@@ -206,6 +206,136 @@ func (s *NetworkManagerVCURTestSuite) TestCalcBlockRewards(c *C) {
 	c.Check(poolR.Uint64(), Equals, uint64(0), Commentf("%d", poolR.Uint64()))
 	c.Check(lpD.Uint64(), Equals, uint64(0), Commentf("%d", lpD.Uint64()))
 	c.Check(lpShare.Uint64(), Equals, uint64(0), Commentf("%d", lpShare.Uint64()))
+
+	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	// Testing of different settings for PendulumAssetsBasisPoints, PendulumIgnoreEffectiveSecurity, PendulumIgnoreL1Assets.
+	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+	networkMgr.k.SetMimir(ctx, constants.PendulumAssetsBasisPoints.String(), 10_000)
+	networkMgr.k.SetMimir(ctx, constants.MimirKeyPendulumIgnoreEffectiveSecurity, 0)
+	networkMgr.k.SetMimir(ctx, constants.MimirKeyPendulumIgnoreL1Assets, 0)
+
+	c.Check(totalEffectiveBond.String(), Equals, cosmos.NewUint(3000*common.One).String())
+	effectiveSecurityBond = cosmos.NewUint(2000 * common.One) // Resetting from the half-size comparison.
+	c.Check(vaultsLiquidityRune.String(), Equals, cosmos.NewUint(1000*common.One).String())
+	c.Check(availablePoolsRune.String(), Equals, cosmos.NewUint(500*common.One).String())
+
+	bondR, poolR, _, _, devFundDeduct, systemIncomeBurnDeduct := networkMgr.calcBlockRewards(ctx, availablePoolsRune, vaultsLiquidityRune, effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, emissionCurve, blocksPerYear, 0, 0)
+	c.Check(devFundDeduct.String(), Equals, "0")
+	c.Check(systemIncomeBurnDeduct.String(), Equals, "0")
+	c.Check(bondR.String(), Equals, "2379")
+	c.Check(poolR.String(), Equals, "792")
+
+	e12BondYield := bondR.MulUint64(1e12).Quo(totalEffectiveBond)
+	e12PoolYield := poolR.MulUint64(1e12).Quo(availablePoolsRune.MulUint64(2)) // The pool liquidity experiencing yield is the total value, both Asset and RUNE depths.
+	c.Check(e12BondYield.String(), Equals, "7930")
+	c.Check(e12PoolYield.String(), Equals, "7920")
+	c.Check(e12BondYield.QuoUint64(100).String(), Equals, e12PoolYield.QuoUint64(100).String())
+	// Approximately equilibrium (affected slightly by rounding steps).
+
+	///////////////////////////////////////////////////////////////////////////////
+	// PendulumAssetsBasisPoints 13,333:
+	networkMgr.k.SetMimir(ctx, constants.PendulumAssetsBasisPoints.String(), 13_333)
+
+	bondR, poolR, _, _, _, _ = networkMgr.calcBlockRewards(ctx, availablePoolsRune, vaultsLiquidityRune, effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, emissionCurve, blocksPerYear, 0, 0)
+	e12BondYield = bondR.MulUint64(1e12).Quo(totalEffectiveBond)
+	e12PoolYield = poolR.MulUint64(1e12).Quo(availablePoolsRune.MulUint64(2)) // The pool liquidity experiencing yield is the total value, both Asset and RUNE depths.
+	c.Check(e12BondYield.String(), Equals, "9060")
+	c.Check(e12PoolYield.String(), Equals, "4530")
+	// The pendulum perceives secured liquidity as being 2/3rds of securing liquidity rather than 1/2, so nodes get more than the yield of pools (double).
+
+	///////////////////////////////////////////////////////////////////////////////
+	// PendulumAssetsBasisPoints 6,666:
+	networkMgr.k.SetMimir(ctx, constants.PendulumAssetsBasisPoints.String(), 6666)
+	bondR, poolR, _, _, _, _ = networkMgr.calcBlockRewards(ctx, availablePoolsRune, vaultsLiquidityRune, effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, emissionCurve, blocksPerYear, 0, 0)
+	e12BondYield = bondR.MulUint64(1e12).Quo(totalEffectiveBond)
+	e12PoolYield = poolR.MulUint64(1e12).Quo(availablePoolsRune.MulUint64(2)) // The pool liquidity experiencing yield is the total value, both Asset and RUNE depths.
+	c.Check(e12BondYield.String(), Equals, "6340")
+	c.Check(e12PoolYield.String(), Equals, "12690")
+	// The pendulum perceives secured liquidity as being 1/3rd of securing liquidity rather than 1/2, so nodes get less than the yield of pools (half).
+
+	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	// PendulumIgnoreEffectiveSecurity true, PendulumIgnoreL1Assets false:
+	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	networkMgr.k.SetMimir(ctx, constants.PendulumAssetsBasisPoints.String(), 10_000)
+	networkMgr.k.SetMimir(ctx, constants.MimirKeyPendulumIgnoreEffectiveSecurity, 1)
+	networkMgr.k.SetMimir(ctx, constants.MimirKeyPendulumIgnoreL1Assets, 0)
+
+	c.Check(totalEffectiveBond.String(), Equals, cosmos.NewUint(3000*common.One).String())
+	c.Check(vaultsLiquidityRune.String(), Equals, cosmos.NewUint(1000*common.One).String())
+
+	bondR, poolR, _, _, _, _ = networkMgr.calcBlockRewards(ctx, availablePoolsRune, vaultsLiquidityRune, effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, emissionCurve, blocksPerYear, 0, 0)
+	e12BondYield = bondR.MulUint64(1e12).Quo(totalEffectiveBond)
+	e12PoolYield = poolR.MulUint64(1e12).Quo(availablePoolsRune.MulUint64(2)) // The pool liquidity experiencing yield is the total value, both Asset and RUNE depths.
+	c.Check(e12BondYield.String(), Equals, "5283")
+	c.Check(e12PoolYield.String(), Equals, "15860")
+	// The pendulum perceives the secured vaults liquidity as being 1/3rd of the securing total effective bond, so nodes get 1/3rd the yield of pools.
+
+	// Equilbrium yield when vaultsLiquidityRune is 3/2 greater:
+	bondR, poolR, _, _, _, _ = networkMgr.calcBlockRewards(ctx, availablePoolsRune, vaultsLiquidityRune.MulUint64(3).QuoUint64(2), effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, emissionCurve, blocksPerYear, 0, 0)
+	e12BondYield = bondR.MulUint64(1e12).Quo(totalEffectiveBond)
+	e12PoolYield = poolR.MulUint64(1e12).Quo(availablePoolsRune.MulUint64(2)) // The pool liquidity experiencing yield is the total value, both Asset and RUNE depths.
+	c.Check(e12BondYield.String(), Equals, "7930")
+	c.Check(e12PoolYield.String(), Equals, "7920")
+	c.Check(e12BondYield.QuoUint64(100).String(), Equals, e12PoolYield.QuoUint64(100).String())
+
+	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	// PendulumIgnoreEffectiveSecurity false, PendulumIgnoreL1Assets true:
+	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	networkMgr.k.SetMimir(ctx, constants.PendulumAssetsBasisPoints.String(), 10_000)
+	networkMgr.k.SetMimir(ctx, constants.MimirKeyPendulumIgnoreEffectiveSecurity, 0)
+	networkMgr.k.SetMimir(ctx, constants.MimirKeyPendulumIgnoreL1Assets, 1)
+
+	c.Check(effectiveSecurityBond.String(), Equals, cosmos.NewUint(2000*common.One).String())
+	c.Check(availablePoolsRune.String(), Equals, cosmos.NewUint(500*common.One).String())
+
+	bondR, poolR, _, _, _, _ = networkMgr.calcBlockRewards(ctx, availablePoolsRune, vaultsLiquidityRune, effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, emissionCurve, blocksPerYear, 0, 0)
+	e12BondYield = bondR.MulUint64(1e12).Quo(totalEffectiveBond)
+	e12PoolYield = poolR.MulUint64(1e12).Quo(availablePoolsRune.MulUint64(2)) // The pool liquidity experiencing yield is the total value, both Asset and RUNE depths.
+	c.Check(e12BondYield.String(), Equals, "3523")
+	c.Check(e12PoolYield.String(), Equals, "21140")
+	// The pendulum perceives secured liquidity as being 1/4th of securing liquidity rather than 1/2, so nodes get less than the yield of pools (1/6th).
+
+	// Equilbrium yield when availablePoolsRune is doubled:
+	bondR, poolR, _, _, _, _ = networkMgr.calcBlockRewards(ctx, availablePoolsRune.MulUint64(2), vaultsLiquidityRune, effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, emissionCurve, blocksPerYear, 0, 0)
+	e12BondYield = bondR.MulUint64(1e12).Quo(totalEffectiveBond)
+	e12PoolYield = poolR.MulUint64(1e12).Quo(availablePoolsRune.MulUint64(2).MulUint64(2)) // The (doubled) pool liquidity experiencing yield is the total value, both Asset and RUNE depths.
+	c.Check(e12BondYield.String(), Equals, "6343")
+	c.Check(e12PoolYield.String(), Equals, "6340")
+	c.Check(e12BondYield.QuoUint64(100).String(), Equals, e12PoolYield.QuoUint64(100).String())
+
+	// No change when ignoring L1 Assets when vaultsLiquidityRune is equally increased in order to increase availablePoolsRune:
+	bondR, poolR, _, _, _, _ = networkMgr.calcBlockRewards(ctx, availablePoolsRune.MulUint64(2), vaultsLiquidityRune.Add(availablePoolsRune), effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, emissionCurve, blocksPerYear, 0, 0)
+	e12BondYield = bondR.MulUint64(1e12).Quo(totalEffectiveBond)
+	e12PoolYield = poolR.MulUint64(1e12).Quo(availablePoolsRune.MulUint64(2).MulUint64(2)) // The (doubled) pool liquidity experiencing yield is the total value, both Asset and RUNE depths.
+	c.Check(e12BondYield.String(), Equals, "6343")
+	c.Check(e12PoolYield.String(), Equals, "6340")
+	c.Check(e12BondYield.QuoUint64(100).String(), Equals, e12PoolYield.QuoUint64(100).String())
+
+	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	// PendulumIgnoreEffectiveSecurity true, PendulumIgnoreL1Assets true:
+	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	networkMgr.k.SetMimir(ctx, constants.PendulumAssetsBasisPoints.String(), 10_000)
+	networkMgr.k.SetMimir(ctx, constants.MimirKeyPendulumIgnoreEffectiveSecurity, 1)
+	networkMgr.k.SetMimir(ctx, constants.MimirKeyPendulumIgnoreL1Assets, 1)
+
+	c.Check(totalEffectiveBond.String(), Equals, cosmos.NewUint(3000*common.One).String())
+	c.Check(availablePoolsRune.String(), Equals, cosmos.NewUint(500*common.One).String())
+
+	bondR, poolR, _, _, _, _ = networkMgr.calcBlockRewards(ctx, availablePoolsRune, vaultsLiquidityRune, effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, emissionCurve, blocksPerYear, 0, 0)
+	e12BondYield = bondR.MulUint64(1e12).Quo(totalEffectiveBond)
+	e12PoolYield = poolR.MulUint64(1e12).Quo(availablePoolsRune.MulUint64(2)) // The pool liquidity experiencing yield is the total value, both Asset and RUNE depths.
+	c.Check(e12BondYield.String(), Equals, "1760")
+	c.Check(e12PoolYield.String(), Equals, "26430")
+	// The pendulum perceives secured liquidity as being 1/6th of securing liquidity rather than 1/2, so nodes get less than the yield of pools (1/15th).
+
+	// Equilbrium yield when availablePoolsRune is tripled:
+	bondR, poolR, _, _, _, _ = networkMgr.calcBlockRewards(ctx, availablePoolsRune.MulUint64(3), vaultsLiquidityRune, effectiveSecurityBond, totalEffectiveBond, totalReserve, totalLiquidityFees, emissionCurve, blocksPerYear, 0, 0)
+	e12BondYield = bondR.MulUint64(1e12).Quo(totalEffectiveBond)
+	e12PoolYield = poolR.MulUint64(1e12).Quo(availablePoolsRune.MulUint64(3).MulUint64(2)) // The (tripled) pool liquidity experiencing yield is the total value, both Asset and RUNE depths.
+	c.Check(e12BondYield.String(), Equals, "5286")
+	c.Check(e12PoolYield.String(), Equals, "5283")
+	c.Check(e12BondYield.QuoUint64(100).String(), Equals, e12PoolYield.QuoUint64(100).String())
 }
 
 func (s *NetworkManagerVCURTestSuite) TestCalcPoolDeficit(c *C) {
