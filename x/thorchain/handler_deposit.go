@@ -265,19 +265,19 @@ func (h DepositHandler) addSwapDirectV137(ctx cosmos.Context, msg MsgSwap) {
 		protocolBps := h.mgr.Keeper().GetConfigInt64(ctx, constants.ProtocolAffiliateFeeBps)
 		protocolAffiliateBps := common.GetSafeShare(
 			cosmos.NewUint(uint64(protocolBps)),
-			cosmos.NewUint(10000),
+			cosmos.NewUint(constants.MaxBasisPts),
 			msg.AffiliateBasisPoints,
 		)
 
 		amt = common.GetSafeShare(
 			msg.AffiliateBasisPoints,
-			cosmos.NewUint(10000),
+			cosmos.NewUint(constants.MaxBasisPts),
 			msg.Tx.Coins[0].Amount,
 		)
 
 		protocolAmt = common.GetSafeShare(
 			protocolAffiliateBps,
-			cosmos.NewUint(10000),
+			cosmos.NewUint(constants.MaxBasisPts),
 			msg.Tx.Coins[0].Amount,
 		)
 
