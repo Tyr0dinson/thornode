@@ -37,7 +37,7 @@ asserts:
 type: create-blocks
 count: 1
 ---
-# set fee floor999207
+# set fee floor
 type: tx-mimir
 key: "SynthSlipMinBps"
 value: 500
