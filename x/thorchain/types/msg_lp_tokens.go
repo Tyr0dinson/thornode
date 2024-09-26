@@ -65,10 +65,11 @@ func NewMsgLpRedeem(
 	txID common.TxID,
 ) *MsgLpRedeem {
 	return &MsgLpRedeem{
-		TxID:   txID,
-		Asset:  asset,
-		Amount: amount,
-		Signer: signer,
+		AccountAddress: accAddr,
+		TxID:           txID,
+		Asset:          asset,
+		Amount:         amount,
+		Signer:         signer,
 	}
 }
 
