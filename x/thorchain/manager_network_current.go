@@ -1832,11 +1832,6 @@ func (vm *NetworkMgrVCUR) getPoolShare(
 		return cosmos.ZeroUint()
 	}
 
-	// when p == 0, no payments to nodes - 100% to pools
-	if pooledRune.IsZero() {
-		return systemIncome
-	}
-
 	// calculate base shareFactor s * 10_000 = (bond + pool) / (bond - pool) * 10_000
 	shareFactor := (totalBonded.Add(pooledRune)).Mul(cosmos.NewUint(constants.MaxBasisPts)).QuoUint64(common.SafeSub(totalBonded, pooledRune).Uint64()) // s * 10_000
 
