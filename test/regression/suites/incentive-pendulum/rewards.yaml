@@ -133,14 +133,9 @@ type: check
 endpoint: http://localhost:1317/thorchain/pools
 asserts:
   - "[.[].balance_rune|tonumber] | add == ${TOTAL_POOLED_RUNE=195337512809}"
----
-########################################################################################
-# Check share factor
-# ShareFactor = ((bond + pool) / (bond - pool)) * PoolShareAdjustmentBasisPoints / 10_000
-########################################################################################
-type: check
-endpoint: http://localhost:1317/thorchain/ping
-asserts:
+  ########################################################################################
+  # ShareFactor = ((bond + pool) / (bond - pool)) * PoolShareAdjustmentBasisPoints / 10_000
+  ########################################################################################
   - ${TOTAL_ACTIVE_BOND_RUNE} == 500000000000
   - ${POOLSHAREADJUSTMENTBASISPOINTS} == 5000
   # ShareFactor Check (s)
