@@ -531,19 +531,19 @@ func (ob *OrderBookVCUR) EndBlock(ctx cosmos.Context, mgr Manager) error {
 			protocolBps := mgr.Keeper().GetConfigInt64(ctx, constants.ProtocolAffiliateFeeBps)
 			protocolAffiliateBps := common.GetSafeShare(
 				cosmos.NewUint(uint64(protocolBps)),
-				cosmos.NewUint(10000),
+				cosmos.NewUint(constants.MaxBasisPts),
 				msg.AffiliateBasisPoints,
 			)
 
 			affiliateAmt := common.GetSafeShare(
 				msg.AffiliateBasisPoints,
-				cosmos.NewUint(10000),
+				cosmos.NewUint(constants.MaxBasisPts),
 				msg.Tx.Coins[0].Amount,
 			)
 
 			protocolAmt := common.GetSafeShare(
 				protocolAffiliateBps,
-				cosmos.NewUint(10000),
+				cosmos.NewUint(constants.MaxBasisPts),
 				msg.Tx.Coins[0].Amount,
 			)
 
