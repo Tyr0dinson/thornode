@@ -91,5 +91,4 @@ func (s *HandlerLpMintSuite) TestLpMintHandler(c *C) {
 	c.Assert(pool.LPUnits.String(), Equals, "7500000000")
 	c.Assert(provider.Units.String(), Equals, "7500000000")
 	c.Assert(balance.Amount.String(), Equals, "2500000000")
-
 }
