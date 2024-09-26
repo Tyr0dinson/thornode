@@ -24,9 +24,9 @@ genesis:
         - address: {{ addr_module_bond }}
           coins:
             - amount: "500000000000"
-              denom: rune  
+              denom: rune
     thorchain:
-      store_version: "{{ store_version }}"  # avoid store migrations
+      store_version: "{{ store_version }}" # avoid store migrations
       node_accounts:
         - active_block_height: "0"
           bond: "500000000000" # reduced by factor of 10 from default
@@ -58,22 +58,22 @@ asserts:
 type: tx-observed-in
 signer: {{ addr_thor_dog }}
 txs:
-- tx:
-    id: '{{ observe_txid 1 }}'
-    chain: BTC
-    from_address: {{ addr_btc_fox }}
-    to_address: {{ addr_btc_dog }}
-    coins:
-      - amount: "5000000"
-        asset: "BTC.BTC"
-        decimals: 8
-    gas:
-      - amount: "10000"
-        asset: "BTC.BTC"
-    memo: "=:THOR.RUNE:{{ addr_thor_fox }}"
-  block_height: 1
-  finalise_height: 1
-  observed_pub_key: {{ pubkey_dog }}
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "5000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "=:THOR.RUNE:{{ addr_thor_fox }}"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
 ---
 ########################################################################################
 # pool and bond reward calculations
@@ -81,8 +81,8 @@ txs:
 type: check
 endpoint: http://localhost:1317/thorchain/block?height=1
 asserts:
-  - .end_block_events[] | select(.type == "rewards") | (to_entries | map(select(.key != "type" and .key != "bond_reward")) | map(.value | tonumber) | add) == 31536 
-  - .end_block_events[] | select(.type == "rewards") | (to_entries | map(select(.key != "type" and .key == "bond_reward")) | map(.value | tonumber) | add) == 79448
+  - .end_block_events[] | select(.type == "rewards") | (to_entries | map(select(.key != "type" and .key != "bond_reward")) | map(.value | tonumber) | add) == 47564
+  - .end_block_events[] | select(.type == "rewards") | (to_entries | map(select(.key != "type" and .key == "bond_reward")) | map(.value | tonumber) | add) == 63419
 ---
 type: create-blocks
 count: 1
@@ -101,25 +101,25 @@ count: 1
 type: tx-observed-in
 signer: {{ addr_thor_dog }}
 txs:
-- tx:
-    id: '{{ observe_txid 2 }}'
-    chain: BTC
-    from_address: {{ addr_btc_fox }}
-    to_address: {{ addr_btc_dog }}
-    coins:
-      - amount: "5000000"
-        asset: "BTC.BTC"
-        decimals: 8
-    gas:
-      - amount: "10000"
-        asset: "BTC.BTC"
-    memo: "=:THOR.RUNE:{{ addr_thor_fox }}"
-  block_height: 3
-  finalise_height: 3
-  observed_pub_key: {{ pubkey_dog }}
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "5000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "=:THOR.RUNE:{{ addr_thor_fox }}"
+    block_height: 3
+    finalise_height: 3
+    observed_pub_key: {{ pubkey_dog }}
 ---
 ########################################################################################
-# Check total bonded RUNE  
+# Check total bonded RUNE
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/nodes
@@ -132,7 +132,7 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/pools
 asserts:
-  - "[.[].balance_rune|tonumber] | add == ${TOTAL_POOLED_RUNE=195304017281}"
+  - "[.[].balance_rune|tonumber] | add == ${TOTAL_POOLED_RUNE=195337512809}"
 ---
 ########################################################################################
 # Check share factor
@@ -142,12 +142,11 @@ type: check
 endpoint: http://localhost:1317/thorchain/ping
 asserts:
   - ${TOTAL_ACTIVE_BOND_RUNE} == 500000000000
-  - ${TOTAL_POOLED_RUNE} == 195304017281
   - ${POOLSHAREADJUSTMENTBASISPOINTS} == 5000
   # ShareFactor Check (s)
-  - (((${TOTAL_ACTIVE_BOND_RUNE} + ${TOTAL_POOLED_RUNE}) / (${TOTAL_ACTIVE_BOND_RUNE} - ${TOTAL_POOLED_RUNE})) * 10000) | floor == 22819
+  - (((${TOTAL_ACTIVE_BOND_RUNE} + ${TOTAL_POOLED_RUNE}) / (${TOTAL_ACTIVE_BOND_RUNE} - ${TOTAL_POOLED_RUNE})) * 10000) | floor == 22823
   # PoolShareFactor Check (f/s)
-  - (((${TOTAL_ACTIVE_BOND_RUNE} + ${TOTAL_POOLED_RUNE}) / (${TOTAL_ACTIVE_BOND_RUNE} - ${TOTAL_POOLED_RUNE})) * ${POOLSHAREADJUSTMENTBASISPOINTS}) | floor == 11409  
+  - (((${TOTAL_ACTIVE_BOND_RUNE} + ${TOTAL_POOLED_RUNE}) / (${TOTAL_ACTIVE_BOND_RUNE} - ${TOTAL_POOLED_RUNE})) * ${POOLSHAREADJUSTMENTBASISPOINTS}) | floor == 11411
 ---
 ########################################################################################
 # pool and bond reward calculations
@@ -155,5 +154,5 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/block?height=3
 asserts:
-  - .end_block_events[] | select(.type == "rewards") | (to_entries | map(select(.key != "type" and .key != "bond_reward")) | map(.value | tonumber) | add) == 24318
-  - .end_block_events[] | select(.type == "rewards") | (to_entries | map(select(.key != "type" and .key == "bond_reward")) | map(.value | tonumber) | add) == 86666
+  - .end_block_events[] | select(.type == "rewards") | (to_entries | map(select(.key != "type" and .key != "bond_reward")) | map(.value | tonumber) | add) == 24314
+  - .end_block_events[] | select(.type == "rewards") | (to_entries | map(select(.key != "type" and .key == "bond_reward")) | map(.value | tonumber) | add) == 86670

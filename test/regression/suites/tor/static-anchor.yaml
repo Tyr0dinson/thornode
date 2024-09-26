@@ -64,7 +64,7 @@ endpoint: http://localhost:1317/thorchain/dpool/thor.tor
 asserts:
   - .derived_depth_bps|tonumber == 10000
   - .balance_asset|tonumber == 299999999999
-  - .balance_rune|tonumber == 300001083690
+  - .balance_rune|tonumber == 300001634526
 ---
 # thor.tor should not be available in the pool querier
 type: check
@@ -98,8 +98,8 @@ type: check
 endpoint: http://localhost:1317/thorchain/dpool/thor.tor
 asserts:
   - .derived_depth_bps|tonumber == 8913
-  - .balance_asset|tonumber == 271650544741 # median still ~1:1
-  - .balance_rune|tonumber == 271651526025
+  - .balance_asset|tonumber == 271706429350 # median still ~1:1
+  - .balance_rune|tonumber == 271707909721
 ---
 ########################################################################################
 # swap to USDY should reduce depth
@@ -119,8 +119,8 @@ type: check
 endpoint: http://localhost:1317/thorchain/dpool/thor.tor
 asserts:
   - .derived_depth_bps|tonumber == 7853
-  - .balance_asset|tonumber == 221773092635 # price shift with affected median
-  - .balance_rune|tonumber == 243090811236
+  - .balance_asset|tonumber == 221730444929 # price shift with affected median
+  - .balance_rune|tonumber == 243189631202
 ---
 ########################################################################################
 # swap to USDZ should reduce depth
@@ -139,8 +139,8 @@ type: check
 endpoint: http://localhost:1317/thorchain/dpool/thor.tor
 asserts:
   - .derived_depth_bps|tonumber == 6827
-  - .balance_asset|tonumber == 195750381410
-  - .balance_rune|tonumber == 214566692701
+  - .balance_asset|tonumber == 195750403341
+  - .balance_rune|tonumber == 214695227853
 ---
 ########################################################################################
 # depth should increase back to 100% over the successive max anchor blocks
@@ -172,6 +172,14 @@ asserts:
 ########################################################################################
 # clear outbounds to cleanup
 ########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 3
+  - .[0].coin.amount == "${OUT_1_AMOUNT=4418748800}"
+  - .[1].coin.amount == "${OUT_2_AMOUNT=4418748800}"
+  - .[2].coin.amount == "${OUT_3_AMOUNT=4418748800}"
+---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
 txs:
@@ -181,7 +189,7 @@ txs:
       from_address: {{ addr_eth_dog }}
       to_address: {{ addr_eth_fox }}
       coins:
-        - amount: "4418756300"
+        - amount: "${OUT_1_AMOUNT}"
           asset: "ETH.USDX-0X9999999999999999999999999999999999999999"
           decimals: 8
       gas:
@@ -197,7 +205,7 @@ txs:
       from_address: {{ addr_eth_dog }}
       to_address: {{ addr_eth_fox }}
       coins:
-        - amount: "4418756300"
+        - amount: "${OUT_2_AMOUNT}"
           asset: "ETH.USDY-0X9999999999999999999999999999999999999999"
           decimals: 8
       gas:
@@ -213,7 +221,7 @@ txs:
       from_address: {{ addr_eth_dog }}
       to_address: {{ addr_eth_fox }}
       coins:
-        - amount: "4418756300"
+        - amount: "${OUT_3_AMOUNT}"
           asset: "ETH.USDZ-0X9999999999999999999999999999999999999999"
           decimals: 8
       gas:
@@ -231,3 +239,4 @@ type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .|length == 0
+

@@ -26,7 +26,7 @@ count: 1
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
-  - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 9068418
+  - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == ${BTC_BALANCE=9068389}
   - .balances[]|select(.denom == "rune")|.amount|tonumber == 2489998000000
 ---
 ########################################################################################
@@ -35,7 +35,7 @@ asserts:
 type: tx-deposit
 signer: {{ addr_thor_fox }}
 coins:
-  - amount: "9068418"
+  - amount: "${BTC_BALANCE}"
     asset: "btc/btc"
 memo: "=:THOR.RUNE"
 ---
@@ -46,7 +46,7 @@ type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 1
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2499108862107
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2499121033283
 ---
 ########################################################################################
 # swap btc to btc synth
@@ -54,22 +54,22 @@ asserts:
 type: tx-observed-in
 signer: {{ addr_thor_dog }}
 txs:
-- tx:
-    id: '{{ observe_txid 1 }}'
-    chain: BTC
-    from_address: {{ addr_btc_fox }}
-    to_address: {{ addr_btc_dog }}
-    coins:
-      - amount: "5000000"
-        asset: "BTC.BTC"
-        decimals: 8
-    gas:
-      - amount: "10000"
-        asset: "BTC.BTC"
-    memo: "=:BTC/BTC:{{ addr_thor_fox }}"
-  block_height: 1
-  finalise_height: 1
-  observed_pub_key: {{ pubkey_dog }}
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "5000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "=:BTC/BTC:{{ addr_thor_fox }}"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
 ---
 type: create-blocks
 count: 1
@@ -78,8 +78,8 @@ type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 2
-  - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 4757253
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2499108862107
+  - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == ${BTC_BALANCE=4757258}
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2499121033283
 ---
 ########################################################################################
 # swap btc synth to btc
@@ -87,7 +87,7 @@ asserts:
 type: tx-deposit
 signer: {{ addr_thor_fox }}
 coins:
-  - amount: "4757253"
+  - amount: "${BTC_BALANCE}"
     asset: "btc/btc"
 memo: "=:BTC.BTC:{{ addr_btc_fox }}"
 ---
@@ -98,7 +98,7 @@ type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 1
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2499106862107
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2499119033283
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound

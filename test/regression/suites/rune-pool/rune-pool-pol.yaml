@@ -94,11 +94,11 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
 asserts:
-  - .pol.current_deposit|tonumber == ${POL_DEPOSIT=1864533593}
+  - .pol.current_deposit|tonumber == ${POL_DEPOSIT=1953880922}
   - .pol.rune_deposited|tonumber == ${POL_DEPOSIT}
   - .pol.rune_withdrawn|tonumber == 0
-  - .pol.value|tonumber == ${POL_VALUE=1861784996}
-  - .pol.pnl|tonumber == ${POL_PNL=-2748597}
+  - .pol.value|tonumber == ${POL_VALUE=1951000612}
+  - .pol.pnl|tonumber == ${POL_PNL=-2880310}
   - .reserve.units|tonumber == ${POL_DEPOSIT}
   - 'all(.providers|.[]; . == "0")'
   - (.reserve.pnl|tonumber)+(.providers.pnl|tonumber) == (.pol.pnl|tonumber)
@@ -109,8 +109,8 @@ type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
 asserts:
   # show we are over 25% synth per pool target + 10% buffer
-  - (.synth_supply|tonumber)/(.balance_asset|tonumber*2) == ${SYNTH_PER_POOL=0.372443515}
-  - .balance_rune == "${RUNE_BALANCE=374771252290}"
+  - (.synth_supply|tonumber)/(.balance_asset|tonumber*2) == ${SYNTH_PER_POOL=0.37244341}
+  - .balance_rune == "${RUNE_BALANCE=392730065359}"
 ---
 ########################################################################################
 # Ensure Max Deposit is Respected
@@ -285,18 +285,18 @@ asserts:
   - .withdraw_amount|tonumber == ${POL_VALUE}
   - .units|tonumber == 2*${POL_DEPOSIT}
   - .last_deposit_height == 8
-  - .value|tonumber == 2*${POL_VALUE}-571623
-  - .pnl|tonumber == -571623 # incurred loss from POL deposit
+  - .pnl|tonumber == -${LOSS=599013} # incurred loss from POL deposit
+  - .value|tonumber == 2*${POL_VALUE}-${LOSS}
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
 asserts:
-  - .pol.current_deposit|tonumber == ${POL_DEPOSIT}+${POL_DEPOSIT_2=1873856261}
+  - .pol.current_deposit|tonumber == ${POL_DEPOSIT}+${POL_DEPOSIT_2=1963650327}
   - .pol.rune_deposited|tonumber == ${POL_DEPOSIT}+${POL_DEPOSIT_2}
   - .pol.rune_withdrawn|tonumber == 0
-  - .pol.value|tonumber == ${POL_VALUE}+${POL_DEPOSIT_2}-859287
-  - .pol.pnl|tonumber == ${POL_PNL}-859287
-  - .reserve.units|tonumber == ${RESERVE_UNITS=11802809} # reserve entered too
+  - .pol.value|tonumber == ${POL_VALUE}+${POL_DEPOSIT_2}-900461
+  - .pol.pnl|tonumber == ${POL_PNL}-900461
+  - .reserve.units|tonumber == ${RESERVE_UNITS=12368396} # reserve entered too
   - .providers.units|tonumber == 2*${POL_DEPOSIT} # fully deployed all pending
   - .providers.pending_units|tonumber == 0
   - (.reserve.pnl|tonumber)+(.providers.pnl|tonumber) == (.pol.pnl|tonumber)
@@ -321,21 +321,21 @@ endpoint: http://localhost:1317/thorchain/rune_provider/{{ addr_thor_fox }}
 asserts:
   - .rune_address == "{{ addr_thor_fox }}"
   - .deposit_amount|tonumber == 3*${POL_VALUE}
-  - .withdraw_amount|tonumber == 2*${POL_VALUE}-571622/2
+  - .withdraw_amount|tonumber == 2*${POL_VALUE}-599014/2
   - .units|tonumber == ${POL_DEPOSIT}
   - .last_deposit_height == 8
   - .last_withdraw_height == 10
-  - .value|tonumber == ${POL_VALUE}-571622/2 # half of loss realized on withdraw
-  - .pnl|tonumber == -571622
+  - .value|tonumber == ${POL_VALUE}-599014/2 # half of loss realized on withdraw
+  - .pnl|tonumber == -599014
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
 asserts:
-  - .pol.current_deposit|tonumber == 2*${POL_DEPOSIT}+9322668
-  - .pol.rune_deposited|tonumber == 2*${POL_DEPOSIT}+9322668
+  - .pol.current_deposit|tonumber == 2*${POL_DEPOSIT}+9769405
+  - .pol.rune_deposited|tonumber == 2*${POL_DEPOSIT}+9769405
   - .pol.rune_withdrawn|tonumber == 0
-  - .pol.value|tonumber == ${POL_VALUE}+${POL_DEPOSIT_2}-859287
-  - .pol.pnl|tonumber == ${POL_PNL}-859287
+  - .pol.value|tonumber == ${POL_VALUE}+${POL_DEPOSIT_2}-900461
+  - .pol.pnl|tonumber == ${POL_PNL}-900461
   - .reserve.units|tonumber == ${RESERVE_UNITS}+${POL_DEPOSIT}
   - .providers.units|tonumber == ${POL_DEPOSIT}
   - .providers.pending_units|tonumber == 0
@@ -366,12 +366,12 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/runepool
 asserts:
-  - .pol.current_deposit|tonumber == 2*${POL_DEPOSIT}+9322668-958609289
-  - .pol.rune_deposited|tonumber == 2*${POL_DEPOSIT}+9322668
-  - .pol.rune_withdrawn|tonumber == 958609289
-  - .pol.value|tonumber == ${POL_VALUE}+${POL_DEPOSIT_2}-859287-1663646186
-  - .pol.pnl|tonumber == ${POL_PNL}-859287-705036897
-  - .reserve.units|tonumber == ${RESERVE_UNITS}+${POL_DEPOSIT}-1183611267
+  - .pol.current_deposit|tonumber == 2*${POL_DEPOSIT}+9769405-1062605111
+  - .pol.rune_deposited|tonumber == 2*${POL_DEPOSIT}+9769405
+  - .pol.rune_withdrawn|tonumber == 1062605111
+  - .pol.value|tonumber == ${POL_VALUE}+${POL_DEPOSIT_2}-900461-1617925158
+  - .pol.pnl|tonumber == ${POL_PNL}-900461-555320047
+  - .reserve.units|tonumber == ${RESERVE_UNITS}+${POL_DEPOSIT}-1240329208
   - .providers.units|tonumber == ${POL_DEPOSIT}
   - .providers.pending_units|tonumber == 0
   - (.reserve.pnl|tonumber)+(.providers.pnl|tonumber) == (.pol.pnl|tonumber)
@@ -415,12 +415,12 @@ endpoint: http://localhost:1317/thorchain/rune_provider/{{ addr_thor_fox }}
 asserts:
   - .rune_address == "{{ addr_thor_fox }}"
   - .deposit_amount|tonumber == 3*${POL_VALUE}
-  - .withdraw_amount|tonumber == 2*${POL_VALUE}-571622/2
+  - .withdraw_amount|tonumber == 2*${POL_VALUE}-599014/2
   - .units|tonumber == ${POL_DEPOSIT}
   - .last_deposit_height == 8
   - .last_withdraw_height == 10
-  - .value|tonumber == ${POL_VALUE}-354870982
-  - .pnl|tonumber == -354870982-571622/2
+  - .value|tonumber == ${POL_VALUE}-280607308
+  - .pnl|tonumber == -280906815
 ---
 ########################################################################################
 # RUNEPool withdraw remaining from pending
@@ -439,7 +439,7 @@ type: check
 endpoint: http://localhost:1317/thorchain/runepool
 asserts:
   - .pol.value|tonumber == 0
-  - .pol.pnl|tonumber == -716656098
+  - .pol.pnl|tonumber == -567981252
   - .reserve.units|tonumber == 0
   - .reserve.value|tonumber == 0
   - .providers.units|tonumber == 0
@@ -454,9 +454,9 @@ endpoint: http://localhost:1317/thorchain/rune_provider/{{ addr_thor_fox }}
 asserts:
   - .rune_address == "{{ addr_thor_fox }}"
   - .deposit_amount|tonumber == 3*${POL_VALUE}
-  - .withdraw_amount|tonumber == 3*${POL_VALUE}-355156793
+  - .withdraw_amount|tonumber == 3*${POL_VALUE}-280906815
   - .units|tonumber == 0
   - .last_deposit_height == 8
   - .last_withdraw_height == 15
   - .value|tonumber == 0
-  - .pnl|tonumber == -354870982-571622/2
+  - .pnl|tonumber == -280906815

@@ -64,7 +64,7 @@ endpoint: http://localhost:1317/thorchain/dpool/thor.tor
 asserts:
   - .derived_depth_bps|tonumber == 10000
   - .balance_asset|tonumber == 299999999999
-  - .balance_rune|tonumber == 300001083690
+  - .balance_rune|tonumber == 300001634526
 ---
 # thor.tor should not be available in the pool querier
 type: check
@@ -98,8 +98,8 @@ type: check
 endpoint: http://localhost:1317/thorchain/dpool/thor.tor
 asserts:
   - .derived_depth_bps|tonumber == 8913
-  - .balance_asset|tonumber == 271650544741 # median still ~1:1
-  - .balance_rune|tonumber == 271651526025
+  - .balance_asset|tonumber == 271706429350 # median still ~1:1
+  - .balance_rune|tonumber == 271707909721
 ---
 ########################################################################################
 # swap to USDY should reduce depth
@@ -128,8 +128,8 @@ type: check
 endpoint: http://localhost:1317/thorchain/dpool/thor.tor
 asserts:
   - .derived_depth_bps|tonumber == 7853
-  - .balance_asset|tonumber == 221773092635 # price shift with affected median
-  - .balance_rune|tonumber == 243090811236
+  - .balance_asset|tonumber == 221730444929 # price shift with affected median
+  - .balance_rune|tonumber == 243189631202
 ---
 ########################################################################################
 # enable the dynamic anchor to target 95% and compute every block
@@ -203,7 +203,7 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/dpool/thor.tor
 asserts:
-  - .derived_depth_bps|tonumber == 9836
+  - .derived_depth_bps|tonumber == 9837
 ---
 type: create-blocks
 count: 1
@@ -216,6 +216,16 @@ asserts:
 ########################################################################################
 # clear outbounds to cleanup
 ########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 5
+  - .[0].coin.amount == "${OUT_1_AMOUNT=4418748800}"
+  - .[1].coin.amount == "${OUT_2_AMOUNT=4418748800}"
+  - .[2].coin.amount == "${OUT_3_AMOUNT=4418748800}"
+  - .[3].coin.amount == "${OUT_4_AMOUNT=4046613700}"
+  - .[4].coin.amount == "${OUT_5_AMOUNT=4046626500}"
+---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
 txs:
@@ -225,7 +235,7 @@ txs:
       from_address: {{ addr_eth_dog }}
       to_address: {{ addr_eth_fox }}
       coins:
-        - amount: "4418756300"
+        - amount: "${OUT_1_AMOUNT}"
           asset: "ETH.USDX-0X9999999999999999999999999999999999999999"
           decimals: 8
       gas:
@@ -241,7 +251,7 @@ txs:
       from_address: {{ addr_eth_dog }}
       to_address: {{ addr_eth_fox }}
       coins:
-        - amount: "4418756300"
+        - amount: "${OUT_2_AMOUNT}"
           asset: "ETH.USDY-0X9999999999999999999999999999999999999999"
           decimals: 8
       gas:
@@ -257,7 +267,7 @@ txs:
       from_address: {{ addr_eth_dog }}
       to_address: {{ addr_eth_fox }}
       coins:
-        - amount: "4418756300"
+        - amount: "${OUT_3_AMOUNT}"
           asset: "ETH.USDZ-0X9999999999999999999999999999999999999999"
           decimals: 8
       gas:
@@ -273,7 +283,7 @@ txs:
       from_address: {{ addr_eth_dog }}
       to_address: {{ addr_eth_fox }}
       coins:
-        - amount: "4048821100"
+        - amount: "${OUT_4_AMOUNT}"
           asset: "ETH.USDX-0X9999999999999999999999999999999999999999"
           decimals: 8
       gas:
@@ -289,7 +299,7 @@ txs:
       from_address: {{ addr_eth_dog }}
       to_address: {{ addr_eth_fox }}
       coins:
-        - amount: "4048829200"
+        - amount: "${OUT_5_AMOUNT}"
           asset: "ETH.USDY-0X9999999999999999999999999999999999999999"
           decimals: 8
       gas:

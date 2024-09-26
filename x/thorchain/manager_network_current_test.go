@@ -117,10 +117,10 @@ func (s *NetworkManagerVCURTestSuite) TestCalcBlockRewards(c *C) {
 	// Pool share = (rewards) * (pool share factor / 10_000) = 3171 * 0.5000 = 1586
 	// Bond share = rewards - (pool share) = 3171 - 1586 = 1585
 	bondR, poolR, lpD, lpShare, _, _ = networkMgr.calcBlockRewards(availablePoolsRune, totalBonded, totalReserve, totalLiquidityFees, emissionCurve, blocksPerYear, poolShareBasisPoints, devFundDeduct, systemIncomeBurnDeduct)
-	c.Check(bondR.Uint64(), Equals, uint64(2120), Commentf("%d", bondR.Uint64()))
-	c.Check(poolR.Uint64(), Equals, uint64(1051), Commentf("%d", poolR.Uint64()))
+	c.Check(bondR.Uint64(), Equals, uint64(1585), Commentf("%d", bondR.Uint64()))
+	c.Check(poolR.Uint64(), Equals, uint64(1586), Commentf("%d", poolR.Uint64()))
 	c.Check(lpD.Uint64(), Equals, uint64(0), Commentf("%d", lpD.Uint64()))
-	c.Check(lpShare.Uint64(), Equals, uint64(3314), Commentf("%d", lpShare.Uint64()))
+	c.Check(lpShare.Uint64(), Equals, uint64(5002), Commentf("%d", lpShare.Uint64()))
 
 	// Optimal
 	// Bonded 67%, Pooled 33%
@@ -130,10 +130,10 @@ func (s *NetworkManagerVCURTestSuite) TestCalcBlockRewards(c *C) {
 	// Pool share = (rewards) * (pool share factor / 10_000) = 3171 * 0.3333 = 1057
 	// Bond share = rewards - (pool share) = 3171 - 1057 = 2114
 	bondR, poolR, lpD, lpShare, _, _ = networkMgr.calcBlockRewards(availablePoolsRune, totalBonded, totalReserve, totalLiquidityFees, emissionCurve, blocksPerYear, poolShareBasisPoints, devFundDeduct, systemIncomeBurnDeduct)
-	c.Check(bondR.Uint64(), Equals, uint64(2470), Commentf("%d", bondR.Uint64()))
-	c.Check(poolR.Uint64(), Equals, uint64(701), Commentf("%d", poolR.Uint64()))
+	c.Check(bondR.Uint64(), Equals, uint64(2114), Commentf("%d", bondR.Uint64()))
+	c.Check(poolR.Uint64(), Equals, uint64(1057), Commentf("%d", poolR.Uint64()))
 	c.Check(lpD.Uint64(), Equals, uint64(0), Commentf("%d", lpD.Uint64()))
-	c.Check(lpShare.Uint64(), Equals, uint64(2211), Commentf("%d", lpShare.Uint64()))
+	c.Check(lpShare.Uint64(), Equals, uint64(3333), Commentf("%d", lpShare.Uint64()))
 
 	// Under-bonded
 	// Bonded 60%, Pooled 40%
@@ -143,10 +143,10 @@ func (s *NetworkManagerVCURTestSuite) TestCalcBlockRewards(c *C) {
 	// Pool share = (rewards) * (pool share factor / 10_000) = 3171 * 0.2000 = 634
 	// Bond share = rewards - (pool share) = 3171 - 634 = 2537
 	bondR, poolR, lpD, lpShare, _, _ = networkMgr.calcBlockRewards(availablePoolsRune, totalBonded, totalReserve, totalLiquidityFees, emissionCurve, blocksPerYear, poolShareBasisPoints, devFundDeduct, systemIncomeBurnDeduct)
-	c.Check(bondR.Uint64(), Equals, uint64(2751), Commentf("%d", bondR.Uint64()))
-	c.Check(poolR.Uint64(), Equals, uint64(420), Commentf("%d", poolR.Uint64()))
+	c.Check(bondR.Uint64(), Equals, uint64(2537), Commentf("%d", bondR.Uint64()))
+	c.Check(poolR.Uint64(), Equals, uint64(634), Commentf("%d", poolR.Uint64()))
 	c.Check(lpD.Uint64(), Equals, uint64(0), Commentf("%d", lpD.Uint64()))
-	c.Check(lpShare.Uint64(), Equals, uint64(1325), Commentf("%d", lpShare.Uint64()))
+	c.Check(lpShare.Uint64(), Equals, uint64(1999), Commentf("%d", lpShare.Uint64()))
 
 	// Unsafe
 	// Bonded 50.1%, Pooled 49.9%
@@ -156,10 +156,10 @@ func (s *NetworkManagerVCURTestSuite) TestCalcBlockRewards(c *C) {
 	// Pool share = (rewards) * (pool share factor / 10_000) = 3171 * 0.0007 = 2
 	// Bond share = rewards - (pool share) = 3171 - 2 = 3169
 	bondR, poolR, lpD, lpShare, _, _ = networkMgr.calcBlockRewards(availablePoolsRune, totalBonded, totalReserve, totalLiquidityFees, emissionCurve, blocksPerYear, poolShareBasisPoints, devFundDeduct, systemIncomeBurnDeduct)
-	c.Check(bondR.Uint64(), Equals, uint64(3170), Commentf("%d", bondR.Uint64()))
-	c.Check(poolR.Uint64(), Equals, uint64(1), Commentf("%d", poolR.Uint64()))
+	c.Check(bondR.Uint64(), Equals, uint64(3169), Commentf("%d", bondR.Uint64()))
+	c.Check(poolR.Uint64(), Equals, uint64(2), Commentf("%d", poolR.Uint64()))
 	c.Check(lpD.Uint64(), Equals, uint64(0), Commentf("%d", lpD.Uint64()))
-	c.Check(lpShare.Uint64(), Equals, uint64(3), Commentf("%d", lpShare.Uint64()))
+	c.Check(lpShare.Uint64(), Equals, uint64(6), Commentf("%d", lpShare.Uint64()))
 
 	// Resetting to optimal scenario to validate PoolShareAdjustmentBasisPoints Point adjustments
 	availablePoolsRune = cosmos.NewUint(1000 * common.One)
@@ -416,14 +416,14 @@ func (s *NetworkManagerVCURTestSuite) TestSaverYieldCall(c *C) {
 	c.Assert(networkMgr.UpdateNetwork(ctx, constAccessor, mgr.gasMgr, mgr.eventMgr), IsNil)
 	spool, err = mgr.Keeper().GetPool(ctx, spool.Asset.GetSyntheticAsset())
 	c.Assert(err, IsNil)
-	c.Check(spool.BalanceAsset.Uint64(), Equals, uint64(5080245276), Commentf("%d", spool.BalanceAsset.Uint64()))
+	c.Check(spool.BalanceAsset.Uint64(), Equals, uint64(7154216104), Commentf("%d", spool.BalanceAsset.Uint64()))
 
 	// mgr.Keeper().SetMimir(ctx, constants.IncentiveCurve.String(), 50)
 	c.Assert(mgr.Keeper().AddToLiquidityFees(ctx, pool.Asset, cosmos.NewUint(50*common.One)), IsNil)
 	c.Assert(networkMgr.UpdateNetwork(ctx, constAccessor, mgr.gasMgr, mgr.eventMgr), IsNil)
 	spool, err = mgr.Keeper().GetPool(ctx, spool.Asset.GetSyntheticAsset())
 	c.Assert(err, IsNil)
-	c.Check(spool.BalanceAsset.String(), Equals, "5808136148", Commentf("%d", spool.BalanceAsset.Uint64()))
+	c.Check(spool.BalanceAsset.String(), Equals, "7829413284", Commentf("%d", spool.BalanceAsset.Uint64()))
 
 	// check we don't give yield when synth utilization is too high
 	// add some synths
@@ -433,7 +433,7 @@ func (s *NetworkManagerVCURTestSuite) TestSaverYieldCall(c *C) {
 	c.Assert(networkMgr.UpdateNetwork(ctx, constAccessor, mgr.gasMgr, mgr.eventMgr), IsNil)
 	spool, err = mgr.Keeper().GetPool(ctx, spool.Asset.GetSyntheticAsset())
 	c.Assert(err, IsNil)
-	c.Check(spool.BalanceAsset.String(), Equals, "5808136148", Commentf("%d", spool.BalanceAsset.Uint64()))
+	c.Check(spool.BalanceAsset.String(), Equals, "7829413284", Commentf("%d", spool.BalanceAsset.Uint64()))
 }
 
 func (s *NetworkManagerVCURTestSuite) TestRagnarokPool(c *C) {

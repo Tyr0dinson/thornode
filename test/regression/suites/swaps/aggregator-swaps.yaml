@@ -31,25 +31,25 @@ endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - |
     .[0] == {
-      chain: "ETH",
-      clout_spent: "0",
-      coin: {
-          amount: "81364398",
-          asset: "ETH.ETH"
+      "chain": "ETH",
+      "to_address": "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
+      "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
+      "coin": {
+        "asset": "ETH.ETH",
+        "amount": "81364281"
       },
-      gas_rate: 12,
-      height: 2,
-      in_hash: "34AA325C82F0B9572B54B1AD403146200625DB5F31EF59C5F8BF9BF22F93E71A",
-      max_gas: [
-          {
-              amount: "960000",
-              asset: "ETH.ETH",
-              decimals: 8
-          }
+      "memo": "OUT:34AA325C82F0B9572B54B1AD403146200625DB5F31EF59C5F8BF9BF22F93E71A",
+      "max_gas": [
+        {
+          "asset": "ETH.ETH",
+          "amount": "960000",
+          "decimals": 8
+        }
       ],
-      memo: "OUT:34AA325C82F0B9572B54B1AD403146200625DB5F31EF59C5F8BF9BF22F93E71A",
-      to_address: "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
-      vault_pub_key: "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
+      "gas_rate": 12,
+      "in_hash": "34AA325C82F0B9572B54B1AD403146200625DB5F31EF59C5F8BF9BF22F93E71A",
+      "height": 2,
+      "clout_spent": "0"
     }
 ---
 type: check
@@ -57,25 +57,25 @@ endpoint: http://localhost:1317/thorchain/keysign/2/tthorpub1addwnpepqfshsq2y6ej
 asserts:
   - |
     .keysign.tx_array[0] == {
-      chain: "ETH",
-      to_address: "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
-      vault_pub_key: "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
-      coin: {
-        "asset": "ETH.ETH",
-        "amount": "81364398"
-      },
-      memo: "OUT:34AA325C82F0B9572B54B1AD403146200625DB5F31EF59C5F8BF9BF22F93E71A",
-      max_gas: [
-        {
-          asset: "ETH.ETH",
-          amount: "960000",
-          decimals: 8
-        }
-      ],
-      gas_rate: 12,
-      in_hash: "34AA325C82F0B9572B54B1AD403146200625DB5F31EF59C5F8BF9BF22F93E71A",
-      aggregator: "0x69800327b38A4CeF30367Dec3f64c2f2386f3848",
-      aggregator_target_asset: "0x6f67873ebc41ed88B08A9265Bd16480f819e4348",
-      clout_spent: "0"
-    }
-  - .signature == "mYKHUlOSdQZzkB+fWQkgASOSlCYrdJH7YaawwIeQG3ZdA9beAkUtVhvKYz9XIl1EjZybA0INCw0aHQFKeV7sKQ=="
+        "chain": "ETH",
+        "to_address": "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
+        "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
+        "coin": {
+          "asset": "ETH.ETH",
+          "amount": "81364281"
+        },
+        "memo": "OUT:34AA325C82F0B9572B54B1AD403146200625DB5F31EF59C5F8BF9BF22F93E71A",
+        "max_gas": [
+          {
+            "asset": "ETH.ETH",
+            "amount": "960000",
+            "decimals": 8
+          }
+        ],
+        "gas_rate": 12,
+        "in_hash": "34AA325C82F0B9572B54B1AD403146200625DB5F31EF59C5F8BF9BF22F93E71A",
+        "aggregator": "0x69800327b38A4CeF30367Dec3f64c2f2386f3848",
+        "aggregator_target_asset": "0x6f67873ebc41ed88B08A9265Bd16480f819e4348",
+        "clout_spent": "0"
+      }
+  - .signature == "o/9HdWpay+xi89+aQQ7PDA9LZQ1GNJ0Q9iOsjdd/mLocSwfAS0lnrqFAGtU392Bb2SOeRclJBEeylUJvahMpJw=="

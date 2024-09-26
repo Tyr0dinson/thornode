@@ -169,7 +169,7 @@
           "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
           "coins": [
             {
-              "amount": "205977853562",
+              "amount": "207180864821",
               "denom": "rune"
             }
           ]
@@ -187,7 +187,7 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "35000133730820",
+              "amount": "35000133770896",
               "denom": "rune"
             }
           ]
@@ -196,11 +196,11 @@
           "address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
           "coins": [
             {
-              "amount": "25737428",
+              "amount": "24402571",
               "denom": "eth/eth"
             },
             {
-              "amount": "2491527582889",
+              "amount": "2492127521672",
               "denom": "rune"
             }
           ]
@@ -218,7 +218,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "5002360832729",
+              "amount": "5000557842611",
               "denom": "rune"
             }
           ]
@@ -231,7 +231,7 @@
       },
       "supply": [
         {
-          "amount": "25737428",
+          "amount": "24402571",
           "denom": "eth/eth"
         },
         {
@@ -302,9 +302,9 @@
         }
       ],
       "network": {
-        "LPIncomeSplit": "6106",
-        "NodeIncomeSplit": "3894",
-        "bond_reward_rune": "2360832729",
+        "LPIncomeSplit": "9205",
+        "NodeIncomeSplit": "795",
+        "bond_reward_rune": "557842611",
         "total_bond_units": "68"
       },
       "network_fees": [
@@ -341,21 +341,21 @@
       "orderbook_items": [],
       "outbound_fee_spent_rune": [
         {
-          "amount": "8343073",
+          "amount": "8345327",
           "asset": "BTC.BTC"
         },
         {
-          "amount": "591934476",
+          "amount": "592072290",
           "asset": "ETH.ETH"
         }
       ],
       "outbound_fee_withheld_rune": [
         {
-          "amount": "11125410",
+          "amount": "11128377",
           "asset": "BTC.BTC"
         },
         {
-          "amount": "790352448",
+          "amount": "790529703",
           "asset": "ETH.ETH"
         }
       ],
@@ -364,7 +364,7 @@
           "LP_units": "100000000000",
           "asset": "BTC.BTC",
           "balance_asset": "118503500",
-          "balance_rune": "84451500089",
+          "balance_rune": "84484962771",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -374,13 +374,13 @@
         {
           "LP_units": "100000000000",
           "asset": "ETH.ETH",
-          "balance_asset": "867729297",
-          "balance_rune": "121526353473",
+          "balance_asset": "867726100",
+          "balance_rune": "122695902050",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
           "status": "Available",
-          "synth_units": "1505358213"
+          "synth_units": "1426175523"
         }
       ],
       "reserve_contributors": null,
@@ -397,19 +397,19 @@
         {
           "address": "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
           "reclaimed": "0",
-          "score": "85285142",
+          "score": "85300445",
           "spent": "0"
         },
         {
           "address": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw",
           "reclaimed": "0",
-          "score": "85285106",
+          "score": "85300420",
           "spent": "0"
         },
         {
           "address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
           "reclaimed": "0",
-          "score": "5666590280",
+          "score": "5676203886",
           "spent": "0"
         }
       ],
@@ -436,7 +436,7 @@
               "decimals": "8"
             },
             {
-              "amount": "867729297",
+              "amount": "867726100",
               "asset": "ETH.ETH",
               "decimals": "8"
             }
