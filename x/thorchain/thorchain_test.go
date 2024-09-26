@@ -113,6 +113,7 @@ func (s *ThorchainSuite) TestChurn(c *C) {
 		BalanceAsset: cosmos.NewUint(common.One),
 		Asset:        common.ETHAsset,
 		LPUnits:      cosmos.NewUint(common.One),
+		BankUnits:    cosmos.ZeroUint(),
 		Status:       PoolAvailable,
 	}), IsNil)
 	addresses := make([]cosmos.AccAddress, 4)

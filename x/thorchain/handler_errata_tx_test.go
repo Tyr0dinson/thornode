@@ -114,6 +114,7 @@ func (s *HandlerErrataTxSuite) TestErrataHandlerHappyPath(c *C) {
 		pool: Pool{
 			Asset:        common.ETHAsset,
 			LPUnits:      totalUnits,
+			BankUnits:    cosmos.ZeroUint(),
 			BalanceRune:  cosmos.NewUint(100 * common.One),
 			BalanceAsset: cosmos.NewUint(100 * common.One),
 		},
@@ -772,6 +773,7 @@ func (s *HandlerErrataTxSuite) TestObservingSlashing(c *C) {
 	pool := Pool{
 		Asset:        common.ETHAsset,
 		LPUnits:      totalUnits,
+		BankUnits:    cosmos.ZeroUint(),
 		BalanceRune:  cosmos.NewUint(100 * common.One),
 		BalanceAsset: cosmos.NewUint(100 * common.One),
 		Status:       PoolAvailable,

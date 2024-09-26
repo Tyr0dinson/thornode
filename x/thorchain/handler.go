@@ -205,21 +205,15 @@ func getMsgAddLiquidityFromMemo(ctx cosmos.Context, memo AddLiquidityMemo, tx Ob
 }
 
 func getMsgMintLpFromMemo(ctx cosmos.Context, memo MintLpMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
-	var runeAddr common.Address
-	var assetAddr common.Address
-	if tx.Tx.Chain.Equals(common.THORChain) {
-		runeAddr = tx.Tx.FromAddress
-		assetAddr = memo.GetDestination()
-	} else {
-		runeAddr = memo.GetDestination()
-		assetAddr = tx.Tx.FromAddress
-	}
-	// in case we are providing native rune and another native asset
-	if memo.GetAsset().Chain.Equals(common.THORChain) {
-		assetAddr = runeAddr
-	}
-
-	return NewMsgLpMint(tx.Tx, memo.GetAsset(), runeAddr, assetAddr, memo.Amount, memo.Recipient, signer), nil
+	return NewMsgLpMint(
+		memo.GetAsset(),
+		// Accesses a user account. Must be validated
+		tx.Tx.FromAddress,
+		memo.Amount,
+		memo.Recipient,
+		signer,
+		tx.Tx.ID,
+	), nil
 }
 
 func getMsgDonateFromMemo(memo DonateMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
@@ -297,7 +291,7 @@ func processOneTxIn(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, sig
 	case MintLpMemo:
 		newMsg, err = getMsgMintLpFromMemo(ctx, m, tx, signer)
 	case RedeemLpMemo:
-		newMsg = NewMsgLpRedeem(tx.Tx, memo.GetAsset(), tx.Tx.FromAddress, memo.GetAmount(), signer)
+		newMsg = NewMsgLpRedeem(memo.GetAsset(), tx.Tx.FromAddress, memo.GetAmount(), signer, tx.Tx.ID)
 	case SwapMemo:
 		m.Asset = fuzzyAssetMatch(ctx, keeper, m.Asset)
 		m.DexTargetAddress = externalAssetMatch(keeper.GetVersion(), m.Asset.GetChain(), m.DexTargetAddress)

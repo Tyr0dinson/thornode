@@ -7,20 +7,19 @@ import (
 
 // NewMsgLpMint is a constructor function for MsgLpMint
 func NewMsgLpMint(
-	tx common.Tx,
 	asset common.Asset,
-	runeAddr, assetAddr common.Address,
+	accAddr common.Address,
 	amount cosmos.Uint,
 	recipient, signer cosmos.AccAddress,
+	txID common.TxID,
 ) *MsgLpMint {
 	return &MsgLpMint{
-		Tx:           tx,
-		Asset:        asset,
-		RuneAddress:  runeAddr,
-		AssetAddress: assetAddr,
-		Amount:       amount,
-		Recipient:    recipient,
-		Signer:       signer,
+		TxID:           txID,
+		Asset:          asset,
+		AccountAddress: accAddr,
+		Amount:         amount,
+		Recipient:      recipient,
+		Signer:         signer,
 	}
 }
 
@@ -38,18 +37,11 @@ func (m *MsgLpMint) ValidateBasic() error {
 	if m.Asset.IsEmpty() {
 		return cosmos.ErrUnknownRequest("pool asset cannot be empty")
 	}
-	if err := m.Tx.Valid(); err != nil {
-		return cosmos.ErrUnknownRequest(err.Error())
-	}
-	// There is no dedicate pool for RUNE, because every pool will have RUNE, that's by design
 	if m.Asset.IsRune() {
 		return cosmos.ErrUnknownRequest("asset cannot be rune")
 	}
-	if len(m.Tx.Coins) != 0 {
-		return cosmos.ErrUnknownRequest("not expecting coins")
-	}
-	if m.RuneAddress.IsEmpty() && m.AssetAddress.IsEmpty() {
-		return cosmos.ErrUnknownRequest("rune address and asset address cannot be empty")
+	if m.AccountAddress.IsEmpty() {
+		return cosmos.ErrUnknownRequest("account address cannot be empty")
 	}
 	return nil
 }
@@ -66,14 +58,14 @@ func (m *MsgLpMint) GetSigners() []cosmos.AccAddress {
 
 // NewMsgLpRedeem is a constructor function for MsgLpRedeem
 func NewMsgLpRedeem(
-	tx common.Tx,
 	asset common.Asset,
 	accAddr common.Address,
 	amount cosmos.Uint,
 	signer cosmos.AccAddress,
+	txID common.TxID,
 ) *MsgLpRedeem {
 	return &MsgLpRedeem{
-		Tx:     tx,
+		TxID:   txID,
 		Asset:  asset,
 		Amount: amount,
 		Signer: signer,
@@ -94,15 +86,9 @@ func (m *MsgLpRedeem) ValidateBasic() error {
 	if m.Asset.IsEmpty() {
 		return cosmos.ErrUnknownRequest("pool asset cannot be empty")
 	}
-	if err := m.Tx.Valid(); err != nil {
-		return cosmos.ErrUnknownRequest(err.Error())
-	}
 	// There is no dedicate pool for RUNE, because every pool will have RUNE, that's by design
 	if m.Asset.IsRune() {
 		return cosmos.ErrUnknownRequest("asset cannot be rune")
-	}
-	if len(m.Tx.Coins) != 0 {
-		return cosmos.ErrUnknownRequest("not expecting coins")
 	}
 	if m.AccountAddress.IsEmpty() {
 		return cosmos.ErrUnknownRequest("account address cannot be empty")

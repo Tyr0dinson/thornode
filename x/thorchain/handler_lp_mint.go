@@ -62,12 +62,7 @@ func (h LpMintHandler) handle(ctx cosmos.Context, msg MsgLpMint) error {
 
 // handle process MsgLpMint
 func (h LpMintHandler) handleV137(ctx cosmos.Context, msg MsgLpMint) error {
-	accAddr := msg.RuneAddress
-	if accAddr.IsEmpty() {
-		accAddr = msg.AssetAddress
-	}
-
-	_, err := h.mgr.LpTokenManager().Mint(ctx, msg.Asset, accAddr, msg.Amount, msg.Recipient, msg.Tx.ID)
+	_, err := h.mgr.LpTokenManager().Mint(ctx, msg.Asset, msg.AccountAddress, msg.Amount, msg.Recipient, msg.TxID)
 	if err != nil {
 		ctx.Logger().Error("fail to handle LP Token Mint", "error", err)
 		return err

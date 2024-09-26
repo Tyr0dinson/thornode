@@ -62,7 +62,7 @@ func (h LpRedeemHandler) handle(ctx cosmos.Context, msg MsgLpRedeem) error {
 
 // handle process MsgLpRedeem
 func (h LpRedeemHandler) handleV137(ctx cosmos.Context, msg MsgLpRedeem) error {
-	_, err := h.mgr.LpTokenManager().Redeem(ctx, msg.Asset, msg.AccountAddress, msg.Amount, msg.Tx.ID)
+	_, err := h.mgr.LpTokenManager().Redeem(ctx, msg.Asset, msg.AccountAddress, msg.Amount, msg.TxID)
 	if err != nil {
 		ctx.Logger().Error("fail to handle LP Token Redeem", "error", err)
 		return err
