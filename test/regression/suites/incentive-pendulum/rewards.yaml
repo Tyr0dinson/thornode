@@ -118,6 +118,9 @@ txs:
     finalise_height: 3
     observed_pub_key: {{ pubkey_dog }}
 ---
+type: create-blocks
+count: 1
+---
 ########################################################################################
 # Check total bonded RUNE
 ########################################################################################
@@ -132,16 +135,16 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/pools
 asserts:
-  - "[.[].balance_rune|tonumber] | add == ${TOTAL_POOLED_RUNE=195337512809}"
+  - "[.[].balance_rune|tonumber] | add == ${TOTAL_POOLED_RUNE=191048017694}"
   ########################################################################################
   # ShareFactor = ((bond + pool) / (bond - pool)) * PoolShareAdjustmentBasisPoints / 10_000
   ########################################################################################
   - ${TOTAL_ACTIVE_BOND_RUNE} == 500000000000
   - ${POOLSHAREADJUSTMENTBASISPOINTS} == 5000
   # ShareFactor Check (s)
-  - (((${TOTAL_ACTIVE_BOND_RUNE} + ${TOTAL_POOLED_RUNE}) / (${TOTAL_ACTIVE_BOND_RUNE} - ${TOTAL_POOLED_RUNE})) * 10000) | floor == 22823
+  - (((${TOTAL_ACTIVE_BOND_RUNE} + ${TOTAL_POOLED_RUNE}) / (${TOTAL_ACTIVE_BOND_RUNE} - ${TOTAL_POOLED_RUNE})) * 10000) | floor == 22367
   # PoolShareFactor Check (f/s)
-  - (((${TOTAL_ACTIVE_BOND_RUNE} + ${TOTAL_POOLED_RUNE}) / (${TOTAL_ACTIVE_BOND_RUNE} - ${TOTAL_POOLED_RUNE})) * ${POOLSHAREADJUSTMENTBASISPOINTS}) | floor == 11411
+  - (((${TOTAL_ACTIVE_BOND_RUNE} + ${TOTAL_POOLED_RUNE}) / (${TOTAL_ACTIVE_BOND_RUNE} - ${TOTAL_POOLED_RUNE})) * ${POOLSHAREADJUSTMENTBASISPOINTS}) | floor == 11183
 ---
 ########################################################################################
 # pool and bond reward calculations
