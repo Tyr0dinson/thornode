@@ -7,14 +7,6 @@ ifneq ($(CHECK_ENV),)
 $(error Check environment dependencies.)
 endif
 
-ifneq ($(SKIP_DOCKER_TEST),true)
-CHECK_DOCKER=$(shell ./scripts/check-docker.sh)
-endif
-
-ifneq ($(CHECK_DOCKER),)
-$(error Check docker installation.)
-endif
-
 ########################################################################################
 # Config
 ########################################################################################
