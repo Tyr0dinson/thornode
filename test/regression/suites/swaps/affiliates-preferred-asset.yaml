@@ -283,7 +283,7 @@ txs:
       gas:
         - amount: "10500"
           asset: "BTC.BTC"
-      memo: "OUT:4C78AA1948383709858186F81820B0CB56118A5B274B77ACD89FE81945866A6E"
+      memo: "OUT:E96A41DD71312823248A868A221EDD6FC4E77A305AF3B26236E006C985BC63CF"
     block_height: 9
     finalise_height: 9
     observed_pub_key: {{ pubkey_dog }}
@@ -325,12 +325,12 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/test
 asserts:
-  - .affiliate_collector_rune == "443786489"
+  - .affiliate_collector_rune == "427509188"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/balance/module/affiliate_collector
 asserts:
-  - .coins[]|select(.denom == "rune")|.amount == "443786489"
+  - .coins[]|select(.denom == "rune")|.amount == "427509188"
 ---
 # BTC paused
 type: tx-mimir
@@ -372,12 +372,12 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/test
 asserts:
-  - .affiliate_collector_rune == "2275856702"
+  - .affiliate_collector_rune == "2259579587"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/balance/module/affiliate_collector
 asserts:
-  - .coins[]|select(.denom == "rune")|.amount == "2275856702"
+  - .coins[]|select(.denom == "rune")|.amount == "2259579587"
 ---
 ########################################################################################
 # Swap RUNE -> BTC w/ affiliate "test", which should trigger preferred asset swap
@@ -395,12 +395,12 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/test
 asserts:
-  - .affiliate_collector_rune == "4775856702"
+  - .affiliate_collector_rune == "4759579587"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/balance/module/affiliate_collector
 asserts:
-  - .coins[]|select(.denom == "rune")|.amount == "4775856702"
+  - .coins[]|select(.denom == "rune")|.amount == "4759579587"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
