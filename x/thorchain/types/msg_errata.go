@@ -1,11 +1,19 @@
 package types
 
 import (
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	
 	"google.golang.org/protobuf/proto"
 
 	"gitlab.com/thorchain/thornode/api/types"
 	"gitlab.com/thorchain/thornode/common"
 	cosmos "gitlab.com/thorchain/thornode/common/cosmos"
+)
+
+var (
+	_ sdk.Msg = &MsgErrataTx{}
+	_ sdk.HasValidateBasic = &MsgErrataTx{}
+	_ sdk.LegacyMsg = &MsgErrataTx{}
 )
 
 // NewMsgErrataTx is a constructor function for NewMsgErrataTx
@@ -17,13 +25,13 @@ func NewMsgErrataTx(txID common.TxID, chain common.Chain, signer cosmos.AccAddre
 	}
 }
 
-// Route should return the name of the module
-func (m *MsgErrataTx) Route() string { return RouterKey }
-
-// Type should return the action
-func (m MsgErrataTx) Type() string { return "errata_tx" }
-
-// ValidateBasic runs stateless checks on the message
+// ValidateBasic implements HasValidateBasic
+// ValidateBasic is now ran in the message service router handler for messages that
+// used to be routed using the external handler and only when HasValidateBasic is implemented. 
+// No versioning is used there.
+// It does not need to be executed twice, so it is removed from the handler's validate.
+// Alternatively, we can not implement HasValidateBasic and perform this validation
+// directly in the msg server / handler. The sdk prefers this...
 func (m *MsgErrataTx) ValidateBasic() error {
 	if m.Signer.Empty() {
 		return cosmos.ErrInvalidAddress(m.Signer.String())
@@ -35,11 +43,6 @@ func (m *MsgErrataTx) ValidateBasic() error {
 		return cosmos.ErrUnknownRequest("chain cannot be empty")
 	}
 	return nil
-}
-
-// GetSignBytes encodes the message for signing
-func (m *MsgErrataTx) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(m))
 }
 
 // GetSigners defines whose signature is required

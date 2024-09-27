@@ -1,10 +1,20 @@
 package types
 
 import (
+	"errors"
+
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	
 	"google.golang.org/protobuf/proto"
 
 	"gitlab.com/thorchain/thornode/api/types"
 	"gitlab.com/thorchain/thornode/common/cosmos"
+)
+
+var (
+	_ sdk.Msg = &MsgSend{}
+	_ sdk.HasValidateBasic = &MsgSend{}
+	_ sdk.LegacyMsg = &MsgSend{}
 )
 
 // NewMsgSend - construct a msg to send coins from one account to another.
@@ -12,13 +22,13 @@ func NewMsgSend(fromAddr, toAddr cosmos.AccAddress, amount cosmos.Coins) *MsgSen
 	return &MsgSend{FromAddress: fromAddr, ToAddress: toAddr, Amount: amount}
 }
 
-// Route Implements Msg.
-func (m *MsgSend) Route() string { return RouterKey }
-
-// Type Implements Msg.
-func (m MsgSend) Type() string { return "types.MsgSend" }
-
-// ValidateBasic Implements Msg.
+// ValidateBasic implements HasValidateBasic
+// ValidateBasic is now ran in the message service router handler for messages that
+// used to be routed using the external handler and only when HasValidateBasic is implemented. 
+// No versioning is used there.
+// It does not need to be executed twice, so it is removed from the handler's validate.
+// Alternatively, we can not implement HasValidateBasic and perform this validation
+// directly in the msg server / handler. The sdk prefers this...
 func (m *MsgSend) ValidateBasic() error {
 	if err := cosmos.VerifyAddressFormat(m.FromAddress); err != nil {
 		return cosmos.ErrInvalidAddress(m.FromAddress.String())
@@ -36,15 +46,15 @@ func (m *MsgSend) ValidateBasic() error {
 		return cosmos.ErrInvalidCoins("coins must be positive")
 	}
 
+	// send only allowed with one coin
+	if len(m.Amount) != 1 {
+		return errors.New("only one coin is allowed")
+	}
+
 	return nil
 }
 
-// GetSignBytes Implements Msg.
-func (m *MsgSend) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(m))
-}
-
-// GetSigners Implements Msg.
+// GetSigners Implements LegacyMsg.
 func (m *MsgSend) GetSigners() []cosmos.AccAddress {
 	return []cosmos.AccAddress{m.FromAddress}
 }

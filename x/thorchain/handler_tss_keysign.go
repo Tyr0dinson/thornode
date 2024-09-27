@@ -58,9 +58,9 @@ func (h TssKeysignHandler) validate(ctx cosmos.Context, msg MsgTssKeysignFail) e
 }
 
 func (h TssKeysignHandler) validateV114(ctx cosmos.Context, msg MsgTssKeysignFail) error {
-	if err := msg.ValidateBasic(); err != nil {
-		return err
-	}
+	// ValidateBasic is executed by message service router handler
+	// Removed for clarity that it is not versioned
+	
 	m, err := NewMsgTssKeysignFail(msg.Height, msg.Blame, msg.Memo, msg.Coins, msg.Signer, msg.PubKey)
 	if err != nil {
 		ctx.Logger().Error("fail to reconstruct keysign fail msg", "error", err)

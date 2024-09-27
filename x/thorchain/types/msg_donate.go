@@ -3,10 +3,17 @@ package types
 import (
 	"errors"
 
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
+var (
+	_ sdk.Msg = &MsgDonate{}
+	_ sdk.HasValidateBasic = &MsgDonate{}
+	_ sdk.LegacyMsg = &MsgDonate{}
+)
 // NewMsgDonate is a constructor function for MsgDonate
 func NewMsgDonate(tx common.Tx, asset common.Asset, r, amount cosmos.Uint, signer cosmos.AccAddress) *MsgDonate {
 	return &MsgDonate{
@@ -17,12 +24,6 @@ func NewMsgDonate(tx common.Tx, asset common.Asset, r, amount cosmos.Uint, signe
 		Signer:      signer,
 	}
 }
-
-// Route should return the route key of the module
-func (m *MsgDonate) Route() string { return RouterKey }
-
-// Type should return the action
-func (m MsgDonate) Type() string { return "donate" }
 
 // ValidateBasic runs stateless checks on the message
 func (m *MsgDonate) ValidateBasic() error {
@@ -42,11 +43,6 @@ func (m *MsgDonate) ValidateBasic() error {
 		return cosmos.ErrUnknownRequest(err.Error())
 	}
 	return nil
-}
-
-// GetSignBytes encodes the message for signing
-func (m *MsgDonate) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(m))
 }
 
 // GetSigners defines whose signature is required

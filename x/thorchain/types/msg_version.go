@@ -4,8 +4,16 @@ import (
 	"github.com/blang/semver"
 	"google.golang.org/protobuf/proto"
 
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	
 	"gitlab.com/thorchain/thornode/api/types"
 	"gitlab.com/thorchain/thornode/common/cosmos"
+)
+
+var (
+	_ sdk.Msg = &MsgSetVersion{}
+	_ sdk.HasValidateBasic = &MsgSetVersion{}
+	_ sdk.LegacyMsg = &MsgSetVersion{}
 )
 
 // NewMsgSetVersion is a constructor function for NewMsgSetVersion
@@ -16,13 +24,13 @@ func NewMsgSetVersion(version string, signer cosmos.AccAddress) *MsgSetVersion {
 	}
 }
 
-// Route should return the route key of the module
-func (m *MsgSetVersion) Route() string { return RouterKey }
-
-// Type should return the action
-func (m MsgSetVersion) Type() string { return "set_version" }
-
-// ValidateBasic runs stateless checks on the message
+// ValidateBasic implements HasValidateBasic
+// ValidateBasic is now ran in the message service router handler for messages that
+// used to be routed using the external handler and only when HasValidateBasic is implemented. 
+// No versioning is used there.
+// It does not need to be executed twice, so it is removed from the handler's validate.
+// Alternatively, we can not implement HasValidateBasic and perform this validation
+// directly in the msg server / handler. The sdk prefers this...
 func (m *MsgSetVersion) ValidateBasic() error {
 	if m.Signer.Empty() {
 		return cosmos.ErrInvalidAddress(m.Signer.String())
@@ -36,11 +44,6 @@ func (m *MsgSetVersion) ValidateBasic() error {
 // GetVersion return the semantic version
 func (m *MsgSetVersion) GetVersion() (semver.Version, error) {
 	return semver.Make(m.Version)
-}
-
-// GetSignBytes encodes the message for signing
-func (m *MsgSetVersion) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(m))
 }
 
 // GetSigners defines whose signature is required

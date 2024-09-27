@@ -50,9 +50,8 @@ func (h ErrataTxHandler) validate(ctx cosmos.Context, msg MsgErrataTx) error {
 }
 
 func (h ErrataTxHandler) validateV1(ctx cosmos.Context, msg MsgErrataTx) error {
-	if err := msg.ValidateBasic(); err != nil {
-		return err
-	}
+	// ValidateBasic is executed in message service router's handler
+	// Removed for clarity that it is not versioned
 
 	if !isSignedByActiveNodeAccounts(ctx, h.mgr.Keeper(), msg.GetSigners()) {
 		return cosmos.ErrUnauthorized(errNotAuthorized.Error())

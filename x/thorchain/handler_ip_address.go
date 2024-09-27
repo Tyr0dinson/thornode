@@ -51,9 +51,9 @@ func (h IPAddressHandler) validate(ctx cosmos.Context, msg MsgSetIPAddress) erro
 }
 
 func (h IPAddressHandler) validateV114(ctx cosmos.Context, msg MsgSetIPAddress) error {
-	if err := msg.ValidateBasic(); err != nil {
-		return err
-	}
+	// ValidateBasic is executed in message service router handler
+	// Removed for clarity that it is not versioned
+
 	if err := validateIPAddressAuth(ctx, h.mgr.Keeper(), msg.Signer); err != nil {
 		return err
 	}

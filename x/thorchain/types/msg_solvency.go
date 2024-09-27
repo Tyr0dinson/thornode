@@ -4,11 +4,19 @@ import (
 	"crypto/sha256"
 	"fmt"
 
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	
 	"google.golang.org/protobuf/proto"
 
 	"gitlab.com/thorchain/thornode/api/types"
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
+)
+
+var (
+	_ sdk.Msg = &MsgSolvency{}
+	_ sdk.HasValidateBasic = &MsgSolvency{}
+	_ sdk.LegacyMsg = &MsgSolvency{}
 )
 
 // NewMsgSolvency create a new MsgSolvency
@@ -28,13 +36,13 @@ func NewMsgSolvency(chain common.Chain, pubKey common.PubKey, coins common.Coins
 	}, nil
 }
 
-// Route Implements Msg.
-func (m *MsgSolvency) Route() string { return RouterKey }
-
-// Type Implements Msg.
-func (m MsgSolvency) Type() string { return "solvency" }
-
-// ValidateBasic Implements Msg.
+// ValidateBasic implements HasValidateBasic
+// ValidateBasic is now ran in the message service router handler for messages that
+// used to be routed using the external handler and only when HasValidateBasic is implemented. 
+// No versioning is used there.
+// It does not need to be executed twice, so it is removed from the handler's validate.
+// Alternatively, we can not implement HasValidateBasic and perform this validation
+// directly in the msg server / handler. The sdk prefers this...
 func (m *MsgSolvency) ValidateBasic() error {
 	if m.Id.IsEmpty() {
 		return cosmos.ErrUnknownRequest("invalid id")
@@ -52,11 +60,6 @@ func (m *MsgSolvency) ValidateBasic() error {
 		return cosmos.ErrUnauthorized("invalid sender")
 	}
 	return nil
-}
-
-// GetSignBytes Implements Msg.
-func (m *MsgSolvency) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(m))
 }
 
 // GetSigners Implements Msg.

@@ -36,9 +36,9 @@ func MsgTssPoolLogger(ctx cosmos.Context, msg *MsgTssPool) {
 }
 
 func MsgTssPoolValidateV124(ctx cosmos.Context, mgr Manager, msg *MsgTssPool) error {
-	if err := msg.ValidateBasic(); err != nil {
-		return err
-	}
+	// ValidateBasic is executed by message service router handler
+	// Removed for clarity that it is not versioned
+	
 	if msg.KeygenType != AsgardKeygen {
 		return fmt.Errorf("only asgard vaults allowed for tss")
 	}

@@ -55,9 +55,9 @@ func (h SolvencyHandler) validate(ctx cosmos.Context, msg MsgSolvency) error {
 }
 
 func (h SolvencyHandler) validateV70(ctx cosmos.Context, msg MsgSolvency) error {
-	if err := msg.ValidateBasic(); err != nil {
-		return err
-	}
+	// ValidateBasic is executed by message service router handler
+	// Removed for clarity that it is not versioned
+	
 	m, err := NewMsgSolvency(msg.Chain, msg.PubKey, msg.Coins, msg.Height, msg.Signer)
 	if err != nil {
 		ctx.Logger().Error("fail to reconstruct msg solvency", "error", err)

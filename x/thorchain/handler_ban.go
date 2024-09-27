@@ -48,9 +48,8 @@ func (h BanHandler) validate(ctx cosmos.Context, msg MsgBan) error {
 }
 
 func (h BanHandler) validateV1(ctx cosmos.Context, msg MsgBan) error {
-	if err := msg.ValidateBasic(); err != nil {
-		return err
-	}
+	// ValidateBasic is executed by message service router handler
+	// Removed for clarity that it is not versioned
 
 	if !isSignedByActiveNodeAccounts(ctx, h.mgr.Keeper(), msg.GetSigners()) {
 		return cosmos.ErrUnauthorized(errNotAuthorized.Error())

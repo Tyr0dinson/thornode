@@ -2,13 +2,22 @@ package types
 
 import (
 	"fmt"
+	"errors"
 
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	
 	"google.golang.org/protobuf/proto"
 
 	"gitlab.com/thorchain/thornode/api/types"
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
+)
+
+var (
+	_ sdk.Msg = &MsgDeposit{}
+	_ sdk.HasValidateBasic = &MsgDeposit{}
+	_ sdk.LegacyMsg = &MsgDeposit{}
 )
 
 // NewMsgDeposit is a constructor function for NewMsgDeposit
@@ -20,13 +29,13 @@ func NewMsgDeposit(coins common.Coins, memo string, signer cosmos.AccAddress) *M
 	}
 }
 
-// Route should return the route key of the module
-func (m *MsgDeposit) Route() string { return RouterKey }
-
-// Type should return the action
-func (m MsgDeposit) Type() string { return "types.MsgDeposit" }
-
-// ValidateBasic runs stateless checks on the message
+// ValidateBasic implements HasValidateBasic
+// ValidateBasic is now ran in the message service router for messages that
+// used to be routed using the external handler and only when HasValidateBasic is implemented. 
+// No versioning is used there.
+// It does not need to be executed twice, so it is removed from the handler's validate.
+// Alternatively, we can not implement HasValidateBasic and perform this validation
+// directly in the msg server / handler. The sdk prefers this...
 func (m *MsgDeposit) ValidateBasic() error {
 	if m.Signer.Empty() {
 		return cosmos.ErrInvalidAddress(m.Signer.String())
@@ -40,12 +49,18 @@ func (m *MsgDeposit) ValidateBasic() error {
 		err := fmt.Errorf("memo must not exceed %d bytes: %d", constants.MaxMemoSize, len([]byte(m.Memo)))
 		return cosmos.ErrUnknownRequest(err.Error())
 	}
-	return nil
-}
 
-// GetSignBytes encodes the message for signing
-func (m *MsgDeposit) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(m))
+	// deposit only allowed with one coin
+	if len(m.Coins) != 1 {
+		return errors.New("only one coin is allowed")
+	}
+
+	// trunk-ignore(golangci-lint/govet): shadow
+	if err := m.Coins[0].Asset.Valid(); err != nil {
+		return fmt.Errorf("invalid coin: %w", err)
+	}
+
+	return nil
 }
 
 // GetSigners defines whose signature is required

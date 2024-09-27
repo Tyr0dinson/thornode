@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	
 	"google.golang.org/protobuf/proto"
 
 	"gitlab.com/thorchain/thornode/api/types"
@@ -24,6 +26,12 @@ const (
 
 // MatchMnemonic will match substrings that look like a 12+ word mnemonic.
 var MatchMnemonic = regexp.MustCompile(`([a-zA-Z]+ ){11}[a-zA-Z]+`)
+
+var (
+	_ sdk.Msg = &MsgTssPool{}
+	_ sdk.HasValidateBasic = &MsgTssPool{}
+	_ sdk.LegacyMsg = &MsgTssPool{}
+)
 
 // NewMsgTssPool is a constructor function for MsgTssPool
 func NewMsgTssPool(pks []string, poolpk common.PubKey, keysharesBackup []byte, keygenType KeygenType, height int64, bl Blame, chains []string, signer cosmos.AccAddress, keygenTime int64) (*MsgTssPool, error) {
@@ -77,13 +85,13 @@ func getTssID(members []string, poolPk common.PubKey, height int64, bl Blame) (s
 	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
-// Route should return the route key of the module
-func (m *MsgTssPool) Route() string { return RouterKey }
-
-// Type should return the action
-func (m MsgTssPool) Type() string { return "set_tss_pool" }
-
-// ValidateBasic runs stateless checks on the message
+// ValidateBasic implements HasValidateBasic
+// ValidateBasic is now ran in the message service router handler for messages that
+// used to be routed using the external handler and only when HasValidateBasic is implemented. 
+// No versioning is used there.
+// It does not need to be executed twice, so it is removed from the handler's validate.
+// Alternatively, we can not implement HasValidateBasic and perform this validation
+// directly in the msg server / handler. The sdk prefers this...
 func (m *MsgTssPool) ValidateBasic() error {
 	if m.Signer.Empty() {
 		return cosmos.ErrInvalidAddress(m.Signer.String())
@@ -186,11 +194,6 @@ func (m MsgTssPool) GetPubKeys() common.PubKeys {
 		pubkeys = append(pubkeys, pk)
 	}
 	return pubkeys
-}
-
-// GetSignBytes encodes the message for signing
-func (m *MsgTssPool) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(m))
 }
 
 // GetSigners defines whose signature is required

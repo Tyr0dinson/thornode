@@ -50,9 +50,9 @@ func (h SetNodeKeysHandler) validate(ctx cosmos.Context, msg MsgSetNodeKeys) err
 }
 
 func (h SetNodeKeysHandler) validateV134(ctx cosmos.Context, msg MsgSetNodeKeys) error {
-	if err := msg.ValidateBasic(); err != nil {
-		return err
-	}
+	// ValidateBasic is executed by message service router handler
+	// Removed for clarity that it is not versioned
+	
 	if err := validateNodeKeysAuth(ctx, h.mgr.Keeper(), msg.Signer); err != nil {
 		return err
 	}

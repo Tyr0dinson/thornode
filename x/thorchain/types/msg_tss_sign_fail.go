@@ -7,12 +7,20 @@ import (
 	"sort"
 	"strings"
 
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	
 	"google.golang.org/protobuf/proto"
 
 	"gitlab.com/thorchain/thornode/api/types"
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
+)
+
+var (
+	_ sdk.Msg = &MsgTssKeysignFail{}
+	_ sdk.HasValidateBasic = &MsgTssKeysignFail{}
+	_ sdk.LegacyMsg = &MsgTssKeysignFail{}
 )
 
 // NewMsgTssKeysignFail create a new instance of MsgTssKeysignFail message
@@ -59,13 +67,13 @@ func getMsgTssKeysignFailID(members []Node, height int64, memo string, coins com
 	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
-// Route should return the route key of the module
-func (m *MsgTssKeysignFail) Route() string { return RouterKey }
-
-// Type should return the action
-func (m MsgTssKeysignFail) Type() string { return "set_tss_keysign_fail" }
-
-// ValidateBasic runs stateless checks on the message
+// ValidateBasic implements HasValidateBasic
+// ValidateBasic is now ran in the message service router handler for messages that
+// used to be routed using the external handler and only when HasValidateBasic is implemented. 
+// No versioning is used there.
+// It does not need to be executed twice, so it is removed from the handler's validate.
+// Alternatively, we can not implement HasValidateBasic and perform this validation
+// directly in the msg server / handler. The sdk prefers this...
 func (m *MsgTssKeysignFail) ValidateBasic() error {
 	if m.Signer.Empty() {
 		return cosmos.ErrInvalidAddress(m.Signer.String())
@@ -93,11 +101,6 @@ func (m *MsgTssKeysignFail) ValidateBasic() error {
 		return cosmos.ErrUnknownRequest("vault pubkey cannot be empty")
 	}
 	return nil
-}
-
-// GetSignBytes encodes the message for signing
-func (m *MsgTssKeysignFail) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(m))
 }
 
 // GetSigners defines whose signature is required

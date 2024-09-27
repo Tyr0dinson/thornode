@@ -1,7 +1,6 @@
 package thorchain
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/blang/semver"
@@ -55,22 +54,8 @@ func (h DepositHandler) validate(ctx cosmos.Context, msg MsgDeposit) error {
 }
 
 func (h DepositHandler) validateV134(ctx cosmos.Context, msg MsgDeposit) error {
-	err := msg.ValidateBasic()
-	if err != nil {
-		return err
-	}
-
-	// TODO on hard fork move to ValidateBasic
-	// deposit only allowed with one coin
-	if len(msg.Coins) != 1 {
-		return errors.New("only one coin is allowed")
-	}
-
-	// TODO on hard fork move to Coin.Valid() and call that from ValidateBasic
-	// trunk-ignore(golangci-lint/govet): shadow
-	if err := msg.Coins[0].Asset.Valid(); err != nil {
-		return fmt.Errorf("invalid coin: %w", err)
-	}
+	// ValidateBasic is executed in message service router
+	// Removed for clarity that it is not versioned
 
 	return nil
 }
