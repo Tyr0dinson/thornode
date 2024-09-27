@@ -135,9 +135,9 @@ asserts:
   - .total_open_loan_seconds|tonumber == 624
   - .recommended_min_amount_in == "512000"
   - .fees.slippage_bps|tonumber == 194
-  - .fees.total_bps|tonumber == 2878
-  - .fees.outbound|tonumber == 126781200
-  - .fees.liquidity|tonumber == 9437600
+  - .fees.total_bps|tonumber == 2881
+  - .fees.outbound|tonumber == 126782600
+  - .fees.liquidity|tonumber == 9414900
   - .fees.affiliate|tonumber == 4999500
   - (.fees.total|tonumber) == (.fees.liquidity|tonumber)+(.fees.outbound|tonumber)+(.fees.affiliate|tonumber)
   - .recommended_gas_rate == "10"
@@ -253,9 +253,9 @@ params:
 asserts:
   - .memo == "$+:ETH.USDX-9999:{{ addr_eth_fox }}:0:test:500"
   - .inbound_address == "{{ addr_btc_dog }}"
-  - .expected_amount_out|tonumber == 6902743400
-  - .expected_collateral_deposited|tonumber == 69812184
-  - .expected_debt_issued|tonumber == 10103230000
+  - .expected_amount_out|tonumber == 6915355000
+  - .expected_collateral_deposited|tonumber == 69680136
+  - .expected_debt_issued|tonumber == 10129870000
 ---
 ########################################################################################
 # Open loan with preferred asset - make sure collateral_deposited / debt_issued matches sum of previous two quotes

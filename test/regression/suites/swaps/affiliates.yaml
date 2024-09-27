@@ -28,7 +28,7 @@ endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .|length == 1
   - .[0]|.in_hash == "{{ native_txid -1 }}"
-  - .[0]|.coin.amount == "${OUT_AMOUNT=7909070}"
+  - .[0]|.coin.amount == "${OUT_AMOUNT=7867665}"
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
@@ -94,10 +94,10 @@ type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
 asserts:
   - .balances|length == 1
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 1965049838
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 1967740572
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 1
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2514564443543
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2514496639791

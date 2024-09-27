@@ -122,12 +122,12 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/test
 asserts:
-  - .affiliate_collector_rune == "225251611"
+  - .affiliate_collector_rune == "225375510"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/balance/module/affiliate_collector
 asserts:
-  - .coins[]|select(.denom == "rune")|.amount == "225251611"
+  - .coins[]|select(.denom == "rune")|.amount == "225375510"
 ---
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
@@ -153,12 +153,12 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/test
 asserts:
-  - .affiliate_collector_rune == "475251611"
+  - .affiliate_collector_rune == "475375510"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/balance/module/affiliate_collector
 asserts:
-  - .coins[]|select(.denom == "rune")|.amount == "475251611"
+  - .coins[]|select(.denom == "rune")|.amount == "475375510"
 ---
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
@@ -168,7 +168,7 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
-  - .[0].coin.amount == "${OUT_AMOUNT=4728404}"
+  - .[0].coin.amount == "${OUT_AMOUNT=4701472}"
 ---
 # Observe the outbound.
 type: tx-observed-out
@@ -232,10 +232,10 @@ endpoint: http://localhost:1317/thorchain/block
 asserts:
   - .|[.end_block_events[]|select(.type == "scheduled_outbound")]|length == 2
   - .|[.end_block_events[]|select(.type == "scheduled_outbound")]|.[0].to_address == "{{ addr_btc_cat }}"
-  - .|[.end_block_events[]|select(.type == "scheduled_outbound")]|.[0].coin_amount == "${OUT_ONE=21863092}"
+  - .|[.end_block_events[]|select(.type == "scheduled_outbound")]|.[0].coin_amount == "${OUT_ONE=21822243}"
   - .|[.end_block_events[]|select(.type == "scheduled_outbound")]|.[0].coin_asset == "BTC.BTC"
   - .|[.end_block_events[]|select(.type == "scheduled_outbound")]|.[1].to_address == "{{ addr_btc_pig }}"
-  - .|[.end_block_events[]|select(.type == "scheduled_outbound")]|.[1].coin_amount == "${OUT_TWO=1504111}"
+  - .|[.end_block_events[]|select(.type == "scheduled_outbound")]|.[1].coin_amount == "${OUT_TWO=1508817}"
   - .|[.end_block_events[]|select(.type == "scheduled_outbound")]|.[1].coin_asset == "BTC.BTC"
 ---
 type: check
@@ -325,12 +325,12 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/test
 asserts:
-  - .affiliate_collector_rune == "428546187"
+  - .affiliate_collector_rune == "443786489"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/balance/module/affiliate_collector
 asserts:
-  - .coins[]|select(.denom == "rune")|.amount == "428546187"
+  - .coins[]|select(.denom == "rune")|.amount == "443786489"
 ---
 # BTC paused
 type: tx-mimir
@@ -372,12 +372,12 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/test
 asserts:
-  - .affiliate_collector_rune == "2255150397"
+  - .affiliate_collector_rune == "2275856702"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/balance/module/affiliate_collector
 asserts:
-  - .coins[]|select(.denom == "rune")|.amount == "2255150397"
+  - .coins[]|select(.denom == "rune")|.amount == "2275856702"
 ---
 ########################################################################################
 # Swap RUNE -> BTC w/ affiliate "test", which should trigger preferred asset swap
@@ -395,12 +395,12 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/test
 asserts:
-  - .affiliate_collector_rune == "4755150397"
+  - .affiliate_collector_rune == "4775856702"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/balance/module/affiliate_collector
 asserts:
-  - .coins[]|select(.denom == "rune")|.amount == "4755150397"
+  - .coins[]|select(.denom == "rune")|.amount == "4775856702"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound

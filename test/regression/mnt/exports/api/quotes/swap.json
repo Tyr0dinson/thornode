@@ -148,7 +148,7 @@
           "address": "tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u",
           "coins": [
             {
-              "amount": "141099574",
+              "amount": "141099224",
               "denom": "rune"
             }
           ]
@@ -188,7 +188,7 @@
           "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
           "coins": [
             {
-              "amount": "197394287351",
+              "amount": "197382835431",
               "denom": "rune"
             }
           ]
@@ -206,7 +206,7 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "35001036434463",
+              "amount": "35001036433552",
               "denom": "rune"
             }
           ]
@@ -215,11 +215,11 @@
           "address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
           "coins": [
             {
-              "amount": "1170766",
+              "amount": "1170874",
               "denom": "btc/btc"
             },
             {
-              "amount": "2501415701460",
+              "amount": "2501415675280",
               "denom": "rune"
             }
           ]
@@ -237,7 +237,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "5000012477152",
+              "amount": "5000023956513",
               "denom": "rune"
             }
           ]
@@ -250,7 +250,7 @@
       },
       "supply": [
         {
-          "amount": "1170766",
+          "amount": "1170874",
           "denom": "btc/btc"
         },
         {
@@ -339,9 +339,9 @@
         }
       ],
       "network": {
-        "LPIncomeSplit": "9605",
-        "NodeIncomeSplit": "395",
-        "bond_reward_rune": "12477152",
+        "LPIncomeSplit": "9241",
+        "NodeIncomeSplit": "759",
+        "bond_reward_rune": "23956513",
         "total_bond_units": "14"
       },
       "network_fees": [
@@ -377,13 +377,13 @@
       "orderbook_items": [],
       "outbound_fee_spent_rune": [
         {
-          "amount": "30947528",
+          "amount": "30945467",
           "asset": "BTC.BTC"
         }
       ],
       "outbound_fee_withheld_rune": [
         {
-          "amount": "41268687",
+          "amount": "41266129",
           "asset": "BTC.BTC"
         }
       ],
@@ -391,19 +391,19 @@
         {
           "LP_units": "100000000000",
           "asset": "BTC.BTC",
-          "balance_asset": "102089925",
-          "balance_rune": "99333613222",
+          "balance_asset": "102089741",
+          "balance_rune": "99323413399",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
           "status": "Available",
-          "synth_units": "571367012"
+          "synth_units": "571420539"
         },
         {
           "LP_units": "100000000000",
           "asset": "ETH.ETH",
           "balance_asset": "1020000000",
-          "balance_rune": "98060674129",
+          "balance_rune": "98059422032",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -425,19 +425,19 @@
         {
           "address": "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
           "reclaimed": "0",
-          "score": "12922131",
+          "score": "12922633",
           "spent": "0"
         },
         {
           "address": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw",
           "reclaimed": "0",
-          "score": "134708367",
+          "score": "134708903",
           "spent": "0"
         },
         {
           "address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
           "reclaimed": "0",
-          "score": "135486076",
+          "score": "135486499",
           "spent": "0"
         },
         {
@@ -471,7 +471,7 @@
           ],
           "coins": [
             {
-              "amount": "102089925",
+              "amount": "102089741",
               "asset": "BTC.BTC",
               "decimals": "8"
             },

@@ -35,17 +35,17 @@
     "begin_block_events": [],
     "end_block_events": [
       {
-        "amount": "532724rune",
+        "amount": "512251rune",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "532724rune",
+        "amount": "512251rune",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "532724rune",
+        "amount": "512251rune",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "transfer"
@@ -55,17 +55,17 @@
         "type": "message"
       },
       {
-        "amount": "532724rune",
+        "amount": "512251rune",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "532724rune",
+        "amount": "512251rune",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "532724rune",
+        "amount": "512251rune",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "transfer"
@@ -75,17 +75,17 @@
         "type": "message"
       },
       {
-        "amount": "44394rune",
+        "amount": "85341rune",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "44394rune",
+        "amount": "85341rune",
         "receiver": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "type": "coin_received"
       },
       {
-        "amount": "44394rune",
+        "amount": "85341rune",
         "recipient": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "transfer"
@@ -95,9 +95,9 @@
         "type": "message"
       },
       {
-        "BTC.BTC": "532724",
-        "ETH.ETH": "532724",
-        "bond_reward": "44394",
+        "BTC.BTC": "512251",
+        "ETH.ETH": "512251",
+        "bond_reward": "85341",
         "dev_fund_reward": "0",
         "income_burn": "0",
         "type": "rewards"
@@ -133,7 +133,7 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "96A0FF2A9A37B40504D439EA14D27CA782D810922214D868D0C34516EA7DD9A2",
+      "app_hash": "A322061C27252B65C50702677A322D6ABAE79570572DAB107A777FA1F2921794",
       "last_results_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
@@ -141,17 +141,17 @@
     "begin_block_events": [],
     "end_block_events": [
       {
-        "amount": "532724rune",
+        "amount": "512251rune",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "532724rune",
+        "amount": "512251rune",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "532724rune",
+        "amount": "512251rune",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "transfer"
@@ -161,17 +161,17 @@
         "type": "message"
       },
       {
-        "amount": "532724rune",
+        "amount": "512251rune",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "532724rune",
+        "amount": "512251rune",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "532724rune",
+        "amount": "512251rune",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "transfer"
@@ -181,17 +181,17 @@
         "type": "message"
       },
       {
-        "amount": "44394rune",
+        "amount": "85341rune",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "44394rune",
+        "amount": "85341rune",
         "receiver": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "type": "coin_received"
       },
       {
-        "amount": "44394rune",
+        "amount": "85341rune",
         "recipient": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "transfer"
@@ -201,9 +201,9 @@
         "type": "message"
       },
       {
-        "BTC.BTC": "532724",
-        "ETH.ETH": "532724",
-        "bond_reward": "44394",
+        "BTC.BTC": "512251",
+        "ETH.ETH": "512251",
+        "bond_reward": "85341",
         "dev_fund_reward": "0",
         "income_burn": "0",
         "type": "rewards"
@@ -355,7 +355,7 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "CB133C65DCDC914E826E05AFDFC9090458DAB7808E314204C2C139B774140496",
+      "app_hash": "78C039623D0545DAFF470581D6CFE2883E630427E702F856886223CAA7A234CA",
       "last_results_hash": "05F6A8455F3F73EB3EF49EA47DD95D8381BCED2566E344F1E226814E09D0597A",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
@@ -363,17 +363,17 @@
     "begin_block_events": [],
     "end_block_events": [
       {
-        "amount": "532724rune",
+        "amount": "512251rune",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "532724rune",
+        "amount": "512251rune",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "532724rune",
+        "amount": "512251rune",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "transfer"
@@ -383,17 +383,17 @@
         "type": "message"
       },
       {
-        "amount": "532724rune",
+        "amount": "512251rune",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "532724rune",
+        "amount": "512251rune",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "532724rune",
+        "amount": "512251rune",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "transfer"
@@ -403,17 +403,17 @@
         "type": "message"
       },
       {
-        "amount": "44394rune",
+        "amount": "85341rune",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "44394rune",
+        "amount": "85341rune",
         "receiver": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "type": "coin_received"
       },
       {
-        "amount": "44394rune",
+        "amount": "85341rune",
         "recipient": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "transfer"
@@ -423,9 +423,9 @@
         "type": "message"
       },
       {
-        "BTC.BTC": "532724",
-        "ETH.ETH": "532724",
-        "bond_reward": "44394",
+        "BTC.BTC": "512251",
+        "ETH.ETH": "512251",
+        "bond_reward": "85341",
         "dev_fund_reward": "0",
         "income_burn": "0",
         "type": "rewards"
@@ -553,7 +553,7 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "302DCB9759E2437DB5A41897F5590493A3428B3CA16A6BDB5BAC741F0730DB6D",
+      "app_hash": "CE6D1DDB374497509F926FECB9FB6E778013FB7DB0CFE326E7B1AF53426C726D",
       "last_results_hash": "24E5E649501A444A66693490752E5A6EDE01BAB63753489E5CB438A68126D864",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
@@ -561,17 +561,17 @@
     "begin_block_events": [],
     "end_block_events": [
       {
-        "amount": "532800rune",
+        "amount": "512324rune",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "532800rune",
+        "amount": "512324rune",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "532800rune",
+        "amount": "512324rune",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "transfer"
@@ -581,17 +581,17 @@
         "type": "message"
       },
       {
-        "amount": "532800rune",
+        "amount": "512324rune",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "532800rune",
+        "amount": "512324rune",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "532800rune",
+        "amount": "512324rune",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "transfer"
@@ -601,17 +601,17 @@
         "type": "message"
       },
       {
-        "amount": "44401rune",
+        "amount": "85353rune",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "44401rune",
+        "amount": "85353rune",
         "receiver": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "type": "coin_received"
       },
       {
-        "amount": "44401rune",
+        "amount": "85353rune",
         "recipient": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "transfer"
@@ -621,9 +621,9 @@
         "type": "message"
       },
       {
-        "BTC.BTC": "532800",
-        "ETH.ETH": "532800",
-        "bond_reward": "44401",
+        "BTC.BTC": "512324",
+        "ETH.ETH": "512324",
+        "bond_reward": "85353",
         "dev_fund_reward": "0",
         "income_burn": "0",
         "type": "rewards"
@@ -786,7 +786,7 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "6A0C4C741CBC75547037CE6A1FA5E69A9FC0A96BC0B3E2F5D484456947E2003D",
+      "app_hash": "250DA8E96B2282F17FFF8A6EFBE71C1C594A3676A5C85ABB5CC4C05222F64EFA",
       "last_results_hash": "62EF4BDDD86ED25E7A96781650B7E0D1AD799C98CFC3D74F03CD7E5C1026A002",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
@@ -794,17 +794,17 @@
     "begin_block_events": [],
     "end_block_events": [
       {
-        "amount": "532876rune",
+        "amount": "512398rune",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "532876rune",
+        "amount": "512398rune",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "532876rune",
+        "amount": "512398rune",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "transfer"
@@ -814,17 +814,17 @@
         "type": "message"
       },
       {
-        "amount": "532876rune",
+        "amount": "512398rune",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "532876rune",
+        "amount": "512398rune",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "532876rune",
+        "amount": "512398rune",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "transfer"
@@ -834,17 +834,17 @@
         "type": "message"
       },
       {
-        "amount": "44407rune",
+        "amount": "85365rune",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "44407rune",
+        "amount": "85365rune",
         "receiver": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "type": "coin_received"
       },
       {
-        "amount": "44407rune",
+        "amount": "85365rune",
         "recipient": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "transfer"
@@ -854,9 +854,9 @@
         "type": "message"
       },
       {
-        "BTC.BTC": "532876",
-        "ETH.ETH": "532876",
-        "bond_reward": "44407",
+        "BTC.BTC": "512398",
+        "ETH.ETH": "512398",
+        "bond_reward": "85365",
         "dev_fund_reward": "0",
         "income_burn": "0",
         "type": "rewards"
@@ -1019,7 +1019,7 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "7B2280D918D1A5A45CAE1F97E6C6DB32579AF309A0DC2308AFB76107805830CE",
+      "app_hash": "7D6F3DBD641D8DB67AD0470751774762E319F2C2B3EE32F998761A5B4264BF44",
       "last_results_hash": "CEB0D55EB3B328EB1DE4C5F1D7EB97D50A16EAFED53A7B09A1E5522F8DDB18CA",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
@@ -1029,11 +1029,11 @@
       {
         "chain": "BTC",
         "coin": "4720000 BTC.BTC",
-        "emit_asset": "4304218406 THOR.RUNE",
+        "emit_asset": "4304213999 THOR.RUNE",
         "from": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw",
         "id": "0000000000000000000000000000000000000000000000000000000000000001",
-        "liquidity_fee": "203159108",
-        "liquidity_fee_in_rune": "203159108",
+        "liquidity_fee": "203158900",
+        "liquidity_fee_in_rune": "203158900",
         "memo": "=:THOR.RUNE:tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr::test:500",
         "pool": "BTC.BTC",
         "pool_slip": "451",
@@ -1071,17 +1071,17 @@
         "type": "message"
       },
       {
-        "amount": "4302218406rune",
+        "amount": "4302213999rune",
         "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_spent"
       },
       {
-        "amount": "4302218406rune",
+        "amount": "4302213999rune",
         "receiver": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
         "type": "coin_received"
       },
       {
-        "amount": "4302218406rune",
+        "amount": "4302213999rune",
         "recipient": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
         "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "transfer"
@@ -1092,7 +1092,7 @@
       },
       {
         "chain": "THOR",
-        "coin": "4302218406 THOR.RUNE",
+        "coin": "4302213999 THOR.RUNE",
         "from": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "id": "0000000000000000000000000000000000000000000000000000000000000000",
         "in_tx_id": "0000000000000000000000000000000000000000000000000000000000000001",
@@ -1103,11 +1103,11 @@
       {
         "chain": "BTC",
         "coin": "250000 BTC.BTC",
-        "emit_asset": "227375742 THOR.RUNE",
+        "emit_asset": "227375510 THOR.RUNE",
         "from": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw",
         "id": "0000000000000000000000000000000000000000000000000000000000000001",
-        "liquidity_fee": "542818",
-        "liquidity_fee_in_rune": "542818",
+        "liquidity_fee": "542817",
+        "liquidity_fee_in_rune": "542817",
         "memo": "=:THOR.RUNE:tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr::test:500",
         "pool": "BTC.BTC",
         "pool_slip": "24",
@@ -1145,17 +1145,17 @@
         "type": "message"
       },
       {
-        "amount": "225375742rune",
+        "amount": "225375510rune",
         "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_spent"
       },
       {
-        "amount": "225375742rune",
+        "amount": "225375510rune",
         "receiver": "tthor1dl7un46w7l7f3ewrnrm6nq58nerjtp0d82uzjg",
         "type": "coin_received"
       },
       {
-        "amount": "225375742rune",
+        "amount": "225375510rune",
         "recipient": "tthor1dl7un46w7l7f3ewrnrm6nq58nerjtp0d82uzjg",
         "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "transfer"
@@ -1166,7 +1166,7 @@
       },
       {
         "chain": "THOR",
-        "coin": "225375742 THOR.RUNE",
+        "coin": "225375510 THOR.RUNE",
         "from": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "id": "0000000000000000000000000000000000000000000000000000000000000000",
         "in_tx_id": "0000000000000000000000000000000000000000000000000000000000000001",
@@ -1177,7 +1177,7 @@
       {
         "chain": "BTC",
         "coin": "30000 BTC.BTC",
-        "emit_asset": "27269654 THOR.RUNE",
+        "emit_asset": "27269627 THOR.RUNE",
         "from": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw",
         "id": "0000000000000000000000000000000000000000000000000000000000000001",
         "liquidity_fee": "7793",
@@ -1219,17 +1219,17 @@
         "type": "message"
       },
       {
-        "amount": "25269654rune",
+        "amount": "25269627rune",
         "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_spent"
       },
       {
-        "amount": "25269654rune",
+        "amount": "25269627rune",
         "receiver": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_received"
       },
       {
-        "amount": "25269654rune",
+        "amount": "25269627rune",
         "recipient": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "transfer"
@@ -1240,7 +1240,7 @@
       },
       {
         "chain": "THOR",
-        "coin": "25269654 THOR.RUNE",
+        "coin": "25269627 THOR.RUNE",
         "from": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "id": "0000000000000000000000000000000000000000000000000000000000000000",
         "in_tx_id": "0000000000000000000000000000000000000000000000000000000000000001",
@@ -1249,17 +1249,17 @@
         "type": "outbound"
       },
       {
-        "amount": "7962055rune",
+        "amount": "16340001rune",
         "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_spent"
       },
       {
-        "amount": "7962055rune",
+        "amount": "16340001rune",
         "receiver": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_received"
       },
       {
-        "amount": "7962055rune",
+        "amount": "16340001rune",
         "recipient": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "transfer"
@@ -1269,17 +1269,17 @@
         "type": "message"
       },
       {
-        "amount": "9072216rune",
+        "amount": "17450162rune",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "9072216rune",
+        "amount": "17450162rune",
         "receiver": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "type": "coin_received"
       },
       {
-        "amount": "9072216rune",
+        "amount": "17450162rune",
         "recipient": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "transfer"
@@ -1289,8 +1289,8 @@
         "type": "message"
       },
       {
-        "BTC.BTC": "-7962055",
-        "bond_reward": "9072216",
+        "BTC.BTC": "-16340001",
+        "bond_reward": "17450162",
         "dev_fund_reward": "0",
         "income_burn": "0",
         "type": "rewards"
@@ -1430,7 +1430,7 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "DDD620157E32CD2E5E71F696F8CD8C90B94E504926F466A649E018AFC315FC72",
+      "app_hash": "218C721A726991EA6A2C8269292F8A0DA73F4DBABCAFA97F3988C7F3E1ABD9A0",
       "last_results_hash": "B3191BFC6B11AF52B0CE5CF552594F7A5A21C55D1C4A970B73063A29BB47710B",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
@@ -1440,11 +1440,11 @@
       {
         "chain": "THOR",
         "coin": "4720000000 THOR.RUNE",
-        "emit_asset": "4715092 BTC.BTC",
+        "emit_asset": "4715472 BTC.BTC",
         "from": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
         "id": "3761FF40D4C6CE570B3A10B558DA32AAC9F5A6CC91F3F91222E85C73AF9509E8",
-        "liquidity_fee": "233195",
-        "liquidity_fee_in_rune": "211953907",
+        "liquidity_fee": "233235",
+        "liquidity_fee_in_rune": "211971437",
         "memo": "=:BTC.BTC:bcrt1quuds8pd92qnnq0udw0rpg0szpgcslc9pm6tzal::test:500",
         "pool": "BTC.BTC",
         "pool_slip": "471",
@@ -1457,22 +1457,22 @@
       },
       {
         "coins": "14000 BTC.BTC",
-        "pool_deduct": "13980030",
+        "pool_deduct": "13978900",
         "tx_id": "3761FF40D4C6CE570B3A10B558DA32AAC9F5A6CC91F3F91222E85C73AF9509E8",
         "type": "fee"
       },
       {
-        "amount": "13980030rune",
+        "amount": "13978900rune",
         "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_spent"
       },
       {
-        "amount": "13980030rune",
+        "amount": "13978900rune",
         "receiver": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_received"
       },
       {
-        "amount": "13980030rune",
+        "amount": "13978900rune",
         "recipient": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "transfer"
@@ -1483,7 +1483,7 @@
       },
       {
         "chain": "BTC",
-        "coin_amount": "4701092",
+        "coin_amount": "4701472",
         "coin_asset": "BTC.BTC",
         "coin_decimals": "0",
         "gas_rate": "10",
@@ -1499,17 +1499,17 @@
         "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
       },
       {
-        "amount": "9071347rune",
+        "amount": "17581518rune",
         "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_spent"
       },
       {
-        "amount": "9071347rune",
+        "amount": "17581518rune",
         "receiver": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_received"
       },
       {
-        "amount": "9071347rune",
+        "amount": "17581518rune",
         "recipient": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "transfer"
@@ -1519,17 +1519,17 @@
         "type": "message"
       },
       {
-        "amount": "10181509rune",
+        "amount": "18691680rune",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "10181509rune",
+        "amount": "18691680rune",
         "receiver": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "type": "coin_received"
       },
       {
-        "amount": "10181509rune",
+        "amount": "18691680rune",
         "recipient": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "transfer"
@@ -1539,8 +1539,8 @@
         "type": "message"
       },
       {
-        "BTC.BTC": "-9071347",
-        "bond_reward": "10181509",
+        "BTC.BTC": "-17581518",
+        "bond_reward": "18691680",
         "dev_fund_reward": "0",
         "income_burn": "0",
         "type": "rewards"
@@ -1729,11 +1729,11 @@
         }
       },
       "last_commit_hash": "",
-      "data_hash": "CF0062BA303CA38C50A6C624A6112E64C882A6CF23DF971ED2D7D14261707957",
+      "data_hash": "456284EDE67B21FE7B667996F2CF2486AD73345C6A683FB8A74F839FC353C050",
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "F9AA33AAE598F797E0C51C04657807CE6A7AE340B329D4EAF4493530A5343B97",
+      "app_hash": "A24F1FD2ADCB18BB1830B23611294BD8E64AAA2C7E5242E38DE8D5EE3691CFBC",
       "last_results_hash": "D7D25B6F976FC68285DFED2988A8E20AAFE2723EFD801DF92B9E206D0194BBA8",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
@@ -1741,17 +1741,17 @@
     "begin_block_events": [],
     "end_block_events": [
       {
-        "amount": "533210rune",
+        "amount": "512688rune",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "533210rune",
+        "amount": "512688rune",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "533210rune",
+        "amount": "512688rune",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "transfer"
@@ -1761,17 +1761,17 @@
         "type": "message"
       },
       {
-        "amount": "532518rune",
+        "amount": "512108rune",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "532518rune",
+        "amount": "512108rune",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "532518rune",
+        "amount": "512108rune",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "transfer"
@@ -1781,17 +1781,17 @@
         "type": "message"
       },
       {
-        "amount": "44434rune",
+        "amount": "85366rune",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "44434rune",
+        "amount": "85366rune",
         "receiver": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "type": "coin_received"
       },
       {
-        "amount": "44434rune",
+        "amount": "85366rune",
         "recipient": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "transfer"
@@ -1801,25 +1801,25 @@
         "type": "message"
       },
       {
-        "BTC.BTC": "533210",
-        "ETH.ETH": "532518",
-        "bond_reward": "44434",
+        "BTC.BTC": "512688",
+        "ETH.ETH": "512108",
+        "bond_reward": "85366",
         "dev_fund_reward": "0",
         "income_burn": "0",
         "type": "rewards"
       },
       {
-        "amount": "10482665rune",
+        "amount": "10480925rune",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "10482665rune",
+        "amount": "10480925rune",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "10482665rune",
+        "amount": "10480925rune",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "transfer"
@@ -1831,14 +1831,14 @@
       {
         "asset": "BTC.BTC",
         "asset_amt": "10500",
-        "rune_amt": "10482665",
+        "rune_amt": "10480925",
         "transaction_count": "1",
         "type": "gas"
       }
     ],
     "txs": [
       {
-        "hash": "B363AA3441D8F4CCB5B0254189A0DBEB53B4881B40F2395CBC40FD013AAFAF20",
+        "hash": "B2D8C20C6D8DD975063947AF062A46B401D9FCF5BE5D8ED6F3589A56CA5AA8A7",
         "tx": {
           "auth_info": {
             "fee": {
@@ -1885,7 +1885,7 @@
                       "chain": "BTC",
                       "coins": [
                         {
-                          "amount": "4701092",
+                          "amount": "4701472",
                           "asset": "BTC.BTC",
                           "decimals": "8"
                         }
@@ -1910,13 +1910,13 @@
             "timeout_height": "0"
           },
           "signatures": [
-            "mhRe3vfVyOTV3pYyMVMkSGySTADcumZ4odwd2PuXIzVOMylwJ7HLBZYi6jbwsKFBD8nhbdOPXPOnM/zr4yCzag=="
+            "jluWh5kDixsPVQ/FyBQByg2CcLxQF29Yv5xEnVy03qd3opqEKQ4U8ctr+ALFlZyaSofPYMTVZjt1fOucCQQ6Jg=="
           ]
         },
         "result": {
           "code": 0,
           "data": "\n\u0019\n\u0017/types.MsgObservedTxOut",
-          "log": "[{\"events\":[{\"type\":\"message\",\"attributes\":[{\"key\":\"action\",\"value\":\"set_observed_txout\"}]},{\"type\":\"outbound\",\"attributes\":[{\"key\":\"in_tx_id\",\"value\":\"3761FF40D4C6CE570B3A10B558DA32AAC9F5A6CC91F3F91222E85C73AF9509E8\"},{\"key\":\"id\",\"value\":\"0000000000000000000000000000000000000000000000000000000000000002\"},{\"key\":\"chain\",\"value\":\"BTC\"},{\"key\":\"from\",\"value\":\"bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk\"},{\"key\":\"to\",\"value\":\"bcrt1quuds8pd92qnnq0udw0rpg0szpgcslc9pm6tzal\"},{\"key\":\"coin\",\"value\":\"4701092 BTC.BTC\"},{\"key\":\"memo\",\"value\":\"OUT:3761FF40D4C6CE570B3A10B558DA32AAC9F5A6CC91F3F91222E85C73AF9509E8\"}]}]}]",
+          "log": "[{\"events\":[{\"type\":\"message\",\"attributes\":[{\"key\":\"action\",\"value\":\"set_observed_txout\"}]},{\"type\":\"outbound\",\"attributes\":[{\"key\":\"in_tx_id\",\"value\":\"3761FF40D4C6CE570B3A10B558DA32AAC9F5A6CC91F3F91222E85C73AF9509E8\"},{\"key\":\"id\",\"value\":\"0000000000000000000000000000000000000000000000000000000000000002\"},{\"key\":\"chain\",\"value\":\"BTC\"},{\"key\":\"from\",\"value\":\"bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk\"},{\"key\":\"to\",\"value\":\"bcrt1quuds8pd92qnnq0udw0rpg0szpgcslc9pm6tzal\"},{\"key\":\"coin\",\"value\":\"4701472 BTC.BTC\"},{\"key\":\"memo\",\"value\":\"OUT:3761FF40D4C6CE570B3A10B558DA32AAC9F5A6CC91F3F91222E85C73AF9509E8\"}]}]}]",
           "gas_wanted": "0",
           "gas_used": "255519",
           "events": [
@@ -1930,7 +1930,7 @@
               "type": "tx"
             },
             {
-              "signature": "mhRe3vfVyOTV3pYyMVMkSGySTADcumZ4odwd2PuXIzVOMylwJ7HLBZYi6jbwsKFBD8nhbdOPXPOnM/zr4yCzag==",
+              "signature": "jluWh5kDixsPVQ/FyBQByg2CcLxQF29Yv5xEnVy03qd3opqEKQ4U8ctr+ALFlZyaSofPYMTVZjt1fOucCQQ6Jg==",
               "type": "tx"
             },
             {
@@ -1939,7 +1939,7 @@
             },
             {
               "chain": "BTC",
-              "coin": "4701092 BTC.BTC",
+              "coin": "4701472 BTC.BTC",
               "from": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk",
               "id": "0000000000000000000000000000000000000000000000000000000000000002",
               "in_tx_id": "3761FF40D4C6CE570B3A10B558DA32AAC9F5A6CC91F3F91222E85C73AF9509E8",
@@ -1980,7 +1980,7 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "73DFA0ADF2B0DA8284D0B3085E8F45F5156C0E2C5836E396DD8C9645B8E86591",
+      "app_hash": "F169B4915A39196930546D47334945E0C75C58C21DDDAFF5FCF49984E19B2593",
       "last_results_hash": "DFAA8793DEFEEC3056876F9043627D4408F708167EE8B1290A991503FDF14972",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
@@ -1990,39 +1990,39 @@
       {
         "chain": "THOR",
         "coin": "47200000000 THOR.RUNE",
-        "emit_asset": "21834993 BTC.BTC",
+        "emit_asset": "21836243 BTC.BTC",
         "from": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
         "id": "4B5C6CD0C2AF2BE321094ED5967AD4E064E4E26491BE88731B58088A92B479F0",
-        "liquidity_fee": "10291317",
-        "liquidity_fee_in_rune": "10276477985",
+        "liquidity_fee": "10293654",
+        "liquidity_fee_in_rune": "10277104954",
         "memo": "=:BTC.BTC:bcrt1quuds8pd92qnnq0udw0rpg0szpgcslc9pm6tzal::test:500",
         "pool": "BTC.BTC",
-        "pool_slip": "3203",
+        "pool_slip": "3204",
         "streaming_swap_count": "1",
         "streaming_swap_quantity": "1",
-        "swap_slip": "3203",
+        "swap_slip": "3204",
         "swap_target": "0",
         "to": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "swap"
       },
       {
         "coins": "14000 BTC.BTC",
-        "pool_deduct": "26288788",
+        "pool_deduct": "26286300",
         "tx_id": "4B5C6CD0C2AF2BE321094ED5967AD4E064E4E26491BE88731B58088A92B479F0",
         "type": "fee"
       },
       {
-        "amount": "26288788rune",
+        "amount": "26286300rune",
         "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_spent"
       },
       {
-        "amount": "26288788rune",
+        "amount": "26286300rune",
         "receiver": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_received"
       },
       {
-        "amount": "26288788rune",
+        "amount": "26286300rune",
         "recipient": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "transfer"
@@ -2033,7 +2033,7 @@
       },
       {
         "chain": "BTC",
-        "coin_amount": "21820993",
+        "coin_amount": "21822243",
         "coin_asset": "BTC.BTC",
         "coin_decimals": "0",
         "gas_rate": "10",
@@ -2050,12 +2050,12 @@
       },
       {
         "chain": "THOR",
-        "coin": "2975375742 THOR.RUNE",
-        "emit_asset": "1522680 BTC.BTC",
+        "coin": "2975375510 THOR.RUNE",
+        "emit_asset": "1522817 BTC.BTC",
         "from": "tthor1dl7un46w7l7f3ewrnrm6nq58nerjtp0d82uzjg",
-        "id": "6A1857DCCCC2D9FDFEB148D40189C6BF79FC945FB8798EA668E811741FDA0F35",
-        "liquidity_fee": "30753",
-        "liquidity_fee_in_rune": "57736775",
+        "id": "E96A41DD71312823248A868A221EDD6FC4E77A305AF3B26236E006C985BC63CF",
+        "liquidity_fee": "30759",
+        "liquidity_fee_in_rune": "57742574",
         "memo": "THOR-PREFERRED-ASSET-test",
         "pool": "BTC.BTC",
         "pool_slip": "198",
@@ -2068,22 +2068,22 @@
       },
       {
         "coins": "14000 BTC.BTC",
-        "pool_deduct": "27340632",
-        "tx_id": "6A1857DCCCC2D9FDFEB148D40189C6BF79FC945FB8798EA668E811741FDA0F35",
+        "pool_deduct": "27338166",
+        "tx_id": "E96A41DD71312823248A868A221EDD6FC4E77A305AF3B26236E006C985BC63CF",
         "type": "fee"
       },
       {
-        "amount": "27340632rune",
+        "amount": "27338166rune",
         "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_spent"
       },
       {
-        "amount": "27340632rune",
+        "amount": "27338166rune",
         "receiver": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_received"
       },
       {
-        "amount": "27340632rune",
+        "amount": "27338166rune",
         "recipient": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "transfer"
@@ -2094,15 +2094,15 @@
       },
       {
         "chain": "BTC",
-        "coin_amount": "1508680",
+        "coin_amount": "1508817",
         "coin_asset": "BTC.BTC",
         "coin_decimals": "0",
         "gas_rate": "10",
-        "in_hash": "6A1857DCCCC2D9FDFEB148D40189C6BF79FC945FB8798EA668E811741FDA0F35",
+        "in_hash": "E96A41DD71312823248A868A221EDD6FC4E77A305AF3B26236E006C985BC63CF",
         "max_gas_amount_0": "10500",
         "max_gas_asset_0": "BTC.BTC",
         "max_gas_decimals_0": "8",
-        "memo": "OUT:6A1857DCCCC2D9FDFEB148D40189C6BF79FC945FB8798EA668E811741FDA0F35",
+        "memo": "OUT:E96A41DD71312823248A868A221EDD6FC4E77A305AF3B26236E006C985BC63CF",
         "module_name": "",
         "out_hash": "",
         "to_address": "bcrt1qqk8c8sfrmfm0tkncs0zxeutc8v5mx3pjw22g33",
@@ -2110,17 +2110,17 @@
         "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
       },
       {
-        "amount": "2975375742rune",
+        "amount": "2975375510rune",
         "spender": "tthor1dl7un46w7l7f3ewrnrm6nq58nerjtp0d82uzjg",
         "type": "coin_spent"
       },
       {
-        "amount": "2975375742rune",
+        "amount": "2975375510rune",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "2975375742rune",
+        "amount": "2975375510rune",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dl7un46w7l7f3ewrnrm6nq58nerjtp0d82uzjg",
         "type": "transfer"
@@ -2130,17 +2130,17 @@
         "type": "message"
       },
       {
-        "amount": "734724843rune",
+        "amount": "1012158936rune",
         "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_spent"
       },
       {
-        "amount": "734724843rune",
+        "amount": "1012158936rune",
         "receiver": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_received"
       },
       {
-        "amount": "734724843rune",
+        "amount": "1012158936rune",
         "recipient": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "transfer"
@@ -2150,17 +2150,17 @@
         "type": "message"
       },
       {
-        "amount": "735835016rune",
+        "amount": "1013269109rune",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "735835016rune",
+        "amount": "1013269109rune",
         "receiver": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "type": "coin_received"
       },
       {
-        "amount": "735835016rune",
+        "amount": "1013269109rune",
         "recipient": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "transfer"
@@ -2170,8 +2170,8 @@
         "type": "message"
       },
       {
-        "BTC.BTC": "-734724843",
-        "bond_reward": "735835016",
+        "BTC.BTC": "-1012158936",
+        "bond_reward": "1013269109",
         "dev_fund_reward": "0",
         "income_burn": "0",
         "type": "rewards"
@@ -2360,11 +2360,11 @@
         }
       },
       "last_commit_hash": "",
-      "data_hash": "9D79E5CB307F8BCEB09F53DF5CB78F8A21B3FB867F83FBEC2732F780BBC902C7",
+      "data_hash": "8C7E61D16E6E4B5AF87E1C1B2177011F0F38F7E66075078DA81E7E2F827D068A",
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "61E63595A5C00A9D19FA82754A063C05B7C56A14218A554762D49B66107A518D",
+      "app_hash": "49327AAF3F7622582AD909C1603138E4CA1D8B7F25C2AC97CBF80508F1C098C4",
       "last_results_hash": "6F13E54A5B27CD267963F971B94926CD239A2B11B4ABB0D89361EF6E21E0B772",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
@@ -2372,17 +2372,17 @@
     "begin_block_events": [],
     "end_block_events": [
       {
-        "amount": "631300rune",
+        "amount": "601624rune",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "631300rune",
+        "amount": "601624rune",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "631300rune",
+        "amount": "601624rune",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "transfer"
@@ -2392,17 +2392,17 @@
         "type": "message"
       },
       {
-        "amount": "422201rune",
+        "amount": "403148rune",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "422201rune",
+        "amount": "403148rune",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "422201rune",
+        "amount": "403148rune",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "transfer"
@@ -2412,17 +2412,17 @@
         "type": "message"
       },
       {
-        "amount": "56672rune",
+        "amount": "105401rune",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "56672rune",
+        "amount": "105401rune",
         "receiver": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "type": "coin_received"
       },
       {
-        "amount": "56672rune",
+        "amount": "105401rune",
         "recipient": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "transfer"
@@ -2432,25 +2432,25 @@
         "type": "message"
       },
       {
-        "BTC.BTC": "631300",
-        "ETH.ETH": "422201",
-        "bond_reward": "56672",
+        "BTC.BTC": "601624",
+        "ETH.ETH": "403148",
+        "bond_reward": "105401",
         "dev_fund_reward": "0",
         "income_burn": "0",
         "type": "rewards"
       },
       {
-        "amount": "20401586rune",
+        "amount": "20361878rune",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "20401586rune",
+        "amount": "20361878rune",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "20401586rune",
+        "amount": "20361878rune",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "transfer"
@@ -2462,14 +2462,14 @@
       {
         "asset": "BTC.BTC",
         "asset_amt": "10500",
-        "rune_amt": "20401586",
+        "rune_amt": "20361878",
         "transaction_count": "1",
         "type": "gas"
       }
     ],
     "txs": [
       {
-        "hash": "EE4D61FC06D26F94B3D45D6E9117DE97C24352BF48C25FD40A1896B60348032D",
+        "hash": "81932404F5B6C423F7216A1BA66335EC23EB26338CD913EF51848415C8C64C27",
         "tx": {
           "auth_info": {
             "fee": {
@@ -2516,7 +2516,7 @@
                       "chain": "BTC",
                       "coins": [
                         {
-                          "amount": "21820993",
+                          "amount": "21822243",
                           "asset": "BTC.BTC",
                           "decimals": "8"
                         }
@@ -2541,13 +2541,13 @@
             "timeout_height": "0"
           },
           "signatures": [
-            "oHr/QqX32uRmU79syKGSDrNaHydOnbAWybqIjA8veKUOaM48AH5PpdwtnfndoGAIUcNjntYVHHdCzP9lWK7rjQ=="
+            "6YmIiz/8LFNXIAz5iL/VQ049zS7516C2+kqf6gry7cJRB/3H+vTE59Yg+9iZ6Ez6aj5qpejBeuk22gk04nIOMA=="
           ]
         },
         "result": {
           "code": 0,
           "data": "\n\u0019\n\u0017/types.MsgObservedTxOut",
-          "log": "[{\"events\":[{\"type\":\"message\",\"attributes\":[{\"key\":\"action\",\"value\":\"set_observed_txout\"}]},{\"type\":\"outbound\",\"attributes\":[{\"key\":\"in_tx_id\",\"value\":\"4B5C6CD0C2AF2BE321094ED5967AD4E064E4E26491BE88731B58088A92B479F0\"},{\"key\":\"id\",\"value\":\"0000000000000000000000000000000000000000000000000000000000000003\"},{\"key\":\"chain\",\"value\":\"BTC\"},{\"key\":\"from\",\"value\":\"bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk\"},{\"key\":\"to\",\"value\":\"bcrt1quuds8pd92qnnq0udw0rpg0szpgcslc9pm6tzal\"},{\"key\":\"coin\",\"value\":\"21820993 BTC.BTC\"},{\"key\":\"memo\",\"value\":\"OUT:4B5C6CD0C2AF2BE321094ED5967AD4E064E4E26491BE88731B58088A92B479F0\"}]}]}]",
+          "log": "[{\"events\":[{\"type\":\"message\",\"attributes\":[{\"key\":\"action\",\"value\":\"set_observed_txout\"}]},{\"type\":\"outbound\",\"attributes\":[{\"key\":\"in_tx_id\",\"value\":\"4B5C6CD0C2AF2BE321094ED5967AD4E064E4E26491BE88731B58088A92B479F0\"},{\"key\":\"id\",\"value\":\"0000000000000000000000000000000000000000000000000000000000000003\"},{\"key\":\"chain\",\"value\":\"BTC\"},{\"key\":\"from\",\"value\":\"bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk\"},{\"key\":\"to\",\"value\":\"bcrt1quuds8pd92qnnq0udw0rpg0szpgcslc9pm6tzal\"},{\"key\":\"coin\",\"value\":\"21822243 BTC.BTC\"},{\"key\":\"memo\",\"value\":\"OUT:4B5C6CD0C2AF2BE321094ED5967AD4E064E4E26491BE88731B58088A92B479F0\"}]}]}]",
           "gas_wanted": "0",
           "gas_used": "267776",
           "events": [
@@ -2561,7 +2561,7 @@
               "type": "tx"
             },
             {
-              "signature": "oHr/QqX32uRmU79syKGSDrNaHydOnbAWybqIjA8veKUOaM48AH5PpdwtnfndoGAIUcNjntYVHHdCzP9lWK7rjQ==",
+              "signature": "6YmIiz/8LFNXIAz5iL/VQ049zS7516C2+kqf6gry7cJRB/3H+vTE59Yg+9iZ6Ez6aj5qpejBeuk22gk04nIOMA==",
               "type": "tx"
             },
             {
@@ -2570,7 +2570,7 @@
             },
             {
               "chain": "BTC",
-              "coin": "21820993 BTC.BTC",
+              "coin": "21822243 BTC.BTC",
               "from": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk",
               "id": "0000000000000000000000000000000000000000000000000000000000000003",
               "in_tx_id": "4B5C6CD0C2AF2BE321094ED5967AD4E064E4E26491BE88731B58088A92B479F0",
@@ -2607,11 +2607,11 @@
         }
       },
       "last_commit_hash": "",
-      "data_hash": "9AE7955C94A52C9782611FA285748F3B06D5C6A21BD6F10FBF28D72562DA50EE",
+      "data_hash": "01029B9BBB1B25B35201323B4001E00FB6422CCE9219EBF42293ACEF011EF1E6",
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "1F957A9F33AD8ADE33D4946C0AFDDCFFF9E723CE55CA3875AB1BEF9544C87126",
+      "app_hash": "52901D8B602EAD4B03DE451F7C1FE95D8EE8D37162470E5E12D1F7AB916A0446",
       "last_results_hash": "9BE7E037B386C514957C10F1E1B5ACEB8BC09D39C22491F7883E5BA6C981BC17",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
@@ -2619,17 +2619,17 @@
     "begin_block_events": [],
     "end_block_events": [
       {
-        "amount": "632093rune",
+        "amount": "605626rune",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "632093rune",
+        "amount": "605626rune",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "632093rune",
+        "amount": "605626rune",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "transfer"
@@ -2639,17 +2639,17 @@
         "type": "message"
       },
       {
-        "amount": "422674rune",
+        "amount": "397916rune",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "422674rune",
+        "amount": "397916rune",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "422674rune",
+        "amount": "397916rune",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "transfer"
@@ -2659,17 +2659,17 @@
         "type": "message"
       },
       {
-        "amount": "55405rune",
+        "amount": "106677rune",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "55405rune",
+        "amount": "106677rune",
         "receiver": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "type": "coin_received"
       },
       {
-        "amount": "55405rune",
+        "amount": "106677rune",
         "recipient": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "transfer"
@@ -2679,25 +2679,25 @@
         "type": "message"
       },
       {
-        "BTC.BTC": "632093",
-        "ETH.ETH": "422674",
-        "bond_reward": "55405",
+        "BTC.BTC": "605626",
+        "ETH.ETH": "397916",
+        "bond_reward": "106677",
         "dev_fund_reward": "0",
         "income_burn": "0",
         "type": "rewards"
       },
       {
-        "amount": "20407240rune",
+        "amount": "21188035rune",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "20407240rune",
+        "amount": "21188035rune",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "20407240rune",
+        "amount": "21188035rune",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "transfer"
@@ -2709,14 +2709,14 @@
       {
         "asset": "BTC.BTC",
         "asset_amt": "10500",
-        "rune_amt": "20407240",
+        "rune_amt": "21188035",
         "transaction_count": "1",
         "type": "gas"
       }
     ],
     "txs": [
       {
-        "hash": "43A7DCE93FA6D2309135072A3835A35B90C6C0197409A5618B9992C4C567AD4B",
+        "hash": "37A44CACE239E9F38F88CF8EEC1DAF2CEF17A1274A139086733B94A06014EDC8",
         "tx": {
           "auth_info": {
             "fee": {
@@ -2763,7 +2763,7 @@
                       "chain": "BTC",
                       "coins": [
                         {
-                          "amount": "1508680",
+                          "amount": "1508817",
                           "asset": "BTC.BTC",
                           "decimals": "8"
                         }
@@ -2777,7 +2777,7 @@
                         }
                       ],
                       "id": "0000000000000000000000000000000000000000000000000000000000000004",
-                      "memo": "OUT:6A1857DCCCC2D9FDFEB148D40189C6BF79FC945FB8798EA668E811741FDA0F35",
+                      "memo": "OUT:4C78AA1948383709858186F81820B0CB56118A5B274B77ACD89FE81945866A6E",
                       "to_address": "bcrt1qqk8c8sfrmfm0tkncs0zxeutc8v5mx3pjw22g33"
                     }
                   }
@@ -2788,15 +2788,15 @@
             "timeout_height": "0"
           },
           "signatures": [
-            "RqGzBd5yc9CJJG2TbVr5+K7mn90qu+2gev0V1CBMzeEhU9I4w4WWUjFd3mNtAQTTqDjDfkqnCg+IFs6dcXYZtg=="
+            "X+IHINyonzd9DotEP7E+ikIAXbXAaTDoCHERiDWo77lfN6SiaMI2x3ygdZvrNqPAFcEHMSVlPGJ8ZTP6gpUtIw=="
           ]
         },
         "result": {
           "code": 0,
           "data": "\n\u0019\n\u0017/types.MsgObservedTxOut",
-          "log": "[{\"events\":[{\"type\":\"message\",\"attributes\":[{\"key\":\"action\",\"value\":\"set_observed_txout\"}]},{\"type\":\"outbound\",\"attributes\":[{\"key\":\"in_tx_id\",\"value\":\"6A1857DCCCC2D9FDFEB148D40189C6BF79FC945FB8798EA668E811741FDA0F35\"},{\"key\":\"id\",\"value\":\"0000000000000000000000000000000000000000000000000000000000000004\"},{\"key\":\"chain\",\"value\":\"BTC\"},{\"key\":\"from\",\"value\":\"bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk\"},{\"key\":\"to\",\"value\":\"bcrt1qqk8c8sfrmfm0tkncs0zxeutc8v5mx3pjw22g33\"},{\"key\":\"coin\",\"value\":\"1508680 BTC.BTC\"},{\"key\":\"memo\",\"value\":\"OUT:6A1857DCCCC2D9FDFEB148D40189C6BF79FC945FB8798EA668E811741FDA0F35\"}]}]}]",
+          "log": "[{\"events\":[{\"type\":\"bond\",\"attributes\":[{\"key\":\"amount\",\"value\":\"4420655752\"},{\"key\":\"bond_type\",\"value\":\"\\u0003\"},{\"key\":\"id\",\"value\":\"0000000000000000000000000000000000000000000000000000000000000000\"},{\"key\":\"chain\"},{\"key\":\"from\",\"value\":\"tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m\"},{\"key\":\"to\"},{\"key\":\"coin\"},{\"key\":\"memo\"}]},{\"type\":\"coin_received\",\"attributes\":[{\"key\":\"receiver\",\"value\":\"tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw\"},{\"key\":\"amount\",\"value\":\"1473551917rune\"},{\"key\":\"receiver\",\"value\":\"tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2\"},{\"key\":\"amount\",\"value\":\"2947103835rune\"}]},{\"type\":\"coin_spent\",\"attributes\":[{\"key\":\"spender\",\"value\":\"tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff\"},{\"key\":\"amount\",\"value\":\"1473551917rune\"},{\"key\":\"spender\",\"value\":\"tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff\"},{\"key\":\"amount\",\"value\":\"2947103835rune\"}]},{\"type\":\"message\",\"attributes\":[{\"key\":\"action\",\"value\":\"set_observed_txout\"},{\"key\":\"sender\",\"value\":\"tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff\"},{\"key\":\"sender\",\"value\":\"tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff\"}]},{\"type\":\"security\",\"attributes\":[{\"key\":\"msg\",\"value\":\"missing tx out in=4C78AA1948383709858186F81820B0CB56118A5B274B77ACD89FE81945866A6E\"},{\"key\":\"id\",\"value\":\"0000000000000000000000000000000000000000000000000000000000000004\"},{\"key\":\"chain\",\"value\":\"BTC\"},{\"key\":\"from\",\"value\":\"bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk\"},{\"key\":\"to\",\"value\":\"bcrt1qqk8c8sfrmfm0tkncs0zxeutc8v5mx3pjw22g33\"},{\"key\":\"coin\",\"value\":\"1508817 BTC.BTC\"},{\"key\":\"memo\",\"value\":\"OUT:4C78AA1948383709858186F81820B0CB56118A5B274B77ACD89FE81945866A6E\"}]},{\"type\":\"slash\",\"attributes\":[{\"key\":\"pool\",\"value\":\"BTC.BTC\"},{\"key\":\"BTC.BTC\",\"value\":\"-1519317\"},{\"key\":\"THOR.RUNE\",\"value\":\"2947103835\"}]},{\"type\":\"transfer\",\"attributes\":[{\"key\":\"recipient\",\"value\":\"tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw\"},{\"key\":\"sender\",\"value\":\"tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff\"},{\"key\":\"amount\",\"value\":\"1473551917rune\"},{\"key\":\"recipient\",\"value\":\"tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2\"},{\"key\":\"sender\",\"value\":\"tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff\"},{\"key\":\"amount\",\"value\":\"2947103835rune\"}]}]}]",
           "gas_wanted": "0",
-          "gas_used": "268085",
+          "gas_used": "267957",
           "events": [
             {
               "fee": "",
@@ -2808,7 +2808,7 @@
               "type": "tx"
             },
             {
-              "signature": "RqGzBd5yc9CJJG2TbVr5+K7mn90qu+2gev0V1CBMzeEhU9I4w4WWUjFd3mNtAQTTqDjDfkqnCg+IFs6dcXYZtg==",
+              "signature": "X+IHINyonzd9DotEP7E+ikIAXbXAaTDoCHERiDWo77lfN6SiaMI2x3ygdZvrNqPAFcEHMSVlPGJ8ZTP6gpUtIw==",
               "type": "tx"
             },
             {
@@ -2817,13 +2817,70 @@
             },
             {
               "chain": "BTC",
-              "coin": "1508680 BTC.BTC",
+              "coin": "1508817 BTC.BTC",
               "from": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk",
               "id": "0000000000000000000000000000000000000000000000000000000000000004",
-              "in_tx_id": "6A1857DCCCC2D9FDFEB148D40189C6BF79FC945FB8798EA668E811741FDA0F35",
-              "memo": "OUT:6A1857DCCCC2D9FDFEB148D40189C6BF79FC945FB8798EA668E811741FDA0F35",
+              "memo": "OUT:4C78AA1948383709858186F81820B0CB56118A5B274B77ACD89FE81945866A6E",
+              "msg": "missing tx out in=4C78AA1948383709858186F81820B0CB56118A5B274B77ACD89FE81945866A6E",
               "to": "bcrt1qqk8c8sfrmfm0tkncs0zxeutc8v5mx3pjw22g33",
-              "type": "outbound"
+              "type": "security"
+            },
+            {
+              "amount": "4420655752",
+              "bond_type": "\u0003",
+              "chain": "",
+              "coin": "",
+              "from": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
+              "id": "0000000000000000000000000000000000000000000000000000000000000000",
+              "memo": "",
+              "to": "",
+              "type": "bond"
+            },
+            {
+              "amount": "1473551917rune",
+              "spender": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
+              "type": "coin_spent"
+            },
+            {
+              "amount": "1473551917rune",
+              "receiver": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
+              "type": "coin_received"
+            },
+            {
+              "amount": "1473551917rune",
+              "recipient": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
+              "sender": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
+              "type": "transfer"
+            },
+            {
+              "sender": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
+              "type": "message"
+            },
+            {
+              "amount": "2947103835rune",
+              "spender": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
+              "type": "coin_spent"
+            },
+            {
+              "amount": "2947103835rune",
+              "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
+              "type": "coin_received"
+            },
+            {
+              "amount": "2947103835rune",
+              "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
+              "sender": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
+              "type": "transfer"
+            },
+            {
+              "sender": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
+              "type": "message"
+            },
+            {
+              "BTC.BTC": "-1519317",
+              "THOR.RUNE": "2947103835",
+              "pool": "BTC.BTC",
+              "type": "slash"
             }
           ]
         }
@@ -2858,8 +2915,8 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "7C1A95DDEC44FFB2F39128851D0A98E332FD4AE9191DE49DDAB90DB0E54D822F",
-      "last_results_hash": "74B9050018F282C4D02BF4966CB469B9E270BA4EBF5367726E650B612A0D4303",
+      "app_hash": "9055F7760539DFA32613D4B94ADCFEEBFEDCDE36DB7A59699F3711C648F54422",
+      "last_results_hash": "54EF79B2830803F4EEDA9458AB22E74FC0229324BB45AAB7B2FD5237DA9BE4A2",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
@@ -2868,17 +2925,17 @@
       {
         "chain": "BTC",
         "coin": "4720000 BTC.BTC",
-        "emit_asset": "8145910602 THOR.RUNE",
+        "emit_asset": "8437939535 THOR.RUNE",
         "from": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw",
         "id": "0000000000000000000000000000000000000000000000000000000000000005",
-        "liquidity_fee": "499737847",
-        "liquidity_fee_in_rune": "499737847",
+        "liquidity_fee": "528093916",
+        "liquidity_fee_in_rune": "528093916",
         "memo": "=:THOR.RUNE:tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr::test:500",
         "pool": "BTC.BTC",
-        "pool_slip": "578",
+        "pool_slip": "589",
         "streaming_swap_count": "1",
         "streaming_swap_quantity": "1",
-        "swap_slip": "578",
+        "swap_slip": "589",
         "swap_target": "0",
         "to": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk",
         "type": "swap"
@@ -2910,17 +2967,17 @@
         "type": "message"
       },
       {
-        "amount": "8143910602rune",
+        "amount": "8435939535rune",
         "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_spent"
       },
       {
-        "amount": "8143910602rune",
+        "amount": "8435939535rune",
         "receiver": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
         "type": "coin_received"
       },
       {
-        "amount": "8143910602rune",
+        "amount": "8435939535rune",
         "recipient": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
         "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "transfer"
@@ -2931,7 +2988,7 @@
       },
       {
         "chain": "THOR",
-        "coin": "8143910602 THOR.RUNE",
+        "coin": "8435939535 THOR.RUNE",
         "from": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "id": "0000000000000000000000000000000000000000000000000000000000000000",
         "in_tx_id": "0000000000000000000000000000000000000000000000000000000000000005",
@@ -2942,11 +2999,11 @@
       {
         "chain": "BTC",
         "coin": "250000 BTC.BTC",
-        "emit_asset": "430348000 THOR.RUNE",
+        "emit_asset": "445786489 THOR.RUNE",
         "from": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw",
         "id": "0000000000000000000000000000000000000000000000000000000000000005",
-        "liquidity_fee": "1317535",
-        "liquidity_fee_in_rune": "1317535",
+        "liquidity_fee": "1390707",
+        "liquidity_fee_in_rune": "1390707",
         "memo": "=:THOR.RUNE:tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr::test:500",
         "pool": "BTC.BTC",
         "pool_slip": "31",
@@ -2984,17 +3041,17 @@
         "type": "message"
       },
       {
-        "amount": "428348000rune",
+        "amount": "443786489rune",
         "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_spent"
       },
       {
-        "amount": "428348000rune",
+        "amount": "443786489rune",
         "receiver": "tthor1dl7un46w7l7f3ewrnrm6nq58nerjtp0d82uzjg",
         "type": "coin_received"
       },
       {
-        "amount": "428348000rune",
+        "amount": "443786489rune",
         "recipient": "tthor1dl7un46w7l7f3ewrnrm6nq58nerjtp0d82uzjg",
         "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "transfer"
@@ -3005,7 +3062,7 @@
       },
       {
         "chain": "THOR",
-        "coin": "428348000 THOR.RUNE",
+        "coin": "443786489 THOR.RUNE",
         "from": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "id": "0000000000000000000000000000000000000000000000000000000000000000",
         "in_tx_id": "0000000000000000000000000000000000000000000000000000000000000005",
@@ -3016,11 +3073,11 @@
       {
         "chain": "BTC",
         "coin": "30000 BTC.BTC",
-        "emit_asset": "51604433 THOR.RUNE",
+        "emit_asset": "53454991 THOR.RUNE",
         "from": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw",
         "id": "0000000000000000000000000000000000000000000000000000000000000005",
-        "liquidity_fee": "18900",
-        "liquidity_fee_in_rune": "18900",
+        "liquidity_fee": "19949",
+        "liquidity_fee_in_rune": "19949",
         "memo": "THOR-PROTOCOL-AFFILIATE",
         "pool": "BTC.BTC",
         "pool_slip": "4",
@@ -3058,17 +3115,17 @@
         "type": "message"
       },
       {
-        "amount": "49604433rune",
+        "amount": "51454991rune",
         "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_spent"
       },
       {
-        "amount": "49604433rune",
+        "amount": "51454991rune",
         "receiver": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_received"
       },
       {
-        "amount": "49604433rune",
+        "amount": "51454991rune",
         "recipient": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "transfer"
@@ -3079,7 +3136,7 @@
       },
       {
         "chain": "THOR",
-        "coin": "49604433 THOR.RUNE",
+        "coin": "51454991 THOR.RUNE",
         "from": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "id": "0000000000000000000000000000000000000000000000000000000000000000",
         "in_tx_id": "0000000000000000000000000000000000000000000000000000000000000005",
@@ -3088,17 +3145,17 @@
         "type": "outbound"
       },
       {
-        "amount": "25576810rune",
+        "amount": "53094932rune",
         "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_spent"
       },
       {
-        "amount": "25576810rune",
+        "amount": "53094932rune",
         "receiver": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_received"
       },
       {
-        "amount": "25576810rune",
+        "amount": "53094932rune",
         "recipient": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "transfer"
@@ -3108,17 +3165,17 @@
         "type": "message"
       },
       {
-        "amount": "26686984rune",
+        "amount": "54205152rune",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "26686984rune",
+        "amount": "54205152rune",
         "receiver": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "type": "coin_received"
       },
       {
-        "amount": "26686984rune",
+        "amount": "54205152rune",
         "recipient": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "transfer"
@@ -3128,8 +3185,8 @@
         "type": "message"
       },
       {
-        "BTC.BTC": "-25576810",
-        "bond_reward": "26686984",
+        "BTC.BTC": "-53094932",
+        "bond_reward": "54205152",
         "dev_fund_reward": "0",
         "income_burn": "0",
         "type": "rewards"
@@ -3269,7 +3326,7 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "901E39D14BEF036D429C7355E3218CD31E28432128BC0CD6CD644D24F4967FA8",
+      "app_hash": "3F617D01BD22FF4785AB01BFE5CEC00BDE9C4AFFE8625D757D4ABA52E4CB3ADC",
       "last_results_hash": "D04D03DC9D0E3FF9573B3CEE06437A554E3626973C58C7888F336D2BE41E046E",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
@@ -3277,17 +3334,17 @@
     "begin_block_events": [],
     "end_block_events": [
       {
-        "amount": "618067rune",
+        "amount": "593098rune",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "618067rune",
+        "amount": "593098rune",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "618067rune",
+        "amount": "593098rune",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "transfer"
@@ -3297,17 +3354,17 @@
         "type": "message"
       },
       {
-        "amount": "438614rune",
+        "amount": "414087rune",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "438614rune",
+        "amount": "414087rune",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "438614rune",
+        "amount": "414087rune",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "transfer"
@@ -3317,17 +3374,17 @@
         "type": "message"
       },
       {
-        "amount": "53493rune",
+        "amount": "103035rune",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "53493rune",
+        "amount": "103035rune",
         "receiver": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "type": "coin_received"
       },
       {
-        "amount": "53493rune",
+        "amount": "103035rune",
         "recipient": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "transfer"
@@ -3337,9 +3394,9 @@
         "type": "message"
       },
       {
-        "BTC.BTC": "618067",
-        "ETH.ETH": "438614",
-        "bond_reward": "53493",
+        "BTC.BTC": "593098",
+        "ETH.ETH": "414087",
+        "bond_reward": "103035",
         "dev_fund_reward": "0",
         "income_burn": "0",
         "type": "rewards"
@@ -3451,7 +3508,7 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "BF668B5E9A47BBC197D63F19A93D781EF9C04BDAB3390902820F106B65236042",
+      "app_hash": "20FC8D0C97361AAC4C4064C61D8906BDCD9D6A0F27B6D5573C05B7CF31ECD02B",
       "last_results_hash": "029499337E1C928506842F75CFF89E760FA8C9CF49845CB680D2579291F41D09",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
@@ -3461,11 +3518,11 @@
       {
         "chain": "ETH",
         "coin": "944000000 ETH.ETH",
-        "emit_asset": "24980373551 THOR.RUNE",
+        "emit_asset": "24980325811 THOR.RUNE",
         "from": "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
         "id": "0000000000000000000000000000000000000000000000000000000000000006",
-        "liquidity_fee": "23581472632",
-        "liquidity_fee_in_rune": "23581472632",
+        "liquidity_fee": "23581427565",
+        "liquidity_fee_in_rune": "23581427565",
         "memo": "=:THOR.RUNE:tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr::test:500",
         "pool": "ETH.ETH",
         "pool_slip": "4856",
@@ -3503,17 +3560,17 @@
         "type": "message"
       },
       {
-        "amount": "24978373551rune",
+        "amount": "24978325811rune",
         "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_spent"
       },
       {
-        "amount": "24978373551rune",
+        "amount": "24978325811rune",
         "receiver": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
         "type": "coin_received"
       },
       {
-        "amount": "24978373551rune",
+        "amount": "24978325811rune",
         "recipient": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
         "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "transfer"
@@ -3524,7 +3581,7 @@
       },
       {
         "chain": "THOR",
-        "coin": "24978373551 THOR.RUNE",
+        "coin": "24978325811 THOR.RUNE",
         "from": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "id": "0000000000000000000000000000000000000000000000000000000000000000",
         "in_tx_id": "0000000000000000000000000000000000000000000000000000000000000006",
@@ -3535,11 +3592,11 @@
       {
         "chain": "ETH",
         "coin": "50000000 ETH.ETH",
-        "emit_asset": "1834073718 THOR.RUNE",
+        "emit_asset": "1834070213 THOR.RUNE",
         "from": "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
         "id": "0000000000000000000000000000000000000000000000000000000000000006",
-        "liquidity_fee": "47172677",
-        "liquidity_fee_in_rune": "47172677",
+        "liquidity_fee": "47172587",
+        "liquidity_fee_in_rune": "47172587",
         "memo": "=:THOR.RUNE:tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr::test:500",
         "pool": "ETH.ETH",
         "pool_slip": "251",
@@ -3577,17 +3634,17 @@
         "type": "message"
       },
       {
-        "amount": "1832073718rune",
+        "amount": "1832070213rune",
         "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_spent"
       },
       {
-        "amount": "1832073718rune",
+        "amount": "1832070213rune",
         "receiver": "tthor1dl7un46w7l7f3ewrnrm6nq58nerjtp0d82uzjg",
         "type": "coin_received"
       },
       {
-        "amount": "1832073718rune",
+        "amount": "1832070213rune",
         "recipient": "tthor1dl7un46w7l7f3ewrnrm6nq58nerjtp0d82uzjg",
         "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "transfer"
@@ -3598,7 +3655,7 @@
       },
       {
         "chain": "THOR",
-        "coin": "1832073718 THOR.RUNE",
+        "coin": "1832070213 THOR.RUNE",
         "from": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "id": "0000000000000000000000000000000000000000000000000000000000000000",
         "in_tx_id": "0000000000000000000000000000000000000000000000000000000000000006",
@@ -3609,11 +3666,11 @@
       {
         "chain": "ETH",
         "coin": "6000000 ETH.ETH",
-        "emit_asset": "218911387 THOR.RUNE",
+        "emit_asset": "218910969 THOR.RUNE",
         "from": "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
         "id": "0000000000000000000000000000000000000000000000000000000000000006",
-        "liquidity_fee": "658710",
-        "liquidity_fee_in_rune": "658710",
+        "liquidity_fee": "658709",
+        "liquidity_fee_in_rune": "658709",
         "memo": "THOR-PROTOCOL-AFFILIATE",
         "pool": "ETH.ETH",
         "pool_slip": "30",
@@ -3651,17 +3708,17 @@
         "type": "message"
       },
       {
-        "amount": "216911387rune",
+        "amount": "216910969rune",
         "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_spent"
       },
       {
-        "amount": "216911387rune",
+        "amount": "216910969rune",
         "receiver": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_received"
       },
       {
-        "amount": "216911387rune",
+        "amount": "216910969rune",
         "recipient": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "transfer"
@@ -3672,7 +3729,7 @@
       },
       {
         "chain": "THOR",
-        "coin": "216911387 THOR.RUNE",
+        "coin": "216910969 THOR.RUNE",
         "from": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "id": "0000000000000000000000000000000000000000000000000000000000000000",
         "in_tx_id": "0000000000000000000000000000000000000000000000000000000000000006",
@@ -3681,17 +3738,17 @@
         "type": "outbound"
       },
       {
-        "amount": "1019121972rune",
+        "amount": "1976122822rune",
         "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_spent"
       },
       {
-        "amount": "1019121972rune",
+        "amount": "1976122822rune",
         "receiver": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_received"
       },
       {
-        "amount": "1019121972rune",
+        "amount": "1976122822rune",
         "recipient": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "transfer"
@@ -3701,17 +3758,17 @@
         "type": "message"
       },
       {
-        "amount": "1020232153rune",
+        "amount": "1977233049rune",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "1020232153rune",
+        "amount": "1977233049rune",
         "receiver": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "type": "coin_received"
       },
       {
-        "amount": "1020232153rune",
+        "amount": "1977233049rune",
         "recipient": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "transfer"
@@ -3721,8 +3778,8 @@
         "type": "message"
       },
       {
-        "ETH.ETH": "-1019121972",
-        "bond_reward": "1020232153",
+        "ETH.ETH": "-1976122822",
+        "bond_reward": "1977233049",
         "dev_fund_reward": "0",
         "income_burn": "0",
         "type": "rewards"
@@ -3862,7 +3919,7 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "A838FA657EF303A30586ABC77A8ADF4356F0D3221AAEAAB8BF59A21B2D0FEE9F",
+      "app_hash": "09BE5237B0851789D255E64A2DA13E01B343C92BC7D1DCB7C7C91B6BF84A4346",
       "last_results_hash": "B7BDDF975DD964C718947F74F0A70495200472DDD154DDC1D2CE0618328686D5",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
@@ -3872,39 +3929,39 @@
       {
         "chain": "THOR",
         "coin": "47200000000 THOR.RUNE",
-        "emit_asset": "478423156 ETH.ETH",
+        "emit_asset": "479735350 ETH.ETH",
         "from": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
         "id": "DC45F316F9C1092433136E56CF77182427B3ADF07C4E9F373BD7EF2505E56CC3",
-        "liquidity_fee": "313842189",
-        "liquidity_fee_in_rune": "11290786470",
+        "liquidity_fee": "318945750",
+        "liquidity_fee_in_rune": "11321754262",
         "memo": "=:ETH.ETH:0x1b03d088612a00df0049634e9cc8684d622cada2::test:500",
         "pool": "ETH.ETH",
-        "pool_slip": "3961",
+        "pool_slip": "3993",
         "streaming_swap_count": "1",
         "streaming_swap_quantity": "1",
-        "swap_slip": "3961",
+        "swap_slip": "3993",
         "swap_target": "0",
         "to": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "swap"
       },
       {
         "coins": "1280000 ETH.ETH",
-        "pool_deduct": "100150293",
+        "pool_deduct": "99431469",
         "tx_id": "DC45F316F9C1092433136E56CF77182427B3ADF07C4E9F373BD7EF2505E56CC3",
         "type": "fee"
       },
       {
-        "amount": "100150293rune",
+        "amount": "99431469rune",
         "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_spent"
       },
       {
-        "amount": "100150293rune",
+        "amount": "99431469rune",
         "receiver": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_received"
       },
       {
-        "amount": "100150293rune",
+        "amount": "99431469rune",
         "recipient": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "transfer"
@@ -3915,7 +3972,7 @@
       },
       {
         "chain": "ETH",
-        "coin_amount": "477143156",
+        "coin_amount": "478455350",
         "coin_asset": "ETH.ETH",
         "coin_decimals": "0",
         "gas_rate": "12",
@@ -3931,17 +3988,17 @@
         "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
       },
       {
-        "amount": "780303390rune",
+        "amount": "1154477153rune",
         "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_spent"
       },
       {
-        "amount": "780303390rune",
+        "amount": "1154477153rune",
         "receiver": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_received"
       },
       {
-        "amount": "780303390rune",
+        "amount": "1154477153rune",
         "recipient": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "transfer"
@@ -3951,17 +4008,17 @@
         "type": "message"
       },
       {
-        "amount": "781413583rune",
+        "amount": "1155587393rune",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "781413583rune",
+        "amount": "1155587393rune",
         "receiver": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "type": "coin_received"
       },
       {
-        "amount": "781413583rune",
+        "amount": "1155587393rune",
         "recipient": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "transfer"
@@ -3971,8 +4028,8 @@
         "type": "message"
       },
       {
-        "ETH.ETH": "-780303390",
-        "bond_reward": "781413583",
+        "ETH.ETH": "-1154477153",
+        "bond_reward": "1155587393",
         "dev_fund_reward": "0",
         "income_burn": "0",
         "type": "rewards"

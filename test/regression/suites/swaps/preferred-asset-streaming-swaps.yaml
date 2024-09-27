@@ -82,7 +82,7 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
-  - .[0]|.coin.amount == "${OUT_AMOUNT=10902903}"
+  - .[0]|.coin.amount == "${OUT_AMOUNT=10851065}"
 ---
 # Observe the outbound.
 type: tx-observed-out
@@ -142,7 +142,7 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/test
 asserts:
-  - .affiliate_collector_rune == "1466293739"
+  - .affiliate_collector_rune == "1466386756"
 ---
 ########################################################################################
 # streaming swap to trigger preferred asset swap
@@ -188,9 +188,9 @@ type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .|length == 1
-  - .[0]|.in_hash == "${IN_HASH=C059DCF5FFAB7E02708A269E30BD099CEB868AD7740FD4A54A69891EACC5F66D}"
+  - .[0]|.in_hash == "${IN_HASH=372AABFCE87C1D13ACE165189AD0F164D08FF33AD82DC3C4C7EE42989484F413}"
   - .[0]|.coin.asset == "ETH.USDX-0X9999999999999999999999999999999999999999"
-  - .[0]|.coin.amount == "${OUT_AMOUNT=1301254000}"
+  - .[0]|.coin.amount == "${OUT_AMOUNT=1301333200}"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -217,7 +217,7 @@ count: 2
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/test
 asserts:
-  - .affiliate_collector_rune == "145349582"
+  - .affiliate_collector_rune == "145360065"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/swap/streaming/{{ observe_txid 3 }}
@@ -227,7 +227,7 @@ asserts:
   - .count == 3
   - .interval == 1
   - .quantity == 5
-  - .out == "1633191600"
+  - .out == "1622921800"
   - .last_height == 11
   - .trade_target == "0"
   - .failed_swaps|length == 0
@@ -247,7 +247,7 @@ asserts:
   - .|length == 1
   - .[0]|.in_hash == "{{ observe_txid 3 }}"
   - .[0]|.coin.asset == "ETH.USDY-0X9999999999999999999999999999999999999999"
-  - .[0]|.coin.amount == "${OUT_AMOUNT=2549700400}"
+  - .[0]|.coin.amount == "${OUT_AMOUNT=2533133200}"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}

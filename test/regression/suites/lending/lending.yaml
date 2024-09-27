@@ -917,4 +917,4 @@ asserts:
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
 asserts:
-  - .result[]|select(.denom == "rune")|.amount == "10000801977"
+  - .result[]|select(.denom == "rune")|.amount == "10000801862"

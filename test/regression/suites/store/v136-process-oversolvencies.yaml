@@ -149,7 +149,7 @@ endpoint: http://localhost:1317/thorchain/pools
 asserts:
   - .| length == 1
   - .[0].pending_inbound_rune == "0"
-  - .[0].balance_rune == "${POOL_RUNE=100003176194}" # Including rewards.
+  - .[0].balance_rune == "${POOL_RUNE=100003196196}" # Including rewards.
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/balance/module/asgard
