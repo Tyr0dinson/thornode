@@ -1580,6 +1580,7 @@ func queryPools(ctx cosmos.Context, req abci.RequestQuery, mgr *Mgrs) ([]byte, e
 			BalanceRune:         pool.BalanceRune.String(),
 			PoolUnits:           pool.GetPoolUnits().String(),
 			LPUnits:             pool.LPUnits.String(),
+			BankUnits:           pool.BankUnits.String(),
 			SynthUnits:          pool.SynthUnits.String(),
 		}
 

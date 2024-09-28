@@ -163,6 +163,8 @@ func getInternalHandlerMapping(mgr Manager) map[string]MsgHandler {
 	m[MsgTradeAccountWithdrawal{}.Type()] = NewTradeAccountWithdrawalHandler(mgr)
 	m[MsgRunePoolDeposit{}.Type()] = NewRunePoolDepositHandler(mgr)
 	m[MsgRunePoolWithdraw{}.Type()] = NewRunePoolWithdrawHandler(mgr)
+	m[MsgLpMint{}.Type()] = NewLpMintHandler(mgr)
+	m[MsgLpRedeem{}.Type()] = NewLpRedeemHandler(mgr)
 	return m
 }
 

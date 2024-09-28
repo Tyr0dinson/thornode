@@ -53,7 +53,6 @@ func (s *LpTokenMgrVCUR) Mint(
 	if err != nil {
 		return cosmos.ZeroUint(), err
 	}
-
 	err = s.bank.SendCoinsFromModuleToAccount(ctx, ModuleName, recipient, coins)
 	if err != nil {
 		return cosmos.ZeroUint(), err

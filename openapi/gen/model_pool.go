@@ -26,10 +26,12 @@ type Pool struct {
 	BalanceRune string `json:"balance_rune"`
 	// the USD (TOR) price of the asset in 1e8
 	AssetTorPrice string `json:"asset_tor_price"`
-	// the total pool units, this is the sum of LP and synth units
+	// the total pool units, this is the sum of LP, bank and synth units
 	PoolUnits string `json:"pool_units"`
-	// the total pool liquidity provider units
+	// the total pool liquidity provider units not accounted for with x/bank tokens
 	LPUnits string `json:"LP_units"`
+	// the total pool liquidity provider units accounted for with x/bank tokens
+	BankUnits string `json:"bank_units"`
 	// the total synth units in the pool
 	SynthUnits string `json:"synth_units"`
 	// the total supply of synths for the asset
@@ -60,7 +62,7 @@ type Pool struct {
 // This constructor will assign default values to properties that have it defined,
 // and makes sure properties required by API are set, but the set of arguments
 // will change when the set of required properties is changed
-func NewPool(asset string, status string, pendingInboundAsset string, pendingInboundRune string, balanceAsset string, balanceRune string, assetTorPrice string, poolUnits string, lPUnits string, synthUnits string, synthSupply string, saversDepth string, saversUnits string, saversFillBps string, saversCapacityRemaining string, synthMintPaused bool, synthSupplyRemaining string, loanCollateral string, loanCollateralRemaining string, loanCr string, derivedDepthBps string) *Pool {
+func NewPool(asset string, status string, pendingInboundAsset string, pendingInboundRune string, balanceAsset string, balanceRune string, assetTorPrice string, poolUnits string, lPUnits string, bankUnits string, synthUnits string, synthSupply string, saversDepth string, saversUnits string, saversFillBps string, saversCapacityRemaining string, synthMintPaused bool, synthSupplyRemaining string, loanCollateral string, loanCollateralRemaining string, loanCr string, derivedDepthBps string) *Pool {
 	this := Pool{}
 	this.Asset = asset
 	this.Status = status
@@ -71,6 +73,7 @@ func NewPool(asset string, status string, pendingInboundAsset string, pendingInb
 	this.AssetTorPrice = assetTorPrice
 	this.PoolUnits = poolUnits
 	this.LPUnits = lPUnits
+	this.BankUnits = bankUnits
 	this.SynthUnits = synthUnits
 	this.SynthSupply = synthSupply
 	this.SaversDepth = saversDepth
@@ -372,6 +375,30 @@ func (o *Pool) GetLPUnitsOk() (*string, bool) {
 // SetLPUnits sets field value
 func (o *Pool) SetLPUnits(v string) {
 	o.LPUnits = v
+}
+
+// GetBankUnits returns the BankUnits field value
+func (o *Pool) GetBankUnits() string {
+	if o == nil {
+		var ret string
+		return ret
+	}
+
+	return o.BankUnits
+}
+
+// GetBankUnitsOk returns a tuple with the BankUnits field value
+// and a boolean to check if the value has been set.
+func (o *Pool) GetBankUnitsOk() (*string, bool) {
+	if o == nil {
+		return nil, false
+	}
+	return &o.BankUnits, true
+}
+
+// SetBankUnits sets field value
+func (o *Pool) SetBankUnits(v string) {
+	o.BankUnits = v
 }
 
 // GetSynthUnits returns the SynthUnits field value
@@ -696,6 +723,9 @@ func (o Pool) MarshalJSON_deprecated() ([]byte, error) {
 	}
 	if true {
 		toSerialize["LP_units"] = o.LPUnits
+	}
+	if true {
+		toSerialize["bank_units"] = o.BankUnits
 	}
 	if true {
 		toSerialize["synth_units"] = o.SynthUnits
