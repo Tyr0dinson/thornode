@@ -61,7 +61,11 @@ func (s *LpTokenMgrVCUR) Mint(
 		return cosmos.ZeroUint(), err
 	}
 
-	s.keeper.SetPool(ctx, pool)
+	err = s.keeper.SetPool(ctx, pool)
+	if err != nil {
+		return cosmos.ZeroUint(), err
+	}
+
 	s.keeper.SetLiquidityProvider(ctx, lp)
 	return amount, nil
 }
@@ -102,7 +106,11 @@ func (s *LpTokenMgrVCUR) Redeem(
 	pool.BankUnits = pool.BankUnits.Sub(amount)
 	pool.LPUnits = pool.LPUnits.Add(amount)
 
-	s.keeper.SetPool(ctx, pool)
+	err = s.keeper.SetPool(ctx, pool)
+	if err != nil {
+		return cosmos.ZeroUint(), err
+	}
+
 	s.keeper.SetLiquidityProvider(ctx, lp)
 	return amount, nil
 }

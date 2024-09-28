@@ -53,10 +53,11 @@ func (s *HandlerLpMintSuite) TestLpMintHandler(c *C) {
 	accAddr := cosmos.AccAddress(runeAddr)
 
 	pool, err := mgr.Keeper().GetPool(ctx, common.ETHAsset)
+	c.Assert(err, IsNil)
 	provider, err := mgr.Keeper().GetLiquidityProvider(ctx, common.ETHAsset, runeAddr)
+	c.Assert(err, IsNil)
 	balance := mgr.coinKeeper.GetBalance(ctx, accAddr, "lp.ETH.ETH")
 
-	c.Assert(err, IsNil)
 	c.Assert(pool.LPUnits.String(), Equals, "10000000000")
 	c.Assert(pool.SynthUnits.String(), Equals, "0")
 	c.Assert(pool.BankUnits.String(), Equals, "0")
@@ -84,10 +85,11 @@ func (s *HandlerLpMintSuite) TestLpMintHandler(c *C) {
 	c.Assert(err, IsNil)
 
 	pool, err = mgr.Keeper().GetPool(ctx, common.ETHAsset)
+	c.Assert(err, IsNil)
 	provider, err = mgr.Keeper().GetLiquidityProvider(ctx, common.ETHAsset, runeAddr)
+	c.Assert(err, IsNil)
 	balance = mgr.coinKeeper.GetBalance(ctx, accAddr, "lp.eth.eth")
 
-	c.Assert(err, IsNil)
 	c.Assert(pool.LPUnits.String(), Equals, "7500000000")
 	c.Assert(provider.Units.String(), Equals, "7500000000")
 	c.Assert(balance.Amount.String(), Equals, "2500000000")

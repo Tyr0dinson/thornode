@@ -90,10 +90,12 @@ func (s *HandlerLpRedeemSuite) TestLpRedeemHandler(c *C) {
 	c.Assert(err, IsNil)
 
 	pool, err := mgr.Keeper().GetPool(ctx, common.ETHAsset)
+	c.Assert(err, IsNil)
+
 	provider, err := mgr.Keeper().GetLiquidityProvider(ctx, common.ETHAsset, runeAddr)
+	c.Assert(err, IsNil)
 	balance := mgr.coinKeeper.GetBalance(ctx, accAddr, "lp.eth.eth")
 
-	c.Assert(err, IsNil)
 	c.Assert(pool.LPUnits.String(), Equals, "9500000000")
 	c.Assert(provider.Units.String(), Equals, "9500000000")
 	c.Assert(balance.Amount.String(), Equals, "500000000")
