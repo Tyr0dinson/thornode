@@ -253,16 +253,16 @@ func calculateWithdrawV137(ctx cosmos.Context, keeper keeper.Keeper, poolAsset c
 	minSlipBps := getMinSlipBps(ctx, keeper, poolAsset)
 	// Being for a non-Savers asymmetric liquidity action, MinSlipBps should always be for an L1 swap.
 	y, liqFee, _ := swapper.GetSwapCalc(X, x, Y, swapSlipBps, minSlipBps)
-	y = y.Add(yAdd)
+	outputAmount := y.Add(yAdd)
 	// Waive any implicit slip fee for POL withdrawals, effectively an XYK constant-depths half-swap.
 	if isPOL {
-		y = y.Add(liqFee)
+		outputAmount = outputAmount.Add(liqFee)
 	}
 
 	if withdrawalAsset.IsRune() {
-		return y, cosmos.ZeroUint(), unitAfter, nil
+		return outputAmount, cosmos.ZeroUint(), unitAfter, nil
 	}
-	return cosmos.ZeroUint(), y, unitAfter, nil
+	return cosmos.ZeroUint(), outputAmount, unitAfter, nil
 }
 
 func calculateVaultWithdraw(vaultUnits, assetAmt, lpUnits, withdrawBasisPoints cosmos.Uint) (cosmos.Uint, cosmos.Uint, cosmos.Uint) {
