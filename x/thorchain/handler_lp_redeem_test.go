@@ -63,7 +63,7 @@ func (s *HandlerLpRedeemSuite) TestLpRedeemHandler(c *C) {
 		common.ETHAsset, runeAddr,
 		cosmos.NewUint(25*common.One),
 		accAddr, activeNodeAccount.NodeAddress,
-		tx.ID,
+		tx,
 	)
 
 	_, err = mh.Run(ctx, mintMsg)
@@ -73,7 +73,7 @@ func (s *HandlerLpRedeemSuite) TestLpRedeemHandler(c *C) {
 	msg := NewMsgLpRedeem(common.ETHAsset, runeAddr,
 		cosmos.NewUint(30*common.One),
 		activeNodeAccount.NodeAddress,
-		tx.ID,
+		tx,
 	)
 	_, err = h.Run(ctx, msg)
 	c.Assert(err, NotNil)
@@ -82,7 +82,7 @@ func (s *HandlerLpRedeemSuite) TestLpRedeemHandler(c *C) {
 	msg = NewMsgLpRedeem(common.ETHAsset, runeAddr,
 		cosmos.NewUint(20*common.One),
 		activeNodeAccount.NodeAddress,
-		tx.ID,
+		tx,
 	)
 	_, err = h.Run(ctx, msg)
 	c.Assert(err, IsNil)

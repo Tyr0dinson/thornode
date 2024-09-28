@@ -78,7 +78,7 @@ func (s *HandlerLpMintSuite) TestLpMintHandler(c *C) {
 		cosmos.NewUint(25*common.One),
 		accAddr,
 		activeNodeAccount.NodeAddress,
-		tx.ID,
+		tx,
 	)
 	_, err = h.Run(ctx, msg)
 	c.Assert(err, IsNil)

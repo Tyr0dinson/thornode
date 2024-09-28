@@ -3,6 +3,7 @@ package thorchain
 import (
 	"github.com/blang/semver"
 
+	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
@@ -47,6 +48,10 @@ func (h LpRedeemHandler) validate(ctx cosmos.Context, msg MsgLpRedeem) error {
 }
 
 func (h LpRedeemHandler) validateV137(ctx cosmos.Context, msg MsgLpRedeem) error {
+	if msg.Tx.Chain != common.THORChain {
+		return cosmos.ErrUnauthorized("Chain must be THORChain")
+	}
+
 	return msg.ValidateBasic()
 }
 
@@ -62,10 +67,28 @@ func (h LpRedeemHandler) handle(ctx cosmos.Context, msg MsgLpRedeem) error {
 
 // handle process MsgLpRedeem
 func (h LpRedeemHandler) handleV137(ctx cosmos.Context, msg MsgLpRedeem) error {
-	_, err := h.mgr.LpTokenManager().Redeem(ctx, msg.Asset, msg.AccountAddress, msg.Amount, msg.TxID)
+	_, err := h.mgr.LpTokenManager().Redeem(ctx, msg.Asset, msg.AccountAddress, msg.Amount)
 	if err != nil {
 		ctx.Logger().Error("fail to handle LP Token Redeem", "error", err)
 		return err
 	}
+
+	// Return any funds
+	cosmosAcc, err := msg.Tx.FromAddress.AccAddress()
+	if err != nil {
+		return err
+	}
+	coin := msg.Tx.Coins.GetCoin(common.RuneAsset())
+	if !coin.IsEmpty() {
+		err = h.mgr.Keeper().SendFromModuleToAccount(ctx,
+			AsgardName,
+			cosmosAcc,
+			common.NewCoins(coin),
+		)
+		if err != nil {
+			return err
+		}
+	}
+
 	return nil
 }

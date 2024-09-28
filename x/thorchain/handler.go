@@ -214,7 +214,7 @@ func getMsgMintLpFromMemo(ctx cosmos.Context, memo MintLpMemo, tx ObservedTx, si
 		memo.Amount,
 		memo.Recipient,
 		signer,
-		tx.Tx.ID,
+		tx.Tx,
 	), nil
 }
 
@@ -296,7 +296,7 @@ func processOneTxIn(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, sig
 		newMsg = NewMsgLpRedeem(memo.GetAsset(),
 			// Accesses a user account. Must be validated
 			tx.Tx.FromAddress,
-			memo.GetAmount(), signer, tx.Tx.ID)
+			memo.GetAmount(), signer, tx.Tx)
 	case SwapMemo:
 		m.Asset = fuzzyAssetMatch(ctx, keeper, m.Asset)
 		m.DexTargetAddress = externalAssetMatch(keeper.GetVersion(), m.Asset.GetChain(), m.DexTargetAddress)

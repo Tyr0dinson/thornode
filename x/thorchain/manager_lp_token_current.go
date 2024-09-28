@@ -29,7 +29,6 @@ func (s *LpTokenMgrVCUR) Mint(
 	accAddr common.Address,
 	amount cosmos.Uint,
 	recipient cosmos.AccAddress,
-	txID common.TxID,
 ) (cosmos.Uint, error) {
 	pool, err := s.keeper.GetPool(ctx, asset)
 	if err != nil {
@@ -72,7 +71,6 @@ func (s *LpTokenMgrVCUR) Redeem(
 	asset common.Asset,
 	accAddr common.Address,
 	amount cosmos.Uint,
-	txID common.TxID,
 ) (cosmos.Uint, error) {
 	pool, err := s.keeper.GetPool(ctx, asset)
 	if err != nil {

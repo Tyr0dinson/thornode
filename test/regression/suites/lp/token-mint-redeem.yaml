@@ -8,7 +8,7 @@ count: 1
 type: tx-deposit
 signer: {{ addr_thor_cat }}
 coins:
-  - amount: "0"
+  - amount: "100"
     asset: "rune"
 memo: "lp+:BTC.BTC:1000:{{ addr_thor_cat }}"
 ---
@@ -32,7 +32,7 @@ asserts:
 type: tx-deposit
 signer: {{ addr_thor_cat }}
 coins:
-  - amount: "0"
+  - amount: "100"
     asset: "rune"
 memo: "lp-:BTC.BTC:500:{{ addr_thor_cat }}"
 ---

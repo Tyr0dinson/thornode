@@ -46,8 +46,8 @@ type Manager interface {
 }
 
 type LpTokenManager interface {
-	Mint(ctx cosmos.Context, asset common.Asset, accAddr common.Address, amount cosmos.Uint, recipient cosmos.AccAddress, txID common.TxID) (cosmos.Uint, error)
-	Redeem(ctx cosmos.Context, asset common.Asset, accAddr common.Address, amount cosmos.Uint, txID common.TxID) (cosmos.Uint, error)
+	Mint(ctx cosmos.Context, asset common.Asset, accAddr common.Address, amount cosmos.Uint, recipient cosmos.AccAddress) (cosmos.Uint, error)
+	Redeem(ctx cosmos.Context, asset common.Asset, accAddr common.Address, amount cosmos.Uint) (cosmos.Uint, error)
 }
 
 type TradeAccountManager interface {

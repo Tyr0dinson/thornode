@@ -12,7 +12,7 @@ message MsgLpMint {
   string amount = 3 [(gogoproto.customtype) = "github.com/cosmos/cosmos-sdk/types.Uint", (gogoproto.nullable) = false];
   bytes recipient = 4 [(gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress"];
   bytes signer = 5 [(gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress"];
-  string tx_id = 6 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/common.TxID", (gogoproto.customname) = "TxID"];
+  common.Tx tx = 6 [(gogoproto.nullable) = false];
 }
 
 
@@ -21,7 +21,6 @@ message MsgLpRedeem {
   string account_address = 2 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/common.Address"];
   string amount = 3 [(gogoproto.customtype) = "github.com/cosmos/cosmos-sdk/types.Uint", (gogoproto.nullable) = false];
   bytes signer = 4 [(gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress"];
-  string tx_id = 5 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/common.TxID", (gogoproto.customname) = "TxID"];
-
+  common.Tx tx = 5 [(gogoproto.nullable) = false];
 }
 

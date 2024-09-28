@@ -11,10 +11,10 @@ func NewMsgLpMint(
 	accAddr common.Address,
 	amount cosmos.Uint,
 	recipient, signer cosmos.AccAddress,
-	txID common.TxID,
+	tx common.Tx,
 ) *MsgLpMint {
 	return &MsgLpMint{
-		TxID:           txID,
+		Tx:             tx,
 		Asset:          asset,
 		AccountAddress: accAddr,
 		Amount:         amount,
@@ -62,11 +62,11 @@ func NewMsgLpRedeem(
 	accAddr common.Address,
 	amount cosmos.Uint,
 	signer cosmos.AccAddress,
-	txID common.TxID,
+	tx common.Tx,
 ) *MsgLpRedeem {
 	return &MsgLpRedeem{
 		AccountAddress: accAddr,
-		TxID:           txID,
+		Tx:             tx,
 		Asset:          asset,
 		Amount:         amount,
 		Signer:         signer,
