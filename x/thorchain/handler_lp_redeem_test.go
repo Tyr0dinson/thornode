@@ -52,10 +52,12 @@ func (s *HandlerLpRedeemSuite) TestLpRedeemHandler(c *C) {
 	_, err = ah.Run(ctx, addMsg)
 	c.Assert(err, IsNil)
 
-	accAddr := cosmos.AccAddress(runeAddr)
+	accAddr, err := runeAddr.AccAddress()
+	c.Assert(err, IsNil)
+
 	tx = common.NewTx(GetRandomTxHash(), runeAddr, ethAddr,
-		common.Coins{},
-		common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(10000))},
+		common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(100))},
+		common.Gas{common.NewCoin(common.RuneAsset(), cosmos.NewUint(10000))},
 		"lp-:ETH",
 	)
 

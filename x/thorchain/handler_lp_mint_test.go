@@ -66,9 +66,9 @@ func (s *HandlerLpMintSuite) TestLpMintHandler(c *C) {
 	tx = common.NewTx(
 		GetRandomTxHash(),
 		runeAddr,
-		ethAddr,
-		common.Coins{},
-		common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(10000))},
+		runeAddr,
+		common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(100))},
+		common.Gas{common.NewCoin(common.RuneAsset(), cosmos.NewUint(10000))},
 		"lp+:ETH",
 	)
 
