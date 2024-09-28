@@ -71,26 +71,6 @@ package app
 // 	snapshotStore, err := snapshots.NewStore(snapshotDB, snapshotDir)
 // 	require.NoError(t, err)
 
-// 	appOptions := make(simtestutil.AppOptionsMap, 0)
-// 	appOptions[flags.FlagHome] = nodeHome // ensure unique folder
-// 	appOptions[server.FlagInvCheckPeriod] = invCheckPeriod
-// 	app := NewChainApp(
-// 		log.NewNopLogger(),
-// 		db,
-// 		nil,
-// 		true,
-// 		appOptions,
-// 		bam.SetChainID(chainID),
-// 		bam.SetSnapshot(snapshotStore, snapshottypes.SnapshotOptions{KeepRecent: 2}),
-// 	)
-// 	if withGenesis {
-// 		return app, app.DefaultGenesis()
-// 	}
-// 	return app, GenesisState{}
-// }
-
-// // NewChainAppWithCustomOptions initializes a new ChainApp with custom options.
-// func NewChainAppWithCustomOptions(t *testing.T, isCheckTx bool, options SetupOptions) *THORChainApp {
 // 	t.Helper()
 
 // 	privVal := mock.NewPV()

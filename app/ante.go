@@ -5,6 +5,8 @@ import (
 
 	corestoretypes "cosmossdk.io/core/store"
 
+	wasmkeeper "github.com/CosmWasm/wasmd/x/wasm/keeper"
+	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/x/auth/ante"
 
@@ -16,6 +18,9 @@ import (
 // channel keeper.
 type HandlerOptions struct {
 	ante.HandlerOptions
+
+	WasmConfig *wasmtypes.WasmConfig
+	WasmKeeper *wasmkeeper.Keeper
 
 	TXCounterStoreService corestoretypes.KVStoreService
 
@@ -35,6 +40,9 @@ func NewAnteHandler(options HandlerOptions) (sdk.AnteHandler, error) {
 	if options.SignModeHandler == nil {
 		return nil, errors.New("sign mode handler is required for ante builder")
 	}
+	if options.WasmConfig == nil {
+		return nil, errors.New("wasm config is required for ante builder")
+	}
 	if options.THORChainKeeper == nil {
 		return nil, errors.New("thorchain keeper is required for ante builder")
 	}
@@ -44,6 +52,10 @@ func NewAnteHandler(options HandlerOptions) (sdk.AnteHandler, error) {
 
 	anteDecorators := []sdk.AnteDecorator{
 		ante.NewSetUpContextDecorator(), // outermost AnteDecorator. SetUpContext must be called first
+
+		wasmkeeper.NewLimitSimulationGasDecorator(options.WasmConfig.SimulationGasLimit), // after setup context to enforce limits early
+		wasmkeeper.NewCountTXDecorator(options.TXCounterStoreService),
+		wasmkeeper.NewGasRegisterDecorator(options.WasmKeeper.GetGasRegister()),
 
 		// replace gas meter immediately after setting up ctx
 		thorchain.NewInfiniteGasDecorator(options.THORChainKeeper),
