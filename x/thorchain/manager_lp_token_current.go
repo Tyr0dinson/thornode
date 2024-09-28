@@ -84,8 +84,13 @@ func (s *LpTokenMgrVCUR) Redeem(
 		return cosmos.ZeroUint(), ErrInternal(err, "fail to get liquidity provider")
 	}
 
+	cosmosAccAddr, err := accAddr.AccAddress()
+	if err != nil {
+		return cosmos.ZeroUint(), err
+	}
+
 	coins := cosmos.NewCoins(cosmos.NewCoin(pool.NativeLpDenomString(), cosmos.Int(amount)))
-	err = s.bank.SendCoinsFromAccountToModule(ctx, cosmos.AccAddress(accAddr), ModuleName, coins)
+	err = s.bank.SendCoinsFromAccountToModule(ctx, cosmosAccAddr, ModuleName, coins)
 	if err != nil {
 		return cosmos.ZeroUint(), err
 	}

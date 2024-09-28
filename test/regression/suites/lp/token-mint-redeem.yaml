@@ -28,27 +28,27 @@ endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_providers
 asserts:
   - .[0].asset == "BTC.BTC"
   - .[0].units == "99999999000"
-# ---
-# type: tx-deposit
-# signer: {{ addr_thor_cat }}
-# coins:
-#   - amount: "0"
-#     asset: "rune"
-# memo: "lp-:BTC.BTC:500:{{ addr_thor_cat }}"
-# ---
-# type: create-blocks
-# count: 1
-# ---
-# type: check
-# endpoint: http://localhost:1317/thorchain/pools
-# asserts:
-#   - .[0].asset == "BTC.BTC"
-#   - .[0].pool_units == "100000000000"
-#   - .[0].LP_units == "99999999500"
-#   - .[0].bank_units == "500"
-# ---
-# type: check
-# endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_providers
-# asserts:
-#   - .[0].asset == "BTC.BTC"
-#   - .[0].units == "99999999500"
+---
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "0"
+    asset: "rune"
+memo: "lp-:BTC.BTC:500:{{ addr_thor_cat }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .[0].asset == "BTC.BTC"
+  - .[0].pool_units == "100000000000"
+  - .[0].LP_units == "99999999500"
+  - .[0].bank_units == "500"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_providers
+asserts:
+  - .[0].asset == "BTC.BTC"
+  - .[0].units == "99999999500"
