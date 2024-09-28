@@ -37,6 +37,9 @@ import (
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 	kv1 "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/v1"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
+
+	wasmkeeper "github.com/CosmWasm/wasmd/x/wasm/keeper"
+	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
 )
 
 var errKaboom = errors.New("kaboom")
@@ -93,12 +96,15 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 	keyAcc := cosmos.NewKVStoreKey(authtypes.StoreKey)
 	keyBank := cosmos.NewKVStoreKey(banktypes.StoreKey)
 	keyUpgrade := cosmos.NewKVStoreKey(upgradetypes.StoreKey)
+	keyWasm := cosmos.NewKVStoreKey(wasmtypes.StoreKey)
 
 	db := dbm.NewMemDB()
 	ms := store.NewCommitMultiStore(db, sdklog.NewNopLogger(), storemetrics.NewNoOpMetrics())
 	ms.MountStoreWithDB(keyAcc, cosmos.StoreTypeIAVL, db)
 	ms.MountStoreWithDB(keyThorchain, cosmos.StoreTypeIAVL, db)
 	ms.MountStoreWithDB(keyBank, cosmos.StoreTypeIAVL, db)
+	ms.MountStoreWithDB(keyWasm, cosmos.StoreTypeIAVL, db)
+
 	err := ms.LoadLatestVersion()
 	c.Assert(err, IsNil)
 
@@ -136,6 +142,16 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 		authtypes.NewModuleAddress(ModuleName).String(),
 		sdklog.NewNopLogger(),
 	)
+	wk := wasmkeeper.NewKeeper(
+		encodingConfig.Codec,
+		runtime.NewKVStoreService(keyWasm),
+		ak, bk,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, "wasm",
+		wasmtypes.DefaultWasmConfig(), wasmkeeper.BuiltInCapabilities(),
+		authtypes.NewModuleAddress(ModuleName).String(),
+		nil,
+	)
+
 	c.Assert(bk.MintCoins(ctx, ModuleName, cosmos.Coins{
 		cosmos.NewCoin(common.RuneAsset().Native(), cosmos.NewInt(200_000_000_00000000)),
 	}), IsNil)
@@ -170,7 +186,7 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 	}), IsNil)
 
 	os.Setenv("NET", "mocknet")
-	mgr := NewManagers(k, encodingConfig.Codec, bk, ak, uk, keyThorchain)
+	mgr := NewManagers(k, encodingConfig.Codec, bk, ak, uk, wk, keyThorchain)
 	constants.SWVersion = GetCurrentVersion()
 
 	_, hasVerStored := k.GetVersionWithCtx(ctx)
@@ -237,6 +253,7 @@ func setupKeeperForTest(c *C) (cosmos.Context, keeper.Keeper) {
 		authtypes.NewModuleAddress(ModuleName).String(),
 		sdklog.NewNopLogger(),
 	)
+
 	c.Assert(bk.MintCoins(ctx, ModuleName, cosmos.Coins{
 		cosmos.NewCoin(common.RuneAsset().Native(), cosmos.NewInt(200_000_000_00000000)),
 	}), IsNil)

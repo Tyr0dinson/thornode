@@ -186,6 +186,7 @@ var (
 	NewMsgRejectUpgrade            = types.NewMsgRejectUpgrade
 	NewMsgSetIPAddress             = types.NewMsgSetIPAddress
 	NewMsgNetworkFee               = types.NewMsgNetworkFee
+	NewMsgWasmExec                 = types.NewMsgWasmExec
 	NewNetworkFee                  = types.NewNetworkFee
 	NewTHORName                    = types.NewTHORName
 	NewLoan                        = types.NewLoan
@@ -276,6 +277,7 @@ type (
 	MsgLoanRepayment          = types.MsgLoanRepayment
 	MsgRunePoolDeposit        = types.MsgRunePoolDeposit
 	MsgRunePoolWithdraw       = types.MsgRunePoolWithdraw
+	MsgWasmExec               = types.MsgWasmExec
 
 	// Keeper structs
 	PoolStatus               = types.PoolStatus
@@ -374,6 +376,7 @@ type (
 	LoanRepaymentMemo          = mem.LoanRepaymentMemo
 	RunePoolDepositMemo        = mem.RunePoolDepositMemo
 	RunePoolWithdrawMemo       = mem.RunePoolWithdrawMemo
+	ExecMemo                   = mem.ExecMemo
 
 	// Proto
 	ProtoStrings = types.ProtoStrings

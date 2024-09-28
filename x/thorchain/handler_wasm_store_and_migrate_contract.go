@@ -1,0 +1,78 @@
+package thorchain
+
+import (
+	"fmt"
+
+	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
+	"github.com/blang/semver"
+
+	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+)
+
+// WasmStoreAndMigrateContractHandler processes incoming MsgStoreAndMigrateContract messages from x/wasm
+type WasmStoreAndMigrateContractHandler struct {
+	mgr Manager
+}
+
+// NewWasmStoreAndMigrateContractHandler create a new instance of WasmStoreAndMigrateContractHandler
+func NewWasmStoreAndMigrateContractHandler(mgr Manager) WasmStoreAndMigrateContractHandler {
+	return WasmStoreAndMigrateContractHandler{
+		mgr: mgr,
+	}
+}
+
+// Run is the main entry of WasmStoreAndMigrateContractHandler
+func (h WasmStoreAndMigrateContractHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, error) {
+	msg, ok := m.(*wasmtypes.MsgStoreAndMigrateContract)
+	if !ok {
+		return nil, errInvalidMessage
+	}
+	if err := h.validate(ctx, *msg); err != nil {
+		ctx.Logger().Error("MsgStoreAndMigrateContract failed validation", "error", err)
+		return nil, err
+	}
+	result, err := h.handle(ctx, *msg)
+	if err != nil {
+		ctx.Logger().Error("fail to process MsgStoreAndMigrateContract", "error", err)
+		return nil, err
+	}
+	return result, nil
+}
+
+func (h WasmStoreAndMigrateContractHandler) validate(ctx cosmos.Context, msg wasmtypes.MsgStoreAndMigrateContract) error {
+	version := h.mgr.GetVersion()
+	switch {
+	case version.GTE(semver.MustParse("2.137.0")):
+		return h.validateV137(ctx, msg)
+	default:
+		return errInvalidVersion
+	}
+}
+
+func (h WasmStoreAndMigrateContractHandler) validateV137(ctx cosmos.Context, msg wasmtypes.MsgStoreAndMigrateContract) error {
+	return nil
+}
+
+func (h WasmStoreAndMigrateContractHandler) handle(ctx cosmos.Context, msg wasmtypes.MsgStoreAndMigrateContract) (*cosmos.Result, error) {
+	ctx.Logger().Info("receive MsgStoreAndMigrateContract", "from", msg.Authority)
+	version := h.mgr.GetVersion()
+	switch {
+	case version.GTE(semver.MustParse("2.137.0")):
+		return h.handleV137(ctx, msg)
+	default:
+		return nil, errInvalidVersion
+	}
+}
+
+func (h WasmStoreAndMigrateContractHandler) handleV137(ctx cosmos.Context, msg wasmtypes.MsgStoreAndMigrateContract) (*cosmos.Result, error) {
+	if h.mgr.Keeper().IsChainHalted(ctx, common.THORChain) {
+		return nil, fmt.Errorf("unable to use MsgStoreAndMigrateContract while THORChain is halted")
+	}
+	_, err := h.mgr.WasmManager().StoreAndMigrateContract(ctx, &msg)
+	if err != nil {
+		return &cosmos.Result{}, err
+	}
+
+	return &cosmos.Result{}, nil
+}

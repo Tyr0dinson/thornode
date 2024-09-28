@@ -6,6 +6,7 @@ package types
 import (
 	context "context"
 	fmt "fmt"
+	types "github.com/CosmWasm/wasmd/x/wasm/types"
 	_ "github.com/cosmos/cosmos-sdk/types/msgservice"
 	grpc1 "github.com/cosmos/gogoproto/grpc"
 	proto "github.com/cosmos/gogoproto/proto"
@@ -72,45 +73,69 @@ func init() {
 func init() { proto.RegisterFile("types/tx.proto", fileDescriptor_991dda0e66fd389c) }
 
 var fileDescriptor_991dda0e66fd389c = []byte{
-	// 596 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x6c, 0x94, 0xcd, 0x6e, 0xd3, 0x4e,
-	0x14, 0xc5, 0x1b, 0x55, 0xfd, 0xb7, 0x9a, 0x3f, 0x2d, 0x62, 0xe8, 0x97, 0x82, 0xb0, 0x10, 0x12,
-	0x0b, 0x40, 0xc4, 0xa2, 0x15, 0x42, 0x88, 0x55, 0x03, 0xad, 0x54, 0x95, 0x34, 0x11, 0x09, 0x2c,
-	0xd8, 0x58, 0x93, 0xf8, 0xd6, 0x31, 0xb5, 0x3d, 0xd6, 0xdc, 0x89, 0x49, 0x76, 0x3c, 0x02, 0x8f,
-	0xc2, 0x63, 0x74, 0xd9, 0x25, 0x4b, 0x94, 0x2c, 0x78, 0x0d, 0xe4, 0x2f, 0x66, 0xac, 0x99, 0x55,
-	0x32, 0xe7, 0x77, 0x4f, 0x72, 0x7d, 0xef, 0xf1, 0x90, 0x1d, 0xb9, 0x48, 0x01, 0x5d, 0x39, 0xef,
-	0xa4, 0x82, 0x4b, 0x4e, 0x37, 0x8a, 0x73, 0xfb, 0x60, 0xc2, 0x31, 0xe6, 0xe8, 0xc6, 0x18, 0xb8,
-	0xd9, 0xcb, 0xfc, 0xa3, 0xe4, 0xed, 0xfb, 0x65, 0x7d, 0x8c, 0x81, 0x37, 0x66, 0x49, 0x25, 0x1e,
-	0x28, 0xd1, 0x87, 0x94, 0x63, 0x28, 0x2b, 0xb0, 0xaf, 0x00, 0x08, 0xc1, 0x24, 0xab, 0xf4, 0x3d,
-	0xa5, 0xc7, 0x61, 0x1c, 0x8a, 0x4a, 0x7e, 0xa0, 0xe4, 0x04, 0xe4, 0x37, 0x2e, 0xae, 0xbd, 0x2b,
-	0x80, 0x0a, 0x3e, 0xd2, 0x20, 0xf7, 0xc1, 0x4b, 0xd9, 0x0c, 0xc1, 0x9b, 0x4c, 0x59, 0x58, 0xb7,
-	0xf1, 0x50, 0x55, 0xf0, 0x31, 0x82, 0xc8, 0xc0, 0xf7, 0xe4, 0xfc, 0x1f, 0x76, 0xac, 0x98, 0xcf,
-	0xea, 0x66, 0x77, 0x15, 0x47, 0x48, 0x7c, 0xd3, 0x85, 0x20, 0xbd, 0x30, 0xf5, 0x98, 0xef, 0x0b,
-	0x40, 0x34, 0xff, 0x34, 0xe7, 0x45, 0x6b, 0xd7, 0xb0, 0xa8, 0xf1, 0xa1, 0x86, 0x79, 0x94, 0x41,
-	0x32, 0x59, 0x98, 0xcf, 0x23, 0x11, 0x0b, 0x4f, 0x18, 0x24, 0xde, 0x15, 0x0b, 0x23, 0xd3, 0x9b,
-	0x57, 0xa4, 0x9c, 0x47, 0xe6, 0xc0, 0x33, 0x10, 0x18, 0x72, 0xcb, 0x26, 0x66, 0x69, 0x20, 0x98,
-	0x5f, 0x4d, 0xef, 0x31, 0x21, 0x5b, 0x3d, 0x0c, 0x4e, 0xe3, 0x54, 0x2e, 0x8e, 0x6e, 0x36, 0xc9,
-	0x7a, 0x0f, 0x03, 0xfa, 0x84, 0xac, 0x77, 0x59, 0x42, 0xb7, 0x3b, 0x85, 0xa9, 0xd3, 0xc3, 0xa0,
-	0xcb, 0x92, 0xf6, 0x5d, 0x75, 0x2c, 0xca, 0xe9, 0x0b, 0xb2, 0xf9, 0xbe, 0xdc, 0x2a, 0xbd, 0xa7,
-	0x58, 0x25, 0x99, 0xe5, 0x2e, 0xd9, 0x3a, 0x2d, 0x76, 0x3d, 0x9a, 0x53, 0xaa, 0xc1, 0x4a, 0x33,
-	0x0d, 0x4f, 0xc9, 0x46, 0x2f, 0x0f, 0x01, 0xd5, 0x48, 0x21, 0x98, 0xa5, 0xc7, 0x84, 0x5c, 0x96,
-	0xc1, 0x38, 0x03, 0xa0, 0xbb, 0x0a, 0x2b, 0xd5, 0x34, 0xbd, 0x25, 0x3b, 0x97, 0xdc, 0x87, 0x41,
-	0x9e, 0x97, 0x77, 0x79, 0x5c, 0xe8, 0xa1, 0x66, 0x6c, 0x10, 0xd3, 0xfc, 0x9a, 0xdc, 0xe9, 0x57,
-	0x61, 0x19, 0xcd, 0xcf, 0x13, 0xba, 0xaf, 0x0a, 0x74, 0xdd, 0x34, 0xbe, 0x21, 0xdb, 0xaa, 0xa0,
-	0x3f, 0x93, 0xf4, 0xc0, 0xe6, 0xec, 0xcf, 0x2c, 0x13, 0x7c, 0x4e, 0xb6, 0x46, 0x53, 0x2e, 0x86,
-	0x90, 0xf8, 0x74, 0x47, 0xc1, 0xfc, 0x6c, 0x6d, 0x70, 0x08, 0xf2, 0x7c, 0x70, 0x52, 0xa6, 0x52,
-	0x6f, 0x50, 0xd7, 0x4d, 0xe3, 0x2b, 0xf2, 0xff, 0x10, 0x64, 0xfe, 0xfc, 0x17, 0xb0, 0x40, 0xba,
-	0xd7, 0xf0, 0xd5, 0xb2, 0x75, 0xbd, 0xc3, 0x2a, 0xc8, 0xfa, 0x7a, 0x6b, 0xcd, 0x3a, 0xfe, 0x11,
-	0xe2, 0x45, 0x19, 0xef, 0x33, 0x16, 0x46, 0xfa, 0xf8, 0x9b, 0xc4, 0x9a, 0xbd, 0x11, 0xe2, 0x80,
-	0xf3, 0x48, 0xcf, 0x5e, 0x25, 0x59, 0xf3, 0x31, 0x04, 0xf9, 0xb9, 0x7c, 0x25, 0xf4, 0x7c, 0x28,
-	0xd5, 0xda, 0xe0, 0x40, 0xf0, 0x94, 0x23, 0x7c, 0x2a, 0x5f, 0x19, 0xbd, 0xc1, 0x26, 0xb1, 0x9a,
-	0x4f, 0xd2, 0x54, 0xf0, 0xcc, 0x66, 0x6e, 0x12, 0x6b, 0x46, 0x3e, 0xc2, 0x57, 0x98, 0xc8, 0xda,
-	0xab, 0x65, 0xa4, 0x01, 0x0c, 0x6b, 0x7b, 0xe3, 0xfb, 0x9f, 0x9f, 0xcf, 0x5a, 0xdd, 0x0f, 0x37,
-	0x4b, 0xa7, 0x75, 0xbb, 0x74, 0x5a, 0xbf, 0x97, 0x4e, 0xeb, 0xc7, 0xca, 0x59, 0xbb, 0x5d, 0x39,
-	0x6b, 0xbf, 0x56, 0xce, 0xda, 0x97, 0xa3, 0x20, 0x94, 0x11, 0x1b, 0x77, 0x26, 0x3c, 0x76, 0xe5,
-	0x94, 0x8b, 0xe2, 0xa2, 0x2c, 0xbe, 0xe5, 0x57, 0x94, 0x9b, 0x1d, 0xbb, 0x73, 0x5d, 0xcf, 0x7f,
-	0x7d, 0xfc, 0x5f, 0x71, 0x57, 0x1c, 0xff, 0x0d, 0x00, 0x00, 0xff, 0xff, 0xaa, 0x3a, 0xe9, 0x15,
-	0x15, 0x06, 0x00, 0x00,
+	// 982 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x9c, 0x57, 0x4f, 0x6f, 0x1b, 0x45,
+	0x14, 0x8f, 0x55, 0x05, 0xc2, 0xb4, 0x4d, 0xc5, 0x34, 0x4d, 0xca, 0x96, 0xba, 0x05, 0x51, 0x68,
+	0x20, 0xd8, 0x4d, 0x52, 0x04, 0x15, 0x5c, 0x9c, 0x90, 0x4a, 0x51, 0xeb, 0xc6, 0x8a, 0x9d, 0x4a,
+	0x20, 0x24, 0x6b, 0xec, 0x79, 0xd9, 0x2c, 0xdd, 0x9d, 0x59, 0x66, 0xc6, 0x5b, 0xfb, 0x80, 0xc4,
+	0x15, 0x89, 0x03, 0x1c, 0xf8, 0x1e, 0x7c, 0x0c, 0x8e, 0x39, 0x72, 0x44, 0xc9, 0x81, 0xaf, 0x81,
+	0xf6, 0xef, 0x8c, 0xbd, 0x63, 0x3b, 0xe9, 0xc5, 0xc9, 0xfe, 0xfe, 0xbc, 0xf7, 0x76, 0xde, 0x9b,
+	0x19, 0x1b, 0x2d, 0xab, 0x51, 0x08, 0xb2, 0xae, 0x86, 0xb5, 0x50, 0x70, 0xc5, 0xf1, 0x62, 0xf2,
+	0xec, 0xac, 0xf5, 0xb9, 0x0c, 0xb8, 0xac, 0x07, 0xd2, 0xad, 0x47, 0x9b, 0xf1, 0x9f, 0x94, 0x77,
+	0x6e, 0xa6, 0xfa, 0x40, 0xba, 0xdd, 0x1e, 0x61, 0x19, 0xb8, 0xa6, 0x41, 0x0a, 0x21, 0x97, 0x9e,
+	0xca, 0x88, 0x55, 0x4d, 0x80, 0x10, 0x44, 0x91, 0x0c, 0xbf, 0xa5, 0xf1, 0xc0, 0x0b, 0x3c, 0x91,
+	0xc1, 0x77, 0x34, 0xcc, 0x40, 0xbd, 0xe6, 0xe2, 0x55, 0xf7, 0x18, 0x20, 0x23, 0xef, 0x1b, 0x24,
+	0xa7, 0xd0, 0x0d, 0xc9, 0x40, 0x42, 0xb7, 0x7f, 0x42, 0xbc, 0xbc, 0x8c, 0xbb, 0x5a, 0xc1, 0x7b,
+	0x12, 0x44, 0x04, 0xb4, 0xab, 0x86, 0x05, 0x5d, 0xb5, 0xd2, 0x7c, 0x90, 0x17, 0xbb, 0xa2, 0x79,
+	0x09, 0x8c, 0x96, 0x5d, 0x12, 0x54, 0xd7, 0x0b, 0xbb, 0x84, 0x52, 0x01, 0x52, 0x96, 0x93, 0xc6,
+	0x7c, 0x52, 0xda, 0x2b, 0x18, 0xe5, 0xf4, 0x6d, 0x83, 0xe6, 0x7e, 0x04, 0xac, 0x3f, 0x2a, 0xbf,
+	0x8f, 0x92, 0x32, 0xf1, 0x78, 0x2e, 0xeb, 0x1e, 0x13, 0xcf, 0x2f, 0x7b, 0x63, 0x45, 0xc8, 0xb9,
+	0x5f, 0x5e, 0xf0, 0x08, 0x84, 0xf4, 0xb8, 0xa5, 0x13, 0x83, 0xd0, 0x15, 0x84, 0xe6, 0xab, 0xf7,
+	0x5e, 0xdc, 0xd0, 0xd7, 0x44, 0x06, 0xf5, 0xe4, 0x23, 0xda, 0x2c, 0x5a, 0xfe, 0x21, 0x42, 0x4b,
+	0x4d, 0xe9, 0xee, 0x05, 0xa1, 0x1a, 0x6d, 0xfd, 0xb1, 0x8a, 0xae, 0x34, 0xa5, 0x8b, 0x1f, 0xa0,
+	0x2b, 0x3b, 0x84, 0xe1, 0xeb, 0xb5, 0x24, 0x5e, 0xad, 0x29, 0xdd, 0x1d, 0xc2, 0x9c, 0x1b, 0xfa,
+	0x31, 0x91, 0xe3, 0xcf, 0xd1, 0xdb, 0xdf, 0xa6, 0x0d, 0xc7, 0xef, 0x6a, 0x2e, 0x83, 0xca, 0xf2,
+	0x3a, 0x5a, 0xda, 0x4b, 0xc6, 0xa0, 0x33, 0xc4, 0xd8, 0x20, 0x33, 0xac, 0x6c, 0x58, 0x47, 0x8b,
+	0xcd, 0x78, 0x3e, 0xb0, 0xc1, 0x24, 0x40, 0x59, 0xba, 0x8d, 0xd0, 0x8b, 0x74, 0x66, 0x9e, 0x02,
+	0xe0, 0x15, 0x4d, 0x6b, 0xb4, 0x6c, 0xfa, 0x1a, 0x2d, 0xbf, 0xe0, 0x14, 0x5a, 0xf1, 0x28, 0xed,
+	0xc6, 0x93, 0x84, 0x6f, 0x1b, 0xc6, 0x31, 0xa6, 0x6c, 0xfe, 0x12, 0x5d, 0x3b, 0xc8, 0xe6, 0xa8,
+	0x33, 0xdc, 0x67, 0x78, 0x55, 0x0b, 0x4c, 0xbc, 0x6c, 0x7c, 0x82, 0xae, 0x6b, 0xc1, 0xc1, 0x40,
+	0xe1, 0x35, 0x9b, 0xf3, 0x60, 0x60, 0x59, 0xc1, 0xcf, 0xd0, 0x52, 0xe7, 0x84, 0x8b, 0x36, 0x30,
+	0x8a, 0x97, 0x35, 0x19, 0x3f, 0x5b, 0x0b, 0x6c, 0x83, 0xda, 0x6f, 0x35, 0xd2, 0x81, 0x35, 0x0b,
+	0x34, 0xf1, 0xb2, 0xf1, 0x0b, 0x74, 0xb5, 0x0d, 0x2a, 0x7e, 0xff, 0x67, 0x30, 0x92, 0xf8, 0xd6,
+	0x98, 0x2f, 0x87, 0xad, 0xed, 0x6d, 0x67, 0x33, 0x6e, 0xb6, 0x37, 0xc7, 0xac, 0xcb, 0xdf, 0x91,
+	0xf2, 0x59, 0x3a, 0xf9, 0x4f, 0x89, 0xe7, 0x9b, 0xcb, 0x3f, 0xce, 0x58, 0x67, 0xaf, 0x23, 0x65,
+	0x8b, 0x73, 0xdf, 0x9c, 0xbd, 0x0c, 0xb2, 0xce, 0x47, 0x1b, 0xd4, 0xcb, 0x74, 0xb7, 0x98, 0xf3,
+	0xa1, 0x51, 0x6b, 0x81, 0x2d, 0xc1, 0x43, 0x2e, 0xe1, 0x28, 0xdd, 0x4d, 0x66, 0x81, 0xe3, 0x8c,
+	0xd5, 0xdc, 0x08, 0x43, 0xc1, 0x23, 0x9b, 0x79, 0x9c, 0xb1, 0xce, 0xc8, 0x21, 0xfc, 0x08, 0x7d,
+	0x95, 0x7b, 0x8d, 0x19, 0x19, 0x23, 0xca, 0xd6, 0x36, 0x7a, 0xa7, 0xad, 0xb8, 0x80, 0x5d, 0x4e,
+	0x01, 0x57, 0x6b, 0xf9, 0xc6, 0xaf, 0x25, 0x1f, 0xd1, 0x66, 0xf2, 0xce, 0x39, 0xef, 0x7c, 0x3c,
+	0x9b, 0x3f, 0x04, 0x19, 0x72, 0x26, 0x01, 0xff, 0x84, 0x6e, 0xee, 0x33, 0xa9, 0x08, 0x53, 0x1e,
+	0x51, 0xb0, 0xcb, 0x99, 0x12, 0xa4, 0xaf, 0xf0, 0x43, 0xab, 0xdd, 0xa2, 0x74, 0x1e, 0x5d, 0x54,
+	0x59, 0xa4, 0x54, 0x68, 0xc5, 0x42, 0x6f, 0xe1, 0xf5, 0x8b, 0x46, 0xda, 0x72, 0x36, 0x2f, 0x2c,
+	0x2d, 0xb2, 0x02, 0xba, 0xb1, 0x37, 0x84, 0xfe, 0xc0, 0x78, 0xc9, 0x8f, 0xac, 0x51, 0x26, 0x54,
+	0xce, 0xc6, 0x45, 0x54, 0x66, 0x9a, 0xa6, 0xe7, 0x0a, 0x32, 0x37, 0xcd, 0x84, 0x6a, 0x4a, 0x9a,
+	0x09, 0x55, 0x91, 0xe6, 0x3b, 0x74, 0xf5, 0x28, 0xa4, 0x44, 0x41, 0x83, 0x06, 0x1e, 0xc3, 0xf7,
+	0xad, 0x66, 0x43, 0xe1, 0x3c, 0x9c, 0xa7, 0x28, 0x42, 0xbf, 0x44, 0x68, 0xd7, 0x07, 0x22, 0xd2,
+	0xc8, 0xf7, 0xac, 0x3e, 0x2d, 0x70, 0x3e, 0x99, 0x23, 0x28, 0xe2, 0xfe, 0x8c, 0xd6, 0xd2, 0x74,
+	0xe3, 0x6d, 0x3a, 0xf6, 0x5c, 0xbc, 0x31, 0xa3, 0xb8, 0x92, 0xda, 0x79, 0x7c, 0x19, 0x75, 0x91,
+	0xfe, 0x07, 0x74, 0x2d, 0x95, 0xb4, 0x88, 0x20, 0x81, 0xc4, 0x1f, 0xcc, 0x88, 0x92, 0x4a, 0x9c,
+	0xf5, 0xb9, 0x12, 0x33, 0x7a, 0x7b, 0x40, 0x79, 0xd1, 0x73, 0x7b, 0x74, 0x53, 0x32, 0x25, 0xba,
+	0x29, 0x29, 0xa2, 0xb7, 0xd0, 0x52, 0xcb, 0x63, 0xf1, 0xbe, 0x95, 0xf8, 0xae, 0xd5, 0x96, 0xd3,
+	0xce, 0x83, 0x99, 0xb4, 0xd9, 0xe4, 0x23, 0x16, 0xe6, 0x31, 0xed, 0x4d, 0xd6, 0x82, 0x29, 0x4d,
+	0xd6, 0x82, 0x22, 0xee, 0xaf, 0x15, 0x74, 0x27, 0x39, 0x64, 0x1a, 0x8c, 0xda, 0xce, 0x95, 0x47,
+	0xd3, 0x8f, 0x25, 0xbb, 0xc3, 0xf9, 0xea, 0xb2, 0x8e, 0xa2, 0x96, 0x3f, 0x2b, 0xe8, 0xde, 0x21,
+	0x04, 0x3c, 0x4a, 0x4e, 0xbc, 0xa3, 0xd0, 0xe7, 0x84, 0xa6, 0x6d, 0xcb, 0x2e, 0x48, 0x90, 0xd8,
+	0x3e, 0x4b, 0x73, 0x5c, 0xce, 0x37, 0x6f, 0xe2, 0x2a, 0xea, 0xfa, 0xad, 0x82, 0xde, 0x6f, 0x50,
+	0x3a, 0xbd, 0x28, 0xfb, 0xe9, 0x36, 0xcb, 0xe2, 0x3c, 0xb9, 0xb4, 0xc5, 0xdc, 0x97, 0xf9, 0x6a,
+	0x4e, 0x9e, 0x5c, 0x1b, 0x33, 0xd7, 0x7e, 0xf2, 0x04, 0x7b, 0x7c, 0x19, 0xb5, 0x79, 0x01, 0xa5,
+	0x3b, 0x2a, 0x67, 0x9e, 0x93, 0x1e, 0xf8, 0x78, 0xd6, 0x79, 0x35, 0xa6, 0x9c, 0x72, 0x01, 0x59,
+	0x94, 0x79, 0x4a, 0x67, 0xf1, 0x97, 0xff, 0xfe, 0xfa, 0xb4, 0xb2, 0xf3, 0xfc, 0xef, 0xb3, 0x6a,
+	0xe5, 0xf4, 0xac, 0x5a, 0xf9, 0xf7, 0xac, 0x5a, 0xf9, 0xfd, 0xbc, 0xba, 0x70, 0x7a, 0x5e, 0x5d,
+	0xf8, 0xe7, 0xbc, 0xba, 0xf0, 0xfd, 0x96, 0xeb, 0x29, 0x9f, 0xf4, 0x6a, 0x7d, 0x1e, 0xd4, 0xd5,
+	0x09, 0x17, 0xc9, 0x8f, 0x91, 0xe4, 0xbf, 0xf8, 0x67, 0x40, 0x3d, 0xda, 0xae, 0x0f, 0x4d, 0x3c,
+	0xbe, 0xa6, 0x7b, 0x6f, 0x25, 0x5f, 0xba, 0xb7, 0xff, 0x0f, 0x00, 0x00, 0xff, 0xff, 0x4c, 0x61,
+	0x83, 0x2a, 0x79, 0x0d, 0x00, 0x00,
 }
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -143,6 +168,24 @@ type MsgClient interface {
 	ProposeUpgrade(ctx context.Context, in *MsgProposeUpgrade, opts ...grpc.CallOption) (*MsgEmpty, error)
 	ApproveUpgrade(ctx context.Context, in *MsgApproveUpgrade, opts ...grpc.CallOption) (*MsgEmpty, error)
 	RejectUpgrade(ctx context.Context, in *MsgRejectUpgrade, opts ...grpc.CallOption) (*MsgEmpty, error)
+	// CosmWasm interface cloned in order so that we can register the x/thorchain message server as the server for x/wasm messages, and route through version control
+	StoreCode(ctx context.Context, in *types.MsgStoreCode, opts ...grpc.CallOption) (*types.MsgStoreCodeResponse, error)
+	InstantiateContract(ctx context.Context, in *types.MsgInstantiateContract, opts ...grpc.CallOption) (*types.MsgInstantiateContractResponse, error)
+	InstantiateContract2(ctx context.Context, in *types.MsgInstantiateContract2, opts ...grpc.CallOption) (*types.MsgInstantiateContract2Response, error)
+	ExecuteContract(ctx context.Context, in *types.MsgExecuteContract, opts ...grpc.CallOption) (*types.MsgExecuteContractResponse, error)
+	MigrateContract(ctx context.Context, in *types.MsgMigrateContract, opts ...grpc.CallOption) (*types.MsgMigrateContractResponse, error)
+	UpdateAdmin(ctx context.Context, in *types.MsgUpdateAdmin, opts ...grpc.CallOption) (*types.MsgUpdateAdminResponse, error)
+	ClearAdmin(ctx context.Context, in *types.MsgClearAdmin, opts ...grpc.CallOption) (*types.MsgClearAdminResponse, error)
+	UpdateInstantiateConfig(ctx context.Context, in *types.MsgUpdateInstantiateConfig, opts ...grpc.CallOption) (*types.MsgUpdateInstantiateConfigResponse, error)
+	UpdateParams(ctx context.Context, in *types.MsgUpdateParams, opts ...grpc.CallOption) (*types.MsgUpdateParamsResponse, error)
+	SudoContract(ctx context.Context, in *types.MsgSudoContract, opts ...grpc.CallOption) (*types.MsgSudoContractResponse, error)
+	PinCodes(ctx context.Context, in *types.MsgPinCodes, opts ...grpc.CallOption) (*types.MsgPinCodesResponse, error)
+	UnpinCodes(ctx context.Context, in *types.MsgUnpinCodes, opts ...grpc.CallOption) (*types.MsgUnpinCodesResponse, error)
+	StoreAndInstantiateContract(ctx context.Context, in *types.MsgStoreAndInstantiateContract, opts ...grpc.CallOption) (*types.MsgStoreAndInstantiateContractResponse, error)
+	RemoveCodeUploadParamsAddresses(ctx context.Context, in *types.MsgRemoveCodeUploadParamsAddresses, opts ...grpc.CallOption) (*types.MsgRemoveCodeUploadParamsAddressesResponse, error)
+	AddCodeUploadParamsAddresses(ctx context.Context, in *types.MsgAddCodeUploadParamsAddresses, opts ...grpc.CallOption) (*types.MsgAddCodeUploadParamsAddressesResponse, error)
+	StoreAndMigrateContract(ctx context.Context, in *types.MsgStoreAndMigrateContract, opts ...grpc.CallOption) (*types.MsgStoreAndMigrateContractResponse, error)
+	UpdateContractLabel(ctx context.Context, in *types.MsgUpdateContractLabel, opts ...grpc.CallOption) (*types.MsgUpdateContractLabelResponse, error)
 }
 
 type msgClient struct {
@@ -315,6 +358,159 @@ func (c *msgClient) RejectUpgrade(ctx context.Context, in *MsgRejectUpgrade, opt
 	return out, nil
 }
 
+func (c *msgClient) StoreCode(ctx context.Context, in *types.MsgStoreCode, opts ...grpc.CallOption) (*types.MsgStoreCodeResponse, error) {
+	out := new(types.MsgStoreCodeResponse)
+	err := c.cc.Invoke(ctx, "/types.Msg/StoreCode", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *msgClient) InstantiateContract(ctx context.Context, in *types.MsgInstantiateContract, opts ...grpc.CallOption) (*types.MsgInstantiateContractResponse, error) {
+	out := new(types.MsgInstantiateContractResponse)
+	err := c.cc.Invoke(ctx, "/types.Msg/InstantiateContract", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *msgClient) InstantiateContract2(ctx context.Context, in *types.MsgInstantiateContract2, opts ...grpc.CallOption) (*types.MsgInstantiateContract2Response, error) {
+	out := new(types.MsgInstantiateContract2Response)
+	err := c.cc.Invoke(ctx, "/types.Msg/InstantiateContract2", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *msgClient) ExecuteContract(ctx context.Context, in *types.MsgExecuteContract, opts ...grpc.CallOption) (*types.MsgExecuteContractResponse, error) {
+	out := new(types.MsgExecuteContractResponse)
+	err := c.cc.Invoke(ctx, "/types.Msg/ExecuteContract", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *msgClient) MigrateContract(ctx context.Context, in *types.MsgMigrateContract, opts ...grpc.CallOption) (*types.MsgMigrateContractResponse, error) {
+	out := new(types.MsgMigrateContractResponse)
+	err := c.cc.Invoke(ctx, "/types.Msg/MigrateContract", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *msgClient) UpdateAdmin(ctx context.Context, in *types.MsgUpdateAdmin, opts ...grpc.CallOption) (*types.MsgUpdateAdminResponse, error) {
+	out := new(types.MsgUpdateAdminResponse)
+	err := c.cc.Invoke(ctx, "/types.Msg/UpdateAdmin", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *msgClient) ClearAdmin(ctx context.Context, in *types.MsgClearAdmin, opts ...grpc.CallOption) (*types.MsgClearAdminResponse, error) {
+	out := new(types.MsgClearAdminResponse)
+	err := c.cc.Invoke(ctx, "/types.Msg/ClearAdmin", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *msgClient) UpdateInstantiateConfig(ctx context.Context, in *types.MsgUpdateInstantiateConfig, opts ...grpc.CallOption) (*types.MsgUpdateInstantiateConfigResponse, error) {
+	out := new(types.MsgUpdateInstantiateConfigResponse)
+	err := c.cc.Invoke(ctx, "/types.Msg/UpdateInstantiateConfig", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *msgClient) UpdateParams(ctx context.Context, in *types.MsgUpdateParams, opts ...grpc.CallOption) (*types.MsgUpdateParamsResponse, error) {
+	out := new(types.MsgUpdateParamsResponse)
+	err := c.cc.Invoke(ctx, "/types.Msg/UpdateParams", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *msgClient) SudoContract(ctx context.Context, in *types.MsgSudoContract, opts ...grpc.CallOption) (*types.MsgSudoContractResponse, error) {
+	out := new(types.MsgSudoContractResponse)
+	err := c.cc.Invoke(ctx, "/types.Msg/SudoContract", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *msgClient) PinCodes(ctx context.Context, in *types.MsgPinCodes, opts ...grpc.CallOption) (*types.MsgPinCodesResponse, error) {
+	out := new(types.MsgPinCodesResponse)
+	err := c.cc.Invoke(ctx, "/types.Msg/PinCodes", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *msgClient) UnpinCodes(ctx context.Context, in *types.MsgUnpinCodes, opts ...grpc.CallOption) (*types.MsgUnpinCodesResponse, error) {
+	out := new(types.MsgUnpinCodesResponse)
+	err := c.cc.Invoke(ctx, "/types.Msg/UnpinCodes", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *msgClient) StoreAndInstantiateContract(ctx context.Context, in *types.MsgStoreAndInstantiateContract, opts ...grpc.CallOption) (*types.MsgStoreAndInstantiateContractResponse, error) {
+	out := new(types.MsgStoreAndInstantiateContractResponse)
+	err := c.cc.Invoke(ctx, "/types.Msg/StoreAndInstantiateContract", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *msgClient) RemoveCodeUploadParamsAddresses(ctx context.Context, in *types.MsgRemoveCodeUploadParamsAddresses, opts ...grpc.CallOption) (*types.MsgRemoveCodeUploadParamsAddressesResponse, error) {
+	out := new(types.MsgRemoveCodeUploadParamsAddressesResponse)
+	err := c.cc.Invoke(ctx, "/types.Msg/RemoveCodeUploadParamsAddresses", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *msgClient) AddCodeUploadParamsAddresses(ctx context.Context, in *types.MsgAddCodeUploadParamsAddresses, opts ...grpc.CallOption) (*types.MsgAddCodeUploadParamsAddressesResponse, error) {
+	out := new(types.MsgAddCodeUploadParamsAddressesResponse)
+	err := c.cc.Invoke(ctx, "/types.Msg/AddCodeUploadParamsAddresses", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *msgClient) StoreAndMigrateContract(ctx context.Context, in *types.MsgStoreAndMigrateContract, opts ...grpc.CallOption) (*types.MsgStoreAndMigrateContractResponse, error) {
+	out := new(types.MsgStoreAndMigrateContractResponse)
+	err := c.cc.Invoke(ctx, "/types.Msg/StoreAndMigrateContract", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *msgClient) UpdateContractLabel(ctx context.Context, in *types.MsgUpdateContractLabel, opts ...grpc.CallOption) (*types.MsgUpdateContractLabelResponse, error) {
+	out := new(types.MsgUpdateContractLabelResponse)
+	err := c.cc.Invoke(ctx, "/types.Msg/UpdateContractLabel", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // MsgServer is the server API for Msg service.
 type MsgServer interface {
 	Ban(context.Context, *MsgBan) (*MsgEmpty, error)
@@ -335,6 +531,24 @@ type MsgServer interface {
 	ProposeUpgrade(context.Context, *MsgProposeUpgrade) (*MsgEmpty, error)
 	ApproveUpgrade(context.Context, *MsgApproveUpgrade) (*MsgEmpty, error)
 	RejectUpgrade(context.Context, *MsgRejectUpgrade) (*MsgEmpty, error)
+	// CosmWasm interface cloned in order so that we can register the x/thorchain message server as the server for x/wasm messages, and route through version control
+	StoreCode(context.Context, *types.MsgStoreCode) (*types.MsgStoreCodeResponse, error)
+	InstantiateContract(context.Context, *types.MsgInstantiateContract) (*types.MsgInstantiateContractResponse, error)
+	InstantiateContract2(context.Context, *types.MsgInstantiateContract2) (*types.MsgInstantiateContract2Response, error)
+	ExecuteContract(context.Context, *types.MsgExecuteContract) (*types.MsgExecuteContractResponse, error)
+	MigrateContract(context.Context, *types.MsgMigrateContract) (*types.MsgMigrateContractResponse, error)
+	UpdateAdmin(context.Context, *types.MsgUpdateAdmin) (*types.MsgUpdateAdminResponse, error)
+	ClearAdmin(context.Context, *types.MsgClearAdmin) (*types.MsgClearAdminResponse, error)
+	UpdateInstantiateConfig(context.Context, *types.MsgUpdateInstantiateConfig) (*types.MsgUpdateInstantiateConfigResponse, error)
+	UpdateParams(context.Context, *types.MsgUpdateParams) (*types.MsgUpdateParamsResponse, error)
+	SudoContract(context.Context, *types.MsgSudoContract) (*types.MsgSudoContractResponse, error)
+	PinCodes(context.Context, *types.MsgPinCodes) (*types.MsgPinCodesResponse, error)
+	UnpinCodes(context.Context, *types.MsgUnpinCodes) (*types.MsgUnpinCodesResponse, error)
+	StoreAndInstantiateContract(context.Context, *types.MsgStoreAndInstantiateContract) (*types.MsgStoreAndInstantiateContractResponse, error)
+	RemoveCodeUploadParamsAddresses(context.Context, *types.MsgRemoveCodeUploadParamsAddresses) (*types.MsgRemoveCodeUploadParamsAddressesResponse, error)
+	AddCodeUploadParamsAddresses(context.Context, *types.MsgAddCodeUploadParamsAddresses) (*types.MsgAddCodeUploadParamsAddressesResponse, error)
+	StoreAndMigrateContract(context.Context, *types.MsgStoreAndMigrateContract) (*types.MsgStoreAndMigrateContractResponse, error)
+	UpdateContractLabel(context.Context, *types.MsgUpdateContractLabel) (*types.MsgUpdateContractLabelResponse, error)
 }
 
 // UnimplementedMsgServer can be embedded to have forward compatible implementations.
@@ -394,6 +608,57 @@ func (*UnimplementedMsgServer) ApproveUpgrade(ctx context.Context, req *MsgAppro
 }
 func (*UnimplementedMsgServer) RejectUpgrade(ctx context.Context, req *MsgRejectUpgrade) (*MsgEmpty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RejectUpgrade not implemented")
+}
+func (*UnimplementedMsgServer) StoreCode(ctx context.Context, req *types.MsgStoreCode) (*types.MsgStoreCodeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method StoreCode not implemented")
+}
+func (*UnimplementedMsgServer) InstantiateContract(ctx context.Context, req *types.MsgInstantiateContract) (*types.MsgInstantiateContractResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method InstantiateContract not implemented")
+}
+func (*UnimplementedMsgServer) InstantiateContract2(ctx context.Context, req *types.MsgInstantiateContract2) (*types.MsgInstantiateContract2Response, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method InstantiateContract2 not implemented")
+}
+func (*UnimplementedMsgServer) ExecuteContract(ctx context.Context, req *types.MsgExecuteContract) (*types.MsgExecuteContractResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ExecuteContract not implemented")
+}
+func (*UnimplementedMsgServer) MigrateContract(ctx context.Context, req *types.MsgMigrateContract) (*types.MsgMigrateContractResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method MigrateContract not implemented")
+}
+func (*UnimplementedMsgServer) UpdateAdmin(ctx context.Context, req *types.MsgUpdateAdmin) (*types.MsgUpdateAdminResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateAdmin not implemented")
+}
+func (*UnimplementedMsgServer) ClearAdmin(ctx context.Context, req *types.MsgClearAdmin) (*types.MsgClearAdminResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ClearAdmin not implemented")
+}
+func (*UnimplementedMsgServer) UpdateInstantiateConfig(ctx context.Context, req *types.MsgUpdateInstantiateConfig) (*types.MsgUpdateInstantiateConfigResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateInstantiateConfig not implemented")
+}
+func (*UnimplementedMsgServer) UpdateParams(ctx context.Context, req *types.MsgUpdateParams) (*types.MsgUpdateParamsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateParams not implemented")
+}
+func (*UnimplementedMsgServer) SudoContract(ctx context.Context, req *types.MsgSudoContract) (*types.MsgSudoContractResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SudoContract not implemented")
+}
+func (*UnimplementedMsgServer) PinCodes(ctx context.Context, req *types.MsgPinCodes) (*types.MsgPinCodesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PinCodes not implemented")
+}
+func (*UnimplementedMsgServer) UnpinCodes(ctx context.Context, req *types.MsgUnpinCodes) (*types.MsgUnpinCodesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UnpinCodes not implemented")
+}
+func (*UnimplementedMsgServer) StoreAndInstantiateContract(ctx context.Context, req *types.MsgStoreAndInstantiateContract) (*types.MsgStoreAndInstantiateContractResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method StoreAndInstantiateContract not implemented")
+}
+func (*UnimplementedMsgServer) RemoveCodeUploadParamsAddresses(ctx context.Context, req *types.MsgRemoveCodeUploadParamsAddresses) (*types.MsgRemoveCodeUploadParamsAddressesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RemoveCodeUploadParamsAddresses not implemented")
+}
+func (*UnimplementedMsgServer) AddCodeUploadParamsAddresses(ctx context.Context, req *types.MsgAddCodeUploadParamsAddresses) (*types.MsgAddCodeUploadParamsAddressesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AddCodeUploadParamsAddresses not implemented")
+}
+func (*UnimplementedMsgServer) StoreAndMigrateContract(ctx context.Context, req *types.MsgStoreAndMigrateContract) (*types.MsgStoreAndMigrateContractResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method StoreAndMigrateContract not implemented")
+}
+func (*UnimplementedMsgServer) UpdateContractLabel(ctx context.Context, req *types.MsgUpdateContractLabel) (*types.MsgUpdateContractLabelResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateContractLabel not implemented")
 }
 
 func RegisterMsgServer(s grpc1.Server, srv MsgServer) {
@@ -724,6 +989,312 @@ func _Msg_RejectUpgrade_Handler(srv interface{}, ctx context.Context, dec func(i
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Msg_StoreCode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(types.MsgStoreCode)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).StoreCode(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/types.Msg/StoreCode",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).StoreCode(ctx, req.(*types.MsgStoreCode))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Msg_InstantiateContract_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(types.MsgInstantiateContract)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).InstantiateContract(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/types.Msg/InstantiateContract",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).InstantiateContract(ctx, req.(*types.MsgInstantiateContract))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Msg_InstantiateContract2_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(types.MsgInstantiateContract2)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).InstantiateContract2(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/types.Msg/InstantiateContract2",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).InstantiateContract2(ctx, req.(*types.MsgInstantiateContract2))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Msg_ExecuteContract_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(types.MsgExecuteContract)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).ExecuteContract(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/types.Msg/ExecuteContract",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).ExecuteContract(ctx, req.(*types.MsgExecuteContract))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Msg_MigrateContract_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(types.MsgMigrateContract)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).MigrateContract(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/types.Msg/MigrateContract",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).MigrateContract(ctx, req.(*types.MsgMigrateContract))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Msg_UpdateAdmin_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(types.MsgUpdateAdmin)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).UpdateAdmin(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/types.Msg/UpdateAdmin",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).UpdateAdmin(ctx, req.(*types.MsgUpdateAdmin))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Msg_ClearAdmin_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(types.MsgClearAdmin)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).ClearAdmin(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/types.Msg/ClearAdmin",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).ClearAdmin(ctx, req.(*types.MsgClearAdmin))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Msg_UpdateInstantiateConfig_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(types.MsgUpdateInstantiateConfig)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).UpdateInstantiateConfig(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/types.Msg/UpdateInstantiateConfig",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).UpdateInstantiateConfig(ctx, req.(*types.MsgUpdateInstantiateConfig))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Msg_UpdateParams_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(types.MsgUpdateParams)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).UpdateParams(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/types.Msg/UpdateParams",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).UpdateParams(ctx, req.(*types.MsgUpdateParams))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Msg_SudoContract_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(types.MsgSudoContract)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).SudoContract(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/types.Msg/SudoContract",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).SudoContract(ctx, req.(*types.MsgSudoContract))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Msg_PinCodes_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(types.MsgPinCodes)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).PinCodes(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/types.Msg/PinCodes",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).PinCodes(ctx, req.(*types.MsgPinCodes))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Msg_UnpinCodes_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(types.MsgUnpinCodes)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).UnpinCodes(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/types.Msg/UnpinCodes",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).UnpinCodes(ctx, req.(*types.MsgUnpinCodes))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Msg_StoreAndInstantiateContract_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(types.MsgStoreAndInstantiateContract)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).StoreAndInstantiateContract(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/types.Msg/StoreAndInstantiateContract",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).StoreAndInstantiateContract(ctx, req.(*types.MsgStoreAndInstantiateContract))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Msg_RemoveCodeUploadParamsAddresses_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(types.MsgRemoveCodeUploadParamsAddresses)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).RemoveCodeUploadParamsAddresses(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/types.Msg/RemoveCodeUploadParamsAddresses",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).RemoveCodeUploadParamsAddresses(ctx, req.(*types.MsgRemoveCodeUploadParamsAddresses))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Msg_AddCodeUploadParamsAddresses_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(types.MsgAddCodeUploadParamsAddresses)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).AddCodeUploadParamsAddresses(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/types.Msg/AddCodeUploadParamsAddresses",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).AddCodeUploadParamsAddresses(ctx, req.(*types.MsgAddCodeUploadParamsAddresses))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Msg_StoreAndMigrateContract_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(types.MsgStoreAndMigrateContract)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).StoreAndMigrateContract(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/types.Msg/StoreAndMigrateContract",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).StoreAndMigrateContract(ctx, req.(*types.MsgStoreAndMigrateContract))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Msg_UpdateContractLabel_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(types.MsgUpdateContractLabel)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).UpdateContractLabel(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/types.Msg/UpdateContractLabel",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).UpdateContractLabel(ctx, req.(*types.MsgUpdateContractLabel))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 var _Msg_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "types.Msg",
 	HandlerType: (*MsgServer)(nil),
@@ -799,6 +1370,74 @@ var _Msg_serviceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RejectUpgrade",
 			Handler:    _Msg_RejectUpgrade_Handler,
+		},
+		{
+			MethodName: "StoreCode",
+			Handler:    _Msg_StoreCode_Handler,
+		},
+		{
+			MethodName: "InstantiateContract",
+			Handler:    _Msg_InstantiateContract_Handler,
+		},
+		{
+			MethodName: "InstantiateContract2",
+			Handler:    _Msg_InstantiateContract2_Handler,
+		},
+		{
+			MethodName: "ExecuteContract",
+			Handler:    _Msg_ExecuteContract_Handler,
+		},
+		{
+			MethodName: "MigrateContract",
+			Handler:    _Msg_MigrateContract_Handler,
+		},
+		{
+			MethodName: "UpdateAdmin",
+			Handler:    _Msg_UpdateAdmin_Handler,
+		},
+		{
+			MethodName: "ClearAdmin",
+			Handler:    _Msg_ClearAdmin_Handler,
+		},
+		{
+			MethodName: "UpdateInstantiateConfig",
+			Handler:    _Msg_UpdateInstantiateConfig_Handler,
+		},
+		{
+			MethodName: "UpdateParams",
+			Handler:    _Msg_UpdateParams_Handler,
+		},
+		{
+			MethodName: "SudoContract",
+			Handler:    _Msg_SudoContract_Handler,
+		},
+		{
+			MethodName: "PinCodes",
+			Handler:    _Msg_PinCodes_Handler,
+		},
+		{
+			MethodName: "UnpinCodes",
+			Handler:    _Msg_UnpinCodes_Handler,
+		},
+		{
+			MethodName: "StoreAndInstantiateContract",
+			Handler:    _Msg_StoreAndInstantiateContract_Handler,
+		},
+		{
+			MethodName: "RemoveCodeUploadParamsAddresses",
+			Handler:    _Msg_RemoveCodeUploadParamsAddresses_Handler,
+		},
+		{
+			MethodName: "AddCodeUploadParamsAddresses",
+			Handler:    _Msg_AddCodeUploadParamsAddresses_Handler,
+		},
+		{
+			MethodName: "StoreAndMigrateContract",
+			Handler:    _Msg_StoreAndMigrateContract_Handler,
+		},
+		{
+			MethodName: "UpdateContractLabel",
+			Handler:    _Msg_UpdateContractLabel_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

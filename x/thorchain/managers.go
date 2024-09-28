@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	upgradekeeper "cosmossdk.io/x/upgrade/keeper"
+	wasmkeeper "github.com/CosmWasm/wasmd/x/wasm/keeper"
+	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
 	"github.com/blang/semver"
 	abci "github.com/cometbft/cometbft/abci/types"
 	"github.com/cosmos/cosmos-sdk/codec"
@@ -43,6 +45,7 @@ type Manager interface {
 	Slasher() Slasher
 	TradeAccountManager() TradeAccountManager
 	SecuredAssetManager() SecuredAssetManager
+	WasmManager() WasmManager
 }
 
 type TradeAccountManager interface {
@@ -129,6 +132,12 @@ type PoolManager interface {
 	EndBlock(ctx cosmos.Context, mgr Manager) error
 }
 
+type WasmManager interface {
+	wasmtypes.MsgServer
+	Sudo(ctx cosmos.Context, msg *wasmtypes.MsgSudoContract,
+	) (*wasmtypes.MsgSudoContractResponse, error)
+}
+
 // SwapQueue interface define the contract of Swap Queue
 type SwapQueue interface {
 	EndBlock(ctx cosmos.Context, mgr Manager) error
@@ -185,12 +194,14 @@ type Mgrs struct {
 	slasher        Slasher
 	tradeManager   TradeAccountManager
 	securedManager SecuredAssetManager
+	wasmManager    WasmManager
 
 	K             keeper.Keeper
 	cdc           codec.Codec
 	coinKeeper    bankkeeper.Keeper
 	accountKeeper authkeeper.AccountKeeper
 	upgradeKeeper *upgradekeeper.Keeper
+	wasmKeeper    wasmkeeper.Keeper
 	storeKey      cosmos.StoreKey
 }
 
@@ -201,6 +212,7 @@ func NewManagers(
 	coinKeeper bankkeeper.Keeper,
 	accountKeeper authkeeper.AccountKeeper,
 	upgradeKeeper *upgradekeeper.Keeper,
+	wasmKeeper wasmkeeper.Keeper,
 	storeKey cosmos.StoreKey,
 ) *Mgrs {
 	return &Mgrs{
@@ -209,6 +221,7 @@ func NewManagers(
 		coinKeeper:    coinKeeper,
 		accountKeeper: accountKeeper,
 		upgradeKeeper: upgradeKeeper,
+		wasmKeeper:    wasmKeeper,
 		storeKey:      storeKey,
 	}
 }
@@ -317,6 +330,11 @@ func (mgr *Mgrs) BeginBlock(ctx cosmos.Context) error {
 		return fmt.Errorf("fail to create secured manager: %w", err)
 	}
 
+	mgr.wasmManager, err = GetWasmManager(v, mgr.K, mgr.wasmKeeper, mgr.eventMgr)
+	if err != nil {
+		return fmt.Errorf("fail to create wasm manager: %w", err)
+	}
+
 	return nil
 }
 
@@ -356,6 +374,8 @@ func (mgr *Mgrs) Slasher() Slasher { return mgr.slasher }
 func (mgr *Mgrs) TradeAccountManager() TradeAccountManager { return mgr.tradeManager }
 
 func (mgr *Mgrs) SecuredAssetManager() SecuredAssetManager { return mgr.securedManager }
+
+func (mgr *Mgrs) WasmManager() WasmManager { return mgr.wasmManager }
 
 // GetKeeper return Keeper
 func GetKeeper(
@@ -508,6 +528,15 @@ func GetSecuredAssetManager(version semver.Version, keeper keeper.Keeper, eventM
 	switch {
 	case version.GTE(semver.MustParse("3.0.0")):
 		return newSecuredAssetMgrVCUR(keeper, eventMgr), nil
+	default:
+		return nil, errInvalidVersion
+	}
+}
+
+func GetWasmManager(version semver.Version, keeper keeper.Keeper, wasmKeeper wasmkeeper.Keeper, eventMgr EventManager) (WasmManager, error) {
+	switch {
+	case version.GTE(semver.MustParse("2.137.0")):
+		return newWasmMgrVCUR(keeper, wasmKeeper, eventMgr), nil
 	default:
 		return nil, errInvalidVersion
 	}

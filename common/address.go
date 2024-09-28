@@ -384,6 +384,22 @@ func (addr Address) AccAddress() (cosmos.AccAddress, error) {
 	return cosmos.AccAddressFromBech32(addr.String())
 }
 
+// Converts the underlying address to a cosmos representation,
+// making best effort to convert the provided address format
+// into an AccAddress that can be signed by other L1 signers
+//
+// Used for calling x/wasm smart contracts when an `exec` memo is used from a L1
+func (addr Address) MustAccAddress() (cosmos.AccAddress, error) {
+	if addr.GetChain().IsEVM() {
+		return cosmos.AccAddressFromHexUnsafe(strings.TrimPrefix(addr.String(), "0x"))
+	}
+	_, _, err := bech32.Decode(addr.String())
+	if err == nil {
+		return cosmos.AccAddressFromBech32(addr.String())
+	}
+	return cosmos.AccAddress{}, err
+}
+
 func (addr Address) Equals(addr2 Address) bool {
 	return strings.EqualFold(addr.String(), addr2.String())
 }

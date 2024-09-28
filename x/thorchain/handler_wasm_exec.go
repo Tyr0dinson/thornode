@@ -1,0 +1,92 @@
+package thorchain
+
+import (
+	"fmt"
+
+	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
+	"github.com/blang/semver"
+	"github.com/cosmos/cosmos-sdk/types"
+
+	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+)
+
+// WasmExecHandler handles Exec memo calls from L1 integrations
+type WasmExecHandler struct {
+	mgr Manager
+}
+
+// NewWasmExecHandler create a new instance of WasmExecHandler
+func NewWasmExecHandler(mgr Manager) WasmExecHandler {
+	return WasmExecHandler{mgr: mgr}
+}
+
+// Run is the main entry of WasmExecHandler
+func (h WasmExecHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, error) {
+	msg, ok := m.(*MsgWasmExec)
+	if !ok {
+		return nil, errInvalidMessage
+	}
+	if err := h.validate(ctx, *msg); err != nil {
+		ctx.Logger().Error("MsgWasmExec failed validation", "error", err)
+		return nil, err
+	}
+	result, err := h.handle(ctx, *msg)
+	if err != nil {
+		ctx.Logger().Error("fail to process MsgWasmExec", "error", err)
+		return nil, err
+	}
+	return result, nil
+}
+
+func (h WasmExecHandler) validate(ctx cosmos.Context, msg MsgWasmExec) error {
+	version := h.mgr.GetVersion()
+	switch {
+	case version.GTE(semver.MustParse("2.137.0")):
+		return h.validateV137(ctx, msg)
+	default:
+		return errInvalidVersion
+	}
+}
+
+func (h WasmExecHandler) validateV137(ctx cosmos.Context, msg MsgWasmExec) error {
+	return nil
+}
+
+func (h WasmExecHandler) handle(ctx cosmos.Context, msg MsgWasmExec) (*cosmos.Result, error) {
+	ctx.Logger().Info("receive MsgWasmExec", "from", msg.Signer)
+	version := h.mgr.GetVersion()
+	switch {
+	case version.GTE(semver.MustParse("2.137.0")):
+		return h.handleV137(ctx, msg)
+	default:
+		return nil, errInvalidVersion
+	}
+}
+
+func (h WasmExecHandler) handleV137(ctx cosmos.Context, msg MsgWasmExec) (*cosmos.Result, error) {
+	if h.mgr.Keeper().IsChainHalted(ctx, common.THORChain) {
+		return nil, fmt.Errorf("unable to use MsgWasmExec while THORChain is halted")
+	}
+	// TODO: mint Bridge tokens and transfer to msg.Signer address
+	funds := []types.Coin{}
+
+	sender, err := msg.Tx.FromAddress.MustAccAddress()
+	if err != nil {
+		return &cosmos.Result{}, err
+	}
+
+	execMsg := wasmtypes.MsgExecuteContract{
+		Sender:   sender.String(),
+		Contract: msg.Contract.String(),
+		Msg:      msg.Msg,
+		Funds:    funds,
+	}
+
+	_, err = h.mgr.WasmManager().ExecuteContract(ctx, &execMsg)
+	if err != nil {
+		return &cosmos.Result{}, err
+	}
+
+	return &cosmos.Result{}, nil
+}
