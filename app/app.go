@@ -73,6 +73,9 @@ import (
 	stakingkeeper "github.com/cosmos/cosmos-sdk/x/staking/keeper"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	"github.com/cosmos/gogoproto/proto"
+	capability "github.com/cosmos/ibc-go/modules/capability"
+	capabilitykeeper "github.com/cosmos/ibc-go/modules/capability/keeper"
+	capabilitytypes "github.com/cosmos/ibc-go/modules/capability/types"
 	"github.com/spf13/cast"
 
 	"gitlab.com/thorchain/thornode/openapi"
@@ -84,6 +87,11 @@ import (
 	"github.com/CosmWasm/wasmd/x/wasm"
 	wasmkeeper "github.com/CosmWasm/wasmd/x/wasm/keeper"
 	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
+
+	ibc "github.com/cosmos/ibc-go/v8/modules/core"
+	porttypes "github.com/cosmos/ibc-go/v8/modules/core/05-port/types"
+	ibcexported "github.com/cosmos/ibc-go/v8/modules/core/exported"
+	ibckeeper "github.com/cosmos/ibc-go/v8/modules/core/keeper"
 )
 
 const (
@@ -130,12 +138,14 @@ type THORChainApp struct {
 	interfaceRegistry types.InterfaceRegistry
 
 	// keys to access the substores
-	keys  map[string]*storetypes.KVStoreKey
-	tkeys map[string]*storetypes.TransientStoreKey
+	keys    map[string]*storetypes.KVStoreKey
+	tkeys   map[string]*storetypes.TransientStoreKey
+	memKeys map[string]*storetypes.MemoryStoreKey
 
 	// keepers
 	AccountKeeper         authkeeper.AccountKeeper
 	BankKeeper            bankkeeper.BaseKeeper
+	CapabilityKeeper      *capabilitykeeper.Keeper
 	StakingKeeper         *stakingkeeper.Keeper
 	MintKeeper            mintkeeper.Keeper
 	UpgradeKeeper         *upgradekeeper.Keeper
@@ -146,6 +156,11 @@ type THORChainApp struct {
 	ThorchainModule thorchain.AppModule
 
 	WasmKeeper wasmkeeper.Keeper
+
+	IBCKeeper *ibckeeper.Keeper // IBC Keeper must be a pointer in the app, so we can SetRouter on it correctly
+
+	ScopedIBCKeeper  capabilitykeeper.ScopedKeeper
+	ScopedWasmKeeper capabilitykeeper.ScopedKeeper
 
 	// the module manager
 	ModuleManager      *module.Manager
@@ -258,9 +273,12 @@ func NewChainApp(
 		thorchaintypes.StoreKey,
 
 		wasmtypes.StoreKey,
+
+		ibcexported.StoreKey,
 	)
 
 	tkeys := storetypes.NewTransientStoreKeys(paramstypes.TStoreKey)
+	memKeys := storetypes.NewMemoryStoreKeys(capabilitytypes.MemStoreKey)
 
 	// register streaming services
 	if err := bApp.RegisterStreamingServices(appOpts, keys); err != nil {
@@ -295,6 +313,17 @@ func NewChainApp(
 
 	// add keepers
 
+	// add capability keeper and ScopeToModule for ibc module
+	app.CapabilityKeeper = capabilitykeeper.NewKeeper(
+		appCodec,
+		keys[capabilitytypes.StoreKey],
+		memKeys[capabilitytypes.MemStoreKey],
+	)
+
+	scopedIBCKeeper := app.CapabilityKeeper.ScopeToModule(ibcexported.ModuleName)
+	scopedWasmKeeper := app.CapabilityKeeper.ScopeToModule(wasmtypes.ModuleName)
+	app.CapabilityKeeper.Seal()
+
 	app.AccountKeeper = authkeeper.NewAccountKeeper(
 		appCodec,
 		runtime.NewKVStoreService(keys[authtypes.StoreKey]),
@@ -328,6 +357,16 @@ func NewChainApp(
 		panic(err)
 	}
 	app.txConfig = txConfig
+
+	app.IBCKeeper = ibckeeper.NewKeeper(
+		appCodec,
+		keys[ibcexported.StoreKey],
+		app.GetSubspace(ibcexported.ModuleName),
+		app.StakingKeeper,
+		app.UpgradeKeeper,
+		scopedIBCKeeper,
+		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
+	)
 
 	app.StakingKeeper = stakingkeeper.NewKeeper(
 		appCodec,
@@ -383,11 +422,9 @@ func NewChainApp(
 		// IBCFeeKeeper
 		nil,
 		// ChannelKeeper
-		nil,
-		// PortKeeper
-		nil,
-		// scopedWasmKeeper
-		nil,
+		app.IBCKeeper.ChannelKeeper,
+		app.IBCKeeper.PortKeeper,
+		scopedWasmKeeper,
 		// TransferKeeper
 		nil,
 		app.MsgServiceRouter(),
@@ -398,6 +435,13 @@ func NewChainApp(
 		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
 		wasmOpts...,
 	)
+
+	var wasmStack porttypes.IBCModule // Create fee enabled wasm ibc Stack
+	wasmStack = wasm.NewIBCHandler(app.WasmKeeper, app.IBCKeeper.ChannelKeeper, app.IBCKeeper.ChannelKeeper)
+	// Create static IBC router, add app routes, then set and seal it
+	ibcRouter := porttypes.NewRouter()
+	ibcRouter.AddRoute(wasmtypes.ModuleName, wasmStack)
+	app.IBCKeeper.SetRouter(ibcRouter)
 
 	app.ThorchainKeeper = thorchainkeeperv1.NewKeeper(
 		appCodec, app.BankKeeper, app.AccountKeeper, keys[thorchaintypes.StoreKey],
@@ -416,6 +460,7 @@ func NewChainApp(
 	paramsModule := params.NewAppModule(app.ParamsKeeper)
 	app.ThorchainModule = thorchain.NewAppModule(app.ThorchainKeeper, appCodec, app.BankKeeper, app.AccountKeeper, keys[thorchaintypes.StoreKey], telemetryEnabled, testApp)
 	upgradeModule := upgrade.NewAppModule(app.UpgradeKeeper, app.AccountKeeper.AddressCodec())
+	capabilityModule := capability.NewAppModule(appCodec, *app.CapabilityKeeper, false)
 	wasmModule := wasm.NewAppModule(
 		appCodec,
 		&app.WasmKeeper,
@@ -425,6 +470,7 @@ func NewChainApp(
 		app.MsgServiceRouter(),
 		app.GetSubspace(wasmtypes.ModuleName),
 	)
+	ibcModule := ibc.NewAppModule(app.IBCKeeper)
 
 	app.ModuleManager = module.NewManager(
 		genutilModule,
@@ -433,9 +479,11 @@ func NewChainApp(
 		upgradeModule,
 		paramsModule,
 		consensusModule,
+		capabilityModule,
 		// non sdk modules
 		app.ThorchainModule,
 		wasmModule,
+		ibcModule,
 	)
 
 	// BasicModuleManager defines the module BasicManager is in charge of setting up basic,
@@ -449,9 +497,12 @@ func NewChainApp(
 		upgradeModule,
 		paramsModule,
 		consensusModule,
+		capabilityModule,
 		mint.NewAppModule(appCodec, app.MintKeeper, app.AccountKeeper, nil, app.GetSubspace(minttypes.ModuleName)),
 		// non sdk modules
 		app.ThorchainModule,
+		wasmModule,
+		ibcModule,
 	)
 	app.BasicModuleManager.RegisterLegacyAminoCodec(legacyAmino)
 	app.BasicModuleManager.RegisterInterfaces(interfaceRegistry)
@@ -466,18 +517,22 @@ func NewChainApp(
 		minttypes.ModuleName,
 		stakingtypes.ModuleName,
 		genutiltypes.ModuleName,
+		capabilitytypes.ModuleName,
 		// additional non simd modules
 		thorchaintypes.ModuleName,
 		wasmtypes.ModuleName,
+		ibcexported.ModuleName,
 	)
 
 	app.ModuleManager.SetOrderEndBlockers(
 		govtypes.ModuleName,
 		stakingtypes.ModuleName,
 		genutiltypes.ModuleName,
+		capabilitytypes.ModuleName,
 		// additional non simd modules
 		thorchaintypes.ModuleName,
 		wasmtypes.ModuleName,
+		ibcexported.ModuleName,
 	)
 
 	// NOTE: The genutils module must occur after staking so that pools are
@@ -496,8 +551,10 @@ func NewChainApp(
 		paramstypes.ModuleName,
 		upgradetypes.ModuleName,
 		consensusparamtypes.ModuleName,
+		capabilitytypes.ModuleName,
 		thorchaintypes.ModuleName,
 		wasmtypes.ModuleName,
+		ibcexported.ModuleName,
 	}
 	app.ModuleManager.SetOrderInitGenesis(genesisModuleOrder...)
 	app.ModuleManager.SetOrderExportGenesis(genesisModuleOrder...)
@@ -540,6 +597,7 @@ func NewChainApp(
 	// initialize stores
 	app.MountKVStores(keys)
 	app.MountTransientStores(tkeys)
+	app.MountMemoryStores(memKeys)
 
 	// initialize BaseApp
 	app.SetInitChainer(app.InitChainer)
@@ -555,9 +613,11 @@ func NewChainApp(
 				SignModeHandler: txConfig.SignModeHandler(),
 				SigGasConsumer:  ante.DefaultSigVerificationGasConsumer,
 			},
-			THORChainKeeper: app.ThorchainKeeper,
-			WasmConfig:      &wasmConfig,
-			WasmKeeper:      &app.WasmKeeper,
+			THORChainKeeper:       app.ThorchainKeeper,
+			WasmConfig:            &wasmConfig,
+			WasmKeeper:            &app.WasmKeeper,
+			TXCounterStoreService: runtime.NewKVStoreService(keys[wasmtypes.StoreKey]),
+			IBCKeeper:             app.IBCKeeper,
 		},
 	)
 	if err != nil {
@@ -573,6 +633,9 @@ func NewChainApp(
 			panic(fmt.Errorf("failed to register snapshot extension: %s", err))
 		}
 	}
+
+	app.ScopedIBCKeeper = scopedIBCKeeper
+	app.ScopedWasmKeeper = scopedWasmKeeper
 
 	// In v0.46, the SDK introduces _postHandlers_. PostHandlers are like
 	// antehandlers, but are run _after_ the `runMsgs` execution. They are also
