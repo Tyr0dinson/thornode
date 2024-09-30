@@ -15,7 +15,6 @@ import (
 // It is necessary for query responses that are slices, contain maps, or contain int64 parameters.
 // The proto marshaler marshals int64 parameter to strings while openapi expects int64
 
-// TODO: compare this list with grpc_query.go
 var (
 	_ jsonpb.JSONPBMarshaler = &QueryAsgardVaultsResponse{}
 	_ jsonpb.JSONPBMarshaler = &QueryBalanceModuleResponse{}
