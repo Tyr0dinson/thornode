@@ -88,6 +88,11 @@ import (
 	wasmkeeper "github.com/CosmWasm/wasmd/x/wasm/keeper"
 	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
 
+	ica "github.com/cosmos/ibc-go/v8/modules/apps/27-interchain-accounts"
+	icahost "github.com/cosmos/ibc-go/v8/modules/apps/27-interchain-accounts/host"
+	icahostkeeper "github.com/cosmos/ibc-go/v8/modules/apps/27-interchain-accounts/host/keeper"
+	icahosttypes "github.com/cosmos/ibc-go/v8/modules/apps/27-interchain-accounts/host/types"
+	icatypes "github.com/cosmos/ibc-go/v8/modules/apps/27-interchain-accounts/types"
 	ibcfee "github.com/cosmos/ibc-go/v8/modules/apps/29-fee"
 	ibcfeekeeper "github.com/cosmos/ibc-go/v8/modules/apps/29-fee/keeper"
 	ibcfeetypes "github.com/cosmos/ibc-go/v8/modules/apps/29-fee/types"
@@ -168,11 +173,13 @@ type THORChainApp struct {
 	IBCKeeper         *ibckeeper.Keeper // IBC Keeper must be a pointer in the app, so we can SetRouter on it correctly
 	IBCTransferKeeper ibctransferkeeper.Keeper
 	IBCFeeKeeper      ibcfeekeeper.Keeper
+	ICAHostKeeper     icahostkeeper.Keeper
 
 	ScopedWasmKeeper        capabilitykeeper.ScopedKeeper
 	ScopedIBCKeeper         capabilitykeeper.ScopedKeeper
 	ScopedIBCTransferKeeper capabilitykeeper.ScopedKeeper
 	ScopedIBCFeeKeeper      capabilitykeeper.ScopedKeeper
+	ScopedICAHostKeeper     capabilitykeeper.ScopedKeeper
 
 	// the module manager
 	ModuleManager      *module.Manager
@@ -289,6 +296,7 @@ func NewChainApp(
 		ibcexported.StoreKey,
 		ibctransfertypes.StoreKey,
 		ibcfeetypes.StoreKey,
+		icahosttypes.StoreKey,
 	)
 
 	tkeys := storetypes.NewTransientStoreKeys(paramstypes.TStoreKey)
@@ -337,6 +345,7 @@ func NewChainApp(
 	scopedIBCKeeper := app.CapabilityKeeper.ScopeToModule(ibcexported.ModuleName)
 	scopedIBCTransferKeeper := app.CapabilityKeeper.ScopeToModule(ibctransfertypes.ModuleName)
 	scopedIBCFeeKeeper := app.CapabilityKeeper.ScopeToModule(ibcfeetypes.ModuleName)
+	scopedICAHostKeeper := app.CapabilityKeeper.ScopeToModule(icahosttypes.SubModuleName)
 	scopedWasmKeeper := app.CapabilityKeeper.ScopeToModule(wasmtypes.ModuleName)
 	app.CapabilityKeeper.Seal()
 
@@ -403,6 +412,21 @@ func NewChainApp(
 		scopedIBCTransferKeeper,
 		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
 	)
+
+	app.ICAHostKeeper = icahostkeeper.NewKeeper(
+		appCodec,
+		keys[icahosttypes.StoreKey],
+		app.GetSubspace(icahosttypes.SubModuleName),
+		app.IBCFeeKeeper, // use ics29 fee as ics4Wrapper in middleware stack
+		app.IBCKeeper.ChannelKeeper,
+		app.IBCKeeper.PortKeeper,
+		app.AccountKeeper,
+		scopedICAHostKeeper,
+		app.MsgServiceRouter(),
+		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
+	)
+	// set grpc router for ica host
+	app.ICAHostKeeper.WithQueryRouter(app.GRPCQueryRouter())
 
 	app.StakingKeeper = stakingkeeper.NewKeeper(
 		appCodec,
@@ -478,10 +502,17 @@ func NewChainApp(
 	wasmStackIBCHandler := wasm.NewIBCHandler(app.WasmKeeper, app.IBCKeeper.ChannelKeeper, app.IBCFeeKeeper)
 	wasmStack = ibcfee.NewIBCMiddleware(wasmStackIBCHandler, app.IBCFeeKeeper)
 
+	// RecvPacket, message that originates from core IBC and goes down to app, the flow is:
+	// channel.RecvPacket -> fee.OnRecvPacket -> icaHost.OnRecvPacket
+	var icaHostStack porttypes.IBCModule
+	icaHostStack = icahost.NewIBCModule(app.ICAHostKeeper)
+	icaHostStack = ibcfee.NewIBCMiddleware(icaHostStack, app.IBCFeeKeeper)
+
 	// Create static IBC router, add app routes, then set and seal it
-	ibcRouter := porttypes.NewRouter()
-	ibcRouter.AddRoute(wasmtypes.ModuleName, wasmStack)
-	ibcRouter.AddRoute(ibctransfertypes.ModuleName, transferStack)
+	ibcRouter := porttypes.NewRouter().
+		AddRoute(wasmtypes.ModuleName, wasmStack).
+		AddRoute(ibctransfertypes.ModuleName, transferStack).
+		AddRoute(icahosttypes.SubModuleName, icaHostStack)
 
 	app.IBCKeeper.SetRouter(ibcRouter)
 
@@ -515,6 +546,7 @@ func NewChainApp(
 	ibcModule := ibc.NewAppModule(app.IBCKeeper)
 	ibcTransferModule := ibctransfer.NewAppModule(app.IBCTransferKeeper)
 	ibcFeeModule := ibcfee.NewAppModule(app.IBCFeeKeeper)
+	icaModule := ica.NewAppModule(nil, &app.ICAHostKeeper)
 
 	app.ModuleManager = module.NewManager(
 		genutilModule,
@@ -530,6 +562,7 @@ func NewChainApp(
 		ibcModule,
 		ibcTransferModule,
 		ibcFeeModule,
+		icaModule,
 	)
 
 	// BasicModuleManager defines the module BasicManager is in charge of setting up basic,
@@ -551,6 +584,7 @@ func NewChainApp(
 		ibcModule,
 		ibcTransferModule,
 		ibcFeeModule,
+		icaModule,
 	)
 	app.BasicModuleManager.RegisterLegacyAminoCodec(legacyAmino)
 	app.BasicModuleManager.RegisterInterfaces(interfaceRegistry)
@@ -572,6 +606,7 @@ func NewChainApp(
 		ibcexported.ModuleName,
 		ibctransfertypes.ModuleName,
 		ibcfeetypes.ModuleName,
+		icatypes.ModuleName,
 	)
 
 	app.ModuleManager.SetOrderEndBlockers(
@@ -585,6 +620,7 @@ func NewChainApp(
 		ibcexported.ModuleName,
 		ibctransfertypes.ModuleName,
 		ibcfeetypes.ModuleName,
+		icatypes.ModuleName,
 	)
 
 	// NOTE: The genutils module must occur after staking so that pools are
@@ -609,6 +645,7 @@ func NewChainApp(
 		ibcexported.ModuleName,
 		ibctransfertypes.ModuleName,
 		ibcfeetypes.ModuleName,
+		icatypes.ModuleName,
 	}
 	app.ModuleManager.SetOrderInitGenesis(genesisModuleOrder...)
 	app.ModuleManager.SetOrderExportGenesis(genesisModuleOrder...)
@@ -691,6 +728,7 @@ func NewChainApp(
 	app.ScopedIBCKeeper = scopedIBCKeeper
 	app.ScopedIBCTransferKeeper = scopedIBCTransferKeeper
 	app.ScopedIBCFeeKeeper = scopedIBCFeeKeeper
+	app.ScopedICAHostKeeper = scopedICAHostKeeper
 	app.ScopedWasmKeeper = scopedWasmKeeper
 
 	// In v0.46, the SDK introduces _postHandlers_. PostHandlers are like
