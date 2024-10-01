@@ -281,7 +281,7 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
-  - .|length == 0
+  - length == 0
 ---
 ########################################################################################
 # swapper clout w/ dex agg
@@ -302,12 +302,13 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
+  - .[0].coin.amount == "${OUT_AMOUNT=65816782}"
   - |
     .[0] == {
       chain: "ETH",
       clout_spent: "0",
       coin: {
-          amount: "65817296",
+          amount: "${OUT_AMOUNT}",
           asset: "ETH.ETH"
       },
       gas_rate: 12,

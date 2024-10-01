@@ -650,8 +650,8 @@ type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 1
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == ${AFTER_BALANCE=2503838262887}
-  - ${AFTER_BALANCE} - ${INITIAL_BALANCE} == ${BALANCE_DIFFERENCE_ONE=3856916110}
+  - .balances[]|select(.denom == "rune").amount == "${AFTER_BALANCE=2503838262887}"
+  - ${AFTER_BALANCE} - ${INITIAL_BALANCE} == ${BALANCE_DIFFERENCE_ONE=3856916137}
 ---
 type: create-blocks
 count: 1
@@ -691,7 +691,7 @@ type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 1
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == ${INITIAL_BALANCE=2503838262887}
+  - .balances[]|select(.denom == "rune").amount == "${INITIAL_BALANCE=2503838262887}"
 ---
 type: create-blocks
 count: 1
@@ -700,18 +700,18 @@ type: check
 endpoint: http://localhost:1317/thorchain/pool/btc.btc/borrowers
 asserts:
   - .|length == 1
-  - .[0]|.collateral_deposited == "1978401"
-  - .[0]|.debt_issued == "5648086332"
-  - .[0]|.owner == "{{ addr_btc_fox }}"
-  - .[0]|.collateral_withdrawn == "${INITIAL_COLLATERAL_DEPOSITED}"
-  - .[0]|.debt_repaid == "${DEBT_REPAID}"
+  - .[0].collateral_deposited == "1978401"
+  - .[0].debt_issued == "5648086332"
+  - .[0].owner == "{{ addr_btc_fox }}"
+  - .[0].collateral_withdrawn == "${INITIAL_COLLATERAL_DEPOSITED}"
+  - .[0].debt_repaid == "${DEBT_REPAID}"
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 1
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == ${AFTER_BALANCE=2504315574035}
-  - ${AFTER_BALANCE} - ${INITIAL_BALANCE} == ${BALANCE_DIFFERENCE_TWO=477311145}
+  - .balances[]|select(.denom == "rune").amount == "${AFTER_BALANCE=2504315574035}"
+  - ${AFTER_BALANCE} - ${INITIAL_BALANCE} == ${BALANCE_DIFFERENCE_TWO=477311148}
   - ${BALANCE_DIFFERENCE_ONE} > ${BALANCE_DIFFERENCE_TWO} # Over-repayment output is greater than no-over-repayment output.
   - ${BALANCE_DIFFERENCE_ONE} > ${BALANCE_DIFFERENCE_TWO} * 8
 
@@ -725,7 +725,7 @@ asserts:
   - .balances|length == 1
     # this time they should receive a normal amount relative to the deposit since the
     # excess debt down was credited on the previous open
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == ${AFTER_BALANCE}
+  - .balances[]|select(.denom == "rune").amount|tonumber == ${AFTER_BALANCE}
 ---
 ########################################################################################
 # open loan btc -> usdc (with fuzzy)

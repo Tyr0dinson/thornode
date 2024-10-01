@@ -242,7 +242,7 @@ asserts:
   - .|length == 1
   - .[0]|.in_hash == "{{ observe_txid 3 }}"
   - .[0]|.coin.asset == "ETH.USDY-0X9999999999999999999999999999999999999999"
-  - .[0]|.coin.amount == "2549702300"
+  - .[0]|.coin.amount == "${OUTPUT_AMOUNT=2549702300}"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -253,7 +253,7 @@ txs:
       from_address: {{ addr_eth_dog }}
       to_address: {{ addr_eth_fox }}
       coins:
-        - amount: "2549702200"
+        - amount: "${OUTPUT_AMOUNT}"
           asset: "ETH.USDY-0X9999999999999999999999999999999999999999"
       gas:
         - amount: "960000"

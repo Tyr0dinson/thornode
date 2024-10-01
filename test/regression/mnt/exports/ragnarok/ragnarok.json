@@ -181,7 +181,7 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "35000911903918",
+              "amount": "35000260879554",
               "denom": "rune"
             }
           ]
@@ -208,7 +208,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "4999348980374",
+              "amount": "5000000004738",
               "denom": "rune"
             }
           ]
@@ -294,7 +294,7 @@
       "node_accounts": [
         {
           "active_block_height": "1",
-          "bond": "4999348975636",
+          "bond": "5000000000000",
           "bond_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
           "ip_address": "1.1.1.1",
           "node_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
@@ -306,75 +306,12 @@
           "validator_cons_pub_key": "tthorcpub1zcjduepqq75h7uy6qhesh9d3a9tuk0mzrnc46u8rye44ze6peua3zmpfh23q8z37sz"
         }
       ],
-      "observed_tx_in_voters": [
-        {
-          "actions": [
-            {
-              "chain": "ETH",
-              "coin": {
-                "amount": "30917273",
-                "asset": "ETH.ETH"
-              },
-              "gas_rate": "15",
-              "in_hash": "1F0879AAE452C869F47C1B7A1310D1D4BABF75003A528741681FF878F5345038",
-              "max_gas": [
-                {
-                  "amount": "15000",
-                  "asset": "ETH.ETH",
-                  "decimals": "8"
-                }
-              ],
-              "memo": "OUT:1F0879AAE452C869F47C1B7A1310D1D4BABF75003A528741681FF878F5345038",
-              "to_address": "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
-              "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
-            }
-          ],
-          "finalised_height": "11",
-          "height": "11",
-          "out_txs": null,
-          "outbound_height": "11",
-          "tx": {
-            "tx": {
-              "chain": "THOR",
-              "coins": [
-                {
-                  "amount": "46216908",
-                  "asset": "ETH/ETH"
-                }
-              ],
-              "from_address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
-              "gas": null,
-              "id": "1F0879AAE452C869F47C1B7A1310D1D4BABF75003A528741681FF878F5345038",
-              "memo": "=:ETH.ETH:0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
-              "to_address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2"
-            }
-          },
-          "tx_id": "1F0879AAE452C869F47C1B7A1310D1D4BABF75003A528741681FF878F5345038",
-          "txs": [
-            {
-              "tx": {
-                "chain": "THOR",
-                "coins": [
-                  {
-                    "amount": "46216908",
-                    "asset": "ETH/ETH"
-                  }
-                ],
-                "from_address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
-                "gas": null,
-                "id": "1F0879AAE452C869F47C1B7A1310D1D4BABF75003A528741681FF878F5345038",
-                "memo": "=:ETH.ETH:0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
-                "to_address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2"
-              }
-            }
-          ]
-        }
-      ],
+      "observed_tx_in_voters": null,
       "observed_tx_out_voters": null,
       "orderbook_items": [],
       "outbound_fee_spent_rune": [
         {
-          "amount": "371182",
+          "amount": "175482",
           "asset": "ETH.ETH"
         },
         {
@@ -427,74 +364,7 @@
       ],
       "trade_accounts": [],
       "trade_units": [],
-      "tx_outs": [
-        {
-          "height": "11",
-          "tx_array": [
-            {
-              "chain": "ETH",
-              "clout_spent": "0",
-              "coin": {
-                "amount": "30917273",
-                "asset": "ETH.ETH"
-              },
-              "gas_rate": "15",
-              "in_hash": "1F0879AAE452C869F47C1B7A1310D1D4BABF75003A528741681FF878F5345038",
-              "max_gas": [
-                {
-                  "amount": "15000",
-                  "asset": "ETH.ETH",
-                  "decimals": "8"
-                }
-              ],
-              "memo": "OUT:1F0879AAE452C869F47C1B7A1310D1D4BABF75003A528741681FF878F5345038",
-              "to_address": "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
-              "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
-            },
-            {
-              "chain": "ETH",
-              "clout_spent": "0",
-              "coin": {
-                "amount": "8643424",
-                "asset": "ETH.ETH"
-              },
-              "gas_rate": "15",
-              "in_hash": "E91556161E52FC55FF96F9D3E520C1CA4716C6578D2AF3E498F8A3C3CFEDDECC",
-              "max_gas": [
-                {
-                  "amount": "15000",
-                  "asset": "ETH.ETH",
-                  "decimals": "8"
-                }
-              ],
-              "memo": "OUT:E91556161E52FC55FF96F9D3E520C1CA4716C6578D2AF3E498F8A3C3CFEDDECC",
-              "out_hash": "000000000000000000000000000000000000000000000000000000000000000a",
-              "to_address": "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
-              "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
-            },
-            {
-              "chain": "ETH",
-              "clout_spent": "0",
-              "coin": {
-                "amount": "86390518",
-                "asset": "ETH.ETH"
-              },
-              "gas_rate": "15",
-              "in_hash": "0000000000000000000000000000000000000000000000000000000000000000",
-              "max_gas": [
-                {
-                  "amount": "15000",
-                  "asset": "ETH.ETH",
-                  "decimals": "8"
-                }
-              ],
-              "memo": "RAGNAROK:11",
-              "to_address": "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
-              "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
-            }
-          ]
-        }
-      ],
+      "tx_outs": null,
       "vaults": [
         {
           "block_height": "2",

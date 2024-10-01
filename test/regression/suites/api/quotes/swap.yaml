@@ -444,7 +444,7 @@ params:
   affiliate_bps: 500
   destination: {{ addr_thor_fox }}
 asserts:
-  - .memo == "=:THOR.RUNE:{{ addr_thor_fox }}:838252233:xx:500"
+  - .memo == "=:THOR.RUNE:{{ addr_thor_fox }}:${LIMIT=838252262}:xx:500"
   - .expected_amount_out|tonumber == 912114319
   - .recommended_min_amount_in == "5120000"
   - .fees.affiliate == "49020600"
@@ -469,7 +469,7 @@ txs:
       gas:
         - amount: "100000"
           asset: "ETH.ETH"
-      memo: "=:THOR.RUNE:{{ addr_thor_fox }}:838252233:xx:500"
+      memo: "=:THOR.RUNE:{{ addr_thor_fox }}:${LIMIT}:xx:500"
     block_height: 7
     finalise_height: 7
     observed_pub_key: {{ pubkey_dog }}

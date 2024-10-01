@@ -216,6 +216,16 @@ asserts:
 ########################################################################################
 # clear outbounds to cleanup
 ########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - length == 5
+  - .[0].coin.amount == "${OUTPUT_AMOUNTS=4418746600}"
+  - .[1].coin.amount == "${OUTPUT_AMOUNTS=4418746600}"
+  - .[2].coin.amount == "${OUTPUT_AMOUNTS=4418746600}"
+  - .[3].coin.amount == "${OUTPUT_AMOUNT_4=4045952900}"
+  - .[4].coin.amount == "${OUTPUT_AMOUNT_5=4045960700}"
+---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
 txs:
@@ -225,7 +235,7 @@ txs:
       from_address: {{ addr_eth_dog }}
       to_address: {{ addr_eth_fox }}
       coins:
-        - amount: "4418746600"
+        - amount: "${OUTPUT_AMOUNTS}"
           asset: "ETH.USDX-0X9999999999999999999999999999999999999999"
           decimals: 8
       gas:
@@ -241,7 +251,7 @@ txs:
       from_address: {{ addr_eth_dog }}
       to_address: {{ addr_eth_fox }}
       coins:
-        - amount: "4418746600"
+        - amount: "${OUTPUT_AMOUNTS}"
           asset: "ETH.USDY-0X9999999999999999999999999999999999999999"
           decimals: 8
       gas:
@@ -257,7 +267,7 @@ txs:
       from_address: {{ addr_eth_dog }}
       to_address: {{ addr_eth_fox }}
       coins:
-        - amount: "4418746600"
+        - amount: "${OUTPUT_AMOUNTS}"
           asset: "ETH.USDZ-0X9999999999999999999999999999999999999999"
           decimals: 8
       gas:
@@ -273,7 +283,7 @@ txs:
       from_address: {{ addr_eth_dog }}
       to_address: {{ addr_eth_fox }}
       coins:
-        - amount: "4045967800"
+        - amount: "${OUTPUT_AMOUNT_4}"
           asset: "ETH.USDX-0X9999999999999999999999999999999999999999"
           decimals: 8
       gas:
@@ -289,7 +299,7 @@ txs:
       from_address: {{ addr_eth_dog }}
       to_address: {{ addr_eth_fox }}
       coins:
-        - amount: "4045990400"
+        - amount: "${OUTPUT_AMOUNT_5}"
           asset: "ETH.USDY-0X9999999999999999999999999999999999999999"
           decimals: 8
       gas:

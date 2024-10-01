@@ -166,15 +166,6 @@
     "bank": {
       "balances": [
         {
-          "address": "tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u",
-          "coins": [
-            {
-              "amount": "186801",
-              "denom": "rune"
-            }
-          ]
-        },
-        {
           "address": "tthor1p3pm60jxtqvr6zvlw97l2ef5rm6cn8nfrtt2ds",
           "coins": [
             {
@@ -294,7 +285,7 @@
       },
       "supply": [
         {
-          "amount": "49999863441156",
+          "amount": "49999863254355",
           "denom": "rune"
         },
         {
@@ -420,7 +411,7 @@
           "collateral_deposited": "494905",
           "collateral_withdrawn": "494905",
           "debt_issued": "185400000",
-          "debt_repaid": "394824534",
+          "debt_repaid": "395008384",
           "last_open_height": "9",
           "last_repay_height": "17",
           "owner": "bcrt1qqk8c8sfrmfm0tkncs0zxeutc8v5mx3pjw22g33"
@@ -653,7 +644,7 @@
         {
           "address": "tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u",
           "reclaimed": "0",
-          "score": "20563876",
+          "score": "20564611",
           "spent": "0"
         },
         {
