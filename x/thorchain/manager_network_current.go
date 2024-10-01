@@ -1771,16 +1771,16 @@ func (vm *NetworkMgrVCUR) calcBlockRewards(
 	systemIncomeBurnDeduct = common.GetSafeShare(systemIncomeBurnRateBpsUint, cosmos.NewUint(10_000), systemIncome)
 	assetsBps := cosmos.NewUint(uint64(vm.k.GetConfigInt64(ctx, constants.PendulumAssetsBasisPoints)))
 
-	pendulumIgnoreEffectiveSecurity, err := vm.k.GetMimir(ctx, constants.MimirKeyPendulumIgnoreEffectiveSecurity)
+	pendulumUseEffectiveSecurity, err := vm.k.GetMimir(ctx, constants.MimirKeyPendulumUseEffectiveSecurity)
 	if err != nil {
-		ctx.Logger().Error("fail to fetch mimir value", "key", constants.MimirKeyPendulumIgnoreEffectiveSecurity, "error", err)
+		ctx.Logger().Error("fail to fetch mimir value", "key", constants.MimirKeyPendulumUseEffectiveSecurity, "error", err)
 	}
-	ignoreEffectiveSecurity := (pendulumIgnoreEffectiveSecurity > 0 && err == nil)
-	pendulumIgnoreL1Assets, err := vm.k.GetMimir(ctx, constants.MimirKeyPendulumIgnoreL1Assets)
+	useEffectiveSecurity := (pendulumUseEffectiveSecurity > 0 && err == nil)
+	pendulumUseVaultAssets, err := vm.k.GetMimir(ctx, constants.MimirKeyPendulumUseVaultAssets)
 	if err != nil {
-		ctx.Logger().Error("fail to fetch mimir value", "key", constants.MimirKeyPendulumIgnoreL1Assets, "error", err)
+		ctx.Logger().Error("fail to fetch mimir value", "key", constants.MimirKeyPendulumUseVaultAssets, "error", err)
 	}
-	ignoreL1Assets := (pendulumIgnoreL1Assets > 0 && err == nil)
+	useVaultAssets := (pendulumUseVaultAssets > 0 && err == nil)
 
 	if !devFundDeduct.IsZero() {
 		systemIncome = common.SafeSub(systemIncome, devFundDeduct)
@@ -1793,8 +1793,8 @@ func (vm *NetworkMgrVCUR) calcBlockRewards(
 		systemIncome = common.SafeSub(systemIncome, systemIncomeBurnDeduct)
 	}
 
-	lpSplit := vm.getPoolShare(availablePoolsRune, vaultsLiquidityRune, effectiveSecurityBond, totalEffectiveBond, systemIncome, assetsBps, ignoreEffectiveSecurity, ignoreL1Assets) // Get liquidity provider share
-	bonderSplit := common.SafeSub(systemIncome, lpSplit)                                                                                                                             // Remainder to Bonders
+	lpSplit := vm.getPoolShare(availablePoolsRune, vaultsLiquidityRune, effectiveSecurityBond, totalEffectiveBond, systemIncome, assetsBps, useEffectiveSecurity, useVaultAssets) // Get liquidity provider share
+	bonderSplit := common.SafeSub(systemIncome, lpSplit)                                                                                                                          // Remainder to Bonders
 
 	ctx.Logger().Info(
 		"incentive pendulum",
@@ -1808,8 +1808,8 @@ func (vm *NetworkMgrVCUR) calcBlockRewards(
 		"income_burn", systemIncomeBurnDeduct.String(),
 		"total_pendulum_rewards", systemIncome.String(),
 		"pendulum_assets_basis_points", assetsBps.String(),
-		"ignore_layer_1_assets", ignoreL1Assets,
-		"ignore_effective_security", ignoreEffectiveSecurity,
+		"use_vault_assets", useVaultAssets,
+		"use_effective_security", useEffectiveSecurity,
 		"bond_rewards", bonderSplit.String(),
 		"pool_rewards", lpSplit.String(),
 	)
@@ -1839,15 +1839,15 @@ func (vm *NetworkMgrVCUR) calcBlockRewards(
 // effectiveBond: total RUNE value bonded, with max per-node at 66th percentile
 // totalRewards: total RUNE rewards to be distributed
 func (vm *NetworkMgrVCUR) getPoolShare(
-	pooledRune, vaultLiquidity, effectiveSecurityBond, totalEffectiveBond, totalRewards, assetsBps cosmos.Uint, ignoreEffectiveSecurity, ignoreL1Assets bool,
+	pooledRune, vaultLiquidity, effectiveSecurityBond, totalEffectiveBond, totalRewards, assetsBps cosmos.Uint, useEffectiveSecurity, useVaultAssets bool,
 ) cosmos.Uint {
 	securing := effectiveSecurityBond
 	secured := vaultLiquidity
 
-	if ignoreEffectiveSecurity {
+	if !useEffectiveSecurity {
 		securing = totalEffectiveBond
 	}
-	if ignoreL1Assets {
+	if !useVaultAssets {
 		secured = pooledRune
 	}
 
@@ -1870,10 +1870,10 @@ func (vm *NetworkMgrVCUR) getPoolShare(
 	adjustmentNodeShare := common.GetUncappedShare(totalEffectiveBond, effectiveSecurityBond, baseNodeShare)
 	adjustmentPoolShare := common.GetSafeShare(pooledRune, vaultLiquidity, basePoolShare)
 
-	if ignoreEffectiveSecurity {
+	if !useEffectiveSecurity {
 		adjustmentNodeShare = baseNodeShare
 	}
-	if ignoreL1Assets {
+	if !useVaultAssets {
 		adjustmentPoolShare = basePoolShare
 	}
 

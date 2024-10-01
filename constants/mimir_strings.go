@@ -6,8 +6,8 @@ package constants
 // and no Mimir key should require the combination of more than two strings.
 const (
 	// TODO: Perhaps complete this list with May 2024's pending !3561.
-	MimirKeyPendulumIgnoreL1Assets          = "PendulumIgnoreL1Assets"
-	MimirKeyPendulumIgnoreEffectiveSecurity = "PendulumIgnoreEffectiveSecurity"
+	MimirKeyPendulumUseVaultAssets       = "PendulumUseVaultAssets"
+	MimirKeyPendulumUseEffectiveSecurity = "PendulumUseEffectiveSecurity"
 
 	MimirTemplateConfMultiplierBasisPoints = "ConfMultiplierBasisPoints-%s" // Use with Chain
 	MimirTemplateMaxConfirmations          = "MaxConfirmations-%s"          // Use with Chain
