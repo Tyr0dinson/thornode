@@ -97,6 +97,28 @@ func (ms msgServer) SetVersion(goCtx context.Context, msg *types.MsgSetVersion) 
 	return externalHandler(goCtx, handler, msg)
 }
 
+// --- CosmWasm
+
+func (ms msgServer) StoreCode(goCtx context.Context, msg *types.MsgStoreCode) (*types.MsgEmpty, error) {
+	handler := NewWasmStoreCodeHandler(ms.mgr)
+	return externalHandler(goCtx, handler, msg)
+}
+
+func (ms msgServer) InstantiateContract(goCtx context.Context, msg *types.MsgInstantiateContract) (*types.MsgEmpty, error) {
+	handler := NewWasmInstantiateContractHandler(ms.mgr)
+	return externalHandler(goCtx, handler, msg)
+}
+
+func (ms msgServer) InstantiateContract2(goCtx context.Context, msg *types.MsgInstantiateContract2) (*types.MsgEmpty, error) {
+	handler := NewWasmInstantiateContract2Handler(ms.mgr)
+	return externalHandler(goCtx, handler, msg)
+}
+
+func (ms msgServer) SudoContract(goCtx context.Context, msg *types.MsgSudoContract) (*types.MsgEmpty, error) {
+	handler := NewWasmSudoContractHandler(ms.mgr)
+	return externalHandler(goCtx, handler, msg)
+}
+
 func externalHandler(goCtx context.Context, handler MsgHandler, msg sdk.Msg) (_ *types.MsgEmpty, err error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 

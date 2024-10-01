@@ -27,6 +27,8 @@ import (
 	"gitlab.com/thorchain/thornode/x/thorchain/client/cli"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
+
+	wasmkeeper "github.com/CosmWasm/wasmd/x/wasm/keeper"
 )
 
 // type check to ensure the interface is properly implemented
@@ -105,7 +107,15 @@ type AppModule struct {
 }
 
 // NewAppModule creates a new AppModule Object
-func NewAppModule(k keeper.Keeper, cdc codec.Codec, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, storeKey cosmos.StoreKey, telemetryEnabled bool, testApp bool) AppModule {
+func NewAppModule(k keeper.Keeper,
+	cdc codec.Codec,
+	coinKeeper bankkeeper.Keeper,
+	accountKeeper authkeeper.AccountKeeper,
+	wasmKeeper wasmkeeper.Keeper,
+	storeKey cosmos.StoreKey,
+	telemetryEnabled bool,
+	testApp bool,
+) AppModule {
 	kb := cosmos.KeybaseStore{}
 	var err error
 	if !testApp {
@@ -114,7 +124,7 @@ func NewAppModule(k keeper.Keeper, cdc codec.Codec, coinKeeper bankkeeper.Keeper
 			panic(err)
 		}
 	}
-	mgr := NewManagers(k, cdc, coinKeeper, accountKeeper, storeKey)
+	mgr := NewManagers(k, cdc, coinKeeper, accountKeeper, wasmKeeper, storeKey)
 	return AppModule{
 		AppModuleBasic:   AppModuleBasic{},
 		mgr:              mgr,

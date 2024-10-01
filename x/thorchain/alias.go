@@ -264,6 +264,11 @@ type (
 	MsgLoanRepayment          = types.MsgLoanRepayment
 	MsgRunePoolDeposit        = types.MsgRunePoolDeposit
 	MsgRunePoolWithdraw       = types.MsgRunePoolWithdraw
+	MsgStoreCode              = types.MsgStoreCode
+	MsgInstantiateContract    = types.MsgInstantiateContract
+	MsgInstantiateContract2   = types.MsgInstantiateContract2
+	MsgMigrateContract        = types.MsgMigrateContract
+	MsgSudoContract           = types.MsgSudoContract
 
 	// Keeper structs
 	PoolStatus               = types.PoolStatus

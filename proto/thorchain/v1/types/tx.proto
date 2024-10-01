@@ -17,6 +17,7 @@ import "types/msg_solvency.proto";
 import "types/msg_tss_keysign_fail.proto";
 import "types/msg_tss_pool.proto";
 import "types/msg_version.proto";
+import "types/msg_wasms.proto";
 
 option go_package = "gitlab.com/thorchain/thornode/x/thorchain/types";
 
@@ -39,6 +40,11 @@ service Msg {
     rpc TssKeysignFail(MsgTssKeysignFail) returns (MsgEmpty);
     rpc TssPool(MsgTssPool) returns (MsgEmpty);
     rpc SetVersion(MsgSetVersion) returns (MsgEmpty);
+
+    rpc StoreCode(MsgStoreCode) returns (MsgEmpty);
+    rpc InstantiateContract(MsgInstantiateContract) returns (MsgEmpty);
+    rpc InstantiateContract2(MsgInstantiateContract2) returns (MsgEmpty);
+    rpc SudoContract(MsgSudoContract) returns (MsgEmpty);
 }
 
 // MsgEmpty is the return type for all current Msg Server messages

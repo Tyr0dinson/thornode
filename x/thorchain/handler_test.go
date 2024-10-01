@@ -33,6 +33,9 @@ import (
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 	kv1 "gitlab.com/thorchain/thornode/x/thorchain/keeper/v1"
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
+
+	wasmkeeper "github.com/CosmWasm/wasmd/x/wasm/keeper"
+	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
 )
 
 var errKaboom = errors.New("kaboom")
@@ -72,6 +75,7 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 	SetupConfigForTest()
 	keyAcc := cosmos.NewKVStoreKey(authtypes.StoreKey)
 	keyBank := cosmos.NewKVStoreKey(banktypes.StoreKey)
+	keyWasm := cosmos.NewKVStoreKey(wasmtypes.StoreKey)
 
 	db := dbm.NewMemDB()
 	ms := store.NewCommitMultiStore(db, log.NewNopLogger(), storemetrics.NewNoOpMetrics())
@@ -115,6 +119,15 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
 		log.NewNopLogger(),
 	)
+	wk := wasmkeeper.NewKeeper(
+		encodingConfig.Codec,
+		runtime.NewKVStoreService(keyWasm),
+		ak, bk,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, "wasm",
+		wasmtypes.DefaultWasmConfig(), wasmkeeper.BuiltInCapabilities(),
+		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
+		nil,
+	)
 	c.Assert(bk.MintCoins(ctx, ModuleName, cosmos.Coins{
 		cosmos.NewCoin(common.RuneAsset().Native(), cosmos.NewInt(200_000_000_00000000)),
 	}), IsNil)
@@ -141,7 +154,7 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 	}), IsNil)
 
 	os.Setenv("NET", "mocknet")
-	mgr := NewManagers(k, encodingConfig.Codec, bk, ak, keyThorchain)
+	mgr := NewManagers(k, encodingConfig.Codec, bk, ak, wk, keyThorchain)
 	constants.SWVersion = GetCurrentVersion()
 
 	_, hasVerStored := k.GetVersionWithCtx(ctx)

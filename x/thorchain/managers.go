@@ -1,9 +1,12 @@
 package thorchain
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
+	wasmkeeper "github.com/CosmWasm/wasmd/x/wasm/keeper"
+	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
 	"github.com/blang/semver"
 	abci "github.com/cometbft/cometbft/abci/types"
 	"github.com/cosmos/cosmos-sdk/codec"
@@ -41,6 +44,7 @@ type Manager interface {
 	OrderBookMgr() OrderBook
 	Slasher() Slasher
 	TradeAccountManager() TradeAccountManager
+	WasmManager() WasmManager
 }
 
 type TradeAccountManager interface {
@@ -117,6 +121,40 @@ type PoolManager interface {
 	EndBlock(ctx cosmos.Context, mgr Manager) error
 }
 
+type WasmManager interface {
+	Create(
+		ctx cosmos.Context,
+		creator cosmos.AccAddress,
+		wasmCode []byte,
+	) (wasmtypes.MsgStoreCodeResponse, error)
+	Instantiate(ctx context.Context,
+		codeID uint64,
+		creator, admin cosmos.AccAddress,
+		initMsg []byte,
+		label string,
+		deposit cosmos.Coins,
+	) (wasmtypes.MsgInstantiateContractResponse, error)
+	Instantiate2(
+		ctx context.Context,
+		codeID uint64,
+		creator, admin cosmos.AccAddress,
+		initMsg []byte,
+		label string,
+		deposit cosmos.Coins,
+		salt []byte,
+		fixMsg bool,
+	) (wasmtypes.MsgInstantiateContract2Response, error)
+	Migrate(ctx context.Context,
+		contractAddress, caller cosmos.AccAddress,
+		newCodeID uint64,
+		msg []byte,
+	) (wasmtypes.MsgMigrateContractResponse, error)
+	Sudo(ctx cosmos.Context,
+		caller, contractAddress cosmos.AccAddress,
+		msg []byte,
+	) (wasmtypes.MsgSudoContractResponse, error)
+}
+
 // SwapQueue interface define the contract of Swap Queue
 type SwapQueue interface {
 	EndBlock(ctx cosmos.Context, mgr Manager) error
@@ -171,21 +209,30 @@ type Mgrs struct {
 	orderBook      OrderBook
 	slasher        Slasher
 	tradeManager   TradeAccountManager
+	wasmManager    WasmManager
 
 	K             keeper.Keeper
 	cdc           codec.Codec
 	coinKeeper    bankkeeper.Keeper
 	accountKeeper authkeeper.AccountKeeper
+	wasmKeeper    wasmkeeper.Keeper
 	storeKey      cosmos.StoreKey
 }
 
 // NewManagers  create a new Manager
-func NewManagers(keeper keeper.Keeper, cdc codec.Codec, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, storeKey cosmos.StoreKey) *Mgrs {
+func NewManagers(keeper keeper.Keeper,
+	cdc codec.Codec,
+	coinKeeper bankkeeper.Keeper,
+	accountKeeper authkeeper.AccountKeeper,
+	wasmKeeper wasmkeeper.Keeper,
+	storeKey cosmos.StoreKey,
+) *Mgrs {
 	return &Mgrs{
 		K:             keeper,
 		cdc:           cdc,
 		coinKeeper:    coinKeeper,
 		accountKeeper: accountKeeper,
+		wasmKeeper:    wasmKeeper,
 		storeKey:      storeKey,
 	}
 }
@@ -289,6 +336,11 @@ func (mgr *Mgrs) BeginBlock(ctx cosmos.Context) error {
 		return fmt.Errorf("fail to create trade manager: %w", err)
 	}
 
+	mgr.wasmManager, err = GetWasmManager(v, mgr.K, mgr.wasmKeeper, mgr.eventMgr)
+	if err != nil {
+		return fmt.Errorf("fail to create trade manager: %w", err)
+	}
+
 	return nil
 }
 
@@ -326,6 +378,8 @@ func (mgr *Mgrs) OrderBookMgr() OrderBook { return mgr.orderBook }
 func (mgr *Mgrs) Slasher() Slasher { return mgr.slasher }
 
 func (mgr *Mgrs) TradeAccountManager() TradeAccountManager { return mgr.tradeManager }
+
+func (mgr *Mgrs) WasmManager() WasmManager { return mgr.wasmManager }
 
 // GetKeeper return Keeper
 func GetKeeper(version semver.Version, cdc codec.BinaryCodec, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, storeKey cosmos.StoreKey) (keeper.Keeper, error) {
@@ -453,6 +507,15 @@ func GetTradeAccountManager(version semver.Version, keeper keeper.Keeper, eventM
 	switch {
 	case version.GTE(semver.MustParse("1.131.0")):
 		return newTradeMgrVCUR(keeper, eventMgr), nil
+	default:
+		return nil, errInvalidVersion
+	}
+}
+
+func GetWasmManager(version semver.Version, keeper keeper.Keeper, wasmKeeper wasmkeeper.Keeper, eventMgr EventManager) (WasmManager, error) {
+	switch {
+	case version.GTE(semver.MustParse("2.137.0")):
+		return newWasmMgrVCUR(keeper, wasmKeeper, eventMgr), nil
 	default:
 		return nil, errInvalidVersion
 	}

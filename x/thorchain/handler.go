@@ -60,6 +60,12 @@ func getInternalHandlerMapping(mgr Manager) map[string]MsgHandler {
 	m[sdk.MsgTypeURL(&MsgTradeAccountWithdrawal{})] = NewTradeAccountWithdrawalHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgRunePoolDeposit{})] = NewRunePoolDepositHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgRunePoolWithdraw{})] = NewRunePoolWithdrawHandler(mgr)
+	// --- CosmWasm
+	m[sdk.MsgTypeURL(&MsgStoreCode{})] = NewWasmStoreCodeHandler(mgr)
+	m[sdk.MsgTypeURL(&MsgInstantiateContract{})] = NewWasmInstantiateContractHandler(mgr)
+	m[sdk.MsgTypeURL(&MsgInstantiateContract2{})] = NewWasmInstantiateContract2Handler(mgr)
+	m[sdk.MsgTypeURL(&MsgMigrateContract{})] = NewWasmMigrateContractHandler(mgr)
+	m[sdk.MsgTypeURL(&MsgSudoContract{})] = NewWasmSudoContractHandler(mgr)
 	return m
 }
 
