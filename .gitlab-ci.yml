@@ -258,7 +258,20 @@ test-regression:
   script:
     - make test-regression
 
-test-upgrade:
+test-ictest-sim:
+  rules: *rules
+  stage: long-test
+  <<: *use_dind
+  environment:
+    name: integration
+  before_script:
+    - apk -U add make git bash go
+    - make install-heighliner
+    - PATH="/root/go/bin:$PATH" make build-heighliner-mocknet
+  script:
+    - make test-ictest-sim
+
+test-ictest-upgrade:
   rules: *rules
   stage: long-test
   <<: *use_dind

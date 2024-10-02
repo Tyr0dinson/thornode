@@ -207,6 +207,9 @@ _test-regression:
 	@chown -R ${UID}:${GID} /mnt
 
 # ---------------------------- Interchaintest Tests ----------------------------
+test-ictest-sim:
+	@cd test/ictest && go test -v -timeout 30m -run ^TestThorchainSim$
+
 test-ictest-upgrade:
 	@cd test/ictest && go test -v -timeout 30m -run ^TestUpgrade$
 
