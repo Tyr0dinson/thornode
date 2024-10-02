@@ -3,85 +3,9 @@ package types;
 
 option go_package = "gitlab.com/thorchain/thornode/x/thorchain/types";
 
-import "common/common.proto";
 import "gogoproto/gogo.proto";
 import "amino/amino.proto";
-import "cosmos/base/v1beta1/coin.proto";
 import "cosmos_proto/cosmos.proto";
-
-// MsgStoreCode submit Wasm code to the system
-message MsgStoreCode {
-  // Sender is the actor that signed the messages
-  string sender = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
-  // WASMByteCode can be raw or gzip compressed
-  bytes wasm_byte_code = 2 [ (gogoproto.customname) = "WASMByteCode" ];
-}
-
-message MsgInstantiateContract {
-  // Sender is the that actor that signed the messages
-  string sender = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
-  // Admin is an optional address that can execute migrations
-  string admin = 2 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
-  // CodeID is the reference to the stored WASM code
-  uint64 code_id = 3 [ (gogoproto.customname) = "CodeID" ];
-  // Label is optional metadata to be stored with a contract instance.
-  string label = 4;
-  // Msg json encoded message to be passed to the contract on instantiation
-  bytes msg = 5 [
-    (gogoproto.casttype) = "RawContractMessage",
-    (amino.encoding) = "inline_json"
-  ];
-  // Funds coins that are transferred to the contract on instantiation
-  repeated cosmos.base.v1beta1.Coin funds = 6 [
-    (gogoproto.nullable) = false,
-    (amino.dont_omitempty) = true,
-    (gogoproto.castrepeated) = "github.com/cosmos/cosmos-sdk/types.Coins",
-    (amino.encoding) = "legacy_coins"
-  ];
-}
-
-message MsgInstantiateContract2 {
-  // Sender is the that actor that signed the messages
-  string sender = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
-  // Admin is an optional address that can execute migrations
-  string admin = 2 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
-  // CodeID is the reference to the stored WASM code
-  uint64 code_id = 3 [ (gogoproto.customname) = "CodeID" ];
-  // Label is optional metadata to be stored with a contract instance.
-  string label = 4;
-  // Msg json encoded message to be passed to the contract on instantiation
-  bytes msg = 5 [
-    (gogoproto.casttype) = "RawContractMessage",
-    (amino.encoding) = "inline_json"
-  ];
-  // Funds coins that are transferred to the contract on instantiation
-  repeated cosmos.base.v1beta1.Coin funds = 6 [
-    (gogoproto.nullable) = false,
-    (amino.dont_omitempty) = true,
-    (gogoproto.castrepeated) = "github.com/cosmos/cosmos-sdk/types.Coins",
-    (amino.encoding) = "legacy_coins"
-  ];
-  // Salt is an arbitrary value provided by the sender. Size can be 1 to 64.
-  bytes salt = 7;
-  // FixMsg include the msg value into the hash for the predictable address.
-  // Default is false
-  bool fix_msg = 8;
-}
-
-message MsgMigrateContract {
-  // Sender is the that actor that signed the messages
-  string sender = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
-  // Contract is the address of the smart contract
-  string contract = 2 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
-  // CodeID references the new WASM code
-  uint64 code_id = 3 [ (gogoproto.customname) = "CodeID" ];
-  // Msg json encoded message to be passed to the contract on migration
-  bytes msg = 4 [
-    (gogoproto.casttype) = "RawContractMessage",
-    (amino.encoding) = "inline_json"
-  ];
-}
-
 
 message MsgSudoContract {
   string sender = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];

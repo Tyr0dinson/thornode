@@ -40,10 +40,6 @@ service Msg {
     rpc TssKeysignFail(MsgTssKeysignFail) returns (MsgEmpty);
     rpc TssPool(MsgTssPool) returns (MsgEmpty);
     rpc SetVersion(MsgSetVersion) returns (MsgEmpty);
-
-    rpc StoreCode(MsgStoreCode) returns (MsgEmpty);
-    rpc InstantiateContract(MsgInstantiateContract) returns (MsgEmpty);
-    rpc InstantiateContract2(MsgInstantiateContract2) returns (MsgEmpty);
     rpc SudoContract(MsgSudoContract) returns (MsgEmpty);
 }
 

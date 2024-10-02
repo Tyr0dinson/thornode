@@ -531,7 +531,16 @@ func NewChainApp(
 	consensusModule := consensus.NewAppModule(appCodec, app.ConsensusParamsKeeper)
 	genutilModule := genutil.NewAppModule(app.AccountKeeper, app.StakingKeeper, app, txConfig)
 	paramsModule := params.NewAppModule(app.ParamsKeeper)
-	app.ThorchainModule = thorchain.NewAppModule(app.ThorchainKeeper, appCodec, app.BankKeeper, app.AccountKeeper, keys[thorchaintypes.StoreKey], telemetryEnabled, testApp)
+	app.ThorchainModule = thorchain.NewAppModule(
+		app.ThorchainKeeper,
+		appCodec,
+		app.BankKeeper,
+		app.AccountKeeper,
+		app.WasmKeeper,
+		keys[thorchaintypes.StoreKey],
+		telemetryEnabled,
+		testApp,
+	)
 	upgradeModule := upgrade.NewAppModule(app.UpgradeKeeper, app.AccountKeeper.AddressCodec())
 	capabilityModule := capability.NewAppModule(appCodec, *app.CapabilityKeeper, false)
 	wasmModule := wasm.NewAppModule(

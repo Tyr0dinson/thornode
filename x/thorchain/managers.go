@@ -1,7 +1,6 @@
 package thorchain
 
 import (
-	"context"
 	"errors"
 	"fmt"
 
@@ -122,33 +121,6 @@ type PoolManager interface {
 }
 
 type WasmManager interface {
-	Create(
-		ctx cosmos.Context,
-		creator cosmos.AccAddress,
-		wasmCode []byte,
-	) (wasmtypes.MsgStoreCodeResponse, error)
-	Instantiate(ctx context.Context,
-		codeID uint64,
-		creator, admin cosmos.AccAddress,
-		initMsg []byte,
-		label string,
-		deposit cosmos.Coins,
-	) (wasmtypes.MsgInstantiateContractResponse, error)
-	Instantiate2(
-		ctx context.Context,
-		codeID uint64,
-		creator, admin cosmos.AccAddress,
-		initMsg []byte,
-		label string,
-		deposit cosmos.Coins,
-		salt []byte,
-		fixMsg bool,
-	) (wasmtypes.MsgInstantiateContract2Response, error)
-	Migrate(ctx context.Context,
-		contractAddress, caller cosmos.AccAddress,
-		newCodeID uint64,
-		msg []byte,
-	) (wasmtypes.MsgMigrateContractResponse, error)
 	Sudo(ctx cosmos.Context,
 		caller, contractAddress cosmos.AccAddress,
 		msg []byte,
