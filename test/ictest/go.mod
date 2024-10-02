@@ -18,7 +18,7 @@ require (
 	github.com/cosmos/cosmos-sdk v0.50.9
 	github.com/docker/docker v24.0.9+incompatible
 	github.com/ethereum/go-ethereum v1.14.8
-	github.com/strangelove-ventures/interchaintest/v8 v8.7.2-0.20241002161852-47b336958662
+	github.com/strangelove-ventures/interchaintest/v8 v8.7.2-0.20241002200303-3b13960bc6ad
 	github.com/stretchr/testify v1.9.0
 	go.uber.org/zap v1.27.0
 	golang.org/x/sync v0.7.0

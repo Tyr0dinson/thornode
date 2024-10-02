@@ -40,7 +40,7 @@ func TestThorchainSim(t *testing.T) {
 	ethRouterContractAddress, bscRouterContractAddress, err := SetupContracts(ctx, exoChains["ETH"], exoChains["BSC"])
 	require.NoError(t, err)
 
-	chainImage := ibc.NewDockerImage("thorchain", "local", "1025:1025")
+	chainImage := ibc.NewDockerImage("thorchain", "mocknet-local", "1025:1025")
 
 	// Start thorchain
 	thorchain := StartThorchain(t, ctx, client, network, 1, 0, false,

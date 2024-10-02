@@ -35,13 +35,16 @@ func TestUpgrade(t *testing.T) {
 	// Set up thorchain and others
 	// ----------------------------
 	const (
-		numVals        = 1 // 2
-		numFns         = 0 // 1
-		imageUidGid    = "1025:1025"
-		initialRepo    = "thorchain"
-		initialVersion = "v2.136.0-mocknet"
+		numVals     = 1 // 2
+		numFns      = 0 // 1
+		imageUidGid = "1025:1025"
+		mainnet     = false
+
+		initialRepo    = "ghcr.io/strangelove-ventures/heighliner/thorchain"
+		initialVersion = "mocknet-v2.136.0"
+
 		upgradeRepo    = "thorchain"
-		upgradeVersion = "v2.137.0-mocknet"
+		upgradeVersion = "mocknet-local"
 
 		upgradeName = "2.137.0"
 	)
@@ -54,7 +57,7 @@ func TestUpgrade(t *testing.T) {
 	chainImage := ibc.NewDockerImage(initialRepo, initialVersion, imageUidGid)
 
 	// Start thorchain
-	tc := StartThorchain(t, ctx, client, network, numVals, numFns, true, chainImage, exoChains, ethRouterContractAddress, "")
+	tc := StartThorchain(t, ctx, client, network, numVals, numFns, mainnet, chainImage, exoChains, ethRouterContractAddress, "")
 
 	// --------------------------------------------------------
 	// Bootstrap pool
@@ -125,7 +128,10 @@ func TestUpgrade(t *testing.T) {
 
 	// upgrade version on all nodes
 	newImage := ibc.NewDockerImage(upgradeRepo, upgradeVersion, imageUidGid)
+
+	// not necessary for local images and will error. needed for remote images, so leaving like this to support both.
 	_ = newImage.PullImage(ctx, client)
+
 	for _, n := range tc.Nodes() {
 		n.Image = newImage
 	}

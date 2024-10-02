@@ -37,6 +37,9 @@ ldflags = -X gitlab.com/thorchain/thornode/constants.Version=$(VERSION) \
       -X github.com/cosmos/cosmos-sdk/version.BuildTags=$(TAG) \
       -buildid=
 
+# Consume LDFLAGS from the environment, needed for things like static binaries and cross-compilation
+ldflags += ${LDFLAGS}
+
 # golang settings
 TEST_PATHS=$(shell go list ./... | grep -v bifrost/tss/go-tss) # Skip compute-intensive tests by default
 TEST_DIR?=${TEST_PATHS}
@@ -203,6 +206,11 @@ _test-regression:
 	@awk '/^total:/ {print "Regression Coverage: " $$3}' /mnt/coverage/func-coverage.txt
 	@chown -R ${UID}:${GID} /mnt
 
+# ---------------------------- Interchaintest Tests ----------------------------
+test-ictest-upgrade:
+	@cd test/ictest
+	@go test -v -timeout 30m -run ^TestUpgrade$ gitlab.com/thorchain/thornode/test/ictest
+
 # ------------------------------ Simulation Tests ------------------------------
 
 test-simulation: build-mocknet reset-mocknet test-simulation-no-reset
@@ -249,6 +257,17 @@ halt-mocknet:
 build-mocknet:
 	@docker compose -f build/docker/docker-compose.yml --profile mocknet --profile midgard build \
 		--build-arg COMMIT=$(COMMIT)
+
+install-heighliner:
+	git clone https://github.com/strangelove-ventures/heighliner.git
+	cd heighliner && go install && cd .. && rm -rf heighliner
+
+build-heighliner-mocknet:
+ifeq (,$(shell which heighliner))
+	echo 'heighliner' binary not found. Consider running `make get-heighliner`
+else
+	heighliner build -f build/docker/heighliner.yaml -c thorchain --local -t mocknet-local --build-env "TAG=mocknet"
+endif
 
 bootstrap-mocknet:
 	@docker run --rm ${DOCKER_TTY_ARGS} \

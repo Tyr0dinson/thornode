@@ -258,6 +258,19 @@ test-regression:
   script:
     - make test-regression
 
+test-upgrade:
+  rules: *rules
+  stage: long-test
+  <<: *use_dind
+  environment:
+    name: integration
+  before_script:
+    - apk -U add make git bash
+    - make install-heighliner 
+    - make build-heighliner-mocknet
+  script:
+    - make test-ictest-upgrade
+
 include:
   - template: Security/SAST.gitlab-ci.yml
   - template: Security/Secret-Detection.gitlab-ci.yml
