@@ -736,9 +736,8 @@ func (s *HandlerSuite) TestFuzzyMatching(c *C) {
 	check, _ = common.NewAsset("ETH~USDT")
 	result = fuzzyAssetMatch(ctx, k, check)
 	c.Check(result.Synth, Equals, false)
-	c.Check(result.Trade, Equals, false)
-	c.Check(result.Equals(p2.Asset.GetTradeAsset()), Equals, false)
-	// This should return the Trade Asset of p2, but doesn't.
+	c.Check(result.Trade, Equals, true)
+	c.Check(result.Equals(p2.Asset.GetTradeAsset()), Equals, true)
 }
 
 func (s *HandlerSuite) TestMemoFetchAddress(c *C) {
