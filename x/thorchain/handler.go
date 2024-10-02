@@ -317,8 +317,10 @@ func fuzzyAssetMatchV3_2_0(ctx cosmos.Context, keeper keeper.Keeper, origAsset c
 			continue
 		}
 	}
-	winner.Asset.Synth = origAsset.Synth
-	return winner.Asset
+	// Since the Chain and Ticker must already match, replace just the Symbol with the winner's,
+	// keeping other fields like Synth and Trade the same as the original.
+	origAsset.Symbol = winner.Asset.Symbol
+	return origAsset
 }
 
 func externalAssetMatch(version semver.Version, chain common.Chain, hint string) string {
