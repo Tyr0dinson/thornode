@@ -103,8 +103,8 @@ func (s *NetworkManagerVCURTestSuite) TestCalcBlockRewards(c *C) {
 	// First, thorough testing with PendulumUseEffectiveSecurity and PendulumUseVaultAssets both true.
 	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-	networkMgr.k.SetMimir(ctx, constants.MimirKeyPendulumUseEffectiveSecurity, 1)
-	networkMgr.k.SetMimir(ctx, constants.MimirKeyPendulumUseVaultAssets, 1)
+	networkMgr.k.SetMimir(ctx, constants.PendulumUseEffectiveSecurity.String(), 1)
+	networkMgr.k.SetMimir(ctx, constants.PendulumUseVaultAssets.String(), 1)
 
 	bondR, poolR, lpD, lpShare, _, _ := networkMgr.calcBlockRewards(ctx, vaultsLiquidityRune, vaultsLiquidityRune, effectiveSecurityBond, effectiveSecurityBond, totalReserve, totalLiquidityFees, emissionCurve, blocksPerYear, 0, 0)
 	c.Check(bondR.Uint64(), Equals, uint64(1586), Commentf("%d", bondR.Uint64()))
@@ -218,8 +218,8 @@ func (s *NetworkManagerVCURTestSuite) TestCalcBlockRewards(c *C) {
 	// Next, thorough testing with PendulumUseEffectiveSecurity and PendulumUseVaultAssets both false.
 	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-	networkMgr.k.SetMimir(ctx, constants.MimirKeyPendulumUseEffectiveSecurity, 0)
-	networkMgr.k.SetMimir(ctx, constants.MimirKeyPendulumUseVaultAssets, 1)
+	networkMgr.k.SetMimir(ctx, constants.PendulumUseEffectiveSecurity.String(), 0)
+	networkMgr.k.SetMimir(ctx, constants.PendulumUseVaultAssets.String(), 1)
 	effectiveSecurityBond = cosmos.NewUint(2000 * common.One) // Resetting from the half-size comparison.
 
 	bondR, poolR, lpD, lpShare, _, _ = networkMgr.calcBlockRewards(ctx, vaultsLiquidityRune, vaultsLiquidityRune, effectiveSecurityBond, effectiveSecurityBond, totalReserve, totalLiquidityFees, emissionCurve, blocksPerYear, 0, 0)
@@ -335,8 +335,8 @@ func (s *NetworkManagerVCURTestSuite) TestCalcBlockRewards(c *C) {
 	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 	networkMgr.k.SetMimir(ctx, constants.PendulumAssetsBasisPoints.String(), 10_000)
-	networkMgr.k.SetMimir(ctx, constants.MimirKeyPendulumUseEffectiveSecurity, 1)
-	networkMgr.k.SetMimir(ctx, constants.MimirKeyPendulumUseVaultAssets, 1)
+	networkMgr.k.SetMimir(ctx, constants.PendulumUseEffectiveSecurity.String(), 1)
+	networkMgr.k.SetMimir(ctx, constants.PendulumUseVaultAssets.String(), 1)
 
 	c.Check(totalEffectiveBond.String(), Equals, cosmos.NewUint(3000*common.One).String())
 	effectiveSecurityBond = cosmos.NewUint(2000 * common.One) // Resetting from the half-size comparison.
@@ -378,11 +378,11 @@ func (s *NetworkManagerVCURTestSuite) TestCalcBlockRewards(c *C) {
 	// The pendulum perceives secured liquidity as being 1/3rd of securing liquidity rather than 1/2, so nodes get less than the yield of pools (half).
 
 	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-	// PendulumUseEffectiveSecurity false, MimirKeyPendulumUseVaultAssets true:
+	// PendulumUseEffectiveSecurity false, PendulumUseVaultAssets.String() true:
 	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 	networkMgr.k.SetMimir(ctx, constants.PendulumAssetsBasisPoints.String(), 10_000)
-	networkMgr.k.SetMimir(ctx, constants.MimirKeyPendulumUseEffectiveSecurity, 0)
-	networkMgr.k.SetMimir(ctx, constants.MimirKeyPendulumUseVaultAssets, 1)
+	networkMgr.k.SetMimir(ctx, constants.PendulumUseEffectiveSecurity.String(), 0)
+	networkMgr.k.SetMimir(ctx, constants.PendulumUseVaultAssets.String(), 1)
 
 	c.Check(totalEffectiveBond.String(), Equals, cosmos.NewUint(3000*common.One).String())
 	c.Check(vaultsLiquidityRune.String(), Equals, cosmos.NewUint(1000*common.One).String())
@@ -403,11 +403,11 @@ func (s *NetworkManagerVCURTestSuite) TestCalcBlockRewards(c *C) {
 	c.Check(e12BondYield.QuoUint64(100).String(), Equals, e12PoolYield.QuoUint64(100).String())
 
 	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-	// PendulumUseEffectiveSecurity true, MimirKeyPendulumUseVaultAssets false:
+	// PendulumUseEffectiveSecurity true, PendulumUseVaultAssets.String() false:
 	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 	networkMgr.k.SetMimir(ctx, constants.PendulumAssetsBasisPoints.String(), 10_000)
-	networkMgr.k.SetMimir(ctx, constants.MimirKeyPendulumUseEffectiveSecurity, 1)
-	networkMgr.k.SetMimir(ctx, constants.MimirKeyPendulumUseVaultAssets, 0)
+	networkMgr.k.SetMimir(ctx, constants.PendulumUseEffectiveSecurity.String(), 1)
+	networkMgr.k.SetMimir(ctx, constants.PendulumUseVaultAssets.String(), 0)
 
 	c.Check(effectiveSecurityBond.String(), Equals, cosmos.NewUint(2000*common.One).String())
 	c.Check(availablePoolsRune.String(), Equals, cosmos.NewUint(500*common.One).String())
@@ -439,8 +439,8 @@ func (s *NetworkManagerVCURTestSuite) TestCalcBlockRewards(c *C) {
 	// PendulumUseEffectiveSecurity false, PendulumUseVaultAssets false:
 	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 	networkMgr.k.SetMimir(ctx, constants.PendulumAssetsBasisPoints.String(), 10_000)
-	networkMgr.k.SetMimir(ctx, constants.MimirKeyPendulumUseEffectiveSecurity, 0)
-	networkMgr.k.SetMimir(ctx, constants.MimirKeyPendulumUseVaultAssets, 0)
+	networkMgr.k.SetMimir(ctx, constants.PendulumUseEffectiveSecurity.String(), 0)
+	networkMgr.k.SetMimir(ctx, constants.PendulumUseVaultAssets.String(), 0)
 
 	c.Check(totalEffectiveBond.String(), Equals, cosmos.NewUint(3000*common.One).String())
 	c.Check(availablePoolsRune.String(), Equals, cosmos.NewUint(500*common.One).String())

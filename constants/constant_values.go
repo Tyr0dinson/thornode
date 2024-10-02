@@ -140,6 +140,8 @@ const (
 	MaximumLiquidityRune
 	MintSynths
 	NumberOfNewNodesPerChurn
+	PendulumUseEffectiveSecurity
+	PendulumUseVaultAssets
 	SignerConcurrency
 	StrictBondLiquidityRatio
 	SwapOutDexAggregationDisabled

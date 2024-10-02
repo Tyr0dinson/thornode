@@ -1770,17 +1770,8 @@ func (vm *NetworkMgrVCUR) calcBlockRewards(
 	devFundDeduct = common.GetSafeShare(devFundSystemIncomeBpsUint, cosmos.NewUint(10_000), systemIncome)
 	systemIncomeBurnDeduct = common.GetSafeShare(systemIncomeBurnRateBpsUint, cosmos.NewUint(10_000), systemIncome)
 	assetsBps := cosmos.NewUint(uint64(vm.k.GetConfigInt64(ctx, constants.PendulumAssetsBasisPoints)))
-
-	pendulumUseEffectiveSecurity, err := vm.k.GetMimir(ctx, constants.MimirKeyPendulumUseEffectiveSecurity)
-	if err != nil {
-		ctx.Logger().Error("fail to fetch mimir value", "key", constants.MimirKeyPendulumUseEffectiveSecurity, "error", err)
-	}
-	useEffectiveSecurity := (pendulumUseEffectiveSecurity > 0 && err == nil)
-	pendulumUseVaultAssets, err := vm.k.GetMimir(ctx, constants.MimirKeyPendulumUseVaultAssets)
-	if err != nil {
-		ctx.Logger().Error("fail to fetch mimir value", "key", constants.MimirKeyPendulumUseVaultAssets, "error", err)
-	}
-	useVaultAssets := (pendulumUseVaultAssets > 0 && err == nil)
+	useEffectiveSecurity := (vm.k.GetConfigInt64(ctx, constants.PendulumUseEffectiveSecurity) > 0)
+	useVaultAssets := (vm.k.GetConfigInt64(ctx, constants.PendulumUseVaultAssets) > 0)
 
 	if !devFundDeduct.IsZero() {
 		systemIncome = common.SafeSub(systemIncome, devFundDeduct)
