@@ -208,8 +208,7 @@ _test-regression:
 
 # ---------------------------- Interchaintest Tests ----------------------------
 test-ictest-upgrade:
-	@cd test/ictest
-	@go test -v -timeout 30m -run ^TestUpgrade$ gitlab.com/thorchain/thornode/test/ictest
+	@cd test/ictest && go test -v -timeout 30m -run ^TestUpgrade$
 
 # ------------------------------ Simulation Tests ------------------------------
 
