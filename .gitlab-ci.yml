@@ -267,7 +267,7 @@ test-upgrade:
   before_script:
     - apk -U add make git bash go
     - make install-heighliner
-    - make build-heighliner-mocknet
+    - PATH="/root/go/bin:$PATH" make build-heighliner-mocknet
   script:
     - make test-ictest-upgrade
 
