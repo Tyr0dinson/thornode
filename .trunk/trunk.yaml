@@ -41,6 +41,7 @@ lint:
         # TODO: fix all lint errors in imported repos and enable lint for these.
         - bifrost/tss/go-tss
         - bifrost/txscript
+        - test/ictest
     - linters:
         - prettier
         - yamllint

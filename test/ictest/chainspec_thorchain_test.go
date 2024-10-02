@@ -101,7 +101,7 @@ func ThorchainDefaultChainSpec(testName string, chainImage ibc.DockerImage, main
 				Image:       chainImage,
 				HomeDir:     "/var/data/bifrost",
 				Ports:       []string{"5040/tcp", "6040/tcp", "9000/tcp"},
-				//StartCmd: []string{"bifrost", "-p"},
+				// StartCmd: []string{"bifrost", "-p"},
 				StartCmd:         []string{"bifrost", "-p", "-l", "debug"},
 				Env:              bifrostEnv,
 				PreStart:         false,

@@ -1,6 +1,8 @@
 package v137
 
 import (
+	"fmt"
+
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module"
 	upgradetypes "github.com/cosmos/cosmos-sdk/x/upgrade/types"
@@ -24,7 +26,9 @@ func CreateUpgradeHandler(
 		// on the new version is required to resume the chain.
 		// This is a THORChain specific upgrade step that should be
 		// done in every upgrade handler.
-		keeperv1.UpdateActiveValidatorVersions(ctx, thorchainKeeper, UpgradeName)
+		if err = keeperv1.UpdateActiveValidatorVersions(ctx, thorchainKeeper, UpgradeName); err != nil {
+			return vm, fmt.Errorf("failed to update active validator versions: %w", err)
+		}
 
 		return vm, nil
 	}

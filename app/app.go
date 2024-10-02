@@ -419,8 +419,7 @@ func (app *THORChainApp) setupUpgradeHandlers() {
 
 	var storeLoader baseapp.StoreLoader
 
-	switch upgradeInfo.Name {
-	case upgrade137.UpgradeName:
+	if upgradeInfo.Name == upgrade137.UpgradeName {
 		storeLoader = upgrade137.CreateStoreLoader(upgradeInfo.Height)
 	}
 

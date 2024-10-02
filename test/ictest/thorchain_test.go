@@ -28,7 +28,7 @@ func TestThorchainSim(t *testing.T) {
 	// Start non-thorchain chains
 	exoChains := StartExoChains(t, ctx, client, network,
 		EthChainSpec("geth"), // only use this chain spec for eth or the one below
-		//EthChainSpec("anvil"),
+		// EthChainSpec("anvil"),
 		GaiaChainSpec(),
 		BtcChainSpec(),
 		BchChainSpec(),

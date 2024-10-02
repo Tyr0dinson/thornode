@@ -266,7 +266,7 @@ test-upgrade:
     name: integration
   before_script:
     - apk -U add make git bash
-    - make install-heighliner 
+    - make install-heighliner
     - make build-heighliner-mocknet
   script:
     - make test-ictest-upgrade

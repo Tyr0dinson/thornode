@@ -211,7 +211,9 @@ func UpdateActiveValidatorVersions(
 
 	for _, v := range activeVals {
 		v.Version = version
-		thorchainKeeper.SetNodeAccount(ctx, v)
+		if err = thorchainKeeper.SetNodeAccount(ctx, v); err != nil {
+			return fmt.Errorf("fail to save node account: %w", err)
+		}
 	}
 
 	return nil

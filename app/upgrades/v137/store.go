@@ -8,7 +8,7 @@ import (
 
 func CreateStoreLoader(upgradeHeight int64) baseapp.StoreLoader {
 	storeUpgrades := storetypes.StoreUpgrades{
-		//Added: []string{ibc.ModuleName, wasm.ModuleName},
+		// Added: []string{ibc.ModuleName, wasm.ModuleName},
 	}
 
 	return upgradetypes.UpgradeStoreLoader(upgradeHeight, &storeUpgrades)
