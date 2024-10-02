@@ -38,10 +38,10 @@ func TestUpgrade(t *testing.T) {
 		numVals        = 1 // 2
 		numFns         = 0 // 1
 		imageUidGid    = "1025:1025"
-		initialRepo    = "ghcr.io/strangelove-ventures/heighliner/thorchain"
-		initialVersion = "v2.136.0"
+		initialRepo    = "thorchain"
+		initialVersion = "v2.136.0-mocknet"
 		upgradeRepo    = "thorchain"
-		upgradeVersion = "local-mainnet"
+		upgradeVersion = "v2.137.0-mocknet"
 
 		upgradeName = "2.137.0"
 	)
