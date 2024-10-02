@@ -32,6 +32,7 @@ func (s *WasmMgrVCUR) Create(
 	creator cosmos.AccAddress,
 	wasmCode []byte,
 ) (wasmtypes.MsgStoreCodeResponse, error) {
+	return wasmtypes.MsgStoreCodeResponse{}, nil
 }
 
 func (s *WasmMgrVCUR) Instantiate(ctx context.Context,
@@ -41,6 +42,7 @@ func (s *WasmMgrVCUR) Instantiate(ctx context.Context,
 	label string,
 	deposit cosmos.Coins,
 ) (wasmtypes.MsgInstantiateContractResponse, error) {
+	return wasmtypes.MsgInstantiateContractResponse{}, nil
 }
 
 func (s *WasmMgrVCUR) Instantiate2(
@@ -53,6 +55,7 @@ func (s *WasmMgrVCUR) Instantiate2(
 	salt []byte,
 	fixMsg bool,
 ) (wasmtypes.MsgInstantiateContract2Response, error) {
+	return wasmtypes.MsgInstantiateContract2Response{}, nil
 }
 
 func (s *WasmMgrVCUR) Migrate(ctx context.Context,
@@ -60,6 +63,7 @@ func (s *WasmMgrVCUR) Migrate(ctx context.Context,
 	newCodeID uint64,
 	msg []byte,
 ) (wasmtypes.MsgMigrateContractResponse, error) {
+	return wasmtypes.MsgMigrateContractResponse{}, nil
 }
 
 func (s *WasmMgrVCUR) Sudo(ctx cosmos.Context, contractAddres, caller cosmos.AccAddress, msg []byte) (wasmtypes.MsgSudoContractResponse, error) {
