@@ -27,6 +27,7 @@ import (
 	"github.com/strangelove-ventures/interchaintest/v8/chain/utxo"
 	"github.com/strangelove-ventures/interchaintest/v8/ibc"
 	"github.com/stretchr/testify/require"
+	"gitlab.com/thorchain/thornode/build/scripts/evm"
 	"go.uber.org/zap/zaptest"
 	"golang.org/x/sync/errgroup"
 )
@@ -183,24 +184,12 @@ func SetupContracts(ctx context.Context, ethExoChain *ExoChain, bscExoChain *Exo
 	return ethContractAddr, bscContractAddr, eg.Wait()
 }
 
-//go:embed contracts/eth-router-abi.json
-var ethRouterAbi []byte
-
-//go:embed contracts/eth-router-bytecode.txt
-var ethRouterByteCode []byte
-
-//go:embed contracts/router-abi.json
-var routerAbi []byte
-
-//go:embed contracts/router-bytecode.txt
-var routerByteCode []byte
-
 func SetupGethContracts(ctx context.Context, exoChain *ExoChain) (string, error) {
-	abi := routerAbi
-	byteCode := routerByteCode
+	abi := evm.RouterAbi
+	byteCode := evm.RouterByteCode
 	if exoChain.chain.Config().Name == "ETH" {
-		abi = ethRouterAbi
-		byteCode = append(ethRouterByteCode, []byte("000000000000000000000000de06987c28d839daaefb6c85816a2cc55277654c")...) // RUNE token (doesn't matter)
+		abi = evm.EthRouterAbi
+		byteCode = append(evm.EthRouterByteCode, []byte("000000000000000000000000de06987c28d839daaefb6c85816a2cc55277654c")...) // RUNE token (doesn't matter)
 	}
 
 	ethChain := exoChain.chain.(*geth.GethChain)

@@ -11,6 +11,7 @@ replace (
 	github.com/btcsuite/btcd/btcec/v2 => github.com/btcsuite/btcd/btcec/v2 v2.3.3
 	github.com/gogo/protobuf => github.com/regen-network/protobuf v1.3.3-alpha.regen.1
 	github.com/vedhavyas/go-subkey => github.com/strangelove-ventures/go-subkey v1.0.7
+	gitlab.com/thorchain/thornode/build/scripts/evm => ../../build/scripts/evm
 )
 
 require (
@@ -20,6 +21,7 @@ require (
 	github.com/ethereum/go-ethereum v1.14.8
 	github.com/strangelove-ventures/interchaintest/v8 v8.7.2-0.20241002200303-3b13960bc6ad
 	github.com/stretchr/testify v1.9.0
+	gitlab.com/thorchain/thornode/build/scripts/evm v0.0.0
 	go.uber.org/zap v1.27.0
 	golang.org/x/sync v0.7.0
 )
