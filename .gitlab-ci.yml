@@ -265,7 +265,7 @@ test-upgrade:
   environment:
     name: integration
   before_script:
-    - apk -U add make git bash
+    - apk -U add make git bash go
     - make install-heighliner
     - make build-heighliner-mocknet
   script:
