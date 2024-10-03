@@ -10,6 +10,7 @@ replace (
 	// cometbft API breaking change fix
 	github.com/btcsuite/btcd/btcec/v2 => github.com/btcsuite/btcd/btcec/v2 v2.3.3
 	github.com/gogo/protobuf => github.com/regen-network/protobuf v1.3.3-alpha.regen.1
+	github.com/strangelove-ventures/interchaintest/v8 => ../../../interchaintest
 	github.com/vedhavyas/go-subkey => github.com/strangelove-ventures/go-subkey v1.0.7
 	gitlab.com/thorchain/thornode/build/scripts/evm => ../../build/scripts/evm
 )
@@ -19,7 +20,7 @@ require (
 	github.com/cosmos/cosmos-sdk v0.50.9
 	github.com/docker/docker v24.0.9+incompatible
 	github.com/ethereum/go-ethereum v1.14.8
-	github.com/strangelove-ventures/interchaintest/v8 v8.7.2-0.20241002234134-7c72fc4a72c4
+	github.com/strangelove-ventures/interchaintest/v8 v8.7.2-0.20241003001658-5f6d0488eeba
 	github.com/stretchr/testify v1.9.0
 	gitlab.com/thorchain/thornode/build/scripts/evm v0.0.0
 	go.uber.org/zap v1.27.0
