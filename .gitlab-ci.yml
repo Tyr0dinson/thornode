@@ -270,8 +270,15 @@ test-ictest-sim:
     - apk -U add make git bash go
     - make install-heighliner
     - PATH="/root/go/bin:$PATH" make build-heighliner-mocknet
-  script:
-    - NETWORK_ID="runner-${CI_RUNNER_SHORT_TOKEN,,}-$CI_PROJECT_ID-$CI_CONCURRENT_PROJECT_ID-$CI_JOB_ID" make test-ictest-sim
+  script: |
+    export NETWORK_ID="$HOSTNAME-job-$CI_JOB_ID-network"
+    docker network ls
+    echo "NETWORK_ID=$NETWORK_ID"
+    echo "CI_JOB_ID=$CI_JOB_ID"
+    echo "CI_RUNNER_SHORT_TOKEN=$CI_RUNNER_SHORT_TOKEN"
+    echo "CI_CONCURRENT_PROJECT_ID=$CI_CONCURRENT_PROJECT_ID"
+    echo "CI_PROJECT_ID=$CI_PROJECT_ID"
+    make test-ictest-sim
 
 test-ictest-upgrade:
   rules: *rules
@@ -285,8 +292,15 @@ test-ictest-upgrade:
     - apk -U add make git bash go
     - make install-heighliner
     - PATH="/root/go/bin:$PATH" make build-heighliner-mocknet
-  script:
-    - NETWORK_ID="runner-${CI_RUNNER_SHORT_TOKEN,,}-$CI_PROJECT_ID-$CI_CONCURRENT_PROJECT_ID-$CI_JOB_ID" make test-ictest-upgrade
+  script: |
+    export NETWORK_ID="$HOSTNAME-job-$CI_JOB_ID-network"
+    docker network ls
+    echo "NETWORK_ID=$NETWORK_ID"
+    echo "CI_JOB_ID=$CI_JOB_ID"
+    echo "CI_RUNNER_SHORT_TOKEN=$CI_RUNNER_SHORT_TOKEN"
+    echo "CI_CONCURRENT_PROJECT_ID=$CI_CONCURRENT_PROJECT_ID"
+    echo "CI_PROJECT_ID=$CI_PROJECT_ID"
+    make test-ictest-upgrade
 
 include:
   - template: Security/SAST.gitlab-ci.yml
