@@ -271,13 +271,7 @@ test-ictest-sim:
     - make install-heighliner
     - PATH="/root/go/bin:$PATH" make build-heighliner-mocknet
   script: |
-    export NETWORK_ID="$HOSTNAME-job-$CI_JOB_ID-network"
-    docker network ls
-    echo "NETWORK_ID=$NETWORK_ID"
-    echo "CI_JOB_ID=$CI_JOB_ID"
-    echo "CI_RUNNER_SHORT_TOKEN=$CI_RUNNER_SHORT_TOKEN"
-    echo "CI_CONCURRENT_PROJECT_ID=$CI_CONCURRENT_PROJECT_ID"
-    echo "CI_PROJECT_ID=$CI_PROJECT_ID"
+    export NETWORK_ID=bridge
     make test-ictest-sim
 
 test-ictest-upgrade:
@@ -293,13 +287,7 @@ test-ictest-upgrade:
     - make install-heighliner
     - PATH="/root/go/bin:$PATH" make build-heighliner-mocknet
   script: |
-    export NETWORK_ID="$HOSTNAME-job-$CI_JOB_ID-network"
-    docker network ls
-    echo "NETWORK_ID=$NETWORK_ID"
-    echo "CI_JOB_ID=$CI_JOB_ID"
-    echo "CI_RUNNER_SHORT_TOKEN=$CI_RUNNER_SHORT_TOKEN"
-    echo "CI_CONCURRENT_PROJECT_ID=$CI_CONCURRENT_PROJECT_ID"
-    echo "CI_PROJECT_ID=$CI_PROJECT_ID"
+    export NETWORK_ID=bridge
     make test-ictest-upgrade
 
 include:
