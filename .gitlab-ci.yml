@@ -271,7 +271,7 @@ test-ictest-sim:
     - make install-heighliner
     - PATH="/root/go/bin:$PATH" make build-heighliner-mocknet
   script:
-    - NETWORK_ID=$(docker network ls | awk '{print $1" "$2}' | grep $CI_BUILD_ID-network | awk '{print $1}') make test-ictest-sim
+    - NETWORK_ID="runner-${CI_RUNNER_SHORT_TOKEN,,}-$CI_PROJECT_ID-$CI_CONCURRENT_PROJECT_ID-$CI_JOB_ID" make test-ictest-sim
 
 test-ictest-upgrade:
   rules: *rules
@@ -286,7 +286,7 @@ test-ictest-upgrade:
     - make install-heighliner
     - PATH="/root/go/bin:$PATH" make build-heighliner-mocknet
   script:
-    - NETWORK_ID=$(docker network ls | awk '{print $1" "$2}' | grep $CI_BUILD_ID-network | awk '{print $1}') make test-ictest-upgrade
+    - NETWORK_ID="runner-${CI_RUNNER_SHORT_TOKEN,,}-$CI_PROJECT_ID-$CI_CONCURRENT_PROJECT_ID-$CI_JOB_ID" make test-ictest-upgrade
 
 include:
   - template: Security/SAST.gitlab-ci.yml
