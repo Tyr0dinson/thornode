@@ -264,6 +264,8 @@ test-ictest-sim:
   <<: *use_dind
   environment:
     name: integration
+  variables:
+    FF_NETWORK_PER_BUILD: "true" # activate container-to-container networking
   before_script:
     - apk -U add make git bash go
     - make install-heighliner
@@ -277,6 +279,8 @@ test-ictest-upgrade:
   <<: *use_dind
   environment:
     name: integration
+  variables:
+    FF_NETWORK_PER_BUILD: "true" # activate container-to-container networking
   before_script:
     - apk -U add make git bash go
     - make install-heighliner
