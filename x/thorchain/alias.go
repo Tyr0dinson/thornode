@@ -360,6 +360,7 @@ type (
 	LoanRepaymentMemo          = mem.LoanRepaymentMemo
 	RunePoolDepositMemo        = mem.RunePoolDepositMemo
 	RunePoolWithdrawMemo       = mem.RunePoolWithdrawMemo
+	ExecMemo                   = mem.ExecMemo
 
 	// Proto
 	ProtoStrings = types.ProtoStrings
