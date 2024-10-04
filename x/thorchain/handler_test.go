@@ -93,11 +93,14 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 		runtime.NewKVStoreService(keyAcc),
 		authtypes.ProtoBaseAccount,
 		map[string][]string{
-			types.ModuleName:  {authtypes.Minter, authtypes.Burner},
-			types.AsgardName:  {},
-			types.BondName:    {},
-			types.ReserveName: {},
-			types.LendingName: {},
+			types.ModuleName:             {authtypes.Minter, authtypes.Burner},
+			types.AsgardName:             {},
+			types.BondName:               {},
+			types.ReserveName:            {},
+			types.LendingName:            {},
+			types.AffiliateCollectorName: {},
+			types.TreasuryName:           {},
+			types.RUNEPoolName:           {},
 		},
 		authcodec.NewBech32Codec(sdk.GetConfig().GetBech32AccountAddrPrefix()),
 		sdk.GetConfig().GetBech32AccountAddrPrefix(),
@@ -184,11 +187,12 @@ func setupKeeperForTest(c *C) (cosmos.Context, keeper.Keeper) {
 		runtime.NewKVStoreService(keyAcc),
 		authtypes.ProtoBaseAccount,
 		map[string][]string{
-			types.ModuleName:  {authtypes.Minter, authtypes.Burner},
-			types.AsgardName:  {},
-			types.BondName:    {},
-			types.ReserveName: {},
-			types.LendingName: {},
+			types.ModuleName:             {authtypes.Minter, authtypes.Burner},
+			types.AsgardName:             {},
+			types.BondName:               {},
+			types.ReserveName:            {},
+			types.LendingName:            {},
+			types.AffiliateCollectorName: {},
 		},
 		authcodec.NewBech32Codec(sdk.GetConfig().GetBech32AccountAddrPrefix()),
 		sdk.GetConfig().GetBech32AccountAddrPrefix(),
@@ -624,7 +628,7 @@ func (s *HandlerSuite) TestMsgServer(c *C) {
 	result, err := newMsgServer.NetworkFee(ctx, msg)
 	c.Check(err, NotNil)
 	c.Check(errors.Is(err, se.ErrUnauthorized), Equals, true)
-	c.Check(result, NotNil)
+	c.Check(result, IsNil)
 	na := GetRandomValidatorNode(NodeActive)
 	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
 	FundModule(c, ctx, mgr.Keeper(), BondName, 10*common.One)

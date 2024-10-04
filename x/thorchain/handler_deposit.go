@@ -54,8 +54,10 @@ func (h DepositHandler) validate(ctx cosmos.Context, msg MsgDeposit) error {
 }
 
 func (h DepositHandler) validateV134(ctx cosmos.Context, msg MsgDeposit) error {
-	// ValidateBasic is executed in message service router
-	// Removed for clarity that it is not versioned
+	// ValidateBasic is also executed in message service router's handler and isn't versioned there
+	if err := msg.ValidateBasic(); err != nil {
+		return err
+	}
 
 	return nil
 }

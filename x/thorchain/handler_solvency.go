@@ -55,8 +55,10 @@ func (h SolvencyHandler) validate(ctx cosmos.Context, msg MsgSolvency) error {
 }
 
 func (h SolvencyHandler) validateV70(ctx cosmos.Context, msg MsgSolvency) error {
-	// ValidateBasic is executed by message service router handler
-	// Removed for clarity that it is not versioned
+	// ValidateBasic is also executed in message service router's handler and isn't versioned there
+	if err := msg.ValidateBasic(); err != nil {
+		return err
+	}
 	
 	m, err := NewMsgSolvency(msg.Chain, msg.PubKey, msg.Coins, msg.Height, msg.Signer)
 	if err != nil {

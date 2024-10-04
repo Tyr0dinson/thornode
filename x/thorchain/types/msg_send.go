@@ -26,9 +26,6 @@ func NewMsgSend(fromAddr, toAddr cosmos.AccAddress, amount cosmos.Coins) *MsgSen
 // ValidateBasic is now ran in the message service router handler for messages that
 // used to be routed using the external handler and only when HasValidateBasic is implemented. 
 // No versioning is used there.
-// It does not need to be executed twice, so it is removed from the handler's validate.
-// Alternatively, we can not implement HasValidateBasic and perform this validation
-// directly in the msg server / handler. The sdk prefers this...
 func (m *MsgSend) ValidateBasic() error {
 	if err := cosmos.VerifyAddressFormat(m.FromAddress); err != nil {
 		return cosmos.ErrInvalidAddress(m.FromAddress.String())

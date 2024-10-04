@@ -28,9 +28,6 @@ func NewMsgMimir(key string, value int64, signer cosmos.AccAddress) *MsgMimir {
 // ValidateBasic is now ran in the message service router handler for messages that
 // used to be routed using the external handler and only when HasValidateBasic is implemented. 
 // No versioning is used there.
-// It does not need to be executed twice, so it is removed from the handler's validate.
-// Alternatively, we can not implement HasValidateBasic and perform this validation
-// directly in the msg server / handler. The sdk prefers this...
 func (m *MsgMimir) ValidateBasic() error {
 	if m.Key == "" {
 		return cosmos.ErrUnknownRequest("key cannot be empty")

@@ -23,8 +23,10 @@ func NewSendHandler(mgr Manager) BaseHandler[*MsgSend] {
 }
 
 func MsgSendValidateV130(ctx cosmos.Context, mgr Manager, msg *MsgSend) error {
-	// ValidateBasic is executed in message service router
-	// Removed for clarity that it is not versioned
+	// ValidateBasic is also executed in message service router's handler and isn't versioned there
+	if err := msg.ValidateBasic(); err != nil {
+		return err
+	}
 
 	// disallow sends to modules, they should only be interacted with via deposit messages
 	if IsModuleAccAddress(mgr.Keeper(), msg.ToAddress) {

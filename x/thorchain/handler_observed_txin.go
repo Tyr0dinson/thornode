@@ -58,8 +58,10 @@ func (h ObservedTxInHandler) validate(ctx cosmos.Context, msg MsgObservedTxIn) e
 }
 
 func (h ObservedTxInHandler) validateV1(ctx cosmos.Context, msg MsgObservedTxIn) error {
-	// ValidateBasic is executed in message service router
-	// Removed for clarity that it is not versioned
+	// ValidateBasic is also executed in message service router's handler and isn't versioned there
+	if err := msg.ValidateBasic(); err != nil {
+		return err
+	}
 
 	if !isSignedByActiveNodeAccounts(ctx, h.mgr.Keeper(), msg.GetSigners()) {
 		return cosmos.ErrUnauthorized(fmt.Sprintf("%+v are not authorized", msg.GetSigners()))

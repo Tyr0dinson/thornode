@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	sdkmath "cosmossdk.io/math"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"
@@ -100,14 +101,12 @@ func NewCosmosBlockScanner(cfg config.BifrostBlockScannerConfiguration,
 	// We also need to access GRPC for Cosmos chains
 
 	// Registry for decoding txs
-	registry := bridge.GetContext().InterfaceRegistry
-
+	registry := codectypes.NewInterfaceRegistry()
 	btypes.RegisterInterfaces(registry)
 	cdc := codec.NewProtoCodec(registry)
 
 	// Registry for encoding txs
-	marshaler := codec.NewProtoCodec(registry)
-	txConfig := tx.NewTxConfig(marshaler, []signingtypes.SignMode{signingtypes.SignMode_SIGN_MODE_DIRECT})
+	txConfig := tx.NewTxConfig(cdc, []signingtypes.SignMode{signingtypes.SignMode_SIGN_MODE_DIRECT})
 	rpcClient, err := rpcclienthttp.New(cfg.RPCHost, "/websocket")
 	if err != nil {
 		logger.Fatal().Err(err).Msg("fail to create tendemrint rpcclient")

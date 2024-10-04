@@ -57,8 +57,10 @@ func (h MimirHandler) validate(ctx cosmos.Context, msg MsgMimir) error {
 }
 
 func (h MimirHandler) validateV114(ctx cosmos.Context, msg MsgMimir) error {
-	// ValidateBasic is executed by message service router handler
-	// Removed for clarity that it is not versioned
+	// ValidateBasic is also executed in message service router's handler and isn't versioned there
+	if err := msg.ValidateBasic(); err != nil {
+		return err
+	}
 
 	if !mimirValidKey(msg.Key) || len(msg.Key) > 64 {
 		return cosmos.ErrUnknownRequest("invalid mimir key")

@@ -2,9 +2,13 @@ package gaia
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 
+	"github.com/cosmos/cosmos-sdk/codec"
+	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	atypes "github.com/cosmos/cosmos-sdk/x/auth/types"
+	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	grpc "google.golang.org/grpc"
 )
 
@@ -52,9 +56,16 @@ func NewMockAccountServiceClient() MockAccountServiceClient {
 	return &mockAccountServiceClient{}
 }
 
+//go:embed test-data/account_by_address.json
+var accountByAddress []byte
+
 func (c *mockAccountServiceClient) Account(ctx context.Context, in *atypes.QueryAccountRequest, opts ...grpc.CallOption) (*atypes.QueryAccountResponse, error) {
 	out := new(atypes.QueryAccountResponse)
-	err := unmarshalJSONToPb("./test-data/account_by_address.json", out)
+	registry := codectypes.NewInterfaceRegistry()
+	atypes.RegisterInterfaces(registry)
+	cryptocodec.RegisterInterfaces(registry)
+	cdc := codec.NewProtoCodec(registry)
+	err := cdc.UnmarshalJSON(accountByAddress, out)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal block by height: %s", err)
 	}

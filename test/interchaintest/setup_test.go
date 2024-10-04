@@ -97,6 +97,13 @@ func StartExoChains(t *testing.T, ctx context.Context, client *client.Client, ne
 	}))
 	t.Cleanup(func() {
 		_ = ic.Close()
+		// Add below once race PR is merged
+		// for _, chain := range chains {
+		// 	utxoChain, ok := chain.(*utxo.UtxoChain)
+		// 	if ok {
+		// 		utxoChain.Stop()
+		// 	}
+		// }
 	})
 
 	return exoChains

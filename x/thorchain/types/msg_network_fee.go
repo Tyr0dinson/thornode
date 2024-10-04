@@ -31,9 +31,6 @@ func NewMsgNetworkFee(blockHeight int64, chain common.Chain, transactionSize, tr
 // ValidateBasic is now ran in the message service router handler for messages that
 // used to be routed using the external handler and only when HasValidateBasic is implemented. 
 // No versioning is used there.
-// It does not need to be executed twice, so it is removed from the handler's validate.
-// Alternatively, we can not implement HasValidateBasic and perform this validation
-// directly in the msg server / handler. The sdk prefers this...
 func (m *MsgNetworkFee) ValidateBasic() error {
 	if m.BlockHeight <= 0 {
 		return cosmos.ErrUnknownRequest("block height can't be negative, or zero")

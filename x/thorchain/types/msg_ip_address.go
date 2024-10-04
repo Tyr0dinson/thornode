@@ -29,9 +29,6 @@ func NewMsgSetIPAddress(ip string, signer cosmos.AccAddress) *MsgSetIPAddress {
 // ValidateBasic is now ran in the message service router handler for messages that
 // used to be routed using the external handler and only when HasValidateBasic is implemented. 
 // No versioning is used there.
-// It does not need to be executed twice, so it is removed from the handler's validate.
-// Alternatively, we can not implement HasValidateBasic and perform this validation
-// directly in the msg server / handler. The sdk prefers this...
 func (m *MsgSetIPAddress) ValidateBasic() error {
 	if m.Signer.Empty() {
 		return cosmos.ErrInvalidAddress(m.Signer.String())
