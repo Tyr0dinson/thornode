@@ -10,10 +10,14 @@ import (
 
 	wasmkeeper "github.com/CosmWasm/wasmd/x/wasm/keeper"
 	"github.com/CosmWasm/wasmd/x/wasm/types"
+	"gitlab.com/thorchain/thornode/common/cosmos"
 	tckeeper "gitlab.com/thorchain/thornode/x/thorchain/keeper"
 )
 
-var _ types.MsgServer = msgServer{}
+var (
+	_                 types.MsgServer = msgServer{}
+	MIMIR_GLOBAL_HALT                 = "WASMGLOBALHALT"
+)
 
 // grpc message server implementation
 type msgServer struct {
@@ -31,6 +35,12 @@ func (m msgServer) StoreCode(
 	ctx context.Context,
 	msg *types.MsgStoreCode,
 ) (*types.MsgStoreCodeResponse, error) {
+	sdkCtx := sdk.UnwrapSDKContext(ctx)
+
+	if err := m.checkHalt(sdkCtx); err != nil {
+		return nil, err
+	}
+
 	if err := msg.ValidateBasic(); err != nil {
 		return nil, err
 	}
@@ -38,8 +48,6 @@ func (m msgServer) StoreCode(
 	if err != nil {
 		return nil, errorsmod.Wrap(err, "sender")
 	}
-
-	sdkCtx := sdk.UnwrapSDKContext(ctx)
 
 	// TODO: Authorization
 
@@ -68,6 +76,12 @@ func (m msgServer) InstantiateContract(
 	ctx context.Context,
 	msg *types.MsgInstantiateContract,
 ) (*types.MsgInstantiateContractResponse, error) {
+	sdkCtx := sdk.UnwrapSDKContext(ctx)
+
+	if err := m.checkHalt(sdkCtx); err != nil {
+		return nil, err
+	}
+
 	if err := msg.ValidateBasic(); err != nil {
 		return nil, err
 	}
@@ -87,7 +101,7 @@ func (m msgServer) InstantiateContract(
 	}
 
 	contractAddr, data, err := m.keeper.Instantiate(
-		sdk.UnwrapSDKContext(ctx),
+		sdkCtx,
 		msg.CodeID,
 		senderAddr,
 		adminAddr,
@@ -110,6 +124,12 @@ func (m msgServer) InstantiateContract2(
 	ctx context.Context,
 	msg *types.MsgInstantiateContract2,
 ) (*types.MsgInstantiateContract2Response, error) {
+	sdkCtx := sdk.UnwrapSDKContext(ctx)
+
+	if err := m.checkHalt(sdkCtx); err != nil {
+		return nil, err
+	}
+
 	if err := msg.ValidateBasic(); err != nil {
 		return nil, err
 	}
@@ -130,7 +150,7 @@ func (m msgServer) InstantiateContract2(
 
 	// TODO: Authorization
 	contractAddr, data, err := m.keeper.Instantiate2(
-		sdk.UnwrapSDKContext(ctx),
+		sdkCtx,
 		msg.CodeID,
 		senderAddr,
 		adminAddr,
@@ -154,6 +174,12 @@ func (m msgServer) ExecuteContract(
 	ctx context.Context,
 	msg *types.MsgExecuteContract,
 ) (*types.MsgExecuteContractResponse, error) {
+	sdkCtx := sdk.UnwrapSDKContext(ctx)
+
+	if err := m.checkHalt(sdkCtx); err != nil {
+		return nil, err
+	}
+
 	if err := msg.ValidateBasic(); err != nil {
 		return nil, err
 	}
@@ -168,7 +194,7 @@ func (m msgServer) ExecuteContract(
 	}
 
 	data, err := m.keeper.Execute(
-		sdk.UnwrapSDKContext(ctx),
+		sdkCtx,
 		contractAddr,
 		senderAddr,
 		msg.Msg,
@@ -187,6 +213,12 @@ func (m msgServer) MigrateContract(
 	ctx context.Context,
 	msg *types.MsgMigrateContract,
 ) (*types.MsgMigrateContractResponse, error) {
+	sdkCtx := sdk.UnwrapSDKContext(ctx)
+
+	if err := m.checkHalt(sdkCtx); err != nil {
+		return nil, err
+	}
+
 	if err := msg.ValidateBasic(); err != nil {
 		return nil, err
 	}
@@ -204,7 +236,7 @@ func (m msgServer) MigrateContract(
 	}
 
 	data, err := m.keeper.Migrate(
-		sdk.UnwrapSDKContext(ctx),
+		sdkCtx,
 		contractAddr,
 		senderAddr,
 		msg.CodeID,
@@ -225,6 +257,12 @@ func (m msgServer) UpdateAdmin(
 	ctx context.Context,
 	msg *types.MsgUpdateAdmin,
 ) (*types.MsgUpdateAdminResponse, error) {
+	sdkCtx := sdk.UnwrapSDKContext(ctx)
+
+	if err := m.checkHalt(sdkCtx); err != nil {
+		return nil, err
+	}
+
 	if err := msg.ValidateBasic(); err != nil {
 		return nil, err
 	}
@@ -243,7 +281,7 @@ func (m msgServer) UpdateAdmin(
 	}
 
 	if err := m.keeper.UpdateContractAdmin(
-		sdk.UnwrapSDKContext(ctx),
+		sdkCtx,
 		contractAddr,
 		senderAddr,
 		newAdminAddr,
@@ -257,6 +295,11 @@ func (m msgServer) UpdateAdmin(
 func (m msgServer) ClearAdmin(
 	ctx context.Context,
 	msg *types.MsgClearAdmin) (*types.MsgClearAdminResponse, error) {
+	sdkCtx := sdk.UnwrapSDKContext(ctx)
+
+	if err := m.checkHalt(sdkCtx); err != nil {
+		return nil, err
+	}
 
 	if err := msg.ValidateBasic(); err != nil {
 		return nil, err
@@ -272,7 +315,7 @@ func (m msgServer) ClearAdmin(
 	}
 
 	if err := m.keeper.ClearContractAdmin(
-		sdk.UnwrapSDKContext(ctx),
+		sdkCtx,
 		contractAddr,
 		senderAddr,
 	); err != nil {
@@ -286,6 +329,12 @@ func (m msgServer) UpdateInstantiateConfig(
 	ctx context.Context,
 	msg *types.MsgUpdateInstantiateConfig,
 ) (*types.MsgUpdateInstantiateConfigResponse, error) {
+	sdkCtx := sdk.UnwrapSDKContext(ctx)
+
+	if err := m.checkHalt(sdkCtx); err != nil {
+		return nil, err
+	}
+
 	if err := msg.ValidateBasic(); err != nil {
 		return nil, err
 	}
@@ -296,7 +345,7 @@ func (m msgServer) UpdateInstantiateConfig(
 	}
 
 	if err := m.keeper.SetAccessConfig(
-		sdk.UnwrapSDKContext(ctx),
+		sdkCtx,
 		msg.CodeID,
 		senderAddr,
 		*msg.NewInstantiatePermission,
@@ -312,6 +361,13 @@ func (m msgServer) UpdateParams(
 	ctx context.Context,
 	req *types.MsgUpdateParams,
 ) (*types.MsgUpdateParamsResponse, error) {
+	sdkCtx := sdk.UnwrapSDKContext(ctx)
+
+	// Check added for completeness
+	if err := m.checkHalt(sdkCtx); err != nil {
+		return nil, err
+	}
+
 	return &types.MsgUpdateParamsResponse{}, errors.ErrUnauthorized
 }
 
@@ -320,6 +376,13 @@ func (m msgServer) PinCodes(
 	ctx context.Context,
 	req *types.MsgPinCodes,
 ) (*types.MsgPinCodesResponse, error) {
+	sdkCtx := sdk.UnwrapSDKContext(ctx)
+
+	// Check added for completeness
+	if err := m.checkHalt(sdkCtx); err != nil {
+		return nil, err
+	}
+
 	return &types.MsgPinCodesResponse{}, errors.ErrUnauthorized
 }
 
@@ -328,6 +391,13 @@ func (m msgServer) UnpinCodes(
 	ctx context.Context,
 	req *types.MsgUnpinCodes,
 ) (*types.MsgUnpinCodesResponse, error) {
+	sdkCtx := sdk.UnwrapSDKContext(ctx)
+
+	// Check added for completeness
+	if err := m.checkHalt(sdkCtx); err != nil {
+		return nil, err
+	}
+
 	return &types.MsgUnpinCodesResponse{}, errors.ErrUnauthorized
 }
 
@@ -336,6 +406,12 @@ func (m msgServer) SudoContract(
 	ctx context.Context,
 	req *types.MsgSudoContract,
 ) (*types.MsgSudoContractResponse, error) {
+	sdkCtx := sdk.UnwrapSDKContext(ctx)
+
+	if err := m.checkHalt(sdkCtx); err != nil {
+		return nil, err
+	}
+
 	if err := req.ValidateBasic(); err != nil {
 		return nil, err
 	}
@@ -352,7 +428,7 @@ func (m msgServer) SudoContract(
 	}
 
 	data, err := m.keeper.Sudo(
-		sdk.UnwrapSDKContext(ctx),
+		sdkCtx,
 		contractAddr,
 		req.Msg,
 	)
@@ -365,9 +441,15 @@ func (m msgServer) SudoContract(
 
 // StoreAndInstantiateContract stores and instantiates the contract.
 func (m msgServer) StoreAndInstantiateContract(
-	goCtx context.Context,
+	ctx context.Context,
 	req *types.MsgStoreAndInstantiateContract,
 ) (*types.MsgStoreAndInstantiateContractResponse, error) {
+	sdkCtx := sdk.UnwrapSDKContext(ctx)
+
+	if err := m.checkHalt(sdkCtx); err != nil {
+		return nil, err
+	}
+
 	if err := req.ValidateBasic(); err != nil {
 		return nil, err
 	}
@@ -384,10 +466,8 @@ func (m msgServer) StoreAndInstantiateContract(
 		}
 	}
 
-	ctx := sdk.UnwrapSDKContext(goCtx)
-
 	codeID, _, err := m.keeper.Create(
-		ctx,
+		sdkCtx,
 		authorityAddr,
 		req.WASMByteCode,
 		req.InstantiatePermission,
@@ -396,12 +476,12 @@ func (m msgServer) StoreAndInstantiateContract(
 		return nil, err
 	}
 
-	if err := m.keeper.PinCode(ctx, codeID); err != nil {
+	if err := m.keeper.PinCode(sdkCtx, codeID); err != nil {
 		return nil, err
 	}
 
 	contractAddr, data, err := m.keeper.Instantiate(
-		ctx,
+		sdkCtx,
 		codeID,
 		authorityAddr,
 		adminAddr,
@@ -420,26 +500,45 @@ func (m msgServer) StoreAndInstantiateContract(
 
 // AddCodeUploadParamsAddresses adds addresses to code upload params
 func (m msgServer) AddCodeUploadParamsAddresses(
-	goCtx context.Context,
+	ctx context.Context,
 	req *types.MsgAddCodeUploadParamsAddresses,
 ) (*types.MsgAddCodeUploadParamsAddressesResponse, error) {
+	sdkCtx := sdk.UnwrapSDKContext(ctx)
+
+	// Check added for completeness
+	if err := m.checkHalt(sdkCtx); err != nil {
+		return nil, err
+	}
 
 	return &types.MsgAddCodeUploadParamsAddressesResponse{}, errors.ErrUnauthorized
 }
 
 // RemoveCodeUploadParamsAddresses removes addresses to code upload params
 func (m msgServer) RemoveCodeUploadParamsAddresses(
-	goCtx context.Context,
+	ctx context.Context,
 	req *types.MsgRemoveCodeUploadParamsAddresses,
 ) (*types.MsgRemoveCodeUploadParamsAddressesResponse, error) {
+	sdkCtx := sdk.UnwrapSDKContext(ctx)
+
+	// Check added for completeness
+	if err := m.checkHalt(sdkCtx); err != nil {
+		return nil, err
+	}
+
 	return &types.MsgRemoveCodeUploadParamsAddressesResponse{}, errors.ErrUnauthorized
 }
 
 // StoreAndMigrateContract stores and migrates the contract.
 func (m msgServer) StoreAndMigrateContract(
-	goCtx context.Context,
+	ctx context.Context,
 	req *types.MsgStoreAndMigrateContract,
 ) (*types.MsgStoreAndMigrateContractResponse, error) {
+	sdkCtx := sdk.UnwrapSDKContext(ctx)
+
+	if err := m.checkHalt(sdkCtx); err != nil {
+		return nil, err
+	}
+
 	authorityAddr, err := sdk.AccAddressFromBech32(req.Authority)
 	if err != nil {
 		return nil, errorsmod.Wrap(err, "authority")
@@ -449,10 +548,8 @@ func (m msgServer) StoreAndMigrateContract(
 		return nil, err
 	}
 
-	ctx := sdk.UnwrapSDKContext(goCtx)
-
 	codeID, checksum, err := m.keeper.Create(
-		ctx,
+		sdkCtx,
 		authorityAddr,
 		req.WASMByteCode,
 		req.InstantiatePermission,
@@ -461,7 +558,7 @@ func (m msgServer) StoreAndMigrateContract(
 		return nil, err
 	}
 
-	if err := m.keeper.PinCode(ctx, codeID); err != nil {
+	if err := m.keeper.PinCode(sdkCtx, codeID); err != nil {
 		return nil, err
 	}
 
@@ -473,7 +570,7 @@ func (m msgServer) StoreAndMigrateContract(
 	// TODO: Check if old code id contract count == 0 and unpin
 
 	data, err := m.keeper.Migrate(
-		ctx,
+		sdkCtx,
 		contractAddr,
 		authorityAddr,
 		codeID,
@@ -493,5 +590,22 @@ func (m msgServer) UpdateContractLabel(
 	ctx context.Context,
 	msg *types.MsgUpdateContractLabel,
 ) (*types.MsgUpdateContractLabelResponse, error) {
+	sdkCtx := sdk.UnwrapSDKContext(ctx)
+
+	if err := m.checkHalt(sdkCtx); err != nil {
+		return nil, err
+	}
+
 	return &types.MsgUpdateContractLabelResponse{}, errors.ErrUnauthorized
+}
+
+func (m msgServer) checkHalt(ctx cosmos.Context) error {
+	v, err := m.tcKeeper.GetMimir(ctx, MIMIR_GLOBAL_HALT)
+	if err != nil {
+		return err
+	}
+	if v != 0 && ctx.BlockHeight() > v {
+		return errors.ErrUnauthorized
+	}
+	return nil
 }
