@@ -4,7 +4,6 @@ import (
 	"context"
 
 	wasmkeeper "github.com/CosmWasm/wasmd/x/wasm/keeper"
-	"github.com/CosmWasm/wasmd/x/wasm/types"
 	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
@@ -42,8 +41,8 @@ func (s *WasmMgrVCUR) Sudo(ctx cosmos.Context, msg *wasmtypes.MsgSudoContract) (
 // StoreCode stores a new wasm code on chain
 func (m WasmMgrVCUR) StoreCode(
 	ctx context.Context,
-	msg *types.MsgStoreCode,
-) (*types.MsgStoreCodeResponse, error) {
+	msg *wasmtypes.MsgStoreCode,
+) (*wasmtypes.MsgStoreCodeResponse, error) {
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
 
 	if err := m.checkHalt(sdkCtx); err != nil {
@@ -74,7 +73,7 @@ func (m WasmMgrVCUR) StoreCode(
 		return nil, err
 	}
 
-	return &types.MsgStoreCodeResponse{
+	return &wasmtypes.MsgStoreCodeResponse{
 		CodeID:   codeID,
 		Checksum: checksum,
 	}, nil
@@ -83,8 +82,8 @@ func (m WasmMgrVCUR) StoreCode(
 // InstantiateContract instantiate a new contract with classic sequence based address generation
 func (m WasmMgrVCUR) InstantiateContract(
 	ctx context.Context,
-	msg *types.MsgInstantiateContract,
-) (*types.MsgInstantiateContractResponse, error) {
+	msg *wasmtypes.MsgInstantiateContract,
+) (*wasmtypes.MsgInstantiateContractResponse, error) {
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
 
 	if err := m.checkHalt(sdkCtx); err != nil {
@@ -122,7 +121,7 @@ func (m WasmMgrVCUR) InstantiateContract(
 		return nil, err
 	}
 
-	return &types.MsgInstantiateContractResponse{
+	return &wasmtypes.MsgInstantiateContractResponse{
 		Address: contractAddr.String(),
 		Data:    data,
 	}, nil
@@ -131,8 +130,8 @@ func (m WasmMgrVCUR) InstantiateContract(
 // InstantiateContract2 instantiate a new contract with predicatable address generated
 func (m WasmMgrVCUR) InstantiateContract2(
 	ctx context.Context,
-	msg *types.MsgInstantiateContract2,
-) (*types.MsgInstantiateContract2Response, error) {
+	msg *wasmtypes.MsgInstantiateContract2,
+) (*wasmtypes.MsgInstantiateContract2Response, error) {
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
 
 	if err := m.checkHalt(sdkCtx); err != nil {
@@ -173,7 +172,7 @@ func (m WasmMgrVCUR) InstantiateContract2(
 		return nil, err
 	}
 
-	return &types.MsgInstantiateContract2Response{
+	return &wasmtypes.MsgInstantiateContract2Response{
 		Address: contractAddr.String(),
 		Data:    data,
 	}, nil
@@ -181,8 +180,8 @@ func (m WasmMgrVCUR) InstantiateContract2(
 
 func (m WasmMgrVCUR) ExecuteContract(
 	ctx context.Context,
-	msg *types.MsgExecuteContract,
-) (*types.MsgExecuteContractResponse, error) {
+	msg *wasmtypes.MsgExecuteContract,
+) (*wasmtypes.MsgExecuteContractResponse, error) {
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
 
 	if err := m.checkHalt(sdkCtx); err != nil {
@@ -213,15 +212,15 @@ func (m WasmMgrVCUR) ExecuteContract(
 		return nil, err
 	}
 
-	return &types.MsgExecuteContractResponse{
+	return &wasmtypes.MsgExecuteContractResponse{
 		Data: data,
 	}, nil
 }
 
 func (m WasmMgrVCUR) MigrateContract(
 	ctx context.Context,
-	msg *types.MsgMigrateContract,
-) (*types.MsgMigrateContractResponse, error) {
+	msg *wasmtypes.MsgMigrateContract,
+) (*wasmtypes.MsgMigrateContractResponse, error) {
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
 
 	if err := m.checkHalt(sdkCtx); err != nil {
@@ -257,15 +256,15 @@ func (m WasmMgrVCUR) MigrateContract(
 
 	// TODO: Check if old code id contract count == 0 and unpin
 
-	return &types.MsgMigrateContractResponse{
+	return &wasmtypes.MsgMigrateContractResponse{
 		Data: data,
 	}, nil
 }
 
 func (m WasmMgrVCUR) UpdateAdmin(
 	ctx context.Context,
-	msg *types.MsgUpdateAdmin,
-) (*types.MsgUpdateAdminResponse, error) {
+	msg *wasmtypes.MsgUpdateAdmin,
+) (*wasmtypes.MsgUpdateAdminResponse, error) {
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
 
 	if err := m.checkHalt(sdkCtx); err != nil {
@@ -298,12 +297,12 @@ func (m WasmMgrVCUR) UpdateAdmin(
 		return nil, err
 	}
 
-	return &types.MsgUpdateAdminResponse{}, nil
+	return &wasmtypes.MsgUpdateAdminResponse{}, nil
 }
 
 func (m WasmMgrVCUR) ClearAdmin(
 	ctx context.Context,
-	msg *types.MsgClearAdmin) (*types.MsgClearAdminResponse, error) {
+	msg *wasmtypes.MsgClearAdmin) (*wasmtypes.MsgClearAdminResponse, error) {
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
 
 	if err := m.checkHalt(sdkCtx); err != nil {
@@ -331,13 +330,13 @@ func (m WasmMgrVCUR) ClearAdmin(
 		return nil, err
 	}
 
-	return &types.MsgClearAdminResponse{}, nil
+	return &wasmtypes.MsgClearAdminResponse{}, nil
 }
 
 func (m WasmMgrVCUR) UpdateInstantiateConfig(
 	ctx context.Context,
-	msg *types.MsgUpdateInstantiateConfig,
-) (*types.MsgUpdateInstantiateConfigResponse, error) {
+	msg *wasmtypes.MsgUpdateInstantiateConfig,
+) (*wasmtypes.MsgUpdateInstantiateConfigResponse, error) {
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
 
 	if err := m.checkHalt(sdkCtx); err != nil {
@@ -362,14 +361,14 @@ func (m WasmMgrVCUR) UpdateInstantiateConfig(
 		return nil, err
 	}
 
-	return &types.MsgUpdateInstantiateConfigResponse{}, nil
+	return &wasmtypes.MsgUpdateInstantiateConfigResponse{}, nil
 }
 
 // UpdateParams updates the module parameters
 func (m WasmMgrVCUR) UpdateParams(
 	ctx context.Context,
-	req *types.MsgUpdateParams,
-) (*types.MsgUpdateParamsResponse, error) {
+	req *wasmtypes.MsgUpdateParams,
+) (*wasmtypes.MsgUpdateParamsResponse, error) {
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
 
 	// Check added for completeness
@@ -377,14 +376,14 @@ func (m WasmMgrVCUR) UpdateParams(
 		return nil, err
 	}
 
-	return &types.MsgUpdateParamsResponse{}, errors.ErrUnauthorized
+	return &wasmtypes.MsgUpdateParamsResponse{}, errors.ErrUnauthorized
 }
 
 // Codes are pinned automatically when stored
 func (m WasmMgrVCUR) PinCodes(
 	ctx context.Context,
-	req *types.MsgPinCodes,
-) (*types.MsgPinCodesResponse, error) {
+	req *wasmtypes.MsgPinCodes,
+) (*wasmtypes.MsgPinCodesResponse, error) {
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
 
 	// Check added for completeness
@@ -392,14 +391,14 @@ func (m WasmMgrVCUR) PinCodes(
 		return nil, err
 	}
 
-	return &types.MsgPinCodesResponse{}, errors.ErrUnauthorized
+	return &wasmtypes.MsgPinCodesResponse{}, errors.ErrUnauthorized
 }
 
 // Codes are unpinned automatically when migrated away leaving 0
 func (m WasmMgrVCUR) UnpinCodes(
 	ctx context.Context,
-	req *types.MsgUnpinCodes,
-) (*types.MsgUnpinCodesResponse, error) {
+	req *wasmtypes.MsgUnpinCodes,
+) (*wasmtypes.MsgUnpinCodesResponse, error) {
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
 
 	// Check added for completeness
@@ -407,14 +406,14 @@ func (m WasmMgrVCUR) UnpinCodes(
 		return nil, err
 	}
 
-	return &types.MsgUnpinCodesResponse{}, errors.ErrUnauthorized
+	return &wasmtypes.MsgUnpinCodesResponse{}, errors.ErrUnauthorized
 }
 
 // SudoContract calls sudo on a contract.
 func (m WasmMgrVCUR) SudoContract(
 	ctx context.Context,
-	req *types.MsgSudoContract,
-) (*types.MsgSudoContractResponse, error) {
+	req *wasmtypes.MsgSudoContract,
+) (*wasmtypes.MsgSudoContractResponse, error) {
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
 
 	if err := m.checkHalt(sdkCtx); err != nil {
@@ -445,14 +444,14 @@ func (m WasmMgrVCUR) SudoContract(
 		return nil, err
 	}
 
-	return &types.MsgSudoContractResponse{Data: data}, nil
+	return &wasmtypes.MsgSudoContractResponse{Data: data}, nil
 }
 
 // StoreAndInstantiateContract stores and instantiates the contract.
 func (m WasmMgrVCUR) StoreAndInstantiateContract(
 	ctx context.Context,
-	req *types.MsgStoreAndInstantiateContract,
-) (*types.MsgStoreAndInstantiateContractResponse, error) {
+	req *wasmtypes.MsgStoreAndInstantiateContract,
+) (*wasmtypes.MsgStoreAndInstantiateContractResponse, error) {
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
 
 	if err := m.checkHalt(sdkCtx); err != nil {
@@ -501,7 +500,7 @@ func (m WasmMgrVCUR) StoreAndInstantiateContract(
 		return nil, err
 	}
 
-	return &types.MsgStoreAndInstantiateContractResponse{
+	return &wasmtypes.MsgStoreAndInstantiateContractResponse{
 		Address: contractAddr.String(),
 		Data:    data,
 	}, nil
@@ -510,8 +509,8 @@ func (m WasmMgrVCUR) StoreAndInstantiateContract(
 // AddCodeUploadParamsAddresses adds addresses to code upload params
 func (m WasmMgrVCUR) AddCodeUploadParamsAddresses(
 	ctx context.Context,
-	req *types.MsgAddCodeUploadParamsAddresses,
-) (*types.MsgAddCodeUploadParamsAddressesResponse, error) {
+	req *wasmtypes.MsgAddCodeUploadParamsAddresses,
+) (*wasmtypes.MsgAddCodeUploadParamsAddressesResponse, error) {
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
 
 	// Check added for completeness
@@ -519,14 +518,14 @@ func (m WasmMgrVCUR) AddCodeUploadParamsAddresses(
 		return nil, err
 	}
 
-	return &types.MsgAddCodeUploadParamsAddressesResponse{}, errors.ErrUnauthorized
+	return &wasmtypes.MsgAddCodeUploadParamsAddressesResponse{}, errors.ErrUnauthorized
 }
 
 // RemoveCodeUploadParamsAddresses removes addresses to code upload params
 func (m WasmMgrVCUR) RemoveCodeUploadParamsAddresses(
 	ctx context.Context,
-	req *types.MsgRemoveCodeUploadParamsAddresses,
-) (*types.MsgRemoveCodeUploadParamsAddressesResponse, error) {
+	req *wasmtypes.MsgRemoveCodeUploadParamsAddresses,
+) (*wasmtypes.MsgRemoveCodeUploadParamsAddressesResponse, error) {
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
 
 	// Check added for completeness
@@ -534,14 +533,14 @@ func (m WasmMgrVCUR) RemoveCodeUploadParamsAddresses(
 		return nil, err
 	}
 
-	return &types.MsgRemoveCodeUploadParamsAddressesResponse{}, errors.ErrUnauthorized
+	return &wasmtypes.MsgRemoveCodeUploadParamsAddressesResponse{}, errors.ErrUnauthorized
 }
 
 // StoreAndMigrateContract stores and migrates the contract.
 func (m WasmMgrVCUR) StoreAndMigrateContract(
 	ctx context.Context,
-	req *types.MsgStoreAndMigrateContract,
-) (*types.MsgStoreAndMigrateContractResponse, error) {
+	req *wasmtypes.MsgStoreAndMigrateContract,
+) (*wasmtypes.MsgStoreAndMigrateContractResponse, error) {
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
 
 	if err := m.checkHalt(sdkCtx); err != nil {
@@ -588,7 +587,7 @@ func (m WasmMgrVCUR) StoreAndMigrateContract(
 		return nil, err
 	}
 
-	return &types.MsgStoreAndMigrateContractResponse{
+	return &wasmtypes.MsgStoreAndMigrateContractResponse{
 		CodeID:   codeID,
 		Checksum: checksum,
 		Data:     data,
@@ -597,15 +596,15 @@ func (m WasmMgrVCUR) StoreAndMigrateContract(
 
 func (m WasmMgrVCUR) UpdateContractLabel(
 	ctx context.Context,
-	msg *types.MsgUpdateContractLabel,
-) (*types.MsgUpdateContractLabelResponse, error) {
+	msg *wasmtypes.MsgUpdateContractLabel,
+) (*wasmtypes.MsgUpdateContractLabelResponse, error) {
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
 
 	if err := m.checkHalt(sdkCtx); err != nil {
 		return nil, err
 	}
 
-	return &types.MsgUpdateContractLabelResponse{}, errors.ErrUnauthorized
+	return &wasmtypes.MsgUpdateContractLabelResponse{}, errors.ErrUnauthorized
 }
 
 func (m WasmMgrVCUR) checkHalt(ctx cosmos.Context) error {
