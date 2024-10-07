@@ -12,6 +12,8 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/common/tokenlist"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
+
+	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
 )
 
 // MsgHandler is an interface expect all handler to implement
@@ -61,6 +63,7 @@ func getInternalHandlerMapping(mgr Manager) map[string]MsgHandler {
 	m[sdk.MsgTypeURL(&MsgRunePoolDeposit{})] = NewRunePoolDepositHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgRunePoolWithdraw{})] = NewRunePoolWithdrawHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgSudoContract{})] = NewWasmSudoContractHandler(mgr)
+	m[sdk.MsgTypeURL(&wasmtypes.MsgExecuteContract{})] = NewWasmExecHandler(mgr)
 
 	return m
 }
@@ -154,6 +157,19 @@ func getMsgManageTHORNameFromMemo(memo ManageTHORNameMemo, tx ObservedTx, signer
 	return NewMsgManageTHORName(memo.Name, memo.Chain, memo.Address, tx.Tx.Coins[0], memo.Expire, memo.PreferredAsset, memo.Owner, signer), nil
 }
 
+func getMsgExecuteContractFromMemo(memo ExecMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
+	coins, err := tx.Tx.Coins.Native()
+	if err != nil {
+		return nil, err
+	}
+	return &wasmtypes.MsgExecuteContract{
+		Sender:   signer.String(),
+		Contract: memo.ContractAddress.String(),
+		Msg:      memo.Msg,
+		Funds:    coins,
+	}, nil
+}
+
 func processOneTxIn(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
 	if len(tx.Tx.Coins) != 1 {
 		return nil, cosmos.ErrInvalidCoins("only send 1 coins per message")
@@ -222,7 +238,7 @@ func processOneTxIn(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, sig
 	case RunePoolWithdrawMemo:
 		newMsg = NewMsgRunePoolWithdraw(signer, tx.Tx, m.GetBasisPts(), m.GetAffiliateAddress(), m.GetAffiliateBasisPoints())
 	case ExecMemo:
-
+		newMsg, err = getMsgExecuteContractFromMemo(m, tx, signer)
 	default:
 		return nil, errInvalidMemo
 	}
