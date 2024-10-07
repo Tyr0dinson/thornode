@@ -123,7 +123,7 @@ type PoolManager interface {
 type WasmManager interface {
 	wasmtypes.MsgServer
 	Sudo(ctx cosmos.Context, msg *wasmtypes.MsgSudoContract,
-	) (wasmtypes.MsgSudoContractResponse, error)
+	) (*wasmtypes.MsgSudoContractResponse, error)
 }
 
 // SwapQueue interface define the contract of Swap Queue

@@ -37,8 +37,41 @@ func newWasmMgrVCUR(keeper keeper.Keeper, wasmKeeper wasmkeeper.Keeper, eventMgr
 		eventMgr:   eventMgr,
 	}
 }
-func (s *WasmMgrVCUR) Sudo(ctx cosmos.Context, msg *wasmtypes.MsgSudoContract) (wasmtypes.MsgSudoContractResponse, error) {
-	return wasmtypes.MsgSudoContractResponse{}, nil
+func (m *WasmMgrVCUR) Sudo(ctx cosmos.Context, msg *wasmtypes.MsgSudoContract) (*wasmtypes.MsgSudoContractResponse, error) {
+	sdkCtx := sdk.UnwrapSDKContext(ctx)
+
+	if err := m.checkHalt(sdkCtx); err != nil {
+		return nil, err
+	}
+
+	if err := msg.ValidateBasic(); err != nil {
+		return nil, err
+	}
+	senderAddr, err := sdk.AccAddressFromBech32(msg.Authority)
+	if err != nil {
+		return nil, errorsmod.Wrap(err, "authority")
+	}
+
+	contractAddr, err := sdk.AccAddressFromBech32(msg.Contract)
+	if err != nil {
+		return nil, errorsmod.Wrap(err, "contract")
+	}
+
+	contractInfo := m.wasmKeeper.GetContractInfo(sdkCtx, contractAddr)
+	codeInfo := m.wasmKeeper.GetCodeInfo(sdkCtx, contractInfo.CodeID)
+	err = m.checkAuthorization(senderAddr, codeInfo.CodeHash)
+	if err != nil {
+		return nil, err
+	}
+
+	res, err := m.permissionedKeeper().Sudo(sdkCtx, contractAddr, msg.Msg)
+	if err != nil {
+		return nil, err
+	}
+
+	return &wasmtypes.MsgSudoContractResponse{
+		Data: res,
+	}, nil
 }
 
 // StoreCode stores a new wasm code on chain

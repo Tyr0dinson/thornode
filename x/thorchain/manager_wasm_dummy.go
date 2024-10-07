@@ -19,6 +19,6 @@ func NewDummyWasmManager() *DummyWasmManager {
 	return &DummyWasmManager{}
 }
 
-func (s *DummyWasmManager) Sudo(ctx cosmos.Context, msg *wasmtypes.MsgSudoContract) (wasmtypes.MsgSudoContractResponse, error) {
-	return wasmtypes.MsgSudoContractResponse{}, nil
+func (s *DummyWasmManager) Sudo(ctx cosmos.Context, msg *wasmtypes.MsgSudoContract) (*wasmtypes.MsgSudoContractResponse, error) {
+	return &wasmtypes.MsgSudoContractResponse{}, nil
 }
