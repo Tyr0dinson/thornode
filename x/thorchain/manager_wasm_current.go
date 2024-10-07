@@ -16,9 +16,11 @@ import (
 )
 
 var (
-	_                 WasmManager = &WasmMgrVCUR{}
-	MIMIR_GLOBAL_HALT             = "WASMGLOBALHALT"
-	PERMISSIONS                   = map[string](map[string]bool){}
+	_                   WasmManager = &WasmMgrVCUR{}
+	MIMIR_GLOBAL_HALT               = "WASMHALTGLOBAL"
+	MIMIR_CHECKSUM_HALT             = "WASMHALTCONTRACT"
+	MIMIR_CONTRACT_HALT             = "WASMHALTCHECKSUM"
+	PERMISSIONS                     = map[string](map[string]bool){}
 )
 
 // WasmMgrVCUR is VCUR implementation of slasher
@@ -245,6 +247,20 @@ func (m WasmMgrVCUR) ExecuteContract(
 	contractAddr, err := sdk.AccAddressFromBech32(msg.Contract)
 	if err != nil {
 		return nil, errorsmod.Wrap(err, "contract")
+	}
+
+	// The default `Messenger` configured in wasm keeper, used for routing sub-messages, uses
+	// the app's `Router`. Therefore, any SDK submessages that call a contract will route
+	// back through this code path and will be halted where necessary
+	contractInfo := m.wasmKeeper.GetContractInfo(sdkCtx, contractAddr)
+	codeInfo := m.wasmKeeper.GetCodeInfo(sdkCtx, contractInfo.CodeID)
+
+	if err := m.checkContractHalt(sdkCtx, contractAddr); err != nil {
+		return nil, err
+	}
+
+	if err := m.checkChecksumHalt(sdkCtx, codeInfo.CodeHash); err != nil {
+		return nil, err
 	}
 
 	data, err := m.permissionedKeeper().Execute(
@@ -530,6 +546,28 @@ func (m WasmMgrVCUR) checkHalt(ctx cosmos.Context) error {
 	}
 	if v != 0 && ctx.BlockHeight() > v {
 		return errors.ErrUnauthorized
+	}
+	return nil
+}
+
+func (m WasmMgrVCUR) checkContractHalt(ctx cosmos.Context, address sdk.AccAddress) error {
+	v, err := m.keeper.GetMimir(ctx, MIMIR_CONTRACT_HALT+address.String())
+	if err != nil {
+		return err
+	}
+	if v != 0 && ctx.BlockHeight() > v {
+		return wrapError(ctx, errors.ErrUnauthorized, "contract halted")
+	}
+	return nil
+}
+
+func (m WasmMgrVCUR) checkChecksumHalt(ctx cosmos.Context, checksum []byte) error {
+	v, err := m.keeper.GetMimir(ctx, MIMIR_CHECKSUM_HALT+hex.EncodeToString(checksum))
+	if err != nil {
+		return err
+	}
+	if v != 0 && ctx.BlockHeight() > v {
+		return wrapError(ctx, errors.ErrUnauthorized, "checksum halted")
 	}
 	return nil
 }
