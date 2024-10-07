@@ -60,8 +60,6 @@ func (m WasmMgrVCUR) StoreCode(
 		return nil, errorsmod.Wrap(err, "sender")
 	}
 
-	// TODO: Authorization
-
 	codeID, checksum, err := m.permissionedKeeper().Create(
 		sdkCtx,
 		senderAddr,
@@ -273,7 +271,7 @@ func (m WasmMgrVCUR) MigrateContract(
 		return nil, err
 	}
 
-	// TODO: Check if old code id contract count == 0 and unpin
+	m.maybeUnpin(sdkCtx, contractAddr)
 
 	return &wasmtypes.MsgMigrateContractResponse{
 		Data: data,
@@ -402,7 +400,7 @@ func (m WasmMgrVCUR) StoreAndInstantiateContract(
 // StoreAndMigrateContract stores and migrates the contract.
 func (m WasmMgrVCUR) StoreAndMigrateContract(
 	ctx context.Context,
-	req *wasmtypes.MsgStoreAndMigrateContract,
+	msg *wasmtypes.MsgStoreAndMigrateContract,
 ) (*wasmtypes.MsgStoreAndMigrateContractResponse, error) {
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
 
@@ -410,20 +408,20 @@ func (m WasmMgrVCUR) StoreAndMigrateContract(
 		return nil, err
 	}
 
-	authorityAddr, err := sdk.AccAddressFromBech32(req.Authority)
+	authorityAddr, err := sdk.AccAddressFromBech32(msg.Authority)
 	if err != nil {
 		return nil, errorsmod.Wrap(err, "authority")
 	}
 
-	if err = req.ValidateBasic(); err != nil {
+	if err = msg.ValidateBasic(); err != nil {
 		return nil, err
 	}
 
 	codeID, checksum, err := m.permissionedKeeper().Create(
 		sdkCtx,
 		authorityAddr,
-		req.WASMByteCode,
-		req.InstantiatePermission,
+		msg.WASMByteCode,
+		msg.InstantiatePermission,
 	)
 	if err != nil {
 		return nil, err
@@ -438,22 +436,22 @@ func (m WasmMgrVCUR) StoreAndMigrateContract(
 		return nil, err
 	}
 
-	contractAddr, err := sdk.AccAddressFromBech32(req.Contract)
+	contractAddr, err := sdk.AccAddressFromBech32(msg.Contract)
 	if err != nil {
 		return nil, errorsmod.Wrap(err, "contract")
 	}
-
-	// TODO: Check if old code id contract count == 0 and unpin
 
 	data, err := m.permissionedKeeper().Migrate(
 		sdkCtx,
 		contractAddr,
 		authorityAddr,
 		codeID,
-		req.Msg)
+		msg.Msg)
 	if err != nil {
 		return nil, err
 	}
+
+	m.maybeUnpin(sdkCtx, contractAddr)
 
 	return &wasmtypes.MsgStoreAndMigrateContractResponse{
 		CodeID:   codeID,
@@ -516,4 +514,16 @@ func (m WasmMgrVCUR) checkAuthorization(actor cosmos.AccAddress, checksum []byte
 	}
 
 	return errNotAuthorized
+}
+
+func (m WasmMgrVCUR) maybeUnpin(ctx cosmos.Context, address cosmos.AccAddress) {
+	contractInfo := m.wasmKeeper.GetContractInfo(ctx, address)
+	var instanceCount int
+	m.wasmKeeper.IterateContractsByCode(ctx, contractInfo.CodeID, func(address sdk.AccAddress) bool {
+		instanceCount++
+		return true
+	})
+	if instanceCount == 0 {
+		m.permissionedKeeper().UnpinCode(ctx, contractInfo.CodeID)
+	}
 }
