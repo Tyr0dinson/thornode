@@ -684,6 +684,18 @@ signer: {{ addr_thor_dog }}
 type: create-blocks
 count: 1
 ---
+# Testing whether the Saver deposit quote still works.
+type: check
+endpoint: http://localhost:1317/thorchain/quote/saver/deposit
+params:
+  asset: BTC.BTC
+  amount: ${ADD=200000}
+asserts:
+  - has("expected_amount_deposit") | not
+  # The test ends here with error="unexpected status code: 404" .
+  # TODO: Modify the Saver depsoit quote (for add liquidity memo transactions)
+  # so it doesn't stop working when to-synth swap memo transactions are disabled.
+---
 type: tx-observed-in
 signer: {{ addr_thor_dog }}
 txs:
@@ -693,7 +705,7 @@ txs:
       from_address: {{ addr_btc_pig }}
       to_address: {{ addr_btc_dog }}
       coins:
-        - amount: "${ADD=200000}"
+        - amount: "${ADD}"
           asset: "BTC.BTC"
           decimals: 8
       gas:
