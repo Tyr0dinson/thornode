@@ -43,10 +43,7 @@ func (k KVStore) getTHORNameExpiration(ctx cosmos.Context, name THORName) int64 
 
 // Check both the hard and soft expiration block height for a given THORName
 func (k KVStore) GetTHORNameExpiration(ctx cosmos.Context, name THORName) (int64, int64) {
-	gracePeriod, err := k.GetMimir(ctx, constants.THORNameGracePeriodBlocks.String())
-	if gracePeriod < 0 || err != nil {
-		gracePeriod = k.constAccessor.GetInt64Value(constants.THORNameGracePeriodBlocks)
-	}
+	gracePeriod := k.GetConfigInt64(ctx, constants.THORNameGracePeriodBlocks)
 
 	return name.ExpireBlockHeight, (name.ExpireBlockHeight + gracePeriod)
 }
