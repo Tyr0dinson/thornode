@@ -87,7 +87,6 @@ import (
 	"github.com/CosmWasm/wasmd/x/wasm"
 	wasmkeeper "github.com/CosmWasm/wasmd/x/wasm/keeper"
 	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
-	tcwasm "gitlab.com/thorchain/thornode/x/wasm"
 
 	ica "github.com/cosmos/ibc-go/v8/modules/apps/27-interchain-accounts"
 	icahost "github.com/cosmos/ibc-go/v8/modules/apps/27-interchain-accounts/host"
@@ -545,13 +544,12 @@ func NewChainApp(
 	)
 	upgradeModule := upgrade.NewAppModule(app.UpgradeKeeper, app.AccountKeeper.AddressCodec())
 	capabilityModule := capability.NewAppModule(appCodec, *app.CapabilityKeeper, false)
-	wasmModule := tcwasm.NewAppModule(
+	wasmModule := wasm.NewAppModule(
 		appCodec,
 		&app.WasmKeeper,
 		app.StakingKeeper,
 		app.AccountKeeper,
 		app.BankKeeper,
-		app.ThorchainKeeper,
 		app.MsgServiceRouter(),
 		app.GetSubspace(wasmtypes.ModuleName),
 	)
@@ -570,7 +568,8 @@ func NewChainApp(
 		capabilityModule,
 		// non sdk modules
 		app.ThorchainModule,
-		wasmModule,
+		// Don't register wasm module - x/thorchain registers msg and query servers
+		// wasmModule,
 		ibcModule,
 		ibcTransferModule,
 		ibcFeeModule,

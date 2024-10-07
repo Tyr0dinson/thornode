@@ -97,13 +97,6 @@ func (ms msgServer) SetVersion(goCtx context.Context, msg *types.MsgSetVersion) 
 	return externalHandler(goCtx, handler, msg)
 }
 
-// --- CosmWasm
-
-func (ms msgServer) SudoContract(goCtx context.Context, msg *types.MsgSudoContract) (*types.MsgEmpty, error) {
-	handler := NewWasmSudoContractHandler(ms.mgr)
-	return externalHandler(goCtx, handler, msg)
-}
-
 func externalHandler(goCtx context.Context, handler MsgHandler, msg sdk.Msg) (_ *types.MsgEmpty, err error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 

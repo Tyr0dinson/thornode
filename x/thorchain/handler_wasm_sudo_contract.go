@@ -3,6 +3,7 @@ package thorchain
 import (
 	"fmt"
 
+	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
 	"github.com/blang/semver"
 
 	"gitlab.com/thorchain/thornode/common"
@@ -23,7 +24,7 @@ func NewWasmSudoContractHandler(mgr Manager) WasmSudoContractHandler {
 
 // Run is the main entry of WasmSudoContractHandler
 func (h WasmSudoContractHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, error) {
-	msg, ok := m.(*MsgSudoContract)
+	msg, ok := m.(*wasmtypes.MsgSudoContract)
 	if !ok {
 		return nil, errInvalidMessage
 	}
@@ -39,7 +40,7 @@ func (h WasmSudoContractHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.
 	return result, nil
 }
 
-func (h WasmSudoContractHandler) validate(ctx cosmos.Context, msg MsgSudoContract) error {
+func (h WasmSudoContractHandler) validate(ctx cosmos.Context, msg wasmtypes.MsgSudoContract) error {
 	version := h.mgr.GetVersion()
 	switch {
 	case version.GTE(semver.MustParse("2.137.0")):
@@ -49,15 +50,15 @@ func (h WasmSudoContractHandler) validate(ctx cosmos.Context, msg MsgSudoContrac
 	}
 }
 
-func (h WasmSudoContractHandler) validateV137(ctx cosmos.Context, msg MsgSudoContract) error {
+func (h WasmSudoContractHandler) validateV137(ctx cosmos.Context, msg wasmtypes.MsgSudoContract) error {
 	// ValidateBasic is executed in message service router
 	// Removed for clarity that it is not versioned
 
 	return nil
 }
 
-func (h WasmSudoContractHandler) handle(ctx cosmos.Context, msg MsgSudoContract) (*cosmos.Result, error) {
-	ctx.Logger().Info("receive MsgSudoContract", "from", msg.GetSigners()[0])
+func (h WasmSudoContractHandler) handle(ctx cosmos.Context, msg wasmtypes.MsgSudoContract) (*cosmos.Result, error) {
+	ctx.Logger().Info("receive MsgSudoContract", "from", msg.Authority)
 	version := h.mgr.GetVersion()
 	switch {
 	case version.GTE(semver.MustParse("2.137.0")):
@@ -67,14 +68,11 @@ func (h WasmSudoContractHandler) handle(ctx cosmos.Context, msg MsgSudoContract)
 	}
 }
 
-func (h WasmSudoContractHandler) handleV137(ctx cosmos.Context, msg MsgSudoContract) (*cosmos.Result, error) {
+func (h WasmSudoContractHandler) handleV137(ctx cosmos.Context, msg wasmtypes.MsgSudoContract) (*cosmos.Result, error) {
 	if h.mgr.Keeper().IsChainHalted(ctx, common.THORChain) {
 		return nil, fmt.Errorf("unable to use MsgSudoContract while THORChain is halted")
 	}
-	_, err := h.mgr.WasmManager().Sudo(ctx,
-		cosmos.AccAddress(msg.Contract),
-		cosmos.AccAddress(msg.Sender),
-		msg.Msg)
+	_, err := h.mgr.WasmManager().Sudo(ctx, &msg)
 	if err != nil {
 		return &cosmos.Result{}, err
 	}

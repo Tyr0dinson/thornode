@@ -121,9 +121,8 @@ type PoolManager interface {
 }
 
 type WasmManager interface {
-	Sudo(ctx cosmos.Context,
-		caller, contractAddress cosmos.AccAddress,
-		msg []byte,
+	wasmtypes.MsgServer
+	Sudo(ctx cosmos.Context, msg *wasmtypes.MsgSudoContract,
 	) (wasmtypes.MsgSudoContractResponse, error)
 }
 

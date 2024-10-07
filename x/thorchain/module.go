@@ -29,6 +29,7 @@ import (
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
 
 	wasmkeeper "github.com/CosmWasm/wasmd/x/wasm/keeper"
+	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
 )
 
 // type check to ensure the interface is properly implemented
@@ -156,6 +157,9 @@ func (am AppModule) QuerierRoute() string {
 func (am AppModule) RegisterServices(cfg module.Configurator) {
 	types.RegisterMsgServer(cfg.MsgServer(), am.msgServer)
 	types.RegisterQueryServer(cfg.QueryServer(), am.queryServer)
+
+	wasmtypes.RegisterMsgServer(cfg.MsgServer(), am.msgServer)
+	wasmtypes.RegisterQueryServer(cfg.QueryServer(), wasmkeeper.Querier(&am.mgr.wasmKeeper))
 }
 
 // TODO: rename BeginBlock functions to PreBlock functions

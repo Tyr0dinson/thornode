@@ -7,8 +7,13 @@ import (
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 )
 
+var (
+	_ WasmManager = &DummyWasmManager{}
+)
+
 // DummyWasmManager is VCUR implementation of slasher
 type DummyWasmManager struct {
+	wasmtypes.UnimplementedMsgServer
 	keeper     keeper.Keeper
 	wasmKeeper wasmkeeper.Keeper
 	eventMgr   EventManager
@@ -19,6 +24,6 @@ func NewDummyWasmManager() *DummyWasmManager {
 	return &DummyWasmManager{}
 }
 
-func (s *DummyWasmManager) Sudo(ctx cosmos.Context, contractAddres, caller cosmos.AccAddress, msg []byte) (wasmtypes.MsgSudoContractResponse, error) {
+func (s *DummyWasmManager) Sudo(ctx cosmos.Context, msg *wasmtypes.MsgSudoContract) (wasmtypes.MsgSudoContractResponse, error) {
 	return wasmtypes.MsgSudoContractResponse{}, nil
 }
