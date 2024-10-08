@@ -156,6 +156,7 @@ func getMsgManageTHORNameFromMemo(memo ManageTHORNameMemo, tx ObservedTx, signer
 }
 
 func getMsgExecuteContractFromMemo(memo ExecMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
+	panic("TODO: Convert tokens to Bridge Assets to be sent in `Funds`")
 	coins, err := tx.Tx.Coins.Native()
 	if err != nil {
 		return nil, err
