@@ -271,7 +271,7 @@ test-ictest-sim:
     - make install-heighliner
     - PATH="/root/go/bin:$PATH" make build-heighliner-mocknet
   script: |
-    make test-ictest-sim
+    DOCKER_HOST=docker make test-ictest-sim
 
 test-ictest-upgrade:
   rules: *rules
@@ -286,7 +286,7 @@ test-ictest-upgrade:
     - make install-heighliner
     - PATH="/root/go/bin:$PATH" make build-heighliner-mocknet
   script: |
-    make test-ictest-upgrade
+    DOCKER_HOST=docker make test-ictest-upgrade
 
 include:
   - template: Security/SAST.gitlab-ci.yml
