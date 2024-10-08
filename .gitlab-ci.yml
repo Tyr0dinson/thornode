@@ -274,14 +274,16 @@ build-heighliner-mocknet-image:
     PATH="/root/go/bin:$PATH" make build-heighliner-mocknet
     docker save -o mocknet.tar thorchain:mocknet-local
 
-test-ictest-sim:
+# Template for interchaintest jobs
+.ictest: &ictest
   rules: *rules
   stage: long-test
   <<: *use_dind
   environment:
     name: integration
   variables:
-    FF_NETWORK_PER_BUILD: "true" # activate container-to-container networking
+    # FF_NETWORK_PER_BUILD: "true"
+    NETWORK_ID: ictest
   needs:
     - job: build-heighliner-mocknet-image
       artifacts: true
@@ -290,27 +292,18 @@ test-ictest-sim:
     - docker load -i mocknet.tar
     - docker network create ictest
   script: |
-    export NETWORK_ID=ictest DOCKER_HOST_OVERRIDE=$(docker network inspect ictest -f '{{range .IPAM.Config}}{{.Gateway}}{{end}}')
-    make test-ictest-sim
+    export DOCKER_HOST_OVERRIDE=$(docker network inspect ictest -f '{{range .IPAM.Config}}{{.Gateway}}{{end}}')
+    make test-ictest-${ICTEST_NAME}
+
+test-ictest-sim:
+  <<: *ictest
+  variables:
+    ICTEST_NAME: sim
 
 test-ictest-upgrade:
-  rules: *rules
-  stage: long-test
-  <<: *use_dind
-  environment:
-    name: integration
+  <<: *ictest
   variables:
-    FF_NETWORK_PER_BUILD: "true" # activate container-to-container networking
-  needs:
-    - job: build-heighliner-mocknet-image
-      artifacts: true
-  before_script:
-    - apk -U add make git bash go tar
-    - docker load -i mocknet.tar
-    - docker network create ictest
-  script: |
-    export NETWORK_ID=ictest DOCKER_HOST_OVERRIDE=$(docker network inspect ictest -f '{{range .IPAM.Config}}{{.Gateway}}{{end}}')
-    make test-ictest-upgrade
+    ICTEST_NAME: upgrade
 
 include:
   - template: Security/SAST.gitlab-ci.yml
