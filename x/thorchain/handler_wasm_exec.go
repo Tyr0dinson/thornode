@@ -72,6 +72,7 @@ func (h WasmExecHandler) handleV137(ctx cosmos.Context, msg MsgWasmExec) (*cosmo
 	funds := []types.Coin{}
 
 	execMsg := wasmtypes.MsgExecuteContract{
+		// TODO: Map msg.Tx.FromAddress to bech32 string
 		Sender:   msg.Signer.String(),
 		Contract: msg.Contract.String(),
 		Msg:      msg.Msg,
