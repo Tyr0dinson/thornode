@@ -268,7 +268,7 @@ build-heighliner-mocknet-image:
     paths:
       - mocknet.tar
   before_script:
-    - apk -U add make bash curl jq wget
+    - apk -U add make bash curl jq wget tar
     - make install-heighliner-release
   script:
     - PATH="/root/go/bin:$PATH" make build-heighliner-mocknet --tar-export-path mocknet.tar
@@ -284,7 +284,7 @@ test-ictest-sim:
   dependencies:
     - build-heighliner-mocknet-image
   before_script:
-    - apk -U add make git bash go
+    - apk -U add make git bash go tar
   script: |
     docker image load -i mocknet.tar
     export DOCKER_HOST_OVERRIDE=$(docker network inspect bridge -f '{{range .IPAM.Config}}{{.Gateway}}{{end}}')
@@ -301,7 +301,7 @@ test-ictest-upgrade:
   dependencies:
     - build-heighliner-mocknet-image
   before_script:
-    - apk -U add make git bash go
+    - apk -U add make git bash go tar
   script: |
     docker image load -i mocknet.tar
     export DOCKER_HOST_OVERRIDE=$(docker network inspect bridge -f '{{range .IPAM.Config}}{{.Gateway}}{{end}}')
