@@ -270,8 +270,9 @@ build-heighliner-mocknet-image:
   before_script:
     - apk -U add make bash curl jq wget tar gcompat
     - make install-heighliner-release
-  script:
-    - PATH="/root/go/bin:$PATH" make HEIGHLINER_BUILD_FLAGS="--tar-export-path mocknet.tar" build-heighliner-mocknet
+  script: |
+    PATH="/root/go/bin:$PATH" make build-heighliner-mocknet
+    docker save -o mocknet.tar thorchain:mocknet-local
 
 test-ictest-sim:
   rules: *rules
@@ -281,12 +282,13 @@ test-ictest-sim:
     name: integration
   variables:
     FF_NETWORK_PER_BUILD: "true" # activate container-to-container networking
-  dependencies:
-    - build-heighliner-mocknet-image
+  needs:
+    - job: build-heighliner-mocknet-image
+      artifacts: true
   before_script:
     - apk -U add make git bash go tar
   script: |
-    docker image load -i mocknet.tar
+    docker load -i mocknet.tar
     export DOCKER_HOST_OVERRIDE=$(docker network inspect bridge -f '{{range .IPAM.Config}}{{.Gateway}}{{end}}')
     make test-ictest-sim
 
@@ -298,12 +300,13 @@ test-ictest-upgrade:
     name: integration
   variables:
     FF_NETWORK_PER_BUILD: "true" # activate container-to-container networking
-  dependencies:
-    - build-heighliner-mocknet-image
+  needs:
+    - job: build-heighliner-mocknet-image
+      artifacts: true
   before_script:
     - apk -U add make git bash go tar
   script: |
-    docker image load -i mocknet.tar
+    docker load -i mocknet.tar
     export DOCKER_HOST_OVERRIDE=$(docker network inspect bridge -f '{{range .IPAM.Config}}{{.Gateway}}{{end}}')
     make test-ictest-upgrade
 
