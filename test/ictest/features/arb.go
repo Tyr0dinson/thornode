@@ -33,7 +33,7 @@ func Arb(
 		return users, err
 	}
 
-	mimirs, err := thorchain.ApiGetMimirs()
+	mimirs, err := thorchain.APIGetMimirs(ctx)
 	if err != nil {
 		return users, err
 	}
@@ -65,7 +65,7 @@ func Arb(
 			}
 
 			memo := fmt.Sprintf("trade+:%s", thorUser.FormattedAddress())
-			exoInboundAddr, _, err := thorchain.ApiGetInboundAddress(exoChainType.String())
+			exoInboundAddr, _, err := thorchain.APIGetInboundAddress(ctx, exoChainType.String())
 			if err != nil {
 				return err
 			}
@@ -91,7 +91,7 @@ func Arb(
 		maxBasisPts := uint64(10_000)
 
 		for {
-			pools, err := thorchain.ApiGetPools()
+			pools, err := thorchain.APIGetPools(ctx)
 			if err != nil {
 				fmt.Println("Error getting arb api pools", err)
 				time.Sleep(time.Second * 2)

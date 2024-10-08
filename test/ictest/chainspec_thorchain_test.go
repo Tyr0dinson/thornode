@@ -14,7 +14,8 @@ import (
 var (
 	Denom               = "rune"
 	Binary              = "thornode"
-	Bech32              = "tthor"
+	Bech32Mocknet       = "tthor"
+	Bech32Mainnet       = "thor"
 	CoinScale           = math.NewInt(100_000_000)
 	StaticGas           = math.NewInt(2_000_000)
 	InitialFaucetAmount = math.NewInt(100_000_000).Mul(CoinScale)
@@ -25,23 +26,29 @@ type ChainContract struct {
 	Router string `json:"router"`
 }
 
-func ThorchainDefaultChainSpec(testName string, numVals int, numFn int, ethRouter string, bscRouter string, thornodeEnvOverrides, bifrostEnvOverrides map[string]string) *interchaintest.ChainSpec {
+func ThorchainDefaultChainSpec(testName string, chainImage ibc.DockerImage, mainnet bool, numVals int, numFn int, ethRouter string, bscRouter string, thornodeEnvOverrides, bifrostEnvOverrides map[string]string) *interchaintest.ChainSpec {
 	chainID := "thorchain"
 	name := common.THORChain.String() // Must use this name for test
-	chainImage := ibc.NewDockerImage("thorchain", "local", "1025:1025")
 	genesisKVMods := []thorchain.GenesisKV{
 		thorchain.NewGenesisKV("app_state.bank.params.default_send_enabled", true), // disable bank module transfers
 		thorchain.NewGenesisKV("app_state.thorchain.reserve", "22000000000000000"),  // mint to reserve for mocknet (220M)
-		thorchain.NewGenesisKV("app_state.thorchain.chain_contracts", []ChainContract{
-			{
+	}
+
+	if ethRouter != "" || bscRouter != "" {
+		var chainContracts []ChainContract
+		if ethRouter != "" {
+			chainContracts = append(chainContracts, ChainContract{
 				Chain:  "ETH",
 				Router: ethRouter,
-			},
-			{
+			})
+		}
+		if bscRouter != "" {
+			chainContracts = append(chainContracts, ChainContract{
 				Chain:  "BSC",
 				Router: bscRouter,
-			},
-		}),
+			})
+		}
+		genesisKVMods = append(genesisKVMods, thorchain.NewGenesisKV("app_state.thorchain.chain_contracts", chainContracts))
 	}
 
 	thornodeEnv := thornodeDefaults
@@ -83,7 +90,6 @@ func ThorchainDefaultChainSpec(testName string, numVals int, numFn int, ethRoute
 		Name:           name,
 		ChainID:        chainID,
 		Bin:            Binary,
-		Bech32Prefix:   Bech32,
 		Denom:          Denom,
 		CoinType:       "931",
 		GasPrices:      "0" + Denom,
@@ -104,6 +110,12 @@ func ThorchainDefaultChainSpec(testName string, numVals int, numFn int, ethRoute
 		},
 		ModifyGenesis:    thorchain.ModifyGenesis(genesisKVMods),
 		HostPortOverride: map[int]int{1317: 1317},
+	}
+
+	if mainnet {
+		defaultChainConfig.Bech32Prefix = Bech32Mainnet
+	} else {
+		defaultChainConfig.Bech32Prefix = Bech32Mocknet
 	}
 
 	return &interchaintest.ChainSpec{

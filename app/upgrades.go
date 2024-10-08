@@ -7,10 +7,11 @@ import (
 
 	"gitlab.com/thorchain/thornode/app/upgrades"
 	"gitlab.com/thorchain/thornode/app/upgrades/noop"
+	"gitlab.com/thorchain/thornode/app/upgrades/v137"
 )
 
 // Upgrades list of chain upgrades
-var Upgrades = []upgrades.Upgrade{}
+var Upgrades = []upgrades.Upgrade{v137.NewUpgrade()}
 
 // RegisterUpgradeHandlers registers the chain upgrade handlers
 func (app *THORChainApp) RegisterUpgradeHandlers() {

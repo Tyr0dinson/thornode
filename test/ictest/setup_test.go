@@ -97,22 +97,30 @@ func StartExoChains(t *testing.T, ctx context.Context, client *client.Client, ne
 	}))
 	t.Cleanup(func() {
 		_ = ic.Close()
-		// Add below once race PR is merged
-		// for _, chain := range chains {
-		// 	utxoChain, ok := chain.(*utxo.UtxoChain)
-		// 	if ok {
-		// 		utxoChain.Stop()
-		// 	}
-		// }
+		for _, chain := range chains {
+			utxoChain, ok := chain.(*utxo.UtxoChain)
+			if ok {
+				utxoChain.Stop()
+			}
+		}
 	})
 
 	return exoChains
 }
 
-func StartThorchain(t *testing.T, ctx context.Context, client *client.Client, network string, exoChains ExoChains, ethRouterContractAddress string, bscRouterContractAddress string) *tc.Thorchain {
-	numThorchainValidators := 1
-	numThorchainFullNodes := 0
-
+func StartThorchain(
+	t *testing.T,
+	ctx context.Context,
+	client *client.Client,
+	network string,
+	numValidators int,
+	numFullNodes int,
+	mainnet bool,
+	chainImage ibc.DockerImage,
+	exoChains ExoChains,
+	ethRouterContractAddress string,
+	bscRouterContractAddress string,
+) *tc.Thorchain {
 	bifrostEnvOverrides := map[string]string{
 		"BIFROST_CHAINS_GAIA_BLOCK_SCANNER_START_BLOCK_HEIGHT": "2",
 	}
@@ -133,7 +141,8 @@ func StartThorchain(t *testing.T, ctx context.Context, client *client.Client, ne
 			bifrostEnvOverrides[bsRpcHost] = exoChain.chain.GetRPCAddress()
 		}
 	}
-	thorchainChainSpec := ThorchainDefaultChainSpec(t.Name(), numThorchainValidators, numThorchainFullNodes, ethRouterContractAddress, bscRouterContractAddress, nil, bifrostEnvOverrides)
+	thorchainChainSpec := ThorchainDefaultChainSpec(t.Name(), chainImage, mainnet, numValidators,
+		numFullNodes, ethRouterContractAddress, bscRouterContractAddress, nil, bifrostEnvOverrides)
 
 	cf := interchaintest.NewBuiltinChainFactory(zaptest.NewLogger(t), []*interchaintest.ChainSpec{
 		thorchainChainSpec,

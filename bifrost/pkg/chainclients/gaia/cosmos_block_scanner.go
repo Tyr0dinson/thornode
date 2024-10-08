@@ -10,13 +10,23 @@ import (
 	"time"
 
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
+	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	sdkmath "cosmossdk.io/math"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"
 	ctypes "github.com/cosmos/cosmos-sdk/types"
 	signingtypes "github.com/cosmos/cosmos-sdk/types/tx/signing"
 	"github.com/cosmos/cosmos-sdk/x/auth/tx"
-	btypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+
+	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
+	authvesting "github.com/cosmos/cosmos-sdk/x/auth/vesting/types"
+	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+	distribtypes "github.com/cosmos/cosmos-sdk/x/distribution/types"
+	govv1types "github.com/cosmos/cosmos-sdk/x/gov/types/v1"
+	govv1beta1types "github.com/cosmos/cosmos-sdk/x/gov/types/v1beta1"
+	paramsproptypes "github.com/cosmos/cosmos-sdk/x/params/types/proposal"
+	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
+	upgradetypes "cosmossdk.io/x/upgrade/types"
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -100,9 +110,20 @@ func NewCosmosBlockScanner(cfg config.BifrostBlockScannerConfiguration,
 	// Bifrost only supports an "RPCHost" in its configuration.
 	// We also need to access GRPC for Cosmos chains
 
-	// Registry for decoding txs
+	// Registry for decoding gaia txs
+	// Note: we register gaia's cosmos sdk types
+	// don't use thorchain's codec as it is a smaller subset of codecs
 	registry := codectypes.NewInterfaceRegistry()
-	btypes.RegisterInterfaces(registry)
+	authtypes.RegisterInterfaces(registry)
+	banktypes.RegisterInterfaces(registry)
+	authvesting.RegisterInterfaces(registry)
+	stakingtypes.RegisterInterfaces(registry)
+	cryptocodec.RegisterInterfaces(registry)
+	govv1types.RegisterInterfaces(registry)
+	govv1beta1types.RegisterInterfaces(registry)
+	paramsproptypes.RegisterInterfaces(registry)
+	upgradetypes.RegisterInterfaces(registry)
+	distribtypes.RegisterInterfaces(registry)
 	cdc := codec.NewProtoCodec(registry)
 
 	// Registry for encoding txs
@@ -303,7 +324,7 @@ func (c *CosmosBlockScanner) processTxs(height int64, rawTxs []tmtypes.Tx) ([]ty
 		c.updateGasCache(feeTx)
 
 		for _, msg := range tx.GetMsgs() {
-			if msg, isMsgSend := msg.(*btypes.MsgSend); isMsgSend {
+			if msg, isMsgSend := msg.(*banktypes.MsgSend); isMsgSend {
 				// Transaction contains a relevant MsgSend, check if the transaction was successful...
 				if blockResults.TxsResults[i].Code != 0 {
 					c.logger.Warn().Str("txhash", hash).Int64("height", height).Msg("inbound tx has non-zero response code, ignoring...")
