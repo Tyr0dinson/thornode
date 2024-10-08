@@ -3,8 +3,6 @@ package v137
 import (
 	"context"
 
-	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/cosmos/cosmos-sdk/baseapp"
 	"github.com/cosmos/cosmos-sdk/types/module"
 	storetypes "cosmossdk.io/store/types"
 	upgradetypes "cosmossdk.io/x/upgrade/types"
@@ -65,15 +63,9 @@ func CreateUpgradeHandler(
 				subspace.WithKeyTable(keyTable)
 			}
 		}
-
-		// migrate params to new conensus params keeper
-		// ref:https://github.com/cosmos/cosmos-sdk/blob/release/v0.47.x/UPGRADING.md#xconsensus
-		baseAppLegacySS := ak.ParamsKeeper.Subspace(baseapp.Paramspace).WithKeyTable(paramstypes.ConsensusParamsKeyTable())
-		ctx := sdk.UnwrapSDKContext(goCtx)
-		baseapp.MigrateParams(ctx, baseAppLegacySS, ak.ConsensusParamsKeeper.ParamsStore)
 		
 		// Perform SDK module migrations
-		vm, err := mm.RunMigrations(ctx, configurator, fromVM)
+		vm, err := mm.RunMigrations(goCtx, configurator, fromVM)
 		if err != nil {
 			return vm, err
 		}

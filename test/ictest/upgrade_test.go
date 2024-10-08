@@ -25,6 +25,7 @@ const (
 
 // TODO:
 // add swaps, savers eject, ragnarok after upgrade
+// restart node after upgrade
 // test multiple validators
 // test mainnet
 func TestUpgrade136to137(t *testing.T) {
@@ -128,8 +129,6 @@ func TestUpgrade136to137(t *testing.T) {
 	// --------------------------------------------------------
 	// Start upgrade
 	// --------------------------------------------------------
-	eg, egCtx = errgroup.WithContext(ctx)
-
 	height, err := thorchain.Height(ctx)
 	require.NoError(t, err, "error fetching height before submit upgrade proposal")
 
@@ -202,6 +201,8 @@ func TestUpgrade136to137(t *testing.T) {
 	err = testutil.WaitForBlocks(timeoutCtx, int(blocksAfterUpgrade), thorchain)
 	require.NoError(t, err, "chain did not produce blocks after upgrade")
 
+	//err = testutil.WaitForBlocks(ctx, 300, thorchain)
+	//require.NoError(t, err, "thorchain failed to make blocks")
 	//nodes, err := tc.ApiGetNodes()
 	//require.NoError(t, err, "error fetching nodes after upgrade")
 

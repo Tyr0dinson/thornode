@@ -554,7 +554,7 @@ func (app *THORChainApp) FinalizeBlock(req *abci.RequestFinalizeBlock) (*abci.Re
 			// sdk 47:
 			// Migrate Tendermint consensus parameters from x/params module to a dedicated x/consensus module.
 			// see https://github.com/cosmos/cosmos-sdk/blob/v0.47.0/simapp/upgrades.go#L66
-			baseAppLegacySS := app.GetSubspace(baseapp.Paramspace)
+			baseAppLegacySS := app.GetSubspace(baseapp.Paramspace).WithKeyTable(paramstypes.ConsensusParamsKeyTable())
 			err := baseapp.MigrateParams(sdk.UnwrapSDKContext(ctx), baseAppLegacySS, app.ConsensusParamsKeeper.ParamsStore)
 			if err != nil {
 				panic(err)
@@ -581,10 +581,14 @@ func (app *THORChainApp) Name() string { return app.BaseApp.Name() }
 
 // PreBlocker application updates every pre block
 func (app *THORChainApp) PreBlocker(ctx sdk.Context, req *abci.RequestFinalizeBlock) (*sdk.ResponsePreBlock, error) {
+	preBlockResp, err := app.ModuleManager.PreBlock(ctx)
+	if err != nil {
+		return preBlockResp, err
+	}
 	if err := app.ThorchainModule.PreBlock(ctx, req); err != nil {
 		return nil, err
 	}
-	return app.ModuleManager.PreBlock(ctx)
+	return preBlockResp, nil
 }
 
 func (a *THORChainApp) Configurator() module.Configurator {
