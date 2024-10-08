@@ -209,7 +209,7 @@ func (b *BlockScanner) scanBlocks() {
 			// General goal is about once per day.
 			mod := ((24 * 60 * 60 * 1000) + ms - 1) / ms
 			if currentBlock%mod == 0 {
-				b.checkThorFee(currentBlock)
+				b.updateStaleNetworkFee(currentBlock)
 			}
 
 			// determine how often we print a info log line for scanner
@@ -252,12 +252,12 @@ func (b *BlockScanner) scanBlocks() {
 	}
 }
 
-// checkThorFee compares the Bifrost network fee to the THORNode network fee,
+// updateStaleNetworkFee compares the Bifrost network fee to the THORNode network fee,
 // for regularly-timed broadcasting if not matching THORNode network fee
 // (though do not post any network fee for THORChain)
-// in case an network fee change was broadcast without height consensus
+// in case a network fee change had been broadcast without height consensus
 // (such as from an unversioned configuration change).
-func (b *BlockScanner) checkThorFee(currentBlock int64) {
+func (b *BlockScanner) updateStaleNetworkFee(currentBlock int64) {
 	// Only broadcast MsgNetworkFee if the chain isn't THORChain
 	// and the scanner is healthy.
 	if b.cfg.ChainID.Equals(common.THORChain) || !b.healthy.Load() {
