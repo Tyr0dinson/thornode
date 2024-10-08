@@ -10,7 +10,7 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
-// WasmMigrateContractHandler is to process native messages on THORChain
+// WasmMigrateContractHandler processes incoming MsgMigrateContract messages from x/wasm
 type WasmMigrateContractHandler struct {
 	mgr Manager
 }

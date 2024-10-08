@@ -10,7 +10,7 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
-// WasmUpdateParamsHandler is to process native messages on THORChain
+// WasmUpdateParamsHandler processes incoming MsgUpdateParams messages from x/wasm
 type WasmUpdateParamsHandler struct {
 	mgr Manager
 }

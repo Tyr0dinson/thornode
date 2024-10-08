@@ -10,7 +10,7 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
-// WasmUpdateContractLabelHandler is to process native messages on THORChain
+// WasmUpdateContractLabelHandler processes incoming MsgUpdateContractLabel messages from x/wasm
 type WasmUpdateContractLabelHandler struct {
 	mgr Manager
 }

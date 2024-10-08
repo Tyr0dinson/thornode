@@ -10,7 +10,7 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
-// WasmClearAdminHandler is to process native messages on THORChain
+// WasmClearAdminHandler processes incoming MsgClearAdmin messages from x/wasm
 type WasmClearAdminHandler struct {
 	mgr Manager
 }

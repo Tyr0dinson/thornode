@@ -10,7 +10,7 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
-// WasmSudoContractHandler is to process native messages on THORChain
+// WasmSudoContractHandler processes incoming MsgSudoContract messages from x/wasm
 type WasmSudoContractHandler struct {
 	mgr Manager
 }

@@ -10,7 +10,7 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
-// WasmStoreCodeHandler is to process native messages on THORChain
+// WasmStoreCodeHandler processes incoming MsgStoreCode messages from x/wasm
 type WasmStoreCodeHandler struct {
 	mgr Manager
 }
