@@ -284,7 +284,7 @@ build-heighliner-mocknet:
 ifeq (,$(shell which heighliner))
 	echo 'heighliner' binary not found. Consider running `make install-heighliner-release`
 else
-	heighliner build -f build/docker/heighliner.yaml -c thorchain --local -t mocknet-local --build-env "TAG=mocknet"
+	heighliner build -f build/docker/heighliner.yaml -c thorchain --local -t mocknet-local --build-env "TAG=mocknet" ${HEIGHLINER_BUILD_FLAGS}
 endif
 
 bootstrap-mocknet:
