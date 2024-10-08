@@ -267,7 +267,7 @@ install-heighliner:
 install-heighliner-release:
 	$(eval HEIGHLINER_TAG := $(shell curl -s https://api.github.com/repos/strangelove-ventures/heighliner/tags | jq -r '.[0].name'))
 	@echo "Installing heighliner $(HEIGHLINER_TAG)"
-	$(eval MACHINE_TYPE := $(shell uname -s | tr A-Z a-z))
+	$(eval MACHINE_TYPE := $(shell uname | tr A-Z a-z))
 	$(eval ARCH := $(shell uname -m))
 	@wget -qO- https://github.com/strangelove-ventures/heighliner/releases/download/$(HEIGHLINER_TAG)/heighliner_$(HEIGHLINER_TAG:v%=%)_$(MACHINE_TYPE)_$(ARCH).tar.gz | tar -xz -C ~/go/bin/
 
