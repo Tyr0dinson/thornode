@@ -271,7 +271,8 @@ test-ictest-sim:
     - make install-heighliner
     - PATH="/root/go/bin:$PATH" make build-heighliner-mocknet
   script: |
-    DOCKER_HOST=docker make test-ictest-sim
+    export DOCKER_HOST=$(docker network inspect bridge -f '{{range .IPAM.Config}}{{.Gateway}}{{end}}')
+    make test-ictest-sim
 
 test-ictest-upgrade:
   rules: *rules
@@ -286,7 +287,8 @@ test-ictest-upgrade:
     - make install-heighliner
     - PATH="/root/go/bin:$PATH" make build-heighliner-mocknet
   script: |
-    DOCKER_HOST=docker make test-ictest-upgrade
+    export DOCKER_HOST=$(docker network inspect bridge -f '{{range .IPAM.Config}}{{.Gateway}}{{end}}')
+    make test-ictest-upgrade
 
 include:
   - template: Security/SAST.gitlab-ci.yml
