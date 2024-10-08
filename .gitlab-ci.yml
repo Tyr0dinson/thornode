@@ -271,7 +271,6 @@ test-ictest-sim:
     - make install-heighliner
     - PATH="/root/go/bin:$PATH" make build-heighliner-mocknet
   script: |
-    export NETWORK_ID=bridge
     make test-ictest-sim
 
 test-ictest-upgrade:
@@ -287,7 +286,6 @@ test-ictest-upgrade:
     - make install-heighliner
     - PATH="/root/go/bin:$PATH" make build-heighliner-mocknet
   script: |
-    export NETWORK_ID=bridge
     make test-ictest-upgrade
 
 include:
