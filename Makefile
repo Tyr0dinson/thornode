@@ -276,6 +276,7 @@ else ifeq ($(UNAME), aarch64)
 else
 	$(eval ARCH := $(UNAME))
 endif
+	@mkdir -p ~/go/bin
 	@wget -qO- https://github.com/strangelove-ventures/heighliner/releases/download/$(HEIGHLINER_TAG)/heighliner_$(HEIGHLINER_TAG:v%=%)_$(MACHINE_TYPE)_$(ARCH).tar.gz | tar -xz -C ~/go/bin/
 
 build-heighliner-mocknet:
