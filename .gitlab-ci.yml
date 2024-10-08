@@ -287,9 +287,10 @@ test-ictest-sim:
       artifacts: true
   before_script:
     - apk -U add make git bash go tar
+    - docker load -i mocknet.tar
+    - docker network create ictest
   script: |
-    docker load -i mocknet.tar
-    export DOCKER_HOST_OVERRIDE=$(docker network inspect bridge -f '{{range .IPAM.Config}}{{.Gateway}}{{end}}')
+    export NETWORK_ID=ictest DOCKER_HOST_OVERRIDE=$(docker network inspect ictest -f '{{range .IPAM.Config}}{{.Gateway}}{{end}}')
     make test-ictest-sim
 
 test-ictest-upgrade:
@@ -305,9 +306,10 @@ test-ictest-upgrade:
       artifacts: true
   before_script:
     - apk -U add make git bash go tar
+    - docker load -i mocknet.tar
+    - docker network create ictest
   script: |
-    docker load -i mocknet.tar
-    export DOCKER_HOST_OVERRIDE=$(docker network inspect bridge -f '{{range .IPAM.Config}}{{.Gateway}}{{end}}')
+    export NETWORK_ID=ictest DOCKER_HOST_OVERRIDE=$(docker network inspect ictest -f '{{range .IPAM.Config}}{{.Gateway}}{{end}}')
     make test-ictest-upgrade
 
 include:
