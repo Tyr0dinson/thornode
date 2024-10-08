@@ -268,7 +268,14 @@ install-heighliner-release:
 	$(eval HEIGHLINER_TAG := $(shell curl -s https://api.github.com/repos/strangelove-ventures/heighliner/tags | jq -r '.[0].name'))
 	@echo "Installing heighliner $(HEIGHLINER_TAG)"
 	$(eval MACHINE_TYPE := $(shell uname | tr A-Z a-z))
-	$(eval ARCH := $(shell uname -m))
+	$(eval UNAME := $(shell uname -m))
+ifeq ($(UNAME), x86_64)
+	$(eval ARCH := amd64)
+else ifeq ($(UNAME), aarch64)
+	$(eval ARCH := arm64)
+else
+	$(eval ARCH := $(UNAME))
+endif
 	@wget -qO- https://github.com/strangelove-ventures/heighliner/releases/download/$(HEIGHLINER_TAG)/heighliner_$(HEIGHLINER_TAG:v%=%)_$(MACHINE_TYPE)_$(ARCH).tar.gz | tar -xz -C ~/go/bin/
 
 build-heighliner-mocknet:
