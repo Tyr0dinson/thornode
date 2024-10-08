@@ -267,9 +267,10 @@ build-heighliner-mocknet-image:
   artifacts:
     paths:
       - mocknet.tar
-  script: |
+  before_script:
     - apk -U add make bash
     - make install-heighliner-release
+  script:
     - PATH="/root/go/bin:$PATH" make build-heighliner-mocknet --tar-export-path mocknet.tar
 
 test-ictest-sim:
