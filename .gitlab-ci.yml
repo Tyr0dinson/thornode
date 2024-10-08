@@ -282,18 +282,15 @@ build-heighliner-mocknet-image:
   environment:
     name: integration
   variables:
-    # FF_NETWORK_PER_BUILD: "true"
-    NETWORK_ID: ictest
+    DOCKER_HOST: tcp://docker:2375
+    FF_NETWORK_PER_BUILD: "true"
   needs:
     - job: build-heighliner-mocknet-image
       artifacts: true
   before_script:
     - apk -U add make git bash go tar
     - docker load -i mocknet.tar
-    - docker network create ictest
-  script: |
-    export DOCKER_HOST_OVERRIDE=$(docker network inspect ictest -f '{{range .IPAM.Config}}{{.Gateway}}{{end}}')
-    make test-ictest-${ICTEST_NAME}
+  script: make test-ictest-${ICTEST_NAME}
 
 test-ictest-sim:
   <<: *ictest
