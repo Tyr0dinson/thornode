@@ -268,7 +268,7 @@ build-heighliner-mocknet-image:
     paths:
       - mocknet.tar
   before_script:
-    - apk -U add make bash curl jq wget tar
+    - apk -U add make bash curl jq wget tar gcompat
     - make install-heighliner-release
   script:
     - PATH="/root/go/bin:$PATH" make HEIGHLINER_BUILD_FLAGS="--tar-export-path mocknet.tar" build-heighliner-mocknet
