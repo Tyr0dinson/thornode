@@ -252,11 +252,9 @@ func (b *BlockScanner) scanBlocks() {
 	}
 }
 
-// updateStaleNetworkFee compares the Bifrost network fee to the THORNode network fee,
-// for regularly-timed broadcasting if not matching THORNode network fee
-// (though do not post any network fee for THORChain)
-// in case a network fee change had been broadcast without height consensus
-// (such as from an unversioned configuration change).
+// updateStaleNetworkFee broadcasts a network fee observation if the local scanner fee
+// does not match the fee published to THORNode. This can be called periodically to
+// ensure fee changes find consensus despite raciness on the observation height.
 func (b *BlockScanner) updateStaleNetworkFee(currentBlock int64) {
 	// Only broadcast MsgNetworkFee if the chain isn't THORChain
 	// and the scanner is healthy.
