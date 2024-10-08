@@ -264,9 +264,16 @@ install-heighliner:
 	git clone https://github.com/strangelove-ventures/heighliner.git
 	cd heighliner && go install && cd .. && rm -rf heighliner
 
+install-heighliner-release:
+	$(eval HEIGHLINER_TAG := $(shell curl -s https://api.github.com/repos/strangelove-ventures/heighliner/tags | jq -r '.[0].name'))
+	@echo "Installing heighliner $(HEIGHLINER_TAG)"
+	$(eval MACHINE_TYPE := $(shell uname -s | tr A-Z a-z))
+	$(eval ARCH := $(shell uname -m))
+	@wget -qO- https://github.com/strangelove-ventures/heighliner/releases/download/$(HEIGHLINER_TAG)/heighliner_$(HEIGHLINER_TAG:v%=%)_$(MACHINE_TYPE)_$(ARCH).tar.gz | tar -xz -C ~/go/bin/
+
 build-heighliner-mocknet:
 ifeq (,$(shell which heighliner))
-	echo 'heighliner' binary not found. Consider running `make install-heighliner`
+	echo 'heighliner' binary not found. Consider running `make install-heighliner-release`
 else
 	heighliner build -f build/docker/heighliner.yaml -c thorchain --local -t mocknet-local --build-env "TAG=mocknet"
 endif
