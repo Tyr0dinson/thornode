@@ -97,7 +97,6 @@ func (h ManageTHORNameHandler) validateV3_0_0(ctx cosmos.Context, msg MsgManageT
 			return fmt.Errorf("no authorization: owned by %s", name.Owner)
 		}
 
-		// TODO: remove this and the explicit height in memo after transfers are supported
 		// explicit height in the memo can only reduce expiration
 		if name.ExpireBlockHeight < msg.ExpireBlockHeight {
 			return errors.New("cannot artificially inflate expire block height")
