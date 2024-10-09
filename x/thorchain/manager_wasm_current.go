@@ -16,11 +16,11 @@ import (
 )
 
 var (
-	_                   WasmManager = &WasmMgrVCUR{}
-	MIMIR_GLOBAL_HALT               = "WASMHALTGLOBAL"
-	MIMIR_CHECKSUM_HALT             = "WASMHALTCONTRACT"
-	MIMIR_CONTRACT_HALT             = "WASMHALTCHECKSUM"
-	PERMISSIONS                     = map[string](map[string]bool){}
+	_                        WasmManager = &WasmMgrVCUR{}
+	MIMIR_WASM_GLOBAL_HALT               = "WASMHALTGLOBAL"
+	MIMIR_WASM_CHECKSUM_HALT             = "WASMHALTCONTRACT"
+	MIMIR_WASM_CONTRACT_HALT             = "WASMHALTCHECKSUM"
+	PERMISSIONS                          = map[string](map[string]bool){}
 )
 
 // WasmMgrVCUR is VCUR implementation of slasher
@@ -540,7 +540,7 @@ func (m WasmMgrVCUR) UpdateContractLabel(
 }
 
 func (m WasmMgrVCUR) checkHalt(ctx cosmos.Context) error {
-	v, err := m.keeper.GetMimir(ctx, MIMIR_GLOBAL_HALT)
+	v, err := m.keeper.GetMimir(ctx, MIMIR_WASM_GLOBAL_HALT)
 	if err != nil {
 		return err
 	}
@@ -551,7 +551,7 @@ func (m WasmMgrVCUR) checkHalt(ctx cosmos.Context) error {
 }
 
 func (m WasmMgrVCUR) checkContractHalt(ctx cosmos.Context, address sdk.AccAddress) error {
-	v, err := m.keeper.GetMimir(ctx, MIMIR_CONTRACT_HALT+address.String())
+	v, err := m.keeper.GetMimir(ctx, MIMIR_WASM_CONTRACT_HALT+address.String())
 	if err != nil {
 		return err
 	}
@@ -562,7 +562,7 @@ func (m WasmMgrVCUR) checkContractHalt(ctx cosmos.Context, address sdk.AccAddres
 }
 
 func (m WasmMgrVCUR) checkChecksumHalt(ctx cosmos.Context, checksum []byte) error {
-	v, err := m.keeper.GetMimir(ctx, MIMIR_CHECKSUM_HALT+hex.EncodeToString(checksum))
+	v, err := m.keeper.GetMimir(ctx, MIMIR_WASM_CHECKSUM_HALT+hex.EncodeToString(checksum))
 	if err != nil {
 		return err
 	}
