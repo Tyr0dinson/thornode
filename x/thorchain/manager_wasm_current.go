@@ -20,7 +20,7 @@ var (
 	MIMIR_WASM_GLOBAL_HALT               = "WASMHALTGLOBAL"
 	MIMIR_WASM_CHECKSUM_HALT             = "WASMHALTCONTRACT"
 	MIMIR_WASM_CONTRACT_HALT             = "WASMHALTCHECKSUM"
-	PERMISSIONS                          = map[string](map[string]bool){}
+	WASM_PERMISSIONS                     = map[string](map[string]bool){}
 )
 
 // WasmMgrVCUR is VCUR implementation of slasher
@@ -580,7 +580,7 @@ func (m WasmMgrVCUR) checkAuthorization(actor cosmos.AccAddress, checksum []byte
 	if isAdmin(actor) {
 		return nil
 	}
-	if PERMISSIONS[actor.String()][hex.EncodeToString(checksum)] {
+	if WASM_PERMISSIONS[actor.String()][hex.EncodeToString(checksum)] {
 		return nil
 	}
 
