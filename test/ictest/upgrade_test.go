@@ -58,21 +58,21 @@ func TestUpgrade136to137(t *testing.T) {
 	exoChains := StartExoChains(t, ctx, client, network, []*interchaintest.ChainSpec{
 		EthChainSpec("geth"), // only use this chain spec for eth or the one below
 		// EthChainSpec("anvil"), // Anvil supported contracts are not support in this repo
-		//GaiaChainSpec(),
-		//BtcChainSpec(),
-		//BchChainSpec(),
-		//LtcChainSpec(),
-		//DogeChainSpec(),
+		GaiaChainSpec(),
+		BtcChainSpec(),
+		BchChainSpec(),
+		LtcChainSpec(),
+		DogeChainSpec(),
 		BscChainSpec(),
 	})
-	//gaiaEg := SetupGaia(t, ctx, exoChains["GAIA"])
+	gaiaEg := SetupGaia(t, ctx, exoChains["GAIA"])
 	ethRouterContractAddress, bscRouterContractAddress, err := SetupContracts(ctx, exoChains["ETH"], exoChains["BSC"])
 	require.NoError(t, err, "error setting up contracts for eth and bsc")
  
 	// Start thorchain
 	chainImage := ibc.NewDockerImage(initialRepo, initialVersion, imageUidGid)
 	thorchain := StartThorchain(t, ctx, client, network, numVals, numFns, mainnet, chainImage, exoChains, ethRouterContractAddress, bscRouterContractAddress)
-	//require.NoError(t, gaiaEg.Wait()) // Wait for 100 transactions before starting tests
+	require.NoError(t, gaiaEg.Wait()) // Wait for 100 transactions before starting tests
 
 	// --------------------------------------------------------
 	// Pre-upgrade setup and tests
@@ -80,8 +80,8 @@ func TestUpgrade136to137(t *testing.T) {
 	BootstrapPools(t, ctx, thorchain, exoChains)
 	CreateSavers(t, ctx, thorchain, exoChains)
 	arbTimer := CreateArbers(t, ctx, thorchain, exoChains)
-	//PerformSwaps(t, ctx, thorchain, exoChains)
-	//PerformSaverEjects(t, ctx, thorchain, exoChains)
+	PerformSwaps(t, ctx, thorchain, exoChains)
+	PerformSaverEjects(t, ctx, thorchain, exoChains)
 
 	// --------------------------------------------------------
 	// Upgrade
@@ -96,7 +96,7 @@ func TestUpgrade136to137(t *testing.T) {
 	// --------------------------------------------------------
 	// Post-upgrade tests
 	// --------------------------------------------------------
-	//PerformSwaps(t, ctx, thorchain, exoChains)
+	PerformSwaps(t, ctx, thorchain, exoChains)
 	PerformSaverEjects(t, ctx, thorchain, exoChains)
 	Ragnarok(t, ctx, thorchain, exoChains)
 
@@ -111,12 +111,14 @@ func TestUpgrade136to137(t *testing.T) {
 	// }
 }
 
+// If there are no arbers and thus no arbTimer, pass in nil
 func PerformUpgrade(t *testing.T, ctx context.Context, client *client.Client, thorchain *tc.Thorchain, arbTimer *time.Timer, upgradeInfo UpgradeInfo) {
 	fmt.Printf("\n  ----------------\n  Starting upgrade\n  ----------------\n")
-	// Stop the arbs for the upgrade, make sure we actually stop the timer or it can get reset
-	for arbsStopped := arbTimer.Stop(); !arbsStopped; arbsStopped = arbTimer.Stop() {
-		fmt.Println("Try stopping arb timer in 200ms")
-		time.Sleep(time.Millisecond * 200)
+	if arbTimer != nil {
+		// Stop the arbs for the upgrade, make sure we actually stop the timer or it can get reset
+		for arbsStopped := arbTimer.Stop(); !arbsStopped; arbsStopped = arbTimer.Stop() {
+			time.Sleep(time.Millisecond * 200)
+		}
 	}
 
 	height, err := thorchain.Height(ctx)
@@ -153,7 +155,7 @@ func PerformUpgrade(t *testing.T, ctx context.Context, client *client.Client, th
 	height, err = thorchain.Height(ctx)
 	require.NoError(t, err, "error fetching height before upgrade")
 
-	timeoutCtx, timeoutCtxCancel := context.WithTimeout(ctx, time.Second*25)
+	timeoutCtx, timeoutCtxCancel := context.WithTimeout(ctx, time.Second*30)
 	defer timeoutCtxCancel()
 
 	// this should timeout due to chain halt at upgrade height.
@@ -204,7 +206,10 @@ func PerformUpgrade(t *testing.T, ctx context.Context, client *client.Client, th
 
 	fmt.Println("Chain is producing blocks")
 	// We are now producing blocks
-	// Do another set of swaps, test saver eject again, and finally ragnaroks
-	arbTimer.Reset(time.Second) // Start the arbs back up
+	
+	// Start the arbers back up
+	if arbTimer != nil {
+		arbTimer.Reset(time.Second) // Start the arbs back up
+	}
 
 }
