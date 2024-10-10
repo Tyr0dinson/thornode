@@ -284,7 +284,7 @@ func (b *thorchainBridge) getAccountNumberAndSequenceNumber() (uint64, uint64, e
 	if err = json.Unmarshal(body, &resp); err != nil {
 		return 0, 0, fmt.Errorf("failed to unmarshal account resp: %w", err)
 	}
-	acc := resp.Result.Value
+	acc := resp.Account
 
 	return acc.AccountNumber, acc.Sequence, nil
 }

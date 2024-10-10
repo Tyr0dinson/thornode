@@ -12,6 +12,7 @@ import (
 	"github.com/strangelove-ventures/interchaintest/v8"
 	tc "github.com/strangelove-ventures/interchaintest/v8/chain/thorchain"
 	"github.com/strangelove-ventures/interchaintest/v8/chain/thorchain/common"
+	"github.com/strangelove-ventures/interchaintest/v8/dockerutil"
 	"github.com/strangelove-ventures/interchaintest/v8/ibc"
 	"github.com/strangelove-ventures/interchaintest/v8/testutil"
 	"golang.org/x/sync/errgroup"
@@ -21,6 +22,7 @@ func GetAndFundTestUsers(
 	t *testing.T,
 	ctx context.Context,
 	keyNamePrefix string,
+	lper bool,
 	chains ...ibc.Chain,
 ) ([]ibc.Wallet, error) {
 	users := make([]ibc.Wallet, len(chains))
@@ -38,8 +40,11 @@ func GetAndFundTestUsers(
 		case "3": // doge
 			amount = oneCoin.MulRaw(10_000)
 		}
+		if lper {
+			amount = amount.MulRaw(2)
+		}
 		eg.Go(func() error {
-			user := interchaintest.GetAndFundTestUsers(t, egCtx, keyNamePrefix, amount, chain)
+			user := interchaintest.GetAndFundTestUsers(t, egCtx, fmt.Sprintf("%s-%s", keyNamePrefix, dockerutil.RandLowerCaseLetterString(3)), amount, chain)
 			users[i] = user[0]
 
 			userBalance, err := chain.GetBalance(egCtx, user[0].FormattedAddress(), chain.Config().Denom)

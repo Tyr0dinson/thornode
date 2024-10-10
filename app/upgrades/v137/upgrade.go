@@ -2,6 +2,7 @@ package v137
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/cosmos/cosmos-sdk/types/module"
 	storetypes "cosmossdk.io/store/types"
@@ -40,6 +41,7 @@ func CreateUpgradeHandler(
 	ak *upgrades.AppKeepers,
 ) upgradetypes.UpgradeHandler {
 	return func(goCtx context.Context, _ upgradetypes.Plan, fromVM module.VersionMap) (module.VersionMap, error) {
+		fmt.Println("module version map:", fromVM)
 		// set param key table for params module migration
 		// ref: https://github.com/cosmos/cosmos-sdk/pull/12363/files
 		for _, subspace := range ak.ParamsKeeper.GetSubspaces() {

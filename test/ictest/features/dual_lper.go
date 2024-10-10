@@ -17,7 +17,7 @@ func DualLp(
 	exoChain ibc.Chain,
 ) (thorUser ibc.Wallet, exoUser ibc.Wallet, err error) {
 	fmt.Println("#### Dual Lper:", exoChain.Config().Name)
-	users, err := GetAndFundTestUsers(t, ctx, fmt.Sprintf("%s-DualLper", exoChain.Config().Name), thorchain, exoChain)
+	users, err := GetAndFundTestUsers(t, ctx, fmt.Sprintf("%s-DualLper", exoChain.Config().Name), true, thorchain, exoChain)
 	if err != nil {
 		return thorUser, exoUser, fmt.Errorf("duallp, fund users (%s), %w", exoChain.Config().Name, err)
 	}

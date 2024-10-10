@@ -34,17 +34,7 @@ import (
 
 )
 
-func StartExoChains(t *testing.T, ctx context.Context, client *client.Client, network string) ExoChains {
-	chainSpecs := []*interchaintest.ChainSpec{
-		EthChainSpec("geth"), // only use this chain spec for eth or the one below
-		// EthChainSpec("anvil"), // Anvil supported contracts are not support in this repo
-		GaiaChainSpec(),
-		BtcChainSpec(),
-		BchChainSpec(),
-		LtcChainSpec(),
-		DogeChainSpec(),
-		BscChainSpec(),
-	}
+func StartExoChains(t *testing.T, ctx context.Context, client *client.Client, network string, chainSpecs []*interchaintest.ChainSpec) ExoChains {
 	cf0 := interchaintest.NewBuiltinChainFactory(zaptest.NewLogger(t), chainSpecs)
 
 	chains, err := cf0.Chains(t.Name())

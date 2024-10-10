@@ -20,7 +20,7 @@ func SingleSwap(
 	destChain ibc.Chain,
 ) error {
 	fmt.Println("#### Single swap:", srcChain.Config().Name, "to", destChain.Config().Name)
-	users, err := GetAndFundTestUsers(t, ctx, fmt.Sprintf("swap-%s-%s", srcChain.Config().Name, destChain.Config().Name), srcChain, destChain)
+	users, err := GetAndFundTestUsers(t, ctx, fmt.Sprintf("swap-%s-%s", srcChain.Config().Name, destChain.Config().Name), false, srcChain, destChain)
 	if err != nil {
 		return err
 	}
@@ -37,7 +37,7 @@ func DualSwap(
 	destChain ibc.Chain,
 ) error {
 	fmt.Println("#### Dual swap:", srcChain.Config().Name, "<->", destChain.Config().Name)
-	users, err := GetAndFundTestUsers(t, ctx, fmt.Sprintf("swap-%s-%s", srcChain.Config().Name, destChain.Config().Name), srcChain, destChain)
+	users, err := GetAndFundTestUsers(t, ctx, fmt.Sprintf("swap-%s-%s", srcChain.Config().Name, destChain.Config().Name), false, srcChain, destChain)
 	if err != nil {
 		return err
 	}
@@ -173,10 +173,10 @@ func singleSwap(
 	}
 	actualSwapAmount := destUserBalancePostSwap.Sub(destUserBalancePreSwap)
 	if actualSwapAmount.LT(sdkmath.Int(minExpectedSwapAmount)) {
-		return fmt.Errorf("actual swap amount: %s %s, min expected: %s", actualSwapAmount, destChain.Config().Denom, minExpectedSwapAmount)
+		return fmt.Errorf("actual swap amount %s->%s: %s %s, min expected: %s", srcChainAsset, destChainAsset, actualSwapAmount, destChain.Config().Denom, minExpectedSwapAmount)
 	}
 	if actualSwapAmount.GT(sdkmath.Int(maxExpectedSwapAmount)) {
-		return fmt.Errorf("actual swap amount: %s %s, max expected: %s", actualSwapAmount, destChain.Config().Denom, maxExpectedSwapAmount)
+		return fmt.Errorf("actual swap amount %s->%s: %s %s, max expected: %s", srcChainAsset, destChainAsset, actualSwapAmount, destChain.Config().Denom, maxExpectedSwapAmount)
 	}
 	// TODO: compare outAmountPlusMaxGas -> actualSwapAmount
 	fmt.Println("outAmountPlusMaxGas:", outAmountPlusMaxGas, "actualSwapAmount:", actualSwapAmount)

@@ -28,7 +28,7 @@ func SaverEject(
 		return exoUser, err
 	}
 
-	users, err := GetAndFundTestUsers(t, ctx, fmt.Sprintf("%s-SaverEject", exoChain.Config().Name), exoChain)
+	users, err := GetAndFundTestUsers(t, ctx, fmt.Sprintf("%s-SaverEject", exoChain.Config().Name), false, exoChain)
 	if err != nil {
 		return exoUser, err
 	}

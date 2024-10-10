@@ -377,8 +377,8 @@ events-gitlab-push:
 
 ictest-sim:
 	@echo "Running interchaintest sim test"
-	@cd test/ictest && go test -race -timeout 20m -v -run TestThorchainSim . -count 1
+	@cd test/ictest && go test -race -timeout 30m -v -run TestThorchainSim . -count 1
 
 ictest-upgrade:
 	@echo "Running interchaintest upgrade test"
-	@cd test/ictest && go test -race -timeout 20m -v -run TestUpgrade136to137 . -count 1
+	@cd test/ictest && go test -race -timeout 30m -v -run TestUpgrade136to137 . -count 1

@@ -20,7 +20,7 @@ func Saver(
 	exoChain ibc.Chain,
 ) (exoUser ibc.Wallet, err error) {
 	fmt.Println("#### Savers:", exoChain.Config().Name)
-	users, err := GetAndFundTestUsers(t, ctx, fmt.Sprintf("%s-Saver", exoChain.Config().Name), exoChain)
+	users, err := GetAndFundTestUsers(t, ctx, fmt.Sprintf("%s-Saver", exoChain.Config().Name), false, exoChain)
 	if err != nil {
 		return exoUser, err
 	}
