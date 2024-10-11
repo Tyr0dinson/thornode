@@ -7,6 +7,8 @@ import (
 
 	"github.com/blang/semver"
 	"github.com/gogo/protobuf/jsonpb"
+
+	ibctransfertypes "github.com/cosmos/ibc-go/v8/modules/apps/transfer/types"
 )
 
 var (
@@ -209,9 +211,13 @@ func (a Asset) Native() string {
 	if a.IsRune() {
 		return "rune"
 	}
+	if a.IsIbc() {
+		return ibctransfertypes.ParseDenomTrace(a.Ticker.String()).IBCDenom()
+	}
 	if a.Equals(TOR) {
 		return "tor"
 	}
+
 	return strings.ToLower(a.String())
 }
 
@@ -270,6 +276,11 @@ func (a Asset) IsGasAsset() bool {
 // IsRune is a helper function ,return true only when the asset represent RUNE
 func (a Asset) IsRune() bool {
 	return RuneAsset().Equals(a)
+}
+
+// IsRune is a helper function ,return true only when the asset is an inbound IBC token
+func (a Asset) IsIbc() bool {
+	return ibctransfertypes.ParseDenomTrace(a.Ticker.String()).Path != ""
 }
 
 // IsNative is a helper function, returns true when the asset is a native
