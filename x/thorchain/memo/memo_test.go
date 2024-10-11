@@ -27,6 +27,11 @@ import (
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 	kv1 "gitlab.com/thorchain/thornode/x/thorchain/keeper/v1"
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
+
+	capabilitykeeper "github.com/cosmos/ibc-go/modules/capability/keeper"
+	capabilitytypes "github.com/cosmos/ibc-go/modules/capability/types"
+	ibcexported "github.com/cosmos/ibc-go/v8/modules/core/exported"
+	ibckeeper "github.com/cosmos/ibc-go/v8/modules/core/keeper"
 )
 
 type MemoSuite struct {
@@ -43,12 +48,18 @@ func (s *MemoSuite) SetUpSuite(c *C) {
 	keyAcc := cosmos.NewKVStoreKey(authtypes.StoreKey)
 	keyBank := cosmos.NewKVStoreKey(banktypes.StoreKey)
 	keyThorchain := cosmos.NewKVStoreKey(types.StoreKey)
+	keyCap := cosmos.NewKVStoreKey(capabilitytypes.StoreKey)
+	keyCapMem := cosmos.NewMemoryStoreKey(capabilitytypes.StoreKey)
+	keyIbc := cosmos.NewKVStoreKey(ibcexported.StoreKey)
 
 	db := dbm.NewMemDB()
 	ms := store.NewCommitMultiStore(db, log.NewNopLogger(), storemetrics.NewNoOpMetrics())
 	ms.MountStoreWithDB(keyAcc, cosmos.StoreTypeIAVL, db)
 	ms.MountStoreWithDB(keyThorchain, cosmos.StoreTypeIAVL, db)
 	ms.MountStoreWithDB(keyBank, cosmos.StoreTypeIAVL, db)
+	ms.MountStoreWithDB(keyCap, cosmos.StoreTypeIAVL, db)
+	ms.MountStoreWithDB(keyIbc, cosmos.StoreTypeIAVL, db)
+
 	err := ms.LoadLatestVersion()
 	c.Assert(err, IsNil)
 
@@ -84,10 +95,22 @@ func (s *MemoSuite) SetUpSuite(c *C) {
 		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
 		log.NewNopLogger(),
 	)
+	ck := capabilitykeeper.NewKeeper(encodingConfig.Codec, keyCap, keyCapMem)
+
+	ik := ibckeeper.NewKeeper(
+		encodingConfig.Codec,
+		keyIbc,
+		nil,
+		nil,
+		nil,
+		ck.ScopeToModule(ibcexported.ModuleName),
+		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
+	)
+
 	c.Assert(bk.MintCoins(ctx, types.ModuleName, cosmos.Coins{
 		cosmos.NewCoin(common.RuneAsset().Native(), cosmos.NewInt(200_000_000_00000000)),
 	}), IsNil)
-	s.k = kv1.NewKVStore(encodingConfig.Codec, bk, ak, keyThorchain, types.GetCurrentVersion())
+	s.k = kv1.NewKVStore(encodingConfig.Codec, bk, ak, ik.ChannelKeeper, keyThorchain, types.GetCurrentVersion())
 }
 
 func (s *MemoSuite) TestTxType(c *C) {

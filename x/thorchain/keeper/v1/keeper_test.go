@@ -27,6 +27,11 @@ import (
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
+
+	capabilitykeeper "github.com/cosmos/ibc-go/modules/capability/keeper"
+	capabilitytypes "github.com/cosmos/ibc-go/modules/capability/types"
+	ibcexported "github.com/cosmos/ibc-go/v8/modules/core/exported"
+	ibckeeper "github.com/cosmos/ibc-go/v8/modules/core/keeper"
 )
 
 func TestPackage(t *testing.T) { TestingT(t) }
@@ -46,6 +51,7 @@ func setupKeeperForTest(c *C) (cosmos.Context, KVStore) {
 	keys := cosmos.NewKVStoreKeys(
 		authtypes.StoreKey, banktypes.StoreKey, stakingtypes.StoreKey,
 	)
+	memKeys := cosmos.NewMemoryStoreKeys(capabilitytypes.MemStoreKey)
 
 	db := dbm.NewMemDB()
 	ms := store.NewCommitMultiStore(db, log.NewNopLogger(), storemetrics.NewNoOpMetrics())
@@ -95,7 +101,23 @@ func setupKeeperForTest(c *C) (cosmos.Context, KVStore) {
 		log.NewNopLogger(),
 	)
 
-	k := NewKVStore(encodingConfig.Codec, bk, ak, keyThorchain, GetCurrentVersion())
+	ck := capabilitykeeper.NewKeeper(
+		encodingConfig.Codec,
+		keys[capabilitytypes.StoreKey],
+		memKeys[capabilitytypes.MemStoreKey],
+	)
+
+	ik := ibckeeper.NewKeeper(
+		encodingConfig.Codec,
+		keys[ibcexported.StoreKey],
+		nil,
+		nil,
+		nil,
+		ck.ScopeToModule(ibcexported.ModuleName),
+		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
+	)
+
+	k := NewKVStore(encodingConfig.Codec, bk, ak, ik.ChannelKeeper, keyThorchain, GetCurrentVersion())
 
 	FundModule(c, ctx, k, AsgardName, common.One)
 

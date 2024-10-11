@@ -17,6 +17,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/types/module"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
+	porttypes "github.com/cosmos/ibc-go/v8/modules/core/05-port/types"
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -113,6 +114,7 @@ func NewAppModule(k keeper.Keeper,
 	coinKeeper bankkeeper.Keeper,
 	accountKeeper authkeeper.AccountKeeper,
 	wasmKeeper wasmkeeper.Keeper,
+	ics4Wrapper porttypes.ICS4Wrapper,
 	storeKey cosmos.StoreKey,
 	telemetryEnabled bool,
 	testApp bool,
@@ -125,7 +127,7 @@ func NewAppModule(k keeper.Keeper,
 			panic(err)
 		}
 	}
-	mgr := NewManagers(k, cdc, coinKeeper, accountKeeper, wasmKeeper, storeKey)
+	mgr := NewManagers(k, cdc, coinKeeper, accountKeeper, wasmKeeper, ics4Wrapper, storeKey)
 	return AppModule{
 		AppModuleBasic:   AppModuleBasic{},
 		mgr:              mgr,

@@ -429,9 +429,13 @@ func NewChainApp(
 		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
 	)
 
+	app.ThorchainKeeper = thorchainkeeperv1.NewKeeper(
+		appCodec, app.BankKeeper, app.AccountKeeper, app.IBCKeeper.ChannelKeeper, keys[thorchaintypes.StoreKey],
+	)
+
 	app.IBCFeeKeeper = ibcfeekeeper.NewKeeper(
 		appCodec, keys[ibcfeetypes.StoreKey],
-		app.IBCKeeper.ChannelKeeper,
+		app.ThorchainKeeper,
 		app.IBCKeeper.ChannelKeeper,
 		app.IBCKeeper.PortKeeper, app.AccountKeeper, app.BankKeeper,
 	)
@@ -498,19 +502,19 @@ func NewChainApp(
 	var transferStack porttypes.IBCModule
 	transferStack = ibctransfer.NewIBCModule(app.IBCTransferKeeper)
 	transferStack = ibcfee.NewIBCMiddleware(transferStack, app.IBCFeeKeeper)
-	transferStack = thorchain.NewIBCMiddleware(transferStack, app.ThorchainKeeper)
+	transferStack = thorchainkeeperv1.NewIBCModule(transferStack, app.ThorchainKeeper)
 
 	var wasmStack porttypes.IBCModule // Create fee enabled wasm ibc Stack
 	wasmStackIBCHandler := wasm.NewIBCHandler(app.WasmKeeper, app.IBCKeeper.ChannelKeeper, app.IBCFeeKeeper)
 	wasmStack = ibcfee.NewIBCMiddleware(wasmStackIBCHandler, app.IBCFeeKeeper)
-	wasmStack = thorchain.NewIBCMiddleware(wasmStack, app.ThorchainKeeper)
+	wasmStack = thorchainkeeperv1.NewIBCModule(wasmStack, app.ThorchainKeeper)
 
 	// RecvPacket, message that originates from core IBC and goes down to app, the flow is:
 	// channel.RecvPacket -> fee.OnRecvPacket -> icaHost.OnRecvPacket
 	var icaHostStack porttypes.IBCModule
 	icaHostStack = icahost.NewIBCModule(app.ICAHostKeeper)
 	icaHostStack = ibcfee.NewIBCMiddleware(icaHostStack, app.IBCFeeKeeper)
-	icaHostStack = thorchain.NewIBCMiddleware(icaHostStack, app.ThorchainKeeper)
+	icaHostStack = thorchainkeeperv1.NewIBCModule(icaHostStack, app.ThorchainKeeper)
 
 	// Create static IBC router, add app routes, then set and seal it
 	ibcRouter := porttypes.NewRouter().
@@ -519,10 +523,6 @@ func NewChainApp(
 		AddRoute(icahosttypes.SubModuleName, icaHostStack)
 
 	app.IBCKeeper.SetRouter(ibcRouter)
-
-	app.ThorchainKeeper = thorchainkeeperv1.NewKeeper(
-		appCodec, app.BankKeeper, app.AccountKeeper, keys[thorchaintypes.StoreKey],
-	)
 
 	// --- Module Options ---
 	telemetryEnabled := cast.ToBool(appOpts.Get("telemetry.enabled"))
@@ -541,6 +541,7 @@ func NewChainApp(
 		app.BankKeeper,
 		app.AccountKeeper,
 		app.WasmKeeper,
+		app.IBCKeeper.ChannelKeeper,
 		keys[thorchaintypes.StoreKey],
 		telemetryEnabled,
 		testApp,

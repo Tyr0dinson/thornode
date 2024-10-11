@@ -36,6 +36,11 @@ import (
 
 	wasmkeeper "github.com/CosmWasm/wasmd/x/wasm/keeper"
 	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
+
+	capabilitykeeper "github.com/cosmos/ibc-go/modules/capability/keeper"
+	capabilitytypes "github.com/cosmos/ibc-go/modules/capability/types"
+	ibcexported "github.com/cosmos/ibc-go/v8/modules/core/exported"
+	ibckeeper "github.com/cosmos/ibc-go/v8/modules/core/keeper"
 )
 
 var errKaboom = errors.New("kaboom")
@@ -76,12 +81,19 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 	keyAcc := cosmos.NewKVStoreKey(authtypes.StoreKey)
 	keyBank := cosmos.NewKVStoreKey(banktypes.StoreKey)
 	keyWasm := cosmos.NewKVStoreKey(wasmtypes.StoreKey)
+	keyCap := cosmos.NewKVStoreKey(capabilitytypes.StoreKey)
+	keyCapMem := cosmos.NewMemoryStoreKey(capabilitytypes.StoreKey)
+	keyIbc := cosmos.NewKVStoreKey(ibcexported.StoreKey)
 
 	db := dbm.NewMemDB()
 	ms := store.NewCommitMultiStore(db, log.NewNopLogger(), storemetrics.NewNoOpMetrics())
 	ms.MountStoreWithDB(keyAcc, cosmos.StoreTypeIAVL, db)
 	ms.MountStoreWithDB(keyThorchain, cosmos.StoreTypeIAVL, db)
 	ms.MountStoreWithDB(keyBank, cosmos.StoreTypeIAVL, db)
+	ms.MountStoreWithDB(keyWasm, cosmos.StoreTypeIAVL, db)
+	ms.MountStoreWithDB(keyCap, cosmos.StoreTypeIAVL, db)
+	ms.MountStoreWithDB(keyIbc, cosmos.StoreTypeIAVL, db)
+
 	err := ms.LoadLatestVersion()
 	c.Assert(err, IsNil)
 
@@ -128,10 +140,22 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
 		nil,
 	)
+	ck := capabilitykeeper.NewKeeper(encodingConfig.Codec, keyCap, keyCapMem)
+
+	ik := ibckeeper.NewKeeper(
+		encodingConfig.Codec,
+		keyIbc,
+		nil,
+		nil,
+		nil,
+		ck.ScopeToModule(ibcexported.ModuleName),
+		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
+	)
+
 	c.Assert(bk.MintCoins(ctx, ModuleName, cosmos.Coins{
 		cosmos.NewCoin(common.RuneAsset().Native(), cosmos.NewInt(200_000_000_00000000)),
 	}), IsNil)
-	k := kv1.NewKeeper(encodingConfig.Codec, bk, ak, keyThorchain)
+	k := kv1.NewKeeper(encodingConfig.Codec, bk, ak, ik.ChannelKeeper, keyThorchain)
 	FundModule(c, ctx, k, ModuleName, 10000*common.One)
 	FundModule(c, ctx, k, AsgardName, common.One)
 	FundModule(c, ctx, k, ReserveName, 10000*common.One)
@@ -154,7 +178,7 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 	}), IsNil)
 
 	os.Setenv("NET", "mocknet")
-	mgr := NewManagers(k, encodingConfig.Codec, bk, ak, wk, keyThorchain)
+	mgr := NewManagers(k, encodingConfig.Codec, bk, ak, wk, ik.ChannelKeeper, keyThorchain)
 	constants.SWVersion = GetCurrentVersion()
 
 	_, hasVerStored := k.GetVersionWithCtx(ctx)
@@ -178,12 +202,17 @@ func setupKeeperForTest(c *C) (cosmos.Context, keeper.Keeper) {
 	SetupConfigForTest()
 	keyAcc := cosmos.NewKVStoreKey(authtypes.StoreKey)
 	keyBank := cosmos.NewKVStoreKey(banktypes.StoreKey)
+	keyCap := cosmos.NewKVStoreKey(capabilitytypes.StoreKey)
+	keyCapMem := cosmos.NewMemoryStoreKey(capabilitytypes.StoreKey)
+	keyIbc := cosmos.NewKVStoreKey(ibcexported.StoreKey)
 
 	db := dbm.NewMemDB()
 	ms := store.NewCommitMultiStore(db, log.NewNopLogger(), storemetrics.NewNoOpMetrics())
 	ms.MountStoreWithDB(keyAcc, cosmos.StoreTypeIAVL, db)
 	ms.MountStoreWithDB(keyThorchain, cosmos.StoreTypeIAVL, db)
 	ms.MountStoreWithDB(keyBank, cosmos.StoreTypeIAVL, db)
+	ms.MountStoreWithDB(keyCap, cosmos.StoreTypeIAVL, db)
+	ms.MountStoreWithDB(keyIbc, cosmos.StoreTypeIAVL, db)
 	err := ms.LoadLatestVersion()
 	c.Assert(err, IsNil)
 
@@ -220,10 +249,22 @@ func setupKeeperForTest(c *C) (cosmos.Context, keeper.Keeper) {
 		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
 		log.NewNopLogger(),
 	)
+	ck := capabilitykeeper.NewKeeper(encodingConfig.Codec, keyCap, keyCapMem)
+
+	ik := ibckeeper.NewKeeper(
+		encodingConfig.Codec,
+		keyIbc,
+		nil,
+		nil,
+		nil,
+		ck.ScopeToModule(ibcexported.ModuleName),
+		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
+	)
+
 	c.Assert(bk.MintCoins(ctx, ModuleName, cosmos.Coins{
 		cosmos.NewCoin(common.RuneAsset().Native(), cosmos.NewInt(200_000_000_00000000)),
 	}), IsNil)
-	k := kv1.NewKVStore(encodingConfig.Codec, bk, ak, keyThorchain, GetCurrentVersion())
+	k := kv1.NewKVStore(encodingConfig.Codec, bk, ak, ik.ChannelKeeper, keyThorchain, GetCurrentVersion())
 	FundModule(c, ctx, k, ModuleName, 1000000*common.One)
 	FundModule(c, ctx, k, AsgardName, common.One)
 	FundModule(c, ctx, k, ReserveName, 10000*common.One)

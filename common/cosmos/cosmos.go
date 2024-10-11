@@ -35,6 +35,7 @@ const (
 var (
 	KeyringServiceName           = sdk.KeyringServiceName
 	NewKVStoreKeys               = storetypes.NewKVStoreKeys
+	NewMemoryStoreKeys           = storetypes.NewMemoryStoreKeys
 	NewUint                      = sdkmath.NewUint
 	ParseUint                    = sdkmath.ParseUint
 	NewInt                       = sdkmath.NewInt
@@ -64,6 +65,7 @@ var (
 	KVStorePrefixIterator        = storetypes.KVStorePrefixIterator
 	KVStoreReversePrefixIterator = storetypes.KVStoreReversePrefixIterator
 	NewKVStoreKey                = storetypes.NewKVStoreKey
+	NewMemoryStoreKey            = storetypes.NewMemoryStoreKey
 	NewTransientStoreKey         = storetypes.NewTransientStoreKey
 	StoreTypeTransient           = storetypes.StoreTypeTransient
 	StoreTypeIAVL                = storetypes.StoreTypeIAVL

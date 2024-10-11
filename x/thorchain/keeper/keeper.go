@@ -9,6 +9,8 @@ import (
 	"gitlab.com/thorchain/thornode/constants"
 	kvTypes "gitlab.com/thorchain/thornode/x/thorchain/keeper/types"
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
+
+	porttypes "github.com/cosmos/ibc-go/v8/modules/core/05-port/types"
 )
 
 type Keeper interface {
@@ -54,6 +56,7 @@ type Keeper interface {
 	DeductNativeTxFeeFromAccount(ctx cosmos.Context, acctAddr cosmos.AccAddress) error
 
 	// Keeper Interfaces
+	porttypes.ICS4Wrapper
 	KeeperConfig
 	KeeperPool
 	KeeperLastHeight
