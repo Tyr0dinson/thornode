@@ -130,6 +130,8 @@ const (
 	DevFundSystemIncomeBps
 	DevFundAddress
 	PendulumAssetsBasisPoints
+	PendulumUseEffectiveSecurity
+	PendulumUseVaultAssets
 
 	// These are the implicitly-0 Constants undisplayed in the API endpoint (no explicit value set).
 	ArtificialRagnarokBlockHeight
@@ -140,8 +142,6 @@ const (
 	MaximumLiquidityRune
 	MintSynths
 	NumberOfNewNodesPerChurn
-	PendulumUseEffectiveSecurity
-	PendulumUseVaultAssets
 	SignerConcurrency
 	StrictBondLiquidityRatio
 	SwapOutDexAggregationDisabled
