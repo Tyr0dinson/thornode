@@ -28,10 +28,7 @@ cp -r $GO_MOD_PACKAGE/* ../../.
 rm -rf gitlab.com
 
 # Copy files over for dep injection
-rm -rf ../../api && mkdir ../../api
+rm -rf ../../api/thorchain ../../api/types ../../api/common
 mv thorchain ../../api/.
 mv types ../../api/.
 mv common ../../api/.
-
-# Remove below line once pulsar generated files are re-added
-rm -rf ../../api
