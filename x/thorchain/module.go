@@ -288,4 +288,7 @@ func DefineCustomGetSigners(signingOptions *signing.Options) {
 	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgTssKeysignFail"), types.MsgTssKeysignFailCustomGetSigners)
 	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgTssPool"), types.MsgTssPoolCustomGetSigners)
 	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgSetVersion"), types.MsgSetVersionCustomGetSigners)
+	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgProposeUpgrade"), types.MsgProposeUpgradeCustomGetSigners)
+	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgApproveUpgrade"), types.MsgApproveUpgradeCustomGetSigners)
+	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgRejectUpgrade"), types.MsgRejectUpgradeCustomGetSigners)
 }

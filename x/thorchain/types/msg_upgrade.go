@@ -3,7 +3,10 @@ package types
 import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/blang/semver"
+	"gitlab.com/thorchain/thornode/api/types"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
@@ -61,6 +64,11 @@ func (m *MsgProposeUpgrade) GetSigners() []cosmos.AccAddress {
 	return []cosmos.AccAddress{m.Signer}
 }
 
+func MsgProposeUpgradeCustomGetSigners(m proto.Message) ([][]byte, error) {
+	msg := m.(*types.MsgProposeUpgrade)
+	return [][]byte{msg.Signer}, nil
+}
+
 // NewMsgApproveUpgrade is a constructor function for NewMsgApproveUpgrade
 func NewMsgApproveUpgrade(name string, signer cosmos.AccAddress) *MsgApproveUpgrade {
 	return &MsgApproveUpgrade{
@@ -85,6 +93,11 @@ func (m *MsgApproveUpgrade) GetSigners() []cosmos.AccAddress {
 	return []cosmos.AccAddress{m.Signer}
 }
 
+func MsgApproveUpgradeCustomGetSigners(m proto.Message) ([][]byte, error) {
+	msg := m.(*types.MsgApproveUpgrade)
+	return [][]byte{msg.Signer}, nil
+}
+
 // NewMsgRejectUpgrade is a constructor function for NewMsgRejectUpgrade
 func NewMsgRejectUpgrade(name string, signer cosmos.AccAddress) *MsgRejectUpgrade {
 	return &MsgRejectUpgrade{
@@ -107,4 +120,9 @@ func (m *MsgRejectUpgrade) ValidateBasic() error {
 // GetSigners defines whose signature is required
 func (m *MsgRejectUpgrade) GetSigners() []cosmos.AccAddress {
 	return []cosmos.AccAddress{m.Signer}
+}
+
+func MsgRejectUpgradeCustomGetSigners(m proto.Message) ([][]byte, error) {
+	msg := m.(*types.MsgRejectUpgrade)
+	return [][]byte{msg.Signer}, nil
 }
