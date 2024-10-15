@@ -283,7 +283,7 @@ func scheduleUpgradeIfNecessary(ctx cosmos.Context, k keeper.Keeper, name string
 	}
 
 	if uq.Approved {
-		if upgradePlanErr != nil {
+		if upgradePlanErr == nil {
 			return fmt.Errorf("a different upgrade is already scheduled: %s", upgradePlan.Name)
 		}
 

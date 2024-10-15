@@ -2718,8 +2718,6 @@ github.com/zquestz/grab v0.0.0-20190224022517-abcee96e61b1/go.mod h1:bslhAiUxakr
 gitlab.com/bosi/decorder v0.2.2/go.mod h1:9K1RB5+VPNQYtXtTDAzd2OEftsZb1oV0IrJrzChSdGE=
 gitlab.com/thorchain/ledger-thorchain-go v1.0.3 h1:pnAKxDd1rGocZS7lOErGxMpROINtK/HPiBBR24L5WvA=
 gitlab.com/thorchain/ledger-thorchain-go v1.0.3/go.mod h1:1zH1LiTMqQmAqPp5vah+AuDs7E++LmqUOn+p1nZOgys=
-gitlab.com/thorchain/thornode/api v0.0.0-20241011152234-3a601aa29240 h1:cCHsHBADy7fRY1znf8OEb1h2HWB1bAZ/amFA9uOb66w=
-gitlab.com/thorchain/thornode/api v0.0.0-20241011152234-3a601aa29240/go.mod h1:JaOA1ABmrMe+/FHvQIElRPK8CigRX6SOidjC0jZecLE=
 gitlab.com/thorchain/thornode/api v0.0.0-20241015194849-630f6eda4eed h1:BanKT/Rc1jR3bDYV3wVEf50A1sXl8ujsQr4a5FMnxMs=
 gitlab.com/thorchain/thornode/api v0.0.0-20241015194849-630f6eda4eed/go.mod h1:JaOA1ABmrMe+/FHvQIElRPK8CigRX6SOidjC0jZecLE=
 gitlab.com/thorchain/tss/tss-lib v0.1.5 h1:L9MD+E3B4lJmadso69lTIP6s2Iks24fS7Ancs62LTZo=

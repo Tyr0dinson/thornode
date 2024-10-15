@@ -19,11 +19,11 @@ message QueryUpgradeProposalResponse{
 	// the description of the upgrade, typically json with URLs to binaries for use with automation tools
 	string info = 3;
 	// whether the upgrade has been approved by the active validators
-	bool approved = 4;
+	bool approved = 4 [(gogoproto.jsontag) = "approved"];
 	// the percentage of active validators that have approved the upgrade
 	string approved_percent = 5;
 	// the amount of additional active validators required to reach quorum for the upgrade
-	int64 validators_to_quorum = 6;
+	int64 validators_to_quorum = 6 [(gogoproto.jsontag) = "validators_to_quorum"];
 }
 
 message QueryUpgradeProposalsRequest{}
