@@ -7,6 +7,7 @@ import (
 	errorsmod "cosmossdk.io/errors"
 	"github.com/cosmos/cosmos-sdk/types/errors"
 	capabilitytypes "github.com/cosmos/ibc-go/modules/capability/types"
+	transfertypes "github.com/cosmos/ibc-go/v8/modules/apps/transfer/types"
 	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
 	channeltypes "github.com/cosmos/ibc-go/v8/modules/core/04-channel/types"
 	porttypes "github.com/cosmos/ibc-go/v8/modules/core/05-port/types"
@@ -138,9 +139,16 @@ func (im IBCModule) OnChanCloseConfirm(ctx cosmos.Context, portID, channelID str
 }
 
 func (im IBCModule) OnRecvPacket(ctx cosmos.Context, packet channeltypes.Packet, relayer cosmos.AccAddress) ibcexported.Acknowledgement {
-	// if err := checkIBCHalt(im.keeper, ctx); err != nil {
-	// 	return err
-	// }
+	if err := checkIBCHalt(im.keeper, ctx); err != nil {
+		return channeltypes.NewErrorAcknowledgement(err)
+	}
+
+	var data transfertypes.FungibleTokenPacketData
+	if err := transfertypes.ModuleCdc.UnmarshalJSON(packet.GetData(), &data); err == nil &&
+		data.Receiver == im.keeper.GetModuleAccAddress(ModuleName).String() {
+		// TODO: Route through MsgDeposit (pending MsgSend wrapping)
+	}
+
 	return im.app.OnRecvPacket(ctx, packet, relayer)
 }
 
