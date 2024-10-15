@@ -11,6 +11,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/types/module/testutil"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
+	upgradetypes "cosmossdk.io/x/upgrade/types"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
@@ -41,7 +42,45 @@ func (k KVStoreDummy) GetMinJoinLast(ctx cosmos.Context) (semver.Version, int64)
 }
 func (k KVStoreDummy) SetMinJoinLast(ctx cosmos.Context) {}
 
-func (k KVStoreDummy) GetKey(_ cosmos.Context, prefix kvTypes.DbPrefix, key string) string {
+func (k KVStoreDummy) ProposeUpgrade(ctx cosmos.Context, name string, upgrade Upgrade) error {
+	return kaboom
+}
+
+func (k KVStoreDummy) GetProposedUpgrade(ctx cosmos.Context, name string) (*Upgrade, error) {
+	return nil, kaboom
+}
+
+func (k KVStoreDummy) ApproveUpgrade(ctx cosmos.Context, addr cosmos.AccAddress, name string) {
+	panic(kaboom)
+}
+
+func (k KVStoreDummy) RejectUpgrade(ctx cosmos.Context, addr cosmos.AccAddress, name string) {
+	panic(kaboom)
+}
+
+func (k KVStoreDummy) GetUpgradePlan(ctx cosmos.Context) (upgradetypes.Plan, error) {
+	return upgradetypes.Plan{}, nil
+}
+
+func (k KVStoreDummy) ScheduleUpgrade(ctx cosmos.Context, plan upgradetypes.Plan) error {
+	return kaboom
+}
+
+func (k KVStoreDummy) GetUpgradeProposalIterator(_ cosmos.Context) cosmos.Iterator {
+	return nil
+}
+
+func (k KVStoreDummy) GetUpgradeVoteIterator(_ cosmos.Context, _ string) cosmos.Iterator {
+	return nil
+}
+
+func (k KVStoreDummy) RemoveExpiredUpgradeProposals(_ cosmos.Context) error {
+	return nil
+}
+
+func (k KVStoreDummy) ClearUpgradePlan(ctx cosmos.Context) {}
+
+func (k KVStoreDummy) GetKey(prefix kvTypes.DbPrefix, key string) string {
 	return fmt.Sprintf("%s/1/%s", prefix, key)
 }
 
@@ -89,6 +128,9 @@ func (k KVStoreDummy) MintAndSendToAccount(ctx cosmos.Context, to cosmos.AccAddr
 }
 
 func (k KVStoreDummy) GetModuleAddress(module string) (common.Address, error) {
+	if module == ReserveName {
+		return "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw", nil // Mocknet Reserve address
+	}
 	return "", kaboom
 }
 

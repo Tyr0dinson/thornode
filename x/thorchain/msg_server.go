@@ -97,6 +97,21 @@ func (ms msgServer) SetVersion(goCtx context.Context, msg *types.MsgSetVersion) 
 	return externalHandler(goCtx, handler, msg)
 }
 
+func (ms msgServer) ProposeUpgrade(goCtx context.Context, msg *types.MsgProposeUpgrade) (*types.MsgEmpty, error) {
+	handler := NewProposeUpgradeHandler(ms.mgr)
+	return externalHandler(goCtx, handler, msg)
+}
+
+func (ms msgServer) ApproveUpgrade(goCtx context.Context, msg *types.MsgApproveUpgrade) (*types.MsgEmpty, error) {
+	handler := NewApproveUpgradeHandler(ms.mgr)
+	return externalHandler(goCtx, handler, msg)
+}
+
+func (ms msgServer) RejectUpgrade(goCtx context.Context, msg *types.MsgRejectUpgrade) (*types.MsgEmpty, error) {
+	handler := NewRejectUpgradeHandler(ms.mgr)
+	return externalHandler(goCtx, handler, msg)
+}
+
 func externalHandler(goCtx context.Context, handler MsgHandler, msg sdk.Msg) (_ *types.MsgEmpty, err error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 

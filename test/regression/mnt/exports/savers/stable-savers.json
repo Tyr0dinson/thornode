@@ -243,6 +243,7 @@
         "rune_withdrawn": "0"
       },
       "THORNames": [],
+      "affiliate_collectors": null,
       "bond_providers": [
         {
           "node_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
@@ -293,6 +294,7 @@
           "units": "100000000000"
         }
       ],
+      "loan_total_collateral": [],
       "loans": [],
       "mimirs": [
         {
@@ -412,7 +414,14 @@
       "rune_providers": [],
       "streaming_swaps": [],
       "swap_queue_items": [],
-      "swapper_clout": [],
+      "swapper_clout": [
+        {
+          "address": "0xdd99304abf262d653e2eb6722d874c2b86efdcea",
+          "reclaimed": "0",
+          "score": "21314283",
+          "spent": "0"
+        }
+      ],
       "trade_accounts": [],
       "trade_units": [],
       "tx_outs": null,

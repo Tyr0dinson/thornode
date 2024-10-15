@@ -517,7 +517,7 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 		s.logger.Err(err).Msgf("fail to get %s", mimirKey)
 		return nil, nil, err
 	}
-	if haltSigningGlobalMimir > 0 {
+	if haltSigningGlobalMimir > 0 && haltSigningGlobalMimir < blockHeight {
 		s.logger.Info().Msg("signing has been halted globally")
 		return nil, nil, nil
 	}
@@ -527,7 +527,7 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 		s.logger.Err(err).Msgf("fail to get %s", mimirKey)
 		return nil, nil, err
 	}
-	if haltSigningMimir > 0 {
+	if haltSigningMimir > 0 && haltSigningMimir < blockHeight {
 		s.logger.Info().Msgf("signing for %s is halted", tx.Chain)
 		return nil, nil, nil
 	}
@@ -680,10 +680,7 @@ func (s *Signer) processTransaction(item TxOutStoreItem) {
 			}
 		}
 
-		if errors.Is(err, context.DeadlineExceeded) {
-			panic(fmt.Errorf("tx out item: %+v , keysign timeout : %w", item.TxOutItem, err))
-		}
-		s.logger.Error().Err(err).Msg("fail to sign and broadcast tx out store item")
+		s.logger.Error().Interface("tx", item.TxOutItem).Err(err).Msg("fail to sign and broadcast tx out store item")
 		cancel()
 		return
 		// The 'item' for loop should not be items[0],

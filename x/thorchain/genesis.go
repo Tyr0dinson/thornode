@@ -142,11 +142,13 @@ func DefaultGenesisState() GenesisState {
 		THORNames:               make([]THORName, 0),
 		StoreVersion:            38, // refer to func `GetStoreVersion` , let's keep it consistent
 		Loans:                   make([]Loan, 0),
+		LoanTotalCollateral:     make([]common.Coin, 0),
 		SwapperClout:            make([]SwapperClout, 0),
 		TradeAccounts:           make([]TradeAccount, 0),
 		TradeUnits:              make([]TradeUnit, 0),
 		RuneProviders:           make([]RUNEProvider, 0),
 		RunePool:                NewRUNEPool(),
+		AffiliateCollectors:     []AffiliateFeeCollector{},
 	}
 }
 
@@ -280,6 +282,10 @@ func initGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 		keeper.SetLoan(ctx, loan)
 	}
 
+	for _, c := range data.LoanTotalCollateral {
+		keeper.SetTotalCollateral(ctx, c.Asset, c.Amount)
+	}
+
 	for _, clout := range data.SwapperClout {
 		if err := keeper.SetSwapperClout(ctx, clout); err != nil {
 			panic(err)
@@ -334,6 +340,10 @@ func initGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 		if err := keeper.SetNodeMimir(ctx, item.Key, item.Value, item.Signer); err != nil {
 			panic(err)
 		}
+	}
+
+	for _, item := range data.AffiliateCollectors {
+		keeper.SetAffiliateCollector(ctx, item)
 	}
 
 	keeper.SetStoreVersion(ctx, data.StoreVersion)
@@ -627,8 +637,20 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		}
 	}
 
+	loanTotalCollateral := make([]common.Coin, 0)
+	for _, asset := range assets {
+		amount, errTotalCol := k.GetTotalCollateral(ctx, asset)
+		if errTotalCol != nil {
+			panic(errTotalCol)
+		}
+		if !amount.IsZero() {
+			coin := common.NewCoin(asset, amount)
+			loanTotalCollateral = append(loanTotalCollateral, coin)
+		}
+	}
+
 	clouts := make([]SwapperClout, 0)
-	iterClouts := k.GetSwapQueueIterator(ctx)
+	iterClouts := k.GetSwapperCloutIterator(ctx)
 	defer iterClouts.Close()
 	for ; iterClouts.Valid(); iterClouts.Next() {
 		var addr common.Address
@@ -712,6 +734,11 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		outboundFeeSpentRune = append(outboundFeeSpentRune, common.NewCoin(asset, amount))
 	}
 
+	affiliateCollectors, err := k.GetAffiliateCollectors(ctx)
+	if err != nil {
+		panic(err)
+	}
+
 	return GenesisState{
 		Pools:                   pools,
 		LiquidityProviders:      liquidityProviders,
@@ -733,6 +760,7 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		ChainContracts:          chainContracts,
 		THORNames:               names,
 		Loans:                   loans,
+		LoanTotalCollateral:     loanTotalCollateral,
 		Mimirs:                  mimirs,
 		NodeMimirs:              nodeMimirs,
 		SwapperClout:            clouts,
@@ -741,5 +769,6 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		StoreVersion:            k.GetStoreVersion(ctx),
 		RuneProviders:           runeProviders,
 		RunePool:                runePool,
+		AffiliateCollectors:     affiliateCollectors,
 	}
 }

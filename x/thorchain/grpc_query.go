@@ -354,3 +354,18 @@ func (s queryServer) Keygen(c context.Context, req *types.QueryKeygenRequest) (*
 	ctx := sdk.UnwrapSDKContext(c)
 	return s.queryKeygen(ctx, req)
 }
+
+func (s queryServer) UpgradeProposal(c context.Context, req *types.QueryUpgradeProposalRequest) (*types.QueryUpgradeProposalResponse, error) {
+	ctx := sdk.UnwrapSDKContext(c)
+	return s.queryUpgradeProposal(ctx, req)
+}
+
+func (s queryServer) UpgradeProposals(c context.Context, req *types.QueryUpgradeProposalsRequest) (*types.QueryUpgradeProposalsResponse, error) {
+	ctx := sdk.UnwrapSDKContext(c)
+	return s.queryUpgradeProposals(ctx, req)
+}
+
+func (s queryServer) UpgradeVotes(c context.Context, req *types.QueryUpgradeVotesRequest) (*types.QueryUpgradeVotesResponse, error) {
+	ctx := sdk.UnwrapSDKContext(c)
+	return s.queryUpgradeVotes(ctx, req)
+}

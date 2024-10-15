@@ -17,6 +17,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/types/module"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
+	upgradekeeper "cosmossdk.io/x/upgrade/keeper"
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -105,7 +106,16 @@ type AppModule struct {
 }
 
 // NewAppModule creates a new AppModule Object
-func NewAppModule(k keeper.Keeper, cdc codec.Codec, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, storeKey cosmos.StoreKey, telemetryEnabled bool, testApp bool) AppModule {
+func NewAppModule(
+	k keeper.Keeper,
+	cdc codec.Codec,
+	coinKeeper bankkeeper.Keeper,
+	accountKeeper authkeeper.AccountKeeper,
+	upgradeKeeper *upgradekeeper.Keeper,
+	storeKey cosmos.StoreKey,
+	telemetryEnabled bool,
+	testApp bool,
+) AppModule {
 	kb := cosmos.KeybaseStore{}
 	var err error
 	if !testApp {
@@ -114,7 +124,7 @@ func NewAppModule(k keeper.Keeper, cdc codec.Codec, coinKeeper bankkeeper.Keeper
 			panic(err)
 		}
 	}
-	mgr := NewManagers(k, cdc, coinKeeper, accountKeeper, storeKey)
+	mgr := NewManagers(k, cdc, coinKeeper, accountKeeper, upgradeKeeper, storeKey)
 	return AppModule{
 		AppModuleBasic:   AppModuleBasic{},
 		mgr:              mgr,
@@ -159,7 +169,7 @@ func (am AppModule) PreBlock(ctx sdk.Context, req *abci.RequestFinalizeBlock) er
 
 	ctx.Logger().Debug("PreBlock", "height", ctx.BlockHeight())
 	// Check/Update the network version before checking the local version or checking whether to do a new-version store migration
-	if err := am.mgr.BeginBlock(ctx); err != nil {
+	if err := am.mgr.PreBlock(ctx); err != nil {
 		ctx.Logger().Error("fail to get managers", "error", err)
 	}
 
@@ -177,12 +187,12 @@ func (am AppModule) PreBlock(ctx sdk.Context, req *abci.RequestFinalizeBlock) er
 
 	am.mgr.Keeper().ClearObservingAddresses(ctx)
 
-	am.mgr.GasMgr().BeginBlock()
-	if err := am.mgr.NetworkMgr().BeginBlock(ctx, am.mgr); err != nil {
+	am.mgr.GasMgr().PreBlock()
+	if err := am.mgr.NetworkMgr().PreBlock(ctx, am.mgr); err != nil {
 		ctx.Logger().Error("fail to begin network manager", "error", err)
 	}
 	am.mgr.Slasher().PreBlock(ctx, req, am.mgr.GetConstants())
-	if err := am.mgr.ValidatorMgr().BeginBlock(ctx, am.mgr, existingValidators); err != nil {
+	if err := am.mgr.ValidatorMgr().PreBlock(ctx, am.mgr, existingValidators); err != nil {
 		ctx.Logger().Error("Fail to begin block on validator", "error", err)
 	}
 
@@ -193,6 +203,9 @@ func (am AppModule) PreBlock(ctx sdk.Context, req *abci.RequestFinalizeBlock) er
 func (am AppModule) BeginBlock(goCtx context.Context) error {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 	ctx.Logger().Debug("Begin Block", "height", ctx.BlockHeight())
+	if err := am.mgr.Keeper().RemoveExpiredUpgradeProposals(ctx); err != nil {
+		ctx.Logger().Error("Failed to remove expired upgrade proposals", "error", err)
+	}
 	return nil
 }
 

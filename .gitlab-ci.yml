@@ -34,6 +34,8 @@ fork:
   rules:
     - if: $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH && $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH != $CI_MERGE_REQUEST_PROJECT_PATH
       when: always
+  before_script:
+    - apt-get update && apt-get install -y --no-install-recommends jq
   script:
     - |
       echo Project ID: $CI_PROJECT_ID
@@ -58,6 +60,7 @@ generate:
   <<: *use_dind
   before_script:
     - apk -U add bash curl findutils git go jq make protoc sed wget python3
+    - echo "$DOCKER_HUB_PASSWD" | docker login -u thornode --password-stdin
   script:
     - |
       export PATH="$PATH:/root/go/bin"
@@ -121,6 +124,7 @@ build-thornode:
           sleep 1s
       done
     - apk -U add make git jq curl protoc
+    - echo "$DOCKER_HUB_PASSWD" | docker login -u thornode --password-stdin
     - make docker-gitlab-login
   script:
     - make docker-gitlab-build
@@ -153,6 +157,19 @@ chain-ethereum:
     - cd chain/ethereum/
     - yarn install --non-interactive
     - yarn hardhat test
+
+go-tss:
+  rules:
+    - changes:
+        paths:
+          - bifrost/tss/go-tss/**/*
+  stage: test
+  <<: *use_dind
+  before_script:
+    - apk -U add make git bash go
+    - echo "$DOCKER_HUB_PASSWD" | docker login -u thornode --password-stdin
+  script:
+    - make test-go-tss
 
 pages:
   rules:
@@ -209,6 +226,7 @@ test-simulation:
     name: integration
   before_script:
     - apk -U add git make protoc bash
+    - echo "$DOCKER_HUB_PASSWD" | docker login -u thornode --password-stdin
     - |
       PLUGIN="$HOME/.docker/cli-plugins/docker-compose"
       mkdir -p $(dirname $PLUGIN)
@@ -234,10 +252,11 @@ test-regression:
   variables:
     DOCKER_BUILDKIT: "1"
     TIME_FACTOR: "2"
-    PARALLELISM: "4"
+    PARALLELISM: "6"
     FAIL_FAST: "true"
   before_script:
     - apk -U add make git bash
+    - echo "$DOCKER_HUB_PASSWD" | docker login -u thornode --password-stdin
   script:
     - make test-regression
 

@@ -41,11 +41,12 @@ ldflags = -X gitlab.com/thorchain/thornode/constants.Version=$(VERSION) \
       -buildid=
 
 # golang settings
-TEST_DIR?="./..."
+TEST_PATHS=$(shell go list ./... | grep -v bifrost/tss/go-tss) # Skip compute-intensive tests by default
+TEST_DIR?=${TEST_PATHS}
 BUILD_FLAGS := -ldflags '$(ldflags)' -tags ${TAG} -trimpath
 TEST_BUILD_FLAGS := -parallel=1 -tags=mocknet
 GOBIN?=${GOPATH}/bin
-BINARIES=./cmd/thornode ./cmd/bifrost ./tools/recover-keyshare-backup
+BINARIES?=./cmd/thornode ./cmd/bifrost ./tools/recover-keyshare-backup
 
 # docker tty args are disabled in CI
 ifndef CI
@@ -143,7 +144,8 @@ gitlab-trigger-ci:
 # ------------------------------ Housekeeping ------------------------------
 
 format:
-	@git ls-files '*.go' | grep -v -e '^docs/' -e '^api/' -e '^openapi/gen/' -e '.pb.go' -e '.pb.gw.go' -e '_gen.go' -e 'wire_gen.go' | xargs gofumpt -w
+	@git ls-files '*.go' | grep -v -e '^docs/' -e '^api/' -e '^openapi/gen/' -e '.pb.go$$' -e '.pb.gw.go$$' -e '_gen.go$$' -e 'wire_gen.go$$' |\
+		xargs gofumpt -w
 
 lint:
 	@./scripts/lint.sh
@@ -172,6 +174,12 @@ test-coverage-sum: test-network-specific
 test: test-network-specific
 	@CGO_ENABLED=0 go test ${TEST_BUILD_FLAGS} ${TEST_DIR}
 
+test-all: test-network-specific
+	@CGO_ENABLED=0 go test ${TEST_BUILD_FLAGS} "./..."
+
+test-go-tss:
+	@go test ${TEST_BUILD_FLAGS} --race "./bifrost/tss/go-tss/..."
+
 test-network-specific:
 	@CGO_ENABLED=0 go test -tags stagenet ./common
 	@CGO_ENABLED=0 go test -tags mainnet ./common ./bifrost/pkg/chainclients/utxo/...
@@ -185,6 +193,7 @@ test-race:
 test-regression: build-test-regression
 	@docker run --rm ${DOCKER_TTY_ARGS} \
 		-e DEBUG -e RUN -e EXPORT -e TIME_FACTOR -e PARALLELISM -e FAIL_FAST \
+		-e AUTO_UPDATE -e IGNORE_FAILURES \
 		-e UID=$(shell id -u) -e GID=$(shell id -g) \
 		-p 1317:1317 -p 26657:26657 \
 		-v $(shell pwd)/test/regression/mnt:/mnt \

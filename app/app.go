@@ -354,7 +354,7 @@ func NewChainApp(
 	)
 
 	app.ThorchainKeeper = thorchainkeeperv1.NewKeeper(
-		appCodec, app.BankKeeper, app.AccountKeeper, keys[thorchaintypes.StoreKey],
+		appCodec, app.BankKeeper, app.AccountKeeper, app.UpgradeKeeper, keys[thorchaintypes.StoreKey],
 	)
 
 	// --- Module Options ---
@@ -368,7 +368,7 @@ func NewChainApp(
 	consensusModule := consensus.NewAppModule(appCodec, app.ConsensusParamsKeeper)
 	genutilModule := genutil.NewAppModule(app.AccountKeeper, app.StakingKeeper, app, txConfig)
 	paramsModule := params.NewAppModule(app.ParamsKeeper)
-	app.ThorchainModule = thorchain.NewAppModule(app.ThorchainKeeper, appCodec, app.BankKeeper, app.AccountKeeper, keys[thorchaintypes.StoreKey], telemetryEnabled, testApp)
+	app.ThorchainModule = thorchain.NewAppModule(app.ThorchainKeeper, appCodec, app.BankKeeper, app.AccountKeeper, app.UpgradeKeeper, keys[thorchaintypes.StoreKey], telemetryEnabled, testApp)
 	upgradeModule := upgrade.NewAppModule(app.UpgradeKeeper, app.AccountKeeper.AddressCodec())
 
 	app.ModuleManager = module.NewManager(
@@ -407,16 +407,12 @@ func NewChainApp(
 	// NOTE: staking module is required if HistoricalEntries param > 0
 	// NOTE: capability module's beginblocker must come before any modules using capabilities (e.g. IBC)
 	app.ModuleManager.SetOrderBeginBlockers(
-		minttypes.ModuleName,
-		stakingtypes.ModuleName,
 		genutiltypes.ModuleName,
 		// additional non simd modules
 		thorchaintypes.ModuleName,
 	)
 
 	app.ModuleManager.SetOrderEndBlockers(
-		govtypes.ModuleName,
-		stakingtypes.ModuleName,
 		genutiltypes.ModuleName,
 		// additional non simd modules
 		thorchaintypes.ModuleName,
@@ -581,6 +577,7 @@ func (app *THORChainApp) Name() string { return app.BaseApp.Name() }
 
 // PreBlocker application updates every pre block
 func (app *THORChainApp) PreBlocker(ctx sdk.Context, req *abci.RequestFinalizeBlock) (*sdk.ResponsePreBlock, error) {
+	// Run module preblock first so that the upgrade module is prioritized
 	preBlockResp, err := app.ModuleManager.PreBlock(ctx)
 	if err != nil {
 		return preBlockResp, err

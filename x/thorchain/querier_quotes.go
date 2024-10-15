@@ -194,7 +194,7 @@ func quoteReverseFuzzyAsset(ctx cosmos.Context, mgr *Mgrs, asset common.Asset) (
 	// (without exactly matching the symbol)
 	addressMatches := []string{}
 	for _, p := range pools {
-		if p.IsAvailable() && !p.IsEmpty() && !p.Asset.IsVaultAsset() &&
+		if p.IsAvailable() && !p.IsEmpty() && !p.Asset.IsSyntheticAsset() &&
 			!p.Asset.Symbol.Equals(asset.Symbol) &&
 			p.Asset.Chain.Equals(asset.Chain) && p.Asset.Ticker.Equals(asset.Ticker) {
 			pSplit := strings.Split(p.Asset.Symbol.String(), "-")
@@ -932,6 +932,12 @@ func (qs queryServer) queryQuoteSaverDeposit(ctx cosmos.Context, req *types.Quer
 		swapMsg.StreamingInterval = fmt.Sprintf("%d", ssInterval)
 		swapMsg.StreamingQuantity = fmt.Sprintf("%d", 0)
 	}
+
+	// Here in queryQuoteSaverDeposit,
+	// queryQuoteSwap uses a swap memo to evaluate the result of an add liquidity memo,
+	// so unset ManualSwapsToSynth in the local context tp prevent an error
+	// (and panic from nil pointer at the later sdk.ParseUint(*swapRes.Fees.Outbound) ).
+	qs.mgr.Keeper().SetMimir(ctx, constants.ManualSwapsToSynthDisabled.String(), 0)
 
 	swapRes, err := qs.queryQuoteSwap(ctx, &swapMsg)
 	if err != nil {
@@ -1709,16 +1715,6 @@ func (qs queryServer) queryQuoteLoanClose(ctx cosmos.Context, req *types.QueryQu
 	fromAddress, err := types.GetRandomPubKey().GetAddress(asset.Chain)
 	if err != nil {
 		return nil, fmt.Errorf("bad from address: %w", err)
-	}
-
-	// validate if it is valid collateral asset
-	key := "LENDING-" + loanAsset.GetDerivedAsset().MimirString()
-	val, err := qs.mgr.Keeper().GetMimir(ctx, key)
-	if err != nil {
-		return nil, fmt.Errorf("ail to fetch LENDING key: %w", err)
-	}
-	if val <= 0 {
-		return nil, fmt.Errorf("Lending is not available for this collateral asset")
 	}
 
 	loan, err := qs.mgr.Keeper().GetLoan(ctx, loanAsset, loanOwner)

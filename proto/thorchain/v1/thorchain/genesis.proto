@@ -8,6 +8,7 @@ import "types/type_pool.proto";
 import "types/type_chain_contract.proto";
 import "types/type_network_fee.proto";
 import "types/msg_swap.proto";
+import "types/type_affiliate_fee_collector.proto";
 import "types/type_streaming_swap.proto";
 import "types/type_network.proto";
 import "types/type_pol.proto";
@@ -71,4 +72,6 @@ message GenesisState {
   repeated types.RUNEProvider rune_providers = 36 [(gogoproto.nullable) = false];
   types.RUNEPool rune_pool = 37 [(gogoproto.nullable) = false];
   repeated types.NodeMimir nodeMimirs = 38 [(gogoproto.nullable) = false];
+  repeated types.AffiliateFeeCollector affiliate_collectors = 39 [(gogoproto.nullable) = false];
+  repeated common.Coin loan_total_collateral = 40 [(gogoproto.castrepeated) = "gitlab.com/thorchain/thornode/common.Coins", (gogoproto.nullable) = false];
 }

@@ -34,8 +34,6 @@ const (
 	DynamicMaxAnchorCalcInterval
 	ChurnInterval
 	ChurnRetryInterval
-	ValidatorsChangeWindow
-	LeaveProcessPerBlockHeight
 	BadValidatorRedline
 	LackOfObservationPenalty
 	SigningTransactionPeriod
@@ -44,10 +42,6 @@ const (
 	PauseUnbond
 	MinimumBondInRune
 	FundMigrationInterval
-	ArtificialRagnarokBlockHeight
-	MaximumLiquidityRune
-	StrictBondLiquidityRatio
-	DefaultPoolStatus
 	MaxOutboundAttempts
 	SlashPenalty
 	PauseOnSlashThreshold
@@ -65,16 +59,12 @@ const (
 	MinSwapsPerBlock
 	MaxSwapsPerBlock
 	EnableOrderBooks
-	MintSynths
-	BurnSynths
 	MaxSynthPerPoolDepth
 	MaxSynthsForSaversYield
 	VirtualMultSynths
 	VirtualMultSynthsBasisPoints
 	MinSlashPointsForBadValidator
-	BondLockupPeriod
 	MaxBondProviders
-	NumberOfNewNodesPerChurn
 	MinTxOutVolumeThreshold
 	TxOutDelayRate
 	TxOutDelayMax
@@ -83,7 +73,7 @@ const (
 	TNSFeeOnSale
 	TNSFeePerBlock
 	StreamingSwapPause
-	StreamingSwapMinBPFee
+	StreamingSwapMinBPFee // TODO: remove on hard fork
 	StreamingSwapMaxLength
 	StreamingSwapMaxLengthNative
 	MinCR
@@ -102,7 +92,6 @@ const (
 	POLTargetSynthPerPoolDepth
 	POLBuffer
 	RagnarokProcessNumOfLPPerIteration
-	SwapOutDexAggregationDisabled
 	SynthYieldBasisPoints
 	SynthYieldCycle
 	MinimumL1OutboundFeeUSD
@@ -126,10 +115,10 @@ const (
 	KeygenRetryInterval
 	SaversStreamingSwapsInterval
 	RescheduleCoalesceBlocks
-	SignerConcurrency
 	L1SlipMinBps
 	SynthSlipMinBps
 	TradeAccountsSlipMinBps
+	DerivedSlipMinBps
 	TradeAccountsEnabled
 	EVMDisableContractWhitelist
 	OperationalVotesMin
@@ -137,6 +126,22 @@ const (
 	RUNEPoolDepositMaturityBlocks
 	RUNEPoolMaxReserveBackstop
 	SaversEjectInterval
+	SystemIncomeBurnRateBps
+	DevFundSystemIncomeBps
+	DevFundAddress
+
+	// These are the implicitly-0 Constants undisplayed in the API endpoint (no explicit value set).
+	ArtificialRagnarokBlockHeight
+	BondLockupPeriod
+	BurnSynths
+	DefaultPoolStatus
+	ManualSwapsToSynthDisabled
+	MaximumLiquidityRune
+	MintSynths
+	NumberOfNewNodesPerChurn
+	SignerConcurrency
+	StrictBondLiquidityRatio
+	SwapOutDexAggregationDisabled
 )
 
 // ConstantValues define methods used to get constant values

@@ -1,11 +1,13 @@
 package thorchain
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
 	"strconv"
 	"strings"
 	"sync"
@@ -26,6 +28,7 @@ import (
 	"gitlab.com/thorchain/thornode/config"
 	"gitlab.com/thorchain/thornode/constants"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
+	keeperv1 "gitlab.com/thorchain/thornode/x/thorchain/keeper/v1"
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )
 
@@ -970,7 +973,7 @@ func (qs queryServer) queryLiquidityProviders(ctx cosmos.Context, req *types.Que
 	if asset.IsDerivedAsset() {
 		return nil, fmt.Errorf("must not be a derived asset")
 	}
-	if asset.IsVaultAsset() {
+	if asset.IsSyntheticAsset() {
 		return nil, fmt.Errorf("invalid request: requested pool is a SaversPool")
 	}
 
@@ -1016,7 +1019,7 @@ func (qs queryServer) queryLiquidityProvider(ctx cosmos.Context, req *types.Quer
 		return nil, fmt.Errorf("must not be a derived asset")
 	}
 
-	if asset.IsVaultAsset() {
+	if asset.IsSyntheticAsset() {
 		return nil, fmt.Errorf("invalid request: requested pool is a SaversPool")
 	}
 
@@ -1089,7 +1092,7 @@ func (qs queryServer) querySavers(ctx cosmos.Context, req *types.QuerySaversRequ
 	if asset.IsDerivedAsset() {
 		return nil, fmt.Errorf("must not be a derived asset")
 	}
-	if !asset.IsVaultAsset() {
+	if !asset.IsSyntheticAsset() {
 		return nil, fmt.Errorf("invalid request: requested pool is not a SaversPool")
 	}
 
@@ -1133,7 +1136,7 @@ func (qs queryServer) querySaver(ctx cosmos.Context, req *types.QuerySaverReques
 		return nil, fmt.Errorf("must not be a derived asset")
 	}
 
-	if !asset.IsVaultAsset() {
+	if !asset.IsSyntheticAsset() {
 		return nil, fmt.Errorf("invalid request: requested pool is not a SaversPool")
 	}
 
@@ -1399,7 +1402,7 @@ func (qs queryServer) queryPools(ctx cosmos.Context, _ *types.QueryPoolsRequest)
 		}
 
 		// Ignore synth asset pool (savers). Info will be on the L1 pool
-		if pool.Asset.IsVaultAsset() {
+		if pool.Asset.IsSyntheticAsset() {
 			continue
 		}
 
@@ -1576,7 +1579,7 @@ func (qs queryServer) queryDerivedPool(ctx cosmos.Context, req *types.QueryDeriv
 	}
 
 	// call begin block so the derived depth matches the next block execution state
-	_ = qs.mgr.NetworkMgr().BeginBlock(ctx.WithBlockHeight(ctx.BlockHeight()+1), qs.mgr)
+	_ = qs.mgr.NetworkMgr().PreBlock(ctx.WithBlockHeight(ctx.BlockHeight()+1), qs.mgr)
 
 	// sum rune depth of anchor pools
 	runeDepth := sdkmath.ZeroUint()
@@ -1828,7 +1831,7 @@ func checkPending(ctx cosmos.Context, keeper keeper.Keeper, voter ObservedTxVote
 
 	memoType := memo.GetType()
 	// If the memo asset is a synth, as with Savers add liquidity or withdraw, a swap is assumed to be involved.
-	if memoType == TxSwap || memoType == TxLimitOrder || memo.GetAsset().IsVaultAsset() {
+	if memoType == TxSwap || memoType == TxLimitOrder || memo.GetAsset().IsSyntheticAsset() {
 		isSwap = true
 		// Only check the KVStore when the inbound transaction has already been finalised
 		// and when there haven't been any Actions planned.
@@ -2392,6 +2395,107 @@ func (qs queryServer) queryVersion(ctx cosmos.Context, _ *types.QueryVersionRequ
 		Querier:         constants.SWVersion.String(),
 	}
 	return &ver, nil
+}
+
+func (qs queryServer) queryUpgradeProposals(ctx cosmos.Context, req *types.QueryUpgradeProposalsRequest) (*types.QueryUpgradeProposalsResponse, error) {
+	res := make([]*types.QueryUpgradeProposalResponse, 0)
+
+	k := qs.mgr.Keeper()
+	iter := k.GetUpgradeProposalIterator(ctx)
+	defer iter.Close()
+	for ; iter.Valid(); iter.Next() {
+		key, value := iter.Key(), iter.Value()
+
+		nameSplit := strings.Split(string(key), "/")
+		name := nameSplit[len(nameSplit)-1]
+
+		var upgrade types.Upgrade
+		if err := k.Cdc().Unmarshal(value, &upgrade); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal proposed upgrade: %w", err)
+		}
+
+		p := types.QueryUpgradeProposalResponse{
+			Name:   name,
+			Height: upgrade.Height,
+			Info:   upgrade.Info,
+		}
+
+		res = append(res, &p)
+	}
+
+	return &types.QueryUpgradeProposalsResponse{UpgradeProposals: res}, nil
+}
+
+func (qs queryServer) queryUpgradeProposal(ctx cosmos.Context, req *types.QueryUpgradeProposalRequest) (*types.QueryUpgradeProposalResponse, error) {
+	if len(req.Name) == 0 {
+		return nil, errors.New("upgrade name not provided")
+	}
+
+	k := qs.mgr.Keeper()
+
+	proposal, err := k.GetProposedUpgrade(ctx, req.Name)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get upgrade proposal: %w", err)
+	}
+
+	if proposal == nil {
+		return nil, fmt.Errorf("upgrade proposal not found: %s", req.Name)
+	}
+
+	uq, err := keeperv1.UpgradeApprovedByMajority(ctx, k, req.Name)
+	if err != nil {
+		return nil, fmt.Errorf("fail to check upgrade approval: %w", err)
+	}
+
+	approval := big.NewRat(int64(uq.ApprovingVals), int64(uq.TotalActive))
+	approvalFlt, _ := approval.Float64()
+	approvalStr := strconv.FormatFloat(approvalFlt, 'f', -1, 64)
+
+	vtq := int64(uq.NeededForQuorum)
+
+	res := types.QueryUpgradeProposalResponse{
+		Name:               req.Name,
+		Height:             proposal.Height,
+		Info:               proposal.Info,
+		Approved:           uq.Approved,
+		ApprovedPercent:    approvalStr,
+		ValidatorsToQuorum: vtq,
+	}
+
+	return &res, nil
+}
+
+func (qs queryServer) queryUpgradeVotes(ctx cosmos.Context, req *types.QueryUpgradeVotesRequest) (*types.QueryUpgradeVotesResponse, error) {
+	if len(req.Name) == 0 {
+		return nil, errors.New("upgrade name not provided")
+	}
+
+	prefix := []byte(keeperv1.VotePrefix(req.Name))
+	res := make([]*types.UpgradeVote, 0)
+
+	iter := qs.mgr.Keeper().GetUpgradeVoteIterator(ctx, req.Name)
+	defer iter.Close()
+	for ; iter.Valid(); iter.Next() {
+		key, value := iter.Key(), iter.Value()
+
+		addr := cosmos.AccAddress(bytes.TrimPrefix(key, prefix))
+
+		var vote string
+		if bytes.Equal(value, []byte{0x1}) {
+			vote = "approve"
+		} else {
+			vote = "reject"
+		}
+
+		v := types.UpgradeVote{
+			NodeAddress: addr.String(),
+			Vote:        vote,
+		}
+
+		res = append(res, &v)
+	}
+
+	return &types.QueryUpgradeVotesResponse{UpgradeVotes: res}, nil
 }
 
 func (qs queryServer) queryMimirWithKey(ctx cosmos.Context, req *types.QueryMimirWithKeyRequest) (*types.QueryMimirWithKeyResponse, error) {

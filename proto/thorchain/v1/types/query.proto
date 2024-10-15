@@ -44,6 +44,7 @@ import "types/query_block.proto";
 import "types/query_tss.proto";
 import "types/type_tss_metric.proto";
 import "types/query_keystore.proto";
+import "types/query_upgrade.proto";
 
 option (gogoproto.marshaler_all) = true;
 
@@ -317,5 +318,17 @@ service Query {
 
   rpc Keygen(QueryKeygenRequest) returns (QueryKeygenResponse) {
     option (google.api.http).get = "/thorchain/keygen/{height}/{pub_key}";
+  }
+
+  rpc UpgradeProposals(QueryUpgradeProposalsRequest) returns (QueryUpgradeProposalsResponse) {
+    option (google.api.http).get = "/thorchain/upgrade_proposals";
+  }
+
+  rpc UpgradeProposal(QueryUpgradeProposalRequest) returns (QueryUpgradeProposalResponse) {
+    option (google.api.http).get = "/thorchain/upgrade_proposal/{name}";
+  }
+
+  rpc UpgradeVotes(QueryUpgradeVotesRequest) returns (QueryUpgradeVotesResponse) {
+    option (google.api.http).get = "/thorchain/upgrade_votes/{name}";
   }
 }

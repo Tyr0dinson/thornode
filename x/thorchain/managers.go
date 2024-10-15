@@ -9,6 +9,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
+	upgradekeeper "cosmossdk.io/x/upgrade/keeper"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
@@ -52,7 +53,7 @@ type TradeAccountManager interface {
 
 // GasManager define all the methods required to manage gas
 type GasManager interface {
-	BeginBlock()
+	PreBlock()
 	EndBlock(ctx cosmos.Context, keeper keeper.Keeper, eventManager EventManager)
 	AddGasAsset(outAsset common.Asset, gas common.Gas, increaseTxCount bool)
 	ProcessGas(ctx cosmos.Context, keeper keeper.Keeper)
@@ -95,7 +96,7 @@ type ObserverManager interface {
 
 // ValidatorManager define the method to manage validators
 type ValidatorManager interface {
-	BeginBlock(ctx cosmos.Context, mgr Manager, existingValidators []string) error
+	PreBlock(ctx cosmos.Context, mgr Manager, existingValidators []string) error
 	EndBlock(ctx cosmos.Context, mgr Manager) []abci.ValidatorUpdate
 	processRagnarok(ctx cosmos.Context, mgr Manager) error
 	NodeAccountPreflightCheck(ctx cosmos.Context, na NodeAccount, constAccessor constants.ConstantValues) (NodeStatus, error)
@@ -105,7 +106,7 @@ type ValidatorManager interface {
 type NetworkManager interface {
 	TriggerKeygen(ctx cosmos.Context, nas NodeAccounts) error
 	RotateVault(ctx cosmos.Context, vault Vault) error
-	BeginBlock(ctx cosmos.Context, mgr Manager) error
+	PreBlock(ctx cosmos.Context, mgr Manager) error
 	EndBlock(ctx cosmos.Context, mgr Manager) error
 	UpdateNetwork(ctx cosmos.Context, constAccessor constants.ConstantValues, gasManager GasManager, eventMgr EventManager) error
 	SpawnDerivedAsset(ctx cosmos.Context, asset common.Asset, mgr Manager)
@@ -154,6 +155,7 @@ type Swapper interface {
 	CalcAssetEmission(X, x, Y cosmos.Uint) cosmos.Uint
 	CalcLiquidityFee(X, x, Y cosmos.Uint) cosmos.Uint
 	CalcSwapSlip(Xi, xi cosmos.Uint) cosmos.Uint
+	GetSwapCalc(X, x, Y, slipBps, minSlipBps cosmos.Uint) (emitAssets, liquidityFee, slip cosmos.Uint)
 }
 
 // Mgrs is an implementation of Manager interface
@@ -176,16 +178,25 @@ type Mgrs struct {
 	cdc           codec.Codec
 	coinKeeper    bankkeeper.Keeper
 	accountKeeper authkeeper.AccountKeeper
+	upgradeKeeper *upgradekeeper.Keeper
 	storeKey      cosmos.StoreKey
 }
 
 // NewManagers  create a new Manager
-func NewManagers(keeper keeper.Keeper, cdc codec.Codec, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, storeKey cosmos.StoreKey) *Mgrs {
+func NewManagers(
+	keeper keeper.Keeper,
+	cdc codec.Codec,
+	coinKeeper bankkeeper.Keeper,
+	accountKeeper authkeeper.AccountKeeper,
+	upgradeKeeper *upgradekeeper.Keeper,
+	storeKey cosmos.StoreKey,
+) *Mgrs {
 	return &Mgrs{
 		K:             keeper,
 		cdc:           cdc,
 		coinKeeper:    coinKeeper,
 		accountKeeper: accountKeeper,
+		upgradeKeeper: upgradeKeeper,
 		storeKey:      storeKey,
 	}
 }
@@ -198,8 +209,8 @@ func (mgr *Mgrs) GetConstants() constants.ConstantValues {
 	return mgr.constAccessor
 }
 
-// BeginBlock detect whether there are new version available, if it is available then create a new version of Mgr
-func (mgr *Mgrs) BeginBlock(ctx cosmos.Context) error {
+// PreBlock detect whether there are new version available, if it is available then create a new version of Mgr
+func (mgr *Mgrs) PreBlock(ctx cosmos.Context) error {
 	v := mgr.K.GetLowestActiveVersion(ctx)
 	if v.Equals(mgr.GetVersion()) {
 		return nil
@@ -209,7 +220,7 @@ func (mgr *Mgrs) BeginBlock(ctx cosmos.Context) error {
 	mgr.constAccessor = constants.GetConstantValues(v)
 	var err error
 
-	mgr.K, err = GetKeeper(v, mgr.cdc, mgr.coinKeeper, mgr.accountKeeper, mgr.storeKey)
+	mgr.K, err = GetKeeper(v, mgr.cdc, mgr.coinKeeper, mgr.accountKeeper, mgr.upgradeKeeper, mgr.storeKey)
 	if err != nil {
 		return fmt.Errorf("fail to create keeper: %w", err)
 	}
@@ -328,9 +339,16 @@ func (mgr *Mgrs) Slasher() Slasher { return mgr.slasher }
 func (mgr *Mgrs) TradeAccountManager() TradeAccountManager { return mgr.tradeManager }
 
 // GetKeeper return Keeper
-func GetKeeper(version semver.Version, cdc codec.BinaryCodec, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, storeKey cosmos.StoreKey) (keeper.Keeper, error) {
+func GetKeeper(
+	version semver.Version,
+	cdc codec.BinaryCodec,
+	coinKeeper bankkeeper.Keeper,
+	accountKeeper authkeeper.AccountKeeper,
+	upgradeKeeper *upgradekeeper.Keeper,
+	storeKey cosmos.StoreKey,
+) (keeper.Keeper, error) {
 	if version.GTE(semver.MustParse("0.1.0")) {
-		return kv1.NewKVStore(cdc, coinKeeper, accountKeeper, storeKey, version), nil
+		return kv1.NewKVStore(cdc, coinKeeper, accountKeeper, upgradeKeeper, storeKey, version), nil
 	}
 	return nil, errInvalidVersion
 }
@@ -370,8 +388,10 @@ func GetTxOutStore(version semver.Version, keeper keeper.Keeper, eventMgr EventM
 // GetNetworkManager  retrieve a NetworkManager that is compatible with the given version
 func GetNetworkManager(version semver.Version, keeper keeper.Keeper, txOutStore TxOutStore, eventMgr EventManager) (NetworkManager, error) {
 	switch {
-	case version.GTE(semver.MustParse("1.134.0")):
+	case version.GTE(semver.MustParse("2.136.0")):
 		return newNetworkMgrVCUR(keeper, txOutStore, eventMgr), nil
+	case version.GTE(semver.MustParse("1.134.0")):
+		return newNetworkMgrV134(keeper, txOutStore, eventMgr), nil
 	default:
 		return nil, errInvalidVersion
 	}
@@ -442,8 +462,10 @@ func GetSlasher(version semver.Version, keeper keeper.Keeper, eventMgr EventMana
 // GetSwapper return an implementation of Swapper
 func GetSwapper(version semver.Version) (Swapper, error) {
 	switch {
-	case version.GTE(semver.MustParse("1.134.0")):
+	case version.GTE(semver.MustParse("2.136.0")):
 		return newSwapperVCUR(), nil
+	case version.GTE(semver.MustParse("1.134.0")):
+		return newSwapperV134(), nil
 	default:
 		return nil, errInvalidVersion
 	}

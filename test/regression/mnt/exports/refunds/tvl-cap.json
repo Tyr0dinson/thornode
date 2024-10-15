@@ -243,6 +243,7 @@
         "rune_withdrawn": "0"
       },
       "THORNames": [],
+      "affiliate_collectors": null,
       "bond_providers": [
         {
           "node_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
@@ -270,6 +271,7 @@
           "units": "100000000000"
         }
       ],
+      "loan_total_collateral": [],
       "loans": [],
       "mimirs": [],
       "network": {

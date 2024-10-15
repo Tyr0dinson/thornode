@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/telemetry"
 	"github.com/hashicorp/go-metrics"
 	"github.com/hashicorp/go-multierror"
@@ -138,71 +139,63 @@ func unrefundableCoinCleanup(ctx cosmos.Context, mgr Manager, toi TxOutItem, bur
 }
 
 func getMaxSwapQuantity(ctx cosmos.Context, mgr Manager, sourceAsset, targetAsset common.Asset, swp StreamingSwap) (uint64, error) {
+	version := mgr.GetVersion()
+	switch {
+	case version.GTE(semver.MustParse("2.137.0")):
+		return getMaxSwapQuantityV137(ctx, mgr, sourceAsset, targetAsset, swp)
+	case version.GTE(semver.MustParse("2.136.0")):
+		return getMaxSwapQuantityV136(ctx, mgr, sourceAsset, targetAsset, swp)
+	default:
+		return getMaxSwapQuantityV1(ctx, mgr, sourceAsset, targetAsset, swp)
+	}
+}
+
+func getMaxSwapQuantityV137(ctx cosmos.Context, mgr Manager, sourceAsset, targetAsset common.Asset, swp StreamingSwap) (uint64, error) {
 	if swp.Interval == 0 {
 		return 0, nil
 	}
+
 	// collect pools involved in this swap
-	var pools Pools
-	totalRuneDepth := cosmos.ZeroUint()
-	for _, asset := range []common.Asset{sourceAsset, targetAsset} {
+	minSwapSize := cosmos.ZeroUint()
+	var sourceAssetPool types.Pool
+	for i, asset := range []common.Asset{sourceAsset, targetAsset} {
 		if asset.IsRune() {
 			continue
 		}
 
+		// get the asset pool
 		pool, err := mgr.Keeper().GetPool(ctx, asset.GetLayer1Asset())
 		if err != nil {
 			ctx.Logger().Error("fail to fetch pool", "error", err)
 			return 0, err
 		}
-		pools = append(pools, pool)
-		totalRuneDepth = totalRuneDepth.Add(pool.BalanceRune)
-	}
-	if len(pools) == 0 {
-		return 0, fmt.Errorf("dev error: no pools selected during a streaming swap")
-	}
-	var virtualDepth cosmos.Uint
-	switch len(pools) {
-	case 1:
-		// single swap, virtual depth is the same size as the single pool
-		virtualDepth = totalRuneDepth
-	case 2:
-		// double swap, dynamically calculate a virtual pool that is between the
-		// depth of pool1 and pool2. This calculation should result in a
-		// consistent swap fee (in bps) no matter the depth of the pools. The
-		// larger the difference between the pools, the more the virtual pool
-		// skews towards the smaller pool. This results in less rewards given
-		// to the larger pool, and more rewards given to the smaller pool.
 
-		// (2*r1*r2) / (r1+r2)
-		r1 := pools[0].BalanceRune
-		r2 := pools[1].BalanceRune
-		num := r1.Mul(r2).MulUint64(2)
-		denom := r1.Add(r2)
-		if denom.IsZero() {
-			return 0, fmt.Errorf("dev error: both pools have no rune balance")
+		// store the source asset pool for later conversion of RUNE to asset
+		if i == 0 {
+			sourceAssetPool = pool
 		}
-		virtualDepth = num.Quo(denom)
-	default:
-		return 0, fmt.Errorf("dev error: unsupported number of pools in a streaming swap: %d", len(pools))
+
+		// get the configured min slip for this asset
+		minSlip := getMinSlipBps(ctx, mgr.Keeper(), asset)
+		if minSlip.IsZero() {
+			continue
+		}
+
+		// compute the minimum rune swap size for this leg of the swap
+		minRuneSwapSize := common.GetSafeShare(minSlip, cosmos.NewUint(constants.MaxBasisPts), pool.BalanceRune)
+		if minSwapSize.IsZero() || minRuneSwapSize.LT(minSwapSize) {
+			minSwapSize = minRuneSwapSize
+		}
 	}
+
+	// calculate the max swap quantity
 	if !sourceAsset.IsRune() {
-		// since the inbound asset is not rune, the virtual depth needs to be
-		// recalculated to be the asset side
-		virtualDepth = common.GetUncappedShare(virtualDepth, pools[0].BalanceRune, pools[0].BalanceAsset)
+		minSwapSize = sourceAssetPool.RuneValueInAsset(minSwapSize)
 	}
-	// we multiply by 100 to ensure we can support decimal points (ie 2.5bps / 2 == 1.25)
-	minBP := mgr.Keeper().GetConfigInt64(ctx, constants.StreamingSwapMinBPFee) * constants.StreamingSwapMinBPFeeMulti
-	minBP /= int64(len(pools)) // since multiple swaps are executed, then minBP should be adjusted
-	if minBP == 0 {
-		return 0, fmt.Errorf("streaming swaps are not allows with a min BP of zero")
-	}
-	// constants.StreamingSwapMinBPFee is in 10k basis point x 10, so we add an
-	// addition zero here (_0)
-	minSize := common.GetSafeShare(cosmos.SafeUintFromInt64(minBP), cosmos.SafeUintFromInt64(10_000*constants.StreamingSwapMinBPFeeMulti), virtualDepth)
-	if minSize.IsZero() {
+	if minSwapSize.IsZero() {
 		return 1, nil
 	}
-	maxSwapQuantity := swp.Deposit.Quo(minSize)
+	maxSwapQuantity := swp.Deposit.Quo(minSwapSize)
 
 	// make sure maxSwapQuantity doesn't infringe on max length that a
 	// streaming swap can exist
@@ -256,6 +249,27 @@ func getMaxSwapQuantity(ctx cosmos.Context, mgr Manager, sourceAsset, targetAsse
 	}
 
 	return maxSwapQuantity.Uint64(), nil
+}
+
+// getMinSlipBps returns artificial slip floor, expressed in basis points (10000).
+func getMinSlipBps(
+	ctx cosmos.Context,
+	k keeper.Keeper,
+	asset common.Asset,
+) cosmos.Uint {
+	var ref constants.ConstantName
+	switch {
+	case asset.IsSyntheticAsset():
+		ref = constants.SynthSlipMinBps
+	case asset.IsTradeAsset():
+		ref = constants.TradeAccountsSlipMinBps
+	case asset.IsDerivedAsset():
+		ref = constants.DerivedSlipMinBps
+	default:
+		ref = constants.L1SlipMinBps
+	}
+	minFeeMimir := k.GetConfigInt64(ctx, ref)
+	return cosmos.SafeUintFromInt64(minFeeMimir)
 }
 
 func refundBond(ctx cosmos.Context, tx common.Tx, acc cosmos.AccAddress, amt cosmos.Uint, nodeAcc *NodeAccount, mgr Manager) error {
@@ -338,29 +352,39 @@ func isSignedByActiveNodeAccounts(ctx cosmos.Context, k keeper.Keeper, signers [
 		if signer.Equals(k.GetModuleAccAddress(AsgardName)) {
 			continue
 		}
-		nodeAccount, err := k.GetNodeAccount(ctx, signer)
-		if err != nil {
-			ctx.Logger().Error("unauthorized account", "address", signer.String(), "error", err)
-			return false
-		}
-		if nodeAccount.IsEmpty() {
-			ctx.Logger().Error("unauthorized account", "address", signer.String())
-			return false
-		}
-		if nodeAccount.Status != NodeActive {
-			ctx.Logger().Error("unauthorized account, node account not active",
-				"address", signer.String(),
-				"status", nodeAccount.Status)
-			return false
-		}
-		if nodeAccount.Type != NodeTypeValidator {
-			ctx.Logger().Error("unauthorized account, node account must be a validator",
-				"address", signer.String(),
-				"type", nodeAccount.Type)
+		if err := signedByActiveNodeAccount(ctx, k, signer); err != nil {
+			ctx.Logger().Error("unauthorized account", "error", err)
 			return false
 		}
 	}
 	return true
+}
+
+// signedByActiveNodeAccounts returns an error unless all signers are active validator nodes
+func signedByActiveNodeAccount(ctx cosmos.Context, k keeper.Keeper, signer cosmos.AccAddress) error {
+	nodeAccount, err := k.GetNodeAccount(ctx, signer)
+	if err != nil {
+		return fmt.Errorf("error fetching node account: %s: %w", signer.String(), err)
+	}
+	if nodeAccount.IsEmpty() {
+		return fmt.Errorf("node account is unexpectedly empty: %s", signer.String())
+	}
+	if nodeAccount.Status != NodeActive {
+		return fmt.Errorf(
+			"node account %s not active: %s",
+			signer.String(),
+			nodeAccount.Status,
+		)
+	}
+	if nodeAccount.Type != NodeTypeValidator {
+		return fmt.Errorf(
+			"node account %s must be a validator: %s",
+			signer.String(),
+			nodeAccount.Type,
+		)
+	}
+
+	return nil
 }
 
 func wrapError(ctx cosmos.Context, err error, wrap string) error {
