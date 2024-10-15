@@ -14,8 +14,6 @@ import (
 	"gitlab.com/thorchain/thornode/constants"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper/types"
-
-	porttypes "github.com/cosmos/ibc-go/v8/modules/core/05-port/types"
 )
 
 // NOTE: Always end a dbPrefix with a slash ("/"). This is to ensure that there
@@ -107,7 +105,6 @@ type KVStore struct {
 	storeKey      cosmos.StoreKey // Unexposed key to access store from cosmos.Context
 	version       semver.Version
 	constAccessor constants.ConstantValues
-	ics4Wrapper   porttypes.ICS4Wrapper
 }
 
 // NewKVStore creates new instances of the thorchain Keeper
@@ -115,7 +112,6 @@ func NewKVStore(
 	cdc codec.BinaryCodec,
 	coinKeeper bankkeeper.Keeper,
 	accountKeeper authkeeper.AccountKeeper,
-	ics4Wrapper porttypes.ICS4Wrapper,
 	storeKey cosmos.StoreKey,
 	version semver.Version,
 ) KVStore {
@@ -123,7 +119,6 @@ func NewKVStore(
 		coinKeeper:    coinKeeper,
 		accountKeeper: accountKeeper,
 		storeKey:      storeKey,
-		ics4Wrapper:   ics4Wrapper,
 		cdc:           cdc,
 		version:       version,
 		constAccessor: constants.GetConstantValues(version),
@@ -135,11 +130,10 @@ func NewKeeper(
 	cdc codec.BinaryCodec,
 	coinKeeper bankkeeper.Keeper,
 	accountKeeper authkeeper.AccountKeeper,
-	ics4Wrapper porttypes.ICS4Wrapper,
 	storeKey cosmos.StoreKey,
 ) keeper.Keeper {
 	version := semver.MustParse("0.0.0")
-	return NewKVStore(cdc, coinKeeper, accountKeeper, ics4Wrapper, storeKey, version)
+	return NewKVStore(cdc, coinKeeper, accountKeeper, storeKey, version)
 }
 
 // Cdc return the amino codec

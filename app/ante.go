@@ -12,20 +12,14 @@ import (
 
 	"gitlab.com/thorchain/thornode/x/thorchain"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
-
-	ibcante "github.com/cosmos/ibc-go/v8/modules/core/ante"
-	ibckeeper "github.com/cosmos/ibc-go/v8/modules/core/keeper"
 )
 
-// HandlerOptions extend the SDK's AnteHandler options by requiring the IBC
-// channel keeper.
+// HandlerOptions extend the SDK's AnteHandler options
 type HandlerOptions struct {
 	ante.HandlerOptions
 
 	WasmConfig *wasmtypes.WasmConfig
 	WasmKeeper *wasmkeeper.Keeper
-
-	IBCKeeper *ibckeeper.Keeper
 
 	TXCounterStoreService corestoretypes.KVStoreService
 
@@ -80,7 +74,6 @@ func NewAnteHandler(options HandlerOptions) (sdk.AnteHandler, error) {
 		ante.NewSigGasConsumeDecorator(options.AccountKeeper, options.SigGasConsumer),
 		ante.NewSigVerificationDecorator(options.AccountKeeper, options.SignModeHandler),
 		ante.NewIncrementSequenceDecorator(options.AccountKeeper),
-		ibcante.NewRedundantRelayDecorator(options.IBCKeeper),
 	}
 
 	return sdk.ChainAnteDecorators(anteDecorators...), nil

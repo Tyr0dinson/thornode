@@ -18,8 +18,6 @@ import (
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 	kv1 "gitlab.com/thorchain/thornode/x/thorchain/keeper/v1"
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
-
-	porttypes "github.com/cosmos/ibc-go/v8/modules/core/05-port/types"
 )
 
 const (
@@ -189,7 +187,6 @@ type Mgrs struct {
 	coinKeeper    bankkeeper.Keeper
 	accountKeeper authkeeper.AccountKeeper
 	wasmKeeper    wasmkeeper.Keeper
-	ics4Wrapper   porttypes.ICS4Wrapper
 	storeKey      cosmos.StoreKey
 }
 
@@ -199,7 +196,6 @@ func NewManagers(keeper keeper.Keeper,
 	coinKeeper bankkeeper.Keeper,
 	accountKeeper authkeeper.AccountKeeper,
 	wasmKeeper wasmkeeper.Keeper,
-	ics4Wrapper porttypes.ICS4Wrapper,
 	storeKey cosmos.StoreKey,
 ) *Mgrs {
 	return &Mgrs{
@@ -208,7 +204,6 @@ func NewManagers(keeper keeper.Keeper,
 		coinKeeper:    coinKeeper,
 		accountKeeper: accountKeeper,
 		wasmKeeper:    wasmKeeper,
-		ics4Wrapper:   ics4Wrapper,
 		storeKey:      storeKey,
 	}
 }
@@ -232,7 +227,7 @@ func (mgr *Mgrs) BeginBlock(ctx cosmos.Context) error {
 	mgr.constAccessor = constants.GetConstantValues(v)
 	var err error
 
-	mgr.K, err = GetKeeper(v, mgr.cdc, mgr.coinKeeper, mgr.accountKeeper, mgr.ics4Wrapper, mgr.storeKey)
+	mgr.K, err = GetKeeper(v, mgr.cdc, mgr.coinKeeper, mgr.accountKeeper, mgr.storeKey)
 	if err != nil {
 		return fmt.Errorf("fail to create keeper: %w", err)
 	}
@@ -358,9 +353,9 @@ func (mgr *Mgrs) TradeAccountManager() TradeAccountManager { return mgr.tradeMan
 func (mgr *Mgrs) WasmManager() WasmManager { return mgr.wasmManager }
 
 // GetKeeper return Keeper
-func GetKeeper(version semver.Version, cdc codec.BinaryCodec, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, ics4Wrapper porttypes.ICS4Wrapper, storeKey cosmos.StoreKey) (keeper.Keeper, error) {
+func GetKeeper(version semver.Version, cdc codec.BinaryCodec, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, storeKey cosmos.StoreKey) (keeper.Keeper, error) {
 	if version.GTE(semver.MustParse("0.1.0")) {
-		return kv1.NewKVStore(cdc, coinKeeper, accountKeeper, ics4Wrapper, storeKey, version), nil
+		return kv1.NewKVStore(cdc, coinKeeper, accountKeeper, storeKey, version), nil
 	}
 	return nil, errInvalidVersion
 }

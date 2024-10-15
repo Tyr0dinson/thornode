@@ -7,7 +7,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/app/upgrades"
 	"gitlab.com/thorchain/thornode/app/upgrades/noop"
-	"gitlab.com/thorchain/thornode/app/upgrades/v137"
+	v137 "gitlab.com/thorchain/thornode/app/upgrades/v137"
 )
 
 // Upgrades list of chain upgrades
@@ -25,8 +25,6 @@ func (app *THORChainApp) RegisterUpgradeHandlers() {
 		AccountKeeper:         &app.AccountKeeper,
 		ParamsKeeper:          &app.ParamsKeeper,
 		ConsensusParamsKeeper: &app.ConsensusParamsKeeper,
-		CapabilityKeeper:      app.CapabilityKeeper,
-		IBCKeeper:             app.IBCKeeper,
 		Codec:                 app.appCodec,
 		GetStoreKey:           app.GetKey,
 	}

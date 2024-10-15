@@ -17,17 +17,9 @@ import (
 	"gitlab.com/thorchain/thornode/constants"
 	kvTypes "gitlab.com/thorchain/thornode/x/thorchain/keeper/types"
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
-
-	capabilitytypes "github.com/cosmos/ibc-go/modules/capability/types"
-	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
-	porttypes "github.com/cosmos/ibc-go/v8/modules/core/05-port/types"
-	ibcexported "github.com/cosmos/ibc-go/v8/modules/core/exported"
 )
 
-var (
-	kaboom                       = errors.New("Kaboom!!!")
-	_      porttypes.ICS4Wrapper = (*KVStoreDummy)(nil)
-)
+var kaboom = errors.New("Kaboom!!!")
 
 type KVStoreDummy struct{}
 
@@ -752,35 +744,6 @@ func (k KVStoreDummy) GetSwapperClout(ctx cosmos.Context, addr common.Address) (
 
 func (k KVStoreDummy) RemoveLowBondValidatorAccounts(ctx cosmos.Context) error {
 	return kaboom
-}
-
-func (k KVStoreDummy) SendPacket(
-	ctx cosmos.Context,
-	chanCap *capabilitytypes.Capability,
-	sourcePort string,
-	sourceChannel string,
-	timeoutHeight clienttypes.Height,
-	timeoutTimestamp uint64,
-	data []byte,
-) (sequence uint64, err error) {
-	return 0, nil
-}
-
-func (k KVStoreDummy) WriteAcknowledgement(
-	ctx cosmos.Context,
-	chanCap *capabilitytypes.Capability,
-	packet ibcexported.PacketI,
-	ack ibcexported.Acknowledgement,
-) error {
-	return nil
-}
-
-func (k KVStoreDummy) GetAppVersion(
-	ctx cosmos.Context,
-	portID,
-	channelID string,
-) (string, bool) {
-	return "", true
 }
 
 // a mock cosmos.Iterator implementation for testing purposes

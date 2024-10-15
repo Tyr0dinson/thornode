@@ -73,9 +73,6 @@ import (
 	stakingkeeper "github.com/cosmos/cosmos-sdk/x/staking/keeper"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	"github.com/cosmos/gogoproto/proto"
-	capability "github.com/cosmos/ibc-go/modules/capability"
-	capabilitykeeper "github.com/cosmos/ibc-go/modules/capability/keeper"
-	capabilitytypes "github.com/cosmos/ibc-go/modules/capability/types"
 	"github.com/spf13/cast"
 
 	"gitlab.com/thorchain/thornode/openapi"
@@ -87,22 +84,6 @@ import (
 	"github.com/CosmWasm/wasmd/x/wasm"
 	wasmkeeper "github.com/CosmWasm/wasmd/x/wasm/keeper"
 	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
-
-	ica "github.com/cosmos/ibc-go/v8/modules/apps/27-interchain-accounts"
-	icahost "github.com/cosmos/ibc-go/v8/modules/apps/27-interchain-accounts/host"
-	icahostkeeper "github.com/cosmos/ibc-go/v8/modules/apps/27-interchain-accounts/host/keeper"
-	icahosttypes "github.com/cosmos/ibc-go/v8/modules/apps/27-interchain-accounts/host/types"
-	icatypes "github.com/cosmos/ibc-go/v8/modules/apps/27-interchain-accounts/types"
-	ibcfee "github.com/cosmos/ibc-go/v8/modules/apps/29-fee"
-	ibcfeekeeper "github.com/cosmos/ibc-go/v8/modules/apps/29-fee/keeper"
-	ibcfeetypes "github.com/cosmos/ibc-go/v8/modules/apps/29-fee/types"
-	ibctransfer "github.com/cosmos/ibc-go/v8/modules/apps/transfer"
-	ibctransferkeeper "github.com/cosmos/ibc-go/v8/modules/apps/transfer/keeper"
-	ibctransfertypes "github.com/cosmos/ibc-go/v8/modules/apps/transfer/types"
-	ibc "github.com/cosmos/ibc-go/v8/modules/core"
-	porttypes "github.com/cosmos/ibc-go/v8/modules/core/05-port/types"
-	ibcexported "github.com/cosmos/ibc-go/v8/modules/core/exported"
-	ibckeeper "github.com/cosmos/ibc-go/v8/modules/core/keeper"
 )
 
 const (
@@ -133,9 +114,6 @@ var maccPerms = map[string][]string{
 	thorchain.TreasuryName:           {},
 	thorchain.RUNEPoolName:           {},
 	wasmtypes.ModuleName:             {authtypes.Burner},
-	ibctransfertypes.ModuleName:      {authtypes.Minter, authtypes.Burner},
-	ibcfeetypes.ModuleName:           nil,
-	icatypes.ModuleName:              nil,
 }
 
 var (
@@ -159,7 +137,6 @@ type THORChainApp struct {
 	// keepers
 	AccountKeeper         authkeeper.AccountKeeper
 	BankKeeper            bankkeeper.BaseKeeper
-	CapabilityKeeper      *capabilitykeeper.Keeper
 	StakingKeeper         *stakingkeeper.Keeper
 	MintKeeper            mintkeeper.Keeper
 	UpgradeKeeper         *upgradekeeper.Keeper
@@ -170,17 +147,6 @@ type THORChainApp struct {
 	ThorchainModule thorchain.AppModule
 
 	WasmKeeper wasmkeeper.Keeper
-
-	IBCKeeper         *ibckeeper.Keeper // IBC Keeper must be a pointer in the app, so we can SetRouter on it correctly
-	IBCTransferKeeper ibctransferkeeper.Keeper
-	IBCFeeKeeper      ibcfeekeeper.Keeper
-	ICAHostKeeper     icahostkeeper.Keeper
-
-	ScopedWasmKeeper        capabilitykeeper.ScopedKeeper
-	ScopedIBCKeeper         capabilitykeeper.ScopedKeeper
-	ScopedIBCTransferKeeper capabilitykeeper.ScopedKeeper
-	ScopedIBCFeeKeeper      capabilitykeeper.ScopedKeeper
-	ScopedICAHostKeeper     capabilitykeeper.ScopedKeeper
 
 	// the module manager
 	ModuleManager      *module.Manager
@@ -293,15 +259,9 @@ func NewChainApp(
 		thorchaintypes.StoreKey,
 
 		wasmtypes.StoreKey,
-
-		ibcexported.StoreKey,
-		ibctransfertypes.StoreKey,
-		ibcfeetypes.StoreKey,
-		icahosttypes.StoreKey,
 	)
 
 	tkeys := storetypes.NewTransientStoreKeys(paramstypes.TStoreKey)
-	memKeys := storetypes.NewMemoryStoreKeys(capabilitytypes.MemStoreKey)
 
 	// register streaming services
 	if err := bApp.RegisterStreamingServices(appOpts, keys); err != nil {
@@ -335,20 +295,6 @@ func NewChainApp(
 	bApp.SetParamStore(app.ConsensusParamsKeeper.ParamsStore)
 
 	// add keepers
-
-	// add capability keeper and ScopeToModule for ibc module
-	app.CapabilityKeeper = capabilitykeeper.NewKeeper(
-		appCodec,
-		keys[capabilitytypes.StoreKey],
-		memKeys[capabilitytypes.MemStoreKey],
-	)
-
-	scopedIBCKeeper := app.CapabilityKeeper.ScopeToModule(ibcexported.ModuleName)
-	scopedIBCTransferKeeper := app.CapabilityKeeper.ScopeToModule(ibctransfertypes.ModuleName)
-	scopedIBCFeeKeeper := app.CapabilityKeeper.ScopeToModule(ibcfeetypes.ModuleName)
-	scopedICAHostKeeper := app.CapabilityKeeper.ScopeToModule(icahosttypes.SubModuleName)
-	scopedWasmKeeper := app.CapabilityKeeper.ScopeToModule(wasmtypes.ModuleName)
-	app.CapabilityKeeper.Seal()
 
 	app.AccountKeeper = authkeeper.NewAccountKeeper(
 		appCodec,
@@ -419,54 +365,9 @@ func NewChainApp(
 	}
 	app.txConfig = txConfig
 
-	app.IBCKeeper = ibckeeper.NewKeeper(
-		appCodec,
-		keys[ibcexported.StoreKey],
-		app.GetSubspace(ibcexported.ModuleName),
-		app.StakingKeeper,
-		app.UpgradeKeeper,
-		scopedIBCKeeper,
-		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
-	)
-
 	app.ThorchainKeeper = thorchainkeeperv1.NewKeeper(
-		appCodec, app.BankKeeper, app.AccountKeeper, app.IBCKeeper.ChannelKeeper, keys[thorchaintypes.StoreKey],
+		appCodec, app.BankKeeper, app.AccountKeeper, keys[thorchaintypes.StoreKey],
 	)
-
-	app.IBCFeeKeeper = ibcfeekeeper.NewKeeper(
-		appCodec, keys[ibcfeetypes.StoreKey],
-		app.ThorchainKeeper,
-		app.IBCKeeper.ChannelKeeper,
-		app.IBCKeeper.PortKeeper, app.AccountKeeper, app.BankKeeper,
-	)
-
-	app.IBCTransferKeeper = ibctransferkeeper.NewKeeper(
-		appCodec,
-		keys[ibctransfertypes.StoreKey],
-		app.GetSubspace(ibctransfertypes.ModuleName),
-		app.IBCFeeKeeper,
-		app.IBCKeeper.ChannelKeeper,
-		app.IBCKeeper.PortKeeper,
-		app.AccountKeeper,
-		app.BankKeeper,
-		scopedIBCTransferKeeper,
-		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
-	)
-
-	app.ICAHostKeeper = icahostkeeper.NewKeeper(
-		appCodec,
-		keys[icahosttypes.StoreKey],
-		app.GetSubspace(icahosttypes.SubModuleName),
-		app.IBCFeeKeeper, // use ics29 fee as ics4Wrapper in middleware stack
-		app.IBCKeeper.ChannelKeeper,
-		app.IBCKeeper.PortKeeper,
-		app.AccountKeeper,
-		scopedICAHostKeeper,
-		app.MsgServiceRouter(),
-		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
-	)
-	// set grpc router for ica host
-	app.ICAHostKeeper.WithQueryRouter(app.GRPCQueryRouter())
 
 	wasmDir := filepath.Join(homePath, "wasm")
 	wasmConfig, err := wasm.ReadWasmConfig(appOpts)
@@ -482,13 +383,7 @@ func NewChainApp(
 		app.AccountKeeper,
 		app.BankKeeper,
 		app.StakingKeeper,
-		// DistributionKeeper
-		nil,
-		app.IBCFeeKeeper,
-		app.IBCKeeper.ChannelKeeper,
-		app.IBCKeeper.PortKeeper,
-		scopedWasmKeeper,
-		app.IBCTransferKeeper,
+		nil, nil, nil, nil, nil, nil,
 		app.MsgServiceRouter(),
 		app.GRPCQueryRouter(),
 		wasmDir,
@@ -497,32 +392,6 @@ func NewChainApp(
 		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
 		wasmOpts...,
 	)
-
-	// Create Transfer Stack
-	var transferStack porttypes.IBCModule
-	transferStack = ibctransfer.NewIBCModule(app.IBCTransferKeeper)
-	transferStack = ibcfee.NewIBCMiddleware(transferStack, app.IBCFeeKeeper)
-	transferStack = thorchainkeeperv1.NewIBCModule(transferStack, app.ThorchainKeeper)
-
-	var wasmStack porttypes.IBCModule // Create fee enabled wasm ibc Stack
-	wasmStackIBCHandler := wasm.NewIBCHandler(app.WasmKeeper, app.IBCKeeper.ChannelKeeper, app.IBCFeeKeeper)
-	wasmStack = ibcfee.NewIBCMiddleware(wasmStackIBCHandler, app.IBCFeeKeeper)
-	wasmStack = thorchainkeeperv1.NewIBCModule(wasmStack, app.ThorchainKeeper)
-
-	// RecvPacket, message that originates from core IBC and goes down to app, the flow is:
-	// channel.RecvPacket -> fee.OnRecvPacket -> icaHost.OnRecvPacket
-	var icaHostStack porttypes.IBCModule
-	icaHostStack = icahost.NewIBCModule(app.ICAHostKeeper)
-	icaHostStack = ibcfee.NewIBCMiddleware(icaHostStack, app.IBCFeeKeeper)
-	icaHostStack = thorchainkeeperv1.NewIBCModule(icaHostStack, app.ThorchainKeeper)
-
-	// Create static IBC router, add app routes, then set and seal it
-	ibcRouter := porttypes.NewRouter().
-		AddRoute(wasmtypes.ModuleName, wasmStack).
-		AddRoute(ibctransfertypes.ModuleName, transferStack).
-		AddRoute(icahosttypes.SubModuleName, icaHostStack)
-
-	app.IBCKeeper.SetRouter(ibcRouter)
 
 	// --- Module Options ---
 	telemetryEnabled := cast.ToBool(appOpts.Get("telemetry.enabled"))
@@ -541,13 +410,11 @@ func NewChainApp(
 		app.BankKeeper,
 		app.AccountKeeper,
 		app.WasmKeeper,
-		app.IBCKeeper.ChannelKeeper,
 		keys[thorchaintypes.StoreKey],
 		telemetryEnabled,
 		testApp,
 	)
 	upgradeModule := upgrade.NewAppModule(app.UpgradeKeeper, app.AccountKeeper.AddressCodec())
-	capabilityModule := capability.NewAppModule(appCodec, *app.CapabilityKeeper, false)
 	wasmModule := wasm.NewAppModule(
 		appCodec,
 		&app.WasmKeeper,
@@ -557,10 +424,6 @@ func NewChainApp(
 		app.MsgServiceRouter(),
 		app.GetSubspace(wasmtypes.ModuleName),
 	)
-	ibcModule := ibc.NewAppModule(app.IBCKeeper)
-	ibcTransferModule := ibctransfer.NewAppModule(app.IBCTransferKeeper)
-	ibcFeeModule := ibcfee.NewAppModule(app.IBCFeeKeeper)
-	icaModule := ica.NewAppModule(nil, &app.ICAHostKeeper)
 
 	app.ModuleManager = module.NewManager(
 		genutilModule,
@@ -569,15 +432,10 @@ func NewChainApp(
 		upgradeModule,
 		paramsModule,
 		consensusModule,
-		capabilityModule,
 		// non sdk modules
 		app.ThorchainModule,
 		// Don't register wasm module - x/thorchain registers msg and query servers
 		// wasmModule,
-		ibcModule,
-		ibcTransferModule,
-		ibcFeeModule,
-		icaModule,
 	)
 
 	// BasicModuleManager defines the module BasicManager is in charge of setting up basic,
@@ -591,15 +449,10 @@ func NewChainApp(
 		upgradeModule,
 		paramsModule,
 		consensusModule,
-		capabilityModule,
 		mint.NewAppModule(appCodec, app.MintKeeper, app.AccountKeeper, nil, app.GetSubspace(minttypes.ModuleName)),
 		// non sdk modules
 		app.ThorchainModule,
 		wasmModule,
-		ibcModule,
-		ibcTransferModule,
-		ibcFeeModule,
-		icaModule,
 	)
 	app.BasicModuleManager.RegisterLegacyAminoCodec(legacyAmino)
 	app.BasicModuleManager.RegisterInterfaces(interfaceRegistry)
@@ -609,33 +462,22 @@ func NewChainApp(
 		upgradetypes.ModuleName,
 	)
 	// NOTE: staking module is required if HistoricalEntries param > 0
-	// NOTE: capability module's beginblocker must come before any modules using capabilities (e.g. IBC)
 	app.ModuleManager.SetOrderBeginBlockers(
 		minttypes.ModuleName,
 		stakingtypes.ModuleName,
 		genutiltypes.ModuleName,
-		capabilitytypes.ModuleName,
 		// additional non simd modules
 		thorchaintypes.ModuleName,
 		wasmtypes.ModuleName,
-		ibcexported.ModuleName,
-		ibctransfertypes.ModuleName,
-		ibcfeetypes.ModuleName,
-		icatypes.ModuleName,
 	)
 
 	app.ModuleManager.SetOrderEndBlockers(
 		govtypes.ModuleName,
 		stakingtypes.ModuleName,
 		genutiltypes.ModuleName,
-		capabilitytypes.ModuleName,
 		// additional non simd modules
 		thorchaintypes.ModuleName,
 		wasmtypes.ModuleName,
-		ibcexported.ModuleName,
-		ibctransfertypes.ModuleName,
-		ibcfeetypes.ModuleName,
-		icatypes.ModuleName,
 	)
 
 	// NOTE: The genutils module must occur after staking so that pools are
@@ -654,13 +496,8 @@ func NewChainApp(
 		paramstypes.ModuleName,
 		upgradetypes.ModuleName,
 		consensusparamtypes.ModuleName,
-		capabilitytypes.ModuleName,
 		thorchaintypes.ModuleName,
 		wasmtypes.ModuleName,
-		ibcexported.ModuleName,
-		ibctransfertypes.ModuleName,
-		ibcfeetypes.ModuleName,
-		icatypes.ModuleName,
 	}
 	app.ModuleManager.SetOrderInitGenesis(genesisModuleOrder...)
 	app.ModuleManager.SetOrderExportGenesis(genesisModuleOrder...)
@@ -703,7 +540,6 @@ func NewChainApp(
 	// initialize stores
 	app.MountKVStores(keys)
 	app.MountTransientStores(tkeys)
-	app.MountMemoryStores(memKeys)
 
 	// initialize BaseApp
 	app.SetInitChainer(app.InitChainer)
@@ -723,7 +559,6 @@ func NewChainApp(
 			WasmConfig:            &wasmConfig,
 			WasmKeeper:            &app.WasmKeeper,
 			TXCounterStoreService: runtime.NewKVStoreService(keys[wasmtypes.StoreKey]),
-			IBCKeeper:             app.IBCKeeper,
 		},
 	)
 	if err != nil {
@@ -739,12 +574,6 @@ func NewChainApp(
 			panic(fmt.Errorf("failed to register snapshot extension: %s", err))
 		}
 	}
-
-	app.ScopedIBCKeeper = scopedIBCKeeper
-	app.ScopedIBCTransferKeeper = scopedIBCTransferKeeper
-	app.ScopedIBCFeeKeeper = scopedIBCFeeKeeper
-	app.ScopedICAHostKeeper = scopedICAHostKeeper
-	app.ScopedWasmKeeper = scopedWasmKeeper
 
 	// In v0.46, the SDK introduces _postHandlers_. PostHandlers are like
 	// antehandlers, but are run _after_ the `runMsgs` execution. They are also
