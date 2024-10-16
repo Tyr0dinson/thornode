@@ -32,13 +32,11 @@ import (
 	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )
 
-// TODO: Does/should this query exist?
-// QueryPOL = Query{Key: "pol", EndpointTemplate: "/%s/pol"}
-// queries only available on regtest builds
-// QueryExport = Query{Key: "export", EndpointTemplate: "/%s/export"}
-
 var (
-	// initManager   = func(mgr *Mgrs, ctx cosmos.Context) {}
+	initManager = func(_ cosmos.Context, _ *Mgrs) {}
+	queryExport = func(_ sdk.Context, _ *Mgrs) ([]byte, error) {
+		return nil, fmt.Errorf("export query not supported")
+	}
 	tendermintClient   *tmhttp.HTTP
 	initTendermintOnce = sync.Once{}
 )
