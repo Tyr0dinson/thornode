@@ -1039,12 +1039,16 @@ func sendMsg(out io.Writer, routine int, msg sdk.Msg, signer sdk.AccAddress, seq
 		return err
 	}
 
+	res := buf.Bytes()
+
 	// extract txhash from output json
 	var txRes sdk.TxResponse
-	err = encodingConfig.Codec.UnmarshalJSON(buf.Bytes(), &txRes)
+	err = encodingConfig.Codec.UnmarshalJSON(res, &txRes)
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to unmarshal tx response")
 	}
+
+	log.Debug().Str("tx", string(res)).Msg("tx sent")
 
 	// fail if tx did not send, otherwise add to out native tx ids
 	if txRes.Code != 0 {
