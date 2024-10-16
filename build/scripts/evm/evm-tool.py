@@ -44,7 +44,14 @@ class EVMSetupTool:
 
         # on AVAX the admin key is the local network funded account
         if chain == "AVAX" and len(self.web3.geth.personal.list_accounts()) == 0:
-            self.web3.geth.personal.import_raw_key(self.admin_key, "")
+            try:
+                self.web3.geth.personal.import_raw_key(self.admin_key, "")
+            except ValueError as e:
+                error_message = str(e)
+                if "account already exists" in error_message:
+                    print("admin key already imported.")
+                else:
+                    raise
 
         # fund simulation account with 1m ETH
         coinbase_addr = self.web3.geth.personal.list_accounts()[0]
@@ -79,6 +86,8 @@ class EVMSetupTool:
             return "ETH.ETH"
         elif self.chain == "BSC":
             return "BSC.BNB"
+        elif self.chain == "BASE":
+            return "BASE.ETH"
         else:
             logging.fatal(f"unknown chain: {self.chain}")
 
@@ -346,6 +355,7 @@ def main():
         "AVAX": "http://avalanche:9650/ext/bc/C/rpc",
         "ETH": "http://ethereum:8545",
         "BSC": "http://binance-smart:8545",
+        "BASE": "http://base:8545",
     }
 
     # parse args

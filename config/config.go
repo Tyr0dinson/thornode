@@ -506,6 +506,7 @@ type Bifrost struct {
 		ETH  BifrostChainConfiguration `mapstructure:"eth"`
 		GAIA BifrostChainConfiguration `mapstructure:"gaia"`
 		LTC  BifrostChainConfiguration `mapstructure:"ltc"`
+		BASE BifrostChainConfiguration `mapstructure:"base"`
 	} `mapstructure:"chains"`
 	TSS             BifrostTSSConfiguration `mapstructure:"tss"`
 	ObserverLevelDB LevelDBOptions          `mapstructure:"observer_leveldb"`
@@ -521,6 +522,7 @@ func (b Bifrost) GetChains() map[common.Chain]BifrostChainConfiguration {
 		common.ETHChain:  b.Chains.ETH,
 		common.GAIAChain: b.Chains.GAIA,
 		common.LTCChain:  b.Chains.LTC,
+		common.BASEChain: b.Chains.BASE,
 	}
 }
 
