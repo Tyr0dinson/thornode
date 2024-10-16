@@ -156,13 +156,13 @@ func (m *QueryInboundAddressesResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]by
 }
 
 // QueryInvariantResponse
-// No override needed (contains no int64 parameters) 
+// No override needed (contains no int64 parameters)
 // func (m *QueryInvariantResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
 // 	return jsonify(m)
 // }
 
 // QueryInvariantsResponse
-// No override needed (contains no int64 parameters) 
+// No override needed (contains no int64 parameters)
 // func (m *QueryInvariantsResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
 // 	return jsonify(m)
 // }
@@ -230,7 +230,7 @@ func (m *QueryMimirWithKeyResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, 
 }
 
 // QueryNetworkResponse
-// No override needed (contains no int64 parameters) 
+// No override needed (contains no int64 parameters)
 // func (m *QueryNetworkResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
 // 	return jsonify(m)
 // }
@@ -305,7 +305,7 @@ func (m *QueryRagnarokResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, erro
 }
 
 // QueryRunePoolResponse
-// No override needed (contains no int64 parameters) 
+// No override needed (contains no int64 parameters)
 // func (m *QueryRunePoolResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
 // 	return jsonify(m)
 // }
@@ -356,7 +356,7 @@ func (m *QueryTradeAccountsResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte,
 }
 
 // QueryTradeUnitResponse
-// No override needed (contains no int64 parameters) 
+// No override needed (contains no int64 parameters)
 // func (m *QueryTradeUnitResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
 // 	return jsonify(m)
 // }
@@ -407,7 +407,7 @@ func (m *QueryVaultResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) 
 }
 
 // QueryVaultsPubkeysResponse
-// No override needed (contains no int64 parameters) 
+// No override needed (contains no int64 parameters)
 // func (m *QueryVaultsPubkeysResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
 // 	return jsonify(m)
 // }
@@ -415,6 +415,12 @@ func (m *QueryVaultResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) 
 // QueryVersionResponse
 func (m *QueryVersionResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
 	return jsonify(m)
+}
+
+// QueryExportResponse
+// RegressionTest only
+func (m *QueryExportResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
+	return m.Content, nil
 }
 
 // Backwards compatibility for /auth/accounts/{address} endpoint

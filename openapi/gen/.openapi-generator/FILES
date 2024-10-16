@@ -6,6 +6,7 @@ api_auth.go
 api_block.go
 api_borrowers.go
 api_clout.go
+api_export.go
 api_health.go
 api_invariants.go
 api_liquidity_providers.go
@@ -50,6 +51,7 @@ docs/CloutApi.md
 docs/Coin.md
 docs/ConstantsResponse.md
 docs/DerivedPool.md
+docs/ExportApi.md
 docs/HealthApi.md
 docs/InboundAddress.md
 docs/InboundConfirmationCountedStage.md

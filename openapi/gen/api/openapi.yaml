@@ -2267,6 +2267,19 @@ paths:
           description: OK
       tags:
       - Block
+  /thorchain/export:
+    get:
+      description: Returns genesis export
+      operationId: export
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExportResponse'
+          description: OK
+      tags:
+      - Export
 components:
   parameters:
     queryHeight:
@@ -5430,6 +5443,8 @@ components:
           items:
             $ref: '#/components/schemas/MimirVote'
           type: array
+      type: object
+    ExportResponse:
       type: object
     BlockResponse:
       example:

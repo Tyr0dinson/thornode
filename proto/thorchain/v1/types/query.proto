@@ -46,6 +46,7 @@ import "types/type_tss_metric.proto";
 import "types/query_keystore.proto";
 import "types/query_upgrade.proto";
 import "types/query_account.proto";
+import "types/query_export.proto";
 
 option (gogoproto.marshaler_all) = true;
 
@@ -54,6 +55,11 @@ service Query {
   // Account returns account details for a given address.
   rpc Account(QueryAccountRequest) returns (QueryAccountResponse) {
     option (google.api.http).get = "/auth/accounts/{address}";
+  }
+
+  // Export returns the content of the export file (regression test only).
+  rpc Export(QueryExportRequest) returns (QueryExportResponse) {
+    option (google.api.http).get = "/thorchain/export";
   }
 
   // Returns the extended pool information for the provided asset.

@@ -1414,6 +1414,19 @@ paths:
               schema:
                 $ref: "#/components/schemas/BlockResponse"
 
+  /thorchain/export:
+    get:
+      description: Returns genesis export
+      operationId: export
+      tags:
+        - Export
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExportResponse"
 ########################################################################################
 # Components
 ########################################################################################
@@ -3738,6 +3751,9 @@ components:
                 format: int64
               signer:
                 type: string
+
+    ExportResponse:
+      type: object
 
     BlockResponse:
       type: object
