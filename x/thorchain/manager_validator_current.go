@@ -6,8 +6,8 @@ import (
 	"net"
 	"sort"
 
+	abci "github.com/cometbft/cometbft/abci/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	abci "github.com/tendermint/tendermint/abci/types"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
@@ -34,8 +34,8 @@ func newValidatorMgrVCUR(k keeper.Keeper, networkMgr NetworkManager, txOutStore 
 	}
 }
 
-// BeginBlock when block begin
-func (vm *ValidatorMgrVCUR) BeginBlock(ctx cosmos.Context, mgr Manager, existingValidators []string) error {
+// PreBlock when block begin
+func (vm *ValidatorMgrVCUR) PreBlock(ctx cosmos.Context, mgr Manager, existingValidators []string) error {
 	vm.existingValidators = existingValidators
 	height := ctx.BlockHeight()
 	if height == genesisBlockHeight {

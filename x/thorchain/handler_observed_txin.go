@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/armon/go-metrics"
 	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/telemetry"
 	se "github.com/cosmos/cosmos-sdk/types/errors"
+	"github.com/hashicorp/go-metrics"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
@@ -57,6 +57,7 @@ func (h ObservedTxInHandler) validate(ctx cosmos.Context, msg MsgObservedTxIn) e
 }
 
 func (h ObservedTxInHandler) validateV1(ctx cosmos.Context, msg MsgObservedTxIn) error {
+	// ValidateBasic is also executed in message service router's handler and isn't versioned there
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}

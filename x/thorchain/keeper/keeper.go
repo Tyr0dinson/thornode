@@ -3,7 +3,7 @@ package keeper
 import (
 	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/codec"
-	upgradetypes "github.com/cosmos/cosmos-sdk/x/upgrade/types"
+	upgradetypes "cosmossdk.io/x/upgrade/types"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
@@ -191,7 +191,7 @@ type KeeperUpgrade interface {
 	GetUpgradeVoteIterator(ctx cosmos.Context, name string) cosmos.Iterator
 
 	// x/upgrade module methods
-	GetUpgradePlan(ctx cosmos.Context) (upgradetypes.Plan, bool)
+	GetUpgradePlan(ctx cosmos.Context) (upgradetypes.Plan, error)
 	ScheduleUpgrade(ctx cosmos.Context, plan upgradetypes.Plan) error
 	ClearUpgradePlan(ctx cosmos.Context)
 }

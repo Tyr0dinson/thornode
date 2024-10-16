@@ -37,8 +37,8 @@ func (gm *GasMgrVCUR) reset() {
 	gm.gasCount = make(map[common.Asset]int64)
 }
 
-// BeginBlock need to be called when a new block get created , update the internal EventGas to new one
-func (gm *GasMgrVCUR) BeginBlock() {
+// PreBlock need to be called when a new block get created , update the internal EventGas to new one
+func (gm *GasMgrVCUR) PreBlock() {
 	gm.reset()
 }
 

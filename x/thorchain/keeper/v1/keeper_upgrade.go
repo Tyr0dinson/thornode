@@ -7,7 +7,7 @@ import (
 	"math/big"
 	"strings"
 
-	upgradetypes "github.com/cosmos/cosmos-sdk/x/upgrade/types"
+	upgradetypes "cosmossdk.io/x/upgrade/types"
 
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
@@ -15,7 +15,7 @@ import (
 )
 
 // GetUpgradePlan proxies through to the upgrade keeper
-func (k KVStore) GetUpgradePlan(ctx cosmos.Context) (upgradetypes.Plan, bool) {
+func (k KVStore) GetUpgradePlan(ctx cosmos.Context) (upgradetypes.Plan, error) {
 	return k.upgradeKeeper.GetUpgradePlan(ctx)
 }
 

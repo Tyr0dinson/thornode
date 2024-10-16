@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/armon/go-metrics"
+	"github.com/hashicorp/go-metrics"
 	"github.com/cosmos/cosmos-sdk/telemetry"
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"

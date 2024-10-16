@@ -1,0 +1,21 @@
+syntax = "proto3";
+package types;
+
+option go_package = "gitlab.com/thorchain/thornode/x/thorchain/types";
+
+import "gogoproto/gogo.proto";
+
+option (gogoproto.marshaler_all) = true;
+
+message QueryQueueRequest{}
+
+message QueryQueueResponse{
+  int64 swap = 1;
+	// number of signed outbound tx in the queue
+  int64 outbound = 2;
+  int64 internal = 3;
+	// scheduled outbound value in RUNE
+  string scheduled_outbound_value = 4;
+	// scheduled outbound clout in RUNE
+  string scheduled_outbound_clout = 5;
+}

@@ -8,13 +8,13 @@ import (
 	"strings"
 	"time"
 
+	tmhttp "github.com/cometbft/cometbft/rpc/client/http"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/flags"
 	"github.com/cosmos/cosmos-sdk/client/tx"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"github.com/cosmos/cosmos-sdk/types/tx/signing"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
-	tmhttp "github.com/tendermint/tendermint/rpc/client/http"
 
 	"gitlab.com/thorchain/thornode/app"
 	"gitlab.com/thorchain/thornode/app/params"
@@ -73,8 +73,7 @@ func clientContextAndFactory(routine int) (client.Context, tx.Factory) {
 	clientCtx := client.Context{
 		Client:            rpcClient,
 		ChainID:           "thorchain",
-		JSONCodec:         encodingConfig.Marshaler,
-		Codec:             encodingConfig.Marshaler,
+		Codec:             encodingConfig.Codec,
 		InterfaceRegistry: encodingConfig.InterfaceRegistry,
 		Keyring:           keyRing,
 		BroadcastMode:     flags.BroadcastSync,
@@ -178,7 +177,7 @@ func init() {
 ////////////////////////////////////////////////////////////////////////////////////////
 
 var (
-	keyRing            = keyring.NewInMemory()
+	keyRing            = keyring.NewInMemory(encodingConfig.Codec)
 	addressToName      = map[string]string{} // thor...->dog, 0x...->dog
 	templateAddress    = map[string]string{} // addr_thor_dog->thor..., addr_eth_dog->0x...
 	templatePubKey     = map[string]string{} // pubkey_dog->thorpub...

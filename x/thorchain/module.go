@@ -1,37 +1,46 @@
 package thorchain
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 
+	"cosmossdk.io/core/appmodule"
+	"cosmossdk.io/x/tx/signing"
 	"github.com/blang/semver"
+	abci "github.com/cometbft/cometbft/abci/types"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"
 	cdctypes "github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module"
-	sdkRest "github.com/cosmos/cosmos-sdk/x/auth/client/rest"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
-	upgradekeeper "github.com/cosmos/cosmos-sdk/x/upgrade/keeper"
-	"github.com/gorilla/mux"
+	upgradekeeper "cosmossdk.io/x/upgrade/keeper"
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/spf13/cobra"
-	abci "github.com/tendermint/tendermint/abci/types"
+	"google.golang.org/protobuf/reflect/protoreflect"
 
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
 
 	"gitlab.com/thorchain/thornode/x/thorchain/client/cli"
-	"gitlab.com/thorchain/thornode/x/thorchain/client/rest"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
+	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )
 
 // type check to ensure the interface is properly implemented
 var (
-	_ module.AppModule      = AppModule{}
-	_ module.AppModuleBasic = AppModuleBasic{}
+	_ module.AppModule          = AppModule{}
+	_ module.AppModuleBasic     = AppModuleBasic{}
+	_ module.AppModuleGenesis   = AppModule{}
+	_ module.HasABCIGenesis     = AppModule{}
+	_ module.HasServices        = AppModule{}
+	_ module.HasABCIEndBlock    = AppModule{}
+	_ appmodule.HasBeginBlocker = AppModule{}
+
+// _ appmodule.HasPreBlocker = AppModule{} // We do not have an expected PreBlocker
 )
 
 // AppModuleBasic app module Basics object
@@ -44,7 +53,7 @@ func (AppModuleBasic) Name() string {
 
 // RegisterLegacyAminoCodec registers the module's types for the given codec.
 func (AppModuleBasic) RegisterLegacyAminoCodec(cdc *codec.LegacyAmino) {
-	RegisterCodec(cdc)
+	RegisterLegacyAminoCodec(cdc)
 }
 
 // RegisterInterfaces registers the module's interface types
@@ -67,17 +76,12 @@ func (AppModuleBasic) ValidateGenesis(cdc codec.JSONCodec, config client.TxEncod
 	return ValidateGenesis(data)
 }
 
-// RegisterRESTRoutes register rest routes
-func (AppModuleBasic) RegisterRESTRoutes(ctx client.Context, rtr *mux.Router) {
-	rest.RegisterRoutes(ctx, rtr, StoreKey)
-	sdkRest.RegisterTxRoutes(ctx, rtr)
-	sdkRest.RegisterRoutes(ctx, rtr, StoreKey)
-}
-
 // RegisterGRPCGatewayRoutes registers the gRPC Gateway routes for the mint module.
 // thornode current doesn't have grpc endpoint yet
 func (AppModuleBasic) RegisterGRPCGatewayRoutes(clientCtx client.Context, mux *runtime.ServeMux) {
-	// types.RegisterQueryHandlerClient(context.Background(), mux, types.NewQueryClient(clientCtx))
+	if err := types.RegisterQueryHandlerClient(context.Background(), mux, types.NewQueryClient(clientCtx)); err != nil {
+		panic(err)
+	}
 }
 
 // GetQueryCmd get the root query command of this module
@@ -96,8 +100,9 @@ func (AppModuleBasic) GetTxCmd() *cobra.Command {
 type AppModule struct {
 	AppModuleBasic
 	mgr              *Mgrs
-	keybaseStore     cosmos.KeybaseStore
 	telemetryEnabled bool
+	msgServer        types.MsgServer
+	queryServer      types.QueryServer
 }
 
 // NewAppModule creates a new AppModule Object
@@ -106,73 +111,65 @@ func NewAppModule(
 	cdc codec.Codec,
 	coinKeeper bankkeeper.Keeper,
 	accountKeeper authkeeper.AccountKeeper,
-	upgradeKeeper upgradekeeper.Keeper,
+	upgradeKeeper *upgradekeeper.Keeper,
 	storeKey cosmos.StoreKey,
 	telemetryEnabled bool,
+	testApp bool,
 ) AppModule {
-	kb, err := cosmos.GetKeybase(os.Getenv(cosmos.EnvChainHome))
-	if err != nil {
-		panic(err)
+	kb := cosmos.KeybaseStore{}
+	var err error
+	if !testApp {
+		kb, err = cosmos.GetKeybase(os.Getenv(cosmos.EnvChainHome))
+		if err != nil {
+			panic(err)
+		}
 	}
+	mgr := NewManagers(k, cdc, coinKeeper, accountKeeper, upgradeKeeper, storeKey)
 	return AppModule{
 		AppModuleBasic:   AppModuleBasic{},
-		mgr:              NewManagers(k, cdc, coinKeeper, accountKeeper, upgradeKeeper, storeKey),
-		keybaseStore:     kb,
+		mgr:              mgr,
 		telemetryEnabled: telemetryEnabled,
+		msgServer:        NewMsgServerImpl(mgr),
+		queryServer:      NewQueryServerImpl(mgr, kb),
 	}
 }
 
-func (AppModule) Name() string {
-	return ModuleName
-}
+func (AppModule) IsAppModule() {}
 
-func (AppModule) ConsensusVersion() uint64 {
-	return 1
-}
+func (AppModule) IsOnePerModuleType() {}
 
-func (am AppModule) RegisterInvariants(ir sdk.InvariantRegistry) {}
+// func (AppModule) Name() string {
+// 	return ModuleName
+// }
 
-func (am AppModule) Route() cosmos.Route {
-	return cosmos.NewRoute(RouterKey, NewExternalHandler(am.mgr))
-}
+// func (AppModule) ConsensusVersion() uint64 {
+// 	return 1
+// }
 
-func (am AppModule) NewHandler() sdk.Handler {
-	return NewExternalHandler(am.mgr)
-}
+func (am AppModule) RegisterInvariants(_ sdk.InvariantRegistry) {}
 
 func (am AppModule) QuerierRoute() string {
-	return ModuleName
-}
-
-// LegacyQuerierHandler returns the capability module's Querier.
-func (am AppModule) LegacyQuerierHandler(legacyQuerierCdc *codec.LegacyAmino) sdk.Querier {
-	return NewQuerier(am.mgr, am.keybaseStore)
+	return types.QuerierRoute
 }
 
 // RegisterServices registers module services.
 func (am AppModule) RegisterServices(cfg module.Configurator) {
-	// types.RegisterMsgServer(cfg.MsgServer(), keeper.NewMsgServerImpl(am.keeper))
-	// types.RegisterQueryServer(cfg.QueryServer(), am.keeper)
+	types.RegisterMsgServer(cfg.MsgServer(), am.msgServer)
+	types.RegisterQueryServer(cfg.QueryServer(), am.queryServer)
 }
 
-func (am AppModule) NewQuerierHandler() sdk.Querier {
-	return func(ctx cosmos.Context, path []string, req abci.RequestQuery) ([]byte, error) {
-		return nil, nil
-	}
-}
-
-// BeginBlock called when a block get proposed
-func (am AppModule) BeginBlock(ctx sdk.Context, req abci.RequestBeginBlock) {
-	info := req.GetLastCommitInfo()
+// TODO: rename BeginBlock functions to PreBlock functions
+func (am AppModule) PreBlock(ctx sdk.Context, req *abci.RequestFinalizeBlock) error {
+	info := req.GetDecidedLastCommit()
 	var existingValidators []string
 	for _, v := range info.GetVotes() {
 		addr := sdk.ValAddress(v.Validator.GetAddress())
 		existingValidators = append(existingValidators, addr.String())
 	}
 
-	ctx.Logger().Debug("Begin Block", "height", req.Header.Height)
+	ctx.Logger().Debug("PreBlock", "height", ctx.BlockHeight())
 	// Check/Update the network version before checking the local version or checking whether to do a new-version store migration
-	if err := am.mgr.BeginBlock(ctx); err != nil {
+	if err := am.mgr.PreBlock(ctx); err != nil {
 		ctx.Logger().Error("fail to get managers", "error", err)
 	}
 
@@ -190,22 +187,32 @@ func (am AppModule) BeginBlock(ctx sdk.Context, req abci.RequestBeginBlock) {
 
 	am.mgr.Keeper().ClearObservingAddresses(ctx)
 
-	am.mgr.GasMgr().BeginBlock()
-	if err := am.mgr.NetworkMgr().BeginBlock(ctx, am.mgr); err != nil {
+	am.mgr.GasMgr().PreBlock()
+	if err := am.mgr.NetworkMgr().PreBlock(ctx, am.mgr); err != nil {
 		ctx.Logger().Error("fail to begin network manager", "error", err)
 	}
-	am.mgr.Slasher().BeginBlock(ctx, req, am.mgr.GetConstants())
-	if err := am.mgr.ValidatorMgr().BeginBlock(ctx, am.mgr, existingValidators); err != nil {
+	am.mgr.Slasher().PreBlock(ctx, req, am.mgr.GetConstants())
+	if err := am.mgr.ValidatorMgr().PreBlock(ctx, am.mgr, existingValidators); err != nil {
 		ctx.Logger().Error("Fail to begin block on validator", "error", err)
 	}
+
+	return nil
+}
+
+// BeginBlock called when a block get proposed
+func (am AppModule) BeginBlock(goCtx context.Context) error {
+	ctx := sdk.UnwrapSDKContext(goCtx)
+	ctx.Logger().Debug("Begin Block", "height", ctx.BlockHeight())
 	if err := am.mgr.Keeper().RemoveExpiredUpgradeProposals(ctx); err != nil {
 		ctx.Logger().Error("Failed to remove expired upgrade proposals", "error", err)
 	}
+	return nil
 }
 
 // EndBlock called when a block get committed
-func (am AppModule) EndBlock(ctx sdk.Context, req abci.RequestEndBlock) []abci.ValidatorUpdate {
-	ctx.Logger().Debug("End Block", "height", req.Height)
+func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, error) {
+	ctx := sdk.UnwrapSDKContext(goCtx)
+	ctx.Logger().Debug("End Block", "height", ctx.BlockHeight())
 
 	if err := am.mgr.SwapQ().EndBlock(ctx, am.mgr); err != nil {
 		ctx.Logger().Error("fail to process swap queue", "error", err)
@@ -249,7 +256,7 @@ func (am AppModule) EndBlock(ctx sdk.Context, req abci.RequestEndBlock) []abci.V
 		}
 	}
 
-	return validators
+	return validators, nil
 }
 
 // InitGenesis initialise genesis
@@ -263,4 +270,25 @@ func (am AppModule) InitGenesis(ctx sdk.Context, cdc codec.JSONCodec, data json.
 func (am AppModule) ExportGenesis(ctx sdk.Context, cdc codec.JSONCodec) json.RawMessage {
 	gs := ExportGenesis(ctx, am.mgr.Keeper())
 	return ModuleCdc.MustMarshalJSON(&gs)
+}
+
+func DefineCustomGetSigners(signingOptions *signing.Options) {
+	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgBan"), types.MsgBanCustomGetSigners)
+	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgDeposit"), types.MsgDepositCustomGetSigners)
+	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgErrataTx"), types.MsgErrataCustomGetSigners)
+	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgMimir"), types.MsgMimirCustomGetSigners)
+	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgNetworkFee"), types.MsgNetworkFeeCustomGetSigners)
+	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgNodePauseChain"), types.MsgNodePauseChainCustomGetSigners)
+	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgObservedTxIn"), types.MsgObservedTxInCustomGetSigners)
+	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgObservedTxOut"), types.MsgObservedTxOutCustomGetSigners)
+	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgSend"), types.MsgSendCustomGetSigners)
+	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgSetIPAddress"), types.MsgSetIPAddressCustomGetSigners)
+	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgSetNodeKeys"), types.MsgSetNodeKeysCustomGetSigners)
+	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgSolvency"), types.MsgSolvencyCustomGetSigners)
+	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgTssKeysignFail"), types.MsgTssKeysignFailCustomGetSigners)
+	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgTssPool"), types.MsgTssPoolCustomGetSigners)
+	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgSetVersion"), types.MsgSetVersionCustomGetSigners)
+	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgProposeUpgrade"), types.MsgProposeUpgradeCustomGetSigners)
+	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgApproveUpgrade"), types.MsgApproveUpgradeCustomGetSigners)
+	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgRejectUpgrade"), types.MsgRejectUpgradeCustomGetSigners)
 }

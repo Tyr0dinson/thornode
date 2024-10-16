@@ -1,8 +1,27 @@
 package types
 
 import (
+	sdk "github.com/cosmos/cosmos-sdk/types"
+
+	"google.golang.org/protobuf/proto"
+
 	"github.com/blang/semver"
+	"gitlab.com/thorchain/thornode/api/types"
 	"gitlab.com/thorchain/thornode/common/cosmos"
+)
+
+var (
+	_ sdk.Msg = &MsgProposeUpgrade{}
+	_ sdk.HasValidateBasic = &MsgProposeUpgrade{}
+	_ sdk.LegacyMsg = &MsgProposeUpgrade{}
+
+	_ sdk.Msg = &MsgApproveUpgrade{}
+	_ sdk.HasValidateBasic = &MsgApproveUpgrade{}
+	_ sdk.LegacyMsg = &MsgApproveUpgrade{}
+
+	_ sdk.Msg = &MsgRejectUpgrade{}
+	_ sdk.HasValidateBasic = &MsgRejectUpgrade{}
+	_ sdk.LegacyMsg = &MsgRejectUpgrade{}
 )
 
 // NewMsgProposeUpgrade is a constructor function for NewMsgProposeUpgrade
@@ -16,12 +35,6 @@ func NewMsgProposeUpgrade(name string, height int64, info string, signer cosmos.
 		Signer: signer,
 	}
 }
-
-// Route should return the route key of the module
-func (m *MsgProposeUpgrade) Route() string { return RouterKey }
-
-// Type should return the action
-func (m MsgProposeUpgrade) Type() string { return "propose_upgrade" }
 
 // ValidateBasic runs stateless checks on the message
 func (m *MsgProposeUpgrade) ValidateBasic() error {
@@ -46,14 +59,14 @@ func (m *MsgProposeUpgrade) ValidateBasic() error {
 	return nil
 }
 
-// GetSignBytes encodes the message for signing
-func (m *MsgProposeUpgrade) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(m))
-}
-
 // GetSigners defines whose signature is required
 func (m *MsgProposeUpgrade) GetSigners() []cosmos.AccAddress {
 	return []cosmos.AccAddress{m.Signer}
+}
+
+func MsgProposeUpgradeCustomGetSigners(m proto.Message) ([][]byte, error) {
+	msg := m.(*types.MsgProposeUpgrade)
+	return [][]byte{msg.Signer}, nil
 }
 
 // NewMsgApproveUpgrade is a constructor function for NewMsgApproveUpgrade
@@ -63,12 +76,6 @@ func NewMsgApproveUpgrade(name string, signer cosmos.AccAddress) *MsgApproveUpgr
 		Signer: signer,
 	}
 }
-
-// Route should return the route key of the module
-func (m *MsgApproveUpgrade) Route() string { return RouterKey }
-
-// Type should return the action
-func (m MsgApproveUpgrade) Type() string { return "approve_upgrade" }
 
 // ValidateBasic runs stateless checks on the message
 func (m *MsgApproveUpgrade) ValidateBasic() error {
@@ -81,14 +88,14 @@ func (m *MsgApproveUpgrade) ValidateBasic() error {
 	return nil
 }
 
-// GetSignBytes encodes the message for signing
-func (m *MsgApproveUpgrade) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(m))
-}
-
 // GetSigners defines whose signature is required
 func (m *MsgApproveUpgrade) GetSigners() []cosmos.AccAddress {
 	return []cosmos.AccAddress{m.Signer}
+}
+
+func MsgApproveUpgradeCustomGetSigners(m proto.Message) ([][]byte, error) {
+	msg := m.(*types.MsgApproveUpgrade)
+	return [][]byte{msg.Signer}, nil
 }
 
 // NewMsgRejectUpgrade is a constructor function for NewMsgRejectUpgrade
@@ -98,12 +105,6 @@ func NewMsgRejectUpgrade(name string, signer cosmos.AccAddress) *MsgRejectUpgrad
 		Signer: signer,
 	}
 }
-
-// Route should return the route key of the module
-func (m *MsgRejectUpgrade) Route() string { return RouterKey }
-
-// Type should return the action
-func (m MsgRejectUpgrade) Type() string { return "reject_upgrade" }
 
 // ValidateBasic runs stateless checks on the message
 func (m *MsgRejectUpgrade) ValidateBasic() error {
@@ -116,12 +117,12 @@ func (m *MsgRejectUpgrade) ValidateBasic() error {
 	return nil
 }
 
-// GetSignBytes encodes the message for signing
-func (m *MsgRejectUpgrade) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(m))
-}
-
 // GetSigners defines whose signature is required
 func (m *MsgRejectUpgrade) GetSigners() []cosmos.AccAddress {
 	return []cosmos.AccAddress{m.Signer}
+}
+
+func MsgRejectUpgradeCustomGetSigners(m proto.Message) ([][]byte, error) {
+	msg := m.(*types.MsgRejectUpgrade)
+	return [][]byte{msg.Signer}, nil
 }

@@ -9,7 +9,7 @@ import (
 	keeperv1 "gitlab.com/thorchain/thornode/x/thorchain/keeper/v1"
 
 	"github.com/blang/semver"
-	upgradetypes "github.com/cosmos/cosmos-sdk/x/upgrade/types"
+	upgradetypes "cosmossdk.io/x/upgrade/types"
 )
 
 // ProposeUpgradeHandler is to handle the ProposeUpgrade message
@@ -261,8 +261,9 @@ func (h RejectUpgradeHandler) handle(ctx cosmos.Context, msg *MsgRejectUpgrade) 
 }
 
 func scheduleUpgradeIfNecessary(ctx cosmos.Context, k keeper.Keeper, name string) error {
-	upgradePlan, upgradeScheduled := k.GetUpgradePlan(ctx)
-	if upgradeScheduled && upgradePlan.Name == name {
+	// TODO-Steve: review with Andrew
+	upgradePlan, upgradePlanErr := k.GetUpgradePlan(ctx)
+	if upgradePlanErr != nil && upgradePlan.Name == name {
 		// already scheduled
 		return nil
 	}
@@ -282,7 +283,7 @@ func scheduleUpgradeIfNecessary(ctx cosmos.Context, k keeper.Keeper, name string
 	}
 
 	if uq.Approved {
-		if upgradeScheduled {
+		if upgradePlanErr == nil {
 			return fmt.Errorf("a different upgrade is already scheduled: %s", upgradePlan.Name)
 		}
 
@@ -298,8 +299,9 @@ func scheduleUpgradeIfNecessary(ctx cosmos.Context, k keeper.Keeper, name string
 }
 
 func clearUpgradeIfNecessary(ctx cosmos.Context, k keeper.Keeper, name string) error {
-	upgradePlan, upgradeScheduled := k.GetUpgradePlan(ctx)
-	if !upgradeScheduled || (upgradeScheduled && upgradePlan.Name != name) {
+	// TODO-Steve: review with Andrew
+	upgradePlan, err := k.GetUpgradePlan(ctx)
+	if err != nil || upgradePlan.Name != name {
 		// upgrade by this name not scheduled
 		return nil
 	}

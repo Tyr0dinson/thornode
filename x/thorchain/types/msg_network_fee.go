@@ -1,8 +1,19 @@
 package types
 
 import (
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	
+	"google.golang.org/protobuf/proto"
+
+	"gitlab.com/thorchain/thornode/api/types"
 	"gitlab.com/thorchain/thornode/common"
 	cosmos "gitlab.com/thorchain/thornode/common/cosmos"
+)
+
+var (
+	_ sdk.Msg = &MsgNetworkFee{}
+	_ sdk.HasValidateBasic = &MsgNetworkFee{}
+	_ sdk.LegacyMsg = &MsgNetworkFee{}
 )
 
 // NewMsgNetworkFee create a new instance of MsgNetworkFee
@@ -16,13 +27,10 @@ func NewMsgNetworkFee(blockHeight int64, chain common.Chain, transactionSize, tr
 	}
 }
 
-// Route should return the Route of the module
-func (m *MsgNetworkFee) Route() string { return RouterKey }
-
-// Type should return the action
-func (m MsgNetworkFee) Type() string { return "set_network_fee" }
-
-// ValidateBasic runs stateless checks on the message
+// ValidateBasic implements HasValidateBasic
+// ValidateBasic is now ran in the message service router handler for messages that
+// used to be routed using the external handler and only when HasValidateBasic is implemented. 
+// No versioning is used there.
 func (m *MsgNetworkFee) ValidateBasic() error {
 	if m.BlockHeight <= 0 {
 		return cosmos.ErrUnknownRequest("block height can't be negative, or zero")
@@ -42,12 +50,11 @@ func (m *MsgNetworkFee) ValidateBasic() error {
 	return nil
 }
 
-// GetSignBytes encodes the message for signing
-func (m *MsgNetworkFee) GetSignBytes() []byte {
-	return cosmos.MustSortJSON(ModuleCdc.MustMarshalJSON(m))
-}
-
 // GetSigners defines whose signature is required
 func (m *MsgNetworkFee) GetSigners() []cosmos.AccAddress {
 	return []cosmos.AccAddress{m.Signer}
+}
+
+func MsgNetworkFeeCustomGetSigners(m proto.Message) ([][]byte, error) {
+	return [][]byte{m.(*types.MsgNetworkFee).Signer}, nil
 }

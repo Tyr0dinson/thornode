@@ -54,6 +54,7 @@ func (h NodePauseChainHandler) validate(ctx cosmos.Context, msg MsgNodePauseChai
 }
 
 func (h NodePauseChainHandler) validateV1(ctx cosmos.Context, msg MsgNodePauseChain) error {
+	// ValidateBasic is also executed in message service router's handler and isn't versioned there
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}

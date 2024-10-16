@@ -1,0 +1,81 @@
+syntax = "proto3";
+package types;
+
+option go_package = "gitlab.com/thorchain/thornode/x/thorchain/types";
+
+import "gogoproto/gogo.proto";
+import "common/common.proto";
+
+option (gogoproto.marshaler_all) = true;
+
+message QueryNodeRequest{
+  string address = 1;
+}
+
+message QueryNodeResponse{
+  string node_address = 1;
+  string status = 2;
+  common.PubKeySet pub_key_set = 3 [(gogoproto.nullable) = false];
+	// the consensus pub key for the node
+  string validator_cons_pub_key = 4;
+	// the P2PID (:6040/p2pid endpoint) of the node
+  string peer_id = 5;
+	// the block height at which the node became active
+  int64 active_block_height = 6;
+	// the block height of the current provided information for the node
+  int64 status_since = 7;
+  string node_operator_address = 8;
+	// current node bond
+  string total_bond = 9;
+  NodeBondProviders bond_providers = 10;
+	// the set of vault public keys of which the node is a member
+  repeated string signer_membership = 11;
+  bool requested_to_leave = 12;
+	// indicates whether the node has been forced to leave by the network, typically via ban
+  bool forced_to_leave = 13;
+  int64 leave_height = 14;
+	// the currently set version of the node
+  string ip_address = 15;
+  string version = 16;
+	// the accumulated slash points, reset at churn but excessive slash points may carry over
+  int64 slash_points = 17;
+  NodeJail jail = 18;
+  string current_award = 19;
+	// the last observed heights for all chain by the node
+  repeated ChainHeight observe_chains = 20;
+  NodePreflightStatus preflight_status = 21;
+}
+
+message QueryNodesRequest{}
+
+message QueryNodesResponse{
+  repeated QueryNodeResponse nodes = 1;
+}
+
+message NodeBondProviders{
+  string node_operator_fee = 1;
+  repeated NodeBondProvider providers = 2;
+}
+
+message NodeBondProvider{
+  string bond_address = 1;
+  string bond = 2;
+}
+
+message NodeJail{
+  int64 release_height = 1;
+  string reason = 2;
+}
+
+message ChainHeight{
+  string chain = 1;
+  int64 height = 2;
+}
+
+message NodePreflightStatus{
+	// the next status of the node
+  string status = 1;
+	// the reason for the transition to the next status
+  string reason = 2;
+  int64  code = 3;
+}

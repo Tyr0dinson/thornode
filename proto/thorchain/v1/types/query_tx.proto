@@ -1,0 +1,133 @@
+syntax = "proto3";
+package types;
+
+option go_package = "gitlab.com/thorchain/thornode/x/thorchain/types";
+
+import "gogoproto/gogo.proto";
+import "types/query_vault.proto";
+import "types/type_tss_metric.proto";
+import "types/type_observed_tx.proto";
+import "common/common.proto";
+
+option (gogoproto.marshaler_all) = true;
+
+message QueryTxStagesRequest{
+  string tx_id = 1;
+}
+
+message QueryTxStagesResponse{
+  InboundObservedStage inbound_observed = 1 [(gogoproto.nullable) = false];
+  InboundConfirmationCountedStage inbound_confirmation_counted = 2;
+  InboundFinalisedStage inbound_finalised = 3;
+  SwapStatus swap_status = 4;
+  SwapFinalisedStage swap_finalised = 5;
+  OutboundDelayStage outbound_delay = 6;
+  OutboundSignedStage outbound_signed = 7;
+}
+
+message QueryTxStatusRequest{
+  string tx_id = 1;
+}
+
+message QueryTxStatusResponse{
+  common.Tx tx = 1;
+  repeated PlannedOutTx planned_out_txs = 2;
+  repeated common.Tx out_txs = 3 [(gogoproto.castrepeated) = "gitlab.com/thorchain/thornode/common.Txs", (gogoproto.nullable) = false];
+  QueryTxStagesResponse stages = 4 [(gogoproto.nullable) = false];
+}
+
+message QueryTxRequest{
+  string tx_id = 1;
+}
+
+message QueryTxResponse{
+  ObservedTx observed_tx = 1;
+	// the thorchain height at which the inbound reached consensus
+  int64 consensus_height = 2;
+	// the thorchain height at which the outbound was finalised
+  int64 finalised_height = 3;
+	// the thorchain height for which the outbound was scheduled
+  int64 outbound_height = 4;
+  TssKeysignMetric keysign_metric = 5;
+}
+
+message QueryTxVotersRequest{
+  string tx_id = 1;
+}
+
+message PlannedOutTx{
+  string chain = 1;
+  string to_address = 2;
+  common.Coin coin = 3;
+	// returns true if the planned transaction has a refund memo
+  bool refund = 4;
+}
+
+message InboundObservedStage{
+	// returns true if any nodes have observed the transaction (to be deprecated in favour of counts)
+  bool started = 1;
+	// number of signers for pre-confirmation-counting observations
+  int64 pre_confirmation_count = 2;
+	// number of signers for final observations, after any confirmation counting complete
+  int64 final_count = 3;
+	// returns true if no transaction observation remains to be done
+  bool completed = 4;
+}
+
+message InboundConfirmationCountedStage{
+	// the THORChain block height when confirmation counting began
+  int64 counting_start_height = 1;
+	// the external source chain for which confirmation counting takes place
+  string chain = 2;
+	// the block height on the external source chain when the transaction was observed
+  int64 external_observed_height = 3;
+	// the block height on the external source chain when confirmation counting will be complete
+  int64 external_confirmation_delay_height = 4;
+	// the estimated remaining seconds before confirmation counting completes
+  int64 remaining_confirmation_seconds = 5;
+	// returns true if no transaction confirmation counting remains to be done
+  bool completed = 6;
+}
+
+message InboundFinalisedStage{
+	// returns true if the inbound transaction has been finalised (THORChain agreeing it exists)
+  bool completed = 1;
+}
+
+message SwapStatus{
+	// true when awaiting a swap
+  bool pending = 1;
+  StreamingStatus streaming = 2;
+}
+
+message StreamingStatus{
+	// how often each swap is made, in blocks
+  int64 interval = 1;
+	// the total number of swaps in a streaming swaps
+  int64 quantity = 2;
+	// the amount of swap attempts so far
+  int64 count = 3;
+}
+
+message SwapFinalisedStage{
+	// (to be deprecated in favor of swap_status) returns true if an inbound transaction's swap (successful or refunded) is no longer pending
+  bool completed = 1;
+}
+
+message OutboundDelayStage{
+	// the number of remaining THORChain blocks the outbound will be delayed
+  int64 remaining_delay_blocks = 1;
+	// the estimated remaining seconds of the outbound delay before it will be sent
+  int64 remaining_delay_seconds = 2;
+	// returns true if no transaction outbound delay remains
+  bool completed = 3;
+}
+
+message OutboundSignedStage{
+	// THORChain height for which the external outbound is scheduled
+  int64 scheduled_outbound_height = 1;
+	// THORChain blocks since the scheduled outbound height
+  int64 blocks_since_scheduled = 2;
+	// returns true if an external transaction has been signed and broadcast (and observed in its mempool)
+  bool completed = 3;
+}

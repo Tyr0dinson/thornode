@@ -1,7 +1,7 @@
 package thorchain
 
 import (
-	abci "github.com/tendermint/tendermint/abci/types"
+	abci "github.com/cometbft/cometbft/abci/types"
 
 	cosmos "gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
@@ -14,7 +14,7 @@ func NewValidatorDummyMgr() *ValidatorDummyMgr {
 	return &ValidatorDummyMgr{}
 }
 
-func (vm *ValidatorDummyMgr) BeginBlock(_ cosmos.Context, _ Manager, _ []string) error {
+func (vm *ValidatorDummyMgr) PreBlock(_ cosmos.Context, _ Manager, _ []string) error {
 	return errKaboom
 }
 
