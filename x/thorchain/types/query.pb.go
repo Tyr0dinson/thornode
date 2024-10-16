@@ -272,6 +272,15 @@ type queryClient struct {
 func NewQueryClient(cc grpc1.ClientConn) QueryClient {
 	return &queryClient{cc}
 }
+func (c *queryClient) Account(ctx context.Context, in *QueryAccountRequest, opts ...grpc.CallOption) (*QueryAccountResponse, error) {
+	out := new(QueryAccountResponse)
+	err := c.cc.Invoke(ctx, "/types.Query/Account", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 
 func (c *queryClient) Pool(ctx context.Context, in *QueryPoolRequest, opts ...grpc.CallOption) (*QueryPoolResponse, error) {
 	out := new(QueryPoolResponse)
@@ -905,6 +914,8 @@ func (c *queryClient) UpgradeVotes(ctx context.Context, in *QueryUpgradeVotesReq
 
 // QueryServer is the server API for Query service.
 type QueryServer interface {
+	// Account returns account details for a given address.
+	Account(context.Context, *QueryAccountRequest) (*QueryAccountResponse, error)
 	// Returns the extended pool information for the provided asset.
 	Pool(context.Context, *QueryPoolRequest) (*QueryPoolResponse, error)
 	// Pools returns all extended pools
@@ -983,6 +994,9 @@ type QueryServer interface {
 type UnimplementedQueryServer struct {
 }
 
+func (*UnimplementedQueryServer) Account(ctx context.Context, req *QueryAccountRequest) (*QueryAccountResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Account not implemented")
+}
 func (*UnimplementedQueryServer) Pool(ctx context.Context, req *QueryPoolRequest) (*QueryPoolResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Pool not implemented")
 }
@@ -1196,6 +1210,24 @@ func (*UnimplementedQueryServer) UpgradeVotes(ctx context.Context, req *QueryUpg
 
 func RegisterQueryServer(s grpc1.Server, srv QueryServer) {
 	s.RegisterService(&_Query_serviceDesc, srv)
+}
+
+func _Query_Account_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryAccountRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).Account(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/types.Query/Account",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).Account(ctx, req.(*QueryAccountRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _Query_Pool_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -2462,6 +2494,10 @@ var _Query_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "types.Query",
 	HandlerType: (*QueryServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "Account",
+			Handler:    _Query_Account_Handler,
+		},
 		{
 			MethodName: "Pool",
 			Handler:    _Query_Pool_Handler,

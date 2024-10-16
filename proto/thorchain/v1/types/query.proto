@@ -45,11 +45,17 @@ import "types/query_tss.proto";
 import "types/type_tss_metric.proto";
 import "types/query_keystore.proto";
 import "types/query_upgrade.proto";
+import "types/query_account.proto";
 
 option (gogoproto.marshaler_all) = true;
 
 // Query defines the gRPC querier service.
 service Query {
+  // Account returns account details for a given address.
+  rpc Account(QueryAccountRequest) returns (QueryAccountResponse) {
+    option (google.api.http).get = "/auth/accounts/{address}";
+  }
+
   // Returns the extended pool information for the provided asset.
   rpc Pool(QueryPoolRequest) returns (QueryPoolResponse) {
     option (google.api.http).get = "/thorchain/pool/{asset}";

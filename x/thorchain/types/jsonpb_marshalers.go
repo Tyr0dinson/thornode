@@ -417,6 +417,16 @@ func (m *QueryVersionResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error
 	return jsonify(m)
 }
 
+// Backwards compatibility for /auth/accounts/{address} endpoint
+func (m *QueryAccountResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
+	res := map[string]any{
+		"result": map[string]any{
+			"value": m,
+		},
+	}
+	return jsonify(res)
+}
+
 // QueryOpenAPiBlockTx overrides the openapi type with a custom Tx field for marshaling.
 type QueryOpenApiBlockTx struct {
 	openapi.BlockTx

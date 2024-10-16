@@ -2465,6 +2465,27 @@ func (qs queryServer) queryUpgradeProposal(ctx cosmos.Context, req *types.QueryU
 	return &res, nil
 }
 
+func (qs queryServer) queryAccount(ctx cosmos.Context, req *types.QueryAccountRequest) (*types.QueryAccountResponse, error) {
+	b32, err := cosmos.AccAddressFromBech32(req.Address)
+	if err != nil {
+		return nil, fmt.Errorf("fail to parse address: %w", err)
+	}
+	acc := qs.mgr.Keeper().GetAccount(ctx, b32)
+
+	var pubKey string
+	pk := acc.GetPubKey()
+	if pk != nil {
+		pubKey = pk.String()
+	}
+
+	return &types.QueryAccountResponse{
+		Address:       acc.GetAddress().String(),
+		PubKey:        pubKey,
+		AccountNumber: strconv.FormatUint(acc.GetAccountNumber(), 10),
+		Sequence:      strconv.FormatUint(acc.GetSequence(), 10),
+	}, nil
+}
+
 func (qs queryServer) queryUpgradeVotes(ctx cosmos.Context, req *types.QueryUpgradeVotesRequest) (*types.QueryUpgradeVotesResponse, error) {
 	if len(req.Name) == 0 {
 		return nil, errors.New("upgrade name not provided")
