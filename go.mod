@@ -105,7 +105,7 @@ require (
 	github.com/syndtr/goleveldb v1.0.1-0.20220721030215-126854af5e6d
 	github.com/tendermint/btcd v0.1.1
 	github.com/tendermint/tendermint v0.35.9
-	gitlab.com/thorchain/thornode/api v0.0.0-20241011152234-3a601aa29240
+	gitlab.com/thorchain/thornode/api v0.0.0-20241015194849-630f6eda4eed
 	go.uber.org/atomic v1.11.0
 	golang.org/x/crypto v0.26.0
 	golang.org/x/oauth2 v0.21.0
@@ -162,7 +162,6 @@ require (
 	github.com/consensys/gnark-crypto v0.12.1 // indirect
 	github.com/coreos/go-semver v0.3.0 // indirect
 	github.com/cosmos/btcutil v1.0.5 // indirect
-	github.com/cosmos/cosmos-proto v1.0.0-beta.5 // indirect
 	github.com/cosmos/gogogateway v1.2.0 // indirect
 	github.com/cosmos/iavl v1.2.0 // indirect
 	github.com/cosmos/ibc-go/modules/capability v1.0.1 // indirect

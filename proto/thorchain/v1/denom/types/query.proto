@@ -1,0 +1,41 @@
+syntax = "proto3";
+package denom;
+
+import "gogoproto/gogo.proto";
+import "google/api/annotations.proto";
+import "cosmos/base/query/v1beta1/pagination.proto";
+import "denom/types/authorityMetadata.proto";
+
+option go_package = "gitlab.com/thorchain/thornode/x/denom/types";
+
+// Query defines the gRPC querier service.
+service Query {
+  rpc DenomAuthorityMetadata(QueryDenomAuthorityMetadataRequest)
+      returns (QueryDenomAuthorityMetadataResponse) {
+    option (google.api.http).get =
+        "/denoms/{denom}/authority_metadata";
+  }
+
+  rpc DenomsFromCreator(QueryDenomsFromCreatorRequest)
+      returns (QueryDenomsFromCreatorResponse) {
+    option (google.api.http).get =
+        "/denoms/by_creator/{creator}";
+  }
+}
+
+message QueryDenomAuthorityMetadataRequest {
+  string denom = 1 [ (gogoproto.moretags) = "yaml:\"denom\"" ];
+}
+message QueryDenomAuthorityMetadataResponse {
+  DenomAuthorityMetadata authority_metadata = 1 [
+    (gogoproto.moretags) = "yaml:\"authority_metadata\"",
+    (gogoproto.nullable) = false
+  ];
+}
+
+message QueryDenomsFromCreatorRequest {
+  string creator = 1 [ (gogoproto.moretags) = "yaml:\"creator\"" ];
+}
+message QueryDenomsFromCreatorResponse {
+  repeated string denoms = 1 [ (gogoproto.moretags) = "yaml:\"denoms\"" ];
+}
