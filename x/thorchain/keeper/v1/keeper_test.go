@@ -46,7 +46,6 @@ func setupKeeperForTest(c *C) (cosmos.Context, KVStore) {
 	keys := cosmos.NewKVStoreKeys(
 		authtypes.StoreKey, banktypes.StoreKey, stakingtypes.StoreKey,
 	)
-	memKeys := cosmos.NewMemoryStoreKeys(capabilitytypes.MemStoreKey)
 
 	db := dbm.NewMemDB()
 	ms := store.NewCommitMultiStore(db, log.NewNopLogger(), storemetrics.NewNoOpMetrics())
