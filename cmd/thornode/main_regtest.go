@@ -8,8 +8,6 @@ import (
 	"os/signal"
 	"syscall"
 
-	"cosmossdk.io/log"
-
 	svrcmd "github.com/cosmos/cosmos-sdk/server/cmd"
 	"gitlab.com/thorchain/thornode/app"
 )
@@ -19,7 +17,7 @@ func main() {
 	syn := make(chan error)
 	go func() {
 		rootCmd := NewRootCmd()
-		syn <- svrcmd.Execute(rootCmd, "", app.DefaultNodeHome())
+		syn <- svrcmd.Execute(rootCmd, "", app.DefaultNodeHome)
 	}()
 
 	sig := make(chan os.Signal, 1)

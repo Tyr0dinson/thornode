@@ -39,6 +39,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/types/mempool"
 	"github.com/cosmos/cosmos-sdk/types/module"
 	authcmd "github.com/cosmos/cosmos-sdk/x/auth/client/cli"
+
 	//	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	genutilcli "github.com/cosmos/cosmos-sdk/x/genutil/client/cli"
 	genutiltypes "github.com/cosmos/cosmos-sdk/x/genutil/types"
@@ -290,7 +291,6 @@ func appExport(
 		traceStore,
 		height == -1,
 		appOpts,
-		nil,
 	)
 
 	if height != -1 {

@@ -40,11 +40,11 @@ func init() {
 
 func (app *THORChainApp) BeginBlocker(ctx sdk.Context) (sdk.BeginBlock, error) {
 	<-begin
-	return app.ModuleManager.BeginBlock(ctx, req)
+	return app.ModuleManager.BeginBlock(ctx)
 }
 
 // EndBlocker application updates every end block
 func (app *THORChainApp) EndBlocker(ctx sdk.Context) (sdk.EndBlock, error) {
 	defer func() { end <- struct{}{} }()
-	return app.ModuleManager.EndBlock(ctx, req)
+	return app.ModuleManager.EndBlock(ctx)
 }

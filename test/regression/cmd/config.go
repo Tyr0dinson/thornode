@@ -33,7 +33,10 @@ import (
 // Cosmos
 ////////////////////////////////////////////////////////////////////////////////////////
 
-var encodingConfig params.EncodingConfig
+var (
+	encodingConfig params.EncodingConfig
+	keyRing        keyring.Keyring
+)
 
 func init() {
 	// initialize the bech32 prefix for mocknet
@@ -45,6 +48,7 @@ func init() {
 
 	// initialize the codec
 	encodingConfig = app.MakeEncodingConfig()
+	keyRing = keyring.NewInMemory(encodingConfig.Codec)
 
 	// Having set the prefixes, derive the module addresses.
 	ModuleAddrTransfer = authtypes.NewModuleAddress("transfer").String() // "tthor1yl6hdjhmkf37639730gffanpzndzdpmhv07zme"
@@ -177,7 +181,6 @@ func init() {
 ////////////////////////////////////////////////////////////////////////////////////////
 
 var (
-	keyRing            = keyring.NewInMemory(encodingConfig.Codec)
 	addressToName      = map[string]string{} // thor...->dog, 0x...->dog
 	templateAddress    = map[string]string{} // addr_thor_dog->thor..., addr_eth_dog->0x...
 	templatePubKey     = map[string]string{} // pubkey_dog->thorpub...
