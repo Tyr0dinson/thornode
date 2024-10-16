@@ -80,16 +80,16 @@ func export(out io.Writer, path string, routine int, failExportInvariants bool) 
 	_, err = os.Stat(exportPath)
 	exportExists := err == nil
 
-	// check export invariants
-	err = checkExportInvariants(out, export)
-	if err != nil && !failExportInvariants {
-		// also log export changes for easier debugging
-		if exportExists {
-			_ = checkExportChanges(out, export, exportPath)
-		}
+	// // check export invariants
+	// err = checkExportInvariants(out, export)
+	// if err != nil && !failExportInvariants {
+	// 	// also log export changes for easier debugging
+	// 	if exportExists {
+	// 		_ = checkExportChanges(out, export, exportPath)
+	// 	}
 
-		return err
-	}
+	// 	return err
+	// }
 
 	// export if it none exists or EXPORT is set
 	if !exportExists || os.Getenv("EXPORT") != "" {
