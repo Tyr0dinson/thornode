@@ -11,12 +11,14 @@ import (
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
 	consensusparamkeeper "github.com/cosmos/cosmos-sdk/x/consensus/keeper"
 	paramskeeper "github.com/cosmos/cosmos-sdk/x/params/keeper"
+	thorchainKeeper "gitlab.com/thorchain/thornode/x/thorchain/keeper"
 )
 
 type AppKeepers struct {
 	AccountKeeper         *authkeeper.AccountKeeper
 	ParamsKeeper          *paramskeeper.Keeper
 	ConsensusParamsKeeper *consensusparamkeeper.Keeper
+	ThorchainKeeper       thorchainKeeper.Keeper
 	Codec                 codec.Codec
 	GetStoreKey           func(storeKey string) *storetypes.KVStoreKey
 }

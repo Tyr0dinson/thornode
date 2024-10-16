@@ -197,3 +197,24 @@ func UpgradeApprovedByMajority(ctx cosmos.Context, k keeper.Keeper, name string)
 		NeededForQuorum: int(valsToQuorum),
 	}, nil
 }
+
+// UpdateActiveValidatorVersions updates the active validator versions to the given version
+func UpdateActiveValidatorVersions(
+	ctx cosmos.Context,
+	thorchainKeeper keeper.Keeper,
+	version string,
+) error {
+	activeVals, err := thorchainKeeper.ListActiveValidators(ctx)
+	if err != nil {
+		return fmt.Errorf("fail to get active validators: %w", err)
+	}
+
+	for _, v := range activeVals {
+		v.Version = version
+		if err = thorchainKeeper.SetNodeAccount(ctx, v); err != nil {
+			return fmt.Errorf("fail to save node account: %w", err)
+		}
+	}
+
+	return nil
+}

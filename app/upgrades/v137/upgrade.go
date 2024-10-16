@@ -2,19 +2,21 @@ package v137
 
 import (
 	"context"
+	"fmt"
 
-	"github.com/cosmos/cosmos-sdk/types/module"
 	storetypes "cosmossdk.io/store/types"
 	upgradetypes "cosmossdk.io/x/upgrade/types"
-	
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/types/module"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	consensustypes "github.com/cosmos/cosmos-sdk/x/consensus/types"
 	minttypes "github.com/cosmos/cosmos-sdk/x/mint/types"
 	paramstypes "github.com/cosmos/cosmos-sdk/x/params/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
-	
+
 	"gitlab.com/thorchain/thornode/app/upgrades"
+	keeperv1 "gitlab.com/thorchain/thornode/x/thorchain/keeper/v1"
 )
 
 // UpgradeName is the name of this specific software upgrade used on-chain.
@@ -26,7 +28,7 @@ func NewUpgrade() upgrades.Upgrade {
 		UpgradeName:          UpgradeName,
 		CreateUpgradeHandler: CreateUpgradeHandler,
 		StoreUpgrades: storetypes.StoreUpgrades{
-			Added:   []string{
+			Added: []string{
 				consensustypes.ModuleName, // add consensus module store
 			},
 			Deleted: []string{},
@@ -47,7 +49,7 @@ func CreateUpgradeHandler(
 		fromVM["params"] = 1
 		fromVM["thorchain"] = 1
 		fromVM["upgrade"] = 1
-		
+
 		// set param key table for params module migration
 		// ref: https://github.com/cosmos/cosmos-sdk/pull/12363/files
 		for _, subspace := range ak.ParamsKeeper.GetSubspaces() {
@@ -71,11 +73,21 @@ func CreateUpgradeHandler(
 				subspace.WithKeyTable(keyTable)
 			}
 		}
-		
+
 		// Perform SDK module migrations
 		vm, err := mm.RunMigrations(goCtx, configurator, fromVM)
 		if err != nil {
 			return vm, err
+		}
+
+		ctx := sdk.UnwrapSDKContext(goCtx)
+
+		// Active validator versions need to be updated since consensus
+		// on the new version is required to resume the chain.
+		// This is a THORChain specific upgrade step that should be
+		// done in every upgrade handler.
+		if err = keeperv1.UpdateActiveValidatorVersions(ctx, ak.ThorchainKeeper, UpgradeName); err != nil {
+			return vm, fmt.Errorf("failed to update active validator versions: %w", err)
 		}
 
 		return vm, nil
