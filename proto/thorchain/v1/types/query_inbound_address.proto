@@ -13,13 +13,13 @@ message QueryInboundAddressResponse{
   string address = 3;
   string router = 4;
   // Returns true if trading is unavailable for this chain, either because trading is halted globally or specifically for this chain
-  bool   halted = 5;
+  bool   halted = 5 [(gogoproto.jsontag) = "halted"];
   // Returns true if trading is paused globally
-  bool   global_trading_paused = 6;
+  bool   global_trading_paused = 6 [(gogoproto.jsontag) = "global_trading_paused"];
   // Returns true if trading is paused for this chain
-  bool   chain_trading_paused = 7;
+  bool   chain_trading_paused = 7 [(gogoproto.jsontag) = "chain_trading_paused"];
   // Returns true if LP actions are paused for this chain
-  bool   chain_lp_actions_paused = 8;
+  bool   chain_lp_actions_paused = 8 [(gogoproto.jsontag) = "chain_lp_actions_paused"];
   // The minimum fee rate used by vaults to send outbound TXs. The actual fee rate may be higher. For EVM chains this is returned in gwei (1e9).
   string gas_rate = 9;
 	// Units of the gas_rate.
