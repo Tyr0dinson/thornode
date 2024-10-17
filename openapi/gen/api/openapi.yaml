@@ -40,6 +40,38 @@ paths:
           description: OK
       tags:
       - Auth
+  /bank/balances/{address}:
+    get:
+      description: Returns balances for the provided address.
+      operationId: balances
+      parameters:
+      - description: "optional block height, defaults to current tip"
+        explode: true
+        in: query
+        name: height
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      - explode: false
+        in: path
+        name: address
+        required: true
+        schema:
+          example: thor1zupk5lmc84r2dh738a9g3zscavannjy3nzplwt
+          type: string
+        style: simple
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BalancesResponse'
+          description: OK
+      tags:
+      - Bank
   /thorchain/ping:
     get:
       operationId: ping
@@ -4051,6 +4083,19 @@ components:
           format: int64
           type: integer
       type: object
+    Amount:
+      example:
+        amount: amount
+        denom: denom
+      properties:
+        denom:
+          type: string
+        amount:
+          type: string
+      required:
+      - amount
+      - denom
+      type: object
     AccountResponse:
       example:
         result:
@@ -4064,6 +4109,18 @@ components:
         result:
           $ref: '#/components/schemas/AccountResponse_result'
       type: object
+    BalancesResponse:
+      example:
+        result:
+        - amount: amount
+          denom: denom
+        - amount: amount
+          denom: denom
+      properties:
+        result:
+          items:
+            $ref: '#/components/schemas/Amount'
+          type: array
     PoolResponse:
       $ref: '#/components/schemas/Pool'
     PoolsResponse:

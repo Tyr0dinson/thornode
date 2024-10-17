@@ -47,6 +47,7 @@ import "types/query_keystore.proto";
 import "types/query_upgrade.proto";
 import "types/query_account.proto";
 import "types/query_export.proto";
+import "types/query_bank.proto";
 
 option (gogoproto.marshaler_all) = true;
 
@@ -55,6 +56,11 @@ service Query {
   // Account returns account details for a given address.
   rpc Account(QueryAccountRequest) returns (QueryAccountResponse) {
     option (google.api.http).get = "/auth/accounts/{address}";
+  }
+
+  // Balances returns the bank module balances for a given address.
+  rpc Balances(QueryBalancesRequest) returns (QueryBalancesResponse) {
+    option (google.api.http).get = "/bank/balances/{address}";
   }
 
   // Export returns the content of the export file (regression test only).

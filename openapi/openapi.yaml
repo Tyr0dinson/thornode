@@ -29,6 +29,25 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AccountResponse"
+  
+  # ------------------------------ bank --------------------------------
+  /bank/balances/{address}:
+    parameters:
+      - $ref: "#/components/parameters/queryHeight"
+      - $ref: "#/components/parameters/address"
+    get:
+      description: Returns balances for the provided address.
+      operationId: balances
+      tags:
+        - Bank
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BalancesResponse"
+
   # ------------------------------ health ------------------------------
 
   /thorchain/ping:
@@ -2843,6 +2862,17 @@ components:
           format: int64
           example: 1234
 
+    Amount:
+      type: object
+      required:
+        - denom
+        - amount
+      properties:
+        denom:
+          type: string
+        amount:
+          type: string
+
     # ------------------------------ responses ------------------------------
     AccountResponse:
       type: object
@@ -2852,6 +2882,13 @@ components:
           properties:
             value:
               $ref: "#/components/schemas/Account"
+
+    BalancesResponse:
+      properties:
+        result:
+          type: array
+          items:
+            $ref: "#/components/schemas/Amount"
 
     PoolResponse:
       $ref: "#/components/schemas/Pool"

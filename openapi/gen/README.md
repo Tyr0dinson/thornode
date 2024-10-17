@@ -78,6 +78,7 @@ All URIs are relative to *http://localhost*
 Class | Method | HTTP request | Description
 ------------ | ------------- | ------------- | -------------
 *AuthApi* | [**Account**](docs/AuthApi.md#account) | **Get** /auth/accounts/{address} | 
+*BankApi* | [**Balances**](docs/BankApi.md#balances) | **Get** /bank/balances/{address} | 
 *BlockApi* | [**Block**](docs/BlockApi.md#block) | **Get** /thorchain/block | 
 *BorrowersApi* | [**Borrower**](docs/BorrowersApi.md#borrower) | **Get** /thorchain/pool/{asset}/borrower/{address} | 
 *BorrowersApi* | [**Borrowers**](docs/BorrowersApi.md#borrowers) | **Get** /thorchain/pool/{asset}/borrowers | 
@@ -156,6 +157,8 @@ Class | Method | HTTP request | Description
  - [Account](docs/Account.md)
  - [AccountResponse](docs/AccountResponse.md)
  - [AccountResponseResult](docs/AccountResponseResult.md)
+ - [Amount](docs/Amount.md)
+ - [BalancesResponse](docs/BalancesResponse.md)
  - [BanResponse](docs/BanResponse.md)
  - [BaseQuoteResponse](docs/BaseQuoteResponse.md)
  - [BlockResponse](docs/BlockResponse.md)
