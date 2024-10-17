@@ -127,7 +127,9 @@ func externalHandler(goCtx context.Context, handler MsgHandler, msg sdk.Msg) (_ 
 		}
 	}()
 
-	ctx = ctx.WithEventManager(sdk.NewEventManager())
+	if ctx.EventManager() == nil {
+		ctx = ctx.WithEventManager(sdk.NewEventManager())
+	}
 	result, err := handler.Run(ctx, msg)
 
 	if result != nil && result.Size() > 0 {
