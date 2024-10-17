@@ -733,7 +733,7 @@ func RegisterSwaggerAPI(rtr *mux.Router, swaggerEnabled bool) error {
 			fmt.Fprintf(w, `{"ping":"pong"}`)
 		},
 	).Methods(http.MethodGet, http.MethodOptions)
-	
+
 	if !swaggerEnabled {
 		return nil
 	}
@@ -787,7 +787,12 @@ func BlockedAddresses() map[string]bool {
 	}
 
 	// allow the following addresses to receive funds
+	// TODO: why using gov module for authorities? Do we need this?
 	delete(modAccAddrs, authtypes.NewModuleAddress(govtypes.ModuleName).String())
+
+	// Allow lending and treasury to receive funds
+	delete(modAccAddrs, authtypes.NewModuleAddress(thorchaintypes.LendingName).String())
+	delete(modAccAddrs, authtypes.NewModuleAddress(thorchaintypes.TreasuryName).String())
 
 	return modAccAddrs
 }
