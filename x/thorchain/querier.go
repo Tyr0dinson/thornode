@@ -3016,29 +3016,37 @@ func (qs queryServer) queryBlock(ctx cosmos.Context, _ *types.QueryBlockRequest)
 			}
 		}
 	}
-	for i, tx := range block.Block.Txs {
-		res.Txs[i].Hash = strings.ToUpper(hex.EncodeToString(tx.Hash()))
 
+	for i, tx := range block.Block.Txs {
 		// decode the protobuf and encode to json
 		dtx, err := authtx.DefaultTxDecoder(qs.mgr.cdc.(*codec.ProtoCodec))(tx)
 		if err != nil {
 			return nil, fmt.Errorf("fail to decode tx: %w", err)
 		}
-		res.Txs[i].Tx, err = authtx.DefaultJSONTxEncoder(qs.mgr.cdc.(*codec.ProtoCodec))(dtx)
+
+		etx, err := authtx.DefaultJSONTxEncoder(qs.mgr.cdc.(*codec.ProtoCodec))(dtx)
 		if err != nil {
 			return nil, fmt.Errorf("fail to encode tx: %w", err)
 		}
 
-		// parse the tx events
-		code := int64(results.TxsResults[i].Code)
-		res.Txs[i].Result.Code = code
-		res.Txs[i].Result.Data = string(results.TxsResults[i].Data)
-		res.Txs[i].Result.Log = results.TxsResults[i].Log
-		res.Txs[i].Result.Info = results.TxsResults[i].Info
-		res.Txs[i].Result.GasWanted = strconv.FormatInt(results.TxsResults[i].GasWanted, 10)
-		res.Txs[i].Result.GasUsed = strconv.FormatInt(results.TxsResults[i].GasUsed, 10)
-		for _, event := range results.TxsResults[i].Events {
-			res.Txs[i].Result.Events = append(res.Txs[i].Result.Events, blockEvent(sdk.Event(event)))
+		resultTx := results.TxsResults[i]
+
+		res.Txs[i] = &types.QueryBlockTx{
+			Tx:   etx,
+			Hash: strings.ToUpper(hex.EncodeToString(tx.Hash())),
+			Result: &types.BlockTxResult{
+				Code:      int64(resultTx.Code),
+				Data:      string(resultTx.Data),
+				Log:       resultTx.Log,
+				Info:      resultTx.Info,
+				GasWanted: strconv.FormatInt(resultTx.GasWanted, 10),
+				GasUsed:   strconv.FormatInt(resultTx.GasUsed, 10),
+				Events:    make([]*types.BlockEvent, len(resultTx.Events)),
+			},
+		}
+
+		for j, event := range resultTx.Events {
+			res.Txs[i].Result.Events[j] = blockEvent(sdk.Event(event))
 		}
 	}
 
