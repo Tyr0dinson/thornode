@@ -58,4 +58,4 @@ count: 1
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
-  - .balances[]|select(.denom=="rune")|.amount|tonumber == 2500400000000
+  - .balances[]|select(.denom=="rune")|.amount|tonumber == 2500200000000

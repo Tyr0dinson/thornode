@@ -1024,6 +1024,7 @@ func sendMsg(out io.Writer, routine int, msg sdk.Msg, signer sdk.AccAddress, seq
 	if gas != nil {
 		txf = txFactory.WithGas(uint64(*gas))
 	} else {
+		// NewDeductFeeDecorator in Cosmos SDK v0.50 does not allow zero gas
 		txf = txFactory.WithGas(200000)
 	}
 
