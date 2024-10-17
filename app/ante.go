@@ -12,6 +12,8 @@ import (
 
 	"gitlab.com/thorchain/thornode/x/thorchain"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
+
+	denomtypes "gitlab.com/thorchain/thornode/x/denom/types"
 )
 
 // HandlerOptions extend the SDK's AnteHandler options
@@ -49,6 +51,14 @@ func NewAnteHandler(options HandlerOptions) (sdk.AnteHandler, error) {
 	// 	return nil, errors.New("wasm store service is required for ante builder")
 	// }
 
+	blockedMsgDecorator := NewBlockMsgDecorator(
+		// Block x/denom msg types from being called by an EOA. These should be called only by cosmwasm contracts
+		sdk.MsgTypeURL(&denomtypes.MsgCreateDenom{}),
+		sdk.MsgTypeURL(&denomtypes.MsgBurnTokens{}),
+		sdk.MsgTypeURL(&denomtypes.MsgMintTokens{}),
+		sdk.MsgTypeURL(&denomtypes.MsgChangeDenomAdmin{}),
+	)
+
 	anteDecorators := []sdk.AnteDecorator{
 		ante.NewSetUpContextDecorator(), // outermost AnteDecorator. SetUpContext must be called first
 
@@ -58,7 +68,6 @@ func NewAnteHandler(options HandlerOptions) (sdk.AnteHandler, error) {
 
 		// replace gas meter immediately after setting up ctx
 		thorchain.NewInfiniteGasDecorator(options.THORChainKeeper),
-
 		ante.NewExtensionOptionsDecorator(options.ExtensionOptionChecker),
 		ante.NewValidateBasicDecorator(),
 		ante.NewTxTimeoutHeightDecorator(),
@@ -68,6 +77,7 @@ func NewAnteHandler(options HandlerOptions) (sdk.AnteHandler, error) {
 
 		// run thorchain-specific msg antes
 		thorchain.NewAnteDecorator(options.THORChainKeeper),
+		blockedMsgDecorator,
 
 		ante.NewSetPubKeyDecorator(options.AccountKeeper), // SetPubKeyDecorator must be called before all signature verification decorators
 		ante.NewValidateSigCountDecorator(options.AccountKeeper),
