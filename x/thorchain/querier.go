@@ -569,6 +569,7 @@ func (qs queryServer) queryNode(ctx cosmos.Context, req *types.QueryNodeRequest)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get all active node account: %w", err)
 	}
+
 	result := types.QueryNodeResponse{
 		NodeAddress: nodeAcc.NodeAddress.String(),
 		Status:      nodeAcc.Status.String(),
@@ -602,9 +603,11 @@ func (qs queryServer) queryNode(ctx cosmos.Context, req *types.QueryNodeRequest)
 	// Leave this nil (null rather than []) if the source is nil.
 	if bp.Providers != nil {
 		providers = make([]*types.NodeBondProvider, len(bp.Providers))
-		for i := range bp.Providers {
-			providers[i].BondAddress = bp.Providers[i].BondAddress.String()
-			providers[i].Bond = bp.Providers[i].Bond.String()
+		for i, p := range bp.Providers {
+			providers[i] = &types.NodeBondProvider{
+				BondAddress: p.BondAddress.String(),
+				Bond:        p.Bond.String(),
+			}
 		}
 	}
 
