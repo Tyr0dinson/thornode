@@ -19,7 +19,8 @@ func InitGenesis(ctx sdk.Context, k keeper.Keeper, genState types.GenesisState) 
 		if err != nil {
 			panic(err)
 		}
-		err = k.SetAuthorityMetadata(ctx, genDenom.GetDenom(), genDenom.GetAuthorityMetadata())
+
+		err = k.SetAdmin(ctx, genDenom.GetDenom(), sdk.MustAccAddressFromBech32(genDenom.Admin))
 		if err != nil {
 			panic(err)
 		}
@@ -35,14 +36,14 @@ func ExportGenesis(ctx sdk.Context, k keeper.Keeper) *types.GenesisState {
 	for ; iterator.Valid(); iterator.Next() {
 		denom := string(iterator.Value())
 
-		authorityMetadata, err := k.GetAuthorityMetadata(ctx, denom)
+		admin, err := k.GetAdmin(ctx, denom)
 		if err != nil {
 			panic(err)
 		}
 
 		genDenoms = append(genDenoms, types.GenesisDenom{
-			Denom:             denom,
-			AuthorityMetadata: authorityMetadata,
+			Denom: denom,
+			Admin: admin.String(),
 		})
 	}
 

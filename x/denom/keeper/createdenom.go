@@ -16,11 +16,12 @@ func (k Keeper) CreateDenom(ctx sdk.Context, creatorAddr string, denomId string)
 	if found {
 		return "", types.ErrDenomExists
 	}
-
-	authorityMetadata := types.DenomAuthorityMetadata{
-		Admin: creatorAddr,
+	admin, err := sdk.AccAddressFromBech32(creatorAddr)
+	if err != nil {
+		return "", err
 	}
-	err = k.SetAuthorityMetadata(ctx, denom, authorityMetadata)
+
+	err = k.SetAdmin(ctx, denom, admin)
 	if err != nil {
 		return "", err
 	}

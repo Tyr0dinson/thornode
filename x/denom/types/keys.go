@@ -25,12 +25,10 @@ const (
 const KeySeparator = "|"
 
 var (
-	DenomAuthorityMetadataKey = "authoritymetadata"
-	DenomsPrefixKey           = "denoms"
-	CreatorPrefixKey          = "creator"
-	AdminPrefixKey            = "admin"
-	NoFeeAccountPrefixKey     = "nofeeaccount"
-	ParamsKey                 = []byte("params")
+	DenomAdminKey    = "admins"
+	DenomsPrefixKey  = "denoms"
+	CreatorPrefixKey = "creator"
+	ParamsKey        = []byte("params")
 )
 
 // GetDenomPrefixStore returns the store prefix where all the data associated with a specific denom

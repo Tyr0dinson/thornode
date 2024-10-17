@@ -48,12 +48,12 @@ func (server msgServer) CreateDenom(goCtx context.Context, msg *types.MsgCreateD
 func (server msgServer) MintTokens(goCtx context.Context, msg *types.MsgMintTokens) (*types.MsgMintTokensResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
-	authorityMetadata, err := server.Keeper.GetAuthorityMetadata(ctx, msg.Amount.GetDenom())
+	admin, err := server.Keeper.GetAdmin(ctx, msg.Amount.GetDenom())
 	if err != nil {
 		return nil, err
 	}
 
-	if msg.Sender != authorityMetadata.GetAdmin() {
+	if msg.Sender != admin.String() {
 		return nil, types.ErrUnauthorized
 	}
 
@@ -76,12 +76,12 @@ func (server msgServer) MintTokens(goCtx context.Context, msg *types.MsgMintToke
 func (server msgServer) BurnTokens(goCtx context.Context, msg *types.MsgBurnTokens) (*types.MsgBurnTokensResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
-	authorityMetadata, err := server.Keeper.GetAuthorityMetadata(ctx, msg.Amount.GetDenom())
+	admin, err := server.Keeper.GetAdmin(ctx, msg.Amount.GetDenom())
 	if err != nil {
 		return nil, err
 	}
 
-	if msg.Sender != authorityMetadata.GetAdmin() {
+	if msg.Sender != admin.String() {
 		return nil, types.ErrUnauthorized
 	}
 
@@ -104,16 +104,21 @@ func (server msgServer) BurnTokens(goCtx context.Context, msg *types.MsgBurnToke
 func (server msgServer) ChangeDenomAdmin(goCtx context.Context, msg *types.MsgChangeDenomAdmin) (*types.MsgChangeDenomAdminResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
-	authorityMetadata, err := server.Keeper.GetAuthorityMetadata(ctx, msg.Denom)
+	admin, err := server.Keeper.GetAdmin(ctx, msg.Denom)
 	if err != nil {
 		return nil, err
 	}
 
-	if msg.Sender != authorityMetadata.GetAdmin() {
+	if msg.Sender != admin.String() {
 		return nil, types.ErrUnauthorized
 	}
 
-	err = server.Keeper.setAdmin(ctx, msg.Denom, msg.NewAdmin)
+	newAdmin, err := sdk.AccAddressFromBech32(msg.NewAdmin)
+	if err != nil {
+		return nil, err
+	}
+
+	err = server.Keeper.SetAdmin(ctx, msg.Denom, newAdmin)
 	if err != nil {
 		return nil, err
 	}

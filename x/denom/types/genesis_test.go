@@ -25,9 +25,7 @@ func TestGenesisState_Validate(t *testing.T) {
 				CustomDenoms: []types.GenesisDenom{
 					{
 						Denom: "factory/cosmos1t7egva48prqmzl59x5ngv4zx0dtrwewcdqdjr8/bitcoin",
-						AuthorityMetadata: types.DenomAuthorityMetadata{
-							Admin: "cosmos1t7egva48prqmzl59x5ngv4zx0dtrwewcdqdjr8",
-						},
+						Admin: "cosmos1t7egva48prqmzl59x5ngv4zx0dtrwewcdqdjr8",
 					},
 				},
 			},
@@ -39,9 +37,7 @@ func TestGenesisState_Validate(t *testing.T) {
 				CustomDenoms: []types.GenesisDenom{
 					{
 						Denom: "factory/cosmos1t7egva48prqmzl59x5ngv4zx0dtrwewcdqdjr8/bitcoin",
-						AuthorityMetadata: types.DenomAuthorityMetadata{
-							Admin: "cosmos1ft6e5esdtdegnvcr3djd3ftk4kwpcr6jta8eyh",
-						},
+						Admin: "cosmos1ft6e5esdtdegnvcr3djd3ftk4kwpcr6jta8eyh",
 					},
 				},
 			},
@@ -53,9 +49,7 @@ func TestGenesisState_Validate(t *testing.T) {
 				CustomDenoms: []types.GenesisDenom{
 					{
 						Denom: "factory/cosmos1t7egva48prqmzl59x5ngv4zx0dtrwewcdqdjr8/bitcoin",
-						AuthorityMetadata: types.DenomAuthorityMetadata{
-							Admin: "",
-						},
+						Admin: "",
 					},
 				},
 			},
@@ -78,9 +72,7 @@ func TestGenesisState_Validate(t *testing.T) {
 				CustomDenoms: []types.GenesisDenom{
 					{
 						Denom: "factory/cosmos1t7egva48prqmzl59x5ngv4zx0dtrwewcdqdjr8/bitcoin",
-						AuthorityMetadata: types.DenomAuthorityMetadata{
-							Admin: "moose",
-						},
+						Admin: "moose",
 					},
 				},
 			},
@@ -91,16 +83,12 @@ func TestGenesisState_Validate(t *testing.T) {
 			genState: &types.GenesisState{
 				CustomDenoms: []types.GenesisDenom{
 					{
-						Denom: "factory/cosmos1t7egva48prqmzl59x5ngv4zx0dtrwewcdqdjr8/bitcoin",
-						AuthorityMetadata: types.DenomAuthorityMetadata{
-							Admin: "",
-						},
+						Denom: "fctory/cosmos1t7egva48prqmzl59x5ngv4zx0dtrwewcdqdjr8/bitcoin",
+						Admin: "",
 					},
 					{
-						Denom: "factory/cosmos1t7egva48prqmzl59x5ngv4zx0dtrwewcdqdjr8/litecoin",
-						AuthorityMetadata: types.DenomAuthorityMetadata{
-							Admin: "",
-						},
+						Denom: "fctory/cosmos1t7egva48prqmzl59x5ngv4zx0dtrwewcdqdjr8/litecoin",
+						Admin: "",
 					},
 				},
 			},
@@ -111,16 +99,12 @@ func TestGenesisState_Validate(t *testing.T) {
 			genState: &types.GenesisState{
 				CustomDenoms: []types.GenesisDenom{
 					{
-						Denom: "factory/cosmos1t7egva48prqmzl59x5ngv4zx0dtrwewcdqdjr8/bitcoin",
-						AuthorityMetadata: types.DenomAuthorityMetadata{
-							Admin: "",
-						},
+						Denom: "fctory/cosmos1t7egva48prqmzl59x5ngv4zx0dtrwewcdqdjr8/bitcoin",
+						Admin: "",
 					},
 					{
-						Denom: "factory/cosmos1t7egva48prqmzl59x5ngv4zx0dtrwewcdqdjr8/bitcoin",
-						AuthorityMetadata: types.DenomAuthorityMetadata{
-							Admin: "",
-						},
+						Denom: "fctory/cosmos1t7egva48prqmzl59x5ngv4zx0dtrwewcdqdjr8/bitcoin",
+						Admin: "",
 					},
 				},
 			},

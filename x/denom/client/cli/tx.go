@@ -87,7 +87,7 @@ func NewMintTokensCmd() *cobra.Command {
 				return err
 			}
 
-			msg := types.NewMsgMint(
+			msg := types.NewMsgMintTokens(
 				clientCtx.GetFromAddress().String(),
 				amount,
 				args[1],
@@ -125,7 +125,7 @@ func NewBurnTokensCmd() *cobra.Command {
 				return err
 			}
 
-			msg := types.NewMsgBurn(
+			msg := types.NewMsgBurnTokens(
 				clientCtx.GetFromAddress().String(),
 				amount,
 			)
@@ -157,7 +157,7 @@ func NewChangeAdminCmd() *cobra.Command {
 
 			txf = txf.WithTxConfig(clientCtx.TxConfig).WithAccountRetriever(clientCtx.AccountRetriever)
 
-			msg := types.NewMsgChangeAdmin(
+			msg := types.NewMsgChangeDenomAdmin(
 				clientCtx.GetFromAddress().String(),
 				args[0],
 				args[1],

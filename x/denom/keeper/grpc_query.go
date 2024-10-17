@@ -10,15 +10,15 @@ import (
 
 var _ types.QueryServer = Keeper{}
 
-func (k Keeper) DenomAuthorityMetadata(ctx context.Context, req *types.QueryDenomAuthorityMetadataRequest) (*types.QueryDenomAuthorityMetadataResponse, error) {
+func (k Keeper) DenomAdmin(ctx context.Context, req *types.QueryDenomAdminRequest) (*types.QueryDenomAdminResponse, error) {
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
 
-	authorityMetadata, err := k.GetAuthorityMetadata(sdkCtx, req.GetDenom())
+	admin, err := k.GetAdmin(sdkCtx, req.GetDenom())
 	if err != nil {
 		return nil, err
 	}
 
-	return &types.QueryDenomAuthorityMetadataResponse{AuthorityMetadata: authorityMetadata}, nil
+	return &types.QueryDenomAdminResponse{Admin: admin.String()}, nil
 }
 
 func (k Keeper) DenomsFromCreator(ctx context.Context, req *types.QueryDenomsFromCreatorRequest) (*types.QueryDenomsFromCreatorResponse, error) {

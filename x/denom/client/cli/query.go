@@ -23,18 +23,18 @@ func GetQueryCmd() *cobra.Command {
 	}
 
 	cmd.AddCommand(
-		GetCmdDenomAuthorityMetadata(),
+		GetCmdDenomAdmin(),
 		GetCmdDenomsFromCreator(),
 	)
 
 	return cmd
 }
 
-// GetCmdDenomAuthorityMetadata returns the authority metadata for a queried denom
-func GetCmdDenomAuthorityMetadata() *cobra.Command {
+// GetCmdDenomAdmin returns the admin for a queried denom
+func GetCmdDenomAdmin() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "denom-authority-metadata [denom] [flags]",
-		Short: "Get the authority metadata for a specific denom",
+		Use:   "admin [denom] [flags]",
+		Short: "Get the admin for a specific denom",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			clientCtx, err := client.GetClientQueryContext(cmd)
@@ -43,7 +43,7 @@ func GetCmdDenomAuthorityMetadata() *cobra.Command {
 			}
 			queryClient := types.NewQueryClient(clientCtx)
 
-			res, err := queryClient.DenomAuthorityMetadata(cmd.Context(), &types.QueryDenomAuthorityMetadataRequest{
+			res, err := queryClient.DenomAdmin(cmd.Context(), &types.QueryDenomAdminRequest{
 				Denom: args[0],
 			})
 			if err != nil {
