@@ -1018,14 +1018,14 @@ func sendMsg(out io.Writer, routine int, msg sdk.Msg, signer sdk.AccAddress, seq
 	// override the sequence if provided
 	txf := txFactory
 	if seq != nil {
-		txf = txFactory.WithSequence(uint64(*seq))
+		txf = txf.WithSequence(uint64(*seq))
 	}
 	// override the cosmos gas if provided
 	if gas != nil {
-		txf = txFactory.WithGas(uint64(*gas))
+		txf = txf.WithGas(uint64(*gas))
 	} else {
 		// NewDeductFeeDecorator in Cosmos SDK v0.50 does not allow zero gas
-		txf = txFactory.WithGas(200000)
+		txf = txf.WithGas(200000)
 	}
 
 	// send message
