@@ -207,6 +207,11 @@ func (vm *NetworkMgrVCUR) spawnDerivedAssets(ctx cosmos.Context, mgr Manager) er
 			continue
 		}
 
+		// skip any ethereum L2s with ETH as the gas asset
+		if !chain.Equals(common.ETHChain) && chain.GetGasAsset().Symbol.Equals("ETH") {
+			continue
+		}
+
 		layer1Assets = append(layer1Assets, chain.GetGasAsset())
 	}
 
