@@ -81,6 +81,7 @@ bifrost:
       min_confirmations: 0
       max_rpc_retries: 9 # about 1 min
       max_pending_nonces: 0
+      authorization_bearer: ""
       max_gas_tip_percentage: 0
       token_max_gas_multiplier: 0
       aggregator_max_gas_multiplier: 0

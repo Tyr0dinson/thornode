@@ -638,6 +638,10 @@ type BifrostChainConfiguration struct {
 	// new signing attempts.
 	MaxPendingNonces uint64 `mapstructure:"max_pending_nonces"`
 
+	// AuthorizationBearer can be set to configure the RPC client with an API token that
+	// will be provided to the backend in an Authorization header.
+	AuthorizationBearer string `mapstructure:"authorization_bearer"`
+
 	// UTXO contains UTXO chain specific configuration.
 	UTXO struct {
 		// BlockCacheCount is the number of blocks to cache in storage.

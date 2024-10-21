@@ -18,21 +18,14 @@ import (
 
 // EthRPC is a struct that interacts with an ETH RPC compatible blockchain
 type EthRPC struct {
-	host    string
 	client  *ethclient.Client
 	timeout time.Duration
 	logger  zerolog.Logger
 }
 
-func NewEthRPC(host string, timeout time.Duration, chain string) (*EthRPC, error) {
-	ethClient, err := ethclient.Dial(host)
-	if err != nil {
-		return nil, fmt.Errorf("fail to dial ETH rpc host(%s): %w", host, err)
-	}
-
+func NewEthRPC(client *ethclient.Client, timeout time.Duration, chain string) (*EthRPC, error) {
 	return &EthRPC{
-		host:    host,
-		client:  ethClient,
+		client:  client,
 		timeout: timeout,
 		logger:  log.Logger.With().Str("module", "eth_rpc").Str("chain", chain).Logger(),
 	}, nil
