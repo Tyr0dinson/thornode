@@ -1119,7 +1119,7 @@ func (qs queryServer) queryQuoteSaverWithdraw(ctx cosmos.Context, req *types.Que
 		FromAsset:   asset.String(),
 		ToAsset:     asset.GetLayer1Asset().String(),
 		Amount:      amount.String(),
-		Destination: string(GetRandomTHORAddress()), // required param, not actually used, spoof it
+		Destination: address.String(), // required param, not actually used, spoof it
 	}
 
 	ssInterval := qs.mgr.Keeper().GetConfigInt64(ctx, constants.SaversStreamingSwapsInterval)
