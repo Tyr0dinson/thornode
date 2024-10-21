@@ -1,3 +1,4 @@
+# Multiple coins check is in ValidateBasic(), this test should be a unit test as it will error here
 {{ template "default-state.yaml" }}
 ---
 {{ template "btc-eth-pool-state.yaml" }}
