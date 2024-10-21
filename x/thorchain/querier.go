@@ -1517,6 +1517,7 @@ func (qs queryServer) queryPoolSlips(ctx cosmos.Context, asset string) (*types.Q
 
 	result := make([]*types.QueryPoolSlipResponse, len(assets))
 	for i := range assets {
+		result[i] = &types.QueryPoolSlipResponse{}
 		result[i].Asset = assets[i].String()
 
 		poolSlip, err := qs.mgr.Keeper().GetPoolSwapSlip(ctx, ctx.BlockHeight(), assets[i])
