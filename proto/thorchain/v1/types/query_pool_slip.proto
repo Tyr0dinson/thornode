@@ -9,6 +9,7 @@ option (gogoproto.marshaler_all) = true;
 
 message QueryPoolSlipRequest{
   string asset = 1;
+  string height = 2;
 }
 
 message QueryPoolSlipResponse{
@@ -25,7 +26,9 @@ message QueryPoolSlipResponse{
   int64  summed_rollup = 6  [(gogoproto.nullable) = true];
 }
 
-message QueryPoolSlipsRequest{}
+message QueryPoolSlipsRequest{
+  string height = 1;
+}
 
 message QueryPoolSlipsResponse{
   repeated QueryPoolSlipResponse pool_slips = 1;

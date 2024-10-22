@@ -9,6 +9,7 @@ option (gogoproto.marshaler_all) = true;
 
 message QueryInvariantRequest{
   string path = 1;
+  string height = 2;
 }
 
 message QueryInvariantResponse{
@@ -20,7 +21,9 @@ message QueryInvariantResponse{
   repeated string msg = 3;
 }
 
-message QueryInvariantsRequest{}
+message QueryInvariantsRequest{
+  string height = 1;
+}
 
 message QueryInvariantsResponse{
   repeated string invariants = 1;

@@ -7,7 +7,9 @@ import "gogoproto/gogo.proto";
 
 option (gogoproto.marshaler_all) = true;
 
-message QueryNetworkRequest{}
+message QueryNetworkRequest{
+  string height = 1;
+}
 
 message QueryNetworkResponse{
 	// total amount of RUNE awarded to node operators

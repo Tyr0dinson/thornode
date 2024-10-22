@@ -7,7 +7,9 @@ import "gogoproto/gogo.proto";
 
 option (gogoproto.marshaler_all) = true;
 
-message QueryRunePoolRequest{}
+message QueryRunePoolRequest{
+  string height = 1;
+}
 
 message QueryRunePoolResponse{
   POL pol = 1;

@@ -7,7 +7,9 @@ import "gogoproto/gogo.proto";
 
 option (gogoproto.marshaler_all) = true;
 
-message QueryBlockRequest{}
+message QueryBlockRequest{
+  string height = 1;
+}
 
 message QueryBlockResponse{
   BlockResponseId id = 1;

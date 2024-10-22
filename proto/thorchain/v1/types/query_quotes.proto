@@ -18,6 +18,7 @@ message QueryQuoteSwapRequest{
   string refund_address = 8;
   repeated string affiliate = 9;
   repeated string affiliate_bps = 10;
+  string height = 11;
 }
 
 message QueryQuoteSwapResponse{
@@ -67,6 +68,7 @@ message QueryQuoteSaverDepositRequest{
   string amount = 2;
   string affiliate = 3;
   string affiliate_bps = 4;
+  string height = 5;
 }
 
 message QueryQuoteSaverDepositResponse{
@@ -109,6 +111,7 @@ message QueryQuoteSaverWithdrawRequest{
   string asset = 1;
   string address = 2;
   string withdraw_bps = 3;
+  string height = 4;
 }
 
 message QueryQuoteSaverWithdrawResponse{
@@ -155,6 +158,7 @@ message QueryQuoteLoanOpenRequest{
   string destination = 5;
   string affiliate = 6;
   string affiliate_bps = 7;
+  string height = 8;
 }
 
 message QueryQuoteLoanOpenResponse{
@@ -209,6 +213,7 @@ message QueryQuoteLoanCloseRequest{
   string min_out = 3;
   string repay_bps = 4;
   string loan_owner = 5;
+  string height = 6;
 }
 
 message QueryQuoteLoanCloseResponse{

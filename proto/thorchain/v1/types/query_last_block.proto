@@ -7,10 +7,13 @@ import "gogoproto/gogo.proto";
 
 option (gogoproto.marshaler_all) = true;
 
-message QueryLastBlocksRequest{}
+message QueryLastBlocksRequest{
+  string height = 1;
+}
 
 message QueryChainsLastBlockRequest{
   string chain = 1;
+  string height = 2;
 }
 
 message QueryLastBlocksResponse{

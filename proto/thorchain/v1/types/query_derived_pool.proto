@@ -9,6 +9,7 @@ option (gogoproto.marshaler_all) = true;
 
 message QueryDerivedPoolRequest{
   string asset = 1;
+  string height = 2;
 }
 
 message QueryDerivedPoolResponse{
@@ -21,7 +22,9 @@ message QueryDerivedPoolResponse{
   string derived_depth_bps = 6;
 }
 
-message QueryDerivedPoolsRequest{}
+message QueryDerivedPoolsRequest{
+  string height = 1;
+}
 
 message QueryDerivedPoolsResponse{
   repeated QueryDerivedPoolResponse pools = 1;

@@ -10,6 +10,7 @@ option (gogoproto.marshaler_all) = true;
 message QueryLiquidityProviderRequest{
   string asset = 1;
   string address = 2;
+  string height = 3;
 }
 
 // Can we replace this with LiquidityProvider proto? Check json fields...
@@ -34,6 +35,7 @@ message QueryLiquidityProviderResponse{
 
 message QueryLiquidityProvidersRequest{
   string asset = 1;
+  string height = 2;
 }
 
 message QueryLiquidityProvidersResponse{

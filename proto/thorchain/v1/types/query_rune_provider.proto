@@ -9,6 +9,7 @@ option (gogoproto.marshaler_all) = true;
 
 message QueryRuneProviderRequest{
   string address = 1;
+  string height = 2;
 }
 
 message QueryRuneProviderResponse{
@@ -22,7 +23,9 @@ message QueryRuneProviderResponse{
   int64  last_withdraw_height = 8;
 }
 
-message QueryRuneProvidersRequest{}
+message QueryRuneProvidersRequest{
+  string height = 1;
+}
 
 message QueryRuneProvidersResponse{
   repeated QueryRuneProviderResponse providers = 1;

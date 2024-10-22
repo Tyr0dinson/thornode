@@ -7,7 +7,9 @@ import "gogoproto/gogo.proto";
 
 option (gogoproto.marshaler_all) = true;
 
-message QueryRagnarokRequest{}
+message QueryRagnarokRequest{
+  string height = 1;
+}
 
 message QueryRagnarokResponse{
   bool in_progress = 1;

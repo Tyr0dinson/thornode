@@ -9,6 +9,7 @@ option (gogoproto.marshaler_all) = true;
 
 message QueryThornameRequest{
   string name = 1;
+  string height = 2;
 }
 
 message QueryThornameResponse{

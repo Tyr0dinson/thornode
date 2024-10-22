@@ -9,6 +9,7 @@ option (gogoproto.marshaler_all) = true;
 
 message QueryStreamingSwapRequest{
   string tx_id = 1;
+  string height = 2;
 }
 
 message QueryStreamingSwapResponse{
@@ -42,7 +43,9 @@ message QueryStreamingSwapResponse{
   repeated string failed_swap_reasons = 14;
 }
 
-message QueryStreamingSwapsRequest{}
+message QueryStreamingSwapsRequest{
+  string height = 1;
+}
 
 message QueryStreamingSwapsResponse{
   repeated QueryStreamingSwapResponse streaming_swaps = 1;

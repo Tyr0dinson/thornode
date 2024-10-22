@@ -10,6 +10,7 @@ option (gogoproto.marshaler_all) = true;
 
 message QueryNodeRequest{
   string address = 1;
+  string height = 2;
 }
 
 message QueryNodeResponse{
@@ -46,7 +47,9 @@ message QueryNodeResponse{
   NodePreflightStatus preflight_status = 21;
 }
 
-message QueryNodesRequest{}
+message QueryNodesRequest{
+  string height = 1;
+}
 
 message QueryNodesResponse{
   repeated QueryNodeResponse nodes = 1;

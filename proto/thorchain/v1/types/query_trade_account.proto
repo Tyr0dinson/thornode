@@ -9,6 +9,7 @@ option (gogoproto.marshaler_all) = true;
 
 message QueryTradeAccountRequest{
   string address = 1;
+  string height = 2;
 }
 
 message QueryTradeAccountResponse{
@@ -26,6 +27,7 @@ message QueryTradeAccountResponse{
 
 message QueryTradeAccountsRequest{
   string asset = 1;
+  string height = 2;
 }
 
 message QueryTradeAccountsResponse{

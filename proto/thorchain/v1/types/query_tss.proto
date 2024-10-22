@@ -10,13 +10,16 @@ option (gogoproto.marshaler_all) = true;
 
 message QueryTssKeygenMetricRequest{
   string pub_key = 1;
+  string height = 2;
 }
 
 message QueryTssKeygenMetricResponse{
   repeated TssKeygenMetric metrics = 1;
 }
 
-message QueryTssMetricRequest{}
+message QueryTssMetricRequest{
+  string height = 1;
+}
 
 message QueryTssMetricResponse{
   repeated TssKeygenMetric keygen = 1;

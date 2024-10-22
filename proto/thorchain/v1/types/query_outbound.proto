@@ -8,9 +8,13 @@ import "common/common.proto";
 
 option (gogoproto.marshaler_all) = true;
 
-message QueryScheduledOutboundRequest{}
+message QueryScheduledOutboundRequest{
+  string height = 1;
+}
 
-message QueryPendingOutboundRequest{}
+message QueryPendingOutboundRequest{
+  string height = 1;
+}
 
 message QueryOutboundResponse{
   repeated QueryTxOutItem tx_out_items = 1;

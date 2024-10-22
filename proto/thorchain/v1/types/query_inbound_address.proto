@@ -32,7 +32,9 @@ message QueryInboundAddressResponse{
   string dust_threshold = 13;
 }
 
-message QueryInboundAddressesRequest{}
+message QueryInboundAddressesRequest{
+  string height = 1;
+}
 
 message QueryInboundAddressesResponse{
   repeated QueryInboundAddressResponse inbound_addresses = 1;

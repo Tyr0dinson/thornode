@@ -10,6 +10,7 @@ option (gogoproto.marshaler_all) = true;
 message QueryBorrowerRequest{
   string asset = 1;
   string address = 2;
+  string height = 3;
 }
 
 message QueryBorrowerResponse{
@@ -27,6 +28,7 @@ message QueryBorrowerResponse{
 
 message QueryBorrowersRequest{
   string asset = 1;
+  string height = 2;
 }
 
 message QueryBorrowersResponse{

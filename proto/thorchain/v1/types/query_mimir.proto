@@ -8,7 +8,9 @@ import "types/type_mimir.proto";
 
 option (gogoproto.marshaler_all) = true;
 
-message QueryMimirValuesRequest{}
+message QueryMimirValuesRequest{
+  string height = 1;
+}
 
 message QueryMimirValuesResponse{
   repeated Mimir mimirs = 1;
@@ -16,25 +18,32 @@ message QueryMimirValuesResponse{
 
 message QueryMimirWithKeyRequest{
   string key = 1;
+  string height = 2;
 }
 
 message QueryMimirWithKeyResponse{
   int64 value = 1;
 }
 
-message QueryMimirAdminValuesRequest{}
+message QueryMimirAdminValuesRequest{
+  string height = 1;
+}
 
 message QueryMimirAdminValuesResponse{
   repeated Mimir admin_mimirs = 1;
 }
 
-message QueryMimirNodesAllValuesRequest{}
+message QueryMimirNodesAllValuesRequest{
+  string height = 1;
+}
 
 message QueryMimirNodesAllValuesResponse{
   repeated NodeMimir mimirs = 1 [(gogoproto.nullable) = false];
 }
 
-message QueryMimirNodesValuesRequest{}
+message QueryMimirNodesValuesRequest{
+  string height = 1;
+}
 
 message QueryMimirNodesValuesResponse{
   repeated Mimir mimirs = 1;
@@ -42,6 +51,7 @@ message QueryMimirNodesValuesResponse{
 
 message QueryMimirNodeValuesRequest{
   string address = 1;
+  string height = 2;
 }
 
 message QueryMimirNodeValuesResponse{

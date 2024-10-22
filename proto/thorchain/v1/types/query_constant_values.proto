@@ -7,7 +7,9 @@ import "gogoproto/gogo.proto";
 
 option (gogoproto.marshaler_all) = true;
 
-message QueryConstantValuesRequest{}
+message QueryConstantValuesRequest{
+  string height = 1;
+}
 
 message QueryConstantValuesResponse{
   repeated Int64Constants int_64_values = 1;

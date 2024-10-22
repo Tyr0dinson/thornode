@@ -9,6 +9,7 @@ option (gogoproto.marshaler_all) = true;
 
 message QueryAccountRequest{
   string address = 1;
+  string height = 2;
 }
 
 message QueryAccountResponse{

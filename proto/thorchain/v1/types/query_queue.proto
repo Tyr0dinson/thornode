@@ -7,7 +7,9 @@ import "gogoproto/gogo.proto";
 
 option (gogoproto.marshaler_all) = true;
 
-message QueryQueueRequest{}
+message QueryQueueRequest{
+  string height = 1;
+}
 
 message QueryQueueResponse{
   int64 swap = 1;

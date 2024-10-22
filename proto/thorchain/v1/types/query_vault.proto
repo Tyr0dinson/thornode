@@ -10,6 +10,7 @@ option (gogoproto.marshaler_all) = true;
 
 message QueryVaultRequest{
   string pub_key = 1;
+  string height = 2;
 }
 
 message QueryVaultResponse{
@@ -30,13 +31,17 @@ message QueryVaultResponse{
   repeated string frozen = 14;
 }
 
-message QueryAsgardVaultsRequest{}
+message QueryAsgardVaultsRequest{
+  string height = 1;
+}
 
 message QueryAsgardVaultsResponse{
   repeated QueryVaultResponse asgard_vaults = 1;
 }
 
-message QueryVaultsPubkeysRequest{}
+message QueryVaultsPubkeysRequest{
+  string height = 1;
+}
 
 message QueryVaultsPubkeysResponse{
   repeated VaultInfo asgard = 1;

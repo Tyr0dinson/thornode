@@ -9,4 +9,5 @@ option (gogoproto.marshaler_all) = true;
 
 message QueryBanRequest{
   string address = 1;
+  string height = 2;
 }

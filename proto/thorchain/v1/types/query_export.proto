@@ -7,7 +7,9 @@ import "gogoproto/gogo.proto";
 
 option (gogoproto.marshaler_all) = true;
 
-message QueryExportRequest{}
+message QueryExportRequest{
+  string height = 1;
+}
 
 message QueryExportResponse{
   bytes content = 1;

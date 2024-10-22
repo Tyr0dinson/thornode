@@ -10,6 +10,7 @@ option (gogoproto.marshaler_all) = true;
 
 message QueryBalanceModuleRequest{
   string name = 1;
+  string height = 2;
 }
 
 message QueryBalanceModuleResponse{

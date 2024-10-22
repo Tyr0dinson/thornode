@@ -24,6 +24,7 @@ var _ = math.Inf
 const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 
 type QueryMimirValuesRequest struct {
+	Height string `protobuf:"bytes,1,opt,name=height,proto3" json:"height,omitempty"`
 }
 
 func (m *QueryMimirValuesRequest) Reset()         { *m = QueryMimirValuesRequest{} }
@@ -58,6 +59,13 @@ func (m *QueryMimirValuesRequest) XXX_DiscardUnknown() {
 }
 
 var xxx_messageInfo_QueryMimirValuesRequest proto.InternalMessageInfo
+
+func (m *QueryMimirValuesRequest) GetHeight() string {
+	if m != nil {
+		return m.Height
+	}
+	return ""
+}
 
 type QueryMimirValuesResponse struct {
 	Mimirs []*Mimir `protobuf:"bytes,1,rep,name=mimirs,proto3" json:"mimirs,omitempty"`
@@ -104,7 +112,8 @@ func (m *QueryMimirValuesResponse) GetMimirs() []*Mimir {
 }
 
 type QueryMimirWithKeyRequest struct {
-	Key string `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	Key    string `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	Height string `protobuf:"bytes,2,opt,name=height,proto3" json:"height,omitempty"`
 }
 
 func (m *QueryMimirWithKeyRequest) Reset()         { *m = QueryMimirWithKeyRequest{} }
@@ -143,6 +152,13 @@ var xxx_messageInfo_QueryMimirWithKeyRequest proto.InternalMessageInfo
 func (m *QueryMimirWithKeyRequest) GetKey() string {
 	if m != nil {
 		return m.Key
+	}
+	return ""
+}
+
+func (m *QueryMimirWithKeyRequest) GetHeight() string {
+	if m != nil {
+		return m.Height
 	}
 	return ""
 }
@@ -192,6 +208,7 @@ func (m *QueryMimirWithKeyResponse) GetValue() int64 {
 }
 
 type QueryMimirAdminValuesRequest struct {
+	Height string `protobuf:"bytes,1,opt,name=height,proto3" json:"height,omitempty"`
 }
 
 func (m *QueryMimirAdminValuesRequest) Reset()         { *m = QueryMimirAdminValuesRequest{} }
@@ -226,6 +243,13 @@ func (m *QueryMimirAdminValuesRequest) XXX_DiscardUnknown() {
 }
 
 var xxx_messageInfo_QueryMimirAdminValuesRequest proto.InternalMessageInfo
+
+func (m *QueryMimirAdminValuesRequest) GetHeight() string {
+	if m != nil {
+		return m.Height
+	}
+	return ""
+}
 
 type QueryMimirAdminValuesResponse struct {
 	AdminMimirs []*Mimir `protobuf:"bytes,1,rep,name=admin_mimirs,json=adminMimirs,proto3" json:"admin_mimirs,omitempty"`
@@ -272,6 +296,7 @@ func (m *QueryMimirAdminValuesResponse) GetAdminMimirs() []*Mimir {
 }
 
 type QueryMimirNodesAllValuesRequest struct {
+	Height string `protobuf:"bytes,1,opt,name=height,proto3" json:"height,omitempty"`
 }
 
 func (m *QueryMimirNodesAllValuesRequest) Reset()         { *m = QueryMimirNodesAllValuesRequest{} }
@@ -306,6 +331,13 @@ func (m *QueryMimirNodesAllValuesRequest) XXX_DiscardUnknown() {
 }
 
 var xxx_messageInfo_QueryMimirNodesAllValuesRequest proto.InternalMessageInfo
+
+func (m *QueryMimirNodesAllValuesRequest) GetHeight() string {
+	if m != nil {
+		return m.Height
+	}
+	return ""
+}
 
 type QueryMimirNodesAllValuesResponse struct {
 	Mimirs []NodeMimir `protobuf:"bytes,1,rep,name=mimirs,proto3" json:"mimirs"`
@@ -352,6 +384,7 @@ func (m *QueryMimirNodesAllValuesResponse) GetMimirs() []NodeMimir {
 }
 
 type QueryMimirNodesValuesRequest struct {
+	Height string `protobuf:"bytes,1,opt,name=height,proto3" json:"height,omitempty"`
 }
 
 func (m *QueryMimirNodesValuesRequest) Reset()         { *m = QueryMimirNodesValuesRequest{} }
@@ -386,6 +419,13 @@ func (m *QueryMimirNodesValuesRequest) XXX_DiscardUnknown() {
 }
 
 var xxx_messageInfo_QueryMimirNodesValuesRequest proto.InternalMessageInfo
+
+func (m *QueryMimirNodesValuesRequest) GetHeight() string {
+	if m != nil {
+		return m.Height
+	}
+	return ""
+}
 
 type QueryMimirNodesValuesResponse struct {
 	Mimirs []*Mimir `protobuf:"bytes,1,rep,name=mimirs,proto3" json:"mimirs,omitempty"`
@@ -433,6 +473,7 @@ func (m *QueryMimirNodesValuesResponse) GetMimirs() []*Mimir {
 
 type QueryMimirNodeValuesRequest struct {
 	Address string `protobuf:"bytes,1,opt,name=address,proto3" json:"address,omitempty"`
+	Height  string `protobuf:"bytes,2,opt,name=height,proto3" json:"height,omitempty"`
 }
 
 func (m *QueryMimirNodeValuesRequest) Reset()         { *m = QueryMimirNodeValuesRequest{} }
@@ -471,6 +512,13 @@ var xxx_messageInfo_QueryMimirNodeValuesRequest proto.InternalMessageInfo
 func (m *QueryMimirNodeValuesRequest) GetAddress() string {
 	if m != nil {
 		return m.Address
+	}
+	return ""
+}
+
+func (m *QueryMimirNodeValuesRequest) GetHeight() string {
+	if m != nil {
+		return m.Height
 	}
 	return ""
 }
@@ -590,32 +638,33 @@ func init() {
 func init() { proto.RegisterFile("types/query_mimir.proto", fileDescriptor_dae8c053a533c659) }
 
 var fileDescriptor_dae8c053a533c659 = []byte{
-	// 395 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x94, 0x53, 0x41, 0x4f, 0xf2, 0x40,
-	0x10, 0x6d, 0x3f, 0x3e, 0x30, 0x0e, 0x1c, 0x48, 0x43, 0xa4, 0xa0, 0x16, 0x6c, 0x3c, 0x70, 0xd0,
-	0x36, 0xea, 0xc1, 0xab, 0x90, 0x78, 0x30, 0x06, 0xa3, 0x3d, 0x68, 0xe2, 0x85, 0x14, 0xba, 0x81,
-	0xc6, 0xb6, 0x0b, 0xdd, 0x62, 0xec, 0xbf, 0xf0, 0x67, 0x71, 0xe4, 0xe8, 0xc9, 0x18, 0xf8, 0x23,
-	0x66, 0xb7, 0x8b, 0x74, 0x41, 0x48, 0xbc, 0x34, 0xb3, 0xf3, 0x66, 0xde, 0xdb, 0x37, 0x3b, 0x85,
-	0x72, 0x14, 0x0f, 0x11, 0x31, 0x47, 0x63, 0x14, 0xc6, 0x1d, 0xdf, 0xf5, 0xdd, 0xd0, 0x18, 0x86,
-	0x38, 0xc2, 0x4a, 0x96, 0x01, 0xd5, 0x52, 0x1f, 0xf7, 0x31, 0xcb, 0x98, 0x34, 0x4a, 0xc0, 0xea,
-	0x5e, 0xd2, 0x45, 0xbf, 0xe9, 0x26, 0xbd, 0x02, 0xe5, 0x07, 0xca, 0xd4, 0xa6, 0xb9, 0x47, 0xdb,
-	0x1b, 0x23, 0x62, 0xa1, 0xd1, 0x18, 0x91, 0x48, 0xbf, 0x02, 0x75, 0x1d, 0x22, 0x43, 0x1c, 0x10,
-	0xa4, 0x1c, 0x43, 0x8e, 0xb1, 0x10, 0x55, 0xae, 0x67, 0x1a, 0xf9, 0xf3, 0x82, 0xc1, 0xf8, 0x0d,
-	0x56, 0x6b, 0x71, 0x4c, 0x3f, 0x49, 0x33, 0x3c, 0xb9, 0xd1, 0xe0, 0x16, 0xc5, 0x9c, 0x5d, 0x29,
-	0x42, 0xe6, 0x05, 0xc5, 0xaa, 0x5c, 0x97, 0x1b, 0xbb, 0x16, 0x0d, 0xf5, 0x33, 0xa8, 0xfc, 0x52,
-	0xcd, 0x05, 0x4b, 0x90, 0x7d, 0xa5, 0x57, 0x60, 0x0d, 0x19, 0x2b, 0x39, 0xe8, 0x1a, 0x1c, 0x2c,
-	0x5b, 0x9a, 0x8e, 0xef, 0x06, 0xa2, 0x85, 0x7b, 0x38, 0xdc, 0x80, 0x73, 0x5a, 0x13, 0x0a, 0x36,
-	0x4d, 0x77, 0xb6, 0xb8, 0xc9, 0xb3, 0x8a, 0x76, 0x62, 0xe9, 0x08, 0x6a, 0x4b, 0xc6, 0x3b, 0xec,
-	0x20, 0xd2, 0xf4, 0x3c, 0x51, 0xd4, 0x82, 0xfa, 0xe6, 0x12, 0xae, 0x6b, 0xac, 0xcc, 0xaf, 0xc8,
-	0x15, 0x69, 0x39, 0xeb, 0x6b, 0xfd, 0x9f, 0x7c, 0xd6, 0xa4, 0x9f, 0x49, 0x0a, 0x46, 0x19, 0xa7,
-	0xa8, 0x79, 0x9d, 0x36, 0x2a, 0xe0, 0x7f, 0x7a, 0xb0, 0x4b, 0xd8, 0x17, 0x69, 0x04, 0x15, 0x45,
-	0x85, 0x1d, 0xdb, 0x71, 0x42, 0x44, 0x08, 0x7f, 0xb7, 0xc5, 0x51, 0x6f, 0xaf, 0xde, 0x6f, 0x45,
-	0xfe, 0x14, 0xf2, 0x01, 0x76, 0xd0, 0xb6, 0x31, 0x43, 0xb0, 0xf0, 0x4e, 0x74, 0x13, 0xb2, 0x2c,
-	0x5a, 0xdf, 0x92, 0xe5, 0x22, 0xfc, 0x4b, 0x2d, 0x42, 0xeb, 0x66, 0x32, 0xd3, 0xe4, 0xe9, 0x4c,
-	0x93, 0xbf, 0x66, 0x9a, 0xfc, 0x3e, 0xd7, 0xa4, 0xe9, 0x5c, 0x93, 0x3e, 0xe6, 0x9a, 0xf4, 0x6c,
-	0xf6, 0xdd, 0xc8, 0xb3, 0xbb, 0x46, 0x0f, 0xfb, 0x66, 0x34, 0xc0, 0x61, 0x6f, 0x60, 0xbb, 0x01,
-	0x8b, 0xa8, 0x9e, 0xf9, 0x96, 0x4e, 0xd2, 0xdb, 0x74, 0x73, 0xec, 0xc7, 0xb8, 0xf8, 0x0e, 0x00,
-	0x00, 0xff, 0xff, 0x45, 0xce, 0xca, 0x6d, 0x68, 0x03, 0x00, 0x00,
+	// 416 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x94, 0x53, 0x4f, 0x6b, 0xe2, 0x40,
+	0x14, 0x4f, 0x74, 0x75, 0xd9, 0xa7, 0x07, 0x11, 0xd1, 0xac, 0xbb, 0x1b, 0x25, 0xec, 0xc1, 0xcb,
+	0x26, 0xb8, 0x85, 0x42, 0x6f, 0x55, 0xda, 0x43, 0x29, 0xf6, 0x4f, 0x0e, 0x2d, 0xf4, 0x22, 0xd1,
+	0x0c, 0x49, 0x68, 0x92, 0xd1, 0x4c, 0x2c, 0xcd, 0xb7, 0xe8, 0xc7, 0xf2, 0xe8, 0xb1, 0xa7, 0x52,
+	0xf4, 0x8b, 0x94, 0x99, 0x8c, 0x9a, 0x58, 0x15, 0x7b, 0x09, 0x6f, 0xde, 0xcc, 0xef, 0xcf, 0xfb,
+	0x13, 0xa8, 0x85, 0xd1, 0x08, 0x11, 0x6d, 0x3c, 0x41, 0x41, 0xd4, 0xf7, 0x1c, 0xcf, 0x09, 0xd4,
+	0x51, 0x80, 0x43, 0x5c, 0xce, 0xb1, 0x8b, 0x7a, 0xc5, 0xc2, 0x16, 0x66, 0x19, 0x8d, 0x46, 0xf1,
+	0x65, 0xbd, 0x1a, 0xa3, 0xe8, 0x37, 0x09, 0x52, 0xda, 0x50, 0xbb, 0xa5, 0x4c, 0x3d, 0x9a, 0xbb,
+	0x33, 0xdc, 0x09, 0x22, 0x3a, 0x1a, 0x4f, 0x10, 0x09, 0xcb, 0x55, 0xc8, 0xdb, 0xc8, 0xb1, 0xec,
+	0x50, 0x12, 0x9b, 0x62, 0xeb, 0x87, 0xce, 0x4f, 0xca, 0x29, 0x48, 0x9f, 0x21, 0x64, 0x84, 0x7d,
+	0x82, 0xca, 0x7f, 0x21, 0xcf, 0xd8, 0x89, 0x24, 0x36, 0xb3, 0xad, 0xc2, 0xff, 0xa2, 0xca, 0x74,
+	0x55, 0xf6, 0x56, 0xe7, 0x77, 0xca, 0x59, 0x92, 0xe1, 0xde, 0x09, 0xed, 0x4b, 0x14, 0x2d, 0x55,
+	0x4b, 0x90, 0x7d, 0x44, 0x11, 0x97, 0xa4, 0x61, 0xc2, 0x47, 0x26, 0xe5, 0xa3, 0x0d, 0x3f, 0xb7,
+	0xb0, 0x70, 0x23, 0x15, 0xc8, 0x3d, 0x51, 0x6b, 0x8c, 0x28, 0xab, 0xc7, 0x07, 0xe5, 0x18, 0x7e,
+	0xaf, 0x21, 0x1d, 0xd3, 0x73, 0xfc, 0xc3, 0x4a, 0xbe, 0x81, 0x3f, 0x3b, 0x70, 0x5c, 0x4e, 0x83,
+	0xa2, 0x41, 0xd3, 0xfd, 0x3d, 0xd5, 0x17, 0xd8, 0x8b, 0x5e, 0xdc, 0x82, 0x13, 0x68, 0xac, 0x19,
+	0xaf, 0xb0, 0x89, 0x48, 0xc7, 0x75, 0x0f, 0x33, 0xa3, 0x43, 0x73, 0x37, 0x94, 0xfb, 0x51, 0x37,
+	0xe6, 0x50, 0xe2, 0x4e, 0xe8, 0x73, 0x86, 0xeb, 0x7e, 0x9b, 0xbe, 0x35, 0x84, 0xd5, 0x44, 0x52,
+	0x8d, 0x61, 0x9c, 0x87, 0x79, 0x39, 0x4f, 0x36, 0x26, 0x85, 0xfb, 0xd2, 0x42, 0x5c, 0xc3, 0xaf,
+	0x34, 0x4d, 0x5a, 0x5d, 0x82, 0xef, 0x86, 0x69, 0x06, 0x88, 0x10, 0x2e, 0xbf, 0x3c, 0xee, 0xdc,
+	0x8d, 0xde, 0x66, 0x3d, 0x1b, 0xb6, 0xfe, 0x41, 0xc1, 0xc7, 0x26, 0xda, 0x37, 0x2e, 0xf0, 0x97,
+	0xbd, 0x22, 0x8a, 0x06, 0x39, 0x16, 0x6d, 0xd9, 0xce, 0xd5, 0xa2, 0x65, 0x12, 0x8b, 0xd6, 0xbd,
+	0x98, 0xce, 0x65, 0x71, 0x36, 0x97, 0xc5, 0xf7, 0xb9, 0x2c, 0xbe, 0x2c, 0x64, 0x61, 0xb6, 0x90,
+	0x85, 0xd7, 0x85, 0x2c, 0x3c, 0x68, 0x96, 0x13, 0xba, 0xc6, 0x40, 0x1d, 0x62, 0x4f, 0x0b, 0x6d,
+	0x1c, 0x0c, 0x6d, 0xc3, 0xf1, 0x59, 0x44, 0xf5, 0xb4, 0xe7, 0x64, 0x92, 0xba, 0x19, 0xe4, 0xd9,
+	0x8f, 0x7a, 0xf4, 0x11, 0x00, 0x00, 0xff, 0xff, 0x08, 0x52, 0xdf, 0x8f, 0xf8, 0x03, 0x00, 0x00,
 }
 
 func (m *QueryMimirValuesRequest) Marshal() (dAtA []byte, err error) {
@@ -638,6 +687,13 @@ func (m *QueryMimirValuesRequest) MarshalToSizedBuffer(dAtA []byte) (int, error)
 	_ = i
 	var l int
 	_ = l
+	if len(m.Height) > 0 {
+		i -= len(m.Height)
+		copy(dAtA[i:], m.Height)
+		i = encodeVarintQueryMimir(dAtA, i, uint64(len(m.Height)))
+		i--
+		dAtA[i] = 0xa
+	}
 	return len(dAtA) - i, nil
 }
 
@@ -698,6 +754,13 @@ func (m *QueryMimirWithKeyRequest) MarshalToSizedBuffer(dAtA []byte) (int, error
 	_ = i
 	var l int
 	_ = l
+	if len(m.Height) > 0 {
+		i -= len(m.Height)
+		copy(dAtA[i:], m.Height)
+		i = encodeVarintQueryMimir(dAtA, i, uint64(len(m.Height)))
+		i--
+		dAtA[i] = 0x12
+	}
 	if len(m.Key) > 0 {
 		i -= len(m.Key)
 		copy(dAtA[i:], m.Key)
@@ -756,6 +819,13 @@ func (m *QueryMimirAdminValuesRequest) MarshalToSizedBuffer(dAtA []byte) (int, e
 	_ = i
 	var l int
 	_ = l
+	if len(m.Height) > 0 {
+		i -= len(m.Height)
+		copy(dAtA[i:], m.Height)
+		i = encodeVarintQueryMimir(dAtA, i, uint64(len(m.Height)))
+		i--
+		dAtA[i] = 0xa
+	}
 	return len(dAtA) - i, nil
 }
 
@@ -816,6 +886,13 @@ func (m *QueryMimirNodesAllValuesRequest) MarshalToSizedBuffer(dAtA []byte) (int
 	_ = i
 	var l int
 	_ = l
+	if len(m.Height) > 0 {
+		i -= len(m.Height)
+		copy(dAtA[i:], m.Height)
+		i = encodeVarintQueryMimir(dAtA, i, uint64(len(m.Height)))
+		i--
+		dAtA[i] = 0xa
+	}
 	return len(dAtA) - i, nil
 }
 
@@ -876,6 +953,13 @@ func (m *QueryMimirNodesValuesRequest) MarshalToSizedBuffer(dAtA []byte) (int, e
 	_ = i
 	var l int
 	_ = l
+	if len(m.Height) > 0 {
+		i -= len(m.Height)
+		copy(dAtA[i:], m.Height)
+		i = encodeVarintQueryMimir(dAtA, i, uint64(len(m.Height)))
+		i--
+		dAtA[i] = 0xa
+	}
 	return len(dAtA) - i, nil
 }
 
@@ -936,6 +1020,13 @@ func (m *QueryMimirNodeValuesRequest) MarshalToSizedBuffer(dAtA []byte) (int, er
 	_ = i
 	var l int
 	_ = l
+	if len(m.Height) > 0 {
+		i -= len(m.Height)
+		copy(dAtA[i:], m.Height)
+		i = encodeVarintQueryMimir(dAtA, i, uint64(len(m.Height)))
+		i--
+		dAtA[i] = 0x12
+	}
 	if len(m.Address) > 0 {
 		i -= len(m.Address)
 		copy(dAtA[i:], m.Address)
@@ -1035,6 +1126,10 @@ func (m *QueryMimirValuesRequest) Size() (n int) {
 	}
 	var l int
 	_ = l
+	l = len(m.Height)
+	if l > 0 {
+		n += 1 + l + sovQueryMimir(uint64(l))
+	}
 	return n
 }
 
@@ -1063,6 +1158,10 @@ func (m *QueryMimirWithKeyRequest) Size() (n int) {
 	if l > 0 {
 		n += 1 + l + sovQueryMimir(uint64(l))
 	}
+	l = len(m.Height)
+	if l > 0 {
+		n += 1 + l + sovQueryMimir(uint64(l))
+	}
 	return n
 }
 
@@ -1084,6 +1183,10 @@ func (m *QueryMimirAdminValuesRequest) Size() (n int) {
 	}
 	var l int
 	_ = l
+	l = len(m.Height)
+	if l > 0 {
+		n += 1 + l + sovQueryMimir(uint64(l))
+	}
 	return n
 }
 
@@ -1108,6 +1211,10 @@ func (m *QueryMimirNodesAllValuesRequest) Size() (n int) {
 	}
 	var l int
 	_ = l
+	l = len(m.Height)
+	if l > 0 {
+		n += 1 + l + sovQueryMimir(uint64(l))
+	}
 	return n
 }
 
@@ -1132,6 +1239,10 @@ func (m *QueryMimirNodesValuesRequest) Size() (n int) {
 	}
 	var l int
 	_ = l
+	l = len(m.Height)
+	if l > 0 {
+		n += 1 + l + sovQueryMimir(uint64(l))
+	}
 	return n
 }
 
@@ -1157,6 +1268,10 @@ func (m *QueryMimirNodeValuesRequest) Size() (n int) {
 	var l int
 	_ = l
 	l = len(m.Address)
+	if l > 0 {
+		n += 1 + l + sovQueryMimir(uint64(l))
+	}
+	l = len(m.Height)
 	if l > 0 {
 		n += 1 + l + sovQueryMimir(uint64(l))
 	}
@@ -1229,6 +1344,38 @@ func (m *QueryMimirValuesRequest) Unmarshal(dAtA []byte) error {
 			return fmt.Errorf("proto: QueryMimirValuesRequest: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Height", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryMimir
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthQueryMimir
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthQueryMimir
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Height = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := skipQueryMimir(dAtA[iNdEx:])
@@ -1395,6 +1542,38 @@ func (m *QueryMimirWithKeyRequest) Unmarshal(dAtA []byte) error {
 			}
 			m.Key = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Height", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryMimir
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthQueryMimir
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthQueryMimir
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Height = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := skipQueryMimir(dAtA[iNdEx:])
@@ -1514,6 +1693,38 @@ func (m *QueryMimirAdminValuesRequest) Unmarshal(dAtA []byte) error {
 			return fmt.Errorf("proto: QueryMimirAdminValuesRequest: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Height", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryMimir
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthQueryMimir
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthQueryMimir
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Height = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := skipQueryMimir(dAtA[iNdEx:])
@@ -1648,6 +1859,38 @@ func (m *QueryMimirNodesAllValuesRequest) Unmarshal(dAtA []byte) error {
 			return fmt.Errorf("proto: QueryMimirNodesAllValuesRequest: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Height", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryMimir
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthQueryMimir
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthQueryMimir
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Height = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := skipQueryMimir(dAtA[iNdEx:])
@@ -1782,6 +2025,38 @@ func (m *QueryMimirNodesValuesRequest) Unmarshal(dAtA []byte) error {
 			return fmt.Errorf("proto: QueryMimirNodesValuesRequest: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Height", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryMimir
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthQueryMimir
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthQueryMimir
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Height = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := skipQueryMimir(dAtA[iNdEx:])
@@ -1947,6 +2222,38 @@ func (m *QueryMimirNodeValuesRequest) Unmarshal(dAtA []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			m.Address = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Height", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryMimir
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthQueryMimir
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthQueryMimir
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Height = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex

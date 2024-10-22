@@ -9,6 +9,7 @@ option (gogoproto.marshaler_all) = true;
 
 message QueryTradeUnitRequest{
   string asset = 1;
+  string height = 2;
 }
 
 message QueryTradeUnitResponse{
@@ -20,7 +21,9 @@ message QueryTradeUnitResponse{
   string depth = 3;
 }
 
-message QueryTradeUnitsRequest{}
+message QueryTradeUnitsRequest{
+  string height = 1;
+}
 
 message QueryTradeUnitsResponse{
   repeated QueryTradeUnitResponse trade_units = 1;
