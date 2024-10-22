@@ -79,8 +79,8 @@ func NewAsset(input string) (Asset, error) {
 
 func NewAssetWithShortCodes(version semver.Version, input string) (Asset, error) {
 	switch {
-	case version.GTE(semver.MustParse("2.137.0")):
-		return NewAssetWithShortCodesV137(input)
+	case version.GTE(semver.MustParse("2.138.0")):
+		return NewAssetWithShortCodesV138(input)
 	case version.GTE(semver.MustParse("1.124.0")):
 		return NewAssetWithShortCodesV124(input)
 	default:
@@ -88,7 +88,7 @@ func NewAssetWithShortCodes(version semver.Version, input string) (Asset, error)
 	}
 }
 
-func NewAssetWithShortCodesV137(input string) (Asset, error) {
+func NewAssetWithShortCodesV138(input string) (Asset, error) {
 	shorts := make(map[string]string)
 
 	shorts[ATOMAsset.ShortCode()] = ATOMAsset.String()

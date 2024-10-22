@@ -7,18 +7,18 @@ import (
 	"gitlab.com/thorchain/thornode/common/tokenlist/basetokens"
 )
 
-var baseTokenListV137 EVMTokenList
+var baseTokenListV138 EVMTokenList
 
 func init() {
-	if err := json.Unmarshal(basetokens.BASETokenListRawV137, &baseTokenListV137); err != nil {
+	if err := json.Unmarshal(basetokens.BASETokenListRawV138, &baseTokenListV138); err != nil {
 		panic(err)
 	}
 }
 
 func GetBASETokenList(version semver.Version) EVMTokenList {
 	switch {
-	case version.GTE(semver.MustParse("2.137.0")):
-		return baseTokenListV137
+	case version.GTE(semver.MustParse("2.138.0")):
+		return baseTokenListV138
 	default:
 		return EVMTokenList{}
 	}
