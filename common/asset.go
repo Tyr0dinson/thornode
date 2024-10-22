@@ -255,7 +255,7 @@ func (a Asset) ShortCode() string {
 	case "BSC.BNB":
 		return "s"
 	case "BASE.ETH":
-		return "be"
+		return "f"
 	default:
 		return ""
 	}
