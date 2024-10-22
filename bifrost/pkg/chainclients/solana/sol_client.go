@@ -54,7 +54,7 @@ type SOLClient struct {
 func NewSOLClient(
 	thorKeys *thorclient.Keys,
 	cfg config.BifrostChainConfiguration,
-	server *tssp.TssServer,
+	// server *tss.TssServer,
 	bridge thorclient.ThorchainBridge,
 	m *metrics.Metrics,
 	pubkeyMgr pubkeymanager.PubKeyValidator,
@@ -74,11 +74,11 @@ func NewSOLClient(
 		return nil, errors.New("pool manager is nil")
 	}
 
-	// create keys
-	tssKm, err := tss.NewKeySign(server, bridge)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create tss signer: %w", err)
-	}
+	// // create keys
+	// tssKm, err := tss.NewKeySign(server, bridge)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("failed to create tss signer: %w", err)
+	// }
 	priv, err := thorKeys.GetPrivateKey()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get private key: %w", err)
@@ -100,14 +100,14 @@ func NewSOLClient(
 		cfg:         cfg,
 		localPubKey: pk,
 		// kw:           keysignWrapper,
-		bridge:        bridge,
-		pubkeyMgr:     pubkeyMgr,
-		poolMgr:       poolMgr,
-		tssKeySigner:  tssKm,
-		tssKeyManager: tssKm,
-		wg:            &sync.WaitGroup{},
-		stopchan:      make(chan struct{}),
-		rpcClient:     rpcClient,
+		bridge:    bridge,
+		pubkeyMgr: pubkeyMgr,
+		poolMgr:   poolMgr,
+		// tssKeySigner:  tssKm,
+		// tssKeyManager: tssKm,
+		wg:        &sync.WaitGroup{},
+		stopchan:  make(chan struct{}),
+		rpcClient: rpcClient,
 	}
 
 	// initialize storage

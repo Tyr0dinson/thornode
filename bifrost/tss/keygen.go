@@ -113,9 +113,9 @@ func (kg *KeyGen) GenerateNewKey(keygenBlockHeight int64, pKeys common.PubKeys) 
 	timer := time.NewTimer(30 * time.Minute)
 	defer timer.Stop()
 
-	var responses []keygen.Response
+	var resp keygen.Response
 	go func() {
-		responses, err = kg.server.KeygenAllAlgo(keyGenReq)
+		resp, err = kg.server.Keygen(keyGenReq)
 		ch <- true
 	}()
 
@@ -126,47 +126,32 @@ func (kg *KeyGen) GenerateNewKey(keygenBlockHeight int64, pKeys common.PubKeys) 
 		panic("tss keygen timeout")
 	}
 
-	for _, resp := range responses {
-		// copy blame to our own struct
-		blame = types.Blame{
-			FailReason: resp.Blame.FailReason,
-			IsUnicast:  resp.Blame.IsUnicast,
-			Round:      resp.Blame.Round,
-			BlameNodes: make([]types.Node, len(resp.Blame.BlameNodes)),
-		}
-		for i, n := range resp.Blame.BlameNodes {
-			blame.BlameNodes[i].Pubkey = n.Pubkey
-			blame.BlameNodes[i].BlameData = n.BlameData
-			blame.BlameNodes[i].BlameSignature = n.BlameSignature
-		}
-
-		if err != nil {
-			// the resp from kg.server.Keygen will not be nil
-			if blame.IsEmpty() {
-				blame.FailReason = err.Error()
-			}
-			return common.EmptyPubKeySet, blame, fmt.Errorf("fail to keygen,err:%w", err)
-		}
+	// copy blame to our own struct
+	blame = types.Blame{
+		FailReason: resp.Blame.FailReason,
+		IsUnicast:  resp.Blame.IsUnicast,
+		Round:      resp.Blame.Round,
+		BlameNodes: make([]types.Node, len(resp.Blame.BlameNodes)),
+	}
+	for i, n := range resp.Blame.BlameNodes {
+		blame.BlameNodes[i].Pubkey = n.Pubkey
+		blame.BlameNodes[i].BlameData = n.BlameData
+		blame.BlameNodes[i].BlameSignature = n.BlameSignature
 	}
 
-	var ecdsaPubKey common.PubKey
-	var eddsaPubKey common.PubKey
-	for _, resp := range responses {
-		switch resp.Algo {
-		case tsscommon.ECDSA:
-			var err error
-			ecdsaPubKey, err = common.NewPubKey(resp.PubKey)
-			if err != nil {
-				return common.EmptyPubKeySet, blame, fmt.Errorf("fail to create ECDSA PubKey,%w", err)
-			}
-		case tsscommon.EdDSA:
-			var err error
-			eddsaPubKey, err = common.NewPubKey(resp.PubKey)
-			if err != nil {
-				return common.EmptyPubKeySet, blame, fmt.Errorf("fail to create EDDSA PubKey,%w", err)
-			}
+	if err != nil {
+		// the resp from kg.server.Keygen will not be nil
+		if blame.IsEmpty() {
+			blame.FailReason = err.Error()
 		}
+		return common.EmptyPubKeySet, blame, fmt.Errorf("fail to keygen,err:%w", err)
 	}
 
-	return common.NewPubKeySet(ecdsaPubKey, eddsaPubKey), blame, nil
+	cpk, err := common.NewPubKey(resp.PubKey)
+	if err != nil {
+		return common.EmptyPubKeySet, blame, fmt.Errorf("fail to create common.PubKey,%w", err)
+	}
+
+	// TODO later on THORNode need to have both secp256k1 key and ed25519
+	return common.NewPubKeySet(cpk, cpk), blame, nil
 }

@@ -48,7 +48,7 @@ func LoadChains(thorKeys *thorclient.Keys,
 		case common.BTCChain, common.BCHChain, common.LTCChain, common.DOGEChain:
 			return utxo.NewClient(thorKeys, chain, server, thorchainBridge, m)
 		case common.SOLChain:
-			return solana.NewSOLClient(thorKeys, chain, server, thorchainBridge, m, pubKeyValidator, poolMgr)
+			return solana.NewSOLClient(thorKeys, chain, thorchainBridge, m, pubKeyValidator, poolMgr)
 		default:
 			log.Fatal().Msgf("chain %s is not supported", chain.ChainID)
 			return nil, nil
