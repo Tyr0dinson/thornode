@@ -39,8 +39,6 @@ var (
 	_ module.HasServices        = AppModule{}
 	_ module.HasABCIEndBlock    = AppModule{}
 	_ appmodule.HasBeginBlocker = AppModule{}
-
-// _ appmodule.HasPreBlocker = AppModule{} // We do not have an expected PreBlocker
 )
 
 // AppModuleBasic app module Basics object
@@ -158,18 +156,20 @@ func (am AppModule) RegisterServices(cfg module.Configurator) {
 	types.RegisterQueryServer(cfg.QueryServer(), am.queryServer)
 }
 
-// TODO: rename BeginBlock functions to PreBlock functions
-func (am AppModule) PreBlock(ctx sdk.Context, req *abci.RequestFinalizeBlock) error {
-	info := req.GetDecidedLastCommit()
+// BeginBlock called when a block get proposed
+func (am AppModule) BeginBlock(goCtx context.Context) error {
+	ctx := sdk.UnwrapSDKContext(goCtx)
+	votes := ctx.CometInfo().GetLastCommit().Votes()
 	var existingValidators []string
-	for _, v := range info.GetVotes() {
-		addr := sdk.ValAddress(v.Validator.GetAddress())
+	for i := range votes.Len() {
+		v := votes.Get(i)
+		addr := sdk.ValAddress(v.Validator().Address())
 		existingValidators = append(existingValidators, addr.String())
 	}
 
-	ctx.Logger().Debug("PreBlock", "height", ctx.BlockHeight())
+	ctx.Logger().Debug("BeginBlock", "height", ctx.BlockHeight())
 	// Check/Update the network version before checking the local version or checking whether to do a new-version store migration
-	if err := am.mgr.PreBlock(ctx); err != nil {
+	if err := am.mgr.BeginBlock(ctx); err != nil {
 		ctx.Logger().Error("fail to get managers", "error", err)
 	}
 
@@ -187,22 +187,15 @@ func (am AppModule) PreBlock(ctx sdk.Context, req *abci.RequestFinalizeBlock) er
 
 	am.mgr.Keeper().ClearObservingAddresses(ctx)
 
-	am.mgr.GasMgr().PreBlock()
-	if err := am.mgr.NetworkMgr().PreBlock(ctx, am.mgr); err != nil {
+	am.mgr.GasMgr().BeginBlock()
+	if err := am.mgr.NetworkMgr().BeginBlock(ctx, am.mgr); err != nil {
 		ctx.Logger().Error("fail to begin network manager", "error", err)
 	}
-	am.mgr.Slasher().PreBlock(ctx, req, am.mgr.GetConstants())
-	if err := am.mgr.ValidatorMgr().PreBlock(ctx, am.mgr, existingValidators); err != nil {
+	am.mgr.Slasher().BeginBlock(ctx, am.mgr.GetConstants())
+	if err := am.mgr.ValidatorMgr().BeginBlock(ctx, am.mgr, existingValidators); err != nil {
 		ctx.Logger().Error("Fail to begin block on validator", "error", err)
 	}
 
-	return nil
-}
-
-// BeginBlock called when a block get proposed
-func (am AppModule) BeginBlock(goCtx context.Context) error {
-	ctx := sdk.UnwrapSDKContext(goCtx)
-	ctx.Logger().Debug("Begin Block", "height", ctx.BlockHeight())
 	if err := am.mgr.Keeper().RemoveExpiredUpgradeProposals(ctx); err != nil {
 		ctx.Logger().Error("Failed to remove expired upgrade proposals", "error", err)
 	}

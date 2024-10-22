@@ -301,12 +301,12 @@ func (s *queryServer) TxStatus(c context.Context, req *types.QueryTxStatusReques
 	return s.queryTxStatus(ctx, req)
 }
 
-func (s *queryServer) TxVoters(c context.Context, req *types.QueryTxVotersRequest) (*types.ObservedTxVoter, error) {
+func (s *queryServer) TxVoters(c context.Context, req *types.QueryTxVotersRequest) (*types.QueryObservedTxVoter, error) {
 	ctx := s.unwrapSdkContext(c)
 	return s.queryTxVoters(ctx, req)
 }
 
-func (s *queryServer) TxVotersOld(c context.Context, req *types.QueryTxVotersRequest) (*types.ObservedTxVoter, error) {
+func (s *queryServer) TxVotersOld(c context.Context, req *types.QueryTxVotersRequest) (*types.QueryObservedTxVoter, error) {
 	ctx := s.unwrapSdkContext(c)
 	return s.queryTxVoters(ctx, req)
 }

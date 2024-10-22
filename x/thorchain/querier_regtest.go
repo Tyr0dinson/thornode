@@ -13,7 +13,7 @@ import (
 
 func init() {
 	initManager = func(ctx cosmos.Context, mgr *Mgrs) {
-		_ = mgr.PreBlock(ctx)
+		_ = mgr.BeginBlock(ctx)
 	}
 
 	queryExport = func(ctx sdk.Context, mgr *Mgrs) ([]byte, error) {

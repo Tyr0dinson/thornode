@@ -21,7 +21,7 @@ func (vm *NetworkMgrDummy) CalcAnchor(_ cosmos.Context, _ Manager, _ common.Asse
 
 func (vm *NetworkMgrDummy) SpawnDerivedAsset(ctx cosmos.Context, asset common.Asset, mgr Manager) {}
 
-func (vm *NetworkMgrDummy) PreBlock(ctx cosmos.Context, mgr Manager) error {
+func (vm *NetworkMgrDummy) BeginBlock(ctx cosmos.Context, mgr Manager) error {
 	return nil
 }
 

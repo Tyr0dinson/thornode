@@ -1581,7 +1581,7 @@ func (qs queryServer) queryDerivedPool(ctx cosmos.Context, req *types.QueryDeriv
 	}
 
 	// call begin block so the derived depth matches the next block execution state
-	_ = qs.mgr.NetworkMgr().PreBlock(ctx.WithBlockHeight(ctx.BlockHeight()+1), qs.mgr)
+	_ = qs.mgr.NetworkMgr().BeginBlock(ctx.WithBlockHeight(ctx.BlockHeight()+1), qs.mgr)
 
 	// sum rune depth of anchor pools
 	runeDepth := sdkmath.ZeroUint()
@@ -1787,7 +1787,7 @@ func extractVoter(ctx cosmos.Context, tx_id string, mgr *Mgrs) (common.TxID, Obs
 	return hash, voter, nil
 }
 
-func (qs queryServer) queryTxVoters(ctx cosmos.Context, req *types.QueryTxVotersRequest) (*types.ObservedTxVoter, error) {
+func (qs queryServer) queryTxVoters(ctx cosmos.Context, req *types.QueryTxVotersRequest) (*types.QueryObservedTxVoter, error) {
 	hash, voter, err := extractVoter(ctx, req.TxId, qs.mgr)
 	if err != nil {
 		return nil, err
@@ -1803,7 +1803,45 @@ func (qs queryServer) queryTxVoters(ctx cosmos.Context, req *types.QueryTxVoters
 		}
 	}
 
-	return &voter, nil
+	txs := make([]types.QueryObservedTx, len(voter.Txs))
+	for i, tx := range voter.Txs {
+		txs[i].Tx = tx.Tx
+		txs[i].Status = tx.Status.String()
+		txs[i].OutHashes = tx.OutHashes
+		txs[i].BlockHeight = tx.BlockHeight
+		txs[i].Signers = tx.Signers
+		txs[i].ObservedPubKey = tx.ObservedPubKey
+		txs[i].KeysignMs = tx.KeysignMs
+		txs[i].FinaliseHeight = tx.FinaliseHeight
+		txs[i].Aggregator = tx.Aggregator
+		txs[i].AggregatorTarget = tx.AggregatorTarget
+		txs[i].AggregatorTargetLimit = tx.AggregatorTargetLimit
+	}
+
+	return &types.QueryObservedTxVoter{
+		TxID: voter.TxID,
+		Tx: types.QueryObservedTx{
+			Tx: voter.Tx.Tx,
+			Status: voter.Tx.Status.String(),
+			OutHashes: voter.Tx.OutHashes,
+			BlockHeight: voter.Tx.BlockHeight,
+			Signers: voter.Tx.Signers,
+			ObservedPubKey: voter.Tx.ObservedPubKey,
+			KeysignMs: voter.Tx.KeysignMs,
+			FinaliseHeight: voter.Tx.FinaliseHeight,
+			Aggregator: voter.Tx.Aggregator,
+			AggregatorTarget: voter.Tx.AggregatorTarget,
+			AggregatorTargetLimit: voter.Tx.AggregatorTargetLimit,
+		},
+		Height: voter.Height,
+		Txs: txs,
+		Actions: voter.Actions,
+		OutTxs: voter.OutTxs,
+		FinalisedHeight: voter.FinalisedHeight,
+		UpdatedVault: voter.UpdatedVault,
+		Reverted: voter.Reverted,
+		OutboundHeight: voter.OutboundHeight,
+	}, nil
 }
 
 // TODO: Remove isSwap and isPending code when SwapFinalised field deprecated.
@@ -2094,8 +2132,21 @@ func (qs queryServer) queryTx(ctx cosmos.Context, req *types.QueryTxRequest) (*t
 	}
 
 	observedTx := voter.GetTx(nodeAccounts)
+	queryObservedTx := &types.QueryObservedTx{
+		Tx: observedTx.Tx,
+		Status: observedTx.Status.String(),
+		OutHashes: observedTx.OutHashes,
+		BlockHeight: observedTx.BlockHeight,
+		Signers: observedTx.Signers,
+		ObservedPubKey: observedTx.ObservedPubKey,
+		KeysignMs: observedTx.KeysignMs,
+		FinaliseHeight: observedTx.FinaliseHeight,
+		Aggregator: observedTx.Aggregator,
+		AggregatorTarget: observedTx.AggregatorTarget,
+		AggregatorTargetLimit: observedTx.AggregatorTargetLimit,
+	}
 	result := types.QueryTxResponse{
-		ObservedTx:      &observedTx,
+		ObservedTx:      queryObservedTx,
 		ConsensusHeight: voter.Height,
 		FinalisedHeight: voter.FinalisedHeight,
 		OutboundHeight:  voter.OutboundHeight,

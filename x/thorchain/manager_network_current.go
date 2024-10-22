@@ -77,7 +77,7 @@ func (vm *NetworkMgrVCUR) processGenesisSetup(ctx cosmos.Context) error {
 	return nil
 }
 
-func (vm *NetworkMgrVCUR) PreBlock(ctx cosmos.Context, mgr Manager) error {
+func (vm *NetworkMgrVCUR) BeginBlock(ctx cosmos.Context, mgr Manager) error {
 	return vm.spawnDerivedAssets(ctx, mgr)
 }
 

@@ -577,15 +577,7 @@ func (app *THORChainApp) Name() string { return app.BaseApp.Name() }
 
 // PreBlocker application updates every pre block
 func (app *THORChainApp) PreBlocker(ctx sdk.Context, req *abci.RequestFinalizeBlock) (*sdk.ResponsePreBlock, error) {
-	// Run module preblock first so that the upgrade module is prioritized
-	preBlockResp, err := app.ModuleManager.PreBlock(ctx)
-	if err != nil {
-		return preBlockResp, err
-	}
-	if err := app.ThorchainModule.PreBlock(ctx, req); err != nil {
-		return nil, err
-	}
-	return preBlockResp, nil
+	return app.ModuleManager.PreBlock(ctx)
 }
 
 func (a *THORChainApp) Configurator() module.Configurator {

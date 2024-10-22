@@ -32,15 +32,15 @@ func (m *ObservedTx) Valid() error {
 	// Memo should not be empty, but it can't be checked here, because a
 	// message failed validation will be rejected by THORNode.
 	// Thus THORNode can't refund customer accordingly , which will result fund lost
-	// if m.BlockHeight <= 0 {
-	// 	return errors.New("block height can't be zero")
-	// }
+	if m.BlockHeight <= 0 {
+		return errors.New("block height can't be zero")
+	}
 	if m.ObservedPubKey.IsEmpty() {
 		return errors.New("observed pool pubkey is empty")
 	}
-	// if m.FinaliseHeight <= 0 {
-	// 	return errors.New("finalise block height can't be zero")
-	// }
+	if m.FinaliseHeight <= 0 {
+		return errors.New("finalise block height can't be zero")
+	}
 	return nil
 }
 

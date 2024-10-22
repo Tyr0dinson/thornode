@@ -38,7 +38,7 @@ var (
 	_ jsonpb.JSONPBMarshaler = &QueryMimirWithKeyResponse{}
 	_ jsonpb.JSONPBMarshaler = &QueryNodeResponse{}
 	_ jsonpb.JSONPBMarshaler = &QueryNodesResponse{}
-	_ jsonpb.JSONPBMarshaler = &ObservedTxVoter{}
+	_ jsonpb.JSONPBMarshaler = &QueryObservedTxVoter{}
 	_ jsonpb.JSONPBMarshaler = &QueryOutboundFeesResponse{}
 	_ jsonpb.JSONPBMarshaler = &QueryOutboundResponse{}
 	_ jsonpb.JSONPBMarshaler = &QueryPoolResponse{}
@@ -245,7 +245,7 @@ func (m *QueryNodesResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) 
 }
 
 // ObservedTxVoter
-func (m *ObservedTxVoter) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
+func (m *QueryObservedTxVoter) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
 	return jsonify(m)
 }
 

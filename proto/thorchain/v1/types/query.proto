@@ -35,7 +35,6 @@ import "types/query_swap_queue.proto";
 import "types/query_last_block.proto";
 import "types/query_vault.proto";
 import "types/query_tx.proto";
-import "types/type_observed_tx.proto";
 import "types/query_swapper_clout.proto";
 import "types/type_clout.proto";
 import "types/query_queue.proto";
@@ -290,11 +289,11 @@ service Query {
     option (google.api.http).get = "/thorchain/tx/{tx_id}";
   }
 
-  rpc TxVoters(QueryTxVotersRequest) returns (ObservedTxVoter) {
+  rpc TxVoters(QueryTxVotersRequest) returns (QueryObservedTxVoter) {
     option (google.api.http).get = "/thorchain/tx/details/{tx_id}";
   }
 
-  rpc TxVotersOld(QueryTxVotersRequest) returns (ObservedTxVoter) {
+  rpc TxVotersOld(QueryTxVotersRequest) returns (QueryObservedTxVoter) {
     option (google.api.http).get = "/thorchain/tx/{tx_id}/signers";
   }
 

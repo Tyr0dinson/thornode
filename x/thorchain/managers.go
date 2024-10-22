@@ -53,7 +53,7 @@ type TradeAccountManager interface {
 
 // GasManager define all the methods required to manage gas
 type GasManager interface {
-	PreBlock()
+	BeginBlock()
 	EndBlock(ctx cosmos.Context, keeper keeper.Keeper, eventManager EventManager)
 	AddGasAsset(outAsset common.Asset, gas common.Gas, increaseTxCount bool)
 	ProcessGas(ctx cosmos.Context, keeper keeper.Keeper)
@@ -96,7 +96,7 @@ type ObserverManager interface {
 
 // ValidatorManager define the method to manage validators
 type ValidatorManager interface {
-	PreBlock(ctx cosmos.Context, mgr Manager, existingValidators []string) error
+	BeginBlock(ctx cosmos.Context, mgr Manager, existingValidators []string) error
 	EndBlock(ctx cosmos.Context, mgr Manager) []abci.ValidatorUpdate
 	processRagnarok(ctx cosmos.Context, mgr Manager) error
 	NodeAccountPreflightCheck(ctx cosmos.Context, na NodeAccount, constAccessor constants.ConstantValues) (NodeStatus, error)
@@ -106,7 +106,7 @@ type ValidatorManager interface {
 type NetworkManager interface {
 	TriggerKeygen(ctx cosmos.Context, nas NodeAccounts) error
 	RotateVault(ctx cosmos.Context, vault Vault) error
-	PreBlock(ctx cosmos.Context, mgr Manager) error
+	BeginBlock(ctx cosmos.Context, mgr Manager) error
 	EndBlock(ctx cosmos.Context, mgr Manager) error
 	UpdateNetwork(ctx cosmos.Context, constAccessor constants.ConstantValues, gasManager GasManager, eventMgr EventManager) error
 	SpawnDerivedAsset(ctx cosmos.Context, asset common.Asset, mgr Manager)
@@ -130,7 +130,7 @@ type OrderBook interface {
 
 // Slasher define all the method to perform slash
 type Slasher interface {
-	PreBlock(ctx cosmos.Context, req *abci.RequestFinalizeBlock, constAccessor constants.ConstantValues)
+	BeginBlock(ctx cosmos.Context, constAccessor constants.ConstantValues)
 	LackSigning(ctx cosmos.Context, mgr Manager) error
 	SlashVault(ctx cosmos.Context, vaultPK common.PubKey, coins common.Coins, mgr Manager) error
 	IncSlashPoints(ctx cosmos.Context, point int64, addresses ...cosmos.AccAddress)
@@ -209,8 +209,8 @@ func (mgr *Mgrs) GetConstants() constants.ConstantValues {
 	return mgr.constAccessor
 }
 
-// PreBlock detect whether there are new version available, if it is available then create a new version of Mgr
-func (mgr *Mgrs) PreBlock(ctx cosmos.Context) error {
+// BeginBlock detect whether there are new version available, if it is available then create a new version of Mgr
+func (mgr *Mgrs) BeginBlock(ctx cosmos.Context) error {
 	v := mgr.K.GetLowestActiveVersion(ctx)
 	if v.Equals(mgr.GetVersion()) {
 		return nil

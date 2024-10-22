@@ -178,8 +178,8 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 	c.Assert(hasVerStored, Equals, false,
 		Commentf("version should not be stored until BeginBlock"))
 
-	c.Assert(mgr.PreBlock(ctx), IsNil)
-	mgr.gasMgr.PreBlock()
+	c.Assert(mgr.BeginBlock(ctx), IsNil)
+	mgr.gasMgr.BeginBlock()
 
 	verStored, hasVerStored := k.GetVersionWithCtx(ctx)
 	c.Assert(hasVerStored, Equals, true,
@@ -298,7 +298,7 @@ func getHandlerTestWrapper(c *C, height int64, withActiveNode, withActieDOGEPool
 
 	FundModule(c, ctx, mgr.Keeper(), AsgardName, 100000000)
 
-	c.Assert(mgr.ValidatorMgr().PreBlock(ctx, mgr, nil), IsNil)
+	c.Assert(mgr.ValidatorMgr().BeginBlock(ctx, mgr, nil), IsNil)
 
 	return handlerTestWrapper{
 		ctx:                  ctx,

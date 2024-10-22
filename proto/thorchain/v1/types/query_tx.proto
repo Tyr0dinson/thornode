@@ -6,6 +6,7 @@ option go_package = "gitlab.com/thorchain/thornode/x/thorchain/types";
 import "gogoproto/gogo.proto";
 import "types/query_vault.proto";
 import "types/type_tss_metric.proto";
+import "types/type_tx_out.proto";
 import "types/type_observed_tx.proto";
 import "common/common.proto";
 
@@ -41,7 +42,7 @@ message QueryTxRequest{
 }
 
 message QueryTxResponse{
-  ObservedTx observed_tx = 1;
+  QueryObservedTx observed_tx = 1;
 	// the thorchain height at which the inbound reached consensus
   int64 consensus_height = 2;
 	// the thorchain height at which the outbound was finalised
@@ -49,6 +50,35 @@ message QueryTxResponse{
 	// the thorchain height for which the outbound was scheduled
   int64 outbound_height = 4;
   TssKeysignMetric keysign_metric = 5;
+}
+
+// Same as ObservedTx, but changes block_height and finalise_height (openapi spec)
+message QueryObservedTx {
+  common.Tx tx = 1 [(gogoproto.nullable) = false];
+  string status = 2;
+  repeated string out_hashes = 3;
+  int64 block_height = 4 [(gogoproto.jsontag) = "external_observed_height,omitempty"];
+  repeated string signers = 5;
+  string observed_pub_key = 6 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/common.PubKey"];
+  int64 keysign_ms = 7;
+  int64 finalise_height = 8 [(gogoproto.jsontag) = "external_confirmation_delay_height,omitempty"];
+  string aggregator = 9;
+  string aggregator_target = 10;
+  string aggregator_target_limit = 11 [(gogoproto.customtype) = "cosmossdk.io/math.Uint", (gogoproto.nullable) = true];
+}
+
+// Same as ObservedTxVoter, but changes height (openapi spec)
+message QueryObservedTxVoter {
+  string tx_id = 1 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/common.TxID", (gogoproto.customname) = "TxID"];
+  QueryObservedTx tx = 2 [(gogoproto.nullable) = false];
+  int64 height = 3 [(gogoproto.jsontag) = "consensus_height"];
+  repeated QueryObservedTx txs = 4 [(gogoproto.nullable) = false];
+  repeated TxOutItem actions = 5 [(gogoproto.nullable) = false];
+  repeated common.Tx out_txs = 6 [(gogoproto.castrepeated) = "gitlab.com/thorchain/thornode/common.Txs", (gogoproto.nullable) = false];
+  int64 finalised_height = 7;
+  bool updated_vault = 8;
+  bool reverted = 9;
+  int64 outbound_height = 10;
 }
 
 message QueryTxVotersRequest{

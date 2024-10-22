@@ -42,7 +42,7 @@ func (vts *ValidatorMgrVCURTestSuite) TestChurnWithChainHalt(c *C) {
 	mgr.Keeper().SetMimir(ctx, "HaltETHChain", 1) // ignored since not in active vault
 
 	// should not start churn with chain halted
-	c.Assert(networkMgr.PreBlock(ctx, mgr, nil), IsNil)
+	c.Assert(networkMgr.BeginBlock(ctx, mgr, nil), IsNil)
 	ready, err := k.ListValidatorsByStatus(ctx, NodeReady)
 	c.Assert(err, IsNil)
 	c.Assert(len(ready), Equals, 0) // standby node should not be ready if churn did not start
@@ -51,7 +51,7 @@ func (vts *ValidatorMgrVCURTestSuite) TestChurnWithChainHalt(c *C) {
 	mgr.Keeper().SetMimir(ctx, "HaltBTCChain", -1)
 
 	// should start churn with chain unhalted
-	c.Assert(networkMgr.PreBlock(ctx, mgr, nil), IsNil)
+	c.Assert(networkMgr.BeginBlock(ctx, mgr, nil), IsNil)
 	ready, err = k.ListValidatorsByStatus(ctx, NodeReady)
 	c.Assert(err, IsNil)
 	c.Assert(len(ready), Equals, 1) // standby node should be ready if churn started
@@ -83,7 +83,7 @@ func (vts *ValidatorMgrVCURTestSuite) TestSetupValidatorNodes(c *C) {
 	// it should take both of the node as active
 	validatorMgr1 := newValidatorMgrVCUR(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
 
-	c.Assert(validatorMgr1.PreBlock(ctx, mgr, nil), IsNil)
+	c.Assert(validatorMgr1.BeginBlock(ctx, mgr, nil), IsNil)
 	activeNodes, err := k.ListActiveValidators(ctx)
 	c.Assert(err, IsNil)
 	c.Assert(len(activeNodes) == 2, Equals, true)
@@ -95,7 +95,7 @@ func (vts *ValidatorMgrVCURTestSuite) TestSetupValidatorNodes(c *C) {
 
 	// three active nodes and 1 ready nodes, it should take them all
 	validatorMgr2 := newValidatorMgrVCUR(k, mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
-	c.Assert(validatorMgr2.PreBlock(ctx, mgr, nil), IsNil)
+	c.Assert(validatorMgr2.BeginBlock(ctx, mgr, nil), IsNil)
 
 	activeNodes1, err := k.ListActiveValidators(ctx)
 	c.Assert(err, IsNil)
@@ -123,7 +123,7 @@ func (vts *ValidatorMgrVCURTestSuite) TestRagnarokForMainnet(c *C) {
 
 	// trigger ragnarok
 	ctx = ctx.WithBlockHeight(1024)
-	c.Assert(networkMgr.PreBlock(ctx, mgr, nil), IsNil)
+	c.Assert(networkMgr.BeginBlock(ctx, mgr, nil), IsNil)
 	vault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.ETHChain}.Strings(), []ChainContract{})
 	for _, item := range nodeAccounts {
 		vault.Membership = append(vault.Membership, item.PubKeySet.Secp256k1.String())
