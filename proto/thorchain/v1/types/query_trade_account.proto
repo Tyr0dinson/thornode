@@ -14,11 +14,11 @@ message QueryTradeAccountRequest{
 
 message QueryTradeAccountResponse{
 	// trade account asset with \"~\" separator
-  string asset = 1;
+  string asset = 1 [(gogoproto.jsontag) = "asset"];
 	// units of trade asset belonging to this owner
-  string units = 2;
+  string units = 2 [(gogoproto.jsontag) = "units"];
 	// thor address of trade account owner
-  string owner = 3;
+  string owner = 3 [(gogoproto.jsontag) = "owner"];
 	// last thorchain height trade assets were added to trade account
   int64  last_add_height = 4;
 	// last thorchain height trade assets were withdrawn from trade account

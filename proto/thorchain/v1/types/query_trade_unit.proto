@@ -14,11 +14,11 @@ message QueryTradeUnitRequest{
 
 message QueryTradeUnitResponse{
 	// trade account asset with \"~\" separator
-  string asset = 1;
+  string asset = 1 [(gogoproto.jsontag) = "asset"];
 	// total units of trade asset
-  string units = 2;
+  string units = 2 [(gogoproto.jsontag) = "units"];
 	// total depth of trade asset
-  string depth = 3;
+  string depth = 3 [(gogoproto.jsontag) = "depth"];
 }
 
 message QueryTradeUnitsRequest{

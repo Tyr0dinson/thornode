@@ -38,7 +38,7 @@ message QueryMimirNodesAllValuesRequest{
 }
 
 message QueryMimirNodesAllValuesResponse{
-  repeated NodeMimir mimirs = 1 [(gogoproto.nullable) = false];
+  repeated NodeMimir mimirs = 1 [(gogoproto.nullable) = false, (gogoproto.jsontag) = "mimirs"];
 }
 
 message QueryMimirNodesValuesRequest{

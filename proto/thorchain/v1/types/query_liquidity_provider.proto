@@ -15,17 +15,17 @@ message QueryLiquidityProviderRequest{
 
 // Can we replace this with LiquidityProvider proto? Check json fields...
 message QueryLiquidityProviderResponse{
-  string asset = 1;
+  string asset = 1 [(gogoproto.jsontag) = "asset"];
   string rune_address = 2;
   string asset_address = 3;
   int64  last_add_height = 4;
   int64  last_withdraw_height = 5;
-  string units = 6;
-  string pending_rune = 7;
-  string pending_asset = 8;
+  string units = 6 [(gogoproto.jsontag) = "units"];
+  string pending_rune = 7 [(gogoproto.jsontag) = "pending_rune"];
+  string pending_asset = 8 [(gogoproto.jsontag) = "pending_asset"];
   string pending_tx_id = 9;
-  string rune_deposit_value = 10;
-  string asset_deposit_value = 11;
+  string rune_deposit_value = 10 [(gogoproto.jsontag) = "rune_deposit_value"];
+  string asset_deposit_value = 11 [(gogoproto.jsontag) = "asset_deposit_value"];
   string rune_redeem_value = 12;
   string asset_redeem_value = 13;
   string luvi_deposit_value = 14;

@@ -14,11 +14,11 @@ message QueryUpgradeProposalRequest{
 
 message QueryUpgradeProposalResponse{
 	// the name of the upgrade
-	string name = 1;
+	string name = 1 [(gogoproto.jsontag) = "name"];
 	// the block height at which the upgrade will occur
-	int64 height = 2;
+	int64 height = 2 [(gogoproto.jsontag) = "height"];
 	// the description of the upgrade, typically json with URLs to binaries for use with automation tools
-	string info = 3;
+	string info = 3 [(gogoproto.jsontag) = "info"];
 	// whether the upgrade has been approved by the active validators
 	bool approved = 4 [(gogoproto.jsontag) = "approved"];
 	// the percentage of active validators that have approved the upgrade
@@ -41,8 +41,8 @@ message QueryUpgradeVotesRequest{
 }
 
 message UpgradeVote{
-  string node_address = 1;
-  string vote = 2;
+  string node_address = 1 [(gogoproto.jsontag) = "node_address"];
+  string vote = 2 [(gogoproto.jsontag) = "vote"];
 }
 
 message QueryUpgradeVotesResponse{

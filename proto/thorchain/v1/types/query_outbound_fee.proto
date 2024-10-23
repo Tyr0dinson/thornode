@@ -14,9 +14,9 @@ message QueryOutboundFeeRequest{
 
 message QueryOutboundFeeResponse{
 	// the asset to display the outbound fee for
-  string asset = 1;
+  string asset = 1 [(gogoproto.jsontag) = "asset"];
 	// the asset's outbound fee, in (1e8-format) units of the asset
-  string outbound_fee = 2;
+  string outbound_fee = 2 [(gogoproto.jsontag) = "outbound_fee"];
 	// Total RUNE the network has withheld as fees to later cover gas costs for this asset's outbounds
   string fee_withheld_rune = 3;
 	// Total RUNE the network has spent to reimburse gas costs for this asset's outbounds

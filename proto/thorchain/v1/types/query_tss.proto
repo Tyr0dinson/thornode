@@ -22,6 +22,6 @@ message QueryTssMetricRequest{
 }
 
 message QueryTssMetricResponse{
-  repeated TssKeygenMetric keygen = 1;
-  TssKeysignMetric keysign = 2;
+  repeated TssKeygenMetric keygen = 1 [(gogoproto.jsontag) = "keygen"];
+  TssKeysignMetric keysign = 2 [(gogoproto.jsontag) = "keysign"];
 }

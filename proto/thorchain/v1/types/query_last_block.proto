@@ -21,8 +21,8 @@ message QueryLastBlocksResponse{
 }
 
 message ChainsLastBlock{
-  string chain = 1;
-  int64 last_observed_in = 2;
-  int64 last_signed_out = 3;
-  int64 thorchain = 4;
+  string chain = 1 [(gogoproto.jsontag) = "chain"];
+  int64 last_observed_in = 2 [(gogoproto.jsontag) = "last_observed_in"];
+  int64 last_signed_out = 3 [(gogoproto.jsontag) = "last_signed_out"];
+  int64 thorchain = 4 [(gogoproto.jsontag) = "thorchain"];
 }

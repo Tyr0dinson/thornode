@@ -13,13 +13,13 @@ message QueryDerivedPoolRequest{
 }
 
 message QueryDerivedPoolResponse{
-  string asset = 1;
-  string status = 2;
+  string asset = 1 [(gogoproto.jsontag) = "asset"];
+  string status = 2 [(gogoproto.jsontag) = "status"];
   int64  decimals = 3;
-  string balance_asset = 4;
-  string balance_rune = 5;
+  string balance_asset = 4 [(gogoproto.jsontag) = "balance_asset"];
+  string balance_rune = 5 [(gogoproto.jsontag) = "balance_rune"];
   // the depth of the derived virtual pool relative to L1 pool (in basis points)
-  string derived_depth_bps = 6;
+  string derived_depth_bps = 6 [(gogoproto.jsontag) = "derived_depth_bps"];
 }
 
 message QueryDerivedPoolsRequest{

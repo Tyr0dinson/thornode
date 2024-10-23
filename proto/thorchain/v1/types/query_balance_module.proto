@@ -14,7 +14,7 @@ message QueryBalanceModuleRequest{
 }
 
 message QueryBalanceModuleResponse{
-  string name = 1;
-  bytes address = 2  [(gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress"];
-  repeated cosmos.base.v1beta1.Coin coins = 3 [(gogoproto.castrepeated) = "github.com/cosmos/cosmos-sdk/types.Coins", (gogoproto.nullable) = false];
+  string name = 1 [(gogoproto.jsontag) = "name"];
+  bytes address = 2  [(gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress", (gogoproto.jsontag) = "address"];
+  repeated cosmos.base.v1beta1.Coin coins = 3 [(gogoproto.castrepeated) = "github.com/cosmos/cosmos-sdk/types.Coins", (gogoproto.nullable) = false, (gogoproto.jsontag) = "coins"];
 }

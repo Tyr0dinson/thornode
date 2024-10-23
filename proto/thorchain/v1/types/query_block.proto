@@ -12,43 +12,43 @@ message QueryBlockRequest{
 }
 
 message QueryBlockResponse{
-  BlockResponseId id = 1;
-  BlockResponseHeader header = 2;
-  repeated BlockEvent begin_block_events = 3;
-  repeated BlockEvent end_block_events = 4;
-  repeated QueryBlockTx txs = 5;
+  BlockResponseId id = 1 [(gogoproto.jsontag) = "id"];
+  BlockResponseHeader header = 2 [(gogoproto.jsontag) = "header"];
+  repeated BlockEvent begin_block_events = 3 [(gogoproto.jsontag) = "begin_block_events"];
+  repeated BlockEvent end_block_events = 4 [(gogoproto.jsontag) = "end_block_events"];
+  repeated QueryBlockTx txs = 5 [(gogoproto.jsontag) = "txs"];
 }
 
 message BlockResponseId{
-  string hash = 1;
-  BlockResponseIdParts parts = 2;
+  string hash = 1 [(gogoproto.jsontag) = "hash"];
+  BlockResponseIdParts parts = 2 [(gogoproto.jsontag) = "parts"];
 }
 
 message BlockResponseIdParts{
-  int64 total = 1;
-  string hash = 2;
+  int64 total = 1 [(gogoproto.jsontag) = "total"];
+  string hash = 2 [(gogoproto.jsontag) = "hash"];
 }
 
 message BlockResponseHeader{
-  BlockResponseHeaderVersion version = 1;
-  string chain_id = 2;
-  int64 height = 3;
-  string time = 4;
-  BlockResponseId last_block_id = 5;
-  string last_commit_hash = 6;
-  string data_hash = 7;
-  string validators_hash = 8;
-  string next_validators_hash = 9;
-  string consensus_hash = 10;
-  string app_hash = 11;
-  string last_results_hash = 12;
-  string evidence_hash = 13;
-  string proposer_address = 14;
+  BlockResponseHeaderVersion version = 1 [(gogoproto.jsontag) = "version"];
+  string chain_id = 2 [(gogoproto.jsontag) = "chain_id"];
+  int64 height = 3 [(gogoproto.jsontag) = "height"];
+  string time = 4 [(gogoproto.jsontag) = "time"];
+  BlockResponseId last_block_id = 5 [(gogoproto.jsontag) = "last_block_id"];
+  string last_commit_hash = 6 [(gogoproto.jsontag) = "last_commit_hash"];
+  string data_hash = 7 [(gogoproto.jsontag) = "data_hash"];
+  string validators_hash = 8 [(gogoproto.jsontag) = "validators_hash"];
+  string next_validators_hash = 9 [(gogoproto.jsontag) = "next_validators_hash"];
+  string consensus_hash = 10 [(gogoproto.jsontag) = "consensus_hash"];
+  string app_hash = 11 [(gogoproto.jsontag) = "app_hash"];
+  string last_results_hash = 12 [(gogoproto.jsontag) = "last_results_hash"];
+  string evidence_hash = 13 [(gogoproto.jsontag) = "evidence_hash"];
+  string proposer_address = 14 [(gogoproto.jsontag) = "proposer_address"];
 }
 
 message BlockResponseHeaderVersion{
-  string block = 1;
-  string app = 2;
+  string block = 1 [(gogoproto.jsontag) = "block"];
+  string app = 2 [(gogoproto.jsontag) = "app"];
 }
 
 message BlockEvent{
@@ -61,9 +61,9 @@ message EventKeyValuePair{
 }
 
 message QueryBlockTx{
-  string hash = 1;
+  string hash = 1 [(gogoproto.jsontag) = "hash"];
   bytes tx = 2;
-  BlockTxResult result = 3;
+  BlockTxResult result = 3 [(gogoproto.jsontag) = "result"];
 }
 
 message BlockTxResult{

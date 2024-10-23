@@ -14,16 +14,16 @@ message QueryBorrowerRequest{
 }
 
 message QueryBorrowerResponse{
-  string owner = 1;
-  string asset = 2;
-  string debt_issued = 3;
-  string debt_repaid = 4;
-  string debt_current = 5;
-  string collateral_deposited = 6;
-  string collateral_withdrawn = 7;
-  string collateral_current = 8;
-  int64  last_open_height = 9;
-  int64  last_replay_height = 10;
+  string owner = 1 [(gogoproto.jsontag) = "owner"];
+  string asset = 2 [(gogoproto.jsontag) = "asset"];
+  string debt_issued = 3 [(gogoproto.jsontag) = "debt_issued"];
+  string debt_repaid = 4 [(gogoproto.jsontag) = "debt_repaid"];
+  string debt_current = 5 [(gogoproto.jsontag) = "debt_current"];
+  string collateral_deposited = 6 [(gogoproto.jsontag) = "collateral_deposited"];
+  string collateral_withdrawn = 7 [(gogoproto.jsontag) = "collateral_withdrawn"];
+  string collateral_current = 8 [(gogoproto.jsontag) = "collateral_current"];
+  int64  last_open_height = 9 [(gogoproto.jsontag) = "last_open_height"];
+  int64  last_replay_height = 10 [(gogoproto.jsontag) = "last_replay_height"];
 }
 
 message QueryBorrowersRequest{

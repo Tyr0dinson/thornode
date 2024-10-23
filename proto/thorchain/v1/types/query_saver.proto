@@ -14,14 +14,14 @@ message QuerySaverRequest{
 }
 
 message QuerySaverResponse{
-  string asset = 1;
-  string asset_address = 2;
+  string asset = 1 [(gogoproto.jsontag) = "asset"];
+  string asset_address = 2 [(gogoproto.jsontag) = "asset_address"];
   int64  last_add_height = 3;
   int64  last_withdraw_height = 4;
-  string units = 5;
-  string asset_deposit_value = 6;
-  string asset_redeem_value = 7;
-  string growth_pct = 8;
+  string units = 5 [(gogoproto.jsontag) = "units"];
+  string asset_deposit_value = 6 [(gogoproto.jsontag) = "asset_deposit_value"];
+  string asset_redeem_value = 7 [(gogoproto.jsontag) = "asset_redeem_value"];
+  string growth_pct = 8 [(gogoproto.jsontag) = "growth_pct"];
 }
 
 message QuerySaversRequest{

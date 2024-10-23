@@ -24,7 +24,7 @@ message QueryStreamingSwapResponse{
 	// the block height of the latest swap
   int64 last_height = 5;
 	// the total number of tokens the swapper wants to receive of the output asset
-  string trade_target = 6;
+  string trade_target = 6 [(gogoproto.jsontag) = "trade_target"];
 	// the asset to be swapped from
   string source_asset = 7;
 	// the asset to be swapped to
@@ -32,11 +32,11 @@ message QueryStreamingSwapResponse{
 	// the destination address to receive the swap output
   string destination = 9;
 	// the number of input tokens the swapper has deposited
-  string deposit = 10;
+  string deposit = 10 [(gogoproto.jsontag) = "deposit"];
 	// the amount of input tokens that have been swapped so far
-  string in = 11;
+  string in = 11 [(gogoproto.jsontag) = "in"];
 	// the amount of output tokens that have been swapped so far
-  string out = 12;
+  string out = 12 [(gogoproto.jsontag) = "out"];
 	// the list of swap indexes that failed
   repeated int64 failed_swaps = 13;
 	// the list of reasons that sub-swaps have failed
