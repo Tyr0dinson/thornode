@@ -67,7 +67,7 @@ message QueryBlockTx{
 }
 
 message BlockTxResult{
-  int64 code = 1;
+  int64 code = 1 [(gogoproto.jsontag) = "code"];
   string data = 2;
   string log = 3;
   string info = 4;

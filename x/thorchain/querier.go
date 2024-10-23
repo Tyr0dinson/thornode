@@ -839,8 +839,10 @@ func (qs queryServer) queryNodes(ctx cosmos.Context, _ *types.QueryNodesRequest)
 		if bp.Providers != nil {
 			providers = make([]*types.NodeBondProvider, len(bp.Providers))
 			for i := range bp.Providers {
-				providers[i].BondAddress = bp.Providers[i].BondAddress.String()
-				providers[i].Bond = bp.Providers[i].Bond.String()
+				providers[i] = &types.NodeBondProvider{
+					BondAddress: bp.Providers[i].BondAddress.String(),
+					Bond: bp.Providers[i].Bond.String(),
+				}
 			}
 		}
 

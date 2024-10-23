@@ -504,7 +504,7 @@ func (m *QueryBlockResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) 
 	for i, tx := range m.Txs {
 		res.Txs[i].Hash = tx.Hash
 		res.Txs[i].Tx = tx.Tx
-		res.Txs[i].Result.Code = wrapInt64(tx.Result.Code)
+		res.Txs[i].Result.Code = &tx.Result.Code
 		res.Txs[i].Result.Data = wrapString(tx.Result.Data)
 		res.Txs[i].Result.Log = wrapString(tx.Result.Log)
 		res.Txs[i].Result.Info = wrapString(tx.Result.Info)
