@@ -1257,9 +1257,8 @@ github.com/multiformats/go-multiaddr v0.2.0/go.mod h1:0nO36NvPpyV4QzvTLi/lafl2y9
 github.com/multiformats/go-multiaddr v0.2.1/go.mod h1:s/Apk6IyxfvMjDafnhJgJ3/46z7tZ04iMk5wP4QMGGE=
 github.com/multiformats/go-multiaddr v0.2.2/go.mod h1:NtfXiOtHvghW9KojvtySjH5y0u0xW5UouOmQQrn6a3Y=
 github.com/multiformats/go-multiaddr v0.3.0/go.mod h1:dF9kph9wfJ+3VLAaeBqo9Of8x4fJxp6ggJGteB8HQTI=
+github.com/multiformats/go-multiaddr v0.3.1 h1:1bxa+W7j9wZKTZREySx1vPMs2TqrYWjVZ7zE6/XLG1I=
 github.com/multiformats/go-multiaddr v0.3.1/go.mod h1:uPbspcUPd5AfaP6ql3ujFY+QWzmBD8uLLL4bXW0XfGc=
-github.com/multiformats/go-multiaddr v0.13.0 h1:BCBzs61E3AGHcYYTv8dqRH43ZfyrqM8RXVPT8t13tLQ=
-github.com/multiformats/go-multiaddr v0.13.0/go.mod h1:sBXrNzucqkFJhvKOiwwLyqamGa/P5EIXNPLovyhQCII=
 github.com/multiformats/go-multiaddr-dns v0.0.1/go.mod h1:9kWcqw/Pj6FwxAwW38n/9403szc57zJPs45fmnznu3Q=
 github.com/multiformats/go-multiaddr-dns v0.0.2/go.mod h1:9kWcqw/Pj6FwxAwW38n/9403szc57zJPs45fmnznu3Q=
 github.com/multiformats/go-multiaddr-dns v0.2.0 h1:YWJoIDwLePniH7OU5hBnDZV6SWuvJqJ0YtN6pLeH9zA=
@@ -1585,6 +1584,8 @@ github.com/zondax/ledger-go v0.14.3/go.mod h1:IKKaoxupuB43g4NxeQmbLXv7T9AlQyie1U
 github.com/zquestz/grab v0.0.0-20190224022517-abcee96e61b1/go.mod h1:bslhAiUxakrA6z6CHmVyvkfpnxx18RJBwVyx2TluJWw=
 gitlab.com/thorchain/ledger-thorchain-go v1.0.3 h1:pnAKxDd1rGocZS7lOErGxMpROINtK/HPiBBR24L5WvA=
 gitlab.com/thorchain/ledger-thorchain-go v1.0.3/go.mod h1:1zH1LiTMqQmAqPp5vah+AuDs7E++LmqUOn+p1nZOgys=
+gitlab.com/thorchain/thornode/api v0.0.0-20241015194849-630f6eda4eed h1:BanKT/Rc1jR3bDYV3wVEf50A1sXl8ujsQr4a5FMnxMs=
+gitlab.com/thorchain/thornode/api v0.0.0-20241015194849-630f6eda4eed/go.mod h1:JaOA1ABmrMe+/FHvQIElRPK8CigRX6SOidjC0jZecLE=
 gitlab.com/thorchain/tss/tss-lib v0.1.5 h1:L9MD+E3B4lJmadso69lTIP6s2Iks24fS7Ancs62LTZo=
 gitlab.com/thorchain/tss/tss-lib v0.1.5/go.mod h1:pEM3W/1inIzmdQn9IY9pA0MkG1bTGKhsSivxizeyyt4=
 go.etcd.io/bbolt v1.3.3/go.mod h1:IbVyRI1SCnLcuJnV2u8VeU0CEYM7e686BmAb1XKL+uU=

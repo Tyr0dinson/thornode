@@ -22,6 +22,8 @@ require (
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c
 )
 
+require gitlab.com/thorchain/thornode/api v0.0.0-20241015194849-630f6eda4eed // indirect
+
 require (
 	cloud.google.com/go v0.112.0 // indirect
 	cloud.google.com/go/compute/metadata v0.3.0 // indirect
@@ -261,7 +263,7 @@ require (
 	github.com/mtibben/percent v0.2.1 // indirect
 	github.com/multiformats/go-base32 v0.1.0 // indirect
 	github.com/multiformats/go-base36 v0.2.0 // indirect
-	github.com/multiformats/go-multiaddr v0.13.0 // indirect
+	github.com/multiformats/go-multiaddr v0.3.1 // indirect
 	github.com/multiformats/go-multiaddr-dns v0.2.0 // indirect
 	github.com/multiformats/go-multiaddr-fmt v0.1.0 // indirect
 	github.com/multiformats/go-multiaddr-net v0.2.0 // indirect
