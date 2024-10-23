@@ -1,11 +1,11 @@
 package types
 
 import (
-	"fmt"
 	"errors"
+	"fmt"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	
+
 	"google.golang.org/protobuf/proto"
 
 	"gitlab.com/thorchain/thornode/api/types"
@@ -15,9 +15,9 @@ import (
 )
 
 var (
-	_ sdk.Msg = &MsgDeposit{}
+	_ sdk.Msg              = &MsgDeposit{}
 	_ sdk.HasValidateBasic = &MsgDeposit{}
-	_ sdk.LegacyMsg = &MsgDeposit{}
+	_ sdk.LegacyMsg        = &MsgDeposit{}
 )
 
 // NewMsgDeposit is a constructor function for NewMsgDeposit
@@ -31,7 +31,7 @@ func NewMsgDeposit(coins common.Coins, memo string, signer cosmos.AccAddress) *M
 
 // ValidateBasic implements HasValidateBasic
 // ValidateBasic is now ran in the message service router for messages that
-// used to be routed using the external handler and only when HasValidateBasic is implemented. 
+// used to be routed using the external handler and only when HasValidateBasic is implemented.
 // No versioning is used there.
 func (m *MsgDeposit) ValidateBasic() error {
 	if m.Signer.Empty() {
@@ -66,6 +66,9 @@ func (m *MsgDeposit) GetSigners() []cosmos.AccAddress {
 }
 
 func MsgDepositCustomGetSigners(m proto.Message) ([][]byte, error) {
-	msgSend := m.(*types.MsgDeposit)
+	msgSend, ok := m.(*types.MsgDeposit)
+	if !ok {
+		return nil, fmt.Errorf("can't cast as MsgDeposit: %T", m)
+	}
 	return [][]byte{msgSend.Signer}, nil
 }

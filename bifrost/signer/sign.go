@@ -76,9 +76,9 @@ func NewSigner(cfg config.BifrostSignerConfiguration,
 	}
 	var na *ttypes.NodeAccount
 	for i := 0; i < 300; i++ { // wait for 5 min before timing out
-		signerAddr, err := thorKeys.GetSignerInfo().GetAddress()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get address from thorKeys signer: %w", err)
+		signerAddr, err2 := thorKeys.GetSignerInfo().GetAddress()
+		if err2 != nil {
+			return nil, fmt.Errorf("failed to get address from thorKeys signer: %w", err2)
 		}
 		na, err = thorchainBridge.GetNodeAccount(signerAddr.String())
 		if err != nil {

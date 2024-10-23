@@ -49,7 +49,7 @@ func (s *KeysignWrapperTestSuite) SetUpSuite(c *C) {
 
 	privateKey, err := s.thorKeys.GetPrivateKey()
 	c.Assert(err, IsNil)
-	temp, err := cryptocodec.ToTmPubKeyInterface(privateKey.PubKey())
+	temp, err := cryptocodec.ToCmtPubKeyInterface(privateKey.PubKey())
 	c.Assert(err, IsNil)
 	pk, err := common.NewPubKeyFromCrypto(temp)
 	c.Assert(err, IsNil)

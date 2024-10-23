@@ -2,15 +2,15 @@ package types
 
 import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	
+
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
 var (
-	_ sdk.Msg = &MsgReserveContributor{}
+	_ sdk.Msg              = &MsgReserveContributor{}
 	_ sdk.HasValidateBasic = &MsgReserveContributor{}
-	_ sdk.LegacyMsg = &MsgReserveContributor{}
+	_ sdk.LegacyMsg        = &MsgReserveContributor{}
 )
 
 // NewMsgReserveContributor is a constructor function for MsgReserveContributor

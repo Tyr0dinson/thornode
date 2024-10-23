@@ -2,14 +2,14 @@ package types
 
 import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	
+
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
 var (
-	_ sdk.Msg = &MsgMigrate{}
+	_ sdk.Msg              = &MsgMigrate{}
 	_ sdk.HasValidateBasic = &MsgMigrate{}
-	_ sdk.LegacyMsg = &MsgMigrate{}
+	_ sdk.LegacyMsg        = &MsgMigrate{}
 )
 
 // NewMsgMigrate is a constructor function for MsgMigrate

@@ -72,7 +72,8 @@ func NewRootCmd() *cobra.Command {
 			thorconfig.Init()
 
 			initClientCtx = initClientCtx.WithCmdContext(cmd.Context())
-			initClientCtx, err := client.ReadPersistentCommandFlags(initClientCtx, cmd.Flags())
+			var err error
+			initClientCtx, err = client.ReadPersistentCommandFlags(initClientCtx, cmd.Flags())
 			if err != nil {
 				return err
 			}
@@ -86,23 +87,24 @@ func NewRootCmd() *cobra.Command {
 			// sets the RPC client needed for SIGN_MODE_TEXTUAL. This sign mode
 			// is only available if the client is online.
 			if !initClientCtx.Offline {
-				enabledSignModes := append(tx.DefaultSignModes, signing.SignMode_SIGN_MODE_TEXTUAL)
+				enabledSignModes := tx.DefaultSignModes
+				enabledSignModes = append(enabledSignModes, signing.SignMode_SIGN_MODE_TEXTUAL)
 				txConfigOpts := tx.ConfigOptions{
 					EnabledSignModes:           enabledSignModes,
 					TextualCoinMetadataQueryFn: txmodule.NewGRPCCoinMetadataQueryFn(initClientCtx),
 				}
-				txConfig, err := tx.NewTxConfigWithOptions(
+				txConfig, err2 := tx.NewTxConfigWithOptions(
 					initClientCtx.Codec,
 					txConfigOpts,
 				)
-				if err != nil {
-					return err
+				if err2 != nil {
+					return err2
 				}
 
 				initClientCtx = initClientCtx.WithTxConfig(txConfig)
 			}
 
-			if err := client.SetCmdClientContextHandler(initClientCtx, cmd); err != nil {
+			if err = client.SetCmdClientContextHandler(initClientCtx, cmd); err != nil {
 				return err
 			}
 

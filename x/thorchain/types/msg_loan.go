@@ -4,19 +4,19 @@ import (
 	"fmt"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	
+
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
 var (
-	_ sdk.Msg = &MsgLoanOpen{}
+	_ sdk.Msg              = &MsgLoanOpen{}
 	_ sdk.HasValidateBasic = &MsgLoanOpen{}
-	_ sdk.LegacyMsg = &MsgLoanOpen{}
+	_ sdk.LegacyMsg        = &MsgLoanOpen{}
 
-	_ sdk.Msg = &MsgLoanRepayment{}
+	_ sdk.Msg              = &MsgLoanRepayment{}
 	_ sdk.HasValidateBasic = &MsgLoanRepayment{}
-	_ sdk.LegacyMsg = &MsgLoanRepayment{}
+	_ sdk.LegacyMsg        = &MsgLoanRepayment{}
 )
 
 // NewMsgLoanOpen create new MsgLoan message

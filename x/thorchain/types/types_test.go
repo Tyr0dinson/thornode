@@ -69,8 +69,12 @@ func (TypesSuite) TestHasMinority(c *C) {
 }
 
 func EnsureMsgBasicCorrect(m cosmos.Msg, c *C) {
-	signers := m.(sdk.LegacyMsg).GetSigners()
+	legacyMsg, ok := m.(sdk.LegacyMsg)
+	c.Check(ok, Equals, true)
+	signers := legacyMsg.GetSigners()
 	c.Check(signers, NotNil)
 	c.Check(len(signers), Equals, 1)
-	c.Check(m.(sdk.HasValidateBasic).ValidateBasic(), IsNil)
+	msgV, ok := m.(sdk.HasValidateBasic)
+	c.Check(ok, Equals, true)
+	c.Check(msgV.ValidateBasic(), IsNil)
 }

@@ -234,12 +234,14 @@ func InitConfig(parallelism int, seed bool) *OpConfig {
 // Helpers
 ////////////////////////////////////////////////////////////////////////////////////////
 
+// nolint:typecheck
 func fundUserChainAccounts(master *User, users []*User, chain common.Chain, amount sdkmath.Uint) {
 	for _, user := range users {
 		fundUserChainAccount(master, user, chain, amount)
 	}
 }
 
+// nolint:typecheck
 func fundUserChainAccount(master, user *User, chain common.Chain, amount sdkmath.Uint) {
 	// build tx
 	addr, err := user.PubKey().GetAddress(chain)

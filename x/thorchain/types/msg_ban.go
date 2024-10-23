@@ -1,6 +1,8 @@
 package types
 
 import (
+	"fmt"
+
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
 	"google.golang.org/protobuf/proto"
@@ -10,9 +12,9 @@ import (
 )
 
 var (
-	_ sdk.Msg = &MsgBan{}
+	_ sdk.Msg              = &MsgBan{}
 	_ sdk.HasValidateBasic = &MsgBan{}
-	_ sdk.LegacyMsg = &MsgBan{}
+	_ sdk.LegacyMsg        = &MsgBan{}
 )
 
 // NewMsgBan is a constructor function for NewMsgBan
@@ -25,7 +27,7 @@ func NewMsgBan(addr, signer cosmos.AccAddress) *MsgBan {
 
 // ValidateBasic implements HasValidateBasic
 // ValidateBasic is now ran in the message service router for messages that
-// used to be routed using the external handler and only when HasValidateBasic is implemented. 
+// used to be routed using the external handler and only when HasValidateBasic is implemented.
 // No versioning is used there.
 func (m *MsgBan) ValidateBasic() error {
 	if m.Signer.Empty() {
@@ -44,5 +46,9 @@ func (m *MsgBan) GetSigners() []cosmos.AccAddress {
 }
 
 func MsgBanCustomGetSigners(m proto.Message) ([][]byte, error) {
-	return [][]byte{m.(*types.MsgBan).Signer}, nil
+	msg, ok := m.(*types.MsgBan)
+	if !ok {
+		return nil, fmt.Errorf("can't cast as MsgBan: %T", m)
+	}
+	return [][]byte{msg.Signer}, nil
 }

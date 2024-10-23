@@ -7,7 +7,7 @@ import (
 
 	"github.com/blang/semver"
 	"github.com/gogo/protobuf/jsonpb"
-	
+
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 

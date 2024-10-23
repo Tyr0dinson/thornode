@@ -38,12 +38,12 @@ func (mfd MsgFilterDecorator) HasDisallowedMessage(ctx sdk.Context, msgs []sdk.M
 	for _, msg := range msgs {
 		// check nested messages in a recursive manner
 		if execMsg, ok := msg.(*authz.MsgExec); ok {
-			msgs, err := execMsg.GetMessages()
+			eMsgs, err := execMsg.GetMessages()
 			if err != nil {
 				return true
 			}
 
-			if mfd.HasDisallowedMessage(ctx, msgs) {
+			if mfd.HasDisallowedMessage(ctx, eMsgs) {
 				return true
 			}
 		}

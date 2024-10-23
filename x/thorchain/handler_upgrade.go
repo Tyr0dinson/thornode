@@ -8,8 +8,8 @@ import (
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 	keeperv1 "gitlab.com/thorchain/thornode/x/thorchain/keeper/v1"
 
-	"github.com/blang/semver"
 	upgradetypes "cosmossdk.io/x/upgrade/types"
+	"github.com/blang/semver"
 )
 
 // ProposeUpgradeHandler is to handle the ProposeUpgrade message

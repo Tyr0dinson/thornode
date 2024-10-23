@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"strings"
 
+	upgradekeeper "cosmossdk.io/x/upgrade/keeper"
 	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/codec"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
-	upgradekeeper "cosmossdk.io/x/upgrade/keeper"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"

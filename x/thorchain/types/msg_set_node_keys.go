@@ -1,8 +1,10 @@
 package types
 
 import (
+	"fmt"
+
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	
+
 	"google.golang.org/protobuf/proto"
 
 	"gitlab.com/thorchain/thornode/api/types"
@@ -11,9 +13,9 @@ import (
 )
 
 var (
-	_ sdk.Msg = &MsgSetNodeKeys{}
+	_ sdk.Msg              = &MsgSetNodeKeys{}
 	_ sdk.HasValidateBasic = &MsgSetNodeKeys{}
-	_ sdk.LegacyMsg = &MsgSetNodeKeys{}
+	_ sdk.LegacyMsg        = &MsgSetNodeKeys{}
 )
 
 // NewMsgSetNodeKeys is a constructor function for NewMsgAddNodeKeys
@@ -27,7 +29,7 @@ func NewMsgSetNodeKeys(nodePubKeySet common.PubKeySet, validatorConsPubKey strin
 
 // ValidateBasic implements HasValidateBasic
 // ValidateBasic is now ran in the message service router handler for messages that
-// used to be routed using the external handler and only when HasValidateBasic is implemented. 
+// used to be routed using the external handler and only when HasValidateBasic is implemented.
 // No versioning is used there.
 func (m *MsgSetNodeKeys) ValidateBasic() error {
 	if m.Signer.Empty() {
@@ -48,5 +50,9 @@ func (m *MsgSetNodeKeys) GetSigners() []cosmos.AccAddress {
 }
 
 func MsgSetNodeKeysCustomGetSigners(m proto.Message) ([][]byte, error) {
-	return [][]byte{m.(*types.MsgSetNodeKeys).Signer}, nil
+	msg, ok := m.(*types.MsgSetNodeKeys)
+	if !ok {
+		return nil, fmt.Errorf("can't cast as MsgSetNodeKeys: %T", m)
+	}
+	return [][]byte{msg.Signer}, nil
 }

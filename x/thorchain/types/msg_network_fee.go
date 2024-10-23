@@ -1,8 +1,10 @@
 package types
 
 import (
+	"fmt"
+
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	
+
 	"google.golang.org/protobuf/proto"
 
 	"gitlab.com/thorchain/thornode/api/types"
@@ -11,9 +13,9 @@ import (
 )
 
 var (
-	_ sdk.Msg = &MsgNetworkFee{}
+	_ sdk.Msg              = &MsgNetworkFee{}
 	_ sdk.HasValidateBasic = &MsgNetworkFee{}
-	_ sdk.LegacyMsg = &MsgNetworkFee{}
+	_ sdk.LegacyMsg        = &MsgNetworkFee{}
 )
 
 // NewMsgNetworkFee create a new instance of MsgNetworkFee
@@ -29,7 +31,7 @@ func NewMsgNetworkFee(blockHeight int64, chain common.Chain, transactionSize, tr
 
 // ValidateBasic implements HasValidateBasic
 // ValidateBasic is now ran in the message service router handler for messages that
-// used to be routed using the external handler and only when HasValidateBasic is implemented. 
+// used to be routed using the external handler and only when HasValidateBasic is implemented.
 // No versioning is used there.
 func (m *MsgNetworkFee) ValidateBasic() error {
 	if m.BlockHeight <= 0 {
@@ -56,5 +58,9 @@ func (m *MsgNetworkFee) GetSigners() []cosmos.AccAddress {
 }
 
 func MsgNetworkFeeCustomGetSigners(m proto.Message) ([][]byte, error) {
-	return [][]byte{m.(*types.MsgNetworkFee).Signer}, nil
+	msg, ok := m.(*types.MsgNetworkFee)
+	if !ok {
+		return nil, fmt.Errorf("can't cast as MsgNetworkFee: %T", m)
+	}
+	return [][]byte{msg.Signer}, nil
 }

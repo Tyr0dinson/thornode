@@ -1069,7 +1069,7 @@ func (qs queryServer) queryQuoteSaverWithdraw(ctx cosmos.Context, req *types.Que
 		return nil, fmt.Errorf("missing address parameter")
 	}
 	if len(req.WithdrawBps) == 0 {
-		return nil, fmt.Errorf("missing withdraw_bps paramter")
+		return nil, fmt.Errorf("missing withdraw_bps parameter")
 	}
 
 	// parse asset

@@ -2,15 +2,15 @@ package types
 
 import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	
+
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
 var (
-	_ sdk.Msg = &MsgLeave{}
+	_ sdk.Msg              = &MsgLeave{}
 	_ sdk.HasValidateBasic = &MsgLeave{}
-	_ sdk.LegacyMsg = &MsgLeave{}
+	_ sdk.LegacyMsg        = &MsgLeave{}
 )
 
 // NewMsgLeave create a new instance of MsgLeave

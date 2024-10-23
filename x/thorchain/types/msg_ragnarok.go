@@ -2,14 +2,14 @@ package types
 
 import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	
+
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
 var (
-	_ sdk.Msg = &MsgRagnarok{}
+	_ sdk.Msg              = &MsgRagnarok{}
 	_ sdk.HasValidateBasic = &MsgRagnarok{}
-	_ sdk.LegacyMsg = &MsgRagnarok{}
+	_ sdk.LegacyMsg        = &MsgRagnarok{}
 )
 
 // NewMsgRagnarok is a constructor function for MsgRagnarok

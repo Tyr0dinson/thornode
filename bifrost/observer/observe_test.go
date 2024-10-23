@@ -184,7 +184,7 @@ func (s *ObserverSuite) SetUpSuite(c *C) {
 	c.Assert(err, IsNil)
 	priv, err := s.thorKeys.GetPrivateKey()
 	c.Assert(err, IsNil)
-	tmp, err := cryptocodec.ToTmPubKeyInterface(priv.PubKey())
+	tmp, err := cryptocodec.ToCmtPubKeyInterface(priv.PubKey())
 	c.Assert(err, IsNil)
 	_, err = common.NewPubKeyFromCrypto(tmp)
 	c.Assert(err, IsNil)

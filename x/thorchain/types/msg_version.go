@@ -1,19 +1,21 @@
 package types
 
 import (
+	"fmt"
+
 	"github.com/blang/semver"
 	"google.golang.org/protobuf/proto"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	
+
 	"gitlab.com/thorchain/thornode/api/types"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
 var (
-	_ sdk.Msg = &MsgSetVersion{}
+	_ sdk.Msg              = &MsgSetVersion{}
 	_ sdk.HasValidateBasic = &MsgSetVersion{}
-	_ sdk.LegacyMsg = &MsgSetVersion{}
+	_ sdk.LegacyMsg        = &MsgSetVersion{}
 )
 
 // NewMsgSetVersion is a constructor function for NewMsgSetVersion
@@ -26,7 +28,7 @@ func NewMsgSetVersion(version string, signer cosmos.AccAddress) *MsgSetVersion {
 
 // ValidateBasic implements HasValidateBasic
 // ValidateBasic is now ran in the message service router handler for messages that
-// used to be routed using the external handler and only when HasValidateBasic is implemented. 
+// used to be routed using the external handler and only when HasValidateBasic is implemented.
 // No versioning is used there.
 func (m *MsgSetVersion) ValidateBasic() error {
 	if m.Signer.Empty() {
@@ -49,5 +51,9 @@ func (m *MsgSetVersion) GetSigners() []cosmos.AccAddress {
 }
 
 func MsgSetVersionCustomGetSigners(m proto.Message) ([][]byte, error) {
-	return [][]byte{m.(*types.MsgSetVersion).Signer}, nil
+	msg, ok := m.(*types.MsgSetVersion)
+	if !ok {
+		return nil, fmt.Errorf("can't cast as MsgSetVersion: %T", m)
+	}
+	return [][]byte{msg.Signer}, nil
 }

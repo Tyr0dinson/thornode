@@ -841,7 +841,7 @@ func (qs queryServer) queryNodes(ctx cosmos.Context, _ *types.QueryNodesRequest)
 			for i := range bp.Providers {
 				providers[i] = &types.NodeBondProvider{
 					BondAddress: bp.Providers[i].BondAddress.String(),
-					Bond: bp.Providers[i].Bond.String(),
+					Bond:        bp.Providers[i].Bond.String(),
 				}
 			}
 		}
@@ -1823,26 +1823,26 @@ func (qs queryServer) queryTxVoters(ctx cosmos.Context, req *types.QueryTxVoters
 	return &types.QueryObservedTxVoter{
 		TxID: voter.TxID,
 		Tx: types.QueryObservedTx{
-			Tx: voter.Tx.Tx,
-			Status: voter.Tx.Status.String(),
-			OutHashes: voter.Tx.OutHashes,
-			BlockHeight: voter.Tx.BlockHeight,
-			Signers: voter.Tx.Signers,
-			ObservedPubKey: voter.Tx.ObservedPubKey,
-			KeysignMs: voter.Tx.KeysignMs,
-			FinaliseHeight: voter.Tx.FinaliseHeight,
-			Aggregator: voter.Tx.Aggregator,
-			AggregatorTarget: voter.Tx.AggregatorTarget,
+			Tx:                    voter.Tx.Tx,
+			Status:                voter.Tx.Status.String(),
+			OutHashes:             voter.Tx.OutHashes,
+			BlockHeight:           voter.Tx.BlockHeight,
+			Signers:               voter.Tx.Signers,
+			ObservedPubKey:        voter.Tx.ObservedPubKey,
+			KeysignMs:             voter.Tx.KeysignMs,
+			FinaliseHeight:        voter.Tx.FinaliseHeight,
+			Aggregator:            voter.Tx.Aggregator,
+			AggregatorTarget:      voter.Tx.AggregatorTarget,
 			AggregatorTargetLimit: voter.Tx.AggregatorTargetLimit,
 		},
-		Height: voter.Height,
-		Txs: txs,
-		Actions: voter.Actions,
-		OutTxs: voter.OutTxs,
+		Height:          voter.Height,
+		Txs:             txs,
+		Actions:         voter.Actions,
+		OutTxs:          voter.OutTxs,
 		FinalisedHeight: voter.FinalisedHeight,
-		UpdatedVault: voter.UpdatedVault,
-		Reverted: voter.Reverted,
-		OutboundHeight: voter.OutboundHeight,
+		UpdatedVault:    voter.UpdatedVault,
+		Reverted:        voter.Reverted,
+		OutboundHeight:  voter.OutboundHeight,
 	}, nil
 }
 
@@ -2135,16 +2135,16 @@ func (qs queryServer) queryTx(ctx cosmos.Context, req *types.QueryTxRequest) (*t
 
 	observedTx := voter.GetTx(nodeAccounts)
 	queryObservedTx := &types.QueryObservedTx{
-		Tx: observedTx.Tx,
-		Status: observedTx.Status.String(),
-		OutHashes: observedTx.OutHashes,
-		BlockHeight: observedTx.BlockHeight,
-		Signers: observedTx.Signers,
-		ObservedPubKey: observedTx.ObservedPubKey,
-		KeysignMs: observedTx.KeysignMs,
-		FinaliseHeight: observedTx.FinaliseHeight,
-		Aggregator: observedTx.Aggregator,
-		AggregatorTarget: observedTx.AggregatorTarget,
+		Tx:                    observedTx.Tx,
+		Status:                observedTx.Status.String(),
+		OutHashes:             observedTx.OutHashes,
+		BlockHeight:           observedTx.BlockHeight,
+		Signers:               observedTx.Signers,
+		ObservedPubKey:        observedTx.ObservedPubKey,
+		KeysignMs:             observedTx.KeysignMs,
+		FinaliseHeight:        observedTx.FinaliseHeight,
+		Aggregator:            observedTx.Aggregator,
+		AggregatorTarget:      observedTx.AggregatorTarget,
 		AggregatorTargetLimit: observedTx.AggregatorTargetLimit,
 	}
 	result := types.QueryTxResponse{
@@ -2559,7 +2559,6 @@ func (qs queryServer) queryBalances(ctx cosmos.Context, req *types.QueryBalances
 	return &types.QueryBalancesResponse{
 		Balances: balances,
 	}, nil
-
 }
 
 func (qs queryServer) queryUpgradeVotes(ctx cosmos.Context, req *types.QueryUpgradeVotesRequest) (*types.QueryUpgradeVotesResponse, error) {
@@ -3149,7 +3148,12 @@ func castVaultRouters(chainContracts []ChainContract) []*types.VaultRouter {
 // TODO: Migrate callers to use simulate instead.
 func simulateInternal(ctx cosmos.Context, mgr *Mgrs, msg sdk.Msg) (sdk.Events, error) {
 	// validate
-	err := msg.(sdk.HasValidateBasic).ValidateBasic()
+	m, ok := msg.(sdk.HasValidateBasic)
+	if !ok {
+		return nil, fmt.Errorf("message doesn't support validation")
+	}
+
+	err := m.ValidateBasic()
 	if err != nil {
 		return nil, fmt.Errorf("failed validate: %w", err)
 	}
@@ -3212,7 +3216,11 @@ func simulate(ctx cosmos.Context, mgr Manager, msg sdk.Msg) (sdk.Events, error) 
 	ctx = ctx.WithValue(constants.CtxLoanTxID, txid)
 
 	// validate
-	err = msg.(sdk.HasValidateBasic).ValidateBasic()
+	msgV, ok := msg.(sdk.HasValidateBasic)
+	if !ok {
+		return nil, fmt.Errorf("message doesn't support validation")
+	}
+	err = msgV.ValidateBasic()
 	if err != nil {
 		return nil, fmt.Errorf("failed to validate message: %w", err)
 	}

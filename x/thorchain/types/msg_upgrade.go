@@ -1,6 +1,8 @@
 package types
 
 import (
+	"fmt"
+
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
 	"google.golang.org/protobuf/proto"
@@ -11,17 +13,17 @@ import (
 )
 
 var (
-	_ sdk.Msg = &MsgProposeUpgrade{}
+	_ sdk.Msg              = &MsgProposeUpgrade{}
 	_ sdk.HasValidateBasic = &MsgProposeUpgrade{}
-	_ sdk.LegacyMsg = &MsgProposeUpgrade{}
+	_ sdk.LegacyMsg        = &MsgProposeUpgrade{}
 
-	_ sdk.Msg = &MsgApproveUpgrade{}
+	_ sdk.Msg              = &MsgApproveUpgrade{}
 	_ sdk.HasValidateBasic = &MsgApproveUpgrade{}
-	_ sdk.LegacyMsg = &MsgApproveUpgrade{}
+	_ sdk.LegacyMsg        = &MsgApproveUpgrade{}
 
-	_ sdk.Msg = &MsgRejectUpgrade{}
+	_ sdk.Msg              = &MsgRejectUpgrade{}
 	_ sdk.HasValidateBasic = &MsgRejectUpgrade{}
-	_ sdk.LegacyMsg = &MsgRejectUpgrade{}
+	_ sdk.LegacyMsg        = &MsgRejectUpgrade{}
 )
 
 // NewMsgProposeUpgrade is a constructor function for NewMsgProposeUpgrade
@@ -65,7 +67,10 @@ func (m *MsgProposeUpgrade) GetSigners() []cosmos.AccAddress {
 }
 
 func MsgProposeUpgradeCustomGetSigners(m proto.Message) ([][]byte, error) {
-	msg := m.(*types.MsgProposeUpgrade)
+	msg, ok := m.(*types.MsgProposeUpgrade)
+	if !ok {
+		return nil, fmt.Errorf("can't cast as MsgProposeUpgrade: %T", m)
+	}
 	return [][]byte{msg.Signer}, nil
 }
 
@@ -94,7 +99,10 @@ func (m *MsgApproveUpgrade) GetSigners() []cosmos.AccAddress {
 }
 
 func MsgApproveUpgradeCustomGetSigners(m proto.Message) ([][]byte, error) {
-	msg := m.(*types.MsgApproveUpgrade)
+	msg, ok := m.(*types.MsgApproveUpgrade)
+	if !ok {
+		return nil, fmt.Errorf("can't cast as MsgApproveUpgrade: %T", m)
+	}
 	return [][]byte{msg.Signer}, nil
 }
 
@@ -123,6 +131,9 @@ func (m *MsgRejectUpgrade) GetSigners() []cosmos.AccAddress {
 }
 
 func MsgRejectUpgradeCustomGetSigners(m proto.Message) ([][]byte, error) {
-	msg := m.(*types.MsgRejectUpgrade)
+	msg, ok := m.(*types.MsgRejectUpgrade)
+	if !ok {
+		return nil, fmt.Errorf("can't cast as MsgRejectUpgrade: %T", m)
+	}
 	return [][]byte{msg.Signer}, nil
 }

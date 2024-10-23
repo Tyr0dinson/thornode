@@ -59,7 +59,7 @@ func (h SolvencyHandler) validateV70(ctx cosmos.Context, msg MsgSolvency) error 
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}
-	
+
 	m, err := NewMsgSolvency(msg.Chain, msg.PubKey, msg.Coins, msg.Height, msg.Signer)
 	if err != nil {
 		ctx.Logger().Error("fail to reconstruct msg solvency", "error", err)

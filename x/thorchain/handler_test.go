@@ -9,6 +9,9 @@ import (
 	sdklog "cosmossdk.io/log"
 	"cosmossdk.io/store"
 	storemetrics "cosmossdk.io/store/metrics"
+	upgradekeeper "cosmossdk.io/x/upgrade/keeper"
+	upgradetypes "cosmossdk.io/x/upgrade/types"
+	tmproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	dbm "github.com/cosmos/cosmos-db"
 	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/runtime"
@@ -22,12 +25,9 @@ import (
 	"github.com/cosmos/cosmos-sdk/x/bank"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
-	tmproto "github.com/cometbft/cometbft/proto/tendermint/types"
-	upgradekeeper "cosmossdk.io/x/upgrade/keeper"
-	upgradetypes "cosmossdk.io/x/upgrade/types"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/common"
@@ -630,7 +630,9 @@ func (HandlerSuite) TestMsgLeaveFromMemo(c *C) {
 
 	msg, err := processOneTxIn(w.ctx, w.keeper, txin, addr)
 	c.Assert(err, IsNil)
-	c.Check(msg.(sdk.HasValidateBasic).ValidateBasic(), IsNil)
+	msgV, ok := msg.(sdk.HasValidateBasic)
+	c.Assert(ok, Equals, true)
+	c.Check(msgV.ValidateBasic(), IsNil)
 }
 
 func (s *HandlerSuite) TestReserveContributor(c *C) {
@@ -654,7 +656,9 @@ func (s *HandlerSuite) TestReserveContributor(c *C) {
 
 	msg, err := processOneTxIn(w.ctx, w.keeper, txin, addr)
 	c.Assert(err, IsNil)
-	c.Check(msg.(sdk.HasValidateBasic).ValidateBasic(), IsNil)
+	msgV, ok := msg.(sdk.HasValidateBasic)
+	c.Assert(ok, Equals, true)
+	c.Check(msgV.ValidateBasic(), IsNil)
 	_, isReserve := msg.(*MsgReserveContributor)
 	c.Assert(isReserve, Equals, true)
 }

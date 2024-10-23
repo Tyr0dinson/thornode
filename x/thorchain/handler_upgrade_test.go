@@ -4,9 +4,9 @@ import (
 	"errors"
 	"fmt"
 
+	upgradetypes "cosmossdk.io/x/upgrade/types"
 	"github.com/cosmos/cosmos-sdk/codec"
 	se "github.com/cosmos/cosmos-sdk/types/errors"
-	upgradetypes "cosmossdk.io/x/upgrade/types"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/common/cosmos"

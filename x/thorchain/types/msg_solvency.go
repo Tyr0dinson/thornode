@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	
+
 	"google.golang.org/protobuf/proto"
 
 	"gitlab.com/thorchain/thornode/api/types"
@@ -14,9 +14,9 @@ import (
 )
 
 var (
-	_ sdk.Msg = &MsgSolvency{}
+	_ sdk.Msg              = &MsgSolvency{}
 	_ sdk.HasValidateBasic = &MsgSolvency{}
-	_ sdk.LegacyMsg = &MsgSolvency{}
+	_ sdk.LegacyMsg        = &MsgSolvency{}
 )
 
 // NewMsgSolvency create a new MsgSolvency
@@ -38,7 +38,7 @@ func NewMsgSolvency(chain common.Chain, pubKey common.PubKey, coins common.Coins
 
 // ValidateBasic implements HasValidateBasic
 // ValidateBasic is now ran in the message service router handler for messages that
-// used to be routed using the external handler and only when HasValidateBasic is implemented. 
+// used to be routed using the external handler and only when HasValidateBasic is implemented.
 // No versioning is used there.
 func (m *MsgSolvency) ValidateBasic() error {
 	if m.Id.IsEmpty() {
@@ -65,5 +65,9 @@ func (m *MsgSolvency) GetSigners() []cosmos.AccAddress {
 }
 
 func MsgSolvencyCustomGetSigners(m proto.Message) ([][]byte, error) {
-	return [][]byte{m.(*types.MsgSolvency).Signer}, nil
+	msg, ok := m.(*types.MsgSolvency)
+	if !ok {
+		return nil, fmt.Errorf("can't cast as MsgSolvency: %T", m)
+	}
+	return [][]byte{msg.Signer}, nil
 }

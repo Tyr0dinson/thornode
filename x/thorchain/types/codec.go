@@ -74,7 +74,7 @@ func RegisterInterfaces(registry cdctypes.InterfaceRegistry) {
 		&MsgOutboundTx{},
 		&MsgSetVersion{},
 		&MsgProposeUpgrade{},
-	    &MsgApproveUpgrade{},
+		&MsgApproveUpgrade{},
 		&MsgRejectUpgrade{},
 		&MsgSetNodeKeys{},
 		&MsgSetIPAddress{},

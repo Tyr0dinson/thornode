@@ -62,7 +62,7 @@ func (h TssKeysignHandler) validateV114(ctx cosmos.Context, msg MsgTssKeysignFai
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}
-	
+
 	m, err := NewMsgTssKeysignFail(msg.Height, msg.Blame, msg.Memo, msg.Coins, msg.Signer, msg.PubKey)
 	if err != nil {
 		ctx.Logger().Error("fail to reconstruct keysign fail msg", "error", err)

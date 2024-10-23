@@ -4,7 +4,7 @@ import (
 	"errors"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	
+
 	"google.golang.org/protobuf/proto"
 
 	"gitlab.com/thorchain/thornode/api/types"
@@ -12,9 +12,9 @@ import (
 )
 
 var (
-	_ sdk.Msg = &MsgSend{}
+	_ sdk.Msg              = &MsgSend{}
 	_ sdk.HasValidateBasic = &MsgSend{}
-	_ sdk.LegacyMsg = &MsgSend{}
+	_ sdk.LegacyMsg        = &MsgSend{}
 )
 
 // NewMsgSend - construct a msg to send coins from one account to another.
@@ -24,7 +24,7 @@ func NewMsgSend(fromAddr, toAddr cosmos.AccAddress, amount cosmos.Coins) *MsgSen
 
 // ValidateBasic implements HasValidateBasic
 // ValidateBasic is now ran in the message service router handler for messages that
-// used to be routed using the external handler and only when HasValidateBasic is implemented. 
+// used to be routed using the external handler and only when HasValidateBasic is implemented.
 // No versioning is used there.
 func (m *MsgSend) ValidateBasic() error {
 	if err := cosmos.VerifyAddressFormat(m.FromAddress); err != nil {
@@ -57,6 +57,9 @@ func (m *MsgSend) GetSigners() []cosmos.AccAddress {
 }
 
 func MsgSendCustomGetSigners(m proto.Message) ([][]byte, error) {
-	msgSend := m.(*types.MsgSend)
+	msgSend, ok := m.(*types.MsgSend)
+	if !ok {
+		return nil, errors.New("can't cast as MsgSend")
+	}
 	return [][]byte{msgSend.FromAddress}, nil
 }

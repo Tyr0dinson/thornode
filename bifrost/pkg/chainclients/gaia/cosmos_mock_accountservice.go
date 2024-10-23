@@ -7,8 +7,8 @@ import (
 
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
-	atypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
+	atypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	grpc "google.golang.org/grpc"
 )
 

@@ -8,9 +8,9 @@ import (
 )
 
 var (
-	_ sdk.Msg = &MsgRefundTx{}
+	_ sdk.Msg              = &MsgRefundTx{}
 	_ sdk.HasValidateBasic = &MsgRefundTx{}
-	_ sdk.LegacyMsg = &MsgRefundTx{}
+	_ sdk.LegacyMsg        = &MsgRefundTx{}
 )
 
 // NewMsgRefundTx is a constructor function for MsgOutboundTx

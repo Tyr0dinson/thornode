@@ -139,7 +139,6 @@ func (s *QuerierSuite) TestQueryKeysign(c *C) {
 	c.Assert(openapiKeysignResp.Signature, Equals, queryKeysignResp.Signature)
 	c.Assert(*openapiKeysignResp.Keysign.Height, Equals, queryKeysignResp.Keysign.Height)
 	c.Assert(len(openapiKeysignResp.Keysign.TxArray), Equals, len(queryKeysignResp.Keysign.TxArray))
-
 }
 
 func (s *QuerierSuite) TestQueryPool(c *C) {
@@ -618,7 +617,7 @@ func (s *QuerierSuite) TestQueryTxStages(c *C) {
 	queryTxStagesResp, err := s.queryServer.TxStages(s.ctx, &types.QueryTxStagesRequest{
 		TxId: tx.ID.String(),
 	})
-	c.Assert(err, IsNil)     // Expecting no error for an unobserved hash.
+	c.Assert(err, IsNil) // Expecting no error for an unobserved hash.
 
 	// marshal output so we can verify it unmarshals as expected
 	result, err := queryTxStagesResp.MarshalJSONPB(nil)
@@ -629,7 +628,7 @@ func (s *QuerierSuite) TestQueryTxStages(c *C) {
 	queryTxStagesResp, err = s.queryServer.TxStages(s.ctx, &types.QueryTxStagesRequest{
 		TxId: tx.ID.String(),
 	})
-	c.Assert(err, IsNil)     // Expecting no error for an unobserved hash.
+	c.Assert(err, IsNil) // Expecting no error for an unobserved hash.
 
 	// marshal output so we can verify it unmarshals as expected
 	result, err = queryTxStagesResp.MarshalJSONPB(nil)
@@ -642,20 +641,18 @@ func (s *QuerierSuite) TestQueryTxStages(c *C) {
 	c.Assert(err, IsNil)
 
 	c.Assert(*openapiTxStagesResp.InboundObserved.Started, Equals, queryTxStagesResp.InboundObserved.Started)
-
 }
 
 func (s *QuerierSuite) TestQueryTxStatus(c *C) {
-	
 	tx := GetRandomTx()
 	// test getTxInVoter
 	queryTxStatusResp, err := s.queryServer.TxStatus(s.ctx, &types.QueryTxStatusRequest{
 		TxId: tx.ID.String(),
 	})
-	c.Assert(err, IsNil)     // Expecting no error for an unobserved hash.
+	c.Assert(err, IsNil) // Expecting no error for an unobserved hash.
 
 	// marshal output so we can verify it unmarshals as expected
-	result, err := queryTxStatusResp.MarshalJSONPB(nil)	
+	result, err := queryTxStatusResp.MarshalJSONPB(nil)
 	c.Assert(result, NotNil) // Expecting a not-started Observation stage.
 	c.Assert(err, IsNil)     // Expecting no error for an unobserved hash.
 	observedTxInVote := NewObservedTxVoter(tx.ID, []ObservedTx{NewObservedTx(tx, s.ctx.BlockHeight(), GetRandomPubKey(), s.ctx.BlockHeight())})
@@ -663,13 +660,13 @@ func (s *QuerierSuite) TestQueryTxStatus(c *C) {
 	queryTxStatusResp, err = s.queryServer.TxStatus(s.ctx, &types.QueryTxStatusRequest{
 		TxId: tx.ID.String(),
 	})
-	c.Assert(err, IsNil)     // Expecting no error for an unobserved hash.
+	c.Assert(err, IsNil) // Expecting no error for an unobserved hash.
 
 	// marshal output so we can verify it unmarshals as expected
-	result, err = queryTxStatusResp.MarshalJSONPB(nil)	
+	result, err = queryTxStatusResp.MarshalJSONPB(nil)
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
-	
+
 	// Verify conformance to openapi spec
 	var openapiTxStatusresp openapi.TxStatusResponse
 	err = json.Unmarshal(result, &openapiTxStatusresp)
@@ -753,7 +750,7 @@ func (s *QuerierSuite) TestQueryKeyGen(c *C) {
 	})
 	c.Assert(queryKeygensPubkeyResp, NotNil)
 	c.Assert(err, IsNil)
-	
+
 	result, err := queryKeygensPubkeyResp.MarshalJSONPB(nil)
 	c.Assert(err, IsNil)
 
@@ -777,7 +774,7 @@ func (s *QuerierSuite) TestQueryQueue(c *C) {
 	c.Assert(err, IsNil)
 	var q openapi.QueueResponse
 	c.Assert(json.Unmarshal(result, &q), IsNil)
-	
+
 	// Verify conformance to openapi spec
 	c.Assert(q.ScheduledOutboundClout, Equals, queryQueueResp.ScheduledOutboundClout)
 	c.Assert(q.ScheduledOutboundValue, Equals, queryQueueResp.ScheduledOutboundValue)
@@ -809,7 +806,7 @@ func (s *QuerierSuite) TestQueryHeights(c *C) {
 	c.Assert(result, NotNil)
 	c.Assert(err, IsNil)
 	c.Assert(json.Unmarshal(result, &q), IsNil)
-	
+
 	// Verify conformance to openapi spec
 	c.Assert(q[0].Chain, Equals, queryChainsLastBlockResp.LastBlocks[0].Chain)
 	c.Assert(q[0].Thorchain, Equals, queryChainsLastBlockResp.LastBlocks[0].Thorchain)
@@ -819,7 +816,7 @@ func (s *QuerierSuite) TestQueryConstantValues(c *C) {
 	queryConstantValResp, err := s.queryServer.ConstantValues(s.ctx, &types.QueryConstantValuesRequest{})
 	c.Assert(queryConstantValResp, NotNil)
 	c.Assert(err, IsNil)
-	
+
 	_, err = queryConstantValResp.MarshalJSONPB(nil)
 	c.Assert(err, IsNil)
 
@@ -833,7 +830,7 @@ func (s *QuerierSuite) TestQueryMimir(c *C) {
 	s.k.SetMimir(s.ctx, "hello", 111)
 	queryMimirResp, err := s.queryServer.MimirValues(s.ctx, &types.QueryMimirValuesRequest{})
 	c.Assert(err, IsNil)
-	
+
 	// marshal output so we can verify it unmarshals as expected
 	result, err := queryMimirResp.MarshalJSONPB(nil)
 	c.Assert(err, IsNil)
@@ -856,7 +853,7 @@ func (s *QuerierSuite) TestQueryBan(c *C) {
 	c.Assert(err, NotNil)
 
 	queryBanResp, err = s.queryServer.Ban(s.ctx, &types.QueryBanRequest{
-		Address: GetRandomBech32Addr().String(), 
+		Address: GetRandomBech32Addr().String(),
 	})
 	c.Assert(queryBanResp, NotNil)
 	c.Assert(err, IsNil)
@@ -1014,7 +1011,7 @@ func (s *QuerierSuite) TestQueryNetwork(c *C) {
 	c.Assert(err, IsNil)
 	var r Network // unsure why we were unmarshaling to this type, but leaving in
 	c.Assert(json.Unmarshal(result, &r), IsNil)
-	
+
 	// Verify conformance to openapi spec
 	var openapiNetworkResponse openapi.NetworkResponse
 	c.Assert(json.Unmarshal(result, &openapiNetworkResponse), IsNil)
@@ -1046,7 +1043,7 @@ func (s *QuerierSuite) TestQueryAsgardVault(c *C) {
 	c.Assert(err, IsNil)
 	var r Vaults
 	c.Assert(json.Unmarshal(result, &r), IsNil)
-	
+
 	// Verify conformance to openapi spec
 	var openapiVaults []openapi.Vault
 	err = json.Unmarshal(result, &openapiVaults)
@@ -1094,7 +1091,6 @@ func (s *QuerierSuite) TestQueryVaultPubKeys(c *C) {
 	c.Assert(r.Asgard[0].PubKey, Equals, queryVaultPubkeys.Asgard[0].PubKey)
 	c.Assert(*r.Asgard[0].Routers[0].Chain, Equals, queryVaultPubkeys.Asgard[0].Routers[0].Chain)
 	c.Assert(*r.Asgard[0].Routers[0].Router, Equals, queryVaultPubkeys.Asgard[0].Routers[0].Router)
-
 }
 
 func (s *QuerierSuite) TestQueryBalanceModule(c *C) {
@@ -1114,7 +1110,7 @@ func (s *QuerierSuite) TestQueryBalanceModule(c *C) {
 		Coins   types2.Coins      `json:"coins"`
 	}
 	c.Assert(json.Unmarshal(result, &r), IsNil)
-	
+
 	// Verify conformance to legacy output
 	c.Assert(r.Address.String(), Equals, queryBalanceModulesResp.Address.String())
 	c.Assert(r.Coins[0].Amount.String(), Equals, queryBalanceModulesResp.Coins[0].Amount.String())
@@ -1136,7 +1132,7 @@ func (s *QuerierSuite) TestQueryVault(c *C) {
 		PubKey: vault.PubKey.String(),
 	})
 	c.Assert(err, IsNil)
-	
+
 	// marshal output so we can verify it unmarshals as expected
 	result, err := queryVaultResp.MarshalJSONPB(nil)
 	c.Assert(err, IsNil)

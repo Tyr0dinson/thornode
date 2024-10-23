@@ -2,14 +2,14 @@ package types
 
 import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	
+
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
 var (
-	_ sdk.Msg = &MsgConsolidate{}
+	_ sdk.Msg              = &MsgConsolidate{}
 	_ sdk.HasValidateBasic = &MsgConsolidate{}
-	_ sdk.LegacyMsg = &MsgConsolidate{}
+	_ sdk.LegacyMsg        = &MsgConsolidate{}
 )
 
 // NewMsgConsolidate is a constructor function for MsgConsolidate

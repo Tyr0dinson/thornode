@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	
+
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
@@ -13,9 +13,9 @@ import (
 const MaxAffiliateFeeBasisPoints = 1_000
 
 var (
-	_ sdk.Msg = &MsgSwap{}
+	_ sdk.Msg              = &MsgSwap{}
 	_ sdk.HasValidateBasic = &MsgSwap{}
-	_ sdk.LegacyMsg = &MsgSwap{}
+	_ sdk.LegacyMsg        = &MsgSwap{}
 )
 
 // NewMsgSwap is a constructor function for MsgSwap

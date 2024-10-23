@@ -2,19 +2,19 @@ package types
 
 import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	
+
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
 var (
-	_ sdk.Msg = &MsgTradeAccountDeposit{}
+	_ sdk.Msg              = &MsgTradeAccountDeposit{}
 	_ sdk.HasValidateBasic = &MsgTradeAccountDeposit{}
-	_ sdk.LegacyMsg = &MsgTradeAccountDeposit{}
-	
-	_ sdk.Msg = &MsgTradeAccountWithdrawal{}
+	_ sdk.LegacyMsg        = &MsgTradeAccountDeposit{}
+
+	_ sdk.Msg              = &MsgTradeAccountWithdrawal{}
 	_ sdk.HasValidateBasic = &MsgTradeAccountWithdrawal{}
-	_ sdk.LegacyMsg = &MsgTradeAccountWithdrawal{}
+	_ sdk.LegacyMsg        = &MsgTradeAccountWithdrawal{}
 )
 
 // NewMsgTradeAccountDeposit is a constructor function for MsgTradeAccountDeposit

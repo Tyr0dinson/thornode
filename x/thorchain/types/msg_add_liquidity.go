@@ -4,17 +4,16 @@ import (
 	"fmt"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	
+
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
 var (
-	_ sdk.Msg = &MsgAddLiquidity{}
+	_ sdk.Msg              = &MsgAddLiquidity{}
 	_ sdk.HasValidateBasic = &MsgAddLiquidity{}
-	_ sdk.LegacyMsg = &MsgAddLiquidity{}
+	_ sdk.LegacyMsg        = &MsgAddLiquidity{}
 )
-
 
 // NewMsgAddLiquidity is a constructor function for MsgAddLiquidity
 func NewMsgAddLiquidity(tx common.Tx, asset common.Asset, r, amount cosmos.Uint, runeAddr, assetAddr, affAddr common.Address, affPts cosmos.Uint, signer cosmos.AccAddress) *MsgAddLiquidity {

@@ -2,15 +2,15 @@ package types
 
 import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	
+
 	"gitlab.com/thorchain/thornode/common"
 	cosmos "gitlab.com/thorchain/thornode/common/cosmos"
 )
 
 var (
-	_ sdk.Msg = &MsgManageTHORName{}
+	_ sdk.Msg              = &MsgManageTHORName{}
 	_ sdk.HasValidateBasic = &MsgManageTHORName{}
-	_ sdk.LegacyMsg = &MsgManageTHORName{}
+	_ sdk.LegacyMsg        = &MsgManageTHORName{}
 )
 
 // NewMsgManageTHORName create a new instance of MsgManageTHORName

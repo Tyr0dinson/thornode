@@ -1,8 +1,10 @@
 package types
 
 import (
+	"fmt"
+
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	
+
 	"google.golang.org/protobuf/proto"
 
 	"gitlab.com/thorchain/thornode/api/types"
@@ -10,9 +12,9 @@ import (
 )
 
 var (
-	_ sdk.Msg = &MsgNodePauseChain{}
+	_ sdk.Msg              = &MsgNodePauseChain{}
 	_ sdk.HasValidateBasic = &MsgNodePauseChain{}
-	_ sdk.LegacyMsg = &MsgNodePauseChain{}
+	_ sdk.LegacyMsg        = &MsgNodePauseChain{}
 )
 
 // NewMsgNodePauseChain is a constructor function for NewMsgNodePauseChain
@@ -25,7 +27,7 @@ func NewMsgNodePauseChain(val int64, signer cosmos.AccAddress) *MsgNodePauseChai
 
 // ValidateBasic implements HasValidateBasic
 // ValidateBasic is now ran in the message service router handler for messages that
-// used to be routed using the external handler and only when HasValidateBasic is implemented. 
+// used to be routed using the external handler and only when HasValidateBasic is implemented.
 // No versioning is used there.
 func (m *MsgNodePauseChain) ValidateBasic() error {
 	if m.Signer.Empty() {
@@ -40,5 +42,9 @@ func (m *MsgNodePauseChain) GetSigners() []cosmos.AccAddress {
 }
 
 func MsgNodePauseChainCustomGetSigners(m proto.Message) ([][]byte, error) {
-	return [][]byte{m.(*types.MsgNodePauseChain).Signer}, nil
+	msg, ok := m.(*types.MsgNodePauseChain)
+	if !ok {
+		return nil, fmt.Errorf("can't cast as MsgNodePauseChain: %T", m)
+	}
+	return [][]byte{msg.Signer}, nil
 }

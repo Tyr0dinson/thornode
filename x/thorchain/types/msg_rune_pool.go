@@ -2,20 +2,20 @@ package types
 
 import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	
+
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
 )
 
 var (
-	_ sdk.Msg = &MsgRunePoolDeposit{}
+	_ sdk.Msg              = &MsgRunePoolDeposit{}
 	_ sdk.HasValidateBasic = &MsgRunePoolDeposit{}
-	_ sdk.LegacyMsg = &MsgRunePoolDeposit{}
-	
-	_ sdk.Msg = &MsgRunePoolWithdraw{}
+	_ sdk.LegacyMsg        = &MsgRunePoolDeposit{}
+
+	_ sdk.Msg              = &MsgRunePoolWithdraw{}
 	_ sdk.HasValidateBasic = &MsgRunePoolWithdraw{}
-	_ sdk.LegacyMsg = &MsgRunePoolWithdraw{}
+	_ sdk.LegacyMsg        = &MsgRunePoolWithdraw{}
 )
 
 // NewMsgRunePoolDeposit create new MsgRunePoolDeposit message

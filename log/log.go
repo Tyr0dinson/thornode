@@ -3,8 +3,8 @@ package log
 import (
 	"strings"
 
-	"github.com/rs/zerolog"
 	sdklog "cosmossdk.io/log"
+	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/config"
 )
 
@@ -95,6 +95,7 @@ func (z SdkLogWrapper) With(keyVals ...interface{}) sdklog.Logger {
 		Logger: &logger,
 	}
 }
+
 // Impl returns the underlying logger implementation.
 // It is used to access the full functionalities of the underlying logger.
 // Advanced users can type cast the returned value to the actual logger.

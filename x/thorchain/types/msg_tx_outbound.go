@@ -2,15 +2,15 @@ package types
 
 import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	
+
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
 var (
-	_ sdk.Msg = &MsgOutboundTx{}
+	_ sdk.Msg              = &MsgOutboundTx{}
 	_ sdk.HasValidateBasic = &MsgOutboundTx{}
-	_ sdk.LegacyMsg = &MsgOutboundTx{}
+	_ sdk.LegacyMsg        = &MsgOutboundTx{}
 )
 
 // NewMsgOutboundTx is a constructor function for MsgOutboundTx

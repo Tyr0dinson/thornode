@@ -252,7 +252,7 @@ func NewChainApp(
 	tkeys := storetypes.NewTransientStoreKeys(paramstypes.TStoreKey)
 
 	// register streaming services
-	if err := bApp.RegisterStreamingServices(appOpts, keys); err != nil {
+	if err = bApp.RegisterStreamingServices(appOpts, keys); err != nil {
 		panic(err)
 	}
 
@@ -303,7 +303,8 @@ func NewChainApp(
 	)
 
 	// enable sign mode textual by overwriting the default tx config (after setting the bank keeper)
-	enabledSignModes := append(tx.DefaultSignModes, signingtype.SignMode_SIGN_MODE_TEXTUAL)
+	enabledSignModes := tx.DefaultSignModes
+	enabledSignModes = append(enabledSignModes, signingtype.SignMode_SIGN_MODE_TEXTUAL)
 	txConfigOpts = tx.ConfigOptions{
 		EnabledSignModes:           enabledSignModes,
 		TextualCoinMetadataQueryFn: txmodule.NewBankKeeperCoinMetadataQueryFn(app.BankKeeper),
@@ -529,7 +530,7 @@ func NewChainApp(
 	}
 
 	if loadLatest {
-		if err := app.LoadLatestVersion(); err != nil {
+		if err = app.LoadLatestVersion(); err != nil {
 			panic(fmt.Errorf("error loading last version: %w", err))
 		}
 
@@ -551,7 +552,7 @@ func (app *THORChainApp) FinalizeBlock(req *abci.RequestFinalizeBlock) (*abci.Re
 			// Migrate Tendermint consensus parameters from x/params module to a dedicated x/consensus module.
 			// see https://github.com/cosmos/cosmos-sdk/blob/v0.47.0/simapp/upgrades.go#L66
 			baseAppLegacySS := app.GetSubspace(baseapp.Paramspace).WithKeyTable(paramstypes.ConsensusParamsKeyTable())
-			err := baseapp.MigrateParams(sdk.UnwrapSDKContext(ctx), baseAppLegacySS, app.ConsensusParamsKeeper.ParamsStore)
+			err = baseapp.MigrateParams(sdk.UnwrapSDKContext(ctx), baseAppLegacySS, app.ConsensusParamsKeeper.ParamsStore)
 			if err != nil {
 				panic(err)
 			}
@@ -635,7 +636,7 @@ func (app *THORChainApp) AutoCliOpts() autocli.AppOptions {
 	for _, m := range app.ModuleManager.Modules {
 		if moduleWithName, ok := m.(module.HasName); ok {
 			moduleName := moduleWithName.Name()
-			if appModule, ok := moduleWithName.(appmodule.AppModule); ok {
+			if appModule, ok2 := moduleWithName.(appmodule.AppModule); ok2 {
 				modules[moduleName] = appModule
 			}
 		}

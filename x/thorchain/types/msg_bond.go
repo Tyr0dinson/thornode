@@ -2,15 +2,15 @@ package types
 
 import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	
+
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
 var (
-	_ sdk.Msg = &MsgBond{}
+	_ sdk.Msg              = &MsgBond{}
 	_ sdk.HasValidateBasic = &MsgBond{}
-	_ sdk.LegacyMsg = &MsgBond{}
+	_ sdk.LegacyMsg        = &MsgBond{}
 )
 
 // NewMsgBond create new MsgBond message

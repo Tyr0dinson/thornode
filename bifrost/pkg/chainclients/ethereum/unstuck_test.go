@@ -63,7 +63,7 @@ func (s *UnstuckTestSuite) SetUpTest(c *C) {
 	// get public key
 	priv, err := s.thorKeys.GetPrivateKey()
 	c.Assert(err, IsNil)
-	temp, err := cryptocodec.ToTmPubKeyInterface(priv.PubKey())
+	temp, err := cryptocodec.ToCmtPubKeyInterface(priv.PubKey())
 	c.Assert(err, IsNil)
 	pubkey, err := common.NewPubKeyFromCrypto(temp)
 	c.Assert(err, IsNil)

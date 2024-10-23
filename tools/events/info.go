@@ -464,7 +464,11 @@ func notifyChurnStarted(height int64, keyshareBackups map[string]map[string]bool
 ////////////////////////////////////////////////////////////////////////////////////////
 
 func formatNodePauseMessage(height int64, tx thorscan.BlockTx, event map[string]string) string {
-	signer := tx.Tx.GetMsgs()[0].(sdk.LegacyMsg).GetSigners()[0].String()
+	legacyMsg, ok := tx.Tx.GetMsgs()[0].(sdk.LegacyMsg)
+	if !ok {
+		log.Panic().Msg("failed to cast to legacy message")
+	}
+	signer := legacyMsg.GetSigners()[0].String()
 	pauseHeight, err := strconv.ParseInt(event["value"], 10, 64)
 	if err != nil {
 		log.Panic().Str("value", event["value"]).Err(err).Msg("failed to parse pause height")

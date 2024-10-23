@@ -1,8 +1,10 @@
 package types
 
 import (
+	"fmt"
+
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	
+
 	"google.golang.org/protobuf/proto"
 
 	"gitlab.com/thorchain/thornode/api/types"
@@ -11,9 +13,9 @@ import (
 )
 
 var (
-	_ sdk.Msg = &MsgErrataTx{}
+	_ sdk.Msg              = &MsgErrataTx{}
 	_ sdk.HasValidateBasic = &MsgErrataTx{}
-	_ sdk.LegacyMsg = &MsgErrataTx{}
+	_ sdk.LegacyMsg        = &MsgErrataTx{}
 )
 
 // NewMsgErrataTx is a constructor function for NewMsgErrataTx
@@ -27,7 +29,7 @@ func NewMsgErrataTx(txID common.TxID, chain common.Chain, signer cosmos.AccAddre
 
 // ValidateBasic implements HasValidateBasic
 // ValidateBasic is now ran in the message service router handler for messages that
-// used to be routed using the external handler and only when HasValidateBasic is implemented. 
+// used to be routed using the external handler and only when HasValidateBasic is implemented.
 // No versioning is used there.
 func (m *MsgErrataTx) ValidateBasic() error {
 	if m.Signer.Empty() {
@@ -48,5 +50,10 @@ func (m *MsgErrataTx) GetSigners() []cosmos.AccAddress {
 }
 
 func MsgErrataCustomGetSigners(m proto.Message) ([][]byte, error) {
-	return [][]byte{m.(*types.MsgErrataTx).Signer}, nil
+	msg, ok := m.(*types.MsgErrataTx)
+	if !ok {
+		return nil, fmt.Errorf("can't cast as MsgErrataTx: %T", m)
+	}
+
+	return [][]byte{msg.Signer}, nil
 }

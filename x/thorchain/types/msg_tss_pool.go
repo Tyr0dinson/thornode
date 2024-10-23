@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	
+
 	"google.golang.org/protobuf/proto"
 
 	"gitlab.com/thorchain/thornode/api/types"
@@ -28,9 +28,9 @@ const (
 var MatchMnemonic = regexp.MustCompile(`([a-zA-Z]+ ){11}[a-zA-Z]+`)
 
 var (
-	_ sdk.Msg = &MsgTssPool{}
+	_ sdk.Msg              = &MsgTssPool{}
 	_ sdk.HasValidateBasic = &MsgTssPool{}
-	_ sdk.LegacyMsg = &MsgTssPool{}
+	_ sdk.LegacyMsg        = &MsgTssPool{}
 )
 
 // NewMsgTssPool is a constructor function for MsgTssPool
@@ -88,7 +88,7 @@ func getTssID(members []string, poolPk common.PubKey, height int64, bl Blame) (s
 
 // ValidateBasic implements HasValidateBasic
 // ValidateBasic is now ran in the message service router handler for messages that
-// used to be routed using the external handler and only when HasValidateBasic is implemented. 
+// used to be routed using the external handler and only when HasValidateBasic is implemented.
 // No versioning is used there.
 func (m *MsgTssPool) ValidateBasic() error {
 	if m.Signer.Empty() {
@@ -200,5 +200,9 @@ func (m *MsgTssPool) GetSigners() []cosmos.AccAddress {
 }
 
 func MsgTssPoolCustomGetSigners(m proto.Message) ([][]byte, error) {
-	return [][]byte{m.(*types.MsgTssPool).Signer}, nil
+	msg, ok := m.(*types.MsgTssPool)
+	if !ok {
+		return nil, fmt.Errorf("can't cast as MsgTssPool: %T", m)
+	}
+	return [][]byte{msg.Signer}, nil
 }

@@ -2,14 +2,14 @@ package types
 
 import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	
+
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
 
 var (
-	_ sdk.Msg = &MsgNoOp{}
+	_ sdk.Msg              = &MsgNoOp{}
 	_ sdk.HasValidateBasic = &MsgNoOp{}
-	_ sdk.LegacyMsg = &MsgNoOp{}
+	_ sdk.LegacyMsg        = &MsgNoOp{}
 )
 
 // NewMsgNoOp is a constructor function for MsgNoOp

@@ -534,10 +534,3 @@ func wrapString(s string) *string {
 	}
 	return &s
 }
-
-func wrapInt64(d int64) *int64 {
-	if d == 0 {
-		return nil
-	}
-	return &d
-}

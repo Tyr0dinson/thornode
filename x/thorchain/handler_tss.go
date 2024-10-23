@@ -75,7 +75,7 @@ func MsgTssPoolValidateV137(ctx cosmos.Context, mgr Manager, msg *MsgTssPool) er
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}
-	
+
 	if msg.KeygenType != AsgardKeygen {
 		return fmt.Errorf("only asgard vaults allowed for tss")
 	}

@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	
+
 	"google.golang.org/protobuf/proto"
 
 	"gitlab.com/thorchain/thornode/api/types"
@@ -18,9 +18,9 @@ import (
 )
 
 var (
-	_ sdk.Msg = &MsgTssKeysignFail{}
+	_ sdk.Msg              = &MsgTssKeysignFail{}
 	_ sdk.HasValidateBasic = &MsgTssKeysignFail{}
-	_ sdk.LegacyMsg = &MsgTssKeysignFail{}
+	_ sdk.LegacyMsg        = &MsgTssKeysignFail{}
 )
 
 // NewMsgTssKeysignFail create a new instance of MsgTssKeysignFail message
@@ -69,7 +69,7 @@ func getMsgTssKeysignFailID(members []Node, height int64, memo string, coins com
 
 // ValidateBasic implements HasValidateBasic
 // ValidateBasic is now ran in the message service router handler for messages that
-// used to be routed using the external handler and only when HasValidateBasic is implemented. 
+// used to be routed using the external handler and only when HasValidateBasic is implemented.
 // No versioning is used there.
 func (m *MsgTssKeysignFail) ValidateBasic() error {
 	if m.Signer.Empty() {
@@ -106,5 +106,9 @@ func (m *MsgTssKeysignFail) GetSigners() []cosmos.AccAddress {
 }
 
 func MsgTssKeysignFailCustomGetSigners(m proto.Message) ([][]byte, error) {
-	return [][]byte{m.(*types.MsgTssKeysignFail).Signer}, nil
+	msg, ok := m.(*types.MsgTssKeysignFail)
+	if !ok {
+		return nil, fmt.Errorf("can't cast as MsgTssKeysignFail: %T", m)
+	}
+	return [][]byte{msg.Signer}, nil
 }

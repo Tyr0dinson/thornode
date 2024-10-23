@@ -54,7 +54,7 @@ func (h SetNodeKeysHandler) validateV134(ctx cosmos.Context, msg MsgSetNodeKeys)
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}
-	
+
 	if err := validateNodeKeysAuth(ctx, h.mgr.Keeper(), msg.Signer); err != nil {
 		return err
 	}

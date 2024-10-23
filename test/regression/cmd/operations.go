@@ -999,7 +999,11 @@ func sendMsg(out io.Writer, routine int, msg sdk.Msg, signer sdk.AccAddress, seq
 	log := log.Output(zerolog.ConsoleWriter{Out: out})
 
 	// check that message is valid
-	err := msg.(sdk.HasValidateBasic).ValidateBasic()
+	msgV, ok := msg.(sdk.HasValidateBasic)
+	if !ok {
+		log.Fatal().Msg("message does not implement HasValidateBasic")
+	}
+	err := msgV.ValidateBasic()
 	if err != nil {
 		enc := json.NewEncoder(out) // json instead of yaml to encode amount
 		enc.SetIndent("", "  ")

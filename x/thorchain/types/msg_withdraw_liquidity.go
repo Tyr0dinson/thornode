@@ -2,7 +2,7 @@ package types
 
 import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	
+
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 )
@@ -11,9 +11,9 @@ import (
 const MaxWithdrawBasisPoints = 10_000
 
 var (
-	_ sdk.Msg = &MsgWithdrawLiquidity{}
+	_ sdk.Msg              = &MsgWithdrawLiquidity{}
 	_ sdk.HasValidateBasic = &MsgWithdrawLiquidity{}
-	_ sdk.LegacyMsg = &MsgWithdrawLiquidity{}
+	_ sdk.LegacyMsg        = &MsgWithdrawLiquidity{}
 )
 
 // NewMsgWithdrawLiquidity is a constructor function for MsgWithdrawLiquidity

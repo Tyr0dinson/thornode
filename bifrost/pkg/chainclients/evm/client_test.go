@@ -73,7 +73,7 @@ func (s *EVMSuite) SetUpTest(c *C) {
 			c.Assert(err, IsNil)
 		case thorclient.PubKeysEndpoint:
 			priKey, _ := s.thorKeys.GetPrivateKey()
-			tm, _ := cryptocodec.ToTmPubKeyInterface(priKey.PubKey())
+			tm, _ := cryptocodec.ToCmtPubKeyInterface(priKey.PubKey())
 			pk, err := common.NewPubKeyFromCrypto(tm)
 			c.Assert(err, IsNil)
 			content, err := os.ReadFile("../../../../test/fixtures/endpoints/vaults/pubKeys.json")

@@ -1,8 +1,10 @@
 package types
 
 import (
+	"fmt"
+
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	
+
 	"google.golang.org/protobuf/proto"
 
 	"gitlab.com/thorchain/thornode/api/types"
@@ -10,9 +12,9 @@ import (
 )
 
 var (
-	_ sdk.Msg = &MsgObservedTxOut{}
+	_ sdk.Msg              = &MsgObservedTxOut{}
 	_ sdk.HasValidateBasic = &MsgObservedTxOut{}
-	_ sdk.LegacyMsg = &MsgObservedTxOut{}
+	_ sdk.LegacyMsg        = &MsgObservedTxOut{}
 )
 
 // NewMsgObservedTxOut is a constructor function for MsgObservedTxOut
@@ -25,7 +27,7 @@ func NewMsgObservedTxOut(txs ObservedTxs, signer cosmos.AccAddress) *MsgObserved
 
 // ValidateBasic implements HasValidateBasic
 // ValidateBasic is now ran in the message service router handler for messages that
-// used to be routed using the external handler and only when HasValidateBasic is implemented. 
+// used to be routed using the external handler and only when HasValidateBasic is implemented.
 // No versioning is used there.
 func (m *MsgObservedTxOut) ValidateBasic() error {
 	if m.Signer.Empty() {
@@ -64,5 +66,9 @@ func (m *MsgObservedTxOut) GetSigners() []cosmos.AccAddress {
 }
 
 func MsgObservedTxOutCustomGetSigners(m proto.Message) ([][]byte, error) {
-	return [][]byte{m.(*types.MsgObservedTxOut).Signer}, nil
+	msg, ok := m.(*types.MsgObservedTxOut)
+	if !ok {
+		return nil, fmt.Errorf("can't cast as MsgObservedTxOut: %T", m)
+	}
+	return [][]byte{msg.Signer}, nil
 }

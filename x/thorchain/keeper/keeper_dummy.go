@@ -6,12 +6,12 @@ import (
 	"strings"
 
 	"cosmossdk.io/log"
+	upgradetypes "cosmossdk.io/x/upgrade/types"
 	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/types/module/testutil"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
-	upgradetypes "cosmossdk.io/x/upgrade/types"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"

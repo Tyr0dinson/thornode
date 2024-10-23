@@ -234,7 +234,13 @@ func processOneTxIn(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, sig
 	if err != nil {
 		return newMsg, err
 	}
-	return newMsg, newMsg.(sdk.HasValidateBasic).ValidateBasic()
+
+	newMsgV, ok := newMsg.(sdk.HasValidateBasic)
+	if !ok {
+		return newMsg, fmt.Errorf("msg does not implement sdk.HasValidateBasic: %T", newMsg)
+	}
+
+	return newMsg, newMsgV.ValidateBasic()
 }
 
 func fuzzyAssetMatch(ctx cosmos.Context, keeper keeper.Keeper, origAsset common.Asset) common.Asset {

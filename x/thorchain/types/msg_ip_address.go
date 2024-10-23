@@ -1,10 +1,11 @@
 package types
 
 import (
+	"fmt"
 	"net"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	
+
 	"google.golang.org/protobuf/proto"
 
 	"gitlab.com/thorchain/thornode/api/types"
@@ -12,9 +13,9 @@ import (
 )
 
 var (
-	_ sdk.Msg = &MsgSetIPAddress{}
+	_ sdk.Msg              = &MsgSetIPAddress{}
 	_ sdk.HasValidateBasic = &MsgSetIPAddress{}
-	_ sdk.LegacyMsg = &MsgSetIPAddress{}
+	_ sdk.LegacyMsg        = &MsgSetIPAddress{}
 )
 
 // NewMsgSetIPAddress is a constructor function for NewMsgSetIPAddress
@@ -27,7 +28,7 @@ func NewMsgSetIPAddress(ip string, signer cosmos.AccAddress) *MsgSetIPAddress {
 
 // ValidateBasic implements HasValidateBasic
 // ValidateBasic is now ran in the message service router handler for messages that
-// used to be routed using the external handler and only when HasValidateBasic is implemented. 
+// used to be routed using the external handler and only when HasValidateBasic is implemented.
 // No versioning is used there.
 func (m *MsgSetIPAddress) ValidateBasic() error {
 	if m.Signer.Empty() {
@@ -45,5 +46,9 @@ func (m *MsgSetIPAddress) GetSigners() []cosmos.AccAddress {
 }
 
 func MsgSetIPAddressCustomGetSigners(m proto.Message) ([][]byte, error) {
-	return [][]byte{m.(*types.MsgSetIPAddress).Signer}, nil
+	msg, ok := m.(*types.MsgSetIPAddress)
+	if !ok {
+		return nil, fmt.Errorf("can't cast as MsgSetIPAddress: %T", m)
+	}
+	return [][]byte{msg.Signer}, nil
 }

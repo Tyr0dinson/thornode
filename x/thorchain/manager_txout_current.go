@@ -157,7 +157,7 @@ func (tos *TxOutStorageVCUR) TryAddTxOutItem(ctx cosmos.Context, mgr Manager, to
 	success, err := tos.cachedTryAddTxOutItem(cacheCtx, mgr, toi, minOut)
 	if err == nil {
 		commit()
-	}	
+	}
 	return success, err
 }
 

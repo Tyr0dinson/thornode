@@ -1,9 +1,9 @@
 package keeper
 
 import (
+	upgradetypes "cosmossdk.io/x/upgrade/types"
 	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/codec"
-	upgradetypes "cosmossdk.io/x/upgrade/types"
 
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"

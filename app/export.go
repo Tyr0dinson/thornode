@@ -82,8 +82,8 @@ func (app *THORChainApp) prepForZeroHeightGenesis(ctx sdk.Context, jailAllowedAd
 
 	for ; iter.Valid(); iter.Next() {
 		addr := sdk.ValAddress(stakingtypes.AddressFromValidatorsKey(iter.Key()))
-		validator, err := app.StakingKeeper.GetValidator(ctx, addr)
-		if err != nil {
+		validator, err2 := app.StakingKeeper.GetValidator(ctx, addr)
+		if err2 != nil {
 			panic("expected validator, not found")
 		}
 
