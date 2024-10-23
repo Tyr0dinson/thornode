@@ -7,7 +7,7 @@ import "common/common.proto";
 import "gogoproto/gogo.proto";
 
 message LiquidityProvider {
-  common.Asset asset = 1 [(gogoproto.nullable) = false];
+  common.Asset asset = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "gitlab.com/thorchain/thornode/common.Asset"];
   string rune_address = 2 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/common.Address"];
   string asset_address = 3 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/common.Address"];
   int64 last_add_height = 4;

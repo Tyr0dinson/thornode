@@ -12,7 +12,7 @@ message MsgManageTHORName {
   string address = 3 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/common.Address"];
   common.Coin coin = 4 [(gogoproto.nullable) = false];
   int64 expire_block_height = 5;
-  common.Asset preferred_asset = 6 [(gogoproto.nullable) = false];
+  common.Asset preferred_asset = 6 [(gogoproto.nullable) = false, (gogoproto.customtype) = "gitlab.com/thorchain/thornode/common.Asset"];
   bytes owner = 7  [(gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress"];
   bytes signer = 8  [(gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress"];
 }

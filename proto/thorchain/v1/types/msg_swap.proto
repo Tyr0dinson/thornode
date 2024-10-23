@@ -14,7 +14,7 @@ enum OrderType {
 
 message MsgSwap {
   common.Tx tx = 1 [(gogoproto.nullable) = false, (gogoproto.jsontag) = "tx"];
-  common.Asset target_asset = 2 [(gogoproto.nullable) = false, (gogoproto.jsontag) = "target_asset"];
+  common.Asset target_asset = 2 [(gogoproto.nullable) = false, (gogoproto.jsontag) = "target_asset", (gogoproto.customtype) = "gitlab.com/thorchain/thornode/common.Asset"];
   string destination = 3 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/common.Address"];
   string trade_target = 4 [(gogoproto.customtype) = "cosmossdk.io/math.Uint", (gogoproto.nullable) = false, (gogoproto.jsontag) = "trade_target"];
   string affiliate_address = 5 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/common.Address"];

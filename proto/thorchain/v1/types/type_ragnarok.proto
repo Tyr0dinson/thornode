@@ -8,5 +8,5 @@ import "gogoproto/gogo.proto";
 
 message RagnarokWithdrawPosition {
   int64 number = 1;
-  common.Asset pool = 2 [(gogoproto.nullable) = false];
+  common.Asset pool = 2 [(gogoproto.nullable) = false, (gogoproto.customtype) = "gitlab.com/thorchain/thornode/common.Asset"];
 }

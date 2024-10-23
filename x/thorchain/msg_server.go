@@ -127,9 +127,6 @@ func externalHandler(goCtx context.Context, handler MsgHandler, msg sdk.Msg) (_ 
 		}
 	}()
 
-	if ctx.EventManager() == nil {
-		ctx = ctx.WithEventManager(sdk.NewEventManager())
-	}
 	result, err := handler.Run(ctx, msg)
 
 	if result != nil && result.Size() > 0 {
@@ -142,11 +139,6 @@ func externalHandler(goCtx context.Context, handler MsgHandler, msg sdk.Msg) (_ 
 		}
 		return nil, err
 	}
-
-	// TODO: is this still necessary?
-	// if len(ctx.EventManager().Events()) > 0 {
-	// 	result.Events = ctx.EventManager().ABCIEvents()
-	// }
 
 	return &types.MsgEmpty{}, err
 }
