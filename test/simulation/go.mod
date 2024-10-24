@@ -2,6 +2,9 @@ module gitlab.com/thorchain/thornode/test/simulation
 
 go 1.22.2
 
+// overrides
+replace cosmossdk.io/core => cosmossdk.io/core v0.11.0
+
 require (
 	cosmossdk.io/math v1.3.0
 	github.com/btcsuite/btcd v0.22.1
