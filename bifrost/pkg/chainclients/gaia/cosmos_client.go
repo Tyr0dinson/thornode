@@ -95,7 +95,7 @@ func NewCosmosClient(
 		return nil, fmt.Errorf("fail to get private key: %w", err)
 	}
 
-	temp, err := cryptocodec.ToTmPubKeyInterface(priv.PubKey())
+	temp, err := cryptocodec.ToCmtPubKeyInterface(priv.PubKey())
 	if err != nil {
 		return nil, fmt.Errorf("fail to get tm pub key: %w", err)
 	}

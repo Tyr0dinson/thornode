@@ -69,7 +69,7 @@ func NewClient(chain common.Chain, host string, keys *thorclient.Keys) (LiteChai
 	}
 
 	// derive the public key
-	pk, err := cryptocodec.ToTmPubKeyInterface(privKey.PubKey())
+	pk, err := cryptocodec.ToCmtPubKeyInterface(privKey.PubKey())
 	if err != nil {
 		return nil, fmt.Errorf("fail to get tm pub key: %w", err)
 	}

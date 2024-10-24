@@ -188,7 +188,7 @@ func (s *CosmosTestSuite) TestSign(c *C) {
 	priv, err := s.thorKeys.GetPrivateKey()
 	c.Assert(err, IsNil)
 
-	temp, err := cryptocodec.ToTmPubKeyInterface(priv.PubKey())
+	temp, err := cryptocodec.ToCmtPubKeyInterface(priv.PubKey())
 	c.Assert(err, IsNil)
 
 	pk, err := common.NewPubKeyFromCrypto(temp)

@@ -17,7 +17,7 @@ which gofumpt &>/dev/null || go install mvdan.cc/gofumpt@v0.5.0
 FILTER=(-e '^docs/' -e '.pb.go$' -e '^openapi/gen' -e '_gen.go' -e '.pb.gw.go$' -e 'wire_gen.go$' -e '^api/' -e '^test/ictest/')
 
 if [ -n "$(git ls-files '*.go' | grep -v "${FILTER[@]}" | xargs gofumpt -l 2>/dev/null)" ]; then
-  git ls-files '*.go' | grep -v "${FILTER[@]}" | xargs gofumpt -d 2>/dev/null
+  git ls-files '*.go' | grep -v "${FILTER[@]}" | xargs gofumpt -w 2>/dev/null
   die "Go formatting errors"
 fi
 go mod verify

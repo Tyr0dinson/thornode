@@ -65,7 +65,7 @@ func (app *THORChainApp) prepForZeroHeightGenesis(ctx sdk.Context, jailAllowedAd
 	allowedAddrsMap := make(map[string]bool)
 
 	for _, addr := range jailAllowedAddrs {
-		_, err := sdk.ValAddressFromBech32(addr)
+		_, err = sdk.ValAddressFromBech32(addr)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -98,7 +98,7 @@ func (app *THORChainApp) prepForZeroHeightGenesis(ctx sdk.Context, jailAllowedAd
 		}
 	}
 
-	if err := iter.Close(); err != nil {
+	if err = iter.Close(); err != nil {
 		app.Logger().Error("error while closing the key-value store reverse prefix iterator: ", err)
 		return
 	}
