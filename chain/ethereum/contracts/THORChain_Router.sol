@@ -317,7 +317,7 @@ contract THORChain_Router {
     if (aggregationPayload.fromAsset == address(0)) {
       // call swapOutV5 with ether
       (bool swapOutSuccess, ) = aggregationPayload.target.call{
-        value: msg.value
+        value: aggregationPayload.fromAmount
       }(
         abi.encodeWithSignature(
           "swapOutV5(address,uint256,address,address,uint256,bytes,string)",
@@ -331,15 +331,17 @@ contract THORChain_Router {
         )
       );
       if (!swapOutSuccess) {
-        bool sendSuccess = payable(aggregationPayload.target).send(msg.value); // If can't swap, just send the recipient the gas asset
+        bool sendSuccess = payable(aggregationPayload.target).send(
+          aggregationPayload.fromAmount
+        ); // If can't swap, just send the recipient the gas asset
         if (!sendSuccess) {
-          payable(address(msg.sender)).transfer(msg.value); // For failure, bounce back to vault & continue.
+          payable(address(msg.sender)).transfer(aggregationPayload.fromAmount); // For failure, bounce back to vault & continue.
         }
       } else {
         emit TransferOutAndCallV5(
           msg.sender,
           aggregationPayload.target,
-          msg.value,
+          aggregationPayload.fromAmount,
           aggregationPayload.toAsset,
           aggregationPayload.recipient,
           aggregationPayload.amountOutMin,
