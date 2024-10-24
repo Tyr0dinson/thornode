@@ -194,6 +194,8 @@ contract THORChain_Router {
       bool success = to.send(safeAmount); // Send ETH.
       if (!success) {
         payable(address(msg.sender)).transfer(safeAmount); // For failure, bounce back to vault & continue.
+      } else {
+        emit TransferOut(msg.sender, to, asset, safeAmount, memo);
       }
     } else {
       _vaultAllowance[msg.sender][asset] -= amount; // Reduce allowance
@@ -202,8 +204,8 @@ contract THORChain_Router {
       );
       require(success && (data.length == 0 || abi.decode(data, (bool))));
       safeAmount = amount;
+      emit TransferOut(msg.sender, to, asset, safeAmount, memo);
     }
-    emit TransferOut(msg.sender, to, asset, safeAmount, memo);
   }
 
   function _transferOutV5(TransferOutData memory transferOutPayload) private {
@@ -211,6 +213,14 @@ contract THORChain_Router {
       bool success = transferOutPayload.to.send(transferOutPayload.amount); // Send ETH.
       if (!success) {
         payable(address(msg.sender)).transfer(transferOutPayload.amount); // For failure, bounce back to vault & continue.
+      } else {
+        emit TransferOut(
+          msg.sender,
+          transferOutPayload.to,
+          transferOutPayload.asset,
+          transferOutPayload.amount,
+          transferOutPayload.memo
+        );
       }
     } else {
       _vaultAllowance[msg.sender][
@@ -226,15 +236,14 @@ contract THORChain_Router {
       );
 
       require(success && (data.length == 0 || abi.decode(data, (bool))));
+      emit TransferOut(
+        msg.sender,
+        transferOutPayload.to,
+        transferOutPayload.asset,
+        transferOutPayload.amount,
+        transferOutPayload.memo
+      );
     }
-
-    emit TransferOut(
-      msg.sender,
-      transferOutPayload.to,
-      transferOutPayload.asset,
-      transferOutPayload.amount,
-      transferOutPayload.memo
-    );
   }
 
   function transferOutV5(
@@ -274,22 +283,23 @@ contract THORChain_Router {
         amountOutMin
       )
     );
+
     if (!erc20Success) {
       bool ethSuccess = payable(to).send(_safeAmount); // If can't swap, just send the recipient the ETH
       if (!ethSuccess) {
         payable(address(msg.sender)).transfer(_safeAmount); // For failure, bounce back to vault & continue.
       }
+    } else {
+      emit TransferOutAndCall(
+        msg.sender,
+        aggregator,
+        _safeAmount,
+        finalToken,
+        to,
+        amountOutMin,
+        memo
+      );
     }
-
-    emit TransferOutAndCall(
-      msg.sender,
-      aggregator,
-      _safeAmount,
-      finalToken,
-      to,
-      amountOutMin,
-      memo
-    );
   }
 
   // Any vault calls to transferAndCall on a target contract that conforms with "swapOut(address,uint256,address,address,uint256,bytes)"
@@ -325,19 +335,19 @@ contract THORChain_Router {
         if (!sendSuccess) {
           payable(address(msg.sender)).transfer(msg.value); // For failure, bounce back to vault & continue.
         }
+      } else {
+        emit TransferOutAndCallV5(
+          msg.sender,
+          aggregationPayload.target,
+          msg.value,
+          aggregationPayload.toAsset,
+          aggregationPayload.recipient,
+          aggregationPayload.amountOutMin,
+          aggregationPayload.memo,
+          aggregationPayload.payload,
+          aggregationPayload.originAddress
+        );
       }
-
-      emit TransferOutAndCallV5(
-        msg.sender,
-        aggregationPayload.target,
-        msg.value,
-        aggregationPayload.toAsset,
-        aggregationPayload.recipient,
-        aggregationPayload.amountOutMin,
-        aggregationPayload.memo,
-        aggregationPayload.payload,
-        aggregationPayload.originAddress
-      );
     } else {
       _vaultAllowance[msg.sender][
         aggregationPayload.fromAsset
@@ -374,17 +384,19 @@ contract THORChain_Router {
         )
       );
 
-      emit TransferOutAndCallV5(
-        msg.sender,
-        aggregationPayload.target,
-        aggregationPayload.fromAmount,
-        aggregationPayload.toAsset,
-        aggregationPayload.recipient,
-        aggregationPayload.amountOutMin,
-        aggregationPayload.memo,
-        aggregationPayload.payload,
-        aggregationPayload.originAddress
-      );
+      if (_dexAggSuccess) {
+        emit TransferOutAndCallV5(
+          msg.sender,
+          aggregationPayload.target,
+          aggregationPayload.fromAmount,
+          aggregationPayload.toAsset,
+          aggregationPayload.recipient,
+          aggregationPayload.amountOutMin,
+          aggregationPayload.memo,
+          aggregationPayload.payload,
+          aggregationPayload.originAddress
+        );
+      }
     }
   }
 
@@ -401,7 +413,7 @@ contract THORChain_Router {
       _transferOutAndCallV5(aggregationPayloads[i]);
     }
   }
-  
+
   //############################## HELPERS ##############################
 
   function vaultAllowance(
