@@ -144,7 +144,6 @@ func run(out io.Writer, path string, routine int) (failExportInvariants bool, er
 	ops = ops[stateOpCount:]
 	opLines = opLines[stateOpCount:]
 
-	// TODO: fix genesis validation
 	// validate genesis
 	localLog.Debug().Msg("Validating genesis")
 	cmd = exec.Command("thornode", "genesis", "validate")

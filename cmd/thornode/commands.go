@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/viper"
 	"github.com/syndtr/goleveldb/leveldb/util"
 	"gitlab.com/thorchain/thornode/app"
+	"github.com/rs/zerolog"
 
 	"cosmossdk.io/log"
 	"cosmossdk.io/store"
@@ -46,6 +47,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/cmd/thornode/cmd"
 	"gitlab.com/thorchain/thornode/config"
+	thorlog "gitlab.com/thorchain/thornode/log"
 
 	"gitlab.com/thorchain/thornode/x/thorchain/client/cli"
 )
@@ -144,13 +146,14 @@ func addModuleInitFlags(startCmd *cobra.Command) {
 			return fmt.Errorf("fail to bind flags,err: %w", err)
 		}
 
-		// TODO: Logger is now sdk module, does this code block still apply?
-		// if zw, ok := serverCtx.Logger.(server.ZeroLogWrapper); ok {
-		// 	serverCtx.Logger = thorlog.TendermintLogWrapper{
-		// 		Logger: zw.Logger.With().CallerWithSkipFrameCount(3).Logger(),
-		// 	}
-		// 	return server.SetCmdServerContext(startCmd, serverCtx)
-		// }
+		// replace sdk logger with thorlog
+		if zl, ok := serverCtx.Logger.Impl().(*zerolog.Logger); ok {
+			logger := zl.With().CallerWithSkipFrameCount(3).Logger()
+			serverCtx.Logger = thorlog.SdkLogWrapper{
+				Logger: &logger,
+			}
+			return server.SetCmdServerContext(startCmd, serverCtx)
+		}
 		return nil
 	}
 }
