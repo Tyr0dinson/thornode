@@ -85,7 +85,7 @@ func Tokens(chain common.Chain) map[common.Asset]tokenlist.ERC20Token {
 	// gather the available tokens
 	var tokens []tokenlist.ERC20Token
 	switch chain {
-	case common.ETHChain, common.BSCChain:
+	case common.ETHChain, common.BSCChain, common.BASEChain:
 		tokens = []tokenlist.ERC20Token{
 			{
 				Address:  "0x52C84043CD9c865236f11d9Fc9F56aa003c1f922",

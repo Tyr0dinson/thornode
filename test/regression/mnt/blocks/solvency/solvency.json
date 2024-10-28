@@ -64,7 +64,7 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "0CDB0576E72B53B4840095C201E3D92749BB2B5689DA42B8D412147CD770BF0D",
+      "app_hash": "4A8502DF77AAA6AEFCA5B36EF973E83964DC756D3EADE12BF9E3BD6FC59611E2",
       "last_results_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
@@ -153,7 +153,7 @@
           "data": "\n\u0018\n\u0016/types.MsgObservedTxIn",
           "log": "[{\"events\":[{\"type\":\"message\",\"attributes\":[{\"key\":\"action\",\"value\":\"set_observed_txin\"}]},{\"type\":\"refund\",\"attributes\":[{\"key\":\"code\",\"value\":\"105\"},{\"key\":\"reason\",\"value\":\"MEMO: donate:\\nPARSE FAILURE(S): cannot parse '' as an asset: invalid symbol\"},{\"key\":\"id\",\"value\":\"0000000000000000000000000000000000000000000000000000000000000001\"},{\"key\":\"chain\",\"value\":\"BTC\"},{\"key\":\"from\",\"value\":\"bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw\"},{\"key\":\"to\",\"value\":\"bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk\"},{\"key\":\"coin\",\"value\":\"200000000 BTC.BTC\"},{\"key\":\"memo\",\"value\":\"donate:\"}]}]}]",
           "gas_wanted": "0",
-          "gas_used": "156516",
+          "gas_used": "156714",
           "events": [
             {
               "fee": "",
@@ -216,8 +216,8 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "9EB591DD9B920022F57B29A0B4F92469F9020AF5257BDD943026F63C91B6932D",
-      "last_results_hash": "99C10E9E11B9A3EEE221FBFEC9C229240735E13BEAB145031FED7BD4C5C04539",
+      "app_hash": "850D75E46BE8FC5DAA10A88BABDF077ADF622B368DE6068B23DB756BAC4F11E6",
+      "last_results_hash": "3DE962EDAE221A6CE3D34A63ECEE35631C313F1D4C1403257A9A165AE832ADF0",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
@@ -281,7 +281,7 @@
           "data": "\n\u0014\n\u0012/types.MsgSolvency",
           "log": "[{\"events\":[{\"type\":\"message\",\"attributes\":[{\"key\":\"action\",\"value\":\"solvency\"}]},{\"type\":\"set_mimir\",\"attributes\":[{\"key\":\"key\",\"value\":\"SOLVENCYHALTBTCCHAIN\"},{\"key\":\"value\",\"value\":\"3\"}]}]}]",
           "gas_wanted": "0",
-          "gas_used": "102617",
+          "gas_used": "102635",
           "events": [
             {
               "fee": "",
@@ -338,8 +338,8 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "6653EB017BBE3E4F4BC149DF4B3A86BD6279D96AF768954907DFEA18ADCD6A94",
-      "last_results_hash": "6BD0873DE0D18FC5392689517F2B8DD4D0E4AAF85290BC349016B997701FCCBB",
+      "app_hash": "138AE56EA4285E089CBA3324C0D66A250B9D5ADD7368FA0F1918EF2AFF12A5E0",
+      "last_results_hash": "D503EBB123621844B5DB62A006A408D501A6ABED1A023DF50FA2EE077D750AD6",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },

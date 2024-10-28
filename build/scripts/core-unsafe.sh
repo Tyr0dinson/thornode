@@ -4,7 +4,7 @@ set -o pipefail
 
 deploy_evm_contracts() {
   pip3 install retry
-  for CHAIN in ETH AVAX BSC; do
+  for CHAIN in ETH AVAX BSC BASE; do
     (
       # deploy contract and get address from output
       echo "Deploying $CHAIN contracts"

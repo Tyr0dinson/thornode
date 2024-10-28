@@ -64,7 +64,7 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "0CDB0576E72B53B4840095C201E3D92749BB2B5689DA42B8D412147CD770BF0D",
+      "app_hash": "4A8502DF77AAA6AEFCA5B36EF973E83964DC756D3EADE12BF9E3BD6FC59611E2",
       "last_results_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
@@ -227,7 +227,7 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "CFB76F638C5D6B825850A6EEA921F037DC1D66716967265F81F911582753745B",
+      "app_hash": "8887F408F8787C4825EE8542B0D3650961F5B943E89764C7EF383D8814E044BC",
       "last_results_hash": "CF54185B8109C054F23A11291F5B9727B851625DD2FF95387CA72677573549D5",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
@@ -364,7 +364,7 @@
           "data": "\n\u0018\n\u0016/types.MsgObservedTxIn",
           "log": "[{\"events\":[{\"type\":\"add_liquidity\",\"attributes\":[{\"key\":\"pool\",\"value\":\"BTC.BTC\"},{\"key\":\"liquidity_provider_units\",\"value\":\"200000000\"},{\"key\":\"rune_address\",\"value\":\"tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej\"},{\"key\":\"rune_amount\",\"value\":\"200000000\"},{\"key\":\"asset_amount\",\"value\":\"100000000\"},{\"key\":\"asset_address\",\"value\":\"bcrt1quuds8pd92qnnq0udw0rpg0szpgcslc9pm6tzal\"},{\"key\":\"THOR_txid\",\"value\":\"FCCDA2B100DA9963984A89FA368E018029FACAD38DA186C963525C6B2E0DDBF1\"},{\"key\":\"BTC_txid\",\"value\":\"0000000000000000000000000000000000000000000000000000000000000001\"}]},{\"type\":\"message\",\"attributes\":[{\"key\":\"action\",\"value\":\"set_observed_txin\"}]},{\"type\":\"pool\",\"attributes\":[{\"key\":\"pool\",\"value\":\"BTC.BTC\"},{\"key\":\"pool_status\",\"value\":\"Available\"}]}]}]",
           "gas_wanted": "0",
-          "gas_used": "247176",
+          "gas_used": "247374",
           "events": [
             {
               "fee": "",

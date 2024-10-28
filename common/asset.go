@@ -26,6 +26,8 @@ var (
 	DOGEAsset = Asset{Chain: DOGEChain, Symbol: "DOGE", Ticker: "DOGE", Synth: false}
 	// ETHAsset ETH
 	ETHAsset = Asset{Chain: ETHChain, Symbol: "ETH", Ticker: "ETH", Synth: false}
+	// BaseAsset ETH
+	BaseETHAsset = Asset{Chain: BASEChain, Symbol: "ETH", Ticker: "ETH", Synth: false}
 	// AVAXAsset AVAX
 	AVAXAsset = Asset{Chain: AVAXChain, Symbol: "AVAX", Ticker: "AVAX", Synth: false}
 	// RuneNative RUNE on thorchain
@@ -77,6 +79,8 @@ func NewAsset(input string) (Asset, error) {
 
 func NewAssetWithShortCodes(version semver.Version, input string) (Asset, error) {
 	switch {
+	case version.GTE(semver.MustParse("2.138.0")):
+		return NewAssetWithShortCodesV138(input)
 	case version.GTE(semver.MustParse("1.124.0")):
 		return NewAssetWithShortCodesV124(input)
 	default:
@@ -84,7 +88,7 @@ func NewAssetWithShortCodes(version semver.Version, input string) (Asset, error)
 	}
 }
 
-func NewAssetWithShortCodesV124(input string) (Asset, error) {
+func NewAssetWithShortCodesV138(input string) (Asset, error) {
 	shorts := make(map[string]string)
 
 	shorts[ATOMAsset.ShortCode()] = ATOMAsset.String()
@@ -96,6 +100,7 @@ func NewAssetWithShortCodesV124(input string) (Asset, error) {
 	shorts[ETHAsset.ShortCode()] = ETHAsset.String()
 	shorts[LTCAsset.ShortCode()] = LTCAsset.String()
 	shorts[RuneNative.ShortCode()] = RuneNative.String()
+	shorts[BaseETHAsset.ShortCode()] = BaseETHAsset.String()
 
 	long, ok := shorts[input]
 	if ok {
@@ -249,6 +254,8 @@ func (a Asset) ShortCode() string {
 		return "a"
 	case "BSC.BNB":
 		return "s"
+	case "BASE.ETH":
+		return "f"
 	default:
 		return ""
 	}

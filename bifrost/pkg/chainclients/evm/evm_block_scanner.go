@@ -207,15 +207,6 @@ func (e *EVMScanner) GetGasPrice() *big.Int {
 	return e.gasPrice
 }
 
-// GetHeight returns the current block height.
-func (e *EVMScanner) GetHeight() (int64, error) {
-	height, err := e.ethRpc.GetBlockHeight()
-	if err != nil {
-		return -1, err
-	}
-	return height, nil
-}
-
 // GetNonce returns the nonce (including pending) for the given address.
 func (e *EVMScanner) GetNonce(addr string) (uint64, error) {
 	return e.ethRpc.GetNonce(addr)
