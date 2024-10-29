@@ -52,7 +52,6 @@ func (m *MsgDeposit) ValidateBasic() error {
 		return errors.New("only one coin is allowed")
 	}
 
-	// trunk-ignore(golangci-lint/govet): shadow
 	if err := m.Coins[0].Asset.Valid(); err != nil {
 		return fmt.Errorf("invalid coin: %w", err)
 	}
