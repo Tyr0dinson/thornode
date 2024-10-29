@@ -32,17 +32,17 @@ func newSlasherVCUR(keeper keeper.Keeper, eventMgr EventManager) *SlasherVCUR {
 
 // BeginBlock called when a new block get proposed to detect whether there are duplicate vote
 func (s *SlasherVCUR) BeginBlock(ctx cosmos.Context, constAccessor constants.ConstantValues) {
-	var doubleSignMisbehavior []comet.Evidence
+	var doubleSignEvidence []comet.Evidence
 	// Iterate through any newly discovered evidence of infraction
 	// Slash any validators (and since-unbonded liquidity within the unbonding period)
 	// who contributed to valid infractions
 	for i := range ctx.CometInfo().GetEvidence().Len() {
-		misbehavior := ctx.CometInfo().GetEvidence().Get(i)
-		switch misbehavior.Type() {
+		evidence := ctx.CometInfo().GetEvidence().Get(i)
+		switch evidence.Type() {
 		case comet.DuplicateVote:
-			doubleSignMisbehavior = append(doubleSignMisbehavior, misbehavior)
+			doubleSignEvidence = append(doubleSignEvidence, evidence)
 		default:
-			ctx.Logger().Error("ignored unknown misbehavior type", "type", misbehavior.Type)
+			ctx.Logger().Error("ignored unknown evidence type", "type", evidence.Type)
 		}
 	}
 
@@ -50,14 +50,14 @@ func (s *SlasherVCUR) BeginBlock(ctx cosmos.Context, constAccessor constants.Con
 	var missingSignAddresses []crypto.Address
 	for i := range ctx.CometInfo().GetLastCommit().Votes().Len() {
 		voteInfo := ctx.CometInfo().GetLastCommit().Votes().Get(i)
-		if voteInfo.GetBlockIDFlag() == comet.BlockIDFlagCommit {
+		if voteInfo.GetBlockIDFlag() != comet.BlockIDFlagAbsent {
 			continue
 		}
 		missingSignAddresses = append(missingSignAddresses, voteInfo.Validator().Address())
 	}
 
 	// Do not continue if there is no action to take.
-	if len(doubleSignMisbehavior)+len(missingSignAddresses) == 0 {
+	if len(doubleSignEvidence)+len(missingSignAddresses) == 0 {
 		return
 	}
 
@@ -81,7 +81,7 @@ func (s *SlasherVCUR) BeginBlock(ctx cosmos.Context, constAccessor constants.Con
 	}
 
 	// Act on double signs.
-	for _, evidence := range doubleSignMisbehavior {
+	for _, evidence := range doubleSignEvidence{
 		if err := s.HandleDoubleSign(ctx, evidence.Validator().Address(), evidence.Height(), constAccessor, validatorAddresses); err != nil {
 			ctx.Logger().Error("fail to slash for double signing a block", "error", err)
 		}
