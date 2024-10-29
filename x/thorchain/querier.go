@@ -3179,7 +3179,7 @@ func eventMap(e sdk.Event) map[string]string {
 	m := map[string]string{}
 	m["type"] = e.Type
 	for _, a := range e.Attributes {
-		m[string(a.Key)] = string(a.Value)
+		m[a.Key] = a.Value
 	}
 	return m
 }

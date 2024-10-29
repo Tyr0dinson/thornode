@@ -358,10 +358,10 @@ func (m *QuerySwapQueueResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, err
 		// always display the OrderType?
 
 		result = append(result, openapi.MsgSwap{
-			Tx: castTx(msg.Tx),
-			TargetAsset: msg.TargetAsset.String(),
-			Destination: wrapString(msg.Destination.String()),
-			TradeTarget: msg.TradeTarget.String(),
+			Tx:                      castTx(msg.Tx),
+			TargetAsset:             msg.TargetAsset.String(),
+			Destination:             wrapString(msg.Destination.String()),
+			TradeTarget:             msg.TradeTarget.String(),
 			AffiliateAddress:        wrapString(msg.AffiliateAddress.String()),
 			AffiliateBasisPoints:    msg.AffiliateBasisPoints.String(),
 			Signer:                  wrapString(msg.Signer.String()),

@@ -161,6 +161,7 @@ func (h ObservedTxInHandler) handleV131(ctx cosmos.Context, msg MsgObservedTxIn)
 			continue
 		}
 
+		// trunk-ignore(golangci-lint/govet): shadow
 		voter, err := h.mgr.Keeper().GetObservedTxInVoter(ctx, tx.Tx.ID)
 		if err != nil {
 			ctx.Logger().Error("fail to get tx in voter", "error", err)
@@ -213,13 +214,13 @@ func (h ObservedTxInHandler) handleV131(ctx cosmos.Context, msg MsgObservedTxIn)
 				voter.UpdatedVault = true
 			}
 		}
-		if err := h.mgr.Keeper().SetLastChainHeight(ctx, tx.Tx.Chain, tx.BlockHeight); err != nil {
+		if err = h.mgr.Keeper().SetLastChainHeight(ctx, tx.Tx.Chain, tx.BlockHeight); err != nil {
 			ctx.Logger().Error("fail to set last chain height", "error", err)
 		}
 
 		// save the changes in Tx Voter to key value store
 		h.mgr.Keeper().SetObservedTxInVoter(ctx, voter)
-		if err := h.mgr.Keeper().SetVault(ctx, vault); err != nil {
+		if err = h.mgr.Keeper().SetVault(ctx, vault); err != nil {
 			ctx.Logger().Error("fail to set vault", "error", err)
 			continue
 		}
@@ -292,7 +293,7 @@ func (h ObservedTxInHandler) handleV131(ctx cosmos.Context, msg MsgObservedTxIn)
 
 		_, err = handler(mCtx, m)
 		if err != nil {
-			if err := refundTx(ctx, tx, h.mgr, CodeTxFail, err.Error(), ""); err != nil {
+			if err = refundTx(ctx, tx, h.mgr, CodeTxFail, err.Error(), ""); err != nil {
 				ctx.Logger().Error("fail to refund", "error", err)
 			}
 			continue
@@ -301,6 +302,7 @@ func (h ObservedTxInHandler) handleV131(ctx cosmos.Context, msg MsgObservedTxIn)
 		// if an outbound is not expected, mark the voter as done
 		if !memo.GetType().HasOutbound() {
 			// retrieve the voter from store in case the handler caused a change
+			// trunk-ignore(golangci-lint/govet): shadow
 			voter, err := h.mgr.Keeper().GetObservedTxInVoter(ctx, tx.Tx.ID)
 			if err != nil {
 				return nil, fmt.Errorf("fail to get voter")

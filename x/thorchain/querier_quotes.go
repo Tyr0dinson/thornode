@@ -1,10 +1,8 @@
 package thorchain
 
 import (
-	"encoding/json"
 	"fmt"
 	"math/big"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -34,25 +32,6 @@ var nullLogger = log.NewNopLogger()
 // -------------------------------------------------------------------------------------
 // Helpers
 // -------------------------------------------------------------------------------------
-
-func quoteErrorResponse(err error) ([]byte, error) {
-	return json.Marshal(map[string]string{"error": err.Error()})
-}
-
-func quoteParseParams(data []byte) (params url.Values, err error) {
-	// parse the query parameters
-	u, err := url.ParseRequestURI(string(data))
-	if err != nil {
-		return nil, fmt.Errorf("bad params: %w", err)
-	}
-
-	// error if parameters were not provided
-	if len(u.Query()) == 0 {
-		return nil, fmt.Errorf("no parameters provided")
-	}
-
-	return u.Query(), nil
-}
 
 func quoteParseAddress(ctx cosmos.Context, mgr *Mgrs, addrString string, chain common.Chain) (common.Address, error) {
 	if addrString == "" {

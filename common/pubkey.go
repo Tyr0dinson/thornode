@@ -61,7 +61,7 @@ func NewPubKey(key string) (PubKey, error) {
 
 // NewPubKeyFromCrypto
 func NewPubKeyFromCrypto(pk crypto.PubKey) (PubKey, error) {
-	tmp, err := codec.FromTmPubKeyInterface(pk)
+	tmp, err := codec.FromCmtPubKeyInterface(pk)
 	if err != nil {
 		return EmptyPubKey, fmt.Errorf("fail to create PubKey from crypto.PubKey,err:%w", err)
 	}

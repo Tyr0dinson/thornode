@@ -85,7 +85,7 @@ func NewClient(chain common.Chain, host string, keys *thorclient.Keys) (LiteChai
 	}
 
 	// dial rpc
-	grpc, err := grpc.Dial(host, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	grpc, err := grpc.NewClient(host, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return nil, fmt.Errorf("fail to dial rpc: %w", err)
 	}

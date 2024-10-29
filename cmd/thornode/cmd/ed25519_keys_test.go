@@ -31,7 +31,7 @@ func (*ED25519TestSuite) TestGetEd25519Keys(c *C) {
 	_, pk, err := edwards.PrivKeyFromScalar(edwards.Edwards(), result)
 	c.Assert(err, IsNil)
 	pkey := ed25519.PubKey(pk.Serialize())
-	tmp, err := codec.FromTmPubKeyInterface(pkey)
+	tmp, err := codec.FromCmtPubKeyInterface(pkey)
 	c.Assert(err, IsNil)
 	// nolint
 	pubKey, err := bech32.MarshalPubKey(bech32.AccPK, tmp)

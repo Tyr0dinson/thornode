@@ -8,13 +8,10 @@ import (
 	"github.com/cosmos/cosmos-sdk/types/msgservice"
 )
 
-var (
-	amino     = codec.NewLegacyAmino()
-	ModuleCdc = codec.NewAminoCodec(amino)
-)
+var ModuleCdc = codec.NewLegacyAmino()
 
 func init() {
-	RegisterLegacyAminoCodec(amino)
+	RegisterLegacyAminoCodec(ModuleCdc)
 }
 
 // RegisterCodec register the msg types for amino

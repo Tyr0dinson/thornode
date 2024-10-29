@@ -24,7 +24,7 @@ func (s *PubKeyTestSuite) TestPubKeyGetAddress(c *C) {
 
 		c.Assert(hex.EncodeToString(pub), Equals, hex.EncodeToString(pubB))
 
-		tmp, err := codec.FromTmPubKeyInterface(pubKey)
+		tmp, err := codec.FromCmtPubKeyInterface(pubKey)
 		c.Assert(err, IsNil)
 		pubBech32, err := cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeAccPub, tmp)
 		c.Assert(err, IsNil)

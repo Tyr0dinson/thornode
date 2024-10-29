@@ -26,7 +26,9 @@ func (k KVStore) ScheduleUpgrade(ctx cosmos.Context, plan upgradetypes.Plan) err
 
 // ClearUpgradePlan proxies through to the upgrade keeper
 func (k KVStore) ClearUpgradePlan(ctx cosmos.Context) {
-	k.upgradeKeeper.ClearUpgradePlan(ctx)
+	if err := k.upgradeKeeper.ClearUpgradePlan(ctx); err != nil {
+		ctx.Logger().Error("failed to clear upgrade plan", "error", err)
+	}
 }
 
 // ProposeUpgrade proposes an upgrade by name

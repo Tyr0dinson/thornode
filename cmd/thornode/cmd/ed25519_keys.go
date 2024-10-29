@@ -76,7 +76,7 @@ func ed25519Keys(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("fail to parse private key")
 	}
 	pkey := ed25519.PubKey(pk.Serialize())
-	tmp, err := codec.FromTmPubKeyInterface(pkey)
+	tmp, err := codec.FromCmtPubKeyInterface(pkey)
 	if err != nil {
 		return fmt.Errorf("fail to get ED25519 key : %w", err)
 	}

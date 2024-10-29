@@ -81,7 +81,7 @@ func (h IPAddressHandler) handleV115(ctx cosmos.Context, msg MsgSetIPAddress) er
 	}
 
 	nodeAccount.IPAddress = msg.IPAddress
-	if err := h.mgr.Keeper().SetNodeAccount(ctx, nodeAccount); err != nil {
+	if err = h.mgr.Keeper().SetNodeAccount(ctx, nodeAccount); err != nil {
 		return fmt.Errorf("fail to save node account: %w", err)
 	}
 

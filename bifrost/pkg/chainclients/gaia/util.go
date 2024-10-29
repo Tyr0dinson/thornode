@@ -128,7 +128,7 @@ func getGRPCConn(host string, tls bool) (*grpc.ClientConn, error) {
 		creds = insecure.NewCredentials()
 	}
 
-	return grpc.Dial(host, grpc.WithTransportCredentials(creds))
+	return grpc.NewClient(host, grpc.WithTransportCredentials(creds))
 }
 
 func unmarshalJSONToPb(filePath string, msg proto.Message) error {

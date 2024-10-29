@@ -20,7 +20,6 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/bech32/legacybech32" // nolint SA1019 deprecated
 	se "github.com/cosmos/cosmos-sdk/types/errors"
-	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	log "github.com/rs/zerolog/log"
 )
 
@@ -95,7 +94,7 @@ type (
 	Iterator   = storetypes.Iterator
 	StoreKey   = storetypes.StoreKey
 	TxResponse = sdk.TxResponse
-	Account    = authtypes.AccountI
+	Account    = sdk.AccountI
 )
 
 // Handler defines the core of the state transition function of an application.
