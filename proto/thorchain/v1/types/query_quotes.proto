@@ -54,9 +54,9 @@ message QueryQuoteSwapResponse{
 	// the amount of the target asset the user can expect to receive after fees
   string expected_amount_out = 16 [(gogoproto.jsontag) = "expected_amount_out"];
 	// the amount of the target asset the user can expect to receive after fees
-  int64 max_streaming_quantity = 17;
+  int64 max_streaming_quantity = 17 [(gogoproto.jsontag) = "max_streaming_quantity"];
 	// the number of blocks the streaming swap will execute over
-  int64 streaming_swap_blocks = 18;
+  int64 streaming_swap_blocks = 18 [(gogoproto.jsontag) = "streaming_swap_blocks"];
 	// approx the number of seconds the streaming swap will execute over
   int64 streaming_swap_seconds = 19;
 	// total number of seconds a swap is expected to take (inbound conf + streaming swap + outbound delay)

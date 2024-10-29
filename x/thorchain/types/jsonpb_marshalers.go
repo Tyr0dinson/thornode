@@ -4,8 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 
+	sdkmath "cosmossdk.io/math"
+
 	"github.com/cosmos/gogoproto/jsonpb"
 
+	"gitlab.com/thorchain/thornode/common"
 	openapi "gitlab.com/thorchain/thornode/openapi/gen"
 )
 
@@ -342,8 +345,35 @@ func (m *SwapperClout) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
 	return jsonify(m)
 }
 
+// Use openapi type since its ordertype is a string (i.e. "market", "limit") and not the int representation ("0", "1")
 func (m *QuerySwapQueueResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
-	return jsonify(m.SwapQueue)
+	result := make([]openapi.MsgSwap, 0)
+	for _, msg := range m.SwapQueue {
+		// Only display the OrderType if it is "limit", not if "market".
+		var orderType *string
+		if msg.OrderType != OrderType_market {
+			orderType = wrapString(msg.OrderType.String())
+		}
+		// TODO: After order books implementation,
+		// always display the OrderType?
+
+		result = append(result, openapi.MsgSwap{
+			Tx: castTx(msg.Tx),
+			TargetAsset: msg.TargetAsset.String(),
+			Destination: wrapString(msg.Destination.String()),
+			TradeTarget: msg.TradeTarget.String(),
+			AffiliateAddress:        wrapString(msg.AffiliateAddress.String()),
+			AffiliateBasisPoints:    msg.AffiliateBasisPoints.String(),
+			Signer:                  wrapString(msg.Signer.String()),
+			Aggregator:              wrapString(msg.Aggregator),
+			AggregatorTargetAddress: wrapString(msg.AggregatorTargetAddress),
+			AggregatorTargetLimit:   wrapUintPtr(msg.AggregatorTargetLimit),
+			OrderType:               orderType,
+			StreamQuantity:          wrapInt64(int64(msg.StreamQuantity)),
+			StreamInterval:          wrapInt64(int64(msg.StreamInterval)),
+		})
+	}
+	return jsonify(result)
 }
 
 // QueryThornameResponse
@@ -533,4 +563,51 @@ func wrapString(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+func wrapInt64(d int64) *int64 {
+	if d == 0 {
+		return nil
+	}
+	return &d
+}
+
+func wrapUintPtr(uintPtr *sdkmath.Uint) *string {
+	if uintPtr == nil {
+		return nil
+	}
+	return wrapString(uintPtr.String())
+}
+
+func castCoin(sourceCoin common.Coin) openapi.Coin {
+	return openapi.Coin{
+		Asset:    sourceCoin.Asset.String(),
+		Amount:   sourceCoin.Amount.String(),
+		Decimals: wrapInt64(sourceCoin.Decimals),
+	}
+}
+
+func castCoins(sourceCoins ...common.Coin) []openapi.Coin {
+	// Leave this nil (null rather than []) if the source is nil.
+	if sourceCoins == nil {
+		return nil
+	}
+
+	coins := make([]openapi.Coin, len(sourceCoins))
+	for i := range sourceCoins {
+		coins[i] = castCoin(sourceCoins[i])
+	}
+	return coins
+}
+
+func castTx(tx common.Tx) openapi.Tx {
+	return openapi.Tx{
+		Id:          wrapString(tx.ID.String()),
+		Chain:       wrapString(tx.Chain.String()),
+		FromAddress: wrapString(tx.FromAddress.String()),
+		ToAddress:   wrapString(tx.ToAddress.String()),
+		Coins:       castCoins(tx.Coins...),
+		Gas:         castCoins(tx.Gas...),
+		Memo:        wrapString(tx.Memo),
+	}
 }

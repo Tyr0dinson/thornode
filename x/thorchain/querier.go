@@ -1805,36 +1805,18 @@ func (qs queryServer) queryTxVoters(ctx cosmos.Context, req *types.QueryTxVoters
 		}
 	}
 
-	txs := make([]types.QueryObservedTx, len(voter.Txs))
-	for i, tx := range voter.Txs {
-		txs[i].Tx = tx.Tx
-		txs[i].Status = tx.Status.String()
-		txs[i].OutHashes = tx.OutHashes
-		txs[i].BlockHeight = tx.BlockHeight
-		txs[i].Signers = tx.Signers
-		txs[i].ObservedPubKey = tx.ObservedPubKey
-		txs[i].KeysignMs = tx.KeysignMs
-		txs[i].FinaliseHeight = tx.FinaliseHeight
-		txs[i].Aggregator = tx.Aggregator
-		txs[i].AggregatorTarget = tx.AggregatorTarget
-		txs[i].AggregatorTargetLimit = tx.AggregatorTargetLimit
+	var txs []types.QueryObservedTx
+	// Leave this nil (null rather than []) if the source is nil.
+	if voter.Txs != nil {
+		txs = make([]types.QueryObservedTx, len(voter.Txs))
+		for i := range voter.Txs {
+			txs[i] = castObservedTx(voter.Txs[i])
+		}
 	}
 
 	return &types.QueryObservedTxVoter{
-		TxID: voter.TxID,
-		Tx: types.QueryObservedTx{
-			Tx:                    voter.Tx.Tx,
-			Status:                voter.Tx.Status.String(),
-			OutHashes:             voter.Tx.OutHashes,
-			BlockHeight:           voter.Tx.BlockHeight,
-			Signers:               voter.Tx.Signers,
-			ObservedPubKey:        voter.Tx.ObservedPubKey,
-			KeysignMs:             voter.Tx.KeysignMs,
-			FinaliseHeight:        voter.Tx.FinaliseHeight,
-			Aggregator:            voter.Tx.Aggregator,
-			AggregatorTarget:      voter.Tx.AggregatorTarget,
-			AggregatorTargetLimit: voter.Tx.AggregatorTargetLimit,
-		},
+		TxID:            voter.TxID,
+		Tx:              castObservedTx(voter.Tx),
 		Height:          voter.Height,
 		Txs:             txs,
 		Actions:         voter.Actions,
@@ -2133,22 +2115,8 @@ func (qs queryServer) queryTx(ctx cosmos.Context, req *types.QueryTxRequest) (*t
 		ctx.Logger().Error("fail to get keysign metrics", "error", err)
 	}
 
-	observedTx := voter.GetTx(nodeAccounts)
-	queryObservedTx := &types.QueryObservedTx{
-		Tx:                    observedTx.Tx,
-		Status:                observedTx.Status.String(),
-		OutHashes:             observedTx.OutHashes,
-		BlockHeight:           observedTx.BlockHeight,
-		Signers:               observedTx.Signers,
-		ObservedPubKey:        observedTx.ObservedPubKey,
-		KeysignMs:             observedTx.KeysignMs,
-		FinaliseHeight:        observedTx.FinaliseHeight,
-		Aggregator:            observedTx.Aggregator,
-		AggregatorTarget:      observedTx.AggregatorTarget,
-		AggregatorTargetLimit: observedTx.AggregatorTargetLimit,
-	}
 	result := types.QueryTxResponse{
-		ObservedTx:      queryObservedTx,
+		ObservedTx:      castObservedTx(voter.GetTx(nodeAccounts)),
 		ConsensusHeight: voter.Height,
 		FinalisedHeight: voter.FinalisedHeight,
 		OutboundHeight:  voter.OutboundHeight,
@@ -2924,7 +2892,6 @@ func (qs queryServer) querySwapQueue(ctx cosmos.Context, _ *types.QuerySwapQueue
 		if err := qs.mgr.Keeper().Cdc().Unmarshal(iterator.Value(), &msg); err != nil {
 			continue
 		}
-		// TODO: - check to see if always displaying the order type is okay?
 		result = append(result, &msg)
 	}
 
@@ -3126,6 +3093,27 @@ func castTxOutItem(toi TxOutItem, height int64) *types.QueryTxOutItem {
 		OutHash:     toi.OutHash.String(),
 		Height:      height, // Omitted if 0, for use in openapi.TxDetailsResponse
 		CloutSpent:  toi.CloutSpent.String(),
+	}
+}
+
+func castObservedTx(observedTx ObservedTx) types.QueryObservedTx {
+	// Only display the Status if it is "done", not if "incomplete".
+	status := ""
+	if observedTx.Status != types.Status_incomplete {
+		status = observedTx.Status.String()
+	}
+	return types.QueryObservedTx{
+		Tx:                    observedTx.Tx,
+		Status:                status,
+		OutHashes:             observedTx.OutHashes,
+		BlockHeight:           observedTx.BlockHeight,
+		Signers:               observedTx.Signers,
+		ObservedPubKey:        observedTx.ObservedPubKey,
+		KeysignMs:             observedTx.KeysignMs,
+		FinaliseHeight:        observedTx.FinaliseHeight,
+		Aggregator:            observedTx.Aggregator,
+		AggregatorTarget:      observedTx.AggregatorTarget,
+		AggregatorTargetLimit: observedTx.AggregatorTargetLimit,
 	}
 }
 

@@ -20,9 +20,9 @@ message QueryTradeAccountResponse{
 	// thor address of trade account owner
   string owner = 3 [(gogoproto.jsontag) = "owner"];
 	// last thorchain height trade assets were added to trade account
-  int64  last_add_height = 4;
+  int64  last_add_height = 4 [(gogoproto.jsontag) = "last_add_height"];
 	// last thorchain height trade assets were withdrawn from trade account
-  int64  last_withdraw_height = 5;
+  int64  last_withdraw_height = 5 [(gogoproto.jsontag) = "last_withdraw_height"];
 }
 
 message QueryTradeAccountsRequest{

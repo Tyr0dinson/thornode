@@ -45,7 +45,7 @@ message QueryTxRequest{
 }
 
 message QueryTxResponse{
-  QueryObservedTx observed_tx = 1 [(gogoproto.jsontag) = "observed_tx"];
+  QueryObservedTx observed_tx = 1 [(gogoproto.jsontag) = "observed_tx", (gogoproto.nullable) = false];
 	// the thorchain height at which the inbound reached consensus
   int64 consensus_height = 2;
 	// the thorchain height at which the outbound was finalised
@@ -118,7 +118,7 @@ message InboundConfirmationCountedStage{
 	// the block height on the external source chain when confirmation counting will be complete
   int64 external_confirmation_delay_height = 4;
 	// the estimated remaining seconds before confirmation counting completes
-  int64 remaining_confirmation_seconds = 5;
+  int64 remaining_confirmation_seconds = 5 [(gogoproto.jsontag) = "remaining_confirmation_seconds"];
 	// returns true if no transaction confirmation counting remains to be done
   bool completed = 6 [(gogoproto.jsontag) = "completed"];
 }
