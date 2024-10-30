@@ -90,7 +90,6 @@ proto-gen:
 	@docker run --rm -v $(shell pwd):/app -w /app golang:1.22.2 make bifrost-protosh
 	@echo "Generating Protobuf files"
 	@$(protoImage) sh ./scripts/protocgen.sh
-	@go mod tidy
 
 proto-format:
 	@echo "Formatting Protobuf files"
