@@ -644,7 +644,7 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 					Tx: common.Tx{
 						ID:          common.BlankTxID,
 						Chain:       fromAsset.Chain,
-						FromAddress: common.NoopAddress,
+						FromAddress: fromAddress,
 						ToAddress:   common.NoopAddress,
 						Coins: []common.Coin{
 							{
@@ -1200,10 +1200,16 @@ func (qs queryServer) queryQuoteLoanOpen(ctx cosmos.Context, req *types.QueryQuo
 		return nil, err
 	}
 
+	// generate random address for collateral owner
+	collateralOwner, err := types.GetRandomPubKey().GetAddress(asset.Chain)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate address: %w", err)
+	}
+
 	if affiliate != common.NoAddress && !affiliateBps.IsZero() {
 		affCoin := common.NewCoin(asset, affiliateAmt)
 		gasCoin := common.NewCoin(asset.GetChain().GetGasAsset(), cosmos.OneUint())
-		fakeTx := common.NewTx(common.BlankTxID, common.NoopAddress, common.NoopAddress, common.NewCoins(affCoin), common.Gas{gasCoin}, "noop")
+		fakeTx := common.NewTx(common.BlankTxID, collateralOwner, common.NoopAddress, common.NewCoins(affCoin), common.Gas{gasCoin}, "noop")
 		affiliateSwap := NewMsgSwap(fakeTx, common.RuneAsset(), affiliate, cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, 0, 0, 0, nil)
 
 		_, affiliateRuneAmt, _, err = quoteSimulateSwap(ctx, qs.mgr, affiliateAmt, affiliateSwap, 1)
@@ -1242,12 +1248,6 @@ func (qs queryServer) queryQuoteLoanOpen(ctx cosmos.Context, req *types.QueryQuo
 	// check that destination and affiliate are not the same
 	if destination.Equals(affiliate) {
 		return nil, fmt.Errorf("destination and affiliate should not be the same")
-	}
-
-	// generate random address for collateral owner
-	collateralOwner, err := types.GetRandomPubKey().GetAddress(asset.Chain)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate address: %w", err)
 	}
 
 	// create message for simulation
