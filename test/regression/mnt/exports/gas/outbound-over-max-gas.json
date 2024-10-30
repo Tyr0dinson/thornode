@@ -1,5 +1,6 @@
 {
-  "app_hash": "",
+  "app_hash": null,
+  "app_name": "thornode",
   "app_state": {
     "auth": {
       "accounts": [
@@ -225,6 +226,7 @@
         "default_send_enabled": false,
         "send_enabled": []
       },
+      "send_enabled": [],
       "supply": [
         {
           "amount": "50000000000000",
@@ -239,7 +241,6 @@
     "genutil": {
       "gen_txs": []
     },
-    "params": null,
     "thorchain": {
       "POL": {
         "rune_deposited": "0",
@@ -374,7 +375,7 @@
                 "asset": "ETH.USDX-0X9999999999999999999999999999999999999999"
               },
               "gas_rate": "12",
-              "in_hash": "FC48955BB43A023562DC27A4601DDAD188EFF5A38B400D144FFCAF0996853EF7",
+              "in_hash": "3E08FF29BC2F3661DCAB3E8A8570D28F5CA5F551515A6D561F7B0BD0D91B2775",
               "max_gas": [
                 {
                   "amount": "960000",
@@ -382,7 +383,7 @@
                   "decimals": "8"
                 }
               ],
-              "memo": "OUT:FC48955BB43A023562DC27A4601DDAD188EFF5A38B400D144FFCAF0996853EF7",
+              "memo": "OUT:3E08FF29BC2F3661DCAB3E8A8570D28F5CA5F551515A6D561F7B0BD0D91B2775",
               "to_address": "0x1b03d088612a00df0049634e9cc8684d622cada2",
               "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
             }
@@ -402,12 +403,12 @@
               ],
               "from_address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
               "gas": null,
-              "id": "FC48955BB43A023562DC27A4601DDAD188EFF5A38B400D144FFCAF0996853EF7",
+              "id": "3E08FF29BC2F3661DCAB3E8A8570D28F5CA5F551515A6D561F7B0BD0D91B2775",
               "memo": "=:ETH.USDX-0X9999999999999999999999999999999999999999:0x1b03d088612a00df0049634e9cc8684d622cada2",
               "to_address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2"
             }
           },
-          "tx_id": "FC48955BB43A023562DC27A4601DDAD188EFF5A38B400D144FFCAF0996853EF7",
+          "tx_id": "3E08FF29BC2F3661DCAB3E8A8570D28F5CA5F551515A6D561F7B0BD0D91B2775",
           "txs": [
             {
               "tx": {
@@ -420,7 +421,7 @@
                 ],
                 "from_address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
                 "gas": null,
-                "id": "FC48955BB43A023562DC27A4601DDAD188EFF5A38B400D144FFCAF0996853EF7",
+                "id": "3E08FF29BC2F3661DCAB3E8A8570D28F5CA5F551515A6D561F7B0BD0D91B2775",
                 "memo": "=:ETH.USDX-0X9999999999999999999999999999999999999999:0x1b03d088612a00df0049634e9cc8684d622cada2",
                 "to_address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2"
               }
@@ -537,7 +538,7 @@
                 "asset": "ETH.USDX-0X9999999999999999999999999999999999999999"
               },
               "gas_rate": "12",
-              "in_hash": "FC48955BB43A023562DC27A4601DDAD188EFF5A38B400D144FFCAF0996853EF7",
+              "in_hash": "3E08FF29BC2F3661DCAB3E8A8570D28F5CA5F551515A6D561F7B0BD0D91B2775",
               "max_gas": [
                 {
                   "amount": "960000",
@@ -545,7 +546,7 @@
                   "decimals": "8"
                 }
               ],
-              "memo": "OUT:FC48955BB43A023562DC27A4601DDAD188EFF5A38B400D144FFCAF0996853EF7",
+              "memo": "OUT:3E08FF29BC2F3661DCAB3E8A8570D28F5CA5F551515A6D561F7B0BD0D91B2775",
               "to_address": "0x1b03d088612a00df0049634e9cc8684d622cada2",
               "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
             }
@@ -606,24 +607,31 @@
     },
     "upgrade": {}
   },
+  "app_version": "2.138.0",
   "chain_id": "thorchain",
-  "consensus_params": {
-    "block": {
-      "max_bytes": "22020096",
-      "max_gas": "-1",
-      "time_iota_ms": "1000"
-    },
-    "evidence": {
-      "max_age_duration": "172800000000000",
-      "max_age_num_blocks": "100000",
-      "max_bytes": "1048576"
-    },
-    "validator": {
-      "pub_key_types": [
-        "ed25519"
-      ]
-    },
-    "version": {}
+  "consensus": {
+    "params": {
+      "abci": {
+        "vote_extensions_enable_height": "0"
+      },
+      "block": {
+        "max_bytes": "22020096",
+        "max_gas": "-1"
+      },
+      "evidence": {
+        "max_age_duration": "172800000000000",
+        "max_age_num_blocks": "100000",
+        "max_bytes": "1048576"
+      },
+      "validator": {
+        "pub_key_types": [
+          "ed25519"
+        ]
+      },
+      "version": {
+        "app": "0"
+      }
+    }
   },
-  "initial_height": "6"
+  "initial_height": 6
 }

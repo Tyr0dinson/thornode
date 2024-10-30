@@ -9,11 +9,11 @@
     },
     "header": {
       "version": {
-        "block": "11",
-        "app": "0"
+        "block": "",
+        "app": ""
       },
-      "chain_id": "thorchain",
-      "height": 1,
+      "chain_id": "",
+      "height": 0,
       "time": "",
       "last_block_id": {
         "hash": "",
@@ -23,18 +23,18 @@
         }
       },
       "last_commit_hash": "",
-      "data_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
-      "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
-      "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
-      "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
-      "last_results_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
-      "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
-      "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
+      "data_hash": "",
+      "validators_hash": "",
+      "next_validators_hash": "",
+      "consensus_hash": "",
+      "app_hash": "",
+      "last_results_hash": "",
+      "evidence_hash": "",
+      "proposer_address": ""
     },
-    "begin_block_events": [],
-    "end_block_events": [],
-    "txs": []
+    "begin_block_events": null,
+    "end_block_events": null,
+    "txs": null
   },
   {
     "id": {
@@ -46,11 +46,11 @@
     },
     "header": {
       "version": {
-        "block": "11",
-        "app": "0"
+        "block": "",
+        "app": ""
       },
-      "chain_id": "thorchain",
-      "height": 2,
+      "chain_id": "",
+      "height": 0,
       "time": "",
       "last_block_id": {
         "hash": "",
@@ -60,17 +60,17 @@
         }
       },
       "last_commit_hash": "",
-      "data_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
-      "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
-      "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
-      "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "4A8502DF77AAA6AEFCA5B36EF973E83964DC756D3EADE12BF9E3BD6FC59611E2",
-      "last_results_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
-      "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
-      "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
+      "data_hash": "",
+      "validators_hash": "",
+      "next_validators_hash": "",
+      "consensus_hash": "",
+      "app_hash": "",
+      "last_results_hash": "",
+      "evidence_hash": "",
+      "proposer_address": ""
     },
-    "begin_block_events": [],
-    "end_block_events": [],
-    "txs": []
+    "begin_block_events": null,
+    "end_block_events": null,
+    "txs": null
   }
 ]
