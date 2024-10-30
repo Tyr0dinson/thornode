@@ -81,7 +81,7 @@ func (s *SlasherVCUR) BeginBlock(ctx cosmos.Context, constAccessor constants.Con
 	}
 
 	// Act on double signs.
-	for _, evidence := range doubleSignEvidence{
+	for _, evidence := range doubleSignEvidence {
 		if err := s.HandleDoubleSign(ctx, evidence.Validator().Address(), evidence.Height(), constAccessor, validatorAddresses); err != nil {
 			ctx.Logger().Error("fail to slash for double signing a block", "error", err)
 		}
