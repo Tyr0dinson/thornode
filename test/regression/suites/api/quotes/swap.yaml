@@ -230,9 +230,9 @@ params:
   tolerance_bps: 1000
   affiliate: {{ addr_thor_pig }}
   affiliate_bps: 5000
-status: 500
+status: 400
 asserts:
-  - .message|test("affiliate fee basis points can't be more than 1000")
+  - .message|test("total affiliate fee must not be more than 1000 bps")
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/quote/swap
