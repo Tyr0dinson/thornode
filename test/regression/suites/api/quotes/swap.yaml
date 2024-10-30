@@ -771,4 +771,7 @@ params:
   affiliate_bps: 10
   destination: {{ addr_thor_fox }}
 asserts:
-  - .error|contains("invalid bech32 string length 4") # "noop" FromAddress.
+  - .error|contains("fail swap, invalid amount")
+  # Because querier quotes does the explicit Deposit after the affiliate swap attempt
+  # and before the main swap attempt.
+
