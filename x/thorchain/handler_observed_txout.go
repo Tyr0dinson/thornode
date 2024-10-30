@@ -146,6 +146,7 @@ func (h ObservedTxOutHandler) handleV129(ctx cosmos.Context, msg MsgObservedTxOu
 			continue
 		}
 		if tx.KeysignMs > 0 {
+			// trunk-ignore(golangci-lint/govet): shadow
 			keysignMetric, err := h.mgr.Keeper().GetTssKeysignMetric(ctx, tx.Tx.ID)
 			if err != nil {
 				ctx.Logger().Error("fail to get keysign metric", "error", err)
