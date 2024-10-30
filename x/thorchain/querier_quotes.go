@@ -621,6 +621,18 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 		return nil, err
 	}
 
+	// if from asset is a trade asset, create fake balance
+	if fromAsset.IsTradeAsset() {
+		thorAddr, err := fromPubkey.GetThorAddress()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get thor address: %w", err)
+		}
+		_, err = qs.mgr.TradeAccountManager().Deposit(ctx, fromAsset, amount, thorAddr, common.NoAddress, common.BlankTxID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to deposit trade asset: %w", err)
+		}
+	}
+
 	if len(affiliates) > 0 && len(affiliateBps) > 0 {
 		totalAffFee := cosmos.ZeroUint()
 		nodeAccounts, err := qs.mgr.Keeper().ListActiveValidators(ctx)
