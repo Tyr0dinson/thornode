@@ -771,7 +771,5 @@ params:
   affiliate_bps: 10
   destination: {{ addr_thor_fox }}
 asserts:
-  - .error|contains("fail swap, invalid amount")
-  # Because querier quotes does the explicit Deposit after the affiliate swap attempt
-  # and before the main swap attempt.
+  - .memo == "=:THOR.RUNE:tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr::xx:10"
 
