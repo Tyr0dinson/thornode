@@ -144,7 +144,7 @@ func (HandlerLeaveSuite) TestLeaveBondProvider(c *C) {
 		txID,
 		bpBelowMin,
 		GetRandomTHORAddress(),
-		common.Coins{common.NewCoin(common.RuneAsset(), cosmos.OneUint())},
+		common.Coins{common.NewCoin(common.RuneAsset(), cosmos.ZeroUint())},
 		common.Gas{},
 		"",
 	)
@@ -158,7 +158,7 @@ func (HandlerLeaveSuite) TestLeaveBondProvider(c *C) {
 		txID,
 		bpAboveMin,
 		GetRandomTHORAddress(),
-		common.Coins{common.NewCoin(common.RuneAsset(), cosmos.OneUint())},
+		common.Coins{common.NewCoin(common.RuneAsset(), cosmos.ZeroUint())},
 		common.Gas{},
 		"",
 	)
