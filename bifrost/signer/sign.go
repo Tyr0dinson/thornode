@@ -418,6 +418,10 @@ func (s *Signer) secp256k1VerificationSignature(pk common.PubKey) []byte {
 		// this is expected in some cases if we were not in the signing party
 		s.logger.Info().Err(err).Msg("fail secp256k1 check signing")
 		return nil
+	} else if sigBytes == nil {
+		// This is expected in other cases when not in the signing party,
+		// when RemoteSign's len(resp.R) and len(resp.S) are both nil.
+		return nil
 	}
 
 	// build the signature

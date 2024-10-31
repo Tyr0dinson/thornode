@@ -527,15 +527,5 @@ func judgeLateSigner(ctx cosmos.Context, mgr Manager, msg *MsgTssPool, voter Tss
 // and also during deliver. Store changes will persist if this function
 // succeeds, regardless of the success of the transaction.
 func TssAnteHandler(ctx cosmos.Context, v semver.Version, k keeper.Keeper, msg MsgTssPool) error {
-	err := validateTssAuth(ctx, k, msg.Signer)
-	if err != nil {
-		return err
-	}
-
-	// reject messages with a check signature before network version 137
-	if v.LT(semver.MustParse("2.137.0")) && len(msg.Secp256K1Signature) > 0 {
-		return fmt.Errorf("check signatures not supported before version 137")
-	}
-
-	return nil
+	return validateTssAuth(ctx, k, msg.Signer)
 }
