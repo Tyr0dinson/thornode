@@ -62,7 +62,7 @@ asserts:
   - .balances[]|select(.denom == "rune")|.amount|tonumber == 2499996000000
 ---
 type: check
-endpoint: http://localhost:1317/thorchain/block
+endpoint: http://localhost:1317/thorchain/block?height=3
 asserts:
   - .txs|length == 1
   - .txs[0]|.result.events|length == 12

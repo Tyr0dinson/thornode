@@ -3,6 +3,7 @@ package thorchain
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
@@ -34,7 +35,10 @@ func (s *queryServer) unwrapSdkContext(c context.Context) sdk.Context {
 
 func checkHeightParam(height string) error {
 	if len(height) > 0 {
-		return fmt.Errorf("height parameter unsupported")
+		_, err := strconv.ParseInt(height, 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid height param, %w", err)
+		}
 	}
 	return nil
 }

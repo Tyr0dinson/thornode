@@ -80,7 +80,7 @@ txs:
 # when b < p 100% of rewards go to bonds
 ########################################################################################
 type: check
-endpoint: http://localhost:1317/thorchain/block
+endpoint: http://localhost:1317/thorchain/block?height=1
 asserts:
   - .end_block_events[] | select(.type == "rewards") | .bond_reward == "110984"
   - .end_block_events[] | select(.type == "rewards") | keys | length == 5

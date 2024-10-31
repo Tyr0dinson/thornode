@@ -699,6 +699,10 @@ func (app *THORChainApp) SimulationManager() *module.SimulationManager {
 // API server.
 func (app *THORChainApp) RegisterAPIRoutes(apiSvr *api.Server, apiConfig config.APIConfig) {
 	clientCtx := apiSvr.ClientCtx
+
+	// Must call this before registering any GRPC gateway routes
+	thorchain.CustomGRPCGatewayRouter(apiSvr)
+
 	// Register new tx routes from grpc-gateway.
 	authtx.RegisterGRPCGatewayRoutes(clientCtx, apiSvr.GRPCGatewayRouter)
 

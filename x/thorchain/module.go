@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
+	"strconv"
+	"strings"
 
 	"cosmossdk.io/core/appmodule"
 	"cosmossdk.io/x/tx/signing"
@@ -14,12 +17,16 @@ import (
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"
 	cdctypes "github.com/cosmos/cosmos-sdk/codec/types"
+	"github.com/cosmos/cosmos-sdk/server/api"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	sdkgrpc "github.com/cosmos/cosmos-sdk/types/grpc"
 	"github.com/cosmos/cosmos-sdk/types/module"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
+	gateway "github.com/cosmos/gogogateway"
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/spf13/cobra"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/reflect/protoreflect"
 
 	"gitlab.com/thorchain/thornode/common/cosmos"
@@ -284,4 +291,59 @@ func DefineCustomGetSigners(signingOptions *signing.Options) {
 	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgProposeUpgrade"), types.MsgProposeUpgradeCustomGetSigners)
 	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgApproveUpgrade"), types.MsgApproveUpgradeCustomGetSigners)
 	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgRejectUpgrade"), types.MsgRejectUpgradeCustomGetSigners)
+}
+
+// CustomGRPCGatewayRouter sets thorchain's custom GRPC gateway router
+// Must be called before any GRPC gateway routes are registered
+// GRPC gateway router settings are the same as cosmos sdk except for the additional
+// serve mux option, WithMetadata().
+func CustomGRPCGatewayRouter(apiSvr *api.Server) {
+	clientCtx := apiSvr.ClientCtx
+
+	// The default JSON marshaller used by the gRPC-Gateway is unable to marshal non-nullable non-scalar fields.
+	// Using the gogo/gateway package with the gRPC-Gateway WithMarshaler option fixes the scalar field marshaling issue.
+	marshalerOption := &gateway.JSONPb{
+		EmitDefaults: true,
+		Indent:       "",
+		OrigName:     true,
+		AnyResolver:  clientCtx.InterfaceRegistry,
+	}
+
+	apiSvr.GRPCGatewayRouter = runtime.NewServeMux(
+		// Custom marshaler option is required for gogo proto
+		runtime.WithMarshalerOption(runtime.MIMEWildcard, marshalerOption),
+
+		// This is necessary to get error details properly
+		// marshaled in unary requests.
+		runtime.WithProtoErrorHandler(runtime.DefaultHTTPProtoErrorHandler),
+
+		// Custom header matcher for mapping request headers to
+		// GRPC metadata
+		runtime.WithIncomingHeaderMatcher(api.CustomGRPCHeaderMatcher),
+
+		// This is necessary to be able to use the height query param for setting the correct state.
+		// Cosmos sdk expect the GRPCBlockHeightHeader to be set if the latest height is not used.
+		// This function will extract the height query param and set it in the metadata for the sdk to consume.
+		runtime.WithMetadata(func(ctx context.Context, req *http.Request) metadata.MD {
+			md := make(metadata.MD, 1)
+			for key := range req.Header {
+				// if the GRPCBlockHeightHeader is set, use that and ignore the height query parameter
+				if key == sdkgrpc.GRPCBlockHeightHeader {
+					return md
+				}
+			}
+			// Only extract the height query param from thorchain module endpoints
+			if strings.HasPrefix(req.URL.Path, "/thorchain/") {
+				heightStr, ok := req.URL.Query()["height"]
+				if ok && len(heightStr) > 0 {
+					_, err := strconv.ParseInt(heightStr[0], 10, 64)
+					// if a valid int, set the GRPCBlockHeightHeader, the query server will error later on invalid height params
+					if err == nil {
+						md.Set(sdkgrpc.GRPCBlockHeightHeader, heightStr...)
+					}
+				}
+			}
+			return md
+		}),
+	)
 }
