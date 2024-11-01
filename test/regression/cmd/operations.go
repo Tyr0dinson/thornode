@@ -1027,9 +1027,6 @@ func sendMsg(out io.Writer, routine int, msg sdk.Msg, signer sdk.AccAddress, seq
 	// override the cosmos gas if provided
 	if gas != nil {
 		txf = txf.WithGas(uint64(*gas))
-	} else {
-		// NewDeductFeeDecorator in Cosmos SDK v0.50 does not allow zero gas
-		txf = txf.WithGas(200000)
 	}
 
 	// send message

@@ -8,6 +8,7 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/x/auth/ante"
 
+	"gitlab.com/thorchain/thornode/app/decorators"
 	"gitlab.com/thorchain/thornode/x/thorchain"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 )
@@ -53,7 +54,7 @@ func NewAnteHandler(options HandlerOptions) (sdk.AnteHandler, error) {
 		ante.NewTxTimeoutHeightDecorator(),
 		ante.NewValidateMemoDecorator(options.AccountKeeper),
 		ante.NewConsumeGasForTxSizeDecorator(options.AccountKeeper),
-		ante.NewDeductFeeDecorator(options.AccountKeeper, options.BankKeeper, options.FeegrantKeeper, options.TxFeeChecker),
+		decorators.NewDeductFeeDecorator(options.AccountKeeper, options.BankKeeper, options.FeegrantKeeper, options.TxFeeChecker),
 
 		// run thorchain-specific msg antes
 		thorchain.NewAnteDecorator(options.THORChainKeeper),
