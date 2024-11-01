@@ -433,20 +433,20 @@ func (m *QueryTxStagesResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, erro
 // casting is required due to the tx stages type
 func (m *QueryTxStatusResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
 	var result openapi.TxStatusResponse
-	
+
 	if m.Tx != nil {
 		tx := castTx(*m.Tx)
 		result.Tx = &tx
 	}
-	
+
 	if m.PlannedOutTxs != nil {
 		result.PlannedOutTxs = make([]openapi.PlannedOutTx, len(m.PlannedOutTxs))
 		for i, p := range m.PlannedOutTxs {
 			result.PlannedOutTxs[i] = openapi.PlannedOutTx{
-				Chain: p.Chain,
+				Chain:     p.Chain,
 				ToAddress: p.ToAddress,
-				Coin: castCoin(*p.Coin),
-				Refund: p.Refund,
+				Coin:      castCoin(*p.Coin),
+				Refund:    p.Refund,
 			}
 		}
 	}
@@ -659,10 +659,11 @@ func castTx(tx common.Tx) openapi.Tx {
 // We cast from the protobuf type to openapi to match the expected output
 // If these discrepancies are okay, we can remove this casting and remove the optional declaration from OutboundSignedStage's BlocksSinceScheduled
 // The disconnect is in 3 of the embedded types:
-//   InboundObservedStage: if not completed and started == false, started would have been omitted
-//   OutboundDelay: if not completed, RemainingDelayBlocks, RemainingDelaySeconds would be respectively omitted if 0
-//   OutboundSignedStage: if not completed, ScheduledOutboundHeight would be omitted if 0 (not likely...)
-//                        if not completed and current height minus scheduled height equals 0, BlocksSinceScheduled would be omitted
+//
+//	InboundObservedStage: if not completed and started == false, started would have been omitted
+//	OutboundDelay: if not completed, RemainingDelayBlocks, RemainingDelaySeconds would be respectively omitted if 0
+//	OutboundSignedStage: if not completed, ScheduledOutboundHeight would be omitted if 0 (not likely...)
+//	                     if not completed and current height minus scheduled height equals 0, BlocksSinceScheduled would be omitted
 func castTxStagesResponse(in QueryTxStagesResponse) (result openapi.TxStagesResponse) {
 	result.InboundObserved.PreConfirmationCount = wrapInt64(in.InboundObserved.PreConfirmationCount)
 	result.InboundObserved.FinalCount = in.InboundObserved.FinalCount
@@ -674,12 +675,12 @@ func castTxStagesResponse(in QueryTxStagesResponse) (result openapi.TxStagesResp
 
 	if in.InboundConfirmationCounted != nil {
 		result.InboundConfirmationCounted = &openapi.InboundConfirmationCountedStage{
-			CountingStartHeight: wrapInt64(in.InboundConfirmationCounted.CountingStartHeight),
-			Chain: wrapString(in.InboundConfirmationCounted.Chain),
-			ExternalObservedHeight: wrapInt64(in.InboundConfirmationCounted.ExternalObservedHeight),
+			CountingStartHeight:             wrapInt64(in.InboundConfirmationCounted.CountingStartHeight),
+			Chain:                           wrapString(in.InboundConfirmationCounted.Chain),
+			ExternalObservedHeight:          wrapInt64(in.InboundConfirmationCounted.ExternalObservedHeight),
 			ExternalConfirmationDelayHeight: wrapInt64(in.InboundConfirmationCounted.ExternalConfirmationDelayHeight),
-			RemainingConfirmationSeconds: &in.InboundConfirmationCounted.RemainingConfirmationSeconds,
-			Completed: in.InboundConfirmationCounted.Completed,
+			RemainingConfirmationSeconds:    &in.InboundConfirmationCounted.RemainingConfirmationSeconds,
+			Completed:                       in.InboundConfirmationCounted.Completed,
 		}
 	}
 
@@ -697,7 +698,7 @@ func castTxStagesResponse(in QueryTxStagesResponse) (result openapi.TxStagesResp
 			result.SwapStatus.Streaming = &openapi.StreamingStatus{
 				Interval: in.SwapStatus.Streaming.Interval,
 				Quantity: in.SwapStatus.Streaming.Quantity,
-				Count: in.SwapStatus.Streaming.Count,
+				Count:    in.SwapStatus.Streaming.Count,
 			}
 		}
 	}
