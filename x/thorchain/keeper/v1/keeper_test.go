@@ -23,7 +23,6 @@ import (
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	distrtypes "github.com/cosmos/cosmos-sdk/x/distribution/types"
-	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
 	minttypes "github.com/cosmos/cosmos-sdk/x/mint/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 
@@ -86,7 +85,7 @@ func setupKeeperForTest(c *C) (cosmos.Context, KVStore) {
 		maccPerms,
 		authcodec.NewBech32Codec(sdk.GetConfig().GetBech32AccountAddrPrefix()),
 		sdk.GetConfig().GetBech32AccountAddrPrefix(),
-		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
+		authtypes.NewModuleAddress(ModuleName).String(),
 	)
 
 	bk := bankkeeper.NewBaseKeeper(
@@ -94,7 +93,7 @@ func setupKeeperForTest(c *C) (cosmos.Context, KVStore) {
 		runtime.NewKVStoreService(keys[banktypes.StoreKey]),
 		ak,
 		nil,
-		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
+		authtypes.NewModuleAddress(ModuleName).String(),
 		log.NewNopLogger(),
 	)
 
@@ -104,7 +103,7 @@ func setupKeeperForTest(c *C) (cosmos.Context, KVStore) {
 		encodingConfig.Codec,
 		c.MkDir(),
 		nil,
-		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
+		authtypes.NewModuleAddress(ModuleName).String(),
 	)
 
 	k := NewKVStore(encodingConfig.Codec, bk, ak, uk, keyThorchain, GetCurrentVersion())

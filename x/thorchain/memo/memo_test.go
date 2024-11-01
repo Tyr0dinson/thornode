@@ -21,7 +21,6 @@ import (
 	"github.com/cosmos/cosmos-sdk/x/bank"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
-	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/common"
@@ -76,7 +75,7 @@ func (s *MemoSuite) SetUpSuite(c *C) {
 		},
 		authcodec.NewBech32Codec(sdk.GetConfig().GetBech32AccountAddrPrefix()),
 		sdk.GetConfig().GetBech32AccountAddrPrefix(),
-		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
+		authtypes.NewModuleAddress(types.ModuleName).String(),
 	)
 
 	bk := bankkeeper.NewBaseKeeper(
@@ -84,7 +83,7 @@ func (s *MemoSuite) SetUpSuite(c *C) {
 		runtime.NewKVStoreService(keyBank),
 		ak,
 		nil,
-		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
+		authtypes.NewModuleAddress(types.ModuleName).String(),
 		log.NewNopLogger(),
 	)
 	c.Assert(bk.MintCoins(ctx, types.ModuleName, cosmos.Coins{
@@ -96,7 +95,7 @@ func (s *MemoSuite) SetUpSuite(c *C) {
 		encodingConfig.Codec,
 		c.MkDir(),
 		nil,
-		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
+		authtypes.NewModuleAddress(types.ModuleName).String(),
 	)
 	s.k = kv1.NewKVStore(encodingConfig.Codec, bk, ak, uk, keyThorchain, types.GetCurrentVersion())
 }

@@ -25,7 +25,6 @@ import (
 	"github.com/cosmos/cosmos-sdk/x/bank"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
-	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	. "gopkg.in/check.v1"
@@ -126,7 +125,7 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 		},
 		authcodec.NewBech32Codec(sdk.GetConfig().GetBech32AccountAddrPrefix()),
 		sdk.GetConfig().GetBech32AccountAddrPrefix(),
-		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
+		authtypes.NewModuleAddress(ModuleName).String(),
 	)
 
 	bk := bankkeeper.NewBaseKeeper(
@@ -134,7 +133,7 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 		runtime.NewKVStoreService(keyBank),
 		ak,
 		nil,
-		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
+		authtypes.NewModuleAddress(ModuleName).String(),
 		sdklog.NewNopLogger(),
 	)
 	c.Assert(bk.MintCoins(ctx, ModuleName, cosmos.Coins{
@@ -146,7 +145,7 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 		encodingConfig.Codec,
 		c.MkDir(),
 		nil,
-		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
+		authtypes.NewModuleAddress(ModuleName).String(),
 	)
 	k := kv1.NewKeeper(encodingConfig.Codec, bk, ak, uk, keyThorchain)
 	FundModule(c, ctx, k, ModuleName, 10000*common.One)
@@ -227,7 +226,7 @@ func setupKeeperForTest(c *C) (cosmos.Context, keeper.Keeper) {
 		},
 		authcodec.NewBech32Codec(sdk.GetConfig().GetBech32AccountAddrPrefix()),
 		sdk.GetConfig().GetBech32AccountAddrPrefix(),
-		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
+		authtypes.NewModuleAddress(ModuleName).String(),
 	)
 
 	bk := bankkeeper.NewBaseKeeper(
@@ -235,7 +234,7 @@ func setupKeeperForTest(c *C) (cosmos.Context, keeper.Keeper) {
 		runtime.NewKVStoreService(keyBank),
 		ak,
 		nil,
-		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
+		authtypes.NewModuleAddress(ModuleName).String(),
 		sdklog.NewNopLogger(),
 	)
 	c.Assert(bk.MintCoins(ctx, ModuleName, cosmos.Coins{
@@ -247,7 +246,7 @@ func setupKeeperForTest(c *C) (cosmos.Context, keeper.Keeper) {
 		encodingConfig.Codec,
 		c.MkDir(),
 		nil,
-		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
+		authtypes.NewModuleAddress(ModuleName).String(),
 	)
 	k := kv1.NewKVStore(encodingConfig.Codec, bk, ak, uk, keyThorchain, GetCurrentVersion())
 	FundModule(c, ctx, k, ModuleName, 1000000*common.One)
