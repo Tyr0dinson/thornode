@@ -66,8 +66,8 @@ message QueryQuoteSwapResponse{
 message QueryQuoteSaverDepositRequest{
   string asset = 1;
   string amount = 2;
-  string affiliate = 3;
-  string affiliate_bps = 4;
+  repeated string affiliate = 3;
+  repeated string affiliate_bps = 4;
   string height = 5;
 }
 
@@ -156,8 +156,8 @@ message QueryQuoteLoanOpenRequest{
   string amount = 3;
   string min_out = 4;
   string destination = 5;
-  string affiliate = 6;
-  string affiliate_bps = 7;
+  repeated string affiliate = 6;
+  repeated string affiliate_bps = 7;
   string height = 8;
 }
 

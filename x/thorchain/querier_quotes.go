@@ -116,23 +116,23 @@ func quoteHandleMultipleAffiliates(ctx cosmos.Context, mgr *Mgrs, affiliateParam
 	return affAddrs, affParams, affiliateBps, amount, totalBps, nil
 }
 
-func quoteHandleAffiliate(ctx cosmos.Context, mgr *Mgrs, affiliateParam string, affiliateBpsParam string, amount sdkmath.Uint) (affiliate common.Address, memo string, bps, newAmount, affiliateAmt sdkmath.Uint, err error) {
+func quoteHandleAffiliate(ctx cosmos.Context, mgr *Mgrs, affiliateParam []string, affiliateBpsParam []string, amount sdkmath.Uint) (affiliate common.Address, memo string, bps, newAmount, affiliateAmt sdkmath.Uint, err error) {
 	// parse affiliate
 	affAmt := cosmos.ZeroUint()
 	memo = "" // do not resolve thorname for the memo
 	if len(affiliateParam) > 0 {
-		affiliate, err = quoteParseAddress(ctx, mgr, affiliateParam, common.THORChain)
+		affiliate, err = quoteParseAddress(ctx, mgr, affiliateParam[0], common.THORChain)
 		if err != nil {
 			err = fmt.Errorf("bad affiliate address: %w", err)
 			return
 		}
-		memo = affiliateParam
+		memo = affiliateParam[0]
 	}
 
 	// parse affiliate fee
 	bps = sdkmath.NewUint(0)
 	if len(affiliateBpsParam) > 0 {
-		bps, err = sdkmath.ParseUint(affiliateBpsParam)
+		bps, err = sdkmath.ParseUint(affiliateBpsParam[0])
 		if err != nil {
 			err = fmt.Errorf("bad affiliate fee: %w", err)
 			return
