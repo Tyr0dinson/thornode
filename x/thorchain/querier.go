@@ -2020,7 +2020,7 @@ func newTxStagesResponse(ctx cosmos.Context, voter ObservedTxVoter, isSwap, isPe
 		// Only fill in BlocksSinceScheduled if the outbound delay is complete.
 		if currentHeight >= scheduledHeight {
 			sinceScheduled := currentHeight - scheduledHeight
-			outSigned.BlocksSinceScheduled = sinceScheduled
+			outSigned.XBlocksSinceScheduled = &types.OutboundSignedStage_BlocksSinceScheduled{BlocksSinceScheduled: sinceScheduled}
 		}
 	}
 

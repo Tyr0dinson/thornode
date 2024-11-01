@@ -269,8 +269,23 @@ func (m *QueryPoolsResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) 
 	return jsonify(m.Pools)
 }
 
+// QueryPoolSlipsResponse MarshalJSONPB converts to equivalent openapi type before marshaling
 func (m *QueryPoolSlipsResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
-	return jsonify(m.PoolSlips)
+	result := make([]openapi.PoolSlipResponseInner, len(m.PoolSlips))
+	for i, slip := range m.PoolSlips {
+		result[i].Asset = slip.Asset
+		result[i].PoolSlip = slip.PoolSlip
+		result[i].RollupCount = slip.RollupCount
+		result[i].LongRollup = slip.LongRollup
+		result[i].Rollup = slip.Rollup
+	}
+
+	// for single asset queries, if omitting SummedRollup when it equals 0 is okay, we don't need this openapi conversion
+	if len(m.PoolSlips) == 1 {
+		result[0].SummedRollup = &m.PoolSlips[0].SummedRollup
+	}
+
+	return jsonify(result)
 }
 
 // QueryQueueResponse
@@ -409,14 +424,43 @@ func (m *QueryTxResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
 	return jsonify(m)
 }
 
-// QueryTxStagesResponse
+// QueryTxStagesResponse's MarshalJSONPB cast the protobuf type to the openapi type before marshaling
 func (m *QueryTxStagesResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
-	return jsonify(m)
+	return jsonify(castTxStagesResponse(*m))
 }
 
-// QueryTxStatusResponse
+// QueryTxStatusResponse's MarshalJSONPB cast the protobuf type to the openapi type before marshaling
+// casting is required due to the tx stages type
 func (m *QueryTxStatusResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
-	return jsonify(m)
+	var result openapi.TxStatusResponse
+	
+	if m.Tx != nil {
+		tx := castTx(*m.Tx)
+		result.Tx = &tx
+	}
+	
+	if m.PlannedOutTxs != nil {
+		result.PlannedOutTxs = make([]openapi.PlannedOutTx, len(m.PlannedOutTxs))
+		for i, p := range m.PlannedOutTxs {
+			result.PlannedOutTxs[i] = openapi.PlannedOutTx{
+				Chain: p.Chain,
+				ToAddress: p.ToAddress,
+				Coin: castCoin(*p.Coin),
+				Refund: p.Refund,
+			}
+		}
+	}
+
+	if m.OutTxs != nil {
+		result.OutTxs = make([]openapi.Tx, len(m.OutTxs))
+		for i := range m.OutTxs {
+			result.OutTxs[i] = castTx(m.OutTxs[i])
+		}
+	}
+
+	result.Stages = castTxStagesResponse(m.Stages)
+
+	return jsonify(result)
 }
 
 func (m *QueryUpgradeProposalResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
@@ -610,4 +654,82 @@ func castTx(tx common.Tx) openapi.Tx {
 		Gas:         castCoins(tx.Gas...),
 		Memo:        wrapString(tx.Memo),
 	}
+}
+
+// We cast from the protobuf type to openapi to match the expected output
+// If these discrepancies are okay, we can remove this casting and remove the optional declaration from OutboundSignedStage's BlocksSinceScheduled
+// The disconnect is in 3 of the embedded types:
+//   InboundObservedStage: if not completed and started == false, started would have been omitted
+//   OutboundDelay: if not completed, RemainingDelayBlocks, RemainingDelaySeconds would be respectively omitted if 0
+//   OutboundSignedStage: if not completed, ScheduledOutboundHeight would be omitted if 0 (not likely...)
+//                        if not completed and current height minus scheduled height equals 0, BlocksSinceScheduled would be omitted
+func castTxStagesResponse(in QueryTxStagesResponse) (result openapi.TxStagesResponse) {
+	result.InboundObserved.PreConfirmationCount = wrapInt64(in.InboundObserved.PreConfirmationCount)
+	result.InboundObserved.FinalCount = in.InboundObserved.FinalCount
+	result.InboundObserved.Completed = in.InboundObserved.Completed
+	if !result.InboundObserved.Completed {
+		result.InboundObserved.Started = &in.InboundObserved.Started
+		return result
+	}
+
+	if in.InboundConfirmationCounted != nil {
+		result.InboundConfirmationCounted = &openapi.InboundConfirmationCountedStage{
+			CountingStartHeight: wrapInt64(in.InboundConfirmationCounted.CountingStartHeight),
+			Chain: wrapString(in.InboundConfirmationCounted.Chain),
+			ExternalObservedHeight: wrapInt64(in.InboundConfirmationCounted.ExternalObservedHeight),
+			ExternalConfirmationDelayHeight: wrapInt64(in.InboundConfirmationCounted.ExternalConfirmationDelayHeight),
+			RemainingConfirmationSeconds: &in.InboundConfirmationCounted.RemainingConfirmationSeconds,
+			Completed: in.InboundConfirmationCounted.Completed,
+		}
+	}
+
+	if in.InboundFinalised != nil {
+		result.InboundFinalised = &openapi.InboundFinalisedStage{
+			Completed: in.InboundFinalised.Completed,
+		}
+	}
+
+	if in.SwapStatus != nil {
+		result.SwapStatus = &openapi.SwapStatus{
+			Pending: in.SwapStatus.Pending,
+		}
+		if in.SwapStatus.Streaming != nil {
+			result.SwapStatus.Streaming = &openapi.StreamingStatus{
+				Interval: in.SwapStatus.Streaming.Interval,
+				Quantity: in.SwapStatus.Streaming.Quantity,
+				Count: in.SwapStatus.Streaming.Count,
+			}
+		}
+	}
+
+	if in.SwapFinalised != nil {
+		result.SwapFinalised = &openapi.SwapFinalisedStage{
+			Completed: in.SwapFinalised.Completed,
+		}
+	}
+
+	if in.OutboundDelay != nil {
+		result.OutboundDelay = &openapi.OutboundDelayStage{
+			Completed: in.OutboundDelay.Completed,
+		}
+		if !in.OutboundDelay.Completed {
+			result.OutboundDelay.RemainingDelayBlocks = &in.OutboundDelay.RemainingDelayBlocks
+			result.OutboundDelay.RemainingDelaySeconds = &in.OutboundDelay.RemainingDelayBlocks
+		}
+	}
+
+	if in.OutboundSigned != nil {
+		result.OutboundSigned = &openapi.OutboundSignedStage{
+			Completed: in.OutboundSigned.Completed,
+		}
+		if !in.OutboundSigned.Completed {
+			result.OutboundSigned.ScheduledOutboundHeight = &in.OutboundSigned.ScheduledOutboundHeight
+			if in.OutboundSigned.XBlocksSinceScheduled != nil {
+				blocksSinceScheduled := in.OutboundSigned.GetBlocksSinceScheduled()
+				result.OutboundSigned.BlocksSinceScheduled = &blocksSinceScheduled
+			}
+		}
+	}
+
+	return result
 }

@@ -161,7 +161,7 @@ message OutboundSignedStage{
 	// THORChain height for which the external outbound is scheduled
   int64 scheduled_outbound_height = 1;
 	// THORChain blocks since the scheduled outbound height
-  int64 blocks_since_scheduled = 2;
+  optional int64 blocks_since_scheduled = 2;
 	// returns true if an external transaction has been signed and broadcast (and observed in its mempool)
   bool completed = 3 [(gogoproto.jsontag) = "completed"];
 }
