@@ -35,6 +35,7 @@ func NewDeductFeeDecorator(ak ante.AccountKeeper, bk authtypes.BankKeeper, fk an
 		txFeeChecker:   tfc,
 	}
 }
+
 func (dfd DeductFeeDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate bool, next sdk.AnteHandler) (sdk.Context, error) {
 	feeTx, ok := tx.(sdk.FeeTx)
 	if !ok {
@@ -53,7 +54,7 @@ func (dfd DeductFeeDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate bo
 			return ctx, err
 		}
 	}
-	if err := dfd.checkDeductFee(ctx, tx, fee); err != nil {
+	if err = dfd.checkDeductFee(ctx, tx, fee); err != nil {
 		return ctx, err
 	}
 
