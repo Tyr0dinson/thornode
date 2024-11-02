@@ -142,7 +142,7 @@
         }
       },
       "last_commit_hash": "",
-      "data_hash": "740ABC71405C94A96EF296AC37760EF54500305E7004ADD515CF9A6361BB48A0",
+      "data_hash": "FED7E3E1EC9AA4656B62DBDD857A6358363AF602822337D25080C955A4725B78",
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
@@ -237,12 +237,12 @@
     ],
     "txs": [
       {
-        "hash": "B9C6CC9FB60334B21B73510A7A2888E57FC475905E27EAC166497879929AA48F",
+        "hash": "8E6769F82C3691F44584FFDDEE2F1E5F062A7A3C5AECB8FC05CA809D2BB5D4EF",
         "tx": {
           "auth_info": {
             "fee": {
               "amount": [],
-              "gas_limit": "200000",
+              "gas_limit": "0",
               "granter": "",
               "payer": ""
             },
@@ -283,14 +283,14 @@
             "timeout_height": "0"
           },
           "signatures": [
-            "Ln3dA8p0ZZ4+lh+K5/1aB/Y/fTFcrAP5ZsRSDF7kc0doZ5l2i+q8pCYniZ4cQx2wMSdBjq4aPlDw7OKZU6Ch6g=="
+            "WhpoUA0Vi7QsrBFGCoVrLJdVmxqZpR8kQfs8b1WALn0C7qqSve7qAYVImrwAQ1aKaiteXsblvkpABb4KjYABLQ=="
           ]
         },
         "result": {
           "code": 4,
           "log": "failed to execute message; message index: 0: tthor1xkz88t875m7ms7wa6220estwwdlc86pqsccrvm are not authorized to manage tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr: unauthorized",
           "gas_wanted": "-1",
-          "gas_used": "115771",
+          "gas_used": "115731",
           "events": [
             {
               "fee": "",
@@ -322,7 +322,7 @@
               "type": "tx"
             },
             {
-              "signature": "Ln3dA8p0ZZ4+lh+K5/1aB/Y/fTFcrAP5ZsRSDF7kc0doZ5l2i+q8pCYniZ4cQx2wMSdBjq4aPlDw7OKZU6Ch6g==",
+              "signature": "WhpoUA0Vi7QsrBFGCoVrLJdVmxqZpR8kQfs8b1WALn0C7qqSve7qAYVImrwAQ1aKaiteXsblvkpABb4KjYABLQ==",
               "type": "tx"
             }
           ]
@@ -354,12 +354,12 @@
         }
       },
       "last_commit_hash": "",
-      "data_hash": "6EC50448CBC5C8862267BBD16C19C96D777F2C8D23258C0EE1408CD8976708FB",
+      "data_hash": "778225DA12A518B9E46493F40B9EA8DF24A44853E20DAC759632893E6DF6949B",
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
       "app_hash": "354EE5226B7EA262D48A8C973C0D9B0FB874E5823FF74918A1F455D17A765607",
-      "last_results_hash": "EF292BE982AC5F6C2D556DE3E4507BB71AAFA2E9F6C08659BF9FF6340DAD1B2A",
+      "last_results_hash": "BAA6BADFDC004E0DFEC9ED3DE433A73D756E470E39AF6552F3705A57D3648483",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
@@ -449,12 +449,12 @@
     ],
     "txs": [
       {
-        "hash": "9405D95DC42C94ED710C403547CE16F1BF76A8C1D8B7E0D54D6AB2E57170CEAF",
+        "hash": "0A9EC69FE953E679B68125BF4123FFC37D49AB07EAE75233195F2028278D1190",
         "tx": {
           "auth_info": {
             "fee": {
               "amount": [],
-              "gas_limit": "200000",
+              "gas_limit": "0",
               "granter": "",
               "payer": ""
             },
@@ -495,14 +495,14 @@
             "timeout_height": "0"
           },
           "signatures": [
-            "WzMQYxZoRb9GnPLH7lJNfMKnN7p2Ds6rORinJ0edYXUOAp8gxFuHNBeKwVrXZKt/NtEN4sOtuh4+ZvDV/aXLdA=="
+            "hkaDQ06jpgXMZUFWOgMGbNwnXM61zjGdP9ttFjWp5MJHPXc6b51yoOQKi3uTOIodTQGb11usOnQ+qC3PRw7erQ=="
           ]
         },
         "result": {
           "code": 0,
           "data": "\u0012\u0011\n\u000f/types.MsgEmpty",
           "gas_wanted": "-1",
-          "gas_used": "133483",
+          "gas_used": "133443",
           "events": [
             {
               "fee": "",
@@ -534,7 +534,7 @@
               "type": "tx"
             },
             {
-              "signature": "WzMQYxZoRb9GnPLH7lJNfMKnN7p2Ds6rORinJ0edYXUOAp8gxFuHNBeKwVrXZKt/NtEN4sOtuh4+ZvDV/aXLdA==",
+              "signature": "hkaDQ06jpgXMZUFWOgMGbNwnXM61zjGdP9ttFjWp5MJHPXc6b51yoOQKi3uTOIodTQGb11usOnQ+qC3PRw7erQ==",
               "type": "tx"
             },
             {
@@ -572,7 +572,7 @@
               "msg_index": "0",
               "node": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
               "signer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
-              "txid": "9405D95DC42C94ED710C403547CE16F1BF76A8C1D8B7E0D54D6AB2E57170CEAF",
+              "txid": "0A9EC69FE953E679B68125BF4123FFC37D49AB07EAE75233195F2028278D1190",
               "type": "validator_request_leave"
             }
           ]

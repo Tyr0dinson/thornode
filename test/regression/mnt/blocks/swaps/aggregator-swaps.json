@@ -142,7 +142,7 @@
         }
       },
       "last_commit_hash": "",
-      "data_hash": "BFECB2A4C3FA7225DC3BA9162F9CE341E818AA46EF0F3D513545A80145BE7F61",
+      "data_hash": "4A8D34027E3DE31F62D83F9986D0E8922657B7AC83B5314F255FE503A241C144",
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
@@ -158,7 +158,7 @@
         "coin": "10000000000 THOR.RUNE",
         "emit_asset": "82644267 ETH.ETH",
         "from": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
-        "id": "A1FC5CCD53D52BDB78929E4B46D695C8FC7294BCBB679ED1F0A4BCFBB947F281",
+        "id": "34AA325C82F0B9572B54B1AD403146200625DB5F31EF59C5F8BF9BF22F93E71A",
         "liquidity_fee": "8264382",
         "liquidity_fee_in_rune": "826442603",
         "memo": "=:e:0xe3c64974c78f5693bd2bc68b3221d58df5c6e877::::6f3848:19e4348",
@@ -176,7 +176,7 @@
         "coins": "1280000 ETH.ETH",
         "mode": "EndBlock",
         "pool_deduct": "153271506",
-        "tx_id": "A1FC5CCD53D52BDB78929E4B46D695C8FC7294BCBB679ED1F0A4BCFBB947F281",
+        "tx_id": "34AA325C82F0B9572B54B1AD403146200625DB5F31EF59C5F8BF9BF22F93E71A",
         "type": "fee"
       },
       {
@@ -209,11 +209,11 @@
         "coin_asset": "ETH.ETH",
         "coin_decimals": "0",
         "gas_rate": "12",
-        "in_hash": "A1FC5CCD53D52BDB78929E4B46D695C8FC7294BCBB679ED1F0A4BCFBB947F281",
+        "in_hash": "34AA325C82F0B9572B54B1AD403146200625DB5F31EF59C5F8BF9BF22F93E71A",
         "max_gas_amount_0": "960000",
         "max_gas_asset_0": "ETH.ETH",
         "max_gas_decimals_0": "8",
-        "memo": "OUT:A1FC5CCD53D52BDB78929E4B46D695C8FC7294BCBB679ED1F0A4BCFBB947F281",
+        "memo": "OUT:34AA325C82F0B9572B54B1AD403146200625DB5F31EF59C5F8BF9BF22F93E71A",
         "mode": "EndBlock",
         "module_name": "",
         "out_hash": "",
@@ -280,12 +280,12 @@
     ],
     "txs": [
       {
-        "hash": "A1FC5CCD53D52BDB78929E4B46D695C8FC7294BCBB679ED1F0A4BCFBB947F281",
+        "hash": "34AA325C82F0B9572B54B1AD403146200625DB5F31EF59C5F8BF9BF22F93E71A",
         "tx": {
           "auth_info": {
             "fee": {
               "amount": [],
-              "gas_limit": "200000",
+              "gas_limit": "0",
               "granter": "",
               "payer": ""
             },
@@ -326,14 +326,14 @@
             "timeout_height": "0"
           },
           "signatures": [
-            "R38LD+hvOwHRTR4qhKzKWWw2rgufU1ZEqgHLIKByEzxiEkcM3KgZoejt1S2awt3bPv33LPOf64i/JZ4tC94F/g=="
+            "x+mdfqHy/WBollcHzQIYAFMNS5SAOpVWgOCIYQu9aqNiWp6h9Up8zHepPg1T/tN5uqR0H5Vxx54BMn1YYnXbiA=="
           ]
         },
         "result": {
           "code": 0,
           "data": "\u0012\u0011\n\u000f/types.MsgEmpty",
           "gas_wanted": "-1",
-          "gas_used": "148221",
+          "gas_used": "148181",
           "events": [
             {
               "fee": "",
@@ -365,7 +365,7 @@
               "type": "tx"
             },
             {
-              "signature": "R38LD+hvOwHRTR4qhKzKWWw2rgufU1ZEqgHLIKByEzxiEkcM3KgZoejt1S2awt3bPv33LPOf64i/JZ4tC94F/g==",
+              "signature": "x+mdfqHy/WBollcHzQIYAFMNS5SAOpVWgOCIYQu9aqNiWp6h9Up8zHepPg1T/tN5uqR0H5Vxx54BMn1YYnXbiA==",
               "type": "tx"
             },
             {

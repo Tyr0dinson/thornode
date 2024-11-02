@@ -60,7 +60,7 @@
         }
       },
       "last_commit_hash": "",
-      "data_hash": "AF88FD89529D7D280E1E03A4BEE4EB17F831B39E430F419B5181A7B57994CC85",
+      "data_hash": "D849F5986A83576B3B47E4741ADEFBA33A2B211FE70FD87C8631C172EE394198",
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
@@ -130,12 +130,12 @@
     ],
     "txs": [
       {
-        "hash": "3B37ACFC0143DB6DC907DC1E39473F0C4DFEEA746B2D770C99FAF3F80BD78345",
+        "hash": "4055130C678A3E8F7F4FB7B7E7B12695C1110C17BEBB0DD634D092DE7B0E9D28",
         "tx": {
           "auth_info": {
             "fee": {
               "amount": [],
-              "gas_limit": "200000",
+              "gas_limit": "0",
               "granter": "",
               "payer": ""
             },
@@ -203,14 +203,14 @@
             "timeout_height": "0"
           },
           "signatures": [
-            "S3GPzDmGZWAZTxGmFTAkvI4QvEY9cNR+jz7KgF2i+oArC/4e6A1nm7YdH2FF0RRwt5ZGS1AjhmWL8ZoiSUZwkw=="
+            "H5N7LDUiokoGebl3fpJMrgy9dAVQ/B3m9m65HESlaRssBKARrt6Pb/lTkDrOixw+R7/xAphZlvnNmUGtPpPxZg=="
           ]
         },
         "result": {
           "code": 0,
           "data": "\u0012\u0011\n\u000f/types.MsgEmpty",
           "gas_wanted": "-1",
-          "gas_used": "240796",
+          "gas_used": "240756",
           "events": [
             {
               "fee": "",
@@ -222,7 +222,7 @@
               "type": "tx"
             },
             {
-              "signature": "S3GPzDmGZWAZTxGmFTAkvI4QvEY9cNR+jz7KgF2i+oArC/4e6A1nm7YdH2FF0RRwt5ZGS1AjhmWL8ZoiSUZwkw==",
+              "signature": "H5N7LDUiokoGebl3fpJMrgy9dAVQ/B3m9m65HESlaRssBKARrt6Pb/lTkDrOixw+R7/xAphZlvnNmUGtPpPxZg==",
               "type": "tx"
             },
             {
@@ -246,12 +246,12 @@
         }
       },
       {
-        "hash": "33A2103F3D6C052882515F3F5A0EDECCD65D532D2C6A29B0178F1D4F784E6E62",
+        "hash": "FCCDA2B100DA9963984A89FA368E018029FACAD38DA186C963525C6B2E0DDBF1",
         "tx": {
           "auth_info": {
             "fee": {
               "amount": [],
-              "gas_limit": "200000",
+              "gas_limit": "0",
               "granter": "",
               "payer": ""
             },
@@ -292,14 +292,14 @@
             "timeout_height": "0"
           },
           "signatures": [
-            "yYQ2C8jcBGC4f84GwuXPMyX0SbEgBKCJgKirqLV+LY51Ja9Gc7SYUUI0QQ6w1hAcGhbIb0selWh0YtZR/ASbBg=="
+            "palfadsEzYAVwYlK/+vTi4PuqlKBdG0l8fE1PKaKK65MDfFEptez/9E9B/+zBXPVtYmWdHZXKtby1h9xzWXQzQ=="
           ]
         },
         "result": {
           "code": 0,
           "data": "\u0012\u0011\n\u000f/types.MsgEmpty",
           "gas_wanted": "-1",
-          "gas_used": "180132",
+          "gas_used": "180092",
           "events": [
             {
               "fee": "",
@@ -331,7 +331,7 @@
               "type": "tx"
             },
             {
-              "signature": "yYQ2C8jcBGC4f84GwuXPMyX0SbEgBKCJgKirqLV+LY51Ja9Gc7SYUUI0QQ6w1hAcGhbIb0selWh0YtZR/ASbBg==",
+              "signature": "palfadsEzYAVwYlK/+vTi4PuqlKBdG0l8fE1PKaKK65MDfFEptez/9E9B/+zBXPVtYmWdHZXKtby1h9xzWXQzQ==",
               "type": "tx"
             },
             {
@@ -373,7 +373,7 @@
             },
             {
               "BTC_txid": "0000000000000000000000000000000000000000000000000000000000000001",
-              "THOR_txid": "33A2103F3D6C052882515F3F5A0EDECCD65D532D2C6A29B0178F1D4F784E6E62",
+              "THOR_txid": "FCCDA2B100DA9963984A89FA368E018029FACAD38DA186C963525C6B2E0DDBF1",
               "asset_address": "bcrt1quuds8pd92qnnq0udw0rpg0szpgcslc9pm6tzal",
               "asset_amount": "100000000",
               "liquidity_provider_units": "200000000",
