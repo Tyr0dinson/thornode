@@ -261,7 +261,6 @@ func (h RejectUpgradeHandler) handle(ctx cosmos.Context, msg *MsgRejectUpgrade) 
 }
 
 func scheduleUpgradeIfNecessary(ctx cosmos.Context, k keeper.Keeper, name string) error {
-	// TODO-Steve: review with Andrew
 	upgradePlan, upgradePlanErr := k.GetUpgradePlan(ctx)
 	if upgradePlanErr != nil && upgradePlan.Name == name {
 		// already scheduled
@@ -299,7 +298,6 @@ func scheduleUpgradeIfNecessary(ctx cosmos.Context, k keeper.Keeper, name string
 }
 
 func clearUpgradeIfNecessary(ctx cosmos.Context, k keeper.Keeper, name string) error {
-	// TODO-Steve: review with Andrew
 	upgradePlan, err := k.GetUpgradePlan(ctx)
 	if err != nil || upgradePlan.Name != name {
 		// upgrade by this name not scheduled
