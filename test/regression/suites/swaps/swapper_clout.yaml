@@ -313,7 +313,7 @@ asserts:
       },
       gas_rate: 12,
       height: 20,
-      in_hash: "A1FC5CCD53D52BDB78929E4B46D695C8FC7294BCBB679ED1F0A4BCFBB947F281",
+      in_hash: "34AA325C82F0B9572B54B1AD403146200625DB5F31EF59C5F8BF9BF22F93E71A",
       max_gas: [
           {
               amount: "960000",
@@ -321,7 +321,7 @@ asserts:
               decimals: 8
           }
       ],
-      memo: "OUT:A1FC5CCD53D52BDB78929E4B46D695C8FC7294BCBB679ED1F0A4BCFBB947F281",
+      memo: "OUT:34AA325C82F0B9572B54B1AD403146200625DB5F31EF59C5F8BF9BF22F93E71A",
       to_address: "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
       vault_pub_key: "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
     }
