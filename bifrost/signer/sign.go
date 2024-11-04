@@ -380,7 +380,15 @@ func (s *Signer) processKeygenBlock(keygenBlock ttypes.KeygenBlock) {
 		}
 
 		// generate a verification signature to ensure we can sign with the new key
-		secp256k1Sig := s.secp256k1VerificationSignature(pubKey.Secp256k1)
+		var disableVerification int64
+		disableVerification, err = s.thorchainBridge.GetMimir(constants.DisableKeygenVerificationSignature.String())
+		if err != nil {
+			s.logger.Err(err).Msgf("fail to get %s", constants.DisableKeygenVerificationSignature)
+		}
+		var secp256k1Sig []byte
+		if disableVerification <= 0 {
+			secp256k1Sig = s.secp256k1VerificationSignature(pubKey.Secp256k1)
+		}
 
 		if err = s.sendKeygenToThorchain(keygenBlock.Height, pubKey.Secp256k1, secp256k1Sig, blame, keygenReq.GetMembers(), keygenReq.Type, keygenTime); err != nil {
 			s.errCounter.WithLabelValues("fail_to_broadcast_keygen", "").Inc()

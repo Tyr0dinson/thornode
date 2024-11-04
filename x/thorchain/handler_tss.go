@@ -30,6 +30,7 @@ func NewTssHandler(mgr Manager) BaseHandler[*MsgTssPool] {
 			Register("2.137.0", MsgTssPoolValidateV137).
 			Register("1.124.0", MsgTssPoolValidateV124),
 		handlers: NewHandlers[*MsgTssPool]().
+			Register("2.138.0", MsgTssPoolHandleV138).
 			Register("2.137.0", MsgTssPoolHandleV137).
 			Register("1.134.0", MsgTssPoolHandleV134),
 	}
@@ -151,7 +152,7 @@ func validateTssAuth(ctx cosmos.Context, k keeper.Keeper, signer cosmos.AccAddre
 	return nil
 }
 
-func MsgTssPoolHandleV137(ctx cosmos.Context, mgr Manager, msg *MsgTssPool) (*cosmos.Result, error) {
+func MsgTssPoolHandleV138(ctx cosmos.Context, mgr Manager, msg *MsgTssPool) (*cosmos.Result, error) {
 	ctx.Logger().Info("handler tss", "current version", mgr.GetVersion())
 	blames := make([]string, 0)
 	if !msg.Blame.IsEmpty() {
@@ -395,21 +396,24 @@ func MsgTssPoolHandleV137(ctx cosmos.Context, mgr Manager, msg *MsgTssPool) (*co
 				"pubkey", msg.PoolPubKey,
 			)
 
-			// we must also have quorum on the check signature
-			consensusSig, ok := voter.ConsensusCheckSignature()
-			if !ok {
-				ctx.Logger().Error("keygen rejected due to lacking check signature quorum")
-				return &cosmos.Result{}, nil
-			}
+			disableVerification := mgr.Keeper().GetConfigInt64(ctx, constants.DisableKeygenVerificationSignature)
+			if disableVerification <= 0 {
+				// we must also have quorum on the check signature
+				consensusSig, ok := voter.ConsensusCheckSignature()
+				if !ok {
+					ctx.Logger().Error("keygen rejected due to lacking check signature quorum")
+					return &cosmos.Result{}, nil
+				}
 
-			// log an error if any bad nodes submitted a mismatched check signature
-			for _, sig := range voter.Secp256K1Signatures {
-				if sig != consensusSig {
-					ctx.Logger().Error(
-						"mismatched check signature detected",
-						"expected", base64.StdEncoding.EncodeToString([]byte(consensusSig)),
-						"found", base64.StdEncoding.EncodeToString([]byte(sig)),
-					)
+				// log an error if any bad nodes submitted a mismatched check signature
+				for _, sig := range voter.Secp256K1Signatures {
+					if sig != consensusSig {
+						ctx.Logger().Error(
+							"mismatched check signature detected",
+							"expected", base64.StdEncoding.EncodeToString([]byte(consensusSig)),
+							"found", base64.StdEncoding.EncodeToString([]byte(sig)),
+						)
+					}
 				}
 			}
 
