@@ -39,13 +39,14 @@ import (
 
 // type check to ensure the interface is properly implemented
 var (
-	_ module.AppModule          = AppModule{}
-	_ module.AppModuleBasic     = AppModuleBasic{}
-	_ module.AppModuleGenesis   = AppModule{}
-	_ module.HasABCIGenesis     = AppModule{}
-	_ module.HasServices        = AppModule{}
-	_ module.HasABCIEndBlock    = AppModule{}
-	_ appmodule.HasBeginBlocker = AppModule{}
+	_ module.AppModule           = AppModule{}
+	_ module.AppModuleBasic      = AppModuleBasic{}
+	_ module.AppModuleGenesis    = AppModule{}
+	_ module.HasABCIGenesis      = AppModule{}
+	_ module.HasServices         = AppModule{}
+	_ module.HasABCIEndBlock     = AppModule{}
+	_ module.HasConsensusVersion = AppModule{}
+	_ appmodule.HasBeginBlocker  = AppModule{}
 )
 
 // AppModuleBasic app module Basics object
@@ -143,13 +144,9 @@ func (AppModule) IsAppModule() {}
 
 func (AppModule) IsOnePerModuleType() {}
 
-// func (AppModule) Name() string {
-// 	return ModuleName
-// }
-
-// func (AppModule) ConsensusVersion() uint64 {
-// 	return 1
-// }
+func (AppModule) ConsensusVersion() uint64 {
+	return 1
+}
 
 func (am AppModule) RegisterInvariants(_ sdk.InvariantRegistry) {}
 
