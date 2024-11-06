@@ -13,6 +13,8 @@ import (
 	"github.com/strangelove-ventures/interchaintest/v8/chain/thorchain/common"
 	"github.com/strangelove-ventures/interchaintest/v8/ibc"
 	"golang.org/x/sync/errgroup"
+	
+	tcommon "gitlab.com/thorchain/thornode/common"
 )
 
 func Arb(
@@ -156,7 +158,7 @@ func Arb(
 				receive := arbPools[len(arbPools)-1]
 
 				// skip if none have diverged more than 10 basis points
-				adjustmentBps := Min(Abs(priceChangeBps(send)), Abs(priceChangeBps(receive)))
+				adjustmentBps := tcommon.Min(tcommon.Abs(priceChangeBps(send)),tcommon.Abs(priceChangeBps(receive)))
 				if adjustmentBps < 10 {
 					// pools have not diverged enough
 					continue
@@ -183,18 +185,4 @@ func Arb(
 	}()
 
 	return users, arbTimer, nil
-}
-
-func Min[T int | uint | int64 | uint64](a, b T) T {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func Abs[T int | int64](a T) T {
-	if a < 0 {
-		return -a
-	}
-	return a
 }

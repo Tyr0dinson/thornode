@@ -18,6 +18,26 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+const (
+	BtcCoinType       = "0"
+	LtcCoinType       = "2"
+	DogeCointType     = "3"
+	EthCoinType       = "60"
+	CosmosCoinType    = "118"
+	BchCoinType       = "145"
+	ThorchainCoinType = "931"
+)
+
+var CoinTypeFundAmounts = map[string]int64{
+	BtcCoinType:       10,     // btc
+	LtcCoinType:       100,    // ltc
+	DogeCointType:     10_000, // doge
+	EthCoinType:       10,     // eth/evm/bsc
+	CosmosCoinType:    1000,   // cosmos/gaia
+	BchCoinType:       100,    // bch
+	ThorchainCoinType: 1000,   // thorchain
+}
+
 func GetAndFundTestUsers(
 	t *testing.T,
 	ctx context.Context,
@@ -31,15 +51,7 @@ func GetAndFundTestUsers(
 		i := i
 		chain := chain
 		oneCoin := sdkmath.NewInt(int64(math.Pow10(int(*chain.Config().CoinDecimals))))
-		amount := oneCoin.MulRaw(1000) // thor, gaia
-		switch chain.Config().CoinType {
-		case "0", "60": // btc, eth
-			amount = oneCoin.MulRaw(10)
-		case "2", "145": // ltc, bch
-			amount = oneCoin.MulRaw(100)
-		case "3": // doge
-			amount = oneCoin.MulRaw(10_000)
-		}
+		amount := oneCoin.MulRaw(CoinTypeFundAmounts[chain.Config().CoinType])
 		if lper {
 			amount = amount.MulRaw(2)
 		}

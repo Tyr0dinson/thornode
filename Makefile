@@ -341,13 +341,9 @@ docker-gitlab-build:
 		--build-arg COMMIT=$(COMMIT) \
 		--build-arg TAG=$(BUILDTAG)
 
-get-heighliner:
-	git clone https://github.com/strangelove-ventures/heighliner.git
-	cd heighliner && go install
-
 local-image:
 ifeq (,$(shell which heighliner))
-	echo 'heighliner' binary not found. Consider running `make get-heighliner`
+	echo 'heighliner' binary not found. Consider running `go install github.com/strangelove-ventures/heighliner@latest`
 else
 	heighliner build -c thorchain --local -f chains.yaml
 endif
@@ -378,9 +374,9 @@ events-gitlab-push:
 	@docker push registry.gitlab.com/thorchain/thornode:events-${GITREF}
 	@docker push registry.gitlab.com/thorchain/thornode:events
 
-###############################################################################
-###                               interchaintest                            ###
-###############################################################################
+########################################################################################
+# Interchaintest
+########################################################################################
 
 ictest-sim:
 	@echo "Running interchaintest sim test"
