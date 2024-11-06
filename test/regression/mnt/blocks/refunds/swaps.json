@@ -366,7 +366,6 @@
         },
         "result": {
           "code": 0,
-          "data": "\u0012\u0011\n\u000f/types.MsgEmpty",
           "gas_wanted": "-1",
           "gas_used": "146818",
           "events": [
@@ -687,7 +686,6 @@
         },
         "result": {
           "code": 0,
-          "data": "\u0012\u0011\n\u000f/types.MsgEmpty",
           "gas_wanted": "-1",
           "gas_used": "134733",
           "events": [
@@ -1008,7 +1006,6 @@
         },
         "result": {
           "code": 0,
-          "data": "\u0012\u0011\n\u000f/types.MsgEmpty",
           "gas_wanted": "-1",
           "gas_used": "132248",
           "events": [
@@ -1329,7 +1326,6 @@
         },
         "result": {
           "code": 0,
-          "data": "\u0012\u0011\n\u000f/types.MsgEmpty",
           "gas_wanted": "-1",
           "gas_used": "134608",
           "events": [
@@ -1660,7 +1656,6 @@
         },
         "result": {
           "code": 0,
-          "data": "\u0012\u0011\n\u000f/types.MsgEmpty",
           "gas_wanted": "-1",
           "gas_used": "197033",
           "events": [
@@ -1918,7 +1913,6 @@
         },
         "result": {
           "code": 0,
-          "data": "\u0012\u0011\n\u000f/types.MsgEmpty",
           "gas_wanted": "-1",
           "gas_used": "254778",
           "events": [
@@ -2216,7 +2210,6 @@
         },
         "result": {
           "code": 0,
-          "data": "\u0012\u0011\n\u000f/types.MsgEmpty",
           "gas_wanted": "-1",
           "gas_used": "186418",
           "events": [
@@ -2474,7 +2467,6 @@
         },
         "result": {
           "code": 0,
-          "data": "\u0012\u0011\n\u000f/types.MsgEmpty",
           "gas_wanted": "-1",
           "gas_used": "255520",
           "events": [
@@ -2772,7 +2764,6 @@
         },
         "result": {
           "code": 0,
-          "data": "\u0012\u0011\n\u000f/types.MsgEmpty",
           "gas_wanted": "-1",
           "gas_used": "187858",
           "events": [
@@ -3030,7 +3021,6 @@
         },
         "result": {
           "code": 0,
-          "data": "\u0012\u0011\n\u000f/types.MsgEmpty",
           "gas_wanted": "-1",
           "gas_used": "255685",
           "events": [
@@ -3328,7 +3318,6 @@
         },
         "result": {
           "code": 0,
-          "data": "\u0012\u0011\n\u000f/types.MsgEmpty",
           "gas_wanted": "-1",
           "gas_used": "184884",
           "events": [
@@ -3586,7 +3575,6 @@
         },
         "result": {
           "code": 0,
-          "data": "\u0012\u0011\n\u000f/types.MsgEmpty",
           "gas_wanted": "-1",
           "gas_used": "255157",
           "events": [
@@ -3884,7 +3872,6 @@
         },
         "result": {
           "code": 0,
-          "data": "\u0012\u0011\n\u000f/types.MsgEmpty",
           "gas_wanted": "-1",
           "gas_used": "187844",
           "events": [
@@ -4142,7 +4129,6 @@
         },
         "result": {
           "code": 0,
-          "data": "\u0012\u0011\n\u000f/types.MsgEmpty",
           "gas_wanted": "-1",
           "gas_used": "255817",
           "events": [
@@ -4500,7 +4486,6 @@
         },
         "result": {
           "code": 0,
-          "data": "\u0012\u0011\n\u000f/types.MsgEmpty",
           "gas_wanted": "-1",
           "gas_used": "133590",
           "events": [
@@ -4865,7 +4850,6 @@
         },
         "result": {
           "code": 0,
-          "data": "\u0012\u0011\n\u000f/types.MsgEmpty",
           "gas_wanted": "-1",
           "gas_used": "134585",
           "events": [
@@ -5230,7 +5214,6 @@
         },
         "result": {
           "code": 0,
-          "data": "\u0012\u0011\n\u000f/types.MsgEmpty",
           "gas_wanted": "-1",
           "gas_used": "131163",
           "events": [
@@ -5595,7 +5578,6 @@
         },
         "result": {
           "code": 0,
-          "data": "\u0012\u0011\n\u000f/types.MsgEmpty",
           "gas_wanted": "-1",
           "gas_used": "134459",
           "events": [
@@ -5960,7 +5942,6 @@
         },
         "result": {
           "code": 0,
-          "data": "\u0012\u0011\n\u000f/types.MsgEmpty",
           "gas_wanted": "-1",
           "gas_used": "131765",
           "events": [
@@ -6325,7 +6306,6 @@
         },
         "result": {
           "code": 0,
-          "data": "\u0012\u0011\n\u000f/types.MsgEmpty",
           "gas_wanted": "-1",
           "gas_used": "133145",
           "events": [
@@ -6646,7 +6626,6 @@
         },
         "result": {
           "code": 0,
-          "data": "\u0012\u0011\n\u000f/types.MsgEmpty",
           "gas_wanted": "-1",
           "gas_used": "133749",
           "events": [

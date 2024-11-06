@@ -375,7 +375,6 @@
         },
         "result": {
           "code": 0,
-          "data": "\u0012\u0011\n\u000f/types.MsgEmpty",
           "gas_wanted": "-1",
           "gas_used": "194807",
           "events": [
@@ -636,7 +635,6 @@
         },
         "result": {
           "code": 0,
-          "data": "\u0012\u0011\n\u000f/types.MsgEmpty",
           "gas_wanted": "-1",
           "gas_used": "36650",
           "events": [
@@ -715,7 +713,6 @@
         },
         "result": {
           "code": 0,
-          "data": "\u0012\u0011\n\u000f/types.MsgEmpty",
           "gas_wanted": "-1",
           "gas_used": "36650",
           "events": [
@@ -1075,7 +1072,6 @@
         },
         "result": {
           "code": 0,
-          "data": "\u0012\u0011\n\u000f/types.MsgEmpty",
           "gas_wanted": "-1",
           "gas_used": "181953",
           "events": [
@@ -1429,7 +1425,6 @@
         },
         "result": {
           "code": 0,
-          "data": "\u0012\u0011\n\u000f/types.MsgEmpty",
           "gas_wanted": "-1",
           "gas_used": "184395",
           "events": [

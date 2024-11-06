@@ -3054,6 +3054,13 @@ func (qs queryServer) queryBlock(ctx cosmos.Context, _ *types.QueryBlockRequest)
 
 		resultTx := results.TxsResults[i]
 
+		// Attempt to unmarshal the tx result's data, if it of type MsgEmpty, don't include it as it's not useful
+		var emptyMsg types.MsgEmpty
+		err = qs.mgr.cdc.UnmarshalInterface(resultTx.Data, &emptyMsg)
+		if err == nil {
+			resultTx.Data = nil
+		}
+
 		res.Txs[i] = &types.QueryBlockTx{
 			Tx:   etx,
 			Hash: strings.ToUpper(hex.EncodeToString(tx.Hash())),
