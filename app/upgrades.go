@@ -29,7 +29,6 @@ func (app *THORChainApp) RegisterUpgradeHandlers() {
 		Codec:                 app.appCodec,
 		GetStoreKey:           app.GetKey,
 	}
-	app.GetStoreKeys()
 	// register all upgrade handlers
 	for _, upgrade := range Upgrades {
 		app.UpgradeKeeper.SetUpgradeHandler(
