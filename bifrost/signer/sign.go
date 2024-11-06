@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"sync"
 	"time"
-	
+
 	sdktypes "github.com/cosmos/cosmos-sdk/types"
 
 	"github.com/btcsuite/btcd/btcec"
