@@ -17,7 +17,6 @@ import (
 	"cosmossdk.io/core/appmodule"
 	"cosmossdk.io/log"
 	storetypes "cosmossdk.io/store/types"
-	"cosmossdk.io/x/tx/signing"
 	"cosmossdk.io/x/upgrade"
 	upgradekeeper "cosmossdk.io/x/upgrade/keeper"
 	upgradetypes "cosmossdk.io/x/upgrade/types"
@@ -30,7 +29,6 @@ import (
 	"github.com/cosmos/cosmos-sdk/client/grpc/cmtservice"
 	nodeservice "github.com/cosmos/cosmos-sdk/client/grpc/node"
 	"github.com/cosmos/cosmos-sdk/codec"
-	"github.com/cosmos/cosmos-sdk/codec/address"
 	"github.com/cosmos/cosmos-sdk/codec/types"
 	"github.com/cosmos/cosmos-sdk/runtime"
 	runtimeservices "github.com/cosmos/cosmos-sdk/runtime/services"
@@ -73,6 +71,7 @@ import (
 	"github.com/cosmos/gogoproto/proto"
 	"github.com/spf13/cast"
 
+	appparams "gitlab.com/thorchain/thornode/app/params"
 	"gitlab.com/thorchain/thornode/openapi"
 	"gitlab.com/thorchain/thornode/x/thorchain"
 	thorchainkeeper "gitlab.com/thorchain/thornode/x/thorchain/keeper"
@@ -158,43 +157,10 @@ func NewChainApp(
 	appOpts servertypes.AppOptions,
 	baseAppOptions ...func(*baseapp.BaseApp),
 ) *THORChainApp {
-	interfaceRegistrySigningOptions := signing.Options{
-		AddressCodec: address.Bech32Codec{
-			Bech32Prefix: sdk.GetConfig().GetBech32AccountAddrPrefix(),
-		},
-		ValidatorAddressCodec: address.Bech32Codec{
-			Bech32Prefix: sdk.GetConfig().GetBech32ValidatorAddrPrefix(),
-		},
-	}
-	thorchain.DefineCustomGetSigners(&interfaceRegistrySigningOptions)
-	interfaceRegistry, err := types.NewInterfaceRegistryWithOptions(types.InterfaceRegistryOptions{
-		ProtoFiles:     proto.HybridResolver,
-		SigningOptions: interfaceRegistrySigningOptions,
-	})
-	if err != nil {
-		panic(err)
-	}
-	appCodec := codec.NewProtoCodec(interfaceRegistry)
-	legacyAmino := codec.NewLegacyAmino()
-	txSigningOptions, err := tx.NewDefaultSigningOptions()
-	if err != nil {
-		panic(err)
-	}
+	ec := appparams.MakeEncodingConfig()
 
-	thorchain.DefineCustomGetSigners(txSigningOptions)
-	txConfigOpts := tx.ConfigOptions{
-		EnabledSignModes: authtx.DefaultSignModes,
-		SigningOptions:   txSigningOptions,
-	}
-	txConfig, err := tx.NewTxConfigWithOptions(
-		appCodec,
-		txConfigOpts,
-	)
-	if err != nil {
-		panic(err)
-	}
-	std.RegisterLegacyAminoCodec(legacyAmino)
-	std.RegisterInterfaces(interfaceRegistry)
+	std.RegisterLegacyAminoCodec(ec.Amino)
+	std.RegisterInterfaces(ec.InterfaceRegistry)
 
 	// Below we could construct and set an application specific mempool and
 	// ABCI 1.0 PrepareProposal and ProcessProposal handlers. These defaults are
@@ -229,12 +195,12 @@ func NewChainApp(
 	// }
 	// baseAppOptions = append(baseAppOptions, voteExtOp)
 
-	bApp := baseapp.NewBaseApp(appName, logger, db, txConfig.TxDecoder(), baseAppOptions...)
+	bApp := baseapp.NewBaseApp(appName, logger, db, ec.TxConfig.TxDecoder(), baseAppOptions...)
 	bApp.SetCommitMultiStoreTracer(traceStore)
 	bApp.SetVersion(version.Version)
-	bApp.SetInterfaceRegistry(interfaceRegistry)
+	bApp.SetInterfaceRegistry(ec.InterfaceRegistry)
 
-	bApp.SetTxEncoder(txConfig.TxEncoder())
+	bApp.SetTxEncoder(ec.TxConfig.TxEncoder())
 
 	keys := storetypes.NewKVStoreKeys(
 		authtypes.StoreKey, banktypes.StoreKey,
@@ -250,30 +216,30 @@ func NewChainApp(
 	tkeys := storetypes.NewTransientStoreKeys(paramstypes.TStoreKey)
 
 	// register streaming services
-	if err = bApp.RegisterStreamingServices(appOpts, keys); err != nil {
+	if err := bApp.RegisterStreamingServices(appOpts, keys); err != nil {
 		panic(err)
 	}
 
 	app := &THORChainApp{
 		BaseApp:           bApp,
-		legacyAmino:       legacyAmino,
-		appCodec:          appCodec,
-		txConfig:          txConfig,
-		interfaceRegistry: interfaceRegistry,
+		legacyAmino:       ec.Amino,
+		appCodec:          ec.Codec,
+		txConfig:          ec.TxConfig,
+		interfaceRegistry: ec.InterfaceRegistry,
 		keys:              keys,
 		tkeys:             tkeys,
 	}
 
 	app.ParamsKeeper = initParamsKeeper(
-		appCodec,
-		legacyAmino,
+		app.appCodec,
+		app.legacyAmino,
 		keys[paramstypes.StoreKey],
 		tkeys[paramstypes.TStoreKey],
 	)
 
 	// set the BaseApp's parameter store
 	app.ConsensusParamsKeeper = consensusparamkeeper.NewKeeper(
-		appCodec,
+		app.appCodec,
 		runtime.NewKVStoreService(keys[consensusparamtypes.StoreKey]),
 		authtypes.NewModuleAddress(thorchain.ModuleName).String(),
 		runtime.EventService{},
@@ -283,7 +249,7 @@ func NewChainApp(
 	// add keepers
 
 	app.AccountKeeper = authkeeper.NewAccountKeeper(
-		appCodec,
+		app.appCodec,
 		runtime.NewKVStoreService(keys[authtypes.StoreKey]),
 		authtypes.ProtoBaseAccount,
 		maccPerms,
@@ -292,7 +258,7 @@ func NewChainApp(
 		authtypes.NewModuleAddress(thorchain.ModuleName).String(),
 	)
 	app.BankKeeper = bankkeeper.NewBaseKeeper(
-		appCodec,
+		app.appCodec,
 		runtime.NewKVStoreService(keys[banktypes.StoreKey]),
 		app.AccountKeeper,
 		BlockedAddresses(),
@@ -303,13 +269,18 @@ func NewChainApp(
 	// enable sign mode textual by overwriting the default tx config (after setting the bank keeper)
 	enabledSignModes := tx.DefaultSignModes
 	enabledSignModes = append(enabledSignModes, signingtype.SignMode_SIGN_MODE_TEXTUAL)
-	txConfigOpts = tx.ConfigOptions{
+	txSigningOptions, err := tx.NewDefaultSigningOptions()
+	if err != nil {
+		panic(err)
+	}
+	thorchain.DefineCustomGetSigners(txSigningOptions)
+	txConfigOpts := tx.ConfigOptions{
 		EnabledSignModes:           enabledSignModes,
 		TextualCoinMetadataQueryFn: txmodule.NewBankKeeperCoinMetadataQueryFn(app.BankKeeper),
 		SigningOptions:             txSigningOptions,
 	}
-	txConfig, err = tx.NewTxConfigWithOptions(
-		appCodec,
+	txConfig, err := tx.NewTxConfigWithOptions(
+		app.appCodec,
 		txConfigOpts,
 	)
 	if err != nil {
@@ -318,7 +289,7 @@ func NewChainApp(
 	app.txConfig = txConfig
 
 	app.StakingKeeper = stakingkeeper.NewKeeper(
-		appCodec,
+		app.appCodec,
 		runtime.NewKVStoreService(keys[stakingtypes.StoreKey]),
 		app.AccountKeeper,
 		app.BankKeeper,
@@ -327,7 +298,7 @@ func NewChainApp(
 		authcodec.NewBech32Codec(sdk.GetConfig().GetBech32ConsensusAddrPrefix()),
 	)
 	app.MintKeeper = mintkeeper.NewKeeper(
-		appCodec,
+		app.appCodec,
 		runtime.NewKVStoreService(keys[minttypes.StoreKey]),
 		app.StakingKeeper,
 		app.AccountKeeper,
@@ -346,14 +317,14 @@ func NewChainApp(
 	app.UpgradeKeeper = upgradekeeper.NewKeeper(
 		skipUpgradeHeights,
 		runtime.NewKVStoreService(keys[upgradetypes.StoreKey]),
-		appCodec,
+		app.appCodec,
 		homePath,
 		app.BaseApp,
 		authtypes.NewModuleAddress(thorchain.ModuleName).String(),
 	)
 
 	app.ThorchainKeeper = thorchainkeeperv1.NewKeeper(
-		appCodec, app.BankKeeper, app.AccountKeeper, app.UpgradeKeeper, keys[thorchaintypes.StoreKey],
+		app.appCodec, app.BankKeeper, app.AccountKeeper, app.UpgradeKeeper, keys[thorchaintypes.StoreKey],
 	)
 
 	// --- Module Options ---
@@ -362,12 +333,12 @@ func NewChainApp(
 
 	// NOTE: Any module instantiated in the module manager that is later modified
 	// must be passed by reference here.
-	authModule := auth.NewAppModule(appCodec, app.AccountKeeper, authsims.RandomGenesisAccounts, app.GetSubspace(authtypes.ModuleName))
-	bankModule := bank.NewAppModule(appCodec, app.BankKeeper, app.AccountKeeper, app.GetSubspace(banktypes.ModuleName))
-	consensusModule := consensus.NewAppModule(appCodec, app.ConsensusParamsKeeper)
+	authModule := auth.NewAppModule(app.appCodec, app.AccountKeeper, authsims.RandomGenesisAccounts, app.GetSubspace(authtypes.ModuleName))
+	bankModule := bank.NewAppModule(app.appCodec, app.BankKeeper, app.AccountKeeper, app.GetSubspace(banktypes.ModuleName))
+	consensusModule := consensus.NewAppModule(app.appCodec, app.ConsensusParamsKeeper)
 	genutilModule := genutil.NewAppModule(app.AccountKeeper, app.StakingKeeper, app, txConfig)
 	paramsModule := params.NewAppModule(app.ParamsKeeper)
-	thorchainModule := thorchain.NewAppModule(app.ThorchainKeeper, appCodec, app.BankKeeper, app.AccountKeeper, app.UpgradeKeeper, keys[thorchaintypes.StoreKey], telemetryEnabled, testApp)
+	thorchainModule := thorchain.NewAppModule(app.ThorchainKeeper, app.appCodec, app.BankKeeper, app.AccountKeeper, app.UpgradeKeeper, keys[thorchaintypes.StoreKey], telemetryEnabled, testApp)
 	upgradeModule := upgrade.NewAppModule(app.UpgradeKeeper, app.AccountKeeper.AddressCodec())
 
 	app.ModuleManager = module.NewManager(
@@ -392,12 +363,12 @@ func NewChainApp(
 		upgradeModule,
 		paramsModule,
 		consensusModule,
-		mint.NewAppModule(appCodec, app.MintKeeper, app.AccountKeeper, nil, app.GetSubspace(minttypes.ModuleName)),
+		mint.NewAppModule(app.appCodec, app.MintKeeper, app.AccountKeeper, nil, app.GetSubspace(minttypes.ModuleName)),
 		// non sdk modules
 		thorchainModule,
 	)
-	app.BasicModuleManager.RegisterLegacyAminoCodec(legacyAmino)
-	app.BasicModuleManager.RegisterInterfaces(interfaceRegistry)
+	app.BasicModuleManager.RegisterLegacyAminoCodec(app.legacyAmino)
+	app.BasicModuleManager.RegisterInterfaces(app.interfaceRegistry)
 
 	// NOTE: upgrade module is required to be prioritized
 	app.ModuleManager.SetOrderPreBlockers(
