@@ -301,7 +301,8 @@ func NewChainApp(
 	)
 
 	// enable sign mode textual by overwriting the default tx config (after setting the bank keeper)
-	enabledSignModes := append(tx.DefaultSignModes, signingtype.SignMode_SIGN_MODE_TEXTUAL)
+	enabledSignModes := tx.DefaultSignModes
+	enabledSignModes = append(enabledSignModes, signingtype.SignMode_SIGN_MODE_TEXTUAL)
 	txConfigOpts = tx.ConfigOptions{
 		EnabledSignModes:           enabledSignModes,
 		TextualCoinMetadataQueryFn: txmodule.NewBankKeeperCoinMetadataQueryFn(app.BankKeeper),
