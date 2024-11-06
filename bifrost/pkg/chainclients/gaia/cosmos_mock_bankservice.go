@@ -12,8 +12,10 @@ import (
 type MockBankServiceClient interface {
 	// Balance queries the balance of a single coin for a single account.
 	Balance(ctx context.Context, in *btypes.QueryBalanceRequest, opts ...grpc.CallOption) (*btypes.QueryBalanceResponse, error)
+
 	// AllBalances queries the balance of all coins for a single account.
 	AllBalances(ctx context.Context, in *btypes.QueryAllBalancesRequest, opts ...grpc.CallOption) (*btypes.QueryAllBalancesResponse, error)
+
 	// SpendableBalances queries the spendable balance of all coins for a single
 	// account.
 	//
@@ -22,6 +24,7 @@ type MockBankServiceClient interface {
 	//
 	// Since: cosmos-sdk 0.46
 	SpendableBalances(ctx context.Context, in *btypes.QuerySpendableBalancesRequest, opts ...grpc.CallOption) (*btypes.QuerySpendableBalancesResponse, error)
+
 	// SpendableBalanceByDenom queries the spendable balance of a single denom for
 	// a single account.
 	//
@@ -30,18 +33,25 @@ type MockBankServiceClient interface {
 	//
 	// Since: cosmos-sdk 0.47
 	SpendableBalanceByDenom(ctx context.Context, in *btypes.QuerySpendableBalanceByDenomRequest, opts ...grpc.CallOption) (*btypes.QuerySpendableBalanceByDenomResponse, error)
+
 	// TotalSupply queries the total supply of all coins.
 	TotalSupply(ctx context.Context, in *btypes.QueryTotalSupplyRequest, opts ...grpc.CallOption) (*btypes.QueryTotalSupplyResponse, error)
+
 	// SupplyOf queries the supply of a single coin.
 	SupplyOf(ctx context.Context, in *btypes.QuerySupplyOfRequest, opts ...grpc.CallOption) (*btypes.QuerySupplyOfResponse, error)
+
 	// Params queries the parameters of x/bank module.
 	Params(ctx context.Context, in *btypes.QueryParamsRequest, opts ...grpc.CallOption) (*btypes.QueryParamsResponse, error)
+
 	// DenomsMetadata queries the client metadata of a given coin denomination.
 	DenomMetadata(ctx context.Context, in *btypes.QueryDenomMetadataRequest, opts ...grpc.CallOption) (*btypes.QueryDenomMetadataResponse, error)
+
 	// DenomsMetadata queries the client metadata for all registered coin denominations.
 	DenomsMetadata(ctx context.Context, in *btypes.QueryDenomsMetadataRequest, opts ...grpc.CallOption) (*btypes.QueryDenomsMetadataResponse, error)
+
 	// DenomMetadataByQueryString queries the client metadata of a given coin denomination.
 	DenomMetadataByQueryString(ctx context.Context, in *btypes.QueryDenomMetadataByQueryStringRequest, opts ...grpc.CallOption) (*btypes.QueryDenomMetadataByQueryStringResponse, error)
+
 	// DenomOwners queries for all account addresses that own a particular token
 	// denomination.
 	//
@@ -50,11 +60,13 @@ type MockBankServiceClient interface {
 	//
 	// Since: cosmos-sdk 0.46
 	DenomOwners(ctx context.Context, in *btypes.QueryDenomOwnersRequest, opts ...grpc.CallOption) (*btypes.QueryDenomOwnersResponse, error)
+
 	// DenomOwnersByQuery queries for all account addresses that own a particular token
 	// denomination.
 	//
 	// Since: cosmos-sdk 0.50.3
 	DenomOwnersByQuery(ctx context.Context, in *btypes.QueryDenomOwnersByQueryRequest, opts ...grpc.CallOption) (*btypes.QueryDenomOwnersByQueryResponse, error)
+
 	// SendEnabled queries for SendEnabled entries.
 	//
 	// This query only returns denominations that have specific SendEnabled settings.

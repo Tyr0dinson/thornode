@@ -18,8 +18,10 @@ type MockAccountServiceClient interface {
 	//
 	// Since: cosmos-sdk 0.43
 	Accounts(ctx context.Context, in *atypes.QueryAccountsRequest, opts ...grpc.CallOption) (*atypes.QueryAccountsResponse, error)
+
 	// Account returns account details based on address.
 	Account(ctx context.Context, in *atypes.QueryAccountRequest, opts ...grpc.CallOption) (*atypes.QueryAccountResponse, error)
+
 	// AccountAddressByID returns account address based on account number.
 	//
 	// Since: cosmos-sdk 0.46.2
@@ -27,23 +29,29 @@ type MockAccountServiceClient interface {
 
 	// Params queries all parameters.
 	Params(ctx context.Context, in *atypes.QueryParamsRequest, opts ...grpc.CallOption) (*atypes.QueryParamsResponse, error)
+
 	// ModuleAccounts returns all the existing module accounts.
 	//
 	// Since: cosmos-sdk 0.46
 	ModuleAccounts(ctx context.Context, in *atypes.QueryModuleAccountsRequest, opts ...grpc.CallOption) (*atypes.QueryModuleAccountsResponse, error)
+
 	ModuleAccountByName(ctx context.Context, in *atypes.QueryModuleAccountByNameRequest, opts ...grpc.CallOption) (*atypes.QueryModuleAccountByNameResponse, error)
+
 	// Bech32Prefix queries bech32Prefix
 	//
 	// Since: cosmos-sdk 0.46
 	Bech32Prefix(ctx context.Context, in *atypes.Bech32PrefixRequest, opts ...grpc.CallOption) (*atypes.Bech32PrefixResponse, error)
+
 	// AddressBytesToString converts Account Address bytes to string
 	//
 	// Since: cosmos-sdk 0.46
 	AddressBytesToString(ctx context.Context, in *atypes.AddressBytesToStringRequest, opts ...grpc.CallOption) (*atypes.AddressBytesToStringResponse, error)
+
 	// AddressStringToBytes converts Address string to bytes
 	//
 	// Since: cosmos-sdk 0.46
 	AddressStringToBytes(ctx context.Context, in *atypes.AddressStringToBytesRequest, opts ...grpc.CallOption) (*atypes.AddressStringToBytesResponse, error)
+
 	// AccountInfo queries account info which is common to all account types.
 	//
 	// Since: cosmos-sdk 0.47

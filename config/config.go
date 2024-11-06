@@ -410,11 +410,6 @@ type Thornode struct {
 		Peers []string `mapstructure:"peers"`
 	} `mapstructure:"auto_state_sync"`
 
-	API struct {
-		LimitCount    float64       `mapstructure:"limit_count"`
-		LimitDuration time.Duration `mapstructure:"limit_duration"`
-	} `mapstructure:"api"`
-
 	// Cosmos contains values used in templating the Cosmos app.toml.
 	Cosmos struct {
 		Pruning         string `mapstructure:"pruning"`

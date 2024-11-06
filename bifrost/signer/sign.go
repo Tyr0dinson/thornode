@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+	
+	sdktypes "github.com/cosmos/cosmos-sdk/types"
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/cenkalti/backoff"
@@ -76,9 +78,10 @@ func NewSigner(cfg config.BifrostSignerConfiguration,
 	}
 	var na *ttypes.NodeAccount
 	for i := 0; i < 300; i++ { // wait for 5 min before timing out
-		signerAddr, err2 := thorKeys.GetSignerInfo().GetAddress()
-		if err2 != nil {
-			return nil, fmt.Errorf("failed to get address from thorKeys signer: %w", err2)
+		var signerAddr sdktypes.AccAddress
+		signerAddr, err = thorKeys.GetSignerInfo().GetAddress()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get address from thorKeys signer: %w", err)
 		}
 		na, err = thorchainBridge.GetNodeAccount(signerAddr.String())
 		if err != nil {
