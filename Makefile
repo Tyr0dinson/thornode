@@ -341,6 +341,15 @@ docker-gitlab-build:
 		--build-arg COMMIT=$(COMMIT) \
 		--build-arg TAG=$(BUILDTAG)
 
+local-image:
+ifeq (,$(shell which heighliner))
+	echo 'heighliner' binary not found. Consider running `go install github.com/strangelove-ventures/heighliner@latest`
+else
+	heighliner build -c thorchain --local -f chains.yaml
+endif
+
+.PHONY: get-heighliner local-image
+
 ########################################################################################
 # Tools
 ########################################################################################
@@ -360,3 +369,15 @@ events-build:
 events-gitlab-push: docker-gitlab-login
 	@./build/docker/semver_tags.sh registry.gitlab.com/thorchain/thornode events-${BRANCH} $(shell cat version) \
 		| xargs -n1 | grep registry | xargs -n1 docker push
+
+########################################################################################
+# Interchaintest
+########################################################################################
+
+ictest-sim:
+	@echo "Running interchaintest sim test"
+	@cd test/ictest && go test -race -timeout 30m -v -run TestThorchainSim . -count 1
+
+ictest-upgrade:
+	@echo "Running interchaintest upgrade test"
+	@cd test/ictest && go test -race -timeout 30m -v -run TestUpgrade136to137 . -count 1
