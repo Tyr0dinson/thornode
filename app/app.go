@@ -136,7 +136,6 @@ type THORChainApp struct {
 	ConsensusParamsKeeper consensusparamkeeper.Keeper
 
 	ThorchainKeeper thorchainkeeper.Keeper
-	ThorchainModule thorchain.AppModule
 
 	// the module manager
 	ModuleManager      *module.Manager
@@ -368,7 +367,7 @@ func NewChainApp(
 	consensusModule := consensus.NewAppModule(appCodec, app.ConsensusParamsKeeper)
 	genutilModule := genutil.NewAppModule(app.AccountKeeper, app.StakingKeeper, app, txConfig)
 	paramsModule := params.NewAppModule(app.ParamsKeeper)
-	app.ThorchainModule = thorchain.NewAppModule(app.ThorchainKeeper, appCodec, app.BankKeeper, app.AccountKeeper, app.UpgradeKeeper, keys[thorchaintypes.StoreKey], telemetryEnabled, testApp)
+	thorchainModule := thorchain.NewAppModule(app.ThorchainKeeper, appCodec, app.BankKeeper, app.AccountKeeper, app.UpgradeKeeper, keys[thorchaintypes.StoreKey], telemetryEnabled, testApp)
 	upgradeModule := upgrade.NewAppModule(app.UpgradeKeeper, app.AccountKeeper.AddressCodec())
 
 	app.ModuleManager = module.NewManager(
@@ -379,7 +378,7 @@ func NewChainApp(
 		paramsModule,
 		consensusModule,
 		// non sdk modules
-		app.ThorchainModule,
+		thorchainModule,
 	)
 
 	// BasicModuleManager defines the module BasicManager is in charge of setting up basic,
@@ -395,7 +394,7 @@ func NewChainApp(
 		consensusModule,
 		mint.NewAppModule(appCodec, app.MintKeeper, app.AccountKeeper, nil, app.GetSubspace(minttypes.ModuleName)),
 		// non sdk modules
-		app.ThorchainModule,
+		thorchainModule,
 	)
 	app.BasicModuleManager.RegisterLegacyAminoCodec(legacyAmino)
 	app.BasicModuleManager.RegisterInterfaces(interfaceRegistry)
