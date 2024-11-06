@@ -1,16 +1,23 @@
 #!/bin/bash
 
-# Start test validator
-solana-test-validator --ledger /tmp/test-ledger --reset --log --limit-ledger-size --url http://localhost:8899 &
+set -e
 
-# Wait for the validator to be ready
-sleep 10
+# Start test validator
+solana-test-validator --ledger /tmp/test-ledger --reset --limit-ledger-size --url http://localhost:8899
 
 # Check if the validator is running
-until solana cluster-version; do
-  echo "Waiting for the validator to be fully up..."
+echo "Waiting for the Solana validator to be fully up..."
+RETRIES=10
+while ! solana cluster-version; do
+  if [ $RETRIES -le 0 ]; then
+    echo "Validator failed to start after multiple attempts."
+    exit 1
+  fi
+  echo "Validator not ready yet. Retrying in 5 seconds..."
+  RETRIES=$((RETRIES-1))
   sleep 5
 done
+echo "Validator is ready and reachable."
 
 # Set local URL for Solana CLI
 solana config set --url http://localhost:$RPC_PORT
@@ -24,5 +31,13 @@ fi
 # Set the generated keypair as the default wallet (CLI needs this to interact with the network)
 solana config set --keypair $TEMP_KEYPAIR
 
-# Airdrop to master account
-solana airdrop 10000 AAH1XhfycX678et7Pjvwp1DMWnHpSP92wpJwV19MXHtX
+# Display current Solana CLI configuration for verification
+solana config get
+
+# Perform airdrop to specified address with configurable amount
+echo "Airdropping $AIRDROP_AMOUNT SOL to address $AIRDROP_ADDRESS..."
+solana airdrop "$AIRDROP_AMOUNT" "$AIRDROP_ADDRESS"
+
+rm $TEMP_KEYPAIR
+
+echo "Solana test validator setup complete and airdrop successful."

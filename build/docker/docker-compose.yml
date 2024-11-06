@@ -520,6 +520,7 @@ services:
       RPC_PORT: "9650"
 
   # ------------------------------ solana ------------------------------
+
   solana:
     profiles:
       - mocknet
@@ -536,3 +537,5 @@ services:
       - 8900:8900
     environment:
       RPC_PORT: "8899"
+      AIRDROP_ADDRESS: "AAH1XhfycX678et7Pjvwp1DMWnHpSP92wpJwV19MXHtX"
+      AIRDROP_AMOUNT: "10000"
