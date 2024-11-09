@@ -35,9 +35,6 @@ func NewRootCmd() *cobra.Command {
 	cfg.SetCoinType(prefix.THORChainCoinType)
 	cfg.SetPurpose(prefix.THORChainCoinPurpose)
 	cfg.Seal()
-	sdk.SetCoinDenomRegex(func() string {
-		return prefix.DenomRegex
-	})
 	// we "pre"-instantiate the application for getting the injected/configured encoding configuration
 	// note, this is not necessary when using app wiring, as depinject can be directly used (see root_v2.go)
 	tempApp := app.NewChainApp(

@@ -12,7 +12,6 @@ import (
 	"github.com/blang/semver"
 	"github.com/cometbft/cometbft/crypto"
 	"github.com/cosmos/cosmos-sdk/codec"
-	"github.com/cosmos/cosmos-sdk/types"
 	simtypes "github.com/cosmos/cosmos-sdk/types/simulation"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
@@ -210,9 +209,6 @@ func SetupConfigForTest() {
 	config.SetBech32PrefixForConsensusNode(cmd.Bech32PrefixConsAddr, cmd.Bech32PrefixConsPub)
 	config.SetCoinType(cmd.THORChainCoinType)
 	config.SetPurpose(cmd.THORChainCoinPurpose)
-	types.SetCoinDenomRegex(func() string {
-		return cmd.DenomRegex
-	})
 }
 
 // create a codec used only for testing
