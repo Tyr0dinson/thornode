@@ -177,6 +177,7 @@ asserts:
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/quote/loan/open
+status: 400
 params:
   from_asset: BTC~BTC
   amount: 500000
