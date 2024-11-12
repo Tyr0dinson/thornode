@@ -22,6 +22,11 @@ var CosmosAssetMappings = []CosmosAssetMapping{
 		THORChainSymbol: "KUJI",
 	},
 	{
+		CosmosDenom:     "ibc/50A69DC508ACCADE2DAC4B8B09AA6D9C9062FCBFA72BB4C6334367DECD972B06",
+		CosmosDecimals:  6,
+		THORChainSymbol: "RKUJI",
+	},
+	{
 		CosmosDenom:     "ibc/6BBBB4B63C51648E9B8567F34505A9D5D8BAAC4C31D768971998BE8C18431C26",
 		CosmosDecimals:  6,
 		THORChainSymbol: "FUZN",
