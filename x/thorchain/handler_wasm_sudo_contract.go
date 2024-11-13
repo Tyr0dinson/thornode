@@ -53,7 +53,6 @@ func (h WasmSudoContractHandler) validate(ctx cosmos.Context, msg wasmtypes.MsgS
 func (h WasmSudoContractHandler) validateV137(ctx cosmos.Context, msg wasmtypes.MsgSudoContract) error {
 	// ValidateBasic is executed in message service router
 	// Removed for clarity that it is not versioned
-
 	return nil
 }
 
@@ -72,7 +71,7 @@ func (h WasmSudoContractHandler) handleV137(ctx cosmos.Context, msg wasmtypes.Ms
 	if h.mgr.Keeper().IsChainHalted(ctx, common.THORChain) {
 		return nil, fmt.Errorf("unable to use MsgSudoContract while THORChain is halted")
 	}
-	_, err := h.mgr.WasmManager().Sudo(ctx, &msg)
+	_, err := h.mgr.WasmManager().SudoContract(ctx, &msg)
 	if err != nil {
 		return &cosmos.Result{}, err
 	}

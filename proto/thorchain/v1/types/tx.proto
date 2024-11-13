@@ -53,24 +53,7 @@ service Msg {
         returns (cosmwasm.wasm.v1.MsgInstantiateContract2Response);
     rpc ExecuteContract(cosmwasm.wasm.v1.MsgExecuteContract) returns (cosmwasm.wasm.v1.MsgExecuteContractResponse);
     rpc MigrateContract(cosmwasm.wasm.v1.MsgMigrateContract) returns (cosmwasm.wasm.v1.MsgMigrateContractResponse);
-    rpc UpdateAdmin(cosmwasm.wasm.v1.MsgUpdateAdmin) returns (cosmwasm.wasm.v1.MsgUpdateAdminResponse);
-    rpc ClearAdmin(cosmwasm.wasm.v1.MsgClearAdmin) returns (cosmwasm.wasm.v1.MsgClearAdminResponse);
-    rpc UpdateInstantiateConfig(cosmwasm.wasm.v1.MsgUpdateInstantiateConfig)
-        returns (cosmwasm.wasm.v1.MsgUpdateInstantiateConfigResponse);
-    rpc UpdateParams(cosmwasm.wasm.v1.MsgUpdateParams) returns (cosmwasm.wasm.v1.MsgUpdateParamsResponse);
     rpc SudoContract(cosmwasm.wasm.v1.MsgSudoContract) returns (cosmwasm.wasm.v1.MsgSudoContractResponse);
-    rpc PinCodes(cosmwasm.wasm.v1.MsgPinCodes) returns (cosmwasm.wasm.v1.MsgPinCodesResponse);
-    rpc UnpinCodes(cosmwasm.wasm.v1.MsgUnpinCodes) returns (cosmwasm.wasm.v1.MsgUnpinCodesResponse);
-    rpc StoreAndInstantiateContract(cosmwasm.wasm.v1.MsgStoreAndInstantiateContract)
-        returns (cosmwasm.wasm.v1.MsgStoreAndInstantiateContractResponse);
-    rpc RemoveCodeUploadParamsAddresses(cosmwasm.wasm.v1.MsgRemoveCodeUploadParamsAddresses)
-        returns (cosmwasm.wasm.v1.MsgRemoveCodeUploadParamsAddressesResponse);
-    rpc AddCodeUploadParamsAddresses(cosmwasm.wasm.v1.MsgAddCodeUploadParamsAddresses)
-        returns (cosmwasm.wasm.v1.MsgAddCodeUploadParamsAddressesResponse);
-    rpc StoreAndMigrateContract(cosmwasm.wasm.v1.MsgStoreAndMigrateContract)
-        returns (cosmwasm.wasm.v1.MsgStoreAndMigrateContractResponse);
-    rpc UpdateContractLabel(cosmwasm.wasm.v1.MsgUpdateContractLabel)
-        returns (cosmwasm.wasm.v1.MsgUpdateContractLabelResponse);
 }
 
 // MsgEmpty is the return type for all current Msg Server messages

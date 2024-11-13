@@ -133,9 +133,23 @@ type PoolManager interface {
 }
 
 type WasmManager interface {
-	wasmtypes.MsgServer
-	Sudo(ctx cosmos.Context, msg *wasmtypes.MsgSudoContract,
-	) (*wasmtypes.MsgSudoContractResponse, error)
+	// StoreCode to submit Wasm code to the system
+	StoreCode(ctx cosmos.Context, msg *wasmtypes.MsgStoreCode) (*wasmtypes.MsgStoreCodeResponse, error)
+	//  InstantiateContract creates a new smart contract instance for the given
+	//  code id.
+	InstantiateContract(ctx cosmos.Context, msg *wasmtypes.MsgInstantiateContract) (*wasmtypes.MsgInstantiateContractResponse, error)
+	//  InstantiateContract2 creates a new smart contract instance for the given
+	//  code id with a predictable address
+	InstantiateContract2(ctx cosmos.Context, msg *wasmtypes.MsgInstantiateContract2) (*wasmtypes.MsgInstantiateContract2Response, error)
+	// Execute submits the given message data to a smart contract
+	ExecuteContract(ctx cosmos.Context, msg *wasmtypes.MsgExecuteContract) (*wasmtypes.MsgExecuteContractResponse, error)
+	// Migrate runs a code upgrade/ downgrade for a smart contract
+	MigrateContract(ctx cosmos.Context, msg *wasmtypes.MsgMigrateContract) (*wasmtypes.MsgMigrateContractResponse, error)
+	// SudoContract defines an operation for calling sudo
+	// on a contract. The authority is verified against deployer permissions.
+	//
+	// Since: 0.40
+	SudoContract(ctx cosmos.Context, msg *wasmtypes.MsgSudoContract) (*wasmtypes.MsgSudoContractResponse, error)
 }
 
 // SwapQueue interface define the contract of Swap Queue

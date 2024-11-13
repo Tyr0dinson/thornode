@@ -1,7 +1,6 @@
 package thorchain
 
 import (
-	"context"
 	"encoding/hex"
 
 	wasmkeeper "github.com/CosmWasm/wasmd/x/wasm/keeper"
@@ -40,51 +39,12 @@ func newWasmMgrVCUR(keeper keeper.Keeper, wasmKeeper wasmkeeper.Keeper, eventMgr
 	}
 }
 
-func (m *WasmMgrVCUR) Sudo(ctx cosmos.Context, msg *wasmtypes.MsgSudoContract) (*wasmtypes.MsgSudoContractResponse, error) {
-	sdkCtx := sdk.UnwrapSDKContext(ctx)
-
-	if err := m.checkHalt(sdkCtx); err != nil {
-		return nil, err
-	}
-
-	if err := msg.ValidateBasic(); err != nil {
-		return nil, err
-	}
-	senderAddr, err := sdk.AccAddressFromBech32(msg.Authority)
-	if err != nil {
-		return nil, errorsmod.Wrap(err, "authority")
-	}
-
-	contractAddr, err := sdk.AccAddressFromBech32(msg.Contract)
-	if err != nil {
-		return nil, errorsmod.Wrap(err, "contract")
-	}
-
-	contractInfo := m.wasmKeeper.GetContractInfo(sdkCtx, contractAddr)
-	codeInfo := m.wasmKeeper.GetCodeInfo(sdkCtx, contractInfo.CodeID)
-	err = m.checkAuthorization(senderAddr, codeInfo.CodeHash)
-	if err != nil {
-		return nil, err
-	}
-
-	res, err := m.permissionedKeeper().Sudo(sdkCtx, contractAddr, msg.Msg)
-	if err != nil {
-		return nil, err
-	}
-
-	return &wasmtypes.MsgSudoContractResponse{
-		Data: res,
-	}, nil
-}
-
 // StoreCode stores a new wasm code on chain
 func (m WasmMgrVCUR) StoreCode(
-	ctx context.Context,
+	ctx cosmos.Context,
 	msg *wasmtypes.MsgStoreCode,
 ) (*wasmtypes.MsgStoreCodeResponse, error) {
-	sdkCtx := sdk.UnwrapSDKContext(ctx)
-
-	if err := m.checkHalt(sdkCtx); err != nil {
+	if err := m.checkHalt(ctx); err != nil {
 		return nil, err
 	}
 
@@ -97,7 +57,7 @@ func (m WasmMgrVCUR) StoreCode(
 	}
 
 	codeID, checksum, err := m.permissionedKeeper().Create(
-		sdkCtx,
+		ctx,
 		senderAddr,
 		msg.WASMByteCode,
 		msg.InstantiatePermission,
@@ -111,7 +71,7 @@ func (m WasmMgrVCUR) StoreCode(
 		return nil, err
 	}
 
-	if err := m.permissionedKeeper().PinCode(sdkCtx, codeID); err != nil {
+	if err := m.permissionedKeeper().PinCode(ctx, codeID); err != nil {
 		return nil, err
 	}
 
@@ -123,12 +83,10 @@ func (m WasmMgrVCUR) StoreCode(
 
 // InstantiateContract instantiate a new contract with classic sequence based address generation
 func (m WasmMgrVCUR) InstantiateContract(
-	ctx context.Context,
+	ctx cosmos.Context,
 	msg *wasmtypes.MsgInstantiateContract,
 ) (*wasmtypes.MsgInstantiateContractResponse, error) {
-	sdkCtx := sdk.UnwrapSDKContext(ctx)
-
-	if err := m.checkHalt(sdkCtx); err != nil {
+	if err := m.checkHalt(ctx); err != nil {
 		return nil, err
 	}
 
@@ -141,7 +99,7 @@ func (m WasmMgrVCUR) InstantiateContract(
 		return nil, errorsmod.Wrap(err, "sender")
 	}
 
-	codeInfo := m.wasmKeeper.GetCodeInfo(sdkCtx, msg.CodeID)
+	codeInfo := m.wasmKeeper.GetCodeInfo(ctx, msg.CodeID)
 	err = m.checkAuthorization(senderAddr, codeInfo.CodeHash)
 	if err != nil {
 		return nil, err
@@ -155,7 +113,7 @@ func (m WasmMgrVCUR) InstantiateContract(
 	}
 
 	contractAddr, data, err := m.permissionedKeeper().Instantiate(
-		sdkCtx,
+		ctx,
 		msg.CodeID,
 		senderAddr,
 		adminAddr,
@@ -175,12 +133,10 @@ func (m WasmMgrVCUR) InstantiateContract(
 
 // InstantiateContract2 instantiate a new contract with predicatable address generated
 func (m WasmMgrVCUR) InstantiateContract2(
-	ctx context.Context,
+	ctx cosmos.Context,
 	msg *wasmtypes.MsgInstantiateContract2,
 ) (*wasmtypes.MsgInstantiateContract2Response, error) {
-	sdkCtx := sdk.UnwrapSDKContext(ctx)
-
-	if err := m.checkHalt(sdkCtx); err != nil {
+	if err := m.checkHalt(ctx); err != nil {
 		return nil, err
 	}
 
@@ -193,7 +149,7 @@ func (m WasmMgrVCUR) InstantiateContract2(
 		return nil, errorsmod.Wrap(err, "sender")
 	}
 
-	codeInfo := m.wasmKeeper.GetCodeInfo(sdkCtx, msg.CodeID)
+	codeInfo := m.wasmKeeper.GetCodeInfo(ctx, msg.CodeID)
 	err = m.checkAuthorization(senderAddr, codeInfo.CodeHash)
 	if err != nil {
 		return nil, err
@@ -207,7 +163,7 @@ func (m WasmMgrVCUR) InstantiateContract2(
 	}
 
 	contractAddr, data, err := m.permissionedKeeper().Instantiate2(
-		sdkCtx,
+		ctx,
 		msg.CodeID,
 		senderAddr,
 		adminAddr,
@@ -228,12 +184,10 @@ func (m WasmMgrVCUR) InstantiateContract2(
 }
 
 func (m WasmMgrVCUR) ExecuteContract(
-	ctx context.Context,
+	ctx cosmos.Context,
 	msg *wasmtypes.MsgExecuteContract,
 ) (*wasmtypes.MsgExecuteContractResponse, error) {
-	sdkCtx := sdk.UnwrapSDKContext(ctx)
-
-	if err := m.checkHalt(sdkCtx); err != nil {
+	if err := m.checkHalt(ctx); err != nil {
 		return nil, err
 	}
 
@@ -253,19 +207,19 @@ func (m WasmMgrVCUR) ExecuteContract(
 	// The default `Messenger` configured in wasm keeper, used for routing sub-messages, uses
 	// the app's `Router`. Therefore, any SDK submessages that call a contract will route
 	// back through this code path and will be halted where necessary
-	contractInfo := m.wasmKeeper.GetContractInfo(sdkCtx, contractAddr)
-	codeInfo := m.wasmKeeper.GetCodeInfo(sdkCtx, contractInfo.CodeID)
+	contractInfo := m.wasmKeeper.GetContractInfo(ctx, contractAddr)
+	codeInfo := m.wasmKeeper.GetCodeInfo(ctx, contractInfo.CodeID)
 
-	if err := m.checkContractHalt(sdkCtx, contractAddr); err != nil {
+	if err := m.checkContractHalt(ctx, contractAddr); err != nil {
 		return nil, err
 	}
 
-	if err := m.checkChecksumHalt(sdkCtx, codeInfo.CodeHash); err != nil {
+	if err := m.checkChecksumHalt(ctx, codeInfo.CodeHash); err != nil {
 		return nil, err
 	}
 
 	data, err := m.permissionedKeeper().Execute(
-		sdkCtx,
+		ctx,
 		contractAddr,
 		senderAddr,
 		msg.Msg,
@@ -281,12 +235,10 @@ func (m WasmMgrVCUR) ExecuteContract(
 }
 
 func (m WasmMgrVCUR) MigrateContract(
-	ctx context.Context,
+	ctx cosmos.Context,
 	msg *wasmtypes.MsgMigrateContract,
 ) (*wasmtypes.MsgMigrateContractResponse, error) {
-	sdkCtx := sdk.UnwrapSDKContext(ctx)
-
-	if err := m.checkHalt(sdkCtx); err != nil {
+	if err := m.checkHalt(ctx); err != nil {
 		return nil, err
 	}
 
@@ -299,7 +251,7 @@ func (m WasmMgrVCUR) MigrateContract(
 		return nil, errorsmod.Wrap(err, "sender")
 	}
 
-	codeInfo := m.wasmKeeper.GetCodeInfo(sdkCtx, msg.CodeID)
+	codeInfo := m.wasmKeeper.GetCodeInfo(ctx, msg.CodeID)
 	err = m.checkAuthorization(senderAddr, codeInfo.CodeHash)
 	if err != nil {
 		return nil, err
@@ -310,8 +262,13 @@ func (m WasmMgrVCUR) MigrateContract(
 		return nil, errorsmod.Wrap(err, "contract")
 	}
 
+	contractInfo := m.wasmKeeper.GetContractInfo(ctx, contractAddr)
+	if contractInfo.Admin == "" || contractInfo.Admin != msg.Sender {
+		return nil, errNotAuthorized
+	}
+
 	data, err := m.permissionedKeeper().Migrate(
-		sdkCtx,
+		ctx,
 		contractAddr,
 		senderAddr,
 		msg.CodeID,
@@ -321,36 +278,19 @@ func (m WasmMgrVCUR) MigrateContract(
 		return nil, err
 	}
 
-	m.maybeUnpin(sdkCtx, contractAddr)
+	m.maybeUnpin(ctx, contractAddr)
 
 	return &wasmtypes.MsgMigrateContractResponse{
 		Data: data,
 	}, nil
 }
 
-// UpdateParams updates the module parameters
-func (m WasmMgrVCUR) UpdateParams(
-	ctx context.Context,
-	req *wasmtypes.MsgUpdateParams,
-) (*wasmtypes.MsgUpdateParamsResponse, error) {
-	sdkCtx := sdk.UnwrapSDKContext(ctx)
-
-	// Check added for completeness
-	if err := m.checkHalt(sdkCtx); err != nil {
-		return nil, err
-	}
-
-	return &wasmtypes.MsgUpdateParamsResponse{}, errors.ErrUnauthorized
-}
-
 // SudoContract calls sudo on a contract.
 func (m WasmMgrVCUR) SudoContract(
-	ctx context.Context,
+	ctx cosmos.Context,
 	msg *wasmtypes.MsgSudoContract,
 ) (*wasmtypes.MsgSudoContractResponse, error) {
-	sdkCtx := sdk.UnwrapSDKContext(ctx)
-
-	if err := m.checkHalt(sdkCtx); err != nil {
+	if err := m.checkHalt(ctx); err != nil {
 		return nil, err
 	}
 
@@ -368,176 +308,19 @@ func (m WasmMgrVCUR) SudoContract(
 		return nil, errorsmod.Wrap(err, "contract")
 	}
 
-	contractInfo := m.wasmKeeper.GetContractInfo(sdkCtx, contractAddr)
-	codeInfo := m.wasmKeeper.GetCodeInfo(sdkCtx, contractInfo.CodeID)
+	contractInfo := m.wasmKeeper.GetContractInfo(ctx, contractAddr)
+	codeInfo := m.wasmKeeper.GetCodeInfo(ctx, contractInfo.CodeID)
 	err = m.checkAuthorization(authorityAddr, codeInfo.CodeHash)
 	if err != nil {
 		return nil, err
 	}
 
-	data, err := m.permissionedKeeper().Sudo(sdkCtx, contractAddr, msg.Msg)
+	data, err := m.permissionedKeeper().Sudo(ctx, contractAddr, msg.Msg)
 	if err != nil {
 		return nil, err
 	}
 
 	return &wasmtypes.MsgSudoContractResponse{Data: data}, nil
-}
-
-// StoreAndInstantiateContract stores and instantiates the contract.
-func (m WasmMgrVCUR) StoreAndInstantiateContract(
-	ctx context.Context,
-	msg *wasmtypes.MsgStoreAndInstantiateContract,
-) (*wasmtypes.MsgStoreAndInstantiateContractResponse, error) {
-	sdkCtx := sdk.UnwrapSDKContext(ctx)
-
-	if err := m.checkHalt(sdkCtx); err != nil {
-		return nil, err
-	}
-
-	if err := msg.ValidateBasic(); err != nil {
-		return nil, err
-	}
-
-	authorityAddr, err := sdk.AccAddressFromBech32(msg.Authority)
-	if err != nil {
-		return nil, errorsmod.Wrap(err, "authority")
-	}
-
-	var adminAddr sdk.AccAddress
-	if msg.Admin != "" {
-		if adminAddr, err = sdk.AccAddressFromBech32(msg.Admin); err != nil {
-			return nil, errorsmod.Wrap(err, "admin")
-		}
-	}
-
-	codeID, checksum, err := m.permissionedKeeper().Create(
-		sdkCtx,
-		authorityAddr,
-		msg.WASMByteCode,
-		msg.InstantiatePermission,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	err = m.checkAuthorization(authorityAddr, checksum)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := m.permissionedKeeper().PinCode(sdkCtx, codeID); err != nil {
-		return nil, err
-	}
-
-	contractAddr, data, err := m.permissionedKeeper().Instantiate(
-		sdkCtx,
-		codeID,
-		authorityAddr,
-		adminAddr,
-		msg.Msg,
-		msg.Label,
-		msg.Funds)
-	if err != nil {
-		return nil, err
-	}
-
-	return &wasmtypes.MsgStoreAndInstantiateContractResponse{
-		Address: contractAddr.String(),
-		Data:    data,
-	}, nil
-}
-
-// StoreAndMigrateContract stores and migrates the contract.
-func (m WasmMgrVCUR) StoreAndMigrateContract(
-	ctx context.Context,
-	msg *wasmtypes.MsgStoreAndMigrateContract,
-) (*wasmtypes.MsgStoreAndMigrateContractResponse, error) {
-	sdkCtx := sdk.UnwrapSDKContext(ctx)
-
-	if err := m.checkHalt(sdkCtx); err != nil {
-		return nil, err
-	}
-
-	authorityAddr, err := sdk.AccAddressFromBech32(msg.Authority)
-	if err != nil {
-		return nil, errorsmod.Wrap(err, "authority")
-	}
-
-	if err = msg.ValidateBasic(); err != nil {
-		return nil, err
-	}
-
-	codeID, checksum, err := m.permissionedKeeper().Create(
-		sdkCtx,
-		authorityAddr,
-		msg.WASMByteCode,
-		msg.InstantiatePermission,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	err = m.checkAuthorization(authorityAddr, checksum)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := m.permissionedKeeper().PinCode(sdkCtx, codeID); err != nil {
-		return nil, err
-	}
-
-	contractAddr, err := sdk.AccAddressFromBech32(msg.Contract)
-	if err != nil {
-		return nil, errorsmod.Wrap(err, "contract")
-	}
-
-	data, err := m.permissionedKeeper().Migrate(
-		sdkCtx,
-		contractAddr,
-		authorityAddr,
-		codeID,
-		msg.Msg)
-	if err != nil {
-		return nil, err
-	}
-
-	m.maybeUnpin(sdkCtx, contractAddr)
-
-	return &wasmtypes.MsgStoreAndMigrateContractResponse{
-		CodeID:   codeID,
-		Checksum: checksum,
-		Data:     data,
-	}, nil
-}
-
-func (m WasmMgrVCUR) UpdateContractLabel(
-	ctx context.Context,
-	msg *wasmtypes.MsgUpdateContractLabel,
-) (*wasmtypes.MsgUpdateContractLabelResponse, error) {
-	sdkCtx := sdk.UnwrapSDKContext(ctx)
-
-	if err := m.checkHalt(sdkCtx); err != nil {
-		return nil, err
-	}
-
-	senderAddr, err := sdk.AccAddressFromBech32(msg.Sender)
-	if err != nil {
-		return nil, errorsmod.Wrap(err, "sender")
-	}
-
-	contractAddr, err := sdk.AccAddressFromBech32(msg.Contract)
-	if err != nil {
-		return nil, errorsmod.Wrap(err, "contract")
-	}
-
-	contractInfo := m.wasmKeeper.GetContractInfo(sdkCtx, contractAddr)
-	codeInfo := m.wasmKeeper.GetCodeInfo(sdkCtx, contractInfo.CodeID)
-	err = m.checkAuthorization(senderAddr, codeInfo.CodeHash)
-	if err != nil {
-		return nil, err
-	}
-
-	return &wasmtypes.MsgUpdateContractLabelResponse{}, errors.ErrUnauthorized
 }
 
 func (m WasmMgrVCUR) checkHalt(ctx cosmos.Context) error {

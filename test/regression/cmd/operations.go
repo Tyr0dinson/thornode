@@ -16,6 +16,7 @@ import (
 	"text/template"
 	"time"
 
+	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
 	"github.com/cosmos/cosmos-sdk/client/tx"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
@@ -123,6 +124,21 @@ func NewOperation(opMap map[string]any) Operation {
 		op = &OpTxApproveUpgrade{}
 	case "tx-reject-upgrade":
 		op = &OpTxRejectUpgrade{}
+
+	// x/wasm
+	case "tx-execute-contract":
+		op = &OpTxExecuteContract{}
+	case "tx-instantiate-contract-2":
+		op = &OpTxInstantiateContract2{}
+	case "tx-instantiate-contract":
+		op = &OpTxInstantiateContract{}
+	case "tx-migrate-contract":
+		op = &OpTxMigrateContract{}
+	case "tx-store-code":
+		op = &OpTxStoreCode{}
+	case "tx-sudo-contract":
+		op = &OpTxSudoContract{}
+
 	default:
 		log.Fatal().Str("type", t).Msg("unknown operation type")
 	}
@@ -1012,6 +1028,84 @@ type OpFailExportInvariants struct {
 
 func (op *OpFailExportInvariants) Execute(out io.Writer, _ string, _, _ int, _ *os.Process, _ chan string) error {
 	return fmt.Errorf("fail-export-invariants should only be the last operation")
+}
+
+// ------------------------------ OpTxExecuteContract ------------------------------
+
+type OpTxExecuteContract struct {
+	OpBase                       `yaml:",inline"`
+	wasmtypes.MsgExecuteContract `yaml:",inline"`
+	Sequence                     *int64 `json:"sequence"`
+	Gas                          *int64 `json:"gas"`
+}
+
+func (op *OpTxExecuteContract) Execute(out io.Writer, _ string, _, routine int, _ *os.Process, logs chan string) error {
+	return sendMsg(out, routine, &op.MsgExecuteContract, sdk.MustAccAddressFromBech32(op.Sender), op.Sequence, op.Gas, op, logs)
+}
+
+// ------------------------------ OpTxInstantiateContract2 ------------------------------
+
+type OpTxInstantiateContract2 struct {
+	OpBase                            `yaml:",inline"`
+	wasmtypes.MsgInstantiateContract2 `yaml:",inline"`
+	Sequence                          *int64 `json:"sequence"`
+	Gas                               *int64 `json:"gas"`
+}
+
+func (op *OpTxInstantiateContract2) Execute(out io.Writer, _ string, _, routine int, _ *os.Process, logs chan string) error {
+	return sendMsg(out, routine, &op.MsgInstantiateContract2, sdk.MustAccAddressFromBech32(op.Sender), op.Sequence, op.Gas, op, logs)
+}
+
+// ------------------------------ OpTxInstantiateContract ------------------------------
+
+type OpTxInstantiateContract struct {
+	OpBase                           `yaml:",inline"`
+	wasmtypes.MsgInstantiateContract `yaml:",inline"`
+	Sequence                         *int64 `json:"sequence"`
+	Gas                              *int64 `json:"gas"`
+}
+
+func (op *OpTxInstantiateContract) Execute(out io.Writer, _ string, _, routine int, _ *os.Process, logs chan string) error {
+	return sendMsg(out, routine, &op.MsgInstantiateContract, sdk.MustAccAddressFromBech32(op.Sender), op.Sequence, op.Gas, op, logs)
+}
+
+// ------------------------------ OpTxMigrateContract ------------------------------
+
+type OpTxMigrateContract struct {
+	OpBase                       `yaml:",inline"`
+	wasmtypes.MsgMigrateContract `yaml:",inline"`
+	Sequence                     *int64 `json:"sequence"`
+	Gas                          *int64 `json:"gas"`
+}
+
+func (op *OpTxMigrateContract) Execute(out io.Writer, _ string, _, routine int, _ *os.Process, logs chan string) error {
+	return sendMsg(out, routine, &op.MsgMigrateContract, sdk.MustAccAddressFromBech32(op.Sender), op.Sequence, op.Gas, op, logs)
+}
+
+// ------------------------------ OpTxStoreCode ------------------------------
+
+type OpTxStoreCode struct {
+	OpBase                 `yaml:",inline"`
+	wasmtypes.MsgStoreCode `yaml:",inline"`
+	Sequence               *int64 `json:"sequence"`
+	Gas                    *int64 `json:"gas"`
+}
+
+func (op *OpTxStoreCode) Execute(out io.Writer, _ string, _, routine int, _ *os.Process, logs chan string) error {
+	return sendMsg(out, routine, &op.MsgStoreCode, sdk.MustAccAddressFromBech32(op.Sender), op.Sequence, op.Gas, op, logs)
+}
+
+// ------------------------------ OpTxSudoContract ------------------------------
+
+type OpTxSudoContract struct {
+	OpBase                    `yaml:",inline"`
+	wasmtypes.MsgSudoContract `yaml:",inline"`
+	Sequence                  *int64 `json:"sequence"`
+	Gas                       *int64 `json:"gas"`
+}
+
+func (op *OpTxSudoContract) Execute(out io.Writer, _ string, _, routine int, _ *os.Process, logs chan string) error {
+	return sendMsg(out, routine, &op.MsgSudoContract, sdk.MustAccAddressFromBech32(op.Authority), op.Sequence, op.Gas, op, logs)
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
