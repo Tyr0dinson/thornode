@@ -438,6 +438,7 @@ func (HandlerSuite) TestRefund(c *C) {
 }
 
 func (HandlerSuite) TestGetMsgSwapFromMemo(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
 	m, err := ParseMemo(GetCurrentVersion(), "swap:DOGE.DOGE")
 	swapMemo, ok := m.(SwapMemo)
 	c.Assert(ok, Equals, true)
@@ -477,8 +478,8 @@ func (HandlerSuite) TestGetMsgSwapFromMemo(c *C) {
 	c.Assert(err, IsNil)
 
 	// default streaming interval should not override if limit is set
-	txin.Tx.Memo = "swap:DOGE.DOGE:dogeAddr:100"
-	m, err = ParseMemo(GetCurrentVersion(), "swap:DOGE.DOGE:dogeAddr:100")
+	txin.Tx.Memo = "swap:DOGE.DOGE:DH5yaieqoZN36fDVciNyRueRGvGLR3mr7L:100"
+	m, err = ParseMemo(GetCurrentVersion(), "swap:DOGE.DOGE:DH5yaieqoZN36fDVciNyRueRGvGLR3mr7L:100")
 	swapMemo, ok = m.(SwapMemo)
 	c.Assert(err, IsNil)
 	c.Assert(ok, Equals, true)
@@ -490,8 +491,8 @@ func (HandlerSuite) TestGetMsgSwapFromMemo(c *C) {
 	c.Assert(err, IsNil)
 
 	// default streaming interval should not override if interval is set
-	txin.Tx.Memo = "swap:DOGE.DOGE:dogeAddr:0/1/0"
-	m, err = ParseMemo(GetCurrentVersion(), "swap:DOGE.DOGE:dogeAddr:0/1/0")
+	txin.Tx.Memo = "swap:DOGE.DOGE:DH5yaieqoZN36fDVciNyRueRGvGLR3mr7L:0/1/0"
+	m, err = ParseMemoWithTHORNames(w.ctx, w.keeper, "swap:DOGE.DOGE:DH5yaieqoZN36fDVciNyRueRGvGLR3mr7L:0/10/0")
 	swapMemo, ok = m.(SwapMemo)
 	c.Assert(err, IsNil)
 	c.Assert(ok, Equals, true)
@@ -499,7 +500,7 @@ func (HandlerSuite) TestGetMsgSwapFromMemo(c *C) {
 	c.Assert(resultMsg1, NotNil)
 	sm, ok = resultMsg1.(*MsgSwap)
 	c.Assert(ok, Equals, true)
-	c.Assert(sm.GetStreamInterval(), Equals, uint64(0))
+	c.Assert(sm.GetStreamInterval(), Equals, uint64(10))
 	c.Assert(err, IsNil)
 }
 
