@@ -149,7 +149,8 @@ func (ad AnteDecorator) anteHandleMessage(ctx sdk.Context, version semver.Versio
 	case *wasmtypes.MsgStoreCode,
 		*wasmtypes.MsgInstantiateContract,
 		*wasmtypes.MsgExecuteContract,
-		*wasmtypes.MsgMigrateContract:
+		*wasmtypes.MsgMigrateContract,
+		*wasmtypes.MsgSudoContract:
 		// TODO
 		return nil
 	default:
