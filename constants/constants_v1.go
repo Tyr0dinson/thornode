@@ -125,6 +125,7 @@ func NewConstantValue() *ConstantVals {
 			PendulumUseVaultAssets:              0,                  // If 1. use the L1 Assets in the vaults (the Assets seizable by the lower-bond 2/3rds of nodes in each vault) as the Assets to be secured.  If 0, instead use only the L1 Assets in pools, ignoring the L1 Assets in for instance streaming swaps, oversolvencies, and Trade/Bridge Assets.
 			MultipleAffiliatesMaxCount:          5,                  // maximum number of nested affiliates
 			BondSlashBan:                        5_000_00000000,     // 5000 RUNE - amount to slash bond of banned nodes
+			DefaultStreamingSwapInterval:        1,                  // If no limit and no interval are set in a swap memo this streaming interval value will be applied
 		},
 		boolValues: map[ConstantName]bool{
 			StrictBondLiquidityRatio: true,

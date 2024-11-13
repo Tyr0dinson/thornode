@@ -11,6 +11,7 @@ import (
 	"gitlab.com/thorchain/thornode/common"
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/common/tokenlist"
+	"gitlab.com/thorchain/thornode/constants"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
 )
 
@@ -71,11 +72,17 @@ func getInternalHandlerMapping(mgr Manager) map[string]MsgHandler {
 	return m
 }
 
-func getMsgSwapFromMemo(memo SwapMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
+func getMsgSwapFromMemo(memo SwapMemo, tx ObservedTx, signer cosmos.AccAddress, defaultStreamingInterval int64) (cosmos.Msg, error) {
 	if memo.Destination.IsEmpty() {
 		memo.Destination = tx.Tx.FromAddress
 	}
-	return NewMsgSwap(tx.Tx, memo.GetAsset(), memo.Destination, memo.SlipLimit, memo.AffiliateAddress, memo.AffiliateBasisPoints, memo.GetDexAggregator(), memo.GetDexTargetAddress(), memo.GetDexTargetLimit(), memo.GetOrderType(), memo.GetStreamQuantity(), memo.GetStreamInterval(), signer), nil
+
+	interval := memo.GetStreamInterval()
+	if memo.GetSlipLimit().IsZero() && interval == 0 && defaultStreamingInterval > 0 {
+		interval = uint64(defaultStreamingInterval)
+	}
+
+	return NewMsgSwap(tx.Tx, memo.GetAsset(), memo.Destination, memo.SlipLimit, memo.AffiliateAddress, memo.AffiliateBasisPoints, memo.GetDexAggregator(), memo.GetDexTargetAddress(), memo.GetDexTargetLimit(), memo.GetOrderType(), memo.GetStreamQuantity(), interval, signer), nil
 }
 
 func getMsgWithdrawFromMemo(memo WithdrawLiquidityMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
@@ -184,7 +191,8 @@ func processOneTxIn(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, sig
 	case SwapMemo:
 		m.Asset = fuzzyAssetMatch(ctx, keeper, m.Asset)
 		m.DexTargetAddress = externalAssetMatch(keeper.GetVersion(), m.Asset.GetChain(), m.DexTargetAddress)
-		newMsg, err = getMsgSwapFromMemo(m, tx, signer)
+		defaultInterval := keeper.GetConfigInt64(ctx, constants.DefaultStreamingSwapInterval)
+		newMsg, err = getMsgSwapFromMemo(m, tx, signer, defaultInterval)
 	case DonateMemo:
 		m.Asset = fuzzyAssetMatch(ctx, keeper, m.Asset)
 		newMsg, err = getMsgDonateFromMemo(m, tx, signer)
