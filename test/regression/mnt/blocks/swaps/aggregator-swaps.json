@@ -332,7 +332,7 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "148181",
+          "gas_used": "149181",
           "events": [
             {
               "fee": "",

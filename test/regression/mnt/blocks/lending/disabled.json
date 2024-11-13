@@ -10126,7 +10126,7 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "133790",
+          "gas_used": "134790",
           "events": [
             {
               "fee": "",
