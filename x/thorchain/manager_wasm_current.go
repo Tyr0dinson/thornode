@@ -12,6 +12,7 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/errors"
+	"gitlab.com/thorchain/thornode/common/wasmpermissions"
 )
 
 var (
@@ -19,23 +20,18 @@ var (
 	MIMIR_WASM_GLOBAL_HALT               = "WASMHALTGLOBAL"
 	MIMIR_WASM_CHECKSUM_HALT             = "WASMHALTCONTRACT"
 	MIMIR_WASM_CONTRACT_HALT             = "WASMHALTCHECKSUM"
-	WASM_PERMISSIONS                     = map[string](map[string]bool){
-		"tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m": {
-			"f9b2efce508ab3594d41ad0d7bd645014b1e145df64083308d37c780de7390b0": true,
-			"016414b67c4a8b0cd030d8221e19df549e95688002ed18894466008e32c9db3a": true,
-		},
-	}
 )
 
 // WasmMgrVCUR is VCUR implementation of slasher
 type WasmMgrVCUR struct {
-	keeper     keeper.Keeper
-	wasmKeeper wasmkeeper.Keeper
-	eventMgr   EventManager
+	keeper      keeper.Keeper
+	wasmKeeper  wasmkeeper.Keeper
+	eventMgr    EventManager
+	permissions wasmpermissions.WasmPermissions
 }
 
 // newWasmMgrVCUR create a new instance of Slasher
-func newWasmMgrVCUR(ctx cosmos.Context, keeper keeper.Keeper, wasmKeeper wasmkeeper.Keeper, eventMgr EventManager) *WasmMgrVCUR {
+func newWasmMgrVCUR(ctx cosmos.Context, keeper keeper.Keeper, wasmKeeper wasmkeeper.Keeper, permissions wasmpermissions.WasmPermissions, eventMgr EventManager) *WasmMgrVCUR {
 	// We don't use wasmtypes.Params for permissioning.
 	// This just ensures that there is data available for wasmkeeper.Keeper.GetParams to retrieve
 	wasmKeeper.SetParams(ctx, wasmtypes.Params{
@@ -47,9 +43,10 @@ func newWasmMgrVCUR(ctx cosmos.Context, keeper keeper.Keeper, wasmKeeper wasmkee
 	})
 
 	return &WasmMgrVCUR{
-		keeper:     keeper,
-		wasmKeeper: wasmKeeper,
-		eventMgr:   eventMgr,
+		keeper:      keeper,
+		wasmKeeper:  wasmKeeper,
+		permissions: permissions,
+		eventMgr:    eventMgr,
 	}
 }
 
@@ -379,13 +376,8 @@ func (m WasmMgrVCUR) checkAuthorization(actor cosmos.AccAddress, checksum []byte
 	if isAdmin(actor) {
 		return nil
 	}
-	actorStr := actor.String()
-	checksumStr := hex.EncodeToString(checksum)
-	if WASM_PERMISSIONS[actorStr][checksumStr] {
-		return nil
-	}
+	return m.permissions.Permit(actor, checksum)
 
-	return errorsmod.Wrapf(errNotAuthorized, "%s:%s", actorStr, checksumStr)
 }
 
 func (m WasmMgrVCUR) maybeUnpin(ctx cosmos.Context, address cosmos.AccAddress) {

@@ -15,6 +15,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/common/wasmpermissions"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 	kv1 "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/v1"
@@ -550,7 +551,7 @@ func GetSecuredAssetManager(version semver.Version, keeper keeper.Keeper, eventM
 func GetWasmManager(ctx cosmos.Context, version semver.Version, keeper keeper.Keeper, wasmKeeper wasmkeeper.Keeper, eventMgr EventManager) (WasmManager, error) {
 	switch {
 	case version.GTE(semver.MustParse("2.137.0")):
-		return newWasmMgrVCUR(ctx, keeper, wasmKeeper, eventMgr), nil
+		return newWasmMgrVCUR(ctx, keeper, wasmKeeper, wasmpermissions.GetWasmPermissions(version), eventMgr), nil
 	default:
 		return nil, errInvalidVersion
 	}
