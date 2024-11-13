@@ -146,7 +146,8 @@ func (ad AnteDecorator) anteHandleMessage(ctx sdk.Context, version semver.Versio
 		return DepositAnteHandler(ctx, version, ad.keeper, *m)
 	case *types.MsgSend, *banktypes.MsgSend:
 		return SendAnteHandler(ctx, version, ad.keeper, m)
-	case *wasmtypes.MsgStoreCode:
+	case *wasmtypes.MsgStoreCode,
+		*wasmtypes.MsgInstantiateContract:
 		// TODO
 		return nil
 	default:
