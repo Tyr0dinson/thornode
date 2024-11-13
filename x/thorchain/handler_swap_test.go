@@ -351,7 +351,7 @@ func (s *HandlerSwapSuite) TestHandle(c *C) {
 		1,
 		GetRandomPubKey(), 1,
 	)
-	msgSwapFromTxIn, err := getMsgSwapFromMemo(m.(SwapMemo), txIn, observerAddr)
+	msgSwapFromTxIn, err := getMsgSwapFromMemo(m.(SwapMemo), txIn, observerAddr, 0)
 	c.Assert(err, IsNil)
 	items, err := mgr.TxOutStore().GetOutboundItems(ctx)
 	c.Assert(err, IsNil)
@@ -488,7 +488,7 @@ func (s *HandlerSwapSuite) TestSwapSynthERC20(c *C) {
 	)
 	observerAddr, err := GetRandomTHORAddress().AccAddress()
 	c.Assert(err, IsNil)
-	msgSwapFromTxIn, err := getMsgSwapFromMemo(m.(SwapMemo), txIn, observerAddr)
+	msgSwapFromTxIn, err := getMsgSwapFromMemo(m.(SwapMemo), txIn, observerAddr, 0)
 	c.Assert(err, IsNil)
 	res, err := handler.Run(ctx, msgSwapFromTxIn)
 	c.Assert(res, IsNil)
@@ -538,7 +538,7 @@ func (s *HandlerSwapSuite) TestDoubleSwap(c *C) {
 		1,
 		GetRandomPubKey(), 1,
 	)
-	msgSwapFromTxIn, err := getMsgSwapFromMemo(m.(SwapMemo), txIn, observerAddr)
+	msgSwapFromTxIn, err := getMsgSwapFromMemo(m.(SwapMemo), txIn, observerAddr, 0)
 	c.Assert(err, IsNil)
 
 	items, err := mgr.TxOutStore().GetOutboundItems(ctx)
@@ -568,7 +568,7 @@ func (s *HandlerSwapSuite) TestDoubleSwap(c *C) {
 		1,
 		GetRandomPubKey(), 1,
 	)
-	msgSwapFromTxIn1, err := getMsgSwapFromMemo(m1.(SwapMemo), txIn1, observerAddr)
+	msgSwapFromTxIn1, err := getMsgSwapFromMemo(m1.(SwapMemo), txIn1, observerAddr, 0)
 	c.Assert(err, IsNil)
 	mgr.TxOutStore().ClearOutboundItems(ctx)
 	_, err = handler.Run(ctx, msgSwapFromTxIn1)
@@ -621,7 +621,7 @@ func (s *HandlerSwapSuite) TestSwapOutDexIntegration(c *C) {
 
 	observerAddr, err := GetRandomTHORAddress().AccAddress()
 	c.Assert(err, IsNil)
-	msgSwapFromTxIn, err := getMsgSwapFromMemo(m.(SwapMemo), txIn, observerAddr)
+	msgSwapFromTxIn, err := getMsgSwapFromMemo(m.(SwapMemo), txIn, observerAddr, 0)
 	c.Assert(err, IsNil)
 	// when SwapOut Dex integration has been disabled by mimir , it should return an error cause refund
 	mgr.Keeper().SetMimir(ctx, constants.SwapOutDexAggregationDisabled.String(), 1)
@@ -636,7 +636,7 @@ func (s *HandlerSwapSuite) TestSwapOutDexIntegration(c *C) {
 	swapM, ok := m.(SwapMemo)
 	c.Assert(ok, Equals, true)
 	swapM.DexTargetAddress = ""
-	msgSwapFromTxIn, err = getMsgSwapFromMemo(swapM, txIn, observerAddr)
+	msgSwapFromTxIn, err = getMsgSwapFromMemo(swapM, txIn, observerAddr, 0)
 	c.Assert(err, IsNil)
 	res, err = handler.Run(ctx, msgSwapFromTxIn)
 	c.Assert(err, NotNil)
@@ -650,7 +650,7 @@ func (s *HandlerSwapSuite) TestSwapOutDexIntegration(c *C) {
 	AAVEAsset, err := common.NewAsset("ETH.AAVE-0X7FC66500C84A76AD7E9C93437BFC5AC33E2DDAE9")
 	c.Assert(err, IsNil)
 	swapM.Asset = AAVEAsset
-	msgSwapFromTxIn, err = getMsgSwapFromMemo(swapM, txIn, observerAddr)
+	msgSwapFromTxIn, err = getMsgSwapFromMemo(swapM, txIn, observerAddr, 0)
 	c.Assert(err, IsNil)
 	res, err = handler.Run(ctx, msgSwapFromTxIn)
 	c.Assert(err, NotNil)
@@ -661,7 +661,7 @@ func (s *HandlerSwapSuite) TestSwapOutDexIntegration(c *C) {
 	swapM, ok = m.(SwapMemo)
 	c.Assert(ok, Equals, true)
 	swapM.DexAggregator = "whatever"
-	msgSwapFromTxIn, err = getMsgSwapFromMemo(swapM, txIn, observerAddr)
+	msgSwapFromTxIn, err = getMsgSwapFromMemo(swapM, txIn, observerAddr, 0)
 	c.Assert(err, IsNil)
 	res, err = handler.Run(ctx, msgSwapFromTxIn)
 	c.Assert(err, NotNil)
@@ -672,7 +672,7 @@ func (s *HandlerSwapSuite) TestSwapOutDexIntegration(c *C) {
 	swapM, ok = m.(SwapMemo)
 	c.Assert(ok, Equals, true)
 	swapM.DexTargetAddress = "whatever"
-	msgSwapFromTxIn, err = getMsgSwapFromMemo(swapM, txIn, observerAddr)
+	msgSwapFromTxIn, err = getMsgSwapFromMemo(swapM, txIn, observerAddr, 0)
 	c.Assert(err, IsNil)
 	res, err = handler.Run(ctx, msgSwapFromTxIn)
 	c.Assert(err, IsNil)
@@ -682,7 +682,7 @@ func (s *HandlerSwapSuite) TestSwapOutDexIntegration(c *C) {
 	swapM, ok = m.(SwapMemo)
 	c.Assert(ok, Equals, true)
 	swapM.DexTargetAddress = GetRandomDOGEAddress().String()
-	msgSwapFromTxIn, err = getMsgSwapFromMemo(swapM, txIn, observerAddr)
+	msgSwapFromTxIn, err = getMsgSwapFromMemo(swapM, txIn, observerAddr, 0)
 	c.Assert(err, IsNil)
 	res, err = handler.Run(ctx, msgSwapFromTxIn)
 	c.Assert(err, IsNil)
@@ -692,7 +692,7 @@ func (s *HandlerSwapSuite) TestSwapOutDexIntegration(c *C) {
 	// normal swap with DEX
 	swapM, ok = m.(SwapMemo)
 	c.Assert(ok, Equals, true)
-	msgSwapFromTxIn, err = getMsgSwapFromMemo(swapM, txIn, observerAddr)
+	msgSwapFromTxIn, err = getMsgSwapFromMemo(swapM, txIn, observerAddr, 0)
 	c.Assert(err, IsNil)
 	res, err = handler.Run(ctx, msgSwapFromTxIn)
 	c.Assert(err, IsNil)

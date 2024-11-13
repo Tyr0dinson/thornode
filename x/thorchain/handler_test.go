@@ -464,8 +464,32 @@ func (HandlerSuite) TestGetMsgSwapFromMemo(c *C) {
 		common.EmptyPubKey, 1024,
 	)
 
-	resultMsg1, err := getMsgSwapFromMemo(swapMemo, txin, GetRandomBech32Addr())
+	resultMsg1, err := getMsgSwapFromMemo(swapMemo, txin, GetRandomBech32Addr(), 0)
 	c.Assert(resultMsg1, NotNil)
+	c.Assert(err, IsNil)
+
+	// test default streaming interval
+	resultMsg1, err = getMsgSwapFromMemo(swapMemo, txin, GetRandomBech32Addr(), 1)
+	c.Assert(resultMsg1, NotNil)
+	c.Assert(resultMsg1.(*MsgSwap).GetStreamInterval(), Equals, uint64(1))
+	c.Assert(err, IsNil)
+
+	// default streaming interval should not override if limit is set
+	txin.Tx.Memo = "swap:DOGE.DOGE:dogeAddr:100"
+	m, err = ParseMemo(GetCurrentVersion(), "swap:DOGE.DOGE:dogeAddr:100")
+	swapMemo, ok = m.(SwapMemo)
+	resultMsg1, err = getMsgSwapFromMemo(swapMemo, txin, GetRandomBech32Addr(), 1)
+	c.Assert(resultMsg1, NotNil)
+	c.Assert(resultMsg1.(*MsgSwap).GetStreamInterval(), Equals, uint64(0))
+	c.Assert(err, IsNil)
+
+	// default streaming interval should not override if interval is set
+	txin.Tx.Memo = "swap:DOGE.DOGE:dogeAddr:0/1/0"
+	m, err = ParseMemo(GetCurrentVersion(), "swap:DOGE.DOGE:dogeAddr:0/1/0")
+	swapMemo, ok = m.(SwapMemo)
+	resultMsg1, err = getMsgSwapFromMemo(swapMemo, txin, GetRandomBech32Addr(), 1)
+	c.Assert(resultMsg1, NotNil)
+	c.Assert(resultMsg1.(*MsgSwap).GetStreamInterval(), Equals, uint64(0))
 	c.Assert(err, IsNil)
 }
 

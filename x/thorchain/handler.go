@@ -78,7 +78,8 @@ func getMsgSwapFromMemo(memo SwapMemo, tx ObservedTx, signer cosmos.AccAddress, 
 	}
 
 	interval := memo.GetStreamInterval()
-	if memo.GetSlipLimit().IsZero() && interval == 0 && defaultStreamingInterval > 0 {
+	slip := memo.GetSlipLimit()
+	if !slip.IsNil() && slip.IsZero() && interval == 0 && defaultStreamingInterval > 0 {
 		interval = uint64(defaultStreamingInterval)
 	}
 
