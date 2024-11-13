@@ -2,6 +2,7 @@ package thorchain
 
 import (
 	"encoding/hex"
+	"fmt"
 
 	wasmkeeper "github.com/CosmWasm/wasmd/x/wasm/keeper"
 	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
@@ -290,7 +291,7 @@ func (m WasmMgrVCUR) MigrateContract(
 		return nil, err
 	}
 
-	m.maybeUnpin(ctx, contractAddr)
+	m.maybeUnpin(ctx, contractInfo.CodeID)
 
 	return &wasmtypes.MsgMigrateContractResponse{
 		Data: data,
@@ -380,14 +381,15 @@ func (m WasmMgrVCUR) checkAuthorization(actor cosmos.AccAddress, checksum []byte
 
 }
 
-func (m WasmMgrVCUR) maybeUnpin(ctx cosmos.Context, address cosmos.AccAddress) {
-	contractInfo := m.wasmKeeper.GetContractInfo(ctx, address)
+func (m WasmMgrVCUR) maybeUnpin(ctx cosmos.Context, codeId uint64) {
 	var instanceCount int
-	m.wasmKeeper.IterateContractsByCode(ctx, contractInfo.CodeID, func(address sdk.AccAddress) bool {
+
+	m.wasmKeeper.IterateContractsByCode(ctx, codeId, func(address sdk.AccAddress) bool {
+		fmt.Println(address)
 		instanceCount++
 		return true
 	})
 	if instanceCount == 0 {
-		m.permissionedKeeper().UnpinCode(ctx, contractInfo.CodeID)
+		m.permissionedKeeper().UnpinCode(ctx, codeId)
 	}
 }

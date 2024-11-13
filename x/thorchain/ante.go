@@ -148,7 +148,8 @@ func (ad AnteDecorator) anteHandleMessage(ctx sdk.Context, version semver.Versio
 		return SendAnteHandler(ctx, version, ad.keeper, m)
 	case *wasmtypes.MsgStoreCode,
 		*wasmtypes.MsgInstantiateContract,
-		*wasmtypes.MsgExecuteContract:
+		*wasmtypes.MsgExecuteContract,
+		*wasmtypes.MsgMigrateContract:
 		// TODO
 		return nil
 	default:
