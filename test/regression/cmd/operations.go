@@ -1099,7 +1099,7 @@ type OpTxStoreCode struct {
 }
 
 func (op *OpTxStoreCode) Execute(out io.Writer, path string, _, routine int, _ *os.Process, logs chan string) error {
-	wasmPath := filepath.Join(filepath.Dir(path), op.WasmFile)
+	wasmPath := filepath.Join("../fixtures/wasm", op.WasmFile)
 	wasm, err := os.ReadFile(wasmPath)
 	if err != nil {
 		return err
