@@ -2,7 +2,6 @@
 package types
 
 import (
-	"fmt"
 	"math/rand"
 	"os"
 	"path"
@@ -204,8 +203,6 @@ func GetRandomPubKey() common.PubKey {
 
 // SetupConfigForTest used for test purpose
 func SetupConfigForTest() {
-	fmt.Println("SetupConfigForTest")
-
 	config := cosmos.GetConfig()
 	config.SetBech32PrefixForAccount(cmd.Bech32PrefixAccAddr, cmd.Bech32PrefixAccPub)
 	config.SetBech32PrefixForValidator(cmd.Bech32PrefixValAddr, cmd.Bech32PrefixValPub)

@@ -1,6 +1,9 @@
 package thorchain
 
 import (
+	"encoding/hex"
+	"strings"
+
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
@@ -11,10 +14,14 @@ type ExecMemo struct {
 }
 
 func (m ExecMemo) GetAccAddress() cosmos.AccAddress { return m.ContractAddress }
+func (m ExecMemo) String() string {
+	args := []string{TxExec.String(), m.ContractAddress.String(), hex.EncodeToString(m.Msg)}
+	return strings.Join(args, ":")
+}
 
 func NewExecMemo(contract cosmos.AccAddress, msg []byte) ExecMemo {
 	return ExecMemo{
-		MemoBase:        MemoBase{TxType: TxBond},
+		MemoBase:        MemoBase{TxType: TxExec},
 		ContractAddress: contract,
 		Msg:             msg,
 	}

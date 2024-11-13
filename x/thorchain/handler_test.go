@@ -142,14 +142,14 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 		authtypes.NewModuleAddress(ModuleName).String(),
 		sdklog.NewNopLogger(),
 	)
+	wasmDir := c.MkDir()
 	wk := wasmkeeper.NewKeeper(
 		encodingConfig.Codec,
 		runtime.NewKVStoreService(keyWasm),
 		ak, bk,
-		nil, nil, nil, nil, nil, nil, nil, nil, nil, "wasm",
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, wasmDir,
 		wasmtypes.DefaultWasmConfig(), wasmkeeper.BuiltInCapabilities(),
 		authtypes.NewModuleAddress(ModuleName).String(),
-		nil,
 	)
 
 	c.Assert(bk.MintCoins(ctx, ModuleName, cosmos.Coins{
