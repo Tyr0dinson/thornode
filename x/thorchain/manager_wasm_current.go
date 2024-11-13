@@ -22,6 +22,7 @@ var (
 	WASM_PERMISSIONS                     = map[string](map[string]bool){
 		"tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m": {
 			"f9b2efce508ab3594d41ad0d7bd645014b1e145df64083308d37c780de7390b0": true,
+			"016414b67c4a8b0cd030d8221e19df549e95688002ed18894466008e32c9db3a": true,
 		},
 	}
 )
