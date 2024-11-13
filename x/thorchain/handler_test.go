@@ -471,7 +471,9 @@ func (HandlerSuite) TestGetMsgSwapFromMemo(c *C) {
 	// test default streaming interval
 	resultMsg1, err = getMsgSwapFromMemo(swapMemo, txin, GetRandomBech32Addr(), 1)
 	c.Assert(resultMsg1, NotNil)
-	c.Assert(resultMsg1.(*MsgSwap).GetStreamInterval(), Equals, uint64(1))
+	sm, ok := resultMsg1.(*MsgSwap)
+	c.Assert(ok, Equals, true)
+	c.Assert(sm.GetStreamInterval(), Equals, uint64(1))
 	c.Assert(err, IsNil)
 
 	// default streaming interval should not override if limit is set
@@ -482,7 +484,9 @@ func (HandlerSuite) TestGetMsgSwapFromMemo(c *C) {
 	c.Assert(ok, Equals, true)
 	resultMsg1, err = getMsgSwapFromMemo(swapMemo, txin, GetRandomBech32Addr(), 1)
 	c.Assert(resultMsg1, NotNil)
-	c.Assert(resultMsg1.(*MsgSwap).GetStreamInterval(), Equals, uint64(0))
+	sm, ok = resultMsg1.(*MsgSwap)
+	c.Assert(ok, Equals, true)
+	c.Assert(sm.GetStreamInterval(), Equals, uint64(0))
 	c.Assert(err, IsNil)
 
 	// default streaming interval should not override if interval is set
@@ -493,7 +497,9 @@ func (HandlerSuite) TestGetMsgSwapFromMemo(c *C) {
 	c.Assert(ok, Equals, true)
 	resultMsg1, err = getMsgSwapFromMemo(swapMemo, txin, GetRandomBech32Addr(), 1)
 	c.Assert(resultMsg1, NotNil)
-	c.Assert(resultMsg1.(*MsgSwap).GetStreamInterval(), Equals, uint64(0))
+	sm, ok = resultMsg1.(*MsgSwap)
+	c.Assert(ok, Equals, true)
+	c.Assert(sm.GetStreamInterval(), Equals, uint64(0))
 	c.Assert(err, IsNil)
 }
 
