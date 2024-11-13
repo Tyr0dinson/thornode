@@ -478,6 +478,8 @@ func (HandlerSuite) TestGetMsgSwapFromMemo(c *C) {
 	txin.Tx.Memo = "swap:DOGE.DOGE:dogeAddr:100"
 	m, err = ParseMemo(GetCurrentVersion(), "swap:DOGE.DOGE:dogeAddr:100")
 	swapMemo, ok = m.(SwapMemo)
+	c.Assert(err, IsNil)
+	c.Assert(ok, Equals, true)
 	resultMsg1, err = getMsgSwapFromMemo(swapMemo, txin, GetRandomBech32Addr(), 1)
 	c.Assert(resultMsg1, NotNil)
 	c.Assert(resultMsg1.(*MsgSwap).GetStreamInterval(), Equals, uint64(0))
@@ -487,6 +489,8 @@ func (HandlerSuite) TestGetMsgSwapFromMemo(c *C) {
 	txin.Tx.Memo = "swap:DOGE.DOGE:dogeAddr:0/1/0"
 	m, err = ParseMemo(GetCurrentVersion(), "swap:DOGE.DOGE:dogeAddr:0/1/0")
 	swapMemo, ok = m.(SwapMemo)
+	c.Assert(err, IsNil)
+	c.Assert(ok, Equals, true)
 	resultMsg1, err = getMsgSwapFromMemo(swapMemo, txin, GetRandomBech32Addr(), 1)
 	c.Assert(resultMsg1, NotNil)
 	c.Assert(resultMsg1.(*MsgSwap).GetStreamInterval(), Equals, uint64(0))
