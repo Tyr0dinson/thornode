@@ -344,7 +344,7 @@ func (mgr *Mgrs) BeginBlock(ctx cosmos.Context) error {
 		return fmt.Errorf("fail to create secured manager: %w", err)
 	}
 
-	mgr.wasmManager, err = GetWasmManager(v, mgr.K, mgr.wasmKeeper, mgr.eventMgr)
+	mgr.wasmManager, err = GetWasmManager(ctx, v, mgr.K, mgr.wasmKeeper, mgr.eventMgr)
 	if err != nil {
 		return fmt.Errorf("fail to create wasm manager: %w", err)
 	}
@@ -547,10 +547,10 @@ func GetSecuredAssetManager(version semver.Version, keeper keeper.Keeper, eventM
 	}
 }
 
-func GetWasmManager(version semver.Version, keeper keeper.Keeper, wasmKeeper wasmkeeper.Keeper, eventMgr EventManager) (WasmManager, error) {
+func GetWasmManager(ctx cosmos.Context, version semver.Version, keeper keeper.Keeper, wasmKeeper wasmkeeper.Keeper, eventMgr EventManager) (WasmManager, error) {
 	switch {
 	case version.GTE(semver.MustParse("2.137.0")):
-		return newWasmMgrVCUR(keeper, wasmKeeper, eventMgr), nil
+		return newWasmMgrVCUR(ctx, keeper, wasmKeeper, eventMgr), nil
 	default:
 		return nil, errInvalidVersion
 	}

@@ -19,19 +19,32 @@ var (
 	MIMIR_WASM_GLOBAL_HALT               = "WASMHALTGLOBAL"
 	MIMIR_WASM_CHECKSUM_HALT             = "WASMHALTCONTRACT"
 	MIMIR_WASM_CONTRACT_HALT             = "WASMHALTCHECKSUM"
-	WASM_PERMISSIONS                     = map[string](map[string]bool){}
+	WASM_PERMISSIONS                     = map[string](map[string]bool){
+		"tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m": {
+			"f9b2efce508ab3594d41ad0d7bd645014b1e145df64083308d37c780de7390b0": true,
+		},
+	}
 )
 
 // WasmMgrVCUR is VCUR implementation of slasher
 type WasmMgrVCUR struct {
-	wasmtypes.UnimplementedMsgServer
 	keeper     keeper.Keeper
 	wasmKeeper wasmkeeper.Keeper
 	eventMgr   EventManager
 }
 
 // newWasmMgrVCUR create a new instance of Slasher
-func newWasmMgrVCUR(keeper keeper.Keeper, wasmKeeper wasmkeeper.Keeper, eventMgr EventManager) *WasmMgrVCUR {
+func newWasmMgrVCUR(ctx cosmos.Context, keeper keeper.Keeper, wasmKeeper wasmkeeper.Keeper, eventMgr EventManager) *WasmMgrVCUR {
+	// We don't use wasmtypes.Params for permissioning.
+	// This just ensures that there is data available for wasmkeeper.Keeper.GetParams to retrieve
+	wasmKeeper.SetParams(ctx, wasmtypes.Params{
+		CodeUploadAccess: wasmtypes.AccessConfig{
+			Permission: 1,
+			Addresses:  []string{},
+		},
+		InstantiateDefaultPermission: 1,
+	})
+
 	return &WasmMgrVCUR{
 		keeper:     keeper,
 		wasmKeeper: wasmKeeper,
@@ -48,9 +61,6 @@ func (m WasmMgrVCUR) StoreCode(
 		return nil, err
 	}
 
-	if err := msg.ValidateBasic(); err != nil {
-		return nil, err
-	}
 	senderAddr, err := sdk.AccAddressFromBech32(msg.Sender)
 	if err != nil {
 		return nil, errorsmod.Wrap(err, "sender")
@@ -62,12 +72,16 @@ func (m WasmMgrVCUR) StoreCode(
 		msg.WASMByteCode,
 		msg.InstantiatePermission,
 	)
+
 	if err != nil {
 		return nil, err
 	}
 
-	err = m.checkAuthorization(senderAddr, checksum)
-	if err != nil {
+	if err := m.checkChecksumHalt(ctx, checksum); err != nil {
+		return nil, err
+	}
+
+	if err := m.checkAuthorization(senderAddr, checksum); err != nil {
 		return nil, err
 	}
 
@@ -328,8 +342,8 @@ func (m WasmMgrVCUR) checkHalt(ctx cosmos.Context) error {
 	if err != nil {
 		return err
 	}
-	if v != 0 && ctx.BlockHeight() > v {
-		return errors.ErrUnauthorized
+	if v != -1 && ctx.BlockHeight() > v {
+		return errorsmod.Wrap(errors.ErrUnauthorized, "wasm halted")
 	}
 	return nil
 }
@@ -339,8 +353,8 @@ func (m WasmMgrVCUR) checkContractHalt(ctx cosmos.Context, address sdk.AccAddres
 	if err != nil {
 		return err
 	}
-	if v != 0 && ctx.BlockHeight() > v {
-		return wrapError(ctx, errors.ErrUnauthorized, "contract halted")
+	if v != -1 && ctx.BlockHeight() > v {
+		return errorsmod.Wrap(errors.ErrUnauthorized, "contract halted")
 	}
 	return nil
 }
@@ -350,8 +364,8 @@ func (m WasmMgrVCUR) checkChecksumHalt(ctx cosmos.Context, checksum []byte) erro
 	if err != nil {
 		return err
 	}
-	if v != 0 && ctx.BlockHeight() > v {
-		return wrapError(ctx, errors.ErrUnauthorized, "checksum halted")
+	if v != -1 && ctx.BlockHeight() > v {
+		return errorsmod.Wrap(errors.ErrUnauthorized, "checksum halted")
 	}
 	return nil
 }
@@ -364,11 +378,13 @@ func (m WasmMgrVCUR) checkAuthorization(actor cosmos.AccAddress, checksum []byte
 	if isAdmin(actor) {
 		return nil
 	}
-	if WASM_PERMISSIONS[actor.String()][hex.EncodeToString(checksum)] {
+	actorStr := actor.String()
+	checksumStr := hex.EncodeToString(checksum)
+	if WASM_PERMISSIONS[actorStr][checksumStr] {
 		return nil
 	}
 
-	return errNotAuthorized
+	return errorsmod.Wrapf(errNotAuthorized, "%s:%s", actorStr, checksumStr)
 }
 
 func (m WasmMgrVCUR) maybeUnpin(ctx cosmos.Context, address cosmos.AccAddress) {

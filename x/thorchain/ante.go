@@ -1,6 +1,7 @@
 package thorchain
 
 import (
+	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
 	"github.com/blang/semver"
 
 	storetypes "cosmossdk.io/store/types"
@@ -145,7 +146,9 @@ func (ad AnteDecorator) anteHandleMessage(ctx sdk.Context, version semver.Versio
 		return DepositAnteHandler(ctx, version, ad.keeper, *m)
 	case *types.MsgSend, *banktypes.MsgSend:
 		return SendAnteHandler(ctx, version, ad.keeper, m)
-
+	case *wasmtypes.MsgStoreCode:
+		// TODO
+		return nil
 	default:
 		return cosmos.ErrUnknownRequest("invalid message type")
 	}

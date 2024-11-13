@@ -381,6 +381,7 @@ func NewChainApp(
 	genutilModule := genutil.NewAppModule(app.AccountKeeper, app.StakingKeeper, app, txConfig)
 	paramsModule := params.NewAppModule(app.ParamsKeeper)
 	upgradeModule := upgrade.NewAppModule(app.UpgradeKeeper, app.AccountKeeper.AddressCodec())
+	wasmModule := wasm.NewAppModule(app.appCodec, &app.WasmKeeper, app.StakingKeeper, app.AccountKeeper, app.BankKeeper, app.MsgServiceRouter(), app.GetSubspace(wasmtypes.ModuleName))
 
 	app.ModuleManager = module.NewManager(
 		genutilModule,
@@ -391,6 +392,7 @@ func NewChainApp(
 		consensusModule,
 		// non sdk modules
 		thorchainModule,
+		// do not register wasmModule, the thorchainModule registers x/wasm services
 	)
 
 	// BasicModuleManager defines the module BasicManager is in charge of setting up basic,
@@ -407,6 +409,7 @@ func NewChainApp(
 		mint.NewAppModule(app.appCodec, app.MintKeeper, app.AccountKeeper, nil, app.GetSubspace(minttypes.ModuleName)),
 		// non sdk modules
 		thorchainModule,
+		wasmModule,
 	)
 	app.BasicModuleManager.RegisterLegacyAminoCodec(app.legacyAmino)
 	app.BasicModuleManager.RegisterInterfaces(interfaceRegistry)
