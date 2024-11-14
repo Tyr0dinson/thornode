@@ -112,7 +112,11 @@ func (m WasmMgrVCUR) InstantiateContract(
 		return nil, errorsmod.Wrap(err, "sender")
 	}
 
-	codeInfo := m.wasmKeeper.GetCodeInfo(ctx, msg.CodeID)
+	codeInfo, err := m.getCodeInfo(ctx, msg.CodeID)
+	if err != nil {
+		return nil, err
+	}
+
 	err = m.checkAuthorization(senderAddr, codeInfo.CodeHash)
 	if err != nil {
 		return nil, err
@@ -162,7 +166,11 @@ func (m WasmMgrVCUR) InstantiateContract2(
 		return nil, errorsmod.Wrap(err, "sender")
 	}
 
-	codeInfo := m.wasmKeeper.GetCodeInfo(ctx, msg.CodeID)
+	codeInfo, err := m.getCodeInfo(ctx, msg.CodeID)
+	if err != nil {
+		return nil, err
+	}
+
 	err = m.checkAuthorization(senderAddr, codeInfo.CodeHash)
 	if err != nil {
 		return nil, err
@@ -220,8 +228,15 @@ func (m WasmMgrVCUR) ExecuteContract(
 	// The default `Messenger` configured in wasm keeper, used for routing sub-messages, uses
 	// the app's `Router`. Therefore, any SDK submessages that call a contract will route
 	// back through this code path and will be halted where necessary
-	contractInfo := m.wasmKeeper.GetContractInfo(ctx, contractAddr)
-	codeInfo := m.wasmKeeper.GetCodeInfo(ctx, contractInfo.CodeID)
+	contractInfo, err := m.getContractInfo(ctx, contractAddr)
+	if err != nil {
+		return nil, err
+	}
+
+	codeInfo, err := m.getCodeInfo(ctx, contractInfo.CodeID)
+	if err != nil {
+		return nil, err
+	}
 
 	if err := m.checkContractHalt(ctx, contractAddr); err != nil {
 		return nil, err
@@ -264,7 +279,11 @@ func (m WasmMgrVCUR) MigrateContract(
 		return nil, errorsmod.Wrap(err, "sender")
 	}
 
-	codeInfo := m.wasmKeeper.GetCodeInfo(ctx, msg.CodeID)
+	codeInfo, err := m.getCodeInfo(ctx, msg.CodeID)
+	if err != nil {
+		return nil, err
+	}
+
 	err = m.checkAuthorization(senderAddr, codeInfo.CodeHash)
 	if err != nil {
 		return nil, err
@@ -275,7 +294,11 @@ func (m WasmMgrVCUR) MigrateContract(
 		return nil, errorsmod.Wrap(err, "contract")
 	}
 
-	contractInfo := m.wasmKeeper.GetContractInfo(ctx, contractAddr)
+	contractInfo, err := m.getContractInfo(ctx, contractAddr)
+	if err != nil {
+		return nil, err
+	}
+
 	if contractInfo.Admin == "" || contractInfo.Admin != msg.Sender {
 		return nil, errNotAuthorized
 	}
@@ -321,8 +344,16 @@ func (m WasmMgrVCUR) SudoContract(
 		return nil, errorsmod.Wrap(err, "contract")
 	}
 
-	contractInfo := m.wasmKeeper.GetContractInfo(ctx, contractAddr)
-	codeInfo := m.wasmKeeper.GetCodeInfo(ctx, contractInfo.CodeID)
+	contractInfo, err := m.getContractInfo(ctx, contractAddr)
+	if err != nil {
+		return nil, err
+	}
+
+	codeInfo, err := m.getCodeInfo(ctx, contractInfo.CodeID)
+	if err != nil {
+		return nil, err
+	}
+
 	err = m.checkAuthorization(authorityAddr, codeInfo.CodeHash)
 	if err != nil {
 		return nil, err
@@ -378,7 +409,22 @@ func (m WasmMgrVCUR) checkAuthorization(actor cosmos.AccAddress, checksum []byte
 		return nil
 	}
 	return m.permissions.Permit(actor, checksum)
+}
 
+func (m WasmMgrVCUR) getCodeInfo(ctx cosmos.Context, id uint64) (*wasmtypes.CodeInfo, error) {
+	codeInfo := m.wasmKeeper.GetCodeInfo(ctx, id)
+	if codeInfo == nil {
+		return nil, wasmtypes.ErrNotFound
+	}
+	return codeInfo, nil
+}
+
+func (m WasmMgrVCUR) getContractInfo(ctx cosmos.Context, contractAddress sdk.AccAddress) (*wasmtypes.ContractInfo, error) {
+	contractInfo := m.wasmKeeper.GetContractInfo(ctx, contractAddress)
+	if contractInfo == nil {
+		return nil, wasmtypes.ErrNotFound
+	}
+	return contractInfo, nil
 }
 
 func (m WasmMgrVCUR) maybeUnpin(ctx cosmos.Context, codeId uint64) {

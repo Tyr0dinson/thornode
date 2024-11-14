@@ -28,6 +28,61 @@ func (s WasmManagerVCURSuite) TestStoreCode(c *C) {
 	c.Assert(err, IsNil)
 }
 
+func (s WasmManagerVCURSuite) TestInstantiateContract(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockTime(time.Unix(1, 0))
+
+	_, err := mgr.WasmManager().StoreCode(ctx, &wasmtypes.MsgStoreCode{
+		Sender:                "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
+		WASMByteCode:          s.loadWasm(c, "counter.wasm"),
+		InstantiatePermission: nil,
+	})
+	c.Assert(err, IsNil)
+
+	_, err = mgr.WasmManager().StoreCode(ctx, &wasmtypes.MsgStoreCode{
+		Sender:                "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
+		WASMByteCode:          s.loadWasm(c, "extended.wasm"),
+		InstantiatePermission: nil,
+	})
+	c.Assert(err, IsNil)
+
+	_, err = mgr.WasmManager().InstantiateContract(ctx, &wasmtypes.MsgInstantiateContract{
+		Sender: "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
+		CodeID: 1,
+		Label:  "label",
+		Msg:    []byte(`{}`),
+		Funds:  []types.Coin{},
+	})
+	c.Assert(err, IsNil)
+
+	_, err = mgr.WasmManager().InstantiateContract(ctx, &wasmtypes.MsgInstantiateContract{
+		Sender: "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
+		CodeID: 1,
+		Label:  "label 2",
+		Msg:    []byte(`{}`),
+		Funds:  []types.Coin{},
+	})
+	c.Assert(err, IsNil)
+
+	_, err = mgr.WasmManager().InstantiateContract(ctx, &wasmtypes.MsgInstantiateContract{
+		Sender: "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
+		CodeID: 2,
+		Label:  "label",
+		Msg:    []byte(`{}`),
+		Funds:  []types.Coin{},
+	})
+	c.Assert(err, IsNil)
+
+	_, err = mgr.WasmManager().InstantiateContract(ctx, &wasmtypes.MsgInstantiateContract{
+		Sender: "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
+		CodeID: 2,
+		Label:  "label",
+		Msg:    []byte(`{}`),
+		Funds:  []types.Coin{},
+	})
+	c.Assert(err, IsNil)
+}
+
 func (s WasmManagerVCURSuite) TestMigrateCode(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	ctx = ctx.WithBlockTime(time.Unix(1, 0))
