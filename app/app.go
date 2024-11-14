@@ -72,17 +72,15 @@ import (
 	"github.com/cosmos/gogoproto/proto"
 	"github.com/spf13/cast"
 
-	apitypes "gitlab.com/thorchain/thornode/v3/api/types"
+	"github.com/CosmWasm/wasmd/x/wasm"
+	wasmkeeper "github.com/CosmWasm/wasmd/x/wasm/keeper"
+	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
 	appparams "gitlab.com/thorchain/thornode/v3/app/params"
 	"gitlab.com/thorchain/thornode/v3/openapi"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain"
 	thorchainkeeper "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 	thorchainkeeperv1 "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/v1"
 	thorchaintypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
-
-	"github.com/CosmWasm/wasmd/x/wasm"
-	wasmkeeper "github.com/CosmWasm/wasmd/x/wasm/keeper"
-	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
 )
 
 const (
@@ -351,7 +349,7 @@ func NewChainApp(
 		wasmkeeper.WithQueryPlugins(
 			&wasmkeeper.QueryPlugins{
 				Grpc: wasmkeeper.AcceptListGrpcQuerier(
-					wasmkeeper.AcceptedQueries{"/types.Query/Pool": &apitypes.QueryPoolResponse{}},
+					wasmAcceptedQueries,
 					app.GRPCQueryRouter(),
 					app.appCodec),
 			},
