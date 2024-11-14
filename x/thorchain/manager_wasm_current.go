@@ -1,8 +1,10 @@
 package thorchain
 
 import (
-	"encoding/hex"
 	"fmt"
+	"strings"
+
+	"encoding/base32"
 
 	wasmkeeper "github.com/CosmWasm/wasmd/x/wasm/keeper"
 	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
@@ -19,8 +21,8 @@ import (
 var (
 	_                        WasmManager = &WasmMgrVCUR{}
 	MIMIR_WASM_GLOBAL_HALT               = "WASMHALTGLOBAL"
-	MIMIR_WASM_CHECKSUM_HALT             = "WASMHALTCONTRACT"
-	MIMIR_WASM_CONTRACT_HALT             = "WASMHALTCHECKSUM"
+	MIMIR_WASM_CHECKSUM_HALT             = "WASMHALTCS"
+	MIMIR_WASM_CONTRACT_HALT             = "WASMHALTCONTRACT"
 )
 
 // WasmMgrVCUR is VCUR implementation of slasher
@@ -379,7 +381,11 @@ func (m WasmMgrVCUR) checkHalt(ctx cosmos.Context) error {
 }
 
 func (m WasmMgrVCUR) checkContractHalt(ctx cosmos.Context, address sdk.AccAddress) error {
-	v, err := m.keeper.GetMimir(ctx, MIMIR_WASM_CONTRACT_HALT+address.String())
+	// Use checksum for revity and to fit inside mimir's 64 char length
+	addrStr := address.String()
+	contractKey := strings.ToUpper(addrStr)[len(addrStr)-6:]
+	v, err := m.keeper.GetMimir(ctx, MIMIR_WASM_CONTRACT_HALT+contractKey)
+
 	if err != nil {
 		return err
 	}
@@ -390,7 +396,12 @@ func (m WasmMgrVCUR) checkContractHalt(ctx cosmos.Context, address sdk.AccAddres
 }
 
 func (m WasmMgrVCUR) checkChecksumHalt(ctx cosmos.Context, checksum []byte) error {
-	v, err := m.keeper.GetMimir(ctx, MIMIR_WASM_CHECKSUM_HALT+hex.EncodeToString(checksum))
+	// Encode the checksum to base32 to fit within mimir's 64 char limit and case insenstivity
+	// Truncate trailing `=` for brevity
+	encoder := base32.StdEncoding
+	encoded := encoder.EncodeToString(checksum)
+	key := strings.TrimRight(encoded, "=")
+	v, err := m.keeper.GetMimir(ctx, MIMIR_WASM_CHECKSUM_HALT+strings.ToUpper(key))
 	if err != nil {
 		return err
 	}
