@@ -11,6 +11,10 @@
     "e518f0ee58133d9eda33e8d0d0fbcde7b54ed6b0a8dc82a98fe9bbdb2a31fd46": {
       "origin": "file:../../../test/fixtures/extended.wasm",
       "deployers": { "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m": true }
+    },
+    "e10f245549ade47cbf5b6fe50e60f78fd2943e2bc2580c3a1f58b850efa6c0a4": {
+      "origin": "file:../../../test/fixtures/bindings.wasm",
+      "deployers": { "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m": true }
     }
   }
 }

@@ -346,6 +346,12 @@ func NewChainApp(
 		panic(fmt.Sprintf("error while reading wasm config: %s", err))
 	}
 
+	wasmOpts = append(wasmOpts,
+		wasmkeeper.WithQueryHandler(
+			NewWasmQueryHandler(app),
+		),
+	)
+
 	// The last arguments can contain custom message handlers, and custom query handlers,
 	// if we want to allow any custom callbacks
 	app.WasmKeeper = wasmkeeper.NewKeeper(
