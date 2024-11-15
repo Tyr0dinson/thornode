@@ -5,7 +5,6 @@ import (
 
 	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
 	"github.com/blang/semver"
-	"github.com/cosmos/cosmos-sdk/types"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -68,19 +67,28 @@ func (h WasmExecHandler) handleV137(ctx cosmos.Context, msg MsgWasmExec) (*cosmo
 	if h.mgr.Keeper().IsChainHalted(ctx, common.THORChain) {
 		return nil, fmt.Errorf("unable to use MsgWasmExec while THORChain is halted")
 	}
-	// TODO: mint Bridge tokens and transfer to msg.Signer address
-	funds := []types.Coin{}
 
 	sender, err := msg.Tx.FromAddress.MustAccAddress()
 	if err != nil {
 		return &cosmos.Result{}, err
 	}
 
+	_, mintAmt, err := h.mgr.SecuredAssetManager().Deposit(ctx, msg.Asset, msg.Amount, sender, msg.Tx.FromAddress, msg.Tx.ID)
+
+	if err != nil {
+		return nil, err
+	}
+
+	coin, err := mintAmt.Native()
+	if err != nil {
+		return nil, err
+	}
+
 	execMsg := wasmtypes.MsgExecuteContract{
 		Sender:   sender.String(),
 		Contract: msg.Contract.String(),
 		Msg:      msg.Msg,
-		Funds:    funds,
+		Funds:    cosmos.NewCoins(coin),
 	}
 
 	_, err = h.mgr.WasmManager().ExecuteContract(ctx, &execMsg)
