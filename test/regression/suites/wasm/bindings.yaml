@@ -108,3 +108,9 @@ asserts:
   - .txs[0].result.events[11].from == "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
   - .txs[0].result.events[11].memo == "bond:tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m"
   - .txs[0].result.events[11].node_address == "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_dog }}
+asserts: 
+  - .bond_providers.providers[1].bond_address == "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
+  - .bond_providers.providers[1].bond == "2500000000000"
