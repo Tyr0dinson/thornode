@@ -14,12 +14,13 @@ var (
 )
 
 // NewMsgWasmExec is a constructor function for MsgWasmExec
-func NewMsgWasmExec(asset common.Asset, amount cosmos.Uint, contract, signer cosmos.AccAddress, tx common.Tx) *MsgWasmExec {
+func NewMsgWasmExec(asset common.Asset, amount cosmos.Uint, contract, signer cosmos.AccAddress, msg []byte, tx common.Tx) *MsgWasmExec {
 	return &MsgWasmExec{
 		Tx:       tx,
 		Asset:    asset,
 		Amount:   amount,
 		Contract: contract,
+		Msg:      msg,
 		Signer:   signer,
 	}
 }

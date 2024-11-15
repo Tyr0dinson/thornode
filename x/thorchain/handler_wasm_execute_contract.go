@@ -3,8 +3,10 @@ package thorchain
 import (
 	"fmt"
 
+	errorsmod "cosmossdk.io/errors"
 	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
 	"github.com/blang/semver"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -69,7 +71,17 @@ func (h WasmExecuteContractHandler) handleV137(ctx cosmos.Context, msg wasmtypes
 	if h.mgr.Keeper().IsChainHalted(ctx, common.THORChain) {
 		return nil, fmt.Errorf("unable to use MsgExecuteContract while THORChain is halted")
 	}
-	_, err := h.mgr.WasmManager().ExecuteContract(ctx, &msg)
+
+	senderAddr, err := sdk.AccAddressFromBech32(msg.Sender)
+	if err != nil {
+		return nil, errorsmod.Wrap(err, "sender")
+	}
+	contractAddr, err := sdk.AccAddressFromBech32(msg.Contract)
+	if err != nil {
+		return nil, errorsmod.Wrap(err, "contract")
+	}
+
+	_, err = h.mgr.WasmManager().ExecuteContract(ctx, contractAddr, senderAddr, msg.Msg, msg.Funds)
 	if err != nil {
 		return &cosmos.Result{}, err
 	}

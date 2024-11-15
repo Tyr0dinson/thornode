@@ -3,7 +3,6 @@ package thorchain
 import (
 	"fmt"
 
-	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
 	"github.com/blang/semver"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -69,6 +68,7 @@ func (h WasmExecHandler) handleV137(ctx cosmos.Context, msg MsgWasmExec) (*cosmo
 	}
 
 	sender, err := msg.Tx.FromAddress.MustAccAddress()
+
 	if err != nil {
 		return &cosmos.Result{}, err
 	}
@@ -84,14 +84,7 @@ func (h WasmExecHandler) handleV137(ctx cosmos.Context, msg MsgWasmExec) (*cosmo
 		return nil, err
 	}
 
-	execMsg := wasmtypes.MsgExecuteContract{
-		Sender:   sender.String(),
-		Contract: msg.Contract.String(),
-		Msg:      msg.Msg,
-		Funds:    cosmos.NewCoins(coin),
-	}
-
-	_, err = h.mgr.WasmManager().ExecuteContract(ctx, &execMsg)
+	_, err = h.mgr.WasmManager().ExecuteContract(ctx, msg.Contract, sender, msg.Msg, cosmos.NewCoins(coin))
 	if err != nil {
 		return &cosmos.Result{}, err
 	}

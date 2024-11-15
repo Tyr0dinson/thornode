@@ -1,7 +1,6 @@
 package thorchain
 
 import (
-	"fmt"
 	"strings"
 
 	"encoding/base32"
@@ -208,23 +207,10 @@ func (m WasmMgrVCUR) InstantiateContract2(
 
 func (m WasmMgrVCUR) ExecuteContract(
 	ctx cosmos.Context,
-	msg *wasmtypes.MsgExecuteContract,
+	contractAddr, senderAddr sdk.AccAddress, msg []byte, coins sdk.Coins,
 ) (*wasmtypes.MsgExecuteContractResponse, error) {
 	if err := m.checkHalt(ctx); err != nil {
 		return nil, err
-	}
-
-	if err := msg.ValidateBasic(); err != nil {
-		return nil, err
-	}
-
-	senderAddr, err := sdk.AccAddressFromBech32(msg.Sender)
-	if err != nil {
-		return nil, errorsmod.Wrap(err, "sender")
-	}
-	contractAddr, err := sdk.AccAddressFromBech32(msg.Contract)
-	if err != nil {
-		return nil, errorsmod.Wrap(err, "contract")
 	}
 
 	// The default `Messenger` configured in wasm keeper, used for routing sub-messages, uses
@@ -252,8 +238,7 @@ func (m WasmMgrVCUR) ExecuteContract(
 		ctx,
 		contractAddr,
 		senderAddr,
-		msg.Msg,
-		msg.Funds,
+		msg, coins,
 	)
 	if err != nil {
 		return nil, err
@@ -442,7 +427,6 @@ func (m WasmMgrVCUR) maybeUnpin(ctx cosmos.Context, codeId uint64) {
 	var instanceCount int
 
 	m.wasmKeeper.IterateContractsByCode(ctx, codeId, func(address sdk.AccAddress) bool {
-		fmt.Println(address)
 		instanceCount++
 		return true
 	})

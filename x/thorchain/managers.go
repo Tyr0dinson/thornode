@@ -143,7 +143,7 @@ type WasmManager interface {
 	//  code id with a predictable address
 	InstantiateContract2(ctx cosmos.Context, msg *wasmtypes.MsgInstantiateContract2) (*wasmtypes.MsgInstantiateContract2Response, error)
 	// Execute submits the given message data to a smart contract
-	ExecuteContract(ctx cosmos.Context, msg *wasmtypes.MsgExecuteContract) (*wasmtypes.MsgExecuteContractResponse, error)
+	ExecuteContract(ctx cosmos.Context, contractAddr, senderAddr cosmos.AccAddress, msg []byte, coins cosmos.Coins) (*wasmtypes.MsgExecuteContractResponse, error)
 	// Migrate runs a code upgrade/ downgrade for a smart contract
 	MigrateContract(ctx cosmos.Context, msg *wasmtypes.MsgMigrateContract) (*wasmtypes.MsgMigrateContractResponse, error)
 	// SudoContract defines an operation for calling sudo

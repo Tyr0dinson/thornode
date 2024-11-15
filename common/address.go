@@ -393,11 +393,19 @@ func (addr Address) MustAccAddress() (cosmos.AccAddress, error) {
 	if addr.GetChain().IsEVM() {
 		return cosmos.AccAddressFromHexUnsafe(strings.TrimPrefix(addr.String(), "0x"))
 	}
-	_, _, err := bech32.Decode(addr.String())
-	if err == nil {
-		return cosmos.AccAddressFromBech32(addr.String())
+
+	_, bz, err := bech32.Decode(addr.String())
+	if err != nil {
+		return nil, fmt.Errorf("decoding bech32 failed: %w", err)
 	}
-	return cosmos.AccAddress{}, err
+
+	converted, err := bech32.ConvertBits(bz, 5, 8, true)
+
+	if err != nil {
+		return nil, fmt.Errorf("decoding bech32 failed: %w", err)
+	}
+
+	return cosmos.AccAddress(converted), nil
 }
 
 func (addr Address) Equals(addr2 Address) bool {

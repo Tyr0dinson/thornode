@@ -29,7 +29,7 @@ func (s *DummyWasmManager) InstantiateContract2(ctx cosmos.Context, msg *wasmtyp
 	return &wasmtypes.MsgInstantiateContract2Response{}, nil
 }
 
-func (s *DummyWasmManager) ExecuteContract(ctx cosmos.Context, msg *wasmtypes.MsgExecuteContract) (*wasmtypes.MsgExecuteContractResponse, error) {
+func (s *DummyWasmManager) ExecuteContract(ctx cosmos.Context, contractAddr, senderAddr cosmos.AccAddress, msg []byte, coins cosmos.Coins) (*wasmtypes.MsgExecuteContractResponse, error) {
 	return &wasmtypes.MsgExecuteContractResponse{}, nil
 }
 

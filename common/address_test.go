@@ -357,3 +357,11 @@ func (s *AddressSuite) TestAddress(c *C) {
 	c.Check(addr.IsChain(DOGEChain), Equals, true)
 	c.Check(addr.GetNetwork(DOGEChain), Equals, MockNet)
 }
+
+func (s *AddressSuite) TestMappingAddress(c *C) {
+	addr, err := NewAddress("bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk")
+	c.Check(err, IsNil)
+	cosmosAddr, err := addr.MustAccAddress()
+	c.Check(err, IsNil)
+	c.Check(cosmosAddr.String(), Equals, "cosmos1qzf3gsk7edzwl9syyefvfhle37cjtql35qvx4f8c")
+}

@@ -238,7 +238,7 @@ func processOneTxIn(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, sig
 		newMsg = NewMsgRunePoolWithdraw(signer, tx.Tx, m.GetBasisPts(), m.GetAffiliateAddress(), m.GetAffiliateBasisPoints())
 	case ExecMemo:
 		coin := tx.Tx.Coins[0]
-		newMsg = NewMsgWasmExec(coin.Asset, coin.Amount, m.ContractAddress, signer, tx.Tx)
+		newMsg = NewMsgWasmExec(coin.Asset, coin.Amount, m.ContractAddress, signer, m.Msg, tx.Tx)
 	default:
 		return nil, errInvalidMemo
 	}
