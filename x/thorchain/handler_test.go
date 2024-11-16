@@ -65,7 +65,7 @@ func (s *HandlerSuite) SetUpSuite(*C) {
 }
 
 func FundModule(c *C, ctx cosmos.Context, k keeper.Keeper, name string, amt uint64) {
-	coin := common.NewCoin(common.RuneNative, cosmos.NewUint(amt*common.One))
+	coin := common.NewCoin(common.RuneNative, cosmos.NewUint(amt))
 	err := k.MintToModule(ctx, ModuleName, coin)
 	c.Assert(err, IsNil)
 	err = k.SendFromModuleToModule(ctx, ModuleName, name, common.NewCoins(coin))
@@ -73,7 +73,7 @@ func FundModule(c *C, ctx cosmos.Context, k keeper.Keeper, name string, amt uint
 }
 
 func FundAccount(c *C, ctx cosmos.Context, k keeper.Keeper, addr cosmos.AccAddress, amt uint64) {
-	coin := common.NewCoin(common.RuneNative, cosmos.NewUint(amt*common.One))
+	coin := common.NewCoin(common.RuneNative, cosmos.NewUint(amt))
 	err := k.MintToModule(ctx, ModuleName, coin)
 	c.Assert(err, IsNil)
 	err = k.SendFromModuleToAccount(ctx, ModuleName, addr, common.NewCoins(coin))
@@ -142,9 +142,9 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 		authtypes.NewModuleAddress(ModuleName).String(),
 	)
 	k := kv1.NewKeeper(encodingConfig.Codec, bk, ak, uk, keyThorchain)
-	FundModule(c, ctx, k, ModuleName, 10000*common.One)
-	FundModule(c, ctx, k, AsgardName, common.One)
-	FundModule(c, ctx, k, ReserveName, 10000*common.One)
+	FundModule(c, ctx, k, ModuleName, 10_000*common.One)
+	FundModule(c, ctx, k, AsgardName, 100_000_000*common.One)
+	FundModule(c, ctx, k, ReserveName, 100_000_000*common.One)
 	c.Assert(k.SaveNetworkFee(ctx, common.ETHChain, NetworkFee{
 		Chain:              common.ETHChain,
 		TransactionSize:    1,
@@ -289,7 +289,7 @@ func getHandlerTestWrapper(c *C, height int64, withActiveNode, withActieDOGEPool
 		c.Assert(mgr.Keeper().SetPool(ctx, p), IsNil)
 	}
 
-	FundModule(c, ctx, mgr.Keeper(), AsgardName, 100000000)
+	FundModule(c, ctx, mgr.Keeper(), AsgardName, common.One)
 
 	c.Assert(mgr.ValidatorMgr().BeginBlock(ctx, mgr, nil), IsNil)
 
@@ -349,7 +349,7 @@ func (HandlerSuite) TestHandleTxInWithdrawLiquidityMemo(c *C) {
 
 	handler := NewInternalHandler(w.mgr)
 
-	FundModule(c, w.ctx, w.keeper, AsgardName, 500)
+	FundModule(c, w.ctx, w.keeper, AsgardName, 500*common.One)
 	c.Assert(w.keeper.SaveNetworkFee(w.ctx, common.DOGEChain, NetworkFee{
 		Chain:              common.DOGEChain,
 		TransactionSize:    1,

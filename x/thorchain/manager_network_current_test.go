@@ -65,7 +65,7 @@ func (s *NetworkManagerVCURTestSuite) TestUpdateNetwork(c *C) {
 	// fail to get total liquidity fee should result an error
 	helper.failGetTotalLiquidityFee = true
 	if common.RuneAsset().Equals(common.RuneNative) {
-		FundModule(c, ctx, helper, ReserveName, 100)
+		FundModule(c, ctx, helper, ReserveName, 100*common.One)
 	}
 	c.Assert(networkMgr.UpdateNetwork(ctx, constAccessor, mgr.GasMgr(), mgr.EventMgr()), NotNil)
 	helper.failGetTotalLiquidityFee = false
