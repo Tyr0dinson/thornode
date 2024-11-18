@@ -28,7 +28,7 @@ func (s *SecuredAssetMgrSuite) TestDepositAndWithdraw(c *C) {
 	depositAmt, mintAmt, err := mgr.Deposit(ctx, asset, cosmos.NewUint(100*common.One), addr1, common.NoAddress, common.BlankTxID)
 	c.Assert(err, IsNil)
 	c.Check(depositAmt.String(), Equals, cosmos.NewUint(100*common.One).String())
-	c.Check(mintAmt.String(), Equals, cosmos.NewUint(100*common.One).String())
+	c.Check(mintAmt.Amount.String(), Equals, cosmos.NewUint(100*common.One).String())
 
 	bal := mgr.BalanceOf(ctx, asset, addr1)
 	c.Check(bal.String(), Equals, cosmos.NewUint(100*common.One).String())
@@ -36,7 +36,7 @@ func (s *SecuredAssetMgrSuite) TestDepositAndWithdraw(c *C) {
 	depositAmt, mintAmt, err = mgr.Deposit(ctx, asset, cosmos.NewUint(50*common.One), addr2, common.NoAddress, common.BlankTxID)
 	c.Assert(err, IsNil)
 	c.Check(depositAmt.String(), Equals, cosmos.NewUint(50*common.One).String())
-	c.Check(mintAmt.String(), Equals, cosmos.NewUint(50*common.One).String())
+	c.Check(mintAmt.Amount.String(), Equals, cosmos.NewUint(50*common.One).String())
 
 	bal = mgr.BalanceOf(ctx, asset, addr2)
 	c.Check(bal.String(), Equals, cosmos.NewUint(50*common.One).String())
@@ -77,12 +77,12 @@ func (s *SecuredAssetMgrSuite) TestRateDecrease(c *C) {
 	depositAmt, mintAmt, err := mgr.Deposit(ctx, asset, depositAmount1, addr1, common.NoAddress, common.BlankTxID)
 	c.Assert(err, IsNil)
 	c.Check(depositAmt.String(), Equals, depositAmount1.String())
-	c.Check(mintAmt.String(), Equals, depositAmount1.String())
+	c.Check(mintAmt.Amount.String(), Equals, depositAmount1.String())
 
 	depositAmt, mintAmt, err = mgr.Deposit(ctx, asset, depositAmount2, addr2, common.NoAddress, common.BlankTxID)
 	c.Assert(err, IsNil)
 	c.Check(depositAmt.String(), Equals, depositAmount2.String())
-	c.Check(mintAmt.String(), Equals, depositAmount2.String())
+	c.Check(mintAmt.Amount.String(), Equals, depositAmount2.String())
 
 	bal := mgr.BalanceOf(ctx, asset, addr1)
 	c.Check(bal.String(), Equals, depositAmount1.String())
@@ -139,12 +139,12 @@ func (s *SecuredAssetMgrSuite) TestRateDecreaseDeposit(c *C) {
 	depositAmt, mintAmt, err := mgr.Deposit(ctx, asset, depositAmount1, addr1, common.NoAddress, common.BlankTxID)
 	c.Assert(err, IsNil)
 	c.Check(depositAmt.String(), Equals, depositAmount1.String())
-	c.Check(mintAmt.String(), Equals, depositAmount1.String())
+	c.Check(mintAmt.Amount.String(), Equals, depositAmount1.String())
 
 	depositAmt, mintAmt, err = mgr.Deposit(ctx, asset, depositAmount2, addr2, common.NoAddress, common.BlankTxID)
 	c.Assert(err, IsNil)
 	c.Check(depositAmt.String(), Equals, depositAmount2.String())
-	c.Check(mintAmt.String(), Equals, depositAmount2.String())
+	c.Check(mintAmt.Amount.String(), Equals, depositAmount2.String())
 
 	bal := mgr.BalanceOf(ctx, asset, addr1)
 	c.Check(bal.String(), Equals, depositAmount1.String())
@@ -165,7 +165,7 @@ func (s *SecuredAssetMgrSuite) TestRateDecreaseDeposit(c *C) {
 	c.Assert(err, IsNil)
 	c.Check(depositAmt.String(), Equals, depositAmount1.String())
 	// Issuance after a dilution will be greater than the deposit amount
-	c.Check(mintAmt.String(), Equals, issuanceAmount3.String())
+	c.Check(mintAmt.Amount.String(), Equals, issuanceAmount3.String())
 	bal = mgr.BalanceOf(ctx, asset, addr3)
 	c.Check(bal.String(), Equals, depositAmount1.String())
 
