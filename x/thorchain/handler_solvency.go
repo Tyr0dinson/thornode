@@ -14,6 +14,7 @@ import (
 	"gitlab.com/thorchain/thornode/common/cosmos"
 	"gitlab.com/thorchain/thornode/constants"
 	"gitlab.com/thorchain/thornode/x/thorchain/keeper"
+	"gitlab.com/thorchain/thornode/x/thorchain/types"
 )
 
 // SolvencyHandler is to process MsgSolvency message from bifrost
@@ -114,40 +115,54 @@ func (h SolvencyHandler) handleV134(ctx cosmos.Context, msg MsgSolvency) (*cosmo
 		return &cosmos.Result{}, nil
 	}
 	h.mgr.Keeper().SetSolvencyVoter(ctx, voter)
+
+	if voter.ConsensusBlockHeight > 0 {
+		// if consensus was reached prior to this signer, decrement slash;
+		// only decr if signer was active at consensus and flex period has not expired
+		na, err := h.mgr.Keeper().GetNodeAccount(ctx, msg.Signer)
+		if err != nil {
+			return &cosmos.Result{}, fmt.Errorf("error fetching node account: %s: %w", msg.Signer.String(), err)
+		}
+		withinFlex := (voter.ConsensusBlockHeight + observeFlex) >= ctx.BlockHeight()
+		if withinFlex && voter.ConsensusBlockHeight >= na.ActiveBlockHeight {
+			h.mgr.Slasher().DecSlashPoints(slashCtx, lackOfObservationPenalty, msg.Signer)
+		}
+		return &cosmos.Result{}, nil
+	} else {
+		// slash the signer until consensus is reached
+		h.mgr.Slasher().IncSlashPoints(slashCtx, observeSlashPoints, msg.Signer)
+	}
+
+	// check if this signer triggers consensus
 	active, err := h.mgr.Keeper().ListActiveValidators(ctx)
 	if err != nil {
 		return nil, wrapError(ctx, err, "fail to get list of active node accounts")
 	}
 	if !voter.HasConsensus(active) {
-		// Before consensus, slash until consensus.
-		h.mgr.Slasher().IncSlashPoints(slashCtx, observeSlashPoints, msg.Signer)
-		return &cosmos.Result{}, nil
-	}
-
-	// from this point , solvency reach consensus
-	if voter.ConsensusBlockHeight > 0 {
-		// After consensus, only decrement slash points if within the ObservationDelayFlexibility period.
-		if (voter.ConsensusBlockHeight + observeFlex) >= ctx.BlockHeight() {
-			h.mgr.Slasher().DecSlashPoints(slashCtx, lackOfObservationPenalty, msg.Signer)
-		}
-		// solvency tx already processed
 		return &cosmos.Result{}, nil
 	}
 	voter.ConsensusBlockHeight = ctx.BlockHeight()
 	h.mgr.Keeper().SetSolvencyVoter(ctx, voter)
 
-	// This signer brings the voter to consensus; increment the signer's slash points like the before-consensus signers,
-	// then decrement all the signers' slash points and increment the non-signers' slash points.
-	h.mgr.Slasher().IncSlashPoints(slashCtx, observeSlashPoints, msg.Signer)
+	// This signer brings the voter to consensus; decrement all the signers' slash
+	// points and increment the non-signers' slash points.
 	signers := voter.GetSigners()
 	nonSigners := getNonSigners(active, signers)
 	h.mgr.Slasher().DecSlashPoints(slashCtx, observeSlashPoints, signers...)
 	h.mgr.Slasher().IncSlashPoints(slashCtx, lackOfObservationPenalty, nonSigners...)
 
+	if err := h.handleConsensus(ctx, voter); err != nil {
+		return &cosmos.Result{}, err
+	}
+
+	return &cosmos.Result{}, nil
+}
+
+func (h SolvencyHandler) handleConsensus(ctx cosmos.Context, voter types.SolvencyVoter) error {
 	vault, err := h.mgr.Keeper().GetVault(ctx, voter.PubKey)
 	if err != nil {
 		ctx.Logger().Error("fail to get vault", "error", err)
-		return &cosmos.Result{}, fmt.Errorf("fail to get vault: %w", err)
+		return fmt.Errorf("fail to get vault: %w", err)
 	}
 
 	// Do checks for whether to act on this consensus or not.
@@ -157,7 +172,7 @@ func (h SolvencyHandler) handleV134(ctx cosmos.Context, msg MsgSolvency) (*cosmo
 		ctx.Logger().Error("fail to get mimir", "key", StopSolvencyCheckKey, "error", err)
 	}
 	if stopSolvencyCheck > 0 && stopSolvencyCheck < ctx.BlockHeight() {
-		return &cosmos.Result{}, nil
+		return nil
 	}
 	// stop solvency checker can be chain specific
 	stopSolvencyCheckChain, err := h.mgr.Keeper().GetMimir(ctx, fmt.Sprintf("%s%s", StopSolvencyCheckKey, voter.Chain.String()))
@@ -165,7 +180,7 @@ func (h SolvencyHandler) handleV134(ctx cosmos.Context, msg MsgSolvency) (*cosmo
 		ctx.Logger().Error("fail to get mimir", "key", StopSolvencyCheckKey+voter.Chain.String(), "error", err)
 	}
 	if stopSolvencyCheckChain > 0 && stopSolvencyCheckChain < ctx.BlockHeight() {
-		return &cosmos.Result{}, nil
+		return nil
 	}
 	haltChainKey := fmt.Sprintf(`SolvencyHalt%sChain`, voter.Chain)
 	haltChain, err := h.mgr.Keeper().GetMimir(ctx, haltChainKey)
@@ -177,7 +192,7 @@ func (h SolvencyHandler) handleV134(ctx cosmos.Context, msg MsgSolvency) (*cosmo
 	// Also don't unhalt if the chain was manually halted for a future height
 	// or indefinitely ('1').
 	if haltChain >= ctx.BlockHeight() || haltChain == 1 {
-		return &cosmos.Result{}, nil
+		return nil
 	}
 	// If the solvency message is from a height which does not reflect inbounds
 	// reflected in the supermajority-observation vault balances,
@@ -187,9 +202,9 @@ func (h SolvencyHandler) handleV134(ctx cosmos.Context, msg MsgSolvency) (*cosmo
 		ctx.Logger().Error("fail to get last chain height", "chain", voter.Chain, "error", err)
 	}
 	// According to the validate msg.Id check, the Height is consistent for all the voter's messages.
-	if msg.Height < lastChainHeight {
-		ctx.Logger().Info("solvency message consensus for height before last chain height inbound supermajority observation", "chain", voter.Chain, "vault pubkey", voter.PubKey, "last chain height", lastChainHeight, "solvency message height", msg.Height)
-		return &cosmos.Result{}, nil
+	if voter.Height < lastChainHeight {
+		ctx.Logger().Info("solvency message consensus for height before last chain height inbound supermajority observation", "chain", voter.Chain, "vault pubkey", voter.PubKey, "last chain height", lastChainHeight, "solvency message height", voter.Height)
+		return nil
 	}
 
 	isInsolvent := h.insolvencyCheck(ctx, vault, voter.Coins, voter.Chain)
@@ -218,7 +233,7 @@ func (h SolvencyHandler) handleV134(ctx cosmos.Context, msg MsgSolvency) (*cosmo
 		}
 	}
 
-	return &cosmos.Result{}, nil
+	return nil
 }
 
 // insolvencyCheck compare the coins in vault against the coins report by solvency message
