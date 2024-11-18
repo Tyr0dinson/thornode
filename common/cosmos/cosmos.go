@@ -51,6 +51,7 @@ var (
 	NewIntFromBigInt             = sdkmath.NewIntFromBigInt
 	NewUintFromBigInt            = sdkmath.NewUintFromBigInt
 	AccAddressFromBech32         = sdk.AccAddressFromBech32
+	MustAccAddressFromBech32     = sdk.MustAccAddressFromBech32
 	AccAddressFromHexUnsafe      = sdk.AccAddressFromHexUnsafe
 	VerifyAddressFormat          = sdk.VerifyAddressFormat
 	GetFromBech32                = sdk.GetFromBech32

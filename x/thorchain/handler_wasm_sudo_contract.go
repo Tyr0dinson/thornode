@@ -3,6 +3,7 @@ package thorchain
 import (
 	"fmt"
 
+	errorsmod "cosmossdk.io/errors"
 	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
 	"github.com/blang/semver"
 
@@ -71,7 +72,18 @@ func (h WasmSudoContractHandler) handleV137(ctx cosmos.Context, msg wasmtypes.Ms
 	if h.mgr.Keeper().IsChainHalted(ctx, common.THORChain) {
 		return nil, fmt.Errorf("unable to use MsgSudoContract while THORChain is halted")
 	}
-	_, err := h.mgr.WasmManager().SudoContract(ctx, &msg)
+
+	authorityAddr, err := cosmos.AccAddressFromBech32(msg.Authority)
+	if err != nil {
+		return nil, errorsmod.Wrap(err, "authority")
+	}
+
+	contractAddr, err := cosmos.AccAddressFromBech32(msg.Contract)
+	if err != nil {
+		return nil, errorsmod.Wrap(err, "contract")
+	}
+
+	_, err = h.mgr.WasmManager().SudoContract(ctx, contractAddr, authorityAddr, msg.Msg)
 	if err != nil {
 		return &cosmos.Result{}, err
 	}

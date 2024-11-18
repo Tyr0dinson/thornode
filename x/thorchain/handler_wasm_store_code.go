@@ -3,6 +3,7 @@ package thorchain
 import (
 	"fmt"
 
+	errorsmod "cosmossdk.io/errors"
 	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
 	"github.com/blang/semver"
 
@@ -69,7 +70,13 @@ func (h WasmStoreCodeHandler) handleV137(ctx cosmos.Context, msg wasmtypes.MsgSt
 	if h.mgr.Keeper().IsChainHalted(ctx, common.THORChain) {
 		return nil, fmt.Errorf("unable to use MsgStoreCode while THORChain is halted")
 	}
-	_, err := h.mgr.WasmManager().StoreCode(ctx, &msg)
+
+	senderAddr, err := cosmos.AccAddressFromBech32(msg.Sender)
+	if err != nil {
+		return nil, errorsmod.Wrap(err, "sender")
+	}
+
+	_, _, err = h.mgr.WasmManager().StoreCode(ctx, senderAddr, msg.WASMByteCode)
 	if err != nil {
 		return &cosmos.Result{}, err
 	}

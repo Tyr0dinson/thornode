@@ -6,10 +6,10 @@ import (
 
 	upgradekeeper "cosmossdk.io/x/upgrade/keeper"
 	wasmkeeper "github.com/CosmWasm/wasmd/x/wasm/keeper"
-	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
 	"github.com/blang/semver"
 	abci "github.com/cometbft/cometbft/abci/types"
 	"github.com/cosmos/cosmos-sdk/codec"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
 
@@ -135,22 +135,50 @@ type PoolManager interface {
 
 type WasmManager interface {
 	// StoreCode to submit Wasm code to the system
-	StoreCode(ctx cosmos.Context, msg *wasmtypes.MsgStoreCode) (*wasmtypes.MsgStoreCodeResponse, error)
+	StoreCode(ctx cosmos.Context,
+		creator cosmos.AccAddress,
+		wasmCode []byte,
+	) (codeID uint64, checksum []byte, err error)
 	//  InstantiateContract creates a new smart contract instance for the given
 	//  code id.
-	InstantiateContract(ctx cosmos.Context, msg *wasmtypes.MsgInstantiateContract) (*wasmtypes.MsgInstantiateContractResponse, error)
+	InstantiateContract(ctx cosmos.Context,
+		codeID uint64,
+		creator, admin sdk.AccAddress,
+		initMsg []byte,
+		label string,
+		deposit sdk.Coins,
+	) (cosmos.AccAddress, []byte, error)
 	//  InstantiateContract2 creates a new smart contract instance for the given
 	//  code id with a predictable address
-	InstantiateContract2(ctx cosmos.Context, msg *wasmtypes.MsgInstantiateContract2) (*wasmtypes.MsgInstantiateContract2Response, error)
+	InstantiateContract2(ctx cosmos.Context,
+		codeID uint64,
+		creator, admin sdk.AccAddress,
+		initMsg []byte,
+		label string,
+		deposit sdk.Coins,
+		salt []byte,
+		fixMsg bool,
+	) (sdk.AccAddress, []byte, error)
 	// Execute submits the given message data to a smart contract
-	ExecuteContract(ctx cosmos.Context, contractAddr, senderAddr cosmos.AccAddress, msg []byte, coins cosmos.Coins) (*wasmtypes.MsgExecuteContractResponse, error)
+	ExecuteContract(ctx cosmos.Context,
+		contractAddr, senderAddr cosmos.AccAddress,
+		msg []byte,
+		coins cosmos.Coins,
+	) ([]byte, error)
 	// Migrate runs a code upgrade/ downgrade for a smart contract
-	MigrateContract(ctx cosmos.Context, msg *wasmtypes.MsgMigrateContract) (*wasmtypes.MsgMigrateContractResponse, error)
+	MigrateContract(ctx cosmos.Context,
+		contractAddress, caller sdk.AccAddress,
+		newCodeID uint64,
+		msg []byte,
+	) ([]byte, error)
 	// SudoContract defines an operation for calling sudo
 	// on a contract. The authority is verified against deployer permissions.
 	//
 	// Since: 0.40
-	SudoContract(ctx cosmos.Context, msg *wasmtypes.MsgSudoContract) (*wasmtypes.MsgSudoContractResponse, error)
+	SudoContract(ctx cosmos.Context,
+		contractAddress, caller sdk.AccAddress,
+		msg []byte,
+	) ([]byte, error)
 }
 
 // SwapQueue interface define the contract of Swap Queue

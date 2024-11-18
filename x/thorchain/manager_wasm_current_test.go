@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/CosmWasm/wasmd/x/wasm/ioutils"
-	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
 	"github.com/cosmos/cosmos-sdk/types"
+	"gitlab.com/thorchain/thornode/common/cosmos"
 	. "gopkg.in/check.v1"
 )
 
@@ -17,14 +17,11 @@ var _ = Suite(&WasmManagerVCURSuite{})
 
 func (s WasmManagerVCURSuite) TestStoreCode(c *C) {
 	ctx, mgr := setupManagerForTest(c)
-	wasm := s.loadWasm(c, "simple.wasm")
 
-	msg := wasmtypes.MsgStoreCode{
-		Sender:                "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
-		WASMByteCode:          wasm,
-		InstantiatePermission: nil,
-	}
-	_, err := mgr.WasmManager().StoreCode(ctx, &msg)
+	_, _, err := mgr.WasmManager().StoreCode(ctx,
+		cosmos.MustAccAddressFromBech32("tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m"),
+		s.loadWasm(c, "simple.wasm"),
+	)
 	c.Assert(err, IsNil)
 }
 
@@ -32,98 +29,92 @@ func (s WasmManagerVCURSuite) TestInstantiateContract(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	ctx = ctx.WithBlockTime(time.Unix(1, 0))
 
-	_, err := mgr.WasmManager().StoreCode(ctx, &wasmtypes.MsgStoreCode{
-		Sender:                "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
-		WASMByteCode:          s.loadWasm(c, "counter.wasm"),
-		InstantiatePermission: nil,
-	})
+	_, _, err := mgr.WasmManager().StoreCode(ctx,
+		cosmos.MustAccAddressFromBech32("tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m"),
+		s.loadWasm(c, "counter.wasm"),
+	)
 	c.Assert(err, IsNil)
 
-	_, err = mgr.WasmManager().StoreCode(ctx, &wasmtypes.MsgStoreCode{
-		Sender:                "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
-		WASMByteCode:          s.loadWasm(c, "extended.wasm"),
-		InstantiatePermission: nil,
-	})
+	_, _, err = mgr.WasmManager().StoreCode(ctx,
+		cosmos.MustAccAddressFromBech32("tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m"),
+		s.loadWasm(c, "extended.wasm"),
+	)
 	c.Assert(err, IsNil)
 
-	_, err = mgr.WasmManager().InstantiateContract(ctx, &wasmtypes.MsgInstantiateContract{
-		Sender: "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
-		CodeID: 1,
-		Label:  "label",
-		Msg:    []byte(`{}`),
-		Funds:  []types.Coin{},
-	})
+	_, _, err = mgr.WasmManager().InstantiateContract(ctx,
+		1,
+		cosmos.MustAccAddressFromBech32("tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m"),
+		nil,
+		[]byte(`{}`),
+		"label",
+		[]types.Coin{},
+	)
 	c.Assert(err, IsNil)
 
-	_, err = mgr.WasmManager().InstantiateContract(ctx, &wasmtypes.MsgInstantiateContract{
-		Sender: "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
-		CodeID: 1,
-		Label:  "label 2",
-		Msg:    []byte(`{}`),
-		Funds:  []types.Coin{},
-	})
+	_, _, err = mgr.WasmManager().InstantiateContract(ctx,
+		1,
+		cosmos.MustAccAddressFromBech32("tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m"),
+		nil,
+		[]byte(`{}`),
+		"label 2",
+		[]types.Coin{},
+	)
 	c.Assert(err, IsNil)
 
-	_, err = mgr.WasmManager().InstantiateContract(ctx, &wasmtypes.MsgInstantiateContract{
-		Sender: "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
-		CodeID: 2,
-		Label:  "label",
-		Msg:    []byte(`{}`),
-		Funds:  []types.Coin{},
-	})
+	_, _, err = mgr.WasmManager().InstantiateContract(ctx,
+		2,
+		cosmos.MustAccAddressFromBech32("tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m"),
+		nil,
+		[]byte(`{}`),
+		"label",
+		[]types.Coin{},
+	)
 	c.Assert(err, IsNil)
 
-	_, err = mgr.WasmManager().InstantiateContract(ctx, &wasmtypes.MsgInstantiateContract{
-		Sender: "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
-		CodeID: 2,
-		Label:  "label",
-		Msg:    []byte(`{}`),
-		Funds:  []types.Coin{},
-	})
+	_, _, err = mgr.WasmManager().InstantiateContract(ctx,
+		2,
+		cosmos.MustAccAddressFromBech32("tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m"),
+		nil,
+		[]byte(`{}`),
+		"label",
+		[]types.Coin{},
+	)
 	c.Assert(err, IsNil)
 }
 
 func (s WasmManagerVCURSuite) TestMigrateCode(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	ctx = ctx.WithBlockTime(time.Unix(1, 0))
-	wasm := s.loadWasm(c, "simple.wasm")
 
-	msg := wasmtypes.MsgStoreCode{
-		Sender:                "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
-		WASMByteCode:          wasm,
-		InstantiatePermission: nil,
-	}
-	_, err := mgr.WasmManager().StoreCode(ctx, &msg)
+	_, _, err := mgr.WasmManager().StoreCode(ctx,
+		cosmos.MustAccAddressFromBech32("tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m"),
+		s.loadWasm(c, "simple.wasm"),
+	)
 	c.Assert(err, IsNil)
 
-	wasm = s.loadWasm(c, "extended.wasm")
-
-	msg = wasmtypes.MsgStoreCode{
-		Sender:                "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
-		WASMByteCode:          wasm,
-		InstantiatePermission: nil,
-	}
-	_, err = mgr.WasmManager().StoreCode(ctx, &msg)
+	_, _, err = mgr.WasmManager().StoreCode(ctx,
+		cosmos.MustAccAddressFromBech32("tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m"),
+		s.loadWasm(c, "extended.wasm"),
+	)
 	c.Assert(err, IsNil)
 
-	initMsg := wasmtypes.MsgInstantiateContract{
-		Sender: "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
-		Admin:  "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
-		CodeID: 1,
-		Label:  "label",
-		Msg:    []byte(`{}`),
-		Funds:  []types.Coin{},
-	}
-	_, err = mgr.WasmManager().InstantiateContract(ctx, &initMsg)
+	_, _, err = mgr.WasmManager().InstantiateContract(ctx,
+		1,
+		cosmos.MustAccAddressFromBech32("tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m"),
+		cosmos.MustAccAddressFromBech32("tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m"),
+		[]byte(`{}`),
+		"label",
+		[]types.Coin{},
+	)
 	c.Assert(err, IsNil)
 
-	migrateMsg := wasmtypes.MsgMigrateContract{
-		Sender:   "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
-		Contract: "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f",
-		CodeID:   2,
-		Msg:      []byte(`{}`),
-	}
-	_, err = mgr.WasmManager().MigrateContract(ctx, &migrateMsg)
+	_, err = mgr.WasmManager().MigrateContract(ctx,
+		cosmos.MustAccAddressFromBech32("tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"),
+		cosmos.MustAccAddressFromBech32("tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m"),
+		2,
+		[]byte(`{}`),
+	)
+
 	c.Assert(err, IsNil)
 }
 

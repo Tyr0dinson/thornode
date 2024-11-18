@@ -2,6 +2,7 @@ package thorchain
 
 import (
 	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
@@ -17,26 +18,54 @@ func NewDummyWasmManager() *DummyWasmManager {
 	return &DummyWasmManager{}
 }
 
-func (s *DummyWasmManager) StoreCode(ctx cosmos.Context, msg *wasmtypes.MsgStoreCode) (*wasmtypes.MsgStoreCodeResponse, error) {
-	return &wasmtypes.MsgStoreCodeResponse{}, nil
+func (s *DummyWasmManager) StoreCode(ctx cosmos.Context,
+	creator cosmos.AccAddress,
+	wasmCode []byte,
+) (codeID uint64, checksum []byte, err error) {
+	return 0, nil, nil
 }
 
-func (s *DummyWasmManager) InstantiateContract(ctx cosmos.Context, msg *wasmtypes.MsgInstantiateContract) (*wasmtypes.MsgInstantiateContractResponse, error) {
-	return &wasmtypes.MsgInstantiateContractResponse{}, nil
+func (s *DummyWasmManager) InstantiateContract(ctx cosmos.Context,
+	codeID uint64,
+	creator, admin sdk.AccAddress,
+	initMsg []byte,
+	label string,
+	deposit sdk.Coins,
+) (cosmos.AccAddress, []byte, error) {
+	return nil, nil, nil
 }
 
-func (s *DummyWasmManager) InstantiateContract2(ctx cosmos.Context, msg *wasmtypes.MsgInstantiateContract2) (*wasmtypes.MsgInstantiateContract2Response, error) {
-	return &wasmtypes.MsgInstantiateContract2Response{}, nil
+func (s *DummyWasmManager) InstantiateContract2(ctx cosmos.Context,
+	codeID uint64,
+	creator, admin sdk.AccAddress,
+	initMsg []byte,
+	label string,
+	deposit sdk.Coins,
+	salt []byte,
+	fixMsg bool,
+) (sdk.AccAddress, []byte, error) {
+	return nil, nil, nil
 }
 
-func (s *DummyWasmManager) ExecuteContract(ctx cosmos.Context, contractAddr, senderAddr cosmos.AccAddress, msg []byte, coins cosmos.Coins) (*wasmtypes.MsgExecuteContractResponse, error) {
-	return &wasmtypes.MsgExecuteContractResponse{}, nil
+func (s *DummyWasmManager) ExecuteContract(ctx cosmos.Context,
+	contractAddr, senderAddr cosmos.AccAddress,
+	msg []byte,
+	coins cosmos.Coins,
+) ([]byte, error) {
+	return nil, nil
 }
 
-func (s *DummyWasmManager) MigrateContract(ctx cosmos.Context, msg *wasmtypes.MsgMigrateContract) (*wasmtypes.MsgMigrateContractResponse, error) {
-	return &wasmtypes.MsgMigrateContractResponse{}, nil
+func (s *DummyWasmManager) MigrateContract(ctx cosmos.Context,
+	contractAddress, caller sdk.AccAddress,
+	newCodeID uint64,
+	msg []byte,
+) ([]byte, error) {
+	return nil, nil
 }
 
-func (s *DummyWasmManager) SudoContract(ctx cosmos.Context, msg *wasmtypes.MsgSudoContract) (*wasmtypes.MsgSudoContractResponse, error) {
-	return &wasmtypes.MsgSudoContractResponse{}, nil
+func (s *DummyWasmManager) SudoContract(ctx cosmos.Context,
+	contractAddress, caller sdk.AccAddress,
+	msg []byte,
+) ([]byte, error) {
+	return nil, nil
 }
