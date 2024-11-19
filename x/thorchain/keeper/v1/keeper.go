@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"strings"
 
+	storetypes "cosmossdk.io/core/store"
 	upgradekeeper "cosmossdk.io/x/upgrade/keeper"
 	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/codec"
+	"github.com/cosmos/cosmos-sdk/runtime"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
 
@@ -106,18 +108,18 @@ type KVStore struct {
 	coinKeeper    bankkeeper.Keeper
 	accountKeeper authkeeper.AccountKeeper
 	upgradeKeeper *upgradekeeper.Keeper
-	storeKey      cosmos.StoreKey // Unexposed key to access store from cosmos.Context
+	storeService  storetypes.KVStoreService
 	version       semver.Version
 	constAccessor constants.ConstantValues
 }
 
 // NewKVStore creates new instances of the thorchain Keeper
-func NewKVStore(cdc codec.BinaryCodec, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, upgradeKeeper *upgradekeeper.Keeper, storeKey cosmos.StoreKey, version semver.Version) KVStore {
+func NewKVStore(cdc codec.BinaryCodec, storeService storetypes.KVStoreService, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, upgradeKeeper *upgradekeeper.Keeper, version semver.Version) KVStore {
 	return KVStore{
 		coinKeeper:    coinKeeper,
 		accountKeeper: accountKeeper,
 		upgradeKeeper: upgradeKeeper,
-		storeKey:      storeKey,
+		storeService:  storeService,
 		cdc:           cdc,
 		version:       version,
 		constAccessor: constants.GetConstantValues(version),
@@ -125,9 +127,9 @@ func NewKVStore(cdc codec.BinaryCodec, coinKeeper bankkeeper.Keeper, accountKeep
 }
 
 // NewKeeper creates new instances of the thorchain Keeper
-func NewKeeper(cdc codec.BinaryCodec, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, upgradeKeeper *upgradekeeper.Keeper, storeKey cosmos.StoreKey) keeper.Keeper {
+func NewKeeper(cdc codec.BinaryCodec, storeService storetypes.KVStoreService, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, upgradeKeeper *upgradekeeper.Keeper) keeper.Keeper {
 	version := semver.MustParse("0.0.0")
-	return NewKVStore(cdc, coinKeeper, accountKeeper, upgradeKeeper, storeKey, version)
+	return NewKVStore(cdc, storeService, coinKeeper, accountKeeper, upgradeKeeper, version)
 }
 
 // Cdc return the amino codec
@@ -145,8 +147,16 @@ func (k *KVStore) SetVersion(ver semver.Version) {
 }
 
 // GetKey return a key that can be used to store into key value store
-func (k KVStore) GetKey(prefix types.DbPrefix, key string) string {
-	return fmt.Sprintf("%s/%s", prefix, strings.ToUpper(key))
+func (k KVStore) GetKey(prefix types.DbPrefix, key string, other ...string) []byte {
+	newKey := fmt.Sprintf("%s/%s", prefix, strings.ToUpper(key))
+
+	// TODO: should this handle the slashes automatically?
+	// ref: x/thorchain/keeper/v1/keeper_last_height.go#GetLastObserveHeight
+	for _, item := range other {
+		newKey += item
+	}
+
+	return []byte(newKey)
 }
 
 // getIterator - get an iterator for given prefix
