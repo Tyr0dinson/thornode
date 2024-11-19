@@ -3,6 +3,7 @@ package keeperv1
 import (
 	"fmt"
 
+	"github.com/blang/semver"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 )
@@ -48,8 +49,13 @@ func (k KVStore) THORNameExists(ctx cosmos.Context, name string) bool {
 	}
 	if k.has(ctx, k.GetKey(prefixTHORName, record.Key())) {
 		record, _ = k.GetTHORName(ctx, name)
-		gracePeriod := k.GetConfigInt64(ctx, constants.THORNameGracePeriodBlocks)
-		return record.ExpireBlockHeight+gracePeriod >= ctx.BlockHeight()
+		expiration := record.ExpireBlockHeight
+		if k.GetVersion().GTE(semver.MustParse("2.137.0")) {
+			gracePeriod := k.GetConfigInt64(ctx, constants.THORNameGracePeriodBlocks)
+			expiration = record.ExpireBlockHeight + gracePeriod
+		}
+
+		return expiration >= ctx.BlockHeight()
 	}
 	return false
 }
@@ -64,8 +70,13 @@ func (k KVStore) GetTHORName(ctx cosmos.Context, name string) (THORName, error) 
 		return record, fmt.Errorf("THORName doesn't exist: %s", name)
 	}
 
-	gracePeriod := k.GetConfigInt64(ctx, constants.THORNameGracePeriodBlocks)
-	if record.ExpireBlockHeight+gracePeriod < ctx.BlockHeight() {
+	expiration := record.ExpireBlockHeight
+	if k.GetVersion().GTE(semver.MustParse("2.137.0")) {
+		gracePeriod := k.GetConfigInt64(ctx, constants.THORNameGracePeriodBlocks)
+		expiration = record.ExpireBlockHeight + gracePeriod
+	}
+
+	if expiration < ctx.BlockHeight() {
 		return THORName{Name: name}, nil
 	}
 	return record, err
