@@ -3,6 +3,7 @@ package keeperv1
 import (
 	"fmt"
 
+	"github.com/blang/semver"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 )
@@ -29,6 +30,15 @@ func (k KVStore) getTHORName(ctx cosmos.Context, key string, record *THORName) (
 	}
 
 	return true, nil
+}
+
+func (k KVStore) getTHORNameExpiration(ctx cosmos.Context, name THORName) int64 {
+	expiration := name.ExpireBlockHeight
+	if k.GetVersion().GTE(semver.MustParse("2.137.0")) {
+		_, expiration = k.GetTHORNameExpiration(ctx, name)
+	}
+
+	return expiration
 }
 
 // Check both the hard and soft expiration block height for a given THORName
@@ -58,8 +68,7 @@ func (k KVStore) THORNameExists(ctx cosmos.Context, name string) bool {
 	}
 	if k.has(ctx, k.GetKey(prefixTHORName, record.Key())) {
 		record, _ = k.GetTHORName(ctx, name)
-		_, hardExpiration := k.GetTHORNameExpiration(ctx, record)
-		return hardExpiration >= ctx.BlockHeight()
+		return k.getTHORNameExpiration(ctx, record) >= ctx.BlockHeight()
 	}
 	return false
 }
@@ -74,9 +83,7 @@ func (k KVStore) GetTHORName(ctx cosmos.Context, name string) (THORName, error) 
 		return record, fmt.Errorf("THORName doesn't exist: %s", name)
 	}
 
-	_, hardExpiration := k.GetTHORNameExpiration(ctx, record)
-
-	if hardExpiration < ctx.BlockHeight() {
+	if k.getTHORNameExpiration(ctx, record) < ctx.BlockHeight() {
 		return THORName{Name: name}, nil
 	}
 	return record, err
