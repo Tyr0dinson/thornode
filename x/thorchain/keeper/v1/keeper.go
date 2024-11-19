@@ -161,47 +161,47 @@ func (k KVStore) GetKey(prefix types.DbPrefix, key string, other ...string) []by
 
 // getIterator - get an iterator for given prefix
 func (k KVStore) getIterator(ctx cosmos.Context, prefix types.DbPrefix) cosmos.Iterator {
-	store := ctx.KVStore(k.storeKey)
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 	return cosmos.KVStorePrefixIterator(store, []byte(prefix))
 }
 
-func (k KVStore) DeleteKey(ctx cosmos.Context, key string) {
+func (k KVStore) DeleteKey(ctx cosmos.Context, key []byte) {
 	k.del(ctx, key)
 }
 
 // del - delete data from the kvstore
-func (k KVStore) del(ctx cosmos.Context, key string) {
-	store := ctx.KVStore(k.storeKey)
-	if store.Has([]byte(key)) {
-		store.Delete([]byte(key))
+func (k KVStore) del(ctx cosmos.Context, key []byte) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	if store.Has(key) {
+		store.Delete(key)
 	}
 }
 
 // has - kvstore has key
-func (k KVStore) has(ctx cosmos.Context, key string) bool {
-	store := ctx.KVStore(k.storeKey)
-	return store.Has([]byte(key))
+func (k KVStore) has(ctx cosmos.Context, key []byte) bool {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	return store.Has(key)
 }
 
-func (k KVStore) setInt64(ctx cosmos.Context, key string, record int64) {
-	store := ctx.KVStore(k.storeKey)
+func (k KVStore) setInt64(ctx cosmos.Context, key []byte, record int64) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 	value := ProtoInt64{Value: record}
 	buf := k.cdc.MustMarshal(&value)
 	if buf == nil {
-		store.Delete([]byte(key))
+		store.Delete(key)
 	} else {
 		store.Set([]byte(key), buf)
 	}
 }
 
-func (k KVStore) getInt64(ctx cosmos.Context, key string, record *int64) (bool, error) {
-	store := ctx.KVStore(k.storeKey)
-	if !store.Has([]byte(key)) {
+func (k KVStore) getInt64(ctx cosmos.Context, key []byte, record *int64) (bool, error) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	if !store.Has(key) {
 		return false, nil
 	}
 
 	value := ProtoInt64{}
-	bz := store.Get([]byte(key))
+	bz := store.Get(key)
 	if err := k.cdc.Unmarshal(bz, &value); err != nil {
 		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
 	}
@@ -209,25 +209,25 @@ func (k KVStore) getInt64(ctx cosmos.Context, key string, record *int64) (bool, 
 	return true, nil
 }
 
-func (k KVStore) setUint64(ctx cosmos.Context, key string, record uint64) {
-	store := ctx.KVStore(k.storeKey)
+func (k KVStore) setUint64(ctx cosmos.Context, key []byte, record uint64) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 	value := ProtoUint64{Value: record}
 	buf := k.cdc.MustMarshal(&value)
 	if buf == nil {
-		store.Delete([]byte(key))
+		store.Delete(key)
 	} else {
 		store.Set([]byte(key), buf)
 	}
 }
 
-func (k KVStore) getUint64(ctx cosmos.Context, key string, record *uint64) (bool, error) {
-	store := ctx.KVStore(k.storeKey)
-	if !store.Has([]byte(key)) {
+func (k KVStore) getUint64(ctx cosmos.Context, key []byte, record *uint64) (bool, error) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	if !store.Has(key) {
 		return false, nil
 	}
 
 	value := ProtoUint64{Value: *record}
-	bz := store.Get([]byte(key))
+	bz := store.Get(key)
 	if err := k.cdc.Unmarshal(bz, &value); err != nil {
 		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
 	}
@@ -235,25 +235,25 @@ func (k KVStore) getUint64(ctx cosmos.Context, key string, record *uint64) (bool
 	return true, nil
 }
 
-func (k KVStore) setAccAddresses(ctx cosmos.Context, key string, record []cosmos.AccAddress) {
-	store := ctx.KVStore(k.storeKey)
+func (k KVStore) setAccAddresses(ctx cosmos.Context, key []byte, record []cosmos.AccAddress) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 	value := ProtoAccAddresses{Value: record}
 	buf := k.cdc.MustMarshal(&value)
 	if buf == nil {
-		store.Delete([]byte(key))
+		store.Delete(key)
 	} else {
 		store.Set([]byte(key), buf)
 	}
 }
 
-func (k KVStore) getAccAddresses(ctx cosmos.Context, key string, record *[]cosmos.AccAddress) (bool, error) {
-	store := ctx.KVStore(k.storeKey)
-	if !store.Has([]byte(key)) {
+func (k KVStore) getAccAddresses(ctx cosmos.Context, key []byte, record *[]cosmos.AccAddress) (bool, error) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	if !store.Has(key) {
 		return false, nil
 	}
 
 	var value ProtoAccAddresses
-	bz := store.Get([]byte(key))
+	bz := store.Get(key)
 	if err := k.cdc.Unmarshal(bz, &value); err != nil {
 		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
 	}
@@ -261,25 +261,25 @@ func (k KVStore) getAccAddresses(ctx cosmos.Context, key string, record *[]cosmo
 	return true, nil
 }
 
-func (k KVStore) setStrings(ctx cosmos.Context, key string, record []string) {
-	store := ctx.KVStore(k.storeKey)
+func (k KVStore) setStrings(ctx cosmos.Context, key []byte, record []string) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 	value := ProtoStrings{Value: record}
 	buf := k.cdc.MustMarshal(&value)
 	if buf == nil {
-		store.Delete([]byte(key))
+		store.Delete(key)
 	} else {
 		store.Set([]byte(key), buf)
 	}
 }
 
-func (k KVStore) getStrings(ctx cosmos.Context, key string, record *[]string) (bool, error) {
-	store := ctx.KVStore(k.storeKey)
-	if !store.Has([]byte(key)) {
+func (k KVStore) getStrings(ctx cosmos.Context, key []byte, record *[]string) (bool, error) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	if !store.Has(key) {
 		return false, nil
 	}
 
 	var value ProtoStrings
-	bz := store.Get([]byte(key))
+	bz := store.Get(key)
 	if err := k.cdc.Unmarshal(bz, &value); err != nil {
 		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
 	}
@@ -287,25 +287,25 @@ func (k KVStore) getStrings(ctx cosmos.Context, key string, record *[]string) (b
 	return true, nil
 }
 
-func (k KVStore) setUint(ctx cosmos.Context, key string, record cosmos.Uint) {
-	store := ctx.KVStore(k.storeKey)
+func (k KVStore) setUint(ctx cosmos.Context, key []byte, record cosmos.Uint) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 	value := ProtoUint{Value: record}
 	buf := k.cdc.MustMarshal(&value)
 	if buf == nil {
-		store.Delete([]byte(key))
+		store.Delete(key)
 	} else {
 		store.Set([]byte(key), buf)
 	}
 }
 
-func (k KVStore) getUint(ctx cosmos.Context, key string, record *cosmos.Uint) (bool, error) {
-	store := ctx.KVStore(k.storeKey)
-	if !store.Has([]byte(key)) {
+func (k KVStore) getUint(ctx cosmos.Context, key []byte, record *cosmos.Uint) (bool, error) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	if !store.Has(key) {
 		return false, nil
 	}
 
 	var value ProtoUint
-	bz := store.Get([]byte(key))
+	bz := store.Get(key)
 	if err := k.cdc.Unmarshal(bz, &value); err != nil {
 		return false, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
 	}
@@ -313,22 +313,22 @@ func (k KVStore) getUint(ctx cosmos.Context, key string, record *cosmos.Uint) (b
 	return true, nil
 }
 
-func (k KVStore) setBools(ctx cosmos.Context, key string, record []bool) {
-	store := ctx.KVStore(k.storeKey)
+func (k KVStore) setBools(ctx cosmos.Context, key []byte, record []bool) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 	value := ProtoBools{Value: record}
 	buf := k.cdc.MustMarshal(&value)
 	if buf == nil {
-		store.Delete([]byte(key))
+		store.Delete(key)
 	} else {
 		store.Set([]byte(key), buf)
 	}
 }
 
-func (k KVStore) getBools(ctx cosmos.Context, key string, record *[]bool) (bool, error) {
-	store := ctx.KVStore(k.storeKey)
+func (k KVStore) getBools(ctx cosmos.Context, key []byte, record *[]bool) (bool, error) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 
 	var value ProtoBools
-	bz := store.Get([]byte(key))
+	bz := store.Get(key)
 	if bz == nil {
 		return false, nil
 	}

@@ -9,6 +9,7 @@ import (
 	sdklog "cosmossdk.io/log"
 	"cosmossdk.io/store"
 	storemetrics "cosmossdk.io/store/metrics"
+	storetypes "cosmossdk.io/store/types"
 	upgradekeeper "cosmossdk.io/x/upgrade/keeper"
 	upgradetypes "cosmossdk.io/x/upgrade/types"
 	tmproto "github.com/cometbft/cometbft/proto/tendermint/types"
@@ -86,7 +87,10 @@ func makeTestCodec() *codec.LegacyAmino {
 	return types.MakeTestCodec()
 }
 
-var keyThorchain = cosmos.NewKVStoreKey(StoreKey)
+var (
+	keyThorchain     = storetypes.NewKVStoreKey(StoreKey)
+	serviceThorchain = runtime.NewKVStoreService(keyThorchain)
+)
 
 func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 	SetupConfigForTest()
@@ -147,7 +151,7 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 		nil,
 		authtypes.NewModuleAddress(ModuleName).String(),
 	)
-	k := kv1.NewKeeper(encodingConfig.Codec, bk, ak, uk, keyThorchain)
+	k := kv1.NewKeeper(encodingConfig.Codec, serviceThorchain, bk, ak, uk)
 	FundModule(c, ctx, k, ModuleName, 10000*common.One)
 	FundModule(c, ctx, k, AsgardName, common.One)
 	FundModule(c, ctx, k, ReserveName, 10000*common.One)
@@ -170,7 +174,7 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 	}), IsNil)
 
 	os.Setenv("NET", "mocknet")
-	mgr := NewManagers(k, encodingConfig.Codec, bk, ak, uk, keyThorchain)
+	mgr := NewManagers(k, encodingConfig.Codec, serviceThorchain, bk, ak, uk)
 	constants.SWVersion = GetCurrentVersion()
 
 	_, hasVerStored := k.GetVersionWithCtx(ctx)
@@ -248,7 +252,7 @@ func setupKeeperForTest(c *C) (cosmos.Context, keeper.Keeper) {
 		nil,
 		authtypes.NewModuleAddress(ModuleName).String(),
 	)
-	k := kv1.NewKVStore(encodingConfig.Codec, bk, ak, uk, keyThorchain, GetCurrentVersion())
+	k := kv1.NewKVStore(encodingConfig.Codec, serviceThorchain, bk, ak, uk, GetCurrentVersion())
 	FundModule(c, ctx, k, ModuleName, 1000000*common.One)
 	FundModule(c, ctx, k, AsgardName, common.One)
 	FundModule(c, ctx, k, ReserveName, 10000*common.One)

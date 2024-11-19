@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/cosmos/cosmos-sdk/runtime"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
@@ -31,7 +32,7 @@ func (k KVStore) SetMimir(ctx cosmos.Context, key string, value int64) {
 func (k KVStore) GetNodeMimirs(ctx cosmos.Context, key string) (NodeMimirs, error) {
 	key = strings.ToUpper(key)
 	record := NodeMimirs{}
-	store := ctx.KVStore(k.storeKey)
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 	if !store.Has([]byte(k.GetKey(prefixNodeMimir, key))) {
 		return record, nil
 	}
@@ -51,7 +52,7 @@ func (k KVStore) SetNodeMimir(ctx cosmos.Context, key string, value int64, acc c
 		return err
 	}
 	record.Set(key, value, acc)
-	store := ctx.KVStore(k.storeKey)
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 	buf := k.cdc.MustMarshal(&record)
 	if buf == nil || len(record.Mimirs) == 0 {
 		store.Delete([]byte(kvkey))

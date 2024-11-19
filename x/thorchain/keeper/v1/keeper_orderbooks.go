@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/cosmos/cosmos-sdk/runtime"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
@@ -128,7 +129,7 @@ func (k KVStore) SetOrderBookIndex(ctx cosmos.Context, msg MsgSwap) error {
 
 // GetOrderBookIterator iterate order book items
 func (k KVStore) GetOrderBookIndexIterator(ctx cosmos.Context, order types.OrderType, source, target common.Asset) cosmos.Iterator {
-	store := ctx.KVStore(k.storeKey)
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 	switch order {
 	case types.OrderType_limit:
 		prefix := k.GetKey(prefixOrderBookLimitIndex, fmt.Sprintf("%s>%s/", source, target))
@@ -205,7 +206,7 @@ func (k KVStore) RemoveOrderBookIndex(ctx cosmos.Context, msg MsgSwap) error {
 	return nil
 }
 
-func (k KVStore) getOrderBookIndexKey(ctx cosmos.Context, msg MsgSwap) string {
+func (k KVStore) getOrderBookIndexKey(ctx cosmos.Context, msg MsgSwap) []byte {
 	switch msg.OrderType {
 	case types.OrderType_limit:
 		ra := rewriteRatio(ratioLength, getRatio(msg.Tx.Coins[0].Amount, msg.TradeTarget))
@@ -215,7 +216,7 @@ func (k KVStore) getOrderBookIndexKey(ctx cosmos.Context, msg MsgSwap) string {
 	case types.OrderType_market:
 		return k.GetKey(prefixOrderBookMarketIndex, "")
 	default:
-		return ""
+		return nil
 	}
 }
 
