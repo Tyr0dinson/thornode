@@ -702,7 +702,10 @@ func (k KVStoreDummy) GetTHORName(ctx cosmos.Context, _ string) (THORName, error
 }
 func (k KVStoreDummy) SetTHORName(ctx cosmos.Context, name THORName)          {}
 func (k KVStoreDummy) GetTHORNameIterator(ctx cosmos.Context) cosmos.Iterator { return nil }
-func (k KVStoreDummy) DeleteTHORName(ctx cosmos.Context, _ string) error      { return kaboom }
+func (k KVStoreDummy) GetTHORNameExpiration(ctx cosmos.Context, name THORName) (int64, int64) {
+	return 0, 0
+}
+func (k KVStoreDummy) DeleteTHORName(ctx cosmos.Context, _ string) error { return kaboom }
 
 func (k KVStoreDummy) SetAffiliateCollector(_ cosmos.Context, _ AffiliateFeeCollector) {}
 func (k KVStoreDummy) GetAffiliateCollector(_ cosmos.Context, _ cosmos.AccAddress) (AffiliateFeeCollector, error) {

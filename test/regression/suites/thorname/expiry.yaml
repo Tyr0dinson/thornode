@@ -1,0 +1,88 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Setup thorname
+########################################################################################
+type: tx-send
+from_address: {{ addr_thor_fox }}
+to_address: {{ addr_thor_pig }}
+amount:
+  - amount: "15000000000"
+    denom: "rune"
+---
+type: create-blocks
+count: 1
+---
+type: tx-deposit
+signer: {{ addr_thor_pig }}
+coins:
+  - amount: "1100000000"
+    asset: "rune"
+memo: "~:test:THOR:{{ addr_thor_pig }}:{{ addr_thor_pig }}:BTC.BTC:10"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/thorname/test
+asserts:
+  - .aliases[0].address == "{{ addr_thor_pig }}"
+  - .owner == "{{ addr_thor_pig }}"
+  - .expire_block_height == 10
+---
+########################################################################################
+# Validate ownership while thorname is valid
+########################################################################################
+type: tx-send
+from_address: {{ addr_thor_fox }}
+to_address: {{ addr_thor_dog }}
+amount:
+  - amount: "15000000000"
+    denom: "rune"
+---
+type: create-blocks
+count: 1
+---
+type: tx-deposit
+signer: {{ addr_thor_dog }}
+coins:
+  - amount: "1100000000"
+    asset: "rune"
+memo: "~:test:THOR:{{ addr_thor_dog }}:{{ addr_thor_dog }}:BTC.BTC"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/thorname/test
+asserts:
+  - .aliases[0].address == "{{ addr_thor_pig }}"
+  - .owner == "{{ addr_thor_pig }}"
+---
+########################################################################################
+# Fast-forward to beyond grace period - block height will be 20 after this step
+########################################################################################
+type: create-blocks
+count: 15
+---
+type: tx-deposit
+signer: {{ addr_thor_dog }}
+coins:
+  - amount: "1100000000"
+    asset: "rune"
+memo: "~:test:THOR:{{ addr_thor_dog }}:{{ addr_thor_dog }}:BTC.BTC"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/thorname/test
+asserts:
+  - .aliases[0].address == "{{ addr_thor_dog }}"
+  - .owner == "{{ addr_thor_dog }}"
+  - .expire_block_height == 10256021

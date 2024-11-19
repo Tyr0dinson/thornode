@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
 )
 
 func (k KVStore) setTHORName(ctx cosmos.Context, key string, record THORName) {
@@ -30,6 +31,16 @@ func (k KVStore) getTHORName(ctx cosmos.Context, key string, record *THORName) (
 	return true, nil
 }
 
+// Check both the hard and soft expiration block height for a given THORName
+func (k KVStore) GetTHORNameExpiration(ctx cosmos.Context, name THORName) (int64, int64) {
+	gracePeriod, err := k.GetMimir(ctx, constants.THORNameGracePeriodBlocks.String())
+	if gracePeriod < 0 || err != nil {
+		gracePeriod = k.constAccessor.GetInt64Value(constants.THORNameGracePeriodBlocks)
+	}
+
+	return name.ExpireBlockHeight, (name.ExpireBlockHeight + gracePeriod)
+}
+
 // GetTHORNameIterator only iterate THORNames
 func (k KVStore) GetTHORNameIterator(ctx cosmos.Context) cosmos.Iterator {
 	return k.getIterator(ctx, prefixTHORName)
@@ -47,7 +58,8 @@ func (k KVStore) THORNameExists(ctx cosmos.Context, name string) bool {
 	}
 	if k.has(ctx, k.GetKey(prefixTHORName, record.Key())) {
 		record, _ = k.GetTHORName(ctx, name)
-		return record.ExpireBlockHeight >= ctx.BlockHeight()
+		_, hardExpiration := k.GetTHORNameExpiration(ctx, record)
+		return hardExpiration >= ctx.BlockHeight()
 	}
 	return false
 }
@@ -61,7 +73,10 @@ func (k KVStore) GetTHORName(ctx cosmos.Context, name string) (THORName, error) 
 	if !ok {
 		return record, fmt.Errorf("THORName doesn't exist: %s", name)
 	}
-	if record.ExpireBlockHeight < ctx.BlockHeight() {
+
+	_, hardExpiration := k.GetTHORNameExpiration(ctx, record)
+
+	if hardExpiration < ctx.BlockHeight() {
 		return THORName{Name: name}, nil
 	}
 	return record, err
