@@ -433,7 +433,6 @@ type KeeperTHORName interface {
 	THORNameExists(ctx cosmos.Context, _ string) bool
 	GetTHORName(ctx cosmos.Context, _ string) (THORName, error)
 	SetTHORName(ctx cosmos.Context, name THORName)
-	GetTHORNameExpiration(ctx cosmos.Context, name THORName) (int64, int64)
 	GetTHORNameIterator(ctx cosmos.Context) cosmos.Iterator
 	DeleteTHORName(ctx cosmos.Context, _ string) error
 	SetAffiliateCollector(_ cosmos.Context, _ AffiliateFeeCollector)
