@@ -134,10 +134,11 @@ asserts:
   - .|[..|select(.type? == "streaming_swap")][0] | .count == .quantity
   - .|[..|select(.type? == "scheduled_outbound")] | length == 0
   - .|[..|select(.type? == "outbound")] | length == 0
-  - .|[..|select(.type? == "refund")] | length == 0
-  # Though the streaming swap has completed,
-  # there is no event to signal to explorers/interfaces the total size of the output or what happened to it.
-  # TODO: Add a "fail to refund"-reason refund event for this situation.
+  - .|[..|select(.type? == "refund")] | length == 1
+  - ..|select(.type? == "refund").coin | contains("BTC.BTC")
+  - ..|select(.type? == "refund").reason | contains("fail to refund")
+  - ..|select(.type? == "refund").reason | contains("streaming swap output")
+  # The "fail to refund" refund event reports to explorers/interfaces what has happened to the output.
 ---
 # Since vault has more than the pool:
 type: fail-export-invariants
