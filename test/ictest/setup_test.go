@@ -156,12 +156,14 @@ func StartThorchain(
 		_ = ic.Close()
 	})
 
-	err = thorchain.StartAllValSidecars(ctx)
-	require.NoError(t, err, "failed starting validator sidecars")
+	if exoChains != nil {
+		err = thorchain.StartAllValSidecars(ctx)
+		require.NoError(t, err, "failed starting validator sidecars")
 
-	// Give some time for bifrost to initialize before any tests start
-	time.Sleep(time.Second * 15)
-	require.NoError(t, err)
+		// Give some time for bifrost to initialize before any tests start
+		time.Sleep(time.Second * 15)
+		require.NoError(t, err)
+	}
 
 	return thorchain
 }

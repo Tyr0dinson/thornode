@@ -17,7 +17,7 @@ require (
 	github.com/cosmos/cosmos-sdk v0.50.10
 	github.com/docker/docker v24.0.9+incompatible
 	github.com/ethereum/go-ethereum v1.14.11
-	github.com/strangelove-ventures/interchaintest/v8 v8.7.2-0.20241008015205-4490028f0243
+	github.com/strangelove-ventures/interchaintest/v8 v8.8.1-0.20241121163142-0a06baff6b30
 	github.com/stretchr/testify v1.9.0
 	gitlab.com/thorchain/thornode v1.134.1
 	go.uber.org/zap v1.27.0
@@ -244,6 +244,7 @@ require (
 	github.com/supranational/blst v0.3.13 // indirect
 	github.com/syndtr/goleveldb v1.0.1-0.20220721030215-126854af5e6d // indirect
 	github.com/tendermint/go-amino v0.16.0 // indirect
+	github.com/tendermint/tendermint v0.38.0-dev // indirect
 	github.com/tidwall/btree v1.7.0 // indirect
 	github.com/tidwall/gjson v1.17.1 // indirect
 	github.com/tidwall/match v1.1.1 // indirect

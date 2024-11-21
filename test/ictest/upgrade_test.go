@@ -33,7 +33,7 @@ type UpgradeInfo struct {
 // restart node after upgrade
 // test multiple validators
 // test mainnet
-func TestUpgrade136to137(t *testing.T) {
+func TestUpgrade_2_137_to_3_0(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping in short mode")
 	}
@@ -51,7 +51,7 @@ func TestUpgrade136to137(t *testing.T) {
 		mainnet     = false
 
 		initialRepo    = "ghcr.io/strangelove-ventures/heighliner/thorchain"
-		initialVersion = "mocknet-v2.136.0"
+		initialVersion = "v2.137.3-mocknet"
 	)
 
 	// Start non-thorchain chains
@@ -87,7 +87,7 @@ func TestUpgrade136to137(t *testing.T) {
 	// Upgrade
 	// --------------------------------------------------------
 	PerformUpgrade(t, ctx, client, thorchain, arbTimer, UpgradeInfo{
-		name: "2.137.0",
+		name: "3.0.0",
 		repo: "thorchain",
 		version: "local",
 		uidgid: imageUidGid,

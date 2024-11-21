@@ -380,4 +380,8 @@ ictest-sim:
 
 ictest-upgrade:
 	@echo "Running interchaintest upgrade test"
-	@cd test/ictest && go test -race -timeout 30m -v -run TestUpgrade136to137 . -count 1
+	@cd test/ictest && go test -race -timeout 30m -v -run TestUpgrade_2_137_to_3_0 . -count 1
+
+ictest-slash:
+	@echo "Running interchaintest slash test"
+	@cd test/ictest && go test -race -timeout 30m -v -run TestValSlash . -count 1
