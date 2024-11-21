@@ -51,63 +51,114 @@ func NewAddress(address string) (Address, error) {
 	}
 
 	// Check other BTC address formats with mainnet
-	_, err = btcutil.DecodeAddress(address, &chaincfg.MainNetParams)
-	if err == nil {
-		return Address(address), nil
+	var outputAddr interface{}
+	outputAddr, err = btcutil.DecodeAddress(address, &chaincfg.MainNetParams)
+	switch outputAddr.(type) {
+	case *btcutil.AddressPubKey:
+		// AddressPubKey format is not supported by THORChain.
+	default:
+		if err == nil {
+			return Address(address), nil
+		}
 	}
 
 	// Check BTC address formats with testnet
-	_, err = btcutil.DecodeAddress(address, &chaincfg.TestNet3Params)
-	if err == nil {
-		return Address(address), nil
+	outputAddr, err = btcutil.DecodeAddress(address, &chaincfg.TestNet3Params)
+	switch outputAddr.(type) {
+	case *btcutil.AddressPubKey:
+		// AddressPubKey format is not supported by THORChain.
+	default:
+		if err == nil {
+			return Address(address), nil
+		}
 	}
 
 	// Check other LTC address formats with mainnet
-	_, err = ltcutil.DecodeAddress(address, &ltcchaincfg.MainNetParams)
-	if err == nil {
-		return Address(address), nil
+	outputAddr, err = ltcutil.DecodeAddress(address, &ltcchaincfg.MainNetParams)
+	switch outputAddr.(type) {
+	case *ltcutil.AddressPubKey:
+		// AddressPubKey format is not supported by THORChain.
+	default:
+		if err == nil {
+			return Address(address), nil
+		}
 	}
 
 	// Check LTC address formats with testnet
-	_, err = ltcutil.DecodeAddress(address, &ltcchaincfg.TestNet4Params)
-	if err == nil {
-		return Address(address), nil
+	outputAddr, err = ltcutil.DecodeAddress(address, &ltcchaincfg.TestNet4Params)
+	switch outputAddr.(type) {
+	case *ltcutil.AddressPubKey:
+		// AddressPubKey format is not supported by THORChain.
+	default:
+		if err == nil {
+			return Address(address), nil
+		}
 	}
 
 	// Check BCH address formats with mainnet
-	_, err = bchutil.DecodeAddress(address, &bchchaincfg.MainNetParams)
-	if err == nil {
-		return Address(address), nil
+	outputAddr, err = bchutil.DecodeAddress(address, &bchchaincfg.MainNetParams)
+	switch outputAddr.(type) {
+	case *bchutil.AddressPubKey:
+		// AddressPubKey format is not supported by THORChain.
+	default:
+		if err == nil {
+			return Address(address), nil
+		}
 	}
 
 	// Check BCH address formats with testnet
-	_, err = bchutil.DecodeAddress(address, &bchchaincfg.TestNet3Params)
-	if err == nil {
-		return Address(address), nil
+	outputAddr, err = bchutil.DecodeAddress(address, &bchchaincfg.TestNet3Params)
+	switch outputAddr.(type) {
+	case *bchutil.AddressPubKey:
+		// AddressPubKey format is not supported by THORChain.
+	default:
+		if err == nil {
+			return Address(address), nil
+		}
 	}
 
 	// Check BCH address formats with mocknet
-	_, err = bchutil.DecodeAddress(address, &bchchaincfg.RegressionNetParams)
-	if err == nil {
-		return Address(address), nil
+	outputAddr, err = bchutil.DecodeAddress(address, &bchchaincfg.RegressionNetParams)
+	switch outputAddr.(type) {
+	case *bchutil.AddressPubKey:
+		// AddressPubKey format is not supported by THORChain.
+	default:
+		if err == nil {
+			return Address(address), nil
+		}
 	}
 
 	// Check DOGE address formats with mainnet
-	_, err = dogutil.DecodeAddress(address, &dogchaincfg.MainNetParams)
-	if err == nil {
-		return Address(address), nil
+	outputAddr, err = dogutil.DecodeAddress(address, &dogchaincfg.MainNetParams)
+	switch outputAddr.(type) {
+	case *dogutil.AddressPubKey:
+		// AddressPubKey format is not supported by THORChain.
+	default:
+		if err == nil {
+			return Address(address), nil
+		}
 	}
 
 	// Check DOGE address formats with testnet
-	_, err = dogutil.DecodeAddress(address, &dogchaincfg.TestNet3Params)
-	if err == nil {
-		return Address(address), nil
+	outputAddr, err = dogutil.DecodeAddress(address, &dogchaincfg.TestNet3Params)
+	switch outputAddr.(type) {
+	case *dogutil.AddressPubKey:
+		// AddressPubKey format is not supported by THORChain.
+	default:
+		if err == nil {
+			return Address(address), nil
+		}
 	}
 
 	// Check DOGE address formats with mocknet
-	_, err = dogutil.DecodeAddress(address, &dogchaincfg.RegressionNetParams)
-	if err == nil {
-		return Address(address), nil
+	outputAddr, err = dogutil.DecodeAddress(address, &dogchaincfg.RegressionNetParams)
+	switch outputAddr.(type) {
+	case *dogutil.AddressPubKey:
+		// AddressPubKey format is not supported by THORChain.
+	default:
+		if err == nil {
+			return Address(address), nil
+		}
 	}
 
 	return NoAddress, fmt.Errorf("address format not supported: %s", address)
