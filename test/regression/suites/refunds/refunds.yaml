@@ -356,6 +356,10 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/block
 asserts:
-  - .|[..|select(.type? == "refund")] | length == 1
-  - .|[..|select(.type? == "refund")][0].reason == "address(${ADDRESS_PUB_KEY}) is not same network"
-  # AddressPubKey has no Mainnet-vs-Testnet difference, so in regression tests is interpreted as Mainnet and rejected as not being Mocknet.
+  - .|[..|select(.type? == "refund")] | length == 0 # No refund event.
+  - .txs | length == 1
+  - .txs[0].code != 0 # Rejected transaction.
+  - .txs[0].result.log | contains("cannot parse '${ADDRESS_PUB_KEY}' as an Address")
+  # As UTXO SignTx cannot sign for AddressPubKey destinations,
+  # these are not accepted as valid addresses
+  # (which would then get stuck in the outbound queue).
