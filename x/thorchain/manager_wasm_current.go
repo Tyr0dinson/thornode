@@ -18,10 +18,11 @@ import (
 )
 
 var (
-	_                        WasmManager = &WasmMgrVCUR{}
-	MIMIR_WASM_GLOBAL_HALT               = "WASMHALTGLOBAL"
-	MIMIR_WASM_CHECKSUM_HALT             = "WASMHALTCS"
-	MIMIR_WASM_CONTRACT_HALT             = "WASMHALTCONTRACT"
+	_                         WasmManager = &WasmMgrVCUR{}
+	MIMIR_WASM_GLOBAL_HALT                = "WASMHALTGLOBAL"
+	MIMIR_WASM_CHECKSUM_HALT              = "WASMHALTCS"
+	MIMIR_WASM_CONTRACT_HALT              = "WASMHALTCONTRACT"
+	MIMIR_WASM_PERMISSIONLESS             = "WASMPERMISSIONLESS"
 )
 
 // WasmMgrVCUR is VCUR implementation of slasher
@@ -83,7 +84,7 @@ func (m WasmMgrVCUR) StoreCode(
 		return 0, nil, err
 	}
 
-	if err := m.checkAuthorization(creator, checksum); err != nil {
+	if err := m.checkAuthorization(ctx, creator, checksum); err != nil {
 		return 0, nil, err
 	}
 
@@ -112,7 +113,7 @@ func (m WasmMgrVCUR) InstantiateContract(
 		return nil, nil, err
 	}
 
-	err = m.checkAuthorization(creator, codeInfo.CodeHash)
+	err = m.checkAuthorization(ctx, creator, codeInfo.CodeHash)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -149,7 +150,7 @@ func (m WasmMgrVCUR) InstantiateContract2(
 		return nil, nil, err
 	}
 
-	err = m.checkAuthorization(creator, codeInfo.CodeHash)
+	err = m.checkAuthorization(ctx, creator, codeInfo.CodeHash)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -221,7 +222,7 @@ func (m WasmMgrVCUR) MigrateContract(
 		return nil, err
 	}
 
-	err = m.checkAuthorization(caller, codeInfo.CodeHash)
+	err = m.checkAuthorization(ctx, caller, codeInfo.CodeHash)
 	if err != nil {
 		return nil, err
 	}
@@ -271,7 +272,7 @@ func (m WasmMgrVCUR) SudoContract(
 		return nil, err
 	}
 
-	err = m.checkAuthorization(caller, codeInfo.CodeHash)
+	err = m.checkAuthorization(ctx, caller, codeInfo.CodeHash)
 	if err != nil {
 		return nil, err
 	}
@@ -326,10 +327,18 @@ func (m WasmMgrVCUR) permissionedKeeper() *wasmkeeper.PermissionedKeeper {
 	return wasmkeeper.NewGovPermissionKeeper(m.wasmKeeper)
 }
 
-func (m WasmMgrVCUR) checkAuthorization(actor cosmos.AccAddress, checksum []byte) error {
+func (m WasmMgrVCUR) checkAuthorization(ctx cosmos.Context, actor cosmos.AccAddress, checksum []byte) error {
 	if isAdmin(actor) {
 		return nil
 	}
+	v, err := m.keeper.GetMimir(ctx, MIMIR_WASM_PERMISSIONLESS)
+	if err != nil {
+		return err
+	}
+	if v != -1 && ctx.BlockHeight() > v {
+		return nil
+	}
+
 	return m.permissions.Permit(actor, checksum)
 }
 

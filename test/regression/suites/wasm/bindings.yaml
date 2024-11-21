@@ -25,6 +25,14 @@
 type: create-blocks
 count: 1
 ---
+type: tx-mimir
+key: WasmPermissionless
+value: 0
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
 type: tx-store-code
 sender: {{ addr_thor_dog }}
 wasm_file: "bindings.wasm"
