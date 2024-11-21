@@ -238,14 +238,12 @@ func (h AddLiquidityHandler) handle(ctx cosmos.Context, msg MsgAddLiquidity) err
 	// set the decimals once.
 	if pool.Decimals == 0 {
 		coin := msg.GetTx().Coins.GetCoin(pool.Asset)
-		if !coin.IsEmpty() {
-			if coin.Decimals > 0 {
-				pool.Decimals = coin.Decimals
-			}
-			ctx.Logger().Info("try update pool decimals", "asset", msg.Asset, "pool decimals", pool.Decimals)
+		if !coin.IsEmpty() && coin.Decimals > 0 {
+			pool.Decimals = coin.Decimals
 			if err = h.mgr.Keeper().SetPool(ctx, pool); err != nil {
 				return ErrInternal(err, "fail to save pool to key value store")
 			}
+			ctx.Logger().Info("update pool decimals", "asset", msg.Asset, "pool decimals", pool.Decimals)
 		}
 	}
 
