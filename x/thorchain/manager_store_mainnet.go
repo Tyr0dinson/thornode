@@ -11,6 +11,42 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
+func migrateStoreV3_0_0(ctx cosmos.Context, mgr *Mgrs) {
+	defer func() {
+		if err := recover(); err != nil {
+			ctx.Logger().Error("fail to migrate store to v3_0_0", "error", err)
+		}
+	}()
+
+	tn, err := mgr.Keeper().GetTHORName(ctx, "_")
+	if err != nil {
+		ctx.Logger().Error("fail to get thorname", "error", err)
+		return
+	}
+
+	acModuleAddr := "thor1dl7un46w7l7f3ewrnrm6nq58nerjtp0dradjtd"
+	if tn.Owner.String() != acModuleAddr {
+		ctx.Logger().Error("thorname owner is not affiliate module")
+		return
+	}
+
+	newOwnerAddr, err := common.NewAddress("thor12l42ts3gwuenfqqyjwk2qvq48ym9s4y6z39jua")
+	if err != nil {
+		ctx.Logger().Error("fail to parse address", "error", err)
+		return
+	}
+
+	ownerAcc, err := newOwnerAddr.AccAddress()
+	if err != nil {
+		ctx.Logger().Error("fail to parse address", "error", err)
+		return
+	}
+
+	tn.Owner = ownerAcc
+	mgr.Keeper().SetTHORName(ctx, tn)
+
+}
+
 //go:embed manager_store_v136_clout.json
 var jsonV136Clouts []byte
 
