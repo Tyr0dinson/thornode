@@ -282,16 +282,9 @@ func (s *AddressSuite) TestAddress(c *C) {
 	c.Check(addr.GetNetwork(BCHChain), Equals, MockNet)
 
 	// doge tests
-	addr, err = NewAddress("DJbKker23xfz3ufxAbqUuQwp1EBibGJJHu")
-	c.Check(err, IsNil)
-	c.Check(addr.IsChain(BCHChain), Equals, false)
-	c.Check(addr.IsChain(LTCChain), Equals, false)
-	c.Check(addr.IsChain(BTCChain), Equals, false)
-	c.Check(addr.IsChain(ETHChain), Equals, false)
-	c.Check(addr.IsChain(GAIAChain), Equals, false)
-	c.Check(addr.IsChain(THORChain), Equals, false)
-	c.Check(addr.IsChain(DOGEChain), Equals, true)
-	c.Check(addr.GetNetwork(DOGEChain), Equals, MainNet)
+	_, err = NewAddress("DJbKker23xfz3ufxAbqUuQwp1EBibGJJHu")
+	c.Check(err, NotNil)
+	// This Mainnet address is not valid for Mocknet(/Testnet).
 
 	addr, err = NewAddress("nfWiQeddE4zsYsDuYhvpgVC7y4gjr5RyqK")
 	c.Check(err, IsNil)
