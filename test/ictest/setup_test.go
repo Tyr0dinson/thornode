@@ -30,7 +30,7 @@ import (
 	"go.uber.org/zap/zaptest"
 	"golang.org/x/sync/errgroup"
 
-	"gitlab.com/thorchain/thornode/build/scripts/evm"
+	"gitlab.com/thorchain/thornode/v3/build/scripts/evm"
 
 )
 

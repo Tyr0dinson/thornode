@@ -14,7 +14,7 @@ import (
 	"github.com/strangelove-ventures/interchaintest/v8/ibc"
 	"golang.org/x/sync/errgroup"
 	
-	tcommon "gitlab.com/thorchain/thornode/common"
+	tcommon "gitlab.com/thorchain/thornode/v3/common"
 )
 
 func Arb(
