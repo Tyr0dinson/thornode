@@ -107,7 +107,7 @@ func missedBlocksSlashTest(t *testing.T, ctx context.Context, thorchain *tc.Thor
 	// Verify val's slash pts are as expected
 	height, err := thorchain.Height(ctx)
 	require.NoError(t, err)
-	disabledValNodeInfo, err := thorchain.ApiGetNode(ctx, disabledVal.NodeAccount.NodeAddress)
+	disabledValNodeInfo, err := thorchain.APIGetNode(ctx, disabledVal.NodeAccount.NodeAddress)
 	require.NoError(t, err)
 	heightSinceDisabled := height-disabledValHeight
 	fmt.Printf("\n\nHeight diff: %d, slash pts: %d\n\n", heightSinceDisabled, disabledValNodeInfo.SlashPoints)
@@ -129,7 +129,7 @@ func doubleSignSlashTest(t *testing.T, ctx context.Context, thorchain *tc.Thorch
 	err = testutil.WaitForBlocks(ctx, 20, thorchain)
 	require.NoError(t, err, "thorchain failed to make blocks")
 
-	duplicateValNodeInfo, err := thorchain.ApiGetNode(ctx, duplicateVal.NodeAccount.NodeAddress)
+	duplicateValNodeInfo, err := thorchain.APIGetNode(ctx, duplicateVal.NodeAccount.NodeAddress)
 	require.NoError(t, err)
 	fmt.Println("Duplicate Val slash points:", duplicateValNodeInfo.SlashPoints)
 	require.GreaterOrEqual(t, duplicateValNodeInfo.SlashPoints, int64(1000), "duplicate validator does not have double sign slash points")
@@ -153,11 +153,11 @@ func verifySlashPointsUnchanged(t *testing.T, ctx context.Context, thorchain *tc
 	require.NoError(t, err, "thorchain failed to make blocks")
 
 	// Verify slashings have ended
-	na, err := thorchain.ApiGetNodes(ctx)
+	na, err := thorchain.APIGetNodes(ctx)
 	require.NoError(t, err)
 	err = testutil.WaitForBlocks(ctx, 10, thorchain)
 	require.NoError(t, err, "thorchain failed to make blocks")
-	na2, err := thorchain.ApiGetNodes(ctx)
+	na2, err := thorchain.APIGetNodes(ctx)
 	require.NoError(t, err)
 	for i := range na {
 		require.Equal(t, na[i].SlashPoints, na2[i].SlashPoints, fmt.Sprintf("Node %d, %s, slash points changed", i, na[i].NodeAddress))
@@ -165,7 +165,7 @@ func verifySlashPointsUnchanged(t *testing.T, ctx context.Context, thorchain *tc
 }
 
 func getNumActiveVals(t *testing.T, ctx context.Context, thorchain *tc.Thorchain) (numActiveVals int) {
-	na, err := thorchain.ApiGetNodes(ctx)
+	na, err := thorchain.APIGetNodes(ctx)
 	require.NoError(t, err)
 		
 	for _, node := range na {

@@ -10,7 +10,7 @@ import (
 
 	tc "github.com/strangelove-ventures/interchaintest/v8/chain/thorchain"
 
-	"gitlab.com/thorchain/thornode/test/ictest/features"
+	"gitlab.com/thorchain/thornode/v3/test/ictest/features"
 
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"

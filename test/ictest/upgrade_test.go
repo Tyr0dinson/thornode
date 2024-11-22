@@ -4,14 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"testing"
 	"time"
 
 	"github.com/strangelove-ventures/interchaintest/v8"
 	tc "github.com/strangelove-ventures/interchaintest/v8/chain/thorchain"
 	"github.com/strangelove-ventures/interchaintest/v8/ibc"
-
 	"github.com/strangelove-ventures/interchaintest/v8/testutil"
+
 	"github.com/stretchr/testify/require"
 	"github.com/docker/docker/client"
 )
@@ -100,15 +101,8 @@ func TestUpgrade_2_137_to_3_0(t *testing.T) {
 	PerformSaverEjects(t, ctx, thorchain, exoChains)
 	Ragnarok(t, ctx, thorchain, exoChains)
 
-	//err = testutil.WaitForBlocks(ctx, 300, thorchain)
-	//require.NoError(t, err, "thorchain failed to make blocks")
-	//nodes, err := tc.ApiGetNodes()
-	//require.NoError(t, err, "error fetching nodes after upgrade")
-
-	// require.Len(t, nodes, numVals, "expected number of nodes")
-	// for _, n := range nodes {
-	// 	require.Equal(t, upgradeName, n.Version, "expected version")
-	// }
+	storeVersion := getStoreVersion(t, ctx, thorchain, true)
+	require.Equal(t, int64(-1), storeVersion)
 }
 
 // If there are no arbers and thus no arbTimer, pass in nil
@@ -174,6 +168,9 @@ func PerformUpgrade(t *testing.T, ctx context.Context, client *client.Client, th
 	err = thorchain.StopAllNodes(ctx)
 	require.NoError(t, err, "error stopping node(s)")
 
+	storeVersion := getStoreVersion(t, ctx, thorchain, false)
+	require.Equal(t, int64(137), storeVersion)
+
 	// upgrade version on all nodes
 	newImage := ibc.NewDockerImage(upgradeInfo.repo, upgradeInfo.version, upgradeInfo.uidgid)
 
@@ -212,4 +209,41 @@ func PerformUpgrade(t *testing.T, ctx context.Context, client *client.Client, th
 		arbTimer.Reset(time.Second) // Start the arbs back up
 	}
 
+}
+
+// app_state, "thorchain", "store_version"
+func getStoreVersion(t *testing.T, ctx context.Context, thorchain *tc.Thorchain, stopAllNodes bool) int64 {
+	type ThorchainState struct {
+		StoreVersion string `json:"store_version,omitempty"`
+	}
+	type AppState struct {
+		Thorchain ThorchainState `json:"thorchain"`
+	}
+	type GenesisState struct {
+		AppState AppState `json:"app_state"`
+	}
+	
+	if stopAllNodes {
+		err := thorchain.StopAllSidecars(ctx)
+		require.NoError(t, err, "error stopping sidecar(s)")
+	
+		// bring down nodes to prepare for upgrade
+		err = thorchain.StopAllNodes(ctx)
+		require.NoError(t, err, "error stopping node(s)")
+	}
+	state, err := thorchain.ExportState(ctx, -1)
+	require.NoError(t, err)
+
+	var gs GenesisState
+	err = json.Unmarshal([]byte(state), &gs)
+	require.NoError(t, err)
+
+	if gs.AppState.Thorchain.StoreVersion == "" {
+		return -1
+	}
+
+	storeVersion, err := strconv.ParseInt(gs.AppState.Thorchain.StoreVersion, 10, 64)
+	require.NoError(t, err)
+
+	return storeVersion
 }
