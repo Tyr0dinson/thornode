@@ -2,7 +2,7 @@ package app
 
 import (
 	wasmkeeper "github.com/CosmWasm/wasmd/x/wasm/keeper"
-	apitypes "gitlab.com/thorchain/thornode/api/types"
+	apitypes "gitlab.com/thorchain/thornode/v3/api/types"
 )
 
 var wasmAcceptedQueries = wasmkeeper.AcceptedQueries{
