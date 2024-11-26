@@ -36,7 +36,7 @@ func (am CustomWasmModule) RegisterServices(cfg module.Configurator) {
 
 // x/wasm uses bankkeeper.IsSendEnabledCoins to check the movement of funds when instantiating, executing, sudoing, and executing submsgs
 // WasmBankKeeper bypasses the IsSendEnabledCoins check to allow funds to be transferred for these actions, without affecting the behaviour of x/bank MsgSend
-// Contracts that wish to send funds explicity will need to emit a thorchain MsgSend, or otherwise
+// Contracts that wish to send funds explicitly will need to emit a thorchain MsgSend, or otherwise
 // are subject to the restrictions of x/bank's send restrictions (eg with a CosmosMsg(BankMsg::Send {}) submsg,
 // as these messages are routed through the standard baseapp.MsgServiceRouter
 type WasmBankKeeper struct {
