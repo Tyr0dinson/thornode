@@ -52,7 +52,7 @@ func (h WasmExecuteContractHandler) validate(ctx cosmos.Context, msg wasmtypes.M
 	}
 }
 
-func (h WasmExecuteContractHandler) validateV137(ctx cosmos.Context, msg wasmtypes.MsgExecuteContract) error {
+func (h WasmExecuteContractHandler) validateV137(_ cosmos.Context, _ wasmtypes.MsgExecuteContract) error {
 	return nil
 }
 

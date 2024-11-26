@@ -14,13 +14,14 @@ var (
 )
 
 // NewMsgWasmExec is a constructor function for MsgWasmExec
-func NewMsgWasmExec(asset common.Asset, amount cosmos.Uint, contract, signer cosmos.AccAddress, msg []byte, tx common.Tx) *MsgWasmExec {
+func NewMsgWasmExec(asset common.Asset, amount cosmos.Uint, contract, sender, signer cosmos.AccAddress, msg []byte, tx common.Tx) *MsgWasmExec {
 	return &MsgWasmExec{
 		Tx:       tx,
 		Asset:    asset,
 		Amount:   amount,
 		Contract: contract,
 		Msg:      msg,
+		Sender:   sender,
 		Signer:   signer,
 	}
 }
@@ -38,6 +39,9 @@ func (m *MsgWasmExec) ValidateBasic() error {
 	}
 	if m.Contract.Empty() {
 		return cosmos.ErrInvalidAddress(m.Contract.String())
+	}
+	if m.Sender.Empty() {
+		return cosmos.ErrInvalidAddress(m.Sender.String())
 	}
 	if m.Signer.Empty() {
 		return cosmos.ErrInvalidAddress(m.Signer.String())

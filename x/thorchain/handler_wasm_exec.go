@@ -47,7 +47,7 @@ func (h WasmExecHandler) validate(ctx cosmos.Context, msg MsgWasmExec) error {
 	}
 }
 
-func (h WasmExecHandler) validateV137(ctx cosmos.Context, msg MsgWasmExec) error {
+func (h WasmExecHandler) validateV137(_ctx cosmos.Context, _msg MsgWasmExec) error {
 	return nil
 }
 
@@ -67,13 +67,7 @@ func (h WasmExecHandler) handleV137(ctx cosmos.Context, msg MsgWasmExec) (*cosmo
 		return nil, fmt.Errorf("unable to use MsgWasmExec while THORChain is halted")
 	}
 
-	sender, err := msg.Tx.FromAddress.MustAccAddress()
-
-	if err != nil {
-		return &cosmos.Result{}, err
-	}
-
-	_, mintAmt, err := h.mgr.SecuredAssetManager().Deposit(ctx, msg.Asset, msg.Amount, sender, msg.Tx.FromAddress, msg.Tx.ID)
+	_, mintAmt, err := h.mgr.SecuredAssetManager().Deposit(ctx, msg.Asset, msg.Amount, msg.Sender, msg.Tx.FromAddress, msg.Tx.ID)
 
 	if err != nil {
 		return nil, err
@@ -84,7 +78,7 @@ func (h WasmExecHandler) handleV137(ctx cosmos.Context, msg MsgWasmExec) (*cosmo
 		return nil, err
 	}
 
-	_, err = h.mgr.WasmManager().ExecuteContract(ctx, msg.Contract, sender, msg.Msg, cosmos.NewCoins(coin))
+	_, err = h.mgr.WasmManager().ExecuteContract(ctx, msg.Contract, msg.Sender, msg.Msg, cosmos.NewCoins(coin))
 	if err != nil {
 		return &cosmos.Result{}, err
 	}
