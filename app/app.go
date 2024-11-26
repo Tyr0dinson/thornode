@@ -400,6 +400,7 @@ func NewChainApp(
 		app.MsgServiceRouter().MsgServiceRouter,
 		app.GetSubspace(wasmtypes.ModuleName),
 	)
+	customWasmModule := NewCustomWasmModule(&wasmModule)
 
 	app.ModuleManager = module.NewManager(
 		genutilModule,
@@ -410,7 +411,7 @@ func NewChainApp(
 		consensusModule,
 		// non sdk modules
 		thorchainModule,
-		// do not register wasmModule, the thorchainModule registers x/wasm services
+		customWasmModule,
 	)
 
 	// BasicModuleManager defines the module BasicManager is in charge of setting up basic,
