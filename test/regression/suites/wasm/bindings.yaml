@@ -1,5 +1,7 @@
 {{ template "default-state.yaml" }}
 ---
+{{ template "wasm-state.yaml" }}
+---
 {{ template "btc-pool-state.yaml" }}
 
 # The following tests use the `bindings.wasm` contract, which implements these following interfaces. 

@@ -53,12 +53,12 @@ func NewAnteHandler(options HandlerOptions) (sdk.AnteHandler, error) {
 	anteDecorators := []sdk.AnteDecorator{
 		ante.NewSetUpContextDecorator(), // outermost AnteDecorator. SetUpContext must be called first
 
+		// replace gas meter immediately after setting up ctx
+		thorchain.NewInfiniteGasDecorator(options.THORChainKeeper),
+
 		// wasmkeeper.NewLimitSimulationGasDecorator(options.WasmConfig.SimulationGasLimit), // after setup context to enforce limits early
 		wasmkeeper.NewCountTXDecorator(options.TXCounterStoreService),
 		// wasmkeeper.NewGasRegisterDecorator(options.WasmKeeper.GetGasRegister()),
-
-		// replace gas meter immediately after setting up ctx
-		thorchain.NewInfiniteGasDecorator(options.THORChainKeeper),
 
 		ante.NewExtensionOptionsDecorator(options.ExtensionOptionChecker),
 		ante.NewValidateBasicDecorator(),

@@ -1,5 +1,7 @@
 {{ template "default-state.yaml" }}
 ---
+{{ template "wasm-state.yaml" }}
+---
 type: create-blocks
 count: 1
 ---

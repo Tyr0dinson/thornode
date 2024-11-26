@@ -1,0 +1,6 @@
+type: state
+genesis:
+  app_state:
+    bank:
+      params:
+        default_send_enabled: true
