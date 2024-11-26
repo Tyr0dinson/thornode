@@ -220,12 +220,12 @@ func (m WasmMgrVCUR) MigrateContract(
 		return nil, err
 	}
 
-	err = m.checkAuthorization(ctx, caller, codeInfo.CodeHash)
+	contractInfo, err := m.getContractInfo(ctx, contractAddress)
 	if err != nil {
 		return nil, err
 	}
 
-	contractInfo, err := m.getContractInfo(ctx, contractAddress)
+	err = m.checkContractAuthorization(ctx, contractInfo, caller, codeInfo.CodeHash)
 	if err != nil {
 		return nil, err
 	}
@@ -270,7 +270,7 @@ func (m WasmMgrVCUR) SudoContract(
 		return nil, err
 	}
 
-	err = m.checkAuthorization(ctx, caller, codeInfo.CodeHash)
+	err = m.checkContractAuthorization(ctx, contractInfo, caller, codeInfo.CodeHash)
 	if err != nil {
 		return nil, err
 	}
@@ -335,6 +335,26 @@ func (m WasmMgrVCUR) checkAuthorization(ctx cosmos.Context, actor cosmos.AccAddr
 	}
 	if v != -1 && ctx.BlockHeight() > v {
 		return nil
+	}
+
+	return m.permissions.Permit(actor, checksum)
+}
+
+func (m WasmMgrVCUR) checkContractAuthorization(ctx cosmos.Context, contractInfo *wasmtypes.ContractInfo, actor cosmos.AccAddress, checksum []byte) error {
+	if isAdmin(actor) {
+		return nil
+	}
+
+	v, err := m.keeper.GetMimir(ctx, constants.MimirKeyWasmPermissionless)
+	if err != nil {
+		return err
+	}
+	// If MimirKeyWasmPermissionless is enabled, we still need to restrict who can call Sudo on and Migrate contracts
+	// Check this against the admin value that is stored on instantiation, as is default x/wasm behaviour
+	// Current limitations of x/wasm mean we can't access the storage for ContractInfo to support updating of this value
+	if v != -1 && ctx.BlockHeight() > v &&
+		(wasmkeeper.DefaultAuthorizationPolicy{}).CanModifyContract(contractInfo.AdminAddr(), actor) {
+		return errors.ErrUnauthorized
 	}
 
 	return m.permissions.Permit(actor, checksum)

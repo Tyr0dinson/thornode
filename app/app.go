@@ -362,7 +362,7 @@ func NewChainApp(
 		app.appCodec,
 		runtime.NewKVStoreService(keys[wasmtypes.StoreKey]),
 		app.AccountKeeper,
-		app.BankKeeper,
+		NewWasmBankKeeper(app.BankKeeper),
 		app.StakingKeeper,
 		nil, nil, nil, nil, nil, nil,
 		app.MsgServiceRouter(),

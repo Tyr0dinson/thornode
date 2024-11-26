@@ -508,7 +508,7 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "222420",
+          "gas_used": "220411",
           "events": [
             {
               "fee": "",

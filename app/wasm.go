@@ -1,8 +1,12 @@
 package app
 
 import (
+	"context"
+
 	"github.com/CosmWasm/wasmd/x/wasm"
 	wasmkeeper "github.com/CosmWasm/wasmd/x/wasm/keeper"
+	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module"
 	apitypes "gitlab.com/thorchain/thornode/v3/api/types"
 )
@@ -14,7 +18,7 @@ var wasmAcceptedQueries = wasmkeeper.AcceptedQueries{
 // CustomWasmModule re-exposes the underlying module's methods,
 // but prevents Services from being registered, as these
 // should be registered and handled in x/thorchain
-// N.b. we can't use app.MsgServiceRouter as the router arguemnt to wasm.NewKeeper is a concrete type of baseapp.MsgServiceRouter,
+// N.b. we can't use app.msgServiceRouter as the router argument for wasm.NewKeeper is a concrete type of baseapp.MsgServiceRouter,
 // and cosmwasm submessages rely on the ability to call back into eg MsgExecuteContract
 type CustomWasmModule struct {
 	*wasm.AppModule
@@ -28,4 +32,25 @@ func NewCustomWasmModule(
 }
 
 func (am CustomWasmModule) RegisterServices(cfg module.Configurator) {
+}
+
+// x/wasm uses bankkeeper.IsSendEnabledCoins to check the movement of funds when instantiating, executing, sudoing, and executing submsgs
+// WasmBankKeeper bypasses the IsSendEnabledCoins check to allow funds to be transferred for these actions, without affecting the behaviour of x/bank MsgSend
+// Contracts that wish to send funds explicity will need to emit a thorchain MsgSend, or otherwise
+// are subject to the restrictions of x/bank's send restrictions (eg with a CosmosMsg(BankMsg::Send {}) submsg,
+// as these messages are routed through the standard baseapp.MsgServiceRouter
+type WasmBankKeeper struct {
+	wasmtypes.BankKeeper
+}
+
+func NewWasmBankKeeper(keeper wasmtypes.BankKeeper) WasmBankKeeper {
+	return WasmBankKeeper{keeper}
+}
+
+func (c WasmBankKeeper) IsSendEnabledCoin(ctx context.Context, coin sdk.Coin) bool {
+	return true
+}
+
+func (c WasmBankKeeper) IsSendEnabledCoins(ctx context.Context, coins ...sdk.Coin) error {
+	return nil
 }

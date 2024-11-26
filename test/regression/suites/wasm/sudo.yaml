@@ -34,7 +34,7 @@ count: 1
 ---
 type: tx-sudo-contract
 contract: tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f
-msg: "{}"
+msg: {}
 code_id: 2
 authority: {{ addr_thor_fox }}
 gas: 100000

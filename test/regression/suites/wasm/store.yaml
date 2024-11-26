@@ -5,14 +5,6 @@
 type: create-blocks
 count: 1
 ---
-type: tx-mimir
-key: WasmPermissionless
-value: 0
-signer: {{ addr_thor_dog }}
----
-type: create-blocks
-count: 1
----
 type: check
 endpoint: http://localhost:1317/cosmwasm/wasm/v1/code
 asserts:
@@ -30,6 +22,14 @@ type: check
 endpoint: http://localhost:1317/cosmwasm/wasm/v1/code
 asserts:
   - .code_infos|length == 0
+---
+type: tx-mimir
+key: WasmPermissionless
+value: 0
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
 ---
 type: tx-store-code
 sender: {{ addr_thor_dog }}
