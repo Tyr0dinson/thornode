@@ -391,7 +391,15 @@ func NewChainApp(
 	genutilModule := genutil.NewAppModule(app.AccountKeeper, app.StakingKeeper, app, txConfig)
 	paramsModule := params.NewAppModule(app.ParamsKeeper)
 	upgradeModule := upgrade.NewAppModule(app.UpgradeKeeper, app.AccountKeeper.AddressCodec())
-	wasmModule := wasm.NewAppModule(app.appCodec, &app.WasmKeeper, app.StakingKeeper, app.AccountKeeper, app.BankKeeper, app.MsgServiceRouter(), app.GetSubspace(wasmtypes.ModuleName))
+	wasmModule := wasm.NewAppModule(
+		app.appCodec,
+		&app.WasmKeeper,
+		app.StakingKeeper,
+		app.AccountKeeper,
+		app.BankKeeper,
+		app.MsgServiceRouter().MsgServiceRouter,
+		app.GetSubspace(wasmtypes.ModuleName),
+	)
 
 	app.ModuleManager = module.NewManager(
 		genutilModule,
