@@ -9,7 +9,6 @@ import (
 	"github.com/blang/semver"
 	abci "github.com/cometbft/cometbft/abci/types"
 	"github.com/cosmos/cosmos-sdk/codec"
-	sdk "github.com/cosmos/cosmos-sdk/types"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
 
@@ -61,7 +60,7 @@ type SecuredAssetManager interface {
 	Deposit(_ cosmos.Context, _ common.Asset, amount cosmos.Uint, owner cosmos.AccAddress, assetAddr common.Address, _ common.TxID) (cosmos.Uint, common.Coin, error)
 	Withdraw(_ cosmos.Context, _ common.Asset, amount cosmos.Uint, owner cosmos.AccAddress, assetAddr common.Address, _ common.TxID) (cosmos.Uint, cosmos.Uint, error)
 	BalanceOf(_ cosmos.Context, _ common.Asset, owner cosmos.AccAddress) cosmos.Uint
-	// GetSecuredAssetStatus(_ cosmos.Context, _ common.Asset) (keeper.SecuredAsset, cosmos.Uint, error)
+	GetSecuredAssetStatus(_ cosmos.Context, _ common.Asset) (keeper.SecuredAsset, cosmos.Uint, error)
 	GetShareSupply(_ cosmos.Context, _ common.Asset) cosmos.Uint
 	CheckHalt(_ cosmos.Context) error
 }
@@ -143,22 +142,22 @@ type WasmManager interface {
 	//  code id.
 	InstantiateContract(ctx cosmos.Context,
 		codeID uint64,
-		creator, admin sdk.AccAddress,
+		creator, admin cosmos.AccAddress,
 		initMsg []byte,
 		label string,
-		deposit sdk.Coins,
+		deposit cosmos.Coins,
 	) (cosmos.AccAddress, []byte, error)
 	//  InstantiateContract2 creates a new smart contract instance for the given
 	//  code id with a predictable address
 	InstantiateContract2(ctx cosmos.Context,
 		codeID uint64,
-		creator, admin sdk.AccAddress,
+		creator, admin cosmos.AccAddress,
 		initMsg []byte,
 		label string,
-		deposit sdk.Coins,
+		deposit cosmos.Coins,
 		salt []byte,
 		fixMsg bool,
-	) (sdk.AccAddress, []byte, error)
+	) (cosmos.AccAddress, []byte, error)
 	// Execute submits the given message data to a smart contract
 	ExecuteContract(ctx cosmos.Context,
 		contractAddr, senderAddr cosmos.AccAddress,
@@ -167,7 +166,7 @@ type WasmManager interface {
 	) ([]byte, error)
 	// Migrate runs a code upgrade/ downgrade for a smart contract
 	MigrateContract(ctx cosmos.Context,
-		contractAddress, caller sdk.AccAddress,
+		contractAddress, caller cosmos.AccAddress,
 		newCodeID uint64,
 		msg []byte,
 	) ([]byte, error)
@@ -176,7 +175,7 @@ type WasmManager interface {
 	//
 	// Since: 0.40
 	SudoContract(ctx cosmos.Context,
-		contractAddress, caller sdk.AccAddress,
+		contractAddress, caller cosmos.AccAddress,
 		msg []byte,
 	) ([]byte, error)
 }

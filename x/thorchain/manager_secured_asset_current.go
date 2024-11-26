@@ -76,22 +76,22 @@ func (s *SecuredAssetMgrVCUR) Deposit(
 	owner cosmos.AccAddress,
 	assetAddr common.Address,
 	txID common.TxID,
-) (cosmos.Uint, cosmos.Uint, error) {
+) (cosmos.Uint, common.Coin, error) {
 	if err := s.CheckHalt(ctx); err != nil {
-		return cosmos.ZeroUint(), cosmos.ZeroUint(), err
+		return cosmos.ZeroUint(), common.NoCoin, err
 	}
 
 	asset = asset.GetSecuredAsset()
 	pool, shareSupply, err := s.GetSecuredAssetStatus(ctx, asset)
 	if err != nil {
-		return cosmos.ZeroUint(), cosmos.ZeroUint(), err
+		return cosmos.ZeroUint(), common.NoCoin, err
 	}
 
 	mintAmt := s.calcMintAmt(shareSupply, pool.Depth, amount)
 	coin := common.NewCoin(asset, mintAmt)
 	err = s.keeper.MintAndSendToAccount(ctx, owner, coin)
 	if err != nil {
-		return cosmos.ZeroUint(), cosmos.ZeroUint(), err
+		return cosmos.ZeroUint(), common.NoCoin, err
 	}
 
 	pool.Depth = pool.Depth.Add(amount)
@@ -103,7 +103,7 @@ func (s *SecuredAssetMgrVCUR) Deposit(
 		ctx.Logger().Error("fail to emit secured asset deposit event", "error", err)
 	}
 
-	return amount, mintAmt, nil
+	return amount, coin, nil
 }
 
 func (s *SecuredAssetMgrVCUR) calcMintAmt(oldUnits, depth, add cosmos.Uint) cosmos.Uint {

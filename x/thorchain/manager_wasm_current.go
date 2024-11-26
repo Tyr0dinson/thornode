@@ -14,7 +14,7 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/errors"
-	"gitlab.com/thorchain/thornode/common/wasmpermissions"
+	"gitlab.com/thorchain/thornode/v3/common/wasmpermissions"
 )
 
 var (
