@@ -403,7 +403,7 @@ func (s *SwapperVCUR) swapOne(ctx cosmos.Context,
 		if err != nil {
 			return cosmos.ZeroUint(), evt, ErrInternal(err, "fail to parse destination address")
 		}
-		_, _, err = mgr.SecuredAssetManager().Deposit(ctx, target, emitAssets, acc, common.NoAddress, tx.ID)
+		_, _, err = mgr.SecuredAssetManager().Deposit(ctx, target.GetLayer1Asset(), emitAssets, acc, common.NoAddress, tx.ID)
 		if err != nil {
 			return cosmos.ZeroUint(), evt, ErrInternal(err, "fail to mint secured asset")
 		}

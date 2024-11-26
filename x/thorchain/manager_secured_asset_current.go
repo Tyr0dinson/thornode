@@ -80,6 +80,9 @@ func (s *SecuredAssetMgrVCUR) Deposit(
 	if err := s.CheckHalt(ctx); err != nil {
 		return cosmos.ZeroUint(), common.NoCoin, err
 	}
+	if !asset.IsLayer1Asset() {
+		return cosmos.ZeroUint(), common.NoCoin, fmt.Errorf("only layer 1 assets can be deposited")
+	}
 
 	asset = asset.GetSecuredAsset()
 	pool, shareSupply, err := s.GetSecuredAssetStatus(ctx, asset)
@@ -123,15 +126,18 @@ func (s *SecuredAssetMgrVCUR) Withdraw(
 	owner cosmos.AccAddress,
 	assetAddr common.Address,
 	txID common.TxID,
-) (cosmos.Uint, cosmos.Uint, error) {
+) (cosmos.Uint, common.Coin, error) {
 	if err := s.CheckHalt(ctx); err != nil {
-		return cosmos.ZeroUint(), cosmos.ZeroUint(), err
+		return cosmos.ZeroUint(), common.NoCoin, err
 	}
 
-	asset = asset.GetSecuredAsset()
+	if !asset.IsSecuredAsset() {
+		return cosmos.ZeroUint(), common.NoCoin, fmt.Errorf("only secured assets can be withdrawn")
+	}
+
 	pool, shareSupply, err := s.GetSecuredAssetStatus(ctx, asset)
 	if err != nil {
-		return cosmos.ZeroUint(), cosmos.ZeroUint(), err
+		return cosmos.ZeroUint(), common.NoCoin, err
 	}
 
 	balance := s.keeper.GetBalanceOf(ctx, owner, asset)
@@ -148,7 +154,7 @@ func (s *SecuredAssetMgrVCUR) Withdraw(
 
 	err = s.keeper.SendFromAccountToModule(ctx, owner, ModuleName, coins)
 	if err != nil {
-		return cosmos.ZeroUint(), cosmos.ZeroUint(), err
+		return cosmos.ZeroUint(), common.NoCoin, err
 	}
 
 	// Safely re-calculate withdraw amount from burnAmt
@@ -156,7 +162,7 @@ func (s *SecuredAssetMgrVCUR) Withdraw(
 
 	err = s.keeper.BurnFromModule(ctx, ModuleName, coin)
 	if err != nil {
-		return cosmos.ZeroUint(), cosmos.ZeroUint(), err
+		return cosmos.ZeroUint(), common.NoCoin, err
 	}
 	pool.Depth = common.SafeSub(pool.Depth, tokensToClaim)
 
@@ -168,7 +174,7 @@ func (s *SecuredAssetMgrVCUR) Withdraw(
 	}
 
 	// Return the share units burned
-	return tokensToClaim, burnAmt, nil
+	return tokensToClaim, coin, nil
 }
 
 func (h SecuredAssetMgrVCUR) CheckHalt(ctx cosmos.Context) error {

@@ -20,15 +20,20 @@ func (s *SecuredAssetMgrSuite) TestDepositAndWithdraw(c *C) {
 	c.Assert(err, IsNil)
 	mgr := newSecuredAssetMgrVCUR(k, eventMgr)
 
-	asset := common.BTCAsset.GetSecuredAsset()
+	asset := common.BTCAsset
+	securedAsset := asset.GetSecuredAsset()
+
 	addr1 := GetRandomBech32Addr()
 	addr2 := GetRandomBech32Addr()
 	// addr3 := GetRandomBech32Addr()
 
+	_, _, err = mgr.Deposit(ctx, securedAsset, cosmos.NewUint(100*common.One), addr1, common.NoAddress, common.BlankTxID)
+	c.Assert(err, NotNil)
+
 	depositAmt, mintAmt, err := mgr.Deposit(ctx, asset, cosmos.NewUint(100*common.One), addr1, common.NoAddress, common.BlankTxID)
 	c.Assert(err, IsNil)
 	c.Check(depositAmt.String(), Equals, cosmos.NewUint(100*common.One).String())
-	c.Check(mintAmt.Amount.String(), Equals, cosmos.NewUint(100*common.One).String())
+	c.Check(mintAmt.String(), Equals, common.NewCoin(securedAsset, cosmos.NewUint(100*common.One)).String())
 
 	bal := mgr.BalanceOf(ctx, asset, addr1)
 	c.Check(bal.String(), Equals, cosmos.NewUint(100*common.One).String())
@@ -36,7 +41,7 @@ func (s *SecuredAssetMgrSuite) TestDepositAndWithdraw(c *C) {
 	depositAmt, mintAmt, err = mgr.Deposit(ctx, asset, cosmos.NewUint(50*common.One), addr2, common.NoAddress, common.BlankTxID)
 	c.Assert(err, IsNil)
 	c.Check(depositAmt.String(), Equals, cosmos.NewUint(50*common.One).String())
-	c.Check(mintAmt.Amount.String(), Equals, cosmos.NewUint(50*common.One).String())
+	c.Check(mintAmt.String(), Equals, common.NewCoin(securedAsset, cosmos.NewUint(50*common.One)).String())
 
 	bal = mgr.BalanceOf(ctx, asset, addr2)
 	c.Check(bal.String(), Equals, cosmos.NewUint(50*common.One).String())
@@ -44,16 +49,19 @@ func (s *SecuredAssetMgrSuite) TestDepositAndWithdraw(c *C) {
 	c.Check(bal.String(), Equals, cosmos.NewUint(100*common.One).String())
 
 	// withdrawal
-	withdrawAmt, burnAmt, err := mgr.Withdraw(ctx, asset, cosmos.NewUint(30*common.One), addr2, common.NoAddress, common.BlankTxID)
+	_, _, err = mgr.Withdraw(ctx, asset, cosmos.NewUint(30*common.One), addr2, common.NoAddress, common.BlankTxID)
+	c.Assert(err, NotNil)
+
+	withdrawAmt, burnAmt, err := mgr.Withdraw(ctx, securedAsset, cosmos.NewUint(30*common.One), addr2, common.NoAddress, common.BlankTxID)
 	c.Assert(err, IsNil)
 	c.Check(withdrawAmt.String(), Equals, cosmos.NewUint(30*common.One).String())
-	c.Check(burnAmt.String(), Equals, cosmos.NewUint(30*common.One).String())
+	c.Check(burnAmt.String(), Equals, common.NewCoin(securedAsset, cosmos.NewUint(30*common.One)).String())
 	bal = mgr.BalanceOf(ctx, asset, addr2)
 	c.Check(bal.String(), Equals, cosmos.NewUint(20*common.One).String())
-	withdrawAmt, burnAmt, err = mgr.Withdraw(ctx, asset, cosmos.NewUint(30*common.One), addr2, common.NoAddress, common.BlankTxID)
+	withdrawAmt, burnAmt, err = mgr.Withdraw(ctx, securedAsset, cosmos.NewUint(30*common.One), addr2, common.NoAddress, common.BlankTxID)
 	c.Assert(err, IsNil)
 	c.Check(withdrawAmt.String(), Equals, cosmos.NewUint(20*common.One).String())
-	c.Check(burnAmt.String(), Equals, cosmos.NewUint(20*common.One).String())
+	c.Check(burnAmt.String(), Equals, common.NewCoin(securedAsset, cosmos.NewUint(20*common.One)).String())
 	bal = mgr.BalanceOf(ctx, asset, addr2)
 	c.Check(bal.String(), Equals, cosmos.NewUint(0).String())
 }
@@ -64,7 +72,9 @@ func (s *SecuredAssetMgrSuite) TestRateDecrease(c *C) {
 	c.Assert(err, IsNil)
 	mgr := newSecuredAssetMgrVCUR(k, eventMgr)
 
-	asset := common.BTCAsset.GetSecuredAsset()
+	asset := common.BCHAsset
+	securedAsset := asset.GetSecuredAsset()
+
 	addr1 := GetRandomBech32Addr()
 	addr2 := GetRandomBech32Addr()
 
@@ -77,12 +87,12 @@ func (s *SecuredAssetMgrSuite) TestRateDecrease(c *C) {
 	depositAmt, mintAmt, err := mgr.Deposit(ctx, asset, depositAmount1, addr1, common.NoAddress, common.BlankTxID)
 	c.Assert(err, IsNil)
 	c.Check(depositAmt.String(), Equals, depositAmount1.String())
-	c.Check(mintAmt.Amount.String(), Equals, depositAmount1.String())
+	c.Check(mintAmt.String(), Equals, common.NewCoin(securedAsset, depositAmount1).String())
 
 	depositAmt, mintAmt, err = mgr.Deposit(ctx, asset, depositAmount2, addr2, common.NoAddress, common.BlankTxID)
 	c.Assert(err, IsNil)
 	c.Check(depositAmt.String(), Equals, depositAmount2.String())
-	c.Check(mintAmt.Amount.String(), Equals, depositAmount2.String())
+	c.Check(mintAmt.String(), Equals, common.NewCoin(securedAsset, depositAmount2).String())
 
 	bal := mgr.BalanceOf(ctx, asset, addr1)
 	c.Check(bal.String(), Equals, depositAmount1.String())
@@ -94,7 +104,7 @@ func (s *SecuredAssetMgrSuite) TestRateDecrease(c *C) {
 	// Pool share tokens are minted without any corresponding token deposits to increase the pool depth
 	// Account SDK token balance should remain fixed, `mgr.BalanceOf` should return the reduced amount
 
-	coin := common.NewCoin(asset, dilutionAmount)
+	coin := common.NewCoin(securedAsset, dilutionAmount)
 	err = mgr.keeper.MintToModule(ctx, ModuleName, coin)
 	c.Assert(err, IsNil)
 
@@ -124,7 +134,8 @@ func (s *SecuredAssetMgrSuite) TestRateDecreaseDeposit(c *C) {
 	c.Assert(err, IsNil)
 	mgr := newSecuredAssetMgrVCUR(k, eventMgr)
 
-	asset := common.BTCAsset.GetSecuredAsset()
+	asset := common.BTCAsset
+	securedAsset := asset.GetSecuredAsset()
 	addr1 := GetRandomBech32Addr()
 	addr2 := GetRandomBech32Addr()
 	addr3 := GetRandomBech32Addr()
@@ -139,12 +150,12 @@ func (s *SecuredAssetMgrSuite) TestRateDecreaseDeposit(c *C) {
 	depositAmt, mintAmt, err := mgr.Deposit(ctx, asset, depositAmount1, addr1, common.NoAddress, common.BlankTxID)
 	c.Assert(err, IsNil)
 	c.Check(depositAmt.String(), Equals, depositAmount1.String())
-	c.Check(mintAmt.Amount.String(), Equals, depositAmount1.String())
+	c.Check(mintAmt.String(), Equals, common.NewCoin(securedAsset, depositAmount1).String())
 
 	depositAmt, mintAmt, err = mgr.Deposit(ctx, asset, depositAmount2, addr2, common.NoAddress, common.BlankTxID)
 	c.Assert(err, IsNil)
 	c.Check(depositAmt.String(), Equals, depositAmount2.String())
-	c.Check(mintAmt.Amount.String(), Equals, depositAmount2.String())
+	c.Check(mintAmt.String(), Equals, common.NewCoin(securedAsset, depositAmount2).String())
 
 	bal := mgr.BalanceOf(ctx, asset, addr1)
 	c.Check(bal.String(), Equals, depositAmount1.String())
@@ -156,7 +167,7 @@ func (s *SecuredAssetMgrSuite) TestRateDecreaseDeposit(c *C) {
 	// Pool share tokens are minted without any corresponding token deposits to increase the pool depth
 	// Account SDK token balance should remain fixed, `mgr.BalanceOf` should return the reduced amount
 
-	coin := common.NewCoin(asset, dilutionAmount)
+	coin := common.NewCoin(securedAsset, dilutionAmount)
 	err = mgr.keeper.MintToModule(ctx, ModuleName, coin)
 	c.Assert(err, IsNil)
 
@@ -165,23 +176,23 @@ func (s *SecuredAssetMgrSuite) TestRateDecreaseDeposit(c *C) {
 	c.Assert(err, IsNil)
 	c.Check(depositAmt.String(), Equals, depositAmount1.String())
 	// Issuance after a dilution will be greater than the deposit amount
-	c.Check(mintAmt.Amount.String(), Equals, issuanceAmount3.String())
+	c.Check(mintAmt.String(), Equals, common.NewCoin(securedAsset, issuanceAmount3).String())
 	bal = mgr.BalanceOf(ctx, asset, addr3)
 	c.Check(bal.String(), Equals, depositAmount1.String())
 
 	// Finally, check that Withdrawal logic allocates the right amount of the pool for given withdraw amount
-	withdrawAmt, burnAmt, err := mgr.Withdraw(ctx, asset, depositAmount1, addr1, common.NoAddress, common.BlankTxID)
+	withdrawAmt, burnAmt, err := mgr.Withdraw(ctx, securedAsset, depositAmount1, addr1, common.NoAddress, common.BlankTxID)
 	c.Assert(err, IsNil)
 	c.Check(withdrawAmt.String(), Equals, dilutedAmount1.String())
-	c.Check(burnAmt.String(), Equals, issuanceAmount1.String())
+	c.Check(burnAmt.String(), Equals, common.NewCoin(securedAsset, issuanceAmount1).String())
 
 	bal = mgr.BalanceOf(ctx, asset, addr1)
 	c.Check(bal.String(), Equals, "0")
 
-	withdrawAmt, burnAmt, err = mgr.Withdraw(ctx, asset, depositAmount1, addr3, common.NoAddress, common.BlankTxID)
+	withdrawAmt, burnAmt, err = mgr.Withdraw(ctx, securedAsset, depositAmount1, addr3, common.NoAddress, common.BlankTxID)
 	c.Assert(err, IsNil)
 	c.Check(withdrawAmt.String(), Equals, depositAmount1.String())
-	c.Check(burnAmt.String(), Equals, issuanceAmount3.String())
+	c.Check(burnAmt.String(), Equals, common.NewCoin(securedAsset, issuanceAmount3).String())
 	bal = mgr.BalanceOf(ctx, asset, addr3)
 	c.Check(bal.String(), Equals, "0")
 }
