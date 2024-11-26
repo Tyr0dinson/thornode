@@ -577,7 +577,7 @@ func GetSecuredAssetManager(version semver.Version, keeper keeper.Keeper, eventM
 
 func GetWasmManager(ctx cosmos.Context, version semver.Version, keeper keeper.Keeper, wasmKeeper wasmkeeper.Keeper, eventMgr EventManager) (WasmManager, error) {
 	switch {
-	case version.GTE(semver.MustParse("2.137.0")):
+	case version.GTE(semver.MustParse("3.1.0")):
 		return newWasmMgrVCUR(ctx, keeper, wasmKeeper, wasmpermissions.GetWasmPermissions(version), eventMgr), nil
 	default:
 		return nil, errInvalidVersion

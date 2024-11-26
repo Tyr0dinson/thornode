@@ -45,14 +45,14 @@ func (h WasmExecuteContractHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosm
 func (h WasmExecuteContractHandler) validate(ctx cosmos.Context, msg wasmtypes.MsgExecuteContract) error {
 	version := h.mgr.GetVersion()
 	switch {
-	case version.GTE(semver.MustParse("2.137.0")):
-		return h.validateV137(ctx, msg)
+	case version.GTE(semver.MustParse("3.1.0")):
+		return h.validateV3_1_0(ctx, msg)
 	default:
 		return errInvalidVersion
 	}
 }
 
-func (h WasmExecuteContractHandler) validateV137(_ cosmos.Context, _ wasmtypes.MsgExecuteContract) error {
+func (h WasmExecuteContractHandler) validateV3_1_0(_ cosmos.Context, _ wasmtypes.MsgExecuteContract) error {
 	return nil
 }
 
@@ -60,14 +60,14 @@ func (h WasmExecuteContractHandler) handle(ctx cosmos.Context, msg wasmtypes.Msg
 	ctx.Logger().Info("receive MsgExecuteContract", "from", msg.Sender)
 	version := h.mgr.GetVersion()
 	switch {
-	case version.GTE(semver.MustParse("2.137.0")):
-		return h.handleV137(ctx, msg)
+	case version.GTE(semver.MustParse("3.1.0")):
+		return h.handleV3_1_0(ctx, msg)
 	default:
 		return nil, errInvalidVersion
 	}
 }
 
-func (h WasmExecuteContractHandler) handleV137(ctx cosmos.Context, msg wasmtypes.MsgExecuteContract) (*cosmos.Result, error) {
+func (h WasmExecuteContractHandler) handleV3_1_0(ctx cosmos.Context, msg wasmtypes.MsgExecuteContract) (*cosmos.Result, error) {
 	if h.mgr.Keeper().IsChainHalted(ctx, common.THORChain) {
 		return nil, fmt.Errorf("unable to use MsgExecuteContract while THORChain is halted")
 	}
