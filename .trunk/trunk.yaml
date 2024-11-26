@@ -7,7 +7,8 @@ lint:
   definitions:
     - name: codespell
       commands:
-        - run: codespell --uri-ignore-words-list=* --ignore-words-list=toi,amountIn ${target}
+        # IDae = base64 found in wasm bytecode expected to be "idea"
+        - run: codespell --uri-ignore-words-list=* --ignore-words-list=toi,amountIn,IDae ${target}
   enabled:
     - codespell@2.3.0
     - black@24.10.0
