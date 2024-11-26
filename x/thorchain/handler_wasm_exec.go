@@ -68,7 +68,6 @@ func (h WasmExecHandler) handleV137(ctx cosmos.Context, msg MsgWasmExec) (*cosmo
 	}
 
 	_, mintAmt, err := h.mgr.SecuredAssetManager().Deposit(ctx, msg.Asset, msg.Amount, msg.Sender, msg.Tx.FromAddress, msg.Tx.ID)
-
 	if err != nil {
 		return nil, err
 	}

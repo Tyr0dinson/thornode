@@ -9,9 +9,7 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
-var (
-	wasmPermissionsV138 WasmPermissions
-)
+var wasmPermissionsV138 WasmPermissions
 
 type WasmPermissions struct {
 	Permissions map[string]WasmPermission

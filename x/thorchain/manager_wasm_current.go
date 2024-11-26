@@ -1,10 +1,9 @@
 package thorchain
 
 import (
+	"encoding/base32"
 	"fmt"
 	"strings"
-
-	"encoding/base32"
 
 	wasmkeeper "github.com/CosmWasm/wasmd/x/wasm/keeper"
 	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
@@ -19,9 +18,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/wasmpermissions"
 )
 
-var (
-	_ WasmManager = &WasmMgrVCUR{}
-)
+var _ WasmManager = &WasmMgrVCUR{}
 
 // WasmMgrVCUR is VCUR implementation of slasher
 type WasmMgrVCUR struct {
@@ -125,7 +122,6 @@ func (m WasmMgrVCUR) InstantiateContract(
 		label,
 		deposit,
 	)
-
 }
 
 // InstantiateContract2 instantiate a new contract with predicatable address generated
@@ -276,7 +272,6 @@ func (m WasmMgrVCUR) SudoContract(
 	}
 
 	return m.permissionedKeeper().Sudo(ctx, contractAddress, msg)
-
 }
 
 func (m WasmMgrVCUR) checkHalt(ctx cosmos.Context) error {
@@ -296,7 +291,6 @@ func (m WasmMgrVCUR) checkContractHalt(ctx cosmos.Context, address sdk.AccAddres
 	contractKey := addrStr[len(addrStr)-6:]
 	fmt.Println("CONTRACT KEY", contractKey)
 	v, err := m.keeper.GetMimirWithRef(ctx, constants.MimirTemplateWasmContract, contractKey)
-
 	if err != nil {
 		return err
 	}
@@ -307,7 +301,6 @@ func (m WasmMgrVCUR) checkContractHalt(ctx cosmos.Context, address sdk.AccAddres
 }
 
 func (m WasmMgrVCUR) checkChecksumHalt(ctx cosmos.Context, checksum []byte) error {
-
 	encoder := base32.StdEncoding
 	encoded := encoder.EncodeToString(checksum)
 	key := strings.TrimRight(encoded, "=")
