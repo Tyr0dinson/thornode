@@ -144,7 +144,7 @@ asserts:
 ---
 # Disable a single contract
 type: tx-mimir
-key: WasmHaltContractw58u9f
+key: HaltWasmContract-w58u9f
 gas: 100000
 value: 1
 signer: {{ addr_thor_dog }}
@@ -155,7 +155,7 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/mimir
 asserts:
-  - .WASMHALTCONTRACTW58U9F == 1
+  - ."HALTWASMCONTRACT-W58U9F" == 1
 ---
 # Check matching one is not executable, but others still are
 type: tx-execute-contract
@@ -219,7 +219,7 @@ asserts:
 ---
 # Disable the checksum for code id 2
 type: tx-mimir
-key: WasmHaltCs4UMPB3SYCM6Z5WRT5DINB66N462U5VVQVDOIFKMP5G55WKRR7VDA
+key: HaltWasmCs-4UMPB3SYCM6Z5WRT5DINB66N462U5VVQVDOIFKMP5G55WKRR7VDA
 gas: 100000
 value: 1
 signer: {{ addr_thor_dog }}
@@ -230,7 +230,7 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/mimir
 asserts:
-  - .WASMHALTCS4UMPB3SYCM6Z5WRT5DINB66N462U5VVQVDOIFKMP5G55WKRR7VDA == 1
+  - ."HALTWASMCS-4UMPB3SYCM6Z5WRT5DINB66N462U5VVQVDOIFKMP5G55WKRR7VDA" == 1
 ---
 # Check only one is still executable
 type: tx-execute-contract
@@ -292,7 +292,7 @@ asserts:
 ---
 # Now halt everything
 type: tx-mimir
-key: WasmHaltGlobal
+key: HaltWasmGlobal
 gas: 100000
 value: 1
 signer: {{ addr_thor_dog }}
@@ -303,7 +303,7 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/mimir
 asserts:
-  - .WASMHALTGLOBAL == 1
+  - .HALTWASMGLOBAL == 1
 ---
 # Check nothing can be used
 type: tx-execute-contract

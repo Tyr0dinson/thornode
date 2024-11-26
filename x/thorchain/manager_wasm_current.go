@@ -1,6 +1,7 @@
 package thorchain
 
 import (
+	"fmt"
 	"strings"
 
 	"encoding/base32"
@@ -8,6 +9,7 @@ import (
 	wasmkeeper "github.com/CosmWasm/wasmd/x/wasm/keeper"
 	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 
 	errorsmod "cosmossdk.io/errors"
@@ -18,11 +20,7 @@ import (
 )
 
 var (
-	_                         WasmManager = &WasmMgrVCUR{}
-	MIMIR_WASM_GLOBAL_HALT                = "WASMHALTGLOBAL"
-	MIMIR_WASM_CHECKSUM_HALT              = "WASMHALTCS"
-	MIMIR_WASM_CONTRACT_HALT              = "WASMHALTCONTRACT"
-	MIMIR_WASM_PERMISSIONLESS             = "WASMPERMISSIONLESS"
+	_ WasmManager = &WasmMgrVCUR{}
 )
 
 // WasmMgrVCUR is VCUR implementation of slasher
@@ -282,7 +280,7 @@ func (m WasmMgrVCUR) SudoContract(
 }
 
 func (m WasmMgrVCUR) checkHalt(ctx cosmos.Context) error {
-	v, err := m.keeper.GetMimir(ctx, MIMIR_WASM_GLOBAL_HALT)
+	v, err := m.keeper.GetMimir(ctx, constants.MimirKeyWasmHaltGlobal)
 	if err != nil {
 		return err
 	}
@@ -295,8 +293,9 @@ func (m WasmMgrVCUR) checkHalt(ctx cosmos.Context) error {
 func (m WasmMgrVCUR) checkContractHalt(ctx cosmos.Context, address sdk.AccAddress) error {
 	// Use checksum for revity and to fit inside mimir's 64 char length
 	addrStr := address.String()
-	contractKey := strings.ToUpper(addrStr)[len(addrStr)-6:]
-	v, err := m.keeper.GetMimir(ctx, MIMIR_WASM_CONTRACT_HALT+contractKey)
+	contractKey := addrStr[len(addrStr)-6:]
+	fmt.Println("CONTRACT KEY", contractKey)
+	v, err := m.keeper.GetMimirWithRef(ctx, constants.MimirTemplateWasmContract, contractKey)
 
 	if err != nil {
 		return err
@@ -308,12 +307,11 @@ func (m WasmMgrVCUR) checkContractHalt(ctx cosmos.Context, address sdk.AccAddres
 }
 
 func (m WasmMgrVCUR) checkChecksumHalt(ctx cosmos.Context, checksum []byte) error {
-	// Encode the checksum to base32 to fit within mimir's 64 char limit and case insenstivity
-	// Truncate trailing `=` for brevity
+
 	encoder := base32.StdEncoding
 	encoded := encoder.EncodeToString(checksum)
 	key := strings.TrimRight(encoded, "=")
-	v, err := m.keeper.GetMimir(ctx, MIMIR_WASM_CHECKSUM_HALT+strings.ToUpper(key))
+	v, err := m.keeper.GetMimirWithRef(ctx, constants.MimirTemplateWasmChecksum, key)
 	if err != nil {
 		return err
 	}
@@ -331,7 +329,7 @@ func (m WasmMgrVCUR) checkAuthorization(ctx cosmos.Context, actor cosmos.AccAddr
 	if isAdmin(actor) {
 		return nil
 	}
-	v, err := m.keeper.GetMimir(ctx, MIMIR_WASM_PERMISSIONLESS)
+	v, err := m.keeper.GetMimir(ctx, constants.MimirKeyWasmPermissionless)
 	if err != nil {
 		return err
 	}
