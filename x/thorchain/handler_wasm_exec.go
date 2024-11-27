@@ -40,14 +40,14 @@ func (h WasmExecHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, 
 func (h WasmExecHandler) validate(ctx cosmos.Context, msg MsgWasmExec) error {
 	version := h.mgr.GetVersion()
 	switch {
-	case version.GTE(semver.MustParse("2.137.0")):
-		return h.validateV137(ctx, msg)
+	case version.GTE(semver.MustParse("3.1.0")):
+		return h.validateV3_1_0(ctx, msg)
 	default:
 		return errInvalidVersion
 	}
 }
 
-func (h WasmExecHandler) validateV137(_ctx cosmos.Context, _msg MsgWasmExec) error {
+func (h WasmExecHandler) validateV3_1_0(_ cosmos.Context, _ MsgWasmExec) error {
 	return nil
 }
 
@@ -55,20 +55,19 @@ func (h WasmExecHandler) handle(ctx cosmos.Context, msg MsgWasmExec) (*cosmos.Re
 	ctx.Logger().Info("receive MsgWasmExec", "from", msg.Signer)
 	version := h.mgr.GetVersion()
 	switch {
-	case version.GTE(semver.MustParse("2.137.0")):
-		return h.handleV137(ctx, msg)
+	case version.GTE(semver.MustParse("3.1.0")):
+		return h.handleV3_1_0(ctx, msg)
 	default:
 		return nil, errInvalidVersion
 	}
 }
 
-func (h WasmExecHandler) handleV137(ctx cosmos.Context, msg MsgWasmExec) (*cosmos.Result, error) {
+func (h WasmExecHandler) handleV3_1_0(ctx cosmos.Context, msg MsgWasmExec) (*cosmos.Result, error) {
 	if h.mgr.Keeper().IsChainHalted(ctx, common.THORChain) {
 		return nil, fmt.Errorf("unable to use MsgWasmExec while THORChain is halted")
 	}
 
 	_, mintAmt, err := h.mgr.SecuredAssetManager().Deposit(ctx, msg.Asset, msg.Amount, msg.Sender, msg.Tx.FromAddress, msg.Tx.ID)
-
 	if err != nil {
 		return nil, err
 	}

@@ -44,14 +44,14 @@ func (h WasmStoreCodeHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Res
 func (h WasmStoreCodeHandler) validate(ctx cosmos.Context, msg wasmtypes.MsgStoreCode) error {
 	version := h.mgr.GetVersion()
 	switch {
-	case version.GTE(semver.MustParse("2.137.0")):
-		return h.validateV137(ctx, msg)
+	case version.GTE(semver.MustParse("3.1.0")):
+		return h.validateV3_1_0(ctx, msg)
 	default:
 		return errInvalidVersion
 	}
 }
 
-func (h WasmStoreCodeHandler) validateV137(ctx cosmos.Context, msg wasmtypes.MsgStoreCode) error {
+func (h WasmStoreCodeHandler) validateV3_1_0(_ cosmos.Context, _ wasmtypes.MsgStoreCode) error {
 	return nil
 }
 
@@ -59,14 +59,14 @@ func (h WasmStoreCodeHandler) handle(ctx cosmos.Context, msg wasmtypes.MsgStoreC
 	ctx.Logger().Info("receive MsgStoreCode", "from", msg.Sender)
 	version := h.mgr.GetVersion()
 	switch {
-	case version.GTE(semver.MustParse("2.137.0")):
-		return h.handleV137(ctx, msg)
+	case version.GTE(semver.MustParse("3.1.0")):
+		return h.handleV3_1_0(ctx, msg)
 	default:
 		return nil, errInvalidVersion
 	}
 }
 
-func (h WasmStoreCodeHandler) handleV137(ctx cosmos.Context, msg wasmtypes.MsgStoreCode) (*cosmos.Result, error) {
+func (h WasmStoreCodeHandler) handleV3_1_0(ctx cosmos.Context, msg wasmtypes.MsgStoreCode) (*cosmos.Result, error) {
 	if h.mgr.Keeper().IsChainHalted(ctx, common.THORChain) {
 		return nil, fmt.Errorf("unable to use MsgStoreCode while THORChain is halted")
 	}

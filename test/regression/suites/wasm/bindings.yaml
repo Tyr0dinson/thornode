@@ -111,7 +111,7 @@ asserts:
   - .txs[0].result.events[9].amount == "2500000000000rune"
   - .txs[0].result.events[9].receiver == "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff"
   - .txs[0].result.events[10].type == "transfer"
-  # Bond excuted on behalf of the smart contract
+  # Bond executed on behalf of the smart contract
   - .txs[0].result.events[11].type == "bond"
   - .txs[0].result.events[11].amount == "2500000000000"
   - .txs[0].result.events[11].bond_address == "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"

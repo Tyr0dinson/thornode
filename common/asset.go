@@ -217,6 +217,10 @@ func (a Asset) GetDerivedAsset() Asset {
 	}
 }
 
+func (a Asset) IsLayer1Asset() bool {
+	return !a.Secured && !a.Trade && !a.Synth && a.Chain != THORChain
+}
+
 // Check if asset is a pegged asset
 func (a Asset) IsSyntheticAsset() bool {
 	return a.Synth

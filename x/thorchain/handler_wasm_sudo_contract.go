@@ -44,14 +44,14 @@ func (h WasmSudoContractHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.
 func (h WasmSudoContractHandler) validate(ctx cosmos.Context, msg wasmtypes.MsgSudoContract) error {
 	version := h.mgr.GetVersion()
 	switch {
-	case version.GTE(semver.MustParse("2.137.0")):
-		return h.validateV137(ctx, msg)
+	case version.GTE(semver.MustParse("3.1.0")):
+		return h.validateV3_1_0(ctx, msg)
 	default:
 		return errInvalidVersion
 	}
 }
 
-func (h WasmSudoContractHandler) validateV137(ctx cosmos.Context, msg wasmtypes.MsgSudoContract) error {
+func (h WasmSudoContractHandler) validateV3_1_0(_ cosmos.Context, _ wasmtypes.MsgSudoContract) error {
 	// ValidateBasic is executed in message service router
 	// Removed for clarity that it is not versioned
 	return nil
@@ -61,14 +61,14 @@ func (h WasmSudoContractHandler) handle(ctx cosmos.Context, msg wasmtypes.MsgSud
 	ctx.Logger().Info("receive MsgSudoContract", "from", msg.Authority)
 	version := h.mgr.GetVersion()
 	switch {
-	case version.GTE(semver.MustParse("2.137.0")):
-		return h.handleV137(ctx, msg)
+	case version.GTE(semver.MustParse("3.1.0")):
+		return h.handleV3_1_0(ctx, msg)
 	default:
 		return nil, errInvalidVersion
 	}
 }
 
-func (h WasmSudoContractHandler) handleV137(ctx cosmos.Context, msg wasmtypes.MsgSudoContract) (*cosmos.Result, error) {
+func (h WasmSudoContractHandler) handleV3_1_0(ctx cosmos.Context, msg wasmtypes.MsgSudoContract) (*cosmos.Result, error) {
 	if h.mgr.Keeper().IsChainHalted(ctx, common.THORChain) {
 		return nil, fmt.Errorf("unable to use MsgSudoContract while THORChain is halted")
 	}

@@ -58,7 +58,7 @@ type TradeAccountManager interface {
 type SecuredAssetManager interface {
 	EndBlock(ctx cosmos.Context, keeper keeper.Keeper) error
 	Deposit(_ cosmos.Context, _ common.Asset, amount cosmos.Uint, owner cosmos.AccAddress, assetAddr common.Address, _ common.TxID) (cosmos.Uint, common.Coin, error)
-	Withdraw(_ cosmos.Context, _ common.Asset, amount cosmos.Uint, owner cosmos.AccAddress, assetAddr common.Address, _ common.TxID) (cosmos.Uint, cosmos.Uint, error)
+	Withdraw(_ cosmos.Context, _ common.Asset, amount cosmos.Uint, owner cosmos.AccAddress, assetAddr common.Address, _ common.TxID) (cosmos.Uint, common.Coin, error)
 	BalanceOf(_ cosmos.Context, _ common.Asset, owner cosmos.AccAddress) cosmos.Uint
 	GetSecuredAssetStatus(_ cosmos.Context, _ common.Asset) (keeper.SecuredAsset, cosmos.Uint, error)
 	GetShareSupply(_ cosmos.Context, _ common.Asset) cosmos.Uint
@@ -577,7 +577,7 @@ func GetSecuredAssetManager(version semver.Version, keeper keeper.Keeper, eventM
 
 func GetWasmManager(ctx cosmos.Context, version semver.Version, keeper keeper.Keeper, wasmKeeper wasmkeeper.Keeper, eventMgr EventManager) (WasmManager, error) {
 	switch {
-	case version.GTE(semver.MustParse("2.137.0")):
+	case version.GTE(semver.MustParse("3.1.0")):
 		return newWasmMgrVCUR(ctx, keeper, wasmKeeper, wasmpermissions.GetWasmPermissions(version), eventMgr), nil
 	default:
 		return nil, errInvalidVersion
