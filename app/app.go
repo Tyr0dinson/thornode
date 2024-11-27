@@ -166,6 +166,7 @@ func NewChainApp(
 	wasmOpts []wasmkeeper.Option,
 	baseAppOptions ...func(*baseapp.BaseApp),
 ) *THORChainApp {
+	wasmtypes.MaxWasmSize = 2_624_000
 	ec := appparams.MakeEncodingConfig()
 	interfaceRegistry := ec.InterfaceRegistry
 
