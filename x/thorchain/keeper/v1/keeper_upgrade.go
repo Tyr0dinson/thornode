@@ -230,5 +230,9 @@ func UpdateActiveValidatorVersions(
 		}
 	}
 
+	// Since we are not using MsgSetVersion and SetMinJoinLast() won't be called until the next churn,
+	// we must call this now to set the min join version for the next churn
+	thorchainKeeper.SetMinJoinLast(ctx)
+
 	return nil
 }
