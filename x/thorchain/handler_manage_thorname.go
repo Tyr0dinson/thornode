@@ -91,18 +91,15 @@ func (h ManageTHORNameHandler) validateV3_0_0(ctx cosmos.Context, msg MsgManageT
 			return err
 		}
 
-		// If this thorname is already owned, check signer has ownership.
-		// Check if expiration is in the past (+ 1 month), before allowing
-		// a different user to take ownership
-		softExpiration, hardExpiration := h.mgr.Keeper().GetTHORNameExpiration(ctx, name)
-
-		if !name.Owner.Equals(msg.Signer) && ctx.BlockHeight() <= hardExpiration {
+		// if this thorname is already owned, check signer has ownership. If
+		// expiration is past, allow different user to take ownership
+		if !name.Owner.Equals(msg.Signer) && ctx.BlockHeight() <= name.ExpireBlockHeight {
 			ctx.Logger().Error("no authorization", "owner", name.Owner)
 			return fmt.Errorf("no authorization: owned by %s", name.Owner)
 		}
 
 		// ensure user isn't inflating their expire block height artificaially
-		if softExpiration < msg.ExpireBlockHeight {
+		if name.ExpireBlockHeight < msg.ExpireBlockHeight {
 			return errors.New("cannot artificially inflate expire block height")
 		}
 	}
