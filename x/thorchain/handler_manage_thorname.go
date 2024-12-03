@@ -91,19 +91,14 @@ func (h ManageTHORNameHandler) validateV3_0_0(ctx cosmos.Context, msg MsgManageT
 			return err
 		}
 
-		// If this thorname is already owned, check signer has ownership.
-		// Check if expiration is in the past (+ grace period), before allowing
-		// a different user to take ownership
-		gracePeriod := h.mgr.Keeper().GetConfigInt64(ctx, constants.THORNameGracePeriodBlocks)
-
-		if !name.Owner.Equals(msg.Signer) && ctx.BlockHeight() <= name.ExpireBlockHeight+gracePeriod {
+		// if this thorname is already owned, check signer has ownership.
+		if !name.Owner.Equals(msg.Signer) {
 			ctx.Logger().Error("no authorization", "owner", name.Owner)
 			return fmt.Errorf("no authorization: owned by %s", name.Owner)
 		}
 
 		// TODO: remove this and the explicit height in memo after transfers are supported
 		// explicit height in the memo can only reduce expiration
-		// ensure user isn't inflating their expire block height artificaially
 		if name.ExpireBlockHeight < msg.ExpireBlockHeight {
 			return errors.New("cannot artificially inflate expire block height")
 		}
