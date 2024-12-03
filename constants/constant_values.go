@@ -136,6 +136,7 @@ const (
 	PendulumUseVaultAssets
 	MultipleAffiliatesMaxCount
 	BondSlashBan
+	THORNameGracePeriodBlocks
 
 	// These are the implicitly-0 Constants undisplayed in the API endpoint (no explicit value set).
 	ArtificialRagnarokBlockHeight
