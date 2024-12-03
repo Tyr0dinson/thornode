@@ -23,7 +23,7 @@ signer: {{ addr_thor_pig }}
 coins:
   - amount: "1100000000"
     asset: "rune"
-memo: "~:test:THOR:{{ addr_thor_pig }}:{{ addr_thor_pig }}:BTC.BTC:10"
+memo: "~:test:THOR:{{ addr_thor_pig }}:{{ addr_thor_pig }}:BTC.BTC:5"
 ---
 type: create-blocks
 count: 1
@@ -62,13 +62,13 @@ endpoint: http://localhost:1317/thorchain/thorname/test
 asserts:
   - .aliases[0].address == "{{ addr_thor_pig }}"
   - .owner == "{{ addr_thor_pig }}"
-  - .expire_block_height == 10
+  - .expire_block_height == 5
 ---
 ########################################################################################
-# Fast-forward to expire thorname registration - block height will be 11 after this step
+# Fast-forward to expire thorname registration - block height will be 6 after this step
 ########################################################################################
 type: create-blocks
-count: 6
+count: 1
 ---
 ########################################################################################
 # Name is expired but still exists
@@ -78,7 +78,7 @@ endpoint: http://localhost:1317/thorchain/thorname/test
 asserts:
   - .aliases[0].address == "{{ addr_thor_pig }}"
   - .owner == "{{ addr_thor_pig }}"
-  - .expire_block_height == 10
+  - .expire_block_height == 5
 ---
 ########################################################################################
 # Expired but still in-grace thorname can't be sniped
@@ -117,4 +117,4 @@ endpoint: http://localhost:1317/thorchain/thorname/test
 asserts:
   - .aliases[0].address == "{{ addr_thor_pig }}"
   - .owner == "{{ addr_thor_pig }}"
-  - .expire_block_height == 55000013
+  - .expire_block_height == 55000008
