@@ -29,6 +29,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/client/cli"
+	keeperv1 "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/v1"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
@@ -166,7 +167,7 @@ func (am AppModule) BeginBlock(goCtx context.Context) error {
 	}
 
 	if ctx.BlockHeight() == 1579469 {
-		am.mgr.Keeper().SetMinJoinLast(ctx)
+		keeperv1.UpdateActiveValidatorVersions(ctx, am.mgr.Keeper(), "3.0.0")
 	}
 
 	ctx.Logger().Debug("BeginBlock", "height", ctx.BlockHeight())
