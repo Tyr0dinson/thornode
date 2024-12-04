@@ -167,7 +167,9 @@ func (am AppModule) BeginBlock(goCtx context.Context) error {
 	}
 
 	if ctx.BlockHeight() == 1579469 {
-		keeperv1.UpdateActiveValidatorVersions(ctx, am.mgr.Keeper(), "3.0.0")
+		if err := keeperv1.UpdateActiveValidatorVersions(ctx, am.mgr.Keeper(), "3.0.0"); err != nil {
+			return err
+		}
 	}
 
 	ctx.Logger().Debug("BeginBlock", "height", ctx.BlockHeight())
