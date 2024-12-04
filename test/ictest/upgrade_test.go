@@ -15,10 +15,11 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/docker/docker/client"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
-	haltHeightDelta    = 10 // will propose upgrade this many blocks in the future
+	haltHeightDelta    = 20 // will propose upgrade this many blocks in the future
 	blocksAfterUpgrade = 10
 	imageUidGid        = "1025:1025"
 )
@@ -32,7 +33,6 @@ type UpgradeInfo struct {
 
 // TODO:
 // restart node after upgrade
-// test multiple validators
 // test mainnet
 func TestUpgrade_2_137_to_3_0(t *testing.T) {
 	if testing.Short() {
@@ -47,13 +47,16 @@ func TestUpgrade_2_137_to_3_0(t *testing.T) {
 	// Set up thorchain and others
 	// ----------------------------
 	const (
-		numVals     = 1 // 2
-		numFns      = 0 // 1
+		numVals     = 2
+		numFns      = 0
 		mainnet     = false
 
 		initialRepo    = "ghcr.io/strangelove-ventures/heighliner/thorchain"
 		initialVersion = "v2.137.3-mocknet"
 	)
+
+	// Start chain with 1 validator, then validators may be churned in (current bifrost requirement)
+	initialValSetSize := 1
 
 	// Start non-thorchain chains
 	exoChains := StartExoChains(t, ctx, client, network, []*interchaintest.ChainSpec{
@@ -72,9 +75,13 @@ func TestUpgrade_2_137_to_3_0(t *testing.T) {
  
 	// Start thorchain
 	chainImage := ibc.NewDockerImage(initialRepo, initialVersion, imageUidGid)
-	thorchain := StartThorchain(t, ctx, client, network, numVals, numFns, mainnet, chainImage, exoChains, ethRouterContractAddress, bscRouterContractAddress)
+	thorchain := StartThorchain(t, ctx, client, network, initialValSetSize, numFns, mainnet, chainImage, exoChains, ethRouterContractAddress, bscRouterContractAddress)
 	require.NoError(t, gaiaEg.Wait()) // Wait for 100 transactions before starting tests
 
+	// Add validators
+	if numVals > 1 {
+		addValidators(t, ctx, thorchain, numVals-1)
+	}
 	// --------------------------------------------------------
 	// Pre-upgrade setup and tests
 	// --------------------------------------------------------
@@ -124,16 +131,22 @@ func PerformUpgrade(t *testing.T, ctx context.Context, client *client.Client, th
 	err = ProposeUpgrade(ctx, thorchain.Validators[0], upgradeInfo.name, haltHeight)
 	require.NoError(t, err, "error submitting software upgrade proposal tx")
 
-	// we have two validators, so we need to approve the upgrade
-	// from the second validator to reach quorum schedule the upgrade.
+	if len(thorchain.Validators) > 1 {
+		// the upgrade plan should not be scheduled on-chain yet.
+		_, _, err = thorchain.GetNode().ExecQuery(ctx, "upgrade", "plan")
+		require.Error(t, err, "expected error from upgrade plan query")
+	}
 
-	// the upgrade plan should not be scheduled on-chain yet.
-	// _, _, err = tc.GetNode().ExecQuery(ctx, "upgrade", "plan")
-	// require.Error(t, err, "expected error from upgrade plan query")
-
-	// // approve software upgrade from second validator
-	// _, err = tc.Validators[1].ExecTx(ctx, "thorchain", "thorchain", "approve-upgrade", upgradeName)
-	// require.NoError(t, err, "error submitting software upgrade approval tx")
+	// approve software upgrade from other validators, if they exist
+	var eg errgroup.Group
+	for i := 1; i < len(thorchain.Validators); i++ {
+		i := i
+		eg.Go(func() error {
+			return ApproveUpgrade(ctx, thorchain.Validators[i], upgradeInfo.name)
+		})
+	}
+	err = eg.Wait()
+	require.NoError(t, err)
 
 	// ensure on-chain scheduled upgrade plan matches what was proposed and approved
 	stdout, _, err := thorchain.GetNode().ExecQuery(ctx, "upgrade", "plan")
@@ -149,7 +162,7 @@ func PerformUpgrade(t *testing.T, ctx context.Context, client *client.Client, th
 	height, err = thorchain.Height(ctx)
 	require.NoError(t, err, "error fetching height before upgrade")
 
-	timeoutCtx, timeoutCtxCancel := context.WithTimeout(ctx, time.Second*30)
+	timeoutCtx, timeoutCtxCancel := context.WithTimeout(ctx, time.Second*haltHeightDelta*2)
 	defer timeoutCtxCancel()
 
 	// this should timeout due to chain halt at upgrade height.
@@ -179,7 +192,6 @@ func PerformUpgrade(t *testing.T, ctx context.Context, client *client.Client, th
 
 	for _, n := range thorchain.Nodes() {
 		n.Image = newImage
-		// TODO: add deprecated auth endpoint and don't change bifrost
 		for _, s := range n.Sidecars {
 			s.Image = newImage
 		}
@@ -202,13 +214,13 @@ func PerformUpgrade(t *testing.T, ctx context.Context, client *client.Client, th
 	require.NoError(t, err, "chain did not produce blocks after upgrade")
 
 	fmt.Println("Chain is producing blocks")
-	// We are now producing blocks
 	
 	// Start the arbers back up
 	if arbTimer != nil {
 		arbTimer.Reset(time.Second) // Start the arbs back up
 	}
 
+	verifyVersionAPI(t, ctx, thorchain, upgradeInfo.name)
 }
 
 // app_state, "thorchain", "store_version"
@@ -246,4 +258,17 @@ func getStoreVersion(t *testing.T, ctx context.Context, thorchain *tc.Thorchain,
 	require.NoError(t, err)
 
 	return storeVersion
+}
+
+func verifyVersionAPI(t *testing.T, ctx context.Context, thorchain *tc.Thorchain, expectedVersion string) {
+	version, err := thorchain.APIQuery(ctx, "thorchain/version")
+	require.NoError(t, err)
+
+	versionMap := version.(map[string]any)
+	currentVersion := versionMap["current"].(string)
+	nextVersion := versionMap["next"].(string)
+	querierVersion := versionMap["querier"].(string)
+	require.Equal(t, currentVersion, expectedVersion)
+	require.Equal(t, nextVersion, expectedVersion)
+	require.Equal(t, querierVersion, expectedVersion)
 }

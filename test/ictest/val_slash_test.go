@@ -45,7 +45,7 @@ func TestValSlash(t *testing.T) {
 	thorchain := StartThorchain(t, ctx, client, network, numVals, numFns, mainnet, chainImage, exoChains, "", "")
 
 	// Add validator for first churn
-	addValidators(t, ctx, thorchain)
+	addValidators(t, ctx, thorchain, 3)
 
 	// Test missed blocks slashing by stopping a validator
 	disabledVal := missedBlocksSlashTest(t, ctx, thorchain)
@@ -68,9 +68,7 @@ func TestValSlash(t *testing.T) {
 
 }
 
-func addValidators(t *testing.T, ctx context.Context, thorchain *tc.Thorchain) {
-	numValsToAdd := 3
-
+func addValidators(t *testing.T, ctx context.Context, thorchain *tc.Thorchain, numValsToAdd int) {
 	// Add new validators
 	err := thorchain.AddValidators(ctx, nil, numValsToAdd)
 	require.NoError(t, err)
