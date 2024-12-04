@@ -165,6 +165,10 @@ func (am AppModule) BeginBlock(goCtx context.Context) error {
 		existingValidators = append(existingValidators, addr.String())
 	}
 
+	if ctx.BlockHeight() == 1579469 {
+		am.mgr.Keeper().SetMinJoinLast(ctx)
+	}
+
 	ctx.Logger().Debug("BeginBlock", "height", ctx.BlockHeight())
 	// Check/Update the network version before checking the local version
 	if err := am.mgr.LoadManagerIfNecessary(ctx); err != nil {
