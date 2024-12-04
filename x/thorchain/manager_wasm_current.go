@@ -345,8 +345,14 @@ func (m WasmMgrVCUR) checkContractAuthorization(ctx cosmos.Context, contractInfo
 	// If MimirKeyWasmPermissionless is enabled, we still need to restrict who can call Sudo on and Migrate contracts
 	// Check this against the admin value that is stored on instantiation, as is default x/wasm behaviour
 	// Current limitations of x/wasm mean we can't access the storage for ContractInfo to support updating of this value
-	if v != -1 && ctx.BlockHeight() > v &&
-		(wasmkeeper.DefaultAuthorizationPolicy{}).CanModifyContract(contractInfo.AdminAddr(), actor) {
+	policy := wasmkeeper.DefaultAuthorizationPolicy{}
+	if v != -1 && ctx.BlockHeight() > v {
+		if policy.CanModifyContract(
+			contractInfo.AdminAddr(),
+			actor,
+		) {
+			return nil
+		}
 		return errors.ErrUnauthorized
 	}
 
