@@ -54,3 +54,15 @@ func ProposeUpgrade(ctx context.Context, val *thorchain.ChainNode, upgradeName s
 	}
 	return err
 }
+
+// ApproveUpgrade submits an upgrade proposal by a validator
+// Since bifrost is running, there is potential for a sequence number mismatch with no seq num increment logic so we try a few times
+// We can shut down bifrost earlier, but current upgrade plan does not require this
+func ApproveUpgrade(ctx context.Context, val *thorchain.ChainNode, upgradeName string) error {
+	_, err := val.ExecTx(ctx, "thorchain", "thorchain", "approve-upgrade", upgradeName)
+	for count := 0; err != nil && count < 4; count++ {
+		time.Sleep(time.Second)
+		_, err = val.ExecTx(ctx, "thorchain", "thorchain", "approve-upgrade", upgradeName)
+	}
+	return err
+}
