@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
+	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	"github.com/cosmos/cosmos-sdk/testutil/testdata"
-	. "gopkg.in/check.v1"
-
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	. "gopkg.in/check.v1"
 )
 
 type KeyDataAddr struct {
@@ -263,12 +265,32 @@ func (s *PubKeyTestSuite) TestEquals(c *C) {
 	}), Equals, true)
 }
 
+// Borrowed from https://github.com/cosmos/cosmos-sdk/blob/v0.52.0-beta.2/testutil/testdata/tx.go#L59
+func KeyTestPubAddrED25519() (cryptotypes.PrivKey, cryptotypes.PubKey, sdk.AccAddress) {
+	key := ed25519.GenPrivKey()
+	pub := key.PubKey()
+	addr := sdk.AccAddress(pub.Address())
+	return key, pub, addr
+}
+
 func (s *PubKeyTestSuite) TestSOLPubKey(c *C) {
-	_, pubKey1, _ := testdata.KeyTestPubAddr()
-	tpk1, err := cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeAccPub, pubKey1)
+	/** TODO: Replace with testdata.KeyTestPubAddrED25519() when cosmos v0.52 lands **/
+	_, pubKey1, _ := KeyTestPubAddrED25519()
+	spk, err := cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeAccPub, pubKey1)
 	c.Assert(err, IsNil)
-	pk1 := PubKey(tpk1)
-	solAddr, err := pk1.GetAddress(Chain("SOL"))
+	pk, err := NewPubKey(spk)
 	c.Assert(err, IsNil)
-	c.Check(solAddr.String(), Equals, "D9A6eE2pZ6oSiGb8BPkag4gvAeEhHvc3eEYPBoLSM")
+	hexStr := pk.String()
+	c.Assert(len(hexStr) > 0, Equals, true)
+	pk1, err := NewPubKey(hexStr)
+	c.Assert(err, IsNil)
+	c.Assert(pk.Equals(pk1), Equals, true)
+
+	result, err := json.Marshal(pk)
+	c.Assert(err, IsNil)
+	c.Log(result, Equals, fmt.Sprintf(`"%s"`, hexStr))
+	var pk2 PubKey
+	err = json.Unmarshal(result, &pk2)
+	c.Assert(err, IsNil)
+	c.Assert(pk2.Equals(pk), Equals, true)
 }
