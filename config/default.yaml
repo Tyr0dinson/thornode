@@ -137,6 +137,7 @@ bifrost:
     eth:
       <<: *default-chain
       chain_id: ETH
+      solvency_blocks: 20
       max_pending_nonces: 3
       max_gas_tip_percentage: 20
       token_max_gas_multiplier: 3
