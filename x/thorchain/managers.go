@@ -368,7 +368,7 @@ func GetKeeper(
 	upgradeKeeper *upgradekeeper.Keeper,
 ) (keeper.Keeper, error) {
 	if version.GTE(semver.MustParse("3.0.0")) {
-		kvs := kv1.NewKVStore(cdc, coinKeeper, accountKeeper, upgradeKeeper, storeKey, version)
+		kvs := kv1.NewKVStore(cdc, storeService, coinKeeper, accountKeeper, upgradeKeeper, version)
 		return &kvs, nil
 	}
 	return nil, errInvalidVersion

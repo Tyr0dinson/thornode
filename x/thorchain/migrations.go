@@ -23,5 +23,5 @@ func (m Migrator) Migrate1to2(ctx sdk.Context) error {
 	if err := m.mgr.LoadManagerIfNecessary(ctx); err != nil {
 		return err
 	}
-	return v2.MigrateStore(ctx, m.mgr.storeKey)
+	return v2.MigrateStore(ctx, m.mgr.storeService)
 }
