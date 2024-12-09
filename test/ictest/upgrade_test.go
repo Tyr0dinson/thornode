@@ -18,12 +18,6 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-const (
-	haltHeightDelta    = 20 // will propose upgrade this many blocks in the future
-	blocksAfterUpgrade = 10
-	imageUidGid        = "1025:1025"
-)
-
 type UpgradeInfo struct {
 	name    string
 	repo    string
@@ -53,6 +47,7 @@ func TestUpgrade_2_137_to_3_0(t *testing.T) {
 
 		initialRepo    = "ghcr.io/strangelove-ventures/heighliner/thorchain"
 		initialVersion = "v2.137.3-mocknet"
+		imageUidGid    = "1025:1025"
 	)
 
 	// Start chain with 1 validator, then validators may be churned in (current bifrost requirement)
@@ -114,6 +109,11 @@ func TestUpgrade_2_137_to_3_0(t *testing.T) {
 
 // If there are no arbers and thus no arbTimer, pass in nil
 func PerformUpgrade(t *testing.T, ctx context.Context, client *client.Client, thorchain *tc.Thorchain, arbTimer *time.Timer, upgradeInfo UpgradeInfo) {
+	const (
+		haltHeightDelta    = 20 // will propose upgrade this many blocks in the future
+		blocksAfterUpgrade = 10
+	)
+	
 	fmt.Printf("\n  ----------------\n  Starting upgrade\n  ----------------\n")
 	if arbTimer != nil {
 		// Stop the arbs for the upgrade, make sure we actually stop the timer or it can get reset
