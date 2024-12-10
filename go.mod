@@ -1,6 +1,6 @@
 module gitlab.com/thorchain/thornode/v3
 
-go 1.22.2
+go 1.22.6
 
 // overrides
 replace (

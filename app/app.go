@@ -71,9 +71,11 @@ import (
 	"github.com/cosmos/gogoproto/proto"
 	"github.com/spf13/cast"
 	appparams "gitlab.com/thorchain/thornode/v3/app/params"
+	v3 "gitlab.com/thorchain/thornode/v3/app/upgrades/v3"
 	"gitlab.com/thorchain/thornode/v3/openapi"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain"
 	thorchainkeeper "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
+	keeperv1 "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/v1"
 	thorchainkeeperv1 "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/v1"
 	thorchaintypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
@@ -505,8 +507,13 @@ func NewChainApp(
 	}
 
 	if loadLatest {
-		if err = app.LoadLatestVersion(); err != nil {
-			panic(fmt.Errorf("error loading last version: %w", err))
+		cms := app.CommitMultiStore()
+		storeUpgrade := v3.NewUpgrade().StoreUpgrades
+		if err = cms.LoadLatestVersionAndUpgrade(&storeUpgrade); err != nil {
+			panic(fmt.Errorf("error loading latest version and upgrade: %w", err))
+		}
+		if err = app.Init(); err != nil {
+			panic(fmt.Errorf("error app.Init: %w", err))
 		}
 
 		ctx := app.BaseApp.NewUncachedContext(true, tmproto.Header{})
@@ -528,6 +535,52 @@ func (app *THORChainApp) FinalizeBlock(req *abci.RequestFinalizeBlock) (*abci.Re
 			// see https://github.com/cosmos/cosmos-sdk/blob/v0.47.0/simapp/upgrades.go#L66
 			baseAppLegacySS := app.GetSubspace(baseapp.Paramspace).WithKeyTable(paramstypes.ConsensusParamsKeyTable())
 			err = baseapp.MigrateParams(sdk.UnwrapSDKContext(ctx), baseAppLegacySS, app.ConsensusParamsKeeper.ParamsStore)
+			if err != nil {
+				panic(err)
+			}
+			// We do not set module versions in v2.136.0 or earlier, must set them manually
+			fromVM := make(module.VersionMap)
+			fromVM["auth"] = 2
+			fromVM["bank"] = 2
+			fromVM["genutil"] = 1
+			fromVM["params"] = 1
+			fromVM["thorchain"] = 1
+			fromVM["upgrade"] = 1
+
+			// set param key table for params module migration
+			// ref: https://github.com/cosmos/cosmos-sdk/pull/12363/files
+			for _, subspace := range app.ParamsKeeper.GetSubspaces() {
+				subspace := subspace
+				var keyTable paramstypes.KeyTable
+
+				switch subspace.Name() {
+
+				// cosmos-sdk modules
+				case authtypes.ModuleName:
+					keyTable = authtypes.ParamKeyTable() //nolint:staticcheck
+				case banktypes.ModuleName:
+					keyTable = banktypes.ParamKeyTable() //nolint:staticcheck
+				case stakingtypes.ModuleName:
+					keyTable = stakingtypes.ParamKeyTable() //nolint:staticcheck
+				case minttypes.ModuleName:
+					keyTable = minttypes.ParamKeyTable() //nolint:staticcheck
+				}
+
+				if !subspace.HasKeyTable() {
+					subspace.WithKeyTable(keyTable)
+				}
+			}
+
+			// Active validator versions need to be updated since consensus
+			// on the new version is required to resume the chain.
+			// This is a THORChain specific upgrade step that should be
+			// done in every upgrade handler and before any thorchain module migrations.
+			if err := keeperv1.UpdateActiveValidatorVersions(ctx, app.ThorchainKeeper, "3.0.0"); err != nil {
+				panic(err)
+			}
+
+			// Perform SDK module migrations
+			_, err = app.ModuleManager.RunMigrations(ctx, app.configurator, fromVM)
 			if err != nil {
 				panic(err)
 			}
