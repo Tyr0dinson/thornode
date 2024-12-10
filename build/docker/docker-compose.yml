@@ -558,6 +558,7 @@ services:
     ports:
       - 8899:8899
       - 8900:8900
+      - 10000:10000
     environment:
       RPC_PORT: "8899"
       AIRDROP_ADDRESS: "AAH1XhfycX678et7Pjvwp1DMWnHpSP92wpJwV19MXHtX"

@@ -1,5 +1,28 @@
+# Match the base Debian image to https://github.com/anza-xyz/agave/blob/master/sdk/docker-solana/Dockerfile
+# 2.0.18 === bullseye
+# 2.1.4  === bookworm
+FROM debian:bullseye AS builder
+
+RUN apt-get update && \
+    apt-get install -y build-essential git curl openssl libssl-dev pkg-config
+
+# set up Rust
+RUN curl --proto '=https' --tlsv1.3 https://sh.rustup.rs -sSf | bash -s -- -y
+
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# build from source
+ARG COMMITSH="f17284439efd11c3c89c1c9180d9c93f78a32f28"
+ARG TAG="v3.1.0+solana.2.0.18"
+WORKDIR /build
+RUN git init && \
+    git remote add origin https://github.com/rpcpool/yellowstone-grpc && \
+    git fetch --depth 1 origin "$TAG" && \
+    git checkout $COMMITSH && \
+    cargo build --release
+
 # Use an official Solana release image as a parent image
-FROM solanalabs/solana:v1.18.21
+FROM anzaxyz/agave:v2.0.18
 
 # Set the working directory
 WORKDIR /mocknet
@@ -7,9 +30,13 @@ WORKDIR /mocknet
 # Copy the current directory contents into the container at /mocknet
 COPY . /mocknet
 
+# Copy the build geyser plugin
+COPY --from=builder /build/target/release/libyellowstone_grpc_geyser.so /usr/share/libyellowstone_grpc_geyser.so
+
 # Ensure the entrypoint script is executable
 RUN chmod +x /mocknet/entrypoint.sh
 
 # Expose the RPC and WebSocket ports
 EXPOSE 8899
 EXPOSE 8900
+EXPOSE 10000
