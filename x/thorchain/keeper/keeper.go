@@ -91,6 +91,7 @@ type Keeper interface {
 	KeeperTradeAccount
 	KeeperSecuredAsset
 	KeeperRUNEPool
+	KeeperYieldAccount
 }
 
 type KeeperConfig interface {
@@ -281,6 +282,11 @@ type KeeperRUNEPool interface {
 	GetRUNEProvider(ctx cosmos.Context, addr cosmos.AccAddress) (RUNEProvider, error)
 	SetRUNEProvider(ctx cosmos.Context, rp RUNEProvider)
 	RemoveRUNEProvider(ctx cosmos.Context, rp RUNEProvider)
+}
+
+type KeeperYieldAccount interface {
+	GetYieldAccount(ctx cosmos.Context, addr common.Address, asset common.Asset) (YieldAccount, error)
+	SetYieldAccout(ctx cosmos.Context, ya YieldAccount)
 }
 
 type KeeperVault interface {

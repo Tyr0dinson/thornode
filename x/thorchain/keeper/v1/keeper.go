@@ -49,6 +49,7 @@ const (
 	prefixPOL                     types.DbPrefix = "pol/"
 	prefixLoan                    types.DbPrefix = "loan/"
 	prefixTradeAccount            types.DbPrefix = "tr_acct/"
+	prefixYieldAccount            types.DbPrefix = "yield_acct/"
 	prefixSecuredAsset            types.DbPrefix = "sa/"
 	prefixRUNEProvider            types.DbPrefix = "rune_provider/"
 	prefixRUNEPool                types.DbPrefix = "rune_pool/"

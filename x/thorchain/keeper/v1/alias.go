@@ -61,6 +61,7 @@ var (
 	HasSuperMajority           = types.HasSuperMajority
 	RegisterLegacyAminoCodec   = types.RegisterLegacyAminoCodec
 	NewTradeAccount            = types.NewTradeAccount
+	NewYieldAccount            = types.NewYieldAccount
 	NewTradeUnit               = types.NewTradeUnit
 	NewSecuredAsset            = types.NewSecuredAsset
 	NewRUNEProvider            = types.NewRUNEProvider
@@ -139,6 +140,7 @@ type (
 	ProtocolOwnedLiquidity   = types.ProtocolOwnedLiquidity
 	SwapperClout             = types.SwapperClout
 	TradeAccount             = types.TradeAccount
+	YieldAccount             = types.YieldAccount
 	TradeUnit                = types.TradeUnit
 	SecuredAsset             = types.SecuredAsset
 	RUNEProvider             = types.RUNEProvider

@@ -75,6 +75,7 @@ type (
 	TradeUnit                = types.TradeUnit
 	SecuredAsset             = types.SecuredAsset
 	RUNEProvider             = types.RUNEProvider
+	YieldAccount             = types.YieldAccount
 	RUNEPool                 = types.RUNEPool
 	Upgrade                  = types.Upgrade
 )

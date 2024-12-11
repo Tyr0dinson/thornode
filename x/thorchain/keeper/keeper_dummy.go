@@ -193,6 +193,11 @@ func (k KVStoreDummy) GetTradeUnit(ctx cosmos.Context, asset common.Asset) (Trad
 func (k KVStoreDummy) SetTradeUnit(ctx cosmos.Context, unit TradeUnit)         {}
 func (k KVStoreDummy) GetTradeUnitIterator(ctx cosmos.Context) cosmos.Iterator { return nil }
 
+func (k KVStoreDummy) GetYieldAccount(ctx cosmos.Context, addr common.Address, asset common.Asset) (YieldAccount, error) {
+	return YieldAccount{}, kaboom
+}
+func (k KVStoreDummy) SetYieldAccount(ctx cosmos.Context, ya YieldAccount) {}
+
 func (k KVStoreDummy) GetSecuredAsset(ctx cosmos.Context, asset common.Asset) (SecuredAsset, error) {
 	return SecuredAsset{}, kaboom
 }
