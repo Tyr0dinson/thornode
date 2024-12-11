@@ -17,6 +17,7 @@ const (
 	AffiliateCollectorName = types.AffiliateCollectorName
 	TreasuryName           = types.TreasuryName
 	RUNEPoolName           = types.RUNEPoolName
+	YieldCollectorName     = types.YieldCollectorName
 	RouterKey              = types.RouterKey
 	StoreKey               = types.StoreKey
 	DefaultCodespace       = types.DefaultCodespace

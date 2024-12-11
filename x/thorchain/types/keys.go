@@ -19,6 +19,8 @@ const (
 	TreasuryName = "treasury"
 	// RUNEPoolName the name of the account used to track RUNEPool
 	RUNEPoolName = "rune_pool"
+	// YieldCollectorName the name of the account used to store yield accounts
+	YieldCollectorName = "yield_collector"
 
 	// StoreKey to be used when creating the KVStore
 	StoreKey = ModuleName
