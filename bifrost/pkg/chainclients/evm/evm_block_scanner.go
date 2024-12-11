@@ -121,20 +121,26 @@ func NewEVMScanner(cfg config.BifrostBlockScannerConfiguration,
 	// load token list
 	allTokens := tokenlist.GetEVMTokenList(cfg.ChainID, common.LatestVersion).Tokens
 	var whitelistTokens []tokenlist.ERC20Token
-	for _, addr := range cfg.WhitelistTokens {
-		// find matching token in token list
-		found := false
-		for _, tok := range allTokens {
-			if strings.EqualFold(addr, tok.Address) {
-				whitelistTokens = append(whitelistTokens, tok)
-				found = true
-				break
+	if cfg.ChainID == common.ETHChain {
+		// This special case is to match the behavior of the dedicated Ethereum chainclient.
+		// TODO: remove this exception for ETH.
+		whitelistTokens = allTokens
+	} else {
+		for _, addr := range cfg.WhitelistTokens {
+			// find matching token in token list
+			found := false
+			for _, tok := range allTokens {
+				if strings.EqualFold(addr, tok.Address) {
+					whitelistTokens = append(whitelistTokens, tok)
+					found = true
+					break
+				}
 			}
-		}
 
-		// all whitelisted tokens must be in the chain token list
-		if !found {
-			return nil, fmt.Errorf("whitelist token %s not found in token list", addr)
+			// all whitelisted tokens must be in the chain token list
+			if !found {
+				return nil, fmt.Errorf("whitelist token %s not found in token list", addr)
+			}
 		}
 	}
 
