@@ -286,7 +286,7 @@ type KeeperRUNEPool interface {
 
 type KeeperYieldAccount interface {
 	GetYieldAccount(ctx cosmos.Context, addr common.Address, asset common.Asset) (YieldAccount, error)
-	SetYieldAccout(ctx cosmos.Context, ya YieldAccount)
+	SetYieldAccount(ctx cosmos.Context, ya YieldAccount)
 }
 
 type KeeperVault interface {

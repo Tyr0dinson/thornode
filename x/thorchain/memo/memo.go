@@ -43,6 +43,7 @@ const (
 	TxSecuredAssetWithdraw
 	TxRunePoolDeposit
 	TxRunePoolWithdraw
+	TxYieldAccountDeposit
 )
 
 var stringToTxTypeMap = map[string]TxType{
@@ -81,6 +82,8 @@ var stringToTxTypeMap = map[string]TxType{
 	"secure-":     TxSecuredAssetWithdraw,
 	"pool+":       TxRunePoolDeposit,
 	"pool-":       TxRunePoolWithdraw,
+	"yield+":      TxYieldAccountDeposit,
+	"y+":          TxYieldAccountDeposit,
 }
 
 var txToStringMap = map[TxType]string{
@@ -106,6 +109,7 @@ var txToStringMap = map[TxType]string{
 	TxTradeAccountWithdrawal: "trade-",
 	TxSecuredAssetDeposit:    "secure+",
 	TxSecuredAssetWithdraw:   "secure-",
+	TxYieldAccountDeposit:    "yield+",
 }
 
 // converts a string into a txType
@@ -121,7 +125,7 @@ func StringToTxType(s string) (TxType, error) {
 
 func (tx TxType) IsInbound() bool {
 	switch tx {
-	case TxAdd, TxWithdraw, TxTradeAccountDeposit, TxTradeAccountWithdrawal, TxSecuredAssetDeposit, TxSecuredAssetWithdraw, TxRunePoolDeposit, TxRunePoolWithdraw, TxSwap, TxLimitOrder, TxDonate, TxBond, TxUnbond, TxLeave, TxReserve, TxNoOp, TxTHORName, TxLoanOpen, TxLoanRepayment:
+	case TxAdd, TxWithdraw, TxTradeAccountDeposit, TxTradeAccountWithdrawal, TxSecuredAssetDeposit, TxSecuredAssetWithdraw, TxRunePoolDeposit, TxRunePoolWithdraw, TxSwap, TxLimitOrder, TxDonate, TxBond, TxUnbond, TxLeave, TxReserve, TxNoOp, TxTHORName, TxLoanOpen, TxLoanRepayment, TxYieldAccountDeposit:
 		return true
 	default:
 		return false

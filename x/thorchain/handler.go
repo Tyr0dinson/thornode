@@ -235,6 +235,9 @@ func processOneTxIn(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, sig
 		newMsg = NewMsgRunePoolDeposit(signer, tx.Tx)
 	case RunePoolWithdrawMemo:
 		newMsg = NewMsgRunePoolWithdraw(signer, tx.Tx, m.GetBasisPts(), m.GetAffiliateAddress(), m.GetAffiliateBasisPoints())
+	case YieldAccountDepositMemo:
+		coin := tx.Tx.Coins[0]
+		newMsg = NewMsgYieldAccountDeposit(m.GetAsset(), m.GetDestination(), coin.Amount, signer, tx.Tx)
 	default:
 		return nil, errInvalidMemo
 	}

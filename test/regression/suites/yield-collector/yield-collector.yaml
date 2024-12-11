@@ -1,0 +1,26 @@
+type: env
+key: SECURED_ASSET_SLIP_MIN_BPS
+value: "50"
+---
+{{ template "5-validators-btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 2
+---
+type: create-blocks
+count: 1
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "1000000000"
+    asset: "THOR.RUNE"
+memo: "=:BTC-BTC:{{ addr_thor_fox }}::{{ addr_btc_fox }}"
+---
+type: create-blocks
+count: 1

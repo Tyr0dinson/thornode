@@ -100,6 +100,7 @@ var (
 	NewObservedTxVoter             = types.NewObservedTxVoter
 	NewMsgRunePoolDeposit          = types.NewMsgRunePoolDeposit
 	NewMsgRunePoolWithdraw         = types.NewMsgRunePoolWithdraw
+	NewMsgYieldAccountDeposit      = types.NewMsgYieldAccountDeposit
 	NewMsgTradeAccountDeposit      = types.NewMsgTradeAccountDeposit
 	NewMsgTradeAccountWithdrawal   = types.NewMsgTradeAccountWithdrawal
 	NewMsgSecuredAssetDeposit      = types.NewMsgSecuredAssetDeposit
@@ -245,6 +246,7 @@ type (
 	MsgTradeAccountDeposit    = types.MsgTradeAccountDeposit
 	MsgTradeAccountWithdrawal = types.MsgTradeAccountWithdrawal
 	MsgSecuredAssetDeposit    = types.MsgSecuredAssetDeposit
+	MsgYieldAccountDeposit    = types.MsgYieldAccountDeposit
 	MsgSecuredAssetWithdraw   = types.MsgSecuredAssetWithdraw
 	MsgConsolidate            = types.MsgConsolidate
 	MsgDonate                 = types.MsgDonate
@@ -377,6 +379,7 @@ type (
 	LoanRepaymentMemo          = mem.LoanRepaymentMemo
 	RunePoolDepositMemo        = mem.RunePoolDepositMemo
 	RunePoolWithdrawMemo       = mem.RunePoolWithdrawMemo
+	YieldAccountDepositMemo    = mem.YieldAccountDepositMemo
 
 	// Proto
 	ProtoStrings = types.ProtoStrings

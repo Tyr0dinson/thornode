@@ -43,6 +43,7 @@ type Manager interface {
 	Slasher() Slasher
 	TradeAccountManager() TradeAccountManager
 	SecuredAssetManager() SecuredAssetManager
+	YieldAccountManager() YieldAccountManager
 }
 
 type TradeAccountManager interface {
@@ -60,6 +61,11 @@ type SecuredAssetManager interface {
 	GetSecuredAssetStatus(_ cosmos.Context, _ common.Asset) (keeper.SecuredAsset, cosmos.Uint, error)
 	GetShareSupply(_ cosmos.Context, _ common.Asset) cosmos.Uint
 	CheckHalt(_ cosmos.Context) error
+}
+
+type YieldAccountManager interface {
+	Deposit(ctx cosmos.Context, address common.Address, asset common.Asset, amount cosmos.Uint) error
+	EndBlock(ctx cosmos.Context, keeper keeper.Keeper) error
 }
 
 // GasManager define all the methods required to manage gas
@@ -185,6 +191,7 @@ type Mgrs struct {
 	slasher        Slasher
 	tradeManager   TradeAccountManager
 	securedManager SecuredAssetManager
+	yieldManager   YieldAccountManager
 
 	K             keeper.Keeper
 	cdc           codec.Codec
@@ -317,6 +324,11 @@ func (mgr *Mgrs) LoadManagerIfNecessary(ctx cosmos.Context) error {
 		return fmt.Errorf("fail to create secured manager: %w", err)
 	}
 
+	mgr.yieldManager, err = GetYieldAccountManager(v, mgr.K, mgr.eventMgr)
+	if err != nil {
+		return fmt.Errorf("fail to create yield manager: %w", err)
+	}
+
 	return nil
 }
 
@@ -356,6 +368,8 @@ func (mgr *Mgrs) Slasher() Slasher { return mgr.slasher }
 func (mgr *Mgrs) TradeAccountManager() TradeAccountManager { return mgr.tradeManager }
 
 func (mgr *Mgrs) SecuredAssetManager() SecuredAssetManager { return mgr.securedManager }
+
+func (mgr *Mgrs) YieldAccountManager() YieldAccountManager { return mgr.yieldManager }
 
 // GetKeeper return Keeper
 func GetKeeper(
@@ -500,6 +514,15 @@ func GetSecuredAssetManager(version semver.Version, keeper keeper.Keeper, eventM
 	switch {
 	case version.GTE(semver.MustParse("3.0.0")):
 		return newSecuredAssetMgrVCUR(keeper, eventMgr), nil
+	default:
+		return nil, errInvalidVersion
+	}
+}
+
+func GetYieldAccountManager(version semver.Version, keeper keeper.Keeper, eventMgr EventManager) (YieldAccountManager, error) {
+	switch {
+	case version.GTE(semver.MustParse("3.1.0")):
+		return newYieldAccountMgrVCUR(keeper, eventMgr), nil
 	default:
 		return nil, errInvalidVersion
 	}
