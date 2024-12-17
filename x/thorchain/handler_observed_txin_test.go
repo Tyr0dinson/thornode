@@ -897,12 +897,21 @@ func (s *HandlerObservedTxInSuite) TestObservingSlashing(c *C) {
 	broadcast(c, ctx, nas[0], msg)
 	checkSlashPoints(c, ctx, nas, [7]int64{2, 0, 0, 0, 2, 2, 0})
 
-	// Within the ObservationDelayFlexibility period, nas[4] observes
-	// (and is decremented LackOfObservationPenalty).
+	// consensusMsg should be consistent with the consensus-observed message,
+	// but with a slightly later BlockHeight and FinaliseHeight,
+	// which is normal.
+	consensusMsg := msg
+	consensusMsg.Txs = []ObservedTx{msg.Txs[0]}
+	consensusMsg.Txs[0].BlockHeight++
+	consensusMsg.Txs[0].FinaliseHeight++
+
+	// Within the ObservationDelayFlexibility period, nas[4] observes with consensusMsg
+	// yet is not decremented LackOfObservationPenalty,
+	// because decremantion is currently only for messages exactly matching the consensus ObservedTx.
 	height += observeFlex
 	ctx = ctx.WithBlockHeight(height)
-	broadcast(c, ctx, nas[4], msg)
-	checkSlashPoints(c, ctx, nas, [7]int64{2, 0, 0, 0, 0, 2, 0})
+	broadcast(c, ctx, nas[4], consensusMsg)
+	checkSlashPoints(c, ctx, nas, [7]int64{2, 0, 0, 0, 2, 2, 0})
 
 	// The ObservationDelayFlexibility period ends, after which nas[5] observes;
 	// it is not incremented ObserveSlashPoints (and it is added to the list of signers)
@@ -910,11 +919,11 @@ func (s *HandlerObservedTxInSuite) TestObservingSlashing(c *C) {
 	height++
 	ctx = ctx.WithBlockHeight(height)
 	broadcast(c, ctx, nas[5], msg)
-	checkSlashPoints(c, ctx, nas, [7]int64{2, 0, 0, 0, 0, 2, 0})
+	checkSlashPoints(c, ctx, nas, [7]int64{2, 0, 0, 0, 2, 2, 0})
 
 	// nas[5] observes again, this time incremented ObserveSlashPoints for the extra signing.
 	broadcast(c, ctx, nas[5], msg)
-	checkSlashPoints(c, ctx, nas, [7]int64{2, 0, 0, 0, 0, 3, 0})
+	checkSlashPoints(c, ctx, nas, [7]int64{2, 0, 0, 0, 2, 3, 0})
 
 	// Note that nas[6], the Standby node, remains unaffected by the Actives nodes' observations.
 }
