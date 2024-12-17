@@ -743,24 +743,26 @@ func (s *HandlerObservedTxOutSuite) TestObservingSlashing(c *C) {
 	consensusMsg.Txs[0].FinaliseHeight++
 
 	// Within the ObservationDelayFlexibility period, nas[4] observes with consensusMsg
-	// yet is not decremented LackOfObservationPenalty,
+	// add is incremented ObserveSlashPoints yet is not decremented ObserveSlashPoints and LackOfObservationPenalty,
 	// because decremantion is currently only for messages exactly matching the consensus ObservedTx.
 	height += observeFlex
 	ctx = ctx.WithBlockHeight(height)
 	broadcast(c, ctx, nas[4], consensusMsg)
-	checkSlashPoints(c, ctx, nas, [7]int64{2, 0, 0, 0, 2, 2, 0})
+	checkSlashPoints(c, ctx, nas, [7]int64{2, 0, 0, 0, 3, 2, 0})
 
 	// The ObservationDelayFlexibility period ends, after which nas[5] observes;
-	// it is not incremented ObserveSlashPoints (and it is added to the list of signers)
-	// and is also not decremented LackOfObservationPenalty.
+	// it is appropriately incremented ObserveSlashPoints since the network has to handle the observations
+	// (and it is added to the list of signers)
+	// and being past the ObservationDelayFlexibility period
+	// neither ObserveSlashPoints nor LackOfObservationPenalty is decremented.
 	height++
 	ctx = ctx.WithBlockHeight(height)
 	broadcast(c, ctx, nas[5], msg)
-	checkSlashPoints(c, ctx, nas, [7]int64{2, 0, 0, 0, 2, 2, 0})
+	checkSlashPoints(c, ctx, nas, [7]int64{2, 0, 0, 0, 3, 3, 0})
 
 	// nas[5] observes again, this time incremented ObserveSlashPoints for the extra signing.
 	broadcast(c, ctx, nas[5], msg)
-	checkSlashPoints(c, ctx, nas, [7]int64{2, 0, 0, 0, 2, 3, 0})
+	checkSlashPoints(c, ctx, nas, [7]int64{2, 0, 0, 0, 3, 4, 0})
 
 	// Note that nas[6], the Standby node, remains unaffected by the Actives nodes' observations.
 }
