@@ -101,7 +101,7 @@ func (h ObservedTxOutHandler) preflight(ctx cosmos.Context, voter ObservedTxVote
 			nonSigners := getNonSigners(nas, signers)
 			h.mgr.Slasher().DecSlashPoints(slashCtx, observeSlashPoints, signers...)
 			h.mgr.Slasher().IncSlashPoints(slashCtx, lackOfObservationPenalty, nonSigners...)
-		} else if ctx.BlockHeight() <= (voter.FinalisedHeight+observeFlex) && voter.Tx.Equals(tx) {
+		} else if ctx.BlockHeight() <= (voter.FinalisedHeight+observeFlex) && voter.Tx.IsFinal() == tx.IsFinal() && voter.Tx.Tx.EqualsEx(tx.Tx) {
 			// event the tx had been processed , given the signer just a bit late , so we still take away their slash points
 			h.mgr.Slasher().DecSlashPoints(slashCtx, observeSlashPoints+lackOfObservationPenalty, signer)
 		}
