@@ -125,6 +125,8 @@ func (h ManageTHORNameHandler) validateV3_0_0(ctx cosmos.Context, msg MsgManageT
 func (h ManageTHORNameHandler) handle(ctx cosmos.Context, msg MsgManageTHORName) (*cosmos.Result, error) {
 	version := h.mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("3.1.0")):
+		return h.handleV3_1_0(ctx, msg)
 	case version.GTE(semver.MustParse("3.0.0")):
 		return h.handleV3_0_0(ctx, msg)
 	default:
@@ -133,7 +135,7 @@ func (h ManageTHORNameHandler) handle(ctx cosmos.Context, msg MsgManageTHORName)
 }
 
 // handle process MsgManageTHORName
-func (h ManageTHORNameHandler) handleV3_0_0(ctx cosmos.Context, msg MsgManageTHORName) (*cosmos.Result, error) {
+func (h ManageTHORNameHandler) handleV3_1_0(ctx cosmos.Context, msg MsgManageTHORName) (*cosmos.Result, error) {
 	var err error
 
 	enable, _ := h.mgr.Keeper().GetMimir(ctx, "THORNames")
