@@ -9,10 +9,6 @@ interface iERC20 {
     function balanceOf(address) external view returns (uint256);
     function burn(uint) external;
 }
-// RUNE Interface
-interface iRUNE {
-    function transferTo(address, uint) external returns (bool);
-}
 // ROUTER Interface
 interface iROUTER {
     function depositWithExpiry(address, address, uint, string calldata, uint) external;
@@ -20,8 +16,6 @@ interface iROUTER {
 
 // THORChain_Router is managed by THORChain Vaults
 contract THORChain_Router {
-    address public RUNE;
-
     struct Coin {
         address asset;
         uint amount;
@@ -56,8 +50,7 @@ contract THORChain_Router {
         _status = _NOT_ENTERED;
     }
 
-    constructor(address rune) {
-        RUNE = rune;
+    constructor() {
         _status = _NOT_ENTERED;
     }
 
@@ -68,22 +61,22 @@ contract THORChain_Router {
     }
 
     // Deposit an asset with a memo. ETH is forwarded, ERC-20 stays in ROUTER
-    function deposit(address payable vault, address asset, uint amount, string memory memo) private nonReentrant{
-        uint safeAmount;
-        if(asset == address(0)){
+    function deposit(
+        address payable vault,
+        address asset,
+        uint256 amount,
+        string memory memo
+    ) public payable nonReentrant {
+        uint256 safeAmount;
+        if (asset == address(0)) {
             safeAmount = msg.value;
             bool success = vault.send(safeAmount);
-            require(success);
+            require(success, "Send Failed");
         } else {
-            require(msg.value == 0, "unexpected eth");  // protect user from accidentally locking up eth
-            if(asset == RUNE) {
-                safeAmount = amount;
-                iRUNE(RUNE).transferTo(address(this), amount);
-                iERC20(RUNE).burn(amount);
-            } else {
-                safeAmount = safeTransferFrom(asset, amount); // Transfer asset
-                _vaultAllowance[vault][asset] += safeAmount; // Credit to chosen vault
-            }
+            require(msg.value == 0, "unexpected eth"); // protect user from accidentally locking up eth
+
+            safeAmount = safeTransferFrom(asset, amount); // Transfer asset
+            _vaultAllowance[vault][asset] += safeAmount; // Credit to chosen vault
         }
         emit Deposit(vault, asset, safeAmount, memo);
     }
