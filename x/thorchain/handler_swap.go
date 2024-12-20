@@ -388,6 +388,31 @@ func (h SwapHandler) handleV3_2_0(ctx cosmos.Context, msg MsgSwap) (*cosmos.Resu
 		}
 	}
 
+	// Whether streaming or not, do a swap output's add liquidity immediately.
+	// (Streamed large add liquidities are added in smaller low-slippage sub-adds,
+	//  and successful sub-swaps' outputs' add liquiditities do not rely
+	//  on the last swap of a streaming swap not being refunded.)
+	if mem != nil && mem.IsType(TxAdd) {
+		m, ok := mem.(AddLiquidityMemo)
+		if !ok {
+			return nil, fmt.Errorf("fail to cast add liquidity memo")
+		}
+		m.Asset = fuzzyAssetMatch(ctx, h.mgr.Keeper(), m.Asset)
+		obTx := ObservedTx{Tx: msg.Tx}
+		// Don't overwrite msg.Tx.Coins, as that will be used for the streaming swap update.
+		obTx.Tx.Coins = common.NewCoins(common.NewCoin(m.Asset, emit))
+		msg, err := getMsgAddLiquidityFromMemo(ctx, m, obTx, msg.Signer)
+		if err != nil {
+			return nil, err
+		}
+		handler := NewAddLiquidityHandler(h.mgr)
+		_, err = handler.Run(ctx, msg)
+		if err != nil {
+			ctx.Logger().Error("swap handler failed to add liquidity", "error", err)
+			return nil, err
+		}
+	}
+
 	if msg.IsStreaming() {
 		// only increment In/Out if we have a successful swap
 		swp.In = swp.In.Add(msg.Tx.Coins[0].Amount)
@@ -413,24 +438,6 @@ func (h SwapHandler) handleV3_2_0(ctx cosmos.Context, msg MsgSwap) (*cosmos.Resu
 		return nil, err
 	}
 	switch mem.GetType() {
-	case TxAdd:
-		m, ok := mem.(AddLiquidityMemo)
-		if !ok {
-			return nil, fmt.Errorf("fail to cast add liquidity memo")
-		}
-		m.Asset = fuzzyAssetMatch(ctx, h.mgr.Keeper(), m.Asset)
-		msg.Tx.Coins = common.NewCoins(common.NewCoin(m.Asset, emit))
-		obTx := ObservedTx{Tx: msg.Tx}
-		msg, err := getMsgAddLiquidityFromMemo(ctx, m, obTx, msg.Signer)
-		if err != nil {
-			return nil, err
-		}
-		handler := NewAddLiquidityHandler(h.mgr)
-		_, err = handler.Run(ctx, msg)
-		if err != nil {
-			ctx.Logger().Error("swap handler failed to add liquidity", "error", err)
-			return nil, err
-		}
 	case TxLoanOpen:
 		m, ok := mem.(LoanOpenMemo)
 		if !ok {
