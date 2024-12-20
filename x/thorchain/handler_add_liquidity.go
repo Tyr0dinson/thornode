@@ -52,6 +52,8 @@ func (h AddLiquidityHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Resu
 func (h AddLiquidityHandler) validate(ctx cosmos.Context, msg MsgAddLiquidity) error {
 	version := h.mgr.GetVersion()
 	switch {
+	case version.GTE(semver.MustParse("3.2.0")):
+		return h.validateV3_2_0(ctx, msg)
 	case version.GTE(semver.MustParse("3.0.0")):
 		return h.validateV3_0_0(ctx, msg)
 	default:
@@ -59,7 +61,7 @@ func (h AddLiquidityHandler) validate(ctx cosmos.Context, msg MsgAddLiquidity) e
 	}
 }
 
-func (h AddLiquidityHandler) validateV3_0_0(ctx cosmos.Context, msg MsgAddLiquidity) error {
+func (h AddLiquidityHandler) validateV3_2_0(ctx cosmos.Context, msg MsgAddLiquidity) error {
 	if !msg.Tx.ID.IsBlank() { // don't validate tx if internal txn
 		if err := msg.ValidateBasic(); err != nil {
 			ctx.Logger().Error(err.Error())
@@ -469,6 +471,25 @@ func calculateVaultUnits(oldPoolUnits, poolAmt, addAmt cosmos.Uint) (cosmos.Uint
 }
 
 func (h AddLiquidityHandler) addLiquidity(ctx cosmos.Context,
+	asset common.Asset,
+	addRuneAmount, addAssetAmount cosmos.Uint,
+	runeAddr, assetAddr common.Address,
+	requestTxHash common.TxID,
+	stage bool,
+	constAccessor constants.ConstantValues,
+) (err error) {
+	version := h.mgr.GetVersion()
+	switch {
+	case version.GTE(semver.MustParse("3.2.0")):
+		return h.addLiquidityV3_2_0(ctx, asset, addRuneAmount, addAssetAmount, runeAddr, assetAddr, requestTxHash, stage, constAccessor)
+	case version.GTE(semver.MustParse("3.0.0")):
+		return h.addLiquidityV3_0_0(ctx, asset, addRuneAmount, addAssetAmount, runeAddr, assetAddr, requestTxHash, stage, constAccessor)
+	default:
+		return errBadVersion
+	}
+}
+
+func (h AddLiquidityHandler) addLiquidityV3_2_0(ctx cosmos.Context,
 	asset common.Asset,
 	addRuneAmount, addAssetAmount cosmos.Uint,
 	runeAddr, assetAddr common.Address,
