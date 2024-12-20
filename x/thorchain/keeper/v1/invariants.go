@@ -7,6 +7,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/types"
+	mem "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
 )
 
 // InvariantRoutes return the keeper's invariant routes
@@ -92,7 +93,11 @@ func AsgardInvariant(k KVStore) common.Invariant {
 			}
 
 			if swap.TargetAsset.IsNative() && !swap.TargetAsset.IsTradeAsset() && !swap.TargetAsset.IsSecuredAsset() && !ss.Out.IsZero() {
-				swapCoins = swapCoins.Add(common.NewCoin(swap.TargetAsset, ss.Out))
+				// Each sub-swap does its add liquidity immediately, so do not include add liquidity ss.Out in swapCoins.
+				// If memo is nil, assume an error and that not such an add liquidity.
+				if memo, _ := mem.ParseMemoWithTHORNames(ctx, k, swap.Tx.Memo); memo == nil || !memo.IsType(mem.TxAdd) {
+					swapCoins = swapCoins.Add(common.NewCoin(swap.TargetAsset, ss.Out))
+				}
 			}
 		}
 
