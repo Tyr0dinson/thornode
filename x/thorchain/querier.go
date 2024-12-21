@@ -3013,7 +3013,7 @@ func (qs queryServer) queryTssMetric(ctx cosmos.Context, _ *types.QueryTssMetric
 
 func (qs queryServer) queryInvariants(_ cosmos.Context, _ *types.QueryInvariantsRequest) (*types.QueryInvariantsResponse, error) {
 	result := types.QueryInvariantsResponse{}
-	for _, route := range qs.mgr.Keeper().InvariantRoutes() {
+	for _, route := range InvariantRoutes(qs.mgr.Keeper()) {
 		result.Invariants = append(result.Invariants, route.Route)
 	}
 	return &result, nil
@@ -3023,7 +3023,7 @@ func (qs queryServer) queryInvariant(ctx cosmos.Context, req *types.QueryInvaria
 	if len(req.Path) < 1 {
 		return nil, fmt.Errorf("invalid path: %v", req.Path)
 	}
-	for _, route := range qs.mgr.Keeper().InvariantRoutes() {
+	for _, route := range InvariantRoutes(qs.mgr.Keeper()) {
 		if strings.EqualFold(route.Route, req.Path) {
 			msg, broken := route.Invariant(ctx)
 			result := types.QueryInvariantResponse{

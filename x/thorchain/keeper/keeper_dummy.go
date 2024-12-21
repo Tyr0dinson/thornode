@@ -275,6 +275,10 @@ func (k KVStoreDummy) GetLoanIterator(ctx cosmos.Context, _ common.Asset) cosmos
 	return nil
 }
 
+func (k KVStoreDummy) GetAllLoansIterator(ctx cosmos.Context) cosmos.Iterator {
+	return nil
+}
+
 func (k KVStoreDummy) GetLoan(ctx cosmos.Context, asset common.Asset, addr common.Address) (Loan, error) {
 	return Loan{}, kaboom
 }
@@ -283,6 +287,10 @@ func (k KVStoreDummy) RemoveLoan(ctx cosmos.Context, _ Loan)                    
 func (k KVStoreDummy) SetTotalCollateral(_ cosmos.Context, _ common.Asset, _ cosmos.Uint) {}
 func (k KVStoreDummy) GetTotalCollateral(_ cosmos.Context, _ common.Asset) (cosmos.Uint, error) {
 	return cosmos.ZeroUint(), kaboom
+}
+
+func (k KVStoreDummy) GetTotalCollateralsIterator(ctx cosmos.Context) cosmos.Iterator {
+	return nil
 }
 
 func (k KVStoreDummy) GetLiquidityProviderIterator(_ cosmos.Context, _ common.Asset) cosmos.Iterator {
@@ -711,10 +719,6 @@ func (k KVStoreDummy) GetAffiliateCollectorIterator(_ cosmos.Context) cosmos.Ite
 
 func (k KVStoreDummy) GetAffiliateCollectors(_ cosmos.Context) ([]AffiliateFeeCollector, error) {
 	return nil, kaboom
-}
-
-func (k KVStoreDummy) InvariantRoutes() []common.InvariantRoute {
-	return nil
 }
 
 func (k KVStoreDummy) GetConstants() constants.ConstantValues {

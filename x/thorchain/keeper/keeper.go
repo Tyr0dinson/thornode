@@ -40,8 +40,6 @@ type Keeper interface {
 	// passthrough funcs
 	SendCoins(ctx cosmos.Context, from, to cosmos.AccAddress, coins cosmos.Coins) error
 
-	InvariantRoutes() []common.InvariantRoute
-
 	GetConstants() constants.ConstantValues
 	GetConfigInt64(ctx cosmos.Context, key constants.ConstantName) int64
 	DollarConfigInRune(ctx cosmos.Context, key constants.ConstantName) cosmos.Uint
@@ -136,11 +134,13 @@ type KeeperStreamingSwap interface {
 
 type KeeperLoan interface {
 	GetLoanIterator(ctx cosmos.Context, _ common.Asset) cosmos.Iterator
+	GetAllLoansIterator(ctx cosmos.Context) cosmos.Iterator
 	GetLoan(ctx cosmos.Context, asset common.Asset, addr common.Address) (Loan, error)
 	SetLoan(ctx cosmos.Context, _ Loan)
 	RemoveLoan(ctx cosmos.Context, _ Loan)
 	SetTotalCollateral(_ cosmos.Context, _ common.Asset, _ cosmos.Uint)
 	GetTotalCollateral(_ cosmos.Context, _ common.Asset) (cosmos.Uint, error)
+	GetTotalCollateralsIterator(_ cosmos.Context) cosmos.Iterator
 }
 
 type KeeperLiquidityProvider interface {

@@ -21,6 +21,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/cmd"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain"
 	keeperv1 "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/v1"
 
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
@@ -171,7 +172,7 @@ var invariants []string
 
 func init() {
 	k := keeperv1.KVStore{}
-	for _, ir := range k.InvariantRoutes() {
+	for _, ir := range thorchain.InvariantRoutes(k) {
 		invariants = append(invariants, ir.Route)
 	}
 }

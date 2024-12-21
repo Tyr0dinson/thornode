@@ -37,6 +37,12 @@ func (k KVStore) GetLoanIterator(ctx cosmos.Context, asset common.Asset) cosmos.
 	return k.getIterator(ctx, types.DbPrefix(key))
 }
 
+// GetAllLoansIterator iterate all loans
+func (k KVStore) GetAllLoansIterator(ctx cosmos.Context) cosmos.Iterator {
+	key := k.GetKey(prefixLoan, "")
+	return k.getIterator(ctx, types.DbPrefix(key))
+}
+
 // GetLoan retrieve loan from the data store
 func (k KVStore) GetLoan(ctx cosmos.Context, asset common.Asset, addr common.Address) (Loan, error) {
 	record := NewLoan(addr, asset, 0)
@@ -64,4 +70,9 @@ func (k KVStore) GetTotalCollateral(ctx cosmos.Context, asset common.Asset) (cos
 	key := k.GetKey(prefixLoanTotalCollateral, asset.String())
 	_, err := k.getUint64(ctx, key, &record)
 	return cosmos.NewUint(record), err
+}
+
+func (k KVStore) GetTotalCollateralsIterator(ctx cosmos.Context) cosmos.Iterator {
+	key := k.GetKey(prefixLoanTotalCollateral, "")
+	return k.getIterator(ctx, types.DbPrefix(key))
 }

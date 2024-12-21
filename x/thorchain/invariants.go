@@ -1,4 +1,4 @@
-package keeperv1
+package thorchain
 
 import (
 	"fmt"
@@ -6,12 +6,12 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
-	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/types"
-	mem "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 // InvariantRoutes return the keeper's invariant routes
-func (k KVStore) InvariantRoutes() []common.InvariantRoute {
+func InvariantRoutes(k keeper.Keeper) []common.InvariantRoute {
 	return []common.InvariantRoute{
 		common.NewInvariantRoute("asgard", AsgardInvariant(k)),
 		common.NewInvariantRoute("bond", BondInvariant(k)),
@@ -26,7 +26,7 @@ func (k KVStore) InvariantRoutes() []common.InvariantRoute {
 
 // AsgardInvariant the asgard module backs pool rune, savers synths, and native
 // coins in queued swaps
-func AsgardInvariant(k KVStore) common.Invariant {
+func AsgardInvariant(k keeper.Keeper) common.Invariant {
 	return func(ctx cosmos.Context) (msg []string, broken bool) {
 		// sum all rune liquidity on pools, including pending
 		var poolCoins common.Coins
@@ -95,7 +95,7 @@ func AsgardInvariant(k KVStore) common.Invariant {
 			if swap.TargetAsset.IsNative() && !swap.TargetAsset.IsTradeAsset() && !swap.TargetAsset.IsSecuredAsset() && !ss.Out.IsZero() {
 				// Each sub-swap does its add liquidity immediately, so do not include add liquidity ss.Out in swapCoins.
 				// If memo is nil, assume an error and that not such an add liquidity.
-				if memo, _ := mem.ParseMemoWithTHORNames(ctx, k, swap.Tx.Memo); memo == nil || !memo.IsType(mem.TxAdd) {
+				if memo, _ := ParseMemoWithTHORNames(ctx, k, swap.Tx.Memo); memo == nil || !memo.IsType(TxAdd) {
 					swapCoins = swapCoins.Add(common.NewCoin(swap.TargetAsset, ss.Out))
 				}
 			}
@@ -127,7 +127,7 @@ func AsgardInvariant(k KVStore) common.Invariant {
 }
 
 // BondInvariant the bond module backs node bond and pending reward bond
-func BondInvariant(k KVStore) common.Invariant {
+func BondInvariant(k keeper.Keeper) common.Invariant {
 	return func(ctx cosmos.Context) (msg []string, broken bool) {
 		// sum all rune bonded to nodes
 		bondedRune := cosmos.ZeroUint()
@@ -166,7 +166,7 @@ func BondInvariant(k KVStore) common.Invariant {
 }
 
 // THORChainInvariant the thorchain module should never hold a balance
-func THORChainInvariant(k KVStore) common.Invariant {
+func THORChainInvariant(k keeper.Keeper) common.Invariant {
 	return func(ctx cosmos.Context) (msg []string, broken bool) {
 		// module balance of thorchain
 		tcAddr := k.GetModuleAccAddress(ModuleName)
@@ -186,7 +186,7 @@ func THORChainInvariant(k KVStore) common.Invariant {
 
 // AffilliateCollectorInvariant the affiliate_collector module backs accrued affiliate
 // rewards
-func AffilliateCollectorInvariant(k KVStore) common.Invariant {
+func AffilliateCollectorInvariant(k keeper.Keeper) common.Invariant {
 	return func(ctx cosmos.Context) (msg []string, broken bool) {
 		affColModuleRune := k.GetBalanceOfModule(ctx, AffiliateCollectorName, common.RuneAsset().Native())
 		affCols, err := k.GetAffiliateCollectors(ctx)
@@ -221,7 +221,7 @@ func AffilliateCollectorInvariant(k KVStore) common.Invariant {
 
 // PoolsInvariant pool units and pending rune/asset should match the sum
 // of units and pending rune/asset for all lps
-func PoolsInvariant(k KVStore) common.Invariant {
+func PoolsInvariant(k keeper.Keeper) common.Invariant {
 	return func(ctx cosmos.Context) (msg []string, broken bool) {
 		pools, _ := k.GetPools(ctx)
 		for _, pool := range pools {
@@ -267,7 +267,7 @@ func PoolsInvariant(k KVStore) common.Invariant {
 // StreamingSwapsInvariant every streaming swap should have a corresponding
 // queued swap, stream deposit should equal the queued swap's source coin,
 // and the stream should be internally consistent
-func StreamingSwapsInvariant(k KVStore) common.Invariant {
+func StreamingSwapsInvariant(k keeper.Keeper) common.Invariant {
 	return func(ctx cosmos.Context) (msg []string, broken bool) {
 		// fetch all streaming swaps from the swap queue
 		var swaps []MsgSwap
@@ -334,7 +334,7 @@ func StreamingSwapsInvariant(k KVStore) common.Invariant {
 }
 
 // RUNEPoolInvariant asserts that the RUNEPool units and provider units are consistent.
-func RUNEPoolInvariant(k KVStore) common.Invariant {
+func RUNEPoolInvariant(k keeper.Keeper) common.Invariant {
 	return func(ctx cosmos.Context) (msg []string, broken bool) {
 		runePool, err := k.GetRUNEPool(ctx)
 		if err != nil {
@@ -391,11 +391,10 @@ func RUNEPoolInvariant(k KVStore) common.Invariant {
 
 // LendingInvariant ensures stored total collateral value matches the sum
 // of collateral for all loans and the module balances match the totals
-func LendingInvariant(k KVStore) common.Invariant {
+func LendingInvariant(k keeper.Keeper) common.Invariant {
 	return func(ctx cosmos.Context) (msg []string, broken bool) {
 		assetToTotal := make(map[string]cosmos.Uint)
-		key := k.GetKey(prefixLoan, "")
-		it := k.getIterator(ctx, types.DbPrefix(key))
+		it := k.GetAllLoansIterator(ctx)
 		defer it.Close()
 		for ; it.Valid(); it.Next() {
 			var loan Loan
@@ -422,11 +421,10 @@ func LendingInvariant(k KVStore) common.Invariant {
 		}
 
 		// ensure stored total collateral equals sum of loans
-		keyTotal := k.GetKey(prefixLoanTotalCollateral, "")
-		itTotal := k.getIterator(ctx, types.DbPrefix(keyTotal))
+		itTotal := k.GetTotalCollateralsIterator(ctx)
 		defer itTotal.Close()
 		for ; itTotal.Valid(); itTotal.Next() {
-			var totalCol ProtoUint64
+			var totalCol types.ProtoUint64
 			k.Cdc().MustUnmarshal(itTotal.Value(), &totalCol)
 			parts := strings.SplitN(string(itTotal.Key()), "/", 3)
 			asset, _ := common.NewAsset(parts[2])

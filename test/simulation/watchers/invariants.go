@@ -10,6 +10,7 @@ import (
 
 	"github.com/rs/zerolog/log"
 
+	"gitlab.com/thorchain/thornode/v3/x/thorchain"
 	keeperv1 "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/v1"
 
 	. "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
@@ -30,7 +31,7 @@ func NewInvariants() *Watcher {
 	// gather the list of all invariants to watch
 	invariants := []string{}
 	k := keeperv1.KVStore{}
-	for _, ir := range k.InvariantRoutes() {
+	for _, ir := range thorchain.InvariantRoutes(k) {
 		invariants = append(invariants, ir.Route)
 	}
 
