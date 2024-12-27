@@ -74,6 +74,14 @@ contract THORChain_Router {
     string memo
   );
 
+  event TransferOutFail(
+    address indexed vault,
+    address indexed to,
+    address asset,
+    uint amount,
+    string memo
+  );
+
   // Used in original V4 methods
   // Emitted for all outgoing transferAndCalls, the vault dictates who sent it, memo used to track.
   event TransferOutAndCall(
@@ -193,6 +201,7 @@ contract THORChain_Router {
       safeAmount = msg.value;
       bool success = to.send(safeAmount); // Send ETH.
       if (!success) {
+        emit TransferOutFail(msg.sender, to, asset, safeAmount, memo);
         payable(address(msg.sender)).transfer(safeAmount); // For failure, bounce back to vault & continue.
       } else {
         emit TransferOut(msg.sender, to, asset, safeAmount, memo);
