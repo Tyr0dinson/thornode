@@ -139,7 +139,7 @@ chain-avalanche:
         paths:
           - chain/avalanche/**/*
   stage: test
-  image: node:16
+  image: node:18
   script:
     - cd chain/avalanche/
     - yarn install --non-interactive
@@ -152,7 +152,7 @@ chain-ethereum:
         paths:
           - chain/ethereum/**/*
   stage: test
-  image: node:16
+  image: node:18
   script:
     - cd chain/ethereum/
     - yarn install --non-interactive
