@@ -380,7 +380,6 @@ contract THORChain_Router {
         "Failed to transfer token before dex agg call"
       );
 
-      // add test case if aggregator fails, it should not revert the whole transaction (transferOutAndCallV5 call succeeds)
       // call swapOutV5 with erc20. if the aggregator fails, the transaction should not revert
       (bool _dexAggSuccess, ) = aggregationPayload.target.call{value: 0}(
         abi.encodeWithSignature(
