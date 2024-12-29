@@ -9,9 +9,9 @@ Name | Type | Description | Notes
 **Address** | Pointer to **string** |  | [optional] 
 **Router** | Pointer to **string** |  | [optional] 
 **Halted** | **bool** | Returns true if trading is unavailable for this chain, either because trading is halted globally or specifically for this chain | 
-**GlobalTradingPaused** | Pointer to **bool** | Returns true if trading is paused globally | [optional] 
-**ChainTradingPaused** | Pointer to **bool** | Returns true if trading is paused for this chain | [optional] 
-**ChainLpActionsPaused** | Pointer to **bool** | Returns true if LP actions are paused for this chain | [optional] 
+**GlobalTradingPaused** | **bool** | Returns true if trading is paused globally | 
+**ChainTradingPaused** | **bool** | Returns true if trading is paused for this chain | 
+**ChainLpActionsPaused** | **bool** | Returns true if LP actions are paused for this chain | 
 **ObservedFeeRate** | Pointer to **string** | The chain&#39;s observed fee rate in 1e8 format, before the 1.5x that makes an outbound more likely to have a sufficient gas rate.  Used by validators to check whether they need to report a fee change. | [optional] 
 **GasRate** | Pointer to **string** | The minimum fee rate used by vaults to send outbound TXs. The actual fee rate may be higher. For EVM chains this is returned in gwei (1e9). | [optional] 
 **GasRateUnits** | Pointer to **string** | Units of the gas_rate. | [optional] 
@@ -23,7 +23,7 @@ Name | Type | Description | Notes
 
 ### NewInboundAddress
 
-`func NewInboundAddress(halted bool, ) *InboundAddress`
+`func NewInboundAddress(halted bool, globalTradingPaused bool, chainTradingPaused bool, chainLpActionsPaused bool, ) *InboundAddress`
 
 NewInboundAddress instantiates a new InboundAddress object
 This constructor will assign default values to properties that have it defined,
@@ -177,11 +177,6 @@ and a boolean to check if the value has been set.
 
 SetGlobalTradingPaused sets GlobalTradingPaused field to given value.
 
-### HasGlobalTradingPaused
-
-`func (o *InboundAddress) HasGlobalTradingPaused() bool`
-
-HasGlobalTradingPaused returns a boolean if a field has been set.
 
 ### GetChainTradingPaused
 
@@ -202,11 +197,6 @@ and a boolean to check if the value has been set.
 
 SetChainTradingPaused sets ChainTradingPaused field to given value.
 
-### HasChainTradingPaused
-
-`func (o *InboundAddress) HasChainTradingPaused() bool`
-
-HasChainTradingPaused returns a boolean if a field has been set.
 
 ### GetChainLpActionsPaused
 
@@ -227,11 +217,6 @@ and a boolean to check if the value has been set.
 
 SetChainLpActionsPaused sets ChainLpActionsPaused field to given value.
 
-### HasChainLpActionsPaused
-
-`func (o *InboundAddress) HasChainLpActionsPaused() bool`
-
-HasChainLpActionsPaused returns a boolean if a field has been set.
 
 ### GetObservedFeeRate
 

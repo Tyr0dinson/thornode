@@ -2256,6 +2256,9 @@ components:
       type: object
       required:
         - halted
+        - global_trading_paused
+        - chain_trading_paused
+        - chain_lp_actions_paused
       properties:
         chain:
           type: string

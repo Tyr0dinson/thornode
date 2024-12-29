@@ -23,11 +23,11 @@ type InboundAddress struct {
 	// Returns true if trading is unavailable for this chain, either because trading is halted globally or specifically for this chain
 	Halted bool `json:"halted"`
 	// Returns true if trading is paused globally
-	GlobalTradingPaused *bool `json:"global_trading_paused,omitempty"`
+	GlobalTradingPaused bool `json:"global_trading_paused"`
 	// Returns true if trading is paused for this chain
-	ChainTradingPaused *bool `json:"chain_trading_paused,omitempty"`
+	ChainTradingPaused bool `json:"chain_trading_paused"`
 	// Returns true if LP actions are paused for this chain
-	ChainLpActionsPaused *bool `json:"chain_lp_actions_paused,omitempty"`
+	ChainLpActionsPaused bool `json:"chain_lp_actions_paused"`
 	// The chain's observed fee rate in 1e8 format, before the 1.5x that makes an outbound more likely to have a sufficient gas rate.  Used by validators to check whether they need to report a fee change.
 	ObservedFeeRate *string `json:"observed_fee_rate,omitempty"`
 	// The minimum fee rate used by vaults to send outbound TXs. The actual fee rate may be higher. For EVM chains this is returned in gwei (1e9).
@@ -46,9 +46,12 @@ type InboundAddress struct {
 // This constructor will assign default values to properties that have it defined,
 // and makes sure properties required by API are set, but the set of arguments
 // will change when the set of required properties is changed
-func NewInboundAddress(halted bool) *InboundAddress {
+func NewInboundAddress(halted bool, globalTradingPaused bool, chainTradingPaused bool, chainLpActionsPaused bool) *InboundAddress {
 	this := InboundAddress{}
 	this.Halted = halted
+	this.GlobalTradingPaused = globalTradingPaused
+	this.ChainTradingPaused = chainTradingPaused
+	this.ChainLpActionsPaused = chainLpActionsPaused
 	return &this
 }
 
@@ -212,100 +215,76 @@ func (o *InboundAddress) SetHalted(v bool) {
 	o.Halted = v
 }
 
-// GetGlobalTradingPaused returns the GlobalTradingPaused field value if set, zero value otherwise.
+// GetGlobalTradingPaused returns the GlobalTradingPaused field value
 func (o *InboundAddress) GetGlobalTradingPaused() bool {
-	if o == nil || o.GlobalTradingPaused == nil {
+	if o == nil {
 		var ret bool
 		return ret
 	}
-	return *o.GlobalTradingPaused
+
+	return o.GlobalTradingPaused
 }
 
-// GetGlobalTradingPausedOk returns a tuple with the GlobalTradingPaused field value if set, nil otherwise
+// GetGlobalTradingPausedOk returns a tuple with the GlobalTradingPaused field value
 // and a boolean to check if the value has been set.
 func (o *InboundAddress) GetGlobalTradingPausedOk() (*bool, bool) {
-	if o == nil || o.GlobalTradingPaused == nil {
+	if o == nil {
 		return nil, false
 	}
-	return o.GlobalTradingPaused, true
+	return &o.GlobalTradingPaused, true
 }
 
-// HasGlobalTradingPaused returns a boolean if a field has been set.
-func (o *InboundAddress) HasGlobalTradingPaused() bool {
-	if o != nil && o.GlobalTradingPaused != nil {
-		return true
-	}
-
-	return false
-}
-
-// SetGlobalTradingPaused gets a reference to the given bool and assigns it to the GlobalTradingPaused field.
+// SetGlobalTradingPaused sets field value
 func (o *InboundAddress) SetGlobalTradingPaused(v bool) {
-	o.GlobalTradingPaused = &v
+	o.GlobalTradingPaused = v
 }
 
-// GetChainTradingPaused returns the ChainTradingPaused field value if set, zero value otherwise.
+// GetChainTradingPaused returns the ChainTradingPaused field value
 func (o *InboundAddress) GetChainTradingPaused() bool {
-	if o == nil || o.ChainTradingPaused == nil {
+	if o == nil {
 		var ret bool
 		return ret
 	}
-	return *o.ChainTradingPaused
+
+	return o.ChainTradingPaused
 }
 
-// GetChainTradingPausedOk returns a tuple with the ChainTradingPaused field value if set, nil otherwise
+// GetChainTradingPausedOk returns a tuple with the ChainTradingPaused field value
 // and a boolean to check if the value has been set.
 func (o *InboundAddress) GetChainTradingPausedOk() (*bool, bool) {
-	if o == nil || o.ChainTradingPaused == nil {
+	if o == nil {
 		return nil, false
 	}
-	return o.ChainTradingPaused, true
+	return &o.ChainTradingPaused, true
 }
 
-// HasChainTradingPaused returns a boolean if a field has been set.
-func (o *InboundAddress) HasChainTradingPaused() bool {
-	if o != nil && o.ChainTradingPaused != nil {
-		return true
-	}
-
-	return false
-}
-
-// SetChainTradingPaused gets a reference to the given bool and assigns it to the ChainTradingPaused field.
+// SetChainTradingPaused sets field value
 func (o *InboundAddress) SetChainTradingPaused(v bool) {
-	o.ChainTradingPaused = &v
+	o.ChainTradingPaused = v
 }
 
-// GetChainLpActionsPaused returns the ChainLpActionsPaused field value if set, zero value otherwise.
+// GetChainLpActionsPaused returns the ChainLpActionsPaused field value
 func (o *InboundAddress) GetChainLpActionsPaused() bool {
-	if o == nil || o.ChainLpActionsPaused == nil {
+	if o == nil {
 		var ret bool
 		return ret
 	}
-	return *o.ChainLpActionsPaused
+
+	return o.ChainLpActionsPaused
 }
 
-// GetChainLpActionsPausedOk returns a tuple with the ChainLpActionsPaused field value if set, nil otherwise
+// GetChainLpActionsPausedOk returns a tuple with the ChainLpActionsPaused field value
 // and a boolean to check if the value has been set.
 func (o *InboundAddress) GetChainLpActionsPausedOk() (*bool, bool) {
-	if o == nil || o.ChainLpActionsPaused == nil {
+	if o == nil {
 		return nil, false
 	}
-	return o.ChainLpActionsPaused, true
+	return &o.ChainLpActionsPaused, true
 }
 
-// HasChainLpActionsPaused returns a boolean if a field has been set.
-func (o *InboundAddress) HasChainLpActionsPaused() bool {
-	if o != nil && o.ChainLpActionsPaused != nil {
-		return true
-	}
-
-	return false
-}
-
-// SetChainLpActionsPaused gets a reference to the given bool and assigns it to the ChainLpActionsPaused field.
+// SetChainLpActionsPaused sets field value
 func (o *InboundAddress) SetChainLpActionsPaused(v bool) {
-	o.ChainLpActionsPaused = &v
+	o.ChainLpActionsPaused = v
 }
 
 // GetObservedFeeRate returns the ObservedFeeRate field value if set, zero value otherwise.
@@ -517,13 +496,13 @@ func (o InboundAddress) MarshalJSON_deprecated() ([]byte, error) {
 	if true {
 		toSerialize["halted"] = o.Halted
 	}
-	if o.GlobalTradingPaused != nil {
+	if true {
 		toSerialize["global_trading_paused"] = o.GlobalTradingPaused
 	}
-	if o.ChainTradingPaused != nil {
+	if true {
 		toSerialize["chain_trading_paused"] = o.ChainTradingPaused
 	}
-	if o.ChainLpActionsPaused != nil {
+	if true {
 		toSerialize["chain_lp_actions_paused"] = o.ChainLpActionsPaused
 	}
 	if o.ObservedFeeRate != nil {
