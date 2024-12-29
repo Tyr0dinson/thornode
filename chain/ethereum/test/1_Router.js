@@ -11,8 +11,7 @@ const EvilToken = artifacts.require("EvilERC20Token");
 const StealToken = artifacts.require("StealERC20Token");
 const RevertingContract = artifacts.require("RevertingContract");
 const EvilCallback = artifacts.require("EvilCallback");
-const Rune = artifacts.require("ETH_RUNE");
-const USDT = artifacts.require("TetherToken");
+const UsdtToken = artifacts.require("TetherToken");
 
 const BigNumber = require("bignumber.js");
 const { expect } = require("chai");
@@ -26,30 +25,21 @@ function getBN(BN) {
 }
 
 var ROUTER1;
-var ROUTER2;
-var ROUTER3;
-var RUNE, TOKEN, EVILTOKEN, STEALTOKEN;
+var TOKEN, EVILTOKEN, STEALTOKEN;
 var ETH = "0x0000000000000000000000000000000000000000";
-var usdt;
+var USDT;
 var REVERTINGCONTRACT, EVILCALLBACK;
 var USER1, USER2;
-var ASGARD1, ASGARD2;
-var YGGDRASIL1, YGGDRASIL2;
+var ASGARD1, ASGARD2, ASGARD3;
 
 const _1 = "1000000000000000000";
 const _10 = "10000000000000000000";
-const _20 = "20000000000000000000";
-const _300 = "300000000000000000000";
-const _400 = "400000000000000000000";
 const _1000 = "1000000000000000000000";
 const _5000 = "5000000000000000000000";
 const _50k = "50000000000000000000000";
 const _100k = "100000000000000000000000";
-const _150k = "150000000000000000000000";
 const _250k = "250000000000000000000000";
-const _400k = "400000000000000000000000";
 const _500k = "500000000000000000000000";
-const _600k = "600000000000000000000000";
 const _1m = "1000000000000000000000000";
 
 const currentTime = Math.floor(Date.now() / 1000 + 15 * 60); // time plus 15 mins
@@ -59,23 +49,18 @@ describe("Router contract", function () {
 
   before(async function () {
     accounts = await web3.eth.getAccounts();
-    RUNE = await Rune.new();
     ROUTER1 = await Router.new();
-    ROUTER2 = await Router.new();
-    ROUTER3 = await Router.new();
     TOKEN = await Token.new(); // User gets 1m TOKENS during construction
     EVILTOKEN = await EvilToken.new();
     REVERTINGCONTRACT = await RevertingContract.new();
     EVILCALLBACK = await EvilCallback.new(ROUTER1.address);
-    usdt = await USDT.new(_1m, "Tether", "USDT", 6);
+    USDT = await UsdtToken.new(_1m, "Tether", "USDT", 6);
     STEALTOKEN = await StealToken.new(TOKEN.address);
     USER1 = accounts[0];
     USER2 = accounts[1];
-    ASGARD1 = accounts[3];
-    ASGARD2 = accounts[4];
-    YGGDRASIL1 = accounts[7];
-    YGGDRASIL2 = accounts[8];
-    ASGARD3 = accounts[9];
+    ASGARD1 = accounts[2];
+    ASGARD2 = accounts[3];
+    ASGARD3 = accounts[4];
   });
 
   describe("User Deposit Assets", function () {
@@ -109,19 +94,6 @@ describe("Router contract", function () {
           "SWAP:THOR.RUNE",
           getBN(0),
           { from: USER1, value: _1000 },
-        ),
-        "THORChain_Router: expired",
-      );
-    });
-
-    it("Should revert Deposit RUNE to Asgard1", async function () {
-      await truffleAssert.reverts(
-        ROUTER1.depositWithExpiry(
-          ASGARD1,
-          RUNE.address,
-          _1m,
-          "SWITCH:THOR.RUNE",
-          getBN(0),
         ),
         "THORChain_Router: expired",
       );
@@ -169,7 +141,7 @@ describe("Router contract", function () {
       ).to.equal(_1m);
 
       await ROUTER1.depositWithExpiry(
-        YGGDRASIL1,
+        ASGARD1,
         STEALTOKEN.address,
         _500k,
         "SWAP:THOR.RUNE",
@@ -181,7 +153,7 @@ describe("Router contract", function () {
       );
       expect(BN2Str(await STEALTOKEN.balanceOf(USER1))).to.equal(_500k);
       expect(
-        BN2Str(await ROUTER1.vaultAllowance(YGGDRASIL1, STEALTOKEN.address)),
+        BN2Str(await ROUTER1.vaultAllowance(ASGARD1, STEALTOKEN.address)),
       ).to.equal(_500k);
     });
 
@@ -214,242 +186,81 @@ describe("Router contract", function () {
 
     it("Should Deposit USDT to Asgard1", async function () {
       // await usdt.issue(_1m, { from: USER1 });
-      expect(BN2Str(await usdt.totalSupply())).to.equal(_1m);
-      expect(BN2Str(await usdt.balanceOf(USER1))).to.equal(_1m);
+      expect(BN2Str(await USDT.totalSupply())).to.equal(_1m);
+      expect(BN2Str(await USDT.balanceOf(USER1))).to.equal(_1m);
 
       // Approval - we are approving the ROUTER1 to spend all of USER1 funds
-      await usdt.approve(ROUTER1.address, _1m, { from: USER1 });
-      expect(BN2Str(await usdt.allowance(USER1, ROUTER1.address))).to.equal(
+      await USDT.approve(ROUTER1.address, _1m, { from: USER1 });
+      expect(BN2Str(await USDT.allowance(USER1, ROUTER1.address))).to.equal(
         _1m,
       );
 
       // tx
       let tx = await ROUTER1.depositWithExpiry(
         ASGARD1,
-        usdt.address,
+        USDT.address,
         _500k,
         "SWAP:THOR.RUNE",
         currentTime,
       );
       // console.log(tx.logs)
       expect(tx.logs[0].event).to.equal("Deposit");
-      expect(tx.logs[0].args.asset).to.equal(usdt.address);
+      expect(tx.logs[0].args.asset).to.equal(USDT.address);
       expect(tx.logs[0].args.to).to.equal(ASGARD1);
       expect(BN2Str(tx.logs[0].args.amount)).to.equal(_500k);
       expect(tx.logs[0].args.memo).to.equal("SWAP:THOR.RUNE");
 
-      expect(BN2Str(await usdt.balanceOf(ROUTER1.address))).to.equal(_500k);
-      expect(BN2Str(await usdt.balanceOf(USER1))).to.equal(_500k);
+      expect(BN2Str(await USDT.balanceOf(ROUTER1.address))).to.equal(_500k);
+      expect(BN2Str(await USDT.balanceOf(USER1))).to.equal(_500k);
       expect(
-        BN2Str(await ROUTER1.vaultAllowance(ASGARD1, usdt.address)),
+        BN2Str(await ROUTER1.vaultAllowance(ASGARD1, USDT.address)),
       ).to.equal(_500k);
     });
   });
 
-  describe("Fund Yggdrasil, Yggdrasil Transfer Out", function () {
-    it("Should fund yggdrasil ETH", async function () {
-      let startBal = getBN(await web3.eth.getBalance(YGGDRASIL1));
-      let tx = await ROUTER1.transferOut(YGGDRASIL1, ETH, _300, "ygg+:123", {
-        from: ASGARD1,
-        value: _400,
-      });
-
-      expect(tx.logs[0].event).to.equal("TransferOut");
-      expect(tx.logs[0].args.asset).to.equal(ETH);
-      expect(tx.logs[0].args.vault).to.equal(ASGARD1);
-      expect(BN2Str(tx.logs[0].args.amount)).to.equal(_400);
-      expect(tx.logs[0].args.memo).to.equal("ygg+:123");
-
-      let endBal = getBN(await web3.eth.getBalance(YGGDRASIL1));
-      let changeBal = BN2Str(endBal.minus(startBal));
-      expect(changeBal).to.equal(_400);
-    });
-
-    it("Should fund yggdrasil tokens", async function () {
-      let tx = await ROUTER1.transferAllowance(
-        ROUTER1.address,
-        YGGDRASIL1,
-        TOKEN.address,
-        _500k,
-        "yggdrasil+:1234",
-        { from: ASGARD1 },
-      );
-      expect(tx.logs[0].event).to.equal("TransferAllowance");
-      expect(tx.logs[0].args.newVault).to.equal(YGGDRASIL1);
-      expect(BN2Str(tx.logs[0].args.amount)).to.equal(_500k);
-
-      expect(BN2Str(await TOKEN.balanceOf(ROUTER1.address))).to.equal(_500k);
-      expect(
-        BN2Str(await ROUTER1.vaultAllowance(YGGDRASIL1, TOKEN.address)),
-      ).to.equal(_500k);
-      expect(
-        BN2Str(await ROUTER1.vaultAllowance(ASGARD1, TOKEN.address)),
-      ).to.equal("0");
-    });
-
-    it("Should transfer ETH to USER2", async function () {
-      let startBal = getBN(await web3.eth.getBalance(USER2));
-      let tx = await ROUTER1.transferOut(USER2, ETH, _10, "OUT:", {
-        from: YGGDRASIL1,
-        value: _10,
-      });
-      expect(tx.logs[0].event).to.equal("TransferOut");
-      expect(tx.logs[0].args.to).to.equal(USER2);
-      expect(tx.logs[0].args.asset).to.equal(ETH);
-      expect(tx.logs[0].args.memo).to.equal("OUT:");
-      expect(BN2Str(tx.logs[0].args.amount)).to.equal(_10);
-
-      let endBal = getBN(await web3.eth.getBalance(USER2));
-      let changeBal = BN2Str(endBal.minus(startBal));
-      expect(changeBal).to.equal(_10);
-    });
-
-    it("Should take ETH amount from the amount in transaction, instead of the amount parameter", async function () {
-      let startBal = getBN(await web3.eth.getBalance(USER2));
-      let tx = await ROUTER1.transferOut(USER2, ETH, _20, "OUT:", {
-        from: YGGDRASIL1,
-        value: _10,
-      });
-      expect(tx.logs[0].event).to.equal("TransferOut");
-      expect(tx.logs[0].args.to).to.equal(USER2);
-      expect(tx.logs[0].args.asset).to.equal(ETH);
-      expect(tx.logs[0].args.memo).to.equal("OUT:");
-      expect(BN2Str(tx.logs[0].args.amount)).to.equal(_10);
-
-      let endBal = getBN(await web3.eth.getBalance(USER2));
-      let changeBal = BN2Str(endBal.minus(startBal));
-      expect(changeBal).to.equal(_10);
-    });
-
-    it("Should transfer tokens to USER2", async function () {
-      let tx = await ROUTER1.transferOut(USER2, TOKEN.address, _100k, "OUT:", {
-        from: YGGDRASIL1,
-      });
-      expect(tx.logs[0].event).to.equal("TransferOut");
-      expect(tx.logs[0].args.to).to.equal(USER2);
-      expect(tx.logs[0].args.asset).to.equal(TOKEN.address);
-      expect(tx.logs[0].args.memo).to.equal("OUT:");
-      expect(BN2Str(tx.logs[0].args.amount)).to.equal(_100k);
-
-      expect(BN2Str(await TOKEN.balanceOf(ROUTER1.address))).to.equal(_400k);
-      expect(
-        BN2Str(await ROUTER1.vaultAllowance(YGGDRASIL1, TOKEN.address)),
-      ).to.equal(_400k);
-    });
-
-    it("Should transfer USDT to USER2", async function () {
-      let tx = await ROUTER1.transferOut(USER2, usdt.address, _500k, "OUT:", {
-        from: ASGARD1,
-      });
-      expect(tx.logs[0].event).to.equal("TransferOut");
-      expect(tx.logs[0].args.to).to.equal(USER2);
-      expect(tx.logs[0].args.asset).to.equal(usdt.address);
-      expect(tx.logs[0].args.memo).to.equal("OUT:");
-      expect(BN2Str(tx.logs[0].args.amount)).to.equal(_500k);
-
-      expect(BN2Str(await usdt.balanceOf(ROUTER1.address))).to.equal("0");
-      expect(
-        BN2Str(await ROUTER1.vaultAllowance(YGGDRASIL1, usdt.address)),
-      ).to.equal("0");
-    });
-
-    it("Should not steal TOKEN from router", async function () {
-      // router has 400k token and 500k stealing token
-      expect(BN2Str(await TOKEN.balanceOf(ROUTER1.address))).to.equal(_400k);
-      expect(BN2Str(await STEALTOKEN.balanceOf(ROUTER1.address))).to.equal(
-        _500k,
-      );
-
-      expect(
-        BN2Str(await ROUTER1.vaultAllowance(YGGDRASIL1, TOKEN.address)),
-      ).to.equal(_400k);
-      expect(
-        BN2Str(await ROUTER1.vaultAllowance(YGGDRASIL1, STEALTOKEN.address)),
-      ).to.equal(_500k);
-
-      expect(BN2Str(await TOKEN.balanceOf(USER1))).to.equal(_500k);
-      expect(BN2Str(await STEALTOKEN.balanceOf(USER1))).to.equal(_500k);
-
-      await ROUTER1.transferOut(USER1, STEALTOKEN.address, _100k, "OUT:", {
-        from: YGGDRASIL1,
-      });
-
-      expect(BN2Str(await STEALTOKEN.balanceOf(ROUTER1.address))).to.equal(
-        _400k,
-      );
-      expect(BN2Str(await TOKEN.balanceOf(ROUTER1.address))).to.equal(_400k);
-
-      expect(
-        BN2Str(await ROUTER1.vaultAllowance(YGGDRASIL1, TOKEN.address)),
-      ).to.equal(_400k);
-      expect(
-        BN2Str(await ROUTER1.vaultAllowance(YGGDRASIL1, STEALTOKEN.address)),
-      ).to.equal(_400k);
-
-      expect(BN2Str(await TOKEN.balanceOf(USER1))).to.equal(_500k);
-      expect(BN2Str(await STEALTOKEN.balanceOf(USER1))).to.equal(_600k);
-    });
-
-    it("Should spend more funds to prep balances for next tests", async function () {
-      await ROUTER1.transferOut(USER2, TOKEN.address, _150k, "OUT:", {
-        from: YGGDRASIL1,
-      });
-
-      expect(BN2Str(await TOKEN.balanceOf(ROUTER1.address))).to.equal(_250k);
-      expect(
-        BN2Str(await ROUTER1.vaultAllowance(YGGDRASIL1, TOKEN.address)),
-      ).to.equal(_250k);
-    });
-  });
-
-  describe("Yggdrasil Returns Funds, Asgard Churns, Old Vaults can't spend", function () {
-    it("Ygg returns", async function () {
-      let ethBal = _20;
-      let coins = {
-        asset: TOKEN.address,
-        amount: _250k,
-      };
-      let tx = await ROUTER1.returnVaultAssets(
-        ROUTER1.address,
-        ASGARD1,
-        [coins],
-        "yggdrasil-:1234",
-        { from: YGGDRASIL1, value: ethBal },
-      );
-      expect(tx.logs[0].event).to.equal("VaultTransfer");
-      expect(tx.logs[0].args.coins[0].asset).to.equal(TOKEN.address);
-      expect(BN2Str(tx.logs[0].args.coins[0].amount)).to.equal(_250k);
-      expect(tx.logs[0].args.memo).to.equal("yggdrasil-:1234");
-
-      expect(BN2Str(await TOKEN.balanceOf(ROUTER1.address))).to.equal(_250k);
-      expect(
-        BN2Str(await ROUTER1.vaultAllowance(YGGDRASIL1, TOKEN.address)),
-      ).to.equal("0");
-      expect(
-        BN2Str(await ROUTER1.vaultAllowance(ASGARD1, TOKEN.address)),
-      ).to.equal(_250k);
-    });
+  describe("Asgard Churns, Old Vaults can't spend", function () {
     it("Asgard Churns", async function () {
-      let tx = await ROUTER1.transferAllowance(
+      // Router holds 500k of TOKEN1, allocated to ASGARD1
+      expect(BN2Str(await TOKEN.balanceOf(ROUTER1.address))).to.equal(_500k);
+      expect(BN2Str(await ROUTER1.vaultAllowance(ASGARD1, TOKEN.address))).to.equal(_500k);
+
+      // First round, migrate half
+      // Router should still hold 500k of TOKEN1, but now half is allocared to ASGARD2
+      let tx1 = await ROUTER1.transferAllowance(
         ROUTER1.address,
         ASGARD2,
         TOKEN.address,
         _250k,
-        "migrate:1234",
+        "migrate:1",
         { from: ASGARD1 },
       );
-      expect(tx.logs[0].event).to.equal("TransferAllowance");
-      expect(tx.logs[0].args.asset).to.equal(TOKEN.address);
-      expect(BN2Str(tx.logs[0].args.amount)).to.equal(_250k);
+      expect(tx1.logs[0].event).to.equal("TransferAllowance");
+      expect(tx1.logs[0].args.asset).to.equal(TOKEN.address);
+      expect(BN2Str(tx1.logs[0].args.amount)).to.equal(_250k);
 
-      expect(BN2Str(await TOKEN.balanceOf(ROUTER1.address))).to.equal(_250k);
-      expect(
-        BN2Str(await ROUTER1.vaultAllowance(ASGARD1, TOKEN.address)),
-      ).to.equal("0");
-      expect(
-        BN2Str(await ROUTER1.vaultAllowance(ASGARD2, TOKEN.address)),
-      ).to.equal(_250k);
+      expect(BN2Str(await TOKEN.balanceOf(ROUTER1.address))).to.equal(_500k);
+      expect(BN2Str(await ROUTER1.vaultAllowance(ASGARD1, TOKEN.address))).to.equal(_250k);
+      expect(BN2Str(await ROUTER1.vaultAllowance(ASGARD2, TOKEN.address))).to.equal(_250k);
+
+      // Second round, migrate remaining half
+      // Router should still hold 500k of TOKEN1, but not all is allocated to ASGARD2
+      let tx2 = await ROUTER1.transferAllowance(
+        ROUTER1.address,
+        ASGARD2,
+        TOKEN.address,
+        _250k,
+        "migrate:2",
+        { from: ASGARD1 },
+      );
+      expect(tx2.logs[0].event).to.equal("TransferAllowance");
+      expect(tx2.logs[0].args.asset).to.equal(TOKEN.address);
+      expect(BN2Str(tx2.logs[0].args.amount)).to.equal(_250k);
+
+      expect(BN2Str(await TOKEN.balanceOf(ROUTER1.address))).to.equal(_500k);
+      expect(BN2Str(await ROUTER1.vaultAllowance(ASGARD1, TOKEN.address))).to.equal("0");
+      expect(BN2Str(await ROUTER1.vaultAllowance(ASGARD2, TOKEN.address))).to.equal(_500k);
     });
+
     it("Should fail to when old Asgard interacts", async function () {
       await truffleAssert.fails(
         ROUTER1.transferAllowance(
@@ -469,188 +280,66 @@ describe("Router contract", function () {
         truffleAssert.ErrorType.REVERT,
       );
     });
-    it("Should fail to when old Yggdrasil interacts", async function () {
-      await truffleAssert.fails(
-        ROUTER1.transferAllowance(
-          ROUTER1.address,
-          ASGARD2,
-          TOKEN.address,
-          _50k,
-          "migrate:1234",
-          { from: YGGDRASIL1 },
-        ),
-        truffleAssert.ErrorType.REVERT,
-      );
-      await truffleAssert.fails(
-        ROUTER1.transferOut(USER2, TOKEN.address, _50k, "OUT:", {
-          from: YGGDRASIL1,
-        }),
-        truffleAssert.ErrorType.REVERT,
-      );
-    });
   });
 
   describe("Upgrade contract", function () {
-    it("should return vault assets to new router", async function () {
-      let asgard1StartBalance = getBN(await web3.eth.getBalance(YGGDRASIL1));
-      await ROUTER1.depositWithExpiry(
-        YGGDRASIL1,
-        TOKEN.address,
-        _50k,
-        "SEED",
-        currentTime,
-        { from: USER1 },
-      );
-      await ROUTER1.depositWithExpiry(
-        YGGDRASIL1,
-        usdt.address,
-        _50k,
-        "SEED",
-        currentTime,
-        { from: USER1 },
-      );
-      await ROUTER1.depositWithExpiry(
-        YGGDRASIL1,
-        ETH,
-        "0",
-        "SEED ETH",
-        currentTime,
-        { from: accounts[10], value: _1 },
-      );
-
-      let ethBal = "1000000000000";
-      // console.log(ethBal)
-      // migrate _50k from asgard1 to asgard3 , to new Router3 contract
-
-      let coin1 = {
-        asset: TOKEN.address,
-        amount: _50k,
-      };
-      let coin2 = {
-        asset: usdt.address,
-        amount: _50k,
-      };
-
-      let tx = await ROUTER1.returnVaultAssets(
-        ROUTER3.address,
-        ASGARD3,
-        [coin1, coin2],
-        "yggdrasil-:1234",
-        { from: YGGDRASIL1, value: ethBal },
-      );
-
-      //console.log(tx.logs);
-      expect(tx.logs[0].event).to.equal("Deposit");
-      expect(tx.logs[0].args.to).to.equal(ASGARD3);
-      expect(tx.logs[0].args.asset).to.equal(TOKEN.address);
-      expect(tx.logs[0].args.memo).to.equal("yggdrasil-:1234");
-      expect(BN2Str(tx.logs[0].args.amount)).to.equal(_50k);
-
-      // make sure the token had been transfer to ASGARD3 and Router3
-      expect(BN2Str(await TOKEN.balanceOf(ROUTER3.address))).to.equal(_50k);
-      expect(
-        BN2Str(await ROUTER3.vaultAllowance(ASGARD3, TOKEN.address)),
-      ).to.equal(_50k);
-      expect(
-        BN2Str(await ROUTER1.vaultAllowance(ASGARD1, TOKEN.address)),
-      ).to.equal("0");
-    });
-
     it("should transfer all token and allowance to new contract", async function () {
-      let asgard1StartBalance = getBN(await web3.eth.getBalance(ASGARD1));
-      await ROUTER1.depositWithExpiry(
-        ASGARD1,
+      let asgard = accounts[5];
+      let routerCurrent = await Router.new()
+      let routerNext = await Router.new()
+
+      // Approvals - current router can spend USER1 funds (for seeding)
+      await TOKEN.approve(routerCurrent.address, _1m, { from: USER1 });
+      await USDT.approve(routerCurrent.address, _1m, { from: USER1 });
+
+      // Seed 1 ETH to asgard
+      let asgardStartBalance = getBN(await web3.eth.getBalance(asgard));
+      await routerCurrent.depositWithExpiry(
+        asgard,
+        ETH,
+        _1,
+        "SEED",
+        currentTime,
+        { from: accounts[10], value: _1 },
+      );
+      let asgardEndBalance = getBN(await web3.eth.getBalance(asgard));
+      expect(BN2Str(asgardEndBalance.minus(asgardStartBalance))).to.equal(_1);
+
+      // Seed 50k TOKEN to asgard on current router
+      await routerCurrent.depositWithExpiry(
+        asgard,
         TOKEN.address,
         _50k,
         "SEED",
         currentTime,
         { from: USER1 },
       );
-      await ROUTER1.depositWithExpiry(
-        ASGARD1,
-        usdt.address,
-        _50k,
-        "SEED",
-        currentTime,
-        { from: USER1 },
-      );
-      await ROUTER1.depositWithExpiry(
-        ASGARD1,
-        ETH,
-        "0",
-        "SEED ETH",
-        currentTime,
-        { from: accounts[10], value: _1 },
-      );
-
-      let asgard1EndBalance = getBN(await web3.eth.getBalance(ASGARD1));
-      expect(BN2Str(asgard1EndBalance.minus(asgard1StartBalance))).to.equal(_1);
-      // migrate _50k from asgard1 to asgard3 , to new Router3 contract
-      let tx = await ROUTER1.transferAllowance(
-        ROUTER3.address,
-        ASGARD3,
+      expect(BN2Str(await routerCurrent.vaultAllowance(asgard, TOKEN.address))).to.equal(_50k);
+      expect(BN2Str(await TOKEN.balanceOf(routerCurrent.address))).to.equal(_50k);
+ 
+      // Migrate 50k TOKEN to new router contract
+      let tx = await routerCurrent.transferAllowance(
+        routerNext.address,
+        asgard,
         TOKEN.address,
         _50k,
         "MIGRATE:1",
-        { from: ASGARD1 },
+        { from: asgard },
       );
-      //console.log(tx.logs);
+
       expect(tx.logs[0].event).to.equal("Deposit");
-      expect(tx.logs[0].args.to).to.equal(ASGARD3);
+      expect(tx.logs[0].args.to).to.equal(asgard);
       expect(tx.logs[0].args.asset).to.equal(TOKEN.address);
       expect(tx.logs[0].args.memo).to.equal("MIGRATE:1");
       expect(BN2Str(tx.logs[0].args.amount)).to.equal(_50k);
 
-      // make sure the token had been transfer to ASGARD3 and Router3
-      expect(BN2Str(await TOKEN.balanceOf(ROUTER3.address))).to.equal(_100k);
-      expect(
-        BN2Str(await ROUTER3.vaultAllowance(ASGARD3, TOKEN.address)),
-      ).to.equal(_100k);
-      expect(
-        BN2Str(await ROUTER1.vaultAllowance(ASGARD1, TOKEN.address)),
-      ).to.equal("0");
+      // Make sure the token has been transferred and routerNext
+      expect(BN2Str(await TOKEN.balanceOf(routerCurrent.address))).to.equal("0");
+      expect(BN2Str(await TOKEN.balanceOf(routerNext.address))).to.equal(_50k);
 
-      let tx2 = await ROUTER1.transferAllowance(
-        ROUTER3.address,
-        ASGARD3,
-        usdt.address,
-        _50k,
-        "MIGRATE:1",
-        { from: ASGARD1 },
-      );
-      expect(tx2.logs[0].event).to.equal("Deposit");
-      expect(tx2.logs[0].args.to).to.equal(ASGARD3);
-      expect(tx2.logs[0].args.asset).to.equal(usdt.address);
-      expect(tx2.logs[0].args.memo).to.equal("MIGRATE:1");
-      expect(BN2Str(tx2.logs[0].args.amount)).to.equal(_50k);
-
-      // make sure the token had been transfer to ASGARD3 and Router3
-      expect(BN2Str(await usdt.balanceOf(ROUTER3.address))).to.equal(_100k);
-      expect(
-        BN2Str(await ROUTER3.vaultAllowance(ASGARD3, usdt.address)),
-      ).to.equal(_100k);
-      expect(
-        BN2Str(await ROUTER1.vaultAllowance(ASGARD1, usdt.address)),
-      ).to.equal("0");
-
-      let asgard3StartBalance = getBN(await web3.eth.getBalance(ASGARD3));
-      // this ignore the gas cost on ASGARD1
-      // transfer out ETH.ETH
-      let tx1 = await ROUTER1.transferOut(ASGARD3, ETH, "0", "MIGRATE:1", {
-        from: ASGARD1,
-        value: _5000,
-      });
-      // console.log(tx1.logs)
-      expect(tx1.logs[0].event).to.equal("TransferOut");
-      expect(tx1.logs[0].args.vault).to.equal(ASGARD1);
-      expect(tx1.logs[0].args.to).to.equal(ASGARD3);
-      expect(tx1.logs[0].args.asset).to.equal(ETH);
-      expect(tx1.logs[0].args.memo).to.equal("MIGRATE:1");
-
-      let asgard3EndBalance = getBN(await web3.eth.getBalance(ASGARD3));
-      expect(BN2Str(asgard3EndBalance.minus(asgard3StartBalance))).to.equal(
-        _5000,
-      );
+      // Make sure the token vault allowance has moved from routerCurrent to routerNext
+      expect(BN2Str(await routerNext.vaultAllowance(asgard, TOKEN.address))).to.equal(_50k);
+      expect(BN2Str(await routerCurrent.vaultAllowance(asgard, TOKEN.address))).to.equal("0");
     });
   });
 
@@ -680,10 +369,10 @@ describe("Router contract", function () {
         ETH,
         _10,
         "OUT:",
-        { from: YGGDRASIL1, value: _10 },
+        { from: ASGARD1, value: _10 },
       );
       // Should emit a valid log ("fire and forget")
-      expect(tx.logs[0].event).to.equal("TransferOut");
+      expect(tx.logs[0].event).to.equal("TransferOutFail");
       expect(tx.logs[0].args.to).to.equal(REVERTINGCONTRACT.address);
       expect(tx.logs[0].args.asset).to.equal(ETH);
       expect(tx.logs[0].args.memo).to.equal("OUT:");
@@ -700,10 +389,10 @@ describe("Router contract", function () {
         ETH,
         _10,
         "OUT:",
-        { from: YGGDRASIL1, value: _10 },
+        { from: ASGARD1, value: _10 },
       );
       // Should emit a valid log ("fire and forget")
-      expect(tx.logs[0].event).to.equal("TransferOut");
+      expect(tx.logs[0].event).to.equal("TransferOutFail");
       expect(tx.logs[0].args.to).to.equal(EVILCALLBACK.address);
       expect(tx.logs[0].args.asset).to.equal(ETH);
       expect(tx.logs[0].args.memo).to.equal("OUT:");
