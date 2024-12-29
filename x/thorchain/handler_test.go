@@ -234,6 +234,9 @@ func setupKeeperForTest(c *C) (cosmos.Context, keeper.Keeper) {
 	c.Assert(bk.MintCoins(ctx, ModuleName, cosmos.Coins{
 		cosmos.NewCoin(common.RuneAsset().Native(), cosmos.NewInt(200_000_000_00000000)),
 	}), IsNil)
+	c.Assert(bk.BurnCoins(ctx, ModuleName, cosmos.Coins{
+		cosmos.NewCoin(common.RuneAsset().Native(), cosmos.NewInt(200_000_000_00000000)),
+	}), IsNil)
 	uk := upgradekeeper.NewKeeper(
 		nil,
 		runtime.NewKVStoreService(keyUpgrade),
@@ -243,7 +246,6 @@ func setupKeeperForTest(c *C) (cosmos.Context, keeper.Keeper) {
 		authtypes.NewModuleAddress(ModuleName).String(),
 	)
 	k := kv1.NewKVStore(encodingConfig.Codec, bk, ak, uk, keyThorchain, GetCurrentVersion())
-	FundModule(c, ctx, k, ModuleName, 1000000*common.One)
 	FundModule(c, ctx, k, AsgardName, common.One)
 	FundModule(c, ctx, k, ReserveName, 10000*common.One)
 	err = k.SaveNetworkFee(ctx, common.ETHChain, NetworkFee{
