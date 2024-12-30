@@ -169,7 +169,7 @@ contract THORChain_Router {
 
   //############################## ALLOWANCE TRANSFERS ##############################
 
-  // Use for "moving" assets between vaults (asgard<>ygg), as well "churning" to a new Asgard
+  // Use for "churning" assets to a new Asgard vault
   function transferAllowance(
     address router,
     address newVault,
