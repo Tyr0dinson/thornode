@@ -546,22 +546,19 @@ endpoint: http://localhost:1317/thorchain/block
 asserts:
   - .|[..|select(.type? == "swap")] | length == 1
   - ..|select(.type? == "swap").id == "{{ native_txid -2 }}"
-  - ..|select(.type? == "swap").coin == "${INPUT_3=4679981} BTC-BTC"
+  - ..|select(.type? == "swap").coin == "${INPUT_3=2339991} BTC-BTC"
   - ..|select(.type? == "swap").emit_asset == "${OUTPUT_3=1948538383} THOR.RUNE"
   - ..|select(.type? == "swap").streaming_swap_count == "${QUANTITY}" # Final sub-swap.
   - ..|select(.type? == "swap").streaming_swap_quantity == "${QUANTITY}"
   ##
   - .|[..|select(.type? == "secured_asset_withdraw")] | length == 1
-  - ..|select(.type? == "secured_asset_withdraw").amount != "${INPUT_3}"
-  - ..|select(.type? == "secured_asset_withdraw").amount == "${REAL_INPUT_3=2339991}"
-  # The swap event does not accurately reflect the swap input (interfering with Midgard pool depth aggregation).
-  - ${INPUT_1} + ${INPUT_2} + ${INPUT_3} > ${TOTAL_INPUT} # The swap events indicate double-spending (which has not taken place).
-  - ${INPUT_1} + ${INPUT_2} + ${REAL_INPUT_3} == ${TOTAL_INPUT} # As it should be.
+  - ..|select(.type? == "secured_asset_withdraw").amount == "${INPUT_3}"
+  - ${INPUT_1} + ${INPUT_2} + ${INPUT_3} == ${TOTAL_INPUT} # As it should be.
   ##
   - ${OUTPUT_1} / ${INPUT_1} | floor == 906
   - ${OUTPUT_2} / ${INPUT_2} | floor == 868
-  - ${OUTPUT_3} / ${REAL_INPUT_3} | floor == 832 # The real input is consistent with the output, as it should be.
-  - ${OUTPUT_3} / ${INPUT_3} | floor == 416 # The swap event input is inconsistent with the output.
+  - ${OUTPUT_3} / ${INPUT_3} | floor == 832
+  # The output ratios are consistent, going down as the input depth increases and the output depth decreases.
   ##
   - .|[..|select(.type? == "streaming_swap")] | length == 1
   - ..|select(.type? == "streaming_swap").deposit == "${TOTAL_INPUT} BTC-BTC"
