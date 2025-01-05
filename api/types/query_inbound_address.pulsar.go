@@ -631,45 +631,45 @@ func (x *fastReflection_QueryInboundAddressResponse) ProtoMethods() *protoiface.
 			i -= len(x.unknownFields)
 			copy(dAtA[i:], x.unknownFields)
 		}
+		if len(x.ObservedFeeRate) > 0 {
+			i -= len(x.ObservedFeeRate)
+			copy(dAtA[i:], x.ObservedFeeRate)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.ObservedFeeRate)))
+			i--
+			dAtA[i] = 0x72
+		}
 		if len(x.DustThreshold) > 0 {
 			i -= len(x.DustThreshold)
 			copy(dAtA[i:], x.DustThreshold)
 			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.DustThreshold)))
 			i--
-			dAtA[i] = 0x72
+			dAtA[i] = 0x6a
 		}
 		if len(x.OutboundFee) > 0 {
 			i -= len(x.OutboundFee)
 			copy(dAtA[i:], x.OutboundFee)
 			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.OutboundFee)))
 			i--
-			dAtA[i] = 0x6a
+			dAtA[i] = 0x62
 		}
 		if len(x.OutboundTxSize) > 0 {
 			i -= len(x.OutboundTxSize)
 			copy(dAtA[i:], x.OutboundTxSize)
 			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.OutboundTxSize)))
 			i--
-			dAtA[i] = 0x62
+			dAtA[i] = 0x5a
 		}
 		if len(x.GasRateUnits) > 0 {
 			i -= len(x.GasRateUnits)
 			copy(dAtA[i:], x.GasRateUnits)
 			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.GasRateUnits)))
 			i--
-			dAtA[i] = 0x5a
+			dAtA[i] = 0x52
 		}
 		if len(x.GasRate) > 0 {
 			i -= len(x.GasRate)
 			copy(dAtA[i:], x.GasRate)
 			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.GasRate)))
-			i--
-			dAtA[i] = 0x52
-		}
-		if len(x.ObservedFeeRate) > 0 {
-			i -= len(x.ObservedFeeRate)
-			copy(dAtA[i:], x.ObservedFeeRate)
-			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.ObservedFeeRate)))
 			i--
 			dAtA[i] = 0x4a
 		}
@@ -998,7 +998,7 @@ func (x *fastReflection_QueryInboundAddressResponse) ProtoMethods() *protoiface.
 					}
 				}
 				x.ChainLpActionsPaused = bool(v != 0)
-			case 9:
+			case 14:
 				if wireType != 2 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field ObservedFeeRate", wireType)
 				}
@@ -1030,7 +1030,7 @@ func (x *fastReflection_QueryInboundAddressResponse) ProtoMethods() *protoiface.
 				}
 				x.ObservedFeeRate = string(dAtA[iNdEx:postIndex])
 				iNdEx = postIndex
-			case 10:
+			case 9:
 				if wireType != 2 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field GasRate", wireType)
 				}
@@ -1062,7 +1062,7 @@ func (x *fastReflection_QueryInboundAddressResponse) ProtoMethods() *protoiface.
 				}
 				x.GasRate = string(dAtA[iNdEx:postIndex])
 				iNdEx = postIndex
-			case 11:
+			case 10:
 				if wireType != 2 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field GasRateUnits", wireType)
 				}
@@ -1094,7 +1094,7 @@ func (x *fastReflection_QueryInboundAddressResponse) ProtoMethods() *protoiface.
 				}
 				x.GasRateUnits = string(dAtA[iNdEx:postIndex])
 				iNdEx = postIndex
-			case 12:
+			case 11:
 				if wireType != 2 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field OutboundTxSize", wireType)
 				}
@@ -1126,7 +1126,7 @@ func (x *fastReflection_QueryInboundAddressResponse) ProtoMethods() *protoiface.
 				}
 				x.OutboundTxSize = string(dAtA[iNdEx:postIndex])
 				iNdEx = postIndex
-			case 13:
+			case 12:
 				if wireType != 2 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field OutboundFee", wireType)
 				}
@@ -1158,7 +1158,7 @@ func (x *fastReflection_QueryInboundAddressResponse) ProtoMethods() *protoiface.
 				}
 				x.OutboundFee = string(dAtA[iNdEx:postIndex])
 				iNdEx = postIndex
-			case 14:
+			case 13:
 				if wireType != 2 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field DustThreshold", wireType)
 				}
@@ -2170,17 +2170,17 @@ type QueryInboundAddressResponse struct {
 	// Returns true if LP actions are paused for this chain
 	ChainLpActionsPaused bool `protobuf:"varint,8,opt,name=chain_lp_actions_paused,json=chainLpActionsPaused,proto3" json:"chain_lp_actions_paused,omitempty"`
 	// The chain's observed fee rate in 1e8 format, before the 1.5x that makes an outbound more likely to have a sufficient gas rate.  Used by validators to check whether they need to report a fee change.
-	ObservedFeeRate string `protobuf:"bytes,9,opt,name=observed_fee_rate,json=observedFeeRate,proto3" json:"observed_fee_rate,omitempty"`
+	ObservedFeeRate string `protobuf:"bytes,14,opt,name=observed_fee_rate,json=observedFeeRate,proto3" json:"observed_fee_rate,omitempty"`
 	// The minimum fee rate used by vaults to send outbound TXs. The actual fee rate may be higher. For EVM chains this is returned in gwei (1e9).
-	GasRate string `protobuf:"bytes,10,opt,name=gas_rate,json=gasRate,proto3" json:"gas_rate,omitempty"`
+	GasRate string `protobuf:"bytes,9,opt,name=gas_rate,json=gasRate,proto3" json:"gas_rate,omitempty"`
 	// Units of the gas_rate.
-	GasRateUnits string `protobuf:"bytes,11,opt,name=gas_rate_units,json=gasRateUnits,proto3" json:"gas_rate_units,omitempty"`
+	GasRateUnits string `protobuf:"bytes,10,opt,name=gas_rate_units,json=gasRateUnits,proto3" json:"gas_rate_units,omitempty"`
 	// Avg size of outbound TXs on each chain. For UTXO chains it may be larger than average, as it takes into account vault consolidation txs, which can have many vouts
-	OutboundTxSize string `protobuf:"bytes,12,opt,name=outbound_tx_size,json=outboundTxSize,proto3" json:"outbound_tx_size,omitempty"`
+	OutboundTxSize string `protobuf:"bytes,11,opt,name=outbound_tx_size,json=outboundTxSize,proto3" json:"outbound_tx_size,omitempty"`
 	// The total outbound fee charged to the user for outbound txs in the gas asset of the chain.
-	OutboundFee string `protobuf:"bytes,13,opt,name=outbound_fee,json=outboundFee,proto3" json:"outbound_fee,omitempty"`
+	OutboundFee string `protobuf:"bytes,12,opt,name=outbound_fee,json=outboundFee,proto3" json:"outbound_fee,omitempty"`
 	// Defines the minimum transaction size for the chain in base units (sats, wei, uatom). Transactions with asset amounts lower than the dust_threshold are ignored.
-	DustThreshold string `protobuf:"bytes,14,opt,name=dust_threshold,json=dustThreshold,proto3" json:"dust_threshold,omitempty"`
+	DustThreshold string `protobuf:"bytes,13,opt,name=dust_threshold,json=dustThreshold,proto3" json:"dust_threshold,omitempty"`
 }
 
 func (x *QueryInboundAddressResponse) Reset() {
@@ -2404,19 +2404,19 @@ var file_types_query_inbound_address_proto_rawDesc = []byte{
 	0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x73, 0x5f, 0x70, 0x61, 0x75, 0x73, 0x65, 0x64, 0x52, 0x14,
 	0x63, 0x68, 0x61, 0x69, 0x6e, 0x4c, 0x70, 0x41, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x73, 0x50, 0x61,
 	0x75, 0x73, 0x65, 0x64, 0x12, 0x2a, 0x0a, 0x11, 0x6f, 0x62, 0x73, 0x65, 0x72, 0x76, 0x65, 0x64,
-	0x5f, 0x66, 0x65, 0x65, 0x5f, 0x72, 0x61, 0x74, 0x65, 0x18, 0x09, 0x20, 0x01, 0x28, 0x09, 0x52,
+	0x5f, 0x66, 0x65, 0x65, 0x5f, 0x72, 0x61, 0x74, 0x65, 0x18, 0x0e, 0x20, 0x01, 0x28, 0x09, 0x52,
 	0x0f, 0x6f, 0x62, 0x73, 0x65, 0x72, 0x76, 0x65, 0x64, 0x46, 0x65, 0x65, 0x52, 0x61, 0x74, 0x65,
-	0x12, 0x19, 0x0a, 0x08, 0x67, 0x61, 0x73, 0x5f, 0x72, 0x61, 0x74, 0x65, 0x18, 0x0a, 0x20, 0x01,
+	0x12, 0x19, 0x0a, 0x08, 0x67, 0x61, 0x73, 0x5f, 0x72, 0x61, 0x74, 0x65, 0x18, 0x09, 0x20, 0x01,
 	0x28, 0x09, 0x52, 0x07, 0x67, 0x61, 0x73, 0x52, 0x61, 0x74, 0x65, 0x12, 0x24, 0x0a, 0x0e, 0x67,
-	0x61, 0x73, 0x5f, 0x72, 0x61, 0x74, 0x65, 0x5f, 0x75, 0x6e, 0x69, 0x74, 0x73, 0x18, 0x0b, 0x20,
+	0x61, 0x73, 0x5f, 0x72, 0x61, 0x74, 0x65, 0x5f, 0x75, 0x6e, 0x69, 0x74, 0x73, 0x18, 0x0a, 0x20,
 	0x01, 0x28, 0x09, 0x52, 0x0c, 0x67, 0x61, 0x73, 0x52, 0x61, 0x74, 0x65, 0x55, 0x6e, 0x69, 0x74,
 	0x73, 0x12, 0x28, 0x0a, 0x10, 0x6f, 0x75, 0x74, 0x62, 0x6f, 0x75, 0x6e, 0x64, 0x5f, 0x74, 0x78,
-	0x5f, 0x73, 0x69, 0x7a, 0x65, 0x18, 0x0c, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0e, 0x6f, 0x75, 0x74,
+	0x5f, 0x73, 0x69, 0x7a, 0x65, 0x18, 0x0b, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0e, 0x6f, 0x75, 0x74,
 	0x62, 0x6f, 0x75, 0x6e, 0x64, 0x54, 0x78, 0x53, 0x69, 0x7a, 0x65, 0x12, 0x21, 0x0a, 0x0c, 0x6f,
-	0x75, 0x74, 0x62, 0x6f, 0x75, 0x6e, 0x64, 0x5f, 0x66, 0x65, 0x65, 0x18, 0x0d, 0x20, 0x01, 0x28,
+	0x75, 0x74, 0x62, 0x6f, 0x75, 0x6e, 0x64, 0x5f, 0x66, 0x65, 0x65, 0x18, 0x0c, 0x20, 0x01, 0x28,
 	0x09, 0x52, 0x0b, 0x6f, 0x75, 0x74, 0x62, 0x6f, 0x75, 0x6e, 0x64, 0x46, 0x65, 0x65, 0x12, 0x25,
 	0x0a, 0x0e, 0x64, 0x75, 0x73, 0x74, 0x5f, 0x74, 0x68, 0x72, 0x65, 0x73, 0x68, 0x6f, 0x6c, 0x64,
-	0x18, 0x0e, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0d, 0x64, 0x75, 0x73, 0x74, 0x54, 0x68, 0x72, 0x65,
+	0x18, 0x0d, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0d, 0x64, 0x75, 0x73, 0x74, 0x54, 0x68, 0x72, 0x65,
 	0x73, 0x68, 0x6f, 0x6c, 0x64, 0x22, 0x36, 0x0a, 0x1c, 0x51, 0x75, 0x65, 0x72, 0x79, 0x49, 0x6e,
 	0x62, 0x6f, 0x75, 0x6e, 0x64, 0x41, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x65, 0x73, 0x52, 0x65,
 	0x71, 0x75, 0x65, 0x73, 0x74, 0x12, 0x16, 0x0a, 0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x18,

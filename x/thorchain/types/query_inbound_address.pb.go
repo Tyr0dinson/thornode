@@ -37,17 +37,17 @@ type QueryInboundAddressResponse struct {
 	// Returns true if LP actions are paused for this chain
 	ChainLpActionsPaused bool `protobuf:"varint,8,opt,name=chain_lp_actions_paused,json=chainLpActionsPaused,proto3" json:"chain_lp_actions_paused"`
 	// The chain's observed fee rate in 1e8 format, before the 1.5x that makes an outbound more likely to have a sufficient gas rate.  Used by validators to check whether they need to report a fee change.
-	ObservedFeeRate string `protobuf:"bytes,9,opt,name=observed_fee_rate,json=observedFeeRate,proto3" json:"observed_fee_rate,omitempty"`
+	ObservedFeeRate string `protobuf:"bytes,14,opt,name=observed_fee_rate,json=observedFeeRate,proto3" json:"observed_fee_rate,omitempty"`
 	// The minimum fee rate used by vaults to send outbound TXs. The actual fee rate may be higher. For EVM chains this is returned in gwei (1e9).
-	GasRate string `protobuf:"bytes,10,opt,name=gas_rate,json=gasRate,proto3" json:"gas_rate,omitempty"`
+	GasRate string `protobuf:"bytes,9,opt,name=gas_rate,json=gasRate,proto3" json:"gas_rate,omitempty"`
 	// Units of the gas_rate.
-	GasRateUnits string `protobuf:"bytes,11,opt,name=gas_rate_units,json=gasRateUnits,proto3" json:"gas_rate_units,omitempty"`
+	GasRateUnits string `protobuf:"bytes,10,opt,name=gas_rate_units,json=gasRateUnits,proto3" json:"gas_rate_units,omitempty"`
 	// Avg size of outbound TXs on each chain. For UTXO chains it may be larger than average, as it takes into account vault consolidation txs, which can have many vouts
-	OutboundTxSize string `protobuf:"bytes,12,opt,name=outbound_tx_size,json=outboundTxSize,proto3" json:"outbound_tx_size,omitempty"`
+	OutboundTxSize string `protobuf:"bytes,11,opt,name=outbound_tx_size,json=outboundTxSize,proto3" json:"outbound_tx_size,omitempty"`
 	// The total outbound fee charged to the user for outbound txs in the gas asset of the chain.
-	OutboundFee string `protobuf:"bytes,13,opt,name=outbound_fee,json=outboundFee,proto3" json:"outbound_fee,omitempty"`
+	OutboundFee string `protobuf:"bytes,12,opt,name=outbound_fee,json=outboundFee,proto3" json:"outbound_fee,omitempty"`
 	// Defines the minimum transaction size for the chain in base units (sats, wei, uatom). Transactions with asset amounts lower than the dust_threshold are ignored.
-	DustThreshold string `protobuf:"bytes,14,opt,name=dust_threshold,json=dustThreshold,proto3" json:"dust_threshold,omitempty"`
+	DustThreshold string `protobuf:"bytes,13,opt,name=dust_threshold,json=dustThreshold,proto3" json:"dust_threshold,omitempty"`
 }
 
 func (m *QueryInboundAddressResponse) Reset()         { *m = QueryInboundAddressResponse{} }
@@ -298,20 +298,20 @@ var fileDescriptor_cd4cb06f1e5d4e87 = []byte{
 	0xa3, 0xcb, 0x59, 0x67, 0x6d, 0xdf, 0x21, 0x9a, 0xfe, 0xeb, 0xe5, 0xc0, 0xbe, 0xd1, 0x46, 0x09,
 	0xe3, 0x63, 0x15, 0x8a, 0x58, 0x96, 0x76, 0x75, 0x6d, 0x77, 0xb8, 0x9c, 0x75, 0xee, 0x92, 0x38,
 	0xe6, 0x9e, 0x8b, 0xe4, 0xd4, 0xe0, 0xc2, 0xf3, 0x05, 0xec, 0x09, 0x57, 0x62, 0x7a, 0x8d, 0x1e,
-	0xbb, 0x44, 0x64, 0x29, 0x57, 0x48, 0xb7, 0xf5, 0xab, 0xdd, 0x2f, 0x1b, 0xe7, 0x88, 0x0e, 0x57,
-	0x48, 0x0e, 0xa0, 0xee, 0x73, 0x69, 0x24, 0x60, 0x5e, 0xdc, 0xe7, 0x52, 0xb7, 0x9e, 0x41, 0xab,
-	0x6c, 0xb1, 0x2c, 0x0e, 0x95, 0xa4, 0x0d, 0x2d, 0x68, 0x16, 0x82, 0x4f, 0x39, 0x23, 0x7d, 0xd8,
-	0x15, 0x99, 0x32, 0xb9, 0x51, 0x13, 0x26, 0xc3, 0x1b, 0xa4, 0x4d, 0xad, 0x6b, 0x95, 0x7c, 0x34,
-	0xf9, 0x18, 0xde, 0x20, 0x39, 0x82, 0xe6, 0x1f, 0xe5, 0x25, 0x22, 0xdd, 0xd1, 0xaa, 0x46, 0xc9,
-	0xce, 0x11, 0xc9, 0x73, 0x68, 0x79, 0x99, 0x54, 0x4c, 0x05, 0x29, 0xca, 0x40, 0x44, 0x1e, 0x6d,
-	0x69, 0xd1, 0x4e, 0x4e, 0x47, 0x25, 0xec, 0xbd, 0x84, 0x27, 0x6b, 0x32, 0x87, 0xd2, 0xc1, 0xab,
+	0xbb, 0x44, 0x64, 0x29, 0x57, 0x48, 0x5b, 0xfa, 0xd5, 0xee, 0x97, 0x8d, 0x73, 0x44, 0x87, 0x2b,
+	0x24, 0x07, 0x50, 0xf7, 0xb9, 0x34, 0x92, 0x6d, 0xf3, 0xe2, 0x3e, 0x97, 0xba, 0xf5, 0x0c, 0x5a,
+	0x65, 0x8b, 0x65, 0x71, 0xa8, 0x24, 0x05, 0x2d, 0x68, 0x16, 0x82, 0x4f, 0x39, 0x23, 0x7d, 0xd8,
+	0x15, 0x99, 0x32, 0xb9, 0x51, 0x13, 0x26, 0xc3, 0x1b, 0xa4, 0x0d, 0xad, 0x6b, 0x95, 0x7c, 0x34,
+	0xf9, 0x18, 0xde, 0x20, 0x39, 0x82, 0xe6, 0x1f, 0xe5, 0x25, 0x22, 0x6d, 0x6a, 0x55, 0xa3, 0x64,
+	0xe7, 0x88, 0xe4, 0x39, 0xb4, 0xbc, 0x4c, 0x2a, 0xa6, 0x82, 0x14, 0x65, 0x20, 0x22, 0x8f, 0xee,
+	0x68, 0xd1, 0x4e, 0x4e, 0x47, 0x25, 0xec, 0xbd, 0x84, 0x27, 0x6b, 0x32, 0x87, 0xd2, 0xc1, 0xab,
 	0x0c, 0xa5, 0xca, 0xb3, 0x12, 0x60, 0xe8, 0x07, 0xaa, 0x48, 0x5d, 0x51, 0xf5, 0x12, 0x78, 0x7a,
 	0xc7, 0x5c, 0x91, 0xd6, 0x77, 0xb0, 0xb7, 0xb2, 0x03, 0x28, 0xa9, 0xd5, 0xdd, 0xec, 0x37, 0x8e,
 	0x7b, 0x03, 0xbd, 0x06, 0x83, 0xff, 0x84, 0xdd, 0xd9, 0x0d, 0x57, 0x8c, 0xcf, 0x2e, 0xbe, 0xcf,
 	0x6d, 0xeb, 0x76, 0x6e, 0x5b, 0x3f, 0xe7, 0xb6, 0xf5, 0x6d, 0x61, 0x6f, 0xdc, 0x2e, 0xec, 0x8d,
 	0x1f, 0x0b, 0x7b, 0xe3, 0xf3, 0xb1, 0x1f, 0xaa, 0x88, 0xbb, 0x83, 0xb1, 0xf8, 0x3a, 0x54, 0x81,
 	0x48, 0xf5, 0x97, 0xd4, 0xa7, 0x58, 0x78, 0x38, 0xbc, 0x3e, 0x19, 0x4e, 0xfe, 0xe6, 0xf9, 0xdd,
-	0x6e, 0x55, 0xef, 0xdc, 0xc9, 0xef, 0x00, 0x00, 0x00, 0xff, 0xff, 0xc2, 0x5f, 0xb5, 0x19, 0xb5,
+	0x6e, 0x55, 0xef, 0xdc, 0xc9, 0xef, 0x00, 0x00, 0x00, 0xff, 0xff, 0xfd, 0x7f, 0x74, 0xb9, 0xb5,
 	0x03, 0x00, 0x00,
 }
 
@@ -335,45 +335,45 @@ func (m *QueryInboundAddressResponse) MarshalToSizedBuffer(dAtA []byte) (int, er
 	_ = i
 	var l int
 	_ = l
+	if len(m.ObservedFeeRate) > 0 {
+		i -= len(m.ObservedFeeRate)
+		copy(dAtA[i:], m.ObservedFeeRate)
+		i = encodeVarintQueryInboundAddress(dAtA, i, uint64(len(m.ObservedFeeRate)))
+		i--
+		dAtA[i] = 0x72
+	}
 	if len(m.DustThreshold) > 0 {
 		i -= len(m.DustThreshold)
 		copy(dAtA[i:], m.DustThreshold)
 		i = encodeVarintQueryInboundAddress(dAtA, i, uint64(len(m.DustThreshold)))
 		i--
-		dAtA[i] = 0x72
+		dAtA[i] = 0x6a
 	}
 	if len(m.OutboundFee) > 0 {
 		i -= len(m.OutboundFee)
 		copy(dAtA[i:], m.OutboundFee)
 		i = encodeVarintQueryInboundAddress(dAtA, i, uint64(len(m.OutboundFee)))
 		i--
-		dAtA[i] = 0x6a
+		dAtA[i] = 0x62
 	}
 	if len(m.OutboundTxSize) > 0 {
 		i -= len(m.OutboundTxSize)
 		copy(dAtA[i:], m.OutboundTxSize)
 		i = encodeVarintQueryInboundAddress(dAtA, i, uint64(len(m.OutboundTxSize)))
 		i--
-		dAtA[i] = 0x62
+		dAtA[i] = 0x5a
 	}
 	if len(m.GasRateUnits) > 0 {
 		i -= len(m.GasRateUnits)
 		copy(dAtA[i:], m.GasRateUnits)
 		i = encodeVarintQueryInboundAddress(dAtA, i, uint64(len(m.GasRateUnits)))
 		i--
-		dAtA[i] = 0x5a
+		dAtA[i] = 0x52
 	}
 	if len(m.GasRate) > 0 {
 		i -= len(m.GasRate)
 		copy(dAtA[i:], m.GasRate)
 		i = encodeVarintQueryInboundAddress(dAtA, i, uint64(len(m.GasRate)))
-		i--
-		dAtA[i] = 0x52
-	}
-	if len(m.ObservedFeeRate) > 0 {
-		i -= len(m.ObservedFeeRate)
-		copy(dAtA[i:], m.ObservedFeeRate)
-		i = encodeVarintQueryInboundAddress(dAtA, i, uint64(len(m.ObservedFeeRate)))
 		i--
 		dAtA[i] = 0x4a
 	}
@@ -560,10 +560,6 @@ func (m *QueryInboundAddressResponse) Size() (n int) {
 	if m.ChainLpActionsPaused {
 		n += 2
 	}
-	l = len(m.ObservedFeeRate)
-	if l > 0 {
-		n += 1 + l + sovQueryInboundAddress(uint64(l))
-	}
 	l = len(m.GasRate)
 	if l > 0 {
 		n += 1 + l + sovQueryInboundAddress(uint64(l))
@@ -581,6 +577,10 @@ func (m *QueryInboundAddressResponse) Size() (n int) {
 		n += 1 + l + sovQueryInboundAddress(uint64(l))
 	}
 	l = len(m.DustThreshold)
+	if l > 0 {
+		n += 1 + l + sovQueryInboundAddress(uint64(l))
+	}
+	l = len(m.ObservedFeeRate)
 	if l > 0 {
 		n += 1 + l + sovQueryInboundAddress(uint64(l))
 	}
@@ -860,38 +860,6 @@ func (m *QueryInboundAddressResponse) Unmarshal(dAtA []byte) error {
 			m.ChainLpActionsPaused = bool(v != 0)
 		case 9:
 			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field ObservedFeeRate", wireType)
-			}
-			var stringLen uint64
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowQueryInboundAddress
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				stringLen |= uint64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			intStringLen := int(stringLen)
-			if intStringLen < 0 {
-				return ErrInvalidLengthQueryInboundAddress
-			}
-			postIndex := iNdEx + intStringLen
-			if postIndex < 0 {
-				return ErrInvalidLengthQueryInboundAddress
-			}
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.ObservedFeeRate = string(dAtA[iNdEx:postIndex])
-			iNdEx = postIndex
-		case 10:
-			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field GasRate", wireType)
 			}
 			var stringLen uint64
@@ -922,7 +890,7 @@ func (m *QueryInboundAddressResponse) Unmarshal(dAtA []byte) error {
 			}
 			m.GasRate = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
-		case 11:
+		case 10:
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field GasRateUnits", wireType)
 			}
@@ -954,7 +922,7 @@ func (m *QueryInboundAddressResponse) Unmarshal(dAtA []byte) error {
 			}
 			m.GasRateUnits = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
-		case 12:
+		case 11:
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field OutboundTxSize", wireType)
 			}
@@ -986,7 +954,7 @@ func (m *QueryInboundAddressResponse) Unmarshal(dAtA []byte) error {
 			}
 			m.OutboundTxSize = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
-		case 13:
+		case 12:
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field OutboundFee", wireType)
 			}
@@ -1018,7 +986,7 @@ func (m *QueryInboundAddressResponse) Unmarshal(dAtA []byte) error {
 			}
 			m.OutboundFee = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
-		case 14:
+		case 13:
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field DustThreshold", wireType)
 			}
@@ -1049,6 +1017,38 @@ func (m *QueryInboundAddressResponse) Unmarshal(dAtA []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			m.DustThreshold = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 14:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ObservedFeeRate", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryInboundAddress
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthQueryInboundAddress
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthQueryInboundAddress
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.ObservedFeeRate = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
