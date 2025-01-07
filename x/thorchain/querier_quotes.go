@@ -1174,7 +1174,7 @@ func (qs queryServer) queryQuoteLoanOpen(ctx cosmos.Context, req *types.QueryQuo
 	}
 
 	// generate random address for collateral owner
-	randomCollateralOwner, err := types.GetRandomPubKey().GetAddress(asset.Chain)
+	randomCollateralOwner, err := types.GetRandomPubkeyForChain(asset.Chain).GetAddress(asset.Chain)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate address: %w", err)
 	}
@@ -1211,7 +1211,7 @@ func (qs queryServer) queryQuoteLoanOpen(ctx cosmos.Context, req *types.QueryQuo
 		}
 
 	} else {
-		destination, err = types.GetRandomPubKey().GetAddress(targetAsset.Chain)
+		destination, err = types.GetRandomPubkeyForChain(targetAsset.Chain).GetAddress(targetAsset.Chain)
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate address: %w", err)
 		}
@@ -1734,7 +1734,7 @@ func (qs queryServer) queryQuoteLoanClose(ctx cosmos.Context, req *types.QueryQu
 	}
 
 	// generate random from address
-	fromAddress, err := types.GetRandomPubKey().GetAddress(asset.Chain)
+	fromAddress, err := types.GetRandomPubkeyForChain(asset.Chain).GetAddress(asset.Chain)
 	if err != nil {
 		return nil, fmt.Errorf("bad from address: %w", err)
 	}
