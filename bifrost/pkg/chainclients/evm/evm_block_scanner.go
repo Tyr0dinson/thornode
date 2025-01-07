@@ -315,7 +315,13 @@ func (e *EVMScanner) processBlock(block *etypes.Block) (stypes.TxIn, error) {
 			txsGas = append(txsGas, tx.GasPrice())
 		}
 	}
-	e.updateGasPrice(txsGas)
+
+	// use different gas calculation if ETH
+	if e.cfg.ChainID.Equals(common.ETHChain) {
+		e.updateGasPriceETH(block.BaseFee(), txsGas)
+	} else {
+		e.updateGasPrice(txsGas)
+	}
 
 	// process reorg if possible on this chain
 	if e.cfg.MaxReorgRescanBlocks > 0 {
@@ -774,6 +780,69 @@ func (e *EVMScanner) updateGasPrice(prices []*big.Int) {
 	gasPriceFloat, _ := new(big.Float).SetInt64(e.gasPrice.Int64()).Float64()
 	e.m.GetGauge(metrics.GasPrice(e.cfg.ChainID)).Set(gasPriceFloat)
 	e.m.GetCounter(metrics.GasPriceChange(e.cfg.ChainID)).Inc()
+}
+
+// updateGasPrice records base fee + 25th percentile priority fee, rounded up 10 gwei.
+// TOOD: fold this into the function(s) above
+func (e *EVMScanner) updateGasPriceETH(baseFee *big.Int, priorityFees []*big.Int) {
+	// skip empty blocks
+	if len(priorityFees) == 0 {
+		return
+	}
+
+	// find the 25th percentile priority fee in the block
+	sort.Slice(priorityFees, func(i, j int) bool { return priorityFees[i].Cmp(priorityFees[j]) == -1 })
+	priorityFee := priorityFees[len(priorityFees)/4]
+
+	// consider gas price as base fee + 25th percentile priority fee
+	gasPriceWei := new(big.Int).Add(baseFee, priorityFee)
+
+	// round the price up to nearest configured resolution
+	resolution := big.NewInt(e.cfg.GasPriceResolution)
+	gasPriceWei.Add(gasPriceWei, new(big.Int).Sub(resolution, big.NewInt(1)))
+	gasPriceWei = gasPriceWei.Div(gasPriceWei, resolution)
+	gasPriceWei = gasPriceWei.Mul(gasPriceWei, resolution)
+
+	// add to the cache
+	e.gasCache = append(e.gasCache, gasPriceWei)
+	if len(e.gasCache) > e.cfg.GasCacheBlocks {
+		e.gasCache = e.gasCache[(len(e.gasCache) - e.cfg.GasCacheBlocks):]
+	}
+
+	e.updateGasPriceFromCacheETH()
+}
+
+// TODO: fold this into the function(s) above
+func (e *EVMScanner) updateGasPriceFromCacheETH() {
+	// skip update unless cache is full
+	if len(e.gasCache) < e.cfg.GasCacheBlocks {
+		return
+	}
+
+	// compute the mean of cache
+	sum := new(big.Int)
+	for _, fee := range e.gasCache {
+		sum.Add(sum, fee)
+	}
+	mean := new(big.Int).Quo(sum, big.NewInt(int64(e.cfg.GasCacheBlocks)))
+
+	// compute the standard deviation of cache
+	std := new(big.Int)
+	for _, fee := range e.gasCache {
+		v := new(big.Int).Sub(fee, mean)
+		v.Mul(v, v)
+		std.Add(std, v)
+	}
+	std.Quo(std, big.NewInt(int64(e.cfg.GasCacheBlocks)))
+	std.Sqrt(std)
+
+	// mean + 3x standard deviation over cache blocks
+	e.gasPrice = mean.Add(mean, std.Mul(std, big.NewInt(3)))
+
+	// record metrics
+	gasPriceFloat, _ := new(big.Float).SetInt64(e.gasPrice.Int64()).Float64()
+	e.m.GetGauge(metrics.GasPrice(common.ETHChain)).Set(gasPriceFloat)
+	e.m.GetCounter(metrics.GasPriceChange(common.ETHChain)).Inc()
 }
 
 // reportNetworkFee reports current network fee to thornode
