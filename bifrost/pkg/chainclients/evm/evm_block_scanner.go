@@ -430,7 +430,7 @@ func (e *EVMScanner) getTxIn(block *etypes.Block) (stypes.TxIn, error) {
 	switch e.cfg.ChainID {
 	case common.BSCChain:
 		return e.getTxInOptimized("eth_getTransactionReceiptsByBlockNumber", block)
-	case common.BASEChain:
+	case common.BASEChain, common.AVAXChain, common.ETHChain:
 		return e.getTxInOptimized("eth_getBlockReceipts", block)
 	}
 
