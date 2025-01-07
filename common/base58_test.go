@@ -12,10 +12,10 @@ func (s Base58Suite) TestBase58(c *C) {
 	// Test encode
 	data := []byte{0x01, 0x02, 0x03, 0x04, 0x05}
 	encoded := Base58Encode(data)
-	c.Check(encoded, Equals, "Ldpz")
+	c.Check(encoded, Equals, "7bWpTW")
 
 	// Test decode
-	decoded, err := Base58Decode("2idJ2vUnD2uxedhPCoqHLKbBWZQdkQgDfkxzrYY9YeYPVyXLWAttBNJvcbBGGu9cDXMkkkzbVdkEsTDYJg9X1RRH")
+	decoded, err := Base58Decode("7bWpTW")
 	c.Assert(err, IsNil)
 	c.Check(decoded, DeepEquals, data)
 
@@ -25,7 +25,7 @@ func (s Base58Suite) TestBase58(c *C) {
 	c.Check(decoded, IsNil)
 
 	// SOL Addr
-	decoded, err = Base58Decode("278148FmwtNfYmfJAu2qYkZ38VZix46ky5oNWUVUbJnst")
+	decoded, err = Base58Decode("FXazoWBBd7GXm6xYhLSxE3GtYPpZs6PCM7t6KTqr1QY")
 	c.Assert(err, IsNil)
 	c.Check(len(decoded), Equals, 32)
 }
