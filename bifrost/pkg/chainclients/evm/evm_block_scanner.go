@@ -303,7 +303,17 @@ func (e *EVMScanner) processBlock(block *etypes.Block) (stypes.TxIn, error) {
 	// collect gas prices of txs in current block
 	var txsGas []*big.Int
 	for _, tx := range block.Transactions() {
-		txsGas = append(txsGas, tx.GasPrice())
+		// use tx.GasTipCap for Ethereum
+		if e.cfg.ChainID.Equals(common.ETHChain) {
+			tipCap := tx.GasTipCap()
+			if tipCap == nil {
+				tipCap = big.NewInt(0)
+			}
+			txsGas = append(txsGas, tipCap)
+		} else {
+			// all other chains, use tx.GasPrice
+			txsGas = append(txsGas, tx.GasPrice())
+		}
 	}
 	e.updateGasPrice(txsGas)
 
@@ -831,7 +841,16 @@ func (e *EVMScanner) getTxInFromTransaction(tx *etypes.Transaction, receipt *ety
 
 	nativeValue := e.tokenManager.ConvertAmount(evm.NativeTokenAddr, tx.Value())
 	txInItem.Coins = append(txInItem.Coins, common.NewCoin(e.cfg.ChainID.GetGasAsset(), nativeValue))
-	txGasPrice := tx.GasPrice()
+
+	// for ethereum, use EffectiveGasPrice
+	var txGasPrice *big.Int
+	if e.cfg.ChainID.Equals(common.ETHChain) {
+		txGasPrice = receipt.EffectiveGasPrice
+	} else {
+		// all other chains use tx.GasPrice
+		txGasPrice = tx.GasPrice()
+	}
+
 	txInItem.Gas = common.MakeEVMGas(e.cfg.ChainID, txGasPrice, receipt.GasUsed)
 	txInItem.Gas[0].Asset = e.cfg.ChainID.GetGasAsset()
 
