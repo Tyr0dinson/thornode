@@ -593,7 +593,28 @@ func (c *EVMClient) buildOutboundTx(txOutItem stypes.TxOutItem, memo mem.Memo, n
 		// as long as we pass in an EVM value , which we almost guarantee it will not exceed the EVM balance , so we can avoid the above two errors
 		estimatedEVMValue = estimatedEVMValue.SetInt64(21000)
 	}
-	createdTx := etypes.NewTransaction(nonce, ecommon.HexToAddress(contractAddr.String()), estimatedEVMValue, c.cfg.BlockScanner.MaxGasLimit, gasRate, txData)
+
+	to := ecommon.HexToAddress(contractAddr.String())
+	var createdTx *etypes.Transaction
+	// ETH transactions use dynamic fee tx
+	if c.cfg.ChainID.Equals(common.ETHChain) {
+		tipCap := new(big.Int).Mul(gasRate, big.NewInt(int64(c.cfg.MaxGasTipPercentage)))
+		tipCap.Div(tipCap, big.NewInt(100))
+		createdTx = etypes.NewTx(&etypes.DynamicFeeTx{
+			ChainID:   c.evmScanner.eipSigner.ChainID(),
+			Nonce:     nonce,
+			To:        &to,
+			Value:     estimatedEVMValue,
+			GasFeeCap: gasRate, // maxFeePerGas
+			GasTipCap: tipCap,  // maxPriorityFeePerGas
+			Data:      txData,
+			// gas is ignored in estimate gas call
+			// Gas: c.cfg.BlockScanner.MaxGasLimit,
+		})
+	} else {
+		createdTx = etypes.NewTransaction(nonce, to, estimatedEVMValue, c.cfg.BlockScanner.MaxGasLimit, gasRate, txData)
+	}
+
 	estimatedGas, err := c.evmScanner.ethRpc.EstimateGas(fromAddr.String(), createdTx)
 	if err != nil {
 		// in an edge case that vault doesn't have enough fund to fulfill an outbound transaction , it will fail to estimate gas
@@ -654,9 +675,26 @@ func (c *EVMClient) buildOutboundTx(txOutItem stypes.TxOutItem, memo mem.Memo, n
 		return nil, nil
 	}
 
-	createdTx = etypes.NewTransaction(
-		nonce, ecommon.HexToAddress(contractAddr.String()), evmValue, maxGasUnits, gasRate, txData,
-	)
+	// once again, ETH uses dynamic fee tx
+	if c.cfg.ChainID.Equals(common.ETHChain) {
+		tipCap := new(big.Int).Mul(gasRate, big.NewInt(int64(c.cfg.MaxGasTipPercentage)))
+		tipCap.Div(tipCap, big.NewInt(100))
+		createdTx = etypes.NewTx(&etypes.DynamicFeeTx{
+			ChainID:   c.evmScanner.eipSigner.ChainID(),
+			Nonce:     nonce,
+			To:        &to,
+			Value:     evmValue,
+			Gas:       maxGasUnits,
+			GasFeeCap: gasRate,
+			GasTipCap: tipCap,
+			Data:      txData,
+		})
+
+	} else {
+		createdTx = etypes.NewTransaction(
+			nonce, ecommon.HexToAddress(contractAddr.String()), evmValue, maxGasUnits, gasRate, txData,
+		)
+	}
 
 	return createdTx, nil
 }
