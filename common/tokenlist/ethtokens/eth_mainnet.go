@@ -8,4 +8,7 @@ import (
 )
 
 //go:embed eth_mainnet_latest.json
+var ETHTokenListRawV3_2_0 []byte
+
+//go:embed eth_mainnet_V3_0_0.json
 var ETHTokenListRawV3_0_0 []byte

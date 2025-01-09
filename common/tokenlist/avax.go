@@ -8,15 +8,21 @@ import (
 )
 
 var avaxTokenListV3_0_0 EVMTokenList
+var avaxTokenListV3_2_0 EVMTokenList
 
 func init() {
 	if err := json.Unmarshal(avaxtokens.AVAXTokenListRawV3_0_0, &avaxTokenListV3_0_0); err != nil {
+		panic(err)
+	}
+	if err := json.Unmarshal(avaxtokens.AVAXTokenListRawV3_2_0, &avaxTokenListV3_2_0); err != nil {
 		panic(err)
 	}
 }
 
 func GetAVAXTokenList(version semver.Version) EVMTokenList {
 	switch {
+	case version.GTE(semver.MustParse("3.2.0")):
+		return avaxTokenListV3_2_0
 	case version.GTE(semver.MustParse("3.0.0")):
 		return avaxTokenListV3_0_0
 	default:

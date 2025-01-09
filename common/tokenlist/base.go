@@ -8,15 +8,21 @@ import (
 )
 
 var baseTokenListV3_1_0 EVMTokenList
+var baseTokenListV3_2_0 EVMTokenList
 
 func init() {
 	if err := json.Unmarshal(basetokens.BASETokenListRawV3_1_0, &baseTokenListV3_1_0); err != nil {
+		panic(err)
+	}
+	if err := json.Unmarshal(basetokens.BASETokenListRawV3_2_0, &baseTokenListV3_2_0); err != nil {
 		panic(err)
 	}
 }
 
 func GetBASETokenList(version semver.Version) EVMTokenList {
 	switch {
+	case version.GTE(semver.MustParse("3.2.0")):
+		return baseTokenListV3_2_0
 	case version.GTE(semver.MustParse("3.1.0")):
 		return baseTokenListV3_1_0
 	default:
