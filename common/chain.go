@@ -27,6 +27,7 @@ const (
 	BASEChain  = Chain("BASE")
 	XRPChain   = Chain("XRP")
 	SOLChain   = Chain("SOL")
+	TONChain   = Chain("TON")
 
 	SigningAlgoSecp256k1 = SigningAlgo("secp256k1")
 	SigningAlgoEd25519   = SigningAlgo("ed25519")
@@ -45,6 +46,7 @@ var AllChains = [...]Chain{
 	BASEChain,
 	XRPChain,
 	SOLChain,
+	TONChain,
 }
 
 type SigningAlgo string
@@ -142,7 +144,8 @@ func (c Chain) String() string {
 
 // GetSigningAlgo get the signing algorithm for the given chain
 func (c Chain) GetSigningAlgo() SigningAlgo {
-	if c == SOLChain {
+	switch c {
+	case SOLChain, TONChain:
 		return SigningAlgoEd25519
 	}
 	return SigningAlgoSecp256k1
@@ -173,6 +176,8 @@ func (c Chain) GetGasAsset() Asset {
 		return BaseETHAsset
 	case XRPChain:
 		return XRPAsset
+	case TONChain:
+		return TONAsset
 	default:
 		return EmptyAsset
 	}
@@ -197,6 +202,8 @@ func (c Chain) GetGasUnits() string {
 		return "satsperbyte"
 	case XRPChain:
 		return "drop"
+	case TONChain:
+		return "nanoton"
 	default:
 		return ""
 	}
@@ -211,6 +218,8 @@ func (c Chain) GetGasAssetDecimal() int64 {
 		return 6
 	case XRPChain:
 		return 6
+	case TONChain:
+		return 9
 	default:
 		return cosmos.DefaultCoinDecimals
 	}
@@ -342,6 +351,8 @@ func (c Chain) ApproximateBlockMilliseconds() int64 {
 		return 2_000
 	case XRPChain:
 		return 4_000 // approx 3-5 seconds
+	case TONChain:
+		return 2_500
 	default:
 		return 0
 	}

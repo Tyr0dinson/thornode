@@ -201,6 +201,19 @@ func Init() {
 		"bifrost.chains.GAIA.block_scanner.cosmos_grpc_tls",
 		"GAIA_GRPC_TLS",
 	))
+	assert(viper.BindEnv(
+		"bifrost.chains.TON.rpc_host",
+		"TON_HOST",
+	))
+	assert(viper.BindEnv(
+		"bifrost.chains.TON.block_scanner.rpc_host",
+		"TON_HOST",
+	))
+	assert(viper.BindEnv(
+		"bifrost.chains.TON.password",
+		"TON_HOST_KEY",
+	))
+
 	assert(viper.BindEnv("bifrost.chains.GAIA.disabled", "GAIA_DISABLED"))
 	assert(viper.BindEnv("bifrost.chains.DOGE.disabled", "DOGE_DISABLED"))
 	assert(viper.BindEnv("bifrost.chains.LTC.disabled", "LTC_DISABLED"))
@@ -492,6 +505,7 @@ type Bifrost struct {
 		LTC  BifrostChainConfiguration `mapstructure:"ltc"`
 		BASE BifrostChainConfiguration `mapstructure:"base"`
 		XRP  BifrostChainConfiguration `mapstructure:"xrp"`
+		TON  BifrostChainConfiguration `mapstructure:"ton"`
 	} `mapstructure:"chains"`
 	TSS             BifrostTSSConfiguration `mapstructure:"tss"`
 	ObserverLevelDB LevelDBOptions          `mapstructure:"observer_leveldb"`
@@ -509,6 +523,7 @@ func (b Bifrost) GetChains() map[common.Chain]BifrostChainConfiguration {
 		common.LTCChain:  b.Chains.LTC,
 		common.BASEChain: b.Chains.BASE,
 		common.XRPChain:  b.Chains.XRP,
+		common.TONChain:  b.Chains.TON,
 	}
 }
 

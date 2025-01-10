@@ -241,8 +241,9 @@ func (qs queryServer) queryVaultsPubkeys(ctx cosmos.Context, _ *types.QueryVault
 			switch vault.Status {
 			case ActiveVault, RetiringVault:
 				resp.Asgard = append(resp.Asgard, &types.VaultInfo{
-					PubKey:  vault.PubKey.String(),
-					Routers: castVaultRouters(vault.Routers),
+					PubKey:      vault.PubKey.String(),
+					PubKeyEddsa: vault.PubKeyEddsa.String(),
+					Routers:     castVaultRouters(vault.Routers),
 				})
 			case InactiveVault:
 				// skip inactive vaults that have never received an inbound

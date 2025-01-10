@@ -35,6 +35,8 @@ var (
 	AVAXAsset = Asset{Chain: AVAXChain, Symbol: "AVAX", Ticker: "AVAX", Synth: false}
 	// XRPAsset XRP
 	XRPAsset = Asset{Chain: XRPChain, Symbol: "XRP", Ticker: "XRP", Synth: false}
+	// TONAsset TON
+	TONAsset = Asset{Chain: TONChain, Symbol: "TON", Ticker: "TON", Synth: false}
 	// RuneNative RUNE on thorchain
 	RuneNative = Asset{Chain: THORChain, Symbol: "RUNE", Ticker: "RUNE", Synth: false}
 	TCY        = Asset{Chain: THORChain, Symbol: "TCY", Ticker: "TCY", Synth: false}
@@ -112,6 +114,7 @@ func NewAssetWithShortCodesV3_1_0(input string) (Asset, error) {
 	shorts[RuneNative.ShortCode()] = RuneNative.String()
 	shorts[BaseETHAsset.ShortCode()] = BaseETHAsset.String()
 	shorts[XRPAsset.ShortCode()] = XRPAsset.String()
+	shorts[TONAsset.ShortCode()] = TONAsset.String()
 
 	long, ok := shorts[input]
 	if ok {
@@ -300,6 +303,8 @@ func (a Asset) ShortCode() string {
 		return "f"
 	case "XRP.XRP":
 		return "x"
+	case "TON.TON":
+		return "t"
 	default:
 		return ""
 	}

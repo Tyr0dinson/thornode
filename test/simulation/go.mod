@@ -118,11 +118,13 @@ require (
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/rs/cors v1.11.1 // indirect
 	github.com/shamaton/msgpack/v2 v2.2.0 // indirect
+	github.com/sigurn/crc16 v0.0.0-20211026045750-20ab5afb07e3 // indirect
 	github.com/tidwall/btree v1.7.0 // indirect
 	github.com/tyler-smith/go-bip32 v1.0.0 // indirect
 	github.com/tyler-smith/go-bip39 v1.1.0 // indirect
 	github.com/ugorji/go/codec v1.2.11 // indirect
 	github.com/ulikunitz/xz v0.5.11 // indirect
+	github.com/xssnick/tonutils-go v1.10.2 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.49.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.49.0 // indirect
 	go.opentelemetry.io/otel v1.24.0 // indirect

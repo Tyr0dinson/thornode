@@ -3,6 +3,8 @@ package chainclients
 import (
 	"time"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/ton"
+
 	"github.com/rs/zerolog/log"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/tss"
 
@@ -49,6 +51,8 @@ func LoadChains(thorKeys *thorclient.Keys,
 			return utxo.NewClient(thorKeys, chain, server, thorchainBridge, m)
 		case common.XRPChain:
 			return xrp.NewClient(thorKeys, chain, server, thorchainBridge, m)
+		case common.TONChain:
+			return ton.NewTonClient(thorKeys, chain, server, thorchainBridge, m)
 		default:
 			log.Fatal().Msgf("chain %s is not supported", chain.ChainID)
 			return nil, nil

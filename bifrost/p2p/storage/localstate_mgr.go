@@ -17,6 +17,8 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/conversion"
 )
 
+type LocalPartySaveData interface{}
+
 // KeygenLocalState is a structure used to represent the data we saved locally for different keygen
 type KeygenLocalState struct {
 	PubKey          string   `json:"pub_key"`

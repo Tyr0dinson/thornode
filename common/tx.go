@@ -2,6 +2,8 @@ package common
 
 import (
 	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"math/big"
@@ -25,6 +27,17 @@ var BlankTxID = TxID("0000000000000000000000000000000000000000000000000000000000
 // NewTxID parse the input hash as TxID
 func NewTxID(hash string) (TxID, error) {
 	switch len(hash) {
+	case 44:
+		// check for TON address
+		data, err := base64.StdEncoding.DecodeString(hash)
+		if err != nil {
+			return TxID(""), err
+		}
+		if len(data) != 32 {
+			err := fmt.Errorf("txid error: no valid ton hash")
+			return TxID(""), err
+		}
+		hash = hex.EncodeToString(data)
 	case 64:
 		// do nothing
 	case 66: // ETH check

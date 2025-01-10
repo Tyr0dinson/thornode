@@ -96,13 +96,23 @@ func (h CommonOutboundTxHandler) handle(ctx cosmos.Context, tx ObservedTx, inTxI
 			// one coin in it , THORNode could use that to identify which tx it
 			// is
 
+			// using (ecdsa) vault key for comparison, because txOutItem is sent
+			// without regards to signing algo and eddsa clients like ton_client
+			// observe and report the tx with the eddsa vault key
+			vault, err := h.mgr.Keeper().GetVault(ctx, tx.ObservedPubKey)
+			if err != nil {
+				ctx.Logger().Error("failed to get vault", "error", err)
+			}
+
+			observedVaultKey := vault.PubKey
+
 			if txOutItem.InHash.Equals(inTxID) &&
 				txOutItem.OutHash.IsEmpty() &&
 				tx.Tx.Chain.Equals(txOutItem.Chain) &&
 				tx.Tx.ToAddress.Equals(txOutItem.ToAddress) &&
 				strings.EqualFold(tx.Aggregator, txOutItem.Aggregator) &&
 				strings.EqualFold(tx.AggregatorTarget, txOutItem.AggregatorTargetAsset) &&
-				tx.ObservedPubKey.Equals(txOutItem.VaultPubKey) {
+				txOutItem.VaultPubKey.Equals(observedVaultKey) {
 
 				matchCoin := tx.Tx.Coins.EqualsEx(common.Coins{txOutItem.Coin})
 				if !matchCoin {

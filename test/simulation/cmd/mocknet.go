@@ -37,6 +37,7 @@ var chainRPCs = map[common.Chain]string{
 	common.GAIAChain: "localhost:9091",
 	common.BASEChain: "http://localhost:8547",
 	common.XRPChain:  "http://localhost:5005",
+	common.TONChain:  "mocknet",
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////

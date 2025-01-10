@@ -38,7 +38,7 @@ require (
 	cosmossdk.io/x/tx v0.13.7
 	cosmossdk.io/x/upgrade v0.1.4
 	filippo.io/age v1.0.0-rc.3
-	github.com/99designs/keyring v1.2.1
+	github.com/99designs/keyring v1.2.1 // indirect
 	github.com/CosmWasm/wasmd v0.53.0
 	github.com/CosmWasm/wasmvm/v2 v2.1.2 // indirect
 	github.com/Peersyst/xrpl-go v0.1.3
@@ -58,7 +58,6 @@ require (
 	github.com/cosmos/gogoproto v1.7.0
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
 	github.com/deckarep/golang-set v1.8.0
-	github.com/decred/dcrd/dcrec/edwards v1.0.0
 	github.com/decred/dcrd/dcrec/edwards/v2 v2.0.0
 	github.com/eager7/dogd v0.0.0-20200427085516-2caf59f59dbb
 	github.com/eager7/doglog v0.0.0-20200427040431-a0db59f0a792
@@ -105,6 +104,7 @@ require (
 	github.com/stretchr/testify v1.10.0
 	github.com/syndtr/goleveldb v1.0.1-0.20220721030215-126854af5e6d
 	github.com/tendermint/btcd v0.1.1
+	github.com/xssnick/tonutils-go v1.10.2
 	go.uber.org/atomic v1.11.0
 	golang.org/x/crypto v0.32.0
 	golang.org/x/oauth2 v0.22.0
@@ -336,6 +336,7 @@ require (
 	github.com/sasha-s/go-deadlock v0.3.1 // indirect
 	github.com/shamaton/msgpack/v2 v2.2.0 // indirect
 	github.com/shirou/gopsutil v3.21.4-0.20210419000835-c7a38de76ee5+incompatible // indirect
+	github.com/sigurn/crc16 v0.0.0-20211026045750-20ab5afb07e3 // indirect
 	github.com/sourcegraph/conc v0.3.0 // indirect
 	github.com/spacemonkeygo/spacelog v0.0.0-20180420211403-2296661a0572 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
@@ -348,7 +349,7 @@ require (
 	github.com/tklauser/go-sysconf v0.3.12 // indirect
 	github.com/tklauser/numcpus v0.6.1 // indirect
 	github.com/tyler-smith/go-bip32 v1.0.0 // indirect
-	github.com/tyler-smith/go-bip39 v1.1.0 // indirect
+	github.com/tyler-smith/go-bip39 v1.1.0
 	github.com/ugorji/go/codec v1.2.11 // indirect
 	github.com/ulikunitz/xz v0.5.11 // indirect
 	github.com/whyrusleeping/go-keyspace v0.0.0-20160322163242-5b898ac5add1 // indirect

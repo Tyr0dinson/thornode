@@ -891,4 +891,3 @@ params:
 asserts:
   - .memo == "=:THOR.RUNE:{{ addr_thor_fox }}:884714326:xx:500"
   - .expected_amount_out|tonumber == 893650835
-

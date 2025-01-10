@@ -65,24 +65,24 @@ services:
 
   # ------------------------------ events ------------------------------
 
-  events:
-    build:
-      context: ../..
-      dockerfile: ./tools/events/Dockerfile
-      args:
-        TAG: mocknet
-    environment:
-      CONSOLE: 1
-      ENDPOINTS_THORNODE: http://thornode:1317
-      ENDPOINTS_MIDGARD: http://midgard:8080
-      NETWORK: mocknet
-      SCAN_START: 1
-      SCAN_STOP: -1
-      # output everything
-      THRESHOLDS_USD_VALUE: 0
-      THRESHOLDS_RUNE_VALUE: 0
-      THRESHOLDS_DELTA_USD_VALUE: 0
-      THRESHOLDS_DELTA_PERCENT: 0
+#  events:
+#    build:
+#      context: ../..
+#      dockerfile: ./tools/events/Dockerfile
+#      args:
+#        TAG: mocknet
+#    environment:
+#      CONSOLE: 1
+#      ENDPOINTS_THORNODE: http://thornode:1317
+#      ENDPOINTS_MIDGARD: http://midgard:8080
+#      NETWORK: mocknet
+#      SCAN_START: 1
+#      SCAN_STOP: -1
+#      # output everything
+#      THRESHOLDS_USD_VALUE: 0
+#      THRESHOLDS_RUNE_VALUE: 0
+#      THRESHOLDS_DELTA_USD_VALUE: 0
+#      THRESHOLDS_DELTA_PERCENT: 0
 
   # ------------------------------ thornode ------------------------------
 
@@ -93,9 +93,9 @@ services:
       - thornode
       - mocknet
       - mocknet-cluster
-    depends_on:
-      - ethereum
-      - avalanche
+#    depends_on:
+#      - ethereum
+#      - avalanche
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment: &thornode-environment
@@ -146,11 +146,11 @@ services:
       - bifrost
       - validator
     depends_on:
-      - bitcoin
-      - bitcoin-cash
-      - dogecoin
-      - gaia
-      - litecoin
+#      - bitcoin
+#      - bitcoin-cash
+#      - dogecoin
+#      - gaia
+#      - litecoin
       - thornode
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -192,13 +192,13 @@ services:
       BIFROST_CHAINS_BSC_BLOCK_SCANNER_MAX_GAS_LIMIT: 80000
       BIFROST_CHAINS_BASE_BLOCK_SCANNER_MAX_GAS_LIMIT: 80000
 
-      # enable bsc
-      BIFROST_CHAINS_BSC_DISABLED: "false"
-      BIFROST_CHAINS_BSC_RPC_HOST: ${BSC_HOST:-http://binance-smart:8545}
-
-      # enable base
-      BIFROST_CHAINS_BASE_DISABLED: "false"
-      BIFROST_CHAINS_BASE_RPC_HOST: http://base:8545
+#      # enable bsc
+#      BIFROST_CHAINS_BSC_DISABLED: "false"
+#      BIFROST_CHAINS_BSC_RPC_HOST: ${BSC_HOST:-http://binance-smart:8545}
+#
+#      # enable base
+#      BIFROST_CHAINS_BASE_DISABLED: "false"
+#      BIFROST_CHAINS_BASE_RPC_HOST: http://base:8545
 
       # enable xrp
       BIFROST_CHAINS_XRP_DISABLED: "false"
@@ -219,6 +219,8 @@ services:
       # attestation timing
       BIFROST_ATTESTATION_GOSSIP_MIN_TIME_BETWEEN_ATTESTATIONS: 1s
       BIFROST_ATTESTATION_GOSSIP_OBSERVE_RECONCILE_INTERVAL: 1s
+
+      TON_HOST: "testnet"
 
     ports:
       - 5040:5040

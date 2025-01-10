@@ -23,6 +23,7 @@ func init() {
 		DesiredValidatorSet:                 12,
 		ChurnInterval:                       180, // 5 min
 		ChurnRetryInterval:                  90,
+		ChurnMigrateRounds:                  2,
 		MinimumBondInRune:                   100_000_000, // 1 rune
 		ValidatorMaxRewardRatio:             3,
 		FundMigrationInterval:               120,
