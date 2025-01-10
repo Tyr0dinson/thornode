@@ -28,7 +28,8 @@ type QueryInboundAddressResponse struct {
 	PubKey  string `protobuf:"bytes,2,opt,name=pub_key,json=pubKey,proto3" json:"pub_key,omitempty"`
 	Address string `protobuf:"bytes,3,opt,name=address,proto3" json:"address,omitempty"`
 	Router  string `protobuf:"bytes,4,opt,name=router,proto3" json:"router,omitempty"`
-	// Returns true if trading is unavailable for this chain, either because trading is halted globally or specifically for this chain
+	// Returns true if trading is unavailable for this chain, either because
+	// trading is halted globally or specifically for this chain
 	Halted bool `protobuf:"varint,5,opt,name=halted,proto3" json:"halted"`
 	// Returns true if trading is paused globally
 	GlobalTradingPaused bool `protobuf:"varint,6,opt,name=global_trading_paused,json=globalTradingPaused,proto3" json:"global_trading_paused"`
@@ -36,15 +37,21 @@ type QueryInboundAddressResponse struct {
 	ChainTradingPaused bool `protobuf:"varint,7,opt,name=chain_trading_paused,json=chainTradingPaused,proto3" json:"chain_trading_paused"`
 	// Returns true if LP actions are paused for this chain
 	ChainLpActionsPaused bool `protobuf:"varint,8,opt,name=chain_lp_actions_paused,json=chainLpActionsPaused,proto3" json:"chain_lp_actions_paused"`
-	// The minimum fee rate used by vaults to send outbound TXs. The actual fee rate may be higher. For EVM chains this is returned in gwei (1e9).
+	// The minimum fee rate used by vaults to send outbound TXs. The actual fee
+	// rate may be higher. For EVM chains this is returned in gwei (1e9).
 	GasRate string `protobuf:"bytes,9,opt,name=gas_rate,json=gasRate,proto3" json:"gas_rate,omitempty"`
 	// Units of the gas_rate.
 	GasRateUnits string `protobuf:"bytes,10,opt,name=gas_rate_units,json=gasRateUnits,proto3" json:"gas_rate_units,omitempty"`
-	// Avg size of outbound TXs on each chain. For UTXO chains it may be larger than average, as it takes into account vault consolidation txs, which can have many vouts
+	// Avg size of outbound TXs on each chain. For UTXO chains it may be larger
+	// than average, as it takes into account vault consolidation txs, which can
+	// have many vouts
 	OutboundTxSize string `protobuf:"bytes,11,opt,name=outbound_tx_size,json=outboundTxSize,proto3" json:"outbound_tx_size,omitempty"`
-	// The total outbound fee charged to the user for outbound txs in the gas asset of the chain.
+	// The total outbound fee charged to the user for outbound txs in the gas
+	// asset of the chain.
 	OutboundFee string `protobuf:"bytes,12,opt,name=outbound_fee,json=outboundFee,proto3" json:"outbound_fee,omitempty"`
-	// Defines the minimum transaction size for the chain in base units (sats, wei, uatom). Transactions with asset amounts lower than the dust_threshold are ignored.
+	// Defines the minimum transaction size for the chain in base units (sats,
+	// wei, uatom). Transactions with asset amounts lower than the dust_threshold
+	// are ignored.
 	DustThreshold string `protobuf:"bytes,13,opt,name=dust_threshold,json=dustThreshold,proto3" json:"dust_threshold,omitempty"`
 }
 

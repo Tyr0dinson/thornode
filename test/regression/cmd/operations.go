@@ -884,10 +884,11 @@ type OpTxTssPool struct {
 	KeygenTime         int64            `json:"keygen_time"`
 	Sequence           *int64           `json:"sequence"`
 	Gas                *int64           `json:"gas"`
+	PoolPubKeyEddsa    common.PubKey    `json:"pool_pub_key_eddsa"`
 }
 
 func (op *OpTxTssPool) Execute(out io.Writer, _ string, _, routine int, _ *os.Process, logs chan string) error {
-	msg, err := types.NewMsgTssPool(op.PubKeys, op.PoolPubKey, op.Secp256K1Signature, op.KeysharesBackup, op.KeygenType, op.Height, op.Blame, op.Chains, op.Signer, op.KeygenTime)
+	msg, err := types.NewMsgTssPoolV2(op.PubKeys, op.PoolPubKey, op.Secp256K1Signature, op.KeysharesBackup, op.KeygenType, op.Height, op.Blame, op.Chains, op.Signer, op.KeygenTime, op.PoolPubKeyEddsa)
 	if err != nil {
 		return err
 	}

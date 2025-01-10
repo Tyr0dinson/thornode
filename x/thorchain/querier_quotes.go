@@ -351,7 +351,7 @@ func quoteInboundInfo(ctx cosmos.Context, mgr *Mgrs, amount sdkmath.Uint, chain 
 		constAccessor := mgr.GetConstants()
 		signingTransactionPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
 		vault := mgr.Keeper().GetMostSecure(ctx, active, signingTransactionPeriod)
-		address, err = vault.PubKey.GetAddress(chain)
+		address, err = vault.GetAddress(chain)
 		if err != nil {
 			return common.NoAddress, common.NoAddress, 0, err
 		}
