@@ -1908,7 +1908,8 @@ type QueryThornameResponse struct {
 	ExpireBlockHeight int64  `protobuf:"varint,2,opt,name=expire_block_height,json=expireBlockHeight,proto3" json:"expire_block_height,omitempty"`
 	Owner             string `protobuf:"bytes,3,opt,name=owner,proto3" json:"owner,omitempty"`
 	PreferredAsset    string `protobuf:"bytes,4,opt,name=preferred_asset,json=preferredAsset,proto3" json:"preferred_asset,omitempty"`
-	// Amount of RUNE currently accrued by this thorname in affiliate fees waiting to be swapped to preferred asset.
+	// Amount of RUNE currently accrued by this thorname in affiliate fees waiting
+	// to be swapped to preferred asset.
 	AffiliateCollectorRune string           `protobuf:"bytes,5,opt,name=affiliate_collector_rune,json=affiliateCollectorRune,proto3" json:"affiliate_collector_rune,omitempty"`
 	Aliases                []*ThornameAlias `protobuf:"bytes,6,rep,name=aliases,proto3" json:"aliases,omitempty"`
 	// Amount of RUNE currently needed to trigger a preferred asset swap.
