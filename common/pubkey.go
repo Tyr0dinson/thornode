@@ -23,6 +23,8 @@ import (
 	"github.com/cometbft/cometbft/crypto"
 	eth "github.com/ethereum/go-ethereum/crypto"
 
+	xrpkm "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/xrp/keymanager"
+
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
@@ -122,6 +124,13 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 	chainNetwork := CurrentChainNetwork
 	var addressString string
 	switch chain {
+	case XRPChain:
+		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, string(p))
+		if err != nil {
+			return NoAddress, err
+		}
+		// TODO SAM127: check this
+		addressString = xrpkm.MasterPubKeyToAccountID(pk.Address().Bytes())
 	case GAIAChain, THORChain:
 		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, string(p))
 		if err != nil {

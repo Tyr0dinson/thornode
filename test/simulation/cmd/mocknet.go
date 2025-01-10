@@ -35,6 +35,7 @@ var chainRPCs = map[common.Chain]string{
 	common.AVAXChain: "http://localhost:9650/ext/bc/C/rpc",
 	common.GAIAChain: "localhost:9091",
 	common.BASEChain: "http://localhost:8547",
+	common.XRPChain:  "http://localhost:5005",
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -206,7 +207,9 @@ func InitConfig(parallelism int, seed bool) *OpConfig {
 		switch chain {
 		case common.BTCChain, common.ETHChain, common.LTCChain, common.BCHChain, common.BASEChain:
 			chainSeedAmount = sdkmath.NewUint(10 * common.One)
-		case common.GAIAChain:
+		case common.BSCChain:
+			chainSeedAmount = sdkmath.NewUint(100 * common.One)
+		case common.GAIAChain, common.XRPChain:
 			chainSeedAmount = sdkmath.NewUint(1000 * common.One)
 		case common.AVAXChain:
 			chainSeedAmount = sdkmath.NewUint(10000 * common.One) // more since local gas is high
