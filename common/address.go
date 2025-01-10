@@ -16,6 +16,7 @@ import (
 	"github.com/gcash/bchutil"
 	ltcchaincfg "github.com/ltcsuite/ltcd/chaincfg"
 	"github.com/ltcsuite/ltcutil"
+	xrp "github.com/Peersyst/xrpl-go/address-codec"
 
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
@@ -49,6 +50,11 @@ func NewAddress(address string) (Address, error) {
 	// Check bech32 addresses, would succeed any string bech32 encoded (e.g. GAIA)
 	_, _, err := bech32.Decode(address)
 	if err == nil {
+		return Address(address), nil
+	}
+
+	// Check is xrp address
+	if xrp.IsValidAddress(address) {
 		return Address(address), nil
 	}
 
@@ -132,6 +138,8 @@ func (addr Address) IsChain(chain Chain) bool {
 		return strings.HasPrefix(addr.String(), "0x")
 	}
 	switch chain {
+	case XRPChain:
+		return xrp.IsValidAddress(addr.String())
 	case GAIAChain:
 		// Note: Gaia does not use a special prefix for testnet
 		prefix, _, _ := bech32.Decode(addr.String())
@@ -213,7 +221,7 @@ func (addr Address) IsChain(chain Chain) bool {
 // Note that this will always return ETHChain for an AVAXChain address,
 // so perhaps only use it when determining a network (e.g. mainnet/testnet).
 func (addr Address) GetChain() Chain {
-	for _, chain := range []Chain{ETHChain, THORChain, BTCChain, LTCChain, BCHChain, DOGEChain, GAIAChain, AVAXChain} {
+	for _, chain := range []Chain{ETHChain, THORChain, BTCChain, LTCChain, BCHChain, DOGEChain, GAIAChain, AVAXChain, XRPChain} {
 		if addr.IsChain(chain) {
 			return chain
 		}

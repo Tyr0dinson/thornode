@@ -125,12 +125,16 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 	var addressString string
 	switch chain {
 	case XRPChain:
-		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, string(p))
-		if err != nil {
-			return NoAddress, err
-		}
+		// pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, string(p))
+		// if err != nil {
+		// 	return NoAddress, fmt.Errorf("get pub key from bech32, %w", err)
+		// }
 		// TODO SAM127: check this
-		addressString = xrpkm.MasterPubKeyToAccountID(pk.Address().Bytes())
+		pk, err := p.Secp256K1()
+		if err != nil {
+			return NoAddress, fmt.Errorf("get pub key secp256k1, %w", err)
+		}
+		addressString = xrpkm.MasterPubKeyToAccountID(pk.SerializeCompressed())
 	case GAIAChain, THORChain:
 		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, string(p))
 		if err != nil {
@@ -223,7 +227,7 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 
 	address, err := NewAddress(addressString)
 	if err != nil {
-		return address, err
+		return address, fmt.Errorf("NewAddress, addressString %s, %w", addressString, err)
 	}
 	pubkeyToAddressCache[key] = address
 	return address, nil

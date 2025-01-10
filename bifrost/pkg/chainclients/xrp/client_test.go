@@ -1,47 +1,56 @@
 package xrp
-/*
+
 import (
+	// "fmt"
+	"encoding/hex"
 	"math/big"
-	"net/http"
-	"net/http/httptest"
+
+	// "net/http"
+	// "net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
+
+	// "strings"
 	"testing"
 	"time"
 
-	sdkmath "cosmossdk.io/math"
+	// sdkmath "cosmossdk.io/math"
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	cKeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
-	"github.com/cosmos/cosmos-sdk/types"
-	signingtypes "github.com/cosmos/cosmos-sdk/types/tx/signing"
-	"github.com/cosmos/cosmos-sdk/x/auth/tx"
-	btypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+
+	// "github.com/cosmos/cosmos-sdk/types/bech32"
+
+	// "github.com/cosmos/cosmos-sdk/types"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
+
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/cmd"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
 	. "gopkg.in/check.v1"
+
+	"github.com/Peersyst/xrpl-go/xrpl/rpc"
+	"github.com/Peersyst/xrpl-go/xrpl/rpc/testutil"
+	txtypes "github.com/Peersyst/xrpl-go/xrpl/transaction/types"
 )
 
 func TestPackage(t *testing.T) { TestingT(t) }
 
-type CosmosTestSuite struct {
+type XrpTestSuite struct {
 	thordir  string
 	thorKeys *thorclient.Keys
 	bridge   thorclient.ThorchainBridge
 	m        *metrics.Metrics
 }
 
-var _ = Suite(&CosmosTestSuite{})
+var _ = Suite(&XrpTestSuite{})
 
 var m *metrics.Metrics
 
@@ -53,7 +62,7 @@ func GetMetricForTest(c *C) *metrics.Metrics {
 			ListenPort:   9000,
 			ReadTimeout:  time.Second,
 			WriteTimeout: time.Second,
-			Chains:       common.Chains{common.GAIAChain},
+			Chains:       common.Chains{common.XRPChain},
 		})
 		c.Assert(m, NotNil)
 		c.Assert(err, IsNil)
@@ -61,7 +70,7 @@ func GetMetricForTest(c *C) *metrics.Metrics {
 	return m
 }
 
-func (s *CosmosTestSuite) SetUpSuite(c *C) {
+func (s *XrpTestSuite) SetUpSuite(c *C) {
 	cosmosSDKConfg := cosmos.GetConfig()
 	cosmosSDKConfg.SetBech32PrefixForAccount("sthor", "sthorpub")
 
@@ -91,141 +100,211 @@ func (s *CosmosTestSuite) SetUpSuite(c *C) {
 	c.Assert(err, IsNil)
 }
 
-func (s *CosmosTestSuite) TearDownSuite(c *C) {
+func (s *XrpTestSuite) TearDownSuite(c *C) {
 	c.Assert(os.Unsetenv("NET"), IsNil)
 	if err := os.RemoveAll(s.thordir); err != nil {
 		c.Error(err)
 	}
 }
 
-func (s *CosmosTestSuite) TestGetAddress(c *C) {
-	mockBankServiceClient := NewMockBankServiceClient()
-	mockAccountServiceClient := NewMockAccountServiceClient()
+// Bech32 pub key (orig): sthorpub1addwnpepqtrvka83xluqq522k8at4d84gnthj5ryqhrf0fa24yze4yhk7j0fk4876fz
+// AccountID: rQwpQ54X5gJyLGg4QGp3HSkjdf3u37NqiZ
+// PubKey: aBP7sAttvzcW5zhhGf9YfweBH9bxRVHS4RoDJNkv2taAwScJNodh
+// PubKeyHex: 02c6cb74f137f800514ab1fabab4f544d779506405c697a7aaa9059a92f6f49e9b
+// Generated bech32: accpub1qtrvka83xluqq522k8at4d84gnthj5ryqhrf0fa24yze4yhk7j0fkqacejz
 
-	cc := CosmosClient{
-		cfg:           config.BifrostChainConfiguration{ChainID: common.GAIAChain},
-		bankClient:    mockBankServiceClient,
-		accountClient: mockAccountServiceClient,
+func (s *XrpTestSuite) TestGetAddress(c *C) {
+	response := `{
+		"result": {
+			"account_data": {
+				"Flags": 8388608,
+				"LedgerEntryType": "AccountRoot",
+				"Account": "rQwpQ54X5gJyLGg4QGp3HSkjdf3u37NqiZ",
+				"Balance": "999999999960",
+				"OwnerCount": 0,
+				"PreviousTxnID": "4294BEBE5B569A18C0A2702387C9B1E7146DC3A5850C1E87204951C6FDAA4C42",
+				"PreviousTxnLgrSeq": 3,
+				"Sequence": 6
+			},
+			"ledger_current_index": 4,
+			"queue_data": {
+				"txn_count": 5,
+				"auth_change_queued": true,
+				"lowest_sequence": 6,
+				"highest_sequence": 10,
+				"max_spend_drops_total": "500",
+				"transactions": [
+					{
+						"auth_change": false,
+						"fee": "100",
+						"fee_level": "2560",
+						"max_spend_drops": "100",
+						"seq": 6
+					},
+					{
+						"auth_change": true,
+						"fee": "100",
+						"fee_level": "2560",
+						"max_spend_drops": "100",
+						"seq": 10
+					}
+				]
+			},
+			"validated": false
+		},
+		"warning": "none",
+		"warnings":
+		[{
+			"id": 1,
+			"message": "message"
+		}]
+	}`
+
+	mc := &testutil.JSONRPCMockClient{}
+	mc.DoFunc = testutil.MockResponse(response, 200, mc)
+
+	cfg, err := rpc.NewClientConfig("http://testnode/", rpc.WithHTTPClient(mc))
+	c.Assert(err, IsNil)
+
+
+	xrpclient := Client{
+		cfg:           config.BifrostChainConfiguration{ChainID: common.XRPChain},
+		rpcClient: rpc.NewClient(cfg),
 	}
 
-	addr := "cosmos10tjz4ave7znpctgd2rfu6v2r6zkeup2dlmqtuz"
-	atom, _ := common.NewAsset("GAIA.ATOM")
+	addr := "rQwpQ54X5gJyLGg4QGp3HSkjdf3u37NqiZ"
+	xrp, _ := common.NewAsset("XRP.XRP")
 	expectedCoins := common.NewCoins(
-		common.NewCoin(atom, cosmos.NewUint(496694100)),
+		common.NewCoin(xrp, cosmos.NewUint(999999999960)),
 	)
 
-	acc, err := cc.GetAccountByAddress(addr, big.NewInt(0))
+	acc, err := xrpclient.GetAccountByAddress(addr, big.NewInt(0))
 	c.Assert(err, IsNil)
-	c.Check(acc.AccountNumber, Equals, int64(3530305))
-	c.Check(acc.Sequence, Equals, int64(3))
+	c.Check(acc.AccountNumber, Equals, int64(0))
+	c.Check(acc.Sequence, Equals, int64(6))
 	c.Check(acc.Coins.EqualsEx(expectedCoins), Equals, true)
 
-	pk := common.PubKey("sthorpub1addwnpepqf72ur2e8zk8r5augtrly40cuy94f7e663zh798tyms6pu2k8qdswf4es66")
-	acc, err = cc.GetAccount(pk, big.NewInt(0))
+	pk := common.PubKey("sthorpub1addwnpepqtrvka83xluqq522k8at4d84gnthj5ryqhrf0fa24yze4yhk7j0fk4876fz")
+	acc, err = xrpclient.GetAccount(pk, big.NewInt(0))
 	c.Assert(err, IsNil)
-	c.Check(acc.AccountNumber, Equals, int64(3530305))
-	c.Check(acc.Sequence, Equals, int64(3))
+	c.Check(acc.AccountNumber, Equals, int64(0))
+	c.Check(acc.Sequence, Equals, int64(6))
 	c.Check(acc.Coins.EqualsEx(expectedCoins), Equals, true)
 
-	resultAddr := cc.GetAddress(pk)
+	resultAddr := xrpclient.GetAddress(pk)
 
 	c.Logf(resultAddr)
 	c.Check(addr, Equals, resultAddr)
 }
 
-func (s *CosmosTestSuite) TestProcessOutboundTx(c *C) {
-	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-	}))
+// func (s *XrpTestSuite) TestKeyManager(c *C) {
+// 	client, err := NewClient(
+// 		s.thorKeys, 
+// 		config.BifrostChainConfiguration{
+// 			ChainID:        common.XRPChain,
+// 			RPCHost:        "http://testnode/",
+// 			BlockScanner: config.BifrostBlockScannerConfiguration{
+// 				StartBlockHeight: 1, // avoids querying thorchain for block height
+// 			},
+// 			ChainNetwork: "1234",
+// 		}, 
+// 		nil, 
+// 		s.bridge, 
+// 		s.m,
+// 	)
+// 	c.Assert(err, IsNil)
+// 	c.Check(client.rpcClient.NetworkID, Equals, uint32(1234))
 
-	// This test does not actually contact the gRPC endpoint,
-	// but gRPC throws an error if a TCP connection cannot be establish.
-	// This hack switches the schema for the mock HTTP server
-	// to keep gRPC happy.
-	fakeGRPCHost := strings.ReplaceAll(server.URL, "http://", "grpc://")
+// 	// Print AccountID
+// 	fmt.Println("AccountID:", client.localKeyManager.AccountID)
+// 	fmt.Println("PubKey:", client.localKeyManager.PublicKey)
+// 	fmt.Println("PubKeyHex:", client.localKeyManager.PublicKeyHex)
+// 	// Print bech32 pub key
+// 	bech32, err := bech32.ConvertAndEncode("accpub", client.localKeyManager.Keys.GetFormattedPublicKey())
+// 	c.Assert(err, IsNil)
+// 	fmt.Println("Generated bech32:", bech32)
+	
+// }
 
-	client, err := NewCosmosClient(s.thorKeys, config.BifrostChainConfiguration{
-		ChainID:        common.GAIAChain,
-		RPCHost:        server.URL,
-		CosmosGRPCHost: fakeGRPCHost,
-		BlockScanner: config.BifrostBlockScannerConfiguration{
-			CosmosGRPCHost:   fakeGRPCHost,
-			StartBlockHeight: 1, // avoids querying thorchain for block height
-		},
-	}, nil, s.bridge, s.m)
+func (s *XrpTestSuite) TestProcessOutboundTx(c *C) {
+	client, err := NewClient(
+		s.thorKeys, 
+		config.BifrostChainConfiguration{
+			ChainID:        common.XRPChain,
+			RPCHost:        "http://testnode/",
+			BlockScanner: config.BifrostBlockScannerConfiguration{
+				StartBlockHeight: 1, // avoids querying thorchain for block height
+			},
+			ChainNetwork: "1",
+		}, 
+		nil, 
+		s.bridge, 
+		s.m,
+	)
+	c.Assert(err, IsNil)
+	c.Check(client.rpcClient.NetworkID, Equals, uint32(1))
+
+	vaultPubKey, err := common.NewPubKey("sthorpub1addwnpepqtrvka83xluqq522k8at4d84gnthj5ryqhrf0fa24yze4yhk7j0fk4876fz")
+	c.Assert(err, IsNil)
+	outAsset, err := common.NewAsset("XRP.XRP")
+	c.Assert(err, IsNil)
+	toAddress, err := common.NewAddress("rQwpQ54X5gJyLGg4QGp3HSkjdf3u37NqiZ")
 	c.Assert(err, IsNil)
 
-	vaultPubKey, err := common.NewPubKey("sthorpub1addwnpepqda0q2avvxnferqasee42lu5492jlc4zvf6u264famvg9dywgq2kz0zaecw")
-	c.Assert(err, IsNil)
-	outAsset, err := common.NewAsset("GAIA.ATOM")
-	c.Assert(err, IsNil)
-	toAddress, err := common.NewAddress("cosmos10tjz4ave7znpctgd2rfu6v2r6zkeup2dlmqtuz")
-	c.Assert(err, IsNil)
+	paymentAmount := uint64(245283)
 	txOut := stypes.TxOutItem{
-		Chain:       common.GAIAChain,
+		Chain:       common.XRPChain,
 		ToAddress:   toAddress,
 		VaultPubKey: vaultPubKey,
-		Coins:       common.Coins{common.NewCoin(outAsset, cosmos.NewUint(24528352))},
+		Coins:       common.Coins{common.NewCoin(outAsset, cosmos.NewUint(paymentAmount))},
 		Memo:        "memo",
 		MaxGas:      common.Gas{common.NewCoin(outAsset, cosmos.NewUint(235824))},
 		GasRate:     750000,
 		InHash:      "hash",
 	}
 
-	msg, err := client.processOutboundTx(txOut, 1)
+	msg, err := client.processOutboundTx(txOut)
 	c.Assert(err, IsNil)
 
-	expectedAmount := int64(245283)
-	expectedDenom := "uatom"
-	c.Check(msg.Amount[0].Amount.Int64(), Equals, expectedAmount)
-	c.Check(msg.Amount[0].Denom, Equals, expectedDenom)
-	c.Logf(msg.FromAddress)
-	c.Check(msg.FromAddress, Equals, "cosmos126kpfewtlc7agqjrwdl2wfg0txkphsawus338n")
-	c.Check(msg.ToAddress, Equals, toAddress.String())
+	c.Check(msg.Amount, Equals, txtypes.XRPCurrencyAmount(paymentAmount))
+	c.Check(msg.BaseTx.Account, Equals, txtypes.Address("rQwpQ54X5gJyLGg4QGp3HSkjdf3u37NqiZ"))
+	c.Check(msg.Destination, Equals, txtypes.Address(toAddress.String()))
+	c.Check(msg.BaseTx.NetworkID, Equals, uint32(1))
+
+	signingPubKey, err := vaultPubKey.Secp256K1()
+	c.Assert(err, IsNil)
+	signingPubKeyHex := hex.EncodeToString(signingPubKey.SerializeCompressed())
+	c.Check(msg.BaseTx.SigningPubKey, Equals, signingPubKeyHex)
 }
 
-func (s *CosmosTestSuite) TestSign(c *C) {
+func (s *XrpTestSuite) TestSign(c *C) {
+	client, err := NewClient(
+		s.thorKeys, 
+		config.BifrostChainConfiguration{
+			ChainID:        common.XRPChain,
+			RPCHost:        "http://testnode/",
+			BlockScanner: config.BifrostBlockScannerConfiguration{
+				ChainID: common.XRPChain,
+				StartBlockHeight: 1, // avoids querying thorchain for block height
+			},
+			ChainNetwork: "1",
+		}, 
+		nil, 
+		s.bridge, 
+		s.m,
+	)
+	c.Assert(err, IsNil)
+	c.Check(client.rpcClient.NetworkID, Equals, uint32(1))
+
 	priv, err := s.thorKeys.GetPrivateKey()
 	c.Assert(err, IsNil)
-
 	temp, err := cryptocodec.ToCmtPubKeyInterface(priv.PubKey())
 	c.Assert(err, IsNil)
-
-	pk, err := common.NewPubKeyFromCrypto(temp)
+	vaultPubKey, err := common.NewPubKeyFromCrypto(temp)
 	c.Assert(err, IsNil)
-
-	localKm := &keyManager{
-		privKey: priv,
-		addr:    types.AccAddress(priv.PubKey().Address()),
-		pubkey:  pk,
-	}
-
-	interfaceRegistry := codectypes.NewInterfaceRegistry()
-	interfaceRegistry.RegisterImplementations((*types.Msg)(nil), &btypes.MsgSend{})
-	marshaler := codec.NewProtoCodec(interfaceRegistry)
-
-	clientConfig := config.BifrostChainConfiguration{ChainID: common.GAIAChain}
-	scannerConfig := config.BifrostBlockScannerConfiguration{ChainID: common.GAIAChain}
-	txConfig := tx.NewTxConfig(marshaler, []signingtypes.SignMode{signingtypes.SignMode_SIGN_MODE_DIRECT})
-
-	mockAccountServiceClient := NewMockAccountServiceClient()
-	mockBankServiceClient := NewMockBankServiceClient()
-
-	client := CosmosClient{
-		cfg:             clientConfig,
-		txConfig:        txConfig,
-		cosmosScanner:   &CosmosBlockScanner{cfg: scannerConfig, rpc: &mockTendermintRPC{}},
-		bankClient:      mockBankServiceClient,
-		accountClient:   mockAccountServiceClient,
-		chainID:         "columbus-5",
-		localKeyManager: localKm,
-		accts:           NewCosmosMetaDataStore(),
-	}
-
-	vaultPubKey, err := common.NewPubKey(pk.String())
+	outAsset, err := common.NewAsset("XRP.XRP")
 	c.Assert(err, IsNil)
-	outAsset, err := common.NewAsset("GAIA.ATOM")
-	c.Assert(err, IsNil)
-	toAddress, err := common.NewAddress("cosmos10tjz4ave7znpctgd2rfu6v2r6zkeup2dlmqtuz")
+	toAddress, err := common.NewAddress("rQwpQ54X5gJyLGg4QGp3HSkjdf3u37NqiZ")
 	c.Assert(err, IsNil)
 	txOut := stypes.TxOutItem{
 		Chain:       common.GAIAChain,
@@ -238,49 +317,42 @@ func (s *CosmosTestSuite) TestSign(c *C) {
 		InHash:      "hash",
 	}
 
-	msg, err := client.processOutboundTx(txOut, 1)
+	msg, err := client.processOutboundTx(txOut)
 	c.Assert(err, IsNil)
 
-	meta := client.accts.Get(pk)
-	c.Check(meta.AccountNumber, Equals, int64(0))
+	meta := client.accts.Get(vaultPubKey)
 	c.Check(meta.SeqNumber, Equals, int64(0))
 
-	gas := types.NewCoins(types.NewCoin("uatom", sdkmath.NewInt(100)))
+	msg.Sequence = uint32(meta.SeqNumber+1)
+	msg.Fee = txtypes.XRPCurrencyAmount(txOut.GasRate)
+	if txOut.Memo != "" {
+		msg.BaseTx.Memos = []txtypes.MemoWrapper{
+			{
+				Memo: txtypes.Memo{
+					MemoData: hex.EncodeToString([]byte(txOut.Memo)),
+				},
+			},
+		}
+	}
+	msg.LastLedgerSequence = 1
 
-	txb, err := buildUnsigned(
-		txConfig,
-		msg,
-		vaultPubKey,
-		"memo",
-		gas,
-		uint64(meta.AccountNumber),
-		uint64(meta.SeqNumber),
-	)
-	c.Assert(err, IsNil)
+	// c.Check(txb.GetTx().GetFee().Equal(gas), Equals, true)
+	// c.Check(txb.GetTx().GetMemo(), Equals, "memo")
+	// pks, err := txb.GetTx().GetPubKeys()
+	// c.Assert(err, IsNil)
 
-	c.Check(txb.GetTx().GetFee().Equal(gas), Equals, true)
-	c.Check(txb.GetTx().GetMemo(), Equals, "memo")
-	pks, err := txb.GetTx().GetPubKeys()
-	c.Assert(err, IsNil)
-
-	c.Check(pks[0].Address().String(), Equals, priv.PubKey().Address().String())
+	// c.Check(pks[0].Address().String(), Equals, priv.PubKey().Address().String())
 
 	// Ensure the signature is present but tranasaction has not been signed yet
-	sigs, err := txb.GetTx().GetSignaturesV2()
-	c.Assert(err, IsNil)
-	c.Check(sigs[0].PubKey.String(), Equals, priv.PubKey().String())
-	sigData, ok := sigs[0].Data.(*signingtypes.SingleSignatureData)
-	c.Check(ok, Equals, true)
-	c.Check(sigData.SignMode, Equals, signingtypes.SignMode_SIGN_MODE_DIRECT)
-	c.Check(len(sigData.Signature), Equals, 0)
+	// sigs, err := txb.GetTx().GetSignaturesV2()
+	// c.Assert(err, IsNil)
+	// c.Check(sigs[0].PubKey.String(), Equals, priv.PubKey().String())
+	// sigData, ok := sigs[0].Data.(*signingtypes.SingleSignatureData)
+	// c.Check(ok, Equals, true)
+	// c.Check(sigData.SignMode, Equals, signingtypes.SignMode_SIGN_MODE_DIRECT)
+	// c.Check(len(sigData.Signature), Equals, 0)
 
 	// Sign the message
-	_, err = client.signMsg(
-		txb,
-		vaultPubKey,
-		uint64(meta.AccountNumber),
-		uint64(meta.SeqNumber),
-	)
+	_, err = client.signMsg(msg, vaultPubKey)
 	c.Assert(err, IsNil)
 }
-*/

@@ -9,7 +9,6 @@ func (k *Keys) GetFormattedPublicKey() []byte {
 }
 
 func (k *Keys) Sign(message []byte) ([]byte, error) {
-	// TODO: do I need NewKeyFromSeed?
 	rawPriv := ed25519.NewKeyFromSeed(k.privateKey)
 	return ed25519.Sign(rawPriv, message), nil
 }
