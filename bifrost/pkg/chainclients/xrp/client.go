@@ -57,7 +57,7 @@ type Client struct {
 	storage             *blockscanner.BlockScannerStorage
 	blockScanner        *blockscanner.BlockScanner
 	signerCacheManager  *signercache.CacheManager
-	cosmosScanner       *XrpBlockScanner
+	xrpScanner          *XrpBlockScanner
 	globalSolvencyQueue chan stypes.Solvency
 	wg                  *sync.WaitGroup
 	stopchan            chan struct{}
@@ -84,14 +84,6 @@ func NewClient(
 		return nil, fmt.Errorf("fail to get private key: %w", err)
 	}
 
-	// temp, err := cryptocodec.ToCmtPubKeyInterface(priv.PubKey())
-	// if err != nil {
-	// 	return nil, fmt.Errorf("fail to get tm pub key: %w", err)
-	// }
-	// pk, err := common.NewPubKeyFromCrypto(temp)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("fail to get pub key: %w", err)
-	// }
 	if thorchainBridge == nil {
 		return nil, errors.New("thorchain bridge is nil")
 	}
@@ -101,8 +93,6 @@ func NewClient(
 		return nil, fmt.Errorf("fail to create key manager: %w", err)
 	}
 
-	// CHANGEME: each THORNode network (e.g. mainnet, mocknet, etc.) may connect to a Cosmos chain with a different chain ID
-	// Implement the logic here for determinine which chain ID to use.
 	chainID := uint32(0)
 	switch os.Getenv("NET") {
 	case "mainnet", "stagenet":
@@ -145,7 +135,7 @@ func NewClient(
 		return nil, fmt.Errorf("fail to create scan storage: %w", err)
 	}
 
-	c.cosmosScanner, err = NewXrpBlockScanner(
+	c.xrpScanner, err = NewXrpBlockScanner(
 		c.cfg.RPCHost,
 		c.cfg.BlockScanner,
 		c.storage,
@@ -157,7 +147,7 @@ func NewClient(
 		return nil, fmt.Errorf("failed to create cosmos scanner: %w", err)
 	}
 
-	c.blockScanner, err = blockscanner.NewBlockScanner(c.cfg.BlockScanner, c.storage, m, c.thorchainBridge, c.cosmosScanner)
+	c.blockScanner, err = blockscanner.NewBlockScanner(c.cfg.BlockScanner, c.storage, m, c.thorchainBridge, c.xrpScanner)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create block scanner: %w", err)
 	}
@@ -171,7 +161,7 @@ func NewClient(
 	return c, nil
 }
 
-// Start Cosmos chain client
+// Start Xrp chain client
 func (c *Client) Start(globalTxsQueue chan stypes.TxIn, globalErrataQueue chan stypes.ErrataBlock, globalSolvencyQueue chan stypes.Solvency) {
 	c.globalSolvencyQueue = globalSolvencyQueue
 	c.tssKeyManager.Start()
@@ -180,7 +170,7 @@ func (c *Client) Start(globalTxsQueue chan stypes.TxIn, globalErrataQueue chan s
 	go runners.SolvencyCheckRunner(c.GetChain(), c, c.thorchainBridge, c.stopchan, c.wg, constants.ThorchainBlockTime)
 }
 
-// Stop Cosmos chain client
+// Stop Xrp chain client
 func (c *Client) Stop() {
 	c.tssKeyManager.Stop()
 	c.blockScanner.Stop()
@@ -188,7 +178,7 @@ func (c *Client) Stop() {
 	c.wg.Wait()
 }
 
-// GetConfig return the configuration used by Cosmos chain client
+// GetConfig return the configuration used by Xrp chain client
 func (c *Client) GetConfig() config.BifrostChainConfiguration {
 	return c.cfg
 }
@@ -202,7 +192,7 @@ func (c *Client) GetChain() common.Chain {
 }
 
 func (c *Client) GetHeight() (int64, error) {
-	return c.cosmosScanner.GetHeight()
+	return c.xrpScanner.GetHeight()
 }
 
 // GetBlockScannerHeight returns blockscanner height
@@ -270,7 +260,7 @@ func (c *Client) GetAccountByAddress(address string, height *big.Int) (common.Ac
 	}, nil
 }
 
-func (c *Client) processOutboundTx(tx stypes.TxOutItem, thorchainHeight int64) (*transactions.Payment, error) {
+func (c *Client) processOutboundTx(tx stypes.TxOutItem) (*transactions.Payment, error) {
 	fromAddr, err := tx.VaultPubKey.GetAddress(c.GetChain())
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert address (%s) to bech32: %w", tx.VaultPubKey.String(), err)
@@ -281,14 +271,15 @@ func (c *Client) processOutboundTx(tx stypes.TxOutItem, thorchainHeight int64) (
 	}
 
 	signingPubKey, err := tx.VaultPubKey.Secp256K1()
+	if err != nil {
+		return nil, err
+	}
 
 	return &transactions.Payment{
 		BaseTx: transactions.BaseTx{
 			Account: txtypes.Address(fromAddr),
 			NetworkID: c.chainID, // Currently doesn't do anything, but the client with populate
 			SigningPubKey: hex.EncodeToString(signingPubKey.SerializeCompressed()),
-			//Sequence:        sequence,
-			//Fee:             strconv.Itoa(int(feeScaled)),
 		},
 		Amount: txtypes.XRPCurrencyAmount(tx.Coins[0].Amount.Uint64()),
 		Destination: txtypes.Address(tx.ToAddress),
@@ -325,13 +316,13 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signedTx, c
 		return nil, nil, nil, nil
 	}
 
-	msg, err := c.processOutboundTx(tx, thorchainHeight)
+	msg, err := c.processOutboundTx(tx)
 	if err != nil {
 		c.logger.Err(err).Msg("failed to process outbound tx")
 		return nil, nil, nil, err
 	}
 
-	currentHeight, err := c.cosmosScanner.GetHeight()
+	currentHeight, err := c.xrpScanner.GetHeight()
 	if err != nil {
 		c.logger.Err(err).Msg("fail to get current block height")
 		return nil, nil, nil, err
@@ -346,8 +337,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signedTx, c
 			return nil, nil, nil, err
 		}
 	} else {
-		// Check if we have CosmosMetadata for the current block height before
-		// fetching it from the GRPC server
+		// Check if we have XrpMetadata for the current block height before fetching it
 		meta = c.accts.Get(tx.VaultPubKey)
 		if currentHeight > meta.BlockHeight {
 			var acc common.Account
@@ -406,15 +396,11 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signedTx, c
 	return txBytes, nil, nil, nil
 }
 
-// signMsg takes an unsigned msg in a txBuilder and signs it using either private key or TSS.
+// signMsg takes a payment msg and signs it using either private key or TSS.
 func (c *Client) signMsg(
 	payment *transactions.Payment,
 	pubkey common.PubKey,
 ) ([]byte, error) {
-	// cpk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, pubkey.String())
-	// if err != nil {
-	// 	return nil, fmt.Errorf("unable to GetPubKeyFromBech32 from cosmos: %w", err)
-	// }
 	xrpPubKey, err := pubkey.Secp256K1()
 	if err != nil {
 		return nil, err
@@ -437,7 +423,6 @@ func (c *Client) signMsg(
 
 	var signature []byte
 	if c.localKeyManager.PublicKeyHex == hex.EncodeToString(xrpPubKey.SerializeCompressed()){
-	//if c.localKeyManager.Pubkey().Equals(pubkey) {
 		signature, err = c.localKeyManager.Sign(signBytes)
 		if err != nil {
 			return nil, fmt.Errorf("unable to sign using localKeyManager: %w", err)
@@ -454,10 +439,7 @@ func (c *Client) signMsg(
 	flatTx["TxnSignature"] = hex.EncodeToString(signature) // use flatTx so we don't need to call autofill again
 
 	// Ensure the signature is valid
-	// if !cpk.VerifySignature(signBytes, signature) {
-	// 	return nil, fmt.Errorf("unable to verify signature with secpPubKey")
-	// }
-	if verifySignature(signBytes, signature, xrpPubKey.SerializeCompressed()) {
+	if !verifySignature(signBytes, signature, xrpPubKey.SerializeCompressed()) {
 		return nil, fmt.Errorf("unable to verify signature with secpPubKey")
 	}
 
@@ -486,15 +468,8 @@ func verifySignature(signBytes, signature, compressedPubKey []byte) bool {
 			return false
 		}
 	
-		// // Decode the public key from hex
-		// publicKey, err := ethcrypto.DecompressPubkey(compressedPubKey)
-		// if err != nil {
-		// 	return false
-		// }
-	
 		// Verify the signature
 		return ethcrypto.VerifySignature(
-			//crypto.CompressPubkey(publicKey),
 			compressedPubKey,
 			messageHash,
 			append(sig.R.Bytes(), sig.S.Bytes()...),
@@ -503,13 +478,6 @@ func verifySignature(signBytes, signature, compressedPubKey []byte) bool {
 
 // BroadcastTx is to broadcast the tx to cosmos chain
 func (c *Client) BroadcastTx(tx stypes.TxOutItem, txBytes []byte) (string, error) {
-	// TODO SAM127: fix rpc client to have a timeout/context
-	// txHash, err := c.rpcClient.SubmitTxBlob(hex.EncodeToString(txBytes))
-	// if err != nil {
-	// 	c.logger.Error().AnErr("error", err).Msg("unsuccessful error code in transaction broadcast")
-	// 	return "", fmt.Errorf("broadcast msg failed, %w", err)
-	// }
-
 	response, err := c.rpcClient.SubmitAndWait(hex.EncodeToString(txBytes), true)
 	if err != nil {
 		c.logger.Error().AnErr("error", err).Msg("unsuccessful error code in transaction broadcast")
@@ -564,7 +532,7 @@ func (c *Client) ReportSolvency(blockHeight int64) error {
 		return fmt.Errorf("fail to get asgards,err: %w", err)
 	}
 
-	currentGasFee := c.cosmosScanner.lastFee
+	currentGasFee := c.xrpScanner.lastFee
 
 	// report insolvent asgard vaults,
 	// or else all if the chain is halted and all are solvent
@@ -626,7 +594,7 @@ func (c *Client) ShouldReportSolvency(height int64) bool {
 	// blocks/min). Since the last fee is used as a buffer we also want to ensure that is
 	// non-zero (enough blocks have been seen) before checking insolvency to avoid false
 	// positives.
-	return height%10 == 0 && !c.cosmosScanner.lastFee.IsZero()
+	return height%10 == 0 && !c.xrpScanner.lastFee.IsZero()
 }
 
 // OnObservedTxIn update the signer cache (in case we haven't already)

@@ -15,7 +15,6 @@ import (
 	btypes "gitlab.com/thorchain/thornode/v3/bifrost/blockscanner/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 
-	//"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/xrp/rpc"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"

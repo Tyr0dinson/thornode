@@ -11,8 +11,6 @@ import (
 
 type KeyManager struct {
 	AccountID     string // base58 encoded address with 'r' prefix and checksum
-	//MasterSeed    string
-	//MasterSeedHex string
 	PublicKey     string // base58 encoded w/ prefix and checksum
 	PublicKeyHex  string // raw hex encoded pub key
 	KeyType       CryptoAlgorithm
@@ -29,7 +27,7 @@ func NewKeyManager(key cryptotypes.PrivKey, keyType CryptoAlgorithm) (*KeyManage
 	// 		return nil, fmt.Errorf("fail generate xrp wallet from ed25519 seed: %v", err)
 	// 	}
 	case SECP256K1:
-		keys, err = secp256k1.DeriveKeysFromSeed(key.Bytes())
+		keys, err = secp256k1.DeriveKeysFromMasterPrivateKey(key.Bytes())
 		if err != nil {
 			return nil, fmt.Errorf("fail generate xrp wallet from secp256k1 seed: %v", err)
 		}
@@ -41,8 +39,6 @@ func NewKeyManager(key cryptotypes.PrivKey, keyType CryptoAlgorithm) (*KeyManage
 	return &KeyManager{
 		AccountID:     MasterPubKeyToAccountID(keys.GetFormattedPublicKey()),
 		KeyType:       keyType,
-		//MasterSeed:    masterSeed,
-		//MasterSeedHex: hex.EncodeToString(masterSeedBytes),
 		PublicKey:     EncodePublicKey(keys.GetFormattedPublicKey()),
 		PublicKeyHex:  hex.EncodeToString(keys.GetFormattedPublicKey()),
 		Keys:          keys,
@@ -53,24 +49,9 @@ func (m *KeyManager) Pubkey() string {
 	return m.PublicKey
 }
 
-// func (m *KeyManager) ExportAsMnemonic() (string, error) {
-// 	if m.mnemonic == "" {
-// 		return "", fmt.Errorf("this key manager is not recover from mnemonic or auto generated ")
-// 	}
-// 	return m.mnemonic, nil
-// }
-
-// func (m *KeyManager) ExportAsPrivateKey() (string, error) {
-// 	return hex.EncodeToString(m.privKey.Bytes()), nil
-// }
-
 func (m *KeyManager) Sign(msg []byte) ([]byte, error) {
 	return m.Keys.Sign(msg)
 }
-
-// func (m *KeyManager) GetPrivKey() ctypes.PrivKey {
-// 	return m.privKey
-// }
 
 // Get formatted address, passing in a prefix.
 func (w *KeyManager) GetAddr() string {
