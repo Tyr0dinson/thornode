@@ -7,8 +7,10 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/tokenlist/avaxtokens"
 )
 
-var avaxTokenListV3_0_0 EVMTokenList
-var avaxTokenListV3_2_0 EVMTokenList
+var (
+	avaxTokenListV3_0_0 EVMTokenList
+	avaxTokenListV3_2_0 EVMTokenList
+)
 
 func init() {
 	if err := json.Unmarshal(avaxtokens.AVAXTokenListRawV3_0_0, &avaxTokenListV3_0_0); err != nil {

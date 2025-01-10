@@ -7,8 +7,10 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/tokenlist/ethtokens"
 )
 
-var ethTokenListV3_0_0 EVMTokenList
-var ethTokenListV3_2_0 EVMTokenList
+var (
+	ethTokenListV3_0_0 EVMTokenList
+	ethTokenListV3_2_0 EVMTokenList
+)
 
 func init() {
 	if err := json.Unmarshal(ethtokens.ETHTokenListRawV3_0_0, &ethTokenListV3_0_0); err != nil {

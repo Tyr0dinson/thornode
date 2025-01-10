@@ -7,8 +7,10 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/tokenlist/bsctokens"
 )
 
-var bscTokenListV3_0_0 EVMTokenList
-var bscTokenListV3_2_0 EVMTokenList
+var (
+	bscTokenListV3_0_0 EVMTokenList
+	bscTokenListV3_2_0 EVMTokenList
+)
 
 func init() {
 	if err := json.Unmarshal(bsctokens.BSCTokenListRawV3_0_0, &bscTokenListV3_0_0); err != nil {
