@@ -12,7 +12,7 @@
             "@type": "/cosmos.crypto.secp256k1.PubKey",
             "key": "Ah4wzGUnsQ7oYiei732pv9NLLvufvGFkBtH3zNyhzBZW"
           },
-          "sequence": "2"
+          "sequence": "3"
         },
         {
           "@type": "/cosmos.auth.v1beta1.BaseAccount",
@@ -29,11 +29,11 @@
             "@type": "/cosmos.crypto.secp256k1.PubKey",
             "key": "AmF4AUTWZEUSBtgqiR5n2Lgic/Yrr1mWupMo5TAubNRO"
           },
-          "sequence": "2"
+          "sequence": "1"
         },
         {
           "@type": "/cosmos.auth.v1beta1.BaseAccount",
-          "account_number": "16",
+          "account_number": "15",
           "address": "tthor1yqz8q00jlvn4r4hycvkg555ak7lxtxx6jwapqj",
           "pub_key": null,
           "sequence": "0"
@@ -86,20 +86,13 @@
         },
         {
           "@type": "/cosmos.auth.v1beta1.BaseAccount",
-          "account_number": "15",
-          "address": "tthor1f4l5dlqhaujgkxxqmug4stfvmvt58vx2tspx4g",
-          "pub_key": null,
-          "sequence": "0"
-        },
-        {
-          "@type": "/cosmos.auth.v1beta1.BaseAccount",
           "account_number": "10",
           "address": "tthor12e7ngn5h22su4hecdf0h8aw7hvnly5tchrfd43",
           "pub_key": {
             "@type": "/cosmos.crypto.secp256k1.PubKey",
             "key": "A8MoqNbfqzaZ7t5peW7avtFHeOJsxPVL+xxj5iD7uuUB"
           },
-          "sequence": "2"
+          "sequence": "3"
         },
         {
           "@type": "/cosmos.auth.v1beta1.ModuleAccount",
@@ -144,7 +137,7 @@
             "@type": "/cosmos.crypto.secp256k1.PubKey",
             "key": "A79mmwQR0zNaJgvyBZyo1g3eKxUQTlINRlNJTUFCRxUj"
           },
-          "sequence": "1"
+          "sequence": "2"
         },
         {
           "@type": "/cosmos.auth.v1beta1.ModuleAccount",
@@ -252,15 +245,6 @@
           ]
         },
         {
-          "address": "tthor1f4l5dlqhaujgkxxqmug4stfvmvt58vx2tspx4g",
-          "coins": [
-            {
-              "amount": "100000000000",
-              "denom": "thor.mimir"
-            }
-          ]
-        },
-        {
           "address": "tthor12e7ngn5h22su4hecdf0h8aw7hvnly5tchrfd43",
           "coins": [
             {
@@ -273,7 +257,7 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "35500002000000",
+              "amount": "35500008000000",
               "denom": "rune"
             }
           ]
@@ -300,7 +284,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "14500000000000",
+              "amount": "14499994000000",
               "denom": "rune"
             }
           ]
@@ -318,7 +302,7 @@
           "denom": "rune"
         },
         {
-          "amount": "300000000000",
+          "amount": "200000000000",
           "denom": "thor.mimir"
         }
       ]
@@ -440,11 +424,24 @@
           "transaction_size": "80000"
         }
       ],
-      "nodeMimirs": [],
+      "nodeMimirs": [
+        {
+          "key": "BONDSLASHBAN",
+          "signer": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej"
+        },
+        {
+          "key": "BONDSLASHBAN",
+          "signer": "tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u"
+        },
+        {
+          "key": "BONDSLASHBAN",
+          "signer": "tthor12e7ngn5h22su4hecdf0h8aw7hvnly5tchrfd43"
+        }
+      ],
       "node_accounts": [
         {
           "active_block_height": "1",
-          "bond": "2500000000000",
+          "bond": "2499998000000",
           "bond_address": "tthor12e7ngn5h22su4hecdf0h8aw7hvnly5tchrfd43",
           "ip_address": "1.1.1.1",
           "node_address": "tthor12e7ngn5h22su4hecdf0h8aw7hvnly5tchrfd43",
@@ -487,7 +484,7 @@
         },
         {
           "active_block_height": "1",
-          "bond": "2500000000000",
+          "bond": "2499998000000",
           "bond_address": "tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u",
           "ip_address": "1.1.1.1",
           "node_address": "tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u",
@@ -502,7 +499,7 @@
         },
         {
           "active_block_height": "1",
-          "bond": "2500000000000",
+          "bond": "2499998000000",
           "bond_address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
           "ip_address": "1.1.1.1",
           "node_address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
