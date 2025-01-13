@@ -6,7 +6,7 @@
       "accounts": [
         {
           "@type": "/cosmos.auth.v1beta1.BaseAccount",
-          "account_number": "12",
+          "account_number": "11",
           "address": "tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u",
           "pub_key": {
             "@type": "/cosmos.crypto.secp256k1.PubKey",
@@ -64,13 +64,6 @@
           "permissions": []
         },
         {
-          "@type": "/cosmos.auth.v1beta1.BaseAccount",
-          "account_number": "11",
-          "address": "tthor1f4l5dlqhaujgkxxqmug4stfvmvt58vx2tspx4g",
-          "pub_key": null,
-          "sequence": "0"
-        },
-        {
           "@type": "/cosmos.auth.v1beta1.ModuleAccount",
           "base_account": {
             "account_number": "2",
@@ -98,7 +91,7 @@
         {
           "@type": "/cosmos.auth.v1beta1.ModuleAccount",
           "base_account": {
-            "account_number": "13",
+            "account_number": "12",
             "address": "tthor1dl7un46w7l7f3ewrnrm6nq58nerjtp0d82uzjg",
             "pub_key": null,
             "sequence": "0"
@@ -199,21 +192,8 @@
           "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
           "coins": [
             {
-<<<<<<< HEAD
-              "amount": "242137074369",
-=======
-              "amount": "260052872353",
->>>>>>> abd92c4da (Regression test export updates: Miscellaneous non-Admin dog MsgMimir bond costs)
+              "amount": "242137073311",
               "denom": "rune"
-            }
-          ]
-        },
-        {
-          "address": "tthor1f4l5dlqhaujgkxxqmug4stfvmvt58vx2tspx4g",
-          "coins": [
-            {
-              "amount": "100000000000",
-              "denom": "thor.mimir"
             }
           ]
         },
@@ -221,11 +201,7 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-<<<<<<< HEAD
-              "amount": "35010094324553",
-=======
-              "amount": "35010128315161",
->>>>>>> abd92c4da (Regression test export updates: Miscellaneous non-Admin dog MsgMimir bond costs)
+              "amount": "35010096324552",
               "denom": "rune"
             }
           ]
@@ -234,7 +210,7 @@
           "address": "tthor1dl7un46w7l7f3ewrnrm6nq58nerjtp0d82uzjg",
           "coins": [
             {
-              "amount": "6556873224",
+              "amount": "6556873213",
               "denom": "rune"
             }
           ]
@@ -243,7 +219,7 @@
           "address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
           "coins": [
             {
-              "amount": "2537767244428",
+              "amount": "2537767244371",
               "denom": "rune"
             }
           ]
@@ -261,11 +237,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-<<<<<<< HEAD
-              "amount": "5003456483426",
-=======
-              "amount": "5002552393158",
->>>>>>> abd92c4da (Regression test export updates: Miscellaneous non-Admin dog MsgMimir bond costs)
+              "amount": "5003454484553",
               "denom": "rune"
             }
           ]
@@ -283,7 +255,7 @@
           "denom": "rune"
         },
         {
-          "amount": "300000000000",
+          "amount": "200000000000",
           "denom": "thor.mimir"
         }
       ]
@@ -317,7 +289,7 @@
       "affiliate_collectors": [
         {
           "owner_address": "tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u",
-          "rune_amount": "6556873224"
+          "rune_amount": "6556873213"
         }
       ],
       "bond_providers": [
@@ -372,19 +344,10 @@
         }
       ],
       "network": {
-<<<<<<< HEAD
         "LPIncomeSplit": "9516",
         "NodeIncomeSplit": "484",
-        "bond_reward_rune": "3456483426",
+        "bond_reward_rune": "3456484553",
         "total_bond_units": "21"
-=======
-        "LPIncomeSplit": "9323",
-        "NodeIncomeSplit": "677",
-        "bond_reward_rune": "2554393158",
-        "burned_bep2_rune": "0",
-        "burned_erc20_rune": "0",
-        "total_bond_units": "15"
->>>>>>> abd92c4da (Regression test export updates: Miscellaneous non-Admin dog MsgMimir bond costs)
       },
       "network_fees": [
         {
@@ -398,7 +361,13 @@
           "transaction_size": "80000"
         }
       ],
-      "nodeMimirs": [],
+      "nodeMimirs": [
+        {
+          "key": "HALTBTCTRADING",
+          "signer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
+          "value": "1"
+        }
+      ],
       "node_accounts": [
         {
           "active_block_height": "1",
@@ -414,74 +383,7 @@
           "validator_cons_pub_key": "tthorcpub1zcjduepqq75h7uy6qhesh9d3a9tuk0mzrnc46u8rye44ze6peua3zmpfh23q8z37sz"
         }
       ],
-<<<<<<< HEAD
       "observed_tx_in_voters": null,
-=======
-      "observed_tx_in_voters": [
-        {
-          "actions": [
-            {
-              "chain": "ETH",
-              "coin": {
-                "amount": "477467933",
-                "asset": "ETH.ETH"
-              },
-              "gas_rate": "12",
-              "in_hash": "DC45F316F9C1092433136E56CF77182427B3ADF07C4E9F373BD7EF2505E56CC3",
-              "max_gas": [
-                {
-                  "amount": "960000",
-                  "asset": "ETH.ETH",
-                  "decimals": "8"
-                }
-              ],
-              "memo": "OUT:DC45F316F9C1092433136E56CF77182427B3ADF07C4E9F373BD7EF2505E56CC3",
-              "to_address": "0x1b03d088612a00df0049634e9cc8684d622cada2",
-              "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
-            }
-          ],
-          "finalised_height": "15",
-          "height": "15",
-          "out_txs": null,
-          "outbound_height": "15",
-          "tx": {
-            "tx": {
-              "chain": "THOR",
-              "coins": [
-                {
-                  "amount": "50000000000",
-                  "asset": "THOR.RUNE"
-                }
-              ],
-              "from_address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
-              "gas": null,
-              "id": "DC45F316F9C1092433136E56CF77182427B3ADF07C4E9F373BD7EF2505E56CC3",
-              "memo": "=:ETH.ETH:0x1b03d088612a00df0049634e9cc8684d622cada2::test:500",
-              "to_address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2"
-            }
-          },
-          "tx_id": "DC45F316F9C1092433136E56CF77182427B3ADF07C4E9F373BD7EF2505E56CC3",
-          "txs": [
-            {
-              "tx": {
-                "chain": "THOR",
-                "coins": [
-                  {
-                    "amount": "50000000000",
-                    "asset": "THOR.RUNE"
-                  }
-                ],
-                "from_address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
-                "gas": null,
-                "id": "DC45F316F9C1092433136E56CF77182427B3ADF07C4E9F373BD7EF2505E56CC3",
-                "memo": "=:ETH.ETH:0x1b03d088612a00df0049634e9cc8684d622cada2::test:500",
-                "to_address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2"
-              }
-            }
-          ]
-        }
-      ],
->>>>>>> abd92c4da (Regression test export updates: Miscellaneous non-Admin dog MsgMimir bond costs)
       "observed_tx_out_voters": null,
       "orderbook_items": [],
       "outbound_fee_spent_rune": [
@@ -509,7 +411,7 @@
           "LP_units": "100000000000",
           "asset": "BTC.BTC",
           "balance_asset": "87194541",
-          "balance_rune": "134923536348",
+          "balance_rune": "134923536349",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -519,13 +421,8 @@
         {
           "LP_units": "100000000000",
           "asset": "ETH.ETH",
-<<<<<<< HEAD
           "balance_asset": "1800323006",
-          "balance_rune": "107213538021",
-=======
-          "balance_asset": "1522532067",
-          "balance_rune": "118803370503",
->>>>>>> abd92c4da (Regression test export updates: Miscellaneous non-Admin dog MsgMimir bond costs)
+          "balance_rune": "107213536962",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -546,7 +443,6 @@
       "swap_queue_items": [],
       "swapper_clout": [
         {
-<<<<<<< HEAD
           "address": "0x1b03d088612a00df0049634e9cc8684d622cada2",
           "reclaimed": "0",
           "score": "5555472041",
@@ -555,7 +451,7 @@
         {
           "address": "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
           "reclaimed": "0",
-          "score": "22410773408",
+          "score": "22410773370",
           "spent": "0"
         },
         {
@@ -579,7 +475,7 @@
         {
           "address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
           "reclaimed": "0",
-          "score": "23019290253",
+          "score": "23019290215",
           "spent": "0"
         },
         {
@@ -593,31 +489,6 @@
           "reclaimed": "0",
           "score": "11298002065",
           "spent": "0"
-=======
-          "height": "15",
-          "tx_array": [
-            {
-              "chain": "ETH",
-              "clout_spent": "0",
-              "coin": {
-                "amount": "477467933",
-                "asset": "ETH.ETH"
-              },
-              "gas_rate": "12",
-              "in_hash": "DC45F316F9C1092433136E56CF77182427B3ADF07C4E9F373BD7EF2505E56CC3",
-              "max_gas": [
-                {
-                  "amount": "960000",
-                  "asset": "ETH.ETH",
-                  "decimals": "8"
-                }
-              ],
-              "memo": "OUT:DC45F316F9C1092433136E56CF77182427B3ADF07C4E9F373BD7EF2505E56CC3",
-              "to_address": "0x1b03d088612a00df0049634e9cc8684d622cada2",
-              "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
-            }
-          ]
->>>>>>> abd92c4da (Regression test export updates: Miscellaneous non-Admin dog MsgMimir bond costs)
         }
       ],
       "trade_accounts": [],
