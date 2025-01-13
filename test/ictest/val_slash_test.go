@@ -45,7 +45,8 @@ func TestValSlash(t *testing.T) {
 	thorchain := StartThorchain(t, ctx, client, network, numVals, numFns, mainnet, chainImage, exoChains, "", "")
 
 	// Add validator for first churn
-	addValidators(t, ctx, thorchain, 3)
+	err := addValidators(t, ctx, thorchain, 3)
+	require.NoError(t, err)
 
 	// Test missed blocks slashing by stopping a validator
 	disabledVal := missedBlocksSlashTest(t, ctx, thorchain)
@@ -63,12 +64,12 @@ func TestValSlash(t *testing.T) {
 	// TODO: banned node slash
 		
 	// Wait for churn
-	err := testutil.WaitForBlocks(ctx, 1, thorchain)
+	err = testutil.WaitForBlocks(ctx, 1, thorchain)
 	require.NoError(t, err, "thorchain failed to make blocks")
 
 }
 
-func addValidators(t *testing.T, ctx context.Context, thorchain *tc.Thorchain, numValsToAdd int) {
+func addValidators(t *testing.T, ctx context.Context, thorchain *tc.Thorchain, numValsToAdd int) error {
 	// Add new validators
 	err := thorchain.AddValidators(ctx, nil, numValsToAdd)
 	require.NoError(t, err)
@@ -78,15 +79,18 @@ func addValidators(t *testing.T, ctx context.Context, thorchain *tc.Thorchain, n
 	require.NoError(t, err, "thorchain failed to make blocks")
 
 	// Wait for all vals to be active, then disable 1 val
+	numActiveVals := 0
 	for i := 0; i < 20; i++ {
-		numActiveVals := getNumActiveVals(t, ctx, thorchain)	
+		numActiveVals = getNumActiveVals(t, ctx, thorchain)	
 		err = testutil.WaitForBlocks(ctx, 5, thorchain)
 		require.NoError(t, err, "thorchain failed to make blocks")
 
 		if numActiveVals == len(thorchain.Validators) {
-			break
+			return nil
 		}
 	}
+
+	return fmt.Errorf("Failed to add validators, actual: %d, expected: %d", numActiveVals, len(thorchain.Validators))
 }
 
 func missedBlocksSlashTest(t *testing.T, ctx context.Context, thorchain *tc.Thorchain) *tc.ChainNode {

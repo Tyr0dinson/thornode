@@ -61,6 +61,7 @@ func ProposeUpgrade(ctx context.Context, val *thorchain.ChainNode, upgradeName s
 func ApproveUpgrade(ctx context.Context, val *thorchain.ChainNode, upgradeName string) error {
 	_, err := val.ExecTx(ctx, "thorchain", "thorchain", "approve-upgrade", upgradeName)
 	for count := 0; err != nil && count < 4; count++ {
+		fmt.Println("ApproveUpgrade error, trying again:", err)
 		time.Sleep(time.Second)
 		_, err = val.ExecTx(ctx, "thorchain", "thorchain", "approve-upgrade", upgradeName)
 	}

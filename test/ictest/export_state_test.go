@@ -45,7 +45,8 @@ func TestExportState(t *testing.T) {
 
 	// Add validators
 	if numVals > 1 {
-		addValidators(t, ctx, thorchain, numVals-1)
+		err := addValidators(t, ctx, thorchain, numVals-1)
+		require.NoError(t, err)
 	}
 	
 	err := thorchain.StopAllSidecars(ctx)

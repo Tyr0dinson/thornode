@@ -25,6 +25,159 @@ type UpgradeInfo struct {
 	uidgid  string
 }
 
+func TestUpgrade_3_1_to_3_2(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping in short mode")
+	}
+	t.Parallel()
+
+	client, network := interchaintest.DockerSetup(t)
+	ctx := context.Background()
+
+	// ----------------------------
+	// Set up thorchain and others
+	// ----------------------------
+	const (
+		numVals     = 2
+		numFns      = 0
+		mainnet     = false
+
+		initialRepo    = "thorchain"
+		initialVersion = "v3.1.1-mocknet"
+		imageUidGid    = "1025:1025"
+	)
+
+	// Start chain with 1 validator, then validators may be churned in (current bifrost requirement)
+	initialValSetSize := 1
+
+	// Start non-thorchain chains
+	exoChains := StartExoChains(t, ctx, client, network, []*interchaintest.ChainSpec{
+		//EthChainSpec("geth"), // only use this chain spec for eth or the one below
+		// EthChainSpec("anvil"), // Anvil supported contracts are not support in this repo
+		//GaiaChainSpec(),
+		BtcChainSpec(),
+		BchChainSpec(),
+		//LtcChainSpec(),
+		//DogeChainSpec(),
+		//BscChainSpec(),
+	})
+	//gaiaEg := SetupGaia(t, ctx, exoChains["GAIA"])
+	//ethRouterContractAddress, bscRouterContractAddress, err := SetupContracts(ctx, exoChains["ETH"], exoChains["BSC"])
+	//require.NoError(t, err, "error setting up contracts for eth and bsc")
+	ethRouterContractAddress, bscRouterContractAddress := "", ""
+	// Start thorchain
+	chainImage := ibc.NewDockerImage(initialRepo, initialVersion, imageUidGid)
+	thorchain := StartThorchain(t, ctx, client, network, initialValSetSize, numFns, mainnet, chainImage, exoChains, ethRouterContractAddress, bscRouterContractAddress)
+	//require.NoError(t, gaiaEg.Wait()) // Wait for 100 transactions before starting tests
+
+	// Add validators
+	if numVals > 1 {
+		err := addValidators(t, ctx, thorchain, numVals-1)
+		require.NoError(t, err)
+	}
+	// --------------------------------------------------------
+	// Pre-upgrade setup and tests
+	// --------------------------------------------------------
+	BootstrapPools(t, ctx, thorchain, exoChains)
+	CreateSavers(t, ctx, thorchain, exoChains)
+	arbTimer := CreateArbers(t, ctx, thorchain, exoChains)
+	PerformSwaps(t, ctx, thorchain, exoChains)
+	PerformSaverEjects(t, ctx, thorchain, exoChains)
+
+	// --------------------------------------------------------
+	// Upgrade
+	// --------------------------------------------------------
+	PerformUpgrade(t, ctx, client, thorchain, arbTimer, UpgradeInfo{
+		name: "3.2.0",
+		repo: "thorchain",
+		version: "v3.2.0-mocknet",
+		uidgid: imageUidGid,
+	})
+
+	// --------------------------------------------------------
+	// Post-upgrade tests
+	// --------------------------------------------------------
+	PerformSwaps(t, ctx, thorchain, exoChains)
+	PerformSaverEjects(t, ctx, thorchain, exoChains)
+	Ragnarok(t, ctx, thorchain, exoChains)
+}
+
+func TestUpgrade_3_0_to_3_1(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping in short mode")
+	}
+	t.Parallel()
+
+	client, network := interchaintest.DockerSetup(t)
+	ctx := context.Background()
+
+	// ----------------------------
+	// Set up thorchain and others
+	// ----------------------------
+	const (
+		numVals     = 3
+		numFns      = 0
+		mainnet     = false
+
+		initialRepo    = "thorchain"
+		initialVersion = "v3.0.1-mocknet"
+		imageUidGid    = "1025:1025"
+	)
+
+	// Start chain with 1 validator, then validators may be churned in (current bifrost requirement)
+	initialValSetSize := 1
+
+	// Start non-thorchain chains
+	exoChains := StartExoChains(t, ctx, client, network, []*interchaintest.ChainSpec{
+		//EthChainSpec("geth"), // only use this chain spec for eth or the one below
+		// EthChainSpec("anvil"), // Anvil supported contracts are not support in this repo
+		//GaiaChainSpec(),
+		BtcChainSpec(),
+		// BchChainSpec(),
+		// LtcChainSpec(),
+		// DogeChainSpec(),
+		//BscChainSpec(),
+	})
+	//gaiaEg := SetupGaia(t, ctx, exoChains["GAIA"])
+	//ethRouterContractAddress, bscRouterContractAddress, err := SetupContracts(ctx, exoChains["ETH"], exoChains["BSC"])
+	//require.NoError(t, err, "error setting up contracts for eth and bsc")
+	ethRouterContractAddress, bscRouterContractAddress := "", ""
+	// Start thorchain
+	chainImage := ibc.NewDockerImage(initialRepo, initialVersion, imageUidGid)
+	thorchain := StartThorchain(t, ctx, client, network, initialValSetSize, numFns, mainnet, chainImage, exoChains, ethRouterContractAddress, bscRouterContractAddress)
+	//require.NoError(t, gaiaEg.Wait()) // Wait for 100 transactions before starting tests
+
+	// Add validators
+	if numVals > 1 {
+		err := addValidators(t, ctx, thorchain, numVals-1)
+		require.NoError(t, err)
+	}
+	// --------------------------------------------------------
+	// Pre-upgrade setup and tests
+	// --------------------------------------------------------
+	BootstrapPools(t, ctx, thorchain, exoChains)
+	//CreateSavers(t, ctx, thorchain, exoChains)
+	arbTimer := CreateArbers(t, ctx, thorchain, exoChains)
+	//PerformSwaps(t, ctx, thorchain, exoChains)
+	//PerformSaverEjects(t, ctx, thorchain, exoChains)
+
+	// --------------------------------------------------------
+	// Upgrade
+	// --------------------------------------------------------
+	PerformUpgrade(t, ctx, client, thorchain, arbTimer, UpgradeInfo{
+		name: "3.1.0",
+		repo: "thorchain",
+		version: "v3.1.0-mocknet",
+		uidgid: imageUidGid,
+	})
+
+	// --------------------------------------------------------
+	// Post-upgrade tests
+	// --------------------------------------------------------
+	//PerformSwaps(t, ctx, thorchain, exoChains)
+	//PerformSaverEjects(t, ctx, thorchain, exoChains)
+	Ragnarok(t, ctx, thorchain, exoChains)
+}
 // TODO:
 // restart node after upgrade
 // test mainnet
@@ -75,7 +228,8 @@ func TestUpgrade_2_137_to_3_0(t *testing.T) {
 
 	// Add validators
 	if numVals > 1 {
-		addValidators(t, ctx, thorchain, numVals-1)
+		err := addValidators(t, ctx, thorchain, numVals-1)
+		require.NoError(t, err)
 	}
 	// --------------------------------------------------------
 	// Pre-upgrade setup and tests
@@ -92,7 +246,7 @@ func TestUpgrade_2_137_to_3_0(t *testing.T) {
 	PerformUpgrade(t, ctx, client, thorchain, arbTimer, UpgradeInfo{
 		name: "3.0.0",
 		repo: "thorchain",
-		version: "local",
+		version: "v3.0.0-mocknet",
 		uidgid: imageUidGid,
 	})
 
@@ -133,8 +287,12 @@ func PerformUpgrade(t *testing.T, ctx context.Context, client *client.Client, th
 
 	if len(thorchain.Validators) > 1 {
 		// the upgrade plan should not be scheduled on-chain yet.
-		_, _, err = thorchain.GetNode().ExecQuery(ctx, "upgrade", "plan")
-		require.Error(t, err, "expected error from upgrade plan query")
+		stdout, _, err := thorchain.GetNode().ExecQuery(ctx, "upgrade", "plan")
+		if thorchain.GetNode().IsAboveSDK47(ctx) {
+			require.Equal(t, "{}\n", string(stdout))
+		} else {
+			require.Error(t, err, "expected error from upgrade plan query")
+		}
 	}
 
 	// approve software upgrade from other validators, if they exist
@@ -152,10 +310,17 @@ func PerformUpgrade(t *testing.T, ctx context.Context, client *client.Client, th
 	stdout, _, err := thorchain.GetNode().ExecQuery(ctx, "upgrade", "plan")
 	require.NoError(t, err, "expected success from upgrade plan query")
 
-	plan := make(map[string]any)
-	require.NoError(t, json.Unmarshal(stdout, &plan))
-	require.Equal(t, upgradeInfo.name, plan["name"], "upgrade name mismatch")
-	require.Equal(t, fmt.Sprint(haltHeight), plan["height"], "upgrade height mismatch")
+	if thorchain.GetNode().IsAboveSDK47(ctx) {
+		plan := make(map[string]map[string]any)
+		require.NoError(t, json.Unmarshal(stdout, &plan))
+		require.Equal(t, upgradeInfo.name, plan["plan"]["name"], "upgrade name mismatch")
+		require.Equal(t, fmt.Sprint(haltHeight), plan["plan"]["height"], "upgrade height mismatch")
+	} else {
+		plan := make(map[string]any)
+		require.NoError(t, json.Unmarshal(stdout, &plan))
+		require.Equal(t, upgradeInfo.name, plan["name"], "upgrade name mismatch")
+		require.Equal(t, fmt.Sprint(haltHeight), plan["height"], "upgrade height mismatch")
+	}
 
 	// now wait for chain to halt at upgrade height
 
@@ -181,8 +346,11 @@ func PerformUpgrade(t *testing.T, ctx context.Context, client *client.Client, th
 	err = thorchain.StopAllNodes(ctx)
 	require.NoError(t, err, "error stopping node(s)")
 
-	storeVersion := getStoreVersion(t, ctx, thorchain, false)
-	require.Equal(t, int64(137), storeVersion)
+	// Store version prior to 3.0.0 is 137
+	if upgradeInfo.name == "3.0.0" {
+		storeVersion := getStoreVersion(t, ctx, thorchain, false)
+		require.Equal(t, int64(137), storeVersion)
+	}
 
 	// upgrade version on all nodes
 	newImage := ibc.NewDockerImage(upgradeInfo.repo, upgradeInfo.version, upgradeInfo.uidgid)

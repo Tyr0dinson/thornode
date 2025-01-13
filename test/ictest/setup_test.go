@@ -134,6 +134,9 @@ func StartThorchain(
 	thorchainChainSpec := ThorchainDefaultChainSpec(t.Name(), chainImage, mainnet, numValidators,
 		numFullNodes, ethRouterContractAddress, bscRouterContractAddress, nil, bifrostEnvOverrides)
 
+	if exoChains == nil {
+		thorchainChainSpec.SidecarConfigs = nil
+	}
 	cf := interchaintest.NewBuiltinChainFactory(zaptest.NewLogger(t), []*interchaintest.ChainSpec{
 		thorchainChainSpec,
 	})
