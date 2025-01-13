@@ -1,6 +1,7 @@
 # ADR 20: Marketing Fund Allocation
 
 ## Changelog
+14 Jan 25: Added timeframe, additional funding option and further steps.
 
 ## Status
 Draft
@@ -43,13 +44,19 @@ This ADR proposes the creation of a dedicated marketing fund, sourced from a sma
 
 ### Funding and Governance
 - **Allocation**:
-  Funding can be supplied as either a percentage of Thorchains revenue (e.g 2%) or via treasury allocation. The specific percentage or amount can be adjusted based on community consensus.
+  Funding can be supplied as either a percentage of Thorchains revenue (e.g 2%), via treasury allocation or from existing quarterly grant submission. The specific percentage or amount can be adjusted based on community consensus and actual spending within limits.
+   - 1. 2% revenue
+   - 2. Treasury allocation
+   - 3. Regular grant submission
 
 - **Governance**:
   Marketing initiatives and budget allocations will be managed by a dedicated marketing committee represented by active members of the Thorchain developers discord.
   
 - **Accountability and transparency**:
   Marketing committee members will provide updates to the Discord and Thorchain community as necessary with a minimum of quarterly reports. These reports will include ROI and gerenal marketing performance to enable the community to assess the effectiveness of campaigns.
+
+### Timeframe
+Once approved, an initial timeframe of 3-6 months will be used to establish long term viability of marketing actions. At the end of the period the community will determine if marketing activities should continue or cease.
 
 ### Alternatives Considered
 1. **Status Quo**:
@@ -63,9 +70,11 @@ This ADR proposes the creation of a dedicated marketing fund, sourced from a sma
 - **Low ROI**: Regular performance evaluations and adjustments to strategy will minimize inefficiencies.
 
 ## Next Steps
-1. Present this ADR to the Thorchain community and solicit feedback.
+1. Present this ADR to the Thorchain community, solicit feedback and approve funding and governance course of action.
 2. Establish community members to manage the marketing fund and activities.
-3. Begin assessing marketing companies and possible pilot marketing campaigns to measure initial impact to refine strategies.
+3. Begin assessing marketing companies and possible pilot marketing campaigns to measure costs and initial impact to refine strategies.
+4. Present costs with KPI's to community for voting and fund approval.
+5. Action and continuously manage marketing activities with quarterly reports.
 
 ## Conclusion
 Investing in marketing is essential for Thorchain to achieve its long-term vision of becoming the leading decentralized liquidity protocol. By increasing awareness and adoption, a dedicated marketing fund will catalyze growth, enhance the protocol’s reputation, and solidify its position in the DeFi ecosystem.
@@ -74,5 +83,5 @@ Investing in marketing is essential for Thorchain to achieve its long-term visio
 TBD
 
 ## Consequences
-A portion of revenue will now go to marketing efforts instead of to LP and bond providers.
+A portion of revenue/funds will now go to marketing efforts instead of to LP and bond providers to provide greater exposure and awareness of the Thorchain ecosystem.
 
