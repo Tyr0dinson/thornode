@@ -38,7 +38,7 @@ func TestUpgrade_3_1_to_3_2(t *testing.T) {
 	// Set up thorchain and others
 	// ----------------------------
 	const (
-		numVals     = 2
+		numVals     = 3
 		numFns      = 0
 		mainnet     = false
 

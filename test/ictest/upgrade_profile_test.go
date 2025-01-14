@@ -21,7 +21,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-//go:embed genesis.1733524678.json
+// //go:embed genesis.1733524678.json
 var genesisBz []byte
 
 func TestProfileMainnetUpgrade(t *testing.T) {

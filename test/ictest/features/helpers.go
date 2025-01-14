@@ -26,6 +26,7 @@ const (
 	CosmosCoinType    = "118"
 	BchCoinType       = "145"
 	ThorchainCoinType = "931"
+	XrpCoinType       = "144"
 )
 
 var CoinTypeFundAmounts = map[string]int64{
@@ -36,6 +37,7 @@ var CoinTypeFundAmounts = map[string]int64{
 	CosmosCoinType:    1000,   // cosmos/gaia
 	BchCoinType:       100,    // bch
 	ThorchainCoinType: 1000,   // thorchain
+	XrpCoinType:       1000,   // xrp
 }
 
 func GetAndFundTestUsers(

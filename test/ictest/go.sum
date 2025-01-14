@@ -247,6 +247,8 @@ github.com/Nvveen/Gotty v0.0.0-20120604004816-cd527374f1e5 h1:TngWCqHvy9oXAN6lEV
 github.com/Nvveen/Gotty v0.0.0-20120604004816-cd527374f1e5/go.mod h1:lmUJ/7eu/Q8D7ML55dXQrVaamCz2vxCfdQBasLZfHKk=
 github.com/OneOfOne/xxhash v1.2.2/go.mod h1:HSdplMjZKSmBqAxg5vPj2TmRDmfkzw+cTzAElWljhcU=
 github.com/OpenBazaar/jsonpb v0.0.0-20171123000858-37d32ddf4eef/go.mod h1:55mCznBcN9WQgrtgaAkv+p2LxeW/tQRdidyyE9D0I5k=
+github.com/Peersyst/xrpl-go v0.1.0 h1:9yes8HiR9DNybm6SUQjjAUVbaPsVi7fZ4WQ7qLpk+5o=
+github.com/Peersyst/xrpl-go v0.1.0/go.mod h1:WD1UqnZ3HEXhpxjHdtEx/V+Kz2WZADzAQ+2OG1/hLGA=
 github.com/Shopify/sarama v1.19.0/go.mod h1:FVkBWblsNy7DGZRfXLU0O9RCGt5g3g3yEuWXgklEdEo=
 github.com/Shopify/toxiproxy v2.1.4+incompatible/go.mod h1:OXgGpZ6Cli1/URJOF1DMxUHB2q5Ap20/P/eIdh4G0pI=
 github.com/StackExchange/wmi v1.2.1 h1:VIkavFPXSjcnS+O8yTq7NI32k0R5Aj+v39y29VYDOSA=
@@ -455,12 +457,16 @@ github.com/decred/dcrd/chaincfg/chainhash v1.0.2/go.mod h1:BpbrGgrPTr3YJYRN3Bm+D
 github.com/decred/dcrd/crypto/blake256 v1.0.0/go.mod h1:sQl2p6Y26YV+ZOcSTP6thNdn47hh8kt6rqSlvmrXFAc=
 github.com/decred/dcrd/crypto/blake256 v1.0.1 h1:7PltbUIQB7u/FfZ39+DGa/ShuMyJ5ilcvdfma9wOH6Y=
 github.com/decred/dcrd/crypto/blake256 v1.0.1/go.mod h1:2OfgNZ5wDpcsFmHmCK5gZTPcCXqlm2ArzUIkw9czNJo=
+github.com/decred/dcrd/crypto/ripemd160 v1.0.2 h1:TvGTmUBHDU75OHro9ojPLK+Yv7gDl2hnUvRocRCjsys=
+github.com/decred/dcrd/crypto/ripemd160 v1.0.2/go.mod h1:uGfjDyePSpa75cSQLzNdVmWlbQMBuiJkvXw/MNKRY4M=
 github.com/decred/dcrd/dcrec/edwards/v2 v2.0.0 h1:E5KszxGgpjpmW8vN811G6rBAZg0/S/DftdGqN4FW5x4=
 github.com/decred/dcrd/dcrec/edwards/v2 v2.0.0/go.mod h1:d0H8xGMWbiIQP7gN3v2rByWUcuZPm9YsgmnfoxgbINc=
 github.com/decred/dcrd/dcrec/secp256k1/v2 v2.0.1 h1:18HurQ6DfHeNvwIjvOmrgr44bPdtVaQAe/WWwHg9goM=
 github.com/decred/dcrd/dcrec/secp256k1/v2 v2.0.1/go.mod h1:XmyzkaXBy7ZvHdrTAlXAjpog8qKSAWa3ze7yqzWmgmc=
 github.com/decred/dcrd/dcrec/secp256k1/v4 v4.2.0 h1:8UrgZ3GkP4i/CLijOJx79Yu+etlyjdBU4sfcs2WYQMs=
 github.com/decred/dcrd/dcrec/secp256k1/v4 v4.2.0/go.mod h1:v57UDF4pDQJcEfFUCRop3lJL149eHGSe9Jvczhzjo/0=
+github.com/decred/dcrd/dcrec/secp256k1/v4 v4.3.0 h1:rpfIENRNNilwHwZeG5+P150SMrnNEcHYvcCuK6dPZSg=
+github.com/decred/dcrd/dcrec/secp256k1/v4 v4.3.0/go.mod h1:v57UDF4pDQJcEfFUCRop3lJL149eHGSe9Jvczhzjo/0=
 github.com/decred/dcrd/lru v1.0.0/go.mod h1:mxKOwFd7lFjN2GZYsiz/ecgqR6kkYAl+0pz0tEMk218=
 github.com/desertbit/timer v0.0.0-20180107155436-c41aec40b27f h1:U5y3Y5UE0w7amNe7Z5G/twsBW0KEalRQXZzf8ufSh9I=
 github.com/desertbit/timer v0.0.0-20180107155436-c41aec40b27f/go.mod h1:xH/i4TFMt8koVQZ6WFms69WAsDWr2XsYL3Hkl7jkoLE=
@@ -1534,6 +1540,8 @@ github.com/status-im/keycard-go v0.2.0 h1:QDLFswOQu1r5jsycloeQh3bVU8n/NatHHaZobt
 github.com/status-im/keycard-go v0.2.0/go.mod h1:wlp8ZLbsmrF6g6WjugPAx+IzoLrkdf9+mHxBEeo3Hbg=
 github.com/strangelove-ventures/interchaintest/v8 v8.8.1-0.20241121194118-c3460c885b3f h1:ab1CpeZTX2Ld0qeC+JJftKZvUX3E3mR/0s50DiaBL5E=
 github.com/strangelove-ventures/interchaintest/v8 v8.8.1-0.20241121194118-c3460c885b3f/go.mod h1:AFFimVWInij/cZMjNbKYMW6EgX0SjHKmIl/GS/akMd8=
+github.com/strangelove-ventures/interchaintest/v8 v8.8.2-0.20250109190818-ce1da34ede69 h1:BO4FVEzMEbDySM3T6bgsNxTLk5OniVW//NaB00Qr1bk=
+github.com/strangelove-ventures/interchaintest/v8 v8.8.2-0.20250109190818-ce1da34ede69/go.mod h1:wnE+YqXKhe6IH5EtZ9JpPoFlQsp3GvBA5IbdKtd3b94=
 github.com/streadway/amqp v0.0.0-20190404075320-75d898a42a94/go.mod h1:AZpEONHx3DKn8O/DFsRAY58/XVQiIPMTMB1SddzLXVw=
 github.com/streadway/amqp v0.0.0-20190827072141-edfb9018d271/go.mod h1:AZpEONHx3DKn8O/DFsRAY58/XVQiIPMTMB1SddzLXVw=
 github.com/streadway/handy v0.0.0-20190108123426-d5acb3125c2a/go.mod h1:qNTQ5P5JnDBl6z3cMAg/SywNDC5ABu5ApDIw6lUbRmI=

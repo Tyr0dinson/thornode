@@ -63,6 +63,9 @@ func CreateArbers(t *testing.T, ctx context.Context, thorchain *tc.Thorchain, ex
 // min/max vs actual swap check to work and be of value
 // --------------------------------------------------------
 func PerformSwaps(t *testing.T, ctx context.Context, thorchain *tc.Thorchain, exoChains ExoChains) {
+	if len(exoChains) < 2 {
+		t.Error("must have at least 2 exochains to perform swaps")
+	}
 	eg, egCtx := errgroup.WithContext(ctx)
 	exoChainList := exoChains.GetChains()
 	randomChain := rand.Intn(len(exoChainList))

@@ -25,6 +25,7 @@ import (
 	"github.com/strangelove-ventures/interchaintest/v8/chain/ethereum/geth"
 	tc "github.com/strangelove-ventures/interchaintest/v8/chain/thorchain"
 	"github.com/strangelove-ventures/interchaintest/v8/chain/utxo"
+	"github.com/strangelove-ventures/interchaintest/v8/chain/xrp"
 	"github.com/strangelove-ventures/interchaintest/v8/ibc"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap/zaptest"
@@ -91,6 +92,10 @@ func StartExoChains(t *testing.T, ctx context.Context, client *client.Client, ne
 			utxoChain, ok := chain.(*utxo.UtxoChain)
 			if ok {
 				utxoChain.Stop()
+			}
+			xrpChain, ok := chain.(*xrp.XrpChain)
+			if ok {
+				xrpChain.Stop()
 			}
 		}
 	})

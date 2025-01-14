@@ -28,6 +28,47 @@ func (e ExoChains) GetChains() []ibc.Chain {
 	return chains
 }
 
+func XrpChainSpec() *interchaintest.ChainSpec {
+	name := "XRP"
+	version := "2.3.0"
+	numVals := 1
+	numFn := 0
+	chainConfig := ibc.ChainConfig{
+		Type:           "xrp",
+		Name:           name,
+		ChainID:        "1234",
+		Bech32Prefix:   "n/a",
+		CoinType:       "144",
+		Denom:          "drop",
+		GasPrices:      "0.00001", // flat fee
+		GasAdjustment:  0,         // N/A
+		TrustingPeriod: "0",
+		NoHostMount:    false,
+		Images: []ibc.DockerImage{
+			{
+				Repository: "xrpllabsofficial/xrpld",
+				Version:    version,
+				UIDGID:     "1025:1025",
+			},
+		},
+		Bin: "rippled,/opt/ripple/bin/validator-keys",
+		HostPortOverride: map[int]int{
+			80:    8001,
+			5005:  5005,
+			6006:  6006,
+			51235: 51235,
+		},
+	}
+	return &interchaintest.ChainSpec{
+		Name: "xrp",
+		ChainName: name,
+		Version:   version,
+		ChainConfig: chainConfig,
+		NumValidators: &numVals,
+		NumFullNodes: &numFn,
+	}
+}
+
 func GaiaChainSpec() *interchaintest.ChainSpec {
 	name := common.GAIAChain.String() // Must use this name for tests
 	version := "v18.1.0"
