@@ -1,6 +1,7 @@
 package xrp
-/*
+
 import (
+	"encoding/hex"
 	"fmt"
 
 	sdkmath "cosmossdk.io/math"
@@ -9,10 +10,8 @@ import (
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	cKeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
-	ctypes "github.com/cosmos/cosmos-sdk/types"
-	btypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 
-	protov2 "google.golang.org/protobuf/proto"
+	//protov2 "google.golang.org/protobuf/proto"
 
 	"github.com/rs/zerolog/log"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
@@ -22,46 +21,10 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/cmd"
 	. "gopkg.in/check.v1"
+
+	"github.com/Peersyst/xrpl-go/xrpl/transaction"
+	"github.com/Peersyst/xrpl-go/xrpl/transaction/types"
 )
-
-// -------------------------------------------------------------------------------------
-// Mock FeeTx
-// -------------------------------------------------------------------------------------
-
-var _ ctypes.FeeTx = &MockFeeTx{}
-
-type MockFeeTx struct {
-	fee ctypes.Coins
-	gas uint64
-}
-
-func (m *MockFeeTx) GetMsgs() []ctypes.Msg {
-	return nil
-}
-
-func (m *MockFeeTx) GetMsgsV2() ([]protov2.Message, error) {
-	return nil, nil
-}
-
-func (m *MockFeeTx) ValidateBasic() error {
-	return nil
-}
-
-func (m *MockFeeTx) GetGas() uint64 {
-	return m.gas
-}
-
-func (m *MockFeeTx) GetFee() ctypes.Coins {
-	return m.fee
-}
-
-func (m *MockFeeTx) FeePayer() []byte {
-	return nil
-}
-
-func (m *MockFeeTx) FeeGranter() []byte {
-	return nil
-}
 
 // -------------------------------------------------------------------------------------
 // Tests
@@ -99,116 +62,68 @@ func (s *BlockScannerTestSuite) SetUpSuite(c *C) {
 	s.keys = thorKeys
 }
 
-func (s *BlockScannerTestSuite) TestCalculateAverageGasFees(c *C) {
-	cfg := config.BifrostBlockScannerConfiguration{ChainID: common.GAIAChain, GasPriceResolution: 100_000}
-	blockScanner := CosmosBlockScanner{cfg: cfg}
+func (s *BlockScannerTestSuite) TestCalculateAverageFees(c *C) {
+	cfg := config.BifrostBlockScannerConfiguration{ChainID: common.XRPChain}
+	blockScanner := XrpBlockScanner{cfg: cfg}
 
-	atomToThorchain := int64(100)
-
-	blockScanner.updateGasCache(&MockFeeTx{
-		gas: GasLimit / 2,
-		fee: ctypes.Coins{ctypes.NewCoin("uatom", sdkmath.NewInt(10000))},
-	})
+	blockScanner.updateFeeCache(common.NewCoin(common.XRPAsset, sdkmath.NewUint(10)))
 	c.Check(len(blockScanner.feeCache), Equals, 1)
-	c.Check(blockScanner.averageFee().String(), Equals, fmt.Sprintf("%d", uint64(20000*atomToThorchain)))
+	c.Check(blockScanner.averageFee().String(), Equals, fmt.Sprintf("%d", uint64(10)))
 
-	blockScanner.updateGasCache(&MockFeeTx{
-		gas: GasLimit / 2,
-		fee: ctypes.Coins{ctypes.NewCoin("uatom", sdkmath.NewInt(10000))},
-	})
+	blockScanner.updateFeeCache(common.NewCoin(common.XRPAsset, sdkmath.NewUint(10)))
 	c.Check(len(blockScanner.feeCache), Equals, 2)
-	c.Check(blockScanner.averageFee().String(), Equals, fmt.Sprintf("%d", uint64(20000*atomToThorchain)))
+	c.Check(blockScanner.averageFee().String(), Equals, fmt.Sprintf("%d", uint64(10)))
 
-	// two blocks at half fee should average to 75% of last
-	blockScanner.updateGasCache(&MockFeeTx{
-		gas: GasLimit,
-		fee: ctypes.Coins{ctypes.NewCoin("uatom", sdkmath.NewInt(10000))},
-	})
-	blockScanner.updateGasCache(&MockFeeTx{
-		gas: GasLimit,
-		fee: ctypes.Coins{ctypes.NewCoin("uatom", sdkmath.NewInt(10000))},
-	})
+	// two txs at double fee should average to 75% of last
+	blockScanner.updateFeeCache(common.NewCoin(common.XRPAsset, sdkmath.NewUint(20)))
+	blockScanner.updateFeeCache(common.NewCoin(common.XRPAsset, sdkmath.NewUint(20)))
 	c.Check(len(blockScanner.feeCache), Equals, 4)
-	c.Check(blockScanner.averageFee().String(), Equals, fmt.Sprintf("%d", uint64(15000*atomToThorchain)))
-
-	// skip transactions with multiple coins
-	blockScanner.updateGasCache(&MockFeeTx{
-		gas: GasLimit,
-		fee: ctypes.Coins{
-			ctypes.NewCoin("uatom", sdkmath.NewInt(10000)),
-			ctypes.NewCoin("uusd", sdkmath.NewInt(10000)),
-		},
-	})
-	c.Check(len(blockScanner.feeCache), Equals, 4)
-	c.Check(blockScanner.averageFee().String(), Equals, fmt.Sprintf("%d", uint64(15000*atomToThorchain)))
-
-	// skip transactions with fees not in uatom
-	blockScanner.updateGasCache(&MockFeeTx{
-		gas: GasLimit,
-		fee: ctypes.Coins{
-			ctypes.NewCoin("uusd", sdkmath.NewInt(10000)),
-		},
-	})
-	c.Check(len(blockScanner.feeCache), Equals, 4)
-	c.Check(blockScanner.averageFee().String(), Equals, fmt.Sprintf("%d", uint64(15000*atomToThorchain)))
+	c.Check(blockScanner.averageFee().String(), Equals, fmt.Sprintf("%d", uint64(15)))
 
 	// skip transactions with zero fee
-	blockScanner.updateGasCache(&MockFeeTx{
-		gas: GasLimit,
-		fee: ctypes.Coins{
-			ctypes.NewCoin("uusd", sdkmath.NewInt(0)),
-		},
-	})
+	blockScanner.updateFeeCache(common.NewCoin(common.XRPAsset, sdkmath.NewUint(0)))
 	c.Check(len(blockScanner.feeCache), Equals, 4)
-	c.Check(blockScanner.averageFee().String(), Equals, fmt.Sprintf("%d", uint64(15000*atomToThorchain)))
+	c.Check(blockScanner.averageFee().String(), Equals, fmt.Sprintf("%d", uint64(15)))
 
 	// ensure we only cache the transaction limit number of blocks
-	for i := 0; i < GasCacheTransactions; i++ {
-		blockScanner.updateGasCache(&MockFeeTx{
-			gas: GasLimit,
-			fee: ctypes.Coins{
-				ctypes.NewCoin("uatom", sdkmath.NewInt(10000)),
-			},
-		})
+	for i := 0; i < FeeCacheTransactions; i++ {
+		blockScanner.updateFeeCache(common.NewCoin(common.XRPAsset, sdkmath.NewUint(12)))
 	}
-	c.Check(len(blockScanner.feeCache), Equals, GasCacheTransactions)
-	c.Check(blockScanner.averageFee().String(), Equals, fmt.Sprintf("%d", uint64(10000*atomToThorchain)))
-}
-
-func (s *BlockScannerTestSuite) TestGetBlock(c *C) {
-	cfg := config.BifrostBlockScannerConfiguration{ChainID: common.GAIAChain}
-	blockScanner := CosmosBlockScanner{
-		cfg: cfg,
-		rpc: &mockTendermintRPC{},
-	}
-
-	block, err := blockScanner.GetBlock(1)
-
-	c.Assert(err, IsNil)
-	c.Assert(len(block.Data.Txs), Equals, 1)
-	c.Assert(block.Header.Height, Equals, int64(6509672))
+	c.Check(len(blockScanner.feeCache), Equals, FeeCacheTransactions)
+	c.Check(blockScanner.averageFee().String(), Equals, fmt.Sprintf("%d", uint64(12)))
 }
 
 func (s *BlockScannerTestSuite) TestProcessTxs(c *C) {
-	cfg := config.BifrostBlockScannerConfiguration{ChainID: common.GAIAChain}
-	registry := s.bridge.GetContext().InterfaceRegistry
-	btypes.RegisterInterfaces(registry)
-	cdc := codec.NewProtoCodec(registry)
+	cfg := config.BifrostBlockScannerConfiguration{ChainID: common.XRPChain}
 
-	blockScanner := CosmosBlockScanner{
+	blockScanner := XrpBlockScanner{
 		cfg:    cfg,
-		rpc:    &mockTendermintRPC{},
-		cdc:    cdc,
-		logger: log.Logger.With().Str("module", "blockscanner").Str("chain", common.GAIAChain.String()).Logger(),
+		logger: log.Logger.With().Str("module", "blockscanner").Str("chain", common.XRPChain.String()).Logger(),
 	}
 
-	block, err := blockScanner.GetBlock(1)
-	c.Assert(err, IsNil)
+	tx := transaction.Payment{
+		BaseTx: transaction.BaseTx{
+			Account: types.Address("rs3xN42EFLE23gUDG2Rw4rwxhR9MnjwZKQ"),
+			SigningPubKey: "03dd7eb4b0479d2898cabdd4ccfd30f2277e57cb9c13ccabb8ec5170ed13dd149a",
+			Fee: types.XRPCurrencyAmount(20),
+			Memos: []types.MemoWrapper{
+				{
+					Memo: types.Memo{
+						MemoData: hex.EncodeToString([]byte("hello")),
+					},
+				},
+			},
+		},
+		Amount: types.XRPCurrencyAmount(1000000),
+		Destination: types.Address("rELnd6Ae5ZYDhHkaqjSVg2vgtBnzjeDshm"),
+	}
 
-	txInItems, err := blockScanner.processTxs(1, block.Data.Txs)
+	txFlat := tx.Flatten()
+
+	txInItems, err := blockScanner.processTxs(1, []transaction.FlatTransaction{txFlat})
 	c.Assert(err, IsNil)
 
 	// proccessTxs should filter out everything besides the valid MsgSend
 	c.Assert(len(txInItems), Equals, 1)
+	c.Assert(txInItems[0].Memo, Equals, "hello")
 }
-*/

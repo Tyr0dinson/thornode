@@ -6,6 +6,7 @@ go 1.23.4
 replace (
 	// use cosmos fork of keyring
 	github.com/99designs/keyring => github.com/cosmos/keyring v1.2.0
+
 	github.com/agl/ed25519 => github.com/binance-chain/edwards25519 v0.0.0-20200305024217-f36fc4b53d43
 	github.com/binance-chain/tss-lib => gitlab.com/thorchain/tss/tss-lib v0.1.5
 	// dgrijalva/jwt-go is deprecated and doesn't receive security updates.

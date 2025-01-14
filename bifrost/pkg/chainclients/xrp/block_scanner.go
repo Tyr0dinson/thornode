@@ -21,8 +21,6 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
 
-	binarycodec "github.com/Peersyst/xrpl-go/binary-codec"
-	"github.com/Peersyst/xrpl-go/xrpl/hash"
 	xrplcommon "github.com/Peersyst/xrpl-go/xrpl/queries/common"
 	"github.com/Peersyst/xrpl-go/xrpl/queries/ledger"
 	"github.com/Peersyst/xrpl-go/xrpl/rpc"
@@ -33,22 +31,14 @@ import (
 type SolvencyReporter func(int64) error
 
 const (
-	// GasUpdatePeriodBlocks is the block interval at which we report gas fee changes.
-	GasUpdatePeriodBlocks = 10
+	// FeeUpdatePeriodBlocks is the block interval at which we report fee changes.
+	FeeUpdatePeriodBlocks = 10
 
-	// GasPriceFactor is a multiplier applied to the gas amount before dividing by the gas
-	// limit to determine the gas price, and later used as a divisor on the final fee -
-	// this avoid the integer division going to zero, and can be thought of as the
-	// reciprocal of the gas price precision.
-	GasPriceFactor = uint64(1e9)
-
-	// GasLimit is the default gas limit we will use for all outbound transactions.
-	GasLimit = 200000
-
-	// GasCacheTransactions is the number of transactions over which we compute an average
-	// (mean) gas price to use for outbound transactions. Note that only transactions
+	// FeeCacheTransactions is the number of transactions over which we compute an average
+	// (mean) fee price to use for outbound transactions. Note that only transactions
 	// using the chain fee asset will be considered.
-	GasCacheTransactions = 100
+	// TODO SAM127: change back to 100
+	FeeCacheTransactions = 5
 )
 
 var (
@@ -66,8 +56,7 @@ type XrpBlockScanner struct {
 	solvencyReporter SolvencyReporter
 	rpcClient        *rpc.Client
 
-	// feeCache contains a rolling window of suggested gas fees which are computed as the
-	// gas price paid in each observed transaction multiplied by the default GasLimit.
+	// feeCache contains a rolling window of suggested fees.
 	// Fees are stored at 100x the values on the observed chain due to compensate for the
 	// difference in base chain decimals (thorchain:1e8, gaia:1e6).
 	feeCache []sdkmath.Uint
@@ -114,10 +103,6 @@ func NewXrpBlockScanner(rpcHost string,
 // Since the GetLatestBlockRequests tells what transactions will be in the block at T+1
 // TODO SAM127: review the above race condition for xrp
 func (c *XrpBlockScanner) GetHeight() (int64, error) {
-	// TODO SAM127: rpc client should timeout
-	// ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
-	// defer cancel()
-
 	currentLedger, err := c.rpcClient.GetCurrentLedger()
 	if err != nil {
 		return 0, err
@@ -131,7 +116,7 @@ func (c *XrpBlockScanner) FetchMemPool(height int64) (types.TxIn, error) {
 	return types.TxIn{}, nil
 }
 
-func (c *XrpBlockScanner) updateGasCache(fee common.Coin) {
+func (c *XrpBlockScanner) updateFeeCache(fee common.Coin) {
 	// sanity check to ensure fee is non-zero
 	err := fee.Valid()
 	if err != nil {
@@ -142,9 +127,9 @@ func (c *XrpBlockScanner) updateGasCache(fee common.Coin) {
 	// add the fee to our cache
 	c.feeCache = append(c.feeCache, fee.Amount)
 
-	// truncate gas prices older than our max cached transactions
-	if len(c.feeCache) > GasCacheTransactions {
-		c.feeCache = c.feeCache[(len(c.feeCache) - GasCacheTransactions):]
+	// truncate fee prices older than our max cached transactions
+	if len(c.feeCache) > FeeCacheTransactions {
+		c.feeCache = c.feeCache[(len(c.feeCache) - FeeCacheTransactions):]
 	}
 }
 
@@ -161,32 +146,23 @@ func (c *XrpBlockScanner) averageFee() sdkmath.Uint {
 	}
 	mean := sum.Quo(sdkmath.NewUint(uint64(len(c.feeCache))))
 
-	// round the price up to avoid fee noise
-	resolution := sdkmath.NewUint(uint64(c.cfg.GasPriceResolution))
-	if mean.LTE(resolution) {
-		return resolution
-	}
-	mean = mean.Sub(sdkmath.NewUint(1))
-	mean = mean.Quo(resolution)
-	mean = mean.Add(sdkmath.NewUint(1))
-	mean = mean.Mul(resolution)
-
 	return mean
 }
 
-func (c *XrpBlockScanner) updateGasFees(height int64) error {
+func (c *XrpBlockScanner) updateFees(height int64) error {
 	// post the gas fee over every cache period when we have a full gas cache
-	if height%GasUpdatePeriodBlocks == 0 && len(c.feeCache) == GasCacheTransactions {
-		gasFee := c.averageFee()
+	if height%FeeUpdatePeriodBlocks == 0 && len(c.feeCache) > 0 {
+		// TODO SAM127: change back to line below
+	//if height%FeeUpdatePeriodBlocks == 0 && len(c.feeCache) == FeeCacheTransactions {
+		avgFee := c.averageFee()
 
 		// sanity check the fee is not zero
-		if gasFee.IsZero() {
+		if avgFee.IsZero() {
 			return errors.New("suggested gas fee was zero")
 		}
 
-		// skip fee if less than 1 resolution away from the last
-		feeDelta := sdkmath.MaxUint(c.lastFee, gasFee).Sub(sdkmath.MinUint(c.lastFee, gasFee))
-		if feeDelta.LTE(sdkmath.NewUint(uint64(c.cfg.GasPriceResolution))) {
+		// skip fee update if it has not changed
+		if c.lastFee.Equal(avgFee) {
 			return nil
 		}
 
@@ -195,14 +171,14 @@ func (c *XrpBlockScanner) updateGasFees(height int64) error {
 		// correct fee. We cannot pass the proper size and rate without a deeper change to
 		// Thornode, as the rate on Cosmos chains is less than 1 and cannot be represented
 		// by the uint.
-		feeTx, err := c.bridge.PostNetworkFee(height, c.cfg.ChainID, 1, gasFee.Uint64())
+		feeTx, err := c.bridge.PostNetworkFee(height, c.cfg.ChainID, 1, avgFee.Uint64())
 		if err != nil {
 			return err
 		}
-		c.lastFee = gasFee
+		c.lastFee = avgFee
 		c.logger.Info().
 			Str("tx", feeTx.String()).
-			Uint64("fee", gasFee.Uint64()).
+			Uint64("fee", avgFee.Uint64()).
 			Int64("height", height).
 			Msg("sent network fee to THORChain")
 	}
@@ -213,15 +189,6 @@ func (c *XrpBlockScanner) updateGasFees(height int64) error {
 func (c *XrpBlockScanner) processTxs(height int64, rawTxs []transaction.FlatTransaction) ([]types.TxInItem, error) {
 	var txIn []types.TxInItem
 	for _, rawTx := range rawTxs {
-		txBlob, err := binarycodec.Encode(rawTx)
-		if err != nil {
-			return nil, err
-		}
-		hash, err := hash.SignTxBlob(txBlob)
-		if err != nil {
-			return nil, err
-		}
-
 		// Ignore any txs other than payments
 		// TODO: verify this
 		if rawTx["TransactionType"] != "Payment" {
@@ -230,50 +197,101 @@ func (c *XrpBlockScanner) processTxs(height int64, rawTxs []transaction.FlatTran
 
 		feeStr, ok := rawTx["Fee"].(string)
 		if !ok {
+			c.logger.Info().Msg("skipping tx, cannot cast fee to string")
 			continue
 		}
-		fee := common.Coin{
-			Asset: common.XRPAsset,
-			Amount: cosmos.NewUintFromString(feeStr),
-			Decimals: 6,
+		
+		feeAmount, err := cosmos.ParseUint(feeStr)
+		if err != nil {
+			c.logger.Info().AnErr("error", err).Msg("skipping tx, cannot convert fee string to uint")
+			continue
 		}
+		fee, err := fromXrpToThorchain(common.NewCoin(common.XRPAsset, feeAmount))
+		if err != nil {
+			c.logger.Info().AnErr("error", err).Msg("skipping tx, cannot convert xrp fee to thorchain fee")
+			continue
+		}
+		c.updateFeeCache(fee)
 
-		memos := rawTx["Memos"].([]map[string]interface{})
-		if len(memos) != 1 {
+		// TODO SAM127: if memo can't be cast, check if nil and set memo to empty
+		// Then remove the need to set memo for savers
+		memos, ok := rawTx["Memos"].([]interface{})
+		if !ok {
+			c.logger.Info().Msg("skipping tx, cannot cast memos to []interface{}")
 			continue
 		}
-		memo := memos[0]["Memo"].(map[string]string)
-		memoDataHex := memo["MemoData"]
+		if len(memos) != 1 {
+			c.logger.Info().Msg("skipping tx, more than 1 memo exists")
+			continue
+		}
+		memoObj, ok := memos[0].(map[string]interface{})
+		if !ok {
+			c.logger.Info().Msg("skipping tx, cannot cast memos[0] to map[string]interface{}")
+			continue
+		}
+		memo, ok  := memoObj["Memo"].(map[string]interface{})
+		if !ok {
+			c.logger.Info().Msg("skipping tx, cannot cast memo to map[string]interface{}")
+			continue
+		}
+		memoDataHex, ok := memo["MemoData"].(string)
+		if !ok {
+			c.logger.Info().Msg("skipping tx, cannot cast MemoData to string")
+			continue
+		}
 		if memoDataHex == "" {
+			c.logger.Info().Msg("skipping tx, MemoData is empty")
 			continue
 		}
 		memoData, err := hex.DecodeString(memoDataHex)
 		if err != nil {
+			c.logger.Info().AnErr("error", err).Msg("skipping tx, cannot decode memo data")
 			continue
 		}
-		c.updateGasCache(fee)
 
-		// TODO: this only supports XRP, do we want to support other currencies
-		amount, ok := rawTx["Amount"].(string)
+		// TODO SAM127: this only supports XRP, do we want to support other currencies
+		amountStr, ok := rawTx["Amount"].(string)
 		if !ok {
+			c.logger.Info().Msg("skipping tx, cannot cast amount to string")
 			continue
 		}
-		coins := common.Coins{
-			{
-				Asset: common.XRPAsset,
-				Amount: cosmos.NewUintFromString(amount),
-				Decimals: 6,
-			},
+		amount, err := cosmos.ParseUint(amountStr)
+		if err != nil {
+			c.logger.Info().AnErr("error", err).Msg("skipping tx, cannot convert amount string to uint")
+			continue
+		}
+		coin, err := fromXrpToThorchain(common.NewCoin(common.XRPAsset, amount))
+		if err != nil {
+			c.logger.Info().AnErr("error", err).Msg("skipping tx, cannot convert xrp amount to thorchain amount")
+			continue
+		}
+		coins := common.Coins{coin}
+
+		sender, ok := rawTx["Account"].(string)
+		if !ok {
+			c.logger.Info().Msg("skipping tx, cannot cast sender/account to string")
+			continue
+		}
+
+		to, ok := rawTx["Destination"].(string)
+		if !ok {
+			c.logger.Info().Msg("skipping tx, cannot cast to/destination to string")
+			continue
+		}
+
+		hash, ok := rawTx["hash"].(string)
+		if !ok {
+			c.logger.Info().Msg("skipping tx, cannot cast hash to string")
+			continue
 		}
 
 		// TODO: Do we need to verify there were any errors / error codes? Or if it exists, it was a successful tx?
-		// TODO: verify all casting is okay
 		txIn = append(txIn, types.TxInItem{
 			Tx:          hash,
 			BlockHeight: height,
 			Memo:        string(memoData),
-			Sender:      rawTx["Account"].(string),
-			To:          rawTx["Destination"].(string),
+			Sender:      sender,
+			To:          to,
 			Coins:       coins,
 			Gas:         []common.Coin{fee},
 		})
@@ -316,7 +334,7 @@ func (c *XrpBlockScanner) FetchTxs(height, chainHeight int64) (types.TxIn, error
 		return txIn, nil
 	}
 
-	err = c.updateGasFees(height)
+	err = c.updateFees(height)
 	if err != nil {
 		c.logger.Err(err).Int64("height", height).Msg("unable to update network fee")
 	}

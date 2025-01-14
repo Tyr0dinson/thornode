@@ -245,18 +245,15 @@ func (c *Client) GetAccountByAddress(address string, height *big.Int) (common.Ac
 		return common.Account{}, err
 	}
 
-	coins := common.Coins{
-		{
-			Asset:    common.XRPAsset,
-			Amount:   balance,
-			Decimals: 6,
-		},
+	coins, err := fromXrpToThorchain(common.NewCoin(common.XRPAsset, balance))
+	if err != nil {
+		return common.Account{}, err
 	}
 
 	return common.Account{
 		Sequence:      int64(aiResp.AccountData.Sequence),
 		AccountNumber: 0,
-		Coins:         coins,
+		Coins:         common.NewCoins(coins),
 	}, nil
 }
 
@@ -275,13 +272,19 @@ func (c *Client) processOutboundTx(tx stypes.TxOutItem) (*transactions.Payment, 
 		return nil, err
 	}
 
+	coin, err := fromThorchainToXrp(tx.Coins[0])
+	if err != nil {
+		return nil, err
+	}
+
 	return &transactions.Payment{
 		BaseTx: transactions.BaseTx{
 			Account: txtypes.Address(fromAddr),
 			NetworkID: c.chainID, // Currently doesn't do anything, but the client with populate
 			SigningPubKey: hex.EncodeToString(signingPubKey.SerializeCompressed()),
 		},
-		Amount: txtypes.XRPCurrencyAmount(tx.Coins[0].Amount.Uint64()),
+		// TODO SAM127: only support xrp tokens for now...
+		Amount: txtypes.XRPCurrencyAmount(coin.Amount.Uint64()),
 		Destination: txtypes.Address(tx.ToAddress),
 	}, nil
 }
@@ -363,21 +366,25 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signedTx, c
 		return nil, nil, nil, fmt.Errorf("fail to marshal checkpoint: %w", err)
 	}
 
-	// TODO SAM127: check gas coins
-	gasCoins := tx.MaxGas.ToCoins()
-	if len(gasCoins) != 1 {
-		err = errors.New("exactly one gas coin must be provided")
-		c.logger.Err(err).Interface("fee", gasCoins).Msg(err.Error())
-		return nil, nil, nil, err
+	// TODO SAM127: check fee
+	fee, err := fromThorchainToXrp(common.NewCoin(common.XRPAsset, cosmos.NewUint(uint64(tx.GasRate))))
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("fail to get fee: %w", err)
 	}
+	// fee := tx.GasRate
+	// if len(gasCoins) != 1 {
+	// 	err = errors.New("exactly one gas coin must be provided")
+	// 	c.logger.Err(err).Interface("fee", gasCoins).Msg(err.Error())
+	// 	return nil, nil, nil, err
+	// }
 
-	if !gasCoins[0].Asset.Equals(c.GetChain().GetGasAsset()) {
-		err = errors.New("gas coin asset must match chain gas asset")
-		c.logger.Err(err).Interface("coin", gasCoins[0]).Msg(err.Error())
-		return nil, nil, nil, err
-	}
+	// if !gasCoins[0].Asset.Equals(c.GetChain().GetGasAsset()) {
+	// 	err = errors.New("gas coin asset must match chain gas asset")
+	// 	c.logger.Err(err).Interface("coin", gasCoins[0]).Msg(err.Error())
+	// 	return nil, nil, nil, err
+	// }
 	msg.Sequence = uint32(meta.SeqNumber)
-	msg.Fee = txtypes.XRPCurrencyAmount(gasCoins[0].Amount.Uint64())
+	msg.Fee = txtypes.XRPCurrencyAmount(fee.Amount.Uint64())
 	if tx.Memo != "" {
 		msg.BaseTx.Memos = []txtypes.MemoWrapper{
 			{
@@ -409,6 +416,14 @@ func (c *Client) signMsg(
 	flatTx := payment.Flatten()
 	if err := c.rpcClient.Autofill(&flatTx); err != nil {
 		return nil, err
+	}
+
+	// TODO SAM127: Debug only - remove
+	flatTxJson, err := json.Marshal(flatTx)
+	if err == nil {
+		c.logger.Info().Str("xrp flat tx", string(flatTxJson)).Msg("xrp flat tx")
+	} else {
+		c.logger.Info().AnErr("error", err).Msg("unabled to json marshal flat tx")
 	}
 
 	encodedTx, err := binarycodec.EncodeForSigning(flatTx)
@@ -503,13 +518,13 @@ func (c *Client) BroadcastTx(tx stypes.TxOutItem, txBytes []byte) (string, error
 	return response.Hash.String(), nil
 }
 
-// ConfirmationCountReady cosmos chain has almost instant finality, so doesn't need to wait for confirmation
+// ConfirmationCountReady xrp chain has almost instant finality, so doesn't need to wait for confirmation
 func (c *Client) ConfirmationCountReady(txIn stypes.TxIn) bool {
 	return true
 }
 
 // GetConfirmationCount determine how many confirmations are required
-// NOTE: Cosmos chains are instant finality, so confirmations are not needed.
+// NOTE: Xrp chains are instant finality, so confirmations are not needed.
 // If the transaction was successful, we know it is included in a block and thus immutable.
 func (c *Client) GetConfirmationCount(txIn stypes.TxIn) int64 {
 	return 0
