@@ -33,6 +33,7 @@ ETHEREUM_BEACON_ENDPOINT=$(echo "$ETHEREUM_ENDPOINT" | sed 's/:[0-9]*$/:3500/g')
 BINANCE_SMART_ENDPOINT="${BSC_HOST:-http://binance-smart-daemon:${BINANCE_SMART_DAEMON_SERVICE_PORT_RPC:-8545}}"
 GAIA_ENDPOINT="${GAIA_HOST:-http://gaia-daemon:26657}"
 AVALANCHE_ENDPOINT="${AVAX_HOST:-http://avalanche-daemon:9650/ext/bc/C/rpc}"
+BASE_ENDPOINT="${BASE_HOST:-http://base-daemon:${BASE_DAEMON_SERVICE_PORT_RPC:-8545}}"
 
 ADDRESS=$(echo "$SIGNER_PASSWD" | thornode keys show "$SIGNER_NAME" -a --keyring-backend file)
 JSON=$(curl -sL --fail -m 10 "$API/thorchain/node/$ADDRESS")
@@ -47,16 +48,21 @@ PREFLIGHT=$(echo "$JSON" | jq -r ".preflight_status")
 PUB_KEY=$(echo "$JSON" | jq -r ".pub_key_set.secp256k1")
 [ "$VALIDATOR" = "false" ] && IP=$EXTERNAL_IP
 
+get_utxo_info() {
+  local ENDPOINT="$1"
+  curl -sL --fail -m 10 --data-binary '{"jsonrpc": "1.0", "id": "node-status", "method": "getblockchaininfo", "params": []}' -H 'content-type: text/plain;' "$ENDPOINT"
+}
+
 if [ "$VALIDATOR" = "true" ]; then
   # calculate BTC chain sync progress
-  BTC_RESULT=$(curl -sL --fail -m 10 --data-binary '{"jsonrpc": "1.0", "id": "node-status", "method": "getblockchaininfo", "params": []}' -H 'content-type: text/plain;' http://thorchain:password@"$BITCOIN_ENDPOINT")
+  BTC_RESULT=$(get_utxo_info http://thorchain:password@"$BITCOIN_ENDPOINT")
   BTC_HEIGHT=$(echo "$BTC_RESULT" | jq -r ".result.headers")
   BTC_SYNC_HEIGHT=$(echo "$BTC_RESULT" | jq -r ".result.blocks")
   BTC_PROGRESS=$(echo "$BTC_RESULT" | jq -r ".result.verificationprogress")
   BTC_PROGRESS=$(calc_progress "$BTC_SYNC_HEIGHT" "$BTC_HEIGHT" "$BTC_PROGRESS")
 
   # calculate LTC chain sync progress
-  LTC_RESULT=$(curl -sL --fail -m 10 --data-binary '{"jsonrpc": "1.0", "id": "node-status", "method": "getblockchaininfo", "params": []}' -H 'content-type: text/plain;' http://thorchain:password@"$LITECOIN_ENDPOINT")
+  LTC_RESULT=$(get_utxo_info http://thorchain:password@"$LITECOIN_ENDPOINT")
   LTC_HEIGHT=$(echo "$LTC_RESULT" | jq -r ".result.headers")
   LTC_SYNC_HEIGHT=$(echo "$LTC_RESULT" | jq -r ".result.blocks")
   LTC_PROGRESS=$(echo "$LTC_RESULT" | jq -r ".result.verificationprogress")
@@ -86,14 +92,14 @@ if [ "$VALIDATOR" = "true" ]; then
   fi
 
   # calculate BCH chain sync progress
-  BCH_RESULT=$(curl -sL --fail -m 10 --data-binary '{"jsonrpc": "1.0", "id": "node-status", "method": "getblockchaininfo", "params": []}' -H 'content-type: text/plain;' http://thorchain:password@"$BITCOIN_CASH_ENDPOINT")
+  BCH_RESULT=$(get_utxo_info http://thorchain:password@"$BITCOIN_CASH_ENDPOINT")
   BCH_HEIGHT=$(echo "$BCH_RESULT" | jq -r ".result.headers")
   BCH_SYNC_HEIGHT=$(echo "$BCH_RESULT" | jq -r ".result.blocks")
   BCH_PROGRESS=$(echo "$BCH_RESULT" | jq -r ".result.verificationprogress")
   BCH_PROGRESS=$(calc_progress "$BCH_SYNC_HEIGHT" "$BCH_HEIGHT" "$BCH_PROGRESS")
 
   # calculate DOGE chain sync progress
-  DOGE_RESULT=$(curl -sL --fail -m 10 --data-binary '{"jsonrpc": "1.0", "id": "node-status", "method": "getblockchaininfo", "params": []}' -H 'content-type: text/plain;' http://thorchain:password@"$DOGECOIN_ENDPOINT")
+  DOGE_RESULT=$(get_utxo_info http://thorchain:password@"$DOGECOIN_ENDPOINT")
   DOGE_HEIGHT=$(echo "$DOGE_RESULT" | jq -r ".result.headers")
   DOGE_SYNC_HEIGHT=$(echo "$DOGE_RESULT" | jq -r ".result.blocks")
   DOGE_PROGRESS=$(echo "$DOGE_RESULT" | jq -r ".result.verificationprogress")
@@ -127,24 +133,41 @@ if [ "$VALIDATOR" = "true" ]; then
     fi
     BSC_PROGRESS=$(calc_progress "$BSC_SYNC_HEIGHT" "$BSC_HEIGHT")
   fi
+
+  if [ -z "$BASE_DISABLED" ]; then
+    BASE_HEIGHT_RESULT=$(curl -X POST -sL --fail -m 10 --data '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' -H 'content-type: application/json' "https://mainnet.base.org")
+    BASE_SYNC_HEIGHT_RESULT=$(curl -X POST -sL --fail -m 10 --data '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' -H 'content-type: application/json' "$BASE_ENDPOINT")
+    BASE_HEIGHT=$(printf "%.0f" "$(echo "$BASE_HEIGHT_RESULT" | jq -r ".result")")
+    if [ -n "$BASE_SYNC_HEIGHT_RESULT" ]; then
+      BASE_SYNC_HEIGHT=$(printf "%.0f" "$(echo "$BASE_SYNC_HEIGHT_RESULT" | jq -r ".result")")
+    else
+      BASE_SYNC_HEIGHT=0
+    fi
+    BASE_PROGRESS=$(calc_progress "$BASE_SYNC_HEIGHT" "$BASE_HEIGHT")
+  fi
 fi
 
+get_thor_height() {
+  local ENDPOINT="$1"
+  curl -sL --fail -m 10 "$ENDPOINT" | jq -r ".result.sync_info.latest_block_height"
+}
+
 # calculate THOR chain sync progress
-THOR_SYNC_HEIGHT=$(curl -sL --fail -m 10 thornode:"$THORNODE_PORT"/status | jq -r ".result.sync_info.latest_block_height")
+THOR_SYNC_HEIGHT=$(get_thor_height thornode:"$THORNODE_PORT"/status)
 if [ "$PEER" != "" ]; then
-  THOR_HEIGHT=$(curl -sL --fail -m 10 "$PEER:$THORNODE_PORT/status" | jq -r ".result.sync_info.latest_block_height")
+  THOR_HEIGHT=$(get_thor_height "$PEER:$THORNODE_PORT/status")
 elif [ "$SEEDS" != "" ]; then
   OLD_IFS=$IFS
   IFS=","
   for PEER in $SEEDS; do
-    THOR_HEIGHT=$(curl -sL --fail -m 10 "$PEER:$THORNODE_PORT/status" | jq -r ".result.sync_info.latest_block_height") || continue
+    THOR_HEIGHT=$(get_thor_height "$PEER:$THORNODE_PORT/status") || continue
     break
   done
   IFS=$OLD_IFS
 elif [ "$NET" = "mainnet" ]; then
-  THOR_HEIGHT=$(curl -sL --fail -m 10 https://rpc.ninerealms.com/status | jq -r ".result.sync_info.latest_block_height")
+  THOR_HEIGHT=$(get_thor_height https://rpc.ninerealms.com/status)
 elif [ "$NET" = "stagenet" ]; then
-  THOR_HEIGHT=$(curl -sL --fail -m 10 https://stagenet-rpc.ninerealms.com/status | jq -r ".result.sync_info.latest_block_height")
+  THOR_HEIGHT=$(get_thor_height https://stagenet-rpc.ninerealms.com/status)
 else
   THOR_HEIGHT=$THOR_SYNC_HEIGHT
 fi
@@ -189,6 +212,8 @@ DOGE_HEIGHT=${DOGE_HEIGHT:=0}
 DOGE_SYNC_HEIGHT=${DOGE_SYNC_HEIGHT:=0}
 GAIA_HEIGHT=${GAIA_HEIGHT:=0}
 GAIA_SYNC_HEIGHT=${GAIA_SYNC_HEIGHT:=0}
+BASE_HEIGHT=${BASE_HEIGHT:=0}
+BASE_SYNC_HEIGHT=${BASE_SYNC_HEIGHT:=0}
 
 echo
 printf "%-18s %-10s %-14s %-10s\n" CHAIN SYNC BEHIND TIP
@@ -205,6 +230,9 @@ if [ "$VALIDATOR" = "true" ]; then
   printf "%-18s %-10s %-14s %-10s\n" AVAX "$AVAX_PROGRESS" "$(format_int $((AVAX_SYNC_HEIGHT - AVAX_HEIGHT)))" "$(format_int "$AVAX_HEIGHT")"
   if [ -z "$BSC_DISABLED" ]; then
     printf "%-18s %-10s %-14s %-10s\n" BSC "$BSC_PROGRESS" "$(format_int $((BSC_SYNC_HEIGHT - BSC_HEIGHT)))" "$(format_int "$BSC_HEIGHT")"
+  fi
+  if [ -z "$BASE_DISABLED" ]; then
+    printf "%-18s %-10s %-14s %-10s\n" BASE "$BASE_PROGRESS" "$(format_int $((BASE_SYNC_HEIGHT - BASE_HEIGHT)))" "$(format_int "$BASE_HEIGHT")"
   fi
 fi
 
@@ -274,8 +302,14 @@ echo "  ETA Churn Finish: $FINISH_ETA"
 if [ "$PUB_KEY" != "null" ]; then
   echo
 
-  MEMBER_ACTIVE=$(echo "$VAULTS" | jq -r ".[] | select(.status == \"ActiveVault\") | select([.membership[] == \"$PUB_KEY\"] | any) | .addresses[] | select(.chain == \"THOR\") | .address")
-  MEMBER_RETIRING=$(echo "$VAULTS" | jq -r ".[] | select(.status == \"RetiringVault\") | select([.membership[] == \"$PUB_KEY\"] | any) | .addresses[] | select(.chain == \"THOR\") | .address")
+  get_vault_for() {
+    local PUB_KEY="$1"
+    local VAULT_TYPE="$2"
+    echo "$VAULTS" | jq -r ".[] | select(.status == \"${VAULT_TYPE}\") | select([.membership[] == \"${PUB_KEY}\"] | any) | .addresses[] | select(.chain == \"THOR\") | .address"
+  }
+
+  MEMBER_ACTIVE=$(get_vault_for $PUB_KEY ActiveVault)
+  MEMBER_RETIRING=$(get_vault_for $PUB_KEY RetiringVault)
   UNBOND_ALLOWED="true"
 
   EXPLORER="https://thorchain.net"
