@@ -2,12 +2,13 @@ package ictest
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/strangelove-ventures/interchaintest/v8"
+	"github.com/strangelove-ventures/interchaintest/v8/chain/xrp"
 	"github.com/strangelove-ventures/interchaintest/v8/ibc"
-	
-	//"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/require"
 )
 
 // go test -timeout 20m -v -run TestXrp examples/thorchain/*.go -count 1
@@ -55,6 +56,16 @@ func TestXrp(t *testing.T) {
 	PerformSwaps(t, ctx, thorchain, exoChains)
 	PerformSaverEjects(t, ctx, thorchain, exoChains)
 	Ragnarok(t, ctx, thorchain, exoChains)
+
+	xrpChain, ok := exoChains["XRP"].chain.(*xrp.XrpChain)
+	require.True(t, ok)
+	
+	xrpVaultAddr, _, err := thorchain.APIGetInboundAddress(ctx, "XRP")
+	require.NoError(t, err)
+	xrpVaultBalance, err := xrpChain.GetBalance(ctx, xrpVaultAddr, "")
+	require.NoError(t, err)
+
+	fmt.Println("Xrp vault balance:", xrpVaultBalance)
 
 	//err = testutil.WaitForBlocks(ctx, 300, thorchain)
 	//require.NoError(t, err, "thorchain failed to make blocks")

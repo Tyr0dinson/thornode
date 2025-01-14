@@ -29,7 +29,7 @@ func (e ExoChains) GetChains() []ibc.Chain {
 }
 
 func XrpChainSpec() *interchaintest.ChainSpec {
-	name := "XRP"
+	name := common.XRPChain.String()
 	version := "2.3.0"
 	numVals := 1
 	numFn := 0
@@ -60,7 +60,7 @@ func XrpChainSpec() *interchaintest.ChainSpec {
 		},
 	}
 	return &interchaintest.ChainSpec{
-		Name: "xrp",
+		Name: name,
 		ChainName: name,
 		Version:   version,
 		ChainConfig: chainConfig,

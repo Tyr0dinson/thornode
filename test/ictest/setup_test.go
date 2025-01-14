@@ -129,11 +129,15 @@ func StartThorchain(
 		}
 		disableChainKey := fmt.Sprintf("BIFROST_CHAINS_%s_DISABLED", name)
 		bifrostEnvOverrides[disableChainKey] = "false"
-		if name == "BSC" {
+		if name == "BSC" || name == "XRP" {
 			hostKey = fmt.Sprintf("BIFROST_CHAINS_%s_RPC_HOST", name)
 			bifrostEnvOverrides[hostKey] = exoChain.chain.GetRPCAddress()
 			bsRpcHost := fmt.Sprintf("BIFROST_CHAINS_%s_BLOCK_SCANNER_RPC_HOST", name)
 			bifrostEnvOverrides[bsRpcHost] = exoChain.chain.GetRPCAddress()
+		}
+		if name == "XRP" {
+			hostKey = fmt.Sprintf("BIFROST_CHAINS_%s_CHAIN_NETWORK", name)
+			bifrostEnvOverrides[hostKey] = exoChain.chain.Config().ChainID
 		}
 	}
 	thorchainChainSpec := ThorchainDefaultChainSpec(t.Name(), chainImage, mainnet, numValidators,
