@@ -86,6 +86,7 @@ func addValidators(t *testing.T, ctx context.Context, thorchain *tc.Thorchain, n
 		require.NoError(t, err, "thorchain failed to make blocks")
 
 		if numActiveVals == len(thorchain.Validators) {
+			fmt.Println("Validators added, total:", numActiveVals)
 			return nil
 		}
 	}

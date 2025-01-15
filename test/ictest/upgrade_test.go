@@ -47,9 +47,6 @@ func TestUpgrade_3_1_to_3_2(t *testing.T) {
 		imageUidGid    = "1025:1025"
 	)
 
-	// Start chain with 1 validator, then validators may be churned in (current bifrost requirement)
-	initialValSetSize := 1
-
 	// Start non-thorchain chains
 	exoChains := StartExoChains(t, ctx, client, network, []*interchaintest.ChainSpec{
 		//EthChainSpec("geth"), // only use this chain spec for eth or the one below
@@ -67,7 +64,8 @@ func TestUpgrade_3_1_to_3_2(t *testing.T) {
 	ethRouterContractAddress, bscRouterContractAddress := "", ""
 	// Start thorchain
 	chainImage := ibc.NewDockerImage(initialRepo, initialVersion, imageUidGid)
-	thorchain := StartThorchain(t, ctx, client, network, initialValSetSize, numFns, mainnet, chainImage, exoChains, ethRouterContractAddress, bscRouterContractAddress)
+	// Start chain with 1 validator, then validators may be churned in (current bifrost requirement)
+	thorchain := StartThorchain(t, ctx, client, network, 1, numFns, mainnet, chainImage, exoChains, ethRouterContractAddress, bscRouterContractAddress)
 	//require.NoError(t, gaiaEg.Wait()) // Wait for 100 transactions before starting tests
 
 	// Add validators

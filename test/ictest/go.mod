@@ -12,7 +12,7 @@ replace (
 	github.com/btcsuite/btcd => github.com/btcsuite/btcd v0.22.1
 	github.com/cosmos/ledger-cosmos-go => gitlab.com/thorchain/ledger-thorchain-go v1.0.3
 	github.com/gogo/protobuf => github.com/regen-network/protobuf v1.3.3-alpha.regen.1
-	github.com/strangelove-ventures/interchaintest/v8 => ../../../../../github.com/strangelove-ventures/interchaintest
+	//github.com/strangelove-ventures/interchaintest/v8 => ../../../../../github.com/strangelove-ventures/interchaintest
 	github.com/tendermint/go-amino => github.com/binance-chain/bnc-go-amino v0.14.1-binance.1
 	github.com/vedhavyas/go-subkey => github.com/strangelove-ventures/go-subkey v1.0.7
 	gitlab.com/thorchain/thornode/v3 => ../..
@@ -23,7 +23,7 @@ require (
 	github.com/cosmos/cosmos-sdk v0.50.10
 	github.com/docker/docker v24.0.9+incompatible
 	github.com/ethereum/go-ethereum v1.14.11
-	github.com/strangelove-ventures/interchaintest/v8 v8.8.2-0.20250114180342-41bdc87bb889
+	github.com/strangelove-ventures/interchaintest/v8 v8.8.2-0.20250115185121-64f5dff8797e
 	github.com/stretchr/testify v1.9.0
 	github.com/tidwall/gjson v1.18.0
 	github.com/tidwall/sjson v1.2.5
