@@ -79,7 +79,7 @@ func NewXrpBlockScanner(rpcHost string,
 	}
 
 	logger := log.Logger.With().Str("module", "blockscanner").Str("chain", cfg.ChainID.String()).Logger()
-	
+
 	rpcConfig, err := rpc.NewClientConfig(rpcHost)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create rpc config, %w", err)
@@ -153,7 +153,7 @@ func (c *XrpBlockScanner) updateFees(height int64) error {
 	// post the gas fee over every cache period when we have a full gas cache
 	if height%FeeUpdatePeriodBlocks == 0 && len(c.feeCache) > 0 {
 		// TODO SAM127: change back to line below
-	//if height%FeeUpdatePeriodBlocks == 0 && len(c.feeCache) == FeeCacheTransactions {
+		//if height%FeeUpdatePeriodBlocks == 0 && len(c.feeCache) == FeeCacheTransactions {
 		avgFee := c.averageFee()
 
 		// sanity check the fee is not zero
@@ -200,7 +200,7 @@ func (c *XrpBlockScanner) processTxs(height int64, rawTxs []transaction.FlatTran
 			c.logger.Info().Msg("skipping tx, cannot cast fee to string")
 			continue
 		}
-		
+
 		feeAmount, err := cosmos.ParseUint(feeStr)
 		if err != nil {
 			c.logger.Info().AnErr("error", err).Msg("skipping tx, cannot convert fee string to uint")
@@ -213,40 +213,41 @@ func (c *XrpBlockScanner) processTxs(height int64, rawTxs []transaction.FlatTran
 		}
 		c.updateFeeCache(fee)
 
-		// TODO SAM127: if memo can't be cast, check if nil and set memo to empty
-		// Then remove the need to set memo for savers
-		memos, ok := rawTx["Memos"].([]interface{})
-		if !ok {
-			c.logger.Info().Msg("skipping tx, cannot cast memos to []interface{}")
-			continue
-		}
-		if len(memos) != 1 {
-			c.logger.Info().Msg("skipping tx, more than 1 memo exists")
-			continue
-		}
-		memoObj, ok := memos[0].(map[string]interface{})
-		if !ok {
-			c.logger.Info().Msg("skipping tx, cannot cast memos[0] to map[string]interface{}")
-			continue
-		}
-		memo, ok  := memoObj["Memo"].(map[string]interface{})
-		if !ok {
-			c.logger.Info().Msg("skipping tx, cannot cast memo to map[string]interface{}")
-			continue
-		}
-		memoDataHex, ok := memo["MemoData"].(string)
-		if !ok {
-			c.logger.Info().Msg("skipping tx, cannot cast MemoData to string")
-			continue
-		}
-		if memoDataHex == "" {
-			c.logger.Info().Msg("skipping tx, MemoData is empty")
-			continue
-		}
-		memoData, err := hex.DecodeString(memoDataHex)
-		if err != nil {
-			c.logger.Info().AnErr("error", err).Msg("skipping tx, cannot decode memo data")
-			continue
+		var memoData []byte
+		if rawTx["Memos"] != nil {
+			memos, ok := rawTx["Memos"].([]interface{})
+			if !ok {
+				c.logger.Info().Msg("skipping tx, cannot cast memos to []interface{}")
+				continue
+			}
+			if len(memos) != 1 {
+				c.logger.Info().Msg("skipping tx, more than 1 memo exists")
+				continue
+			}
+			memoObj, ok := memos[0].(map[string]interface{})
+			if !ok {
+				c.logger.Info().Msg("skipping tx, cannot cast memos[0] to map[string]interface{}")
+				continue
+			}
+			memo, ok := memoObj["Memo"].(map[string]interface{})
+			if !ok {
+				c.logger.Info().Msg("skipping tx, cannot cast memo to map[string]interface{}")
+				continue
+			}
+			memoDataHex, ok := memo["MemoData"].(string)
+			if !ok {
+				c.logger.Info().Msg("skipping tx, cannot cast MemoData to string")
+				continue
+			}
+			if memoDataHex == "" {
+				c.logger.Info().Msg("skipping tx, MemoData is empty")
+				continue
+			}
+			memoData, err = hex.DecodeString(memoDataHex)
+			if err != nil {
+				c.logger.Info().AnErr("error", err).Msg("skipping tx, cannot decode memo data")
+				continue
+			}
 		}
 
 		// TODO SAM127: this only supports XRP, do we want to support other currencies
@@ -302,10 +303,9 @@ func (c *XrpBlockScanner) processTxs(height int64, rawTxs []transaction.FlatTran
 
 func (c *XrpBlockScanner) FetchTxs(height, chainHeight int64) (types.TxIn, error) {
 	ledger, err := c.rpcClient.GetLedger(&ledger.Request{
-		LedgerIndex: xrplcommon.LedgerIndex(height),
+		LedgerIndex:  xrplcommon.LedgerIndex(height),
 		Transactions: true,
-		Expand: true,
-
+		Expand:       true,
 	})
 	if err != nil {
 		return types.TxIn{}, err
