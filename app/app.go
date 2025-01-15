@@ -72,6 +72,7 @@ import (
 	appparams "gitlab.com/thorchain/thornode/v3/app/params"
 	"gitlab.com/thorchain/thornode/v3/openapi"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain"
+	enshrinedbifrost "gitlab.com/thorchain/thornode/v3/x/thorchain/enshrined_bifrost"
 	thorchainkeeper "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 	thorchainkeeperabci "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/abci"
 	thorchainkeeperv1 "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/v1"
@@ -134,7 +135,7 @@ type THORChainApp struct {
 	ConsensusParamsKeeper consensusparamkeeper.Keeper
 
 	ThorchainKeeper  thorchainkeeper.Keeper
-	EnshrinedBifrost *thorchain.EnshrinedBifrost
+	EnshrinedBifrost *enshrinedbifrost.EnshrinedBifrost
 
 	msgServiceRouter *MsgServiceRouter // router for redirecting Msg service messages
 	// the module manager
@@ -328,7 +329,7 @@ func NewChainApp(
 
 	thorchainModule := thorchain.NewAppModule(mgrs, telemetryEnabled, testApp)
 
-	app.EnshrinedBifrost = thorchain.NewBifrost(app.appCodec)
+	app.EnshrinedBifrost = enshrinedbifrost.NewBifrost(app.appCodec)
 
 	// Enshrined relayer proposal handling
 	defaultProposalHandler := baseapp.NewDefaultProposalHandler(bApp.Mempool(), bApp)

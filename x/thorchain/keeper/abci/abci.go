@@ -3,13 +3,13 @@ package abci
 import (
 	abci "github.com/cometbft/cometbft/abci/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"gitlab.com/thorchain/thornode/v3/x/thorchain"
+	enshrinedbifrost "gitlab.com/thorchain/thornode/v3/x/thorchain/enshrined_bifrost"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 )
 
 type ProposalHandler struct {
 	keeper  *keeper.Keeper
-	bifrost *thorchain.EnshrinedBifrost
+	bifrost *enshrinedbifrost.EnshrinedBifrost
 
 	prepareProposalHandler sdk.PrepareProposalHandler
 	processProposalHandler sdk.ProcessProposalHandler
@@ -17,7 +17,7 @@ type ProposalHandler struct {
 
 func NewProposalHandler(
 	k *keeper.Keeper,
-	b *thorchain.EnshrinedBifrost,
+	b *enshrinedbifrost.EnshrinedBifrost,
 	nextPrepareProposalHandler sdk.PrepareProposalHandler,
 	nextProcessProposalHandler sdk.ProcessProposalHandler,
 ) *ProposalHandler {
