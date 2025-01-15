@@ -49,11 +49,23 @@ If the RUNE price drops drastically against the majority of its collateral asset
 
 ### Unwind Path
 
-If the Circuit Breaker is hit, then the protocol will draw from RESERVES, until RESERVES are zero’d. After this, the protocol will attempt to mint over 500m and fire another trigger which auto-halts the entire protocol (swaps, savers, lending, sends). At this point there is still 60m RUNE in the Standby RESERVE that can be used to:
+If the Circuit Breaker is hit, then the protocol will draw from RESERVES, until RESERVES are zero’d.
+
+After this, the protocol will attempt to mint over 500m and fire another trigger which auto-halts the entire protocol (swaps, savers, lending, sends).
+
+``` admonish note
+This is not coded and would require a vote to impelemnt and enable.
+```
+
+At this point there is still 60m RUNE in the Standby RESERVE that can be used to:
 
 1. Re-stock the Protocol RESERVE, then
 2. Place remainder in a Claims Module, where collateral holders can pro-rata claim based on their collateral at the time of the halt, paid out in RUNE.
 3. After some time, turn off the Claims module, and redraw unclaimed RUNE back to Standby.
+
+``` admonish note
+Since this ADR was voted on, [ADR-012](./adr-012-scale-lending.md) passed which included burning the Standby Reserve.
+```
 
 Important to note, the above Unwind Path is not coded, and will require governance to approve and devs to implement. It is just a suggestion for the Community to know there is an Unwind Path possible that does not result in destruction of the entire network.
 
