@@ -41,7 +41,7 @@ import (
 	"github.com/Peersyst/xrpl-go/xrpl/rpc"
 	transactions "github.com/Peersyst/xrpl-go/xrpl/transaction"
 	txtypes "github.com/Peersyst/xrpl-go/xrpl/transaction/types"
-	
+
 	ethcrypto "github.com/ethereum/go-ethereum/crypto"
 )
 
@@ -229,7 +229,7 @@ func (c *Client) GetAccount(pkey common.PubKey, height *big.Int) (common.Account
 
 func (c *Client) GetAccountByAddress(address string, height *big.Int) (common.Account, error) {
 	aiReq := account.InfoRequest{
-		Account: txtypes.Address(address),
+		Account:     txtypes.Address(address),
 		LedgerIndex: qcommon.Validated,
 	}
 	if height != nil && height.Cmp(big.NewInt(0)) > 0 {
@@ -279,12 +279,12 @@ func (c *Client) processOutboundTx(tx stypes.TxOutItem) (*transactions.Payment, 
 
 	return &transactions.Payment{
 		BaseTx: transactions.BaseTx{
-			Account: txtypes.Address(fromAddr),
-			NetworkID: c.chainID, // Currently doesn't do anything, but the client with populate
+			Account:       txtypes.Address(fromAddr),
+			NetworkID:     c.chainID, // Currently doesn't do anything, but the client with populate
 			SigningPubKey: hex.EncodeToString(signingPubKey.SerializeCompressed()),
 		},
 		// TODO SAM127: only support xrp tokens for now...
-		Amount: txtypes.XRPCurrencyAmount(coin.Amount.Uint64()),
+		Amount:      txtypes.XRPCurrencyAmount(coin.Amount.Uint64()),
 		Destination: txtypes.Address(tx.ToAddress),
 	}, nil
 }
@@ -436,25 +436,49 @@ func (c *Client) signMsg(
 		return nil, err
 	}
 
-	var signature []byte
-	if c.localKeyManager.PublicKeyHex == hex.EncodeToString(xrpPubKey.SerializeCompressed()){
-		signature, err = c.localKeyManager.Sign(signBytes)
+	var derSignature []byte
+	if c.localKeyManager.PublicKeyHex == hex.EncodeToString(xrpPubKey.SerializeCompressed()) {
+		derSignature, err = c.localKeyManager.Sign(signBytes)
 		if err != nil {
 			return nil, fmt.Errorf("unable to sign using localKeyManager: %w", err)
 		}
 	} else {
 		hashedMsg := sha512.Sum512(signBytes)
-		signature, _, err = c.tssKeyManager.RemoteSign(hashedMsg[:32], pubkey.String())
+		signature, _, err := c.tssKeyManager.RemoteSign(hashedMsg[:32], pubkey.String())
 		if err != nil {
-			return nil, err
+			c.logger.Err(err).Msg("xrp remote sign")
+			return nil, fmt.Errorf("error, xrp remote sign: %w", err)
 		}
-		// TODO SAM127: Need ASN.1 DER encoding of signature
+		if signature == nil {
+			c.logger.Error().Msg("xrp remote sign, signature is nil")
+			return nil, fmt.Errorf("error, xrp remote sign, signature is nil")
+		}
+		if len(signature) < 64 {
+			c.logger.Error().Msg("xrp remote sign, signature is <64 bytes")
+			return nil, fmt.Errorf("error, xrp remote sign, signature is <64 bytes")
+		}
+		// Extract R and S from the signature
+		// The signature is in the format R || S || V where V is the recovery ID
+		r := new(big.Int).SetBytes(signature[:32])
+		s := new(big.Int).SetBytes(signature[32:64])
+
+		// Create an ECDSASignature struct for ASN.1 DER encoding
+		sig := secp256k1.ECDSASignature{
+			R: r,
+			S: s,
+		}
+
+		// Encode the signature in DER format
+		derSignature, err = asn1.Marshal(sig)
+		if err != nil {
+			return nil, fmt.Errorf("failed to DER encode signature: %w", err)
+		}
 	}
 	//payment.TxnSignature = hex.EncodeToString(signature)
-	flatTx["TxnSignature"] = hex.EncodeToString(signature) // use flatTx so we don't need to call autofill again
+	flatTx["TxnSignature"] = hex.EncodeToString(derSignature) // use flatTx so we don't need to call autofill again
 
 	// Ensure the signature is valid
-	if !verifySignature(signBytes, signature, xrpPubKey.SerializeCompressed()) {
+	if !verifySignature(signBytes, derSignature, xrpPubKey.SerializeCompressed()) {
 		return nil, fmt.Errorf("unable to verify signature with secpPubKey")
 	}
 
@@ -472,23 +496,23 @@ func (c *Client) signMsg(
 }
 
 func verifySignature(signBytes, signature, compressedPubKey []byte) bool {
-		// Hash the transaction data
-		messageHashFull := sha512.Sum512(signBytes)
-		messageHash := messageHashFull[:32]
-	
-		// Parse the DER signature
-		var sig secp256k1.ECDSASignature
-		_, err := asn1.Unmarshal(signature, &sig)
-		if err != nil {
-			return false
-		}
-	
-		// Verify the signature
-		return ethcrypto.VerifySignature(
-			compressedPubKey,
-			messageHash,
-			append(sig.R.Bytes(), sig.S.Bytes()...),
-		)
+	// Hash the transaction data
+	messageHashFull := sha512.Sum512(signBytes)
+	messageHash := messageHashFull[:32]
+
+	// Parse the DER signature
+	var sig secp256k1.ECDSASignature
+	_, err := asn1.Unmarshal(signature, &sig)
+	if err != nil {
+		return false
+	}
+
+	// Verify the signature
+	return ethcrypto.VerifySignature(
+		compressedPubKey,
+		messageHash,
+		append(sig.R.Bytes(), sig.S.Bytes()...),
+	)
 }
 
 // BroadcastTx is to broadcast the tx to cosmos chain

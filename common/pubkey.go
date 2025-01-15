@@ -125,11 +125,6 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 	var addressString string
 	switch chain {
 	case XRPChain:
-		// pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, string(p))
-		// if err != nil {
-		// 	return NoAddress, fmt.Errorf("get pub key from bech32, %w", err)
-		// }
-		// TODO SAM127: check this
 		pk, err := p.Secp256K1()
 		if err != nil {
 			return NoAddress, fmt.Errorf("get pub key secp256k1, %w", err)
