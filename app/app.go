@@ -73,6 +73,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/openapi"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain"
 	thorchainkeeper "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
+	thorchainkeeperabci "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/abci"
 	thorchainkeeperv1 "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/v1"
 	thorchaintypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
@@ -132,7 +133,8 @@ type THORChainApp struct {
 	ParamsKeeper          paramskeeper.Keeper
 	ConsensusParamsKeeper consensusparamkeeper.Keeper
 
-	ThorchainKeeper thorchainkeeper.Keeper
+	ThorchainKeeper  thorchainkeeper.Keeper
+	EnshrinedBifrost *thorchain.EnshrinedBifrost
 
 	msgServiceRouter *MsgServiceRouter // router for redirecting Msg service messages
 	// the module manager
@@ -325,6 +327,20 @@ func NewChainApp(
 	app.msgServiceRouter.AddCustomRoute("cosmos.bank.v1beta1.Msg", thorchain.NewBankSendHandler(thorchain.NewSendHandler(mgrs)))
 
 	thorchainModule := thorchain.NewAppModule(mgrs, telemetryEnabled, testApp)
+
+	app.EnshrinedBifrost = thorchain.NewBifrost(app.appCodec)
+
+	// Enshrined relayer proposal handling
+	defaultProposalHandler := baseapp.NewDefaultProposalHandler(bApp.Mempool(), bApp)
+	eBifrostProposalHandler := thorchainkeeperabci.NewProposalHandler(
+		&app.ThorchainKeeper,
+		app.EnshrinedBifrost,
+		defaultProposalHandler.PrepareProposalHandler(),
+		defaultProposalHandler.ProcessProposalHandler(),
+	)
+
+	bApp.SetPrepareProposal(eBifrostProposalHandler.PrepareProposal)
+	bApp.SetProcessProposal(eBifrostProposalHandler.ProcessProposal)
 
 	// NOTE: Any module instantiated in the module manager that is later modified
 	// must be passed by reference here.
