@@ -16,7 +16,7 @@ func init() {
 	if err := json.Unmarshal(ethtokens.ETHTokenListRawV3_0_0, &ethTokenListV3_0_0); err != nil {
 		panic(err)
 	}
-	if err := json.Unmarshal(ethtokens.ETHTokenListRawV3_0_0, &ethTokenListV3_0_0); err != nil {
+	if err := json.Unmarshal(ethtokens.ETHTokenListRawV3_2_0, &ethTokenListV3_2_0); err != nil {
 		panic(err)
 	}
 }
