@@ -103,12 +103,13 @@ func NewXrpBlockScanner(rpcHost string,
 // Since the GetLatestBlockRequests tells what transactions will be in the block at T+1
 // TODO SAM127: review the above race condition for xrp
 func (c *XrpBlockScanner) GetHeight() (int64, error) {
-	currentLedger, err := c.rpcClient.GetCurrentLedger()
+	ledgerIndex, err := c.rpcClient.GetLedgerIndex()
 	if err != nil {
 		return 0, err
 	}
 
-	return int64(currentLedger.LedgerCurrentIndex.Uint32() - 1), nil
+	return int64(ledgerIndex.Int()), nil
+	// return int64(ledgerIndex.Int() - 1), nil
 }
 
 // FetchMemPool returns nothing since we are only concerned about finalized transactions in Xrp

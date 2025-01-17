@@ -9,13 +9,14 @@ import (
 	"fmt"
 	"math/big"
 	"os"
-	"strconv"
 	"sync"
 	"time"
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	tssp "gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/tss"
+	
+	sdkmath "cosmossdk.io/math"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
@@ -24,8 +25,6 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/xrp/keymanager"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/xrp/keymanager/secp256k1"
 
-	//"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/xrp/rpc"
-	//rpctypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/xrp/rpc/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss"
@@ -36,8 +35,10 @@ import (
 	memo "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
 
 	"github.com/Peersyst/xrpl-go/binary-codec"
+	"github.com/Peersyst/xrpl-go/xrpl/hash"
 	"github.com/Peersyst/xrpl-go/xrpl/queries/account"
 	qcommon "github.com/Peersyst/xrpl-go/xrpl/queries/common"
+	requests "github.com/Peersyst/xrpl-go/xrpl/queries/transactions"
 	"github.com/Peersyst/xrpl-go/xrpl/rpc"
 	transactions "github.com/Peersyst/xrpl-go/xrpl/transaction"
 	txtypes "github.com/Peersyst/xrpl-go/xrpl/transaction/types"
@@ -49,7 +50,6 @@ import (
 type Client struct {
 	logger              zerolog.Logger
 	cfg                 config.BifrostChainConfiguration
-	chainID             uint32
 	accts               *XrpMetaDataStore
 	tssKeyManager       *tss.KeySign
 	localKeyManager     *keymanager.KeyManager
@@ -103,18 +103,21 @@ func NewClient(
 
 	rpcConfig, err := rpc.NewClientConfig(cfg.RPCHost)
 	if err != nil {
+		fmt.Println("ERROR ERROR ERROR 5")
 		return nil, fmt.Errorf("unable to create rpc config for client, %w", err)
 	}
 	rpcClient := rpc.NewClient(rpcConfig)
 
-	networkID, err := strconv.ParseUint(cfg.ChainNetwork, 10, 32)
-	if err != nil {
-		return nil, fmt.Errorf("error parsing chain network as uint, %w", err)
+	// networkID, err := strconv.ParseUint(cfg.ChainNetwork, 10, 32)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("error parsing chain network as uint, %w", err)
+	// }
+	// rpcClient.NetworkID = uint32(networkID)
+	if chainID > 1024 {
+		rpcClient.NetworkID = chainID
 	}
-	rpcClient.NetworkID = uint32(networkID)
 
 	c := &Client{
-		chainID:         chainID,
 		logger:          logger,
 		cfg:             cfg,
 		accts:           NewXrpMetaDataStore(),
@@ -230,7 +233,7 @@ func (c *Client) GetAccount(pkey common.PubKey, height *big.Int) (common.Account
 func (c *Client) GetAccountByAddress(address string, height *big.Int) (common.Account, error) {
 	aiReq := account.InfoRequest{
 		Account:     txtypes.Address(address),
-		LedgerIndex: qcommon.Validated,
+		LedgerIndex: qcommon.Current, // Query current/non-closed/non-validated ledger
 	}
 	if height != nil && height.Cmp(big.NewInt(0)) > 0 {
 		aiReq.LedgerIndex = qcommon.LedgerIndex(height.Int64())
@@ -240,11 +243,7 @@ func (c *Client) GetAccountByAddress(address string, height *big.Int) (common.Ac
 		return common.Account{}, err
 	}
 
-	balance, err := cosmos.ParseUint(aiResp.AccountData.Balance.String())
-	if err != nil {
-		return common.Account{}, err
-	}
-
+	balance := sdkmath.NewUint(aiResp.AccountData.Balance.Uint64())
 	coins, err := fromXrpToThorchain(common.NewCoin(common.XRPAsset, balance))
 	if err != nil {
 		return common.Account{}, err
@@ -280,7 +279,7 @@ func (c *Client) processOutboundTx(tx stypes.TxOutItem) (*transactions.Payment, 
 	return &transactions.Payment{
 		BaseTx: transactions.BaseTx{
 			Account:       txtypes.Address(fromAddr),
-			NetworkID:     c.chainID, // Currently doesn't do anything, but the client with populate
+			// NetworkID:     c.chainID, // Currently doesn't do anything, but the client with populate
 			SigningPubKey: hex.EncodeToString(signingPubKey.SerializeCompressed()),
 		},
 		// TODO SAM127: only support xrp tokens for now...
@@ -414,9 +413,13 @@ func (c *Client) signMsg(
 	}
 
 	flatTx := payment.Flatten()
+	// TODO SAM127: Get rid of auto fill? Needs to be deterministic...
 	if err := c.rpcClient.Autofill(&flatTx); err != nil {
 		return nil, err
 	}
+
+	// TODO SAM127: do we want to populated this? Maybe based on observed tx in height?
+	delete(flatTx, "LastLedgerSequence")
 
 	// TODO SAM127: Debug only - remove
 	flatTxJson, err := json.Marshal(flatTx)
@@ -515,31 +518,68 @@ func verifySignature(signBytes, signature, compressedPubKey []byte) bool {
 	)
 }
 
-// BroadcastTx is to broadcast the tx to cosmos chain
-func (c *Client) BroadcastTx(tx stypes.TxOutItem, txBytes []byte) (string, error) {
-	response, err := c.rpcClient.SubmitAndWait(hex.EncodeToString(txBytes), true)
+func (c *Client) txNeedsBroadcast(txHash string) bool {
+	var txResponse *requests.TxResponse
+
+	// Request the transaction from the server
+	res, err := c.rpcClient.Request(&requests.TxRequest{
+		Transaction: txHash,
+	})
 	if err != nil {
-		c.logger.Error().AnErr("error", err).Msg("unsuccessful error code in transaction broadcast")
-		return "", fmt.Errorf("broadcast msg failed, %w", err)
+		c.logger.Error().AnErr("error", err).Msg("error tx request")
+		return true
 	}
 
-	c.logger.Info().Msg("BroadcastTx success")
-	//c.logger.Info().Interface("broadcastRes", broadcastRes).Msg("BroadcastTx success")
-	// if success := CosmosSuccessCodes[broadcastRes.TxResponse.Code]; !success {
-	// 	return "", errors.New("broadcast msg failed")
-	// }
+	err = res.GetResult(&txResponse)
+	if err != nil {
+		c.logger.Error().AnErr("error", err).Msg("error get results of tx request")
+		return true
+	}
 
-	c.accts.SeqInc(tx.VaultPubKey)
+	c.logger.Info().Interface("txResponse", txResponse).Msg("tx response found")
+
+	return false
+}
+
+func (c *Client) broadcastTx(txBlob string) error {
+	response, err := c.rpcClient.Submit(txBlob, true)
+	if err != nil {
+		c.logger.Error().AnErr("error", err).Msg("unsuccessful error code in transaction broadcast")
+		return fmt.Errorf("broadcast msg failed, %w", err)
+	}
+
 	// Only add the transaction to signer cache when it is sure the transaction has been broadcast successfully.
 	// So for other scenario , like transaction already in mempool , invalid account sequence # , the transaction can be rescheduled , and retried
+	if response.EngineResult != "tesSUCCESS" {
+		c.logger.Info().Interface("broadcastRes", response).Msg("XRP BroadcastTx failed")
+		return fmt.Errorf("transaction failed to submit with engine result: %s", response.EngineResult)
+	}
+	c.logger.Info().Interface("broadcastRes", response).Msg("XRP BroadcastTx success")
+	return nil
+}
 
-	// TODO SAM127: ensure tx was successful before adding to cache
-	// if broadcastRes.TxResponse.Code == errorsmod.SuccessABCICode {
-	// 	if err = c.signerCacheManager.SetSigned(tx.CacheHash(), tx.CacheVault(c.GetChain()), broadcastRes.TxResponse.TxHash); err != nil {
-	// 		c.logger.Err(err).Msg("fail to set signer cache")
-	// 	}
-	// }
-	return response.Hash.String(), nil
+// BroadcastTx is to broadcast the tx to cosmos chain
+func (c *Client) BroadcastTx(tx stypes.TxOutItem, txBytes []byte) (string, error) {
+	txBlob := hex.EncodeToString(txBytes)
+	txHash, err := hash.SignTxBlob(txBlob)
+	if err != nil {
+		c.logger.Error().Msg("error hashing txBlob on broadcast")
+		return "", err
+	}
+
+	// if tx has already been broadcasted, don't try again, it will error with engine result: tefPAST_SEQ
+	if c.txNeedsBroadcast(txHash) {
+		if err := c.broadcastTx(txBlob); err != nil {
+			return "", err
+		}
+	}
+
+	c.accts.SeqInc(tx.VaultPubKey)
+	if err = c.signerCacheManager.SetSigned(tx.CacheHash(), tx.CacheVault(c.GetChain()), txHash); err != nil {
+		c.logger.Err(err).Msg("fail to set signer cache")
+	}
+	
+	return txHash, nil
 }
 
 // ConfirmationCountReady xrp chain has almost instant finality, so doesn't need to wait for confirmation
