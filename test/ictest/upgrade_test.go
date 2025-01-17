@@ -66,6 +66,8 @@ func TestUpgrade_3_1_to_3_2(t *testing.T) {
 	chainImage := ibc.NewDockerImage(initialRepo, initialVersion, imageUidGid)
 	// Start chain with 1 validator, then validators may be churned in (current bifrost requirement)
 	thorchain := StartThorchain(t, ctx, client, network, 1, numFns, mainnet, chainImage, exoChains, ethRouterContractAddress, bscRouterContractAddress)
+	err := setNetworkFee(thorchain.Validators, exoChains)
+	require.NoError(t, err)
 	//require.NoError(t, gaiaEg.Wait()) // Wait for 100 transactions before starting tests
 
 	// Add validators
@@ -143,6 +145,8 @@ func TestUpgrade_3_0_to_3_1(t *testing.T) {
 	// Start thorchain
 	chainImage := ibc.NewDockerImage(initialRepo, initialVersion, imageUidGid)
 	thorchain := StartThorchain(t, ctx, client, network, initialValSetSize, numFns, mainnet, chainImage, exoChains, ethRouterContractAddress, bscRouterContractAddress)
+	err := setNetworkFee(thorchain.Validators, exoChains)
+	require.NoError(t, err)
 	//require.NoError(t, gaiaEg.Wait()) // Wait for 100 transactions before starting tests
 
 	// Add validators
@@ -215,14 +219,16 @@ func TestUpgrade_2_137_to_3_0(t *testing.T) {
 		DogeChainSpec(),
 		BscChainSpec(),
 	})
-	gaiaEg := SetupGaia(t, ctx, exoChains["GAIA"])
+	//gaiaEg := SetupGaia(t, ctx, exoChains["GAIA"])
 	ethRouterContractAddress, bscRouterContractAddress, err := SetupContracts(ctx, exoChains["ETH"], exoChains["BSC"])
 	require.NoError(t, err, "error setting up contracts for eth and bsc")
  
 	// Start thorchain
 	chainImage := ibc.NewDockerImage(initialRepo, initialVersion, imageUidGid)
 	thorchain := StartThorchain(t, ctx, client, network, initialValSetSize, numFns, mainnet, chainImage, exoChains, ethRouterContractAddress, bscRouterContractAddress)
-	require.NoError(t, gaiaEg.Wait()) // Wait for 100 transactions before starting tests
+	err = setNetworkFee(thorchain.Validators, exoChains)
+	require.NoError(t, err)
+	//require.NoError(t, gaiaEg.Wait()) // Wait for 100 transactions before starting tests
 
 	// Add validators
 	if numVals > 1 {

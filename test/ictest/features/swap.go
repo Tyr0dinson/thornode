@@ -180,5 +180,8 @@ func singleSwap(
 	}
 	// TODO: compare outAmountPlusMaxGas -> actualSwapAmount
 	fmt.Println("outAmountPlusMaxGas:", outAmountPlusMaxGas, "actualSwapAmount:", actualSwapAmount)
+	fmt.Println("*********************")
+	fmt.Println("*********************")
+	fmt.Println("Swap complete, src:", srcChainAsset, "dst:", destChainAsset, "Actual amount:", actualSwapAmount)
 	return nil
 }

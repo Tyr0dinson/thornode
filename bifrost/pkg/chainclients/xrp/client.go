@@ -222,6 +222,7 @@ func (c *Client) GetAddress(poolPubKey common.PubKey) string {
 func (c *Client) GetAccount(pkey common.PubKey, height *big.Int) (common.Account, error) {
 	addr, err := pkey.GetAddress(c.GetChain())
 	if err != nil {
+		c.logger.Err(err).Msg("xrp client GetAccount()")
 		return common.Account{}, fmt.Errorf("failed to convert address (%s) from bech32: %w", pkey, err)
 	}
 	return c.GetAccountByAddress(addr.String(), height)

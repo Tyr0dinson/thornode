@@ -33,8 +33,8 @@ func TestXrp(t *testing.T) {
 	exoChains := StartExoChains(t, ctx, client, network, []*interchaintest.ChainSpec{
 		//EthChainSpec("geth"), // only use this chain spec for eth or the one below
 		// EthChainSpec("anvil"), // Anvil supported contracts are not support in this repo
-		//GaiaChainSpec(),
-		BtcChainSpec(),
+		GaiaChainSpec(),
+		//BtcChainSpec(),
 		//BchChainSpec(),
 		//LtcChainSpec(),
 		//DogeChainSpec(),
@@ -49,6 +49,8 @@ func TestXrp(t *testing.T) {
 	// Start thorchain
 	chainImage := ibc.NewDockerImage("thorchain", "local", "1025:1025")
 	thorchain := StartThorchain(t, ctx, client, network, 1, numFns, mainnet, chainImage, exoChains, ethRouterContractAddress, bscRouterContractAddress)
+	err := setNetworkFee(thorchain.Validators, exoChains)
+	require.NoError(t, err)
 	//require.NoError(t, gaiaEg.Wait()) // Wait for 100 transactions before starting tests
 
 	printVaultAddressesAndBalance(t, ctx, thorchain, exoChains)
@@ -69,20 +71,65 @@ func TestXrp(t *testing.T) {
 	PerformSaverEjects(t, ctx, thorchain, exoChains)
 	printVaultAddressesAndBalance(t, ctx, thorchain, exoChains)
 
-	oldVaultAddr, _, err := thorchain.APIGetInboundAddress(ctx, "XRP")
+	oldXrpVaultAddr, _, err := thorchain.APIGetInboundAddress(ctx, "XRP")
+	require.NoError(t, err)
+	oldGaiaVaultAddr, _, err := thorchain.APIGetInboundAddress(ctx, "GAIA")
 	require.NoError(t, err)
 	// Add 1 more validator so we churn addresses again
 	err = addValidators(t, ctx, thorchain, numVals-1)
 	require.NoError(t, err)
+	oldXrpVaultBalance1, err1 := exoChains["XRP"].chain.GetBalance(ctx, oldXrpVaultAddr, "")
+	oldGaiaVaultBalance1, err11 := exoChains["GAIA"].chain.GetBalance(ctx, oldGaiaVaultAddr, exoChains["GAIA"].chain.Config().Denom)
 	time.Sleep(time.Minute)
-	oldVaultBalance, err := exoChains["XRP"].chain.GetBalance(ctx, oldVaultAddr, "")
-	if err != nil {
-		fmt.Println("Chain:", "XRP", ", vault addr:", oldVaultAddr, ", vault balance err:", err)
+	oldXrpVaultBalance2, err2 := exoChains["XRP"].chain.GetBalance(ctx, oldXrpVaultAddr, "")
+	oldGaiaVaultBalance2, err21 := exoChains["GAIA"].chain.GetBalance(ctx, oldGaiaVaultAddr, exoChains["GAIA"].chain.Config().Denom)
+	time.Sleep(time.Minute)
+	oldXrpVaultBalance3, err3 := exoChains["XRP"].chain.GetBalance(ctx, oldXrpVaultAddr, "")
+	oldGaiaVaultBalance3, err31 := exoChains["GAIA"].chain.GetBalance(ctx, oldGaiaVaultAddr, exoChains["GAIA"].chain.Config().Denom)
+	if err1 != nil {
+		fmt.Println("Chain:", "XRP", ", old vault addr:", oldXrpVaultAddr, ", old vault balance err:", err1)
 	} else {
-		fmt.Println("Chain:", "XRP", ", vault addr:", oldVaultAddr, ", vault balance:", oldVaultBalance)
+		fmt.Println("Chain:", "XRP", ", old vault addr:", oldXrpVaultAddr, ", old vault balance:", oldXrpVaultBalance1)
+	}	
+	if err2 != nil {
+		fmt.Println("Chain:", "XRP", ", old vault addr:", oldXrpVaultAddr, ", old vault balance err:", err2)
+	} else {
+		fmt.Println("Chain:", "XRP", ", old vault addr:", oldXrpVaultAddr, ", old vault balance:", oldXrpVaultBalance2)
+	}	
+	if err3 != nil {
+		fmt.Println("Chain:", "XRP", ", old vault addr:", oldXrpVaultAddr, ", old vault balance err:", err3)
+	} else {
+		fmt.Println("Chain:", "XRP", ", old vault addr:", oldXrpVaultAddr, ", old vault balance:", oldXrpVaultBalance3)
+	}	
+	if err11 != nil {
+		fmt.Println("Chain:", "GAIA", ", old vault addr:", oldGaiaVaultAddr, ", old vault balance err:", err11)
+	} else {
+		fmt.Println("Chain:", "GAIA", ", old vault addr:", oldGaiaVaultAddr, ", old vault balance:", oldGaiaVaultBalance1)
+	}	
+	if err21 != nil {
+		fmt.Println("Chain:", "GAIA", ", old vault addr:", oldGaiaVaultAddr, ", old vault balance err:", err21)
+	} else {
+		fmt.Println("Chain:", "GAIA", ", old vault addr:", oldGaiaVaultAddr, ", old vault balance:", oldGaiaVaultBalance2)
+	}	
+	if err31 != nil {
+		fmt.Println("Chain:", "GAIA", ", old vault addr:", oldGaiaVaultAddr, ", old vault balance err:", err31)
+	} else {
+		fmt.Println("Chain:", "GAIA", ", old vault addr:", oldGaiaVaultAddr, ", old vault balance:", oldGaiaVaultBalance3)
 	}	
 	printVaultAddressesAndBalance(t, ctx, thorchain, exoChains)
 	PerformSwaps(t, ctx, thorchain, exoChains)
+	oldXrpVaultBalance, err := exoChains["XRP"].chain.GetBalance(ctx, oldXrpVaultAddr, "")
+	if err != nil {
+		fmt.Println("Chain:", "XRP", ", old vault addr:", oldXrpVaultAddr, ", old vault balance err:", err)
+	} else {
+		fmt.Println("Chain:", "XRP", ", old vault addr:", oldXrpVaultAddr, ", old vault balance:", oldXrpVaultBalance)
+	}	
+	oldGaiaVaultBalance, err := exoChains["GAIA"].chain.GetBalance(ctx, oldGaiaVaultAddr, exoChains["GAIA"].chain.Config().Denom)
+	if err != nil {
+		fmt.Println("Chain:", "GAIA", ", old vault addr:", oldGaiaVaultAddr, ", old vault balance err:", err)
+	} else {
+		fmt.Println("Chain:", "GAIA", ", old vault addr:", oldGaiaVaultAddr, ", old vault balance:", oldGaiaVaultBalance)
+	}	
 	printVaultAddressesAndBalance(t, ctx, thorchain, exoChains)
 	Ragnarok(t, ctx, thorchain, exoChains)
 	printVaultAddressesAndBalance(t, ctx, thorchain, exoChains)

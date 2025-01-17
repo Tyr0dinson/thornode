@@ -37,14 +37,16 @@ func TestThorchainSim(t *testing.T) {
 		DogeChainSpec(),
 		BscChainSpec(),
 	})
-	gaiaEg := SetupGaia(t, ctx, exoChains["GAIA"])
+	//gaiaEg := SetupGaia(t, ctx, exoChains["GAIA"])
 	ethRouterContractAddress, bscRouterContractAddress, err := SetupContracts(ctx, exoChains["ETH"], exoChains["BSC"])
 	require.NoError(t, err, "error setting up contracts for eth and bsc")
  
 	// Start thorchain
 	chainImage := ibc.NewDockerImage("thorchain", "local", "1025:1025")
 	thorchain := StartThorchain(t, ctx, client, network, numVals, numFns, mainnet, chainImage, exoChains, ethRouterContractAddress, bscRouterContractAddress)
-	require.NoError(t, gaiaEg.Wait()) // Wait for 100 transactions before starting tests
+	err = setNetworkFee(thorchain.Validators, exoChains)
+	require.NoError(t, err)
+	//require.NoError(t, gaiaEg.Wait()) // Wait for 100 transactions before starting tests
 
 	BootstrapPools(t, ctx, thorchain, exoChains)
 	CreateSavers(t, ctx, thorchain, exoChains)
