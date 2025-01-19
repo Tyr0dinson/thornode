@@ -52,6 +52,11 @@ brew install golang coreutils binutils diffutils findutils gnu-tar gnu-sed gawk 
 export PATH=/opt/homebrew/opt/make/libexec/gnubin:/opt/homebrew/opt/gnu-sed/libexec/gnubin:opt/homebrew/opt/libpq/bin:/opt/homebrew/opt/findutils/libexec/gnubin:$GOPATH/bin:/usr/local/bin:$PATH
 ```
 
+On recent Mac, you may need to set a higher-priority path to replace `awk` with `gawk`:
+```bash
+ln -sf $(which gawk) /usr/local/bin/awk
+```
+
 Install [Docker and Docker Compose V2](https://docs.docker.com/engine/install/).
 
 Ensure you have a recent version of go ([scripts/check-env.sh](https://gitlab.com/thorchain/thornode/-/blob/develop/scripts/check-env.sh#L46-48)) and enabled go modules.<br/>
