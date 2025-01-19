@@ -53,6 +53,7 @@ export PATH=/opt/homebrew/opt/make/libexec/gnubin:/opt/homebrew/opt/gnu-sed/libe
 ```
 
 On recent Mac machines, you may need to set a higher-priority path to replace `awk` with `gawk`:
+
 ```bash
 ln -sf $(which gawk) /usr/local/bin/awk
 ```
