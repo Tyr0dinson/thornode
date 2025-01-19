@@ -52,7 +52,7 @@ brew install golang coreutils binutils diffutils findutils gnu-tar gnu-sed gawk 
 export PATH=/opt/homebrew/opt/make/libexec/gnubin:/opt/homebrew/opt/gnu-sed/libexec/gnubin:opt/homebrew/opt/libpq/bin:/opt/homebrew/opt/findutils/libexec/gnubin:$GOPATH/bin:/usr/local/bin:$PATH
 ```
 
-On recent Mac, you may need to set a higher-priority path to replace `awk` with `gawk`:
+On recent Mac machines, you may need to set a higher-priority path to replace `awk` with `gawk`:
 ```bash
 ln -sf $(which gawk) /usr/local/bin/awk
 ```
@@ -78,7 +78,7 @@ cd thornode
 Install via this `make` command.
 
 ```bash
-make go-generate openapi protob-docker install
+make go-generate openapi proto-gen install
 ```
 
 Once you've installed `thornode`, check that they are there.
@@ -205,7 +205,7 @@ Current active branch is `develop`, so when you open PR, make sure your target b
 
 ## ADRs
 
-THORChain follows a Architectural Decisison Record process outlined here:
+THORChain follows a Architectural Decision Record process outlined here:
 https://gitlab.com/thorchain/thornode/-/blob/develop/docs/architecture/PROCESS.md?ref_type=heads
 
 ## Upgrades
