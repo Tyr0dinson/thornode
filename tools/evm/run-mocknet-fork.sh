@@ -19,16 +19,16 @@ case $1 in
   CHAIN_RPC="https://rpc.ankr.com/avalanche"
   export "${UPPER_CHAIN}_HOST"=http://host.docker.internal:5458/ext/bc/C/rpc
   ;;
-"eth")
-  CHAIN_RPC="https://rpc.ankr.com/eth"
+"base")
+  CHAIN_RPC="https://rpc.ankr.com/base"
   export "${UPPER_CHAIN}_HOST"=http://host.docker.internal:5458
   ;;
 "bsc")
   CHAIN_RPC="https://rpc.ankr.com/bsc"
   export "${UPPER_CHAIN}_HOST"=http://host.docker.internal:5458
   ;;
-"base")
-  CHAIN_RPC="https://rpc.ankr.com/base"
+"eth")
+  CHAIN_RPC="https://rpc.ankr.com/eth"
   export "${UPPER_CHAIN}_HOST"=http://host.docker.internal:5458
   ;;
 *)
@@ -52,8 +52,14 @@ npm install || {
   exit 1
 }
 
-npx hardhat node --fork "$CHAIN_RPC" --port 5458 --hostname 0.0.0.0 &
+npx hardhat node --fork "$CHAIN_RPC" --hostname 0.0.0.0 --port 5458 &
 HARDHAT_PID=$!
+
+# log the PID
+echo "Hardhat PID: $HARDHAT_PID"
+
+# Wait for the Hardhat process
+wait $HARDHAT_PID
 
 # Bootstrap USDC balance
 node init.js || {
@@ -61,6 +67,3 @@ node init.js || {
   kill $HARDHAT_PID
   exit 1
 }
-
-# Wait for the Hardhat process
-wait $HARDHAT_PID
