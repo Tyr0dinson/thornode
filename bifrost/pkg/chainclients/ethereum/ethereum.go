@@ -378,9 +378,11 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 		return nil, nil, nil, nil
 	}
 
+	// NOTE oleg: it would be great if this could be relaxed for dex agg calls. the target aggregator might not require a `toAddress`
 	if tx.ToAddress.IsEmpty() {
 		return nil, nil, nil, fmt.Errorf("to address is empty")
 	}
+
 	if tx.VaultPubKey.IsEmpty() {
 		return nil, nil, nil, fmt.Errorf("vault public key is empty")
 	}
@@ -437,9 +439,12 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 				return nil, nil, nil, fmt.Errorf("%s can't use transferOutAndCall", memoType)
 			}
 			c.logger.Info().Msgf("aggregator target address: %s", tx.AggregatorTargetAsset)
-			if ethValue.Uint64() == 0 {
-				return nil, nil, nil, fmt.Errorf("transferOutAndCall can only be used when outbound asset is ETH")
-			}
+
+			// NOTE oleg: this is no longer a limitation of the router
+			// if ethValue.Uint64() == 0 {
+			// 	return nil, nil, nil, fmt.Errorf("transferOutAndCall can only be used when outbound asset is ETH")
+			// }
+
 			targetLimit := tx.AggregatorTargetLimit
 			if targetLimit == nil {
 				zeroLimit := cosmos.ZeroUint()
@@ -456,9 +461,19 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 				c.logger.Error().Msgf("aggregator target asset address can't roundtrip , ignore tx (%s != %s)", tx.AggregatorTargetAsset, targetAddr.String())
 				return nil, nil, nil, nil
 			}
-			data, err = c.vaultABI.Pack("transferOutAndCall", aggAddr, targetAddr, dest, targetLimit.BigInt(), tx.Memo)
-			if err != nil {
-				return nil, nil, nil, fmt.Errorf("fail to create data to call smart contract(transferOutAndCall): %w", err)
+
+			if constants.DexAggVersion == 4 {
+				data, err = c.vaultABI.Pack("transferOutAndCall", aggAddr, targetAddr, dest, targetLimit.BigInt(), tx.Memo)
+				if err != nil {
+					return nil, nil, nil, fmt.Errorf("fail to create data to call smart contract(transferOutAndCall): %w", err)
+				}
+			} else if constants.DexAggVersion == 5 {
+				data, err = c.vaultABI.Pack("transferOutAndCallV5", aggAddr, targetAddr, dest, targetLimit.BigInt(), tx.Memo, tx.DexAggPayload)
+				if err != nil {
+					return nil, nil, nil, fmt.Errorf("fail to create data to call smart contract(transferOutAndCallV5): %w", err)
+				}
+			} else {
+				return nil, nil, nil, fmt.Errorf("unsupported dex agg version: %d", constants.DexAggVersion)
 			}
 		}
 	case mem.TxMigrate:

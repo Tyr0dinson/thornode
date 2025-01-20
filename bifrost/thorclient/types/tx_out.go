@@ -23,6 +23,7 @@ type TxOutItem struct {
 	Aggregator            string         `json:"aggregator"`
 	AggregatorTargetAsset string         `json:"aggregator_target_asset,omitempty"`
 	AggregatorTargetLimit *cosmos.Uint   `json:"aggregator_target_limit,omitempty"`
+	DexAggPayload         string         `json:"dex_agg_payload,omitempty"`
 	Checkpoint            []byte         `json:"-"`
 	Height                int64          `json:"height"`
 }
@@ -88,6 +89,9 @@ func (tx TxOutItem) Equals(tx2 TxOutItem) bool {
 	if !tx.AggregatorTargetLimit.Equal(*tx2.AggregatorTargetLimit) {
 		return false
 	}
+	if !strings.EqualFold(tx.DexAggPayload, tx2.DexAggPayload) {
+		return false
+	}
 	return true
 }
 
@@ -108,6 +112,7 @@ type TxArrayItem struct {
 	Aggregator            string         `json:"aggregator,omitempty"`
 	AggregatorTargetAsset string         `json:"aggregator_target_asset,omitempty"`
 	AggregatorTargetLimit *cosmos.Uint   `json:"aggregator_target_limit,omitempty"`
+	DexAggPayload         string         `json:"dex_agg_payload,omitempty"`
 	CloutSpent            string         `json:"clout_spent,omitempty"`
 }
 
@@ -126,6 +131,7 @@ func (tx TxArrayItem) TxOutItem(height int64) TxOutItem {
 		Aggregator:            tx.Aggregator,
 		AggregatorTargetAsset: tx.AggregatorTargetAsset,
 		AggregatorTargetLimit: tx.AggregatorTargetLimit,
+		DexAggPayload:         tx.DexAggPayload,
 		Height:                height,
 	}
 }

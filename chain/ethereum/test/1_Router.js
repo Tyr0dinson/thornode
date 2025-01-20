@@ -222,7 +222,9 @@ describe("Router contract", function () {
     it("Asgard Churns", async function () {
       // Router holds 500k of TOKEN1, allocated to ASGARD1
       expect(BN2Str(await TOKEN.balanceOf(ROUTER1.address))).to.equal(_500k);
-      expect(BN2Str(await ROUTER1.vaultAllowance(ASGARD1, TOKEN.address))).to.equal(_500k);
+      expect(
+        BN2Str(await ROUTER1.vaultAllowance(ASGARD1, TOKEN.address)),
+      ).to.equal(_500k);
 
       // First round, migrate half
       // Router should still hold 500k of TOKEN1, but now half is allocared to ASGARD2
@@ -239,8 +241,12 @@ describe("Router contract", function () {
       expect(BN2Str(tx1.logs[0].args.amount)).to.equal(_250k);
 
       expect(BN2Str(await TOKEN.balanceOf(ROUTER1.address))).to.equal(_500k);
-      expect(BN2Str(await ROUTER1.vaultAllowance(ASGARD1, TOKEN.address))).to.equal(_250k);
-      expect(BN2Str(await ROUTER1.vaultAllowance(ASGARD2, TOKEN.address))).to.equal(_250k);
+      expect(
+        BN2Str(await ROUTER1.vaultAllowance(ASGARD1, TOKEN.address)),
+      ).to.equal(_250k);
+      expect(
+        BN2Str(await ROUTER1.vaultAllowance(ASGARD2, TOKEN.address)),
+      ).to.equal(_250k);
 
       // Second round, migrate remaining half
       // Router should still hold 500k of TOKEN1, but not all is allocated to ASGARD2
@@ -257,8 +263,12 @@ describe("Router contract", function () {
       expect(BN2Str(tx2.logs[0].args.amount)).to.equal(_250k);
 
       expect(BN2Str(await TOKEN.balanceOf(ROUTER1.address))).to.equal(_500k);
-      expect(BN2Str(await ROUTER1.vaultAllowance(ASGARD1, TOKEN.address))).to.equal("0");
-      expect(BN2Str(await ROUTER1.vaultAllowance(ASGARD2, TOKEN.address))).to.equal(_500k);
+      expect(
+        BN2Str(await ROUTER1.vaultAllowance(ASGARD1, TOKEN.address)),
+      ).to.equal("0");
+      expect(
+        BN2Str(await ROUTER1.vaultAllowance(ASGARD2, TOKEN.address)),
+      ).to.equal(_500k);
     });
 
     it("Should fail to when old Asgard interacts", async function () {
@@ -285,8 +295,8 @@ describe("Router contract", function () {
   describe("Upgrade contract", function () {
     it("should transfer all token and allowance to new contract", async function () {
       let asgard = accounts[5];
-      let routerCurrent = await Router.new()
-      let routerNext = await Router.new()
+      let routerCurrent = await Router.new();
+      let routerNext = await Router.new();
 
       // Approvals - current router can spend USER1 funds (for seeding)
       await TOKEN.approve(routerCurrent.address, _1m, { from: USER1 });
@@ -314,9 +324,13 @@ describe("Router contract", function () {
         currentTime,
         { from: USER1 },
       );
-      expect(BN2Str(await routerCurrent.vaultAllowance(asgard, TOKEN.address))).to.equal(_50k);
-      expect(BN2Str(await TOKEN.balanceOf(routerCurrent.address))).to.equal(_50k);
- 
+      expect(
+        BN2Str(await routerCurrent.vaultAllowance(asgard, TOKEN.address)),
+      ).to.equal(_50k);
+      expect(BN2Str(await TOKEN.balanceOf(routerCurrent.address))).to.equal(
+        _50k,
+      );
+
       // Migrate 50k TOKEN to new router contract
       let tx = await routerCurrent.transferAllowance(
         routerNext.address,
@@ -334,12 +348,18 @@ describe("Router contract", function () {
       expect(BN2Str(tx.logs[0].args.amount)).to.equal(_50k);
 
       // Make sure the token has been transferred and routerNext
-      expect(BN2Str(await TOKEN.balanceOf(routerCurrent.address))).to.equal("0");
+      expect(BN2Str(await TOKEN.balanceOf(routerCurrent.address))).to.equal(
+        "0",
+      );
       expect(BN2Str(await TOKEN.balanceOf(routerNext.address))).to.equal(_50k);
 
       // Make sure the token vault allowance has moved from routerCurrent to routerNext
-      expect(BN2Str(await routerNext.vaultAllowance(asgard, TOKEN.address))).to.equal(_50k);
-      expect(BN2Str(await routerCurrent.vaultAllowance(asgard, TOKEN.address))).to.equal("0");
+      expect(
+        BN2Str(await routerNext.vaultAllowance(asgard, TOKEN.address)),
+      ).to.equal(_50k);
+      expect(
+        BN2Str(await routerCurrent.vaultAllowance(asgard, TOKEN.address)),
+      ).to.equal("0");
     });
   });
 

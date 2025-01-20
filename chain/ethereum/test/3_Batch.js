@@ -54,20 +54,25 @@ describe("Batch Outbounds", function () {
     it("Should Deposit Assets to Router", async function () {
       await TOKEN.transfer(SUSHIROUTER.address, _10);
 
-      let user1StartEth = BigNumber(await web3.eth.getBalance(USER1))
+      let user1StartEth = BigNumber(await web3.eth.getBalance(USER1));
       let tx = await web3.eth.sendTransaction({
         to: SUSHIROUTER.address,
         from: USER1,
         value: _10,
       });
-      let user1EndEth = BigNumber(await web3.eth.getBalance(USER1))
+      let user1EndEth = BigNumber(await web3.eth.getBalance(USER1));
       // sanity check new balance net of send amount and gas
-      expect(BN2Str(user1EndEth)).to.equal(BN2Str(
-        user1StartEth.minus(
-          BigNumber(tx.gasUsed)
-          .multipliedBy(BigNumber(tx.effectiveGasPrice)))
-        .minus(_10)
-      ))
+      expect(BN2Str(user1EndEth)).to.equal(
+        BN2Str(
+          user1StartEth
+            .minus(
+              BigNumber(tx.gasUsed).multipliedBy(
+                BigNumber(tx.effectiveGasPrice),
+              ),
+            )
+            .minus(_10),
+        ),
+      );
 
       await web3.eth.sendTransaction({
         to: WETH.address,
@@ -90,17 +95,19 @@ describe("Batch Outbounds", function () {
       );
 
       expect(BN2Str(await TOKEN.balanceOf(SUSHIROUTER.address))).to.equal(_10);
-      expect(BN2Str(await web3.eth.getBalance(SUSHIROUTER.address))).to.equal(_10);
+      expect(BN2Str(await web3.eth.getBalance(SUSHIROUTER.address))).to.equal(
+        _10,
+      );
       expect(BN2Str(await WETH.balanceOf(SUSHIROUTER.address))).to.equal(_10);
       expect(BN2Str(await TOKEN.balanceOf(ROUTER.address))).to.equal(_20);
     });
 
     it("Should send 4 outbound transactions", async function () {
-      let asgardStartEth = BigNumber(await web3.eth.getBalance(ASGARD))
-      let user1StartEth = BigNumber(await web3.eth.getBalance(USER1))
-      let user2StartEth = BigNumber(await web3.eth.getBalance(USER2))
-      let user1StartToken = BigNumber(await TOKEN.balanceOf(USER1))
-      let user2StartToken = BigNumber(await TOKEN.balanceOf(USER2))
+      let asgardStartEth = BigNumber(await web3.eth.getBalance(ASGARD));
+      let user1StartEth = BigNumber(await web3.eth.getBalance(USER1));
+      let user2StartEth = BigNumber(await web3.eth.getBalance(USER2));
+      let user1StartToken = BigNumber(await TOKEN.balanceOf(USER1));
+      let user2StartToken = BigNumber(await TOKEN.balanceOf(USER2));
 
       let tx = await ROUTER.batchTransferOutV5(
         [
@@ -111,33 +118,31 @@ describe("Batch Outbounds", function () {
         ],
         { from: ASGARD, value: _3 },
       );
-      expect(tx.logs.length).to.equal(4)
+      expect(tx.logs.length).to.equal(4);
 
-      let asgardEndEth = BigNumber(await web3.eth.getBalance(ASGARD))
-      expect(BN2Str(asgardEndEth)).to.equal(BN2Str(
-        asgardStartEth.minus(
-          BigNumber(tx.receipt.gasUsed)
-          .multipliedBy(BigNumber(tx.receipt.effectiveGasPrice)))
-        .minus(_3)
-      )); // Less 3 eth and some gas
-      
-      let user1EndEth = BigNumber(await web3.eth.getBalance(USER1))
-      expect(BN2Str(user1EndEth)).to.equal(BN2Str(
-        user1StartEth.plus(_2)
-      )); // 2x outbounds @ 1 ETH
+      let asgardEndEth = BigNumber(await web3.eth.getBalance(ASGARD));
+      expect(BN2Str(asgardEndEth)).to.equal(
+        BN2Str(
+          asgardStartEth
+            .minus(
+              BigNumber(tx.receipt.gasUsed).multipliedBy(
+                BigNumber(tx.receipt.effectiveGasPrice),
+              ),
+            )
+            .minus(_3),
+        ),
+      ); // Less 3 eth and some gas
 
-      let user2EndEth = BigNumber(await web3.eth.getBalance(USER2))
-      expect(BN2Str(user2EndEth)).to.equal(BN2Str(
-        user2StartEth.plus(_1)
-      )); // 1 outbound @ 1 ETH
+      let user1EndEth = BigNumber(await web3.eth.getBalance(USER1));
+      expect(BN2Str(user1EndEth)).to.equal(BN2Str(user1StartEth.plus(_2))); // 2x outbounds @ 1 ETH
 
+      let user2EndEth = BigNumber(await web3.eth.getBalance(USER2));
+      expect(BN2Str(user2EndEth)).to.equal(BN2Str(user2StartEth.plus(_1))); // 1 outbound @ 1 ETH
 
-      let user1EndToken = BigNumber(await TOKEN.balanceOf(USER1))
-      let user2EndToken = BigNumber(await TOKEN.balanceOf(USER2))
-      expect(BN2Str(user1EndToken)).to.equal(BN2Str(user1StartToken)) // No change
-      expect(BN2Str(user2EndToken)).to.equal(BN2Str(
-        user2StartToken.plus(_1)
-      )); // 1 outbound @ 1 TOKEN
+      let user1EndToken = BigNumber(await TOKEN.balanceOf(USER1));
+      let user2EndToken = BigNumber(await TOKEN.balanceOf(USER2));
+      expect(BN2Str(user1EndToken)).to.equal(BN2Str(user1StartToken)); // No change
+      expect(BN2Str(user2EndToken)).to.equal(BN2Str(user2StartToken.plus(_1))); // 1 outbound @ 1 TOKEN
     });
 
     it("Should fail if not enough ether is sent", async function () {
@@ -156,11 +161,11 @@ describe("Batch Outbounds", function () {
     });
 
     it("Should send 2 dex agg outbounds", async function () {
-      let asgardStartEth = BigNumber(await web3.eth.getBalance(ASGARD))
-      let user1StartEth = BigNumber(await web3.eth.getBalance(USER1))
-      let user2StartEth = BigNumber(await web3.eth.getBalance(USER2))
-      let user1StartToken = BigNumber(await TOKEN.balanceOf(USER1))
-      let user2StartToken = BigNumber(await TOKEN.balanceOf(USER2))
+      let asgardStartEth = BigNumber(await web3.eth.getBalance(ASGARD));
+      let user1StartEth = BigNumber(await web3.eth.getBalance(USER1));
+      let user2StartEth = BigNumber(await web3.eth.getBalance(USER2));
+      let user1StartToken = BigNumber(await TOKEN.balanceOf(USER1));
+      let user2StartToken = BigNumber(await TOKEN.balanceOf(USER2));
 
       let tx = await ROUTER.batchTransferOutAndCallV5(
         [
@@ -190,27 +195,27 @@ describe("Batch Outbounds", function () {
         { from: ASGARD, value: "0" },
       );
 
-      expect(BN2Str(asgardEndEth)).to.equal(BN2Str(
-        asgardStartEth.minus(
-          BigNumber(tx.receipt.gasUsed)
-          .multipliedBy(BigNumber(tx.receipt.effectiveGasPrice)))
-      )); // Less gas
+      expect(BN2Str(asgardEndEth)).to.equal(
+        BN2Str(
+          asgardStartEth.minus(
+            BigNumber(tx.receipt.gasUsed).multipliedBy(
+              BigNumber(tx.receipt.effectiveGasPrice),
+            ),
+          ),
+        ),
+      ); // Less gas
 
-      let user1EndEth = BigNumber(await web3.eth.getBalance(USER1))
-      expect(BN2Str(user1EndEth)).to.equal(BN2Str(
-        user1StartEth.plus(_1)
-      )); // 1 outbound @ 1 ETH
+      let user1EndEth = BigNumber(await web3.eth.getBalance(USER1));
+      expect(BN2Str(user1EndEth)).to.equal(BN2Str(user1StartEth.plus(_1))); // 1 outbound @ 1 ETH
 
-      let user1EndToken = BigNumber(await TOKEN.balanceOf(USER1))
-      expect(BN2Str(user1EndToken)).to.equal(BN2Str(user1StartToken)) // no change
+      let user1EndToken = BigNumber(await TOKEN.balanceOf(USER1));
+      expect(BN2Str(user1EndToken)).to.equal(BN2Str(user1StartToken)); // no change
 
-      let user2EndEth = BigNumber(await web3.eth.getBalance(USER2))
-      expect(BN2Str(user2EndEth)).to.equal(BN2Str(user2StartEth)) // no change
+      let user2EndEth = BigNumber(await web3.eth.getBalance(USER2));
+      expect(BN2Str(user2EndEth)).to.equal(BN2Str(user2StartEth)); // no change
 
-      let user2EndToken = BigNumber(await TOKEN.balanceOf(USER2))
-      expect(BN2Str(user2EndToken)).to.equal(BN2Str(
-        user2StartToken.plus(_1)
-      )); // 1 outbound @ 1 TOKEN
+      let user2EndToken = BigNumber(await TOKEN.balanceOf(USER2));
+      expect(BN2Str(user2EndToken)).to.equal(BN2Str(user2StartToken.plus(_1))); // 1 outbound @ 1 TOKEN
     });
   });
 });

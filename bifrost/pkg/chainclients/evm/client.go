@@ -477,9 +477,12 @@ func (c *EVMClient) getOutboundTxData(txOutItem stypes.TxOutItem, memo mem.Memo,
 				return nil, hasRouterUpdated, nil, fmt.Errorf("%s can't use transferOutAndCall", memoType)
 			}
 			c.logger.Info().Msgf("aggregator target asset address: %s", txOutItem.AggregatorTargetAsset)
-			if evmValue.Uint64() == 0 {
-				return nil, hasRouterUpdated, nil, fmt.Errorf("transferOutAndCall can only be used when outbound asset is native")
-			}
+
+			// NOTE oleg: this is no longer a limitation of the router
+			// if evmValue.Uint64() == 0 {
+			// 	return nil, hasRouterUpdated, nil, fmt.Errorf("transferOutAndCall can only be used when outbound asset is native")
+			// }
+
 			targetLimit := txOutItem.AggregatorTargetLimit
 			if targetLimit == nil {
 				zeroLimit := cosmos.ZeroUint()
@@ -496,9 +499,19 @@ func (c *EVMClient) getOutboundTxData(txOutItem stypes.TxOutItem, memo mem.Memo,
 				c.logger.Error().Msgf("aggregator target asset address can't roundtrip , ignore tx (%s != %s)", txOutItem.AggregatorTargetAsset, targetAddr.String())
 				return nil, hasRouterUpdated, nil, nil
 			}
-			data, err = c.vaultABI.Pack("transferOutAndCall", aggAddr, targetAddr, toAddr, targetLimit.BigInt(), txOutItem.Memo)
-			if err != nil {
-				return nil, hasRouterUpdated, nil, fmt.Errorf("fail to create data to call smart contract(transferOutAndCall): %w", err)
+
+			if constants.DexAggVersion == 4 {
+				data, err = c.vaultABI.Pack("transferOutAndCall", aggAddr, targetAddr, toAddr, targetLimit.BigInt(), txOutItem.Memo)
+				if err != nil {
+					return nil, hasRouterUpdated, nil, fmt.Errorf("fail to create data to call smart contract(transferOutAndCall): %w", err)
+				}
+			} else if constants.DexAggVersion == 5 {
+				data, err = c.vaultABI.Pack("transferOutAndCallV5", aggAddr, targetAddr, toAddr, targetLimit.BigInt(), txOutItem.Memo, txOutItem.DexAggPayload)
+				if err != nil {
+					return nil, hasRouterUpdated, nil, fmt.Errorf("fail to create data to call smart contract(transferOutAndCallV5): %w", err)
+				}
+			} else {
+				return nil, hasRouterUpdated, nil, fmt.Errorf("unsupported dex agg version: %d", constants.DexAggVersion)
 			}
 		}
 	case mem.TxMigrate:
