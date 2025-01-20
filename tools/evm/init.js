@@ -7,15 +7,19 @@ async function main() {
   const port = 5458;
   let ready = false;
   while (true) {
-    console.log("Waiting for hardhat node to start...");
-    const client = net.createConnection({ host, port }, () => {
-      ready = true;
-      client.destroy();
-    });
-    client.on("error", () => {});
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    if (ready) {
-      break;
+    try {
+      console.log("Waiting for hardhat node to start...");
+      const client = net.createConnection({ host, port }, () => {
+        ready = true;
+        client.destroy();
+      });
+      client.on("error", () => {});
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      if (ready) {
+        break;
+      }
+    } catch (e) {
+      console.error(e);
     }
   }
 
@@ -28,9 +32,10 @@ async function main() {
 
   // list of USD tokens on various networks
   const usdTokens = {
-    ETH: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", // ETH.USDC
     AVAX: "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E", // AVAX.USDC
+    BASE: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", // BASE.USDC
     BSC: "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d", // BSC.USDC
+    ETH: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", // ETH.USDC
   };
 
   for (const [network, token] of Object.entries(usdTokens)) {
@@ -42,7 +47,7 @@ async function main() {
     const erc20 = new ethers.Contract(
       token,
       ["function balanceOf(address) view returns (uint256)"],
-      provider,
+      provider
     );
     const mintAmount = ethers.utils.parseUnits("100000", 6);
 
@@ -59,7 +64,7 @@ async function main() {
             "function mint(address,uint256)",
             "function configureMinter(address,uint256)",
           ],
-          provider,
+          provider
         );
 
         // get minter and set balance
@@ -77,6 +82,36 @@ async function main() {
 
         // mint 100K USD to the account
         await configContract.mint(accountAddress, mintAmount);
+        break;
+      }
+
+      case "BASE": {
+        // Assume BASE.USDC supports the same minting as BSC or AVAX
+        const contract = new ethers.Contract(
+          token,
+          [
+            "function balanceOf(address) view returns (uint256)",
+            "function mint(uint256)",
+            "function getOwner() view returns (address)",
+            "function transfer(address,uint256)",
+          ],
+          provider
+        );
+
+        const owner = await contract.getOwner();
+
+        // impersonate the owner
+        await provider.send("hardhat_impersonateAccount", [owner]);
+        const signer = await provider.getSigner(owner);
+        const configContract = contract.connect(signer);
+
+        // mint and transfer funds to the account
+        await provider.send("hardhat_setBalance", [
+          owner,
+          ethers.utils.hexlify(ethers.utils.parseEther("10")),
+        ]);
+        await configContract.transfer(accountAddress, mintAmount);
+        break;
       }
 
       case "BSC": {
@@ -89,7 +124,7 @@ async function main() {
             "function getOwner() view returns (address)",
             "function transfer(address,uint256)",
           ],
-          provider,
+          provider
         );
 
         // get owner
@@ -103,6 +138,7 @@ async function main() {
         // mint 100K USD to the account
         await configContract.mint(mintAmount);
         await configContract.transfer(accountAddress, mintAmount);
+        break;
       }
     }
 
@@ -111,8 +147,8 @@ async function main() {
     console.log(
       `${accountAddress}: ${ethers.utils.formatUnits(
         balance,
-        6,
-      )} ${network}.USDC (${token})`,
+        6
+      )} ${network}.USDC (${token})`
     );
   }
 }
