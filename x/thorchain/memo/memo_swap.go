@@ -29,6 +29,8 @@ type SwapMemo struct {
 	RefundAddress         common.Address
 	Affiliates            []string
 	AffiliatesBasisPoints []cosmos.Uint
+	// REVIEW check if string is the correct type, we want to sign with solidity bytes
+	DexAggPayload string // arbitrary payload to forward if present
 }
 
 func (m SwapMemo) GetDestination() common.Address          { return m.Destination }
@@ -45,6 +47,7 @@ func (m SwapMemo) GetAffiliateTHORName() *types.THORName   { return m.AffiliateT
 func (m SwapMemo) GetRefundAddress() common.Address        { return m.RefundAddress }
 func (m SwapMemo) GetAffiliates() []string                 { return m.Affiliates }
 func (m SwapMemo) GetAffiliatesBasisPoints() []cosmos.Uint { return m.AffiliatesBasisPoints }
+func (m SwapMemo) GetDexAggPayload() string                { return m.DexAggPayload }
 
 func (m SwapMemo) String() string {
 	return m.string(false)
@@ -103,6 +106,7 @@ func (m SwapMemo) string(short bool) string {
 		affBpsString,
 		m.DexAggregator,
 		m.DexTargetAddress,
+		m.DexAggPayload,
 	}
 
 	last := 3
@@ -123,10 +127,14 @@ func (m SwapMemo) string(short bool) string {
 		last = 9
 	}
 
+	if m.DexAggPayload != "" {
+		last = 10
+	}
+
 	return strings.Join(args[:last], ":")
 }
 
-func NewSwapMemo(asset common.Asset, dest common.Address, slip cosmos.Uint, affAddr common.Address, affPts cosmos.Uint, dexAgg, dexTargetAddress string, dexTargetLimit cosmos.Uint, orderType types.OrderType, quan, interval uint64, tn types.THORName, refundAddress common.Address, affiliates []string, affiliatesFeeBps []cosmos.Uint) SwapMemo {
+func NewSwapMemo(asset common.Asset, dest common.Address, slip cosmos.Uint, affAddr common.Address, affPts cosmos.Uint, dexAgg, dexTargetAddress string, dexTargetLimit cosmos.Uint, orderType types.OrderType, quan, interval uint64, tn types.THORName, refundAddress common.Address, affiliates []string, affiliatesFeeBps []cosmos.Uint, dexAggPayload string) SwapMemo {
 	swapMemo := SwapMemo{
 		MemoBase:              MemoBase{TxType: TxSwap, Asset: asset},
 		Destination:           dest,
@@ -141,6 +149,7 @@ func NewSwapMemo(asset common.Asset, dest common.Address, slip cosmos.Uint, affA
 		RefundAddress:         refundAddress,
 		Affiliates:            affiliates,
 		AffiliatesBasisPoints: affiliatesFeeBps,
+		DexAggPayload:         dexAggPayload,
 	}
 	if !dexTargetLimit.IsZero() {
 		swapMemo.DexTargetLimit = &dexTargetLimit
@@ -153,11 +162,28 @@ func NewSwapMemo(asset common.Asset, dest common.Address, slip cosmos.Uint, affA
 
 func (p *parser) ParseSwapMemo() (SwapMemo, error) {
 	switch {
+	case p.version.GTE(semver.MustParse("3.2.0")):
+		return p.ParseSwapMemoV3_2_0()
 	case p.version.GTE(semver.MustParse("3.0.0")):
 		return p.ParseSwapMemoV3_0_0()
 	default:
 		return SwapMemo{}, fmt.Errorf("unsupported version: %s", p.version.String())
 	}
+}
+
+// ParseSwapMemoV3_2_0 only adds the dexAggPayload if present and doesn't changing parsing from current memo params
+func (p *parser) ParseSwapMemoV3_2_0() (SwapMemo, error) {
+	swapMemo, err := p.ParseSwapMemoV3_0_0()
+
+	if err != nil {
+		return SwapMemo{}, err
+	}
+
+	if len(p.parts) > 10 {
+		swapMemo.DexAggPayload = p.get(10)
+	}
+
+	return swapMemo, p.Error()
 }
 
 func (p *parser) ParseSwapMemoV3_0_0() (SwapMemo, error) {
@@ -258,7 +284,8 @@ func (p *parser) ParseSwapMemoV3_0_0() (SwapMemo, error) {
 	dexTargetAddress := p.get(7)
 	dexTargetLimit := p.getUintWithScientificNotation(8, false, 0)
 
-	return NewSwapMemo(asset, destination, slip, affAddr, totalAffBps, dexAgg, dexTargetAddress, dexTargetLimit, order, streamQuantity, streamInterval, tn, refundAddress, affiliates, affFeeBps), p.Error()
+	//REVIEW - is it ok to add the empty string to newly added dexAggPayload in a previous revision function?
+	return NewSwapMemo(asset, destination, slip, affAddr, totalAffBps, dexAgg, dexTargetAddress, dexTargetLimit, order, streamQuantity, streamInterval, tn, refundAddress, affiliates, affFeeBps, ""), p.Error()
 }
 
 func ParseSwapMemoV1(ctx cosmos.Context, keeper keeper.Keeper, asset common.Asset, parts []string) (SwapMemo, error) {
@@ -307,5 +334,5 @@ func ParseSwapMemoV1(ctx cosmos.Context, keeper keeper.Keeper, asset common.Asse
 		}
 	}
 
-	return NewSwapMemo(asset, destination, slip, affAddr, cosmos.NewUint(affPts), "", "", cosmos.ZeroUint(), order, 0, 0, types.NewTHORName("", 0, nil), "", nil, nil), nil
+	return NewSwapMemo(asset, destination, slip, affAddr, cosmos.NewUint(affPts), "", "", cosmos.ZeroUint(), order, 0, 0, types.NewTHORName("", 0, nil), "", nil, nil, ""), nil
 }
