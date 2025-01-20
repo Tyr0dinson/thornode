@@ -109,7 +109,7 @@ make cli-mocknet
 > thornode tx thorchain mimir CHURNINTERVAL 1000 --from dog $TX_FLAGS
 
 # bootstrap vaults from simulation test add liquidity transactions
-make mocknet-bootstrap
+make bootstrap-mocknet
 
 # verify vault balances
 curl -s localhost:1317/thorchain/vaults/asgard | jq '.[0].coins'
