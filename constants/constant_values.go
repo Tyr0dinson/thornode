@@ -137,6 +137,7 @@ const (
 	MultipleAffiliatesMaxCount
 	BondSlashBan
 	BankSendEnabled
+	DexAggVersion
 
 	// These are the implicitly-0 Constants undisplayed in the API endpoint (no explicit value set).
 	ArtificialRagnarokBlockHeight
@@ -149,7 +150,7 @@ const (
 	NumberOfNewNodesPerChurn
 	SignerConcurrency
 	StrictBondLiquidityRatio
-	SwapOutDexAggregationDisabled
+	SwapOutDexAggregationDisabled //TODO remove this on hard fork if DexAggVersion is approved
 )
 
 // ConstantValues define methods used to get constant values

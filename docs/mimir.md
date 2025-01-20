@@ -212,6 +212,7 @@ Mimir setting can be created and changed without a corresponding Constant.
 - `HALTSIGNING#`: Halt signing globally
 - `Ragnarok-<Asset>`#: Ragnaroks a specific pool
 - `BankSendEnabled`: Enable/Disable cosmos bank send messages
+- `DexAggVersion`: toggle which versions of dex agg functions to call. values: 4|5, anything else disables dex aggregation calls.
 
 ### Router Upgrading (DO NOT TOUCH!)
 

@@ -53,6 +53,7 @@ func init() {
 		DevFundSystemIncomeBps:              0,
 		MultipleAffiliatesMaxCount:          5,
 		BankSendEnabled:                     1,
+		DexAggVersion:                       4, // default is Router V4 functions, RouterV5 backports them
 	}
 	boolOverrides = map[ConstantName]bool{
 		StrictBondLiquidityRatio: false,
