@@ -14,6 +14,10 @@ module.exports = {
 
   networks: {
     hardhat: {
+      // forking: {
+      //   url: `https://eth-mainnet.g.alchemy.com/v2/${apiKey}`,
+      //   blockNumber: fromBlockNumber
+      // },
       // Accounts correspond to those created by smoke tests and evm-tool.py.
       accounts: [
         {
