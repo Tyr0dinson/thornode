@@ -4,6 +4,12 @@
 
 set -euo pipefail
 
+# Check if the chain argument is provided
+if [ -z "${1-}" ]; then
+  echo "Usage: $0 <chain>"
+  exit 1
+fi
+
 # set chain rpc to local hardhat
 UPPER_CHAIN=$(echo "$1" | tr '[:lower:]' '[:upper:]')
 
@@ -37,8 +43,14 @@ docker compose -f build/docker/docker-compose.yml --profile mocknet --profile mi
 set -m
 
 # start hardhat in background
-cd tools/evm
-npm install
+cd tools/evm || {
+  echo "Directory tools/evm not found."
+  exit 1
+}
+npm install || {
+  echo "Failed to install npm dependencies."
+  exit 1
+}
 npx hardhat node --fork $CHAIN_RPC --port 5458 --hostname 0.0.0.0 &
 
 # bootstrap usdc balance
