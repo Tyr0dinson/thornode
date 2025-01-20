@@ -51,10 +51,16 @@ npm install || {
   echo "Failed to install npm dependencies."
   exit 1
 }
-npx hardhat node --fork $CHAIN_RPC --port 5458 --hostname 0.0.0.0 &
 
-# bootstrap usdc balance
-node init.js
+npx hardhat node --fork "$CHAIN_RPC" --port 5458 --hostname 0.0.0.0 &
+HARDHAT_PID=$!
 
-# attach to hardhat
-fg
+# Bootstrap USDC balance
+node init.js || {
+  echo "Failed to run init.js."
+  kill $HARDHAT_PID
+  exit 1
+}
+
+# Wait for the Hardhat process
+wait $HARDHAT_PID
