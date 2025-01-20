@@ -47,7 +47,7 @@ async function main() {
     const erc20 = new ethers.Contract(
       token,
       ["function balanceOf(address) view returns (uint256)"],
-      provider
+      provider,
     );
     const mintAmount = ethers.utils.parseUnits("100000", 6);
 
@@ -64,7 +64,7 @@ async function main() {
             "function mint(address,uint256)",
             "function configureMinter(address,uint256)",
           ],
-          provider
+          provider,
         );
 
         // get minter and set balance
@@ -95,7 +95,7 @@ async function main() {
             "function getOwner() view returns (address)",
             "function transfer(address,uint256)",
           ],
-          provider
+          provider,
         );
 
         const owner = await contract.getOwner();
@@ -124,7 +124,7 @@ async function main() {
             "function getOwner() view returns (address)",
             "function transfer(address,uint256)",
           ],
-          provider
+          provider,
         );
 
         // get owner
@@ -147,8 +147,8 @@ async function main() {
     console.log(
       `${accountAddress}: ${ethers.utils.formatUnits(
         balance,
-        6
-      )} ${network}.USDC (${token})`
+        6,
+      )} ${network}.USDC (${token})`,
     );
   }
 }
