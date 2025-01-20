@@ -34,6 +34,8 @@ make reset-mocknet-fork-eth
 
 The provided Ankr RPC links no longer support the required archival features for forking. You need to provide your API key or replace the RPC links with your own.
 
+If using Node version 18+, you may need to use the `--openssl-legacy-provider` flag depending on your setup and RPC provider.
+
 2. Watch logs and wait until Bifrost startup:
 
 ```bash
