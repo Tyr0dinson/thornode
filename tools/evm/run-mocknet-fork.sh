@@ -21,6 +21,10 @@ case $1 in
   CHAIN_RPC="https://rpc.ankr.com/bsc"
   export "${UPPER_CHAIN}_HOST"=http://host.docker.internal:5458
   ;;
+"base")
+  CHAIN_RPC="https://rpc.ankr.com/base"
+  export "${UPPER_CHAIN}_HOST"=http://host.docker.internal:5458
+  ;;
 *)
   echo "Unsupported chain: $1"
   exit 1
