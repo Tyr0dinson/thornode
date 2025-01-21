@@ -2,6 +2,7 @@
 
 ## Changelog
 14 Jan 25: Added timeframe, additional funding option and further steps.
+21 Jan 25: Amended funding options.
 
 ## Status
 Draft
@@ -44,19 +45,20 @@ This ADR proposes the creation of a dedicated marketing fund, sourced from a sma
 
 ### Funding and Governance
 - **Allocation**:
-  Funding can be supplied as either a percentage of Thorchains revenue (e.g 2%), via treasury allocation or from existing quarterly grant submission. The specific percentage or amount can be adjusted based on community consensus and actual spending within limits.
-   - 1. 2% revenue
-   - 2. Treasury allocation
+  Funding can be supplied as either a percentage of Thorchains revenue (e.g 5%), via treasury allocation or from existing quarterly grant submission. The specific percentage or amount can be adjusted based on community consensus and actual spending within limits.
+   - 1. 5% revenue (generated from fees). Small Rune sell pressure. Less LP and Bonder rewards
+   - 2. Treasury allocation - $250,000 per month. 
    - 3. Regular grant submission
+   - 4. Swap 5% burn for 5% marketing. Results in small Rune sell pressure.
 
 - **Governance**:
   Marketing initiatives and budget allocations will be managed by a dedicated marketing committee represented by active members of the Thorchain developers discord.
   
 - **Accountability and transparency**:
-  Marketing committee members will provide updates to the Discord and Thorchain community as necessary with a minimum of quarterly reports. These reports will include ROI and gerenal marketing performance to enable the community to assess the effectiveness of campaigns.
+  Marketing committee members will provide updates and reports to the Discord and Thorchain community as necessary with a minimum of quarterly reports. These reports will include , spend, ROI and general marketing performance to enable the community to assess the effectiveness of campaigns, provide feedback and to allow the committee to make adjustments, cancellations or new deals.
 
 ### Timeframe
-Once approved, an initial timeframe of 3-6 months will be used to establish long term viability of marketing actions. At the end of the period the community will determine if marketing activities should continue or cease.
+Once approved, an initial timeframe of 6 months will be used to establish long term viability of marketing actions. At the end of the period the community will determine if marketing activities should continue or cease.
 
 ### Alternatives Considered
 1. **Status Quo**:
