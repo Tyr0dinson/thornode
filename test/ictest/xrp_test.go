@@ -7,7 +7,9 @@ import (
 	"time"
 
 	"github.com/strangelove-ventures/interchaintest/v8"
+	"github.com/strangelove-ventures/interchaintest/v8/chain/cosmos"
 	tc "github.com/strangelove-ventures/interchaintest/v8/chain/thorchain"
+	"github.com/strangelove-ventures/interchaintest/v8/chain/xrp"
 	"github.com/strangelove-ventures/interchaintest/v8/ibc"
 	"github.com/stretchr/testify/require"
 )
@@ -41,7 +43,6 @@ func TestXrp(t *testing.T) {
 		//BscChainSpec(),
 		XrpChainSpec(),
 	})
-	//gaiaEg := SetupGaia(t, ctx, exoChains["GAIA"])
 	//ethRouterContractAddress, bscRouterContractAddress, err := SetupContracts(ctx, exoChains["ETH"], exoChains["BSC"])
 	ethRouterContractAddress, bscRouterContractAddress := "", ""
 	//require.NoError(t, err, "error setting up contracts for eth and bsc")
@@ -49,9 +50,10 @@ func TestXrp(t *testing.T) {
 	// Start thorchain
 	chainImage := ibc.NewDockerImage("thorchain", "local", "1025:1025")
 	thorchain := StartThorchain(t, ctx, client, network, 1, numFns, mainnet, chainImage, exoChains, ethRouterContractAddress, bscRouterContractAddress)
+	xrpChain := exoChains["XRP"].chain.(*xrp.XrpChain)
+	gaiaChain := exoChains["GAIA"].chain.(*cosmos.CosmosChain)
 	err := setNetworkFee(thorchain.Validators, exoChains)
 	require.NoError(t, err)
-	//require.NoError(t, gaiaEg.Wait()) // Wait for 100 transactions before starting tests
 
 	printVaultAddressesAndBalance(t, ctx, thorchain, exoChains)
 	if numVals > 1 {
@@ -75,17 +77,18 @@ func TestXrp(t *testing.T) {
 	require.NoError(t, err)
 	oldGaiaVaultAddr, _, err := thorchain.APIGetInboundAddress(ctx, "GAIA")
 	require.NoError(t, err)
+
 	// Add 1 more validator so we churn addresses again
-	err = addValidators(t, ctx, thorchain, numVals-1)
+	err = addValidators(t, ctx, thorchain, 1)
 	require.NoError(t, err)
-	oldXrpVaultBalance1, err1 := exoChains["XRP"].chain.GetBalance(ctx, oldXrpVaultAddr, "")
-	oldGaiaVaultBalance1, err11 := exoChains["GAIA"].chain.GetBalance(ctx, oldGaiaVaultAddr, exoChains["GAIA"].chain.Config().Denom)
+	oldXrpVaultBalance1, err1 := xrpChain.GetBalance(ctx, oldXrpVaultAddr, "")
+	oldGaiaVaultBalance1, err11 := gaiaChain.GetBalance(ctx, oldGaiaVaultAddr, gaiaChain.Config().Denom)
 	time.Sleep(time.Minute)
-	oldXrpVaultBalance2, err2 := exoChains["XRP"].chain.GetBalance(ctx, oldXrpVaultAddr, "")
-	oldGaiaVaultBalance2, err21 := exoChains["GAIA"].chain.GetBalance(ctx, oldGaiaVaultAddr, exoChains["GAIA"].chain.Config().Denom)
+	oldXrpVaultBalance2, err2 := xrpChain.GetBalance(ctx, oldXrpVaultAddr, "")
+	oldGaiaVaultBalance2, err21 := gaiaChain.GetBalance(ctx, oldGaiaVaultAddr, gaiaChain.Config().Denom)
 	time.Sleep(time.Minute)
-	oldXrpVaultBalance3, err3 := exoChains["XRP"].chain.GetBalance(ctx, oldXrpVaultAddr, "")
-	oldGaiaVaultBalance3, err31 := exoChains["GAIA"].chain.GetBalance(ctx, oldGaiaVaultAddr, exoChains["GAIA"].chain.Config().Denom)
+	oldXrpVaultBalance3, err3 := xrpChain.GetBalance(ctx, oldXrpVaultAddr, "")
+	oldGaiaVaultBalance3, err31 := gaiaChain.GetBalance(ctx, oldGaiaVaultAddr, gaiaChain.Config().Denom)
 	if err1 != nil {
 		fmt.Println("Chain:", "XRP", ", old vault addr:", oldXrpVaultAddr, ", old vault balance err:", err1)
 	} else {
@@ -118,13 +121,13 @@ func TestXrp(t *testing.T) {
 	}	
 	printVaultAddressesAndBalance(t, ctx, thorchain, exoChains)
 	PerformSwaps(t, ctx, thorchain, exoChains)
-	oldXrpVaultBalance, err := exoChains["XRP"].chain.GetBalance(ctx, oldXrpVaultAddr, "")
+	oldXrpVaultBalance, err := xrpChain.GetBalance(ctx, oldXrpVaultAddr, "")
 	if err != nil {
 		fmt.Println("Chain:", "XRP", ", old vault addr:", oldXrpVaultAddr, ", old vault balance err:", err)
 	} else {
 		fmt.Println("Chain:", "XRP", ", old vault addr:", oldXrpVaultAddr, ", old vault balance:", oldXrpVaultBalance)
 	}	
-	oldGaiaVaultBalance, err := exoChains["GAIA"].chain.GetBalance(ctx, oldGaiaVaultAddr, exoChains["GAIA"].chain.Config().Denom)
+	oldGaiaVaultBalance, err := gaiaChain.GetBalance(ctx, oldGaiaVaultAddr, gaiaChain.Config().Denom)
 	if err != nil {
 		fmt.Println("Chain:", "GAIA", ", old vault addr:", oldGaiaVaultAddr, ", old vault balance err:", err)
 	} else {
