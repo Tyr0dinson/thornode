@@ -269,8 +269,15 @@ func (c Chain) DustThreshold() cosmos.Uint {
 		return cosmos.NewUint(10_000)
 	case DOGEChain:
 		return cosmos.NewUint(100_000_000)
-	case ETHChain, AVAXChain, GAIAChain, BSCChain, BASEChain, XRPChain:
+	case ETHChain, AVAXChain, GAIAChain, BSCChain, BASEChain:
 		return cosmos.OneUint()
+	case XRPChain:
+		// XRP's dust threshold is being set to 1 XRP. This is the base reserve requirement on XRP's ledger.
+		// It is set to this value for two reasons:
+		//    1. to prevent edge cases of outbound XRP to new addresses where this is the minimum that must be transferred
+		//    2. to burn this amount on churns of each XRP vault, effectively leaving it behind as it cannot be transferred, but still transferring all other XRP
+		// On churns, we can optionally delete the account to recover an additional .8 XRP, but would increases code complexity and will remove related ledger entries
+		return cosmos.NewUint(100_000_000) // 1 XRP
 	default:
 		return cosmos.ZeroUint()
 	}
