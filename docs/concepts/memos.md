@@ -43,6 +43,7 @@ The following functions can be put into a memo:
 1. [**WITHDRAW** **Trade Account**](memos.md#withdraw-liquidity)
 1. [**ADD** **Secured Asset**](memos.md#add-secured-asset)
 1. [**WITHDRAW** **Secured Asset**](memos.md#withdraw-secured-asset)
+1. [**SWITCH Asset**](memos.md#switch)
 1. [**BOND**, **UNBOND** & **LEAVE**](memos.md#bond-unbond-and-leave)
 1. [**DONATE** & **RESERVE**](memos.md#donate-and-reserve)
 1. [**MIGRATE**](memos.md#migrate)
@@ -320,6 +321,16 @@ Converts a Secured Asset to a L1 Asset.
 Note: Secured Assets and amount are determined by the `coins` within the `MsgDeposit`. Transaction fee in `RUNE` does apply.
 
 **Example:** `SECURE-:bc1qp8278yutn09r2wu3jrc8xg2a7hgdgwv2gvsdyw` - Convert 0.1 BTC from a Secured Asset to a L1 and send to `bc1qp8278yutn09r2wu3jrc8xg2a7hgdgwv2gvsdyw`
+
+### Switch
+
+One way switch for external tokens to be a native THORChain asset. Supported Assets are listed in a switchMap within the `SwitchManager`.
+
+| Parameter | Notes                              | Extra                                |
+| --------- | ---------------------------------- | ------------------------------------ |
+| Payload   | The asset to become a Native Asset | Must be a L1 supported on THORChain. |
+| `switch`  | The Secured Asset handler.         |                                      |
+| `ADDR`    | The thor address for native asset  | Must be a thor address               |
 
 ### DONATE & RESERVE
 

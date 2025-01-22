@@ -49,14 +49,14 @@ func (h ObservedTxInHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Resu
 func (h ObservedTxInHandler) validate(ctx cosmos.Context, msg MsgObservedTxIn) error {
 	version := h.mgr.GetVersion()
 	switch {
-	case version.GTE(semver.MustParse("3.0.0")):
-		return h.validateV3_0_0(ctx, msg)
+	case version.GTE(semver.MustParse("3.2.0")):
+		return h.validateV3_2_0(ctx, msg)
 	default:
 		return errInvalidVersion
 	}
 }
 
-func (h ObservedTxInHandler) validateV3_0_0(ctx cosmos.Context, msg MsgObservedTxIn) error {
+func (h ObservedTxInHandler) validateV3_2_0(ctx cosmos.Context, msg MsgObservedTxIn) error {
 	// ValidateBasic is also executed in message service router's handler and isn't versioned there
 	if err := msg.ValidateBasic(); err != nil {
 		return err
@@ -72,8 +72,8 @@ func (h ObservedTxInHandler) validateV3_0_0(ctx cosmos.Context, msg MsgObservedT
 func (h ObservedTxInHandler) handle(ctx cosmos.Context, msg MsgObservedTxIn) (*cosmos.Result, error) {
 	version := h.mgr.GetVersion()
 	switch {
-	case version.GTE(semver.MustParse("3.0.0")):
-		return h.handleV3_0_0(ctx, msg)
+	case version.GTE(semver.MustParse("3.2.0")):
+		return h.handleV3_2_0(ctx, msg)
 	default:
 		return nil, errBadVersion
 	}
@@ -148,7 +148,7 @@ func (h ObservedTxInHandler) preflight(ctx cosmos.Context, voter ObservedTxVoter
 	return voter, ok
 }
 
-func (h ObservedTxInHandler) handleV3_0_0(ctx cosmos.Context, msg MsgObservedTxIn) (*cosmos.Result, error) {
+func (h ObservedTxInHandler) handleV3_2_0(ctx cosmos.Context, msg MsgObservedTxIn) (*cosmos.Result, error) {
 	activeNodeAccounts, err := h.mgr.Keeper().ListActiveValidators(ctx)
 	if err != nil {
 		return nil, wrapError(ctx, err, "fail to get list of active node accounts")
@@ -289,6 +289,18 @@ func (h ObservedTxInHandler) handleV3_0_0(ctx cosmos.Context, msg MsgObservedTxI
 		if isLoanOpen || isLoanRepayment {
 			mCtx = ctx.WithValue(constants.CtxLoanTxID, tx.Tx.ID)
 			mCtx = mCtx.WithValue(constants.CtxLoanToAddress, tx.Tx.ToAddress)
+		}
+
+		// Check and block switch assets
+		// Check is independent of the mimir to enable the handler in order to support
+		// bifrost & switch whitelisting prior to switching commencing
+		_, isSwitch := m.(*MsgSwitch)
+		if !isSwitch && h.mgr.SwitchManager().IsSwitch(ctx, tx.Tx.Coins[0].Asset) {
+			if err = refundTx(ctx, tx, h.mgr, CodeTxFail, "asset is a switch asset", ""); err != nil {
+				ctx.Logger().Error("fail to refund", "error", err)
+			}
+
+			continue
 		}
 
 		_, err = handler(mCtx, m)
