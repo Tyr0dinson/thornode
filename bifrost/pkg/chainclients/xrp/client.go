@@ -477,7 +477,6 @@ func (c *Client) signMsg(
 			return nil, fmt.Errorf("failed to DER encode signature: %w", err)
 		}
 	}
-	//payment.TxnSignature = hex.EncodeToString(signature)
 	flatTx["TxnSignature"] = hex.EncodeToString(derSignature) // use flatTx so we don't need to call autofill again
 
 	// Ensure the signature is valid

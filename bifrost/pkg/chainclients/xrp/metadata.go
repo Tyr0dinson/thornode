@@ -32,17 +32,6 @@ func (b *XrpMetaDataStore) Get(pk common.PubKey) XrpMetadata {
 	return XrpMetadata{}
 }
 
-// func (b *XrpMetaDataStore) GetByAccount(acct int64) XrpMetadata {
-// 	b.lock.Lock()
-// 	defer b.lock.Unlock()
-// 	for _, meta := range b.accts {
-// 		if meta.AccountNumber == acct {
-// 			return meta
-// 		}
-// 	}
-// 	return XrpMetadata{}
-// }
-
 func (b *XrpMetaDataStore) Set(pk common.PubKey, meta XrpMetadata) {
 	b.lock.Lock()
 	defer b.lock.Unlock()
