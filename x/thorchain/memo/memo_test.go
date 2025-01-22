@@ -628,4 +628,9 @@ func (s *MemoSuite) TestParse(c *C) {
 	c.Assert(err, NotNil)
 	_, err = ParseMemoWithTHORNames(ctx, k, "whatever") // not support
 	c.Assert(err, NotNil)
+
+	memo, err = ParseMemoWithTHORNames(ctx, k, "x:tthor176xrckly4p7efq7fshhcuc2kax3dyxu9hguzl7:00")
+	c.Assert(err, IsNil)
+	c.Check(memo.IsType(TxExec), Equals, true)
+	c.Check(memo.String(), Equals, "x:tthor176xrckly4p7efq7fshhcuc2kax3dyxu9hguzl7:00")
 }

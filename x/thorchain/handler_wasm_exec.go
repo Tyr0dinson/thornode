@@ -1,0 +1,81 @@
+package thorchain
+
+import (
+	"fmt"
+
+	"github.com/blang/semver"
+
+	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+)
+
+// WasmExecHandler handles Exec memo calls from L1 integrations
+type WasmExecHandler struct {
+	mgr Manager
+}
+
+// NewWasmExecHandler create a new instance of WasmExecHandler
+func NewWasmExecHandler(mgr Manager) WasmExecHandler {
+	return WasmExecHandler{mgr: mgr}
+}
+
+// Run is the main entry of WasmExecHandler
+func (h WasmExecHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, error) {
+	msg, ok := m.(*MsgWasmExec)
+	if !ok {
+		return nil, errInvalidMessage
+	}
+	if err := h.validate(ctx, *msg); err != nil {
+		ctx.Logger().Error("MsgWasmExec failed validation", "error", err)
+		return nil, err
+	}
+	result, err := h.handle(ctx, *msg)
+	if err != nil {
+		ctx.Logger().Error("fail to process MsgWasmExec", "error", err)
+		return nil, err
+	}
+	return result, nil
+}
+
+func (h WasmExecHandler) validate(ctx cosmos.Context, msg MsgWasmExec) error {
+	version := h.mgr.GetVersion()
+	switch {
+	case version.GTE(semver.MustParse("3.2.0")):
+		return h.validateV3_2_0(ctx, msg)
+	default:
+		return errInvalidVersion
+	}
+}
+
+func (h WasmExecHandler) validateV3_2_0(_ cosmos.Context, _ MsgWasmExec) error {
+	return nil
+}
+
+func (h WasmExecHandler) handle(ctx cosmos.Context, msg MsgWasmExec) (*cosmos.Result, error) {
+	ctx.Logger().Info("receive MsgWasmExec", "from", msg.Signer)
+	version := h.mgr.GetVersion()
+	switch {
+	case version.GTE(semver.MustParse("3.2.0")):
+		return h.handleV3_2_0(ctx, msg)
+	default:
+		return nil, errInvalidVersion
+	}
+}
+
+func (h WasmExecHandler) handleV3_2_0(ctx cosmos.Context, msg MsgWasmExec) (*cosmos.Result, error) {
+	if h.mgr.Keeper().IsChainHalted(ctx, common.THORChain) {
+		return nil, fmt.Errorf("unable to use MsgWasmExec while THORChain is halted")
+	}
+
+	mintAmt, err := h.mgr.SecuredAssetManager().Deposit(ctx, msg.Asset, msg.Amount, msg.Sender, msg.Tx.FromAddress, msg.Tx.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = h.mgr.WasmManager().ExecuteContract(ctx, msg.Contract, msg.Sender, msg.Msg, cosmos.NewCoins(mintAmt))
+	if err != nil {
+		return nil, err
+	}
+
+	return &cosmos.Result{}, nil
+}

@@ -1,6 +1,7 @@
 package thorchain
 
 import (
+	"encoding/hex"
 	"fmt"
 	"math/big"
 	"strconv"
@@ -109,7 +110,8 @@ func (p *parser) parse() (mem Memo, err error) {
 		return p.ParseSecuredAssetDeposit()
 	case TxSecuredAssetWithdraw:
 		return p.ParseSecuredAssetWithdraw()
-
+	case TxExec:
+		return p.ParseExecMemo()
 	default:
 		return EmptyMemo, fmt.Errorf("TxType not supported: %s", p.getType().String())
 	}
@@ -377,4 +379,16 @@ func (p *parser) getTHORName(idx int, required bool, def types.THORName, subInde
 		return tn
 	}
 	return def
+}
+
+func (p *parser) getHexBytes(idx int, required bool, def []byte) []byte {
+	p.incRequired(required)
+	value, err := hex.DecodeString(p.get(idx))
+	if err != nil {
+		if required || p.get(idx) != "" {
+			p.addErr(fmt.Errorf("cannot parse '%s' as a hex string: %w", p.get(idx), err))
+		}
+		return def
+	}
+	return value
 }

@@ -44,8 +44,6 @@ BUILD_FLAGS := -ldflags '$(ldflags) -extldflags=-static' -tags ${TAG} -trimpath
 TEST_BUILD_FLAGS := -parallel=1 -tags=mocknet
 BINARIES?=./cmd/thornode ./cmd/bifrost ./tools/recover-keyshare-backup
 
-# CGO must be disabled for static linking, so disable it across the board for consistency.
-export CGO_ENABLED=0
 
 # docker tty args are disabled in CI
 ifndef CI
