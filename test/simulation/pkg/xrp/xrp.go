@@ -132,7 +132,7 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 		return nil, fmt.Errorf("unable to sign using localKeyManager: %w", err)
 	}
 	flatTx["TxnSignature"] = hex.EncodeToString(derSignature) // use flatTx so we don't need to call autofill again
-	
+
 	// Ensure the signature is valid
 	verified, err := c.localKm.Keys.Verify(signBytes, derSignature)
 	if err != nil {

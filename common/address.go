@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 
+	xrp "github.com/Peersyst/xrpl-go/address-codec"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcutil"
 	"github.com/btcsuite/btcutil/bech32"
@@ -16,7 +17,6 @@ import (
 	"github.com/gcash/bchutil"
 	ltcchaincfg "github.com/ltcsuite/ltcd/chaincfg"
 	"github.com/ltcsuite/ltcutil"
-	xrp "github.com/Peersyst/xrpl-go/address-codec"
 
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )

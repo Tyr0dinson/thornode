@@ -5,16 +5,16 @@ import (
 	"fmt"
 
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
-	
+
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/xrp/keymanager/secp256k1"
 )
 
 type KeyManager struct {
-	AccountID     string // base58 encoded address with 'r' prefix and checksum
-	PublicKey     string // base58 encoded w/ prefix and checksum
-	PublicKeyHex  string // raw hex encoded pub key
-	KeyType       CryptoAlgorithm
-	Keys          Keys
+	AccountID    string // base58 encoded address with 'r' prefix and checksum
+	PublicKey    string // base58 encoded w/ prefix and checksum
+	PublicKeyHex string // raw hex encoded pub key
+	KeyType      CryptoAlgorithm
+	Keys         Keys
 }
 
 func NewKeyManager(key cryptotypes.PrivKey, keyType CryptoAlgorithm) (*KeyManager, error) {
@@ -37,11 +37,11 @@ func NewKeyManager(key cryptotypes.PrivKey, keyType CryptoAlgorithm) (*KeyManage
 	}
 
 	return &KeyManager{
-		AccountID:     MasterPubKeyToAccountID(keys.GetFormattedPublicKey()),
-		KeyType:       keyType,
-		PublicKey:     EncodePublicKey(keys.GetFormattedPublicKey()),
-		PublicKeyHex:  hex.EncodeToString(keys.GetFormattedPublicKey()),
-		Keys:          keys,
+		AccountID:    MasterPubKeyToAccountID(keys.GetFormattedPublicKey()),
+		KeyType:      keyType,
+		PublicKey:    EncodePublicKey(keys.GetFormattedPublicKey()),
+		PublicKeyHex: hex.EncodeToString(keys.GetFormattedPublicKey()),
+		Keys:         keys,
 	}, nil
 }
 

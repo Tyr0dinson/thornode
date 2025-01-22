@@ -15,7 +15,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	tssp "gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/tss"
-	
+
 	sdkmath "cosmossdk.io/math"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
@@ -278,7 +278,7 @@ func (c *Client) processOutboundTx(tx stypes.TxOutItem) (*transactions.Payment, 
 
 	return &transactions.Payment{
 		BaseTx: transactions.BaseTx{
-			Account:       txtypes.Address(fromAddr),
+			Account: txtypes.Address(fromAddr),
 			// NetworkID:     c.chainID, // Currently doesn't do anything, but the client with populate
 			SigningPubKey: hex.EncodeToString(signingPubKey.SerializeCompressed()),
 		},
@@ -577,7 +577,7 @@ func (c *Client) BroadcastTx(tx stypes.TxOutItem, txBytes []byte) (string, error
 	if err = c.signerCacheManager.SetSigned(tx.CacheHash(), tx.CacheVault(c.GetChain()), txHash); err != nil {
 		c.logger.Err(err).Msg("fail to set signer cache")
 	}
-	
+
 	return txHash, nil
 }
 

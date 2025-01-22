@@ -22,26 +22,26 @@ func TestSeedToXrpWallet(t *testing.T) {
 		shouldError      bool
 	}{
 		{
-			name:         "Valid SECP256K1 seed",
-			accountID:    "r4qmPsHfdoqtNMPx9popoXG3nDtsCSzUZQ",
+			name:             "Valid SECP256K1 seed",
+			accountID:        "r4qmPsHfdoqtNMPx9popoXG3nDtsCSzUZQ",
 			masterPrivKeyHex: "3869b485d5219b0582e1806595d7c6ee14fa5afed584c1b60b81e630bafcf3db",
-			keyType:      SECP256K1,
-			publicKey:    "aB4PwLt3AMgsvLSUWjYyun7hdGr6tcbnbAU8TKjHgHRxjXycAwS2",
-			publicKeyHex: "0237FEF6D393A2D209C879A344EFD39C20C01A8E2413298EBC6E6CCDECEEBAA7AD",
-			shouldError:  false,
+			keyType:          SECP256K1,
+			publicKey:        "aB4PwLt3AMgsvLSUWjYyun7hdGr6tcbnbAU8TKjHgHRxjXycAwS2",
+			publicKeyHex:     "0237FEF6D393A2D209C879A344EFD39C20C01A8E2413298EBC6E6CCDECEEBAA7AD",
+			shouldError:      false,
 		},
 		{
-			name:         "root account SECP256K1 seed",
-			accountID:    "rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh",
+			name:             "root account SECP256K1 seed",
+			accountID:        "rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh",
 			masterPrivKeyHex: "1acaaedece405b2a958212629e16f2eb46b153eee94cdd350fdeff52795525b7",
-			keyType:      SECP256K1,
-			publicKey:    "aBQG8RQAzjs1eTKFEAQXr2gS4utcDiEC9wmi7pfUPTi27VCahwgw",
-			publicKeyHex: "0330E7FC9D56BB25D6893BA3F317AE5BCF33B3291BD63DB32654A313222F7FD020",
-			shouldError:  false,
+			keyType:          SECP256K1,
+			publicKey:        "aBQG8RQAzjs1eTKFEAQXr2gS4utcDiEC9wmi7pfUPTi27VCahwgw",
+			publicKeyHex:     "0330E7FC9D56BB25D6893BA3F317AE5BCF33B3291BD63DB32654A313222F7FD020",
+			shouldError:      false,
 		},
 		{
-			name:      "dart SECP256K1 seed",
-			accountID: "rs3xN42EFLE23gUDG2Rw4rwxhR9MnjwZKQ", // classic address
+			name:             "dart SECP256K1 seed",
+			accountID:        "rs3xN42EFLE23gUDG2Rw4rwxhR9MnjwZKQ", // classic address
 			masterPrivKeyHex: "e290da3da124b4bf9b68eb023cb57d313f016d36ef395ed03791521b83c66be6",
 			// Xaddress: "X72W51px1i7iPTf4EwKFY2Nygdh5tGGNkvBFfbiuXKPxEPY"
 			// XtestNetAddress: "T7Ws3yBAjFp1Fx1yWyhbSZztwhbXPqvG5a9GRHaSf1fZnqk"

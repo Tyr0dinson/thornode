@@ -53,8 +53,8 @@ func fromThorchainToXrp(coin common.Coin) (common.Coin, error) {
 		amount.Quo(amount, exp.Exp(big.NewInt(10), big.NewInt(decimalDiff), nil))
 	}
 	return common.Coin{
-		Asset: coin.Asset,
-		Amount: sdkmath.NewUintFromBigInt(amount),
+		Asset:    coin.Asset,
+		Amount:   sdkmath.NewUintFromBigInt(amount),
 		Decimals: decimals,
 	}, nil
 }

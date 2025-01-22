@@ -149,9 +149,8 @@ func (s *XrpTestSuite) TestGetAddress(c *C) {
 	cfg, err := rpc.NewClientConfig("http://testnode/", rpc.WithHTTPClient(mc))
 	c.Assert(err, IsNil)
 
-
 	xrpclient := Client{
-		cfg:           config.BifrostChainConfiguration{ChainID: common.XRPChain},
+		cfg:       config.BifrostChainConfiguration{ChainID: common.XRPChain},
 		rpcClient: rpc.NewClient(cfg),
 	}
 
@@ -182,16 +181,16 @@ func (s *XrpTestSuite) TestGetAddress(c *C) {
 
 func (s *XrpTestSuite) TestProcessOutboundTx(c *C) {
 	client, err := NewClient(
-		s.thorKeys, 
+		s.thorKeys,
 		config.BifrostChainConfiguration{
-			ChainID:        common.XRPChain,
-			RPCHost:        "http://testnode/",
+			ChainID: common.XRPChain,
+			RPCHost: "http://testnode/",
 			BlockScanner: config.BifrostBlockScannerConfiguration{
 				StartBlockHeight: 1, // avoids querying thorchain for block height
 			},
-		}, 
-		nil, 
-		s.bridge, 
+		},
+		nil,
+		s.bridge,
 		s.m,
 	)
 	c.Assert(err, IsNil)
@@ -232,17 +231,17 @@ func (s *XrpTestSuite) TestProcessOutboundTx(c *C) {
 
 func (s *XrpTestSuite) TestSign(c *C) {
 	client, err := NewClient(
-		s.thorKeys, 
+		s.thorKeys,
 		config.BifrostChainConfiguration{
-			ChainID:        common.XRPChain,
-			RPCHost:        "http://testnode/",
+			ChainID: common.XRPChain,
+			RPCHost: "http://testnode/",
 			BlockScanner: config.BifrostBlockScannerConfiguration{
-				ChainID: common.XRPChain,
+				ChainID:          common.XRPChain,
 				StartBlockHeight: 1, // avoids querying thorchain for block height
 			},
-		}, 
-		nil, 
-		s.bridge, 
+		},
+		nil,
+		s.bridge,
 		s.m,
 	)
 	c.Assert(err, IsNil)
@@ -275,7 +274,7 @@ func (s *XrpTestSuite) TestSign(c *C) {
 	meta := client.accts.Get(vaultPubKey)
 	c.Check(meta.SeqNumber, Equals, int64(0))
 
-	msg.Sequence = uint32(meta.SeqNumber+1)
+	msg.Sequence = uint32(meta.SeqNumber + 1)
 	msg.Fee = txtypes.XRPCurrencyAmount(txOut.GasRate)
 	if txOut.Memo != "" {
 		msg.BaseTx.Memos = []txtypes.MemoWrapper{

@@ -21,8 +21,8 @@ func (s *UtilTestSuite) TestFromXrpToThorchain(c *C) {
 
 	// 5 XRP, 8 decimals
 	expectedCoin := common.Coin{
-		Asset: common.XRPAsset,
-		Amount: sdkmath.NewUint(500000000),
+		Asset:    common.XRPAsset,
+		Amount:   sdkmath.NewUint(500000000),
 		Decimals: 6,
 	}
 	c.Check(thorchainCoin.Asset.Equals(expectedCoin.Asset), Equals, true)
@@ -38,8 +38,8 @@ func (s *UtilTestSuite) TestFromThorchainToXrp(c *C) {
 
 	// 6 XRP, 6 decimals
 	expectedCoin := common.Coin{
-		Asset: common.XRPAsset,
-		Amount: sdkmath.NewUint(6000000),
+		Asset:    common.XRPAsset,
+		Amount:   sdkmath.NewUint(6000000),
 		Decimals: 6,
 	}
 	c.Check(xrpCoin.Asset, Equals, expectedCoin.Asset)

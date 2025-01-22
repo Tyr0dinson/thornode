@@ -154,7 +154,7 @@ func (c *XrpBlockScanner) updateFees(height int64) error {
 	// post the gas fee over every cache period when we have a full gas cache
 	if height%FeeUpdatePeriodBlocks == 0 && len(c.feeCache) > 0 {
 		// TODO SAM127: change back to line below
-		//if height%FeeUpdatePeriodBlocks == 0 && len(c.feeCache) == FeeCacheTransactions {
+		// if height%FeeUpdatePeriodBlocks == 0 && len(c.feeCache) == FeeCacheTransactions {
 		avgFee := c.averageFee()
 
 		// sanity check the fee is not zero

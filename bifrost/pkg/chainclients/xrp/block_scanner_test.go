@@ -11,7 +11,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	cKeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
 
-	//protov2 "google.golang.org/protobuf/proto"
+	// protov2 "google.golang.org/protobuf/proto"
 
 	"github.com/rs/zerolog/log"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
@@ -103,9 +103,9 @@ func (s *BlockScannerTestSuite) TestProcessTxs(c *C) {
 
 	tx := transaction.Payment{
 		BaseTx: transaction.BaseTx{
-			Account: types.Address("rs3xN42EFLE23gUDG2Rw4rwxhR9MnjwZKQ"),
+			Account:       types.Address("rs3xN42EFLE23gUDG2Rw4rwxhR9MnjwZKQ"),
 			SigningPubKey: "03dd7eb4b0479d2898cabdd4ccfd30f2277e57cb9c13ccabb8ec5170ed13dd149a",
-			Fee: types.XRPCurrencyAmount(20),
+			Fee:           types.XRPCurrencyAmount(20),
 			Memos: []types.MemoWrapper{
 				{
 					Memo: types.Memo{
@@ -114,7 +114,7 @@ func (s *BlockScannerTestSuite) TestProcessTxs(c *C) {
 				},
 			},
 		},
-		Amount: types.XRPCurrencyAmount(1000000),
+		Amount:      types.XRPCurrencyAmount(1000000),
 		Destination: types.Address("rELnd6Ae5ZYDhHkaqjSVg2vgtBnzjeDshm"),
 	}
 
