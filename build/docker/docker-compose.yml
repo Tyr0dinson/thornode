@@ -523,7 +523,7 @@ services:
       - 5005:5005
     volumes:
       - "../scripts:/docker/scripts"
-    entrypoint: /docker/scripts/mock/start-xrp.sh
+    entrypoint: /docker/scripts/xrp/start-xrp.sh
 
   # ------------------------------ binance-smart ------------------------------
 

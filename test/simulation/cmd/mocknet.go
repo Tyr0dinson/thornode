@@ -115,7 +115,16 @@ func InitConfig(parallelism int, seed bool) *OpConfig {
 				if err == nil {
 					break
 				}
-				log.Error().Err(err).Msg("failed to post network fee")
+				log.Error().Err(err).Msg("failed to post gaia network fee")
+				time.Sleep(5 * time.Second)
+			}
+			log.Info().Msg("posting xrp network fee")
+			for {
+				_, err := a.Thorchain.PostNetworkFee(1, common.XRPChain, 1, 1_000)
+				if err == nil {
+					break
+				}
+				log.Error().Err(err).Msg("failed to post xrp network fee")
 				time.Sleep(5 * time.Second)
 			}
 		}(mnemonic)
