@@ -12,6 +12,7 @@ import (
 )
 
 var wasmAcceptedQueries = wasmkeeper.AcceptedQueries{
+	"/types.Query/Network":           &apitypes.QueryNetworkResponse{},
 	"/types.Query/Borrower":          &apitypes.QueryBorrowerResponse{},
 	"/types.Query/LiquidityProvider": &apitypes.QueryLiquidityProviderResponse{},
 	"/types.Query/Node":              &apitypes.QueryNodeResponse{},
