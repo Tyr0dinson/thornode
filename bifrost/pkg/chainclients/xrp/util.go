@@ -3,20 +3,39 @@ package xrp
 import (
 	"fmt"
 	"math/big"
+	"strconv"
 
 	sdkmath "cosmossdk.io/math"
 
 	"gitlab.com/thorchain/thornode/v3/common"
+	
+	txtypes "github.com/Peersyst/xrpl-go/xrpl/transaction/types"
 )
 
-func fromXrpToThorchain(c common.Coin) (common.Coin, error) {
-	cosmosAsset, exists := GetAssetByXrpDenom(c.Asset.Symbol.String())
+func parseCurrencyAmount(coin txtypes.CurrencyAmount) (*big.Int, error) {
+	if xrpAmount, ok := coin.(txtypes.XRPCurrencyAmount); ok {
+		return big.NewInt(int64(xrpAmount.Uint64())), nil
+	} else if issuedAmount, ok := coin.(txtypes.IssuedCurrencyAmount); ok {
+		amount, err := strconv.ParseInt(issuedAmount.Value, 10, 64)
+		if err != nil {
+			return nil, err
+		}
+		return big.NewInt(amount), nil
+	}
+	return nil, fmt.Errorf("invalid xrp currency type")
+}
+
+func fromXrpToThorchain(coin txtypes.CurrencyAmount) (common.Coin, error) {
+	asset, exists := GetAssetByXrpCurrency(coin)
 	if !exists {
 		return common.NoCoin, fmt.Errorf("asset does not exist / not whitelisted by client")
 	}
 
-	decimals := cosmosAsset.XrpDecimals
-	amount := c.Amount.BigInt()
+	decimals := asset.XrpDecimals
+	amount, err := parseCurrencyAmount(coin)
+	if err != nil {
+		return common.NoCoin, err
+	}
 	var exp big.Int
 	// Decimals are more than native THORChain, so divide...
 	if decimals > common.THORChainDecimals {
@@ -28,16 +47,16 @@ func fromXrpToThorchain(c common.Coin) (common.Coin, error) {
 		amount.Mul(amount, exp.Exp(big.NewInt(10), big.NewInt(decimalDiff), nil))
 	}
 	return common.Coin{
-		Asset:    c.Asset,
+		Asset:    asset.THORChainAsset,
 		Amount:   sdkmath.NewUintFromBigInt(amount),
 		Decimals: decimals,
 	}, nil
 }
 
-func fromThorchainToXrp(coin common.Coin) (common.Coin, error) {
-	asset, exists := GetAssetByThorchainSymbol(coin.Asset.Symbol.String())
+func fromThorchainToXrp(coin common.Coin) (txtypes.CurrencyAmount, error) {
+	asset, exists := GetAssetByThorchainAsset(coin.Asset)
 	if !exists {
-		return common.Coin{}, fmt.Errorf("asset (%s) does not exist / not whitelisted by client", coin.Asset)
+		return nil, fmt.Errorf("asset (%s) does not exist / not whitelisted by client", coin.Asset)
 	}
 
 	decimals := asset.XrpDecimals
@@ -52,9 +71,14 @@ func fromThorchainToXrp(coin common.Coin) (common.Coin, error) {
 		decimalDiff := common.THORChainDecimals - decimals
 		amount.Quo(amount, exp.Exp(big.NewInt(10), big.NewInt(decimalDiff), nil))
 	}
-	return common.Coin{
-		Asset:    coin.Asset,
-		Amount:   sdkmath.NewUintFromBigInt(amount),
-		Decimals: decimals,
-	}, nil
+
+	if asset.XrpKind == txtypes.ISSUED {
+		return txtypes.IssuedCurrencyAmount{
+			Issuer: txtypes.Address(asset.XrpIssuer),
+			Currency: asset.XrpCurrency,
+			Value: amount.String(),
+		}, nil
+	}
+
+	return txtypes.XRPCurrencyAmount(amount.Uint64()), nil
 }

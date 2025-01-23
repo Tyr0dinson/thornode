@@ -2,6 +2,7 @@ package xrp
 
 import (
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -25,6 +26,7 @@ import (
 	"github.com/Peersyst/xrpl-go/xrpl/queries/ledger"
 	"github.com/Peersyst/xrpl-go/xrpl/rpc"
 	"github.com/Peersyst/xrpl-go/xrpl/transaction"
+	txtypes "github.com/Peersyst/xrpl-go/xrpl/transaction/types"
 )
 
 // SolvencyReporter is to report solvency info to THORNode
@@ -37,8 +39,7 @@ const (
 	// FeeCacheTransactions is the number of transactions over which we compute an average
 	// (mean) fee price to use for outbound transactions. Note that only transactions
 	// using the chain fee asset will be considered.
-	// TODO SAM127: change back to 100
-	FeeCacheTransactions = 5
+	FeeCacheTransactions = 100
 )
 
 var (
@@ -98,10 +99,7 @@ func NewXrpBlockScanner(rpcHost string,
 	}, nil
 }
 
-// GetHeight returns the height from the latest block minus 1
-// NOTE: we must lag by one block due to a race condition fetching the block results
-// Since the GetLatestBlockRequests tells what transactions will be in the block at T+1
-// TODO SAM127: review the above race condition for xrp
+// GetHeight returns the index of the most recently validated ledger.
 func (c *XrpBlockScanner) GetHeight() (int64, error) {
 	ledgerIndex, err := c.rpcClient.GetLedgerIndex()
 	if err != nil {
@@ -109,7 +107,6 @@ func (c *XrpBlockScanner) GetHeight() (int64, error) {
 	}
 
 	return int64(ledgerIndex.Int()), nil
-	// return int64(ledgerIndex.Int() - 1), nil
 }
 
 // FetchMemPool returns nothing since we are only concerned about finalized transactions in Xrp
@@ -152,9 +149,7 @@ func (c *XrpBlockScanner) averageFee() sdkmath.Uint {
 
 func (c *XrpBlockScanner) updateFees(height int64) error {
 	// post the gas fee over every cache period when we have a full gas cache
-	if height%FeeUpdatePeriodBlocks == 0 && len(c.feeCache) > 0 {
-		// TODO SAM127: change back to line below
-		// if height%FeeUpdatePeriodBlocks == 0 && len(c.feeCache) == FeeCacheTransactions {
+	if height%FeeUpdatePeriodBlocks == 0 && len(c.feeCache) == FeeCacheTransactions {
 		avgFee := c.averageFee()
 
 		// sanity check the fee is not zero
@@ -190,26 +185,36 @@ func (c *XrpBlockScanner) updateFees(height int64) error {
 func (c *XrpBlockScanner) processTxs(height int64, rawTxs []transaction.FlatTransaction) ([]types.TxInItem, error) {
 	var txIn []types.TxInItem
 	for _, rawTx := range rawTxs {
+		c.logger.Info().Interface("flat tx in", rawTx).Msg("processTxs()")
+		
+		// Ignore failed transactions
+		metaData, ok := rawTx["metaData"].(map[string]any)
+		if !ok {
+			continue
+		}
+		if metaData["TransactionResult"] != "tesSUCCESS" {
+			continue
+		}
+
 		// Ignore any txs other than payments
-		// TODO: verify this
 		if rawTx["TransactionType"] != "Payment" {
 			continue
 		}
 
+		ctxLog := c.logger.Info().Interface("tx", rawTx)
 		feeStr, ok := rawTx["Fee"].(string)
 		if !ok {
-			c.logger.Info().Msg("skipping tx, cannot cast fee to string")
+			ctxLog.Msg("skipping tx, cannot cast fee to string")
 			continue
 		}
-
 		feeAmount, err := cosmos.ParseUint(feeStr)
 		if err != nil {
-			c.logger.Info().AnErr("error", err).Msg("skipping tx, cannot convert fee string to uint")
+			ctxLog.AnErr("error", err).Msg("skipping tx, cannot convert fee string to uint")
 			continue
 		}
-		fee, err := fromXrpToThorchain(common.NewCoin(common.XRPAsset, feeAmount))
+		fee, err := fromXrpToThorchain(txtypes.XRPCurrencyAmount(feeAmount.Uint64()))
 		if err != nil {
-			c.logger.Info().AnErr("error", err).Msg("skipping tx, cannot convert xrp fee to thorchain fee")
+			ctxLog.AnErr("error", err).Msg("skipping tx, cannot convert xrp fee to thorchain fee")
 			continue
 		}
 		c.updateFeeCache(fee)
@@ -219,76 +224,74 @@ func (c *XrpBlockScanner) processTxs(height int64, rawTxs []transaction.FlatTran
 			// trunk-ignore(golangci-lint/govet): shadow
 			memos, ok := rawTx["Memos"].([]interface{})
 			if !ok {
-				c.logger.Info().Msg("skipping tx, cannot cast memos to []interface{}")
+				ctxLog.Msg("skipping tx, cannot cast memos to []interface{}")
 				continue
 			}
 			if len(memos) != 1 {
-				c.logger.Info().Msg("skipping tx, more than 1 memo exists")
+				ctxLog.Msg("skipping tx, more than 1 memo exists")
 				continue
 			}
 			memoObj, ok := memos[0].(map[string]interface{})
 			if !ok {
-				c.logger.Info().Msg("skipping tx, cannot cast memos[0] to map[string]interface{}")
+				ctxLog.Msg("skipping tx, cannot cast memos[0] to map[string]interface{}")
 				continue
 			}
 			memo, ok := memoObj["Memo"].(map[string]interface{})
 			if !ok {
-				c.logger.Info().Msg("skipping tx, cannot cast memo to map[string]interface{}")
+				ctxLog.Msg("skipping tx, cannot cast memo to map[string]interface{}")
 				continue
 			}
 			memoDataHex, ok := memo["MemoData"].(string)
 			if !ok {
-				c.logger.Info().Msg("skipping tx, cannot cast MemoData to string")
+				ctxLog.Msg("skipping tx, cannot cast MemoData to string")
 				continue
 			}
 			if memoDataHex == "" {
-				c.logger.Info().Msg("skipping tx, MemoData is empty")
+				ctxLog.Msg("skipping tx, MemoData is empty")
 				continue
 			}
 			memoData, err = hex.DecodeString(memoDataHex)
 			if err != nil {
-				c.logger.Info().AnErr("error", err).Msg("skipping tx, cannot decode memo data")
+				ctxLog.AnErr("error", err).Msg("skipping tx, cannot decode memo data")
 				continue
 			}
 		}
 
-		// TODO SAM127: this only supports XRP, do we want to support other currencies
-		amountStr, ok := rawTx["Amount"].(string)
-		if !ok {
-			c.logger.Info().Msg("skipping tx, cannot cast amount to string")
+		amountJson, err := json.Marshal(rawTx["Amount"])
+		if err != nil {
+			ctxLog.AnErr("error", err).Msg("skipping tx, cannot json marshal amount")
 			continue
 		}
-		amount, err := cosmos.ParseUint(amountStr)
+		amount, err := txtypes.UnmarshalCurrencyAmount(amountJson)
 		if err != nil {
-			c.logger.Info().AnErr("error", err).Msg("skipping tx, cannot convert amount string to uint")
+			ctxLog.AnErr("error", err).Msg("skipping tx, cannot unmarshal currency amount")
 			continue
 		}
-		coin, err := fromXrpToThorchain(common.NewCoin(common.XRPAsset, amount))
+		coin, err := fromXrpToThorchain(amount)
 		if err != nil {
-			c.logger.Info().AnErr("error", err).Msg("skipping tx, cannot convert xrp amount to thorchain amount")
+			ctxLog.AnErr("error", err).Msg("skipping tx, cannot convert xrp amount to thorchain amount")
 			continue
 		}
 		coins := common.Coins{coin}
 
 		sender, ok := rawTx["Account"].(string)
 		if !ok {
-			c.logger.Info().Msg("skipping tx, cannot cast sender/account to string")
+			ctxLog.Msg("skipping tx, cannot cast sender/account to string")
 			continue
 		}
 
 		to, ok := rawTx["Destination"].(string)
 		if !ok {
-			c.logger.Info().Msg("skipping tx, cannot cast to/destination to string")
+			ctxLog.Msg("skipping tx, cannot cast to/destination to string")
 			continue
 		}
 
 		hash, ok := rawTx["hash"].(string)
 		if !ok {
-			c.logger.Info().Msg("skipping tx, cannot cast hash to string")
+			ctxLog.Msg("skipping tx, cannot cast hash to string")
 			continue
 		}
 
-		// TODO: Do we need to verify there were any errors / error codes? Or if it exists, it was a successful tx?
 		txIn = append(txIn, types.TxInItem{
 			Tx:          hash,
 			BlockHeight: height,

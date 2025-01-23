@@ -546,8 +546,6 @@ func (vm *NetworkMgrVCUR) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 	}
 
 	for _, vault := range retiring {
-		// TODO SAM127: remove debug
-		fmt.Println("Retiring vault:", vault.String(), "Chains:", vault.Chains, "Coins:", vault.Coins)
 		if !vault.HasFunds() {
 			vault.UpdateStatus(InactiveVault, ctx.BlockHeight())
 			if err := vm.k.SetVault(ctx, vault); err != nil {

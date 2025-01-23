@@ -244,7 +244,7 @@ func (c *Client) GetAccountByAddress(address string, height *big.Int) (common.Ac
 	}
 
 	balance := sdkmath.NewUint(aiResp.AccountData.Balance.Uint64())
-	coins, err := fromXrpToThorchain(common.NewCoin(common.XRPAsset, balance))
+	coins, err := fromXrpToThorchain(txtypes.XRPCurrencyAmount(balance.Uint64()))
 	if err != nil {
 		return common.Account{}, err
 	}
@@ -283,7 +283,7 @@ func (c *Client) processOutboundTx(tx stypes.TxOutItem) (*transactions.Payment, 
 			SigningPubKey: hex.EncodeToString(signingPubKey.SerializeCompressed()),
 		},
 		// TODO SAM127: only support xrp tokens for now...
-		Amount:      txtypes.XRPCurrencyAmount(coin.Amount.Uint64()),
+		Amount:      coin,
 		Destination: txtypes.Address(tx.ToAddress),
 	}, nil
 }
@@ -366,24 +366,18 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signedTx, c
 	}
 
 	// TODO SAM127: check fee
-	fee, err := fromThorchainToXrp(common.NewCoin(common.XRPAsset, cosmos.NewUint(uint64(tx.GasRate))))
+	feeCurrency, err := fromThorchainToXrp(common.NewCoin(common.XRPAsset, cosmos.NewUint(uint64(tx.GasRate))))
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("fail to get fee: %w", err)
 	}
-	// fee := tx.GasRate
-	// if len(gasCoins) != 1 {
-	// 	err = errors.New("exactly one gas coin must be provided")
-	// 	c.logger.Err(err).Interface("fee", gasCoins).Msg(err.Error())
-	// 	return nil, nil, nil, err
-	// }
 
-	// if !gasCoins[0].Asset.Equals(c.GetChain().GetGasAsset()) {
-	// 	err = errors.New("gas coin asset must match chain gas asset")
-	// 	c.logger.Err(err).Interface("coin", gasCoins[0]).Msg(err.Error())
-	// 	return nil, nil, nil, err
-	// }
+	fee, ok := feeCurrency.(txtypes.XRPCurrencyAmount)
+	if !ok {
+		return nil, nil, nil, fmt.Errorf("fail to cast fee to xrp currency amount")
+	}
+	
 	msg.Sequence = uint32(meta.SeqNumber)
-	msg.Fee = txtypes.XRPCurrencyAmount(fee.Amount.Uint64())
+	msg.Fee = fee
 	if tx.Memo != "" {
 		msg.BaseTx.Memos = []txtypes.MemoWrapper{
 			{

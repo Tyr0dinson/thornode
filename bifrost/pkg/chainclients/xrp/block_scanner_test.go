@@ -120,6 +120,9 @@ func (s *BlockScannerTestSuite) TestProcessTxs(c *C) {
 
 	txFlat := tx.Flatten()
 	txFlat["hash"] = "0123456789ABCDEF"
+	txFlat["metaData"] = map[string]any{
+		"TransactionResult": "tesSUCCESS",
+	}
 
 	txInItems, err := blockScanner.processTxs(1, []transaction.FlatTransaction{txFlat})
 	c.Assert(err, IsNil)

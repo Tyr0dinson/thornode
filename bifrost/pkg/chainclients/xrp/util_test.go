@@ -5,6 +5,8 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	. "gopkg.in/check.v1"
+	
+	txtypes "github.com/Peersyst/xrpl-go/xrpl/transaction/types"
 )
 
 type UtilTestSuite struct{}
@@ -15,8 +17,7 @@ func (s *UtilTestSuite) SetUpSuite(c *C) {}
 
 func (s *UtilTestSuite) TestFromXrpToThorchain(c *C) {
 	// 5 XRP, 6 decimals
-	xrpCoin := common.NewCoin(common.XRPAsset, sdkmath.NewUint(5000000))
-	thorchainCoin, err := fromXrpToThorchain(xrpCoin)
+	thorchainCoin, err := fromXrpToThorchain(txtypes.XRPCurrencyAmount(uint64(5000000)))
 	c.Assert(err, IsNil)
 
 	// 5 XRP, 8 decimals
@@ -37,12 +38,5 @@ func (s *UtilTestSuite) TestFromThorchainToXrp(c *C) {
 	c.Assert(err, IsNil)
 
 	// 6 XRP, 6 decimals
-	expectedCoin := common.Coin{
-		Asset:    common.XRPAsset,
-		Amount:   sdkmath.NewUint(6000000),
-		Decimals: 6,
-	}
-	c.Check(xrpCoin.Asset, Equals, expectedCoin.Asset)
-	c.Check(xrpCoin.Amount.String(), Equals, expectedCoin.Amount.String())
-	c.Check(xrpCoin.Decimals, Equals, expectedCoin.Decimals)
+	c.Check(xrpCoin.(txtypes.XRPCurrencyAmount), Equals, txtypes.XRPCurrencyAmount(6000000))
 }
