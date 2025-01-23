@@ -218,10 +218,11 @@ func InitConfig(parallelism int, seed bool) *OpConfig {
 			chainSeedAmount = sdkmath.NewUint(10 * common.One)
 		case common.BSCChain:
 			chainSeedAmount = sdkmath.NewUint(100 * common.One)
-		case common.GAIAChain, common.XRPChain:
+		case common.GAIAChain:
 			chainSeedAmount = sdkmath.NewUint(1000 * common.One)
-		case common.AVAXChain:
-			chainSeedAmount = sdkmath.NewUint(10000 * common.One) // more since local gas is high
+		case common.AVAXChain, // more since local gas is high
+			common.XRPChain: // more since dust threshold is 1 XRP
+			chainSeedAmount = sdkmath.NewUint(10000 * common.One)
 		case common.DOGEChain:
 			chainSeedAmount = sdkmath.NewUint(100000 * common.One)
 		default:

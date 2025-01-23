@@ -189,7 +189,8 @@ func get(url string, target interface{}) error {
 
 	// extract error if the request failed
 	type ErrorResponse struct {
-		Error string `json:"error"`
+		Code int `json:"code"`
+		Message string `json:"message"`
 	}
 	buf, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -197,8 +198,8 @@ func get(url string, target interface{}) error {
 	}
 	errResp := ErrorResponse{}
 	err = json.Unmarshal(buf, &errResp)
-	if err == nil && errResp.Error != "" {
-		return fmt.Errorf("%s", errResp.Error)
+	if err == nil && errResp.Code != 0 && errResp.Message != "" {
+		return fmt.Errorf("code: %d, message: %s", errResp.Code, errResp.Message)
 	}
 
 	// decode response
