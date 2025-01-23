@@ -284,6 +284,16 @@ bifrost:
           - symbol: LVN
             decimals: 6
             denom: ibc/6C95083ADD352D5D47FB4BA427015796E5FEF17A829463AD05ECD392EB38D889
+          - symbol: NAMI
+            decimals: 6
+            denom: ibc/4622E82B845FFC6AA8B45C1EB2F507133A9E876A5FEA1BA64585D5F564405453
+          - symbol: AUTO
+            decimals: 6
+            denom: ibc/7D20C448700E7C56DC4577DA46666BA7993AEC6BFA223E67FA23CC4333B28745
+          - symbol: MNTA
+            decimals: 6
+            denom: ibc/CF52BFC8A11248F05151BFEC0FB033C3531E40C7BAFC72E277F49346EF76E981
+
       mempool_tx_id_cache_size: 0
       scanner_leveldb: *default-leveldb
 

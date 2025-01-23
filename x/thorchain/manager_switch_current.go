@@ -12,6 +12,9 @@ var switchMap = map[string]common.Address{
 	"GAIA.FUZN":  common.NoopAddress,
 	"GAIA.LVN":   common.NoopAddress,
 	"GAIA.WINK":  common.NoopAddress,
+	"GAIA.NAMI":  common.NoopAddress,
+	"GAIA.AUTO":  common.NoopAddress,
+	"GAIA.MNTA":  common.NoopAddress,
 }
 
 // SwitchMgrVCUR is VCUR implementation of SecuredAssetMgr
