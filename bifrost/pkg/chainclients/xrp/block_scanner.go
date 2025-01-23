@@ -257,7 +257,8 @@ func (c *XrpBlockScanner) processTxs(height int64, rawTxs []transaction.FlatTran
 			}
 		}
 
-		amountJson, err := json.Marshal(rawTx["Amount"])
+		// Do not use the "Amount" field to find the amount transferred due to partial payment exploit.
+		amountJson, err := json.Marshal(metaData["delivered_amount"])
 		if err != nil {
 			ctxLog.AnErr("error", err).Msg("skipping tx, cannot json marshal amount")
 			continue
@@ -265,6 +266,12 @@ func (c *XrpBlockScanner) processTxs(height int64, rawTxs []transaction.FlatTran
 		amount, err := txtypes.UnmarshalCurrencyAmount(amountJson)
 		if err != nil {
 			ctxLog.AnErr("error", err).Msg("skipping tx, cannot unmarshal currency amount")
+			continue
+		}
+		// Verify that the amount is of type XRP, issuer currencies are not currently supported.
+		// Without any trust lines, this shouldn't be possible.
+		if amount.Kind() != txtypes.XRP {
+			ctxLog.Msg("skipping tx, amount is not of type XRP")
 			continue
 		}
 		coin, err := fromXrpToThorchain(amount)

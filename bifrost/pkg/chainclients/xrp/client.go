@@ -282,7 +282,6 @@ func (c *Client) processOutboundTx(tx stypes.TxOutItem) (*transactions.Payment, 
 			// NetworkID:     c.chainID, // Currently doesn't do anything, but the client with populate
 			SigningPubKey: hex.EncodeToString(signingPubKey.SerializeCompressed()),
 		},
-		// TODO SAM127: only support xrp tokens for now...
 		Amount:      coin,
 		Destination: txtypes.Address(tx.ToAddress),
 	}, nil
@@ -411,6 +410,7 @@ func (c *Client) signMsg(
 	if err := c.rpcClient.Autofill(&flatTx); err != nil {
 		return nil, err
 	}
+	// Set NetworkID
 
 	// TODO SAM127: do we want to populated this? Maybe based on observed tx in height?
 	delete(flatTx, "LastLedgerSequence")
