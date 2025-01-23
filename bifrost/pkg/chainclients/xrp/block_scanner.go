@@ -216,6 +216,7 @@ func (c *XrpBlockScanner) processTxs(height int64, rawTxs []transaction.FlatTran
 
 		var memoData []byte
 		if rawTx["Memos"] != nil {
+			// trunk-ignore(golangci-lint/govet): shadow
 			memos, ok := rawTx["Memos"].([]interface{})
 			if !ok {
 				c.logger.Info().Msg("skipping tx, cannot cast memos to []interface{}")

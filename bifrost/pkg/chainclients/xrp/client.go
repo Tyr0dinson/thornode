@@ -426,7 +426,7 @@ func (c *Client) signMsg(
 	if err == nil {
 		c.logger.Info().Str("xrp flat tx", string(flatTxJson)).Msg("xrp flat tx")
 	} else {
-		c.logger.Info().AnErr("error", err).Msg("unabled to json marshal flat tx")
+		c.logger.Info().AnErr("error", err).Msg("unable to json marshal flat tx")
 	}
 
 	encodedTx, err := binarycodec.EncodeForSigning(flatTx)

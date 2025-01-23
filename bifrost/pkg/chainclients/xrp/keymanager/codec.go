@@ -42,17 +42,19 @@ func MasterPubKeyToAccountID(compressedMasterPubKey []byte) string {
 	// Generate RIPEMD160 hash.
 	ripemd160Hash := ripemd160.New() //nolint:gosec
 	ripemd160Hash.Write(sha256Hash[:])
-	accountID := ripemd160Hash.Sum(nil)
+	accountIDHash := ripemd160Hash.Sum(nil)
 
 	// Add version prefix (0x00).
-	versionedAccountID := append(accountPrefix, accountID...)
+	accountID := make([]byte, len(accountPrefix))
+	copy(accountID, accountPrefix)
+	accountID = append(accountID, accountIDHash...)
 
 	// Generate checksum (first 4 bytes of double SHA256).
-	firstHash := sha256.Sum256(versionedAccountID)
+	firstHash := sha256.Sum256(accountID)
 	secondHash := sha256.Sum256(firstHash[:])
 	checksum := secondHash[:4]
 
 	// Combine everything.
-	finalAccountID := append(versionedAccountID, checksum...)
-	return addresscodec.EncodeBase58(finalAccountID)
+	accountID = append(accountID, checksum...)
+	return addresscodec.EncodeBase58(accountID)
 }
