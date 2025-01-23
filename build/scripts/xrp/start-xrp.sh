@@ -17,4 +17,3 @@ while true; do
   rippled ledger_accept
   sleep 2
 done
-  

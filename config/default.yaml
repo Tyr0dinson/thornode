@@ -308,7 +308,7 @@ bifrost:
         gas_price_resolution: 10 # drop
         observation_flexibility_blocks: 40
       mempool_tx_id_cache_size: 0
-      scanner_leveldb: *default-leveldb 
+      scanner_leveldb: *default-leveldb
 
     ltc:
       <<: *default-chain
