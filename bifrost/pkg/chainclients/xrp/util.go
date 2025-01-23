@@ -24,7 +24,7 @@ func fromXrpToThorchain(c common.Coin) (common.Coin, error) {
 		amount.Quo(amount, exp.Exp(big.NewInt(10), big.NewInt(decimalDiff), nil))
 	} else if decimals < common.THORChainDecimals {
 		// Decimals are less than native THORChain, so multiply...
-		decimalDiff := int64(common.THORChainDecimals - decimals)
+		decimalDiff := common.THORChainDecimals - decimals
 		amount.Mul(amount, exp.Exp(big.NewInt(10), big.NewInt(decimalDiff), nil))
 	}
 	return common.Coin{
@@ -49,7 +49,7 @@ func fromThorchainToXrp(coin common.Coin) (common.Coin, error) {
 		amount.Mul(amount, exp.Exp(big.NewInt(10), big.NewInt(decimalDiff), nil))
 	} else if decimals < common.THORChainDecimals {
 		// Decimals are less than native THORChain, so divide...
-		decimalDiff := int64(common.THORChainDecimals - decimals)
+		decimalDiff := common.THORChainDecimals - decimals
 		amount.Quo(amount, exp.Exp(big.NewInt(10), big.NewInt(decimalDiff), nil))
 	}
 	return common.Coin{
