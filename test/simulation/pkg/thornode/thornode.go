@@ -189,7 +189,7 @@ func get(url string, target interface{}) error {
 
 	// extract error if the request failed
 	type ErrorResponse struct {
-		Code int `json:"code"`
+		Code    int    `json:"code"`
 		Message string `json:"message"`
 	}
 	buf, err := io.ReadAll(resp.Body)
