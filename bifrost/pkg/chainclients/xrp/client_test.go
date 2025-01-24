@@ -25,6 +25,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/config"
 	. "gopkg.in/check.v1"
 
+	addresscodec "github.com/Peersyst/xrpl-go/address-codec"
 	"github.com/Peersyst/xrpl-go/xrpl/rpc"
 	"github.com/Peersyst/xrpl-go/xrpl/rpc/testutil"
 	txtypes "github.com/Peersyst/xrpl-go/xrpl/transaction/types"
@@ -194,7 +195,7 @@ func (s *XrpTestSuite) TestProcessOutboundTx(c *C) {
 		s.m,
 	)
 	c.Assert(err, IsNil)
-	c.Check(client.rpcClient.NetworkID, Equals, uint32(0))
+	c.Check(client.networkID, Equals, uint32(1))
 
 	vaultPubKey, err := common.NewPubKey("sthorpub1addwnpepqtrvka83xluqq522k8at4d84gnthj5ryqhrf0fa24yze4yhk7j0fk4876fz")
 	c.Assert(err, IsNil)
@@ -227,6 +228,53 @@ func (s *XrpTestSuite) TestProcessOutboundTx(c *C) {
 	c.Assert(err, IsNil)
 	signingPubKeyHex := hex.EncodeToString(signingPubKey.SerializeCompressed())
 	c.Check(msg.BaseTx.SigningPubKey, Equals, signingPubKeyHex)
+}
+
+func (s *XrpTestSuite) TestXAddresses(c *C) {
+	client, err := NewClient(
+		s.thorKeys,
+		config.BifrostChainConfiguration{
+			ChainID: common.XRPChain,
+			RPCHost: "http://testnode/",
+			BlockScanner: config.BifrostBlockScannerConfiguration{
+				StartBlockHeight: 1, // avoids querying thorchain for block height
+			},
+		},
+		nil,
+		s.bridge,
+		s.m,
+	)
+	c.Assert(err, IsNil)
+	c.Check(client.rpcClient.NetworkID, Equals, uint32(0))
+
+	vaultPubKey, err := common.NewPubKey("sthorpub1addwnpepqtrvka83xluqq522k8at4d84gnthj5ryqhrf0fa24yze4yhk7j0fk4876fz")
+	c.Assert(err, IsNil)
+	outAsset, err := common.NewAsset("XRP.XRP")
+	c.Assert(err, IsNil)
+	classicAddr := "rQwpQ54X5gJyLGg4QGp3HSkjdf3u37NqiZ"
+	destTag := uint32(177)
+	toAddress, err := addresscodec.ClassicAddressToXAddress(classicAddr, destTag, true, false)
+	c.Assert(err, IsNil)
+
+	paymentAmount := uint64(24528300)
+	txOut := stypes.TxOutItem{
+		Chain:       common.XRPChain,
+		ToAddress:   common.Address(toAddress),
+		VaultPubKey: vaultPubKey,
+		Coins:       common.Coins{common.NewCoin(outAsset, cosmos.NewUint(paymentAmount))},
+		Memo:        "memo",
+		MaxGas:      common.Gas{common.NewCoin(outAsset, cosmos.NewUint(23582400))},
+		GasRate:     750000,
+		InHash:      "hash",
+	}
+
+	msg, err := client.processOutboundTx(txOut)
+	c.Assert(err, IsNil)
+	
+	c.Check(msg.Amount, Equals, txtypes.XRPCurrencyAmount(paymentAmount/100))
+	c.Check(msg.BaseTx.Account, Equals, txtypes.Address("rQwpQ54X5gJyLGg4QGp3HSkjdf3u37NqiZ"))
+	c.Check(msg.Destination, Equals, txtypes.Address(classicAddr))
+	c.Check(msg.DestinationTag, Equals, destTag)
 }
 
 func (s *XrpTestSuite) TestSign(c *C) {
@@ -285,7 +333,6 @@ func (s *XrpTestSuite) TestSign(c *C) {
 			},
 		}
 	}
-	msg.LastLedgerSequence = 1
 
 	// Sign the message (verifies signature within)
 	_, err = client.signMsg(msg, vaultPubKey)

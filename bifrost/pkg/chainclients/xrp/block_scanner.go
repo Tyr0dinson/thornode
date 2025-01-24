@@ -86,7 +86,6 @@ func NewXrpBlockScanner(rpcHost string,
 		return nil, fmt.Errorf("unable to create rpc config, %w", err)
 	}
 	rpcClient := rpc.NewClient(rpcConfig)
-	// We do not need to set the network id since this is query-only
 	return &XrpBlockScanner{
 		cfg:              cfg,
 		logger:           logger,
@@ -182,116 +181,140 @@ func (c *XrpBlockScanner) updateFees(height int64) error {
 	return nil
 }
 
+func (c *XrpBlockScanner) processPayment(flatTx map[string]any) (*transaction.Payment, error) {
+	// Ignore any txs other than payments
+	if flatTx["TransactionType"] != "Payment" {
+		return nil, nil
+	}
+
+	feeStr, ok := flatTx["Fee"].(string)
+	if !ok {
+		return nil, fmt.Errorf("cannot cast fee to string")
+	}
+	feeAmount, err := cosmos.ParseUint(feeStr)
+	if err != nil {
+		return nil, fmt.Errorf("cannot convert fee string to uint: %w", err)
+	}
+
+	var memoData []byte
+	if flatTx["Memos"] != nil {
+		// trunk-ignore(golangci-lint/govet): shadow
+		memos, ok := flatTx["Memos"].([]interface{})
+		if !ok {
+			return nil, fmt.Errorf("cannot cast memos to []interface{}")
+		}
+		if len(memos) != 1 {
+			return nil, fmt.Errorf("more than 1 memo exists")
+		}
+		memoObj, ok := memos[0].(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("cannot cast memos[0] to map[string]interface{}")
+		}
+		memo, ok := memoObj["Memo"].(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("cannot cast memo to map[string]interface{}")
+		}
+		memoDataHex, ok := memo["MemoData"].(string)
+		if !ok {
+			return nil, fmt.Errorf("cannot cast MemoData to string")
+		}
+		if memoDataHex == "" {
+			return nil, fmt.Errorf("MemoData is empty")
+		}
+		memoData, err = hex.DecodeString(memoDataHex)
+		if err != nil {
+			return nil, fmt.Errorf("cannot decode memo data")
+		}
+	}
+
+	sender, ok := flatTx["Account"].(string)
+	if !ok {
+		return nil, fmt.Errorf("cannot cast sender/account to string")
+	}
+
+	to, ok := flatTx["Destination"].(string)
+	if !ok {
+		return nil, fmt.Errorf("cannot cast to/destination to string")
+	}
+
+	return &transaction.Payment{
+		BaseTx: transaction.BaseTx{
+			Account: txtypes.Address(sender),
+			Fee: txtypes.XRPCurrencyAmount(feeAmount.Uint64()),
+			Memos: []txtypes.MemoWrapper{
+				{
+					Memo: txtypes.Memo{
+						MemoData: string(memoData),
+					},
+				},
+			},
+		},
+		Destination: txtypes.Address(to),
+	}, nil
+}
+
 func (c *XrpBlockScanner) processTxs(height int64, rawTxs []transaction.FlatTransaction) ([]types.TxInItem, error) {
 	var txIn []types.TxInItem
 	for _, rawTx := range rawTxs {
 		c.logger.Info().Interface("flat tx in", rawTx).Msg("processTxs()")
-		
-		// Ignore failed transactions
-		metaData, ok := rawTx["metaData"].(map[string]any)
-		if !ok {
-			continue
-		}
-		if metaData["TransactionResult"] != "tesSUCCESS" {
+
+		// double-check the tx has been validated
+		if rawTx["validated"] != true {
+			c.logger.Error().Interface("tx", rawTx).Msg("got a tx that was not validated")
 			continue
 		}
 
-		// Ignore any txs other than payments
-		if rawTx["TransactionType"] != "Payment" {
+		// Ignore failed transactions
+		meta, ok := rawTx["meta"].(map[string]any)
+		if !ok {
+			continue
+		}
+		if meta["TransactionResult"] != "tesSUCCESS" {
 			continue
 		}
 
 		ctxLog := c.logger.Info().Interface("tx", rawTx)
-		feeStr, ok := rawTx["Fee"].(string)
+		flatTx, ok := rawTx["tx_json"].(map[string]any)
 		if !ok {
-			ctxLog.Msg("skipping tx, cannot cast fee to string")
+			ctxLog.Msg("skipping tx, cannot cast tx_json to map[string]any")
 			continue
 		}
-		feeAmount, err := cosmos.ParseUint(feeStr)
-		if err != nil {
-			ctxLog.AnErr("error", err).Msg("skipping tx, cannot convert fee string to uint")
+
+		payment, err := c.processPayment(flatTx)
+		if payment == nil && err == nil {
+			// This was not a payment tx
 			continue
 		}
-		fee, err := fromXrpToThorchain(txtypes.XRPCurrencyAmount(feeAmount.Uint64()))
 		if err != nil {
-			ctxLog.AnErr("error", err).Msg("skipping tx, cannot convert xrp fee to thorchain fee")
+			ctxLog.AnErr("reason", err).Msg("skipping payment tx")
 			continue
+		}
+		
+		fee, err := fromXrpToThorchain(payment.Fee)
+		if err != nil {
+			return nil, fmt.Errorf("cannot convert xrp fee to thorchain fee: %w", err)
 		}
 		c.updateFeeCache(fee)
-
-		var memoData []byte
-		if rawTx["Memos"] != nil {
-			// trunk-ignore(golangci-lint/govet): shadow
-			memos, ok := rawTx["Memos"].([]interface{})
-			if !ok {
-				ctxLog.Msg("skipping tx, cannot cast memos to []interface{}")
-				continue
-			}
-			if len(memos) != 1 {
-				ctxLog.Msg("skipping tx, more than 1 memo exists")
-				continue
-			}
-			memoObj, ok := memos[0].(map[string]interface{})
-			if !ok {
-				ctxLog.Msg("skipping tx, cannot cast memos[0] to map[string]interface{}")
-				continue
-			}
-			memo, ok := memoObj["Memo"].(map[string]interface{})
-			if !ok {
-				ctxLog.Msg("skipping tx, cannot cast memo to map[string]interface{}")
-				continue
-			}
-			memoDataHex, ok := memo["MemoData"].(string)
-			if !ok {
-				ctxLog.Msg("skipping tx, cannot cast MemoData to string")
-				continue
-			}
-			if memoDataHex == "" {
-				ctxLog.Msg("skipping tx, MemoData is empty")
-				continue
-			}
-			memoData, err = hex.DecodeString(memoDataHex)
-			if err != nil {
-				ctxLog.AnErr("error", err).Msg("skipping tx, cannot decode memo data")
-				continue
-			}
-		}
-
+		
 		// Do not use the "Amount" field to find the amount transferred due to partial payment exploit.
-		amountJson, err := json.Marshal(metaData["delivered_amount"])
+		amountJson, err := json.Marshal(meta["delivered_amount"])
 		if err != nil {
 			ctxLog.AnErr("error", err).Msg("skipping tx, cannot json marshal amount")
-			continue
 		}
 		amount, err := txtypes.UnmarshalCurrencyAmount(amountJson)
 		if err != nil {
 			ctxLog.AnErr("error", err).Msg("skipping tx, cannot unmarshal currency amount")
-			continue
 		}
 		// Verify that the amount is of type XRP, issuer currencies are not currently supported.
 		// Without any trust lines, this shouldn't be possible.
 		if amount.Kind() != txtypes.XRP {
 			ctxLog.Msg("skipping tx, amount is not of type XRP")
-			continue
 		}
 		coin, err := fromXrpToThorchain(amount)
 		if err != nil {
 			ctxLog.AnErr("error", err).Msg("skipping tx, cannot convert xrp amount to thorchain amount")
-			continue
 		}
 		coins := common.Coins{coin}
-
-		sender, ok := rawTx["Account"].(string)
-		if !ok {
-			ctxLog.Msg("skipping tx, cannot cast sender/account to string")
-			continue
-		}
-
-		to, ok := rawTx["Destination"].(string)
-		if !ok {
-			ctxLog.Msg("skipping tx, cannot cast to/destination to string")
-			continue
-		}
 
 		hash, ok := rawTx["hash"].(string)
 		if !ok {
@@ -299,12 +322,17 @@ func (c *XrpBlockScanner) processTxs(height int64, rawTxs []transaction.FlatTran
 			continue
 		}
 
+		memo := ""
+		if len(payment.Memos) == 1 {
+			memo = payment.Memos[0].Memo.MemoData
+		}
+
 		txIn = append(txIn, types.TxInItem{
 			Tx:          hash,
 			BlockHeight: height,
-			Memo:        string(memoData),
-			Sender:      sender,
-			To:          to,
+			Memo:        memo,
+			Sender:      payment.Account.String(),
+			To:          payment.Destination.String(),
 			Coins:       coins,
 			Gas:         []common.Coin{fee},
 		})
@@ -318,6 +346,7 @@ func (c *XrpBlockScanner) FetchTxs(height, chainHeight int64) (types.TxIn, error
 		LedgerIndex:  xrplcommon.LedgerIndex(height),
 		Transactions: true,
 		Expand:       true,
+		//		Binary: true,
 	})
 	if err != nil {
 		return types.TxIn{}, err

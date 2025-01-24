@@ -34,6 +34,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/constants"
 	memo "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
 
+	addresscodec "github.com/Peersyst/xrpl-go/address-codec"
 	"github.com/Peersyst/xrpl-go/binary-codec"
 	"github.com/Peersyst/xrpl-go/xrpl/hash"
 	"github.com/Peersyst/xrpl-go/xrpl/queries/account"
@@ -62,6 +63,7 @@ type Client struct {
 	wg                  *sync.WaitGroup
 	stopchan            chan struct{}
 	rpcClient           *rpc.Client
+	networkID           uint32
 }
 
 // NewClient creates a new instance of an XRP-based chain client
@@ -93,12 +95,12 @@ func NewClient(
 		return nil, fmt.Errorf("fail to create key manager: %w", err)
 	}
 
-	chainID := uint32(0)
+	networkID := uint32(0)
 	switch os.Getenv("NET") {
 	case "mainnet", "stagenet":
-		chainID = 1
+		networkID = 1
 	case "mocknet":
-		chainID = 1234
+		networkID = 1234
 	}
 
 	rpcConfig, err := rpc.NewClientConfig(cfg.RPCHost)
@@ -107,15 +109,6 @@ func NewClient(
 		return nil, fmt.Errorf("unable to create rpc config for client, %w", err)
 	}
 	rpcClient := rpc.NewClient(rpcConfig)
-
-	// networkID, err := strconv.ParseUint(cfg.ChainNetwork, 10, 32)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("error parsing chain network as uint, %w", err)
-	// }
-	// rpcClient.NetworkID = uint32(networkID)
-	if chainID > 1024 {
-		rpcClient.NetworkID = chainID
-	}
 
 	c := &Client{
 		logger:          logger,
@@ -127,6 +120,7 @@ func NewClient(
 		wg:              &sync.WaitGroup{},
 		stopchan:        make(chan struct{}),
 		rpcClient:       rpcClient,
+		networkID:       networkID,
 	}
 
 	var path string // if not set later, will in memory storage
@@ -276,15 +270,36 @@ func (c *Client) processOutboundTx(tx stypes.TxOutItem) (*transactions.Payment, 
 		return nil, err
 	}
 
-	return &transactions.Payment{
+	destination := tx.ToAddress.String()
+	destinationTag := uint32(0)
+	c.logger.Info().Str("original_destination", destination).Msg("Incoming destination")
+	if addresscodec.IsValidXAddress(tx.ToAddress.String()) {
+		destination, destinationTag, _, err = addresscodec.XAddressToClassicAddress(tx.ToAddress.String())
+		c.logger.Info().Str("classic add", destination).Msg("classic addr destination")
+		if err != nil {
+			return nil, fmt.Errorf("fail to convert XAddress to classic address: %w", err)
+		}
+	}
+
+	payment := transactions.Payment{
 		BaseTx: transactions.BaseTx{
 			Account: txtypes.Address(fromAddr),
 			SigningPubKey: hex.EncodeToString(signingPubKey.SerializeCompressed()),
-			LastLedgerSequence: 1, // Populate this field so that Autofill does not perform a query for it, it will be deleted before signing.
 		},
 		Amount:      coin,
-		Destination: txtypes.Address(tx.ToAddress),
-	}, nil
+		Destination: txtypes.Address(destination),
+	}
+
+	// Network id is required when > 1024 (i.e. mocknet/standalone) and must not be included for mainnet/testnet
+	if c.networkID > 1024 {
+		payment.BaseTx.NetworkID = c.networkID
+	}
+
+	if destinationTag != uint32(0) {
+		payment.DestinationTag = destinationTag
+	}
+
+	return &payment, nil
 }
 
 // SignTx sign the the given TxArrayItem
@@ -405,12 +420,6 @@ func (c *Client) signMsg(
 	}
 
 	flatTx := payment.Flatten()
-
-	// Autofill is primarily required to populate the correct fields for X-address destinations and to set the network id.
-	if err := c.rpcClient.Autofill(&flatTx); err != nil {
-		return nil, err
-	}
-	delete(flatTx, "LastLedgerSequence")
 
 	// TODO SAM127: Debug only - remove
 	flatTxJson, err := json.Marshal(flatTx)

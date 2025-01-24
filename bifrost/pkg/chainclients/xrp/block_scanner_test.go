@@ -11,8 +11,6 @@ import (
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	cKeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
 
-	// protov2 "google.golang.org/protobuf/proto"
-
 	"github.com/rs/zerolog/log"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
@@ -23,7 +21,6 @@ import (
 	. "gopkg.in/check.v1"
 
 	"github.com/Peersyst/xrpl-go/xrpl/transaction"
-	"github.com/Peersyst/xrpl-go/xrpl/transaction/types"
 )
 
 // -------------------------------------------------------------------------------------
@@ -101,30 +98,30 @@ func (s *BlockScannerTestSuite) TestProcessTxs(c *C) {
 		logger: log.Logger.With().Str("module", "blockscanner").Str("chain", common.XRPChain.String()).Logger(),
 	}
 
-	tx := transaction.Payment{
-		BaseTx: transaction.BaseTx{
-			Account:       types.Address("rs3xN42EFLE23gUDG2Rw4rwxhR9MnjwZKQ"),
-			SigningPubKey: "03dd7eb4b0479d2898cabdd4ccfd30f2277e57cb9c13ccabb8ec5170ed13dd149a",
-			Fee:           types.XRPCurrencyAmount(20),
-			Memos: []types.MemoWrapper{
-				{
-					Memo: types.Memo{
-						MemoData: hex.EncodeToString([]byte("hello")),
+	tx := map[string]any{
+		"tx_json": map[string]any{
+			"Account": "rs3xN42EFLE23gUDG2Rw4rwxhR9MnjwZKQ",
+			"Destination": "rELnd6Ae5ZYDhHkaqjSVg2vgtBnzjeDshm",
+			"Fee": "20",
+			"Memos": []any{
+				map[string]any{
+					"Memo": map[string]any{
+						"MemoData": hex.EncodeToString([]byte("hello")),
 					},
 				},
 			},
+			"SigningPubKey": "03dd7eb4b0479d2898cabdd4ccfd30f2277e57cb9c13ccabb8ec5170ed13dd149a",
+			"TransactionType": "Payment",
 		},
-		Amount:      types.XRPCurrencyAmount(1000000),
-		Destination: types.Address("rELnd6Ae5ZYDhHkaqjSVg2vgtBnzjeDshm"),
+		"hash": "0123456789ABCDEF",
+		"meta": map[string]any{
+			"TransactionResult": "tesSUCCESS",
+			"delivered_amount": "1000000",
+		},
+		"validated": true,
 	}
 
-	txFlat := tx.Flatten()
-	txFlat["hash"] = "0123456789ABCDEF"
-	txFlat["metaData"] = map[string]any{
-		"TransactionResult": "tesSUCCESS",
-	}
-
-	txInItems, err := blockScanner.processTxs(1, []transaction.FlatTransaction{txFlat})
+	txInItems, err := blockScanner.processTxs(1, []transaction.FlatTransaction{tx})
 	c.Assert(err, IsNil)
 
 	// proccessTxs should filter out everything besides the valid MsgSend

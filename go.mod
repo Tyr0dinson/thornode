@@ -41,7 +41,7 @@ require (
 	github.com/99designs/keyring v1.2.1
 	github.com/CosmWasm/wasmd v0.53.0
 	github.com/CosmWasm/wasmvm/v2 v2.1.2 // indirect
-	github.com/Peersyst/xrpl-go v0.1.0
+	github.com/Peersyst/xrpl-go v0.1.3
 	github.com/binance-chain/tss-lib v0.0.0-20201118045712-70b2cb4bf916
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/btcsuite/btcd v0.22.1
