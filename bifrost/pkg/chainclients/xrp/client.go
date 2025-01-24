@@ -279,8 +279,8 @@ func (c *Client) processOutboundTx(tx stypes.TxOutItem) (*transactions.Payment, 
 	return &transactions.Payment{
 		BaseTx: transactions.BaseTx{
 			Account: txtypes.Address(fromAddr),
-			// NetworkID:     c.chainID, // Currently doesn't do anything, but the client with populate
 			SigningPubKey: hex.EncodeToString(signingPubKey.SerializeCompressed()),
+			LastLedgerSequence: 1, // Populate this field so that Autofill does not perform a query for it, it will be deleted before signing.
 		},
 		Amount:      coin,
 		Destination: txtypes.Address(tx.ToAddress),
@@ -364,7 +364,6 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signedTx, c
 		return nil, nil, nil, fmt.Errorf("fail to marshal checkpoint: %w", err)
 	}
 
-	// TODO SAM127: check fee
 	feeCurrency, err := fromThorchainToXrp(common.NewCoin(common.XRPAsset, cosmos.NewUint(uint64(tx.GasRate))))
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("fail to get fee: %w", err)
@@ -406,13 +405,11 @@ func (c *Client) signMsg(
 	}
 
 	flatTx := payment.Flatten()
-	// TODO SAM127: Get rid of auto fill? Needs to be deterministic...
+
+	// Autofill is primarily required to populate the correct fields for X-address destinations and to set the network id.
 	if err := c.rpcClient.Autofill(&flatTx); err != nil {
 		return nil, err
 	}
-	// Set NetworkID
-
-	// TODO SAM127: do we want to populated this? Maybe based on observed tx in height?
 	delete(flatTx, "LastLedgerSequence")
 
 	// TODO SAM127: Debug only - remove
