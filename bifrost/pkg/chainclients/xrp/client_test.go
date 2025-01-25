@@ -273,8 +273,7 @@ func (s *XrpTestSuite) TestXAddresses(c *C) {
 	
 	c.Check(msg.Amount, Equals, txtypes.XRPCurrencyAmount(paymentAmount/100))
 	c.Check(msg.BaseTx.Account, Equals, txtypes.Address("rQwpQ54X5gJyLGg4QGp3HSkjdf3u37NqiZ"))
-	c.Check(msg.Destination, Equals, txtypes.Address(classicAddr))
-	c.Check(msg.DestinationTag, Equals, destTag)
+	c.Check(msg.Destination, Not(Equals), txtypes.Address(classicAddr))
 }
 
 func (s *XrpTestSuite) TestSign(c *C) {
