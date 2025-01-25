@@ -10,17 +10,11 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkmath "cosmossdk.io/math"
-	// "github.com/cosmos/cosmos-sdk/codec"
-	// codectypes "github.com/cosmos/cosmos-sdk/codec/types"
-	// cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
-	// "github.com/cosmos/cosmos-sdk/crypto/hd"
-	// "github.com/cosmos/cosmos-sdk/crypto/keyring"
 
 	"github.com/docker/docker/client"
 	ethcommon "github.com/ethereum/go-ethereum/common"
 
 	"github.com/strangelove-ventures/interchaintest/v8"
-	// "github.com/strangelove-ventures/interchaintest/v8/chain/cosmos"
 	"github.com/strangelove-ventures/interchaintest/v8/chain/ethereum"
 	"github.com/strangelove-ventures/interchaintest/v8/chain/ethereum/foundry"
 	"github.com/strangelove-ventures/interchaintest/v8/chain/ethereum/geth"
@@ -53,10 +47,6 @@ func StartExoChains(t *testing.T, ctx context.Context, client *client.Client, ne
 			utxoChain := chain.(*utxo.UtxoChain)
 			utxoChain.UnloadWalletAfterUse(true)
 		}
-
-		// if name == "GAIA" {
-		// 	exoChains[name].genWallets = BuildGaiaWallets(t, 5, chain.Config())
-		// }
 	}
 
 	ic := interchaintest.NewInterchain()
@@ -156,10 +146,10 @@ func StartThorchain(
 			bsRpcHost := fmt.Sprintf("BIFROST_CHAINS_%s_BLOCK_SCANNER_RPC_HOST", name)
 			bifrostEnvOverrides[bsRpcHost] = exoChain.chain.GetRPCAddress()
 		}
-		// if name == "XRP" {
-		// 	hostKey = fmt.Sprintf("BIFROST_CHAINS_%s_CHAIN_NETWORK", name)
-		// 	bifrostEnvOverrides[hostKey] = exoChain.chain.Config().ChainID
-		// }
+		if name == "XRP" {
+			hostKey = fmt.Sprintf("BIFROST_CHAINS_%s_CHAIN_NETWORK", name)
+			bifrostEnvOverrides[hostKey] = exoChain.chain.Config().ChainID
+		}
 	}
 	thorchainChainSpec := ThorchainDefaultChainSpec(t.Name(), chainImage, mainnet, numValidators,
 		numFullNodes, ethRouterContractAddress, bscRouterContractAddress, nil, bifrostEnvOverrides)
@@ -304,71 +294,3 @@ func SetupAnvilContracts(ctx context.Context, exoChain *ExoChain) (string, error
 
 	return ethRouterContractAddress, nil
 }
-
-// func SetupGaia(t *testing.T, ctx context.Context, exoChain *ExoChain) *errgroup.Group {
-// 	gaia := exoChain.chain.(*cosmos.CosmosChain)
-// 	eg, egCtx := errgroup.WithContext(ctx)
-// 	eg.Go(func() error {
-// 		for _, genWallet := range exoChain.genWallets {
-// 			err := gaia.RecoverKey(egCtx, genWallet.KeyName(), genWallet.Mnemonic())
-// 			if err != nil {
-// 				return err
-// 			}
-// 		}
-
-// 		// Send 100 txs on gaia so that bifrost can automatically set the network fee
-// 		// Sim testing can directly use bifrost to do this, right now, we can't, but may in the future
-// 		val0 := gaia.GetNode()
-// 		amount := fmt.Sprintf("%s%s", sdkmath.NewInt(1_000_000).String(), gaia.Config().Denom)
-// 		for i := 0; i < 100/len(exoChain.genWallets)+1; i++ {
-// 			cmd := ""
-// 			for j, genWallet := range exoChain.genWallets {
-// 				toUser := exoChain.genWallets[(j+1)%len(exoChain.genWallets)]
-// 				bankSend := []string{"bank", "send", genWallet.KeyName(), toUser.FormattedAddress(), amount}
-// 				bankSend = val0.TxCommand(genWallet.KeyName(), bankSend...)
-// 				if j < len(exoChain.genWallets)-1 {
-// 					bankSend = append(bankSend, "&& ")
-// 				}
-// 				cmd = fmt.Sprintf("%s%s", cmd, strings.Join(bankSend, " "))
-// 			}
-// 			_, _, err := val0.Exec(ctx, []string{"sh", "-c", cmd}, val0.Chain.Config().Env)
-// 			if err != nil {
-// 				fmt.Println("Gaia send funds err:", err)
-// 			}
-// 			err = NiceWaitForBlocks(ctx, 1, gaia)
-// 			if err != nil {
-// 				return err
-// 			}
-// 		}
-// 		return nil
-// 	})
-
-// 	return eg
-// }
-
-// func BuildGaiaWallets(t *testing.T, numWallets int, cfg ibc.ChainConfig) []ibc.Wallet {
-// 	registry := codectypes.NewInterfaceRegistry()
-// 	cryptocodec.RegisterInterfaces(registry)
-// 	cdc := codec.NewProtoCodec(registry)
-// 	kr := keyring.NewInMemory(cdc)
-
-// 	gaiaWallets := make([]ibc.Wallet, numWallets)
-// 	for i := 0; i < numWallets; i++ {
-// 		keyName := fmt.Sprintf("tx100_%d", i)
-// 		record, mnemonic, err := kr.NewMnemonic(
-// 			keyName,
-// 			keyring.English,
-// 			hd.CreateHDPath(118, 0, 0).String(),
-// 			"", // Empty passphrase.
-// 			hd.Secp256k1,
-// 		)
-// 		require.NoError(t, err)
-
-// 		addrBytes, err := record.GetAddress()
-// 		require.NoError(t, err)
-
-// 		gaiaWallets[i] = cosmos.NewWallet(keyName, addrBytes, mnemonic, cfg)
-// 	}
-
-// 	return gaiaWallets
-// }
