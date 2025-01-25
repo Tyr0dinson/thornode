@@ -63,7 +63,7 @@ func NewAddress(address string) (Address, error) {
 }
 
 func IsValidXRPAddress(address string) bool {
-	return (strings.HasPrefix(address, "r") && xrp.IsValidClassicAddress(address)) || xrp.IsValidXAddress(address)
+	return (strings.HasPrefix(address, "r") && xrp.IsValidClassicAddress(address))
 }
 
 // IsValidBCHAddress determinate whether the address is a valid new BCH address format

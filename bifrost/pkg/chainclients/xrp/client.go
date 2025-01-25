@@ -34,7 +34,6 @@ import (
 	"gitlab.com/thorchain/thornode/v3/constants"
 	memo "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
 
-	addresscodec "github.com/Peersyst/xrpl-go/address-codec"
 	"github.com/Peersyst/xrpl-go/binary-codec"
 	"github.com/Peersyst/xrpl-go/xrpl/hash"
 	"github.com/Peersyst/xrpl-go/xrpl/queries/account"
@@ -270,33 +269,18 @@ func (c *Client) processOutboundTx(tx stypes.TxOutItem) (*transactions.Payment, 
 		return nil, err
 	}
 
-	destination := tx.ToAddress.String()
-	destinationTag := uint32(0)
-	c.logger.Info().Str("original_destination", destination).Msg("Incoming destination")
-	if addresscodec.IsValidXAddress(tx.ToAddress.String()) {
-		destination, destinationTag, _, err = addresscodec.XAddressToClassicAddress(tx.ToAddress.String())
-		c.logger.Info().Str("classic add", destination).Msg("classic addr destination")
-		if err != nil {
-			return nil, fmt.Errorf("fail to convert XAddress to classic address: %w", err)
-		}
-	}
-
 	payment := transactions.Payment{
 		BaseTx: transactions.BaseTx{
 			Account: txtypes.Address(fromAddr),
 			SigningPubKey: hex.EncodeToString(signingPubKey.SerializeCompressed()),
 		},
 		Amount:      coin,
-		Destination: txtypes.Address(destination),
+		Destination: txtypes.Address(tx.ToAddress.String()),
 	}
 
 	// Network id is required when > 1024 (i.e. mocknet/standalone) and must not be included for mainnet/testnet
 	if c.networkID > 1024 {
 		payment.BaseTx.NetworkID = c.networkID
-	}
-
-	if destinationTag != uint32(0) {
-		payment.DestinationTag = destinationTag
 	}
 
 	return &payment, nil
