@@ -8,7 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -94,12 +94,9 @@ func NewClient(
 		return nil, fmt.Errorf("fail to create key manager: %w", err)
 	}
 
-	networkID := uint32(0)
-	switch os.Getenv("NET") {
-	case "mainnet", "stagenet":
-		networkID = 1
-	case "mocknet":
-		networkID = 1234
+	networkID, err := strconv.ParseUint(cfg.ChainNetwork, 10, 32)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing chain network as uint, %w", err)
 	}
 
 	rpcConfig, err := rpc.NewClientConfig(cfg.RPCHost)
@@ -119,7 +116,7 @@ func NewClient(
 		wg:              &sync.WaitGroup{},
 		stopchan:        make(chan struct{}),
 		rpcClient:       rpcClient,
-		networkID:       networkID,
+		networkID:       uint32(networkID),
 	}
 
 	var path string // if not set later, will in memory storage
