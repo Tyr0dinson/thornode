@@ -443,6 +443,8 @@ func (vm *NetworkMgrVCUR) EndBlock(ctx cosmos.Context, mgr Manager) error {
 	controller := NewRouterUpgradeController(mgr)
 	controller.Process(ctx)
 
+	vm.thorfiUnwind(ctx, mgr)
+
 	if err := vm.POLCycle(ctx, mgr); err != nil {
 		ctx.Logger().Error("fail to process POL liquidity", "error", err)
 	}
@@ -454,7 +456,105 @@ func (vm *NetworkMgrVCUR) EndBlock(ctx cosmos.Context, mgr Manager) error {
 	if err := vm.checkPoolRagnarok(ctx, mgr); err != nil {
 		ctx.Logger().Error("fail to process pool ragnarok", "error", err)
 	}
+
 	return nil
+}
+
+// thorfiUnwind sets mimirs to enable or disable thorfi redemptions based on
+// the current price of RUNE. If the price of RUNE is below the disable threshold,
+// thorfi redemptions are disabled. If the unwind burn basis points are set at the time
+// of disabling, the system burn is updated to reflect the new burn rate. If the price
+// of RUNE is above the enable threshold, thorfi redemptions are enabled. If the unwind
+// burn basis points are set at the time of enabling, the system burn is reset to the
+// constant value (5% at time of writing).
+func (vm *NetworkMgrVCUR) thorfiUnwind(ctx cosmos.Context, mgr Manager) {
+	unwindEnableRuneTOR := vm.k.GetConfigInt64(ctx, constants.THORFiUnwindEnableRuneTOR)
+	unwindDisableRuneTOR := vm.k.GetConfigInt64(ctx, constants.THORFiUnwindDisableRuneTOR)
+	unwindBurnBasisPoints := vm.k.GetConfigInt64(ctx, constants.THORFiUnwindBurnBasisPoints)
+	runeUSDPrice := vm.k.DollarsPerRune(ctx)
+
+	// threshold mimirs must be set to proceed
+	if unwindEnableRuneTOR <= 0 || unwindDisableRuneTOR <= 0 {
+		return
+	}
+
+	// rune USD price must be non-zero to take action (valid and unpaused anchors)
+	if runeUSDPrice.IsZero() {
+		return
+	}
+
+	// disable redemptions if price is below disable threshold
+	if runeUSDPrice.LT(cosmos.NewUint(uint64(unwindDisableRuneTOR))) {
+		// disable savers redemptions
+		burnSynths := vm.k.GetConfigInt64(ctx, constants.BurnSynths)
+		if burnSynths < 1 {
+			vm.k.SetMimir(ctx, constants.BurnSynths.String(), 1)
+			mimirEvent := NewEventSetMimir(strings.ToUpper(constants.BurnSynths.String()), "1")
+			if err := mgr.EventMgr().EmitEvent(ctx, mimirEvent); err != nil {
+				ctx.Logger().Error("fail to emit set_mimir event", "error", err)
+			}
+		}
+
+		// disable loan redemptions
+		pauseLoans := vm.k.GetConfigInt64(ctx, constants.PauseLoans)
+		if pauseLoans < 1 {
+			vm.k.SetMimir(ctx, constants.PauseLoans.String(), 1)
+			mimirEvent := NewEventSetMimir(strings.ToUpper(constants.PauseLoans.String()), "1")
+			if err := mgr.EventMgr().EmitEvent(ctx, mimirEvent); err != nil {
+				ctx.Logger().Error("fail to emit set_mimir event", "error", err)
+			}
+		}
+
+		// if unwind burn basis points are set, update system burn
+		if unwindBurnBasisPoints > 0 {
+			burnBasisPoints := vm.k.GetConfigInt64(ctx, constants.SystemIncomeBurnRateBps)
+			if burnBasisPoints != unwindBurnBasisPoints {
+				vm.k.SetMimir(ctx, constants.SystemIncomeBurnRateBps.String(), unwindBurnBasisPoints)
+				mimirEvent := NewEventSetMimir(strings.ToUpper(constants.SystemIncomeBurnRateBps.String()), strconv.FormatInt(unwindBurnBasisPoints, 10))
+				if err := mgr.EventMgr().EmitEvent(ctx, mimirEvent); err != nil {
+					ctx.Logger().Error("fail to emit set_mimir event", "error", err)
+				}
+			}
+		}
+
+		return
+	}
+
+	// enable redemptions if price is above enable threshold
+	if runeUSDPrice.GT(cosmos.NewUint(uint64(unwindEnableRuneTOR))) {
+		// disable savers redemptions
+		burnSynths := vm.k.GetConfigInt64(ctx, constants.BurnSynths)
+		if burnSynths > 0 {
+			vm.k.SetMimir(ctx, constants.BurnSynths.String(), 0)
+			mimirEvent := NewEventSetMimir(strings.ToUpper(constants.BurnSynths.String()), "0")
+			if err := mgr.EventMgr().EmitEvent(ctx, mimirEvent); err != nil {
+				ctx.Logger().Error("fail to emit set_mimir event", "error", err)
+			}
+		}
+
+		// disable loan redemptions
+		pauseLoans := vm.k.GetConfigInt64(ctx, constants.PauseLoans)
+		if pauseLoans > 0 {
+			vm.k.SetMimir(ctx, constants.PauseLoans.String(), 0)
+			mimirEvent := NewEventSetMimir(strings.ToUpper(constants.PauseLoans.String()), "0")
+			if err := mgr.EventMgr().EmitEvent(ctx, mimirEvent); err != nil {
+				ctx.Logger().Error("fail to emit set_mimir event", "error", err)
+			}
+		}
+
+		// if unwind burn basis points are set, reset system burn to constant value
+		if unwindBurnBasisPoints > 0 {
+			burnBasisPoints := vm.k.GetConfigInt64(ctx, constants.SystemIncomeBurnRateBps)
+			defaultBurnBasisPoints := vm.k.GetConstants().GetInt64Value(constants.SystemIncomeBurnRateBps)
+			if burnBasisPoints != defaultBurnBasisPoints {
+				vm.k.SetMimir(ctx, constants.SystemIncomeBurnRateBps.String(), defaultBurnBasisPoints)
+				mimirEvent := NewEventSetMimir(strings.ToUpper(constants.SystemIncomeBurnRateBps.String()), strconv.FormatInt(defaultBurnBasisPoints, 10))
+				if err := mgr.EventMgr().EmitEvent(ctx, mimirEvent); err != nil {
+					ctx.Logger().Error("fail to emit set_mimir event", "error", err)
+				}
+			}
+		}
+	}
 }
 
 func (vm *NetworkMgrVCUR) migrateFunds(ctx cosmos.Context, mgr Manager) error {

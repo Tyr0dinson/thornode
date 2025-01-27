@@ -150,6 +150,9 @@ const (
 	SignerConcurrency
 	StrictBondLiquidityRatio
 	SwapOutDexAggregationDisabled
+	THORFiUnwindEnableRuneTOR
+	THORFiUnwindDisableRuneTOR
+	THORFiUnwindBurnBasisPoints
 )
 
 // ConstantValues define methods used to get constant values
