@@ -5,7 +5,6 @@ const FailingAggregator = artifacts.require("THORChain_Failing_Aggregator");
 const SushiRouter = artifacts.require("SushiRouterSmol");
 const RevertingContract = artifacts.require("RevertingContract");
 const Token = artifacts.require("ERC20Token");
-const Rune = artifacts.require("ETH_RUNE");
 const Usdt = artifacts.require("TetherToken");
 const Weth = artifacts.require("WETH");
 const BigNumber = require("bignumber.js");
@@ -24,7 +23,7 @@ var AGG, FAIL_AGG;
 var WETH;
 var SUSHIROUTER;
 var REVERTINGCONTRACT;
-var RUNE, TOKEN;
+var TOKEN;
 var USDT;
 var WETH;
 var ETH = "0x0000000000000000000000000000000000000000";
@@ -33,6 +32,8 @@ var USER1;
 const _1 = "1000000000000000000";
 const _10 = "10000000000000000000";
 const _20 = "20000000000000000000";
+const _1k = "1000000000000000000000";
+const _999k = "900000000000000000000000";
 const _1m = "1000000000000000000000000";
 
 const currentTime = Math.floor(Date.now() / 1000 + 15 * 60); // time plus 15 mins
@@ -42,7 +43,6 @@ describe("Aggregator contract", function () {
 
   before(async function () {
     accounts = await web3.eth.getAccounts();
-    RUNE = await Rune.new();
     ROUTER = await Router.new();
     TOKEN = await Token.new(); // User gets 1m TOKENS during construction
     USDT = await Usdt.new(_1m, "Tether", "USDT", 6);
@@ -57,7 +57,7 @@ describe("Aggregator contract", function () {
   });
 
   describe("Swap In and Out", function () {
-    it("Should Deposit Assets to Router", async function () {
+    it("Initial sushi router funding", async function () {
       await TOKEN.transfer(SUSHIROUTER.address, _10);
       await USDT.transfer(SUSHIROUTER.address, _10);
       await web3.eth.sendTransaction({
@@ -78,9 +78,16 @@ describe("Aggregator contract", function () {
         _10,
       );
       expect(BN2Str(await WETH.balanceOf(SUSHIROUTER.address))).to.equal(_10);
+      expect(BN2Str(await TOKEN.balanceOf(USER1.address))).to.equal(_1m);
     });
 
     it("Should Swap In Token using Aggregator", async function () {
+      let asgard1StartEthBal = getBN(await web3.eth.getBalance(ASGARD));
+      let user1StartTokenBal = getBN(await TOKEN.balanceOf(USER1));
+      let sushirouterTokenBal = getBN(await TOKEN.balanceOf(SUSHIROUTER.address));
+      let sushirouterWethBal = getBN(await WETH.balanceOf(SUSHIROUTER.address));
+      let sushirouterEthBal = getBN(await web3.eth.getBalance(SUSHIROUTER.address));
+
       expect(BN2Str(await web3.eth.getBalance(ASGARD))).to.equal(
         "5620998795093383193000",
       ); // 1000 ETH
@@ -101,6 +108,9 @@ describe("Aggregator contract", function () {
         0,
         BN2Str(deadline),
       );
+
+      // here
+      expect(BN2Str(await TOKEN.balanceOf(USER1))).to.equal(
 
       expect(BN2Str(await TOKEN.balanceOf(USER1))).to.equal(
         "999980000000000000000000",
