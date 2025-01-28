@@ -1,11 +1,11 @@
 package xrp
 
 import (
-	"encoding/hex"
-	"encoding/json"
+	"context"
 	"errors"
 	"fmt"
 	"strconv"
+	"sync"
 
 	sdkmath "cosmossdk.io/math"
 
@@ -19,13 +19,15 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
-	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
 
 	xrplcommon "github.com/Peersyst/xrpl-go/xrpl/queries/common"
+	//ledgertypes "github.com/Peersyst/xrpl-go/xrpl/queries/ledger/types"
 	"github.com/Peersyst/xrpl-go/xrpl/queries/ledger"
+	requests "github.com/Peersyst/xrpl-go/xrpl/queries/transactions"
 	"github.com/Peersyst/xrpl-go/xrpl/rpc"
 	"github.com/Peersyst/xrpl-go/xrpl/transaction"
+	//ledgerentrytypes "github.com/Peersyst/xrpl-go/xrpl/ledger-entry-types"
 	txtypes "github.com/Peersyst/xrpl-go/xrpl/transaction/types"
 )
 
@@ -181,104 +183,35 @@ func (c *XrpBlockScanner) updateFees(height int64) error {
 	return nil
 }
 
-func (c *XrpBlockScanner) processPayment(flatTx map[string]any) (*transaction.Payment, error) {
-	// Ignore any txs other than payments
-	if flatTx["TransactionType"] != "Payment" {
-		return nil, nil
-	}
-
-	feeStr, ok := flatTx["Fee"].(string)
-	if !ok {
-		return nil, fmt.Errorf("cannot cast fee to string")
-	}
-	feeAmount, err := cosmos.ParseUint(feeStr)
-	if err != nil {
-		return nil, fmt.Errorf("cannot convert fee string to uint: %w", err)
-	}
-
-	var memoData []byte
-	if flatTx["Memos"] != nil {
-		// trunk-ignore(golangci-lint/govet): shadow
-		memos, ok := flatTx["Memos"].([]interface{})
-		if !ok {
-			return nil, fmt.Errorf("cannot cast memos to []interface{}")
-		}
-		if len(memos) != 1 {
-			return nil, fmt.Errorf("more than 1 memo exists")
-		}
-		memoObj, ok := memos[0].(map[string]interface{})
-		if !ok {
-			return nil, fmt.Errorf("cannot cast memos[0] to map[string]interface{}")
-		}
-		memo, ok := memoObj["Memo"].(map[string]interface{})
-		if !ok {
-			return nil, fmt.Errorf("cannot cast memo to map[string]interface{}")
-		}
-		memoDataHex, ok := memo["MemoData"].(string)
-		if !ok {
-			return nil, fmt.Errorf("cannot cast MemoData to string")
-		}
-		if memoDataHex == "" {
-			return nil, fmt.Errorf("MemoData is empty")
-		}
-		memoData, err = hex.DecodeString(memoDataHex)
-		if err != nil {
-			return nil, fmt.Errorf("cannot decode memo data")
-		}
-	}
-
-	sender, ok := flatTx["Account"].(string)
-	if !ok {
-		return nil, fmt.Errorf("cannot cast sender/account to string")
-	}
-
-	to, ok := flatTx["Destination"].(string)
-	if !ok {
-		return nil, fmt.Errorf("cannot cast to/destination to string")
-	}
-
-	return &transaction.Payment{
-		BaseTx: transaction.BaseTx{
-			Account: txtypes.Address(sender),
-			Fee: txtypes.XRPCurrencyAmount(feeAmount.Uint64()),
-			Memos: []txtypes.MemoWrapper{
-				{
-					Memo: txtypes.Memo{
-						MemoData: string(memoData),
-					},
-				},
-			},
-		},
-		Destination: txtypes.Address(to),
-	}, nil
-}
-
 func (c *XrpBlockScanner) processTxs(height int64, rawTxs []transaction.FlatTransaction) ([]types.TxInItem, error) {
 	var txIn []types.TxInItem
 	for _, rawTx := range rawTxs {
-		c.logger.Info().Interface("flat tx in", rawTx).Msg("processTxs()")
+		c.logger.Info().Interface("raw tx in", rawTx).Msg("processTxs()")
 
-		// double-check the tx has been validated
-		if rawTx["validated"] != true {
-			c.logger.Error().Interface("tx", rawTx).Msg("got a tx that was not validated")
+		// tx is nil, maybe not have been validated
+		if rawTx == nil {
 			continue
 		}
+
+		meta, err := c.decodeMetaBlobIfNecessary(rawTx)
+		if err != nil {
+			c.logger.Info().AnErr("error", err).Msg("fail to decode meta")
+			continue
+		}
+		c.logger.Info().Interface("meta", meta).Msg("processTxs() meta decoded")
 
 		// Ignore failed transactions
-		meta, ok := rawTx["meta"].(map[string]any)
-		if !ok {
-			continue
-		}
 		if meta["TransactionResult"] != "tesSUCCESS" {
 			continue
 		}
 
 		ctxLog := c.logger.Info().Interface("tx", rawTx)
-		flatTx, ok := rawTx["tx_json"].(map[string]any)
-		if !ok {
-			ctxLog.Msg("skipping tx, cannot cast tx_json to map[string]any")
+		flatTx, err := c.decodeTxBlobIfNecessary(rawTx)
+		if err != nil {
+			ctxLog.AnErr("error", err).Msg("fail to decode tx blob")
 			continue
 		}
+		c.logger.Info().Interface("flat tx in", flatTx).Msg("processTxs()")
 
 		payment, err := c.processPayment(flatTx)
 		if payment == nil && err == nil {
@@ -289,32 +222,12 @@ func (c *XrpBlockScanner) processTxs(height int64, rawTxs []transaction.FlatTran
 			ctxLog.AnErr("reason", err).Msg("skipping payment tx")
 			continue
 		}
-		
+
 		fee, err := fromXrpToThorchain(payment.Fee)
 		if err != nil {
 			return nil, fmt.Errorf("cannot convert xrp fee to thorchain fee: %w", err)
 		}
 		c.updateFeeCache(fee)
-		
-		// Do not use the "Amount" field to find the amount transferred due to partial payment exploit.
-		amountJson, err := json.Marshal(meta["delivered_amount"])
-		if err != nil {
-			ctxLog.AnErr("error", err).Msg("skipping tx, cannot json marshal amount")
-		}
-		amount, err := txtypes.UnmarshalCurrencyAmount(amountJson)
-		if err != nil {
-			ctxLog.AnErr("error", err).Msg("skipping tx, cannot unmarshal currency amount")
-		}
-		// Verify that the amount is of type XRP, issuer currencies are not currently supported.
-		// Without any trust lines, this shouldn't be possible.
-		if amount.Kind() != txtypes.XRP {
-			ctxLog.Msg("skipping tx, amount is not of type XRP")
-		}
-		coin, err := fromXrpToThorchain(amount)
-		if err != nil {
-			ctxLog.AnErr("error", err).Msg("skipping tx, cannot convert xrp amount to thorchain amount")
-		}
-		coins := common.Coins{coin}
 
 		hash, ok := rawTx["hash"].(string)
 		if !ok {
@@ -326,6 +239,25 @@ func (c *XrpBlockScanner) processTxs(height int64, rawTxs []transaction.FlatTran
 		if len(payment.Memos) == 1 {
 			memo = payment.Memos[0].Memo.MemoData
 		}
+
+		amount, err := c.getDeliveredAmount(flatTx, meta)
+		if err != nil {
+			ctxLog.AnErr("reason", err).Msg("fail getting delivered amount")
+			continue
+		}
+
+		// Verify that the amount is of type XRP, issuer currencies are not currently supported.
+		// Without any trust lines, this shouldn't be possible.
+		if amount.Kind() != txtypes.XRP {
+			ctxLog.Msg("skipping tx, amount is not of type XRP")
+			continue
+		}
+		coin, err := fromXrpToThorchain(amount)
+		if err != nil {
+			ctxLog.AnErr("error", err).Msg("skipping tx, cannot convert xrp amount to thorchain amount")
+			continue
+		}
+		coins := common.Coins{coin}
 
 		txIn = append(txIn, types.TxInItem{
 			Tx:          hash,
@@ -341,12 +273,47 @@ func (c *XrpBlockScanner) processTxs(height int64, rawTxs []transaction.FlatTran
 	return txIn, nil
 }
 
+// The expected response from the ledger method.
+type LedgerResponseWithTxHashes struct {
+	Ledger struct {
+		Transactions []string `json:"transactions,omitempty"`
+	} `json:"ledger"`
+	LedgerHash  string                 `json:"ledger_hash"`
+	LedgerIndex xrplcommon.LedgerIndex `json:"ledger_index"`
+	Validated   bool                   `json:"validated,omitempty"`
+}
+
+//	type BaseLedger struct {
+//		Transactions        []string `json:"transactions,omitempty"`
+//	}
 func (c *XrpBlockScanner) FetchTxs(height, chainHeight int64) (types.TxIn, error) {
+	res, err := c.rpcClient.Request(&ledger.Request{
+		LedgerIndex:  xrplcommon.LedgerIndex(height),
+		Transactions: true,
+		Expand:       false,
+	})
+	if err != nil {
+		return types.TxIn{}, err
+	}
+	var ledgerTxHashes LedgerResponseWithTxHashes
+	err = res.GetResult(&ledgerTxHashes)
+	if err != nil {
+		return types.TxIn{}, err
+	}
+
+	// Verify ledger has been validated, it should be
+	if !ledgerTxHashes.Validated {
+		return types.TxIn{}, btypes.ErrUnavailableBlock
+	}
+
+	// TODO SAM127: log this output to confirm it is as expected
+	c.logger.Info().Interface("ledgerTxHashes", ledgerTxHashes).Msg("debug output for ledger tx hashes")
+
 	ledger, err := c.rpcClient.GetLedger(&ledger.Request{
 		LedgerIndex:  xrplcommon.LedgerIndex(height),
 		Transactions: true,
 		Expand:       true,
-		//		Binary: true,
+		Binary:       true,
 	})
 	if err != nil {
 		return types.TxIn{}, err
@@ -357,7 +324,23 @@ func (c *XrpBlockScanner) FetchTxs(height, chainHeight int64) (types.TxIn, error
 		return types.TxIn{}, btypes.ErrUnavailableBlock
 	}
 
-	txs, err := c.processTxs(height, ledger.Ledger.Transactions)
+	flatTransactions := ledger.Ledger.Transactions
+	// TODO SAM127: for testing, add/sub 1 from either end to force entry
+	if len(ledgerTxHashes.Ledger.Transactions) > len(flatTransactions) {
+		c.logger.Info().Msg("number of transactions don't match")
+		// We did not get all transactions, most likely due to a server side limitation,
+		// i.e.: max response size setting, new tx amout limitation for binary==true, remote/centralized server.
+		// Retrieve each tx individually, enough load could get us behind, but better behind than missing txs.
+		// TODO SAM127: pass in ledger with expanded txs, match first and don't query those
+		flatTransactions, err = c.FetchTxsByHash(ledgerTxHashes.Ledger.Transactions)
+		if err != nil {
+			return types.TxIn{}, err
+		}
+	} else {
+		c.logger.Info().Msg("number of transactions match")
+	}
+
+	txs, err := c.processTxs(height, flatTransactions)
 	if err != nil {
 		return types.TxIn{}, err
 	}
@@ -385,4 +368,112 @@ func (c *XrpBlockScanner) FetchTxs(height, chainHeight int64) (types.TxIn, error
 	}
 
 	return txIn, nil
+}
+
+const (
+	workerBatchSize = 10
+)
+
+func (c *XrpBlockScanner) FetchTxsByHash(txHashes []string) ([]transaction.FlatTransaction, error) {
+	ctx := context.Background()
+	// Create channels for parallel processing
+	txChan := make(chan string, len(txHashes))
+	resultChan := make(chan *txResult, len(txHashes))
+
+	// Start worker pool
+	workerCount := min(workerBatchSize, len(txHashes))
+	var wg sync.WaitGroup
+
+	// Launch workers
+	for i := 0; i < workerCount; i++ {
+		wg.Add(1)
+		go c.txWorker(ctx, &wg, txChan, resultChan)
+	}
+
+	// Feed transaction hashes to workers
+	go func() {
+		for _, hash := range txHashes {
+			txChan <- hash
+		}
+		close(txChan)
+	}()
+
+	// Wait for workers in a separate goroutine
+	go func() {
+		wg.Wait()
+		close(resultChan)
+	}()
+
+	// Collect results while maintaining order
+	results := make(map[string]*requests.TxResponse)
+	var firstError error
+
+	for i := 0; i < len(txHashes); i++ {
+		select {
+		case result := <-resultChan:
+			if result.err != nil && firstError == nil {
+				firstError = result.err
+				continue
+			}
+			results[result.hash] = result.tx
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+
+	if firstError != nil {
+		return nil, firstError
+	}
+
+	// Preserve original transaction order
+	transactions := make([]transaction.FlatTransaction, len(txHashes))
+	for i, hash := range txHashes {
+		result := results[hash]
+		if result.Validated {
+			transactions[i] = results[hash].Tx
+		}
+	}
+
+	return transactions, nil
+}
+
+type txResult struct {
+	hash string
+	tx   *requests.TxResponse
+	err  error
+}
+
+func (c *XrpBlockScanner) txWorker(ctx context.Context, wg *sync.WaitGroup, txChan <-chan string, resultChan chan<- *txResult) {
+	defer wg.Done()
+
+	for txHash := range txChan {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			var txResponse *requests.TxResponse
+
+			result := &txResult{
+				hash: txHash,
+			}
+			// Request the transaction from the server
+			res, err := c.rpcClient.Request(&requests.TxRequest{
+				Transaction: txHash,
+				Binary:      true,
+			})
+			if err == nil {
+				err = res.GetResult(&txResponse)
+				if err == nil {
+					c.logger.Info().Interface("single tx response", txResponse).Msg("debug for txWorker, single tx response")
+					result.tx = txResponse
+				} else {
+					c.logger.Err(err).Str("hash", txHash).Msg("error parsing tx results in txWorker")
+				}
+			} else {
+				c.logger.Err(err).Str("hash", txHash).Msg("error requesting tx in txWorker")
+			}
+			result.err = err
+			resultChan <- result
+		}
+	}
 }
