@@ -282,6 +282,7 @@ type LedgerResponseWithTxHashes struct {
 }
 
 func (c *XrpBlockScanner) FetchTxs(height, chainHeight int64) (types.TxIn, error) {
+	// First retrieve all transaction hashes in block
 	res, err := c.rpcClient.Request(&ledger.Request{
 		LedgerIndex:  xrplcommon.LedgerIndex(height),
 		Transactions: true,
@@ -301,6 +302,7 @@ func (c *XrpBlockScanner) FetchTxs(height, chainHeight int64) (types.TxIn, error
 		return types.TxIn{}, btypes.ErrUnavailableBlock
 	}
 
+	// Next, get all transactions in block
 	ledger, err := c.rpcClient.GetLedger(&ledger.Request{
 		LedgerIndex:  xrplcommon.LedgerIndex(height),
 		Transactions: true,
@@ -316,6 +318,7 @@ func (c *XrpBlockScanner) FetchTxs(height, chainHeight int64) (types.TxIn, error
 		return types.TxIn{}, btypes.ErrUnavailableBlock
 	}
 
+	// Verify that we could fetch all transactions, if not, fetch remaining individually.
 	flatTransactions := ledger.Ledger.Transactions
 	if len(ledgerTxHashes.Ledger.Transactions) > len(flatTransactions) {
 		c.logger.Info().Int("from ledger with just hashes", len(ledgerTxHashes.Ledger.Transactions)).
@@ -324,7 +327,7 @@ func (c *XrpBlockScanner) FetchTxs(height, chainHeight int64) (types.TxIn, error
 		// i.e.: max response size setting, new tx amout limitation for binary==true, remote/centralized server.
 		// Retrieve each tx individually, enough load could get us behind, but better behind than missing txs.
 		// TODO SAM127: pass in ledger with expanded txs, match first and don't query those
-		flatTransactions, err = c.fetchTxsByHash(ledgerTxHashes.Ledger.Transactions)
+		flatTransactions, err = c.fetchTxsByHash(ledgerTxHashes.Ledger.Transactions, flatTransactions)
 		if err != nil {
 			return types.TxIn{}, err
 		}
@@ -364,7 +367,21 @@ const (
 	workerBatchSize = 10
 )
 
-func (c *XrpBlockScanner) fetchTxsByHash(txHashes []string) ([]transaction.FlatTransaction, error) {
+func (c *XrpBlockScanner) fetchTxsByHash(txHashes []string, txs []transaction.FlatTransaction) ([]transaction.FlatTransaction, error) {
+	// Collect results while maintaining order
+	results := make(map[string]transaction.FlatTransaction)
+	
+	// Populate with transactions that we have and don't want to query again
+	for _, tx := range txs {
+		// We verified we got this tx from a validated ledger, set per tx
+		tx["validated"] = true
+		hash, ok := tx["hash"].(string)
+		if !ok {
+			continue
+		}
+		results[hash] = tx
+	}
+
 	ctx := context.Background()
 	// Create channels for parallel processing
 	txChan := make(chan string, len(txHashes))
@@ -383,6 +400,10 @@ func (c *XrpBlockScanner) fetchTxsByHash(txHashes []string) ([]transaction.FlatT
 	// Feed transaction hashes to workers
 	go func() {
 		for _, hash := range txHashes {
+			// Only feed in hashes for transaction we don't already have.
+			if results[hash] != nil {
+				continue
+			}
 			txChan <- hash
 		}
 		close(txChan)
@@ -394,18 +415,17 @@ func (c *XrpBlockScanner) fetchTxsByHash(txHashes []string) ([]transaction.FlatT
 		close(resultChan)
 	}()
 
-	// Collect results while maintaining order
-	results := make(map[string]transaction.FlatTransaction)
 	var firstError error
-
 	for i := 0; i < len(txHashes); i++ {
 		select {
 		case result := <-resultChan:
-			if result.err != nil && firstError == nil {
-				firstError = result.err
-				continue
+			if result != nil {
+				if result.err != nil && firstError == nil {
+					firstError = result.err
+					continue
+				}
+				results[result.hash] = result.tx
 			}
-			results[result.hash] = result.tx
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		}
