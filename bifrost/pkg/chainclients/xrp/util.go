@@ -15,7 +15,8 @@ import (
 func parseCurrencyAmount(coin txtypes.CurrencyAmount) (*big.Int, error) {
 	if xrpAmount, ok := coin.(txtypes.XRPCurrencyAmount); ok {
 		return big.NewInt(int64(xrpAmount.Uint64())), nil
-	} else if issuedAmount, ok := coin.(txtypes.IssuedCurrencyAmount); ok {
+	}
+	if issuedAmount, ok := coin.(txtypes.IssuedCurrencyAmount); ok {
 		amount, err := strconv.ParseInt(issuedAmount.Value, 10, 64)
 		if err != nil {
 			return nil, err

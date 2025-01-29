@@ -324,9 +324,8 @@ func (c *XrpBlockScanner) FetchTxs(height, chainHeight int64) (types.TxIn, error
 		c.logger.Info().Int("from ledger with just hashes", len(ledgerTxHashes.Ledger.Transactions)).
 			Int("from ledger with expanded txs", len(flatTransactions)).Msg("number of transactions don't match")
 		// We did not get all transactions, most likely due to a server side limitation,
-		// i.e.: max response size setting, new tx amout limitation for binary==true, remote/centralized server.
+		// i.e.: max response size setting, new tx amount limitation for binary==true, remote/centralized server.
 		// Retrieve each tx individually, enough load could get us behind, but better behind than missing txs.
-		// TODO SAM127: pass in ledger with expanded txs, match first and don't query those
 		flatTransactions, err = c.fetchTxsByHash(ledgerTxHashes.Ledger.Transactions, flatTransactions)
 		if err != nil {
 			return types.TxIn{}, err

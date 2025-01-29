@@ -34,9 +34,11 @@ func (s *UtilTestSuite) TestFromXrpToThorchain(c *C) {
 func (s *UtilTestSuite) TestFromThorchainToXrp(c *C) {
 	// 6 XRP, 8 decimals
 	thorchainCoin := common.NewCoin(common.XRPAsset, sdkmath.NewUint(600000000))
-	xrpCoin, err := fromThorchainToXrp(thorchainCoin)
+	xrpCurrency, err := fromThorchainToXrp(thorchainCoin)
 	c.Assert(err, IsNil)
 
 	// 6 XRP, 6 decimals
-	c.Check(xrpCoin.(txtypes.XRPCurrencyAmount), Equals, txtypes.XRPCurrencyAmount(6000000))
+	xrpCoin, ok := xrpCurrency.(txtypes.XRPCurrencyAmount)
+	c.Check(ok, Equals, true)
+	c.Check(xrpCoin, Equals, txtypes.XRPCurrencyAmount(6000000))
 }

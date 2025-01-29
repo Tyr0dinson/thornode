@@ -462,7 +462,7 @@ func TestGetDeliveredAmount(t *testing.T) {
 		{
 			name: "partial payment flag set but no delivered amount",
 			tx: map[string]any{
-				"Flags":  uint32(tfPartialPayment),
+				"Flags":  tfPartialPayment,
 				"Amount": "1000000",
 			},
 			meta:    map[string]any{},
