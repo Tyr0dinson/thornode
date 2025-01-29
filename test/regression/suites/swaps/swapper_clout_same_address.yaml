@@ -70,9 +70,8 @@ asserts:
   - .score == "${LIQFEES}"
   - (.reclaimed|tonumber) < (.spent|tonumber)
   - .reclaimed == "0"
-  - .spent != "${CLOUT_LIMIT}"
-  - .spent|tonumber == ${CLOUT_LIMIT} / 2
-  # The recorded .spent is only half of the outbound queue's clout_spent CloutLimit.
+  - .spent == "${CLOUT_LIMIT}"
+  # All is in order.
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -108,5 +107,5 @@ asserts:
   - .address == "{{ addr_eth_fox }}"
   - .score == "${LIQFEES}"
   - .reclaimed == .spent
-  - .spent != "${CLOUT_LIMIT}"
-  - .spent|tonumber == ${CLOUT_LIMIT} / 2
+  - .spent == "${CLOUT_LIMIT}"
+  # All is in order.

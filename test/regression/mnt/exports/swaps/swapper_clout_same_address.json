@@ -361,9 +361,9 @@
           "address": "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
           "last_reclaim_height": "4",
           "last_spent_height": "3",
-          "reclaimed": "50",
+          "reclaimed": "100",
           "score": "414976948",
-          "spent": "50"
+          "spent": "100"
         }
       ],
       "trade_accounts": [],
