@@ -101,7 +101,6 @@ func NewClient(
 
 	rpcConfig, err := rpc.NewClientConfig(cfg.RPCHost)
 	if err != nil {
-		fmt.Println("ERROR ERROR ERROR 5")
 		return nil, fmt.Errorf("unable to create rpc config for client, %w", err)
 	}
 	rpcClient := rpc.NewClient(rpcConfig)

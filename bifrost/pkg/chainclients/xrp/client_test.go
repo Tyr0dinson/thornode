@@ -185,6 +185,7 @@ func (s *XrpTestSuite) TestProcessOutboundTx(c *C) {
 		s.thorKeys,
 		config.BifrostChainConfiguration{
 			ChainID: common.XRPChain,
+			ChainNetwork: "1234",
 			RPCHost: "http://testnode/",
 			BlockScanner: config.BifrostBlockScannerConfiguration{
 				StartBlockHeight: 1, // avoids querying thorchain for block height
@@ -195,7 +196,7 @@ func (s *XrpTestSuite) TestProcessOutboundTx(c *C) {
 		s.m,
 	)
 	c.Assert(err, IsNil)
-	c.Check(client.networkID, Equals, uint32(1))
+	c.Check(client.networkID, Equals, uint32(1234))
 
 	vaultPubKey, err := common.NewPubKey("sthorpub1addwnpepqtrvka83xluqq522k8at4d84gnthj5ryqhrf0fa24yze4yhk7j0fk4876fz")
 	c.Assert(err, IsNil)
@@ -222,7 +223,7 @@ func (s *XrpTestSuite) TestProcessOutboundTx(c *C) {
 	c.Check(msg.Amount, Equals, txtypes.XRPCurrencyAmount(paymentAmount/100))
 	c.Check(msg.BaseTx.Account, Equals, txtypes.Address("rQwpQ54X5gJyLGg4QGp3HSkjdf3u37NqiZ"))
 	c.Check(msg.Destination, Equals, txtypes.Address(toAddress.String()))
-	c.Check(msg.BaseTx.NetworkID, Equals, uint32(0))
+	c.Check(msg.BaseTx.NetworkID, Equals, uint32(1234))
 
 	signingPubKey, err := vaultPubKey.Secp256K1()
 	c.Assert(err, IsNil)
@@ -235,6 +236,7 @@ func (s *XrpTestSuite) TestXAddresses(c *C) {
 		s.thorKeys,
 		config.BifrostChainConfiguration{
 			ChainID: common.XRPChain,
+			ChainNetwork: "1234",
 			RPCHost: "http://testnode/",
 			BlockScanner: config.BifrostBlockScannerConfiguration{
 				StartBlockHeight: 1, // avoids querying thorchain for block height
@@ -245,7 +247,7 @@ func (s *XrpTestSuite) TestXAddresses(c *C) {
 		s.m,
 	)
 	c.Assert(err, IsNil)
-	c.Check(client.rpcClient.NetworkID, Equals, uint32(0))
+	c.Check(client.networkID, Equals, uint32(1234))
 
 	vaultPubKey, err := common.NewPubKey("sthorpub1addwnpepqtrvka83xluqq522k8at4d84gnthj5ryqhrf0fa24yze4yhk7j0fk4876fz")
 	c.Assert(err, IsNil)
@@ -281,6 +283,7 @@ func (s *XrpTestSuite) TestSign(c *C) {
 		s.thorKeys,
 		config.BifrostChainConfiguration{
 			ChainID: common.XRPChain,
+			ChainNetwork: "1234",
 			RPCHost: "http://testnode/",
 			BlockScanner: config.BifrostBlockScannerConfiguration{
 				ChainID:          common.XRPChain,
@@ -292,7 +295,7 @@ func (s *XrpTestSuite) TestSign(c *C) {
 		s.m,
 	)
 	c.Assert(err, IsNil)
-	c.Check(client.rpcClient.NetworkID, Equals, uint32(0))
+	c.Check(client.networkID, Equals, uint32(1234))
 
 	priv, err := s.thorKeys.GetPrivateKey()
 	c.Assert(err, IsNil)
