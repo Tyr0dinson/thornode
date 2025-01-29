@@ -184,9 +184,9 @@ func (c *XrpBlockScanner) updateFees(height int64) error {
 func (c *XrpBlockScanner) processTxs(height int64, rawTxs []transaction.FlatTransaction) ([]types.TxInItem, error) {
 	var txIn []types.TxInItem
 	for _, rawTx := range rawTxs {
-		//c.logger.Info().Interface("raw tx in", rawTx).Msg("processTxs()")
+		// c.logger.Info().Interface("raw tx in", rawTx).Msg("processTxs()")
 
-		// tx is nil, maybe not have been validated
+		// tx is nil, may not have been validated
 		if rawTx == nil {
 			continue
 		}
@@ -196,7 +196,7 @@ func (c *XrpBlockScanner) processTxs(height int64, rawTxs []transaction.FlatTran
 			c.logger.Info().AnErr("error", err).Msg("fail to decode meta")
 			continue
 		}
-		//c.logger.Info().Interface("meta", meta).Msg("processTxs() meta decoded")
+		// c.logger.Info().Interface("meta", meta).Msg("processTxs() meta decoded")
 
 		// Ignore failed transactions
 		if meta["TransactionResult"] != "tesSUCCESS" {
@@ -209,7 +209,7 @@ func (c *XrpBlockScanner) processTxs(height int64, rawTxs []transaction.FlatTran
 			ctxLog.AnErr("error", err).Msg("fail to decode tx blob")
 			continue
 		}
-		//c.logger.Info().Interface("flat tx in", flatTx).Msg("processTxs()")
+		// c.logger.Info().Interface("flat tx in", flatTx).Msg("processTxs()")
 
 		payment, err := c.processPayment(flatTx)
 		if payment == nil && err == nil {
