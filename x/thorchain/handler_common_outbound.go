@@ -196,6 +196,10 @@ func (h CommonOutboundTxHandler) handle(ctx cosmos.Context, tx ObservedTx, inTxI
 						ctx.Logger().Error("fail to save swapper clout in", "error", err)
 					}
 
+					if cloutIn.Address.Equals(cloutOut.Address) {
+						// cloutOut is about to overwrite cloutIn, so reincrement with clout1.
+						cloutOut.Reclaim(clout1)
+					}
 					cloutOut.Reclaim(clout2)
 					cloutOut.LastReclaimHeight = ctx.BlockHeight()
 					// trunk-ignore(golangci-lint/govet): shadow
