@@ -4,7 +4,7 @@ go 1.23.4
 
 require (
 	cosmossdk.io/math v1.4.0
-	github.com/Peersyst/xrpl-go v0.1.0
+	github.com/Peersyst/xrpl-go v0.1.3
 	github.com/btcsuite/btcd v0.22.1
 	github.com/btcsuite/btcd/chaincfg/chainhash v1.0.1
 	github.com/cometbft/cometbft v0.38.12
