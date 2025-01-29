@@ -506,17 +506,15 @@ func (c *Client) txNeedsBroadcast(txHash string) bool {
 		Transaction: txHash,
 	})
 	if err != nil {
-		c.logger.Error().AnErr("error", err).Msg("error tx request")
 		return true
 	}
 
 	err = res.GetResult(&txResponse)
 	if err != nil {
-		c.logger.Error().AnErr("error", err).Msg("error get results of tx request")
+		// unexpected error, log it
+		c.logger.Info().AnErr("error", err).Msg("error get results of tx request")
 		return true
 	}
-
-	c.logger.Info().Interface("txResponse", txResponse).Msg("tx response found")
 
 	return false
 }
@@ -524,13 +522,13 @@ func (c *Client) txNeedsBroadcast(txHash string) bool {
 func (c *Client) broadcastTx(txBlob string) error {
 	response, err := c.rpcClient.Submit(txBlob, true)
 	if err != nil {
-		c.logger.Error().AnErr("error", err).Msg("unsuccessful error code in transaction broadcast")
 		return fmt.Errorf("broadcast msg failed, %w", err)
 	}
 
 	// Only add the transaction to signer cache when it is sure the transaction has been broadcast successfully.
 	// So for other scenario , like transaction already in mempool , invalid account sequence # , the transaction can be rescheduled , and retried
-	if response.EngineResult != "tesSUCCESS" {
+	// If we get tefPAST_SEQ, tx is already in current ledger, most likely by another validator.
+	if response.EngineResult != "tesSUCCESS" && response.EngineResult != "tefPAST_SEQ" {
 		c.logger.Info().Interface("broadcastRes", response).Msg("XRP BroadcastTx failed")
 		return fmt.Errorf("transaction failed to submit with engine result: %s", response.EngineResult)
 	}

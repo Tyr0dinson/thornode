@@ -281,9 +281,6 @@ type LedgerResponseWithTxHashes struct {
 	Validated   bool                   `json:"validated,omitempty"`
 }
 
-//	type BaseLedger struct {
-//		Transactions        []string `json:"transactions,omitempty"`
-//	}
 func (c *XrpBlockScanner) FetchTxs(height, chainHeight int64) (types.TxIn, error) {
 	res, err := c.rpcClient.Request(&ledger.Request{
 		LedgerIndex:  xrplcommon.LedgerIndex(height),
@@ -304,9 +301,6 @@ func (c *XrpBlockScanner) FetchTxs(height, chainHeight int64) (types.TxIn, error
 		return types.TxIn{}, btypes.ErrUnavailableBlock
 	}
 
-	// TODO SAM127: log this output to confirm it is as expected
-	c.logger.Info().Interface("ledgerTxHashes", ledgerTxHashes).Msg("debug output for ledger tx hashes")
-
 	ledger, err := c.rpcClient.GetLedger(&ledger.Request{
 		LedgerIndex:  xrplcommon.LedgerIndex(height),
 		Transactions: true,
@@ -323,15 +317,9 @@ func (c *XrpBlockScanner) FetchTxs(height, chainHeight int64) (types.TxIn, error
 	}
 
 	flatTransactions := ledger.Ledger.Transactions
-	c.logger.Info().Int("ledgerTxHashes len:", len(ledgerTxHashes.Ledger.Transactions)).Msg("Number of txs")
-	c.logger.Info().Int("ledger txs len:", len(flatTransactions)).Msg("Number of txs")
-	// TODO SAM127: for testing, add/sub 1 from either end to force entry
-	lenLedgerTxHashes := len(ledgerTxHashes.Ledger.Transactions)
-	if lenLedgerTxHashes > 0 {
-		lenLedgerTxHashes++
-	}
-	if lenLedgerTxHashes > len(flatTransactions) {
-		c.logger.Info().Msg("number of transactions don't match")
+	if len(ledgerTxHashes.Ledger.Transactions) > len(flatTransactions) {
+		c.logger.Info().Int("from ledger with just hashes", len(ledgerTxHashes.Ledger.Transactions)).
+			Int("from ledger with expanded txs", len(flatTransactions)).Msg("number of transactions don't match")
 		// We did not get all transactions, most likely due to a server side limitation,
 		// i.e.: max response size setting, new tx amout limitation for binary==true, remote/centralized server.
 		// Retrieve each tx individually, enough load could get us behind, but better behind than missing txs.
@@ -340,8 +328,6 @@ func (c *XrpBlockScanner) FetchTxs(height, chainHeight int64) (types.TxIn, error
 		if err != nil {
 			return types.TxIn{}, err
 		}
-	} else {
-		c.logger.Info().Msg("number of transactions match")
 	}
 
 	txs, err := c.processTxs(height, flatTransactions)
@@ -409,7 +395,7 @@ func (c *XrpBlockScanner) fetchTxsByHash(txHashes []string) ([]transaction.FlatT
 	}()
 
 	// Collect results while maintaining order
-	results := make(map[string]*TxResponse)
+	results := make(map[string]transaction.FlatTransaction)
 	var firstError error
 
 	for i := 0; i < len(txHashes); i++ {
@@ -433,14 +419,9 @@ func (c *XrpBlockScanner) fetchTxsByHash(txHashes []string) ([]transaction.FlatT
 	transactions := make([]transaction.FlatTransaction, len(txHashes))
 	for i, hash := range txHashes {
 		result := results[hash]
-		if result.Validated {
-			transactions[i] = map[string]any{
-				"hash": result.Hash,
-				"meta": result.Meta,
-				"meta_blob": result.Meta_blob,
-				"tx_blob": result.Tx_blob,
-				"tx_json": result.Tx_json,
-			}
+		validated, ok := result["validated"].(bool)
+		if ok && validated {
+			transactions[i] = result
 		}
 	}
 
@@ -449,17 +430,8 @@ func (c *XrpBlockScanner) fetchTxsByHash(txHashes []string) ([]transaction.FlatT
 
 type txResult struct {
 	hash string
-	tx   *TxResponse
+	tx   transaction.FlatTransaction
 	err  error
-}
-
-type TxResponse struct {
-	Hash         string `json:"hash,omitempty"`
-	Meta         any `json:"meta,omitempty"`
-	Meta_blob    string `json:"meta_blob,omitempty"`
-	Tx_blob      string `json:"tx_blob,omitempty"`
-	Tx_json      map[string]any `json:"tx_json,omitempty"`
-	Validated    bool `json:"validated,omitempty"`
 }
 
 func (c *XrpBlockScanner) txWorker(ctx context.Context, wg *sync.WaitGroup, txChan <-chan string, resultChan chan<- *txResult) {
@@ -470,7 +442,7 @@ func (c *XrpBlockScanner) txWorker(ctx context.Context, wg *sync.WaitGroup, txCh
 		case <-ctx.Done():
 			return
 		default:
-			var txResponse TxResponse
+			var txResponse transaction.FlatTransaction
 
 			result := &txResult{
 				hash: txHash,
@@ -483,8 +455,7 @@ func (c *XrpBlockScanner) txWorker(ctx context.Context, wg *sync.WaitGroup, txCh
 			if err == nil {
 				err = res.GetResult(&txResponse)
 				if err == nil {
-					c.logger.Info().Interface("single tx response", txResponse).Msg("debug for txWorker, single tx response")
-					result.tx = &txResponse
+					result.tx = txResponse
 				} else {
 					c.logger.Err(err).Str("hash", txHash).Msg("error parsing tx results in txWorker")
 				}
