@@ -370,7 +370,7 @@ const (
 func (c *XrpBlockScanner) fetchTxsByHash(txHashes []string, txs []transaction.FlatTransaction) ([]transaction.FlatTransaction, error) {
 	// Collect results while maintaining order
 	results := make(map[string]transaction.FlatTransaction)
-	
+
 	// Populate with transactions that we have and don't want to query again
 	for _, tx := range txs {
 		// We verified we got this tx from a validated ledger, set per tx

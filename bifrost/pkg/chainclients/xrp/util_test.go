@@ -5,7 +5,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	. "gopkg.in/check.v1"
-	
+
 	txtypes "github.com/Peersyst/xrpl-go/xrpl/transaction/types"
 )
 

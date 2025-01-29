@@ -103,7 +103,6 @@ func (c *XrpBlockScanner) decodeMetaBlobIfNecessary(rawTx transaction.FlatTransa
 	}
 
 	return meta, nil
-
 }
 
 func (c *XrpBlockScanner) decodeTxBlobIfNecessary(rawTx transaction.FlatTransaction) (map[string]any, error) {

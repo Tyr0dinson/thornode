@@ -267,7 +267,7 @@ func (c *Client) processOutboundTx(tx stypes.TxOutItem) (*transactions.Payment, 
 
 	payment := transactions.Payment{
 		BaseTx: transactions.BaseTx{
-			Account: txtypes.Address(fromAddr),
+			Account:       txtypes.Address(fromAddr),
 			SigningPubKey: hex.EncodeToString(signingPubKey.SerializeCompressed()),
 		},
 		Amount:      coin,
@@ -368,7 +368,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signedTx, c
 	if !ok {
 		return nil, nil, nil, fmt.Errorf("fail to cast fee to xrp currency amount")
 	}
-	
+
 	msg.Sequence = uint32(meta.SeqNumber)
 	msg.Fee = fee
 	if tx.Memo != "" {

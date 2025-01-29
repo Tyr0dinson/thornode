@@ -184,9 +184,9 @@ func (s *XrpTestSuite) TestProcessOutboundTx(c *C) {
 	client, err := NewClient(
 		s.thorKeys,
 		config.BifrostChainConfiguration{
-			ChainID: common.XRPChain,
+			ChainID:      common.XRPChain,
 			ChainNetwork: "1234",
-			RPCHost: "http://testnode/",
+			RPCHost:      "http://testnode/",
 			BlockScanner: config.BifrostBlockScannerConfiguration{
 				StartBlockHeight: 1, // avoids querying thorchain for block height
 			},
@@ -235,9 +235,9 @@ func (s *XrpTestSuite) TestXAddresses(c *C) {
 	client, err := NewClient(
 		s.thorKeys,
 		config.BifrostChainConfiguration{
-			ChainID: common.XRPChain,
+			ChainID:      common.XRPChain,
 			ChainNetwork: "1234",
-			RPCHost: "http://testnode/",
+			RPCHost:      "http://testnode/",
 			BlockScanner: config.BifrostBlockScannerConfiguration{
 				StartBlockHeight: 1, // avoids querying thorchain for block height
 			},
@@ -272,7 +272,7 @@ func (s *XrpTestSuite) TestXAddresses(c *C) {
 
 	msg, err := client.processOutboundTx(txOut)
 	c.Assert(err, IsNil)
-	
+
 	c.Check(msg.Amount, Equals, txtypes.XRPCurrencyAmount(paymentAmount/100))
 	c.Check(msg.BaseTx.Account, Equals, txtypes.Address("rQwpQ54X5gJyLGg4QGp3HSkjdf3u37NqiZ"))
 	c.Check(msg.Destination, Not(Equals), txtypes.Address(classicAddr))
@@ -282,9 +282,9 @@ func (s *XrpTestSuite) TestSign(c *C) {
 	client, err := NewClient(
 		s.thorKeys,
 		config.BifrostChainConfiguration{
-			ChainID: common.XRPChain,
+			ChainID:      common.XRPChain,
 			ChainNetwork: "1234",
-			RPCHost: "http://testnode/",
+			RPCHost:      "http://testnode/",
 			BlockScanner: config.BifrostBlockScannerConfiguration{
 				ChainID:          common.XRPChain,
 				StartBlockHeight: 1, // avoids querying thorchain for block height

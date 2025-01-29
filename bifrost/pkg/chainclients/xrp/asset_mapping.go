@@ -40,7 +40,6 @@ func GetAssetByXrpCurrency(coin txtypes.CurrencyAmount) (XrpAssetMapping, bool) 
 				return assetEntry, true
 			}
 		}
-
 	}
 	return XrpAssetMapping{}, false
 }

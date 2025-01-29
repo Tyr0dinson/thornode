@@ -8,7 +8,7 @@ import (
 	sdkmath "cosmossdk.io/math"
 
 	"gitlab.com/thorchain/thornode/v3/common"
-	
+
 	txtypes "github.com/Peersyst/xrpl-go/xrpl/transaction/types"
 )
 
@@ -74,9 +74,9 @@ func fromThorchainToXrp(coin common.Coin) (txtypes.CurrencyAmount, error) {
 
 	if asset.XrpKind == txtypes.ISSUED {
 		return txtypes.IssuedCurrencyAmount{
-			Issuer: txtypes.Address(asset.XrpIssuer),
+			Issuer:   txtypes.Address(asset.XrpIssuer),
 			Currency: asset.XrpCurrency,
-			Value: amount.String(),
+			Value:    amount.String(),
 		}, nil
 	}
 
