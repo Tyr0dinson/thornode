@@ -803,6 +803,12 @@ func (vm *NetworkMgrVCUR) paySaverYield(ctx cosmos.Context, asset common.Asset, 
 		return nil
 	}
 
+	// Check whether minting synths is forbidden by Mimir.
+	err = isSynthMintPaused(ctx, vm.k, asset, earnings)
+	if err != nil {
+		return nil
+	}
+
 	// Mint the corresponding amount of synths
 	coin := common.NewCoin(saver.Asset.GetSyntheticAsset(), earnings)
 	if err := vm.k.MintToModule(ctx, ModuleName, coin); err != nil {
