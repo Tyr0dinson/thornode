@@ -172,12 +172,7 @@ go-tss:
     - make test-go-tss
 
 pages:
-  rules:
-    - if: $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH && $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH != $CI_MERGE_REQUEST_PROJECT_PATH
-      when: never
-    - if: $CI_COMMIT_BRANCH == "develop"
-      when: always
-  stage: build
+  stage: generate
   image: rust:1.83.0
   artifacts:
     paths:
