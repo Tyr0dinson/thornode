@@ -97,7 +97,7 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
 asserts:
-  - .savers_depth|tonumber == 4763033
+  - .savers_depth|tonumber == 4763021
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/saver/{{ addr_btc_pig }}

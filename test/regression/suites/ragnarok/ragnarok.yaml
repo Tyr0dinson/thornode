@@ -467,10 +467,10 @@ type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - length == 5
-  - .[0].coin.amount == "${OUTPUT_AMOUNT_1=8838815}"
-  - .[1].coin.amount == "${OUTPUT_AMOUNT_2=8774453}"
-  - .[2].coin.amount == "${OUTPUT_AMOUNT_3=30917273}"
-  - .[3].coin.amount == "${OUTPUT_AMOUNT_4=8643424}"
+  - .[0].coin.amount == "${OUTPUT_AMOUNT_1=8833310}"
+  - .[1].coin.amount == "${OUTPUT_AMOUNT_2=8769022}"
+  - .[2].coin.amount == "${OUTPUT_AMOUNT_3=30917862}"
+  - .[3].coin.amount == "${OUTPUT_AMOUNT_4=8627992}"
 ---
 # observe outbounds for saver withdrawals and the synth swap
 type: tx-observed-out
@@ -553,7 +553,7 @@ type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - length == 1
-  - .[0].coin.amount == "${OUTPUT_AMOUNT=86390518}"
+  - .[0].coin.amount == "${OUTPUT_AMOUNT=86403407}"
 ---
 # observe lp outbound
 type: tx-observed-out
