@@ -448,14 +448,11 @@ func emitPoolBalanceChangedEvent(ctx cosmos.Context, poolMod PoolMod, reason str
 	}
 }
 
-func getSynthSupplyRemaining(ctx cosmos.Context, mgr Manager, asset common.Asset) (cosmos.Uint, error) {
-	maxSynths, err := mgr.Keeper().GetMimir(ctx, constants.MaxSynthPerPoolDepth.String())
-	if maxSynths < 0 || err != nil {
-		maxSynths = mgr.GetConstants().GetInt64Value(constants.MaxSynthPerPoolDepth)
-	}
+func getSynthSupplyRemaining(ctx cosmos.Context, keeper keeper.Keeper, asset common.Asset) (cosmos.Uint, error) {
+	maxSynths := keeper.GetConfigInt64(ctx, constants.MaxSynthPerPoolDepth)
 
-	synthSupply := mgr.Keeper().GetTotalSupply(ctx, asset.GetSyntheticAsset())
-	pool, err := mgr.Keeper().GetPool(ctx, asset.GetLayer1Asset())
+	synthSupply := keeper.GetTotalSupply(ctx, asset.GetSyntheticAsset())
+	pool, err := keeper.GetPool(ctx, asset.GetLayer1Asset())
 	if err != nil {
 		return cosmos.ZeroUint(), ErrInternal(err, "fail to get pool")
 	}
@@ -473,10 +470,10 @@ func getSynthSupplyRemaining(ctx cosmos.Context, mgr Manager, asset common.Asset
 }
 
 // isSynthMintPaused fails validation if synth supply is already too high, relative to pool depth
-func isSynthMintPaused(ctx cosmos.Context, mgr Manager, targetAsset common.Asset, outputAmt cosmos.Uint) error {
+func isSynthMintPaused(ctx cosmos.Context, keeper keeper.Keeper, targetAsset common.Asset, outputAmt cosmos.Uint) error {
 	// check if the pool is in ragnarok
 	k := "RAGNAROK-" + targetAsset.MimirString()
-	v, err := mgr.Keeper().GetMimir(ctx, k)
+	v, err := keeper.GetMimir(ctx, k)
 	if err != nil {
 		return err
 	}
@@ -484,12 +481,12 @@ func isSynthMintPaused(ctx cosmos.Context, mgr Manager, targetAsset common.Asset
 		return fmt.Errorf("pool is in ragnarok")
 	}
 
-	mintHeight := mgr.Keeper().GetConfigInt64(ctx, constants.MintSynths)
+	mintHeight := keeper.GetConfigInt64(ctx, constants.MintSynths)
 	if mintHeight > 0 && ctx.BlockHeight() > mintHeight {
 		return fmt.Errorf("minting synthetics has been disabled")
 	}
 
-	remaining, err := getSynthSupplyRemaining(ctx, mgr, targetAsset)
+	remaining, err := getSynthSupplyRemaining(ctx, keeper, targetAsset)
 	if err != nil {
 		return err
 	}

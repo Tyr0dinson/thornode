@@ -232,7 +232,7 @@ func (h SwapHandler) validateV3_0_0(ctx cosmos.Context, msg MsgSwap) error {
 				targetAmount = swapper.CalcAssetEmission(targetPool.BalanceRune, runeAmount, targetPool.BalanceAsset)
 			}
 		}
-		err = isSynthMintPaused(ctx, h.mgr, target, targetAmount)
+		err = isSynthMintPaused(ctx, h.mgr.Keeper(), target, targetAmount)
 		if err != nil {
 			return err
 		}
@@ -380,7 +380,7 @@ func (h SwapHandler) handleV3_0_0(ctx cosmos.Context, msg MsgSwap) (*cosmos.Resu
 	// Ignore caps when the swap is streaming (its checked at the start of the
 	// stream, not during)
 	if msg.TargetAsset.IsSyntheticAsset() && !msg.IsStreaming() {
-		err = isSynthMintPaused(ctx, h.mgr, msg.TargetAsset, emit)
+		err = isSynthMintPaused(ctx, h.mgr.Keeper(), msg.TargetAsset, emit)
 		if err != nil {
 			return nil, err
 		}

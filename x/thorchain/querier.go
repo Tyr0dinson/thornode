@@ -1339,8 +1339,8 @@ func (qs queryServer) queryPool(ctx cosmos.Context, req *types.QueryPoolRequest)
 	synthSupply := qs.mgr.Keeper().GetTotalSupply(ctx, pool.Asset.GetSyntheticAsset())
 	pool.CalcUnits(synthSupply)
 
-	synthMintPausedErr := isSynthMintPaused(ctx, qs.mgr, saversAsset, cosmos.ZeroUint())
-	synthSupplyRemaining, _ := getSynthSupplyRemaining(ctx, qs.mgr, saversAsset)
+	synthMintPausedErr := isSynthMintPaused(ctx, qs.mgr.Keeper(), saversAsset, cosmos.ZeroUint())
+	synthSupplyRemaining, _ := getSynthSupplyRemaining(ctx, qs.mgr.Keeper(), saversAsset)
 
 	maxSynthsForSaversYield := qs.mgr.Keeper().GetConfigInt64(ctx, constants.MaxSynthsForSaversYield)
 	// Capping the synths at double the pool balance of Assets.
@@ -1439,8 +1439,8 @@ func (qs queryServer) queryPools(ctx cosmos.Context, _ *types.QueryPoolsRequest)
 		synthSupply := qs.mgr.Keeper().GetTotalSupply(ctx, pool.Asset.GetSyntheticAsset())
 		pool.CalcUnits(synthSupply)
 
-		synthMintPausedErr := isSynthMintPaused(ctx, qs.mgr, pool.Asset, cosmos.ZeroUint())
-		synthSupplyRemaining, _ := getSynthSupplyRemaining(ctx, qs.mgr, pool.Asset)
+		synthMintPausedErr := isSynthMintPaused(ctx, qs.mgr.Keeper(), pool.Asset, cosmos.ZeroUint())
+		synthSupplyRemaining, _ := getSynthSupplyRemaining(ctx, qs.mgr.Keeper(), pool.Asset)
 
 		maxSynthsForSaversYield := qs.mgr.Keeper().GetConfigInt64(ctx, constants.MaxSynthsForSaversYield)
 		// Capping the synths at double the pool balance of Assets.
