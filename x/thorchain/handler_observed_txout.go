@@ -45,16 +45,6 @@ func (h ObservedTxOutHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Res
 }
 
 func (h ObservedTxOutHandler) validate(ctx cosmos.Context, msg MsgObservedTxOut) error {
-	version := h.mgr.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("3.0.0")):
-		return h.validateV3_0_0(ctx, msg)
-	default:
-		return errInvalidVersion
-	}
-}
-
-func (h ObservedTxOutHandler) validateV3_0_0(ctx cosmos.Context, msg MsgObservedTxOut) error {
 	// ValidateBasic is also executed in message service router's handler and isn't versioned there
 	if err := msg.ValidateBasic(); err != nil {
 		return err
@@ -65,16 +55,6 @@ func (h ObservedTxOutHandler) validateV3_0_0(ctx cosmos.Context, msg MsgObserved
 	}
 
 	return nil
-}
-
-func (h ObservedTxOutHandler) handle(ctx cosmos.Context, msg MsgObservedTxOut) (*cosmos.Result, error) {
-	version := h.mgr.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("3.0.0")):
-		return h.handleV3_0_0(ctx, msg)
-	default:
-		return nil, errBadVersion
-	}
 }
 
 func (h ObservedTxOutHandler) preflight(ctx cosmos.Context, voter ObservedTxVoter, nas NodeAccounts, tx ObservedTx, signer cosmos.AccAddress) (ObservedTxVoter, bool) {
@@ -132,7 +112,7 @@ func (h ObservedTxOutHandler) preflight(ctx cosmos.Context, voter ObservedTxVote
 }
 
 // Handle a message to observe outbound tx
-func (h ObservedTxOutHandler) handleV3_0_0(ctx cosmos.Context, msg MsgObservedTxOut) (*cosmos.Result, error) {
+func (h ObservedTxOutHandler) handle(ctx cosmos.Context, msg MsgObservedTxOut) (*cosmos.Result, error) {
 	activeNodeAccounts, err := h.mgr.Keeper().ListActiveValidators(ctx)
 	if err != nil {
 		return nil, wrapError(ctx, err, "fail to get list of active node accounts")
