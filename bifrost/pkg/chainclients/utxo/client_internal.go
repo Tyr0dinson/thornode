@@ -46,6 +46,20 @@ func (c *Client) getAsgardAddress() ([]common.Address, error) {
 	return c.asgardAddresses, nil
 }
 
+func (c *Client) getPriorityAddrs() ([]common.Address, error) {
+	// update priorityConfAddrs every 20 blocks
+	if time.Since(c.lastPriorityAddrs) < constants.ThorchainBlockTime*50 && c.priorityAddrs != nil {
+		return c.priorityAddrs, nil
+	}
+	priorityAddrs, err := c.bridge.GetPriorityAddrs()
+	if err != nil {
+		return nil, fmt.Errorf("fail to get asgards: %w", err)
+	}
+	c.priorityAddrs = priorityAddrs
+	c.lastPriorityAddrs = time.Now()
+	return c.priorityAddrs, nil
+}
+
 func (c *Client) isAsgardAddress(addressToCheck string) bool {
 	asgards, err := c.getAsgardAddress()
 	if err != nil {
@@ -956,9 +970,37 @@ func (c *Client) getBlockRequiredConfirmation(txIn types.TxIn, height int64) (in
 	if err != nil {
 		c.log.Err(err).Msgf("fail to get max conf value adjustment for %s", c.GetChain().String())
 	}
-	if confirm < c.cfg.MinConfirmations {
-		confirm = c.cfg.MinConfirmations
+	if confirm < c.cfg.UTXO.MinUTXOConfirmationsForObservation {
+		confirm = c.cfg.UTXO.MinUTXOConfirmationsForObservation
 	}
+
+	// If the txIn is a deposit to trade assets and has PRIORITY-ADDR mimir designation
+	// It is an arbitreur or market maker, and thus aligned with the protocol
+	// Allow them to bypass confirmation counting,
+	// and apply the minimum conf counting required for moderate security
+	// Only allow this behavior for txArray of length 1
+	if len(txIn.TxArray) == 1 {
+		priorityAddrs, err := c.getPriorityAddrs()
+		if err == nil {
+			for _, addr := range priorityAddrs {
+				memo := txIn.TxArray[0].Memo
+				if strings.HasPrefix(memo, "TRADE+:") {
+					destAddr, err := common.NewAddress(strings.TrimPrefix(memo, "TRADE+:"))
+					if err == nil && addr.Equals(destAddr) {
+						if confirm > c.cfg.UTXO.MinUTXOConfirmationsForObservation {
+							confirm = c.cfg.UTXO.MinUTXOConfirmationsForObservation
+						}
+					}
+				}
+
+			}
+		}
+	}
+
+	if confirm > c.cfg.UTXO.MaxUTXOConfirmationsForObservation {
+		confirm = c.cfg.UTXO.MaxUTXOConfirmationsForObservation
+	}
+
 	c.log.Info().Msgf("totalTxValue:%s, totalFeeAndSubsidy:%d, confirm:%d", totalTxValue, totalFeeAndSubsidy, confirm)
 
 	return int64(confirm), nil

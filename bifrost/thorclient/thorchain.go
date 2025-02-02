@@ -91,6 +91,7 @@ type ThorchainBridge interface {
 	GetPools() (stypes.Pools, error)
 	GetPubKeys() ([]PubKeyContractAddressPair, error)
 	GetAsgardPubKeys() ([]PubKeyContractAddressPair, error)
+	GetPriorityAddrs() ([]common.Address, error)
 	GetSolvencyMsg(height int64, chain common.Chain, pubKey common.PubKey, coins common.Coins) *stypes.MsgSolvency
 	GetTHORName(name string) (stypes.THORName, error)
 	GetThorchainVersion() (semver.Version, error)
@@ -613,6 +614,22 @@ func (b *thorchainBridge) GetPubKeys() ([]PubKeyContractAddressPair, error) {
 	return addressPairs, nil
 }
 
+// GetPriorityConfAddrs retrieves mimir with prefix PRIORITY-ADDRF-, for priority to arbs / market makers
+func (b *thorchainBridge) GetPriorityAddrs() ([]common.Address, error) {
+	prefix := "PRIORITY-ADDR-"
+	mimirs, err := b.GetMimirs()
+	if err != nil {
+		return []common.Address{}, fmt.Errorf("fail to get mimirs, err: %w", err)
+	}
+	addrs := make([]common.Address, 0)
+	for mimirKey, mimirVal := range mimirs {
+		if strings.HasPrefix(mimirKey, prefix) && mimirVal == 1 {
+			addrs = append(addrs, common.Address(strings.TrimPrefix(mimirKey, prefix)))
+		}
+	}
+	return addrs, nil
+}
+
 // GetAsgardPubKeys retrieve asgard vaults, and it's relevant smart contracts
 func (b *thorchainBridge) GetAsgardPubKeys() ([]PubKeyContractAddressPair, error) {
 	buf, err := b.getVaultPubkeys()
@@ -707,6 +724,22 @@ func (b *thorchainBridge) GetThorchainVersion() (semver.Version, error) {
 		return semver.Version{}, fmt.Errorf("fail to unmarshal THORChain version : %w", err)
 	}
 	return semver.MustParse(version.Current), nil
+}
+
+// GetMimir - get mimir settings
+func (b *thorchainBridge) GetMimirs() (map[string]int, error) {
+	res := make(map[string]int)
+	buf, s, err := b.getWithPath(MimirEndpoint)
+	if err != nil {
+		return res, fmt.Errorf("fail to get mimir: %w", err)
+	}
+	if s != http.StatusOK {
+		return res, fmt.Errorf("unexpected status code: %d", s)
+	}
+	if err = json.Unmarshal(buf, &res); err != nil {
+		return res, fmt.Errorf("fail to unmarshal mimir: %w", err)
+	}
+	return res, nil
 }
 
 // GetMimir - get mimir settings

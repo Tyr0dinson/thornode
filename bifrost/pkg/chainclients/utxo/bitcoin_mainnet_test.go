@@ -196,4 +196,29 @@ func (s *BitcoinSuite) TestGetConfirmationCount(c *C) {
 		MemPool:              false,
 		ConfirmationRequired: 0,
 	}), Equals, int64(6))
+
+	// Test that deposit trade assets to thorbob floors confirms to minimum
+	s.client.cfg.UTXO.MinUTXOConfirmationsForObservation = 4
+	priorityAddrs, err := s.bridge.GetPriorityAddrs()
+	c.Assert(err, IsNil)
+	c.Assert(priorityAddrs[0], Equals, common.Address("thor1v8ppstuf6e3x0r4glqc68d5jqcs2tf38cg2q6y"))
+	c.Assert(s.client.GetConfirmationCount(types.TxIn{
+		Chain: common.BTCChain,
+		TxArray: []types.TxInItem{
+			{
+				BlockHeight: 2,
+				Tx:          "24ed2d26fd5d4e0e8fa86633e40faf1bdfc8d1903b1cd02855286312d48818a2",
+				Sender:      "bc1q0s4mg25tu6termrk8egltfyme4q7sg3h0e56p3",
+				To:          "bc1q2gjc0rnhy4nrxvuklk6ptwkcs9kcr59mcl2q9j",
+				Coins: common.Coins{
+					common.NewCoin(common.BTCAsset, cosmos.NewUint(123456000)),
+				},
+				Memo:                "TRADE+:thor1v8ppstuf6e3x0r4glqc68d5jqcs2tf38cg2q6y",
+				ObservedVaultPubKey: pkey,
+			},
+		},
+		Filtered:             true,
+		MemPool:              false,
+		ConfirmationRequired: 0,
+	}), Equals, int64(4))
 }

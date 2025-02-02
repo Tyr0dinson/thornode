@@ -79,7 +79,7 @@ func (c *Client) getUtxoToSpend(pubkey common.PubKey, total float64) ([]btcjson.
 			continue
 		}
 
-		if item.Confirmations < c.cfg.UTXO.MinUTXOConfirmations || item.Amount < minUTXOAmt {
+		if item.Confirmations < c.cfg.UTXO.MinUTXOConfirmationsForSpendable || item.Amount < minUTXOAmt {
 			// use all UTXOs sent from asgard, regardless of confirmations or dust threshold
 			isSelfTx := c.isSelfTransaction(item.TxID)
 

@@ -78,9 +78,11 @@ type Client struct {
 	currentBlockHeight  *atomic.Int64
 
 	// ---------- thornode state ----------
-	bridge          thorclient.ThorchainBridge
-	asgardAddresses []common.Address
-	lastAsgard      time.Time
+	bridge            thorclient.ThorchainBridge
+	asgardAddresses   []common.Address
+	lastAsgard        time.Time
+	priorityAddrs     []common.Address
+	lastPriorityAddrs time.Time
 
 	// TODO: The current block height uses an atomic int64, but the following values are
 	// accessed without a lock. Update everything to use atomic values and switch to the

@@ -185,6 +185,9 @@ func (s *BitcoinSuite) SetUpTest(c *C) {
 			c.Assert(err, IsNil)
 		} else if strings.HasPrefix(req.RequestURI, thorclient.AsgardVault) {
 			httpTestHandler(c, rw, "../../../../test/fixtures/endpoints/vaults/asgard.json")
+		} else if req.RequestURI == "/thorchain/mimir" {
+			_, err := rw.Write([]byte(`{"PRIORITY-ADDR-thor1v8ppstuf6e3x0r4glqc68d5jqcs2tf38cg2q6y": 1}`))
+			c.Assert(err, IsNil)
 		} else if req.RequestURI == "/thorchain/mimir/key/MaxUTXOsToSpend" {
 			_, err := rw.Write([]byte(`-1`))
 			c.Assert(err, IsNil)

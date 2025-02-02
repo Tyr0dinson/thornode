@@ -585,10 +585,6 @@ type BifrostChainConfiguration struct {
 	// ScannerLevelDB is the LevelDB configuration for the block scanner.
 	ScannerLevelDB LevelDBOptions `mapstructure:"scanner_leveldb"`
 
-	// MinConfirmations is the minimum number of confirmations to require before an
-	// observed inbound transaction is considered valid.
-	MinConfirmations uint64 `mapstructure:"min_confirmations"`
-
 	// MaxRPCRetries is the maximum number of retries for RPC requests.
 	MaxRPCRetries int `mapstructure:"max_rpc_retries"`
 
@@ -652,9 +648,17 @@ type BifrostChainConfiguration struct {
 		// mempool.
 		MinSatsPerVByte int64 `mapstructure:"min_sats_per_vbyte"`
 
-		// MinUTXOConfirmations is the minimum number of confirmations required for a UTXO to
+		// MinUTXOConfirmationsForObservation is the minimum number of confirmations required for a UTXO to
+		// be observed.
+		MinUTXOConfirmationsForObservation uint64 `mapstructure:"min_utxo_confirmations_observe"`
+
+		// MaxUTXOConfirmationsForObservation is the maximum number of confirmations required for a UTXO to
+		// be observed.
+		MaxUTXOConfirmationsForObservation uint64 `mapstructure:"max_utxo_confirmations_observe"`
+
+		// MinUTXOConfirmationsForSpendable is the minimum number of confirmations required for a UTXO to
 		// be considered for spending from an asgard vault.
-		MinUTXOConfirmations int64 `mapstructure:"min_utxo_confirmations"`
+		MinUTXOConfirmationsForSpendable int64 `mapstructure:"min_utxo_confirmations_spendable"`
 
 		// MaxUTXOsToSpend is the maximum number of UTXOs to spend in a single transaction.
 		// This is overridden at runtime by the `MaxUTXOsToSpend` mimir value.
