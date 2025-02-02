@@ -460,12 +460,7 @@ func GetKeeper(
 // GetGasManager return GasManager
 func GetGasManager(version semver.Version, keeper keeper.Keeper) (GasManager, error) {
 	constAccessor := constants.GetConstantValues(version)
-	switch {
-	case version.GTE(semver.MustParse("3.0.0")):
-		return newGasMgrVCUR(constAccessor, keeper), nil
-	default:
-		return nil, errInvalidVersion
-	}
+	return newGasMgrVCUR(constAccessor, keeper), nil
 }
 
 // GetEventManager will return an implementation of EventManager
