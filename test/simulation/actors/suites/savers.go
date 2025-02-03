@@ -1,7 +1,6 @@
 package suites
 
 import (
-	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/actors/core"
 	. "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
 )
@@ -14,15 +13,7 @@ func Savers() *Actor {
 	a := NewActor("Savers")
 
 	// add savers for all pools
-	for _, chain := range common.AllChains {
-		if chain == common.THORChain {
-			continue
-		}
-		// BSC not compatible with sim tests
-		if chain.Equals(common.BSCChain) {
-			continue
-		}
-
+	for _, chain := range SimChains {
 		// add saver
 		saver := core.NewSaverActor(chain.GetGasAsset(), 500) // 5% of asset depth
 		a.Children[saver] = true
