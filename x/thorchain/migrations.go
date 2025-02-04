@@ -65,7 +65,7 @@ func (m Migrator) Migrate2to3(ctx sdk.Context) error {
 	// set more lax max confirmations
 	m.mgr.Keeper().SetMimir(ctx, "MAXCONFIRMATIONS-BTC", 3)
 	m.mgr.Keeper().SetMimir(ctx, "MAXCONFIRMATIONS-BCH", 3)
-	m.mgr.Keeper().SetMimir(ctx, "MAXCONFIRMATIONS-DOGE", 10)
+	m.mgr.Keeper().SetMimir(ctx, "MAXCONFIRMATIONS-DOGE", 15)
 	m.mgr.Keeper().SetMimir(ctx, "MAXCONFIRMATIONS-LTC", 6)
 
 	return nil
