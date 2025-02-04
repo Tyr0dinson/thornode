@@ -248,7 +248,7 @@ bifrost:
       scanner_leveldb: *default-leveldb
       utxo:
         <<: *utxo
-        max_utxo_confirmations_priority: 2
+        max_utxo_confirmations_priority: 5
         block_cache_count: 1440
         default_sats_per_vbyte: 25
         max_sats_per_vbyte: 976562 # backwards compatible with 1e8*10/1024
@@ -278,7 +278,7 @@ bifrost:
       scanner_leveldb: *default-leveldb
       utxo:
         <<: *utxo
-        max_utxo_confirmations_priority: 3
+        max_utxo_confirmations_priority: 2
         block_cache_count: 600
         max_sats_per_vbyte: 9765 # backwards compatible with 1e8/10/1024
         min_sats_per_vbyte: 2
