@@ -198,7 +198,7 @@ func (s *BitcoinSuite) TestGetConfirmationCount(c *C) {
 	}), Equals, int64(6))
 
 	// Test that deposit trade assets to thorbob floors confirms to minimum
-	s.client.cfg.UTXO.MinUTXOConfirmationsForObservation = 4
+	s.client.cfg.UTXO.MaxUTXOConfirmationsForPriority = 4
 	priorityAddrs, err := s.bridge.GetPriorityAddrs()
 	c.Assert(err, IsNil)
 	c.Assert(priorityAddrs[0], Equals, common.Address("thor1v8ppstuf6e3x0r4glqc68d5jqcs2tf38cg2q6y"))

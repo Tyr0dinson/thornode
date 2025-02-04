@@ -987,8 +987,8 @@ func (c *Client) getBlockRequiredConfirmation(txIn types.TxIn, height int64) (in
 				if strings.HasPrefix(memo, "TRADE+:") {
 					destAddr, err := common.NewAddress(strings.TrimPrefix(memo, "TRADE+:"))
 					if err == nil && addr.Equals(destAddr) {
-						if confirm > c.cfg.UTXO.MinUTXOConfirmationsForObservation {
-							confirm = c.cfg.UTXO.MinUTXOConfirmationsForObservation
+						if confirm > c.cfg.UTXO.MaxUTXOConfirmationsForPriority {
+							confirm = c.cfg.UTXO.MaxUTXOConfirmationsForPriority
 						}
 					}
 				}

@@ -656,6 +656,10 @@ type BifrostChainConfiguration struct {
 		// be considered for spending from an asgard vault.
 		MinUTXOConfirmationsForSpendable int64 `mapstructure:"min_utxo_confirmations_spendable"`
 
+		// MaxUTXOConfirmationsForPriority is the maximum number of confirmations required for a UTXO to
+		// be observed for inbounds to priority address trade account deposits.
+		MaxUTXOConfirmationsForPriority uint64 `mapstructure:"min_utxo_confirmations_priority"`
+
 		// MaxUTXOsToSpend is the maximum number of UTXOs to spend in a single transaction.
 		// This is overridden at runtime by the `MaxUTXOsToSpend` mimir value.
 		MaxUTXOsToSpend int64 `mapstructure:"max_utxos_to_spend"`

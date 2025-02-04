@@ -94,6 +94,7 @@ bifrost:
         min_sats_per_vbyte: 2
         min_utxo_confirmations_spendable: 1
         min_utxo_confirmations_observe: 0
+        max_utxo_confirmations_priority: 1
         max_utxos_to_spend: 10
       block_scanner: &default-block-scanner
         max_reorg_rescan_blocks: 72 # 12h
@@ -247,7 +248,7 @@ bifrost:
       scanner_leveldb: *default-leveldb
       utxo:
         <<: *utxo
-        min_utxo_confirmations_observe: 2
+        max_utxo_confirmations_priority: 2
         block_cache_count: 1440
         default_sats_per_vbyte: 25
         max_sats_per_vbyte: 976562 # backwards compatible with 1e8*10/1024
@@ -277,7 +278,7 @@ bifrost:
       scanner_leveldb: *default-leveldb
       utxo:
         <<: *utxo
-        min_utxo_confirmations_observe: 3
+        max_utxo_confirmations_priority: 3
         block_cache_count: 600
         max_sats_per_vbyte: 9765 # backwards compatible with 1e8/10/1024
         min_sats_per_vbyte: 2
@@ -295,7 +296,7 @@ bifrost:
       scanner_leveldb: *default-leveldb
       utxo:
         <<: *utxo
-        min_utxo_confirmations_observe: 1
+        max_utxo_confirmations_priority: 1
         block_cache_count: 144
         max_sats_per_vbyte: 9765 # backwards compatible with 1e8/10/1024
         min_sats_per_vbyte: 2
