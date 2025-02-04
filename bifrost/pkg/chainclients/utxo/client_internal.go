@@ -996,13 +996,7 @@ func (c *Client) getBlockRequiredConfirmation(txIn types.TxIn, height int64) (in
 			}
 		}
 	}
-
-	if confirm > c.cfg.UTXO.MaxUTXOConfirmationsForObservation {
-		confirm = c.cfg.UTXO.MaxUTXOConfirmationsForObservation
-	}
-
 	c.log.Info().Msgf("totalTxValue:%s, totalFeeAndSubsidy:%d, confirm:%d", totalTxValue, totalFeeAndSubsidy, confirm)
-
 	return int64(confirm), nil
 }
 

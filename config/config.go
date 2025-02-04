@@ -652,10 +652,6 @@ type BifrostChainConfiguration struct {
 		// be observed.
 		MinUTXOConfirmationsForObservation uint64 `mapstructure:"min_utxo_confirmations_observe"`
 
-		// MaxUTXOConfirmationsForObservation is the maximum number of confirmations required for a UTXO to
-		// be observed.
-		MaxUTXOConfirmationsForObservation uint64 `mapstructure:"max_utxo_confirmations_observe"`
-
 		// MinUTXOConfirmationsForSpendable is the minimum number of confirmations required for a UTXO to
 		// be considered for spending from an asgard vault.
 		MinUTXOConfirmationsForSpendable int64 `mapstructure:"min_utxo_confirmations_spendable"`
