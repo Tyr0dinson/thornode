@@ -658,7 +658,7 @@ type BifrostChainConfiguration struct {
 
 		// MaxUTXOConfirmationsForPriority is the maximum number of confirmations required for a UTXO to
 		// be observed for inbounds to priority address trade account deposits.
-		MaxUTXOConfirmationsForPriority uint64 `mapstructure:"min_utxo_confirmations_priority"`
+		MaxUTXOConfirmationsForPriority uint64 `mapstructure:"max_utxo_confirmations_priority"`
 
 		// MaxUTXOsToSpend is the maximum number of UTXOs to spend in a single transaction.
 		// This is overridden at runtime by the `MaxUTXOsToSpend` mimir value.
