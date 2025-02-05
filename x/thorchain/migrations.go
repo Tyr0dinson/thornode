@@ -59,10 +59,20 @@ func (m Migrator) Migrate2to3(ctx sdk.Context) error {
 
 	// bootstrap priority addrs
 	// these 4 thor addresses handle 95% of arb volume on the network
-	m.mgr.Keeper().SetMimir(ctx, "PRIORITY-ADDR-thor1ukwhpglu7yh2g2rw8h7jvee2r0fv0e90nyxv6v", 1)
-	m.mgr.Keeper().SetMimir(ctx, "PRIORITY-ADDR-thor17hwqt302e5f2xm4h95ma8wuggqkvfzgvsnh5z9", 1)
-	m.mgr.Keeper().SetMimir(ctx, "PRIORITY-ADDR-thor14mh37ua4vkyur0l5ra297a4la6tmf95mt96a55", 1)
-	m.mgr.Keeper().SetMimir(ctx, "PRIORITY-ADDR-thor166n4w5039meulfa3p6ydg60ve6ueac7tlt0jws", 1)
+	priorityAddrs := []string{
+		"PRIORITY-ADDR-thor1ukwhpglu7yh2g2rw8h7jvee2r0fv0e90nyxv6v",
+		"PRIORITY-ADDR-thor17hwqt302e5f2xm4h95ma8wuggqkvfzgvsnh5z9",
+		"PRIORITY-ADDR-thor14mh37ua4vkyur0l5ra297a4la6tmf95mt96a55",
+		"PRIORITY-ADDR-thor166n4w5039meulfa3p6ydg60ve6ueac7tlt0jws",
+	}
+	for _, mimirKey := range priorityAddrs {
+		mimirVal := int64(1)
+		m.mgr.Keeper().SetMimir(ctx, mimirKey, mimirVal)
+		mimirEvent := NewEventSetMimir(mimirKey, strconv.FormatInt(mimirVal, 10))
+		if err = m.mgr.EventMgr().EmitEvent(ctx, mimirEvent); err != nil {
+			ctx.Logger().Error("fail to emit set_mimir event", "error", err)
+		}
+	}
 
 	// set more lax max confirmations
 	mimirKeys := []string{
