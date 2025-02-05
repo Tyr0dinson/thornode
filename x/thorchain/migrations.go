@@ -1,6 +1,8 @@
 package thorchain
 
 import (
+	"strconv"
+
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -63,10 +65,18 @@ func (m Migrator) Migrate2to3(ctx sdk.Context) error {
 	m.mgr.Keeper().SetMimir(ctx, "PRIORITY-ADDR-thor166n4w5039meulfa3p6ydg60ve6ueac7tlt0jws", 1)
 
 	// set more lax max confirmations
-	m.mgr.Keeper().SetMimir(ctx, "MAXCONFIRMATIONS-BTC", 3)
-	m.mgr.Keeper().SetMimir(ctx, "MAXCONFIRMATIONS-BCH", 3)
-	m.mgr.Keeper().SetMimir(ctx, "MAXCONFIRMATIONS-DOGE", 15)
-	m.mgr.Keeper().SetMimir(ctx, "MAXCONFIRMATIONS-LTC", 6)
+	for mimirKey, mimirVal := range map[string]int64{
+		"MAXCONFIRMATIONS-BTC":  3,
+		"MAXCONFIRMATIONS-BCH":  3,
+		"MAXCONFIRMATIONS-DOGE": 15,
+		"MAXCONFIRMATIONS-LTC":  6,
+	} {
+		m.mgr.Keeper().SetMimir(ctx, mimirKey, mimirVal)
+		mimirEvent := NewEventSetMimir(mimirKey, strconv.FormatInt(mimirVal, 10))
+		if err = m.mgr.EventMgr().EmitEvent(ctx, mimirEvent); err != nil {
+			ctx.Logger().Error("fail to emit set_mimir event", "error", err)
+		}
 
+	}
 	return nil
 }
