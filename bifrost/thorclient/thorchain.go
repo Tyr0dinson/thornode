@@ -614,7 +614,7 @@ func (b *thorchainBridge) GetPubKeys() ([]PubKeyContractAddressPair, error) {
 	return addressPairs, nil
 }
 
-// GetPriorityConfAddrs retrieves mimir with prefix PRIORITY-ADDRF-, for priority to arbs / market makers
+// GetPriorityConfAddrs retrieves mimir with prefix PRIORITY-ADDR-, for priority to arbs / market makers
 func (b *thorchainBridge) GetPriorityAddrs() ([]common.Address, error) {
 	prefix := "PRIORITY-ADDR-"
 	mimirs, err := b.GetMimirs()
@@ -726,7 +726,7 @@ func (b *thorchainBridge) GetThorchainVersion() (semver.Version, error) {
 	return semver.MustParse(version.Current), nil
 }
 
-// GetMimir - get mimir settings
+// GetMimirs - get mimir settings
 func (b *thorchainBridge) GetMimirs() (map[string]int, error) {
 	res := make(map[string]int)
 	buf, s, err := b.getWithPath(MimirEndpoint)

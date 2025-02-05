@@ -47,7 +47,7 @@ func (c *Client) getAsgardAddress() ([]common.Address, error) {
 }
 
 func (c *Client) getPriorityAddrs() ([]common.Address, error) {
-	// update priorityConfAddrs every 20 blocks
+	// update priorityConfAddrs every 50 blocks
 	if time.Since(c.lastPriorityAddrs) < constants.ThorchainBlockTime*50 && c.priorityAddrs != nil {
 		return c.priorityAddrs, nil
 	}
