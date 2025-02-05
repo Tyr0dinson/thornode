@@ -76,7 +76,6 @@ func (m Migrator) Migrate2to3(ctx sdk.Context) error {
 		if err = m.mgr.EventMgr().EmitEvent(ctx, mimirEvent); err != nil {
 			ctx.Logger().Error("fail to emit set_mimir event", "error", err)
 		}
-
 	}
 	return nil
 }
