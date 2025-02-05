@@ -65,14 +65,16 @@ func (m Migrator) Migrate2to3(ctx sdk.Context) error {
 	m.mgr.Keeper().SetMimir(ctx, "PRIORITY-ADDR-thor166n4w5039meulfa3p6ydg60ve6ueac7tlt0jws", 1)
 
 	// set more lax max confirmations
-	for mimirKey, mimirVal := range map[string]int64{
-		"MAXCONFIRMATIONS-BTC":  3,
-		"MAXCONFIRMATIONS-BCH":  3,
-		"MAXCONFIRMATIONS-DOGE": 15,
-		"MAXCONFIRMATIONS-LTC":  6,
-	} {
-		m.mgr.Keeper().SetMimir(ctx, mimirKey, mimirVal)
-		mimirEvent := NewEventSetMimir(mimirKey, strconv.FormatInt(mimirVal, 10))
+	mimirKeys := []string{
+		"MAXCONFIRMATIONS-BTC",
+		"MAXCONFIRMATIONS-BCH",
+		"MAXCONFIRMATIONS-DOGE",
+		"MAXCONFIRMATIONS-LTC",
+	}
+	mimirVals := []int64{3, 3, 15, 6}
+	for i, mimirKey := range mimirKeys {
+		m.mgr.Keeper().SetMimir(ctx, mimirKey, mimirVals[i])
+		mimirEvent := NewEventSetMimir(mimirKey, strconv.FormatInt(mimirVals[i], 10))
 		if err = m.mgr.EventMgr().EmitEvent(ctx, mimirEvent); err != nil {
 			ctx.Logger().Error("fail to emit set_mimir event", "error", err)
 		}
