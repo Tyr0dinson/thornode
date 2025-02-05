@@ -984,15 +984,15 @@ func (c *Client) getBlockRequiredConfirmation(txIn types.TxIn, height int64) (in
 		if err == nil {
 			for _, addr := range priorityAddrs {
 				memo := txIn.TxArray[0].Memo
-				if strings.HasPrefix(memo, "TRADE+:") {
-					destAddr, err := common.NewAddress(strings.TrimPrefix(memo, "TRADE+:"))
+				txType, err := mem.StringToTxType(memo)
+				if err != nil && txType.Equals(mem.TxTradeAccountDeposit) {
+					destAddr, err := common.NewAddress(strings.SplitAfter(memo, ":")[1])
 					if err == nil && addr.Equals(destAddr) {
 						if confirm > c.cfg.UTXO.MaxUTXOConfirmationsForPriority {
 							confirm = c.cfg.UTXO.MaxUTXOConfirmationsForPriority
 						}
 					}
 				}
-
 			}
 		}
 	}
