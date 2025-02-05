@@ -112,3 +112,34 @@ asserts:
   - .txs[0].result.events[15].msg_index == "0"
   - .txs[0].result.events[15].new_value == "1"
   - .txs[0].result.events[15].type == "wasm"
+---
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+gas: 100000
+txs:
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: ETH
+      from_address: {{ addr_eth_fox }}
+      to_address: {{ addr_eth_dog }}
+      coins:
+        - amount: "10000000"
+          asset: "ETH.ETH"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "ETH.ETH"
+      memo: "x:tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f:7b22696e6372656d656e74223a7b7d7d"
+    block_height: 2
+    finalise_height: 2
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - '[.txs[]|.result.events[]|select(.type=="refund")]|length == 1'
+  - .txs[]|.result.events[]|select(.type=="refund")|.from == "{{ addr_eth_fox }}"
+  - .txs[]|.result.events[]|select(.type=="refund")|.reason|match("invalid")
