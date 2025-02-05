@@ -40,7 +40,7 @@ ldflags = -X gitlab.com/thorchain/thornode/v3/constants.Version=$(VERSION) \
 # golang settings
 TEST_PATHS=$(shell go list ./... | grep -v bifrost/tss/go-tss) # Skip compute-intensive tests by default
 TEST_DIR?=${TEST_PATHS}
-BUILD_FLAGS := -ldflags '$(ldflags) -extldflags=-static' -tags ${TAG} -trimpath
+BUILD_FLAGS := -ldflags '$(ldflags)' -tags ${TAG} -trimpath
 TEST_BUILD_FLAGS := -parallel=1 -tags=mocknet
 BINARIES?=./cmd/thornode ./cmd/bifrost ./tools/recover-keyshare-backup
 
