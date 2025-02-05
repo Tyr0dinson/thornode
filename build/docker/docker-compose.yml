@@ -199,6 +199,7 @@ services:
       # enable xrp
       BIFROST_CHAINS_XRP_DISABLED: "false"
       BIFROST_CHAINS_XRP_RPC_HOST: http://xrp:5005
+      BIFROST_CHAINS_XRP_CHAIN_NETWORK: "1234"
 
       # set fixed gas rate for evm chains
       BIFROST_CHAINS_ETH_BLOCK_SCANNER_FIXED_GAS_RATE: 20_000_000_000 # 20 gwei

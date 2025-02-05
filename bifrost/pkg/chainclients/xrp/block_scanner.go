@@ -245,9 +245,8 @@ func (c *XrpBlockScanner) processTxs(height int64, rawTxs []transaction.FlatTran
 		}
 
 		// Verify that the amount is of type XRP, issuer currencies are not currently supported.
-		// Without any trust lines, this shouldn't be possible.
+		// Once filtering is moved here, this error shouldn't be possible and we should log the skipped tx
 		if amount.Kind() != txtypes.XRP {
-			ctxLog.Msg("skipping tx, amount is not of type XRP")
 			continue
 		}
 		coin, err := fromXrpToThorchain(amount)
@@ -303,11 +302,12 @@ func (c *XrpBlockScanner) FetchTxs(height, chainHeight int64) (types.TxIn, error
 	}
 
 	// Next, get all transactions in block
+	// Set binary to false, xrp client unfortunately does not fully support decoding all transactions
 	ledger, err := c.rpcClient.GetLedger(&ledger.Request{
 		LedgerIndex:  xrplcommon.LedgerIndex(height),
 		Transactions: true,
 		Expand:       true,
-		Binary:       true,
+		Binary:       false,
 	})
 	if err != nil {
 		return types.TxIn{}, err
@@ -323,9 +323,12 @@ func (c *XrpBlockScanner) FetchTxs(height, chainHeight int64) (types.TxIn, error
 	if len(ledgerTxHashes.Ledger.Transactions) > len(flatTransactions) {
 		c.logger.Info().Int("from ledger with just hashes", len(ledgerTxHashes.Ledger.Transactions)).
 			Int("from ledger with expanded txs", len(flatTransactions)).Msg("number of transactions don't match")
-		// We did not get all transactions, most likely due to a server side limitation,
+		// We did not get all transactions, most likely due to the 256 tx limit when requesting tx in json.
+		// Average txs/ledger is currently well below 256.
+		// In the future, with better xrp client support, we could request an unlimited amount of txs when binary=true,
+		// but this code should still remain to address any other potential server side limitation,
 		// i.e.: max response size setting, new tx amount limitation for binary==true, remote/centralized server.
-		// Retrieve each tx individually, enough load could get us behind, but better behind than missing txs.
+		// Retrieve remaining txs individually, enough load could get us behind, but better behind than missing txs.
 		flatTransactions, err = c.fetchTxsByHash(ledgerTxHashes.Ledger.Transactions, flatTransactions)
 		if err != nil {
 			return types.TxIn{}, err

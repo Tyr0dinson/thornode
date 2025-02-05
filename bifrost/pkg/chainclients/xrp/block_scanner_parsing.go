@@ -36,6 +36,7 @@ func (c *XrpBlockScanner) processPayment(flatTx map[string]any) (*transaction.Pa
 		if !ok {
 			return nil, fmt.Errorf("cannot cast memos to []interface{}")
 		}
+		// TODO SAM127: add filter for vault addresses since this can error for any message
 		if len(memos) != 1 {
 			return nil, fmt.Errorf("more than 1 memo exists")
 		}
@@ -86,6 +87,7 @@ func (c *XrpBlockScanner) processPayment(flatTx map[string]any) (*transaction.Pa
 	}, nil
 }
 
+// Currently, we are requesting txs in json, so this should return immediately
 func (c *XrpBlockScanner) decodeMetaBlobIfNecessary(rawTx transaction.FlatTransaction) (map[string]any, error) {
 	meta, ok := rawTx["meta"].(map[string]any)
 	if ok {
@@ -105,6 +107,7 @@ func (c *XrpBlockScanner) decodeMetaBlobIfNecessary(rawTx transaction.FlatTransa
 	return meta, nil
 }
 
+// Currently, we are requesting txs in json, so this should return immediately
 func (c *XrpBlockScanner) decodeTxBlobIfNecessary(rawTx transaction.FlatTransaction) (map[string]any, error) {
 	flatTx, ok := rawTx["tx_json"].(map[string]any)
 	if ok {

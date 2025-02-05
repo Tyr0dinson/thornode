@@ -94,9 +94,12 @@ func NewClient(
 		return nil, fmt.Errorf("fail to create key manager: %w", err)
 	}
 
-	networkID, err := strconv.ParseUint(cfg.ChainNetwork, 10, 32)
-	if err != nil {
-		return nil, fmt.Errorf("error parsing chain network as uint, %w", err)
+	networkID := uint64(1)
+	if cfg.ChainNetwork != "" {
+		networkID, err = strconv.ParseUint(cfg.ChainNetwork, 10, 32)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing chain network as uint, %w", err)
+		}
 	}
 
 	rpcConfig, err := rpc.NewClientConfig(cfg.RPCHost)
