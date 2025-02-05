@@ -168,7 +168,7 @@
           "coins": [
             {
               "amount": "10000000",
-              "denom": "btc-btc"
+              "denom": "gaia-atom"
             }
           ]
         }
@@ -182,7 +182,7 @@
       "supply": [
         {
           "amount": "10000000",
-          "denom": "btc-btc"
+          "denom": "gaia-atom"
         },
         {
           "amount": "50000000000000",
@@ -213,7 +213,7 @@
       "chain_contracts": [],
       "last_chain_heights": [
         {
-          "chain": "BTC",
+          "chain": "GAIA",
           "height": "1"
         }
       ],
@@ -267,7 +267,7 @@
       "rune_providers": [],
       "secured_assets": [
         {
-          "asset": "BTC-BTC",
+          "asset": "GAIA-ATOM",
           "depth": "10000000"
         }
       ],
@@ -295,7 +295,7 @@
           "coins": [
             {
               "amount": "10000000",
-              "asset": "BTC.BTC",
+              "asset": "GAIA.ATOM",
               "decimals": "8"
             }
           ],
