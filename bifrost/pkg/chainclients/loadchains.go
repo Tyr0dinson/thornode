@@ -1,6 +1,7 @@
 package chainclients
 
 import (
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/ton"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -46,6 +47,8 @@ func LoadChains(thorKeys *thorclient.Keys,
 			return gaia.NewCosmosClient(thorKeys, chain, server, thorchainBridge, m)
 		case common.BTCChain, common.BCHChain, common.LTCChain, common.DOGEChain:
 			return utxo.NewClient(thorKeys, chain, server, thorchainBridge, m)
+		case common.TONChain:
+			return ton.NewTonClient(thorKeys, chain, server, thorchainBridge, m)
 		default:
 			log.Fatal().Msgf("chain %s is not supported", chain.ChainID)
 			return nil, nil

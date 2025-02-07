@@ -36,6 +36,7 @@ var chainRPCs = map[common.Chain]string{
 	common.AVAXChain: "http://localhost:9650/ext/bc/C/rpc",
 	common.GAIAChain: "localhost:9091",
 	common.BASEChain: "http://localhost:8547",
+	common.TONChain:  "mocknet",
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////

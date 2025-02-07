@@ -299,6 +299,17 @@ bifrost:
         min_sats_per_vbyte: 2
         estimated_average_tx_size: 1500
 
+    ton:
+      <<: *default-chain
+      chain_id: TON
+      block_scanner:
+        <<: *default-block-scanner
+        chain_id: TON
+        gas_price_resolution: 1_000_000_000
+        observation_flexibility_blocks: 40
+      mempool_tx_id_cache_size: 0
+      scanner_leveldb: *default-leveldb
+
 ########################################################################################
 # Thor
 ########################################################################################

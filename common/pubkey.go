@@ -3,6 +3,7 @@ package common
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/rs/zerolog/log"
 	"sort"
 	"strings"
 	"sync"
@@ -23,6 +24,8 @@ import (
 	eth "github.com/ethereum/go-ethereum/crypto"
 
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+
+	"github.com/xssnick/tonutils-go/ton/wallet"
 )
 
 // PubKey used in thorchain, it should be bech32 encoded string
@@ -207,7 +210,21 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 
 		// Encode the public key to base58 to get the Solana address
 		addressString = Base58Encode(pk.Bytes())
+	case TONChain:
+		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, p.String())
+		if err != nil {
+			return NoAddress, err
+		}
 
+		addr, err := wallet.AddressFromPubKey(pk.Bytes(), wallet.V4R2, wallet.DefaultSubwallet)
+		if err != nil {
+			log.Err(err).Msg("")
+			return NoAddress, err
+		}
+		addr.SetBounce(false)
+		addr.SetTestnetOnly(true)
+
+		addressString = addr.String()
 	default:
 		// Only EVM chains remain.
 		if !chain.IsEVM() {

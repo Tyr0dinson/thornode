@@ -17,6 +17,8 @@ import (
 	"github.com/ltcsuite/ltcutil"
 
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+
+	tonaddress "github.com/xssnick/tonutils-go/address"
 )
 
 type Address string
@@ -35,6 +37,11 @@ func NewAddress(address string) (Address, error) {
 		return NoAddress, nil
 	}
 
+	_, err := tonaddress.ParseAddr(address)
+	if err == nil {
+		return Address(address), nil
+	}
+
 	if !alphaNumRegex.MatchString(address) {
 		return NoAddress, fmt.Errorf("address format not supported: %s", address)
 	}
@@ -45,7 +52,7 @@ func NewAddress(address string) (Address, error) {
 	}
 
 	// Check bech32 addresses, would succeed any string bech32 encoded (e.g. GAIA)
-	_, _, err := bech32.Decode(address)
+	_, _, err = bech32.Decode(address)
 	if err == nil {
 		return Address(address), nil
 	}
