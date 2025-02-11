@@ -36,6 +36,7 @@ type SOLClient struct {
 	localPubKey             common.PubKey
 	kw                      *evm.KeySignWrapper
 	solScanner              *SOLScanner
+	solGeyser               *SolGeyser
 	bridge                  thorclient.ThorchainBridge
 	blockScanner            *blockscanner.BlockScanner
 	pubkeyMgr               pubkeymanager.PubKeyValidator
@@ -148,6 +149,9 @@ func NewSOLClient(
 		return c, fmt.Errorf("fail to create block scanner: %w", err)
 	}
 
+	// create geyser receiver
+	c.solGeyser = NewSolGeyser(c.cfg.BlockScanner, c.solScanner, cfg.GeyserHost, cfg.GeyserToken)
+
 	return c, nil
 }
 
@@ -157,6 +161,7 @@ func (c *SOLClient) Start(globalTxsQueue chan stypes.TxIn, globalErrataQueue cha
 	c.globalSolvencyQueue = globalSolvencyQueue
 	// c.tssKeySigner.Start()
 	c.blockScanner.Start(globalTxsQueue)
+	c.solGeyser.Run()
 	c.wg.Add(1)
 	go runners.SolvencyCheckRunner(c.GetChain(), c, c.bridge, c.stopchan, c.wg, constants.ThorchainBlockTime)
 }

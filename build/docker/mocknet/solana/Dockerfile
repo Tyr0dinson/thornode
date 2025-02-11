@@ -1,7 +1,5 @@
 # Match the base Debian image to https://github.com/anza-xyz/agave/blob/master/sdk/docker-solana/Dockerfile
-# 2.0.21 === bullseye
-# 2.1.4  === bookworm
-FROM debian:bullseye AS builder
+FROM debian:bookworm AS builder
 
 RUN apt-get update && \
     apt-get install -y build-essential git curl openssl libssl-dev pkg-config
@@ -12,8 +10,8 @@ RUN curl --proto '=https' --tlsv1.3 https://sh.rustup.rs -sSf | bash -s -- -y
 ENV PATH="/root/.cargo/bin:${PATH}"
 
 # build from source
-ARG COMMITSH="aebf9ba77d894fb0068eb04677890a14d957f78d"
-ARG TAG="v3.2.2+solana.2.0.21"
+ARG COMMITSH="405879f39eb282775772adb327af7d84ef12ebdd"
+ARG TAG="v5.0.0+solana.2.1.11"
 WORKDIR /build
 RUN git init && \
     git remote add origin https://github.com/rpcpool/yellowstone-grpc && \
@@ -22,7 +20,7 @@ RUN git init && \
     cargo build --release
 
 # Use an official Solana release image as a parent image
-FROM anzaxyz/agave:v2.0.21
+FROM anzaxyz/agave:v2.1.11
 
 # Set the working directory
 WORKDIR /mocknet

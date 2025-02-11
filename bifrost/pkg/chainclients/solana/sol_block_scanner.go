@@ -145,7 +145,7 @@ func (s *SOLScanner) FetchTxs(height, chainHeight int64) (stypes.TxIn, error) {
 		return stypes.TxIn{}, nil
 	}
 
-	txIn, err := s.processBlock(block)
+	txIn, err := s.ProcessBlock(block)
 	if err != nil {
 		return stypes.TxIn{}, err
 	}
@@ -159,7 +159,7 @@ func (s *SOLScanner) FetchTxs(height, chainHeight int64) (stypes.TxIn, error) {
 		s.logger.Info().Str("duration", duration.String()).Str("avg_duration", s.avgDuration.String()).Msg("sol block processed")
 	}
 
-	s.updateNetworkFee(height)
+	s.UpdateNetworkFee(height)
 
 	return txIn, nil
 }
@@ -193,9 +193,7 @@ func (s *SOLScanner) FetchMemPool(_ int64) (stypes.TxIn, error) {
 	return stypes.TxIn{}, nil
 }
 
-// --------------------------------- extraction ---------------------------------
-
-func (s *SOLScanner) processBlock(block *rpc.BlockResult) (stypes.TxIn, error) {
+func (s *SOLScanner) ProcessBlock(block *rpc.BlockResult) (stypes.TxIn, error) {
 	// skip empty blocks
 	if len(block.Transactions) == 0 {
 		return stypes.TxIn{}, nil
@@ -205,6 +203,33 @@ func (s *SOLScanner) processBlock(block *rpc.BlockResult) (stypes.TxIn, error) {
 
 	return txIn, nil
 }
+
+func (s *SOLScanner) UpdateNetworkFee(height int64) {
+	// Not enough blocks yet
+	if len(s.feeRateCache) < s.cfg.GasCacheBlocks {
+		return
+	}
+
+	// Calculate the median fee rate from the gas cache
+	medianFeeRate := calculateMedian(s.feeRateCache)
+
+	// round medianFeeRate to the nearest resolution
+	resolution := uint64(s.cfg.GasPriceResolution)
+	roundedFeeRate := ((medianFeeRate + (resolution / 2)) / resolution) * resolution
+
+	// Update the fee rate if it has changed
+	if roundedFeeRate != s.feeRate {
+		// post to thorchain
+		if _, err := s.bridge.PostNetworkFee(height, s.cfg.ChainID, 1, roundedFeeRate); err != nil {
+			s.logger.Err(err).Msg("failed to post SOL chain single transfer fee to THORNode")
+		} else {
+			s.feeRate = roundedFeeRate
+			s.logger.Info().Int("feeRate", int(s.feeRate)).Msg("Updated fee rate")
+		}
+	}
+}
+
+// --------------------------------- extraction ---------------------------------
 
 // Gets the TxIn struct for a block
 func (s *SOLScanner) getTxIn(block *rpc.BlockResult) stypes.TxIn {
@@ -270,31 +295,6 @@ func (s *SOLScanner) getTxIn(block *rpc.BlockResult) stypes.TxIn {
 
 	txIn.Count = strconv.Itoa(len(txIn.TxArray))
 	return txIn
-}
-
-func (s *SOLScanner) updateNetworkFee(height int64) {
-	// Not enough blocks yet
-	if len(s.feeRateCache) < s.cfg.GasCacheBlocks {
-		return
-	}
-
-	// Calculate the median fee rate from the gas cache
-	medianFeeRate := calculateMedian(s.feeRateCache)
-
-	// round medianFeeRate to the nearest resolution
-	resolution := uint64(s.cfg.GasPriceResolution)
-	roundedFeeRate := ((medianFeeRate + (resolution / 2)) / resolution) * resolution
-
-	// Update the fee rate if it has changed
-	if roundedFeeRate != s.feeRate {
-		// post to thorchain
-		if _, err := s.bridge.PostNetworkFee(height, s.cfg.ChainID, 1, roundedFeeRate); err != nil {
-			s.logger.Err(err).Msg("failed to post SOL chain single transfer fee to THORNode")
-		} else {
-			s.feeRate = roundedFeeRate
-			s.logger.Info().Int("feeRate", int(s.feeRate)).Msg("Updated fee rate")
-		}
-	}
 }
 
 // Calculates the median of a slice of uint64
