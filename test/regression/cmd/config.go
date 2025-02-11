@@ -259,7 +259,11 @@ func init() {
 		for _, chain := range common.AllChains {
 			// register template address for all chains
 			var addr common.Address
-			addr, err = common.PubKey(ecdsaPubKey).GetAddress(chain)
+			if chain.GetSigningAlgo() == common.SigningAlgoEd25519 {
+				addr, err = common.PubKey(ed25519PubKey).GetAddress(chain)
+			} else {
+				addr, err = common.PubKey(ecdsaPubKey).GetAddress(chain)
+			}
 			if err != nil {
 				log.Fatal().Err(err).Msg("failed to get address")
 			}

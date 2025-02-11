@@ -64,5 +64,11 @@ func newAddress(address string) (Address, error) {
 		}
 	}
 
+	// Check ED25519 (base58 encoded) addresses - SOL addresses must be 32 bytes long
+	res, decodeErr := Base58Decode(address)
+	if decodeErr == nil && len(res) == 32 {
+		return Address(address), nil
+	}
+
 	return NoAddress, fmt.Errorf("address format not supported: %s", address)
 }

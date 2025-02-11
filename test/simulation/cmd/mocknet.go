@@ -35,6 +35,7 @@ var chainRPCs = map[common.Chain]string{
 	common.AVAXChain: "http://localhost:9650/ext/bc/C/rpc",
 	common.GAIAChain: "localhost:9091",
 	common.BASEChain: "http://localhost:8547",
+	common.SOLChain:  "http://localhost:8899",
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -206,6 +207,8 @@ func InitConfig(parallelism int, seed bool) *OpConfig {
 		switch chain {
 		case common.BTCChain, common.ETHChain, common.LTCChain, common.BCHChain, common.BASEChain:
 			chainSeedAmount = sdkmath.NewUint(10 * common.One)
+		case common.BSCChain, common.SOLChain:
+			chainSeedAmount = sdkmath.NewUint(100 * common.One)
 		case common.GAIAChain:
 			chainSeedAmount = sdkmath.NewUint(1000 * common.One)
 		case common.AVAXChain:
@@ -242,7 +245,7 @@ func fundUserChainAccounts(master *User, users []*User, chain common.Chain, amou
 // nolint:typecheck
 func fundUserChainAccount(master, user *User, chain common.Chain, amount sdkmath.Uint) {
 	// build tx
-	addr, err := user.PubKey().GetAddress(chain)
+	addr, err := user.PubKey(chain).GetAddress(chain)
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to get address")
 	}
@@ -300,7 +303,7 @@ func fundUserChainAccount(master, user *User, chain common.Chain, amount sdkmath
 		}
 		tokenTxid, err := master.ChainClients[chain].BroadcastTx(tokenSigned)
 		if err != nil {
-			from, _ := master.PubKey().GetAddress(chain)
+			from, _ := master.PubKey(chain).GetAddress(chain)
 			log.Fatal().Err(err).
 				Stringer("chain", chain).
 				Stringer("from", from).
@@ -319,13 +322,13 @@ func fundUserChainAccount(master, user *User, chain common.Chain, amount sdkmath
 }
 
 func fundUserThorAccount(master, user *User) bool {
-	masterThorAddress, err := master.PubKey().GetThorAddress()
+	masterThorAddress, err := master.PubKey(common.THORChain).GetThorAddress()
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to get master thor address")
 	}
 
 	// skip seeding user if thorchain account has balance
-	userThorAddress, err := user.PubKey().GetAddress(common.THORChain)
+	userThorAddress, err := user.PubKey(common.THORChain).GetAddress(common.THORChain)
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to get user thor address")
 	}
@@ -336,7 +339,7 @@ func fundUserThorAccount(master, user *User) bool {
 	}
 
 	// seed thorchain account
-	userThorAccAddress, err := user.PubKey().GetThorAddress()
+	userThorAccAddress, err := user.PubKey(common.THORChain).GetThorAddress()
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to get user thor address")
 	}

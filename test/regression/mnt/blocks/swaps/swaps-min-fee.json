@@ -595,6 +595,7 @@
                     "finalise_height": "2",
                     "keysign_ms": "0",
                     "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
+                    "observed_pub_key_eddsa": "",
                     "out_hashes": [],
                     "signers": [],
                     "status": "incomplete",
@@ -633,7 +634,7 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "99233",
+          "gas_used": "100233",
           "events": [
             {
               "fee": "",
@@ -700,6 +701,7 @@
                     "finalise_height": "2",
                     "keysign_ms": "0",
                     "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
+                    "observed_pub_key_eddsa": "",
                     "out_hashes": [],
                     "signers": [],
                     "status": "incomplete",
@@ -738,7 +740,7 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "85677",
+          "gas_used": "86677",
           "events": [
             {
               "fee": "",
@@ -805,6 +807,7 @@
                     "finalise_height": "2",
                     "keysign_ms": "0",
                     "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
+                    "observed_pub_key_eddsa": "",
                     "out_hashes": [],
                     "signers": [],
                     "status": "incomplete",
@@ -843,7 +846,7 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "100094",
+          "gas_used": "101094",
           "events": [
             {
               "fee": "",
@@ -910,6 +913,7 @@
                     "finalise_height": "2",
                     "keysign_ms": "0",
                     "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
+                    "observed_pub_key_eddsa": "",
                     "out_hashes": [],
                     "signers": [],
                     "status": "incomplete",
@@ -948,7 +952,7 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "316156",
+          "gas_used": "318156",
           "events": [
             {
               "fee": "",
@@ -1015,7 +1019,7 @@
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
       "app_hash": "028C390B5A765556311AD99B18538CE041DB82283929326D19B5A15BAC440474",
-      "last_results_hash": "268E5D8FA24BEF71E59248DE9B2E7241DBFA755BBE24C7F209D1EB3C83B1A36A",
+      "last_results_hash": "1036D973A6698E99B83A86AA9245F12CB54E4A3A2486C38B71830BBBB63FE21A",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
