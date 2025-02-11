@@ -130,6 +130,8 @@ bifrost:
       chain_host: ""
       chain_network: ""
       rpc_host: ""
+      geyser_host: ""
+      geyser_token: ""
       cosmos_grpc_host: ""
       cosmos_grpc_tls: false
       opt_to_retire: false

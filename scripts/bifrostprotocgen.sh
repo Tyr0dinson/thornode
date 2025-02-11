@@ -13,3 +13,10 @@ go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.2
 pushd bifrost/tss/go-tss
 protoc --go_out=module=gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss:. ./messages/*.proto
 popd
+
+# Generate proto files for Solana geyser
+echo "Generating proto files for Solana geyers"
+apt-get update && apt-get install -y --no-install-recommends libprotobuf-dev
+pushd bifrost/pkg/chainclients/solana/geyser
+protoc --experimental_allow_proto3_optional --go_out=module=gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/solana/geyser:. ./*.proto
+popd

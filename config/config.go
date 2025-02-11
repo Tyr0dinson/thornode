@@ -212,6 +212,14 @@ func Init() {
 		"bifrost.chains.SOL.block_scanner.rpc_host",
 		"SOL_HOST",
 	))
+	assert(viper.BindEnv(
+		"bifrost.chains.SOL.geyser_host",
+		"SOL_GEYSER",
+	))
+	assert(viper.BindEnv(
+		"bifrost.chains.SOL.geyser_token",
+		"SOL_TOKEN",
+	))
 	assert(viper.BindEnv("bifrost.chains.GAIA.disabled", "GAIA_DISABLED"))
 	assert(viper.BindEnv("bifrost.chains.DOGE.disabled", "DOGE_DISABLED"))
 	assert(viper.BindEnv("bifrost.chains.LTC.disabled", "LTC_DISABLED"))
@@ -582,6 +590,8 @@ type BifrostChainConfiguration struct {
 	UserName            string                           `mapstructure:"username"`
 	Password            string                           `mapstructure:"password"`
 	RPCHost             string                           `mapstructure:"rpc_host"`
+	GeyserHost          string                           `mapstructure:"geyser_host"`
+	GeyserToken         string                           `mapstructure:"geyser_token"`
 	CosmosGRPCHost      string                           `mapstructure:"cosmos_grpc_host"`
 	CosmosGRPCTLS       bool                             `mapstructure:"cosmos_grpc_tls"`
 	HTTPostMode         bool                             `mapstructure:"http_post_mode"` // Bitcoin core only supports HTTP POST mode
