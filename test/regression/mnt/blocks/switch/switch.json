@@ -216,7 +216,7 @@
         }
       },
       "last_commit_hash": "",
-      "data_hash": "94E24D201F2AB76971790AE6F905F559DBBC4D38234CCD2132F7E7CD1554F0C8",
+      "data_hash": "B548B54875265A7E819CEB8A0A0BABD251C3948739128833B39DCFD8DF0BEC55",
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
@@ -229,7 +229,7 @@
     "end_block_events": [],
     "txs": [
       {
-        "hash": "91BAC7FBC511AFE54600F10D9E3000DE9D763D42E0CF23D6651BC81EAC19AC6F",
+        "hash": "2501FE864C931F4E557ECB7825B07CBDA7D459166F7D798FAC6A240196E927B3",
         "tx": {
           "auth_info": {
             "fee": {
@@ -263,7 +263,7 @@
                 "block_height": "1",
                 "chain": "GAIA",
                 "signer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
-                "transaction_fee_rate": "1000",
+                "transaction_fee_rate": "10",
                 "transaction_size": "1000"
               }
             ],
@@ -271,20 +271,20 @@
             "timeout_height": "0"
           },
           "signatures": [
-            "EXaypG9bP5XBPGOc6V2DrNeh5TBhoMV3JJ60KWS2I4VF1FMme+g86kCTGvXLhcDUodcobnAe4hAe34uR8jJgLw=="
+            "Xz6iSZtH24eMK/x8Ewpf/YuL7Qp5vNOLM12kkBtfYZsqYhZe6htr2sNkf+IjZoCWw30L3xQNbBSxup4GepBLrg=="
           ]
         },
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "64805",
+          "gas_used": "64585",
           "events": [
             {
               "acc_seq": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m/1",
               "type": "tx"
             },
             {
-              "signature": "EXaypG9bP5XBPGOc6V2DrNeh5TBhoMV3JJ60KWS2I4VF1FMme+g86kCTGvXLhcDUodcobnAe4hAe34uR8jJgLw==",
+              "signature": "Xz6iSZtH24eMK/x8Ewpf/YuL7Qp5vNOLM12kkBtfYZsqYhZe6htr2sNkf+IjZoCWw30L3xQNbBSxup4GepBLrg==",
               "type": "tx"
             },
             {
@@ -327,8 +327,8 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "39B46F83E8D56049487DA8BAAA7F5EA276C52340D763159F167216FC70CEF836",
-      "last_results_hash": "7CD5EBAEC981BEE5597DA8647550D7F5CBA5C13CFA36978B426B7ACB0DFF183D",
+      "app_hash": "B530716FFA024B8ED63CCF29DEAA120FEDB50981B658B300577F55CC6F6D32ED",
+      "last_results_hash": "186B4DF3FD9710D2C2C4C355A572F9D22BDDEABFD5A9F62EB9E8643E157F9CC3",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
@@ -475,7 +475,7 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "BF9591212629848FD9B95602EC62684525290D3CCB537CBC783BD010DE924B4B",
+      "app_hash": "CCD30EC4D06C97108C1D5BC192217D560D1F11A00825BF11BCA18EC6BB43CC29",
       "last_results_hash": "2A4A195A0030C32267CE7AF6894079B8E87790AED9186BC0172F2A59B36484EA",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
@@ -705,7 +705,7 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "F6EDBF3CA278A0CF8D68102F7C26AE257F9EEC9FCDCB47A1F0EFEE014A0F95DD",
+      "app_hash": "C8C8C8396D36C99C9B9421415F252F3BCB8B1E98260D63CC58881EF5523EE9A2",
       "last_results_hash": "6892A7594765CA126870B4D95CC80211F72F2ADB122777725E66B9646720CFCC",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
@@ -850,7 +850,7 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "1085789",
+          "gas_used": "1085681",
           "events": [
             {
               "acc_seq": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m/3",
@@ -917,7 +917,7 @@
               "coin_amount": "10000000",
               "coin_asset": "GAIA.KUJI",
               "coin_decimals": "0",
-              "gas_rate": "1500",
+              "gas_rate": "15",
               "in_hash": "0000000000000000000000000000000000000000000000000000000000000002",
               "max_gas_amount_0": "1500000",
               "max_gas_asset_0": "GAIA.ATOM",

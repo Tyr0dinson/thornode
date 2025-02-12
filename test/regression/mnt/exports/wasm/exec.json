@@ -287,7 +287,7 @@
         },
         {
           "chain": "ETH",
-          "transaction_fee_rate": "8",
+          "transaction_fee_rate": "80",
           "transaction_size": "80000"
         }
       ],
@@ -323,7 +323,7 @@
                 "asset": "ETH.ETH",
                 "decimals": "8"
               },
-              "gas_rate": "12",
+              "gas_rate": "120",
               "in_hash": "0000000000000000000000000000000000000000000000000000000000000002",
               "max_gas": [
                 {
@@ -472,7 +472,7 @@
                 "asset": "ETH.ETH",
                 "decimals": "8"
               },
-              "gas_rate": "12",
+              "gas_rate": "120",
               "in_hash": "0000000000000000000000000000000000000000000000000000000000000002",
               "max_gas": [
                 {
