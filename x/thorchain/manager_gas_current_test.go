@@ -64,7 +64,7 @@ func (GasManagerTestSuiteVCUR) TestGetAssetOutboundFee(c *C) {
 	c.Assert(err, IsNil)
 
 	// set network fee
-	networkFee := NewNetworkFee(common.AVAXChain, 1, 1000)
+	networkFee := NewNetworkFee(common.AVAXChain, 1, 10_000) // 10,000 nAVAX
 	c.Assert(k.SaveNetworkFee(ctx, common.AVAXChain, networkFee), IsNil)
 
 	// when there is a network fee available, but no gas asset pool, the fee should still be returned
@@ -257,17 +257,18 @@ func (GasManagerTestSuiteVCUR) TestGetMaxGas(c *C) {
 	gasCoin, err := gasMgr.GetMaxGas(ctx, common.GAIAChain)
 	c.Assert(err, IsNil)
 	c.Assert(gasCoin.Amount.IsZero(), Equals, true)
-	networkFee := NewNetworkFee(common.GAIAChain, 1000, 127)
+	networkFee := NewNetworkFee(common.GAIAChain, 1000, 127) // 127 uatom gas rate
 	c.Assert(k.SaveNetworkFee(ctx, common.GAIAChain, networkFee), IsNil)
 	gasCoin, err = gasMgr.GetMaxGas(ctx, common.GAIAChain)
 	c.Assert(err, IsNil)
-	c.Assert(gasCoin.Amount.Uint64(), Equals, uint64(127*1000*3/2))
+	c.Assert(gasCoin.Amount.Uint64(), Equals, uint64(1000*(127*3/2)*1e2))
+	// 1e2 uatom (1e6) -> THORChain Amount (1e8) conversion
 
-	networkFee = NewNetworkFee(common.ETHChain, 123, 127)
+	networkFee = NewNetworkFee(common.ETHChain, 123, 127) // 127 gwei gas rate
 	c.Assert(k.SaveNetworkFee(ctx, common.ETHChain, networkFee), IsNil)
 	gasCoin, err = gasMgr.GetMaxGas(ctx, common.ETHChain)
 	c.Assert(err, IsNil)
-	c.Assert(gasCoin.Amount.Uint64(), Equals, uint64(23431))
+	c.Assert(gasCoin.Amount.Uint64(), Equals, uint64(2_337), Commentf("%d", gasCoin.Amount.Uint64()))
 }
 
 func (GasManagerTestSuiteVCUR) TestOutboundFeeMultiplier(c *C) {

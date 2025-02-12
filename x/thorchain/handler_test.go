@@ -170,7 +170,7 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 	c.Assert(k.SaveNetworkFee(ctx, common.ETHChain, NetworkFee{
 		Chain:              common.ETHChain,
 		TransactionSize:    1,
-		TransactionFeeRate: 37500,
+		TransactionFeeRate: 375_000, // 375,000 gwei
 	}), IsNil)
 
 	c.Assert(k.SaveNetworkFee(ctx, common.BTCChain, NetworkFee{
@@ -274,7 +274,7 @@ func setupKeeperForTest(c *C) (cosmos.Context, keeper.Keeper) {
 	err = k.SaveNetworkFee(ctx, common.ETHChain, NetworkFee{
 		Chain:              common.ETHChain,
 		TransactionSize:    1,
-		TransactionFeeRate: 37500,
+		TransactionFeeRate: 375_000, // 375,000 gwei
 	})
 	c.Assert(err, IsNil)
 	err = k.SaveNetworkFee(ctx, common.BTCChain, NetworkFee{
