@@ -174,27 +174,25 @@ func (c Chain) GetGasAsset() Asset {
 	}
 }
 
-// GetGasUnits returns name of the gas unit for each chain
-func (c Chain) GetGasUnits() string {
+// GetGasUnits returns the name of the gas unit for each chain
+// as well as the number of gas units per 'One'.
+// gasRateUnitsPerOne type is cosmos.Uint to avoid uint64 overflow through
+// for example .Mul(gasRateUnitsPerOne).QuoUint64(common.One)
+// rather than * gasRateUnitsPerOne / common.One .
+func (c Chain) GetGasUnits() (gasRateUnits string, gasRateUnitsPerOne cosmos.Uint) {
 	switch c {
-	case AVAXChain:
-		return "nAVAX"
-	case BTCChain:
-		return "satsperbyte"
-	case BCHChain:
-		return "satsperbyte"
-	case DOGEChain:
-		return "satsperbyte"
-	case ETHChain, BSCChain, BASEChain:
-		return "gwei"
 	case GAIAChain:
-		return "uatom"
-	case LTCChain:
-		return "satsperbyte"
+		return "uatom", cosmos.NewUint(1e6)
 	case XRPChain:
-		return "drop"
+		return "drop", cosmos.NewUint(1e6)
+	case BTCChain, BCHChain, LTCChain, DOGEChain:
+		return "satsperbyte", cosmos.NewUint(1e8)
+	case ETHChain, BSCChain, BASEChain:
+		return "gwei", cosmos.NewUint(1e9)
+	case AVAXChain:
+		return "nAVAX", cosmos.NewUint(1e9)
 	default:
-		return ""
+		return "", cosmos.OneUint() // Avoid any divide-by-zero.
 	}
 }
 

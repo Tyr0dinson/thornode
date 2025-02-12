@@ -884,7 +884,7 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 	if !fromAsset.Chain.IsTHORChain() {
 		inboundGas := qs.mgr.GasMgr().GetGasRate(ctx, fromAsset.Chain)
 		res.RecommendedGasRate = inboundGas.String()
-		res.GasRateUnits = fromAsset.Chain.GetGasUnits()
+		res.GasRateUnits, _ = fromAsset.Chain.GetGasUnits()
 	}
 
 	return res, nil
@@ -995,7 +995,7 @@ func (qs queryServer) queryQuoteSaverDeposit(ctx cosmos.Context, req *types.Quer
 	// set inbound recommended gas
 	inboundGas := qs.mgr.GasMgr().GetGasRate(ctx, chain)
 	res.RecommendedGasRate = inboundGas.String()
-	res.GasRateUnits = chain.GetGasUnits()
+	res.GasRateUnits, _ = chain.GetGasUnits()
 
 	return res, nil
 }
@@ -1114,7 +1114,7 @@ func (qs queryServer) queryQuoteSaverWithdraw(ctx cosmos.Context, req *types.Que
 	// set inbound recommended gas
 	inboundGas := qs.mgr.GasMgr().GetGasRate(ctx, chain)
 	res.RecommendedGasRate = inboundGas.String()
-	res.GasRateUnits = chain.GetGasUnits()
+	res.GasRateUnits, _ = chain.GetGasUnits()
 
 	return res, nil
 }
@@ -1442,7 +1442,7 @@ func (qs queryServer) queryQuoteLoanOpen(ctx cosmos.Context, req *types.QueryQuo
 	// set inbound recommended gas
 	inboundGas := qs.mgr.GasMgr().GetGasRate(ctx, asset.Chain)
 	res.RecommendedGasRate = inboundGas.String()
-	res.GasRateUnits = asset.Chain.GetGasUnits()
+	res.GasRateUnits, _ = asset.Chain.GetGasUnits()
 
 	return res, nil
 }
@@ -1805,7 +1805,7 @@ func (qs queryServer) queryQuoteLoanClose(ctx cosmos.Context, req *types.QueryQu
 	if !asset.Chain.IsTHORChain() {
 		inboundGas := qs.mgr.GasMgr().GetGasRate(ctx, asset.Chain)
 		res.RecommendedGasRate = inboundGas.String()
-		res.GasRateUnits = asset.Chain.GetGasUnits()
+		res.GasRateUnits, _ = asset.Chain.GetGasUnits()
 	}
 
 	return res, nil

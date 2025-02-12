@@ -531,6 +531,7 @@ func (qs queryServer) queryInboundAddresses(ctx cosmos.Context, _ *types.QueryIn
 		// Retrieve the outbound fee for the chain's gas asset - fee will be zero if no network fee has been posted/the pool doesn't exist
 		outboundFee, _ := qs.mgr.GasMgr().GetAssetOutboundFee(ctx, chain.GetGasAsset(), false)
 
+		gasUnits, _ := chain.GetGasUnits()
 		addr := types.QueryInboundAddressResponse{
 			Chain:                chain.String(),
 			PubKey:               vault.PubKey.String(),
@@ -542,7 +543,7 @@ func (qs queryServer) queryInboundAddresses(ctx cosmos.Context, _ *types.QueryIn
 			ChainLpActionsPaused: isChainLpPaused,
 			ObservedFeeRate:      cosmos.NewUint(networkFeeInfo.TransactionFeeRate).String(),
 			GasRate:              gasRate.String(),
-			GasRateUnits:         chain.GetGasUnits(),
+			GasRateUnits:         gasUnits,
 			OutboundTxSize:       cosmos.NewUint(networkFeeInfo.TransactionSize).String(),
 			OutboundFee:          outboundFee.String(),
 			DustThreshold:        chain.DustThreshold().String(),
