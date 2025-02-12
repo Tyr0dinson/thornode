@@ -311,7 +311,7 @@ asserts:
           amount: "${OUT_AMOUNT}",
           asset: "ETH.ETH"
       },
-      gas_rate: 12,
+      gas_rate: 120,
       height: 20,
       in_hash: "34AA325C82F0B9572B54B1AD403146200625DB5F31EF59C5F8BF9BF22F93E71A",
       max_gas: [
