@@ -157,9 +157,10 @@ func (gm *GasMgrVCUR) GetAssetOutboundFee(ctx cosmos.Context, asset common.Asset
 	minMultiplierBasisPoints := gm.keeper.GetConfigInt64(ctx, constants.MinOutboundFeeMultiplierBasisPoints)
 
 	// Calculate outbound fee based on current fee multiplier
-	chainBaseFee := chainOutboundFee.TransactionSize * chainOutboundFee.TransactionFeeRate
+	_, gasRateUnitsPerOne := asset.GetChain().GetGasUnits()
+	chainBaseFee := cosmos.NewUint(chainOutboundFee.TransactionSize).MulUint64(chainOutboundFee.TransactionFeeRate).MulUint64(common.One).Quo(gasRateUnitsPerOne)
 	feeMultiplierBps := gm.CalcOutboundFeeMultiplier(ctx, cosmos.NewUint(uint64(targetOutboundFeeSurplus)), outboundFeeSpentRune, outboundFeeWithheldRune, cosmos.NewUint(uint64(maxMultiplierBasisPoints)), cosmos.NewUint(uint64(minMultiplierBasisPoints)))
-	finalFee := common.GetUncappedShare(feeMultiplierBps, cosmos.NewUint(constants.MaxBasisPts), cosmos.NewUint(chainBaseFee))
+	finalFee := common.GetUncappedShare(feeMultiplierBps, cosmos.NewUint(constants.MaxBasisPts), chainBaseFee)
 
 	fee := cosmos.RoundToDecimal(
 		finalFee,
@@ -253,10 +254,12 @@ func (gm *GasMgrVCUR) GetGasRate(ctx cosmos.Context, chain common.Chain) cosmos.
 		ctx.Logger().Error("network fee is invalid", "error", err, "chain", chain)
 		return transactionFee
 	}
-	return cosmos.RoundToDecimal(
-		cosmos.NewUint(networkFee.TransactionFeeRate*3/2),
-		chain.GetGasAssetDecimal(),
-	)
+
+	// Overestimate the gas rate by 1.5x
+	// to increase the likelihood of transaction acceptance.
+	// Being in GasRateUnits unlike THORChain Amount MaxGas,
+	// GasRate doesn't need to be rounded to Gas Asset precision.
+	return cosmos.NewUint(networkFee.TransactionFeeRate * 3 / 2)
 }
 
 func (gm *GasMgrVCUR) GetNetworkFee(ctx cosmos.Context, chain common.Chain) (types.NetworkFee, error) {
@@ -271,13 +274,16 @@ func (gm *GasMgrVCUR) GetNetworkFee(ctx cosmos.Context, chain common.Chain) (typ
 // GetMaxGas will calculate the maximum gas fee a tx can use
 func (gm *GasMgrVCUR) GetMaxGas(ctx cosmos.Context, chain common.Chain) (common.Coin, error) {
 	gasAsset := chain.GetGasAsset()
-	var amount cosmos.Uint
 
 	nf, err := gm.keeper.GetNetworkFee(ctx, chain)
 	if err != nil {
 		return common.NoCoin, fmt.Errorf("fail to get network fee for chain(%s): %w", chain, err)
 	}
-	amount = cosmos.NewUint(nf.TransactionSize * nf.TransactionFeeRate).MulUint64(3).QuoUint64(2)
+	// Overestimate the gas rate by 1.5x
+	// to increase the likelihood of transaction acceptance.
+	gasRate := nf.TransactionFeeRate * 3 / 2
+	_, gasRateUnitsPerOne := chain.GetGasUnits()
+	amount := cosmos.NewUint(nf.TransactionSize).MulUint64(gasRate).MulUint64(common.One).Quo(gasRateUnitsPerOne)
 	gasCoin := common.NewCoin(gasAsset, amount)
 	chainGasAssetPrecision := chain.GetGasAssetDecimal()
 	gasCoin.Amount = cosmos.RoundToDecimal(amount, chainGasAssetPrecision)
