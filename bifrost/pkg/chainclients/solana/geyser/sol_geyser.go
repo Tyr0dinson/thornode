@@ -8,9 +8,9 @@ import (
 	"strconv"
 	"time"
 
-	pb "github.com/rpcpool/yellowstone-grpc/examples/golang/proto"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	pb "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/solana/geyser/proto"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/config"
 	"google.golang.org/grpc"
