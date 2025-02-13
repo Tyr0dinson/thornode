@@ -187,10 +187,12 @@ func (c Chain) GetGasUnits() (gasRateUnits string, gasRateUnitsPerOne cosmos.Uin
 		return "drop", cosmos.NewUint(1e6)
 	case BTCChain, BCHChain, LTCChain, DOGEChain:
 		return "satsperbyte", cosmos.NewUint(1e8)
-	case ETHChain, BSCChain, BASEChain:
+	case ETHChain, BSCChain:
 		return "gwei", cosmos.NewUint(1e9)
 	case AVAXChain:
 		return "nAVAX", cosmos.NewUint(1e9)
+	case BASEChain:
+		return "mwei", cosmos.NewUint(1e12)
 	default:
 		return "", cosmos.OneUint() // Avoid any divide-by-zero.
 	}
