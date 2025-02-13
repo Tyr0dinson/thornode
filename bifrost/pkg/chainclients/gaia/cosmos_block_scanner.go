@@ -221,6 +221,14 @@ func (c *CosmosBlockScanner) updateGasCache(tx ctypes.FeeTx) {
 	price := amount.Quo(sdkmath.NewUint(tx.GetGas()))          // divide by gas to get the price
 	fee := price.Mul(sdkmath.NewUint(GasLimit))                // tx fee for default gas limit
 	fee = fee.Quo(sdkmath.NewUint(GasPriceFactor))             // unroll the multiple
+
+	// gas rate from THORChain decimals to gas rate units
+	_, gasRateUnitsPerOne := c.cfg.ChainID.GetGasUnits()
+	fee = fee.Mul(gasRateUnitsPerOne).QuoUint64(common.One)
+	if fee.IsZero() {
+		fee = cosmos.OneUint()
+	}
+
 	c.feeCache = append(c.feeCache, fee)
 
 	// truncate gas prices older than our max cached transactions
@@ -240,7 +248,7 @@ func (c *CosmosBlockScanner) averageFee() sdkmath.Uint {
 	for _, val := range c.feeCache {
 		sum = sum.Add(val)
 	}
-	mean := sum.Quo(sdkmath.NewUint(uint64(len(c.feeCache))))
+	mean := sum.QuoUint64(uint64(len(c.feeCache)))
 
 	// round the price up to avoid fee noise
 	resolution := sdkmath.NewUint(uint64(c.cfg.GasPriceResolution))
@@ -271,18 +279,19 @@ func (c *CosmosBlockScanner) updateGasFees(height int64) error {
 			return nil
 		}
 
-		// NOTE: We post the fee to the network instead of the transaction rate, and set the
+		// NOTE: We post the fee to the network as the transaction rate (in gas rate units), and set the
 		// transaction size 1 to ensure the MaxGas in the generated TxOut contains the
-		// correct fee. We cannot pass the proper size and rate without a deeper change to
-		// Thornode, as the rate on Cosmos chains is less than 1 and cannot be represented
-		// by the uint.
-		feeTx, err := c.bridge.PostNetworkFee(height, c.cfg.ChainID, 1, gasFee.Uint64())
+		// correct fee. We previously could not pass the proper size and rate without a deeper change to
+		// Thornode, as the rate on Cosmos chains can be less than 1.
+		var transactionSize uint64 = 1
+		feeTx, err := c.bridge.PostNetworkFee(height, c.cfg.ChainID, transactionSize, gasFee.Uint64())
 		if err != nil {
 			return err
 		}
 		c.lastFee = gasFee
 		c.logger.Info().
 			Str("tx", feeTx.String()).
+			Uint64("size", transactionSize).
 			Uint64("fee", gasFee.Uint64()).
 			Int64("height", height).
 			Msg("sent network fee to THORChain")

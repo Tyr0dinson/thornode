@@ -266,7 +266,7 @@ bifrost:
       block_scanner:
         <<: *default-block-scanner
         chain_id: GAIA
-        gas_price_resolution: 100_000 # uatom
+        gas_price_resolution: 1_000 # 1,000 uatom
         observation_flexibility_blocks: 40
         whitelist_cosmos_assets:
           - symbol: ATOM
@@ -310,7 +310,7 @@ bifrost:
       block_scanner:
         <<: *default-block-scanner
         chain_id: XRP
-        gas_price_resolution: 10 # drop
+        gas_price_resolution: 10 # drops
         observation_flexibility_blocks: 40
       mempool_tx_id_cache_size: 0
       scanner_leveldb: *default-leveldb
