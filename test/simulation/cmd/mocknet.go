@@ -111,7 +111,7 @@ func InitConfig(parallelism int, seed bool) *OpConfig {
 			}
 			log.Info().Msg("posting gaia network fee")
 			for {
-				_, err := a.Thorchain.PostNetworkFee(1, common.GAIAChain, 1, 1_000_000)
+				_, err := a.Thorchain.PostNetworkFee(1, common.GAIAChain, 1, 10_000) // 10,000 uatom
 				if err == nil {
 					break
 				}
@@ -120,7 +120,7 @@ func InitConfig(parallelism int, seed bool) *OpConfig {
 			}
 			log.Info().Msg("posting xrp network fee")
 			for {
-				_, err := a.Thorchain.PostNetworkFee(1, common.XRPChain, 1, 1_000)
+				_, err := a.Thorchain.PostNetworkFee(1, common.XRPChain, 1, 10) // 10 drops
 				if err == nil {
 					break
 				}
