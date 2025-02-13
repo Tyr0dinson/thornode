@@ -297,6 +297,7 @@ func (s *EthereumSuite) TestClient(c *C) {
 			StartBlockHeight:   1, // avoids querying thorchain for block height
 			HTTPRequestTimeout: time.Second,
 		},
+		ChainID: common.ETHChain, // Important for determining gas rate units.
 	}, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
 	c.Assert(err2, IsNil)
 	c.Assert(e2, NotNil)
@@ -348,10 +349,10 @@ func (s *EthereumSuite) TestClient(c *C) {
                     "amount": "600000"
                 }
             ],
-			"gas_rate":1
+			"gas_rate":10
         }
     ]
-}`)
+}`) // gas_rate is 10 gwei
 	var txOut stypes.TxOut
 	err = json.Unmarshal(input, &txOut)
 	c.Assert(err, IsNil)
@@ -408,6 +409,7 @@ func (s *EthereumSuite) TestSignETHTx(c *C) {
 			HTTPRequestTimeout: time.Second,
 			MaxGasLimit:        80000,
 		},
+		ChainID:                    common.ETHChain, // Important for determining gas rate units.
 		AggregatorMaxGasMultiplier: 10,
 		TokenMaxGasMultiplier:      3,
 	}, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
@@ -491,7 +493,7 @@ func (s *EthereumSuite) TestSignETHTx(c *C) {
 		MaxGas: common.Gas{
 			common.NewCoin(common.ETHAsset, cosmos.NewUint(e.cfg.BlockScanner.MaxGasLimit*8)),
 		},
-		GasRate: 1,
+		GasRate: 10, // 10 gwei
 		Memo:    "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
 	}, 1)
 	c.Assert(err, IsNil)

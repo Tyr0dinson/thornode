@@ -29,6 +29,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/cmd"
+	thorcommon "gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain"
@@ -82,7 +83,8 @@ func getConfigForTest() config.BifrostBlockScannerConfiguration {
 		BlockRetryInterval:         time.Second,
 		Concurrency:                1,
 		GasCacheBlocks:             40,
-		GasPriceResolution:         10_000_000_000,
+		GasPriceResolution:         10,                  // 10 gwei
+		ChainID:                    thorcommon.ETHChain, // Important for determining gas rate units.
 	}
 }
 
@@ -692,7 +694,8 @@ func (s *BlockScannerTestSuite) TestGasPrice(c *C) {
 	c.Assert(bs, NotNil)
 
 	baseFee := big.NewInt(0)
-	var resolution int64 = 1e10
+	var resolution int64 = 10 // 10 gwei
+	resolution *= 1e9         // gwei to wei, for the below usage.
 
 	// almost fill gas cache
 	for i := 0; i < 39; i++ {
