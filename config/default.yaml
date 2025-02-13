@@ -195,7 +195,7 @@ bifrost:
         concurrency: 1
         chain_id: AVAX
         gas_cache_blocks: 40
-        gas_price_resolution: 50_000_000_000 # 50 navax
+        gas_price_resolution: 50 # 50 navax
         observation_flexibility_blocks: 80
         max_gas_limit: 100000
         max_contract_tx_logs: 50
@@ -221,7 +221,7 @@ bifrost:
         concurrency: 1
         chain_id: BSC
         gas_cache_blocks: 40
-        gas_price_resolution: 10_000_000_000 # 10 gwei
+        gas_price_resolution: 10 # 10 gwei
         observation_flexibility_blocks: 80
         max_gas_limit: 100000
         max_contract_tx_logs: 50

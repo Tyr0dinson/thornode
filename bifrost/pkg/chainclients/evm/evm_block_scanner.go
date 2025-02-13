@@ -208,7 +208,7 @@ func (e *EVMScanner) GetGasPrice() *big.Int {
 
 // GetNetworkFee returns current chain network fee according to Bifrost.
 func (e *EVMScanner) GetNetworkFee() (transactionSize, transactionFeeRate uint64) {
-	return e.cfg.MaxGasLimit, e.lastReportedGasPrice / 1e10 // 1e18 -> 1e8
+	return e.cfg.MaxGasLimit, e.lastReportedGasPrice
 }
 
 // GetNonce returns the nonce (including pending) for the given address.
@@ -750,8 +750,9 @@ func (e *EVMScanner) updateGasPrice(prices []*big.Int) {
 	sort.Slice(medians, func(i, j int) bool { return medians[i].Cmp(medians[j]) == -1 })
 	median := medians[len(medians)/2]
 
-	// round the price up to nearest configured resolution
-	resolution := big.NewInt(e.cfg.GasPriceResolution)
+	// round the price up to nearest configured resolution, converting gas rate units to wei
+	_, gasRateUnitsPerOne := e.cfg.ChainID.GetGasUnits()
+	resolution := cosmos.NewUint(uint64(e.cfg.GasPriceResolution)).MulUint64(common.WeiPerOne).Quo(gasRateUnitsPerOne).BigInt()
 	median.Add(median, new(big.Int).Sub(resolution, big.NewInt(1)))
 	median = median.Div(median, resolution)
 	median = median.Mul(median, resolution)
@@ -772,10 +773,21 @@ func (e *EVMScanner) reportNetworkFee(height int64) {
 		return
 	}
 
+	// gas rate from wei to gas rate units
+	_, gasRateUnitsPerOne := e.cfg.ChainID.GetGasUnits()
+	gasRate := cosmos.NewUintFromBigInt(gasPrice).Mul(gasRateUnitsPerOne).QuoUint64(common.WeiPerOne).Uint64()
+	if gasRate == 0 {
+		gasRate = 1
+	}
+
 	// skip fee if less than 1 resolution away from the last
-	feeDelta := new(big.Int).Sub(gasPrice, big.NewInt(int64(e.lastReportedGasPrice)))
-	feeDelta.Abs(feeDelta)
-	if e.lastReportedGasPrice != 0 && feeDelta.Cmp(big.NewInt(e.cfg.GasPriceResolution)) != 1 {
+	var feeDelta uint64
+	if gasRate >= e.lastReportedGasPrice {
+		feeDelta = gasRate - e.lastReportedGasPrice
+	} else {
+		feeDelta = e.lastReportedGasPrice - gasRate
+	}
+	if e.lastReportedGasPrice != 0 && feeDelta <= uint64(e.cfg.GasPriceResolution) {
 		skip := true
 
 		// every 100 blocks send the fee if none is set
@@ -789,14 +801,11 @@ func (e *EVMScanner) reportNetworkFee(height int64) {
 		}
 	}
 
-	// gas price to 1e8 from 1e18
-	tcGasPrice := new(big.Int).Div(gasPrice, big.NewInt(1e10))
-
 	// post to thorchain
-	if _, err := e.bridge.PostNetworkFee(height, e.cfg.ChainID, e.cfg.MaxGasLimit, tcGasPrice.Uint64()); err != nil {
+	if _, err := e.bridge.PostNetworkFee(height, e.cfg.ChainID, e.cfg.MaxGasLimit, gasRate); err != nil {
 		e.logger.Err(err).Msg("failed to post EVM chain single transfer fee to THORNode")
 	} else {
-		e.lastReportedGasPrice = gasPrice.Uint64()
+		e.lastReportedGasPrice = gasRate
 	}
 }
 
