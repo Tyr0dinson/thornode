@@ -122,7 +122,7 @@ bifrost:
         concurrency: 0
         max_gas_limit: 0
         fixed_gas_rate: 0
-        gas_price_resolution: 10 # 10 gwei
+        gas_price_resolution: 1 # 1 satoshi (UTXO default)
         max_resume_block_lag: 24h
         max_healthy_lag: 30m
         transaction_batch_size: 500
@@ -151,6 +151,7 @@ bifrost:
         chain_id: ETH
         observation_flexibility_blocks: 20
         max_gas_limit: 100000
+        gas_price_resolution: 10 # 10 gwei
         max_contract_tx_logs: 50
       mempool_tx_id_cache_size: 0
       scanner_leveldb: *default-leveldb
