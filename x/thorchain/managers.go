@@ -47,6 +47,7 @@ type Manager interface {
 	TradeAccountManager() TradeAccountManager
 	SecuredAssetManager() SecuredAssetManager
 	WasmManager() WasmManager
+	SwitchManager() SwitchManager
 }
 
 type TradeAccountManager interface {
@@ -221,6 +222,11 @@ type Swapper interface {
 	GetSwapCalc(X, x, Y, slipBps, minSlipBps cosmos.Uint) (emitAssets, liquidityFee, slip cosmos.Uint)
 }
 
+type SwitchManager interface {
+	Switch(_ cosmos.Context, _ common.Asset, amount cosmos.Uint, owner cosmos.AccAddress, assetAddr common.Address, _ common.TxID) (common.Address, error)
+	IsSwitch(_ cosmos.Context, _ common.Asset) bool
+}
+
 // Mgrs is an implementation of Manager interface
 type Mgrs struct {
 	currentVersion semver.Version
@@ -238,6 +244,7 @@ type Mgrs struct {
 	tradeManager   TradeAccountManager
 	securedManager SecuredAssetManager
 	wasmManager    WasmManager
+	switchManager  SwitchManager
 
 	K             keeper.Keeper
 	cdc           codec.Codec
@@ -378,6 +385,11 @@ func (mgr *Mgrs) LoadManagerIfNecessary(ctx cosmos.Context) error {
 		return fmt.Errorf("fail to create wasm manager: %w", err)
 	}
 
+	mgr.switchManager = newSwitchMgrVCUR(mgr.K, mgr.eventMgr)
+	if err != nil {
+		return fmt.Errorf("fail to create switch manager: %w", err)
+	}
+
 	return nil
 }
 
@@ -419,6 +431,8 @@ func (mgr *Mgrs) TradeAccountManager() TradeAccountManager { return mgr.tradeMan
 func (mgr *Mgrs) SecuredAssetManager() SecuredAssetManager { return mgr.securedManager }
 
 func (mgr *Mgrs) WasmManager() WasmManager { return mgr.wasmManager }
+
+func (mgr *Mgrs) SwitchManager() SwitchManager { return mgr.switchManager }
 
 // GetKeeper return Keeper
 func GetKeeper(
