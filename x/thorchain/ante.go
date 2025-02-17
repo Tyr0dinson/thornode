@@ -1,6 +1,7 @@
 package thorchain
 
 import (
+	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
 	"github.com/blang/semver"
 
 	storetypes "cosmossdk.io/store/types"
@@ -161,7 +162,13 @@ func (ad AnteDecorator) anteHandleMessage(ctx sdk.Context, version semver.Versio
 			}
 		}
 		return SendAnteHandler(ctx, version, ad.keeper, m)
-
+	case *wasmtypes.MsgStoreCode,
+		*wasmtypes.MsgInstantiateContract,
+		*wasmtypes.MsgInstantiateContract2,
+		*wasmtypes.MsgExecuteContract,
+		*wasmtypes.MsgMigrateContract,
+		*wasmtypes.MsgSudoContract:
+		return nil
 	default:
 		return cosmos.ErrUnknownRequest("invalid message type")
 	}
@@ -174,7 +181,7 @@ type InfiniteGasDecorator struct {
 	keeper keeper.Keeper
 }
 
-func NewInfiniteGasDecorator(keeper keeper.Keeper) InfiniteGasDecorator {
+func NewGasDecorator(keeper keeper.Keeper) InfiniteGasDecorator {
 	return InfiniteGasDecorator{
 		keeper: keeper,
 	}

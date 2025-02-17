@@ -71,10 +71,6 @@ func (h AddLiquidityHandler) validateV3_0_0(ctx cosmos.Context, msg MsgAddLiquid
 		return fmt.Errorf("asset cannot be a trade asset")
 	}
 
-	if msg.Asset.IsSecuredAsset() {
-		return fmt.Errorf("asset cannot be a secured asset")
-	}
-
 	// TODO on hard fork move network check to ValidateBasic
 	if !msg.AssetAddress.IsEmpty() {
 		if !common.CurrentChainNetwork.SoftEquals(msg.AssetAddress.GetNetwork(msg.AssetAddress.GetChain())) {
@@ -226,6 +222,21 @@ func (h AddLiquidityHandler) handle(ctx cosmos.Context, msg MsgAddLiquidity) err
 }
 
 func (h AddLiquidityHandler) handleV3_0_0(ctx cosmos.Context, msg MsgAddLiquidity) (errResult error) {
+	if msg.Asset.IsSecuredAsset() {
+		withdrawAmount, err := h.mgr.SecuredAssetManager().Withdraw(ctx,
+			msg.Asset,
+			msg.AssetAmount,
+			msg.Signer,
+			common.NoAddress,
+			msg.Tx.ID,
+		)
+		if err != nil {
+			return ErrInternal(err, "fail to withdraw from secured asset")
+		}
+
+		msg.Asset = withdrawAmount.Asset
+	}
+
 	// check if we need to swap before adding asset
 	if h.needsSwap(msg) {
 		return h.swap(ctx, msg)
