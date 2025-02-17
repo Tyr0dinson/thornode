@@ -23,6 +23,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss"
+	gotss "gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/tss"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
@@ -56,7 +57,7 @@ type SOLClient struct {
 func NewSOLClient(
 	thorKeys *thorclient.Keys,
 	cfg config.BifrostChainConfiguration,
-	// server *tss.TssServer,
+	server *gotss.TssServer,
 	bridge thorclient.ThorchainBridge,
 	m *metrics.Metrics,
 	pubkeyMgr pubkeymanager.PubKeyValidator,

@@ -7,8 +7,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"time"
 
+	"github.com/cosmos/cosmos-sdk/codec"
+	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
+	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	cKeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
@@ -49,7 +53,6 @@ func httpTestHandler(c *C, rw http.ResponseWriter, fixture string) {
 func getConfigForTest(rpcHost string) config.BifrostBlockScannerConfiguration {
 	return config.BifrostBlockScannerConfiguration{
 		ChainID:                    common.SOLChain,
-		RPCHost:                    rpcHost,
 		StartBlockHeight:           1, // avoids querying thorchain for block height
 		BlockScanProcessors:        1,
 		HTTPRequestTimeout:         time.Second,
@@ -60,15 +63,16 @@ func getConfigForTest(rpcHost string) config.BifrostBlockScannerConfiguration {
 		BlockRetryInterval:         time.Second,
 		GasCacheBlocks:             100,
 		Concurrency:                1,
-		GasPriceResolution:         TestGasPriceResolution, // 50 navax
+		GasPriceResolution:         TestGasPriceResolution,
 		TransactionBatchSize:       500,
 	}
 }
 
 type BlockScannerTestSuite struct {
-	m      *metrics.Metrics
-	bridge thorclient.ThorchainBridge
-	keys   *thorclient.Keys
+	m       *metrics.Metrics
+	bridge  thorclient.ThorchainBridge
+	keys    *thorclient.Keys
+	scanner *SOLScanner
 }
 
 var _ = Suite(&BlockScannerTestSuite{})
@@ -85,7 +89,10 @@ func (s *BlockScannerTestSuite) SetUpSuite(c *C) {
 		ChainHomeFolder: "",
 	}
 
-	kb := cKeys.NewInMemory()
+	registry := codectypes.NewInterfaceRegistry()
+	cryptocodec.RegisterInterfaces(registry)
+	cdc := codec.NewProtoCodec(registry)
+	kb := cKeys.NewInMemory(cdc)
 	_, _, err := kb.NewMnemonic(cfg.SignerName, cKeys.English, cmd.THORChainHDPath, cfg.SignerPasswd, hd.Secp256k1)
 	c.Assert(err, IsNil)
 	thorKeys := thorclient.NewKeysWithKeybase(kb, cfg.SignerName, cfg.SignerPasswd)
@@ -93,9 +100,7 @@ func (s *BlockScannerTestSuite) SetUpSuite(c *C) {
 	s.keys = thorKeys
 	s.bridge, err = thorclient.NewThorchainBridge(cfg, s.m, thorKeys)
 	c.Assert(err, IsNil)
-}
 
-func (s *BlockScannerTestSuite) TestGetBlock(c *C) {
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		switch req.RequestURI {
 		case thorclient.PubKeysEndpoint:
@@ -132,16 +137,70 @@ func (s *BlockScannerTestSuite) TestGetBlock(c *C) {
 	pubKeyManager, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
 	c.Assert(err, IsNil)
 
-	cfg := getConfigForTest("http://" + server.Listener.Addr().String())
+	scannerCfg := getConfigForTest("http://" + server.Listener.Addr().String())
 
-	rpcClient := rpc.NewSolRPC("http://"+server.Listener.Addr().String(), cfg.HTTPRequestTimeout)
-	scanner, err := NewSOLScanner(cfg, storage, s.bridge, s.m, rpcClient, pubKeyManager, nil, signerCacheManager)
+	rpcClient := rpc.NewSolRPC("http://"+server.Listener.Addr().String(), scannerCfg.HTTPRequestTimeout)
+	scanner, err := NewSOLScanner(scannerCfg, storage, s.bridge, s.m, rpcClient, pubKeyManager, nil, signerCacheManager)
 	c.Assert(err, IsNil)
+	s.scanner = scanner
+}
 
-	txIns, err := scanner.FetchTxs(1, 1)
+// func (s *BlockScannerTestSuite) TestGetBlock(c *C) {
+// 	txIns, err := s.scanner.FetchTxs(1, 1)
+// 	c.Assert(err, IsNil)
+// 	c.Assert(len(txIns.TxArray), Equals, 1)
+// 	// for _, txIn := range txIns.TxArray {
+// 	// 	// fmt.Printf("tx: %s, coins: %+v", txIn.Tx, txIn.Coins[0].String())
+// 	// }
+// }
+
+func (s *BlockScannerTestSuite) TestGetTxInItem(c *C) {
+	// Load the test txs
+	txFiles, err := os.ReadDir("test/txs")
 	c.Assert(err, IsNil)
-	for _, txIn := range txIns.TxArray {
-		fmt.Printf("tx: %s, coins: %+v", txIn.Tx, txIn.Coins[0].String())
+	for _, txFile := range txFiles {
+		txPath := filepath.Join("test/txs", txFile.Name())
+		txFile, err := os.Open(txPath)
+		c.Assert(err, IsNil)
+		defer txFile.Close()
+
+		// Parse the tx
+		tx := new(rpc.RPCTransaction)
+		err = json.NewDecoder(txFile).Decode(tx)
+		c.Assert(err, IsNil)
+
+		innerInstructions := tx.GetInnerInstructions()
+
+		for i, instruction := range tx.GetInstructions() {
+			fmt.Println("Instruction: ", i)
+
+			instInnerInstructions := []rpc.RPCInstruction{}
+			// get inner instructions if any
+			if len(innerInstructions) > 0 {
+				for _, inner := range innerInstructions {
+					if inner.Index == i {
+						instInnerInstructions = inner.Instructions
+					}
+				}
+			}
+
+			for j, account := range instruction.Accounts {
+				fmt.Println("account", j, tx.Transaction.Message.AccountKeys[account])
+			}
+
+			if len(instInnerInstructions) > 0 {
+				fmt.Println("Inst has inner instructions: ", len(instInnerInstructions))
+			}
+
+			// iterate through inner instructions
+			for _, inner := range instInnerInstructions {
+				for j, account := range inner.Accounts {
+					fmt.Println("inner account", j, tx.Transaction.Message.AccountKeys[account])
+				}
+			}
+		}
+
+		txInItem := s.scanner.getTxInItem(*tx, 1)
+		c.Assert(txInItem, NotNil)
 	}
-	// c.Fatal()
 }

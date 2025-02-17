@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"sort"
 	"strconv"
@@ -307,6 +308,26 @@ func calculateMedian(arr []uint64) uint64 {
 	return arr[n/2]
 }
 
+type Token struct {
+	Mint     string `json:"mint"`
+	Symbol   string `json:"symbol"`
+	Decimals int    `json:"decimals"`
+}
+
+// mint_to_symbol is a map of mint addresses to their corresponding symbol
+var mintToSymbol = map[string]Token{
+	"EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v": Token{
+		Mint:     "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+		Symbol:   "USDC",
+		Decimals: 6,
+	},
+	"3bRTivrVsitbmCTGtqwp7hxXPsybkjn4XLNtPsHqa3zR": Token{
+		Mint:     "3bRTivrVsitbmCTGtqwp7hxXPsybkjn4XLNtPsHqa3zR",
+		Symbol:   "LIKE",
+		Decimals: 9,
+	},
+}
+
 // Create a TxInItem for a SOL transfer transaction. This function will only return a
 // TxInItem if the transaction contains a transfer of SOL. Otherwise, it will return
 // nil.
@@ -314,13 +335,18 @@ func (s *SOLScanner) getTxInItem(txn rpc.RPCTransaction, blockHeight int64) *sty
 	memo := ""
 	netBalanceChange := make(map[string]int64)
 	fee := txn.Meta.Fee
+	splTransfers := []common.Coin{}
 
 	instructions := txn.GetInstructions()
+	allInstructions := append(instructions, s.getInnerInstructions(txn)...)
+	tokenBalanceChanges := s.getTokenBalanceChanges(txn)
+	signers := getTransactionSigners(txn)
+	s.logger.Info().Str("signers", jsonString(signers)).Msg("signers")
 
-	for _, instruction := range instructions {
+	for _, instruction := range allInstructions {
 		programID := txn.GetAccountAtIndex(instruction.ProgramIdIndex)
 
-		// Check if this instruction is the memo
+		// Check for Memo Program
 		if types.MemoProgramID.EqualsString(programID) {
 			memoBytes, err := common.Base58Decode(instruction.Data)
 			if err == nil {
@@ -330,51 +356,38 @@ func (s *SOLScanner) getTxInItem(txn rpc.RPCTransaction, blockHeight int64) *sty
 			}
 		}
 
-		// SOL transfers using the systemProgram, so skip if program is something else.
-		if !types.SystemProgramID.EqualsString(programID) {
-			continue
-		}
-
-		// Decode the data
-		data, err := common.Base58Decode(instruction.Data)
-		if err != nil {
-			s.logger.Error().Err(err).Str("data", instruction.Data).Msg("Failed to decode instruction data")
-			continue
-		}
-
-		// Check if the instruction is a transfer
-		if len(data) >= 1 && data[0] == 2 { // `2` indicates a System Program transfer instruction
-			if len(instruction.Accounts) < 2 {
-				s.logger.Debug().Msg("Instruction does not contain enough accounts for transfer")
+		// SOL Transfers (System Program)
+		if types.SystemProgramID.EqualsString(programID) {
+			data, err := common.Base58Decode(instruction.Data)
+			if err != nil {
+				s.logger.Error().Err(err).Str("data", instruction.Data).Msg("Failed to decode instruction data")
 				continue
 			}
-			for i := 0; i < len(instruction.Accounts)-1; i += 2 {
-				if i+1 >= len(instruction.Accounts) {
-					s.logger.Debug().Msg("Index out of range when accessing instruction accounts")
+
+			if len(data) >= 1 && data[0] == 2 { // Transfer opcode
+				if len(instruction.Accounts) < 2 {
+					s.logger.Debug().Msg("Instruction does not contain enough accounts for transfer")
 					continue
 				}
-				fromIdx := instruction.Accounts[i]
-				toIdx := instruction.Accounts[i+1]
+
+				fromIdx := instruction.Accounts[0]
+				toIdx := instruction.Accounts[1]
+
 				if fromIdx >= len(txn.Transaction.Message.AccountKeys) || toIdx >= len(txn.Transaction.Message.AccountKeys) {
-					// Account index out of range, meaning the instruction references an account
-					// from an account lookup table. This instruction can be skipped since
-					// transfer instructions must reference accounts in the primary account keys
-					// array
 					continue
 				}
+
 				fromAccount := txn.Transaction.Message.AccountKeys[fromIdx]
 				toAccount := txn.Transaction.Message.AccountKeys[toIdx]
+
 				if fromIdx >= len(txn.Meta.PreBalances) || fromIdx >= len(txn.Meta.PostBalances) {
-					// Account index out of range, meaning the instruction references an account
-					// from an account lookup table. This instruction can be skipped since
-					// transfer instructions must reference accounts in the primary account keys
-					// array
 					continue
 				}
+
 				amountMoved := txn.Meta.PreBalances[fromIdx] - txn.Meta.PostBalances[fromIdx]
 
-				// Adjust amountMoved for fee if the fromAccount is the sender
-				if fromAccount == txn.Transaction.Message.AccountKeys[0] { // Assuming the first account is the fee payer
+				// Adjust for fee if sender is the fee payer
+				if fromAccount == txn.Transaction.Message.AccountKeys[0] {
 					amountMoved -= fee
 				}
 
@@ -382,9 +395,74 @@ func (s *SOLScanner) getTxInItem(txn rpc.RPCTransaction, blockHeight int64) *sty
 				netBalanceChange[toAccount] += int64(amountMoved)
 			}
 		}
+
+		// SPL Token Transfers
+		if types.TokenProgramID.EqualsString(programID) {
+			s.logger.Info().Str("tx id", txn.Transaction.Signatures[0]).Msg("Parsing SPL Token TX")
+			data, err := common.Base58Decode(instruction.Data)
+			if err != nil {
+				s.logger.Error().Err(err).Str("data", instruction.Data).Msg("Failed to decode SPL instruction data")
+				continue
+			}
+
+			// Process Transfer or TransferChecked opcodes
+			if len(data) >= 1 && (data[0] == 2 || data[0] == 3) {
+				if len(instruction.Accounts) < 3 {
+					s.logger.Debug().Msg("Instruction does not contain enough accounts for SPL transfer")
+					continue
+				}
+
+				s.logger.Info().Str("instruction.Accounts", jsonString(instruction.Accounts)).Msg("SPL transfer accounts")
+				// print each account
+				for i, account := range instruction.Accounts {
+					s.logger.Info().Int("index", i).Str("account", txn.Transaction.Message.AccountKeys[account]).Msg("instr account")
+				}
+
+				fromIdx := instruction.Accounts[0]
+				toIdx := instruction.Accounts[1]
+				mintIdx := instruction.Accounts[2]
+
+				if fromIdx >= len(txn.Transaction.Message.AccountKeys) ||
+					toIdx >= len(txn.Transaction.Message.AccountKeys) ||
+					mintIdx >= len(txn.Transaction.Message.AccountKeys) {
+					continue
+				}
+
+				// fromAccount := txn.Transaction.Message.AccountKeys[fromIdx]
+				// toAccount := txn.Transaction.Message.AccountKeys[toIdx]
+				mintAddress := txn.Transaction.Message.AccountKeys[mintIdx]
+
+				// Retrieve amount from token balance changes
+				amountChange, ok := tokenBalanceChanges[fromIdx][toIdx][mintAddress]
+				if !ok || amountChange.Amount == 0 {
+					continue
+				}
+
+				// Check if the token is in the approved list
+				token, exists := mintToSymbol[mintAddress]
+				if !exists {
+					continue
+				}
+				decimals := token.Decimals
+
+				// Construct asset with proper chain & ticker
+				asset := common.Asset{
+					Chain:  common.SOLChain,
+					Ticker: common.Ticker(token.Symbol),
+					Symbol: common.Symbol(strings.ToUpper(fmt.Sprintf("%s-%s", token.Symbol, mintAddress))),
+				}
+
+				// Convert amount to sdk.Uint
+				amountUint := convertTokenAmount(amountChange.Amount, decimals)
+
+				tokenCoin := common.NewCoin(asset, amountUint)
+				tokenCoin.Decimals = int64(decimals)
+				splTransfers = append(splTransfers, tokenCoin)
+			}
+		}
 	}
 
-	// Find the net sender and receiver
+	// Identify net SOL movement
 	var netSender, netReceiver string
 	var netAmount int64
 	for account, change := range netBalanceChange {
@@ -396,16 +474,20 @@ func (s *SOLScanner) getTxInItem(txn rpc.RPCTransaction, blockHeight int64) *sty
 		}
 	}
 
-	// Skip if net SOL movement is 0
-	if netAmount == 0 {
+	// Skip if no SOL or SPL movement
+	if netAmount == 0 && len(splTransfers) == 0 {
 		return nil
 	}
 
-	solCoin := common.NewCoin(common.SOLAsset, convertLamportsToTHORChain(netAmount))
-	gasCoin := common.NewCoin(common.SOLAsset, convertLamportsToTHORChain(int64(fee)))
+	// Add SOL transfer if applicable
+	coins := splTransfers
+	if netAmount > 0 {
+		solCoin := common.NewCoin(common.SOLAsset, sdk.NewUint(uint64(netAmount)))
+		solCoin.Decimals = 9
+		coins = append(coins, solCoin)
+	}
 
-	// set coin decimals
-	solCoin.Decimals = 9
+	gasCoin := common.NewCoin(common.SOLAsset, sdk.NewUint(uint64(fee)))
 	gasCoin.Decimals = 9
 
 	return &stypes.TxInItem{
@@ -414,12 +496,99 @@ func (s *SOLScanner) getTxInItem(txn rpc.RPCTransaction, blockHeight int64) *sty
 		Memo:        memo,
 		Sender:      netSender,
 		To:          netReceiver,
-		Coins:       []common.Coin{solCoin},
+		Coins:       coins,
 		Gas:         common.Gas{gasCoin},
 	}
 }
 
 // --------------------------------- helpers ---------------------------------
+
+func getTransactionSigners(txn rpc.RPCTransaction) []string {
+	message := txn.Transaction.Message
+	signers := []string{}
+
+	// Number of required signatures (these accounts must sign)
+	requiredSigners := message.Header.NumRequiredSignatures
+
+	// Extract signers from the first `requiredSigners` in accountKeys
+	for i := 0; i < int(requiredSigners) && i < len(message.AccountKeys); i++ {
+		signers = append(signers, message.AccountKeys[i])
+	}
+
+	return signers
+}
+
+// Convert raw token amount to sdk.Uint
+func convertTokenAmount(amount int64, decimals int) sdk.Uint {
+	amountScaled := sdk.NewUint(uint64(amount))
+	if decimals > 8 {
+		amountScaled = amountScaled.Quo(sdk.NewUint(uint64(math.Pow10(decimals - 8))))
+	} else if decimals < 8 {
+		amountScaled = amountScaled.Mul(sdk.NewUint(uint64(math.Pow10(8 - decimals))))
+	}
+	return amountScaled
+}
+
+// Extract inner instructions
+func (s *SOLScanner) getInnerInstructions(txn rpc.RPCTransaction) []rpc.RPCInstruction {
+	var innerInstructions []rpc.RPCInstruction
+
+	for _, inner := range txn.Meta.InnerInstructions {
+		innerInstructions = append(innerInstructions, inner.Instructions...)
+	}
+
+	return innerInstructions
+}
+
+// Define a struct for tracking token balance changes
+type TokenBalanceChange struct {
+	Amount int64
+}
+
+// Extract token balance changes
+func (s *SOLScanner) getTokenBalanceChanges(txn rpc.RPCTransaction) map[int]map[int]map[string]TokenBalanceChange {
+	balanceChanges := make(map[int]map[int]map[string]TokenBalanceChange)
+	preBalances := make(map[int]map[string]int64)
+
+	// Process pre-token balances
+	for _, pre := range txn.Meta.PreTokenBalances {
+		amount, err := strconv.ParseInt(pre.Amount.Amount, 10, 64)
+		if err != nil {
+			s.logger.Error().Err(err).Str("mint", pre.Mint).Msg("Failed to parse pre-token balance amount")
+			continue
+		}
+		if preBalances[pre.AccountIndex] == nil {
+			preBalances[pre.AccountIndex] = make(map[string]int64)
+		}
+		preBalances[pre.AccountIndex][pre.Mint] = amount
+	}
+
+	// Compute post-token balance changes
+	for _, post := range txn.Meta.PostTokenBalances {
+		amount, err := strconv.ParseInt(post.Amount.Amount, 10, 64)
+		if err != nil {
+			s.logger.Error().Err(err).Str("mint", post.Mint).Msg("Failed to parse post-token balance amount")
+			continue
+		}
+
+		for fromIdx, mints := range preBalances {
+			if prevAmount, ok := mints[post.Mint]; ok {
+				amountMoved := prevAmount - amount
+				if amountMoved == 0 {
+					continue
+				}
+				if balanceChanges[fromIdx] == nil {
+					balanceChanges[fromIdx] = make(map[int]map[string]TokenBalanceChange)
+				}
+				balanceChanges[fromIdx][post.AccountIndex] = map[string]TokenBalanceChange{
+					post.Mint: {Amount: amountMoved},
+				}
+			}
+		}
+	}
+
+	return balanceChanges
+}
 
 // Function to convert amountMoved (lamports) to sdk.Uintt
 func convertLamportsToTHORChain(amountMoved int64) sdk.Uint {

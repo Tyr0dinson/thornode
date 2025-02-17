@@ -16,18 +16,61 @@ type RPCTransaction struct {
 }
 
 type RPCMeta struct {
-	ComputeUnitsConsumed uint64        `json:"computeUnitsConsumed"`
-	Err                  interface{}   `json:"err"`
-	Fee                  uint64        `json:"fee"`
-	InnerInstructions    []interface{} `json:"innerInstructions"`
-	LoadedAddresses      RPCAddrList   `json:"loadedAddresses"`
-	LogMessages          []string      `json:"logMessages"`
-	PostBalances         []uint64      `json:"postBalances"`
-	PostTokenBalances    []interface{} `json:"postTokenBalances"`
-	PreBalances          []uint64      `json:"preBalances"`
-	PreTokenBalances     []interface{} `json:"preTokenBalances"`
-	Rewards              interface{}   `json:"rewards"`
-	Status               RPCTxnStatus  `json:"status"`
+	ComputeUnitsConsumed uint64                `json:"computeUnitsConsumed"`
+	Err                  *RPCTransactionError  `json:"err"` // Nullable error struct
+	Fee                  uint64                `json:"fee"`
+	InnerInstructions    []RPCInnerInstruction `json:"innerInstructions"`
+	LoadedAddresses      RPCAddrList           `json:"loadedAddresses"`
+	LogMessages          []string              `json:"logMessages"`
+	PostBalances         []uint64              `json:"postBalances"`
+	PostTokenBalances    []RPCTokenBalance     `json:"postTokenBalances"`
+	PreBalances          []uint64              `json:"preBalances"`
+	PreTokenBalances     []RPCTokenBalance     `json:"preTokenBalances"`
+	Rewards              []RPCReward           `json:"rewards"`
+	Status               RPCTxnStatus          `json:"status"`
+}
+
+// Represents an error in a Solana transaction
+type RPCTransactionError struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
+// Inner instructions represent program calls within a transaction
+type RPCInnerInstruction struct {
+	Index        int              `json:"index"`        // Index of the instruction in the transaction
+	Instructions []RPCInstruction `json:"instructions"` // List of instructions
+}
+
+// Represents token balances before and after a transaction
+type RPCTokenBalance struct {
+	AccountIndex int            `json:"accountIndex"`  // Index of the account in the transaction
+	Mint         string         `json:"mint"`          // Mint address of the token
+	Owner        string         `json:"owner"`         // Owner of the token account
+	ProgramId    string         `json:"programId"`     // Token program ID
+	Amount       RPCTokenAmount `json:"uiTokenAmount"` // Token amount with decimals
+}
+
+// Represents token amount details, including decimals
+type RPCTokenAmount struct {
+	Amount      string  `json:"amount"`         // Raw token amount as string
+	Decimals    int     `json:"decimals"`       // Token decimal places
+	UIAmount    float64 `json:"uiAmount"`       // Human-readable token amount
+	UIAmountStr string  `json:"uiAmountString"` // String representation
+}
+
+// Represents an individual reward entry
+type RPCReward struct {
+	Pubkey      string  `json:"pubkey"`      // Account receiving the reward
+	Lamports    int64   `json:"lamports"`    // Reward amount in lamports
+	PostBalance uint64  `json:"postBalance"` // Account balance after the reward
+	RewardType  *string `json:"rewardType"`  // Optional reward type (e.g., "staking")
+}
+
+// Represents transaction status
+type RPCTxnStatus struct {
+	Ok  interface{}          `json:"Ok,omitempty"`  // Indicates success
+	Err *RPCTransactionError `json:"Err,omitempty"` // Error details if transaction failed
 }
 
 type RPCTxnData struct {
@@ -38,10 +81,6 @@ type RPCTxnData struct {
 type RPCAddrList struct {
 	Readonly []interface{} `json:"readonly"`
 	Writable []interface{} `json:"writable"`
-}
-
-type RPCTxnStatus struct {
-	Ok interface{} `json:"Ok"`
 }
 
 type RPCMessage struct {
@@ -99,6 +138,10 @@ func (v *RPCVersion) UnmarshalJSON(b []byte) error {
 
 func (r *RPCTransaction) GetInstructions() []RPCInstruction {
 	return r.Transaction.Message.Instructions
+}
+
+func (r *RPCTransaction) GetInnerInstructions() []RPCInnerInstruction {
+	return r.Meta.InnerInstructions
 }
 
 func (r *RPCTransaction) GetAccountAtIndex(i int) string {
