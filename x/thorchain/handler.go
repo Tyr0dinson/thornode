@@ -244,8 +244,7 @@ func processOneTxIn(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, sig
 			return nil, err
 		}
 		newMsg = NewMsgWasmExec(coin.Asset, coin.Amount, m.ContractAddress, sender, signer, m.Msg, tx.Tx)
-	}
-	
+
 	case SwitchMemo:
 		coin := tx.Tx.Coins[0]
 		newMsg = NewMsgSwitch(coin.Asset, coin.Amount, m.GetAccAddress(), signer, tx.Tx)
