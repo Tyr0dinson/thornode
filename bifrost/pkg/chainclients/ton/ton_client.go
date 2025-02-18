@@ -3,8 +3,10 @@ package ton
 import (
 	"context"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"golang.org/x/crypto/ed25519"
 	"math/big"
 	"sync"
 	"time"
@@ -30,8 +32,10 @@ import (
 	tcconfig "gitlab.com/thorchain/thornode/v3/config"
 	"gitlab.com/thorchain/thornode/v3/constants"
 
-	memo "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
+	tcmemo "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
 )
+
+const V3R2CodeHex = "B5EE9C724101010100710000DEFF0020DD2082014C97BA218201339CBAB19F71B0ED44D0D31FD31F31D70BFFE304E0A4F2608308D71820D31FD31FD31FF82313BBF263ED44D0D31FD31FD3FFD15132BAF2A15144BAF2A204F901541055F910F2A3F8009320D74A96D307D402FB00E8D101A4C8CB1FCB1FCBFFC9ED5410BD6DAD"
 
 type TonClient struct {
 	logger              zerolog.Logger
@@ -48,11 +52,12 @@ type TonClient struct {
 	globalSolvencyQueue chan types.Solvency
 	wg                  *sync.WaitGroup
 	stopchan            chan struct{}
+	walletCode          *cell.Cell
 }
 
 // NewTonClient creates a new instance of a TON chain client
 func NewTonClient(
-	thorKeys *thorclient.Keys,
+	_ *thorclient.Keys,
 	config tcconfig.BifrostChainConfiguration,
 	server *tctss.TssServer,
 	bridge thorclient.ThorchainBridge,
@@ -88,17 +93,21 @@ func NewTonClient(
 
 		cfg, err := liteclient.GetConfigFromUrl(ctx, url)
 		if err != nil {
-			return nil, client.error(err, "fail to get network config")
+			logger.Err(err).Msg("fail to get network config")
+			return nil, err
 		}
 
 		// connect to mainnet lite servers
 		err = pool.AddConnectionsFromConfig(ctx, cfg)
 		if err != nil {
-			return nil, client.error(err, "fail to add connections to pool")
+			logger.Err(err).Msg("fail to add connections to pool")
+			return nil, err
 		}
 	default:
 		if config.Password == "" {
-			return nil, client.error(nil, "key not set")
+			err = fmt.Errorf("key not set")
+			client.logger.Err(err).Msg("")
+			return nil, err
 		}
 		err := pool.AddConnection(ctx, config.RPCHost, config.Password)
 		if err != nil {
@@ -109,13 +118,9 @@ func NewTonClient(
 
 	client.tssKeyManager, err = tss.NewKeySign(server, bridge)
 	if err != nil {
-		return nil, client.error(err, "failed to create tss signer")
+		logger.Err(err).Msg("failed to create tss signer")
+		return nil, err
 	}
-
-	// client.localKeyManager, err = NewLocalKeyManager(thorKeys)
-	// if err != nil {
-	// 	return nil, client.error(err, "failed to create local key manager")
-	// }
 
 	var path string // if not set later, will in memory storage
 	if len(client.config.BlockScanner.DBPath) > 0 {
@@ -129,7 +134,8 @@ func NewTonClient(
 		client.config.ScannerLevelDB,
 	)
 	if err != nil {
-		return nil, client.error(err, "failed to create scan storage")
+		logger.Err(err).Msg("failed to create scan storage")
+		return nil, err
 	}
 
 	// api client with full proof checks
@@ -139,6 +145,7 @@ func NewTonClient(
 
 	client.tonScanner, err = NewTonBlockScanner(
 		config.BlockScanner,
+		client.bridge,
 		client.api,
 	)
 	if err != nil {
@@ -153,14 +160,29 @@ func NewTonClient(
 		client.tonScanner,
 	)
 	if err != nil {
-		return nil, client.error(err, "failed to create block scanner")
+		logger.Err(err).Msg("failed to create block scanner")
+		return nil, err
 	}
 
 	client.signerCacheManager, err = signercache.NewSignerCacheManager(
 		client.storage.GetInternalDb(),
 	)
 	if err != nil {
-		return nil, client.error(err, "failed to create signer cache manager")
+		logger.Err(err).Msg("failed to create signer cache manager")
+		return nil, err
+	}
+
+	// store code
+	data, err := hex.DecodeString(V3R2CodeHex)
+	if err != nil {
+		logger.Err(err).Msg("failed to decode V3R2CodeHex")
+		return nil, err
+	}
+
+	client.walletCode, err = cell.FromBOC(data)
+	if err != nil {
+		logger.Err(err).Msg("failed to decode BOC")
+		return nil, err
 	}
 
 	return &client, nil
@@ -218,7 +240,7 @@ func (c *TonClient) GetHeight() (int64, error) {
 func (c *TonClient) GetAddress(pubKey common.PubKey) string {
 	address, err := pubKey.GetAddress(c.GetChain())
 	if err != nil {
-		_ = c.error(err, "failed to get pool address")
+		c.logger.Err(err).Msg("failed to get pool address")
 		return ""
 	}
 
@@ -247,22 +269,26 @@ func (c *TonClient) GetAccountByAddress(
 ) (common.Account, error) {
 	info, err := c.api.GetMasterchainInfo(context.Background())
 	if err != nil {
-		return common.Account{}, c.error(err, "failed to get master chain info")
+		c.logger.Err(err).Msg("failed to get master chain info")
+		return common.Account{}, err
 	}
 
 	tonAddress, err := tonaddress.ParseAddr(address)
 	if err != nil {
-		return common.Account{}, c.error(err, "failed to parse address")
+		c.logger.Err(err).Msg("failed to parse address")
+		return common.Account{}, err
 	}
 
 	account, err := c.api.GetAccount(context.Background(), info, tonAddress)
 	if err != nil {
-		return common.Account{}, c.error(err, "failed to get account")
+		c.logger.Err(err).Msg("failed to get account")
+		return common.Account{}, err
 	}
 
 	asset, err := common.NewAsset("TON.TON")
 	if err != nil {
-		return common.Account{}, c.error(err, "failed to create asset")
+		c.logger.Err(err).Msg("failed to create asset")
+		return common.Account{}, err
 	}
 
 	return common.Account{
@@ -281,25 +307,25 @@ func (c *TonClient) GetBlockScannerHeight() (int64, error) {
 }
 
 // GetLatestTxForVault returns last observed and broadcasted tx for a particular vault and chain
-func (c *TonClient) GetLatestTxForVault(vault string) (string, string, error) {
+func (c *TonClient) GetLatestTxForVault(_ string) (string, string, error) {
 	return "", "", nil
 }
 
 // GetConfirmationCount returns the confirmation count for the given tx.
-func (c *TonClient) GetConfirmationCount(txIn types.TxIn) int64 {
+func (c *TonClient) GetConfirmationCount(_ types.TxIn) int64 {
 	return 0
 }
 
 // ConfirmationCountReady TON chain has almost instant finality,
 // so doesn't need to wait for confirmation
-func (c *TonClient) ConfirmationCountReady(txIn types.TxIn) bool {
+func (c *TonClient) ConfirmationCountReady(_ types.TxIn) bool {
 	return true
 }
 
 // OnObservedTxIn is called when a new observed tx is received.
-func (c *TonClient) OnObservedTxIn(txIn types.TxInItem, blockHeight int64) {
+func (c *TonClient) OnObservedTxIn(txIn types.TxInItem, _ int64) {
 	// TODO: remove
-	m, err := memo.ParseMemo(common.LatestVersion, txIn.Memo)
+	memo, err := tcmemo.ParseMemo(common.LatestVersion, txIn.Memo)
 	if err != nil {
 		// Debug log only as ParseMemo error is expected for THORName inbounds.
 		c.logger.Debug().Err(err).Msgf("fail to parse memo: %s", txIn.Memo)
@@ -307,39 +333,36 @@ func (c *TonClient) OnObservedTxIn(txIn types.TxInItem, blockHeight int64) {
 	}
 	c.logger.Info().
 		Str("hash", txIn.Tx).
-		Str("type", m.GetType().String()).
-		Uint64("amount", m.GetAmount().Uint64()).
-		Str("asset", m.GetAsset().String()).
+		Str("type", memo.GetType().String()).
+		Uint64("amount", memo.GetAmount().Uint64()).
+		Str("asset", memo.GetAsset().String()).
 		Msg("found tx")
 }
 
 // SignTx returns the signed transaction.
 func (c *TonClient) SignTx(
-	tx types.TxOutItem,
-	height int64,
+	txOutItem types.TxOutItem,
+	_ int64,
 ) ([]byte, []byte, *types.TxInItem, error) {
-	c.logger.Info().Msg(fmt.Sprintf("%v", tx))
+	c.logger.Info().Msg(fmt.Sprintf("%v", txOutItem))
 
-	if c.signerCacheManager.HasSigned(tx.CacheHash()) {
+	if c.signerCacheManager.HasSigned(txOutItem.CacheHash()) {
 		c.logger.Info().
-			Interface("tx", tx).
+			Interface("tx", txOutItem).
 			Msg("transaction already signed, ignoring...")
 		return nil, nil, nil, nil
 	}
 
-	c.bridge.GetPubKeys()
-
 	// TODO: implement double spend checks
 
-	msg, err := c.processOutboundMessage(tx)
+	signed, err := c.createAndSignTx(txOutItem)
 	if err != nil {
-		c.logger.Err(err).Msg("failed to process outbound tx")
 		return nil, nil, nil, err
 	}
 
 	// TODO: handle checkpoints
 
-	return msg, nil, nil, nil
+	return signed, nil, nil, nil
 }
 
 // BroadcastTx sends the transaction to TON chain
@@ -350,40 +373,105 @@ func (c *TonClient) BroadcastTx(
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 	defer cancel()
 
+	var stateInit *tlb.StateInit
+
 	body, err := cell.FromBOC(txBytes)
 	if err != nil {
 		c.logger.Err(err).Msg("fail to parse txBytes")
 		return "", err
 	}
 
-	addr := c.GetAddress(txOut.VaultPubKey)
-	src, err := address.ParseAddr(addr)
+	vaultPubKey, err := c.getEddsaVaultKey(txOut.VaultPubKey)
 	if err != nil {
-		c.logger.Err(err).
-			Str("address", addr).
-			Msg("fail to parse vault address")
+		c.logger.Err(err).Msg("failed to get eddsa vault pub key")
 		return "", err
 	}
 
-	var stateInit *tlb.StateInit
+	fromAddress, err := address.ParseAddr(c.GetAddress(vaultPubKey))
+	if err != nil {
+		c.logger.Err(err).
+			Str("address", fromAddress.String()).
+			Msg("failed to parse vault address")
+		return "", err
+	}
+
+	memo, err := tcmemo.ParseMemo(common.LatestVersion, txOut.Memo)
+	if err != nil {
+		c.logger.Err(err).Msg("failed to parse memo")
+		return "", err
+	}
+
+	initialized := true
+
+	if memo.GetType() == tcmemo.TxMigrate {
+		c.logger.Info().Msg("Migrate msg, check contract state")
+
+		// check if destination wallet contract is already deployed
+		block, err := c.api.CurrentMasterchainInfo(ctx)
+		if err != nil {
+			c.logger.Err(err).Msg("failed to get master chain info")
+			return "", err
+		}
+
+		_, err = c.api.WaitForBlock(block.SeqNo).RunGetMethod(
+			ctx, block, fromAddress, "seqno",
+		)
+		if err != nil {
+			execErr, ok := err.(ton.ContractExecError)
+			if ok && execErr.Code == ton.ErrCodeContractNotInitialized {
+				c.logger.Info().Msg("contract not initialized")
+				initialized = false
+			} else {
+				c.logger.Err(err).Msg("failed to run method")
+				return "", err
+			}
+		}
+	}
+
+	if !initialized {
+		pubKey, err := cosmos.GetPubKeyFromBech32(
+			cosmos.Bech32PubKeyTypeAccPub,
+			vaultPubKey.String(),
+		)
+		if err != nil {
+			c.logger.Err(err).Msg("failed to get pub key")
+			return "", err
+		}
+
+		stateInit = &tlb.StateInit{
+			Data: cell.BeginCell().
+				MustStoreUInt(0, 32). // seqno
+				MustStoreUInt(uint64(wallet.DefaultSubwallet), 32). // sub wallet
+				MustStoreSlice(pubKey.Bytes(), 256).
+				EndCell(),
+			Code: c.walletCode,
+		}
+
+		calcAddress := stateInit.CalcAddress(0)
+		c.logger.Info().Msgf("calcAddress: %s", calcAddress.String())
+	}
 
 	msg := &tlb.ExternalMessage{
-		DstAddr:   src,
+		DstAddr:   fromAddress,
 		StateInit: stateInit,
 		Body:      body,
 	}
 
 	tx, _, _, err := c.api.SendExternalMessageWaitTransaction(ctx, msg)
+
+	if err != nil {
+		c.logger.Err(err).Msg("failed to send external message")
+		return "", err
+	}
+
 	hash := base64.StdEncoding.EncodeToString(tx.Hash)
-	if err == nil {
-		err = c.signerCacheManager.SetSigned(
-			txOut.CacheHash(),
-			txOut.CacheVault(c.GetChain()),
-			hash,
-		)
-		if err != nil {
-			c.logger.Err(err).Msg("fail to set signer cache")
-		}
+	err = c.signerCacheManager.SetSigned(
+		txOut.CacheHash(),
+		txOut.CacheVault(c.GetChain()),
+		hash,
+	)
+	if err != nil {
+		c.logger.Err(err).Msg("failed to set signer cache")
 	}
 
 	return hash, nil
@@ -415,8 +503,6 @@ func (c *TonClient) ReportSolvency(height int64) error {
 
 	solventMsgs := make([]types.Solvency, 0, len(vaults))
 	insolventMsgs := make([]types.Solvency, 0, len(vaults))
-
-	fmt.Println("check")
 
 	for i, vault := range vaults {
 		fmt.Println(vault.PubKey)
@@ -466,7 +552,7 @@ func (c *TonClient) ReportSolvency(height int64) error {
 	return nil
 }
 
-func (c *TonClient) processOutboundMessage(
+func (c *TonClient) createAndSignTx(
 	tx types.TxOutItem,
 ) ([]byte, error) {
 	coin := tx.Coins.GetCoin(common.TONAsset)
@@ -479,104 +565,159 @@ func (c *TonClient) processOutboundMessage(
 
 	comment, err := wallet.CreateCommentCell(tx.Memo)
 	if err != nil {
-		return nil, c.error(err, "failed to create comment")
+		c.logger.Err(err).Msg("failed to create comment")
+		return nil, err
 	}
 
-	fromAddress, err := address.ParseAddr(c.GetAddress(tx.VaultPubKey))
+	vaultPubKey, err := c.getEddsaVaultKey(tx.VaultPubKey)
 	if err != nil {
-		return nil, c.error(err, "failed to parse vault address")
+		c.logger.Err(err).Msg("failed to get eddsa vault key")
+		return nil, err
+	}
+
+	fromAddress, err := address.ParseAddr(c.GetAddress(vaultPubKey))
+	if err != nil {
+		c.logger.Err(err).Msg("failed to parse vault address")
+		return nil, err
 	}
 
 	toAddress, err := address.ParseAddr(string(tx.ToAddress))
 	if err != nil {
-		return nil, c.error(err, "failed to parse destination address")
+		c.logger.Err(err).Msg("failed to parse destination address")
+		return nil, err
 	}
 
 	message := wallet.SimpleMessage(
-		toAddress, tlb.FromNanoTON(coin.Amount.BigInt()), comment,
+		// toAddress, tlb.FromNanoTON(coin.Amount.BigInt()), comment,
+		toAddress, tlb.FromNanoTON(big.NewInt(1)), comment,
 	)
 	message.InternalMessage.Bounce = false
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*2)
 	defer cancel()
 
+	seqno := big.NewInt(0)
+
 	// we need fresh block info to run get methods
 	block, err := c.api.CurrentMasterchainInfo(ctx)
 	if err != nil {
-		return nil, c.error(err, "failed to get block")
+		c.logger.Err(err).Msg("failed to get current master chain info")
+		return nil, err
 	}
 
-	result, err := c.api.WaitForBlock(block.SeqNo).RunGetMethod(ctx, block, fromAddress, "seqno")
-	if err != nil {
-		return nil, c.error(err, "failed to query wallet")
+	result, err := c.api.WaitForBlock(block.SeqNo).RunGetMethod(
+		ctx, block, fromAddress, "seqno",
+	)
+	if err == nil {
+		seqno, err = result.Int(0)
+		if err != nil {
+			c.logger.Err(err).Msg("failed to parse seqno")
+			return nil, err
+		}
+	} else {
+		execErr, ok := err.(ton.ContractExecError)
+		if ok && execErr.Code == ton.ErrCodeContractNotInitialized {
+			c.logger.Info().Msg("wallet not yet initialized")
+		} else {
+			c.logger.Err(err).Msg("failed to get block")
+			return nil, err
+		}
+
 	}
 
-	seqno, err := result.Int(0)
-	if err != nil {
-		return nil, c.error(err, "failed to parse seqno")
-	}
+	// TODO: Check and maybe use Thorchain migration height instead
+	timeout := time.Now().Truncate(time.Hour).Add(time.Hour * 2).UTC().Unix()
 
 	payload := cell.BeginCell().
 		MustStoreUInt(uint64(wallet.DefaultSubwallet), 32).
-		MustStoreUInt(uint64(time.Now().Add(time.Duration(30)*time.Second).UTC().Unix()), 32).
+		MustStoreUInt(uint64(timeout), 32).
 		MustStoreUInt(seqno.Uint64(), 32) // seq
 
-	tonCell, err := tlb.ToCell(message.InternalMessage)
+	internalMessage, err := tlb.ToCell(message.InternalMessage)
 	if err != nil {
-		return nil, c.error(err, "failed to convert internal message to tonCell")
+		c.logger.Err(err).Msg("failed to convert internal message to cell")
+		return nil, err
 	}
 
 	err = payload.StoreUInt(uint64(message.Mode), 8)
 	if err != nil {
-		return nil, c.error(err, "failed to store message mode")
+		c.logger.Err(err).Msg("failed to store message mode")
+		return nil, err
 	}
 
-	err = payload.StoreRef(tonCell)
+	err = payload.StoreRef(internalMessage)
 	if err != nil {
-		return nil, c.error(err, "failed to store tonCell")
+		c.logger.Err(err).Msg("failed to store internal message")
+		return nil, err
 	}
 
 	hash := payload.EndCell().Hash()
 
-	signature, err := c.sign(hash, tx.VaultPubKey)
+	signature, err := c.sign(hash, vaultPubKey)
 	if err != nil {
 		c.logger.Err(err).Msg("failed to sign message")
 		return nil, err
 	}
 
-	builder := cell.BeginCell()
-	err = builder.StoreSlice(signature, 32)
+	body := cell.BeginCell()
+	err = body.StoreSlice(signature, 512)
 	if err != nil {
-		return nil, c.error(err, "failed to store signature")
+		c.logger.Err(err).Msg("failed to store signature")
+		return nil, err
 	}
 
-	err = builder.StoreBuilder(payload)
+	err = body.StoreBuilder(payload)
 	if err != nil {
-		return nil, c.error(err, "failed to store payload")
+		c.logger.Err(err).Msg("failed to store payload")
+		return nil, err
 	}
 
-	data := builder.EndCell().ToBOC()
-
-	return data, nil
+	return body.EndCell().ToBOC(), nil
 }
 
 func (c *TonClient) sign(data []byte, pubkey common.PubKey) ([]byte, error) {
 	// TODO: add localKeyManager
-	sig, _, err := c.tssKeyManager.RemoteSign(data, pubkey.String())
+
+	fmt.Println(pubkey)
+
+	signature, _, err := c.tssKeyManager.RemoteSign(data, pubkey.String())
 	if err != nil {
 		return nil, err
 	}
 
-	// TODO: add verification
+	c.logger.Info().Msgf("signature: %x (%d)", signature, len(signature))
 
-	return sig, nil
+	cryptoPubKey, err := cosmos.GetPubKeyFromBech32(
+		cosmos.Bech32PubKeyTypeAccPub,
+		pubkey.String(),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	c.logger.Info().Msgf("pubkey: %x", cryptoPubKey.Bytes())
+	c.logger.Info().Msgf("pubkey: %s", pubkey.String())
+	c.logger.Info().Msgf("data: %x", data)
+
+	ok := ed25519.Verify(cryptoPubKey.Bytes(), data, signature)
+	if !ok {
+		c.logger.Err(err).Msg("failed to verify signature")
+	}
+
+	return signature, nil
 }
 
-func (c *TonClient) error(err error, msg string) error {
+func (c *TonClient) getEddsaVaultKey(pubKey common.PubKey) (common.PubKey, error) {
+	vaults, err := c.bridge.GetAsgards()
 	if err != nil {
-		c.logger.Err(err).Msg(msg)
-		return fmt.Errorf("%s: %w", msg, err)
+		return common.EmptyPubKey, err
 	}
-	c.logger.Error().Msg(msg)
-	return fmt.Errorf("%s", msg)
+
+	for _, vault := range vaults {
+		if vault.PubKey.Equals(pubKey) {
+			return vault.PubKeyEddsa, nil
+		}
+	}
+
+	return common.EmptyPubKey, nil
 }

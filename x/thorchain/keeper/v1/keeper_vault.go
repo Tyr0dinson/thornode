@@ -3,12 +3,11 @@ package keeperv1
 import (
 	"errors"
 	"fmt"
-	"sort"
-
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	kvTypes "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/types"
+	"sort"
 )
 
 type VaultSecurity struct {
@@ -266,7 +265,20 @@ func (k KVStore) SetVault(ctx cosmos.Context, vault Vault) error {
 
 // VaultExists check whether the given pubkey is associated with a vault
 func (k KVStore) VaultExists(ctx cosmos.Context, pk common.PubKey) bool {
-	return k.has(ctx, k.GetKey(prefixVault, pk.String()))
+	pubkey := pk.String()
+	iterator := k.GetVaultIterator(ctx)
+	defer iterator.Close()
+	for ; iterator.Valid(); iterator.Next() {
+		var vault Vault
+		if err := k.cdc.Unmarshal(iterator.Value(), &vault); err != nil {
+			return false
+		}
+		if vault.PubKeyEddsa.Equals(pk) {
+			return true
+		}
+	}
+
+	return k.has(ctx, k.GetKey(prefixVault, pubkey))
 }
 
 // GetVault get Vault with the given pubkey from data store
@@ -275,7 +287,23 @@ func (k KVStore) GetVault(ctx cosmos.Context, pk common.PubKey) (Vault, error) {
 		BlockHeight: ctx.BlockHeight(),
 		PubKey:      pk,
 	}
-	ok, err := k.getVault(ctx, k.GetKey(prefixVault, pk.String()), &record)
+
+	// also find vault by eddsa pubkey
+	pubkey := pk.String()
+	iterator := k.GetVaultIterator(ctx)
+	defer iterator.Close()
+	for ; iterator.Valid(); iterator.Next() {
+		var vault Vault
+		if err := k.cdc.Unmarshal(iterator.Value(), &vault); err != nil {
+			return record, dbError(ctx, "fail to unmarshal vault", err)
+		}
+		if vault.PubKeyEddsa.Equals(pk) {
+			pubkey = vault.PubKey.String()
+			break
+		}
+	}
+
+	ok, err := k.getVault(ctx, k.GetKey(prefixVault, pubkey), &record)
 	if !ok {
 		return record, fmt.Errorf("vault with pubkey(%s) doesn't exist: %w", pk, kvTypes.ErrVaultNotFound)
 	}

@@ -216,7 +216,7 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 			return NoAddress, err
 		}
 
-		addr, err := wallet.AddressFromPubKey(pk.Bytes(), wallet.V4R2, wallet.DefaultSubwallet)
+		addr, err := wallet.AddressFromPubKey(pk.Bytes(), wallet.V3R2, wallet.DefaultSubwallet)
 		if err != nil {
 			log.Err(err).Msg("")
 			return NoAddress, err

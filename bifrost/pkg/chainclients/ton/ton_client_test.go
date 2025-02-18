@@ -102,9 +102,9 @@ func (s *TonTestSuite) TearDownSuite(c *C) {
 
 func (s *TonTestSuite) TestGetAddress(c *C) {
 	client := TonClient{
-		chainId:   "TON",
-		apiClient: s.client,
-		config:    config.BifrostChainConfiguration{ChainID: "TON"},
+		chainId: "TON",
+		api:     s.client,
+		config:  config.BifrostChainConfiguration{ChainID: "TON"},
 	}
 
 	pubKey := common.PubKey("sthorpub1addwnpepqf72ur2e8zk8r5augtrly40cuy94f7e663zh798tyms6pu2k8qdswf4es66")

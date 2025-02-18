@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"math/big"
 	"net/http"
 	"strconv"
@@ -23,6 +24,7 @@ import (
 type TonBlockScanner struct {
 	config config.BifrostBlockScannerConfiguration
 	logger zerolog.Logger
+	bridge thorclient.ThorchainBridge
 	client ton.APIClientWrapped
 	http   *http.Client
 	apiUrl string
@@ -30,6 +32,7 @@ type TonBlockScanner struct {
 
 func NewTonBlockScanner(
 	cfg config.BifrostBlockScannerConfiguration,
+	bridge thorclient.ThorchainBridge,
 	client ton.APIClientWrapped,
 ) (*TonBlockScanner, error) {
 	logger := log.Logger.With().
@@ -40,6 +43,7 @@ func NewTonBlockScanner(
 	scanner := TonBlockScanner{
 		config: cfg,
 		logger: logger,
+		bridge: bridge,
 		client: client,
 		http:   &http.Client{},
 		apiUrl: "https://toncenter.com/api",
@@ -96,6 +100,11 @@ func (s *TonBlockScanner) FetchTxs(
 
 		txs, err := s.getBlockTxs(blockInfo)
 		if err != nil {
+			s.logger.Err(err).
+				Uint32("seqno", blockInfo.SeqNo).
+				Int32("workchain", blockInfo.Workchain).
+				Int64("shard", blockInfo.Shard).
+				Msg("failed getting txs")
 			return types.TxIn{}, err
 		}
 
@@ -115,10 +124,26 @@ func (s *TonBlockScanner) FetchTxs(
 		MemPool:  false,
 	}
 
+	if fetchHeight%20 == 0 {
+		fee := uint64(1_000_000)
+		tx, err := s.bridge.PostNetworkFee(
+			fetchHeight, s.config.ChainID, 1, fee, // 1e6 -> 1e8
+		)
+		if err != nil {
+			s.logger.Err(err).Msg("failed posting network fee")
+		} else {
+			s.logger.Info().
+				Str("hash", tx.String()).
+				Uint64("fee", fee).
+				Msg("updated network fee")
+		}
+
+	}
+
 	return txIn, nil
 }
 
-func (s *TonBlockScanner) getBlockTxs(blockInfo *tlb.BlockInfo) ([]types.TxInItem, error) {
+func (s *TonBlockScanner) getBlockTxs(blockInfo *ton.BlockIDExt) ([]types.TxInItem, error) {
 	txInfos, _, err := s.client.GetBlockTransactionsV2(
 		context.TODO(),
 		blockInfo,
