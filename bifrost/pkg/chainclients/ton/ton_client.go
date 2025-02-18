@@ -8,6 +8,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"golang.org/x/crypto/ed25519"
 	"math/big"
+	"slices"
 	"sync"
 	"time"
 
@@ -685,6 +686,9 @@ func (c *TonClient) sign(data []byte, pubkey common.PubKey) ([]byte, error) {
 		return nil, err
 	}
 
+	slices.Reverse(signature)
+	signature = append(signature[32:], signature[:32]...)
+
 	c.logger.Info().Msgf("signature: %x (%d)", signature, len(signature))
 
 	cryptoPubKey, err := cosmos.GetPubKeyFromBech32(
@@ -694,10 +698,6 @@ func (c *TonClient) sign(data []byte, pubkey common.PubKey) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	c.logger.Info().Msgf("pubkey: %x", cryptoPubKey.Bytes())
-	c.logger.Info().Msgf("pubkey: %s", pubkey.String())
-	c.logger.Info().Msgf("data: %x", data)
 
 	ok := ed25519.Verify(cryptoPubKey.Bytes(), data, signature)
 	if !ok {
