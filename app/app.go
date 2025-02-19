@@ -46,7 +46,6 @@ import (
 	"github.com/cosmos/cosmos-sdk/x/auth/ante"
 	authcodec "github.com/cosmos/cosmos-sdk/x/auth/codec"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
-	"github.com/cosmos/cosmos-sdk/x/auth/posthandler"
 	authsims "github.com/cosmos/cosmos-sdk/x/auth/simulation"
 	"github.com/cosmos/cosmos-sdk/x/auth/tx"
 	authtx "github.com/cosmos/cosmos-sdk/x/auth/tx"
@@ -77,7 +76,9 @@ import (
 	appparams "gitlab.com/thorchain/thornode/v3/app/params"
 	"gitlab.com/thorchain/thornode/v3/openapi"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/ebifrost"
 	thorchainkeeper "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
+	thorchainkeeperabci "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/abci"
 	thorchainkeeperv1 "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/v1"
 	thorchaintypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
@@ -138,7 +139,8 @@ type THORChainApp struct {
 	ParamsKeeper          paramskeeper.Keeper
 	ConsensusParamsKeeper consensusparamkeeper.Keeper
 
-	ThorchainKeeper thorchainkeeper.Keeper
+	ThorchainKeeper  thorchainkeeper.Keeper
+	EnshrinedBifrost *ebifrost.EnshrinedBifrost
 
 	msgServiceRouter *MsgServiceRouter // router for redirecting Msg service messages
 	WasmKeeper       wasmkeeper.Keeper
@@ -205,7 +207,7 @@ func NewChainApp(
 	// }
 	// baseAppOptions = append(baseAppOptions, voteExtOp)
 
-	bApp := baseapp.NewBaseApp(appName, logger, db, ec.TxConfig.TxDecoder(), baseAppOptions...)
+	bApp := baseapp.NewBaseApp(appName, logger, db, ebifrost.TxDecoder(ec.Codec, ec.TxConfig.TxDecoder()), baseAppOptions...)
 	bApp.SetCommitMultiStoreTracer(traceStore)
 	bApp.SetVersion(version.Version)
 
@@ -371,6 +373,24 @@ func NewChainApp(
 	app.msgServiceRouter.AddCustomRoute("cosmos.bank.v1beta1.Msg", thorchain.NewBankSendHandler(thorchain.NewSendHandler(mgrs)))
 
 	thorchainModule := thorchain.NewAppModule(mgrs, telemetryEnabled, testApp)
+
+	ebifrostConfig, err := ebifrost.ReadEBifrostConfig(appOpts)
+	if err != nil {
+		panic(fmt.Sprintf("error while reading ebifrost config: %s", err))
+	}
+
+	app.EnshrinedBifrost = ebifrost.NewEnshrinedBifrost(app.appCodec, logger, ebifrostConfig)
+
+	defaultProposalHandler := baseapp.NewDefaultProposalHandler(bApp.Mempool(), bApp)
+	eBifrostProposalHandler := thorchainkeeperabci.NewProposalHandler(
+		&app.ThorchainKeeper,
+		app.EnshrinedBifrost,
+		defaultProposalHandler.PrepareProposalHandler(),
+		defaultProposalHandler.ProcessProposalHandler(),
+	)
+
+	bApp.SetPrepareProposal(eBifrostProposalHandler.PrepareProposal)
+	bApp.SetProcessProposal(eBifrostProposalHandler.ProcessProposal)
 
 	// NOTE: Any module instantiated in the module manager that is later modified
 	// must be passed by reference here.
@@ -603,14 +623,7 @@ func (app *THORChainApp) FinalizeBlock(req *abci.RequestFinalizeBlock) (*abci.Re
 }
 
 func (app *THORChainApp) setPostHandler() {
-	postHandler, err := posthandler.NewPostHandler(
-		posthandler.HandlerOptions{},
-	)
-	if err != nil {
-		panic(err)
-	}
-
-	app.SetPostHandler(postHandler)
+	app.SetPostHandler(sdk.ChainPostDecorators(ebifrost.NewEnshrineBifrostPostDecorator(app.EnshrinedBifrost)))
 }
 
 // Name returns the name of the App
@@ -807,6 +820,13 @@ func (app *THORChainApp) RegisterTendermintService(clientCtx client.Context) {
 
 func (app *THORChainApp) RegisterNodeService(clientCtx client.Context, cfg config.Config) {
 	nodeservice.RegisterNodeService(clientCtx, app.GRPCQueryRouter(), cfg)
+
+	// TODO determine if this is the right place to start the enshrined bifrost service.
+	if app.EnshrinedBifrost != nil {
+		if err := app.EnshrinedBifrost.Start(); err != nil {
+			panic(fmt.Errorf("failed to start bifrost service: %w", err))
+		}
+	}
 }
 
 // GetMaccPerms returns a copy of the module account permissions

@@ -484,7 +484,6 @@ func (s *Signer) sendKeygenToThorchain(height int64, poolPk common.PubKey, secp2
 	bf := backoff.NewExponentialBackOff()
 	bf.MaxElapsedTime = constants.ThorchainBlockTime
 	return backoff.Retry(func() error {
-		// trunk-ignore(golangci-lint/govet): shadow
 		txID, err := s.thorchainBridge.Broadcast(keygenMsg)
 		if err != nil {
 			s.logger.Warn().Err(err).Msg("fail to send keygen tx to thorchain")
@@ -754,13 +753,10 @@ func (s *Signer) processTransaction(item TxOutStoreItem) {
 	// if enabled and the observation is non-nil, instant observe the outbound
 	if s.cfg.Signer.AutoObserve && obs != nil {
 		s.observer.ObserveSigned(types.TxIn{
-			Count:                "1",
 			Chain:                item.TxOutItem.Chain,
-			TxArray:              []types.TxInItem{*obs},
+			TxArray:              []*types.TxInItem{obs},
 			MemPool:              true,
 			Filtered:             true,
-			SentUnFinalised:      false,
-			Finalised:            false,
 			ConfirmationRequired: 0,
 		}, item.TxOutItem.Chain.IsEVM()) // Instant EVM observations have wrong gas and need future correct observations
 	}

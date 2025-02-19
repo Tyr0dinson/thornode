@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"strconv"
 	"sync"
 	"time"
 
@@ -491,7 +490,6 @@ func (c *Client) FetchTxs(height, chainHeight int64) (types.TxIn, error) {
 		go c.consolidateUTXOs()
 	}
 
-	txIn.Count = strconv.Itoa(len(txIn.TxArray))
 	return txIn, nil
 }
 

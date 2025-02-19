@@ -33,7 +33,9 @@ service Msg {
     rpc NetworkFee(MsgNetworkFee) returns (MsgEmpty);
     rpc NodePauseChain(MsgNodePauseChain) returns (MsgEmpty);
     rpc ObservedTxIn(MsgObservedTxIn) returns (MsgEmpty);
+    rpc ObservedTxInQuorum(MsgObservedTxInQuorum) returns (MsgEmpty);
     rpc ObservedTxOut(MsgObservedTxOut) returns (MsgEmpty);
+    rpc ObservedTxOutQuorum(MsgObservedTxOutQuorum) returns (MsgEmpty);
     rpc ThorSend(MsgSend) returns (MsgEmpty);
     rpc SetIPAddress(MsgSetIPAddress) returns (MsgEmpty);
     rpc SetNodeKeys(MsgSetNodeKeys) returns (MsgEmpty);

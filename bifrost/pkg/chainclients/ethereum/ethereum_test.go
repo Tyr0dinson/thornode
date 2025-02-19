@@ -656,7 +656,7 @@ func (s *EthereumSuite) TestGetConfirmationCount(c *C) {
 	c.Assert(e.GetConfirmationCount(stypes.TxIn{}), Equals, int64(0))
 	c.Assert(e.GetConfirmationCount(stypes.TxIn{
 		Chain: common.ETHChain,
-		TxArray: []stypes.TxInItem{
+		TxArray: []*stypes.TxInItem{
 			{
 				BlockHeight:         1,
 				Tx:                  "4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
@@ -671,7 +671,7 @@ func (s *EthereumSuite) TestGetConfirmationCount(c *C) {
 
 	c.Assert(e.GetConfirmationCount(stypes.TxIn{
 		Chain: common.ETHChain,
-		TxArray: []stypes.TxInItem{
+		TxArray: []*stypes.TxInItem{
 			{
 				BlockHeight: 1,
 				Tx:          "4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
@@ -688,7 +688,7 @@ func (s *EthereumSuite) TestGetConfirmationCount(c *C) {
 	}), Equals, int64(2))
 	c.Assert(e.GetConfirmationCount(stypes.TxIn{
 		Chain: common.ETHChain,
-		TxArray: []stypes.TxInItem{
+		TxArray: []*stypes.TxInItem{
 			{
 				BlockHeight: 1,
 				Tx:          "4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",

@@ -27,7 +27,9 @@ const (
 	Msg_NetworkFee_FullMethodName           = "/types.Msg/NetworkFee"
 	Msg_NodePauseChain_FullMethodName       = "/types.Msg/NodePauseChain"
 	Msg_ObservedTxIn_FullMethodName         = "/types.Msg/ObservedTxIn"
+	Msg_ObservedTxInQuorum_FullMethodName   = "/types.Msg/ObservedTxInQuorum"
 	Msg_ObservedTxOut_FullMethodName        = "/types.Msg/ObservedTxOut"
+	Msg_ObservedTxOutQuorum_FullMethodName  = "/types.Msg/ObservedTxOutQuorum"
 	Msg_ThorSend_FullMethodName             = "/types.Msg/ThorSend"
 	Msg_SetIPAddress_FullMethodName         = "/types.Msg/SetIPAddress"
 	Msg_SetNodeKeys_FullMethodName          = "/types.Msg/SetNodeKeys"
@@ -57,7 +59,9 @@ type MsgClient interface {
 	NetworkFee(ctx context.Context, in *MsgNetworkFee, opts ...grpc.CallOption) (*MsgEmpty, error)
 	NodePauseChain(ctx context.Context, in *MsgNodePauseChain, opts ...grpc.CallOption) (*MsgEmpty, error)
 	ObservedTxIn(ctx context.Context, in *MsgObservedTxIn, opts ...grpc.CallOption) (*MsgEmpty, error)
+	ObservedTxInQuorum(ctx context.Context, in *MsgObservedTxInQuorum, opts ...grpc.CallOption) (*MsgEmpty, error)
 	ObservedTxOut(ctx context.Context, in *MsgObservedTxOut, opts ...grpc.CallOption) (*MsgEmpty, error)
+	ObservedTxOutQuorum(ctx context.Context, in *MsgObservedTxOutQuorum, opts ...grpc.CallOption) (*MsgEmpty, error)
 	ThorSend(ctx context.Context, in *MsgSend, opts ...grpc.CallOption) (*MsgEmpty, error)
 	SetIPAddress(ctx context.Context, in *MsgSetIPAddress, opts ...grpc.CallOption) (*MsgEmpty, error)
 	SetNodeKeys(ctx context.Context, in *MsgSetNodeKeys, opts ...grpc.CallOption) (*MsgEmpty, error)
@@ -148,9 +152,27 @@ func (c *msgClient) ObservedTxIn(ctx context.Context, in *MsgObservedTxIn, opts 
 	return out, nil
 }
 
+func (c *msgClient) ObservedTxInQuorum(ctx context.Context, in *MsgObservedTxInQuorum, opts ...grpc.CallOption) (*MsgEmpty, error) {
+	out := new(MsgEmpty)
+	err := c.cc.Invoke(ctx, Msg_ObservedTxInQuorum_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *msgClient) ObservedTxOut(ctx context.Context, in *MsgObservedTxOut, opts ...grpc.CallOption) (*MsgEmpty, error) {
 	out := new(MsgEmpty)
 	err := c.cc.Invoke(ctx, Msg_ObservedTxOut_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *msgClient) ObservedTxOutQuorum(ctx context.Context, in *MsgObservedTxOutQuorum, opts ...grpc.CallOption) (*MsgEmpty, error) {
+	out := new(MsgEmpty)
+	err := c.cc.Invoke(ctx, Msg_ObservedTxOutQuorum_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -312,7 +334,9 @@ type MsgServer interface {
 	NetworkFee(context.Context, *MsgNetworkFee) (*MsgEmpty, error)
 	NodePauseChain(context.Context, *MsgNodePauseChain) (*MsgEmpty, error)
 	ObservedTxIn(context.Context, *MsgObservedTxIn) (*MsgEmpty, error)
+	ObservedTxInQuorum(context.Context, *MsgObservedTxInQuorum) (*MsgEmpty, error)
 	ObservedTxOut(context.Context, *MsgObservedTxOut) (*MsgEmpty, error)
+	ObservedTxOutQuorum(context.Context, *MsgObservedTxOutQuorum) (*MsgEmpty, error)
 	ThorSend(context.Context, *MsgSend) (*MsgEmpty, error)
 	SetIPAddress(context.Context, *MsgSetIPAddress) (*MsgEmpty, error)
 	SetNodeKeys(context.Context, *MsgSetNodeKeys) (*MsgEmpty, error)
@@ -358,8 +382,14 @@ func (UnimplementedMsgServer) NodePauseChain(context.Context, *MsgNodePauseChain
 func (UnimplementedMsgServer) ObservedTxIn(context.Context, *MsgObservedTxIn) (*MsgEmpty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ObservedTxIn not implemented")
 }
+func (UnimplementedMsgServer) ObservedTxInQuorum(context.Context, *MsgObservedTxInQuorum) (*MsgEmpty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ObservedTxInQuorum not implemented")
+}
 func (UnimplementedMsgServer) ObservedTxOut(context.Context, *MsgObservedTxOut) (*MsgEmpty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ObservedTxOut not implemented")
+}
+func (UnimplementedMsgServer) ObservedTxOutQuorum(context.Context, *MsgObservedTxOutQuorum) (*MsgEmpty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ObservedTxOutQuorum not implemented")
 }
 func (UnimplementedMsgServer) ThorSend(context.Context, *MsgSend) (*MsgEmpty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ThorSend not implemented")
@@ -548,6 +578,24 @@ func _Msg_ObservedTxIn_Handler(srv interface{}, ctx context.Context, dec func(in
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Msg_ObservedTxInQuorum_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MsgObservedTxInQuorum)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).ObservedTxInQuorum(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Msg_ObservedTxInQuorum_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).ObservedTxInQuorum(ctx, req.(*MsgObservedTxInQuorum))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Msg_ObservedTxOut_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(MsgObservedTxOut)
 	if err := dec(in); err != nil {
@@ -562,6 +610,24 @@ func _Msg_ObservedTxOut_Handler(srv interface{}, ctx context.Context, dec func(i
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(MsgServer).ObservedTxOut(ctx, req.(*MsgObservedTxOut))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Msg_ObservedTxOutQuorum_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MsgObservedTxOutQuorum)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).ObservedTxOutQuorum(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Msg_ObservedTxOutQuorum_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).ObservedTxOutQuorum(ctx, req.(*MsgObservedTxOutQuorum))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -890,8 +956,16 @@ var Msg_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Msg_ObservedTxIn_Handler,
 		},
 		{
+			MethodName: "ObservedTxInQuorum",
+			Handler:    _Msg_ObservedTxInQuorum_Handler,
+		},
+		{
 			MethodName: "ObservedTxOut",
 			Handler:    _Msg_ObservedTxOut_Handler,
+		},
+		{
+			MethodName: "ObservedTxOutQuorum",
+			Handler:    _Msg_ObservedTxOutQuorum_Handler,
 		},
 		{
 			MethodName: "ThorSend",

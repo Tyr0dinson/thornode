@@ -241,7 +241,7 @@ test-regression:
     name: integration
   variables:
     DOCKER_BUILDKIT: "1"
-    TIME_FACTOR: "2"
+    TIME_FACTOR: "1"
     PARALLELISM: "6"
     FAIL_FAST: "true"
   before_script:

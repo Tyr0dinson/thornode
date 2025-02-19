@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -637,7 +636,7 @@ func (c *Client) extractTxs(block *btcjson.GetBlockVerboseTxResult) (types.TxIn,
 		}
 	}
 
-	var txItems []types.TxInItem
+	var txItems []*types.TxInItem
 	for idx, tx := range block.Tx {
 		// mempool transaction get committed to block , thus remove it from mempool cache
 		c.removeFromMemPoolCache(tx.Hash)
@@ -669,10 +668,9 @@ func (c *Client) extractTxs(block *btcjson.GetBlockVerboseTxResult) (types.TxIn,
 			}
 			continue
 		}
-		txItems = append(txItems, txInItem)
+		txItems = append(txItems, &txInItem)
 	}
 	txIn.TxArray = txItems
-	txIn.Count = strconv.Itoa(len(txItems))
 	return txIn, nil
 }
 

@@ -49,3 +49,53 @@ message ProtoUint {
     option (gogoproto.stringer) = true;
     string value = 1 [(gogoproto.customtype) = "cosmossdk.io/math.Uint", (gogoproto.nullable) = false];
 }
+
+enum Status {
+    incomplete = 0;
+    done = 1;
+    reverted = 2;
+}
+
+message ObservedTx {
+    Tx tx = 1 [(gogoproto.nullable) = false];
+    Status status = 2;
+    repeated string out_hashes = 3;
+    int64 block_height = 4;
+    repeated string signers = 5;
+    string observed_pub_key = 6 [(gogoproto.casttype) = "PubKey"];
+    int64 keysign_ms = 7;
+    int64 finalise_height = 8;
+    string aggregator = 9;
+    string aggregator_target = 10;
+    string aggregator_target_limit = 11 [(gogoproto.customtype) = "cosmossdk.io/math.Uint", (gogoproto.nullable) = true];
+}
+
+
+message Attestation {
+    option (gogoproto.stringer)         = true;
+
+    bytes PubKey = 1;
+    bytes Signature = 2;
+}
+
+message AttestTx {
+    option (gogoproto.stringer)         = true;
+
+    ObservedTx tx = 1 [(gogoproto.nullable) = false];
+    Attestation Attestation = 2;
+    bool inbound = 3;
+}
+
+message QuorumTx {
+    option (gogoproto.stringer)         = true;
+
+    ObservedTx tx = 1 [(gogoproto.nullable) = false];
+    repeated Attestation Attestations = 2;
+    bool inbound = 3;
+}
+
+message QuorumTxs {
+    option (gogoproto.stringer)         = true;
+
+    repeated QuorumTx Txs = 1;
+}

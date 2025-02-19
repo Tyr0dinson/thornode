@@ -57,8 +57,18 @@ func (ms msgServer) ObservedTxIn(goCtx context.Context, msg *types.MsgObservedTx
 	return externalHandler(goCtx, handler, msg)
 }
 
+func (ms msgServer) ObservedTxInQuorum(goCtx context.Context, msg *types.MsgObservedTxInQuorum) (*types.MsgEmpty, error) {
+	handler := NewObservedTxInQuorumHandler(ms.mgr)
+	return externalHandler(goCtx, handler, msg)
+}
+
 func (ms msgServer) ObservedTxOut(goCtx context.Context, msg *types.MsgObservedTxOut) (*types.MsgEmpty, error) {
 	handler := NewObservedTxOutHandler(ms.mgr)
+	return externalHandler(goCtx, handler, msg)
+}
+
+func (ms msgServer) ObservedTxOutQuorum(goCtx context.Context, msg *types.MsgObservedTxOutQuorum) (*types.MsgEmpty, error) {
+	handler := NewObservedTxOutQuorumHandler(ms.mgr)
 	return externalHandler(goCtx, handler, msg)
 }
 

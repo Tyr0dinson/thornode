@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -281,7 +280,7 @@ func (c *CosmosBlockScanner) updateGasFees(height int64) error {
 	return nil
 }
 
-func (c *CosmosBlockScanner) processTxs(height int64, rawTxs []tmtypes.Tx) ([]types.TxInItem, error) {
+func (c *CosmosBlockScanner) processTxs(height int64, rawTxs []tmtypes.Tx) ([]*types.TxInItem, error) {
 	// Proto types for Cosmos chains that we are transacting with may not be included in this repo.
 	// Therefore, it is necessary to include them in the "proto" directory and register them in
 	// the cdc (codec) that is passed below. Registry occurs in the NewCosmosBlockScanner function.
@@ -292,10 +291,10 @@ func (c *CosmosBlockScanner) processTxs(height int64, rawTxs []tmtypes.Tx) ([]ty
 	defer cancel()
 	blockResults, err := c.rpc.BlockResults(ctx, &height)
 	if err != nil {
-		return []types.TxInItem{}, fmt.Errorf("unable to get BlockResults: %w", err)
+		return nil, fmt.Errorf("unable to get BlockResults: %w", err)
 	}
 
-	var txIn []types.TxInItem
+	var txIn []*types.TxInItem
 	for i, rawTx := range rawTxs {
 		hash := hex.EncodeToString(tmhash.Sum(rawTx))
 		var tx ctypes.Tx
@@ -360,7 +359,7 @@ func (c *CosmosBlockScanner) processTxs(height int64, rawTxs []tmtypes.Tx) ([]ty
 				if gasFees.IsEmpty() {
 					gasFees = append(gasFees, common.NewCoin(c.cfg.ChainID.GetGasAsset(), cosmos.NewUint(1)))
 				}
-				txIn = append(txIn, types.TxInItem{
+				txIn = append(txIn, &types.TxInItem{
 					Tx:          hash,
 					BlockHeight: height,
 					Memo:        memo,
@@ -394,7 +393,6 @@ func (c *CosmosBlockScanner) FetchTxs(height, chainHeight int64) (types.TxIn, er
 	}
 
 	txIn := types.TxIn{
-		Count:    strconv.Itoa(len(txs)),
 		Chain:    c.cfg.ChainID,
 		TxArray:  txs,
 		Filtered: false,

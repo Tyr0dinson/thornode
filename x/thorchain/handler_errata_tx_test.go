@@ -507,8 +507,8 @@ func (*HandlerErrataTxSuite) TestProcessErrataOutboundTx(c *C) {
 		common.Gas{
 			common.NewCoin(common.LTCAsset, cosmos.NewUint(1000)),
 		}, "swap:LTC.LTC")
-	observedTx := []ObservedTx{
-		NewObservedTx(
+	observedTx := []common.ObservedTx{
+		common.NewObservedTx(
 			tx,
 			1024, observedPubKey, 1024),
 	}
@@ -525,7 +525,7 @@ func (*HandlerErrataTxSuite) TestProcessErrataOutboundTx(c *C) {
 	c.Assert(finalisedTx.IsEmpty(), Equals, false)
 	// voter.Tx must be explicitly updated in the handler,
 	// for instance on consensus.
-	txOutVoter.Tx = finalisedTx
+	txOutVoter.Tx = *finalisedTx
 
 	helper.Keeper.SetObservedTxOutVoter(ctx, txOutVoter)
 
@@ -582,7 +582,7 @@ func (*HandlerErrataTxSuite) TestProcessErrataOutboundTx(c *C) {
 		common.Gas{
 			common.NewCoin(common.LTCAsset, cosmos.NewUint(1000)),
 		}, "swap:LTC.LTC")
-	observedTxInbound := []ObservedTx{
+	observedTxInbound := []common.ObservedTx{
 		NewObservedTx(
 			txInbound,
 			1024, observedPubKey, 1024),
@@ -668,8 +668,8 @@ func (*HandlerErrataTxSuite) TestProcessErrortaOutboundTx_EnsureMigrateTxWillSet
 		}, "migrate:111")
 
 	// observed outbound tx in the retired vault
-	observedTx := []ObservedTx{
-		NewObservedTx(
+	observedTx := []common.ObservedTx{
+		common.NewObservedTx(
 			migrateTx,
 			1024, retiredPubKey, 1024),
 	}
@@ -681,13 +681,14 @@ func (*HandlerErrataTxSuite) TestProcessErrortaOutboundTx_EnsureMigrateTxWillSet
 	c.Assert(finalisedTx.IsEmpty(), Equals, false)
 	// voter.Tx must be explicitly updated in the handler,
 	// for instance on consensus.
-	txOutVoter.Tx = finalisedTx
+	txOutVoter.Tx = *finalisedTx
 
 	helper.Keeper.SetObservedTxOutVoter(ctx, txOutVoter)
 
 	// (identical) observed inbound tx in the same retired vault
-	observedInboundTx := []ObservedTx{
-		NewObservedTx(
+	observedInboundTx := []common.ObservedTx{
+		common.NewObservedTx(
+
 			migrateTx,
 			1024, retiredPubKey, 1024),
 	}
@@ -699,7 +700,7 @@ func (*HandlerErrataTxSuite) TestProcessErrortaOutboundTx_EnsureMigrateTxWillSet
 	c.Assert(finalisedTx.IsEmpty(), Equals, false)
 	// voter.Tx must be explicitly updated in the handler,
 	// for instance on consensus.
-	txInVoter.Tx = finalisedTx
+	txInVoter.Tx = *finalisedTx
 	helper.Keeper.SetObservedTxInVoter(ctx, txInVoter)
 
 	result, err := handler.processErrataOutboundTx(ctx, *internalMigrationTx)
@@ -779,7 +780,7 @@ func (s *HandlerErrataTxSuite) TestObservingSlashing(c *C) {
 	voter := ObservedTxVoter{
 		TxID:            observedTx.Tx.ID,
 		Tx:              observedTx,
-		Txs:             ObservedTxs{observedTx},
+		Txs:             common.ObservedTxs{observedTx},
 		Height:          observedTx.BlockHeight,
 		FinalisedHeight: observedTx.BlockHeight,
 	}

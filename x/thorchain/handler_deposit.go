@@ -140,7 +140,6 @@ func (h DepositHandler) handle(ctx cosmos.Context, msg MsgDeposit) (*cosmos.Resu
 	coinsInMsg := msg.Coins
 	if !coinsInMsg.IsEmpty() && !coinsInMsg[0].Asset.IsTradeAsset() && !coinsInMsg[0].Asset.IsSecuredAsset() {
 		// send funds to target module
-		// trunk-ignore(golangci-lint/govet): shadow
 		err := h.mgr.Keeper().SendFromAccountToModule(ctx, msg.GetSigners()[0], targetModule, msg.Coins)
 		if err != nil {
 			return nil, err
@@ -157,7 +156,7 @@ func (h DepositHandler) handle(ctx cosmos.Context, msg MsgDeposit) (*cosmos.Resu
 
 	// construct msg from memo
 	txIn := ObservedTx{Tx: tx}
-	txInVoter := NewObservedTxVoter(txIn.Tx.ID, []ObservedTx{txIn})
+	txInVoter := NewObservedTxVoter(txIn.Tx.ID, []common.ObservedTx{txIn})
 	txInVoter.Height = ctx.BlockHeight() // While FinalisedHeight may be overwritten, Height records the consensus height
 	txInVoter.FinalisedHeight = ctx.BlockHeight()
 	txInVoter.Tx = txIn
@@ -204,7 +203,6 @@ func (h DepositHandler) handle(ctx cosmos.Context, msg MsgDeposit) (*cosmos.Resu
 	// if an outbound is not expected, mark the voter as done
 	if !memo.GetType().HasOutbound() {
 		// retrieve the voter from store in case the handler caused a change
-		// trunk-ignore(golangci-lint/govet): shadow
 		voter, err := h.mgr.Keeper().GetObservedTxInVoter(ctx, txID)
 		if err != nil {
 			return nil, fmt.Errorf("fail to get voter")

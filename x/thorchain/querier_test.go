@@ -582,7 +582,7 @@ func (s *QuerierSuite) TestQueryTxInVoter(c *C) {
 	c.Assert(err, NotNil)
 	c.Assert(queryTxVoterResp, IsNil)
 
-	observedTxInVote := NewObservedTxVoter(tx.ID, []ObservedTx{NewObservedTx(tx, s.ctx.BlockHeight(), GetRandomPubKey(), s.ctx.BlockHeight())})
+	observedTxInVote := NewObservedTxVoter(tx.ID, []common.ObservedTx{NewObservedTx(tx, s.ctx.BlockHeight(), GetRandomPubKey(), s.ctx.BlockHeight())})
 	s.k.SetObservedTxInVoter(s.ctx, observedTxInVote)
 	queryTxVoterResp, err = s.queryServer.TxVoters(s.ctx, &types.QueryTxVotersRequest{
 		TxId: tx.ID.String(),
@@ -623,7 +623,7 @@ func (s *QuerierSuite) TestQueryTxStages(c *C) {
 	result, err := queryTxStagesResp.MarshalJSONPB(nil)
 	c.Assert(result, NotNil) // Expecting a not-started Observation stage.
 	c.Assert(err, IsNil)     // Expecting no error for an unobserved hash.
-	observedTxInVote := NewObservedTxVoter(tx.ID, []ObservedTx{NewObservedTx(tx, s.ctx.BlockHeight(), GetRandomPubKey(), s.ctx.BlockHeight())})
+	observedTxInVote := NewObservedTxVoter(tx.ID, []common.ObservedTx{NewObservedTx(tx, s.ctx.BlockHeight(), GetRandomPubKey(), s.ctx.BlockHeight())})
 	s.k.SetObservedTxInVoter(s.ctx, observedTxInVote)
 	queryTxStagesResp, err = s.queryServer.TxStages(s.ctx, &types.QueryTxStagesRequest{
 		TxId: tx.ID.String(),
@@ -655,7 +655,7 @@ func (s *QuerierSuite) TestQueryTxStatus(c *C) {
 	result, err := queryTxStatusResp.MarshalJSONPB(nil)
 	c.Assert(result, NotNil) // Expecting a not-started Observation stage.
 	c.Assert(err, IsNil)     // Expecting no error for an unobserved hash.
-	observedTxInVote := NewObservedTxVoter(tx.ID, []ObservedTx{NewObservedTx(tx, s.ctx.BlockHeight(), GetRandomPubKey(), s.ctx.BlockHeight())})
+	observedTxInVote := NewObservedTxVoter(tx.ID, []common.ObservedTx{NewObservedTx(tx, s.ctx.BlockHeight(), GetRandomPubKey(), s.ctx.BlockHeight())})
 	s.k.SetObservedTxInVoter(s.ctx, observedTxInVote)
 	queryTxStatusResp, err = s.queryServer.TxStatus(s.ctx, &types.QueryTxStatusRequest{
 		TxId: tx.ID.String(),
