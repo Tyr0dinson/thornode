@@ -131,9 +131,15 @@ func StartThorchain(
 		"BIFROST_CHAINS_GAIA_BLOCK_SCANNER_START_BLOCK_HEIGHT": "2",
 	}
 	for _, exoChain := range exoChains {
+		rpcAddress := ""
+		if exoChain.chain.Config().Images == nil {
+			rpcAddress = exoChain.remoteRpc
+		} else {
+			rpcAddress = exoChain.chain.GetRPCAddress()
+		}
 		name := exoChain.chain.Config().Name
 		hostKey := fmt.Sprintf("%s_HOST", name)
-		bifrostEnvOverrides[hostKey] = exoChain.chain.GetRPCAddress()
+		bifrostEnvOverrides[hostKey] = rpcAddress
 		if name == "GAIA" {
 			hostGRPCKey := fmt.Sprintf("%s_GRPC_HOST", name)
 			bifrostEnvOverrides[hostGRPCKey] = exoChain.chain.GetGRPCAddress()
@@ -142,9 +148,9 @@ func StartThorchain(
 		bifrostEnvOverrides[disableChainKey] = "false"
 		if name == "BSC" || name == "XRP" {
 			hostKey = fmt.Sprintf("BIFROST_CHAINS_%s_RPC_HOST", name)
-			bifrostEnvOverrides[hostKey] = exoChain.chain.GetRPCAddress()
+			bifrostEnvOverrides[hostKey] = rpcAddress
 			bsRpcHost := fmt.Sprintf("BIFROST_CHAINS_%s_BLOCK_SCANNER_RPC_HOST", name)
-			bifrostEnvOverrides[bsRpcHost] = exoChain.chain.GetRPCAddress()
+			bifrostEnvOverrides[bsRpcHost] = rpcAddress
 		}
 		if name == "XRP" {
 			hostKey = fmt.Sprintf("BIFROST_CHAINS_%s_CHAIN_NETWORK", name)

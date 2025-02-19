@@ -12,10 +12,14 @@ import (
 	"github.com/strangelove-ventures/interchaintest/v8"
 	tc "github.com/strangelove-ventures/interchaintest/v8/chain/thorchain"
 	"github.com/strangelove-ventures/interchaintest/v8/chain/thorchain/common"
+	"github.com/strangelove-ventures/interchaintest/v8/chain/xrp"
 	"github.com/strangelove-ventures/interchaintest/v8/dockerutil"
 	"github.com/strangelove-ventures/interchaintest/v8/ibc"
 	"github.com/strangelove-ventures/interchaintest/v8/testutil"
 	"golang.org/x/sync/errgroup"
+	
+	"github.com/Peersyst/xrpl-go/xrpl/wallet"
+	"github.com/Peersyst/xrpl-go/pkg/crypto"
 )
 
 const (
@@ -58,6 +62,38 @@ func GetAndFundTestUsers(
 			amount = amount.MulRaw(2)
 		}
 		eg.Go(func() error {
+			// if testnet xrp, fund via testnet
+			if chain.Config().Name == "XRP" && chain.Config().Images == nil {
+				w, err := wallet.New(crypto.SECP256K1())
+				if err != nil {
+					return err
+				}
+				xrpChain, ok := chain.(*xrp.XrpChain)
+				if !ok {
+					return fmt.Errorf("not an xrp chain as expected")
+				}
+				err = xrpChain.RpcClient.FundWallet(&w)
+				if err != nil {
+					return err
+				}
+
+				keyName := fmt.Sprintf("%s-%s", keyNamePrefix, dockerutil.RandLowerCaseLetterString(6))
+				err = chain.RecoverKey(ctx, keyName, w.Seed)
+				if err != nil {
+					return err
+				}
+				xrpChain.MapAccess.Lock()
+				users[i] = xrpChain.KeyNameToWalletMap[keyName]
+				xrpChain.MapAccess.Unlock()
+				balance, err := xrpChain.RpcClient.GetXrpBalance(w.GetAddress())
+				if err != nil {
+					return err
+				}
+				if balance != "100" {
+					return fmt.Errorf("user (%s) was not properly funded, balance (%s)", keyName, balance)
+				}
+				return nil
+			}
 			user := interchaintest.GetAndFundTestUsers(t, egCtx, fmt.Sprintf("%s-%s", keyNamePrefix, dockerutil.RandLowerCaseLetterString(3)), amount, chain)
 			users[i] = user[0]
 

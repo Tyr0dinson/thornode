@@ -17,6 +17,7 @@ type ExoChain struct {
 	lpers      []ibc.Wallet
 	savers     []ibc.Wallet
 	genWallets []ibc.Wallet
+	remoteRpc  string
 }
 
 func (e ExoChains) GetChains() []ibc.Chain {
@@ -57,6 +58,7 @@ func XrpChainSpec() *interchaintest.ChainSpec {
 			5005:  5005,
 			6006:  6006,
 			51235: 51235,
+			51234: 51234,
 		},
 	}
 	return &interchaintest.ChainSpec{
