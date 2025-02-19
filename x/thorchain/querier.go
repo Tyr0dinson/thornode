@@ -21,12 +21,13 @@ import (
 	"github.com/cosmos/cosmos-sdk/types/tx/signing"
 	authtx "github.com/cosmos/cosmos-sdk/x/auth/tx"
 	"github.com/rs/zerolog/log"
-	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/conversion"
+	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/conversion"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
 	"gitlab.com/thorchain/thornode/v3/constants"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/ebifrost"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 	keeperv1 "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/v1"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
@@ -2077,7 +2078,7 @@ func newTxStagesResponse(ctx cosmos.Context, voter ObservedTxVoter, isSwap, isPe
 	var outSigned types.OutboundSignedStage
 
 	// Set the Completed state first.
-	outSigned.Completed = (voter.Tx.Status != types.Status_incomplete)
+	outSigned.Completed = (voter.Tx.Status != common.Status_incomplete)
 
 	// Only fill in other fields if not Completed.
 	if !outSigned.Completed {
@@ -2183,7 +2184,7 @@ func (qs queryServer) queryTx(ctx cosmos.Context, req *types.QueryTxRequest) (*t
 	}
 
 	result := types.QueryTxResponse{
-		ObservedTx:      castObservedTx(voter.GetTx(nodeAccounts)),
+		ObservedTx:      castObservedTx(*voter.GetTx(nodeAccounts)),
 		ConsensusHeight: voter.Height,
 		FinalisedHeight: voter.FinalisedHeight,
 		OutboundHeight:  voter.OutboundHeight,
@@ -3109,14 +3110,20 @@ func (qs queryServer) queryBlock(ctx cosmos.Context, req *types.QueryBlockReques
 		}
 	}
 
+	cdc, ok := qs.mgr.cdc.(*codec.ProtoCodec)
+	if !ok {
+		return nil, fmt.Errorf("invalid codec")
+	}
+
 	for i, tx := range block.Block.Txs {
 		// decode the protobuf and encode to json
-		dtx, err := authtx.DefaultTxDecoder(qs.mgr.cdc.(*codec.ProtoCodec))(tx)
+
+		dtx, err := ebifrost.TxDecoder(cdc, authtx.DefaultTxDecoder(cdc))(tx)
 		if err != nil {
 			return nil, fmt.Errorf("fail to decode tx: %w", err)
 		}
 
-		etx, err := authtx.DefaultJSONTxEncoder(qs.mgr.cdc.(*codec.ProtoCodec))(dtx)
+		etx, err := ebifrost.JSONTxEncoder(cdc, authtx.DefaultJSONTxEncoder(cdc))(dtx)
 		if err != nil {
 			return nil, fmt.Errorf("fail to encode tx: %w", err)
 		}
@@ -3178,7 +3185,7 @@ func castTxOutItem(toi TxOutItem, height int64) *types.QueryTxOutItem {
 func castObservedTx(observedTx ObservedTx) types.QueryObservedTx {
 	// Only display the Status if it is "done", not if "incomplete".
 	status := ""
-	if observedTx.Status != types.Status_incomplete {
+	if observedTx.Status != common.Status_incomplete {
 		status = observedTx.Status.String()
 	}
 	return types.QueryObservedTx{

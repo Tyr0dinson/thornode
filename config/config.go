@@ -129,6 +129,34 @@ func Init() {
 		"CHAIN_RPC",
 	))
 	assert(viper.BindEnv(
+		"bifrost.thorchain.chain_ebifrost",
+		"CHAIN_EBIFROST",
+	))
+	assert(viper.BindEnv(
+		"bifrost.attestation_gossip.observe_reconcile_interval",
+		"ATT_GSIP_OBSERVE_RECONCILE_INTERVAL",
+	))
+	assert(viper.BindEnv(
+		"bifrost.attestation_gossip.late_observe_timeout",
+		"ATT_GSIP_LATE_OBSERVE_TIMEOUT",
+	))
+	assert(viper.BindEnv(
+		"bifrost.attestation_gossip.non_qourum_timeout",
+		"ATT_GSIP_NON_QUORUM_TIMEOUT",
+	))
+	assert(viper.BindEnv(
+		"bifrost.attestation_gossip.min_time_between_attestations",
+		"ATT_GSIP_MIN_TIME_BETWEEN_ATTESTATIONS",
+	))
+	assert(viper.BindEnv(
+		"bifrost.attestation_gossip.ask_peers",
+		"ATT_GSIP_ASK_PEERS",
+	))
+	assert(viper.BindEnv(
+		"bifrost.attestation_gossip.ask_peers_delay",
+		"ATT_GSIP_ASK_PEERS_DELAY",
+	))
+	assert(viper.BindEnv(
 		"bifrost.chains.BTC.rpc_host",
 		"BTC_HOST",
 	))
@@ -206,6 +234,7 @@ func Init() {
 	assert(viper.BindEnv("bifrost.chains.AVAX.disabled", "AVAX_DISABLED"))
 	assert(viper.BindEnv("bifrost.chains.AVAX.block_scanner.gas_cache_size", "AVAX_GAS_CACHE_SIZE"))
 	assert(viper.BindEnv("thor.cosmos.halt_height", "HARDFORK_BLOCK_HEIGHT"))
+	assert(viper.BindEnv("thor.cosmos.ebifrost.address", "THOR_COSMOS_EBIFROST_ADDRESS"))
 
 	// always override from environment
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
@@ -230,6 +259,9 @@ func Init() {
 	}
 	if config.Thornode.Tendermint.P2P.ListenAddress == "" {
 		config.Thornode.Tendermint.P2P.ListenAddress = fmt.Sprintf("tcp://0.0.0.0:%d", p2pPort)
+	}
+	if config.Thornode.Cosmos.EBifrost.Address == "" {
+		config.Thornode.Cosmos.EBifrost.Address = fmt.Sprintf("0.0.0.0:%d", ebifrostPort)
 	}
 }
 
@@ -411,6 +443,11 @@ type Thornode struct {
 			Address string `mapstructure:"address"`
 		} `mapstructure:"grpc"`
 
+		EBifrost struct {
+			Enable  bool   `mapstructure:"enable"`
+			Address string `mapstructure:"address"`
+		} `mapstructure:"ebifrost"`
+
 		StateSync struct {
 			SnapshotInterval   int64 `mapstructure:"snapshot_interval"`
 			SnapshotKeepRecent int64 `mapstructure:"snapshot_keep_recent"`
@@ -468,10 +505,11 @@ type Thornode struct {
 // -------------------------------------------------------------------------------------
 
 type Bifrost struct {
-	Signer    BifrostSignerConfiguration  `mapstructure:"signer"`
-	Thorchain BifrostClientConfiguration  `mapstructure:"thorchain"`
-	Metrics   BifrostMetricsConfiguration `mapstructure:"metrics"`
-	Chains    struct {
+	Signer            BifrostSignerConfiguration     `mapstructure:"signer"`
+	Thorchain         BifrostClientConfiguration     `mapstructure:"thorchain"`
+	AttestationGossip BifrostAttestationGossipConfig `mapstructure:"attestation_gossip"`
+	Metrics           BifrostMetricsConfiguration    `mapstructure:"metrics"`
+	Chains            struct {
 		AVAX BifrostChainConfiguration `mapstructure:"avax"`
 		BCH  BifrostChainConfiguration `mapstructure:"bch"`
 		BSC  BifrostChainConfiguration `mapstructure:"bsc"`
@@ -562,6 +600,29 @@ type BifrostSignerConfiguration struct {
 	KeysignTimeout  time.Duration `mapstructure:"keysign_timeout"`
 	PartyTimeout    time.Duration `mapstructure:"party_timeout"`
 	PreParamTimeout time.Duration `mapstructure:"pre_param_timeout"`
+}
+
+type BifrostAttestationGossipConfig struct {
+	// how often to prune old observed txs and check if late attestations should be sent.
+	// should be less than lateObserveTimeout and minTimeBetweenAttestations by at least a factor of 2.
+	ObserveReconcileInterval time.Duration `mapstructure:"observe_reconcile_interval"`
+
+	// validators can get credit for observing a tx for up to this amount of time after it is committed, after which it count against a slash penalty.
+	LateObserveTimeout time.Duration `mapstructure:"late_observe_timeout"`
+
+	// Prune observed tx attestations after this amount of time, even if they are not yet committed.
+	// Gives some time for longer chain halts.
+	// If chain halts for longer than this, validators will need to restart their bifrosts to re-share their attestations.
+	NonQuorumTimeout time.Duration `mapstructure:"non_quorum_timeout"`
+
+	// minTimeBetweenAttestations is the minimum time between sending batches of attestations for a quorum tx to thornode.
+	MinTimeBetweenAttestations time.Duration `mapstructure:"min_time_between_attestations"`
+
+	// how many random peers to ask for their attestation state on startup.
+	AskPeers int `mapstructure:"ask_peers"`
+
+	// delay before asking peers for their attestation state on startup.
+	AskPeersDelay time.Duration `mapstructure:"ask_peers_delay"`
 }
 
 type BifrostChainConfiguration struct {
@@ -759,6 +820,7 @@ type BifrostClientConfiguration struct {
 	ChainID         common.Chain `mapstructure:"chain_id" `
 	ChainHost       string       `mapstructure:"chain_host"`
 	ChainRPC        string       `mapstructure:"chain_rpc"`
+	ChainEBifrost   string       `mapstructure:"chain_ebifrost"`
 	ChainHomeFolder string       `mapstructure:"chain_home_folder"`
 	SignerName      string       `mapstructure:"signer_name"`
 	SignerPasswd    string
@@ -780,6 +842,18 @@ type BifrostTSSConfiguration struct {
 	InfoAddress                  string   `mapstructure:"info_address"`
 	ExternalIP                   string   `mapstructure:"external_ip"`
 	MaxKeyshareRecoverScanBlocks int64    `mapstructure:"max_keyshare_recover_scan_blocks"`
+}
+
+func (c BifrostTSSConfiguration) GetP2PPort() int {
+	return c.P2PPort
+}
+
+func (c BifrostTSSConfiguration) GetRendezvous() string {
+	return c.Rendezvous
+}
+
+func (c BifrostTSSConfiguration) GetExternalIP() string {
+	return c.ExternalIP
 }
 
 type WhitelistCosmosAsset struct {
