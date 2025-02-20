@@ -516,7 +516,7 @@ services:
     profiles:
       - mocknet
       - mocknet-cluster
-    image: xrpllabsofficial/xrpld:2.3.0
+    image: xrpllabsofficial/xrpld:2.3.1
     restart: unless-stopped
     environment:
       BLOCK_TIME: ${BLOCK_TIME:-5}

@@ -1,7 +1,5 @@
 #!/bin/bash
 
-BLOCK_TIME="${BLOCK_TIME:=2}"
-
 # Start xrpl
 exec /opt/ripple/bin/rippled --conf /docker/scripts/xrp/rippled.cfg --standalone &
 sleep 5

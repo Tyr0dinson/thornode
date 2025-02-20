@@ -21,11 +21,8 @@ func NewKeyManager(key cryptotypes.PrivKey, keyType CryptoAlgorithm) (*KeyManage
 	var keys Keys
 	var err error
 	switch keyType {
-	// case ED25519:
-	// 	keys, err = ed25519.DeriveKeysFromSeed(key.Bytes())
-	// 	if err != nil {
-	// 		return nil, fmt.Errorf("fail generate xrp wallet from ed25519 seed: %v", err)
-	// 	}
+	case ED25519:
+		return nil, fmt.Errorf("ed25519 is not currently supported")
 	case SECP256K1:
 		keys, err = secp256k1.DeriveKeysFromMasterPrivateKey(key.Bytes())
 		if err != nil {
