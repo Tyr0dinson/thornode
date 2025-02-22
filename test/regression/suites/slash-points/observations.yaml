@@ -541,6 +541,11 @@ asserts:
 ########################################################################################
 # unfinalized outbound - slash non-observers on consensus
 ########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - length == 1
+---
 type: tx-observed-out
 signer: {{ addr_thor_frog }}
 txs:
@@ -563,6 +568,13 @@ txs:
 ---
 type: create-blocks
 count: 1
+---
+# Being an outbound (to avoid apparent insolvency),
+# unfinalised consensus is sufficient for internal handler action.
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - length == 0
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/nodes
@@ -769,7 +781,7 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
-  - length == 1
+  - length == 0
 ---
 type: tx-observed-out
 signer: {{ addr_thor_frog }}
