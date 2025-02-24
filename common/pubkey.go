@@ -14,14 +14,13 @@ import (
 	"github.com/cosmos/cosmos-sdk/crypto/codec"
 	dogchaincfg "github.com/eager7/dogd/chaincfg"
 	"github.com/eager7/dogutil"
-	ltcchaincfg "github.com/ltcsuite/ltcd/chaincfg"
-	"github.com/ltcsuite/ltcutil"
-
+	eth "github.com/ethereum/go-ethereum/crypto"
 	bchchaincfg "github.com/gcash/bchd/chaincfg"
 	"github.com/gcash/bchutil"
 
 	"github.com/cometbft/cometbft/crypto"
-	eth "github.com/ethereum/go-ethereum/crypto"
+	ltcchaincfg "github.com/ltcsuite/ltcd/chaincfg"
+	"github.com/ltcsuite/ltcutil"
 
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
@@ -200,6 +199,14 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 			return NoAddress, fmt.Errorf("fail to encode the address, err: %w", err)
 		}
 		addressString = addr.String()
+	case SOLChain:
+		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, string(p))
+		if err != nil {
+			return NoAddress, err
+		}
+
+		// Encode the public key to base58 to get the Solana address
+		addressString = Base58Encode(pk.Bytes())
 	default:
 		// Only EVM chains remain.
 		if !chain.IsEVM() {

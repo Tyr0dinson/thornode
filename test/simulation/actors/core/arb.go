@@ -71,7 +71,7 @@ func (a *ArbActor) acquireUser(config *OpConfig) OpResult {
 		a.account = user
 
 		// set thorchain address for later use
-		thorAddress, err := user.PubKey().GetThorAddress()
+		thorAddress, err := user.PubKey(common.THORChain).GetThorAddress()
 		if err != nil {
 			a.Log().Error().Err(err).Msg("failed to get thor address")
 			user.Release()

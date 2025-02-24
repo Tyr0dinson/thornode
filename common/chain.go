@@ -25,6 +25,7 @@ const (
 	GAIAChain  = Chain("GAIA")
 	AVAXChain  = Chain("AVAX")
 	BASEChain  = Chain("BASE")
+	SOLChain   = Chain("SOL")
 
 	SigningAlgoSecp256k1 = SigningAlgo("secp256k1")
 	SigningAlgoEd25519   = SigningAlgo("ed25519")
@@ -41,6 +42,7 @@ var AllChains = [...]Chain{
 	GAIAChain,
 	AVAXChain,
 	BASEChain,
+	SOLChain,
 }
 
 type SigningAlgo string
@@ -138,7 +140,9 @@ func (c Chain) String() string {
 
 // GetSigningAlgo get the signing algorithm for the given chain
 func (c Chain) GetSigningAlgo() SigningAlgo {
-	// Only SigningAlgoSecp256k1 is supported for now
+	if c == SOLChain {
+		return SigningAlgoEd25519
+	}
 	return SigningAlgoSecp256k1
 }
 
@@ -165,6 +169,8 @@ func (c Chain) GetGasAsset() Asset {
 		return ATOMAsset
 	case BASEChain:
 		return BaseETHAsset
+	case SOLChain:
+		return SOLAsset
 	default:
 		return EmptyAsset
 	}
@@ -187,6 +193,8 @@ func (c Chain) GetGasUnits() string {
 		return "uatom"
 	case LTCChain:
 		return "satsperbyte"
+	case SOLChain:
+		return "lamport"
 	default:
 		return ""
 	}
@@ -199,6 +207,8 @@ func (c Chain) GetGasAssetDecimal() int64 {
 	switch c {
 	case GAIAChain:
 		return 6
+	case SOLChain:
+		return 9
 	default:
 		return cosmos.DefaultCoinDecimals
 	}
@@ -263,6 +273,8 @@ func (c Chain) DustThreshold() cosmos.Uint {
 		return cosmos.NewUint(100_000_000)
 	case ETHChain, AVAXChain, GAIAChain, BSCChain, BASEChain:
 		return cosmos.NewUint(0)
+	case SOLChain:
+		return cosmos.NewUint(10_000)
 	default:
 		return cosmos.NewUint(0)
 	}
@@ -320,6 +332,8 @@ func (c Chain) ApproximateBlockMilliseconds() int64 {
 		return 6_000
 	case BASEChain:
 		return 2_000
+	case SOLChain:
+		return 400
 	default:
 		return 0
 	}
