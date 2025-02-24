@@ -246,7 +246,7 @@ func (tos *TxOutStorageVCUR) cachedTryAddTxOutItem(ctx cosmos.Context, mgr Manag
 
 	outputs, totalOutboundFeeRune, err := tos.prepareTxOutItem(ctx, toi)
 	if err != nil {
-		return false, fmt.Errorf("fail to prepare outbound tx: %w", err)
+		return false, fmt.Errorf("failed to prepare tx out item: %w", err)
 	}
 	if len(outputs) == 0 {
 		return false, ErrNotEnoughToPayFee
@@ -439,7 +439,12 @@ func (tos *TxOutStorageVCUR) DiscoverOutbounds(ctx cosmos.Context, transactionFe
 			}
 		}
 
-		toi.VaultPubKey = vault.PubKey
+		if toi.Chain.GetSigningAlgo() == common.SigningAlgoEd25519 {
+			toi.VaultPubKey = vault.PubKeyEddsa
+		} else {
+			toi.VaultPubKey = vault.PubKey
+		}
+
 		if toi.Coin.Amount.LTE(vaultCoinAmount) {
 			outputs = append(outputs, toi)
 			toi.Coin.Amount = cosmos.ZeroUint()
@@ -680,7 +685,6 @@ func (tos *TxOutStorageVCUR) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 				}
 			}
 		}
-
 		vault, err := tos.keeper.GetVault(ctx, outputs[i].VaultPubKey)
 		if err != nil && !outputs[i].Chain.IsTHORChain() {
 			// For THORChain outputs (since having an empty VaultPubKey)

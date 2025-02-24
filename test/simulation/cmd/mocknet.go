@@ -37,6 +37,7 @@ var chainRPCs = map[common.Chain]string{
 	common.GAIAChain: "localhost:9091",
 	common.BASEChain: "http://localhost:8547",
 	common.XRPChain:  "http://localhost:5005",
+	common.SOLChain:  "http://localhost:8899",
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -219,7 +220,7 @@ func InitConfig(parallelism int, seed bool) *OpConfig {
 		switch chain {
 		case common.BTCChain, common.LTCChain, common.BCHChain:
 			chainSeedAmount = sdkmath.NewUint(10 * common.One)
-		case common.BSCChain, common.BASEChain, common.ETHChain:
+		case common.BSCChain, common.BASEChain, common.ETHChain, common.SOLChain:
 			chainSeedAmount = sdkmath.NewUint(100 * common.One)
 		case common.GAIAChain:
 			chainSeedAmount = sdkmath.NewUint(1000 * common.One)

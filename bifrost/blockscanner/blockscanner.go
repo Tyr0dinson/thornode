@@ -156,35 +156,35 @@ func (b *BlockScanner) scanMempool() {
 
 // Checks current mimir settings to determine if the current chain is paused
 // either globally or specifically
-func (b *BlockScanner) isChainPaused() bool {
+func IsChainPaused(cfg config.BifrostBlockScannerConfiguration, logger zerolog.Logger, bridge thorclient.ThorchainBridge) bool {
 	var haltHeight, solvencyHaltHeight, nodeHaltHeight, thorHeight int64
 
 	// Check if chain has been halted via mimir
-	haltHeight, err := b.thorchainBridge.GetMimir(fmt.Sprintf("Halt%sChain", b.cfg.ChainID))
+	haltHeight, err := bridge.GetMimir(fmt.Sprintf("Halt%sChain", cfg.ChainID))
 	if err != nil {
-		b.logger.Error().Err(err).Msgf("fail to get mimir setting %s", fmt.Sprintf("Halt%sChain", b.cfg.ChainID))
+		logger.Error().Err(err).Msgf("fail to get mimir setting %s", fmt.Sprintf("Halt%sChain", cfg.ChainID))
 	}
 	// Check if chain has been halted by auto solvency checks
-	solvencyHaltHeight, err = b.thorchainBridge.GetMimir(fmt.Sprintf("SolvencyHalt%sChain", b.cfg.ChainID))
+	solvencyHaltHeight, err = bridge.GetMimir(fmt.Sprintf("SolvencyHalt%sChain", cfg.ChainID))
 	if err != nil {
-		b.logger.Error().Err(err).Msgf("fail to get mimir %s", fmt.Sprintf("SolvencyHalt%sChain", b.cfg.ChainID))
+		logger.Error().Err(err).Msgf("fail to get mimir %s", fmt.Sprintf("SolvencyHalt%sChain", cfg.ChainID))
 	}
 	// Check if all chains halted globally
-	globalHaltHeight, err := b.thorchainBridge.GetMimir("HaltChainGlobal")
+	globalHaltHeight, err := bridge.GetMimir("HaltChainGlobal")
 	if err != nil {
-		b.logger.Error().Err(err).Msg("fail to get mimir setting HaltChainGlobal")
+		logger.Error().Err(err).Msg("fail to get mimir setting HaltChainGlobal")
 	}
 	if globalHaltHeight > haltHeight {
 		haltHeight = globalHaltHeight
 	}
 	// Check if a node paused all chains
-	nodeHaltHeight, err = b.thorchainBridge.GetMimir("NodePauseChainGlobal")
+	nodeHaltHeight, err = bridge.GetMimir("NodePauseChainGlobal")
 	if err != nil {
-		b.logger.Error().Err(err).Msg("fail to get mimir setting NodePauseChainGlobal")
+		logger.Error().Err(err).Msg("fail to get mimir setting NodePauseChainGlobal")
 	}
-	thorHeight, err = b.thorchainBridge.GetBlockHeight()
+	thorHeight, err = bridge.GetBlockHeight()
 	if err != nil {
-		b.logger.Error().Err(err).Msg("fail to get THORChain block height")
+		logger.Error().Err(err).Msg("fail to get THORChain block height")
 	}
 
 	if nodeHaltHeight > 0 && thorHeight < nodeHaltHeight {
@@ -213,7 +213,7 @@ func (b *BlockScanner) scanBlocks() {
 			currentBlock := preBlockHeight + 1
 			// check if mimir has disabled this chain
 			if time.Since(lastMimirCheck) >= constants.ThorchainBlockTime {
-				isChainPaused = b.isChainPaused()
+				isChainPaused = IsChainPaused(b.cfg, b.logger, b.thorchainBridge)
 				lastMimirCheck = time.Now()
 			}
 
