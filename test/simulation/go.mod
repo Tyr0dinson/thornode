@@ -5,6 +5,7 @@ go 1.23.4
 require (
 	cosmossdk.io/math v1.4.0
 	github.com/Peersyst/xrpl-go v0.1.3
+	github.com/blocto/solana-go-sdk v1.30.0
 	github.com/btcsuite/btcd v0.22.1
 	github.com/btcsuite/btcd/chaincfg/chainhash v1.0.1
 	github.com/cometbft/cometbft v0.38.12
@@ -172,7 +173,7 @@ require (
 	github.com/consensys/gnark-crypto v0.14.0 // indirect
 	github.com/coreos/go-semver v0.3.0 // indirect
 	github.com/cosmos/btcutil v1.0.5 // indirect
-	github.com/cosmos/go-bip39 v1.0.0 // indirect
+	github.com/cosmos/go-bip39 v1.0.0
 	github.com/cosmos/iavl v1.2.4 // indirect
 	github.com/cosmos/ledger-cosmos-go v0.13.3 // indirect
 	github.com/crate-crypto/go-kzg-4844 v1.1.0 // indirect

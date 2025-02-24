@@ -114,6 +114,10 @@ func Init() {
 		"BLOCK_SCANNER_BACKOFF",
 	))
 	assert(viper.BindEnv(
+		"bifrost.chains.sol.block_scanner.block_height_discover_back_off",
+		"BLOCK_SCANNER_BACKOFF",
+	))
+	assert(viper.BindEnv(
 		"bifrost.signer.block_scanner.block_height_discover_back_off",
 		"THOR_BLOCK_TIME",
 	))
@@ -201,10 +205,27 @@ func Init() {
 		"bifrost.chains.GAIA.block_scanner.cosmos_grpc_tls",
 		"GAIA_GRPC_TLS",
 	))
+	assert(viper.BindEnv(
+		"bifrost.chains.SOL.rpc_host",
+		"SOL_HOST",
+	))
+	assert(viper.BindEnv(
+		"bifrost.chains.SOL.block_scanner.rpc_host",
+		"SOL_HOST",
+	))
+	assert(viper.BindEnv(
+		"bifrost.chains.SOL.geyser_host",
+		"SOL_GEYSER",
+	))
+	assert(viper.BindEnv(
+		"bifrost.chains.SOL.geyser_token",
+		"SOL_TOKEN",
+	))
 	assert(viper.BindEnv("bifrost.chains.GAIA.disabled", "GAIA_DISABLED"))
 	assert(viper.BindEnv("bifrost.chains.DOGE.disabled", "DOGE_DISABLED"))
 	assert(viper.BindEnv("bifrost.chains.LTC.disabled", "LTC_DISABLED"))
 	assert(viper.BindEnv("bifrost.chains.AVAX.disabled", "AVAX_DISABLED"))
+	assert(viper.BindEnv("bifrost.chains.SOL.disabled", "SOL_DISABLED"))
 	assert(viper.BindEnv("bifrost.chains.AVAX.block_scanner.gas_cache_size", "AVAX_GAS_CACHE_SIZE"))
 	assert(viper.BindEnv("thor.cosmos.halt_height", "HARDFORK_BLOCK_HEIGHT"))
 
@@ -492,6 +513,7 @@ type Bifrost struct {
 		LTC  BifrostChainConfiguration `mapstructure:"ltc"`
 		BASE BifrostChainConfiguration `mapstructure:"base"`
 		XRP  BifrostChainConfiguration `mapstructure:"xrp"`
+		SOL  BifrostChainConfiguration `mapstructure:"sol"`
 	} `mapstructure:"chains"`
 	TSS             BifrostTSSConfiguration `mapstructure:"tss"`
 	ObserverLevelDB LevelDBOptions          `mapstructure:"observer_leveldb"`
@@ -509,6 +531,7 @@ func (b Bifrost) GetChains() map[common.Chain]BifrostChainConfiguration {
 		common.LTCChain:  b.Chains.LTC,
 		common.BASEChain: b.Chains.BASE,
 		common.XRPChain:  b.Chains.XRP,
+		common.SOLChain:  b.Chains.SOL,
 	}
 }
 
@@ -604,6 +627,8 @@ type BifrostChainConfiguration struct {
 	UserName            string                           `mapstructure:"username"`
 	Password            string                           `mapstructure:"password"`
 	RPCHost             string                           `mapstructure:"rpc_host"`
+	GeyserHost          string                           `mapstructure:"geyser_host"`
+	GeyserToken         string                           `mapstructure:"geyser_token"`
 	CosmosGRPCHost      string                           `mapstructure:"cosmos_grpc_host"`
 	CosmosGRPCTLS       bool                             `mapstructure:"cosmos_grpc_tls"`
 	HTTPostMode         bool                             `mapstructure:"http_post_mode"` // Bitcoin core only supports HTTP POST mode

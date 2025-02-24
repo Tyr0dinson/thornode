@@ -12,7 +12,7 @@
             "@type": "/cosmos.crypto.secp256k1.PubKey",
             "key": "AmF4AUTWZEUSBtgqiR5n2Lgic/Yrr1mWupMo5TAubNRO"
           },
-          "sequence": "2"
+          "sequence": "1"
         },
         {
           "@type": "/cosmos.auth.v1beta1.ModuleAccount",
@@ -170,9 +170,6 @@
         }
       ]
     },
-    "denom": {
-      "admins": []
-    },
     "genutil": {
       "gen_txs": []
     },
@@ -263,7 +260,7 @@
             "GAIA",
             "BSC",
             "BASE",
-            "XRP"
+            "SOL"
           ],
           "coins": null,
           "membership": [
@@ -276,28 +273,7 @@
         }
       ]
     },
-    "upgrade": {},
-    "wasm": {
-      "codes": [],
-      "contracts": [],
-      "params": {
-        "code_upload_access": {
-          "addresses": [],
-          "permission": "Everybody"
-        },
-        "instantiate_default_permission": "Everybody"
-      },
-      "sequences": [
-        {
-          "id_key": "BGxhc3RDb2RlSWQ=",
-          "value": "1"
-        },
-        {
-          "id_key": "BGxhc3RDb250cmFjdElk",
-          "value": "1"
-        }
-      ]
-    }
+    "upgrade": {}
   },
   "chain_id": "thorchain",
   "consensus": {
@@ -324,5 +300,5 @@
       }
     }
   },
-  "initial_height": 5
+  "initial_height": 4
 }

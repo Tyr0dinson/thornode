@@ -182,9 +182,6 @@
         }
       ]
     },
-    "denom": {
-      "admins": []
-    },
     "genutil": {
       "gen_txs": []
     },
@@ -294,7 +291,7 @@
             "GAIA",
             "BSC",
             "BASE",
-            "XRP"
+            "SOL"
           ],
           "coins": [
             {
@@ -314,28 +311,7 @@
         }
       ]
     },
-    "upgrade": {},
-    "wasm": {
-      "codes": [],
-      "contracts": [],
-      "params": {
-        "code_upload_access": {
-          "addresses": [],
-          "permission": "Everybody"
-        },
-        "instantiate_default_permission": "Everybody"
-      },
-      "sequences": [
-        {
-          "id_key": "BGxhc3RDb2RlSWQ=",
-          "value": "1"
-        },
-        {
-          "id_key": "BGxhc3RDb250cmFjdElk",
-          "value": "1"
-        }
-      ]
-    }
+    "upgrade": {}
   },
   "chain_id": "thorchain",
   "consensus": {

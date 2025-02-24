@@ -166,6 +166,9 @@ services:
       ETH_HOST: ${ETH_HOST:-http://ethereum:8545}
       AVAX_HOST: ${AVAX_HOST:-http://avalanche:9650/ext/bc/C/rpc}
       GAIA_HOST: ${GAIA_HOST:-http://gaia:26657}
+      SOL_HOST: ${SOL_HOST:-http://solana:8899}
+      SOL_GEYSER: ${SOL_GEYSER:-http://solana:10000}
+      SOL_TOKEN: ${SOL_TOKEN:-}
       GAIA_GRPC_HOST: ${GAIA_GRPC_HOST:-gaia:9090}
       THOR_BLOCK_TIME: ${BLOCK_TIME:-1s}
       BLOCK_SCANNER_BACKOFF: ${BLOCK_SCANNER_BACKOFF:-5s}
@@ -569,3 +572,25 @@ services:
       - 9650:9650
     environment:
       RPC_PORT: "9650"
+
+  # ------------------------------ solana ------------------------------
+
+  solana:
+    profiles:
+      - mocknet
+      - mocknet-cluster
+    restart: unless-stopped
+    build:
+      context: ./mocknet/solana
+      dockerfile: Dockerfile
+    volumes:
+      - "./mocknet/solana:/mocknet"
+    entrypoint: /mocknet/entrypoint.sh
+    ports:
+      - 8899:8899
+      - 8900:8900
+      - 10000:10000
+    environment:
+      RPC_PORT: "8899"
+      AIRDROP_ADDRESS: "AAH1XhfycX678et7Pjvwp1DMWnHpSP92wpJwV19MXHtX"
+      AIRDROP_AMOUNT: "10000"

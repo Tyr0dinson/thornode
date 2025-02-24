@@ -230,6 +230,13 @@ func (addr Address) IsChain(chain Chain) bool {
 			return true
 		}
 		return false
+	case SOLChain:
+		res, err := Base58Decode(addr.String())
+		if err == nil && len(res) == 32 {
+			return true
+		}
+		return false
+
 	default:
 		return true // if THORNode don't specifically check a chain yet, assume its ok.
 	}
@@ -344,6 +351,8 @@ func (addr Address) GetNetwork(chain Chain) ChainNetwork {
 		if err == nil {
 			return MockNet
 		}
+	case SOLChain:
+		return currentNetwork
 	}
 	return currentNetwork
 }

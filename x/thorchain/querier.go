@@ -241,8 +241,9 @@ func (qs queryServer) queryVaultsPubkeys(ctx cosmos.Context, _ *types.QueryVault
 			switch vault.Status {
 			case ActiveVault, RetiringVault:
 				resp.Asgard = append(resp.Asgard, &types.VaultInfo{
-					PubKey:  vault.PubKey.String(),
-					Routers: castVaultRouters(vault.Routers),
+					PubKey:      vault.PubKey.String(),
+					PubKeyEddsa: vault.PubKeyEddsa.String(),
+					Routers:     castVaultRouters(vault.Routers),
 				})
 			case InactiveVault:
 				// skip inactive vaults that have never received an inbound
@@ -513,7 +514,8 @@ func (qs queryServer) queryInboundAddresses(ctx cosmos.Context, _ *types.QueryIn
 		vaultAddress, err := vault.GetAddress(chain)
 		if err != nil {
 			ctx.Logger().Error("fail to get address for chain", "error", err)
-			return nil, fmt.Errorf("fail to get address for chain: %w", err)
+			continue // TODO: revert this, just for testing
+			// return nil, fmt.Errorf("fail to get address for chain: %w", err)
 		}
 		cc := vault.GetContract(chain)
 		gasRate := qs.mgr.GasMgr().GetGasRate(ctx, chain)

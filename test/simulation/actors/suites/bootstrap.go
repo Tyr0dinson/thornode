@@ -45,6 +45,9 @@ func Bootstrap() *Actor {
 	// create token pools
 	tokenPools := NewActor("Bootstrap-TokenPools")
 	for _, chain := range common.AllChains {
+		if chain.Equals(common.SOLChain) {
+			continue
+		}
 		if !chain.IsEVM() {
 			continue
 		}
