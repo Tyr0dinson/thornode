@@ -403,15 +403,6 @@ func (c *Client) signMsg(
 	}
 
 	flatTx := payment.Flatten()
-
-	// TODO SAM127: Debug only - remove
-	flatTxJson, err := json.Marshal(flatTx)
-	if err == nil {
-		c.logger.Info().Str("xrp flat tx", string(flatTxJson)).Msg("xrp flat tx")
-	} else {
-		c.logger.Info().AnErr("error", err).Msg("unable to json marshal flat tx")
-	}
-
 	encodedTx, err := binarycodec.EncodeForSigning(flatTx)
 	if err != nil {
 		return nil, err

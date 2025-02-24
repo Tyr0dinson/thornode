@@ -36,9 +36,10 @@ func (c *XrpBlockScanner) processPayment(flatTx map[string]any) (*transaction.Pa
 		if !ok {
 			return nil, fmt.Errorf("cannot cast memos to []interface{}")
 		}
-		// TODO SAM127: add filter for vault addresses since this can error for any message
-		if len(memos) != 1 {
-			return nil, fmt.Errorf("more than 1 memo exists")
+		// optional: add filter for vault addresses
+		// if more than 1 memo exist, we only use the first
+		if len(memos) < 1 {
+			return nil, fmt.Errorf("memos is empty")
 		}
 		memoObj, ok := memos[0].(map[string]interface{})
 		if !ok {
