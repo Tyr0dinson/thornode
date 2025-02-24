@@ -4,17 +4,16 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
-	"math/big"
-	"net/http"
-	"strconv"
-
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
-	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
+	"math/big"
+	"net/http"
+	"regexp"
+	"strconv"
 
 	"github.com/xssnick/tonutils-go/address"
 	"github.com/xssnick/tonutils-go/tlb"
@@ -63,12 +62,12 @@ func (s *TonBlockScanner) GetHeight() (int64, error) {
 	return int64(info.SeqNo), nil
 }
 
-func (s *TonBlockScanner) FetchMemPool(height int64) (types.TxIn, error) {
+func (s *TonBlockScanner) FetchMemPool(_ int64) (types.TxIn, error) {
 	return types.TxIn{}, nil
 }
 
 func (s *TonBlockScanner) FetchTxs(
-	fetchHeight, chainHeight int64,
+	fetchHeight, _ int64,
 ) (types.TxIn, error) {
 	masterBlockInfo, err := s.client.LookupBlock(
 		context.TODO(),
@@ -125,10 +124,12 @@ func (s *TonBlockScanner) FetchTxs(
 	}
 
 	if fetchHeight%20 == 0 {
-		fee := uint64(1_000_000)
+		fee := toThor(big.NewInt(TxFee)).Uint64()
+
 		tx, err := s.bridge.PostNetworkFee(
-			fetchHeight, s.config.ChainID, 1, fee, // 1e6 -> 1e8
+			fetchHeight, s.config.ChainID, 1, fee,
 		)
+
 		if err != nil {
 			s.logger.Err(err).Msg("failed posting network fee")
 		} else {
@@ -144,6 +145,12 @@ func (s *TonBlockScanner) FetchTxs(
 }
 
 func (s *TonBlockScanner) getBlockTxs(blockInfo *ton.BlockIDExt) ([]types.TxInItem, error) {
+	expression, err := regexp.Compile("^(MIGRATE|RAGNAROK):.*")
+	if err != nil {
+		s.logger.Err(err).Msg("failed to compile regex")
+		return nil, err
+	}
+
 	txInfos, _, err := s.client.GetBlockTransactionsV2(
 		context.TODO(),
 		blockInfo,
@@ -170,102 +177,157 @@ func (s *TonBlockScanner) getBlockTxs(blockInfo *ton.BlockIDExt) ([]types.TxInIt
 			s.logger.Err(err).Msg("failed getting tx info")
 		}
 
-		if tx.IO.In == nil {
+		// we are interested in "ordinary" transactions only
+		// https://docs.ton.org/v3/documentation/data-formats/tlb/transaction-layout
+		txDescription, ok := tx.Description.Description.(tlb.TransactionDescriptionOrdinary)
+		if !ok {
 			continue
 		}
 
-		if tx.IO.In.MsgType != tlb.MsgTypeInternal {
-			continue
+		// get relevant messages going out from a TON wallet
+		if tx.IO.Out != nil {
+			messages, err := tx.IO.Out.ToSlice()
+			if err != nil {
+				s.logger.Err(err).Msg("failed to get out msgs")
+			}
+
+			for i := range messages {
+				if messages[i].MsgType != tlb.MsgTypeInternal {
+					continue
+				}
+
+				message := messages[i].AsInternal()
+
+				// messages going out from THORChain don't have that flag set
+				if message.Bounce {
+					continue
+				}
+
+				// we are only interested in certain tx types
+				if !expression.MatchString(message.Comment()) {
+					continue
+				}
+
+				items, err := s.getTxInItems(tx, message)
+				if err != nil {
+					s.logger.Err(err).Msg("failed to get outgoing txs")
+					continue
+				}
+
+				txInItems = append(txInItems, items...)
+			}
 		}
 
-		hash := base64.StdEncoding.EncodeToString(tx.Hash)
-		msg := tx.IO.In.AsInternal()
-
-		if msg.Bounced || msg.Bounce {
-			// bounced or bouncing msgs can't be regular deposits...
-			continue
-		}
-
-		discard := true
-
-		switch desc := tx.Description.Description.(type) {
-		case tlb.TransactionDescriptionOrdinary:
-			// if not aborted, then no simple fund transfer
-			if !desc.Aborted {
+		// get relevant message going into a TON wallet
+		if tx.IO.In != nil {
+			if tx.IO.In.MsgType != tlb.MsgTypeInternal {
 				continue
 			}
 
-			switch phase := desc.ComputePhase.Phase.(type) {
-			case tlb.ComputePhaseSkipped:
-				switch phase.Reason.Type {
-				case tlb.ComputeSkipReasonNoState, tlb.ComputeSkipReasonNoGas:
-					discard = false
+			if txDescription.Aborted {
+				// double check if transaction is skipped...
+				phaseSkipped, ok := txDescription.ComputePhase.Phase.(tlb.ComputePhaseSkipped)
+				if !ok {
+					continue
+				}
+
+				// ...and the reason is acceptable
+				validReasons := map[tlb.ComputeSkipReasonType]struct{}{
+					tlb.ComputeSkipReasonNoState: {},
+					tlb.ComputeSkipReasonNoGas:   {},
+				}
+
+				_, ok = validReasons[phaseSkipped.Reason.Type]
+				if !ok {
+					continue
 				}
 			}
+
+			message := tx.IO.In.AsInternal()
+
+			// we can't do anything without a memo
+			if message.Comment() == "" {
+				continue
+			}
+
+			// bounced messages are no valid deposits
+			// TODO: Discuss if messages if "bouncable" flag should be accepted
+			// 		 too, each wallet will probably set that by default
+			if message.Bounced {
+				continue
+			}
+
+			// we are not interested in certain memos, that are only sent from
+			// THORChain itself, to prevent double counting (outgoing tx should
+			// have been observed already
+			if expression.MatchString(message.Comment()) {
+				continue
+			}
+
+			items, err := s.getTxInItems(tx, message)
+			if err != nil {
+				s.logger.Err(err).Msg("failed to get incoming txs")
+			}
+
+			txInItems = append(txInItems, items...)
+
 		}
-
-		if discard {
-			continue
-		}
-
-		sender := tx.IO.In.Msg.SenderAddr()
-		dest := tx.IO.In.Msg.DestAddr()
-
-		// TODO: Check if distinguishing between mainnet and testnet is needed
-		// and add checks for dest address only
-		sender.SetTestnetOnly(true)
-		sender.SetBounce(false)
-		dest.SetTestnetOnly(true)
-		dest.SetBounce(false)
-
-		amount := msg.Amount.Nano()
-		fees := tx.TotalFees.Coins.Nano()
-
-		if amount.Cmp(tlb.ZeroCoins.Nano()) <= 0 {
-			s.logger.Debug().
-				Str("hash", hash).
-				Uint64("amount", amount.Uint64()).
-				Msg("invalid amount")
-			continue
-		}
-
-		// should be discarded for reason tlb.ComputeSkipReasonNoGas
-		if amount.Cmp(fees) <= 0 {
-			s.logger.Debug().
-				Str("hash", hash).
-				Uint64("amount", amount.Uint64()).
-				Uint64("fees", fees.Uint64()).
-				Msg("sent amount less than fees")
-			continue
-		}
-
-		// when creating multiple txs at once, fee is 0 for additional txs
-		if len(fees.Bits()) == 0 {
-			fees = big.NewInt(1)
-		}
-
-		txInItems = append(txInItems, types.TxInItem{
-			BlockHeight: -1,
-			Tx:          hash,
-			Memo:        msg.Comment(),
-			Sender:      sender.String(),
-			To:          dest.String(),
-			Coins:       toCoins(amount.Sub(amount, fees), 9),
-			Gas:         common.Gas{toCoin(fees, 9)},
-		})
 	}
 
 	return txInItems, nil
 }
 
-func toCoin(amount *big.Int, decimals int) common.Coin {
-	return common.Coin{
-		Asset:    common.TONAsset,
-		Amount:   cosmos.NewUintFromBigInt(amount),
-		Decimals: int64(decimals),
-	}
-}
+func (s *TonBlockScanner) getTxInItems(
+	tx *tlb.Transaction,
+	message *tlb.InternalMessage,
+) ([]types.TxInItem, error) {
+	txInItems := []types.TxInItem{}
 
-func toCoins(amount *big.Int, decimals int) common.Coins {
-	return common.Coins{toCoin(amount, decimals)}
+	hash := base64.StdEncoding.EncodeToString(tx.Hash)
+	// sender := tx.IO.In.Msg.SenderAddr()
+	// dest := tx.IO.In.Msg.DestAddr()
+	sender := message.SrcAddr
+	dest := message.DestAddr()
+
+	// TODO: Check if distinguishing between mainnet and testnet is needed
+	// and add checks for dest address only
+	sender.SetTestnetOnly(true)
+	sender.SetBounce(false)
+	dest.SetTestnetOnly(true)
+	dest.SetBounce(false)
+
+	amount := message.Amount.Nano()
+
+	if amount.Cmp(tlb.ZeroCoins.Nano()) <= 0 {
+		err := fmt.Errorf("amount less than or equal to zero")
+		s.logger.Err(err).
+			Str("hash", hash).
+			Uint64("amount", amount.Uint64()).
+			Msg("")
+		return nil, err
+	}
+
+	coins := common.Coins{{
+		Amount: toThor(amount),
+		Asset:  common.TONAsset,
+		// Decimals: 9,
+	}}
+
+	gas := common.Gas{{
+		Amount: toThor(big.NewInt(TxFee)),
+		Asset:  common.TONAsset,
+		// Decimals: 9,
+	}}
+
+	txInItems = append(txInItems, types.TxInItem{
+		BlockHeight: -1,
+		Tx:          hash,
+		Memo:        message.Comment(),
+		Sender:      sender.String(),
+		To:          dest.String(),
+		Coins:       coins,
+		Gas:         gas,
+	})
+
+	return txInItems, nil
 }

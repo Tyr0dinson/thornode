@@ -2,6 +2,7 @@ package ton
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"golang.org/x/crypto/ed25519"
 	"math/big"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -36,7 +38,10 @@ import (
 	tcmemo "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
 )
 
-const V3R2CodeHex = "B5EE9C724101010100710000DEFF0020DD2082014C97BA218201339CBAB19F71B0ED44D0D31FD31F31D70BFFE304E0A4F2608308D71820D31FD31FD31FF82313BBF263ED44D0D31FD31FD3FFD15132BAF2A15144BAF2A204F901541055F910F2A3F8009320D74A96D307D402FB00E8D101A4C8CB1FCB1FCBFFC9ED5410BD6DAD"
+const (
+	V3R2CodeHex = "B5EE9C724101010100710000DEFF0020DD2082014C97BA218201339CBAB19F71B0ED44D0D31FD31F31D70BFFE304E0A4F2608308D71820D31FD31FD31FF82313BBF263ED44D0D31FD31FD3FFD15132BAF2A15144BAF2A204F901541055F910F2A3F8009320D74A96D307D402FB00E8D101A4C8CB1FCB1FCBFFC9ED5410BD6DAD"
+	TxFee       = 5_000_000 // 0.005 TON
+)
 
 type TonClient struct {
 	logger              zerolog.Logger
@@ -286,17 +291,25 @@ func (c *TonClient) GetAccountByAddress(
 		return common.Account{}, err
 	}
 
+	if account.State == nil {
+		msg := "account not initialized"
+		c.logger.Warn().Msg(msg)
+		return common.Account{}, fmt.Errorf(msg)
+	}
+
 	asset, err := common.NewAsset("TON.TON")
 	if err != nil {
 		c.logger.Err(err).Msg("failed to create asset")
 		return common.Account{}, err
 	}
 
+	amount := toThor(account.State.Balance.Nano())
+
 	return common.Account{
 		Coins: []common.Coin{{
-			Asset:    asset,
-			Amount:   cosmos.NewUintFromBigInt(account.State.Balance.Nano()),
-			Decimals: int64(account.State.Balance.Decimals()),
+			Asset:  asset,
+			Amount: amount,
+			// Decimals: int64(account.State.Balance.Decimals()),
 		}},
 	}, nil
 
@@ -308,8 +321,19 @@ func (c *TonClient) GetBlockScannerHeight() (int64, error) {
 }
 
 // GetLatestTxForVault returns last observed and broadcasted tx for a particular vault and chain
-func (c *TonClient) GetLatestTxForVault(_ string) (string, string, error) {
-	return "", "", nil
+func (c *TonClient) GetLatestTxForVault(vault string) (string, string, error) {
+	lastObserved, err := c.signerCacheManager.GetLatestRecordedTx(
+		types.InboundCacheKey(vault, c.GetChain().String()),
+	)
+	if err != nil {
+		return "", "", err
+	}
+
+	lastBroadcasted, err := c.signerCacheManager.GetLatestRecordedTx(
+		types.BroadcastCacheKey(vault, c.GetChain().String()),
+	)
+
+	return lastObserved, lastBroadcasted, err
 }
 
 // GetConfirmationCount returns the confirmation count for the given tx.
@@ -325,19 +349,31 @@ func (c *TonClient) ConfirmationCountReady(_ types.TxIn) bool {
 
 // OnObservedTxIn is called when a new observed tx is received.
 func (c *TonClient) OnObservedTxIn(txIn types.TxInItem, _ int64) {
-	// TODO: remove
 	memo, err := tcmemo.ParseMemo(common.LatestVersion, txIn.Memo)
 	if err != nil {
 		// Debug log only as ParseMemo error is expected for THORName inbounds.
 		c.logger.Debug().Err(err).Msgf("fail to parse memo: %s", txIn.Memo)
 		return
 	}
-	c.logger.Info().
-		Str("hash", txIn.Tx).
-		Str("type", memo.GetType().String()).
-		Uint64("amount", memo.GetAmount().Uint64()).
-		Str("asset", memo.GetAsset().String()).
-		Msg("found tx")
+
+	validTypes := map[tcmemo.TxType]struct{}{
+		tcmemo.TxMigrate:  {},
+		tcmemo.TxRagnarok: {},
+	}
+
+	_, ok := validTypes[memo.GetType()]
+	if !ok {
+		return
+	}
+
+	err = c.signerCacheManager.SetSigned(
+		txIn.CacheHash(c.GetChain(), common.BlankTxID.String()),
+		txIn.CacheVault(c.GetChain()),
+		txIn.Tx,
+	)
+	if err != nil {
+		c.logger.Err(err).Msg("failed to update signer cache")
+	}
 }
 
 // SignTx returns the signed transaction.
@@ -347,21 +383,20 @@ func (c *TonClient) SignTx(
 ) ([]byte, []byte, *types.TxInItem, error) {
 	c.logger.Info().Msg(fmt.Sprintf("%v", txOutItem))
 
-	if c.signerCacheManager.HasSigned(txOutItem.CacheHash()) {
+	str := fmt.Sprintf("%s|%s|%s|%s", c.GetChain(), txOutItem.ToAddress, txOutItem.Coins, txOutItem.Memo)
+	cacheHash := fmt.Sprintf("%X", sha256.Sum256([]byte(str)))
+
+	if c.signerCacheManager.HasSigned(cacheHash) {
 		c.logger.Info().
 			Interface("tx", txOutItem).
 			Msg("transaction already signed, ignoring...")
 		return nil, nil, nil, nil
 	}
 
-	// TODO: implement double spend checks
-
 	signed, err := c.createAndSignTx(txOutItem)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-
-	// TODO: handle checkpoints
 
 	return signed, nil, nil, nil
 }
@@ -396,36 +431,26 @@ func (c *TonClient) BroadcastTx(
 		return "", err
 	}
 
-	memo, err := tcmemo.ParseMemo(common.LatestVersion, txOut.Memo)
+	initialized := true
+
+	// check if source wallet contract is already deployed
+	block, err := c.api.CurrentMasterchainInfo(ctx)
 	if err != nil {
-		c.logger.Err(err).Msg("failed to parse memo")
+		c.logger.Err(err).Msg("failed to get master chain info")
 		return "", err
 	}
 
-	initialized := true
-
-	if memo.GetType() == tcmemo.TxMigrate {
-		c.logger.Info().Msg("Migrate msg, check contract state")
-
-		// check if destination wallet contract is already deployed
-		block, err := c.api.CurrentMasterchainInfo(ctx)
-		if err != nil {
-			c.logger.Err(err).Msg("failed to get master chain info")
+	_, err = c.api.WaitForBlock(block.SeqNo).RunGetMethod(
+		ctx, block, fromAddress, "seqno",
+	)
+	if err != nil {
+		execErr, ok := err.(ton.ContractExecError)
+		if ok && execErr.Code == ton.ErrCodeContractNotInitialized {
+			c.logger.Info().Msg("contract not initialized")
+			initialized = false
+		} else {
+			c.logger.Err(err).Msg("failed to run method")
 			return "", err
-		}
-
-		_, err = c.api.WaitForBlock(block.SeqNo).RunGetMethod(
-			ctx, block, fromAddress, "seqno",
-		)
-		if err != nil {
-			execErr, ok := err.(ton.ContractExecError)
-			if ok && execErr.Code == ton.ErrCodeContractNotInitialized {
-				c.logger.Info().Msg("contract not initialized")
-				initialized = false
-			} else {
-				c.logger.Err(err).Msg("failed to run method")
-				return "", err
-			}
 		}
 	}
 
@@ -447,9 +472,6 @@ func (c *TonClient) BroadcastTx(
 				EndCell(),
 			Code: c.walletCode,
 		}
-
-		calcAddress := stateInit.CalcAddress(0)
-		c.logger.Info().Msgf("calcAddress: %s", calcAddress.String())
 	}
 
 	msg := &tlb.ExternalMessage{
@@ -461,25 +483,30 @@ func (c *TonClient) BroadcastTx(
 	tx, _, _, err := c.api.SendExternalMessageWaitTransaction(ctx, msg)
 
 	if err != nil {
-		c.logger.Err(err).Msg("failed to send external message")
-		return "", err
+		if strings.HasSuffix(err.Error(), ": duplicate message") {
+			c.logger.Err(err).Msg("message already sent")
+			return "", err
+		} else {
+			c.logger.Err(err).Msg("failed to send external message")
+			return "", err
+		}
 	}
 
-	hash := base64.StdEncoding.EncodeToString(tx.Hash)
+	txHash := base64.StdEncoding.EncodeToString(tx.Hash)
+
 	err = c.signerCacheManager.SetSigned(
 		txOut.CacheHash(),
 		txOut.CacheVault(c.GetChain()),
-		hash,
+		txHash,
 	)
 	if err != nil {
 		c.logger.Err(err).Msg("failed to set signer cache")
 	}
 
-	return hash, nil
+	return txHash, nil
 }
 
 func (c *TonClient) ShouldReportSolvency(height int64) bool {
-	// TODO: Implement fee observaton / calculation
 	return height%10 == 0
 }
 
@@ -500,14 +527,13 @@ func (c *TonClient) ReportSolvency(height int64) error {
 	}
 
 	// TODO: implement gas fee
-	fee := cosmos.NewUint(1)
+	fee := toThor(big.NewInt(TxFee))
 
 	solventMsgs := make([]types.Solvency, 0, len(vaults))
 	insolventMsgs := make([]types.Solvency, 0, len(vaults))
 
 	for i, vault := range vaults {
-		fmt.Println(vault.PubKey)
-		acc, err := c.GetAccount(vault.PubKey, big.NewInt(height))
+		acc, err := c.GetAccount(vault.PubKeyEddsa, big.NewInt(height))
 		if err != nil {
 			c.logger.Err(err).Msgf("fail to get account balance")
 			continue
@@ -588,10 +614,9 @@ func (c *TonClient) createAndSignTx(
 		return nil, err
 	}
 
-	message := wallet.SimpleMessage(
-		// toAddress, tlb.FromNanoTON(coin.Amount.BigInt()), comment,
-		toAddress, tlb.FromNanoTON(big.NewInt(1)), comment,
-	)
+	// 1e8 -> 1e9
+	amount := tlb.FromNanoTON(fromThor(coin.Amount))
+	message := wallet.SimpleMessage(toAddress, amount, comment)
 	message.InternalMessage.Bounce = false
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*2)
@@ -620,18 +645,24 @@ func (c *TonClient) createAndSignTx(
 		if ok && execErr.Code == ton.ErrCodeContractNotInitialized {
 			c.logger.Info().Msg("wallet not yet initialized")
 		} else {
-			c.logger.Err(err).Msg("failed to get block")
+			c.logger.Err(err).Msg("failed to get seqno")
 			return nil, err
 		}
-
 	}
 
 	// TODO: Check and maybe use Thorchain migration height instead
-	timeout := time.Now().Truncate(time.Hour).Add(time.Hour * 2).UTC().Unix()
+	period := time.Second * 30
+	timeout := time.Now().
+		Truncate(period).
+		Add(period * -1).
+		Add(time.Minute * 3).UTC()
 
+	c.logger.Info().Msgf("Timeout: %s", timeout.Format(time.RFC3339))
+
+	// TODO: Replace MustStoreX with err checks
 	payload := cell.BeginCell().
 		MustStoreUInt(uint64(wallet.DefaultSubwallet), 32).
-		MustStoreUInt(uint64(timeout), 32).
+		MustStoreUInt(uint64(timeout.Unix()), 32).
 		MustStoreUInt(seqno.Uint64(), 32) // seq
 
 	internalMessage, err := tlb.ToCell(message.InternalMessage)
@@ -679,17 +710,14 @@ func (c *TonClient) createAndSignTx(
 func (c *TonClient) sign(data []byte, pubkey common.PubKey) ([]byte, error) {
 	// TODO: add localKeyManager
 
-	fmt.Println(pubkey)
-
 	signature, _, err := c.tssKeyManager.RemoteSign(data, pubkey.String())
 	if err != nil {
 		return nil, err
 	}
 
+	// TODO: use r, s for better readability
 	slices.Reverse(signature)
 	signature = append(signature[32:], signature[:32]...)
-
-	c.logger.Info().Msgf("signature: %x (%d)", signature, len(signature))
 
 	cryptoPubKey, err := cosmos.GetPubKeyFromBech32(
 		cosmos.Bech32PubKeyTypeAccPub,
