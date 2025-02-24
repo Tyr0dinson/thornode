@@ -317,9 +317,7 @@
         {
           "actions": [
             {
-              "aggregator_target_limit": "0",
               "chain": "ETH",
-              "clout_spent": "0",
               "coin": {
                 "amount": "8720000",
                 "asset": "ETH.ETH",
