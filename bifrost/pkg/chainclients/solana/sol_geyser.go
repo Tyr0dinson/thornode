@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"math"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -83,10 +84,8 @@ func NewSolGeyser(cfg config.BifrostBlockScannerConfiguration, scanner *SOLScann
 	}
 }
 
-func (g *SolGeyser) Run() (stypes.TxIn, error) {
-	//resub := uint(1)
+func (g *SolGeyser) createSubscription() (pb.Geyser_SubscribeClient, error) {
 	commitment := pb.CommitmentLevel_FINALIZED
-
 	subReq := &pb.SubscribeRequest{
 		Commitment: &commitment,
 		Blocks: map[string]*pb.SubscribeRequestFilterBlocks{
@@ -100,47 +99,60 @@ func (g *SolGeyser) Run() (stypes.TxIn, error) {
 	stream, err := g.client.Subscribe(context.Background())
 	if err != nil {
 		g.logger.Error().Err(err).Msg("Failed to subscribe to yellowstone geyser.")
-		return stypes.TxIn{}, err
+		return nil, err
 	}
 
 	if err = stream.Send(subReq); err != nil {
 		g.logger.Error().Err(err).Msg("Failed to send subscription request.")
-		return stypes.TxIn{}, err
+		return nil, err
 	}
 
-	//var i uint = 0
+	return stream, nil
+}
+
+func (g *SolGeyser) Run() {
+	stream, err := g.createSubscription()
+	if err != nil {
+		g.logger.Error().Err(err).Msg("Initial subscription failed")
+		return
+	}
+
 	for {
-		// i += 1
-		// if i == resub {
-		// 	subReq = &pb.SubscribeRequest{
-		// 		Commitment: &commitment,
-		// 		Blocks: map[string]*pb.SubscribeRequestFilterBlocks{
-		// 			"blocks": {},
-		// 		},
-		// 	}
-		// 	stream.Send(subReq)
-		// }
-
 		resp, err := stream.Recv()
-		timestamp := time.Now().UnixNano()
 
-		// if err == io.EOF {
-		// 	return stypes.TxIn{}, err
-		// }
 		if err != nil {
 			g.logger.Error().Err(err).Msg("Error in receiving update.")
+			// Close existing stream
+			stream.CloseSend()
+
+			// Attempt to create new stream with exponential backoff
+			var newStream pb.Geyser_SubscribeClient
+			for retries := 0; retries < 3; retries++ {
+				newStream, err = g.createSubscription()
+				if err == nil {
+					stream = newStream
+					g.logger.Info().Msg("Successfully reconnected to geyser stream")
+					break
+				}
+				backoffDuration := time.Second * time.Duration(math.Pow(2, float64(retries)))
+				time.Sleep(backoffDuration)
+			}
+			if err != nil {
+				g.logger.Error().Err(err).Msg("Failed to reconnect after multiple attempts")
+				return
+			}
+			continue
 		}
 
-		g.logger.Printf("%v %v", timestamp, resp)
 		block := resp.GetBlock()
 		height := block.GetBlockHeight().GetBlockHeight()
-		g.logger.Info().Msgf("%s: Height: %d", time.Now().Format(time.UnixDate), height)
+		if height%100 == 0 {
+			g.logger.Info().Msgf("%s: Height: %d", time.Now().Format(time.UnixDate), height)
+		}
 		if block.GetTransactions() != nil {
 			g.FetchTxs(block)
 		}
 	}
-
-	//return stypes.TxIn{}, nil
 }
 
 func (g *SolGeyser) FetchTxs(block *pb.SubscribeUpdateBlock) (stypes.TxIn, error) {
