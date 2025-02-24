@@ -314,9 +314,7 @@
         {
           "actions": [
             {
-              "aggregator_target_limit": "0",
               "chain": "BTC",
-              "clout_spent": "0",
               "coin": {
                 "amount": "49986000",
                 "asset": "BTC.BTC",
@@ -404,9 +402,7 @@
         {
           "actions": [
             {
-              "aggregator_target_limit": "0",
               "chain": "BTC",
-              "clout_spent": "0",
               "coin": {
                 "amount": "9986000",
                 "asset": "BTC.BTC",
@@ -494,9 +490,7 @@
         {
           "actions": [
             {
-              "aggregator_target_limit": "0",
               "chain": "BTC",
-              "clout_spent": "0",
               "coin": {
                 "amount": "49986000",
                 "asset": "BTC.BTC",
@@ -584,9 +578,7 @@
         {
           "actions": [
             {
-              "aggregator_target_limit": "0",
               "chain": "BTC",
-              "clout_spent": "0",
               "coin": {
                 "amount": "9986000",
                 "asset": "BTC.BTC",

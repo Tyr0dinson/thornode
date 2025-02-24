@@ -175,6 +175,8 @@ func (c Chain) GetGasAsset() Asset {
 		return BaseETHAsset
 	case XRPChain:
 		return XRPAsset
+	case SOLChain:
+		return SOLAsset
 	default:
 		return EmptyAsset
 	}
@@ -199,6 +201,8 @@ func (c Chain) GetGasUnits() string {
 		return "satsperbyte"
 	case XRPChain:
 		return "drop"
+	case SOLChain:
+		return "lamport"
 	default:
 		return ""
 	}
@@ -213,6 +217,8 @@ func (c Chain) GetGasAssetDecimal() int64 {
 		return 6
 	case XRPChain:
 		return 6
+	case SOLChain:
+		return 9
 	default:
 		return cosmos.DefaultCoinDecimals
 	}
@@ -285,6 +291,8 @@ func (c Chain) DustThreshold() cosmos.Uint {
 		// On churns, we can optionally delete the account to recover an additional .8 XRP, but would increases code complexity and will remove related ledger entries
 		// Comparing to BTC, this dust threshold should be reasonable.
 		return cosmos.NewUint(One) // 1 XRP
+	case SOLChain:
+		return cosmos.NewUint(100_000) // 0.001 SOL
 	default:
 		return cosmos.ZeroUint()
 	}
@@ -344,6 +352,8 @@ func (c Chain) ApproximateBlockMilliseconds() int64 {
 		return 2_000
 	case XRPChain:
 		return 4_000 // approx 3-5 seconds
+	case SOLChain:
+		return 400
 	default:
 		return 0
 	}

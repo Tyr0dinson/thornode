@@ -21,6 +21,7 @@ var SimChains = []common.Chain{
 	common.GAIAChain,
 	common.LTCChain,
 	common.XRPChain,
+	common.SOLChain,
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -48,8 +49,8 @@ func Bootstrap() *Actor {
 		if !chain.IsEVM() {
 			continue
 		}
-		// BSC & SOL not compatible with sim tests
-		if chain.Equals(common.BSCChain) || chain.Equals(common.SOLChain) {
+		// BSC not compatible with sim tests
+		if chain.Equals(common.BSCChain) {
 			continue
 		}
 		count++
