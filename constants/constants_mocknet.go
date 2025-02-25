@@ -23,13 +23,14 @@ func init() {
 		DesiredValidatorSet:                 12,
 		ChurnInterval:                       60, // 5 min
 		ChurnRetryInterval:                  30,
+		ChurnMigrateRounds:                  2,
 		MinimumBondInRune:                   100_000_000, // 1 rune
 		ValidatorMaxRewardRatio:             3,
-		FundMigrationInterval:               40,
+		FundMigrationInterval:               30,
 		LiquidityLockUpBlocks:               0,
 		MaxRuneSupply:                       500_000_000_00000000,
-		JailTimeKeygen:                      10,
-		JailTimeKeysign:                     10,
+		JailTimeKeygen:                      70,
+		JailTimeKeysign:                     70,
 		AsgardSize:                          6,
 		StreamingSwapMinBPFee:               100, // TODO: remove on hard fork
 		VirtualMultSynthsBasisPoints:        20_000,
