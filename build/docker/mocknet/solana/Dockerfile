@@ -10,8 +10,8 @@ RUN curl --proto '=https' --tlsv1.3 https://sh.rustup.rs -sSf | bash -s -- -y
 ENV PATH="/root/.cargo/bin:${PATH}"
 
 # build from source
-ARG COMMITSH="405879f39eb282775772adb327af7d84ef12ebdd"
-ARG TAG="v5.0.0+solana.2.1.11"
+ARG COMMITSH="90b43755ada0c11571a0085251205141823c08cb"
+ARG TAG="v5.0.0+solana.2.1.13"
 WORKDIR /build
 RUN git init && \
     git remote add origin https://github.com/rpcpool/yellowstone-grpc && \
@@ -20,7 +20,7 @@ RUN git init && \
     cargo build --release
 
 # Use an official Solana release image as a parent image
-FROM anzaxyz/agave:v2.1.11
+FROM anzaxyz/agave:v2.1.13
 
 # Set the working directory
 WORKDIR /mocknet
