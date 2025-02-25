@@ -50,6 +50,7 @@ type SOLScanner struct {
 	currentBlockHeight int64
 	solvencyReporter   SolvencyReporter
 	signerCacheManager *signercache.CacheManager
+	geyser             *SolGeyser
 
 	// fee rate
 	feeRateCache        []uint64
@@ -136,10 +137,29 @@ func (s *SOLScanner) FetchTxs(height, chainHeight int64) (stypes.TxIn, error) {
 
 	// process all transactions in the block
 	s.currentBlockHeight = height
-	block, err := s.solRpc.GetBlock(height)
-	if err != nil {
-		return stypes.TxIn{}, err
+
+	var block *rpc.BlockResult
+	var err error
+
+	// First try to get block from geyser cache if available
+	if s.geyser != nil {
+		if cachedBlock, exists := s.geyser.GetBlock(uint64(height)); exists {
+			s.logger.Debug().Msgf("%s: Found block in geyser cache for height: %d", time.Now().Format(time.UnixDate), height)
+			block = cachedBlock
+			// Remove from cache since we've processed it
+			s.geyser.RemoveBlock(uint64(height))
+		}
 	}
+
+	// Fall back to RPC if block not in cache
+	if block == nil {
+		s.logger.Info().Msgf("%s: Fetching block from RPC for height: %d", time.Now().Format(time.UnixDate), height)
+		block, err = s.solRpc.GetBlock(height)
+		if err != nil {
+			return stypes.TxIn{}, err
+		}
+	}
+
 	if block == nil {
 		// skip empty blocks
 		return stypes.TxIn{}, nil
@@ -149,6 +169,7 @@ func (s *SOLScanner) FetchTxs(height, chainHeight int64) (stypes.TxIn, error) {
 	if err != nil {
 		return stypes.TxIn{}, err
 	}
+
 	duration := time.Since(start)
 	s.totalDuration += duration
 	s.blockCount++
@@ -443,4 +464,9 @@ func jsonString(data interface{}) string {
 		return ""
 	}
 	return string(jsonData)
+}
+
+// Add setter for geyser
+func (s *SOLScanner) SetGeyser(g *SolGeyser) {
+	s.geyser = g
 }

@@ -141,6 +141,15 @@ func NewSOLClient(
 		return c, fmt.Errorf("fail to create evm block scanner: %w", err)
 	}
 
+	// create geyser receiver
+	c.solGeyser, err = NewSolGeyser(c.cfg.BlockScanner, c.solScanner, cfg.GeyserHost, cfg.GeyserToken)
+	if err != nil {
+		return c, fmt.Errorf("fail to create sol geyser: %w", err)
+	}
+
+	// Set geyser reference in scanner
+	c.solScanner.SetGeyser(c.solGeyser)
+
 	// initialize block scanner
 	c.blockScanner, err = blockscanner.NewBlockScanner(
 		c.cfg.BlockScanner, storage, m, c.bridge, c.solScanner,
@@ -148,9 +157,6 @@ func NewSOLClient(
 	if err != nil {
 		return c, fmt.Errorf("fail to create block scanner: %w", err)
 	}
-
-	// create geyser receiver
-	c.solGeyser = NewSolGeyser(c.cfg.BlockScanner, c.solScanner, cfg.GeyserHost, cfg.GeyserToken)
 
 	return c, nil
 }
@@ -170,6 +176,7 @@ func (c *SOLClient) Start(globalTxsQueue chan stypes.TxIn, globalErrataQueue cha
 func (c *SOLClient) Stop() {
 	c.tssKeySigner.Stop()
 	c.blockScanner.Stop()
+	c.solGeyser.Stop()
 	close(c.stopchan)
 	c.wg.Wait()
 }
