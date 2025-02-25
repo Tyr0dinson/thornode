@@ -466,7 +466,7 @@ func (c *TonClient) BroadcastTx(
 
 		stateInit = &tlb.StateInit{
 			Data: cell.BeginCell().
-				MustStoreUInt(0, 32). // seqno
+				MustStoreUInt(0, 32).                               // seqno
 				MustStoreUInt(uint64(wallet.DefaultSubwallet), 32). // sub wallet
 				MustStoreSlice(pubKey.Bytes(), 256).
 				EndCell(),
@@ -507,7 +507,8 @@ func (c *TonClient) BroadcastTx(
 }
 
 func (c *TonClient) ShouldReportSolvency(height int64) bool {
-	return height%10 == 0
+	// return height%10 == 0
+	return true
 }
 
 func (c *TonClient) ReportSolvency(height int64) error {
@@ -542,7 +543,7 @@ func (c *TonClient) ReportSolvency(height int64) error {
 		msg := types.Solvency{
 			Height: height,
 			Chain:  c.config.ChainID,
-			PubKey: vaults[i].PubKey,
+			PubKey: vaults[i].PubKeyEddsa,
 			Coins:  acc.Coins,
 		}
 

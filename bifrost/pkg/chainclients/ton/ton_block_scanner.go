@@ -21,12 +21,13 @@ import (
 )
 
 type TonBlockScanner struct {
-	config config.BifrostBlockScannerConfiguration
-	logger zerolog.Logger
-	bridge thorclient.ThorchainBridge
-	client ton.APIClientWrapped
-	http   *http.Client
-	apiUrl string
+	config     config.BifrostBlockScannerConfiguration
+	logger     zerolog.Logger
+	bridge     thorclient.ThorchainBridge
+	client     ton.APIClientWrapped
+	http       *http.Client
+	apiUrl     string
+	lastBlocks map[int64]uint32
 }
 
 func NewTonBlockScanner(
@@ -40,12 +41,13 @@ func NewTonBlockScanner(
 		Logger()
 
 	scanner := TonBlockScanner{
-		config: cfg,
-		logger: logger,
-		bridge: bridge,
-		client: client,
-		http:   &http.Client{},
-		apiUrl: "https://toncenter.com/api",
+		config:     cfg,
+		logger:     logger,
+		bridge:     bridge,
+		client:     client,
+		http:       &http.Client{},
+		apiUrl:     "https://toncenter.com/api",
+		lastBlocks: map[int64]uint32{},
 	}
 
 	return &scanner, nil
@@ -97,17 +99,39 @@ func (s *TonBlockScanner) FetchTxs(
 			Uint32("height", blockInfo.SeqNo).
 			Msg("get txs")
 
-		txs, err := s.getBlockTxs(blockInfo)
-		if err != nil {
-			s.logger.Err(err).
-				Uint32("seqno", blockInfo.SeqNo).
-				Int32("workchain", blockInfo.Workchain).
-				Int64("shard", blockInfo.Shard).
-				Msg("failed getting txs")
-			return types.TxIn{}, err
+		seqno, found := s.lastBlocks[blockInfo.Shard]
+		if !found {
+			seqno = blockInfo.SeqNo
+			s.lastBlocks[blockInfo.Shard] = seqno
 		}
 
-		txInItems = append(txInItems, txs...)
+		for seqno <= blockInfo.SeqNo {
+			info, err := s.client.LookupBlock(
+				context.Background(),
+				blockInfo.Workchain,
+				blockInfo.Shard,
+				seqno,
+			)
+			if err != nil {
+				s.logger.Err(err).Msg("failed to get shard block info")
+			}
+
+			txs, err := s.getBlockTxs(info)
+			if err != nil {
+				s.logger.Err(err).
+					Uint32("seqno", blockInfo.SeqNo).
+					Int32("workchain", blockInfo.Workchain).
+					Int64("shard", blockInfo.Shard).
+					Msg("failed getting txs")
+				return types.TxIn{}, err
+			}
+
+			txInItems = append(txInItems, txs...)
+			seqno++
+		}
+
+		s.lastBlocks[blockInfo.Shard] = seqno
+
 	}
 
 	// Set master chain height for every tx
