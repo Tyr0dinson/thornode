@@ -623,10 +623,6 @@ func (tos *TxOutStorageVCUR) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 	finalRuneFee := cosmos.ZeroUint()
 	for i := range outputs {
 		if outputs[i].MaxGas.IsEmpty() {
-			maxGasCoin, err := tos.gasManager.GetMaxGas(ctx, outputs[i].Chain)
-			if err != nil {
-				return nil, cosmos.ZeroUint(), fmt.Errorf("fail to get max gas coin: %w", err)
-			}
 			outputs[i].MaxGas = common.Gas{
 				maxGasCoin,
 			}
