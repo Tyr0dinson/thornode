@@ -44,7 +44,7 @@ signer: {{ addr_thor_cat }}
 coins:
   - amount: "0"
     asset: "rune"
-memo: "-:BTC.BTC:5001"
+memo: "-:BTC.BTC:4792"
 ---
 type: create-blocks
 count: 1
@@ -58,12 +58,12 @@ asserts:
   - .|[..|select(.type?=="withdraw")] | length == 1
   - .|[..|select(.type?=="scheduled_outbound")] | length == 1
   - .|[..|select(.type?=="fee" and (.coins | contains("BTC.BTC")))] | length == 1
-  - ..|select(.type?=="withdraw").emit_asset == "${WITHDRAW=50010000}"
-  - ..|select(.type?=="scheduled_outbound").coin_amount == "${OUTBOUND=49975500}"
+  - ..|select(.type?=="withdraw").emit_asset == "${WITHDRAW=47920000}"
+  - ..|select(.type?=="scheduled_outbound").coin_amount == "${OUTBOUND=47886000}"
   - ..|select(.type?=="fee" and (.coins | contains("BTC.BTC"))).coins == "${FEE=14000} BTC.BTC"
-  - ${WITHDRAW} - ${OUTBOUND} - ${FEE} == ${VAULT_SWALLOWED=20500}
+  - ${WITHDRAW} - ${OUTBOUND} - ${FEE} == ${VAULT_SWALLOWED=20000}
   ##
-  - ${VAULT_SWALLOWED} - ${FEE} == ${DROPPED_OUTBOUND=6500}
+  - ${VAULT_SWALLOWED} - ${FEE} == ${DROPPED_OUTBOUND=6000}
   - ${DROPPED_OUTBOUND} < 10000 # (The dust threshold.)
   
 ---
