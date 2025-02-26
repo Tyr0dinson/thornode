@@ -50,6 +50,24 @@ type: create-blocks
 count: 1
 ---
 ########################################################################################
+# confirmation that withdraw emit_asset greater than outbound-plus-fee
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .|[..|select(.type?=="withdraw")] | length == 1
+  - .|[..|select(.type?=="scheduled_outbound")] | length == 1
+  - .|[..|select(.type?=="fee" and (.coins | contains("BTC.BTC")))] | length == 1
+  - ..|select(.type?=="withdraw").emit_asset == "${WITHDRAW=50010000}"
+  - ..|select(.type?=="scheduled_outbound").coin_amount == "${OUTBOUND=49975500}"
+  - ..|select(.type?=="fee" and (.coins | contains("BTC.BTC"))).coins == "${FEE=14000} BTC.BTC"
+  - ${WITHDRAW} - ${OUTBOUND} - ${FEE} == ${VAULT_SWALLOWED=20500}
+  ##
+  - ${VAULT_SWALLOWED} - ${FEE} == ${DROPPED_OUTBOUND=6500}
+  - ${DROPPED_OUTBOUND} < 10000 # (The dust threshold.)
+  
+---
+########################################################################################
 # all outbound items should have over dust
 ########################################################################################
 type: check
@@ -66,7 +84,7 @@ type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .|length == 1
-  - .[0]|.coin.amount|tonumber == 49982000-6500
+  - .[0]|.coin.amount|tonumber == ${WITHDRAW} - ${FEE} - ${VAULT_SWALLOWED}
 ---
 ########################################################################################
 # vault will have more than pool
