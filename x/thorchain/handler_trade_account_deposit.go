@@ -5,6 +5,7 @@ import (
 
 	"github.com/blang/semver"
 
+	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 )
@@ -54,6 +55,12 @@ func (h TradeAccountDepositHandler) validateV3_0_0(ctx cosmos.Context, msg MsgTr
 	tradeAccountsDespositEnabled := h.mgr.Keeper().GetConfigInt64(ctx, constants.TradeAccountsDepositEnabled)
 	if tradeAccountsEnabled <= 0 || tradeAccountsDespositEnabled <= 0 {
 		return fmt.Errorf("trade accounts are disabled")
+	}
+
+	if atTVLCap(ctx, common.NewCoins(
+		common.NewCoin(msg.Asset, msg.Amount),
+	), h.mgr) {
+		return fmt.Errorf("%s trade accounts more than bond", msg.Asset)
 	}
 	return msg.ValidateBasic()
 }
