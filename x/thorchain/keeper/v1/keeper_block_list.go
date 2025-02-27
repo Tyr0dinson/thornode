@@ -1,28 +1,13 @@
 package keeperv1
 
 import (
-	"fmt"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
-
-type BlockListAddresses struct {
-	ETHAddresses []string `json:"eth"`
-	BTCAddresses []string `json:"btc"`
-}
-
-func (k KVStore) setBlockListAddresses(ctx cosmos.Context, key string, addresses map[string]BlockListAddresses) {
-	store := ctx.KVStore(k.storeKey)
-	buf := k.cdc.MustMarshal(&addresses)
-	if buf == nil {
-		store.Delete([]byte(key))
-	} else {
-		store.Set([]byte(key), buf)
-	}
-}
 
 func (k KVStore) getBlockListAddresses(ctx cosmos.Context, key string, addresses *map[string]BlockListAddresses) (bool, error) {
 	store := ctx.KVStore(k.storeKey)
@@ -35,6 +20,16 @@ func (k KVStore) getBlockListAddresses(ctx cosmos.Context, key string, addresses
 		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", addresses, key), err)
 	}
 	return true, nil
+}
+
+func (k KVStore) setBlockListAddresses(ctx cosmos.Context, key string, addresses map[string]BlockListAddresses) {
+	store := ctx.KVStore(k.storeKey)
+	buf := k.cdc.MustMarshal(&addresses)
+	if buf == nil {
+		store.Delete([]byte(key))
+	} else {
+		store.Set([]byte(key), buf)
+	}
 }
 
 func (k KVStore) FetchBlockListAddresses(ctx cosmos.Context) error {
