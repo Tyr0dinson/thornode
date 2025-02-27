@@ -373,7 +373,10 @@ func (k KVStoreDummy) GetObservingAddresses(_ cosmos.Context) ([]cosmos.AccAddre
 func (k KVStoreDummy) AddObservingAddresses(_ cosmos.Context, _ []cosmos.AccAddress) error {
 	return kaboom
 }
-func (k KVStoreDummy) ClearObservingAddresses(_ cosmos.Context)                      {}
+func (k KVStoreDummy) ClearObservingAddresses(_ cosmos.Context) {}
+func (k KVStoreDummy) FetchBlockListAddresses(_ cosmos.Context) error {
+	return kaboom
+}
 func (k KVStoreDummy) SetObservedTxInVoter(_ cosmos.Context, _ ObservedTxVoter)      {}
 func (k KVStoreDummy) GetObservedTxInVoterIterator(_ cosmos.Context) cosmos.Iterator { return nil }
 func (k KVStoreDummy) GetObservedTxInVoter(_ cosmos.Context, _ common.TxID) (ObservedTxVoter, error) {

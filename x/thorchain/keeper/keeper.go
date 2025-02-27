@@ -200,6 +200,7 @@ type KeeperObserver interface {
 	GetObservingAddresses(ctx cosmos.Context) ([]cosmos.AccAddress, error)
 	AddObservingAddresses(ctx cosmos.Context, inAddresses []cosmos.AccAddress) error
 	ClearObservingAddresses(ctx cosmos.Context)
+	FetchBlockListAddresses(ctx cosmos.Context) error
 }
 
 type KeeperObservedTx interface {

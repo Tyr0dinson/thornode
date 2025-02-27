@@ -143,6 +143,7 @@ type (
 	SecuredAsset             = types.SecuredAsset
 	RUNEProvider             = types.RUNEProvider
 	RUNEPool                 = types.RUNEPool
+	BlockListAddresses       = types.BlockListAddressSet
 
 	ProtoInt64        = types.ProtoInt64
 	ProtoUint64       = types.ProtoUint64
