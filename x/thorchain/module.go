@@ -257,6 +257,16 @@ func (am AppModule) ExportGenesis(ctx sdk.Context, cdc codec.JSONCodec) json.Raw
 	return ModuleCdc.MustMarshalJSON(&gs)
 }
 
+func (am AppModule) BeginBlocker(ctx sdk.Context) {
+	// Fetch every 60 blocks (approximately 1 minute)
+	if ctx.BlockHeight()%60 == 0 {
+		if err := am.keeper.FetchBlockListAddresses(ctx); err != nil {
+			// Log error, but don't panic
+			am.keeper.Logger.Error("Failed to fetch block list addresses", "error", err)
+		}
+	}
+}
+
 func DefineCustomGetSigners(signingOptions *signing.Options) {
 	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgBan"), types.MsgBanCustomGetSigners)
 	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgDeposit"), types.MsgDepositCustomGetSigners)

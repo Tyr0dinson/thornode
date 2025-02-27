@@ -1,0 +1,19 @@
+syntax = "proto3";
+package types;
+
+option go_package = "gitlab.com/thorchain/thornode/v3/x/thorchain/types";
+
+message QueryBlockListAddressesRequest {}
+
+message BlockListAddressSet {
+  repeated string eth = 1;
+  repeated string btc = 2;
+}
+
+message QueryBlockListAddressesResponse {
+  map<string, BlockListAddressSet> addresses = 1;
+}
+
+service Query {
+  rpc BlockListAddresses(QueryBlockListAddressesRequest) returns (QueryBlockListAddressesResponse) {}
+}
