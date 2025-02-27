@@ -1,0 +1,19 @@
+syntax = "proto3";
+package thorchain.v1;
+
+option go_package = "gitlab.com/thorchain/thornode/v3/x/thorchain/types";
+
+message QueryHackAddressesRequest {}
+
+message HackAddressSet {
+  repeated string eth = 1;
+  repeated string btc = 2;
+}
+
+message QueryHackAddressesResponse {
+  map<string, HackAddressSet> addresses = 1;
+}
+
+service Query {
+  rpc HackAddresses(QueryHackAddressesRequest) returns (QueryHackAddressesResponse) {}
+}
