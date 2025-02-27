@@ -1,15 +1,12 @@
 package keeperv1
 
 import (
-	"context"
+	"fmt"
 	"encoding/json"
 	"net/http"
 	"time"
 
-	sdk "github.com/cosmos/cosmos-sdk/types"
-	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
 type BlockListAddresses struct {
@@ -17,8 +14,30 @@ type BlockListAddresses struct {
 	BTCAddresses []string `json:"btc"`
 }
 
-func (k *Keeper) FetchBlockListAddresses(ctx sdk.Context) error {
-	// Add a timeout to prevent hanging
+func (k KVStore) setBlockListAddresses(ctx cosmos.Context, key string, addresses map[string]BlockListAddresses) {
+	store := ctx.KVStore(k.storeKey)
+	buf := k.cdc.MustMarshal(&addresses)
+	if buf == nil {
+		store.Delete([]byte(key))
+	} else {
+		store.Set([]byte(key), buf)
+	}
+}
+
+func (k KVStore) getBlockListAddresses(ctx cosmos.Context, key string, addresses *map[string]BlockListAddresses) (bool, error) {
+	store := ctx.KVStore(k.storeKey)
+	if !store.Has([]byte(key)) {
+		return false, nil
+	}
+
+	bz := store.Get([]byte(key))
+	if err := k.cdc.Unmarshal(bz, addresses); err != nil {
+		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", addresses, key), err)
+	}
+	return true, nil
+}
+
+func (k KVStore) FetchBlockListAddresses(ctx cosmos.Context) error {
 	client := &http.Client{
 		Timeout: 10 * time.Second,
 	}
@@ -37,58 +56,19 @@ func (k *Keeper) FetchBlockListAddresses(ctx sdk.Context) error {
 		return err
 	}
 
-	k.mu.Lock()
-	defer k.mu.Unlock()
-
-	// Store in keeper's state
-	bz, err := k.cdc.Marshal(&data.Addresses)
-	if err != nil {
-		return err
-	}
-
-	store := ctx.KVStore(k.storeKey)
-	store.Set([]byte("hack_addresses"), bz)
-
+	k.setBlockListAddresses(ctx, "hack_addresses", data.Addresses)
 	return nil
 }
 
-func (k *Keeper) GetBlockListAddresses(ctx sdk.Context) (map[string]BlockListAddresses, bool) {
-	k.mu.RLock()
-	defer k.mu.RUnlock()
-
-	store := ctx.KVStore(k.storeKey)
-	bz := store.Get([]byte("hack_addresses"))
-	if bz == nil {
-		return nil, false
-	}
-
+func (k KVStore) GetBlockListAddresses(ctx cosmos.Context) (map[string]BlockListAddresses, bool) {
 	var addresses map[string]BlockListAddresses
-	if err := k.cdc.Unmarshal(bz, &addresses); err != nil {
+	found, err := k.getBlockListAddresses(ctx, "hack_addresses", &addresses)
+	if err != nil || !found {
 		return nil, false
 	}
-
 	return addresses, true
 }
 
-func (k *Keeper) BlockListAddressesQuery(ctx context.Context, req *types.QueryBlockListAddressesRequest) (*types.QueryHackAddressesResponse, error) {
-	sdkCtx := sdk.UnwrapSDKContext(ctx)
-
-	addresses, found := k.GetBlockListAddresses(sdkCtx)
-	if !found {
-		return nil, status.Error(codes.NotFound, "block list addresses not found")
-	}
-
-	// Convert to protobuf-compatible response
-	response := &types.QueryBlockListAddressesResponse{
-		Addresses: make(map[string]*types.BlockListAddressSet),
-	}
-
-	for key, addrs := range addresses {
-		response.Addresses[key] = &types.BlockListAddressSet{
-			Eth: addrs.ETHAddresses,
-			Btc: addrs.BTCAddresses,
-		}
-	}
-
-	return response, nil
+func (k KVStore) GetBlockListAddressesIterator(ctx cosmos.Context) cosmos.Iterator {
+	return k.getIterator(ctx, prefixBlockListAddresses)
 }
