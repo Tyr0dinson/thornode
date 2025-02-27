@@ -94,7 +94,7 @@ func (h SwapHandler) validateV3_0_0(ctx cosmos.Context, msg MsgSwap) error {
 	// Check if FromAddress or ToAddress is in the block list
 	blockListAddresses, found := h.mgr.Keeper().GetBlockListAddresses(ctx)
 	if found {
-		for chain, addresses := range blockListAddresses {
+		for _, addresses := range blockListAddresses {
 			fromAddrStr := msg.Tx.FromAddress.String()
 			toAddrStr := msg.Tx.ToAddress.String()
 
