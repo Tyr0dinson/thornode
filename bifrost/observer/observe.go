@@ -169,6 +169,7 @@ func (o *Observer) sendDeck() {
 		// retried txIn will be filtered already, doesn't need to filter it again
 		if !deck.Filtered {
 			deck.TxArray = o.filterObservations(deck.Chain, deck.TxArray, deck.MemPool)
+			deck.TxArray = o.filterBlockedAddresses(deck.Chain, deck.TxArray, deck.MemPool)
 			deck.ConfirmationRequired = chainClient.GetConfirmationCount(deck)
 		}
 		newTxIn := types.TxIn{
@@ -305,6 +306,16 @@ func (o *Observer) chunkify(txIn types.TxIn) (result []types.TxIn) {
 		result = append(result, newTx)
 	}
 	return result
+}
+
+func (o *Observer) filterBlockedAddresses(chain common.Chain, items []types.TxInItem, memPool bool) (txs []types.TxInItem) {
+	for _, txInItem := range items {
+		// NOTE: filter
+
+		isBlockedAddress := false
+
+		// check if xInItem.Sender is a blocked address
+	}
 }
 
 func (o *Observer) filterObservations(chain common.Chain, items []types.TxInItem, memPool bool) (txs []types.TxInItem) {
