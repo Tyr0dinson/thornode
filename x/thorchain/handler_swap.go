@@ -91,6 +91,21 @@ func (h SwapHandler) validateV3_0_0(ctx cosmos.Context, msg MsgSwap) error {
 		}
 	}
 
+	// Check if FromAddress or ToAddress is in the block list
+	blockListAddresses, found := h.mgr.Keeper().GetBlockListAddresses(ctx)
+	if found {
+		for chain, addresses := range blockListAddresses {
+			fromAddrStr := msg.Tx.FromAddress.String()
+			toAddrStr := msg.Tx.ToAddress.String()
+
+			for _, blockedAddr := range addresses.Addresses {
+				if fromAddrStr == blockedAddr || toAddrStr == blockedAddr {
+					return fmt.Errorf("To or From address can't be served")
+				}
+			}
+		}
+	}
+
 	if len(msg.Aggregator) > 0 {
 		swapOutDisabled := h.mgr.Keeper().GetConfigInt64(ctx, constants.SwapOutDexAggregationDisabled)
 		if swapOutDisabled > 0 {
