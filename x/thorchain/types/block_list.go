@@ -1,8 +1,8 @@
 package types
 
 import (
-	"google.golang.org/protobuf/runtime/protoimpl"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"google.golang.org/protobuf/runtime/protoimpl"
 )
 
 var (
