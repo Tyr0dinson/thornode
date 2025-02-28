@@ -63,7 +63,13 @@ func NewAddress(address string) (Address, error) {
 }
 
 func IsValidXRPAddress(address string) bool {
-	return (strings.HasPrefix(address, "r") && xrp.IsValidClassicAddress(address))
+	// checks checksum and returns prefix (1 byte, 0x00) + account id (20 bytes)
+	decoded, err := xrp.Base58CheckDecode(address)
+	if err != nil {
+		return false
+	}
+
+	return decoded[0] == 0x00 && len(decoded) == 21
 }
 
 // IsValidBCHAddress determinate whether the address is a valid new BCH address format

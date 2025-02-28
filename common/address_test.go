@@ -316,6 +316,12 @@ func (s *AddressSuite) TestAddress(c *C) {
 	c.Check(addr.IsChain(DOGEChain), Equals, false)
 	c.Check(addr.IsChain(XRPChain), Equals, true)
 	c.Check(addr.GetNetwork(XRPChain), Equals, MockNet)
+	// Valid XRP address
+	addr, err = NewAddress("r4KYDZBbcAaJJ5MQPwRR9apJ2p5EBz8bq8")
+	c.Check(err, IsNil)
+	// XRP address that decodes, but has incorrect checksum
+	addr, err = NewAddress("r4KYDZBbcAaJJ5MQPwRR9apJ2p5EBz8bq")
+	c.Check(err, NotNil)
 
 	addr, err = NewAddress("nfWiQeddE4zsYsDuYhvpgVC7y4gjr5RyqK")
 	c.Check(err, IsNil)
