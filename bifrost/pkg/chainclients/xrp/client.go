@@ -46,7 +46,7 @@ import (
 	ethcrypto "github.com/ethereum/go-ethereum/crypto"
 )
 
-// Client is a structure to sign and broadcast tx to Cosmos chain used by signer mostly
+// Client is a structure to sign and broadcast tx to XRP chain used by signer mostly
 type Client struct {
 	logger              zerolog.Logger
 	cfg                 config.BifrostChainConfiguration
@@ -640,7 +640,7 @@ func (c *Client) ReportSolvency(blockHeight int64) error {
 }
 
 func (c *Client) ShouldReportSolvency(height int64) bool {
-	// Block time on Cosmos-based chains generally hovers around 6 seconds (10
+	// Block time on XRP generally hovers between 3-5 seconds (15
 	// blocks/min). Since the last fee is used as a buffer we also want to ensure that is
 	// non-zero (enough blocks have been seen) before checking insolvency to avoid false
 	// positives.

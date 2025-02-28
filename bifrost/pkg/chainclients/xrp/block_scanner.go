@@ -34,12 +34,12 @@ type SolvencyReporter func(int64) error
 
 const (
 	// FeeUpdatePeriodBlocks is the block interval at which we report fee changes.
-	FeeUpdatePeriodBlocks = 10
+	FeeUpdatePeriodBlocks = 20
 
 	// FeeCacheTransactions is the number of transactions over which we compute an average
 	// (mean) fee price to use for outbound transactions. Note that only transactions
 	// using the chain fee asset will be considered.
-	FeeCacheTransactions = 100
+	FeeCacheTransactions = 200
 )
 
 var (
@@ -59,7 +59,7 @@ type XrpBlockScanner struct {
 
 	// feeCache contains a rolling window of suggested fees.
 	// Fees are stored at 100x the values on the observed chain due to compensate for the
-	// difference in base chain decimals (thorchain:1e8, gaia:1e6).
+	// difference in base chain decimals (thorchain:1e8, xrp:1e6).
 	feeCache []sdkmath.Uint
 	lastFee  sdkmath.Uint
 }
@@ -164,7 +164,7 @@ func (c *XrpBlockScanner) updateFees(height int64) error {
 		// NOTE: We post the fee to the network instead of the transaction rate, and set the
 		// transaction size 1 to ensure the MaxGas in the generated TxOut contains the
 		// correct fee. We cannot pass the proper size and rate without a deeper change to
-		// Thornode, as the rate on Cosmos chains is less than 1 and cannot be represented
+		// Thornode, as the rate on XRP chain is less than 1 and cannot be represented
 		// by the uint.
 		feeTx, err := c.bridge.PostNetworkFee(height, c.cfg.ChainID, 1, avgFee.Uint64())
 		if err != nil {
