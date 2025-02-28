@@ -36,7 +36,8 @@ const (
 	ObserverError MetricName = `observer_error`
 	SignerError   MetricName = `signer_error`
 
-	PubKeyManagerError MetricName = `pubkey_manager_error`
+	BlockedAddrManagerError MetricName = `blocked_address_manager_error`
+	PubKeyManagerError      MetricName = `pubkey_manager_error`
 )
 
 // Metrics used to provide promethus metrics

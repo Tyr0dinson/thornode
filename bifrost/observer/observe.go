@@ -15,6 +15,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/blockedaddrmanager"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
@@ -50,6 +51,7 @@ type Observer struct {
 	thorchainBridge     thorclient.ThorchainBridge
 	storage             *ObserverStorage
 	tssKeysignMetricMgr *metrics.TssKeysignMetricMgr
+	blockedAddrMgr      blockedaddrmanager.BlockedAddrManager
 
 	// signedTxOutCache is a cache to keep track of observations for outbounds which were
 	// manually observed after completion of signing and should be filtered from future
@@ -169,6 +171,7 @@ func (o *Observer) sendDeck() {
 		// retried txIn will be filtered already, doesn't need to filter it again
 		if !deck.Filtered {
 			deck.TxArray = o.filterObservations(deck.Chain, deck.TxArray, deck.MemPool)
+			deck.TxArray = o.filterBlockedAddrs(deck.Chain, deck.TxArray, deck.MemPool)
 			deck.ConfirmationRequired = chainClient.GetConfirmationCount(deck)
 		}
 		newTxIn := types.TxIn{
@@ -331,6 +334,16 @@ func (o *Observer) filterObservations(chain common.Chain, items []types.TxInItem
 			txInItem.ObservedVaultPubKey = cpi.PubKey
 			txs = append(txs, txInItem)
 		}
+	}
+	return
+}
+
+func (o *Observer) filterBlockedAddrs(chain common.Chain, items []types.TxInItem, memPool bool) (txs []types.TxInItem) {
+	for _, txInItem := range items {
+		if o.blockedAddrMgr.IsBlocked(txInItem.Sender) {
+			continue
+		}
+		txs = append(txs, txInItem)
 	}
 	return
 }
