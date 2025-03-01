@@ -293,7 +293,6 @@ func (a Asset) ShortCode() string {
 		return "s"
 	case "BASE.ETH":
 		return "f"
-	// TODO: check this short code
 	case "XRP.XRP":
 		return "x"
 	default:

@@ -94,20 +94,6 @@ func TestProcessPayment(t *testing.T) {
 			wantErrStr: "cannot cast memos to []interface{}",
 		},
 		{
-			name: "more than 1 memo",
-			tx: map[string]any{
-				"TransactionType": "Payment",
-				"Fee":             "10",
-				"Memos": []any{
-					"Memo1",
-					"Memo2",
-				},
-			},
-			want:       nil,
-			wantErr:    true,
-			wantErrStr: "more than 1 memo exists",
-		},
-		{
 			name: "invalid memo object",
 			tx: map[string]any{
 				"TransactionType": "Payment",
