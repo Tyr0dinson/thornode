@@ -204,12 +204,8 @@ func Init() {
 	assert(viper.BindEnv("bifrost.chains.DOGE.disabled", "DOGE_DISABLED"))
 	assert(viper.BindEnv("bifrost.chains.LTC.disabled", "LTC_DISABLED"))
 	assert(viper.BindEnv("bifrost.chains.AVAX.disabled", "AVAX_DISABLED"))
-	assert(viper.BindEnv("bifrost.chains.BCH.disabled", "BCH_DISABLED"))
-	assert(viper.BindEnv("bifrost.chains.BTC.disabled", "BCH_DISABLED"))
 	assert(viper.BindEnv("bifrost.chains.AVAX.block_scanner.gas_cache_size", "AVAX_GAS_CACHE_SIZE"))
 	assert(viper.BindEnv("thor.cosmos.halt_height", "HARDFORK_BLOCK_HEIGHT"))
-
-	assert(viper.BindEnv("bifrost.signer.signer_db_path", "SIGNER_DB_PATH"))
 
 	// always override from environment
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
