@@ -2,6 +2,7 @@ package cardano
 
 import (
 	"crypto/tls"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -17,6 +18,7 @@ import (
 	ouroboroscommon "github.com/blinklabs-io/gouroboros/protocol/common"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	leveldbutil "github.com/syndtr/goleveldb/leveldb/util"
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	shared "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
@@ -49,12 +51,14 @@ func NewClient(
 	thorchainBridge thorclient.ThorchainBridge,
 	m *metrics.Metrics,
 ) (*Client, error) {
+	fmt.Println("!!!! new ada client !!!!!!")
 	if thorchainBridge == nil {
 		return nil, errors.New("thorchain bridge is nil")
 	}
 	c := &Client{
 		thorchainBridge: thorchainBridge,
 		logger:          log.With().Str("module", cfg.ChainID.String()).Logger(),
+		config:          cfg,
 	}
 
 	_, err := tss.NewKeySign(server, thorchainBridge)
@@ -67,10 +71,12 @@ func NewClient(
 	}
 
 	var path string // if not set later, will in memory storage
-	if len(c.config.BlockScanner.DBPath) > 0 {
-		path = fmt.Sprintf("%s/%s", c.config.BlockScanner.DBPath, c.config.BlockScanner.ChainID)
+	c.logger.Info().Msgf("block scanner db path: %s", path)
+	if len(cfg.BlockScanner.DBPath) > 0 {
+		path = fmt.Sprintf("%s/%s", cfg.BlockScanner.DBPath, cfg.BlockScanner.ChainID)
 	}
-	c.storage, err = blockscanner.NewBlockScannerStorage(path, c.config.ScannerLevelDB)
+	c.logger.Info().Msgf("final path: %s", path)
+	c.storage, err = blockscanner.NewBlockScannerStorage(path, cfg.ScannerLevelDB)
 	if err != nil {
 		return nil, fmt.Errorf("fail to create scan storage: %w", err)
 	}
@@ -111,6 +117,7 @@ func NewClient(
 		return nil, fmt.Errorf("fail to dial: %w", err)
 	}
 	c.node, err = ouroboros.NewConnection(
+		ouroboros.WithPeerSharing(true),
 		ouroboros.WithConnection(client),
 		ouroboros.WithNetwork(network),
 		ouroboros.WithLogger(networkLogger),
@@ -190,10 +197,28 @@ func (c *Client) Start(
 	globalSolvencyQueue chan types.Solvency,
 ) {
 	c.logger.Info().Msg("starting cardano client")
+	slot, hash := c.getLastSeenBlock()
+	if slot == 0 {
+		tip, err := c.node.ChainSync().Client.GetCurrentTip()
+		if err != nil {
+			c.logger.Err(err).Msg("fail to get current tip")
+			return
+		}
+		slot = tip.Point.Slot
+		hash = tip.Point.Hash
+		c.logger.Info().Msgf("no last seen block, current tip slot=%d hash=%x", slot, hash)
+
+	}
+	err := c.node.ChainSync().Client.Sync([]ouroboroscommon.Point{ouroboroscommon.NewPoint(slot, hash)})
+	if err != nil {
+		c.logger.Err(err).Msg("failed to start chain-sync client")
+	}
 }
 
 func (c *Client) Stop() {
-	panic("unimplemented")
+	if err := c.node.ChainSync().Client.Stop(); err != nil {
+		c.logger.Err(err).Msg("fail to stop chain-sync client")
+	}
 }
 
 // FetchMemPool implements blockscanner.BlockScannerFetcher.
@@ -256,6 +281,14 @@ func (c *Client) chainSyncRollForwardHandler(
 			block.Hash(),
 			len(block.Transactions()),
 		)
+		hashBz, err := hex.DecodeString(block.Hash())
+		if err != nil {
+			c.logger.Err(err).Msg("fail to decode block hash")
+		}
+		err = c.setBlockId(block.BlockNumber(), block.SlotNumber(), hashBz)
+		if err != nil {
+			c.logger.Err(err).Msg("fail to set block id")
+		}
 	}
 	return nil
 }
@@ -270,4 +303,47 @@ func (c *Client) chainSyncRollBackwardHandler(
 		tip.Point.Slot, tip.Point.Hash,
 	)
 	return nil
+}
+
+// STORAGE
+
+const (
+	blockIDKeyPrefix = "chainblock"
+)
+
+func (c *Client) getLastSeenBlock() (slot uint64, hash []byte) {
+	itr := c.storage.GetInternalDb().NewIterator(&leveldbutil.Range{Start: []byte(blockIDKeyPrefix)}, nil)
+	ok := itr.First()
+	if !ok {
+		return 0, nil
+	}
+	slot = binary.LittleEndian.Uint64(itr.Value()[:8])
+	hash = itr.Value()[8:]
+	height := binary.LittleEndian.Uint64(itr.Key()[len(blockIDKeyPrefix):])
+	c.logger.Info().Msgf("last seen block: height=%d slot=%d hash=%x", height, slot, hash)
+	return slot, hash
+}
+
+func (c *Client) blockIDKey(height uint64) []byte {
+	buf := make([]byte, 8+len(blockIDKeyPrefix))
+	copy(buf[:], blockIDKeyPrefix)
+	binary.LittleEndian.PutUint64(buf[len(blockIDKeyPrefix):], height)
+	return buf
+}
+
+func (c *Client) setBlockId(height uint64, slot uint64, hash []byte) error {
+	buf := make([]byte, 8+32)
+	binary.LittleEndian.PutUint64(buf[:8], slot)
+	copy(buf[8:], hash)
+	return c.storage.GetInternalDb().Put(c.blockIDKey(height), buf, nil)
+}
+
+func (c *Client) getBlockId(height uint64) (slot uint64, hash []byte, err error) {
+	buf, err := c.storage.GetInternalDb().Get(c.blockIDKey(height), nil)
+	if err != nil {
+		return
+	}
+	slot = binary.LittleEndian.Uint64(buf[:8])
+	hash = buf[8:]
+	return
 }

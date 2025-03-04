@@ -97,7 +97,7 @@ services:
       - ethereum
       - avalanche
     extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - "host.docker.internal:192.168.127.1"
     environment: &thornode-environment
       <<: *thorchain-environment
       SEED: thornode
@@ -149,7 +149,7 @@ services:
       - litecoin
       - thornode
     extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - "host.docker.internal:192.168.127.1"
     environment: &bifrost-environment
       <<: *thorchain-environment
       SIGNER_SEED_PHRASE: "dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog fossil"

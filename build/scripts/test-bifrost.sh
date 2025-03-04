@@ -18,8 +18,6 @@ export BIFROST_SIGNER_KEYSIGN_TIMEOUT=30s
 export BIFROST_SIGNER_SIGNER_DB_PATH="$HOME/data/bifrost/signer_db"
 export BIFROST_CHAINS_ADA_BLOCK_SCANNER_DB_PATH="$HOME/data/bifrost/observer"
 
-CHAIN_API="${CHAIN_API:=127.0.0.1:1317}"
-
 . "$(dirname "$0")/core.sh"
 "$(dirname "$0")/wait-for-thorchain-api.sh" "$CHAIN_API"
 
