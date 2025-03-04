@@ -429,7 +429,9 @@
         {
           "actions": [
             {
+              "aggregator_target_limit": "0",
               "chain": "BTC",
+              "clout_spent": "0",
               "coin": {
                 "amount": "49486000",
                 "asset": "BTC.BTC"
@@ -720,6 +722,7 @@
           "height": "14",
           "tx_array": [
             {
+              "aggregator_target_limit": "0",
               "chain": "BTC",
               "clout_spent": "0",
               "coin": {

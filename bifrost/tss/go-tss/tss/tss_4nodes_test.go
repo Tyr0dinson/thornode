@@ -16,7 +16,7 @@ import (
 
 	btsskeygen "github.com/binance-chain/tss-lib/ecdsa/keygen"
 	maddr "github.com/multiformats/go-multiaddr"
-	"gopkg.in/check.v1"
+
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/common"
@@ -31,7 +31,6 @@ const (
 	preParamTestFile = "preParam_test.data"
 
 	newJoinPartyVersion string = "0.14.0"
-	oldJoinPartyVersion string = "0.13.0"
 )
 
 var (
@@ -114,13 +113,16 @@ func hash(payload []byte) []byte {
 
 // we do for both join party schemes
 func (s *FourNodeTestSuite) Test4NodesTss(c *C) {
+	algos := []common.Algo{common.ECDSA}
 	// 0.13.0 is oldJoinParty, 0.14.0 is the new leader-based joinParty
-	versions := []string{oldJoinPartyVersion, newJoinPartyVersion}
-	for _, jpv := range versions {
-		c.Logf("testing with %s", jpv)
-		s.doTestKeygenAndKeySign(c, jpv)
-		s.doTestFailJoinParty(c, jpv)
-		s.doTestBlame(c, jpv)
+	versions := []string{newJoinPartyVersion}
+	for _, algo := range algos {
+		for _, jpv := range versions {
+			c.Logf("testing with version %s for algo %s", jpv, algo)
+			s.doTestKeygenAndKeySign(c, jpv, algo)
+			s.doTestFailJoinParty(c, jpv, algo)
+			s.doTestBlame(c, jpv, algo)
+		}
 	}
 }
 
@@ -141,7 +143,7 @@ func checkSignResult(c *C, keysignResult map[int]keysign.Response) {
 }
 
 // generate a new key
-func (s *FourNodeTestSuite) doTestKeygenAndKeySign(c *C, version string) {
+func (s *FourNodeTestSuite) doTestKeygenAndKeySign(c *C, version string, algo common.Algo) {
 	wg := sync.WaitGroup{}
 	lock := &sync.Mutex{}
 	keygenResult := make(map[int]keygen.Response)
@@ -149,7 +151,7 @@ func (s *FourNodeTestSuite) doTestKeygenAndKeySign(c *C, version string) {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
-			req := keygen.NewRequest(copyTestPubKeys(), 10, version)
+			req := keygen.NewRequest(copyTestPubKeys(), 10, version, algo)
 			res, err := s.servers[idx].Keygen(req)
 			c.Assert(err, IsNil)
 			lock.Lock()
@@ -179,21 +181,6 @@ func (s *FourNodeTestSuite) doTestKeygenAndKeySign(c *C, version string) {
 		}
 	}
 
-	if version != newJoinPartyVersion {
-		pubKeys1 := copyTestPubKeys()
-		keysignReqWithErr1 := keysign.NewRequest(poolPubKey, makeMessages(), 10, pubKeys1[:1], oldJoinPartyVersion)
-		resp, err = s.servers[0].KeySign(keysignReqWithErr1)
-		c.Assert(err, NotNil)
-		c.Assert(resp.Signatures, HasLen, 0)
-
-	}
-	if version != newJoinPartyVersion {
-		keysignReqWithErr2 := keysign.NewRequest(poolPubKey, makeMessages(), 10, nil, oldJoinPartyVersion)
-		resp, err = s.servers[0].KeySign(keysignReqWithErr2)
-		c.Assert(err, NotNil)
-		c.Assert(resp.Signatures, HasLen, 0)
-	}
-
 	keysignResult := make(map[int]keysign.Response)
 	for i := 0; i < partyNum; i++ {
 		wg.Add(1)
@@ -216,9 +203,6 @@ func (s *FourNodeTestSuite) doTestKeygenAndKeySign(c *C, version string) {
 		go func(idx int) {
 			defer wg.Done()
 			var signers []string
-			if version == oldJoinPartyVersion {
-				signers = copyTestPubKeys()[:3]
-			}
 			req := keysign.NewRequest(poolPubKey, makeMessages(), 10, signers, version)
 			res, err := s.servers[idx].KeySign(req)
 			c.Assert(err, IsNil)
@@ -231,7 +215,7 @@ func (s *FourNodeTestSuite) doTestKeygenAndKeySign(c *C, version string) {
 	checkSignResult(c, keysignResult1)
 }
 
-func (s *FourNodeTestSuite) doTestFailJoinParty(c *C, version string) {
+func (s *FourNodeTestSuite) doTestFailJoinParty(c *C, version string, algo common.Algo) {
 	// JoinParty should fail if there is a node that suppose to be in the keygen , but we didn't send request in
 	wg := sync.WaitGroup{}
 	lock := &sync.Mutex{}
@@ -241,7 +225,7 @@ func (s *FourNodeTestSuite) doTestFailJoinParty(c *C, version string) {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
-			req := keygen.NewRequest(copyTestPubKeys(), 10, version)
+			req := keygen.NewRequest(copyTestPubKeys(), 10, version, algo)
 			res, err := s.servers[idx].Keygen(req)
 			c.Assert(err, IsNil)
 			lock.Lock()
@@ -271,7 +255,7 @@ func (s *FourNodeTestSuite) doTestFailJoinParty(c *C, version string) {
 	}
 }
 
-func (s *FourNodeTestSuite) doTestBlame(c *C, version string) {
+func (s *FourNodeTestSuite) doTestBlame(c *C, version string, algo common.Algo) {
 	wg := sync.WaitGroup{}
 	lock := &sync.Mutex{}
 	keygenResult := make(map[int]keygen.Response)
@@ -280,10 +264,10 @@ func (s *FourNodeTestSuite) doTestBlame(c *C, version string) {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
-			req := keygen.NewRequest(copyTestPubKeys(), 10, version)
+			req := keygen.NewRequest(copyTestPubKeys(), 10, version, algo)
 			s.servers[idx].setJoinPartyChan(joinPartyChan)
 			res, err := s.servers[idx].Keygen(req)
-			c.Assert(err, NotNil, check.Commentf("idx=%d", idx))
+			c.Assert(err, NotNil, Commentf("idx=%d", idx))
 			lock.Lock()
 			defer lock.Unlock()
 			keygenResult[idx] = res
@@ -330,7 +314,7 @@ func (s *FourNodeTestSuite) doTestBlame(c *C, version string) {
 		if idx == shutdownIdx {
 			continue
 		}
-		comment := check.Commentf("idx=%d", idx)
+		comment := Commentf("idx=%d", idx)
 		c.Assert(item.PubKey, Equals, "", comment)
 		c.Assert(item.Status, Equals, common.Fail, comment)
 		c.Assert(item.Blame.BlameNodes, HasLen, 1, comment)
