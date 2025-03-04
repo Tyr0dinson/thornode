@@ -18,19 +18,18 @@ import (
 	"net/url"
 )
 
-
 // QuoteApiService QuoteApi service
 type QuoteApiService service
 
 type ApiQuoteloancloseRequest struct {
-	ctx context.Context
+	ctx        context.Context
 	ApiService *QuoteApiService
-	height *int64
-	fromAsset *string
-	repayBps *int64
-	toAsset *string
-	loanOwner *string
-	minOut *string
+	height     *int64
+	fromAsset  *string
+	repayBps   *int64
+	toAsset    *string
+	loanOwner  *string
+	minOut     *string
 }
 
 // optional block height, defaults to current tip
@@ -78,24 +77,25 @@ Quoteloanclose Method for Quoteloanclose
 
 Provide a quote estimate for the provided loan close.
 
- @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
- @return ApiQuoteloancloseRequest
+	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+	@return ApiQuoteloancloseRequest
 */
 func (a *QuoteApiService) Quoteloanclose(ctx context.Context) ApiQuoteloancloseRequest {
 	return ApiQuoteloancloseRequest{
 		ApiService: a,
-		ctx: ctx,
+		ctx:        ctx,
 	}
 }
 
 // Execute executes the request
-//  @return QuoteLoanCloseResponse
+//
+//	@return QuoteLoanCloseResponse
 func (a *QuoteApiService) QuoteloancloseExecute(r ApiQuoteloancloseRequest) (*QuoteLoanCloseResponse, *http.Response, error) {
 	var (
-		localVarHTTPMethod   = http.MethodGet
-		localVarPostBody     interface{}
-		formFiles            []formFile
-		localVarReturnValue  *QuoteLoanCloseResponse
+		localVarHTTPMethod  = http.MethodGet
+		localVarPostBody    interface{}
+		formFiles           []formFile
+		localVarReturnValue *QuoteLoanCloseResponse
 	)
 
 	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "QuoteApiService.Quoteloanclose")
@@ -182,16 +182,16 @@ func (a *QuoteApiService) QuoteloancloseExecute(r ApiQuoteloancloseRequest) (*Qu
 }
 
 type ApiQuoteloanopenRequest struct {
-	ctx context.Context
-	ApiService *QuoteApiService
-	height *int64
-	fromAsset *string
-	amount *int64
-	toAsset *string
-	destination *string
-	minOut *string
+	ctx          context.Context
+	ApiService   *QuoteApiService
+	height       *int64
+	fromAsset    *string
+	amount       *int64
+	toAsset      *string
+	destination  *string
+	minOut       *string
 	affiliateBps *int64
-	affiliate *string
+	affiliate    *string
 }
 
 // optional block height, defaults to current tip
@@ -251,24 +251,25 @@ Quoteloanopen Method for Quoteloanopen
 
 Provide a quote estimate for the provided loan open.
 
- @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
- @return ApiQuoteloanopenRequest
+	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+	@return ApiQuoteloanopenRequest
 */
 func (a *QuoteApiService) Quoteloanopen(ctx context.Context) ApiQuoteloanopenRequest {
 	return ApiQuoteloanopenRequest{
 		ApiService: a,
-		ctx: ctx,
+		ctx:        ctx,
 	}
 }
 
 // Execute executes the request
-//  @return QuoteLoanOpenResponse
+//
+//	@return QuoteLoanOpenResponse
 func (a *QuoteApiService) QuoteloanopenExecute(r ApiQuoteloanopenRequest) (*QuoteLoanOpenResponse, *http.Response, error) {
 	var (
-		localVarHTTPMethod   = http.MethodGet
-		localVarPostBody     interface{}
-		formFiles            []formFile
-		localVarReturnValue  *QuoteLoanOpenResponse
+		localVarHTTPMethod  = http.MethodGet
+		localVarPostBody    interface{}
+		formFiles           []formFile
+		localVarReturnValue *QuoteLoanOpenResponse
 	)
 
 	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "QuoteApiService.Quoteloanopen")
@@ -361,11 +362,11 @@ func (a *QuoteApiService) QuoteloanopenExecute(r ApiQuoteloanopenRequest) (*Quot
 }
 
 type ApiQuotesaverdepositRequest struct {
-	ctx context.Context
+	ctx        context.Context
 	ApiService *QuoteApiService
-	height *int64
-	asset *string
-	amount *int64
+	height     *int64
+	asset      *string
+	amount     *int64
 }
 
 // optional block height, defaults to current tip
@@ -395,24 +396,25 @@ Quotesaverdeposit Method for Quotesaverdeposit
 
 Provide a quote estimate for the provided saver deposit.
 
- @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
- @return ApiQuotesaverdepositRequest
+	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+	@return ApiQuotesaverdepositRequest
 */
 func (a *QuoteApiService) Quotesaverdeposit(ctx context.Context) ApiQuotesaverdepositRequest {
 	return ApiQuotesaverdepositRequest{
 		ApiService: a,
-		ctx: ctx,
+		ctx:        ctx,
 	}
 }
 
 // Execute executes the request
-//  @return QuoteSaverDepositResponse
+//
+//	@return QuoteSaverDepositResponse
 func (a *QuoteApiService) QuotesaverdepositExecute(r ApiQuotesaverdepositRequest) (*QuoteSaverDepositResponse, *http.Response, error) {
 	var (
-		localVarHTTPMethod   = http.MethodGet
-		localVarPostBody     interface{}
-		formFiles            []formFile
-		localVarReturnValue  *QuoteSaverDepositResponse
+		localVarHTTPMethod  = http.MethodGet
+		localVarPostBody    interface{}
+		formFiles           []formFile
+		localVarReturnValue *QuoteSaverDepositResponse
 	)
 
 	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "QuoteApiService.Quotesaverdeposit")
@@ -490,11 +492,11 @@ func (a *QuoteApiService) QuotesaverdepositExecute(r ApiQuotesaverdepositRequest
 }
 
 type ApiQuotesaverwithdrawRequest struct {
-	ctx context.Context
-	ApiService *QuoteApiService
-	height *int64
-	asset *string
-	address *string
+	ctx         context.Context
+	ApiService  *QuoteApiService
+	height      *int64
+	asset       *string
+	address     *string
 	withdrawBps *int64
 }
 
@@ -531,24 +533,25 @@ Quotesaverwithdraw Method for Quotesaverwithdraw
 
 Provide a quote estimate for the provided saver withdraw.
 
- @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
- @return ApiQuotesaverwithdrawRequest
+	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+	@return ApiQuotesaverwithdrawRequest
 */
 func (a *QuoteApiService) Quotesaverwithdraw(ctx context.Context) ApiQuotesaverwithdrawRequest {
 	return ApiQuotesaverwithdrawRequest{
 		ApiService: a,
-		ctx: ctx,
+		ctx:        ctx,
 	}
 }
 
 // Execute executes the request
-//  @return QuoteSaverWithdrawResponse
+//
+//	@return QuoteSaverWithdrawResponse
 func (a *QuoteApiService) QuotesaverwithdrawExecute(r ApiQuotesaverwithdrawRequest) (*QuoteSaverWithdrawResponse, *http.Response, error) {
 	var (
-		localVarHTTPMethod   = http.MethodGet
-		localVarPostBody     interface{}
-		formFiles            []formFile
-		localVarReturnValue  *QuoteSaverWithdrawResponse
+		localVarHTTPMethod  = http.MethodGet
+		localVarPostBody    interface{}
+		formFiles           []formFile
+		localVarReturnValue *QuoteSaverWithdrawResponse
 	)
 
 	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "QuoteApiService.Quotesaverwithdraw")
@@ -629,19 +632,20 @@ func (a *QuoteApiService) QuotesaverwithdrawExecute(r ApiQuotesaverwithdrawReque
 }
 
 type ApiQuoteswapRequest struct {
-	ctx context.Context
-	ApiService *QuoteApiService
-	height *int64
-	fromAsset *string
-	toAsset *string
-	amount *int64
-	destination *string
-	refundAddress *string
-	streamingInterval *int64
-	streamingQuantity *int64
-	toleranceBps *int64
-	affiliateBps *int64
-	affiliate *string
+	ctx                   context.Context
+	ApiService            *QuoteApiService
+	height                *int64
+	fromAsset             *string
+	toAsset               *string
+	amount                *int64
+	destination           *string
+	refundAddress         *string
+	streamingInterval     *int64
+	streamingQuantity     *int64
+	toleranceBps          *int64
+	liquidityToleranceBps *int64
+	affiliateBps          *int64
+	affiliate             *string
 }
 
 // optional block height, defaults to current tip
@@ -698,6 +702,12 @@ func (r ApiQuoteswapRequest) ToleranceBps(toleranceBps int64) ApiQuoteswapReques
 	return r
 }
 
+// the maximum basis points of tolerance for pool price movements to set the limit in the generated memo
+func (r ApiQuoteswapRequest) LiquidityToleranceBps(liquidityToleranceBps int64) ApiQuoteswapRequest {
+	r.liquidityToleranceBps = &liquidityToleranceBps
+	return r
+}
+
 // the affiliate fee in basis points
 func (r ApiQuoteswapRequest) AffiliateBps(affiliateBps int64) ApiQuoteswapRequest {
 	r.affiliateBps = &affiliateBps
@@ -719,24 +729,25 @@ Quoteswap Method for Quoteswap
 
 Provide a quote estimate for the provided swap.
 
- @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
- @return ApiQuoteswapRequest
+	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+	@return ApiQuoteswapRequest
 */
 func (a *QuoteApiService) Quoteswap(ctx context.Context) ApiQuoteswapRequest {
 	return ApiQuoteswapRequest{
 		ApiService: a,
-		ctx: ctx,
+		ctx:        ctx,
 	}
 }
 
 // Execute executes the request
-//  @return QuoteSwapResponse
+//
+//	@return QuoteSwapResponse
 func (a *QuoteApiService) QuoteswapExecute(r ApiQuoteswapRequest) (*QuoteSwapResponse, *http.Response, error) {
 	var (
-		localVarHTTPMethod   = http.MethodGet
-		localVarPostBody     interface{}
-		formFiles            []formFile
-		localVarReturnValue  *QuoteSwapResponse
+		localVarHTTPMethod  = http.MethodGet
+		localVarPostBody    interface{}
+		formFiles           []formFile
+		localVarReturnValue *QuoteSwapResponse
 	)
 
 	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "QuoteApiService.Quoteswap")
@@ -776,6 +787,9 @@ func (a *QuoteApiService) QuoteswapExecute(r ApiQuoteswapRequest) (*QuoteSwapRes
 	}
 	if r.toleranceBps != nil {
 		localVarQueryParams.Add("tolerance_bps", parameterToString(*r.toleranceBps, ""))
+	}
+	if r.liquidityToleranceBps != nil {
+		localVarQueryParams.Add("liquidity_tolerance_bps", parameterToString(*r.liquidityToleranceBps, ""))
 	}
 	if r.affiliateBps != nil {
 		localVarQueryParams.Add("affiliate_bps", parameterToString(*r.affiliateBps, ""))
