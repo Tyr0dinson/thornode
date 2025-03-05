@@ -4,6 +4,7 @@ import (
 	"crypto/ed25519"
 	"fmt"
 
+	utxocardano "github.com/utxorpc/go-codegen/utxorpc/v1alpha/cardano"
 	"gitlab.com/thorchain/thornode/v3/common/cardano"
 )
 
@@ -11,7 +12,7 @@ import (
 type TxBuilder struct {
 	tx       *Tx
 	privs    []ed25519.PrivateKey
-	protocol *Protocol
+	protocol *utxocardano.PParams
 }
 
 // Sign adds a private key to create signature for witness
@@ -113,7 +114,7 @@ func (tb TxBuilder) getTotalInputOutputs() (inputs, outputs uint) {
 }
 
 // MinFee calculates the minimum fee for the provided transaction.
-func (tb TxBuilder) MinFee() (fee uint, err error) {
+func (tb TxBuilder) MinFee() (fee uint64, err error) {
 	feeTx := Tx{
 		Body: TxBody{
 			Inputs:  tb.tx.Body.Inputs,
@@ -147,7 +148,7 @@ func (tb TxBuilder) MinFee() (fee uint, err error) {
 		}
 		feeTx.Body.Outputs = append(feeTx.Body.Outputs, NewTxOutput(inner_addr, (totalI-totalO-200000)))
 	}
-	lfee := NewLinearFee(tb.protocol.TxFeePerByte, tb.protocol.TxFeeFixed)
+	lfee := NewLinearFee(tb.protocol.MinFeeCoefficient, tb.protocol.MinFeeConstant)
 	// The fee may have increased enough to increase the number of bytes, so do one more pass
 	fee, _ = feeTx.Fee(lfee)
 	feeTx.Body.Fee = uint64(fee)
@@ -167,7 +168,7 @@ func (tb *TxBuilder) AddOutputs(outputs ...TxOutput) {
 }
 
 // NewTxBuilder returns pointer to a new TxBuilder.
-func NewTxBuilder(pr *Protocol, privs []ed25519.PrivateKey) *TxBuilder {
+func NewTxBuilder(pr *utxocardano.PParams, privs []ed25519.PrivateKey) *TxBuilder {
 	return &TxBuilder{
 		tx:       NewTx(),
 		privs:    privs,

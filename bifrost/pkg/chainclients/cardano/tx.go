@@ -66,7 +66,7 @@ func (t *Tx) Hash() ([32]byte, error) {
 
 // Fee returns the fee(in lovelaces) required by the transaction from the linear formula
 // fee = txFeeFixed + txFeePerByte*tx_len_in_bytes
-func (t *Tx) Fee(lfee *LinearFee) (uint, error) {
+func (t *Tx) Fee(lfee *LinearFee) (uint64, error) {
 	if err := t.CalculateAuxiliaryDataHash(); err != nil {
 		return 0, err
 	}
@@ -75,14 +75,14 @@ func (t *Tx) Fee(lfee *LinearFee) (uint, error) {
 		return 0, err
 	}
 	txBodyLen := len(txCbor)
-	fee := lfee.TxFeeFixed + lfee.TxFeePerByte*uint(txBodyLen)
+	fee := lfee.TxFeeFixed + lfee.TxFeePerByte*uint64(txBodyLen)
 
 	return fee, nil
 }
 
 // SetFee sets the fee
-func (t *Tx) SetFee(fee uint) {
-	t.Body.Fee = uint64(fee)
+func (t *Tx) SetFee(fee uint64) {
+	t.Body.Fee = fee
 }
 
 func (t *Tx) CalculateAuxiliaryDataHash() error {
@@ -261,12 +261,12 @@ type BootstrapWitness struct {
 // LinearFee contains parameters for the linear fee equation `TxFeeFixed + len_bytes(tx) * TxFeePerByte`.
 // These are provided in the protocol parameters
 type LinearFee struct {
-	TxFeePerByte uint
-	TxFeeFixed   uint
+	TxFeePerByte uint64
+	TxFeeFixed   uint64
 }
 
 // NewLinearFee returns a pointer to a new LinearFee from the provided params
-func NewLinearFee(feePerByte uint, fixedFee uint) *LinearFee {
+func NewLinearFee(feePerByte uint64, fixedFee uint64) *LinearFee {
 	return &LinearFee{
 		TxFeePerByte: feePerByte,
 		TxFeeFixed:   fixedFee,

@@ -23,6 +23,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	leveldbutil "github.com/syndtr/goleveldb/leveldb/util"
+	utxocardano "github.com/utxorpc/go-codegen/utxorpc/v1alpha/cardano"
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/runners"
@@ -63,6 +64,7 @@ type Client struct {
 
 	startHeight uint64
 	n2cLock     sync.Mutex
+	protocol    *utxocardano.PParams
 }
 
 func NewClient(
@@ -125,6 +127,7 @@ func NewClient(
 		Level: slog.LevelInfo,
 	}))
 
+	// create n2n connection
 	peer := network.BootstrapPeers[0]
 	addr := fmt.Sprintf("%s:%d", peer.Address, peer.Port)
 	n2nConn, err := c.dialTCP(addr)
@@ -148,6 +151,7 @@ func NewClient(
 		return nil, fmt.Errorf("fail to create ouroboros n2n connection: %w", err)
 	}
 
+	// create n2c connection
 	n2cConn, err := c.dialTCP(cfg.RPCHost)
 	if err != nil {
 		return nil, fmt.Errorf("fail to dial n2c host: %w", err)
@@ -169,6 +173,14 @@ func NewClient(
 		return nil, fmt.Errorf("fail to create ouroboros n2c connection: %w", err)
 	}
 
+	// fetch network protocol parameters, needed for tx signing
+	protocolParams, err := c.clientConn.LocalStateQuery().Client.GetCurrentProtocolParams()
+	if err != nil {
+		return nil, fmt.Errorf("fail to get protocol parameters: %w", err)
+	}
+	c.protocol = protocolParams.Utxorpc()
+
+	// figure out start height for the sync process
 	c.startHeight, _, _ = c.getLastSeenBlock()
 	if cfg.BlockScanner.StartBlockHeight > 0 {
 		slot, _, _ := c.getBlockId(uint64(cfg.BlockScanner.StartBlockHeight))
