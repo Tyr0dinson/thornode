@@ -25,6 +25,7 @@ const (
 	GAIAChain  = Chain("GAIA")
 	AVAXChain  = Chain("AVAX")
 	BASEChain  = Chain("BASE")
+	ADAChain   = Chain("ADA")
 
 	SigningAlgoSecp256k1 = SigningAlgo("secp256k1")
 	SigningAlgoEd25519   = SigningAlgo("ed25519")
@@ -41,6 +42,7 @@ var AllChains = [...]Chain{
 	GAIAChain,
 	AVAXChain,
 	BASEChain,
+	ADAChain,
 }
 
 type SigningAlgo string

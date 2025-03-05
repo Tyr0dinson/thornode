@@ -2,6 +2,7 @@ package common
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -122,6 +123,8 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 	chainNetwork := CurrentChainNetwork
 	var addressString string
 	switch chain {
+	case ADAChain:
+		return "", errors.New("ADA not yet supported")
 	case GAIAChain, THORChain:
 		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, string(p))
 		if err != nil {

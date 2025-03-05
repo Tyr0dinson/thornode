@@ -204,8 +204,12 @@ func Init() {
 	assert(viper.BindEnv("bifrost.chains.DOGE.disabled", "DOGE_DISABLED"))
 	assert(viper.BindEnv("bifrost.chains.LTC.disabled", "LTC_DISABLED"))
 	assert(viper.BindEnv("bifrost.chains.AVAX.disabled", "AVAX_DISABLED"))
+	assert(viper.BindEnv("bifrost.chains.BCH.disabled", "BCH_DISABLED"))
+	assert(viper.BindEnv("bifrost.chains.BTC.disabled", "BCH_DISABLED"))
 	assert(viper.BindEnv("bifrost.chains.AVAX.block_scanner.gas_cache_size", "AVAX_GAS_CACHE_SIZE"))
 	assert(viper.BindEnv("thor.cosmos.halt_height", "HARDFORK_BLOCK_HEIGHT"))
+
+	assert(viper.BindEnv("bifrost.signer.signer_db_path", "SIGNER_DB_PATH"))
 
 	// always override from environment
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
@@ -481,6 +485,7 @@ type Bifrost struct {
 		GAIA BifrostChainConfiguration `mapstructure:"gaia"`
 		LTC  BifrostChainConfiguration `mapstructure:"ltc"`
 		BASE BifrostChainConfiguration `mapstructure:"base"`
+		ADA  BifrostChainConfiguration `mapstructure:"ada"`
 	} `mapstructure:"chains"`
 	TSS             BifrostTSSConfiguration `mapstructure:"tss"`
 	ObserverLevelDB LevelDBOptions          `mapstructure:"observer_leveldb"`
@@ -488,15 +493,16 @@ type Bifrost struct {
 
 func (b Bifrost) GetChains() map[common.Chain]BifrostChainConfiguration {
 	return map[common.Chain]BifrostChainConfiguration{
-		common.AVAXChain: b.Chains.AVAX,
-		common.BCHChain:  b.Chains.BCH,
-		common.BSCChain:  b.Chains.BSC,
-		common.BTCChain:  b.Chains.BTC,
-		common.DOGEChain: b.Chains.DOGE,
-		common.ETHChain:  b.Chains.ETH,
-		common.GAIAChain: b.Chains.GAIA,
-		common.LTCChain:  b.Chains.LTC,
-		common.BASEChain: b.Chains.BASE,
+		// common.AVAXChain: b.Chains.AVAX,
+		// common.BCHChain:  b.Chains.BCH,
+		// common.BSCChain:  b.Chains.BSC,
+		// common.BTCChain:  b.Chains.BTC,
+		// common.DOGEChain: b.Chains.DOGE,
+		// common.ETHChain:  b.Chains.ETH,
+		// common.GAIAChain: b.Chains.GAIA,
+		// common.LTCChain:  b.Chains.LTC,
+		// common.BASEChain: b.Chains.BASE,
+		common.ADAChain: b.Chains.ADA,
 	}
 }
 

@@ -333,6 +333,16 @@ bifrost:
         min_sats_per_vbyte: 2
         estimated_average_tx_size: 1500
 
+    ada:
+      <<: *default-chain
+      chain_id: ADA
+      block_scanner:
+        <<: *default-block-scanner
+        chain_id: ADA
+      scanner_leveldb: *default-leveldb
+      rpc_host: "dev.null" # not used but required
+      utxo: *utxo
+
 ########################################################################################
 # Thor
 ########################################################################################

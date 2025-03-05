@@ -228,13 +228,8 @@ func (o *Observer) chunkifyAndSendToThorchain(deck types.TxIn, chainClient chain
 			continue
 		}
 
-		i, ok := chainClient.(interface {
-			OnObservedTxIn(txIn types.TxInItem, blockHeight int64)
-		})
-		if ok {
-			for _, item := range txIn.TxArray {
-				i.OnObservedTxIn(item, item.BlockHeight)
-			}
+		for _, item := range txIn.TxArray {
+			chainClient.OnObservedTxIn(item, item.BlockHeight)
 		}
 	}
 	return newTxIn
