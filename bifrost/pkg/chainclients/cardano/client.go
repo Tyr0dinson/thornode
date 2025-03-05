@@ -191,14 +191,17 @@ func (c *Client) ConfirmationCountReady(txIn types.TxIn) bool {
 }
 
 func (c *Client) GetAccount(poolPubKey common.PubKey, height *big.Int) (common.Account, error) {
+	// is this pubkey expected to be an ed25519 public key?
 	panic("unimplemented")
 }
 
 func (c *Client) GetAccountByAddress(address string, height *big.Int) (common.Account, error) {
+	// this will be a bech32 cardano address?
 	panic("unimplemented")
 }
 
 func (c *Client) GetAddress(poolPubKey common.PubKey) string {
+	// is this pubkey expected to be an ed25519 public key?
 	panic("unimplemented")
 }
 
@@ -230,7 +233,7 @@ func (c *Client) GetLatestTxForVault(vault string) (string, string, error) {
 }
 
 func (c *Client) IsBlockScannerHealthy() bool {
-	panic("unimplemented")
+	return c.scanner.IsHealthy()
 }
 
 func (c *Client) OnObservedTxIn(txIn types.TxInItem, blockHeight int64) {
