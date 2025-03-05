@@ -25,6 +25,7 @@ import (
 	leveldbutil "github.com/syndtr/goleveldb/leveldb/util"
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/runners"
 	shared "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
@@ -38,6 +39,7 @@ import (
 var (
 	_ shared.ChainClient               = &Client{}
 	_ blockscanner.BlockScannerFetcher = &Client{}
+	_ runners.SolvencyCheckProvider    = &Client{}
 	// epoch 542 started on Feb 28, 2025 3:44:51 PM and ends at Mar 5, 2025 3:44:51 PM
 	epoch542StartBlock = ouroboroscommon.Tip{
 		Point: ouroboroscommon.Point{
@@ -326,8 +328,17 @@ func (c *Client) OnObservedTxIn(txIn types.TxInItem, blockHeight int64) {
 	panic("unimplemented")
 }
 
-func (c *Client) SignTx(tx types.TxOutItem, height int64) ([]byte, []byte, *types.TxInItem, error) {
-	panic("unimplemented")
+func (c *Client) SignTx(tx types.TxOutItem, height int64) (signedBz, checkpoint []byte, _ *types.TxInItem, topErr error) {
+	// fromAddr, err := tx.VaultPubKey.GetAddress(c.GetChain())
+	// if err != nil {
+	// 	topErr = fmt.Errorf("fail to get from pubkey %s: %w", tx.VaultPubKey.String(), err)
+	// 	return
+	// }
+	// if len(tx.Coins) != 1 {
+	// 	topErr = fmt.Errorf("expected 1 coin, got %d", len(tx.Coins))
+	// 	return
+	// }
+	return
 }
 
 func (c *Client) Start(
@@ -477,6 +488,14 @@ func (c *Client) chainSyncRollBackwardHandler(
 		tip.Point.Slot, tip.Point.Hash,
 	)
 	return nil
+}
+
+func (c *Client) ShouldReportSolvency(height int64) bool {
+	panic("unimplemented")
+}
+
+func (c *Client) ReportSolvency(height int64) error {
+	panic("unimplemented")
 }
 
 // STORAGE
