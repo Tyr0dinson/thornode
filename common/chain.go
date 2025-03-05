@@ -322,6 +322,8 @@ func (c Chain) ApproximateBlockMilliseconds() int64 {
 		return 6_000
 	case BASEChain:
 		return 2_000
+	case ADAChain:
+		return 30_000
 	default:
 		return 0
 	}

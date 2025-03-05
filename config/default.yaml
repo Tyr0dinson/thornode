@@ -339,6 +339,7 @@ bifrost:
       block_scanner:
         <<: *default-block-scanner
         chain_id: ADA
+        start_block_height: 11561640
       scanner_leveldb: *default-leveldb
       rpc_host: "dev.null" # not used but required
       utxo: *utxo
