@@ -11,6 +11,7 @@ import (
 	"net"
 	"os"
 	"strconv"
+	"sync"
 	"time"
 
 	sdkmath "cosmossdk.io/math"
@@ -18,6 +19,7 @@ import (
 	"github.com/blinklabs-io/gouroboros/ledger"
 	"github.com/blinklabs-io/gouroboros/protocol/chainsync"
 	ouroboroscommon "github.com/blinklabs-io/gouroboros/protocol/common"
+	"github.com/blinklabs-io/gouroboros/protocol/localstatequery"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	leveldbutil "github.com/syndtr/goleveldb/leveldb/util"
@@ -29,6 +31,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss"
 	tssp "gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/tss"
 	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/common/cardano"
 	"gitlab.com/thorchain/thornode/v3/config"
 )
 
@@ -50,12 +53,14 @@ type Client struct {
 	logger          zerolog.Logger
 	networkError    chan error
 	config          config.BifrostChainConfiguration
-	node            *ouroboros.Connection
+	nodeConn        *ouroboros.Connection
+	clientConn      *ouroboros.Connection
 	thorchainBridge thorclient.ThorchainBridge
 	storage         *blockscanner.BlockScannerStorage
 	scanner         *blockscanner.BlockScanner
 
 	startHeight uint64
+	n2cLock     sync.Mutex
 }
 
 func NewClient(
@@ -120,18 +125,13 @@ func NewClient(
 
 	peer := network.BootstrapPeers[0]
 	addr := fmt.Sprintf("%s:%d", peer.Address, peer.Port)
-	var client net.Conn
-	if cfg.DisableTLS {
-		client, err = net.Dial("tcp", addr)
-	} else {
-		client, err = tls.Dial("tcp", addr, nil)
-	}
+	n2nConn, err := c.dialTCP(addr)
 	if err != nil {
-		return nil, fmt.Errorf("fail to dial: %w", err)
+		return nil, fmt.Errorf("fail to dial n2n host: %w", err)
 	}
-	c.node, err = ouroboros.NewConnection(
+	c.nodeConn, err = ouroboros.NewConnection(
 		ouroboros.WithPeerSharing(true),
-		ouroboros.WithConnection(client),
+		ouroboros.WithConnection(n2nConn),
 		ouroboros.WithNetwork(network),
 		ouroboros.WithLogger(networkLogger),
 		ouroboros.WithErrorChan(c.networkError),
@@ -143,7 +143,28 @@ func NewClient(
 		)),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("fail to create ouroboros connection: %w", err)
+		return nil, fmt.Errorf("fail to create ouroboros n2n connection: %w", err)
+	}
+
+	n2cConn, err := c.dialTCP(cfg.RPCHost)
+	if err != nil {
+		return nil, fmt.Errorf("fail to dial n2c host: %w", err)
+	}
+	c.clientConn, err = ouroboros.NewConnection(
+		ouroboros.WithConnection(n2cConn),
+		ouroboros.WithErrorChan(c.networkError),
+		ouroboros.WithLogger(networkLogger),
+		ouroboros.WithNetwork(network),
+		// ouroboros.WithLocalStateQueryConfig(localstatequery.NewConfig()),
+		// ouroboros.WithLocalTxSubmissionConfig(
+		// 	localtxsubmission.NewConfig(
+		// 		localtxsubmission.WithSubmitTxFunc(localSubmitTxCallbackHandler),
+		// 	),
+		// ),
+		ouroboros.WithKeepAlive(true),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("fail to create ouroboros n2c connection: %w", err)
 	}
 
 	c.startHeight, _, _ = c.getLastSeenBlock()
@@ -161,7 +182,7 @@ func NewClient(
 		}
 	}
 	if c.startHeight == 0 {
-		tip, err := c.node.ChainSync().Client.GetCurrentTip()
+		tip, err := c.nodeConn.ChainSync().Client.GetCurrentTip()
 		if err != nil {
 			return nil, fmt.Errorf("fail to get current tip: %w", err)
 		}
@@ -182,6 +203,15 @@ func NewClient(
 	return c, nil
 }
 
+func (c *Client) dialTCP(addr string) (conn net.Conn, err error) {
+	if c.config.DisableTLS {
+		conn, err = net.Dial("tcp", addr)
+	} else {
+		conn, err = tls.Dial("tcp", addr, nil)
+	}
+	return
+}
+
 func (c *Client) BroadcastTx(_ types.TxOutItem, _ []byte) (string, error) {
 	panic("unimplemented")
 }
@@ -192,21 +222,65 @@ func (c *Client) ConfirmationCountReady(txIn types.TxIn) bool {
 
 func (c *Client) GetAccount(poolPubKey common.PubKey, height *big.Int) (common.Account, error) {
 	// is this pubkey expected to be an ed25519 public key?
-	panic("unimplemented")
+	addr, err := poolPubKey.GetAddress(c.GetChain())
+	if err != nil {
+		c.logger.Err(err).Str("pool_pub_key", poolPubKey.String()).Msg("fail to get address")
+	}
+	return c.GetAccountByAddress(addr.String(), height)
 }
 
 func (c *Client) GetAccountByAddress(address string, height *big.Int) (common.Account, error) {
-	// this will be a bech32 cardano address?
-	panic("unimplemented")
+	addr, err := ledger.NewAddress(address)
+	if err != nil {
+		return common.Account{}, fmt.Errorf("fail to create address: %w", err)
+	}
+	queryClient := c.clientConn.LocalStateQuery().Client
+
+	h := height.Uint64()
+	slot, hash, err := c.getBlockId(h)
+	if err != nil {
+		c.logger.Warn().Err(err).Uint64("height", h).Msg("fail to get block id for height, falling back to tip")
+	} else {
+		c.n2cLock.Lock()
+		defer c.n2cLock.Unlock()
+		point := ouroboroscommon.NewPoint(slot, hash)
+		err = queryClient.Acquire(&point)
+		if err != nil {
+			return common.Account{}, fmt.Errorf("fail to acquire point: %w", err)
+		}
+		defer func(client *localstatequery.Client) {
+			if err := client.Release(); err != nil {
+				c.logger.Err(err).Msg("fail to release point")
+			}
+		}(queryClient)
+	}
+
+	res, err := queryClient.GetUTxOByAddress([]ledger.Address{addr})
+	if err != nil {
+		return common.Account{}, fmt.Errorf("fail to query address: %w", err)
+	}
+	var balance uint64
+	for _, utxo := range res.Results {
+		balance += utxo.Amount()
+	}
+	coin := common.NewCoin(common.ADAAsset, sdkmath.NewUint(balance))
+	return common.Account{
+		Coins: common.Coins{coin},
+	}, nil
 }
 
 func (c *Client) GetAddress(poolPubKey common.PubKey) string {
 	// is this pubkey expected to be an ed25519 public key?
-	panic("unimplemented")
+	addr, err := poolPubKey.GetAddress(c.GetChain())
+	if err != nil {
+		c.logger.Err(err).Str("pool_pub_key", poolPubKey.String()).Msg("fail to get address")
+		return ""
+	}
+	return addr.String()
 }
 
 func (c *Client) GetBlockScannerHeight() (int64, error) {
-	panic("unimplemented")
+	return c.scanner.PreviousHeight(), nil
 }
 
 func (c *Client) GetChain() common.Chain {
@@ -218,7 +292,19 @@ func (c *Client) GetConfig() config.BifrostChainConfiguration {
 }
 
 func (c *Client) GetConfirmationCount(txIn types.TxIn) int64 {
-	panic("unimplemented")
+	//  n2c call may be slow, may also query leveldb if chain-sync is current
+	tip, err := c.clientConn.LocalStateQuery().Client.GetChainBlockNo()
+	if err != nil {
+		c.logger.Err(err).Str("op", "GetConfirmationCount").Msg("fail to get current tip")
+		return 0
+	}
+	var height int64
+	for _, tx := range txIn.TxArray {
+		if tx.BlockHeight > height {
+			height = tx.BlockHeight
+		}
+	}
+	return tip - height
 }
 
 // GetHeight returns the current height of the chain.
@@ -254,7 +340,7 @@ func (c *Client) Start(
 		c.logger.Err(err).Msgf("client start failed, unable to find block id for height=%d", c.startHeight)
 		return
 	}
-	err = c.node.ChainSync().Client.Sync([]ouroboroscommon.Point{ouroboroscommon.NewPoint(slot, hash)})
+	err = c.nodeConn.ChainSync().Client.Sync([]ouroboroscommon.Point{ouroboroscommon.NewPoint(slot, hash)})
 	if err != nil {
 		c.logger.Err(err).Msg("failed to start chain-sync client")
 		return
@@ -265,7 +351,7 @@ func (c *Client) Start(
 }
 
 func (c *Client) Stop() {
-	if err := c.node.ChainSync().Client.Stop(); err != nil {
+	if err := c.nodeConn.ChainSync().Client.Stop(); err != nil {
 		c.logger.Err(err).Msg("fail to stop chain-sync client")
 	}
 }
@@ -282,7 +368,7 @@ func (c *Client) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
 	if err != nil {
 		return types.TxIn{}, err
 	}
-	block, err := c.node.BlockFetch().Client.GetBlock(ouroboroscommon.NewPoint(slot, hash))
+	block, err := c.nodeConn.BlockFetch().Client.GetBlock(ouroboroscommon.NewPoint(slot, hash))
 	if err != nil {
 		return types.TxIn{}, err
 	}
@@ -299,7 +385,7 @@ func (c *Client) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
 			// c.logger.Warn().Msgf("skip tx with %d witnesses", len(tx.Witnesses().Vkey()))
 			continue
 		}
-		senderAddr, err := NewMainnetPaymentOnlyFromPubkey(tx.Witnesses().Vkey()[0].Vkey)
+		senderAddr, err := cardano.PaymentOnlyMainnetAddressFromPubkey(tx.Witnesses().Vkey()[0].Vkey)
 		if err != nil {
 			c.logger.Err(err).Msg("fail to get sender address")
 			continue

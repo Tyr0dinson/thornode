@@ -53,3 +53,11 @@ in-house solution would be required.
 
 - A bit more discovery needed, implementation may look quite different than other Bifrost chain
 clients since the "client" is in fact a Cardano node on the network.
+
+## Dev notes
+
+- [conway CDDL spec](https://github.com/IntersectMBO/cardano-ledger/blob/master/eras/conway/impl/cddl-files/conway.cddl)
+- [formal spec repo](https://github.com/IntersectMBO/formal-ledger-specifications)
+- [clarification of n2n and n2c from a dev](https://github.com/IntersectMBO/ouroboros-network/issues/4628#issuecomment-2587106371)
+- [replace required for ed25519 tss support](https://gitlab.com/thorchain/thornode/-/blob/beorn/sol-geyser/go.mod#L10)
+- [SOL impl assumes input pubkeys to bifrost client are ed25519](https://gitlab.com/thorchain/thornode/-/blob/beorn/sol-geyser/common/pubkey.go#L202-209)

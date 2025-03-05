@@ -2,7 +2,6 @@ package common
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -24,6 +23,7 @@ import (
 	"github.com/cometbft/cometbft/crypto"
 	eth "github.com/ethereum/go-ethereum/crypto"
 
+	"gitlab.com/thorchain/thornode/v3/common/cardano"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
@@ -123,8 +123,6 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 	chainNetwork := CurrentChainNetwork
 	var addressString string
 	switch chain {
-	case ADAChain:
-		return "", errors.New("ADA not yet supported")
 	case GAIAChain, THORChain:
 		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, string(p))
 		if err != nil {
@@ -199,6 +197,23 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 			net = &bchchaincfg.MainNetParams
 		}
 		addr, err := bchutil.NewAddressPubKeyHash(pk.Address().Bytes(), net)
+		if err != nil {
+			return NoAddress, fmt.Errorf("fail to encode the address, err: %w", err)
+		}
+		addressString = addr.String()
+	case ADAChain:
+		// assumed to be an ed25519 pubkey!
+		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, string(p))
+		if err != nil {
+			return NoAddress, err
+		}
+		var addr cardano.Address
+		switch chainNetwork {
+		case MainNet:
+			addr, err = cardano.PaymentOnlyMainnetAddressFromPubkey(pk.Bytes())
+		default:
+			addr, err = cardano.PaymentOnlyTestnetAddressFromPubkey(pk.Bytes())
+		}
 		if err != nil {
 			return NoAddress, fmt.Errorf("fail to encode the address, err: %w", err)
 		}

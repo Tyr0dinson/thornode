@@ -200,6 +200,10 @@ func Init() {
 		"bifrost.chains.GAIA.block_scanner.cosmos_grpc_tls",
 		"GAIA_GRPC_TLS",
 	))
+	assert(viper.BindEnv(
+		"bifrost.chains.ADA.rpc_host",
+		"ADA_HOST",
+	))
 	assert(viper.BindEnv("bifrost.chains.GAIA.disabled", "GAIA_DISABLED"))
 	assert(viper.BindEnv("bifrost.chains.DOGE.disabled", "DOGE_DISABLED"))
 	assert(viper.BindEnv("bifrost.chains.LTC.disabled", "LTC_DISABLED"))
