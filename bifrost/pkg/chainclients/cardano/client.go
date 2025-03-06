@@ -1,6 +1,7 @@
 package cardano
 
 import (
+	"crypto/ed25519"
 	"crypto/tls"
 	"encoding/binary"
 	"encoding/hex"
@@ -65,6 +66,8 @@ type Client struct {
 	startHeight uint64
 	n2cLock     sync.Mutex
 	protocol    *utxocardano.PParams
+
+	localTestingKey ed25519.PrivateKey
 }
 
 func NewClient(
@@ -90,6 +93,12 @@ func NewClient(
 	_, err = thorKeys.GetPrivateKey()
 	if err != nil {
 		return nil, fmt.Errorf("fail to get private key: %w", err)
+	}
+	if os.Getenv("BIFROST_CARDANO_PRIV_KEY") != "" {
+		c.localTestingKey, err = cardano.PrivateKeyFromBech32(os.Getenv("BIFROST_CARDANO_PRIV_KEY"))
+		if err != nil {
+			return nil, fmt.Errorf("fail to parse private key: %w", err)
+		}
 	}
 
 	var path string // if not set later, will in memory storage
@@ -341,15 +350,18 @@ func (c *Client) OnObservedTxIn(txIn types.TxInItem, blockHeight int64) {
 }
 
 func (c *Client) SignTx(tx types.TxOutItem, height int64) (signedBz, checkpoint []byte, _ *types.TxInItem, topErr error) {
-	// fromAddr, err := tx.VaultPubKey.GetAddress(c.GetChain())
-	// if err != nil {
-	// 	topErr = fmt.Errorf("fail to get from pubkey %s: %w", tx.VaultPubKey.String(), err)
-	// 	return
-	// }
-	// if len(tx.Coins) != 1 {
-	// 	topErr = fmt.Errorf("expected 1 coin, got %d", len(tx.Coins))
-	// 	return
-	// }
+	fromAddr, err := tx.VaultPubKey.GetAddress(c.GetChain())
+	if err != nil {
+		topErr = fmt.Errorf("fail to get from pubkey %s: %w", tx.VaultPubKey.String(), err)
+		return
+	}
+	if len(tx.Coins) != 1 {
+		topErr = fmt.Errorf("expected 1 coin, got %d", len(tx.Coins))
+		return
+	}
+	txBuilder := NewTxBuilder(c.protocol, nil)
+	// TODO
+	fmt.Println("txBuilder", txBuilder, "fromAddr", fromAddr)
 	return
 }
 

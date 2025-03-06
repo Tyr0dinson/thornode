@@ -167,6 +167,8 @@ func (c Chain) GetGasAsset() Asset {
 		return ATOMAsset
 	case BASEChain:
 		return BaseETHAsset
+	case ADAChain:
+		return ADAAsset
 	default:
 		return EmptyAsset
 	}
@@ -189,6 +191,8 @@ func (c Chain) GetGasUnits() string {
 		return "uatom"
 	case LTCChain:
 		return "satsperbyte"
+	case ADAChain:
+		return "lovelace"
 	default:
 		return ""
 	}
@@ -323,7 +327,7 @@ func (c Chain) ApproximateBlockMilliseconds() int64 {
 	case BASEChain:
 		return 2_000
 	case ADAChain:
-		return 30_000
+		return 20_000
 	default:
 		return 0
 	}

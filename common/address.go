@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/blinklabs-io/gouroboros/ledger"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcutil"
 	"github.com/btcsuite/btcutil/bech32"
@@ -205,6 +206,12 @@ func (addr Address) IsChain(chain Chain) bool {
 			return true
 		}
 		return false
+	case ADAChain:
+		_, err := ledger.NewAddress(addr.String())
+		if err == nil {
+			return true
+		}
+		return false
 	default:
 		return true // if THORNode don't specifically check a chain yet, assume its ok.
 	}
@@ -213,7 +220,7 @@ func (addr Address) IsChain(chain Chain) bool {
 // Note that this will always return ETHChain for an AVAXChain address,
 // so perhaps only use it when determining a network (e.g. mainnet/testnet).
 func (addr Address) GetChain() Chain {
-	for _, chain := range []Chain{ETHChain, THORChain, BTCChain, LTCChain, BCHChain, DOGEChain, GAIAChain, AVAXChain} {
+	for _, chain := range []Chain{ETHChain, THORChain, BTCChain, LTCChain, BCHChain, DOGEChain, GAIAChain, AVAXChain, ADAChain} {
 		if addr.IsChain(chain) {
 			return chain
 		}

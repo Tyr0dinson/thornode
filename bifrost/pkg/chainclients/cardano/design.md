@@ -61,3 +61,6 @@ clients since the "client" is in fact a Cardano node on the network.
 - [clarification of n2n and n2c from a dev](https://github.com/IntersectMBO/ouroboros-network/issues/4628#issuecomment-2587106371)
 - [replace required for ed25519 tss support](https://gitlab.com/thorchain/thornode/-/blob/beorn/sol-geyser/go.mod#L10)
 - [SOL impl assumes input pubkeys to bifrost client are ed25519](https://gitlab.com/thorchain/thornode/-/blob/beorn/sol-geyser/common/pubkey.go#L202-209)
+- full ED25519/EDDSA support is blocked behind [f425cc445](https://gitlab.com/thorchain/thornode/-/commit/f425cc44517d838a3a94edf6421bb0267220e238)
+- targetting something working with ed25519 priv key imported via env var to start with
+- cardano-node [scripts](https://github.com/kocubinski/cardano-node/tree/master/scripts/babbage) for running a local devnet (3 nodes) work with minor modifications.  more tweaks needed for a single node setup.
