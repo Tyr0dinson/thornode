@@ -334,7 +334,7 @@ func (c Chain) ApproximateBlockMilliseconds() int64 {
 	case BASEChain:
 		return 2_000
 	case TONChain:
-		return 12_000
+		return 2_500
 	default:
 		return 0
 	}

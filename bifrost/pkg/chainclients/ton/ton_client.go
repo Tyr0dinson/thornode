@@ -2,9 +2,8 @@ package ton
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"golang.org/x/crypto/ed25519"
@@ -59,6 +58,7 @@ type TonClient struct {
 	wg                  *sync.WaitGroup
 	stopchan            chan struct{}
 	walletCode          *cell.Cell
+	sentMessages        map[string]struct{}
 }
 
 // NewTonClient creates a new instance of a TON chain client
@@ -74,12 +74,13 @@ func NewTonClient(
 	logger := log.With().Str("module", config.ChainID.String()).Logger()
 
 	client := TonClient{
-		logger:   logger,
-		chainId:  config.ChainID.String(),
-		config:   config,
-		bridge:   bridge,
-		wg:       &sync.WaitGroup{},
-		stopchan: make(chan struct{}),
+		logger:       logger,
+		chainId:      config.ChainID.String(),
+		config:       config,
+		bridge:       bridge,
+		wg:           &sync.WaitGroup{},
+		stopchan:     make(chan struct{}),
+		sentMessages: map[string]struct{}{},
 	}
 
 	ctx := context.Background()
@@ -111,7 +112,7 @@ func NewTonClient(
 		}
 	default:
 		if config.Password == "" {
-			err = fmt.Errorf("key not set")
+			err = fmt.Errorf("liteserver key not set")
 			client.logger.Err(err).Msg("")
 			return nil, err
 		}
@@ -352,9 +353,17 @@ func (c *TonClient) OnObservedTxIn(txIn types.TxInItem, _ int64) {
 	memo, err := tcmemo.ParseMemo(common.LatestVersion, txIn.Memo)
 	if err != nil {
 		// Debug log only as ParseMemo error is expected for THORName inbounds.
-		c.logger.Debug().Err(err).Msgf("fail to parse memo: %s", txIn.Memo)
+		c.logger.Err(err).Msgf("fail to parse memo: %s", txIn.Memo)
 		return
 	}
+
+	d, e := json.Marshal(txIn)
+	if e != nil {
+		c.logger.Debug().Err(e).Msgf("fail to marshal memo: %s", txIn.Memo)
+		return
+	}
+
+	fmt.Printf(string(d))
 
 	validTypes := map[tcmemo.TxType]struct{}{
 		tcmemo.TxMigrate:  {},
@@ -366,8 +375,12 @@ func (c *TonClient) OnObservedTxIn(txIn types.TxInItem, _ int64) {
 		return
 	}
 
+	cacheHash := txIn.CacheHash(c.config.ChainID, common.BlankTxID.String())
+
+	delete(c.sentMessages, cacheHash)
+
 	err = c.signerCacheManager.SetSigned(
-		txIn.CacheHash(c.GetChain(), common.BlankTxID.String()),
+		cacheHash,
 		txIn.CacheVault(c.GetChain()),
 		txIn.Tx,
 	)
@@ -381,11 +394,9 @@ func (c *TonClient) SignTx(
 	txOutItem types.TxOutItem,
 	_ int64,
 ) ([]byte, []byte, *types.TxInItem, error) {
-	c.logger.Info().Msg(fmt.Sprintf("%v", txOutItem))
+	cacheHash := txOutItem.CacheHash()
 
-	str := fmt.Sprintf("%s|%s|%s|%s", c.GetChain(), txOutItem.ToAddress, txOutItem.Coins, txOutItem.Memo)
-	cacheHash := fmt.Sprintf("%X", sha256.Sum256([]byte(str)))
-
+	txOutItem.CacheHash()
 	if c.signerCacheManager.HasSigned(cacheHash) {
 		c.logger.Info().
 			Interface("tx", txOutItem).
@@ -406,6 +417,13 @@ func (c *TonClient) BroadcastTx(
 	txOut types.TxOutItem,
 	txBytes []byte,
 ) (string, error) {
+	cacheHash := txOut.CacheHash()
+	_, found := c.sentMessages[cacheHash]
+	if found {
+		c.logger.Info().Msg("transaction already sent")
+		return "", nil
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 	defer cancel()
 
@@ -466,7 +484,7 @@ func (c *TonClient) BroadcastTx(
 
 		stateInit = &tlb.StateInit{
 			Data: cell.BeginCell().
-				MustStoreUInt(0, 32).                               // seqno
+				MustStoreUInt(0, 32). // seqno
 				MustStoreUInt(uint64(wallet.DefaultSubwallet), 32). // sub wallet
 				MustStoreSlice(pubKey.Bytes(), 256).
 				EndCell(),
@@ -480,35 +498,24 @@ func (c *TonClient) BroadcastTx(
 		Body:      body,
 	}
 
-	tx, _, _, err := c.api.SendExternalMessageWaitTransaction(ctx, msg)
+	_, _, _, err = c.api.SendExternalMessageWaitTransaction(ctx, msg)
 
 	if err != nil {
 		if strings.HasSuffix(err.Error(), ": duplicate message") {
-			c.logger.Err(err).Msg("message already sent")
-			return "", err
+			c.logger.Info().Err(err).Msg("message already sent")
 		} else {
 			c.logger.Err(err).Msg("failed to send external message")
 			return "", err
 		}
 	}
 
-	txHash := base64.StdEncoding.EncodeToString(tx.Hash)
+	c.sentMessages[cacheHash] = struct{}{}
 
-	err = c.signerCacheManager.SetSigned(
-		txOut.CacheHash(),
-		txOut.CacheVault(c.GetChain()),
-		txHash,
-	)
-	if err != nil {
-		c.logger.Err(err).Msg("failed to set signer cache")
-	}
-
-	return txHash, nil
+	return "", nil
 }
 
 func (c *TonClient) ShouldReportSolvency(height int64) bool {
-	// return height%10 == 0
-	return true
+	return height%10 == 0
 }
 
 func (c *TonClient) ReportSolvency(height int64) error {
@@ -527,7 +534,6 @@ func (c *TonClient) ReportSolvency(height int64) error {
 		return fmt.Errorf("fail to get asgards,err: %w", err)
 	}
 
-	// TODO: implement gas fee
 	fee := toThor(big.NewInt(TxFee))
 
 	solventMsgs := make([]types.Solvency, 0, len(vaults))
@@ -651,20 +657,31 @@ func (c *TonClient) createAndSignTx(
 		}
 	}
 
-	// TODO: Check and maybe use Thorchain migration height instead
 	period := time.Second * 30
 	timeout := time.Now().
 		Truncate(period).
 		Add(period * -1).
 		Add(time.Minute * 3).UTC()
 
-	c.logger.Info().Msgf("Timeout: %s", timeout.Format(time.RFC3339))
+	payload := cell.BeginCell()
 
-	// TODO: Replace MustStoreX with err checks
-	payload := cell.BeginCell().
-		MustStoreUInt(uint64(wallet.DefaultSubwallet), 32).
-		MustStoreUInt(uint64(timeout.Unix()), 32).
-		MustStoreUInt(seqno.Uint64(), 32) // seq
+	err = payload.StoreUInt(uint64(wallet.DefaultSubwallet), 32)
+	if err != nil {
+		c.logger.Err(err).Msg("failed to store subwallet")
+		return nil, err
+	}
+
+	err = payload.StoreUInt(uint64(timeout.Unix()), 32)
+	if err != nil {
+		c.logger.Err(err).Msg("failed to store timeout")
+		return nil, err
+	}
+
+	err = payload.StoreUInt(seqno.Uint64(), 32)
+	if err != nil {
+		c.logger.Err(err).Msg("failed to store seqno")
+		return nil, err
+	}
 
 	internalMessage, err := tlb.ToCell(message.InternalMessage)
 	if err != nil {
@@ -739,14 +756,15 @@ func (c *TonClient) sign(data []byte, pubkey common.PubKey) ([]byte, error) {
 func (c *TonClient) getEddsaVaultKey(pubKey common.PubKey) (common.PubKey, error) {
 	vaults, err := c.bridge.GetAsgards()
 	if err != nil {
+		c.logger.Err(err).Msg("failed to get bridge vaults")
 		return common.EmptyPubKey, err
 	}
 
 	for _, vault := range vaults {
-		if vault.PubKey.Equals(pubKey) {
+		if vault.PubKey.Equals(pubKey) || vault.PubKeyEddsa.Equals(pubKey) {
 			return vault.PubKeyEddsa, nil
 		}
 	}
 
-	return common.EmptyPubKey, nil
+	return common.EmptyPubKey, fmt.Errorf("vault not found")
 }

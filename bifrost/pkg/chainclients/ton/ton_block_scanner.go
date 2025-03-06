@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"github.com/xssnick/tonutils-go/address"
+	"github.com/xssnick/tonutils-go/tlb"
+	"github.com/xssnick/tonutils-go/ton"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -13,11 +16,8 @@ import (
 	"math/big"
 	"net/http"
 	"regexp"
+	"sort"
 	"strconv"
-
-	"github.com/xssnick/tonutils-go/address"
-	"github.com/xssnick/tonutils-go/tlb"
-	"github.com/xssnick/tonutils-go/ton"
 )
 
 type TonBlockScanner struct {
@@ -27,7 +27,8 @@ type TonBlockScanner struct {
 	client     ton.APIClientWrapped
 	http       *http.Client
 	apiUrl     string
-	lastBlocks map[int64]uint32
+	lastMaster uint32
+	lastShards map[string]uint32
 }
 
 func NewTonBlockScanner(
@@ -47,7 +48,8 @@ func NewTonBlockScanner(
 		client:     client,
 		http:       &http.Client{},
 		apiUrl:     "https://toncenter.com/api",
-		lastBlocks: map[int64]uint32{},
+		lastMaster: 0,
+		lastShards: map[string]uint32{},
 	}
 
 	return &scanner, nil
@@ -61,7 +63,7 @@ func (s *TonBlockScanner) GetHeight() (int64, error) {
 		return 0, err
 	}
 
-	return int64(info.SeqNo), nil
+	return int64(info.SeqNo) - 1, nil
 }
 
 func (s *TonBlockScanner) FetchMemPool(_ int64) (types.TxIn, error) {
@@ -71,7 +73,7 @@ func (s *TonBlockScanner) FetchMemPool(_ int64) (types.TxIn, error) {
 func (s *TonBlockScanner) FetchTxs(
 	fetchHeight, _ int64,
 ) (types.TxIn, error) {
-	masterBlockInfo, err := s.client.LookupBlock(
+	block, err := s.client.LookupBlock(
 		context.TODO(),
 		-1,
 		2305843009213693952,
@@ -82,59 +84,22 @@ func (s *TonBlockScanner) FetchTxs(
 		return types.TxIn{}, err
 	}
 
-	shardBlockInfos, err := s.client.GetBlockShardsInfo(
-		context.Background(),
-		masterBlockInfo,
-	)
-	if err != nil {
-		s.logger.Err(err).Msg("failed getting shard info")
-		return types.TxIn{}, err
-	}
-
 	txInItems := []types.TxInItem{}
 
-	for _, blockInfo := range shardBlockInfos {
-		s.logger.Debug().
-			Str("shard", fmt.Sprintf("%x", uint64(blockInfo.Shard))).
-			Uint32("height", blockInfo.SeqNo).
-			Msg("get txs")
-
-		seqno, found := s.lastBlocks[blockInfo.Shard]
-		if !found {
-			seqno = blockInfo.SeqNo
-			s.lastBlocks[blockInfo.Shard] = seqno
-		}
-
-		for seqno <= blockInfo.SeqNo {
-			info, err := s.client.LookupBlock(
-				context.Background(),
-				blockInfo.Workchain,
-				blockInfo.Shard,
-				seqno,
-			)
-			if err != nil {
-				s.logger.Err(err).Msg("failed to get shard block info")
-			}
-
-			txs, err := s.getBlockTxs(info)
-			if err != nil {
-				s.logger.Err(err).
-					Uint32("seqno", blockInfo.SeqNo).
-					Int32("workchain", blockInfo.Workchain).
-					Int64("shard", blockInfo.Shard).
-					Msg("failed getting txs")
-				return types.TxIn{}, err
-			}
-
-			txInItems = append(txInItems, txs...)
-			seqno++
-		}
-
-		s.lastBlocks[blockInfo.Shard] = seqno
-
+	if s.lastMaster == 0 {
+		s.lastMaster = block.SeqNo - 1
 	}
 
-	// Set master chain height for every tx
+	for seqno := s.lastMaster + 1; seqno <= block.SeqNo; seqno++ {
+		items, err := s.processMaster(seqno)
+		if err != nil {
+			s.logger.Err(err).Msg("failed to process master block")
+			return types.TxIn{}, err
+		}
+
+		txInItems = append(txInItems, items...)
+	}
+
 	for i := range txInItems {
 		txInItems[i].BlockHeight = fetchHeight
 	}
@@ -168,7 +133,80 @@ func (s *TonBlockScanner) FetchTxs(
 	return txIn, nil
 }
 
-func (s *TonBlockScanner) getBlockTxs(blockInfo *ton.BlockIDExt) ([]types.TxInItem, error) {
+func (s *TonBlockScanner) processMaster(masterSeqno uint32) ([]types.TxInItem, error) {
+	master, err := s.client.LookupBlock(
+		context.Background(),
+		-1,
+		-9223372036854775808,
+		masterSeqno,
+	)
+	if err != nil {
+		s.logger.Err(err).Msg("failed to lookup block")
+		return nil, err
+	}
+
+	txInItems := []types.TxInItem{}
+	id := shardId(master)
+
+	shards, err := s.client.GetBlockShardsInfo(context.Background(), master)
+	if err != nil {
+		s.logger.Err(err).Msg("failed to get shard blocks")
+		return nil, err
+	}
+
+	sort.Slice(shards, func(i, j int) bool {
+		return shards[i].Shard < shards[j].Shard
+	})
+
+	for _, shard := range shards {
+		shardSeqno, found := s.lastShards[shardId(shard)]
+		if found {
+			shardSeqno++
+		} else {
+			shardSeqno = shard.SeqNo
+		}
+
+		for ; shardSeqno <= shard.SeqNo; shardSeqno++ {
+			items, err := s.processShard(shard.Workchain, shard.Shard, shardSeqno)
+			if err != nil {
+				s.logger.Err(err).Msg("failed to process shard")
+				return nil, err
+			}
+
+			txInItems = append(txInItems, items...)
+		}
+	}
+
+	s.logger.Info().
+		Str("id", fmt.Sprintf("(%s,%d)", id, masterSeqno)).
+		Int("txs", len(txInItems)).
+		Msg("processing master")
+
+	s.lastMaster = masterSeqno
+
+	return txInItems, nil
+}
+
+func (s *TonBlockScanner) processShard(
+	workchain int32,
+	shard int64,
+	seqno uint32,
+) ([]types.TxInItem, error) {
+	block, err := s.client.LookupBlock(context.Background(), workchain, shard, seqno)
+	if err != nil {
+		s.logger.Err(err).Msg("failed to lookup block")
+		return nil, err
+	}
+
+	data, err := s.client.GetBlockData(context.Background(), block)
+	if err != nil {
+		s.logger.Err(err).Msg("failed to get block data")
+		return nil, err
+	}
+
+	info := data.BlockInfo
+	id := shardId(block)
+
 	expression, err := regexp.Compile("^(MIGRATE|RAGNAROK):.*")
 	if err != nil {
 		s.logger.Err(err).Msg("failed to compile regex")
@@ -177,7 +215,7 @@ func (s *TonBlockScanner) getBlockTxs(blockInfo *ton.BlockIDExt) ([]types.TxInIt
 
 	txInfos, _, err := s.client.GetBlockTransactionsV2(
 		context.TODO(),
-		blockInfo,
+		block,
 		1000,
 		nil,
 	)
@@ -193,7 +231,7 @@ func (s *TonBlockScanner) getBlockTxs(blockInfo *ton.BlockIDExt) ([]types.TxInIt
 
 		tx, err := s.client.GetTransaction(
 			context.TODO(),
-			blockInfo,
+			block,
 			addr,
 			txInfo.LT,
 		)
@@ -232,7 +270,7 @@ func (s *TonBlockScanner) getBlockTxs(blockInfo *ton.BlockIDExt) ([]types.TxInIt
 					continue
 				}
 
-				items, err := s.getTxInItems(tx, message)
+				items, err := s.processMessage(tx, message)
 				if err != nil {
 					s.logger.Err(err).Msg("failed to get outgoing txs")
 					continue
@@ -288,7 +326,7 @@ func (s *TonBlockScanner) getBlockTxs(blockInfo *ton.BlockIDExt) ([]types.TxInIt
 				continue
 			}
 
-			items, err := s.getTxInItems(tx, message)
+			items, err := s.processMessage(tx, message)
 			if err != nil {
 				s.logger.Err(err).Msg("failed to get incoming txs")
 			}
@@ -298,10 +336,33 @@ func (s *TonBlockScanner) getBlockTxs(blockInfo *ton.BlockIDExt) ([]types.TxInIt
 		}
 	}
 
+	// update internal history
+
+	s.lastShards[id] = seqno
+
+	if info.AfterSplit || info.AfterMerge {
+		s.logger.Info().Msg("merged or split shard")
+		parents, err := info.GetParentBlocks()
+		if err != nil {
+			s.logger.Err(err).Msg("failed to get parent blocks")
+			return nil, err
+		}
+		for _, parent := range parents {
+			delete(s.lastShards, shardId(parent))
+		}
+	}
+
+	s.logger.Info().
+		Bool("afterSplit", info.AfterSplit).
+		Bool("afterMerge", info.AfterMerge).
+		Str("id", fmt.Sprintf("(%s,%d)", id, seqno)).
+		Int("txs", len(txInItems)).
+		Msg("")
+
 	return txInItems, nil
 }
 
-func (s *TonBlockScanner) getTxInItems(
+func (s *TonBlockScanner) processMessage(
 	tx *tlb.Transaction,
 	message *tlb.InternalMessage,
 ) ([]types.TxInItem, error) {
@@ -354,4 +415,8 @@ func (s *TonBlockScanner) getTxInItems(
 	})
 
 	return txInItems, nil
+}
+
+func shardId(info *ton.BlockIDExt) string {
+	return fmt.Sprintf("%d,%x", info.Workchain, uint64(info.Shard))
 }
