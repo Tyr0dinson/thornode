@@ -27,7 +27,7 @@ func Test_TransactionSpec(t *testing.T) {
 			tx: Tx{
 				Body: TxBody{
 					Inputs: TxInputSet{
-						TxIns: []*TxInput{
+						TxIns: []TxInput{
 							NewTxInput("086838187822234a2153763a74daea139f29cf8753cb84f6e0c904e1db0ea3ab", 0, 2832783),
 						},
 					},
@@ -42,7 +42,7 @@ func Test_TransactionSpec(t *testing.T) {
 			tx: Tx{
 				Body: TxBody{
 					Inputs: TxInputSet{
-						TxIns: []*TxInput{
+						TxIns: []TxInput{
 							NewTxInput("086838187822234a2153763a74daea139f29cf8753cb84f6e0c904e1db0ea3ab", 0, 2832783),
 						},
 					},
@@ -60,7 +60,7 @@ func Test_TransactionSpec(t *testing.T) {
 			tx: Tx{
 				Body: TxBody{
 					Inputs: TxInputSet{
-						TxIns: []*TxInput{
+						TxIns: []TxInput{
 							NewTxInput("086838187822234a2153763a74daea139f29cf8753cb84f6e0c904e1db0ea3ab", 0, 2832783),
 						},
 					},

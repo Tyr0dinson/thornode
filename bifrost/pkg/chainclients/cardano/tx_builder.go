@@ -158,7 +158,7 @@ func (tb TxBuilder) MinFee() (fee uint64, err error) {
 }
 
 // AddInputs adds inputs to the transaction body
-func (tb *TxBuilder) AddInputs(inputs ...*TxInput) {
+func (tb *TxBuilder) AddInputs(inputs ...TxInput) {
 	tb.tx.AddInputs(inputs...)
 }
 

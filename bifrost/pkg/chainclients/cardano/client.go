@@ -349,20 +349,56 @@ func (c *Client) OnObservedTxIn(txIn types.TxInItem, blockHeight int64) {
 	panic("unimplemented")
 }
 
-func (c *Client) SignTx(tx types.TxOutItem, height int64) (signedBz, checkpoint []byte, _ *types.TxInItem, topErr error) {
-	fromAddr, err := tx.VaultPubKey.GetAddress(c.GetChain())
+func (c *Client) SignTx(tx types.TxOutItem, height int64) (signedBz, checkpoint []byte, txIn *types.TxInItem, err error) {
+	// TODO:
+	// tx.VaultPubKey is expected to be an ed25519 public key, but without eddsa vault key support it will be
+	// a secp256k1 pubkey. Ideally it should be fetched like so:
+	//
+	// fromAddr, err := tx.VaultPubKey.GetAddress(c.GetChain())
+	// if err != nil {
+	// 	topErr = fmt.Errorf("fail to get from pubkey %s: %w", tx.VaultPubKey.String(), err)
+	// 	return
+	// }
+	//
+	// Presently this won't work, so for now use the local key supplied via BIFROST_CARDANO_PRIV_KEY
+	fromAddr, err := cardano.PaymentOnlyMainnetAddressFromPubkey(c.localTestingKey.Public().(ed25519.PublicKey))
 	if err != nil {
-		topErr = fmt.Errorf("fail to get from pubkey %s: %w", tx.VaultPubKey.String(), err)
-		return
+		return nil, nil, nil, fmt.Errorf("fail to get vault address: %w", err)
+	}
+	toAddr, err := cardano.NewAddressFromBech32(tx.ToAddress.String())
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("fail to parse to recipient address: %w", err)
 	}
 	if len(tx.Coins) != 1 {
-		topErr = fmt.Errorf("expected 1 coin, got %d", len(tx.Coins))
-		return
+		return nil, nil, nil, fmt.Errorf("expected 1 coin, got %d", len(tx.Coins))
 	}
-	txBuilder := NewTxBuilder(c.protocol, nil)
-	// TODO
-	fmt.Println("txBuilder", txBuilder, "fromAddr", fromAddr)
-	return
+	txBuilder := NewTxBuilder(c.protocol, []ed25519.PrivateKey{c.localTestingKey})
+	// TODO: where are input txs specified in the call chain?  many input utxos may be required to satisify a transfer
+	txBuilder.AddInputs(TxInput{
+		TxHash: []byte(tx.InHash),
+		Index:  0,                                 // TODO how to obtain this?
+		Amount: uint(tx.Coins[0].Amount.Uint64()), // not strictly necessary, but used for fee calculation
+	})
+	txBuilder.AddOutputs(TxOutput{
+		Address: toAddr,
+		Amount:  uint(tx.Coins[0].Amount.Uint64()),
+	})
+	if err = txBuilder.SetMemo(tx.Memo); err != nil {
+		return nil, nil, nil, fmt.Errorf("fail to set memo: %w", err)
+	}
+	if err := txBuilder.AddChangeIfNeeded(fromAddr); err != nil {
+		return nil, nil, nil, fmt.Errorf("fail to add change: %w", err)
+	}
+	signedTx, err := txBuilder.Build()
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("fail to build tx: %w", err)
+	}
+	signedBz, err = signedTx.Bytes()
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("fail to marshal tx: %w", err)
+	}
+
+	return signedBz, nil, nil, nil
 }
 
 func (c *Client) Start(

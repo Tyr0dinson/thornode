@@ -98,7 +98,7 @@ func (t *Tx) CalculateAuxiliaryDataHash() error {
 }
 
 // AddInputs adds the inputs to the transaction body
-func (t *Tx) AddInputs(inputs ...*TxInput) {
+func (t *Tx) AddInputs(inputs ...TxInput) {
 	t.Body.Inputs.TxIns = append(t.Body.Inputs.TxIns, inputs...)
 }
 
@@ -109,7 +109,7 @@ func (t *Tx) AddOutputs(outputs ...TxOutput) {
 
 type TxInputSet struct {
 	cbor.Marshaler
-	TxIns []*TxInput
+	TxIns []TxInput
 }
 
 func (txI *TxInputSet) MarshalCBOR() ([]byte, error) {
@@ -161,10 +161,10 @@ type TxInput struct {
 }
 
 // NewTxInput creates and returns a *TxInput from Transaction Hash(Hex Encoded), Transaction Index and Amount.
-func NewTxInput(txHash string, txIx uint16, amount uint) *TxInput {
+func NewTxInput(txHash string, txIx uint16, amount uint) TxInput {
 	hash, _ := hex.DecodeString(txHash)
 
-	return &TxInput{
+	return TxInput{
 		TxHash: hash,
 		Index:  txIx,
 		Amount: amount,
