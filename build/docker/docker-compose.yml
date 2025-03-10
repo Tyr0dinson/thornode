@@ -550,7 +550,7 @@ services:
       - mocknet
       - mocknet-cluster
     restart: unless-stopped
-    image: ghcr.io/kocubinski/cardano-devnet:0.1.1
+    image: kocubinski/cardano-devnet:0.1.2
     ports:
       - 7007:7007 #n2c port
       - 3001:3001 #n2n port
