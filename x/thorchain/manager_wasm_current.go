@@ -29,25 +29,11 @@ type WasmMgrVCUR struct {
 
 // newWasmMgrVCUR create a new instance of Slasher
 func newWasmMgrVCUR(
-	ctx cosmos.Context,
 	keeper keeper.Keeper,
 	wasmKeeper wasmkeeper.Keeper,
 	permissions wasmpermissions.WasmPermissions,
 	eventMgr EventManager,
 ) (*WasmMgrVCUR, error) {
-	// We don't use wasmtypes.Params for permissioning.
-	// This just ensures that there is data available for wasmkeeper.Keeper.GetParams to retrieve
-	err := wasmKeeper.SetParams(ctx, wasmtypes.Params{
-		CodeUploadAccess: wasmtypes.AccessConfig{
-			Permission: 1,
-			Addresses:  []string{},
-		},
-		InstantiateDefaultPermission: 1,
-	})
-	if err != nil {
-		return nil, err
-	}
-
 	return &WasmMgrVCUR{
 		keeper:      keeper,
 		wasmKeeper:  wasmKeeper,
