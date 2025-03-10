@@ -1,6 +1,7 @@
 package cardano
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"crypto/tls"
 	"encoding/binary"
@@ -70,6 +71,17 @@ type Client struct {
 	localTestingKey ed25519.PrivateKey
 }
 
+func getNetworkMagic(cfg config.BifrostChainConfiguration) (uint32, error) {
+	if cfg.ChainNetwork == "" {
+		return 0, errors.New("chain network not set")
+	}
+	i, err := strconv.ParseUint(cfg.ChainNetwork, 10, 32)
+	if err != nil {
+		return 0, fmt.Errorf("error parsing chain network as uint, %w", err)
+	}
+	return uint32(i), nil
+}
+
 func NewClient(
 	thorKeys *thorclient.Keys,
 	cfg config.BifrostChainConfiguration,
@@ -90,16 +102,27 @@ func NewClient(
 	if err != nil {
 		return nil, fmt.Errorf("fail to create tss signer: %w", err)
 	}
-	_, err = thorKeys.GetPrivateKey()
+	privKey, err := thorKeys.GetPrivateKey()
 	if err != nil {
 		return nil, fmt.Errorf("fail to get private key: %w", err)
 	}
-	if os.Getenv("BIFROST_CARDANO_PRIV_KEY") != "" {
-		c.localTestingKey, err = cardano.PrivateKeyFromBech32(os.Getenv("BIFROST_CARDANO_PRIV_KEY"))
-		if err != nil {
-			return nil, fmt.Errorf("fail to parse private key: %w", err)
-		}
+	var buf bytes.Buffer
+	buf.Write(privKey.Bytes())
+	adaPubKey, adaPrivKey, err := ed25519.GenerateKey(&buf)
+	if err != nil {
+		return nil, fmt.Errorf("fail to generate ed25519 key")
 	}
+	c.localTestingKey = adaPrivKey
+	vaultAddr, err := c.getVaultAddress()
+	if err != nil {
+		return nil, fmt.Errorf("fail to get vault address: %w", err)
+	}
+	fmt.Printf("thorKeys:\n privKey: %x\n  pubKey: %x\n vaultAddress: %s",
+		privKey.Bytes(), privKey.PubKey().Bytes(),
+		vaultAddr.String(),
+	)
+	cardano.DeleteMeVaultAddress = vaultAddr
+	cardano.DeleteMeVaultPubKey = adaPubKey
 
 	var path string // if not set later, will in memory storage
 	c.logger.Info().Msgf("block scanner db path: %s", path)
@@ -113,23 +136,16 @@ func NewClient(
 	}
 
 	// create ouroboros connection
-	networkID := uint64(1)
-	if cfg.ChainNetwork != "" {
-		networkID, err = strconv.ParseUint(cfg.ChainNetwork, 10, 32)
-		if err != nil {
-			return nil, fmt.Errorf("error parsing chain network as uint, %w", err)
-		}
-	}
-	network, ok := ouroboros.NetworkById(uint8(networkID))
-	if !ok {
-		return nil, fmt.Errorf("invalid network id %d", networkID)
+	networkMagic, err := getNetworkMagic(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get network magic: %w", err)
 	}
 	c.networkError = make(chan error)
 	go func() {
 		for {
 			err := <-c.networkError
 			c.logger.Err(err).Msg("ouroboros network error")
-			time.Sleep(500)
+			time.Sleep(time.Millisecond * 500)
 		}
 	}()
 	networkLogger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
@@ -137,16 +153,14 @@ func NewClient(
 	}))
 
 	// create n2n connection
-	peer := network.BootstrapPeers[0]
-	addr := fmt.Sprintf("%s:%d", peer.Address, peer.Port)
-	n2nConn, err := c.dialTCP(addr)
+	n2nConn, err := c.dialTCP(c.config.RPCHost)
 	if err != nil {
 		return nil, fmt.Errorf("fail to dial n2n host: %w", err)
 	}
 	c.nodeConn, err = ouroboros.NewConnection(
 		ouroboros.WithPeerSharing(true),
 		ouroboros.WithConnection(n2nConn),
-		ouroboros.WithNetwork(network),
+		ouroboros.WithNetworkMagic(networkMagic),
 		ouroboros.WithLogger(networkLogger),
 		ouroboros.WithErrorChan(c.networkError),
 		ouroboros.WithNodeToNode(true),
@@ -161,7 +175,7 @@ func NewClient(
 	}
 
 	// create n2c connection
-	n2cConn, err := c.dialTCP(cfg.RPCHost)
+	n2cConn, err := c.dialTCP(cfg.CardanoN2CAddress)
 	if err != nil {
 		return nil, fmt.Errorf("fail to dial n2c host: %w", err)
 	}
@@ -169,7 +183,7 @@ func NewClient(
 		ouroboros.WithConnection(n2cConn),
 		ouroboros.WithErrorChan(c.networkError),
 		ouroboros.WithLogger(networkLogger),
-		ouroboros.WithNetwork(network),
+		ouroboros.WithNetworkMagic(networkMagic),
 		// ouroboros.WithLocalStateQueryConfig(localstatequery.NewConfig()),
 		// ouroboros.WithLocalTxSubmissionConfig(
 		// 	localtxsubmission.NewConfig(
@@ -240,7 +254,7 @@ func (c *Client) BroadcastTx(_ types.TxOutItem, _ []byte) (string, error) {
 }
 
 func (c *Client) ConfirmationCountReady(txIn types.TxIn) bool {
-	panic("unimplemented")
+	return true
 }
 
 func (c *Client) GetAccount(poolPubKey common.PubKey, height *big.Int) (common.Account, error) {
@@ -346,7 +360,8 @@ func (c *Client) IsBlockScannerHealthy() bool {
 }
 
 func (c *Client) OnObservedTxIn(txIn types.TxInItem, blockHeight int64) {
-	panic("unimplemented")
+	// TODO
+	// What to do here?
 }
 
 func (c *Client) SignTx(tx types.TxOutItem, height int64) (signedBz, checkpoint []byte, txIn *types.TxInItem, err error) {
@@ -456,7 +471,7 @@ func (c *Client) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
 			// c.logger.Warn().Msgf("skip tx with %d witnesses", len(tx.Witnesses().Vkey()))
 			continue
 		}
-		senderAddr, err := cardano.PaymentOnlyMainnetAddressFromPubkey(tx.Witnesses().Vkey()[0].Vkey)
+		senderAddr, err := c.getAddressFromPubkey(tx.Witnesses().Vkey()[0].Vkey)
 		if err != nil {
 			c.logger.Err(err).Msg("fail to get sender address")
 			continue
@@ -509,10 +524,37 @@ func (c *Client) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
 	}, nil
 }
 
-func (c *Client) isAsgardAddress(_ []byte) bool {
+func (c *Client) getVaultAddress() (cardano.Address, error) {
+	return c.getAddressFromPubkey(c.localTestingKey.Public().(ed25519.PublicKey))
+}
+
+func (c *Client) getAddressFromPubkey(pub []byte) (cardano.Address, error) {
+	networkMagic, err := getNetworkMagic(c.config)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get network magic: %w", err)
+	}
+	switch networkMagic {
+	case 764824073:
+		return cardano.PaymentOnlyMainnetAddressFromPubkey(pub)
+	case 42:
+		return cardano.PaymentOnlyTestnetAddressFromPubkey(pub)
+	default:
+	}
+	return nil, fmt.Errorf("unsupported network magic: %d", networkMagic)
+}
+
+func (c *Client) isAsgardAddress(addr []byte) bool {
 	// TODO
 	// ref impl: https://gitlab.com/thorchain/thornode/-/blob/develop/bifrost/pkg/chainclients/utxo/client_internal.go#L49
-	return false
+	//
+
+	// this a temporary hack until eddsa is live
+	vaultAddress, err := c.getVaultAddress()
+	if err != nil {
+		c.logger.Err(err).Msg("fail to get vault address")
+		return false
+	}
+	return bytes.Equal(addr, vaultAddress)
 }
 
 func (c *Client) chainSyncRollForwardHandler(

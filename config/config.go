@@ -204,6 +204,10 @@ func Init() {
 		"bifrost.chains.ADA.rpc_host",
 		"ADA_HOST",
 	))
+	assert(viper.BindEnv(
+		"bifrost.chains.ADA.cardano_n2c_address",
+		"ADA_N2C_ADDRESS",
+	))
 	assert(viper.BindEnv("bifrost.chains.GAIA.disabled", "GAIA_DISABLED"))
 	assert(viper.BindEnv("bifrost.chains.DOGE.disabled", "DOGE_DISABLED"))
 	assert(viper.BindEnv("bifrost.chains.LTC.disabled", "LTC_DISABLED"))
@@ -620,6 +624,8 @@ type BifrostChainConfiguration struct {
 	// AuthorizationBearer can be set to configure the RPC client with an API token that
 	// will be provided to the backend in an Authorization header.
 	AuthorizationBearer string `mapstructure:"authorization_bearer"`
+
+	CardanoN2CAddress string `mapstructure:"cardano_n2c_address"`
 
 	// UTXO contains UTXO chain specific configuration.
 	UTXO struct {

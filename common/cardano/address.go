@@ -10,19 +10,43 @@ import (
 
 const blake2b224Len = 28
 
+var (
+	DeleteMeVaultAddress Address
+	DeleteMeVaultPubKey  ed25519.PublicKey
+)
+
 type Address []byte
 
 // String returns the bech32 representation of the address
 func (addr Address) String() string {
+	header := addr[0]
+	network := header & 0x0F
+	var hrp string
+	if network == 0 {
+		hrp = "addr_test"
+	} else if network == 1 {
+		hrp = "addr"
+	} else {
+		panic(fmt.Sprintf("invalid network: %d", network))
+	}
+
 	addr5Bit, err := bech32.ConvertBits(addr, 8, 5, true)
 	if err != nil {
 		panic(err)
 	}
-	res, err := bech32.Encode("addr", addr5Bit)
+	res, err := bech32.Encode(hrp, addr5Bit)
 	if err != nil {
 		panic(err)
 	}
 	return res
+}
+
+func NewThorPubKeyBech32(pubKey ed25519.PublicKey) (string, error) {
+	bz, err := bech32.ConvertBits(pubKey, 8, 5, true)
+	if err != nil {
+		return "", err
+	}
+	return bech32.Encode("tthorpub", bz)
 }
 
 func NewAddressFromBech32(addrBech32 string) (Address, error) {

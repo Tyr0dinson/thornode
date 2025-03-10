@@ -202,20 +202,23 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 		}
 		addressString = addr.String()
 	case ADAChain:
-		// assumed to be an ed25519 pubkey!
-		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, string(p))
+		_, data, err := bech32.Decode(string(p))
 		if err != nil {
-			return NoAddress, err
+			return NoAddress, fmt.Errorf("fail to decode the address, err: %w", err)
+		}
+		pub, err := bech32.ConvertBits(data, 5, 8, false)
+		if err != nil {
+			return NoAddress, fmt.Errorf("fail to convert bits, err: %w", err)
 		}
 		var addr cardano.Address
 		switch chainNetwork {
 		case MainNet:
-			addr, err = cardano.PaymentOnlyMainnetAddressFromPubkey(pk.Bytes())
+			addr, err = cardano.PaymentOnlyMainnetAddressFromPubkey(pub)
 		default:
-			addr, err = cardano.PaymentOnlyTestnetAddressFromPubkey(pk.Bytes())
+			addr, err = cardano.PaymentOnlyTestnetAddressFromPubkey(pub)
 		}
 		if err != nil {
-			return NoAddress, fmt.Errorf("fail to encode the address, err: %w", err)
+			return NoAddress, fmt.Errorf("fail to create address from pubkey, err: %w", err)
 		}
 		addressString = addr.String()
 	default:

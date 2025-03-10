@@ -339,9 +339,9 @@ bifrost:
       block_scanner:
         <<: *default-block-scanner
         chain_id: ADA
-        start_block_height: 11561640
       scanner_leveldb: *default-leveldb
       utxo: *utxo
+      chain_network: 42
 
 ########################################################################################
 # Thor
