@@ -2,6 +2,7 @@ package ton
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -9,7 +10,7 @@ import (
 	"golang.org/x/crypto/ed25519"
 	"math/big"
 	"slices"
-	"strings"
+	"sort"
 	"sync"
 	"time"
 
@@ -38,8 +39,9 @@ import (
 )
 
 const (
-	V3R2CodeHex = "B5EE9C724101010100710000DEFF0020DD2082014C97BA218201339CBAB19F71B0ED44D0D31FD31F31D70BFFE304E0A4F2608308D71820D31FD31FD31FF82313BBF263ED44D0D31FD31FD3FFD15132BAF2A15144BAF2A204F901541055F910F2A3F8009320D74A96D307D402FB00E8D101A4C8CB1FCB1FCBFFC9ED5410BD6DAD"
-	TxFee       = 5_000_000 // 0.005 TON
+	V3R2CodeHex              = "B5EE9C724101010100710000DEFF0020DD2082014C97BA218201339CBAB19F71B0ED44D0D31FD31F31D70BFFE304E0A4F2608308D71820D31FD31FD31FF82313BBF263ED44D0D31FD31FD3FFD15132BAF2A15144BAF2A204F901541055F910F2A3F8009320D74A96D307D402FB00E8D101A4C8CB1FCB1FCBFFC9ED5410BD6DAD"
+	TxFee                    = 5_000_000 // 0.005 TON
+	ConfirmationBlocks int64 = 10
 )
 
 type TonClient struct {
@@ -58,7 +60,8 @@ type TonClient struct {
 	wg                  *sync.WaitGroup
 	stopchan            chan struct{}
 	walletCode          *cell.Cell
-	sentMessages        map[string]struct{}
+	retryHandler        *RetryHandler
+	// sentMessages        map[string]struct{}
 }
 
 // NewTonClient creates a new instance of a TON chain client
@@ -80,7 +83,9 @@ func NewTonClient(
 		bridge:       bridge,
 		wg:           &sync.WaitGroup{},
 		stopchan:     make(chan struct{}),
-		sentMessages: map[string]struct{}{},
+		retryHandler: NewRetryHandler(),
+		// retryHeights: map[string]int64{},
+		// sentMessages: map[string]struct{}{},
 	}
 
 	ctx := context.Background()
@@ -349,7 +354,9 @@ func (c *TonClient) ConfirmationCountReady(_ types.TxIn) bool {
 }
 
 // OnObservedTxIn is called when a new observed tx is received.
-func (c *TonClient) OnObservedTxIn(txIn types.TxInItem, _ int64) {
+func (c *TonClient) OnObservedTxIn(txIn types.TxInItem, height int64) {
+	c.logger.Info().Msgf("OnObservedTxIn height: %d", height)
+
 	memo, err := tcmemo.ParseMemo(common.LatestVersion, txIn.Memo)
 	if err != nil {
 		// Debug log only as ParseMemo error is expected for THORName inbounds.
@@ -359,11 +366,11 @@ func (c *TonClient) OnObservedTxIn(txIn types.TxInItem, _ int64) {
 
 	d, e := json.Marshal(txIn)
 	if e != nil {
-		c.logger.Debug().Err(e).Msgf("fail to marshal memo: %s", txIn.Memo)
+		c.logger.Debug().Err(e).Msgf("fail to marshal memo: %s\n", txIn.Memo)
 		return
 	}
 
-	fmt.Printf(string(d))
+	fmt.Println(string(d))
 
 	validTypes := map[tcmemo.TxType]struct{}{
 		tcmemo.TxMigrate:  {},
@@ -377,16 +384,8 @@ func (c *TonClient) OnObservedTxIn(txIn types.TxInItem, _ int64) {
 
 	cacheHash := txIn.CacheHash(c.config.ChainID, common.BlankTxID.String())
 
-	delete(c.sentMessages, cacheHash)
+	c.retryHandler.Confirm(cacheHash, txIn.Tx)
 
-	err = c.signerCacheManager.SetSigned(
-		cacheHash,
-		txIn.CacheVault(c.GetChain()),
-		txIn.Tx,
-	)
-	if err != nil {
-		c.logger.Err(err).Msg("failed to update signer cache")
-	}
 }
 
 // SignTx returns the signed transaction.
@@ -417,11 +416,46 @@ func (c *TonClient) BroadcastTx(
 	txOut types.TxOutItem,
 	txBytes []byte,
 ) (string, error) {
+	height, err := c.GetHeight()
+	if err != nil {
+		c.logger.Err(err).Msg("failed to get height")
+		return "", err
+	}
+
 	cacheHash := txOut.CacheHash()
-	_, found := c.sentMessages[cacheHash]
+	state, found := c.retryHandler.Get(cacheHash)
 	if found {
-		c.logger.Info().Msg("transaction already sent")
-		return "", nil
+		if state.Confirmed {
+			c.retryHandler.Remove(cacheHash)
+			c.logger.Info().Msg("transaction already confirmed, ignoring...")
+
+			err = c.signerCacheManager.SetSigned(
+				cacheHash,
+				txOut.CacheVault(c.GetChain()),
+				state.TxId,
+			)
+			if err != nil {
+				c.logger.Err(err).Msg("failed to update signer cache")
+			}
+
+			return state.TxId, nil
+		}
+
+		now := time.Now().UTC()
+		if now.After(state.DiscardAt) {
+			c.retryHandler.Remove(cacheHash)
+			c.logger.Info().
+				Time("at", state.DiscardAt).
+				Time("now", now).
+				Msg("tx ttl reached, discarding...")
+			return "", fmt.Errorf("tx timeout reached")
+		}
+
+		if state.RetryHeight > height {
+			time.Sleep(time.Second * 2)
+			c.logger.Info().Msgf("current: %d, needed: %d", height, state.RetryHeight)
+			return "", fmt.Errorf("retry height not reached")
+		}
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
@@ -498,20 +532,58 @@ func (c *TonClient) BroadcastTx(
 		Body:      body,
 	}
 
-	_, _, _, err = c.api.SendExternalMessageWaitTransaction(ctx, msg)
+	tx, _, _, err := c.api.SendExternalMessageWaitTransaction(ctx, msg)
 
-	if err != nil {
-		if strings.HasSuffix(err.Error(), ": duplicate message") {
-			c.logger.Info().Err(err).Msg("message already sent")
-		} else {
-			c.logger.Err(err).Msg("failed to send external message")
+	// if err != nil {
+	// 	if strings.HasSuffix(err.Error(), ": duplicate message") {
+	// 		c.logger.Info().Err(err).Msg("message already sent")
+	// 	} else {
+	// 		c.logger.Err(err).Msg("failed to send external message")
+	// 	}
+	// }
+
+	txHash := ""
+
+	if err == nil {
+		c.logger.Info().Msg("Broadcasted tx")
+		txHash = base64.StdEncoding.EncodeToString(tx.Hash)
+	} else {
+		// maybe this node was to slow and tx is already sent,
+		// try to find tx from account history
+		c.logger.Err(err).Msg("Try to find tx from history")
+
+		toAddress, err := address.ParseAddr(c.GetAddress(vaultPubKey))
+		if err != nil {
+			c.logger.Err(err).Msg("failed to parse vault address")
+			return "", err
+		}
+
+		c.api.WaitForBlock(block.SeqNo + 1)
+
+		txHash, err = c.findTx(
+			fromAddress,
+			toAddress,
+			txOut.Memo,
+		)
+		if err != nil {
+			c.retryHandler.Reschedule(cacheHash, height+1)
 			return "", err
 		}
 	}
 
-	c.sentMessages[cacheHash] = struct{}{}
+	c.retryHandler.Remove(cacheHash)
 
-	return "", nil
+	err = c.signerCacheManager.SetSigned(
+		cacheHash,
+		txOut.CacheVault(c.GetChain()),
+		txHash,
+	)
+	if err != nil {
+		c.logger.Err(err).Msg("failed to update signer cache")
+	}
+
+	return txHash, nil
+
 }
 
 func (c *TonClient) ShouldReportSolvency(height int64) bool {
@@ -587,23 +659,23 @@ func (c *TonClient) ReportSolvency(height int64) error {
 }
 
 func (c *TonClient) createAndSignTx(
-	tx types.TxOutItem,
+	txOutItem types.TxOutItem,
 ) ([]byte, error) {
-	coin := tx.Coins.GetCoin(common.TONAsset)
+	coin := txOutItem.Coins.GetCoin(common.TONAsset)
 
 	if coin.IsEmpty() {
 		err := fmt.Errorf("no TON coins found")
-		c.logger.Err(err).Interface("coins", tx.Coins).Msg("")
+		c.logger.Err(err).Interface("coins", txOutItem.Coins).Msg("")
 		return nil, err
 	}
 
-	comment, err := wallet.CreateCommentCell(tx.Memo)
+	comment, err := wallet.CreateCommentCell(txOutItem.Memo)
 	if err != nil {
 		c.logger.Err(err).Msg("failed to create comment")
 		return nil, err
 	}
 
-	vaultPubKey, err := c.getEddsaVaultKey(tx.VaultPubKey)
+	vaultPubKey, err := c.getEddsaVaultKey(txOutItem.VaultPubKey)
 	if err != nil {
 		c.logger.Err(err).Msg("failed to get eddsa vault key")
 		return nil, err
@@ -615,7 +687,7 @@ func (c *TonClient) createAndSignTx(
 		return nil, err
 	}
 
-	toAddress, err := address.ParseAddr(string(tx.ToAddress))
+	toAddress, err := address.ParseAddr(string(txOutItem.ToAddress))
 	if err != nil {
 		c.logger.Err(err).Msg("failed to parse destination address")
 		return nil, err
@@ -658,10 +730,12 @@ func (c *TonClient) createAndSignTx(
 	}
 
 	period := time.Second * 30
-	timeout := time.Now().
+	timeout := time.Now().UTC().
 		Truncate(period).
 		Add(period * -1).
-		Add(time.Minute * 3).UTC()
+		Add(time.Minute * 3)
+
+	c.logger.Info().Msgf("Timeout: %v", timeout.Format(time.RFC3339))
 
 	payload := cell.BeginCell()
 
@@ -722,6 +796,8 @@ func (c *TonClient) createAndSignTx(
 		return nil, err
 	}
 
+	c.retryHandler.Add(txOutItem.CacheHash(), 0, timeout)
+
 	return body.EndCell().ToBOC(), nil
 }
 
@@ -767,4 +843,82 @@ func (c *TonClient) getEddsaVaultKey(pubKey common.PubKey) (common.PubKey, error
 	}
 
 	return common.EmptyPubKey, fmt.Errorf("vault not found")
+}
+
+func (c *TonClient) findTx(from, to *address.Address, memo string) (string, error) {
+	c.logger.Info().Msgf("findTx: %s %s %s\n", from, to, memo)
+
+	ctx := context.Background()
+
+	block, err := c.api.GetMasterchainInfo(ctx)
+	if err != nil {
+		c.logger.Err(err).Msg("failed to get master chain info")
+		return "", err
+	}
+
+	account, err := c.api.GetAccount(ctx, block, from)
+	if err != nil {
+		c.logger.Err(err).Msg("failed to get account")
+		return "", err
+	}
+
+	txs, err := c.api.ListTransactions(ctx, from, 20, account.LastTxLT, account.LastTxHash)
+	if err != nil {
+		c.logger.Err(err).Msg("failed to list transactions")
+	}
+
+	sort.SliceStable(txs, func(i, j int) bool {
+		return txs[i].LT > txs[j].LT
+	})
+
+	for _, tx := range txs {
+		c.logger.Info().Msg(tx.String())
+		if tx.IO.Out == nil {
+			continue
+		}
+
+		msgs, err := tx.IO.Out.ToSlice()
+		if err != nil {
+			c.logger.Err(err).Msg("failed to convert io out to slice")
+			continue
+		}
+
+		for _, msg := range msgs {
+			if msg.MsgType != tlb.MsgTypeInternal {
+				continue
+			}
+
+			intMsg := msg.AsInternal()
+
+			src := intMsg.SrcAddr
+			src.SetTestnetOnly(true)
+			src.SetBounce(false)
+			dst := intMsg.SrcAddr
+			dst.SetTestnetOnly(true)
+			dst.SetBounce(false)
+
+			c.logger.Info().Msgf(
+				"> %s, %s, %s",
+				src.String(),
+				dst.String(),
+				intMsg.Comment(),
+			)
+
+			if !src.Equals(from) {
+				continue
+			}
+
+			if !dst.Equals(to) {
+				continue
+			}
+
+			if intMsg.Comment() != memo {
+				continue
+			}
+
+			return base64.StdEncoding.EncodeToString(tx.Hash), nil
+		}
+	}
+
+	return "", fmt.Errorf("transaction not found")
 }

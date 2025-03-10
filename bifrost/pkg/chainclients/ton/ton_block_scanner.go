@@ -63,7 +63,7 @@ func (s *TonBlockScanner) GetHeight() (int64, error) {
 		return 0, err
 	}
 
-	return int64(info.SeqNo) - 1, nil
+	return int64(info.SeqNo) - ConfirmationBlocks, nil
 }
 
 func (s *TonBlockScanner) FetchMemPool(_ int64) (types.TxIn, error) {
