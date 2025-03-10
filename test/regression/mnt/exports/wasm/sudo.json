@@ -294,7 +294,7 @@
             "creator": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
             "instantiate_config": {
               "addresses": [],
-              "permission": "Nobody"
+              "permission": "Everybody"
             }
           },
           "pinned": true
@@ -337,9 +337,9 @@
       "params": {
         "code_upload_access": {
           "addresses": [],
-          "permission": "Nobody"
+          "permission": "Everybody"
         },
-        "instantiate_default_permission": "Nobody"
+        "instantiate_default_permission": "Everybody"
       },
       "sequences": [
         {
