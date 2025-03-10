@@ -283,6 +283,7 @@ func (pkm *PubKeyManager) updatePubKeys() {
 }
 
 func matchAddress(addr string, chain common.Chain, key common.PubKey) (bool, common.ChainPoolInfo) {
+	// TODO: Remove me; this is a big hack for single validator signing in test without full EDDSA support
 	if chain == common.ADAChain {
 		thorPubKey, err := cardano.NewThorPubKeyBech32(cardano.DeleteMeVaultPubKey)
 		if err != nil {

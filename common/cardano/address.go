@@ -11,6 +11,7 @@ import (
 const blake2b224Len = 28
 
 var (
+	// TODO: Remove me; this is a big hack for single validator signing in test without full EDDSA support
 	DeleteMeVaultAddress Address
 	DeleteMeVaultPubKey  ed25519.PublicKey
 )

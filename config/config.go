@@ -497,16 +497,16 @@ type Bifrost struct {
 
 func (b Bifrost) GetChains() map[common.Chain]BifrostChainConfiguration {
 	return map[common.Chain]BifrostChainConfiguration{
-		// common.AVAXChain: b.Chains.AVAX,
-		// common.BCHChain:  b.Chains.BCH,
-		// common.BSCChain:  b.Chains.BSC,
-		// common.BTCChain:  b.Chains.BTC,
-		// common.DOGEChain: b.Chains.DOGE,
-		// common.ETHChain:  b.Chains.ETH,
-		// common.GAIAChain: b.Chains.GAIA,
-		// common.LTCChain:  b.Chains.LTC,
-		// common.BASEChain: b.Chains.BASE,
-		common.ADAChain: b.Chains.ADA,
+		common.AVAXChain: b.Chains.AVAX,
+		common.BCHChain:  b.Chains.BCH,
+		common.BSCChain:  b.Chains.BSC,
+		common.BTCChain:  b.Chains.BTC,
+		common.DOGEChain: b.Chains.DOGE,
+		common.ETHChain:  b.Chains.ETH,
+		common.GAIAChain: b.Chains.GAIA,
+		common.LTCChain:  b.Chains.LTC,
+		common.BASEChain: b.Chains.BASE,
+		common.ADAChain:  b.Chains.ADA,
 	}
 }
 
