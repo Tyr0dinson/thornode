@@ -42,6 +42,8 @@ const (
 	V3R2CodeHex              = "B5EE9C724101010100710000DEFF0020DD2082014C97BA218201339CBAB19F71B0ED44D0D31FD31F31D70BFFE304E0A4F2608308D71820D31FD31FD31FF82313BBF263ED44D0D31FD31FD3FFD15132BAF2A15144BAF2A204F901541055F910F2A3F8009320D74A96D307D402FB00E8D101A4C8CB1FCB1FCBFFC9ED5410BD6DAD"
 	TxFee                    = 5_000_000 // 0.005 TON
 	ConfirmationBlocks int64 = 10
+	TimestampAccuracy        = 10 * time.Second
+	TimestampValidity        = 5 * time.Minute
 )
 
 type TonClient struct {
@@ -60,8 +62,6 @@ type TonClient struct {
 	wg                  *sync.WaitGroup
 	stopchan            chan struct{}
 	walletCode          *cell.Cell
-	retryHandler        *RetryHandler
-	// sentMessages        map[string]struct{}
 }
 
 // NewTonClient creates a new instance of a TON chain client
@@ -77,15 +77,12 @@ func NewTonClient(
 	logger := log.With().Str("module", config.ChainID.String()).Logger()
 
 	client := TonClient{
-		logger:       logger,
-		chainId:      config.ChainID.String(),
-		config:       config,
-		bridge:       bridge,
-		wg:           &sync.WaitGroup{},
-		stopchan:     make(chan struct{}),
-		retryHandler: NewRetryHandler(),
-		// retryHeights: map[string]int64{},
-		// sentMessages: map[string]struct{}{},
+		logger:   logger,
+		chainId:  config.ChainID.String(),
+		config:   config,
+		bridge:   bridge,
+		wg:       &sync.WaitGroup{},
+		stopchan: make(chan struct{}),
 	}
 
 	ctx := context.Background()
@@ -382,10 +379,14 @@ func (c *TonClient) OnObservedTxIn(txIn types.TxInItem, height int64) {
 		return
 	}
 
-	cacheHash := txIn.CacheHash(c.config.ChainID, common.BlankTxID.String())
-
-	c.retryHandler.Confirm(cacheHash, txIn.Tx)
-
+	err = c.signerCacheManager.SetSigned(
+		txIn.CacheHash(c.config.ChainID, common.BlankTxID.String()),
+		txIn.CacheVault(c.GetChain()),
+		txIn.Tx,
+	)
+	if err != nil {
+		c.logger.Err(err).Msg("failed to update signer cache")
+	}
 }
 
 // SignTx returns the signed transaction.
@@ -393,10 +394,7 @@ func (c *TonClient) SignTx(
 	txOutItem types.TxOutItem,
 	_ int64,
 ) ([]byte, []byte, *types.TxInItem, error) {
-	cacheHash := txOutItem.CacheHash()
-
-	txOutItem.CacheHash()
-	if c.signerCacheManager.HasSigned(cacheHash) {
+	if c.signerCacheManager.HasSigned(txOutItem.CacheHash()) {
 		c.logger.Info().
 			Interface("tx", txOutItem).
 			Msg("transaction already signed, ignoring...")
@@ -416,48 +414,6 @@ func (c *TonClient) BroadcastTx(
 	txOut types.TxOutItem,
 	txBytes []byte,
 ) (string, error) {
-	height, err := c.GetHeight()
-	if err != nil {
-		c.logger.Err(err).Msg("failed to get height")
-		return "", err
-	}
-
-	cacheHash := txOut.CacheHash()
-	state, found := c.retryHandler.Get(cacheHash)
-	if found {
-		if state.Confirmed {
-			c.retryHandler.Remove(cacheHash)
-			c.logger.Info().Msg("transaction already confirmed, ignoring...")
-
-			err = c.signerCacheManager.SetSigned(
-				cacheHash,
-				txOut.CacheVault(c.GetChain()),
-				state.TxId,
-			)
-			if err != nil {
-				c.logger.Err(err).Msg("failed to update signer cache")
-			}
-
-			return state.TxId, nil
-		}
-
-		now := time.Now().UTC()
-		if now.After(state.DiscardAt) {
-			c.retryHandler.Remove(cacheHash)
-			c.logger.Info().
-				Time("at", state.DiscardAt).
-				Time("now", now).
-				Msg("tx ttl reached, discarding...")
-			return "", fmt.Errorf("tx timeout reached")
-		}
-
-		if state.RetryHeight > height {
-			time.Sleep(time.Second * 2)
-			c.logger.Info().Msgf("current: %d, needed: %d", height, state.RetryHeight)
-			return "", fmt.Errorf("retry height not reached")
-		}
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 	defer cancel()
 
@@ -534,21 +490,13 @@ func (c *TonClient) BroadcastTx(
 
 	tx, _, _, err := c.api.SendExternalMessageWaitTransaction(ctx, msg)
 
-	// if err != nil {
-	// 	if strings.HasSuffix(err.Error(), ": duplicate message") {
-	// 		c.logger.Info().Err(err).Msg("message already sent")
-	// 	} else {
-	// 		c.logger.Err(err).Msg("failed to send external message")
-	// 	}
-	// }
-
 	txHash := ""
 
 	if err == nil {
 		c.logger.Info().Msg("Broadcasted tx")
 		txHash = base64.StdEncoding.EncodeToString(tx.Hash)
 	} else {
-		// maybe this node was to slow and tx is already sent,
+		// maybe this node was too slow and the tx is already sent,
 		// try to find tx from account history
 		c.logger.Err(err).Msg("Try to find tx from history")
 
@@ -566,15 +514,12 @@ func (c *TonClient) BroadcastTx(
 			txOut.Memo,
 		)
 		if err != nil {
-			c.retryHandler.Reschedule(cacheHash, height+1)
 			return "", err
 		}
 	}
 
-	c.retryHandler.Remove(cacheHash)
-
 	err = c.signerCacheManager.SetSigned(
-		cacheHash,
+		txOut.CacheHash(),
 		txOut.CacheVault(c.GetChain()),
 		txHash,
 	)
@@ -729,11 +674,10 @@ func (c *TonClient) createAndSignTx(
 		}
 	}
 
-	period := time.Second * 30
 	timeout := time.Now().UTC().
-		Truncate(period).
-		Add(period * -1).
-		Add(time.Minute * 3)
+		Truncate(TimestampAccuracy).
+		Add(TimestampAccuracy * -1).
+		Add(TimestampValidity)
 
 	c.logger.Info().Msgf("Timeout: %v", timeout.Format(time.RFC3339))
 
@@ -795,8 +739,6 @@ func (c *TonClient) createAndSignTx(
 		c.logger.Err(err).Msg("failed to store payload")
 		return nil, err
 	}
-
-	c.retryHandler.Add(txOutItem.CacheHash(), 0, timeout)
 
 	return body.EndCell().ToBOC(), nil
 }
@@ -893,6 +835,7 @@ func (c *TonClient) findTx(from, to *address.Address, memo string) (string, erro
 			src := intMsg.SrcAddr
 			src.SetTestnetOnly(true)
 			src.SetBounce(false)
+
 			dst := intMsg.SrcAddr
 			dst.SetTestnetOnly(true)
 			dst.SetBounce(false)
