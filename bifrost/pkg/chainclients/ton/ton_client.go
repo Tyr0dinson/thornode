@@ -2,6 +2,7 @@ package ton
 
 import (
 	"context"
+	"cosmossdk.io/math"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -288,6 +289,12 @@ func (c *TonClient) GetAccountByAddress(
 		return common.Account{}, err
 	}
 
+	asset, err := common.NewAsset("TON.TON")
+	if err != nil {
+		c.logger.Err(err).Msg("failed to create asset")
+		return common.Account{}, err
+	}
+
 	account, err := c.api.GetAccount(context.Background(), info, tonAddress)
 	if err != nil {
 		c.logger.Err(err).Msg("failed to get account")
@@ -295,15 +302,14 @@ func (c *TonClient) GetAccountByAddress(
 	}
 
 	if account.State == nil {
-		msg := "account not initialized"
-		c.logger.Warn().Msg(msg)
-		return common.Account{}, fmt.Errorf(msg)
-	}
-
-	asset, err := common.NewAsset("TON.TON")
-	if err != nil {
-		c.logger.Err(err).Msg("failed to create asset")
-		return common.Account{}, err
+		c.logger.Warn().Msg("account not initialized")
+		return common.Account{
+			Coins: []common.Coin{{
+				Asset:  asset,
+				Amount: math.NewUint(0),
+				// Decimals: int64(account.State.Balance.Decimals()),
+			}},
+		}, nil
 	}
 
 	amount := toThor(account.State.Balance.Nano())
@@ -474,7 +480,7 @@ func (c *TonClient) BroadcastTx(
 
 		stateInit = &tlb.StateInit{
 			Data: cell.BeginCell().
-				MustStoreUInt(0, 32).                               // seqno
+				MustStoreUInt(0, 32). // seqno
 				MustStoreUInt(uint64(wallet.DefaultSubwallet), 32). // sub wallet
 				MustStoreSlice(pubKey.Bytes(), 256).
 				EndCell(),
@@ -532,7 +538,7 @@ func (c *TonClient) BroadcastTx(
 }
 
 func (c *TonClient) ShouldReportSolvency(height int64) bool {
-	return height%10 == 0
+	return height%20 == 19
 }
 
 func (c *TonClient) ReportSolvency(height int64) error {
