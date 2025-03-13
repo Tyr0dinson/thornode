@@ -62,6 +62,7 @@ type Keys interface {
 }
 
 // Algorithm represents supported cryptographic algorithms.
+//go:generate stringer -type=CryptoAlgorithm
 type CryptoAlgorithm int
 
 const (
@@ -70,15 +71,3 @@ const (
 	// ED25519 represents the Ed25519 elliptic curve algorithm.
 	ED25519
 )
-
-// String returns the string representation of the CryptoAlgorithm.
-func (a CryptoAlgorithm) String() string {
-	switch a {
-	case SECP256K1:
-		return "secp256k1"
-	case ED25519:
-		return "ed25519"
-	default:
-		return "unknown"
-	}
-}
