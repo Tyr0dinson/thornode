@@ -62,6 +62,7 @@ type Keys interface {
 }
 
 // Algorithm represents supported cryptographic algorithms.
+//
 //go:generate stringer -type=CryptoAlgorithm
 type CryptoAlgorithm int
 
