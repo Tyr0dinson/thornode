@@ -382,6 +382,8 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signedTx, c
 				},
 			},
 		}
+	} else {
+		return nil, nil, nil, fmt.Errorf("tx out memo is empty")
 	}
 
 	txBytes, err := c.signMsg(msg, tx.VaultPubKey)
