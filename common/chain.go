@@ -278,7 +278,7 @@ func (c Chain) DustThreshold() cosmos.Uint {
 		//    2. to burn this amount on churns of each XRP vault, effectively leaving it behind as it cannot be transferred, but still transferring all other XRP
 		// On churns, we can optionally delete the account to recover an additional .8 XRP, but would increases code complexity and will remove related ledger entries
 		// Comparing to BTC, this dust threshold should be reasonable.
-		return cosmos.NewUint(100_000_000) // 1 XRP
+		return cosmos.NewUint(One) // 1 XRP
 	default:
 		return cosmos.ZeroUint()
 	}
