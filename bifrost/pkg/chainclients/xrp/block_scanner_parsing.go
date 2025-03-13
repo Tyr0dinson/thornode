@@ -32,22 +32,22 @@ func (c *XrpBlockScanner) processPayment(flatTx map[string]any) (*transaction.Pa
 	var memoData []byte
 	if flatTx["Memos"] != nil {
 		// trunk-ignore(golangci-lint/govet): shadow
-		memos, ok := flatTx["Memos"].([]interface{})
+		memos, ok := flatTx["Memos"].([]any)
 		if !ok {
-			return nil, fmt.Errorf("cannot cast memos to []interface{}")
+			return nil, fmt.Errorf("cannot cast memos to []any")
 		}
 		// optional: add filter for vault addresses
 		// if more than 1 memo exist, we only use the first
 		if len(memos) < 1 {
 			return nil, fmt.Errorf("memos is empty")
 		}
-		memoObj, ok := memos[0].(map[string]interface{})
+		memoObj, ok := memos[0].(map[string]any)
 		if !ok {
-			return nil, fmt.Errorf("cannot cast memos[0] to map[string]interface{}")
+			return nil, fmt.Errorf("cannot cast memos[0] to map[string]any")
 		}
-		memo, ok := memoObj["Memo"].(map[string]interface{})
+		memo, ok := memoObj["Memo"].(map[string]any)
 		if !ok {
-			return nil, fmt.Errorf("cannot cast memo to map[string]interface{}")
+			return nil, fmt.Errorf("cannot cast memo to map[string]any")
 		}
 		memoDataHex, ok := memo["MemoData"].(string)
 		if !ok {

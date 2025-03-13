@@ -26,9 +26,9 @@ func TestProcessPayment(t *testing.T) {
 				"Fee":             "10",
 				"Account":         "rSender123",
 				"Destination":     "rReceiver456",
-				"Memos": []interface{}{
-					map[string]interface{}{
-						"Memo": map[string]interface{}{
+				"Memos": []any{
+					map[string]any{
+						"Memo": map[string]any{
 							"MemoData": "48656C6C6F", // "Hello" in hex
 						},
 					},
@@ -91,7 +91,7 @@ func TestProcessPayment(t *testing.T) {
 			},
 			want:       nil,
 			wantErr:    true,
-			wantErrStr: "cannot cast memos to []interface{}",
+			wantErrStr: "cannot cast memos to []any",
 		},
 		{
 			name: "invalid memo object",
@@ -104,7 +104,7 @@ func TestProcessPayment(t *testing.T) {
 			},
 			want:       nil,
 			wantErr:    true,
-			wantErrStr: "cannot cast memos[0] to map[string]interface{}",
+			wantErrStr: "cannot cast memos[0] to map[string]any",
 		},
 		{
 			name: "invalid memo map structure",
@@ -119,7 +119,7 @@ func TestProcessPayment(t *testing.T) {
 			},
 			want:       nil,
 			wantErr:    true,
-			wantErrStr: "cannot cast memo to map[string]interface{}",
+			wantErrStr: "cannot cast memo to map[string]any",
 		},
 		{
 			name: "invalid MemoData type",
@@ -520,7 +520,7 @@ func TestParseAmountFromTx(t *testing.T) {
 		},
 		{
 			name: "valid issued currency amount",
-			amount: map[string]interface{}{
+			amount: map[string]any{
 				"value":    "100",
 				"currency": "USD",
 				"issuer":   "rIssuer123",
