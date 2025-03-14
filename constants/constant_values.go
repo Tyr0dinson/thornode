@@ -117,11 +117,15 @@ const (
 	RescheduleCoalesceBlocks
 	L1SlipMinBps
 	SynthSlipMinBps
+	TradeAccountsReductionDivisor
 	TradeAccountsSlipMinBps
+	TradeAccountsTargetBasisPoints
 	DerivedSlipMinBps
 	TradeAccountsEnabled
 	TradeAccountsDepositEnabled
+	SecuredAssetReductionDivisor
 	SecuredAssetSlipMinBps
+	SecuredAssetTargetBasisPoints
 	EVMDisableContractWhitelist
 	OperationalVotesMin
 	RUNEPoolEnabled

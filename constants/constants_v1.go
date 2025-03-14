@@ -112,8 +112,12 @@ func NewConstantValue() *ConstantVals {
 			EVMDisableContractWhitelist:         0,                  // enable/disable contract whitelist
 			OperationalVotesMin:                 3,                  // Minimum node votes to set an Operational Mimir
 			L1SlipMinBps:                        0,                  // Minimum L1 asset swap fee in basis points
+			TradeAccountsReductionDivisor:       0,                  // If 0, no excess reduction; if 1, full excess reduction; if 2, excess half-life one block; if 100_800 (one week's blocks), excess half-life ~4.9 days.
 			TradeAccountsSlipMinBps:             0,                  // Minimum trade asset swap fee in basis points
+			TradeAccountsTargetBasisPoints:      1000,               // Trade Assets target basis points of their pool's BalanceAsset.
+			SecuredAssetReductionDivisor:        0,                  // If 0, no excess reduction; if 1, full excess reduction; if 2, excess half-life one block; if 100_800 (one week's blocks), excess half-life ~4.9 days.
 			SecuredAssetSlipMinBps:              5,                  // Minimum secured asset swap fee in basis points
+			SecuredAssetTargetBasisPoints:       1000,               // Secured Assets target basis points of their pool's BalanceAsset.
 			SynthSlipMinBps:                     0,                  // Minimum synth asset swap fee in basis points
 			DerivedSlipMinBps:                   0,                  // Minimum derived asset swap fee in basis points
 			RUNEPoolEnabled:                     0,                  // enable/disable RUNE Pool
