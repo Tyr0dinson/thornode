@@ -1530,10 +1530,21 @@ func (vm *NetworkMgrVCUR) UpdateNetwork(ctx cosmos.Context, constAccessor consta
 	if totalReserve.IsZero() {
 		return nil
 	}
-	availablePools, availablePoolsRune, err := getAvailablePoolsRune(ctx, vm.k)
+	availablePools, _, err := getAvailablePoolsRune(ctx, vm.k)
 	if err != nil {
 		return fmt.Errorf("fail to get available pools and their rune: %w", err)
 	}
+	// Only for the selected available pools,
+	// reduce Trade/Secured Assets if over their target basis points of their pools' BalanceAssets.
+	if availablePools, network.BondRewardRune, err = vm.reduceUnpooledAssets(ctx, availablePools, network.BondRewardRune); err != nil {
+		ctx.Logger().Error("fail to reduce unpooled assets", "error", err)
+	}
+	// As reduceUnpooledAssets can alter pools RUNE, sum it now.
+	availablePoolsRune := cosmos.ZeroUint()
+	for i := range availablePools {
+		availablePoolsRune = availablePoolsRune.Add(availablePools[i].BalanceRune)
+	}
+
 	vaultsLiquidityRune, err := getVaultsLiquidityRune(ctx, vm.k)
 	if err != nil {
 		return fmt.Errorf("fail to get vaults liquidity rune: %w", err)
@@ -1671,6 +1682,145 @@ func (vm *NetworkMgrVCUR) UpdateNetwork(ctx cosmos.Context, constAccessor consta
 	network.TotalBondUnits = network.TotalBondUnits.Add(cosmos.NewUint(uint64(i))) // Add 1 unit for each active Node
 
 	return vm.k.SetNetwork(ctx, network)
+}
+
+func (vm *NetworkMgrVCUR) reduceUnpooledAssets(ctx cosmos.Context, pools Pools, bondRewardRune cosmos.Uint) (returnedPools Pools, returnedBondRewardRune cosmos.Uint, err error) {
+	// Initial (default) assignment of returned values, since must not have the same name as arguments (to prevent declaration clash).
+	returnedPools = pools
+	returnedBondRewardRune = bondRewardRune
+
+	// Trade Asset and Secured Asset target basis points do not overlap,
+	// such as if there were expected total 33% of pooled Assets security margin
+	// of which 10% were allocated for Trade Asset and 15% for Secured Assets,
+	// leaving 8% for streaming swaps and pool liquidity adds.
+	tradeTargetBps := cosmos.NewUint(uint64(vm.k.GetConfigInt64(ctx, constants.TradeAccountsTargetBasisPoints)))
+	securedTargetBps := cosmos.NewUint(uint64(vm.k.GetConfigInt64(ctx, constants.SecuredAssetTargetBasisPoints)))
+	tradeReductionDivisor := uint64(vm.k.GetConfigInt64(ctx, constants.TradeAccountsReductionDivisor))
+	securedReductionDivisor := uint64(vm.k.GetConfigInt64(ctx, constants.SecuredAssetReductionDivisor))
+
+	if tradeReductionDivisor == 0 && securedReductionDivisor == 0 {
+		// If both divisors are zero then no reduction is possible, so return early.
+		return
+	}
+
+	// If the entire process including RUNE transfer does not complete,
+	// do not keep partial state changes.
+	ctx, commit := ctx.CacheContext()
+
+	updatedPools := make(Pools, len(pools))
+	transferRune := cosmos.ZeroUint()
+	var assetReduced bool
+	for i, pool := range pools {
+		// Unchanged pool state for if no unpooled asset reductions take place for this pool.
+		updatedPools[i] = pool
+
+		tradeReduction := cosmos.ZeroUint()
+		// No division can take place if the divisor is zero, so the divisor also serves as a toggle.
+		if tradeReductionDivisor > 0 {
+			tradeTarget := common.GetUncappedShare(tradeTargetBps, cosmos.NewUint(constants.MaxBasisPts), pool.BalanceAsset)
+			if tradeTarget.IsZero() {
+				// Never bring a Trade-Asset-backing depth to zero, otherwise it would be worth zero forever.
+				tradeTarget = cosmos.OneUint()
+			}
+			var tradeUnit TradeUnit // Declaration to prevent err shadow.
+			tradeUnit, err = vm.k.GetTradeUnit(ctx, pool.Asset.GetTradeAsset())
+			if err != nil {
+				err = fmt.Errorf("fail to get trade unit (%s): %w", pool.Asset.GetTradeAsset().String(), err)
+				return
+			}
+			tradeExcess := common.SafeSub(tradeUnit.Depth, tradeTarget)
+			// Reduce by the reduction divisor (to asymptotically approach a target).
+			tradeReduction = tradeExcess.QuoUint64(tradeReductionDivisor)
+			if !tradeReduction.IsZero() {
+				tradeUnit.Depth = common.SafeSub(tradeUnit.Depth, tradeReduction)
+				vm.k.SetTradeUnit(ctx, tradeUnit)
+			}
+		}
+
+		securedReduction := cosmos.ZeroUint()
+		// No division can take place if the divisor is zero, so the divisor also serves as a toggle.
+		if securedReductionDivisor > 0 {
+			securedTarget := common.GetUncappedShare(securedTargetBps, cosmos.NewUint(constants.MaxBasisPts), pool.BalanceAsset)
+			if securedTarget.IsZero() {
+				// Never bring a Secured-Asset-backing depth to zero, otherwise it would be worth zero forever.
+				securedTarget = cosmos.OneUint()
+			}
+			var securedAsset SecuredAsset // Declaration to prevent err shadow.
+			securedAsset, err = vm.k.GetSecuredAsset(ctx, pool.Asset.GetSecuredAsset())
+			if err != nil {
+				err = fmt.Errorf("fail to get secured asset (%s): %w", pool.Asset.GetSecuredAsset().String(), err)
+				return
+			}
+			securedExcess := common.SafeSub(securedAsset.Depth, securedTarget)
+			// Reduce by the reduction divisor (to asymptotically approach a target).
+			securedReduction = securedExcess.QuoUint64(securedReductionDivisor)
+			if !securedReduction.IsZero() {
+				securedAsset.Depth = common.SafeSub(securedAsset.Depth, securedReduction)
+				vm.k.SetSecuredAsset(ctx, securedAsset)
+			}
+		}
+
+		totalReduction := tradeReduction.Add(securedReduction)
+		if totalReduction.IsZero() {
+			// No further logic necessary for this pool.
+			continue
+		}
+		assetReduced = true // Track whether any change is made to any pool.
+
+		runeDisbursement := pool.RuneDisbursementForAssetAdd(totalReduction)
+		pool.BalanceAsset = pool.BalanceAsset.Add(totalReduction)
+		pool.BalanceRune = common.SafeSub(pool.BalanceRune, runeDisbursement)
+		transferRune = transferRune.Add(runeDisbursement)
+		if err = vm.k.SetPool(ctx, pool); err != nil {
+			err = fmt.Errorf("failed to set pool (%s): %w", pool.Asset.String(), err)
+			return
+		}
+		updatedPools[i] = pool
+
+		evt := NewEventPoolBalanceChanged(
+			NewPoolMod(pool.Asset, runeDisbursement, false, totalReduction, true),
+			"unpooled asset reduction sent to bond module",
+		)
+		if err = vm.eventMgr.EmitEvent(ctx, evt); err != nil {
+			ctx.Logger().Error("fail to emit pool balance changed event", "error", err)
+		}
+	}
+	if !assetReduced {
+		// Since no asset reduction, no need for further logic or state commitment.
+		return
+	}
+
+	// Having updated the BalanceRune of the pools,
+	// do the single RUNE transfer from the Pool Module to the Bond Module.
+	updatedBondRewardRune := bondRewardRune.Add(transferRune)
+	if !transferRune.IsZero() {
+		if err = vm.k.SendFromModuleToModule(ctx, AsgardName, BondName, common.NewCoins(common.NewCoin(common.RuneAsset(), transferRune))); err != nil {
+			err = fmt.Errorf("fail to transfer RUNE from pool module to bond module: %w", err)
+			return
+		}
+		var network Network // Declaration to prevent err shadow.
+		network, err = vm.k.GetNetwork(ctx)
+		if err != nil {
+			err = fmt.Errorf("fail to get existing network data: %w", err)
+			return
+		}
+		if !bondRewardRune.Equal(network.BondRewardRune) {
+			err = fmt.Errorf("expected bond reward rune (%s) not equal to actual bond reward rune (%s)", bondRewardRune.String(), network.BondRewardRune.String())
+			return
+		}
+		// Leave the returned bondReturnRune addition until the end of the function during state commits.
+		network.BondRewardRune = updatedBondRewardRune
+		if err = vm.k.SetNetwork(ctx, network); err != nil {
+			err = fmt.Errorf("fail to set network data: %w", err)
+			return
+		}
+	}
+
+	// Commit state changes and update returned values.
+	commit()
+	returnedPools = updatedPools
+	returnedBondRewardRune = updatedBondRewardRune
+	return
 }
 
 // Pays out Rewards
