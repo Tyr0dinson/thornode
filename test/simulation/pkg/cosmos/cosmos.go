@@ -108,7 +108,7 @@ func NewClient(chain common.Chain, host string, keys *thorclient.Keys) (LiteChai
 	}, nil
 }
 
-func (c *Client) GetAccount(pk *common.PubKey) (*common.Account, error) {
+func (c *Client) GetAccount(_ *common.PubKey) (*common.Account, error) {
 	// get balances
 	balanceReq := &btypes.QueryAllBalancesRequest{Address: c.address.String()}
 	balances, err := btypes.NewQueryClient(c.grpc).AllBalances(ctx(), balanceReq)

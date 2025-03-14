@@ -202,7 +202,13 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 		}
 		addressString = addr.String()
 	case ADAChain:
-		_, data, err := bech32.Decode(string(p))
+		pubkeyBech32 := string(p)
+		ed25519PubKey := cardano.GetEd25519(pubkeyBech32)
+		if ed25519PubKey != "" {
+			pubkeyBech32 = ed25519PubKey
+		}
+		fmt.Printf("pubkey.Address() for ADACHAIN\n pubkey=%s ed25519=%s\n", string(p), ed25519PubKey)
+		_, data, err := bech32.Decode(pubkeyBech32)
 		if err != nil {
 			return NoAddress, fmt.Errorf("fail to decode the address, err: %w", err)
 		}

@@ -157,11 +157,11 @@ type TxInput struct {
 
 	TxHash []byte
 	Index  uint16
-	Amount uint
+	Amount uint64
 }
 
 // NewTxInput creates and returns a *TxInput from Transaction Hash(Hex Encoded), Transaction Index and Amount.
-func NewTxInput(txHash string, txIx uint16, amount uint) TxInput {
+func NewTxInput(txHash string, txIx uint16, amount uint64) TxInput {
 	hash, _ := hex.DecodeString(txHash)
 
 	return TxInput{
@@ -187,10 +187,10 @@ func (txI *TxInput) MarshalCBOR() ([]byte, error) {
 type TxOutput struct {
 	_       struct{} `cbor:",toarray"`
 	Address cardano.Address
-	Amount  uint
+	Amount  uint64
 }
 
-func NewTxOutput(addr cardano.Address, amount uint) TxOutput {
+func NewTxOutput(addr cardano.Address, amount uint64) TxOutput {
 	return TxOutput{
 		Address: addr,
 		Amount:  amount,

@@ -117,9 +117,15 @@ func NewClient(
 	if err != nil {
 		return nil, fmt.Errorf("fail to get vault address: %w", err)
 	}
-	fmt.Printf("thorKeys:\n privKey: %x\n  pubKey: %x\n vaultAddress: %s",
+
+	pubBech32, err := cardano.NewThorPubKeyBech32(privKey.PubKey().Bytes())
+	if err != nil {
+		return nil, fmt.Errorf("fail to get thor pub key bech32: %w", err)
+	}
+	fmt.Printf("cardano client has thorKeys:\n privKey: %x\n  pubKey: %x\n vaultAddress: %s\n thorpub: %s\n",
 		privKey.Bytes(), privKey.PubKey().Bytes(),
 		vaultAddr.String(),
+		pubBech32,
 	)
 	cardano.DeleteMeVaultAddress = vaultAddr
 	cardano.DeleteMeVaultPubKey = adaPubKey
@@ -376,7 +382,7 @@ func (c *Client) SignTx(tx types.TxOutItem, height int64) (signedBz, checkpoint 
 	// }
 	//
 	// Presently this won't work, so for now use the local key supplied via BIFROST_CARDANO_PRIV_KEY
-	fromAddr, err := cardano.PaymentOnlyMainnetAddressFromPubkey(c.localTestingKey.Public().(ed25519.PublicKey))
+	fromAddr, err := c.getVaultAddress()
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("fail to get vault address: %w", err)
 	}
@@ -391,12 +397,12 @@ func (c *Client) SignTx(tx types.TxOutItem, height int64) (signedBz, checkpoint 
 	// TODO: where are input txs specified in the call chain?  many input utxos may be required to satisify a transfer
 	txBuilder.AddInputs(TxInput{
 		TxHash: []byte(tx.InHash),
-		Index:  0,                                 // TODO how to obtain this?
-		Amount: uint(tx.Coins[0].Amount.Uint64()), // not strictly necessary, but used for fee calculation
+		Index:  0,                           // TODO how to obtain this?
+		Amount: tx.Coins[0].Amount.Uint64(), // not strictly necessary, but used for fee calculation
 	})
 	txBuilder.AddOutputs(TxOutput{
 		Address: toAddr,
-		Amount:  uint(tx.Coins[0].Amount.Uint64()),
+		Amount:  tx.Coins[0].Amount.Uint64(),
 	})
 	if err = txBuilder.SetMemo(tx.Memo); err != nil {
 		return nil, nil, nil, fmt.Errorf("fail to set memo: %w", err)

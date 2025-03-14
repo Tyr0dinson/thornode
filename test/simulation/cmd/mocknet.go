@@ -35,6 +35,7 @@ var chainRPCs = map[common.Chain]string{
 	common.AVAXChain: "http://localhost:9650/ext/bc/C/rpc",
 	common.GAIAChain: "localhost:9091",
 	common.BASEChain: "http://localhost:8547",
+	common.ADAChain:  "localhost:7007",
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -212,6 +213,8 @@ func InitConfig(parallelism int, seed bool) *OpConfig {
 			chainSeedAmount = sdkmath.NewUint(10000 * common.One) // more since local gas is high
 		case common.DOGEChain:
 			chainSeedAmount = sdkmath.NewUint(100000 * common.One)
+		case common.ADAChain:
+			chainSeedAmount = sdkmath.NewUint(1000 * 1_000_000) // 1000 ADA
 		default:
 			continue // all other chains currently unsupported
 		}

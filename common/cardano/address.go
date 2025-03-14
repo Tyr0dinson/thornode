@@ -3,6 +3,7 @@ package cardano
 import (
 	"crypto/ed25519"
 	"fmt"
+	"sync"
 
 	"github.com/gcash/bchutil/bech32"
 	"golang.org/x/crypto/blake2b"
@@ -14,7 +15,21 @@ var (
 	// TODO: Remove me; this is a big hack for single validator signing in test without full EDDSA support
 	DeleteMeVaultAddress Address
 	DeleteMeVaultPubKey  ed25519.PublicKey
+	secpToEd25519        = make(map[string]string)
+	secpMu               sync.Mutex
 )
+
+func SetEd25519(secpPubKey, ed25519PubKey string) {
+	secpMu.Lock()
+	defer secpMu.Unlock()
+	secpToEd25519[secpPubKey] = ed25519PubKey
+}
+
+func GetEd25519(secpPubKey string) string {
+	secpMu.Lock()
+	defer secpMu.Unlock()
+	return secpToEd25519[secpPubKey]
+}
 
 type Address []byte
 
@@ -42,7 +57,7 @@ func (addr Address) String() string {
 	return res
 }
 
-func NewThorPubKeyBech32(pubKey ed25519.PublicKey) (string, error) {
+func NewThorPubKeyBech32(pubKey []byte) (string, error) {
 	bz, err := bech32.ConvertBits(pubKey, 8, 5, true)
 	if err != nil {
 		return "", err
@@ -55,7 +70,7 @@ func NewAddressFromBech32(addrBech32 string) (Address, error) {
 	if err != nil {
 		return nil, err
 	}
-	if hrp != "addr" {
+	if hrp != "addr" && hrp != "addr_test" {
 		return nil, fmt.Errorf("invalid hrp: %s", hrp)
 	}
 	addrBz, err := bech32.ConvertBits(data, 5, 8, false)

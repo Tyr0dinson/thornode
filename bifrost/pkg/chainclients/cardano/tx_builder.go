@@ -60,7 +60,7 @@ func (tb *TxBuilder) AddChangeIfNeeded(addr cardano.Address) error {
 	tb.tx.SetFee(minFee)
 	totalI, totalO := tb.getTotalInputOutputs()
 
-	change := totalI - totalO - uint(tb.tx.Body.Fee)
+	change := totalI - totalO - tb.tx.Body.Fee
 	if change > 0 {
 		tb.tx.AddOutputs(
 			NewTxOutput(
@@ -102,12 +102,12 @@ func (tb *TxBuilder) SetMemo(memos ...string) error {
 	return nil
 }
 
-func (tb TxBuilder) getTotalInputOutputs() (inputs, outputs uint) {
+func (tb TxBuilder) getTotalInputOutputs() (inputs, outputs uint64) {
 	for _, inp := range tb.tx.Body.Inputs.TxIns {
 		inputs += inp.Amount
 	}
 	for _, out := range tb.tx.Body.Outputs {
-		outputs += uint(out.Amount)
+		outputs += out.Amount
 	}
 
 	return
@@ -142,7 +142,8 @@ func (tb TxBuilder) MinFee() (fee uint64, err error) {
 	totalI, totalO := tb.getTotalInputOutputs()
 
 	if totalI != (totalO) {
-		inner_addr, err := cardano.NewAddressFromBech32("addr_test1qqe6zztejhz5hq0xghlf72resflc4t2gmu9xjlf73x8dpf88d78zlt4rng3ccw8g5vvnkyrvt96mug06l5eskxh8rcjq2wyd63")
+		// phony address for byte counting
+		inner_addr, err := cardano.NewAddressFromBech32("addr_test1vplnske8nmg3p02msdwnzf2wsydhuk53q4dykj5jyslmu9chljg73")
 		if err != nil {
 			return 0, err
 		}
