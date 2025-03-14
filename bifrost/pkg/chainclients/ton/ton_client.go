@@ -480,7 +480,7 @@ func (c *TonClient) BroadcastTx(
 
 		stateInit = &tlb.StateInit{
 			Data: cell.BeginCell().
-				MustStoreUInt(0, 32). // seqno
+				MustStoreUInt(0, 32).                               // seqno
 				MustStoreUInt(uint64(wallet.DefaultSubwallet), 32). // sub wallet
 				MustStoreSlice(pubKey.Bytes(), 256).
 				EndCell(),
