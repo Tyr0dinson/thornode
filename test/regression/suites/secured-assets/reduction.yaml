@@ -1,0 +1,236 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+asserts:
+  - .balance_asset == "${POOL_ASSET=100000000}"
+  - .balance_rune == "${POOL_RUNE=100001087646}"
+  - ${POOL_RUNE} / ${POOL_ASSET} | floor == ${RUNE_PER_ASSET=1000}
+---
+type: check
+endpoint: http://localhost:1317/thorchain/vaults/asgard
+asserts:
+  - .|[.[].coins[]|select(.asset=="BTC.BTC").amount|tonumber] | add == ${POOL_ASSET}
+---
+type: check
+endpoint: http://localhost:1317/thorchain/network
+asserts:
+  - .vaults_liquidity_rune == "${POOL_RUNE}"
+  - .effective_security_bond == "${EFFECTIVE_SECURITY_BOND=5000000000000}"
+  - ${EFFECTIVE_SECURITY_BOND} / ${POOL_RUNE} | floor == 49
+  # Overbonded; Incentive Pendulum is expected to make this approach 2x or 1.33x
+  # depending on whether PendulumUseEffectiveSecurity is enabled or disabled.
+  - (${EFFECTIVE_SECURITY_BOND} / ${RUNE_PER_ASSET}) - ${POOL_ASSET} == ${ASSET_ROOM=4900000000}
+  - 2 * ${ASSET_ROOM} == ${DOUBLE_ASSET_ROOM=9800000000}
+---
+########################################################################################
+# attempt double-asset-room deposit
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 1 }}'
+    chain: BTC
+    from_address: {{ addr_btc_fox }}
+    to_address: {{ addr_btc_dog }}
+    coins:
+      - amount: "${DOUBLE_ASSET_ROOM}"
+        asset: "BTC.BTC"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "BTC.BTC"
+    memo: "secure+:{{ addr_thor_fox }}"
+  block_height: 5
+  finalise_height: 5
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .|[..|select(.type?=="refund")] | length == 1
+  - ..|select(.type?=="refund").reason == "BTC.BTC secured deposits more than bond"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - length == 1
+  - .[0].in_hash == "{{ observe_txid 1 }}"
+  - .[0].coin.amount == "${OUT_AMOUNT=9799986000}"
+---
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: BTC
+      from_address: {{ addr_btc_dog }}
+      to_address: {{ addr_btc_fox }}
+      coins:
+        - amount: "${OUT_AMOUNT}"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10500"
+          asset: "BTC.BTC"
+      memo: "OUT:{{ observe_txid 1 }}"
+    block_height: 2
+    finalise_height: 2
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - length == 0
+---
+########################################################################################
+# deposit of same amount as in pool (10,000 basis points of pool BalanceAsset)
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/securedasset/BTC-BTC
+asserts:
+  - .asset == "BTC-BTC"
+  - .supply == "0"
+  - .depth == "0"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+asserts:
+  - .balance_asset == "${POOL_ASSET=100003500}"
+  - ${POOL_ASSET} * 2000 / 10000 | floor = ${DEPOSIT_AMOUNT=20000700}
+  # 20 % pool BalanceAsset deposit planned.  
+---
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 3 }}'
+    chain: BTC
+    from_address: {{ addr_btc_fox }}
+    to_address: {{ addr_btc_dog }}
+    coins:
+      - amount: "${DEPOSIT_AMOUNT}"
+        asset: "BTC.BTC"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "BTC.BTC"
+    memo: "secure+:{{ addr_thor_fox }}"
+  block_height: 5
+  finalise_height: 5
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/securedasset/BTC-BTC
+asserts:
+  - .asset == "BTC-BTC"
+  - .supply == "${DEPOSIT_AMOUNT}"
+  - .depth == .supply
+  # Successful deposit, and by default no reduction.
+---
+type: check
+endpoint: http://localhost:1317/auth/accounts/{{ addr_thor_dog }}
+asserts:
+  - .result.value.sequence == "${SEQ=3}"
+  - ${SEQ} + 1 == ${SEQ_AFTER=4}
+---
+type: tx-mimir
+key: SecuredAssetTargetBasisPoints
+value: ${TARGET_BPS=1000} # 10 % pool BalanceAsset target
+signer: {{ addr_thor_dog }}
+sequence: ${SEQ}
+---
+type: tx-mimir
+key: SecuredAssetReductionDivisor
+value: ${DIVISOR=10} # Expected excess half-life of 6.6 blocks, by ln(0.5)/ln(9/10).
+signer: {{ addr_thor_dog }}
+sequence: ${SEQ_AFTER}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/securedasset/BTC-BTC
+asserts:
+  - .asset == "BTC-BTC"
+  - .supply == "${DEPOSIT_AMOUNT}"
+  - .depth|tonumber < ${DEPOSIT_AMOUNT}
+  # Reduction has taken place.
+  - ${DEPOSIT_AMOUNT} - (${POOL_ASSET} * ${TARGET_BPS} / 10000) == ${EXCESS=10000350}
+  - ${EXCESS} / ${DIVISOR} == ${REDUCTION=1000035}
+  - .depth|tonumber == ${DEPOSIT_AMOUNT} - ${REDUCTION}
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+asserts:
+  - .balance_asset|tonumber == ${POOL_ASSET} + ${REDUCTION}
+---
+type: check
+endpoint: http://localhost:1317/thorchain/lastblock
+asserts:
+  - .[0].thorchain - 1 == ${PREVIOUS_HEIGHT=4}
+---
+type: check
+endpoint: http://localhost:1317/thorchain/network?height=${PREVIOUS_HEIGHT}
+asserts:
+  - .bond_reward_rune == "${PREVIOUS_BOND_REWARD_RUNE=88782}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/network
+asserts:
+  - .bond_reward_rune|tonumber - ${PREVIOUS_BOND_REWARD_RUNE} == ${BOND_REWARD_RUNE_INCREASE=990129401}
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .|[..|select(.type?=="rewards")] | length == 1
+  - ..|select(.type?=="rewards").bond_reward == "${BOND_REWARD=21977}"
+  ##
+  - .|[..|select(.type?=="pool_balance_change")] | length == 1
+  - ..|select(.type?=="pool_balance_change").asset == "BTC.BTC"
+  - ..|select(.type?=="pool_balance_change").asset_add == "true"
+  - ..|select(.type?=="pool_balance_change").asset_amt == "${REDUCTION}"
+  - ..|select(.type?=="pool_balance_change").rune_add == "false"
+  - ..|select(.type?=="pool_balance_change").rune_amt == "${REDUCTION_RUNE=990107424}"
+  - ${BOND_REWARD_RUNE_INCREASE} == ${BOND_REWARD} + ${REDUCTION_RUNE}
+  ##
+  - .|[..|select(.type?=="transfer" and .sender=="{{ addr_module_asgard }}" and .recipient=="{{ addr_module_bond }}")] | length == 1
+  - ..|select(.type?=="transfer" and .sender=="{{ addr_module_asgard }}" and .recipient=="{{ addr_module_bond }}").amount == "${REDUCTION_RUNE}rune"
+---
+# Estimating 7 blocks for excess to decrease by a little over half (from ln(0.5)/ln(9/10) ), checking the state after 6 more blocks of reductions.
+# (Also keeping in mind that in this test BalanceAsset increases without arbitrage as this takes place.)
+type: create-blocks
+count: 6
+---
+type: check
+endpoint: http://localhost:1317/thorchain/securedasset/BTC-BTC
+asserts:
+  - .asset == "BTC-BTC"
+  - .supply == "${DEPOSIT_AMOUNT}"
+  - .depth == "${SECURED_DEPTH=14930647}"
+  - ${SECURED_DEPTH} > ${DEPOSIT_AMOUNT} / 2
+  # (As BalanceAsset and Secured Amount approach each other (Secured Amount nearing its target),
+  #  rate of reduction has asymptotically decreased.)
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
+asserts:
+  - 10000 * ${DEPOSIT_AMOUNT} / ${POOL_ASSET} | floor == 2000 # Initially, had been 2000 basis points (20%) of BalanceAsset.
+  - .balance_asset == "${POOL_ASSET=105073553}"
+  - 10000 * ${SECURED_DEPTH} / ${POOL_ASSET} | floor == 1420
+  # In 7 blocks, a little over halfway from 2000 basis points toward the target of 1000 basis points.
