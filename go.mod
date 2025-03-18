@@ -7,7 +7,7 @@ replace (
 	// use cosmos fork of keyring
 	github.com/99designs/keyring => github.com/cosmos/keyring v1.2.0
 	github.com/agl/ed25519 => github.com/binance-chain/edwards25519 v0.0.0-20200305024217-f36fc4b53d43
-	github.com/binance-chain/tss-lib => gitlab.com/thorchain/tss/tss-lib v0.1.5
+	github.com/binance-chain/tss-lib => gitlab.com/thorchain/tss/tss-lib v0.1.6
 	// dgrijalva/jwt-go is deprecated and doesn't receive security updates.
 	// See: https://github.com/cosmos/cosmos-sdk/issues/13134
 	github.com/dgrijalva/jwt-go => github.com/golang-jwt/jwt/v4 v4.4.2
@@ -57,7 +57,7 @@ require (
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
 	github.com/deckarep/golang-set v1.8.0
 	github.com/decred/dcrd/dcrec/edwards v1.0.0
-	github.com/decred/dcrd/dcrec/secp256k1 v1.0.4
+	github.com/decred/dcrd/dcrec/edwards/v2 v2.0.0
 	github.com/eager7/dogd v0.0.0-20200427085516-2caf59f59dbb
 	github.com/eager7/doglog v0.0.0-20200427040431-a0db59f0a792
 	github.com/eager7/dogutil v0.0.0-20200427040807-200e961ba4b5
@@ -174,8 +174,6 @@ require (
 	github.com/davidlazar/go-crypto v0.0.0-20200604182044-b73af7476f6c // indirect
 	github.com/dchest/siphash v1.2.2 // indirect
 	github.com/deckarep/golang-set/v2 v2.6.0 // indirect
-	github.com/decred/dcrd/dcrec/edwards/v2 v2.0.0 // indirect
-	github.com/decred/dcrd/dcrec/secp256k1/v2 v2.0.0 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.2.0 // indirect
 	github.com/desertbit/timer v0.0.0-20180107155436-c41aec40b27f // indirect
 	github.com/dgraph-io/badger/v2 v2.2007.4 // indirect
