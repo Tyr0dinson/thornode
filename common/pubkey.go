@@ -234,7 +234,6 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 
 		// Encode the public key to base58 to get the Solana address
 		addressString = Base58Encode(pk.Bytes())
-
 	default:
 		// Only EVM chains remain.
 		if !chain.IsEVM() {
