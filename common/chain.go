@@ -140,7 +140,9 @@ func (c Chain) String() string {
 
 // GetSigningAlgo get the signing algorithm for the given chain
 func (c Chain) GetSigningAlgo() SigningAlgo {
-	// Only SigningAlgoSecp256k1 is supported for now
+	if c == SOLChain {
+		return SigningAlgoEd25519
+	}
 	return SigningAlgoSecp256k1
 }
 
