@@ -1,6 +1,7 @@
 package core
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/hashicorp/go-multierror"
@@ -203,6 +204,14 @@ func (a *DualLPActor) verifyLP(config *OpConfig) OpResult {
 	}
 
 	for _, lp := range lps {
+		if a.asset == common.ADAAsset {
+			jsonLp, err := json.Marshal(lp)
+			if err != nil {
+				a.Log().Error().Err(err).Msg("failed to marshal lp")
+				continue
+			}
+			a.Log().Info().Msgf("verify ADA pool %s", jsonLp)
+		}
 		// skip pending lps
 		if lp.PendingAsset != "0" || lp.PendingRune != "0" {
 			continue

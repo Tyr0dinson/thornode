@@ -133,6 +133,16 @@ func NewCosmosClient(
 		chainID = "localgaia"
 	}
 
+	vaultAddr, err := pk.GetAddress(cfg.ChainID)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get vault address: %w", err)
+	}
+	fmt.Printf("cosmos client has thorKeys:\n privKey: %x\n  pubKey: %x\n vaultAddress: %s\n thorpub: %s\n",
+		priv.Bytes(), priv.PubKey().Bytes(),
+		vaultAddr,
+		pk,
+	)
+
 	c := &CosmosClient{
 		chainID:         chainID,
 		logger:          logger,

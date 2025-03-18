@@ -550,7 +550,9 @@ services:
       - mocknet
       - mocknet-cluster
     restart: unless-stopped
-    image: kocubinski/cardano-devnet:0.1.2
+    image: kocubinski/cardano-devnet:0.1.5
     ports:
       - 7007:7007 #n2c port
       - 3001:3001 #n2n port
+    environment:
+      FUND_ACCOUNT: addr_test1vpqcmkzt6wtvfwk7k2j6qcm5ry8l892ll5gj2lkmqkuttpg3znall # "master ..master notice" derived

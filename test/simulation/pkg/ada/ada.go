@@ -15,6 +15,7 @@ import (
 	"github.com/blinklabs-io/gouroboros/ledger"
 	"github.com/blinklabs-io/gouroboros/protocol/chainsync"
 	ocommon "github.com/blinklabs-io/gouroboros/protocol/common"
+	"github.com/rs/zerolog/log"
 	utxocardano "github.com/utxorpc/go-codegen/utxorpc/v1alpha/cardano"
 	adatx "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/cardano"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
@@ -26,6 +27,8 @@ import (
 
 const testnetNetworkMagic = 42
 
+var chainSyncOnce sync.Once
+
 type Client struct {
 	clientConn *ouroboros.Connection
 	logger     *slog.Logger
@@ -33,14 +36,7 @@ type Client struct {
 	address    cardano.Address
 	protocol   *utxocardano.PParams
 
-	txWait  sync.WaitGroup
-	txMu    sync.Mutex
-	txWatch string
-
-	inFlight map[string]struct{} // used to track in-flight transactions
-
-	tip   ocommon.Point // used to track the latest block tip
-	tipMu sync.Mutex
+	broadcastLock sync.Mutex
 }
 
 func NewConstructor(n2cAddress string) simtypes.LiteChainClientConstructor {
@@ -55,10 +51,6 @@ func NewClient(n2cAddress string, keys *thorclient.Keys) (*Client, error) {
 	}))
 	c := &Client{logger: logger}
 	// create n2c connection
-	n2cConn, err := net.Dial("tcp", n2cAddress)
-	if err != nil {
-		return nil, fmt.Errorf("fail to dial n2c host: %w", err)
-	}
 	networkError := make(chan error)
 
 	go func() {
@@ -72,18 +64,43 @@ func NewClient(n2cAddress string, keys *thorclient.Keys) (*Client, error) {
 		Level: slog.LevelInfo,
 	}))
 
+	chainSyncOnce.Do(func() {
+		n2cConn, err := net.Dial("tcp", n2cAddress)
+		if err != nil {
+			log.Fatal().Err(err).Msg("fail to dial n2c host")
+		}
+		conn, err := ouroboros.NewConnection(
+			ouroboros.WithConnection(n2cConn),
+			ouroboros.WithErrorChan(networkError),
+			ouroboros.WithLogger(networkLogger),
+			ouroboros.WithNetworkMagic(testnetNetworkMagic),
+			ouroboros.WithKeepAlive(true),
+			ouroboros.WithChainSyncConfig(chainsync.NewConfig(
+				chainsync.WithRollForwardFunc(chainSyncRollForwardHandler),
+				chainsync.WithRollBackwardFunc(chainSyncRollBackwardHandler))),
+		)
+		if err != nil {
+			log.Fatal().Err(err).Msg("fail to create ouroboros connection")
+		}
+		err = conn.ChainSync().Client.Sync([]ocommon.Point{ocommon.NewPointOrigin()})
+		if err != nil {
+			log.Fatal().Err(err).Msg("fail to start chain sync")
+		}
+	})
+
+	n2cConn, err := net.Dial("tcp", n2cAddress)
+	if err != nil {
+		return nil, fmt.Errorf("fail to dial n2c host: %w", err)
+	}
 	c.clientConn, err = ouroboros.NewConnection(
 		ouroboros.WithConnection(n2cConn),
 		ouroboros.WithErrorChan(networkError),
 		ouroboros.WithLogger(networkLogger),
 		ouroboros.WithNetworkMagic(testnetNetworkMagic),
 		ouroboros.WithKeepAlive(true),
-		ouroboros.WithChainSyncConfig(chainsync.NewConfig(
-			chainsync.WithRollForwardFunc(c.chainSyncRollForwardHandler),
-			chainsync.WithRollBackwardFunc(c.chainSyncRollBackwardHandler))),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("fail to create ouroboros n2c connection: %w", err)
+		return nil, fmt.Errorf("fail to create ouroboros connection: %w", err)
 	}
 
 	// fetch network protocol parameters, needed for tx signing
@@ -119,68 +136,19 @@ func NewClient(n2cAddress string, keys *thorclient.Keys) (*Client, error) {
 	}
 	cardano.SetEd25519(secpBech32, pubBech32)
 
-	if c.address.String() == "addr_test1vpqcmkzt6wtvfwk7k2j6qcm5ry8l892ll5gj2lkmqkuttpg3znall" {
-		err = c.clientConn.ChainSync().Client.Sync([]ocommon.Point{ocommon.NewPointOrigin()})
-		if err != nil {
-			return nil, fmt.Errorf("fail to start chain sync: %w", err)
-		}
-	}
-
 	return c, nil
 }
 
-func (c *Client) chainSyncRollForwardHandler(
-	ctx chainsync.CallbackContext,
-	blockType uint,
-	blockData any,
-	tip chainsync.Tip,
-) error {
-	c.tipMu.Lock()
-	defer c.tipMu.Unlock()
-	c.tip = tip.Point
-	switch block := blockData.(type) {
-	case ledger.Block:
-		c.logger.Info("block received",
-			"slot", block.SlotNumber(),
-			"height", block.BlockNumber(),
-			"hash", block.Hash())
-		for _, tx := range block.Transactions() {
-			if tx.Hash() == c.txWatch {
-				c.logger.Info("transaction included in block", "hash", tx.Hash())
-				c.txWatch = ""
-				c.txWait.Done()
-			}
-		}
-	case ledger.BlockHeader:
-		c.logger.Warn("block header, n2c excpects full block", "hash", block.Hash())
-	}
-	return nil
-}
-
-func (c *Client) chainSyncRollBackwardHandler(
-	ctx chainsync.CallbackContext,
-	point ocommon.Point,
-	tip chainsync.Tip,
-) error {
-	c.tipMu.Lock()
-	defer c.tipMu.Unlock()
-	c.tip = tip.Point
-	fmt.Printf("roll backward: point = (%d, %x), tip = (%d, %x)\n",
-		point.Slot, point.Hash,
-		tip.Point.Slot, tip.Point.Hash,
-	)
-	return nil
-}
-
 func (c *Client) BroadcastTx(txBytes []byte) (string, error) {
+	c.broadcastLock.Lock()
+	defer c.broadcastLock.Unlock()
+
 	tx, err := ledger.NewConwayTransactionFromCbor(txBytes)
 	if err != nil {
 		return "", fmt.Errorf("failed to create transaction: %w", err)
 	}
-	c.txMu.Lock()
-	defer c.txMu.Unlock()
-	c.txWait.Add(1)
-	c.txWatch = tx.Hash()
+	txHash := tx.Hash()
+	log.Info().Msgf("broadcasting transaction hash=%s bytes=%x", txHash, txBytes)
 
 	era, err := c.clientConn.LocalStateQuery().Client.GetCurrentEra()
 	if err != nil {
@@ -192,8 +160,18 @@ func (c *Client) BroadcastTx(txBytes []byte) (string, error) {
 	}
 
 	// wait for tx to be included in a block
-	c.txWait.Wait()
-	return c.txWatch, nil
+	start := time.Now()
+	for {
+		if time.Since(start) > 30*time.Second {
+			return "", fmt.Errorf("timeout waiting for tx to be included in a block")
+		}
+		if _, ok := txInBlock.Load(txHash); ok {
+			log.Info().Msgf("transaction included in block hash=%s", txHash)
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return txHash, nil
 }
 
 func (c *Client) GetAccount(_ *common.PubKey) (*common.Account, error) {
@@ -249,16 +227,16 @@ func (c *Client) SignTx(tx simtypes.SimTx) ([]byte, error) {
 func (c *Client) getUtxoToSpend(total uint64) ([]adatx.TxInput, error) {
 	// 1 tx at a time globally.. better to lock on addr iff an in-flight utxo is seen
 	// in response below
-	c.txWait.Wait()
+	c.logger.Info("wait utxo lock")
+	start := time.Now()
+	c.broadcastLock.Lock()
+	defer c.broadcastLock.Unlock()
+	c.logger.Info("wait utxo lock done", "duration", time.Since(start).String())
 	addr, err := ledger.NewAddress(c.address.String())
 	if err != nil {
 		return nil, fmt.Errorf("fail to create address: %w", err)
 	}
 	queryClient := c.clientConn.LocalStateQuery().Client
-	// c.tipMu.Lock()
-	// tip := ocommon.NewPoint(c.tip.Slot, c.tip.Hash)
-	// c.tipMu.Unlock()
-	// c.logger.Info("querying utxo", "address", addr.String(), "slot", tip.Slot)
 	if err := queryClient.AcquireVolatileTip(); err != nil {
 		return nil, fmt.Errorf("fail to acquire tip: %w", err)
 	}

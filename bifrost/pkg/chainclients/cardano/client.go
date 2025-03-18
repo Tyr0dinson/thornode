@@ -209,7 +209,6 @@ func NewClient(
 	}
 	c.protocol = protocolParams.Utxorpc()
 
-	// figure out start height for the sync process
 	c.startHeight, _, _ = c.getLastSeenBlock()
 	if cfg.BlockScanner.StartBlockHeight > 0 {
 		slot, _, _ := c.getBlockId(uint64(cfg.BlockScanner.StartBlockHeight))
@@ -255,8 +254,21 @@ func (c *Client) dialTCP(addr string) (conn net.Conn, err error) {
 	return
 }
 
-func (c *Client) BroadcastTx(_ types.TxOutItem, _ []byte) (string, error) {
-	panic("unimplemented")
+func (c *Client) BroadcastTx(_ types.TxOutItem, txBytes []byte) (string, error) {
+	tx, err := ledger.NewConwayTransactionFromCbor(txBytes)
+	if err != nil {
+		return "", fmt.Errorf("failed to create transaction: %w", err)
+	}
+	era, err := c.clientConn.LocalStateQuery().Client.GetCurrentEra()
+	if err != nil {
+		return "", fmt.Errorf("failed to get current era: %w", err)
+	}
+	err = c.clientConn.LocalTxSubmission().Client.SubmitTx(uint16(era), txBytes)
+	if err != nil {
+		return "", fmt.Errorf("failed to submit transaction bytes=%x: %w", txBytes, err)
+	}
+
+	return tx.Hash(), nil
 }
 
 func (c *Client) ConfirmationCountReady(txIn types.TxIn) bool {
