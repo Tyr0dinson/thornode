@@ -223,7 +223,6 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 			return NoAddress, err
 		}
 		addr.SetBounce(false)
-		addr.SetTestnetOnly(true)
 
 		addressString = addr.String()
 	default:

@@ -66,7 +66,8 @@ func (s *TonBlockScanner) GetHeight() (int64, error) {
 		return 0, err
 	}
 
-	return int64(info.SeqNo) - ConfirmationBlocks, nil
+	// at least return current block height -1
+	return int64(info.SeqNo) - max(ConfirmationBlocks, 1), nil
 }
 
 func (s *TonBlockScanner) FetchMemPool(_ int64) (types.TxIn, error) {
@@ -267,6 +268,10 @@ func (s *TonBlockScanner) processShard(
 					continue
 				}
 
+				if message.Comment() == "" {
+					continue
+				}
+
 				// we are only interested in certain tx types
 				if !s.regexp.MatchString(message.Comment()) {
 					continue
@@ -309,15 +314,15 @@ func (s *TonBlockScanner) processShard(
 
 			message := tx.IO.In.AsInternal()
 
-			// we can't do anything without a memo
-			if message.Comment() == "" {
-				continue
-			}
-
 			// bounced messages are no valid deposits
 			// TODO: Discuss if messages if "bouncable" flag should be accepted
 			// 		 too, each wallet will probably set that by default
 			if message.Bounced {
+				continue
+			}
+
+			// we can't do anything without a memo
+			if message.Comment() == "" {
 				continue
 			}
 
@@ -331,6 +336,7 @@ func (s *TonBlockScanner) processShard(
 			items, err := s.processMessage(tx, message)
 			if err != nil {
 				s.logger.Err(err).Msg("failed to get incoming txs")
+				return nil, err
 			}
 
 			txInItems = append(txInItems, items...)
@@ -366,16 +372,11 @@ func (s *TonBlockScanner) processMessage(
 	txInItems := []types.TxInItem{}
 
 	hash := base64.StdEncoding.EncodeToString(tx.Hash)
-	// sender := tx.IO.In.Msg.SenderAddr()
-	// dest := tx.IO.In.Msg.DestAddr()
 	sender := message.SrcAddr
 	dest := message.DestAddr()
 
 	// TODO: Check if distinguishing between mainnet and testnet is needed
-	// and add checks for dest address only
-	sender.SetTestnetOnly(true)
 	sender.SetBounce(false)
-	dest.SetTestnetOnly(true)
 	dest.SetBounce(false)
 
 	amount := message.Amount.Nano()

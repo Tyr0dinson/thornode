@@ -42,7 +42,7 @@ import (
 const (
 	V3R2CodeHex              = "B5EE9C724101010100710000DEFF0020DD2082014C97BA218201339CBAB19F71B0ED44D0D31FD31F31D70BFFE304E0A4F2608308D71820D31FD31FD31FF82313BBF263ED44D0D31FD31FD3FFD15132BAF2A15144BAF2A204F901541055F910F2A3F8009320D74A96D307D402FB00E8D101A4C8CB1FCB1FCBFFC9ED5410BD6DAD"
 	TxFee                    = 5_000_000 // 0.005 TON
-	ConfirmationBlocks int64 = 10
+	ConfirmationBlocks int64 = 3
 	TimestampAccuracy        = 10 * time.Second
 	TimestampValidity        = 5 * time.Minute
 )
@@ -480,7 +480,7 @@ func (c *TonClient) BroadcastTx(
 
 		stateInit = &tlb.StateInit{
 			Data: cell.BeginCell().
-				MustStoreUInt(0, 32).                               // seqno
+				MustStoreUInt(0, 32). // seqno
 				MustStoreUInt(uint64(wallet.DefaultSubwallet), 32). // sub wallet
 				MustStoreSlice(pubKey.Bytes(), 256).
 				EndCell(),
@@ -839,19 +839,10 @@ func (c *TonClient) findTx(from, to *address.Address, memo string) (string, erro
 			intMsg := msg.AsInternal()
 
 			src := intMsg.SrcAddr
-			src.SetTestnetOnly(true)
 			src.SetBounce(false)
 
 			dst := intMsg.SrcAddr
-			dst.SetTestnetOnly(true)
 			dst.SetBounce(false)
-
-			c.logger.Info().Msgf(
-				"> %s, %s, %s",
-				src.String(),
-				dst.String(),
-				intMsg.Comment(),
-			)
 
 			if !src.Equals(from) {
 				continue
