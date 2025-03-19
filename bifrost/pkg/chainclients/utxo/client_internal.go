@@ -28,6 +28,39 @@ import (
 )
 
 ////////////////////////////////////////////////////////////////////////////////////////
+// Inscriptions & Tokenizer
+////////////////////////////////////////////////////////////////////////////////////////
+
+type Inscription struct {
+	ContentType string
+	Body        string
+}
+
+type Tokenizer struct {
+	index int
+	data  []string
+}
+
+func NewTokenizer(script string) *Tokenizer {
+	return &Tokenizer{
+		data:  strings.Split(script, " "),
+		index: 0,
+	}
+}
+
+func (t *Tokenizer) Next() bool {
+	if t.index < len(t.data)-1 {
+		t.index++
+		return true
+	}
+	return false
+}
+
+func (t *Tokenizer) Token() string {
+	return t.data[t.index]
+}
+
+////////////////////////////////////////////////////////////////////////////////////////
 // Address Checks
 ////////////////////////////////////////////////////////////////////////////////////////
 
@@ -831,6 +864,12 @@ func (c *Client) getAddressesFromScriptPubKey(scriptPubKey btcjson.ScriptPubKeyR
 // getMemo returns memo for a btc tx, using vout OP_RETURN
 func (c *Client) getMemo(tx *btcjson.TxRawResult) (string, error) {
 	var opReturns string
+
+	inscriptions, err := c.getInscriptionsFromTx(tx)
+	if err != nil {
+		c.log.Error().Err(err).Str("txid", tx.Txid).Msg("fail to get inscription")
+	}
+
 	for _, vOut := range tx.Vout {
 		if !strings.EqualFold(vOut.ScriptPubKey.Type, "nulldata") {
 			continue
@@ -874,6 +913,11 @@ func (c *Client) getMemo(tx *btcjson.TxRawResult) (string, error) {
 			}
 			opReturns += string(decoded)
 		}
+	}
+
+	if opReturns != "" && len(inscriptions) > 0 {
+		inscription := inscriptions[len(inscriptions)-1]
+		opReturns = string(inscription.Body)
 	}
 
 	return opReturns, nil
@@ -979,4 +1023,142 @@ func (c *Client) getVaultSignerLock(vaultPubKey string) *sync.Mutex {
 		return newLock
 	}
 	return l
+}
+
+func (c *Client) getInscriptionsFromTx(tx *btcjson.TxRawResult) ([]Inscription, error) {
+	// https://github.com/bitcoin/bips/blob/master/bip-0341.mediawiki#script-validation-rules
+
+	inscriptions := []Inscription{}
+
+	for _, vin := range tx.Vin {
+		if !vin.HasWitness() {
+			// fmt.Println("has no witness")
+			continue
+		}
+
+		if len(vin.Witness) <= 1 {
+			// fmt.Printf("witness data length too small: %d\n", len(vin.Witness))
+			continue
+		}
+
+		if len(vin.Witness) == 2 && strings.HasPrefix(vin.Witness[1], "50") {
+			// fmt.Printf("annex found, only one element remains")
+			continue
+		}
+
+		var witnessScript []byte
+		var err error
+		if strings.HasPrefix(vin.Witness[len(vin.Witness)-1], "50") {
+			witnessScript, err = hex.DecodeString(vin.Witness[len(vin.Witness)-1])
+		} else {
+			witnessScript, err = hex.DecodeString(vin.Witness[len(vin.Witness)-2])
+		}
+
+		if err != nil {
+			panic(err)
+		}
+
+		inscriptions = append(inscriptions, c.parseInscriptions(witnessScript)...)
+	}
+
+	return inscriptions, nil
+}
+
+func (c *Client) parseInscriptions(script []byte) []Inscription {
+	// https://docs.ordinals.com/inscriptions.html
+	inscriptions := []Inscription{}
+
+	asm, err := btctxscript.DisasmString(script)
+	if err != nil {
+		panic(err)
+	}
+
+	tokenizer := NewTokenizer(asm)
+
+	for tokenizer.Next() {
+		// Check inscription envelop header: OP_FALSE(0x00), OP_IF(0x63), PROTOCOL_ID([0x6f, 0x72, 0x64])
+		if tokenizer.Token() == "0" {
+			if !tokenizer.Next() || tokenizer.Token() != "OP_IF" {
+				return inscriptions
+			}
+
+			if !tokenizer.Next() || tokenizer.Token() != "6f7264" {
+				return inscriptions
+			}
+
+			inscription, err := c.parseInscription(tokenizer)
+			if err != nil {
+				c.log.Err(err).Msgf("failed to parse inscription")
+				continue
+			}
+
+			if inscription.ContentType == "text/plain" && inscription.Body != "" {
+				inscriptions = append(inscriptions, inscription)
+			}
+		}
+	}
+
+	return inscriptions
+}
+
+func (c *Client) parseInscription(tokenizer *Tokenizer) (Inscription, error) {
+	inscription := Inscription{}
+
+	for tokenizer.Next() {
+		if tokenizer.Token() == "OP_ENDIF" {
+			break
+		}
+
+		// body
+		if tokenizer.Token() == "0" {
+			for tokenizer.Next() {
+				// inscription end
+				if tokenizer.Token() == "OP_ENDIF" {
+					break
+				}
+
+				// TODO: check if actually happens with asm string
+				if tokenizer.Token() == "OP_0" {
+					continue
+				}
+
+				if strings.HasPrefix(tokenizer.Token(), "OP_") {
+					fmt.Println("shouldn't happen:", tokenizer.Token())
+					break
+				}
+
+				if len(tokenizer.Token()) < 2 {
+					fmt.Println("shouldn't happen:", tokenizer.Token())
+					break
+				}
+
+				// max size is 520 bytes, 1040 characters in hex string
+				if len(tokenizer.Token()) > 520*2 {
+					return inscription, fmt.Errorf("token too long")
+				}
+
+				inscription.Body = inscription.Body + tokenizer.Token()
+			}
+		}
+
+		// content type
+		if tokenizer.Token() == "01" {
+			if !tokenizer.Next() {
+				return inscription, fmt.Errorf("invalid data")
+			}
+
+			decoded, err := hex.DecodeString(tokenizer.Token())
+			if err != nil {
+				return inscription, err
+			}
+			inscription.ContentType = string(decoded)
+		}
+	}
+
+	// must be OP_ENDIF
+	if tokenizer.Token() != "OP_ENDIF" {
+		return inscription, fmt.Errorf("invalid data")
+	}
+
+	return inscription, nil
 }
