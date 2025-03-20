@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"bytes"
+	stded25519 "crypto/ed25519"
 	"testing"
 
 	"github.com/cometbft/cometbft/crypto/ed25519"
@@ -42,4 +44,24 @@ func (*ED25519TestSuite) TestGetEd25519Keys(c *C) {
 	result, err = mnemonicToEddKey(mnemonic, "")
 	c.Assert(err, NotNil)
 	c.Assert(result, IsNil)
+}
+
+func (*ED25519TestSuite) TestGetEd25519KeysWithPassphrase(c *C) {
+	thorchain.SetupConfigForTest()
+	mnemonic := `grape safe sound obtain bachelor festival profit iron meat moon exit garbage chapter promote noble grocery blood letter junk click mesh arm shop decorate`
+	result, err := mnemonicToEddKey(mnemonic, "")
+	c.Assert(err, IsNil)
+	priv, pub, err := edwards.PrivKeyFromScalar(edwards.Edwards(), result)
+	privBz := priv.Serialize()
+	pubBz := pub.Serialize()
+	c.Assert(err, IsNil)
+	c.Assert(len(pubBz), Equals, ed25519.PubKeySize)
+	c.Assert(len(privBz), Equals, 32)
+	c.Assert(bytes.Equal(privBz, result), Equals, true)
+
+	stdPriv := stded25519.NewKeyFromSeed(privBz)
+	c.Assert(bytes.Equal(stdPriv.Seed(), privBz), Equals, true)
+
+	stdPub := stdPriv.Public().(stded25519.PublicKey)
+	c.Assert(bytes.Equal(stdPub, pubBz), Equals, true)
 }
