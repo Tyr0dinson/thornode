@@ -105,7 +105,7 @@ func NewSigner(cfg config.Bifrost,
 		pubkeyMgr.AddNodePubKey(na.PubKeySet.Ed25519)
 	}
 
-	cfg.BlockScanner.ChainID = common.THORChain // hard code to thorchain
+	cfg.Signer.BlockScanner.ChainID = common.THORChain // hard code to thorchain
 
 	// Create pubkey manager and add our private key
 	thorchainBlockScanner, err := NewThorchainBlockScan(cfg.Signer.BlockScanner, storage, thorchainBridge, m, pubkeyMgr)

@@ -13,7 +13,6 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/common"
-	"gitlab.com/thorchain/thornode/v3/common/cardano"
 	"gitlab.com/thorchain/thornode/v3/constants"
 )
 
@@ -284,13 +283,13 @@ func (pkm *PubKeyManager) updatePubKeys() {
 
 func matchAddress(addr string, chain common.Chain, key common.PubKey) (bool, common.ChainPoolInfo) {
 	// TODO: Remove me; this is a big hack for single validator signing in test without full EDDSA support
-	if chain == common.ADAChain {
-		thorPubKey, err := cardano.NewThorPubKeyBech32(cardano.DeleteMeVaultPubKey)
-		if err != nil {
-			panic(err)
-		}
-		key = common.PubKey(thorPubKey)
-	}
+	// if chain == common.ADAChain {
+	// 	thorPubKey, err := cardano.NewThorPubKeyBech32(cardano.DeleteMeVaultPubKey)
+	// 	if err != nil {
+	// 		panic(err)
+	// 	}
+	// 	key = common.PubKey(thorPubKey)
+	// }
 	cpi, err := common.NewChainPoolInfo(chain, key)
 	if err != nil {
 		return false, common.EmptyChainPoolInfo

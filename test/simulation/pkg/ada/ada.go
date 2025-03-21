@@ -1,7 +1,6 @@
 package ada
 
 import (
-	"bytes"
 	"crypto/ed25519"
 	"fmt"
 	"log/slog"
@@ -21,7 +20,6 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cardano"
-	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	simtypes "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
 )
 
@@ -110,31 +108,15 @@ func NewClient(n2cAddress string, keys *thorclient.Keys) (*Client, error) {
 	}
 	c.protocol = protocolParams.Utxorpc()
 
-	privKey, err := keys.GetPrivateKey()
+	c.key, err = keys.GetSingleValidatorEd25519PrivateKey()
 	if err != nil {
 		return nil, fmt.Errorf("fail to get private key: %w", err)
-	}
-	var buf bytes.Buffer
-	buf.Write(privKey.Bytes())
-	_, c.key, err = ed25519.GenerateKey(&buf)
-	if err != nil {
-		return nil, fmt.Errorf("fail to generate ed25519 key")
 	}
 	pub := c.key.Public().(ed25519.PublicKey)
 	c.address, err = cardano.PaymentOnlyTestnetAddressFromPubkey(pub)
 	if err != nil {
 		return nil, fmt.Errorf("fail to create cardano address: %w", err)
 	}
-
-	secpBech32, err := cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeAccPub, privKey.PubKey())
-	if err != nil {
-		return nil, fmt.Errorf("fail to bech32ify pubkey: %w", err)
-	}
-	pubBech32, err := cardano.NewThorPubKeyBech32(pub)
-	if err != nil {
-		return nil, fmt.Errorf("fail to get thor pub key bech32: %w", err)
-	}
-	cardano.SetEd25519(secpBech32, pubBech32)
 
 	return c, nil
 }

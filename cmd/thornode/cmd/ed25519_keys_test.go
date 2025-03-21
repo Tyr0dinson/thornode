@@ -51,12 +51,14 @@ func (*ED25519TestSuite) TestGetEd25519KeysWithPassphrase(c *C) {
 	mnemonic := `grape safe sound obtain bachelor festival profit iron meat moon exit garbage chapter promote noble grocery blood letter junk click mesh arm shop decorate`
 	result, err := mnemonicToEddKey(mnemonic, "")
 	c.Assert(err, IsNil)
-	priv, pub, err := edwards.PrivKeyFromScalar(edwards.Edwards(), result)
+	curve := edwards.Edwards()
+	// curve.A = curve.A.Neg(curve.A)
+	priv, pub, err := edwards.PrivKeyFromScalar(curve, result)
+	c.Assert(err, IsNil)
 	privBz := priv.Serialize()
 	pubBz := pub.Serialize()
-	c.Assert(err, IsNil)
-	c.Assert(len(pubBz), Equals, ed25519.PubKeySize)
-	c.Assert(len(privBz), Equals, 32)
+	c.Assert(len(pubBz), Equals, stded25519.PublicKeySize)
+	c.Assert(len(privBz), Equals, stded25519.SeedSize)
 	c.Assert(bytes.Equal(privBz, result), Equals, true)
 
 	stdPriv := stded25519.NewKeyFromSeed(privBz)

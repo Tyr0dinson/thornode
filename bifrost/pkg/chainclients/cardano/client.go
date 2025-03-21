@@ -102,33 +102,25 @@ func NewClient(
 	if err != nil {
 		return nil, fmt.Errorf("fail to create tss signer: %w", err)
 	}
-	privKey, err := thorKeys.GetPrivateKey()
+	c.localTestingKey, err = thorKeys.GetSingleValidatorEd25519PrivateKey()
 	if err != nil {
-		return nil, fmt.Errorf("fail to get private key: %w", err)
+		return nil, fmt.Errorf("fail to get local testing key: %w", err)
 	}
-	var buf bytes.Buffer
-	buf.Write(privKey.Bytes())
-	adaPubKey, adaPrivKey, err := ed25519.GenerateKey(&buf)
-	if err != nil {
-		return nil, fmt.Errorf("fail to generate ed25519 key")
-	}
-	c.localTestingKey = adaPrivKey
 	vaultAddr, err := c.getVaultAddress()
 	if err != nil {
 		return nil, fmt.Errorf("fail to get vault address: %w", err)
 	}
-
-	pubBech32, err := cardano.NewThorPubKeyBech32(privKey.PubKey().Bytes())
+	pubKey := c.localTestingKey.Public().(ed25519.PublicKey)
+	pubBech32, err := cardano.NewThorPubKeyBech32(pubKey)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get thor pub key bech32: %w", err)
 	}
 	fmt.Printf("cardano client has thorKeys:\n privKey: %x\n  pubKey: %x\n vaultAddress: %s\n thorpub: %s\n",
-		privKey.Bytes(), privKey.PubKey().Bytes(),
+		c.localTestingKey,
+		pubKey,
 		vaultAddr.String(),
 		pubBech32,
 	)
-	cardano.DeleteMeVaultAddress = vaultAddr
-	cardano.DeleteMeVaultPubKey = adaPubKey
 
 	var path string // if not set later, will in memory storage
 	c.logger.Info().Msgf("block scanner db path: %s", path)
@@ -397,6 +389,14 @@ func (c *Client) SignTx(tx types.TxOutItem, height int64) (signedBz, checkpoint 
 	fromAddr, err := c.getVaultAddress()
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("fail to get vault address: %w", err)
+	}
+	vaultFromAddr, err := tx.VaultPubKeyEddsa.GetAddress(c.GetChain())
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("fail to get vault pubkey address: %w", err)
+	}
+	if vaultFromAddr.String() != fromAddr.String() {
+		return nil, nil, nil, fmt.Errorf("vault pubkey address %s does not match vault address %s",
+			vaultFromAddr.String(), fromAddr.String())
 	}
 	toAddr, err := cardano.NewAddressFromBech32(tx.ToAddress.String())
 	if err != nil {

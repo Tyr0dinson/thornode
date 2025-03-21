@@ -142,10 +142,12 @@ func (c Chain) String() string {
 
 // GetSigningAlgo get the signing algorithm for the given chain
 func (c Chain) GetSigningAlgo() SigningAlgo {
-	if c == SOLChain {
+	switch c {
+	case SOLChain, ADAChain:
 		return SigningAlgoEd25519
+	default:
+		return SigningAlgoSecp256k1
 	}
-	return SigningAlgoSecp256k1
 }
 
 // GetGasAsset chain's base asset

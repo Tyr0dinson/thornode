@@ -201,30 +201,21 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 		}
 		addressString = addr.String()
 	case ADAChain:
-		pubkeyBech32 := string(p)
-		ed25519PubKey := cardano.GetEd25519(pubkeyBech32)
-		if ed25519PubKey != "" {
-			pubkeyBech32 = ed25519PubKey
-		}
-		fmt.Printf("pubkey.Address() for ADACHAIN\n pubkey=%s ed25519=%s\n", string(p), ed25519PubKey)
-		_, data, err := bech32.Decode(pubkeyBech32)
+		pub, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, string(p))
 		if err != nil {
-			return NoAddress, fmt.Errorf("fail to decode the address, err: %w", err)
-		}
-		pub, err := bech32.ConvertBits(data, 5, 8, false)
-		if err != nil {
-			return NoAddress, fmt.Errorf("fail to convert bits, err: %w", err)
+			return NoAddress, err
 		}
 		var addr cardano.Address
 		switch chainNetwork {
 		case MainNet:
-			addr, err = cardano.PaymentOnlyMainnetAddressFromPubkey(pub)
+			addr, err = cardano.PaymentOnlyMainnetAddressFromPubkey(pub.Bytes())
 		default:
-			addr, err = cardano.PaymentOnlyTestnetAddressFromPubkey(pub)
+			addr, err = cardano.PaymentOnlyTestnetAddressFromPubkey(pub.Bytes())
 		}
 		if err != nil {
 			return NoAddress, fmt.Errorf("fail to create address from pubkey, err: %w", err)
 		}
+		fmt.Printf("pubkey.Address() for ADACHAIN\n pubkey=%s addr=%s\n", p, addr.String())
 		addressString = addr.String()
 	case SOLChain:
 		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, p.String())

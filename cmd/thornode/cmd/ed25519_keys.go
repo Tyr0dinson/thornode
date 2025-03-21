@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bufio"
+	stded25519 "crypto/ed25519"
 	"crypto/hmac"
 	"crypto/sha512"
 	"encoding/binary"
@@ -15,8 +16,8 @@ import (
 	"github.com/cometbft/cometbft/crypto/ed25519"
 	"github.com/cosmos/cosmos-sdk/client/input"
 	"github.com/cosmos/cosmos-sdk/crypto/codec"
-	sdk "github.com/cosmos/cosmos-sdk/types"
-	bech32 "github.com/cosmos/cosmos-sdk/types/bech32/legacybech32" // nolint SA1019 deprecated
+	sdk "github.com/cosmos/cosmos-sdk/types" // nolint SA1019 deprecated
+	"github.com/cosmos/cosmos-sdk/types/bech32/legacybech32"
 	"github.com/cosmos/go-bip39"
 	"github.com/decred/dcrd/dcrec/edwards"
 	"github.com/spf13/cobra"
@@ -70,18 +71,17 @@ func ed25519Keys(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("fail to get ED25519 key : %w", err)
 		}
 	}
-	// now we test the ed25519 key can sign and verify
-	_, pk, err := edwards.PrivKeyFromScalar(edwards.Edwards(), item.Data)
-	if err != nil {
-		return fmt.Errorf("fail to parse private key")
-	}
-	pkey := ed25519.PubKey(pk.Serialize())
+	// TODO derivation and construction should use same lib
+	priv := stded25519.NewKeyFromSeed(item.Data)
+	pub := priv.Public().(stded25519.PublicKey)
+
+	pkey := ed25519.PubKey(pub)
 	tmp, err := codec.FromCmtPubKeyInterface(pkey)
 	if err != nil {
 		return fmt.Errorf("fail to get ED25519 key : %w", err)
 	}
 	// nolint
-	pubKey, err := bech32.MarshalPubKey(bech32.AccPK, tmp)
+	pubKey, err := legacybech32.MarshalPubKey(legacybech32.AccPK, tmp)
 	if err != nil {
 		return fmt.Errorf("fail generate bech32 account pub key")
 	}
