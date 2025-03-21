@@ -138,6 +138,7 @@ replace (
 	github.com/agl/ed25519 => github.com/binance-chain/edwards25519 v0.0.0-20200305024217-f36fc4b53d43
 	github.com/binance-chain/tss-lib => gitlab.com/thorchain/tss/tss-lib v0.1.6
 	github.com/btcsuite/btcd => github.com/btcsuite/btcd v0.22.1
+	github.com/btcsuite/btcd/chaincfg/chainhash => github.com/btcsuite/btcd/chaincfg/chainhash v1.0.1
 	github.com/cosmos/ledger-cosmos-go => gitlab.com/thorchain/ledger-thorchain-go v1.0.3
 
 	// pin version! 126854af5e6d has issues with the store so that queries fail

@@ -99,6 +99,7 @@ func NewClient(chain common.Chain, host string, keys *thorclient.Keys) (LiteChai
 	if err != nil {
 		return nil, fmt.Errorf("fail to get address from pubkey(%s): %w", pk, err)
 	}
+	fmt.Printf("chain=%s address=%s\n", chain.String(), address.String())
 
 	// import address to wallet, rescan if master account
 	if keys.GetSignerInfo().Name == "master" {
