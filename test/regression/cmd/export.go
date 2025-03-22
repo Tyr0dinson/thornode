@@ -142,6 +142,10 @@ func exportBlocks(out io.Writer, path string) error {
 		if err != nil {
 			localLog.Fatal().Err(err).Msg("failed to decode block export")
 		}
+
+		// Omit the app_hash to reduce rebase merge conflicts.
+		block.Header.AppHash = "regtest_omitted"
+
 		blocks = append(blocks, block)
 		f.Close()
 	}
