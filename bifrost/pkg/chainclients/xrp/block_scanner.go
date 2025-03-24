@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
 	"sync"
 
 	sdkmath "cosmossdk.io/math"
@@ -182,8 +181,8 @@ func (c *XrpBlockScanner) updateFees(height int64) error {
 	return nil
 }
 
-func (c *XrpBlockScanner) processTxs(height int64, rawTxs []transaction.FlatTransaction) ([]types.TxInItem, error) {
-	var txIn []types.TxInItem
+func (c *XrpBlockScanner) processTxs(height int64, rawTxs []transaction.FlatTransaction) ([]*types.TxInItem, error) {
+	var txIn []*types.TxInItem
 	for _, rawTx := range rawTxs {
 		// tx is nil, may not have been validated
 		if rawTx == nil {
@@ -253,7 +252,7 @@ func (c *XrpBlockScanner) processTxs(height int64, rawTxs []transaction.FlatTran
 		}
 		coins := common.Coins{coin}
 
-		txIn = append(txIn, types.TxInItem{
+		txIn = append(txIn, &types.TxInItem{
 			Tx:          hash,
 			BlockHeight: height,
 			Memo:        memo,
@@ -338,7 +337,6 @@ func (c *XrpBlockScanner) FetchTxs(height, chainHeight int64) (types.TxIn, error
 	}
 
 	txIn := types.TxIn{
-		Count:    strconv.Itoa(len(txs)),
 		Chain:    c.cfg.ChainID,
 		TxArray:  txs,
 		Filtered: false,
