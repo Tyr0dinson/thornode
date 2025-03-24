@@ -261,12 +261,35 @@ func (k KVStore) SetVault(ctx cosmos.Context, vault Vault) error {
 	}
 
 	k.setVault(ctx, k.GetKey(prefixVault, vault.PubKey.String()), vault)
+	k.setVaultAlias(ctx, vault.PubKeyEddsa, vault.PubKey)
 	return nil
+}
+
+func (k KVStore) setVaultAlias(ctx cosmos.Context, ak common.PubKey, vk common.PubKey) {
+	store := ctx.KVStore(k.storeKey)
+	aliasKey := k.GetKey(prefixVaultAlias, ak.String())
+	vaultKey := k.GetKey(prefixVault, vk.String())
+	store.Set([]byte(aliasKey), []byte(vaultKey))
+}
+
+func (k KVStore) getVaultAlias(ctx cosmos.Context, alias string) []byte {
+	store := ctx.KVStore(k.storeKey)
+	key := k.GetKey(prefixVaultAlias, alias)
+	vk := store.Get([]byte(key))
+	if len(vk) > 0 {
+		fmt.Printf("found vault alias! %v => %s\n", key, vk)
+	}
+	return vk
 }
 
 // VaultExists check whether the given pubkey is associated with a vault
 func (k KVStore) VaultExists(ctx cosmos.Context, pk common.PubKey) bool {
-	return k.has(ctx, k.GetKey(prefixVault, pk.String()))
+	vaultKey := []byte(k.GetKey(prefixVault, pk.String()))
+	if alias := k.getVaultAlias(ctx, pk.String()); len(alias) > 0 {
+		vaultKey = alias
+	}
+	store := ctx.KVStore(k.storeKey)
+	return store.Has(vaultKey)
 }
 
 // GetVault get Vault with the given pubkey from data store
@@ -275,7 +298,11 @@ func (k KVStore) GetVault(ctx cosmos.Context, pk common.PubKey) (Vault, error) {
 		BlockHeight: ctx.BlockHeight(),
 		PubKey:      pk,
 	}
-	ok, err := k.getVault(ctx, k.GetKey(prefixVault, pk.String()), &record)
+	vaultKey := k.GetKey(prefixVault, pk.String())
+	if alias := k.getVaultAlias(ctx, pk.String()); len(alias) > 0 {
+		vaultKey = string(alias)
+	}
+	ok, err := k.getVault(ctx, vaultKey, &record)
 	if !ok {
 		return record, fmt.Errorf("vault with pubkey(%s) doesn't exist: %w", pk, kvTypes.ErrVaultNotFound)
 	}

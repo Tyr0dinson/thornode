@@ -163,6 +163,8 @@ services:
       AVAX_HOST: ${AVAX_HOST:-http://avalanche:9650/ext/bc/C/rpc}
       GAIA_HOST: ${GAIA_HOST:-http://gaia:26657}
       GAIA_GRPC_HOST: ${GAIA_GRPC_HOST:-gaia:9090}
+      ADA_HOST: ${ADA_HOST:-cardano:3001}
+      ADA_N2C_ADDRESS: ${ADA_N2C_ADDRESS:-cardano:7007}
       THOR_BLOCK_TIME: ${BLOCK_TIME:-2s}
       BLOCK_SCANNER_BACKOFF: ${BLOCK_SCANNER_BACKOFF:-5s}
       PEER: ${PEER:-}
@@ -540,3 +542,17 @@ services:
       - 9650:9650
     environment:
       RPC_PORT: "9650"
+
+  # ------------------------------ cardano ------------------------------
+
+  cardano:
+    profiles:
+      - mocknet
+      - mocknet-cluster
+    restart: unless-stopped
+    image: kocubinski/cardano-devnet:0.1.5
+    ports:
+      - 7007:7007 #n2c port
+      - 3001:3001 #n2n port
+    environment:
+      FUND_ACCOUNT: addr_test1vr8aq48kt8t8xxkecd6fuvj5zmx8ufaer9eqpt0pz8k9k4cntrghw # "master ..master notice" derived

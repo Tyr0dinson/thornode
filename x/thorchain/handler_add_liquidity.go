@@ -493,9 +493,11 @@ func (h AddLiquidityHandler) addLiquidity(ctx cosmos.Context,
 		} else {
 			// ensure input addresses match LP position addresses
 			if !runeAddr.Equals(su.RuneAddress) {
+				fmt.Printf("rune address mismatch: %s != %s\n", runeAddr, su.RuneAddress)
 				return errAddLiquidityMismatchAddr
 			}
 			if !assetAddr.Equals(su.AssetAddress) {
+				fmt.Printf("asset address mismatch: %s != %s\n", assetAddr, su.AssetAddress)
 				return errAddLiquidityMismatchAddr
 			}
 		}
@@ -508,6 +510,7 @@ func (h AddLiquidityHandler) addLiquidity(ctx cosmos.Context,
 	} else if !assetAddr.IsEmpty() && !su.AssetAddress.Equals(assetAddr) {
 		// mismatch of asset addresses from what is known to the address
 		// given. Refund it.
+		fmt.Printf("asset address mismatch #2: %s != %s\n", assetAddr, su.AssetAddress)
 		return errAddLiquidityMismatchAddr
 	}
 
