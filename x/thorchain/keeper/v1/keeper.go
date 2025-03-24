@@ -44,6 +44,7 @@ const (
 	prefixBondProviders           types.DbPrefix = "bond_providers/"
 	prefixVault                   types.DbPrefix = "vault/"
 	prefixVaultAsgardIndex        types.DbPrefix = "vault_asgard_index/"
+	prefixVaultAlias              types.DbPrefix = "vault_alias/"
 	prefixNetwork                 types.DbPrefix = "network/"
 	prefixSwapperClout            types.DbPrefix = "sclout/"
 	prefixPOL                     types.DbPrefix = "pol/"

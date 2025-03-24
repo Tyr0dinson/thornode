@@ -22,6 +22,7 @@ import (
 	"github.com/cometbft/cometbft/crypto"
 	eth "github.com/ethereum/go-ethereum/crypto"
 
+	"gitlab.com/thorchain/thornode/v3/common/cardano"
 	xrpkm "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/xrp/keymanager"
 
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -215,6 +216,22 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 
 		// Encode the public key to base58 to get the Solana address
 		addressString = Base58Encode(pk.Bytes())
+	case ADAChain:
+		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, p.String())
+		if err != nil {
+			return NoAddress, err
+		}
+		var addr cardano.Address
+		switch chainNetwork {
+		case MainNet:
+			addr, err = cardano.PaymentOnlyMainnetAddressFromPubkey(pk.Bytes())
+		default:
+			addr, err = cardano.PaymentOnlyTestnetAddressFromPubkey(pk.Bytes())
+		}
+		addressString = addr.String()
+		if err != nil {
+			return NoAddress, err
+		}
 
 	default:
 		// Only EVM chains remain.

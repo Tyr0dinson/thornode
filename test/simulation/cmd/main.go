@@ -18,6 +18,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/test/simulation/actors/core"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/actors/features"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/actors/suites"
+	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/ada"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/cli"
 	pkgcosmos "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/cosmos"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/dag"
@@ -45,6 +46,7 @@ var liteClientConstructors = map[common.Chain]LiteChainClientConstructor{
 	common.AVAXChain: evm.NewConstructor(chainRPCs[common.AVAXChain]),
 	common.GAIAChain: pkgcosmos.NewConstructor(chainRPCs[common.GAIAChain]),
 	common.BASEChain: evm.NewConstructor(chainRPCs[common.BASEChain]),
+	common.ADAChain:  ada.NewConstructor(chainRPCs[common.ADAChain]),
 	common.XRPChain:  xrp.NewConstructor(chainRPCs[common.XRPChain]),
 }
 

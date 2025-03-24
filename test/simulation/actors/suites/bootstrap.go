@@ -20,6 +20,7 @@ var SimChains = []common.Chain{
 	common.ETHChain,
 	common.GAIAChain,
 	common.LTCChain,
+	common.ADAChain,
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////

@@ -25,6 +25,8 @@ const (
 	GAIAChain  = Chain("GAIA")
 	AVAXChain  = Chain("AVAX")
 	BASEChain  = Chain("BASE")
+	SOLChain   = Chain("SOL")
+	ADAChain   = Chain("ADA")
 	XRPChain   = Chain("XRP")
 
 	SigningAlgoSecp256k1 = SigningAlgo("secp256k1")
@@ -42,6 +44,8 @@ var AllChains = [...]Chain{
 	GAIAChain,
 	AVAXChain,
 	BASEChain,
+	SOLChain,
+	ADAChain,
 	XRPChain,
 }
 
@@ -140,7 +144,7 @@ func (c Chain) String() string {
 
 // GetSigningAlgo get the signing algorithm for the given chain
 func (c Chain) GetSigningAlgo() SigningAlgo {
-	if c == SOLChain {
+	if c == SOLChain || c == ADAChain {
 		return SigningAlgoEd25519
 	}
 	return SigningAlgoSecp256k1
@@ -169,6 +173,8 @@ func (c Chain) GetGasAsset() Asset {
 		return ATOMAsset
 	case BASEChain:
 		return BaseETHAsset
+	case ADAChain:
+		return ADAAsset
 	case XRPChain:
 		return XRPAsset
 	default:
@@ -193,6 +199,8 @@ func (c Chain) GetGasUnits() string {
 		return "uatom"
 	case LTCChain:
 		return "satsperbyte"
+	case ADAChain:
+		return "lovelace"
 	case XRPChain:
 		return "drop"
 	default:
@@ -338,6 +346,8 @@ func (c Chain) ApproximateBlockMilliseconds() int64 {
 		return 6_000
 	case BASEChain:
 		return 2_000
+	case ADAChain:
+		return 20_000
 	case XRPChain:
 		return 4_000 // approx 3-5 seconds
 	default:

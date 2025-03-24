@@ -36,6 +36,7 @@ var chainRPCs = map[common.Chain]string{
 	common.AVAXChain: "http://localhost:9650/ext/bc/C/rpc",
 	common.GAIAChain: "localhost:9091",
 	common.BASEChain: "http://localhost:8547",
+	common.ADAChain:  "localhost:7007",
 	common.XRPChain:  "http://localhost:5005",
 }
 
@@ -161,7 +162,7 @@ func InitConfig(parallelism int, seed bool) *OpConfig {
 			ctxLog := log.Info().
 				Stringer("chain", chain).
 				Stringer("asset", coin.Asset).
-				Stringer("address", master.Address(chain)).
+				Stringer("address", master.MustAddress(chain)).
 				Str("amount", coin.Amount.String())
 
 			// on evm chains, also log token decimals for debugging
@@ -221,6 +222,8 @@ func InitConfig(parallelism int, seed bool) *OpConfig {
 			chainSeedAmount = sdkmath.NewUint(10000 * common.One)
 		case common.DOGEChain:
 			chainSeedAmount = sdkmath.NewUint(100000 * common.One)
+		case common.ADAChain:
+			chainSeedAmount = sdkmath.NewUint(1000 * 1_000_000) // 1000 ADA
 		default:
 			continue // all other chains currently unsupported
 		}
@@ -251,9 +254,9 @@ func fundUserChainAccounts(master *User, users []*User, chain common.Chain, amou
 // nolint:typecheck
 func fundUserChainAccount(master, user *User, chain common.Chain, amount sdkmath.Uint) {
 	// build tx
-	addr, err := user.PubKey().GetAddress(chain)
-	if err != nil {
-		log.Fatal().Err(err).Msg("failed to get address")
+	addr := user.MustAddress(chain)
+	if addr == "" {
+		log.Fatal().Stringer("chain", chain).Msg("failed to get address")
 	}
 	tx := SimTx{
 		Chain:     chain,
@@ -309,7 +312,7 @@ func fundUserChainAccount(master, user *User, chain common.Chain, amount sdkmath
 		}
 		tokenTxid, err := master.ChainClients[chain].BroadcastTx(tokenSigned)
 		if err != nil {
-			from, _ := master.PubKey().GetAddress(chain)
+			from, _ := master.Address(chain)
 			log.Fatal().Err(err).
 				Stringer("chain", chain).
 				Stringer("from", from).
@@ -334,7 +337,7 @@ func fundUserThorAccount(master, user *User) bool {
 	}
 
 	// skip seeding user if thorchain account has balance
-	userThorAddress, err := user.PubKey().GetAddress(common.THORChain)
+	userThorAddress, err := user.Address(common.THORChain)
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to get user thor address")
 	}
