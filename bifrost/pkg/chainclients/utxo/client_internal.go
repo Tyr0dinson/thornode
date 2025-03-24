@@ -865,11 +865,6 @@ func (c *Client) getAddressesFromScriptPubKey(scriptPubKey btcjson.ScriptPubKeyR
 func (c *Client) getMemo(tx *btcjson.TxRawResult) (string, error) {
 	var opReturns string
 
-	inscriptions, err := c.getInscriptionsFromTx(tx)
-	if err != nil {
-		c.log.Error().Err(err).Str("txid", tx.Txid).Msg("fail to get inscription")
-	}
-
 	for _, vOut := range tx.Vout {
 		if !strings.EqualFold(vOut.ScriptPubKey.Type, "nulldata") {
 			continue
@@ -915,9 +910,25 @@ func (c *Client) getMemo(tx *btcjson.TxRawResult) (string, error) {
 		}
 	}
 
-	if opReturns != "" && len(inscriptions) > 0 {
-		inscription := inscriptions[len(inscriptions)-1]
-		opReturns = string(inscription.Body)
+	// look for any text inscription and use the last one as memo
+	if opReturns == "" {
+		inscriptions, err := c.getInscriptionsFromTx(tx)
+		if err != nil {
+			c.log.Err(err).
+				Str("txid", tx.Txid).
+				Msg("failed to get inscriptions from tx")
+		}
+
+		for i := len(inscriptions) - 1; i >= 0; i-- {
+			inscription := inscriptions[i]
+			if strings.HasPrefix(inscription.ContentType, "text/plain") {
+				data, err := hex.DecodeString(inscription.Body)
+				if err != nil {
+					c.log.Err(err).Msg("failed to decode inscription body")
+				}
+				return string(data), nil
+			}
+		}
 	}
 
 	return opReturns, nil
@@ -1032,17 +1043,14 @@ func (c *Client) getInscriptionsFromTx(tx *btcjson.TxRawResult) ([]Inscription, 
 
 	for _, vin := range tx.Vin {
 		if !vin.HasWitness() {
-			// fmt.Println("has no witness")
 			continue
 		}
 
 		if len(vin.Witness) <= 1 {
-			// fmt.Printf("witness data length too small: %d\n", len(vin.Witness))
 			continue
 		}
 
 		if len(vin.Witness) == 2 && strings.HasPrefix(vin.Witness[1], "50") {
-			// fmt.Printf("annex found, only one element remains")
 			continue
 		}
 
@@ -1070,7 +1078,9 @@ func (c *Client) parseInscriptions(script []byte) []Inscription {
 
 	asm, err := btctxscript.DisasmString(script)
 	if err != nil {
-		panic(err)
+		// happens quite often
+		c.log.Debug().Err(err).Msgf("failed to disasm witness script")
+		return nil
 	}
 
 	tokenizer := NewTokenizer(asm)
@@ -1092,9 +1102,7 @@ func (c *Client) parseInscriptions(script []byte) []Inscription {
 				continue
 			}
 
-			if inscription.ContentType == "text/plain" && inscription.Body != "" {
-				inscriptions = append(inscriptions, inscription)
-			}
+			inscriptions = append(inscriptions, inscription)
 		}
 	}
 
@@ -1109,27 +1117,17 @@ func (c *Client) parseInscription(tokenizer *Tokenizer) (Inscription, error) {
 			break
 		}
 
-		// body
+		// body tag
 		if tokenizer.Token() == "0" {
 			for tokenizer.Next() {
 				// inscription end
 				if tokenizer.Token() == "OP_ENDIF" {
-					break
+					return inscription, nil
 				}
 
-				// TODO: check if actually happens with asm string
-				if tokenizer.Token() == "OP_0" {
+				// ignore OP_0 {
+				if tokenizer.Token() == "0" {
 					continue
-				}
-
-				if strings.HasPrefix(tokenizer.Token(), "OP_") {
-					fmt.Println("shouldn't happen:", tokenizer.Token())
-					break
-				}
-
-				if len(tokenizer.Token()) < 2 {
-					fmt.Println("shouldn't happen:", tokenizer.Token())
-					break
 				}
 
 				// max size is 520 bytes, 1040 characters in hex string
@@ -1138,19 +1136,23 @@ func (c *Client) parseInscription(tokenizer *Tokenizer) (Inscription, error) {
 				}
 
 				inscription.Body = inscription.Body + tokenizer.Token()
+				break
 			}
 		}
 
-		// content type
-		if tokenizer.Token() == "01" {
-			if !tokenizer.Next() {
-				return inscription, fmt.Errorf("invalid data")
-			}
+		tag := tokenizer.Token()
 
+		if !tokenizer.Next() || tokenizer.Token() == "OP_ENDIF" {
+			return inscription, nil
+		}
+
+		// content type tag 0x01
+		if tag == "01" {
 			decoded, err := hex.DecodeString(tokenizer.Token())
 			if err != nil {
 				return inscription, err
 			}
+
 			inscription.ContentType = string(decoded)
 		}
 	}
