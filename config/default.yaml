@@ -294,6 +294,9 @@ bifrost:
           - symbol: LQDY
             decimals: 6
             denom: ibc/CF52BFC8A11248F05151BFEC0FB033C3531E40C7BAFC72E277F49346EF76E981
+          - symbol: BOON
+            decimals: 6
+            denom: ibc/08520C5EF68E2F04784EAC80F5B4A4342B5301701E2B74426AAECFB20E9139DB
 
       mempool_tx_id_cache_size: 0
       scanner_leveldb: *default-leveldb
