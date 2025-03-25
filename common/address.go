@@ -69,7 +69,7 @@ func IsValidXRPAddress(address string) bool {
 		return false
 	}
 
-	return decoded[0] == 0x00 && len(decoded) == 21
+	return len(decoded) == 21 && decoded[0] == 0x00
 }
 
 // IsValidBCHAddress determinate whether the address is a valid new BCH address format
