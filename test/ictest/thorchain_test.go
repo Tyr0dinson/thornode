@@ -49,10 +49,8 @@ func TestThorchainSim(t *testing.T) {
 	//require.NoError(t, gaiaEg.Wait()) // Wait for 100 transactions before starting tests
 
 	BootstrapPools(t, ctx, thorchain, exoChains)
-	CreateSavers(t, ctx, thorchain, exoChains)
 	_ = CreateArbers(t, ctx, thorchain, exoChains)
 	PerformSwaps(t, ctx, thorchain, exoChains)
-	PerformSaverEjects(t, ctx, thorchain, exoChains)
 	Ragnarok(t, ctx, thorchain, exoChains)
 
 	//err = testutil.WaitForBlocks(ctx, 300, thorchain)

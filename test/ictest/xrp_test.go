@@ -69,14 +69,9 @@ func TestXrpMocknet(t *testing.T) {
 
 	BootstrapPools(t, ctx, thorchain, exoChains)
 	printVaultAddressesAndBalance(t, ctx, thorchain, exoChains)
-	CreateSavers(t, ctx, thorchain, exoChains)
-	printVaultAddressesAndBalance(t, ctx, thorchain, exoChains)
 	_ = CreateArbers(t, ctx, thorchain, exoChains)
 	printVaultAddressesAndBalance(t, ctx, thorchain, exoChains)
 	PerformSwaps(t, ctx, thorchain, exoChains)
-	printVaultAddressesAndBalance(t, ctx, thorchain, exoChains)
-
-	PerformSaverEjects(t, ctx, thorchain, exoChains)
 	printVaultAddressesAndBalance(t, ctx, thorchain, exoChains)
 
 	oldXrpVaultAddr, _, err := thorchain.APIGetInboundAddress(ctx, "XRP")

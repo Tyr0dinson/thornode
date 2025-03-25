@@ -33,6 +33,7 @@ func BootstrapPools(t *testing.T, ctx context.Context, thorchain *tc.Thorchain, 
 }
 
 func CreateSavers(t *testing.T, ctx context.Context, thorchain *tc.Thorchain, exoChains ExoChains) {
+	require.Fail(t, "savers functionality is disabled")
 	eg, egCtx := errgroup.WithContext(ctx)
 	for _, exoChain := range exoChains {
 		exoChain := exoChain
@@ -87,6 +88,7 @@ func PerformSwaps(t *testing.T, ctx context.Context, thorchain *tc.Thorchain, ex
 // Saver Eject - must be done sequentially due to mimir states
 // ------------------------------------------------------------
 func PerformSaverEjects(t *testing.T, ctx context.Context, thorchain *tc.Thorchain, exoChains ExoChains) {
+	require.Fail(t, "savers functionality is disabled")
 	mimirLock := sync.Mutex{}
 	eg, egCtx := errgroup.WithContext(ctx)
 	for _, exoChain := range exoChains {

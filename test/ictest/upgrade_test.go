@@ -79,10 +79,8 @@ func TestUpgrade_3_1_to_3_2(t *testing.T) {
 	// Pre-upgrade setup and tests
 	// --------------------------------------------------------
 	BootstrapPools(t, ctx, thorchain, exoChains)
-	CreateSavers(t, ctx, thorchain, exoChains)
 	arbTimer := CreateArbers(t, ctx, thorchain, exoChains)
 	PerformSwaps(t, ctx, thorchain, exoChains)
-	PerformSaverEjects(t, ctx, thorchain, exoChains)
 
 	// --------------------------------------------------------
 	// Upgrade
@@ -98,7 +96,6 @@ func TestUpgrade_3_1_to_3_2(t *testing.T) {
 	// Post-upgrade tests
 	// --------------------------------------------------------
 	PerformSwaps(t, ctx, thorchain, exoChains)
-	PerformSaverEjects(t, ctx, thorchain, exoChains)
 	Ragnarok(t, ctx, thorchain, exoChains)
 }
 
@@ -158,7 +155,6 @@ func TestUpgrade_3_0_to_3_1(t *testing.T) {
 	// Pre-upgrade setup and tests
 	// --------------------------------------------------------
 	BootstrapPools(t, ctx, thorchain, exoChains)
-	//CreateSavers(t, ctx, thorchain, exoChains)
 	arbTimer := CreateArbers(t, ctx, thorchain, exoChains)
 	//PerformSwaps(t, ctx, thorchain, exoChains)
 	//PerformSaverEjects(t, ctx, thorchain, exoChains)
@@ -239,10 +235,8 @@ func TestUpgrade_2_137_to_3_0(t *testing.T) {
 	// Pre-upgrade setup and tests
 	// --------------------------------------------------------
 	BootstrapPools(t, ctx, thorchain, exoChains)
-	CreateSavers(t, ctx, thorchain, exoChains)
 	arbTimer := CreateArbers(t, ctx, thorchain, exoChains)
 	PerformSwaps(t, ctx, thorchain, exoChains)
-	PerformSaverEjects(t, ctx, thorchain, exoChains)
 
 	// --------------------------------------------------------
 	// Upgrade
@@ -258,7 +252,6 @@ func TestUpgrade_2_137_to_3_0(t *testing.T) {
 	// Post-upgrade tests
 	// --------------------------------------------------------
 	PerformSwaps(t, ctx, thorchain, exoChains)
-	PerformSaverEjects(t, ctx, thorchain, exoChains)
 	Ragnarok(t, ctx, thorchain, exoChains)
 
 	storeVersion := getStoreVersion(t, ctx, thorchain, true)
