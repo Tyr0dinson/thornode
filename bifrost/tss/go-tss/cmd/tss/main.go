@@ -12,7 +12,6 @@ import (
 
 	"github.com/cosmos/cosmos-sdk/client/input"
 	golog "github.com/ipfs/go-log"
-	"github.com/libp2p/go-libp2p-peerstore/addr"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p"
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/conversion"
@@ -56,12 +55,9 @@ func main() {
 	}
 
 	comm, stateManager, err := p2p.StartP2P(
-		addr.AddrList(p2pConf.BootstrapPeers),
-		p2pConf.Port,
+		&p2pConf,
 		priKey,
-		p2pConf.RendezvousString,
 		baseFolder,
-		p2pConf.ExternalIP,
 	)
 	if err != nil {
 		log.Fatal(err)

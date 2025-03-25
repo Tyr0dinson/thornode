@@ -113,10 +113,6 @@ func main() {
 		log.Fatal().Err(err).Msg("fail to get private key")
 	}
 
-	bootstrapPeers, err := cfg.TSS.GetBootstrapPeers()
-	if err != nil {
-		log.Fatal().Err(err).Msg("fail to get bootstrap peers")
-	}
 	tmPrivateKey := tcommon.CosmosPrivateKeyToTMPrivateKey(priKey)
 
 	consts := constants.NewConstantValue()
@@ -136,12 +132,9 @@ func main() {
 	}
 
 	comm, stateManager, err := p2p.StartP2P(
-		bootstrapPeers,
-		cfg.TSS.P2PPort,
+		cfg.TSS,
 		tmPrivateKey,
-		cfg.TSS.Rendezvous,
 		app.DefaultNodeHome,
-		cfg.TSS.ExternalIP,
 	)
 	if err != nil {
 		log.Fatal().Err(err).Msg("fail to start p2p")

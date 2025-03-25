@@ -53,8 +53,8 @@ type Message struct {
 
 // Communication use p2p to broadcast messages among all the TSS nodes
 type Communication struct {
-	rendezvous       string // based on group
-	bootstrapPeers   []maddr.Multiaddr
+	config           P2PConfig
+	stateManager     *storage.FileStateMgr
 	logger           zerolog.Logger
 	listenAddr       maddr.Multiaddr
 	host             host.Host
@@ -68,28 +68,24 @@ type Communication struct {
 	streamMgr        *StreamMgr
 }
 
+type P2PConfig interface {
+	GetBootstrapPeers() ([]maddr.Multiaddr, error)
+	GetP2PPort() int
+	GetExternalIP() string
+	GetRendezvous() string
+}
+
 func StartP2P(
-	cmdBootstrapPeers addr.AddrList,
-	p2pPort int,
+	cfg P2PConfig,
 	priKey tcrypto.PrivKey,
-	rendezvous,
 	baseFolder string,
-	externalIP string,
 ) (*Communication, *storage.FileStateMgr, error) {
 	stateManager, err := storage.NewFileStateMgr(baseFolder)
 	if err != nil {
 		return nil, nil, fmt.Errorf("fail to create file state manager")
 	}
 
-	var bootstrapPeers addr.AddrList
-	savedPeers, err := stateManager.RetrieveP2PAddresses()
-	if err != nil {
-		bootstrapPeers = cmdBootstrapPeers
-	} else {
-		bootstrapPeers = savedPeers
-		bootstrapPeers = append(bootstrapPeers, cmdBootstrapPeers...)
-	}
-	comm, err := NewCommunication(rendezvous, bootstrapPeers, p2pPort, externalIP)
+	comm, err := NewCommunication(cfg, stateManager)
 	if err != nil {
 		return nil, nil, fmt.Errorf("fail to create communication layer: %w", err)
 	}
@@ -106,7 +102,8 @@ func StartP2P(
 }
 
 // NewCommunication create a new instance of Communication
-func NewCommunication(rendezvous string, bootstrapPeers []maddr.Multiaddr, port int, externalIP string) (*Communication, error) {
+func NewCommunication(cfg P2PConfig, stateManager *storage.FileStateMgr) (*Communication, error) {
+	port, externalIP := cfg.GetP2PPort(), cfg.GetExternalIP()
 	addr, err := maddr.NewMultiaddr(fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", port))
 	if err != nil {
 		return nil, fmt.Errorf("fail to create listen addr: %w", err)
@@ -119,8 +116,7 @@ func NewCommunication(rendezvous string, bootstrapPeers []maddr.Multiaddr, port 
 		}
 	}
 	return &Communication{
-		rendezvous:       rendezvous,
-		bootstrapPeers:   bootstrapPeers,
+		config:           cfg,
 		logger:           log.With().Str("module", "communication").Logger(),
 		listenAddr:       addr,
 		wg:               &sync.WaitGroup{},
@@ -265,15 +261,39 @@ func (c *Communication) handleStreamObservedTx(stream network.Stream) {
 	}
 }
 
+func (c *Communication) getPeers() addr.AddrList {
+	var bootstrapPeers addr.AddrList
+
+	cfgBoostrapPeers, err := c.config.GetBootstrapPeers()
+	if err != nil {
+		c.logger.Error().Err(err).Msg("fail to get bootstrap peers from config")
+	} else {
+		bootstrapPeers = cfgBoostrapPeers
+	}
+
+	if c.stateManager != nil {
+		savedPeers, err := c.stateManager.RetrieveP2PAddresses()
+		if err != nil {
+			c.logger.Error().Err(err).Msg("fail to get saved peers from state manager")
+		} else {
+			bootstrapPeers = append(bootstrapPeers, savedPeers...)
+		}
+	}
+
+	return bootstrapPeers
+}
+
 func (c *Communication) bootStrapConnectivityCheck() error {
-	if len(c.bootstrapPeers) == 0 {
+	bootstrapPeers := c.getPeers()
+
+	if len(bootstrapPeers) == 0 {
 		c.logger.Error().Msg("we do not have the bootstrap node set, quit the connectivity check")
 		return nil
 	}
 
 	var onlineNodes uint32
 	var wg sync.WaitGroup
-	for _, el := range c.bootstrapPeers {
+	for _, el := range bootstrapPeers {
 		peer, err := peer.AddrInfoFromP2pAddr(el)
 		if err != nil {
 			c.logger.Error().Err(err).Msg("error in decode the bootstrap node, skip it")
@@ -365,7 +385,7 @@ func (c *Communication) startChannel(privKeyBytes []byte) error {
 	// We use a rendezvous point "meet me here" to announce our location.
 	// This is like telling your friends to meet you at the Eiffel Tower.
 	routingDiscovery := discovery.NewRoutingDiscovery(kademliaDHT)
-	discovery.Advertise(ctx, routingDiscovery, c.rendezvous)
+	discovery.Advertise(ctx, routingDiscovery, c.config.GetRendezvous())
 	err = c.bootStrapConnectivityCheck()
 	if err != nil {
 		return err
@@ -392,15 +412,16 @@ func (c *Communication) connectToOnePeer(pID peer.ID) (network.Stream, error) {
 }
 
 func (c *Communication) connectToBootstrapPeers() error {
+	bootstrapPeers := c.getPeers()
 	// Let's connect to the bootstrap nodes first. They will tell us about the
 	// other nodes in the network.
-	if len(c.bootstrapPeers) == 0 {
+	if len(bootstrapPeers) == 0 {
 		c.logger.Info().Msg("no bootstrap node set, we skip the connection")
 		return nil
 	}
 	var wg sync.WaitGroup
-	connRet := make(chan bool, len(c.bootstrapPeers))
-	for _, peerAddr := range c.bootstrapPeers {
+	connRet := make(chan bool, len(bootstrapPeers))
+	for _, peerAddr := range bootstrapPeers {
 		pi, err := peer.AddrInfoFromP2pAddr(peerAddr)
 		if err != nil {
 			return fmt.Errorf("fail to add peer: %w", err)
@@ -420,7 +441,7 @@ func (c *Communication) connectToBootstrapPeers() error {
 		}(connRet)
 	}
 	wg.Wait()
-	for i := 0; i < len(c.bootstrapPeers); i++ {
+	for i := 0; i < len(bootstrapPeers); i++ {
 		if <-connRet {
 			return nil
 		}

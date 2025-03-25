@@ -126,7 +126,7 @@ func (s *ObserverSuite) TestAttestedTxWorkflow(c *C) {
 	basePort := 12340
 	for i, keys := range validatorKeys {
 		// Create P2P communication
-		comm, err := p2p.NewCommunication("validator-test", nil, basePort+i, "")
+		comm, err := p2p.NewCommunication(&p2p.Config{RendezvousString: "validator-test", Port: basePort + i}, nil)
 		c.Assert(err, IsNil)
 		c.Assert(comm, NotNil)
 

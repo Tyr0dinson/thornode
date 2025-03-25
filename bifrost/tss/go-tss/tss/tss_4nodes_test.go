@@ -367,7 +367,12 @@ func (s *FourNodeTestSuite) getTssServer(c *C, index int, conf common.TssConfig,
 	} else {
 		peerIDs = nil
 	}
-	comm, stateManager, err := p2p.StartP2P(peerIDs, s.ports[index], priKey, "Asgard", baseHome, "")
+	p2pConf := &p2p.Config{
+		Port:             s.ports[index],
+		RendezvousString: "Asgard",
+		BootstrapPeers:   peerIDs,
+	}
+	comm, stateManager, err := p2p.StartP2P(p2pConf, priKey, baseHome)
 	c.Assert(err, IsNil)
 	instance, err := NewTss(comm, stateManager, priKey, conf, s.preParams[index])
 	c.Assert(err, IsNil)

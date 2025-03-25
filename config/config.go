@@ -827,6 +827,18 @@ type BifrostTSSConfiguration struct {
 	MaxKeyshareRecoverScanBlocks int64    `mapstructure:"max_keyshare_recover_scan_blocks"`
 }
 
+func (c BifrostTSSConfiguration) GetP2PPort() int {
+	return c.P2PPort
+}
+
+func (c BifrostTSSConfiguration) GetRendezvous() string {
+	return c.Rendezvous
+}
+
+func (c BifrostTSSConfiguration) GetExternalIP() string {
+	return c.ExternalIP
+}
+
 type WhitelistCosmosAsset struct {
 	Denom           string `mapstructure:"denom"`
 	Decimals        int    `mapstructure:"decimals"`
