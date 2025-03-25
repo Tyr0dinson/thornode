@@ -437,7 +437,7 @@ func (c *XrpBlockScanner) fetchTxsByHash(txHashes []string, txs []transaction.Fl
 					// Error channel is full, another error is already being processed
 				}
 				return
-			}	
+			}
 
 			transactions[idx] = txResponse
 		}(i, hash)
@@ -445,12 +445,12 @@ func (c *XrpBlockScanner) fetchTxsByHash(txHashes []string, txs []transaction.Fl
 
 	// Wait for all goroutines to complete
 	wg.Wait()
-	
+
 	// Check if any errors occurred (non-blocking)
 	if len(errChan) > 0 {
 		return nil, <-errChan
 	}
-	
+
 	// Check if context was canceled
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
