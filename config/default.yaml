@@ -302,6 +302,7 @@ bifrost:
     xrp:
       <<: *default-chain
       chain_id: XRP
+      solvency_blocks: 10
       block_scanner:
         <<: *default-block-scanner
         chain_id: XRP
