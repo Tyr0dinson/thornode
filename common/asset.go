@@ -110,6 +110,7 @@ func NewAssetWithShortCodesV3_1_0(input string) (Asset, error) {
 	shorts[LTCAsset.ShortCode()] = LTCAsset.String()
 	shorts[RuneNative.ShortCode()] = RuneNative.String()
 	shorts[BaseETHAsset.ShortCode()] = BaseETHAsset.String()
+	shorts[XRPAsset.ShortCode()] = XRPAsset.String()
 
 	long, ok := shorts[input]
 	if ok {
