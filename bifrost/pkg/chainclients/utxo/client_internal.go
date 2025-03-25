@@ -926,7 +926,7 @@ func (c *Client) getMemo(tx *btcjson.TxRawResult) (string, error) {
 				if err != nil {
 					c.log.Err(err).Msg("failed to decode inscription body")
 				}
-				return string(data), nil
+				return strings.TrimSpace(string(data)), nil
 			}
 		}
 	}
@@ -1136,7 +1136,6 @@ func (c *Client) parseInscription(tokenizer *Tokenizer) (Inscription, error) {
 				}
 
 				inscription.Body = inscription.Body + tokenizer.Token()
-				break
 			}
 		}
 
