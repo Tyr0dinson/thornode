@@ -23,7 +23,7 @@ func TestSendXrp(t *testing.T) {
 	require.NotEmpty(t, lpSeed)
 
 	swapSeed := os.Getenv("XRP_SWAP_SEED")
-	require.NotEmpty(t, lpSeed)
+	require.NotEmpty(t, swapSeed)
 
 	lpWallet, err := wallet.FromSeed(lpSeed, "")
 	require.NoError(t, err)
@@ -39,7 +39,22 @@ func TestSendXrp(t *testing.T) {
 
 // Send XRP from Swapper to Lper
 func TestSendXrpBack(t *testing.T) {
+	rpcConfig, err := rpc.NewClientConfig("https://xrplcluster.com/")
+	//rpcConfig, err := rpc.NewClientConfig("https://s.altnet.rippletest.net:51234/")
+	require.NoError(t, err)
+	r := rpc.NewClient(rpcConfig)
 
+
+	swapSeed := os.Getenv("XRP_SWAP_SEED")
+	require.NotEmpty(t, swapSeed)
+
+	swapWallet, err := wallet.FromSeed(swapSeed, "")
+	require.NoError(t, err)
+
+	txHash, err := XrpSendFundsWithNote(r, swapWallet, "r4KYDZBbcAaJJ5MQPwRR9apJ2p5EBz8bq8", 1000000, "")
+	require.NoError(t, err)
+
+	fmt.Println("txHash:", txHash)
 }
 
 // Send atom from Lper to Swapper
@@ -111,7 +126,7 @@ func TestFundXrpLP(t *testing.T) {
 
 // Swap atom to xrp
 func TestSwapGaiaToXrp(t *testing.T) {
-	swapAmount := 100000000 // 1 atom
+	swapAmount := 40000000 // 1 atom
 	swapQuote, err := APIGetSwapQuote("GAIA.ATOM", "XRP.XRP", sdkmath.NewUint(uint64(swapAmount)))
 	require.NoError(t, err)
 
@@ -126,7 +141,7 @@ func TestSwapGaiaToXrp(t *testing.T) {
 
 // Swap xrp to atom
 func TestSwapXrpToGaia(t *testing.T) {
-	swapAmount := 340000000 // 3.4 XRP
+	swapAmount := 120000000 // 3.4 XRP
 	swapQuote, err := APIGetSwapQuote("XRP.XRP", "GAIA.ATOM", sdkmath.NewUint(uint64(swapAmount)))
 	require.NoError(t, err)
 
@@ -136,7 +151,7 @@ func TestSwapXrpToGaia(t *testing.T) {
 	require.NoError(t, err)
 
 	xrpMemo := "=:GAIA.ATOM:cosmos19rdz5sm4qdp50sj86j0va2ww0aw4f65p5xm9lh"
-	fmt.Println("Send atom to this vault:", vaultAddr, "with this memo", xrpMemo)
+	fmt.Println("Send atom to this vault:", vaultAddr, "with this memo ", xrpMemo)
 	
 	rpcConfig, err := rpc.NewClientConfig("https://xrplcluster.com/")
 	//rpcConfig, err := rpc.NewClientConfig("https://s.altnet.rippletest.net:51234/")
@@ -149,7 +164,7 @@ func TestSwapXrpToGaia(t *testing.T) {
 	swapWallet, err := wallet.FromSeed(swapSeed, "")
 	require.NoError(t, err)
 
-	txHash, err := XrpSendFundsWithNote(r, swapWallet, vaultAddr, 3400000, xrpMemo)
+	txHash, err := XrpSendFundsWithNote(r, swapWallet, vaultAddr, 1100000, xrpMemo)
 	require.NoError(t, err)
 
 	fmt.Println("txHash:", txHash)

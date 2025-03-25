@@ -9,6 +9,7 @@ import (
 	sdkmath "cosmossdk.io/math"
 	tc "github.com/strangelove-ventures/interchaintest/v8/chain/thorchain"
 	"github.com/strangelove-ventures/interchaintest/v8/chain/thorchain/common"
+	"github.com/strangelove-ventures/interchaintest/v8/chain/xrp"
 	"github.com/strangelove-ventures/interchaintest/v8/ibc"
 )
 
@@ -183,5 +184,145 @@ func singleSwap(
 	fmt.Println("*********************")
 	fmt.Println("*********************")
 	fmt.Println("Swap complete, src:", srcChainAsset, "dst:", destChainAsset, "Actual amount:", actualSwapAmount)
+	return nil
+}
+
+// swap 0.5% of pool depth
+func SingleSwapWithoutWait(
+	ctx context.Context,
+	thorchain *tc.Thorchain,
+	srcChain ibc.Chain,
+	srcUser ibc.Wallet,
+	destChain ibc.Chain,
+	destUser ibc.Wallet,
+) (string, sdkmath.Int, sdkmath.Int, error) {
+	srcChainType, err := common.NewChain(srcChain.Config().Name)
+	if err != nil {
+		return "", sdkmath.Int{}, sdkmath.Int{}, fmt.Errorf("srcChainType assignment, %w", err)
+	}
+	destChainType, err := common.NewChain(destChain.Config().Name)
+	if err != nil {
+		return "", sdkmath.Int{}, sdkmath.Int{}, fmt.Errorf("destChainType assignment, %w", err)
+	}
+
+	srcChainAsset := srcChainType.GetGasAsset()
+	destChainAsset := destChainType.GetGasAsset()
+	pool, err := thorchain.APIGetPool(ctx, srcChainAsset)
+	if err != nil {
+		return "", sdkmath.Int{}, sdkmath.Int{}, fmt.Errorf("getting srcChain pool, %w", err)
+	}
+
+	swapAmount := sdkmath.NewUintFromString(pool.BalanceAsset).QuoUint64(200)
+	swapQuote, err := thorchain.APIGetSwapQuote(ctx, srcChainAsset, destChainAsset, swapAmount)
+	if err != nil {
+		return "", sdkmath.Int{}, sdkmath.Int{}, fmt.Errorf("get swap quote, %w", err)
+	}
+
+	// store expected range to fail if received amount is outside 20% tolerance
+	quoteOut := sdkmath.NewUintFromString(swapQuote.ExpectedAmountOut)
+	tolerance := quoteOut.QuoUint64(5) // Give a large tolerance (20%)
+	if swapQuote.Fees.Outbound != nil {
+		outboundFee := sdkmath.NewUintFromString(*swapQuote.Fees.Outbound)
+		quoteOut = quoteOut.Add(outboundFee)
+
+		// handle 2x gas rate fluctuation (add 1x outbound fee to tolerance)
+		tolerance = tolerance.Add(outboundFee)
+	}
+	minExpectedSwapAmount := quoteOut.Sub(tolerance).
+		MulUint64(uint64(math.Pow10(int(*destChain.Config().CoinDecimals)))).
+		QuoUint64(uint64(math.Pow10(int(*thorchain.Config().CoinDecimals))))
+	maxExpectedSwapAmount := quoteOut.Add(tolerance).
+		MulUint64(uint64(math.Pow10(int(*destChain.Config().CoinDecimals)))).
+		QuoUint64(uint64(math.Pow10(int(*thorchain.Config().CoinDecimals))))
+
+	destUserBalancePreSwap, err := destChain.GetBalance(ctx, destUser.FormattedAddress(), destChain.Config().Denom)
+	if err != nil {
+		return "", sdkmath.Int{}, sdkmath.Int{}, err
+	}
+
+	minDestUserBalancePostSwap := destUserBalancePreSwap.Add(sdkmath.Int(minExpectedSwapAmount))
+	maxDestUserBalancePostSwap := destUserBalancePreSwap.Add(sdkmath.Int(maxExpectedSwapAmount))
+
+	srcChainInboundAddr, _, err := thorchain.APIGetInboundAddress(ctx, srcChainType.String())
+	if err != nil {
+		return "", sdkmath.Int{}, sdkmath.Int{}, fmt.Errorf("get srcChain inbound address: %w", err)
+	}
+	memo := fmt.Sprintf("=:%s:%s", destChainAsset, destUser.FormattedAddress())
+	xrpChain, ok := srcChain.(*xrp.XrpChain)
+	txHash := ""
+	if ok {
+		txHash, err = xrpChain.SendFundsWithoutWait(ctx, srcUser.KeyName(), ibc.WalletAmount{
+			Address: srcChainInboundAddr,
+			Denom:   srcChain.Config().Denom,
+			Amount: sdkmath.Int(swapAmount).
+				MulRaw(int64(math.Pow10(int(*srcChain.Config().CoinDecimals)))).
+				QuoRaw(int64(math.Pow10(int(*thorchain.Config().CoinDecimals)))), // swap amount is based on 8 dec,
+		}, memo)
+	} else {
+		txHash, err = srcChain.SendFundsWithNote(ctx, srcUser.KeyName(), ibc.WalletAmount{
+			Address: srcChainInboundAddr,
+			Denom:   srcChain.Config().Denom,
+			Amount: sdkmath.Int(swapAmount).
+				MulRaw(int64(math.Pow10(int(*srcChain.Config().CoinDecimals)))).
+				QuoRaw(int64(math.Pow10(int(*thorchain.Config().CoinDecimals)))), // swap amount is based on 8 dec,
+		}, memo)
+
+	}
+	if err != nil {
+		return "", sdkmath.Int{}, sdkmath.Int{}, err
+	}
+
+	if txHash[0:2] == "0x" {
+		txHash = txHash[2:]
+	}
+
+	fmt.Println("Swap tx hash:", txHash, "SrcUser:", srcUser.KeyName(), "DestUser:", destUser.KeyName())
+	return txHash, minDestUserBalancePostSwap, maxDestUserBalancePostSwap, nil
+}
+
+func SingleSwapVerify(
+	ctx context.Context,
+	thorchain *tc.Thorchain,
+	txHash string,
+	destChain ibc.Chain,
+	destUser ibc.Wallet,
+	minDestUserBalancePostSwap sdkmath.Int,
+	maxDestUserBalancePostSwap sdkmath.Int,
+) error {
+	// ----- VerifyOutbound -----
+	_, err := PollOutboundSigned(ctx, thorchain, 200, txHash)
+	if err != nil {
+		return fmt.Errorf("failed to get outbound signed for txHash: %s, err: %w", txHash, err)
+	}
+
+	details, err := thorchain.APIGetTxDetails(ctx, txHash)
+	if err != nil {
+		return err
+	}
+
+	if len(details.OutTxs) != 1 {
+		return fmt.Errorf("expected exactly one out transaction, tx: %s, OutTxs: %d", txHash, len(details.OutTxs))
+	}
+
+	if len(details.Actions) != 1 {
+		return fmt.Errorf("expected exactly one action, tx: %s, actions: %d", txHash, len(details.Actions))
+	}
+
+	destUserBalancePostSwap, err := destChain.GetBalance(ctx, destUser.FormattedAddress(), destChain.Config().Denom)
+	if err != nil {
+		return err
+	}
+
+	if destUserBalancePostSwap.LT(minDestUserBalancePostSwap) {
+		return fmt.Errorf("dest user (%s) balance is less than expected, actual: %s, min: %s", destUser.KeyName(), destUserBalancePostSwap, minDestUserBalancePostSwap)
+	}
+
+	if destUserBalancePostSwap.GT(maxDestUserBalancePostSwap) {
+		return fmt.Errorf("dest user (%s) balance is more than expected, actual: %s, max: %s", destUser.KeyName(), destUserBalancePostSwap, maxDestUserBalancePostSwap)
+	}
+
+	fmt.Println("*********************")
+	fmt.Println("*********************")
+	fmt.Println("Swap complete, destUser:", destUser.KeyName(), "balance:", destUserBalancePostSwap)
 	return nil
 }

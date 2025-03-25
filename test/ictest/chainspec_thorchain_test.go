@@ -138,12 +138,12 @@ var (
 
 	thornodeDefaults = append(allNodeDefaults, []string{
 		"THOR_BLOCK_TIME=2s", // link to config override
-		"THOR_API_LIMIT_COUNT=500",
-		"THOR_API_LIMIT_DURATION=1s",
-		"HARDFORK_BLOCK_HEIGHT=",
-		"NEW_GENESIS_TIME=",
-		"CHURN_MIGRATION_ROUNDS=2",
-		"FUND_MIGRATION_INTERVAL=10",
+//		"THOR_API_LIMIT_COUNT=500",
+//		"THOR_API_LIMIT_DURATION=1s",
+//		"HARDFORK_BLOCK_HEIGHT=",
+//		"NEW_GENESIS_TIME=",
+//		"CHURN_MIGRATION_ROUNDS=2",
+//		"FUND_MIGRATION_INTERVAL=10",
 	}...)
 
 	bifrostDefaults = append(thornodeDefaults, []string{
