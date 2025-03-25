@@ -11,6 +11,7 @@ import (
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"golang.org/x/sync/semaphore"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	btypes "gitlab.com/thorchain/thornode/v3/bifrost/blockscanner/types"
@@ -362,12 +363,12 @@ func (c *XrpBlockScanner) FetchTxs(height, chainHeight int64) (types.TxIn, error
 }
 
 const (
-	workerBatchSize = 10
+	maxConcurrentRequests = 10
 )
 
 func (c *XrpBlockScanner) fetchTxsByHash(txHashes []string, txs []transaction.FlatTransaction) ([]transaction.FlatTransaction, error) {
-	// Collect results while maintaining order
-	results := make(map[string]transaction.FlatTransaction)
+	// Create txMap for easy lookup of known txs
+	txMap := make(map[string]transaction.FlatTransaction)
 
 	// Populate with transactions that we have and don't want to query again
 	for _, tx := range txs {
@@ -377,111 +378,83 @@ func (c *XrpBlockScanner) fetchTxsByHash(txHashes []string, txs []transaction.Fl
 		if !ok {
 			continue
 		}
-		results[hash] = tx
+		txMap[hash] = tx
 	}
 
 	ctx := context.Background()
-	// Create channels for parallel processing
-	txChan := make(chan string, len(txHashes))
-	resultChan := make(chan *txResult, len(txHashes))
-
-	// Start worker pool
-	workerCount := min(workerBatchSize, len(txHashes))
+	transactions := make([]transaction.FlatTransaction, len(txHashes))
+	sem := semaphore.NewWeighted(int64(maxConcurrentRequests))
+	errChan := make(chan error, maxConcurrentRequests)
 	var wg sync.WaitGroup
 
-	// Launch workers
-	for i := 0; i < workerCount; i++ {
-		wg.Add(1)
-		go c.txWorker(ctx, &wg, txChan, resultChan)
-	}
-
-	// Feed transaction hashes to workers
-	go func() {
-		for _, hash := range txHashes {
-			// Only feed in hashes for transaction we don't already have.
-			if results[hash] != nil {
-				continue
-			}
-			txChan <- hash
-		}
-		close(txChan)
-	}()
-
-	// Wait for workers in a separate goroutine
-	go func() {
-		wg.Wait()
-		close(resultChan)
-	}()
-
-	var firstError error
-	for i := 0; i < len(txHashes); i++ {
-		select {
-		case result := <-resultChan:
-			if result != nil {
-				if result.err != nil && firstError == nil {
-					firstError = result.err
-					continue
-				}
-				results[result.hash] = result.tx
-			}
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		}
-	}
-
-	if firstError != nil {
-		return nil, firstError
-	}
-
-	// Preserve original transaction order
-	transactions := make([]transaction.FlatTransaction, len(txHashes))
 	for i, hash := range txHashes {
-		result := results[hash]
-		validated, ok := result["validated"].(bool)
-		if ok && validated {
-			transactions[i] = result
-		}
-	}
-
-	return transactions, nil
-}
-
-type txResult struct {
-	hash string
-	tx   transaction.FlatTransaction
-	err  error
-}
-
-func (c *XrpBlockScanner) txWorker(ctx context.Context, wg *sync.WaitGroup, txChan <-chan string, resultChan chan<- *txResult) {
-	defer wg.Done()
-
-	for txHash := range txChan {
+		// Check for any errors before starting new goroutines
 		select {
-		case <-ctx.Done():
-			return
+		case err := <-errChan:
+			return nil, err
 		default:
-			var txResponse transaction.FlatTransaction
+			// No errors yet, continue
+		}
 
-			result := &txResult{
-				hash: txHash,
-			}
+		// Check whether we already have this tx, if so, add it to maintain order and don't request it
+		if txMap[hash] != nil {
+			transactions[i] = txMap[hash]
+			continue
+		}
+
+		// Acquire semaphore (blocks if maxConcurrentRequests already running)
+		if err := sem.Acquire(ctx, 1); err != nil {
+			return nil, err
+		}
+
+		wg.Add(1)
+		go func(idx int, txHash string) {
+			defer sem.Release(1)
+			defer wg.Done()
+
 			// Request the transaction from the server
 			res, err := c.rpcClient.Request(&requests.TxRequest{
 				Transaction: txHash,
 				Binary:      false,
 			})
-			if err == nil {
-				err = res.GetResult(&txResponse)
-				if err == nil {
-					result.tx = txResponse
-				} else {
-					c.logger.Err(err).Str("hash", txHash).Msg("error parsing tx results in txWorker")
+			if err != nil {
+				c.logger.Err(err).Str("hash", txHash).Msg("error requesting tx")
+				select {
+				case errChan <- fmt.Errorf("failed to request transaction %s: %w", txHash, err):
+				default:
+					// Error channel is full, another error is already being processed
 				}
-			} else {
-				c.logger.Err(err).Str("hash", txHash).Msg("error requesting tx in txWorker")
+				return
 			}
-			result.err = err
-			resultChan <- result
-		}
+
+			var txResponse transaction.FlatTransaction
+			err = res.GetResult(&txResponse)
+			if err != nil {
+				c.logger.Err(err).Str("hash", txHash).Msg("error parsing tx results")
+				select {
+				case errChan <- fmt.Errorf("failed to parse tx results %s: %w", txHash, err):
+				default:
+					// Error channel is full, another error is already being processed
+				}
+				return
+			}	
+
+			transactions[idx] = txResponse
+		}(i, hash)
 	}
+
+	// Wait for all goroutines to complete
+	wg.Wait()
+	
+	// Check if any errors occurred (non-blocking)
+	if len(errChan) > 0 {
+		return nil, <-errChan
+	}
+	
+	// Check if context was canceled
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
+	return transactions, nil
 }
