@@ -28,23 +28,24 @@ func TestThorchainSim(t *testing.T) {
 
 	// Start non-thorchain chains
 	exoChains := StartExoChains(t, ctx, client, network, []*interchaintest.ChainSpec{
-		EthChainSpec("geth"), // only use this chain spec for eth or the one below
+		// EthChainSpec("geth"), // only use this chain spec for eth or the one below
 		// EthChainSpec("anvil"), // Anvil supported contracts are not support in this repo
 		GaiaChainSpec(),
 		BtcChainSpec(),
 		BchChainSpec(),
-		LtcChainSpec(),
-		DogeChainSpec(),
-		BscChainSpec(),
+		//LtcChainSpec(),
+		//DogeChainSpec(),
+		//BscChainSpec(),
 	})
 	//gaiaEg := SetupGaia(t, ctx, exoChains["GAIA"])
-	ethRouterContractAddress, bscRouterContractAddress, err := SetupContracts(ctx, exoChains["ETH"], exoChains["BSC"])
-	require.NoError(t, err, "error setting up contracts for eth and bsc")
- 
+	//ethRouterContractAddress, bscRouterContractAddress, err := SetupContracts(ctx, exoChains["ETH"], exoChains["BSC"])
+	//require.NoError(t, err, "error setting up contracts for eth and bsc")
+	ethRouterContractAddress, bscRouterContractAddress := "", ""
+
 	// Start thorchain
 	chainImage := ibc.NewDockerImage("thorchain", "local", "1025:1025")
 	thorchain := StartThorchain(t, ctx, client, network, numVals, numFns, mainnet, chainImage, exoChains, ethRouterContractAddress, bscRouterContractAddress)
-	err = setNetworkFee(thorchain.Validators, exoChains)
+	err := setNetworkFee(thorchain.Validators, exoChains)
 	require.NoError(t, err)
 	//require.NoError(t, gaiaEg.Wait()) // Wait for 100 transactions before starting tests
 

@@ -19,10 +19,6 @@ func Ragnarok(
 	exoUsers ...ibc.Wallet,
 ) error {
 	fmt.Println("#### Ragnarok:", exoChain.Config().Name)
-	if err := AddAdminIfNecessary(ctx, thorchain); err != nil {
-		return err
-	}
-
 	exoChainType, err := common.NewChain(exoChain.Config().Name)
 	if err != nil {
 		return err
@@ -42,8 +38,10 @@ func Ragnarok(
 		}
 	}
 
-	if err := thorchain.SetMimir(ctx, "admin", fmt.Sprintf("RAGNAROK-%s", exoAsset.MimirString()), "1"); err != nil {
-		return err
+	for _, node := range thorchain.Validators {
+		if err := node.SetMimir(ctx, "thorchain", fmt.Sprintf("RAGNAROK-%s", exoAsset.MimirString()), "1"); err != nil {
+			return err
+		}
 	}
 
 	if err := PollForPoolSuspended(ctx, thorchain, 30, exoAsset); err != nil {

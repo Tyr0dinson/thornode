@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
-	"sync"
 	"testing"
 	"time"
 
@@ -26,23 +25,6 @@ func BootstrapPools(t *testing.T, ctx context.Context, thorchain *tc.Thorchain, 
 				return err
 			}
 			exoChain.lpers = append(exoChain.lpers, lper)
-			return nil
-		})
-	}
-	require.NoError(t, eg.Wait())
-}
-
-func CreateSavers(t *testing.T, ctx context.Context, thorchain *tc.Thorchain, exoChains ExoChains) {
-	require.Fail(t, "savers functionality is disabled")
-	eg, egCtx := errgroup.WithContext(ctx)
-	for _, exoChain := range exoChains {
-		exoChain := exoChain
-		eg.Go(func() error {
-			saver, err := features.Saver(t, egCtx, thorchain, exoChain.chain)
-			if err != nil {
-				return err
-			}
-			exoChain.savers = append(exoChain.savers, saver)
 			return nil
 		})
 	}
@@ -79,26 +61,6 @@ func PerformSwaps(t *testing.T, ctx context.Context, thorchain *tc.Thorchain, ex
 		randomChain := (randomChain + i) % len(exoChainList)
 		eg.Go(func() error {
 			return features.DualSwap(t, egCtx, thorchain, exoChainList[i], exoChainList[randomChain])
-		})
-	}
-	require.NoError(t, eg.Wait())
-}
-
-// ------------------------------------------------------------
-// Saver Eject - must be done sequentially due to mimir states
-// ------------------------------------------------------------
-func PerformSaverEjects(t *testing.T, ctx context.Context, thorchain *tc.Thorchain, exoChains ExoChains) {
-	require.Fail(t, "savers functionality is disabled")
-	mimirLock := sync.Mutex{}
-	eg, egCtx := errgroup.WithContext(ctx)
-	for _, exoChain := range exoChains {
-		exoChain := exoChain
-		eg.Go(func() error {
-			_, err := features.SaverEject(t, egCtx, &mimirLock, thorchain, exoChain.chain, exoChain.savers...)
-			if err != nil {
-				return err
-			}
-			return nil
 		})
 	}
 	require.NoError(t, eg.Wait())

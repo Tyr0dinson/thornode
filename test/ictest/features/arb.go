@@ -30,20 +30,16 @@ func Arb(
 		return users, nil, err
 	}
 
-	err = AddAdminIfNecessary(ctx, thorchain)
-	if err != nil {
-		return users, nil, err
-	}
-
 	mimirs, err := thorchain.APIGetMimirs(ctx)
 	if err != nil {
 		return users, nil, err
 	}
 
 	if mimir, ok := mimirs[strings.ToUpper("TradeAccountsEnabled")]; ok && mimir != int64(1) || !ok {
-		err := thorchain.SetMimir(ctx, "admin", "TradeAccountsEnabled", "1")
-		if err != nil {
-			return users, nil, err
+		for _, node := range thorchain.Validators {
+			if err := node.SetMimir(ctx, "thorchain", "TradeAccountsEnabled", "1"); err != nil {
+				return users, nil, err
+			}
 		}
 	}
 
