@@ -5,6 +5,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
 )
 
 // RotateHandler is the handler to process MsgRotate.
@@ -46,6 +47,12 @@ func (h RotateHandler) validate(ctx cosmos.Context, msg MsgRotate) error {
 }
 
 func (h RotateHandler) handle(ctx cosmos.Context, msg MsgRotate) error {
+	// check mimir if disabled
+	haltRotate := h.mgr.Keeper().GetConfigInt64(ctx, constants.HaltRotate)
+	if haltRotate > 0 {
+		return fmt.Errorf("rotate is halted")
+	}
+
 	// find nodes operated by the signer
 	iter := h.mgr.Keeper().GetNodeAccountIterator(ctx)
 	defer iter.Close()
@@ -55,9 +62,23 @@ func (h RotateHandler) handle(ctx cosmos.Context, msg MsgRotate) error {
 		if err := h.mgr.Keeper().Cdc().Unmarshal(iter.Value(), &na); err != nil {
 			return fmt.Errorf("fail to unmarshal node account, %w", err)
 		}
-		if !na.IsEmpty() && na.BondAddress.Equals(common.Address(msg.Signer.String())) {
-			rotateNodes = append(rotateNodes, na)
+
+		// skip empty node accounts
+		if na.IsEmpty() {
+			continue
 		}
+
+		// skip active node accounts
+		if na.Status == NodeActive {
+			continue
+		}
+
+		// filter by bond address
+		if !na.BondAddress.Equals(common.Address(msg.Signer.String())) {
+			continue
+		}
+
+		rotateNodes = append(rotateNodes, na)
 	}
 
 	// rotate each node

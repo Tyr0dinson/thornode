@@ -428,7 +428,7 @@ Perform node maintenance features. Also see [Pooled Nodes](https://docs.thorchai
 
 **`ROTATE:NEWOPADDR`**
 
-The operator address can send a `ROTATE` memo to change the operator address for all their nodes.
+The operator address can send a `ROTATE` memo to change the operator address for all their nodes - note that the rotation is only applied to non-active nodes for the operator.
 
 | Parameter    | Notes                     | Extra             |
 | ------------ | ------------------------- | ----------------- |
