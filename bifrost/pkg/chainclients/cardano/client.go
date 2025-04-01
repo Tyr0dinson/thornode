@@ -192,12 +192,6 @@ func NewClient(
 		ouroboros.WithErrorChan(c.networkError),
 		ouroboros.WithLogger(networkLogger),
 		ouroboros.WithNetworkMagic(networkMagic),
-		// ouroboros.WithLocalStateQueryConfig(localstatequery.NewConfig()),
-		// ouroboros.WithLocalTxSubmissionConfig(
-		// 	localtxsubmission.NewConfig(
-		// 		localtxsubmission.WithSubmitTxFunc(localSubmitTxCallbackHandler),
-		// 	),
-		// ),
 		ouroboros.WithKeepAlive(true),
 	)
 	if err != nil {
@@ -419,15 +413,6 @@ func (c *Client) SignTx(tx types.TxOutItem, height int64) (signedBz, checkpoint 
 
 	txBuilder := NewTxBuilder(c.protocol, []ed25519.PrivateKey{c.localTestingKey})
 
-	// get block
-	// blockSlot, blockHash, err := c.getBlockId(uint64(height))
-	// if err != nil {
-	// 	return nil, nil, nil, fmt.Errorf("fail to get block id for height %d: %w", height, err)
-	// }
-	// queryClient := c.clientConn.LocalStateQuery().Client
-	// if err := queryClient.Acquire(&ouroboroscommon.Point{Slot: blockSlot, Hash: blockHash}); err != nil {
-	// 	return nil, nil, nil, fmt.Errorf("fail to acquire point slot=%d hash=%x: %w", blockSlot, blockHash, err)
-	// }
 	queryClient := c.clientConn.LocalStateQuery().Client
 	if err := queryClient.AcquireVolatileTip(); err != nil {
 		return nil, nil, nil, fmt.Errorf("fail to acquire tip: %w", err)
@@ -564,6 +549,7 @@ func (c *Client) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
 				continue
 			}
 			if addr.String() == senderAddr.String() {
+				// skip txs that are sent to the sender, i.e. for utxo change
 				continue
 			}
 			toAddress = &addr
@@ -708,6 +694,17 @@ func (c *Client) ReportSolvency(height int64) error {
 	panic("unimplemented")
 }
 
+func (c *Client) getVaultLock(vaultPubKey string) *sync.Mutex {
+	c.signLock.Lock()
+	defer c.signLock.Unlock()
+	lock, ok := c.vaultLocks[vaultPubKey]
+	if !ok {
+		lock = &sync.Mutex{}
+		c.vaultLocks[vaultPubKey] = lock
+	}
+	return lock
+}
+
 // STORAGE
 
 const (
@@ -752,15 +749,4 @@ func (c *Client) getBlockId(height uint64) (slot uint64, hash []byte, err error)
 	slot = binary.BigEndian.Uint64(buf[:8])
 	hash = buf[8:]
 	return
-}
-
-func (c *Client) getVaultLock(vaultPubKey string) *sync.Mutex {
-	c.signLock.Lock()
-	defer c.signLock.Unlock()
-	lock, ok := c.vaultLocks[vaultPubKey]
-	if !ok {
-		lock = &sync.Mutex{}
-		c.vaultLocks[vaultPubKey] = lock
-	}
-	return lock
 }
