@@ -223,7 +223,7 @@ func InitConfig(parallelism int, seed bool) *OpConfig {
 		case common.DOGEChain:
 			chainSeedAmount = sdkmath.NewUint(100000 * common.One)
 		case common.ADAChain:
-			chainSeedAmount = sdkmath.NewUint(1000 * 1_000_000) // 1000 ADA
+			chainSeedAmount = sdkmath.NewUint(1000 * common.One)
 		default:
 			continue // all other chains currently unsupported
 		}

@@ -213,7 +213,7 @@ func (c Chain) GetGasUnits() string {
 // 1e8, just return cosmos.DefaultCoinDecimals.
 func (c Chain) GetGasAssetDecimal() int64 {
 	switch c {
-	case GAIAChain:
+	case GAIAChain, ADAChain:
 		return 6
 	case XRPChain:
 		return 6

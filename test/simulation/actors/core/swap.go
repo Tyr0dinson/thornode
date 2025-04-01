@@ -1,6 +1,7 @@
 package core
 
 import (
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"strings"
@@ -80,6 +81,15 @@ func (a *SwapActor) acquireUser(config *OpConfig) OpResult {
 		}
 	}
 	a.swapAmount = sdkmath.NewUintFromString(pool.BalanceAsset).QuoUint64(200)
+	if a.from == common.ADAAsset && a.swapAmount.LT(sdkmath.NewUint(1_000_000)) {
+		poolStr, err := json.Marshal(pool)
+		if err != nil {
+			panic(err)
+		}
+		a.Log().Warn().Msgf("acquireUser ADA: swap amount %d from pool for %s is too small! Using minimum of 1_500_000 lovelaces pool=%s",
+			a.swapAmount.Uint64(), a.from, poolStr)
+		a.swapAmount = sdkmath.NewUint(1_500_000) // set minimum for ADA swap amount
+	}
 
 	for _, user := range config.Users {
 		// skip users already being used
