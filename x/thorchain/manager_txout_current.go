@@ -439,7 +439,11 @@ func (tos *TxOutStorageVCUR) DiscoverOutbounds(ctx cosmos.Context, transactionFe
 			}
 		}
 
-		toi.VaultPubKey = vault.PubKey
+		if toi.Chain.GetSigningAlgo() == common.SigningAlgoEd25519 {
+			toi.VaultPubKey = vault.PubKeyEddsa
+		} else {
+			toi.VaultPubKey = vault.PubKey
+		}
 		if toi.Coin.Amount.LTE(vaultCoinAmount) {
 			outputs = append(outputs, toi)
 			toi.Coin.Amount = cosmos.ZeroUint()

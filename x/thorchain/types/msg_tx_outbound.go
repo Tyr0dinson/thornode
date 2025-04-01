@@ -1,6 +1,8 @@
 package types
 
 import (
+	"fmt"
+
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -15,6 +17,10 @@ var (
 
 // NewMsgOutboundTx is a constructor function for MsgOutboundTx
 func NewMsgOutboundTx(tx ObservedTx, txID common.TxID, signer cosmos.AccAddress) *MsgOutboundTx {
+	if tx.Tx.FromAddress == tx.Tx.ToAddress {
+		fmt.Printf("MsgOutboundTx: FromAddress and ToAddress are the same: %s\n", tx.Tx.FromAddress)
+	}
+
 	return &MsgOutboundTx{
 		Tx:     tx,
 		InTxID: txID,

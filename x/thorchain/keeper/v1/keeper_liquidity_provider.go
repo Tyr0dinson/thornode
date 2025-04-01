@@ -2,7 +2,6 @@ package keeperv1
 
 import (
 	"fmt"
-	"runtime/debug"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -76,8 +75,6 @@ func (k KVStore) GetLiquidityProvider(ctx cosmos.Context, asset common.Asset, ad
 
 // SetLiquidityProvider save the liquidity provider to kv store
 func (k KVStore) SetLiquidityProvider(ctx cosmos.Context, lp LiquidityProvider) {
-	fmt.Printf("SetLiquidityProvider: %v\n", lp)
-	debug.PrintStack()
 	k.setLiquidityProvider(ctx, k.GetKey(prefixLiquidityProvider, lp.Key()), lp)
 }
 

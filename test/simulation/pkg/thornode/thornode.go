@@ -142,6 +142,7 @@ func GetSwapQuote(from, to common.Asset, amount sdk.Uint) (openapi.QuoteSwapResp
 	url := parsedURL.String()
 
 	var quote openapi.QuoteSwapResponse
+	fmt.Printf("GetSwapQuote %s\n", url)
 	err = get(url, &quote)
 	return quote, err
 }

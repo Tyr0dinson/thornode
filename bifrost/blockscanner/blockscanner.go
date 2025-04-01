@@ -11,7 +11,6 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
-	btypes "gitlab.com/thorchain/thornode/v3/bifrost/blockscanner/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
@@ -193,10 +192,10 @@ func (b *BlockScanner) scanBlocks() {
 			txIn, err := b.chainScanner.FetchTxs(currentBlock, chainHeight)
 			if err != nil {
 				// don't log an error if its because the block doesn't exist yet
-				if !errors.Is(err, btypes.ErrUnavailableBlock) {
-					b.logger.Error().Err(err).Int64("block height", currentBlock).Msg("fail to get RPCBlock")
-					b.healthy.Store(false)
-				}
+				// if !errors.Is(err, btypes.ErrUnavailableBlock) {
+				b.logger.Error().Err(err).Int64("block height", currentBlock).Msg("fail to get RPCBlock")
+				b.healthy.Store(false)
+				// }
 				time.Sleep(b.cfg.BlockHeightDiscoverBackoff)
 				continue
 			}

@@ -1,6 +1,7 @@
 package observer
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -312,13 +313,21 @@ func (o *Observer) filterObservations(chain common.Chain, items []types.TxInItem
 		// NOTE: the following could result in the same tx being added
 		// twice, which is expected. We want to make sure we generate both
 		// a inbound and outbound txn, if we both apply.
+		txInStr, err := json.Marshal(txInItem)
+		if err != nil {
+			o.logger.Error().Err(err).Msgf("fail to marshal txInItem, %s", txInItem.Tx)
+		}
+
+		if txInItem.Sender == txInItem.To {
+			o.logger.Info().Msgf("tx from address is the same as to address, %s txIn=%s",
+				txInItem.Sender, txInStr)
+		}
 
 		isInternal := false
 		// check if the from address is a valid pool
 		if ok, cpi := o.pubkeyMgr.IsValidPoolAddress(txInItem.Sender, chain); ok {
 			txInItem.ObservedVaultPubKey = cpi.PubKey
 			isInternal = true
-
 			// skip the outbound observation if we signed and manually observed
 			if !o.signedTxOutCache.Contains(txInItem.Tx) {
 				txs = append(txs, txInItem)

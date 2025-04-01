@@ -54,6 +54,10 @@ var (
 	}
 )
 
+const (
+	networkFeeUpdatePeriod = 100
+)
+
 type Client struct {
 	logger          zerolog.Logger
 	networkError    chan error
@@ -69,6 +73,11 @@ type Client struct {
 	protocol    *utxocardano.PParams
 
 	localTestingKey ed25519.PrivateKey
+	txSizes         []uint64
+	txSizesLock     sync.Mutex
+
+	signLock   sync.Mutex
+	vaultLocks map[string]*sync.Mutex
 }
 
 func getNetworkMagic(cfg config.BifrostChainConfiguration) (uint32, error) {
@@ -96,6 +105,7 @@ func NewClient(
 		thorchainBridge: thorchainBridge,
 		logger:          log.With().Str("module", cfg.ChainID.String()).Logger(),
 		config:          cfg,
+		vaultLocks:      make(map[string]*sync.Mutex),
 	}
 
 	_, err := tss.NewKeySign(server, thorchainBridge)
@@ -194,12 +204,9 @@ func NewClient(
 		return nil, fmt.Errorf("fail to create ouroboros n2c connection: %w", err)
 	}
 
-	// fetch network protocol parameters, needed for tx signing
-	protocolParams, err := c.clientConn.LocalStateQuery().Client.GetCurrentProtocolParams()
-	if err != nil {
-		return nil, fmt.Errorf("fail to get protocol parameters: %w", err)
+	if err := c.updateNetworkFee(0); err != nil {
+		return nil, fmt.Errorf("fail to update network fee: %w", err)
 	}
-	c.protocol = protocolParams.Utxorpc()
 
 	c.startHeight, _, _ = c.getLastSeenBlock()
 	if cfg.BlockScanner.StartBlockHeight > 0 {
@@ -258,6 +265,13 @@ func (c *Client) BroadcastTx(_ types.TxOutItem, txBytes []byte) (string, error) 
 	err = c.clientConn.LocalTxSubmission().Client.SubmitTx(uint16(era), txBytes)
 	if err != nil {
 		return "", fmt.Errorf("failed to submit transaction bytes=%x: %w", txBytes, err)
+	}
+
+	c.txSizesLock.Lock()
+	defer c.txSizesLock.Unlock()
+	c.txSizes = append(c.txSizes, uint64(len(txBytes)))
+	if len(c.txSizes) > 100 {
+		c.txSizes = c.txSizes[1:]
 	}
 
 	return tx.Hash(), nil
@@ -375,18 +389,22 @@ func (c *Client) OnObservedTxIn(txIn types.TxInItem, blockHeight int64) {
 }
 
 func (c *Client) SignTx(tx types.TxOutItem, height int64) (signedBz, checkpoint []byte, txIn *types.TxInItem, err error) {
-	fromAddr, err := c.getVaultAddress()
+	vaultAddr, err := c.getVaultAddress()
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("fail to get vault address: %w", err)
 	}
-	vaultFromAddr, err := tx.VaultPubKeyEddsa.GetAddress(c.GetChain())
+	txVaultAddr, err := tx.VaultPubKey.GetAddress(c.GetChain())
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("fail to get vault pubkey address: %w", err)
 	}
-	if vaultFromAddr.String() != fromAddr.String() {
-		return nil, nil, nil, fmt.Errorf("vault pubkey address %s does not match vault address %s",
-			vaultFromAddr.String(), fromAddr.String())
+
+	c.logger.Info().Str("vault", vaultAddr.String()).Str("tx-vault", txVaultAddr.String()).Msg("sign tx")
+
+	if txVaultAddr.String() != vaultAddr.String() {
+		return nil, nil, nil, fmt.Errorf("tx-vault pubkey address %s does not match vault address %s",
+			txVaultAddr.String(), vaultAddr.String())
 	}
+
 	toAddr, err := cardano.NewAddressFromBech32(tx.ToAddress.String())
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("fail to parse to recipient address: %w", err)
@@ -394,21 +412,68 @@ func (c *Client) SignTx(tx types.TxOutItem, height int64) (signedBz, checkpoint 
 	if len(tx.Coins) != 1 {
 		return nil, nil, nil, fmt.Errorf("expected 1 coin, got %d", len(tx.Coins))
 	}
+
+	vaultLock := c.getVaultLock(vaultAddr.String())
+	vaultLock.Lock()
+	defer vaultLock.Unlock()
+
 	txBuilder := NewTxBuilder(c.protocol, []ed25519.PrivateKey{c.localTestingKey})
-	// TODO: where are input txs specified in the call chain?  many input utxos may be required to satisify a transfer
-	txBuilder.AddInputs(TxInput{
-		TxHash: []byte(tx.InHash),
-		Index:  0,                           // TODO how to obtain this?
-		Amount: tx.Coins[0].Amount.Uint64(), // not strictly necessary, but used for fee calculation
-	})
+
+	// get block
+	// blockSlot, blockHash, err := c.getBlockId(uint64(height))
+	// if err != nil {
+	// 	return nil, nil, nil, fmt.Errorf("fail to get block id for height %d: %w", height, err)
+	// }
+	// queryClient := c.clientConn.LocalStateQuery().Client
+	// if err := queryClient.Acquire(&ouroboroscommon.Point{Slot: blockSlot, Hash: blockHash}); err != nil {
+	// 	return nil, nil, nil, fmt.Errorf("fail to acquire point slot=%d hash=%x: %w", blockSlot, blockHash, err)
+	// }
+	queryClient := c.clientConn.LocalStateQuery().Client
+	if err := queryClient.AcquireVolatileTip(); err != nil {
+		return nil, nil, nil, fmt.Errorf("fail to acquire tip: %w", err)
+	}
+	defer func() {
+		if err := queryClient.Release(); err != nil {
+			c.logger.Err(err).Msg("fail to release point")
+		}
+	}()
+
+	ledgerAddr, err := ledger.NewAddress(vaultAddr.String())
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("fail to create ledger address: %w", err)
+	}
+	utxoResponse, err := queryClient.GetUTxOByAddress([]ledger.Address{ledgerAddr})
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("fail to get utxo by address: %w", err)
+	}
+	var (
+		utxoSum      uint64
+		targetAmount = tx.Coins[0].Amount.Uint64()
+	)
+	for txId, utxo := range utxoResponse.Results {
+		utxoSum += utxo.Amount()
+		txBuilder.AddInputs(TxInput{
+			TxHash: txId.Hash[:],
+			Index:  uint16(txId.Idx),
+			Amount: utxo.Amount(),
+		})
+		utxoSum += utxo.Amount()
+		if utxoSum >= targetAmount {
+			break
+		}
+	}
+	if utxoSum < targetAmount {
+		return nil, nil, nil, fmt.Errorf("insufficient funds: need %d, have %d", targetAmount, utxoSum)
+	}
+
 	txBuilder.AddOutputs(TxOutput{
 		Address: toAddr,
-		Amount:  tx.Coins[0].Amount.Uint64(),
+		Amount:  targetAmount,
 	})
 	if err = txBuilder.SetMemo(tx.Memo); err != nil {
 		return nil, nil, nil, fmt.Errorf("fail to set memo: %w", err)
 	}
-	if err := txBuilder.AddChangeIfNeeded(fromAddr); err != nil {
+	if err := txBuilder.AddChangeIfNeeded(vaultAddr); err != nil {
 		return nil, nil, nil, fmt.Errorf("fail to add change: %w", err)
 	}
 	signedTx, err := txBuilder.Build()
@@ -493,11 +558,14 @@ func (c *Client) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
 			amount    uint64
 		)
 		for _, txOut := range tx.Outputs() {
-			if !isSenderAsgard && !c.isAsgardAddress(txOut.Address().Bytes()) {
+			addr := txOut.Address()
+			if !isSenderAsgard && !c.isAsgardAddress(addr.Bytes()) {
 				// skip txs that don't involve asgard addresses
 				continue
 			}
-			addr := txOut.Address()
+			if addr.String() == senderAddr.String() {
+				continue
+			}
 			toAddress = &addr
 			amount = txOut.Amount()
 		}
@@ -522,6 +590,10 @@ func (c *Client) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
 		})
 	}
 
+	if err := c.updateNetworkFee(fetchHeight); err != nil {
+		return types.TxIn{}, err
+	}
+
 	return types.TxIn{
 		Count:    strconv.Itoa(len(txIns)),
 		Chain:    c.config.ChainID,
@@ -529,6 +601,35 @@ func (c *Client) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
 		Filtered: false,
 		MemPool:  false,
 	}, nil
+}
+
+func (c *Client) updateNetworkFee(height int64) error {
+	if height != 0 && height%networkFeeUpdatePeriod != 0 {
+		return nil
+	}
+	c.txSizesLock.Lock()
+	meanSize := uint64(568)
+	if len(c.txSizes) > 0 {
+		meanSize = 0
+		for _, size := range c.txSizes {
+			meanSize += size
+		}
+		meanSize /= uint64(len(c.txSizes))
+	}
+	c.txSizesLock.Unlock()
+
+	// fetch network protocol parameters, needed for tx signing
+	protocolParams, err := c.clientConn.LocalStateQuery().Client.GetCurrentProtocolParams()
+	if err != nil {
+		return fmt.Errorf("fail to get protocol parameters: %w", err)
+	}
+	c.protocol = protocolParams.Utxorpc()
+	_, err = c.thorchainBridge.PostNetworkFee(height, common.ADAChain,
+		1,
+		c.protocol.MinFeeConstant+c.protocol.MinFeeCoefficient*meanSize,
+	)
+	fmt.Printf("cardano updated network fee: %d\n", c.protocol.MinFeeConstant+c.protocol.MinFeeCoefficient*meanSize)
+	return err
 }
 
 func (c *Client) getVaultAddress() (cardano.Address, error) {
@@ -651,4 +752,15 @@ func (c *Client) getBlockId(height uint64) (slot uint64, hash []byte, err error)
 	slot = binary.BigEndian.Uint64(buf[:8])
 	hash = buf[8:]
 	return
+}
+
+func (c *Client) getVaultLock(vaultPubKey string) *sync.Mutex {
+	c.signLock.Lock()
+	defer c.signLock.Unlock()
+	lock, ok := c.vaultLocks[vaultPubKey]
+	if !ok {
+		lock = &sync.Mutex{}
+		c.vaultLocks[vaultPubKey] = lock
+	}
+	return lock
 }

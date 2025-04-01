@@ -59,6 +59,9 @@ func NewDualLPActor(asset common.Asset) *Actor {
 ////////////////////////////////////////////////////////////////////////////////////////
 
 func (a *DualLPActor) acquireUser(config *OpConfig) OpResult {
+	if a.asset.Chain == common.ADAChain {
+		fmt.Println("acquireUser: ADAChain")
+	}
 	for _, user := range config.Users {
 		a.SetLogger(a.Log().With().Str("user", user.Name()).Logger())
 
@@ -200,6 +203,10 @@ func (a *DualLPActor) verifyLP(config *OpConfig) OpResult {
 		return OpResult{
 			Continue: false,
 		}
+	}
+
+	if a.asset.Chain == common.ADAChain {
+		fmt.Println("acquireUser: ADAChain")
 	}
 
 	for _, lp := range lps {

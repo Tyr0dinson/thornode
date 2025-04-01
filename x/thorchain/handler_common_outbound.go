@@ -2,6 +2,7 @@ package thorchain
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -12,6 +13,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 // CommonOutboundTxHandler is the place where those common logic can be shared
@@ -61,6 +63,8 @@ func (h CommonOutboundTxHandler) handle(ctx cosmos.Context, tx ObservedTx, inTxI
 		return &cosmos.Result{}, nil
 	}
 
+	var candidateMatches []types.TxOutItem
+
 	shouldSlash := true
 	signingTransPeriod := h.mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
 	// every Signing Transaction Period , THORNode will check whether a
@@ -89,6 +93,7 @@ func (h CommonOutboundTxHandler) handle(ctx cosmos.Context, tx ObservedTx, inTxI
 		// Save TxOut back with the TxID only when the TxOut on the block height is
 		// not empty
 		for i, txOutItem := range txOut.TxArray {
+			candidateMatches = append(candidateMatches, txOutItem)
 			// withdraw , refund etc, one inbound tx might result two outbound
 			// txes, THORNode have to correlate outbound tx back to the
 			// inbound, and also txitem , thus THORNode could record both
@@ -96,13 +101,28 @@ func (h CommonOutboundTxHandler) handle(ctx cosmos.Context, tx ObservedTx, inTxI
 			// one coin in it , THORNode could use that to identify which tx it
 			// is
 
+			var txPubkey common.PubKey
+			switch {
+			case tx.ObservedPubKey.IsEmpty() && !tx.ObservedPubKeyEddsa.IsEmpty():
+				txPubkey = tx.ObservedPubKeyEddsa
+			case !tx.ObservedPubKey.IsEmpty() && tx.ObservedPubKeyEddsa.IsEmpty():
+				txPubkey = tx.ObservedPubKey
+			case !tx.ObservedPubKey.IsEmpty() && !tx.ObservedPubKeyEddsa.IsEmpty():
+				ctx.Logger().Warn("both pubkeys are not empty")
+				txPubkey = tx.ObservedPubKeyEddsa
+			default:
+				ctx.Logger().Error("both pubkeys are empty")
+			}
+
 			if txOutItem.InHash.Equals(inTxID) &&
 				txOutItem.OutHash.IsEmpty() &&
 				tx.Tx.Chain.Equals(txOutItem.Chain) &&
 				tx.Tx.ToAddress.Equals(txOutItem.ToAddress) &&
 				strings.EqualFold(tx.Aggregator, txOutItem.Aggregator) &&
 				strings.EqualFold(tx.AggregatorTarget, txOutItem.AggregatorTargetAsset) &&
-				tx.ObservedPubKey.Equals(txOutItem.VaultPubKey) {
+				txPubkey.Equals(txOutItem.VaultPubKey) {
+
+				ctx.Logger().Info("found tx out item", "tx_out_item", txOutItem, "tx_out", tx.Tx)
 
 				matchCoin := tx.Tx.Coins.EqualsEx(common.Coins{txOutItem.Coin})
 				if !matchCoin {
@@ -131,7 +151,7 @@ func (h CommonOutboundTxHandler) handle(ctx cosmos.Context, tx ObservedTx, inTxI
 						if maxGasAmt.GT(realGasAmt) {
 							// Don't reimburse gas difference if the outbound is from an InactiveVault.
 							// trunk-ignore(golangci-lint/govet): shadow
-							vault, err := h.mgr.Keeper().GetVault(ctx, tx.ObservedPubKey)
+							vault, err := h.mgr.Keeper().GetVault(ctx, txPubkey)
 							if err != nil {
 								ctx.Logger().Error("fail to get vault", "error", err)
 							}
@@ -220,7 +240,35 @@ func (h CommonOutboundTxHandler) handle(ctx cosmos.Context, tx ObservedTx, inTxI
 	}
 
 	if shouldSlash {
-		ctx.Logger().Info("slash node account, no matched tx out item", "inbound txid", inTxID, "outbound tx", tx.Tx)
+		txJson, err := json.Marshal(tx)
+		if err != nil {
+			ctx.Logger().Error("fail to marshal tx", "error", err)
+		}
+		ctx.Logger().Info("slash node account, no matched tx out item",
+			"inbound txid", inTxID, "outbound tx", tx.Tx,
+			"observed_pubkey", tx.ObservedPubKey,
+			"observed_pubkey_eddsa", tx.ObservedPubKeyEddsa,
+			"tx", txJson,
+		)
+
+		for _, txOutItem := range candidateMatches {
+			txOutItemStr, err := json.Marshal(txOutItem)
+			if err != nil {
+				ctx.Logger().Error("fail to marshal tx out item", "error", err)
+			}
+			ctx.Logger().Info("candidate conditions:",
+				"inHash", txOutItem.InHash.Equals(inTxID),
+				"outEmpty", txOutItem.OutHash.IsEmpty(),
+				"chain", tx.Tx.Chain.Equals(txOutItem.Chain),
+				"address", tx.Tx.ToAddress.Equals(txOutItem.ToAddress),
+				"aggregator", strings.EqualFold(tx.Aggregator, txOutItem.Aggregator),
+				"aggregator_target", strings.EqualFold(tx.AggregatorTarget, txOutItem.AggregatorTargetAsset),
+				"pubkey", tx.ObservedPubKey.Equals(txOutItem.VaultPubKey),
+			)
+			ctx.Logger().Info("found candidate tx out item",
+				"tx_out_item", string(txOutItemStr),
+			)
+		}
 
 		// send security alert for events that are not evm burn
 		if !isOutboundFakeGasTX(tx) {

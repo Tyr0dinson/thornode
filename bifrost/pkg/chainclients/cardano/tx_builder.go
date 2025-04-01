@@ -78,15 +78,19 @@ func (tb *TxBuilder) SetTTL(ttl uint32) {
 }
 
 // SetMemo sets the memo for the transaction as specified in https://cips.cardano.org/cip/CIP-20
-func (tb *TxBuilder) SetMemo(memos ...string) error {
-	if len(memos) == 0 {
+func (tb *TxBuilder) SetMemo(memo string) error {
+	if len(memo) == 0 {
 		return nil
 	}
-	for _, m := range memos {
-		if len(m) > 64 {
-			return fmt.Errorf("memo is too long: %d", len(m))
-		}
+	memos := []string{}
+	for len(memo) > 64 {
+		memos = append(memos, memo[:64])
+		memo = memo[64:]
 	}
+	if len(memo) > 0 {
+		memos = append(memos, memo)
+	}
+	fmt.Printf("TxBuilder: build memos: %v\n", memos)
 
 	if tb.tx.Metadata == nil {
 		tb.tx.Metadata = make(map[uint64]any)

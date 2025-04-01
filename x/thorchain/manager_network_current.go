@@ -717,11 +717,15 @@ func (vm *NetworkMgrVCUR) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 						continue
 					}
 				}
+				vpk := vault.PubKey
+				if coin.Asset.GetChain() == common.ADAChain {
+					vpk = vault.PubKeyEddsa
+				}
 				toi := TxOutItem{
 					Chain:       coin.Asset.GetChain(),
 					InHash:      common.BlankTxID,
 					ToAddress:   addr,
-					VaultPubKey: vault.PubKey,
+					VaultPubKey: vpk,
 					Coin: common.Coin{
 						Asset:  coin.Asset,
 						Amount: amt,

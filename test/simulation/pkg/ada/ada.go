@@ -181,6 +181,7 @@ func (c *Client) GetAccount(_ *common.PubKey) (*common.Account, error) {
 	for _, utxo := range res.Results {
 		balance += utxo.Amount()
 	}
+	// balance *= 100 // 1e6 -> 1e8
 	coin := common.NewCoin(common.ADAAsset, sdkmath.NewUint(balance))
 	c.logger.Info("get account", "address", c.address.String(), "adaAddress", adaAddr.String(), "balance", balance)
 	return &common.Account{
@@ -194,12 +195,14 @@ func (c *Client) SignTx(tx simtypes.SimTx) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("fail to create address: %w", err)
 	}
-	txIns, err := c.getUtxoToSpend(tx.Coin.Amount.Uint64())
+	// amount := tx.Coin.Amount.Quo(sdkmath.NewUint(100)) // 1e8 -> 1e6
+	amount := tx.Coin.Amount
+	txIns, err := c.getUtxoToSpend(amount.Uint64())
 	if err != nil {
 		return nil, fmt.Errorf("fail to get utxo: %w", err)
 	}
 	txBuilder.AddInputs(txIns...)
-	txBuilder.AddOutputs(adatx.NewTxOutput(toAddr, tx.Coin.Amount.Uint64()))
+	txBuilder.AddOutputs(adatx.NewTxOutput(toAddr, amount.Uint64()))
 	if err := txBuilder.SetMemo(tx.Memo); err != nil {
 		return nil, fmt.Errorf("fail to set memo: %w", err)
 	}
