@@ -219,11 +219,8 @@ func (c *Client) SignTx(tx simtypes.SimTx) ([]byte, error) {
 func (c *Client) getUtxoToSpend(total uint64) ([]adatx.TxInput, error) {
 	// 1 tx at a time globally.. better to lock on addr iff an in-flight utxo is seen
 	// in response below
-	c.logger.Info("wait utxo lock")
-	start := time.Now()
 	c.broadcastLock.Lock()
 	defer c.broadcastLock.Unlock()
-	c.logger.Info("wait utxo lock done", "duration", time.Since(start).String())
 	addr, err := ledger.NewAddress(c.address.String())
 	if err != nil {
 		return nil, fmt.Errorf("fail to create address: %w", err)
