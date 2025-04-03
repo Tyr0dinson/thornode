@@ -1642,6 +1642,10 @@ github.com/klauspost/compress v1.17.9/go.mod h1:Di0epgTjJY877eYKx5yC51cX2A2Vl2ib
 github.com/klauspost/cpuid/v2 v2.0.9/go.mod h1:FInQzS24/EEf25PyTYn52gqo7WaD8xa0213Md/qVLRg=
 github.com/klauspost/cpuid/v2 v2.2.6 h1:ndNyv040zDGIDh8thGkXYjnFtiN02M1PVVF+JE/48xc=
 github.com/klauspost/cpuid/v2 v2.2.6/go.mod h1:Lcz8mBdAVJIBVzewtcLocK12l3Y+JytZYpaMropDUws=
+github.com/kocubinski/gardano v0.2.2 h1:vrwg93Y61PT8Wvrnfg6hrP8AsYDfOI0dkboOBpVNKOI=
+github.com/kocubinski/gardano v0.2.2/go.mod h1:IvmQWo7Ri2OdkYKZZQVxXmMQRAOY81LLN4/As3yRgbc=
+github.com/kocubinski/gardano v0.2.3 h1:yts0eyxdzfArDX2/owTr/6A1QQcEdfjbdVCklVd7yYo=
+github.com/kocubinski/gardano v0.2.3/go.mod h1:IvmQWo7Ri2OdkYKZZQVxXmMQRAOY81LLN4/As3yRgbc=
 github.com/konsorten/go-windows-terminal-sequences v1.0.1/go.mod h1:T0+1ngSBFLxvqU3pZ+m/2kptfBszLMUkC4ZK/EgS/cQ=
 github.com/konsorten/go-windows-terminal-sequences v1.0.3/go.mod h1:T0+1ngSBFLxvqU3pZ+m/2kptfBszLMUkC4ZK/EgS/cQ=
 github.com/koron/go-ssdp v0.0.0-20191105050749-2e1c40ed0b5d h1:68u9r4wEvL3gYg2jvAOgROwZ3H+Y3hIDk4tbbmIjcYQ=

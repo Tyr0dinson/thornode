@@ -125,7 +125,7 @@ require (
 
 require (
 	github.com/blinklabs-io/gouroboros v0.114.1
-	github.com/fxamacker/cbor/v2 v2.7.0
+	github.com/kocubinski/gardano v0.2.3
 	github.com/utxorpc/go-codegen v0.16.0
 )
 
@@ -203,6 +203,7 @@ require (
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/flynn/noise v0.0.0-20180327030543-2492fe189ae6 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
+	github.com/fxamacker/cbor/v2 v2.7.0 // indirect
 	github.com/getsentry/sentry-go v0.27.0 // indirect
 	github.com/go-kit/kit v0.12.0 // indirect
 	github.com/go-kit/log v0.2.1 // indirect
