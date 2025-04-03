@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -829,11 +830,26 @@ func (c *Client) getAddressesFromScriptPubKey(scriptPubKey btcjson.ScriptPubKeyR
 
 // getMemo returns memo for a btc tx, using vout OP_RETURN
 func (c *Client) getMemo(tx *btcjson.TxRawResult) (string, error) {
-	var opReturns string
+	var memo string
+
+	supportedPubKeyTypes := []string{
+		"nulldata",
+		"witness_v0_keyhash",
+	}
+
 	for _, vOut := range tx.Vout {
-		if !strings.EqualFold(vOut.ScriptPubKey.Type, "nulldata") {
+		isValidType := false
+		for _, supportedType := range supportedPubKeyTypes {
+			if strings.EqualFold(vOut.ScriptPubKey.Type, supportedType) {
+				isValidType = true
+				break
+			}
+		}
+
+		if !isValidType {
 			continue
 		}
+
 		buf, err := hex.DecodeString(vOut.ScriptPubKey.Hex)
 		if err != nil {
 			c.log.Err(err).Msg("fail to hex decode scriptPubKey")
@@ -858,24 +874,67 @@ func (c *Client) getMemo(tx *btcjson.TxRawResult) (string, error) {
 			c.log.Err(err).Msg("fail to disasm script pubkey")
 			continue
 		}
-		opReturnFields := strings.Fields(asm)
-		if len(opReturnFields) == 2 {
+		fields := strings.Fields(asm)
+
+		if len(fields) != 2 {
+			continue
+		}
+
+		if fields[0] == "OP_RETURN" {
 			// skip "0" field to avoid log noise
-			if opReturnFields[1] == "0" {
+			if fields[1] == "0" {
 				continue
 			}
 
 			var decoded []byte
-			decoded, err = hex.DecodeString(opReturnFields[1])
+			decoded, err = hex.DecodeString(fields[1])
 			if err != nil {
-				c.log.Err(err).Msgf("fail to decode OP_RETURN string: %s", opReturnFields[1])
+				c.log.Err(err).Msgf("fail to decode OP_RETURN string: %s", fields[1])
 				continue
 			}
-			opReturns += string(decoded)
+			memo += string(decoded)
+			continue
+		}
+
+		// don't inspect further non OP_RETURN outputs unless we found one
+		if len(memo) < 80 {
+			continue
+		}
+
+		// marker can be at position >= 79 for a single / multiple OP_RETURN_
+		if strings.LastIndex(memo, "^") < 79 {
+			// no continuation marker found
+			continue
+		}
+
+		if fields[0] == "0" {
+			pubkey := fields[1]
+
+			// no P2WPKPH pubkey
+			if len(pubkey) != 40 {
+				continue
+			}
+
+			// remove trailing zeros
+			if strings.HasSuffix(pubkey, "00") {
+				regex := regexp.MustCompile("(00)+$")
+				pubkey = regex.ReplaceAllString(pubkey, "")
+			}
+
+			decoded, err := hex.DecodeString(pubkey)
+			if err != nil {
+				c.log.Err(err).Msgf("fail to decode pubkey string: %s", pubkey)
+				continue
+			}
+			memo += string(decoded)
 		}
 	}
 
-	return opReturns, nil
+	if strings.LastIndex(memo, "^") >= 79 {
+		memo = strings.Replace(memo, "^", "", 1)
+	}
+
+	return memo, nil
 }
 
 // getGas returns gas for a tx (sum vin - sum vout)
