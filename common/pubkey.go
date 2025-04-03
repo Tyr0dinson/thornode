@@ -22,7 +22,7 @@ import (
 	"github.com/cometbft/cometbft/crypto"
 	eth "github.com/ethereum/go-ethereum/crypto"
 
-	"gitlab.com/thorchain/thornode/v3/common/cardano"
+	cardano "github.com/kocubinski/gardano/address"
 	xrpkm "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/xrp/keymanager"
 
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"

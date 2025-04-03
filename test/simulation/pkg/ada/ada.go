@@ -14,12 +14,12 @@ import (
 	"github.com/blinklabs-io/gouroboros/ledger"
 	"github.com/blinklabs-io/gouroboros/protocol/chainsync"
 	ocommon "github.com/blinklabs-io/gouroboros/protocol/common"
+	cardano "github.com/kocubinski/gardano/address"
+	adatx "github.com/kocubinski/gardano/tx"
 	"github.com/rs/zerolog/log"
 	utxocardano "github.com/utxorpc/go-codegen/utxorpc/v1alpha/cardano"
-	adatx "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/cardano"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/common"
-	"gitlab.com/thorchain/thornode/v3/common/cardano"
 	simtypes "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
 )
 

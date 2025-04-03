@@ -22,6 +22,8 @@ import (
 	"github.com/blinklabs-io/gouroboros/protocol/chainsync"
 	ouroboroscommon "github.com/blinklabs-io/gouroboros/protocol/common"
 	"github.com/blinklabs-io/gouroboros/protocol/localstatequery"
+	"github.com/kocubinski/gardano/address"
+	gtx "github.com/kocubinski/gardano/tx"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	leveldbutil "github.com/syndtr/goleveldb/leveldb/util"
@@ -35,7 +37,6 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss"
 	tssp "gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/tss"
 	"gitlab.com/thorchain/thornode/v3/common"
-	"gitlab.com/thorchain/thornode/v3/common/cardano"
 	"gitlab.com/thorchain/thornode/v3/config"
 )
 
@@ -116,21 +117,21 @@ func NewClient(
 	if err != nil {
 		return nil, fmt.Errorf("fail to get local testing key: %w", err)
 	}
-	vaultAddr, err := c.getVaultAddress()
-	if err != nil {
-		return nil, fmt.Errorf("fail to get vault address: %w", err)
-	}
-	pubKey := c.localTestingKey.Public().(ed25519.PublicKey)
-	pubBech32, err := cardano.NewThorPubKeyBech32(pubKey)
-	if err != nil {
-		return nil, fmt.Errorf("fail to get thor pub key bech32: %w", err)
-	}
-	fmt.Printf("cardano client has thorKeys:\n privKey: %x\n  pubKey: %x\n vaultAddress: %s\n thorpub: %s\n",
-		c.localTestingKey,
-		pubKey,
-		vaultAddr.String(),
-		pubBech32,
-	)
+	// vaultAddr, err := c.getVaultAddress()
+	// if err != nil {
+	// 	return nil, fmt.Errorf("fail to get vault address: %w", err)
+	// }
+	// pubKey := c.localTestingKey.Public().(ed25519.PublicKey)
+	// pubBech32, err := address.NewThorPubKeyBech32(pubKey)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("fail to get thor pub key bech32: %w", err)
+	// }
+	// fmt.Printf("cardano client has thorKeys:\n privKey: %x\n  pubKey: %x\n vaultAddress: %s\n thorpub: %s\n",
+	// 	c.localTestingKey,
+	// 	pubKey,
+	// 	vaultAddr.String(),
+	// 	pubBech32,
+	// )
 
 	var path string // if not set later, will in memory storage
 	c.logger.Info().Msgf("block scanner db path: %s", path)
@@ -399,7 +400,7 @@ func (c *Client) SignTx(tx types.TxOutItem, height int64) (signedBz, checkpoint 
 			txVaultAddr.String(), vaultAddr.String())
 	}
 
-	toAddr, err := cardano.NewAddressFromBech32(tx.ToAddress.String())
+	toAddr, err := address.NewAddressFromBech32(tx.ToAddress.String())
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("fail to parse to recipient address: %w", err)
 	}
@@ -411,7 +412,7 @@ func (c *Client) SignTx(tx types.TxOutItem, height int64) (signedBz, checkpoint 
 	vaultLock.Lock()
 	defer vaultLock.Unlock()
 
-	txBuilder := NewTxBuilder(c.protocol, []ed25519.PrivateKey{c.localTestingKey})
+	txBuilder := gtx.NewTxBuilder(c.protocol, []ed25519.PrivateKey{c.localTestingKey})
 
 	queryClient := c.clientConn.LocalStateQuery().Client
 	if err := queryClient.AcquireVolatileTip(); err != nil {
@@ -437,7 +438,7 @@ func (c *Client) SignTx(tx types.TxOutItem, height int64) (signedBz, checkpoint 
 	)
 	for txId, utxo := range utxoResponse.Results {
 		utxoSum += utxo.Amount()
-		txBuilder.AddInputs(TxInput{
+		txBuilder.AddInputs(gtx.TxInput{
 			TxHash: txId.Hash[:],
 			Index:  uint16(txId.Idx),
 			Amount: utxo.Amount(),
@@ -451,7 +452,7 @@ func (c *Client) SignTx(tx types.TxOutItem, height int64) (signedBz, checkpoint 
 		return nil, nil, nil, fmt.Errorf("insufficient funds: need %d, have %d", targetAmount, utxoSum)
 	}
 
-	txBuilder.AddOutputs(TxOutput{
+	txBuilder.AddOutputs(gtx.TxOutput{
 		Address: toAddr,
 		Amount:  targetAmount,
 	})
@@ -559,7 +560,7 @@ func (c *Client) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
 			continue
 		}
 
-		memo, err := DecodeMemo(tx)
+		memo, err := gtx.DecodeMemo(tx)
 		if err != nil {
 			c.logger.Err(err).Msg("fail to decode tx memo")
 			continue
@@ -618,20 +619,20 @@ func (c *Client) updateNetworkFee(height int64) error {
 	return err
 }
 
-func (c *Client) getVaultAddress() (cardano.Address, error) {
+func (c *Client) getVaultAddress() (address.Address, error) {
 	return c.getAddressFromPubkey(c.localTestingKey.Public().(ed25519.PublicKey))
 }
 
-func (c *Client) getAddressFromPubkey(pub []byte) (cardano.Address, error) {
+func (c *Client) getAddressFromPubkey(pub []byte) (address.Address, error) {
 	networkMagic, err := getNetworkMagic(c.config)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get network magic: %w", err)
 	}
 	switch networkMagic {
 	case 764824073:
-		return cardano.PaymentOnlyMainnetAddressFromPubkey(pub)
+		return address.PaymentOnlyMainnetAddressFromPubkey(pub)
 	case 42:
-		return cardano.PaymentOnlyTestnetAddressFromPubkey(pub)
+		return address.PaymentOnlyTestnetAddressFromPubkey(pub)
 	default:
 	}
 	return nil, fmt.Errorf("unsupported network magic: %d", networkMagic)
