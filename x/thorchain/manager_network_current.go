@@ -607,7 +607,7 @@ func (vm *NetworkMgrVCUR) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 				// GetMostSecure also takes into account migration outbound items.
 				target := vm.k.GetMostSecure(ctx, targetVaults, signingTransactionPeriod)
 				// get address of asgard pubkey
-				addr, err := target.PubKey.GetAddress(coin.Asset.GetChain())
+				addr, err := target.GetAddress(coin.Asset.GetChain())
 				if err != nil {
 					return err
 				}
@@ -731,10 +731,11 @@ func (vm *NetworkMgrVCUR) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 					}
 				}
 				toi := TxOutItem{
-					Chain:       coin.Asset.GetChain(),
-					InHash:      common.BlankTxID,
-					ToAddress:   addr,
-					VaultPubKey: vault.PubKey,
+					Chain:            coin.Asset.GetChain(),
+					InHash:           common.BlankTxID,
+					ToAddress:        addr,
+					VaultPubKey:      vault.PubKey,
+					VaultPubKeyEddsa: vault.PubKeyEddsa,
 					Coin: common.Coin{
 						Asset:  coin.Asset,
 						Amount: amt,

@@ -23,11 +23,11 @@ type OnNewPubKey func(pk common.PubKey) error
 type PubKeyValidator interface {
 	IsValidPoolAddress(addr string, chain common.Chain) (bool, common.ChainPoolInfo)
 	HasPubKey(pk common.PubKey) bool
-	AddPubKey(pk common.PubKey, _ bool)
-	AddNodePubKey(pk common.PubKey)
+	AddPubKey(pk common.PubKey, signer bool, algo common.SigningAlgo)
+	AddNodePubKey(pk common.PubKey, algo common.SigningAlgo)
 	RemovePubKey(pk common.PubKey)
 	GetSignPubKeys() common.PubKeys
-	GetNodePubKey() common.PubKey
+	GetNodePubKey(algo common.SigningAlgo) common.PubKey
 	GetPubKeys() common.PubKeys
 	RegisterCallback(callback OnNewPubKey)
 	GetContracts(chain common.Chain) []common.Address
@@ -40,6 +40,7 @@ type pubKeyInfo struct {
 	Contracts   map[common.Chain]common.Address
 	Signer      bool
 	NodeAccount bool
+	Algo        common.SigningAlgo
 }
 
 // PubKeyManager manager an always up to date pubkeys , which implement PubKeyValidator interface
@@ -74,7 +75,7 @@ func (pkm *PubKeyManager) Start() error {
 		return fmt.Errorf("fail to get pubkeys from thorchain: %w", err)
 	}
 	for _, pk := range pubkeys {
-		pkm.AddPubKey(pk.PubKey, false)
+		pkm.AddPubKey(pk.PubKey, false, pk.Algo)
 	}
 
 	// get smart contract address from THORNode , and update it's internal
@@ -127,11 +128,11 @@ func (pkm *PubKeyManager) GetSignPubKeys() common.PubKeys {
 }
 
 // GetNodePubKey get node account pub key
-func (pkm *PubKeyManager) GetNodePubKey() common.PubKey {
+func (pkm *PubKeyManager) GetNodePubKey(algo common.SigningAlgo) common.PubKey {
 	pkm.rwMutex.RLock()
 	defer pkm.rwMutex.RUnlock()
 	for _, pk := range pkm.pubkeys {
-		if pk.NodeAccount {
+		if pk.NodeAccount && pk.Algo == algo {
 			return pk.PubKey
 		}
 	}
@@ -156,7 +157,7 @@ func (pkm *PubKeyManager) hasPubKeyNoLock(pk common.PubKey) bool {
 }
 
 // AddPubKey add the given public key to internal storage
-func (pkm *PubKeyManager) AddPubKey(pk common.PubKey, signer bool) {
+func (pkm *PubKeyManager) AddPubKey(pk common.PubKey, signer bool, algo common.SigningAlgo) {
 	pkm.rwMutex.Lock()
 	defer pkm.rwMutex.Unlock()
 
@@ -172,6 +173,7 @@ func (pkm *PubKeyManager) AddPubKey(pk common.PubKey, signer bool) {
 	} else {
 		// pubkey doesn't exist yet, append it...
 		pkm.pubkeys = append(pkm.pubkeys, pubKeyInfo{
+			Algo:        algo,
 			PubKey:      pk,
 			Signer:      signer,
 			NodeAccount: false,
@@ -182,7 +184,7 @@ func (pkm *PubKeyManager) AddPubKey(pk common.PubKey, signer bool) {
 }
 
 // AddNodePubKey add the given public key as a node public key to internal storage
-func (pkm *PubKeyManager) AddNodePubKey(pk common.PubKey) {
+func (pkm *PubKeyManager) AddNodePubKey(pk common.PubKey, algo common.SigningAlgo) {
 	pkm.rwMutex.Lock()
 	defer pkm.rwMutex.Unlock()
 
@@ -197,6 +199,7 @@ func (pkm *PubKeyManager) AddNodePubKey(pk common.PubKey) {
 	if !pkm.hasPubKeyNoLock(pk) {
 		pkm.pubkeys = append(pkm.pubkeys, pubKeyInfo{
 			PubKey:      pk,
+			Algo:        algo,
 			Signer:      true,
 			NodeAccount: true,
 			Contracts:   map[common.Chain]common.Address{},
@@ -234,7 +237,7 @@ func (pkm *PubKeyManager) fetchPubKeys(prune bool) {
 	}
 	var pubkeys common.PubKeys
 	for _, pk := range addressPairs {
-		pkm.AddPubKey(pk.PubKey, false)
+		pkm.AddPubKey(pk.PubKey, false, pk.Algo)
 		pubkeys = append(pubkeys, pk.PubKey)
 	}
 	pkm.updateContractAddresses(addressPairs)
@@ -244,8 +247,8 @@ func (pkm *PubKeyManager) fetchPubKeys(prune bool) {
 	}
 
 	for _, vault := range vaults {
-		if vault.GetMembership().Contains(pkm.GetNodePubKey()) {
-			pkm.AddPubKey(vault.PubKey, true)
+		if vault.GetMembership().Contains(pkm.GetNodePubKey(common.SigningAlgoSecp256k1)) {
+			pkm.AddPubKey(vault.PubKey, true, common.SigningAlgoSecp256k1)
 			pubkeys = append(pubkeys, vault.PubKey)
 		}
 	}

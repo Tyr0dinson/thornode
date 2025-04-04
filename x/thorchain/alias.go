@@ -110,6 +110,7 @@ var (
 	NewMsgNodePauseChain           = types.NewMsgNodePauseChain
 	NewMsgDeposit                  = types.NewMsgDeposit
 	NewMsgTssPool                  = types.NewMsgTssPool
+	NewMsgTssPoolV2                = types.NewMsgTssPoolV2
 	NewMsgTssKeysignFail           = types.NewMsgTssKeysignFail
 	NewMsgObservedTxIn             = types.NewMsgObservedTxIn
 	NewMsgObservedTxOut            = types.NewMsgObservedTxOut
@@ -177,6 +178,7 @@ var (
 	NewBondProvider                = types.NewBondProvider
 	NewNodeAccount                 = types.NewNodeAccount
 	NewVault                       = types.NewVault
+	NewVaultV2                     = types.NewVaultV2
 	NewReserveContributor          = types.NewReserveContributor
 	NewMsgReserveContributor       = types.NewMsgReserveContributor
 	NewMsgBond                     = types.NewMsgBond
