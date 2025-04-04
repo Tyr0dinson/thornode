@@ -21,6 +21,7 @@ import (
 
 	"github.com/cometbft/cometbft/crypto"
 	eth "github.com/ethereum/go-ethereum/crypto"
+	"github.com/mr-tron/base58"
 
 	xrpkm "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/xrp/keymanager"
 
@@ -214,7 +215,7 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 		}
 
 		// Encode the public key to base58 to get the Solana address
-		addressString = Base58Encode(pk.Bytes())
+		addressString = base58.Encode(pk.Bytes())
 
 	default:
 		// Only EVM chains remain.
