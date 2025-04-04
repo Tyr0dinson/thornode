@@ -53,7 +53,8 @@ type Signer struct {
 	tssServer             *tssp.TssServer
 	pubkeyMgr             pubkeymanager.PubKeyValidator
 	constantsProvider     *ConstantsProvider
-	localPubKey           common.PubKey
+	localPubKeyECDSA      common.PubKey
+	localPubKeyEDDSA      common.PubKey
 	tssKeysignMetricMgr   *metrics.TssKeysignMetricMgr
 	observer              *observer.Observer
 	pipeline              *pipeline
@@ -101,6 +102,10 @@ func NewSigner(cfg config.Bifrost,
 	}
 	pubkeyMgr.AddNodePubKey(na.PubKeySet.Secp256k1)
 
+	if !na.PubKeySet.Ed25519.IsEmpty() {
+		pubkeyMgr.AddNodePubKey(na.PubKeySet.Ed25519)
+	}
+
 	cfg.Signer.BlockScanner.ChainID = common.THORChain // hard code to thorchain
 
 	// Create pubkey manager and add our private key
@@ -135,7 +140,8 @@ func NewSigner(cfg config.Bifrost,
 		tssKeygen:             kg,
 		tssServer:             tssServer,
 		constantsProvider:     constantProvider,
-		localPubKey:           na.PubKeySet.Secp256k1,
+		localPubKeyECDSA:      na.PubKeySet.Secp256k1,
+		localPubKeyEDDSA:      na.PubKeySet.Ed25519,
 		tssKeysignMetricMgr:   tssKeysignMetricMgr,
 		observer:              obs,
 	}, nil
@@ -166,7 +172,7 @@ func (s *Signer) Start() error {
 }
 
 func (s *Signer) shouldSign(tx types.TxOutItem) bool {
-	return s.pubkeyMgr.HasPubKey(tx.VaultPubKey)
+	return s.pubkeyMgr.HasPubKey(tx.VaultPubKey) || s.pubkeyMgr.HasPubKey(tx.VaultPubKeyEddsa)
 }
 
 // signTransactions - looks for work to do by getting a list of all unsigned
@@ -378,7 +384,7 @@ func (s *Signer) processKeygenBlock(keygenBlock ttypes.KeygenBlock) {
 		}
 
 		// re-enqueue the keygen block to retry if we failed to generate a key
-		if pubKey.Secp256k1.IsEmpty() {
+		if pubKey.Secp256k1.IsEmpty() || pubKey.Ed25519.IsEmpty() {
 			if s.scheduleKeygenRetry(keygenBlock) {
 				return
 			}
@@ -388,7 +394,7 @@ func (s *Signer) processKeygenBlock(keygenBlock ttypes.KeygenBlock) {
 		// generate a verification signature to ensure we can sign with the new key
 		secp256k1Sig := s.secp256k1VerificationSignature(pubKey.Secp256k1)
 
-		if err = s.sendKeygenToThorchain(keygenBlock.Height, pubKey.Secp256k1, secp256k1Sig, blame, keygenReq.GetMembers(), keygenReq.Type, keygenTime); err != nil {
+		if err = s.sendKeygenToThorchain(keygenBlock.Height, pubKey.Secp256k1, secp256k1Sig, blame, keygenReq.GetMembers(), keygenReq.Type, keygenTime, pubKey.Ed25519); err != nil {
 			s.errCounter.WithLabelValues("fail_to_broadcast_keygen", "").Inc()
 			s.logger.Error().Err(err).Msg("fail to broadcast keygen")
 		}
@@ -396,6 +402,9 @@ func (s *Signer) processKeygenBlock(keygenBlock ttypes.KeygenBlock) {
 		// monitor the new pubkey and any new members
 		if !pubKey.Secp256k1.IsEmpty() {
 			s.pubkeyMgr.AddPubKey(pubKey.Secp256k1, true)
+		}
+		if !pubKey.Ed25519.IsEmpty() {
+			s.pubkeyMgr.AddPubKey(pubKey.Ed25519, true)
 		}
 		for _, pk := range keygenReq.GetMembers() {
 			s.pubkeyMgr.AddPubKey(pk, false)
@@ -450,7 +459,7 @@ func (s *Signer) secp256k1VerificationSignature(pk common.PubKey) []byte {
 	return sigBytes
 }
 
-func (s *Signer) sendKeygenToThorchain(height int64, poolPk common.PubKey, secp256k1Signature []byte, blame ttypes.Blame, input common.PubKeys, keygenType ttypes.KeygenType, keygenTime int64) error {
+func (s *Signer) sendKeygenToThorchain(height int64, poolPk common.PubKey, secp256k1Signature []byte, blame ttypes.Blame, input common.PubKeys, keygenType ttypes.KeygenType, keygenTime int64, poolPubKeyEddsa common.PubKey) error {
 	// collect supported chains in the configuration
 	chains := common.Chains{
 		common.THORChain,
@@ -463,18 +472,30 @@ func (s *Signer) sendKeygenToThorchain(height int64, poolPk common.PubKey, secp2
 
 	// make a best effort to add encrypted keyshares to the message
 	var keyshares []byte
+	var keysharesEddsa []byte
 	var err error
-	if s.cfg.Signer.BackupKeyshares && !poolPk.IsEmpty() {
-		keyshares, err = tss.EncryptKeyshares(
-			filepath.Join(app.DefaultNodeHome, fmt.Sprintf("localstate-%s.json", poolPk)),
-			os.Getenv("SIGNER_SEED_PHRASE"),
-		)
-		if err != nil {
-			s.logger.Error().Err(err).Msg("fail to encrypt keyshares")
+	if s.cfg.Signer.BackupKeyshares {
+		if !poolPk.IsEmpty() {
+			keyshares, err = tss.EncryptKeyshares(
+				filepath.Join(app.DefaultNodeHome, fmt.Sprintf("localstate-%s.json", poolPk)),
+				os.Getenv("SIGNER_SEED_PHRASE"),
+			)
+			if err != nil {
+				s.logger.Error().Err(err).Msg("fail to encrypt secp256k1 keyshares")
+			}
+		}
+		if !poolPubKeyEddsa.IsEmpty() {
+			keysharesEddsa, err = tss.EncryptKeyshares(
+				filepath.Join(app.DefaultNodeHome, fmt.Sprintf("localstate-%s.json", poolPubKeyEddsa)),
+				os.Getenv("SIGNER_SEED_PHRASE"),
+			)
+			if err != nil {
+				s.logger.Error().Err(err).Msg("fail to encrypt eddsa keyshares")
+			}
 		}
 	}
 
-	keygenMsg, err := s.thorchainBridge.GetKeygenStdTx(poolPk, secp256k1Signature, keyshares, blame, input, keygenType, chains, height, keygenTime)
+	keygenMsg, err := s.thorchainBridge.GetKeygenStdTx(poolPk, secp256k1Signature, keyshares, blame, input, keygenType, chains, height, keygenTime, poolPubKeyEddsa, keysharesEddsa)
 	if err != nil {
 		return fmt.Errorf("fail to get keygen id: %w", err)
 	}
@@ -680,7 +701,7 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 	}
 	s.logger.Info().Str("txid", hash).Str("memo", tx.Memo).Msg("broadcasted tx to chain")
 
-	if s.isTssKeysign(tx.VaultPubKey) {
+	if s.isTssKeysign(tx.VaultPubKey) || s.isTssKeysign(tx.VaultPubKeyEddsa) {
 		s.tssKeysignMetricMgr.SetTssKeysignMetric(hash, elapse.Milliseconds())
 	}
 
@@ -688,7 +709,7 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 }
 
 func (s *Signer) isTssKeysign(pubKey common.PubKey) bool {
-	return !s.localPubKey.Equals(pubKey)
+	return !s.localPubKeyECDSA.Equals(pubKey) || !s.localPubKeyEDDSA.Equals(pubKey)
 }
 
 // Stop the signer process

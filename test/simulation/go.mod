@@ -23,6 +23,8 @@ require (
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c
 )
 
+require github.com/decred/dcrd/dcrec/edwards v1.0.0 // indirect
+
 require (
 	github.com/naoina/go-stringutil v0.1.0 // indirect
 	github.com/naoina/toml v0.1.2-0.20170918210437-9fafd6967416 // indirect
@@ -139,7 +141,7 @@ require (
 
 replace (
 	github.com/agl/ed25519 => github.com/binance-chain/edwards25519 v0.0.0-20200305024217-f36fc4b53d43
-	github.com/binance-chain/tss-lib => gitlab.com/thorchain/tss/tss-lib v0.1.5
+	github.com/binance-chain/tss-lib => gitlab.com/thorchain/tss/tss-lib v0.1.6
 	github.com/btcsuite/btcd => github.com/btcsuite/btcd v0.22.1
 	github.com/cosmos/ledger-cosmos-go => gitlab.com/thorchain/ledger-thorchain-go v1.0.3
 

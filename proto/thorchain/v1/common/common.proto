@@ -68,6 +68,7 @@ message ObservedTx {
     string aggregator = 9;
     string aggregator_target = 10;
     string aggregator_target_limit = 11 [(gogoproto.customtype) = "cosmossdk.io/math.Uint", (gogoproto.nullable) = true];
+    string observed_pub_key_eddsa = 12 [(gogoproto.casttype) = "PubKey", (gogoproto.nullable) = true];
 }
 
 

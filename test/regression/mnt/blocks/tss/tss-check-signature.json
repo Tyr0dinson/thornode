@@ -287,7 +287,9 @@
                 "keygen_time": "0",
                 "keygen_type": "AsgardKeygen",
                 "keyshares_backup": null,
+                "keyshares_backup_eddsa": null,
                 "pool_pub_key": "tthorpub1addwnpepqw7qvv8309c06z96nwcfhrp5efm2wa2h7nratlgvwpgwksm8d5zwugq792v",
+                "pool_pub_key_eddsa": "",
                 "pub_keys": [
                   "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                   "tthorpub1addwnpepqv8lvvqmczr893yf7zyf7xtffccf032aprl8z09y3e3nfruedew85n306k5",
@@ -374,7 +376,9 @@
                 "keygen_time": "0",
                 "keygen_type": "AsgardKeygen",
                 "keyshares_backup": null,
+                "keyshares_backup_eddsa": null,
                 "pool_pub_key": "tthorpub1addwnpepqw7qvv8309c06z96nwcfhrp5efm2wa2h7nratlgvwpgwksm8d5zwugq792v",
+                "pool_pub_key_eddsa": "",
                 "pub_keys": [
                   "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                   "tthorpub1addwnpepqv8lvvqmczr893yf7zyf7xtffccf032aprl8z09y3e3nfruedew85n306k5",
@@ -461,7 +465,9 @@
                 "keygen_time": "0",
                 "keygen_type": "AsgardKeygen",
                 "keyshares_backup": null,
+                "keyshares_backup_eddsa": null,
                 "pool_pub_key": "tthorpub1addwnpepqw7qvv8309c06z96nwcfhrp5efm2wa2h7nratlgvwpgwksm8d5zwugq792v",
+                "pool_pub_key_eddsa": "",
                 "pub_keys": [
                   "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                   "tthorpub1addwnpepqv8lvvqmczr893yf7zyf7xtffccf032aprl8z09y3e3nfruedew85n306k5",
@@ -623,7 +629,9 @@
                 "keygen_time": "0",
                 "keygen_type": "AsgardKeygen",
                 "keyshares_backup": null,
+                "keyshares_backup_eddsa": null,
                 "pool_pub_key": "tthorpub1addwnpepqw7qvv8309c06z96nwcfhrp5efm2wa2h7nratlgvwpgwksm8d5zwugq792v",
+                "pool_pub_key_eddsa": "",
                 "pub_keys": [
                   "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                   "tthorpub1addwnpepqv8lvvqmczr893yf7zyf7xtffccf032aprl8z09y3e3nfruedew85n306k5",
@@ -710,7 +718,9 @@
                 "keygen_time": "0",
                 "keygen_type": "AsgardKeygen",
                 "keyshares_backup": null,
+                "keyshares_backup_eddsa": null,
                 "pool_pub_key": "tthorpub1addwnpepqw7qvv8309c06z96nwcfhrp5efm2wa2h7nratlgvwpgwksm8d5zwugq792v",
+                "pool_pub_key_eddsa": "",
                 "pub_keys": [
                   "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                   "tthorpub1addwnpepqv8lvvqmczr893yf7zyf7xtffccf032aprl8z09y3e3nfruedew85n306k5",
@@ -797,7 +807,9 @@
                 "keygen_time": "0",
                 "keygen_type": "AsgardKeygen",
                 "keyshares_backup": null,
+                "keyshares_backup_eddsa": null,
                 "pool_pub_key": "tthorpub1addwnpepqw7qvv8309c06z96nwcfhrp5efm2wa2h7nratlgvwpgwksm8d5zwugq792v",
+                "pool_pub_key_eddsa": "",
                 "pub_keys": [
                   "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                   "tthorpub1addwnpepqv8lvvqmczr893yf7zyf7xtffccf032aprl8z09y3e3nfruedew85n306k5",
@@ -959,7 +971,9 @@
                 "keygen_time": "0",
                 "keygen_type": "AsgardKeygen",
                 "keyshares_backup": null,
+                "keyshares_backup_eddsa": null,
                 "pool_pub_key": "tthorpub1addwnpepqw7qvv8309c06z96nwcfhrp5efm2wa2h7nratlgvwpgwksm8d5zwugq792v",
+                "pool_pub_key_eddsa": "",
                 "pub_keys": [
                   "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                   "tthorpub1addwnpepqv8lvvqmczr893yf7zyf7xtffccf032aprl8z09y3e3nfruedew85n306k5",
@@ -1144,7 +1158,9 @@
                 "keygen_time": "0",
                 "keygen_type": "AsgardKeygen",
                 "keyshares_backup": null,
+                "keyshares_backup_eddsa": null,
                 "pool_pub_key": "tthorpub1addwnpepqw7qvv8309c06z96nwcfhrp5efm2wa2h7nratlgvwpgwksm8d5zwugq792v",
+                "pool_pub_key_eddsa": "",
                 "pub_keys": [
                   "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                   "tthorpub1addwnpepqv8lvvqmczr893yf7zyf7xtffccf032aprl8z09y3e3nfruedew85n306k5",
@@ -1231,7 +1247,9 @@
                 "keygen_time": "0",
                 "keygen_type": "AsgardKeygen",
                 "keyshares_backup": null,
+                "keyshares_backup_eddsa": null,
                 "pool_pub_key": "tthorpub1addwnpepqw7qvv8309c06z96nwcfhrp5efm2wa2h7nratlgvwpgwksm8d5zwugq792v",
+                "pool_pub_key_eddsa": "",
                 "pub_keys": [
                   "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                   "tthorpub1addwnpepqv8lvvqmczr893yf7zyf7xtffccf032aprl8z09y3e3nfruedew85n306k5",
@@ -1318,7 +1336,9 @@
                 "keygen_time": "0",
                 "keygen_type": "AsgardKeygen",
                 "keyshares_backup": null,
+                "keyshares_backup_eddsa": null,
                 "pool_pub_key": "tthorpub1addwnpepqw7qvv8309c06z96nwcfhrp5efm2wa2h7nratlgvwpgwksm8d5zwugq792v",
+                "pool_pub_key_eddsa": "",
                 "pub_keys": [
                   "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
                   "tthorpub1addwnpepqv8lvvqmczr893yf7zyf7xtffccf032aprl8z09y3e3nfruedew85n306k5",
