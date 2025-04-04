@@ -110,10 +110,17 @@ func main() {
 	// setup TSS signing
 	priKey, err := k.GetPrivateKey()
 	if err != nil {
-		log.Fatal().Err(err).Msg("fail to get private key")
+		log.Fatal().Err(err).Msg("fail to get secp256k1 private key")
 	}
 
 	tmPrivateKey := tcommon.CosmosPrivateKeyToTMPrivateKey(priKey)
+
+	priKeyEddsa, err := k.GetPrivateKeyEDDSA()
+	if err != nil {
+		log.Fatal().Err(err).Msg("fail to get eddsa private key")
+	}
+
+	tmPrivateKeyEddsa := tcommon.CosmosPrivateKeyToTMPrivateKey(priKeyEddsa)
 
 	consts := constants.NewConstantValue()
 	jailTimeKeygen := time.Duration(consts.GetInt64Value(constants.JailTimeKeygen)) * constants.ThorchainBlockTime
@@ -144,6 +151,7 @@ func main() {
 		comm,
 		stateManager,
 		tmPrivateKey,
+		tmPrivateKeyEddsa,
 		common.TssConfig{
 			EnableMonitor:   true,
 			KeyGenTimeout:   cfg.Signer.KeygenTimeout,
