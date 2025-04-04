@@ -77,8 +77,14 @@ func MsgTssPoolValidateV3_0_0(ctx cosmos.Context, mgr Manager, msg *MsgTssPool) 
 	if msg.KeygenType != AsgardKeygen {
 		return fmt.Errorf("only asgard vaults allowed for tss")
 	}
+	// add additional check after v1.134.0 for EdDSA pubkey
+	if !msg.PoolPubKeyEddsa.IsEmpty() {
+		if _, err := common.NewPubKey(msg.PoolPubKey.String()); err != nil {
+			return cosmos.ErrUnknownRequest(err.Error())
+		}
+	}
 
-	newMsg, err := NewMsgTssPool(msg.PubKeys, msg.PoolPubKey, nil, nil, msg.KeygenType, msg.Height, msg.Blame, msg.Chains, msg.Signer, msg.KeygenTime)
+	newMsg, err := NewMsgTssPoolV2(msg.PubKeys, msg.PoolPubKey, nil, nil, msg.KeygenType, msg.Height, msg.Blame, msg.Chains, msg.Signer, msg.KeygenTime, msg.PoolPubKeyEddsa)
 	if err != nil {
 		return fmt.Errorf("fail to recreate MsgTssPool,err: %w", err)
 	}
@@ -202,10 +208,11 @@ func MsgTssPoolHandleV3_0_0(ctx cosmos.Context, mgr Manager, msg *MsgTssPool) (*
 	// have anything in it either, thus override it with msg.PubKeys as well
 	if voter.PoolPubKey.IsEmpty() {
 		voter.PoolPubKey = msg.PoolPubKey
+		voter.PoolPubKeyEddsa = msg.PoolPubKeyEddsa
 		voter.PubKeys = msg.PubKeys
 	}
 	// voter's pool pubkey is the same as the one in message
-	if !voter.PoolPubKey.Equals(msg.PoolPubKey) {
+	if !voter.PoolPubKey.Equals(msg.PoolPubKey) || !voter.PoolPubKeyEddsa.Equals(msg.PoolPubKeyEddsa) {
 		return nil, fmt.Errorf("invalid pool pubkey")
 	}
 	observeSlashPoints := mgr.GetConstants().GetInt64Value(constants.ObserveSlashPoints)
@@ -416,7 +423,7 @@ func MsgTssPoolHandleV3_0_0(ctx cosmos.Context, mgr Manager, msg *MsgTssPool) (*
 
 			vaultType := AsgardVault
 			chains := voter.ConsensusChains()
-			vault := NewVault(ctx.BlockHeight(), InitVault, vaultType, voter.PoolPubKey, chains.Strings(), mgr.Keeper().GetChainContracts(ctx, chains))
+			vault := NewVaultV2(ctx.BlockHeight(), InitVault, vaultType, voter.PoolPubKey, chains.Strings(), mgr.Keeper().GetChainContracts(ctx, chains), voter.PoolPubKeyEddsa)
 			vault.Membership = voter.PubKeys
 
 			if err := mgr.Keeper().SetVault(ctx, vault); err != nil {

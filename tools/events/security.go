@@ -21,7 +21,7 @@ import (
 func ScanSecurity(block *thorscan.BlockResponse) {
 	SecurityEvents(block)
 	ErrataTransactions(block)
-	Round7Failures(block)
+	LastRoundFailures(block)
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -96,10 +96,65 @@ func ErrataTransactions(block *thorscan.BlockResponse) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
-// Round 7 Failures
+// Last Round Failures
 ////////////////////////////////////////////////////////////////////////////////////////
 
-func Round7Failures(block *thorscan.BlockResponse) {
+func LastRoundFailures(block *thorscan.BlockResponse) {
+	for _, tx := range block.Txs {
+		if tx.Tx == nil { // transaction failed decode
+			continue
+		}
+		for _, msg := range tx.Tx.GetMsgs() {
+			if msgKeysignFail, ok := msg.(*thorchain.MsgTssKeysignFail); ok {
+				// skip migrate transactions
+				if reMemoMigration.MatchString(msgKeysignFail.Memo) {
+					continue
+				}
+
+				// skip failures except for round 7
+				if msgKeysignFail.Blame.Round != "SignRound7Message" && msgKeysignFail.Blame.Round != "EDDSASignRound3Message" {
+					continue
+				}
+
+				// skip seen round 7 failures
+				seen := map[string]bool{}
+				err := util.Load("round7", &seen)
+				if err != nil {
+					log.Error().Err(err).Msg("unable to load round 7 failures")
+				}
+				if seen[msgKeysignFail.Memo] {
+					continue
+				}
+
+				// build the notification
+				title := "Last Round Failure"
+				fields := util.NewOrderedMap()
+				fields.Set("Amount", fmt.Sprintf(
+					"%f %s (%s)",
+					float64(msgKeysignFail.Coins[0].Amount.Uint64())/common.One,
+					msgKeysignFail.Coins[0].Asset,
+					util.USDValueString(block.Header.Height, msgKeysignFail.Coins[0]),
+				))
+				fields.Set("Memo", msgKeysignFail.Memo)
+				fields.Set("Transaction", fmt.Sprintf("%s/cosmos/tx/v1beta1/txs/%s", config.Get().Links.Thornode, tx.Hash))
+				notify.Notify(config.Get().Notifications.Security, title, block.Header.Height, nil, notify.Warning, fields)
+
+				// save seen round 7 failures
+				seen[msgKeysignFail.Memo] = true
+				err = util.Store("lastRound", seen)
+				if err != nil {
+					log.Error().Err(err).Msg("unable to save last round failures")
+				}
+			}
+		}
+	}
+}
+
+////////////////////////////////////////////////////////////////////////////////////////
+// EDDSA Round 7 Failures
+////////////////////////////////////////////////////////////////////////////////////////
+
+func EDDSARound3Failures(block *thorscan.BlockResponse) {
 	for _, tx := range block.Txs {
 		if tx.Tx == nil { // transaction failed decode
 			continue
