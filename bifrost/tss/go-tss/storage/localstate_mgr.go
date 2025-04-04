@@ -5,26 +5,26 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 
-	"github.com/binance-chain/tss-lib/ecdsa/keygen"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-peerstore/addr"
-	ma "github.com/multiformats/go-multiaddr"
+	maddr "github.com/multiformats/go-multiaddr"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/conversion"
 )
 
+type LocalPartySaveData interface{}
+
 // KeygenLocalState is a structure used to represent the data we saved locally for different keygen
 type KeygenLocalState struct {
-	PubKey          string                    `json:"pub_key"`
-	LocalData       keygen.LocalPartySaveData `json:"local_data"`
-	ParticipantKeys []string                  `json:"participant_keys"` // the paticipant of last key gen
-	LocalPartyKey   string                    `json:"local_party_key"`
+	PubKey          string   `json:"pub_key"`
+	LocalData       []byte   `json:"local_data"`
+	ParticipantKeys []string `json:"participant_keys"` // the paticipant of last key gen
+	LocalPartyKey   string   `json:"local_party_key"`
 }
 
 // LocalStateManager provide necessary methods to manage the local state, save it , and read it back
@@ -84,7 +84,7 @@ func (fsm *FileStateMgr) SaveLocalState(state KeygenLocalState) error {
 	if err != nil {
 		return err
 	}
-	return ioutil.WriteFile(filePathName, buf, 0o655)
+	return os.WriteFile(filePathName, buf, 0o655)
 }
 
 // GetLocalState read the local state from file system
@@ -100,7 +100,7 @@ func (fsm *FileStateMgr) GetLocalState(pubKey string) (KeygenLocalState, error) 
 		return KeygenLocalState{}, err
 	}
 
-	buf, err := ioutil.ReadFile(filePathName)
+	buf, err := os.ReadFile(filePathName)
 	if err != nil {
 		return KeygenLocalState{}, fmt.Errorf("file to read from file(%s): %w", filePathName, err)
 	}
@@ -133,7 +133,7 @@ func (fsm *FileStateMgr) SaveAddressBook(address map[peer.ID]addr.AddrList) erro
 	}
 	fsm.writeLock.Lock()
 	defer fsm.writeLock.Unlock()
-	return ioutil.WriteFile(filePathName, buf.Bytes(), 0o655)
+	return os.WriteFile(filePathName, buf.Bytes(), 0o655)
 }
 
 func (fsm *FileStateMgr) RetrieveP2PAddresses() (addr.AddrList, error) {
@@ -147,20 +147,20 @@ func (fsm *FileStateMgr) RetrieveP2PAddresses() (addr.AddrList, error) {
 		return nil, err
 	}
 	fsm.writeLock.RLock()
-	input, err := ioutil.ReadFile(filePathName)
+	input, err := os.ReadFile(filePathName)
 	if err != nil {
 		fsm.writeLock.RUnlock()
 		return nil, err
 	}
 	fsm.writeLock.RUnlock()
 	data := strings.Split(string(input), "\n")
-	var peerAddresses []ma.Multiaddr
+	var peerAddresses []maddr.Multiaddr
 	for _, el := range data {
 		// we skip the empty entry
 		if len(el) == 0 {
 			continue
 		}
-		addr, err := ma.NewMultiaddr(el)
+		addr, err := maddr.NewMultiaddr(el)
 		if err != nil {
 			return nil, fmt.Errorf("invalid address in address book %w", err)
 		}

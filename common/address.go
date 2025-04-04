@@ -58,6 +58,12 @@ func NewAddress(address string) (Address, error) {
 		return Address(address), nil
 	}
 
+	// Check ED25519 (base58 encoded) addresses - SOL addresses must be 32 bytes long
+	res, err := Base58Decode(address)
+	if err == nil && len(res) == 32 {
+		return Address(address), nil
+	}
+
 	// Network-specific (with build tags) address checking.
 	return newAddress(address)
 }

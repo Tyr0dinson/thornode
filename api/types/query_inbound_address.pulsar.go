@@ -2161,7 +2161,8 @@ type QueryInboundAddressResponse struct {
 	PubKey  string `protobuf:"bytes,2,opt,name=pub_key,json=pubKey,proto3" json:"pub_key,omitempty"`
 	Address string `protobuf:"bytes,3,opt,name=address,proto3" json:"address,omitempty"`
 	Router  string `protobuf:"bytes,4,opt,name=router,proto3" json:"router,omitempty"`
-	// Returns true if trading is unavailable for this chain, either because trading is halted globally or specifically for this chain
+	// Returns true if trading is unavailable for this chain, either because
+	// trading is halted globally or specifically for this chain
 	Halted bool `protobuf:"varint,5,opt,name=halted,proto3" json:"halted,omitempty"`
 	// Returns true if trading is paused globally
 	GlobalTradingPaused bool `protobuf:"varint,6,opt,name=global_trading_paused,json=globalTradingPaused,proto3" json:"global_trading_paused,omitempty"`
@@ -2175,7 +2176,9 @@ type QueryInboundAddressResponse struct {
 	GasRate string `protobuf:"bytes,9,opt,name=gas_rate,json=gasRate,proto3" json:"gas_rate,omitempty"`
 	// Units of the gas_rate.
 	GasRateUnits string `protobuf:"bytes,10,opt,name=gas_rate_units,json=gasRateUnits,proto3" json:"gas_rate_units,omitempty"`
-	// Avg size of outbound TXs on each chain. For UTXO chains it may be larger than average, as it takes into account vault consolidation txs, which can have many vouts
+	// Avg size of outbound TXs on each chain. For UTXO chains it may be larger
+	// than average, as it takes into account vault consolidation txs, which can
+	// have many vouts
 	OutboundTxSize string `protobuf:"bytes,11,opt,name=outbound_tx_size,json=outboundTxSize,proto3" json:"outbound_tx_size,omitempty"`
 	// The total outbound fee charged to the user for outbound txs in the gas asset of the chain.
 	OutboundFee string `protobuf:"bytes,12,opt,name=outbound_fee,json=outboundFee,proto3" json:"outbound_fee,omitempty"`
