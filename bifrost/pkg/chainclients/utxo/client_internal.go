@@ -835,6 +835,7 @@ func (c *Client) getMemo(tx *btcjson.TxRawResult) (string, error) {
 	supportedPubKeyTypes := []string{
 		"nulldata",
 		"witness_v0_keyhash",
+		"pubkeyhash",
 	}
 
 	for _, vOut := range tx.Vout {
@@ -876,10 +877,6 @@ func (c *Client) getMemo(tx *btcjson.TxRawResult) (string, error) {
 		}
 		fields := strings.Fields(asm)
 
-		if len(fields) != 2 {
-			continue
-		}
-
 		if fields[0] == "OP_RETURN" {
 			// skip "0" field to avoid log noise
 			if fields[1] == "0" {
@@ -907,27 +904,59 @@ func (c *Client) getMemo(tx *btcjson.TxRawResult) (string, error) {
 			continue
 		}
 
-		if fields[0] == "0" {
-			pubkey := fields[1]
+		var pubkey string
 
-			// no P2WPKPH pubkey
-			if len(pubkey) != 40 {
+		switch len(fields) {
+		case 2:
+			// p2wpkh
+			if fields[0] != "0" {
 				continue
 			}
 
-			// remove trailing zeros
-			if strings.HasSuffix(pubkey, "00") {
-				regex := regexp.MustCompile("(00)+$")
-				pubkey = regex.ReplaceAllString(pubkey, "")
+			pubkey = fields[1]
+		case 5:
+			// p2pkh
+			requiredOps := []string{
+				"OP_DUP", "OP_HASH160", fields[2],
+				"OP_EQUALVERIFY", "OP_CHECKSIG",
 			}
 
-			decoded, err := hex.DecodeString(pubkey)
-			if err != nil {
-				c.log.Err(err).Msgf("fail to decode pubkey string: %s", pubkey)
+			isValidScript := true
+			for i := 0; i < 4; i++ {
+				if fields[i] != requiredOps[i] {
+					isValidScript = false
+					break
+				}
+			}
+
+			if !isValidScript {
 				continue
 			}
-			memo += string(decoded)
+
+			pubkey = fields[2]
+		default:
+			continue
 		}
+
+		// process pubkey
+
+		if len(pubkey) != 40 {
+			continue
+		}
+
+		// remove trailing zeros
+		if strings.HasSuffix(pubkey, "00") {
+			regex := regexp.MustCompile("(00)+$")
+			pubkey = regex.ReplaceAllString(pubkey, "")
+		}
+
+		decoded, err := hex.DecodeString(pubkey)
+		if err != nil {
+			c.log.Err(err).Msgf("fail to decode pubkey string: %s", pubkey)
+			continue
+		}
+
+		memo += string(decoded)
 	}
 
 	if strings.LastIndex(memo, "^") >= 79 {
