@@ -16,6 +16,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
+	"gitlab.com/thorchain/thornode/v3/test/simulation/actors/suites"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/evm"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/thornode"
 	. "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
@@ -205,12 +206,7 @@ func InitConfig(parallelism int, seed bool) *OpConfig {
 
 	// fund user accounts with one goroutine per chain
 	wg = &sync.WaitGroup{}
-	for _, chain := range common.AllChains {
-		// BSC not compatible with simtests
-		if chain.Equals(common.BSCChain) {
-			continue
-		}
-
+	for _, chain := range suites.SimChains {
 		// determine the amount to seed
 		chainSeedAmount := sdkmath.ZeroUint()
 		switch chain {
