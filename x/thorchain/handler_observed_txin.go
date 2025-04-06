@@ -86,7 +86,7 @@ func addSwap(ctx cosmos.Context, k keeper.Keeper, advQueueMgr AdvSwapQueue, even
 		if err := eventMgr.EmitEvent(ctx, evt); err != nil {
 			ctx.Logger().Error("fail to emit swap event", "error", err)
 		}
-		if err := advQueueMgr.AddSwapQueueItem(ctx, msg); err != nil {
+		if err := h.mgr.OrderBookMgr().AddOrderBookItem(ctx, msg); err != nil {
 			ctx.Logger().Error("fail to add swap to queue", "error", err)
 		}
 	} else {
