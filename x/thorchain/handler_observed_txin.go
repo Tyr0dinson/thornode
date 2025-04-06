@@ -328,7 +328,7 @@ func (h ObservedTxInHandler) addSwap(ctx cosmos.Context, msg MsgSwap) {
 		if err := h.mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
 			ctx.Logger().Error("fail to emit swap event", "error", err)
 		}
-		if err := h.mgr.Keeper().SetOrderBookItem(ctx, msg); err != nil {
+		if err := h.mgr.OrderBookMgr().AddOrderBookItem(ctx, msg); err != nil {
 			ctx.Logger().Error("fail to add swap to queue", "error", err)
 		}
 	} else {

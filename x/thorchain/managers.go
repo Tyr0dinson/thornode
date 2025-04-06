@@ -189,6 +189,7 @@ type SwapQueue interface {
 
 // OrderBook interface define the contract of Order Book
 type OrderBook interface {
+	AddOrderBookItem(ctx cosmos.Context, msg MsgSwap) error
 	EndBlock(ctx cosmos.Context, mgr Manager) error
 }
 
