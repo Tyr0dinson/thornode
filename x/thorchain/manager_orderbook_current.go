@@ -58,6 +58,14 @@ func (pair tradePair) Equals(p tradePair) bool {
 	return pair.source.Equals(p.source) && pair.target.Equals(p.target)
 }
 
+func (pairs tradePairs) String() string {
+	strs := make([]string, len(pairs))
+	for i, pair := range pairs {
+		strs[i] = pair.String()
+	}
+	return strings.Join(strs, ", ")
+}
+
 // given a trade pair, find the trading pairs that are the reverse of this
 // trade pair. This helps us build a list of trading pairs/order books to check
 // for limit orders later
