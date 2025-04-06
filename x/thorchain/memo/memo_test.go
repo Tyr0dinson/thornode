@@ -268,6 +268,11 @@ func (s *MemoSuite) TestParseWithAbbreviated(c *C) {
 	c.Assert(err, IsNil)
 	c.Check(memo.GetDexTargetLimit().Equal(cosmos.NewUintFromString("1425000000000000000000")), Equals, true) // noting the large number overflows `cosmos.NewUint`
 
+	memo, err = ParseMemoWithTHORNames(ctx, k, fmt.Sprintf("loc:%s:123", common.RuneAsset()))
+	c.Assert(err, IsNil)
+	c.Check(memo.GetAsset().String(), Equals, common.RuneAsset().String())
+	c.Check(memo.GetSlipLimit().Uint64(), Equals, uint64(123))
+
 	memo, err = ParseMemoWithTHORNames(ctx, k, "OUT:MUKVQILIHIAUSEOVAXBFEZAJKYHFJYHRUUYGQJZGFYBYVXCXYNEMUOAIQKFQLLCX")
 	c.Assert(err, IsNil)
 	c.Check(memo.IsType(TxOutbound), Equals, true, Commentf("%s", memo.GetType()))
