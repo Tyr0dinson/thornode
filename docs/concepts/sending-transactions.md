@@ -45,10 +45,10 @@ Memo:
 1) Put first 79 characters + `^` into `OP_RETURN`: `SWAP:GAIA.ATOM:cosmos1fegapd4jc3ejqeg0eu3jk4hvr74hg66076gyyd/bc1qnfw0gkk05qxl38^`
 2) Hex encode remaining string `mslc69hc6vc64mksyw6zzxhg` and split it into chunks of 40 characters (fill the last chunk with zeros): `6d736c633639686336766336346d6b737977367a`, `7a78686700000000000000000000000000000000`
 3) Create two subsequent VOUTs (prepend `0014`):
-   1) send 294sats to: `00146d736c633639686336766336346d6b737977367a`
+   1) send 294sats (3000sats on LTC) to: `00146d736c633639686336766336346d6b737977367a`
       - BTC: bc1qd4ekccek895xxdnkvvmrgmttwduhwdn622k6gj
       - LTC: ltc1qd4ekccek895xxdnkvvmrgmttwduhwdn6wkv7sz
-   2) send 294sats to: `00147a78686700000000000000000000000000000000`
+   2) send 294sats (3000sats on LTC) to: `00147a78686700000000000000000000000000000000`
       - BTC: bc1q0fuxsecqqqqqqqqqqqqqqqqqqqqqqqqq2alhdv
       - LTC: ltc1q0fuxsecqqqqqqqqqqqqqqqqqqqqqqqqqwp9n4u
 
