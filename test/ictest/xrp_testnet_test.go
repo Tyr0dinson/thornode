@@ -27,24 +27,24 @@ func AddXrpTestnetChain(t *testing.T, log *zap.Logger, exoChains ExoChains) ExoC
 	name := common.XRPChain.String()
 	coinDecimals := int64(6)
 	chainConfig := ibc.ChainConfig{
-		Type:           "xrp",
-		Name:           name,
-		ChainID:        "2",
-		CoinType:       "144",
+		Type:         "xrp",
+		Name:         name,
+		ChainID:      "2",
+		CoinType:     "144",
 		CoinDecimals: &coinDecimals,
-		Denom:          "drop",
-		GasPrices:      "0.00001", // flat fee
-		Bin: "rippled,/opt/ripple/bin/validator-keys",
+		Denom:        "drop",
+		GasPrices:    "0.00001", // flat fee
+		Bin:          "rippled,/opt/ripple/bin/validator-keys",
 	}
 	chain := xrp.NewXrpChain(t.Name(), chainConfig, log)
 	rpcConfig, err := rpc.NewClientConfig(remoteRpc, rpc.WithFaucetProvider(faucet.NewTestnetFaucetProvider()))
 	require.NoError(t, err)
-	chain.RpcClient = rpc.NewClient(rpcConfig)
+	chain.RPCClient = rpc.NewClient(rpcConfig)
 
 	// Pass in rpc address
 	// Pass in a number of wallets?
 	exoChains[name] = &ExoChain{
-		chain: chain,
+		chain:     chain,
 		remoteRpc: remoteRpc,
 	}
 	return exoChains
@@ -63,7 +63,6 @@ func TestFaucet(t *testing.T) {
 
 	balance, err := r.GetXrpBalance(w.GetAddress())
 	require.NoError(t, err)
-
 
 	fmt.Println("Address:", w.GetAddress(), "Balance:", balance, "Seed:", w.Seed)
 	require.Equal(t, "100", balance)
@@ -98,7 +97,7 @@ func TestXrpTestnet(t *testing.T) {
 		GaiaChainSpec(),
 	})
 	exoChains = AddXrpTestnetChain(t, zaptest.NewLogger(t), exoChains)
-	
+
 	ethRouterContractAddress, bscRouterContractAddress := "", ""
 
 	// Start thorchain
@@ -146,32 +145,32 @@ func TestXrpTestnet(t *testing.T) {
 		fmt.Println("Chain:", "XRP", ", old vault addr:", oldXrpVaultAddr, ", old vault balance err:", err1)
 	} else {
 		fmt.Println("Chain:", "XRP", ", old vault addr:", oldXrpVaultAddr, ", old vault balance:", oldXrpVaultBalance1)
-	}	
+	}
 	if err2 != nil {
 		fmt.Println("Chain:", "XRP", ", old vault addr:", oldXrpVaultAddr, ", old vault balance err:", err2)
 	} else {
 		fmt.Println("Chain:", "XRP", ", old vault addr:", oldXrpVaultAddr, ", old vault balance:", oldXrpVaultBalance2)
-	}	
+	}
 	if err3 != nil {
 		fmt.Println("Chain:", "XRP", ", old vault addr:", oldXrpVaultAddr, ", old vault balance err:", err3)
 	} else {
 		fmt.Println("Chain:", "XRP", ", old vault addr:", oldXrpVaultAddr, ", old vault balance:", oldXrpVaultBalance3)
-	}	
+	}
 	if err11 != nil {
 		fmt.Println("Chain:", "GAIA", ", old vault addr:", oldGaiaVaultAddr, ", old vault balance err:", err11)
 	} else {
 		fmt.Println("Chain:", "GAIA", ", old vault addr:", oldGaiaVaultAddr, ", old vault balance:", oldGaiaVaultBalance1)
-	}	
+	}
 	if err21 != nil {
 		fmt.Println("Chain:", "GAIA", ", old vault addr:", oldGaiaVaultAddr, ", old vault balance err:", err21)
 	} else {
 		fmt.Println("Chain:", "GAIA", ", old vault addr:", oldGaiaVaultAddr, ", old vault balance:", oldGaiaVaultBalance2)
-	}	
+	}
 	if err31 != nil {
 		fmt.Println("Chain:", "GAIA", ", old vault addr:", oldGaiaVaultAddr, ", old vault balance err:", err31)
 	} else {
 		fmt.Println("Chain:", "GAIA", ", old vault addr:", oldGaiaVaultAddr, ", old vault balance:", oldGaiaVaultBalance3)
-	}	
+	}
 	printVaultAddressesAndBalance(t, ctx, thorchain, exoChains)
 	PerformSwaps(t, ctx, thorchain, exoChains)
 	oldXrpVaultBalance, err := xrpChain.GetBalance(ctx, oldXrpVaultAddr, "")
@@ -179,13 +178,13 @@ func TestXrpTestnet(t *testing.T) {
 		fmt.Println("Chain:", "XRP", ", old vault addr:", oldXrpVaultAddr, ", old vault balance err:", err)
 	} else {
 		fmt.Println("Chain:", "XRP", ", old vault addr:", oldXrpVaultAddr, ", old vault balance:", oldXrpVaultBalance)
-	}	
+	}
 	oldGaiaVaultBalance, err := gaiaChain.GetBalance(ctx, oldGaiaVaultAddr, gaiaChain.Config().Denom)
 	if err != nil {
 		fmt.Println("Chain:", "GAIA", ", old vault addr:", oldGaiaVaultAddr, ", old vault balance err:", err)
 	} else {
 		fmt.Println("Chain:", "GAIA", ", old vault addr:", oldGaiaVaultAddr, ", old vault balance:", oldGaiaVaultBalance)
-	}	
+	}
 	printVaultAddressesAndBalance(t, ctx, thorchain, exoChains)
 	Ragnarok(t, ctx, thorchain, exoChains)
 	printVaultAddressesAndBalance(t, ctx, thorchain, exoChains)

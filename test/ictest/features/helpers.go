@@ -17,9 +17,9 @@ import (
 	"github.com/strangelove-ventures/interchaintest/v8/ibc"
 	"github.com/strangelove-ventures/interchaintest/v8/testutil"
 	"golang.org/x/sync/errgroup"
-	
-	"github.com/Peersyst/xrpl-go/xrpl/wallet"
+
 	"github.com/Peersyst/xrpl-go/pkg/crypto"
+	"github.com/Peersyst/xrpl-go/xrpl/wallet"
 )
 
 const (
@@ -72,7 +72,7 @@ func GetAndFundTestUsers(
 				if !ok {
 					return fmt.Errorf("not an xrp chain as expected")
 				}
-				err = xrpChain.RpcClient.FundWallet(&w)
+				err = xrpChain.RPCClient.FundWallet(&w)
 				if err != nil {
 					return err
 				}
@@ -85,7 +85,7 @@ func GetAndFundTestUsers(
 				xrpChain.MapAccess.Lock()
 				users[i] = xrpChain.KeyNameToWalletMap[keyName]
 				xrpChain.MapAccess.Unlock()
-				balance, err := xrpChain.RpcClient.GetXrpBalance(w.GetAddress())
+				balance, err := xrpChain.RPCClient.GetXrpBalance(w.GetAddress())
 				if err != nil {
 					return err
 				}
