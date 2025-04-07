@@ -2,3 +2,4 @@
 *.pb.go gitlab-generated
 *.pulsar.go gitlab-generated
 test/regression/mnt/** gitlab-generated
+openapi/gen/** gitlab-generated
