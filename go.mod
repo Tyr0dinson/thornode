@@ -114,9 +114,9 @@ require (
 	go.uber.org/atomic v1.11.0
 	golang.org/x/crypto v0.36.0
 	golang.org/x/oauth2 v0.22.0
-	golang.org/x/sync v0.8.0
-	golang.org/x/text v0.18.0
-	golang.org/x/tools v0.21.1-0.20240508182429-e35e4ccd0d2d
+	golang.org/x/sync v0.12.0
+	golang.org/x/text v0.23.0
+	golang.org/x/tools v0.29.0
 	google.golang.org/genproto/googleapis/api v0.0.0-20240814211410-ddb44dafa142
 	google.golang.org/grpc v1.67.1
 	google.golang.org/protobuf v1.36.3
@@ -126,6 +126,7 @@ require (
 )
 
 require (
+	cosmossdk.io/collections v0.4.0
 	github.com/blinklabs-io/gouroboros v0.114.1
 	github.com/kocubinski/gardano v0.2.3
 	github.com/utxorpc/go-codegen v0.16.0
@@ -138,7 +139,6 @@ require (
 	cloud.google.com/go/compute/metadata v0.5.0 // indirect
 	cloud.google.com/go/iam v1.1.8 // indirect
 	cloud.google.com/go/storage v1.40.0 // indirect
-	cosmossdk.io/collections v0.4.0 // indirect
 	cosmossdk.io/depinject v1.1.0 // indirect
 	cosmossdk.io/x/evidence v0.1.1 // indirect
 	cosmossdk.io/x/feegrant v0.1.1 // indirect
@@ -191,7 +191,8 @@ require (
 	github.com/davidlazar/go-crypto v0.0.0-20200604182044-b73af7476f6c // indirect
 	github.com/dchest/siphash v1.2.2 // indirect
 	github.com/deckarep/golang-set/v2 v2.6.0 // indirect
-	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.2.0 // indirect
+	github.com/decred/dcrd/crypto/ripemd160 v1.0.2 // indirect
+	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.3.0 // indirect
 	github.com/desertbit/timer v0.0.0-20180107155436-c41aec40b27f // indirect
 	github.com/dgraph-io/badger/v2 v2.2007.4 // indirect
 	github.com/dgraph-io/ristretto v0.1.1 // indirect
@@ -377,11 +378,11 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.24.0 // indirect
 	golang.org/x/exp v0.0.0-20240404231335-c0f41cb1a7a0 // indirect
-	golang.org/x/mod v0.20.0 // indirect
-	golang.org/x/net v0.29.0 // indirect
+	golang.org/x/mod v0.22.0 // indirect
+	golang.org/x/net v0.34.0 // indirect
 	golang.org/x/sys v0.31.0 // indirect
 	golang.org/x/term v0.30.0 // indirect
-	golang.org/x/time v0.5.0 // indirect
+	golang.org/x/time v0.9.0 // indirect
 	gonum.org/v1/gonum v0.12.0 // indirect
 	google.golang.org/api v0.184.0 // indirect
 	google.golang.org/genproto v0.0.0-20240604185151-ef581f913117 // indirect

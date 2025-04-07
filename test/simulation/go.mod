@@ -6,11 +6,10 @@ toolchain go1.24.1
 
 require (
 	cosmossdk.io/math v1.4.0
+	github.com/Peersyst/xrpl-go v0.1.3
 	github.com/blinklabs-io/gouroboros v0.114.1
 	github.com/btcsuite/btcd v0.24.2
 	github.com/btcsuite/btcd/chaincfg/chainhash v1.1.0
-	github.com/Peersyst/xrpl-go v0.1.3
-	github.com/btcsuite/btcd/chaincfg/chainhash v1.0.1
 	github.com/cometbft/cometbft v0.38.12
 	github.com/cosmos/cosmos-sdk v0.50.11
 	github.com/eager7/dogd v0.0.0-20200427085516-2caf59f59dbb
@@ -87,8 +86,7 @@ require (
 	github.com/desertbit/timer v0.0.0-20180107155436-c41aec40b27f // indirect
 	github.com/distribution/reference v0.5.0 // indirect
 	github.com/emicklei/dot v1.6.2 // indirect
-	github.com/ethereum-optimism/superchain-registry/superchain v0.0.0-20240828144951-4e6edcb7d36c // indirect
-	github.com/ethereum/go-verkle v0.1.1-0.20240829091221-dffa7562dbe9 // indirect
+	github.com/ethereum/go-verkle v0.2.2 // indirect
 	github.com/fxamacker/cbor/v2 v2.7.0 // indirect
 	github.com/getsentry/sentry-go v0.27.0 // indirect
 	github.com/go-logr/logr v1.4.1 // indirect
@@ -363,7 +361,7 @@ require (
 	golang.org/x/sys v0.31.0 // indirect
 	golang.org/x/term v0.30.0
 	golang.org/x/text v0.23.0 // indirect
-	golang.org/x/time v0.5.0 // indirect
+	golang.org/x/time v0.9.0 // indirect
 	gonum.org/v1/gonum v0.12.0 // indirect
 	google.golang.org/genproto v0.0.0-20240604185151-ef581f913117 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20240814211410-ddb44dafa142 // indirect

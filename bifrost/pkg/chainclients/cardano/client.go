@@ -74,8 +74,10 @@ type Client struct {
 	protocol    *utxocardano.PParams
 
 	localTestingKey ed25519.PrivateKey
-	txSizes         []uint64
-	txSizesLock     sync.Mutex
+
+	txSizes     []uint64
+	txSizesLock sync.Mutex
+	txMeanSize  uint64
 
 	signLock   sync.Mutex
 	vaultLocks map[string]*sync.Mutex
@@ -590,11 +592,9 @@ func (c *Client) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
 	}, nil
 }
 
-func (c *Client) updateNetworkFee(height int64) error {
-	if height != 0 && height%networkFeeUpdatePeriod != 0 {
-		return nil
-	}
+func (c *Client) getMeanTxSize() uint64 {
 	c.txSizesLock.Lock()
+	defer c.txSizesLock.Unlock()
 	meanSize := uint64(568)
 	if len(c.txSizes) > 0 {
 		meanSize = 0
@@ -603,7 +603,14 @@ func (c *Client) updateNetworkFee(height int64) error {
 		}
 		meanSize /= uint64(len(c.txSizes))
 	}
-	c.txSizesLock.Unlock()
+	return meanSize
+}
+
+func (c *Client) updateNetworkFee(height int64) error {
+	if height != 0 && height%networkFeeUpdatePeriod != 0 {
+		return nil
+	}
+	meanSize := c.getMeanTxSize()
 
 	// fetch network protocol parameters, needed for tx signing
 	protocolParams, err := c.clientConn.LocalStateQuery().Client.GetCurrentProtocolParams()
@@ -615,7 +622,6 @@ func (c *Client) updateNetworkFee(height int64) error {
 		1,
 		c.protocol.MinFeeConstant+c.protocol.MinFeeCoefficient*meanSize,
 	)
-	fmt.Printf("cardano updated network fee: %d\n", c.protocol.MinFeeConstant+c.protocol.MinFeeCoefficient*meanSize)
 	return err
 }
 
@@ -693,6 +699,11 @@ func (c *Client) ShouldReportSolvency(height int64) bool {
 
 func (c *Client) ReportSolvency(height int64) error {
 	panic("unimplemented")
+}
+
+func (c *Client) GetNetworkFee() (transactionSize, transactionFeeRate uint64) {
+	return 1, c.protocol.MinFeeConstant + c.protocol.MinFeeCoefficient*c.getMeanTxSize()
+
 }
 
 func (c *Client) getVaultLock(vaultPubKey string) *sync.Mutex {
