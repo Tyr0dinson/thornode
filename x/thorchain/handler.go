@@ -70,6 +70,7 @@ func getInternalHandlerMapping(mgr Manager) map[string]MsgHandler {
 	m[sdk.MsgTypeURL(&MsgSecuredAssetWithdraw{})] = NewSecuredAssetWithdrawHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgRunePoolDeposit{})] = NewRunePoolDepositHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgRunePoolWithdraw{})] = NewRunePoolWithdrawHandler(mgr)
+	m[sdk.MsgTypeURL(&MsgModifyLimitSwap{})] = NewModifyLimitSwapHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgWasmExec{})] = NewWasmExecHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgSwitch{})] = NewSwitchHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgTCYClaim{})] = NewTCYClaimHandler(mgr)
@@ -120,6 +121,14 @@ func getMsgDonateFromMemo(memo DonateMemo, tx ObservedTx, signer cosmos.AccAddre
 	runeCoin := tx.Tx.Coins.GetCoin(common.RuneAsset())
 	assetCoin := tx.Tx.Coins.GetCoin(memo.GetAsset())
 	return NewMsgDonate(tx.Tx, memo.GetAsset(), runeCoin.Amount, assetCoin.Amount, signer), nil
+}
+
+func getMsgModifyLimitSwap(memo ModifyLimitSwapMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
+	newMsg := NewMsgModifyLimitSwap(tx.Tx.FromAddress, memo.Source, memo.Target, memo.ModifiedTargetAmount, signer)
+	if len(tx.Tx.Coins) > 0 {
+		newMsg.Donate = tx.Tx.Coins[0]
+	}
+	return newMsg, nil
 }
 
 func getMsgRefundFromMemo(memo RefundMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
@@ -197,6 +206,8 @@ func processOneTxIn(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, sig
 		m.Asset = fuzzyAssetMatch(ctx, keeper, m.Asset)
 		m.DexTargetAddress = externalAssetMatch(m.Asset.GetChain(), m.DexTargetAddress)
 		newMsg, err = getMsgSwapFromMemo(m, tx, signer)
+	case ModifyLimitSwapMemo:
+		newMsg, err = getMsgModifyLimitSwap(m, tx, signer)
 	case DonateMemo:
 		m.Asset = fuzzyAssetMatch(ctx, keeper, m.Asset)
 		newMsg, err = getMsgDonateFromMemo(m, tx, signer)

@@ -78,6 +78,8 @@ func (p *parser) parse() (mem Memo, err error) {
 		return p.ParseRunePoolWithdrawMemo()
 	case TxSwap, TxLimitSwap:
 		return p.ParseSwapMemo()
+	case TxModifyLimitSwap:
+		return p.ParseModifyLimitSwap()
 	case TxOutbound:
 		return p.ParseOutboundMemo()
 	case TxRefund:
@@ -371,6 +373,16 @@ func (p *parser) getAsset(idx int, required bool, def common.Asset) common.Asset
 	value, err := common.NewAssetWithShortCodes(p.version, p.get(idx))
 	if err != nil && (required || p.get(idx) != "") {
 		p.addErr(fmt.Errorf("cannot parse '%s' as an asset: %w", p.get(idx), err))
+		return def
+	}
+	return value
+}
+
+func (p *parser) getCoin(idx int, required bool, def common.Coin) common.Coin {
+	p.incRequired(required)
+	value, err := common.ParseCoin(p.get(idx))
+	if err != nil && (required || p.get(idx) != "") {
+		p.addErr(fmt.Errorf("cannot parse '%s' as a coin: %w", p.get(idx), err))
 		return def
 	}
 	return value

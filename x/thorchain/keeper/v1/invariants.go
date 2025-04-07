@@ -120,10 +120,6 @@ func AsgardInvariant(k KVStore) common.Invariant {
 		swapCoins := processSwaps(ctx, k, k.GetSwapQueueIterator(ctx))
 		advSwapCoins := processSwaps(ctx, k, k.GetAdvSwapQueueItemIterator(ctx))
 
-		// sum all rune in pending swaps
-		swapCoins := processSwaps(ctx, k, k.GetSwapQueueIterator(ctx))
-		orderCoins := processSwaps(ctx, k, k.GetOrderBookItemIterator(ctx))
-
 		// get asgard module balance
 		asgardAddr := k.GetModuleAccAddress(AsgardName)
 		asgardCoins := k.GetBalance(ctx, asgardAddr)

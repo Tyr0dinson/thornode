@@ -1,0 +1,50 @@
+package types
+
+import (
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+)
+
+var (
+	_ sdk.Msg              = &MsgModifyLimitSwap{}
+	_ sdk.HasValidateBasic = &MsgModifyLimitSwap{}
+	_ sdk.LegacyMsg        = &MsgModifyLimitSwap{}
+)
+
+// NewMsgModifyLimitSwap is a constructor function for MsgModifyLimitSwap
+func NewMsgModifyLimitSwap(from common.Address, source, target common.Coin, mod cosmos.Uint, signer cosmos.AccAddress) *MsgModifyLimitSwap {
+	return &MsgModifyLimitSwap{
+		From:                 from,
+		Source:               source,
+		Target:               target,
+		ModifiedTargetAmount: mod,
+		Donate:               common.NoCoin,
+		Signer:               signer,
+	}
+}
+
+// ValidateBasic runs stateless checks on the message
+func (m *MsgModifyLimitSwap) ValidateBasic() error {
+	if m.Signer.Empty() {
+		return cosmos.ErrInvalidAddress(m.Signer.String())
+	}
+	if err := m.Source.Valid(); err != nil {
+		return cosmos.ErrUnknownRequest(err.Error())
+	}
+	if err := m.Target.Valid(); err != nil {
+		return cosmos.ErrUnknownRequest(err.Error())
+	}
+	if ok := m.Source.Asset.Equals(m.Target.Asset); ok {
+		return cosmos.ErrUnknownRequest("source asset and target asset cannot be the same")
+	}
+	if ok := m.From.IsChain(m.Source.Asset.GetChain()); !ok {
+		return cosmos.ErrUnknownRequest("from address and source asset do not match")
+	}
+	return nil
+}
+
+// GetSigners defines whose signature is required
+func (m *MsgModifyLimitSwap) GetSigners() []cosmos.AccAddress {
+	return []cosmos.AccAddress{m.Signer}
+}

@@ -1,0 +1,68 @@
+########################################################################################
+## this file is designed to test the modification of a limit swap, including cancelling 
+## an swap
+########################################################################################
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: EnableAdvSwapQueue
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 2
+---
+########################################################################################
+# Create a limit swap
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=<:BTC.BTC:{{ addr_btc_fox }}:8998438"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - length == 0
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "1"
+    asset: "rune"
+memo: "m=<:10000000000 THOR.RUNE:8998438 BTC.BTC:999999999999999"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue
+asserts:
+  - .swap == 1
+---
+########################################################################################
+# Test the new swap details endpoint
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/swap/{{ native_txid -2 }}
+asserts:
+  - .swap != null
+  - .swap.tx.id == "{{ native_txid -2 }}"
+  - .swap.trade_target == "999999999999999"
+  - .status == "queued"
+  - .queue_type == "advanced"

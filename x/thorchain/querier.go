@@ -2397,7 +2397,7 @@ func (qs queryServer) queryQueue(ctx cosmos.Context, _ *types.QueryQueueRequest)
 	defer iter2.Close()
 	for ; iter2.Valid(); iter2.Next() {
 		var msg MsgSwap
-		if err := qs.mgr.Keeper().Cdc().Unmarshal(iterator.Value(), &msg); err != nil {
+		if err := qs.mgr.Keeper().Cdc().Unmarshal(iter2.Value(), &msg); err != nil {
 			ctx.Logger().Error("failed to load MsgSwap", "error", err)
 			continue
 		}
@@ -3021,6 +3021,51 @@ func (qs queryServer) querySwapQueue(ctx cosmos.Context, _ *types.QuerySwapQueue
 	}
 
 	return &types.QuerySwapQueueResponse{SwapQueue: result}, nil
+}
+
+func (qs queryServer) querySwapDetails(ctx cosmos.Context, req *types.QuerySwapDetailsRequest) (*types.QuerySwapDetailsResponse, error) {
+	if len(req.TxId) == 0 {
+		return nil, fmt.Errorf("missing tx_id parameter")
+	}
+
+	txID, err := common.NewTxID(req.TxId)
+	if err != nil {
+		return nil, fmt.Errorf("invalid tx_id: %w", err)
+	}
+
+	// Check if it's in the regular swap queue
+	iterator := qs.mgr.Keeper().GetSwapQueueIterator(ctx)
+	defer iterator.Close()
+	for ; iterator.Valid(); iterator.Next() {
+		var msg MsgSwap
+		if err := qs.mgr.Keeper().Cdc().Unmarshal(iterator.Value(), &msg); err != nil {
+			continue
+		}
+		if msg.Tx.ID.Equals(txID) {
+			return &types.QuerySwapDetailsResponse{
+				Swap:      &msg,
+				Status:    "queued",
+				QueueType: "regular",
+			}, nil
+		}
+	}
+
+	// Check if it's in the advanced swap queue
+	if qs.mgr.Keeper().AdvSwapQueueEnabled(ctx) {
+		if qs.mgr.Keeper().HasAdvSwapQueueItem(ctx, txID) {
+			msg, err := qs.mgr.Keeper().GetAdvSwapQueueItem(ctx, txID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get advanced swap queue item: %w", err)
+			}
+			return &types.QuerySwapDetailsResponse{
+				Swap:      &msg,
+				Status:    "queued",
+				QueueType: "advanced",
+			}, nil
+		}
+	}
+
+	return nil, fmt.Errorf("swap with tx_id %s not found in any queue", req.TxId)
 }
 
 func (qs queryServer) queryTssKeygenMetric(ctx cosmos.Context, req *types.QueryTssKeygenMetricRequest) (*types.QueryTssKeygenMetricResponse, error) {
