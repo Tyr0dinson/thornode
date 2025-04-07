@@ -30,7 +30,7 @@ You are ready to make the transaction and swap via THORChain.
 - [ ] Add remaining characters encoded as p2wpkh address as subsequent VOUT
   - [ ] encode remaining characters to hex representation
   - [ ] split the resulting string into chunks of 40 characters each, append "00" to the last chunk until its length also matches 40 characters
-  - [ ] for each hex encoded chunk, create a VOUT sending 294sats to the script pub key: '0014' + <chunk>
+  - [ ] for each hex encoded chunk, create a VOUT sending 294sats to the script pub key: '0014' + `<chunk>`
 - [ ] Use a high enough `gas_rate` to be included
 - [ ] Do not send below the dust threshold (10k Sats BTC, BCH, LTC, 1m DOGE), exhaustive values can be found on the [Inbound Addresses](https://thornode.ninerealms.com/thorchain/inbound_addresses) endpoint
 - [ ] Do not send funds that are part of a transaction with more than 10 outputs
@@ -40,33 +40,32 @@ You are ready to make the transaction and swap via THORChain.
 #### P2WPKH (BTC, LTC)
 
 Memo:
-```SWAP:GAIA.ATOM:cosmos1fegapd4jc3ejqeg0eu3jk4hvr74hg66076gyyd/bc1qnfw0gkk05qxl38mslc69hc6vc64mksyw6zzxhg```
+`SWAP:GAIA.ATOM:cosmos1fegapd4jc3ejqeg0eu3jk4hvr74hg66076gyyd/bc1qnfw0gkk05qxl38mslc69hc6vc64mksyw6zzxhg`
 
-1) Put first 79 characters + `^` into `OP_RETURN`: `SWAP:GAIA.ATOM:cosmos1fegapd4jc3ejqeg0eu3jk4hvr74hg66076gyyd/bc1qnfw0gkk05qxl38^`
-2) Hex encode remaining string `mslc69hc6vc64mksyw6zzxhg` and split it into chunks of 40 characters (fill the last chunk with zeros): `6d736c633639686336766336346d6b737977367a`, `7a78686700000000000000000000000000000000`
-3) Create two subsequent VOUTs (prepend `0014`):
-   1) send 294sats (3000sats on LTC) to: `00146d736c633639686336766336346d6b737977367a`
+1. Put first 79 characters + `^` into `OP_RETURN`: `SWAP:GAIA.ATOM:cosmos1fegapd4jc3ejqeg0eu3jk4hvr74hg66076gyyd/bc1qnfw0gkk05qxl38^`
+2. Hex encode remaining string `mslc69hc6vc64mksyw6zzxhg` and split it into chunks of 40 characters (fill the last chunk with zeros): `6d736c633639686336766336346d6b737977367a`, `7a78686700000000000000000000000000000000`
+3. Create two subsequent VOUTs (prepend `0014`):
+   1. send 294sats (3000sats on LTC) to: `00146d736c633639686336766336346d6b737977367a`
       - BTC: bc1qd4ekccek895xxdnkvvmrgmttwduhwdn622k6gj
       - LTC: ltc1qd4ekccek895xxdnkvvmrgmttwduhwdn6wkv7sz
-   2) send 294sats (3000sats on LTC) to: `00147a78686700000000000000000000000000000000`
+   2. send 294sats (3000sats on LTC) to: `00147a78686700000000000000000000000000000000`
       - BTC: bc1q0fuxsecqqqqqqqqqqqqqqqqqqqqqqqqq2alhdv
       - LTC: ltc1q0fuxsecqqqqqqqqqqqqqqqqqqqqqqqqqwp9n4u
 
 #### P2PKH (BCH, DOGE)
 
 Memo:
-```SWAP:GAIA.ATOM:cosmos1fegapd4jc3ejqeg0eu3jk4hvr74hg66076gyyd/bc1qnfw0gkk05qxl38mslc69hc6vc64mksyw6zzxhg```
+`SWAP:GAIA.ATOM:cosmos1fegapd4jc3ejqeg0eu3jk4hvr74hg66076gyyd/bc1qnfw0gkk05qxl38mslc69hc6vc64mksyw6zzxhg`
 
-1) Put first 79 characters + `^` into `OP_RETURN`: `SWAP:GAIA.ATOM:cosmos1fegapd4jc3ejqeg0eu3jk4hvr74hg66076gyyd/bc1qnfw0gkk05qxl38^`
-2) Hex encode remaining string `mslc69hc6vc64mksyw6zzxhg` and split it into chunks of 40 characters (fill the last chunk with zeros): `6d736c633639686336766336346d6b737977367a`, `7a78686700000000000000000000000000000000`
-3) Create two subsequent VOUTs (prepend `76a914` & append `88ac`):
-    1) send 546sats to: `76a9146d736c633639686336766336346d6b737977367a88ac`
-       - BCH: qpkhxmrrxcukscekwe3nvdrdddehjaek0gldczy2mv
-       - DOGE: DF7pTvdzyY2zoVJ3AFQr8oSYDiqw3m6hCy
-    2) send 546sats to: `76a9147a7868670000000000000000000000000000000088ac`
-       - BCH: qpa8s6r8qqqqqqqqqqqqqqqqqqqqqqqqqq99h3g9e2
-       - DOGE: DGJfDk6cwyNpzebP7MyzueRtXEWGEaaHz9
-
+1. Put first 79 characters + `^` into `OP_RETURN`: `SWAP:GAIA.ATOM:cosmos1fegapd4jc3ejqeg0eu3jk4hvr74hg66076gyyd/bc1qnfw0gkk05qxl38^`
+2. Hex encode remaining string `mslc69hc6vc64mksyw6zzxhg` and split it into chunks of 40 characters (fill the last chunk with zeros): `6d736c633639686336766336346d6b737977367a`, `7a78686700000000000000000000000000000000`
+3. Create two subsequent VOUTs (prepend `76a914` & append `88ac`):
+   1. send 546sats to: `76a9146d736c633639686336766336346d6b737977367a88ac`
+      - BCH: qpkhxmrrxcukscekwe3nvdrdddehjaek0gldczy2mv
+      - DOGE: DF7pTvdzyY2zoVJ3AFQr8oSYDiqw3m6hCy
+   2. send 546sats to: `76a9147a7868670000000000000000000000000000000088ac`
+      - BCH: qpa8s6r8qqqqqqqqqqqqqqqqqqqqqqqqqq99h3g9e2
+      - DOGE: DGJfDk6cwyNpzebP7MyzueRtXEWGEaaHz9
 
 ```admonish warning
 Inbound transactions should not be delayed for any reason else there is risk funds will be sent to an unreachable address. Use standard transactions, check the [`Inbound_Address`](querying-thorchain.md#getting-the-asgard-vault) before sending and use the recommended [`gas rate`](querying-thorchain.md#getting-the-asgard-vault) to ensure transactions are confirmed in the next block to the latest `Inbound_Address`.
@@ -185,7 +184,7 @@ If you are using Javascript, [CosmJS](https://github.com/cosmos/cosmjs) is the r
      const client = await SigningStargateClient.connectWithSigner(
        "https://rpc.ninerealms.com/",
        signer,
-       { registry: myRegistry },
+       { registry: myRegistry }
      );
 
      const memo = `=:ETH/ETH:${signerAddr}`; // THORChain memo
@@ -219,7 +218,7 @@ If you are using Javascript, [CosmJS](https://github.com/cosmos/cosmjs) is the r
        signerAddr,
        [depositMsg],
        fee,
-       memo,
+       memo
      );
      console.log("response: ", response);
 
