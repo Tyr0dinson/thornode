@@ -1,8 +1,10 @@
 package thorchain
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
+	"math/rand"
 	"net"
 	"sort"
 
@@ -164,7 +166,7 @@ func (vm *ValidatorMgrVCUR) churn(ctx cosmos.Context) error {
 		return err
 	}
 	if ok {
-		for _, nodeAccSet := range vm.splitNext(ctx, next, asgardSize) {
+		for _, nodeAccSet := range vm.SplitNext(ctx, next, asgardSize) {
 			if err := vm.networkMgr.TriggerKeygen(ctx, nodeAccSet); err != nil {
 				return err
 			}
@@ -175,7 +177,7 @@ func (vm *ValidatorMgrVCUR) churn(ctx cosmos.Context) error {
 
 // splits given list of node accounts into separate list of nas, for separate
 // asgard vaults
-func (vm *ValidatorMgrVCUR) splitNext(ctx cosmos.Context, nas NodeAccounts, asgardSize int64) []NodeAccounts {
+func (vm *ValidatorMgrVCUR) SplitNext(ctx cosmos.Context, nas NodeAccounts, asgardSize int64) []NodeAccounts {
 	if asgardSize <= 0 { // sanity check
 		return nil
 	}
@@ -203,13 +205,18 @@ func (vm *ValidatorMgrVCUR) splitNext(ctx cosmos.Context, nas NodeAccounts, asga
 	// acquire enough tss shares.
 
 	// Check for duplicates
-	bondAddrMap := make(map[string]int)
+	bondAddrCounts := make(map[string]int)
+	bondAddrTotalBond := make(map[string]cosmos.Uint)
 	for _, na := range nas {
-		bondAddrMap[na.BondAddress.String()]++
+		bondAddrCounts[na.BondAddress.String()]++
+		if _, ok := bondAddrTotalBond[na.BondAddress.String()]; !ok {
+			bondAddrTotalBond[na.BondAddress.String()] = cosmos.ZeroUint()
+		}
+		bondAddrTotalBond[na.BondAddress.String()] = bondAddrTotalBond[na.BondAddress.String()].Add(na.Bond)
 	}
 	var duplicateNas, nonDuplicateNas NodeAccounts
 	for _, na := range nas {
-		if bondAddrMap[na.BondAddress.String()] > 1 {
+		if bondAddrCounts[na.BondAddress.String()] > 1 {
 			duplicateNas = append(duplicateNas, na)
 		} else {
 			nonDuplicateNas = append(nonDuplicateNas, na)
@@ -218,27 +225,38 @@ func (vm *ValidatorMgrVCUR) splitNext(ctx cosmos.Context, nas NodeAccounts, asga
 
 	sort.SliceStable(duplicateNas, func(i, j int) bool {
 		// Check if the bond address counts are the same
-		if bondAddrMap[duplicateNas[i].BondAddress.String()] == bondAddrMap[duplicateNas[j].BondAddress.String()] {
+		if bondAddrCounts[duplicateNas[i].BondAddress.String()] == bondAddrCounts[duplicateNas[j].BondAddress.String()] {
 			// Check if bond addresses are the same
 			if duplicateNas[i].BondAddress.String() == duplicateNas[j].BondAddress.String() {
 				// Sort by bond size
 				return duplicateNas[i].Bond.GT(duplicateNas[j].Bond)
 			}
-			// Sort by bond address
-			return duplicateNas[i].BondAddress.String() < duplicateNas[j].BondAddress.String()
+			// Sort by total bond for the bond address
+			return bondAddrTotalBond[duplicateNas[i].BondAddress.String()].GT(bondAddrTotalBond[duplicateNas[j].BondAddress.String()])
 		}
 		// Sort by bond address count
-		return bondAddrMap[duplicateNas[i].BondAddress.String()] > bondAddrMap[duplicateNas[j].BondAddress.String()]
+		return bondAddrCounts[duplicateNas[i].BondAddress.String()] > bondAddrCounts[duplicateNas[j].BondAddress.String()]
 	})
 
-	// sort by bond size for non-duplicates
-	sort.SliceStable(nonDuplicateNas, func(i, j int) bool {
-		return nonDuplicateNas[i].Bond.LT(nonDuplicateNas[j].Bond)
+	// last commit hash is the most tamper-resistant field in the header
+	lastCommitHash := ctx.BlockHeader().LastCommitHash
+	seed := int64(binary.LittleEndian.Uint64(lastCommitHash[:8]))
+	r := rand.New(rand.NewSource(seed)) // trunk-ignore(golangci-lint/gosec): weak random intended
+
+	// randomize non-duplicates
+	r.Shuffle(len(nonDuplicateNas), func(i, j int) {
+		nonDuplicateNas[i], nonDuplicateNas[j] = nonDuplicateNas[j], nonDuplicateNas[i]
 	})
 
+	// distribute nodes over groups
 	groups := make([]NodeAccounts, groupNum)
 	for i, na := range append(duplicateNas, nonDuplicateNas...) {
 		groups[i%len(groups)] = append(groups[i%len(groups)], na)
+	}
+
+	// rebalance groups with numVaults/2 passes
+	for i := 0; i < len(groups)/2; i++ {
+		rebalanceGroups(groups, bondAddrCounts)
 	}
 
 	// sanity checks
@@ -267,6 +285,88 @@ func (vm *ValidatorMgrVCUR) splitNext(ctx cosmos.Context, nas NodeAccounts, asga
 	}
 
 	return groups
+}
+
+// rebalanceGroups will perform one pass to:
+// 1. Find the groups with min and max total bond.
+// 2. Find one member of each group to permute to most optimally balance their total bond.
+// 3. Swap the two members in place.
+func rebalanceGroups(groups []NodeAccounts, bondAddrCounts map[string]int) {
+	// skip if there are not enough groups to swap
+	if len(groups) < 2 {
+		return
+	}
+
+	// compute total bond for each group
+	totalBonds := make([]cosmos.Uint, len(groups))
+	for i, group := range groups {
+		totalBonds[i] = totalBond(group)
+	}
+
+	// find the group with min and max total bond
+	minGroupIdx, maxGroupIdx := 0, 0
+	for i := 1; i < len(groups); i++ {
+		if totalBonds[i].LT(totalBonds[minGroupIdx]) {
+			minGroupIdx = i
+		}
+		if totalBonds[i].GT(totalBonds[maxGroupIdx]) {
+			maxGroupIdx = i
+		}
+	}
+
+	// find the two members to swap
+	target := totalBonds[maxGroupIdx].Sub(totalBonds[minGroupIdx]).QuoUint64(2)
+	bestDelta := target
+	minMemberIdx, maxMemberIdx := 0, 0
+	for i, minGroupMember := range groups[minGroupIdx] {
+		// skip multi-operator nodes
+		if bondAddrCounts[minGroupMember.BondAddress.String()] > 1 {
+			continue
+		}
+
+		for j, maxGroupMember := range groups[maxGroupIdx] {
+			// skip multi-operator nodes
+			if bondAddrCounts[maxGroupMember.BondAddress.String()] > 1 {
+				continue
+			}
+
+			// skip if the max group member is less than the min group member
+			if maxGroupMember.Bond.LT(minGroupMember.Bond) {
+				continue
+			}
+
+			// calculate the delta if we swap these two members
+			diff := maxGroupMember.Bond.Sub(minGroupMember.Bond)
+			var targetDelta cosmos.Uint
+			if diff.GT(target) {
+				targetDelta = diff.Sub(target)
+			} else {
+				targetDelta = target.Sub(diff)
+			}
+			if targetDelta.LT(bestDelta) {
+				bestDelta = targetDelta
+				minMemberIdx = i
+				maxMemberIdx = j
+			}
+		}
+	}
+
+	// skip if we did not find a pair to swap to improve balance
+	if bestDelta.Equal(target) {
+		return
+	}
+
+	// swap the two members
+	groups[minGroupIdx][minMemberIdx], groups[maxGroupIdx][maxMemberIdx] = groups[maxGroupIdx][maxMemberIdx], groups[minGroupIdx][minMemberIdx]
+}
+
+// totalBond calculates the total bond of the node accounts.
+func totalBond(na NodeAccounts) cosmos.Uint {
+	totalBond := cosmos.ZeroUint()
+	for _, n := range na {
+		totalBond = totalBond.Add(n.Bond)
+	}
+	return totalBond
 }
 
 // EndBlock when block commit

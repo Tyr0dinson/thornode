@@ -437,7 +437,7 @@ func (vts *ValidatorMgrVCURTestSuite) TestSplitNext(c *C) {
 		na.Bond = cosmos.NewUint(uint64(i))
 		nas = append(nas, na)
 	}
-	sets := networkMgr.splitNext(ctx, nas, 30)
+	sets := networkMgr.SplitNext(ctx, nas, 30)
 	c.Assert(sets, HasLen, 3)
 	c.Assert(sets[0], HasLen, 30)
 	c.Assert(sets[1], HasLen, 30)
@@ -449,7 +449,7 @@ func (vts *ValidatorMgrVCURTestSuite) TestSplitNext(c *C) {
 		na.Bond = cosmos.NewUint(uint64(i))
 		nas = append(nas, na)
 	}
-	sets = networkMgr.splitNext(ctx, nas, 30)
+	sets = networkMgr.SplitNext(ctx, nas, 30)
 	c.Assert(sets, HasLen, 4)
 	c.Assert(sets[0], HasLen, 25)
 	c.Assert(sets[1], HasLen, 25)
@@ -462,7 +462,7 @@ func (vts *ValidatorMgrVCURTestSuite) TestSplitNext(c *C) {
 		na.Bond = cosmos.NewUint(uint64(i))
 		nas = append(nas, na)
 	}
-	sets = networkMgr.splitNext(ctx, nas, 30)
+	sets = networkMgr.SplitNext(ctx, nas, 30)
 	c.Assert(sets, HasLen, 1)
 	c.Assert(sets[0], HasLen, 3)
 }
@@ -471,7 +471,7 @@ func (s *ValidatorMgrVCURTestSuite) TestSplitNext_EmptyNodeAccounts(c *C) {
 	var vm ValidatorMgrVCUR
 	ctx, _ := setupKeeperForTest(c)
 
-	groups := vm.splitNext(ctx, NodeAccounts{}, 2)
+	groups := vm.SplitNext(ctx, NodeAccounts{}, 2)
 
 	c.Assert(len(groups), Equals, 0)
 }
@@ -482,7 +482,7 @@ func (s *ValidatorMgrVCURTestSuite) TestSplitNext_SingleNodeAccount(c *C) {
 
 	nodeAcc := NodeAccount{NodeAddress: types.AccAddress("addr1"), Bond: sdkmath.NewUint(50), BondAddress: common.Address("bondAddr1")}
 
-	groups := vm.splitNext(ctx, NodeAccounts{nodeAcc}, 1)
+	groups := vm.SplitNext(ctx, NodeAccounts{nodeAcc}, 1)
 
 	// no asgard should have a length of 1
 	c.Assert(len(groups), Equals, 0)
@@ -497,7 +497,7 @@ func (s *ValidatorMgrVCURTestSuite) TestSplitNext_AllSameBondAddress(c *C) {
 	nodeAcc3 := NodeAccount{NodeAddress: types.AccAddress("addr3"), Bond: sdkmath.NewUint(70), BondAddress: common.Address("bondAddr1")}
 	nodeAcc4 := NodeAccount{NodeAddress: types.AccAddress("addr4"), Bond: sdkmath.NewUint(80), BondAddress: common.Address("bondAddr1")}
 
-	groups := vm.splitNext(ctx, NodeAccounts{nodeAcc1, nodeAcc2, nodeAcc3, nodeAcc4}, 2)
+	groups := vm.SplitNext(ctx, NodeAccounts{nodeAcc1, nodeAcc2, nodeAcc3, nodeAcc4}, 2)
 
 	c.Assert(len(groups), Equals, 2)
 	c.Assert(len(groups[0]), Equals, 2)
@@ -519,14 +519,14 @@ func (s *ValidatorMgrVCURTestSuite) TestSplitNext_DifferentBondAddresses(c *C) {
 	nodeAcc3 := NodeAccount{NodeAddress: types.AccAddress("addr3"), Bond: sdkmath.NewUint(70), BondAddress: common.Address("bondAddr3")}
 	nodeAcc4 := NodeAccount{NodeAddress: types.AccAddress("addr4"), Bond: sdkmath.NewUint(80), BondAddress: common.Address("bondAddr4")}
 
-	groups := vm.splitNext(ctx, NodeAccounts{nodeAcc1, nodeAcc2, nodeAcc3, nodeAcc4}, 2)
+	groups := vm.SplitNext(ctx, NodeAccounts{nodeAcc1, nodeAcc2, nodeAcc3, nodeAcc4}, 2)
 
 	c.Assert(len(groups), Equals, 2)
 	c.Assert(len(groups[0]), Equals, 2)
 	c.Assert(len(groups[1]), Equals, 2)
 
-	expectedGroup1 := NodeAccounts{nodeAcc1, nodeAcc3}
-	expectedGroup2 := NodeAccounts{nodeAcc2, nodeAcc4}
+	expectedGroup1 := NodeAccounts{nodeAcc2, nodeAcc3}
+	expectedGroup2 := NodeAccounts{nodeAcc1, nodeAcc4}
 
 	c.Assert(groups[0], DeepEquals, expectedGroup1)
 	c.Assert(groups[1], DeepEquals, expectedGroup2)
@@ -539,7 +539,7 @@ func (s *ValidatorMgrVCURTestSuite) TestSplitNext_SameBondSameAddress(c *C) {
 	nodeAcc1 := NodeAccount{NodeAddress: types.AccAddress("addr1"), Bond: sdkmath.NewUint(50), BondAddress: common.Address("bondAddr1")}
 	nodeAcc2 := NodeAccount{NodeAddress: types.AccAddress("addr2"), Bond: sdkmath.NewUint(50), BondAddress: common.Address("bondAddr1")}
 
-	groups := vm.splitNext(ctx, NodeAccounts{nodeAcc1, nodeAcc2}, 2)
+	groups := vm.SplitNext(ctx, NodeAccounts{nodeAcc1, nodeAcc2}, 2)
 
 	c.Assert(len(groups), Equals, 1)
 	c.Assert(len(groups[0]), Equals, 2)
@@ -555,7 +555,7 @@ func (s *ValidatorMgrVCURTestSuite) TestSplitNext_ZeroAsgardSize(c *C) {
 
 	nodeAcc := NodeAccount{NodeAddress: types.AccAddress("addr1"), Bond: sdkmath.NewUint(50), BondAddress: common.Address("bondAddr1")}
 
-	groups := vm.splitNext(ctx, NodeAccounts{nodeAcc}, 0)
+	groups := vm.SplitNext(ctx, NodeAccounts{nodeAcc}, 0)
 
 	c.Assert(len(groups), Equals, 0)
 }
@@ -566,7 +566,7 @@ func (s *ValidatorMgrVCURTestSuite) TestSplitNext_NegativeAsgardSize(c *C) {
 
 	nodeAcc := NodeAccount{NodeAddress: types.AccAddress("addr1"), Bond: sdkmath.NewUint(50), BondAddress: common.Address("bondAddr1")}
 
-	groups := vm.splitNext(ctx, NodeAccounts{nodeAcc}, -1)
+	groups := vm.SplitNext(ctx, NodeAccounts{nodeAcc}, -1)
 
 	c.Assert(len(groups), Equals, 0)
 }
@@ -578,7 +578,7 @@ func (s *ValidatorMgrVCURTestSuite) TestSplitNext_AsgardSizeLargerThanLen(c *C) 
 	nodeAcc1 := NodeAccount{NodeAddress: types.AccAddress("addr1"), Bond: sdkmath.NewUint(50), BondAddress: common.Address("bondAddr1")}
 	nodeAcc2 := NodeAccount{NodeAddress: types.AccAddress("addr2"), Bond: sdkmath.NewUint(60), BondAddress: common.Address("bondAddr1")}
 
-	groups := vm.splitNext(ctx, NodeAccounts{nodeAcc1, nodeAcc2}, 3)
+	groups := vm.SplitNext(ctx, NodeAccounts{nodeAcc1, nodeAcc2}, 3)
 
 	c.Assert(len(groups), Equals, 1)
 
@@ -596,14 +596,14 @@ func (s *ValidatorMgrVCURTestSuite) TestSplitNext_MultipleDuplicates(c *C) {
 	nodeAcc3 := NodeAccount{NodeAddress: types.AccAddress("addr3"), Bond: sdkmath.NewUint(70), BondAddress: common.Address("bondAddr2")}
 	nodeAcc4 := NodeAccount{NodeAddress: types.AccAddress("addr4"), Bond: sdkmath.NewUint(80), BondAddress: common.Address("bondAddr2")}
 
-	groups := vm.splitNext(ctx, NodeAccounts{nodeAcc1, nodeAcc2, nodeAcc3, nodeAcc4}, 2)
+	groups := vm.SplitNext(ctx, NodeAccounts{nodeAcc1, nodeAcc2, nodeAcc3, nodeAcc4}, 2)
 
 	c.Assert(len(groups), Equals, 2)
 	c.Assert(len(groups[0]), Equals, 2)
 	c.Assert(len(groups[1]), Equals, 2)
 
-	expectedGroup1 := NodeAccounts{nodeAcc2, nodeAcc4}
-	expectedGroup2 := NodeAccounts{nodeAcc1, nodeAcc3}
+	expectedGroup1 := NodeAccounts{nodeAcc4, nodeAcc2}
+	expectedGroup2 := NodeAccounts{nodeAcc3, nodeAcc1}
 
 	c.Assert(groups[0], DeepEquals, expectedGroup1)
 	c.Assert(groups[1], DeepEquals, expectedGroup2)
@@ -621,14 +621,14 @@ func (s *ValidatorMgrVCURTestSuite) TestSplitNext_MultipleDuplicatesOfDiffSizes(
 	nodeAcc6 := NodeAccount{NodeAddress: types.AccAddress("addr6"), Bond: sdkmath.NewUint(100), BondAddress: common.Address("bondAddr3")}
 	nodeAcc7 := NodeAccount{NodeAddress: types.AccAddress("addr7"), Bond: sdkmath.NewUint(90), BondAddress: common.Address("bondAddr3")}
 
-	groups := vm.splitNext(ctx, NodeAccounts{nodeAcc7, nodeAcc3, nodeAcc2, nodeAcc4, nodeAcc5, nodeAcc6, nodeAcc1}, 4)
+	groups := vm.SplitNext(ctx, NodeAccounts{nodeAcc7, nodeAcc3, nodeAcc2, nodeAcc4, nodeAcc5, nodeAcc6, nodeAcc1}, 4)
 
 	c.Assert(len(groups), Equals, 2)
 	c.Assert(len(groups[0]), Equals, 4)
 	c.Assert(len(groups[1]), Equals, 3)
 
-	expectedGroup1 := NodeAccounts{nodeAcc6, nodeAcc5, nodeAcc3, nodeAcc1}
-	expectedGroup2 := NodeAccounts{nodeAcc7, nodeAcc4, nodeAcc2}
+	expectedGroup1 := NodeAccounts{nodeAcc6, nodeAcc5, nodeAcc3, nodeAcc2}
+	expectedGroup2 := NodeAccounts{nodeAcc7, nodeAcc4, nodeAcc1}
 
 	c.Assert(groups[0], DeepEquals, expectedGroup1)
 	c.Assert(groups[1], DeepEquals, expectedGroup2)
@@ -873,4 +873,277 @@ func (vts *ValidatorMgrVCURTestSuite) TestActiveNodeRequestToLeaveShouldBeStandb
 	naAfter, err := mgr.Keeper().GetNodeAccount(ctx, na.NodeAddress)
 	c.Assert(err, IsNil)
 	c.Assert(naAfter.RequestedToLeave, Equals, false)
+}
+
+func (s *ValidatorMgrVCURTestSuite) TestRebalanceGroups(c *C) {
+	deepCopyGroups := func(groups []NodeAccounts) []NodeAccounts {
+		copiedGroups := make([]NodeAccounts, len(groups))
+		for i, group := range groups {
+			copiedGroups[i] = make(NodeAccounts, len(group))
+			copy(copiedGroups[i], group)
+		}
+		return copiedGroups
+	}
+
+	// <2 groups, no swap
+	groups := []NodeAccounts{
+		{
+			{Bond: cosmos.NewUint(1), BondAddress: "A"},
+			{Bond: cosmos.NewUint(2), BondAddress: "B"},
+			{Bond: cosmos.NewUint(3), BondAddress: "C"},
+			{Bond: cosmos.NewUint(4), BondAddress: "D"},
+		},
+	}
+	counts := map[string]int{}
+	orig := deepCopyGroups(groups)
+	rebalanceGroups(groups, counts)
+	c.Assert(groups, DeepEquals, orig)
+
+	// two groups, one node each, no valid swap
+	groups = []NodeAccounts{
+		{{Bond: cosmos.NewUint(10), BondAddress: "A"}},
+		{{Bond: cosmos.NewUint(20), BondAddress: "B"}},
+	}
+	counts = map[string]int{}
+	orig = deepCopyGroups(groups)
+	rebalanceGroups(groups, counts)
+	c.Assert(groups, DeepEquals, orig)
+
+	// two groups, multiple nodes, no valid swaps
+	groups = []NodeAccounts{
+		{
+			{Bond: cosmos.NewUint(1), BondAddress: "A"},
+			{Bond: cosmos.NewUint(2), BondAddress: "B"},
+			{Bond: cosmos.NewUint(3), BondAddress: "C"},
+			{Bond: cosmos.NewUint(4), BondAddress: "D"},
+		},
+		{
+			{Bond: cosmos.NewUint(1), BondAddress: "E"},
+			{Bond: cosmos.NewUint(2), BondAddress: "F"},
+			{Bond: cosmos.NewUint(3), BondAddress: "G"},
+			{Bond: cosmos.NewUint(4), BondAddress: "H"},
+		},
+	}
+	counts = map[string]int{}
+	orig = deepCopyGroups(groups)
+	rebalanceGroups(groups, counts)
+	c.Assert(groups, DeepEquals, orig)
+
+	// rebalance possible, but multi-node operator skipped, no valid swaps
+	groups = []NodeAccounts{
+		{
+			{Bond: cosmos.NewUint(10), BondAddress: "A"},
+			{Bond: cosmos.NewUint(20), BondAddress: "B"},
+			{Bond: cosmos.NewUint(1), BondAddress: "C"},
+			{Bond: cosmos.NewUint(1), BondAddress: "D"},
+		},
+		{
+			{Bond: cosmos.NewUint(100), BondAddress: "A"},
+			{Bond: cosmos.NewUint(200), BondAddress: "B"},
+			{Bond: cosmos.NewUint(1), BondAddress: "G"},
+			{Bond: cosmos.NewUint(1), BondAddress: "H"},
+		},
+	}
+	counts = map[string]int{"A": 2, "B": 2}
+	orig = deepCopyGroups(groups)
+	rebalanceGroups(groups, counts)
+	c.Assert(groups, DeepEquals, orig)
+
+	// rebalance possible, one valid swap
+	groups = []NodeAccounts{
+		{
+			{Bond: cosmos.NewUint(10), BondAddress: "A"},
+			{Bond: cosmos.NewUint(20), BondAddress: "B"},
+			{Bond: cosmos.NewUint(1), BondAddress: "C"},
+			{Bond: cosmos.NewUint(1), BondAddress: "D"},
+		},
+		{
+			{Bond: cosmos.NewUint(100), BondAddress: "A"},
+			{Bond: cosmos.NewUint(200), BondAddress: "F"},
+			{Bond: cosmos.NewUint(1), BondAddress: "G"},
+			{Bond: cosmos.NewUint(1), BondAddress: "H"},
+		},
+	}
+	expected := []NodeAccounts{
+		{
+			{Bond: cosmos.NewUint(10), BondAddress: "A"},
+			{Bond: cosmos.NewUint(200), BondAddress: "F"},
+			{Bond: cosmos.NewUint(1), BondAddress: "C"},
+			{Bond: cosmos.NewUint(1), BondAddress: "D"},
+		},
+		{
+			{Bond: cosmos.NewUint(100), BondAddress: "A"},
+			{Bond: cosmos.NewUint(20), BondAddress: "B"},
+			{Bond: cosmos.NewUint(1), BondAddress: "G"},
+			{Bond: cosmos.NewUint(1), BondAddress: "H"},
+		},
+	}
+	counts = map[string]int{"A": 2}
+	rebalanceGroups(groups, counts)
+	c.Assert(groups, DeepEquals, expected)
+
+	// rebalance with 3 groups, one swap
+	groups = []NodeAccounts{
+		{
+			{Bond: cosmos.NewUint(1), BondAddress: "A"},
+			{Bond: cosmos.NewUint(1), BondAddress: "B"},
+			{Bond: cosmos.NewUint(1), BondAddress: "C"},
+		},
+		{
+			{Bond: cosmos.NewUint(2), BondAddress: "D"},
+			{Bond: cosmos.NewUint(2), BondAddress: "E"},
+			{Bond: cosmos.NewUint(2), BondAddress: "F"},
+		},
+		{
+			{Bond: cosmos.NewUint(3), BondAddress: "G"},
+			{Bond: cosmos.NewUint(3), BondAddress: "H"},
+			{Bond: cosmos.NewUint(3), BondAddress: "I"},
+		},
+	}
+	expected = []NodeAccounts{
+		{
+			{Bond: cosmos.NewUint(3), BondAddress: "G"},
+			{Bond: cosmos.NewUint(1), BondAddress: "B"},
+			{Bond: cosmos.NewUint(1), BondAddress: "C"},
+		},
+		{
+			{Bond: cosmos.NewUint(2), BondAddress: "D"},
+			{Bond: cosmos.NewUint(2), BondAddress: "E"},
+			{Bond: cosmos.NewUint(2), BondAddress: "F"},
+		},
+		{
+			{Bond: cosmos.NewUint(1), BondAddress: "A"},
+			{Bond: cosmos.NewUint(3), BondAddress: "H"},
+			{Bond: cosmos.NewUint(3), BondAddress: "I"},
+		},
+	}
+	counts = map[string]int{}
+	rebalanceGroups(groups, counts)
+	c.Assert(groups, DeepEquals, expected)
+
+	// rebalance with 4 groups, two swaps
+	groups = []NodeAccounts{
+		{
+			{Bond: cosmos.NewUint(1), BondAddress: "A"},
+			{Bond: cosmos.NewUint(1), BondAddress: "B"},
+		},
+		{
+			{Bond: cosmos.NewUint(2), BondAddress: "C"},
+			{Bond: cosmos.NewUint(2), BondAddress: "D"},
+		},
+		{
+			{Bond: cosmos.NewUint(3), BondAddress: "E"},
+			{Bond: cosmos.NewUint(3), BondAddress: "F"},
+		},
+		{
+			{Bond: cosmos.NewUint(4), BondAddress: "G"},
+			{Bond: cosmos.NewUint(4), BondAddress: "H"},
+		},
+	}
+	expected = []NodeAccounts{
+		{
+			{Bond: cosmos.NewUint(4), BondAddress: "G"},
+			{Bond: cosmos.NewUint(1), BondAddress: "B"},
+		},
+		{
+			{Bond: cosmos.NewUint(3), BondAddress: "E"},
+			{Bond: cosmos.NewUint(2), BondAddress: "D"},
+		},
+		{
+			{Bond: cosmos.NewUint(2), BondAddress: "C"},
+			{Bond: cosmos.NewUint(3), BondAddress: "F"},
+		},
+		{
+			{Bond: cosmos.NewUint(1), BondAddress: "A"},
+			{Bond: cosmos.NewUint(4), BondAddress: "H"},
+		},
+	}
+	counts = map[string]int{}
+	rebalanceGroups(groups, counts)
+	rebalanceGroups(groups, counts)
+	c.Assert(groups, DeepEquals, expected)
+
+	// rebalance with 4 groups, skip multi-node operators, two swaps
+	groups = []NodeAccounts{
+		{
+			{Bond: cosmos.NewUint(1), BondAddress: "A"},
+			{Bond: cosmos.NewUint(1), BondAddress: "B"},
+		},
+		{
+			{Bond: cosmos.NewUint(2), BondAddress: "C"},
+			{Bond: cosmos.NewUint(2), BondAddress: "D"},
+		},
+		{
+			{Bond: cosmos.NewUint(3), BondAddress: "E"},
+			{Bond: cosmos.NewUint(3), BondAddress: "F"},
+		},
+		{
+			{Bond: cosmos.NewUint(4), BondAddress: "G"},
+			{Bond: cosmos.NewUint(4), BondAddress: "H"},
+		},
+	}
+	expected = []NodeAccounts{
+		{
+			{Bond: cosmos.NewUint(1), BondAddress: "A"},
+			{Bond: cosmos.NewUint(4), BondAddress: "H"},
+		},
+		{
+			{Bond: cosmos.NewUint(3), BondAddress: "E"},
+			{Bond: cosmos.NewUint(2), BondAddress: "D"},
+		},
+		{
+			{Bond: cosmos.NewUint(2), BondAddress: "C"},
+			{Bond: cosmos.NewUint(3), BondAddress: "F"},
+		},
+		{
+			{Bond: cosmos.NewUint(4), BondAddress: "G"},
+			{Bond: cosmos.NewUint(1), BondAddress: "B"},
+		},
+	}
+	counts = map[string]int{"A": 2, "G": 2}
+	rebalanceGroups(groups, counts)
+	rebalanceGroups(groups, counts)
+	c.Assert(groups, DeepEquals, expected)
+
+	// rebalance with 4 groups, skip multi-node operators, two swaps, one swap valid
+	groups = []NodeAccounts{
+		{
+			{Bond: cosmos.NewUint(1), BondAddress: "A"},
+			{Bond: cosmos.NewUint(1), BondAddress: "B"},
+		},
+		{
+			{Bond: cosmos.NewUint(2), BondAddress: "C"},
+			{Bond: cosmos.NewUint(2), BondAddress: "D"},
+		},
+		{
+			{Bond: cosmos.NewUint(3), BondAddress: "E"},
+			{Bond: cosmos.NewUint(3), BondAddress: "F"},
+		},
+		{
+			{Bond: cosmos.NewUint(4), BondAddress: "G"},
+			{Bond: cosmos.NewUint(4), BondAddress: "H"},
+		},
+	}
+	expected = []NodeAccounts{
+		{
+			{Bond: cosmos.NewUint(1), BondAddress: "A"},
+			{Bond: cosmos.NewUint(4), BondAddress: "H"},
+		},
+		{
+			{Bond: cosmos.NewUint(2), BondAddress: "C"},
+			{Bond: cosmos.NewUint(2), BondAddress: "D"},
+		},
+		{
+			{Bond: cosmos.NewUint(3), BondAddress: "E"},
+			{Bond: cosmos.NewUint(3), BondAddress: "F"},
+		},
+		{
+			{Bond: cosmos.NewUint(4), BondAddress: "G"},
+			{Bond: cosmos.NewUint(1), BondAddress: "B"},
+		},
+	}
+	counts = map[string]int{"A": 2, "G": 2, "C": 2, "D": 2}
+	rebalanceGroups(groups, counts)
+	rebalanceGroups(groups, counts)
+	c.Assert(groups, DeepEquals, expected)
 }

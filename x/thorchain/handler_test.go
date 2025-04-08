@@ -1,6 +1,7 @@
 package thorchain
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -102,7 +103,12 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 	err := ms.LoadLatestVersion()
 	c.Assert(err, IsNil)
 
-	ctx := cosmos.NewContext(ms, tmproto.Header{ChainID: "thorchain"}, false, logger())
+	lastCommitHashStr := "BA74ABABDBD5DC922738F2B23E47AF18E08C95DC54EACCA26ED1D03879D673F6"
+	lastCommitHash, err := hex.DecodeString(lastCommitHashStr)
+	c.Assert(err, IsNil)
+
+	header := tmproto.Header{ChainID: "thorchain", LastCommitHash: lastCommitHash}
+	ctx := cosmos.NewContext(ms, header, false, logger())
 	ctx = ctx.WithBlockHeight(18)
 	encodingConfig := testutil.MakeTestEncodingConfig(
 		bank.AppModuleBasic{},
@@ -220,7 +226,12 @@ func setupKeeperForTest(c *C) (cosmos.Context, keeper.Keeper) {
 	err := ms.LoadLatestVersion()
 	c.Assert(err, IsNil)
 
-	ctx := cosmos.NewContext(ms, tmproto.Header{ChainID: "thorchain"}, false, logger())
+	lastCommitHashStr := "BA74ABABDBD5DC922738F2B23E47AF18E08C95DC54EACCA26ED1D03879D673F6"
+	lastCommitHash, err := hex.DecodeString(lastCommitHashStr)
+	c.Assert(err, IsNil)
+
+	header := tmproto.Header{ChainID: "thorchain", LastCommitHash: lastCommitHash}
+	ctx := cosmos.NewContext(ms, header, false, logger())
 	ctx = ctx.WithBlockHeight(18)
 
 	encodingConfig := testutil.MakeTestEncodingConfig(
