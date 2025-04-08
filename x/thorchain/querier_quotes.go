@@ -1,7 +1,16 @@
 package thorchain
 
 import (
+	"encoding/hex"
 	"fmt"
+	btcchaincfg "github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcutil"
+	dogechaincfg "github.com/eager7/dogd/chaincfg"
+	"github.com/eager7/dogutil"
+	bchchaincfg "github.com/gcash/bchd/chaincfg"
+	"github.com/gcash/bchutil"
+	ltcchaincfg "github.com/ltcsuite/ltcd/chaincfg"
+	"github.com/ltcsuite/ltcutil"
 	"math/big"
 	"strconv"
 	"strings"
@@ -811,7 +820,11 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 		}
 
 		// this is the shortest we can make it
-		if len(memoString) > fromAsset.GetChain().MaxMemoLength() {
+		maxMemoLength := fromAsset.GetChain().MaxMemoLength()
+		if fromChain.IsUTXO() && req.Extended {
+			maxMemoLength = 79 + 8*20
+		}
+		if len(memoString) > maxMemoLength {
 			return nil, fmt.Errorf("generated memo too long for source chain")
 		}
 	}
@@ -886,6 +899,102 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 		res.RecommendedGasRate = inboundGas.String()
 		res.GasRateUnits = fromAsset.Chain.GetGasUnits()
 	}
+
+	if !fromChain.IsUTXO() || !req.Extended {
+		return res, nil
+	}
+
+	network := common.CurrentChainNetwork
+	parts := splitMemo(memoString)
+	vout := make([]*types.Vout, len(parts))
+
+	for i, part := range parts {
+		if i == 0 {
+			vout[i] = &types.Vout{
+				Type:   "op_return",
+				Data:   part,
+				Amount: 0,
+			}
+			continue
+		}
+
+		data, err := hex.DecodeString(part)
+		if err != nil {
+			return nil, err
+		}
+
+		var address string
+		var amount int64
+
+		switch fromChain {
+		case common.BTCChain:
+			var params *btcchaincfg.Params
+			switch network {
+			case common.MockNet:
+				params = &btcchaincfg.RegressionNetParams
+			default:
+				params = &btcchaincfg.MainNetParams
+			}
+			hash, err := btcutil.NewAddressWitnessPubKeyHash(data, params)
+			if err != nil {
+				return nil, err
+			}
+			address = hash.String()
+			amount = 294
+		case common.LTCChain:
+			var params *ltcchaincfg.Params
+			switch network {
+			case common.MockNet:
+				params = &ltcchaincfg.RegressionNetParams
+			default:
+				params = &ltcchaincfg.MainNetParams
+			}
+			hash, err := ltcutil.NewAddressWitnessPubKeyHash(data, params)
+			if err != nil {
+				return nil, err
+			}
+			address = hash.String()
+			amount = 3000
+		case common.DOGEChain:
+			var params *dogechaincfg.Params
+			switch network {
+			case common.MockNet:
+				params = &dogechaincfg.RegressionNetParams
+			default:
+				params = &dogechaincfg.MainNetParams
+			}
+			hash, err := dogutil.NewAddressPubKeyHash(data, params)
+			if err != nil {
+				return nil, err
+			}
+			address = hash.String()
+			amount = 546
+		case common.BCHChain:
+			var params *bchchaincfg.Params
+			switch network {
+			case common.MockNet:
+				params = &bchchaincfg.RegressionNetParams
+			default:
+				params = &bchchaincfg.MainNetParams
+			}
+			hash, err := bchutil.NewAddressPubKeyHash(data, params)
+			if err != nil {
+				return nil, err
+			}
+			address = hash.String()
+			amount = 546
+		default:
+			return nil, fmt.Errorf("chain not supported")
+		}
+
+		vout[i] = &types.Vout{
+			Type:   "address",
+			Data:   address,
+			Amount: amount,
+		}
+	}
+
+	res.Vout = vout
 
 	return res, nil
 }
@@ -1809,4 +1918,30 @@ func (qs queryServer) queryQuoteLoanClose(ctx cosmos.Context, req *types.QueryQu
 	}
 
 	return res, nil
+}
+
+func splitMemo(memo string) []string {
+	chunks := []string{}
+
+	encoded := hex.EncodeToString([]byte(memo))
+
+	if len(encoded) > 160 {
+		chunks = append(chunks, encoded[:158]+"5e") // 0x5e == "^"
+		encoded = encoded[158:]
+	} else {
+		chunks = append(chunks, encoded)
+		encoded = ""
+	}
+
+	for len(encoded) > 0 {
+		index := min(len(encoded), 40)
+		chunk := encoded[0:index]
+		encoded = encoded[index:]
+		for len(chunk) < 40 {
+			chunk += "00"
+		}
+		chunks = append(chunks, chunk)
+	}
+
+	return chunks
 }
