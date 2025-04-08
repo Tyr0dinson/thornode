@@ -1011,14 +1011,9 @@ func atTVLCap(ctx cosmos.Context, coins common.Coins, mgr Manager) bool {
 	}
 
 	tvlCapBasisPoints := mgr.Keeper().GetConfigInt64(ctx, constants.TVLCapBasisPoints)
-	security := cosmos.ZeroUint()
+	security := getEffectiveSecurityBond(nodeAccounts)
 	if tvlCapBasisPoints > 0 {
-		for _, na := range nodeAccounts {
-			security = security.Add(na.Bond)
-		}
 		security = common.GetUncappedShare(cosmos.NewUint(uint64(tvlCapBasisPoints)), cosmos.NewUint(constants.MaxBasisPts), security)
-	} else {
-		security = getEffectiveSecurityBond(nodeAccounts)
 	}
 
 	if totalRuneValue.GT(security) {
