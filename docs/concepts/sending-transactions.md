@@ -85,7 +85,7 @@ Override randomised VOUT ordering; THORChain requires specific output ordering. 
 
 ### EVM Chains
 
-{{#embed https://gitlab.com/thorchain/thornode/-/blob/develop/chain/ethereum/contracts/THORChain_Router.sol }}
+[Router Contract](https://gitlab.com/thorchain/thornode/-/blob/develop/chain/ethereum/contracts/THORChain_Router.sol)
 
 ```go
 depositWithExpiry(vault, asset, amount, memo, expiry)
@@ -184,7 +184,7 @@ If you are using Javascript, [CosmJS](https://github.com/cosmos/cosmjs) is the r
      const client = await SigningStargateClient.connectWithSigner(
        "https://rpc.ninerealms.com/",
        signer,
-       { registry: myRegistry }
+       { registry: myRegistry },
      );
 
      const memo = `=:ETH/ETH:${signerAddr}`; // THORChain memo
@@ -218,7 +218,7 @@ If you are using Javascript, [CosmJS](https://github.com/cosmos/cosmjs) is the r
        signerAddr,
        [depositMsg],
        fee,
-       memo
+       memo,
      );
      console.log("response: ", response);
 
