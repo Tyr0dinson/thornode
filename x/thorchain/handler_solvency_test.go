@@ -154,7 +154,7 @@ func (s *HandlerSolvencyTestSuite) TestObservingSlashing(c *C) {
 	observeFlex := mgr.GetConstants().GetInt64Value(constants.ObservationDelayFlexibility)
 	c.Assert(observeSlashPoints, Equals, int64(1))
 	c.Assert(lackOfObservationPenalty, Equals, int64(2))
-	c.Assert(observeFlex, Equals, int64(10))
+	c.Assert(observeFlex, Equals, int64(30))
 
 	asgardVault := GetRandomVault()
 	asgardVault.Chains = []string{common.ETHChain.String()}

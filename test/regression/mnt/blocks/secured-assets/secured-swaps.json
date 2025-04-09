@@ -35,19 +35,19 @@
     "begin_block_events": [],
     "end_block_events": [
       {
-        "amount": "546043rune",
+        "amount": "182014rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "546043rune",
+        "amount": "182014rune",
         "mode": "EndBlock",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "546043rune",
+        "amount": "182014rune",
         "mode": "EndBlock",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -59,19 +59,19 @@
         "type": "message"
       },
       {
-        "amount": "546043rune",
+        "amount": "182014rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "546043rune",
+        "amount": "182014rune",
         "mode": "EndBlock",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "546043rune",
+        "amount": "182014rune",
         "mode": "EndBlock",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -83,19 +83,19 @@
         "type": "message"
       },
       {
-        "amount": "17757rune",
+        "amount": "5919rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "17757rune",
+        "amount": "5919rune",
         "mode": "EndBlock",
         "receiver": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "type": "coin_received"
       },
       {
-        "amount": "17757rune",
+        "amount": "5919rune",
         "mode": "EndBlock",
         "recipient": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -107,9 +107,9 @@
         "type": "message"
       },
       {
-        "BTC.BTC": "546043",
-        "ETH.ETH": "546043",
-        "bond_reward": "17757",
+        "BTC.BTC": "182014",
+        "ETH.ETH": "182014",
+        "bond_reward": "5919",
         "dev_fund_reward": "0",
         "income_burn": "0",
         "mode": "EndBlock",
@@ -147,7 +147,7 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "5A55D4B05725A1F1E0C748A6CFEA6F7DD1B8BDC63AED39F7C1D0E1EEB0C1E6B5",
+      "app_hash": "B6C2DB9F4BFF8EEFB4DC439DE67EE6ABA42538FC131198E5C4CCB7908A51157B",
       "last_results_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
@@ -155,19 +155,19 @@
     "begin_block_events": [],
     "end_block_events": [
       {
-        "amount": "546042rune",
+        "amount": "182014rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "546042rune",
+        "amount": "182014rune",
         "mode": "EndBlock",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "546042rune",
+        "amount": "182014rune",
         "mode": "EndBlock",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -179,19 +179,19 @@
         "type": "message"
       },
       {
-        "amount": "546042rune",
+        "amount": "182014rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "546042rune",
+        "amount": "182014rune",
         "mode": "EndBlock",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "546042rune",
+        "amount": "182014rune",
         "mode": "EndBlock",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -203,19 +203,19 @@
         "type": "message"
       },
       {
-        "amount": "17758rune",
+        "amount": "5919rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "17758rune",
+        "amount": "5919rune",
         "mode": "EndBlock",
         "receiver": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "type": "coin_received"
       },
       {
-        "amount": "17758rune",
+        "amount": "5919rune",
         "mode": "EndBlock",
         "recipient": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -227,9 +227,9 @@
         "type": "message"
       },
       {
-        "BTC.BTC": "546042",
-        "ETH.ETH": "546042",
-        "bond_reward": "17758",
+        "BTC.BTC": "182014",
+        "ETH.ETH": "182014",
+        "bond_reward": "5919",
         "dev_fund_reward": "0",
         "income_burn": "0",
         "mode": "EndBlock",
@@ -267,7 +267,7 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "DA4507FF4517B9B1CE2F05911FEF33CF4C288321F06B9B2ED3E976E13164B0CF",
+      "app_hash": "F704C885BF32327D1B28CB54F4847CF13FC149A472887B33B0295835E9AAC4FF",
       "last_results_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
@@ -275,19 +275,19 @@
     "begin_block_events": [],
     "end_block_events": [
       {
-        "amount": "546042rune",
+        "amount": "182014rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "546042rune",
+        "amount": "182014rune",
         "mode": "EndBlock",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "546042rune",
+        "amount": "182014rune",
         "mode": "EndBlock",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -299,19 +299,19 @@
         "type": "message"
       },
       {
-        "amount": "546042rune",
+        "amount": "182014rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "546042rune",
+        "amount": "182014rune",
         "mode": "EndBlock",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "546042rune",
+        "amount": "182014rune",
         "mode": "EndBlock",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -323,19 +323,19 @@
         "type": "message"
       },
       {
-        "amount": "17758rune",
+        "amount": "5919rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "17758rune",
+        "amount": "5919rune",
         "mode": "EndBlock",
         "receiver": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "type": "coin_received"
       },
       {
-        "amount": "17758rune",
+        "amount": "5919rune",
         "mode": "EndBlock",
         "recipient": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -347,9 +347,9 @@
         "type": "message"
       },
       {
-        "BTC.BTC": "546042",
-        "ETH.ETH": "546042",
-        "bond_reward": "17758",
+        "BTC.BTC": "182014",
+        "ETH.ETH": "182014",
+        "bond_reward": "5919",
         "dev_fund_reward": "0",
         "income_burn": "0",
         "mode": "EndBlock",
@@ -833,7 +833,7 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "D9A56BFDC9BBCE2E03F569A9F7DE31A1F2A2B5F3F82823012D12B4889B156033",
+      "app_hash": "E1383107631ED6B2CB9C95EA9689D6854170A76169F052B3D8A8777628E2252A",
       "last_results_hash": "787467CE86591AB3A272655B29F3C83A8A8ED068DA4F07232162D091BD9CB305",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
@@ -886,19 +886,19 @@
         "type": "secured_asset_withdraw"
       },
       {
-        "amount": "226761084rune",
+        "amount": "226758607rune",
         "mode": "EndBlock",
         "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_spent"
       },
       {
-        "amount": "226761084rune",
+        "amount": "226758607rune",
         "mode": "EndBlock",
         "receiver": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_received"
       },
       {
-        "amount": "226761084rune",
+        "amount": "226758607rune",
         "mode": "EndBlock",
         "recipient": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
@@ -910,19 +910,19 @@
         "type": "message"
       },
       {
-        "amount": "205275001rune",
+        "amount": "205272759rune",
         "mode": "EndBlock",
         "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_spent"
       },
       {
-        "amount": "205275001rune",
+        "amount": "205272759rune",
         "mode": "EndBlock",
         "receiver": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_received"
       },
       {
-        "amount": "205275001rune",
+        "amount": "205272759rune",
         "mode": "EndBlock",
         "recipient": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
@@ -981,11 +981,11 @@
       {
         "chain": "THOR",
         "coin": "5000000 BTC-BTC",
-        "emit_asset": "4535221683 THOR.RUNE",
+        "emit_asset": "4535172156 THOR.RUNE",
         "from": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
         "id": "9A1D9A41412E5EC93CE238C8A603A641F352CDD1039528C6EE3351BE669370A5",
-        "liquidity_fee": "226761084",
-        "liquidity_fee_in_rune": "226761084",
+        "liquidity_fee": "226758607",
+        "liquidity_fee_in_rune": "226758607",
         "memo": "=:ETH-ETH:tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
         "mode": "EndBlock",
         "pool": "BTC.BTC",
@@ -999,12 +999,12 @@
       },
       {
         "chain": "THOR",
-        "coin": "4535221683 THOR.RUNE",
+        "coin": "4535172156 THOR.RUNE",
         "emit_asset": "41501780 ETH-ETH",
         "from": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
         "id": "9A1D9A41412E5EC93CE238C8A603A641F352CDD1039528C6EE3351BE669370A5",
         "liquidity_fee": "1882166",
-        "liquidity_fee_in_rune": "205275001",
+        "liquidity_fee_in_rune": "205272759",
         "memo": "=:ETH-ETH:tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
         "mode": "EndBlock",
         "pool": "ETH.ETH",
@@ -1017,19 +1017,19 @@
         "type": "swap"
       },
       {
-        "amount": "223713910rune",
+        "amount": "223329362rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "223713910rune",
+        "amount": "223329362rune",
         "mode": "EndBlock",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "223713910rune",
+        "amount": "223329362rune",
         "mode": "EndBlock",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -1041,19 +1041,19 @@
         "type": "message"
       },
       {
-        "amount": "202516553rune",
+        "amount": "202168442rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "202516553rune",
+        "amount": "202168442rune",
         "mode": "EndBlock",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "202516553rune",
+        "amount": "202168442rune",
         "mode": "EndBlock",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -1065,19 +1065,19 @@
         "type": "message"
       },
       {
-        "amount": "6915478rune",
+        "amount": "6903514rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "6915478rune",
+        "amount": "6903514rune",
         "mode": "EndBlock",
         "receiver": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "type": "coin_received"
       },
       {
-        "amount": "6915478rune",
+        "amount": "6903514rune",
         "mode": "EndBlock",
         "recipient": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -1089,9 +1089,9 @@
         "type": "message"
       },
       {
-        "BTC.BTC": "223713910",
-        "ETH.ETH": "202516553",
-        "bond_reward": "6915478",
+        "BTC.BTC": "223329362",
+        "ETH.ETH": "202168442",
+        "bond_reward": "6903514",
         "dev_fund_reward": "0",
         "income_burn": "0",
         "mode": "EndBlock",
@@ -1223,7 +1223,7 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "AD0EA24489EF7AA9C273DB822F9CF2584CA7E7D62B94DDECD198009E9A52C42F",
+      "app_hash": "62818D97138DC31AE71D7B9921ACA0C97664A1426AF83D211174E87849BFDD83",
       "last_results_hash": "3C14A68DA04CB34054E487984A935E0CFB30DB99CDB5192BE3EC52D489AF13A8",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
@@ -1276,19 +1276,19 @@
         "type": "secured_asset_withdraw"
       },
       {
-        "amount": "46940215rune",
+        "amount": "46939547rune",
         "mode": "EndBlock",
         "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_spent"
       },
       {
-        "amount": "46940215rune",
+        "amount": "46939547rune",
         "mode": "EndBlock",
         "receiver": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_received"
       },
       {
-        "amount": "46940215rune",
+        "amount": "46939547rune",
         "mode": "EndBlock",
         "recipient": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
@@ -1300,19 +1300,19 @@
         "type": "message"
       },
       {
-        "amount": "49219758rune",
+        "amount": "49219025rune",
         "mode": "EndBlock",
         "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_spent"
       },
       {
-        "amount": "49219758rune",
+        "amount": "49219025rune",
         "mode": "EndBlock",
         "receiver": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_received"
       },
       {
-        "amount": "49219758rune",
+        "amount": "49219025rune",
         "mode": "EndBlock",
         "recipient": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
@@ -1324,31 +1324,31 @@
         "type": "message"
       },
       {
-        "amount": "2280054btc-btc",
+        "amount": "2280055btc-btc",
         "mode": "EndBlock",
         "receiver": "tthor1v8ppstuf6e3x0r4glqc68d5jqcs2tf38ulmsrp",
         "type": "coin_received"
       },
       {
-        "amount": "2280054btc-btc",
+        "amount": "2280055btc-btc",
         "minter": "tthor1v8ppstuf6e3x0r4glqc68d5jqcs2tf38ulmsrp",
         "mode": "EndBlock",
         "type": "coinbase"
       },
       {
-        "amount": "2280054btc-btc",
+        "amount": "2280055btc-btc",
         "mode": "EndBlock",
         "spender": "tthor1v8ppstuf6e3x0r4glqc68d5jqcs2tf38ulmsrp",
         "type": "coin_spent"
       },
       {
-        "amount": "2280054btc-btc",
+        "amount": "2280055btc-btc",
         "mode": "EndBlock",
         "receiver": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
         "type": "coin_received"
       },
       {
-        "amount": "2280054btc-btc",
+        "amount": "2280055btc-btc",
         "mode": "EndBlock",
         "recipient": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
         "sender": "tthor1v8ppstuf6e3x0r4glqc68d5jqcs2tf38ulmsrp",
@@ -1360,7 +1360,7 @@
         "type": "message"
       },
       {
-        "amount": "2280054",
+        "amount": "2280055",
         "asset": "BTC-BTC",
         "asset_address": "",
         "mode": "EndBlock",
@@ -1371,11 +1371,11 @@
       {
         "chain": "THOR",
         "coin": "20750890 ETH-ETH",
-        "emit_asset": "2168201587 THOR.RUNE",
+        "emit_asset": "2168170734 THOR.RUNE",
         "from": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
         "id": "9B9B0954A851FC3572984E35BDBF2598672D95868B5B17F096704065F21320F8",
-        "liquidity_fee": "46940215",
-        "liquidity_fee_in_rune": "46940215",
+        "liquidity_fee": "46939547",
+        "liquidity_fee_in_rune": "46939547",
         "memo": "=:BTC-BTC:tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
         "mode": "EndBlock",
         "pool": "ETH.ETH",
@@ -1389,12 +1389,12 @@
       },
       {
         "chain": "THOR",
-        "coin": "2168201587 THOR.RUNE",
-        "emit_asset": "2280054 BTC-BTC",
+        "coin": "2168170734 THOR.RUNE",
+        "emit_asset": "2280055 BTC-BTC",
         "from": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
         "id": "9B9B0954A851FC3572984E35BDBF2598672D95868B5B17F096704065F21320F8",
         "liquidity_fee": "51785",
-        "liquidity_fee_in_rune": "49219758",
+        "liquidity_fee_in_rune": "49219025",
         "memo": "=:BTC-BTC:tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
         "mode": "EndBlock",
         "pool": "BTC.BTC",
@@ -1407,19 +1407,19 @@
         "type": "swap"
       },
       {
-        "amount": "48991624rune",
+        "amount": "48618252rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "48991624rune",
+        "amount": "48618252rune",
         "mode": "EndBlock",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "48991624rune",
+        "amount": "48618252rune",
         "mode": "EndBlock",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -1431,19 +1431,19 @@
         "type": "message"
       },
       {
-        "amount": "46722646rune",
+        "amount": "46366597rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "46722646rune",
+        "amount": "46366597rune",
         "mode": "EndBlock",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "46722646rune",
+        "amount": "46366597rune",
         "mode": "EndBlock",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -1455,19 +1455,19 @@
         "type": "message"
       },
       {
-        "amount": "1555549rune",
+        "amount": "1543672rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "1555549rune",
+        "amount": "1543672rune",
         "mode": "EndBlock",
         "receiver": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "type": "coin_received"
       },
       {
-        "amount": "1555549rune",
+        "amount": "1543672rune",
         "mode": "EndBlock",
         "recipient": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -1479,9 +1479,9 @@
         "type": "message"
       },
       {
-        "BTC.BTC": "48991624",
-        "ETH.ETH": "46722646",
-        "bond_reward": "1555549",
+        "BTC.BTC": "48618252",
+        "ETH.ETH": "46366597",
+        "bond_reward": "1543672",
         "dev_fund_reward": "0",
         "income_burn": "0",
         "mode": "EndBlock",
@@ -1613,7 +1613,7 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "6E02E3E7A4B2FA6C205366F4DB9F42379C88BBA1E32B3B2897DD4DE81FC9C6C8",
+      "app_hash": "046859CB93412183B983D33FC7BCDFC46A30148A1290463781954E8DC5B34D92",
       "last_results_hash": "0B87F11E0153EBCE57558D0F8EE8B792828F36C414348F57E2E3660EEF517BB4",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
@@ -1666,19 +1666,19 @@
         "type": "secured_asset_withdraw"
       },
       {
-        "amount": "2842706rune",
+        "amount": "2842656rune",
         "mode": "EndBlock",
         "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_spent"
       },
       {
-        "amount": "2842706rune",
+        "amount": "2842656rune",
         "mode": "EndBlock",
         "receiver": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_received"
       },
       {
-        "amount": "2842706rune",
+        "amount": "2842656rune",
         "mode": "EndBlock",
         "recipient": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
@@ -1690,19 +1690,19 @@
         "type": "message"
       },
       {
-        "amount": "2949030rune",
+        "amount": "2948975rune",
         "mode": "EndBlock",
         "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_spent"
       },
       {
-        "amount": "2949030rune",
+        "amount": "2948975rune",
         "mode": "EndBlock",
         "receiver": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_received"
       },
       {
-        "amount": "2949030rune",
+        "amount": "2948975rune",
         "mode": "EndBlock",
         "recipient": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
@@ -1761,11 +1761,11 @@
       {
         "chain": "THOR",
         "coin": "5187722 ETH-ETH",
-        "emit_asset": "536597391 THOR.RUNE",
+        "emit_asset": "536587893 THOR.RUNE",
         "from": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
         "id": "0CD39E46EBB19F1AE91427887976BC52EE1C3D973C7B7C8E6C6FF705C69A2AB6",
-        "liquidity_fee": "2842706",
-        "liquidity_fee_in_rune": "2842706",
+        "liquidity_fee": "2842656",
+        "liquidity_fee_in_rune": "2842656",
         "memo": "=:BTC-BTC:tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr:0/1/0",
         "mode": "EndBlock",
         "pool": "ETH.ETH",
@@ -1779,12 +1779,12 @@
       },
       {
         "chain": "THOR",
-        "coin": "536597391 THOR.RUNE",
+        "coin": "536587893 THOR.RUNE",
         "emit_asset": "558410 BTC-BTC",
         "from": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
         "id": "0CD39E46EBB19F1AE91427887976BC52EE1C3D973C7B7C8E6C6FF705C69A2AB6",
         "liquidity_fee": "3069",
-        "liquidity_fee_in_rune": "2949030",
+        "liquidity_fee_in_rune": "2948975",
         "memo": "=:BTC-BTC:tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr:0/1/0",
         "mode": "EndBlock",
         "pool": "BTC.BTC",
@@ -1797,19 +1797,19 @@
         "type": "swap"
       },
       {
-        "amount": "3457915rune",
+        "amount": "3087150rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "3457915rune",
+        "amount": "3087150rune",
         "mode": "EndBlock",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "3457915rune",
+        "amount": "3087150rune",
         "mode": "EndBlock",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -1821,19 +1821,19 @@
         "type": "message"
       },
       {
-        "amount": "3333244rune",
+        "amount": "2975850rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "3333244rune",
+        "amount": "2975850rune",
         "mode": "EndBlock",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "3333244rune",
+        "amount": "2975850rune",
         "mode": "EndBlock",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -1845,19 +1845,19 @@
         "type": "message"
       },
       {
-        "amount": "110420rune",
+        "amount": "98579rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "110420rune",
+        "amount": "98579rune",
         "mode": "EndBlock",
         "receiver": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "type": "coin_received"
       },
       {
-        "amount": "110420rune",
+        "amount": "98579rune",
         "mode": "EndBlock",
         "recipient": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -1869,9 +1869,9 @@
         "type": "message"
       },
       {
-        "BTC.BTC": "3457915",
-        "ETH.ETH": "3333244",
-        "bond_reward": "110420",
+        "BTC.BTC": "3087150",
+        "ETH.ETH": "2975850",
+        "bond_reward": "98579",
         "dev_fund_reward": "0",
         "income_burn": "0",
         "mode": "EndBlock",
@@ -2003,7 +2003,7 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "9B252360897988720F9BE13CE991E2E8806E900C259DB3271655B3B5F368211E",
+      "app_hash": "874E1F310160BF7B391A5EDB6B13E9F565910AD4C24C9611AF47682A7F95B1A5",
       "last_results_hash": "696CEFD7D764676A417390957DE78C47E095026474DD84117A4294D271ACEAB8",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
@@ -2056,19 +2056,19 @@
         "type": "secured_asset_withdraw"
       },
       {
-        "amount": "2798249rune",
+        "amount": "2798189rune",
         "mode": "EndBlock",
         "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_spent"
       },
       {
-        "amount": "2798249rune",
+        "amount": "2798189rune",
         "mode": "EndBlock",
         "receiver": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_received"
       },
       {
-        "amount": "2798249rune",
+        "amount": "2798189rune",
         "mode": "EndBlock",
         "recipient": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
@@ -2080,19 +2080,19 @@
         "type": "message"
       },
       {
-        "amount": "2872161rune",
+        "amount": "2872097rune",
         "mode": "EndBlock",
         "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_spent"
       },
       {
-        "amount": "2872161rune",
+        "amount": "2872097rune",
         "mode": "EndBlock",
         "receiver": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_received"
       },
       {
-        "amount": "2872161rune",
+        "amount": "2872097rune",
         "mode": "EndBlock",
         "recipient": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
@@ -2104,31 +2104,31 @@
         "type": "message"
       },
       {
-        "amount": "546672btc-btc",
+        "amount": "546673btc-btc",
         "mode": "EndBlock",
         "receiver": "tthor1v8ppstuf6e3x0r4glqc68d5jqcs2tf38ulmsrp",
         "type": "coin_received"
       },
       {
-        "amount": "546672btc-btc",
+        "amount": "546673btc-btc",
         "minter": "tthor1v8ppstuf6e3x0r4glqc68d5jqcs2tf38ulmsrp",
         "mode": "EndBlock",
         "type": "coinbase"
       },
       {
-        "amount": "546672btc-btc",
+        "amount": "546673btc-btc",
         "mode": "EndBlock",
         "spender": "tthor1v8ppstuf6e3x0r4glqc68d5jqcs2tf38ulmsrp",
         "type": "coin_spent"
       },
       {
-        "amount": "546672btc-btc",
+        "amount": "546673btc-btc",
         "mode": "EndBlock",
         "receiver": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
         "type": "coin_received"
       },
       {
-        "amount": "546672btc-btc",
+        "amount": "546673btc-btc",
         "mode": "EndBlock",
         "recipient": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
         "sender": "tthor1v8ppstuf6e3x0r4glqc68d5jqcs2tf38ulmsrp",
@@ -2140,7 +2140,7 @@
         "type": "message"
       },
       {
-        "amount": "546672",
+        "amount": "546673",
         "asset": "BTC-BTC",
         "asset_address": "",
         "mode": "EndBlock",
@@ -2151,11 +2151,11 @@
       {
         "chain": "THOR",
         "coin": "5187722 ETH-ETH",
-        "emit_asset": "531003712 THOR.RUNE",
+        "emit_asset": "530992449 THOR.RUNE",
         "from": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
         "id": "0CD39E46EBB19F1AE91427887976BC52EE1C3D973C7B7C8E6C6FF705C69A2AB6",
-        "liquidity_fee": "2798249",
-        "liquidity_fee_in_rune": "2798249",
+        "liquidity_fee": "2798189",
+        "liquidity_fee_in_rune": "2798189",
         "memo": "=:BTC-BTC:tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr:0/1/0",
         "mode": "EndBlock",
         "pool": "ETH.ETH",
@@ -2169,12 +2169,12 @@
       },
       {
         "chain": "THOR",
-        "coin": "531003712 THOR.RUNE",
-        "emit_asset": "546672 BTC-BTC",
+        "coin": "530992449 THOR.RUNE",
+        "emit_asset": "546673 BTC-BTC",
         "from": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
         "id": "0CD39E46EBB19F1AE91427887976BC52EE1C3D973C7B7C8E6C6FF705C69A2AB6",
         "liquidity_fee": "2957",
-        "liquidity_fee_in_rune": "2872161",
+        "liquidity_fee_in_rune": "2872097",
         "memo": "=:BTC-BTC:tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr:0/1/0",
         "mode": "EndBlock",
         "pool": "BTC.BTC",
@@ -2187,19 +2187,19 @@
         "type": "swap"
       },
       {
-        "amount": "3379369rune",
+        "amount": "3010533rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "3379369rune",
+        "amount": "3010533rune",
         "mode": "EndBlock",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "3379369rune",
+        "amount": "3010533rune",
         "mode": "EndBlock",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -2211,19 +2211,19 @@
         "type": "message"
       },
       {
-        "amount": "3292404rune",
+        "amount": "2933063rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "3292404rune",
+        "amount": "2933063rune",
         "mode": "EndBlock",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "3292404rune",
+        "amount": "2933063rune",
         "mode": "EndBlock",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -2235,19 +2235,19 @@
         "type": "message"
       },
       {
-        "amount": "108480rune",
+        "amount": "96638rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "108480rune",
+        "amount": "96638rune",
         "mode": "EndBlock",
         "receiver": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "type": "coin_received"
       },
       {
-        "amount": "108480rune",
+        "amount": "96638rune",
         "mode": "EndBlock",
         "recipient": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -2259,9 +2259,9 @@
         "type": "message"
       },
       {
-        "BTC.BTC": "3379369",
-        "ETH.ETH": "3292404",
-        "bond_reward": "108480",
+        "BTC.BTC": "3010533",
+        "ETH.ETH": "2933063",
+        "bond_reward": "96638",
         "dev_fund_reward": "0",
         "income_burn": "0",
         "mode": "EndBlock",
@@ -2299,7 +2299,7 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "A59EA119C689F45F32E82F17B76B0EFC26C1B3DACEC8FD74910D9E409A65ADEE",
+      "app_hash": "9C9308B0A50F438FF721538E6BA127B6327B52C02A9E53C7E6BB069BB95751CA",
       "last_results_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
@@ -2352,19 +2352,19 @@
         "type": "secured_asset_withdraw"
       },
       {
-        "amount": "2754714rune",
+        "amount": "2754646rune",
         "mode": "EndBlock",
         "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_spent"
       },
       {
-        "amount": "2754714rune",
+        "amount": "2754646rune",
         "mode": "EndBlock",
         "receiver": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_received"
       },
       {
-        "amount": "2754714rune",
+        "amount": "2754646rune",
         "mode": "EndBlock",
         "recipient": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
@@ -2376,19 +2376,19 @@
         "type": "message"
       },
       {
-        "amount": "2797722rune",
+        "amount": "2797649rune",
         "mode": "EndBlock",
         "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_spent"
       },
       {
-        "amount": "2797722rune",
+        "amount": "2797649rune",
         "mode": "EndBlock",
         "receiver": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_received"
       },
       {
-        "amount": "2797722rune",
+        "amount": "2797649rune",
         "mode": "EndBlock",
         "recipient": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
@@ -2400,31 +2400,31 @@
         "type": "message"
       },
       {
-        "amount": "535301btc-btc",
+        "amount": "535302btc-btc",
         "mode": "EndBlock",
         "receiver": "tthor1v8ppstuf6e3x0r4glqc68d5jqcs2tf38ulmsrp",
         "type": "coin_received"
       },
       {
-        "amount": "535301btc-btc",
+        "amount": "535302btc-btc",
         "minter": "tthor1v8ppstuf6e3x0r4glqc68d5jqcs2tf38ulmsrp",
         "mode": "EndBlock",
         "type": "coinbase"
       },
       {
-        "amount": "535301btc-btc",
+        "amount": "535302btc-btc",
         "mode": "EndBlock",
         "spender": "tthor1v8ppstuf6e3x0r4glqc68d5jqcs2tf38ulmsrp",
         "type": "coin_spent"
       },
       {
-        "amount": "535301btc-btc",
+        "amount": "535302btc-btc",
         "mode": "EndBlock",
         "receiver": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
         "type": "coin_received"
       },
       {
-        "amount": "535301btc-btc",
+        "amount": "535302btc-btc",
         "mode": "EndBlock",
         "recipient": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
         "sender": "tthor1v8ppstuf6e3x0r4glqc68d5jqcs2tf38ulmsrp",
@@ -2436,7 +2436,7 @@
         "type": "message"
       },
       {
-        "amount": "535301",
+        "amount": "535302",
         "asset": "BTC-BTC",
         "asset_address": "",
         "mode": "EndBlock",
@@ -2447,11 +2447,11 @@
       {
         "chain": "THOR",
         "coin": "5187722 ETH-ETH",
-        "emit_asset": "525497102 THOR.RUNE",
+        "emit_asset": "525484092 THOR.RUNE",
         "from": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
         "id": "0CD39E46EBB19F1AE91427887976BC52EE1C3D973C7B7C8E6C6FF705C69A2AB6",
-        "liquidity_fee": "2754714",
-        "liquidity_fee_in_rune": "2754714",
+        "liquidity_fee": "2754646",
+        "liquidity_fee_in_rune": "2754646",
         "memo": "=:BTC-BTC:tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr:0/1/0",
         "mode": "EndBlock",
         "pool": "ETH.ETH",
@@ -2465,12 +2465,12 @@
       },
       {
         "chain": "THOR",
-        "coin": "525497102 THOR.RUNE",
-        "emit_asset": "535301 BTC-BTC",
+        "coin": "525484092 THOR.RUNE",
+        "emit_asset": "535302 BTC-BTC",
         "from": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
         "id": "0CD39E46EBB19F1AE91427887976BC52EE1C3D973C7B7C8E6C6FF705C69A2AB6",
         "liquidity_fee": "2850",
-        "liquidity_fee_in_rune": "2797722",
+        "liquidity_fee_in_rune": "2797649",
         "memo": "=:BTC-BTC:tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr:0/1/0",
         "mode": "EndBlock",
         "pool": "BTC.BTC",
@@ -2483,19 +2483,19 @@
         "type": "swap"
       },
       {
-        "amount": "3303232rune",
+        "amount": "2936314rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "3303232rune",
+        "amount": "2936314rune",
         "mode": "EndBlock",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "3303232rune",
+        "amount": "2936314rune",
         "mode": "EndBlock",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -2507,19 +2507,19 @@
         "type": "message"
       },
       {
-        "amount": "3252454rune",
+        "amount": "2891179rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "3252454rune",
+        "amount": "2891179rune",
         "mode": "EndBlock",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "3252454rune",
+        "amount": "2891179rune",
         "mode": "EndBlock",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -2531,19 +2531,19 @@
         "type": "message"
       },
       {
-        "amount": "106593rune",
+        "amount": "94750rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "106593rune",
+        "amount": "94750rune",
         "mode": "EndBlock",
         "receiver": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "type": "coin_received"
       },
       {
-        "amount": "106593rune",
+        "amount": "94750rune",
         "mode": "EndBlock",
         "recipient": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -2555,9 +2555,9 @@
         "type": "message"
       },
       {
-        "BTC.BTC": "3303232",
-        "ETH.ETH": "3252454",
-        "bond_reward": "106593",
+        "BTC.BTC": "2936314",
+        "ETH.ETH": "2891179",
+        "bond_reward": "94750",
         "dev_fund_reward": "0",
         "income_burn": "0",
         "mode": "EndBlock",
@@ -2595,7 +2595,7 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "F99948D22DF4AF23D9CFF63BFA6731484C99F7661AD31E259407FD2FECFD4567",
+      "app_hash": "5FEF6173D99CF60C873A57363B7865DC70A1E6517E999C0FB922357B254C2AC5",
       "last_results_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
@@ -2648,19 +2648,19 @@
         "type": "secured_asset_withdraw"
       },
       {
-        "amount": "2712080rune",
+        "amount": "2712003rune",
         "mode": "EndBlock",
         "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_spent"
       },
       {
-        "amount": "2712080rune",
+        "amount": "2712003rune",
         "mode": "EndBlock",
         "receiver": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_received"
       },
       {
-        "amount": "2712080rune",
+        "amount": "2712003rune",
         "mode": "EndBlock",
         "recipient": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
@@ -2672,19 +2672,19 @@
         "type": "message"
       },
       {
-        "amount": "2724893rune",
+        "amount": "2724811rune",
         "mode": "EndBlock",
         "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_spent"
       },
       {
-        "amount": "2724893rune",
+        "amount": "2724811rune",
         "mode": "EndBlock",
         "receiver": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_received"
       },
       {
-        "amount": "2724893rune",
+        "amount": "2724811rune",
         "mode": "EndBlock",
         "recipient": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
@@ -2743,11 +2743,11 @@
       {
         "chain": "THOR",
         "coin": "5187724 ETH-ETH",
-        "emit_asset": "520075962 THOR.RUNE",
+        "emit_asset": "520061223 THOR.RUNE",
         "from": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
         "id": "0CD39E46EBB19F1AE91427887976BC52EE1C3D973C7B7C8E6C6FF705C69A2AB6",
-        "liquidity_fee": "2712080",
-        "liquidity_fee_in_rune": "2712080",
+        "liquidity_fee": "2712003",
+        "liquidity_fee_in_rune": "2712003",
         "memo": "=:BTC-BTC:tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr:0/1/0",
         "mode": "EndBlock",
         "pool": "ETH.ETH",
@@ -2761,12 +2761,12 @@
       },
       {
         "chain": "THOR",
-        "coin": "520075962 THOR.RUNE",
+        "coin": "520061223 THOR.RUNE",
         "emit_asset": "524281 BTC-BTC",
         "from": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
         "id": "0CD39E46EBB19F1AE91427887976BC52EE1C3D973C7B7C8E6C6FF705C69A2AB6",
         "liquidity_fee": "2747",
-        "liquidity_fee_in_rune": "2724893",
+        "liquidity_fee_in_rune": "2724811",
         "memo": "=:BTC-BTC:tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr:0/1/0",
         "mode": "EndBlock",
         "pool": "BTC.BTC",
@@ -2787,25 +2787,25 @@
         "interval": "1",
         "last_height": "9",
         "mode": "EndBlock",
-        "out": "2164664 BTC-BTC",
+        "out": "2164666 BTC-BTC",
         "quantity": "4",
         "tx_id": "0CD39E46EBB19F1AE91427887976BC52EE1C3D973C7B7C8E6C6FF705C69A2AB6",
         "type": "streaming_swap"
       },
       {
-        "amount": "3228626rune",
+        "amount": "2863660rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "3228626rune",
+        "amount": "2863660rune",
         "mode": "EndBlock",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "3228626rune",
+        "amount": "2863660rune",
         "mode": "EndBlock",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -2817,19 +2817,19 @@
         "type": "message"
       },
       {
-        "amount": "3213444rune",
+        "amount": "2850199rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "3213444rune",
+        "amount": "2850199rune",
         "mode": "EndBlock",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "3213444rune",
+        "amount": "2850199rune",
         "mode": "EndBlock",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -2841,19 +2841,19 @@
         "type": "message"
       },
       {
-        "amount": "104746rune",
+        "amount": "92903rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "104746rune",
+        "amount": "92903rune",
         "mode": "EndBlock",
         "receiver": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "type": "coin_received"
       },
       {
-        "amount": "104746rune",
+        "amount": "92903rune",
         "mode": "EndBlock",
         "recipient": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -2865,9 +2865,9 @@
         "type": "message"
       },
       {
-        "BTC.BTC": "3228626",
-        "ETH.ETH": "3213444",
-        "bond_reward": "104746",
+        "BTC.BTC": "2863660",
+        "ETH.ETH": "2850199",
+        "bond_reward": "92903",
         "dev_fund_reward": "0",
         "income_burn": "0",
         "mode": "EndBlock",
@@ -2905,7 +2905,7 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "BAA62A7B2772D23961BC7272647C2473601339C49A7352624FBBC675AF59FBA1",
+      "app_hash": "5146E54EC3A367C3E5602A3CFB8C3684BBFFFE01D45AD13204B883CCCFB7886A",
       "last_results_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
@@ -2913,19 +2913,19 @@
     "begin_block_events": [],
     "end_block_events": [
       {
-        "amount": "544656rune",
+        "amount": "181552rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "544656rune",
+        "amount": "181552rune",
         "mode": "EndBlock",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "544656rune",
+        "amount": "181552rune",
         "mode": "EndBlock",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -2937,19 +2937,19 @@
         "type": "message"
       },
       {
-        "amount": "547429rune",
+        "amount": "182477rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "547429rune",
+        "amount": "182477rune",
         "mode": "EndBlock",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "547429rune",
+        "amount": "182477rune",
         "mode": "EndBlock",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -2961,19 +2961,19 @@
         "type": "message"
       },
       {
-        "amount": "17758rune",
+        "amount": "5919rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "17758rune",
+        "amount": "5919rune",
         "mode": "EndBlock",
         "receiver": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "type": "coin_received"
       },
       {
-        "amount": "17758rune",
+        "amount": "5919rune",
         "mode": "EndBlock",
         "recipient": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -2985,9 +2985,9 @@
         "type": "message"
       },
       {
-        "BTC.BTC": "544656",
-        "ETH.ETH": "547429",
-        "bond_reward": "17758",
+        "BTC.BTC": "181552",
+        "ETH.ETH": "182477",
+        "bond_reward": "5919",
         "dev_fund_reward": "0",
         "income_burn": "0",
         "mode": "EndBlock",
@@ -3025,7 +3025,7 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "D3CFC4CDF7B6AB7A2000AFF12F99F5FF3A69C6BCAB161546421F7B1B26DDFC0C",
+      "app_hash": "5F77C96A5FF937AAE38106AEE7947A1A0AA7BE83984EE3A0F374A658A3DEA8DD",
       "last_results_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
@@ -3033,19 +3033,19 @@
     "begin_block_events": [],
     "end_block_events": [
       {
-        "amount": "544656rune",
+        "amount": "181552rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "544656rune",
+        "amount": "181552rune",
         "mode": "EndBlock",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "544656rune",
+        "amount": "181552rune",
         "mode": "EndBlock",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -3057,19 +3057,19 @@
         "type": "message"
       },
       {
-        "amount": "547429rune",
+        "amount": "182477rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "547429rune",
+        "amount": "182477rune",
         "mode": "EndBlock",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "547429rune",
+        "amount": "182477rune",
         "mode": "EndBlock",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -3081,19 +3081,19 @@
         "type": "message"
       },
       {
-        "amount": "17758rune",
+        "amount": "5919rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "17758rune",
+        "amount": "5919rune",
         "mode": "EndBlock",
         "receiver": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "type": "coin_received"
       },
       {
-        "amount": "17758rune",
+        "amount": "5919rune",
         "mode": "EndBlock",
         "recipient": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -3105,9 +3105,9 @@
         "type": "message"
       },
       {
-        "BTC.BTC": "544656",
-        "ETH.ETH": "547429",
-        "bond_reward": "17758",
+        "BTC.BTC": "181552",
+        "ETH.ETH": "182477",
+        "bond_reward": "5919",
         "dev_fund_reward": "0",
         "income_burn": "0",
         "mode": "EndBlock",
@@ -3600,7 +3600,7 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "58CA0883BEB0ADF8D4E8645F0979985D16E35D412A51661E91CAAE2711DFF468",
+      "app_hash": "4E214D101F00FF935AFC326784DA1CDB5ED3B5E41AF4614CA1E751E46A2D1B16",
       "last_results_hash": "48A3EE4201CE7EB6F8EFBCD1D4244126D0054628CB1150D967AF08F4E561FEA5",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
@@ -3608,19 +3608,19 @@
     "begin_block_events": [],
     "end_block_events": [
       {
-        "amount": "544656rune",
+        "amount": "181552rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "544656rune",
+        "amount": "181552rune",
         "mode": "EndBlock",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "544656rune",
+        "amount": "181552rune",
         "mode": "EndBlock",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -3632,19 +3632,19 @@
         "type": "message"
       },
       {
-        "amount": "547429rune",
+        "amount": "182477rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "547429rune",
+        "amount": "182477rune",
         "mode": "EndBlock",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "547429rune",
+        "amount": "182477rune",
         "mode": "EndBlock",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -3656,19 +3656,19 @@
         "type": "message"
       },
       {
-        "amount": "17758rune",
+        "amount": "5919rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "17758rune",
+        "amount": "5919rune",
         "mode": "EndBlock",
         "receiver": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "type": "coin_received"
       },
       {
-        "amount": "17758rune",
+        "amount": "5919rune",
         "mode": "EndBlock",
         "recipient": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -3680,9 +3680,9 @@
         "type": "message"
       },
       {
-        "BTC.BTC": "544656",
-        "ETH.ETH": "547429",
-        "bond_reward": "17758",
+        "BTC.BTC": "181552",
+        "ETH.ETH": "182477",
+        "bond_reward": "5919",
         "dev_fund_reward": "0",
         "income_burn": "0",
         "mode": "EndBlock",
@@ -4175,7 +4175,7 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "8A5FDFED69A4061F5220805D8E3540E36412E863378E45FF68C9D2163EE611ED",
+      "app_hash": "200E5F419690580B0F6041B484ABF297709375A4F327BC0BEEAE49F922BCB2F9",
       "last_results_hash": "E5C4FFC6FADA4EE65F760B8B714F5A2C2DC7466D6F56DCA225E8A8538A91AFA9",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
@@ -4183,19 +4183,19 @@
     "begin_block_events": [],
     "end_block_events": [
       {
-        "amount": "544656rune",
+        "amount": "181552rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "544656rune",
+        "amount": "181552rune",
         "mode": "EndBlock",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "544656rune",
+        "amount": "181552rune",
         "mode": "EndBlock",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -4207,19 +4207,19 @@
         "type": "message"
       },
       {
-        "amount": "547429rune",
+        "amount": "182477rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "547429rune",
+        "amount": "182477rune",
         "mode": "EndBlock",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "547429rune",
+        "amount": "182477rune",
         "mode": "EndBlock",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -4231,19 +4231,19 @@
         "type": "message"
       },
       {
-        "amount": "17758rune",
+        "amount": "5919rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "17758rune",
+        "amount": "5919rune",
         "mode": "EndBlock",
         "receiver": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "type": "coin_received"
       },
       {
-        "amount": "17758rune",
+        "amount": "5919rune",
         "mode": "EndBlock",
         "recipient": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -4255,9 +4255,9 @@
         "type": "message"
       },
       {
-        "BTC.BTC": "544656",
-        "ETH.ETH": "547429",
-        "bond_reward": "17758",
+        "BTC.BTC": "181552",
+        "ETH.ETH": "182477",
+        "bond_reward": "5919",
         "dev_fund_reward": "0",
         "income_burn": "0",
         "mode": "EndBlock",
@@ -4750,7 +4750,7 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "E37CCF25E8D7A3E90ED08F002A7F7B23EC1676369B9B7360D71C9CE432EA516B",
+      "app_hash": "14121C0044E04ED92F1B2C3572C7E32C63A148FAFFF73CE6042688BE2C355D4C",
       "last_results_hash": "3DAB85AB7977F1A8C3EBF7794FC33DBE62F1A68F98FE08ABB66E773B7AA46841",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
@@ -4765,11 +4765,11 @@
       {
         "asset": "THOR.BTC",
         "asset_add": "true",
-        "asset_amt": "39417670",
+        "asset_amt": "39417669",
         "mode": "BeginBlock",
         "reason": "derived pool adjustment",
         "rune_add": "true",
-        "rune_amt": "39101498573",
+        "rune_amt": "39099616872",
         "type": "pool_balance_change"
       },
       {
@@ -4785,25 +4785,25 @@
         "mode": "BeginBlock",
         "reason": "derived pool adjustment",
         "rune_add": "true",
-        "rune_amt": "43110373067",
+        "rune_amt": "43108367415",
         "type": "pool_balance_change"
       }
     ],
     "end_block_events": [
       {
-        "amount": "544656rune",
+        "amount": "181552rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "544656rune",
+        "amount": "181552rune",
         "mode": "EndBlock",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "544656rune",
+        "amount": "181552rune",
         "mode": "EndBlock",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -4815,19 +4815,19 @@
         "type": "message"
       },
       {
-        "amount": "547429rune",
+        "amount": "182477rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "547429rune",
+        "amount": "182477rune",
         "mode": "EndBlock",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "547429rune",
+        "amount": "182477rune",
         "mode": "EndBlock",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -4839,19 +4839,19 @@
         "type": "message"
       },
       {
-        "amount": "17758rune",
+        "amount": "5919rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "17758rune",
+        "amount": "5919rune",
         "mode": "EndBlock",
         "receiver": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "type": "coin_received"
       },
       {
-        "amount": "17758rune",
+        "amount": "5919rune",
         "mode": "EndBlock",
         "recipient": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -4863,9 +4863,9 @@
         "type": "message"
       },
       {
-        "BTC.BTC": "544656",
-        "ETH.ETH": "547429",
-        "bond_reward": "17758",
+        "BTC.BTC": "181552",
+        "ETH.ETH": "182477",
+        "bond_reward": "5919",
         "dev_fund_reward": "0",
         "income_burn": "0",
         "mode": "EndBlock",
@@ -4903,7 +4903,7 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "A86FB5B8CC15CDFB2049AC7FEDEA64B08019A3BE2A82543E0E0DB710A48372E3",
+      "app_hash": "92C23974DD1192F8C22C8E09C91AC5C656F63290F80016C75737673CC5F07453",
       "last_results_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
@@ -4916,17 +4916,17 @@
         "mode": "BeginBlock",
         "reason": "derived pool adjustment",
         "rune_add": "true",
-        "rune_amt": "213505",
+        "rune_amt": "71168",
         "type": "pool_balance_change"
       },
       {
         "asset": "THOR.ETH",
         "asset_add": "true",
-        "asset_amt": "1",
+        "asset_amt": "0",
         "mode": "BeginBlock",
         "reason": "derived pool adjustment",
         "rune_add": "true",
-        "rune_amt": "235395",
+        "rune_amt": "78465",
         "type": "pool_balance_change"
       }
     ],
@@ -4944,19 +4944,19 @@
         "type": "refund"
       },
       {
-        "amount": "544656rune",
+        "amount": "181552rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "544656rune",
+        "amount": "181552rune",
         "mode": "EndBlock",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "544656rune",
+        "amount": "181552rune",
         "mode": "EndBlock",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -4968,19 +4968,19 @@
         "type": "message"
       },
       {
-        "amount": "547429rune",
+        "amount": "182477rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "547429rune",
+        "amount": "182477rune",
         "mode": "EndBlock",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "547429rune",
+        "amount": "182477rune",
         "mode": "EndBlock",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -4992,19 +4992,19 @@
         "type": "message"
       },
       {
-        "amount": "17758rune",
+        "amount": "5919rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "17758rune",
+        "amount": "5919rune",
         "mode": "EndBlock",
         "receiver": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "type": "coin_received"
       },
       {
-        "amount": "17758rune",
+        "amount": "5919rune",
         "mode": "EndBlock",
         "recipient": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -5016,9 +5016,9 @@
         "type": "message"
       },
       {
-        "BTC.BTC": "544656",
-        "ETH.ETH": "547429",
-        "bond_reward": "17758",
+        "BTC.BTC": "181552",
+        "ETH.ETH": "182477",
+        "bond_reward": "5919",
         "dev_fund_reward": "0",
         "income_burn": "0",
         "mode": "EndBlock",
@@ -5150,7 +5150,7 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "7D109A50A784FECA8F7045B671F8377CAD7119E0788D16415DC057A24C422A21",
+      "app_hash": "56C4ED908294F03CD9AD921DF14CA4D9F2D112393F829E77B330B2BD500F9FAD",
       "last_results_hash": "D370B66C93A306A919D2AE0D66D66E2AA97106B713FEEA58E4F1312746853BA6",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
@@ -5163,17 +5163,17 @@
         "mode": "BeginBlock",
         "reason": "derived pool adjustment",
         "rune_add": "true",
-        "rune_amt": "213506",
+        "rune_amt": "71169",
         "type": "pool_balance_change"
       },
       {
         "asset": "THOR.ETH",
-        "asset_add": "false",
+        "asset_add": "true",
         "asset_amt": "1",
         "mode": "BeginBlock",
         "reason": "derived pool adjustment",
         "rune_add": "true",
-        "rune_amt": "235394",
+        "rune_amt": "78466",
         "type": "pool_balance_change"
       }
     ],
@@ -5224,19 +5224,19 @@
         "type": "secured_asset_withdraw"
       },
       {
-        "amount": "98222178rune",
+        "amount": "98216739rune",
         "mode": "EndBlock",
         "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_spent"
       },
       {
-        "amount": "98222178rune",
+        "amount": "98216739rune",
         "mode": "EndBlock",
         "receiver": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_received"
       },
       {
-        "amount": "98222178rune",
+        "amount": "98216739rune",
         "mode": "EndBlock",
         "recipient": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
@@ -5250,11 +5250,11 @@
       {
         "chain": "THOR",
         "coin": "1000000 BTC-BTC",
-        "emit_asset": "883999605 THOR.RUNE",
+        "emit_asset": "883950654 THOR.RUNE",
         "from": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
         "id": "F3D6E056ADD66768B4AA1953F03167C5BD16FCD0A9F3FBA2FE48BD09C47D4F8A",
-        "liquidity_fee": "98222178",
-        "liquidity_fee_in_rune": "98222178",
+        "liquidity_fee": "98216739",
+        "liquidity_fee_in_rune": "98216739",
         "memo": "=:THOR.RUNE:tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
         "mode": "EndBlock",
         "pool": "BTC.BTC",
@@ -5298,19 +5298,19 @@
         "type": "message"
       },
       {
-        "amount": "881999605rune",
+        "amount": "881950654rune",
         "mode": "EndBlock",
         "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_spent"
       },
       {
-        "amount": "881999605rune",
+        "amount": "881950654rune",
         "mode": "EndBlock",
         "receiver": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
         "type": "coin_received"
       },
       {
-        "amount": "881999605rune",
+        "amount": "881950654rune",
         "mode": "EndBlock",
         "recipient": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
         "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
@@ -5323,7 +5323,7 @@
       },
       {
         "chain": "THOR",
-        "coin": "881999605 THOR.RUNE",
+        "coin": "881950654 THOR.RUNE",
         "from": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "id": "0000000000000000000000000000000000000000000000000000000000000000",
         "in_tx_id": "F3D6E056ADD66768B4AA1953F03167C5BD16FCD0A9F3FBA2FE48BD09C47D4F8A",
@@ -5333,19 +5333,19 @@
         "type": "outbound"
       },
       {
-        "amount": "97750453rune",
+        "amount": "97017070rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "97750453rune",
+        "amount": "97017070rune",
         "mode": "EndBlock",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "97750453rune",
+        "amount": "97017070rune",
         "mode": "EndBlock",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -5357,19 +5357,19 @@
         "type": "message"
       },
       {
-        "amount": "1581571rune",
+        "amount": "1569618rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "1581571rune",
+        "amount": "1569618rune",
         "mode": "EndBlock",
         "receiver": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "type": "coin_received"
       },
       {
-        "amount": "1581571rune",
+        "amount": "1569618rune",
         "mode": "EndBlock",
         "recipient": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -5381,8 +5381,8 @@
         "type": "message"
       },
       {
-        "BTC.BTC": "97750453",
-        "bond_reward": "1581571",
+        "BTC.BTC": "97017070",
+        "bond_reward": "1569618",
         "dev_fund_reward": "0",
         "income_burn": "0",
         "mode": "EndBlock",
@@ -5514,7 +5514,7 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "F2F98601B45D1358279F5EA8C6E3AFD840379E6913BFFDD67EC140116554FD95",
+      "app_hash": "0591B3DE7E0EB6A432D709444EBF6C11D9F57FF819886CEFCB173CD256917420",
       "last_results_hash": "77DD40F3945FEF4355653B43B47D43F6DAA00EB0437904CC1C915132A7108D93",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
@@ -5527,25 +5527,25 @@
         "mode": "BeginBlock",
         "reason": "derived pool adjustment",
         "rune_add": "false",
-        "rune_amt": "6805914899",
+        "rune_amt": "6805775640",
         "type": "pool_balance_change"
       }
     ],
     "end_block_events": [
       {
-        "amount": "100909189rune",
+        "amount": "100908932rune",
         "mode": "EndBlock",
         "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_spent"
       },
       {
-        "amount": "100909189rune",
+        "amount": "100908932rune",
         "mode": "EndBlock",
         "receiver": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_received"
       },
       {
-        "amount": "100909189rune",
+        "amount": "100908932rune",
         "mode": "EndBlock",
         "recipient": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
@@ -5557,31 +5557,31 @@
         "type": "message"
       },
       {
-        "amount": "915230btc-btc",
+        "amount": "915287btc-btc",
         "mode": "EndBlock",
         "receiver": "tthor1v8ppstuf6e3x0r4glqc68d5jqcs2tf38ulmsrp",
         "type": "coin_received"
       },
       {
-        "amount": "915230btc-btc",
+        "amount": "915287btc-btc",
         "minter": "tthor1v8ppstuf6e3x0r4glqc68d5jqcs2tf38ulmsrp",
         "mode": "EndBlock",
         "type": "coinbase"
       },
       {
-        "amount": "915230btc-btc",
+        "amount": "915287btc-btc",
         "mode": "EndBlock",
         "spender": "tthor1v8ppstuf6e3x0r4glqc68d5jqcs2tf38ulmsrp",
         "type": "coin_spent"
       },
       {
-        "amount": "915230btc-btc",
+        "amount": "915287btc-btc",
         "mode": "EndBlock",
         "receiver": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
         "type": "coin_received"
       },
       {
-        "amount": "915230btc-btc",
+        "amount": "915287btc-btc",
         "mode": "EndBlock",
         "recipient": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
         "sender": "tthor1v8ppstuf6e3x0r4glqc68d5jqcs2tf38ulmsrp",
@@ -5593,7 +5593,7 @@
         "type": "message"
       },
       {
-        "amount": "915230",
+        "amount": "915287",
         "asset": "BTC-BTC",
         "asset_address": "",
         "mode": "EndBlock",
@@ -5604,11 +5604,11 @@
       {
         "chain": "THOR",
         "coin": "1000000000 THOR.RUNE",
-        "emit_asset": "915230 BTC-BTC",
+        "emit_asset": "915287 BTC-BTC",
         "from": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
         "id": "47C5E86D2290549DAB5738C22F4B7EA4CF2DCCA280278DA57AA7F9017D6EC681",
-        "liquidity_fee": "101692",
-        "liquidity_fee_in_rune": "100909189",
+        "liquidity_fee": "101698",
+        "liquidity_fee_in_rune": "100908932",
         "memo": "=:BTC-BTC:tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
         "mode": "EndBlock",
         "pool": "BTC.BTC",
@@ -5621,19 +5621,19 @@
         "type": "swap"
       },
       {
-        "amount": "100386546rune",
+        "amount": "99658329rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "100386546rune",
+        "amount": "99658329rune",
         "mode": "EndBlock",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "100386546rune",
+        "amount": "99658329rune",
         "mode": "EndBlock",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -5645,19 +5645,19 @@
         "type": "message"
       },
       {
-        "amount": "1632490rune",
+        "amount": "1620552rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "1632490rune",
+        "amount": "1620552rune",
         "mode": "EndBlock",
         "receiver": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "type": "coin_received"
       },
       {
-        "amount": "1632490rune",
+        "amount": "1620552rune",
         "mode": "EndBlock",
         "recipient": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -5669,8 +5669,8 @@
         "type": "message"
       },
       {
-        "BTC.BTC": "100386546",
-        "bond_reward": "1632490",
+        "BTC.BTC": "99658329",
+        "bond_reward": "1620552",
         "dev_fund_reward": "0",
         "income_burn": "0",
         "mode": "EndBlock",
@@ -5822,11 +5822,11 @@
         }
       },
       "last_commit_hash": "",
-      "data_hash": "A3FEE90D4277DA296BB3E6BC22AAB6F5E9C95306F506888D7362B88032559BDD",
+      "data_hash": "30CFB99EAD0A093743DCA9E31BEB3866650700F10ACE1CDA56D423EB39A69A1B",
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "28E4665EC13C0FCD3B669A737481448891EDE0C9D3FCAA5AAF4CF02A3F4F7AEE",
+      "app_hash": "396F1405F2A3C6A4C2F9C53FFFBC021DEFBEE61E54852746190C015AE7FEAC94",
       "last_results_hash": "64023DA33C2414FB46043A037A66639D2F2A37E24ADD243E00F6B2EB5934132E",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
@@ -5835,29 +5835,29 @@
       {
         "asset": "THOR.BTC",
         "asset_add": "false",
-        "asset_amt": "7008312",
+        "asset_amt": "7008327",
         "mode": "BeginBlock",
         "reason": "derived pool adjustment",
         "rune_add": "false",
-        "rune_amt": "6331158476",
+        "rune_amt": "6330934049",
         "type": "pool_balance_change"
       }
     ],
     "end_block_events": [
       {
-        "amount": "4679974btc-btc",
+        "amount": "4680004btc-btc",
         "mode": "EndBlock",
         "spender": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
         "type": "coin_spent"
       },
       {
-        "amount": "4679974btc-btc",
+        "amount": "4680004btc-btc",
         "mode": "EndBlock",
         "receiver": "tthor1v8ppstuf6e3x0r4glqc68d5jqcs2tf38ulmsrp",
         "type": "coin_received"
       },
       {
-        "amount": "4679974btc-btc",
+        "amount": "4680004btc-btc",
         "mode": "EndBlock",
         "recipient": "tthor1v8ppstuf6e3x0r4glqc68d5jqcs2tf38ulmsrp",
         "sender": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
@@ -5869,40 +5869,40 @@
         "type": "message"
       },
       {
-        "amount": "4679974btc-btc",
+        "amount": "4680004btc-btc",
         "mode": "EndBlock",
         "spender": "tthor1v8ppstuf6e3x0r4glqc68d5jqcs2tf38ulmsrp",
         "type": "coin_spent"
       },
       {
-        "amount": "4679974btc-btc",
+        "amount": "4680004btc-btc",
         "burner": "tthor1v8ppstuf6e3x0r4glqc68d5jqcs2tf38ulmsrp",
         "mode": "EndBlock",
         "type": "burn"
       },
       {
-        "amount": "4679974",
+        "amount": "4680004",
         "asset": "BTC-BTC",
         "asset_address": "",
         "mode": "EndBlock",
         "rune_address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
-        "tx_id": "9D191A8FCA64617C2D432E516A28EAB5115D8EEB5992F8FDE1743CC247296A80",
+        "tx_id": "AEE860FF4A966A8753E4B62E67079E0CD95B9C61E40D6E4788AE00A7949F20E2",
         "type": "secured_asset_withdraw"
       },
       {
-        "amount": "197186633rune",
+        "amount": "197175583rune",
         "mode": "EndBlock",
         "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_spent"
       },
       {
-        "amount": "197186633rune",
+        "amount": "197175583rune",
         "mode": "EndBlock",
         "receiver": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_received"
       },
       {
-        "amount": "197186633rune",
+        "amount": "197175583rune",
         "mode": "EndBlock",
         "recipient": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
@@ -5915,12 +5915,12 @@
       },
       {
         "chain": "THOR",
-        "coin": "4679974 BTC-BTC",
-        "emit_asset": "4240381045 THOR.RUNE",
+        "coin": "4680004 BTC-BTC",
+        "emit_asset": "4240113711 THOR.RUNE",
         "from": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
-        "id": "9D191A8FCA64617C2D432E516A28EAB5115D8EEB5992F8FDE1743CC247296A80",
-        "liquidity_fee": "197186633",
-        "liquidity_fee_in_rune": "197186633",
+        "id": "AEE860FF4A966A8753E4B62E67079E0CD95B9C61E40D6E4788AE00A7949F20E2",
+        "liquidity_fee": "197175583",
+        "liquidity_fee_in_rune": "197175583",
         "memo": "=:THOR.RUNE:tthor1anq4fk6l89w3sfuxehwyprxqjdj3kuzpfwlrav:0/2/2",
         "mode": "EndBlock",
         "pool": "BTC.BTC",
@@ -5933,19 +5933,19 @@
         "type": "swap"
       },
       {
-        "amount": "195192182rune",
+        "amount": "194453178rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "195192182rune",
+        "amount": "194453178rune",
         "mode": "EndBlock",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "195192182rune",
+        "amount": "194453178rune",
         "mode": "EndBlock",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -5957,19 +5957,19 @@
         "type": "message"
       },
       {
-        "amount": "3104301rune",
+        "amount": "3092355rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "3104301rune",
+        "amount": "3092355rune",
         "mode": "EndBlock",
         "receiver": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "type": "coin_received"
       },
       {
-        "amount": "3104301rune",
+        "amount": "3092355rune",
         "mode": "EndBlock",
         "recipient": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -5981,8 +5981,8 @@
         "type": "message"
       },
       {
-        "BTC.BTC": "195192182",
-        "bond_reward": "3104301",
+        "BTC.BTC": "194453178",
+        "bond_reward": "3092355",
         "dev_fund_reward": "0",
         "income_burn": "0",
         "mode": "EndBlock",
@@ -6446,7 +6446,7 @@
         }
       },
       {
-        "hash": "9D191A8FCA64617C2D432E516A28EAB5115D8EEB5992F8FDE1743CC247296A80",
+        "hash": "AEE860FF4A966A8753E4B62E67079E0CD95B9C61E40D6E4788AE00A7949F20E2",
         "tx": {
           "auth_info": {
             "fee": {
@@ -6479,7 +6479,7 @@
                 "@type": "/types.MsgDeposit",
                 "coins": [
                   {
-                    "amount": "9359948",
+                    "amount": "9360008",
                     "asset": "BTC-BTC",
                     "decimals": "0"
                   }
@@ -6492,7 +6492,7 @@
             "timeout_height": "0"
           },
           "signatures": [
-            "vbyzPO+CSiN/+R2GDlttaI1zqloiW34S0T+bhQQ+dhAfg20wZzPFsn+izUv8kr+sYpBnu9WMa5M6IFjGW7ecjQ=="
+            "+q5ZaSDneqJLGKoeZxMS/4i4xOzd4JRgJVRIVY6EBZ11VGYfm5CagJJ9bVmq3CymxvtxzLioulU4mokGC8136g=="
           ]
         },
         "result": {
@@ -6525,7 +6525,7 @@
               "type": "tx"
             },
             {
-              "signature": "vbyzPO+CSiN/+R2GDlttaI1zqloiW34S0T+bhQQ+dhAfg20wZzPFsn+izUv8kr+sYpBnu9WMa5M6IFjGW7ecjQ==",
+              "signature": "+q5ZaSDneqJLGKoeZxMS/4i4xOzd4JRgJVRIVY6EBZ11VGYfm5CagJJ9bVmq3CymxvtxzLioulU4mokGC8136g==",
               "type": "tx"
             },
             {
@@ -6564,11 +6564,11 @@
         }
       },
       "last_commit_hash": "",
-      "data_hash": "99432D78F63A64E65A90B6D9EA735236609DA98479F985E61092E438A36F2CAE",
+      "data_hash": "E1B4CA15EA838014AEA8184685BCDA99C163D3D5F6D0200BEF159ABD52F6CBE2",
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "557E822550B375E9764A90BE6841C219EA73B8D628023B3BFC4E4CB604426ED7",
+      "app_hash": "1AB7DBB237E1AF262C8EAAE0F7D5B33672305B1B3BE2B8561B6087D84EF48705",
       "last_results_hash": "65FEAF68F58B95ACF100B4B94523626E2844166D558DEC6A71B712756DCE955D",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
@@ -6577,29 +6577,29 @@
       {
         "asset": "THOR.BTC",
         "asset_add": "false",
-        "asset_amt": "25113213",
+        "asset_amt": "25113198",
         "mode": "BeginBlock",
         "reason": "derived pool adjustment",
         "rune_add": "false",
-        "rune_amt": "25008627802",
+        "rune_amt": "25006899053",
         "type": "pool_balance_change"
       }
     ],
     "end_block_events": [
       {
-        "amount": "2339987btc-btc",
+        "amount": "2340002btc-btc",
         "mode": "EndBlock",
         "spender": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
         "type": "coin_spent"
       },
       {
-        "amount": "2339987btc-btc",
+        "amount": "2340002btc-btc",
         "mode": "EndBlock",
         "receiver": "tthor1v8ppstuf6e3x0r4glqc68d5jqcs2tf38ulmsrp",
         "type": "coin_received"
       },
       {
-        "amount": "2339987btc-btc",
+        "amount": "2340002btc-btc",
         "mode": "EndBlock",
         "recipient": "tthor1v8ppstuf6e3x0r4glqc68d5jqcs2tf38ulmsrp",
         "sender": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
@@ -6611,40 +6611,40 @@
         "type": "message"
       },
       {
-        "amount": "2339987btc-btc",
+        "amount": "2340002btc-btc",
         "mode": "EndBlock",
         "spender": "tthor1v8ppstuf6e3x0r4glqc68d5jqcs2tf38ulmsrp",
         "type": "coin_spent"
       },
       {
-        "amount": "2339987btc-btc",
+        "amount": "2340002btc-btc",
         "burner": "tthor1v8ppstuf6e3x0r4glqc68d5jqcs2tf38ulmsrp",
         "mode": "EndBlock",
         "type": "burn"
       },
       {
-        "amount": "2339987",
+        "amount": "2340002",
         "asset": "BTC-BTC",
         "asset_address": "",
         "mode": "EndBlock",
         "rune_address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
-        "tx_id": "50DF1903DB8C055F0B511854A9727D3C87CA664C1D6B89BFB32DC431E6A987BD",
+        "tx_id": "EF20A8453B50077782A377BDF424DAB56A24873FF7C6346F48E9DB6D34CC2533",
         "type": "secured_asset_withdraw"
       },
       {
-        "amount": "45172888rune",
+        "amount": "45169986rune",
         "mode": "EndBlock",
         "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_spent"
       },
       {
-        "amount": "45172888rune",
+        "amount": "45169986rune",
         "mode": "EndBlock",
         "receiver": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_received"
       },
       {
-        "amount": "45172888rune",
+        "amount": "45169986rune",
         "mode": "EndBlock",
         "recipient": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
@@ -6657,12 +6657,12 @@
       },
       {
         "chain": "THOR",
-        "coin": "2339987 BTC-BTC",
-        "emit_asset": "2033177855 THOR.RUNE",
+        "coin": "2340002 BTC-BTC",
+        "emit_asset": "2033033659 THOR.RUNE",
         "from": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
-        "id": "50DF1903DB8C055F0B511854A9727D3C87CA664C1D6B89BFB32DC431E6A987BD",
-        "liquidity_fee": "45172888",
-        "liquidity_fee_in_rune": "45172888",
+        "id": "EF20A8453B50077782A377BDF424DAB56A24873FF7C6346F48E9DB6D34CC2533",
+        "liquidity_fee": "45169986",
+        "liquidity_fee_in_rune": "45169986",
         "memo": "=:THOR.RUNE:tthor1anq4fk6l89w3sfuxehwyprxqjdj3kuzpfwlrav",
         "mode": "EndBlock",
         "pool": "BTC.BTC",
@@ -6678,7 +6678,7 @@
         "coins": "2000000 THOR.RUNE",
         "mode": "EndBlock",
         "pool_deduct": "0",
-        "tx_id": "50DF1903DB8C055F0B511854A9727D3C87CA664C1D6B89BFB32DC431E6A987BD",
+        "tx_id": "EF20A8453B50077782A377BDF424DAB56A24873FF7C6346F48E9DB6D34CC2533",
         "type": "fee"
       },
       {
@@ -6706,19 +6706,19 @@
         "type": "message"
       },
       {
-        "amount": "2031177855rune",
+        "amount": "2031033659rune",
         "mode": "EndBlock",
         "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_spent"
       },
       {
-        "amount": "2031177855rune",
+        "amount": "2031033659rune",
         "mode": "EndBlock",
         "receiver": "tthor1anq4fk6l89w3sfuxehwyprxqjdj3kuzpfwlrav",
         "type": "coin_received"
       },
       {
-        "amount": "2031177855rune",
+        "amount": "2031033659rune",
         "mode": "EndBlock",
         "recipient": "tthor1anq4fk6l89w3sfuxehwyprxqjdj3kuzpfwlrav",
         "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
@@ -6731,29 +6731,29 @@
       },
       {
         "chain": "THOR",
-        "coin": "2031177855 THOR.RUNE",
+        "coin": "2031033659 THOR.RUNE",
         "from": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "id": "0000000000000000000000000000000000000000000000000000000000000000",
-        "in_tx_id": "50DF1903DB8C055F0B511854A9727D3C87CA664C1D6B89BFB32DC431E6A987BD",
-        "memo": "OUT:50DF1903DB8C055F0B511854A9727D3C87CA664C1D6B89BFB32DC431E6A987BD",
+        "in_tx_id": "EF20A8453B50077782A377BDF424DAB56A24873FF7C6346F48E9DB6D34CC2533",
+        "memo": "OUT:EF20A8453B50077782A377BDF424DAB56A24873FF7C6346F48E9DB6D34CC2533",
         "mode": "EndBlock",
         "to": "tthor1anq4fk6l89w3sfuxehwyprxqjdj3kuzpfwlrav",
         "type": "outbound"
       },
       {
-        "amount": "45565157rune",
+        "amount": "44833921rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "45565157rune",
+        "amount": "44833921rune",
         "mode": "EndBlock",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "45565157rune",
+        "amount": "44833921rune",
         "mode": "EndBlock",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -6765,19 +6765,19 @@
         "type": "message"
       },
       {
-        "amount": "717576rune",
+        "amount": "706014rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "717576rune",
+        "amount": "706014rune",
         "mode": "EndBlock",
         "receiver": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "type": "coin_received"
       },
       {
-        "amount": "717576rune",
+        "amount": "706014rune",
         "mode": "EndBlock",
         "recipient": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -6789,8 +6789,8 @@
         "type": "message"
       },
       {
-        "BTC.BTC": "45565157",
-        "bond_reward": "717576",
+        "BTC.BTC": "44833921",
+        "bond_reward": "706014",
         "dev_fund_reward": "0",
         "income_burn": "0",
         "mode": "EndBlock",
@@ -6800,7 +6800,7 @@
     ],
     "txs": [
       {
-        "hash": "50DF1903DB8C055F0B511854A9727D3C87CA664C1D6B89BFB32DC431E6A987BD",
+        "hash": "EF20A8453B50077782A377BDF424DAB56A24873FF7C6346F48E9DB6D34CC2533",
         "tx": {
           "auth_info": {
             "fee": {
@@ -6833,7 +6833,7 @@
                 "@type": "/types.MsgDeposit",
                 "coins": [
                   {
-                    "amount": "2339987",
+                    "amount": "2340002",
                     "asset": "BTC-BTC",
                     "decimals": "0"
                   }
@@ -6846,7 +6846,7 @@
             "timeout_height": "0"
           },
           "signatures": [
-            "5/8Jg+BqACmD5GIQH5xazgFrQx+8pW9aXWAaNmhNe/QiW7t+yGxkbWLia3qcuN0OYNiBn7UG2QXQx71B1dz6ig=="
+            "rzO7mvz9cY6kqVuUPT8rSiQb1H9RqQ5fU92D4BXz37gV9gf6whHluDIQ7dQlAoSKG8S19+N5GpOJR2x+RxaZsQ=="
           ]
         },
         "result": {
@@ -6879,7 +6879,7 @@
               "type": "tx"
             },
             {
-              "signature": "5/8Jg+BqACmD5GIQH5xazgFrQx+8pW9aXWAaNmhNe/QiW7t+yGxkbWLia3qcuN0OYNiBn7UG2QXQx71B1dz6ig==",
+              "signature": "rzO7mvz9cY6kqVuUPT8rSiQb1H9RqQ5fU92D4BXz37gV9gf6whHluDIQ7dQlAoSKG8S19+N5GpOJR2x+RxaZsQ==",
               "type": "tx"
             },
             {
@@ -6922,7 +6922,7 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "CC0D3527D75F5EBAD9351CF56F76C28AB111E94FADA7C880F65AEE1576C03C7D",
+      "app_hash": "FEBCB7691687799C8A3DA16A8EDA8F4833A12B4E9472A4113BFEB1670BAACEA4",
       "last_results_hash": "908F97345283B957F7F16FF2870F8A05AFB17F1411A72164231FC90EBE5EACAC",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
@@ -6935,25 +6935,25 @@
         "mode": "BeginBlock",
         "reason": "derived pool adjustment",
         "rune_add": "false",
-        "rune_amt": "20327856",
+        "rune_amt": "20333698",
         "type": "pool_balance_change"
       }
     ],
     "end_block_events": [
       {
-        "amount": "2339987btc-btc",
+        "amount": "2340002btc-btc",
         "mode": "EndBlock",
         "spender": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
         "type": "coin_spent"
       },
       {
-        "amount": "2339987btc-btc",
+        "amount": "2340002btc-btc",
         "mode": "EndBlock",
         "receiver": "tthor1v8ppstuf6e3x0r4glqc68d5jqcs2tf38ulmsrp",
         "type": "coin_received"
       },
       {
-        "amount": "2339987btc-btc",
+        "amount": "2340002btc-btc",
         "mode": "EndBlock",
         "recipient": "tthor1v8ppstuf6e3x0r4glqc68d5jqcs2tf38ulmsrp",
         "sender": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
@@ -6965,40 +6965,40 @@
         "type": "message"
       },
       {
-        "amount": "2339987btc-btc",
+        "amount": "2340002btc-btc",
         "mode": "EndBlock",
         "spender": "tthor1v8ppstuf6e3x0r4glqc68d5jqcs2tf38ulmsrp",
         "type": "coin_spent"
       },
       {
-        "amount": "2339987btc-btc",
+        "amount": "2340002btc-btc",
         "burner": "tthor1v8ppstuf6e3x0r4glqc68d5jqcs2tf38ulmsrp",
         "mode": "EndBlock",
         "type": "burn"
       },
       {
-        "amount": "2339987",
+        "amount": "2340002",
         "asset": "BTC-BTC",
         "asset_address": "",
         "mode": "EndBlock",
         "rune_address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
-        "tx_id": "9D191A8FCA64617C2D432E516A28EAB5115D8EEB5992F8FDE1743CC247296A80",
+        "tx_id": "AEE860FF4A966A8753E4B62E67079E0CD95B9C61E40D6E4788AE00A7949F20E2",
         "type": "secured_asset_withdraw"
       },
       {
-        "amount": "42351555rune",
+        "amount": "42348488rune",
         "mode": "EndBlock",
         "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_spent"
       },
       {
-        "amount": "42351555rune",
+        "amount": "42348488rune",
         "mode": "EndBlock",
         "receiver": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_received"
       },
       {
-        "amount": "42351555rune",
+        "amount": "42348488rune",
         "mode": "EndBlock",
         "recipient": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
@@ -7011,12 +7011,12 @@
       },
       {
         "chain": "THOR",
-        "coin": "2339987 BTC-BTC",
-        "emit_asset": "1948544592 THOR.RUNE",
+        "coin": "2340002 BTC-BTC",
+        "emit_asset": "1948390704 THOR.RUNE",
         "from": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
-        "id": "9D191A8FCA64617C2D432E516A28EAB5115D8EEB5992F8FDE1743CC247296A80",
-        "liquidity_fee": "42351555",
-        "liquidity_fee_in_rune": "42351555",
+        "id": "AEE860FF4A966A8753E4B62E67079E0CD95B9C61E40D6E4788AE00A7949F20E2",
+        "liquidity_fee": "42348488",
+        "liquidity_fee_in_rune": "42348488",
         "memo": "=:THOR.RUNE:tthor1anq4fk6l89w3sfuxehwyprxqjdj3kuzpfwlrav:0/2/2",
         "mode": "EndBlock",
         "pool": "BTC.BTC",
@@ -7032,7 +7032,7 @@
         "coins": "2000000 THOR.RUNE",
         "mode": "EndBlock",
         "pool_deduct": "0",
-        "tx_id": "9D191A8FCA64617C2D432E516A28EAB5115D8EEB5992F8FDE1743CC247296A80",
+        "tx_id": "AEE860FF4A966A8753E4B62E67079E0CD95B9C61E40D6E4788AE00A7949F20E2",
         "type": "fee"
       },
       {
@@ -7060,19 +7060,19 @@
         "type": "message"
       },
       {
-        "amount": "6186925637rune",
+        "amount": "6186504415rune",
         "mode": "EndBlock",
         "spender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_spent"
       },
       {
-        "amount": "6186925637rune",
+        "amount": "6186504415rune",
         "mode": "EndBlock",
         "receiver": "tthor1anq4fk6l89w3sfuxehwyprxqjdj3kuzpfwlrav",
         "type": "coin_received"
       },
       {
-        "amount": "6186925637rune",
+        "amount": "6186504415rune",
         "mode": "EndBlock",
         "recipient": "tthor1anq4fk6l89w3sfuxehwyprxqjdj3kuzpfwlrav",
         "sender": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
@@ -7085,43 +7085,43 @@
       },
       {
         "chain": "THOR",
-        "coin": "6186925637 THOR.RUNE",
+        "coin": "6186504415 THOR.RUNE",
         "from": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "id": "0000000000000000000000000000000000000000000000000000000000000000",
-        "in_tx_id": "9D191A8FCA64617C2D432E516A28EAB5115D8EEB5992F8FDE1743CC247296A80",
-        "memo": "OUT:9D191A8FCA64617C2D432E516A28EAB5115D8EEB5992F8FDE1743CC247296A80",
+        "in_tx_id": "AEE860FF4A966A8753E4B62E67079E0CD95B9C61E40D6E4788AE00A7949F20E2",
+        "memo": "OUT:AEE860FF4A966A8753E4B62E67079E0CD95B9C61E40D6E4788AE00A7949F20E2",
         "mode": "EndBlock",
         "to": "tthor1anq4fk6l89w3sfuxehwyprxqjdj3kuzpfwlrav",
         "type": "outbound"
       },
       {
         "count": "2",
-        "deposit": "9359948 BTC-BTC",
+        "deposit": "9360008 BTC-BTC",
         "failed_swap_reasons": "",
         "failed_swaps": "",
-        "in": "9359948 BTC-BTC",
+        "in": "9360008 BTC-BTC",
         "interval": "2",
         "last_height": "20",
         "mode": "EndBlock",
-        "out": "6188925637 THOR.RUNE",
+        "out": "6188504415 THOR.RUNE",
         "quantity": "2",
-        "tx_id": "9D191A8FCA64617C2D432E516A28EAB5115D8EEB5992F8FDE1743CC247296A80",
+        "tx_id": "AEE860FF4A966A8753E4B62E67079E0CD95B9C61E40D6E4788AE00A7949F20E2",
         "type": "streaming_swap"
       },
       {
-        "amount": "42794330rune",
+        "amount": "42062815rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "42794330rune",
+        "amount": "42062815rune",
         "mode": "EndBlock",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "42794330rune",
+        "amount": "42062815rune",
         "mode": "EndBlock",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -7133,19 +7133,19 @@
         "type": "message"
       },
       {
-        "amount": "667070rune",
+        "amount": "655622rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "667070rune",
+        "amount": "655622rune",
         "mode": "EndBlock",
         "receiver": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "type": "coin_received"
       },
       {
-        "amount": "667070rune",
+        "amount": "655622rune",
         "mode": "EndBlock",
         "recipient": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -7157,8 +7157,8 @@
         "type": "message"
       },
       {
-        "BTC.BTC": "42794330",
-        "bond_reward": "667070",
+        "BTC.BTC": "42062815",
+        "bond_reward": "655622",
         "dev_fund_reward": "0",
         "income_burn": "0",
         "mode": "EndBlock",

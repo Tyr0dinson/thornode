@@ -64,3 +64,60 @@ func (m Migrator) ClearObsoleteMimirs(ctx sdk.Context) error {
 
 	return nil
 }
+
+func (m Migrator) UpdateMimirsFor2sBlockTime(ctx sdk.Context) {
+	k := m.mgr.Keeper()
+	// Block time changed from ~6s to ~2s (3x faster)
+	// Update all time-based constants
+
+	// Main block timing constant
+	k.SetMimir(ctx, "BlocksPerYear", 15768000)
+
+	// Pool and liquidity timing
+	k.SetMimir(ctx, "PoolCycle", 129600)
+	k.SetMimir(ctx, "PendingLiquidityAgeLimit", 302400)
+
+	// Anchor and dynamic calculations
+	k.SetMimir(ctx, "MaxAnchorBlocks", 900)
+	k.SetMimir(ctx, "DynamicMaxAnchorSlipBlocks", 604800)
+	k.SetMimir(ctx, "DynamicMaxAnchorCalcInterval", 43200)
+
+	// Fund and vault migration
+	k.SetMimir(ctx, "FundMigrationInterval", 1080)
+
+	// Churn-related intervals
+	k.SetMimir(ctx, "ChurnInterval", 129600)
+	k.SetMimir(ctx, "ChurnRetryInterval", 2160)
+	k.SetMimir(ctx, "ChurnOutForLowVersionBlocks", 64800)
+
+	// Transaction signing and validation
+	k.SetMimir(ctx, "SigningTransactionPeriod", 900)
+	k.SetMimir(ctx, "DoubleSignMaxAge", 72)
+
+	// Slashing and penalties
+	k.SetMimir(ctx, "FailKeygenSlashPoints", 2160)
+	k.SetMimir(ctx, "ObservationDelayFlexibility", 30)
+
+	// Jailing durations
+	k.SetMimir(ctx, "JailTimeKeygen", 12960)
+	k.SetMimir(ctx, "JailTimeKeysign", 180)
+
+	// Node operations
+	k.SetMimir(ctx, "NodePauseChainBlocks", 2160)
+	k.SetMimir(ctx, "CloutReset", 2160)
+
+	// Streaming swap timings
+	k.SetMimir(ctx, "StreamingSwapMaxLength", 43200)
+	k.SetMimir(ctx, "StreamingSwapMaxLengthNative", 15768000)
+
+	// Transaction output timings
+	k.SetMimir(ctx, "TxOutDelayMax", 51840)
+	k.SetMimir(ctx, "MaxTxOutOffset", 2160)
+
+	// TNS fees - divided by 3 (rounded up)
+	k.SetMimir(ctx, "TNSFeePerBlock", 7)
+	k.SetMimir(ctx, "TNSFeePerBlockUSD", 7)
+
+	// RUNE Pool maturity blocks
+	k.SetMimir(ctx, "RUNEPoolDepositMaturityBlocks", 3888000)
+}

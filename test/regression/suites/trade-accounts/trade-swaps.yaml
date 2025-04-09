@@ -204,7 +204,7 @@ params:
   destination: {{ addr_thor_fox }}
   amount: 20750890
 asserts:
-  - .expected_amount_out|tonumber == 2280054
+  - .expected_amount_out|tonumber == 2280055
   - .fees|.total_bps == 443
 ---
 type: tx-deposit
@@ -222,7 +222,7 @@ endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_fox }}
 asserts:
   - .|length == 2
   - .[0].asset == "BTC~BTC"
-  - .[0].units|tonumber == 7280054
+  - .[0].units|tonumber == 7280055
   - .[0].owner == "{{ addr_thor_fox }}"
   - .[1].asset == "ETH~ETH"
   - .[1].units|tonumber == 20750890 # 0.2 ETH
@@ -269,7 +269,7 @@ endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_fox }}
 asserts:
   - .|length == 1
   - .[0].asset == "BTC~BTC"
-  - .[0].units|tonumber == 9444718
+  - .[0].units|tonumber == 9444721
   - .[0].owner == "{{ addr_thor_fox }}"
 ---
 ########################################################################################
@@ -444,7 +444,7 @@ endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_fox }}
 asserts:
   - .|length == 1
   - .[0].asset == "BTC~BTC"
-  - .[0].units|tonumber == ${INITIAL_UNITS=9444718}
+  - .[0].units|tonumber == ${INITIAL_UNITS=9444721}
   - .[0].owner == "{{ addr_thor_fox }}"
 ---
 type: check
@@ -487,7 +487,7 @@ endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fox }}
 asserts:
   - .result | length == 1
   - .result[0].denom == "rune"
-  - .result[0].amount|tonumber == ${INITIAL_RUNE=2500871994778}
+  - .result[0].amount|tonumber == ${INITIAL_RUNE=2500871949045}
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/network
@@ -499,7 +499,7 @@ endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_fox }}
 asserts:
   - .|length == 1
   - .[0].asset == "BTC~BTC"
-  - .[0].units|tonumber == ${INITIAL_UNITS=8444718}
+  - .[0].units|tonumber == ${INITIAL_UNITS=8444721}
   - .[0].owner == "{{ addr_thor_fox }}"
 ---
 type: tx-deposit
