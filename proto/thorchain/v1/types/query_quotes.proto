@@ -284,7 +284,10 @@ message QuoteFees{
 }
 
 message Vout{
+  // type of content, either "op_return" or "address"
   string type = 1 [(gogoproto.jsontag) = "type"];
+  // l1 address or hex encoded memo
   string data = 2 [(gogoproto.jsontag) = "data"];
+  // sats to send, depends on dust limit per chain, 0 for op_return
   int64 amount = 3 [(gogoproto.jsontag) = "amount"];
 }
