@@ -3,6 +3,11 @@ package thorchain
 import (
 	"encoding/hex"
 	"fmt"
+	"math/big"
+	"strconv"
+	"strings"
+	"time"
+
 	btcchaincfg "github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcutil"
 	dogechaincfg "github.com/eager7/dogd/chaincfg"
@@ -11,10 +16,6 @@ import (
 	"github.com/gcash/bchutil"
 	ltcchaincfg "github.com/ltcsuite/ltcd/chaincfg"
 	"github.com/ltcsuite/ltcutil"
-	"math/big"
-	"strconv"
-	"strings"
-	"time"
 
 	"cosmossdk.io/log"
 	sdkmath "cosmossdk.io/math"
