@@ -928,61 +928,49 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 
 		switch fromChain {
 		case common.BTCChain:
-			var params *btcchaincfg.Params
-			switch network {
-			case common.MockNet:
+			amount = 294
+			params := &btcchaincfg.MainNetParams
+			if network == common.MockNet {
 				params = &btcchaincfg.RegressionNetParams
-			default:
-				params = &btcchaincfg.MainNetParams
 			}
 			hash, err := btcutil.NewAddressWitnessPubKeyHash(data, params)
 			if err != nil {
 				return nil, err
 			}
 			address = hash.String()
-			amount = 294
 		case common.LTCChain:
-			var params *ltcchaincfg.Params
-			switch network {
-			case common.MockNet:
+			amount = 3000
+			params := &ltcchaincfg.MainNetParams
+			if network == common.MockNet {
 				params = &ltcchaincfg.RegressionNetParams
-			default:
-				params = &ltcchaincfg.MainNetParams
 			}
 			hash, err := ltcutil.NewAddressWitnessPubKeyHash(data, params)
 			if err != nil {
 				return nil, err
 			}
 			address = hash.String()
-			amount = 3000
 		case common.DOGEChain:
-			var params *dogechaincfg.Params
-			switch network {
-			case common.MockNet:
+			amount = 546
+			params := &dogechaincfg.MainNetParams
+			if network == common.MockNet {
 				params = &dogechaincfg.RegressionNetParams
-			default:
-				params = &dogechaincfg.MainNetParams
 			}
 			hash, err := dogutil.NewAddressPubKeyHash(data, params)
 			if err != nil {
 				return nil, err
 			}
 			address = hash.String()
-			amount = 546
 		case common.BCHChain:
-			var params *bchchaincfg.Params
-			switch network {
-			case common.MockNet:
+			amount = 546
+			params := &bchchaincfg.MainNetParams
+			if network == common.MockNet {
 				params = &bchchaincfg.RegressionNetParams
-			default:
-				params = &bchchaincfg.MainNetParams
 			}
 			hash, err := bchutil.NewAddressPubKeyHash(data, params)
 			if err != nil {
 				return nil, err
 			}
 			address = hash.String()
-			amount = 546
 		default:
 			return nil, fmt.Errorf("chain not supported")
 		}

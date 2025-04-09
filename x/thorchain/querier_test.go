@@ -1230,3 +1230,101 @@ func (s *QuerierSuite) TestQuerySecuredAssets(c *C) {
 	c.Assert(asset.Depth, Equals, "2000")
 	c.Assert(asset.Supply, Equals, "2000")
 }
+
+func (s *QuerierSuite) TestQuerySwap(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	queryServer := NewQueryServerImpl(mgr, s.kb)
+
+	nodeAccount := GetRandomValidatorNode(NodeActive)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, nodeAccount), IsNil)
+
+	// pubKey := GetRandomPubKey()
+	asgard := NewVault(
+		ctx.BlockHeight(),
+		ActiveVault,
+		AsgardVault,
+		GetRandomPubKey(),
+		common.Chains{
+			common.BTCChain,
+			common.ETHChain,
+		}.Strings(),
+		[]ChainContract{},
+	)
+
+	c.Assert(mgr.Keeper().SetVault(ctx, asgard), IsNil)
+
+	poolBTC := NewPool()
+	poolBTC.Asset = common.BTCAsset
+	poolBTC.BalanceAsset = cosmos.NewUint(1_000_000_000)
+	poolBTC.BalanceRune = cosmos.NewUint(10_000_000_000_000)
+	poolBTC.LPUnits = cosmos.NewUint(100)
+
+	err := mgr.Keeper().SetPool(ctx, poolBTC)
+	c.Assert(err, IsNil)
+
+	poolETH := NewPool()
+	poolETH.Asset = common.ETHAsset
+	poolETH.BalanceAsset = cosmos.NewUint(100_000_000_000)
+	poolETH.BalanceRune = cosmos.NewUint(10_000_000_000_000)
+	poolETH.LPUnits = cosmos.NewUint(100)
+
+	err = mgr.Keeper().SetPool(ctx, poolETH)
+	c.Assert(err, IsNil)
+
+	addressBTC := "bc1qk5700y6zwtnjzeh4mffh5qcl46vqgs4lf6rm6m"
+	addressTHOR := "thor14j7zjhnazs85macymj4g0xugr8jhdwg07rh2yy"
+
+	request := types.QueryQuoteSwapRequest{
+		FromAsset:         common.BTCAsset.String(),
+		ToAsset:           common.RuneNative.String(),
+		Amount:            "10000000",
+		StreamingInterval: "1",
+		StreamingQuantity: "5",
+		Destination:       addressTHOR,
+		ToleranceBps:      "300",
+		RefundAddress:     addressBTC,
+		Affiliate:         []string{"foo"},
+		AffiliateBps:      []string{"50"},
+	}
+
+	// memo greater than 80 bytes -> return error
+	queryPoolsResp, err := queryServer.QuoteSwap(ctx, &request)
+
+	c.Assert(err, NotNil)
+	c.Assert(err.Error(), Equals, "generated memo too long for source chain")
+	c.Assert(queryPoolsResp, IsNil)
+
+	// Use extended options
+	request.Extended = true
+	queryPoolsResp, err = queryServer.QuoteSwap(ctx, &request)
+
+	c.Assert(err, IsNil)
+	c.Assert(queryPoolsResp, NotNil)
+
+	c.Assert(queryPoolsResp.Memo, Equals, "=:r:thor14j7zjhnazs85macymj4g0xugr8jhdwg07rh2yy/bc1qk5700y6zwtnjzeh4mffh5qcl46vqgs4lf6rm6m:97000000000/1/1:foo:50")
+	c.Assert(len(queryPoolsResp.Vout), Equals, 3)
+	// "=:r:thor14j7zjhnazs85macymj4g0xugr8jhdwg07rh2yy/bc1qk5700y6zwtnjzeh4mffh5qcl46v^
+	c.Assert(queryPoolsResp.Vout[0].Type, Equals, "op_return")
+	c.Assert(queryPoolsResp.Vout[0].Data, Equals, "3d3a723a74686f7231346a377a6a686e617a7338356d6163796d6a34673078756772386a68647767303772683279792f626331716b3537303079367a77746e6a7a6568346d6666683571636c3436765e")
+	// 0014 716773346c6636726d366d3a3937303030303030
+	// "qgs4lf6rm6m:97000000"
+	c.Assert(queryPoolsResp.Vout[1].Type, Equals, "address")
+	c.Assert(queryPoolsResp.Vout[1].Data, Equals, "bc1qw9nhxdrvvcm8ymfkd5arjdesxqcrqvpsndj8fe")
+	// 0014 3030302f312f313a666f6f3a3530 000000000000
+	// "000/1/1:foo:50"
+	c.Assert(queryPoolsResp.Vout[2].Type, Equals, "address")
+	c.Assert(queryPoolsResp.Vout[2].Data, Equals, "bc1qxqcrqte39ucn5en0duar2vqqqqqqqqqquawupl")
+
+	c.Assert(queryPoolsResp.Vout[1].Amount, Equals, int64(294))
+
+	// Empty vout for non-utxo chains
+	request.FromAsset = common.ETHAsset.String()
+	request.RefundAddress = GetRandomETHAddress().String()
+	request.Extended = true
+
+	queryPoolsResp, err = queryServer.QuoteSwap(ctx, &request)
+
+	c.Assert(err, IsNil)
+	c.Assert(queryPoolsResp, NotNil)
+	c.Assert(len(queryPoolsResp.Vout), Equals, 0)
+}
