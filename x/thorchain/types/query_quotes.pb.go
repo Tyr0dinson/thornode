@@ -1657,9 +1657,12 @@ func (m *QuoteFees) GetTotalBps() int64 {
 }
 
 type Vout struct {
-	Type   string `protobuf:"bytes,1,opt,name=type,proto3" json:"type"`
-	Data   string `protobuf:"bytes,2,opt,name=data,proto3" json:"data"`
-	Amount int64  `protobuf:"varint,3,opt,name=amount,proto3" json:"amount"`
+	// type of content, either "op_return" or "address"
+	Type string `protobuf:"bytes,1,opt,name=type,proto3" json:"type"`
+	// l1 address or hex encoded memo
+	Data string `protobuf:"bytes,2,opt,name=data,proto3" json:"data"`
+	// sats to send, depends on dust limit per chain, 0 for op_return
+	Amount int64 `protobuf:"varint,3,opt,name=amount,proto3" json:"amount"`
 }
 
 func (m *Vout) Reset()         { *m = Vout{} }

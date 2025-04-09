@@ -15056,9 +15056,12 @@ type Vout struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Type_  string `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"`
-	Data   string `protobuf:"bytes,2,opt,name=data,proto3" json:"data,omitempty"`
-	Amount int64  `protobuf:"varint,3,opt,name=amount,proto3" json:"amount,omitempty"`
+	// type of content, either "op_return" or "address"
+	Type_ string `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"`
+	// l1 address or hex encoded memo
+	Data string `protobuf:"bytes,2,opt,name=data,proto3" json:"data,omitempty"`
+	// sats to send, depends on dust limit per chain, 0 for op_return
+	Amount int64 `protobuf:"varint,3,opt,name=amount,proto3" json:"amount,omitempty"`
 }
 
 func (x *Vout) Reset() {
