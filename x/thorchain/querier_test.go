@@ -1270,6 +1270,6 @@ func (s *QuerierSuite) TestNetwork(c *C) {
 	c.Assert(runePerDollar.String(), Equals, "0")
 
 	resp, _ = s.queryServer.Network(s.ctx, &types.QueryNetworkRequest{})
-	c.Assert(resp.TorPriceInRune, Equals, "10974243")
-	c.Assert(resp.RunePriceInTor, Equals, "911224600")
+	c.Assert(resp.TorPriceInRune, Equals, "n/a")
+	c.Assert(resp.RunePriceInTor, Equals, "n/a")
 }
