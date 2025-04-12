@@ -3507,11 +3507,11 @@ components:
         rune_price_in_tor:
           type: string
           example: "10"
-          description: the rune price in tor
+          description: the rune price in tor, returns "n/a" if it can't be calculated (eg. all anchor chains are halted)
         tor_price_in_rune:
           type: string
           example: "10"
-          description: the tor price in rune
+          description: the tor price in rune, returns "n/a" if it can't be calculated (eg. all anchor chains are halted)
 
     OutboundFeesResponse:
       type: array
