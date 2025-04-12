@@ -1230,3 +1230,46 @@ func (s *QuerierSuite) TestQuerySecuredAssets(c *C) {
 	c.Assert(asset.Depth, Equals, "2000")
 	c.Assert(asset.Supply, Equals, "2000")
 }
+
+func (s *QuerierSuite) TestNetwork(c *C) {
+	vault := GetRandomVault()
+	vault.Chains = append(vault.Chains, common.ETHChain.String())
+	c.Assert(s.k.SetVault(s.ctx, vault), IsNil)
+
+	s.k.SetMimir(s.ctx, "DerivedDepthBasisPts", 10_000)
+	s.k.SetMimir(s.ctx, "TorAnchor-ETH-BUSD-BD1", 1) // enable BUSD pool as a TOR anchor
+	ethBusd, err := common.NewAsset("ETH.BUSD-BD1")
+	c.Assert(err, IsNil)
+
+	pool := NewPool()
+	pool.Asset = ethBusd
+	pool.Status = PoolAvailable
+	pool.BalanceRune = cosmos.NewUint(500_000_00000000)
+	pool.BalanceAsset = cosmos.NewUint(4_556_123_00000000)
+	pool.Decimals = 8
+	err = s.k.SetPool(s.ctx, pool)
+	c.Assert(err, IsNil)
+
+	dollarsPerRune := s.k.DollarsPerRune(s.ctx)
+	c.Assert(dollarsPerRune.String(), Equals, "911224600")
+
+	runePerDollar := s.k.RunePerDollar(s.ctx)
+	c.Assert(runePerDollar.String(), Equals, "10974243")
+
+	resp, err := s.queryServer.Network(s.ctx, &types.QueryNetworkRequest{})
+	c.Assert(err, IsNil)
+	c.Assert(resp.TorPriceInRune, Equals, "10974243")
+	c.Assert(resp.RunePriceInTor, Equals, "911224600")
+
+	s.k.SetMimir(s.ctx, "HALTETHTRADING", 1)
+
+	dollarsPerRune = s.k.DollarsPerRune(s.ctx)
+	c.Assert(dollarsPerRune.String(), Equals, "0")
+
+	runePerDollar = s.k.RunePerDollar(s.ctx)
+	c.Assert(runePerDollar.String(), Equals, "0")
+
+	resp, _ = s.queryServer.Network(s.ctx, &types.QueryNetworkRequest{})
+	c.Assert(resp.TorPriceInRune, Equals, "10974243")
+	c.Assert(resp.RunePriceInTor, Equals, "911224600")
+}

@@ -467,7 +467,7 @@ func (qs queryServer) queryNetwork(ctx cosmos.Context, _ *types.QueryNetworkRequ
 		TnsRegisterFeeRune:    qs.mgr.Keeper().GetTHORNameRegisterFee(ctx).String(),
 		TnsFeePerBlockRune:    qs.mgr.Keeper().GetTHORNamePerBlockFee(ctx).String(),
 		RunePriceInTor:        dollarsPerRuneIgnoreHalt(ctx, qs.mgr.Keeper()).String(),
-		TorPriceInRune:        qs.mgr.Keeper().RunePerDollar(ctx).String(),
+		TorPriceInRune:        runePerDollarIgnoreHalt(ctx, qs.mgr.Keeper()).String(),
 	}
 
 	return &result, nil
@@ -3315,6 +3315,16 @@ func simulate(ctx cosmos.Context, mgr Manager, msg sdk.Msg) (sdk.Events, error) 
 	}
 
 	return em.Events(), nil
+}
+
+// runePerDollarIgnoreHalt mirrors keeper.RunePerDollars, but ignoring trade
+// halts, using dollarsPerRuneIgnoreHalt
+func runePerDollarIgnoreHalt(ctx cosmos.Context, k keeper.Keeper) cosmos.Uint {
+	dollarsPerRune := dollarsPerRuneIgnoreHalt(ctx, k)
+	return common.GetUncappedShare(
+		cosmos.NewUint(common.One),
+		dollarsPerRune, cosmos.NewUint(common.One),
+	)
 }
 
 // dollarsPerRuneIgnoreHalt mirrors keeper.DollarsPerRune, but ignoring halts if all
