@@ -125,15 +125,23 @@ Apps are generally more successful if there is clear differentiation. This preve
 
 Diversity of apps should be encouraged during the due diligence process of base-layer whitelisting. Any question of duplication should be addressed. 
 
-### Exploits or Un-aligned Apps
+Duplicate apps by different teams may be permitted if a former app has failed, dev-ghosted or has no support any more. 
 
+### App Upgradeability
 
+Since whitelisted deployers can only deploy whitelisted contracts after having adequate base-layer due diligence, it is encouraged that all apps have a `migrate()` path to allow for contract upgrades. 
+
+Deployers cannot upgrade a contract unless the new contract-ID is whitelisted in the base-layer. This will ensure contracts cannot be changed for malicous reasons. 
+
+Upgrading contracts and ensuring state and contract-address stay the same allows for bug-fixes and improvements to be seamlessly and securely rolled out.  
+
+More info: https://github.com/CosmWasm/cosmwasm 
 
 
 ## Emergency Procedures
 App-devs, base-devs and THORNodes are responsible for responding to and managing security issues.
 
-THORChain does not subscribe to the philosophy that "code is forever law" - rather that the chain and assets are sovereign and that long term a safe and vibrant ecosystem will bring 
+THORChain does not subscribe to the philosophy that "code is forever law" - rather that the chain and assets are sovereign and that long term a safe and vibrant ecosystem will bring more users and fees - thus exploits can and should be handled. 
 
 ### Vulnerability Reported
 If a P0 is reported, but no exploit yet, THORNodes can:
@@ -143,10 +151,14 @@ If a P0 is reported, but no exploit yet, THORNodes can:
 
 ### Active Exploit
 If an app is exploited and user assets are lost, THORNodes can:
-1) Pause the entire chain `make halt` which will pause everything, including MsgSend and Secured Assets withdrawals
+1) Pause the entire chain `make halt` which will pause everything, including `MsgSend` and Secured Assets withdrawals
 2) Specifically identify the exploit and target more granular pauses
-3) Base Devs work with App devs to roll-out an app-upgrade, and possible store-migrations to move stolen assets back
+3) Base Devs to work with App devs to roll-out an app-upgrade, and possible store-migrations to move stolen assets back
 
+### App Upgrades
+Apps that should be upgraded after a reported vulnerability or exploit should follow this process
+1) Submit the new app bytecode that migrates user-state correctly and addresses any issues to the Base Layer Devs
+2) Apps that can't migrate can have their state and assets store-migrated to new contracts.
 
 
 ## Deployment
