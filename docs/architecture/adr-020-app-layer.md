@@ -31,9 +31,6 @@ A Hosted App Layer is most appropriate for THORChain:
 
 ## Detailed Design
 
-### Secured Assets
-
-
 ### WASM
 The `x/wasm` module is implemented with the following features:
 
@@ -41,12 +38,35 @@ The `x/wasm` module is implemented with the following features:
 2) Permissioning, where only whitelisted deployer addresses can deploy whitelisted bytecode - this ensures a basic due diligence and quality control process. 
 3) Control - where Node Mimir can pause any contract, any set of contracts or the entire app layer
 ```
-Pause
+HaltWasmGlobal
+HaltWasmCs-%s
+// Encode the checksum to base32 to fit within mimir's 64 char limit and case insenstivity. Truncate trailing `=` for brevity
+HaltWasmContract-%s
+// Use contract address checksum (last 6) for brevity and to fit inside mimir's 64 char length
 ```
-4) Layer1 Callable - where a deposit can be made by an L1 account with an `X:contract:function` memo to directly call an app. 
+4) Layer1 Callable - where a deposit can be made by an L1 account with an `X:ADDR:PAYLOAD` memo to directly call an app. 
 
 Implemented as per https://gitlab.com/thorchain/thornode/-/merge_requests/3829
 
+### Secured Assets
+Contracts can move Secured Assets, which are wrapped L1 assets, represented in THORChain's state as native `x/bank` assets: 
+
+1) Secured Assets are denomed like `btc-btc` for `BTC.BTC` and minted natively.
+2) Secured Assets are not directly redeemed for vaulted assets, they are managed as a "share". This allows negative interest to be charged in future, or if a vault loss ever happens, a haircut to be handled. 
+3) Secured Assets have all the features that Trade Assets have (swaps etc)
+4) Mint with `secure+:thorAddress` and Redeem with `secure-:l1Address`
+5) Pauseable 
+```
+HaltSecuredGlobal
+HaltSecuredDeposit-%s
+// Use with Chain
+HaltSecuredWithdraw-%s
+// Use with Chain
+```
+
+Implemented as per https://gitlab.com/thorchain/thornode/-/merge_requests/3721
+
+### 
 
 
 ## Consequences
