@@ -64,7 +64,7 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "C41D8B097019419DBF1C2DCD919081D1672E6711B6BC363863152E826B8CCA1C",
+      "app_hash": "7D774A26E7B8C449C8E7B1B2BD8B240FF4ADC5BA56EEAABBD4D657EC405B19F9",
       "last_results_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
@@ -126,13 +126,8 @@
           "code": 5,
           "log": "failed to execute message; message index: 0: insufficient funds",
           "gas_wanted": "-1",
-          "gas_used": "67443",
+          "gas_used": "69521",
           "events": [
-            {
-              "fee": "",
-              "fee_payer": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
-              "type": "tx"
-            },
             {
               "amount": "2000000rune",
               "spender": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
@@ -194,8 +189,8 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "46692D8F4D1D9B0386255C8413FC960F5C2AA5B1863DC669D8B3DF819AF9E34C",
-      "last_results_hash": "ADEFE094B54F67AE350A37557C69F171748DC27D9AEF8D02D1D778DE37F42D76",
+      "app_hash": "EB423AA75DDAE371F8E00CD7379984876B795D4265A3E7B862517CC498C925D9",
+      "last_results_hash": "FE0CA263A73403E43E45EB9CCCB9A89E25C649045C546334B013F84966786338",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
@@ -255,13 +250,8 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "138139",
+          "gas_used": "140031",
           "events": [
-            {
-              "fee": "",
-              "fee_payer": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
-              "type": "tx"
-            },
             {
               "amount": "2000000rune",
               "spender": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
@@ -373,8 +363,8 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "DC528CE23713C1C0D93DEAD54131A894F99873DD8FF02774E551D37FBFE3C015",
-      "last_results_hash": "EFE01655D3E4C4C79FF88289E158C12372AFA629393AC0FF7524AC2130C2BF74",
+      "app_hash": "9787A8FDA8AD10879FD875A6EC355E3E476A05639B988DDBDDB242B6C19D1DDE",
+      "last_results_hash": "ADE97D0791C8E6E3890365410033D5BCE3F41F8C55DB69B61296BBC378FEA2DE",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
@@ -410,7 +400,7 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "285C59DC5D8DAD45390DF6C8B69FFA08ECCE2FBE1E6D203AC3A594BFB0C69FDC",
+      "app_hash": "46548342971496345C0041A80E8CD6AABD3716ED9F10C127C8D239229C09F7B0",
       "last_results_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
@@ -472,13 +462,8 @@
           "code": 99,
           "log": "failed to execute message; message index: 0: (bond) memos are for the (bond) module, for which messages must only contain RUNE: internal error",
           "gas_wanted": "-1",
-          "gas_used": "68311",
+          "gas_used": "70425",
           "events": [
-            {
-              "fee": "",
-              "fee_payer": "tthor1anq4fk6l89w3sfuxehwyprxqjdj3kuzpfwlrav",
-              "type": "tx"
-            },
             {
               "amount": "2000000rune",
               "spender": "tthor1anq4fk6l89w3sfuxehwyprxqjdj3kuzpfwlrav",

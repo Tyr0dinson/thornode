@@ -77,7 +77,7 @@ func (s *ThorchainSuite) SetUpTest(c *C) {
 	s.cfg.ChainRPC = s.server.Listener.Addr().String()
 
 	var err error
-	bridge, err := NewThorchainBridge(s.cfg, GetMetricForTest(c), NewKeysWithKeybase(kb, cfg.SignerName, cfg.SignerPasswd))
+	bridge, err := NewThorchainBridge(s.cfg, GetMetricForTest(c), NewKeysWithKeybase(kb, cfg.SignerName, "", cfg.SignerPasswd))
 	var ok bool
 	s.bridge, ok = bridge.(*thorchainBridge)
 	c.Assert(ok, Equals, true)
@@ -177,7 +177,7 @@ func (ThorchainSuite) TestNewThorchainBridge(c *C) {
 		kb := keyring.NewInMemory(cdc)
 		_, _, err := kb.NewMnemonic(cfg.SignerName, keyring.English, cmd.THORChainHDPath, cfg.SignerPasswd, hd.Secp256k1)
 		c.Assert(err, IsNil)
-		sb, err := NewThorchainBridge(cfg, m, NewKeysWithKeybase(kb, cfg.SignerName, cfg.SignerPasswd))
+		sb, err := NewThorchainBridge(cfg, m, NewKeysWithKeybase(kb, cfg.SignerName, "", cfg.SignerPasswd))
 		c.Assert(err, errChecker)
 		c.Assert(sb, sbChecker)
 	}

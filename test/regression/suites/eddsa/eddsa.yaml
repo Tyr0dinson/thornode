@@ -50,11 +50,11 @@ asserts:
   - .expected_amount_out|tonumber == 949194
   - .memo == "=:BTC.BTC:{{ addr_btc_fox }}"
   - .recommended_min_amount_in == "558900"
-  - .fees.liquidity == "19292"
+  - .fees.liquidity == "19478"
   - .fees.outbound == "14000"
   - (.fees.total|tonumber) == (.fees.liquidity|tonumber)+(.fees.outbound|tonumber)
-  - .fees.slippage_bps == 196
-  - .fees.total_bps == 334
+  - .fees.slippage_bps == 198
+  - .fees.total_bps == 335
 ---
 ########################################################################################
 # quote and swap btc to sol
@@ -70,8 +70,8 @@ asserts:
   - .expected_amount_out|tonumber == 9574832
   - .memo == "=:SOL.SOL:{{ addr_sol_fox }}"
   - .recommended_min_amount_in == "56000"
-  - .fees.liquidity == "191801"
+  - .fees.liquidity == "193641"
   - .fees.outbound == "20000"
   - (.fees.total|tonumber) == (.fees.liquidity|tonumber)+(.fees.outbound|tonumber)
-  - .fees.slippage_bps == 195
-  - .fees.total_bps == 215
+  - .fees.slippage_bps == 197
+  - .fees.total_bps == 217

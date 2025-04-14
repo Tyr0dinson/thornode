@@ -820,6 +820,7 @@ type BifrostClientConfiguration struct {
 	ChainEBifrost   string       `mapstructure:"chain_ebifrost"`
 	ChainHomeFolder string       `mapstructure:"chain_home_folder"`
 	SignerName      string       `mapstructure:"signer_name"`
+	SignerNameEDDSA string       `mapstructure:"signer_name_eddsa"`
 	SignerPasswd    string
 }
 

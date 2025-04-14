@@ -38,7 +38,7 @@ func (s *BroadcastSuite) SetUpSuite(c *C) {
 	s.cfg.ChainHost = s.server.Listener.Addr().String()
 	s.cfg.ChainRPC = s.server.Listener.Addr().String()
 	var err error
-	bridge, err := NewThorchainBridge(s.cfg, GetMetricForTest(c), NewKeysWithKeybase(kb, cfg.SignerName, cfg.SignerPasswd))
+	bridge, err := NewThorchainBridge(s.cfg, GetMetricForTest(c), NewKeysWithKeybase(kb, cfg.SignerName, "", cfg.SignerPasswd))
 	c.Assert(err, IsNil)
 	var ok bool
 	s.bridge, ok = bridge.(*thorchainBridge)

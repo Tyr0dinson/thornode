@@ -2,7 +2,6 @@
   "asgard": [
     {
       "pub_key": "tthorpub1addwnpepqflvfv08t6qt95lmttd6wpf3ss8wx63e9vf6fvyuj2yy6nnyna576rfzjks",
-      "pub_key_eddsa": "tthorpub1zcjduepq3p80uejsez2p7ynwjfshlsetm7uqqjxn8xe5susgsf37c0de0kcsecrfnm",
       "routers": [
         {
           "chain": "ETH",
@@ -16,7 +15,6 @@
     },
     {
       "pub_key": "tthorpub1addwnpepq2flfr96skc5lkwdv0n5xjsnhmuju20x3zndgu42zd8dtkrud9m2vajhww6",
-      "pub_key_eddsa": "tthorpub1zcjduepq3p80uejsez2p7ynwjfshlsetm7uqqjxn8xe5susgsf37c0de0kcsecrfnm",
       "routers": [
         {
           "chain": "ETH",
@@ -30,7 +28,6 @@
     },
     {
       "pub_key": "tthorpub1addwnpepqwhnus6xs4208d4ynm05lv493amz3fexfjfx4vptntedd7k0ajlcunlfxxs",
-      "pub_key_eddsa": "tthorpub1zcjduepq3p80uejsez2p7ynwjfshlsetm7uqqjxn8xe5susgsf37c0de0kcsecrfnm",
       "routers": [
         {
           "chain": "ETH",
@@ -44,7 +41,6 @@
     },
     {
       "pub_key": "tthorpub1addwnpepq2mza4j4vplyjw295pkq8j2dan627lz6vufeu22pjx5vnnyjted5vwq3e3d",
-      "pub_key_eddsa": "tthorpub1zcjduepq3p80uejsez2p7ynwjfshlsetm7uqqjxn8xe5susgsf37c0de0kcsecrfnm",
       "routers": [
         {
           "chain": "ETH",

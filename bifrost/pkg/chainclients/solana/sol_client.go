@@ -8,12 +8,13 @@ import (
 	"math/big"
 	"sync"
 
-	"github.com/cosmos/cosmos-sdk/crypto/codec"
+	"github.com/mr-tron/base58"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+
+	cosmoscryptoed25519 "github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
-	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/evm"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/runners"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/solana/rpc"
@@ -22,6 +23,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss"
+	tssp "gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/tss"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
@@ -33,15 +35,13 @@ import (
 type SOLClient struct {
 	logger                  zerolog.Logger
 	cfg                     config.BifrostChainConfiguration
-	localPubKey             common.PubKey
-	kw                      *evm.KeySignWrapper
+	localPubKey             string
+	k                       *cosmoscryptoed25519.PrivKey
 	solScanner              *SOLScanner
 	solGeyser               *SolGeyser
 	bridge                  thorclient.ThorchainBridge
 	blockScanner            *blockscanner.BlockScanner
-	pubkeyMgr               pubkeymanager.PubKeyValidator
 	poolMgr                 thorclient.PoolManager
-	tssKeySigner            *tss.KeySign
 	tssKeyManager           tss.ThorchainKeyManager
 	wg                      *sync.WaitGroup
 	stopchan                chan struct{}
@@ -55,7 +55,7 @@ type SOLClient struct {
 func NewSOLClient(
 	thorKeys *thorclient.Keys,
 	cfg config.BifrostChainConfiguration,
-	// server *tss.TssServer,
+	server *tssp.TssServer,
 	bridge thorclient.ThorchainBridge,
 	m *metrics.Metrics,
 	pubkeyMgr pubkeymanager.PubKeyValidator,
@@ -76,39 +76,35 @@ func NewSOLClient(
 	}
 
 	// // create keys
-	// tssKm, err := tss.NewKeySign(server, bridge)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("failed to create tss signer: %w", err)
-	// }
-	priv, err := thorKeys.GetPrivateKey()
+	tssKm, err := tss.NewKeySign(server, bridge)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create tss signer: %w", err)
+	}
+	priv, err := thorKeys.GetPrivateKeyEDDSA()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get private key: %w", err)
 	}
-	temp, err := codec.ToTmPubKeyInterface(priv.PubKey())
-	if err != nil {
-		return nil, fmt.Errorf("failed to get tm pub key: %w", err)
+
+	pub, ok := priv.PubKey().(*cosmoscryptoed25519.PubKey)
+	if !ok {
+		return nil, fmt.Errorf("failed to cast pubkey to ed25519")
 	}
-	pk, err := common.NewPubKeyFromCrypto(temp)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get pub key: %w", err)
-	}
+	formattedPub := base58.Encode(pub.Bytes())
 
 	// create rpc clients
 	rpcClient := rpc.NewSolRPC(cfg.RPCHost, cfg.BlockScanner.HTTPRequestTimeout)
 
 	c := &SOLClient{
-		logger:      log.With().Str("module", "sol").Stringer("chain", cfg.ChainID).Logger(),
-		cfg:         cfg,
-		localPubKey: pk,
-		// kw:           keysignWrapper,
-		bridge:    bridge,
-		pubkeyMgr: pubkeyMgr,
-		poolMgr:   poolMgr,
-		// tssKeySigner:  tssKm,
-		// tssKeyManager: tssKm,
-		wg:        &sync.WaitGroup{},
-		stopchan:  make(chan struct{}),
-		rpcClient: rpcClient,
+		logger:        log.With().Str("module", "sol").Stringer("chain", cfg.ChainID).Logger(),
+		cfg:           cfg,
+		localPubKey:   formattedPub,
+		k:             priv,
+		bridge:        bridge,
+		poolMgr:       poolMgr,
+		tssKeyManager: tssKm,
+		wg:            &sync.WaitGroup{},
+		stopchan:      make(chan struct{}),
+		rpcClient:     rpcClient,
 	}
 
 	// initialize storage
@@ -162,11 +158,17 @@ func NewSOLClient(
 }
 
 // Start starts the chain client with the given queues.
-func (c *SOLClient) Start(globalTxsQueue chan stypes.TxIn, globalErrataQueue chan stypes.ErrataBlock, globalSolvencyQueue chan stypes.Solvency) {
-	// c.solScanner.globalErrataQueue = globalErrataQueue
+func (c *SOLClient) Start(
+	globalTxsQueue chan stypes.TxIn,
+	globalErrataQueue chan stypes.ErrataBlock,
+	globalSolvencyQueue chan stypes.Solvency,
+	globalNetworkFeeQueue chan common.NetworkFee,
+) {
+	//c.solScanner.globalErrataQueue = globalErrataQueue
 	c.globalSolvencyQueue = globalSolvencyQueue
-	// c.tssKeySigner.Start()
-	c.blockScanner.Start(globalTxsQueue)
+	c.solScanner.globalNetworkFeeQueue = globalNetworkFeeQueue
+	c.tssKeyManager.Start()
+	c.blockScanner.Start(globalTxsQueue, globalNetworkFeeQueue)
 	c.solGeyser.Run()
 	c.wg.Add(1)
 	go runners.SolvencyCheckRunner(c.GetChain(), c, c.bridge, c.stopchan, c.wg, constants.ThorchainBlockTime)
@@ -174,7 +176,7 @@ func (c *SOLClient) Start(globalTxsQueue chan stypes.TxIn, globalErrataQueue cha
 
 // Stop stops the chain client.
 func (c *SOLClient) Stop() {
-	c.tssKeySigner.Stop()
+	c.tssKeyManager.Stop()
 	c.blockScanner.Stop()
 	c.solGeyser.Stop()
 	close(c.stopchan)
@@ -195,7 +197,7 @@ func (c *SOLClient) GetConfig() config.BifrostChainConfiguration {
 
 // GetChain returns the chain.
 func (c *SOLClient) GetChain() common.Chain {
-	return c.cfg.ChainID
+	return common.SOLChain
 }
 
 // --------------------------------- status ---------------------------------
@@ -278,10 +280,13 @@ func (c *SOLClient) ShouldReportSolvency(height int64) bool {
 
 // SignTx returns the signed transaction.
 func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *stypes.TxInItem, error) {
+	if tx.Chain != common.SOLChain {
+		return nil, nil, nil, fmt.Errorf("tx chain is not solana")
+	}
 	if tx.ToAddress.IsEmpty() {
 		return nil, nil, nil, fmt.Errorf("to address is empty")
 	}
-	if tx.VaultPubKey.IsEmpty() {
+	if tx.VaultPubKeyEddsa.IsEmpty() {
 		return nil, nil, nil, fmt.Errorf("vault public key is empty")
 	}
 
@@ -323,13 +328,24 @@ func (c *SOLClient) signTransaction(solTx types.Transaction, txOut stypes.TxOutI
 		return solTx, fmt.Errorf("failed to serialize transaction: %w", err)
 	}
 
-	sig, _, err := c.tssKeySigner.RemoteSign(message, txOut.VaultPubKey.String())
+	var sig []byte
+
+	parsedPub, err := common.PubKey(txOut.VaultPubKeyEddsa).GetAddress(c.GetChain())
 	if err != nil {
-		return types.Transaction{}, err
+		return types.Transaction{}, fmt.Errorf("failed to get address from pubkey: %w", err)
 	}
 
-	fmt.Println("SIG")
-	prettyPrint(sig)
+	if parsedPub.String() == c.localPubKey {
+		sig, err = c.k.Sign(message)
+		if err != nil {
+			return types.Transaction{}, fmt.Errorf("failed to sign local transaction: %w", err)
+		}
+	} else {
+		sig, _, err = c.tssKeyManager.RemoteSign(message, txOut.VaultPubKeyEddsa.String())
+		if err != nil {
+			return types.Transaction{}, fmt.Errorf("failed to sign remote transaction: %w", err)
+		}
+	}
 
 	vaultAccount := solTx.Message.Accounts[0]
 	if !ed25519.Verify(vaultAccount.Bytes(), message, sig) {
@@ -357,8 +373,8 @@ func (c *SOLClient) CreateTx(tx stypes.TxOutItem) (types.Transaction, error) {
 
 	solTx := types.Transaction{}
 
-	// Creae account pubkeys
-	vaultAddr, err := tx.VaultPubKey.GetAddress(c.GetChain())
+	// Create account pubkeys
+	vaultAddr, err := tx.VaultPubKeyEddsa.GetAddress(c.GetChain())
 	if err != nil {
 		return types.Transaction{}, fmt.Errorf("fail to get vault address: %w", err)
 	}
@@ -395,9 +411,6 @@ func (c *SOLClient) CreateTx(tx stypes.TxOutItem) (types.Transaction, error) {
 	}
 
 	recentBlockhash := c.solScanner.GetLatestBlockHash()
-	if err != nil {
-		return solTx, fmt.Errorf("fail to get latest block hash: %w", err)
-	}
 
 	message := types.NewMessage(header, accountKeys, recentBlockhash, []types.CompiledInstruction{memoInstruction, transferInstruction})
 	return types.NewTransaction(message), nil

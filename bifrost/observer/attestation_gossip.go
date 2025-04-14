@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	"github.com/libp2p/go-libp2p-core/host"
 	"github.com/libp2p/go-libp2p-core/protocol"
@@ -84,6 +85,7 @@ type txKey struct {
 
 type KeysInterface interface {
 	GetPrivateKey() (*secp256k1.PrivKey, error)
+	GetPrivateKeyEDDSA() (*ed25519.PrivKey, error)
 }
 
 type EventClientInterface interface {

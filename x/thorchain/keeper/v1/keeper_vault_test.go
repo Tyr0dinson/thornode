@@ -53,7 +53,7 @@ func (s *KeeperVaultSuite) TestVaultV2(c *C) {
 
 	pubKey := GetRandomPubKey()
 	eddsaPubKey := GetRandomPubKey()
-	asgard := NewVaultV2(ctx.BlockHeight(), ActiveVault, AsgardVault, pubKey, common.Chains{common.BNBChain}.Strings(), []ChainContract{}, eddsaPubKey)
+	asgard := NewVaultV2(ctx.BlockHeight(), ActiveVault, AsgardVault, pubKey, common.Chains{common.SOLChain}.Strings(), []ChainContract{}, eddsaPubKey)
 	c.Assert(k.SetVault(ctx, asgard), IsNil)
 
 	// check we can get vault by eddsa key

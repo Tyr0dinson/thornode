@@ -9,8 +9,13 @@ import (
 	"os"
 	"time"
 
+	"github.com/cosmos/cosmos-sdk/codec"
+	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
+	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	cKeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
+	. "gopkg.in/check.v1"
+
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
@@ -21,7 +26,6 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain"
-	. "gopkg.in/check.v1"
 )
 
 const TestGasPriceResolution = 1
@@ -49,7 +53,6 @@ func httpTestHandler(c *C, rw http.ResponseWriter, fixture string) {
 func getConfigForTest(rpcHost string) config.BifrostBlockScannerConfiguration {
 	return config.BifrostBlockScannerConfiguration{
 		ChainID:                    common.SOLChain,
-		RPCHost:                    rpcHost,
 		StartBlockHeight:           1, // avoids querying thorchain for block height
 		BlockScanProcessors:        1,
 		HTTPRequestTimeout:         time.Second,
@@ -80,15 +83,18 @@ func (s *BlockScannerTestSuite) SetUpSuite(c *C) {
 	cfg := config.BifrostClientConfiguration{
 		ChainID:         "thorchain",
 		ChainHost:       "localhost",
-		SignerName:      "bob",
+		SignerName:      "bob-ecdsa",
+		SignerNameEDDSA: "bob-eddsa",
 		SignerPasswd:    "password",
 		ChainHomeFolder: "",
 	}
-
-	kb := cKeys.NewInMemory()
+	registry := codectypes.NewInterfaceRegistry()
+	cryptocodec.RegisterInterfaces(registry)
+	cdc := codec.NewProtoCodec(registry)
+	kb := cKeys.NewInMemory(cdc)
 	_, _, err := kb.NewMnemonic(cfg.SignerName, cKeys.English, cmd.THORChainHDPath, cfg.SignerPasswd, hd.Secp256k1)
 	c.Assert(err, IsNil)
-	thorKeys := thorclient.NewKeysWithKeybase(kb, cfg.SignerName, cfg.SignerPasswd)
+	thorKeys := thorclient.NewKeysWithKeybase(kb, cfg.SignerName, cfg.SignerNameEDDSA, cfg.SignerPasswd)
 	c.Assert(err, IsNil)
 	s.keys = thorKeys
 	s.bridge, err = thorclient.NewThorchainBridge(cfg, s.m, thorKeys)

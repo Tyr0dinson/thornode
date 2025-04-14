@@ -1,7 +1,7 @@
 package types
 
 import (
-	"gitlab.com/thorchain/thornode/v3/common"
+	"github.com/mr-tron/base58"
 )
 
 const (
@@ -25,12 +25,12 @@ func (p PublicKey) EqualsString(s string) bool {
 }
 
 func MustPublicKeyFromString(s string) PublicKey {
-	d, _ := common.Base58Decode(s)
+	d, _ := base58.Decode(s)
 	return PublicKeyFromBytes(d)
 }
 
 func PublicKeyFromString(s string) (PublicKey, error) {
-	d, err := common.Base58Decode(s)
+	d, err := base58.Decode(s)
 	if err != nil {
 		return PublicKey{}, err
 	}
@@ -38,7 +38,7 @@ func PublicKeyFromString(s string) (PublicKey, error) {
 }
 
 func (p PublicKey) ToBase58() string {
-	return common.Base58Encode(p[:])
+	return base58.Encode(p[:])
 }
 
 func PublicKeyFromBytes(b []byte) PublicKey {

@@ -42,12 +42,12 @@ func (s *RpcTestSuite) TestTransaction(c *C) {
 	}`
 
 	// Decode JSON into Go struct
-	var transaction RPCTransaction
+	var transaction RPCTxnData
 	err := json.Unmarshal([]byte(jsonTransaction), &transaction)
 	c.Check(err, IsNil)
 
 	// Further steps to deserialize the base64 data
-	decodedData, err := base64.StdEncoding.DecodeString(transaction.Transaction.Message.Instructions[0].Data)
+	decodedData, err := base64.StdEncoding.DecodeString(transaction.Message.Instructions[0].Data)
 	c.Assert(err, IsNil)
 	c.Assert(decodedData, NotNil)
 }

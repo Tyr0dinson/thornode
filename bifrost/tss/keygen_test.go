@@ -70,9 +70,9 @@ func (kts *KeyGenTestSuite) TestNewTssKenGen(c *C) {
 		err := os.RemoveAll(folder)
 		c.Assert(err, IsNil)
 	}()
-	kb, _, err := thorclient.GetKeyringKeybase(folder, signerNameForTest, signerPasswordForTest)
+	kb, _, err := thorclient.GetKeyringKeybase(folder, signerNameForTest, "", signerPasswordForTest)
 	c.Assert(err, IsNil)
-	k := thorclient.NewKeysWithKeybase(kb, signerNameForTest, signerPasswordForTest)
+	k := thorclient.NewKeysWithKeybase(kb, signerNameForTest, "", signerPasswordForTest)
 	c.Assert(k, NotNil)
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		c.Logf("requestUri:%s", req.RequestURI)

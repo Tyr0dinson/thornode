@@ -63,11 +63,11 @@ func (ks *KeysSuite) TestNewKeys(c *C) {
 		c.Assert(err, IsNil)
 	}()
 
-	k, info, err := GetKeyringKeybase(folder, signerNameForTest, signerPasswordForTest)
+	k, info, err := GetKeyringKeybase(folder, signerNameForTest, "", signerPasswordForTest)
 	c.Assert(err, IsNil)
 	c.Assert(k, NotNil)
 	c.Assert(info, NotNil)
-	ki := NewKeysWithKeybase(k, signerNameForTest, signerPasswordForTest)
+	ki := NewKeysWithKeybase(k, signerNameForTest, "", signerPasswordForTest)
 	info = ki.GetSignerInfo()
 	c.Assert(info, NotNil)
 	c.Assert(info.Name, Equals, signerNameForTest)

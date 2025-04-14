@@ -3,7 +3,7 @@ package types
 import (
 	"encoding/binary"
 
-	"gitlab.com/thorchain/thornode/v3/common"
+	"github.com/mr-tron/base58"
 )
 
 type MessageVersion string
@@ -61,7 +61,7 @@ func (m *Message) Serialize() ([]byte, error) {
 		b = append(b, key[:]...)
 	}
 
-	blockHash, err := common.Base58Decode(m.RecentBlockHash)
+	blockHash, err := base58.Decode(m.RecentBlockHash)
 	if err != nil {
 		return nil, err
 	}

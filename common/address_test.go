@@ -355,7 +355,7 @@ func (s *AddressSuite) TestAddress(c *C) {
 	c.Check(addr.IsChain(LTCChain), Equals, false)
 	c.Check(addr.IsChain(BTCChain), Equals, false)
 	c.Check(addr.IsChain(ETHChain), Equals, false)
-	c.Check(addr.IsChain(BNBChain), Equals, false)
+	c.Check(addr.IsChain(XRPChain), Equals, false)
 	c.Check(addr.IsChain(THORChain), Equals, false)
 	c.Check(addr.IsChain(DOGEChain), Equals, false)
 	c.Check(addr.GetNetwork(SOLChain), Equals, MockNet)

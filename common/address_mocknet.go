@@ -14,6 +14,7 @@ import (
 	"github.com/gcash/bchutil"
 	ltcchaincfg "github.com/ltcsuite/ltcd/chaincfg"
 	"github.com/ltcsuite/ltcutil"
+	"github.com/mr-tron/base58"
 )
 
 // newAddress in this file with build tags checks Mocknet(/Testnet)-specific addresses.
@@ -87,7 +88,7 @@ func newAddress(address string) (Address, error) {
 	}
 
 	// Check ED25519 (base58 encoded) addresses - SOL addresses must be 32 bytes long
-	res, decodeErr := Base58Decode(address)
+	res, decodeErr := base58.Decode(address)
 	if decodeErr == nil && len(res) == 32 {
 		return Address(address), nil
 	}

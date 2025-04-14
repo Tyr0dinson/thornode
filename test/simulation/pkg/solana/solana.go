@@ -8,11 +8,11 @@ import (
 
 	btypes "github.com/blocto/solana-go-sdk/types"
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
-	sdk "github.com/cosmos/cosmos-sdk/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/solana/rpc"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/solana/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 
 	. "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
 )
@@ -92,8 +92,8 @@ func (c *Client) GetAccount(pk *common.PubKey) (*common.Account, error) {
 	}
 
 	// get amount
-	amount := sdk.NewUint(lamportsBalance)
-	amount = amount.Quo(sdk.NewUint(10)) // 1e9 -> 1e8
+	amount := cosmos.NewUint(lamportsBalance)
+	amount = amount.Quo(cosmos.NewUint(10)) // 1e9 -> 1e8
 
 	coins := common.Coins{
 		common.NewCoin(common.SOLAsset, amount),

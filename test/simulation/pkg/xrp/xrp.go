@@ -12,7 +12,7 @@ import (
 
 	. "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
 
-	"github.com/Peersyst/xrpl-go/binary-codec"
+	binarycodec "github.com/Peersyst/xrpl-go/binary-codec"
 	"github.com/Peersyst/xrpl-go/xrpl/queries/account"
 	qcommon "github.com/Peersyst/xrpl-go/xrpl/queries/common"
 	"github.com/Peersyst/xrpl-go/xrpl/rpc"
@@ -45,7 +45,7 @@ func NewClient(chain common.Chain, host string, keys *thorclient.Keys) (LiteChai
 	if err != nil {
 		return nil, fmt.Errorf("fail to get private key: %w", err)
 	}
-	localKm, err := keymanager.NewKeyManager(privKey, keymanager.SECP256K1)
+	localKm, err := keymanager.NewKeyManager(privKey)
 	if err != nil {
 		return nil, fmt.Errorf("fail to create key manager: %w", err)
 	}

@@ -45,7 +45,7 @@ func NewKeysWithKeybase(kb ckeys.Keyring, name, password string) *Keys {
 }
 
 // GetKeyringKeybase return keyring and key info
-func GetKeyringKeybase(chainHomeFolder, signerName, password string) (ckeys.Keyring, *ckeys.Record, error) {
+func GetKeyringKeybase(chainHomeFolder, signerName, eddsaSignerName, password string) (ckeys.Keyring, *ckeys.Record, error) {
 	if len(signerName) == 0 {
 		return nil, nil, fmt.Errorf("signer name is empty")
 	}

@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"math/big"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
+	"github.com/mr-tron/base58"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -46,16 +46,16 @@ type SOLScanner struct {
 	solRpc             *rpc.SolRPC
 	blockMetaAccessor  evm.BlockMetaAccessor
 	bridge             thorclient.ThorchainBridge
-	pubkeyMgr          pubkeymanager.PubKeyValidator
 	currentBlockHeight int64
 	solvencyReporter   SolvencyReporter
 	signerCacheManager *signercache.CacheManager
 	geyser             *SolGeyser
 
+	globalNetworkFeeQueue chan common.NetworkFee
+
 	// fee rate
-	feeRateCache        []uint64
-	feeRate             uint64
-	lastReportedFeeRate uint64
+	feeRateCache []uint64
+	lastFeeRate  uint64
 
 	// metrics
 	totalDuration time.Duration
@@ -100,21 +100,19 @@ func NewSOLScanner(cfg config.BifrostBlockScannerConfiguration,
 	}
 
 	return &SOLScanner{
-		cfg:                 cfg,
-		logger:              log.Logger.With().Stringer("chain", cfg.ChainID).Logger(),
-		errCounter:          m.GetCounterVec(metrics.BlockScanError(cfg.ChainID)),
-		db:                  storage,
-		m:                   m,
-		solRpc:              rpc,
-		blockMetaAccessor:   blockMetaAccessor,
-		bridge:              bridge,
-		pubkeyMgr:           pubkeyMgr,
-		solvencyReporter:    solvencyReporter,
-		signerCacheManager:  signerCacheManager,
-		latestBlockHash:     "",
-		feeRate:             0,
-		lastReportedFeeRate: 0,
-		feeRateCache:        []uint64{},
+		cfg:                cfg,
+		logger:             log.Logger.With().Stringer("chain", cfg.ChainID).Logger(),
+		errCounter:         m.GetCounterVec(metrics.BlockScanError(cfg.ChainID)),
+		db:                 storage,
+		m:                  m,
+		solRpc:             rpc,
+		blockMetaAccessor:  blockMetaAccessor,
+		bridge:             bridge,
+		solvencyReporter:   solvencyReporter,
+		signerCacheManager: signerCacheManager,
+		latestBlockHash:    "",
+		lastFeeRate:        0,
+		feeRateCache:       make([]uint64, 0),
 	}, nil
 }
 
@@ -209,6 +207,11 @@ func (s *SOLScanner) updateLatestBlockHash() error {
 	return nil
 }
 
+// GetNetworkFee returns current chain network fee according to Bifrost.
+func (c *SOLScanner) GetNetworkFee() (transactionSize, transactionFeeRate uint64) {
+	return 1, c.lastFeeRate
+}
+
 // FetchMemPool returns all transactions in the mempool.
 func (s *SOLScanner) FetchMemPool(_ int64) (stypes.TxIn, error) {
 	return stypes.TxIn{}, nil
@@ -239,15 +242,22 @@ func (s *SOLScanner) UpdateNetworkFee(height int64) {
 	roundedFeeRate := ((medianFeeRate + (resolution / 2)) / resolution) * resolution
 
 	// Update the fee rate if it has changed
-	if roundedFeeRate != s.feeRate {
-		// post to thorchain
-		if _, err := s.bridge.PostNetworkFee(height, s.cfg.ChainID, 1, roundedFeeRate); err != nil {
-			s.logger.Err(err).Msg("failed to post SOL chain single transfer fee to THORNode")
-		} else {
-			s.feeRate = roundedFeeRate
-			s.logger.Info().Int("feeRate", int(s.feeRate)).Msg("Updated fee rate")
-		}
+	if roundedFeeRate == s.lastFeeRate {
+		return
 	}
+
+	s.globalNetworkFeeQueue <- common.NetworkFee{
+		Chain:           s.cfg.ChainID,
+		Height:          height,
+		TransactionSize: 1,
+		TransactionRate: roundedFeeRate,
+	}
+
+	s.lastFeeRate = roundedFeeRate
+	s.logger.Info().
+		Uint64("fee", roundedFeeRate).
+		Int64("height", height).
+		Msg("sent network fee to THORChain")
 }
 
 // --------------------------------- extraction ---------------------------------
@@ -256,19 +266,16 @@ func (s *SOLScanner) UpdateNetworkFee(height int64) {
 func (s *SOLScanner) getTxIn(block *rpc.BlockResult) stypes.TxIn {
 	txIn := stypes.TxIn{
 		Chain:                s.cfg.ChainID,
-		TxArray:              []stypes.TxInItem{},
-		Filtered:             false,
+		TxArray:              make([]*stypes.TxInItem, 0),
 		MemPool:              false,
-		SentUnFinalised:      false,
-		Finalised:            true, // Assuming transactions in a block are finalised
-		ConfirmationRequired: 1,    // Assuming 1 confirmation is required
+		ConfirmationRequired: 1, // Assuming 1 confirmation is required
 	}
 
 	// Stores each transaction's fee rate (lamports per signature)
 	txFeeRates := []uint64{}
 
 	// Stores each transaction's priority fee (txn.Meta.Fee - baseFee)
-	priorityFees := []uint64{}
+	//priorityFees := []uint64{}
 
 	for _, txn := range block.Transactions {
 		// Skip transactions with no signatures or no fee
@@ -281,11 +288,11 @@ func (s *SOLScanner) getTxIn(block *rpc.BlockResult) stypes.TxIn {
 			continue
 		}
 
-		txIn.TxArray = append(txIn.TxArray, *txItem)
+		txIn.TxArray = append(txIn.TxArray, txItem)
 
 		// Calculate the fee rate (lamports per signature)
 		numSigs := uint64(len(txn.Transaction.Signatures))
-		baseFee := BaseFeePerSigLamports * numSigs
+		//baseFee := BaseFeePerSigLamports * numSigs
 		feeRate := txn.Meta.Fee / numSigs
 		if feeRate < BaseFeePerSigLamports {
 			feeRate = BaseFeePerSigLamports
@@ -294,14 +301,14 @@ func (s *SOLScanner) getTxIn(block *rpc.BlockResult) stypes.TxIn {
 		txFeeRates = append(txFeeRates, feeRate)
 
 		// Priority fee is any fee in excess of the base fee
-		var priorityFee uint64
-		if txn.Meta.Fee == baseFee || txn.Meta.Fee < baseFee {
-			priorityFee = 0
-		} else {
-			priorityFee = txn.Meta.Fee - baseFee
-		}
+		// var priorityFee uint64
+		// if txn.Meta.Fee == baseFee || txn.Meta.Fee < baseFee {
+		// 	priorityFee = 0
+		// } else {
+		// 	priorityFee = txn.Meta.Fee - baseFee
+		// }
 
-		priorityFees = append(priorityFees, priorityFee)
+		//priorityFees = append(priorityFees, priorityFee)
 	}
 
 	if len(txFeeRates) == 1 {
@@ -314,7 +321,6 @@ func (s *SOLScanner) getTxIn(block *rpc.BlockResult) stypes.TxIn {
 		s.feeRateCache = append(s.feeRateCache, BaseFeePerSigLamports)
 	}
 
-	txIn.Count = strconv.Itoa(len(txIn.TxArray))
 	return txIn
 }
 
@@ -343,7 +349,7 @@ func (s *SOLScanner) getTxInItem(txn rpc.RPCTransaction, blockHeight int64) *sty
 
 		// Check if this instruction is the memo
 		if types.MemoProgramID.EqualsString(programID) {
-			memoBytes, err := common.Base58Decode(instruction.Data)
+			memoBytes, err := base58.Decode(instruction.Data)
 			if err == nil {
 				memo = string(memoBytes)
 			} else {
@@ -357,7 +363,7 @@ func (s *SOLScanner) getTxInItem(txn rpc.RPCTransaction, blockHeight int64) *sty
 		}
 
 		// Decode the data
-		data, err := common.Base58Decode(instruction.Data)
+		data, err := base58.Decode(instruction.Data)
 		if err != nil {
 			s.logger.Error().Err(err).Str("data", instruction.Data).Msg("Failed to decode instruction data")
 			continue

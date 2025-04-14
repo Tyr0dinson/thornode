@@ -3,7 +3,7 @@ package types
 import (
 	"testing"
 
-	"gitlab.com/thorchain/thornode/v3/common"
+	"github.com/mr-tron/base58"
 	. "gopkg.in/check.v1"
 )
 
@@ -27,6 +27,6 @@ func (s *Ed25519Suite) TestAlgo(c *C) {
 	b := privKey.Bytes()
 	c.Assert(b, NotNil)
 	c.Assert(len(b), Equals, 64)
-	addr := common.Base58Encode(privKey.PubKey().Bytes())
+	addr := base58.Encode(privKey.PubKey().Bytes())
 	c.Assert(addr, Equals, "BJvLwohMSn9iL7x5oV7tc1eGH8D6qUiMd8ip6eVCtF73")
 }

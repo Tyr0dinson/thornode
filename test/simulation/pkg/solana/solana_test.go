@@ -5,11 +5,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cosmos/cosmos-sdk/codec"
+	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
+	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
-	sdk "github.com/cosmos/cosmos-sdk/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/cmd"
 	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
 	. "gopkg.in/check.v1"
 )
@@ -29,15 +32,19 @@ func (s *SolanaSuite) TestClient(c *C) {
 		},
 	}
 
+	registry := codectypes.NewInterfaceRegistry()
+	cryptocodec.RegisterInterfaces(registry)
+	cdc := codec.NewProtoCodec(registry)
+
 	// Add ed25519 key to keyring
-	kr := keyring.NewInMemory(types.WithOptions(krOps))
+	kr := keyring.NewInMemory(cdc, types.WithOptions(krOps))
 	name := strings.Split(mnemonic, " ")[0]
 	edName := fmt.Sprintf("ed-%s", name)
 	_, err := kr.NewAccount(edName, mnemonic, "", cmd.EDPath, types.Ed25519)
 	c.Assert(err, IsNil)
 
 	// create thorclient.Keys for chain client construction
-	keys := thorclient.NewKeysWithKeybase(kr, edName, "")
+	keys := thorclient.NewKeysWithKeybase(kr, name, edName, "")
 
 	client, err := NewClient(common.SOLChain, "http://localhost:8899", keys)
 	c.Assert(err, IsNil)
@@ -46,7 +53,7 @@ func (s *SolanaSuite) TestClient(c *C) {
 	simTx := types.SimTx{
 		Chain:     common.SOLChain,
 		ToAddress: common.Address("6oEorfnzTgD4qa9G11SyuCxoudZT1Y44bnErCbhC7RQT"),
-		Coin:      common.NewCoin(common.SOLAsset, sdk.NewUint(10000)),
+		Coin:      common.NewCoin(common.SOLAsset, cosmos.NewUint(10000)),
 		Memo:      "SIMULATION:hawk",
 	}
 

@@ -66,7 +66,7 @@ func (s *BlockScannerTestSuite) SetUpSuite(c *C) {
 	c.Assert(err, IsNil)
 
 	s.cfg = cfg
-	s.keys = thorclient.NewKeysWithKeybase(kb, cfg.SignerName, cfg.SignerPasswd)
+	s.keys = thorclient.NewKeysWithKeybase(kb, cfg.SignerName, "", cfg.SignerPasswd)
 	s.bridge, err = thorclient.NewThorchainBridge(s.cfg, s.m, s.keys)
 	c.Assert(err, IsNil)
 }

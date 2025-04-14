@@ -214,8 +214,13 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 			return NoAddress, err
 		}
 
+		pubBz := pk.Bytes()
+		if len(pubBz) != 32 {
+			return NoAddress, fmt.Errorf("invalid pubkey length %d", len(pubBz))
+		}
+
 		// Encode the public key to base58 to get the Solana address
-		addressString = base58.Encode(pk.Bytes())
+		addressString = base58.Encode(pubBz)
 	default:
 		// Only EVM chains remain.
 		if !chain.IsEVM() {
