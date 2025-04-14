@@ -38,6 +38,7 @@ import (
 	tssp "gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/tss"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
+	"gitlab.com/thorchain/thornode/v3/constants"
 )
 
 var (
@@ -60,14 +61,15 @@ const (
 )
 
 type Client struct {
-	logger          zerolog.Logger
-	networkError    chan error
-	config          config.BifrostChainConfiguration
-	nodeConn        *ouroboros.Connection
-	clientConn      *ouroboros.Connection
-	thorchainBridge thorclient.ThorchainBridge
-	storage         *blockscanner.BlockScannerStorage
-	scanner         *blockscanner.BlockScanner
+	logger              zerolog.Logger
+	networkError        chan error
+	config              config.BifrostChainConfiguration
+	nodeConn            *ouroboros.Connection
+	clientConn          *ouroboros.Connection
+	thorchainBridge     thorclient.ThorchainBridge
+	storage             *blockscanner.BlockScannerStorage
+	scanner             *blockscanner.BlockScanner
+	globalSolvencyQueue chan types.Solvency
 
 	startHeight uint64
 	n2cLock     sync.Mutex
@@ -77,7 +79,6 @@ type Client struct {
 
 	txSizes     []uint64
 	txSizesLock sync.Mutex
-	txMeanSize  uint64
 
 	signLock   sync.Mutex
 	vaultLocks map[string]*sync.Mutex
@@ -279,7 +280,6 @@ func (c *Client) ConfirmationCountReady(txIn types.TxIn) bool {
 }
 
 func (c *Client) GetAccount(poolPubKey common.PubKey, height *big.Int) (common.Account, error) {
-	// is this pubkey expected to be an ed25519 public key?
 	addr, err := poolPubKey.GetAddress(c.GetChain())
 	if err != nil {
 		c.logger.Err(err).Str("pool_pub_key", poolPubKey.String()).Msg("fail to get address")
@@ -381,8 +381,6 @@ func (c *Client) IsBlockScannerHealthy() bool {
 }
 
 func (c *Client) OnObservedTxIn(txIn types.TxInItem, blockHeight int64) {
-	// TODO
-	// What to do here?
 }
 
 func (c *Client) SignTx(tx types.TxOutItem, height int64) (signedBz, checkpoint []byte, txIn *types.TxInItem, err error) {
@@ -492,6 +490,7 @@ func (c *Client) Start(
 		return
 	}
 
+	c.globalSolvencyQueue = globalSolvencyQueue
 	c.scanner.Start(globalTxsQueue)
 	c.logger.Info().Msg("started cardano client")
 }
@@ -528,7 +527,6 @@ func (c *Client) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
 		// try to get sender from witness
 		// if we make certain assumptions about tx origins we can skip n2c protocols and utxo queries
 		if len(tx.Witnesses().Vkey()) != 1 {
-			// c.logger.Warn().Msgf("skip tx with %d witnesses", len(tx.Witnesses().Vkey()))
 			continue
 		}
 		senderAddr, err := c.getAddressFromPubkey(tx.Witnesses().Vkey()[0].Vkey)
@@ -668,7 +666,6 @@ func (c *Client) chainSyncRollForwardHandler(
 	case ledger.Block:
 		c.logger.Warn().Msg("block type is ledger.Block, chain-sync n2n protocol expects ledger.BlockHeader")
 	case ledger.BlockHeader:
-		// c.logger.Info().Msgf("roll forward: block_no=%d slot=%d hash=%x ", h.BlockNumber(), h.SlotNumber(), h.Hash())
 		hashBz, err := hex.DecodeString(h.Hash())
 		if err != nil {
 			c.logger.Err(err).Msg("fail to decode block hash")
@@ -686,24 +683,76 @@ func (c *Client) chainSyncRollBackwardHandler(
 	point ouroboroscommon.Point,
 	tip chainsync.Tip,
 ) error {
-	fmt.Printf("roll backward: point = (%d, %x), tip = (%d, %x)\n",
-		point.Slot, point.Hash,
-		tip.Point.Slot, tip.Point.Hash,
+	c.logger.Info().Msgf("roll backward: point = (%d, %x), tip = (%d, %x)",
+		point.Slot, point.Hash, tip.Point.Slot, tip.Point.Hash,
 	)
 	return nil
 }
 
 func (c *Client) ShouldReportSolvency(height int64) bool {
-	panic("unimplemented")
+	return height%c.config.SolvencyBlocks == 0
 }
 
 func (c *Client) ReportSolvency(height int64) error {
-	panic("unimplemented")
+	if !c.ShouldReportSolvency(height) {
+		return nil
+	}
+	if !c.IsBlockScannerHealthy() && height == c.scanner.PreviousHeight()+1 {
+		return nil
+	}
+	asgardVaults, err := c.thorchainBridge.GetAsgards()
+	if err != nil {
+		return fmt.Errorf("fail to get asgard vaults: %w", err)
+	}
+	_, fee := c.GetNetworkFee()
+	gasFee := sdkmath.NewUint(fee)
+	reportMsgs := make([]types.Solvency, 0, len(asgardVaults))
+	solventMsgs := make([]types.Solvency, 0, len(asgardVaults))
+	for i := range asgardVaults {
+		acct, err := c.GetAccount(asgardVaults[i].PubKey, big.NewInt(height))
+		if err != nil {
+			return fmt.Errorf("fail to get account: %w", err)
+		}
+		msg := types.Solvency{
+			Height: height,
+			Chain:  c.config.ChainID,
+			PubKey: asgardVaults[i].PubKey,
+			Coins:  acct.Coins,
+		}
+		if runners.IsVaultSolvent(acct, asgardVaults[i], gasFee) {
+			solventMsgs = append(solventMsgs, msg)
+		} else {
+			reportMsgs = append(reportMsgs, msg)
+		}
+	}
+	// only report solvency when the block scanner is unhealthy and all vaults are solvent
+	// otherwise report insolvency
+	solvent := false
+	if !c.IsBlockScannerHealthy() && len(solventMsgs) == len(asgardVaults) {
+		reportMsgs = solventMsgs
+		solvent = true
+	}
+
+	for i := range reportMsgs {
+		c.logger.Info().
+			Stringer("asgard", reportMsgs[i].PubKey).
+			Interface("coins", reportMsgs[i].Coins).
+			Bool("solvent", solvent).
+			Msg("reporting solvency")
+
+		// send solvency to thorchain via global queue consumed by the observer
+		select {
+		case c.globalSolvencyQueue <- reportMsgs[i]:
+		case <-time.After(constants.ThorchainBlockTime):
+			c.logger.Info().Msgf("fail to send solvency info to THORChain, timeout")
+		}
+	}
+	return nil
+
 }
 
 func (c *Client) GetNetworkFee() (transactionSize, transactionFeeRate uint64) {
 	return 1, c.protocol.MinFeeConstant + c.protocol.MinFeeCoefficient*c.getMeanTxSize()
-
 }
 
 func (c *Client) getVaultLock(vaultPubKey string) *sync.Mutex {
