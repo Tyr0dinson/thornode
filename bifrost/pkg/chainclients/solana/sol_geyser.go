@@ -52,7 +52,9 @@ func NewSolGeyser(cfg config.BifrostBlockScannerConfiguration, scanner *SOLScann
 	logger := log.Logger.With().Stringer("chain", cfg.ChainID).Logger()
 
 	opts := []grpc.DialOption{
-		grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{})),
+		grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{
+			MinVersion: tls.VersionTLS13,
+		})),
 		grpc.WithKeepaliveParams(kacp),
 		grpc.WithPerRPCCredentials(tokenAuth{token: token}),
 		grpc.WithDefaultCallOptions(
@@ -128,11 +130,10 @@ func (g *SolGeyser) Run() {
 
 		for {
 			resp, err := stream.Recv()
-
 			if err != nil {
 				g.logger.Error().Err(err).Msg("Error in receiving update.")
 				// Close existing stream
-				stream.CloseSend()
+				_ = stream.CloseSend()
 
 				// Attempt to create new stream with exponential backoff
 				var newStream pb.Geyser_SubscribeClient

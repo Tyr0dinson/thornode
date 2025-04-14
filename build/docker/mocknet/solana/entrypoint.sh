@@ -14,13 +14,13 @@ while ! solana cluster-version; do
     exit 1
   fi
   echo "Validator not ready yet. Retrying in 5 seconds..."
-  RETRIES=$((RETRIES-1))
+  RETRIES=$((RETRIES - 1))
   sleep 5
 done
 echo "Validator is ready and reachable."
 
 # Set local URL for Solana CLI
-solana config set --url http://localhost:$RPC_PORT
+solana config set --url http://localhost:"$RPC_PORT"
 
 # Generate a new keypair. This wallet isn't used, but needed to enable the airdrop command.
 TEMP_KEYPAIR="/tmp/solana-keypair.json"

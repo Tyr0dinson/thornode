@@ -1,7 +1,6 @@
 package solana
 
 import (
-	"context"
 	"encoding/base64"
 	"fmt"
 	"time"
@@ -16,14 +15,6 @@ import (
 
 	. "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
 )
-
-////////////////////////////////////////////////////////////////////////////////////////
-// Helpers
-////////////////////////////////////////////////////////////////////////////////////////
-
-func ctx() context.Context {
-	return context.Background()
-}
 
 ////////////////////////////////////////////////////////////////////////////////////////
 // Solana
@@ -58,7 +49,7 @@ func NewClient(chain common.Chain, host string, keys *thorclient.Keys) (LiteChai
 		return nil, fmt.Errorf("fail to get account: %w", err)
 	}
 
-	pk, err := cryptocodec.ToTmPubKeyInterface(pkStruct.PubKey())
+	pk, err := cryptocodec.ToCmtPubKeyInterface(pkStruct.PubKey())
 	if err != nil {
 		return nil, fmt.Errorf("failed to get tm pub key: %w", err)
 	}

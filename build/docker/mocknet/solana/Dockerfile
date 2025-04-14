@@ -1,8 +1,9 @@
 # Match the base Debian image to https://github.com/anza-xyz/agave/blob/master/sdk/docker-solana/Dockerfile
 FROM debian:bookworm AS builder
 
+# hadolint ignore=DL3008,DL4006
 RUN apt-get update && \
-    apt-get install -y build-essential git curl openssl libssl-dev pkg-config
+    apt-get install -y --no-install-recommends build-essential git curl openssl libssl-dev pkg-config
 
 # set up Rust
 RUN curl --proto '=https' --tlsv1.3 https://sh.rustup.rs -sSf | bash -s -- -y

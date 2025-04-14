@@ -99,17 +99,17 @@ func (s *SolTestSuite) SetUpSuite(c *C) {
 	privKey := localRecord.PrivKey
 	c.Assert(privKey, NotNil)
 
-	var cPrivKey = new(cosmosed25519.PrivKey)
+	cPrivKey := new(cosmosed25519.PrivKey)
 	err = cdc.UnpackAny(privKey, &cPrivKey)
 	c.Assert(err, IsNil)
 
-	var cPubKey = new(cosmosed25519.PubKey)
+	cPubKey := new(cosmosed25519.PubKey)
 	err = cdc.UnpackAny(r.PubKey, &cPubKey)
 	c.Assert(err, IsNil)
 
 	c.Assert(bytes.Equal(cPrivKey.PubKey().Bytes(), cPubKey.Bytes()), Equals, true)
 
-	pubKey, err := bech32.MarshalPubKey(bech32.AccPK, cPubKey)
+	pubKey, err := bech32.MarshalPubKey(bech32.AccPK, cPubKey) // nolint:staticcheck
 	c.Assert(err, IsNil)
 
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
@@ -129,7 +129,7 @@ func (s *SolTestSuite) SetUpSuite(c *C) {
 			if _, err = rw.Write([]byte(content)); err != nil {
 				c.Fatal(err)
 			}
-			//httpTestHandler(c, rw, "../../../../test/fixtures/endpoints/vaults/pubKeys.json")
+			// httpTestHandler(c, rw, "../../../../test/fixtures/endpoints/vaults/pubKeys.json")
 		default:
 			body, err := io.ReadAll(req.Body)
 			c.Assert(err, IsNil)
@@ -260,7 +260,7 @@ func (s *SolTestSuite) TestSignSOLTx(c *C) {
 
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
-	//c.Assert(obs, NotNil)
+	// c.Assert(obs, NotNil)
 }
 
 func TestSolAddrKeyringRoundTrip(t *testing.T) {

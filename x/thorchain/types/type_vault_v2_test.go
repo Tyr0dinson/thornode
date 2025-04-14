@@ -15,6 +15,8 @@ func (s *VaultSuiteV2) TestVaultV2(c *C) {
 	c.Check(vault.Valid(), NotNil)
 
 	poolPk, err := common.NewPubKey("tthorpub1addwnpepqvwfjs23krpfteqgqecmaw2hek54y6uy99jrs2utgfhzu2a48wfhkw4xen7")
+	c.Check(err, IsNil)
+
 	poolPkEddsa, err := common.NewPubKey("tthorpub1zcjduepqnd6pdwxvzu35dh60d256sewc5xczlxa35jrzq4uyd95x5476afrs9lzd5u")
 
 	c.Check(err, IsNil)

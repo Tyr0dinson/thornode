@@ -69,19 +69,16 @@ func (s *AttestationGossip) handleObservedTxAttestation(ctx context.Context, tx 
 			s.logger.Error().Msg("fail to get inbound metadata")
 			return
 		}
-		// trunk-ignore(golangci-lint/govet): shadow
 		inboundBool, ok := inbound.(bool)
 		if !ok {
 			s.logger.Error().Msg("fail to cast inbound metadata to bool")
 			return
 		}
-		// trunk-ignore(golangci-lint/govet): shadow
 		allowFutureObservation, ok := state.GetMetadata(metadataKeyAllowFutureObservation)
 		if !ok {
 			s.logger.Error().Msg("fail to get allow future observation metadata")
 			return
 		}
-		// trunk-ignore(golangci-lint/govet): shadow
 		allowFutureObservationBool, ok := allowFutureObservation.(bool)
 		if !ok {
 			s.logger.Error().Msg("fail to cast allow future observation metadata to bool")

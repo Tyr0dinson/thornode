@@ -38,7 +38,7 @@ func serializeTransferInstructionData(amount uint64) []byte {
 
 // NewCompiledTransferInstruction creates a CompiledIntstruction for a transfer instruction
 func NewCompiledTransferInstruction(programIndex, fromIndex, toIndex int, amount uint64) CompiledInstruction {
-	accounts := []int{int(fromIndex), int(toIndex)}
+	accounts := []int{fromIndex, toIndex}
 	data := serializeTransferInstructionData(amount)
 	return NewCompiledInstruction(programIndex, accounts, data)
 }

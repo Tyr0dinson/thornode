@@ -23,8 +23,7 @@ func (s *PubKeyTestSuite) TestPubKeyGetAddress(c *C) {
 		pubKey := priv.PubKey()
 		pubT, _ := pubKey.(secp256k1.PubKey)
 		pub := pubT[:]
-		prikEddsa := ed25519.NewKeyFromSeed(privB[:32])
-		privEddsa := ed25519.PrivateKey(prikEddsa)
+		privEddsa := ed25519.NewKeyFromSeed(privB[:32])
 		pubEddsa, ok := privEddsa.Public().(ed25519.PublicKey)
 		c.Assert(ok, Equals, true)
 

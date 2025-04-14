@@ -164,7 +164,7 @@ func (c *SOLClient) Start(
 	globalSolvencyQueue chan stypes.Solvency,
 	globalNetworkFeeQueue chan common.NetworkFee,
 ) {
-	//c.solScanner.globalErrataQueue = globalErrataQueue
+	// c.solScanner.globalErrataQueue = globalErrataQueue
 	c.globalSolvencyQueue = globalSolvencyQueue
 	c.solScanner.globalNetworkFeeQueue = globalNetworkFeeQueue
 	c.tssKeyManager.Start()
@@ -330,7 +330,7 @@ func (c *SOLClient) signTransaction(solTx types.Transaction, txOut stypes.TxOutI
 
 	var sig []byte
 
-	parsedPub, err := common.PubKey(txOut.VaultPubKeyEddsa).GetAddress(c.GetChain())
+	parsedPub, err := txOut.VaultPubKeyEddsa.GetAddress(c.GetChain())
 	if err != nil {
 		return types.Transaction{}, fmt.Errorf("failed to get address from pubkey: %w", err)
 	}
@@ -352,7 +352,10 @@ func (c *SOLClient) signTransaction(solTx types.Transaction, txOut stypes.TxOutI
 		return types.Transaction{}, fmt.Errorf("signature verification failed")
 	}
 
-	solTx.AddSignature(sig)
+	if err := solTx.AddSignature(sig); err != nil {
+		return types.Transaction{}, fmt.Errorf("failed to add signature: %w", err)
+	}
+
 	return solTx, nil
 }
 

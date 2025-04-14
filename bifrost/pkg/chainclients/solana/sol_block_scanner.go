@@ -275,7 +275,7 @@ func (s *SOLScanner) getTxIn(block *rpc.BlockResult) stypes.TxIn {
 	txFeeRates := []uint64{}
 
 	// Stores each transaction's priority fee (txn.Meta.Fee - baseFee)
-	//priorityFees := []uint64{}
+	// priorityFees := []uint64{}
 
 	for _, txn := range block.Transactions {
 		// Skip transactions with no signatures or no fee
@@ -292,7 +292,7 @@ func (s *SOLScanner) getTxIn(block *rpc.BlockResult) stypes.TxIn {
 
 		// Calculate the fee rate (lamports per signature)
 		numSigs := uint64(len(txn.Transaction.Signatures))
-		//baseFee := BaseFeePerSigLamports * numSigs
+		// baseFee := BaseFeePerSigLamports * numSigs
 		feeRate := txn.Meta.Fee / numSigs
 		if feeRate < BaseFeePerSigLamports {
 			feeRate = BaseFeePerSigLamports
@@ -308,15 +308,16 @@ func (s *SOLScanner) getTxIn(block *rpc.BlockResult) stypes.TxIn {
 		// 	priorityFee = txn.Meta.Fee - baseFee
 		// }
 
-		//priorityFees = append(priorityFees, priorityFee)
+		// priorityFees = append(priorityFees, priorityFee)
 	}
 
-	if len(txFeeRates) == 1 {
+	switch {
+	case len(txFeeRates) == 1:
 		s.feeRateCache = append(s.feeRateCache, txFeeRates[0])
-	} else if len(txFeeRates) > 1 {
+	case len(txFeeRates) > 1:
 		medianFeeRate := calculateMedian(txFeeRates)
 		s.feeRateCache = append(s.feeRateCache, medianFeeRate)
-	} else {
+	case len(txFeeRates) == 0:
 		// If no transactions in the block, just add the base fee
 		s.feeRateCache = append(s.feeRateCache, BaseFeePerSigLamports)
 	}
@@ -461,15 +462,6 @@ func prettyPrint(data interface{}) {
 		return
 	}
 	fmt.Println(string(jsonData))
-}
-
-func jsonString(data interface{}) string {
-	jsonData, err := json.MarshalIndent(data, "", "  ")
-	if err != nil {
-		fmt.Printf("Error pretty printing JSON: %v\n", err)
-		return ""
-	}
-	return string(jsonData)
 }
 
 // Add setter for geyser
