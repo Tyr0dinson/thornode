@@ -10,7 +10,6 @@ import (
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
-	"gitlab.com/thorchain/thornode/v3/cmd"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/common/crypto/ed25519"
@@ -37,11 +36,11 @@ func (s *SolanaSuite) TestClient(c *C) {
 	})
 	name := strings.Split(mnemonic, " ")[0]
 	edName := fmt.Sprintf("ed-%s", name)
-	_, err := kr.NewAccount(edName, mnemonic, "", cmd.EDPath, ed25519.Ed25519)
+	_, err := kr.NewAccount(edName, mnemonic, "", ed25519.HDPath, ed25519.Ed25519)
 	c.Assert(err, IsNil)
 
 	// create thorclient.Keys for chain client construction
-	keys := thorclient.NewKeysWithKeybase(kr, name, edName, "")
+	keys := thorclient.NewKeysWithKeybase(kr, name, "")
 
 	client, err := NewClient(common.SOLChain, "http://localhost:8899", keys)
 	c.Assert(err, IsNil)

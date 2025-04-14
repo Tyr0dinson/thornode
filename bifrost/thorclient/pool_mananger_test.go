@@ -28,7 +28,7 @@ func (s *PoolManagerTestSuite) SetUpSuite(c *C) {
 	}))
 	cfg.ChainHost = s.server.Listener.Addr().String()
 	cfg.ChainRPC = s.server.Listener.Addr().String()
-	bridge, err := NewThorchainBridge(cfg, GetMetricForTest(c), NewKeysWithKeybase(kb, cfg.SignerName, "", cfg.SignerPasswd))
+	bridge, err := NewThorchainBridge(cfg, GetMetricForTest(c), NewKeysWithKeybase(kb, cfg.SignerName, cfg.SignerPasswd))
 	c.Assert(err, IsNil)
 	var ok bool
 	s.bridge, ok = bridge.(*thorchainBridge)

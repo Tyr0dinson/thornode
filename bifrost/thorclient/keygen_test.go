@@ -33,7 +33,7 @@ func (s *KeygenSuite) SetUpSuite(c *C) {
 	s.cfg, _, s.kb = SetupThorchainForTest(c)
 	s.cfg.ChainHost = s.server.Listener.Addr().String()
 	var err error
-	bridge, err := NewThorchainBridge(s.cfg, GetMetricForTest(c), NewKeysWithKeybase(s.kb, s.cfg.SignerName, "", s.cfg.SignerPasswd))
+	bridge, err := NewThorchainBridge(s.cfg, GetMetricForTest(c), NewKeysWithKeybase(s.kb, s.cfg.SignerName, s.cfg.SignerPasswd))
 	var ok bool
 	s.bridge, ok = bridge.(*thorchainBridge)
 	c.Assert(ok, Equals, true)

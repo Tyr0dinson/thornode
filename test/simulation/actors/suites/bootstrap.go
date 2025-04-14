@@ -21,6 +21,7 @@ var SimChains = []common.Chain{
 	common.GAIAChain,
 	common.LTCChain,
 	common.XRPChain,
+	common.SOLChain,
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -45,14 +46,11 @@ func Bootstrap() *Actor {
 	// create token pools
 	tokenPools := NewActor("Bootstrap-TokenPools")
 	for _, chain := range common.AllChains {
-		if chain.Equals(common.SOLChain) {
-			continue
-		}
 		if !chain.IsEVM() {
 			continue
 		}
-		// BSC & SOL not compatible with sim tests
-		if chain.Equals(common.BSCChain) || chain.Equals(common.SOLChain) {
+		// BSC not compatible with sim tests
+		if chain.Equals(common.BSCChain) {
 			continue
 		}
 		count++

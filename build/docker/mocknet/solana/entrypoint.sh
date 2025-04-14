@@ -3,7 +3,7 @@
 set -e
 
 # Start test validator
-solana-test-validator --geyser-plugin-config geyser.json --ledger /tmp/test-ledger --reset --limit-ledger-size --url http://localhost:8899
+solana-test-validator --geyser-plugin-config geyser.json --ledger /tmp/test-ledger --reset --limit-ledger-size --url http://localhost:8899 &
 
 # Check if the validator is running
 echo "Waiting for the Solana validator to be fully up..."
@@ -41,3 +41,5 @@ solana airdrop "$AIRDROP_AMOUNT" "$AIRDROP_ADDRESS"
 rm $TEMP_KEYPAIR
 
 echo "Solana test validator setup complete and airdrop successful."
+
+wait

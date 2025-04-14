@@ -12,6 +12,7 @@ import (
 	"github.com/rs/zerolog/log"
 	pb "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/solana/geyser/proto"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/solana/rpc"
+	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -82,19 +83,50 @@ func NewSolGeyser(cfg config.BifrostBlockScannerConfiguration, scanner *SOLScann
 }
 
 func (g *SolGeyser) createSubscription() (pb.Geyser_SubscribeClient, error) {
+
+	pubs, err := g.scanner.bridge.GetAsgards()
+	if err != nil {
+		g.logger.Error().Err(err).Msg("Failed to get pubkeys from bridge")
+		return nil, err
+	}
+
+	var addrs []string
+	for _, pub := range pubs {
+		if pub.PubKeyEddsa != "" {
+			addr, err := pub.PubKeyEddsa.GetAddress(common.SOLChain)
+			if err != nil {
+				g.logger.Error().Err(err).Msg("Failed to get address from pubkey")
+				return nil, err
+			}
+
+			addrs = append(addrs, addr.String())
+		}
+	}
+
 	commitment := pb.CommitmentLevel_FINALIZED
-	includeTxs := true
+	incTxs := true
 	subReq := &pb.SubscribeRequest{
 		Commitment: &commitment,
+		// Empty map for accounts subscription
+		Accounts: map[string]*pb.SubscribeRequestFilterAccounts{},
+		// Empty map for slots subscription
+		Slots: map[string]*pb.SubscribeRequestFilterSlots{},
+		// Empty map for transactions subscription
+		Transactions: map[string]*pb.SubscribeRequestFilterTransactions{},
+		// Map for blocks subscription - this is what you want for full blocks
 		Blocks: map[string]*pb.SubscribeRequestFilterBlocks{
-			"blocks": {
-				IncludeTransactions: &includeTxs,
-			},
+			"all_blocks": {
+				IncludeTransactions: &incTxs,
+				AccountInclude:      addrs,
+			}, // Empty filter means "subscribe to all blocks"
 		},
+		// Map for block metadata subscription - use this for lightweight block info
+		BlocksMeta: map[string]*pb.SubscribeRequestFilterBlocksMeta{},
+		// Set commitment level
 	}
 
 	d, _ := json.Marshal(subReq)
-	g.logger.Info().Msgf("Subscription request: %s\n", string(d))
+	g.logger.Info().Msgf("Subscription request: %s", string(d))
 
 	stream, err := g.client.Subscribe(context.Background())
 	if err != nil {
@@ -117,7 +149,15 @@ func (g *SolGeyser) Run() {
 	go func() {
 		defer g.wg.Done()
 
-		stream, err := g.createSubscription()
+		var (
+			stream     pb.Geyser_SubscribeClient
+			err        error
+			retries    int
+			maxBackoff = time.Minute
+		)
+
+		// Initial connection
+		stream, err = g.createSubscription()
 		if err != nil {
 			g.logger.Error().Err(err).Msg("Initial subscription failed")
 			return
@@ -130,60 +170,67 @@ func (g *SolGeyser) Run() {
 
 		for {
 			resp, err := stream.Recv()
-			if err != nil {
-				g.logger.Error().Err(err).Msg("Error in receiving update.")
-				// Close existing stream
-				_ = stream.CloseSend()
+			if err == nil {
+				// Successfully received message, reset retries
+				retries = 0
 
-				// Attempt to create new stream with exponential backoff
-				var newStream pb.Geyser_SubscribeClient
-				for retries := 0; retries < 3; retries++ {
-					newStream, err = g.createSubscription()
-					if err == nil {
-						stream = newStream
-						// Update stream reference
-						g.streamMux.Lock()
-						g.stream = newStream
-						g.streamMux.Unlock()
-						g.logger.Info().Msg("Successfully reconnected to geyser stream")
-						break
+				// Process the block...
+				block := resp.GetBlock()
+				height := block.GetBlockHeight().GetBlockHeight()
+				if height == 0 {
+					continue
+				}
+				if height%100 == 0 {
+					g.logger.Info().Msgf("%s: Height: %d, Cache size: %d", time.Now().Format(time.UnixDate), height, len(g.blockCache))
+				}
+				if block.GetTransactions() != nil {
+					slot := block.GetSlot()
+					g.logger.Debug().Msgf("Cached slot height: %d", slot)
+
+					// Convert and store block
+					rpcBlock := GeyserToRPCBlock(block)
+					g.blockQueueMux.Lock()
+					g.blockCache[slot] = &rpcBlock
+					g.slotQueue = append(g.slotQueue, slot)
+
+					// Cleanup old blocks if cache is too large
+					if len(g.slotQueue) > g.maxCacheSize {
+						oldestSlot := g.slotQueue[0]
+						delete(g.blockCache, oldestSlot)
+						g.slotQueue = g.slotQueue[1:]
+						g.logger.Warn().Msgf("Dropped block from cache at slot: %d", oldestSlot)
 					}
-					backoffDuration := time.Second * time.Duration(math.Pow(2, float64(retries)))
-					time.Sleep(backoffDuration)
-				}
-				if err != nil {
-					g.logger.Error().Err(err).Msg("Failed to reconnect after multiple attempts")
-					return
+					g.blockQueueMux.Unlock()
 				}
 				continue
 			}
 
-			block := resp.GetBlock()
-			height := block.GetBlockHeight().GetBlockHeight()
-			if height == 0 {
-				continue
-			}
-			if height%100 == 0 {
-				g.logger.Info().Msgf("%s: Height: %d, Cache size: %d", time.Now().Format(time.UnixDate), height, len(g.blockCache))
-			}
-			if block.GetTransactions() != nil {
-				slot := block.GetSlot()
-				g.logger.Debug().Msgf("Cached slot height: %d", slot)
+			// Error in receiving update
+			g.logger.Error().Err(err).Msg("Error in receiving update.")
 
-				// Convert and store block
-				rpcBlock := GeyserToRPCBlock(block)
-				g.blockQueueMux.Lock()
-				g.blockCache[slot] = &rpcBlock
-				g.slotQueue = append(g.slotQueue, slot)
+			// Close existing stream
+			_ = stream.CloseSend()
 
-				// Cleanup old blocks if cache is too large
-				if len(g.slotQueue) > g.maxCacheSize {
-					oldestSlot := g.slotQueue[0]
-					delete(g.blockCache, oldestSlot)
-					g.slotQueue = g.slotQueue[1:]
-					g.logger.Warn().Msgf("Dropped block from cache at slot: %d", oldestSlot)
-				}
-				g.blockQueueMux.Unlock()
+			// Calculate backoff with upper limit of 1 minute
+			backoffDuration := time.Second * time.Duration(math.Pow(2, float64(retries)))
+			if backoffDuration > maxBackoff {
+				backoffDuration = maxBackoff
+			}
+
+			g.logger.Info().Msgf("Reconnection attempt %d, waiting %v before retry", retries+1, backoffDuration)
+			time.Sleep(backoffDuration)
+
+			// Attempt to create new stream
+			stream, err = g.createSubscription()
+			if err == nil {
+				// Update stream reference
+				g.streamMux.Lock()
+				g.stream = stream
+				g.streamMux.Unlock()
+				g.logger.Info().Msg("Successfully reconnected to geyser stream")
+			} else {
+				g.logger.Error().Err(err).Msgf("Reconnection attempt %d failed", retries+1)
+				retries++
 			}
 		}
 	}()
