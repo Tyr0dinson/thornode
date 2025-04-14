@@ -64,7 +64,7 @@ func (s *SolvencyTestSuite) SetUpSuite(c *C) {
 	_, _, err := kb.NewMnemonic(cfg.SignerName, ckeys.English, cmd.THORChainHDPath, cfg.SignerPasswd, hd.Secp256k1)
 	c.Assert(err, IsNil)
 	s.cfg = cfg
-	s.keys = thorclient.NewKeysWithKeybase(kb, cfg.SignerName, "", cfg.SignerPasswd)
+	s.keys = thorclient.NewKeysWithKeybase(kb, cfg.SignerName, cfg.SignerPasswd)
 
 	c.Assert(err, IsNil)
 }

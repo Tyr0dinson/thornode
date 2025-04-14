@@ -64,7 +64,7 @@ func (s *BlockScannerTestSuite) SetUpSuite(c *C) {
 	kb := cKeys.NewInMemory(cdc)
 	_, _, err := kb.NewMnemonic(cfg.SignerName, cKeys.English, cmd.THORChainHDPath, cfg.SignerPasswd, hd.Secp256k1)
 	c.Assert(err, IsNil)
-	thorKeys := thorclient.NewKeysWithKeybase(kb, cfg.SignerName, "", cfg.SignerPasswd)
+	thorKeys := thorclient.NewKeysWithKeybase(kb, cfg.SignerName, cfg.SignerPasswd)
 	c.Assert(err, IsNil)
 	s.keys = thorKeys
 	s.bridge, err = thorclient.NewThorchainBridge(cfg, s.m, thorKeys)

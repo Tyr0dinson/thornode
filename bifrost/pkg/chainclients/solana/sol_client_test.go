@@ -73,7 +73,6 @@ func (s *SolTestSuite) SetUpSuite(c *C) {
 	cfg := config.BifrostClientConfiguration{
 		ChainID:         "thorchain",
 		SignerName:      "bob-secp256k1",
-		SignerNameEDDSA: "bob-eddsa",
 		SignerPasswd:    "password",
 		ChainHomeFolder: s.thordir,
 	}
@@ -84,13 +83,14 @@ func (s *SolTestSuite) SetUpSuite(c *C) {
 	kb := cKeys.NewInMemory(cdc, func(options *cKeys.Options) {
 		options.SupportedAlgos = append(options.SupportedAlgos, ed25519.Ed25519)
 	})
-	r, mnemonic, err := kb.NewMnemonic(cfg.SignerNameEDDSA, cKeys.English, "", cfg.SignerPasswd, ed25519.Ed25519)
+	edName := ed25519.SignerNameEDDSA(cfg.SignerName)
+	r, mnemonic, err := kb.NewMnemonic(edName, cKeys.English, "", cfg.SignerPasswd, ed25519.Ed25519)
 	c.Assert(err, IsNil)
 
 	_, err = kb.NewAccount(cfg.SignerName, mnemonic, cfg.SignerPasswd, cmd.THORChainHDPath, hd.Secp256k1)
 	c.Assert(err, IsNil)
 
-	record, err := kb.Key(cfg.SignerNameEDDSA)
+	record, err := kb.Key(edName)
 	c.Assert(err, IsNil)
 
 	localRecord := record.GetLocal()
@@ -161,7 +161,7 @@ func (s *SolTestSuite) SetUpSuite(c *C) {
 
 	s.thordir = filepath.Join(os.TempDir(), ns, ".thorcli")
 
-	s.thorKeys = thorclient.NewKeysWithKeybase(kb, cfg.SignerName, cfg.SignerNameEDDSA, cfg.SignerPasswd)
+	s.thorKeys = thorclient.NewKeysWithKeybase(kb, cfg.SignerName, cfg.SignerPasswd)
 
 	s.bridge, err = thorclient.NewThorchainBridge(cfg, s.m, s.thorKeys)
 	c.Assert(err, IsNil)
@@ -301,11 +301,12 @@ func TestSolAddrKeyringRoundTrip(t *testing.T) {
 
 			// create a new account
 			accountName := "test-account"
-			_, err := kb.NewAccount(accountName, tc.mnemonic, tc.passphrase, tc.solanaPath, ed25519.Ed25519)
+			edName := ed25519.SignerNameEDDSA(accountName)
+			_, err := kb.NewAccount(edName, tc.mnemonic, tc.passphrase, tc.solanaPath, ed25519.Ed25519)
 			require.NoError(t, err)
 
 			// get the account
-			keys := thorclient.NewKeysWithKeybase(kb, "unused", accountName, tc.passphrase)
+			keys := thorclient.NewKeysWithKeybase(kb, accountName, tc.passphrase)
 			priv, err := keys.GetPrivateKeyEDDSA()
 			require.NoError(t, err)
 

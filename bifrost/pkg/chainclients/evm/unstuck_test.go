@@ -58,7 +58,7 @@ func (s *UnstuckTestSuite) SetUpTest(c *C) {
 	kb := cKeys.NewInMemory(cdc)
 	_, _, err := kb.NewMnemonic(cfg.SignerName, cKeys.English, cmd.THORChainHDPath, cfg.SignerPasswd, hd.Secp256k1)
 	c.Assert(err, IsNil)
-	s.thorKeys = thorclient.NewKeysWithKeybase(kb, cfg.SignerName, "", cfg.SignerPasswd)
+	s.thorKeys = thorclient.NewKeysWithKeybase(kb, cfg.SignerName, cfg.SignerPasswd)
 
 	// get public key
 	priv, err := s.thorKeys.GetPrivateKey()
