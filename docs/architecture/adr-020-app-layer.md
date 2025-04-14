@@ -10,24 +10,24 @@ Proposed
 
 ## Context
 
-THORChain's SDK V50 update in V3.0.0 (https://gitlab.com/thorchain/thornode/-/merge_requests/3756) enabled it to have an "app-layer" which is a separate execution environment to its base layer. Accounts are allowed to contain RUST-based WASM code, that execute deterministically in the transaction life-cycle. 
+THORChain's SDK V50 update in V3.0.0 (https://gitlab.com/thorchain/thornode/-/merge_requests/3756) enabled it to support an "app-layer" - a separate execution environment to its base layer. Accounts are allowed to contain RUST-based WASM code that execute deterministically in the transaction life-cycle and can trigger other messages. 
 
-This ADR describes the design, operating principles and boundary conditions of the App Layer, its developers and possible apps. It also describes generally how apps can be deployed, managed and handled in the normal case as well as exploits or un-aligned behaviour. 
+This ADR describes the Design, Guidelines, Emergency Procedures and Deployment Process of the App Layer. It also describes generally how apps can be deployed, managed and handled in the normal case as well as exploits or un-aligned behaviour. 
 
 ## Alternative Approaches
 
-1) No App Layer - this design has been how TC has historically operated; attempting to build features as complete handlers/managers in the base layer code. However the key problem with this is the developer bottleneck - since base layer code can easily touch sensitive vault/security logic, base-layer development is slow and cautious. 
+1) No App Layer - THORChain's historical position; attempting to build features as complete handlers/managers in the base layer. The key problem with this is developer bottleneck - since base layer code can easily touch sensitive vault/security logic, base-layer development is slow and cautious. 
 
-2) Hosted App Layer - this design - where x/wasm is deployed and hosted by the THORNode binary. Contracts execute as part of THORChain's state transitions for each block.  
+2) Hosted App Layer - this design - where COSMWASM is deployed and hosted by the THORNode binary. Contracts execute as part of THORChain's state transitions for each block.  
 
-3) Remote App Layer - using IBC and [Cosmos Interchain Accounts](https://tutorials.cosmos.network/academy/3-ibc/8-ica.html) feature - a remote app layer hosted by external validators is possible. Users deposit IBC assets into a remote chain, and remote validators settle period state updates back at THORChain. 
+3) Remote App Layer - using IBC and the [Cosmos Interchain Accounts](https://tutorials.cosmos.network/academy/3-ibc/8-ica.html) feature - a remote app layer hosted by external validators is possible. Users deposit IBC assets into a remote chain, and remote validators settle periodic state updates back to THORChain. 
 
 ## Decision - Hosted App Layer
 
-A Hosted App Layer is most appropriate for THORChain:
+A Hosted App Layer is most appropriate for THORChain currently:
 
 1) WASM contracts with strict boundary conditions allow for a variety of apps to be developed quickly and easily by developers with low risk to the Base Layer. 
-2) A Remote App Layer for a specific high-use app may be entertained in future, eg, Perps where blocktimes, state bloat and more limit the UX of a Hosted App. 
+2) A Remote App Layer for a specific high-use app may be entertained in future, eg Perps, where blocktimes, state bloat and more limit the UX of a Hosted App. 
 
 ## Detailed Design
 
@@ -73,7 +73,7 @@ Contracts can mint using the [Token Factory](https://docs.osmosis.zone/osmosis-c
 2) Currently X tokens are blocked as Base Layer pools - liquidity can only be provided to them on the App Layer itself. This will be reviewed in future. 
 
 
-Impemented as per https://gitlab.com/thorchain/thornode/-/merge_requests/3837
+Implemented as per https://gitlab.com/thorchain/thornode/-/merge_requests/3837
 
 ### Switch Handler
 Tokens can one-way migrate to the App Layer using the Switch Handler. 
@@ -88,10 +88,31 @@ EnableSwitch-%s-%s
 
 Implemented as per https://gitlab.com/thorchain/thornode/-/merge_requests/3840
 
+## Security
+
+The Hosted App Layer design above achieves security by limiting what apps can call, query and use. 
+
+### Call Limits
+- `MsgMint`, eg to mint a Token to represent fungible units
+- `MsgSend`, to send an asset to another address
+- `MsgDeposit`, to call into THORChain's base layer, ie, to swap, bond, redeem
+- `MsgExecuteContract`, to call into another contract
+
+### Query Limits
+- Only specific base layer query endpoints are made available to the App Layer to prevent possible non-deterministic queries
+
+### Asset Limits
+- Only native assets `rune, tcy`, secured assets `btc-btc` and X assets (Token Factory) can be moved by contracts
+
+In short - apps are like "addresses that can do things" - they do not have any extra privilege that a RUNE addresss can do today (with the exception of `MsgMint`, which is only designed to prevent Token Spam by users). 
 
 ## App Layer Guidelines
 
 This section sets out general operating principles that should guide App Layer Devs, THORNodes and the community in handling and growing the App Layer. 
+
+### Quality
+
+Apps should be high-quality, audited, tested and have UX support before being presented for base layer whitelisting. 
 
 ### Fee-sharing
 
@@ -103,11 +124,9 @@ Instead - Apps should offer fee-sharing to THORNodes directly from their service
 * Listing/Sale fees on marketplaces
 * etc
 
-Thus fees are collected from a variety of sustainable revenue sources that don't subject users to high on-chain transaction costs.
+Thus fees are collected from a variety of sustainable revenue sources that don't subject users to high on-chain transaction costs. The suggested fee-sharing arrangement should start at 50%, but over time can be reduced once the App Layer is significantly profitable - long term 15-30% (Marketplace fees) is likely. 
 
-The suggested fee-sharing arrangement should start at 50%, but over time can be reduced once the App Layer is significantly profitable - long term 15-30% (Marketplace fees) is likely. 
-
-To do so, ensure that the share of fees collected in an app are swapped to RUNE and sent to the RESERVE Module address
+To do so, ensure that the share of fees collected in an app are swapped to RUNE and sent to the RESERVE Module address:
 ```
 thor1dheycdevq39qlkxs2a6wuuzyn4aqxhve4qxtxt
 ```
@@ -117,13 +136,11 @@ thor1dheycdevq39qlkxs2a6wuuzyn4aqxhve4qxtxt
 A systemic-risk app is defined as an app that could accumulate large uncapped quantities of RUNE. Such an app could be RUNE-denominated borrow/lend, or RUNE-bond LSTs. 
 These apps may be entertained only if a safe cap is enforced - a suggested cap would be no more than 10% of either the Active Bond or on-chain RUNE Liquidity. 
 
-> Eg with 100m RUNE bonded and 50m RUNE in liquidity, a sensible cap would be 10% of the lower - 5m RUNE. 
+> Eg with 100m RUNE bonded and 50m RUNE in liquidity, a sensible LST cap would be 10m RUNE (10% of Active Bond) and a sensible RUNE collateral cap would be 10% of the liquidity - 5m RUNE. 
 
 ### Duplicate Apps Discouraged 
 
-Apps are generally more successful if there is clear differentiation. This prevents developer angst and liquidity fragmentation. However competition and diversity should be encouraged. 
-
-Diversity of apps should be encouraged during the due diligence process of base-layer whitelisting. Any question of duplication should be addressed. 
+Apps are generally more successful if there is clear differentiation. This prevents developer angst and liquidity fragmentation. However competition and diversity should be encouraged. Diversity of apps should be encouraged during the due diligence process of base-layer whitelisting. Any question of duplication should be addressed. 
 
 Duplicate apps by different teams may be permitted if a former app has failed, dev-ghosted or has no support any more. 
 
@@ -131,17 +148,27 @@ Duplicate apps by different teams may be permitted if a former app has failed, d
 
 Since whitelisted deployers can only deploy whitelisted contracts after having adequate base-layer due diligence, it is encouraged that all apps have a `migrate()` path to allow for contract upgrades. 
 
-Deployers cannot upgrade a contract unless the new contract-ID is whitelisted in the base-layer. This will ensure contracts cannot be changed for malicous reasons. 
-
 Upgrading contracts and ensuring state and contract-address stay the same allows for bug-fixes and improvements to be seamlessly and securely rolled out.  
 
 More info: https://github.com/CosmWasm/cosmwasm 
 
+### Contentious Apps
+
+If an app becomes Contentious to the base-layer (as decided by THORNodes), then THORNodes can pause the app and request the dev address issues. Other nodes can join the pause or unpause if they disagree. 
+Contentious apps could be any app becoming a risk to the protocol or its users. There is no clear category of apps that could meet this definition, it is left up to THORNodes to decide at the time. 
+
+> Apps in breach of these Guidelines are contentious if the breach is easily proven. 
+
+> Apps becoming a risk to the protocol and its users may be deemed contentious (amassing large amounts of assets with poor security or un-aligned developer interests, eg, rugs or scams)
+
+> Privacy apps, dark-net marketplaces, betting platforms and more may be contentious if adequate controls are not put in place by the app-dev. "Adequate controls" should be determined as per other apps in other protocols. 
+
+
 
 ## Emergency Procedures
-App-devs, base-devs and THORNodes are responsible for responding to and managing security issues.
+App-devs, Base-devs and THORNodes are responsible for responding to and managing security issues.
 
-THORChain does not subscribe to the philosophy that "code is forever law" - rather that the chain and assets are sovereign and that long term a safe and vibrant ecosystem will bring more users and fees - thus exploits can and should be handled. 
+> THORChain does not subscribe to the philosophy that "code is forever law" - rather that the chain and assets are sovereign and that long term a safe and vibrant ecosystem will bring more users and fees - thus exploits can and should be handled. 
 
 ### Vulnerability Reported
 If a P0 is reported, but no exploit yet, THORNodes can:
@@ -150,13 +177,15 @@ If a P0 is reported, but no exploit yet, THORNodes can:
 3) Base Devs work with App devs to roll-out an app-upgrade
 
 ### Active Exploit
-If an app is exploited and user assets are lost, THORNodes can:
+If an app is exploited and user assets are being moved, THORNodes can:
 1) Pause the entire chain `make halt` which will pause everything, including `MsgSend` and Secured Assets withdrawals
-2) Specifically identify the exploit and target more granular pauses
-3) Base Devs to work with App devs to roll-out an app-upgrade, and possible store-migrations to move stolen assets back
+2) Specifically identify the exploit and target more granular pauses (if applicable)
+3) Base-devs to work with App-devs to roll-out an app-upgrade, and possible store-migrations to move stolen assets back. 
+
+> There is a financial threshold that an exploit would entertain a widespread halt and upgrade. A $50 exploit would not call for it, but a $5m exploit would. It is left up to THORNodes to make their own decisions to pause/unpause. 
 
 ### App Upgrades
-Apps that should be upgraded after a reported vulnerability or exploit should follow this process
+Apps that should be upgraded after a reported vulnerability or exploit should follow this process:
 1) Submit the new app bytecode that migrates user-state correctly and addresses any issues to the Base Layer Devs
 2) Apps that can't migrate can have their state and assets store-migrated to new contracts.
 
@@ -172,15 +201,15 @@ Devs wishing to deploy an App on THORChain should read this ADR. Any and all app
 5) Be ready to handle feedback from THORNodes on app features and issues, as well as managing upgrades
 
 
-
 ## Rujira
 
 [Rujira](https://gitlab.com/thorchain/rujira) is a well-funded alliance of apps with a cohesive brand, developer community and [developer tools](https://gitlab.com/thorchain/rujira-ui) that is likely to deploy and build the largest collection of apps on THORChain. 
 
 Due to developer support, devnet tooling, audit-funding and more, app-devs are encouraged to be handled by the Ruji team. [More info can be found here](https://docs.rujira.network/developers/getting-started). 
 
-RUJI is not exclusive to THORChain, and apps can be deployed outside of the RUJI Alliance if the app-dev wishes to support themselves on tooling, funding, testing and deployment. As long as an app meets the App Layer Guidelines and passes Base Layer Dev due diligence, then it can be deployed. 
+RUJI is not exclusive to THORChain, and apps can be deployed outside of the RUJI Alliance if the app-dev wishes to support themselves on tooling, funding, testing and deployment. As long as an app meets the App Layer Guidelines and passes Base Layer Dev due diligence, then it can be deployed and hosted. 
 
 
+### Summary
 
-
+This ADR details the App-layer as of 2025. Some or all parts of this ADR may be superceded by an update if needed. 
