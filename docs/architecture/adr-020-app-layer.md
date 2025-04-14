@@ -66,13 +66,111 @@ HaltSecuredWithdraw-%s
 
 Implemented as per https://gitlab.com/thorchain/thornode/-/merge_requests/3721
 
-### 
+### Token Factory
+Contracts can mint using the [Token Factory](https://docs.osmosis.zone/osmosis-core/modules/tokenfactory/) - with the `x/denom` module 
+
+1) Only WASM contracts can `MsgMint` - so tokens will be limited only by whitelisted contracts. This stops token-spam.
+2) Currently X tokens are blocked as Base Layer pools - liquidity can only be provided to them on the App Layer itself. This will be reviewed in future. 
 
 
-## Consequences
+Impemented as per https://gitlab.com/thorchain/thornode/-/merge_requests/3837
 
-> This section describes the consequences, after applying the decision. All
-> consequences should be summarized here, not just the "positive" ones.
+### Switch Handler
+Tokens can one-way migrate to the App Layer using the Switch Handler. 
+
+1) Devs provide a source token, burn address and a target denom for each whitelisted `CHAIN-ASSET`
+2) Users deposit tokens with a `SWITCH:thorAddress`. Source tokens are burnt (sent to burn address) and target tokens are minted to the address. 
+3) Nodes use mimir to whitelist tokens that can switch
+```
+EnableSwitch-%s-%s
+// Chain, Asset
+```
+
+Implemented as per https://gitlab.com/thorchain/thornode/-/merge_requests/3840
+
+
+## App Layer Guidelines
+
+This section sets out general operating principles that should guide App Layer Devs, THORNodes and the community in handling and growing the App Layer. 
+
+### Fee-sharing
+
+THORNodes provide security, L1 observation, decentralisation and execution of app-layer contracts and assets; which is significantly expensive. Transaction fees are not enough to pay for 100+ nodes with RPCs to 10+ chains and counting each, since users generally object to high transaction fees ($1.00 and above). THORChain has set tx fees currently to 2c. 
+
+Instead - Apps should offer fee-sharing to THORNodes directly from their service fees; eg
+* Interest fees on lending/borrowing/stablecoins
+* Trade/Liquidity fees from liquidity protocols
+* Listing/Sale fees on marketplaces
+* etc
+
+Thus fees are collected from a variety of sustainable revenue sources that don't subject users to high on-chain transaction costs.
+
+The suggested fee-sharing arrangement should start at 50%, but over time can be reduced once the App Layer is significantly profitable - long term 15-30% (Marketplace fees) is likely. 
+
+To do so, ensure that the share of fees collected in an app are swapped to RUNE and sent to the RESERVE Module address
+```
+thor1dheycdevq39qlkxs2a6wuuzyn4aqxhve4qxtxt
+```
+
+### No Uncapped Systemic-risk Apps
+
+A systemic-risk app is defined as an app that could accumulate large uncapped quantities of RUNE. Such an app could be RUNE-denominated borrow/lend, or RUNE-bond LSTs. 
+These apps may be entertained only if a safe cap is enforced - a suggested cap would be no more than 10% of either the Active Bond or on-chain RUNE Liquidity. 
+
+> Eg with 100m RUNE bonded and 50m RUNE in liquidity, a sensible cap would be 10% of the lower - 5m RUNE. 
+
+### Duplicate Apps Discouraged 
+
+Apps are generally more successful if there is clear differentiation. This prevents developer angst and liquidity fragmentation. However competition and diversity should be encouraged. 
+
+Diversity of apps should be encouraged during the due diligence process of base-layer whitelisting. Any question of duplication should be addressed. 
+
+### Exploits or Un-aligned Apps
+
+
+
+
+## Emergency Procedures
+App-devs, base-devs and THORNodes are responsible for responding to and managing security issues.
+
+THORChain does not subscribe to the philosophy that "code is forever law" - rather that the chain and assets are sovereign and that long term a safe and vibrant ecosystem will bring 
+
+### Vulnerability Reported
+If a P0 is reported, but no exploit yet, THORNodes can:
+1) Pause the affected app, all copies of the app, or the entire app-layer
+2) `make relay` the reason
+3) Base Devs work with App devs to roll-out an app-upgrade
+
+### Active Exploit
+If an app is exploited and user assets are lost, THORNodes can:
+1) Pause the entire chain `make halt` which will pause everything, including MsgSend and Secured Assets withdrawals
+2) Specifically identify the exploit and target more granular pauses
+3) Base Devs work with App devs to roll-out an app-upgrade, and possible store-migrations to move stolen assets back
+
+
+
+## Deployment
+
+Devs wishing to deploy an App on THORChain should read this ADR. Any and all apps can be entertained. 
+
+1) Build an app, conduct devnet testing and auditing. 
+2) Ensure the app meets App Layer Guidelines
+3) Submit a finalised contract bytecode, deployer address and origin link (containing app description and documentation) to the Base Layer Tech lead for review and merging to the Base Layer. 
+4) Deploy (2) on mainnet once approved
+5) Be ready to handle feedback from THORNodes on app features and issues
+
+
+
+
+
+### Rujira
+
+, as well as the material in https://gitlab.com/thorchain/rujira. 
+
+Rujira is a well-funded alliance of apps with a cohesive brand, developer community and developer tools.
+
+
+
 
 ### Positive
 
