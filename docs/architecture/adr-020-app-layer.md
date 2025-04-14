@@ -166,33 +166,21 @@ Apps that should be upgraded after a reported vulnerability or exploit should fo
 Devs wishing to deploy an App on THORChain should read this ADR. Any and all apps can be entertained. 
 
 1) Build an app, conduct devnet testing and auditing. 
-2) Ensure the app meets App Layer Guidelines
+2) Ensure the app meets the App Layer Guidelines
 3) Submit a finalised contract bytecode, deployer address and origin link (containing app description and documentation) to the Base Layer Tech lead for review and merging to the Base Layer. 
-4) Deploy (2) on mainnet once approved
-5) Be ready to handle feedback from THORNodes on app features and issues
+4) Deploy (3) on mainnet once approved
+5) Be ready to handle feedback from THORNodes on app features and issues, as well as managing upgrades
+
+
+
+## Rujira
+
+[Rujira](https://gitlab.com/thorchain/rujira) is a well-funded alliance of apps with a cohesive brand, developer community and [developer tools](https://gitlab.com/thorchain/rujira-ui) that is likely to deploy and build the largest collection of apps on THORChain. 
+
+Due to developer support, devnet tooling, audit-funding and more, app-devs are encouraged to be handled by the Ruji team. [More info can be found here](https://docs.rujira.network/developers/getting-started). 
+
+RUJI is not exclusive to THORChain, and apps can be deployed outside of the RUJI Alliance if the app-dev wishes to support themselves on tooling, funding, testing and deployment. As long as an app meets the App Layer Guidelines and passes Base Layer Dev due diligence, then it can be deployed. 
 
 
 
 
-
-### Rujira
-
-, as well as the material in https://gitlab.com/thorchain/rujira. 
-
-Rujira is a well-funded alliance of apps with a cohesive brand, developer community and developer tools.
-
-
-
-
-### Positive
-
-### Negative
-
-### Neutral
-
-## References
-
-> Are there any relevant PR comments, issues that led up to this, or articles
-> referenced for why we made the given design choice? If so link them here!
-
-- {reference link}
