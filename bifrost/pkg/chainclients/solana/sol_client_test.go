@@ -183,10 +183,14 @@ func (s *SolTestSuite) TestCreateAndSerializeTx(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(e, NotNil)
 
+	e.solScanner.latestBlockHash = "asdfasdf"
+
 	// Create TX
 	tx, err := e.CreateTx(stypes.TxOutItem{
-		Chain:     common.SOLChain,
-		ToAddress: "D9A6eE2pZ6oSiGb8BPkag4gvAeEhHvc3eEYPBoLSMshG",
+		Chain:            common.SOLChain,
+		ToAddress:        "D9A6eE2pZ6oSiGb8BPkag4gvAeEhHvc3eEYPBoLSMshG",
+		VaultPubKey:      "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
+		VaultPubKeyEddsa: "tthorpub1zcjduepq829qzzhllcktltnfdudyupw5qjtyyjzcmv9wx2jvpah4d6nxtl2s7vwca8",
 		Coins: common.Coins{
 			common.NewCoin(common.SOLAsset, cosmos.NewUint(11047250)),
 		},
@@ -202,7 +206,7 @@ func (s *SolTestSuite) TestCreateAndSerializeTx(c *C) {
 	// Serialize TX
 	rawTx, err := tx.Serialize()
 	c.Assert(err, IsNil)
-	c.Assert(len(rawTx), Equals, 287)
+	c.Assert(len(rawTx), Equals, 293)
 }
 
 func (s *SolTestSuite) TestSignSOLTx(c *C) {
@@ -236,11 +240,14 @@ func (s *SolTestSuite) TestSignSOLTx(c *C) {
 	c.Assert(result, IsNil)
 	c.Assert(obs, IsNil)
 
+	e.solScanner.latestBlockHash = "asdfasdf"
+
 	// Valid outbound
 	result, _, _, err = e.SignTx(stypes.TxOutItem{
 		Chain:            common.SOLChain,
 		ToAddress:        "D9A6eE2pZ6oSiGb8BPkag4gvAeEhHvc3eEYPBoLSMshG",
-		VaultPubKeyEddsa: pubkeys[len(pubkeys)-1],
+		VaultPubKey:      pubkeys[0],
+		VaultPubKeyEddsa: pubkeys[0],
 		Coins: common.Coins{
 			common.NewCoin(common.SOLAsset, cosmos.NewUint(11047250)),
 		},

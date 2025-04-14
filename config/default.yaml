@@ -36,6 +36,7 @@ bifrost:
     chain_ebifrost: localhost:50051
     chain_home_folder: ""
     signer_name: ""
+    signer_name_eddsa: ""
   attestation_gossip:
     observe_reconcile_interval: 15s
     late_observe_timeout: 5m

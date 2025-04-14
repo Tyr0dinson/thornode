@@ -60,8 +60,8 @@ func (s *PubKeyTestSuite) SetUpSuite(_ *C) {
 				mocknet: "mtzUk1zTJzTdyC8Pz6PPPyCHTEL5RLVyDJ",
 			},
 			addrSOL: KeyDataAddr{
-				mainnet: "D9A6eE2pZ6oSiGb8BPkag4gvAeEhHvc3eEYPBoLSMshG",
-				mocknet: "D9A6eE2pZ6oSiGb8BPkag4gvAeEhHvc3eEYPBoLSMshG",
+				mainnet: "DhMcGoLSWsKLqoM12GhR1ZxgcRFzZo2wZ8D2A3BvX9op",
+				mocknet: "DhMcGoLSWsKLqoM12GhR1ZxgcRFzZo2wZ8D2A3BvX9op",
 			},
 		},
 		{
@@ -88,8 +88,8 @@ func (s *PubKeyTestSuite) SetUpSuite(_ *C) {
 				mocknet: "mhcdvpCBUL3RRNW2y8LuksADWfecEmkzju",
 			},
 			addrSOL: KeyDataAddr{
-				mainnet: "9TfXPbVZBwv1BdUnFzyTyLpaDUCGgtDYY6LBurLfjTdQ",
-				mocknet: "9TfXPbVZBwv1BdUnFzyTyLpaDUCGgtDYY6LBurLfjTdQ",
+				mainnet: "G8n9W2tGpcazbyrdQzniSKV6p4uFJArWCENhapDmHTx9",
+				mocknet: "G8n9W2tGpcazbyrdQzniSKV6p4uFJArWCENhapDmHTx9",
 			},
 		},
 		{
@@ -116,8 +116,8 @@ func (s *PubKeyTestSuite) SetUpSuite(_ *C) {
 				mocknet: "mfXkrKKDupWZt2YC3YKKZDjrbAwrBFwj8W",
 			},
 			addrSOL: KeyDataAddr{
-				mainnet: "Ho1cCMjNoZ7hG7ts1iQHPqBE5nGidJcjTmvaey56YFzk",
-				mocknet: "Ho1cCMjNoZ7hG7ts1iQHPqBE5nGidJcjTmvaey56YFzk",
+				mainnet: "49gTXamRza4famcZDvFve6omcFqpiooaWBTX2KK3kp4h",
+				mocknet: "49gTXamRza4famcZDvFve6omcFqpiooaWBTX2KK3kp4h",
 			},
 		},
 		{
@@ -144,8 +144,8 @@ func (s *PubKeyTestSuite) SetUpSuite(_ *C) {
 				mocknet: "mrqWSS33oi57uzwjVsGBiEeYi4ArRRWHV4",
 			},
 			addrSOL: KeyDataAddr{
-				mainnet: "B2rEFJVP9xotaLy9rvqARYVtrZwNJyJHiE7KwBjFAXwH",
-				mocknet: "B2rEFJVP9xotaLy9rvqARYVtrZwNJyJHiE7KwBjFAXwH",
+				mainnet: "C7nGYnw9qTT4XjYKiynAF3Qz9iPrZfXg338sdvBGdBhS",
+				mocknet: "C7nGYnw9qTT4XjYKiynAF3Qz9iPrZfXg338sdvBGdBhS",
 			},
 		},
 		{
@@ -172,8 +172,8 @@ func (s *PubKeyTestSuite) SetUpSuite(_ *C) {
 				mocknet: "mtyBWSzMZaCxJ1xy9apJBZzXz648BZrpJg",
 			},
 			addrSOL: KeyDataAddr{
-				mainnet: "4nTaMRurvKZG4H3DnsQUopMxgdUdGBaQpyT87FJ9deg1",
-				mocknet: "4nTaMRurvKZG4H3DnsQUopMxgdUdGBaQpyT87FJ9deg1",
+				mainnet: "GYnVuwPsSAE6QwWh6TebBqNbFFqsU2563eShGcPbAvL2",
+				mocknet: "GYnVuwPsSAE6QwWh6TebBqNbFFqsU2563eShGcPbAvL2",
 			},
 		},
 	}
