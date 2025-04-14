@@ -13,6 +13,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/cmd"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/common/crypto/ed25519"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
 	. "gopkg.in/check.v1"
 )
@@ -26,21 +27,17 @@ var _ = Suite(&SolanaSuite{})
 func (s *SolanaSuite) TestClient(c *C) {
 	mnemonic := "master master master master master master master master master master master master master master master master master master master master master master master notice"
 
-	krOps := keyring.Options{
-		SupportedAlgos: keyring.SigningAlgoList{
-			types.Ed25519,
-		},
-	}
-
 	registry := codectypes.NewInterfaceRegistry()
 	cryptocodec.RegisterInterfaces(registry)
 	cdc := codec.NewProtoCodec(registry)
 
 	// Add ed25519 key to keyring
-	kr := keyring.NewInMemory(cdc, types.WithOptions(krOps))
+	kr := keyring.NewInMemory(cdc, func(options *keyring.Options) {
+		options.SupportedAlgos = keyring.SigningAlgoList{ed25519.Ed25519}
+	})
 	name := strings.Split(mnemonic, " ")[0]
 	edName := fmt.Sprintf("ed-%s", name)
-	_, err := kr.NewAccount(edName, mnemonic, "", cmd.EDPath, types.Ed25519)
+	_, err := kr.NewAccount(edName, mnemonic, "", cmd.EDPath, ed25519.Ed25519)
 	c.Assert(err, IsNil)
 
 	// create thorclient.Keys for chain client construction

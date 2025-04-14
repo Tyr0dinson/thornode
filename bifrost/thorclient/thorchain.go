@@ -660,7 +660,6 @@ func (b *thorchainBridge) GetPubKeys() ([]PubKeyContractAddressPair, error) {
 			kp.Contracts[common.Chain(*item.Chain)] = common.Address(*item.Router)
 		}
 		addressPairs = append(addressPairs, kp)
-
 	}
 	return addressPairs, nil
 }

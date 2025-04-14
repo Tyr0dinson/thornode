@@ -33,6 +33,7 @@ services:
     environment: &thorchain-environment
       CHAIN_ID: thorchain
       SIGNER_NAME: thorchain
+      SIGNER_NAME_EDDSA: ed-thorchain
       SIGNER_PASSWD: password
     logging: &logging
       driver: "json-file"

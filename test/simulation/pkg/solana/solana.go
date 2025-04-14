@@ -48,7 +48,7 @@ func NewConstructor(host string) LiteChainClientConstructor {
 }
 
 func NewClient(chain common.Chain, host string, keys *thorclient.Keys) (LiteChainClient, error) {
-	pkStruct, err := keys.GetPrivateKey()
+	pkStruct, err := keys.GetPrivateKeyEDDSA()
 	if err != nil {
 		return nil, fmt.Errorf("fail to get private key: %w", err)
 	}

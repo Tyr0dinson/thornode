@@ -8,7 +8,6 @@ import (
 
 	cosmoscryptoed25519 "github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
 	cosmoscryptosecp256k1 "github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
-	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/xrp/keymanager/ed25519"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/xrp/keymanager/secp256k1"
 )
 
@@ -28,11 +27,7 @@ func NewKeyManager(key cryptotypes.PrivKey) (*KeyManager, error) {
 	var keyType CryptoAlgorithm
 	switch key.(type) {
 	case *cosmoscryptoed25519.PrivKey:
-		keyType = ED25519
-		keys, err = ed25519.DeriveKeysFromMasterPrivateKey(key.Bytes())
-		if err != nil {
-			return nil, fmt.Errorf("fail to generate wallet from ed25519 priv key: %v", err)
-		}
+		return nil, fmt.Errorf("ed25519 key is not supported")
 	case *cosmoscryptosecp256k1.PrivKey:
 		keyType = SECP256K1
 		keys, err = secp256k1.DeriveKeysFromMasterPrivateKey(key.Bytes())

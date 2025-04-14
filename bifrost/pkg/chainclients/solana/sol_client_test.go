@@ -24,13 +24,13 @@ import (
 	"github.com/mr-tron/base58"
 	"github.com/stretchr/testify/require"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
-	bifrosted25519 "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/xrp/keymanager/ed25519"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/cmd"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/common/crypto/ed25519"
 	"gitlab.com/thorchain/thornode/v3/config"
 	types2 "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 	. "gopkg.in/check.v1"
@@ -82,9 +82,9 @@ func (s *SolTestSuite) SetUpSuite(c *C) {
 	cdc := codec.NewProtoCodec(registry)
 	cryptocodec.RegisterInterfaces(cdc.InterfaceRegistry())
 	kb := cKeys.NewInMemory(cdc, func(options *cKeys.Options) {
-		options.SupportedAlgos = append(options.SupportedAlgos, bifrosted25519.Ed25519)
+		options.SupportedAlgos = append(options.SupportedAlgos, ed25519.Ed25519)
 	})
-	r, mnemonic, err := kb.NewMnemonic(cfg.SignerNameEDDSA, cKeys.English, "", cfg.SignerPasswd, bifrosted25519.Ed25519)
+	r, mnemonic, err := kb.NewMnemonic(cfg.SignerNameEDDSA, cKeys.English, "", cfg.SignerPasswd, ed25519.Ed25519)
 	c.Assert(err, IsNil)
 
 	_, err = kb.NewAccount(cfg.SignerName, mnemonic, cfg.SignerPasswd, cmd.THORChainHDPath, hd.Secp256k1)
@@ -289,12 +289,12 @@ func TestSolAddrKeyringRoundTrip(t *testing.T) {
 			cdc := codec.NewProtoCodec(registry)
 			cryptocodec.RegisterInterfaces(cdc.InterfaceRegistry())
 			kb := cKeys.NewInMemory(cdc, func(options *cKeys.Options) {
-				options.SupportedAlgos = append(options.SupportedAlgos, bifrosted25519.Ed25519)
+				options.SupportedAlgos = append(options.SupportedAlgos, ed25519.Ed25519)
 			})
 
 			// create a new account
 			accountName := "test-account"
-			_, err := kb.NewAccount(accountName, tc.mnemonic, tc.passphrase, tc.solanaPath, bifrosted25519.Ed25519)
+			_, err := kb.NewAccount(accountName, tc.mnemonic, tc.passphrase, tc.solanaPath, ed25519.Ed25519)
 			require.NoError(t, err)
 
 			// get the account
@@ -302,7 +302,7 @@ func TestSolAddrKeyringRoundTrip(t *testing.T) {
 			priv, err := keys.GetPrivateKeyEDDSA()
 			require.NoError(t, err)
 
-			priv2, err := bifrosted25519.GetPrivateKeyFromMnemonic(tc.mnemonic, tc.passphrase, tc.solanaPath)
+			priv2, err := ed25519.GetPrivateKeyFromMnemonic(tc.mnemonic, tc.passphrase, tc.solanaPath)
 			require.NoError(t, err)
 
 			expectedPrivBz, err := hex.DecodeString(tc.expectedPriv)
