@@ -3,7 +3,7 @@ FROM debian:bookworm AS builder
 
 # hadolint ignore=DL3008,DL4006
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends build-essential git curl openssl libssl-dev pkg-config
+    apt-get install -y build-essential git curl openssl libssl-dev pkg-config
 
 # set up Rust
 RUN curl --proto '=https' --tlsv1.3 https://sh.rustup.rs -sSf | bash -s -- -y
@@ -11,17 +11,15 @@ RUN curl --proto '=https' --tlsv1.3 https://sh.rustup.rs -sSf | bash -s -- -y
 ENV PATH="/root/.cargo/bin:${PATH}"
 
 # build from source
-ARG COMMITSH="90b43755ada0c11571a0085251205141823c08cb"
-ARG TAG="v5.0.0+solana.2.1.13"
+ARG COMMITSH="94f09a2091c481cd5874d3af319069563453c5d5"
+ARG TAG="v6.0.0+solana.2.2.4"
 WORKDIR /build
-RUN git init && \
-    git remote add origin https://github.com/rpcpool/yellowstone-grpc && \
-    git fetch --depth 1 origin "$TAG" && \
+RUN git clone --depth 1 -b "$TAG" https://github.com/rpcpool/yellowstone-grpc . && \
     git checkout $COMMITSH && \
     cargo build --release
 
 # Use an official Solana release image as a parent image
-FROM anzaxyz/agave:v2.1.13
+FROM anzaxyz/agave:v2.2.8
 
 # Set the working directory
 WORKDIR /mocknet

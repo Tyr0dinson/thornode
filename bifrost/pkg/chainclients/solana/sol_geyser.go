@@ -2,7 +2,6 @@ package solana
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -15,7 +14,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/solana/rpc"
 	"gitlab.com/thorchain/thornode/v3/config"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
 )
 
@@ -52,9 +51,7 @@ func NewSolGeyser(cfg config.BifrostBlockScannerConfiguration, scanner *SOLScann
 	logger := log.Logger.With().Stringer("chain", cfg.ChainID).Logger()
 
 	opts := []grpc.DialOption{
-		grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{
-			MinVersion: tls.VersionTLS13,
-		})),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithKeepaliveParams(kacp),
 		grpc.WithPerRPCCredentials(tokenAuth{token: token}),
 		grpc.WithDefaultCallOptions(
@@ -86,10 +83,13 @@ func NewSolGeyser(cfg config.BifrostBlockScannerConfiguration, scanner *SOLScann
 
 func (g *SolGeyser) createSubscription() (pb.Geyser_SubscribeClient, error) {
 	commitment := pb.CommitmentLevel_FINALIZED
+	includeTxs := true
 	subReq := &pb.SubscribeRequest{
 		Commitment: &commitment,
 		Blocks: map[string]*pb.SubscribeRequestFilterBlocks{
-			"blocks": {},
+			"blocks": {
+				IncludeTransactions: &includeTxs,
+			},
 		},
 	}
 
