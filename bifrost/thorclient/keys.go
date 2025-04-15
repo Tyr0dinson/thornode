@@ -2,12 +2,14 @@ package thorclient
 
 import (
 	"bytes"
+	"crypto/ed25519"
 	"fmt"
 	"io"
 	"os"
 	"os/user"
 	"path/filepath"
 
+	"github.com/99designs/keyring"
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	"github.com/cosmos/cosmos-sdk/crypto"
@@ -140,4 +142,38 @@ func (k *Keys) GetPrivateKeyEDDSA() (*cryptokeysed25519.PrivKey, error) {
 // GetKeybase return the keybase
 func (k *Keys) GetKeybase() ckeys.Keyring {
 	return k.kb
+}
+
+const defaultEd25519KeyName = `THORChain-ED25519`
+
+func (k *Keys) GetSingleValidatorEd25519PrivateKey() (ed25519.PrivateKey, error) {
+	cfg := keyring.Config{
+		ServiceName:     sdk.KeyringServiceName(),
+		AllowedBackends: []keyring.BackendType{keyring.FileBackend},
+		FileDir:         filepath.Join(os.Getenv("HOME"), thorchainCliFolderName),
+		FilePasswordFunc: func(_ string) (string, error) {
+			return k.password, nil
+		},
+	}
+	db, err := keyring.Open(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("fail to open keyring db: %w", err)
+	}
+	item, err := db.Get(defaultEd25519KeyName)
+	if err != nil {
+		if keyring.ErrKeyNotFound != nil {
+			return nil, fmt.Errorf("fail to get ed25519 key")
+		}
+	}
+	if item.Data == nil {
+		return nil, fmt.Errorf("ed25519 key is empty")
+	}
+
+	priv, _, err := edwards.PrivKeyFromScalar(edwards.Edwards(), item.Data)
+	if err != nil {
+		return nil, fmt.Errorf("fail to parse private key")
+	}
+	privBz := priv.Serialize()
+	res := ed25519.NewKeyFromSeed(privBz)
+	return res, nil
 }

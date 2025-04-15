@@ -48,6 +48,12 @@ func NewUser(mnemonic string, constructors map[common.Chain]LiteChainClientConst
 		log.Fatal().Err(err).Msg("failed to bech32ify pubkey")
 	}
 	pubkey := common.PubKey(s)
+	edPrivKey, edPubKey, err := GenerateEd25519Key(mnemonic)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to generate ed25519 key")
+	}
+	// TODO: stuff these into keyring ascii-armored ?
+	AdaPrivateKeys.Store(privKey.String(), edPrivKey)
 
 	// EdDSA pubkey
 	edPriv, err := ed25519.Ed25519.Derive()(mnemonic, "", ed25519.HDPath)
@@ -155,17 +161,20 @@ func (u *User) PubKey(chain common.Chain) common.PubKey {
 }
 
 // Address returns the address of the client for the given chain.
-func (u *User) Address(chain common.Chain) common.Address {
-	if chain.GetSigningAlgo() == common.SigningAlgoEd25519 {
-		address, err := u.eddsaPubkey.GetAddress(chain)
-		if err != nil {
-			log.Fatal().Err(err).Stringer("chain", chain).Msg("failed to get address")
-		}
-		return address
+func (u *User) Address(chain common.Chain) (addr common.Address, err error) {
+	switch chain {
+	case common.ADAChain:
+		addr, err = u.eddsaPubkey.GetAddress(chain)
+	default:
+		addr, err = u.pubkey.GetAddress(chain)
 	}
-	address, err := u.pubkey.GetAddress(chain)
+	return
+}
+
+func (u *User) MustAddress(chain common.Chain) common.Address {
+	addr, err := u.Address(chain)
 	if err != nil {
-		log.Fatal().Err(err).Stringer("chain", chain).Msg("failed to get address")
+		log.Fatal().Err(err).Msg("failed to get address")
 	}
-	return address
+	return addr
 }
