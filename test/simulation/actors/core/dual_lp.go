@@ -102,7 +102,7 @@ func (a *DualLPActor) acquireUser(config *OpConfig) OpResult {
 		// TODO: skip users that already have a position in this pool
 
 		// get l1 address to store in state context
-		l1Address, err := user.PubKey(a.asset.Chain).GetAddress(a.asset.Chain)
+		l1Address, err := user.Address(a.asset.Chain)
 		if err != nil {
 			a.Log().Error().Err(err).Msg("failed to get L1 address")
 			user.Release()

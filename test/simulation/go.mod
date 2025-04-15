@@ -1,13 +1,14 @@
 module gitlab.com/thorchain/thornode/v3/test/simulation
 
-go 1.23.4
+go 1.23.6
 
 require (
 	cosmossdk.io/math v1.4.0
 	github.com/Peersyst/xrpl-go v0.1.3
+	github.com/blinklabs-io/gouroboros v0.116.0
 	github.com/blocto/solana-go-sdk v1.30.0
-	github.com/btcsuite/btcd v0.22.1
-	github.com/btcsuite/btcd/chaincfg/chainhash v1.0.1
+	github.com/btcsuite/btcd v0.24.2
+	github.com/btcsuite/btcd/chaincfg/chainhash v1.1.0
 	github.com/cometbft/cometbft v0.38.12
 	github.com/cosmos/cosmos-sdk v0.50.11
 	github.com/eager7/dogd v0.0.0-20200427085516-2caf59f59dbb
@@ -16,15 +17,17 @@ require (
 	github.com/gcash/bchd v0.17.1
 	github.com/gcash/bchutil v0.0.0-20201025062739-fc759989ee3e
 	github.com/hashicorp/go-multierror v1.1.1
+	github.com/kocubinski/gardano v0.2.4
 	github.com/ltcsuite/ltcd v0.20.1-beta.0.20201210074626-c807bfe31ef0
 	github.com/ltcsuite/ltcutil v1.0.2-beta
 	github.com/rs/zerolog v1.33.0
+	github.com/utxorpc/go-codegen v0.16.0
 	gitlab.com/thorchain/thornode/v3 v3.0.0-00010101000000-000000000000
 	google.golang.org/grpc v1.67.1
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c
 )
 
-require github.com/decred/dcrd/dcrec/edwards v1.0.0 // indirect
+require github.com/decred/dcrd/dcrec/edwards v1.0.0
 
 require (
 	github.com/naoina/go-stringutil v0.1.0 // indirect
@@ -60,6 +63,7 @@ require (
 	github.com/FactomProject/btcutilecc v0.0.0-20130527213604-d3a63a5752ec // indirect
 	github.com/aws/aws-sdk-go v1.44.224 // indirect
 	github.com/bgentry/go-netrc v0.0.0-20140422174119-9fd32a8b3d3d // indirect
+	github.com/btcsuite/btcd/btcutil v1.1.6 // indirect
 	github.com/cenkalti/backoff/v4 v4.1.3 // indirect
 	github.com/chzyer/readline v1.5.1 // indirect
 	github.com/cockroachdb/errors v1.11.3 // indirect
@@ -82,6 +86,7 @@ require (
 	github.com/distribution/reference v0.5.0 // indirect
 	github.com/emicklei/dot v1.6.2 // indirect
 	github.com/ethereum/go-verkle v0.2.2 // indirect
+	github.com/fxamacker/cbor/v2 v2.8.0 // indirect
 	github.com/getsentry/sentry-go v0.27.0 // indirect
 	github.com/go-logr/logr v1.4.1 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
@@ -126,6 +131,7 @@ require (
 	github.com/tyler-smith/go-bip39 v1.1.0 // indirect
 	github.com/ugorji/go/codec v1.2.11 // indirect
 	github.com/ulikunitz/xz v0.5.11 // indirect
+	github.com/x448/float16 v0.8.4 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.49.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.49.0 // indirect
 	go.opentelemetry.io/otel v1.24.0 // indirect
@@ -154,7 +160,7 @@ replace (
 
 require (
 	filippo.io/age v1.0.0-rc.3 // indirect
-	filippo.io/edwards25519 v1.0.0 // indirect
+	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/99designs/keyring v1.2.1 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/StackExchange/wmi v1.2.1 // indirect
@@ -173,7 +179,7 @@ require (
 	github.com/consensys/gnark-crypto v0.14.0 // indirect
 	github.com/coreos/go-semver v0.3.0 // indirect
 	github.com/cosmos/btcutil v1.0.5 // indirect
-	github.com/cosmos/go-bip39 v1.0.0 // indirect
+	github.com/cosmos/go-bip39 v1.0.0
 	github.com/cosmos/iavl v1.2.4 // indirect
 	github.com/cosmos/ledger-cosmos-go v0.13.3 // indirect
 	github.com/crate-crypto/go-kzg-4844 v1.1.0 // indirect
@@ -237,7 +243,7 @@ require (
 	github.com/jackpal/go-nat-pmp v1.0.2 // indirect
 	github.com/jbenet/go-temp-err-catcher v0.1.0 // indirect
 	github.com/jbenet/goprocess v0.1.4 // indirect
-	github.com/jinzhu/copier v0.3.5 // indirect
+	github.com/jinzhu/copier v0.4.0 // indirect
 	github.com/jmhodges/levigo v1.0.0 // indirect
 	github.com/klauspost/compress v1.17.11 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.6 // indirect
@@ -346,20 +352,20 @@ require (
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.24.0 // indirect
-	golang.org/x/crypto v0.32.0 // indirect
+	golang.org/x/crypto v0.36.0 // indirect
 	golang.org/x/exp v0.0.0-20240404231335-c0f41cb1a7a0 // indirect
 	golang.org/x/net v0.34.0 // indirect
 	golang.org/x/oauth2 v0.22.0 // indirect
-	golang.org/x/sync v0.10.0 // indirect
-	golang.org/x/sys v0.29.0 // indirect
-	golang.org/x/term v0.28.0
-	golang.org/x/text v0.21.0 // indirect
+	golang.org/x/sync v0.12.0 // indirect
+	golang.org/x/sys v0.31.0 // indirect
+	golang.org/x/term v0.30.0
+	golang.org/x/text v0.23.0 // indirect
 	golang.org/x/time v0.9.0 // indirect
 	gonum.org/v1/gonum v0.12.0 // indirect
 	google.golang.org/genproto v0.0.0-20240604185151-ef581f913117 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20240814211410-ddb44dafa142 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240930140551-af27646dc61f // indirect
-	google.golang.org/protobuf v1.35.1 // indirect
+	google.golang.org/protobuf v1.36.3 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	rsc.io/tmplfunc v0.0.3 // indirect

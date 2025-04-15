@@ -168,6 +168,8 @@ services:
       GAIA_HOST: ${GAIA_HOST:-http://gaia:26657}
       SOL_HOST: ${SOL_HOST:-http://solana:8899}
       GAIA_GRPC_HOST: ${GAIA_GRPC_HOST:-gaia:9090}
+      ADA_HOST: ${ADA_HOST:-cardano:3001}
+      ADA_N2C_ADDRESS: ${ADA_N2C_ADDRESS:-cardano:7007}
       THOR_BLOCK_TIME: ${BLOCK_TIME:-1s}
       BLOCK_SCANNER_BACKOFF: ${BLOCK_SCANNER_BACKOFF:-5s}
       PEER: ${PEER:-}
@@ -404,7 +406,7 @@ services:
     profiles:
       - mocknet
       - mocknet-cluster
-    image: registry.gitlab.com/thorchain/devops/node-launcher:gaia-daemon-23.0.0
+    image: registry.gitlab.com/thorchain/devops/node-launcher:gaia-daemon-22.2.0
     volumes:
       - "./mocknet:/mocknet"
     environment:
@@ -590,3 +592,17 @@ services:
       RPC_PORT: "8899"
       AIRDROP_ADDRESS: "AAH1XhfycX678et7Pjvwp1DMWnHpSP92wpJwV19MXHtX"
       AIRDROP_AMOUNT: "10000"
+
+  # ------------------------------ cardano ------------------------------
+
+  cardano:
+    profiles:
+      - mocknet
+      - mocknet-cluster
+    restart: unless-stopped
+    image: kocubinski/cardano-devnet:0.1.7
+    ports:
+      - 7007:7007 #n2c port
+      - 3001:3001 #n2n port
+    environment:
+      FUND_ACCOUNT: addr_test1vze3395j26tfwymgtmk4e26gmam7vaq9vyejtj0lkpj70rc20g9xv

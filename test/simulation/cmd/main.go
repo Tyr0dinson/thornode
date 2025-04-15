@@ -18,14 +18,13 @@ import (
 	"gitlab.com/thorchain/thornode/v3/test/simulation/actors/core"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/actors/features"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/actors/suites"
+	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/ada"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/cli"
 	pkgcosmos "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/cosmos"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/dag"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/evm"
-	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/solana"
 	. "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/utxo"
-	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/xrp"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/watchers"
 )
 
@@ -46,8 +45,9 @@ var liteClientConstructors = map[common.Chain]LiteChainClientConstructor{
 	common.AVAXChain: evm.NewConstructor(chainRPCs[common.AVAXChain]),
 	common.GAIAChain: pkgcosmos.NewConstructor(chainRPCs[common.GAIAChain]),
 	common.BASEChain: evm.NewConstructor(chainRPCs[common.BASEChain]),
-	common.XRPChain:  xrp.NewConstructor(chainRPCs[common.XRPChain]),
-	common.SOLChain:  solana.NewConstructor(chainRPCs[common.SOLChain]),
+	// common.XRPChain:  xrp.NewConstructor(chainRPCs[common.XRPChain]),
+	// common.SOLChain:  solana.NewConstructor(chainRPCs[common.SOLChain]),
+	common.ADAChain: ada.NewConstructor(chainRPCs[common.ADAChain]),
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
