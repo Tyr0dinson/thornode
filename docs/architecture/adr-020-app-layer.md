@@ -12,7 +12,7 @@ Proposed
 
 THORChain's SDK V50 update in V3.0.0 (https://gitlab.com/thorchain/thornode/-/merge_requests/3756) enabled it to support an "app-layer" - a separate execution environment. Addresses are allowed to point to RUST-based WASM code that execute deterministically in the transaction life-cycle and can trigger other messages. 
 
-This ADR describes the Design, Guidelines, Emergency Procedures and Deployment Process of the App Layer. It can be used by the community as the definitive guide to how the App Layer should operate.  
+This ADR describes the Design, Security, Guidelines, Emergency Procedures and Deployment Process of the App Layer. It can be used by the community as the definitive guide to how the App Layer should operate.  
 
 ## Alternative Approaches
 
@@ -38,7 +38,7 @@ The `x/wasm` module is implemented with the following features:
 2) Permissioning, where only whitelisted deployer addresses can deploy whitelisted bytecode - this ensures a basic due diligence and quality control process. 
 3) Control - where Node Mimir can pause any contract, any set of contracts or the entire app layer
 
-```
+```go
 HaltWasmGlobal
 HaltWasmCs-%s
 // Encode the checksum to base32 to fit within mimir's 64 char limit and case insenstivity. Truncate trailing `=` for brevity
@@ -58,7 +58,7 @@ Contracts can move Secured Assets, which are wrapped L1 assets, represented in T
 4) Mint with `secure+:thorAddress` and Redeem with `secure-:l1Address`
 5) Node Pauseable 
 
-```
+```go
 HaltSecuredGlobal
 HaltSecuredDeposit-%s
 // Use with Chain
@@ -74,7 +74,6 @@ Contracts can mint using the [Token Factory](https://docs.osmosis.zone/osmosis-c
 1) Only WASM contracts can create tokens: `MsgCreateDenom`. Since contracts are permissioned, this will stop token-spam. 
 2) Currently X tokens are blocked as Base Layer pools - liquidity can only be provided to them on the App Layer itself. This will be reviewed in future. 
 
-
 Implemented as per https://gitlab.com/thorchain/thornode/-/merge_requests/3837
 
 ### Switch Handler
@@ -84,7 +83,7 @@ Tokens can one-way migrate to the App Layer using the Switch Handler.
 2) Users deposit tokens with a `SWITCH:thorAddress`. Source tokens are forever discarded and target tokens are minted to the address. 
 3) Nodes currently use mimir to whitelist tokens that can switch (note, in future this may be relaxed to base-layer PRs to allow more tokens to migrate faster without having to be handled by Nodes)
 
-```
+```go
 EnableSwitch-%s-%s
 // Chain, Asset
 ```
@@ -121,9 +120,9 @@ In short - apps are like "addresses that can do things" - they do not have any e
 
 ## Economic Security
 
-Secured Assets are optimistically secured by a Security Budget set by nodes as a `TVLCap`, which allows depositing of assets (Pool, Trade, Secured) up to a limit defined against the Total Active Bond. 
+Secured Assets are optimistically secured by a Security Budget set by nodes as a `TVLCapBasisPoints`, which allows depositing of assets (Pool, Trade, Secured) up to a limit defined against the Total Active Bond. 
 
-> A `TVLCap = 10_000 bps` means total TVL is allowed to equal the Bond. 
+> A `TVLCapBasisPoints = 10_000 bps` means total TVL is allowed to equal the Bond. 
 > Eg, 100m RUNE Bonded at $1.00, with 50m RUNE in the pools and $10m total as trade assets, allows 40m RUNE ($40m) to be the budget for the App Layer. 
 
 As long as apps generate fees on Secured Assets and a fee-share is paid to Nodes, then Nodes will bond-up at some risk-free rate to continuously open up space for more Secured Assets.
@@ -144,11 +143,11 @@ This idea will be re-visited after some time of the App Layer operating.
 This section sets out general operating principles that should guide Devs, THORNodes and the community in handling and growing the App Layer. 
 
 ### Quality & Due Diligence
-Apps should be high-quality, audited, tested and have UX support before being presented for base layer whitelisting, with the due diligence process is updated continuously beyond the following controls:
+Apps should be high-quality, audited, tested and have UX support before being presented for base layer whitelisting, with the following aspects:
 
 * Differentiation: The application must deliver a unique or novel use case that builds meaningfully on the core primitives provided by existing apps, rather than replicating existing solutions.
 * Team: The development team must demonstrate a verifiable track record of shipping reliable, secure applications—ideally within the specific domain the app targets. Public contributions, community trust, and prior deployments are considered key signals.
-* Review: Every app must undergo an internal technical review by the Rujira core contributors to evaluate architectural soundness, integration practices, and adherence to security best practices, as well as an audit by an independent third-party security firm, with public results and follow-up remediation prior to mainnet deployment.
+* Review: Every app must undergo an internal technical review by the existing contributors to evaluate architectural soundness, integration practices, and adherence to security best practices, as well as an audit by an independent third-party security firm, with public results and follow-up remediation prior to mainnet deployment.
 
 ### Fee-sharing
 
