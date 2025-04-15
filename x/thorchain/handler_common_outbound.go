@@ -12,6 +12,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 // CommonOutboundTxHandler is the place where those common logic can be shared
@@ -77,6 +78,7 @@ func (h CommonOutboundTxHandler) handle(ctx cosmos.Context, tx ObservedTx, inTxI
 	if voter.Height > earliestHeight {
 		earliestHeight = voter.Height
 	}
+	var candidateMatches []types.TxOutItem
 	for height := ctx.BlockHeight(); height >= earliestHeight; height-- {
 		// update txOut record with our TxID that sent funds out of the pool
 		// trunk-ignore(golangci-lint/govet): shadow
@@ -89,12 +91,26 @@ func (h CommonOutboundTxHandler) handle(ctx cosmos.Context, tx ObservedTx, inTxI
 		// Save TxOut back with the TxID only when the TxOut on the block height is
 		// not empty
 		for i, txOutItem := range txOut.TxArray {
+			candidateMatches = append(candidateMatches, txOutItem)
 			// withdraw , refund etc, one inbound tx might result two outbound
 			// txes, THORNode have to correlate outbound tx back to the
 			// inbound, and also txitem , thus THORNode could record both
 			// outbound tx hash correctly given every tx item will only have
 			// one coin in it , THORNode could use that to identify which tx it
 			// is
+
+			var txPubkey common.PubKey
+			switch {
+			case tx.ObservedPubKey.IsEmpty() && !tx.ObservedPubKeyEddsa.IsEmpty():
+				txPubkey = tx.ObservedPubKeyEddsa
+			case !tx.ObservedPubKey.IsEmpty() && tx.ObservedPubKeyEddsa.IsEmpty():
+				txPubkey = tx.ObservedPubKey
+			case !tx.ObservedPubKey.IsEmpty() && !tx.ObservedPubKeyEddsa.IsEmpty():
+				ctx.Logger().Warn("both pubkeys are not empty")
+				txPubkey = tx.ObservedPubKeyEddsa
+			default:
+				ctx.Logger().Error("both pubkeys are empty")
+			}
 
 			if txOutItem.InHash.Equals(inTxID) &&
 				txOutItem.OutHash.IsEmpty() &&
