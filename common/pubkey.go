@@ -16,6 +16,7 @@ import (
 	"github.com/eager7/dogutil"
 	bchchaincfg "github.com/gcash/bchd/chaincfg"
 	"github.com/gcash/bchutil"
+	cardano "github.com/kocubinski/gardano/address"
 	ltcchaincfg "github.com/ltcsuite/ltcd/chaincfg"
 	"github.com/ltcsuite/ltcutil"
 
@@ -216,7 +217,22 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 
 		// Encode the public key to base58 to get the Solana address
 		addressString = base58.Encode(pk.Bytes())
-
+	case ADAChain:
+		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, p.String())
+		if err != nil {
+			return NoAddress, err
+		}
+		var addr cardano.Address
+		switch chainNetwork {
+		case MainNet:
+			addr, err = cardano.PaymentOnlyMainnetAddressFromPubkey(pk.Bytes())
+		default:
+			addr, err = cardano.PaymentOnlyTestnetAddressFromPubkey(pk.Bytes())
+		}
+		addressString = addr.String()
+		if err != nil {
+			return NoAddress, err
+		}
 	default:
 		// Only EVM chains remain.
 		if !chain.IsEVM() {

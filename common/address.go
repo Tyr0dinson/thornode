@@ -31,7 +31,7 @@ const (
 	GaiaZeroAddress = Address("cosmos100000000000000000000000000000000708mjz")
 )
 
-var alphaNumRegex = regexp.MustCompile("^[:A-Za-z0-9]*$")
+var alphaNumRegex = regexp.MustCompile("^[:A-Za-z0-9_]*$")
 
 // NewAddress create a new Address. Supports ETH/bech2/BTC/LTC/BCH/DOGE/XRP.
 func NewAddress(address string) (Address, error) {

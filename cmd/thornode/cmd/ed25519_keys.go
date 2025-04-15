@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bufio"
+	stded25519 "crypto/ed25519"
 	"crypto/hmac"
 	"crypto/sha512"
 	"encoding/binary"
@@ -70,12 +71,11 @@ func ed25519Keys(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("fail to get ED25519 key : %w", err)
 		}
 	}
-	// now we test the ed25519 key can sign and verify
-	_, pk, err := edwards.PrivKeyFromScalar(edwards.Edwards(), item.Data)
-	if err != nil {
-		return fmt.Errorf("fail to parse private key")
-	}
-	pkey := ed25519.PubKey(pk.Serialize())
+	// TODO derivation and construction should use same lib
+	priv := stded25519.NewKeyFromSeed(item.Data)
+	pub := priv.Public().(stded25519.PublicKey)
+
+	pkey := ed25519.PubKey(pub)
 	tmp, err := codec.FromCmtPubKeyInterface(pkey)
 	if err != nil {
 		return fmt.Errorf("fail to get ED25519 key : %w", err)
