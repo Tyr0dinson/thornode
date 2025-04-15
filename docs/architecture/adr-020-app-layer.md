@@ -10,9 +10,9 @@ Proposed
 
 ## Context
 
-THORChain's SDK V50 update in V3.0.0 (https://gitlab.com/thorchain/thornode/-/merge_requests/3756) enabled it to support an "app-layer" - a separate execution environment to its base layer. Accounts are allowed to contain RUST-based WASM code that execute deterministically in the transaction life-cycle and can trigger other messages. 
+THORChain's SDK V50 update in V3.0.0 (https://gitlab.com/thorchain/thornode/-/merge_requests/3756) enabled it to support an "app-layer" - a separate execution environment. Addresses are allowed to point to RUST-based WASM code that execute deterministically in the transaction life-cycle and can trigger other messages. 
 
-This ADR describes the Design, Guidelines, Emergency Procedures and Deployment Process of the App Layer. It also describes generally how apps can be deployed, managed and handled in the normal case as well as exploits or un-aligned behaviour. 
+This ADR describes the Design, Guidelines, Emergency Procedures and Deployment Process of the App Layer. It can be used by the community as the definitive guide to how the App Layer should operate.  
 
 ## Alternative Approaches
 
@@ -26,17 +26,18 @@ This ADR describes the Design, Guidelines, Emergency Procedures and Deployment P
 
 A Hosted App Layer is most appropriate for THORChain currently:
 
-1) WASM contracts with strict boundary conditions allow for a variety of apps to be developed quickly and easily by developers with low risk to the Base Layer. 
-2) A Remote App Layer for a specific high-use app may be entertained in future, eg Perps, where blocktimes, state bloat and more limit the UX of a Hosted App. 
+1) WASM contracts with strict boundary conditions allow for a variety of apps to be developed quickly and easily by developers with low risk to the Base Layer. They can also be called by L1 wallets easily - allowing for seamless UX. 
+2) A Remote App Layer is not ideal for seamless L1 experiences due to a 2-step deposit process. A Remote App Layer for a specific high-use app may be entertained in future, eg Perps, where blocktimes, state bloat and more limit the UX of a Hosted App.
 
 ## Detailed Design
 
 ### WASM
 The `x/wasm` module is implemented with the following features:
 
-1) `MsgExecuteContract` can be called by any account to any other account, which can run logic and call:`MsgSend` or `MsgDeposit`
+1) `MsgExecuteContract` can be called by any address to any other address, which can run logic and call:`MsgSend` or `MsgDeposit` (or recursively call another contract)
 2) Permissioning, where only whitelisted deployer addresses can deploy whitelisted bytecode - this ensures a basic due diligence and quality control process. 
 3) Control - where Node Mimir can pause any contract, any set of contracts or the entire app layer
+
 ```
 HaltWasmGlobal
 HaltWasmCs-%s
@@ -52,10 +53,11 @@ Implemented as per https://gitlab.com/thorchain/thornode/-/merge_requests/3829
 Contracts can move Secured Assets, which are wrapped L1 assets, represented in THORChain's state as native `x/bank` assets: 
 
 1) Secured Assets are denomed like `btc-btc` for `BTC.BTC` and minted natively.
-2) Secured Assets are not directly redeemed for vaulted assets, they are managed as a "share". This allows negative interest to be charged in future, or if a vault loss ever happens, a haircut to be handled. 
+2) Secured Assets are not directly redeemed for vaulted assets, they are managed as a "share". This allows negative interest for exported assets to be entertained in future. 
 3) Secured Assets have all the features that Trade Assets have (swaps etc)
 4) Mint with `secure+:thorAddress` and Redeem with `secure-:l1Address`
-5) Pauseable 
+5) Node Pauseable 
+
 ```
 HaltSecuredGlobal
 HaltSecuredDeposit-%s
@@ -67,9 +69,9 @@ HaltSecuredWithdraw-%s
 Implemented as per https://gitlab.com/thorchain/thornode/-/merge_requests/3721
 
 ### Token Factory
-Contracts can mint using the [Token Factory](https://docs.osmosis.zone/osmosis-core/modules/tokenfactory/) - with the `x/denom` module 
+Contracts can mint using the [Token Factory](https://docs.osmosis.zone/osmosis-core/modules/tokenfactory/) - with the `x/denom` module. 
 
-1) Only WASM contracts can `MsgMint` - so tokens will be limited only by whitelisted contracts. This stops token-spam.
+1) Only WASM contracts can create tokens: `MsgCreateDenom`. Since contracts are permissioned, this will stop token-spam. 
 2) Currently X tokens are blocked as Base Layer pools - liquidity can only be provided to them on the App Layer itself. This will be reviewed in future. 
 
 
@@ -79,8 +81,9 @@ Implemented as per https://gitlab.com/thorchain/thornode/-/merge_requests/3837
 Tokens can one-way migrate to the App Layer using the Switch Handler. 
 
 1) Devs provide a source token, burn address and a target denom for each whitelisted `CHAIN-ASSET`
-2) Users deposit tokens with a `SWITCH:thorAddress`. Source tokens are burnt (sent to burn address) and target tokens are minted to the address. 
-3) Nodes use mimir to whitelist tokens that can switch
+2) Users deposit tokens with a `SWITCH:thorAddress`. Source tokens are forever discarded and target tokens are minted to the address. 
+3) Nodes currently use mimir to whitelist tokens that can switch (note, in future this may be relaxed to base-layer PRs to allow more tokens to migrate faster without having to be handled by Nodes)
+
 ```
 EnableSwitch-%s-%s
 // Chain, Asset
@@ -88,35 +91,68 @@ EnableSwitch-%s-%s
 
 Implemented as per https://gitlab.com/thorchain/thornode/-/merge_requests/3840
 
-## Security
+## App Security
 
-The Hosted App Layer design above achieves security by limiting what apps can call, query and use. 
+The App Layer is designed with a strict separation of concerns from THORChain’s Base Layer, ensuring it introduces no new systemic risk. Contracts deployed on the App Layer are sandboxed with limited capabilities, functioning similarly to externally owned accounts (EOAs), with limits on what they can call, query and use. 
+
+To mitigate risk the following security measures are taken for every contract:
+
+* Audits: All deployed contracts undergo internal reviews from core team members and third-party audits before mainnet launch.
+* Permissioned Deployment: Only pre-approved contract bytecode and deployer addresses are allowed on mainnet.
+* Operational Controls: THORChain’s Mimir governance can pause individual apps, all apps, or secured asset minting/burning in response to threats.
+* Impact Isolation: If an exploit occurs, only the users of the affected app are impacted—the Base Layer and its liquidity pools remain unaffected.
+* No Elevated Privileges: Contracts cannot mint or burn secured assets or interfere with Base Layer consensus. Their rights are no greater than any regular user with a thor address.
+
+This design ensures that even in the event of a compromised application, THORChain’s integrity, solvency, and cross-chain operations remain secure. 
 
 ### Call Limits
-- `MsgMint`, eg to mint a Token to represent fungible units
+- `MsgCreateDenom`, eg to mint a Token to represent fungible units
 - `MsgSend`, to send an asset to another address
 - `MsgDeposit`, to call into THORChain's base layer, ie, to swap, bond, redeem
 - `MsgExecuteContract`, to call into another contract
 
 ### Query Limits
-- Only specific base layer query endpoints are made available to the App Layer to prevent possible non-deterministic queries
+- Only specific base layer query endpoints are made available to the App Layer to prevent possible non-deterministic queries (historically has lead to DoS attacks on other chains)
 
 ### Asset Limits
-- Only native assets `rune, tcy`, secured assets `btc-btc` and X assets (Token Factory) can be moved by contracts
+- Only native assets `rune`, secured assets `btc-btc` and X assets (Token Factory) can be moved by contracts
 
-In short - apps are like "addresses that can do things" - they do not have any extra privilege that a RUNE addresss can do today (with the exception of `MsgMint`, which is only designed to prevent Token Spam by users). 
+In short - apps are like "addresses that can do things" - they do not have any extra privilege that a RUNE addresss can do today (with the exception of `MsgCreateDenom`, which is only designed to prevent Token Spam by users). 
+
+## Economic Security
+
+Secured Assets are optimistically secured by a Security Budget set by nodes as a `TVLCap`, which allows depositing of assets (Pool, Trade, Secured) up to a limit defined against the Total Active Bond. 
+
+> A `TVLCap = 10_000 bps` means total TVL is allowed to equal the Bond. 
+> Eg, 100m RUNE Bonded at $1.00, with 50m RUNE in the pools and $10m total as trade assets, allows 40m RUNE ($40m) to be the budget for the App Layer. 
+
+As long as apps generate fees on Secured Assets and a fee-share is paid to Nodes, then Nodes will bond-up at some risk-free rate to continuously open up space for more Secured Assets.
+
+
+Implemented as https://gitlab.com/thorchain/thornode/-/merge_requests/3972
+
+### App-specific security
+Currently all apps pay a global fee-share and use assets in the global budget. But not all apps are the same. 
+
+In future a more granular market-based approach might be taken where apps rent a security budget (Staked RUNE) and pay a fee-share directly to their stakers. The staked RUNE per app sets the per-app TVL caps, and the app can offer any fee-share level they want. The Staked RUNE per app is the slashable security. 
+
+This idea will be re-visited after some time of the App Layer operating. 
+
 
 ## App Layer Guidelines
 
-This section sets out general operating principles that should guide App Layer Devs, THORNodes and the community in handling and growing the App Layer. 
+This section sets out general operating principles that should guide Devs, THORNodes and the community in handling and growing the App Layer. 
 
-### Quality
+### Quality & Due Diligence
+Apps should be high-quality, audited, tested and have UX support before being presented for base layer whitelisting, with the due diligence process is updated continuously beyond the following controls:
 
-Apps should be high-quality, audited, tested and have UX support before being presented for base layer whitelisting. 
+* Differentiation: The application must deliver a unique or novel use case that builds meaningfully on the core primitives provided by existing apps, rather than replicating existing solutions.
+* Team: The development team must demonstrate a verifiable track record of shipping reliable, secure applications—ideally within the specific domain the app targets. Public contributions, community trust, and prior deployments are considered key signals.
+* Review: Every app must undergo an internal technical review by the Rujira core contributors to evaluate architectural soundness, integration practices, and adherence to security best practices, as well as an audit by an independent third-party security firm, with public results and follow-up remediation prior to mainnet deployment.
 
 ### Fee-sharing
 
-THORNodes provide security, L1 observation, decentralisation and execution of app-layer contracts and assets; which is significantly expensive. Transaction fees are not enough to pay for 100+ nodes with RPCs to 10+ chains and counting each, since users generally object to high transaction fees ($1.00 and above). THORChain has set tx fees currently to 2c. 
+THORNodes provide security, L1 observation, decentralisation and execution of app-layer contracts and assets; which is significantly expensive. Transaction fees are not enough to pay for this, since users generally object to high transaction fees ($1.00 and above). THORChain has set tx fees currently to 2c. 
 
 Instead - Apps should offer fee-sharing to THORNodes directly from their service fees; eg
 * Interest fees on lending/borrowing/stablecoins
@@ -130,6 +166,8 @@ To do so, ensure that the share of fees collected in an app are swapped to RUNE 
 ```
 thor1dheycdevq39qlkxs2a6wuuzyn4aqxhve4qxtxt
 ```
+
+Fee-sharing levels can be revisited after some time. 
 
 ### No Uncapped Systemic-risk Apps
 
@@ -146,7 +184,7 @@ Duplicate apps by different teams may be permitted if a former app has failed, d
 
 ### App Upgradeability
 
-Since whitelisted deployers can only deploy whitelisted contracts after having adequate base-layer due diligence, it is encouraged that all apps have a `migrate()` path to allow for contract upgrades. 
+Since whitelisted deployers can only deploy whitelisted contracts after having adequate base-layer due diligence, it is encouraged that all apps have retain deployer upgradeability. 
 
 Upgrading contracts and ensuring state and contract-address stay the same allows for bug-fixes and improvements to be seamlessly and securely rolled out.  
 
@@ -163,12 +201,10 @@ Contentious apps could be any app becoming a risk to the protocol or its users. 
 
 > Privacy apps, dark-net marketplaces, betting platforms and more may be contentious if adequate controls are not put in place by the app-dev. "Adequate controls" should be determined as per other apps in other protocols. 
 
-
-
 ## Emergency Procedures
 App-devs, Base-devs and THORNodes are responsible for responding to and managing security issues.
 
-> THORChain does not subscribe to the philosophy that "code is forever law" - rather that the chain and assets are sovereign and that long term a safe and vibrant ecosystem will bring more users and fees - thus exploits can and should be handled. 
+> THORChain does not subscribe to the philosophy that "code is forever law" - rather that the chain and assets are sovereign and that long term a safe and vibrant ecosystem will bring more users and fees - thus exploits can and should be handled. THORChain's App Layer implementation allows contracts to be upgraded by a review process by nuetral Base Layer Devs. 
 
 ### Vulnerability Reported
 If a P0 is reported, but no exploit yet, THORNodes can:
@@ -198,7 +234,7 @@ Devs wishing to deploy an App on THORChain should read this ADR. Any and all app
 2) Ensure the app meets the App Layer Guidelines
 3) Submit a finalised contract bytecode, deployer address and origin link (containing app description and documentation) to the Base Layer Tech lead for review and merging to the Base Layer. 
 4) Deploy (3) on mainnet once approved
-5) Be ready to handle feedback from THORNodes on app features and issues, as well as managing upgrades
+5) Be ready to handle feedback from THORNodes on app features and issues, as well as managing upgrades.
 
 
 ## Rujira
@@ -212,4 +248,4 @@ RUJI is not exclusive to THORChain, and apps can be deployed outside of the RUJI
 
 ### Summary
 
-This ADR details the App-layer as of 2025. Some or all parts of this ADR may be superceded by an update if needed. 
+This ADR details the App-layer as of 2025. Some or all parts of this ADR may be superceded by an ADR update if needed. 
