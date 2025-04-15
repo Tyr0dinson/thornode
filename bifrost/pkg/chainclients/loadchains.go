@@ -7,6 +7,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/tss"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/cardano"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/ethereum"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/evm"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/gaia"
@@ -52,6 +53,8 @@ func LoadChains(thorKeys *thorclient.Keys,
 			return xrp.NewClient(thorKeys, chain, server, thorchainBridge, m)
 		case common.SOLChain:
 			return solana.NewSOLClient(thorKeys, chain, server, thorchainBridge, m, pubKeyValidator, poolMgr)
+		case common.ADAChain:
+			return cardano.NewClient(thorKeys, chain, server, thorchainBridge, m)
 		default:
 			log.Fatal().Msgf("chain %s is not supported", chain.ChainID)
 			return nil, nil
