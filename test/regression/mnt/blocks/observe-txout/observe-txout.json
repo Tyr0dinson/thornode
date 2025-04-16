@@ -228,7 +228,6 @@
                     "finalise_height": "1",
                     "keysign_ms": "0",
                     "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
-                    "observed_pub_key_eddsa": "",
                     "out_hashes": [],
                     "signers": [],
                     "status": "incomplete",
@@ -267,7 +266,7 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "1047603",
+          "gas_used": "1059788",
           "events": [
             {
               "acc_seq": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m/0",
@@ -378,8 +377,8 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "019E6AC205167B8D9F74CE301B17A299FC301EB720A96222B51A830E12F4DBEC",
-      "last_results_hash": "B8C884A8C3C71529C36B4EB0724ECC72270E6AFCEC03DDF45813267B52141008",
+      "app_hash": "28E8E698E56F5D8C92DBFFE2DFADE4730E1FDD750A316741C501C4A78FBD4AB9",
+      "last_results_hash": "EFAA80E4F48F06C0F1168179090DCAA4DC7960342221C80C2E2DF5272630C69D",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
@@ -517,7 +516,6 @@
                     "finalise_height": "2",
                     "keysign_ms": "0",
                     "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
-                    "observed_pub_key_eddsa": "",
                     "out_hashes": [],
                     "signers": [],
                     "status": "incomplete",
@@ -556,7 +554,7 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "252393",
+          "gas_used": "252195",
           "events": [
             {
               "acc_seq": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m/1",
@@ -617,8 +615,8 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "1E80CFC128AA7DFEB40489903262C0427F309B822ABEF7D789A50B2F7E8A40D3",
-      "last_results_hash": "2FD001C4F483EEAAFAE493B8D89D70EDEA86ADEC5D659AC83372D301171C2016",
+      "app_hash": "45A47029A87CE0AB5B44400BFDE55DDB15BEFE64DDFFEF1559A6FBE4F63F1A4C",
+      "last_results_hash": "5A2E9604DECEC6F8A2984E62C04159A0A80C185EAF12C46D9B6F84A9EDE89ED2",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
