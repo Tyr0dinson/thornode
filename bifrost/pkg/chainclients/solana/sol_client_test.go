@@ -70,6 +70,11 @@ func (s *SolTestSuite) SetUpSuite(c *C) {
 	s.m = GetMetricForTest(c)
 	c.Assert(s.m, NotNil)
 
+	ccfg := cosmos.GetConfig()
+	ccfg.SetBech32PrefixForAccount("tthor", "tthorpub")
+	ccfg.SetBech32PrefixForValidator("tthorv", "tthorvpub")
+	ccfg.SetBech32PrefixForConsensusNode("tthorc", "tthorcpub")
+
 	cfg := config.BifrostClientConfiguration{
 		ChainID:         "thorchain",
 		SignerName:      "bob-secp256k1",
