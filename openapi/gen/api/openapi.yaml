@@ -5185,11 +5185,13 @@ components:
           example: "20"
           type: string
         rune_price_in_tor:
-          description: the rune price in tor
+          description: "the rune price in tor, returns \"n/a\" if it can't be calculated\
+            \ (eg. all anchor chains are halted)"
           example: "10"
           type: string
         tor_price_in_rune:
-          description: the tor price in rune
+          description: "the tor price in rune, returns \"n/a\" if it can't be calculated\
+            \ (eg. all anchor chains are halted)"
           example: "10"
           type: string
       required:

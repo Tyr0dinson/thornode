@@ -44,9 +44,9 @@ type NetworkResponse struct {
 	TnsRegisterFeeRune string `json:"tns_register_fee_rune"`
 	// the thorname fee per block in rune, converted from the TNSFeePerBlockUSD mimir (after USD fees are enabled)
 	TnsFeePerBlockRune string `json:"tns_fee_per_block_rune"`
-	// the rune price in tor
+	// the rune price in tor, returns \"n/a\" if it can't be calculated (eg. all anchor chains are halted)
 	RunePriceInTor string `json:"rune_price_in_tor"`
-	// the tor price in rune
+	// the tor price in rune, returns \"n/a\" if it can't be calculated (eg. all anchor chains are halted)
 	TorPriceInRune string `json:"tor_price_in_rune"`
 }
 

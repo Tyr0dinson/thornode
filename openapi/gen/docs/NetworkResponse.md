@@ -18,8 +18,8 @@ Name | Type | Description | Notes
 **NativeTxFeeRune** | **string** | the native transaction fee in rune, converted from the NativeTransactionFeeUSD mimir (after USD fees are enabled) | 
 **TnsRegisterFeeRune** | **string** | the thorname register fee in rune, converted from the TNSRegisterFeeUSD mimir (after USD fees are enabled) | 
 **TnsFeePerBlockRune** | **string** | the thorname fee per block in rune, converted from the TNSFeePerBlockUSD mimir (after USD fees are enabled) | 
-**RunePriceInTor** | **string** | the rune price in tor | 
-**TorPriceInRune** | **string** | the tor price in rune | 
+**RunePriceInTor** | **string** | the rune price in tor, returns \&quot;n/a\&quot; if it can&#39;t be calculated (eg. all anchor chains are halted) | 
+**TorPriceInRune** | **string** | the tor price in rune, returns \&quot;n/a\&quot; if it can&#39;t be calculated (eg. all anchor chains are halted) | 
 
 ## Methods
 
