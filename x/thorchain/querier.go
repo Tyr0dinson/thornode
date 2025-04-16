@@ -3328,16 +3328,6 @@ func simulate(ctx cosmos.Context, mgr Manager, msg sdk.Msg) (sdk.Events, error) 
 	return em.Events(), nil
 }
 
-// runePerDollarIgnoreHalt mirrors keeper.RunePerDollars, but ignoring trade
-// halts, using dollarsPerRuneIgnoreHalt
-func runePerDollarIgnoreHalt(ctx cosmos.Context, k keeper.Keeper) cosmos.Uint {
-	dollarsPerRune := dollarsPerRuneIgnoreHalt(ctx, k)
-	return common.GetUncappedShare(
-		cosmos.NewUint(common.One),
-		dollarsPerRune, cosmos.NewUint(common.One),
-	)
-}
-
 // dollarsPerRuneIgnoreHalt mirrors keeper.DollarsPerRune, but ignoring halts if all
 // anchor chains are unavailable with them. This is used for the TOR price on pools to
 // ensure a best effort price is returned whenever possible instead of zero.
