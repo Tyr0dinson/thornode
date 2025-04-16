@@ -208,7 +208,6 @@ func (s *SOLScanner) Start() {
 			}
 
 			var newLastSigs = make([]string, len(vaultAddrs))
-			var newLastSlots = make([]uint64, len(vaultAddrs))
 			for i, vaultAddr := range vaultAddrs {
 				lastSig, vaultLastSlot, _ := s.db.GetScanStatus(vaultAddr.String())
 
@@ -217,7 +216,7 @@ func (s *SOLScanner) Start() {
 				go func() {
 					defer wg.Done()
 
-					minContextSlot := max(lastSlot, vaultLastSlot, uint64(s.cfg.StartBlockHeight))
+					minContextSlot := max(vaultLastSlot, uint64(s.cfg.StartBlockHeight))
 
 					res, err := s.solRpc.GetSignaturesForAddressUntil(vaultAddr.String(), minContextSlot, lastSig)
 					if err != nil {
@@ -256,7 +255,6 @@ func (s *SOLScanner) Start() {
 					txWg.Wait()
 
 					newLastSigs[i] = res[0].Signature
-					newLastSlots[i] = res[0].Slot
 				}()
 			}
 			wg.Wait()
@@ -266,7 +264,9 @@ func (s *SOLScanner) Start() {
 			for i, vaultAddr := range vaultAddrs {
 				sig := newLastSigs[i]
 				if sig != "" {
-					s.db.SetScanStatus(vaultAddr.String(), sig, newLastSlots[i])
+					// we are up to date as of the current slot, so minContextSlot
+					// can be the current slot for the next call
+					s.db.SetScanStatus(vaultAddr.String(), sig, currentSlot)
 				}
 			}
 
@@ -305,6 +305,7 @@ func (s *SOLScanner) checkRecentBlocksAndUpdateNetworkFee(slot uint64) error {
 	defer s.sendNetworkFeeIfNecessary(slot)
 
 	numTxs := 0
+	var lastSlot uint64
 
 	for i := slot; i > 0; i-- {
 		block, err := s.solRpc.GetBlock(i)
@@ -312,11 +313,16 @@ func (s *SOLScanner) checkRecentBlocksAndUpdateNetworkFee(slot uint64) error {
 			s.logger.Error().Err(err).Msg("failed to get block to determine netfee")
 			continue
 		}
+		if lastSlot == 0 {
+			lastSlot = i
+		}
 
 		txIn := s.getTxIn(i, block.Transactions)
 		numTxs += len(txIn.TxArray)
 
 		if numTxs > s.cfg.GasCacheBlocks {
+			// We have enough transactions to calculate the network fee
+			s.logger.Info().Uint64("first_slot", i).Uint64("last_slot", lastSlot).Msg("found enough transactions to calculate network fee")
 			break
 		}
 	}
@@ -396,15 +402,17 @@ func (s *SOLScanner) sendNetworkFeeIfNecessary(height uint64) {
 		s.feeRateCache = s.feeRateCache[(len(s.feeRateCache) - s.cfg.GasCacheBlocks):]
 	}
 
+	if roundedFeeRate == 0 {
+		s.logger.Debug().Msg("network fee is 0")
+		return
+	}
+
 	// Update the fee rate if it has changed
 	if roundedFeeRate == s.lastFeeRate {
 		return
 	}
 
-	if roundedFeeRate == 0 {
-		s.logger.Debug().Msg("network fee is 0")
-		return
-	}
+	s.lastFeeRate = roundedFeeRate
 
 	s.netFeeInit = true
 
@@ -415,7 +423,6 @@ func (s *SOLScanner) sendNetworkFeeIfNecessary(height uint64) {
 		TransactionRate: roundedFeeRate,
 	}
 
-	s.lastFeeRate = roundedFeeRate
 	s.logger.Info().
 		Uint64("fee", roundedFeeRate).
 		Uint64("height", height).
