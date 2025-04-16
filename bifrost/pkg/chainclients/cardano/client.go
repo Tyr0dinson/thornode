@@ -477,6 +477,7 @@ func (c *Client) Start(
 	globalTxsQueue chan types.TxIn,
 	globalErrataQueue chan types.ErrataBlock,
 	globalSolvencyQueue chan types.Solvency,
+	globalNetworkFeeQueue chan common.NetworkFee,
 ) {
 	slot, hash, err := c.getBlockId(c.startHeight)
 	if err != nil {
@@ -490,7 +491,7 @@ func (c *Client) Start(
 	}
 
 	c.globalSolvencyQueue = globalSolvencyQueue
-	c.scanner.Start(globalTxsQueue)
+	c.scanner.Start(globalTxsQueue, globalNetworkFeeQueue)
 	c.logger.Info().Msg("started cardano client")
 }
 
@@ -517,7 +518,7 @@ func (c *Client) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
 		return types.TxIn{}, err
 	}
 
-	var txIns []types.TxInItem
+	var txIns []*types.TxInItem
 	for _, tx := range block.Transactions() {
 		if !tx.IsValid() {
 			continue
@@ -565,7 +566,7 @@ func (c *Client) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
 			continue
 		}
 
-		txIns = append(txIns, types.TxInItem{
+		txIns = append(txIns, &types.TxInItem{
 			Tx:          tx.Hash().String(),
 			BlockHeight: fetchHeight,
 			Memo:        memo,
@@ -581,7 +582,6 @@ func (c *Client) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
 	}
 
 	return types.TxIn{
-		Count:    strconv.Itoa(len(txIns)),
 		Chain:    c.config.ChainID,
 		TxArray:  txIns,
 		Filtered: false,
