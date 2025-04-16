@@ -416,6 +416,7 @@ func (s *SOLScanner) sendNetworkFeeIfNecessary(height uint64) {
 
 	// Update the fee rate if it has changed
 	if roundedFeeRate == s.lastFeeRate {
+		s.logger.Info().Uint64("fee", roundedFeeRate).Msg("network fee is already up to date")
 		return
 	}
 
