@@ -181,6 +181,13 @@ func (s *SOLScanner) Start() {
 			}
 
 			if currentSlot > (s.netFeeSlotMultiple+1)*NetFeeUpdateInterval {
+				_, thorRate, err := s.bridge.GetNetworkFee(common.SOLChain)
+				if err != nil {
+					s.logger.Error().Err(err).Msg("failed to get network fee")
+				} else {
+					s.lastFeeRate = thorRate
+				}
+
 				// we crossed the threshold for updating the network fee, so check the last N blocks
 				//  up to the rounded slot for deterministic behavior across nodes.
 				s.netFeeSlotMultiple = currentSlot / NetFeeUpdateInterval
