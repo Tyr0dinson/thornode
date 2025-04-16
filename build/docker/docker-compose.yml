@@ -580,9 +580,7 @@ services:
       - mocknet
       - mocknet-cluster
     restart: unless-stopped
-    build:
-      context: ./mocknet/solana
-      dockerfile: Dockerfile
+    image: anzaxyz/agave:v2.2.10
     volumes:
       - "./mocknet/solana:/mocknet"
     entrypoint: /mocknet/entrypoint.sh

@@ -53,21 +53,14 @@ func refundTx(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32,
 			}
 
 			toi := TxOutItem{
-				Chain:                 coin.Asset.GetChain(),
-				ToAddress:             toAddr,
-				VaultPubKey:           vault.PubKey,
-				VaultPubKeyEddsa:      vault.PubKeyEddsa,
-				Coin:                  coin,
-				Memo:                  NewRefundMemo(tx.Tx.ID).String(),
-				MaxGas:                []common.Coin{},
-				GasRate:               0,
-				InHash:                tx.Tx.ID,
-				OutHash:               "",
-				ModuleName:            sourceModuleName,
-				Aggregator:            "",
-				AggregatorTargetAsset: "",
-				AggregatorTargetLimit: &cosmos.Uint{},
-				CloutSpent:            &cosmos.Uint{},
+				Chain:            coin.Asset.GetChain(),
+				ToAddress:        toAddr,
+				VaultPubKey:      vault.PubKey,
+				VaultPubKeyEddsa: vault.PubKeyEddsa,
+				Coin:             coin,
+				Memo:             NewRefundMemo(tx.Tx.ID).String(),
+				InHash:           tx.Tx.ID,
+				ModuleName:       sourceModuleName,
 			}
 
 			success, err := mgr.TxOutStore().TryAddTxOutItem(ctx, mgr, toi, cosmos.ZeroUint())

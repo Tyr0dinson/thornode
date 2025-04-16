@@ -38,9 +38,7 @@ type SOLClient struct {
 	localPubKey             string
 	k                       *cosmoscryptoed25519.PrivKey
 	solScanner              *SOLScanner
-	solGeyser               *SolGeyser
 	bridge                  thorclient.ThorchainBridge
-	blockScanner            *blockscanner.BlockScanner
 	poolMgr                 thorclient.PoolManager
 	tssKeyManager           tss.ThorchainKeyManager
 	wg                      *sync.WaitGroup
@@ -112,7 +110,7 @@ func NewSOLClient(
 	if len(c.cfg.BlockScanner.DBPath) > 0 {
 		path = fmt.Sprintf("%s/%s", c.cfg.BlockScanner.DBPath, c.cfg.BlockScanner.ChainID)
 	}
-	storage, err := blockscanner.NewBlockScannerStorage(path, c.cfg.ScannerLevelDB)
+	storage, err := blockscanner.NewBlockScannerStorageSolana(path, c.cfg.ScannerLevelDB)
 	if err != nil {
 		return c, fmt.Errorf("fail to create blockscanner storage: %w", err)
 	}
@@ -124,6 +122,7 @@ func NewSOLClient(
 
 	// create block scanner
 	c.solScanner, err = NewSOLScanner(
+		c.stopchan,
 		c.cfg.BlockScanner,
 		storage,
 		bridge,
@@ -137,23 +136,6 @@ func NewSOLClient(
 		return c, fmt.Errorf("fail to create evm block scanner: %w", err)
 	}
 
-	// create geyser receiver
-	c.solGeyser, err = NewSolGeyser(c.cfg.BlockScanner, c.solScanner, cfg.GeyserHost, cfg.GeyserToken)
-	if err != nil {
-		return c, fmt.Errorf("fail to create sol geyser: %w", err)
-	}
-
-	// Set geyser reference in scanner
-	c.solScanner.SetGeyser(c.solGeyser)
-
-	// initialize block scanner
-	c.blockScanner, err = blockscanner.NewBlockScanner(
-		c.cfg.BlockScanner, storage, m, c.bridge, c.solScanner,
-	)
-	if err != nil {
-		return c, fmt.Errorf("fail to create block scanner: %w", err)
-	}
-
 	return c, nil
 }
 
@@ -164,12 +146,11 @@ func (c *SOLClient) Start(
 	globalSolvencyQueue chan stypes.Solvency,
 	globalNetworkFeeQueue chan common.NetworkFee,
 ) {
-	// c.solScanner.globalErrataQueue = globalErrataQueue
 	c.globalSolvencyQueue = globalSolvencyQueue
 	c.solScanner.globalNetworkFeeQueue = globalNetworkFeeQueue
+	c.solScanner.globalTxsQueue = globalTxsQueue
 	c.tssKeyManager.Start()
-	c.blockScanner.Start(globalTxsQueue, globalNetworkFeeQueue)
-	c.solGeyser.Run()
+	go c.solScanner.Start()
 	c.wg.Add(1)
 	go runners.SolvencyCheckRunner(c.GetChain(), c, c.bridge, c.stopchan, c.wg, constants.ThorchainBlockTime)
 }
@@ -177,15 +158,13 @@ func (c *SOLClient) Start(
 // Stop stops the chain client.
 func (c *SOLClient) Stop() {
 	c.tssKeyManager.Stop()
-	c.blockScanner.Stop()
-	c.solGeyser.Stop()
 	close(c.stopchan)
 	c.wg.Wait()
 }
 
 // IsBlockScannerHealthy returns true if the block scanner is healthy.
 func (c *SOLClient) IsBlockScannerHealthy() bool {
-	return c.blockScanner.IsHealthy()
+	return c.solScanner.IsHealthy()
 }
 
 // --------------------------------- config ---------------------------------
@@ -209,7 +188,7 @@ func (c *SOLClient) GetHeight() (int64, error) {
 
 // GetBlockScannerHeight returns blockscanner height
 func (c *SOLClient) GetBlockScannerHeight() (int64, error) {
-	return c.blockScanner.PreviousHeight(), nil
+	return c.solScanner.ScanHeight()
 }
 
 func (c *SOLClient) GetLatestTxForVault(vault string) (string, string, error) {
@@ -273,6 +252,9 @@ func (c *SOLClient) ReportSolvency(height int64) error {
 
 // ShouldReportSolvency returns true if the given height is a solvency report height.
 func (c *SOLClient) ShouldReportSolvency(height int64) bool {
+	if c.cfg.SolvencyBlocks <= 0 {
+		return false
+	}
 	return height%c.cfg.SolvencyBlocks == 0
 }
 

@@ -246,7 +246,7 @@ func (tos *TxOutStorageVCUR) cachedTryAddTxOutItem(ctx cosmos.Context, mgr Manag
 
 	outputs, totalOutboundFeeRune, err := tos.prepareTxOutItem(ctx, toi)
 	if err != nil {
-		return false, fmt.Errorf("fail to prepare outbound tx: %w", err)
+		return false, fmt.Errorf("failed to prepare tx out item: %w", err)
 	}
 	if len(outputs) == 0 {
 		return false, ErrNotEnoughToPayFee

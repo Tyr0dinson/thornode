@@ -10,20 +10,20 @@ type GetBlockResponse struct {
 	Jsonrpc string      `json:"jsonrpc"`
 	Id      int         `json:"id"`
 	Result  BlockResult `json:"result"`
-	Error   RPCError    `json:"error"`
+	Error   *RPCError   `json:"error"`
 }
 
 // Structs for the response data
 type BlockResult struct {
-	Blockhash         string           `json:"blockhash"`
-	PreviousBlockhash string           `json:"previousBlockhash"`
-	ParentSlot        uint64           `json:"parentSlot"`
-	Transactions      []RPCTransaction `json:"transactions"`
+	Blockhash         string               `json:"blockhash"`
+	PreviousBlockhash string               `json:"previousBlockhash"`
+	ParentSlot        uint64               `json:"parentSlot"`
+	Transactions      []*TransactionResult `json:"transactions"`
 }
 
 // GetBlock - makes a getBlock RPC call to the Solana RPC. Will only return a
 // "finalized" block.
-func (s *SolRPC) GetBlock(height int64) (*BlockResult, error) {
+func (s *SolRPC) GetBlock(height uint64) (*BlockResult, error) {
 	params := []interface{}{
 		height,
 		map[string]interface{}{
@@ -45,7 +45,7 @@ func (s *SolRPC) GetBlock(height int64) (*BlockResult, error) {
 		return nil, err
 	}
 
-	if response.Error.Code != 0 {
+	if response.Error != nil && response.Error.Code != 0 {
 		// Sometimes solana skips a slot, so in that case return an empty response to skip the slot
 		if response.Error.Message == fmt.Sprintf("Slot %d was skipped, or missing due to ledger jump to recent snapshot", height) {
 			fmt.Printf("Slot %d was skipped or missing. Returning empty result.\n", height)

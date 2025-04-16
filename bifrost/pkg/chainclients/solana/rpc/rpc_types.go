@@ -9,12 +9,6 @@ import (
 // rpc_types contains the structs for the responses from the Solana RPC
 ////////////////////////////////////////////////////////////////////////////////////////
 
-type RPCTransaction struct {
-	Meta        RPCMeta    `json:"meta"`
-	Transaction RPCTxnData `json:"transaction"`
-	Version     RPCVersion `json:"version"`
-}
-
 type RPCMeta struct {
 	ComputeUnitsConsumed uint64        `json:"computeUnitsConsumed"`
 	Err                  interface{}   `json:"err"`
@@ -97,13 +91,13 @@ func (v *RPCVersion) UnmarshalJSON(b []byte) error {
 // Helpers
 ////////////////////////////////////////////////////////////////////////////////////////
 
-func (r *RPCTransaction) GetInstructions() []RPCInstruction {
-	return r.Transaction.Message.Instructions
+func (r *RPCTxnData) GetInstructions() []RPCInstruction {
+	return r.Message.Instructions
 }
 
-func (r *RPCTransaction) GetAccountAtIndex(i int) string {
-	if i >= len(r.Transaction.Message.AccountKeys) || len(r.Transaction.Message.AccountKeys) == 0 {
+func (r *RPCTxnData) GetAccountAtIndex(i int) string {
+	if i >= len(r.Message.AccountKeys) || len(r.Message.AccountKeys) == 0 {
 		return ""
 	}
-	return r.Transaction.Message.AccountKeys[i]
+	return r.Message.AccountKeys[i]
 }

@@ -6,7 +6,8 @@ import (
 	"fmt"
 	"math/big"
 	"sort"
-	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/mr-tron/base58"
@@ -15,9 +16,8 @@ import (
 	"github.com/rs/zerolog/log"
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
-	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/evm"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
-	. "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
+	shtypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/solana/rpc"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/solana/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
@@ -26,11 +26,13 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	sdk "gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
+	"gitlab.com/thorchain/thornode/v3/constants"
 )
 
 const (
-	LatestHashUpdateInterval = 100  // update latest block hash every 100 blocks
-	BaseFeePerSigLamports    = 5000 // "Base" fee per signature of a transaction
+	BaseFeePerSigLamports = 5000 // "Base" fee per signature of a transaction
+
+	NetFeeUpdateInterval = 1000 // update network fee every 1000 slots
 )
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -40,40 +42,46 @@ const (
 type SOLScanner struct {
 	cfg                config.BifrostBlockScannerConfiguration
 	logger             zerolog.Logger
-	db                 blockscanner.ScannerStorage
+	db                 blockscanner.ScannerStorageSolana
 	m                  *metrics.Metrics
 	errCounter         *prometheus.CounterVec
 	solRpc             *rpc.SolRPC
-	blockMetaAccessor  evm.BlockMetaAccessor
 	bridge             thorclient.ThorchainBridge
-	currentBlockHeight int64
-	solvencyReporter   SolvencyReporter
+	solvencyReporter   shtypes.SolvencyReporter
 	signerCacheManager *signercache.CacheManager
-	geyser             *SolGeyser
 
 	globalNetworkFeeQueue chan common.NetworkFee
+	globalTxsQueue        chan stypes.TxIn
 
 	// fee rate
 	feeRateCache []uint64
 	lastFeeRate  uint64
 
-	// metrics
-	totalDuration time.Duration
-	blockCount    int
-	avgDuration   time.Duration
+	healthy *atomic.Bool
 
 	// local state
 	latestBlockHash string
+	latestBlockMu   sync.Mutex
+
+	// network fee state
+	netFeeSlotMultiple uint64
+	netFeeInit         bool
+
+	lastLog time.Time
+
+	stopChan chan struct{}
 }
 
 // NewSOLScanner create a new instance of SOLScanner.
-func NewSOLScanner(cfg config.BifrostBlockScannerConfiguration,
-	storage blockscanner.ScannerStorage,
+func NewSOLScanner(
+	stopChan chan struct{},
+	cfg config.BifrostBlockScannerConfiguration,
+	storage blockscanner.ScannerStorageSolana,
 	bridge thorclient.ThorchainBridge,
 	m *metrics.Metrics,
 	rpc *rpc.SolRPC,
 	pubkeyMgr pubkeymanager.PubKeyValidator,
-	solvencyReporter SolvencyReporter,
+	solvencyReporter shtypes.SolvencyReporter,
 	signerCacheManager *signercache.CacheManager,
 ) (*SOLScanner, error) {
 	// check required arguments
@@ -87,18 +95,6 @@ func NewSOLScanner(cfg config.BifrostBlockScannerConfiguration,
 		return nil, errors.New("pubkey manager is nil")
 	}
 
-	// set storage prefixes
-	prefixBlockMeta := fmt.Sprintf("%s-blockmeta-", strings.ToLower(cfg.ChainID.String()))
-	prefixSignedMeta := fmt.Sprintf("%s-signedtx-", strings.ToLower(cfg.ChainID.String()))
-
-	// create block meta accessor
-	blockMetaAccessor, err := evm.NewLevelDBBlockMetaAccessor(
-		prefixBlockMeta, prefixSignedMeta, storage.GetInternalDb(),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create block meta accessor: %w", err)
-	}
-
 	return &SOLScanner{
 		cfg:                cfg,
 		logger:             log.Logger.With().Stringer("chain", cfg.ChainID).Logger(),
@@ -106,99 +102,263 @@ func NewSOLScanner(cfg config.BifrostBlockScannerConfiguration,
 		db:                 storage,
 		m:                  m,
 		solRpc:             rpc,
-		blockMetaAccessor:  blockMetaAccessor,
 		bridge:             bridge,
 		solvencyReporter:   solvencyReporter,
 		signerCacheManager: signerCacheManager,
 		latestBlockHash:    "",
 		lastFeeRate:        0,
 		feeRateCache:       make([]uint64, 0),
+		stopChan:           stopChan,
+		healthy:            &atomic.Bool{},
 	}, nil
 }
 
-// FetchTxs extracts all relevant transactions from the block at the provided height.
-func (s *SOLScanner) FetchTxs(height, chainHeight int64) (stypes.TxIn, error) {
-	// log height every 1000 blocks
-	if height%1000 == 0 {
-		s.logger.Info().Int64("height", height).Msg("fetching txs for height")
-	}
+func (s *SOLScanner) Start() {
+	lastMimirCheck := time.Now().Add(-constants.ThorchainBlockTime)
+	isChainPaused := false
 
-	// Update latest block hash every LatestHashUpdateInterval blocks
-	if height%LatestHashUpdateInterval == 0 {
-		if err := s.updateLatestBlockHash(); err != nil {
-			s.logger.Err(err).Msg("failed to update latest block hash")
-		}
-	}
-
-	// time how long it takes to process the block
-	start := time.Now()
-
-	// process all transactions in the block
-	s.currentBlockHeight = height
-
-	var block *rpc.BlockResult
-	var err error
-
-	// First try to get block from geyser cache if available
-	if s.geyser != nil {
-		if cachedBlock, exists := s.geyser.GetBlock(uint64(height)); exists {
-			s.logger.Debug().Msgf("%s: Found block in geyser cache for height: %d", time.Now().Format(time.UnixDate), height)
-			block = cachedBlock
-			// Remove from cache since we've processed it
-			s.geyser.RemoveBlock(uint64(height))
-		}
-	}
-
-	// Fall back to RPC if block not in cache
-	if block == nil {
-		s.logger.Info().Msgf("%s: Fetching block from RPC for height: %d", time.Now().Format(time.UnixDate), height)
-		block, err = s.solRpc.GetBlock(height)
-		if err != nil {
-			return stypes.TxIn{}, err
-		}
-	}
-
-	if block == nil {
-		// skip empty blocks
-		return stypes.TxIn{}, nil
-	}
-
-	txIn, err := s.ProcessBlock(block)
+	initialSlot, err := s.solRpc.GetSlot()
 	if err != nil {
-		return stypes.TxIn{}, err
+		s.logger.Error().Err(err).Msg("failed to get initial slot")
+		return
 	}
 
-	duration := time.Since(start)
-	s.totalDuration += duration
-	s.blockCount++
-	s.avgDuration = s.totalDuration / time.Duration(s.blockCount)
+	// initialize the network fee slot multiple to the closest multiple of NetFeeUpdateInterval beneath the initial slot
+	s.netFeeSlotMultiple = initialSlot / NetFeeUpdateInterval
 
-	if height%1000 == 0 {
-		// TODO: remove or make debug
-		s.logger.Info().Str("duration", duration.String()).Str("avg_duration", s.avgDuration.String()).Msg("sol block processed")
+	// attempt to initialize the network fee. In simtest environment, we will not have enough tx history
+	// so the initial netfee will be sent upon first tx(s) observation
+	if err := s.checkRecentBlocksAndUpdateNetworkFee(s.netFeeSlotMultiple * NetFeeUpdateInterval); err != nil {
+		s.logger.Error().Err(err).Msg("failed to check recent blocks and update network fee")
 	}
 
-	s.UpdateNetworkFee(height)
+	for {
+		select {
+		case <-s.stopChan:
+			s.logger.Info().Msg("stopping SOL scanner")
+			return
+		default:
+			if time.Since(lastMimirCheck) >= constants.ThorchainBlockTime {
+				isChainPaused = blockscanner.IsChainPaused(s.cfg, s.logger, s.bridge)
+				lastMimirCheck = time.Now()
+			}
 
-	return txIn, nil
+			if isChainPaused {
+				s.healthy.Store(false)
+				time.Sleep(constants.ThorchainBlockTime)
+				continue
+			}
+
+			vaults, err := s.bridge.GetAsgards()
+			if err != nil {
+				s.logger.Error().Err(err).Msg("failed to get vaults")
+				time.Sleep(time.Second)
+				continue
+			}
+
+			var vaultAddrs []common.Address
+			for _, vault := range vaults {
+				if !vault.PubKeyEddsa.IsEmpty() {
+					vaultAddrSol, err := vault.PubKeyEddsa.GetAddress(common.SOLChain)
+					if err != nil {
+						s.logger.Error().Err(err).Msg("failed to get vault address")
+						continue
+					}
+					vaultAddrs = append(vaultAddrs, vaultAddrSol)
+				}
+			}
+
+			if err := s.updateLatestBlockHash(); err != nil {
+				s.logger.Error().Err(err).Msg("failed to update latest block hash")
+				// don't need to continue here because this is not necessary for anything further in this block
+			}
+
+			currentSlot, err := s.solRpc.GetSlot()
+			if err != nil {
+				s.logger.Error().Err(err).Msg("failed to get current slot")
+				time.Sleep(time.Second)
+				continue
+			}
+
+			if currentSlot > (s.netFeeSlotMultiple+1)*NetFeeUpdateInterval {
+				// we crossed the threshold for updating the network fee, so check the last N blocks
+				//  up to the rounded slot for deterministic behavior across nodes.
+				s.netFeeSlotMultiple = currentSlot / NetFeeUpdateInterval
+				if err := s.checkRecentBlocksAndUpdateNetworkFee(s.netFeeSlotMultiple * NetFeeUpdateInterval); err != nil {
+					s.logger.Error().Err(err).Msg("failed to check recent blocks and update network fee")
+				}
+			}
+
+			lastSlot, _ := s.db.GetScanPos()
+
+			if currentSlot == lastSlot {
+				time.Sleep(200 * time.Millisecond)
+				continue
+			}
+
+			var wg sync.WaitGroup
+			wg.Add(len(vaultAddrs))
+
+			healthy := true
+			var mu sync.Mutex
+			setUnhealthy := func() {
+				mu.Lock()
+				defer mu.Unlock()
+				healthy = false
+			}
+
+			var newLastSigs = make([]string, len(vaultAddrs))
+			var newLastSlots = make([]uint64, len(vaultAddrs))
+			for i, vaultAddr := range vaultAddrs {
+				lastSig, vaultLastSlot, _ := s.db.GetScanStatus(vaultAddr.String())
+
+				i := i
+
+				go func() {
+					defer wg.Done()
+
+					minContextSlot := max(lastSlot, vaultLastSlot, uint64(s.cfg.StartBlockHeight))
+
+					res, err := s.solRpc.GetSignaturesForAddressUntil(vaultAddr.String(), minContextSlot, lastSig)
+					if err != nil {
+						s.logger.Error().Err(err).Msgf("failed to get signatures for address %s", vaultAddr.String())
+						setUnhealthy()
+						return
+					}
+
+					if len(res) == 0 {
+						s.logger.Debug().Msgf("no new signatures for address %s", vaultAddr.String())
+						return
+					}
+
+					var txWg sync.WaitGroup
+
+					for _, sig := range res {
+						sig := sig
+						txWg.Add(1)
+						go func() {
+							defer txWg.Done()
+							tx, err := s.solRpc.GetTransaction(sig.Signature)
+							if err != nil {
+								s.logger.Error().Err(err).Msgf("failed to get transaction %s", sig.Signature)
+								setUnhealthy()
+								return
+							}
+
+							if tx.Meta.Err != nil {
+								s.logger.Debug().Msgf("transaction %s failed: %s", sig.Signature, tx.Meta.Err)
+								return
+							}
+
+							s.globalTxsQueue <- s.getTxIn(sig.Slot, []*rpc.TransactionResult{tx})
+						}()
+					}
+					txWg.Wait()
+
+					newLastSigs[i] = res[0].Signature
+					newLastSlots[i] = res[0].Slot
+				}()
+			}
+			wg.Wait()
+
+			s.healthy.Store(healthy)
+
+			for i, vaultAddr := range vaultAddrs {
+				sig := newLastSigs[i]
+				if sig != "" {
+					s.db.SetScanStatus(vaultAddr.String(), sig, newLastSlots[i])
+				}
+			}
+
+			if !s.netFeeInit {
+				// this should really only happen (and is only necessary) in test environments to initialize the network fee,
+				// because we expect to have enough observed txs in the checkRecentBlocksAndUpdateNetworkFee above.
+				s.sendNetworkFeeIfNecessary(currentSlot)
+			}
+			if err = s.solvencyReporter(int64(currentSlot)); err != nil {
+				s.logger.Err(err).Msg("fail to send solvency to THORChain")
+			}
+
+			if (time.Since(s.lastLog) > (5 * time.Second)) || !healthy {
+				s.lastLog = time.Now()
+				s.logger.Info().
+					Uint64("block height", currentSlot).
+					Int("gap", 0).
+					Bool("healthy", healthy).
+					Msg("scan block")
+			}
+
+			if lastSlot > 0 {
+				s.m.GetCounter(metrics.TotalBlockScanned).Add(float64(currentSlot - lastSlot))
+			}
+
+			if err := s.db.SetScanPos(currentSlot); err != nil {
+				s.logger.Error().Err(err).Msg("failed to set scan position")
+			}
+		}
+	}
+}
+
+// Since we don't scan all txs in every block, in order to get a good perspective of the network fee
+// we need to check the last N blocks and calculate the median fee rate.
+func (s *SOLScanner) checkRecentBlocksAndUpdateNetworkFee(slot uint64) error {
+	defer s.sendNetworkFeeIfNecessary(slot)
+
+	numTxs := 0
+
+	for i := slot; i > 0; i-- {
+		block, err := s.solRpc.GetBlock(i)
+		if err != nil {
+			s.logger.Error().Err(err).Msg("failed to get block to determine netfee")
+			continue
+		}
+
+		txIn := s.getTxIn(i, block.Transactions)
+		numTxs += len(txIn.TxArray)
+
+		if numTxs > s.cfg.GasCacheBlocks {
+			break
+		}
+	}
+
+	if numTxs < s.cfg.GasCacheBlocks {
+		return fmt.Errorf("not enough transactions")
+	}
+
+	return nil
 }
 
 // GetHeight returns the current block height of Solana
 func (s *SOLScanner) GetHeight() (int64, error) {
-	height, err := s.solRpc.GetBlockHeight()
+	height, err := s.solRpc.GetSlot()
 	if err != nil {
 		return -1, err
 	}
 	return int64(height), nil
 }
 
+// ScanHeight returns the current scanned height
+func (s *SOLScanner) ScanHeight() (int64, error) {
+	lastSlot, _ := s.db.GetScanPos()
+	return int64(lastSlot), nil
+}
+
+// ScanHeight returns the current scanned height
+func (s *SOLScanner) IsHealthy() bool {
+	return s.healthy.Load()
+}
+
 // GetLatestBlockHash returns the latest block hash
 func (s *SOLScanner) GetLatestBlockHash() string {
+	s.latestBlockMu.Lock()
+	defer s.latestBlockMu.Unlock()
 	return s.latestBlockHash
 }
 
 // UpdateLatestBlockHash updates the local latest block hash to be used in tx signing
 func (s *SOLScanner) updateLatestBlockHash() error {
+	s.latestBlockMu.Lock()
+	defer s.latestBlockMu.Unlock()
 	hash, err := s.solRpc.GetLatestBlockhash()
 	if err != nil {
 		return err
@@ -208,47 +368,49 @@ func (s *SOLScanner) updateLatestBlockHash() error {
 }
 
 // GetNetworkFee returns current chain network fee according to Bifrost.
-func (c *SOLScanner) GetNetworkFee() (transactionSize, transactionFeeRate uint64) {
-	return 1, c.lastFeeRate
+func (s *SOLScanner) GetNetworkFee() (transactionSize, transactionFeeRate uint64) {
+	return 1, s.lastFeeRate
 }
 
-// FetchMemPool returns all transactions in the mempool.
-func (s *SOLScanner) FetchMemPool(_ int64) (stypes.TxIn, error) {
-	return stypes.TxIn{}, nil
-}
-
-func (s *SOLScanner) ProcessBlock(block *rpc.BlockResult) (stypes.TxIn, error) {
-	// skip empty blocks
-	if len(block.Transactions) == 0 {
-		return stypes.TxIn{}, nil
+func (s *SOLScanner) sendNetworkFeeIfNecessary(height uint64) {
+	if len(s.feeRateCache) == 0 {
+		// Not enough txs yet
+		return
 	}
 
-	txIn := s.getTxIn(block)
-
-	return txIn, nil
-}
-
-func (s *SOLScanner) UpdateNetworkFee(height int64) {
-	// Not enough blocks yet
-	if len(s.feeRateCache) < s.cfg.GasCacheBlocks {
+	if len(s.feeRateCache) < s.cfg.GasCacheBlocks && s.netFeeInit {
+		// We are beyond the initial fee post, but not enough txs yet
 		return
 	}
 
 	// Calculate the median fee rate from the gas cache
+
 	medianFeeRate := calculateMedian(s.feeRateCache)
 
 	// round medianFeeRate to the nearest resolution
 	resolution := uint64(s.cfg.GasPriceResolution)
 	roundedFeeRate := ((medianFeeRate + (resolution / 2)) / resolution) * resolution
 
+	// truncate gas prices older than our max cached transactions
+	if len(s.feeRateCache) > s.cfg.GasCacheBlocks {
+		s.feeRateCache = s.feeRateCache[(len(s.feeRateCache) - s.cfg.GasCacheBlocks):]
+	}
+
 	// Update the fee rate if it has changed
 	if roundedFeeRate == s.lastFeeRate {
 		return
 	}
 
+	if roundedFeeRate == 0 {
+		s.logger.Debug().Msg("network fee is 0")
+		return
+	}
+
+	s.netFeeInit = true
+
 	s.globalNetworkFeeQueue <- common.NetworkFee{
-		Chain:           s.cfg.ChainID,
-		Height:          height,
+		Chain:           common.SOLChain,
+		Height:          int64(height),
 		TransactionSize: 1,
 		TransactionRate: roundedFeeRate,
 	}
@@ -256,14 +418,14 @@ func (s *SOLScanner) UpdateNetworkFee(height int64) {
 	s.lastFeeRate = roundedFeeRate
 	s.logger.Info().
 		Uint64("fee", roundedFeeRate).
-		Int64("height", height).
+		Uint64("height", height).
 		Msg("sent network fee to THORChain")
 }
 
 // --------------------------------- extraction ---------------------------------
 
 // Gets the TxIn struct for a block
-func (s *SOLScanner) getTxIn(block *rpc.BlockResult) stypes.TxIn {
+func (s *SOLScanner) getTxIn(slot uint64, transactions []*rpc.TransactionResult) stypes.TxIn {
 	txIn := stypes.TxIn{
 		Chain:                s.cfg.ChainID,
 		TxArray:              make([]*stypes.TxInItem, 0),
@@ -274,16 +436,13 @@ func (s *SOLScanner) getTxIn(block *rpc.BlockResult) stypes.TxIn {
 	// Stores each transaction's fee rate (lamports per signature)
 	txFeeRates := []uint64{}
 
-	// Stores each transaction's priority fee (txn.Meta.Fee - baseFee)
-	// priorityFees := []uint64{}
-
-	for _, txn := range block.Transactions {
+	for _, txn := range transactions {
 		// Skip transactions with no signatures or no fee
 		if len(txn.Transaction.Signatures) == 0 || txn.Meta.Fee == 0 {
 			continue
 		}
 
-		txItem := s.getTxInItem(txn, int64(block.ParentSlot))
+		txItem := s.getTxInItem(txn, int64(slot))
 		if txItem == nil {
 			continue
 		}
@@ -299,16 +458,6 @@ func (s *SOLScanner) getTxIn(block *rpc.BlockResult) stypes.TxIn {
 		}
 
 		txFeeRates = append(txFeeRates, feeRate)
-
-		// Priority fee is any fee in excess of the base fee
-		// var priorityFee uint64
-		// if txn.Meta.Fee == baseFee || txn.Meta.Fee < baseFee {
-		// 	priorityFee = 0
-		// } else {
-		// 	priorityFee = txn.Meta.Fee - baseFee
-		// }
-
-		// priorityFees = append(priorityFees, priorityFee)
 	}
 
 	switch {
@@ -338,15 +487,15 @@ func calculateMedian(arr []uint64) uint64 {
 // Create a TxInItem for a SOL transfer transaction. This function will only return a
 // TxInItem if the transaction contains a transfer of SOL. Otherwise, it will return
 // nil.
-func (s *SOLScanner) getTxInItem(txn rpc.RPCTransaction, blockHeight int64) *stypes.TxInItem {
+func (s *SOLScanner) getTxInItem(txn *rpc.TransactionResult, blockHeight int64) *stypes.TxInItem {
 	memo := ""
 	netBalanceChange := make(map[string]int64)
 	fee := txn.Meta.Fee
 
-	instructions := txn.GetInstructions()
+	instructions := txn.Transaction.GetInstructions()
 
 	for _, instruction := range instructions {
-		programID := txn.GetAccountAtIndex(instruction.ProgramIdIndex)
+		programID := txn.Transaction.GetAccountAtIndex(instruction.ProgramIdIndex)
 
 		// Check if this instruction is the memo
 		if types.MemoProgramID.EqualsString(programID) {
@@ -462,9 +611,4 @@ func prettyPrint(data interface{}) {
 		return
 	}
 	fmt.Println(string(jsonData))
-}
-
-// Add setter for geyser
-func (s *SOLScanner) SetGeyser(g *SolGeyser) {
-	s.geyser = g
 }

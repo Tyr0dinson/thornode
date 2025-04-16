@@ -83,29 +83,6 @@ func (s *SolRPC) post(method string, params interface{}) ([]byte, error) {
 // RPC Methods
 ////////////////////////////////////////////////////////////////////////////////////////
 
-// GetBlockHeight - makes a getSlot RPC call to the Solana RPC. Returns the latest
-// "finalized" block height.
-func (s *SolRPC) GetBlockHeight() (uint64, error) {
-	params := []interface{}{
-		map[string]interface{}{
-			"commitment": "finalized",
-		},
-	}
-	respBody, err := s.post("getSlot", params)
-	if err != nil {
-		return 0, fmt.Errorf("failed to call getSlot: %w", err)
-	}
-
-	var result struct {
-		Result uint64 `json:"result"`
-	}
-	if err := json.Unmarshal(respBody, &result); err != nil {
-		return 0, fmt.Errorf("failed to unmarshal response: %w", err)
-	}
-
-	return result.Result, nil
-}
-
 func (s *SolRPC) GetLatestBlockhash() (string, error) {
 	params := []interface{}{}
 	respBody, err := s.post("getLatestBlockhash", params)

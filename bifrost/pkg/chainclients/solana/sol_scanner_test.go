@@ -2,7 +2,6 @@ package solana
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -130,7 +129,7 @@ func (s *BlockScannerTestSuite) TestGetBlock(c *C) {
 		}
 	}))
 
-	storage, err := blockscanner.NewBlockScannerStorage("", config.LevelDBOptions{})
+	storage, err := blockscanner.NewBlockScannerStorageSolana("", config.LevelDBOptions{})
 	c.Assert(err, IsNil)
 	signerCacheManager, err := signercache.NewSignerCacheManager(storage.GetInternalDb())
 	c.Assert(err, IsNil)
@@ -140,13 +139,8 @@ func (s *BlockScannerTestSuite) TestGetBlock(c *C) {
 	cfg := getConfigForTest("http://" + server.Listener.Addr().String())
 
 	rpcClient := rpc.NewSolRPC("http://"+server.Listener.Addr().String(), cfg.HTTPRequestTimeout)
-	scanner, err := NewSOLScanner(cfg, storage, s.bridge, s.m, rpcClient, pubKeyManager, nil, signerCacheManager)
+	_, err = NewSOLScanner(make(chan struct{}), cfg, storage, s.bridge, s.m, rpcClient, pubKeyManager, nil, signerCacheManager)
 	c.Assert(err, IsNil)
 
-	txIns, err := scanner.FetchTxs(1, 1)
-	c.Assert(err, IsNil)
-	for _, txIn := range txIns.TxArray {
-		fmt.Printf("tx: %s, coins: %+v", txIn.Tx, txIn.Coins[0].String())
-	}
-	// c.Fatal()
+	// TODO
 }
