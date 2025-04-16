@@ -146,6 +146,10 @@ func USDValue(height int64, coin common.Coin) float64 {
 			log.Panic().Err(err).Msg("failed to get network")
 		}
 
+		if network.RunePriceInTor == "n/a" {
+			return float64(0)
+		}
+
 		price, err := strconv.ParseFloat(network.RunePriceInTor, 64)
 		if err != nil {
 			log.Panic().Err(err).Msg("failed to parse network rune price")
