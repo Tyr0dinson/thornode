@@ -70,6 +70,9 @@ type SOLScanner struct {
 	lastLog time.Time
 
 	stopChan chan struct{}
+
+	// state for if we've successfully processed the initial height
+	initialHeight map[string]struct{}
 }
 
 // NewSOLScanner create a new instance of SOLScanner.
@@ -110,6 +113,7 @@ func NewSOLScanner(
 		feeRateCache:       make([]uint64, 0),
 		stopChan:           stopChan,
 		healthy:            &atomic.Bool{},
+		initialHeight:      make(map[string]struct{}),
 	}, nil
 }
 
@@ -220,12 +224,23 @@ func (s *SOLScanner) Start() {
 
 				i := i
 
+				var minContextSlot uint64
+				var queryLastSig string
+				if _, ok := s.initialHeight[vaultAddr.String()]; ok || s.cfg.StartBlockHeight == 0 {
+					minContextSlot = vaultLastSlot
+					queryLastSig = lastSig
+				} else {
+					minContextSlot = uint64(s.cfg.StartBlockHeight)
+					queryLastSig = ""
+					// NOTE: this can observe txs that we already observed in the past,
+					// because minContextSlot does not set a minimum bound for the query,
+					// it only ensures that minContextSlot is in the history on the rpc node.
+				}
+
 				go func() {
 					defer wg.Done()
 
-					minContextSlot := max(vaultLastSlot, uint64(s.cfg.StartBlockHeight))
-
-					res, err := s.solRpc.GetSignaturesForAddressUntil(vaultAddr.String(), minContextSlot, lastSig)
+					res, err := s.solRpc.GetSignaturesForAddressUntil(vaultAddr.String(), minContextSlot, queryLastSig)
 					if err != nil {
 						s.logger.Error().Err(err).Msgf("failed to get signatures for address %s", vaultAddr.String())
 						setUnhealthy()
@@ -273,6 +288,7 @@ func (s *SOLScanner) Start() {
 				if sig != "" {
 					// we are up to date as of the current slot, so minContextSlot
 					// can be the current slot for the next call
+					s.initialHeight[vaultAddr.String()] = struct{}{}
 					s.db.SetScanStatus(vaultAddr.String(), sig, currentSlot)
 				}
 			}

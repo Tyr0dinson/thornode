@@ -18,7 +18,7 @@ type GetSlotResponse struct {
 func (s *SolRPC) GetSlot() (uint64, error) {
 	params := []interface{}{
 		map[string]interface{}{
-			// "commitment":     "finalized", Default is finalized
+			"commitment": "finalized",
 		},
 	}
 
