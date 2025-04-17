@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"slices"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -218,6 +220,8 @@ func (s *SOLScanner) Start() {
 				healthy = false
 			}
 
+			newTxs := atomic.Uint64{}
+
 			var newLastSigs = make([]string, len(vaultAddrs))
 			for i, vaultAddr := range vaultAddrs {
 				lastSig, vaultLastSlot, _ := s.db.GetScanStatus(vaultAddr.String())
@@ -251,6 +255,8 @@ func (s *SOLScanner) Start() {
 						s.logger.Debug().Msgf("no new signatures for address %s", vaultAddr.String())
 						return
 					}
+
+					newTxs.Add(uint64(len(res)))
 
 					var txWg sync.WaitGroup
 
@@ -293,7 +299,7 @@ func (s *SOLScanner) Start() {
 				}
 			}
 
-			if !s.netFeeInit {
+			if !s.netFeeInit && newTxs.Load() > 0 {
 				// this should really only happen (and is only necessary) in test environments to initialize the network fee,
 				// because we expect to have enough observed txs in the checkRecentBlocksAndUpdateNetworkFee above.
 				s.sendNetworkFeeIfNecessary(currentSlot)
@@ -330,22 +336,39 @@ func (s *SOLScanner) checkRecentBlocksAndUpdateNetworkFee(slot uint64) error {
 	numTxs := 0
 	var lastSlot uint64
 
-	for i := slot; i > 0; i-- {
-		block, err := s.solRpc.GetBlock(i)
+	var firstSlot uint64
+	if slot > 100 {
+		firstSlot = slot - 100
+	}
+
+	blocks, err := s.solRpc.GetBlocks(firstSlot, slot)
+	if err != nil {
+		return fmt.Errorf("failed to get confirmed blocks: %w", err)
+	}
+
+	// reverse the blocks to get the most recent first
+	slices.Reverse(blocks)
+
+	for _, b := range blocks {
+		block, err := s.solRpc.GetBlock(b)
 		if err != nil {
+			if strings.Contains(err.Error(), "Block status not yet available for slot") {
+				// This can happen if the RPC is overwhelmed. give up for now.
+				return fmt.Errorf("block status not yet available for slot %d", b)
+			}
 			s.logger.Error().Err(err).Msg("failed to get block to determine netfee")
 			continue
 		}
 		if lastSlot == 0 {
-			lastSlot = i
+			lastSlot = b
 		}
 
-		txIn := s.getTxIn(i, block.Transactions)
+		txIn := s.getTxIn(b, block.Transactions)
 		numTxs += len(txIn.TxArray)
 
 		if numTxs > s.cfg.GasCacheBlocks {
 			// We have enough transactions to calculate the network fee
-			s.logger.Info().Uint64("first_slot", i).Uint64("last_slot", lastSlot).Msg("found enough transactions to calculate network fee")
+			s.logger.Info().Uint64("first_slot", b).Uint64("last_slot", lastSlot).Msg("found enough transactions to calculate network fee")
 			break
 		}
 	}
@@ -430,6 +453,8 @@ func (s *SOLScanner) sendNetworkFeeIfNecessary(height uint64) {
 		return
 	}
 
+	s.netFeeInit = true
+
 	// Update the fee rate if it has changed
 	if roundedFeeRate == s.lastFeeRate {
 		s.logger.Info().Uint64("fee", roundedFeeRate).Msg("network fee is already up to date")
@@ -437,8 +462,6 @@ func (s *SOLScanner) sendNetworkFeeIfNecessary(height uint64) {
 	}
 
 	s.lastFeeRate = roundedFeeRate
-
-	s.netFeeInit = true
 
 	s.globalNetworkFeeQueue <- common.NetworkFee{
 		Chain:           common.SOLChain,

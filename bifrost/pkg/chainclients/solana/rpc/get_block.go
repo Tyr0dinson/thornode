@@ -56,3 +56,33 @@ func (s *SolRPC) GetBlock(height uint64) (*BlockResult, error) {
 
 	return &response.Result, nil
 }
+
+// Get a list of confirmed blocks in a range
+func (s *SolRPC) GetBlocks(startSlot, endSlot uint64) ([]uint64, error) {
+	params := []interface{}{
+		startSlot,
+		endSlot,
+		map[string]interface{}{
+			"commitment": "finalized",
+		},
+	}
+
+	respBody, err := s.post("getBlocks", params)
+	if err != nil {
+		return nil, fmt.Errorf("failed to call getBlocks: %w", err)
+	}
+
+	var response struct {
+		Result []uint64  `json:"result"`
+		Error  *RPCError `json:"error"`
+	}
+	if err := json.Unmarshal(respBody, &response); err != nil {
+		return nil, err
+	}
+
+	if response.Error != nil && response.Error.Code != 0 {
+		return nil, fmt.Errorf("RPC Error %d: %s", response.Error.Code, response.Error.Message)
+	}
+
+	return response.Result, nil
+}
