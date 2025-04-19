@@ -23,7 +23,7 @@ var (
 var SWVersion, _ = semver.Make(Version)
 
 // ThorchainBlockTime Block time of THORChain
-var ThorchainBlockTime = 1 * time.Second
+var ThorchainBlockTime = 5 * time.Second
 
 // max basis points
 const MaxBasisPts = uint64(10_000)
