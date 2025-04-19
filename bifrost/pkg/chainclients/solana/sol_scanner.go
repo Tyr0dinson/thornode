@@ -29,6 +29,7 @@ import (
 	sdk "gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
 	"gitlab.com/thorchain/thornode/v3/constants"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -70,6 +71,8 @@ type SOLScanner struct {
 	netFeeInit         bool
 
 	lastLog time.Time
+	// counter for observed txs since last log
+	txCount int
 
 	stopChan chan struct{}
 
@@ -162,7 +165,7 @@ func (s *SOLScanner) Start() {
 				continue
 			}
 
-			var vaultAddrs []common.Address
+			var vaultAddrs []string
 			for _, vault := range vaults {
 				if !vault.PubKeyEddsa.IsEmpty() {
 					vaultAddrSol, err := vault.PubKeyEddsa.GetAddress(common.SOLChain)
@@ -170,7 +173,7 @@ func (s *SOLScanner) Start() {
 						s.logger.Error().Err(err).Msg("failed to get vault address")
 						continue
 					}
-					vaultAddrs = append(vaultAddrs, vaultAddrSol)
+					vaultAddrs = append(vaultAddrs, vaultAddrSol.String())
 				}
 			}
 
@@ -220,86 +223,70 @@ func (s *SOLScanner) Start() {
 				healthy = false
 			}
 
-			newTxs := atomic.Uint64{}
-
 			var newLastSigs = make([]string, len(vaultAddrs))
+			var successfulQueries = make([]bool, len(vaultAddrs))
+			var countTxs = make([]int, len(vaultAddrs))
+			var vaultLastSigs = make([]string, len(vaultAddrs))
 			for i, vaultAddr := range vaultAddrs {
-				lastSig, vaultLastSlot, _ := s.db.GetScanStatus(vaultAddr.String())
-
-				i := i
+				lastSig, vaultLastSlot, _ := s.db.GetScanStatus(vaultAddr)
+				vaultLastSigs[i] = lastSig
 
 				var minContextSlot uint64
 				var queryLastSig string
-				if _, ok := s.initialHeight[vaultAddr.String()]; ok || s.cfg.StartBlockHeight == 0 {
+				if _, ok := s.initialHeight[vaultAddr]; ok || s.cfg.StartBlockHeight == 0 {
 					minContextSlot = vaultLastSlot
 					queryLastSig = lastSig
 				} else {
 					minContextSlot = uint64(s.cfg.StartBlockHeight)
+					s.logger.Info().
+						Str("vault", vaultAddr).
+						Uint64("minContextSlot", minContextSlot).
+						Msg("Initial height is set, querying all rpc node tx history")
 					queryLastSig = ""
 					// NOTE: this can observe txs that we already observed in the past,
 					// because minContextSlot does not set a minimum bound for the query,
 					// it only ensures that minContextSlot is in the history on the rpc node.
 				}
 
-				go func() {
-					defer wg.Done()
-
-					res, err := s.solRpc.GetSignaturesForAddressUntil(vaultAddr.String(), minContextSlot, queryLastSig)
-					if err != nil {
-						s.logger.Error().Err(err).Msgf("failed to get signatures for address %s", vaultAddr.String())
-						setUnhealthy()
-						return
-					}
-
-					if len(res) == 0 {
-						s.logger.Debug().Msgf("no new signatures for address %s", vaultAddr.String())
-						return
-					}
-
-					newTxs.Add(uint64(len(res)))
-
-					var txWg sync.WaitGroup
-
-					for _, sig := range res {
-						sig := sig
-						txWg.Add(1)
-						go func() {
-							defer txWg.Done()
-							tx, err := s.solRpc.GetTransaction(sig.Signature)
-							if err != nil {
-								s.logger.Error().Err(err).Msgf("failed to get transaction %s", sig.Signature)
-								setUnhealthy()
-								return
-							}
-
-							if tx.Meta.Err != nil {
-								s.logger.Debug().Msgf("transaction %s failed: %s", sig.Signature, tx.Meta.Err)
-								return
-							}
-
-							s.globalTxsQueue <- s.getTxIn(sig.Slot, []*rpc.TransactionResult{tx})
-						}()
-					}
-					txWg.Wait()
-
-					newLastSigs[i] = res[0].Signature
-				}()
+				go s.scanVault(vaultAddr, i, queryLastSig, minContextSlot, setUnhealthy, countTxs, successfulQueries, newLastSigs, &wg)
 			}
 			wg.Wait()
 
 			s.healthy.Store(healthy)
 
+			var numTxs int
+
 			for i, vaultAddr := range vaultAddrs {
-				sig := newLastSigs[i]
-				if sig != "" {
+				txCount := countTxs[i]
+
+				// increment tx counts for this scan iteration and also since last log.
+				numTxs += txCount
+				s.txCount += txCount
+
+				if successfulQueries[i] {
 					// we are up to date as of the current slot, so minContextSlot
 					// can be the current slot for the next call
-					s.initialHeight[vaultAddr.String()] = struct{}{}
-					s.db.SetScanStatus(vaultAddr.String(), sig, currentSlot)
+
+					// since tx query was successful, we want to update last scanned slot for this vault. We may or may not have queried new txs.
+					// If no txs were queried, we want to retain the last sig from the db.
+					var lastSig string
+					if txCount == 0 {
+						lastSig = vaultLastSigs[i]
+					} else {
+						lastSig = newLastSigs[i]
+					}
+
+					// we have not scanned this vault before, so we mark it as such so that
+					// the cfg.StartBlockHeight is only used for the first successful query.
+					if _, ok := s.initialHeight[vaultAddr]; !ok {
+						s.initialHeight[vaultAddr] = struct{}{}
+					}
+
+					s.db.SetScanStatus(vaultAddr, lastSig, currentSlot)
 				}
 			}
 
-			if !s.netFeeInit && newTxs.Load() > 0 {
+			if !s.netFeeInit && numTxs > 0 {
 				// this should really only happen (and is only necessary) in test environments to initialize the network fee,
 				// because we expect to have enough observed txs in the checkRecentBlocksAndUpdateNetworkFee above.
 				s.sendNetworkFeeIfNecessary(currentSlot)
@@ -313,8 +300,10 @@ func (s *SOLScanner) Start() {
 				s.logger.Info().
 					Uint64("block height", currentSlot).
 					Int("gap", 0).
+					Int("txs", s.txCount).
 					Bool("healthy", healthy).
 					Msg("scan block")
+				s.txCount = 0
 			}
 
 			if lastSlot > 0 {
@@ -326,6 +315,68 @@ func (s *SOLScanner) Start() {
 			}
 		}
 	}
+}
+
+// scanVault scans a vault for new transactions. It will query the RPC node for the vault's
+// address and get any transactions involving the address, starting from most recent until queryLastSig.
+// If queryLastSig is empty, it will query all transactions for the vault address that exist on the node.
+// minContextSlot is the minimum slot to query for transactions. It does not set a bound on the query,
+// but does ensure that history exists on the RPC node until at least this slot.
+func (s *SOLScanner) scanVault(
+	vaultAddr string,
+	i int,
+	queryLastSig string,
+	minContextSlot uint64,
+	setUnhealthy func(),
+	txCounts []int,
+	successfulQueries []bool,
+	newLastSigs []string,
+	wg *sync.WaitGroup,
+) {
+	defer wg.Done()
+
+	res, err := s.solRpc.GetSignaturesForAddressUntil(vaultAddr, minContextSlot, queryLastSig)
+	if err != nil {
+		s.logger.Error().Err(err).Msgf("failed to get signatures for address %s", vaultAddr)
+		setUnhealthy()
+		return
+	}
+
+	if len(res) == 0 {
+		successfulQueries[i] = true
+		s.logger.Debug().Msgf("no new signatures for address %s", vaultAddr)
+		return
+	}
+
+	txCounts[i] = len(res)
+	var eg errgroup.Group
+	for _, sig := range res {
+		sig := sig
+
+		eg.Go(func() error {
+			tx, err := s.solRpc.GetTransaction(sig.Signature)
+			if err != nil {
+				setUnhealthy()
+				return fmt.Errorf("failed to get transaction %s: %w", sig.Signature, err)
+			}
+
+			if tx.Meta.Err != nil {
+				s.logger.Debug().Msgf("transaction %s failed: %s", sig.Signature, tx.Meta.Err)
+				return nil
+			}
+
+			s.globalTxsQueue <- s.getTxIn(sig.Slot, []*rpc.TransactionResult{tx})
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		setUnhealthy()
+		s.logger.Error().Err(err).Msgf("failed to process transactions")
+		return
+	}
+
+	successfulQueries[i] = true
+	newLastSigs[i] = res[0].Signature
 }
 
 // Since we don't scan all txs in every block, in order to get a good perspective of the network fee
