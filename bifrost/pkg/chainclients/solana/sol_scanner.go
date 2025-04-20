@@ -219,10 +219,10 @@ func (s *SOLScanner) Start() {
 				healthy = false
 			}
 
-			var newLastSigs = make([]string, len(vaultAddrs))
-			var successfulQueries = make([]bool, len(vaultAddrs))
-			var countTxs = make([]int, len(vaultAddrs))
-			var vaultLastSigs = make([]string, len(vaultAddrs))
+			newLastSigs := make([]string, len(vaultAddrs))
+			successfulQueries := make([]bool, len(vaultAddrs))
+			countTxs := make([]int, len(vaultAddrs))
+			vaultLastSigs := make([]string, len(vaultAddrs))
 			for i, vaultAddr := range vaultAddrs {
 				lastSig, vaultLastSlot, _ := s.db.GetScanStatus(vaultAddr)
 				vaultLastSigs[i] = lastSig

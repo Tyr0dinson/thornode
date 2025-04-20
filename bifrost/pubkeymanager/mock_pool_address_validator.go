@@ -19,9 +19,11 @@ func (mpa *MockPoolAddressValidator) GetSignPubKeys() common.PubKeys {
 	pubKey, _ := common.NewPubKey(MockPubkey)
 	return common.PubKeys{pubKey}
 }
+
 func (mpa *MockPoolAddressValidator) GetNodePubKey(_ common.SigningAlgo) common.PubKey {
 	return common.EmptyPubKey
 }
+
 func (mpa *MockPoolAddressValidator) HasPubKey(pk common.PubKey) bool {
 	return pk.String() == MockPubkey
 }

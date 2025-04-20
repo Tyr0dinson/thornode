@@ -22,7 +22,7 @@ type SignaturesForAddressResult struct {
 
 // GetSignaturesForAddressUntil - makes a getSignaturesForAddress RPC call to the Solana RPC. Will only return "finalized" data.
 func (s *SolRPC) GetSignaturesForAddressUntil(address string, minContextSlot uint64, until string) ([]SignaturesForAddressResult, error) {
-	var objParams = map[string]interface{}{
+	objParams := map[string]interface{}{
 		"commitment": "finalized",
 	}
 	if minContextSlot > 0 {
