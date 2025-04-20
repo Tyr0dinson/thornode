@@ -19,7 +19,6 @@ import (
 	eddsaSigning "github.com/binance-chain/tss-lib/eddsa/signing"
 	btss "github.com/binance-chain/tss-lib/tss"
 	tcrypto "github.com/cometbft/cometbft/crypto"
-	"github.com/decred/dcrd/dcrec/edwards"
 	"github.com/eager7/dogd/btcec"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/rs/zerolog"
@@ -47,7 +46,8 @@ func MsgToHashInt(msg []byte, algo common.SigningAlgo) (*big.Int, error) {
 	case common.SigningAlgoSecp256k1:
 		return hashToInt(msg, btcec.S256()), nil
 	case common.SigningAlgoEd25519:
-		return hashToInt(msg, edwards.Edwards()), nil
+		// directly convert the byte array to big int
+		return new(big.Int).SetBytes(msg), nil
 	default:
 		return nil, errors.New("invalid algo")
 	}
