@@ -35,7 +35,7 @@ import (
 const (
 	BaseFeePerSigLamports = 5000 // "Base" fee per signature of a transaction
 
-	NetFeeUpdateInterval = 1000 // update network fee every 1000 slots
+	NetFeeUpdateInterval = 100 // update network fee every 100 slots
 )
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -62,9 +62,10 @@ type SOLScanner struct {
 
 	healthy *atomic.Bool
 
-	// local state
-	latestBlockHash string
-	latestBlockMu   sync.Mutex
+	// recent block hash (needed for tx construction / signing)
+	// needs to be in consensus between validators
+	recentBlockHash   string
+	recentBlockHashMu sync.Mutex
 
 	// network fee state
 	netFeeSlotMultiple uint64
@@ -113,7 +114,7 @@ func NewSOLScanner(
 		bridge:             bridge,
 		solvencyReporter:   solvencyReporter,
 		signerCacheManager: signerCacheManager,
-		latestBlockHash:    "",
+		recentBlockHash:    "",
 		lastFeeRate:        0,
 		feeRateCache:       make([]uint64, 0),
 		stopChan:           stopChan,
@@ -175,11 +176,6 @@ func (s *SOLScanner) Start() {
 					}
 					vaultAddrs = append(vaultAddrs, vaultAddrSol.String())
 				}
-			}
-
-			if err := s.updateLatestBlockHash(); err != nil {
-				s.logger.Error().Err(err).Msg("failed to update latest block hash")
-				// don't need to continue here because this is not necessary for anything further in this block
 			}
 
 			currentSlot, err := s.solRpc.GetSlot()
@@ -400,7 +396,7 @@ func (s *SOLScanner) checkRecentBlocksAndUpdateNetworkFee(slot uint64) error {
 	// reverse the blocks to get the most recent first
 	slices.Reverse(blocks)
 
-	for _, b := range blocks {
+	for i, b := range blocks {
 		block, err := s.solRpc.GetBlock(b)
 		if err != nil {
 			if strings.Contains(err.Error(), "Block status not yet available for slot") {
@@ -409,6 +405,9 @@ func (s *SOLScanner) checkRecentBlocksAndUpdateNetworkFee(slot uint64) error {
 			}
 			s.logger.Error().Err(err).Msg("failed to get block to determine netfee")
 			continue
+		}
+		if i == 0 {
+			s.setRecentBlockHash(block.Blockhash)
 		}
 		if lastSlot == 0 {
 			lastSlot = b
@@ -451,22 +450,18 @@ func (s *SOLScanner) IsHealthy() bool {
 	return s.healthy.Load()
 }
 
-// GetLatestBlockHash returns the latest block hash
-func (s *SOLScanner) GetLatestBlockHash() string {
-	s.latestBlockMu.Lock()
-	defer s.latestBlockMu.Unlock()
-	return s.latestBlockHash
+// GetrecentBlockHash returns the latest block hash
+func (s *SOLScanner) getRecentBlockHash() string {
+	s.recentBlockHashMu.Lock()
+	defer s.recentBlockHashMu.Unlock()
+	return s.recentBlockHash
 }
 
-// UpdateLatestBlockHash updates the local latest block hash to be used in tx signing
-func (s *SOLScanner) updateLatestBlockHash() error {
-	s.latestBlockMu.Lock()
-	defer s.latestBlockMu.Unlock()
-	hash, err := s.solRpc.GetLatestBlockhash()
-	if err != nil {
-		return err
-	}
-	s.latestBlockHash = hash
+// UpdaterecentBlockHash updates the local latest block hash to be used in tx signing
+func (s *SOLScanner) setRecentBlockHash(hash string) error {
+	s.recentBlockHashMu.Lock()
+	defer s.recentBlockHashMu.Unlock()
+	s.recentBlockHash = hash
 	return nil
 }
 

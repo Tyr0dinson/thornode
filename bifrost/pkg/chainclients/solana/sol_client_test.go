@@ -188,7 +188,7 @@ func (s *SolTestSuite) TestCreateAndSerializeTx(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(e, NotNil)
 
-	e.solScanner.latestBlockHash = "asdfasdf"
+	e.solScanner.recentBlockHash = "asdfasdf"
 
 	// Create TX
 	tx, err := e.CreateTx(stypes.TxOutItem{
@@ -245,7 +245,7 @@ func (s *SolTestSuite) TestSignSOLTx(c *C) {
 	c.Assert(result, IsNil)
 	c.Assert(obs, IsNil)
 
-	e.solScanner.latestBlockHash = "asdfasdf"
+	e.solScanner.recentBlockHash = "asdfasdf"
 
 	// Valid outbound
 	result, _, _, err = e.SignTx(stypes.TxOutItem{

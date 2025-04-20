@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -446,6 +447,17 @@ func (pc *PartyCoordinator) JoinPartyWithLeader(msgID string, blockHeight int64,
 		return nil, leader, err
 	}
 	defer pc.removePeerGroup(msgID)
+
+	isLeader := pc.host.ID() == leaderID
+
+	pc.logger.Info().
+		Str("msgID", msgID).
+		Str("leader", leader).
+		Bool("is_leader", isLeader).
+		Int("threshold", threshold).
+		Str("peers", strings.Join(peers, ",")).
+		Str("peerIDs", fmt.Sprintf("%v", peerIDs)).
+		Msgf("joining party")
 
 	if pc.host.ID() == leaderID {
 		onlines, err := pc.joinPartyLeader(msgID, peerGroup, sigChan)

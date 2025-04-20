@@ -344,6 +344,11 @@ func (c *SOLClient) signTransaction(solTx types.Transaction, txOut stypes.TxOutI
 // CreateTx builds a solana transfer function from a TxOutItem using the transaction
 // specification (https://solana.com/docs/core/transactions#manual-sol-transfer)
 func (c *SOLClient) CreateTx(tx stypes.TxOutItem) (types.Transaction, error) {
+	recentBlockhash := c.solScanner.getRecentBlockHash()
+	if recentBlockhash == "" {
+		return types.Transaction{}, fmt.Errorf("recent blockhash is empty")
+	}
+
 	// Validation
 	memo, err := mem.ParseMemo(common.LatestVersion, tx.Memo)
 	if err != nil {
@@ -394,8 +399,6 @@ func (c *SOLClient) CreateTx(tx stypes.TxOutItem) (types.Transaction, error) {
 		NumReadonlySignedAccounts:   0,
 		NumReadonlyUnsignedAccounts: 2,
 	}
-
-	recentBlockhash := c.solScanner.GetLatestBlockHash()
 
 	message := types.NewMessage(header, accountKeys, recentBlockhash, []types.CompiledInstruction{memoInstruction, transferInstruction})
 	return types.NewTransaction(message), nil
