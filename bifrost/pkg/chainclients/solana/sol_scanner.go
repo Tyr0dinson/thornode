@@ -278,7 +278,9 @@ func (s *SOLScanner) Start() {
 						s.initialHeight[vaultAddr] = struct{}{}
 					}
 
-					s.db.SetScanStatus(vaultAddr, lastSig, currentSlot)
+					if err := s.db.SetScanStatus(vaultAddr, lastSig, currentSlot); err != nil {
+						s.logger.Error().Err(err).Str("vault", vaultAddr).Msg("failed to set scan status")
+					}
 				}
 			}
 
@@ -458,11 +460,10 @@ func (s *SOLScanner) getRecentBlockHash() string {
 }
 
 // UpdaterecentBlockHash updates the local latest block hash to be used in tx signing
-func (s *SOLScanner) setRecentBlockHash(hash string) error {
+func (s *SOLScanner) setRecentBlockHash(hash string) {
 	s.recentBlockHashMu.Lock()
 	defer s.recentBlockHashMu.Unlock()
 	s.recentBlockHash = hash
-	return nil
 }
 
 // GetNetworkFee returns current chain network fee according to Bifrost.

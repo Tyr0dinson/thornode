@@ -49,7 +49,7 @@ func (ldbss *LevelDBScannerStorageSolana) SetScanStatus(account string, lastSign
 	copy(buf[8:], lastSignature)
 
 	key := accountScanStatusKey(account)
-	return ldbss.db.Put([]byte(key), buf[:], nil)
+	return ldbss.db.Put([]byte(key), buf, nil)
 }
 
 // GetScanPos get current Scan Pos
