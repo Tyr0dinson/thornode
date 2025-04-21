@@ -1,14 +1,15 @@
 package ton
 
 import (
-	"github.com/cosmos/cosmos-sdk/codec"
-	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
-	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"os"
 	"path/filepath"
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/cosmos/cosmos-sdk/codec"
+	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
+	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
@@ -106,13 +107,8 @@ func (s *TonTestSuite) TearDownSuite(c *C) {
 }
 
 func (s *TonTestSuite) TestGetAddress(c *C) {
-	client := TonClient{
-		chainId: "TON",
-		api:     s.client,
-		config:  config.BifrostChainConfiguration{ChainID: "TON"},
-	}
-
 	pubKey := common.PubKey("sthorpub1addwnpepqf72ur2e8zk8r5augtrly40cuy94f7e663zh798tyms6pu2k8qdswf4es66")
-	address := client.GetAddress(pubKey)
-	c.Assert(address, Equals, "UQDmFsQiIK1WqQxmjP1QWG9GXXabqUUEphTroQplNikiGCwX")
+	address, err := pubKey.GetAddress(common.TONChain)
+	c.Assert(err, IsNil)
+	c.Assert(address.String(), Equals, "UQC0PbKWouvBPwTD9vaQ8LOQrMATFgHssiLzgNjxz-nBYngp")
 }

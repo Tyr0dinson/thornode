@@ -2,6 +2,7 @@ package ton
 
 import (
 	"context"
+
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
@@ -75,7 +76,7 @@ func (s *BlockScannerTestSuite) TestGetHeight(c *C) {
 	cfg := config.BifrostBlockScannerConfiguration{ChainID: common.TONChain}
 	blockScanner := TonBlockScanner{
 		config: cfg,
-		client: s.client,
+		api:    s.client,
 	}
 
 	block, err := blockScanner.GetHeight()

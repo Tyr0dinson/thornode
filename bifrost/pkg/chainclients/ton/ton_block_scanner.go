@@ -4,6 +4,11 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"math/big"
+	"regexp"
+	"sync"
+	"time"
+
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/xssnick/tonutils-go/address"
@@ -13,20 +18,18 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
-	"math/big"
-	"regexp"
-	"strconv"
-	"sync"
-	"time"
 )
 
 type TonBlockScanner struct {
-	config     config.BifrostBlockScannerConfiguration
-	logger     zerolog.Logger
-	bridge     thorclient.ThorchainBridge
-	api        ton.APIClientWrapped
-	lastShards map[string]uint32
-	regexp     *regexp.Regexp
+	config               config.BifrostBlockScannerConfiguration
+	logger               zerolog.Logger
+	bridge               thorclient.ThorchainBridge
+	api                  ton.APIClientWrapped
+	lastShards           map[string]uint32
+	regexp               *regexp.Regexp
+	lastReportedGasPrice uint64
+
+	globalNetworkFeeQueue chan common.NetworkFee
 }
 
 func NewTonBlockScanner(
@@ -77,7 +80,7 @@ func (s *TonBlockScanner) FetchMemPool(_ int64) (types.TxIn, error) {
 func (s *TonBlockScanner) FetchTxs(
 	fetchHeight, _ int64,
 ) (types.TxIn, error) {
-	txInItems := []types.TxInItem{}
+	var txInItems []*types.TxInItem
 
 	items, err := s.processMaster(uint32(fetchHeight))
 	if err != nil {
@@ -92,7 +95,6 @@ func (s *TonBlockScanner) FetchTxs(
 	}
 
 	txIn := types.TxIn{
-		Count:    strconv.Itoa(len(txInItems)),
 		Chain:    s.config.ChainID,
 		TxArray:  txInItems,
 		Filtered: false,
@@ -102,25 +104,32 @@ func (s *TonBlockScanner) FetchTxs(
 	if fetchHeight%20 == 0 {
 		fee := toThor(big.NewInt(TxFee)).Uint64()
 
-		tx, err := s.bridge.PostNetworkFee(
-			fetchHeight, s.config.ChainID, 1, fee,
-		)
-
-		if err != nil {
-			s.logger.Err(err).Msg("failed posting network fee")
-		} else {
-			s.logger.Debug().
-				Str("hash", tx.String()).
-				Uint64("fee", fee).
-				Msg("updated network fee")
+		s.globalNetworkFeeQueue <- common.NetworkFee{
+			Chain:           s.config.ChainID,
+			Height:          fetchHeight,
+			TransactionSize: 1,
+			TransactionRate: fee,
 		}
 
+		s.lastReportedGasPrice = fee
+
+		s.logger.Debug().
+			Uint64("fee", fee).
+			Msg("updated network fee")
 	}
 
 	return txIn, nil
 }
 
-func (s *TonBlockScanner) processMaster(masterSeqno uint32) ([]types.TxInItem, error) {
+func (s *TonBlockScanner) GetNetworkFee() (transactionSize, transactionFeeRate uint64) {
+	if s.lastReportedGasPrice == 0 {
+		return 1, uint64(TxFee)
+	}
+
+	return 1, s.lastReportedGasPrice
+}
+
+func (s *TonBlockScanner) processMaster(masterSeqno uint32) ([]*types.TxInItem, error) {
 	start := time.Now()
 
 	master, err := s.api.LookupBlock(
@@ -134,7 +143,7 @@ func (s *TonBlockScanner) processMaster(masterSeqno uint32) ([]types.TxInItem, e
 		return nil, err
 	}
 
-	txInItems := []types.TxInItem{}
+	var txInItems []*types.TxInItem
 	id := shardId(master)
 
 	shards, err := s.api.GetBlockShardsInfo(context.Background(), master)
@@ -200,7 +209,7 @@ func (s *TonBlockScanner) processShard(
 	workchain int32,
 	shard int64,
 	seqno uint32,
-) ([]types.TxInItem, error) {
+) ([]*types.TxInItem, error) {
 	block, err := s.api.LookupBlock(context.Background(), workchain, shard, seqno)
 	if err != nil {
 		s.logger.Err(err).Msg("failed to lookup block")
@@ -227,7 +236,7 @@ func (s *TonBlockScanner) processShard(
 		return nil, err
 	}
 
-	txInItems := []types.TxInItem{}
+	var txInItems []*types.TxInItem
 
 	for _, txInfo := range txInfos {
 		addr := address.NewAddress(0x17, 0x00, txInfo.Account)
@@ -368,8 +377,8 @@ func (s *TonBlockScanner) processShard(
 func (s *TonBlockScanner) processMessage(
 	tx *tlb.Transaction,
 	message *tlb.InternalMessage,
-) ([]types.TxInItem, error) {
-	txInItems := []types.TxInItem{}
+) ([]*types.TxInItem, error) {
+	var txInItems []*types.TxInItem
 
 	hash := base64.StdEncoding.EncodeToString(tx.Hash)
 	sender := message.SrcAddr
@@ -402,7 +411,7 @@ func (s *TonBlockScanner) processMessage(
 		// Decimals: 9,
 	}}
 
-	txInItems = append(txInItems, types.TxInItem{
+	txInItems = append(txInItems, &types.TxInItem{
 		BlockHeight: -1,
 		Tx:          hash,
 		Memo:        message.Comment(),
