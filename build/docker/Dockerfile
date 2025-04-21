@@ -6,7 +6,6 @@ FROM golang:1.23.4-bullseye AS build
 
 ENV GOBIN=/go/bin
 ENV GOPATH=/go
-ENV CGO_ENABLED=0
 ENV GOOS=linux
 
 WORKDIR /app

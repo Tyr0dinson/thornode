@@ -49,7 +49,6 @@ const (
 type TonClient struct {
 	logger              zerolog.Logger
 	config              tcconfig.BifrostChainConfiguration
-	chainId             string
 	localPubKey         string
 	k                   *cosmoscryptoed25519.PrivKey
 	blockScanner        *blockscanner.BlockScanner
@@ -79,7 +78,6 @@ func NewTonClient(
 
 	client := TonClient{
 		logger:   logger,
-		chainId:  config.ChainID.String(),
 		config:   config,
 		bridge:   bridge,
 		wg:       &sync.WaitGroup{},
@@ -211,6 +209,15 @@ func NewTonClient(
 	}
 
 	return &client, nil
+}
+
+func (c *TonClient) GetAddress(poolPubKey common.PubKey) string {
+	addr, err := poolPubKey.GetAddress(common.TONChain)
+	if err != nil {
+		c.logger.Error().Err(err).Str("pool_pub_key", poolPubKey.String()).Msg("fail to get pool address")
+		return ""
+	}
+	return addr.String()
 }
 
 // Start TON chain client

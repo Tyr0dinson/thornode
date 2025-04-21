@@ -408,9 +408,6 @@ func (s *Signer) processKeygenBlock(keygenBlock ttypes.KeygenBlock) {
 		if !pubKey.Ed25519.IsEmpty() {
 			s.pubkeyMgr.AddPubKey(pubKey.Ed25519, true, common.SigningAlgoEd25519)
 		}
-		if !pubKey.Ed25519.IsEmpty() {
-			s.pubkeyMgr.AddPubKey(pubKey.Ed25519, true)
-		}
 		for _, pk := range keygenReq.GetMembers() {
 			s.pubkeyMgr.AddPubKey(pk, false, common.SigningAlgoSecp256k1)
 		}
