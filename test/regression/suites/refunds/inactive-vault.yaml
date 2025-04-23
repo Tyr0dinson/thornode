@@ -69,7 +69,7 @@ genesis:
             - TERRA
             - AVAX
             - GAIA
-          coins: # Empty Coins at the start
+          coins: [] # Empty Coins at the start
           inbound_tx_count: "1"
           membership:
             - {{ pubkey_fish }}
