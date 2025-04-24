@@ -17,7 +17,7 @@ require (
 	github.com/gcash/bchd v0.17.1
 	github.com/gcash/bchutil v0.0.0-20201025062739-fc759989ee3e
 	github.com/hashicorp/go-multierror v1.1.1
-	github.com/kocubinski/gardano v0.2.4
+	github.com/kocubinski/gardano v0.3.0
 	github.com/ltcsuite/ltcd v0.20.1-beta.0.20201210074626-c807bfe31ef0
 	github.com/ltcsuite/ltcutil v1.0.2-beta
 	github.com/rs/zerolog v1.33.0

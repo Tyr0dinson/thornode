@@ -701,7 +701,7 @@ func (vm *NetworkMgrVCUR) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 							continue
 						}
 
-						if coin.Asset.GetChain().Equals(common.XRPChain) || chain.Equals(common.SOLChain) {
+						if coin.Asset.GetChain().Equals(common.XRPChain) || chain.Equals(common.SOLChain) || chain.Equals(common.ADAChain) {
 							ctx.Logger().Info("left coin is account reserve, thus burn it", "coin", coin, "gas", gasAmount)
 						} else {
 							ctx.Logger().Info("left coin is not enough to pay for gas, thus burn it", "coin", coin, "gas", gasAmount)
@@ -737,7 +737,7 @@ func (vm *NetworkMgrVCUR) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 
 					// on the final migration round(s), deduct amt by 1 XRP (1e8) so that we don't try to transfer any of the account reserve
 					// the account reserve balance will be burned on the next migration round
-					if nth >= migrationRounds && (chain.Equals(common.XRPChain) || chain.Equals(common.SOLChain)) {
+					if nth >= migrationRounds && (chain.Equals(common.XRPChain) || chain.Equals(common.SOLChain) || chain.Equals(common.ADAChain)) {
 						if amt.GT(dustThreshold) {
 							amt = common.SafeSub(amt, dustThreshold)
 						} else {

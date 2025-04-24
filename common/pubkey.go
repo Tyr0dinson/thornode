@@ -229,7 +229,7 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 		}
 		var addr cardano.Address
 		switch chainNetwork {
-		case MainNet:
+		case MainNet, StageNet:
 			addr, err = cardano.PaymentOnlyMainnetAddressFromPubkey(pk.Bytes())
 		default:
 			addr, err = cardano.PaymentOnlyTestnetAddressFromPubkey(pk.Bytes())

@@ -186,7 +186,7 @@ func (c *Client) GetAccount(_ *common.PubKey) (*common.Account, error) {
 }
 
 func (c *Client) SignTx(tx simtypes.SimTx) ([]byte, error) {
-	txBuilder := adatx.NewTxBuilder(c.protocol, []ed25519.PrivateKey{c.key})
+	txBuilder := adatx.NewTxBuilder(c.protocol)
 	toAddr, err := cardano.NewAddressFromBech32(tx.ToAddress.String())
 	if err != nil {
 		return nil, fmt.Errorf("fail to create address: %w", err)
@@ -199,13 +199,16 @@ func (c *Client) SignTx(tx simtypes.SimTx) ([]byte, error) {
 	}
 	txBuilder.AddInputs(txIns...)
 	txBuilder.AddOutputs(adatx.NewTxOutput(toAddr, amount.Uint64()))
-	if err := txBuilder.SetMemo(tx.Memo); err != nil {
+	if err = txBuilder.SetMemo(tx.Memo); err != nil {
 		return nil, fmt.Errorf("fail to set memo: %w", err)
 	}
-	if err := txBuilder.AddChangeIfNeeded(c.address); err != nil {
+	if err = txBuilder.AddChangeIfNeeded(c.address); err != nil {
 		return nil, fmt.Errorf("fail to add change: %w", err)
 	}
-	signedTx, err := txBuilder.Build()
+	if err = txBuilder.CalculateFee(); err != nil {
+		return nil, fmt.Errorf("fail to calculate fee: %w", err)
+	}
+	signedTx, err := txBuilder.Sign([]ed25519.PrivateKey{c.key})
 	if err != nil {
 		return nil, fmt.Errorf("fail to build tx: %w", err)
 	}
