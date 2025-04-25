@@ -152,6 +152,7 @@ services:
       - gaia
       - litecoin
       - thornode
+      - ton
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment: &bifrost-environment
@@ -221,6 +222,7 @@ services:
       BIFROST_ATTESTATION_GOSSIP_OBSERVE_RECONCILE_INTERVAL: 1s
 
       TON_HOST: "ton:40004"
+      TON_HOST_KEY: "E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY="
 
     ports:
       - 5040:5040
@@ -576,3 +578,25 @@ services:
       - 9650:9650
     environment:
       RPC_PORT: "9650"
+
+  ton:
+    profiles:
+      - mocknet
+      - mocknet-cluster
+    image: ghcr.io/neodix42/mylocalton-docker:latest
+    restart: unless-stopped
+    ports:
+      - 40004:40004 # lite-server
+    volumes:
+      - "./mocknet/ton/thorsimmaster.pk:/usr/share/ton/smartcont/faucet.pk"
+    environment:
+      - GENESIS=true
+      - NAME=genesis
+#      - ENABLE_FILE_HTTP_SERVER=false #default true
+#      - NEXT_BLOCK_GENERATION_DELAY=2 #default 2000 (2 seconds)
+#      - EXTERNAL_IP= # used to generate  external.global.config.json that allows remote users to connect to lite-server via public IP
+#      - VALIDATION_PERIOD=86400 # 24h, default 20min
+#      - MASTERCHAIN_ONLY=true   # default false
+#      - HIDE_PRIVATE_KEYS=true  # default false, defines whether to expose private keys  (faucet+validators) via htt-server on 127.0.0.1:8000 and generates new private keys for validators and faucets
+#      - VERBOSITY=4
+      - CUSTOM_PARAMETERS=--state-ttl 315360000 --archive-ttl 315360000

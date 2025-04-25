@@ -75,7 +75,7 @@ func NewClient(chain common.Chain, host string, keys *thorclient.Keys) (types.Li
 	}
 
 	// Setup connection based on host parameter
-	if err := pool.AddConnection(ctx, host, ""); err != nil {
+	if err := pool.AddConnection(ctx, host, "E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY="); err != nil {
 		return nil, fmt.Errorf("fail to add client connection: %w", err)
 	}
 
