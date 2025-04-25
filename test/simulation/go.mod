@@ -27,6 +27,7 @@ require (
 require (
 	github.com/naoina/go-stringutil v0.1.0 // indirect
 	github.com/naoina/toml v0.1.2-0.20170918210437-9fafd6967416 // indirect
+	github.com/xssnick/tonutils-go v1.12.0 // indirect
 )
 
 require (
