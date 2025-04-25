@@ -83,8 +83,6 @@ protoImage=docker run --rm -v $(CURDIR):/workspace --workdir /workspace $(protoI
 proto-all: proto-format proto-lint proto-gen format
 
 proto-gen:
-	@echo "Generating bifrost protobuf files"
-	@docker run --rm -v $(shell pwd):/app -w /app golang:$(GOVERSION) make bifrost-protosh
 	@echo "Generating Protobuf files"
 	@$(protoImage) sh ./scripts/protocgen.sh
 
@@ -97,9 +95,6 @@ proto-lint:
 
 proto-check-breaking:
 	@$(protoImage) buf breaking --against $(HTTPS_GIT)#branch=develop
-
-bifrost-protosh:
-	@./scripts/bifrostprotocgen.sh
 
 # ------------------------------ Docs ------------------------------
 
@@ -186,7 +181,7 @@ test-race:
 test-regression: build-test-regression
 	@docker run --rm ${DOCKER_TTY_ARGS} \
 		-e DEBUG -e RUN -e EXPORT -e TIME_FACTOR -e PARALLELISM -e FAIL_FAST \
-		-e AUTO_UPDATE -e IGNORE_FAILURES \
+		-e AUTO_UPDATE -e IGNORE_FAILURES -e CI \
 		-e UID=$(shell id -u) -e GID=$(shell id -g) \
 		-p 1317:1317 -p 26657:26657 \
 		-v $(shell pwd)/test/regression/mnt:/mnt \
@@ -264,7 +259,7 @@ stop-mocknet:
 halt-mocknet:
 	@docker compose -f build/docker/docker-compose.yml --profile mocknet --profile midgard down
 
-build-mocknet: proto-gen
+build-mocknet:
 	@docker compose -f build/docker/docker-compose.yml --profile mocknet --profile midgard build \
 		--build-arg COMMIT=$(COMMIT)
 

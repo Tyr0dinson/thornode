@@ -1,11 +1,13 @@
 package thorchain
 
 import (
+	"fmt"
+
+	math "cosmossdk.io/math"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
-	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 type MigrationHelpersTestSuite struct{}
@@ -48,7 +50,7 @@ func (MigrationHelpersTestSuite) TestUnsafeAddRefundOutbound(c *C) {
 	voter := NewObservedTxVoter(inTxID, ObservedTxs{
 		ObservedTx{
 			Tx:             tx,
-			Status:         types.Status_incomplete,
+			Status:         common.Status_incomplete,
 			BlockHeight:    1,
 			Signers:        []string{w.activeNodeAccount.NodeAddress.String(), acc1.NodeAddress.String()},
 			KeysignMs:      0,
@@ -72,4 +74,72 @@ func (MigrationHelpersTestSuite) TestUnsafeAddRefundOutbound(c *C) {
 	c.Assert(items[0].ToAddress.Equals(ethAddr), Equals, true)
 	c.Assert(items[0].VaultPubKey.Equals(vault.PubKey), Equals, true)
 	c.Assert(items[0].Coin.Equals(coin), Equals, true)
+}
+
+func (MigrationHelpersTestSuite) TestGetTCYClaimsFromData(c *C) {
+	claimer, err := getTCYClaimsFromData()
+	c.Assert(err, IsNil)
+	c.Assert(len(claimer), Equals, 4)
+	c.Assert(claimer[0].Amount.Equal(math.NewUint(1111111111111111111)), Equals, true)
+	c.Assert(claimer[0].Asset.Equals(common.AVAXAsset), Equals, true)
+	address, err := common.NewAddress("0x00112c24ebee9c96d177a3aa2ff55dcb93a53c80")
+	c.Assert(err, IsNil)
+	c.Assert(claimer[0].L1Address.Equals(address), Equals, true)
+
+	c.Assert(claimer[1].Amount.Equal(math.NewUint(42047799234002)), Equals, true)
+	c.Assert(claimer[1].Asset.Equals(common.BTCAsset), Equals, true)
+	address, err = common.NewAddress("bc1qj937cw6xap470hg427p2kxl85u3ac3ps84hye3")
+	c.Assert(err, IsNil)
+	c.Assert(claimer[1].L1Address.Equals(address), Equals, true)
+
+	c.Assert(claimer[2].Amount.Equal(math.NewUint(1111)), Equals, true)
+	c.Assert(claimer[2].Asset.Equals(common.DOGEAsset), Equals, true)
+	address, err = common.NewAddress("tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff")
+	c.Assert(err, IsNil)
+	c.Assert(claimer[2].L1Address.Equals(address), Equals, true)
+
+	c.Assert(claimer[3].Amount.Equal(math.NewUint(1111)), Equals, true)
+	c.Assert(claimer[3].Asset.Equals(common.DOGEAsset), Equals, true)
+	address, err = common.NewAddress("tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff")
+	c.Assert(err, IsNil)
+	c.Assert(claimer[3].L1Address.Equals(address), Equals, true)
+}
+
+func (MigrationHelpersTestSuite) TestSetTCYClaims(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	address, err := common.NewAddress("0x00112c24ebee9c96d177a3aa2ff55dcb93a53c80")
+	c.Assert(err, IsNil)
+	_, err = mgr.Keeper().GetTCYClaimer(ctx, address, common.AVAXAsset)
+	c.Assert(err.Error(), Equals, fmt.Sprintf("TCYClaimer doesn't exist: %s", address.String()))
+
+	address2, err := common.NewAddress("bc1qj937cw6xap470hg427p2kxl85u3ac3ps84hye3")
+	c.Assert(err, IsNil)
+	_, err = mgr.Keeper().GetTCYClaimer(ctx, address2, common.BTCAsset)
+	c.Assert(err.Error(), Equals, fmt.Sprintf("TCYClaimer doesn't exist: %s", address2.String()))
+
+	address3, err := common.NewAddress("tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff")
+	c.Assert(err, IsNil)
+	_, err = mgr.Keeper().GetTCYClaimer(ctx, address3, common.DOGEAsset)
+	c.Assert(err.Error(), Equals, fmt.Sprintf("TCYClaimer doesn't exist: %s", address3.String()))
+
+	c.Assert(setTCYClaims(ctx, mgr), IsNil)
+
+	claimer, err := mgr.Keeper().GetTCYClaimer(ctx, address, common.AVAXAsset)
+	c.Assert(err, IsNil)
+	c.Assert(claimer.Amount.Equal(math.NewUint(1111111111111111111)), Equals, true)
+	c.Assert(claimer.Asset.Equals(common.AVAXAsset), Equals, true)
+	c.Assert(claimer.L1Address.Equals(address), Equals, true)
+
+	claimer, err = mgr.Keeper().GetTCYClaimer(ctx, address2, common.BTCAsset)
+	c.Assert(err, IsNil)
+	c.Assert(claimer.Amount.Equal(math.NewUint(42047799234002)), Equals, true)
+	c.Assert(claimer.Asset.Equals(common.BTCAsset), Equals, true)
+	c.Assert(claimer.L1Address.Equals(address2), Equals, true)
+
+	claimer, err = mgr.Keeper().GetTCYClaimer(ctx, address3, common.DOGEAsset)
+	c.Assert(err, IsNil)
+	c.Assert(claimer.Amount.Equal(math.NewUint(2222)), Equals, true)
+	c.Assert(claimer.Asset.Equals(common.DOGEAsset), Equals, true)
+	c.Assert(claimer.L1Address.Equals(address3), Equals, true)
 }

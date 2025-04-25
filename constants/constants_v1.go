@@ -55,6 +55,7 @@ func NewConstantValue() *ConstantVals {
 			MinSwapsPerBlock:                    10,                 // process all swaps if queue is less than this number
 			MaxSwapsPerBlock:                    100,                // max swaps to process per block
 			EnableOrderBooks:                    0,                  // enable order books instead of swap queue
+			EnableAdvSwapQueue:                  0,                  // enable advanced swap queue
 			VirtualMultSynths:                   2,                  // pool depth multiplier for synthetic swaps
 			VirtualMultSynthsBasisPoints:        10_000,             // pool depth multiplier for synthetic swaps (in basis points)
 			MaxSynthPerPoolDepth:                1700,               // percentage (in basis points) of how many synths are allowed relative to pool depth of the related pool
@@ -131,6 +132,14 @@ func NewConstantValue() *ConstantVals {
 			BankSendEnabled:                     0,                  // enable/disable cosmos bank send messages
 			RUNEPoolHaltDeposit:                 0,                  // enable/disable RUNEPool deposit (block height)
 			RUNEPoolHaltWithdraw:                0,                  // enable/disable RUNEPool withdraw (block height)
+			MinRuneForTCYStakeDistribution:      2_100_00000000,     // Set what is the minimum amount of rune need it on TCY fund in order to be distributed
+			MinTCYForTCYStakeDistribution:       100000,             // Set what is the minimum amount of TCY need it on TCY fund in order to be distributed
+			TCYStakeSystemIncomeBps:             1000,               // allocate 1000bps (10%) RUNE of all system income to TCY Fund
+			TCYClaimingSwapHalt:                 1,                  // enable/disable claiming module rune to tcy swap
+			TCYStakeDistributionHalt:            1,                  // enable/disable tcy stake distribution
+			TCYStakingHalt:                      1,                  // enable/disable tcy staking
+			TCYUnstakingHalt:                    1,                  // enable/disable tcy unstaking
+			TCYClaimingHalt:                     1,                  // enable/disable tcy claiming
 		},
 		boolValues: map[ConstantName]bool{
 			StrictBondLiquidityRatio: true,

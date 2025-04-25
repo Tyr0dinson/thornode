@@ -260,11 +260,17 @@ func NewEVMClient(
 }
 
 // Start starts the chain client with the given queues.
-func (c *EVMClient) Start(globalTxsQueue chan stypes.TxIn, globalErrataQueue chan stypes.ErrataBlock, globalSolvencyQueue chan stypes.Solvency) {
+func (c *EVMClient) Start(
+	globalTxsQueue chan stypes.TxIn,
+	globalErrataQueue chan stypes.ErrataBlock,
+	globalSolvencyQueue chan stypes.Solvency,
+	globalNetworkFeeQueue chan common.NetworkFee,
+) {
 	c.evmScanner.globalErrataQueue = globalErrataQueue
+	c.evmScanner.globalNetworkFeeQueue = globalNetworkFeeQueue
 	c.globalSolvencyQueue = globalSolvencyQueue
 	c.tssKeySigner.Start()
-	c.blockScanner.Start(globalTxsQueue)
+	c.blockScanner.Start(globalTxsQueue, globalNetworkFeeQueue)
 	c.wg.Add(1)
 	go c.unstuck()
 	c.wg.Add(1)
@@ -609,7 +615,7 @@ func (c *EVMClient) buildOutboundTx(txOutItem stypes.TxOutItem, memo mem.Memo, n
 	if txOutItem.Aggregator != "" {
 		var gasLimitForAggregator uint64
 		gasLimitForAggregator, err = aggregators.FetchDexAggregatorGasLimit(
-			common.LatestVersion, c.cfg.ChainID, txOutItem.Aggregator,
+			c.cfg.ChainID, txOutItem.Aggregator,
 		)
 		if err != nil {
 			c.logger.Err(err).

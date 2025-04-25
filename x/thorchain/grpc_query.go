@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/cosmos/cosmos-sdk/client"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -12,15 +13,16 @@ import (
 )
 
 type queryServer struct {
-	mgr     *Mgrs
-	kbs     cosmos.KeybaseStore
-	regInit bool
+	mgr      *Mgrs
+	kbs      cosmos.KeybaseStore
+	regInit  bool
+	txConfig client.TxConfig
 }
 
 var _ types.QueryServer = &queryServer{}
 
-func NewQueryServerImpl(mgr *Mgrs, kbs cosmos.KeybaseStore) types.QueryServer {
-	return &queryServer{mgr: mgr, kbs: kbs}
+func NewQueryServerImpl(mgr *Mgrs, txConfig client.TxConfig, kbs cosmos.KeybaseStore) types.QueryServer {
+	return &queryServer{mgr: mgr, txConfig: txConfig, kbs: kbs}
 }
 
 func (s *queryServer) unwrapSdkContext(c context.Context) sdk.Context {
@@ -639,4 +641,44 @@ func (s *queryServer) Balances(c context.Context, req *types.QueryBalancesReques
 	}
 	ctx := s.unwrapSdkContext(c)
 	return s.queryBalances(ctx, req)
+}
+
+func (s *queryServer) TCYStaker(c context.Context, req *types.QueryTCYStakerRequest) (*types.QueryTCYStakerResponse, error) {
+	if err := checkHeightParam(req.Height); err != nil {
+		return nil, err
+	}
+	ctx := s.unwrapSdkContext(c)
+	return s.queryTCYStaker(ctx, req)
+}
+
+func (s *queryServer) TCYStakers(c context.Context, req *types.QueryTCYStakersRequest) (*types.QueryTCYStakersResponse, error) {
+	if err := checkHeightParam(req.Height); err != nil {
+		return nil, err
+	}
+	ctx := s.unwrapSdkContext(c)
+	return s.queryTCYStakers(ctx, req)
+}
+
+func (s *queryServer) TCYClaimer(c context.Context, req *types.QueryTCYClaimerRequest) (*types.QueryTCYClaimerResponse, error) {
+	if err := checkHeightParam(req.Height); err != nil {
+		return nil, err
+	}
+	ctx := s.unwrapSdkContext(c)
+	return s.queryTCYClaimer(ctx, req)
+}
+
+func (s *queryServer) TCYClaimers(c context.Context, req *types.QueryTCYClaimersRequest) (*types.QueryTCYClaimersResponse, error) {
+	if err := checkHeightParam(req.Height); err != nil {
+		return nil, err
+	}
+	ctx := s.unwrapSdkContext(c)
+	return s.queryTCYClaimers(ctx, req)
+}
+
+func (s *queryServer) Codes(c context.Context, req *types.QueryCodesRequest) (*types.QueryCodesResponse, error) {
+	if err := checkHeightParam(req.Height); err != nil {
+		return nil, err
+	}
+	ctx := s.unwrapSdkContext(c)
+	return s.queryCodes(ctx, req)
 }

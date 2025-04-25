@@ -99,9 +99,9 @@ func (s *SwapperVCUR) Swap(ctx cosmos.Context,
 	}
 	swapEvents = append(swapEvents, swapEvt)
 	if !swapTarget.IsZero() && assetAmount.LT(swapTarget) {
-		// **NOTE** this error string is utilized by the order book manager to
+		// **NOTE** this error string is utilized by the adv swap queue manager to
 		// catch the error. DO NOT change this error string without updating
-		// the order book manager as well
+		// the adv swap queue manager as well
 		return cosmos.ZeroUint(), swapEvents, fmt.Errorf("emit asset %s less than price limit %s", assetAmount, swapTarget)
 	}
 	// emit asset is zero
@@ -386,14 +386,25 @@ func (s *SwapperVCUR) swapOne(ctx cosmos.Context,
 		if !swapEvt.LiquidityFeeInRune.IsZero() {
 			pool.BalanceRune = common.SafeSub(pool.BalanceRune, swapEvt.LiquidityFeeInRune)
 			liqFeeCoin := common.NewCoin(common.RuneAsset(), swapEvt.LiquidityFeeInRune)
-			if err := mgr.Keeper().SendFromModuleToModule(ctx, AsgardName, ReserveName, common.NewCoins(liqFeeCoin)); err != nil {
-				ctx.Logger().Error("fail to move liquidity fee RUNE to Reserve Module during swap", "error", err)
+
+			targetModule := ReserveName
+			if pool.Asset.IsTCY() {
+				targetModule = TCYClaimingName
+			}
+
+			if err := mgr.Keeper().SendFromModuleToModule(ctx, AsgardName, targetModule, common.NewCoins(liqFeeCoin)); err != nil {
+				ctx.Logger().Error("fail to move liquidity fee RUNE during swap", "module", targetModule, "error", err)
 				return cosmos.ZeroUint(), evt, err
 			}
-			if err := keeper.AddToLiquidityFees(ctx, pool.Asset, swapEvt.LiquidityFeeInRune); err != nil {
-				return cosmos.ZeroUint(), evt, fmt.Errorf("fail to add to liquidity fees: %w", err)
+
+			// Only add to liquidity fees if not TCY
+			if !pool.Asset.IsTCY() {
+				if err := keeper.AddToLiquidityFees(ctx, pool.Asset, swapEvt.LiquidityFeeInRune); err != nil {
+					return cosmos.ZeroUint(), evt, fmt.Errorf("fail to add to liquidity fees: %w", err)
+				}
 			}
 		}
+
 		// use calculated floor
 		if err := keeper.AddToSwapSlip(ctx, pool.Asset, cosmos.NewInt(int64(swapEvt.PoolSlip.Uint64()))); err != nil {
 			return cosmos.ZeroUint(), evt, fmt.Errorf("fail to add to swap slip: %w", err)

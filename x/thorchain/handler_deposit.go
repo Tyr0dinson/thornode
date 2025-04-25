@@ -123,8 +123,11 @@ func (h DepositHandler) handle(ctx cosmos.Context, msg MsgDeposit) (*cosmos.Resu
 	switch memo.GetType() {
 	case TxBond, TxUnBond, TxLeave:
 		targetModule = BondName
-	case TxReserve, TxTHORName:
+	// For TxTCYClaim, send to Reserve so retrievable if done accidentally
+	case TxReserve, TxTHORName, TxTCYClaim:
 		targetModule = ReserveName
+	case TxTCYStake, TxTCYUnstake:
+		targetModule = TCYStakeName
 	default:
 		targetModule = AsgardName
 	}
@@ -133,14 +136,13 @@ func (h DepositHandler) handle(ctx cosmos.Context, msg MsgDeposit) (*cosmos.Resu
 	// (When the Amount is zero, the Asset type is irrelevant.)
 	// Coins having exactly one Coin is ensured by the validate function,
 	// but IsEmpty covers a hypothetical no-Coin scenario too.
-	if !msg.Coins.IsEmpty() && !msg.Coins[0].Asset.IsRune() && targetModule != AsgardName {
-		return nil, fmt.Errorf("(%s) memos are for the (%s) module, for which messages must only contain RUNE", memo.GetType().String(), targetModule)
+	if !msg.Coins.IsEmpty() && (!msg.Coins[0].Asset.IsRune() && !msg.Coins[0].Asset.IsTCY()) && targetModule != AsgardName {
+		return nil, fmt.Errorf("(%s) memos are for the (%s) module, for which messages must only contain RUNE or TCY", memo.GetType().String(), targetModule)
 	}
 
 	coinsInMsg := msg.Coins
 	if !coinsInMsg.IsEmpty() && !coinsInMsg[0].Asset.IsTradeAsset() && !coinsInMsg[0].Asset.IsSecuredAsset() {
 		// send funds to target module
-		// trunk-ignore(golangci-lint/govet): shadow
 		err := h.mgr.Keeper().SendFromAccountToModule(ctx, msg.GetSigners()[0], targetModule, msg.Coins)
 		if err != nil {
 			return nil, err
@@ -157,7 +159,7 @@ func (h DepositHandler) handle(ctx cosmos.Context, msg MsgDeposit) (*cosmos.Resu
 
 	// construct msg from memo
 	txIn := ObservedTx{Tx: tx}
-	txInVoter := NewObservedTxVoter(txIn.Tx.ID, []ObservedTx{txIn})
+	txInVoter := NewObservedTxVoter(txIn.Tx.ID, []common.ObservedTx{txIn})
 	txInVoter.Height = ctx.BlockHeight() // While FinalisedHeight may be overwritten, Height records the consensus height
 	txInVoter.FinalisedHeight = ctx.BlockHeight()
 	txInVoter.Tx = txIn
@@ -204,7 +206,6 @@ func (h DepositHandler) handle(ctx cosmos.Context, msg MsgDeposit) (*cosmos.Resu
 	// if an outbound is not expected, mark the voter as done
 	if !memo.GetType().HasOutbound() {
 		// retrieve the voter from store in case the handler caused a change
-		// trunk-ignore(golangci-lint/govet): shadow
 		voter, err := h.mgr.Keeper().GetObservedTxInVoter(ctx, txID)
 		if err != nil {
 			return nil, fmt.Errorf("fail to get voter")
@@ -216,14 +217,14 @@ func (h DepositHandler) handle(ctx cosmos.Context, msg MsgDeposit) (*cosmos.Resu
 }
 
 func (h DepositHandler) addSwap(ctx cosmos.Context, msg MsgSwap) {
-	if h.mgr.Keeper().OrderBooksEnabled(ctx) {
+	if h.mgr.Keeper().AdvSwapQueueEnabled(ctx) {
 		source := msg.Tx.Coins[0]
 		target := common.NewCoin(msg.TargetAsset, msg.TradeTarget)
-		evt := NewEventLimitOrder(source, target, msg.Tx.ID)
+		evt := NewEventLimitSwap(source, target, msg.Tx.ID)
 		if err := h.mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
-			ctx.Logger().Error("fail to emit limit order event", "error", err)
+			ctx.Logger().Error("fail to emit limit swap event", "error", err)
 		}
-		if err := h.mgr.Keeper().SetOrderBookItem(ctx, msg); err != nil {
+		if err := h.mgr.Keeper().SetAdvSwapQueueItem(ctx, msg); err != nil {
 			ctx.Logger().Error("fail to add swap to queue", "error", err)
 		}
 	} else {
@@ -231,9 +232,9 @@ func (h DepositHandler) addSwap(ctx cosmos.Context, msg MsgSwap) {
 	}
 }
 
-// addSwapDirect adds the swap directly to the swap queue (no order book) - segmented
-// out into its own function to allow easier maintenance of original behavior vs order
-// book behavior.
+// addSwapDirect adds the swap directly to the swap queue - segmented out into
+// its own function to allow easier maintenance of original behavior vs advanced
+// behavior.
 func (h DepositHandler) addSwapDirect(ctx cosmos.Context, msg MsgSwap) {
 	version := h.mgr.GetVersion()
 	switch {

@@ -122,6 +122,8 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 			types.AffiliateCollectorName: {},
 			types.TreasuryName:           {},
 			types.RUNEPoolName:           {},
+			types.TCYStakeName:           {},
+			types.TCYClaimingName:        {},
 		},
 		authcodec.NewBech32Codec(sdk.GetConfig().GetBech32AccountAddrPrefix()),
 		sdk.GetConfig().GetBech32AccountAddrPrefix(),
@@ -239,6 +241,8 @@ func setupKeeperForTest(c *C) (cosmos.Context, keeper.Keeper) {
 			types.ReserveName:            {},
 			types.LendingName:            {},
 			types.AffiliateCollectorName: {},
+			types.TCYStakeName:           {},
+			types.TCYClaimingName:        {},
 		},
 		authcodec.NewBech32Codec(sdk.GetConfig().GetBech32AccountAddrPrefix()),
 		sdk.GetConfig().GetBech32AccountAddrPrefix(),
@@ -462,7 +466,7 @@ func (HandlerSuite) TestGetMsgSwapFromMemo(c *C) {
 	c.Assert(ok, Equals, true)
 	c.Assert(err, IsNil)
 
-	txin := types.NewObservedTx(
+	txin := common.NewObservedTx(
 		common.Tx{
 			ID:    GetRandomTxHash(),
 			Chain: common.ETHChain,
@@ -557,7 +561,7 @@ func (HandlerSuite) TestGetMsgLiquidityFromMemo(c *C) {
 	runeAsset := common.RuneAsset()
 	c.Assert(err, IsNil)
 
-	txin := types.NewObservedTx(
+	txin := common.NewObservedTx(
 		common.Tx{
 			ID:    GetRandomTxHash(),
 			Chain: common.ETHChain,
@@ -630,7 +634,7 @@ func (HandlerSuite) TestGetMsgLiquidityFromMemo(c *C) {
 func (HandlerSuite) TestMsgLeaveFromMemo(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, false)
 	addr := types.GetRandomBech32Addr()
-	txin := types.NewObservedTx(
+	txin := common.NewObservedTx(
 		common.Tx{
 			ID:          GetRandomTxHash(),
 			Chain:       common.ETHChain,
@@ -656,7 +660,7 @@ func (HandlerSuite) TestMsgLeaveFromMemo(c *C) {
 func (s *HandlerSuite) TestReserveContributor(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, false)
 	addr := types.GetRandomBech32Addr()
-	txin := types.NewObservedTx(
+	txin := common.NewObservedTx(
 		common.Tx{
 			ID:          GetRandomTxHash(),
 			Chain:       common.ETHChain,
@@ -785,11 +789,9 @@ func (s *HandlerSuite) TestMemoFetchAddress(c *C) {
 }
 
 func (s *HandlerSuite) TestExternalAssetMatch(c *C) {
-	v := GetCurrentVersion()
-
-	c.Check(externalAssetMatch(v, common.ETHChain, "7a0"), Equals, "0xd601c6A3a36721320573885A8d8420746dA3d7A0")
-	c.Check(externalAssetMatch(v, common.ETHChain, "foobar"), Equals, "foobar")
-	c.Check(externalAssetMatch(v, common.ETHChain, "3"), Equals, "3")
-	c.Check(externalAssetMatch(v, common.ETHChain, ""), Equals, "")
-	c.Check(externalAssetMatch(v, common.BTCChain, "foo"), Equals, "foo")
+	c.Check(externalAssetMatch(common.ETHChain, "7a0"), Equals, "0xd601c6A3a36721320573885A8d8420746dA3d7A0")
+	c.Check(externalAssetMatch(common.ETHChain, "foobar"), Equals, "foobar")
+	c.Check(externalAssetMatch(common.ETHChain, "3"), Equals, "3")
+	c.Check(externalAssetMatch(common.ETHChain, ""), Equals, "")
+	c.Check(externalAssetMatch(common.BTCChain, "foo"), Equals, "foo")
 }

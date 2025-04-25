@@ -22,7 +22,7 @@ const (
 	TxAdd
 	TxWithdraw
 	TxSwap
-	TxLimitOrder
+	TxLimitSwap
 	TxOutbound
 	TxDonate
 	TxBond
@@ -45,6 +45,9 @@ const (
 	TxRunePoolWithdraw
 	TxExec
 	TxSwitch
+	TxTCYClaim
+	TxTCYStake
+	TxTCYUnstake
 )
 
 var stringToTxTypeMap = map[string]TxType{
@@ -56,8 +59,7 @@ var stringToTxTypeMap = map[string]TxType{
 	"swap":        TxSwap,
 	"s":           TxSwap,
 	"=":           TxSwap,
-	"limito":      TxLimitOrder,
-	"lo":          TxLimitOrder,
+	"=>":          TxLimitSwap,
 	"out":         TxOutbound,
 	"donate":      TxDonate,
 	"d":           TxDonate,
@@ -86,13 +88,16 @@ var stringToTxTypeMap = map[string]TxType{
 	"x":           TxExec,
 	"exec":        TxExec,
 	"switch":      TxSwitch,
+	"tcy":         TxTCYClaim,
+	"tcy+":        TxTCYStake,
+	"tcy-":        TxTCYUnstake,
 }
 
 var txToStringMap = map[TxType]string{
 	TxAdd:                    "add",
 	TxWithdraw:               "withdraw",
 	TxSwap:                   "swap",
-	TxLimitOrder:             "limito",
+	TxLimitSwap:              "=>",
 	TxOutbound:               "out",
 	TxRefund:                 "refund",
 	TxDonate:                 "donate",
@@ -113,6 +118,9 @@ var txToStringMap = map[TxType]string{
 	TxSecuredAssetWithdraw:   "secure-",
 	TxExec:                   "x",
 	TxSwitch:                 "switch",
+	TxTCYClaim:               "tcy",
+	TxTCYStake:               "tcy+",
+	TxTCYUnstake:             "tcy-",
 }
 
 // converts a string into a txType
@@ -137,7 +145,7 @@ func (tx TxType) IsInbound() bool {
 		TxSecuredAssetDeposit,
 		TxSecuredAssetWithdraw,
 		TxSwap,
-		TxLimitOrder,
+		TxLimitSwap,
 		TxDonate,
 		TxBond,
 		TxUnbond,
@@ -148,7 +156,10 @@ func (tx TxType) IsInbound() bool {
 		TxLoanOpen,
 		TxLoanRepayment,
 		TxExec,
-		TxSwitch:
+		TxSwitch,
+		TxTCYClaim,
+		TxTCYStake,
+		TxTCYUnstake:
 		return true
 	default:
 		return false
@@ -227,6 +238,7 @@ type Memo interface {
 	GetRefundAddress() common.Address
 	GetAffiliates() []string
 	GetAffiliatesBasisPoints() []cosmos.Uint
+	GetAddress() common.Address
 }
 
 type MemoBase struct {
@@ -257,6 +269,7 @@ func (m MemoBase) GetAffiliateTHORName() *types.THORName   { return nil }
 func (m MemoBase) GetRefundAddress() common.Address        { return common.NoAddress }
 func (m MemoBase) GetAffiliates() []string                 { return nil }
 func (m MemoBase) GetAffiliatesBasisPoints() []cosmos.Uint { return nil }
+func (m MemoBase) GetAddress() common.Address              { return common.NoAddress }
 
 func ParseMemo(version semver.Version, memo string) (mem Memo, err error) {
 	defer func() {

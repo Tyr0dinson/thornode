@@ -728,7 +728,6 @@ func (s HandlerObservedTxInSuite) TestSwapWithAffiliate(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 
 	queue := newSwapQueueVCUR(mgr.Keeper())
-	handler := NewObservedTxInHandler(mgr)
 
 	affAddr := GetRandomTHORAddress()
 
@@ -745,11 +744,11 @@ func (s HandlerObservedTxInSuite) TestSwapWithAffiliate(c *C) {
 	}, common.ETHAsset, GetRandomETHAddress(), cosmos.ZeroUint(), affAddr, cosmos.NewUint(1000),
 		"",
 		"", nil,
-		MarketOrder,
+		MarketSwap,
 		0, 0, GetRandomBech32Addr(),
 	)
 	// no affiliate fees
-	handler.addSwap(ctx, *msg)
+	addSwap(ctx, mgr.Keeper(), mgr.EventMgr(), *msg)
 	swaps, err := queue.FetchQueue(ctx)
 	c.Assert(err, IsNil)
 	c.Assert(swaps, HasLen, 1, Commentf("%d", len(swaps)))
@@ -854,7 +853,7 @@ func (s *HandlerObservedTxInSuite) TestObservingSlashing(c *C) {
 	observedTx.Tx.ToAddress, err = observedTx.ObservedPubKey.GetAddress(observedTx.Tx.Chain)
 	c.Assert(err, IsNil)
 
-	msg := NewMsgObservedTxIn([]ObservedTx{observedTx}, cosmos.AccAddress{})
+	msg := NewMsgObservedTxIn([]common.ObservedTx{observedTx}, cosmos.AccAddress{})
 	handler := NewObservedTxInHandler(mgr)
 
 	broadcast := func(c *C, ctx cosmos.Context, na NodeAccount, msg *MsgObservedTxIn) {
@@ -901,7 +900,7 @@ func (s *HandlerObservedTxInSuite) TestObservingSlashing(c *C) {
 	// but with a slightly later BlockHeight and FinaliseHeight,
 	// which is normal.
 	consensusMsg := msg
-	consensusMsg.Txs = []ObservedTx{msg.Txs[0]}
+	consensusMsg.Txs = []common.ObservedTx{msg.Txs[0]}
 	consensusMsg.Txs[0].BlockHeight++
 	consensusMsg.Txs[0].FinaliseHeight++
 

@@ -8,20 +8,21 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"gitlab.com/thorchain/thornode/v3/common/wasmpermissions"
+
 	sdkmath "cosmossdk.io/math"
 	"github.com/blang/semver"
 	tmhttp "github.com/cometbft/cometbft/rpc/client/http"
-	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/tx/signing"
-	authtx "github.com/cosmos/cosmos-sdk/x/auth/tx"
 	"github.com/rs/zerolog/log"
-	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/conversion"
+	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/conversion"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -1913,7 +1914,7 @@ func checkPending(ctx cosmos.Context, keeper keeper.Keeper, voter ObservedTxVote
 		return
 	}
 
-	pending = keeper.HasSwapQueueItem(ctx, voter.TxID, 0) || keeper.HasOrderBookItem(ctx, voter.TxID)
+	pending = keeper.HasSwapQueueItem(ctx, voter.TxID, 0) || keeper.HasAdvSwapQueueItem(ctx, voter.TxID)
 
 	// Only look for streaming information when a swap is pending.
 	if pending {
@@ -1927,20 +1928,20 @@ func checkPending(ctx cosmos.Context, keeper keeper.Keeper, voter ObservedTxVote
 
 	memo, err := ParseMemoWithTHORNames(ctx, keeper, voter.Tx.Tx.Memo)
 	if err != nil {
-		// If unable to parse, assume not a (valid) swap or limit order memo.
+		// If unable to parse, assume not a (valid) swap or limit swap memo.
 		return
 	}
 
 	memoType := memo.GetType()
 	// If the memo asset is a synth, as with Savers add liquidity or withdraw, a swap is assumed to be involved.
-	if memoType == TxSwap || memoType == TxLimitOrder || memo.GetAsset().IsSyntheticAsset() {
+	if memoType == TxSwap || memoType == TxLimitSwap || memo.GetAsset().IsSyntheticAsset() {
 		isSwap = true
 		// Only check the KVStore when the inbound transaction has already been finalised
 		// and when there haven't been any Actions planned.
 		// This will also check the KVStore when an inbound transaction has no output,
 		// such as the output being not enough to cover a fee.
 		if voter.FinalisedHeight != 0 && len(voter.Actions) == 0 {
-			// Use of Swap Queue or Order Book depends on Mimir key EnableOrderBooks rather than memo type, so check both.
+			// Use of Swap Queue or Adv Swap Queue depends on Mimir key AdvSwapQueueBooks rather than memo type, so check both.
 			isPending = pending
 		}
 	}
@@ -2088,7 +2089,7 @@ func newTxStagesResponse(ctx cosmos.Context, voter ObservedTxVoter, isSwap, isPe
 	var outSigned types.OutboundSignedStage
 
 	// Set the Completed state first.
-	outSigned.Completed = (voter.Tx.Status != types.Status_incomplete)
+	outSigned.Completed = (voter.Tx.Status != common.Status_incomplete)
 
 	// Only fill in other fields if not Completed.
 	if !outSigned.Completed {
@@ -2194,7 +2195,7 @@ func (qs queryServer) queryTx(ctx cosmos.Context, req *types.QueryTxRequest) (*t
 	}
 
 	result := types.QueryTxResponse{
-		ObservedTx:      castObservedTx(voter.GetTx(nodeAccounts)),
+		ObservedTx:      castObservedTx(*voter.GetTx(nodeAccounts)),
 		ConsensusHeight: voter.Height,
 		FinalisedHeight: voter.FinalisedHeight,
 		OutboundHeight:  voter.OutboundHeight,
@@ -2345,7 +2346,7 @@ func (qs queryServer) queryQueue(ctx cosmos.Context, _ *types.QueryQueueRequest)
 		query.Swap++
 	}
 
-	iter2 := qs.mgr.Keeper().GetOrderBookItemIterator(ctx)
+	iter2 := qs.mgr.Keeper().GetAdvSwapQueueItemIterator(ctx)
 	defer iter2.Close()
 	for ; iter2.Valid(); iter2.Next() {
 		var msg MsgSwap
@@ -3122,12 +3123,13 @@ func (qs queryServer) queryBlock(ctx cosmos.Context, req *types.QueryBlockReques
 
 	for i, tx := range block.Block.Txs {
 		// decode the protobuf and encode to json
-		dtx, err := authtx.DefaultTxDecoder(qs.mgr.cdc.(*codec.ProtoCodec))(tx)
+
+		dtx, err := qs.txConfig.TxDecoder()(tx)
 		if err != nil {
 			return nil, fmt.Errorf("fail to decode tx: %w", err)
 		}
 
-		etx, err := authtx.DefaultJSONTxEncoder(qs.mgr.cdc.(*codec.ProtoCodec))(dtx)
+		etx, err := qs.txConfig.TxJSONEncoder()(dtx)
 		if err != nil {
 			return nil, fmt.Errorf("fail to encode tx: %w", err)
 		}
@@ -3189,7 +3191,7 @@ func castTxOutItem(toi TxOutItem, height int64) *types.QueryTxOutItem {
 func castObservedTx(observedTx ObservedTx) types.QueryObservedTx {
 	// Only display the Status if it is "done", not if "incomplete".
 	status := ""
-	if observedTx.Status != types.Status_incomplete {
+	if observedTx.Status != common.Status_incomplete {
 		status = observedTx.Status.String()
 	}
 	return types.QueryObservedTx{
@@ -3370,4 +3372,116 @@ func dollarsPerRuneIgnoreHalt(ctx cosmos.Context, k keeper.Keeper) cosmos.Uint {
 		}
 	}
 	return common.GetMedianUint(p).QuoUint64(constants.DollarMulti)
+}
+
+// queryTCYStakers
+func (qs queryServer) queryTCYStakers(ctx cosmos.Context, req *types.QueryTCYStakersRequest) (*types.QueryTCYStakersResponse, error) {
+	var stakers []*types.QueryTCYStakerResponse
+	tcyStakers, err := qs.mgr.Keeper().ListTCYStakers(ctx)
+	if err != nil {
+		return &types.QueryTCYStakersResponse{}, err
+	}
+	for _, staker := range tcyStakers {
+		stakers = append(stakers, &types.QueryTCYStakerResponse{
+			Address: staker.Address.String(),
+			Amount:  staker.Amount.String(),
+		})
+	}
+	return &types.QueryTCYStakersResponse{TcyStakers: stakers}, nil
+}
+
+// queryTCYStaker
+func (qs queryServer) queryTCYStaker(ctx cosmos.Context, req *types.QueryTCYStakerRequest) (*types.QueryTCYStakerResponse, error) {
+	addr, err := common.NewAddress(req.Address)
+	if err != nil {
+		ctx.Logger().Error("fail to get parse address", "error", err)
+		return nil, fmt.Errorf("fail to parse address: %w", err)
+	}
+	staker, err := qs.mgr.Keeper().GetTCYStaker(ctx, addr)
+	if err != nil {
+		ctx.Logger().Error("fail to get tcy staker", "error", err)
+		return nil, fmt.Errorf("fail to tcy staker: %w", err)
+	}
+
+	stakerRes := types.QueryTCYStakerResponse{
+		Address: staker.Address.String(),
+		Amount:  staker.Amount.String(),
+	}
+
+	return &stakerRes, nil
+}
+
+// queryTCYClaimers
+func (qs queryServer) queryTCYClaimers(ctx cosmos.Context, req *types.QueryTCYClaimersRequest) (*types.QueryTCYClaimersResponse, error) {
+	var claimers []*types.QueryTCYClaimer
+	iterator := qs.mgr.Keeper().GetTCYClaimerIterator(ctx)
+	defer iterator.Close()
+	for ; iterator.Valid(); iterator.Next() {
+		var claimer TCYClaimer
+		qs.mgr.Keeper().Cdc().MustUnmarshal(iterator.Value(), &claimer)
+
+		claimers = append(claimers, &types.QueryTCYClaimer{
+			Asset:     claimer.Asset.String(),
+			L1Address: claimer.L1Address.String(),
+			Amount:    claimer.Amount.String(),
+		})
+	}
+	return &types.QueryTCYClaimersResponse{TcyClaimers: claimers}, nil
+}
+
+// queryTCYClaimer
+func (qs queryServer) queryTCYClaimer(ctx cosmos.Context, req *types.QueryTCYClaimerRequest) (*types.QueryTCYClaimerResponse, error) {
+	addr, err := common.NewAddress(req.Address)
+	if err != nil {
+		ctx.Logger().Error("fail to get parse address", "error", err)
+		return nil, fmt.Errorf("fail to parse address: %w", err)
+	}
+	addressClaims, err := qs.mgr.Keeper().ListTCYClaimersFromL1Address(ctx, addr)
+	if err != nil {
+		ctx.Logger().Error("fail to get tcy claimer", "error", err)
+		return nil, fmt.Errorf("fail to tcy claimer: %w", err)
+	}
+
+	var claimsRes []*types.QueryTCYClaimer
+	for _, claim := range addressClaims {
+		claimsRes = append(claimsRes, &types.QueryTCYClaimer{
+			Asset:     claim.Asset.String(),
+			L1Address: claim.L1Address.String(),
+			Amount:    claim.Amount.String(),
+		})
+	}
+
+	return &types.QueryTCYClaimerResponse{TcyClaimer: claimsRes}, nil
+}
+
+// queryCodes
+func (qs queryServer) queryCodes(_ cosmos.Context, _ *types.QueryCodesRequest) (*types.QueryCodesResponse, error) {
+	var codes []*types.QueryCodesCode
+
+	permissionsRaw := wasmpermissions.GetWasmPermissions()
+	// analyze-ignore(map-iteration)
+	for code, permission := range permissionsRaw.Permissions {
+		deployers := []string{}
+		// analyze-ignore(map-iteration)
+		for deployer, allowed := range permission.Deployers {
+			if !allowed {
+				continue
+			}
+			deployers = append(deployers, deployer)
+		}
+
+		sort.Strings(deployers)
+
+		codes = append(codes, &types.QueryCodesCode{
+			Code:      code,
+			Deployers: deployers,
+			Origin:    permission.Origin,
+		})
+	}
+
+	sort.Slice(codes, func(i, j int) bool {
+		return codes[i].Code < codes[j].Code
+	})
+
+	return &types.QueryCodesResponse{Codes: codes}, nil
 }

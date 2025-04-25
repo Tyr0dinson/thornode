@@ -96,14 +96,14 @@ func triggerPreferredAssetSwapV3_0_0(ctx cosmos.Context, mgr Manager, tn THORNam
 		cosmos.ZeroUint(),
 		"",
 		"", nil,
-		MarketOrder,
+		MarketSwap,
 		0, 0,
 		tn.Owner,
 	)
 
 	// Construct preferred asset swap inbound tx voter
 	txIn := ObservedTx{Tx: tx}
-	txInVoter := NewObservedTxVoter(txIn.Tx.ID, []ObservedTx{txIn})
+	txInVoter := NewObservedTxVoter(txIn.Tx.ID, []common.ObservedTx{txIn})
 	txInVoter.Height = ctx.BlockHeight()
 	txInVoter.FinalisedHeight = ctx.BlockHeight()
 	txInVoter.Tx = txIn
@@ -321,7 +321,7 @@ func affiliateSwapToRuneV3_0_0(ctx cosmos.Context, mgr Manager, mainTx common.Tx
 		cosmos.ZeroUint(),
 		"",
 		"", nil,
-		MarketOrder,
+		MarketSwap,
 		0, 0,
 		signer,
 	)

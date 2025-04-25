@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"cosmossdk.io/log"
+	"cosmossdk.io/math"
 	upgradetypes "cosmossdk.io/x/upgrade/types"
 	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/codec"
@@ -553,48 +554,102 @@ func (k KVStoreDummy) HasSwapQueueItem(ctx cosmos.Context, txID common.TxID, _ i
 	return false
 }
 
-func (k KVStoreDummy) OrderBooksEnabled(ctx cosmos.Context) bool {
+func (k KVStoreDummy) AdvSwapQueueEnabled(ctx cosmos.Context) bool {
 	return false
 }
 
-func (k KVStoreDummy) SetOrderBookItem(ctx cosmos.Context, msg MsgSwap) error      { return kaboom }
-func (k KVStoreDummy) GetOrderBookItemIterator(ctx cosmos.Context) cosmos.Iterator { return nil }
-func (k KVStoreDummy) RemoveOrderBookItem(ctx cosmos.Context, _ common.TxID) error {
+func (k KVStoreDummy) SetAdvSwapQueueItem(ctx cosmos.Context, msg MsgSwap) error      { return kaboom }
+func (k KVStoreDummy) GetAdvSwapQueueItemIterator(ctx cosmos.Context) cosmos.Iterator { return nil }
+func (k KVStoreDummy) RemoveAdvSwapQueueItem(ctx cosmos.Context, _ common.TxID) error {
 	return kaboom
 }
 
-func (k KVStoreDummy) GetOrderBookItem(ctx cosmos.Context, txID common.TxID) (MsgSwap, error) {
+func (k KVStoreDummy) GetAdvSwapQueueItem(ctx cosmos.Context, txID common.TxID) (MsgSwap, error) {
 	return MsgSwap{}, kaboom
 }
 
-func (k KVStoreDummy) HasOrderBookItem(ctx cosmos.Context, txID common.TxID) bool { return false }
-func (k KVStoreDummy) GetOrderBookIndexIterator(_ cosmos.Context, _ types.OrderType, _, _ common.Asset) cosmos.Iterator {
+func (k KVStoreDummy) HasAdvSwapQueueItem(ctx cosmos.Context, txID common.TxID) bool { return false }
+func (k KVStoreDummy) GetAdvSwapQueueIndexIterator(_ cosmos.Context, _ types.SwapType, _, _ common.Asset) cosmos.Iterator {
 	return nil
 }
 
-func (k KVStoreDummy) SetOrderBookIndex(_ cosmos.Context, _ MsgSwap) error {
+func (k KVStoreDummy) SetAdvSwapQueueIndex(_ cosmos.Context, _ MsgSwap) error {
 	return kaboom
 }
 
-func (k KVStoreDummy) GetOrderBookIndex(_ cosmos.Context, _ MsgSwap) (common.TxIDs, error) {
+func (k KVStoreDummy) GetAdvSwapQueueIndex(_ cosmos.Context, _ MsgSwap) (common.TxIDs, error) {
 	return nil, kaboom
 }
 
-func (k KVStoreDummy) HasOrderBookIndex(_ cosmos.Context, _ MsgSwap) (bool, error) {
+func (k KVStoreDummy) HasAdvSwapQueueIndex(_ cosmos.Context, _ MsgSwap) (bool, error) {
 	return false, kaboom
 }
 
-func (k KVStoreDummy) RemoveOrderBookIndex(_ cosmos.Context, _ MsgSwap) error {
+func (k KVStoreDummy) RemoveAdvSwapQueueIndex(_ cosmos.Context, _ MsgSwap) error {
 	return kaboom
 }
 
-func (k KVStoreDummy) SetOrderBookProcessor(ctx cosmos.Context, record []bool) error {
+func (k KVStoreDummy) SetAdvSwapQueueProcessor(ctx cosmos.Context, record []bool) error {
 	return kaboom
 }
 
-// GetOrderBookProcessor - get a list of asset pairs to process
-func (k KVStoreDummy) GetOrderBookProcessor(ctx cosmos.Context) ([]bool, error) {
+// GetAdvSwapQueueProcessor - get a list of asset pairs to process
+func (k KVStoreDummy) GetAdvSwapQueueProcessor(ctx cosmos.Context) ([]bool, error) {
 	return nil, kaboom
+}
+
+func (k KVStoreDummy) GetTCYClaimer(ctx cosmos.Context, l1Address common.Address, asset common.Asset) (TCYClaimer, error) {
+	return TCYClaimer{}, nil
+}
+
+func (k KVStoreDummy) SetTCYClaimer(ctx cosmos.Context, record TCYClaimer) error {
+	return nil
+}
+
+func (k KVStoreDummy) GetTCYClaimerIteratorFromL1Address(ctx cosmos.Context, l1Address common.Address) cosmos.Iterator {
+	return nil
+}
+
+func (k KVStoreDummy) GetTCYClaimerIterator(ctx cosmos.Context) cosmos.Iterator {
+	return nil
+}
+
+func (k KVStoreDummy) DeleteTCYClaimer(ctx cosmos.Context, l1Address common.Address, asset common.Asset) {
+}
+
+func (k KVStoreDummy) ListTCYClaimersFromL1Address(ctx cosmos.Context, l1Address common.Address) ([]TCYClaimer, error) {
+	return nil, nil
+}
+
+func (k KVStoreDummy) GetTCYStaker(ctx cosmos.Context, address common.Address) (TCYStaker, error) {
+	return TCYStaker{}, nil
+}
+
+func (k KVStoreDummy) SetTCYStaker(ctx cosmos.Context, record TCYStaker) error {
+	return nil
+}
+
+func (k KVStoreDummy) TCYClaimerExists(ctx cosmos.Context, l1Address common.Address, asset common.Asset) bool {
+	return false
+}
+
+func (k KVStoreDummy) UpdateTCYClaimer(ctx cosmos.Context, l1Address common.Address, asset common.Asset, amount math.Uint) error {
+	return nil
+}
+
+func (k KVStoreDummy) DeleteTCYStaker(ctx cosmos.Context, address common.Address) {
+}
+
+func (k KVStoreDummy) ListTCYStakers(ctx cosmos.Context) ([]TCYStaker, error) {
+	return nil, nil
+}
+
+func (k KVStoreDummy) TCYStakerExists(ctx cosmos.Context, address common.Address) bool {
+	return false
+}
+
+func (k KVStoreDummy) UpdateTCYStaker(ctx cosmos.Context, address common.Address, amount math.Uint) error {
+	return nil
 }
 
 func (k KVStoreDummy) GetMimir(_ cosmos.Context, key string) (int64, error) { return 0, kaboom }
