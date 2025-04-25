@@ -165,6 +165,22 @@ func InitConfig(parallelism int, seed bool) *OpConfig {
 		if err != nil {
 			log.Fatal().Stringer("chain", chain).Err(err).Msg("failed to get master account")
 		}
+		if chain == common.TONChain {
+			// TON chain takes a LONG time to start up.
+			// TODO see if MyLocalTON can start up with funded master account faster.
+			for i := 0; account.Coins[0].Amount.IsZero() && i < 30; i++ {
+				log.Info().Msg("TON chain is not ready yet, waiting...")
+				<-time.After(5 * time.Second)
+				account, err = master.ChainClients[chain].GetAccount(nil)
+				if err != nil {
+					log.Fatal().Stringer("chain", chain).Err(err).Msg("failed to get master account")
+				}
+				continue
+			}
+			if account.Coins[0].Amount.IsZero() {
+				log.Fatal().Msg("TON chain is still not ready")
+			}
+		}
 		for _, coin := range account.Coins {
 			ctxLog := log.Info().
 				Stringer("chain", chain).

@@ -233,6 +233,7 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 			return NoAddress, err
 		}
 		addr.SetBounce(false)
+		addr.SetTestnetOnly(strings.HasPrefix(p.String(), "tthor")) // TODO set based on mocknet
 
 		addressString = addr.String()
 	default:

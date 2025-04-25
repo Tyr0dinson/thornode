@@ -27,8 +27,9 @@ import (
 ////////////////////////////////////////////////////////////////////////////////////////
 
 const (
-	V3R2CodeHex = "B5EE9C724101010100710000DEFF0020DD2082014C97BA218201339CBAB19F71B0ED44D0D31FD31F31D70BFFE304E0A4F2608308D71820D31FD31FD31FF82313BBF263ED44D0D31FD31FD3FFD15132BAF2A15144BAF2A204F901541055F910F2A3F8009320D74A96D307D402FB00E8D101A4C8CB1FCB1FCBFFC9ED5410BD6DAD"
-	TxFee       = 5_000_000 // 0.005 TON
+	V3R2CodeHex       = "B5EE9C724101010100710000DEFF0020DD2082014C97BA218201339CBAB19F71B0ED44D0D31FD31F31D70BFFE304E0A4F2608308D71820D31FD31FD31FF82313BBF263ED44D0D31FD31FD3FFD15132BAF2A15144BAF2A204F901541055F910F2A3F8009320D74A96D307D402FB00E8D101A4C8CB1FCB1FCBFFC9ED5410BD6DAD"
+	TxFee             = 5_000_000 // 0.005 TON
+	myLocalTonLiteKey = "E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY="
 )
 
 type Client struct {
@@ -75,7 +76,7 @@ func NewClient(chain common.Chain, host string, keys *thorclient.Keys) (types.Li
 	}
 
 	// Setup connection based on host parameter
-	if err := pool.AddConnection(ctx, host, "E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY="); err != nil {
+	if err := pool.AddConnection(ctx, host, myLocalTonLiteKey); err != nil {
 		return nil, fmt.Errorf("fail to add client connection: %w", err)
 	}
 
@@ -93,13 +94,15 @@ func NewClient(chain common.Chain, host string, keys *thorclient.Keys) (types.Li
 		return nil, fmt.Errorf("failed to decode BOC: %w", err)
 	}
 
+	accountID := tonWallet.Bounce(false).Testnet(true).String()
+
 	return &Client{
 		chain:      chain,
 		keys:       keys,
 		k:          priv,
 		api:        api,
 		walletCode: walletCode,
-		accountID:  tonWallet.String(),
+		accountID:  accountID,
 	}, nil
 }
 

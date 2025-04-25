@@ -588,7 +588,7 @@ services:
     ports:
       - 40004:40004 # lite-server
     volumes:
-      - "./mocknet/ton/thorsimmaster.pk:/usr/share/ton/smartcont/faucet.pk"
+      - "./mocknet/ton/post-genesis.sh:/scripts/post-genesis.sh"
     environment:
       - GENESIS=true
       - NAME=genesis

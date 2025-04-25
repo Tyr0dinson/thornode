@@ -82,9 +82,16 @@ func (s *TonBlockScanner) FetchTxs(
 ) (types.TxIn, error) {
 	var txInItems []*types.TxInItem
 
+	if fetchHeight < 1 {
+		return types.TxIn{}, nil
+	}
+
 	items, err := s.processMaster(uint32(fetchHeight))
 	if err != nil {
-		s.logger.Err(err).Msg("failed to process master block")
+		s.logger.
+			Err(err).
+			Int64("height", fetchHeight).
+			Msg("failed to process master block")
 		return types.TxIn{}, err
 	}
 
@@ -139,7 +146,10 @@ func (s *TonBlockScanner) processMaster(masterSeqno uint32) ([]*types.TxInItem, 
 		masterSeqno,
 	)
 	if err != nil {
-		s.logger.Err(err).Msg("failed to lookup block")
+		s.logger.
+			Err(err).
+			Uint32("seqno", masterSeqno).
+			Msg("failed to lookup master block")
 		return nil, err
 	}
 
@@ -148,7 +158,10 @@ func (s *TonBlockScanner) processMaster(masterSeqno uint32) ([]*types.TxInItem, 
 
 	shards, err := s.api.GetBlockShardsInfo(context.Background(), master)
 	if err != nil {
-		s.logger.Err(err).Msg("failed to get shard blocks")
+		s.logger.
+			Err(err).
+			Uint32("seqno", masterSeqno).
+			Msg("failed to get shards for master block")
 		return nil, err
 	}
 
@@ -175,7 +188,12 @@ func (s *TonBlockScanner) processMaster(masterSeqno uint32) ([]*types.TxInItem, 
 				mtx.Lock()
 				defer mtx.Unlock()
 				if err_ != nil {
-					s.logger.Err(err_).Msg("failed to process shard")
+					s.logger.
+						Err(err_).
+						Int32("workchain", shard.Workchain).
+						Int64("shard", shard.Shard).
+						Uint32("seqno", shardSeqno).
+						Msg("failed to process shard")
 					err = err_
 				} else {
 					txInItems = append(txInItems, items...)
@@ -212,13 +230,23 @@ func (s *TonBlockScanner) processShard(
 ) ([]*types.TxInItem, error) {
 	block, err := s.api.LookupBlock(context.Background(), workchain, shard, seqno)
 	if err != nil {
-		s.logger.Err(err).Msg("failed to lookup block")
+		s.logger.
+			Err(err).
+			Int32("workchain", workchain).
+			Int64("shard", shard).
+			Uint32("seqno", seqno).
+			Msg("failed to lookup block")
 		return nil, err
 	}
 
 	data, err := s.api.GetBlockData(context.Background(), block)
 	if err != nil {
-		s.logger.Err(err).Msg("failed to get block data")
+		s.logger.
+			Err(err).
+			Int32("workchain", workchain).
+			Int64("shard", shard).
+			Uint32("seqno", seqno).
+			Msg("failed to get block data")
 		return nil, err
 	}
 
