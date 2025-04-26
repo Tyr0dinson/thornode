@@ -1,22 +1,23 @@
 package chainclients
 
 import (
+	"strings"
 	"time"
 
-	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/ton"
-
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/rs/zerolog/log"
-	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/tss"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/ethereum"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/evm"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/gaia"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/ton"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/xrp"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
+	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/tss"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
 )
@@ -39,6 +40,9 @@ func LoadChains(thorKeys *thorclient.Keys,
 	restart = make(chan struct{})
 	failedChains := []common.Chain{}
 
+	// TODO: don't love this but it works
+	isMocknet := strings.HasPrefix(sdk.GetConfig().GetBech32AccountPubPrefix(), "tthor")
+
 	loadChain := func(chain config.BifrostChainConfiguration) (ChainClient, error) {
 		switch chain.ChainID {
 		case common.ETHChain:
@@ -52,7 +56,7 @@ func LoadChains(thorKeys *thorclient.Keys,
 		case common.XRPChain:
 			return xrp.NewClient(thorKeys, chain, server, thorchainBridge, m)
 		case common.TONChain:
-			return ton.NewTonClient(thorKeys, chain, server, thorchainBridge, m)
+			return ton.NewTonClient(thorKeys, chain, server, thorchainBridge, m, isMocknet)
 		default:
 			log.Fatal().Msgf("chain %s is not supported", chain.ChainID)
 			return nil, nil

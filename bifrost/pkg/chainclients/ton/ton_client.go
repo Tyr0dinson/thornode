@@ -5,7 +5,7 @@ import (
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
 	"sync"
@@ -71,6 +71,7 @@ func NewTonClient(
 	server *tctss.TssServer,
 	bridge thorclient.ThorchainBridge,
 	metrics *tcmetrics.Metrics,
+	testnet bool,
 ) (*TonClient, error) {
 	var err error
 
@@ -134,6 +135,7 @@ func NewTonClient(
 	if err != nil {
 		return nil, fmt.Errorf("failed to get private key: %w", err)
 	}
+	client.k = priv
 
 	pub, ok := priv.PubKey().(*cosmoscryptoed25519.PubKey)
 	if !ok {
@@ -143,6 +145,8 @@ func NewTonClient(
 	if err != nil {
 		return nil, fmt.Errorf("failed to get wallet address: %w", err)
 	}
+	tonWallet.SetBounce(false)
+	tonWallet.SetTestnetOnly(testnet)
 	client.localPubKey = tonWallet.String()
 
 	var path string // if not set later, will in memory storage
@@ -170,6 +174,7 @@ func NewTonClient(
 		config.BlockScanner,
 		client.bridge,
 		client.api,
+		testnet,
 	)
 	if err != nil {
 		return nil, err
@@ -373,46 +378,51 @@ func (c *TonClient) ConfirmationCountReady(_ types.TxIn) bool {
 func (c *TonClient) OnObservedTxIn(txIn types.TxInItem, height int64) {
 	c.logger.Info().Msgf("OnObservedTxIn height: %d", height)
 
-	memo, err := tcmemo.ParseMemo(common.LatestVersion, txIn.Memo)
+	m, err := tcmemo.ParseMemo(common.LatestVersion, txIn.Memo)
 	if err != nil {
 		// Debug log only as ParseMemo error is expected for THORName inbounds.
-		c.logger.Err(err).Msgf("fail to parse memo: %s", txIn.Memo)
+		c.logger.Debug().Err(err).Msgf("fail to parse memo: %s", txIn.Memo)
 		return
 	}
-
-	d, e := json.Marshal(txIn)
-	if e != nil {
-		c.logger.Debug().Err(e).Msgf("fail to marshal memo: %s\n", txIn.Memo)
+	if !m.IsOutbound() {
 		return
 	}
-
-	fmt.Println(string(d))
-
-	validTypes := map[tcmemo.TxType]struct{}{
-		tcmemo.TxMigrate:  {},
-		tcmemo.TxRagnarok: {},
-	}
-
-	_, ok := validTypes[memo.GetType()]
-	if !ok {
+	if m.GetTxID().IsEmpty() {
 		return
 	}
-
-	err = c.signerCacheManager.SetSigned(
-		txIn.CacheHash(c.config.ChainID, common.BlankTxID.String()),
-		txIn.CacheVault(c.GetChain()),
-		txIn.Tx,
-	)
-	if err != nil {
-		c.logger.Err(err).Msg("failed to update signer cache")
+	if err = c.signerCacheManager.SetSigned(txIn.CacheHash(c.GetChain(), m.GetTxID().String()), txIn.CacheVault(c.GetChain()), txIn.Tx); err != nil {
+		c.logger.Err(err).Msg("fail to update signer cache")
 	}
 }
 
 // SignTx returns the signed transaction.
 func (c *TonClient) SignTx(
 	txOutItem types.TxOutItem,
-	_ int64,
+	thorchainHeight int64,
 ) ([]byte, []byte, *types.TxInItem, error) {
+	var err error
+	defer func() {
+		if err != nil {
+			var keysignError tss.KeysignError
+			if errors.As(err, &keysignError) {
+				if len(keysignError.Blame.BlameNodes) == 0 {
+					c.logger.Err(err).Msg("TSS doesn't know which node to blame")
+					return
+				}
+
+				// key sign error forward the keysign blame to thorchain
+				var txID common.TxID
+				txID, err = c.bridge.PostKeysignFailure(keysignError.Blame, thorchainHeight, txOutItem.Memo, txOutItem.Coins, txOutItem.VaultPubKey)
+				if err != nil {
+					c.logger.Err(err).Msg("fail to post keysign failure to THORChain")
+					return
+				}
+				c.logger.Info().Str("tx_id", txID.String()).Msgf("post keysign failure to thorchain")
+			}
+			c.logger.Err(err).Msg("failed to sign tx")
+			return
+		}
+	}()
 	if c.signerCacheManager.HasSigned(txOutItem.CacheHash()) {
 		c.logger.Info().
 			Interface("tx", txOutItem).
@@ -508,24 +518,18 @@ func (c *TonClient) BroadcastTx(
 
 	tx, _, _, err := c.api.SendExternalMessageWaitTransaction(ctx, msg)
 
-	txHash := ""
-
-	if err == nil {
-		c.logger.Info().Msg("Broadcasted tx")
-		txHash = base64.StdEncoding.EncodeToString(tx.Hash)
+	if err != nil {
+		return "", fmt.Errorf("failed to broadcast transaction: %w", err)
 	}
 
-	err = c.signerCacheManager.SetSigned(
-		txOut.CacheHash(),
-		txOut.CacheVault(c.GetChain()),
-		txHash,
-	)
-	if err != nil {
-		c.logger.Err(err).Msg("failed to update signer cache")
+	c.logger.Info().Msg("Broadcasted tx")
+	txHash := base64.StdEncoding.EncodeToString(tx.Hash)
+
+	if err = c.signerCacheManager.SetSigned(txOut.CacheHash(), txOut.CacheVault(c.GetChain()), txHash); err != nil {
+		c.logger.Err(err).Msg("fail to set signer cache")
 	}
 
 	return txHash, nil
-
 }
 
 func (c *TonClient) ShouldReportSolvency(height int64) bool {
@@ -672,10 +676,21 @@ func (c *TonClient) createAndSignTx(
 		}
 	}
 
-	timeout := time.Now().UTC().
-		Truncate(TimestampAccuracy).
-		Add(TimestampAccuracy * -1).
-		Add(TimestampValidity)
+	thorHeight, err := c.bridge.GetBlockHeight()
+	if err != nil {
+		c.logger.Err(err).Msg("failed to fetch thorchain block height")
+		return nil, err
+	}
+
+	roundedHeight := thorHeight * 10 / 10
+
+	thorBlockTime, err := c.bridge.GetBlockTime(roundedHeight)
+	if err != nil {
+		c.logger.Err(err).Msg("failed to fetch node status")
+		return nil, err
+	}
+
+	timeout := thorBlockTime.UTC().Add(TimestampValidity)
 
 	c.logger.Info().Msgf("Timeout: %v", timeout.Format(time.RFC3339))
 
@@ -738,6 +753,17 @@ func (c *TonClient) createAndSignTx(
 		return nil, err
 	}
 
+	c.logger.Info().
+		Str("vault", txOutItem.VaultPubKeyEddsa.String()).
+		Str("from", fromAddress.String()).
+		Str("to", txOutItem.ToAddress.String()).
+		Str("amount", coin.Amount.String()).
+		Str("memo", txOutItem.Memo).
+		Uint64("seqno", seqno.Uint64()).
+		Time("timeout", timeout).
+		Str("signature", hex.EncodeToString(signature)).
+		Msg("Signed tx")
+
 	return body.EndCell().ToBOC(), nil
 }
 
@@ -759,10 +785,6 @@ func (c *TonClient) sign(txOut types.TxOutItem, message []byte) ([]byte, error) 
 			return nil, fmt.Errorf("failed to sign remote transaction: %w", err)
 		}
 	}
-
-	// TODO: check if this is needed
-	// slices.Reverse(signature)
-	// signature = append(signature[32:], signature[:32]...)
 
 	cryptoPubKey, err := cosmos.GetPubKeyFromBech32(
 		cosmos.Bech32PubKeyTypeAccPub,

@@ -42,6 +42,7 @@ const (
 	KeygenEndpoint           = "/thorchain/keygen"
 	KeysignEndpoint          = "/thorchain/keysign"
 	LastBlockEndpoint        = "/thorchain/lastblock"
+	BlockEndpoint            = "/thorchain/block"
 	NodeAccountEndpoint      = "/thorchain/node"
 	NodeAccountsEndpoint     = "/thorchain/nodes"
 	SignerMembershipEndpoint = "/thorchain/vaults/%s/signers"
@@ -110,6 +111,7 @@ type ThorchainBridge interface {
 	GetNodeAccount(string) (*stypes.NodeAccount, error)
 	GetNodeAccounts() ([]*stypes.NodeAccount, error)
 	GetKeygenBlock(int64, string) (stypes.KeygenBlock, error)
+	GetBlockTime(height int64) (time.Time, error)
 }
 
 // httpResponseCache used for caching HTTP responses for less frequent querying
@@ -195,6 +197,10 @@ func (b *thorchainBridge) getWithPath(path string) ([]byte, int, error) {
 	return b.get(b.getThorChainURL(path))
 }
 
+func (b *thorchainBridge) getWithPathAndQuery(path string, query string) ([]byte, int, error) {
+	return b.get(b.getThorChainURLWithQuery(path, query))
+}
+
 // get handle all the low level http GET calls using retryablehttp.ThorchainBridge
 func (b *thorchainBridge) get(url string) ([]byte, int, error) {
 	// To reduce querying time and chance of "429 Too Many Requests",
@@ -254,6 +260,21 @@ func (b *thorchainBridge) getThorChainURL(path string) string {
 		Scheme: "http",
 		Host:   b.cfg.ChainHost,
 		Path:   path,
+	}
+	return uri.String()
+}
+
+// getThorChainURLWithQuery with the given path and query
+func (b *thorchainBridge) getThorChainURLWithQuery(path string, query string) string {
+	if strings.HasPrefix(b.cfg.ChainHost, "http") {
+		return fmt.Sprintf("%s/%s", b.cfg.ChainHost, path)
+	}
+
+	uri := url.URL{
+		Scheme:   "http",
+		Host:     b.cfg.ChainHost,
+		Path:     path,
+		RawQuery: query,
 	}
 	return uri.String()
 }
@@ -876,4 +897,24 @@ func (b *thorchainBridge) GetTHORName(name string) (stypes.THORName, error) {
 		return stypes.THORName{}, fmt.Errorf("fail to unmarshal THORNames from json: %w", err)
 	}
 	return tn, nil
+}
+
+// GetLatestBlockTime get the latest block time from THORChain
+func (b *thorchainBridge) GetBlockTime(height int64) (time.Time, error) {
+	buf, s, err := b.getWithPathAndQuery(BlockEndpoint, fmt.Sprintf("height=%d", height))
+	if err != nil {
+		return time.Time{}, fmt.Errorf("fail to get latest block time: %w", err)
+	}
+	if s != http.StatusOK {
+		return time.Time{}, fmt.Errorf("unexpected status code: %d", s)
+	}
+	var resp struct {
+		Header struct {
+			Time time.Time `json:"time"`
+		} `json:"header"`
+	}
+	if err = json.Unmarshal(buf, &resp); err != nil {
+		return time.Time{}, fmt.Errorf("fail to unmarshal latest block time: %w", err)
+	}
+	return resp.Header.Time, nil
 }

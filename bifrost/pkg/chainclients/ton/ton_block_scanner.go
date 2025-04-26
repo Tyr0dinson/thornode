@@ -5,9 +5,8 @@ import (
 	"encoding/base64"
 	"fmt"
 	"math/big"
-	"regexp"
+	"sort"
 	"sync"
-	"time"
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -18,55 +17,52 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
+	"golang.org/x/sync/errgroup"
 )
 
+//var txOutRegexp = regexp.MustCompile("^(OUT|MIGRATE|RAGNAROK):.*")
+
 type TonBlockScanner struct {
-	config               config.BifrostBlockScannerConfiguration
-	logger               zerolog.Logger
-	bridge               thorclient.ThorchainBridge
-	api                  ton.APIClientWrapped
-	lastShards           map[string]uint32
-	regexp               *regexp.Regexp
-	lastReportedGasPrice uint64
+	config     config.BifrostBlockScannerConfiguration
+	logger     zerolog.Logger
+	bridge     thorclient.ThorchainBridge
+	api        ton.APIClientWrapped
+	lastShards map[string]uint32
+
+	feeRateCache []uint64
+	lastFeeRate  uint64
+	netFeeInit   bool
 
 	globalNetworkFeeQueue chan common.NetworkFee
+	testnet               bool
 }
 
 func NewTonBlockScanner(
 	cfg config.BifrostBlockScannerConfiguration,
 	bridge thorclient.ThorchainBridge,
 	api ton.APIClientWrapped,
+	testnet bool,
 ) (*TonBlockScanner, error) {
-	var err error
-
-	logger := log.Logger.With().
-		Str("module", "blockscanner").
-		Str("chain", cfg.ChainID.String()).
-		Logger()
-
-	scanner := TonBlockScanner{
-		config:     cfg,
-		logger:     logger,
-		bridge:     bridge,
-		api:        api,
-		lastShards: map[string]uint32{},
-	}
-
-	scanner.regexp, err = regexp.Compile("^(MIGRATE|RAGNAROK):.*")
-	if err != nil {
-		logger.Err(err).Msg("failed to compile regex")
-		return nil, err
-	}
-
-	return &scanner, nil
+	return &TonBlockScanner{
+		config: cfg,
+		logger: log.Logger.With().
+			Str("module", "blockscanner").
+			Str("chain", cfg.ChainID.String()).
+			Logger(),
+		bridge:       bridge,
+		api:          api,
+		testnet:      testnet,
+		lastFeeRate:  0,
+		feeRateCache: make([]uint64, 0),
+		lastShards:   make(map[string]uint32),
+	}, nil
 }
 
 // Return the latest block height from master chain
 func (s *TonBlockScanner) GetHeight() (int64, error) {
 	info, err := s.api.GetMasterchainInfo(context.Background())
 	if err != nil {
-		s.logger.Err(err).Msg("")
-		return 0, err
+		return 0, fmt.Errorf("failed to get masterchain info: %w", err)
 	}
 
 	// at least return current block height -1
@@ -102,10 +98,8 @@ func (s *TonBlockScanner) FetchTxs(
 	}
 
 	txIn := types.TxIn{
-		Chain:    s.config.ChainID,
-		TxArray:  txInItems,
-		Filtered: false,
-		MemPool:  false,
+		Chain:   s.config.ChainID,
+		TxArray: txInItems,
 	}
 
 	if fetchHeight%20 == 0 {
@@ -118,7 +112,7 @@ func (s *TonBlockScanner) FetchTxs(
 			TransactionRate: fee,
 		}
 
-		s.lastReportedGasPrice = fee
+		s.sendNetworkFeeIfNecessary(fetchHeight)
 
 		s.logger.Debug().
 			Uint64("fee", fee).
@@ -128,17 +122,74 @@ func (s *TonBlockScanner) FetchTxs(
 	return txIn, nil
 }
 
+// GetNetworkFee returns current chain network fee according to Bifrost.
 func (s *TonBlockScanner) GetNetworkFee() (transactionSize, transactionFeeRate uint64) {
-	if s.lastReportedGasPrice == 0 {
-		return 1, uint64(TxFee)
+	return 1, s.lastFeeRate
+}
+
+func (s *TonBlockScanner) sendNetworkFeeIfNecessary(height int64) {
+	if len(s.feeRateCache) == 0 {
+		// Not enough txs yet
+		return
 	}
 
-	return 1, s.lastReportedGasPrice
+	if len(s.feeRateCache) < s.config.GasCacheBlocks && s.netFeeInit {
+		// We are beyond the initial fee post, but not enough txs yet
+		return
+	}
+
+	// Calculate the median fee rate from the gas cache
+
+	medianFeeRate := calculateMedian(s.feeRateCache)
+
+	// round medianFeeRate to the nearest resolution
+	resolution := uint64(s.config.GasPriceResolution)
+	roundedFeeRate := ((medianFeeRate + (resolution / 2)) / resolution) * resolution
+
+	// truncate gas prices older than our max cached transactions
+	if len(s.feeRateCache) > s.config.GasCacheBlocks {
+		s.feeRateCache = s.feeRateCache[(len(s.feeRateCache) - s.config.GasCacheBlocks):]
+	}
+
+	if roundedFeeRate == 0 {
+		s.logger.Debug().Msg("network fee is 0")
+		return
+	}
+
+	s.netFeeInit = true
+
+	// Update the fee rate if it has changed
+	if roundedFeeRate == s.lastFeeRate {
+		s.logger.Info().Uint64("fee", roundedFeeRate).Msg("network fee is already up to date")
+		return
+	}
+
+	s.lastFeeRate = roundedFeeRate
+
+	s.globalNetworkFeeQueue <- common.NetworkFee{
+		Chain:           common.SOLChain,
+		Height:          int64(height),
+		TransactionSize: 1,
+		TransactionRate: roundedFeeRate,
+	}
+
+	s.logger.Info().
+		Uint64("fee", roundedFeeRate).
+		Int64("height", height).
+		Msg("sent network fee to THORChain")
+}
+
+// Calculates the median of a slice of uint64
+func calculateMedian(arr []uint64) uint64 {
+	sort.Slice(arr, func(i, j int) bool { return arr[i] < arr[j] })
+	n := len(arr)
+	if n%2 == 0 {
+		return (arr[n/2-1] + arr[n/2]) / 2
+	}
+	return arr[n/2]
 }
 
 func (s *TonBlockScanner) processMaster(masterSeqno uint32) ([]*types.TxInItem, error) {
-	start := time.Now()
-
 	master, err := s.api.LookupBlock(
 		context.Background(),
 		-1,
@@ -146,31 +197,21 @@ func (s *TonBlockScanner) processMaster(masterSeqno uint32) ([]*types.TxInItem, 
 		masterSeqno,
 	)
 	if err != nil {
-		s.logger.
-			Err(err).
-			Uint32("seqno", masterSeqno).
-			Msg("failed to lookup master block")
-		return nil, err
+		return nil, fmt.Errorf("failed to lookup master block seq %d: %w", masterSeqno, err)
 	}
-
-	var txInItems []*types.TxInItem
-	id := shardId(master)
 
 	shards, err := s.api.GetBlockShardsInfo(context.Background(), master)
 	if err != nil {
-		s.logger.
-			Err(err).
-			Uint32("seqno", masterSeqno).
-			Msg("failed to get shards for master block")
-		return nil, err
+		return nil, fmt.Errorf("failed to get shards for master block %d: %w", masterSeqno, err)
 	}
-
-	var wg sync.WaitGroup
-	var mtx sync.Mutex
 
 	// sort.Slice(shards, func(i, j int) bool {
 	// 	return shards[i].Shard < shards[j].Shard
 	// })
+
+	var txInItems []*types.TxInItem
+	var mu sync.Mutex
+	var eg errgroup.Group
 
 	for _, shard := range shards {
 		shardSeqno, found := s.lastShards[shardId(shard)]
@@ -181,77 +222,60 @@ func (s *TonBlockScanner) processMaster(masterSeqno uint32) ([]*types.TxInItem, 
 		}
 
 		for ; shardSeqno <= shard.SeqNo; shardSeqno++ {
-			wg.Add(1)
-
-			go func(shard *ton.BlockIDExt, shardSeqno uint32) {
-				items, err_ := s.processShard(shard.Workchain, shard.Shard, shardSeqno)
-				mtx.Lock()
-				defer mtx.Unlock()
-				if err_ != nil {
-					s.logger.
-						Err(err_).
-						Int32("workchain", shard.Workchain).
-						Int64("shard", shard.Shard).
-						Uint32("seqno", shardSeqno).
-						Msg("failed to process shard")
-					err = err_
-				} else {
-					txInItems = append(txInItems, items...)
+			sh := shard.Copy()
+			sh.SeqNo = shardSeqno
+			eg.Go(func() error {
+				items, err := s.processShard(sh)
+				if err != nil {
+					return fmt.Errorf("failed to process shard %d: %w", sh.SeqNo, err)
 				}
-				wg.Done()
-			}(shard, shardSeqno)
+				if len(items) == 0 {
+					return nil
+				}
+				mu.Lock()
+				defer mu.Unlock()
+				txInItems = append(txInItems, items...)
+				return nil
+			})
 		}
 	}
 
-	wg.Wait()
-
-	if err != nil {
+	if err := eg.Wait(); err != nil {
 		return nil, err
 	}
 
-	// update internal history
 	for _, shard := range shards {
 		s.lastShards[shardId(shard)] = shard.SeqNo
 	}
 
-	s.logger.Info().
-		Str("id", fmt.Sprintf("(%s,%d)", id, masterSeqno)).
+	s.logger.Debug().
+		Int32("workchain", master.Workchain).
+		Int64("shard", master.Shard).
+		Uint32("seqno", master.SeqNo).
 		Int("txs", len(txInItems)).
-		Str("duration", time.Since(start).String()).
-		Msg("master block done")
+		Msg("Master block processed")
 
 	return txInItems, nil
 }
 
 func (s *TonBlockScanner) processShard(
-	workchain int32,
-	shard int64,
-	seqno uint32,
+	shard *ton.BlockIDExt,
 ) ([]*types.TxInItem, error) {
-	block, err := s.api.LookupBlock(context.Background(), workchain, shard, seqno)
+	if shard.SeqNo == 0 {
+		return nil, nil
+	}
+
+	block, err := s.api.LookupBlock(context.Background(), shard.Workchain, shard.Shard, shard.SeqNo)
 	if err != nil {
-		s.logger.
-			Err(err).
-			Int32("workchain", workchain).
-			Int64("shard", shard).
-			Uint32("seqno", seqno).
-			Msg("failed to lookup block")
-		return nil, err
+		return nil, fmt.Errorf("failed to lookup shard block %d: %w", shard.SeqNo, err)
 	}
 
 	data, err := s.api.GetBlockData(context.Background(), block)
 	if err != nil {
-		s.logger.
-			Err(err).
-			Int32("workchain", workchain).
-			Int64("shard", shard).
-			Uint32("seqno", seqno).
-			Msg("failed to get block data")
-		return nil, err
+		return nil, fmt.Errorf("failed to get shard block data %d: %w", shard.SeqNo, err)
 	}
 
 	info := data.BlockInfo
-	id := shardId(block)
 
 	txInfos, _, err := s.api.GetBlockTransactionsV2(
 		context.TODO(),
@@ -260,8 +284,7 @@ func (s *TonBlockScanner) processShard(
 		nil,
 	)
 	if err != nil {
-		s.logger.Err(err).Msg("failed getting transactions")
-		return nil, err
+		return nil, fmt.Errorf("failed to get transactions %d: %w", shard.SeqNo, err)
 	}
 
 	var txInItems []*types.TxInItem
@@ -279,6 +302,8 @@ func (s *TonBlockScanner) processShard(
 			s.logger.Err(err).Msg("failed getting tx info")
 		}
 
+		s.feeRateCache = append(s.feeRateCache, tx.TotalFees.Coins.Nano().Uint64())
+
 		// we are interested in "ordinary" transactions only
 		// https://docs.ton.org/v3/documentation/data-formats/tlb/transaction-layout
 		txDescription, ok := tx.Description.Description.(tlb.TransactionDescriptionOrdinary)
@@ -286,94 +311,47 @@ func (s *TonBlockScanner) processShard(
 			continue
 		}
 
-		// get relevant messages going out from a TON wallet
+		if txDescription.Aborted {
+			continue
+		}
+
+		msgs := make([]tlb.Message, 0)
+		if tx.IO.In != nil {
+			msgs = append(msgs, *tx.IO.In)
+		}
 		if tx.IO.Out != nil {
-			messages, err := tx.IO.Out.ToSlice()
+			outMsgs, err := tx.IO.Out.ToSlice()
 			if err != nil {
 				s.logger.Err(err).Msg("failed to get out msgs")
-			}
-
-			for i := range messages {
-				if messages[i].MsgType != tlb.MsgTypeInternal {
-					continue
-				}
-
-				message := messages[i].AsInternal()
-
-				// messages going out from THORChain don't have that flag set
-				if message.Bounce {
-					continue
-				}
-
-				if message.Comment() == "" {
-					continue
-				}
-
-				// we are only interested in certain tx types
-				if !s.regexp.MatchString(message.Comment()) {
-					continue
-				}
-
-				items, err := s.processMessage(tx, message)
-				if err != nil {
-					s.logger.Err(err).Msg("failed to get outgoing txs")
-					continue
-				}
-
-				txInItems = append(txInItems, items...)
+			} else {
+				msgs = append(msgs, outMsgs...)
 			}
 		}
 
-		// get relevant message going into a TON wallet
-		if tx.IO.In != nil {
-			if tx.IO.In.MsgType != tlb.MsgTypeInternal {
+		for _, m := range msgs {
+			// we are interested in internal messages only
+			if m.MsgType != tlb.MsgTypeInternal {
 				continue
 			}
 
-			if txDescription.Aborted {
-				// double check if transaction is skipped...
-				phaseSkipped, ok := txDescription.ComputePhase.Phase.(tlb.ComputePhaseSkipped)
-				if !ok {
-					continue
-				}
+			message := m.AsInternal()
 
-				// ...and the reason is acceptable
-				validReasons := map[tlb.ComputeSkipReasonType]struct{}{
-					tlb.ComputeSkipReasonNoState: {},
-					tlb.ComputeSkipReasonNoGas:   {},
-				}
-
-				_, ok = validReasons[phaseSkipped.Reason.Type]
-				if !ok {
-					continue
-				}
+			// we do not support bounce (returnable) messages.
+			if message.Bounce {
+				s.logger.Debug().
+					Msg("skipping bounce message")
+				continue
 			}
-
-			message := tx.IO.In.AsInternal()
-
-			// bounced messages are no valid deposits
-			// TODO: Discuss if messages if "bouncable" flag should be accepted
-			// 		 too, each wallet will probably set that by default
 			if message.Bounced {
-				continue
-			}
-
-			// we can't do anything without a memo
-			if message.Comment() == "" {
-				continue
-			}
-
-			// we are not interested in certain memos, that are only sent from
-			// THORChain itself, to prevent double counting (outgoing tx should
-			// have been observed already
-			if s.regexp.MatchString(message.Comment()) {
+				s.logger.Debug().
+					Msg("skipping bounced message")
 				continue
 			}
 
 			items, err := s.processMessage(tx, message)
 			if err != nil {
-				s.logger.Err(err).Msg("failed to get incoming txs")
-				return nil, err
+				s.logger.Err(err).Msg("failed to get outgoing txs")
+				continue
 			}
 
 			txInItems = append(txInItems, items...)
@@ -395,9 +373,11 @@ func (s *TonBlockScanner) processShard(
 	s.logger.Debug().
 		Bool("split", info.AfterSplit).
 		Bool("merged", info.AfterMerge).
-		Str("id", fmt.Sprintf("(%s,%d)", id, seqno)).
+		Int32("workchain", shard.Workchain).
+		Int64("shard", shard.Shard).
+		Uint32("seqno", shard.SeqNo).
 		Int("txs", len(txInItems)).
-		Msg("")
+		Msg("Processed shard")
 
 	return txInItems, nil
 }
@@ -410,11 +390,12 @@ func (s *TonBlockScanner) processMessage(
 
 	hash := base64.StdEncoding.EncodeToString(tx.Hash)
 	sender := message.SrcAddr
-	dest := message.DestAddr()
+	dest := message.DstAddr
 
-	// TODO: Check if distinguishing between mainnet and testnet is needed
 	sender.SetBounce(false)
 	dest.SetBounce(false)
+	sender.SetTestnetOnly(s.testnet)
+	dest.SetTestnetOnly(s.testnet)
 
 	amount := message.Amount.Nano()
 
