@@ -104,7 +104,6 @@ func (s *TonBlockScanner) FetchTxs(
 	}
 
 	if fetchHeight%20 == 0 {
-
 		s.sendNetworkFeeIfNecessary(fetchHeight)
 	}
 
@@ -214,7 +213,7 @@ func (s *TonBlockScanner) processMaster(masterSeqno uint32) ([]*types.TxInItem, 
 			sh := shard.Copy()
 			sh.SeqNo = shardSeqno
 			eg.Go(func() error {
-				items, err := s.processShard(sh)
+				items, err := s.processShard(masterSeqno, sh)
 				if err != nil {
 					return fmt.Errorf("failed to process shard %d: %w", sh.SeqNo, err)
 				}
@@ -248,6 +247,7 @@ func (s *TonBlockScanner) processMaster(masterSeqno uint32) ([]*types.TxInItem, 
 }
 
 func (s *TonBlockScanner) processShard(
+	masterSeqno uint32,
 	shard *ton.BlockIDExt,
 ) ([]*types.TxInItem, error) {
 	if shard.SeqNo == 0 {
@@ -301,7 +301,7 @@ func (s *TonBlockScanner) processShard(
 		}
 
 		if txDescription.Aborted {
-			s.logger.Warn().
+			s.logger.Debug().
 				Str("hash", hex.EncodeToString(tx.Hash)).
 				Uint32("block_height", block.SeqNo).
 				Str("lt", fmt.Sprintf("%d", tx.LT)).
@@ -319,16 +319,14 @@ func (s *TonBlockScanner) processShard(
 
 		isInternalOnly := true
 
-		msgs := make([]tlb.Message, 0)
-		if tx.IO.In != nil {
-			msgs = append(msgs, *tx.IO.In)
-		}
+		var msgs []tlb.Message
+		// process out messages only, as they are the result after tx execution.
 		if tx.IO.Out != nil {
 			outMsgs, err := tx.IO.Out.ToSlice()
 			if err != nil {
 				s.logger.Err(err).Msg("failed to get out msgs")
 			} else {
-				msgs = append(msgs, outMsgs...)
+				msgs = outMsgs
 			}
 		}
 
@@ -353,9 +351,9 @@ func (s *TonBlockScanner) processShard(
 				continue
 			}
 
-			items, err := s.processMessage(tx, message)
+			items, err := s.processMessage(int64(masterSeqno), shard, tx, message)
 			if err != nil {
-				s.logger.Err(err).Msg("failed to get outgoing txs")
+				s.logger.Err(err).Msg("failed to process message")
 				continue
 			}
 
@@ -392,6 +390,8 @@ func (s *TonBlockScanner) processShard(
 }
 
 func (s *TonBlockScanner) processMessage(
+	masterSeqno int64,
+	shard *ton.BlockIDExt,
 	tx *tlb.Transaction,
 	message *tlb.InternalMessage,
 ) ([]*types.TxInItem, error) {
@@ -436,10 +436,11 @@ func (s *TonBlockScanner) processMessage(
 		Uint64("amount", amount.Uint64()).
 		Uint64("gas", tx.TotalFees.Coins.Nano().Uint64()).
 		Str("memo", message.Comment()).
+		Str("shard", shardId(shard)).
 		Msg("processing message")
 
 	txInItems = append(txInItems, &types.TxInItem{
-		BlockHeight: -1,
+		BlockHeight: masterSeqno,
 		Tx:          hash,
 		Memo:        message.Comment(),
 		Sender:      sender.String(),

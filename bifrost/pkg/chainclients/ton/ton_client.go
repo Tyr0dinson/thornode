@@ -691,8 +691,6 @@ func (c *TonClient) createAndSignTx(
 
 	timeout := thorBlockTime.UTC().Add(TimestampValidity)
 
-	c.logger.Info().Msgf("Timeout: %v", timeout.Format(time.RFC3339))
-
 	payload := cell.BeginCell()
 
 	err = payload.StoreUInt(uint64(wallet.DefaultSubwallet), 32)
