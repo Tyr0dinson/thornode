@@ -124,6 +124,7 @@ func InitConfig(parallelism int, seed bool) *OpConfig {
 				{common.AVAXChain, 80000, 150},
 				{common.BASEChain, 80000, 30},
 				{common.ETHChain, 80000, 30},
+				{common.TONChain, 1, 550_000},
 			}
 			for _, fee := range defaultFees {
 				log.Info().Msgf("posting %s network fee", fee.chain)

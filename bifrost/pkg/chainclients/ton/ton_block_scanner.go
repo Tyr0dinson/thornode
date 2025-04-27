@@ -3,6 +3,7 @@ package ton
 import (
 	"context"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"math/big"
 	"sort"
@@ -103,20 +104,8 @@ func (s *TonBlockScanner) FetchTxs(
 	}
 
 	if fetchHeight%20 == 0 {
-		fee := toThor(big.NewInt(TxFee)).Uint64()
-
-		s.globalNetworkFeeQueue <- common.NetworkFee{
-			Chain:           s.config.ChainID,
-			Height:          fetchHeight,
-			TransactionSize: 1,
-			TransactionRate: fee,
-		}
 
 		s.sendNetworkFeeIfNecessary(fetchHeight)
-
-		s.logger.Debug().
-			Uint64("fee", fee).
-			Msg("updated network fee")
 	}
 
 	return txIn, nil
@@ -167,7 +156,7 @@ func (s *TonBlockScanner) sendNetworkFeeIfNecessary(height int64) {
 	s.lastFeeRate = roundedFeeRate
 
 	s.globalNetworkFeeQueue <- common.NetworkFee{
-		Chain:           common.SOLChain,
+		Chain:           common.TONChain,
 		Height:          int64(height),
 		TransactionSize: 1,
 		TransactionRate: roundedFeeRate,
@@ -291,6 +280,8 @@ func (s *TonBlockScanner) processShard(
 
 	for _, txInfo := range txInfos {
 		addr := address.NewAddress(0x17, 0x00, txInfo.Account)
+		addr.SetBounce(false)
+		addr.SetTestnetOnly(s.testnet)
 
 		tx, err := s.api.GetTransaction(
 			context.TODO(),
@@ -302,8 +293,6 @@ func (s *TonBlockScanner) processShard(
 			s.logger.Err(err).Msg("failed getting tx info")
 		}
 
-		s.feeRateCache = append(s.feeRateCache, tx.TotalFees.Coins.Nano().Uint64())
-
 		// we are interested in "ordinary" transactions only
 		// https://docs.ton.org/v3/documentation/data-formats/tlb/transaction-layout
 		txDescription, ok := tx.Description.Description.(tlb.TransactionDescriptionOrdinary)
@@ -312,8 +301,23 @@ func (s *TonBlockScanner) processShard(
 		}
 
 		if txDescription.Aborted {
+			s.logger.Warn().
+				Str("hash", hex.EncodeToString(tx.Hash)).
+				Uint32("block_height", block.SeqNo).
+				Str("lt", fmt.Sprintf("%d", tx.LT)).
+				Str("account", addr.String()).
+				Msg("skipping aborted transaction")
 			continue
 		}
+
+		s.logger.Info().
+			Str("hash", hex.EncodeToString(tx.Hash)).
+			Uint32("block_height", block.SeqNo).
+			Str("lt", fmt.Sprintf("%d", tx.LT)).
+			Str("account", addr.String()).
+			Msg("processing transaction")
+
+		isInternalOnly := true
 
 		msgs := make([]tlb.Message, 0)
 		if tx.IO.In != nil {
@@ -331,6 +335,7 @@ func (s *TonBlockScanner) processShard(
 		for _, m := range msgs {
 			// we are interested in internal messages only
 			if m.MsgType != tlb.MsgTypeInternal {
+				isInternalOnly = false
 				continue
 			}
 
@@ -355,6 +360,10 @@ func (s *TonBlockScanner) processShard(
 			}
 
 			txInItems = append(txInItems, items...)
+		}
+
+		if isInternalOnly && !txDescription.Aborted {
+			s.feeRateCache = append(s.feeRateCache, tx.TotalFees.Coins.Nano().Uint64())
 		}
 	}
 
@@ -415,10 +424,19 @@ func (s *TonBlockScanner) processMessage(
 	}}
 
 	gas := common.Gas{{
-		Amount: toThor(big.NewInt(TxFee)),
+		Amount: toThor(big.NewInt(tx.TotalFees.Coins.Nano().Int64())),
 		Asset:  common.TONAsset,
 		// Decimals: 9,
 	}}
+
+	s.logger.Info().
+		Str("hash", hash).
+		Str("sender", sender.String()).
+		Str("dest", dest.String()).
+		Uint64("amount", amount.Uint64()).
+		Uint64("gas", tx.TotalFees.Coins.Nano().Uint64()).
+		Str("memo", message.Comment()).
+		Msg("processing message")
 
 	txInItems = append(txInItems, &types.TxInItem{
 		BlockHeight: -1,

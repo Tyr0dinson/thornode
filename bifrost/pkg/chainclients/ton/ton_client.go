@@ -40,7 +40,6 @@ import (
 
 const (
 	V3R2CodeHex              = "B5EE9C724101010100710000DEFF0020DD2082014C97BA218201339CBAB19F71B0ED44D0D31FD31F31D70BFFE304E0A4F2608308D71820D31FD31FD31FF82313BBF263ED44D0D31FD31FD3FFD15132BAF2A15144BAF2A204F901541055F910F2A3F8009320D74A96D307D402FB00E8D101A4C8CB1FCB1FCBFFC9ED5410BD6DAD"
-	TxFee                    = 5_000_000 // 0.005 TON
 	ConfirmationBlocks int64 = 3
 	TimestampAccuracy        = 10 * time.Second
 	TimestampValidity        = 5 * time.Minute
@@ -552,7 +551,7 @@ func (c *TonClient) ReportSolvency(height int64) error {
 		return fmt.Errorf("fail to get asgards,err: %w", err)
 	}
 
-	fee := toThor(big.NewInt(TxFee))
+	fee := toThor(big.NewInt(int64(c.tonScanner.lastFeeRate)))
 
 	solventMsgs := make([]types.Solvency, 0, len(vaults))
 	insolventMsgs := make([]types.Solvency, 0, len(vaults))
