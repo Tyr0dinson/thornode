@@ -310,7 +310,7 @@ func (s *TonBlockScanner) processShard(
 			continue
 		}
 
-		s.logger.Info().
+		s.logger.Debug().
 			Str("hash", hex.EncodeToString(tx.Hash)).
 			Uint32("block_height", block.SeqNo).
 			Str("lt", fmt.Sprintf("%d", tx.LT)).
@@ -429,7 +429,7 @@ func (s *TonBlockScanner) processMessage(
 		// Decimals: 9,
 	}}
 
-	s.logger.Info().
+	s.logger.Debug().
 		Str("hash", hash).
 		Str("sender", sender.String()).
 		Str("dest", dest.String()).
