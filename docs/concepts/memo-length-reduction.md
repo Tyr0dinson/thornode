@@ -39,6 +39,7 @@ Native asset names can be shortened to reduce the length of the memo. The exact 
 | e             | ETH.ETH        |
 | l             | LTC.LTC        |
 | f             | BASE.ETH       |
+| tr            | TRON.TRX       |
 
 **Example Swaps**:
 

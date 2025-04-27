@@ -277,6 +277,8 @@ logs-mocknet:
 
 reset-mocknet: stop-mocknet run-mocknet
 
+restart-mocknet: halt-mocknet run-mocknet
+
 # ------------------------------ Mocknet EVM Fork ------------------------------
 
 reset-mocknet-fork-%: stop-mocknet

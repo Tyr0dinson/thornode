@@ -212,6 +212,22 @@ func Init() {
 		"bifrost.chains.SOL.block_scanner.rpc_host",
 		"SOL_HOST",
 	))
+	assert(viper.BindEnv(
+		"bifrost.chains.TRON.api_host",
+		"TRON_API_HOST",
+	))
+	assert(viper.BindEnv(
+		"bifrost.chains.TRON.block_scanner.api_host",
+		"TRON_API_HOST",
+	))
+	assert(viper.BindEnv(
+		"bifrost.chains.TRON.rpc_host",
+		"TRON_RPC_HOST",
+	))
+	assert(viper.BindEnv(
+		"bifrost.chains.TRON.block_scanner.rpc_host",
+		"TRON_RPC_HOST",
+	))
 	assert(viper.BindEnv("bifrost.chains.GAIA.disabled", "GAIA_DISABLED"))
 	assert(viper.BindEnv("bifrost.chains.DOGE.disabled", "DOGE_DISABLED"))
 	assert(viper.BindEnv("bifrost.chains.LTC.disabled", "LTC_DISABLED"))
@@ -503,6 +519,7 @@ type Bifrost struct {
 		GAIA BifrostChainConfiguration `mapstructure:"gaia"`
 		LTC  BifrostChainConfiguration `mapstructure:"ltc"`
 		BASE BifrostChainConfiguration `mapstructure:"base"`
+		TRON BifrostChainConfiguration `mapstructure:"tron"`
 		XRP  BifrostChainConfiguration `mapstructure:"xrp"`
 		SOL  BifrostChainConfiguration `mapstructure:"sol"`
 	} `mapstructure:"chains"`
@@ -521,6 +538,7 @@ func (b Bifrost) GetChains() map[common.Chain]BifrostChainConfiguration {
 		common.GAIAChain: b.Chains.GAIA,
 		common.LTCChain:  b.Chains.LTC,
 		common.BASEChain: b.Chains.BASE,
+		common.TRONChain: b.Chains.TRON,
 		common.XRPChain:  b.Chains.XRP,
 		common.SOLChain:  b.Chains.SOL,
 	}
@@ -618,6 +636,7 @@ type BifrostChainConfiguration struct {
 	UserName            string                           `mapstructure:"username"`
 	Password            string                           `mapstructure:"password"`
 	RPCHost             string                           `mapstructure:"rpc_host"`
+	APIHost             string                           `mapstructure:"api_host"`
 	CosmosGRPCHost      string                           `mapstructure:"cosmos_grpc_host"`
 	CosmosGRPCTLS       bool                             `mapstructure:"cosmos_grpc_tls"`
 	HTTPostMode         bool                             `mapstructure:"http_post_mode"` // Bitcoin core only supports HTTP POST mode
@@ -714,12 +733,25 @@ type BifrostChainConfiguration struct {
 }
 
 func (b *BifrostChainConfiguration) Validate() {
-	if b.RPCHost == "" {
-		log.Fatal().Str("chain", b.ChainID.String()).Msg("rpc host is required")
+	switch b.ChainID {
+	case common.TRONChain:
+		if b.APIHost == "" {
+			log.Fatal().
+				Str("chain", b.ChainID.String()).
+				Msg("api host is required")
+		}
+	default:
+		if b.RPCHost == "" {
+			log.Fatal().
+				Str("chain", b.ChainID.String()).
+				Msg("rpc host is required")
+		}
 	}
 }
 
 type BifrostBlockScannerConfiguration struct {
+	APIHost                    string        `mapstructure:"api_host"`
+	RPCHost                    string        `mapstructure:"rpc_host"`
 	StartBlockHeight           int64         `mapstructure:"start_block_height"`
 	BlockScanProcessors        int           `mapstructure:"block_scan_processors"`
 	HTTPRequestTimeout         time.Duration `mapstructure:"http_request_timeout"`

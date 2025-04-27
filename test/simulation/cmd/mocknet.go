@@ -36,6 +36,7 @@ var chainRPCs = map[common.Chain]string{
 	common.AVAXChain: "http://localhost:9650/ext/bc/C/rpc",
 	common.GAIAChain: "localhost:9091",
 	common.BASEChain: "http://localhost:8547",
+	common.TRONChain: "http://localhost:8090",
 	common.XRPChain:  "http://localhost:5005",
 	common.SOLChain:  "http://localhost:8899",
 }
@@ -228,6 +229,8 @@ func InitConfig(parallelism int, seed bool) *OpConfig {
 			common.XRPChain: // more since dust threshold is 1 XRP
 			chainSeedAmount = sdkmath.NewUint(10000 * common.One)
 		case common.DOGEChain:
+			chainSeedAmount = sdkmath.NewUint(100000 * common.One)
+		case common.TRONChain:
 			chainSeedAmount = sdkmath.NewUint(100000 * common.One)
 		default:
 			continue // all other chains currently unsupported

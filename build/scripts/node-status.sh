@@ -33,6 +33,7 @@ ETHEREUM_BEACON_ENDPOINT=$(echo "$ETHEREUM_ENDPOINT" | sed 's/:[0-9]*$/:3500/g')
 BINANCE_SMART_ENDPOINT="${BSC_HOST:-http://binance-smart-daemon:${BINANCE_SMART_DAEMON_SERVICE_PORT_RPC:-8545}}"
 GAIA_ENDPOINT="${GAIA_HOST:-http://gaia-daemon:26657}"
 AVALANCHE_ENDPOINT="${AVAX_HOST:-http://avalanche-daemon:9650/ext/bc/C/rpc}"
+TRON_ENDPOINT="${TRON_HOST:-http://tron-daemon:16667}"
 
 ADDRESS=$(echo "$SIGNER_PASSWD" | thornode keys show "$SIGNER_NAME" -a --keyring-backend file)
 JSON=$(curl -sL --fail -m 10 "$API/thorchain/node/$ADDRESS")
@@ -127,6 +128,11 @@ if [ "$VALIDATOR" = "true" ]; then
     fi
     BSC_PROGRESS=$(calc_progress "$BSC_SYNC_HEIGHT" "$BSC_HEIGHT")
   fi
+
+  # calculate Tron chain sync progress
+  TRON_HEIGHT=$(curl -sL --fail -m 10 https://api.trongrid.io/wallet/getnowblock | jq ".block_header.raw_data.number")
+  TRON_SYNC_HEIGHT=$(curl -sL --fail -m 10 "$TRON_ENDPOINT/wallet/getnowblock" | jq ".block_header.raw_data.number")
+  TRON_PROGRESS=$(calc_progress "$TRON_SYNC_HEIGHT" "$TRON_HEIGHT")
 fi
 
 # calculate THOR chain sync progress
@@ -189,6 +195,8 @@ DOGE_HEIGHT=${DOGE_HEIGHT:=0}
 DOGE_SYNC_HEIGHT=${DOGE_SYNC_HEIGHT:=0}
 GAIA_HEIGHT=${GAIA_HEIGHT:=0}
 GAIA_SYNC_HEIGHT=${GAIA_SYNC_HEIGHT:=0}
+TRON_HEIGHT=${TRON_HEIGHT:=0}
+TRON_SYNC_HEIGHT=${TRON_SYNC_HEIGHT:=0}
 
 echo
 printf "%-18s %-10s %-14s %-10s\n" CHAIN SYNC BEHIND TIP
@@ -206,6 +214,7 @@ if [ "$VALIDATOR" = "true" ]; then
   if [ -z "$BSC_DISABLED" ]; then
     printf "%-18s %-10s %-14s %-10s\n" BSC "$BSC_PROGRESS" "$(format_int $((BSC_SYNC_HEIGHT - BSC_HEIGHT)))" "$(format_int "$BSC_HEIGHT")"
   fi
+  printf "%-18s %-10s %-14s %-10s\n" TRON "$TRON_PROGRESS" "$(format_int $((TRON_SYNC_HEIGHT - TRON_HEIGHT)))" "$(format_int "$TRON_HEIGHT")"
 fi
 
 # skip unbond eta calculation if not within 100 blocks of tip

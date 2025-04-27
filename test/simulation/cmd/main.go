@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"net/http"
 	"os"
 	"strconv"
@@ -23,6 +24,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/dag"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/evm"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/solana"
+	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/tron"
 	. "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/utxo"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/xrp"
@@ -46,6 +48,7 @@ var liteClientConstructors = map[common.Chain]LiteChainClientConstructor{
 	common.AVAXChain: evm.NewConstructor(chainRPCs[common.AVAXChain]),
 	common.GAIAChain: pkgcosmos.NewConstructor(chainRPCs[common.GAIAChain]),
 	common.BASEChain: evm.NewConstructor(chainRPCs[common.BASEChain]),
+	common.TRONChain: tron.NewConstructor(chainRPCs[common.TRONChain]),
 	common.XRPChain:  xrp.NewConstructor(chainRPCs[common.XRPChain]),
 	common.SOLChain:  solana.NewConstructor(chainRPCs[common.SOLChain]),
 }
@@ -112,6 +115,33 @@ func main() {
 		}
 		log.Info().Msg("waiting for bifrost to be ready")
 		time.Sleep(time.Second)
+	}
+
+	// wait for tron chain to produce its first block
+	for _, chain := range common.AllChains {
+		if chain != common.TRONChain {
+			continue
+		}
+
+		for {
+			res, err := http.Post(
+				"http://localhost:8090/wallet/getblockbynum",
+				"application/json",
+				strings.NewReader(`{"num":1}`),
+			)
+
+			if err == nil && res.StatusCode == 200 {
+				defer res.Body.Close()
+
+				data, err := io.ReadAll(res.Body)
+				if err == nil && len(data) > 3 {
+					break
+				}
+			}
+
+			log.Info().Msg("waiting for tron to be ready")
+			time.Sleep(time.Second)
+		}
 	}
 
 	// combine all actor dags for the complete test run

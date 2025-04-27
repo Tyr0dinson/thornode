@@ -27,6 +27,7 @@ bifrost:
       - LTC
       - BSC
       - BASE
+      - TRON
       - XRP
       - SOL
   thorchain:
@@ -122,6 +123,8 @@ bifrost:
         max_contract_tx_logs: 0
 
         # the following defaults must be defined to override with environment
+        rpc_host: ""
+        api_host: ""
         start_block_height: 0
         cosmos_grpc_host: ""
         cosmos_grpc_tls: false
@@ -140,6 +143,7 @@ bifrost:
       chain_host: ""
       chain_network: ""
       rpc_host: ""
+      api_host: ""
       cosmos_grpc_host: ""
       cosmos_grpc_tls: false
       opt_to_retire: false
@@ -189,6 +193,20 @@ bifrost:
           # - 0x0578d8A44db98B23BF096A382e016e29a5Ce0ffe # Higher
           # - 0x1bc0c42215582d5A085795f4baDbaC3ff36d1Bcb # Clanker
           - 0x60a3E35Cc302bFA44Cb288Bc5a4F316Fdb1adb42 # EURC
+      mempool_tx_id_cache_size: 0
+      scanner_leveldb: *default-leveldb
+
+    tron:
+      <<: *default-chain
+      chain_id: TRON
+      block_scanner:
+        <<: *default-block-scanner
+        chain_id: TRON
+        gas_price_resolution: 100_000
+        observation_flexibility_blocks: 40
+        scan_mempool: false
+        # whitelist_tokens:
+        #   - TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf # USDT
       mempool_tx_id_cache_size: 0
       scanner_leveldb: *default-leveldb
 

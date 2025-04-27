@@ -151,6 +151,8 @@ services:
       - dogecoin
       - gaia
       - litecoin
+      - tron-supernode
+      - tron-fullnode
       - thornode
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -169,6 +171,8 @@ services:
       GAIA_HOST: ${GAIA_HOST:-http://gaia:26657}
       SOL_HOST: ${SOL_HOST:-http://solana:8899}
       GAIA_GRPC_HOST: ${GAIA_GRPC_HOST:-gaia:9090}
+      TRON_API_HOST: ${TRON_API_HOST:-http://tron-fullnode:8090}
+      TRON_RPC_HOST: ${TRON_RPC_HOST:-http://tron-fullnode:8091}
       THOR_BLOCK_TIME: ${BLOCK_TIME:-1s}
       BLOCK_SCANNER_BACKOFF: ${BLOCK_SCANNER_BACKOFF:-5s}
       PEER: ${PEER:-}
@@ -599,3 +603,30 @@ services:
       RPC_PORT: "8899"
       AIRDROP_ADDRESS: "AAH1XhfycX678et7Pjvwp1DMWnHpSP92wpJwV19MXHtX"
       AIRDROP_AMOUNT: "10000"
+  # ------------------------------ tron ------------------------------
+
+  tron-supernode:
+    profiles:
+      - mocknet
+      - mocknet-cluster
+    image: starsquid/tron-daemon:4.7.7
+    volumes:
+      - "./mocknet:/mocknet"
+    environment:
+      TRON_NODE_TYPE: mocknet-supernode
+
+  tron-fullnode:
+    profiles:
+      - mocknet
+      - mocknet-cluster
+    image: starsquid/tron-daemon:4.7.7
+    links:
+      - tron-supernode:supernode
+    volumes:
+      - "./mocknet:/mocknet"
+    ports:
+      - "8090:8090"
+      - "8091:9081"
+    environment:
+      TRON_NODE_TYPE: mocknet-fullnode
+      TRON_SEED_NODE: docker-tron-supernode-1:18888

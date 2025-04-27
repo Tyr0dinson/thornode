@@ -39,6 +39,11 @@ func NewAddress(address string) (Address, error) {
 		return NoAddress, nil
 	}
 
+	// Check Tron Base52 address
+	if len(address) == 34 && address[:1] == "T" {
+		return Address(address), nil
+	}
+
 	if !alphaNumRegex.MatchString(address) {
 		return NoAddress, fmt.Errorf("address format not supported: %s", address)
 	}
