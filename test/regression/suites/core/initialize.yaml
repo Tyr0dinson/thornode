@@ -16,7 +16,7 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/inbound_addresses
 asserts:
-  - .|length == 10
+  - .|length == 11
   # all addresses should be for the dog mnemonic
   - .[]|select(.chain == "AVAX")|.address == "{{ addr_avax_dog }}"
   - .[]|select(.chain == "BCH")|.address == "{{ addr_bch_dog }}"
@@ -29,7 +29,7 @@ asserts:
   - .[]|select(.chain == "BASE")|.address == "{{ addr_base_dog }}"
   - .[]|select(.chain == "XRP")|.address == "{{ addr_xrp_dog }}"
   # the pubkey on all inbound addresses should be the dog public key
-  - '[.[]|select(.pub_key == "{{ pubkey_dog }}")]|length == 10'
+  - '[.[]|select(.pub_key == "{{ pubkey_dog }}")]|length == 11'
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/network?height=1000
