@@ -10,14 +10,14 @@ import (
 	tcrypto "github.com/cometbft/cometbft/crypto"
 	"github.com/cometbft/cometbft/crypto/secp256k1"
 	coskey "github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
-	sdk "github.com/cosmos/cosmos-sdk/types/bech32/legacybech32" // nolint:staticcheck
+	sdk "github.com/cosmos/cosmos-sdk/types/bech32/legacybech32"
 	"github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/libp2p/go-libp2p-core/peer"
 )
 
 // GetPeerIDFromPubKey get the peer.ID from bech32 format node pub key
 func GetPeerIDFromPubKey(pubkey string) (peer.ID, error) {
-	pk, err := sdk.UnmarshalPubKey(sdk.AccPK, pubkey) // nolint:staticcheck
+	pk, err := sdk.UnmarshalPubKey(sdk.AccPK, pubkey)
 	if err != nil {
 		return "", fmt.Errorf("fail to parse account pub key(%s): %w", pubkey, err)
 	}
@@ -84,7 +84,7 @@ func GetPubKeyFromPeerID(pID string) (string, error) {
 	pubKey := coskey.PubKey{
 		Key: rawBytes,
 	}
-	return sdk.MarshalPubKey(sdk.AccPK, &pubKey) // nolint:staticcheck
+	return sdk.MarshalPubKey(sdk.AccPK, &pubKey)
 }
 
 func GetPriKey(priKeyString string) (tcrypto.PrivKey, error) {
@@ -96,7 +96,8 @@ func GetPriKey(priKeyString string) (tcrypto.PrivKey, error) {
 	if err != nil {
 		return nil, fmt.Errorf("fail to hex decode private key: %w", err)
 	}
-	var priKey secp256k1.PrivKey = rawBytes[:32]
+	var priKey secp256k1.PrivKey
+	priKey = rawBytes[:32]
 	return priKey, nil
 }
 
@@ -111,7 +112,7 @@ func GetPriKeyRawBytes(priKey tcrypto.PrivKey) ([]byte, error) {
 }
 
 func CheckKeyOnCurve(pk string) (bool, error) {
-	pubKey, err := sdk.UnmarshalPubKey(sdk.AccPK, pk) // nolint:staticcheck
+	pubKey, err := sdk.UnmarshalPubKey(sdk.AccPK, pk)
 	if err != nil {
 		return false, fmt.Errorf("fail to parse pub key(%s): %w", pk, err)
 	}

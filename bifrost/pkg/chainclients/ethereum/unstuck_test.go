@@ -288,7 +288,6 @@ func (s *UnstuckTestSuite) TestUnstuckProcess(c *C) {
 	}, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
 	c.Assert(err, IsNil)
 	c.Assert(e, NotNil)
-	e.ethScanner.globalNetworkFeeQueue = make(chan common.NetworkFee, 1)
 	c.Assert(pubkeyMgr.Start(), IsNil)
 	defer func() { c.Assert(pubkeyMgr.Stop(), IsNil) }()
 	pubkey := e.kw.GetPubKey().String()

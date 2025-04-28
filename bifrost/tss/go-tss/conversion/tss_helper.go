@@ -6,7 +6,7 @@ import (
 
 	"github.com/blang/semver"
 	"github.com/cometbft/cometbft/crypto/secp256k1"
-	sdk "github.com/cosmos/cosmos-sdk/types/bech32/legacybech32" // nolint:staticcheck
+	sdk "github.com/cosmos/cosmos-sdk/types/bech32/legacybech32"
 	atypes "github.com/cosmos/cosmos-sdk/x/auth/vesting/types"
 	"github.com/libp2p/go-libp2p-core/peer"
 )
@@ -14,7 +14,7 @@ import (
 // GetRandomPubKey for test
 func GetRandomPubKey() string {
 	_, pubKey, _ := atypes.KeyTestPubAddr()
-	bech32PubKey, _ := sdk.MarshalPubKey(sdk.AccPK, pubKey) // nolint:staticcheck
+	bech32PubKey, _ := sdk.MarshalPubKey(sdk.AccPK, pubKey)
 	return bech32PubKey
 }
 
@@ -36,7 +36,7 @@ const (
 func RandStringBytesMask(n int) string {
 	b := make([]byte, n)
 	for i := 0; i < n; {
-		if idx := int(rand.Int63() & letterIdxMask); idx < len(letterBytes) { // nolint:gosec
+		if idx := int(rand.Int63() & letterIdxMask); idx < len(letterBytes) {
 			b[i] = letterBytes[idx]
 			i++
 		}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/big"
 	"math/rand"
+	"strconv"
 	"sync"
 	"time"
 
@@ -71,11 +72,10 @@ type Client struct {
 	temporalStorage *utxo.TemporalStorage
 
 	// ---------- control ----------
-	globalErrataQueue     chan<- types.ErrataBlock
-	globalSolvencyQueue   chan<- types.Solvency
-	globalNetworkFeeQueue chan<- common.NetworkFee
-	stopchan              chan struct{}
-	currentBlockHeight    *atomic.Int64
+	globalErrataQueue   chan<- types.ErrataBlock
+	globalSolvencyQueue chan<- types.Solvency
+	stopchan            chan struct{}
+	currentBlockHeight  *atomic.Int64
 
 	// ---------- thornode state ----------
 	bridge          thorclient.ThorchainBridge
@@ -248,13 +248,11 @@ func (c *Client) Start(
 	globalTxsQueue chan types.TxIn,
 	globalErrataQueue chan types.ErrataBlock,
 	globalSolvencyQueue chan types.Solvency,
-	globalNetworkFeeQueue chan common.NetworkFee,
 ) {
 	c.globalErrataQueue = globalErrataQueue
 	c.globalSolvencyQueue = globalSolvencyQueue
-	c.globalNetworkFeeQueue = globalNetworkFeeQueue
 	c.tssKeySigner.Start()
-	c.blockScanner.Start(globalTxsQueue, globalNetworkFeeQueue)
+	c.blockScanner.Start(globalTxsQueue)
 	c.wg.Add(1)
 	go runners.SolvencyCheckRunner(
 		c.GetChain(), c, c.bridge, c.stopchan, c.wg, constants.ThorchainBlockTime,
@@ -499,6 +497,7 @@ func (c *Client) FetchTxs(height, chainHeight int64) (types.TxIn, error) {
 		go c.consolidateUTXOs()
 	}
 
+	txIn.Count = strconv.Itoa(len(txIn.TxArray))
 	return txIn, nil
 }
 
@@ -596,7 +595,7 @@ func (c *Client) FetchMemPool(height int64) (types.TxIn, error) {
 				continue
 			}
 
-			txIn.TxArray = append(txIn.TxArray, &txInItem)
+			txIn.TxArray = append(txIn.TxArray, txInItem)
 		}
 	}
 
@@ -609,6 +608,7 @@ func (c *Client) FetchMemPool(height int64) (types.TxIn, error) {
 			Msg("retrieved mempool batch")
 	}
 
+	txIn.Count = strconv.Itoa(len(txIn.TxArray))
 	return txIn, returnErr
 }
 

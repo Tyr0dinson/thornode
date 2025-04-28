@@ -28,8 +28,8 @@ func TestGetPubKeysFromPeerIDs(t *testing.T) {
 	assert.Len(t, result, 2)
 	assert.Equal(t, "thorpub1addwnpepqtctt9l4fddeh0krvdpxmqsxa5z9xsa0ac6frqfhm9fq6c6u5lck5s8fm4n", result[0])
 	assert.Equal(t, "thorpub1addwnpepqga5cupfejfhtw507sh36fvwaekyjt5kwaw0cmgnpku0at2a87qqkp60t43", result[1])
-	input = append(input, "whatever")
-	result, err = GetPubKeysFromPeerIDs(input)
+	input1 := append(input, "whatever")
+	result, err = GetPubKeysFromPeerIDs(input1)
 	assert.NotNil(t, err)
 	assert.Nil(t, result)
 }
@@ -62,8 +62,8 @@ func (KeyProviderTestSuite) TestGetPeerIDs(c *C) {
 	c.Assert(peers, HasLen, 2)
 	c.Assert(peers[0].String(), Equals, "16Uiu2HAmBdJRswX94UwYj6VLhh4GeUf9X3SjBRgTqFkeEMLmfk2M")
 	c.Assert(peers[1].String(), Equals, "16Uiu2HAkyR9dsFqkj1BqKw8ZHAUU2yur6ZLRJxPTiiVYP5uBMeMG")
-	pubKeys = append(pubKeys, "helloworld")
-	peers, err = GetPeerIDs(pubKeys)
+	pubKeys1 := append(pubKeys, "helloworld")
+	peers, err = GetPeerIDs(pubKeys1)
 	c.Assert(err, NotNil)
 	c.Assert(peers, IsNil)
 }

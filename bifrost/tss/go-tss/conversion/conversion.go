@@ -15,12 +15,12 @@ import (
 	btss "github.com/binance-chain/tss-lib/tss"
 	"github.com/btcsuite/btcd/btcec"
 	coskey "github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
-	sdk "github.com/cosmos/cosmos-sdk/types/bech32/legacybech32" // nolint:staticcheck
+	sdk "github.com/cosmos/cosmos-sdk/types/bech32/legacybech32"
 	crypto2 "github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 
-	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/messages"
+	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/messages"
 )
 
 // GetPeerIDFromSecp256PubKey convert the given pubkey into a peer.ID
@@ -51,7 +51,7 @@ func PartyIDtoPubKey(party *btss.PartyID) (string, error) {
 	pk := coskey.PubKey{
 		Key: partyKeyBytes,
 	}
-	pubKey, err := sdk.MarshalPubKey(sdk.AccPK, &pk) // nolint:staticcheck
+	pubKey, err := sdk.MarshalPubKey(sdk.AccPK, &pk)
 	if err != nil {
 		return "", err
 	}
@@ -112,7 +112,7 @@ func GetParties(keys []string, localPartyKey string) ([]*btss.PartyID, *btss.Par
 	var unSortedPartiesID []*btss.PartyID
 	sort.Strings(keys)
 	for idx, item := range keys {
-		pk, err := sdk.UnmarshalPubKey(sdk.AccPK, item) // nolint:staticcheck
+		pk, err := sdk.UnmarshalPubKey(sdk.AccPK, item)
 		if err != nil {
 			return nil, nil, fmt.Errorf("fail to get account pub key address(%s): %w", item, err)
 		}
@@ -162,7 +162,7 @@ func GetTssPubKey(pubKeyPoint *crypto.ECPoint) (string, cosmos.AccAddress, error
 		Key: tssPubKey.SerializeCompressed(),
 	}
 
-	pubKey, err := sdk.MarshalPubKey(sdk.AccPK, &compressedPubkey) // nolint:staticcheck
+	pubKey, err := sdk.MarshalPubKey(sdk.AccPK, &compressedPubkey)
 	addr := cosmos.AccAddress(compressedPubkey.Address().Bytes())
 	return pubKey, addr, err
 }
@@ -171,7 +171,7 @@ func BytesToHashString(msg []byte) (string, error) {
 	h := sha256.New()
 	_, err := h.Write(msg)
 	if err != nil {
-		return "", fmt.Errorf("fail to calculate sha256 hash: %w", err)
+		return "", fmt.Errorf("fail to caculate sha256 hash: %w", err)
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
 }

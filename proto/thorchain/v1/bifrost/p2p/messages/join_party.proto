@@ -1,9 +1,7 @@
 syntax = "proto3";
 package bifrost.p2p.messages;
 
-option go_package = "gitlab.com/thorchain/thornode/v3/bifrost/p2p/messages";
-
-
+option go_package = "gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/messages";
 
 message JoinPartyRequest {
     string ID = 1; // the unique hash id

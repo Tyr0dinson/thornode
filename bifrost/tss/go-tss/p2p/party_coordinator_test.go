@@ -13,7 +13,7 @@ import (
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/assert"
 
-	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/conversion"
+	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/conversion"
 )
 
 func setupHostsLocally(t *testing.T, n int) []host.Host {
@@ -66,7 +66,7 @@ func TestPartyCoordinator(t *testing.T) {
 		go func(coordinator PartyCoordinator) {
 			defer wg.Done()
 			// we simulate different nodes join at different time
-			time.Sleep(time.Second * time.Duration(rand.Int()%10)) // nolint:gosec
+			time.Sleep(time.Second * time.Duration(rand.Int()%10))
 			onlinePeers, err := coordinator.JoinPartyWithRetry(msgID, peers)
 			if err != nil {
 				t.Error(err)

@@ -140,10 +140,12 @@ func (s *ThorchainSuite) TestGetObservationsStdTx_OutboundShouldHaveConfirmation
 		100,
 	)
 
-	_, out, err := s.bridge.GetInboundOutbound(common.ObservedTxs{tx})
-	c.Assert(out, NotNil)
+	signedMsg, err := s.bridge.GetObservationsStdTx(common.ObservedTxs{tx})
+	c.Assert(signedMsg, NotNil)
 	c.Assert(err, IsNil)
-	c.Assert(out[0].FinaliseHeight > out[0].BlockHeight, Equals, true)
+	m, ok := signedMsg[0].(*stypes.MsgObservedTxOut)
+	c.Assert(ok, Equals, true)
+	c.Assert(m.Txs[0].FinaliseHeight > m.Txs[0].BlockHeight, Equals, true)
 }
 
 func (s *ThorchainSuite) TestSign(c *C) {
@@ -164,8 +166,9 @@ func (s *ThorchainSuite) TestSign(c *C) {
 		1,
 	)
 
-	_, out, err := s.bridge.GetInboundOutbound(common.ObservedTxs{tx})
-	c.Assert(out, NotNil)
+	signedMsg, err := s.bridge.GetObservationsStdTx(common.ObservedTxs{tx})
+	c.Log(err)
+	c.Assert(signedMsg, NotNil)
 	c.Assert(err, IsNil)
 }
 

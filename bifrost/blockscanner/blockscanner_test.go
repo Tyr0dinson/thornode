@@ -153,8 +153,7 @@ func (s *BlockScannerTestSuite) TestBlockScanner(c *C) {
 		}
 	}()
 	globalChan := make(chan types.TxIn)
-	nfChan := make(chan common.NetworkFee)
-	cbs.Start(globalChan, nfChan)
+	cbs.Start(globalChan)
 	time.Sleep(time.Second * 1)
 	cbs.Stop()
 }
@@ -199,7 +198,7 @@ func (s *BlockScannerTestSuite) TestBadBlock(c *C) {
 	}, mss, m, bridge, DummyFetcher{})
 	c.Check(cbs, NotNil)
 	c.Check(err, IsNil)
-	cbs.Start(make(chan types.TxIn), make(chan common.NetworkFee))
+	cbs.Start(make(chan types.TxIn))
 	time.Sleep(time.Second * 1)
 	cbs.Stop()
 }
@@ -239,7 +238,7 @@ func (s *BlockScannerTestSuite) TestBadConnection(c *C) {
 	}, mss, m, bridge, DummyFetcher{})
 	c.Check(cbs, NotNil)
 	c.Check(err, IsNil)
-	cbs.Start(make(chan types.TxIn), make(chan common.NetworkFee))
+	cbs.Start(make(chan types.TxIn))
 	time.Sleep(time.Second * 1)
 	cbs.Stop()
 }

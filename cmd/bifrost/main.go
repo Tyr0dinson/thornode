@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"os"
@@ -15,7 +14,6 @@ import (
 	"github.com/rs/zerolog/log"
 	flag "github.com/spf13/pflag"
 
-	"gitlab.com/thorchain/thornode/v3/bifrost/p2p"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/common"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/tss"
 
@@ -113,6 +111,10 @@ func main() {
 		log.Fatal().Err(err).Msg("fail to get private key")
 	}
 
+	bootstrapPeers, err := cfg.TSS.GetBootstrapPeers()
+	if err != nil {
+		log.Fatal().Err(err).Msg("fail to get bootstrap peers")
+	}
 	tmPrivateKey := tcommon.CosmosPrivateKeyToTMPrivateKey(priKey)
 
 	consts := constants.NewConstantValue()
@@ -131,19 +133,12 @@ func main() {
 			Msg("keysign timeout must be shorter than jail time")
 	}
 
-	comm, stateManager, err := p2p.StartP2P(
-		cfg.TSS,
-		tmPrivateKey,
-		app.DefaultNodeHome,
-	)
-	if err != nil {
-		log.Fatal().Err(err).Msg("fail to start p2p")
-	}
-
 	tssIns, err := tss.NewTss(
-		comm,
-		stateManager,
+		bootstrapPeers,
+		cfg.TSS.P2PPort,
 		tmPrivateKey,
+		cfg.TSS.Rendezvous,
+		app.DefaultNodeHome,
 		common.TssConfig{
 			EnableMonitor:   true,
 			KeyGenTimeout:   cfg.Signer.KeygenTimeout,
@@ -152,6 +147,7 @@ func main() {
 			PreParamTimeout: cfg.Signer.PreParamTimeout,
 		},
 		nil,
+		cfg.TSS.ExternalIP,
 	)
 	if err != nil {
 		log.Fatal().Err(err).Msg("fail to create tss instance")
@@ -189,28 +185,14 @@ func main() {
 			log.Error().Err(err).Msg("fail to start health server")
 		}
 	}()
-
-	ctx := context.Background()
-
-	// start observer notifier
-	ag, err := observer.NewAttestationGossip(comm.GetHost(), k, cfg.Thorchain.ChainEBifrost, thorchainBridge, cfg.AttestationGossip)
-	go func() {
-		defer log.Info().Msg("attestation gossip exit")
-		ag.Start(ctx)
-	}()
-
 	// start observer
-	obs, err := observer.NewObserver(pubkeyMgr, chains, thorchainBridge, m, cfgChains[tcommon.BTCChain].BlockScanner.DBPath, tssKeysignMetricMgr, ag)
+	obs, err := observer.NewObserver(pubkeyMgr, chains, thorchainBridge, m, cfgChains[tcommon.BTCChain].BlockScanner.DBPath, tssKeysignMetricMgr)
 	if err != nil {
 		log.Fatal().Err(err).Msg("fail to create observer")
 	}
-	if err = obs.Start(ctx); err != nil {
+	if err = obs.Start(); err != nil {
 		log.Fatal().Err(err).Msg("fail to start observer")
 	}
-
-	// enable observer to react to notifications from thornode
-	// that come through the grpc connection within AttestationGossip.
-	ag.SetObserverHandleObservedTxCommitted(obs)
 
 	// start signer
 	sign, err := signer.NewSigner(cfg, thorchainBridge, k, pubkeyMgr, tssIns, chains, m, tssKeysignMetricMgr, obs)

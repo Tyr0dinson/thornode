@@ -15,7 +15,6 @@ type ChainClient interface {
 		globalTxsQueue chan types.TxIn,
 		globalErrataQueue chan types.ErrataBlock,
 		globalSolvencyQueue chan types.Solvency,
-		globalNetworkFeeQueue chan common.NetworkFee,
 	)
 
 	// Stop stops the chain client.

@@ -13,7 +13,7 @@ import (
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
 	"github.com/stretchr/testify/assert"
 
-	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/conversion"
+	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/conversion"
 )
 
 func init() {
@@ -51,7 +51,7 @@ func leaderAppearsLastTest(t *testing.T, msgID string, peers []string, pcs []*Pa
 		go func(coordinator *PartyCoordinator) {
 			defer wg.Done()
 			// we simulate different nodes join at different time
-			time.Sleep(time.Millisecond * time.Duration(rand.Int()%100)) // nolint:gosec
+			time.Sleep(time.Millisecond * time.Duration(rand.Int()%100))
 			sigChan := make(chan string)
 			onlinePeers, _, err := coordinator.JoinPartyWithLeader(msgID, 10, peers, 3, sigChan)
 			assert.Nil(t, err)
@@ -91,7 +91,7 @@ func leaderAppersFirstTest(t *testing.T, msgID string, peers []string, pcs []*Pa
 		go func(coordinator *PartyCoordinator) {
 			defer wg.Done()
 			// we simulate different nodes join at different time
-			time.Sleep(time.Millisecond * time.Duration(rand.Int()%100)) // nolint:gosec
+			time.Sleep(time.Millisecond * time.Duration(rand.Int()%100))
 			sigChan := make(chan string)
 			onlinePeers, _, err := coordinator.JoinPartyWithLeader(msgID, 10, peers, 3, sigChan)
 			assert.Nil(t, err)

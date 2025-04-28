@@ -1,7 +1,6 @@
 package observer
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -20,7 +19,6 @@ import (
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
-	"gitlab.com/thorchain/thornode/v3/bifrost/p2p"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/evm"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
@@ -200,26 +198,6 @@ func (s *ObserverSuite) SetUpSuite(c *C) {
 func (s *ObserverSuite) TestProcess(c *C) {
 	pubkeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.metrics)
 	c.Assert(err, IsNil)
-	comm, err := p2p.NewCommunication(&p2p.Config{
-		RendezvousString: "rendezvous",
-		Port:             1234,
-	}, nil)
-	c.Assert(err, IsNil)
-	c.Assert(comm, NotNil)
-
-	priv, err := s.thorKeys.GetPrivateKey()
-	c.Assert(err, IsNil)
-	err = comm.Start(priv.Bytes())
-	c.Assert(err, IsNil)
-
-	defer func() {
-		err := comm.Stop()
-		c.Assert(err, IsNil)
-	}()
-
-	c.Assert(comm.GetHost(), NotNil)
-	ag, err := NewAttestationGossip(comm.GetHost(), s.thorKeys, "localhost:50051", s.bridge, config.BifrostAttestationGossipConfig{})
-	c.Assert(err, IsNil)
 	obs, err := NewObserver(
 		pubkeyMgr,
 		map[common.Chain]chainclients.ChainClient{common.AVAXChain: s.client},
@@ -227,12 +205,10 @@ func (s *ObserverSuite) TestProcess(c *C) {
 		s.metrics,
 		"",
 		metrics.NewTssKeysignMetricMgr(),
-		ag,
 	)
 	c.Assert(obs, NotNil)
 	c.Assert(err, IsNil)
-	ag.SetObserverHandleObservedTxCommitted(obs)
-	err = obs.Start(context.Background())
+	err = obs.Start()
 	c.Assert(err, IsNil)
 	time.Sleep(time.Second * 2)
 	metric, err := s.metrics.GetCounterVec(metrics.ObserverError).GetMetricWithLabelValues("fail_to_send_to_thorchain", "1")
@@ -246,65 +222,14 @@ func (s *ObserverSuite) TestProcess(c *C) {
 func (s *ObserverSuite) TestErrataTx(c *C) {
 	pubkeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.metrics)
 	c.Assert(err, IsNil)
-	comm, err := p2p.NewCommunication(&p2p.Config{
-		RendezvousString: "rendezvous",
-		Port:             1234,
-	}, nil)
-	c.Assert(err, IsNil)
-	c.Assert(comm, NotNil)
-	priv, err := s.thorKeys.GetPrivateKey()
-	c.Assert(err, IsNil)
-	err = comm.Start(priv.Bytes())
-	c.Assert(err, IsNil)
-
-	defer func() {
-		err := comm.Stop()
-		c.Assert(err, IsNil)
-	}()
-
-	c.Assert(comm.GetHost(), NotNil)
-	ag, err := NewAttestationGossip(comm.GetHost(), s.thorKeys, "localhost:50051", s.bridge, config.BifrostAttestationGossipConfig{})
-	c.Assert(err, IsNil)
-
-	obs, err := NewObserver(pubkeyMgr, nil, s.bridge, s.metrics, "", metrics.NewTssKeysignMetricMgr(), ag)
+	obs, err := NewObserver(pubkeyMgr, nil, s.bridge, s.metrics, "", metrics.NewTssKeysignMetricMgr())
 	c.Assert(obs, NotNil)
 	c.Assert(err, IsNil)
-	ag.SetObserverHandleObservedTxCommitted(obs)
-	c.Assert(obs.attestationGossip.AttestSolvency(context.Background(), common.Solvency{
-		Height: 25,
-		Chain:  common.ETHChain,
-		Id:     thorchain.GetRandomTxHash(),
-	}), NotNil)
-	bech32Pub, err := cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeAccPub, priv.PubKey())
-	c.Assert(err, IsNil)
-	ag.setActiveValidators(common.PubKeys{common.PubKey(bech32Pub)})
-	c.Assert(obs.attestationGossip.AttestSolvency(context.Background(), common.Solvency{
-		Height: 25,
-		Chain:  common.ETHChain,
-		Id:     thorchain.GetRandomTxHash(),
-	}), IsNil)
+	c.Assert(obs.sendErrataTxToThorchain(25, thorchain.GetRandomTxHash(), common.ETHChain), IsNil)
 }
 
 func (s *ObserverSuite) TestGetSaversMemo(c *C) {
 	pubkeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.metrics)
-	c.Assert(err, IsNil)
-	comm, err := p2p.NewCommunication(&p2p.Config{
-		RendezvousString: "rendezvous",
-		Port:             1234,
-	}, nil)
-	c.Assert(err, IsNil)
-	c.Assert(comm, NotNil)
-
-	priv, err := s.thorKeys.GetPrivateKey()
-	c.Assert(err, IsNil)
-	c.Assert(comm.Start(priv.Bytes()), IsNil)
-
-	defer func() {
-		err := comm.Stop()
-		c.Assert(err, IsNil)
-	}()
-	c.Assert(comm.GetHost(), NotNil)
-	ag, err := NewAttestationGossip(comm.GetHost(), s.thorKeys, "localhost:50051", s.bridge, config.BifrostAttestationGossipConfig{})
 	c.Assert(err, IsNil)
 	obs, err := NewObserver(
 		pubkeyMgr,
@@ -313,11 +238,9 @@ func (s *ObserverSuite) TestGetSaversMemo(c *C) {
 		s.metrics,
 		"",
 		metrics.NewTssKeysignMetricMgr(),
-		ag,
 	)
 	c.Assert(obs, NotNil)
 	c.Assert(err, IsNil)
-	ag.SetObserverHandleObservedTxCommitted(obs)
 
 	usdc, err := common.NewAsset("ETH.USDC-0x9999999999999999999999999999999999999999")
 	c.Assert(err, IsNil)
@@ -336,17 +259,17 @@ func (s *ObserverSuite) TestGetSaversMemo(c *C) {
 	}
 
 	// memo should be withdraw 1024 basis points
-	memo := obs.getSaversMemo(common.ETHChain, &ethSaversTx)
+	memo := obs.getSaversMemo(common.ETHChain, ethSaversTx)
 	c.Assert(memo, Equals, "-:ETH/USDC-0X9999999999999999999999999999999999999999:1024")
 
 	// memo should be withdraw 1000 basis points
 	ethSaversTx.Coins = common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1001)))
-	memo = obs.getSaversMemo(common.ETHChain, &ethSaversTx)
+	memo = obs.getSaversMemo(common.ETHChain, ethSaversTx)
 	c.Assert(memo, Equals, "-:ETH/ETH:1000")
 
 	// memo should be add
 	ethSaversTx.Coins = common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(20_000)))
-	memo = obs.getSaversMemo(common.ETHChain, &ethSaversTx)
+	memo = obs.getSaversMemo(common.ETHChain, ethSaversTx)
 	c.Assert(memo, Equals, "+:ETH/ETH")
 
 	btcSaversTx := types.TxInItem{
@@ -356,33 +279,33 @@ func (s *ObserverSuite) TestGetSaversMemo(c *C) {
 		Sender:      thorchain.GetRandomBTCAddress().String(),
 		To:          thorchain.GetRandomBTCAddress().String(),
 		Coins: common.Coins{
-			common.NewCoin(common.BTCAsset, cosmos.NewUint(1001)),
+			common.NewCoin(common.BTCAsset, cosmos.NewUint(1000)),
 		},
 		Gas:                 nil,
 		ObservedVaultPubKey: thorchain.GetRandomPubKey(),
 	}
 
 	// memo should be empty, amount not above dust threshold
-	memo = obs.getSaversMemo(common.BTCChain, &btcSaversTx)
+	memo = obs.getSaversMemo(common.BTCChain, btcSaversTx)
 	c.Assert(memo, Equals, "")
 
 	// memo should still be empty, amount is at the dust threshold, but you can't withdraw 0 basis points
 	btcSaversTx.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(10_000)))
-	memo = obs.getSaversMemo(common.BTCChain, &btcSaversTx)
+	memo = obs.getSaversMemo(common.BTCChain, btcSaversTx)
 	c.Assert(memo, Equals, "")
 
 	// memo should be withdraw 500 basis points
 	btcSaversTx.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(10_500)))
-	memo = obs.getSaversMemo(common.BTCChain, &btcSaversTx)
+	memo = obs.getSaversMemo(common.BTCChain, btcSaversTx)
 	c.Assert(memo, Equals, "-:BTC/BTC:500")
 
 	// memo should be withdraw 10_000 basis points
 	btcSaversTx.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(20_000)))
-	memo = obs.getSaversMemo(common.BTCChain, &btcSaversTx)
+	memo = obs.getSaversMemo(common.BTCChain, btcSaversTx)
 	c.Assert(memo, Equals, "-:BTC/BTC:10000")
 
 	// memo should be add
 	btcSaversTx.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(40_000)))
-	memo = obs.getSaversMemo(common.BTCChain, &btcSaversTx)
+	memo = obs.getSaversMemo(common.BTCChain, btcSaversTx)
 	c.Assert(memo, Equals, "+:BTC/BTC")
 }

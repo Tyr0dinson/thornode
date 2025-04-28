@@ -9,7 +9,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	tcrypto "github.com/cometbft/cometbft/crypto"
 	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/libp2p/go-libp2p-core/host"
@@ -18,15 +17,12 @@ import (
 	"github.com/libp2p/go-libp2p-core/protocol"
 	discovery "github.com/libp2p/go-libp2p-discovery"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
-	"github.com/libp2p/go-libp2p-peerstore/addr"
 	"github.com/libp2p/go-libp2p/p2p/protocol/ping"
 	maddr "github.com/multiformats/go-multiaddr"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
-	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/conversion"
-	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/messages"
-	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/storage"
+	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/messages"
 )
 
 var (
@@ -35,17 +31,11 @@ var (
 )
 
 // TSSProtocolID protocol id used for tss
-var (
-	TSSProtocolID        protocol.ID = "/p2p/tss"
-	ObservedTxProtocolID protocol.ID = "/p2p/observed-tx"
-)
+var TSSProtocolID protocol.ID = "/p2p/tss"
 
 const (
 	// TimeoutConnecting maximum time for wait for peers to connect
 	TimeoutConnecting = time.Second * 20
-
-	StreamUnknown = "UNKNOWN"
-	StreamMsgDone = "done"
 )
 
 // Message that get transfer across the wire
@@ -56,8 +46,8 @@ type Message struct {
 
 // Communication use p2p to broadcast messages among all the TSS nodes
 type Communication struct {
-	config           P2PConfig
-	stateManager     *storage.FileStateMgr
+	rendezvous       string // based on group
+	bootstrapPeers   []maddr.Multiaddr
 	logger           zerolog.Logger
 	listenAddr       maddr.Multiaddr
 	host             host.Host
@@ -71,42 +61,8 @@ type Communication struct {
 	streamMgr        *StreamMgr
 }
 
-type P2PConfig interface {
-	GetBootstrapPeers() ([]maddr.Multiaddr, error)
-	GetP2PPort() int
-	GetExternalIP() string
-	GetRendezvous() string
-}
-
-func StartP2P(
-	cfg P2PConfig,
-	priKey tcrypto.PrivKey,
-	baseFolder string,
-) (*Communication, *storage.FileStateMgr, error) {
-	stateManager, err := storage.NewFileStateMgr(baseFolder)
-	if err != nil {
-		return nil, nil, fmt.Errorf("fail to create file state manager")
-	}
-
-	comm, err := NewCommunication(cfg, stateManager)
-	if err != nil {
-		return nil, nil, fmt.Errorf("fail to create communication layer: %w", err)
-	}
-
-	priKeyRawBytes, err := conversion.GetPriKeyRawBytes(priKey)
-	if err != nil {
-		return nil, nil, fmt.Errorf("fail to get private key")
-	}
-	if err := comm.Start(priKeyRawBytes); nil != err {
-		return nil, nil, fmt.Errorf("fail to start p2p network: %w", err)
-	}
-
-	return comm, stateManager, nil
-}
-
 // NewCommunication create a new instance of Communication
-func NewCommunication(cfg P2PConfig, stateManager *storage.FileStateMgr) (*Communication, error) {
-	port, externalIP := cfg.GetP2PPort(), cfg.GetExternalIP()
+func NewCommunication(rendezvous string, bootstrapPeers []maddr.Multiaddr, port int, externalIP string) (*Communication, error) {
 	addr, err := maddr.NewMultiaddr(fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", port))
 	if err != nil {
 		return nil, fmt.Errorf("fail to create listen addr: %w", err)
@@ -119,8 +75,8 @@ func NewCommunication(cfg P2PConfig, stateManager *storage.FileStateMgr) (*Commu
 		}
 	}
 	return &Communication{
-		config:           cfg,
-		stateManager:     stateManager,
+		rendezvous:       rendezvous,
+		bootstrapPeers:   bootstrapPeers,
 		logger:           log.With().Str("module", "communication").Logger(),
 		listenAddr:       addr,
 		wg:               &sync.WaitGroup{},
@@ -193,9 +149,9 @@ func (c *Communication) writeToStream(pID peer.ID, msg []byte, msgID string) err
 	return WriteStreamWithBuffer(msg, stream)
 }
 
-func (c *Communication) handleStreamTss(stream network.Stream) {
+func (c *Communication) readFromStream(stream network.Stream) {
 	peerID := stream.Conn().RemotePeer().String()
-	c.logger.Debug().Msgf("reading from tss stream of peer: %s", peerID)
+	c.logger.Debug().Msgf("reading from stream of peer: %s", peerID)
 
 	select {
 	case <-c.stopChan:
@@ -204,13 +160,13 @@ func (c *Communication) handleStreamTss(stream network.Stream) {
 		dataBuf, err := ReadStreamWithBuffer(stream)
 		if err != nil {
 			c.logger.Error().Err(err).Msgf("fail to read from stream,peerID: %s", peerID)
-			c.streamMgr.AddStream(StreamUnknown, stream)
+			c.streamMgr.AddStream("UNKNOWN", stream)
 			return
 		}
 		var wrappedMsg messages.WrappedMessage
 		if err := json.Unmarshal(dataBuf, &wrappedMsg); nil != err {
 			c.logger.Error().Err(err).Msg("fail to unmarshal wrapped message bytes")
-			c.streamMgr.AddStream(StreamUnknown, stream)
+			c.streamMgr.AddStream("UNKNOWN", stream)
 			return
 		}
 		c.logger.Debug().Msgf(">>>>>>>[%s] %s", wrappedMsg.MessageType, string(wrappedMsg.Payload))
@@ -229,75 +185,22 @@ func (c *Communication) handleStreamTss(stream network.Stream) {
 	}
 }
 
-func (c *Communication) handleStreamObservedTx(stream network.Stream) {
+func (c *Communication) handleStream(stream network.Stream) {
 	peerID := stream.Conn().RemotePeer().String()
-	c.logger.Debug().Msgf("reading from observed tx stream of peer: %s", peerID)
-
-	select {
-	case <-c.stopChan:
-		return
-	default:
-		dataBuf, err := ReadStreamWithBuffer(stream)
-		if err != nil {
-			c.logger.Error().Err(err).Msgf("fail to read from stream,peerID: %s", peerID)
-			c.streamMgr.AddStream(StreamUnknown, stream)
-			return
-		}
-		var wrappedMsg messages.WrappedMessage
-		if err := json.Unmarshal(dataBuf, &wrappedMsg); nil != err {
-			c.logger.Error().Err(err).Msg("fail to unmarshal wrapped message bytes")
-			c.streamMgr.AddStream(StreamUnknown, stream)
-			return
-		}
-		c.logger.Debug().Msgf(">>>>>>>[%s] %s", wrappedMsg.MessageType, string(wrappedMsg.Payload))
-		c.streamMgr.AddStream(wrappedMsg.MsgID, stream)
-		channel := c.getSubscriber(wrappedMsg.MessageType, wrappedMsg.MsgID)
-		if nil == channel {
-			c.logger.Debug().Msgf("no MsgID %s found for this message", wrappedMsg.MsgID)
-			c.logger.Debug().Msgf("no MsgID %s found for this message", wrappedMsg.MessageType)
-			return
-		}
-		channel <- &Message{
-			PeerID:  stream.Conn().RemotePeer(),
-			Payload: dataBuf,
-		}
-
-	}
-}
-
-func (c *Communication) getPeers() addr.AddrList {
-	var bootstrapPeers addr.AddrList
-
-	cfgBoostrapPeers, err := c.config.GetBootstrapPeers()
-	if err != nil {
-		c.logger.Error().Err(err).Msg("fail to get bootstrap peers from config")
-	} else {
-		bootstrapPeers = cfgBoostrapPeers
-	}
-
-	if c.stateManager != nil {
-		savedPeers, err := c.stateManager.RetrieveP2PAddresses()
-		if err != nil {
-			c.logger.Error().Err(err).Msg("fail to get saved peers from state manager")
-		} else {
-			bootstrapPeers = append(bootstrapPeers, savedPeers...)
-		}
-	}
-
-	return bootstrapPeers
+	c.logger.Debug().Msgf("handle stream from peer: %s", peerID)
+	// we will read from that stream
+	c.readFromStream(stream)
 }
 
 func (c *Communication) bootStrapConnectivityCheck() error {
-	bootstrapPeers := c.getPeers()
-
-	if len(bootstrapPeers) == 0 {
+	if len(c.bootstrapPeers) == 0 {
 		c.logger.Error().Msg("we do not have the bootstrap node set, quit the connectivity check")
 		return nil
 	}
 
 	var onlineNodes uint32
 	var wg sync.WaitGroup
-	for _, el := range bootstrapPeers {
+	for _, el := range c.bootstrapPeers {
 		peer, err := peer.AddrInfoFromP2pAddr(el)
 		if err != nil {
 			c.logger.Error().Err(err).Msg("error in decode the bootstrap node, skip it")
@@ -358,8 +261,7 @@ func (c *Communication) startChannel(privKeyBytes []byte) error {
 	}
 	c.host = h
 	c.logger.Info().Msgf("Host created, we are: %s, at: %s", h.ID(), h.Addrs())
-	h.SetStreamHandler(TSSProtocolID, c.handleStreamTss)
-	h.SetStreamHandler(ObservedTxProtocolID, c.handleStreamObservedTx)
+	h.SetStreamHandler(TSSProtocolID, c.handleStream)
 	// Start a DHT, for use in peer discovery. We can't just make a new DHT
 	// client because we want each peer to maintain its own local copy of the
 	// DHT, so that the bootstrapping node of the DHT can go down without
@@ -389,7 +291,7 @@ func (c *Communication) startChannel(privKeyBytes []byte) error {
 	// We use a rendezvous point "meet me here" to announce our location.
 	// This is like telling your friends to meet you at the Eiffel Tower.
 	routingDiscovery := discovery.NewRoutingDiscovery(kademliaDHT)
-	discovery.Advertise(ctx, routingDiscovery, c.config.GetRendezvous())
+	discovery.Advertise(ctx, routingDiscovery, c.rendezvous)
 	err = c.bootStrapConnectivityCheck()
 	if err != nil {
 		return err
@@ -416,16 +318,15 @@ func (c *Communication) connectToOnePeer(pID peer.ID) (network.Stream, error) {
 }
 
 func (c *Communication) connectToBootstrapPeers() error {
-	bootstrapPeers := c.getPeers()
 	// Let's connect to the bootstrap nodes first. They will tell us about the
 	// other nodes in the network.
-	if len(bootstrapPeers) == 0 {
+	if len(c.bootstrapPeers) == 0 {
 		c.logger.Info().Msg("no bootstrap node set, we skip the connection")
 		return nil
 	}
 	var wg sync.WaitGroup
-	connRet := make(chan bool, len(bootstrapPeers))
-	for _, peerAddr := range bootstrapPeers {
+	connRet := make(chan bool, len(c.bootstrapPeers))
+	for _, peerAddr := range c.bootstrapPeers {
 		pi, err := peer.AddrInfoFromP2pAddr(peerAddr)
 		if err != nil {
 			return fmt.Errorf("fail to add peer: %w", err)
@@ -445,7 +346,7 @@ func (c *Communication) connectToBootstrapPeers() error {
 		}(connRet)
 	}
 	wg.Wait()
-	for i := 0; i < len(bootstrapPeers); i++ {
+	for i := 0; i < len(c.bootstrapPeers); i++ {
 		if <-connRet {
 			return nil
 		}

@@ -7,7 +7,7 @@ import (
 	"github.com/libp2p/go-libp2p-core/peer"
 )
 
-// THORChainTSSMessageType  represent the message type used in THORChain TSS
+// THORChainTSSMessageType  represent the messgae type used in THORChain TSS
 type THORChainTSSMessageType uint8
 
 const (

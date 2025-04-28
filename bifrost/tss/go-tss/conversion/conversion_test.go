@@ -9,7 +9,7 @@ import (
 	"github.com/binance-chain/tss-lib/crypto"
 	"github.com/btcsuite/btcd/btcec"
 	coskey "github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
-	sdk "github.com/cosmos/cosmos-sdk/types/bech32/legacybech32" // nolint:staticcheck
+	sdk "github.com/cosmos/cosmos-sdk/types/bech32/legacybech32"
 	"github.com/libp2p/go-libp2p-core/peer"
 	. "gopkg.in/check.v1"
 )
@@ -63,18 +63,18 @@ func (p *ConversionTestSuite) TestGetParties(c *C) {
 	partiesID, localParty, err := GetParties(p.testPubKeys, p.testPubKeys[0])
 	c.Assert(err, IsNil)
 	pk := coskey.PubKey{
-		Key: localParty.Key,
+		Key: localParty.Key[:],
 	}
 	c.Assert(err, IsNil)
-	got, err := sdk.MarshalPubKey(sdk.AccPK, &pk) // nolint:staticcheck
+	got, err := sdk.MarshalPubKey(sdk.AccPK, &pk)
 	c.Assert(err, IsNil)
 	c.Assert(got, Equals, p.testPubKeys[0])
 	var gotKeys []string
 	for _, val := range partiesID {
-		pk = coskey.PubKey{
+		pk := coskey.PubKey{
 			Key: val.Key,
 		}
-		got, err = sdk.MarshalPubKey(sdk.AccPK, &pk) // nolint:staticcheck
+		got, err := sdk.MarshalPubKey(sdk.AccPK, &pk)
 		c.Assert(err, IsNil)
 		gotKeys = append(gotKeys, got)
 	}
@@ -105,7 +105,7 @@ func (p *ConversionTestSuite) TestGetPeerIDFromPartyID(c *C) {
 func (p *ConversionTestSuite) TestGetPeerIDFromSecp256PubKey(c *C) {
 	_, localParty, err := GetParties(p.testPubKeys, p.testPubKeys[0])
 	c.Assert(err, IsNil)
-	got, err := GetPeerIDFromSecp256PubKey(localParty.Key)
+	got, err := GetPeerIDFromSecp256PubKey(localParty.Key[:])
 	c.Assert(err, IsNil)
 	c.Assert(got, Equals, p.localPeerID)
 	_, err = GetPeerIDFromSecp256PubKey(nil)
@@ -174,7 +174,7 @@ func (p *ConversionTestSuite) TestSetupIDMaps(c *C) {
 	sort.Strings(testPeers)
 	c.Assert(got, DeepEquals, testPeers)
 	emptyPartyIDtoP2PID := make(map[string]peer.ID)
-	c.Assert(SetupIDMaps(nil, emptyPartyIDtoP2PID), IsNil)
+	SetupIDMaps(nil, emptyPartyIDtoP2PID)
 	c.Assert(emptyPartyIDtoP2PID, HasLen, 0)
 }
 
@@ -189,7 +189,7 @@ func (p *ConversionTestSuite) TestSetupPartyIDMap(c *C) {
 		pk := coskey.PubKey{
 			Key: el.Key,
 		}
-		got, err := sdk.MarshalPubKey(sdk.AccPK, &pk) // nolint:staticcheck
+		got, err := sdk.MarshalPubKey(sdk.AccPK, &pk)
 		c.Assert(err, IsNil)
 		pubKeys = append(pubKeys, got)
 	}

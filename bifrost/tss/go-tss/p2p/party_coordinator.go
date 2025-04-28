@@ -15,8 +15,8 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
-	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/conversion"
-	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/messages"
+	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/conversion"
+	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/messages"
 )
 
 var (
@@ -79,7 +79,7 @@ func (pc *PartyCoordinator) processRespMsg(respMsg *messages.JoinPartyLeaderComm
 	if remotePeer == peerGroup.getLeader() {
 		peerGroup.setLeaderResponse(respMsg)
 		peerGroup.notify <- true
-		err := WriteStreamWithBuffer([]byte(StreamMsgDone), stream)
+		err := WriteStreamWithBuffer([]byte("done"), stream)
 		if err != nil {
 			pc.logger.Error().Err(err).Msgf("fail to write the reply to peer: %s", remotePeer)
 			return
@@ -116,13 +116,13 @@ func (pc *PartyCoordinator) HandleStream(stream network.Stream) {
 	payload, err := ReadStreamWithBuffer(stream)
 	if err != nil {
 		logger.Err(err).Msgf("fail to read payload from stream")
-		pc.streamMgr.AddStream(StreamUnknown, stream)
+		pc.streamMgr.AddStream("UNKNOWN", stream)
 		return
 	}
 	var msg messages.JoinPartyRequest
 	if err := proto.Unmarshal(payload, &msg); err != nil {
 		logger.Err(err).Msg("fail to unmarshal join party request")
-		pc.streamMgr.AddStream(StreamUnknown, stream)
+		pc.streamMgr.AddStream("UNKNOWN", stream)
 		return
 	}
 	pc.streamMgr.AddStream(msg.ID, stream)
@@ -148,7 +148,7 @@ func (pc *PartyCoordinator) HandleStreamWithLeader(stream network.Stream) {
 	payload, err := ReadStreamWithBuffer(stream)
 	if err != nil {
 		logger.Err(err).Msgf("fail to read payload from stream")
-		pc.streamMgr.AddStream(StreamUnknown, stream)
+		pc.streamMgr.AddStream("UNKNOWN", stream)
 		return
 	}
 
@@ -156,7 +156,7 @@ func (pc *PartyCoordinator) HandleStreamWithLeader(stream network.Stream) {
 	err = proto.Unmarshal(payload, &msg)
 	if err != nil {
 		logger.Err(err).Msg("fail to unmarshal party data")
-		pc.streamMgr.AddStream(StreamUnknown, stream)
+		pc.streamMgr.AddStream("UNKNOWN", stream)
 		return
 	}
 
@@ -168,14 +168,14 @@ func (pc *PartyCoordinator) HandleStreamWithLeader(stream network.Stream) {
 		return
 	case "response":
 		pc.processRespMsg(&msg, stream)
-		err := WriteStreamWithBuffer([]byte(StreamMsgDone), stream)
+		err := WriteStreamWithBuffer([]byte("done"), stream)
 		if err != nil {
 			pc.logger.Error().Err(err).Msgf("fail to send response to leader")
 		}
 		return
 	default:
 		logger.Err(err).Msg("fail to process this message")
-		pc.streamMgr.AddStream(StreamUnknown, stream)
+		pc.streamMgr.AddStream("UNKNOWN", stream)
 		return
 	}
 }

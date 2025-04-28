@@ -6,8 +6,6 @@ import (
 	maddr "github.com/multiformats/go-multiaddr"
 )
 
-var _ P2PConfig = &Config{}
-
 // A new type we need for writing a custom flag parser
 type addrList []maddr.Multiaddr
 
@@ -17,22 +15,6 @@ type Config struct {
 	Port             int
 	BootstrapPeers   addrList
 	ExternalIP       string
-}
-
-func (c *Config) GetRendezvous() string {
-	return c.RendezvousString
-}
-
-func (c *Config) GetP2PPort() int {
-	return c.Port
-}
-
-func (c *Config) GetBootstrapPeers() ([]maddr.Multiaddr, error) {
-	return c.BootstrapPeers, nil
-}
-
-func (c *Config) GetExternalIP() string {
-	return c.ExternalIP
 }
 
 // String implement fmt.Stringer

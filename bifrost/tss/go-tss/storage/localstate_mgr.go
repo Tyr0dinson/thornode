@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,14 +16,14 @@ import (
 	"github.com/libp2p/go-libp2p-peerstore/addr"
 	ma "github.com/multiformats/go-multiaddr"
 
-	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/conversion"
+	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/conversion"
 )
 
 // KeygenLocalState is a structure used to represent the data we saved locally for different keygen
 type KeygenLocalState struct {
 	PubKey          string                    `json:"pub_key"`
 	LocalData       keygen.LocalPartySaveData `json:"local_data"`
-	ParticipantKeys []string                  `json:"participant_keys"` // the participant of last key gen
+	ParticipantKeys []string                  `json:"participant_keys"` // the paticipant of last key gen
 	LocalPartyKey   string                    `json:"local_party_key"`
 }
 
@@ -83,7 +84,7 @@ func (fsm *FileStateMgr) SaveLocalState(state KeygenLocalState) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filePathName, buf, 0o600)
+	return ioutil.WriteFile(filePathName, buf, 0o655)
 }
 
 // GetLocalState read the local state from file system
@@ -99,7 +100,7 @@ func (fsm *FileStateMgr) GetLocalState(pubKey string) (KeygenLocalState, error) 
 		return KeygenLocalState{}, err
 	}
 
-	buf, err := os.ReadFile(filePathName)
+	buf, err := ioutil.ReadFile(filePathName)
 	if err != nil {
 		return KeygenLocalState{}, fmt.Errorf("file to read from file(%s): %w", filePathName, err)
 	}
@@ -132,7 +133,7 @@ func (fsm *FileStateMgr) SaveAddressBook(address map[peer.ID]addr.AddrList) erro
 	}
 	fsm.writeLock.Lock()
 	defer fsm.writeLock.Unlock()
-	return os.WriteFile(filePathName, buf.Bytes(), 0o600)
+	return ioutil.WriteFile(filePathName, buf.Bytes(), 0o655)
 }
 
 func (fsm *FileStateMgr) RetrieveP2PAddresses() (addr.AddrList, error) {
@@ -146,7 +147,7 @@ func (fsm *FileStateMgr) RetrieveP2PAddresses() (addr.AddrList, error) {
 		return nil, err
 	}
 	fsm.writeLock.RLock()
-	input, err := os.ReadFile(filePathName)
+	input, err := ioutil.ReadFile(filePathName)
 	if err != nil {
 		fsm.writeLock.RUnlock()
 		return nil, err

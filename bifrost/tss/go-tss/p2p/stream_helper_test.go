@@ -13,11 +13,11 @@ import (
 	"github.com/magiconair/properties/assert"
 )
 
-var testProtocolID protocol.ID = "/p2p/test-stream"
+const testProtocolID protocol.ID = "/p2p/test-stream"
 
 type MockNetworkStream struct {
 	*bytes.Buffer
-	protocol            *protocol.ID
+	protocol            protocol.ID
 	errSetReadDeadLine  bool
 	errSetWriteDeadLine bool
 	errRead             bool
@@ -27,7 +27,7 @@ type MockNetworkStream struct {
 func NewMockNetworkStream() *MockNetworkStream {
 	return &MockNetworkStream{
 		Buffer:   &bytes.Buffer{},
-		protocol: &testProtocolID,
+		protocol: testProtocolID,
 	}
 }
 
@@ -65,10 +65,12 @@ func (m MockNetworkStream) SetWriteDeadline(time.Time) error {
 }
 
 func (m MockNetworkStream) Protocol() protocol.ID {
-	return testProtocolID
+	return m.protocol
 }
 
-func (m MockNetworkStream) SetProtocol(id protocol.ID) {}
+func (m MockNetworkStream) SetProtocol(id protocol.ID) {
+	m.protocol = id
+}
 
 func (s MockNetworkStream) ID() string {
 	return strconv.FormatInt(s.id, 10)

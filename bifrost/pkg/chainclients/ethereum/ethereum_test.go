@@ -267,7 +267,6 @@ func (s *EthereumSuite) TestConvertSigningAmount(c *C) {
 	}, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
 	c.Assert(err, IsNil)
 	c.Assert(e, NotNil)
-	e.ethScanner.globalNetworkFeeQueue = make(chan common.NetworkFee, 1)
 	c.Assert(e.ethScanner.tokens.SaveTokenMeta("TKN", "0x3b7FA4dd21c6f9BA3ca375217EAD7CAb9D6bF483", 18), IsNil)
 	c.Assert(e.ethScanner.tokens.SaveTokenMeta("TKX", "0x3b7FA4dd21c6f9BA3ca375217EAD7CAb9D6bF482", 8), IsNil)
 	result := e.convertSigningAmount(big.NewInt(100), "0x3b7FA4dd21c6f9BA3ca375217EAD7CAb9D6bF483")
@@ -301,7 +300,6 @@ func (s *EthereumSuite) TestClient(c *C) {
 	}, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
 	c.Assert(err2, IsNil)
 	c.Assert(e2, NotNil)
-	e2.ethScanner.globalNetworkFeeQueue = make(chan common.NetworkFee, 1)
 	c.Assert(pubkeyMgr.Start(), IsNil)
 	defer func() { c.Assert(pubkeyMgr.Stop(), IsNil) }()
 	c.Check(e2.GetChain(), Equals, common.ETHChain)
@@ -389,7 +387,6 @@ func (s *EthereumSuite) TestGetAccount(c *C) {
 	}, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
 	c.Assert(err, IsNil)
 	c.Assert(e, NotNil)
-	e.ethScanner.globalNetworkFeeQueue = make(chan common.NetworkFee, 1)
 	c.Assert(pubkeyMgr.Start(), IsNil)
 	defer func() { c.Assert(pubkeyMgr.Stop(), IsNil) }()
 	acct, err := e.GetAccountByAddress("0x9f4aab49a9cd8fc54dcb3701846f608a6f2c44da", nil)
@@ -416,7 +413,6 @@ func (s *EthereumSuite) TestSignETHTx(c *C) {
 	}, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
 	c.Assert(err, IsNil)
 	c.Assert(e, NotNil)
-	e.ethScanner.globalNetworkFeeQueue = make(chan common.NetworkFee, 1)
 	c.Assert(pubkeyMgr.Start(), IsNil)
 	defer func() { c.Assert(pubkeyMgr.Stop(), IsNil) }()
 	pubkeys := pubkeyMgr.GetPubKeys()
@@ -627,7 +623,6 @@ func (s *EthereumSuite) TestGetAsgardAddresses(c *C) {
 	}, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
 	c.Assert(err, IsNil)
 	c.Assert(e, NotNil)
-	e.ethScanner.globalNetworkFeeQueue = make(chan common.NetworkFee, 1)
 	c.Assert(pubkeyMgr.Start(), IsNil)
 	defer func() { c.Assert(pubkeyMgr.Stop(), IsNil) }()
 	addresses, err := e.getAsgardAddress()
@@ -648,7 +643,6 @@ func (s *EthereumSuite) TestGetConfirmationCount(c *C) {
 	}, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
 	c.Assert(err, IsNil)
 	c.Assert(e, NotNil)
-	e.ethScanner.globalNetworkFeeQueue = make(chan common.NetworkFee, 1)
 	c.Assert(pubkeyMgr.Start(), IsNil)
 	defer func() {
 		c.Assert(pubkeyMgr.Stop(), IsNil)
@@ -662,7 +656,7 @@ func (s *EthereumSuite) TestGetConfirmationCount(c *C) {
 	c.Assert(e.GetConfirmationCount(stypes.TxIn{}), Equals, int64(0))
 	c.Assert(e.GetConfirmationCount(stypes.TxIn{
 		Chain: common.ETHChain,
-		TxArray: []*stypes.TxInItem{
+		TxArray: []stypes.TxInItem{
 			{
 				BlockHeight:         1,
 				Tx:                  "4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
@@ -677,7 +671,7 @@ func (s *EthereumSuite) TestGetConfirmationCount(c *C) {
 
 	c.Assert(e.GetConfirmationCount(stypes.TxIn{
 		Chain: common.ETHChain,
-		TxArray: []*stypes.TxInItem{
+		TxArray: []stypes.TxInItem{
 			{
 				BlockHeight: 1,
 				Tx:          "4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
@@ -694,7 +688,7 @@ func (s *EthereumSuite) TestGetConfirmationCount(c *C) {
 	}), Equals, int64(2))
 	c.Assert(e.GetConfirmationCount(stypes.TxIn{
 		Chain: common.ETHChain,
-		TxArray: []*stypes.TxInItem{
+		TxArray: []stypes.TxInItem{
 			{
 				BlockHeight: 1,
 				Tx:          "4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",

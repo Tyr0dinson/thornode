@@ -41,9 +41,9 @@ func NewStreamMgr() *StreamMgr {
 func (sm *StreamMgr) ReleaseStream(msgID string) {
 	sm.streamLocker.RLock()
 	usedStreams, okStream := sm.unusedStreams[msgID]
-	unknownStreams, okUnknown := sm.unusedStreams[StreamUnknown]
+	unknownStreams, okUnknown := sm.unusedStreams["UNKNOWN"]
 	sm.streamLocker.RUnlock()
-	streams := append(usedStreams, unknownStreams...) // nolint:gocritic
+	streams := append(usedStreams, unknownStreams...)
 	if okStream || okUnknown {
 		for _, el := range streams {
 			err := el.Reset()
@@ -53,7 +53,6 @@ func (sm *StreamMgr) ReleaseStream(msgID string) {
 		}
 		sm.streamLocker.Lock()
 		delete(sm.unusedStreams, msgID)
-		delete(sm.unusedStreams, StreamUnknown)
 		sm.streamLocker.Unlock()
 	}
 }
@@ -66,7 +65,7 @@ func (sm *StreamMgr) AddStream(msgID string, stream network.Stream) {
 	defer sm.streamLocker.Unlock()
 	entries, ok := sm.unusedStreams[msgID]
 	if !ok {
-		entries = []network.Stream{stream}
+		entries := []network.Stream{stream}
 		sm.unusedStreams[msgID] = entries
 	} else {
 		entries = append(entries, stream)
