@@ -42,6 +42,8 @@ const (
 	Msg_ProposeUpgrade_FullMethodName       = "/types.Msg/ProposeUpgrade"
 	Msg_ApproveUpgrade_FullMethodName       = "/types.Msg/ApproveUpgrade"
 	Msg_RejectUpgrade_FullMethodName        = "/types.Msg/RejectUpgrade"
+	Msg_LpDeposit_FullMethodName            = "/types.Msg/LpDeposit"
+	Msg_LpWithdraw_FullMethodName           = "/types.Msg/LpWithdraw"
 	Msg_StoreCode_FullMethodName            = "/types.Msg/StoreCode"
 	Msg_InstantiateContract_FullMethodName  = "/types.Msg/InstantiateContract"
 	Msg_InstantiateContract2_FullMethodName = "/types.Msg/InstantiateContract2"
@@ -76,6 +78,8 @@ type MsgClient interface {
 	ProposeUpgrade(ctx context.Context, in *MsgProposeUpgrade, opts ...grpc.CallOption) (*MsgEmpty, error)
 	ApproveUpgrade(ctx context.Context, in *MsgApproveUpgrade, opts ...grpc.CallOption) (*MsgEmpty, error)
 	RejectUpgrade(ctx context.Context, in *MsgRejectUpgrade, opts ...grpc.CallOption) (*MsgEmpty, error)
+	LpDeposit(ctx context.Context, in *MsgLpDeposit, opts ...grpc.CallOption) (*MsgEmpty, error)
+	LpWithdraw(ctx context.Context, in *MsgLpWithdraw, opts ...grpc.CallOption) (*MsgEmpty, error)
 	// CosmWasm interface cloned in order so that we can register the x/thorchain message server as the server for x/wasm messages, and route through version control
 	StoreCode(ctx context.Context, in *types.MsgStoreCode, opts ...grpc.CallOption) (*types.MsgStoreCodeResponse, error)
 	InstantiateContract(ctx context.Context, in *types.MsgInstantiateContract, opts ...grpc.CallOption) (*types.MsgInstantiateContractResponse, error)
@@ -291,6 +295,24 @@ func (c *msgClient) RejectUpgrade(ctx context.Context, in *MsgRejectUpgrade, opt
 	return out, nil
 }
 
+func (c *msgClient) LpDeposit(ctx context.Context, in *MsgLpDeposit, opts ...grpc.CallOption) (*MsgEmpty, error) {
+	out := new(MsgEmpty)
+	err := c.cc.Invoke(ctx, Msg_LpDeposit_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *msgClient) LpWithdraw(ctx context.Context, in *MsgLpWithdraw, opts ...grpc.CallOption) (*MsgEmpty, error) {
+	out := new(MsgEmpty)
+	err := c.cc.Invoke(ctx, Msg_LpWithdraw_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *msgClient) StoreCode(ctx context.Context, in *types.MsgStoreCode, opts ...grpc.CallOption) (*types.MsgStoreCodeResponse, error) {
 	out := new(types.MsgStoreCodeResponse)
 	err := c.cc.Invoke(ctx, Msg_StoreCode_FullMethodName, in, out, opts...)
@@ -371,6 +393,8 @@ type MsgServer interface {
 	ProposeUpgrade(context.Context, *MsgProposeUpgrade) (*MsgEmpty, error)
 	ApproveUpgrade(context.Context, *MsgApproveUpgrade) (*MsgEmpty, error)
 	RejectUpgrade(context.Context, *MsgRejectUpgrade) (*MsgEmpty, error)
+	LpDeposit(context.Context, *MsgLpDeposit) (*MsgEmpty, error)
+	LpWithdraw(context.Context, *MsgLpWithdraw) (*MsgEmpty, error)
 	// CosmWasm interface cloned in order so that we can register the x/thorchain message server as the server for x/wasm messages, and route through version control
 	StoreCode(context.Context, *types.MsgStoreCode) (*types.MsgStoreCodeResponse, error)
 	InstantiateContract(context.Context, *types.MsgInstantiateContract) (*types.MsgInstantiateContractResponse, error)
@@ -450,6 +474,12 @@ func (UnimplementedMsgServer) ApproveUpgrade(context.Context, *MsgApproveUpgrade
 }
 func (UnimplementedMsgServer) RejectUpgrade(context.Context, *MsgRejectUpgrade) (*MsgEmpty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RejectUpgrade not implemented")
+}
+func (UnimplementedMsgServer) LpDeposit(context.Context, *MsgLpDeposit) (*MsgEmpty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method LpDeposit not implemented")
+}
+func (UnimplementedMsgServer) LpWithdraw(context.Context, *MsgLpWithdraw) (*MsgEmpty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method LpWithdraw not implemented")
 }
 func (UnimplementedMsgServer) StoreCode(context.Context, *types.MsgStoreCode) (*types.MsgStoreCodeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method StoreCode not implemented")
@@ -878,6 +908,42 @@ func _Msg_RejectUpgrade_Handler(srv interface{}, ctx context.Context, dec func(i
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Msg_LpDeposit_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MsgLpDeposit)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).LpDeposit(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Msg_LpDeposit_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).LpDeposit(ctx, req.(*MsgLpDeposit))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Msg_LpWithdraw_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MsgLpWithdraw)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).LpWithdraw(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Msg_LpWithdraw_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).LpWithdraw(ctx, req.(*MsgLpWithdraw))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Msg_StoreCode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(types.MsgStoreCode)
 	if err := dec(in); err != nil {
@@ -1080,6 +1146,14 @@ var Msg_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RejectUpgrade",
 			Handler:    _Msg_RejectUpgrade_Handler,
+		},
+		{
+			MethodName: "LpDeposit",
+			Handler:    _Msg_LpDeposit_Handler,
+		},
+		{
+			MethodName: "LpWithdraw",
+			Handler:    _Msg_LpWithdraw_Handler,
 		},
 		{
 			MethodName: "StoreCode",

@@ -132,6 +132,16 @@ func (ms msgServer) RejectUpgrade(goCtx context.Context, msg *types.MsgRejectUpg
 	return externalHandler(goCtx, handler, msg)
 }
 
+func (ms msgServer) LpDeposit(goCtx context.Context, msg *types.MsgLpDeposit) (*types.MsgEmpty, error) {
+	handler := NewLpDepositHandler(ms.mgr)
+	return externalHandler(goCtx, handler, msg)
+}
+
+func (ms msgServer) LpWithdraw(goCtx context.Context, msg *types.MsgLpWithdraw) (*types.MsgEmpty, error) {
+	handler := NewLpWithdrawHandler(ms.mgr)
+	return externalHandler(goCtx, handler, msg)
+}
+
 func externalHandler(goCtx context.Context, handler MsgHandler, msg sdk.Msg) (_ *types.MsgEmpty, err error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 

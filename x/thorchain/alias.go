@@ -277,6 +277,8 @@ type (
 	MsgSetIPAddress           = types.MsgSetIPAddress
 	MsgSetNodeKeys            = types.MsgSetNodeKeys
 	MsgLeave                  = types.MsgLeave
+	MsgLpDeposit              = types.MsgLpDeposit
+	MsgLpWithdraw             = types.MsgLpWithdraw
 	MsgReserveContributor     = types.MsgReserveContributor
 	MsgObservedTxIn           = types.MsgObservedTxIn
 	MsgObservedTxOut          = types.MsgObservedTxOut

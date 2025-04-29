@@ -5,6 +5,8 @@ import "cosmos/msg/v1/msg.proto";
 import "types/msg_ban.proto";
 import "types/msg_deposit.proto";
 import "types/msg_errata.proto";
+import "types/msg_lp_deposit.proto";
+import "types/msg_lp_withdraw.proto";
 import "types/msg_mimir.proto";
 import "types/msg_network_fee.proto";
 import "types/msg_node_pause_chain.proto";
@@ -49,6 +51,8 @@ service Msg {
     rpc ProposeUpgrade(MsgProposeUpgrade) returns (MsgEmpty);
     rpc ApproveUpgrade(MsgApproveUpgrade) returns (MsgEmpty);
     rpc RejectUpgrade(MsgRejectUpgrade) returns (MsgEmpty);
+    rpc LpDeposit(MsgLpDeposit) returns (MsgEmpty);
+    rpc LpWithdraw(MsgLpWithdraw) returns (MsgEmpty);
 
     // CosmWasm interface cloned in order so that we can register the x/thorchain message server as the server for x/wasm messages, and route through version control
     rpc StoreCode(cosmwasm.wasm.v1.MsgStoreCode) returns (cosmwasm.wasm.v1.MsgStoreCodeResponse);
