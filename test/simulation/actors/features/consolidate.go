@@ -164,17 +164,16 @@ func (a *ConsolidateActor) verifyConsolidate(config *OpConfig) OpResult {
 	type FilterBlockResponse struct {
 		Txs []struct {
 			Tx struct {
-				Messages []struct {
-					Type  string `json:"@type"`
-					QuoTx struct {
-						ObsTx struct {
+				Body struct {
+					Messages []struct {
+						Type string `json:"@type"`
+						Txs  []struct {
 							Tx struct {
-								Chain string `json:"chain"`
-								Memo  string `json:"memo"`
-							} `json:"tx"`
-						} `json:"obsTx"`
-					} `json:"quoTx"`
-				} `json:"messages"`
+								Memo string `json:"memo"`
+							}
+						}
+					} `json:"messages"`
+				} `json:"body"`
 			} `json:"tx"`
 		} `json:"txs"`
 	}
@@ -196,10 +195,12 @@ func (a *ConsolidateActor) verifyConsolidate(config *OpConfig) OpResult {
 
 		// scan for a consolidate inbound
 		for _, tx := range block.Txs {
-			for _, msg := range tx.Tx.Messages {
-				if msg.Type == "/types.MsgObservedTxQuorum" {
-					if msg.QuoTx.ObsTx.Tx.Memo == "consolidate" && msg.QuoTx.ObsTx.Tx.Chain == a.asset.Chain.String() {
-						foundConsolidate = true
+			for _, msg := range tx.Tx.Body.Messages {
+				if msg.Type == "/types.MsgObservedTxIn" {
+					for _, tx := range msg.Txs {
+						if tx.Tx.Memo == "consolidate" {
+							foundConsolidate = true
+						}
 					}
 				}
 			}
