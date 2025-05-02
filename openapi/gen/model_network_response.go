@@ -44,10 +44,14 @@ type NetworkResponse struct {
 	TnsRegisterFeeRune string `json:"tns_register_fee_rune"`
 	// the thorname fee per block in rune, converted from the TNSFeePerBlockUSD mimir (after USD fees are enabled)
 	TnsFeePerBlockRune string `json:"tns_fee_per_block_rune"`
-	// the rune price in tor, returns \"n/a\" if it can't be calculated (eg. all anchor chains are halted)
+	// the rune price in tor
 	RunePriceInTor string `json:"rune_price_in_tor"`
-	// the tor price in rune, returns \"n/a\" if it can't be calculated (eg. all anchor chains are halted)
+	// the tor price in rune
 	TorPriceInRune string `json:"tor_price_in_rune"`
+	// the time between the current block and the block where at least one anchor chain was available
+	TorPriceAge *string `json:"tor_price_age,omitempty"`
+	// indicates if all anchor chains are halted (true), or at least one anchor chain is available (false)
+	TorPriceHalted *bool `json:"tor_price_halted,omitempty"`
 }
 
 // NewNetworkResponse instantiates a new NetworkResponse object
@@ -474,6 +478,70 @@ func (o *NetworkResponse) SetTorPriceInRune(v string) {
 	o.TorPriceInRune = v
 }
 
+// GetTorPriceAge returns the TorPriceAge field value if set, zero value otherwise.
+func (o *NetworkResponse) GetTorPriceAge() string {
+	if o == nil || o.TorPriceAge == nil {
+		var ret string
+		return ret
+	}
+	return *o.TorPriceAge
+}
+
+// GetTorPriceAgeOk returns a tuple with the TorPriceAge field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *NetworkResponse) GetTorPriceAgeOk() (*string, bool) {
+	if o == nil || o.TorPriceAge == nil {
+		return nil, false
+	}
+	return o.TorPriceAge, true
+}
+
+// HasTorPriceAge returns a boolean if a field has been set.
+func (o *NetworkResponse) HasTorPriceAge() bool {
+	if o != nil && o.TorPriceAge != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetTorPriceAge gets a reference to the given string and assigns it to the TorPriceAge field.
+func (o *NetworkResponse) SetTorPriceAge(v string) {
+	o.TorPriceAge = &v
+}
+
+// GetTorPriceHalted returns the TorPriceHalted field value if set, zero value otherwise.
+func (o *NetworkResponse) GetTorPriceHalted() bool {
+	if o == nil || o.TorPriceHalted == nil {
+		var ret bool
+		return ret
+	}
+	return *o.TorPriceHalted
+}
+
+// GetTorPriceHaltedOk returns a tuple with the TorPriceHalted field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *NetworkResponse) GetTorPriceHaltedOk() (*bool, bool) {
+	if o == nil || o.TorPriceHalted == nil {
+		return nil, false
+	}
+	return o.TorPriceHalted, true
+}
+
+// HasTorPriceHalted returns a boolean if a field has been set.
+func (o *NetworkResponse) HasTorPriceHalted() bool {
+	if o != nil && o.TorPriceHalted != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetTorPriceHalted gets a reference to the given bool and assigns it to the TorPriceHalted field.
+func (o *NetworkResponse) SetTorPriceHalted(v bool) {
+	o.TorPriceHalted = &v
+}
+
 func (o NetworkResponse) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
@@ -524,6 +592,12 @@ func (o NetworkResponse) MarshalJSON_deprecated() ([]byte, error) {
 	if true {
 		toSerialize["tor_price_in_rune"] = o.TorPriceInRune
 	}
+	if o.TorPriceAge != nil {
+		toSerialize["tor_price_age"] = o.TorPriceAge
+	}
+	if o.TorPriceHalted != nil {
+		toSerialize["tor_price_halted"] = o.TorPriceHalted
+	}
 	return json.Marshal(toSerialize)
 }
 
@@ -562,5 +636,3 @@ func (v *NullableNetworkResponse) UnmarshalJSON(src []byte) error {
 	v.isSet = true
 	return json.Unmarshal(src, &v.value)
 }
-
-

@@ -18,8 +18,10 @@ Name | Type | Description | Notes
 **NativeTxFeeRune** | **string** | the native transaction fee in rune, converted from the NativeTransactionFeeUSD mimir (after USD fees are enabled) | 
 **TnsRegisterFeeRune** | **string** | the thorname register fee in rune, converted from the TNSRegisterFeeUSD mimir (after USD fees are enabled) | 
 **TnsFeePerBlockRune** | **string** | the thorname fee per block in rune, converted from the TNSFeePerBlockUSD mimir (after USD fees are enabled) | 
-**RunePriceInTor** | **string** | the rune price in tor, returns \&quot;n/a\&quot; if it can&#39;t be calculated (eg. all anchor chains are halted) | 
-**TorPriceInRune** | **string** | the tor price in rune, returns \&quot;n/a\&quot; if it can&#39;t be calculated (eg. all anchor chains are halted) | 
+**RunePriceInTor** | **string** | the rune price in tor | 
+**TorPriceInRune** | **string** | the tor price in rune | 
+**TorPriceAge** | Pointer to **string** | the time between the current block and the block where at least one anchor chain was available | [optional] 
+**TorPriceHalted** | Pointer to **bool** | indicates if all anchor chains are halted (true), or at least one anchor chain is available (false) | [optional] 
 
 ## Methods
 
@@ -364,6 +366,56 @@ and a boolean to check if the value has been set.
 
 SetTorPriceInRune sets TorPriceInRune field to given value.
 
+
+### GetTorPriceAge
+
+`func (o *NetworkResponse) GetTorPriceAge() string`
+
+GetTorPriceAge returns the TorPriceAge field if non-nil, zero value otherwise.
+
+### GetTorPriceAgeOk
+
+`func (o *NetworkResponse) GetTorPriceAgeOk() (*string, bool)`
+
+GetTorPriceAgeOk returns a tuple with the TorPriceAge field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetTorPriceAge
+
+`func (o *NetworkResponse) SetTorPriceAge(v string)`
+
+SetTorPriceAge sets TorPriceAge field to given value.
+
+### HasTorPriceAge
+
+`func (o *NetworkResponse) HasTorPriceAge() bool`
+
+HasTorPriceAge returns a boolean if a field has been set.
+
+### GetTorPriceHalted
+
+`func (o *NetworkResponse) GetTorPriceHalted() bool`
+
+GetTorPriceHalted returns the TorPriceHalted field if non-nil, zero value otherwise.
+
+### GetTorPriceHaltedOk
+
+`func (o *NetworkResponse) GetTorPriceHaltedOk() (*bool, bool)`
+
+GetTorPriceHaltedOk returns a tuple with the TorPriceHalted field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetTorPriceHalted
+
+`func (o *NetworkResponse) SetTorPriceHalted(v bool)`
+
+SetTorPriceHalted sets TorPriceHalted field to given value.
+
+### HasTorPriceHalted
+
+`func (o *NetworkResponse) HasTorPriceHalted() bool`
+
+HasTorPriceHalted returns a boolean if a field has been set.
 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)
