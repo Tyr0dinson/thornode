@@ -3,6 +3,7 @@ package thorchain
 import (
 	"encoding/json"
 	"strconv"
+	"time"
 
 	"github.com/blang/semver"
 
@@ -1283,6 +1284,11 @@ func (s *QuerierSuite) TestNetwork(c *C) {
 	err = s.k.SetPool(s.ctx, pool)
 	c.Assert(err, IsNil)
 
+	// set last tor price unix: -62135597616 (1970yrs ~ 62168470000s)
+	t, err := time.Parse(time.RFC3339Nano, "0000-12-31T23:46:24.831213256Z")
+	c.Assert(err, IsNil)
+	s.k.SetLastTorTime(s.ctx, t)
+
 	dollarsPerRune := s.k.DollarsPerRune(s.ctx)
 	c.Assert(dollarsPerRune.String(), Equals, "911224600")
 
@@ -1293,6 +1299,9 @@ func (s *QuerierSuite) TestNetwork(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(resp.TorPriceInRune, Equals, "10974243")
 	c.Assert(resp.RunePriceInTor, Equals, "911224600")
+	c.Assert(resp.TorPriceHalted, Equals, false)
+	// s.ctx.BlockHeader().Time = 1970-01-01 01:00:00 (unix: -62135596800)
+	c.Assert(resp.TorPriceAge, Equals, "816")
 
 	s.k.SetMimir(s.ctx, "HALTETHTRADING", 1)
 
@@ -1302,7 +1311,15 @@ func (s *QuerierSuite) TestNetwork(c *C) {
 	runePerDollar = s.k.RunePerDollar(s.ctx)
 	c.Assert(runePerDollar.String(), Equals, "0")
 
-	resp, _ = s.queryServer.Network(s.ctx, &types.QueryNetworkRequest{})
-	c.Assert(resp.TorPriceInRune, Equals, "n/a")
-	c.Assert(resp.RunePriceInTor, Equals, "n/a")
+	resp, err = s.queryServer.Network(s.ctx, &types.QueryNetworkRequest{})
+	c.Assert(err, IsNil)
+	c.Assert(resp.TorPriceInRune, Equals, "10974243")
+	c.Assert(resp.RunePriceInTor, Equals, "911224600")
+	c.Assert(resp.TorPriceHalted, Equals, true)
+
+	s.k.SetMimir(s.ctx, "HALTETHTRADING", 0)
+
+	resp, err = s.queryServer.Network(s.ctx, &types.QueryNetworkRequest{})
+	c.Assert(err, IsNil)
+	c.Assert(resp.TorPriceHalted, Equals, false)
 }

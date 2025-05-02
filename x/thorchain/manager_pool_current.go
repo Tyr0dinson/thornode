@@ -46,6 +46,13 @@ func (pm *PoolMgrVCUR) EndBlock(ctx cosmos.Context, mgr Manager) error {
 		ctx.Logger().Error("Unable to force withdraw saver position", "error", err)
 	}
 
+	// set last tor price height
+	usdAssets := mgr.Keeper().GetAnchors(ctx, common.TOR)
+	median := mgr.Keeper().AnchorMedian(ctx, usdAssets).QuoUint64(constants.DollarMulti)
+	if !median.IsZero() {
+		mgr.Keeper().SetLastTorTime(ctx, ctx.BlockHeader().Time)
+	}
+
 	return nil
 }
 

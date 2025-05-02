@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"sort"
 	"strconv"
@@ -450,16 +451,21 @@ func (qs queryServer) queryNetwork(ctx cosmos.Context, _ *types.QueryNetworkRequ
 	minMultiplierBasisPoints := qs.mgr.Keeper().GetConfigInt64(ctx, constants.MinOutboundFeeMultiplierBasisPoints)
 	outboundFeeMultiplier := qs.mgr.gasMgr.CalcOutboundFeeMultiplier(ctx, cosmos.NewUint(uint64(targetOutboundFeeSurplus)), cosmos.NewUint(data.OutboundGasSpentRune), cosmos.NewUint(data.OutboundGasWithheldRune), cosmos.NewUint(uint64(maxMultiplierBasisPoints)), cosmos.NewUint(uint64(minMultiplierBasisPoints)))
 
-	runePriceInTor := qs.mgr.Keeper().DollarsPerRune(ctx).String()
-	torPriceInRune := qs.mgr.Keeper().RunePerDollar(ctx).String()
-
-	if runePriceInTor == "0" {
-		runePriceInTor = "n/a"
+	torPriceHalted := true
+	assets := qs.mgr.Keeper().GetAnchors(ctx, common.TOR)
+	for _, asset := range assets {
+		if !qs.mgr.Keeper().IsChainTradingHalted(ctx, asset.Chain) {
+			torPriceHalted = false
+			break
+		}
 	}
 
-	if torPriceInRune == "0" {
-		torPriceInRune = "n/a"
+	lastTorTime, err := qs.mgr.Keeper().GetLastTorTime(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get last tor height: %w", err)
 	}
+
+	torPriceAge := ctx.BlockHeader().Time.Sub(lastTorTime)
 
 	result := types.QueryNetworkResponse{
 		// Due to using openapi. this will be displayed in alphabetical order,
@@ -478,8 +484,10 @@ func (qs queryServer) queryNetwork(ctx cosmos.Context, _ *types.QueryNetworkRequ
 		NativeOutboundFeeRune: qs.mgr.Keeper().GetOutboundTxFee(ctx).String(),
 		TnsRegisterFeeRune:    qs.mgr.Keeper().GetTHORNameRegisterFee(ctx).String(),
 		TnsFeePerBlockRune:    qs.mgr.Keeper().GetTHORNamePerBlockFee(ctx).String(),
-		RunePriceInTor:        runePriceInTor,
-		TorPriceInRune:        torPriceInRune,
+		RunePriceInTor:        dollarsPerRuneIgnoreHalt(ctx, qs.mgr.Keeper()).String(),
+		TorPriceInRune:        runePerDollarIgnoreHalt(ctx, qs.mgr.Keeper()).String(),
+		TorPriceHalted:        torPriceHalted,
+		TorPriceAge:           fmt.Sprintf("%.0f", math.Ceil(torPriceAge.Seconds())),
 	}
 
 	return &result, nil
@@ -3328,6 +3336,16 @@ func simulate(ctx cosmos.Context, mgr Manager, msg sdk.Msg) (sdk.Events, error) 
 	}
 
 	return em.Events(), nil
+}
+
+// runePerDollarIgnoreHalt mirrors keeper.RunePerDollar, ignoring halts by using
+// dollarsPerRuneIgnoreHalt to return the last known price instead of "0"
+func runePerDollarIgnoreHalt(ctx cosmos.Context, k keeper.Keeper) cosmos.Uint {
+	runePerDollar := dollarsPerRuneIgnoreHalt(ctx, k)
+
+	one := cosmos.NewUint(common.One)
+
+	return common.GetUncappedShare(one, runePerDollar, one)
 }
 
 // dollarsPerRuneIgnoreHalt mirrors keeper.DollarsPerRune, but ignoring halts if all

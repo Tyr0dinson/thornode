@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"cosmossdk.io/log"
 	"cosmossdk.io/math"
@@ -796,6 +797,10 @@ func (k KVStoreDummy) DollarsPerRune(ctx cosmos.Context) cosmos.Uint { return co
 func (k KVStoreDummy) RunePerDollar(ctx cosmos.Context) cosmos.Uint  { return cosmos.ZeroUint() }
 func (k KVStoreDummy) DollarConfigInRune(ctx cosmos.Context, key constants.ConstantName) cosmos.Uint {
 	return cosmos.ZeroUint()
+}
+func (k KVStoreDummy) SetLastTorTime(ctx cosmos.Context, _ time.Time) {}
+func (k KVStoreDummy) GetLastTorTime(ctx cosmos.Context) (time.Time, error) {
+	return time.Time{}, nil
 }
 
 func (k KVStoreDummy) GetNativeTxFee(ctx cosmos.Context) cosmos.Uint {

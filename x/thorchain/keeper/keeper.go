@@ -1,6 +1,8 @@
 package keeper
 
 import (
+	"time"
+
 	"cosmossdk.io/math"
 	upgradetypes "cosmossdk.io/x/upgrade/types"
 	"github.com/blang/semver"
@@ -457,6 +459,8 @@ type KeeperAnchors interface {
 	AnchorMedian(ctx cosmos.Context, assets []common.Asset) cosmos.Uint
 	DollarsPerRune(ctx cosmos.Context) cosmos.Uint
 	RunePerDollar(ctx cosmos.Context) cosmos.Uint
+	SetLastTorTime(ctx cosmos.Context, timestamp time.Time)
+	GetLastTorTime(ctx cosmos.Context) (time.Time, error)
 }
 
 type KeeperTCYClaimer interface {

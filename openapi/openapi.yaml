@@ -3684,11 +3684,19 @@ components:
         rune_price_in_tor:
           type: string
           example: "10"
-          description: the rune price in tor, returns "n/a" if it can't be calculated (eg. all anchor chains are halted)
+          description: the rune price in tor
         tor_price_in_rune:
           type: string
           example: "10"
-          description: the tor price in rune, returns "n/a" if it can't be calculated (eg. all anchor chains are halted)
+          description: the tor price in rune
+        tor_price_age:
+          type: string
+          example: "6"
+          description: the time between the current block and the block where at least one anchor chain was available
+        tor_price_halted:
+          type: boolean
+          example: false
+          description: indicates if all anchor chains are halted (true), or at least one anchor chain is available (false)
 
     OutboundFeesResponse:
       type: array
