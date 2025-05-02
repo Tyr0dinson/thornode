@@ -12,6 +12,10 @@ import (
 // Upgrades list of chain upgrades
 var Upgrades = []upgrades.Upgrade{
 	// register non-standard upgrades here
+	{
+		UpgradeName:          "3.5.0",
+		CreateUpgradeHandler: standard.CreateUpgradeHandler,
+	},
 }
 
 // RegisterUpgradeHandlers registers the chain upgrade handlers
