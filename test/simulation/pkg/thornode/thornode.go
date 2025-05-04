@@ -125,6 +125,27 @@ func GetPools() ([]openapi.Pool, error) {
 	return pools, err
 }
 
+func GetVaults() ([]openapi.Vault, error) {
+	url := fmt.Sprintf("%s/thorchain/vaults/asgard", thornodeURL)
+	var vaults []openapi.Vault
+	err := Get(url, &vaults)
+	return vaults, err
+}
+
+func GetNetwork() (openapi.NetworkResponse, error) {
+	url := fmt.Sprintf("%s/thorchain/network", thornodeURL)
+	var network openapi.NetworkResponse
+	err := Get(url, &network)
+	return network, err
+}
+
+func GetNodes() ([]openapi.Node, error) {
+	url := fmt.Sprintf("%s/thorchain/nodes", thornodeURL)
+	var nodes []openapi.Node
+	err := Get(url, &nodes)
+	return nodes, err
+}
+
 func GetPool(asset common.Asset) (openapi.Pool, error) {
 	url := fmt.Sprintf("%s/thorchain/pool/%s", thornodeURL, asset.String())
 	var pool openapi.Pool
