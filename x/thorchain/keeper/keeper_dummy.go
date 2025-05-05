@@ -4,11 +4,11 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"cosmossdk.io/log"
 	"cosmossdk.io/math"
 	upgradetypes "cosmossdk.io/x/upgrade/types"
+
 	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/types/module/testutil"
@@ -798,9 +798,9 @@ func (k KVStoreDummy) RunePerDollar(ctx cosmos.Context) cosmos.Uint  { return co
 func (k KVStoreDummy) DollarConfigInRune(ctx cosmos.Context, key constants.ConstantName) cosmos.Uint {
 	return cosmos.ZeroUint()
 }
-func (k KVStoreDummy) SetLastTorTime(ctx cosmos.Context, _ time.Time) {}
-func (k KVStoreDummy) GetLastTorTime(ctx cosmos.Context) (time.Time, error) {
-	return time.Time{}, nil
+func (k KVStoreDummy) SetLastTorHeight(ctx cosmos.Context, height int64) {}
+func (k KVStoreDummy) GetLastTorHeight(ctx cosmos.Context) (int64, error) {
+	return -1, nil
 }
 
 func (k KVStoreDummy) GetNativeTxFee(ctx cosmos.Context) cosmos.Uint {

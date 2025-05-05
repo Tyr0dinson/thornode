@@ -3,7 +3,6 @@ package keeperv1
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -91,15 +90,14 @@ func (k KVStore) AnchorMedian(ctx cosmos.Context, assets []common.Asset) cosmos.
 	return common.GetMedianUint(p)
 }
 
-func (k KVStore) SetLastTorTime(ctx cosmos.Context, timestamp time.Time) {
-	key := k.GetKey(prefixLastTorTime, common.TOR.String())
-	k.setInt64(ctx, key, timestamp.Unix())
+func (k KVStore) SetLastTorHeight(ctx cosmos.Context, height int64) {
+	key := k.GetKey(prefixLastTorHeight, common.TOR.String())
+	k.setInt64(ctx, key, height)
 }
 
-func (k KVStore) GetLastTorTime(ctx cosmos.Context) (time.Time, error) {
-	key := k.GetKey(prefixLastTorTime, common.TOR.String())
+func (k KVStore) GetLastTorHeight(ctx cosmos.Context) (int64, error) {
+	key := k.GetKey(prefixLastTorHeight, common.TOR.String())
 	var record int64
 	_, err := k.getInt64(ctx, key, &record)
-	timestamp := time.Unix(record, 0)
-	return timestamp, err
+	return record, err
 }

@@ -3,7 +3,6 @@ package thorchain
 import (
 	"encoding/json"
 	"strconv"
-	"time"
 
 	"github.com/blang/semver"
 
@@ -1284,38 +1283,33 @@ func (s *QuerierSuite) TestNetwork(c *C) {
 	err = s.k.SetPool(s.ctx, pool)
 	c.Assert(err, IsNil)
 
-	// set last tor price unix: -62135597616 (1970yrs ~ 62168470000s)
-	t, err := time.Parse(time.RFC3339Nano, "0000-12-31T23:46:24.831213256Z")
-	c.Assert(err, IsNil)
-	s.k.SetLastTorTime(s.ctx, t)
+	s.k.SetLastTorHeight(s.ctx, s.ctx.BlockHeight())
 
-	dollarsPerRune := s.k.DollarsPerRune(s.ctx)
-	c.Assert(dollarsPerRune.String(), Equals, "911224600")
+	runePriceInTor := s.k.DollarsPerRune(s.ctx)
+	c.Assert(runePriceInTor.String(), Equals, "911224600")
 
-	runePerDollar := s.k.RunePerDollar(s.ctx)
-	c.Assert(runePerDollar.String(), Equals, "10974243")
+	torPriceInRune := s.k.RunePerDollar(s.ctx)
+	c.Assert(torPriceInRune.String(), Equals, "10974243")
 
 	resp, err := s.queryServer.Network(s.ctx, &types.QueryNetworkRequest{})
 	c.Assert(err, IsNil)
-	c.Assert(resp.TorPriceInRune, Equals, "10974243")
-	c.Assert(resp.RunePriceInTor, Equals, "911224600")
+	c.Assert(resp.TorPriceInRune, Equals, torPriceInRune.String())
+	c.Assert(resp.RunePriceInTor, Equals, runePriceInTor.String())
 	c.Assert(resp.TorPriceHalted, Equals, false)
-	// s.ctx.BlockHeader().Time = 1970-01-01 01:00:00 (unix: -62135596800)
-	c.Assert(resp.TorPriceAge, Equals, "816")
+	// there is no previous block, so lastTorHeight is not set
+	c.Assert(resp.TorPriceAge, Equals, "-1")
 
 	s.k.SetMimir(s.ctx, "HALTETHTRADING", 1)
 
-	dollarsPerRune = s.k.DollarsPerRune(s.ctx)
-	c.Assert(dollarsPerRune.String(), Equals, "0")
-
-	runePerDollar = s.k.RunePerDollar(s.ctx)
-	c.Assert(runePerDollar.String(), Equals, "0")
+	c.Assert(s.k.DollarsPerRune(s.ctx).String(), Equals, "0")
+	c.Assert(s.k.RunePerDollar(s.ctx).String(), Equals, "0")
 
 	resp, err = s.queryServer.Network(s.ctx, &types.QueryNetworkRequest{})
 	c.Assert(err, IsNil)
-	c.Assert(resp.TorPriceInRune, Equals, "10974243")
-	c.Assert(resp.RunePriceInTor, Equals, "911224600")
+	c.Assert(resp.TorPriceInRune, Equals, torPriceInRune.String())
+	c.Assert(resp.RunePriceInTor, Equals, runePriceInTor.String())
 	c.Assert(resp.TorPriceHalted, Equals, true)
+	c.Assert(resp.TorPriceAge, Equals, "-1")
 
 	s.k.SetMimir(s.ctx, "HALTETHTRADING", 0)
 

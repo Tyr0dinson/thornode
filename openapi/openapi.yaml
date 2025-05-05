@@ -3624,6 +3624,8 @@ components:
         - tns_fee_per_block_rune
         - rune_price_in_tor
         - tor_price_in_rune
+        - tor_price_age
+        - tor_price_halted
       properties:
         bond_reward_rune:
           type: string
@@ -3692,7 +3694,7 @@ components:
         tor_price_age:
           type: string
           example: "6"
-          description: the time between the current block and the block where at least one anchor chain was available
+          description: the time between the current block and the block where at least one anchor chain was available (returns "-1" when information about last known tor price can't be retrieved)
         tor_price_halted:
           type: boolean
           example: false

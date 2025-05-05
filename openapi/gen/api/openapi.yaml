@@ -5441,7 +5441,8 @@ components:
           type: string
         tor_price_age:
           description: the time between the current block and the block where at least
-            one anchor chain was available
+            one anchor chain was available (returns "-1" when information about last
+            known tor price can't be retrieved)
           example: "6"
           type: string
         tor_price_halted:
@@ -5460,6 +5461,8 @@ components:
       - rune_price_in_tor
       - tns_fee_per_block_rune
       - tns_register_fee_rune
+      - tor_price_age
+      - tor_price_halted
       - tor_price_in_rune
       - total_bond_units
       - total_reserve

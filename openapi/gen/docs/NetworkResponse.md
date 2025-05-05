@@ -20,14 +20,14 @@ Name | Type | Description | Notes
 **TnsFeePerBlockRune** | **string** | the thorname fee per block in rune, converted from the TNSFeePerBlockUSD mimir (after USD fees are enabled) | 
 **RunePriceInTor** | **string** | the rune price in tor | 
 **TorPriceInRune** | **string** | the tor price in rune | 
-**TorPriceAge** | Pointer to **string** | the time between the current block and the block where at least one anchor chain was available | [optional] 
-**TorPriceHalted** | Pointer to **bool** | indicates if all anchor chains are halted (true), or at least one anchor chain is available (false) | [optional] 
+**TorPriceAge** | **string** | the time between the current block and the block where at least one anchor chain was available (returns \&quot;-1\&quot; when information about last known tor price can&#39;t be retrieved) | 
+**TorPriceHalted** | **bool** | indicates if all anchor chains are halted (true), or at least one anchor chain is available (false) | 
 
 ## Methods
 
 ### NewNetworkResponse
 
-`func NewNetworkResponse(bondRewardRune string, totalBondUnits string, availablePoolsRune string, vaultsLiquidityRune string, effectiveSecurityBond string, totalReserve string, vaultsMigrating bool, gasSpentRune string, gasWithheldRune string, nativeOutboundFeeRune string, nativeTxFeeRune string, tnsRegisterFeeRune string, tnsFeePerBlockRune string, runePriceInTor string, torPriceInRune string, ) *NetworkResponse`
+`func NewNetworkResponse(bondRewardRune string, totalBondUnits string, availablePoolsRune string, vaultsLiquidityRune string, effectiveSecurityBond string, totalReserve string, vaultsMigrating bool, gasSpentRune string, gasWithheldRune string, nativeOutboundFeeRune string, nativeTxFeeRune string, tnsRegisterFeeRune string, tnsFeePerBlockRune string, runePriceInTor string, torPriceInRune string, torPriceAge string, torPriceHalted bool, ) *NetworkResponse`
 
 NewNetworkResponse instantiates a new NetworkResponse object
 This constructor will assign default values to properties that have it defined,
@@ -386,11 +386,6 @@ and a boolean to check if the value has been set.
 
 SetTorPriceAge sets TorPriceAge field to given value.
 
-### HasTorPriceAge
-
-`func (o *NetworkResponse) HasTorPriceAge() bool`
-
-HasTorPriceAge returns a boolean if a field has been set.
 
 ### GetTorPriceHalted
 
@@ -411,11 +406,6 @@ and a boolean to check if the value has been set.
 
 SetTorPriceHalted sets TorPriceHalted field to given value.
 
-### HasTorPriceHalted
-
-`func (o *NetworkResponse) HasTorPriceHalted() bool`
-
-HasTorPriceHalted returns a boolean if a field has been set.
 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)

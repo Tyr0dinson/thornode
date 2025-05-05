@@ -460,13 +460,6 @@ func (qs queryServer) queryNetwork(ctx cosmos.Context, _ *types.QueryNetworkRequ
 		}
 	}
 
-	lastTorTime, err := qs.mgr.Keeper().GetLastTorTime(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("fail to get last tor height: %w", err)
-	}
-
-	torPriceAge := ctx.BlockHeader().Time.Sub(lastTorTime)
-
 	result := types.QueryNetworkResponse{
 		// Due to using openapi. this will be displayed in alphabetical order,
 		// so its schema (and order here) should also be in alphabetical order.
@@ -487,7 +480,7 @@ func (qs queryServer) queryNetwork(ctx cosmos.Context, _ *types.QueryNetworkRequ
 		RunePriceInTor:        dollarsPerRuneIgnoreHalt(ctx, qs.mgr.Keeper()).String(),
 		TorPriceInRune:        runePerDollarIgnoreHalt(ctx, qs.mgr.Keeper()).String(),
 		TorPriceHalted:        torPriceHalted,
-		TorPriceAge:           fmt.Sprintf("%.0f", math.Ceil(torPriceAge.Seconds())),
+		TorPriceAge:           fmt.Sprintf("%d", qs.getLastTorAge(ctx)),
 	}
 
 	return &result, nil
@@ -3390,6 +3383,28 @@ func dollarsPerRuneIgnoreHalt(ctx cosmos.Context, k keeper.Keeper) cosmos.Uint {
 		}
 	}
 	return common.GetMedianUint(p).QuoUint64(constants.DollarMulti)
+}
+
+func (qs queryServer) getLastTorAge(ctx cosmos.Context) int64 {
+	lastTorHeight, err := qs.mgr.Keeper().GetLastTorHeight(ctx)
+	if err != nil {
+		return -1
+	}
+
+	lastTorBlock, err := qs.queryBlock(ctx, &types.QueryBlockRequest{
+		Height: fmt.Sprintf("%d", lastTorHeight),
+	})
+	if err != nil {
+		return -1
+	}
+
+	lastTorTime, err := time.Parse(time.RFC3339Nano, lastTorBlock.Header.Time)
+	if err != nil {
+		return -1
+	}
+
+	lastTorAge := ctx.BlockHeader().Time.Sub(lastTorTime)
+	return int64(math.Ceil(lastTorAge.Seconds()))
 }
 
 // queryTCYStakers

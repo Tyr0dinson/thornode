@@ -50,7 +50,7 @@ func (pm *PoolMgrVCUR) EndBlock(ctx cosmos.Context, mgr Manager) error {
 	usdAssets := mgr.Keeper().GetAnchors(ctx, common.TOR)
 	median := mgr.Keeper().AnchorMedian(ctx, usdAssets).QuoUint64(constants.DollarMulti)
 	if !median.IsZero() {
-		mgr.Keeper().SetLastTorTime(ctx, ctx.BlockHeader().Time)
+		mgr.Keeper().SetLastTorHeight(ctx, ctx.BlockHeight())
 	}
 
 	return nil
