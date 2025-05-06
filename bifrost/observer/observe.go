@@ -341,33 +341,34 @@ func (o *Observer) processObservedTx(txIn types.TxIn) {
 			}
 		}
 		// dedupe incoming txs
-		var newTxs []*types.TxInItem
-		for _, txInItem := range txIn.TxArray {
-			foundTx := false
-			for _, txInItemDeck := range in.TxArray {
-				if txInItemDeck.Equals(txInItem) {
-					foundTx = true
-					o.logger.Warn().
-						Str("id", txInItem.Tx).
-						Str("chain", in.Chain.String()).
-						Int64("height", txInItem.BlockHeight).
-						Str("from", txInItem.Sender).
-						Str("to", txInItem.To).
-						Str("memo", txInItem.Memo).
-						Str("coins", txInItem.Coins.String()).
-						Str("gas", common.Coins(txInItem.Gas).String()).
-						Str("observed_vault_pubkey", txInItem.ObservedVaultPubKey.String()).
-						Msg("Dropping duplicate observation tx")
-					break
-				}
-			}
-			if !foundTx {
-				newTxs = append(newTxs, txInItem)
-			}
-		}
-		if len(newTxs) > 0 {
-			in.TxArray = append(in.TxArray, newTxs...)
-		}
+		// var newTxs []*types.TxInItem
+		// for _, txInItem := range txIn.TxArray {
+		// 	foundTx := false
+		// 	for _, txInItemDeck := range in.TxArray {
+		// 		if txInItemDeck.Equals(txInItem) {
+		// 			foundTx = true
+		// 			o.logger.Warn().
+		// 				Str("id", txInItem.Tx).
+		// 				Str("chain", in.Chain.String()).
+		// 				Int64("height", txInItem.BlockHeight).
+		// 				Str("from", txInItem.Sender).
+		// 				Str("to", txInItem.To).
+		// 				Str("memo", txInItem.Memo).
+		// 				Str("coins", txInItem.Coins.String()).
+		// 				Str("gas", common.Coins(txInItem.Gas).String()).
+		// 				Str("observed_vault_pubkey", txInItem.ObservedVaultPubKey.String()).
+		// 				Msg("Dropping duplicate observation tx")
+		// 			break
+		// 		}
+		// 	}
+		// 	if !foundTx {
+		// 		newTxs = append(newTxs, txInItem)
+		// 	}
+		// }
+		// if len(newTxs) > 0 {
+		// 	in.TxArray = append(in.TxArray, newTxs...)
+		// }
+		in.TxArray = append(in.TxArray, txIn.TxArray...)
 
 		found = true
 		break
