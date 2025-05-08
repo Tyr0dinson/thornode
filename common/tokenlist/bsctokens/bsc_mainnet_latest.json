@@ -3008,6 +3008,14 @@
       "chainId": 56,
       "decimals": 18,
       "logoURI": "https://assets-cdn.trustwallet.com/blockchains/smartchain/assets/0xFbe0b4aE6E5a200c36A341299604D5f71A5F0a48/logo.png"
+    },
+    {
+      "name": "Moca",
+      "symbol": "Moca",
+      "address": "0x53312f85bba24c8cb99cffc13bf82420157230d3",
+      "chainId": 56,
+      "decimals": 18,
+      "logoURI": "https://bscscan.com/token/images/mocaapp_32.svg"
     }
   ]
 }
