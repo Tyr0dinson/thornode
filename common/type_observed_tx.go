@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 
+	"cosmossdk.io/log"
+
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
@@ -76,6 +78,67 @@ func (m ObservedTx) Equals(tx2 ObservedTx) bool {
 		tx2.AggregatorTargetLimit = &emptyAmt
 	}
 	if !m.AggregatorTargetLimit.Equal(*tx2.AggregatorTargetLimit) {
+		return false
+	}
+	return true
+}
+
+// Equals compare two ObservedTx
+func (m ObservedTx) EqualsLog(tx2 ObservedTx, log log.Logger) bool {
+	if m.BlockHeight != tx2.BlockHeight {
+		return false
+	}
+	if m.FinaliseHeight != tx2.FinaliseHeight {
+		return false
+	}
+	if !m.Tx.EqualsExLog(tx2.Tx, log) {
+		return false
+	}
+	if !m.ObservedPubKey.Equals(tx2.ObservedPubKey) {
+		log.Warn(
+			"POTENTIAL EBIFROST LEAK: ObservedPubKey mismatch",
+			"observed_pub_key_1", m.ObservedPubKey,
+			"observed_pub_key_2", tx2.ObservedPubKey,
+			"tx_id", m.Tx.ID,
+			"chain", m.Tx.Chain,
+		)
+		return false
+	}
+	if !strings.EqualFold(m.Aggregator, tx2.Aggregator) {
+		log.Warn(
+			"POTENTIAL EBIFROST LEAK: Aggregator mismatch",
+			"aggregator_1", m.Aggregator,
+			"aggregator_2", tx2.Aggregator,
+			"tx_id", m.Tx.ID,
+			"chain", m.Tx.Chain,
+		)
+		return false
+	}
+	if !strings.EqualFold(m.AggregatorTarget, tx2.AggregatorTarget) {
+		log.Warn(
+			"POTENTIAL EBIFROST LEAK: AggregatorTarget mismatch",
+			"aggregator_target_1", m.AggregatorTarget,
+			"aggregator_target_2", tx2.AggregatorTarget,
+			"tx_id", m.Tx.ID,
+			"chain", m.Tx.Chain,
+		)
+		return false
+	}
+	emptyAmt := cosmos.ZeroUint()
+	if m.AggregatorTargetLimit == nil {
+		m.AggregatorTargetLimit = &emptyAmt
+	}
+	if tx2.AggregatorTargetLimit == nil {
+		tx2.AggregatorTargetLimit = &emptyAmt
+	}
+	if !m.AggregatorTargetLimit.Equal(*tx2.AggregatorTargetLimit) {
+		log.Warn(
+			"POTENTIAL EBIFROST LEAK: AggregatorTargetLimit mismatch",
+			"aggregator_target_limit_1", m.AggregatorTargetLimit,
+			"aggregator_target_limit_2", tx2.AggregatorTargetLimit,
+			"tx_id", m.Tx.ID,
+			"chain", m.Tx.Chain,
+		)
 		return false
 	}
 	return true

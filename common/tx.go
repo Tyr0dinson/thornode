@@ -7,6 +7,8 @@ import (
 	"math/big"
 	"strings"
 
+	"cosmossdk.io/log"
+
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 )
@@ -164,6 +166,68 @@ func (tx Tx) EqualsEx(tx2 Tx) bool {
 		return false
 	}
 	if !strings.EqualFold(tx.Memo, tx2.Memo) {
+		return false
+	}
+	return true
+}
+
+// EqualsEx compare two Tx to see whether they represent the same Tx
+// This method will not change the original tx & tx2
+func (tx Tx) EqualsExLog(tx2 Tx, log log.Logger) bool {
+	if !tx.ID.Equals(tx2.ID) {
+		return false
+	}
+	if !tx.Chain.Equals(tx2.Chain) {
+		return false
+	}
+	if !tx.FromAddress.Equals(tx2.FromAddress) {
+		log.Warn(
+			"POTENTIAL EBIFROST LEAK: FromAddress mismatch",
+			"from_address_1", tx.FromAddress,
+			"from_address_2", tx2.FromAddress,
+			"tx_id", tx.ID,
+			"chain", tx.Chain,
+		)
+		return false
+	}
+	if !tx.ToAddress.Equals(tx2.ToAddress) {
+		log.Warn(
+			"POTENTIAL EBIFROST LEAK: ToAddress mismatch",
+			"to_address_1", tx.ToAddress,
+			"to_address_2", tx2.ToAddress,
+			"tx_id", tx.ID,
+			"chain", tx.Chain,
+		)
+		return false
+	}
+	if !tx.Coins.EqualsEx(tx2.Coins) {
+		log.Warn(
+			"POTENTIAL EBIFROST LEAK: Coins mismatch",
+			"coins_1", tx.Coins.String(),
+			"coins_2", tx2.Coins.String(),
+			"tx_id", tx.ID,
+			"chain", tx.Chain,
+		)
+		return false
+	}
+	if !tx.Gas.Equals(tx2.Gas) {
+		log.Warn(
+			"POTENTIAL EBIFROST LEAK: Gas mismatch",
+			"gas_1", tx.Gas.ToCoins().String(),
+			"gas_2", tx2.Gas.ToCoins().String(),
+			"tx_id", tx.ID,
+			"chain", tx.Chain,
+		)
+		return false
+	}
+	if !strings.EqualFold(tx.Memo, tx2.Memo) {
+		log.Warn(
+			"POTENTIAL EBIFROST LEAK: Memo mismatch",
+			"memo_1", tx.Memo,
+			"memo_2", tx2.Memo,
+			"tx_id", tx.ID,
+			"chain", tx.Chain,
+		)
 		return false
 	}
 	return true

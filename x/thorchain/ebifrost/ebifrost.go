@@ -117,10 +117,11 @@ func (b *EnshrinedBifrost) Stop() {
 
 func (b *EnshrinedBifrost) SendQuorumTx(ctx context.Context, tx *common.QuorumTx) (*SendQuorumTxResult, error) {
 	if err := b.quorumTxCache.AddItem(
+		b.logger,
 		tx,
 		(*common.QuorumTx).GetAttestations,
 		(*common.QuorumTx).SetAttestations,
-		(*common.QuorumTx).Equals,
+		(*common.QuorumTx).EqualsLog,
 	); err != nil {
 		return nil, err
 	}
@@ -130,10 +131,11 @@ func (b *EnshrinedBifrost) SendQuorumTx(ctx context.Context, tx *common.QuorumTx
 
 func (b *EnshrinedBifrost) SendQuorumNetworkFee(ctx context.Context, nf *common.QuorumNetworkFee) (*SendQuorumNetworkFeeResult, error) {
 	if err := b.networkFeeCache.AddItem(
+		b.logger,
 		nf,
 		(*common.QuorumNetworkFee).GetAttestations,
 		(*common.QuorumNetworkFee).SetAttestations,
-		(*common.QuorumNetworkFee).Equals,
+		(*common.QuorumNetworkFee).EqualsLog,
 	); err != nil {
 		return nil, err
 	}
@@ -143,10 +145,11 @@ func (b *EnshrinedBifrost) SendQuorumNetworkFee(ctx context.Context, nf *common.
 
 func (b *EnshrinedBifrost) SendQuorumSolvency(ctx context.Context, s *common.QuorumSolvency) (*SendQuorumSolvencyResult, error) {
 	if err := b.solvencyCache.AddItem(
+		b.logger,
 		s,
 		(*common.QuorumSolvency).GetAttestations,
 		(*common.QuorumSolvency).SetAttestations,
-		(*common.QuorumSolvency).Equals,
+		(*common.QuorumSolvency).EqualsLog,
 	); err != nil {
 		return nil, err
 	}
@@ -166,10 +169,11 @@ func (b *EnshrinedBifrost) SendQuorumErrataTx(ctx context.Context, e *common.Quo
 	b.quorumTxCache.Unlock()
 
 	if err := b.errataCache.AddItem(
+		b.logger,
 		e,
 		(*common.QuorumErrataTx).GetAttestations,
 		(*common.QuorumErrataTx).SetAttestations,
-		(*common.QuorumErrataTx).Equals,
+		(*common.QuorumErrataTx).EqualsLog,
 	); err != nil {
 		return nil, err
 	}
@@ -294,7 +298,7 @@ func (b *EnshrinedBifrost) MarkQuorumTxAttestationsConfirmed(ctx context.Context
 	found := b.quorumTxCache.MarkAttestationsConfirmed(
 		qtx,
 		b.logger,
-		(*common.QuorumTx).Equals,
+		(*common.QuorumTx).EqualsLog,
 		(*common.QuorumTx).GetAttestations,
 		(*common.QuorumTx).RemoveAttestations,
 		func(qtx *common.QuorumTx, logger log.Logger) {
@@ -331,7 +335,7 @@ func (b *EnshrinedBifrost) MarkQuorumNetworkFeeAttestationsConfirmed(ctx context
 	found := b.networkFeeCache.MarkAttestationsConfirmed(
 		qnf,
 		b.logger,
-		(*common.QuorumNetworkFee).Equals,
+		(*common.QuorumNetworkFee).EqualsLog,
 		(*common.QuorumNetworkFee).GetAttestations,
 		(*common.QuorumNetworkFee).RemoveAttestations,
 		func(qnf *common.QuorumNetworkFee, logger log.Logger) {
@@ -372,7 +376,7 @@ func (b *EnshrinedBifrost) MarkQuorumSolvencyAttestationsConfirmed(ctx context.C
 	found := b.solvencyCache.MarkAttestationsConfirmed(
 		qs,
 		b.logger,
-		(*common.QuorumSolvency).Equals,
+		(*common.QuorumSolvency).EqualsLog,
 		(*common.QuorumSolvency).GetAttestations,
 		(*common.QuorumSolvency).RemoveAttestations,
 		func(qs *common.QuorumSolvency, logger log.Logger) {
@@ -413,7 +417,7 @@ func (b *EnshrinedBifrost) MarkQuorumErrataTxAttestationsConfirmed(ctx context.C
 	found := b.errataCache.MarkAttestationsConfirmed(
 		qe,
 		b.logger,
-		(*common.QuorumErrataTx).Equals,
+		(*common.QuorumErrataTx).EqualsLog,
 		(*common.QuorumErrataTx).GetAttestations,
 		(*common.QuorumErrataTx).RemoveAttestations,
 		func(qe *common.QuorumErrataTx, logger log.Logger) {

@@ -133,12 +133,12 @@ func (c *InjectCache[T]) CheckRecentBlocks(matches func(T) bool) bool {
 }
 
 // MergeWithExisting tries to merge an item with an existing one or adds it as new
-func (c *InjectCache[T]) MergeWithExisting(item T, equals func(T, T) bool, merge func(existing T, new T)) bool {
+func (c *InjectCache[T]) MergeWithExisting(logger log.Logger, item T, equals func(T, T, log.Logger) bool, merge func(existing T, new T)) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	for i, existing := range c.items {
-		if equals(existing, item) {
+		if equals(existing, item, logger) {
 			merge(c.items[i], item)
 			return true
 		}
@@ -173,7 +173,7 @@ func (c *InjectCache[T]) LogDebug(logger log.Logger, logFn func(item T, logger l
 func (c *InjectCache[T]) MarkAttestationsConfirmed(
 	item T,
 	logger log.Logger,
-	equals func(T, T) bool,
+	equals func(T, T, log.Logger) bool,
 	getAttestations func(T) []*common.Attestation,
 	removeAttestations func(T, []*common.Attestation) bool,
 	logInfo func(T, log.Logger),
@@ -184,7 +184,7 @@ func (c *InjectCache[T]) MarkAttestationsConfirmed(
 	found := false
 	for i := 0; i < len(c.items); i++ {
 		cacheItem := c.items[i]
-		if equals(cacheItem, item) {
+		if equals(cacheItem, item, logger) {
 			found = true
 			logInfo(cacheItem, logger)
 			if empty := removeAttestations(cacheItem, getAttestations(item)); empty {
@@ -201,16 +201,17 @@ func (c *InjectCache[T]) MarkAttestationsConfirmed(
 // AddItem is a generic method that handles the common pattern for sending items to the cache
 // It filters out attestations that already exist in recent blocks and merges with existing items
 func (c *InjectCache[T]) AddItem(
+	logger log.Logger,
 	newItem T,
 	getAttestations func(T) []*common.Attestation,
 	setAttestations func(T, []*common.Attestation) T,
-	itemsEqual func(T, T) bool,
+	itemsEqual func(T, T, log.Logger) bool,
 ) error {
 	// Filter out attestations that are already in recent blocks
 	newAttestations := make([]*common.Attestation, 0)
 	for _, a := range getAttestations(newItem) {
 		found := c.CheckRecentBlocks(func(blockItem T) bool {
-			if !itemsEqual(blockItem, newItem) {
+			if !itemsEqual(blockItem, newItem, logger) {
 				return false
 			}
 
@@ -239,6 +240,7 @@ func (c *InjectCache[T]) AddItem(
 
 	// Try to merge with an existing item or add as new
 	c.MergeWithExisting(
+		logger,
 		itemToAdd,
 		itemsEqual,
 		func(existing T, new T) {

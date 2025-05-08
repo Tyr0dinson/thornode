@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 
+	"cosmossdk.io/log"
+
 	"github.com/blang/semver"
 )
 
@@ -65,6 +67,34 @@ func (nf *NetworkFee) Equals(other *NetworkFee) bool {
 	return true
 }
 
+func (nf *NetworkFee) EqualsLog(other *NetworkFee, log log.Logger) bool {
+	if nf.Chain != other.Chain {
+		return false
+	}
+	if nf.Height != other.Height {
+		return false
+	}
+	if nf.TransactionSize != other.TransactionSize {
+		log.Warn(
+			"POTENTIAL EBIFROST LEAK: Transaction size mismatch",
+			"expected", nf.TransactionSize, "actual", other.TransactionSize,
+			"chain", nf.Chain,
+			"height", nf.Height,
+		)
+		return false
+	}
+	if nf.TransactionRate != other.TransactionRate {
+		log.Warn(
+			"POTENTIAL EBIFROST LEAK: Transaction rate mismatch",
+			"expected", nf.TransactionRate, "actual", other.TransactionRate,
+			"chain", nf.Chain,
+			"height", nf.Height,
+		)
+		return false
+	}
+	return true
+}
+
 func (s *Solvency) Hash() (TxID, error) {
 	input := fmt.Sprintf("%s|%s|%s|%d", s.Chain, s.PubKey, s.Coins, s.Height)
 	id, err := NewTxID(fmt.Sprintf("%X", sha256.Sum256([]byte(input))))
@@ -101,6 +131,43 @@ func (s *Solvency) Equals(other *Solvency) bool {
 	}
 	for i, coin := range s.Coins {
 		if !coin.Equals(other.Coins[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *Solvency) EqualsLog(other *Solvency, log log.Logger) bool {
+	if s.Chain != other.Chain {
+		return false
+	}
+	if s.PubKey != other.PubKey {
+		return false
+	}
+	if s.Height != other.Height {
+		return false
+	}
+	if len(s.Coins) != len(other.Coins) {
+		log.
+			Warn(
+				"POTENTIAL EBIFROST LEAK: Coins length mismatch",
+				"expected", len(s.Coins), "actual", len(other.Coins),
+				"chain", s.Chain,
+				"pubkey", s.PubKey,
+				"height", s.Height,
+			)
+		return false
+	}
+	for i, coin := range s.Coins {
+		if !coin.Equals(other.Coins[i]) {
+			log.Warn(
+				"POTENTIAL EBIFROST LEAK: Coins mismatch",
+				"expected", coin, "actual", other.Coins[i],
+				"coins", len(s.Coins),
+				"chain", s.Chain,
+				"pubkey", s.PubKey,
+				"height", s.Height,
+			)
 			return false
 		}
 	}
@@ -145,6 +212,13 @@ func (qtx *QuorumTx) Equals(other *QuorumTx) bool {
 	return qtx.ObsTx.Equals(other.ObsTx)
 }
 
+func (qtx *QuorumTx) EqualsLog(other *QuorumTx, log log.Logger) bool {
+	if qtx.Inbound != other.Inbound {
+		return false
+	}
+	return qtx.ObsTx.EqualsLog(other.ObsTx, log)
+}
+
 func (qnf *QuorumNetworkFee) GetAttestations() []*Attestation {
 	return qnf.Attestations
 }
@@ -163,6 +237,10 @@ func (qnf *QuorumNetworkFee) RemoveAttestations(atts []*Attestation) bool {
 
 func (qnf *QuorumNetworkFee) Equals(other *QuorumNetworkFee) bool {
 	return qnf.NetworkFee.Equals(other.NetworkFee)
+}
+
+func (qnf *QuorumNetworkFee) EqualsLog(other *QuorumNetworkFee, log log.Logger) bool {
+	return qnf.NetworkFee.EqualsLog(other.NetworkFee, log)
 }
 
 func (qs *QuorumSolvency) GetAttestations() []*Attestation {
@@ -184,6 +262,10 @@ func (qs *QuorumSolvency) Equals(other *QuorumSolvency) bool {
 	return qs.Solvency.Equals(other.Solvency)
 }
 
+func (qs *QuorumSolvency) EqualsLog(other *QuorumSolvency, log log.Logger) bool {
+	return qs.Solvency.EqualsLog(other.Solvency, log)
+}
+
 func (qe *QuorumErrataTx) GetAttestations() []*Attestation {
 	return qe.Attestations
 }
@@ -200,6 +282,10 @@ func (qe *QuorumErrataTx) RemoveAttestations(atts []*Attestation) bool {
 }
 
 func (qe *QuorumErrataTx) Equals(other *QuorumErrataTx) bool {
+	return qe.ErrataTx.Equals(other.ErrataTx)
+}
+
+func (qe *QuorumErrataTx) EqualsLog(other *QuorumErrataTx, _ log.Logger) bool {
 	return qe.ErrataTx.Equals(other.ErrataTx)
 }
 
