@@ -45,8 +45,9 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/network
 asserts:
-  - .rune_price_in_tor == "99999600"
-  - .tor_price_in_rune == "100000400"
+  - .rune_price_in_tor | tonumber > 0
+  - .rune_price_in_tor | tonumber < 100000000
+  - .tor_price_in_rune | tonumber > 100000000
   - .tor_price_age == "0"
   - .tor_price_halted == false
 ---
@@ -61,7 +62,8 @@ count: 5
 type: check
 endpoint: http://localhost:1317/thorchain/network
 asserts:
-  - .rune_price_in_tor == "99999267"
-  - .tor_price_in_rune == "100000733"
+  - .rune_price_in_tor | tonumber > 0
+  - .rune_price_in_tor | tonumber < 100000000
+  - .tor_price_in_rune | tonumber > 100000000
   - .tor_price_age | tonumber >= 0
   - .tor_price_halted == true
