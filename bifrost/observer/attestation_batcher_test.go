@@ -25,17 +25,6 @@ func TestAttestationBatcher(t *testing.T) {
 	// Setup logger for tests
 	logger := zerolog.New(zerolog.NewTestWriter(t)).Level(zerolog.DebugLevel)
 
-	t.Run("creates batcher with default values", func(t *testing.T) {
-		host := NewMockHost([]peer.ID{})
-
-		// When creating batcher with zero values, it should use defaults
-		batcher := NewAttestationBatcher(host, logger, nil, 0, 0, 0, 0)
-
-		assert.Equal(t, 2*time.Second, batcher.batchInterval)
-		assert.Equal(t, 100, batcher.maxBatchSize)
-		assert.Equal(t, 20*time.Second, batcher.peerTimeout)
-	})
-
 	t.Run("creates batcher with custom values", func(t *testing.T) {
 		host := NewMockHost([]peer.ID{})
 

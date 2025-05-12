@@ -65,19 +65,6 @@ func NewAttestationBatcher(
 	peerTimeout time.Duration,
 	peerConcurrentSends int,
 ) *AttestationBatcher {
-	// Set default values if not specified
-	if batchInterval == 0 {
-		batchInterval = 2 * time.Second // Default to 2 second
-	}
-
-	if maxBatchSize == 0 {
-		maxBatchSize = 100 // Default max batch size
-	}
-
-	if peerTimeout == 0 {
-		peerTimeout = 20 * time.Second // Default peer timeout
-	}
-
 	// Create batch metrics
 	batchMetrics := &batchMetrics{
 		BatchSends:      m.GetCounter(metrics.BatchSends),

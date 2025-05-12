@@ -51,8 +51,10 @@ const (
 
 	defaultPeerTimeout = 20 * time.Second
 
-	defaultPeerConcurrentSends    = 4
-	defaultPeerConcurrentReceives = 5
+	defaultPeerConcurrentSends    = 8
+	defaultPeerConcurrentReceives = 9
+	defaultMaxBatchSize           = 200
+	defaultBatchInterval          = 2 * time.Second
 
 	streamAckBegin  = "ack_begin"
 	streamAckHeader = "ack_header"
@@ -240,6 +242,9 @@ func normalizeConfig(config *config.BifrostAttestationGossipConfig) {
 	if config.PeerTimeout == 0 {
 		config.PeerTimeout = defaultPeerTimeout
 	}
+	if config.MaxBatchSize == 0 {
+		config.MaxBatchSize = defaultMaxBatchSize
+	}
 	if config.PeerConcurrentSends == 0 {
 		config.PeerConcurrentSends = defaultPeerConcurrentSends
 	}
@@ -249,6 +254,9 @@ func normalizeConfig(config *config.BifrostAttestationGossipConfig) {
 	if config.PeerConcurrentReceives < config.PeerConcurrentSends {
 		// ensure that the number of concurrent receives is at least as large as the number of concurrent sends
 		config.PeerConcurrentReceives = config.PeerConcurrentSends
+	}
+	if config.BatchInterval == 0 {
+		config.BatchInterval = defaultBatchInterval
 	}
 }
 
