@@ -1,11 +1,21 @@
 package thorchain
 
 import (
+	"encoding/hex"
 	"fmt"
 	"math/big"
 	"strconv"
 	"strings"
 	"time"
+
+	btcchaincfg "github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcutil"
+	dogechaincfg "github.com/eager7/dogd/chaincfg"
+	"github.com/eager7/dogutil"
+	bchchaincfg "github.com/gcash/bchd/chaincfg"
+	"github.com/gcash/bchutil"
+	ltcchaincfg "github.com/ltcsuite/ltcd/chaincfg"
+	"github.com/ltcsuite/ltcutil"
 
 	"cosmossdk.io/log"
 	sdkmath "cosmossdk.io/math"
@@ -808,7 +818,11 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 		}
 
 		// this is the shortest we can make it
-		if len(memoString) > fromAsset.GetChain().MaxMemoLength() {
+		maxMemoLength := fromAsset.GetChain().MaxMemoLength()
+		if fromChain.IsUTXO() && req.Extended {
+			maxMemoLength = 79 + 8*20
+		}
+		if len(memoString) > maxMemoLength {
 			return nil, fmt.Errorf("generated memo too long for source chain")
 		}
 	}
@@ -883,6 +897,96 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 		res.RecommendedGasRate = inboundGas.String()
 		res.GasRateUnits = fromAsset.Chain.GetGasUnits()
 	}
+
+	if !fromChain.IsUTXO() || !req.Extended {
+		return res, nil
+	}
+
+	network := common.CurrentChainNetwork
+	parts := splitMemo(memoString)
+	vout := make([]*types.Vout, len(parts))
+
+	for i, part := range parts {
+		if i == 0 {
+			vout[i] = &types.Vout{
+				Type:   "op_return",
+				Data:   part,
+				Amount: 0,
+			}
+			continue
+		}
+
+		data, err := hex.DecodeString(part)
+		if err != nil {
+			return nil, err
+		}
+
+		var address string
+		var amount int64
+
+		switch fromChain {
+		case common.BTCChain:
+			// https://github.com/bitcoin/bitcoin/blob/29.x/src/policy/policy.cpp#L28-L41
+			amount = 294
+			params := &btcchaincfg.MainNetParams
+			if network == common.MockNet {
+				params = &btcchaincfg.RegressionNetParams
+			}
+			hash, err := btcutil.NewAddressWitnessPubKeyHash(data, params)
+			if err != nil {
+				return nil, err
+			}
+			address = hash.String()
+		case common.LTCChain:
+			// dust relay fee in 'lits' is 10x of the fees on btc (30k vs 3k)
+			// https://github.com/litecoin-project/litecoin/blob/v0.21.4/src/policy/policy.h#L52
+			// https://github.com/litecoin-project/litecoin/blob/v0.21.4/src/policy/policy.cpp#L17-L30
+			amount = 2940
+			params := &ltcchaincfg.MainNetParams
+			if network == common.MockNet {
+				params = &ltcchaincfg.RegressionNetParams
+			}
+			hash, err := ltcutil.NewAddressWitnessPubKeyHash(data, params)
+			if err != nil {
+				return nil, err
+			}
+			address = hash.String()
+		case common.DOGEChain:
+			// using bitcoin default for p2pkh txout
+			amount = 546
+			params := &dogechaincfg.MainNetParams
+			if network == common.MockNet {
+				params = &dogechaincfg.RegressionNetParams
+			}
+			hash, err := dogutil.NewAddressPubKeyHash(data, params)
+			if err != nil {
+				return nil, err
+			}
+			address = hash.String()
+		case common.BCHChain:
+			// using bitcoin default for p2pkh txout
+			amount = 546
+			params := &bchchaincfg.MainNetParams
+			if network == common.MockNet {
+				params = &bchchaincfg.RegressionNetParams
+			}
+			hash, err := bchutil.NewAddressPubKeyHash(data, params)
+			if err != nil {
+				return nil, err
+			}
+			address = hash.String()
+		default:
+			return nil, fmt.Errorf("chain not supported")
+		}
+
+		vout[i] = &types.Vout{
+			Type:   "address",
+			Data:   address,
+			Amount: amount,
+		}
+	}
+
+	res.Vout = vout
 
 	return res, nil
 }
@@ -1806,4 +1910,36 @@ func (qs queryServer) queryQuoteLoanClose(ctx cosmos.Context, req *types.QueryQu
 	}
 
 	return res, nil
+}
+
+// splitMemo converts an arbitrary string into a hex string and splits that
+// into one or more parts, with the first part being 80 bytes and every other
+// part 20 bytes, appending zero to the last part until it matches 20 bytes.
+// It is used for sending memos longer than 80 bytes on UTXO chains.
+func splitMemo(memo string) []string {
+	chunks := []string{}
+
+	encoded := hex.EncodeToString([]byte(memo))
+
+	// OP_RETURN data part: use first 79 chars + "^"
+	if len(encoded) > 160 {
+		chunks = append(chunks, encoded[:158]+"5e") // 0x5e == "^"
+		encoded = encoded[158:]
+	} else {
+		chunks = append(chunks, encoded)
+		encoded = ""
+	}
+
+	// encode remaining memo data into "fake addresses" of 20 bytes each
+	for len(encoded) > 0 {
+		index := min(len(encoded), 40)
+		chunk := encoded[0:index]
+		encoded = encoded[index:]
+		for len(chunk) < 40 {
+			chunk += "00"
+		}
+		chunks = append(chunks, chunk)
+	}
+
+	return chunks
 }

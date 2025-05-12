@@ -310,6 +310,97 @@ func (s *BitcoinSuite) TestGetMemo(c *C) {
 	memo, err = s.client.getMemo(&tx)
 	c.Assert(err, IsNil)
 	c.Assert(memo, Equals, "")
+
+	// OP_RETURN + data encoded in subsequent vout addresses
+	tx = btcjson.TxRawResult{
+		Vout: []btcjson.Vout{
+			{
+				ScriptPubKey: btcjson.ScriptPubKeyResult{
+					Asm:  "OP_RETURN 737761703a6574682e3078633534633135313236393646334541373935366264396144343130383138654563414443466666663a3078633534633135313236393646334541373935366264396144345e",
+					Type: "nulldata",
+					Hex:  "6a4c50737761703a6574682e3078633534633135313236393646334541373935366264396144343130383138654563414443466666663a3078633534633135313236393646334541373935366264396144345e",
+				},
+			},
+			{
+				ScriptPubKey: btcjson.ScriptPubKeyResult{
+					Asm:  "0 3130383138654563414443466666663a31303030",
+					Type: "witness_v0_keyhash",
+					Hex:  "00143130383138654563414443466666663a31303030",
+				},
+			},
+			{
+				ScriptPubKey: btcjson.ScriptPubKeyResult{
+					Asm:  "0 3030303030303000000000000000000000000000",
+					Type: "witness_v0_keyhash",
+					Hex:  "00143030303030303000000000000000000000000000",
+				},
+			},
+		},
+	}
+	memo, err = s.client.getMemo(&tx)
+	c.Assert(err, IsNil)
+	c.Assert(memo, Equals, "swap:eth.0xc54c1512696F3EA7956bd9aD410818eEcADCFfff:0xc54c1512696F3EA7956bd9aD410818eEcADCFfff:10000000000")
+
+	// OP_RETURN exactly 80 chars
+	tx = btcjson.TxRawResult{
+		Vout: []btcjson.Vout{
+			{
+				ScriptPubKey: btcjson.ScriptPubKeyResult{
+					Asm:  "OP_RETURN 535741503a415641582e555344432d4334384136453a3078324242413944344236324133363733313436433336464533423331433336414630323634384539393a302f312f303a2d5f2f743a352f3530",
+					Type: "nulldata",
+					Hex:  "6a4c50535741503a415641582e555344432d4334384136453a3078324242413944344236324133363733313436433336464533423331433336414630323634384539393a302f312f303a2d5f2f743a352f3530",
+				},
+			},
+			{
+				ScriptPubKey: btcjson.ScriptPubKeyResult{
+					Asm:  "0 47715D6877ACF46FAEADDFE010DBDEA83FC19577",
+					Type: "nulldata",
+					Hex:  "001447715D6877ACF46FAEADDFE010DBDEA83FC19577",
+				},
+			},
+		},
+	}
+	memo, err = s.client.getMemo(&tx)
+	c.Assert(err, IsNil)
+	c.Assert(memo, Equals, "SWAP:AVAX.USDC-C48A6E:0x2BBA9D4B62A3673146C36FE3B31C36AF02648E99:0/1/0:-_/t:5/50")
+
+	// OP_RETURN + OP_RETURN + data encoded in subsequent vout address
+	tx = btcjson.TxRawResult{
+		Vout: []btcjson.Vout{
+			{
+				ScriptPubKey: btcjson.ScriptPubKeyResult{
+					Asm:  "OP_RETURN 535741503a",
+					Type: "nulldata",
+					Hex:  "6a05535741503a",
+				},
+			},
+			{
+				ScriptPubKey: btcjson.ScriptPubKeyResult{
+					Asm:  "0 47715D6877ACF46FAEADDFE010DBDEA83FC19577",
+					Type: "nulldata",
+					Hex:  "001447715D6877ACF46FAEADDFE010DBDEA83FC19577",
+				},
+			},
+			{
+				ScriptPubKey: btcjson.ScriptPubKeyResult{
+					Asm:  "OP_RETURN 4554482e555344432d3058413042383639393143363231384233364331443139443441324539454230434533363036454234383a3078324242413944344236324133363733313436433336464533425e",
+					Type: "nulldata",
+					Hex:  "6a4c504554482e555344432d3058413042383639393143363231384233364331443139443441324539454230434533363036454234383a3078324242413944344236324133363733313436433336464533425e",
+				},
+			},
+			{
+				ScriptPubKey: btcjson.ScriptPubKeyResult{
+					Asm:  "0 3331433336414630323634384539390000000000",
+					Type: "nulldata",
+					Hex:  "00143331433336414630323634384539390000000000",
+				},
+			},
+		},
+	}
+
+	memo, err = s.client.getMemo(&tx)
+	c.Assert(err, IsNil)
+	c.Assert(memo, Equals, "SWAP:ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48:0x2BBA9D4B62A3673146C36FE3B31C36AF02648E99")
 }
 
 func (s *BitcoinSuite) TestIgnoreTx(c *C) {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"regexp"
 	"strings"
 	"time"
 
@@ -832,11 +833,16 @@ func (c *Client) getAddressesFromScriptPubKey(scriptPubKey btcjson.ScriptPubKeyR
 
 // getMemo returns memo for a btc tx, using vout OP_RETURN
 func (c *Client) getMemo(tx *btcjson.TxRawResult) (string, error) {
-	var opReturns string
+	var memo string
+
 	for _, vOut := range tx.Vout {
-		if !strings.EqualFold(vOut.ScriptPubKey.Type, "nulldata") {
+		switch strings.ToLower(vOut.ScriptPubKey.Type) {
+		case "witness_v0_keyhash", "pubkeyhash", "nulldata":
+			// do nothing
+		default:
 			continue
 		}
+
 		buf, err := hex.DecodeString(vOut.ScriptPubKey.Hex)
 		if err != nil {
 			c.log.Err(err).Msg("fail to hex decode scriptPubKey")
@@ -861,24 +867,103 @@ func (c *Client) getMemo(tx *btcjson.TxRawResult) (string, error) {
 			c.log.Err(err).Msg("fail to disasm script pubkey")
 			continue
 		}
-		opReturnFields := strings.Fields(asm)
-		if len(opReturnFields) == 2 {
+		fields := strings.Fields(asm)
+
+		if len(fields) < 2 {
+			// we need at least OP_RETURN + data, or 0 + address
+			continue
+		}
+
+		if fields[0] == "OP_RETURN" {
 			// skip "0" field to avoid log noise
-			if opReturnFields[1] == "0" {
+			if fields[1] == "0" {
 				continue
 			}
 
-			var decoded []byte
-			decoded, err = hex.DecodeString(opReturnFields[1])
-			if err != nil {
-				c.log.Err(err).Msgf("fail to decode OP_RETURN string: %s", opReturnFields[1])
+			memo += c.decodeHexString(fields[1])
+			continue
+		}
+
+		// don't inspect further non OP_RETURN outputs unless we found one
+		if len(memo) < 80 {
+			continue
+		}
+
+		// marker can be at position >= 79 for a single / multiple OP_RETURN_
+		if strings.LastIndex(memo, "^") < 79 {
+			// no continuation marker found
+			continue
+		}
+
+		var pubkey string
+
+		switch len(fields) {
+		case 2:
+			// Pay-to-witness-public-key-hash (P2WPKH) script format
+			// Format: <0> <20-byte-key-hash>
+			if fields[0] != "0" {
 				continue
 			}
-			opReturns += string(decoded)
+
+			pubkey = fields[1]
+		case 5:
+			// Pay-to-public-key-hash (P2PKH) script format
+			// Format: OP_DUP OP_HASH160 <20-byte-key-hash> OP_EQUALVERIFY OP_CHECKSIG
+			requiredOps := []string{
+				"OP_DUP", "OP_HASH160", fields[2],
+				"OP_EQUALVERIFY", "OP_CHECKSIG",
+			}
+
+			isValidScript := true
+			for i := 0; i < 4; i++ {
+				if fields[i] != requiredOps[i] {
+					isValidScript = false
+					break
+				}
+			}
+
+			if !isValidScript {
+				continue
+			}
+
+			pubkey = fields[2]
+		default:
+			continue
 		}
+
+		// process pubkey
+
+		// pubkey hash is ripemd-160, which is 20 bytes, 40 chars in hex
+		if len(pubkey) != 40 {
+			continue
+		}
+
+		// remove trailing zeros
+		if strings.HasSuffix(pubkey, "00") {
+			regex := regexp.MustCompile("(00)+$")
+			pubkey = regex.ReplaceAllString(pubkey, "")
+		}
+
+		memo += c.decodeHexString(pubkey)
 	}
 
-	return opReturns, nil
+	if strings.LastIndex(memo, "^") >= 79 {
+		memo = strings.Replace(memo, "^", "", 1)
+	}
+
+	return memo, nil
+}
+
+// decodeHexString decodes a provided hex string and returns the result
+// as string or "" if the decoding failed
+func (c *Client) decodeHexString(hexString string) string {
+	decoded, err := hex.DecodeString(hexString)
+	if err != nil {
+		c.log.Err(err).Msgf("fail to decode pubkey string: %s", hexString)
+		return ""
+	}
+
+	return string(decoded)
 }
 
 // getGas returns gas for a tx (sum vin - sum vout)
