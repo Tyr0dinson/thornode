@@ -29,7 +29,7 @@ func TestAttestationBatcher(t *testing.T) {
 		host := NewMockHost([]peer.ID{})
 
 		batchInterval := 3 * time.Second
-		maxBatchSize := 200
+		maxBatchSize := int64(200)
 		peerTimeout := 30 * time.Second
 		concurrentSends := 5
 

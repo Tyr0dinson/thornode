@@ -277,11 +277,11 @@ func (s *AttestationGossip) handleStreamBatchedAttestations(stream network.Strea
 	}
 
 	// slight tolerance above max
-	max := s.batcher.maxBatchSize
+	max := s.batcher.getMaxBatchSize()
 
 	// Process each attestation in the batch
 	for i, tx := range batch.AttestTxs {
-		if i >= max {
+		if int64(i) >= max {
 			logger.Error().Msgf("tx batch size %d exceeds max size %d", len(batch.AttestTxs), max)
 			break
 		}
@@ -293,7 +293,7 @@ func (s *AttestationGossip) handleStreamBatchedAttestations(stream network.Strea
 	}
 
 	for i, nf := range batch.AttestNetworkFees {
-		if i >= max {
+		if int64(i) >= max {
 			logger.Error().Msgf("net fee batch size %d exceeds max size %d", len(batch.AttestNetworkFees), max)
 			break
 		}
@@ -305,7 +305,7 @@ func (s *AttestationGossip) handleStreamBatchedAttestations(stream network.Strea
 	}
 
 	for i, solvency := range batch.AttestSolvencies {
-		if i >= max {
+		if int64(i) >= max {
 			logger.Error().Msgf("solvency batch size %d exceeds max size %d", len(batch.AttestSolvencies), max)
 			break
 		}
@@ -317,7 +317,7 @@ func (s *AttestationGossip) handleStreamBatchedAttestations(stream network.Strea
 	}
 
 	for i, errata := range batch.AttestErrataTxs {
-		if i >= max {
+		if int64(i) >= max {
 			logger.Error().Msgf("errata batch size %d exceeds max size %d", len(batch.AttestErrataTxs), max)
 			break
 		}

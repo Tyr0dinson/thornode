@@ -59,6 +59,10 @@ const (
 	streamAckBegin  = "ack_begin"
 	streamAckHeader = "ack_header"
 	streamAckData   = "ack_data"
+
+	mimirMaxBatchSize           = "AttestationMaxBatchSize"
+	mimirPeerConcurrentSends    = "AttestationPeerConcurrentSends"
+	mimirPeerConcurrentReceives = "AttestationPeerConcurrentReceives"
 )
 
 var (
@@ -455,6 +459,8 @@ func (s *AttestationGossip) Start(ctx context.Context) {
 		semPruneTicker.Stop()
 	}()
 
+	s.reconcileMimirConfigs()
+
 	go s.batcher.Start(ctx)
 
 	for {
@@ -527,6 +533,8 @@ func (s *AttestationGossip) Start(ctx context.Context) {
 			}
 			s.cachedKeySignMu.Unlock()
 
+			s.reconcileMimirConfigs()
+
 		case <-delayTimer.C:
 			s.eventClient.Start()
 
@@ -537,6 +545,35 @@ func (s *AttestationGossip) Start(ctx context.Context) {
 		case <-ctx.Done():
 			s.eventClient.Stop()
 			return
+		}
+	}
+}
+
+func (s *AttestationGossip) reconcileMimirConfigs() {
+	maxBatchSize, err := s.bridge.GetMimir(mimirMaxBatchSize)
+	if err != nil {
+		s.logger.Error().Str("mimir", mimirMaxBatchSize).Err(err).Msg("fail to get mimir value")
+	} else if maxBatchSize > 0 {
+		if maxBatchSize != s.batcher.getMaxBatchSize() {
+			s.batcher.updateMaxBatchSize(maxBatchSize)
+		}
+	}
+
+	peerConcurrentSends, err := s.bridge.GetMimir(mimirPeerConcurrentSends)
+	if err != nil {
+		s.logger.Error().Str("mimir", mimirPeerConcurrentSends).Err(err).Msg("fail to get mimir value")
+	} else if peerConcurrentSends > 0 {
+		if peerConcurrentSends != int64(s.batcher.peerMgr.getLimit()) {
+			s.batcher.peerMgr.updateLimit(int(peerConcurrentSends)) //nolint:staticcheck
+		}
+	}
+
+	peerConcurrentReceives, err := s.bridge.GetMimir(mimirPeerConcurrentReceives)
+	if err != nil {
+		s.logger.Error().Str("mimir", mimirPeerConcurrentReceives).Err(err).Msg("fail to get mimir value")
+	} else if peerConcurrentReceives > 0 {
+		if peerConcurrentReceives != int64(s.peerMgr.getLimit()) {
+			s.peerMgr.updateLimit(int(peerConcurrentReceives)) //nolint:staticcheck
 		}
 	}
 }
