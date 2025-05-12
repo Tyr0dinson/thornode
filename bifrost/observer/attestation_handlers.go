@@ -56,7 +56,7 @@ func closeStream(logger zerolog.Logger, stream network.Stream) {
 		// NOTE: remove this after upgrading to libp2p v0.12.0+, because
 		// then Close() will close both write and read sides of the stream.
 		// In v0.11.0, it only closes the write side.
-		time.Sleep(1 * time.Second)
+		time.Sleep(10 * time.Second)
 		if err := stream.Reset(); err != nil {
 			logger.Error().Err(err).Msg("fail to reset stream after delay")
 		}
