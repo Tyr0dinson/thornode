@@ -24,6 +24,14 @@ var BlankTxID = TxID("0000000000000000000000000000000000000000000000000000000000
 
 // NewTxID parse the input hash as TxID
 func NewTxID(hash string) (TxID, error) {
+	// for cosmos tx hash with appended id
+	// eg: DDFB48D1A6084FD41FE1D37BB5A950234F4AED3CF8036AED12633389BDC37DB9-1
+	if len(hash) > 64 {
+		if strings.Index(hash, "-") == 64 {
+			return TxID(strings.ToUpper(hash)), nil
+		}
+	}
+
 	switch len(hash) {
 	case 64:
 		// do nothing
