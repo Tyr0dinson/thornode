@@ -175,10 +175,25 @@ func (s *AttestationGossip) AttestErrata(ctx context.Context, errata common.Erra
 // handleStreamAttestationState handles incoming observed transaction streams
 func (s *AttestationGossip) handleStreamAttestationState(stream network.Stream) {
 	remotePeer := stream.Conn().RemotePeer()
+
 	logger := s.logger.With().Str("remote_peer", remotePeer.String()).Logger()
 	logger.Debug().Msg("reading attestation state message")
 
 	defer closeStream(logger, stream)
+
+	s.stateInitMu.Lock()
+	if s.stateInitPeers == nil {
+		// we are not asking for attestation state
+		s.stateInitMu.Unlock()
+		return
+	}
+	_, ok := s.stateInitPeers[remotePeer]
+	s.stateInitMu.Unlock()
+	if !ok {
+		// unauthorized peer
+		s.logger.Warn().Msg("skipping attestation state stream from unexpected peer")
+		return
+	}
 
 	// Read and process the message
 	data, err := p2p.ReadStreamWithBuffer(stream)

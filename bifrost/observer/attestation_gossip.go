@@ -63,7 +63,7 @@ const (
 )
 
 var (
-	attestationStateProtocol   protocol.ID = "/p2p/attestation-state"
+	attestationStateProtocol   protocol.ID = "/p2p/attestation-state/v2"
 	batchedAttestationProtocol protocol.ID = "/p2p/batched-attestations"
 
 	// AttestationState protocol prefixes
@@ -136,6 +136,9 @@ type AttestationGossip struct {
 
 	// peerManager is used to limit the number of concurrent receives from a peer
 	peerMgr *peerManager
+
+	stateInitPeers map[peer.ID]bool // peers that we have asked for their attestation state
+	stateInitMu    sync.Mutex
 }
 
 type cachedKeySignParty struct {
