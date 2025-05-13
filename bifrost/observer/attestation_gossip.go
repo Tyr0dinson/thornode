@@ -369,12 +369,16 @@ func (s *AttestationGossip) handleQuorumTxCommitted(en *ebifrost.EventNotificati
 
 	s.mu.Lock()
 	as, ok := s.observedTxs[k]
+	if ok {
+		// note, purposefully locking the single state mutex prior to releasing the global mutex to avoid race in between.
+		// This order must be maintained everywhere to avoid deadlock.
+		as.mu.Lock()
+	}
 	s.mu.Unlock()
 	if !ok {
 		return
 	}
 
-	as.mu.Lock()
 	defer as.mu.Unlock()
 	as.MarkAttestationsCommitted(qtx.Attestations)
 }
@@ -391,12 +395,16 @@ func (s *AttestationGossip) handleQuorumNetworkFeeCommitted(en *ebifrost.EventNo
 
 	s.mu.Lock()
 	as, ok := s.networkFees[*qnf.NetworkFee]
+	if ok {
+		// note, purposefully locking the single state mutex prior to releasing the global mutex to avoid race in between.
+		// This order must be maintained everywhere to avoid deadlock.
+		as.mu.Lock()
+	}
 	s.mu.Unlock()
 	if !ok {
 		return
 	}
 
-	as.mu.Lock()
 	defer as.mu.Unlock()
 	as.MarkAttestationsCommitted(qnf.Attestations)
 }
@@ -413,12 +421,16 @@ func (s *AttestationGossip) handleQuorumSolvencyCommitted(en *ebifrost.EventNoti
 
 	s.mu.Lock()
 	as, ok := s.solvencies[qs.Solvency.Id]
+	if ok {
+		// note, purposefully locking the single state mutex prior to releasing the global mutex to avoid race in between.
+		// This order must be maintained everywhere to avoid deadlock.
+		as.mu.Lock()
+	}
 	s.mu.Unlock()
 	if !ok {
 		return
 	}
 
-	as.mu.Lock()
 	defer as.mu.Unlock()
 	as.MarkAttestationsCommitted(qs.Attestations)
 }
@@ -435,12 +447,16 @@ func (s *AttestationGossip) handleQuorumErrataTxCommitted(en *ebifrost.EventNoti
 
 	s.mu.Lock()
 	as, ok := s.errataTxs[*qe.ErrataTx]
+	if ok {
+		// note, purposefully locking the single state mutex prior to releasing the global mutex to avoid race in between.
+		// This order must be maintained everywhere to avoid deadlock.
+		as.mu.Lock()
+	}
 	s.mu.Unlock()
 	if !ok {
 		return
 	}
 
-	as.mu.Lock()
 	defer as.mu.Unlock()
 	as.MarkAttestationsCommitted(qe.Attestations)
 }
