@@ -181,20 +181,6 @@ func (s *AttestationGossip) handleStreamAttestationState(stream network.Stream) 
 
 	defer closeStream(logger, stream)
 
-	s.stateInitMu.Lock()
-	if s.stateInitPeers == nil {
-		// we are not asking for attestation state
-		s.stateInitMu.Unlock()
-		return
-	}
-	_, ok := s.stateInitPeers[remotePeer]
-	s.stateInitMu.Unlock()
-	if !ok {
-		// unauthorized peer
-		s.logger.Warn().Msg("skipping attestation state stream from unexpected peer")
-		return
-	}
-
 	// Read and process the message
 	data, err := p2p.ReadStreamWithBuffer(stream)
 	if err != nil {
@@ -222,6 +208,30 @@ func (s *AttestationGossip) handleStreamAttestationState(stream network.Stream) 
 		s.sendAttestationState(stream)
 
 	case data[0] == prefixBatchBegin[0]:
+
+		s.stateInitMu.Lock()
+		if s.stateInitPeers == nil {
+			// we are not asking for attestation state
+			s.stateInitMu.Unlock()
+			s.logger.Warn().Msg("skipping attestation state stream, not asking for it")
+			err := p2p.WriteStreamWithBuffer([]byte("error: not asking for attestation state"), stream)
+			if err != nil {
+				logger.Error().Err(err).Msgf("fail to write error reply to peer: %s", remotePeer)
+			}
+			return
+		}
+		_, ok := s.stateInitPeers[remotePeer]
+		s.stateInitMu.Unlock()
+		if !ok {
+			// unauthorized peer
+			s.logger.Warn().Msg("skipping attestation state stream from unexpected peer")
+			err := p2p.WriteStreamWithBuffer([]byte("error: unauthorized peer for attestation state"), stream)
+			if err != nil {
+				logger.Error().Err(err).Msgf("fail to write error reply to peer: %s", remotePeer)
+			}
+			return
+		}
+
 		// Batched state transmission
 		logger.Debug().Msg("handling batched attestation state")
 		err := s.receiveBatchedAttestationState(stream, data[1:])
