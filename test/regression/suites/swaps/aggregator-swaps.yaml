@@ -38,7 +38,7 @@ asserts:
       "to_address": "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
       "coin": {
         "asset": "ETH.ETH",
-        "amount": "82004267"
+        "amount": "82004508"
       },
       "max_gas": [
         {
@@ -66,7 +66,7 @@ asserts:
         "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
         "coin": {
           "asset": "ETH.ETH",
-          "amount": "82004267"
+          "amount": "82004508"
         },
         "memo": "OUT:34AA325C82F0B9572B54B1AD403146200625DB5F31EF59C5F8BF9BF22F93E71A",
         "max_gas": [
@@ -84,4 +84,4 @@ asserts:
         "clout_spent": "0"
       }
 
-  - .signature == "tDY+4ydD8Jruk6lBQ5CGAopyemisZm0iC1SBmQAI3BZwm3xZ21FoUYBGhlTXKG3xbcxRTLjNdI7LGHGCTJ+ksg=="
+  - .signature == "ulmTLVm/tyO6+YRMKqH38r/SuAJnmWdAs7WYAFlzAw89r5VNVQ2L7dT/95aRtrzI3nHYdKrxnnCZ5TbpokRDag=="

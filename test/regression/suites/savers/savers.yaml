@@ -67,14 +67,14 @@ type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/supply
 asserts:
   - .supply|length == 2
-  - .supply[]|select(.denom == "btc/btc")|.amount|tonumber == 4777728
+  - .supply[]|select(.denom == "btc/btc")|.amount|tonumber == 4777719
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pools
 asserts:
   - .|length == 1
   - .[0].savers_fill_bps|tonumber == 455
-  - .[0].savers_capacity_remaining|tonumber == 100222272
+  - .[0].savers_capacity_remaining|tonumber == 100222281
 ---
 ########################################################################################
 # swap btc to rune and back to generate yield
@@ -106,7 +106,7 @@ type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 1
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2514340793682
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2514340481694
 ---
 ########################################################################################
 # check growth and withdraw 50%
@@ -116,8 +116,8 @@ endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/savers
 asserts:
   - .|length == 1
   - .[0].asset_deposit_value|tonumber == 4770146
-  - .[0].asset_redeem_value|tonumber == 14089560
-  - .[0].growth_pct|tonumber == 1.953695756901361090
+  - .[0].asset_redeem_value|tonumber == 14089484
+  - .[0].growth_pct|tonumber == 1.953679824474974141
 ---
 type: tx-observed-in
 signer: {{ addr_thor_dog }}
@@ -147,7 +147,7 @@ endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - length == 1
   - .[0].in_hash == "{{ observe_txid 3 }}"
-  - .[0].coin.amount == "${OUT_AMOUNT=6876769}"
+  - .[0].coin.amount == "${OUT_AMOUNT=6876733}"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -185,8 +185,8 @@ endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/savers
 asserts:
   - .|length == 1
   - .[0].asset_deposit_value|tonumber == 2385073
-  - .[0].asset_redeem_value|tonumber == 7045518
-  - .[0].growth_pct|tonumber == 1.954005181392770787
+  - .[0].asset_redeem_value|tonumber == 7045450
+  - .[0].growth_pct|tonumber == 1.953976670735025720
 ---
 type: tx-observed-in
 signer: {{ addr_thor_dog }}
@@ -216,7 +216,7 @@ endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - length == 1
   - .[0].in_hash == "{{ observe_txid 5 }}"
-  - .[0].coin.amount == "${OUT_AMOUNT=6876399}"
+  - .[0].coin.amount == "${OUT_AMOUNT=6876334}"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -251,7 +251,7 @@ endpoint: http://localhost:1317/thorchain/pools
 asserts:
   - length == 1
   - .[0].savers_fill_bps == "0"
-  - .[0].savers_capacity_remaining == "594036344"
+  - .[0].savers_capacity_remaining == "594036445"
 ---
 ########################################################################################
 # turn on streaming swaps for savers adds (set interval to 1)
@@ -335,7 +335,7 @@ endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/savers
 asserts:
   - length == 1
   - .[0].asset_deposit_value == "19845387"
-  - .[0].asset_redeem_value == "19845986"
+  - .[0].asset_redeem_value == "19845946"
 ---
 ########################################################################################
 # swap btc to rune and back to generate yield
@@ -368,8 +368,8 @@ endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/savers
 asserts:
   - length == 1
   - .[0].asset_deposit_value == "19845387"
-  - .[0].asset_redeem_value == "${ASSET_REDEEM=23391289}"
-  - .[0].growth_pct == "0.178676384592550400"
+  - .[0].asset_redeem_value == "${ASSET_REDEEM=23391167}"
+  - .[0].growth_pct == "0.178670237068191212"
 ---
 ########################################################################################
 # withdraw savers should use streaming swaps
@@ -420,7 +420,7 @@ asserts:
   - .tx_id == "{{ observe_txid 9 }}"
   - .interval == 1
   - .quantity == 4
-  - .in == "11695644"
+  - .in == "11695582"
 ---
 type: create-blocks
 count: 2
@@ -438,7 +438,7 @@ endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - length == 1
   - .[0].in_hash == "{{ observe_txid 9 }}"
-  - .[0].coin.amount == "${OUTPUT_AMOUNT=23084664}"
+  - .[0].coin.amount == "${OUTPUT_AMOUNT=23084544}"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/savers
@@ -579,7 +579,7 @@ endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/savers
 asserts:
   - length == 1
   - .[0].asset_deposit_value == "19840111"
-  - .[0].asset_redeem_value == "19840915"
+  - .[0].asset_redeem_value == "19840805"
   - .[0].last_add_height == 26
 ---
 ########################################################################################
@@ -626,7 +626,7 @@ endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/savers
 asserts:
   - length == 1
   - .[0].asset_deposit_value == "${PRE_ADD_DEPOSIT=19840111}"
-  - .[0].asset_redeem_value == "${PRE_ADD_REDEEM=19840998}"
+  - .[0].asset_redeem_value == "${PRE_ADD_REDEEM=19840833}"
   - .[0].last_add_height == 26
 ---
 type: check
@@ -676,10 +676,10 @@ type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/savers
 asserts:
   - .|length == 1
-  - .[0].asset_deposit_value == "20038134"
+  - .[0].asset_deposit_value == "20038133"
   - .[0].asset_deposit_value | tonumber > ${PRE_ADD_DEPOSIT} + (${ADD} * 0.99)
   - .[0].asset_deposit_value | tonumber < ${PRE_ADD_DEPOSIT} + ${ADD}
-  - .[0].asset_redeem_value == "20039206"
+  - .[0].asset_redeem_value == "20038929"
   - .[0].asset_redeem_value | tonumber > ${PRE_ADD_REDEEM} + (${ADD} * 0.99)
   # Larger-than-add increase is hypothetically possible due to savers yield.
   - .[0].last_add_height == 30

@@ -31,7 +31,7 @@ asserts:
   - .[0].vault_pub_key_eddsa == "tthorpub1zcjduepqytyuhhzn286vccztkdns982ad0snfa68k3zjlcm2j2ae6rffhxssu9zuek"
   - .[0].to_address == "{{ addr_sol_cat }}"
   - .[0].coin.asset == "SOL.SOL"
-  - .[0].coin.amount == "997497"
+  - .[0].coin.amount == "997501"
   - .[0].max_gas[0].asset == "SOL.SOL"
   - .[0].max_gas[0].amount == "500"
   - .[0].max_gas[0].decimals == 9
@@ -47,7 +47,7 @@ params:
   amount: 10000000
   destination: {{ addr_btc_fox }}
 asserts:
-  - .expected_amount_out|tonumber == 956231
+  - .expected_amount_out|tonumber == 956224
   - .memo == "=:b:{{ addr_btc_fox }}"
   - .recommended_min_amount_in == "209580"
   - .fees.liquidity == "19479"
@@ -67,10 +67,10 @@ params:
   amount: 1000000
   destination: {{ addr_sol_fox }}
 asserts:
-  - .expected_amount_out|tonumber == 9593961
+  - .expected_amount_out|tonumber == 9594027
   - .memo == "=:o:{{ addr_sol_fox }}"
   - .recommended_min_amount_in == "21000"
-  - .fees.liquidity == "193632"
+  - .fees.liquidity == "193634"
   - .fees.outbound == "500"
   - (.fees.total|tonumber) == (.fees.liquidity|tonumber)+(.fees.outbound|tonumber)
   - .fees.slippage_bps == 197

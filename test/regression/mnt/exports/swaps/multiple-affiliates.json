@@ -152,7 +152,7 @@
           "address": "tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u",
           "coins": [
             {
-              "amount": "786178260",
+              "amount": "786155379",
               "denom": "rune"
             }
           ]
@@ -170,7 +170,7 @@
           "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
           "coins": [
             {
-              "amount": "197636953773",
+              "amount": "197628063917",
               "denom": "rune"
             }
           ]
@@ -179,7 +179,7 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "35000402676545",
+              "amount": "35000413776485",
               "denom": "rune"
             }
           ]
@@ -188,7 +188,7 @@
           "address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
           "coins": [
             {
-              "amount": "2499383433398",
+              "amount": "2499381817569",
               "denom": "rune"
             }
           ]
@@ -197,7 +197,7 @@
           "address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
           "coins": [
             {
-              "amount": "2499990407334",
+              "amount": "2499990405911",
               "denom": "rune"
             }
           ]
@@ -206,7 +206,7 @@
           "address": "tthor1anq4fk6l89w3sfuxehwyprxqjdj3kuzpfwlrav",
           "coins": [
             {
-              "amount": "997320291",
+              "amount": "997283140",
               "denom": "rune"
             }
           ]
@@ -215,7 +215,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "5000803030399",
+              "amount": "5000802497599",
               "denom": "rune"
             }
           ]
@@ -253,7 +253,7 @@
               "chain": "THOR"
             }
           ],
-          "expire_block_height": "10256010",
+          "expire_block_height": "30053724",
           "name": "t",
           "owner": "tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u",
           "preferred_asset": "."
@@ -265,7 +265,7 @@
               "chain": "ETH"
             }
           ],
-          "expire_block_height": "10256011",
+          "expire_block_height": "30053725",
           "name": "a",
           "owner": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
           "preferred_asset": "ETH.ETH"
@@ -278,7 +278,7 @@
           "initial_block_height": "15",
           "signer": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
           "state": {
-            "deposit": "249145168",
+            "deposit": "249135844",
             "in": "0",
             "out": "0",
             "quantity": "1",
@@ -291,13 +291,13 @@
             "chain": "THOR",
             "coins": [
               {
-                "amount": "249145168",
+                "amount": "249135844",
                 "asset": "THOR.RUNE"
               }
             ],
             "from_address": "tthor1dl7un46w7l7f3ewrnrm6nq58nerjtp0d82uzjg",
             "gas": null,
-            "id": "44B618D1C033C264C12978B221917FB23F7B36CE72C921855369FA150B41FDC2",
+            "id": "7705C01854FF4981C7EF243E91B256ED969A8A16C8CB89906F834F2E1E33659B",
             "memo": "THOR-PREFERRED-ASSET-a",
             "to_address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2"
           },
@@ -360,7 +360,7 @@
       "network": {
         "LPIncomeSplit": "9642",
         "NodeIncomeSplit": "358",
-        "bond_reward_rune": "805030399",
+        "bond_reward_rune": "804497599",
         "total_bond_units": "15"
       },
       "network_fees": [
@@ -401,13 +401,13 @@
       "observed_tx_out_voters": null,
       "outbound_fee_spent_rune": [
         {
-          "amount": "44068507",
+          "amount": "44066794",
           "asset": "BTC.BTC"
         }
       ],
       "outbound_fee_withheld_rune": [
         {
-          "amount": "689684565872",
+          "amount": "689684565165",
           "asset": "BTC.BTC"
         },
         {
@@ -419,8 +419,8 @@
         {
           "LP_units": "100000000000",
           "asset": "BTC.BTC",
-          "balance_asset": "129556184",
-          "balance_rune": "97383784936",
+          "balance_asset": "129555763",
+          "balance_rune": "97377586837",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -431,7 +431,7 @@
           "LP_units": "100000000000",
           "asset": "ETH.ETH",
           "balance_asset": "1000000000",
-          "balance_rune": "100004023669",
+          "balance_rune": "100001341236",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -454,31 +454,31 @@
         {
           "address": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw",
           "reclaimed": "0",
-          "score": "10937603086",
+          "score": "10937163043",
           "spent": "0"
         },
         {
           "address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
           "reclaimed": "0",
-          "score": "10939072756",
+          "score": "10938632732",
           "spent": "0"
         },
         {
           "address": "tthor1anq4fk6l89w3sfuxehwyprxqjdj3kuzpfwlrav",
           "reclaimed": "0",
-          "score": "244702",
+          "score": "244706",
           "spent": "0"
         },
         {
           "address": "tthor1dl7un46w7l7f3ewrnrm6nq58nerjtp0d82uzjg",
           "reclaimed": "0",
-          "score": "38046",
+          "score": "38047",
           "spent": "0"
         },
         {
           "address": "tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u",
           "reclaimed": "0",
-          "score": "1102283",
+          "score": "1102299",
           "spent": "0"
         },
         {
@@ -508,7 +508,7 @@
           ],
           "coins": [
             {
-              "amount": "129556184",
+              "amount": "129555763",
               "asset": "BTC.BTC",
               "decimals": "8"
             },

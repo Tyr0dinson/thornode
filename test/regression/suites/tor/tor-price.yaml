@@ -44,8 +44,8 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/network
 asserts:
-  - .rune_price_in_tor == "99998801"
-  - .tor_price_in_rune == "100001199"
+  - .rune_price_in_tor == "99999600"
+  - .tor_price_in_rune == "100000400"
   - .tor_price_halted == false
 ---
 type: tx-mimir
@@ -59,6 +59,6 @@ count: 5
 type: check
 endpoint: http://localhost:1317/thorchain/network
 asserts:
-  - .rune_price_in_tor == "99997802"
-  - .tor_price_in_rune == "100002198"
+  - .rune_price_in_tor == "99999267"
+  - .tor_price_in_rune == "100000733"
   - .tor_price_halted == true

@@ -81,7 +81,7 @@ asserts:
   - .|length == 1
   - .[0].in_hash == "${TXID_1}"
   - .[0].coin.asset == "ETH.ETH"
-  - .[0].coin.amount == "${OUT_AMOUNT=44381063}"
+  - .[0].coin.amount == "${OUT_AMOUNT=44381039}"
   - .[0].to_address == "{{ addr_eth_fox }}"
 ---
 # Clear the outbound with tx-observed-out
@@ -423,7 +423,7 @@ asserts:
   - .|length == 2
   - any(.in_hash == "${TXID_10}" and .coin.asset == "ETH.ETH") # Partial swap output
   - any(.memo | contains("REFUND:${TXID_10}")) # Refund of remaining BTC
-  - .[0].coin.amount == "${OUT_AMOUNT_1=13263434}"
+  - .[0].coin.amount == "${OUT_AMOUNT_1=13263400}"
   - .[1].coin.amount == "${OUT_AMOUNT_2=1742999}"
 ---
 # Clear the swap output and refund

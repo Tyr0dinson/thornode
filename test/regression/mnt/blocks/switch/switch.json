@@ -65,7 +65,7 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "22D6ADE663D9D14848797C3F902EF6397827591D7C1D2FBDC9036F6778245104",
+      "app_hash": "957F7DD1F8A8C45A85439EC3C9FB53BE36AA4732C80F6BE6F987F56BA16832BA",
       "last_results_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
@@ -224,7 +224,7 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "67978525B569E6C92D4AA394387909F1DC3EA09E014B579D05A7567EDA733B58",
+      "app_hash": "15828EA7E648A21E24838035C82BECA430C86DE5F07425EC0B1C99D238DC88F0",
       "last_results_hash": "B7E1F76636EC58F5ABE02231AB78F8BFDE8DFE393DCB23059B0490433C3B38F8",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
@@ -334,7 +334,7 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "940355B0F45FBF87625FA6F2359589E851614B782625E8353AFACB059906C86A",
+      "app_hash": "18D9D8F8A4600B7B4FF952C75B73F32C7FB54FF373C0F71D2D6488C39281AC36",
       "last_results_hash": "4DF3303F2B4E9CB92E7EC64388F845B7EC58FD38F0C3A1A5A457BB1F4993C8B1",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
@@ -485,7 +485,7 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "6C1A76CCF42647CC71C048BC28CD37C400D4B029A0FDD3A4DF55067C6531FC00",
+      "app_hash": "B91E12DB95A6FD5F3D9AE04225106E7EB829975CA4C1A16721F18A42FD655512",
       "last_results_hash": "8221121F94257C4AF33BACCF54921995F9E5E63BCF9E7C6BE883AC6D877AC9BA",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
@@ -494,19 +494,19 @@
     "begin_block_events": [],
     "end_block_events": [
       {
-        "amount": "1109799rune",
+        "amount": "369933rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "1109799rune",
+        "amount": "369933rune",
         "mode": "EndBlock",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "1109799rune",
+        "amount": "369933rune",
         "mode": "EndBlock",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -518,19 +518,19 @@
         "type": "message"
       },
       {
-        "amount": "44rune",
+        "amount": "15rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "44rune",
+        "amount": "15rune",
         "mode": "EndBlock",
         "receiver": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "type": "coin_received"
       },
       {
-        "amount": "44rune",
+        "amount": "15rune",
         "mode": "EndBlock",
         "recipient": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -542,8 +542,8 @@
         "type": "message"
       },
       {
-        "GAIA.ATOM": "1109799",
-        "bond_reward": "44",
+        "GAIA.ATOM": "369933",
+        "bond_reward": "15",
         "dev_fund_reward": "0",
         "income_burn": "0",
         "mode": "EndBlock",
@@ -719,7 +719,7 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "40B328046E91F0B6B724591B0BA598E65804C6336A391483D3E0ABAB7D481B7C",
+      "app_hash": "799F74DFC2B023E523B949BD4635E8E4E25EF289AE55D907C40846888A1C95AA",
       "last_results_hash": "6892A7594765CA126870B4D95CC80211F72F2ADB122777725E66B9646720CFCC",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
@@ -728,19 +728,19 @@
     "begin_block_events": [],
     "end_block_events": [
       {
-        "amount": "1109798rune",
+        "amount": "369933rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "1109798rune",
+        "amount": "369933rune",
         "mode": "EndBlock",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "1109798rune",
+        "amount": "369933rune",
         "mode": "EndBlock",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -752,19 +752,19 @@
         "type": "message"
       },
       {
-        "amount": "45rune",
+        "amount": "15rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "45rune",
+        "amount": "15rune",
         "mode": "EndBlock",
         "receiver": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "type": "coin_received"
       },
       {
-        "amount": "45rune",
+        "amount": "15rune",
         "mode": "EndBlock",
         "recipient": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -776,8 +776,8 @@
         "type": "message"
       },
       {
-        "GAIA.ATOM": "1109798",
-        "bond_reward": "45",
+        "GAIA.ATOM": "369933",
+        "bond_reward": "15",
         "dev_fund_reward": "0",
         "income_burn": "0",
         "mode": "EndBlock",
@@ -868,7 +868,7 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "1104915",
+          "gas_used": "1734915",
           "events": [
             {
               "acc_seq": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m/3",

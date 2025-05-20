@@ -127,7 +127,7 @@
           "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
           "coins": [
             {
-              "amount": "200102076777",
+              "amount": "200100656195",
               "denom": "rune"
             }
           ]
@@ -136,7 +136,7 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "34999999830415",
+              "amount": "35000001310204",
               "denom": "rune"
             }
           ]
@@ -163,7 +163,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "5000000092808",
+              "amount": "5000000033601",
               "denom": "rune"
             }
           ]
@@ -235,7 +235,7 @@
       "network": {
         "LPIncomeSplit": "9600",
         "NodeIncomeSplit": "400",
-        "bond_reward_rune": "92808",
+        "bond_reward_rune": "33601",
         "total_bond_units": "2"
       },
       "network_fees": [
@@ -273,7 +273,7 @@
               "chain": "SOL",
               "clout_spent": "0",
               "coin": {
-                "amount": "997497",
+                "amount": "997501",
                 "asset": "SOL.SOL"
               },
               "gas_rate": "1",
@@ -345,7 +345,7 @@
           "LP_units": "100000000000",
           "asset": "BTC.BTC",
           "balance_asset": "100000000",
-          "balance_rune": "100000532724",
+          "balance_rune": "100000177575",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -355,8 +355,8 @@
         {
           "LP_units": "100000000000",
           "asset": "SOL.SOL",
-          "balance_asset": "999002503",
-          "balance_rune": "100101544053",
+          "balance_asset": "999002499",
+          "balance_rune": "100100478620",
           "decimals": "9",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -402,7 +402,7 @@
               "chain": "SOL",
               "clout_spent": "0",
               "coin": {
-                "amount": "997497",
+                "amount": "997501",
                 "asset": "SOL.SOL"
               },
               "gas_rate": "1",

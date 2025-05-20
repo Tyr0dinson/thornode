@@ -53,7 +53,7 @@ type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 1
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2504533195711
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2504533163498
 ---
 ########################################################################################
 # swap to asset
@@ -73,7 +73,7 @@ endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - length == 1
   - .[0].in_hash == "{{ native_txid -1 }}"
-  - .[0].coin.amount == "${OUT_AMOUNT=9005437}"
+  - .[0].coin.amount == "${OUT_AMOUNT=9005543}"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -134,7 +134,7 @@ endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - length == 1
   - .[0].in_hash == "{{ observe_txid 3 }}"
-  - .[0].coin.amount == "${OUT_AMOUNT=44392615}"
+  - .[0].coin.amount == "${OUT_AMOUNT=44392133}"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -258,7 +258,7 @@ endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - length == 1
   - .[0].in_hash == "{{ observe_txid 7 }}"
-  - .[0].coin.amount == "${BTC_OUT_AMOUNT=7621293}"
+  - .[0].coin.amount == "${BTC_OUT_AMOUNT=7621363}"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -388,7 +388,7 @@ txs:
     from_address: {{ addr_eth_dog }}
     to_address: {{ addr_eth_fox }}
     coins:
-      - amount: "${ETH_OUT_AMOUNT=49012706}"
+      - amount: "${ETH_OUT_AMOUNT=49014168}"
         asset: "ETH.ETH"
         decimals: 8
     gas:
@@ -461,7 +461,7 @@ endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - length == 1
   - .[0].in_hash == "{{ observe_txid 13 }}"
-  - .[0].coin.amount == "${ETH_LIMIT_OUT=29012111}"
+  - .[0].coin.amount == "${ETH_LIMIT_OUT=29011925}"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -583,7 +583,7 @@ type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - length == 1
-  - .[0].coin.amount == "${ETH_AFF_OUT=38272306}"
+  - .[0].coin.amount == "${ETH_AFF_OUT=38272073}"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -642,7 +642,7 @@ type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - length == 1
-  - .[0].coin.amount == "${BTC_MULTI_AFF_OUT=4668785}"
+  - .[0].coin.amount == "${BTC_MULTI_AFF_OUT=4668784}"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}

@@ -2,6 +2,7 @@ package thorchain
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -255,4 +256,60 @@ func (m Migrator) CommonMigrate8to9(ctx sdk.Context) error {
 	// Special case TRON.TRX to target 10% multiplier
 	// https://gitlab.com/thorchain/thornode/-/issues/2239#note_2690577110
 	return processAsset(common.TRXAsset, cosmos.NewUint(1_000))
+}
+
+// UpdateMimirsForBlockTime updates the Mimir values for block time related constants.
+func (m Migrator) UpdateMimirsForBlockTime(ctx sdk.Context) {
+	keeper := m.mgr.Keeper()
+
+	// Get constants derived from ThorchainBlockTime
+	c := constants.BlockTimeConstants()
+
+	keys := make([]constants.ConstantName, 0, len(c))
+	// analyze-ignore(map-iteration)
+	for k := range c {
+		keys = append(keys, k)
+	}
+
+	// Sort the keys to ensure consistent ordering
+	sort.Slice(keys, func(i, j int) bool {
+		return keys[i] < keys[j]
+	})
+
+	for _, k := range keys {
+		mimirKey := k.String()
+		existing, _ := keeper.GetMimir(ctx, mimirKey)
+		if existing == -1 {
+			// Mimir not set, don't need to set since it will come from the constants
+			continue
+		}
+		keeper.SetMimir(ctx, mimirKey, c[k])
+	}
+}
+
+func (m Migrator) Migrate9to10(ctx sdk.Context) error {
+	// Loads the manager for this migration (we are in the x/upgrade's preblock)
+	// Note, we do not require the manager loaded for this migration, but it is okay
+	// to load it earlier and this is the pattern for migrations to follow.
+	if err := m.mgr.LoadManagerIfNecessary(ctx); err != nil {
+		return err
+	}
+
+	// Update all Mimir values for block time related constants.
+	m.UpdateMimirsForBlockTime(ctx)
+
+	// Iterate over all THORNames and triple the amount of blocks until expiration.
+	k := m.mgr.Keeper()
+	height := ctx.BlockHeight()
+	iter := k.GetTHORNameIterator(ctx)
+	defer iter.Close()
+	for ; iter.Valid(); iter.Next() {
+		var n THORName
+		k.Cdc().MustUnmarshal(iter.Value(), &n)
+
+		n.ExpireBlockHeight = height + (n.ExpireBlockHeight-height)*3
+		k.SetTHORName(ctx, n)
+	}
+
+	return nil
 }

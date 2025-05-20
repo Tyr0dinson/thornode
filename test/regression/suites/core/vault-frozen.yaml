@@ -64,7 +64,7 @@ type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .[0].in_hash == "D96B553D63BCC6DB749B184F566BF0B37B595B026E9AA7B35B5C7D654237C965"
-  - .[0].coin.amount == "${OUT_AMOUNT=8257426}"
+  - .[0].coin.amount == "${OUT_AMOUNT=8257450}"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}

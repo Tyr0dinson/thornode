@@ -222,5 +222,5 @@ asserts:
   - .end_block_events[] | select(.type == "swap") | .swap_slip == "500"
   - .end_block_events[] | select(.type == "swap") | .pool_slip == "3"
   - .end_block_events[] | select(.type == "swap") | .liquidity_fee == "1498"
-  - .end_block_events[] | select(.type == "swap") | .liquidity_fee_in_rune == "1499921"
+  - .end_block_events[] | select(.type == "swap") | .liquidity_fee_in_rune == "1499894"
   - .end_block_events[] | select(.type == "swap") | .emit_asset == "28472 BTC.BTC"

@@ -141,7 +141,7 @@ func (AppModule) IsAppModule() {}
 func (AppModule) IsOnePerModuleType() {}
 
 func (AppModule) ConsensusVersion() uint64 {
-	return 9
+	return 10
 }
 
 func (am AppModule) RegisterInvariants(_ sdk.InvariantRegistry) {}
@@ -157,8 +157,8 @@ func (am AppModule) RegisterServices(cfg module.Configurator) {
 	wasmtypes.RegisterQueryServer(cfg.QueryServer(), wasmkeeper.Querier(&am.mgr.wasmKeeper))
 
 	m := NewMigrator(am.mgr)
-	if err := cfg.RegisterMigration(types.ModuleName, 8, m.Migrate8to9); err != nil {
-		panic(fmt.Sprintf("failed to migrate x/thorchain from version 8 to 9: %v", err))
+	if err := cfg.RegisterMigration(types.ModuleName, 9, m.Migrate9to10); err != nil {
+		panic(fmt.Sprintf("failed to migrate x/thorchain from version 9 to 10: %v", err))
 	}
 }
 

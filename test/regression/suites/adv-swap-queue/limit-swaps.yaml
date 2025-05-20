@@ -53,7 +53,7 @@ type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 1
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2504533195711
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2504533163498
 ---
 ########################################################################################
 # swap to asset, but won't swap due to limit swap, until another swap comes in later,
@@ -64,7 +64,7 @@ signer: {{ addr_thor_fox }}
 coins:
   - amount: "10000000000"
     asset: "rune"
-memo: "=<:BTC.BTC:{{ addr_btc_fox }}:9005438/0/0"
+memo: "=<:BTC.BTC:{{ addr_btc_fox }}:9005544/0/0"
 ---
 type: create-blocks
 count: 1
@@ -275,14 +275,14 @@ type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 1
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2498671039778
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2498670902104
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - length == 1
   - .[0].in_hash == "{{ native_txid -2 }}"
-  - .[0].coin.amount == "${OUT_AMOUNT=9778912}"
+  - .[0].coin.amount == "${OUT_AMOUNT=9779173}"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}

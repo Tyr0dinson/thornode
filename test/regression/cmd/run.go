@@ -282,7 +282,7 @@ func run(out io.Writer, path string, routine int, doneWithRetries func(path stri
 				Int("line", opLines[i]).
 				Int("op", stateOpCount+i+1).
 				Str("type", op.OpType()).
-				Str("path", path).
+				Str("path", " "+path).
 				Msg("operation failed")
 			dumpLogs(out, stderrLines)
 			break

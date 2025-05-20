@@ -101,7 +101,7 @@ type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
 asserts:
   - .balance_asset == "${ACTIVE_VAULT_AMOUNT}"
-  - .balance_rune == "${START_BALANCE_RUNE=100001087646}"
+  - .balance_rune == "${START_BALANCE_RUNE=100000362549}"
 ---
 # Confirm that no outbounds.
 type: check
