@@ -493,9 +493,17 @@ type Bifrost struct {
 		BASE BifrostChainConfiguration `mapstructure:"base"`
 		XRP  BifrostChainConfiguration `mapstructure:"xrp"`
 	} `mapstructure:"chains"`
-	TSS             BifrostTSSConfiguration `mapstructure:"tss"`
-	ObserverLevelDB LevelDBOptions          `mapstructure:"observer_leveldb"`
-	ObserverWorkers int                     `mapstructure:"observer_workers"`
+	TSS             BifrostTSSConfiguration    `mapstructure:"tss"`
+	ObserverLevelDB LevelDBOptions             `mapstructure:"observer_leveldb"`
+	ObserverWorkers int                        `mapstructure:"observer_workers"`
+	Oracle          BifrostOracleConfiguration `mapstructure:"oracle"`
+	Providers       struct {
+		Binance  BifrostOracleProviderConfiguration `mapstructure:"binance"`
+		Bybit    BifrostOracleProviderConfiguration `mapstructure:"bybit"`
+		Coinbase BifrostOracleProviderConfiguration `mapstructure:"coinbase"`
+		Crypto   BifrostOracleProviderConfiguration `mapstructure:"crypto"`
+		Kraken   BifrostOracleProviderConfiguration `mapstructure:"kraken"`
+	} `mapstructure:"providers"`
 }
 
 func (b Bifrost) GetChains() map[common.Chain]BifrostChainConfiguration {
@@ -510,6 +518,16 @@ func (b Bifrost) GetChains() map[common.Chain]BifrostChainConfiguration {
 		common.LTCChain:  b.Chains.LTC,
 		common.BASEChain: b.Chains.BASE,
 		common.XRPChain:  b.Chains.XRP,
+	}
+}
+
+func (b Bifrost) GetProviders() map[string]BifrostOracleProviderConfiguration {
+	return map[string]BifrostOracleProviderConfiguration{
+		common.ProviderBinance:  b.Providers.Binance,
+		common.ProviderBybit:    b.Providers.Bybit,
+		common.ProviderCoinbase: b.Providers.Coinbase,
+		common.ProviderCrypto:   b.Providers.Crypto,
+		common.ProviderKraken:   b.Providers.Kraken,
 	}
 }
 
@@ -837,6 +855,19 @@ type BifrostTSSConfiguration struct {
 	InfoAddress                  string   `mapstructure:"info_address"`
 	ExternalIP                   string   `mapstructure:"external_ip"`
 	MaxKeyshareRecoverScanBlocks int64    `mapstructure:"max_keyshare_recover_scan_blocks"`
+}
+
+type BifrostOracleConfiguration struct {
+	LogLevel string `mapstructure:"log_level"`
+}
+
+type BifrostOracleProviderConfiguration struct {
+	Name            string        `mapstructure:"name"`
+	Disabled        bool          `mapstructure:"disabled"`
+	PollingInterval time.Duration `mapstructure:"polling_interval"`
+	ApiEndpoints    []string      `mapstructure:"api_endpoints"`
+	Pairs           []string      `mapstructure:"pairs"`
+	SymbolMapping   []string      `mapstructure:"symbol_mapping"`
 }
 
 func (c BifrostTSSConfiguration) GetP2PPort() int {

@@ -379,6 +379,52 @@ bifrost:
         max_sats_per_vbyte: 9765 # backwards compatible with 1e8/10/1024
         min_sats_per_vbyte: 2
         estimated_average_tx_size: 1500
+  oracle:
+    log_level: info
+  providers:
+    binance:
+      polling_interval: 5s
+      api_endpoints:
+        - https://data-api.binance.vision
+      pairs:
+        - BTC/USDC
+
+    bybit:
+      polling_interval: 5s
+      api_endpoints:
+        # check https://bybit-exchange.github.io/docs/v5/guide
+        - https://api.bybit.com
+        - https://api.bytick.com
+      pairs:
+        - BTC/USDT
+
+    coinbase:
+      polling_interval: 10s
+      api_endpoints:
+        - https://api.exchange.coinbase.com
+      pairs:
+        - BTC/USD
+        - USDC/USD
+
+    crypto:
+      polling_interval: 3s
+      api_endpoints:
+        - https://api.crypto.com
+      pairs:
+        - BTC/USD
+        - USDT/USD
+
+    kraken:
+      polling_interval: 3s
+      api_endpoints:
+        - https://api.kraken.com
+      pairs:
+        - USDT/USD
+        - BTC/USD
+      symbol_mapping:
+        - USDT/USD=USDTZUSD
+        - BTC/USD=XXBTZUSD
+
 
 ########################################################################################
 # Thor

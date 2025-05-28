@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"gitlab.com/thorchain/thornode/v3/bifrost/oracle"
 	"io"
 	"os"
 	"os/signal"
@@ -179,9 +180,9 @@ func main() {
 	}
 	poolMgr := thorclient.NewPoolMgr(thorchainBridge)
 	chains, restart := chainclients.LoadChains(k, cfgChains, tssIns, thorchainBridge, m, pubkeyMgr, poolMgr)
-	if len(chains) == 0 {
-		log.Fatal().Msg("fail to load any chains")
-	}
+	// if len(chains) == 0 {
+	// 	log.Fatal().Msg("fail to load any chains")
+	// }
 	tssKeysignMetricMgr := metrics.NewTssKeysignMetricMgr()
 	healthServer := NewHealthServer(cfg.TSS.InfoAddress, tssIns, chains)
 	go func() {
@@ -218,6 +219,13 @@ func main() {
 		log.Fatal().Err(err).Msg("fail to start signer")
 	}
 
+	// start oracle
+	orcl, err := oracle.NewOracle(cfg)
+	if err != nil {
+		log.Fatal().Err(err).Msg("fail to create oracle instance")
+	}
+	orcl.Start()
+
 	// wait....
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM)
@@ -226,6 +234,9 @@ func main() {
 	case <-restart:
 	}
 	log.Info().Msg("stop signal received")
+
+	// stop oracle
+	orcl.Stop()
 
 	// stop observer
 	if err = obs.Stop(); err != nil {
