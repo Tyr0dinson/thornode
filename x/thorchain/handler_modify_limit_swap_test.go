@@ -307,7 +307,7 @@ func (s *HandlerModifyLimitSwapSuite) TestModifyLimitSwapCancellationLogic(c *C)
 	sourceAsset := common.BTCAsset
 	targetAsset := common.RuneAsset()
 	sourceCoin := common.NewCoin(sourceAsset, cosmos.NewUint(100*common.One))
-	largeAmount := cosmos.NewUint(1<<62) // Very large amount
+	largeAmount := cosmos.NewUint(1 << 62) // Very large amount
 	targetCoin := common.NewCoin(targetAsset, largeAmount)
 	signer := GetRandomBech32Addr()
 

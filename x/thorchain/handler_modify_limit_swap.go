@@ -99,7 +99,7 @@ func (h ModifyLimitSwapHandler) handle(ctx cosmos.Context, msg MsgModifyLimitSwa
 			ctx.Logger().Error("fail to get non-empty observed tx", "error", voterErr)
 			refundErr = refundTx(ctx, ObservedTx{Tx: msgSwap.Tx}, h.mgr, CodeSwapFail, "limit swap cancelled", "")
 		}
-		
+
 		if refundErr != nil {
 			ctx.Logger().Error("fail to refund cancelled limit swap", "error", refundErr)
 			return refundErr

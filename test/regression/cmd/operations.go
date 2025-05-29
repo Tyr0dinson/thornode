@@ -115,6 +115,8 @@ func NewOperation(opMap map[string]any) Operation {
 		op = &OpTxTssPool{}
 	case "tx-version":
 		op = &OpTxVersion{}
+	case "tx-modify-limit-swap":
+		op = &OpTxModifyLimitSwap{}
 	case "tx-bank-send":
 		op = &OpTxBankSend{}
 	case "fail-export-invariants":
@@ -171,6 +173,7 @@ func NewOperation(opMap map[string]any) Operation {
 		*OpTxSetIPAddress,
 		*OpTxSetNodeKeys,
 		*OpTxVersion,
+		*OpTxModifyLimitSwap,
 		*OpTxProposeUpgrade,
 		*OpTxApproveUpgrade,
 		*OpTxRejectUpgrade,
@@ -978,6 +981,19 @@ type OpTxVersion struct {
 
 func (op *OpTxVersion) Execute(out io.Writer, _ string, _, routine int, _ *os.Process, logs chan string) error {
 	return sendMsg(out, routine, &op.MsgSetVersion, op.Signer, "", op.Sequence, op.Gas, op, "", logs)
+}
+
+// ------------------------------ OpTxModifyLimitSwap ------------------------------
+
+type OpTxModifyLimitSwap struct {
+	OpBase                   `yaml:",inline"`
+	types.MsgModifyLimitSwap `yaml:",inline"`
+	Sequence                 *int64 `json:"sequence"`
+	Gas                      *int64 `json:"gas"`
+}
+
+func (op *OpTxModifyLimitSwap) Execute(out io.Writer, _ string, _, routine int, _ *os.Process, logs chan string) error {
+	return sendMsg(out, routine, &op.MsgModifyLimitSwap, op.Signer, "", op.Sequence, op.Gas, op, "", logs)
 }
 
 // ------------------------------ OpTxProposeUpgrade ------------------------------
