@@ -40,7 +40,7 @@ func NewDummyMgrWithKeeper(k keeper.Keeper) *DummyMgr {
 		tradeMgr:      NewDummyTradeAccountManager(),
 		wasmMgr:       NewDummyWasmManager(),
 		switchMgr:     NewDummySwitchManager(),
-		// TODO add dummy swap advanced queue
+		// TODO add dummy advanced swap queue
 	}
 }
 
@@ -59,7 +59,7 @@ func NewDummyMgr() *DummyMgr {
 		tradeMgr:      NewDummyTradeAccountManager(),
 		wasmMgr:       NewDummyWasmManager(),
 		switchMgr:     NewDummySwitchManager(),
-		// TODO add dummy swap advanced queue
+		// TODO add dummy advanced swap queue
 	}
 }
 
