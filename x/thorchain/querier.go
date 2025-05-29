@@ -2954,6 +2954,7 @@ func (qs queryServer) queryPendingOutbound(ctx cosmos.Context, _ *types.QueryPen
 func (qs queryServer) querySwapQueue(ctx cosmos.Context, _ *types.QuerySwapQueueRequest) (*types.QuerySwapQueueResponse, error) {
 	result := make([]*MsgSwap, 0)
 
+	// Add items from regular swap queue
 	iterator := qs.mgr.Keeper().GetSwapQueueIterator(ctx)
 	defer iterator.Close()
 	for ; iterator.Valid(); iterator.Next() {
@@ -2962,6 +2963,19 @@ func (qs queryServer) querySwapQueue(ctx cosmos.Context, _ *types.QuerySwapQueue
 			continue
 		}
 		result = append(result, &msg)
+	}
+
+	// Add items from advanced swap queue if enabled
+	if qs.mgr.Keeper().AdvSwapQueueEnabled(ctx) {
+		advIterator := qs.mgr.Keeper().GetAdvSwapQueueItemIterator(ctx)
+		defer advIterator.Close()
+		for ; advIterator.Valid(); advIterator.Next() {
+			var msg MsgSwap
+			if err := qs.mgr.Keeper().Cdc().Unmarshal(advIterator.Value(), &msg); err != nil {
+				continue
+			}
+			result = append(result, &msg)
+		}
 	}
 
 	return &types.QuerySwapQueueResponse{SwapQueue: result}, nil

@@ -201,14 +201,15 @@ func (s *HandlerModifyLimitSwapSuite) TestModifyMultipleLimitSwaps(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
 
-	// Verify both limit swaps were modified
+	// Verify only the first limit swap was modified (only one swap should be modified)
 	modifiedSwap1, err := mgr.Keeper().GetAdvSwapQueueItem(ctx, txID1)
 	c.Assert(err, IsNil)
 	c.Assert(modifiedSwap1.TradeTarget.Equal(modifiedTargetAmount), Equals, true)
 
+	// The second swap should remain unchanged
 	modifiedSwap2, err := mgr.Keeper().GetAdvSwapQueueItem(ctx, txID2)
 	c.Assert(err, IsNil)
-	c.Assert(modifiedSwap2.TradeTarget.Equal(modifiedTargetAmount), Equals, true)
+	c.Assert(modifiedSwap2.TradeTarget.Equal(targetCoin.Amount), Equals, true) // Should still be original amount
 }
 
 func (s *HandlerModifyLimitSwapSuite) TestCancelMultipleLimitSwaps(c *C) {
@@ -258,12 +259,84 @@ func (s *HandlerModifyLimitSwapSuite) TestCancelMultipleLimitSwaps(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
 
-	// Verify both limit swaps were removed
+	// Verify only the first limit swap was cancelled (converted to market swap)
 	mSwap1, err := mgr.Keeper().GetAdvSwapQueueItem(ctx, txID1)
 	c.Assert(err, IsNil)
 	c.Check(mSwap1.SwapType, Equals, MarketSwap)
 
+	// The second swap should remain unchanged as a limit swap
 	mSwap2, err := mgr.Keeper().GetAdvSwapQueueItem(ctx, txID2)
 	c.Assert(err, IsNil)
-	c.Check(mSwap2.SwapType, Equals, MarketSwap)
+	c.Check(mSwap2.SwapType, Equals, LimitSwap) // Should still be a limit swap
+}
+
+func (s *HandlerModifyLimitSwapSuite) TestModifyLimitSwapErrorHandling(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	handler := NewModifyLimitSwapHandler(mgr)
+
+	// Test with invalid assets (same source and target)
+	fromAddr := GetRandomBTCAddress()
+	sourceAsset := common.BTCAsset
+	invalidCoin := common.NewCoin(sourceAsset, cosmos.NewUint(100*common.One))
+	signer := GetRandomBech32Addr()
+
+	invalidMsg := types.NewMsgModifyLimitSwap(fromAddr, invalidCoin, invalidCoin, cosmos.NewUint(200*common.One), signer)
+	result, err := handler.Run(ctx, invalidMsg)
+	c.Assert(err, NotNil)
+	c.Assert(result, IsNil)
+	c.Assert(err.Error(), Matches, ".*source asset and target asset cannot be the same.*")
+
+	// Test with mismatched from address and source asset chain
+	thorAddr := GetRandomTHORAddress()
+	btcCoin := common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One))
+	runeCoin := common.NewCoin(common.RuneAsset(), cosmos.NewUint(500*common.One))
+
+	invalidChainMsg := types.NewMsgModifyLimitSwap(thorAddr, btcCoin, runeCoin, cosmos.NewUint(600*common.One), signer)
+	result, err = handler.Run(ctx, invalidChainMsg)
+	c.Assert(err, NotNil)
+	c.Assert(result, IsNil)
+	c.Assert(err.Error(), Matches, ".*from address and source asset do not match.*")
+}
+
+func (s *HandlerModifyLimitSwapSuite) TestModifyLimitSwapCancellationLogic(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	handler := NewModifyLimitSwapHandler(mgr)
+
+	// Create a limit swap with a very large target amount
+	fromAddr := GetRandomBTCAddress()
+	sourceAsset := common.BTCAsset
+	targetAsset := common.RuneAsset()
+	sourceCoin := common.NewCoin(sourceAsset, cosmos.NewUint(100*common.One))
+	largeAmount := cosmos.NewUint(1<<62) // Very large amount
+	targetCoin := common.NewCoin(targetAsset, largeAmount)
+	signer := GetRandomBech32Addr()
+
+	txID := GetRandomTxHash()
+	tx := common.NewTx(
+		txID,
+		fromAddr,
+		fromAddr,
+		common.Coins{sourceCoin},
+		common.Gas{},
+		"",
+	)
+	limitSwap := NewMsgSwap(tx, targetAsset, fromAddr, targetCoin.Amount, common.NoAddress, cosmos.ZeroUint(), "", "", nil, LimitSwap, 0, 0, signer)
+
+	// Set up the swap book item and index
+	c.Assert(mgr.Keeper().SetAdvSwapQueueItem(ctx, *limitSwap), IsNil)
+	c.Assert(mgr.Keeper().SetAdvSwapQueueIndex(ctx, *limitSwap), IsNil)
+
+	// Test cancellation with zero amount
+	cancelMsg := types.NewMsgModifyLimitSwap(fromAddr, sourceCoin, targetCoin, cosmos.ZeroUint(), signer)
+	result, err := handler.Run(ctx, cancelMsg)
+	c.Assert(err, IsNil)
+	c.Assert(result, NotNil)
+
+	// Verify the swap was converted to market swap with large target
+	modifiedSwap, err := mgr.Keeper().GetAdvSwapQueueItem(ctx, txID)
+	c.Assert(err, IsNil)
+	c.Check(modifiedSwap.SwapType, Equals, MarketSwap)
+	// Should be set to max safe value, not overflow from multiplication
+	expectedMaxValue := cosmos.NewUint(1<<63 - 1)
+	c.Check(modifiedSwap.TradeTarget.Equal(expectedMaxValue), Equals, true)
 }

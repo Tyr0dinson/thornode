@@ -79,39 +79,45 @@ func (h ModifyLimitSwapHandler) handle(ctx cosmos.Context, msg MsgModifyLimitSwa
 		return fmt.Errorf("could not find matching limit swap")
 	}
 
-	for _, msgSwap := range msgSwaps {
-		if msg.ModifiedTargetAmount.IsZero() {
-			// the target is being modified to zero, which is interpreted as a cancel. To do so, the
-			// limit is simply converted into a market swap, which means one final attempt is made,
-			// in which a failure would cause a refund
-			if err := h.mgr.Keeper().RemoveAdvSwapQueueIndex(ctx, msgSwap); err != nil {
-				return err
-			}
-			if err := h.mgr.Keeper().RemoveAdvSwapQueueItem(ctx, msgSwap.Tx.ID); err != nil {
-				return err
-			}
-			msgSwap.SwapType = MarketSwap
-			// increase trade target to something higher to force its failure upon attempting
-			// to do a market swap, thus causing a refund - use a safer multiplier to avoid overflow
-			msgSwap.TradeTarget = msgSwap.TradeTarget.MulUint64(2)
-			if err := h.mgr.AdvSwapQueueMgr().AddSwapQueueItem(ctx, msgSwap); err != nil {
-				return err
-			}
-		} else {
-			// remove current index
-			if err := h.mgr.Keeper().RemoveAdvSwapQueueIndex(ctx, msgSwap); err != nil {
-				return err
-			}
+	// Only modify the first matching swap, not all of them
+	msgSwap := msgSwaps[0]
+	if msg.ModifiedTargetAmount.IsZero() {
+		// the target is being modified to zero, which is interpreted as a cancel
+		if err := h.mgr.Keeper().RemoveAdvSwapQueueIndex(ctx, msgSwap); err != nil {
+			return err
+		}
+		if err := h.mgr.Keeper().RemoveAdvSwapQueueItem(ctx, msgSwap.Tx.ID); err != nil {
+			return err
+		}
 
-			// update trade target
-			msgSwap.TradeTarget = msg.ModifiedTargetAmount
-			// save new index and swap book item
-			if err := h.mgr.Keeper().SetAdvSwapQueueIndex(ctx, msgSwap); err != nil {
-				return err
-			}
-			if err := h.mgr.AdvSwapQueueMgr().AddSwapQueueItem(ctx, msgSwap); err != nil {
-				return err
-			}
+		// Refund the original transaction
+		voter, voterErr := h.mgr.Keeper().GetObservedTxInVoter(ctx, msgSwap.Tx.ID)
+		var refundErr error
+		if voterErr == nil && !voter.Tx.IsEmpty() {
+			refundErr = refundTx(ctx, ObservedTx{Tx: msgSwap.Tx, ObservedPubKey: voter.Tx.ObservedPubKey}, h.mgr, CodeSwapFail, "limit swap cancelled", "")
+		} else {
+			ctx.Logger().Error("fail to get non-empty observed tx", "error", voterErr)
+			refundErr = refundTx(ctx, ObservedTx{Tx: msgSwap.Tx}, h.mgr, CodeSwapFail, "limit swap cancelled", "")
+		}
+		
+		if refundErr != nil {
+			ctx.Logger().Error("fail to refund cancelled limit swap", "error", refundErr)
+			return refundErr
+		}
+	} else {
+		// remove current index
+		if err := h.mgr.Keeper().RemoveAdvSwapQueueIndex(ctx, msgSwap); err != nil {
+			return err
+		}
+
+		// update trade target
+		msgSwap.TradeTarget = msg.ModifiedTargetAmount
+		// save new index and swap book item
+		if err := h.mgr.Keeper().SetAdvSwapQueueIndex(ctx, msgSwap); err != nil {
+			return err
+		}
+		if err := h.mgr.AdvSwapQueueMgr().AddSwapQueueItem(ctx, msgSwap); err != nil {
+			return err
 		}
 	}
 
