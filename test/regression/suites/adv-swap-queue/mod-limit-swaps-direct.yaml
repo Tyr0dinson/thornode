@@ -1,0 +1,58 @@
+########################################################################################
+## Direct MsgModifyLimitSwap transaction testing
+########################################################################################
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: EnableAdvSwapQueue
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Setup: Create initial limit swaps for testing with direct transactions
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "=<:BTC.BTC:{{ addr_btc_fox }}:8998438"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue
+asserts:
+  - .swap == 2
+---
+########################################################################################
+# Test 1: Direct modification using MsgModifyLimitSwap (change target amount)
+########################################################################################
+type: tx-modify-limit-swap
+signer: {{ addr_thor_fox }}
+from: {{ addr_thor_fox }}
+source:
+  asset: "THOR.RUNE"
+  amount: "10000000000"
+target:
+  asset: "BTC.BTC"
+  amount: "8998438"
+modified_target_amount: "9500000"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/swap/{{ native_txid 2 }}
+asserts:
+  - .swap.trade_target == "9500000"
+  - .queue_type == "advanced"

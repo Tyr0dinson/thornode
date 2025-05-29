@@ -25,6 +25,7 @@ const (
 	Msg_ErrataTx_FullMethodName             = "/types.Msg/ErrataTx"
 	Msg_ErrataTxQuorum_FullMethodName       = "/types.Msg/ErrataTxQuorum"
 	Msg_Mimir_FullMethodName                = "/types.Msg/Mimir"
+	Msg_ModifyLimitSwap_FullMethodName      = "/types.Msg/ModifyLimitSwap"
 	Msg_NetworkFee_FullMethodName           = "/types.Msg/NetworkFee"
 	Msg_NetworkFeeQuorum_FullMethodName     = "/types.Msg/NetworkFeeQuorum"
 	Msg_NodePauseChain_FullMethodName       = "/types.Msg/NodePauseChain"
@@ -59,6 +60,7 @@ type MsgClient interface {
 	ErrataTx(ctx context.Context, in *MsgErrataTx, opts ...grpc.CallOption) (*MsgEmpty, error)
 	ErrataTxQuorum(ctx context.Context, in *MsgErrataTxQuorum, opts ...grpc.CallOption) (*MsgEmpty, error)
 	Mimir(ctx context.Context, in *MsgMimir, opts ...grpc.CallOption) (*MsgEmpty, error)
+	ModifyLimitSwap(ctx context.Context, in *MsgModifyLimitSwap, opts ...grpc.CallOption) (*MsgEmpty, error)
 	NetworkFee(ctx context.Context, in *MsgNetworkFee, opts ...grpc.CallOption) (*MsgEmpty, error)
 	NetworkFeeQuorum(ctx context.Context, in *MsgNetworkFeeQuorum, opts ...grpc.CallOption) (*MsgEmpty, error)
 	NodePauseChain(ctx context.Context, in *MsgNodePauseChain, opts ...grpc.CallOption) (*MsgEmpty, error)
@@ -132,6 +134,15 @@ func (c *msgClient) ErrataTxQuorum(ctx context.Context, in *MsgErrataTxQuorum, o
 func (c *msgClient) Mimir(ctx context.Context, in *MsgMimir, opts ...grpc.CallOption) (*MsgEmpty, error) {
 	out := new(MsgEmpty)
 	err := c.cc.Invoke(ctx, Msg_Mimir_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *msgClient) ModifyLimitSwap(ctx context.Context, in *MsgModifyLimitSwap, opts ...grpc.CallOption) (*MsgEmpty, error) {
+	out := new(MsgEmpty)
+	err := c.cc.Invoke(ctx, Msg_ModifyLimitSwap_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -354,6 +365,7 @@ type MsgServer interface {
 	ErrataTx(context.Context, *MsgErrataTx) (*MsgEmpty, error)
 	ErrataTxQuorum(context.Context, *MsgErrataTxQuorum) (*MsgEmpty, error)
 	Mimir(context.Context, *MsgMimir) (*MsgEmpty, error)
+	ModifyLimitSwap(context.Context, *MsgModifyLimitSwap) (*MsgEmpty, error)
 	NetworkFee(context.Context, *MsgNetworkFee) (*MsgEmpty, error)
 	NetworkFeeQuorum(context.Context, *MsgNetworkFeeQuorum) (*MsgEmpty, error)
 	NodePauseChain(context.Context, *MsgNodePauseChain) (*MsgEmpty, error)
@@ -399,6 +411,9 @@ func (UnimplementedMsgServer) ErrataTxQuorum(context.Context, *MsgErrataTxQuorum
 }
 func (UnimplementedMsgServer) Mimir(context.Context, *MsgMimir) (*MsgEmpty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Mimir not implemented")
+}
+func (UnimplementedMsgServer) ModifyLimitSwap(context.Context, *MsgModifyLimitSwap) (*MsgEmpty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ModifyLimitSwap not implemented")
 }
 func (UnimplementedMsgServer) NetworkFee(context.Context, *MsgNetworkFee) (*MsgEmpty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method NetworkFee not implemented")
@@ -568,6 +583,24 @@ func _Msg_Mimir_Handler(srv interface{}, ctx context.Context, dec func(interface
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(MsgServer).Mimir(ctx, req.(*MsgMimir))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Msg_ModifyLimitSwap_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MsgModifyLimitSwap)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).ModifyLimitSwap(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Msg_ModifyLimitSwap_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).ModifyLimitSwap(ctx, req.(*MsgModifyLimitSwap))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1012,6 +1045,10 @@ var Msg_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Mimir",
 			Handler:    _Msg_Mimir_Handler,
+		},
+		{
+			MethodName: "ModifyLimitSwap",
+			Handler:    _Msg_ModifyLimitSwap_Handler,
 		},
 		{
 			MethodName: "NetworkFee",
