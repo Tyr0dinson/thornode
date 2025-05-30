@@ -76,7 +76,7 @@ func (TypeConvertTestSuite) TestGetSafeShare(c *C) {
 	// Test of equal division ten ways:
 	total := cosmos.NewUint(10)
 	totalDistributed = GetSafeShare(cosmos.OneUint(), total, maxToDistribute).Mul(total)
-	c.Assert(totalDistributed.GT(maxToDistribute), Equals, true)
-	c.Assert(totalDistributed.String(), Equals, "20")
-	// More is distributed than the maximum to be distributed, which should never be allowed.
+	c.Assert(totalDistributed.LT(maxToDistribute), Equals, true)
+	c.Assert(totalDistributed.String(), Equals, "10")
+	// Each of the ten gets 1, with 6 left over, without distributing more than the maximum to distribute.
 }
