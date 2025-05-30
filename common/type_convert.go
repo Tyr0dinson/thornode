@@ -52,7 +52,7 @@ func GetUncappedShare(part, total, allocation cosmos.Uint) (share cosmos.Uint) {
 	}
 	// A / (Total / part) == A * (part/Total) but safer when part < Totals
 	result := aD.Quo(tD.Quo(pD))
-	share = cosmos.NewUintFromBigInt(result.RoundInt().BigInt())
+	share = cosmos.NewUintFromBigInt(result.TruncateInt().BigInt())
 	return
 }
 
