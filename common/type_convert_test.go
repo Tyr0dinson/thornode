@@ -66,3 +66,17 @@ func (TypeConvertTestSuite) TestGetUncappedShare(c *C) {
 	share := GetUncappedShare(y, cosmos.NewUint(10000), x)
 	c.Assert(share.IsZero(), Equals, true)
 }
+
+func (TypeConvertTestSuite) TestGetSafeShare(c *C) {
+	// Test of single distribution with >100% distribution ratio:
+	maxToDistribute := cosmos.NewUint(16)
+	totalDistributed := GetSafeShare(cosmos.NewUint(2), cosmos.OneUint(), maxToDistribute)
+	c.Assert(totalDistributed.Equal(maxToDistribute), Equals, true)
+
+	// Test of equal division ten ways:
+	total := cosmos.NewUint(10)
+	totalDistributed = GetSafeShare(cosmos.OneUint(), total, maxToDistribute).Mul(total)
+	c.Assert(totalDistributed.GT(maxToDistribute), Equals, true)
+	c.Assert(totalDistributed.String(), Equals, "20")
+	// More is distributed than the maximum to be distributed, which should never be allowed.
+}
