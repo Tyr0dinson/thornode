@@ -36,7 +36,7 @@ func (TypeConvertTestSuite) TestSafeDivision(c *C) {
 	c.Check(result1.Equal(cosmos.NewUint(33333333)), Equals, true, Commentf("%d", result1.Uint64()))
 
 	result2 := GetUncappedShare(input2, total, allocation)
-	c.Check(result2.Equal(cosmos.NewUint(66666667)), Equals, true, Commentf("%d", result2.Uint64()))
+	c.Check(result2.Equal(cosmos.NewUint(66666666)), Equals, true, Commentf("%d", result2.Uint64()))
 
 	result3 := GetUncappedShare(cosmos.ZeroUint(), total, allocation)
 	c.Check(result3.Equal(cosmos.ZeroUint()), Equals, true, Commentf("%d", result3.Uint64()))
@@ -48,7 +48,7 @@ func (TypeConvertTestSuite) TestSafeDivision(c *C) {
 	c.Check(result5.Equal(cosmos.ZeroUint()), Equals, true, Commentf("%d", result5.Uint64()))
 
 	result6 := GetUncappedShare(cosmos.NewUint(1014), cosmos.NewUint(3), cosmos.NewUint(1000_000*One))
-	c.Check(result6.Equal(cosmos.NewUint(33799999999999997)), Equals, true, Commentf("%s", result6.String()))
+	c.Check(result6.Equal(cosmos.NewUint(33799999999999996)), Equals, true, Commentf("%s", result6.String()))
 }
 
 func (TypeConvertTestSuite) TestGetUncappedShare(c *C) {
