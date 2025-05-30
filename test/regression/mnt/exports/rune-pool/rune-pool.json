@@ -340,8 +340,8 @@
         }
       ],
       "network": {
-        "LPIncomeSplit": "9840",
-        "NodeIncomeSplit": "160",
+        "LPIncomeSplit": "9839",
+        "NodeIncomeSplit": "161",
         "bond_reward_rune": "284133",
         "total_bond_units": "80"
       },

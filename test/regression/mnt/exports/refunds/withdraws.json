@@ -146,15 +146,15 @@
           "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
           "coins": [
             {
-              "amount": "78177635",
+              "amount": "78177620",
               "denom": "btc/btc"
             },
             {
-              "amount": "781778902",
+              "amount": "781778887",
               "denom": "eth/eth"
             },
             {
-              "amount": "198876519852",
+              "amount": "198876519843",
               "denom": "rune"
             }
           ]
@@ -163,7 +163,7 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "35000039978362",
+              "amount": "35000039978375",
               "denom": "rune"
             }
           ]
@@ -190,7 +190,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "5001091501786",
+              "amount": "5001091501782",
               "denom": "rune"
             }
           ]
@@ -204,11 +204,11 @@
       "send_enabled": [],
       "supply": [
         {
-          "amount": "78177635",
+          "amount": "78177620",
           "denom": "btc/btc"
         },
         {
-          "amount": "781778902",
+          "amount": "781778887",
           "denom": "eth/eth"
         },
         {
@@ -254,7 +254,7 @@
         {
           "asset": "BTC.BTC",
           "asset_address": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw",
-          "asset_deposit_value": "50000000",
+          "asset_deposit_value": "49999999",
           "last_add_height": "2",
           "pending_asset": "0",
           "pending_rune": "0",
@@ -285,7 +285,7 @@
         {
           "asset": "ETH.ETH",
           "asset_address": "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
-          "asset_deposit_value": "500000000",
+          "asset_deposit_value": "499999999",
           "last_add_height": "3",
           "pending_asset": "0",
           "pending_rune": "0",
@@ -320,7 +320,7 @@
       "network": {
         "LPIncomeSplit": "9602",
         "NodeIncomeSplit": "398",
-        "bond_reward_rune": "1091501786",
+        "bond_reward_rune": "1091501782",
         "total_bond_units": "19"
       },
       "network_fees": [
@@ -355,13 +355,13 @@
       "observed_tx_out_voters": null,
       "outbound_fee_spent_rune": [
         {
-          "amount": "158934612",
+          "amount": "158934609",
           "asset": "ETH.ETH"
         }
       ],
       "outbound_fee_withheld_rune": [
         {
-          "amount": "212000940",
+          "amount": "212000938",
           "asset": "ETH.ETH"
         }
       ],
@@ -370,7 +370,7 @@
           "LP_units": "133333333333",
           "asset": "BTC.BTC",
           "balance_asset": "300000000",
-          "balance_rune": "99463991846",
+          "balance_rune": "99463991842",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -380,7 +380,7 @@
         {
           "LP_units": "73469387",
           "asset": "BTC/BTC",
-          "balance_asset": "78177635",
+          "balance_asset": "78177620",
           "balance_rune": "0",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -391,7 +391,7 @@
           "LP_units": "133333333333",
           "asset": "ETH.ETH",
           "balance_asset": "3001600000",
-          "balance_rune": "99412528006",
+          "balance_rune": "99412528001",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -401,7 +401,7 @@
         {
           "LP_units": "734693877",
           "asset": "ETH/ETH",
-          "balance_asset": "781778902",
+          "balance_asset": "781778887",
           "balance_rune": "0",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -430,7 +430,7 @@
         {
           "address": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw",
           "reclaimed": "0",
-          "score": "7369732148",
+          "score": "7369732149",
           "spent": "0"
         }
       ],

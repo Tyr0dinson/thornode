@@ -127,7 +127,7 @@
           "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
           "coins": [
             {
-              "amount": "205360677328",
+              "amount": "205360677330",
               "denom": "rune"
             }
           ]
@@ -136,7 +136,7 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "35000035985919",
+              "amount": "35000035985921",
               "denom": "rune"
             }
           ]
@@ -163,7 +163,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "5000072165201",
+              "amount": "5000072165197",
               "denom": "rune"
             }
           ]
@@ -241,7 +241,7 @@
       "network": {
         "LPIncomeSplit": "9589",
         "NodeIncomeSplit": "411",
-        "bond_reward_rune": "72165201",
+        "bond_reward_rune": "72165197",
         "total_bond_units": "6"
       },
       "network_fees": [
@@ -276,7 +276,7 @@
       "observed_tx_out_voters": null,
       "outbound_fee_spent_rune": [
         {
-          "amount": "11528112",
+          "amount": "11528111",
           "asset": "BTC.BTC"
         },
         {
@@ -290,7 +290,7 @@
           "asset": "BTC.BTC"
         },
         {
-          "amount": "140168574",
+          "amount": "140168573",
           "asset": "ETH.ETH"
         }
       ],
@@ -299,7 +299,7 @@
           "LP_units": "100000000000",
           "asset": "BTC.BTC",
           "balance_asset": "100991024",
-          "balance_rune": "100443016649",
+          "balance_rune": "100443016651",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -339,7 +339,7 @@
         {
           "address": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw",
           "reclaimed": "0",
-          "score": "883959080",
+          "score": "883959078",
           "spent": "0"
         },
         {

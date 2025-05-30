@@ -127,7 +127,7 @@
           "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
           "coins": [
             {
-              "amount": "201109799",
+              "amount": "201109798",
               "denom": "rune"
             }
           ]
@@ -163,7 +163,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "5000000000044",
+              "amount": "5000000000045",
               "denom": "rune"
             }
           ]
@@ -227,8 +227,9 @@
       "loans": [],
       "mimirs": [],
       "network": {
-        "LPIncomeSplit": "10000",
-        "bond_reward_rune": "44",
+        "LPIncomeSplit": "9999",
+        "NodeIncomeSplit": "1",
+        "bond_reward_rune": "45",
         "total_bond_units": "1"
       },
       "network_fees": [],
@@ -257,7 +258,7 @@
           "LP_units": "200000000",
           "asset": "BTC.BTC",
           "balance_asset": "100000000",
-          "balance_rune": "201109799",
+          "balance_rune": "201109798",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
