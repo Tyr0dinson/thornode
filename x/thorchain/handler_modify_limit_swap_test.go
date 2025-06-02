@@ -81,10 +81,8 @@ func (s *HandlerModifyLimitSwapSuite) TestModifyLimitSwapHandler(c *C) {
 	c.Assert(err, IsNil)
 	c.Check(hashes, HasLen, 0)
 
-	modifiedSwap, err = mgr.Keeper().GetAdvSwapQueueItem(ctx, txID)
-	c.Assert(err, IsNil)
-	c.Check(modifiedSwap.SwapType, Equals, MarketSwap)
-	c.Check(modifiedSwap.TradeTarget.Uint64() > targetCoin.Amount.Uint64(), Equals, true)
+	_, err = mgr.Keeper().GetAdvSwapQueueItem(ctx, txID)
+	c.Assert(err, NotNil) // Should be removed
 }
 
 func (s *HandlerModifyLimitSwapSuite) TestModifyLimitSwapValidation(c *C) {
@@ -259,10 +257,9 @@ func (s *HandlerModifyLimitSwapSuite) TestCancelMultipleLimitSwaps(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
 
-	// Verify only the first limit swap was cancelled (converted to market swap)
-	mSwap1, err := mgr.Keeper().GetAdvSwapQueueItem(ctx, txID1)
-	c.Assert(err, IsNil)
-	c.Check(mSwap1.SwapType, Equals, MarketSwap)
+	// Verify only the first limit swap was cancelled (removed)
+	_, err = mgr.Keeper().GetAdvSwapQueueItem(ctx, txID1)
+	c.Assert(err, NotNil) // Should be removed
 
 	// The second swap should remain unchanged as a limit swap
 	mSwap2, err := mgr.Keeper().GetAdvSwapQueueItem(ctx, txID2)
@@ -332,11 +329,7 @@ func (s *HandlerModifyLimitSwapSuite) TestModifyLimitSwapCancellationLogic(c *C)
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
 
-	// Verify the swap was converted to market swap with large target
-	modifiedSwap, err := mgr.Keeper().GetAdvSwapQueueItem(ctx, txID)
-	c.Assert(err, IsNil)
-	c.Check(modifiedSwap.SwapType, Equals, MarketSwap)
-	// Should be set to max safe value, not overflow from multiplication
-	expectedMaxValue := cosmos.NewUint(1<<63 - 1)
-	c.Check(modifiedSwap.TradeTarget.Equal(expectedMaxValue), Equals, true)
+	// Verify the swap was removed
+	_, err = mgr.Keeper().GetAdvSwapQueueItem(ctx, txID)
+	c.Assert(err, NotNil) // Should be removed
 }

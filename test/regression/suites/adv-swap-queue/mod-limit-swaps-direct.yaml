@@ -32,14 +32,13 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/queue
 asserts:
-  - .swap == 2
+  - .swap == 1
 ---
 ########################################################################################
 # Test 1: Direct modification using MsgModifyLimitSwap (change target amount)
 ########################################################################################
 type: tx-modify-limit-swap
 signer: {{ addr_thor_fox }}
-from: {{ addr_thor_fox }}
 source:
   asset: "THOR.RUNE"
   amount: "10000000000"
