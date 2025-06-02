@@ -6,9 +6,11 @@ option go_package = "gitlab.com/thorchain/thornode/v3/x/thorchain/types";
 import "common/common.proto";
 import "gogoproto/gogo.proto";
 import "amino/amino.proto";
+import "cosmos/msg/v1/msg.proto";
 
 message MsgModifyLimitSwap {
   option (amino.name) = "thorchain/MsgModifyLimitSwap";
+  option (cosmos.msg.v1.signer) = "signer";
   
   string from = 1 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/v3/common.Address"];
   common.Coin source = 2 [(gogoproto.nullable) = false];
