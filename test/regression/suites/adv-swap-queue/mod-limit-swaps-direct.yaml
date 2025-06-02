@@ -52,7 +52,7 @@ type: create-blocks
 count: 1
 ---
 type: check
-endpoint: http://localhost:1317/thorchain/swap/{{ native_txid 2 }}
+endpoint: http://localhost:1317/thorchain/queue/swap-item/{{ native_txid 2 }}
 asserts:
   - .swap.trade_target == "9500000"
   - .queue_type == "advanced"

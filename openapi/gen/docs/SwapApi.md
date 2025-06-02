@@ -4,7 +4,7 @@ All URIs are relative to *http://localhost*
 
 Method | HTTP request | Description
 ------------- | ------------- | -------------
-[**SwapDetails**](SwapApi.md#SwapDetails) | **Get** /thorchain/swap/{tx_id} | 
+[**SwapDetails**](SwapApi.md#SwapDetails) | **Get** /thorchain/queue/swap-item/{tx_id} | 
 
 
 

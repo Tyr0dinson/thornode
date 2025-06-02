@@ -106,10 +106,7 @@ func (h ModifyLimitSwapHandler) handle(ctx cosmos.Context, msg MsgModifyLimitSwa
 
 		// update trade target
 		msgSwap.TradeTarget = msg.ModifiedTargetAmount
-		// save new index and swap book item
-		if err := h.mgr.Keeper().SetAdvSwapQueueIndex(ctx, msgSwap); err != nil {
-			return err
-		}
+		// save new index and swap limit item
 		if err := h.mgr.AdvSwapQueueMgr().AddSwapQueueItem(ctx, msgSwap); err != nil {
 			return err
 		}

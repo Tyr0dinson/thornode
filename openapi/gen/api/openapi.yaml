@@ -1625,7 +1625,7 @@ paths:
           description: OK
       tags:
       - SecuredAssets
-  /thorchain/swap/{tx_id}:
+  /thorchain/queue/swap-item/{tx_id}:
     get:
       description: Returns detailed information about a specific swap.
       operationId: swapDetails

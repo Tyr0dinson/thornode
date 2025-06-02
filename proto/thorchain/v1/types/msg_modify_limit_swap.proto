@@ -11,6 +11,5 @@ message MsgModifyLimitSwap {
   common.Coin source = 2 [(gogoproto.nullable) = false];
   common.Coin target = 3 [(gogoproto.nullable) = false];
   string modified_target_amount = 4 [(gogoproto.customtype) = "cosmossdk.io/math.Uint", (gogoproto.nullable) = false];
-  common.Coin donate = 5 [(gogoproto.nullable) = false];
-  bytes signer = 6  [(gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress"];
+  bytes signer = 5  [(gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress"];
 }

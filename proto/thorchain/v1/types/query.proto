@@ -275,7 +275,7 @@ service Query {
   }
 
   rpc SwapDetails(QuerySwapDetailsRequest) returns (QuerySwapDetailsResponse) {
-    option (google.api.http).get = "/thorchain/swap/{tx_id}";
+    option (google.api.http).get = "/thorchain/queue/swap-item/{tx_id}";
   }
 
   rpc LastBlocks(QueryLastBlocksRequest) returns (QueryLastBlocksResponse) {

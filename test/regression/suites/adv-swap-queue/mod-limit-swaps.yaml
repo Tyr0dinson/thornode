@@ -55,7 +55,7 @@ type: create-blocks
 count: 1
 ---
 type: check
-endpoint: http://localhost:1317/thorchain/swap/{{ native_txid -3 }}
+endpoint: http://localhost:1317/thorchain/queue/swap-item/{{ native_txid -3 }}
 asserts:
   - .swap.trade_target == "9500000"
   - .queue_type == "advanced"
@@ -116,7 +116,7 @@ count: 1
 ---
 # Fox's swap should remain unchanged
 type: check
-endpoint: http://localhost:1317/thorchain/swap/{{ native_txid 2 }}
+endpoint: http://localhost:1317/thorchain/queue/swap-item/{{ native_txid 2 }}
 asserts:
   - .swap.trade_target == "9500000"  # Should not have changed
 ---
@@ -156,7 +156,7 @@ type: create-blocks
 count: 1
 ---
 type: check
-endpoint: http://localhost:1317/thorchain/swap/{{ observe_txid 1 }}
+endpoint: http://localhost:1317/thorchain/queue/swap-item/{{ observe_txid 1 }}
 asserts:
   - .swap.trade_target == "500000000000000000"
 ---
@@ -202,46 +202,18 @@ count: 1
 ---
 # Only the first swap should be updated
 type: check
-endpoint: http://localhost:1317/thorchain/swap/{{ native_txid 10 }}
+endpoint: http://localhost:1317/thorchain/queue/swap-item/{{ native_txid 10 }}
 asserts:
   - .swap.trade_target == "22000000"
 ---
 # The second swap should remain unchanged
 type: check
-endpoint: http://localhost:1317/thorchain/swap/{{ native_txid 11 }}
+endpoint: http://localhost:1317/thorchain/queue/swap-item/{{ native_txid 11 }}
 asserts:
   - .swap.trade_target == "15000000"
 ---
 ########################################################################################
-# Test 6: Donation field functionality
-########################################################################################
-type: tx-deposit
-signer: {{ addr_thor_fox }}
-coins:
-  - amount: "3000000000"
-    asset: "rune"
-memo: "=<:BTC.BTC:{{ addr_btc_fox }}:5000000"
----
-type: create-blocks
-count: 1
----
-type: tx-deposit
-signer: {{ addr_thor_fox }}
-coins:
-  - amount: "100000000"  # This becomes donation
-    asset: "rune"
-memo: "m=<:3000000000 THOR.RUNE:5000000 BTC.BTC:4500000"
----
-type: create-blocks
-count: 1
----
-type: check
-endpoint: http://localhost:1317/thorchain/swap/{{ native_txid 13 }}
-asserts:
-  - .swap.trade_target == "4500000"
----
-########################################################################################
-# Test 7: Event generation verification
+# Test 6: Event generation verification
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/block
@@ -249,10 +221,10 @@ asserts:
   - .txs[].result.events[]|select(.type == "limit_swap_mod")|length > 0
 ---
 ########################################################################################
-# Test 8: New swap details endpoint
+# Test 7: New swap details endpoint
 ########################################################################################
 type: check
-endpoint: http://localhost:1317/thorchain/swap/{{ native_txid 2 }}
+endpoint: http://localhost:1317/thorchain/queue/swap-item/{{ native_txid 2 }}
 asserts:
   - .swap != null
   - .status == "queued"
@@ -264,4 +236,4 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/queue
 asserts:
-  - .swap >= 5  # Should have all our test swaps (2 initial - 1 cancelled + 1 cross-chain + 2 test5 + 1 test6)
+  - .swap >= 4  # Should have all our test swaps (2 initial - 1 cancelled + 1 cross-chain + 2 test5)

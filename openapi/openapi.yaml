@@ -989,7 +989,7 @@ paths:
 
   # ------------------------------ swap ------------------------------
 
-  /thorchain/swap/{tx_id}:
+  /thorchain/queue/swap-item/{tx_id}:
     parameters:
       - $ref: "#/components/parameters/queryHeight"
       - name: tx_id

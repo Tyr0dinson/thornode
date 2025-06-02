@@ -124,11 +124,7 @@ func getMsgDonateFromMemo(memo DonateMemo, tx ObservedTx, signer cosmos.AccAddre
 }
 
 func getMsgModifyLimitSwap(memo ModifyLimitSwapMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
-	newMsg := NewMsgModifyLimitSwap(tx.Tx.FromAddress, memo.Source, memo.Target, memo.ModifiedTargetAmount, signer)
-	if len(tx.Tx.Coins) > 0 {
-		newMsg.Donate = tx.Tx.Coins[0]
-	}
-	return newMsg, nil
+	return NewMsgModifyLimitSwap(tx.Tx.FromAddress, memo.Source, memo.Target, memo.ModifiedTargetAmount, signer), nil
 }
 
 func getMsgRefundFromMemo(memo RefundMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {

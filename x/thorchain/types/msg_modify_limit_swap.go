@@ -19,7 +19,6 @@ func NewMsgModifyLimitSwap(from common.Address, source, target common.Coin, mod 
 		Source:               source,
 		Target:               target,
 		ModifiedTargetAmount: mod,
-		Donate:               common.NoCoin,
 		Signer:               signer,
 	}
 }

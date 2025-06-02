@@ -72,7 +72,7 @@ func (a *SwapApiService) SwapDetailsExecute(r ApiSwapDetailsRequest) (*SwapDetai
 		return localVarReturnValue, nil, &GenericOpenAPIError{error: err.Error()}
 	}
 
-	localVarPath := localBasePath + "/thorchain/swap/{tx_id}"
+	localVarPath := localBasePath + "/thorchain/queue/swap-item/{tx_id}"
 	localVarPath = strings.Replace(localVarPath, "{"+"tx_id"+"}", url.PathEscape(parameterToString(r.txId, "")), -1)
 
 	localVarHeaderParams := make(map[string]string)

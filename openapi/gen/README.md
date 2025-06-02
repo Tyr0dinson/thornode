@@ -134,7 +134,7 @@ Class | Method | HTTP request | Description
 *SecuredAssetsApi* | [**SecuredAssets**](docs/SecuredAssetsApi.md#securedassets) | **Get** /thorchain/securedassets | 
 *StreamingSwapApi* | [**StreamSwap**](docs/StreamingSwapApi.md#streamswap) | **Get** /thorchain/swap/streaming/{hash} | 
 *StreamingSwapApi* | [**StreamSwaps**](docs/StreamingSwapApi.md#streamswaps) | **Get** /thorchain/swaps/streaming | 
-*SwapApi* | [**SwapDetails**](docs/SwapApi.md#swapdetails) | **Get** /thorchain/swap/{tx_id} | 
+*SwapApi* | [**SwapDetails**](docs/SwapApi.md#swapdetails) | **Get** /thorchain/queue/swap-item/{tx_id} | 
 *TCYClaimersApi* | [**TcyClaimer**](docs/TCYClaimersApi.md#tcyclaimer) | **Get** /thorchain/tcy_claimer/{address} | 
 *TCYClaimersApi* | [**TcyClaimers**](docs/TCYClaimersApi.md#tcyclaimers) | **Get** /thorchain/tcy_claimers | 
 *TCYStakersApi* | [**TcyStaker**](docs/TCYStakersApi.md#tcystaker) | **Get** /thorchain/tcy_staker/{address} | 
