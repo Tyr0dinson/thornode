@@ -1,7 +1,12 @@
 package types
 
 import (
+	"fmt"
+
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"google.golang.org/protobuf/proto"
+
+	"gitlab.com/thorchain/thornode/v3/api/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
@@ -55,4 +60,12 @@ func (m *MsgModifyLimitSwap) ValidateBasic() error {
 // GetSigners defines whose signature is required
 func (m *MsgModifyLimitSwap) GetSigners() []cosmos.AccAddress {
 	return []cosmos.AccAddress{m.Signer}
+}
+
+func MsgModifyLimitSwapCustomGetSigners(m proto.Message) ([][]byte, error) {
+	msgModifyLimitSwap, ok := m.(*types.MsgModifyLimitSwap)
+	if !ok {
+		return nil, fmt.Errorf("can't cast as MsgModifyLimitSwap: %T", m)
+	}
+	return [][]byte{msgModifyLimitSwap.Signer}, nil
 }
