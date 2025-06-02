@@ -159,6 +159,8 @@ func (ad AnteDecorator) anteHandleMessage(ctx sdk.Context, version semver.Versio
 	// native handlers (non-consensus)
 	case *types.MsgDeposit:
 		return DepositAnteHandler(ctx, version, ad.keeper, *m)
+	case *types.MsgModifyLimitSwap:
+		return ctx, nil
 	case *types.MsgSend, *banktypes.MsgSend:
 		_, ok := m.(*banktypes.MsgSend)
 		if ok {
