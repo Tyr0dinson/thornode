@@ -39,6 +39,7 @@ asserts:
 ########################################################################################
 type: tx-modify-limit-swap
 signer: {{ addr_thor_fox }}
+from: {{ addr_thor_fox }}
 source:
   asset: "THOR.RUNE"
   amount: "10000000000"

@@ -40,6 +40,15 @@ func (m *MsgModifyLimitSwap) ValidateBasic() error {
 	if ok := m.From.IsChain(m.Source.Asset.GetChain()); !ok {
 		return cosmos.ErrUnknownRequest("from address and source asset do not match")
 	}
+	if m.Source.Asset.GetChain().IsTHORChain() {
+		frm, err := m.From.AccAddress()
+		if err != nil {
+			return cosmos.ErrUnknownRequest(err.Error())
+		}
+		if !frm.Equals(m.Signer) {
+			return cosmos.ErrUnknownRequest("from and signer address must match when source asset is native")
+		}
+	}
 	return nil
 }
 
