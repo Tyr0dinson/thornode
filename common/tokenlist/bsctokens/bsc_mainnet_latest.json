@@ -47456,6 +47456,14 @@
       "chainId": 56,
       "decimals": 18,
       "logoURI": "https://assets.coingecko.com/coins/images/10354/thumb/logo-grey-circle.png?1696510355"
+    },
+    {
+      "name": "Moca",
+      "symbol": "Moca",
+      "address": "0x53312f85bba24c8cb99cffc13bf82420157230d3",
+      "chainId": 56,
+      "decimals": 18,
+      "logoURI": "https://bscscan.com/token/images/mocaapp_32.svg"
     }
   ]
 }
