@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"cosmossdk.io/core/appmodule"
-	"cosmossdk.io/x/tx/signing"
 	"github.com/blang/semver"
 	abci "github.com/cometbft/cometbft/abci/types"
 	"github.com/cosmos/cosmos-sdk/client"
@@ -24,12 +23,16 @@ import (
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc/metadata"
-	"google.golang.org/protobuf/reflect/protoreflect"
 
+	"gitlab.com/thorchain/thornode/v3/app/params"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
+
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/client/cli"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
+
+	wasmkeeper "github.com/CosmWasm/wasmd/x/wasm/keeper"
+	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
 )
 
 // type check to ensure the interface is properly implemented
@@ -120,12 +123,16 @@ func NewAppModule(
 			panic(err)
 		}
 	}
+	txConfig, err := params.TxConfig(mgr.cdc, nil)
+	if err != nil {
+		panic(fmt.Errorf("failed to create tx config: %w", err))
+	}
 	return AppModule{
 		AppModuleBasic:   AppModuleBasic{},
 		mgr:              mgr,
 		telemetryEnabled: telemetryEnabled,
 		msgServer:        NewMsgServerImpl(mgr),
-		queryServer:      NewQueryServerImpl(mgr, kb),
+		queryServer:      NewQueryServerImpl(mgr, txConfig, kb),
 	}
 }
 
@@ -134,7 +141,7 @@ func (AppModule) IsAppModule() {}
 func (AppModule) IsOnePerModuleType() {}
 
 func (AppModule) ConsensusVersion() uint64 {
-	return 2
+	return 6
 }
 
 func (am AppModule) RegisterInvariants(_ sdk.InvariantRegistry) {}
@@ -147,10 +154,11 @@ func (am AppModule) QuerierRoute() string {
 func (am AppModule) RegisterServices(cfg module.Configurator) {
 	types.RegisterMsgServer(cfg.MsgServer(), am.msgServer)
 	types.RegisterQueryServer(cfg.QueryServer(), am.queryServer)
+	wasmtypes.RegisterQueryServer(cfg.QueryServer(), wasmkeeper.Querier(&am.mgr.wasmKeeper))
 
 	m := NewMigrator(am.mgr)
-	if err := cfg.RegisterMigration(types.ModuleName, 2, m.Migrate2to3); err != nil {
-		panic(fmt.Sprintf("failed to migrate x/thorchain from version 2 to 3: %v", err))
+	if err := cfg.RegisterMigration(types.ModuleName, 5, m.Migrate5to6); err != nil {
+		panic(fmt.Sprintf("failed to migrate x/thorchain from version 5 to 6: %v", err))
 	}
 }
 
@@ -203,8 +211,8 @@ func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, err
 		ctx.Logger().Error("fail to process swap queue", "error", err)
 	}
 
-	if err := am.mgr.OrderBookMgr().EndBlock(ctx, am.mgr); err != nil {
-		ctx.Logger().Error("fail to process order books", "error", err)
+	if err := am.mgr.AdvSwapQueueMgr().EndBlock(ctx, am.mgr); err != nil {
+		ctx.Logger().Error("fail to process adv swap queue", "error", err)
 	}
 
 	if err := am.mgr.Slasher().LackSigning(ctx, am.mgr); err != nil {
@@ -257,27 +265,6 @@ func (am AppModule) ExportGenesis(ctx sdk.Context, cdc codec.JSONCodec) json.Raw
 	return ModuleCdc.MustMarshalJSON(&gs)
 }
 
-func DefineCustomGetSigners(signingOptions *signing.Options) {
-	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgBan"), types.MsgBanCustomGetSigners)
-	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgDeposit"), types.MsgDepositCustomGetSigners)
-	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgErrataTx"), types.MsgErrataCustomGetSigners)
-	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgMimir"), types.MsgMimirCustomGetSigners)
-	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgNetworkFee"), types.MsgNetworkFeeCustomGetSigners)
-	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgNodePauseChain"), types.MsgNodePauseChainCustomGetSigners)
-	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgObservedTxIn"), types.MsgObservedTxInCustomGetSigners)
-	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgObservedTxOut"), types.MsgObservedTxOutCustomGetSigners)
-	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgSend"), types.MsgSendCustomGetSigners)
-	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgSetIPAddress"), types.MsgSetIPAddressCustomGetSigners)
-	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgSetNodeKeys"), types.MsgSetNodeKeysCustomGetSigners)
-	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgSolvency"), types.MsgSolvencyCustomGetSigners)
-	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgTssKeysignFail"), types.MsgTssKeysignFailCustomGetSigners)
-	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgTssPool"), types.MsgTssPoolCustomGetSigners)
-	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgSetVersion"), types.MsgSetVersionCustomGetSigners)
-	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgProposeUpgrade"), types.MsgProposeUpgradeCustomGetSigners)
-	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgApproveUpgrade"), types.MsgApproveUpgradeCustomGetSigners)
-	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgRejectUpgrade"), types.MsgRejectUpgradeCustomGetSigners)
-}
-
 // CustomGRPCGatewayRouter sets thorchain's custom GRPC gateway router
 // Must be called before any GRPC gateway routes are registered
 // GRPC gateway router settings are the same as cosmos sdk except for the additional
@@ -317,8 +304,11 @@ func CustomGRPCGatewayRouter(apiSvr *api.Server) {
 					return md
 				}
 			}
-			// Only extract the height query param from thorchain module endpoints
-			if strings.HasPrefix(req.URL.Path, "/thorchain/") {
+			// The following checked endpoint prefixes have the height query parameter extracted.
+			if strings.HasPrefix(req.URL.Path, "/thorchain/") ||
+				strings.HasPrefix(req.URL.Path, "/cosmos/") ||
+				strings.HasPrefix(req.URL.Path, "/bank/balances/") ||
+				strings.HasPrefix(req.URL.Path, "/auth/accounts/") {
 				heightStr, ok := req.URL.Query()["height"]
 				if ok && len(heightStr) > 0 {
 					_, err := strconv.ParseInt(heightStr[0], 10, 64)

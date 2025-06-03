@@ -191,9 +191,6 @@ func NewEVMClient(
 		return nil, fmt.Errorf("fail to get contract abi: %w", err)
 	}
 
-	// TODO: Do we need to call this?
-	pubkeyMgr.GetPubKeys()
-
 	c := &EVMClient{
 		logger:       clog,
 		cfg:          cfg,
@@ -263,11 +260,17 @@ func NewEVMClient(
 }
 
 // Start starts the chain client with the given queues.
-func (c *EVMClient) Start(globalTxsQueue chan stypes.TxIn, globalErrataQueue chan stypes.ErrataBlock, globalSolvencyQueue chan stypes.Solvency) {
+func (c *EVMClient) Start(
+	globalTxsQueue chan stypes.TxIn,
+	globalErrataQueue chan stypes.ErrataBlock,
+	globalSolvencyQueue chan stypes.Solvency,
+	globalNetworkFeeQueue chan common.NetworkFee,
+) {
 	c.evmScanner.globalErrataQueue = globalErrataQueue
+	c.evmScanner.globalNetworkFeeQueue = globalNetworkFeeQueue
 	c.globalSolvencyQueue = globalSolvencyQueue
 	c.tssKeySigner.Start()
-	c.blockScanner.Start(globalTxsQueue)
+	c.blockScanner.Start(globalTxsQueue, globalNetworkFeeQueue)
 	c.wg.Add(1)
 	go c.unstuck()
 	c.wg.Add(1)
@@ -309,6 +312,11 @@ func (c *EVMClient) GetHeight() (int64, error) {
 // GetBlockScannerHeight returns blockscanner height
 func (c *EVMClient) GetBlockScannerHeight() (int64, error) {
 	return c.blockScanner.PreviousHeight(), nil
+}
+
+// RollbackBlockScanner rolls back the block scanner to the last observed block
+func (c *EVMClient) RollbackBlockScanner() error {
+	return c.blockScanner.RollbackToLastObserved()
 }
 
 func (c *EVMClient) GetLatestTxForVault(vault string) (string, string, error) {
@@ -612,7 +620,7 @@ func (c *EVMClient) buildOutboundTx(txOutItem stypes.TxOutItem, memo mem.Memo, n
 	if txOutItem.Aggregator != "" {
 		var gasLimitForAggregator uint64
 		gasLimitForAggregator, err = aggregators.FetchDexAggregatorGasLimit(
-			common.LatestVersion, c.cfg.ChainID, txOutItem.Aggregator,
+			c.cfg.ChainID, txOutItem.Aggregator,
 		)
 		if err != nil {
 			c.logger.Err(err).
@@ -634,9 +642,15 @@ func (c *EVMClient) buildOutboundTx(txOutItem stypes.TxOutItem, memo mem.Memo, n
 		// set limit to aggregator gas limit
 		estimatedGas = gasLimitForAggregator
 
-		scheduledMaxFee = scheduledMaxFee.Mul(scheduledMaxFee, big.NewInt(c.cfg.AggregatorMaxGasMultiplier))
+		scheduledMaxFee = scheduledMaxFee.Mul(scheduledMaxFee, big.NewInt(c.cfg.EVM.AggregatorMaxGasMultiplier))
 	} else if !txOutItem.Coins[0].Asset.IsGasAsset() {
-		scheduledMaxFee = scheduledMaxFee.Mul(scheduledMaxFee, big.NewInt(c.cfg.TokenMaxGasMultiplier))
+		scheduledMaxFee = scheduledMaxFee.Mul(scheduledMaxFee, big.NewInt(c.cfg.EVM.TokenMaxGasMultiplier))
+	}
+
+	// L2 chains require a small amount of gas asset left for the L1 fee
+	if c.cfg.EVM.ExtraL1GasFee > 0 {
+		l1Fee := big.NewInt(c.cfg.EVM.ExtraL1GasFee)
+		scheduledMaxFee = scheduledMaxFee.Sub(scheduledMaxFee, convertThorchainAmountToWei(l1Fee))
 	}
 
 	// determine max gas units based on scheduled max gas (fee) and current rate
@@ -652,6 +666,17 @@ func (c *EVMClient) buildOutboundTx(txOutItem stypes.TxOutItem, memo mem.Memo, n
 			Str("scheduled_max_fee", scheduledMaxFee.String()).
 			Msg("max gas exceeded, aborting to let thornode reschedule")
 		return nil, nil
+	}
+
+	// before signing, confirm the vault has enough gas asset
+	estimatedFee := big.NewInt(int64(estimatedGas))
+	estimatedFee.Mul(estimatedFee, gasRate)
+	gasBalance, err := c.GetBalance(fromAddr.String(), evm.NativeTokenAddr, nil)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get gas asset balance: %w", err)
+	}
+	if gasBalance.Cmp(big.NewInt(0).Add(evmValue, estimatedFee)) < 0 {
+		return nil, fmt.Errorf("insufficient gas asset balance: %s < %s + %s", gasBalance.String(), evmValue.String(), estimatedFee.String())
 	}
 
 	createdTx = etypes.NewTransaction(
@@ -736,7 +761,7 @@ func (c *EVMClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 
 	outboundTx, err := c.buildOutboundTx(tx, memo, nonce)
 	if err != nil {
-		c.logger.Err(err).Msg("Failed to build outbound tx")
+		c.logger.Err(err).Msg("fail to build outbound tx")
 		return nil, nil, nil, err
 	}
 
@@ -761,12 +786,6 @@ func (c *EVMClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 	// This is the maximum gas, using the gas limit for instant-observation
 	// rather than the GasUsed which can only be gotten from the receipt when scanning.
 
-	// TODO:  For BASEChain MaxGas, what to do about the L1Fee not reflected in the GasPrice(),
-	// but which THORChain needs to allow enough for?
-	// (Not urgent as long as L1Fee is observed and the Dynamic Outbound Fee Multiplier
-	//  keeps total outbound fees inflow equal to total gas reimbursements outflow?
-	//  However, careful regarding any bond slashing for higher-gas-cost-than-permitted observed txouts.)
-
 	signedTx := &etypes.Transaction{}
 	if err = signedTx.UnmarshalJSON(rawTx); err != nil {
 		return nil, rawTx, nil, fmt.Errorf("fail to unmarshal signed tx: %w", err)
@@ -776,7 +795,7 @@ func (c *EVMClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 
 	if err == nil {
 		txIn = stypes.NewTxInItem(
-			chainHeight+1,
+			chainHeight,
 			signedTx.Hash().Hex()[2:],
 			tx.Memo,
 			fromAddr.String(),

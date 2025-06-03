@@ -19,6 +19,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/evm"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/thornode"
 	. "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain"
 	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
@@ -32,10 +33,10 @@ var chainRPCs = map[common.Chain]string{
 	common.BCHChain:  "http://localhost:28443",
 	common.DOGEChain: "http://localhost:18332",
 	common.ETHChain:  "http://localhost:8545",
-	common.BSCChain:  "http://localhost:8546",
 	common.AVAXChain: "http://localhost:9650/ext/bc/C/rpc",
 	common.GAIAChain: "localhost:9091",
 	common.BASEChain: "http://localhost:8547",
+	common.XRPChain:  "http://localhost:5005",
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -47,9 +48,9 @@ var (
 
 	mocknetValidatorMnemonics = [...]string{
 		strings.Repeat("dog ", 23) + "fossil",
-		// strings.Repeat("cat ", 23) + "crawl",
-		// strings.Repeat("fox ", 23) + "filter",
-		// strings.Repeat("pig ", 23) + "quick",
+		strings.Repeat("cat ", 23) + "crawl",
+		strings.Repeat("fox ", 23) + "filter",
+		strings.Repeat("pig ", 23) + "quick",
 	}
 
 	mocknetUserMnemonics = [...]string{
@@ -80,7 +81,9 @@ func InitConfig(parallelism int, seed bool) *OpConfig {
 			Msg("parallelism limited by available user accounts")
 	}
 
-	c := &OpConfig{}
+	c := &OpConfig{
+		NodeUsers: make([]*User, len(mocknetValidatorMnemonics)),
+	}
 	mu := &sync.Mutex{}
 	wg := &sync.WaitGroup{}
 	sem := make(chan struct{}, 8)
@@ -88,16 +91,17 @@ func InitConfig(parallelism int, seed bool) *OpConfig {
 	// since we reuse the bifrost thorclient, load endpoints into config package
 	os.Setenv("BIFROST_THORCHAIN_CHAIN_HOST", "localhost:1317")
 	os.Setenv("BIFROST_THORCHAIN_CHAIN_RPC", "localhost:26657")
+	os.Setenv("BIFROST_THORCHAIN_CHAIN_EBIFROST", "localhost:50051")
 	config.Init()
 
 	// validators
-	for _, mnemonic := range mocknetValidatorMnemonics {
+	for i, mnemonic := range mocknetValidatorMnemonics {
 		wg.Add(1)
 		sem <- struct{}{}
-		go func(mnemonic string) {
+		go func(i int, mnemonic string) {
 			a := NewUser(mnemonic, liteClientConstructors)
 			mu.Lock()
-			c.NodeUsers = append(c.NodeUsers, a)
+			c.NodeUsers[i] = a
 			mu.Unlock()
 
 			defer func() {
@@ -109,16 +113,47 @@ func InitConfig(parallelism int, seed bool) *OpConfig {
 			if !seed {
 				return
 			}
-			log.Info().Msg("posting gaia network fee")
-			for {
-				_, err := a.Thorchain.PostNetworkFee(1, common.GAIAChain, 1, 1_000_000)
-				if err == nil {
-					break
-				}
-				log.Error().Err(err).Msg("failed to post network fee")
-				time.Sleep(5 * time.Second)
+
+			// only the first mnemonic is an active node at init
+			if i != 0 {
+				return
 			}
-		}(mnemonic)
+
+			// halt churning
+			accAddr, err := a.PubKey().GetThorAddress()
+			if err != nil {
+				log.Error().Err(err).Msg("failed to get thor address")
+			}
+			mimir := thorchain.NewMsgMimir("HALTCHURNING", 1, accAddr)
+			_, err = a.Thorchain.Broadcast(mimir)
+			if err != nil {
+				log.Error().Err(err).Msg("failed to broadcast mimir")
+			}
+
+			// default network fees on chains needing a window of blocks before bifrost sends
+			defaultFees := []struct {
+				chain common.Chain
+				size  uint64
+				rate  uint64
+			}{
+				{common.GAIAChain, 1, 1_000_000},
+				{common.XRPChain, 1, 1_000},
+				{common.AVAXChain, 80000, 150},
+				{common.BASEChain, 80000, 30},
+				{common.ETHChain, 80000, 30},
+			}
+			for _, fee := range defaultFees {
+				log.Info().Msgf("posting %s network fee", fee.chain)
+				for {
+					_, err := a.Thorchain.PostNetworkFee(1, fee.chain, fee.size, fee.rate)
+					if err == nil {
+						break
+					}
+					log.Error().Err(err).Msg("failed to post network fee")
+					time.Sleep(2 * time.Second)
+				}
+			}
+		}(i, mnemonic)
 	}
 
 	// users
@@ -180,9 +215,6 @@ func InitConfig(parallelism int, seed bool) *OpConfig {
 		}
 	}
 
-	// master user is also mimir admin
-	c.AdminUser = master
-
 	// return if not seeding accounts
 	if !seed {
 		return c
@@ -200,18 +232,23 @@ func InitConfig(parallelism int, seed bool) *OpConfig {
 	// fund user accounts with one goroutine per chain
 	wg = &sync.WaitGroup{}
 	for _, chain := range common.AllChains {
+		// BSC not compatible with simtests
+		if chain.Equals(common.BSCChain) {
+			continue
+		}
 
 		// determine the amount to seed
 		chainSeedAmount := sdkmath.ZeroUint()
 		switch chain {
-		case common.BTCChain, common.ETHChain, common.LTCChain, common.BCHChain, common.BASEChain:
+		case common.BTCChain, common.LTCChain, common.BCHChain:
 			chainSeedAmount = sdkmath.NewUint(10 * common.One)
-		case common.BSCChain:
+		case common.BSCChain, common.BASEChain, common.ETHChain:
 			chainSeedAmount = sdkmath.NewUint(100 * common.One)
 		case common.GAIAChain:
 			chainSeedAmount = sdkmath.NewUint(1000 * common.One)
-		case common.AVAXChain:
-			chainSeedAmount = sdkmath.NewUint(10000 * common.One) // more since local gas is high
+		case common.AVAXChain, // more since local gas is high
+			common.XRPChain: // more since dust threshold is 1 XRP
+			chainSeedAmount = sdkmath.NewUint(10000 * common.One)
 		case common.DOGEChain:
 			chainSeedAmount = sdkmath.NewUint(100000 * common.One)
 		default:

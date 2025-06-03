@@ -32,6 +32,7 @@
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
+    "finalize_block_events": [],
     "begin_block_events": [],
     "end_block_events": [
       {
@@ -113,6 +114,7 @@
         "dev_fund_reward": "0",
         "income_burn": "0",
         "mode": "EndBlock",
+        "tcy_stake_reward": "0",
         "type": "rewards"
       }
     ],
@@ -146,11 +148,12 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "26AD4F751D405E34857DEA12509080E4F74D76C8287A8A1F885BB13FE49E0BE8",
+      "app_hash": "51B24B13C58EFC2EF6C5571C3C5B813AF11B3A9347A2CB5D6E4C34A4AA46DD8F",
       "last_results_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
+    "finalize_block_events": [],
     "begin_block_events": [],
     "end_block_events": [
       {
@@ -232,6 +235,7 @@
         "dev_fund_reward": "0",
         "income_burn": "0",
         "mode": "EndBlock",
+        "tcy_stake_reward": "0",
         "type": "rewards"
       }
     ],
@@ -265,11 +269,12 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "766EFF8859B8594AD87DB06707B269733F70C7D0F63DD8BB0EE5A551C6796CB7",
+      "app_hash": "2F636EA3F2CF848A80182C8A701452F3DE47649DC5B3375AF9B1D40F1149EA2E",
       "last_results_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
+    "finalize_block_events": [],
     "begin_block_events": [],
     "end_block_events": [
       {
@@ -351,6 +356,7 @@
         "dev_fund_reward": "0",
         "income_burn": "0",
         "mode": "EndBlock",
+        "tcy_stake_reward": "0",
         "type": "rewards"
       }
     ],
@@ -435,13 +441,8 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "1057993",
+          "gas_used": "1060161",
           "events": [
-            {
-              "fee": "",
-              "fee_payer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
-              "type": "tx"
-            },
             {
               "acc_seq": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m/0",
               "type": "tx"
@@ -551,11 +552,12 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "1F134F269802484877D68A049D75F00DCB73E1C9B62641E4095739485AF7C398",
-      "last_results_hash": "C7838FB3C432268F671892C1757106E29E1C8BAB46D4A3057751D50E57C14254",
+      "app_hash": "0C6F9FA04AF7DCD97359FA9171793719BEAC09C1FE87A049A010234BACC793CF",
+      "last_results_hash": "B318B05AA33E5E1A807D7AFD95CCD7686D827B41DF74EBA51860EB63BDBB0224",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
+    "finalize_block_events": [],
     "begin_block_events": [],
     "end_block_events": [
       {
@@ -637,6 +639,7 @@
         "dev_fund_reward": "0",
         "income_burn": "0",
         "mode": "EndBlock",
+        "tcy_stake_reward": "0",
         "type": "rewards"
       },
       {
@@ -753,13 +756,8 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "250884",
+          "gas_used": "253995",
           "events": [
-            {
-              "fee": "",
-              "fee_payer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
-              "type": "tx"
-            },
             {
               "acc_seq": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m/1",
               "type": "tx"
@@ -819,11 +817,12 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "C0C6BB0B82787796CC4D2ED69E2C0008A95E3B1194BB0CB48F9BDAA86FD90D3C",
-      "last_results_hash": "D4B4A9429EB85CFB6704919E7A50DCCE8184C39AD837737CAFA1AAD935EBBB1E",
+      "app_hash": "C360039D36392F33710527B1EEA7FF4D535E61870EA9F19205F25CF12C24F725",
+      "last_results_hash": "E71C2AD7548DF22C6C5A4D2AE7F6B6238391855AB14FDA4D47A96324DC17E02E",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
+    "finalize_block_events": [],
     "begin_block_events": [],
     "end_block_events": [
       {
@@ -905,6 +904,7 @@
         "dev_fund_reward": "0",
         "income_burn": "0",
         "mode": "EndBlock",
+        "tcy_stake_reward": "0",
         "type": "rewards"
       }
     ],
@@ -989,13 +989,8 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "1063805",
+          "gas_used": "1065787",
           "events": [
-            {
-              "fee": "",
-              "fee_payer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
-              "type": "tx"
-            },
             {
               "acc_seq": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m/2",
               "type": "tx"
@@ -1105,11 +1100,12 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "FECCCE5E789CE975EFA06CFC87704ABB8F280F1C69850044D2ABB971F5D4C8DE",
-      "last_results_hash": "23C6AE61796EEDB9D2A77FA2C4CA212F65CC4203EA491E7C746DA832621FAFBA",
+      "app_hash": "7634442EE8CD0331B303CB1382830D5CC5A27FB8A6D3427F57457D218ED335C5",
+      "last_results_hash": "ED24AA25560F1A4EA83AF749007E36E598E439E8CAE5D64566020CA88ECB18B5",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
+    "finalize_block_events": [],
     "begin_block_events": [],
     "end_block_events": [
       {
@@ -1191,6 +1187,7 @@
         "dev_fund_reward": "0",
         "income_burn": "0",
         "mode": "EndBlock",
+        "tcy_stake_reward": "0",
         "type": "rewards"
       },
       {
@@ -1307,13 +1304,8 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "254992",
+          "gas_used": "258103",
           "events": [
-            {
-              "fee": "",
-              "fee_payer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
-              "type": "tx"
-            },
             {
               "acc_seq": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m/3",
               "type": "tx"
@@ -1373,11 +1365,12 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "CA8326F2581AD9A9B69AD19E07C0E277E5A249CBE0D0A7205F5D43EB735B91C6",
-      "last_results_hash": "8343443DCC7B183725DD91C9E838A7D371571D043B0DC58F250363BAFF20BFB2",
+      "app_hash": "1E6AF10A51D2CD4E11106C9C4C68CA54D203658F85282CD135CDBF1F06A513A9",
+      "last_results_hash": "1092442D4E2A0CDF4842475E01BCBDF91A52A1DAD02618E300A1EF7AF22A4D81",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
+    "finalize_block_events": [],
     "begin_block_events": [],
     "end_block_events": [
       {
@@ -1459,6 +1452,7 @@
         "dev_fund_reward": "0",
         "income_burn": "0",
         "mode": "EndBlock",
+        "tcy_stake_reward": "0",
         "type": "rewards"
       }
     ],
@@ -1543,13 +1537,8 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "234015",
+          "gas_used": "236907",
           "events": [
-            {
-              "fee": "",
-              "fee_payer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
-              "type": "tx"
-            },
             {
               "acc_seq": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m/4",
               "type": "tx"
@@ -1643,11 +1632,12 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "0C59035FCB067B6DEE8DC404332D7B2500337C3CB98D4F27AF6221C4CD209541",
-      "last_results_hash": "2AEFE1542F0AA6930FA3092C66C2B3EE056D55BDBEB117AD523EB7452F46E685",
+      "app_hash": "2670FF6352308C780921B5640C9FA44611C747786F97FB6754C4DC0292EC286D",
+      "last_results_hash": "1B958F1A34BF13070CC4FB234A4C1AE684B2D7AFE86A59CE8ECEB694A0B03DB9",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
+    "finalize_block_events": [],
     "begin_block_events": [],
     "end_block_events": [
       {
@@ -1729,6 +1719,7 @@
         "dev_fund_reward": "0",
         "income_burn": "0",
         "mode": "EndBlock",
+        "tcy_stake_reward": "0",
         "type": "rewards"
       }
     ],
@@ -1813,13 +1804,8 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "248673",
+          "gas_used": "251565",
           "events": [
-            {
-              "fee": "",
-              "fee_payer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
-              "type": "tx"
-            },
             {
               "acc_seq": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m/5",
               "type": "tx"
@@ -1913,11 +1899,12 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "772CA0F9BF60815A2BEAB2C65505CD8A090C8A876710EEBC577827D95D2983F5",
-      "last_results_hash": "487A65073DC0225DB69070488BFE88D7ED4D47DC2B0BF2548344DE39B9CADEEE",
+      "app_hash": "D124185FE42AA2C191479C75C5DCA30C968BC7B3B8D8FF831FCC197C02902563",
+      "last_results_hash": "D3BACA474D347F3E26C0F4393F1BD954E585D8E2F77507EBABECACFF76047BFD",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
+    "finalize_block_events": [],
     "begin_block_events": [],
     "end_block_events": [
       {
@@ -1999,6 +1986,7 @@
         "dev_fund_reward": "0",
         "income_burn": "0",
         "mode": "EndBlock",
+        "tcy_stake_reward": "0",
         "type": "rewards"
       }
     ],
@@ -2056,13 +2044,8 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "1772237",
+          "gas_used": "1774459",
           "events": [
-            {
-              "fee": "",
-              "fee_payer": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
-              "type": "tx"
-            },
             {
               "amount": "2000000rune",
               "spender": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
@@ -2225,11 +2208,12 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "E038C7385C3251B850E708AB92F1DAA69B95F795A76532C2E043DAB48DDBCD13",
-      "last_results_hash": "30694AE916924936F6CA1C56B49F1DBD0FFB32A46910AAA127874F9B9AAC6FD3",
+      "app_hash": "717308CFE490113CC0F0C122C12A7683C18AE994AB7CD6ADC9F7A6DA8B4790FA",
+      "last_results_hash": "4185A18A662D95550C494986D52676B1DECEB74F43CBF05D920AE25E9D00E000",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
+    "finalize_block_events": [],
     "begin_block_events": [],
     "end_block_events": [
       {
@@ -2311,6 +2295,7 @@
         "dev_fund_reward": "0",
         "income_burn": "0",
         "mode": "EndBlock",
+        "tcy_stake_reward": "0",
         "type": "rewards"
       },
       {
@@ -2427,13 +2412,8 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "244244",
+          "gas_used": "247355",
           "events": [
-            {
-              "fee": "",
-              "fee_payer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
-              "type": "tx"
-            },
             {
               "acc_seq": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m/6",
               "type": "tx"
@@ -2493,11 +2473,12 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "9C17B9726E85F013884938F8D3EA4479AFA9924326B4BD8966D1862D33BF58C5",
-      "last_results_hash": "5E2ACA498526D9FC06AD8E682432162CE0781A49EE811805C792AEB2710F8C0B",
+      "app_hash": "B96BD8C2304302BD4742BD45455F30BA3125975BCDCD34DB501137045CB59479",
+      "last_results_hash": "E8C047BE24D7AE722F51AC97728E555D3465E3380C4543A6209A91332A698208",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
+    "finalize_block_events": [],
     "begin_block_events": [],
     "end_block_events": [
       {
@@ -2579,6 +2560,7 @@
         "dev_fund_reward": "0",
         "income_burn": "0",
         "mode": "EndBlock",
+        "tcy_stake_reward": "0",
         "type": "rewards"
       }
     ],
@@ -2630,13 +2612,8 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "36610",
+          "gas_used": "89728",
           "events": [
-            {
-              "fee": "",
-              "fee_payer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
-              "type": "tx"
-            },
             {
               "acc_seq": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m/7",
               "type": "tx"
@@ -2651,6 +2628,51 @@
               "msg_index": "0",
               "sender": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
               "type": "message"
+            },
+            {
+              "amount": "2000000rune",
+              "msg_index": "0",
+              "spender": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
+              "type": "coin_spent"
+            },
+            {
+              "amount": "2000000rune",
+              "msg_index": "0",
+              "receiver": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
+              "type": "coin_received"
+            },
+            {
+              "amount": "2000000rune",
+              "msg_index": "0",
+              "recipient": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
+              "sender": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
+              "type": "transfer"
+            },
+            {
+              "msg_index": "0",
+              "sender": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
+              "type": "message"
+            },
+            {
+              "address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
+              "key": "HALTSECUREDDEPOSIT-BTC",
+              "msg_index": "0",
+              "type": "set_node_mimir",
+              "value": "5"
+            },
+            {
+              "amount": "2000000",
+              "bond_address": "",
+              "bond_type": "bond_cost",
+              "chain": "",
+              "coin": "",
+              "from": "",
+              "id": "",
+              "memo": "",
+              "msg_index": "0",
+              "node_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
+              "to": "",
+              "type": "bond"
             },
             {
               "key": "HALTSECUREDDEPOSIT-BTC",
@@ -2691,11 +2713,12 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "2A3D0E7352FE3CBB8E95AC6E33F85BA8F44D8FC6D83A8F4A0854464100A2DC44",
-      "last_results_hash": "AC850313DAF98E8039FEB7BB6C2735F7DD1460F34BBEF938CB27418BF118176D",
+      "app_hash": "79664A93CE017E6360BCD4CE9593CFED91DEB0A277CD8DA57F14EC80967769CF",
+      "last_results_hash": "9DB026F2E5161124523C33A042C03A126AEB8105BB38F61D5E4A5040479EA9BC",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
+    "finalize_block_events": [],
     "begin_block_events": [],
     "end_block_events": [
       {
@@ -2777,6 +2800,7 @@
         "dev_fund_reward": "0",
         "income_burn": "0",
         "mode": "EndBlock",
+        "tcy_stake_reward": "0",
         "type": "rewards"
       }
     ],
@@ -2861,13 +2885,8 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "1065750",
+          "gas_used": "1067732",
           "events": [
-            {
-              "fee": "",
-              "fee_payer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
-              "type": "tx"
-            },
             {
               "acc_seq": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m/8",
               "type": "tx"
@@ -2977,11 +2996,12 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "C70DBDCA0DFE90DC8C906294E107F993EF2E08A1C7A947C766D106A14696B0E3",
-      "last_results_hash": "6A0A6ECEE14A6F5B832F5B263D0757027D733415A5EC6347DE13663B4988B551",
+      "app_hash": "CCE4E24B964FD8F00C4B402FE194748E957D1E23894C07E513A4437D154EDA21",
+      "last_results_hash": "AC50DB7A14CCD97C2A67B7B54D5316C12A450A03967C5BB2A82D84A2B3D59587",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
+    "finalize_block_events": [],
     "begin_block_events": [],
     "end_block_events": [
       {
@@ -3063,6 +3083,7 @@
         "dev_fund_reward": "0",
         "income_burn": "0",
         "mode": "EndBlock",
+        "tcy_stake_reward": "0",
         "type": "rewards"
       }
     ],
@@ -3114,13 +3135,8 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "37623",
+          "gas_used": "91924",
           "events": [
-            {
-              "fee": "",
-              "fee_payer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
-              "type": "tx"
-            },
             {
               "acc_seq": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m/9",
               "type": "tx"
@@ -3135,6 +3151,51 @@
               "msg_index": "0",
               "sender": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
               "type": "message"
+            },
+            {
+              "amount": "2000000rune",
+              "msg_index": "0",
+              "spender": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
+              "type": "coin_spent"
+            },
+            {
+              "amount": "2000000rune",
+              "msg_index": "0",
+              "receiver": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
+              "type": "coin_received"
+            },
+            {
+              "amount": "2000000rune",
+              "msg_index": "0",
+              "recipient": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
+              "sender": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
+              "type": "transfer"
+            },
+            {
+              "msg_index": "0",
+              "sender": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
+              "type": "message"
+            },
+            {
+              "address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
+              "key": "HALTSECUREDDEPOSIT-BTC",
+              "msg_index": "0",
+              "type": "set_node_mimir",
+              "value": "0"
+            },
+            {
+              "amount": "2000000",
+              "bond_address": "",
+              "bond_type": "bond_cost",
+              "chain": "",
+              "coin": "",
+              "from": "",
+              "id": "",
+              "memo": "",
+              "msg_index": "0",
+              "node_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
+              "to": "",
+              "type": "bond"
             },
             {
               "key": "HALTSECUREDDEPOSIT-BTC",
@@ -3175,11 +3236,12 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "ABA76EE16BB432B75A6DCE448D521025696A00979B2D0CB569EE52CA000E1D7E",
-      "last_results_hash": "7713EC4ACACE9F21099450E810CB091CB03F42EAFFE25831963570DDF1321D33",
+      "app_hash": "6EBB4875164CEACE4078D9DF1247643E198CCB447295DC88AB3BA8B982F6E94F",
+      "last_results_hash": "71BF539C62C37C70E7D4C851462457954CA60B3C2B729AB1BFF8EF3E9BD38049",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
+    "finalize_block_events": [],
     "begin_block_events": [],
     "end_block_events": [
       {
@@ -3261,6 +3323,7 @@
         "dev_fund_reward": "0",
         "income_burn": "0",
         "mode": "EndBlock",
+        "tcy_stake_reward": "0",
         "type": "rewards"
       }
     ],
@@ -3345,13 +3408,8 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "236065",
+          "gas_used": "238957",
           "events": [
-            {
-              "fee": "",
-              "fee_payer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
-              "type": "tx"
-            },
             {
               "acc_seq": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m/10",
               "type": "tx"
@@ -3445,11 +3503,12 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "9CDE18F082F26D1F372F81E1B600AD68530F35BB32530E6850E1241737D514CA",
-      "last_results_hash": "B03B5C57B8F28CB01D3E02A8165603390527547827F4E96D1ACF75822081C20C",
+      "app_hash": "13FBF321B49CE4BFF3C0EDDA22ACD73D1EB58F6A5BAE8B4E34D4A88CC2D5332C",
+      "last_results_hash": "15BBA32EFF9C8B4C2066EBB41D92A51BD150D6FEEEC800B70FD6CE6910E85B32",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
+    "finalize_block_events": [],
     "begin_block_events": [],
     "end_block_events": [
       {
@@ -3531,6 +3590,7 @@
         "dev_fund_reward": "0",
         "income_burn": "0",
         "mode": "EndBlock",
+        "tcy_stake_reward": "0",
         "type": "rewards"
       }
     ],
@@ -3615,13 +3675,8 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "1063561",
+          "gas_used": "1065543",
           "events": [
-            {
-              "fee": "",
-              "fee_payer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
-              "type": "tx"
-            },
             {
               "acc_seq": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m/11",
               "type": "tx"
@@ -3731,27 +3786,28 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "A7ED12333340C797F114B0E459FCF3821EF8DE5DFC174EE5B51C6D3564204D58",
-      "last_results_hash": "E7CDEB73C6B97DA6EF334CEA9D30BC209243E0DC0151EA79D102D74CA8B36D1E",
+      "app_hash": "73E4BF4B246FA5467A13D3712A6BB653D4D2BBA7465733C5F3A03D24EEAEBD03",
+      "last_results_hash": "6F0D8DBD385BB2109540149CB3D33180F7E4279917660A6A57F40CB450B02E15",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
+    "finalize_block_events": [],
     "begin_block_events": [],
     "end_block_events": [
       {
-        "amount": "532624rune",
+        "amount": "532625rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
         "type": "coin_spent"
       },
       {
-        "amount": "532624rune",
+        "amount": "532625rune",
         "mode": "EndBlock",
         "receiver": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "coin_received"
       },
       {
-        "amount": "532624rune",
+        "amount": "532625rune",
         "mode": "EndBlock",
         "recipient": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "sender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -3811,12 +3867,13 @@
         "type": "message"
       },
       {
-        "BTC.BTC": "532624",
+        "BTC.BTC": "532625",
         "ETH.ETH": "532830",
         "bond_reward": "44389",
         "dev_fund_reward": "0",
         "income_burn": "0",
         "mode": "EndBlock",
+        "tcy_stake_reward": "0",
         "type": "rewards"
       }
     ],
@@ -3868,13 +3925,8 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "36410",
+          "gas_used": "89198",
           "events": [
-            {
-              "fee": "",
-              "fee_payer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
-              "type": "tx"
-            },
             {
               "acc_seq": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m/12",
               "type": "tx"
@@ -3889,6 +3941,51 @@
               "msg_index": "0",
               "sender": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
               "type": "message"
+            },
+            {
+              "amount": "2000000rune",
+              "msg_index": "0",
+              "spender": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
+              "type": "coin_spent"
+            },
+            {
+              "amount": "2000000rune",
+              "msg_index": "0",
+              "receiver": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
+              "type": "coin_received"
+            },
+            {
+              "amount": "2000000rune",
+              "msg_index": "0",
+              "recipient": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
+              "sender": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
+              "type": "transfer"
+            },
+            {
+              "msg_index": "0",
+              "sender": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
+              "type": "message"
+            },
+            {
+              "address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
+              "key": "HALTSECUREDGLOBAL",
+              "msg_index": "0",
+              "type": "set_node_mimir",
+              "value": "5"
+            },
+            {
+              "amount": "2000000",
+              "bond_address": "",
+              "bond_type": "bond_cost",
+              "chain": "",
+              "coin": "",
+              "from": "",
+              "id": "",
+              "memo": "",
+              "msg_index": "0",
+              "node_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
+              "to": "",
+              "type": "bond"
             },
             {
               "key": "HALTSECUREDGLOBAL",
@@ -3929,11 +4026,12 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "36A1D631596B08398D74AC9D38829044ECB12FA38EF1F2BEE27E4A7CEB51C0BC",
-      "last_results_hash": "FBEFD48AC67485DB066554B6C0FE4EA50148B61C773C8BF936A61950B68120EB",
+      "app_hash": "67D3523FD9B40734281D49F2812D0DB20702F7408C7B7890EACF33C44CA6E983",
+      "last_results_hash": "FE0A3C6DFE8E88FFD5CBF395BA235F763BE6E0F694B37D7DD1423171410691CE",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
+    "finalize_block_events": [],
     "begin_block_events": [],
     "end_block_events": [
       {
@@ -4015,6 +4113,7 @@
         "dev_fund_reward": "0",
         "income_burn": "0",
         "mode": "EndBlock",
+        "tcy_stake_reward": "0",
         "type": "rewards"
       }
     ],
@@ -4099,13 +4198,8 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "1082379",
+          "gas_used": "1085361",
           "events": [
-            {
-              "fee": "",
-              "fee_payer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
-              "type": "tx"
-            },
             {
               "acc_seq": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m/13",
               "type": "tx"
@@ -4215,11 +4309,12 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "C2972D518F792064EB33BF70CB5274F1482BDE166BEC133C82E2A3EBA62CF50B",
-      "last_results_hash": "BB22E1D5BCF7970A3734422E31588C37D5D90BB7257EDE102C5F31C31FB5BD72",
+      "app_hash": "41B58B15106016639B9EE87BABAC3EBE0C17DDC589597463E5EA8AA82E1596F8",
+      "last_results_hash": "81BCEF98680A69EE8D7F13F9BD58DA0CDBF1DB52EDBB1CC29FEE92747BCA25C5",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
+    "finalize_block_events": [],
     "begin_block_events": [],
     "end_block_events": [
       {
@@ -4279,7 +4374,7 @@
         "id": "000000000000000000000000000000000000000000000000000000000000000c",
         "memo": "=:ETH-ETH:tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u",
         "mode": "EndBlock",
-        "reason": "fail to mint secured asset: 2 errors occurred:\n\t* internal error\n\t* secured assets are disabled\n\n",
+        "reason": "secured assets are disabled",
         "to": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk",
         "type": "refund"
       },
@@ -4362,6 +4457,7 @@
         "dev_fund_reward": "0",
         "income_burn": "0",
         "mode": "EndBlock",
+        "tcy_stake_reward": "0",
         "type": "rewards"
       }
     ],
@@ -4446,13 +4542,8 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "186178",
+          "gas_used": "188070",
           "events": [
-            {
-              "fee": "",
-              "fee_payer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
-              "type": "tx"
-            },
             {
               "acc_seq": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m/14",
               "type": "tx"

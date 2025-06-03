@@ -33,8 +33,12 @@ var (
 	BaseETHAsset = Asset{Chain: BASEChain, Symbol: "ETH", Ticker: "ETH", Synth: false}
 	// AVAXAsset AVAX
 	AVAXAsset = Asset{Chain: AVAXChain, Symbol: "AVAX", Ticker: "AVAX", Synth: false}
+	// XRPAsset XRP
+	XRPAsset = Asset{Chain: XRPChain, Symbol: "XRP", Ticker: "XRP", Synth: false}
 	// RuneNative RUNE on thorchain
 	RuneNative = Asset{Chain: THORChain, Symbol: "RUNE", Ticker: "RUNE", Synth: false}
+	RUJI       = Asset{Chain: THORChain, Symbol: "RUJI", Ticker: "RUJI", Synth: false}
+	TCY        = Asset{Chain: THORChain, Symbol: "TCY", Ticker: "TCY", Synth: false}
 	TOR        = Asset{Chain: THORChain, Symbol: "TOR", Ticker: "TOR", Synth: false}
 	THORBTC    = Asset{Chain: THORChain, Symbol: "BTC", Ticker: "BTC", Synth: false}
 )
@@ -108,6 +112,7 @@ func NewAssetWithShortCodesV3_1_0(input string) (Asset, error) {
 	shorts[LTCAsset.ShortCode()] = LTCAsset.String()
 	shorts[RuneNative.ShortCode()] = RuneNative.String()
 	shorts[BaseETHAsset.ShortCode()] = BaseETHAsset.String()
+	shorts[XRPAsset.ShortCode()] = XRPAsset.String()
 
 	long, ok := shorts[input]
 	if ok {
@@ -234,17 +239,22 @@ func (a Asset) IsVaultAsset() bool {
 
 // Check if asset is a derived asset
 func (a Asset) IsDerivedAsset() bool {
-	return !a.Synth && !a.Trade && !a.Secured && a.GetChain().IsTHORChain() && !a.IsRune()
+	return !a.Synth && !a.Trade && !a.Secured && a.GetChain().IsTHORChain() && !a.IsRune() && !a.IsTCY() && !a.IsRUJI()
 }
 
 // Native return native asset, only relevant on THORChain
 func (a Asset) Native() string {
-	if a.IsRune() {
+	switch {
+	case a.IsRune():
 		return "rune"
-	}
-	if a.Equals(TOR) {
+	case a.Equals(TOR):
 		return "tor"
+	case a.Equals(TCY):
+		return "tcy"
+	case a.IsRUJI():
+		return "x/ruji"
 	}
+
 	return strings.ToLower(a.String())
 }
 
@@ -291,6 +301,8 @@ func (a Asset) ShortCode() string {
 		return "s"
 	case "BASE.ETH":
 		return "f"
+	case "XRP.XRP":
+		return "x"
 	default:
 		return ""
 	}
@@ -308,6 +320,15 @@ func (a Asset) IsGasAsset() bool {
 // IsRune is a helper function ,return true only when the asset represent RUNE
 func (a Asset) IsRune() bool {
 	return RuneAsset().Equals(a)
+}
+
+// IsTCY is a helper function ,return true only when the asset represent RUNE
+func (a Asset) IsTCY() bool {
+	return TCY.Equals(a)
+}
+
+func (a Asset) IsRUJI() bool {
+	return RUJI.Equals(a)
 }
 
 // IsNative is a helper function, returns true when the asset is a native

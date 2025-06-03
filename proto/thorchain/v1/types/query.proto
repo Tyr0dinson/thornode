@@ -48,17 +48,24 @@ import "types/query_account.proto";
 import "types/query_export.proto";
 import "types/query_bank.proto";
 import "types/query_secured_asset.proto";
+import "types/query_tcy_stakers.proto";
+import "types/query_tcy_claimers.proto";
+import "types/query_codes.proto";
 
 option (gogoproto.marshaler_all) = true;
 
 // Query defines the gRPC querier service.
 service Query {
   // Account returns account details for a given address.
+  // As this path does not start with /thorchain/ , it requires an exception in CustomGRPCGatewayRouter
+  // to not drop the height parameter.
   rpc Account(QueryAccountRequest) returns (QueryAccountResponse) {
     option (google.api.http).get = "/auth/accounts/{address}";
   }
 
   // Balances returns the bank module balances for a given address.
+  // As this path does not start with /thorchain/ , it requires an exception in CustomGRPCGatewayRouter
+  // to not drop the height parameter.
   rpc Balances(QueryBalancesRequest) returns (QueryBalancesResponse) {
     option (google.api.http).get = "/bank/balances/{address}";
   }
@@ -356,5 +363,25 @@ service Query {
 
   rpc UpgradeVotes(QueryUpgradeVotesRequest) returns (QueryUpgradeVotesResponse) {
     option (google.api.http).get = "/thorchain/upgrade_votes/{name}";
+  }
+
+  rpc TCYStaker(QueryTCYStakerRequest) returns (QueryTCYStakerResponse) {
+    option (google.api.http).get = "/thorchain/tcy_staker/{address}";
+  }
+
+  rpc TCYStakers(QueryTCYStakersRequest) returns (QueryTCYStakersResponse) {
+    option (google.api.http).get = "/thorchain/tcy_stakers";
+  }
+
+  rpc TCYClaimer(QueryTCYClaimerRequest) returns (QueryTCYClaimerResponse) {
+    option (google.api.http).get = "/thorchain/tcy_claimer/{address}";
+  }
+
+  rpc TCYClaimers(QueryTCYClaimersRequest) returns (QueryTCYClaimersResponse) {
+    option (google.api.http).get = "/thorchain/tcy_claimers";
+  }
+
+  rpc Codes(QueryCodesRequest) returns (QueryCodesResponse) {
+    option (google.api.http).get = "/thorchain/codes";
   }
 }

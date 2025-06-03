@@ -23,6 +23,14 @@ func refundTx(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32,
 
 	refundCoins := make(common.Coins, 0)
 	for _, coin := range tx.Tx.Coins {
+		// Do not emit Trade/Secured Asset refund event or attempt refund txout,
+		// as Trade/Secured Asset withdrawals take place in the internal handlers
+		// (state changes and event emission only if the internal handler succeeds)
+		// and not in the deposit handler.
+		if coin.Asset.IsTradeAsset() || coin.Asset.IsSecuredAsset() {
+			continue
+		}
+
 		if coin.IsRune() && coin.Asset.GetChain().Equals(common.ETHChain) {
 			continue
 		}
@@ -357,6 +365,13 @@ func isSignedByActiveNodeAccounts(ctx cosmos.Context, k keeper.Keeper, signers [
 		}
 	}
 	return true
+}
+
+func activeNodeAccountsSignerPriority(ctx cosmos.Context, k keeper.Keeper, signers []cosmos.AccAddress) (cosmos.Context, error) {
+	if isSignedByActiveNodeAccounts(ctx, k, signers) {
+		return ctx.WithPriority(ActiveNodePriority), nil
+	}
+	return ctx, cosmos.ErrUnauthorized(fmt.Sprintf("%+v are not authorized", signers))
 }
 
 // signedByActiveNodeAccounts returns an error unless all signers are active validator nodes
@@ -734,6 +749,73 @@ func emitEndBlockTelemetry(ctx cosmos.Context, mgr Manager) error {
 	return nil
 }
 
+func getAvailablePoolsRune(ctx cosmos.Context, keeper keeper.Keeper) (Pools, cosmos.Uint, error) {
+	// Get Available layer 1 pools and sum their RUNE balances.
+	availablePoolsRune := cosmos.ZeroUint()
+	var availablePools Pools
+	iterator := keeper.GetPoolIterator(ctx)
+	defer iterator.Close()
+	for ; iterator.Valid(); iterator.Next() {
+		var pool Pool
+		if err := keeper.Cdc().Unmarshal(iterator.Value(), &pool); err != nil {
+			return nil, cosmos.ZeroUint(), fmt.Errorf("fail to unmarshal pool: %w", err)
+		}
+		if !pool.IsAvailable() {
+			continue
+		}
+		if pool.Asset.IsNative() {
+			continue
+		}
+		if pool.BalanceRune.IsZero() {
+			continue
+		}
+		availablePoolsRune = availablePoolsRune.Add(pool.BalanceRune)
+		availablePools = append(availablePools, pool)
+	}
+	return availablePools, availablePoolsRune, nil
+}
+
+func getVaultsLiquidityRune(ctx cosmos.Context, keeper keeper.Keeper) (cosmos.Uint, error) {
+	// Sum the RUNE values of non-Inactive vault Coins.
+	vaultsLiquidityRune := cosmos.ZeroUint()
+	poolCache := map[common.Asset]Pool{}
+	vaults, err := keeper.GetAsgardVaults(ctx)
+	if err != nil {
+		return cosmos.ZeroUint(), fmt.Errorf("fail to get vaults: %w", err)
+	}
+	for i := range vaults {
+		// cleanupAsgardIndex removes InactiveVaults from the index on churn,
+		// but RetiringVaults which become InactiveVaults and later receive inbounds
+		// are not cleared from the index until the next churn,
+		// so check nevertheless.
+		// Similarly, an InactiveVault inbound (to be automatically refunded)
+		// re-adds that InactiveVault to the Asgard Index with SetVault
+		// until cleared again in the next churn.
+		if vaults[i].Status == InactiveVault {
+			continue
+		}
+
+		for _, coin := range vaults[i].Coins {
+			if coin.IsRune() {
+				vaultsLiquidityRune = vaultsLiquidityRune.Add(coin.Amount)
+				continue
+			}
+
+			pool, ok := poolCache[coin.Asset]
+			if !ok {
+				pool, err = keeper.GetPool(ctx, coin.Asset)
+				if err != nil {
+					return cosmos.ZeroUint(), fmt.Errorf("fail to get pool for asset %s, err:%w", coin.Asset, err)
+				}
+				poolCache[coin.Asset] = pool
+			}
+
+			vaultsLiquidityRune = vaultsLiquidityRune.Add(pool.AssetValueInRune(coin.Amount))
+		}
+	}
+	return vaultsLiquidityRune, nil
+}
+
 // get the total bond of the bottom 2/3rds active nodes
 func getEffectiveSecurityBond(nas NodeAccounts) cosmos.Uint {
 	amt := cosmos.ZeroUint()
@@ -926,6 +1008,9 @@ func atTVLCap(ctx cosmos.Context, coins common.Coins, mgr Manager) bool {
 		if pool.BalanceRune.IsZero() || pool.BalanceAsset.IsZero() {
 			continue
 		}
+		if pool.Asset.IsNative() {
+			continue
+		}
 		totalRuneValue = totalRuneValue.Add(pool.AssetValueInRune(coin.Amount))
 	}
 
@@ -935,10 +1020,20 @@ func atTVLCap(ctx cosmos.Context, coins common.Coins, mgr Manager) bool {
 		ctx.Logger().Error("fail to get validators to calculate TVL cap", "error", err)
 		return true
 	}
-	effectiveSecurity := getEffectiveSecurityBond(nodeAccounts)
 
-	if totalRuneValue.GT(effectiveSecurity) {
-		ctx.Logger().Debug("reached TVL cap", "total rune value", totalRuneValue.String(), "effective security", effectiveSecurity.String())
+	tvlCapBasisPoints := mgr.Keeper().GetConfigInt64(ctx, constants.TVLCapBasisPoints)
+	security := cosmos.ZeroUint()
+	if tvlCapBasisPoints > 0 {
+		for _, na := range nodeAccounts {
+			security = security.Add(na.Bond)
+		}
+		security = common.GetUncappedShare(cosmos.NewUint(uint64(tvlCapBasisPoints)), cosmos.NewUint(constants.MaxBasisPts), security)
+	} else {
+		security = getEffectiveSecurityBond(nodeAccounts)
+	}
+
+	if totalRuneValue.GT(security) {
+		ctx.Logger().Debug("reached TVL cap", "total rune value", totalRuneValue.String(), "security", security.String())
 		return true
 	}
 	return false
@@ -982,7 +1077,9 @@ func IsModuleAccAddress(keeper keeper.Keeper, accAddr cosmos.AccAddress) bool {
 		accAddr.Equals(keeper.GetModuleAccAddress(ReserveName)) ||
 		accAddr.Equals(keeper.GetModuleAccAddress(LendingName)) ||
 		accAddr.Equals(keeper.GetModuleAccAddress(AffiliateCollectorName)) ||
-		accAddr.Equals(keeper.GetModuleAccAddress(ModuleName))
+		accAddr.Equals(keeper.GetModuleAccAddress(ModuleName)) ||
+		accAddr.Equals(keeper.GetModuleAccAddress(TCYClaimingName)) ||
+		accAddr.Equals(keeper.GetModuleAccAddress(TCYStakeName))
 }
 
 func NewSwapMemo(ctx cosmos.Context, mgr Manager, targetAsset common.Asset, destination common.Address, limit cosmos.Uint, affiliate string, affiliateBps cosmos.Uint) string {
@@ -1158,4 +1255,21 @@ func polPoolValue(ctx cosmos.Context, mgr Manager) (cosmos.Uint, error) {
 	}
 
 	return total, nil
+}
+
+// This removes the first prefix ending with "//" (if there is one) from a KVStore key,
+// such as when obtained through an Iterator, whatever the prefix may be.
+// The "/" at the end of every prefix, together with the "/" added by KVStore GetKey
+// (to ensure that no prefix ever contains another prefix)
+// should ensure that each prefix ends with "//".
+func trimKeyPrefix(key []byte) string {
+	keyString := string(key)
+	if _, after, found := strings.Cut(keyString, "//"); found {
+		return after
+	}
+	return keyString
+}
+
+func IsPeriodLastBlock(ctx cosmos.Context, blocksPerPeriod int64) bool {
+	return ctx.BlockHeight()%blocksPerPeriod == 0
 }

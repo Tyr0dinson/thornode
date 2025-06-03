@@ -69,10 +69,10 @@ const (
 	prefixNodeSlashPoints         types.DbPrefix = "slash/"
 	prefixNodeJail                types.DbPrefix = "jail/"
 	prefixSwapQueueItem           types.DbPrefix = "swapitem/"
-	prefixOrderBookItem           types.DbPrefix = "o/"
-	prefixOrderBookLimitIndex     types.DbPrefix = "olim/"
-	prefixOrderBookMarketIndex    types.DbPrefix = "omark/"
-	prefixOrderBookProcessor      types.DbPrefix = "oproc/"
+	prefixAdvSwapQueueItem        types.DbPrefix = "aq/"
+	prefixAdvSwapQueueLimitIndex  types.DbPrefix = "aqlim/"
+	prefixAdvSwapQueueMarketIndex types.DbPrefix = "aqmark/"
+	prefixAdvSwapQueueProcessor   types.DbPrefix = "aqproc/"
 	prefixOutboundFeeWithheldRune types.DbPrefix = "outbound_fee_withheld_rune/"
 	prefixOutboundFeeSpentRune    types.DbPrefix = "outbound_fee_spent_rune/"
 	prefixMimir                   types.DbPrefix = "mimir/"
@@ -92,6 +92,8 @@ const (
 	prefixVersion                 types.DbPrefix = "version/"
 	prefixUpgradeProposals        types.DbPrefix = "upgr_props/"
 	prefixUpgradeVotes            types.DbPrefix = "upgr_votes/"
+	prefixTCYClaimer              types.DbPrefix = "tcy_claimer/"
+	prefixTCYStaker               types.DbPrefix = "tcy_staker/"
 )
 
 func dbError(ctx cosmos.Context, wrapper string, err error) error {
@@ -354,10 +356,6 @@ func (k KVStore) SendFromModuleToModule(ctx cosmos.Context, from, to string, coi
 
 func (k KVStore) SendCoins(ctx cosmos.Context, from, to cosmos.AccAddress, coins cosmos.Coins) error {
 	return k.coinKeeper.SendCoins(ctx, from, to, coins)
-}
-
-func (k KVStore) AddCoins(ctx cosmos.Context, addr cosmos.AccAddress, coins cosmos.Coins) error {
-	return k.coinKeeper.SendCoinsFromModuleToAccount(ctx, ModuleName, addr, coins)
 }
 
 // SendFromAccountToModule transfer fund from one account to a module

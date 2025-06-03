@@ -1,11 +1,21 @@
 package thorchain
 
 import (
+	"encoding/hex"
 	"fmt"
 	"math/big"
 	"strconv"
 	"strings"
 	"time"
+
+	btcchaincfg "github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcutil"
+	dogechaincfg "github.com/eager7/dogd/chaincfg"
+	"github.com/eager7/dogutil"
+	bchchaincfg "github.com/gcash/bchd/chaincfg"
+	"github.com/gcash/bchutil"
+	ltcchaincfg "github.com/ltcsuite/ltcd/chaincfg"
+	"github.com/ltcsuite/ltcutil"
 
 	"cosmossdk.io/log"
 	sdkmath "cosmossdk.io/math"
@@ -25,6 +35,11 @@ const (
 	quoteWarning         = "Do not cache this response. Do not send funds after the expiry."
 	quoteExpiration      = 15 * time.Minute
 	ethBlockRewardAndFee = 3 * 1e18
+
+	dustLimitBtc  = 294
+	dustLimitLtc  = 2940
+	dustLimitDoge = 546
+	dustLimitBch  = 546
 )
 
 var nullLogger = log.NewNopLogger()
@@ -62,7 +77,7 @@ func quoteParseAddress(ctx cosmos.Context, mgr *Mgrs, addrString string, chain c
 
 // parseMultipleAffiliateParams - attempts to parse one or more affiliates + affiliate
 // bps. skips any that are invalid
-func parseMultipleAffiliateParams(ctx cosmos.Context, mgr *Mgrs, affiliateParams []string, bpParams []string) ([]string, []sdkmath.Uint, sdkmath.Uint, error) {
+func parseMultipleAffiliateParams(ctx cosmos.Context, mgr *Mgrs, affiliateParams, bpParams []string) ([]string, []sdkmath.Uint, sdkmath.Uint, error) {
 	affParams := make([]string, 0)
 	affiliateBps := make([]sdkmath.Uint, 0)
 	totalBps := sdkmath.ZeroUint()
@@ -101,7 +116,7 @@ func parseMultipleAffiliateParams(ctx cosmos.Context, mgr *Mgrs, affiliateParams
 	return affParams, affiliateBps, totalBps, nil
 }
 
-func quoteHandleAffiliate(ctx cosmos.Context, mgr *Mgrs, affiliateParam []string, affiliateBpsParam []string, amount sdkmath.Uint) (affiliate common.Address, memo string, bps, newAmount, affiliateAmt sdkmath.Uint, err error) {
+func quoteHandleAffiliate(ctx cosmos.Context, mgr *Mgrs, affiliateParam, affiliateBpsParam []string, amount sdkmath.Uint) (affiliate common.Address, memo string, bps, newAmount, affiliateAmt sdkmath.Uint, err error) {
 	// parse affiliate
 	affAmt := cosmos.ZeroUint()
 	memo = "" // do not resolve thorname for the memo
@@ -254,21 +269,8 @@ func quoteSimulateSwap(ctx cosmos.Context, mgr *Mgrs, amount sdkmath.Uint, msg *
 
 	msg.Tx.Coins[0].Amount = msg.Tx.Coins[0].Amount.QuoUint64(streamingQuantity)
 
-	// if the generated memo is too long for the source chain send error
-	maxMemoLength := msg.Tx.Coins[0].Asset.Chain.MaxMemoLength()
-	if !msg.Tx.Coins[0].Asset.Synth && len(msg.Tx.Memo) > maxMemoLength {
-		return nil, sdkmath.ZeroUint(), sdkmath.ZeroUint(), fmt.Errorf("generated memo too long for source chain")
-	}
-
-	// use the first active node account as the signer
-	nodeAccounts, err := mgr.Keeper().ListActiveValidators(ctx)
-	if err != nil {
-		return nil, sdkmath.ZeroUint(), sdkmath.ZeroUint(), fmt.Errorf("no active node accounts: %w", err)
-	}
-	msg.Signer = nodeAccounts[0].NodeAddress
-
 	// simulate the swap
-	events, err := simulateInternal(ctx, mgr, msg)
+	events, err := simulate(ctx, mgr, msg)
 	if err != nil {
 		return nil, sdkmath.ZeroUint(), sdkmath.ZeroUint(), err
 	}
@@ -286,15 +288,12 @@ func quoteSimulateSwap(ctx cosmos.Context, mgr *Mgrs, amount sdkmath.Uint, msg *
 	}
 	finalSwap := swaps[len(swaps)-1]
 
-	// parse outbound fee from event (except on trade & secured assets with no outbound fee)
-	outboundFeeAmount = sdkmath.ZeroUint()
-	if !(msg.TargetAsset.IsTradeAsset() || msg.TargetAsset.IsSecuredAsset()) {
-		outboundFeeCoin, err := common.ParseCoin(fee["coins"])
-		if err != nil {
-			return nil, sdkmath.ZeroUint(), sdkmath.ZeroUint(), fmt.Errorf("unable to parse outbound fee coin: %w", err)
-		}
-		outboundFeeAmount = outboundFeeCoin.Amount
+	// parse outbound fee from event
+	outboundFeeCoin, err := common.ParseCoin(fee["coins"])
+	if err != nil {
+		return nil, sdkmath.ZeroUint(), sdkmath.ZeroUint(), fmt.Errorf("unable to parse outbound fee coin: %w", err)
 	}
+	outboundFeeAmount = outboundFeeCoin.Amount
 
 	// parse outbound amount from event
 	emitCoin, err := common.ParseCoin(finalSwap["emit_asset"])
@@ -511,6 +510,10 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 		return nil, fmt.Errorf("missing Amount parameter")
 	}
 
+	if len(req.ToleranceBps) > 0 && len(req.LiquidityToleranceBps) > 0 {
+		return nil, fmt.Errorf("must only include one of: tolerance_bps or liquidity_tolerance_bps")
+	}
+
 	// parse assets
 	fromAsset, err := common.NewAssetWithShortCodes(qs.mgr.GetVersion(), req.FromAsset)
 	if err != nil {
@@ -622,6 +625,7 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 
 	// parse tolerance basis points
 	limit := sdkmath.ZeroUint()
+	liquidityToleranceBps := sdkmath.ZeroUint()
 	if len(req.ToleranceBps) > 0 {
 		// validate tolerance basis points
 		toleranceBasisPoints, err := sdkmath.ParseUint(req.ToleranceBps)
@@ -639,6 +643,14 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 		}
 
 		limit = feelessEmit.MulUint64(10000 - toleranceBasisPoints.Uint64()).QuoUint64(10000)
+	} else if len(req.LiquidityToleranceBps) > 0 {
+		liquidityToleranceBps, err = sdkmath.ParseUint(req.LiquidityToleranceBps)
+		if err != nil {
+			return nil, fmt.Errorf("bad liquidity tolerance basis points: %w", err)
+		}
+		if liquidityToleranceBps.GTE(sdkmath.NewUint(10000)) {
+			return nil, fmt.Errorf("liquidity tolerance basis points must be less than 10000")
+		}
 	}
 
 	// custom refund addr
@@ -671,25 +683,7 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 		StreamQuantity:        streamingQuantity,
 		RefundAddress:         refundAddress,
 	}
-
-	// if from asset chain has memo length restrictions use a prefix
 	memoString := memo.String()
-	if !fromAsset.Synth && len(memoString) > fromAsset.Chain.MaxMemoLength() {
-		if len(memo.ShortString()) < len(memoString) { // use short codes if available
-			memoString = memo.ShortString()
-		} else { // otherwise attempt to shorten
-			fuzzyAsset, err := quoteReverseFuzzyAsset(ctx, qs.mgr, toAsset)
-			if err == nil {
-				memo.Asset = fuzzyAsset
-				memoString = memo.String()
-			}
-		}
-
-		// this is the shortest we can make it
-		if len(memoString) > fromAsset.Chain.MaxMemoLength() {
-			return nil, fmt.Errorf("generated memo too long for source chain")
-		}
-	}
 
 	// if from asset is a trade asset, create fake balance
 	if fromAsset.IsTradeAsset() {
@@ -808,6 +802,36 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 	// the amount out will deduct the outbound fee
 	res.ExpectedAmountOut = emitAmount.Sub(outboundFeeAmount).String()
 
+	// add liquidty_tolerance_bps to the memo
+	if liquidityToleranceBps.GT(sdkmath.ZeroUint()) {
+		outputLimit := emitAmount.Sub(outboundFeeAmount).MulUint64(10000 - liquidityToleranceBps.Uint64()).QuoUint64(10000)
+		memo.SlipLimit = outputLimit
+		memoString = memo.String()
+	}
+
+	// shorten the memo if necessary
+	memoShortString := memo.ShortString()
+	if !fromAsset.IsNative() && len(memoString) > fromAsset.GetChain().MaxMemoLength() {
+		if len(memoShortString) < len(memoString) { // use short codes if available
+			memoString = memoShortString
+		} else { // otherwise attempt to shorten
+			fuzzyAsset, err := quoteReverseFuzzyAsset(ctx, qs.mgr, toAsset)
+			if err == nil {
+				memo.Asset = fuzzyAsset
+				memoString = memo.String()
+			}
+		}
+
+		// this is the shortest we can make it
+		maxMemoLength := fromAsset.GetChain().MaxMemoLength()
+		if fromChain.IsUTXO() && req.Extended {
+			maxMemoLength = constants.MaxMemoSizeUtxoExtended
+		}
+		if len(memoString) > maxMemoLength {
+			return nil, fmt.Errorf("generated memo too long for source chain")
+		}
+	}
+
 	maxQ := int64(maxSwapQuantity)
 	res.MaxStreamingQuantity = maxQ
 	var streamSwapBlocks int64
@@ -878,6 +902,96 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 		res.RecommendedGasRate = inboundGas.String()
 		res.GasRateUnits = fromAsset.Chain.GetGasUnits()
 	}
+
+	if !fromChain.IsUTXO() || !req.Extended {
+		return res, nil
+	}
+
+	network := common.CurrentChainNetwork
+	parts := splitMemo(memoString)
+	vout := make([]*types.Vout, len(parts))
+
+	for i, part := range parts {
+		if i == 0 {
+			vout[i] = &types.Vout{
+				Type:   "op_return",
+				Data:   part,
+				Amount: 0,
+			}
+			continue
+		}
+
+		data, err := hex.DecodeString(part)
+		if err != nil {
+			return nil, err
+		}
+
+		var address string
+		var amount int64
+
+		switch fromChain {
+		case common.BTCChain:
+			// https://github.com/bitcoin/bitcoin/blob/29.x/src/policy/policy.cpp#L28-L41
+			amount = dustLimitBtc
+			params := &btcchaincfg.MainNetParams
+			if network == common.MockNet {
+				params = &btcchaincfg.RegressionNetParams
+			}
+			hash, err := btcutil.NewAddressWitnessPubKeyHash(data, params)
+			if err != nil {
+				return nil, err
+			}
+			address = hash.String()
+		case common.LTCChain:
+			// dust relay fee in 'lits' is 10x of the fees on btc (30k vs 3k)
+			// https://github.com/litecoin-project/litecoin/blob/v0.21.4/src/policy/policy.h#L52
+			// https://github.com/litecoin-project/litecoin/blob/v0.21.4/src/policy/policy.cpp#L17-L30
+			amount = dustLimitLtc
+			params := &ltcchaincfg.MainNetParams
+			if network == common.MockNet {
+				params = &ltcchaincfg.RegressionNetParams
+			}
+			hash, err := ltcutil.NewAddressWitnessPubKeyHash(data, params)
+			if err != nil {
+				return nil, err
+			}
+			address = hash.String()
+		case common.DOGEChain:
+			// using bitcoin default for p2pkh txout
+			amount = dustLimitDoge
+			params := &dogechaincfg.MainNetParams
+			if network == common.MockNet {
+				params = &dogechaincfg.RegressionNetParams
+			}
+			hash, err := dogutil.NewAddressPubKeyHash(data, params)
+			if err != nil {
+				return nil, err
+			}
+			address = hash.String()
+		case common.BCHChain:
+			// using bitcoin default for p2pkh txout
+			amount = dustLimitBch
+			params := &bchchaincfg.MainNetParams
+			if network == common.MockNet {
+				params = &bchchaincfg.RegressionNetParams
+			}
+			hash, err := bchutil.NewAddressPubKeyHash(data, params)
+			if err != nil {
+				return nil, err
+			}
+			address = hash.String()
+		default:
+			return nil, fmt.Errorf("chain not supported")
+		}
+
+		vout[i] = &types.Vout{
+			Type:   "address",
+			Data:   address,
+			Amount: amount,
+		}
+	}
+
+	res.Vout = vout
 
 	return res, nil
 }
@@ -1801,4 +1915,37 @@ func (qs queryServer) queryQuoteLoanClose(ctx cosmos.Context, req *types.QueryQu
 	}
 
 	return res, nil
+}
+
+// splitMemo converts an arbitrary string into a hex string and splits that
+// into one or more parts, with the first part being 80 bytes and every other
+// part 20 bytes, appending zero to the last part until it matches 20 bytes.
+// It is used for sending memos longer than 80 bytes on UTXO chains.
+func splitMemo(memo string) []string {
+	chunks := []string{}
+
+	encoded := hex.EncodeToString([]byte(memo))
+
+	// OP_RETURN data part: use first 79 chars + "^"
+	// calculation uses hex encoded data representation (bytes * 2)
+	if len(encoded) > 160 {
+		chunks = append(chunks, encoded[:158]+"5e") // 0x5e == "^"
+		encoded = encoded[158:]
+	} else {
+		chunks = append(chunks, encoded)
+		encoded = ""
+	}
+
+	// encode remaining memo data into "fake addresses" of 20 bytes each
+	for len(encoded) > 0 {
+		index := min(len(encoded), 40)
+		chunk := encoded[0:index]
+		encoded = encoded[index:]
+		for len(chunk) < 40 {
+			chunk += "00"
+		}
+		chunks = append(chunks, chunk)
+	}
+
+	return chunks
 }

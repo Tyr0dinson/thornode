@@ -100,7 +100,7 @@ func (h SwapHandler) validateV3_0_0(ctx cosmos.Context, msg MsgSwap) error {
 			return fmt.Errorf("target asset (%s) is not gas asset , can't use dex feature", msg.TargetAsset)
 		}
 		// validate that a referenced dex aggregator is legit
-		addr, err := FetchDexAggregator(h.mgr.GetVersion(), target.Chain, msg.Aggregator)
+		addr, err := FetchDexAggregator(target.Chain, msg.Aggregator)
 		if err != nil {
 			return err
 		}
@@ -278,7 +278,7 @@ func (h SwapHandler) handleV3_0_0(ctx cosmos.Context, msg MsgSwap) (*cosmos.Resu
 	dexAgg := ""
 	dexAggTargetAsset := ""
 	if len(msg.Aggregator) > 0 {
-		dexAgg, err = FetchDexAggregator(h.mgr.GetVersion(), msg.TargetAsset.Chain, msg.Aggregator)
+		dexAgg, err = FetchDexAggregator(msg.TargetAsset.Chain, msg.Aggregator)
 		if err != nil {
 			return nil, err
 		}
@@ -402,7 +402,9 @@ func (h SwapHandler) handleV3_0_0(ctx cosmos.Context, msg MsgSwap) (*cosmos.Resu
 
 	// this is a preferred asset swap, so return early since there is no need to call any
 	// downstream handlers
-	if strings.HasPrefix(msg.Tx.Memo, PreferredAssetSwapMemoPrefix) && msg.Tx.FromAddress.Equals(affColAddress) {
+	memo := msg.Tx.Memo
+	fromAdd := msg.Tx.FromAddress
+	if strings.HasPrefix(memo, PreferredAssetSwapMemoPrefix) && fromAdd.Equals(affColAddress) {
 		return &cosmos.Result{}, nil
 	}
 

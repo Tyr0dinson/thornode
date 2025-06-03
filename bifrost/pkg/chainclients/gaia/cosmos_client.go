@@ -185,10 +185,16 @@ func NewCosmosClient(
 }
 
 // Start Cosmos chain client
-func (c *CosmosClient) Start(globalTxsQueue chan stypes.TxIn, globalErrataQueue chan stypes.ErrataBlock, globalSolvencyQueue chan stypes.Solvency) {
+func (c *CosmosClient) Start(
+	globalTxsQueue chan stypes.TxIn,
+	globalErrataQueue chan stypes.ErrataBlock,
+	globalSolvencyQueue chan stypes.Solvency,
+	globalNetworkFeeQueue chan common.NetworkFee,
+) {
 	c.globalSolvencyQueue = globalSolvencyQueue
+	c.cosmosScanner.globalNetworkFeeQueue = globalNetworkFeeQueue
 	c.tssKeyManager.Start()
-	c.blockScanner.Start(globalTxsQueue)
+	c.blockScanner.Start(globalTxsQueue, globalNetworkFeeQueue)
 	c.wg.Add(1)
 	go runners.SolvencyCheckRunner(c.GetChain(), c, c.thorchainBridge, c.stopchan, c.wg, constants.ThorchainBlockTime)
 }
@@ -221,6 +227,11 @@ func (c *CosmosClient) GetHeight() (int64, error) {
 // GetBlockScannerHeight returns blockscanner height
 func (c *CosmosClient) GetBlockScannerHeight() (int64, error) {
 	return c.blockScanner.PreviousHeight(), nil
+}
+
+// RollbackBlockScanner rolls back the block scanner to the last observed block
+func (c *CosmosClient) RollbackBlockScanner() error {
+	return c.blockScanner.RollbackToLastObserved()
 }
 
 func (c *CosmosClient) GetLatestTxForVault(vault string) (string, string, error) {
@@ -269,7 +280,7 @@ func (c *CosmosClient) GetAccountByAddress(address string, height *big.Int) (com
 	nativeCoins := make([]common.Coin, 0)
 	for _, balance := range balances.Balances {
 		var coin common.Coin
-		coin, err = fromCosmosToThorchain(balance)
+		coin, err = c.cosmosScanner.fromCosmosToThorchain(balance)
 		if err != nil {
 			c.logger.Err(err).Interface("balances", balances.Balances).Msg("wasn't able to convert coins that passed whitelist")
 			continue
@@ -309,7 +320,7 @@ func (c *CosmosClient) processOutboundTx(tx stypes.TxOutItem, thorchainHeight in
 	for _, coin := range tx.Coins {
 		// convert to cosmos coin
 		var cosmosCoin ctypes.Coin
-		cosmosCoin, err = fromThorchainToCosmos(coin)
+		cosmosCoin, err = c.cosmosScanner.fromThorchainToCosmos(coin)
 		if err != nil {
 			c.logger.Warn().Err(err).Interface("tx", tx).Msg("unable to convert coin fromThorchainToCosmos")
 			continue
@@ -395,6 +406,16 @@ func (c *CosmosClient) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signe
 				}
 				c.accts.Set(tx.VaultPubKey, meta)
 			}
+			// Check whether the vault has enough funds for the intended outbound.
+			// If a vault attempts a GAIA outbound with insufficient funds,
+			// the unobserved gas cost will make the vault insolvent.
+			neededCoins := tx.Coins.Add(tx.MaxGas...)
+			for _, neededCoin := range neededCoins {
+				vaultCoin := acc.Coins.GetCoin(neededCoin.Asset)
+				if vaultCoin.Amount.LT(neededCoin.Amount) {
+					return nil, nil, nil, fmt.Errorf("insufficient vault balance (%s): %s < %s", vaultCoin.Asset.String(), vaultCoin.Amount.String(), neededCoin.Amount.String())
+				}
+			}
 		}
 	}
 
@@ -416,7 +437,7 @@ func (c *CosmosClient) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signe
 		c.logger.Err(err).Interface("coin", gasCoins[0]).Msg(err.Error())
 		return nil, nil, nil, err
 	}
-	cCoin, err := fromThorchainToCosmos(gasCoins[0])
+	cCoin, err := c.cosmosScanner.fromThorchainToCosmos(gasCoins[0])
 	if err != nil {
 		err = errors.New("gas coin is not defined in cosmos_assets.go, unable to pay fee")
 		c.logger.Err(err).Msg(err.Error())

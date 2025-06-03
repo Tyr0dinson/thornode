@@ -43,6 +43,7 @@ TEST_DIR?=${TEST_PATHS}
 BUILD_FLAGS := -ldflags '$(ldflags)' -tags ${TAG} -trimpath
 TEST_BUILD_FLAGS := -parallel=1 -tags=mocknet
 BINARIES?=./cmd/thornode ./cmd/bifrost ./tools/recover-keyshare-backup
+GOVERSION=$(shell awk '($$1 == "go") { print $$2 }' go.mod)
 
 # docker tty args are disabled in CI
 ifndef CI
@@ -62,7 +63,7 @@ generate: go-generate openapi proto-gen
 	@cd test/simulation && go mod tidy
 
 go-generate:
-	@go install golang.org/x/tools/cmd/stringer@v0.15.0
+	@go install golang.org/x/tools/cmd/stringer@v0.28.0
 	@go generate ./...
 
 openapi:
@@ -82,8 +83,6 @@ protoImage=docker run --rm -v $(CURDIR):/workspace --workdir /workspace $(protoI
 proto-all: proto-format proto-lint proto-gen format
 
 proto-gen:
-	@echo "Generating bifrost protobuf files"
-	@docker run --rm -v $(shell pwd):/app -w /app golang:1.22.2 make bifrost-protosh
 	@echo "Generating Protobuf files"
 	@$(protoImage) sh ./scripts/protocgen.sh
 
@@ -97,18 +96,13 @@ proto-lint:
 proto-check-breaking:
 	@$(protoImage) buf breaking --against $(HTTPS_GIT)#branch=develop
 
-bifrost-protosh:
-	@./scripts/bifrostprotocgen.sh
-
 # ------------------------------ Docs ------------------------------
 
 docs-init:
-	@cargo install mdbook --version 0.4.37
-	@cargo install mdbook-admonish --version 1.14.0
-	@cargo install mdbook-catppuccin --version 2.1.0
-	@cargo install mdbook-katex --version 0.5.10
+	@cargo install mdbook --version 0.4.44
+	@cargo install mdbook-admonish --version 1.18.0
+	@cargo install mdbook-katex --version 0.9.2
 	@cargo install mdbook-embed --version 0.2.0
-	@cd docs && mdbook-catppuccin install
 	@cd docs && mdbook-admonish install --css-dir theme
 
 docs-generate: docs-init
@@ -166,18 +160,18 @@ test-coverage-sum: test-network-specific
 	@go tool cover -html=coverage.txt -o coverage.html
 
 test: test-network-specific
-	@CGO_ENABLED=0 go test ${TEST_BUILD_FLAGS} ${TEST_DIR}
+	@go test ${TEST_BUILD_FLAGS} ${TEST_DIR}
 
 test-all: test-network-specific
-	@CGO_ENABLED=0 go test ${TEST_BUILD_FLAGS} "./..."
+	@go test ${TEST_BUILD_FLAGS} "./..."
 
 test-go-tss:
 	@go test ${TEST_BUILD_FLAGS} --race "./bifrost/tss/go-tss/..."
 
 test-network-specific:
-	@CGO_ENABLED=0 go test -tags stagenet ./common
-	@CGO_ENABLED=0 go test -tags mainnet ./common ./bifrost/pkg/chainclients/utxo/...
-	@CGO_ENABLED=0 go test -tags mocknet ./common ./bifrost/pkg/chainclients/utxo/...
+	@go test -tags stagenet ./common
+	@go test -tags mainnet ./common ./bifrost/pkg/chainclients/utxo/...
+	@go test -tags mocknet ./common ./bifrost/pkg/chainclients/utxo/...
 
 test-race:
 	@go test -race ${TEST_BUILD_FLAGS} ${TEST_DIR}
@@ -187,7 +181,7 @@ test-race:
 test-regression: build-test-regression
 	@docker run --rm ${DOCKER_TTY_ARGS} \
 		-e DEBUG -e RUN -e EXPORT -e TIME_FACTOR -e PARALLELISM -e FAIL_FAST \
-		-e AUTO_UPDATE -e IGNORE_FAILURES \
+		-e AUTO_UPDATE -e IGNORE_FAILURES -e CI \
 		-e UID=$(shell id -u) -e GID=$(shell id -g) \
 		-p 1317:1317 -p 26657:26657 \
 		-v $(shell pwd)/test/regression/mnt:/mnt \
@@ -225,6 +219,11 @@ _test-regression:
 # ------------------------------ Simulation Tests ------------------------------
 
 test-simulation: build-mocknet reset-mocknet test-simulation-no-reset
+
+test-simulation-cluster: build-test-simulation build-mocknet-cluster reset-mocknet-cluster
+	@STAGES=all docker run --rm ${DOCKER_TTY_ARGS} \
+		-e PARALLELISM -e STAGES --network host -w /app \
+		thornode-simtest sh -c 'make _test-simulation'
 
 test-simulation-no-reset: build-test-simulation
 	@docker run --rm ${DOCKER_TTY_ARGS} \
@@ -265,7 +264,7 @@ stop-mocknet:
 halt-mocknet:
 	@docker compose -f build/docker/docker-compose.yml --profile mocknet --profile midgard down
 
-build-mocknet: proto-gen
+build-mocknet:
 	@docker compose -f build/docker/docker-compose.yml --profile mocknet --profile midgard build \
 		--build-arg COMMIT=$(COMMIT)
 
@@ -312,12 +311,7 @@ reset-mocknet-cluster: stop-mocknet-cluster build-mocknet-cluster run-mocknet-cl
 # ------------------------------ Test Sync ------------------------------
 
 test-sync-mainnet:
-	@BUILDTAG=mainnet BRANCH=mainnet $(MAKE) docker-gitlab-build
-	@docker run --rm -e CHAIN_ID=thorchain-1 -e NET=mainnet registry.gitlab.com/thorchain/thornode:mainnet
-
-test-sync-stagenet:
-	@BUILDTAG=stagenet BRANCH=stagenet $(MAKE) docker-gitlab-build
-	@docker run --rm -e CHAIN_ID=thorchain-stagenet-2 -e NET=stagenet -e THOR_SEED_NODES_ENDPOINT=https://stagenet-thornode.ninerealms.com/thorchain/nodes registry.gitlab.com/thorchain/thornode:stagenet
+	@./scripts/test-sync.sh
 
 # ------------------------------ Docker Build ------------------------------
 

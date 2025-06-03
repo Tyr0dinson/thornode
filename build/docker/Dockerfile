@@ -2,11 +2,10 @@
 # Build
 ########################################################################################
 
-FROM golang:1.22.2-bullseye AS build
+FROM golang:1.23.4-bullseye AS build
 
 ENV GOBIN=/go/bin
 ENV GOPATH=/go
-ENV CGO_ENABLED=0
 ENV GOOS=linux
 
 WORKDIR /app
@@ -32,8 +31,8 @@ RUN apt-get update && \
   curl=7.74.0-1.3+deb11u14 \
   jq=1.6-2.1 \
   libffi-dev=3.3-6 \
-  libssl-dev=1.1.1w-0+deb11u2 \
-  openssl=1.1.1w-0+deb11u2 \
+  libssl-dev=1.1.1w-0+deb11u3 \
+  openssl=1.1.1w-0+deb11u3 \
   procps=2:3.3.17-5 \
   python3=3.9.2-3 \
   python3-pip=20.3.4-4+deb11u1 && \
@@ -42,6 +41,7 @@ RUN apt-get update && \
 
 # Copy the compiled binaries over.
 COPY --from=build /go/bin/thornode /go/bin/bifrost /go/bin/recover-keyshare-backup /usr/bin/
+COPY --from=build /go/pkg/mod/github.com/!cosm!wasm/wasmvm/v2@v2.1.2/internal/api/libwasmvm.*.so /usr/lib
 
 COPY build/scripts /scripts
 

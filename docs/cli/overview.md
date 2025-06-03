@@ -9,7 +9,7 @@
 
 ### GoLang
 
-Install Go v1.22.8: [https://go.dev/dl](https://go.dev/dl)
+Install Go: [https://go.dev/dl](https://go.dev/dl)
 
 ```shell
 # Set Go PATH
@@ -62,7 +62,7 @@ brew install homebrew/cask/docker
 git clone https://gitlab.com/thorchain/thornode
 # Docker must be started...
 make openapi
-make protob-docker
+make proto-gen
 make install
 ```
 

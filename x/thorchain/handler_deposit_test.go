@@ -13,7 +13,6 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
-	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 type HandlerDepositSuite struct{}
@@ -53,10 +52,7 @@ func (s *HandlerDepositSuite) TestHandle(c *C) {
 		common.NewCoin(common.RuneNative, cosmos.NewUint(200*common.One)),
 	}
 
-	funds, err := common.NewCoin(common.RuneNative, cosmos.NewUint(300*common.One)).Native()
-	c.Assert(err, IsNil)
-	err = k.AddCoins(ctx, addr, cosmos.NewCoins(funds))
-	c.Assert(err, IsNil)
+	FundAccount(c, ctx, k, addr, 300*common.One)
 	pool := NewPool()
 	pool.Asset = common.DOGEAsset
 	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
@@ -65,7 +61,7 @@ func (s *HandlerDepositSuite) TestHandle(c *C) {
 	c.Assert(k.SetPool(ctx, pool), IsNil)
 	msg := NewMsgDeposit(coins, "ADD:DOGE.DOGE", addr)
 
-	_, err = handler.handle(ctx, *msg)
+	_, err := handler.handle(ctx, *msg)
 	c.Assert(err, IsNil)
 	// ensure observe tx had been saved
 	hash := tmtypes.Tx(ctx.TxBytes()).Hash()
@@ -74,10 +70,9 @@ func (s *HandlerDepositSuite) TestHandle(c *C) {
 	voter, err := k.GetObservedTxInVoter(ctx, txID)
 	c.Assert(err, IsNil)
 	c.Assert(voter.Tx.IsEmpty(), Equals, false)
-	c.Assert(voter.Tx.Status, Equals, types.Status_done)
+	c.Assert(voter.Tx.Status, Equals, common.Status_done)
 
-	err = k.AddCoins(ctx, addr, cosmos.NewCoins(funds))
-	c.Assert(err, IsNil)
+	FundAccount(c, ctx, k, addr, 300*common.One)
 	// do it again, make sure the transaction get rejected
 	_, err = handler.handle(ctx, *msg)
 	c.Assert(err, NotNil)
@@ -155,7 +150,7 @@ func (s *HandlerDepositSuite) TestDifferentValidation(c *C) {
 		{
 			name: "invalid memo should err",
 			messageProvider: func(c *C, ctx cosmos.Context, helper *HandlerDepositTestHelper) cosmos.Msg {
-				FundAccount(c, ctx, helper.Keeper, acctAddr, 100)
+				FundAccount(c, ctx, helper.Keeper, acctAddr, 100*common.One)
 				vault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.DOGEChain, common.THORChain}.Strings(), []ChainContract{})
 				c.Check(helper.Keeper.SetVault(ctx, vault), IsNil)
 				return NewMsgDeposit(common.Coins{
@@ -196,7 +191,7 @@ func (s *HandlerDepositSuite) TestAddSwap(c *C) {
 		fmt.Sprintf("=:BTC.BTC:%s", GetRandomBTCAddress().String()),
 	)
 	// no affiliate fee
-	msg := NewMsgSwap(tx, common.BTCAsset, GetRandomBTCAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, MarketOrder, 0, 0, GetRandomBech32Addr())
+	msg := NewMsgSwap(tx, common.BTCAsset, GetRandomBTCAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, MarketSwap, 0, 0, GetRandomBech32Addr())
 
 	handler.addSwap(ctx, *msg)
 	swap, err := mgr.Keeper().GetSwapQueueItem(ctx, tx.ID, 0)
@@ -206,7 +201,7 @@ func (s *HandlerDepositSuite) TestAddSwap(c *C) {
 	tx.Memo = fmt.Sprintf("=:BTC.BTC:%s::%s:20000", GetRandomBTCAddress().String(), affAddr.String())
 
 	// affiliate fee, with more than 10K as basis points
-	msg1 := NewMsgSwap(tx, common.BTCAsset, GetRandomBTCAddress(), cosmos.ZeroUint(), GetRandomTHORAddress(), cosmos.NewUint(20000), "", "", nil, MarketOrder, 0, 0, GetRandomBech32Addr())
+	msg1 := NewMsgSwap(tx, common.BTCAsset, GetRandomBTCAddress(), cosmos.ZeroUint(), GetRandomTHORAddress(), cosmos.NewUint(20000), "", "", nil, MarketSwap, 0, 0, GetRandomBech32Addr())
 
 	// Check balance before swap
 	affiliateFeeAddr, err := msg1.GetAffiliateAddress().AccAddress()
@@ -224,7 +219,7 @@ func (s *HandlerDepositSuite) TestAddSwap(c *C) {
 	// affiliate fee not taken on deposit
 	tx.Memo = fmt.Sprintf("=:BTC.BTC:%s::%s:1000", GetRandomBTCAddress().String(), affAddr.String())
 	tx.Coins[0].Amount = cosmos.NewUint(common.One)
-	msg2 := NewMsgSwap(tx, common.BTCAsset, GetRandomBTCAddress(), cosmos.ZeroUint(), affAddr, cosmos.NewUint(1000), "", "", nil, MarketOrder, 0, 0, GetRandomBech32Addr())
+	msg2 := NewMsgSwap(tx, common.BTCAsset, GetRandomBTCAddress(), cosmos.ZeroUint(), affAddr, cosmos.NewUint(1000), "", "", nil, MarketSwap, 0, 0, GetRandomBech32Addr())
 	handler.addSwap(ctx, *msg2)
 	swap, err = mgr.Keeper().GetSwapQueueItem(ctx, tx.ID, 0)
 	c.Assert(err, IsNil)
@@ -253,7 +248,7 @@ func (s *HandlerDepositSuite) TestAddSwap(c *C) {
 
 	c.Assert(mgr.Keeper().MintToModule(ctx, ModuleName, tx1.Coins[0]), IsNil)
 	c.Assert(mgr.Keeper().SendFromModuleToModule(ctx, ModuleName, AsgardName, tx1.Coins), IsNil)
-	msg3 := NewMsgSwap(tx1, common.BTCAsset, GetRandomBTCAddress(), cosmos.ZeroUint(), affAddr, cosmos.NewUint(1000), "", "", nil, MarketOrder, 0, 0, GetRandomBech32Addr())
+	msg3 := NewMsgSwap(tx1, common.BTCAsset, GetRandomBTCAddress(), cosmos.ZeroUint(), affAddr, cosmos.NewUint(1000), "", "", nil, MarketSwap, 0, 0, GetRandomBech32Addr())
 	handler.addSwap(ctx, *msg3)
 	swap, err = mgr.Keeper().GetSwapQueueItem(ctx, tx1.ID, 0)
 	c.Assert(err, IsNil)

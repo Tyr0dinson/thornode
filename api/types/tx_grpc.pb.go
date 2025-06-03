@@ -8,6 +8,7 @@ package types
 
 import (
 	context "context"
+	types "github.com/CosmWasm/wasmd/x/wasm/types"
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -19,24 +20,34 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	Msg_Ban_FullMethodName            = "/types.Msg/Ban"
-	Msg_Deposit_FullMethodName        = "/types.Msg/Deposit"
-	Msg_ErrataTx_FullMethodName       = "/types.Msg/ErrataTx"
-	Msg_Mimir_FullMethodName          = "/types.Msg/Mimir"
-	Msg_NetworkFee_FullMethodName     = "/types.Msg/NetworkFee"
-	Msg_NodePauseChain_FullMethodName = "/types.Msg/NodePauseChain"
-	Msg_ObservedTxIn_FullMethodName   = "/types.Msg/ObservedTxIn"
-	Msg_ObservedTxOut_FullMethodName  = "/types.Msg/ObservedTxOut"
-	Msg_ThorSend_FullMethodName       = "/types.Msg/ThorSend"
-	Msg_SetIPAddress_FullMethodName   = "/types.Msg/SetIPAddress"
-	Msg_SetNodeKeys_FullMethodName    = "/types.Msg/SetNodeKeys"
-	Msg_Solvency_FullMethodName       = "/types.Msg/Solvency"
-	Msg_TssKeysignFail_FullMethodName = "/types.Msg/TssKeysignFail"
-	Msg_TssPool_FullMethodName        = "/types.Msg/TssPool"
-	Msg_SetVersion_FullMethodName     = "/types.Msg/SetVersion"
-	Msg_ProposeUpgrade_FullMethodName = "/types.Msg/ProposeUpgrade"
-	Msg_ApproveUpgrade_FullMethodName = "/types.Msg/ApproveUpgrade"
-	Msg_RejectUpgrade_FullMethodName  = "/types.Msg/RejectUpgrade"
+	Msg_Ban_FullMethodName                  = "/types.Msg/Ban"
+	Msg_Deposit_FullMethodName              = "/types.Msg/Deposit"
+	Msg_ErrataTx_FullMethodName             = "/types.Msg/ErrataTx"
+	Msg_ErrataTxQuorum_FullMethodName       = "/types.Msg/ErrataTxQuorum"
+	Msg_Mimir_FullMethodName                = "/types.Msg/Mimir"
+	Msg_NetworkFee_FullMethodName           = "/types.Msg/NetworkFee"
+	Msg_NetworkFeeQuorum_FullMethodName     = "/types.Msg/NetworkFeeQuorum"
+	Msg_NodePauseChain_FullMethodName       = "/types.Msg/NodePauseChain"
+	Msg_ObservedTxIn_FullMethodName         = "/types.Msg/ObservedTxIn"
+	Msg_ObservedTxOut_FullMethodName        = "/types.Msg/ObservedTxOut"
+	Msg_ObservedTxQuorum_FullMethodName     = "/types.Msg/ObservedTxQuorum"
+	Msg_ThorSend_FullMethodName             = "/types.Msg/ThorSend"
+	Msg_SetIPAddress_FullMethodName         = "/types.Msg/SetIPAddress"
+	Msg_SetNodeKeys_FullMethodName          = "/types.Msg/SetNodeKeys"
+	Msg_Solvency_FullMethodName             = "/types.Msg/Solvency"
+	Msg_SolvencyQuorum_FullMethodName       = "/types.Msg/SolvencyQuorum"
+	Msg_TssKeysignFail_FullMethodName       = "/types.Msg/TssKeysignFail"
+	Msg_TssPool_FullMethodName              = "/types.Msg/TssPool"
+	Msg_SetVersion_FullMethodName           = "/types.Msg/SetVersion"
+	Msg_ProposeUpgrade_FullMethodName       = "/types.Msg/ProposeUpgrade"
+	Msg_ApproveUpgrade_FullMethodName       = "/types.Msg/ApproveUpgrade"
+	Msg_RejectUpgrade_FullMethodName        = "/types.Msg/RejectUpgrade"
+	Msg_StoreCode_FullMethodName            = "/types.Msg/StoreCode"
+	Msg_InstantiateContract_FullMethodName  = "/types.Msg/InstantiateContract"
+	Msg_InstantiateContract2_FullMethodName = "/types.Msg/InstantiateContract2"
+	Msg_ExecuteContract_FullMethodName      = "/types.Msg/ExecuteContract"
+	Msg_MigrateContract_FullMethodName      = "/types.Msg/MigrateContract"
+	Msg_SudoContract_FullMethodName         = "/types.Msg/SudoContract"
 )
 
 // MsgClient is the client API for Msg service.
@@ -46,21 +57,32 @@ type MsgClient interface {
 	Ban(ctx context.Context, in *MsgBan, opts ...grpc.CallOption) (*MsgEmpty, error)
 	Deposit(ctx context.Context, in *MsgDeposit, opts ...grpc.CallOption) (*MsgEmpty, error)
 	ErrataTx(ctx context.Context, in *MsgErrataTx, opts ...grpc.CallOption) (*MsgEmpty, error)
+	ErrataTxQuorum(ctx context.Context, in *MsgErrataTxQuorum, opts ...grpc.CallOption) (*MsgEmpty, error)
 	Mimir(ctx context.Context, in *MsgMimir, opts ...grpc.CallOption) (*MsgEmpty, error)
 	NetworkFee(ctx context.Context, in *MsgNetworkFee, opts ...grpc.CallOption) (*MsgEmpty, error)
+	NetworkFeeQuorum(ctx context.Context, in *MsgNetworkFeeQuorum, opts ...grpc.CallOption) (*MsgEmpty, error)
 	NodePauseChain(ctx context.Context, in *MsgNodePauseChain, opts ...grpc.CallOption) (*MsgEmpty, error)
 	ObservedTxIn(ctx context.Context, in *MsgObservedTxIn, opts ...grpc.CallOption) (*MsgEmpty, error)
 	ObservedTxOut(ctx context.Context, in *MsgObservedTxOut, opts ...grpc.CallOption) (*MsgEmpty, error)
+	ObservedTxQuorum(ctx context.Context, in *MsgObservedTxQuorum, opts ...grpc.CallOption) (*MsgEmpty, error)
 	ThorSend(ctx context.Context, in *MsgSend, opts ...grpc.CallOption) (*MsgEmpty, error)
 	SetIPAddress(ctx context.Context, in *MsgSetIPAddress, opts ...grpc.CallOption) (*MsgEmpty, error)
 	SetNodeKeys(ctx context.Context, in *MsgSetNodeKeys, opts ...grpc.CallOption) (*MsgEmpty, error)
 	Solvency(ctx context.Context, in *MsgSolvency, opts ...grpc.CallOption) (*MsgEmpty, error)
+	SolvencyQuorum(ctx context.Context, in *MsgSolvencyQuorum, opts ...grpc.CallOption) (*MsgEmpty, error)
 	TssKeysignFail(ctx context.Context, in *MsgTssKeysignFail, opts ...grpc.CallOption) (*MsgEmpty, error)
 	TssPool(ctx context.Context, in *MsgTssPool, opts ...grpc.CallOption) (*MsgEmpty, error)
 	SetVersion(ctx context.Context, in *MsgSetVersion, opts ...grpc.CallOption) (*MsgEmpty, error)
 	ProposeUpgrade(ctx context.Context, in *MsgProposeUpgrade, opts ...grpc.CallOption) (*MsgEmpty, error)
 	ApproveUpgrade(ctx context.Context, in *MsgApproveUpgrade, opts ...grpc.CallOption) (*MsgEmpty, error)
 	RejectUpgrade(ctx context.Context, in *MsgRejectUpgrade, opts ...grpc.CallOption) (*MsgEmpty, error)
+	// CosmWasm interface cloned in order so that we can register the x/thorchain message server as the server for x/wasm messages, and route through version control
+	StoreCode(ctx context.Context, in *types.MsgStoreCode, opts ...grpc.CallOption) (*types.MsgStoreCodeResponse, error)
+	InstantiateContract(ctx context.Context, in *types.MsgInstantiateContract, opts ...grpc.CallOption) (*types.MsgInstantiateContractResponse, error)
+	InstantiateContract2(ctx context.Context, in *types.MsgInstantiateContract2, opts ...grpc.CallOption) (*types.MsgInstantiateContract2Response, error)
+	ExecuteContract(ctx context.Context, in *types.MsgExecuteContract, opts ...grpc.CallOption) (*types.MsgExecuteContractResponse, error)
+	MigrateContract(ctx context.Context, in *types.MsgMigrateContract, opts ...grpc.CallOption) (*types.MsgMigrateContractResponse, error)
+	SudoContract(ctx context.Context, in *types.MsgSudoContract, opts ...grpc.CallOption) (*types.MsgSudoContractResponse, error)
 }
 
 type msgClient struct {
@@ -98,6 +120,15 @@ func (c *msgClient) ErrataTx(ctx context.Context, in *MsgErrataTx, opts ...grpc.
 	return out, nil
 }
 
+func (c *msgClient) ErrataTxQuorum(ctx context.Context, in *MsgErrataTxQuorum, opts ...grpc.CallOption) (*MsgEmpty, error) {
+	out := new(MsgEmpty)
+	err := c.cc.Invoke(ctx, Msg_ErrataTxQuorum_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *msgClient) Mimir(ctx context.Context, in *MsgMimir, opts ...grpc.CallOption) (*MsgEmpty, error) {
 	out := new(MsgEmpty)
 	err := c.cc.Invoke(ctx, Msg_Mimir_FullMethodName, in, out, opts...)
@@ -110,6 +141,15 @@ func (c *msgClient) Mimir(ctx context.Context, in *MsgMimir, opts ...grpc.CallOp
 func (c *msgClient) NetworkFee(ctx context.Context, in *MsgNetworkFee, opts ...grpc.CallOption) (*MsgEmpty, error) {
 	out := new(MsgEmpty)
 	err := c.cc.Invoke(ctx, Msg_NetworkFee_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *msgClient) NetworkFeeQuorum(ctx context.Context, in *MsgNetworkFeeQuorum, opts ...grpc.CallOption) (*MsgEmpty, error) {
+	out := new(MsgEmpty)
+	err := c.cc.Invoke(ctx, Msg_NetworkFeeQuorum_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -137,6 +177,15 @@ func (c *msgClient) ObservedTxIn(ctx context.Context, in *MsgObservedTxIn, opts 
 func (c *msgClient) ObservedTxOut(ctx context.Context, in *MsgObservedTxOut, opts ...grpc.CallOption) (*MsgEmpty, error) {
 	out := new(MsgEmpty)
 	err := c.cc.Invoke(ctx, Msg_ObservedTxOut_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *msgClient) ObservedTxQuorum(ctx context.Context, in *MsgObservedTxQuorum, opts ...grpc.CallOption) (*MsgEmpty, error) {
+	out := new(MsgEmpty)
+	err := c.cc.Invoke(ctx, Msg_ObservedTxQuorum_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -173,6 +222,15 @@ func (c *msgClient) SetNodeKeys(ctx context.Context, in *MsgSetNodeKeys, opts ..
 func (c *msgClient) Solvency(ctx context.Context, in *MsgSolvency, opts ...grpc.CallOption) (*MsgEmpty, error) {
 	out := new(MsgEmpty)
 	err := c.cc.Invoke(ctx, Msg_Solvency_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *msgClient) SolvencyQuorum(ctx context.Context, in *MsgSolvencyQuorum, opts ...grpc.CallOption) (*MsgEmpty, error) {
+	out := new(MsgEmpty)
+	err := c.cc.Invoke(ctx, Msg_SolvencyQuorum_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -233,6 +291,60 @@ func (c *msgClient) RejectUpgrade(ctx context.Context, in *MsgRejectUpgrade, opt
 	return out, nil
 }
 
+func (c *msgClient) StoreCode(ctx context.Context, in *types.MsgStoreCode, opts ...grpc.CallOption) (*types.MsgStoreCodeResponse, error) {
+	out := new(types.MsgStoreCodeResponse)
+	err := c.cc.Invoke(ctx, Msg_StoreCode_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *msgClient) InstantiateContract(ctx context.Context, in *types.MsgInstantiateContract, opts ...grpc.CallOption) (*types.MsgInstantiateContractResponse, error) {
+	out := new(types.MsgInstantiateContractResponse)
+	err := c.cc.Invoke(ctx, Msg_InstantiateContract_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *msgClient) InstantiateContract2(ctx context.Context, in *types.MsgInstantiateContract2, opts ...grpc.CallOption) (*types.MsgInstantiateContract2Response, error) {
+	out := new(types.MsgInstantiateContract2Response)
+	err := c.cc.Invoke(ctx, Msg_InstantiateContract2_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *msgClient) ExecuteContract(ctx context.Context, in *types.MsgExecuteContract, opts ...grpc.CallOption) (*types.MsgExecuteContractResponse, error) {
+	out := new(types.MsgExecuteContractResponse)
+	err := c.cc.Invoke(ctx, Msg_ExecuteContract_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *msgClient) MigrateContract(ctx context.Context, in *types.MsgMigrateContract, opts ...grpc.CallOption) (*types.MsgMigrateContractResponse, error) {
+	out := new(types.MsgMigrateContractResponse)
+	err := c.cc.Invoke(ctx, Msg_MigrateContract_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *msgClient) SudoContract(ctx context.Context, in *types.MsgSudoContract, opts ...grpc.CallOption) (*types.MsgSudoContractResponse, error) {
+	out := new(types.MsgSudoContractResponse)
+	err := c.cc.Invoke(ctx, Msg_SudoContract_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // MsgServer is the server API for Msg service.
 // All implementations must embed UnimplementedMsgServer
 // for forward compatibility
@@ -240,21 +352,32 @@ type MsgServer interface {
 	Ban(context.Context, *MsgBan) (*MsgEmpty, error)
 	Deposit(context.Context, *MsgDeposit) (*MsgEmpty, error)
 	ErrataTx(context.Context, *MsgErrataTx) (*MsgEmpty, error)
+	ErrataTxQuorum(context.Context, *MsgErrataTxQuorum) (*MsgEmpty, error)
 	Mimir(context.Context, *MsgMimir) (*MsgEmpty, error)
 	NetworkFee(context.Context, *MsgNetworkFee) (*MsgEmpty, error)
+	NetworkFeeQuorum(context.Context, *MsgNetworkFeeQuorum) (*MsgEmpty, error)
 	NodePauseChain(context.Context, *MsgNodePauseChain) (*MsgEmpty, error)
 	ObservedTxIn(context.Context, *MsgObservedTxIn) (*MsgEmpty, error)
 	ObservedTxOut(context.Context, *MsgObservedTxOut) (*MsgEmpty, error)
+	ObservedTxQuorum(context.Context, *MsgObservedTxQuorum) (*MsgEmpty, error)
 	ThorSend(context.Context, *MsgSend) (*MsgEmpty, error)
 	SetIPAddress(context.Context, *MsgSetIPAddress) (*MsgEmpty, error)
 	SetNodeKeys(context.Context, *MsgSetNodeKeys) (*MsgEmpty, error)
 	Solvency(context.Context, *MsgSolvency) (*MsgEmpty, error)
+	SolvencyQuorum(context.Context, *MsgSolvencyQuorum) (*MsgEmpty, error)
 	TssKeysignFail(context.Context, *MsgTssKeysignFail) (*MsgEmpty, error)
 	TssPool(context.Context, *MsgTssPool) (*MsgEmpty, error)
 	SetVersion(context.Context, *MsgSetVersion) (*MsgEmpty, error)
 	ProposeUpgrade(context.Context, *MsgProposeUpgrade) (*MsgEmpty, error)
 	ApproveUpgrade(context.Context, *MsgApproveUpgrade) (*MsgEmpty, error)
 	RejectUpgrade(context.Context, *MsgRejectUpgrade) (*MsgEmpty, error)
+	// CosmWasm interface cloned in order so that we can register the x/thorchain message server as the server for x/wasm messages, and route through version control
+	StoreCode(context.Context, *types.MsgStoreCode) (*types.MsgStoreCodeResponse, error)
+	InstantiateContract(context.Context, *types.MsgInstantiateContract) (*types.MsgInstantiateContractResponse, error)
+	InstantiateContract2(context.Context, *types.MsgInstantiateContract2) (*types.MsgInstantiateContract2Response, error)
+	ExecuteContract(context.Context, *types.MsgExecuteContract) (*types.MsgExecuteContractResponse, error)
+	MigrateContract(context.Context, *types.MsgMigrateContract) (*types.MsgMigrateContractResponse, error)
+	SudoContract(context.Context, *types.MsgSudoContract) (*types.MsgSudoContractResponse, error)
 	mustEmbedUnimplementedMsgServer()
 }
 
@@ -271,11 +394,17 @@ func (UnimplementedMsgServer) Deposit(context.Context, *MsgDeposit) (*MsgEmpty, 
 func (UnimplementedMsgServer) ErrataTx(context.Context, *MsgErrataTx) (*MsgEmpty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ErrataTx not implemented")
 }
+func (UnimplementedMsgServer) ErrataTxQuorum(context.Context, *MsgErrataTxQuorum) (*MsgEmpty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ErrataTxQuorum not implemented")
+}
 func (UnimplementedMsgServer) Mimir(context.Context, *MsgMimir) (*MsgEmpty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Mimir not implemented")
 }
 func (UnimplementedMsgServer) NetworkFee(context.Context, *MsgNetworkFee) (*MsgEmpty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method NetworkFee not implemented")
+}
+func (UnimplementedMsgServer) NetworkFeeQuorum(context.Context, *MsgNetworkFeeQuorum) (*MsgEmpty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method NetworkFeeQuorum not implemented")
 }
 func (UnimplementedMsgServer) NodePauseChain(context.Context, *MsgNodePauseChain) (*MsgEmpty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method NodePauseChain not implemented")
@@ -285,6 +414,9 @@ func (UnimplementedMsgServer) ObservedTxIn(context.Context, *MsgObservedTxIn) (*
 }
 func (UnimplementedMsgServer) ObservedTxOut(context.Context, *MsgObservedTxOut) (*MsgEmpty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ObservedTxOut not implemented")
+}
+func (UnimplementedMsgServer) ObservedTxQuorum(context.Context, *MsgObservedTxQuorum) (*MsgEmpty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ObservedTxQuorum not implemented")
 }
 func (UnimplementedMsgServer) ThorSend(context.Context, *MsgSend) (*MsgEmpty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ThorSend not implemented")
@@ -297,6 +429,9 @@ func (UnimplementedMsgServer) SetNodeKeys(context.Context, *MsgSetNodeKeys) (*Ms
 }
 func (UnimplementedMsgServer) Solvency(context.Context, *MsgSolvency) (*MsgEmpty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Solvency not implemented")
+}
+func (UnimplementedMsgServer) SolvencyQuorum(context.Context, *MsgSolvencyQuorum) (*MsgEmpty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SolvencyQuorum not implemented")
 }
 func (UnimplementedMsgServer) TssKeysignFail(context.Context, *MsgTssKeysignFail) (*MsgEmpty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method TssKeysignFail not implemented")
@@ -315,6 +450,24 @@ func (UnimplementedMsgServer) ApproveUpgrade(context.Context, *MsgApproveUpgrade
 }
 func (UnimplementedMsgServer) RejectUpgrade(context.Context, *MsgRejectUpgrade) (*MsgEmpty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RejectUpgrade not implemented")
+}
+func (UnimplementedMsgServer) StoreCode(context.Context, *types.MsgStoreCode) (*types.MsgStoreCodeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method StoreCode not implemented")
+}
+func (UnimplementedMsgServer) InstantiateContract(context.Context, *types.MsgInstantiateContract) (*types.MsgInstantiateContractResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method InstantiateContract not implemented")
+}
+func (UnimplementedMsgServer) InstantiateContract2(context.Context, *types.MsgInstantiateContract2) (*types.MsgInstantiateContract2Response, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method InstantiateContract2 not implemented")
+}
+func (UnimplementedMsgServer) ExecuteContract(context.Context, *types.MsgExecuteContract) (*types.MsgExecuteContractResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ExecuteContract not implemented")
+}
+func (UnimplementedMsgServer) MigrateContract(context.Context, *types.MsgMigrateContract) (*types.MsgMigrateContractResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method MigrateContract not implemented")
+}
+func (UnimplementedMsgServer) SudoContract(context.Context, *types.MsgSudoContract) (*types.MsgSudoContractResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SudoContract not implemented")
 }
 func (UnimplementedMsgServer) mustEmbedUnimplementedMsgServer() {}
 
@@ -383,6 +536,24 @@ func _Msg_ErrataTx_Handler(srv interface{}, ctx context.Context, dec func(interf
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Msg_ErrataTxQuorum_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MsgErrataTxQuorum)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).ErrataTxQuorum(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Msg_ErrataTxQuorum_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).ErrataTxQuorum(ctx, req.(*MsgErrataTxQuorum))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Msg_Mimir_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(MsgMimir)
 	if err := dec(in); err != nil {
@@ -415,6 +586,24 @@ func _Msg_NetworkFee_Handler(srv interface{}, ctx context.Context, dec func(inte
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(MsgServer).NetworkFee(ctx, req.(*MsgNetworkFee))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Msg_NetworkFeeQuorum_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MsgNetworkFeeQuorum)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).NetworkFeeQuorum(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Msg_NetworkFeeQuorum_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).NetworkFeeQuorum(ctx, req.(*MsgNetworkFeeQuorum))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -469,6 +658,24 @@ func _Msg_ObservedTxOut_Handler(srv interface{}, ctx context.Context, dec func(i
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(MsgServer).ObservedTxOut(ctx, req.(*MsgObservedTxOut))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Msg_ObservedTxQuorum_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MsgObservedTxQuorum)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).ObservedTxQuorum(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Msg_ObservedTxQuorum_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).ObservedTxQuorum(ctx, req.(*MsgObservedTxQuorum))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -541,6 +748,24 @@ func _Msg_Solvency_Handler(srv interface{}, ctx context.Context, dec func(interf
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(MsgServer).Solvency(ctx, req.(*MsgSolvency))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Msg_SolvencyQuorum_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MsgSolvencyQuorum)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).SolvencyQuorum(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Msg_SolvencyQuorum_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).SolvencyQuorum(ctx, req.(*MsgSolvencyQuorum))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -653,6 +878,114 @@ func _Msg_RejectUpgrade_Handler(srv interface{}, ctx context.Context, dec func(i
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Msg_StoreCode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(types.MsgStoreCode)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).StoreCode(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Msg_StoreCode_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).StoreCode(ctx, req.(*types.MsgStoreCode))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Msg_InstantiateContract_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(types.MsgInstantiateContract)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).InstantiateContract(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Msg_InstantiateContract_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).InstantiateContract(ctx, req.(*types.MsgInstantiateContract))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Msg_InstantiateContract2_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(types.MsgInstantiateContract2)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).InstantiateContract2(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Msg_InstantiateContract2_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).InstantiateContract2(ctx, req.(*types.MsgInstantiateContract2))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Msg_ExecuteContract_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(types.MsgExecuteContract)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).ExecuteContract(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Msg_ExecuteContract_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).ExecuteContract(ctx, req.(*types.MsgExecuteContract))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Msg_MigrateContract_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(types.MsgMigrateContract)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).MigrateContract(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Msg_MigrateContract_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).MigrateContract(ctx, req.(*types.MsgMigrateContract))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Msg_SudoContract_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(types.MsgSudoContract)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).SudoContract(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Msg_SudoContract_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).SudoContract(ctx, req.(*types.MsgSudoContract))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Msg_ServiceDesc is the grpc.ServiceDesc for Msg service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -673,12 +1006,20 @@ var Msg_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Msg_ErrataTx_Handler,
 		},
 		{
+			MethodName: "ErrataTxQuorum",
+			Handler:    _Msg_ErrataTxQuorum_Handler,
+		},
+		{
 			MethodName: "Mimir",
 			Handler:    _Msg_Mimir_Handler,
 		},
 		{
 			MethodName: "NetworkFee",
 			Handler:    _Msg_NetworkFee_Handler,
+		},
+		{
+			MethodName: "NetworkFeeQuorum",
+			Handler:    _Msg_NetworkFeeQuorum_Handler,
 		},
 		{
 			MethodName: "NodePauseChain",
@@ -691,6 +1032,10 @@ var Msg_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ObservedTxOut",
 			Handler:    _Msg_ObservedTxOut_Handler,
+		},
+		{
+			MethodName: "ObservedTxQuorum",
+			Handler:    _Msg_ObservedTxQuorum_Handler,
 		},
 		{
 			MethodName: "ThorSend",
@@ -707,6 +1052,10 @@ var Msg_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Solvency",
 			Handler:    _Msg_Solvency_Handler,
+		},
+		{
+			MethodName: "SolvencyQuorum",
+			Handler:    _Msg_SolvencyQuorum_Handler,
 		},
 		{
 			MethodName: "TssKeysignFail",
@@ -731,6 +1080,30 @@ var Msg_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RejectUpgrade",
 			Handler:    _Msg_RejectUpgrade_Handler,
+		},
+		{
+			MethodName: "StoreCode",
+			Handler:    _Msg_StoreCode_Handler,
+		},
+		{
+			MethodName: "InstantiateContract",
+			Handler:    _Msg_InstantiateContract_Handler,
+		},
+		{
+			MethodName: "InstantiateContract2",
+			Handler:    _Msg_InstantiateContract2_Handler,
+		},
+		{
+			MethodName: "ExecuteContract",
+			Handler:    _Msg_ExecuteContract_Handler,
+		},
+		{
+			MethodName: "MigrateContract",
+			Handler:    _Msg_MigrateContract_Handler,
+		},
+		{
+			MethodName: "SudoContract",
+			Handler:    _Msg_SudoContract_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -67,7 +67,7 @@ func ValidateGenesis(data GenesisState) error {
 		}
 	}
 
-	for _, item := range data.OrderbookItems {
+	for _, item := range data.AdvSwapQueueItems {
 		if err := item.ValidateBasic(); err != nil {
 			return fmt.Errorf("invalid swap msg: %w", err)
 		}
@@ -134,7 +134,7 @@ func DefaultGenesisState() GenesisState {
 		OutboundFeeWithheldRune: common.Coins{},
 		OutboundFeeSpentRune:    common.Coins{},
 		POL:                     NewProtocolOwnedLiquidity(),
-		OrderbookItems:          make([]MsgSwap, 0),
+		AdvSwapQueueItems:       make([]MsgSwap, 0),
 		SwapQueueItems:          make([]MsgSwap, 0),
 		StreamingSwaps:          make([]StreamingSwap, 0),
 		NetworkFees:             make([]NetworkFee, 0),
@@ -248,8 +248,8 @@ func initGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 		panic(err)
 	}
 
-	for _, item := range data.OrderbookItems {
-		if err := keeper.SetOrderBookItem(ctx, item); err != nil {
+	for _, item := range data.AdvSwapQueueItems {
+		if err := keeper.SetAdvSwapQueueItem(ctx, item); err != nil {
 			panic(err)
 		}
 	}
@@ -313,22 +313,6 @@ func initGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 		}
 	}
 
-	for _, admin := range ADMINS {
-		addr, err := cosmos.AccAddressFromBech32(admin)
-		if err != nil {
-			panic(err)
-		}
-		mimir, _ := common.NewAsset("THOR.MIMIR")
-		coin := common.NewCoin(mimir, cosmos.NewUint(1000*common.One))
-		// mint some gas asset
-		err = keeper.MintToModule(ctx, ModuleName, coin)
-		if err != nil {
-			panic(err)
-		}
-		if err = keeper.SendFromModuleToAccount(ctx, ModuleName, addr, common.NewCoins(coin)); err != nil {
-			panic(err)
-		}
-	}
 	for _, item := range data.Mimirs {
 		if len(item.Key) == 0 {
 			continue
@@ -349,6 +333,18 @@ func initGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 		keeper.SetAffiliateCollector(ctx, item)
 	}
 
+	for _, item := range data.TcyClaimers {
+		if err := keeper.SetTCYClaimer(ctx, item); err != nil {
+			panic(err)
+		}
+	}
+
+	for _, item := range data.TcyStakers {
+		if err := keeper.SetTCYStaker(ctx, item); err != nil {
+			panic(err)
+		}
+	}
+
 	reserveAddr, _ := keeper.GetModuleAddress(ReserveName)
 	ctx.Logger().Info("Reserve Module", "address", reserveAddr.String())
 	bondAddr, _ := keeper.GetModuleAddress(BondName)
@@ -359,6 +355,10 @@ func initGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 	ctx.Logger().Info("Treasury Module", "address", treasuryAddr.String())
 	runePoolAddr, _ := keeper.GetModuleAddress(RUNEPoolName)
 	ctx.Logger().Info("RUNEPool Module", "address", runePoolAddr.String())
+	ClaimingAddr, _ := keeper.GetModuleAddress(TCYClaimingName)
+	ctx.Logger().Info("Claiming Module", "address", ClaimingAddr.String())
+	tcyStakeAddr, _ := keeper.GetModuleAddress(TCYStakeName)
+	ctx.Logger().Info("TCYStake Module", "address", tcyStakeAddr.String())
 
 	return validators
 }
@@ -448,6 +448,38 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 			panic(err)
 		}
 		bps = append(bps, bp)
+	}
+
+	tcyClaimers := make([]TCYClaimer, 0)
+	iterator = k.GetTCYClaimerIterator(ctx)
+	defer iterator.Close()
+	for ; iterator.Valid(); iterator.Next() {
+		var claimer TCYClaimer
+		k.Cdc().MustUnmarshal(iterator.Value(), &claimer)
+		if claimer.IsEmpty() {
+			continue
+		}
+		if claimer.Amount.IsZero() {
+			continue
+		}
+
+		tcyClaimers = append(tcyClaimers, claimer)
+	}
+
+	tcyStakers := make([]TCYStaker, 0)
+	stakers, err := k.ListTCYStakers(ctx)
+	if err != nil {
+		panic(err)
+	}
+	for _, staker := range stakers {
+		if staker.IsEmpty() {
+			continue
+		}
+		if staker.Amount.IsZero() {
+			continue
+		}
+
+		tcyStakers = append(tcyStakers, staker)
 	}
 
 	var observedTxInVoters ObservedTxVoters
@@ -541,7 +573,7 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 	}
 
 	swapMsgs := make([]MsgSwap, 0)
-	iterMsgSwap := k.GetOrderBookItemIterator(ctx)
+	iterMsgSwap := k.GetAdvSwapQueueItemIterator(ctx)
 	defer iterMsgSwap.Close()
 	for ; iterMsgSwap.Valid(); iterMsgSwap.Next() {
 		var m MsgSwap
@@ -764,7 +796,7 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		OutboundFeeWithheldRune: outboundFeeWithheldRune,
 		OutboundFeeSpentRune:    outboundFeeSpentRune,
 		POL:                     pol,
-		OrderbookItems:          swapMsgs,
+		AdvSwapQueueItems:       swapMsgs,
 		SwapQueueItems:          swapQ,
 		StreamingSwaps:          streamSwaps,
 		NetworkFees:             networkFees,
@@ -781,5 +813,7 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		RuneProviders:           runeProviders,
 		RunePool:                runePool,
 		AffiliateCollectors:     affiliateCollectors,
+		TcyClaimers:             tcyClaimers,
+		TcyStakers:              tcyStakers,
 	}
 }

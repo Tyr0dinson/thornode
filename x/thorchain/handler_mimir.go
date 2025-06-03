@@ -16,7 +16,7 @@ import (
 
 var mimirValidKey = regexp.MustCompile(constants.MimirKeyRegex).MatchString
 
-// MimirHandler is to handle admin messages
+// MimirHandler is to handle mimir messages
 type MimirHandler struct {
 	mgr Manager
 }
@@ -62,10 +62,10 @@ func (h MimirHandler) validateV3_0_0(ctx cosmos.Context, msg MsgMimir) error {
 		return err
 	}
 
-	if !mimirValidKey(msg.Key) || len(msg.Key) > 64 {
+	if !mimirValidKey(msg.Key) || len(msg.Key) > constants.MaxMimirLength {
 		return cosmos.ErrUnknownRequest("invalid mimir key")
 	}
-	if err := validateMimirAuth(ctx, h.mgr.Keeper(), msg); err != nil {
+	if _, err := validateMimirAuth(ctx, h.mgr.Keeper(), msg); err != nil {
 		return err
 	}
 	return nil
@@ -87,10 +87,6 @@ func (h MimirHandler) handleV3_0_0(ctx cosmos.Context, msg MsgMimir) error {
 	// Get the current Mimir key value if it exists.
 	currentMimirValue, _ := h.mgr.Keeper().GetMimir(ctx, msg.Key)
 	// Here, an error is assumed to mean the Mimir key is currently unset.
-
-	if isAdmin(msg.Signer) {
-		return h.handleAdmin(ctx, msg, currentMimirValue)
-	}
 
 	// Cost and emitting of SetNodeMimir, even if a duplicate
 	// (for instance if needed to confirm a new supermajority after a node number decrease).
@@ -122,10 +118,7 @@ func (h MimirHandler) handleV3_0_0(ctx cosmos.Context, msg MsgMimir) error {
 		ctx.Logger().Error("fail to emit set_node_mimir event", "error", err)
 		return err
 	}
-	tx := common.Tx{}
-	tx.ID = common.BlankTxID
-	tx.ToAddress = common.Address(nodeAccount.String())
-	bondEvent := NewEventBond(cost, BondCost, tx, &nodeAccount, nil)
+	bondEvent := NewEventBond(cost, BondCost, common.Tx{}, &nodeAccount, nil)
 	if err = h.mgr.EventMgr().EmitEvent(ctx, bondEvent); err != nil {
 		ctx.Logger().Error("fail to emit bond event", "error", err)
 		return err
@@ -182,58 +175,13 @@ func (h MimirHandler) handleV3_0_0(ctx cosmos.Context, msg MsgMimir) error {
 	return nil
 }
 
-func validateMimirAuth(ctx cosmos.Context, k keeper.Keeper, msg MsgMimir) error {
-	if isAdmin(msg.Signer) {
-		// If the signer is an admin key, check the admin access controls for this mimir.
-		if !isAdminAllowedForMimir(msg.Key) {
-			return cosmos.ErrUnauthorized(fmt.Sprintf("%s cannot set this mimir key", msg.Signer))
-		}
-	} else if !isSignedByActiveNodeAccounts(ctx, k, msg.GetSigners()) {
-		return cosmos.ErrUnauthorized(fmt.Sprintf("%s is not authorized", msg.Signer))
-	}
-	return nil
+func validateMimirAuth(ctx cosmos.Context, k keeper.Keeper, msg MsgMimir) (cosmos.Context, error) {
+	return activeNodeAccountsSignerPriority(ctx, k, msg.GetSigners())
 }
 
 // MimirAnteHandler called by the ante handler to gate mempool entry
 // and also during deliver. Store changes will persist if this function
 // succeeds, regardless of the success of the transaction.
-func MimirAnteHandler(ctx cosmos.Context, v semver.Version, k keeper.Keeper, msg MsgMimir) error {
+func MimirAnteHandler(ctx cosmos.Context, v semver.Version, k keeper.Keeper, msg MsgMimir) (cosmos.Context, error) {
 	return validateMimirAuth(ctx, k, msg)
-}
-
-func (h MimirHandler) handleAdmin(ctx cosmos.Context, msg MsgMimir, currentMimirValue int64) error {
-	// If the Mimir key is already the submitted value, don't do anything further.
-	if msg.Value == currentMimirValue {
-		return nil
-	}
-	nodeMimirs, err := h.mgr.Keeper().GetNodeMimirs(ctx, msg.Key)
-	if err != nil {
-		ctx.Logger().Error("fail to get node mimirs", "error", err)
-		return err
-	}
-	activeNodes, err := h.mgr.Keeper().ListActiveValidators(ctx)
-	if err != nil {
-		ctx.Logger().Error("fail to list active validators", "error", err)
-		return err
-	}
-	currentSuperMajorityValue, currentlyHasSuperMajority := nodeMimirs.HasSuperMajority(msg.Key, activeNodes.GetNodeAddresses())
-	if currentlyHasSuperMajority && (msg.Value != currentSuperMajorityValue) {
-		ctx.Logger().With("key", msg.Key).
-			With("consensus_value", currentMimirValue).
-			Info("admin mimir should not be able to override node voted mimir value")
-		return nil
-	}
-	// Deleting or setting Mimir key value, and emitting a SetMimir event.
-	if msg.Value < 0 {
-		_ = h.mgr.Keeper().DeleteMimir(ctx, msg.Key)
-	} else {
-		h.mgr.Keeper().SetMimir(ctx, msg.Key, msg.Value)
-	}
-	mimirEvent := NewEventSetMimir(strings.ToUpper(msg.Key), strconv.FormatInt(msg.Value, 10))
-	if err = h.mgr.EventMgr().EmitEvent(ctx, mimirEvent); err != nil {
-		ctx.Logger().Error("fail to emit set_mimir event", "error", err)
-		return nil
-	}
-
-	return nil
 }

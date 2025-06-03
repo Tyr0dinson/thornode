@@ -221,6 +221,8 @@ func Init() {
 	if err := viper.Unmarshal(&config); err != nil {
 		log.Fatal().Err(err).Msg("failed to unmarshal config")
 	}
+	// set back to toml for cometbft config
+	viper.SetConfigType("toml")
 
 	// dynamically set rpc listen address
 	if config.Thornode.Tendermint.RPC.ListenAddress == "" {
@@ -228,6 +230,9 @@ func Init() {
 	}
 	if config.Thornode.Tendermint.P2P.ListenAddress == "" {
 		config.Thornode.Tendermint.P2P.ListenAddress = fmt.Sprintf("tcp://0.0.0.0:%d", p2pPort)
+	}
+	if config.Thornode.Cosmos.EBifrost.Address == "" {
+		config.Thornode.Cosmos.EBifrost.Address = fmt.Sprintf("0.0.0.0:%d", ebifrostPort)
 	}
 }
 
@@ -352,6 +357,14 @@ type Thornode struct {
 	// consensus failure on sync from genesis.
 	StagenetAdminAddresses []string `mapstructure:"stagenet_admin_addresses"`
 
+	// Telemetry contains THORnode-specific telemetry configuration.
+	Telemetry struct {
+		// SlashPoints enables slash point telemetry. This creates a file in the node home
+		// directory with JSON events for all slash increments and decrements. This feature
+		// should not be enabled on production nodes.
+		SlashPoints bool `mapstructure:"slash_points"`
+	} `mapstructure:"telemetry"`
+
 	// LogFilter will drop logs matching the modules and messages when not in debug level.
 	LogFilter struct {
 		// Modules is a list of modules to filter.
@@ -400,6 +413,12 @@ type Thornode struct {
 			Enable  bool   `mapstructure:"enable"`
 			Address string `mapstructure:"address"`
 		} `mapstructure:"grpc"`
+
+		EBifrost struct {
+			Enable       bool          `mapstructure:"enable"`
+			Address      string        `mapstructure:"address"`
+			CacheItemTTL time.Duration `mapstructure:"cache_item_ttl"`
+		} `mapstructure:"ebifrost"`
 
 		StateSync struct {
 			SnapshotInterval   int64 `mapstructure:"snapshot_interval"`
@@ -458,10 +477,11 @@ type Thornode struct {
 // -------------------------------------------------------------------------------------
 
 type Bifrost struct {
-	Signer    BifrostSignerConfiguration  `mapstructure:"signer"`
-	Thorchain BifrostClientConfiguration  `mapstructure:"thorchain"`
-	Metrics   BifrostMetricsConfiguration `mapstructure:"metrics"`
-	Chains    struct {
+	Signer            BifrostSignerConfiguration     `mapstructure:"signer"`
+	Thorchain         BifrostClientConfiguration     `mapstructure:"thorchain"`
+	AttestationGossip BifrostAttestationGossipConfig `mapstructure:"attestation_gossip"`
+	Metrics           BifrostMetricsConfiguration    `mapstructure:"metrics"`
+	Chains            struct {
 		AVAX BifrostChainConfiguration `mapstructure:"avax"`
 		BCH  BifrostChainConfiguration `mapstructure:"bch"`
 		BSC  BifrostChainConfiguration `mapstructure:"bsc"`
@@ -471,9 +491,11 @@ type Bifrost struct {
 		GAIA BifrostChainConfiguration `mapstructure:"gaia"`
 		LTC  BifrostChainConfiguration `mapstructure:"ltc"`
 		BASE BifrostChainConfiguration `mapstructure:"base"`
+		XRP  BifrostChainConfiguration `mapstructure:"xrp"`
 	} `mapstructure:"chains"`
 	TSS             BifrostTSSConfiguration `mapstructure:"tss"`
 	ObserverLevelDB LevelDBOptions          `mapstructure:"observer_leveldb"`
+	ObserverWorkers int                     `mapstructure:"observer_workers"`
 }
 
 func (b Bifrost) GetChains() map[common.Chain]BifrostChainConfiguration {
@@ -487,6 +509,7 @@ func (b Bifrost) GetChains() map[common.Chain]BifrostChainConfiguration {
 		common.GAIAChain: b.Chains.GAIA,
 		common.LTCChain:  b.Chains.LTC,
 		common.BASEChain: b.Chains.BASE,
+		common.XRPChain:  b.Chains.XRP,
 	}
 }
 
@@ -552,6 +575,44 @@ type BifrostSignerConfiguration struct {
 	PreParamTimeout time.Duration `mapstructure:"pre_param_timeout"`
 }
 
+type BifrostAttestationGossipConfig struct {
+	// how often to prune old observed txs and check if late attestations should be sent.
+	// should be less than lateObserveTimeout and minTimeBetweenAttestations by at least a factor of 2.
+	ObserveReconcileInterval time.Duration `mapstructure:"observe_reconcile_interval"`
+
+	// validators can get credit for observing a tx for up to this amount of time after it is committed, after which it count against a slash penalty.
+	LateObserveTimeout time.Duration `mapstructure:"late_observe_timeout"`
+
+	// Prune observed tx attestations after this amount of time, even if they are not yet committed.
+	// Gives some time for longer chain halts.
+	// If chain halts for longer than this, validators will need to restart their bifrosts to re-share their attestations.
+	NonQuorumTimeout time.Duration `mapstructure:"non_quorum_timeout"`
+
+	// minTimeBetweenAttestations is the minimum time between sending batches of attestations for a quorum tx to thornode.
+	MinTimeBetweenAttestations time.Duration `mapstructure:"min_time_between_attestations"`
+
+	// how many random peers to ask for their attestation state on startup.
+	AskPeers int `mapstructure:"ask_peers"`
+
+	// delay before asking peers for their attestation state on startup.
+	AskPeersDelay time.Duration `mapstructure:"ask_peers_delay"`
+
+	// how many attestations to batch together before sending to thornode.
+	MaxBatchSize int64 `mapstructure:"max_batch_size"`
+
+	// how often to send batches of attestations to thornode.
+	BatchInterval time.Duration `mapstructure:"batch_interval"`
+
+	// how long to wait when sending a single attestation to a peer before giving up.
+	PeerTimeout time.Duration `mapstructure:"peer_timeout"`
+
+	// maximum concurrent sends to a single peer
+	PeerConcurrentSends int `mapstructure:"peer_concurrent_sends"`
+
+	// maximum concurrent receives from a single peer
+	PeerConcurrentReceives int `mapstructure:"peer_concurrent_receives"`
+}
+
 type BifrostChainConfiguration struct {
 	ChainID             common.Chain                     `mapstructure:"chain_id"`
 	ChainHost           string                           `mapstructure:"chain_host"`
@@ -584,20 +645,6 @@ type BifrostChainConfiguration struct {
 	// MaxRPCRetries is the maximum number of retries for RPC requests.
 	MaxRPCRetries int `mapstructure:"max_rpc_retries"`
 
-	// MaxGasTipPercentage is the percentage of the max fee to set for the max tip cap on
-	// dynamic fee EVM transactions.
-	MaxGasTipPercentage int `mapstructure:"max_gas_tip_percentage"`
-
-	// TokenMaxGasMultiplier is a multiplier applied to max gas for outbounds which are
-	// not the gas asset. This compensates for variance in gas units when contracts for
-	// pool assets use more than the configured MaxGasLimit gas units in transferOut.
-	TokenMaxGasMultiplier int64 `mapstructure:"token_max_gas_multiplier"`
-
-	// AggregatorMaxGasMultiplier is a multiplier applied to max gas for outbounds which
-	// swap out via an aggregator contract. This compensates for variance in gas units when
-	// aggregator swaps outs use more than the configured MaxGasLimit gas units.
-	AggregatorMaxGasMultiplier int64 `mapstructure:"aggregator_max_gas_multiplier"`
-
 	// MaxPendingNonces is the maximum number of pending nonces to allow before aborting
 	// new signing attempts.
 	MaxPendingNonces uint64 `mapstructure:"max_pending_nonces"`
@@ -605,6 +652,27 @@ type BifrostChainConfiguration struct {
 	// AuthorizationBearer can be set to configure the RPC client with an API token that
 	// will be provided to the backend in an Authorization header.
 	AuthorizationBearer string `mapstructure:"authorization_bearer"`
+
+	// EVM contains EVM chain specific configuration.
+	EVM struct {
+		// MaxGasTipPercentage is the percentage of the max fee to set for the max tip cap on
+		// dynamic fee EVM transactions.
+		MaxGasTipPercentage int `mapstructure:"max_gas_tip_percentage"`
+
+		// TokenMaxGasMultiplier is a multiplier applied to max gas for outbounds which are
+		// not the gas asset. This compensates for variance in gas units when contracts for
+		// pool assets use more than the configured MaxGasLimit gas units in transferOut.
+		TokenMaxGasMultiplier int64 `mapstructure:"token_max_gas_multiplier"`
+
+		// AggregatorMaxGasMultiplier is a multiplier applied to max gas for outbounds which
+		// swap out via an aggregator contract. This compensates for variance in gas units when
+		// aggregator swaps outs use more than the configured MaxGasLimit gas units.
+		AggregatorMaxGasMultiplier int64 `mapstructure:"aggregator_max_gas_multiplier"`
+
+		// ExtraL1GasFee is an extra 1e8 amount deducted from the scheduled max gas to
+		// account for the Ethereum gas fee on Ethereum L2s.
+		ExtraL1GasFee int64 `mapstructure:"extra_l1_gas_fee"`
+	} `mapstructure:"evm"`
 
 	// UTXO contains UTXO chain specific configuration.
 	UTXO struct {
@@ -717,6 +785,8 @@ type BifrostBlockScannerConfiguration struct {
 	// tokens are ignored.
 	WhitelistTokens []string `mapstructure:"whitelist_tokens"`
 
+	WhitelistCosmosAssets []WhitelistCosmosAsset `mapstructure:"whitelist_cosmos_assets"`
+
 	// MaxResumeBlockLag is the max duration to lag behind the latest current consensus
 	// inbound height upon startup. If there is a local scanner position we will start
 	// from that height up to this threshold. The local scanner height is compared to the
@@ -745,6 +815,7 @@ type BifrostClientConfiguration struct {
 	ChainID         common.Chain `mapstructure:"chain_id" `
 	ChainHost       string       `mapstructure:"chain_host"`
 	ChainRPC        string       `mapstructure:"chain_rpc"`
+	ChainEBifrost   string       `mapstructure:"chain_ebifrost"`
 	ChainHomeFolder string       `mapstructure:"chain_home_folder"`
 	SignerName      string       `mapstructure:"signer_name"`
 	SignerPasswd    string
@@ -766,6 +837,24 @@ type BifrostTSSConfiguration struct {
 	InfoAddress                  string   `mapstructure:"info_address"`
 	ExternalIP                   string   `mapstructure:"external_ip"`
 	MaxKeyshareRecoverScanBlocks int64    `mapstructure:"max_keyshare_recover_scan_blocks"`
+}
+
+func (c BifrostTSSConfiguration) GetP2PPort() int {
+	return c.P2PPort
+}
+
+func (c BifrostTSSConfiguration) GetRendezvous() string {
+	return c.Rendezvous
+}
+
+func (c BifrostTSSConfiguration) GetExternalIP() string {
+	return c.ExternalIP
+}
+
+type WhitelistCosmosAsset struct {
+	Denom           string `mapstructure:"denom"`
+	Decimals        int    `mapstructure:"decimals"`
+	THORChainSymbol string `mapstructure:"symbol"`
 }
 
 // GetBootstrapPeers return the internal bootstrap peers in a slice of maddr.Multiaddr

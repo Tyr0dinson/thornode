@@ -34,6 +34,7 @@ services:
       CHAIN_ID: thorchain
       SIGNER_NAME: thorchain
       SIGNER_PASSWD: password
+      THORNODE_GRPC_ENABLE: true
     logging: &logging
       driver: "json-file"
       options:
@@ -102,22 +103,25 @@ services:
       <<: *thorchain-environment
       SEED: thornode
       SIGNER_SEED_PHRASE: "dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog fossil"
-      THOR_BLOCK_TIME: ${BLOCK_TIME:-2s}
-      THOR_API_LIMIT_COUNT: 100
-      THOR_API_LIMIT_DURATION: 1s
+      THOR_BLOCK_TIME: ${BLOCK_TIME:-1s}
+      THOR_COSMOS_EBIFROST_ADDRESS: 0.0.0.0:50051
       HARDFORK_BLOCK_HEIGHT: ${HARDFORK_BLOCK_HEIGHT:-}
       NEW_GENESIS_TIME: ${NEW_GENESIS_TIME:-}
-      CHURN_MIGRATION_ROUNDS: 2
+      CHURN_MIGRATE_ROUNDS: 2
       FUND_MIGRATION_INTERVAL: 10
+      EMISSION_CURVE: 100000
       AVAX_HOST: ${AVAX_HOST:-http://avalanche:9650/ext/bc/C/rpc}
       ETH_HOST: ${ETH_HOST:-http://ethereum:8545}
       BASE_HOST: ${BASE_HOST:-http://base:8545}
       BSC_HOST: ${BSC_HOST:-http://binance-smart:8545}
+      XRP_HOST: ${XRP_HOST:-http://xrp:5005}
     ports:
       - 26657:26657
       - 26656:26656
       - 1317:1317
       - 6060:6060
+      - 50051:50051
+      - 9090:9090
     volumes:
       - "../scripts:/docker/scripts"
       - thornode:/root/.thornode
@@ -155,6 +159,7 @@ services:
       SIGNER_SEED_PHRASE: "dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog dog fossil"
       CHAIN_API: thornode:1317
       CHAIN_RPC: thornode:26657
+      BIFROST_THORCHAIN_CHAIN_EBIFROST: thornode:50051
       BTC_HOST: ${BTC_HOST:-bitcoin:18443}
       DOGE_HOST: ${DOGE_HOST:-dogecoin:18332}
       BCH_HOST: ${BCH_HOST:-bitcoin-cash:28443}
@@ -163,7 +168,7 @@ services:
       AVAX_HOST: ${AVAX_HOST:-http://avalanche:9650/ext/bc/C/rpc}
       GAIA_HOST: ${GAIA_HOST:-http://gaia:26657}
       GAIA_GRPC_HOST: ${GAIA_GRPC_HOST:-gaia:9090}
-      THOR_BLOCK_TIME: ${BLOCK_TIME:-2s}
+      THOR_BLOCK_TIME: ${BLOCK_TIME:-1s}
       BLOCK_SCANNER_BACKOFF: ${BLOCK_SCANNER_BACKOFF:-5s}
       PEER: ${PEER:-}
       BIFROST_METRICS_PPROF_ENABLED: "true"
@@ -179,6 +184,7 @@ services:
       BIFROST_CHAINS_GAIA_BLOCK_SCANNER_OBSERVATION_FLEXIBILITY_BLOCKS: "5"
       BIFROST_CHAINS_LTC_BLOCK_SCANNER_OBSERVATION_FLEXIBILITY_BLOCKS: "5"
       BIFROST_CHAINS_BASE_BLOCK_SCANNER_OBSERVATION_FLEXIBILITY_BLOCKS: "5"
+      BIFROST_CHAINS_XRP_BLOCK_SCANNER_OBSERVATION_FLEXIBILITY_BLOCKS: "5"
 
       # maintain historical gas behavior for hard-coded smoke test values
       BIFROST_CHAINS_ETH_BLOCK_SCANNER_MAX_GAS_LIMIT: 80000
@@ -194,6 +200,11 @@ services:
       BIFROST_CHAINS_BASE_DISABLED: "false"
       BIFROST_CHAINS_BASE_RPC_HOST: http://base:8545
 
+      # enable xrp
+      BIFROST_CHAINS_XRP_DISABLED: "false"
+      BIFROST_CHAINS_XRP_RPC_HOST: http://xrp:5005
+      BIFROST_CHAINS_XRP_CHAIN_NETWORK: "1234"
+
       # set fixed gas rate for evm chains
       BIFROST_CHAINS_ETH_BLOCK_SCANNER_FIXED_GAS_RATE: 20_000_000_000 # 20 gwei
       BIFROST_CHAINS_AVAX_BLOCK_SCANNER_FIXED_GAS_RATE: 100_000_000_000 # 100 navax
@@ -204,6 +215,10 @@ services:
       BIFROST_CHAINS_AVAX_BLOCK_SCANNER_WHITELIST_TOKENS: "0x52C84043CD9c865236f11d9Fc9F56aa003c1f922,0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E,0x17aB05351fC94a1a67Bf3f56DdbB941aE6c63E25"
       BIFROST_CHAINS_BSC_BLOCK_SCANNER_WHITELIST_TOKENS: "0x52C84043CD9c865236f11d9Fc9F56aa003c1f922,0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d,0x17aB05351fC94a1a67Bf3f56DdbB941aE6c63E25"
       BIFROST_CHAINS_BASE_BLOCK_SCANNER_WHITELIST_TOKENS: "0x52C84043CD9c865236f11d9Fc9F56aa003c1f922,0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913,0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf,0x17aB05351fC94a1a67Bf3f56DdbB941aE6c63E25"
+
+      # attestation timing
+      BIFROST_ATTESTATION_GOSSIP_MIN_TIME_BETWEEN_ATTESTATIONS: 1s
+      BIFROST_ATTESTATION_GOSSIP_OBSERVE_RECONCILE_INTERVAL: 1s
 
     ports:
       - 5040:5040
@@ -326,6 +341,7 @@ services:
       PEER: bifrost
       CHAIN_API: thornode-cat:1317
       CHAIN_RPC: thornode-cat:26657
+      BIFROST_THORCHAIN_CHAIN_EBIFROST: thornode-cat:50051
       SIGNER_SEED_PHRASE: "cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat cat crawl"
     ports:
       - 5040
@@ -348,6 +364,7 @@ services:
       PEER: bifrost
       CHAIN_API: thornode-fox:1317
       CHAIN_RPC: thornode-fox:26657
+      BIFROST_THORCHAIN_CHAIN_EBIFROST: thornode-fox:50051
       SIGNER_SEED_PHRASE: "fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox fox filter"
     ports:
       - 5040
@@ -370,6 +387,7 @@ services:
       PEER: bifrost
       CHAIN_API: thornode-pig:1317
       CHAIN_RPC: thornode-pig:26657
+      BIFROST_THORCHAIN_CHAIN_EBIFROST: thornode-pig:50051
       SIGNER_SEED_PHRASE: "pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig quick"
     ports:
       - 5040
@@ -390,7 +408,7 @@ services:
     profiles:
       - mocknet
       - mocknet-cluster
-    image: registry.gitlab.com/thorchain/devops/node-launcher:gaia-daemon-21.0.1
+    image: registry.gitlab.com/thorchain/devops/node-launcher:gaia-daemon-23.2.0
     volumes:
       - "./mocknet:/mocknet"
     environment:
@@ -425,7 +443,7 @@ services:
     profiles:
       - mocknet
       - mocknet-cluster
-    image: registry.gitlab.com/thorchain/devops/node-launcher:bitcoin-cash-daemon-28.0.0
+    image: registry.gitlab.com/thorchain/devops/node-launcher:bitcoin-cash-daemon-28.0.1
     restart: unless-stopped
     environment:
       RPC_PORT: "28443"
@@ -474,7 +492,7 @@ services:
     profiles:
       - mocknet
       - mocknet-cluster
-    image: ethereum/client-go:v1.14.12
+    image: ethereum/client-go:v1.15.11
     restart: unless-stopped
     environment:
       BLOCK_TIME: ${BLOCK_TIME:-5}
@@ -492,7 +510,7 @@ services:
     profiles:
       - mocknet
       - mocknet-cluster
-    image: us-docker.pkg.dev/oplabs-tools-artifacts/images/op-geth:v1.101411.1
+    image: us-docker.pkg.dev/oplabs-tools-artifacts/images/op-geth:v1.101503.4
     restart: unless-stopped
     environment:
       BLOCK_TIME: ${BLOCK_TIME:-5}
@@ -503,13 +521,29 @@ services:
       - "../scripts:/docker/scripts"
     entrypoint: /docker/scripts/mock/start-eth.sh
 
+  # ------------------------------ xrp ------------------------------
+
+  xrp:
+    profiles:
+      - mocknet
+      - mocknet-cluster
+    image: xrpllabsofficial/xrpld:2.4.0
+    restart: unless-stopped
+    environment:
+      BLOCK_TIME: ${BLOCK_TIME:-5}
+    ports:
+      - 5005:5005
+    volumes:
+      - "../scripts:/docker/scripts"
+    entrypoint: /docker/scripts/xrp/start-xrp.sh
+
   # ------------------------------ binance-smart ------------------------------
 
   binance-smart:
     profiles:
       - mocknet
       - mocknet-cluster
-    image: registry.gitlab.com/thorchain/devops/node-launcher:binance-smart-daemon-1.2.13
+    image: registry.gitlab.com/thorchain/devops/node-launcher:binance-smart-daemon-1.4.18
     restart: unless-stopped
     environment:
       BLOCK_TIME: ${BLOCK_TIME:-5}
@@ -526,7 +560,7 @@ services:
       - mocknet
       - mocknet-cluster
     restart: unless-stopped
-    image: registry.gitlab.com/thorchain/devops/node-launcher:avalanche-daemon-1.12.0
+    image: registry.gitlab.com/thorchain/devops/node-launcher:avalanche-daemon-1.13.0-1
     volumes:
       - "./mocknet/avax:/mocknet"
     command:

@@ -21,11 +21,11 @@ func init() {
 	int64Overrides = map[ConstantName]int64{
 		// ArtificialRagnarokBlockHeight: 200,
 		DesiredValidatorSet:                 12,
-		ChurnInterval:                       60, // 5 min
+		ChurnInterval:                       60,
 		ChurnRetryInterval:                  30,
 		MinimumBondInRune:                   100_000_000, // 1 rune
 		ValidatorMaxRewardRatio:             3,
-		FundMigrationInterval:               40,
+		FundMigrationInterval:               15,
 		LiquidityLockUpBlocks:               0,
 		MaxRuneSupply:                       500_000_000_00000000,
 		JailTimeKeygen:                      10,
@@ -34,6 +34,8 @@ func init() {
 		StreamingSwapMinBPFee:               100, // TODO: remove on hard fork
 		VirtualMultSynthsBasisPoints:        20_000,
 		MinTxOutVolumeThreshold:             2000000_00000000,
+		MissingBlockChurnOut:                100,
+		MaxMissingBlockChurnOut:             5,
 		TxOutDelayRate:                      2000000_00000000,
 		MaxSynthPerPoolDepth:                3_500,
 		MaxSynthsForSaversYield:             5000,
@@ -51,6 +53,7 @@ func init() {
 		SaversEjectInterval:                 60,
 		SystemIncomeBurnRateBps:             0,
 		DevFundSystemIncomeBps:              0,
+		TCYStakeSystemIncomeBps:             0,
 		MultipleAffiliatesMaxCount:          5,
 		BankSendEnabled:                     1,
 	}

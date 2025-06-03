@@ -36,6 +36,9 @@ import (
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 	kv1 "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/v1"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
+
+	wasmkeeper "github.com/CosmWasm/wasmd/x/wasm/keeper"
+	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
 )
 
 var errKaboom = errors.New("kaboom")
@@ -65,7 +68,7 @@ func (s *HandlerSuite) SetUpSuite(*C) {
 }
 
 func FundModule(c *C, ctx cosmos.Context, k keeper.Keeper, name string, amt uint64) {
-	coin := common.NewCoin(common.RuneNative, cosmos.NewUint(amt*common.One))
+	coin := common.NewCoin(common.RuneNative, cosmos.NewUint(amt))
 	err := k.MintToModule(ctx, ModuleName, coin)
 	c.Assert(err, IsNil)
 	err = k.SendFromModuleToModule(ctx, ModuleName, name, common.NewCoins(coin))
@@ -73,7 +76,7 @@ func FundModule(c *C, ctx cosmos.Context, k keeper.Keeper, name string, amt uint
 }
 
 func FundAccount(c *C, ctx cosmos.Context, k keeper.Keeper, addr cosmos.AccAddress, amt uint64) {
-	coin := common.NewCoin(common.RuneNative, cosmos.NewUint(amt*common.One))
+	coin := common.NewCoin(common.RuneNative, cosmos.NewUint(amt))
 	err := k.MintToModule(ctx, ModuleName, coin)
 	c.Assert(err, IsNil)
 	err = k.SendFromModuleToAccount(ctx, ModuleName, addr, common.NewCoins(coin))
@@ -87,12 +90,15 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 	keyAcc := cosmos.NewKVStoreKey(authtypes.StoreKey)
 	keyBank := cosmos.NewKVStoreKey(banktypes.StoreKey)
 	keyUpgrade := cosmos.NewKVStoreKey(upgradetypes.StoreKey)
+	keyWasm := cosmos.NewKVStoreKey(wasmtypes.StoreKey)
 
 	db := dbm.NewMemDB()
 	ms := store.NewCommitMultiStore(db, sdklog.NewNopLogger(), storemetrics.NewNoOpMetrics())
 	ms.MountStoreWithDB(keyAcc, cosmos.StoreTypeIAVL, db)
 	ms.MountStoreWithDB(keyThorchain, cosmos.StoreTypeIAVL, db)
 	ms.MountStoreWithDB(keyBank, cosmos.StoreTypeIAVL, db)
+	ms.MountStoreWithDB(keyWasm, cosmos.StoreTypeIAVL, db)
+
 	err := ms.LoadLatestVersion()
 	c.Assert(err, IsNil)
 
@@ -116,6 +122,8 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 			types.AffiliateCollectorName: {},
 			types.TreasuryName:           {},
 			types.RUNEPoolName:           {},
+			types.TCYStakeName:           {},
+			types.TCYClaimingName:        {},
 		},
 		authcodec.NewBech32Codec(sdk.GetConfig().GetBech32AccountAddrPrefix()),
 		sdk.GetConfig().GetBech32AccountAddrPrefix(),
@@ -130,6 +138,22 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 		authtypes.NewModuleAddress(ModuleName).String(),
 		sdklog.NewNopLogger(),
 	)
+	wasmDir := c.MkDir()
+	wk := wasmkeeper.NewKeeper(
+		encodingConfig.Codec,
+		runtime.NewKVStoreService(keyWasm),
+		ak, bk,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, wasmDir,
+		wasmtypes.DefaultWasmConfig(), wasmkeeper.BuiltInCapabilities(),
+		authtypes.NewModuleAddress(ModuleName).String(),
+	)
+
+	err = wk.SetParams(ctx, wasmtypes.Params{
+		CodeUploadAccess:             wasmtypes.AllowNobody,
+		InstantiateDefaultPermission: wasmtypes.AccessTypeNobody,
+	})
+	c.Assert(err, IsNil)
+
 	c.Assert(bk.MintCoins(ctx, ModuleName, cosmos.Coins{
 		cosmos.NewCoin(common.RuneAsset().Native(), cosmos.NewInt(200_000_000_00000000)),
 	}), IsNil)
@@ -142,9 +166,9 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 		authtypes.NewModuleAddress(ModuleName).String(),
 	)
 	k := kv1.NewKeeper(encodingConfig.Codec, bk, ak, uk, keyThorchain)
-	FundModule(c, ctx, k, ModuleName, 10000*common.One)
-	FundModule(c, ctx, k, AsgardName, common.One)
-	FundModule(c, ctx, k, ReserveName, 10000*common.One)
+	FundModule(c, ctx, k, ModuleName, 10_000*common.One)
+	FundModule(c, ctx, k, AsgardName, 100_000_000*common.One)
+	FundModule(c, ctx, k, ReserveName, 100_000_000*common.One)
 	c.Assert(k.SaveNetworkFee(ctx, common.ETHChain, NetworkFee{
 		Chain:              common.ETHChain,
 		TransactionSize:    1,
@@ -164,7 +188,7 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 	}), IsNil)
 
 	os.Setenv("NET", "mocknet")
-	mgr := NewManagers(k, encodingConfig.Codec, bk, ak, uk, keyThorchain)
+	mgr := NewManagers(k, encodingConfig.Codec, bk, ak, uk, wk, keyThorchain)
 	constants.SWVersion = GetCurrentVersion()
 
 	_, hasVerStored := k.GetVersionWithCtx(ctx)
@@ -217,6 +241,8 @@ func setupKeeperForTest(c *C) (cosmos.Context, keeper.Keeper) {
 			types.ReserveName:            {},
 			types.LendingName:            {},
 			types.AffiliateCollectorName: {},
+			types.TCYStakeName:           {},
+			types.TCYClaimingName:        {},
 		},
 		authcodec.NewBech32Codec(sdk.GetConfig().GetBech32AccountAddrPrefix()),
 		sdk.GetConfig().GetBech32AccountAddrPrefix(),
@@ -231,7 +257,11 @@ func setupKeeperForTest(c *C) (cosmos.Context, keeper.Keeper) {
 		authtypes.NewModuleAddress(ModuleName).String(),
 		sdklog.NewNopLogger(),
 	)
+
 	c.Assert(bk.MintCoins(ctx, ModuleName, cosmos.Coins{
+		cosmos.NewCoin(common.RuneAsset().Native(), cosmos.NewInt(200_000_000_00000000)),
+	}), IsNil)
+	c.Assert(bk.BurnCoins(ctx, ModuleName, cosmos.Coins{
 		cosmos.NewCoin(common.RuneAsset().Native(), cosmos.NewInt(200_000_000_00000000)),
 	}), IsNil)
 	uk := upgradekeeper.NewKeeper(
@@ -243,7 +273,6 @@ func setupKeeperForTest(c *C) (cosmos.Context, keeper.Keeper) {
 		authtypes.NewModuleAddress(ModuleName).String(),
 	)
 	k := kv1.NewKVStore(encodingConfig.Codec, bk, ak, uk, keyThorchain, GetCurrentVersion())
-	FundModule(c, ctx, k, ModuleName, 1000000*common.One)
 	FundModule(c, ctx, k, AsgardName, common.One)
 	FundModule(c, ctx, k, ReserveName, 10000*common.One)
 	err = k.SaveNetworkFee(ctx, common.ETHChain, NetworkFee{
@@ -289,7 +318,7 @@ func getHandlerTestWrapper(c *C, height int64, withActiveNode, withActieDOGEPool
 		c.Assert(mgr.Keeper().SetPool(ctx, p), IsNil)
 	}
 
-	FundModule(c, ctx, mgr.Keeper(), AsgardName, 100000000)
+	FundModule(c, ctx, mgr.Keeper(), AsgardName, common.One)
 
 	c.Assert(mgr.ValidatorMgr().BeginBlock(ctx, mgr, nil), IsNil)
 
@@ -349,7 +378,7 @@ func (HandlerSuite) TestHandleTxInWithdrawLiquidityMemo(c *C) {
 
 	handler := NewInternalHandler(w.mgr)
 
-	FundModule(c, w.ctx, w.keeper, AsgardName, 500)
+	FundModule(c, w.ctx, w.keeper, AsgardName, 500*common.One)
 	c.Assert(w.keeper.SaveNetworkFee(w.ctx, common.DOGEChain, NetworkFee{
 		Chain:              common.DOGEChain,
 		TransactionSize:    1,
@@ -437,7 +466,7 @@ func (HandlerSuite) TestGetMsgSwapFromMemo(c *C) {
 	c.Assert(ok, Equals, true)
 	c.Assert(err, IsNil)
 
-	txin := types.NewObservedTx(
+	txin := common.NewObservedTx(
 		common.Tx{
 			ID:    GetRandomTxHash(),
 			Chain: common.ETHChain,
@@ -532,7 +561,7 @@ func (HandlerSuite) TestGetMsgLiquidityFromMemo(c *C) {
 	runeAsset := common.RuneAsset()
 	c.Assert(err, IsNil)
 
-	txin := types.NewObservedTx(
+	txin := common.NewObservedTx(
 		common.Tx{
 			ID:    GetRandomTxHash(),
 			Chain: common.ETHChain,
@@ -605,7 +634,7 @@ func (HandlerSuite) TestGetMsgLiquidityFromMemo(c *C) {
 func (HandlerSuite) TestMsgLeaveFromMemo(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, false)
 	addr := types.GetRandomBech32Addr()
-	txin := types.NewObservedTx(
+	txin := common.NewObservedTx(
 		common.Tx{
 			ID:          GetRandomTxHash(),
 			Chain:       common.ETHChain,
@@ -631,7 +660,7 @@ func (HandlerSuite) TestMsgLeaveFromMemo(c *C) {
 func (s *HandlerSuite) TestReserveContributor(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, false)
 	addr := types.GetRandomBech32Addr()
-	txin := types.NewObservedTx(
+	txin := common.NewObservedTx(
 		common.Tx{
 			ID:          GetRandomTxHash(),
 			Chain:       common.ETHChain,
@@ -730,6 +759,12 @@ func (s *HandlerSuite) TestFuzzyMatching(c *C) {
 	result = fuzzyAssetMatch(ctx, k, check)
 	c.Check(result.Synth, Equals, true)
 	c.Check(result.Equals(p2.Asset.GetSyntheticAsset()), Equals, true)
+
+	check, _ = common.NewAsset("ETH~USDT")
+	result = fuzzyAssetMatch(ctx, k, check)
+	c.Check(result.Synth, Equals, false)
+	c.Check(result.Trade, Equals, true)
+	c.Check(result.Equals(p2.Asset.GetTradeAsset()), Equals, true)
 }
 
 func (s *HandlerSuite) TestMemoFetchAddress(c *C) {
@@ -754,11 +789,9 @@ func (s *HandlerSuite) TestMemoFetchAddress(c *C) {
 }
 
 func (s *HandlerSuite) TestExternalAssetMatch(c *C) {
-	v := GetCurrentVersion()
-
-	c.Check(externalAssetMatch(v, common.ETHChain, "7a0"), Equals, "0xd601c6A3a36721320573885A8d8420746dA3d7A0")
-	c.Check(externalAssetMatch(v, common.ETHChain, "foobar"), Equals, "foobar")
-	c.Check(externalAssetMatch(v, common.ETHChain, "3"), Equals, "3")
-	c.Check(externalAssetMatch(v, common.ETHChain, ""), Equals, "")
-	c.Check(externalAssetMatch(v, common.BTCChain, "foo"), Equals, "foo")
+	c.Check(externalAssetMatch(common.ETHChain, "7a0"), Equals, "0xd601c6A3a36721320573885A8d8420746dA3d7A0")
+	c.Check(externalAssetMatch(common.ETHChain, "foobar"), Equals, "foobar")
+	c.Check(externalAssetMatch(common.ETHChain, "3"), Equals, "3")
+	c.Check(externalAssetMatch(common.ETHChain, ""), Equals, "")
+	c.Check(externalAssetMatch(common.BTCChain, "foo"), Equals, "foo")
 }

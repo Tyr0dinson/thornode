@@ -8,20 +8,21 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"gitlab.com/thorchain/thornode/v3/common/wasmpermissions"
+
 	sdkmath "cosmossdk.io/math"
 	"github.com/blang/semver"
 	tmhttp "github.com/cometbft/cometbft/rpc/client/http"
-	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/tx/signing"
-	authtx "github.com/cosmos/cosmos-sdk/x/auth/tx"
 	"github.com/rs/zerolog/log"
-	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/conversion"
+	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/conversion"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -434,6 +435,14 @@ func (qs queryServer) queryNetwork(ctx cosmos.Context, _ *types.QueryNetworkRequ
 		return nil, fmt.Errorf("fail to get active validators: %w", err)
 	}
 
+	_, availablePoolsRune, err := getAvailablePoolsRune(ctx, qs.mgr.Keeper())
+	if err != nil {
+		return nil, fmt.Errorf("fail to get available pools rune: %w", err)
+	}
+	vaultsLiquidityRune, err := getVaultsLiquidityRune(ctx, qs.mgr.Keeper())
+	if err != nil {
+		return nil, fmt.Errorf("fail to get vaults liquidity rune: %w", err)
+	}
 	effectiveSecurityBond := getEffectiveSecurityBond(nodeAccounts)
 
 	targetOutboundFeeSurplus := qs.mgr.Keeper().GetConfigInt64(ctx, constants.TargetOutboundFeeSurplusRune)
@@ -441,11 +450,16 @@ func (qs queryServer) queryNetwork(ctx cosmos.Context, _ *types.QueryNetworkRequ
 	minMultiplierBasisPoints := qs.mgr.Keeper().GetConfigInt64(ctx, constants.MinOutboundFeeMultiplierBasisPoints)
 	outboundFeeMultiplier := qs.mgr.gasMgr.CalcOutboundFeeMultiplier(ctx, cosmos.NewUint(uint64(targetOutboundFeeSurplus)), cosmos.NewUint(data.OutboundGasSpentRune), cosmos.NewUint(data.OutboundGasWithheldRune), cosmos.NewUint(uint64(maxMultiplierBasisPoints)), cosmos.NewUint(uint64(minMultiplierBasisPoints)))
 
+	assets := qs.mgr.Keeper().GetAnchors(ctx, common.TOR)
+	median := qs.mgr.Keeper().AnchorMedian(ctx, assets).QuoUint64(constants.DollarMulti)
+
 	result := types.QueryNetworkResponse{
 		// Due to using openapi. this will be displayed in alphabetical order,
 		// so its schema (and order here) should also be in alphabetical order.
 		BondRewardRune:        data.BondRewardRune.String(),
 		TotalBondUnits:        data.TotalBondUnits.String(),
+		AvailablePoolsRune:    availablePoolsRune.String(),
+		VaultsLiquidityRune:   vaultsLiquidityRune.String(),
 		EffectiveSecurityBond: effectiveSecurityBond.String(),
 		TotalReserve:          qs.mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName).String(),
 		VaultsMigrating:       vaultsMigrating,
@@ -457,7 +471,8 @@ func (qs queryServer) queryNetwork(ctx cosmos.Context, _ *types.QueryNetworkRequ
 		TnsRegisterFeeRune:    qs.mgr.Keeper().GetTHORNameRegisterFee(ctx).String(),
 		TnsFeePerBlockRune:    qs.mgr.Keeper().GetTHORNamePerBlockFee(ctx).String(),
 		RunePriceInTor:        dollarsPerRuneIgnoreHalt(ctx, qs.mgr.Keeper()).String(),
-		TorPriceInRune:        qs.mgr.Keeper().RunePerDollar(ctx).String(),
+		TorPriceInRune:        runePerDollarIgnoreHalt(ctx, qs.mgr.Keeper()).String(),
+		TorPriceHalted:        median.IsZero(),
 	}
 
 	return &result, nil
@@ -530,6 +545,7 @@ func (qs queryServer) queryInboundAddresses(ctx cosmos.Context, _ *types.QueryIn
 			GlobalTradingPaused:  isGlobalTradingPaused,
 			ChainTradingPaused:   isChainTradingPaused,
 			ChainLpActionsPaused: isChainLpPaused,
+			ObservedFeeRate:      cosmos.NewUint(networkFeeInfo.TransactionFeeRate).String(),
 			GasRate:              gasRate.String(),
 			GasRateUnits:         chain.GetGasUnits(),
 			OutboundTxSize:       cosmos.NewUint(networkFeeInfo.TransactionSize).String(),
@@ -598,6 +614,7 @@ func (qs queryServer) queryNode(ctx cosmos.Context, req *types.QueryNodeRequest)
 		RequestedToLeave:    nodeAcc.RequestedToLeave,
 		ForcedToLeave:       nodeAcc.ForcedToLeave,
 		LeaveHeight:         int64(nodeAcc.LeaveScore), // OpenAPI can only represent uint64 as int64
+		Maintenance:         nodeAcc.Maintenance,
 		IpAddress:           nodeAcc.IPAddress,
 		Version:             nodeAcc.GetVersion().String(),
 		CurrentAward:        cosmos.ZeroUint().String(), // Default display for if not overwritten.
@@ -646,14 +663,7 @@ func (qs queryServer) queryNode(ctx cosmos.Context, req *types.QueryNodeRequest)
 
 		totalEffectiveBond, bondHardCap := getTotalEffectiveBond(active)
 
-		// Note that unlike actual BondRewardRune distribution in manager_validator_current.go ,
-		// this estimate treats lastChurnHeight as the block_height of the first (oldest) Asgard vault,
-		// rather than the active_block_height of the youngest active node.
-		// As an example, note from the below URLs that these are 5293728 and 5293733 respectively in block 5336942.
-		// https://thornode.ninerealms.com/thorchain/vaults/asgard?height=5336942
-		// https://thornode.ninerealms.com/thorchain/nodes?height=5336942
-		// (Nodes .cxmy and .uy3a .)
-		lastChurnHeight := vaults[0].BlockHeight
+		lastChurnHeight := vaults[0].StatusSince
 
 		reward, err := getNodeCurrentRewards(ctx, qs.mgr, nodeAcc, lastChurnHeight, network.BondRewardRune, totalEffectiveBond, bondHardCap)
 		if err != nil {
@@ -756,7 +766,7 @@ func (qs queryServer) queryNodes(ctx cosmos.Context, _ *types.QueryNodesRequest)
 
 	totalEffectiveBond, bondHardCap := getTotalEffectiveBond(active)
 
-	lastChurnHeight := vaults[0].BlockHeight
+	lastChurnHeight := vaults[0].StatusSince
 	result := make([]*types.QueryNodeResponse, len(nodeAccounts))
 	for i, na := range nodeAccounts {
 		if na.RequestedToLeave && na.Bond.LTE(cosmos.NewUint(common.One)) {
@@ -794,6 +804,7 @@ func (qs queryServer) queryNodes(ctx cosmos.Context, _ *types.QueryNodesRequest)
 			RequestedToLeave:    na.RequestedToLeave,
 			ForcedToLeave:       na.ForcedToLeave,
 			LeaveHeight:         int64(na.LeaveScore), // OpenAPI can only represent uint64 as int64
+			Maintenance:         na.Maintenance,
 			IpAddress:           na.IPAddress,
 			Version:             na.GetVersion().String(),
 			CurrentAward:        cosmos.ZeroUint().String(), // Default display for if not overwritten.
@@ -1369,6 +1380,27 @@ func (qs queryServer) queryPool(ctx cosmos.Context, req *types.QueryPoolRequest)
 		dbps = cosmos.ZeroUint()
 	}
 
+	tradingHalted := qs.mgr.Keeper().IsGlobalTradingHalted(ctx)
+
+	l1Asset := pool.Asset.GetLayer1Asset()
+	chain := l1Asset.GetChain()
+
+	if !pool.IsAvailable() {
+		tradingHalted = true
+	}
+
+	if !tradingHalted && qs.mgr.Keeper().IsChainTradingHalted(ctx, chain) {
+		tradingHalted = true
+	}
+
+	if !tradingHalted && qs.mgr.Keeper().IsChainHalted(ctx, chain) {
+		tradingHalted = true
+	}
+
+	if !tradingHalted && qs.mgr.Keeper().IsRagnarok(ctx, []common.Asset{l1Asset}) {
+		tradingHalted = true
+	}
+
 	p := types.QueryPoolResponse{
 		Asset:               pool.Asset.String(),
 		ShortCode:           pool.Asset.ShortCode(),
@@ -1381,6 +1413,7 @@ func (qs queryServer) queryPool(ctx cosmos.Context, req *types.QueryPoolRequest)
 		PoolUnits:           pool.GetPoolUnits().String(),
 		LPUnits:             pool.LPUnits.String(),
 		SynthUnits:          pool.SynthUnits.String(),
+		TradingHalted:       tradingHalted,
 	}
 	p.SynthSupply = synthSupply.String()
 	p.SaversDepth = saversDepth.String()
@@ -1404,6 +1437,10 @@ func (qs queryServer) queryPool(ctx cosmos.Context, req *types.QueryPoolRequest)
 
 func (qs queryServer) queryPools(ctx cosmos.Context, _ *types.QueryPoolsRequest) (*types.QueryPoolsResponse, error) {
 	dollarsPerRune := dollarsPerRuneIgnoreHalt(ctx, qs.mgr.Keeper())
+
+	isGlobalTradingHalted := qs.mgr.Keeper().IsGlobalTradingHalted(ctx)
+	isChainOrChainTradingHalted := map[common.Chain]bool{}
+
 	pools := make([]*types.QueryPoolResponse, 0)
 	iterator := qs.mgr.Keeper().GetPoolIterator(ctx)
 	for ; iterator.Valid(); iterator.Next() {
@@ -1469,6 +1506,31 @@ func (qs queryServer) queryPools(ctx cosmos.Context, _ *types.QueryPoolsRequest)
 			dbps = cosmos.ZeroUint()
 		}
 
+		tradingHalted := isGlobalTradingHalted
+
+		l1Asset := pool.Asset.GetLayer1Asset()
+		chain := l1Asset.GetChain()
+
+		_, found := isChainOrChainTradingHalted[chain]
+		if !found {
+			isChainHalted := qs.mgr.Keeper().IsChainHalted(ctx, chain)
+			isChainTradingHalted := qs.mgr.Keeper().IsChainTradingHalted(ctx, chain)
+
+			isChainOrChainTradingHalted[chain] = isChainHalted || isChainTradingHalted
+		}
+
+		if !tradingHalted {
+			tradingHalted = isChainOrChainTradingHalted[chain]
+		}
+
+		if !pool.IsAvailable() {
+			tradingHalted = true
+		}
+
+		if qs.mgr.Keeper().IsRagnarok(ctx, []common.Asset{l1Asset}) {
+			tradingHalted = true
+		}
+
 		p := types.QueryPoolResponse{
 			Asset:               pool.Asset.String(),
 			ShortCode:           pool.Asset.ShortCode(),
@@ -1481,6 +1543,7 @@ func (qs queryServer) queryPools(ctx cosmos.Context, _ *types.QueryPoolsRequest)
 			PoolUnits:           pool.GetPoolUnits().String(),
 			LPUnits:             pool.LPUnits.String(),
 			SynthUnits:          pool.SynthUnits.String(),
+			TradingHalted:       tradingHalted,
 		}
 
 		p.SynthSupply = synthSupply.String()
@@ -1898,7 +1961,7 @@ func checkPending(ctx cosmos.Context, keeper keeper.Keeper, voter ObservedTxVote
 		return
 	}
 
-	pending = keeper.HasSwapQueueItem(ctx, voter.TxID, 0) || keeper.HasOrderBookItem(ctx, voter.TxID)
+	pending = keeper.HasSwapQueueItem(ctx, voter.TxID, 0) || keeper.HasAdvSwapQueueItem(ctx, voter.TxID)
 
 	// Only look for streaming information when a swap is pending.
 	if pending {
@@ -1912,20 +1975,20 @@ func checkPending(ctx cosmos.Context, keeper keeper.Keeper, voter ObservedTxVote
 
 	memo, err := ParseMemoWithTHORNames(ctx, keeper, voter.Tx.Tx.Memo)
 	if err != nil {
-		// If unable to parse, assume not a (valid) swap or limit order memo.
+		// If unable to parse, assume not a (valid) swap or limit swap memo.
 		return
 	}
 
 	memoType := memo.GetType()
 	// If the memo asset is a synth, as with Savers add liquidity or withdraw, a swap is assumed to be involved.
-	if memoType == TxSwap || memoType == TxLimitOrder || memo.GetAsset().IsSyntheticAsset() {
+	if memoType == TxSwap || memoType == TxLimitSwap || memo.GetAsset().IsSyntheticAsset() {
 		isSwap = true
 		// Only check the KVStore when the inbound transaction has already been finalised
 		// and when there haven't been any Actions planned.
 		// This will also check the KVStore when an inbound transaction has no output,
 		// such as the output being not enough to cover a fee.
 		if voter.FinalisedHeight != 0 && len(voter.Actions) == 0 {
-			// Use of Swap Queue or Order Book depends on Mimir key EnableOrderBooks rather than memo type, so check both.
+			// Use of Swap Queue or Adv Swap Queue depends on Mimir key AdvSwapQueueBooks rather than memo type, so check both.
 			isPending = pending
 		}
 	}
@@ -1935,7 +1998,7 @@ func checkPending(ctx cosmos.Context, keeper keeper.Keeper, voter ObservedTxVote
 
 // Get the largest number of signers for a not-final (pre-confirmation-counting) and final Txs respectively.
 func countSigners(voter ObservedTxVoter) (int64, int64) {
-	var notFinalCount, finalCount int64
+	var notFinalCount, finalCount int
 	for i, refTx := range voter.Txs {
 		signersMap := make(map[string]bool)
 		final := refTx.IsFinal()
@@ -1957,13 +2020,13 @@ func countSigners(voter ObservedTxVoter) (int64, int64) {
 				signersMap[signer.String()] = true
 			}
 		}
-		if final && int64(len(signersMap)) > finalCount {
-			finalCount = int64(len(signersMap))
-		} else if int64(len(signersMap)) > notFinalCount {
-			notFinalCount = int64(len(signersMap))
+		if final && len(signersMap) > finalCount {
+			finalCount = len(signersMap)
+		} else if !final && len(signersMap) > notFinalCount {
+			notFinalCount = len(signersMap)
 		}
 	}
-	return notFinalCount, finalCount
+	return int64(notFinalCount), int64(finalCount)
 }
 
 // Call newTxStagesResponse from both queryTxStatus (which includes the stages) and queryTxStages.
@@ -2073,7 +2136,7 @@ func newTxStagesResponse(ctx cosmos.Context, voter ObservedTxVoter, isSwap, isPe
 	var outSigned types.OutboundSignedStage
 
 	// Set the Completed state first.
-	outSigned.Completed = (voter.Tx.Status != types.Status_incomplete)
+	outSigned.Completed = (voter.Tx.Status != common.Status_incomplete)
 
 	// Only fill in other fields if not Completed.
 	if !outSigned.Completed {
@@ -2179,7 +2242,7 @@ func (qs queryServer) queryTx(ctx cosmos.Context, req *types.QueryTxRequest) (*t
 	}
 
 	result := types.QueryTxResponse{
-		ObservedTx:      castObservedTx(voter.GetTx(nodeAccounts)),
+		ObservedTx:      castObservedTx(*voter.GetTx(nodeAccounts)),
 		ConsensusHeight: voter.Height,
 		FinalisedHeight: voter.FinalisedHeight,
 		OutboundHeight:  voter.OutboundHeight,
@@ -2253,7 +2316,7 @@ func (qs queryServer) queryKeygen(ctx cosmos.Context, req *types.QueryKeygenRequ
 	}, nil
 }
 
-func (qs queryServer) queryKeysign(ctx cosmos.Context, heightStr string, pubKey string) (*types.QueryKeysignResponse, error) {
+func (qs queryServer) queryKeysign(ctx cosmos.Context, heightStr, pubKey string) (*types.QueryKeysignResponse, error) {
 	height, err := extractBlockHeight(ctx, heightStr)
 	if err != nil {
 		return nil, err
@@ -2330,7 +2393,7 @@ func (qs queryServer) queryQueue(ctx cosmos.Context, _ *types.QueryQueueRequest)
 		query.Swap++
 	}
 
-	iter2 := qs.mgr.Keeper().GetOrderBookItemIterator(ctx)
+	iter2 := qs.mgr.Keeper().GetAdvSwapQueueItemIterator(ctx)
 	defer iter2.Close()
 	for ; iter2.Valid(); iter2.Next() {
 		var msg MsgSwap
@@ -3037,9 +3100,12 @@ func (qs queryServer) queryInvariant(ctx cosmos.Context, req *types.QueryInvaria
 	return nil, fmt.Errorf("invariant not registered: %s", req.Path)
 }
 
-func (qs queryServer) queryBlock(ctx cosmos.Context, _ *types.QueryBlockRequest) (*types.QueryBlockResponse, error) {
+func (qs queryServer) queryBlock(ctx cosmos.Context, req *types.QueryBlockRequest) (*types.QueryBlockResponse, error) {
 	initTendermintOnce.Do(initTendermint)
 	height := ctx.BlockHeight()
+	if parsed, err := strconv.ParseInt(req.Height, 10, 64); err == nil {
+		height = parsed
+	}
 
 	// get the block and results from tendermint rpc
 	block, err := tendermintClient.Block(ctx.Context(), &height)
@@ -3061,55 +3127,62 @@ func (qs queryServer) queryBlock(ctx cosmos.Context, _ *types.QueryBlockRequest)
 		},
 		Header: &types.BlockResponseHeader{
 			Version: &types.BlockResponseHeaderVersion{
-				Block: strconv.FormatUint(block.Block.Header.Version.Block, 10),
-				App:   strconv.FormatUint(block.Block.Header.Version.App, 10),
+				Block: strconv.FormatUint(block.Block.Version.Block, 10),
+				App:   strconv.FormatUint(block.Block.Version.App, 10),
 			},
-			ChainId: block.Block.Header.ChainID,
-			Height:  block.Block.Header.Height,
-			Time:    block.Block.Header.Time.Format(time.RFC3339Nano),
+			ChainId: block.Block.ChainID,
+			Height:  block.Block.Height,
+			Time:    block.Block.Time.Format(time.RFC3339Nano),
 			LastBlockId: &types.BlockResponseId{
-				Hash: block.Block.Header.LastBlockID.Hash.String(),
+				Hash: block.Block.LastBlockID.Hash.String(),
 				Parts: &types.BlockResponseIdParts{
-					Total: int64(block.Block.Header.LastBlockID.PartSetHeader.Total),
-					Hash:  block.Block.Header.LastBlockID.PartSetHeader.Hash.String(),
+					Total: int64(block.Block.LastBlockID.PartSetHeader.Total),
+					Hash:  block.Block.LastBlockID.PartSetHeader.Hash.String(),
 				},
 			},
-			LastCommitHash:     block.Block.Header.LastCommitHash.String(),
-			DataHash:           block.Block.Header.DataHash.String(),
-			ValidatorsHash:     block.Block.Header.ValidatorsHash.String(),
-			NextValidatorsHash: block.Block.Header.NextValidatorsHash.String(),
-			ConsensusHash:      block.Block.Header.ConsensusHash.String(),
-			AppHash:            block.Block.Header.AppHash.String(),
-			LastResultsHash:    block.Block.Header.LastResultsHash.String(),
-			EvidenceHash:       block.Block.Header.EvidenceHash.String(),
-			ProposerAddress:    block.Block.Header.ProposerAddress.String(),
+			LastCommitHash:     block.Block.LastCommitHash.String(),
+			DataHash:           block.Block.DataHash.String(),
+			ValidatorsHash:     block.Block.ValidatorsHash.String(),
+			NextValidatorsHash: block.Block.NextValidatorsHash.String(),
+			ConsensusHash:      block.Block.ConsensusHash.String(),
+			AppHash:            block.Block.AppHash.String(),
+			LastResultsHash:    block.Block.LastResultsHash.String(),
+			EvidenceHash:       block.Block.EvidenceHash.String(),
+			ProposerAddress:    block.Block.ProposerAddress.String(),
 		},
 		Txs: make([]*types.QueryBlockTx, len(block.Block.Txs)),
 	}
 
 	// parse the events
 	for _, event := range results.FinalizeBlockEvents {
+		foundMode := false
 		for _, attr := range event.Attributes {
 			if attr.Key == "mode" {
 				if attr.Value == "BeginBlock" {
 					res.BeginBlockEvents = append(res.BeginBlockEvents, blockEvent(sdk.Event(event)))
+					foundMode = true
 				}
 				if attr.Value == "EndBlock" {
 					res.EndBlockEvents = append(res.EndBlockEvents, blockEvent(sdk.Event(event)))
+					foundMode = true
 				}
 				continue
 			}
+		}
+		if !foundMode {
+			res.FinalizeBlockEvents = append(res.FinalizeBlockEvents, blockEvent(sdk.Event(event)))
 		}
 	}
 
 	for i, tx := range block.Block.Txs {
 		// decode the protobuf and encode to json
-		dtx, err := authtx.DefaultTxDecoder(qs.mgr.cdc.(*codec.ProtoCodec))(tx)
+
+		dtx, err := qs.txConfig.TxDecoder()(tx)
 		if err != nil {
 			return nil, fmt.Errorf("fail to decode tx: %w", err)
 		}
 
-		etx, err := authtx.DefaultJSONTxEncoder(qs.mgr.cdc.(*codec.ProtoCodec))(dtx)
+		etx, err := qs.txConfig.TxJSONEncoder()(dtx)
 		if err != nil {
 			return nil, fmt.Errorf("fail to encode tx: %w", err)
 		}
@@ -3151,24 +3224,27 @@ func (qs queryServer) queryBlock(ctx cosmos.Context, _ *types.QueryBlockRequest)
 
 func castTxOutItem(toi TxOutItem, height int64) *types.QueryTxOutItem {
 	return &types.QueryTxOutItem{
-		Chain:       toi.Chain.String(),
-		ToAddress:   toi.ToAddress.String(),
-		VaultPubKey: toi.VaultPubKey.String(),
-		Coin:        &toi.Coin,
-		Memo:        toi.Memo,
-		MaxGas:      toi.MaxGas,
-		GasRate:     toi.GasRate,
-		InHash:      toi.InHash.String(),
-		OutHash:     toi.OutHash.String(),
-		Height:      height, // Omitted if 0, for use in openapi.TxDetailsResponse
-		CloutSpent:  toi.CloutSpent.String(),
+		Height:                height, // Omitted if 0, for use in openapi.TxDetailsResponse
+		VaultPubKey:           toi.VaultPubKey.String(),
+		InHash:                toi.InHash.String(),
+		OutHash:               toi.OutHash.String(),
+		Chain:                 toi.Chain.String(),
+		ToAddress:             toi.ToAddress.String(),
+		Coin:                  &toi.Coin,
+		MaxGas:                toi.MaxGas,
+		GasRate:               toi.GasRate,
+		Memo:                  toi.Memo,
+		Aggregator:            toi.Aggregator,
+		AggregatorTargetAsset: toi.AggregatorTargetAsset,
+		AggregatorTargetLimit: toi.AggregatorTargetLimit.String(),
+		CloutSpent:            toi.CloutSpent.String(),
 	}
 }
 
 func castObservedTx(observedTx ObservedTx) types.QueryObservedTx {
 	// Only display the Status if it is "done", not if "incomplete".
 	status := ""
-	if observedTx.Status != types.Status_incomplete {
+	if observedTx.Status != common.Status_incomplete {
 		status = observedTx.Status.String()
 	}
 	return types.QueryObservedTx{
@@ -3200,32 +3276,6 @@ func castVaultRouters(chainContracts []ChainContract) []*types.VaultRouter {
 		}
 	}
 	return routers
-}
-
-// TODO: Migrate callers to use simulate instead.
-func simulateInternal(ctx cosmos.Context, mgr *Mgrs, msg sdk.Msg) (sdk.Events, error) {
-	// validate
-	m, ok := msg.(sdk.HasValidateBasic)
-	if !ok {
-		return nil, fmt.Errorf("message doesn't support validation")
-	}
-
-	err := m.ValidateBasic()
-	if err != nil {
-		return nil, fmt.Errorf("failed validate: %w", err)
-	}
-
-	// intercept events and avoid modifying state
-	cms := ctx.MultiStore().CacheMultiStore() // never call cms.Write()
-	em := cosmos.NewEventManager()
-	ctx = ctx.WithMultiStore(cms).WithEventManager(em)
-
-	// disable logging
-	ctx = ctx.WithLogger(nullLogger)
-
-	// simulate the message handler
-	_, err = NewInternalHandler(mgr)(ctx, msg)
-	return em.Events(), err
 }
 
 func blockEvent(e sdk.Event) *types.BlockEvent {
@@ -3266,6 +3316,8 @@ func simulate(ctx cosmos.Context, mgr Manager, msg sdk.Msg) (sdk.Events, error) 
 		m.Signer = nodeAccounts[0].NodeAddress
 	case *MsgLoanRepayment:
 		m.Signer = nodeAccounts[0].NodeAddress
+	case *MsgSwap:
+		m.Signer = nodeAccounts[0].NodeAddress
 	}
 
 	// set random txid
@@ -3282,13 +3334,15 @@ func simulate(ctx cosmos.Context, mgr Manager, msg sdk.Msg) (sdk.Events, error) 
 		return nil, fmt.Errorf("failed to validate message: %w", err)
 	}
 
+	// TODO: evaluate if this CacheMultiStore is still needed given
+	//   that the querier is called with a CacheContext.
 	// intercept events and avoid modifying state
 	cms := ctx.MultiStore().CacheMultiStore() // never call cms.Write()
 	em := cosmos.NewEventManager()
 	ctx = ctx.WithMultiStore(cms).WithEventManager(em)
 
 	// disable logging
-	// ctx = ctx.WithLogger(nullLogger)
+	ctx = ctx.WithLogger(nullLogger)
 
 	// reset the swap queue
 	iter := mgr.Keeper().GetSwapQueueIterator(ctx)
@@ -3310,8 +3364,8 @@ func simulate(ctx cosmos.Context, mgr Manager, msg sdk.Msg) (sdk.Events, error) 
 	}
 
 	// simulate end block, loop it until the swap queue is empty
-	var count int64
-	for count < 1000 {
+	queueEmpty := false
+	for count := int64(0); !queueEmpty && count < 1000; count += 1 {
 		err = mgr.SwapQ().EndBlock(ctx.WithBlockHeight(ctx.BlockHeight()+count), mgr)
 		if err != nil {
 			return nil, fmt.Errorf("failed to simulate end block: %w", err)
@@ -3321,20 +3375,22 @@ func simulate(ctx cosmos.Context, mgr Manager, msg sdk.Msg) (sdk.Events, error) 
 			_ = mgr.Keeper().SetPool(ctx, pool)
 		}
 
-		count += 1
-		queueEmpty := true
 		iter = mgr.Keeper().GetSwapQueueIterator(ctx)
-		for ; iter.Valid(); iter.Next() {
-			queueEmpty = false
-			break
-		}
+		queueEmpty = !iter.Valid()
 		iter.Close()
-		if queueEmpty {
-			break
-		}
 	}
 
 	return em.Events(), nil
+}
+
+// runePerDollarIgnoreHalt mirrors keeper.RunePerDollar, ignoring halts by using
+// dollarsPerRuneIgnoreHalt to return the last known price instead of "0"
+func runePerDollarIgnoreHalt(ctx cosmos.Context, k keeper.Keeper) cosmos.Uint {
+	runePerDollar := dollarsPerRuneIgnoreHalt(ctx, k)
+
+	one := cosmos.NewUint(common.One)
+
+	return common.GetUncappedShare(one, runePerDollar, one)
 }
 
 // dollarsPerRuneIgnoreHalt mirrors keeper.DollarsPerRune, but ignoring halts if all
@@ -3379,4 +3435,116 @@ func dollarsPerRuneIgnoreHalt(ctx cosmos.Context, k keeper.Keeper) cosmos.Uint {
 		}
 	}
 	return common.GetMedianUint(p).QuoUint64(constants.DollarMulti)
+}
+
+// queryTCYStakers
+func (qs queryServer) queryTCYStakers(ctx cosmos.Context, req *types.QueryTCYStakersRequest) (*types.QueryTCYStakersResponse, error) {
+	var stakers []*types.QueryTCYStakerResponse
+	tcyStakers, err := qs.mgr.Keeper().ListTCYStakers(ctx)
+	if err != nil {
+		return &types.QueryTCYStakersResponse{}, err
+	}
+	for _, staker := range tcyStakers {
+		stakers = append(stakers, &types.QueryTCYStakerResponse{
+			Address: staker.Address.String(),
+			Amount:  staker.Amount.String(),
+		})
+	}
+	return &types.QueryTCYStakersResponse{TcyStakers: stakers}, nil
+}
+
+// queryTCYStaker
+func (qs queryServer) queryTCYStaker(ctx cosmos.Context, req *types.QueryTCYStakerRequest) (*types.QueryTCYStakerResponse, error) {
+	addr, err := common.NewAddress(req.Address)
+	if err != nil {
+		ctx.Logger().Error("fail to get parse address", "error", err)
+		return nil, fmt.Errorf("fail to parse address: %w", err)
+	}
+	staker, err := qs.mgr.Keeper().GetTCYStaker(ctx, addr)
+	if err != nil {
+		ctx.Logger().Error("fail to get tcy staker", "error", err)
+		return nil, fmt.Errorf("fail to tcy staker: %w", err)
+	}
+
+	stakerRes := types.QueryTCYStakerResponse{
+		Address: staker.Address.String(),
+		Amount:  staker.Amount.String(),
+	}
+
+	return &stakerRes, nil
+}
+
+// queryTCYClaimers
+func (qs queryServer) queryTCYClaimers(ctx cosmos.Context, req *types.QueryTCYClaimersRequest) (*types.QueryTCYClaimersResponse, error) {
+	var claimers []*types.QueryTCYClaimer
+	iterator := qs.mgr.Keeper().GetTCYClaimerIterator(ctx)
+	defer iterator.Close()
+	for ; iterator.Valid(); iterator.Next() {
+		var claimer TCYClaimer
+		qs.mgr.Keeper().Cdc().MustUnmarshal(iterator.Value(), &claimer)
+
+		claimers = append(claimers, &types.QueryTCYClaimer{
+			Asset:     claimer.Asset.String(),
+			L1Address: claimer.L1Address.String(),
+			Amount:    claimer.Amount.String(),
+		})
+	}
+	return &types.QueryTCYClaimersResponse{TcyClaimers: claimers}, nil
+}
+
+// queryTCYClaimer
+func (qs queryServer) queryTCYClaimer(ctx cosmos.Context, req *types.QueryTCYClaimerRequest) (*types.QueryTCYClaimerResponse, error) {
+	addr, err := common.NewAddress(req.Address)
+	if err != nil {
+		ctx.Logger().Error("fail to get parse address", "error", err)
+		return nil, fmt.Errorf("fail to parse address: %w", err)
+	}
+	addressClaims, err := qs.mgr.Keeper().ListTCYClaimersFromL1Address(ctx, addr)
+	if err != nil {
+		ctx.Logger().Error("fail to get tcy claimer", "error", err)
+		return nil, fmt.Errorf("fail to tcy claimer: %w", err)
+	}
+
+	var claimsRes []*types.QueryTCYClaimer
+	for _, claim := range addressClaims {
+		claimsRes = append(claimsRes, &types.QueryTCYClaimer{
+			Asset:     claim.Asset.String(),
+			L1Address: claim.L1Address.String(),
+			Amount:    claim.Amount.String(),
+		})
+	}
+
+	return &types.QueryTCYClaimerResponse{TcyClaimer: claimsRes}, nil
+}
+
+// queryCodes
+func (qs queryServer) queryCodes(_ cosmos.Context, _ *types.QueryCodesRequest) (*types.QueryCodesResponse, error) {
+	var codes []*types.QueryCodesCode
+
+	permissionsRaw := wasmpermissions.GetWasmPermissions()
+	// analyze-ignore(map-iteration)
+	for code, permission := range permissionsRaw.Permissions {
+		deployers := []string{}
+		// analyze-ignore(map-iteration)
+		for deployer, allowed := range permission.Deployers {
+			if !allowed {
+				continue
+			}
+			deployers = append(deployers, deployer)
+		}
+
+		sort.Strings(deployers)
+
+		codes = append(codes, &types.QueryCodesCode{
+			Code:      code,
+			Deployers: deployers,
+			Origin:    permission.Origin,
+		})
+	}
+
+	sort.Slice(codes, func(i, j int) bool {
+		return codes[i].Code < codes[j].Code
+	})
+
+	return &types.QueryCodesResponse{Codes: codes}, nil
 }

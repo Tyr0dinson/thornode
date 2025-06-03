@@ -1,8 +1,11 @@
+//go:build !mainnet && !stagenet
+// +build !mainnet,!stagenet
+
 package thorchain
 
 import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"gitlab.com/thorchain/thornode/v3/common"
+
 	v2 "gitlab.com/thorchain/thornode/v3/x/thorchain/migrations/v2"
 )
 
@@ -29,21 +32,20 @@ func (m Migrator) Migrate1to2(ctx sdk.Context) error {
 
 // Migrate2to3 migrates from version 2 to 3.
 func (m Migrator) Migrate2to3(ctx sdk.Context) error {
-	// Loads the manager for this migration (we are in the x/upgrade's preblock)
-	// Note, we do not require the manager loaded for this migration, but it is okay
-	// to load it earlier and this is the pattern for migrations to follow.
-	if err := m.mgr.LoadManagerIfNecessary(ctx); err != nil {
-		return err
-	}
+	return nil
+}
 
-	// TX with outbound that was scheduled in the past
-	txId, err := common.NewTxID("A9AF3ED203079BB246CEE0ACD837FBA024BC846784DE488D5BE70044D8877C52")
-	if err != nil {
-		return err
-	}
+// Migrate3to4 migrates from version 3 to 4.
+func (m Migrator) Migrate3to4(ctx sdk.Context) error {
+	return nil
+}
 
-	txIds := []common.TxID{txId}
-	requeueDanglingActions(ctx, m.mgr, txIds)
+// Migrate4to5 migrates from version 4 to 5.
+func (m Migrator) Migrate4to5(ctx sdk.Context) error {
+	return m.ClearObsoleteMimirs(ctx)
+}
 
+// Migrate5to6 migrates from version 5 to 6.
+func (m Migrator) Migrate5to6(ctx sdk.Context) error {
 	return nil
 }

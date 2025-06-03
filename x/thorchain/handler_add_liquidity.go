@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/telemetry"
 	"github.com/hashicorp/go-metrics"
 
@@ -50,16 +49,6 @@ func (h AddLiquidityHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Resu
 }
 
 func (h AddLiquidityHandler) validate(ctx cosmos.Context, msg MsgAddLiquidity) error {
-	version := h.mgr.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("3.0.0")):
-		return h.validateV3_0_0(ctx, msg)
-	default:
-		return errBadVersion
-	}
-}
-
-func (h AddLiquidityHandler) validateV3_0_0(ctx cosmos.Context, msg MsgAddLiquidity) error {
 	if !msg.Tx.ID.IsBlank() { // don't validate tx if internal txn
 		if err := msg.ValidateBasic(); err != nil {
 			ctx.Logger().Error(err.Error())
@@ -90,7 +79,7 @@ func (h AddLiquidityHandler) validateV3_0_0(ctx cosmos.Context, msg MsgAddLiquid
 	gasAsset := msg.Asset.GetLayer1Asset().GetChain().GetGasAsset()
 	// Even if a destination gas asset pool is empty, the first add liquidity has to be symmetrical,
 	// and so there is no need to check at this stage for whether the addition is of RUNE or Asset or with needsSwap.
-	if !msg.Asset.Equals(gasAsset) {
+	if !msg.Asset.Equals(gasAsset) && !msg.Asset.IsTCY() && !msg.Asset.IsRUJI() {
 		gasPool, err := h.mgr.Keeper().GetPool(ctx, gasAsset)
 		// Note that for a synthetic asset msg.Asset.Chain (unlike msg.Asset.GetChain())
 		// is intentionally used to be the external chain rather than THOR.
@@ -181,6 +170,9 @@ func (h AddLiquidityHandler) validateV3_0_0(ctx cosmos.Context, msg MsgAddLiquid
 	if h.mgr.Keeper().IsChainHalted(ctx, msg.Asset.Chain) || h.mgr.Keeper().IsLPPaused(ctx, msg.Asset.Chain) {
 		return fmt.Errorf("unable to add liquidity while chain has paused LP actions")
 	}
+	if h.mgr.Keeper().IsPoolDepositPaused(ctx, msg.Asset) {
+		return fmt.Errorf("unable to add liquidity, deposits are paused for asset (%s)", msg.Asset.String())
+	}
 
 	ensureLiquidityNoLargerThanBond := h.mgr.GetConstants().GetBoolValue(constants.StrictBondLiquidityRatio)
 	// if the pool is THORChain no need to check economic security
@@ -216,16 +208,6 @@ func (h AddLiquidityHandler) validateV3_0_0(ctx cosmos.Context, msg MsgAddLiquid
 }
 
 func (h AddLiquidityHandler) handle(ctx cosmos.Context, msg MsgAddLiquidity) error {
-	version := h.mgr.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("3.0.0")):
-		return h.handleV3_0_0(ctx, msg)
-	default:
-		return errBadVersion
-	}
-}
-
-func (h AddLiquidityHandler) handleV3_0_0(ctx cosmos.Context, msg MsgAddLiquidity) (errResult error) {
 	// check if we need to swap before adding asset
 	if h.needsSwap(msg) {
 		return h.swap(ctx, msg)
@@ -259,14 +241,12 @@ func (h AddLiquidityHandler) handleV3_0_0(ctx cosmos.Context, msg MsgAddLiquidit
 	// set the decimals once.
 	if pool.Decimals == 0 {
 		coin := msg.GetTx().Coins.GetCoin(pool.Asset)
-		if !coin.IsEmpty() {
-			if coin.Decimals > 0 {
-				pool.Decimals = coin.Decimals
-			}
-			ctx.Logger().Info("try update pool decimals", "asset", msg.Asset, "pool decimals", pool.Decimals)
+		if !coin.IsEmpty() && coin.Decimals > 0 {
+			pool.Decimals = coin.Decimals
 			if err = h.mgr.Keeper().SetPool(ctx, pool); err != nil {
 				return ErrInternal(err, "fail to save pool to key value store")
 			}
+			ctx.Logger().Info("update pool decimals", "asset", msg.Asset, "pool decimals", pool.Decimals)
 		}
 	}
 
@@ -364,7 +344,7 @@ func (h AddLiquidityHandler) swap(ctx cosmos.Context, msg MsgAddLiquidity) error
 		ssInterval = 0
 	}
 
-	swapMsg := NewMsgSwap(msg.Tx, msg.Asset, common.NoopAddress, cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, MarketOrder, 0, uint64(ssInterval), msg.Signer)
+	swapMsg := NewMsgSwap(msg.Tx, msg.Asset, common.NoopAddress, cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, MarketSwap, 0, uint64(ssInterval), msg.Signer)
 
 	// sanity check swap msg
 	handler := NewSwapHandler(h.mgr)

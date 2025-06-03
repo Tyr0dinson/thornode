@@ -7,11 +7,9 @@ import (
 	"fmt"
 	"math/big"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 
-	"github.com/blang/semver"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	ecommon "github.com/ethereum/go-ethereum/common"
@@ -56,28 +54,29 @@ const (
 
 // ETHScanner is a scanner that understand how to interact with ETH chain ,and scan block , parse smart contract etc
 type ETHScanner struct {
-	cfg                  config.BifrostBlockScannerConfiguration
-	logger               zerolog.Logger
-	db                   blockscanner.ScannerStorage
-	m                    *metrics.Metrics
-	errCounter           *prometheus.CounterVec
-	gasPriceChanged      bool
-	gasPrice             *big.Int
-	lastReportedGasPrice uint64
-	client               *ethclient.Client
-	blockMetaAccessor    evm.BlockMetaAccessor
-	globalErrataQueue    chan<- stypes.ErrataBlock
-	vaultABI             *abi.ABI
-	erc20ABI             *abi.ABI
-	tokens               *evm.LevelDBTokenMeta
-	bridge               thorclient.ThorchainBridge
-	pubkeyMgr            pubkeymanager.PubKeyValidator
-	eipSigner            etypes.Signer
-	currentBlockHeight   int64
-	gasCache             []*big.Int
-	solvencyReporter     SolvencyReporter
-	whitelistTokens      []tokenlist.ERC20Token
-	signerCacheManager   *signercache.CacheManager
+	cfg                   config.BifrostBlockScannerConfiguration
+	logger                zerolog.Logger
+	db                    blockscanner.ScannerStorage
+	m                     *metrics.Metrics
+	errCounter            *prometheus.CounterVec
+	gasPriceChanged       bool
+	gasPrice              *big.Int
+	lastReportedGasPrice  uint64
+	client                *ethclient.Client
+	blockMetaAccessor     evm.BlockMetaAccessor
+	globalErrataQueue     chan<- stypes.ErrataBlock
+	globalNetworkFeeQueue chan<- common.NetworkFee
+	vaultABI              *abi.ABI
+	erc20ABI              *abi.ABI
+	tokens                *evm.LevelDBTokenMeta
+	bridge                thorclient.ThorchainBridge
+	pubkeyMgr             pubkeymanager.PubKeyValidator
+	eipSigner             etypes.Signer
+	currentBlockHeight    int64
+	gasCache              []*big.Int
+	solvencyReporter      SolvencyReporter
+	whitelistTokens       []tokenlist.ERC20Token
+	signerCacheManager    *signercache.CacheManager
 }
 
 // NewETHScanner create a new instance of ETHScanner
@@ -135,11 +134,11 @@ func NewETHScanner(cfg config.BifrostBlockScannerConfiguration,
 		bridge:               bridge,
 		vaultABI:             vaultABI,
 		erc20ABI:             erc20ABI,
-		eipSigner:            etypes.NewLondonSigner(chainID),
+		eipSigner:            etypes.NewPragueSigner(chainID),
 		pubkeyMgr:            pubkeyMgr,
 		gasCache:             make([]*big.Int, 0),
 		solvencyReporter:     solvencyReporter,
-		whitelistTokens:      tokenlist.GetETHTokenList(semver.MustParse("9999.0.0")).Tokens,
+		whitelistTokens:      tokenlist.GetETHTokenList().Tokens,
 		signerCacheManager:   signerCacheManager,
 	}, nil
 }
@@ -165,6 +164,11 @@ func (e *ETHScanner) GetHeight() (int64, error) {
 		return -1, fmt.Errorf("fail to get block height: %w", err)
 	}
 	return int64(height), nil
+}
+
+// GetNetworkFee returns current chain network fee according to Bifrost.
+func (e *ETHScanner) GetNetworkFee() (transactionSize, transactionFeeRate uint64) {
+	return e.cfg.MaxGasLimit, e.lastReportedGasPrice
 }
 
 // FetchMemPool get tx from mempool
@@ -199,7 +203,6 @@ func (e *ETHScanner) FetchTxs(height, chainHeight int64) (stypes.TxIn, error) {
 	pruneHeight := height - e.cfg.MaxReorgRescanBlocks
 	if pruneHeight > 0 {
 		defer func() {
-			// trunk-ignore(golangci-lint/govet): shadow
 			if err := e.blockMetaAccessor.PruneBlockMeta(pruneHeight); err != nil {
 				e.logger.Err(err).Msgf("fail to prune block meta, height(%d)", pruneHeight)
 			}
@@ -211,20 +214,23 @@ func (e *ETHScanner) FetchTxs(height, chainHeight int64) (stypes.TxIn, error) {
 		return txIn, nil
 	}
 
-	// gas price to 1e8
+	// gas price to 1e8 from 1e18
 	gasPrice := e.GetGasPrice()
-	tcGasPrice := new(big.Int).Div(gasPrice, big.NewInt(common.One*100)).Uint64()
+	tcGasPrice := new(big.Int).Div(gasPrice, big.NewInt(1e10)).Uint64()
 	if tcGasPrice == 0 {
 		tcGasPrice = 1
 	}
 
 	// post to thorchain if there is a fee and it has changed
 	if gasPrice.Cmp(big.NewInt(0)) != 0 && tcGasPrice != e.lastReportedGasPrice {
-		if _, err = e.bridge.PostNetworkFee(height, common.ETHChain, e.cfg.MaxGasLimit, tcGasPrice); err != nil {
-			e.logger.Err(err).Msg("fail to post ETH chain single transfer fee to THORNode")
-		} else {
-			e.lastReportedGasPrice = tcGasPrice
+		e.globalNetworkFeeQueue <- common.NetworkFee{
+			Chain:           common.ETHChain,
+			Height:          height,
+			TransactionSize: e.cfg.MaxGasLimit,
+			TransactionRate: tcGasPrice,
 		}
+
+		e.lastReportedGasPrice = tcGasPrice
 	}
 
 	if e.solvencyReporter != nil {
@@ -300,12 +306,10 @@ func (e *ETHScanner) updateGasPriceFromCache() {
 func (e *ETHScanner) processBlock(block *etypes.Block) (stypes.TxIn, error) {
 	height := int64(block.NumberU64())
 	txIn := stypes.TxIn{
-		Chain:           common.ETHChain,
-		TxArray:         nil,
-		Filtered:        false,
-		MemPool:         false,
-		SentUnFinalised: false,
-		Finalised:       false,
+		Chain:    common.ETHChain,
+		TxArray:  nil,
+		Filtered: false,
+		MemPool:  false,
 	}
 
 	// update gas price
@@ -394,7 +398,7 @@ func (e *ETHScanner) extractTxs(block *etypes.Block) (stypes.TxIn, error) {
 		}
 		txInItem.BlockHeight = block.Number().Int64()
 		mu.Lock()
-		txInbound.TxArray = append(txInbound.TxArray, *txInItem)
+		txInbound.TxArray = append(txInbound.TxArray, txInItem)
 		mu.Unlock()
 		e.logger.Debug().Str("hash", tx.Hash().Hex()).Msgf("%s got %d tx", e.cfg.ChainID, 1)
 	}
@@ -411,12 +415,12 @@ func (e *ETHScanner) extractTxs(block *etypes.Block) (stypes.TxIn, error) {
 	}
 	wg.Wait()
 
-	if len(txInbound.TxArray) == 0 {
+	count := len(txInbound.TxArray)
+	if count == 0 {
 		e.logger.Info().Int64("block", int64(block.NumberU64())).Msg("no tx need to be processed in this block")
 		return stypes.TxIn{}, nil
 	}
-	txInbound.Count = strconv.Itoa(len(txInbound.TxArray))
-	e.logger.Debug().Int64("block", int64(block.NumberU64())).Msgf("there are %s tx in this block need to process", txInbound.Count)
+	e.logger.Debug().Int64("block", int64(block.NumberU64())).Msgf("there are %d tx in this block need to process", count)
 	return txInbound, nil
 }
 
@@ -638,9 +642,9 @@ func (e *ETHScanner) getDecimals(token string) (uint64, error) {
 	return defaultDecimals, fmt.Errorf("%s is %T fail to parse it", output[0], output[0])
 }
 
-// replace the . in symbol to *, and replace the - in symbol to #
-// because . and - had been reserved to use in THORChain symbol
-var symbolReplacer = strings.NewReplacer(".", "*", "-", "#", `\u0000`, "", "\u0000", "")
+// . and - had been reserved to use in THORChain symbol
+// and + similarly is not accepted by common package NewSymbol's isAlphaNumeric
+var symbolReplacer = strings.NewReplacer(".", "", "-", "", `\u0000`, "", "\u0000", "", "+", "")
 
 func sanitiseSymbol(symbol string) string {
 	return symbolReplacer.Replace(symbol)
@@ -680,7 +684,7 @@ func (e *ETHScanner) getSymbol(token string) (string, error) {
 func (e *ETHScanner) isToValidContractAddress(addr *ecommon.Address, includeWhiteList bool) bool {
 	// get the smart contract used by thornode
 	contractAddresses := e.pubkeyMgr.GetContracts(common.ETHChain)
-	if includeWhiteList {
+	if includeWhiteList || useWhitelistSmartContract {
 		contractAddresses = append(contractAddresses, whitelistSmartContractAddress...)
 	}
 	// combine the whitelist smart contract address
@@ -856,11 +860,13 @@ func (e *ETHScanner) getTxInFromTransaction(tx *etypes.Transaction, receipt *ety
 			// When the Sender and To is the same then there's no balance chance whatever the Coins,
 			// and for Tx-received Valid() a non-zero Amount is needed to observe
 			// the transaction fees (THORChain gas cost) of unstuck.go's cancel transactions.
-			observableAmount := common.ETHChain.DustThreshold().Add(cosmos.OneUint()) // Adding 1 for if DustThreshold is 0.
+			observableAmount := common.ETHChain.DustThreshold()
 			txInItem.Coins = common.NewCoins(common.NewCoin(common.ETHAsset, observableAmount))
 
 			// remove the outbound from signer cache so it can be re-attempted
-			e.signerCacheManager.RemoveSigned(tx.Hash().Hex())
+			if e.signerCacheManager != nil {
+				e.signerCacheManager.RemoveSigned(tx.Hash().Hex())
+			}
 		} else {
 			e.logger.Debug().Msgf("there is no coin in this tx, ignore, %+v", txInItem)
 			return nil, nil

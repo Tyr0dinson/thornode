@@ -46,28 +46,12 @@ func (h LeaveHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, err
 }
 
 func (h LeaveHandler) validate(ctx cosmos.Context, msg MsgLeave) error {
-	version := h.mgr.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("3.0.0")):
-		return h.validateV3_0_0(ctx, msg)
-	default:
-		return errBadVersion
-	}
-}
-
-func (h LeaveHandler) validateV3_0_0(ctx cosmos.Context, msg MsgLeave) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}
 
-	jail, err := h.mgr.Keeper().GetNodeAccountJail(ctx, msg.NodeAddress)
-	if err != nil {
-		// ignore this error and carry on. Don't want a jail bug causing node
-		// accounts to not be able to get their funds out
-		ctx.Logger().Error("fail to get node account jail", "error", err)
-	}
-	if jail.IsJailed(ctx) {
-		return fmt.Errorf("failed to leave due to jail status: (release height %d) %s", jail.ReleaseHeight, jail.Reason)
+	if !msg.Tx.Coins.IsEmpty() {
+		return cosmos.ErrUnknownRequest("leave message cannot have a non-zero coin amount")
 	}
 
 	return nil

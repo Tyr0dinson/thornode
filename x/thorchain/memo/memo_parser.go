@@ -1,6 +1,7 @@
 package thorchain
 
 import (
+	"encoding/base64"
 	"fmt"
 	"math/big"
 	"strconv"
@@ -75,7 +76,7 @@ func (p *parser) parse() (mem Memo, err error) {
 		return p.ParseRunePoolDepositMemo()
 	case TxRunePoolWithdraw:
 		return p.ParseRunePoolWithdrawMemo()
-	case TxSwap, TxLimitOrder:
+	case TxSwap, TxLimitSwap:
 		return p.ParseSwapMemo()
 	case TxOutbound:
 		return p.ParseOutboundMemo()
@@ -109,6 +110,18 @@ func (p *parser) parse() (mem Memo, err error) {
 		return p.ParseSecuredAssetDeposit()
 	case TxSecuredAssetWithdraw:
 		return p.ParseSecuredAssetWithdraw()
+	case TxExec:
+		return p.ParseExecMemo()
+	case TxSwitch:
+		return p.ParseSwitch()
+	case TxTCYClaim:
+		return p.ParseTCYClaimMemo()
+	case TxTCYStake:
+		return p.ParseTCYStakeMemo()
+	case TxTCYUnstake:
+		return p.ParseTCYUnstakeMemo()
+	case TxMaint:
+		return p.ParseMaintMemo()
 
 	default:
 		return EmptyMemo, fmt.Errorf("TxType not supported: %s", p.getType().String())
@@ -235,10 +248,27 @@ func (p *parser) getAddress(idx int, required bool, def common.Address) common.A
 	return value
 }
 
+func (p *parser) getThorAddress(idx int, required bool, def common.Address) common.Address {
+	p.incRequired(required)
+	value, err := common.NewAddress(p.get(idx))
+	if err != nil {
+		if required || p.get(idx) != "" {
+			p.addErr(fmt.Errorf("cannot parse '%s' as an Address: %w", p.get(idx), err))
+		}
+		return def
+	}
+
+	if !value.IsChain(common.THORChain) && required {
+		p.addErr(fmt.Errorf("cannot parse '%s' as a THOR Address: %w", p.get(idx), err))
+		return def
+	}
+	return value
+}
+
 func (p *parser) getAddressWithKeeper(idx int, required bool, def common.Address, chain common.Chain) common.Address {
 	p.incRequired(required)
 	if p.keeper == nil {
-		return p.getAddress(2, required, common.NoAddress)
+		return p.getAddress(idx, required, common.NoAddress)
 	}
 	addr, err := FetchAddress(p.ctx, p.keeper, p.get(idx), chain)
 	if err != nil {
@@ -377,4 +407,16 @@ func (p *parser) getTHORName(idx int, required bool, def types.THORName, subInde
 		return tn
 	}
 	return def
+}
+
+func (p *parser) getBase64Bytes(idx int, required bool, def []byte) []byte {
+	p.incRequired(required)
+	value, err := base64.StdEncoding.DecodeString(p.get(idx))
+	if err != nil {
+		if required || p.get(idx) != "" {
+			p.addErr(fmt.Errorf("cannot parse '%s' as a base64 string: %w", p.get(idx), err))
+		}
+		return def
+	}
+	return value
 }

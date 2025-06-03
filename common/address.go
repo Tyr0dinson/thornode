@@ -5,9 +5,11 @@ import (
 	"regexp"
 	"strings"
 
+	xrp "github.com/Peersyst/xrpl-go/address-codec"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcutil"
 	"github.com/btcsuite/btcutil/bech32"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	dogchaincfg "github.com/eager7/dogd/chaincfg"
 	"github.com/eager7/dogutil"
 	eth "github.com/ethereum/go-ethereum/common"
@@ -22,14 +24,15 @@ import (
 type Address string
 
 const (
-	NoAddress      = Address("")
-	NoopAddress    = Address("noop")
-	EVMNullAddress = Address("0x0000000000000000000000000000000000000000")
+	NoAddress       = Address("")
+	NoopAddress     = Address("noop")
+	EVMNullAddress  = Address("0x0000000000000000000000000000000000000000")
+	GaiaZeroAddress = Address("cosmos100000000000000000000000000000000708mjz")
 )
 
 var alphaNumRegex = regexp.MustCompile("^[:A-Za-z0-9]*$")
 
-// NewAddress create a new Address. Supports ETH/bech2/BTC/LTC/BCH/DOGE.
+// NewAddress create a new Address. Supports ETH/bech2/BTC/LTC/BCH/DOGE/XRP.
 func NewAddress(address string) (Address, error) {
 	if len(address) == 0 {
 		return NoAddress, nil
@@ -50,8 +53,23 @@ func NewAddress(address string) (Address, error) {
 		return Address(address), nil
 	}
 
+	// Check is xrp address
+	if IsValidXRPAddress(address) {
+		return Address(address), nil
+	}
+
 	// Network-specific (with build tags) address checking.
 	return newAddress(address)
+}
+
+func IsValidXRPAddress(address string) bool {
+	// checks checksum and returns prefix (1 byte, 0x00) + account id (20 bytes)
+	decoded, err := xrp.Base58CheckDecode(address)
+	if err != nil {
+		return false
+	}
+
+	return len(decoded) == 21 && decoded[0] == 0x00
 }
 
 // IsValidBCHAddress determinate whether the address is a valid new BCH address format
@@ -130,6 +148,8 @@ func (addr Address) IsChain(chain Chain) bool {
 		return strings.HasPrefix(addr.String(), "0x")
 	}
 	switch chain {
+	case XRPChain:
+		return IsValidXRPAddress(addr.String())
 	case GAIAChain:
 		// Note: Gaia does not use a special prefix for testnet
 		prefix, _, _ := bech32.Decode(addr.String())
@@ -211,7 +231,7 @@ func (addr Address) IsChain(chain Chain) bool {
 // Note that this will always return ETHChain for an AVAXChain address,
 // so perhaps only use it when determining a network (e.g. mainnet/testnet).
 func (addr Address) GetChain() Chain {
-	for _, chain := range []Chain{ETHChain, THORChain, BTCChain, LTCChain, BCHChain, DOGEChain, GAIAChain, AVAXChain} {
+	for _, chain := range []Chain{ETHChain, THORChain, BTCChain, LTCChain, BCHChain, DOGEChain, GAIAChain, AVAXChain, XRPChain} {
 		if addr.IsChain(chain) {
 			return chain
 		}
@@ -339,4 +359,19 @@ func (addr Address) IsNoop() bool {
 
 func (addr Address) String() string {
 	return string(addr)
+}
+
+func (addr Address) MappedAccAddress() (cosmos.AccAddress, error) {
+	// TODO: Add support to map EVM addresses -> bech32.
+	// Will require new PubKey type to validate.
+	_, data, err := bech32.Decode(addr.String())
+	if err != nil {
+		return nil, err
+	}
+	encoded, err := bech32.Encode(sdk.GetConfig().GetBech32AccountAddrPrefix(), data)
+	if err != nil {
+		return nil, err
+	}
+
+	return cosmos.AccAddressFromBech32(encoded)
 }

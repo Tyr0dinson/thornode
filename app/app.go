@@ -2,10 +2,12 @@ package app
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sort"
 	"sync"
 
@@ -45,7 +47,6 @@ import (
 	"github.com/cosmos/cosmos-sdk/x/auth/ante"
 	authcodec "github.com/cosmos/cosmos-sdk/x/auth/codec"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
-	"github.com/cosmos/cosmos-sdk/x/auth/posthandler"
 	authsims "github.com/cosmos/cosmos-sdk/x/auth/simulation"
 	"github.com/cosmos/cosmos-sdk/x/auth/tx"
 	authtx "github.com/cosmos/cosmos-sdk/x/auth/tx"
@@ -69,12 +70,22 @@ import (
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	"github.com/cosmos/gogoproto/proto"
 	"github.com/spf13/cast"
+
+	"github.com/CosmWasm/wasmd/x/wasm"
+	wasmkeeper "github.com/CosmWasm/wasmd/x/wasm/keeper"
+	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
 	appparams "gitlab.com/thorchain/thornode/v3/app/params"
 	"gitlab.com/thorchain/thornode/v3/openapi"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/ebifrost"
 	thorchainkeeper "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
+	thorchainkeeperabci "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/abci"
 	thorchainkeeperv1 "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/v1"
 	thorchaintypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
+
+	"gitlab.com/thorchain/thornode/v3/x/denom"
+	denomkeeper "gitlab.com/thorchain/thornode/v3/x/denom/keeper"
+	denomtypes "gitlab.com/thorchain/thornode/v3/x/denom/types"
 )
 
 const (
@@ -104,6 +115,10 @@ var maccPerms = map[string][]string{
 	thorchain.AffiliateCollectorName: {},
 	thorchain.TreasuryName:           {},
 	thorchain.RUNEPoolName:           {},
+	wasmtypes.ModuleName:             {authtypes.Burner},
+	denomtypes.ModuleName:            {authtypes.Minter, authtypes.Burner},
+	thorchain.TCYClaimingName:        {},
+	thorchain.TCYStakeName:           {},
 }
 
 var (
@@ -132,9 +147,13 @@ type THORChainApp struct {
 	ParamsKeeper          paramskeeper.Keeper
 	ConsensusParamsKeeper consensusparamkeeper.Keeper
 
-	ThorchainKeeper thorchainkeeper.Keeper
+	ThorchainKeeper  thorchainkeeper.Keeper
+	EnshrinedBifrost *ebifrost.EnshrinedBifrost
 
+	DenomKeeper      denomkeeper.Keeper
 	msgServiceRouter *MsgServiceRouter // router for redirecting Msg service messages
+	WasmKeeper       wasmkeeper.Keeper
+
 	// the module manager
 	ModuleManager      *module.Manager
 	BasicModuleManager module.BasicManager
@@ -154,8 +173,15 @@ func NewChainApp(
 	traceStore io.Writer,
 	loadLatest bool,
 	appOpts servertypes.AppOptions,
+	wasmOpts []wasmkeeper.Option,
 	baseAppOptions ...func(*baseapp.BaseApp),
 ) *THORChainApp {
+	ebifrostConfig, err := ebifrost.ReadEBifrostConfig(appOpts)
+	if err != nil {
+		panic(fmt.Sprintf("error while reading ebifrost config: %s", err))
+	}
+
+	wasmtypes.MaxWasmSize = WasmMaxSize
 	ec := appparams.MakeEncodingConfig()
 	interfaceRegistry := ec.InterfaceRegistry
 
@@ -210,6 +236,8 @@ func NewChainApp(
 		upgradetypes.StoreKey,
 		// non sdk store keys
 		thorchaintypes.StoreKey,
+		wasmtypes.StoreKey,
+		denomtypes.StoreKey,
 	)
 
 	tkeys := storetypes.NewTransientStoreKeys(paramstypes.TStoreKey)
@@ -271,7 +299,7 @@ func NewChainApp(
 	if err != nil {
 		panic(err)
 	}
-	thorchain.DefineCustomGetSigners(txSigningOptions)
+	thorchaintypes.DefineCustomGetSigners(txSigningOptions)
 	txConfig, err := appparams.TxConfig(app.appCodec, txmodule.NewBankKeeperCoinMetadataQueryFn(app.BankKeeper))
 	if err != nil {
 		panic(err)
@@ -317,14 +345,70 @@ func NewChainApp(
 		app.appCodec, app.BankKeeper, app.AccountKeeper, app.UpgradeKeeper, keys[thorchaintypes.StoreKey],
 	)
 
+	wasmDir := filepath.Join(homePath, "data") // "wasm" subdirectory created here
+	wasmConfig, err := wasm.ReadWasmConfig(appOpts)
+	if err != nil {
+		panic(fmt.Sprintf("error while reading wasm config: %s", err))
+	}
+
+	wasmOpts = append(wasmOpts,
+		wasmkeeper.WithQueryPlugins(
+			&wasmkeeper.QueryPlugins{
+				Grpc: wasmkeeper.AcceptListGrpcQuerier(
+					wasmAcceptedQueries,
+					app.BaseApp.GRPCQueryRouter(),
+					app.appCodec),
+			},
+		),
+	)
+
+	// The last arguments can contain custom message handlers, and custom query handlers,
+	// if we want to allow any custom callbacks
+	app.WasmKeeper = wasmkeeper.NewKeeper(
+		app.appCodec,
+		runtime.NewKVStoreService(keys[wasmtypes.StoreKey]),
+		app.AccountKeeper,
+		NewWasmBankKeeper(app.BankKeeper),
+		app.StakingKeeper,
+		nil, nil, nil, nil, nil, nil,
+		app.MsgServiceRouter(),
+		app.BaseApp.GRPCQueryRouter(),
+		wasmDir,
+		wasmConfig,
+		wasmkeeper.BuiltInCapabilities(),
+		authtypes.NewModuleAddress(thorchain.ModuleName).String(),
+		wasmOpts...,
+	)
+
+	app.DenomKeeper = denomkeeper.NewKeeper(
+		app.appCodec,
+		runtime.NewKVStoreService(keys[denomtypes.StoreKey]),
+		app.AccountKeeper,
+		app.BankKeeper.WithMintCoinsRestriction(denomtypes.NewDenomMintCoinsRestriction()),
+		authtypes.NewModuleAddress(thorchain.ModuleName).String(),
+	)
+
 	// --- Module Options ---
 	telemetryEnabled := cast.ToBool(appOpts.Get("telemetry.enabled"))
 	testApp := cast.ToBool(appOpts.Get(TestApp))
 
-	mgrs := thorchain.NewManagers(app.ThorchainKeeper, app.appCodec, app.BankKeeper, app.AccountKeeper, app.UpgradeKeeper, keys[thorchaintypes.StoreKey])
+	mgrs := thorchain.NewManagers(app.ThorchainKeeper, app.appCodec, app.BankKeeper, app.AccountKeeper, app.UpgradeKeeper, app.WasmKeeper, keys[thorchaintypes.StoreKey])
 	app.msgServiceRouter.AddCustomRoute("cosmos.bank.v1beta1.Msg", thorchain.NewBankSendHandler(thorchain.NewSendHandler(mgrs)))
 
 	thorchainModule := thorchain.NewAppModule(mgrs, telemetryEnabled, testApp)
+
+	app.EnshrinedBifrost = ebifrost.NewEnshrinedBifrost(app.appCodec, logger, ebifrostConfig)
+
+	defaultProposalHandler := baseapp.NewDefaultProposalHandler(bApp.Mempool(), bApp)
+	eBifrostProposalHandler := thorchainkeeperabci.NewProposalHandler(
+		&app.ThorchainKeeper,
+		app.EnshrinedBifrost,
+		defaultProposalHandler.PrepareProposalHandler(),
+		defaultProposalHandler.ProcessProposalHandler(),
+	)
+
+	bApp.SetPrepareProposal(eBifrostProposalHandler.PrepareProposal)
+	bApp.SetProcessProposal(eBifrostProposalHandler.ProcessProposal)
 
 	// NOTE: Any module instantiated in the module manager that is later modified
 	// must be passed by reference here.
@@ -334,6 +418,17 @@ func NewChainApp(
 	genutilModule := genutil.NewAppModule(app.AccountKeeper, app.StakingKeeper, app, txConfig)
 	paramsModule := params.NewAppModule(app.ParamsKeeper)
 	upgradeModule := upgrade.NewAppModule(app.UpgradeKeeper, app.AccountKeeper.AddressCodec())
+	wasmModule := wasm.NewAppModule(
+		app.appCodec,
+		&app.WasmKeeper,
+		app.StakingKeeper,
+		app.AccountKeeper,
+		app.BankKeeper,
+		app.MsgServiceRouter().MsgServiceRouter,
+		app.GetSubspace(wasmtypes.ModuleName),
+	)
+	customWasmModule := NewCustomWasmModule(&wasmModule)
+	denomModule := denom.NewAppModule(app.appCodec, app.DenomKeeper, app.AccountKeeper, app.BankKeeper)
 
 	app.ModuleManager = module.NewManager(
 		genutilModule,
@@ -344,6 +439,8 @@ func NewChainApp(
 		consensusModule,
 		// non sdk modules
 		thorchainModule,
+		customWasmModule,
+		denomModule,
 	)
 
 	// BasicModuleManager defines the module BasicManager is in charge of setting up basic,
@@ -360,6 +457,8 @@ func NewChainApp(
 		mint.NewAppModule(app.appCodec, app.MintKeeper, app.AccountKeeper, nil, app.GetSubspace(minttypes.ModuleName)),
 		// non sdk modules
 		thorchainModule,
+		wasmModule,
+		denomModule,
 	)
 	app.BasicModuleManager.RegisterLegacyAminoCodec(app.legacyAmino)
 	app.BasicModuleManager.RegisterInterfaces(interfaceRegistry)
@@ -369,17 +468,18 @@ func NewChainApp(
 		upgradetypes.ModuleName,
 	)
 	// NOTE: staking module is required if HistoricalEntries param > 0
-	// NOTE: capability module's beginblocker must come before any modules using capabilities (e.g. IBC)
 	app.ModuleManager.SetOrderBeginBlockers(
 		genutiltypes.ModuleName,
 		// additional non simd modules
 		thorchaintypes.ModuleName,
+		wasmtypes.ModuleName,
 	)
 
 	app.ModuleManager.SetOrderEndBlockers(
 		genutiltypes.ModuleName,
 		// additional non simd modules
 		thorchaintypes.ModuleName,
+		wasmtypes.ModuleName,
 	)
 
 	// NOTE: The genutils module must occur after staking so that pools are
@@ -399,6 +499,8 @@ func NewChainApp(
 		upgradetypes.ModuleName,
 		consensusparamtypes.ModuleName,
 		thorchaintypes.ModuleName,
+		wasmtypes.ModuleName,
+		denomtypes.ModuleName,
 	}
 	app.ModuleManager.SetOrderInitGenesis(genesisModuleOrder...)
 	app.ModuleManager.SetOrderExportGenesis(genesisModuleOrder...)
@@ -456,13 +558,25 @@ func NewChainApp(
 				SignModeHandler: txConfig.SignModeHandler(),
 				SigGasConsumer:  ante.DefaultSigVerificationGasConsumer,
 			},
-			THORChainKeeper: app.ThorchainKeeper,
+			THORChainKeeper:       app.ThorchainKeeper,
+			WasmConfig:            &wasmConfig,
+			WasmKeeper:            &app.WasmKeeper,
+			TXCounterStoreService: runtime.NewKVStoreService(keys[wasmtypes.StoreKey]),
 		},
 	)
 	if err != nil {
 		panic(fmt.Errorf("failed to create AnteHandler: %s", err))
 	}
 	app.SetAnteHandler(anteHandler)
+
+	if manager := app.BaseApp.SnapshotManager(); manager != nil {
+		err := manager.RegisterExtensions(
+			wasmkeeper.NewWasmSnapshotter(app.BaseApp.CommitMultiStore(), &app.WasmKeeper),
+		)
+		if err != nil {
+			panic(fmt.Errorf("failed to register snapshot extension: %s", err))
+		}
+	}
 
 	// In v0.46, the SDK introduces _postHandlers_. PostHandlers are like
 	// antehandlers, but are run _after_ the `runMsgs` execution. They are also
@@ -499,6 +613,11 @@ func NewChainApp(
 
 		ctx := app.BaseApp.NewUncachedContext(true, tmproto.Header{})
 		_ = ctx
+
+		// Initialize pinned codes in wasmvm as they are not persisted there
+		if err := app.WasmKeeper.InitializePinnedCodes(ctx); err != nil {
+			panic(fmt.Sprintf("failed initialize pinned codes %s", err))
+		}
 	}
 
 	return app
@@ -526,14 +645,7 @@ func (app *THORChainApp) FinalizeBlock(req *abci.RequestFinalizeBlock) (*abci.Re
 }
 
 func (app *THORChainApp) setPostHandler() {
-	postHandler, err := posthandler.NewPostHandler(
-		posthandler.HandlerOptions{},
-	)
-	if err != nil {
-		panic(err)
-	}
-
-	app.SetPostHandler(postHandler)
+	app.SetPostHandler(sdk.ChainPostDecorators(ebifrost.NewEnshrineBifrostPostDecorator(app.EnshrinedBifrost)))
 }
 
 // Name returns the name of the App
@@ -678,8 +790,13 @@ func (app *THORChainApp) RegisterAPIRoutes(apiSvr *api.Server, apiConfig config.
 	// Register grpc-gateway routes for all modules.
 	app.BasicModuleManager.RegisterGRPCGatewayRoutes(clientCtx, apiSvr.GRPCGatewayRouter)
 
-	// register swagger API from root so that other applications can override easily
+	// register thorchain-specific swagger API from root so that other applications can override easily
 	if err := RegisterSwaggerAPI(apiSvr.Router, apiConfig.Swagger); err != nil {
+		panic(err)
+	}
+
+	// register built in cosmos swagger API
+	if err := server.RegisterSwaggerAPI(apiSvr.ClientCtx, apiSvr.Router, apiConfig.Swagger); err != nil {
 		panic(err)
 	}
 }
@@ -725,6 +842,16 @@ func (app *THORChainApp) RegisterTendermintService(clientCtx client.Context) {
 
 func (app *THORChainApp) RegisterNodeService(clientCtx client.Context, cfg config.Config) {
 	nodeservice.RegisterNodeService(clientCtx, app.GRPCQueryRouter(), cfg)
+
+	if err := app.EnshrinedBifrost.Start(); err != nil && !errors.Is(err, ebifrost.ErrAlreadyStarted) {
+		panic(fmt.Errorf("failed to start bifrost service: %w", err))
+	}
+}
+
+func (app *THORChainApp) Close() error {
+	app.EnshrinedBifrost.Stop()
+
+	return app.BaseApp.Close()
 }
 
 // GetMaccPerms returns a copy of the module account permissions
@@ -775,6 +902,7 @@ func initParamsKeeper(appCodec codec.BinaryCodec, legacyAmino *codec.LegacyAmino
 	paramsKeeper.Subspace(banktypes.ModuleName)
 	paramsKeeper.Subspace(stakingtypes.ModuleName)
 	paramsKeeper.Subspace(minttypes.ModuleName)
+	paramsKeeper.Subspace(wasmtypes.ModuleName)
 
 	return paramsKeeper
 }

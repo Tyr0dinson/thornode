@@ -22,9 +22,9 @@ import (
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	cKeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"github.com/rs/zerolog/log"
+	tssMessages "gitlab.com/thorchain/thornode/v3/bifrost/p2p/messages"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/blame"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/keysign"
-	tssMessages "gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/messages"
 
 	. "gopkg.in/check.v1"
 
@@ -250,6 +250,11 @@ func (b *MockChainClient) GetBlockScannerHeight() (int64, error) {
 	return 0, nil
 }
 
+// RollbackBlockScanner rolls back the block scanner to the last observed block
+func (c *MockChainClient) RollbackBlockScanner() error {
+	return nil
+}
+
 func (b *MockChainClient) GetLatestTxForVault(vault string) (string, string, error) {
 	return "", "", nil
 }
@@ -285,7 +290,7 @@ func (b *MockChainClient) GetPubKey() crypto.PubKey {
 func (b *MockChainClient) OnObservedTxIn(txIn types.TxInItem, blockHeight int64) {
 }
 
-func (b *MockChainClient) Start(globalTxsQueue chan types.TxIn, globalErrataQueue chan types.ErrataBlock, globalSolvencyQueue chan types.Solvency) {
+func (b *MockChainClient) Start(globalTxsQueue chan types.TxIn, globalErrataQueue chan types.ErrataBlock, globalSolvencyQueue chan types.Solvency, globalNetworkFeeQueue chan common.NetworkFee) {
 }
 
 func (b *MockChainClient) Stop() {}
@@ -416,7 +421,7 @@ func (s *SignSuite) TestProcess(c *C) {
 
 	sign := &Signer{
 		logger:                log.With().Str("module", "signer").Logger(),
-		cfg:                   cfg,
+		cfg:                   config.Bifrost{Signer: cfg},
 		wg:                    &sync.WaitGroup{},
 		stopChan:              make(chan struct{}),
 		blockScanner:          blockScanner,

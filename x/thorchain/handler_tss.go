@@ -361,10 +361,7 @@ func MsgTssPoolHandleV3_0_0(ctx cosmos.Context, mgr Manager, msg *MsgTssPool) (*
 						)
 					}
 
-					tx := common.Tx{}
-					tx.ID = common.BlankTxID
-					tx.FromAddress = na.BondAddress
-					bondEvent := NewEventBond(slashBond, BondCost, tx, &na, nil)
+					bondEvent := NewEventBond(slashBond, BondCost, common.Tx{}, &na, nil)
 					if err := mgr.EventMgr().EmitEvent(ctx, bondEvent); err != nil {
 						return nil, fmt.Errorf("fail to emit bond event: %w", err)
 					}
@@ -526,11 +523,11 @@ func judgeLateSigner(ctx cosmos.Context, mgr Manager, msg *MsgTssPool, voter Tss
 // TssAnteHandler called by the ante handler to gate mempool entry
 // and also during deliver. Store changes will persist if this function
 // succeeds, regardless of the success of the transaction.
-func TssAnteHandler(ctx cosmos.Context, v semver.Version, k keeper.Keeper, msg MsgTssPool) error {
+func TssAnteHandler(ctx cosmos.Context, v semver.Version, k keeper.Keeper, msg MsgTssPool) (cosmos.Context, error) {
 	err := validateTssAuth(ctx, k, msg.Signer)
 	if err != nil {
-		return err
+		return ctx.WithPriority(ActiveNodePriority), err
 	}
 
-	return nil
+	return ctx, nil
 }

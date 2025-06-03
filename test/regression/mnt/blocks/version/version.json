@@ -32,6 +32,7 @@
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
+    "finalize_block_events": [],
     "begin_block_events": [],
     "end_block_events": [],
     "txs": []
@@ -64,11 +65,12 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "46BF8E190318B5077A5B080A5D8D2F9DBC7CAE036C1EF25BC41A549B348DF644",
+      "app_hash": "4C22EB464E234D4A631DDB25F78B110BC23D790D2B808F4B3E612B9FFAD7F668",
       "last_results_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
+    "finalize_block_events": [],
     "begin_block_events": [],
     "end_block_events": [],
     "txs": [
@@ -125,13 +127,8 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "154068",
+          "gas_used": "156146",
           "events": [
-            {
-              "fee": "",
-              "fee_payer": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
-              "type": "tx"
-            },
             {
               "amount": "2000000rune",
               "spender": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
@@ -243,11 +240,12 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "014AD9B602FD15A44882A5B8D3C5A14B58FCACC0584157A942532BA89195214A",
-      "last_results_hash": "60C6622E1290116138A2C3161D640F00E2B1C6F96A5DC99C9FC5E8C5D0D33D95",
+      "app_hash": "37DA535C27FC155DF7A80DB2F2E9FC055EAD239F45A732B24266C1EE05E81D89",
+      "last_results_hash": "22447308D71507502DD47199A74FD782EE3F054F3879F6FBADB48BD949C648AC",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
+    "finalize_block_events": [],
     "begin_block_events": [],
     "end_block_events": [],
     "txs": [
@@ -297,13 +295,8 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "71374",
+          "gas_used": "73266",
           "events": [
-            {
-              "fee": "",
-              "fee_payer": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
-              "type": "tx"
-            },
             {
               "amount": "2000000rune",
               "spender": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
@@ -330,8 +323,8 @@
               "bond_type": "bond_cost",
               "chain": "",
               "coin": "",
-              "from": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
-              "id": "0000000000000000000000000000000000000000000000000000000000000000",
+              "from": "",
+              "id": "",
               "memo": "",
               "node_address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
               "to": "",
@@ -391,11 +384,12 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "FB581049FA8A3442A177E7199EDC74F0437B7AECE663088DBB60280A4B5DDED5",
-      "last_results_hash": "417141538780805D9770E7D9DD46E1EBBE731758A4285E73FD80A7CC707424F4",
+      "app_hash": "07FBE6BE62EEF81A79DF6ECCB835FACF49EFE3D0BB51C25077E2F41532749FAD",
+      "last_results_hash": "1475ECC7189629C1E9565B21330F4D1E3105018405837F5F2F259061D11CC086",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
+    "finalize_block_events": [],
     "begin_block_events": [],
     "end_block_events": [],
     "txs": [
@@ -446,13 +440,8 @@
           "code": 6,
           "log": "failed to execute message; message index: 0: THORChain doesn't use Pre/Build version: unknown request",
           "gas_wanted": "-1",
-          "gas_used": "60200",
+          "gas_used": "62092",
           "events": [
-            {
-              "fee": "",
-              "fee_payer": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
-              "type": "tx"
-            },
             {
               "amount": "2000000rune",
               "spender": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
@@ -479,8 +468,8 @@
               "bond_type": "bond_cost",
               "chain": "",
               "coin": "",
-              "from": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
-              "id": "0000000000000000000000000000000000000000000000000000000000000000",
+              "from": "",
+              "id": "",
               "memo": "",
               "node_address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
               "to": "",
@@ -527,11 +516,12 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "CDDE95026D74A525EF60D57A9183579844737970A602F705FBFB77F83B989E02",
-      "last_results_hash": "C140F85DF876741CD799FB59C7FECADB778149BCB2583178AC0391713045DF8C",
+      "app_hash": "03CBBDC0E86D4422B499FBCF496445769505CE28FC74DD6D19D5446CD56CB07E",
+      "last_results_hash": "8E733D3ADC3DC0D753938606D8C4394B49A13E718FC8A65E847C6E9504F77766",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
+    "finalize_block_events": [],
     "begin_block_events": [],
     "end_block_events": [],
     "txs": []

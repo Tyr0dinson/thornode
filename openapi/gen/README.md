@@ -83,6 +83,7 @@ Class | Method | HTTP request | Description
 *BorrowersApi* | [**Borrower**](docs/BorrowersApi.md#borrower) | **Get** /thorchain/pool/{asset}/borrower/{address} | 
 *BorrowersApi* | [**Borrowers**](docs/BorrowersApi.md#borrowers) | **Get** /thorchain/pool/{asset}/borrowers | 
 *CloutApi* | [**SwapperClout**](docs/CloutApi.md#swapperclout) | **Get** /thorchain/clout/swap/{address} | 
+*CodesApi* | [**Codes**](docs/CodesApi.md#codes) | **Get** /thorchain/codes | 
 *ExportApi* | [**Export**](docs/ExportApi.md#export) | **Get** /thorchain/export | 
 *HealthApi* | [**Ping**](docs/HealthApi.md#ping) | **Get** /thorchain/ping | 
 *InvariantsApi* | [**Invariant**](docs/InvariantsApi.md#invariant) | **Get** /thorchain/invariant/{invariant} | 
@@ -133,6 +134,10 @@ Class | Method | HTTP request | Description
 *SecuredAssetsApi* | [**SecuredAssets**](docs/SecuredAssetsApi.md#securedassets) | **Get** /thorchain/securedassets | 
 *StreamingSwapApi* | [**StreamSwap**](docs/StreamingSwapApi.md#streamswap) | **Get** /thorchain/swap/streaming/{hash} | 
 *StreamingSwapApi* | [**StreamSwaps**](docs/StreamingSwapApi.md#streamswaps) | **Get** /thorchain/swaps/streaming | 
+*TCYClaimersApi* | [**TcyClaimer**](docs/TCYClaimersApi.md#tcyclaimer) | **Get** /thorchain/tcy_claimer/{address} | 
+*TCYClaimersApi* | [**TcyClaimers**](docs/TCYClaimersApi.md#tcyclaimers) | **Get** /thorchain/tcy_claimers | 
+*TCYStakersApi* | [**TcyStaker**](docs/TCYStakersApi.md#tcystaker) | **Get** /thorchain/tcy_staker/{address} | 
+*TCYStakersApi* | [**TcyStakers**](docs/TCYStakersApi.md#tcystakers) | **Get** /thorchain/tcy_stakers | 
 *TSSApi* | [**KeygenPubkey**](docs/TSSApi.md#keygenpubkey) | **Get** /thorchain/keygen/{height}/{pubkey} | 
 *TSSApi* | [**Keysign**](docs/TSSApi.md#keysign) | **Get** /thorchain/keysign/{height} | 
 *TSSApi* | [**KeysignPubkey**](docs/TSSApi.md#keysignpubkey) | **Get** /thorchain/keysign/{height}/{pubkey} | 
@@ -172,6 +177,8 @@ Class | Method | HTTP request | Description
  - [BlockTxResult](docs/BlockTxResult.md)
  - [Borrower](docs/Borrower.md)
  - [ChainHeight](docs/ChainHeight.md)
+ - [Code](docs/Code.md)
+ - [CodesResponse](docs/CodesResponse.md)
  - [Coin](docs/Coin.md)
  - [ConstantsResponse](docs/ConstantsResponse.md)
  - [DerivedPool](docs/DerivedPool.md)
@@ -230,6 +237,10 @@ Class | Method | HTTP request | Description
  - [SwapFinalisedStage](docs/SwapFinalisedStage.md)
  - [SwapStatus](docs/SwapStatus.md)
  - [SwapperCloutResponse](docs/SwapperCloutResponse.md)
+ - [TCYClaimer](docs/TCYClaimer.md)
+ - [TCYClaimerSummary](docs/TCYClaimerSummary.md)
+ - [TCYStaker](docs/TCYStaker.md)
+ - [TCYStakerSummary](docs/TCYStakerSummary.md)
  - [Thorname](docs/Thorname.md)
  - [ThornameAlias](docs/ThornameAlias.md)
  - [TradeAccountResponse](docs/TradeAccountResponse.md)

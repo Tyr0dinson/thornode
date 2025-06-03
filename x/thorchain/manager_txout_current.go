@@ -157,10 +157,14 @@ func (tos *TxOutStorageVCUR) TryAddTxOutItem(ctx cosmos.Context, mgr Manager, to
 
 	// Deduct affiliate fee from outbound amount
 	amount, err := tos.takeAffiliateFee(cacheCtx, mgr, toi)
-	if err == nil {
-		toi.Coin.Amount = amount
-	} else {
+	if err != nil {
 		ctx.Logger().Error("fail to take affiliate fee", "error", err)
+	} else if !toi.Coin.Asset.IsTradeAsset() && !toi.Coin.Asset.IsSecuredAsset() {
+		// For Trade and Secured Assets do not decrement the affiliate fee here,
+		// as the affiliate fee swap will take it from the user's balance after the outbound.
+		// (Since Trade/Secured Withdraw is done in the MsgSwap internal handler,
+		//  not the MsgDeposit external handler.)
+		toi.Coin.Amount = amount
 	}
 
 	success, err := tos.cachedTryAddTxOutItem(cacheCtx, mgr, toi, minOut)
@@ -234,16 +238,6 @@ func (tos *TxOutStorageVCUR) takeAffiliateFee(ctx cosmos.Context, mgr Manager, t
 // return bool indicate whether the transaction had been added successful or not
 // return error indicate error
 func (tos *TxOutStorageVCUR) cachedTryAddTxOutItem(ctx cosmos.Context, mgr Manager, toi TxOutItem, minOut cosmos.Uint) (bool, error) {
-	if toi.Coin.Asset.IsTradeAsset() {
-		// no outbound needed for trade assets
-		return true, nil
-	}
-
-	if toi.Coin.Asset.IsSecuredAsset() {
-		// no outbound needed for secured assets
-		return true, nil
-	}
-
 	outputs, totalOutboundFeeRune, err := tos.prepareTxOutItem(ctx, toi)
 	if err != nil {
 		return false, fmt.Errorf("fail to prepare outbound tx: %w", err)
@@ -257,9 +251,9 @@ func (tos *TxOutStorageVCUR) cachedTryAddTxOutItem(ctx cosmos.Context, mgr Manag
 		sumOut = sumOut.Add(o.Coin.Amount)
 	}
 	if sumOut.LT(minOut) {
-		// **NOTE** this error string is utilized by the order book manager to
+		// **NOTE** this error string is utilized by the adv swap queue manager to
 		// catch the error. DO NOT change this error string without updating
-		// the order book manager as well
+		// the adv swap queue manager as well
 		return false, fmt.Errorf("outbound amount does not meet requirements (%d/%d)", sumOut.Uint64(), minOut.Uint64())
 	}
 
@@ -290,10 +284,10 @@ func (tos *TxOutStorageVCUR) cachedTryAddTxOutItem(ctx cosmos.Context, mgr Manag
 			outboundHeight = targetHeight
 		}
 
-		// When the inbound transaction already has an outbound , the make sure the outbound will be scheduled on the same block
-		if voter.OutboundHeight > 0 {
-			outboundHeight = voter.OutboundHeight
-		} else {
+		// While each outbound has its own security-appropriate outbound delay,
+		// ensure the voter.OutboundHeight reflects the furthest-future scheduled outbound height
+		// so as to serve as an estimate of when the entire transaction may be completed.
+		if outboundHeight > voter.OutboundHeight {
 			voter.OutboundHeight = outboundHeight
 			tos.keeper.SetObservedTxInVoter(ctx, voter)
 		}
@@ -478,8 +472,9 @@ func (tos *TxOutStorageVCUR) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 			parts := strings.SplitN(inboundVoter.Tx.Tx.Memo, "|", 2)
 			if len(parts) == 2 {
 				toi.Memo = fmt.Sprintf("%s|%s", toi.Memo, parts[1])
-				if len(toi.Memo) > constants.MaxMemoSize {
-					toi.Memo = toi.Memo[:constants.MaxMemoSize]
+				maxMemoLength := toi.Chain.MaxMemoLength()
+				if len(toi.Memo) > maxMemoLength {
+					toi.Memo = toi.Memo[:maxMemoLength]
 				}
 			}
 		}
@@ -631,8 +626,9 @@ func (tos *TxOutStorageVCUR) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 					}
 
 					outputs[i].Coin.Amount = common.SafeSub(outputs[i].Coin.Amount, assetFee) // Deduct Asset fee
-					if outputs[i].Coin.Asset.IsNative() {
-						// burn the native asset which used to pay for fee, that's only required when sending from asgard
+					if outputs[i].Coin.Asset.IsSyntheticAsset() || outputs[i].Coin.Asset.IsDerivedAsset() {
+						// burn the native asset which used to pay for fee, that's only required when sending Synthetic/Derived assets from asgard
+						// (not for instance applicable for Trade/Secured Assets which are not (1-to-1) Cosmos-SDK coins transferred from the Pool Module)
 						if outputs[i].GetModuleName() == AsgardName {
 							if err := tos.keeper.SendFromModuleToModule(ctx,
 								AsgardName,
@@ -766,6 +762,9 @@ func (tos *TxOutStorageVCUR) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 				}
 			}
 		} else {
+			// GetModuleName() to ensure that non-"" (AsgardName).
+			sourceModule := toi.GetModuleName()
+
 			// Layer 1 or Synth Asset is implicitly swapped in a pool
 			// whether in vault or burnt from another network module,
 			// but Derived Asset has no outbound fee taken
@@ -774,11 +773,16 @@ func (tos *TxOutStorageVCUR) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 			// (If a fee were taken, then being for a Derived Asset pool
 			//  it would contribute to Lending breathing room
 			//  rather than affecting Pool Module RUNE.)
-			if !toi.Coin.Asset.IsDerivedAsset() {
-				if err := tos.keeper.AddPoolFeeToReserve(ctx, finalRuneFee); err != nil {
-					ctx.Logger().Error("fail to add pool fee to reserve", "error", err)
+			//
+			// If the source module is the Reserve, leave the fee in the Reserve without a transfer.
+			if !toi.Coin.Asset.IsDerivedAsset() && sourceModule != ReserveName {
+				coin := common.NewCoin(common.RuneAsset(), finalRuneFee)
+				err := tos.keeper.SendFromModuleToModule(ctx, sourceModule, ReserveName, common.NewCoins(coin))
+				if err != nil {
+					ctx.Logger().Error("fail to send fee to reserve", "error", err, "module", sourceModule)
 				}
 			}
+
 		}
 	}
 
@@ -789,6 +793,16 @@ func (tos *TxOutStorageVCUR) addToBlockOut(ctx cosmos.Context, mgr Manager, item
 	// if we're sending native assets, transfer them now and return
 	if item.Chain.IsTHORChain() {
 		return tos.nativeTxOut(ctx, mgr, item)
+	}
+
+	// The outbound queue should never receive an item with a nil pointer field.
+	if item.AggregatorTargetLimit == nil {
+		aggregatorTargetLimit := cosmos.ZeroUint()
+		item.AggregatorTargetLimit = &aggregatorTargetLimit
+	}
+	if item.CloutSpent == nil {
+		cloutSpent := cosmos.ZeroUint()
+		item.CloutSpent = &cloutSpent
 	}
 
 	vault, err := tos.keeper.GetVault(ctx, item.VaultPubKey)
@@ -859,6 +873,10 @@ func (tos *TxOutStorageVCUR) calcClout(ctx cosmos.Context, runeValue cosmos.Uint
 	}
 
 	if !clout2.IsZero() {
+		if cloutIn.Address.Equals(cloutOut.Address) {
+			// cloutOut is about to overwrite cloutIn, so reincrement with clout1.
+			cloutOut.Spent = cloutOut.Spent.Add(clout1)
+		}
 		cloutOut.Spent = cloutOut.Spent.Add(clout2)
 		cloutOut.LastSpentHeight = ctx.BlockHeight()
 		if err := tos.keeper.SetSwapperClout(ctx, cloutOut); err != nil {
@@ -1000,7 +1018,7 @@ func (tos *TxOutStorageVCUR) CalcTxOutHeight(ctx cosmos.Context, version semver.
 }
 
 func (tos *TxOutStorageVCUR) nativeTxOut(ctx cosmos.Context, mgr Manager, toi TxOutItem) error {
-	addr, err := cosmos.AccAddressFromBech32(toi.ToAddress.String())
+	addr, err := toi.ToAddress.AccAddress()
 	if err != nil {
 		return err
 	}
@@ -1030,13 +1048,33 @@ func (tos *TxOutStorageVCUR) nativeTxOut(ctx cosmos.Context, mgr Manager, toi Tx
 		return err
 	}
 
+	claimingAddress, err := tos.keeper.GetModuleAddress(TCYClaimingName)
+	if err != nil {
+		ctx.Logger().Error("fail to get from address", "err", err)
+		return err
+	}
+
 	// send funds to/from modules
 	var sdkErr error
 	switch {
+	case toi.Coin.Asset.IsTradeAsset():
+		// Even if trade accounts are not enabled, outbounds (as for streaming swap refunds) should complete.
+		_, err = mgr.TradeAccountManager().Deposit(ctx, toi.Coin.Asset, toi.Coin.Amount, addr, common.NoAddress, toi.InHash)
+		if err != nil {
+			return ErrInternal(err, "fail to deposit to trade account")
+		}
+	case toi.Coin.Asset.IsSecuredAsset():
+		// Even if secured assets are halted, outbounds (as for streaming swap refunds) should complete.
+		_, err = mgr.SecuredAssetManager().Deposit(ctx, toi.Coin.Asset.GetLayer1Asset(), toi.Coin.Amount, addr, common.NoAddress, toi.InHash)
+		if err != nil {
+			return ErrInternal(err, "fail to deposit secured asset")
+		}
 	case polAddress.Equals(toi.ToAddress):
 		sdkErr = tos.keeper.SendFromModuleToModule(ctx, toi.ModuleName, ReserveName, common.NewCoins(toi.Coin))
 	case affColAddress.Equals(toi.ToAddress):
 		sdkErr = tos.keeper.SendFromModuleToModule(ctx, toi.ModuleName, AffiliateCollectorName, common.NewCoins(toi.Coin))
+	case claimingAddress.Equals(toi.ToAddress):
+		sdkErr = tos.keeper.SendFromModuleToModule(ctx, toi.ModuleName, TCYClaimingName, common.NewCoins(toi.Coin))
 	default:
 		sdkErr = tos.keeper.SendFromModuleToAccount(ctx, toi.ModuleName, addr, common.NewCoins(toi.Coin))
 	}

@@ -45,18 +45,12 @@ func (h UnBondHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, er
 }
 
 func (h UnBondHandler) validate(ctx cosmos.Context, msg MsgUnBond) error {
-	version := h.mgr.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("3.0.0")):
-		return h.validateV3_0_0(ctx, msg)
-	default:
-		return errBadVersion
-	}
-}
-
-func (h UnBondHandler) validateV3_0_0(ctx cosmos.Context, msg MsgUnBond) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
+	}
+
+	if !msg.TxIn.Coins.IsEmpty() {
+		return cosmos.ErrUnknownRequest("unbond message cannot have a non-zero coin amount")
 	}
 
 	na, err := h.mgr.Keeper().GetNodeAccount(ctx, msg.NodeAddress)
@@ -70,16 +64,6 @@ func (h UnBondHandler) validateV3_0_0(ctx cosmos.Context, msg MsgUnBond) error {
 
 	if h.mgr.Keeper().GetConfigInt64(ctx, constants.PauseUnbond) > 0 {
 		return ErrInternal(err, "unbonding has been paused")
-	}
-
-	jail, err := h.mgr.Keeper().GetNodeAccountJail(ctx, msg.NodeAddress)
-	if err != nil {
-		// ignore this error and carry on. Don't want a jail bug causing node
-		// accounts to not be able to get their funds out
-		ctx.Logger().Error("fail to get node account jail", "error", err)
-	}
-	if jail.IsJailed(ctx) {
-		return fmt.Errorf("failed to unbond due to jail status: (release height %d) %s", jail.ReleaseHeight, jail.Reason)
 	}
 
 	bp, err := h.mgr.Keeper().GetBondProviders(ctx, msg.NodeAddress)
