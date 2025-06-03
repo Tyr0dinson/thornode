@@ -632,12 +632,6 @@
       "decimals": 18
     },
     {
-      "name": "L2 Standard Bridged DAI  Base ",
-      "symbol": "DAI",
-      "address": "0x50c5725949a6f0c72e6c4a641f24049a917db0cb",
-      "decimals": 18
-    },
-    {
       "name": " REKT",
       "symbol": "REKT",
       "address": "0x8972ab69d499b5537a31576725f0af8f67203d38",
@@ -1608,12 +1602,6 @@
       "symbol": "GG",
       "address": "0x000000000000a59351f61b598e8da953b9e041ec",
       "decimals": 18
-    },
-    {
-      "name": "Bridged USDC  Base ",
-      "symbol": "USDBC",
-      "address": "0xd9aaec86b65d86f6a7b5b1b0c42ffa531710b6ca",
-      "decimals": 6
     },
     {
       "name": "NIKITA by Virtuals",
@@ -5280,12 +5268,6 @@
       "symbol": "DZHV",
       "address": "0x3419875b4d3bca7f3fdda2db7a476a79fd31b4fe",
       "decimals": 18
-    },
-    {
-      "name": "USDC",
-      "symbol": "USDC",
-      "address": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
-      "decimals": 6
     },
     {
       "name": "Extra Finance",

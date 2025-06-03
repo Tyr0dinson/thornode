@@ -22794,14 +22794,6 @@
       "logoURI": "https://assets.coingecko.com/coins/images/31291/thumb/Tokens.png?1696530112"
     },
     {
-      "name": "ONUS",
-      "symbol": "ONUS",
-      "address": "0x1851ccd370c444ff494d7505e6103959bce9f9d9",
-      "chainId": 56,
-      "decimals": 18,
-      "logoURI": "https://assets.coingecko.com/coins/images/24599/thumb/ONUS_200.png?1696523773"
-    },
-    {
       "name": "Wrapped USDR",
       "symbol": "WUSDR",
       "address": "0x9467f15f44a8641389556387b43d9ed3f6981818",
@@ -34194,14 +34186,6 @@
       "logoURI": "https://assets.coingecko.com/coins/images/28951/thumb/PCA.png?1696527924"
     },
     {
-      "name": "ONUS",
-      "symbol": "ONUS",
-      "address": "0x1851ccd370c444ff494d7505e6103959bce9f9d9",
-      "chainId": 56,
-      "decimals": 18,
-      "logoURI": "https://assets.coingecko.com/coins/images/24599/thumb/ONUS_200.png?1696523773"
-    },
-    {
       "name": "iFortune",
       "symbol": "IFC",
       "address": "0x4927b4d730ae6f5a9a9115cf81848a3b9cfad891",
@@ -45016,14 +45000,6 @@
       "chainId": 56,
       "decimals": 18,
       "logoURI": "https://assets.coingecko.com/coins/images/31291/thumb/Tokens.png?1696530112"
-    },
-    {
-      "name": "ONUS",
-      "symbol": "ONUS",
-      "address": "0x1851ccd370c444ff494d7505e6103959bce9f9d9",
-      "chainId": 56,
-      "decimals": 18,
-      "logoURI": "https://assets.coingecko.com/coins/images/24599/thumb/ONUS_200.png?1696523773"
     },
     {
       "name": "Wrapped USDR",
