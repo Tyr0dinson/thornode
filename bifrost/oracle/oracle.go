@@ -2,12 +2,16 @@ package oracle
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/providers"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/types"
 	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
+	"math/big"
+	"strings"
 	"sync"
 	"time"
 
@@ -18,9 +22,13 @@ type Oracle struct {
 	ctx       context.Context
 	cancel    context.CancelFunc
 	wg        *sync.WaitGroup
+	mtx       *sync.Mutex
 	logger    zerolog.Logger
 	providers map[string]types.Provider
 	config    config.Bifrost
+	queue     chan common.PriceFeed
+	address   cosmos.AccAddress
+	rates     map[string]*big.Float
 }
 
 func NewOracle(config config.Bifrost) (*Oracle, error) {
@@ -37,9 +45,11 @@ func NewOracle(config config.Bifrost) (*Oracle, error) {
 	o := Oracle{
 		ctx:    ctx,
 		cancel: cancel,
+		mtx:    &sync.Mutex{},
 		wg:     &sync.WaitGroup{},
 		logger: logger,
 		config: config,
+		rates:  make(map[string]*big.Float),
 	}
 
 	err = o.LoadProviders()
@@ -54,13 +64,13 @@ func (o *Oracle) run() {
 	defer o.wg.Done()
 
 	go func() {
-		ticker := time.NewTicker(time.Second * 5)
+		ticker := time.NewTicker(time.Second * 2)
 		defer ticker.Stop()
 
 		for {
 			select {
 			case <-ticker.C:
-				o.GetTickers()
+				o.getTickers()
 			case <-o.ctx.Done():
 				return
 			}
@@ -68,7 +78,10 @@ func (o *Oracle) run() {
 	}()
 }
 
-func (o *Oracle) Start() {
+func (o *Oracle) Start(queue chan common.PriceFeed) {
+	// set global price feed queue
+	o.queue = queue
+
 	o.logger.Info().Msg("starting oracle")
 
 	for name, provider := range o.providers {
@@ -87,9 +100,7 @@ func (o *Oracle) Stop() {
 	o.wg.Wait()
 }
 
-func (o *Oracle) GetTickers() {
-	o.logger.Info().Msg("getting tickers")
-
+func (o *Oracle) getTickers() {
 	tickerBySymbol := map[string]map[string]types.Ticker{}
 
 	for name, provider := range o.providers {
@@ -113,9 +124,46 @@ func (o *Oracle) GetTickers() {
 		return
 	}
 
+	o.mtx.Lock()
 	for denom, rate := range rates {
-		o.logger.Info().Msgf("%s: %s", denom, rate.String())
+		o.rates[denom] = rate
 	}
+	o.mtx.Unlock()
+}
+
+func (o *Oracle) GetTickers(height int64) {
+	if o.address.Empty() {
+		o.logger.Warn().Msg("oracle address is empty")
+		return
+	}
+
+	o.logger.Info().Int("rates", len(o.rates)).Msg("getting tickers")
+	if len(o.rates) == 0 {
+		return
+	}
+
+	rates := []string{}
+
+	priceFeed := common.PriceFeed{
+		Height: height,
+		Node:   o.address,
+	}
+
+	o.mtx.Lock()
+	for denom, rate := range o.rates {
+		rates = append(rates, fmt.Sprintf("%s%s", rate.Text('f', -1), denom))
+	}
+	o.mtx.Unlock()
+
+	priceFeed.Rates = strings.Join(rates, ",")
+
+	hash := sha256.Sum256(
+		[]byte(fmt.Sprintf("%d%s", height, priceFeed.Rates)),
+	)
+
+	priceFeed.Hash = hash[:]
+
+	o.queue <- priceFeed
 }
 
 func (o *Oracle) LoadProviders() error {
@@ -155,4 +203,8 @@ func (o *Oracle) LoadProviders() error {
 	}
 
 	return nil
+}
+
+func (o *Oracle) SetAccAddress(address cosmos.AccAddress) {
+	o.address = address
 }

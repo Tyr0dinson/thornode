@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"gitlab.com/thorchain/thornode/v3/bifrost/oracle"
 	"io"
 	"os"
 	"os/signal"
@@ -219,12 +218,11 @@ func main() {
 		log.Fatal().Err(err).Msg("fail to start signer")
 	}
 
-	// start oracle
-	orcl, err := oracle.NewOracle(cfg)
+	nodeAddress, err := pubkeyMgr.GetNodePubKey().GetThorAddress()
 	if err != nil {
-		log.Fatal().Err(err).Msg("fail to create oracle instance")
+		log.Fatal().Err(err).Msg("fail to get node address")
 	}
-	orcl.Start()
+	obs.SetOracleAccAddress(nodeAddress)
 
 	// wait....
 	ch := make(chan os.Signal, 1)
@@ -234,9 +232,6 @@ func main() {
 	case <-restart:
 	}
 	log.Info().Msg("stop signal received")
-
-	// stop oracle
-	orcl.Stop()
 
 	// stop observer
 	if err = obs.Stop(); err != nil {

@@ -117,12 +117,14 @@ type AttestationGossip struct {
 	networkFees map[common.NetworkFee]*AttestationState[*common.NetworkFee]
 	solvencies  map[common.TxID]*AttestationState[*common.Solvency]
 	errataTxs   map[common.ErrataTx]*AttestationState[*common.ErrataTx]
+	priceFeeds  map[string]*AttestationState[*common.PriceFeed]
 	mu          sync.Mutex
 
 	observedTxsPool *AttestationStatePool[*common.ObservedTx]
 	networkFeesPool *AttestationStatePool[*common.NetworkFee]
 	solvenciesPool  *AttestationStatePool[*common.Solvency]
 	errataTxsPool   *AttestationStatePool[*common.ErrataTx]
+	priceFeedsPool  *AttestationStatePool[*common.PriceFeed]
 
 	activeVals map[peer.ID]bool // active val peer IDs
 	avMu       sync.Mutex
@@ -197,6 +199,7 @@ func NewAttestationGossip(
 		networkFees: make(map[common.NetworkFee]*AttestationState[*common.NetworkFee]),
 		solvencies:  make(map[common.TxID]*AttestationState[*common.Solvency]),
 		errataTxs:   make(map[common.ErrataTx]*AttestationState[*common.ErrataTx]),
+		priceFeeds:  make(map[string]*AttestationState[*common.PriceFeed]),
 
 		peerMgr: newPeerManager(logger, config.PeerConcurrentReceives),
 
@@ -204,6 +207,7 @@ func NewAttestationGossip(
 		networkFeesPool: NewAttestationStatePool[*common.NetworkFee](),
 		solvenciesPool:  NewAttestationStatePool[*common.Solvency](),
 		errataTxsPool:   NewAttestationStatePool[*common.ErrataTx](),
+		priceFeedsPool:  NewAttestationStatePool[*common.PriceFeed](),
 
 		cachedKeySignParties: make(map[common.PubKey]cachedKeySignParty),
 
@@ -215,6 +219,7 @@ func NewAttestationGossip(
 	eventClient.RegisterHandler(ebifrost.EventQuorumNetworkFeeCommitted, s.handleQuorumNetworkFeeCommitted)
 	eventClient.RegisterHandler(ebifrost.EventQuorumSolvencyCommitted, s.handleQuorumSolvencyCommitted)
 	eventClient.RegisterHandler(ebifrost.EventQuorumErrataTxCommitted, s.handleQuorumErrataTxCommitted)
+	eventClient.RegisterHandler(ebifrost.EventQuorumPriceFeedCommitted, s.handleQuorumPriceFeedCommitted)
 
 	// Register stream handlers
 	host.SetStreamHandler(attestationStateProtocol, s.handleStreamAttestationState)
@@ -456,6 +461,33 @@ func (s *AttestationGossip) handleQuorumErrataTxCommitted(en *ebifrost.EventNoti
 
 	defer as.mu.Unlock()
 	as.MarkAttestationsCommitted(qe.Attestations)
+}
+
+// Handle a committed quorum network fee event
+func (s *AttestationGossip) handleQuorumPriceFeedCommitted(en *ebifrost.EventNotification) {
+	s.logger.Debug().Msg("handling quorum price feeds committed event")
+
+	var qpf common.QuorumPriceFeed
+	if err := qpf.Unmarshal(en.Payload); err != nil {
+		s.logger.Error().Err(err).Msg("fail to unmarshal quorum price feeds")
+		return
+	}
+
+	k := qpf.PriceFeed.Node.String()
+
+	s.mu.Lock()
+	as, ok := s.priceFeeds[k]
+	if ok {
+		// note, purposefully locking the single state mutex prior to releasing the global mutex to avoid race in between.
+		// This order must be maintained everywhere to avoid deadlock.
+		as.mu.Lock()
+	}
+	s.mu.Unlock()
+	if !ok {
+		return
+	}
+
+	delete(s.priceFeeds, k)
 }
 
 // Start the attestation gossip service

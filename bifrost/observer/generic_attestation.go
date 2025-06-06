@@ -68,6 +68,9 @@ type AttestableItem interface {
 
 	// basic nil check, other validation if necessary
 	IsValid() bool
+
+	// check if it can be overwritten
+	IsUnique() bool
 }
 
 // AttestMessage is an interface for messages containing an attestation
@@ -85,6 +88,7 @@ var (
 	_ AttestableItem = &common.NetworkFee{}
 	_ AttestableItem = &common.Solvency{}
 	_ AttestableItem = &common.ErrataTx{}
+	_ AttestableItem = &common.PriceFeed{}
 )
 
 // ProcessAttestation processes an attestation message by checking for duplicates,
@@ -152,14 +156,16 @@ func (s *AttestationState[T]) AddAttestation(attestation *common.Attestation) er
 	}
 
 	// Check for duplicates
-	for _, item := range s.attestations {
-		if bytes.Equal(item.attestation.Signature, attestation.Signature) {
-			// already have the signature, ignore
-			return nil
-		}
-		if bytes.Equal(item.attestation.PubKey, attestation.PubKey) {
-			// Unexpected: we should never have a different signature from the same pubkey for the same item
-			return fmt.Errorf("signature already present for %s", attestation.PubKey)
+	if s.Item.IsUnique() {
+		for _, item := range s.attestations {
+			if bytes.Equal(item.attestation.Signature, attestation.Signature) {
+				// already have the signature, ignore
+				return nil
+			}
+			if bytes.Equal(item.attestation.PubKey, attestation.PubKey) {
+				// Unexpected: we should never have a different signature from the same pubkey for the same item
+				return fmt.Errorf("signature already present for %s", attestation.PubKey)
+			}
 		}
 	}
 
@@ -171,7 +177,7 @@ func (s *AttestationState[T]) AddAttestation(attestation *common.Attestation) er
 
 	// Verify the signature
 	if err := verifySignature(signBz, attestation.Signature, attestation.PubKey); err != nil {
-		return fmt.Errorf("signature verification failed for %s - %w", attestation.PubKey, err)
+		return fmt.Errorf("signature verification failed for %x - %w", attestation.PubKey, err)
 	}
 
 	// Add the attestation

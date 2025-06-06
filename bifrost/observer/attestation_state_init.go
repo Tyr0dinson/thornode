@@ -135,25 +135,55 @@ func (s *AttestationGossip) sendAttestationState(stream network.Stream) {
 		})
 		errataTx.mu.Unlock()
 	}
+
+	allPriceFeeds := make([]*common.QuorumPriceFeed, 0, len(s.priceFeeds))
+	for _, priceFeed := range s.priceFeeds {
+		priceFeed.mu.Lock()
+		pfCopy := &common.PriceFeed{
+			Node:   priceFeed.Item.Node,
+			Height: priceFeed.Item.Height,
+			Hash:   priceFeed.Item.Hash,
+			Rates:  priceFeed.Item.Rates,
+		}
+		allPriceFeeds = append(allPriceFeeds, &common.QuorumPriceFeed{
+			PriceFeed:    pfCopy,
+			Attestations: priceFeed.AttestationsCopy(),
+		})
+		priceFeed.mu.Unlock()
+	}
+
 	s.mu.Unlock()
 
 	// Calculate total number of batches
 	totalTxs := len(allQuorumTxs)
 	totalTxBatches := (totalTxs + maxQuorumTxsPerBatch - 1) / maxQuorumTxsPerBatch
+
 	totalNfs := len(allNetworkFees)
 	totalNfBatches := (totalNfs + maxQuorumTxsPerBatch - 1) / maxQuorumTxsPerBatch
+
 	totalSolvencies := len(allSolvencies)
 	totalSolvencyBatches := (totalSolvencies + maxQuorumTxsPerBatch - 1) / maxQuorumTxsPerBatch
+
 	totalErrataTxs := len(allErrataTxs)
 	totalErrataBatches := (totalErrataTxs + maxQuorumTxsPerBatch - 1) / maxQuorumTxsPerBatch
 
-	totalBatches := max(totalTxBatches, totalNfBatches, totalSolvencyBatches, totalErrataBatches)
+	totalPriceFeeds := len(allPriceFeeds)
+	totalPriceFeedBatches := (totalPriceFeeds + maxQuorumTxsPerBatch) / maxQuorumTxsPerBatch
+
+	totalBatches := max(
+		totalTxBatches,
+		totalNfBatches,
+		totalSolvencyBatches,
+		totalErrataBatches,
+		totalPriceFeedBatches,
+	)
 
 	s.logger.Debug().
 		Int("total_txs", totalTxs).
 		Int("total_network_fees", totalNfs).
 		Int("total_solvencies", totalSolvencies).
 		Int("total_errata_txs", totalErrataTxs).
+		Int("total_price_fees", totalPriceFeeds).
 		Int("total_batches", totalBatches).
 		Int("max_per_batch", maxQuorumTxsPerBatch).
 		Msg("sending attestation state in batches")
@@ -195,6 +225,8 @@ func (s *AttestationGossip) sendAttestationState(stream network.Stream) {
 		var batchNfs []*common.QuorumNetworkFee
 		var batchSolvencies []*common.QuorumSolvency
 		var batchErrataTxs []*common.QuorumErrataTx
+		var batchPriceFeeds []*common.QuorumPriceFeed
+
 		if totalTxs > 0 && startIdx < totalTxs {
 			if endIdx > totalTxs {
 				endIdx = totalTxs
@@ -223,12 +255,20 @@ func (s *AttestationGossip) sendAttestationState(stream network.Stream) {
 			batchErrataTxs = allErrataTxs[startIdx:endIdx]
 		}
 
+		if totalPriceFeeds > 0 && startIdx < totalPriceFeeds {
+			if endIdx > totalPriceFeeds {
+				endIdx = totalPriceFeeds
+			}
+			batchPriceFeeds = allPriceFeeds[startIdx:endIdx]
+		}
+
 		// Create batch with current set of QuorumTxs
 		batch := common.QuorumState{
 			QuoTxs:         batchTxs,
 			QuoNetworkFees: batchNfs,
 			QuoSolvencies:  batchSolvencies,
 			QuoErrataTxs:   batchErrataTxs,
+			QuoPriceFeeds:  batchPriceFeeds,
 		}
 
 		// Marshal the batch (handle empty batches specially)
@@ -320,6 +360,8 @@ func (s *AttestationGossip) sendAttestationState(stream network.Stream) {
 
 // Add a function to handle receiving batched attestation state
 func (s *AttestationGossip) receiveBatchedAttestationState(stream network.Stream, initialData []byte) error {
+	s.logger.Info().Msg("received batched attestation state")
+
 	remotePeer := stream.Conn().RemotePeer()
 	logger := s.logger.With().Str("peer", remotePeer.String()).Str("who", "receiver").Logger()
 
@@ -329,7 +371,7 @@ func (s *AttestationGossip) receiveBatchedAttestationState(stream network.Stream
 	}
 
 	totalBatches := int(binary.LittleEndian.Uint32(initialData[:4]))
-	logger.Debug().Int("total_batches", totalBatches).Msg("receiving batched attestation state")
+	logger.Info().Int("total_batches", totalBatches).Msg("receiving batched attestation state")
 
 	if totalBatches == 0 {
 		// If there are no transactions, we still need to send the end signal
@@ -469,6 +511,15 @@ func (s *AttestationGossip) processAttestationStateBatch(logger zerolog.Logger, 
 			logger.Debug().Msg("handling errata tx from peer state dump")
 			s.handleErrataAttestation(ctx, common.AttestErrataTx{
 				ErrataTx:    errataTx.ErrataTx,
+				Attestation: att,
+			})
+		}
+	}
+	for _, priceFeed := range batch.QuoPriceFeeds {
+		for _, att := range priceFeed.Attestations {
+			logger.Debug().Msg("handling price feed from peer state dump")
+			s.handlePriceFeedAttestation(ctx, common.AttestPriceFeed{
+				PriceFeed:   priceFeed.PriceFeed,
 				Attestation: att,
 			})
 		}

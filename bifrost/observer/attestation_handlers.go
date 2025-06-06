@@ -172,6 +172,44 @@ func (s *AttestationGossip) AttestErrata(ctx context.Context, errata common.Erra
 	return nil
 }
 
+// AttestPriceFeed creates and broadcasts an attestation for a price feed
+func (s *AttestationGossip) AttestPriceFeed(ctx context.Context, priceFeed common.PriceFeed) error {
+	s.logger.Info().Msgf(
+		"attest price feed %s: %s",
+		priceFeed.Node.String(), priceFeed.Rates,
+	)
+
+	if !s.isActiveValidator(s.host.ID()) {
+		return fmt.Errorf("skipping attest price feed: not active")
+	}
+
+	signBz, err := priceFeed.GetSignablePayload()
+	if err != nil {
+		return fmt.Errorf("fail to marshal price feed sign payload: %w", err)
+	}
+
+	signature, err := s.privKey.Sign(signBz)
+	if err != nil {
+		return fmt.Errorf("fail to sign price feed sign payload: %w", err)
+	}
+
+	msg := common.AttestPriceFeed{
+		PriceFeed: &priceFeed,
+		Attestation: &common.Attestation{
+			PubKey:    s.pubKey,
+			Signature: signature,
+		},
+	}
+
+	// Handle the attestation locally first
+	s.logger.Info().Msg("handling attestation locally")
+	s.handlePriceFeedAttestation(ctx, msg)
+
+	s.batcher.AddPriceFeed(msg)
+
+	return nil
+}
+
 // handleStreamAttestationState handles incoming observed transaction streams
 func (s *AttestationGossip) handleStreamAttestationState(stream network.Stream) {
 	remotePeer := stream.Conn().RemotePeer()

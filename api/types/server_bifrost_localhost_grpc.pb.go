@@ -24,6 +24,7 @@ const (
 	LocalhostBifrost_SendQuorumNetworkFee_FullMethodName = "/types.LocalhostBifrost/SendQuorumNetworkFee"
 	LocalhostBifrost_SendQuorumSolvency_FullMethodName   = "/types.LocalhostBifrost/SendQuorumSolvency"
 	LocalhostBifrost_SendQuorumErrataTx_FullMethodName   = "/types.LocalhostBifrost/SendQuorumErrataTx"
+	LocalhostBifrost_SendQuorumPriceFeed_FullMethodName  = "/types.LocalhostBifrost/SendQuorumPriceFeed"
 	LocalhostBifrost_SubscribeToEvents_FullMethodName    = "/types.LocalhostBifrost/SubscribeToEvents"
 )
 
@@ -35,6 +36,7 @@ type LocalhostBifrostClient interface {
 	SendQuorumNetworkFee(ctx context.Context, in *common.QuorumNetworkFee, opts ...grpc.CallOption) (*SendQuorumNetworkFeeResult, error)
 	SendQuorumSolvency(ctx context.Context, in *common.QuorumSolvency, opts ...grpc.CallOption) (*SendQuorumSolvencyResult, error)
 	SendQuorumErrataTx(ctx context.Context, in *common.QuorumErrataTx, opts ...grpc.CallOption) (*SendQuorumErrataTxResult, error)
+	SendQuorumPriceFeed(ctx context.Context, in *common.QuorumPriceFeed, opts ...grpc.CallOption) (*SendQuorumPriceFeedResult, error)
 	// Server streaming for notifications
 	SubscribeToEvents(ctx context.Context, in *SubscribeRequest, opts ...grpc.CallOption) (LocalhostBifrost_SubscribeToEventsClient, error)
 }
@@ -83,6 +85,15 @@ func (c *localhostBifrostClient) SendQuorumErrataTx(ctx context.Context, in *com
 	return out, nil
 }
 
+func (c *localhostBifrostClient) SendQuorumPriceFeed(ctx context.Context, in *common.QuorumPriceFeed, opts ...grpc.CallOption) (*SendQuorumPriceFeedResult, error) {
+	out := new(SendQuorumPriceFeedResult)
+	err := c.cc.Invoke(ctx, LocalhostBifrost_SendQuorumPriceFeed_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *localhostBifrostClient) SubscribeToEvents(ctx context.Context, in *SubscribeRequest, opts ...grpc.CallOption) (LocalhostBifrost_SubscribeToEventsClient, error) {
 	stream, err := c.cc.NewStream(ctx, &LocalhostBifrost_ServiceDesc.Streams[0], LocalhostBifrost_SubscribeToEvents_FullMethodName, opts...)
 	if err != nil {
@@ -123,6 +134,7 @@ type LocalhostBifrostServer interface {
 	SendQuorumNetworkFee(context.Context, *common.QuorumNetworkFee) (*SendQuorumNetworkFeeResult, error)
 	SendQuorumSolvency(context.Context, *common.QuorumSolvency) (*SendQuorumSolvencyResult, error)
 	SendQuorumErrataTx(context.Context, *common.QuorumErrataTx) (*SendQuorumErrataTxResult, error)
+	SendQuorumPriceFeed(context.Context, *common.QuorumPriceFeed) (*SendQuorumPriceFeedResult, error)
 	// Server streaming for notifications
 	SubscribeToEvents(*SubscribeRequest, LocalhostBifrost_SubscribeToEventsServer) error
 	mustEmbedUnimplementedLocalhostBifrostServer()
@@ -143,6 +155,9 @@ func (UnimplementedLocalhostBifrostServer) SendQuorumSolvency(context.Context, *
 }
 func (UnimplementedLocalhostBifrostServer) SendQuorumErrataTx(context.Context, *common.QuorumErrataTx) (*SendQuorumErrataTxResult, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SendQuorumErrataTx not implemented")
+}
+func (UnimplementedLocalhostBifrostServer) SendQuorumPriceFeed(context.Context, *common.QuorumPriceFeed) (*SendQuorumPriceFeedResult, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SendQuorumPriceFeed not implemented")
 }
 func (UnimplementedLocalhostBifrostServer) SubscribeToEvents(*SubscribeRequest, LocalhostBifrost_SubscribeToEventsServer) error {
 	return status.Errorf(codes.Unimplemented, "method SubscribeToEvents not implemented")
@@ -232,6 +247,24 @@ func _LocalhostBifrost_SendQuorumErrataTx_Handler(srv interface{}, ctx context.C
 	return interceptor(ctx, in, info, handler)
 }
 
+func _LocalhostBifrost_SendQuorumPriceFeed_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(common.QuorumPriceFeed)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(LocalhostBifrostServer).SendQuorumPriceFeed(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: LocalhostBifrost_SendQuorumPriceFeed_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(LocalhostBifrostServer).SendQuorumPriceFeed(ctx, req.(*common.QuorumPriceFeed))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _LocalhostBifrost_SubscribeToEvents_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(SubscribeRequest)
 	if err := stream.RecvMsg(m); err != nil {
@@ -275,6 +308,10 @@ var LocalhostBifrost_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SendQuorumErrataTx",
 			Handler:    _LocalhostBifrost_SendQuorumErrataTx_Handler,
+		},
+		{
+			MethodName: "SendQuorumPriceFeed",
+			Handler:    _LocalhostBifrost_SendQuorumPriceFeed_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

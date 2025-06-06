@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"gitlab.com/thorchain/thornode/v3/bifrost/oracle"
 	"os"
 	"runtime"
 	"slices"
@@ -54,14 +55,17 @@ func TxInKey(txIn *types.TxIn) txInKey {
 type Observer struct {
 	logger                zerolog.Logger
 	chains                map[common.Chain]chainclients.ChainClient
+	oracle                *oracle.Oracle
 	stopChan              chan struct{}
 	pubkeyMgr             *pubkeymanager.PubKeyManager
 	onDeck                map[txInKey]*types.TxIn
 	lock                  *sync.Mutex
+	wg                    *sync.WaitGroup
 	globalTxsQueue        chan types.TxIn
 	globalErrataQueue     chan types.ErrataBlock
 	globalSolvencyQueue   chan types.Solvency
 	globalNetworkFeeQueue chan common.NetworkFee
+	globalPriceFeedQueue  chan common.PriceFeed
 	m                     *metrics.Metrics
 	errCounter            *prometheus.CounterVec
 	thorchainBridge       thorclient.ThorchainBridge
@@ -118,18 +122,26 @@ func NewObserver(pubkeyMgr *pubkeymanager.PubKeyManager,
 		return nil, fmt.Errorf("failed to create signed tx out cache: %w", err)
 	}
 
+	priceOracle, err := oracle.NewOracle(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("fail to create oracle instance: %w", err)
+	}
+
 	return &Observer{
 		logger:                logger,
 		chains:                chains,
+		oracle:                priceOracle,
 		stopChan:              make(chan struct{}),
 		m:                     m,
 		pubkeyMgr:             pubkeyMgr,
 		lock:                  &sync.Mutex{},
+		wg:                    &sync.WaitGroup{},
 		onDeck:                make(map[txInKey]*types.TxIn),
 		globalTxsQueue:        make(chan types.TxIn),
 		globalErrataQueue:     make(chan types.ErrataBlock),
 		globalSolvencyQueue:   make(chan types.Solvency),
 		globalNetworkFeeQueue: make(chan common.NetworkFee),
+		globalPriceFeedQueue:  make(chan common.PriceFeed),
 		errCounter:            m.GetCounterVec(metrics.ObserverError),
 		thorchainBridge:       thorchainBridge,
 		storage:               storage,
@@ -155,10 +167,14 @@ func (o *Observer) Start(ctx context.Context) error {
 	for _, chain := range o.chains {
 		chain.Start(o.globalTxsQueue, o.globalErrataQueue, o.globalSolvencyQueue, o.globalNetworkFeeQueue)
 	}
+	o.oracle.Start(o.globalPriceFeedQueue)
+	o.wg.Add(1)
+	go o.processOracle(ctx)
 	go o.processTxIns()
 	go o.processErrataTx(ctx)
 	go o.processSolvencyQueue(ctx)
 	go o.processNetworkFeeQueue(ctx)
+	go o.processPriceFeedQueue(ctx)
 	go o.deck(ctx)
 	go o.attestationGossip.Start(ctx)
 	return nil
@@ -785,6 +801,23 @@ func (o *Observer) processNetworkFeeQueue(ctx context.Context) {
 	}
 }
 
+func (o *Observer) processPriceFeedQueue(ctx context.Context) {
+	for {
+		select {
+		case <-o.stopChan:
+			return
+		case priceFeed := <-o.globalPriceFeedQueue:
+			if err := priceFeed.Valid(); err != nil {
+				o.logger.Err(err).Msgf("invalid price feed - %s", priceFeed.String())
+				continue
+			}
+			if err := o.attestationGossip.AttestPriceFeed(ctx, priceFeed); err != nil {
+				o.logger.Err(err).Msg("fail to send price feed to thorchain")
+			}
+		}
+	}
+}
+
 // Stop the observer
 func (o *Observer) Stop() error {
 	o.logger.Debug().Msg("request to stop observer")
@@ -794,6 +827,8 @@ func (o *Observer) Stop() error {
 		chain.Stop()
 	}
 
+	o.oracle.Stop()
+
 	close(o.stopChan)
 	if err := o.pubkeyMgr.Stop(); err != nil {
 		o.logger.Error().Err(err).Msg("fail to stop pool address manager")
@@ -802,4 +837,40 @@ func (o *Observer) Stop() error {
 		o.logger.Err(err).Msg("fail to close observer storage")
 	}
 	return o.m.Stop()
+}
+
+// SetOracleAccAddress set the nodes account address
+func (o *Observer) SetOracleAccAddress(address cosmos.AccAddress) {
+	o.oracle.SetAccAddress(address)
+}
+
+func (o *Observer) processOracle(ctx context.Context) {
+	defer o.wg.Done()
+
+	go func() {
+		ticker := time.NewTicker(time.Second * 2)
+		defer ticker.Stop()
+
+		lastHeight := int64(-1)
+
+		for {
+			select {
+			case <-o.stopChan:
+				return
+			case <-ticker.C:
+				height, err := o.thorchainBridge.GetBlockHeight()
+				o.logger.Info().Int64("height", height).Msg("get thorchain height")
+				if err != nil {
+					o.logger.Err(err).Msg("fail to get thorchain block height")
+					continue
+				}
+				if height > lastHeight {
+					o.attestationGossip.sendAllPriceFeedAttestationsToThornode(ctx)
+					lastHeight = height
+				} else {
+					o.oracle.GetTickers(height)
+				}
+			}
+		}
+	}()
 }

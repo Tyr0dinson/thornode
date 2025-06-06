@@ -124,9 +124,9 @@ func (vm *ValidatorMgrVCUR) BeginBlock(ctx cosmos.Context, mgr Manager, existing
 func (vm *ValidatorMgrVCUR) churn(ctx cosmos.Context) error {
 	desiredValidatorSet := vm.k.GetConfigInt64(ctx, constants.DesiredValidatorSet)
 	asgardSize := vm.k.GetConfigInt64(ctx, constants.AsgardSize)
-	redline := vm.k.GetConfigInt64(ctx, constants.BadValidatorRedline)
-	minSlashPointsForBadValidator := vm.k.GetConfigInt64(ctx, constants.MinSlashPointsForBadValidator)
-
+	// redline := vm.k.GetConfigInt64(ctx, constants.BadValidatorRedline)
+	// minSlashPointsForBadValidator := vm.k.GetConfigInt64(ctx, constants.MinSlashPointsForBadValidator)
+	//
 	// update list of ready actors
 	if err := vm.markReadyActors(ctx); err != nil {
 		return err
@@ -137,33 +137,33 @@ func (vm *ValidatorMgrVCUR) churn(ctx cosmos.Context) error {
 		return err
 	}
 
-	// Mark bad, old, low bond, and old version validators
-	// mark someone to get churned out for bad behavior
-	_, err := vm.markBadActor(ctx, minSlashPointsForBadValidator, redline)
-	if err != nil {
-		return err
-	}
-
-	// mark someone to get churned out for low bond
-	if err := vm.markLowBondActor(ctx); err != nil {
-		return err
-	}
-
-	// mark someone to get churned out for low version
-	if err := vm.markLowVersionValidators(ctx); err != nil {
-		return err
-	}
-
-	// mark someone to get churned out for age
-	if err := vm.markOldActor(ctx); err != nil {
-		return err
-	}
-
-	// mark someone(s) for not signing blocks
-	if err := vm.markMissingActors(ctx); err != nil {
-		return err
-	}
-
+	// // Mark bad, old, low bond, and old version validators
+	// // mark someone to get churned out for bad behavior
+	// _, err := vm.markBadActor(ctx, minSlashPointsForBadValidator, redline)
+	// if err != nil {
+	// 	return err
+	// }
+	//
+	// // mark someone to get churned out for low bond
+	// if err := vm.markLowBondActor(ctx); err != nil {
+	// 	return err
+	// }
+	//
+	// // mark someone to get churned out for low version
+	// if err := vm.markLowVersionValidators(ctx); err != nil {
+	// 	return err
+	// }
+	//
+	// // mark someone to get churned out for age
+	// if err := vm.markOldActor(ctx); err != nil {
+	// 	return err
+	// }
+	//
+	// // mark someone(s) for not signing blocks
+	// if err := vm.markMissingActors(ctx); err != nil {
+	// 	return err
+	// }
+	//
 	next, ok, err := vm.nextVaultNodeAccounts(ctx, int(desiredValidatorSet))
 	if err != nil {
 		return err

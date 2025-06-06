@@ -287,3 +287,77 @@ func (s *AttestationGossip) sendErrataAttestationsToThornode(ctx context.Context
 	// Mark attestations as sent
 	state.MarkAttestationsSent(isQuorum)
 }
+
+// handlePriceFeedAttestation processes attestations for price feeds
+func (s *AttestationGossip) handlePriceFeedAttestation(_ context.Context, apf common.AttestPriceFeed) {
+	// Use the pubkey as the map key
+	k := apf.PriceFeed.Node.String()
+
+	s.mu.Lock()
+	state, ok := s.priceFeeds[k]
+	if !ok {
+		// Create a new attestation state
+		state = s.priceFeedsPool.NewAttestationState(apf.PriceFeed)
+		s.priceFeeds[k] = state
+	}
+
+	// note, purposefully locking the single state mutex prior to releasing the global mutex to avoid race in between.
+	// This order must be maintained everywhere to avoid deadlock.
+	state.mu.Lock()
+	s.mu.Unlock()
+
+	defer state.mu.Unlock()
+
+	// Add the attestation
+	if err := state.AddAttestation(apf.Attestation); err != nil {
+		s.logger.Error().Err(err).Msg("fail to add attestation")
+		return
+	}
+
+	s.logger.Debug().Msgf(
+		"network fee attestation received - %s, height: %d, count: %d",
+		apf.PriceFeed.Rates, apf.PriceFeed.Height, state.AttestationCount(),
+	)
+}
+
+// sendPriceFeedAttestationsToThornode sends price feed attestations to thornode via gRPC
+func (s *AttestationGossip) sendPriceFeedAttestationsToThornode(
+	ctx context.Context,
+	priceFeed common.PriceFeed,
+	state *AttestationState[*common.PriceFeed],
+) {
+	s.logger.Info().Msg("sending price feed attestations to thornode")
+	// Send via gRPC to thornode
+	if _, err := s.grpcClient.SendQuorumPriceFeed(ctx, &common.QuorumPriceFeed{
+		PriceFeed:    &priceFeed,
+		Attestations: state.UnsentAttestations(),
+	}); err != nil {
+		s.logger.Error().Err(err).Msg("fail to send price feed")
+		return
+	}
+
+	s.logger.Info().Msgf(
+		"sent quorum network fee to thornode - %s, height: %d, attestations: %s",
+		priceFeed.Rates, priceFeed.Height, state.State(),
+	)
+
+	// // Mark attestations as sent
+	// state.MarkAttestationsSent(true)
+}
+
+func (s *AttestationGossip) sendAllPriceFeedAttestationsToThornode(
+	_ context.Context,
+) {
+	// s.logger.Info().Msg("sending all attestations to thornode")
+	// s.mu.Lock()
+	// for _, state := range s.priceFeeds {
+	// 	state.mu.Lock()
+	// 	defer state.mu.Unlock()
+	// }
+	// s.mu.Unlock()
+	//
+	// for _, state := range s.priceFeeds {
+	// 	s.sendPriceFeedAttestationsToThornode(ctx, *state.Item, state)
+	// 	delete(s.priceFeeds, state.Item.Node.String())
+	// }
+}
