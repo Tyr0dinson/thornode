@@ -2,6 +2,7 @@ package ebifrost
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	fmt "fmt"
 	"net"
@@ -29,7 +30,6 @@ const (
 	EventQuorumSolvencyCommitted   = "quorum_solvency_committed"
 	EventQuorumErrataTxCommitted   = "quorum_errata_tx_committed"
 	EventQuorumPriceFeedCommitted  = "quorum_price_feed_committed"
-	EventBeginBlock                = "begin_block"
 )
 
 var ErrAlreadyStarted = errors.New("ebifrost already started")
@@ -40,7 +40,6 @@ var notifyEvents = []string{
 	EventQuorumSolvencyCommitted,
 	EventQuorumErrataTxCommitted,
 	EventQuorumPriceFeedCommitted,
-	EventBeginBlock,
 }
 
 var _, ebifrostSignerAcc, _ = bech32.DecodeAndConvert(ebifrostSigner)
@@ -610,6 +609,8 @@ func (b *EnshrinedBifrost) MarkQuorumPriceFeedAttestationsConfirmed(ctx context.
 		return
 	}
 
+	b.logger.Info("Marking quorum price feed attestations confirmed")
+
 	go b.broadcastQuorumPriceFeedEvent(qpf)
 
 	found := b.priceFeedCache.MarkAttestationsConfirmed(
@@ -620,7 +621,7 @@ func (b *EnshrinedBifrost) MarkQuorumPriceFeedAttestationsConfirmed(ctx context.
 		(*common.QuorumPriceFeed).RemoveAttestations,
 		func(qpf *common.QuorumPriceFeed, logger log.Logger) {
 			pf := qpf.PriceFeed
-			logger.Debug("Marking quorum price feed attestations confirmed",
+			logger.Info("Marking quorum price feed attestations confirmed",
 				"height", pf.Height,
 				"node", pf.Node,
 				"attestations", len(qpf.Attestations))
@@ -758,17 +759,18 @@ func (b *EnshrinedBifrost) ProposalInjectTxs(ctx sdk.Context, maxTxBytes int64) 
 	}
 
 	// Process price feeds
-	pfBzs := b.networkFeeCache.ProcessForProposal(
-		func(qnf *common.QuorumNetworkFee) (sdk.Msg, error) {
-			return types.NewMsgNetworkFeeQuorum(qnf, ebifrostSignerAcc), nil
+	pfBzs := b.priceFeedCache.ProcessForProposal(
+		func(qpf *common.QuorumPriceFeed) (sdk.Msg, error) {
+			return types.NewMsgPriceFeedQuorum(qpf, ebifrostSignerAcc), nil
 		},
 		b.MarshalTx,
-		func(qnf *common.QuorumNetworkFee, logger log.Logger) {
-			nf := qnf.NetworkFee
-			logger.Info("Injecting quorum network fee",
-				"chain", nf.Chain,
-				"height", nf.Height,
-				"attestations", len(qnf.Attestations))
+		func(qpf *common.QuorumPriceFeed, logger log.Logger) {
+			pf := qpf.PriceFeed
+			logger.Info("Injecting quorum price feed",
+				"height", pf.Height,
+				"hash", hex.EncodeToString(pf.Hash),
+				"rates", pf.Rates,
+				"attestations", len(qpf.Attestations))
 		},
 		b.logger,
 	)

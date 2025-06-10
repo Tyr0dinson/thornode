@@ -35,6 +35,8 @@ func (e *EnshrinedBifrostPostDecorator) PostHandle(ctx sdk.Context, tx sdk.Tx, s
 			e.EnshrinedBifrost.MarkQuorumSolvencyAttestationsConfirmed(ctx, m.QuoSolvency)
 		case *types.MsgErrataTxQuorum:
 			e.EnshrinedBifrost.MarkQuorumErrataTxAttestationsConfirmed(ctx, m.QuoErrata)
+		case *types.MsgPriceFeedQuorum:
+			e.EnshrinedBifrost.MarkQuorumPriceFeedAttestationsConfirmed(ctx, m.QuoPriceFeed)
 		}
 	}
 

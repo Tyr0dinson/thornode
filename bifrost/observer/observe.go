@@ -865,7 +865,7 @@ func (o *Observer) processOracle(ctx context.Context) {
 					continue
 				}
 				if height > lastHeight {
-					o.attestationGossip.sendAllPriceFeedAttestationsToThornode(ctx)
+					o.attestationGossip.sendAllPriceFeedAttestationsToThornode(ctx, height)
 					lastHeight = height
 				} else {
 					o.oracle.GetTickers(height)

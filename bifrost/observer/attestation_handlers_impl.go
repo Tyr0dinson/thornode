@@ -2,6 +2,7 @@ package observer
 
 import (
 	"context"
+	"encoding/hex"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
@@ -291,7 +292,7 @@ func (s *AttestationGossip) sendErrataAttestationsToThornode(ctx context.Context
 // handlePriceFeedAttestation processes attestations for price feeds
 func (s *AttestationGossip) handlePriceFeedAttestation(_ context.Context, apf common.AttestPriceFeed) {
 	// Use the pubkey as the map key
-	k := apf.PriceFeed.Node.String()
+	k := hex.EncodeToString(apf.PriceFeed.Node)
 
 	s.mu.Lock()
 	state, ok := s.priceFeeds[k]
@@ -315,7 +316,7 @@ func (s *AttestationGossip) handlePriceFeedAttestation(_ context.Context, apf co
 	}
 
 	s.logger.Debug().Msgf(
-		"network fee attestation received - %s, height: %d, count: %d",
+		"price feed attestation received - %s, height: %d, count: %d",
 		apf.PriceFeed.Rates, apf.PriceFeed.Height, state.AttestationCount(),
 	)
 }
@@ -346,18 +347,18 @@ func (s *AttestationGossip) sendPriceFeedAttestationsToThornode(
 }
 
 func (s *AttestationGossip) sendAllPriceFeedAttestationsToThornode(
-	_ context.Context,
+	ctx context.Context, height int64,
 ) {
-	// s.logger.Info().Msg("sending all attestations to thornode")
-	// s.mu.Lock()
-	// for _, state := range s.priceFeeds {
-	// 	state.mu.Lock()
-	// 	defer state.mu.Unlock()
-	// }
-	// s.mu.Unlock()
-	//
-	// for _, state := range s.priceFeeds {
-	// 	s.sendPriceFeedAttestationsToThornode(ctx, *state.Item, state)
-	// 	delete(s.priceFeeds, state.Item.Node.String())
-	// }
+	s.logger.Info().Msg("sending all attestations to thornode")
+	s.mu.Lock()
+	for _, state := range s.priceFeeds {
+		state.mu.Lock()
+		defer state.mu.Unlock()
+	}
+	s.mu.Unlock()
+
+	for _, state := range s.priceFeeds {
+		s.sendPriceFeedAttestationsToThornode(ctx, *state.Item, state)
+		delete(s.priceFeeds, hex.EncodeToString(state.Item.Node))
+	}
 }

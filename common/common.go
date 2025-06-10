@@ -167,7 +167,7 @@ func (pf *PriceFeed) GetSignablePayload() ([]byte, error) {
 }
 
 func (pf *PriceFeed) Equals(other *PriceFeed) bool {
-	if !pf.Node.Equals(other.Node) {
+	if !bytes.Equal(pf.Node, other.Node) {
 		return false
 	}
 	if pf.Height != other.Height {

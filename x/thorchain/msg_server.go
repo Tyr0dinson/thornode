@@ -77,6 +77,11 @@ func (ms msgServer) ObservedTxQuorum(goCtx context.Context, msg *types.MsgObserv
 	return externalHandler(goCtx, handler, msg)
 }
 
+func (ms msgServer) PriceFeedQuorum(goCtx context.Context, msg *types.MsgPriceFeedQuorum) (*types.MsgEmpty, error) {
+	handler := NewPriceFeedQuorum(ms.mgr)
+	return externalHandler(goCtx, handler, msg)
+}
+
 func (ms msgServer) ThorSend(goCtx context.Context, msg *types.MsgSend) (*types.MsgEmpty, error) {
 	handler := NewSendHandler(ms.mgr)
 	return externalHandler(goCtx, handler, msg)

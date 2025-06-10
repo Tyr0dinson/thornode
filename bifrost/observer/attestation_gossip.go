@@ -3,6 +3,7 @@ package observer
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"fmt"
 	"sync"
 	"time"
@@ -473,7 +474,7 @@ func (s *AttestationGossip) handleQuorumPriceFeedCommitted(en *ebifrost.EventNot
 		return
 	}
 
-	k := qpf.PriceFeed.Node.String()
+	k := hex.EncodeToString(qpf.PriceFeed.Node)
 
 	s.mu.Lock()
 	as, ok := s.priceFeeds[k]

@@ -2,6 +2,7 @@ package observer
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"time"
@@ -176,7 +177,7 @@ func (s *AttestationGossip) AttestErrata(ctx context.Context, errata common.Erra
 func (s *AttestationGossip) AttestPriceFeed(ctx context.Context, priceFeed common.PriceFeed) error {
 	s.logger.Info().Msgf(
 		"attest price feed %s: %s",
-		priceFeed.Node.String(), priceFeed.Rates,
+		hex.EncodeToString(priceFeed.Node), priceFeed.Rates,
 	)
 
 	if !s.isActiveValidator(s.host.ID()) {
@@ -389,5 +390,17 @@ func (s *AttestationGossip) handleStreamBatchedAttestations(stream network.Strea
 			continue
 		}
 		s.handleErrataAttestation(context.Background(), *errata)
+	}
+
+	for i, priceFeed := range batch.AttestPriceFeeds {
+		if int64(i) >= max {
+			logger.Error().Msgf("price feed size %d exceeds max size %d", len(batch.AttestPriceFeeds), max)
+			break
+		}
+		if priceFeed == nil {
+			logger.Error().Msgf("price feed is nil at index %d", i)
+			continue
+		}
+		s.handlePriceFeedAttestation(context.Background(), *priceFeed)
 	}
 }

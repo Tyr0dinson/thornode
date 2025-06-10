@@ -183,7 +183,7 @@ func (s *AttestationGossip) sendAttestationState(stream network.Stream) {
 		Int("total_network_fees", totalNfs).
 		Int("total_solvencies", totalSolvencies).
 		Int("total_errata_txs", totalErrataTxs).
-		Int("total_price_fees", totalPriceFeeds).
+		Int("total_price_feeds", totalPriceFeeds).
 		Int("total_batches", totalBatches).
 		Int("max_per_batch", maxQuorumTxsPerBatch).
 		Msg("sending attestation state in batches")
@@ -354,6 +354,7 @@ func (s *AttestationGossip) sendAttestationState(stream network.Stream) {
 		Int("total_network_fees", totalNfs).
 		Int("total_solvencies", totalSolvencies).
 		Int("total_errata_txs", totalErrataTxs).
+		Int("total_price_feeds", totalPriceFeeds).
 		Int("total_batches", totalBatches).
 		Msg("successfully sent attestation state in batches")
 }
