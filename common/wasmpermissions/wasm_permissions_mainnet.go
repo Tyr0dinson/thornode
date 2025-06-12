@@ -102,9 +102,9 @@ var WasmPermissionsRaw = WasmPermissions{
 			},
 		},
 
-		// rujira-staking v1.1.0
-		"dd9527a025bc3efd10fd5c13bbd6fc0c58144829e3a4944e9fb204c7bf5b5b7f": {
-			Origin: "https://gitlab.com/thorchain/rujira/-/tree/5a5a3869b6e33716e7d1711a28bd2b672b8f62b8/contracts/rujira-staking",
+		// rujira-staking v1.2.0
+		"9f3a872c75ab4413dd37936f720b81a051062b1b96554c9cb46c7ccdb4fd017e": {
+			Origin: "https://gitlab.com/thorchain/rujira/-/tree/3b2942ba9921a700fcd58d19f06f762d9a1131ff/contracts/rujira-staking",
 			Deployers: map[string]bool{
 				"thor1e0lmk5juawc46jwjwd0xfz587njej7ay5fh6cd": true,
 				// AUTO x for TCY auto-compounder
