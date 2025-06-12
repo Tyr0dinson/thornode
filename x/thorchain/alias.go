@@ -353,6 +353,7 @@ type (
 	EventSlash               = types.EventSlash
 	EventOutbound            = types.EventOutbound
 	NetworkFee               = types.NetworkFee
+	PriceFeed                = types.PriceFeed
 	ObservedNetworkFeeVoter  = types.ObservedNetworkFeeVoter
 	Jail                     = types.Jail
 	RagnarokWithdrawPosition = types.RagnarokWithdrawPosition

@@ -203,7 +203,7 @@ func (s *AttestationGossip) AttestPriceFeed(ctx context.Context, priceFeed commo
 	}
 
 	// Handle the attestation locally first
-	s.logger.Info().Msg("handling attestation locally")
+	s.logger.Debug().Msg("handling attestation locally")
 	s.handlePriceFeedAttestation(ctx, msg)
 
 	s.batcher.AddPriceFeed(msg)

@@ -2,6 +2,7 @@ package observer
 
 import (
 	"context"
+	"encoding/hex"
 	"sync"
 	"time"
 
@@ -362,6 +363,10 @@ func (b *AttestationBatcher) AddErrataTx(errata common.AttestErrataTx) {
 
 // AddPriceFeed adds an price feed attestation to the batch
 func (b *AttestationBatcher) AddPriceFeed(priceFeed common.AttestPriceFeed) {
+	b.logger.Debug().
+		Str("pub", hex.EncodeToString(priceFeed.Attestation.PubKey)).
+		Str("node", hex.EncodeToString(priceFeed.PriceFeed.Node)).
+		Msg("add price feed")
 	// maxBatchSize := b.getMaxBatchSize()
 
 	b.mu.Lock()

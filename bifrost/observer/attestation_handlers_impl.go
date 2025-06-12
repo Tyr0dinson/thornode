@@ -3,7 +3,6 @@ package observer
 import (
 	"context"
 	"encoding/hex"
-
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
@@ -291,34 +290,37 @@ func (s *AttestationGossip) sendErrataAttestationsToThornode(ctx context.Context
 
 // handlePriceFeedAttestation processes attestations for price feeds
 func (s *AttestationGossip) handlePriceFeedAttestation(_ context.Context, apf common.AttestPriceFeed) {
-	// Use the pubkey as the map key
-	k := hex.EncodeToString(apf.PriceFeed.Node)
+	// Use the pubkey as key
+	k := hex.EncodeToString(apf.Attestation.PubKey)
 
-	s.mu.Lock()
-	state, ok := s.priceFeeds[k]
-	if !ok {
-		// Create a new attestation state
-		state = s.priceFeedsPool.NewAttestationState(apf.PriceFeed)
-		s.priceFeeds[k] = state
-	}
-
-	// note, purposefully locking the single state mutex prior to releasing the global mutex to avoid race in between.
-	// This order must be maintained everywhere to avoid deadlock.
-	state.mu.Lock()
-	s.mu.Unlock()
-
-	defer state.mu.Unlock()
-
-	// Add the attestation
-	if err := state.AddAttestation(apf.Attestation); err != nil {
-		s.logger.Error().Err(err).Msg("fail to add attestation")
+	// Get the marshaled data for signature verification
+	signBz, err := apf.PriceFeed.GetSignablePayload()
+	if err != nil {
+		s.logger.Error().Err(err).Msg("fail to get signable payload")
 		return
 	}
 
-	s.logger.Debug().Msgf(
-		"price feed attestation received - %s, height: %d, count: %d",
-		apf.PriceFeed.Rates, apf.PriceFeed.Height, state.AttestationCount(),
-	)
+	// Verify the signature
+	att := apf.Attestation
+	err = verifySignature(signBz, att.Signature, att.PubKey)
+	if err != nil {
+		s.logger.Error().Err(err).Msgf("signature verification failed for %x", att.PubKey)
+		return
+	}
+
+	// We don't collect multiple attestations for price feeds, rather want
+	// to store the most recent price we received
+	s.mu.Lock()
+	state, ok := s.priceFeeds[k]
+	if !ok || state.Item.Time < apf.PriceFeed.Time {
+		// Set new attestation state
+		state = s.priceFeedsPool.NewAttestationState(apf.PriceFeed)
+		state.attestations = []attestationSentState{
+			{attestation: apf.Attestation, sent: false},
+		}
+		s.priceFeeds[k] = state
+	}
+	s.mu.Unlock()
 }
 
 // sendPriceFeedAttestationsToThornode sends price feed attestations to thornode via gRPC
@@ -338,8 +340,8 @@ func (s *AttestationGossip) sendPriceFeedAttestationsToThornode(
 	}
 
 	s.logger.Info().Msgf(
-		"sent quorum network fee to thornode - %s, height: %d, attestations: %s",
-		priceFeed.Rates, priceFeed.Height, state.State(),
+		"sent quorum price feed to thornode - %s, node: %x, attestations: %s",
+		priceFeed.Rates, priceFeed.Node, state.State(),
 	)
 
 	// // Mark attestations as sent
@@ -347,7 +349,7 @@ func (s *AttestationGossip) sendPriceFeedAttestationsToThornode(
 }
 
 func (s *AttestationGossip) sendAllPriceFeedAttestationsToThornode(
-	ctx context.Context, height int64,
+	ctx context.Context,
 ) {
 	s.logger.Info().Msg("sending all attestations to thornode")
 	s.mu.Lock()
@@ -357,8 +359,8 @@ func (s *AttestationGossip) sendAllPriceFeedAttestationsToThornode(
 	}
 	s.mu.Unlock()
 
-	for _, state := range s.priceFeeds {
+	for key, state := range s.priceFeeds {
 		s.sendPriceFeedAttestationsToThornode(ctx, *state.Item, state)
-		delete(s.priceFeeds, hex.EncodeToString(state.Item.Node))
+		defer delete(s.priceFeeds, key)
 	}
 }

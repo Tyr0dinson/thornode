@@ -14,7 +14,6 @@ var LatestVersion semver.Version = semver.MustParse("999.0.0")
 func (o *ObservedTx) IsValid() bool {
 	return o != nil
 }
-func (o *ObservedTx) IsUnique() bool { return true }
 
 // GetSignablePayload returns the data that is signed for verification
 func (o *ObservedTx) GetSignablePayload() ([]byte, error) {
@@ -52,7 +51,6 @@ func (m *NetworkFee) Valid() error {
 func (nf *NetworkFee) IsValid() bool {
 	return nf != nil
 }
-func (nf *NetworkFee) IsUnique() bool { return true }
 
 // GetSignablePayload returns the data that is signed for verification
 func (nf *NetworkFee) GetSignablePayload() ([]byte, error) {
@@ -87,7 +85,6 @@ func (s *Solvency) Hash() (TxID, error) {
 func (s *Solvency) IsValid() bool {
 	return s != nil
 }
-func (s *Solvency) IsUnique() bool { return true }
 
 // GetSignablePayload returns the data that is signed for verification
 func (s *Solvency) GetSignablePayload() ([]byte, error) {
@@ -125,7 +122,6 @@ func (s *Solvency) Equals(other *Solvency) bool {
 func (e *ErrataTx) IsValid() bool {
 	return e != nil
 }
-func (e *ErrataTx) IsUnique() bool { return true }
 
 // GetSignablePayload returns the data that is signed for verification
 func (e *ErrataTx) GetSignablePayload() ([]byte, error) {
@@ -146,9 +142,6 @@ func (pf *PriceFeed) Valid() error {
 	// if len(pf.Pubkey) != 20 {
 	// 	return fmt.Errorf("pubkey size is invalid: %d", len(pf.Pubkey))
 	// }
-	if len(pf.Hash) != sha256.Size {
-		return fmt.Errorf("hash length is invalid: %d", len(pf.Hash))
-	}
 	if len(pf.Rates) == 0 {
 		return fmt.Errorf("rates is empty")
 	}
@@ -159,7 +152,6 @@ func (pf *PriceFeed) Valid() error {
 func (pf *PriceFeed) IsValid() bool {
 	return pf != nil
 }
-func (pf *PriceFeed) IsUnique() bool { return false }
 
 // GetSignablePayload returns the data that is signed for verification
 func (pf *PriceFeed) GetSignablePayload() ([]byte, error) {
@@ -170,13 +162,10 @@ func (pf *PriceFeed) Equals(other *PriceFeed) bool {
 	if !bytes.Equal(pf.Node, other.Node) {
 		return false
 	}
-	if pf.Height != other.Height {
+	if pf.Time != other.Time {
 		return false
 	}
 	if pf.Rates != other.Rates {
-		return false
-	}
-	if !bytes.Equal(pf.Hash, other.Hash) {
 		return false
 	}
 	return true

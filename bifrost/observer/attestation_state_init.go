@@ -140,10 +140,9 @@ func (s *AttestationGossip) sendAttestationState(stream network.Stream) {
 	for _, priceFeed := range s.priceFeeds {
 		priceFeed.mu.Lock()
 		pfCopy := &common.PriceFeed{
-			Node:   priceFeed.Item.Node,
-			Height: priceFeed.Item.Height,
-			Hash:   priceFeed.Item.Hash,
-			Rates:  priceFeed.Item.Rates,
+			Node:  priceFeed.Item.Node,
+			Time:  priceFeed.Item.Time,
+			Rates: priceFeed.Item.Rates,
 		}
 		allPriceFeeds = append(allPriceFeeds, &common.QuorumPriceFeed{
 			PriceFeed:    pfCopy,

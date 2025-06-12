@@ -2,7 +2,6 @@ package oracle
 
 import (
 	"context"
-	"crypto/sha256"
 	"fmt"
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/providers"
@@ -131,7 +130,7 @@ func (o *Oracle) getTickers() {
 	o.mtx.Unlock()
 }
 
-func (o *Oracle) GetTickers(height int64) {
+func (o *Oracle) GetTickers() {
 	if o.address.Empty() {
 		o.logger.Warn().Msg("oracle address is empty")
 		return
@@ -145,8 +144,9 @@ func (o *Oracle) GetTickers(height int64) {
 	rates := []string{}
 
 	priceFeed := common.PriceFeed{
-		Height: height,
-		Node:   o.address,
+		Time: time.Now().UnixMilli(),
+		// TODO: Might not need the address, can be taken from attestation signer
+		Node: o.address,
 	}
 
 	o.mtx.Lock()
@@ -156,12 +156,6 @@ func (o *Oracle) GetTickers(height int64) {
 	o.mtx.Unlock()
 
 	priceFeed.Rates = strings.Join(rates, ",")
-
-	hash := sha256.Sum256(
-		[]byte(fmt.Sprintf("%d%s", height, priceFeed.Rates)),
-	)
-
-	priceFeed.Hash = hash[:]
 
 	o.queue <- priceFeed
 }

@@ -9,7 +9,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/api/types"
 	"gitlab.com/thorchain/thornode/v3/common"
-	cosmos "gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
 var (
@@ -18,7 +18,7 @@ var (
 	_ sdk.LegacyMsg        = &MsgPriceFeedQuorum{}
 )
 
-// NewMsgPriceFeed create a new instance of MsgPriceFeed
+// NewMsgPriceFeedQuorum creates a new instance of MsgPriceFeed
 func NewMsgPriceFeedQuorum(quoPriceFeed *common.QuorumPriceFeed, signer cosmos.AccAddress) *MsgPriceFeedQuorum {
 	return &MsgPriceFeedQuorum{
 		QuoPriceFeed: quoPriceFeed,
@@ -32,13 +32,13 @@ func NewMsgPriceFeedQuorum(quoPriceFeed *common.QuorumPriceFeed, signer cosmos.A
 // No versioning is used there.
 func (m *MsgPriceFeedQuorum) ValidateBasic() error {
 	pf := m.QuoPriceFeed.PriceFeed
-	if pf.Height <= 0 {
+	if pf.Time <= 0 {
 		return cosmos.ErrUnknownRequest("block height is negative or zero")
 	}
 	if m.Signer.Empty() {
 		return cosmos.ErrInvalidAddress(m.Signer.String())
 	}
-	if pf.Node.Empty() {
+	if len(pf.Node) == 0 {
 		return cosmos.ErrUnknownRequest("node is empty")
 	}
 	if pf.Rates == "" {

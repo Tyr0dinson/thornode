@@ -2,7 +2,6 @@ package ebifrost
 
 import (
 	"context"
-	"encoding/hex"
 	"errors"
 	fmt "fmt"
 	"net"
@@ -609,8 +608,6 @@ func (b *EnshrinedBifrost) MarkQuorumPriceFeedAttestationsConfirmed(ctx context.
 		return
 	}
 
-	b.logger.Info("Marking quorum price feed attestations confirmed")
-
 	go b.broadcastQuorumPriceFeedEvent(qpf)
 
 	found := b.priceFeedCache.MarkAttestationsConfirmed(
@@ -621,8 +618,8 @@ func (b *EnshrinedBifrost) MarkQuorumPriceFeedAttestationsConfirmed(ctx context.
 		(*common.QuorumPriceFeed).RemoveAttestations,
 		func(qpf *common.QuorumPriceFeed, logger log.Logger) {
 			pf := qpf.PriceFeed
-			logger.Info("Marking quorum price feed attestations confirmed",
-				"height", pf.Height,
+			logger.Debug("Marking quorum price feed attestations confirmed",
+				"time", pf.Time,
 				"node", pf.Node,
 				"attestations", len(qpf.Attestations))
 		},
@@ -631,7 +628,7 @@ func (b *EnshrinedBifrost) MarkQuorumPriceFeedAttestationsConfirmed(ctx context.
 	if !found {
 		cmpPf := qpf.PriceFeed
 		b.logger.Debug("Failed to find quorum price feed to mark attestations confirmed",
-			"height", cmpPf.Height,
+			"time", cmpPf.Time,
 			"node", cmpPf.Node,
 		)
 	}
@@ -767,8 +764,7 @@ func (b *EnshrinedBifrost) ProposalInjectTxs(ctx sdk.Context, maxTxBytes int64) 
 		func(qpf *common.QuorumPriceFeed, logger log.Logger) {
 			pf := qpf.PriceFeed
 			logger.Info("Injecting quorum price feed",
-				"height", pf.Height,
-				"hash", hex.EncodeToString(pf.Hash),
+				"time", pf.Time,
 				"rates", pf.Rates,
 				"attestations", len(qpf.Attestations))
 		},

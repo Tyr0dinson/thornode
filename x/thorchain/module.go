@@ -199,6 +199,10 @@ func (am AppModule) BeginBlock(goCtx context.Context) error {
 	if err := am.mgr.Keeper().RemoveExpiredUpgradeProposals(ctx); err != nil {
 		ctx.Logger().Error("Failed to remove expired upgrade proposals", "error", err)
 	}
+
+	if err := am.mgr.OracleManager().BeginBlock(ctx); err != nil {
+		ctx.Logger().Error("fail to begin oracle manager", "error", err)
+	}
 	return nil
 }
 

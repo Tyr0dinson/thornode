@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle"
+	"io/ioutil"
+	"net/http"
 	"os"
 	"runtime"
 	"slices"
@@ -812,7 +814,7 @@ func (o *Observer) processPriceFeedQueue(ctx context.Context) {
 				continue
 			}
 			if err := o.attestationGossip.AttestPriceFeed(ctx, priceFeed); err != nil {
-				o.logger.Err(err).Msg("fail to send price feed to thorchain")
+				o.logger.Err(err).Msg("fail to send price feed")
 			}
 		}
 	}
@@ -848,7 +850,7 @@ func (o *Observer) processOracle(ctx context.Context) {
 	defer o.wg.Done()
 
 	go func() {
-		ticker := time.NewTicker(time.Second * 2)
+		ticker := time.NewTicker(time.Millisecond * 500)
 		defer ticker.Stop()
 
 		lastHeight := int64(-1)
@@ -858,17 +860,47 @@ func (o *Observer) processOracle(ctx context.Context) {
 			case <-o.stopChan:
 				return
 			case <-ticker.C:
-				height, err := o.thorchainBridge.GetBlockHeight()
-				o.logger.Info().Int64("height", height).Msg("get thorchain height")
+				var blockResponse struct {
+					Result struct {
+						Block struct {
+							Header struct {
+								Height string `json:"height"`
+							} `json:"header"`
+						} `json:"block"`
+					} `json:"result"`
+				}
+
+				response, err := http.Get("http://127.0.0.1:26657/block")
 				if err != nil {
-					o.logger.Err(err).Msg("fail to get thorchain block height")
+					o.logger.Err(err).Msg("fail to rpc response")
 					continue
 				}
+				defer response.Body.Close()
+
+				body, err := ioutil.ReadAll(response.Body)
+				if err != nil {
+					o.logger.Err(err).Msg("Error reading body")
+					continue
+				}
+
+				err = json.Unmarshal(body, &blockResponse)
+				if err != nil {
+					o.logger.Err(err).Msg("fail to unmarshal response")
+					continue
+				}
+
+				height, err := strconv.ParseInt(blockResponse.Result.Block.Header.Height, 10, 64)
+				if err != nil {
+					o.logger.Err(err).Msg("fail to parse height")
+					continue
+				}
+				o.logger.Info().Int64("height", height).Msg("get thorchain height")
+
 				if height > lastHeight {
-					o.attestationGossip.sendAllPriceFeedAttestationsToThornode(ctx, height)
+					o.attestationGossip.sendAllPriceFeedAttestationsToThornode(ctx)
 					lastHeight = height
 				} else {
-					o.oracle.GetTickers(height)
+					o.oracle.GetTickers()
 				}
 			}
 		}

@@ -68,9 +68,6 @@ type AttestableItem interface {
 
 	// basic nil check, other validation if necessary
 	IsValid() bool
-
-	// check if it can be overwritten
-	IsUnique() bool
 }
 
 // AttestMessage is an interface for messages containing an attestation
@@ -155,17 +152,14 @@ func (s *AttestationState[T]) AddAttestation(attestation *common.Attestation) er
 		return fmt.Errorf("item is not valid")
 	}
 
-	// Check for duplicates
-	if s.Item.IsUnique() {
-		for _, item := range s.attestations {
-			if bytes.Equal(item.attestation.Signature, attestation.Signature) {
-				// already have the signature, ignore
-				return nil
-			}
-			if bytes.Equal(item.attestation.PubKey, attestation.PubKey) {
-				// Unexpected: we should never have a different signature from the same pubkey for the same item
-				return fmt.Errorf("signature already present for %s", attestation.PubKey)
-			}
+	for _, item := range s.attestations {
+		if bytes.Equal(item.attestation.Signature, attestation.Signature) {
+			// already have the signature, ignore
+			return nil
+		}
+		if bytes.Equal(item.attestation.PubKey, attestation.PubKey) {
+			// Unexpected: we should never have a different signature from the same pubkey for the same item
+			return fmt.Errorf("signature already present for %s", attestation.PubKey)
 		}
 	}
 

@@ -81,6 +81,8 @@ type Keeper interface {
 	KeeperMimir
 	KeeperNetworkFee
 	KeeperObservedNetworkFeeVoter
+	KeeperPriceFeed
+	KeeperOracle
 	KeeperChainContract
 	KeeperSolvencyVoter
 	KeeperTHORName
@@ -428,6 +430,18 @@ type KeeperChainContract interface {
 type KeeperSolvencyVoter interface {
 	SetSolvencyVoter(_ cosmos.Context, _ SolvencyVoter)
 	GetSolvencyVoter(_ cosmos.Context, _ common.TxID, _ common.Chain) (SolvencyVoter, error)
+}
+
+type KeeperPriceFeed interface {
+	SetPriceFeed(ctx cosmos.Context, priceFeed PriceFeed) error
+	GetPriceFeed(ctx cosmos.Context, node string) (PriceFeed, error)
+	GetPriceFeedIterator(ctx cosmos.Context) cosmos.Iterator
+}
+
+type KeeperOracle interface {
+	SetPrice(ctx cosmos.Context, oraclePrice OraclePrice) error
+	GetPrice(ctx cosmos.Context, symbol string) (OraclePrice, error)
+	GetPriceIterator(ctx cosmos.Context) cosmos.Iterator
 }
 
 // NewKeeper creates new instances of the thorchain Keeper
