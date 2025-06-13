@@ -139,6 +139,7 @@ func (c *Converter) ConvertToUsd() (map[string]*big.Float, error) {
 
 // ----------------------------------------------------------------------------
 
+// TODO: Use MAD instead
 // ComputeStandardDeviation computes and returns the standard deviation and mean
 // of provided ticker prices
 func ComputeStandardDeviation(values []*big.Float) (*big.Float, *big.Float, error) {

@@ -682,3 +682,19 @@ func (s *queryServer) Codes(c context.Context, req *types.QueryCodesRequest) (*t
 	ctx := s.unwrapSdkContext(c)
 	return s.queryCodes(ctx, req)
 }
+
+func (s *queryServer) OraclePrices(c context.Context, req *types.QueryOraclePricesRequest) (*types.QueryOraclePricesResponse, error) {
+	if err := checkHeightParam(req.Height); err != nil {
+		return nil, err
+	}
+	ctx := s.unwrapSdkContext(c)
+	return s.queryOraclePrices(ctx, req)
+}
+
+func (s *queryServer) OraclePrice(c context.Context, req *types.QueryOraclePriceRequest) (*types.QueryOraclePriceResponse, error) {
+	if err := checkHeightParam(req.Height); err != nil {
+		return nil, err
+	}
+	ctx := s.unwrapSdkContext(c)
+	return s.queryOraclePrice(ctx, req)
+}

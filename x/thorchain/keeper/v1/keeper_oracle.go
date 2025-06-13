@@ -32,7 +32,10 @@ func (k KVStore) getPrice(ctx cosmos.Context, key string, record *OraclePrice) (
 // GetPrice get the oracle price the asset from kv store, returns error, if it doesn't exists
 func (k KVStore) GetPrice(ctx cosmos.Context, symbol string) (OraclePrice, error) {
 	var record OraclePrice
-	_, err := k.getPrice(ctx, k.GetKey(prefixOraclePrice, symbol), &record)
+	found, err := k.getPrice(ctx, k.GetKey(prefixOraclePrice, symbol), &record)
+	if !found {
+		return OraclePrice{}, fmt.Errorf("Price not found: %s", symbol)
+	}
 	return record, err
 }
 
@@ -43,6 +46,11 @@ func (k KVStore) SetPrice(ctx cosmos.Context, oraclePrice OraclePrice) error {
 	}
 	k.setPrice(ctx, k.GetKey(prefixOraclePrice, oraclePrice.Symbol), oraclePrice)
 	return nil
+}
+
+// DelPrice deletes the oracle price for a given symbol
+func (k KVStore) DelPrice(ctx cosmos.Context, symbol string) {
+	k.del(ctx, k.GetKey(prefixOraclePrice, symbol))
 }
 
 // GetPriceIterator

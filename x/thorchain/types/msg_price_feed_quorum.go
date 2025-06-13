@@ -41,7 +41,7 @@ func (m *MsgPriceFeedQuorum) ValidateBasic() error {
 	if len(pf.Node) == 0 {
 		return cosmos.ErrUnknownRequest("node is empty")
 	}
-	if pf.Rates == "" {
+	if len(pf.Rates) == 0 {
 		return cosmos.ErrUnknownRequest("rates is empty")
 	}
 	return nil

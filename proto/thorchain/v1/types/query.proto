@@ -51,6 +51,7 @@ import "types/query_secured_asset.proto";
 import "types/query_tcy_stakers.proto";
 import "types/query_tcy_claimers.proto";
 import "types/query_codes.proto";
+import "types/query_oracle_price.proto";
 
 option (gogoproto.marshaler_all) = true;
 
@@ -383,5 +384,13 @@ service Query {
 
   rpc Codes(QueryCodesRequest) returns (QueryCodesResponse) {
     option (google.api.http).get = "/thorchain/codes";
+  }
+
+  rpc OraclePrices(QueryOraclePricesRequest) returns (QueryOraclePricesResponse) {
+    option (google.api.http).get = "/thorchain/oracle/prices";
+  }
+
+  rpc OraclePrice(QueryOraclePriceRequest) returns (QueryOraclePriceResponse) {
+    option (google.api.http).get = "/thorchain/oracle/price/{symbol}";
   }
 }

@@ -3476,3 +3476,33 @@ func (qs queryServer) queryCodes(_ cosmos.Context, _ *types.QueryCodesRequest) (
 
 	return &types.QueryCodesResponse{Codes: codes}, nil
 }
+
+// queryOraclePrices
+func (qs queryServer) queryOraclePrices(ctx cosmos.Context, _ *types.QueryOraclePricesRequest) (*types.QueryOraclePricesResponse, error) {
+	var prices []*OraclePrice
+
+	iterator := qs.mgr.Keeper().GetPriceIterator(ctx)
+	defer iterator.Close()
+
+	for ; iterator.Valid(); iterator.Next() {
+		var price OraclePrice
+		qs.mgr.Keeper().Cdc().MustUnmarshal(iterator.Value(), &price)
+		prices = append(prices, &price)
+	}
+
+	sort.Slice(prices, func(i, j int) bool {
+		return prices[i].Symbol < prices[j].Symbol
+	})
+
+	return &types.QueryOraclePricesResponse{Prices: prices}, nil
+}
+
+// queryOraclePrice
+func (qs queryServer) queryOraclePrice(ctx cosmos.Context, req *types.QueryOraclePriceRequest) (*types.QueryOraclePriceResponse, error) {
+	price, err := qs.mgr.Keeper().GetPrice(ctx, req.Symbol)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get price for symbol '%s': %w", req.Symbol, err)
+	}
+
+	return &types.QueryOraclePriceResponse{Price: &price}, nil
+}

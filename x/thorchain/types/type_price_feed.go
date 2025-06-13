@@ -9,7 +9,7 @@ func (m *PriceFeed) Valid() error {
 	if m.Height <= 0 {
 		return errors.New("height <= 0")
 	}
-	if m.Rates == "" {
+	if len(m.Rates) == 0 {
 		return errors.New("rates is empty")
 	}
 	return nil

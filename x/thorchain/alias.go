@@ -354,6 +354,7 @@ type (
 	EventOutbound            = types.EventOutbound
 	NetworkFee               = types.NetworkFee
 	PriceFeed                = types.PriceFeed
+	OraclePrice              = types.OraclePrice
 	ObservedNetworkFeeVoter  = types.ObservedNetworkFeeVoter
 	Jail                     = types.Jail
 	RagnarokWithdrawPosition = types.RagnarokWithdrawPosition

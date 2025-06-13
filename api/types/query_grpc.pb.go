@@ -99,6 +99,8 @@ const (
 	Query_TCYClaimer_FullMethodName          = "/types.Query/TCYClaimer"
 	Query_TCYClaimers_FullMethodName         = "/types.Query/TCYClaimers"
 	Query_Codes_FullMethodName               = "/types.Query/Codes"
+	Query_OraclePrices_FullMethodName        = "/types.Query/OraclePrices"
+	Query_OraclePrice_FullMethodName         = "/types.Query/OraclePrice"
 )
 
 // QueryClient is the client API for Query service.
@@ -194,6 +196,8 @@ type QueryClient interface {
 	TCYClaimer(ctx context.Context, in *QueryTCYClaimerRequest, opts ...grpc.CallOption) (*QueryTCYClaimerResponse, error)
 	TCYClaimers(ctx context.Context, in *QueryTCYClaimersRequest, opts ...grpc.CallOption) (*QueryTCYClaimersResponse, error)
 	Codes(ctx context.Context, in *QueryCodesRequest, opts ...grpc.CallOption) (*QueryCodesResponse, error)
+	OraclePrices(ctx context.Context, in *QueryOraclePricesRequest, opts ...grpc.CallOption) (*QueryOraclePricesResponse, error)
+	OraclePrice(ctx context.Context, in *QueryOraclePriceRequest, opts ...grpc.CallOption) (*QueryOraclePriceResponse, error)
 }
 
 type queryClient struct {
@@ -924,6 +928,24 @@ func (c *queryClient) Codes(ctx context.Context, in *QueryCodesRequest, opts ...
 	return out, nil
 }
 
+func (c *queryClient) OraclePrices(ctx context.Context, in *QueryOraclePricesRequest, opts ...grpc.CallOption) (*QueryOraclePricesResponse, error) {
+	out := new(QueryOraclePricesResponse)
+	err := c.cc.Invoke(ctx, Query_OraclePrices_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *queryClient) OraclePrice(ctx context.Context, in *QueryOraclePriceRequest, opts ...grpc.CallOption) (*QueryOraclePriceResponse, error) {
+	out := new(QueryOraclePriceResponse)
+	err := c.cc.Invoke(ctx, Query_OraclePrice_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // QueryServer is the server API for Query service.
 // All implementations must embed UnimplementedQueryServer
 // for forward compatibility
@@ -1017,6 +1039,8 @@ type QueryServer interface {
 	TCYClaimer(context.Context, *QueryTCYClaimerRequest) (*QueryTCYClaimerResponse, error)
 	TCYClaimers(context.Context, *QueryTCYClaimersRequest) (*QueryTCYClaimersResponse, error)
 	Codes(context.Context, *QueryCodesRequest) (*QueryCodesResponse, error)
+	OraclePrices(context.Context, *QueryOraclePricesRequest) (*QueryOraclePricesResponse, error)
+	OraclePrice(context.Context, *QueryOraclePriceRequest) (*QueryOraclePriceResponse, error)
 	mustEmbedUnimplementedQueryServer()
 }
 
@@ -1263,6 +1287,12 @@ func (UnimplementedQueryServer) TCYClaimers(context.Context, *QueryTCYClaimersRe
 }
 func (UnimplementedQueryServer) Codes(context.Context, *QueryCodesRequest) (*QueryCodesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Codes not implemented")
+}
+func (UnimplementedQueryServer) OraclePrices(context.Context, *QueryOraclePricesRequest) (*QueryOraclePricesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method OraclePrices not implemented")
+}
+func (UnimplementedQueryServer) OraclePrice(context.Context, *QueryOraclePriceRequest) (*QueryOraclePriceResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method OraclePrice not implemented")
 }
 func (UnimplementedQueryServer) mustEmbedUnimplementedQueryServer() {}
 
@@ -2717,6 +2747,42 @@ func _Query_Codes_Handler(srv interface{}, ctx context.Context, dec func(interfa
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Query_OraclePrices_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryOraclePricesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).OraclePrices(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Query_OraclePrices_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).OraclePrices(ctx, req.(*QueryOraclePricesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Query_OraclePrice_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryOraclePriceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).OraclePrice(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Query_OraclePrice_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).OraclePrice(ctx, req.(*QueryOraclePriceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Query_ServiceDesc is the grpc.ServiceDesc for Query service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -3043,6 +3109,14 @@ var Query_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Codes",
 			Handler:    _Query_Codes_Handler,
+		},
+		{
+			MethodName: "OraclePrices",
+			Handler:    _Query_OraclePrices_Handler,
+		},
+		{
+			MethodName: "OraclePrice",
+			Handler:    _Query_OraclePrice_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

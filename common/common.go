@@ -165,8 +165,19 @@ func (pf *PriceFeed) Equals(other *PriceFeed) bool {
 	if pf.Time != other.Time {
 		return false
 	}
-	if pf.Rates != other.Rates {
+	if len(pf.Rates) != len(other.Rates) {
 		return false
+	}
+	for i, rate := range pf.Rates {
+		if rate.Amount != other.Rates[i].Amount {
+			return false
+		}
+		if rate.Decimals != other.Rates[i].Decimals {
+			return false
+		}
+		if rate.Symbol != other.Rates[i].Symbol {
+			return false
+		}
 	}
 	return true
 }

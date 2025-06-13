@@ -10,7 +10,6 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
 	"math/big"
-	"strings"
 	"sync"
 	"time"
 
@@ -141,8 +140,6 @@ func (o *Oracle) GetTickers() {
 		return
 	}
 
-	rates := []string{}
-
 	priceFeed := common.PriceFeed{
 		Time: time.Now().UnixMilli(),
 		// TODO: Might not need the address, can be taken from attestation signer
@@ -150,13 +147,15 @@ func (o *Oracle) GetTickers() {
 	}
 
 	o.mtx.Lock()
-	for denom, rate := range o.rates {
-		rates = append(rates, fmt.Sprintf("%s%s", rate.Text('f', -1), denom))
+	for symbol, rate := range o.rates {
+		oraclePrice, err := common.NewOraclePrice(rate, symbol)
+		if err != nil {
+			o.logger.Err(err).Msg("Error creating oracle price")
+			continue
+		}
+		priceFeed.Rates = append(priceFeed.Rates, oraclePrice)
 	}
 	o.mtx.Unlock()
-
-	priceFeed.Rates = strings.Join(rates, ",")
-
 	o.queue <- priceFeed
 }
 

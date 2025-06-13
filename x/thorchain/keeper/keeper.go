@@ -435,12 +435,14 @@ type KeeperSolvencyVoter interface {
 type KeeperPriceFeed interface {
 	SetPriceFeed(ctx cosmos.Context, priceFeed PriceFeed) error
 	GetPriceFeed(ctx cosmos.Context, node string) (PriceFeed, error)
+	DelPriceFeed(ctx cosmos.Context, node string)
 	GetPriceFeedIterator(ctx cosmos.Context) cosmos.Iterator
 }
 
 type KeeperOracle interface {
 	SetPrice(ctx cosmos.Context, oraclePrice OraclePrice) error
 	GetPrice(ctx cosmos.Context, symbol string) (OraclePrice, error)
+	DelPrice(ctx cosmos.Context, symbol string)
 	GetPriceIterator(ctx cosmos.Context) cosmos.Iterator
 }
 

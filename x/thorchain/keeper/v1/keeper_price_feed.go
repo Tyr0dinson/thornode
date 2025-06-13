@@ -30,10 +30,14 @@ func (k KVStore) getPriceFeed(ctx cosmos.Context, key string, record *PriceFeed)
 	return true, nil
 }
 
-// GetPriceFeed gets the oracle price feed for the node from kv store, returns error, if it doesn't exists
+// GetPriceFeed gets the oracle price feed for the given node from kv store
+// Returns error, if it doesn't exists
 func (k KVStore) GetPriceFeed(ctx cosmos.Context, node string) (PriceFeed, error) {
 	var record PriceFeed
-	_, err := k.getPriceFeed(ctx, k.GetKey(prefixPriceFeed, node), &record)
+	found, err := k.getPriceFeed(ctx, k.GetKey(prefixPriceFeed, node), &record)
+	if !found {
+		return record, fmt.Errorf("Price feed not found: %s", node)
+	}
 	return record, err
 }
 
@@ -44,6 +48,11 @@ func (k KVStore) SetPriceFeed(ctx cosmos.Context, priceFeed PriceFeed) error {
 	}
 	k.setPriceFeed(ctx, k.GetKey(prefixPriceFeed, hex.EncodeToString(priceFeed.Node)), priceFeed)
 	return nil
+}
+
+// DelPriceFeed deletes the price feed for a given node
+func (k KVStore) DelPriceFeed(ctx cosmos.Context, node string) {
+	k.del(ctx, k.GetKey(prefixPriceFeed, node))
 }
 
 // GetPriceIterator

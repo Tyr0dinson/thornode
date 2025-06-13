@@ -6,6 +6,7 @@ import (
 	fmt "fmt"
 	runtime "github.com/cosmos/cosmos-proto/runtime"
 	_ "github.com/cosmos/gogoproto/gogoproto"
+	common "gitlab.com/thorchain/thornode/v3/api/common"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoiface "google.golang.org/protobuf/runtime/protoiface"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
@@ -13,6 +14,57 @@ import (
 	reflect "reflect"
 	sync "sync"
 )
+
+var _ protoreflect.List = (*_PriceFeed_3_list)(nil)
+
+type _PriceFeed_3_list struct {
+	list *[]*common.OraclePrice
+}
+
+func (x *_PriceFeed_3_list) Len() int {
+	if x.list == nil {
+		return 0
+	}
+	return len(*x.list)
+}
+
+func (x *_PriceFeed_3_list) Get(i int) protoreflect.Value {
+	return protoreflect.ValueOfMessage((*x.list)[i].ProtoReflect())
+}
+
+func (x *_PriceFeed_3_list) Set(i int, value protoreflect.Value) {
+	valueUnwrapped := value.Message()
+	concreteValue := valueUnwrapped.Interface().(*common.OraclePrice)
+	(*x.list)[i] = concreteValue
+}
+
+func (x *_PriceFeed_3_list) Append(value protoreflect.Value) {
+	valueUnwrapped := value.Message()
+	concreteValue := valueUnwrapped.Interface().(*common.OraclePrice)
+	*x.list = append(*x.list, concreteValue)
+}
+
+func (x *_PriceFeed_3_list) AppendMutable() protoreflect.Value {
+	v := new(common.OraclePrice)
+	*x.list = append(*x.list, v)
+	return protoreflect.ValueOfMessage(v.ProtoReflect())
+}
+
+func (x *_PriceFeed_3_list) Truncate(n int) {
+	for i := n; i < len(*x.list); i++ {
+		(*x.list)[i] = nil
+	}
+	*x.list = (*x.list)[:n]
+}
+
+func (x *_PriceFeed_3_list) NewElement() protoreflect.Value {
+	v := new(common.OraclePrice)
+	return protoreflect.ValueOfMessage(v.ProtoReflect())
+}
+
+func (x *_PriceFeed_3_list) IsValid() bool {
+	return x.list != nil
+}
 
 var (
 	md_PriceFeed        protoreflect.MessageDescriptor
@@ -106,8 +158,8 @@ func (x *fastReflection_PriceFeed) Range(f func(protoreflect.FieldDescriptor, pr
 			return
 		}
 	}
-	if x.Rates != "" {
-		value := protoreflect.ValueOfString(x.Rates)
+	if len(x.Rates) != 0 {
+		value := protoreflect.ValueOfList(&_PriceFeed_3_list{list: &x.Rates})
 		if !f(fd_PriceFeed_rates, value) {
 			return
 		}
@@ -132,7 +184,7 @@ func (x *fastReflection_PriceFeed) Has(fd protoreflect.FieldDescriptor) bool {
 	case "types.PriceFeed.height":
 		return x.Height != int64(0)
 	case "types.PriceFeed.rates":
-		return x.Rates != ""
+		return len(x.Rates) != 0
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.PriceFeed"))
@@ -154,7 +206,7 @@ func (x *fastReflection_PriceFeed) Clear(fd protoreflect.FieldDescriptor) {
 	case "types.PriceFeed.height":
 		x.Height = int64(0)
 	case "types.PriceFeed.rates":
-		x.Rates = ""
+		x.Rates = nil
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.PriceFeed"))
@@ -178,8 +230,11 @@ func (x *fastReflection_PriceFeed) Get(descriptor protoreflect.FieldDescriptor) 
 		value := x.Height
 		return protoreflect.ValueOfInt64(value)
 	case "types.PriceFeed.rates":
-		value := x.Rates
-		return protoreflect.ValueOfString(value)
+		if len(x.Rates) == 0 {
+			return protoreflect.ValueOfList(&_PriceFeed_3_list{})
+		}
+		listValue := &_PriceFeed_3_list{list: &x.Rates}
+		return protoreflect.ValueOfList(listValue)
 	default:
 		if descriptor.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.PriceFeed"))
@@ -205,7 +260,9 @@ func (x *fastReflection_PriceFeed) Set(fd protoreflect.FieldDescriptor, value pr
 	case "types.PriceFeed.height":
 		x.Height = value.Int()
 	case "types.PriceFeed.rates":
-		x.Rates = value.Interface().(string)
+		lv := value.List()
+		clv := lv.(*_PriceFeed_3_list)
+		x.Rates = *clv.list
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.PriceFeed"))
@@ -226,12 +283,16 @@ func (x *fastReflection_PriceFeed) Set(fd protoreflect.FieldDescriptor, value pr
 // Mutable is a mutating operation and unsafe for concurrent use.
 func (x *fastReflection_PriceFeed) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
 	switch fd.FullName() {
+	case "types.PriceFeed.rates":
+		if x.Rates == nil {
+			x.Rates = []*common.OraclePrice{}
+		}
+		value := &_PriceFeed_3_list{list: &x.Rates}
+		return protoreflect.ValueOfList(value)
 	case "types.PriceFeed.node":
 		panic(fmt.Errorf("field node of message types.PriceFeed is not mutable"))
 	case "types.PriceFeed.height":
 		panic(fmt.Errorf("field height of message types.PriceFeed is not mutable"))
-	case "types.PriceFeed.rates":
-		panic(fmt.Errorf("field rates of message types.PriceFeed is not mutable"))
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.PriceFeed"))
@@ -250,7 +311,8 @@ func (x *fastReflection_PriceFeed) NewField(fd protoreflect.FieldDescriptor) pro
 	case "types.PriceFeed.height":
 		return protoreflect.ValueOfInt64(int64(0))
 	case "types.PriceFeed.rates":
-		return protoreflect.ValueOfString("")
+		list := []*common.OraclePrice{}
+		return protoreflect.ValueOfList(&_PriceFeed_3_list{list: &list})
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.PriceFeed"))
@@ -327,9 +389,11 @@ func (x *fastReflection_PriceFeed) ProtoMethods() *protoiface.Methods {
 		if x.Height != 0 {
 			n += 1 + runtime.Sov(uint64(x.Height))
 		}
-		l = len(x.Rates)
-		if l > 0 {
-			n += 1 + l + runtime.Sov(uint64(l))
+		if len(x.Rates) > 0 {
+			for _, e := range x.Rates {
+				l = options.Size(e)
+				n += 1 + l + runtime.Sov(uint64(l))
+			}
 		}
 		if x.unknownFields != nil {
 			n += len(x.unknownFields)
@@ -361,11 +425,20 @@ func (x *fastReflection_PriceFeed) ProtoMethods() *protoiface.Methods {
 			copy(dAtA[i:], x.unknownFields)
 		}
 		if len(x.Rates) > 0 {
-			i -= len(x.Rates)
-			copy(dAtA[i:], x.Rates)
-			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.Rates)))
-			i--
-			dAtA[i] = 0x1a
+			for iNdEx := len(x.Rates) - 1; iNdEx >= 0; iNdEx-- {
+				encoded, err := options.Marshal(x.Rates[iNdEx])
+				if err != nil {
+					return protoiface.MarshalOutput{
+						NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+						Buf:               input.Buf,
+					}, err
+				}
+				i -= len(encoded)
+				copy(dAtA[i:], encoded)
+				i = runtime.EncodeVarint(dAtA, i, uint64(len(encoded)))
+				i--
+				dAtA[i] = 0x1a
+			}
 		}
 		if x.Height != 0 {
 			i = runtime.EncodeVarint(dAtA, i, uint64(x.Height))
@@ -485,7 +558,7 @@ func (x *fastReflection_PriceFeed) ProtoMethods() *protoiface.Methods {
 				if wireType != 2 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Rates", wireType)
 				}
-				var stringLen uint64
+				var msglen int
 				for shift := uint(0); ; shift += 7 {
 					if shift >= 64 {
 						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
@@ -495,23 +568,25 @@ func (x *fastReflection_PriceFeed) ProtoMethods() *protoiface.Methods {
 					}
 					b := dAtA[iNdEx]
 					iNdEx++
-					stringLen |= uint64(b&0x7F) << shift
+					msglen |= int(b&0x7F) << shift
 					if b < 0x80 {
 						break
 					}
 				}
-				intStringLen := int(stringLen)
-				if intStringLen < 0 {
+				if msglen < 0 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
 				}
-				postIndex := iNdEx + intStringLen
+				postIndex := iNdEx + msglen
 				if postIndex < 0 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
 				}
 				if postIndex > l {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
 				}
-				x.Rates = string(dAtA[iNdEx:postIndex])
+				x.Rates = append(x.Rates, &common.OraclePrice{})
+				if err := options.Unmarshal(dAtA[iNdEx:postIndex], x.Rates[len(x.Rates)-1]); err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
 				iNdEx = postIndex
 			default:
 				iNdEx = preIndex
@@ -566,9 +641,9 @@ type PriceFeed struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Node   []byte `protobuf:"bytes,1,opt,name=node,proto3" json:"node,omitempty"`
-	Height int64  `protobuf:"varint,2,opt,name=height,proto3" json:"height,omitempty"`
-	Rates  string `protobuf:"bytes,3,opt,name=rates,proto3" json:"rates,omitempty"`
+	Node   []byte                `protobuf:"bytes,1,opt,name=node,proto3" json:"node,omitempty"`
+	Height int64                 `protobuf:"varint,2,opt,name=height,proto3" json:"height,omitempty"`
+	Rates  []*common.OraclePrice `protobuf:"bytes,3,rep,name=rates,proto3" json:"rates,omitempty"`
 }
 
 func (x *PriceFeed) Reset() {
@@ -605,11 +680,11 @@ func (x *PriceFeed) GetHeight() int64 {
 	return 0
 }
 
-func (x *PriceFeed) GetRates() string {
+func (x *PriceFeed) GetRates() []*common.OraclePrice {
 	if x != nil {
 		return x.Rates
 	}
-	return ""
+	return nil
 }
 
 var File_types_type_price_feed_proto protoreflect.FileDescriptor
@@ -618,26 +693,28 @@ var file_types_type_price_feed_proto_rawDesc = []byte{
 	0x0a, 0x1b, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2f, 0x74, 0x79, 0x70, 0x65, 0x5f, 0x70, 0x72, 0x69,
 	0x63, 0x65, 0x5f, 0x66, 0x65, 0x65, 0x64, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x12, 0x05, 0x74,
 	0x79, 0x70, 0x65, 0x73, 0x1a, 0x11, 0x61, 0x6d, 0x69, 0x6e, 0x6f, 0x2f, 0x61, 0x6d, 0x69, 0x6e,
-	0x6f, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x1a, 0x14, 0x67, 0x6f, 0x67, 0x6f, 0x70, 0x72, 0x6f,
-	0x74, 0x6f, 0x2f, 0x67, 0x6f, 0x67, 0x6f, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x22, 0x8b, 0x01,
-	0x0a, 0x09, 0x50, 0x72, 0x69, 0x63, 0x65, 0x46, 0x65, 0x65, 0x64, 0x12, 0x50, 0x0a, 0x04, 0x6e,
-	0x6f, 0x64, 0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0c, 0x42, 0x3c, 0xfa, 0xde, 0x1f, 0x2d, 0x67,
-	0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73,
-	0x2f, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x2d, 0x73, 0x64, 0x6b, 0x2f, 0x74, 0x79, 0x70, 0x65,
-	0x73, 0x2e, 0x41, 0x63, 0x63, 0x41, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x9a, 0xe7, 0xb0, 0x2a,
-	0x06, 0x62, 0x65, 0x63, 0x68, 0x33, 0x32, 0x52, 0x04, 0x6e, 0x6f, 0x64, 0x65, 0x12, 0x16, 0x0a,
-	0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x18, 0x02, 0x20, 0x01, 0x28, 0x03, 0x52, 0x06, 0x68,
-	0x65, 0x69, 0x67, 0x68, 0x74, 0x12, 0x14, 0x0a, 0x05, 0x72, 0x61, 0x74, 0x65, 0x73, 0x18, 0x03,
-	0x20, 0x01, 0x28, 0x09, 0x52, 0x05, 0x72, 0x61, 0x74, 0x65, 0x73, 0x42, 0x7f, 0x0a, 0x09, 0x63,
-	0x6f, 0x6d, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x42, 0x12, 0x54, 0x79, 0x70, 0x65, 0x50, 0x72,
-	0x69, 0x63, 0x65, 0x46, 0x65, 0x65, 0x64, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x2a,
-	0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63,
-	0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33,
-	0x2f, 0x61, 0x70, 0x69, 0x2f, 0x74, 0x79, 0x70, 0x65, 0x73, 0xa2, 0x02, 0x03, 0x54, 0x58, 0x58,
-	0xaa, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xca, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73,
-	0xe2, 0x02, 0x11, 0x54, 0x79, 0x70, 0x65, 0x73, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61,
-	0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0x62, 0x06, 0x70, 0x72,
-	0x6f, 0x74, 0x6f, 0x33,
+	0x6f, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x1a, 0x13, 0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2f,
+	0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x1a, 0x14, 0x67, 0x6f,
+	0x67, 0x6f, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2f, 0x67, 0x6f, 0x67, 0x6f, 0x2e, 0x70, 0x72, 0x6f,
+	0x74, 0x6f, 0x22, 0xa0, 0x01, 0x0a, 0x09, 0x50, 0x72, 0x69, 0x63, 0x65, 0x46, 0x65, 0x65, 0x64,
+	0x12, 0x50, 0x0a, 0x04, 0x6e, 0x6f, 0x64, 0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0c, 0x42, 0x3c,
+	0xfa, 0xde, 0x1f, 0x2d, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x63,
+	0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x2f, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x2d, 0x73, 0x64, 0x6b,
+	0x2f, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2e, 0x41, 0x63, 0x63, 0x41, 0x64, 0x64, 0x72, 0x65, 0x73,
+	0x73, 0x9a, 0xe7, 0xb0, 0x2a, 0x06, 0x62, 0x65, 0x63, 0x68, 0x33, 0x32, 0x52, 0x04, 0x6e, 0x6f,
+	0x64, 0x65, 0x12, 0x16, 0x0a, 0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x18, 0x02, 0x20, 0x01,
+	0x28, 0x03, 0x52, 0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x12, 0x29, 0x0a, 0x05, 0x72, 0x61,
+	0x74, 0x65, 0x73, 0x18, 0x03, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x13, 0x2e, 0x63, 0x6f, 0x6d, 0x6d,
+	0x6f, 0x6e, 0x2e, 0x4f, 0x72, 0x61, 0x63, 0x6c, 0x65, 0x50, 0x72, 0x69, 0x63, 0x65, 0x52, 0x05,
+	0x72, 0x61, 0x74, 0x65, 0x73, 0x42, 0x7f, 0x0a, 0x09, 0x63, 0x6f, 0x6d, 0x2e, 0x74, 0x79, 0x70,
+	0x65, 0x73, 0x42, 0x12, 0x54, 0x79, 0x70, 0x65, 0x50, 0x72, 0x69, 0x63, 0x65, 0x46, 0x65, 0x65,
+	0x64, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x2a, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62,
+	0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74,
+	0x68, 0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x74,
+	0x79, 0x70, 0x65, 0x73, 0xa2, 0x02, 0x03, 0x54, 0x58, 0x58, 0xaa, 0x02, 0x05, 0x54, 0x79, 0x70,
+	0x65, 0x73, 0xca, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xe2, 0x02, 0x11, 0x54, 0x79, 0x70,
+	0x65, 0x73, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02,
+	0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -654,14 +731,16 @@ func file_types_type_price_feed_proto_rawDescGZIP() []byte {
 
 var file_types_type_price_feed_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
 var file_types_type_price_feed_proto_goTypes = []interface{}{
-	(*PriceFeed)(nil), // 0: types.PriceFeed
+	(*PriceFeed)(nil),          // 0: types.PriceFeed
+	(*common.OraclePrice)(nil), // 1: common.OraclePrice
 }
 var file_types_type_price_feed_proto_depIdxs = []int32{
-	0, // [0:0] is the sub-list for method output_type
-	0, // [0:0] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	1, // 0: types.PriceFeed.rates:type_name -> common.OraclePrice
+	1, // [1:1] is the sub-list for method output_type
+	1, // [1:1] is the sub-list for method input_type
+	1, // [1:1] is the sub-list for extension type_name
+	1, // [1:1] is the sub-list for extension extendee
+	0, // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_types_type_price_feed_proto_init() }
