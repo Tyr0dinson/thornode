@@ -42,7 +42,6 @@ const (
 	dustLimitBch  = 546
 )
 
-var nullLogger = log.NewNopLogger()
 
 // -------------------------------------------------------------------------------------
 // Helpers
