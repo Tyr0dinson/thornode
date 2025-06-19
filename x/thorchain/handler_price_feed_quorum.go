@@ -55,8 +55,6 @@ func (h PriceFeedQuorumHandler) handle(ctx cosmos.Context, msg types.MsgPriceFee
 	now := time.Now().Format("15:04:05.000")
 	ts := time.UnixMilli(pf.Time).Format("15:04:05.000")
 
-	ctx.Logger().Info("handle price feed", "toracle", ts, "tnow", now, "node", msg.Signer.String())
-
 	signBz, err := pf.GetSignablePayload()
 	if err != nil {
 		ctx.Logger().Error("fail to get signable price feed payload", "error", err)
@@ -88,6 +86,8 @@ func (h PriceFeedQuorumHandler) handle(ctx cosmos.Context, msg types.MsgPriceFee
 		Height: ctx.BlockHeight(),
 		Rates:  pf.Rates,
 	})
+
+	ctx.Logger().Info("handle price feed", "toracle", ts, "tnow", now, "node", pk.Address())
 
 	if err != nil {
 		ctx.Logger().Error("fail to set price feed", "error", err)

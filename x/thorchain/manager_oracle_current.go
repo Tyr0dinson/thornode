@@ -1,8 +1,9 @@
 package thorchain
 
 import (
-	"fmt"
+	"github.com/cosmos/cosmos-sdk/telemetry"
 	ctypes "github.com/cosmos/cosmos-sdk/types"
+	"github.com/hashicorp/go-metrics"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
@@ -44,14 +45,10 @@ func (om *OracleMgrVCUR) BeginBlock(ctx cosmos.Context) error {
 
 	ten := big.NewInt(10)
 
-	fmt.Println("-- BeginBlock --")
 	for ; iterator.Valid(); iterator.Next() {
 		var priceFeed PriceFeed
 		om.keeper.Cdc().MustUnmarshal(iterator.Value(), &priceFeed)
-		fmt.Println(string(iterator.Key()))
 		om.keeper.DelPriceFeed(ctx, priceFeed.Node.String())
-
-		fmt.Println(priceFeed)
 
 		// Parse rates string into big.Float
 		for _, rate := range priceFeed.Rates {
@@ -91,7 +88,7 @@ func (om *OracleMgrVCUR) BeginBlock(ctx cosmos.Context) error {
 		om.keeper.DelPrice(ctx, symbol)
 
 		// TODO: clarify if 67% or 51% of nodes reporting is enough
-		if !HasSuperMajority(len(nodes), len(priceByNode)) {
+		if !HasSuperMajority(len(priceByNode), len(nodes)) {
 			ctx.Logger().Error(
 				"not enough prices for asset", "asset", symbol,
 				"num_prices", len(priceByNode), "num_nodes", len(nodes))
@@ -133,6 +130,15 @@ func (om *OracleMgrVCUR) BeginBlock(ctx cosmos.Context) error {
 		if err != nil {
 			ctx.Logger().Error("fail to set price", "err", err)
 		}
+
+		f, _ := median.Float32()
+		telemetry.SetGaugeWithLabels(
+			[]string{"thornode", "oracle_price"},
+			f,
+			[]metrics.Label{
+				telemetry.NewLabel("symbol", strings.ToLower(symbol)),
+			},
+		)
 	}
 
 	return nil

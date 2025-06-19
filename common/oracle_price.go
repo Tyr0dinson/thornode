@@ -28,8 +28,6 @@ func NewOraclePrice(number *big.Float, symbol string) (*OraclePrice, error) {
 	decimals := 0
 	remain := maxIntegerLength - len(parts[0])
 
-	fmt.Println(number.Text('f', -1))
-
 	if len(parts) == 2 {
 		zeros := 0
 		index := 0

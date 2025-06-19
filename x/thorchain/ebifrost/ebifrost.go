@@ -277,12 +277,6 @@ func (b *EnshrinedBifrost) SendQuorumPriceFeeds(ctx context.Context, qpfs *commo
 	b.priceFeedCache.Unlock()
 
 	for _, qpf := range qpfs.QuorumPriceFeeds {
-		if len(qpf.Attestations) > 0 {
-			fmt.Printf("%x\n",
-				qpf.Attestations[0].PubKey,
-			)
-		}
-
 		if err := b.priceFeedCache.AddItem(
 			qpf,
 			(*common.QuorumPriceFeed).GetAttestations,

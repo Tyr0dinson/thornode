@@ -218,12 +218,6 @@ func main() {
 		log.Fatal().Err(err).Msg("fail to start signer")
 	}
 
-	nodeAddress, err := pubkeyMgr.GetNodePubKey().GetThorAddress()
-	if err != nil {
-		log.Fatal().Err(err).Msg("fail to get node address")
-	}
-	obs.SetOracleAccAddress(nodeAddress)
-
 	// wait....
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM)

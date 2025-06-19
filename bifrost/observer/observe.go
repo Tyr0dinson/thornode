@@ -167,7 +167,7 @@ func (o *Observer) Start(ctx context.Context) error {
 	for _, chain := range o.chains {
 		chain.Start(o.globalTxsQueue, o.globalErrataQueue, o.globalSolvencyQueue, o.globalNetworkFeeQueue)
 	}
-	o.oracle.Start(o.globalPriceFeedQueue)
+	o.oracle.Start()
 	o.wg.Add(1)
 	go o.processOracle(ctx)
 	go o.processTxIns()
@@ -839,11 +839,6 @@ func (o *Observer) Stop() error {
 	return o.m.Stop()
 }
 
-// SetOracleAccAddress set the nodes account address
-func (o *Observer) SetOracleAccAddress(address cosmos.AccAddress) {
-	o.oracle.SetAccAddress(address)
-}
-
 func (o *Observer) processOracle(ctx context.Context) {
 	defer o.wg.Done()
 
@@ -857,7 +852,14 @@ func (o *Observer) processOracle(ctx context.Context) {
 				return
 			case <-ticker.C:
 				o.attestationGossip.sendPriceFeedAttestationsToThornode(ctx)
-				o.oracle.GetTickers()
+				prices := o.oracle.GetTickers()
+
+				pf := common.PriceFeed{
+					Time:  time.Now().UnixMilli(),
+					Rates: prices,
+				}
+
+				o.globalPriceFeedQueue <- pf
 			}
 		}
 	}()

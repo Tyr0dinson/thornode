@@ -7,7 +7,6 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/providers"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/types"
 	"gitlab.com/thorchain/thornode/v3/common"
-	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
 	"math/big"
 	"sync"
@@ -24,9 +23,8 @@ type Oracle struct {
 	logger    zerolog.Logger
 	providers map[string]types.Provider
 	config    config.Bifrost
-	queue     chan common.PriceFeed
-	address   cosmos.AccAddress
 	rates     map[string]*big.Float
+	metrics   *Metric
 }
 
 func NewOracle(config config.Bifrost) (*Oracle, error) {
@@ -41,19 +39,23 @@ func NewOracle(config config.Bifrost) (*Oracle, error) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	o := Oracle{
-		ctx:    ctx,
-		cancel: cancel,
-		mtx:    &sync.Mutex{},
-		wg:     &sync.WaitGroup{},
-		logger: logger,
-		config: config,
-		rates:  make(map[string]*big.Float),
+		ctx:     ctx,
+		cancel:  cancel,
+		mtx:     &sync.Mutex{},
+		wg:      &sync.WaitGroup{},
+		logger:  logger,
+		config:  config,
+		rates:   make(map[string]*big.Float),
+		metrics: NewMetric(),
 	}
 
 	err = o.LoadProviders()
 	if err != nil {
 		return nil, err
 	}
+
+	// TODO: Add config for metrics
+	o.metrics.Register()
 
 	return &o, nil
 }
@@ -76,10 +78,8 @@ func (o *Oracle) run() {
 	}()
 }
 
-func (o *Oracle) Start(queue chan common.PriceFeed) {
+func (o *Oracle) Start() {
 	// set global price feed queue
-	o.queue = queue
-
 	o.logger.Info().Msg("starting oracle")
 
 	for name, provider := range o.providers {
@@ -112,6 +112,8 @@ func (o *Oracle) getTickers() {
 				tickerBySymbol[symbol] = map[string]types.Ticker{}
 			}
 			tickerBySymbol[symbol][name] = ticker
+
+			o.metrics.UpdateProviderTicker(name, ticker)
 		}
 	}
 
@@ -129,20 +131,14 @@ func (o *Oracle) getTickers() {
 	o.mtx.Unlock()
 }
 
-func (o *Oracle) GetTickers() {
-	if o.address.Empty() {
-		o.logger.Warn().Msg("oracle address is empty")
-		return
-	}
-
+func (o *Oracle) GetTickers() []*common.OraclePrice {
 	o.logger.Info().Int("rates", len(o.rates)).Msg("getting tickers")
+
 	if len(o.rates) == 0 {
-		return
+		return nil
 	}
 
-	priceFeed := common.PriceFeed{
-		Time: time.Now().UnixMilli(),
-	}
+	var rates []*common.OraclePrice
 
 	o.mtx.Lock()
 	for symbol, rate := range o.rates {
@@ -151,10 +147,11 @@ func (o *Oracle) GetTickers() {
 			o.logger.Err(err).Msg("Error creating oracle price")
 			continue
 		}
-		priceFeed.Rates = append(priceFeed.Rates, oraclePrice)
+		rates = append(rates, oraclePrice)
 	}
 	o.mtx.Unlock()
-	o.queue <- priceFeed
+
+	return rates
 }
 
 func (o *Oracle) LoadProviders() error {
@@ -194,8 +191,4 @@ func (o *Oracle) LoadProviders() error {
 	}
 
 	return nil
-}
-
-func (o *Oracle) SetAccAddress(address cosmos.AccAddress) {
-	o.address = address
 }
