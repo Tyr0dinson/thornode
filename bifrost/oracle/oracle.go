@@ -142,8 +142,6 @@ func (o *Oracle) GetTickers() {
 
 	priceFeed := common.PriceFeed{
 		Time: time.Now().UnixMilli(),
-		// TODO: Might not need the address, can be taken from attestation signer
-		Node: o.address,
 	}
 
 	o.mtx.Lock()

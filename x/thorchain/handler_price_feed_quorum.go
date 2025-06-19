@@ -1,7 +1,7 @@
 package thorchain
 
 import (
-	"encoding/hex"
+	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 	"time"
@@ -55,7 +55,7 @@ func (h PriceFeedQuorumHandler) handle(ctx cosmos.Context, msg types.MsgPriceFee
 	now := time.Now().Format("15:04:05.000")
 	ts := time.UnixMilli(pf.Time).Format("15:04:05.000")
 
-	ctx.Logger().Info("handle price feed", "toracle", ts, "tnow", now, "node", hex.EncodeToString(pf.Node))
+	ctx.Logger().Info("handle price feed", "toracle", ts, "tnow", now, "node", msg.Signer.String())
 
 	signBz, err := pf.GetSignablePayload()
 	if err != nil {
@@ -63,21 +63,28 @@ func (h PriceFeedQuorumHandler) handle(ctx cosmos.Context, msg types.MsgPriceFee
 		return &cosmos.Result{}, nil
 	}
 
-	if len(msg.QuoPriceFeed.Attestations) != 1 {
+	atts := msg.QuoPriceFeed.Attestations
+
+	if len(atts) == 0 {
+		ctx.Logger().Error("no attestation found")
+		return &cosmos.Result{}, nil
+	}
+
+	if len(atts) > 1 {
 		ctx.Logger().Error("found more than one attestation", "error", err, "attestations", len(msg.QuoPriceFeed.Attestations))
 	}
 
-	for _, att := range msg.QuoPriceFeed.Attestations {
-		_, err = verifyQuorumAttestation(active, signBz, att)
-		if err != nil {
-			ctx.Logger().Error("fail to verify quorum price feed attestation", "error", err)
-			continue
-		}
+	att := atts[0]
 
+	_, err = verifyQuorumAttestation(active, signBz, att)
+	if err != nil {
+		ctx.Logger().Error("fail to verify quorum price feed attestation", "error", err)
+		return &cosmos.Result{}, nil
 	}
 
+	pk := secp256k1.PubKey{Key: att.PubKey}
 	err = h.mgr.Keeper().SetPriceFeed(ctx, PriceFeed{
-		Node:   pf.Node,
+		Node:   cosmos.AccAddress(pk.Address()),
 		Height: ctx.BlockHeight(),
 		Rates:  pf.Rates,
 	})

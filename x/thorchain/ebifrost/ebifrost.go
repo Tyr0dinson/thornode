@@ -271,14 +271,26 @@ func (b *EnshrinedBifrost) SendQuorumErrataTx(ctx context.Context, e *common.Quo
 	return &SendQuorumErrataTxResult{}, nil
 }
 
-func (b *EnshrinedBifrost) SendQuorumPriceFeed(ctx context.Context, pf *common.QuorumPriceFeed) (*SendQuorumPriceFeedResult, error) {
-	if err := b.priceFeedCache.AddItem(
-		pf,
-		(*common.QuorumPriceFeed).GetAttestations,
-		(*common.QuorumPriceFeed).SetAttestations,
-		(*common.QuorumPriceFeed).Equals,
-	); err != nil {
-		return nil, err
+func (b *EnshrinedBifrost) SendQuorumPriceFeeds(ctx context.Context, qpfs *common.QuorumPriceFeeds) (*SendQuorumPriceFeedResult, error) {
+	b.priceFeedCache.Lock()
+	b.priceFeedCache.items = b.priceFeedCache.items[:0]
+	b.priceFeedCache.Unlock()
+
+	for _, qpf := range qpfs.QuorumPriceFeeds {
+		if len(qpf.Attestations) > 0 {
+			fmt.Printf("%x\n",
+				qpf.Attestations[0].PubKey,
+			)
+		}
+
+		if err := b.priceFeedCache.AddItem(
+			qpf,
+			(*common.QuorumPriceFeed).GetAttestations,
+			(*common.QuorumPriceFeed).SetAttestations,
+			(*common.QuorumPriceFeed).Equals,
+		); err != nil {
+			return nil, err
+		}
 	}
 
 	return &SendQuorumPriceFeedResult{}, nil
@@ -610,28 +622,26 @@ func (b *EnshrinedBifrost) MarkQuorumPriceFeedAttestationsConfirmed(ctx context.
 
 	go b.broadcastQuorumPriceFeedEvent(qpf)
 
-	found := b.priceFeedCache.MarkAttestationsConfirmed(
-		qpf,
-		b.logger,
-		(*common.QuorumPriceFeed).Equals,
-		(*common.QuorumPriceFeed).GetAttestations,
-		(*common.QuorumPriceFeed).RemoveAttestations,
-		func(qpf *common.QuorumPriceFeed, logger log.Logger) {
-			pf := qpf.PriceFeed
-			logger.Debug("Marking quorum price feed attestations confirmed",
-				"time", pf.Time,
-				"node", pf.Node,
-				"attestations", len(qpf.Attestations))
-		},
-	)
-
-	if !found {
-		cmpPf := qpf.PriceFeed
-		b.logger.Debug("Failed to find quorum price feed to mark attestations confirmed",
-			"time", cmpPf.Time,
-			"node", cmpPf.Node,
-		)
-	}
+	// found := b.priceFeedCache.MarkAttestationsConfirmed(
+	// 	qpf,
+	// 	b.logger,
+	// 	(*common.QuorumPriceFeed).Equals,
+	// 	(*common.QuorumPriceFeed).GetAttestations,
+	// 	(*common.QuorumPriceFeed).RemoveAttestations,
+	// 	func(qpf *common.QuorumPriceFeed, logger log.Logger) {
+	// 		pf := qpf.PriceFeed
+	// 		logger.Debug("Marking quorum price feed attestations confirmed",
+	// 			"time", pf.Time,
+	// 			"attestations", len(qpf.Attestations))
+	// 	},
+	// )
+	//
+	// if !found {
+	// 	cmpPf := qpf.PriceFeed
+	// 	b.logger.Debug("Failed to find quorum price feed to mark attestations confirmed",
+	// 		"time", cmpPf.Time,
+	// 	)
+	// }
 
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
 	height := sdkCtx.BlockHeight()

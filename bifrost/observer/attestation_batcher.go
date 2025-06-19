@@ -365,7 +365,6 @@ func (b *AttestationBatcher) AddErrataTx(errata common.AttestErrataTx) {
 func (b *AttestationBatcher) AddPriceFeed(priceFeed common.AttestPriceFeed) {
 	b.logger.Debug().
 		Str("pub", hex.EncodeToString(priceFeed.Attestation.PubKey)).
-		Str("node", hex.EncodeToString(priceFeed.PriceFeed.Node)).
 		Msg("add price feed")
 	// maxBatchSize := b.getMaxBatchSize()
 
@@ -373,18 +372,6 @@ func (b *AttestationBatcher) AddPriceFeed(priceFeed common.AttestPriceFeed) {
 	defer b.mu.Unlock()
 
 	b.priceFeedBatch = append(b.priceFeedBatch, &priceFeed)
-
-	// send immediately
-	go b.triggerBatchSend()
-
-	// // If we've reached the maximum batch size, trigger an immediate send
-	// if int64(len(b.priceFeedBatch)) >= maxBatchSize {
-	// 	b.logger.Debug().
-	// 		Int("batch_size", len(b.priceFeedBatch)).
-	// 		Msg("price feed batch reached max size, triggering immediate send")
-	//
-	// 	go b.triggerBatchSend()
-	// }
 }
 
 // triggerBatchSend triggers an immediate batch send outside the regular interval

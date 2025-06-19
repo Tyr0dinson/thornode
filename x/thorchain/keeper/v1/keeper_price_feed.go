@@ -1,7 +1,6 @@
 package keeperv1
 
 import (
-	"encoding/hex"
 	"fmt"
 
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -42,11 +41,11 @@ func (k KVStore) GetPriceFeed(ctx cosmos.Context, node string) (PriceFeed, error
 }
 
 // SetPriceFeed saves the price feed to kv store
-func (k KVStore) SetPriceFeed(ctx cosmos.Context, priceFeed PriceFeed) error {
-	if err := priceFeed.Valid(); err != nil {
+func (k KVStore) SetPriceFeed(ctx cosmos.Context, pf PriceFeed) error {
+	if err := pf.Valid(); err != nil {
 		return err
 	}
-	k.setPriceFeed(ctx, k.GetKey(prefixPriceFeed, hex.EncodeToString(priceFeed.Node)), priceFeed)
+	k.setPriceFeed(ctx, k.GetKey(prefixPriceFeed, pf.Node.String()), pf)
 	return nil
 }
 

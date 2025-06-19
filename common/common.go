@@ -159,9 +159,6 @@ func (pf *PriceFeed) GetSignablePayload() ([]byte, error) {
 }
 
 func (pf *PriceFeed) Equals(other *PriceFeed) bool {
-	if !bytes.Equal(pf.Node, other.Node) {
-		return false
-	}
 	if pf.Time != other.Time {
 		return false
 	}

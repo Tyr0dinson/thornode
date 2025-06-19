@@ -38,9 +38,6 @@ func (m *MsgPriceFeedQuorum) ValidateBasic() error {
 	if m.Signer.Empty() {
 		return cosmos.ErrInvalidAddress(m.Signer.String())
 	}
-	if len(pf.Node) == 0 {
-		return cosmos.ErrUnknownRequest("node is empty")
-	}
 	if len(pf.Rates) == 0 {
 		return cosmos.ErrUnknownRequest("rates is empty")
 	}

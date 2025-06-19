@@ -140,7 +140,6 @@ func (s *AttestationGossip) sendAttestationState(stream network.Stream) {
 	for _, priceFeed := range s.priceFeeds {
 		priceFeed.mu.Lock()
 		pfCopy := &common.PriceFeed{
-			Node:  priceFeed.Item.Node,
 			Time:  priceFeed.Item.Time,
 			Rates: priceFeed.Item.Rates,
 		}

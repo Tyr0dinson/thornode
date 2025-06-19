@@ -3,7 +3,6 @@ package observer
 import (
 	"bytes"
 	"context"
-	"encoding/hex"
 	"fmt"
 	"sync"
 	"time"
@@ -466,29 +465,8 @@ func (s *AttestationGossip) handleQuorumErrataTxCommitted(en *ebifrost.EventNoti
 
 // Handle a committed quorum network fee event
 func (s *AttestationGossip) handleQuorumPriceFeedCommitted(en *ebifrost.EventNotification) {
+	// Only log, feeds are cleared periodically, nothing else to do
 	s.logger.Debug().Msg("handling quorum price feeds committed event")
-
-	var qpf common.QuorumPriceFeed
-	if err := qpf.Unmarshal(en.Payload); err != nil {
-		s.logger.Error().Err(err).Msg("fail to unmarshal quorum price feeds")
-		return
-	}
-
-	k := hex.EncodeToString(qpf.PriceFeed.Node)
-
-	s.mu.Lock()
-	as, ok := s.priceFeeds[k]
-	if ok {
-		// note, purposefully locking the single state mutex prior to releasing the global mutex to avoid race in between.
-		// This order must be maintained everywhere to avoid deadlock.
-		as.mu.Lock()
-	}
-	s.mu.Unlock()
-	if !ok {
-		return
-	}
-
-	delete(s.priceFeeds, k)
 }
 
 // Start the attestation gossip service

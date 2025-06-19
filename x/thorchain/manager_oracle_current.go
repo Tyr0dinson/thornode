@@ -42,16 +42,18 @@ func (om *OracleMgrVCUR) BeginBlock(ctx cosmos.Context) error {
 	iterator := om.keeper.GetPriceFeedIterator(ctx)
 	defer iterator.Close()
 
+	ten := big.NewInt(10)
+
+	fmt.Println("-- BeginBlock --")
 	for ; iterator.Valid(); iterator.Next() {
 		var priceFeed PriceFeed
 		om.keeper.Cdc().MustUnmarshal(iterator.Value(), &priceFeed)
-
+		fmt.Println(string(iterator.Key()))
 		om.keeper.DelPriceFeed(ctx, priceFeed.Node.String())
 
+		fmt.Println(priceFeed)
+
 		// Parse rates string into big.Float
-
-		ten := big.NewInt(10)
-
 		for _, rate := range priceFeed.Rates {
 			divisor := new(big.Int).Exp(ten, big.NewInt(int64(rate.Decimals)), nil)
 			amount := new(big.Float).SetUint64(rate.Amount)
@@ -90,7 +92,10 @@ func (om *OracleMgrVCUR) BeginBlock(ctx cosmos.Context) error {
 
 		// TODO: clarify if 67% or 51% of nodes reporting is enough
 		if !HasSuperMajority(len(nodes), len(priceByNode)) {
-			ctx.Logger().Error("not enough prices submitted", fmt.Sprintf("%d of %d", len(pricesByAsset), len(priceByNode)))
+			ctx.Logger().Error(
+				"not enough prices for asset", "asset", symbol,
+				"num_prices", len(priceByNode), "num_nodes", len(nodes))
+			continue
 		}
 
 		allPricesForSymbol := []*big.Float{}
@@ -154,8 +159,8 @@ func ComputeMedianAbsoluteDeviation(values []*big.Float) (*big.Float, *big.Float
 }
 
 func ComputeMedian(values []*big.Float) (*big.Float, error) {
-	if len(values) < 2 {
-		return nil, fmt.Errorf("not enough values for calculation")
+	if len(values) == 1 {
+		return values[0], nil
 	}
 
 	sort.Slice(values, func(i, j int) bool {

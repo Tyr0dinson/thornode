@@ -2,7 +2,6 @@ package observer
 
 import (
 	"context"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"time"
@@ -175,11 +174,6 @@ func (s *AttestationGossip) AttestErrata(ctx context.Context, errata common.Erra
 
 // AttestPriceFeed creates and broadcasts an attestation for a price feed
 func (s *AttestationGossip) AttestPriceFeed(ctx context.Context, priceFeed common.PriceFeed) error {
-	s.logger.Info().Msgf(
-		"attest price feed %s: %s",
-		hex.EncodeToString(priceFeed.Node), priceFeed.Rates,
-	)
-
 	if !s.isActiveValidator(s.host.ID()) {
 		return fmt.Errorf("skipping attest price feed: not active")
 	}

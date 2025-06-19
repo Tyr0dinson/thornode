@@ -15,7 +15,7 @@ service LocalhostBifrost {
 
     rpc SendQuorumErrataTx(common.QuorumErrataTx) returns (SendQuorumErrataTxResult);
 
-    rpc SendQuorumPriceFeed(common.QuorumPriceFeed) returns (SendQuorumPriceFeedResult);
+    rpc SendQuorumPriceFeeds(common.QuorumPriceFeeds) returns (SendQuorumPriceFeedResult);
 
     // Server streaming for notifications
     rpc SubscribeToEvents(SubscribeRequest) returns (stream EventNotification);

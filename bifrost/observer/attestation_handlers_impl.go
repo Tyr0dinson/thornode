@@ -309,7 +309,7 @@ func (s *AttestationGossip) handlePriceFeedAttestation(_ context.Context, apf co
 	}
 
 	// We don't collect multiple attestations for price feeds, rather want
-	// to store the most recent price we received
+	// to store the most recent price we received for every node
 	s.mu.Lock()
 	state, ok := s.priceFeeds[k]
 	if !ok || state.Item.Time < apf.PriceFeed.Time {
@@ -323,44 +323,42 @@ func (s *AttestationGossip) handlePriceFeedAttestation(_ context.Context, apf co
 	s.mu.Unlock()
 }
 
-// sendPriceFeedAttestationsToThornode sends price feed attestations to thornode via gRPC
+// sendPriceFeedAttestationsToThornode sends price feed attestations
+// to thornode via gRPC
+//
+// To avoid calling the endpoint hundred times per update, all
+// (quorum) price feeds are batched into a single request
 func (s *AttestationGossip) sendPriceFeedAttestationsToThornode(
 	ctx context.Context,
-	priceFeed common.PriceFeed,
-	state *AttestationState[*common.PriceFeed],
 ) {
-	s.logger.Info().Msg("sending price feed attestations to thornode")
-	// Send via gRPC to thornode
-	if _, err := s.grpcClient.SendQuorumPriceFeed(ctx, &common.QuorumPriceFeed{
-		PriceFeed:    &priceFeed,
-		Attestations: state.UnsentAttestations(),
-	}); err != nil {
+	s.logger.Info().Msg("sending all attestations to thornode")
+
+	qpfs := common.QuorumPriceFeeds{
+		QuorumPriceFeeds: []*common.QuorumPriceFeed{},
+	}
+
+	s.mu.Lock()
+	for _, state := range s.priceFeeds {
+		state.mu.Lock()
+	}
+	s.mu.Unlock()
+
+	for key, state := range s.priceFeeds {
+		qpfs.QuorumPriceFeeds = append(qpfs.QuorumPriceFeeds, &common.QuorumPriceFeed{
+			PriceFeed:    state.Item,
+			Attestations: state.UnsentAttestations(),
+		})
+		defer delete(s.priceFeeds, key)
+	}
+
+	_, err := s.grpcClient.SendQuorumPriceFeeds(ctx, &qpfs)
+	if err != nil {
 		s.logger.Error().Err(err).Msg("fail to send price feed")
 		return
 	}
 
 	s.logger.Info().Msgf(
-		"sent quorum price feed to thornode - %s, node: %x, attestations: %s",
-		priceFeed.Rates, priceFeed.Node, state.State(),
+		"sent quorum price feed to thornode - price feeds: %s",
+		len(qpfs.QuorumPriceFeeds),
 	)
-
-	// // Mark attestations as sent
-	// state.MarkAttestationsSent(true)
-}
-
-func (s *AttestationGossip) sendAllPriceFeedAttestationsToThornode(
-	ctx context.Context,
-) {
-	s.logger.Info().Msg("sending all attestations to thornode")
-	s.mu.Lock()
-	for _, state := range s.priceFeeds {
-		state.mu.Lock()
-		defer state.mu.Unlock()
-	}
-	s.mu.Unlock()
-
-	for key, state := range s.priceFeeds {
-		s.sendPriceFeedAttestationsToThornode(ctx, *state.Item, state)
-		defer delete(s.priceFeeds, key)
-	}
 }
