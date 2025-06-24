@@ -3,6 +3,7 @@ package providers
 import (
 	"context"
 	"encoding/json"
+	"github.com/coder/websocket/wsjson"
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
@@ -20,8 +21,17 @@ type BybitTickersResponse struct {
 	} `json:"result"`
 }
 
+type BybitWsTickerEvent struct {
+	Data struct {
+		Symbol      string `json:"symbol"`
+		Price       string `json:"lastPrice"`
+		BaseVolume  string `json:"volume24h"`
+		QuoteVolume string `json:"turnover24h"`
+	} `json:"data"`
+}
+
 type BybitProvider struct {
-	*provider
+	*websocketProvider
 }
 
 func NewBybitProvider(
@@ -29,18 +39,18 @@ func NewBybitProvider(
 	logger zerolog.Logger,
 	config config.BifrostOracleProviderConfiguration,
 ) (*BybitProvider, error) {
-	p, err := newProvider(ctx, logger, common.ProviderBybit, config)
+	wsProvider, err := newWebsocketProvider(ctx, logger, common.ProviderBybit, config)
 	if err != nil {
 		return nil, err
 	}
 
-	pp := BybitProvider{p}
-	err = pp.init(&pp)
+	provider := BybitProvider{wsProvider}
+	err = provider.init(&provider)
 	if err != nil {
 		return nil, err
 	}
 
-	return &pp, nil
+	return &provider, nil
 }
 
 func (p *BybitProvider) Poll() {
@@ -95,7 +105,7 @@ func (p *BybitProvider) GetAvailablePairs() ([]string, error) {
 		return nil, err
 	}
 
-	symbols := []string{}
+	var symbols []string
 	for _, item := range response.Result.List {
 		symbols = append(symbols, item.Symbol)
 	}
@@ -105,4 +115,51 @@ func (p *BybitProvider) GetAvailablePairs() ([]string, error) {
 
 func (p *BybitProvider) ToProviderSymbol(base, quote string) string {
 	return base + quote
+}
+
+func (p *BybitProvider) Subscribe() error {
+	var args []string
+
+	for _, pair := range p.pairs {
+		args = append(args, "tickers."+pair.Join(""))
+	}
+
+	msg := map[string]any{
+		"op":   "subscribe",
+		"args": args,
+	}
+
+	err := wsjson.Write(p.ctx, p.ws, msg)
+	if err != nil {
+		p.logger.Err(err).Msg("fail to subscribe")
+		return err
+	}
+
+	return nil
+}
+
+func (p *BybitProvider) HandleWsMessage(msg []byte) error {
+	var event BybitWsTickerEvent
+	err := json.Unmarshal(msg, &event)
+	if err != nil {
+		p.logger.Err(err).Msg("error unmarshalling data")
+		return err
+	}
+
+	pair, found := p.pairs[event.Data.Symbol]
+	if !found {
+		return nil
+	}
+
+	timestamp := time.Now()
+
+	p.setTicker(
+		timestamp,
+		pair,
+		strToFloat(event.Data.Price),
+		strToFloat(event.Data.BaseVolume),
+		strToFloat(event.Data.QuoteVolume),
+	)
+
+	return nil
 }

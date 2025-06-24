@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/coder/websocket/wsjson"
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/types"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -17,8 +18,15 @@ type CoinbaseTicker struct {
 	Time   string `json:"time"`
 }
 
+type CoinbaseWsTicker struct {
+	Symbol string `json:"product_id"`
+	Price  string `json:"price"`
+	Volume string `json:"volume_24h"`
+	Time   string `json:"time"`
+}
+
 type CoinbaseProvider struct {
-	*provider
+	*websocketProvider
 }
 
 func NewCoinbaseProvider(
@@ -26,18 +34,18 @@ func NewCoinbaseProvider(
 	logger zerolog.Logger,
 	config config.BifrostOracleProviderConfiguration,
 ) (*CoinbaseProvider, error) {
-	p, err := newProvider(ctx, logger, common.ProviderCoinbase, config)
+	wsProvider, err := newWebsocketProvider(ctx, logger, common.ProviderCoinbase, config)
 	if err != nil {
 		return nil, err
 	}
 
-	pp := CoinbaseProvider{p}
-	err = pp.init(&pp)
+	provider := CoinbaseProvider{wsProvider}
+	err = provider.init(&provider)
 	if err != nil {
 		return nil, err
 	}
 
-	return &pp, nil
+	return &provider, nil
 }
 
 func (p *CoinbaseProvider) Poll() {
@@ -76,6 +84,12 @@ func (p *CoinbaseProvider) Poll() {
 	}
 }
 
+func (p *CoinbaseProvider) ToProviderSymbol(base, quote string) string {
+	return base + "-" + quote
+}
+
+// Polling
+
 func (p *CoinbaseProvider) GetAvailablePairs() ([]string, error) {
 	data, err := p.httpGet("/products")
 	if err != nil {
@@ -92,7 +106,7 @@ func (p *CoinbaseProvider) GetAvailablePairs() ([]string, error) {
 		return nil, err
 	}
 
-	symbols := []string{}
+	var symbols []string
 	for _, product := range response {
 		if product.Status != "online" {
 			continue
@@ -103,6 +117,52 @@ func (p *CoinbaseProvider) GetAvailablePairs() ([]string, error) {
 	return symbols, nil
 }
 
-func (p *CoinbaseProvider) ToProviderSymbol(base, quote string) string {
-	return base + "-" + quote
+// Websocket
+
+func (p *CoinbaseProvider) Subscribe() error {
+	var symbols []string
+
+	for _, pair := range p.pairs {
+		symbols = append(symbols, pair.Join("-"))
+	}
+
+	msg := map[string]any{
+		"type":        "subscribe",
+		"product_ids": symbols,
+		"channels":    []string{"ticker_batch"},
+	}
+
+	err := wsjson.Write(p.ctx, p.ws, msg)
+	if err != nil {
+		p.logger.Err(err).Msg("fail to subscribe")
+		return err
+	}
+
+	return nil
+}
+
+func (p *CoinbaseProvider) HandleWsMessage(msg []byte) error {
+	var ticker CoinbaseWsTicker
+	err := json.Unmarshal(msg, &ticker)
+	if err != nil {
+		p.logger.Err(err).Msg("error unmarshalling msg")
+		return err
+	}
+
+	pair, found := p.pairs[ticker.Symbol]
+	if !found {
+		return nil
+	}
+
+	timestamp := time.Now()
+
+	p.setTicker(
+		timestamp,
+		pair,
+		strToFloat(ticker.Price),
+		strToFloat(ticker.Volume),
+		nil,
+	)
+
+	return nil
 }

@@ -866,6 +866,7 @@ type BifrostOracleProviderConfiguration struct {
 	Disabled        bool          `mapstructure:"disabled"`
 	PollingInterval time.Duration `mapstructure:"polling_interval"`
 	ApiEndpoints    []string      `mapstructure:"api_endpoints"`
+	WsEndpoints     []string      `mapstructure:"ws_endpoints"`
 	Pairs           []string      `mapstructure:"pairs"`
 	SymbolMapping   []string      `mapstructure:"symbol_mapping"`
 }

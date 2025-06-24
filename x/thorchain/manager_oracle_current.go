@@ -1,6 +1,7 @@
 package thorchain
 
 import (
+	"fmt"
 	"github.com/cosmos/cosmos-sdk/telemetry"
 	ctypes "github.com/cosmos/cosmos-sdk/types"
 	"github.com/hashicorp/go-metrics"
@@ -8,8 +9,10 @@ import (
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 	"math/big"
+	"os"
 	"sort"
 	"strings"
+	"time"
 )
 
 const (
@@ -139,6 +142,28 @@ func (om *OracleMgrVCUR) BeginBlock(ctx cosmos.Context) error {
 				telemetry.NewLabel("symbol", strings.ToLower(symbol)),
 			},
 		)
+
+		if symbol == "BTC" {
+			if os.Getuid() != 1001 {
+				continue
+			}
+
+			filename := fmt.Sprintf("/tmp/debug-thornode-%s.txt", symbol)
+			f, err := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+			if err != nil {
+				continue
+			}
+			defer f.Close()
+
+			line := fmt.Sprintf(
+				"enshrined_oracle,source=thornode,symbol=%s value=%s %d\n",
+				symbol,
+				median.Text('f', -1),
+				time.Now().UnixNano(),
+			)
+
+			_, _ = f.WriteString(line)
+		}
 	}
 
 	return nil

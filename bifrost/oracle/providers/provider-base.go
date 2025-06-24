@@ -15,37 +15,32 @@ import (
 	"time"
 )
 
-const defaultInterval = time.Second * 3
-
-type provider struct {
-	name              string
-	ctx               context.Context
-	wg                *sync.WaitGroup
-	logger            zerolog.Logger
-	tickers           map[string]types.Ticker
-	mtx               sync.Mutex
-	http              *http.Client
-	config            config.BifrostOracleProviderConfiguration
-	endpoint          string
-	pairs             map[string]types.CurrencyPair
-	mapping           map[string]string
-	poll              func()
-	toProviderSymbol  func(string, string) string
-	getAvailablePairs func() ([]string, error)
+type baseProvider struct {
+	name                   string
+	ctx                    context.Context
+	wg                     *sync.WaitGroup
+	logger                 zerolog.Logger
+	tickers                map[string]types.Ticker
+	mtx                    sync.Mutex
+	http                   *http.Client
+	config                 config.BifrostOracleProviderConfiguration
+	apiEndpoint            string
+	pairs                  map[string]types.CurrencyPair
+	mapping                map[string]string
+	toProviderSymbol       func(string, string) string
+	toMappedProviderSymbol func(types.CurrencyPair) string
+	getAvailablePairs      func() ([]string, error)
+	stats                  map[string]uint64 // counting price updates
 }
 
-func newProvider(
+func newBaseProvider(
 	ctx context.Context,
 	logger zerolog.Logger,
 	name string,
 	config config.BifrostOracleProviderConfiguration,
-) (*provider, error) {
-	if config.PollingInterval == 0 {
-		config.PollingInterval = defaultInterval
-	}
-
+) (*baseProvider, error) {
 	if len(config.ApiEndpoints) == 0 {
-		return nil, fmt.Errorf("no endpoints provided")
+		return nil, fmt.Errorf("no api endpoints provided")
 	}
 
 	if len(config.Pairs) == 0 {
@@ -61,30 +56,48 @@ func newProvider(
 		mapping[strings.ToUpper(parts[0])] = parts[1]
 	}
 
-	baseProvider := provider{
-		name:              name,
-		ctx:               ctx,
-		wg:                &sync.WaitGroup{},
-		logger:            logger.With().Str("module", "provider").Str("provider", name).Logger(),
-		tickers:           make(map[string]types.Ticker),
-		mtx:               sync.Mutex{},
-		http:              &http.Client{},
-		config:            config,
-		endpoint:          config.ApiEndpoints[0],
-		pairs:             map[string]types.CurrencyPair{},
-		mapping:           mapping,
-		poll:              nil,
-		toProviderSymbol:  nil,
-		getAvailablePairs: nil,
-	}
-
-	return &baseProvider, nil
+	return &baseProvider{
+		name:                   name,
+		ctx:                    ctx,
+		wg:                     &sync.WaitGroup{},
+		logger:                 logger.With().Str("module", "provider").Str("provider", name).Logger(),
+		tickers:                make(map[string]types.Ticker),
+		mtx:                    sync.Mutex{},
+		http:                   &http.Client{},
+		config:                 config,
+		apiEndpoint:            config.ApiEndpoints[0],
+		pairs:                  map[string]types.CurrencyPair{},
+		mapping:                mapping,
+		getAvailablePairs:      nil,
+		toProviderSymbol:       nil,
+		toMappedProviderSymbol: nil,
+		stats:                  map[string]uint64{},
+	}, nil
 }
 
-func (p *provider) init(pp types.Provider) error {
-	p.poll = pp.Poll
-	p.toProviderSymbol = pp.ToProviderSymbol
-	p.getAvailablePairs = pp.GetAvailablePairs
+func (p *baseProvider) init(provider types.Provider) error {
+	p.getAvailablePairs = provider.GetAvailablePairs
+	p.toProviderSymbol = provider.ToProviderSymbol
+	p.toMappedProviderSymbol = func(pair types.CurrencyPair) string {
+		// look for a mapping of the entire pair
+		// example: BTC/USD -> XXBTZUSD on Kraken
+		// (viper does lowercase map indexes)
+		symbol, found := p.mapping[pair.String()]
+		if found {
+			return symbol
+		}
+		// if no pair mapping, look for single denoms
+		base, found := p.mapping[pair.Base]
+		if !found {
+			base = pair.Base
+		}
+		quote, found := p.mapping[pair.Quote]
+		if !found {
+			quote = pair.Quote
+		}
+
+		return p.toProviderSymbol(base, quote)
+	}
 
 	available := map[string]struct{}{}
 	symbols, err := p.getAvailablePairs()
@@ -103,26 +116,10 @@ func (p *provider) init(pp types.Provider) error {
 			continue
 		}
 
-		// look for a mapping of the entire pair
-		// example: BTC/USD -> XXBTZUSD on Kraken
-		// (viper does lowercase map indexes)
-		symbol, found := p.mapping[pair.String()]
-		if !found {
-			// if no pair mapping, look for single denoms
-			base, found := p.mapping[pair.Base]
-			if !found {
-				base = pair.Base
-			}
+		symbol := p.toMappedProviderSymbol(pair)
+		fmt.Println(symbol, pair)
 
-			quote, found := p.mapping[pair.Quote]
-			if !found {
-				quote = pair.Quote
-			}
-
-			symbol = p.toProviderSymbol(base, quote)
-		}
-
-		_, found = available[symbol]
+		_, found := available[symbol]
 		if !found {
 			p.logger.Warn().
 				Str("pair", pair.Join("/")).
@@ -131,6 +128,7 @@ func (p *provider) init(pp types.Provider) error {
 		}
 
 		p.pairs[symbol] = pair
+		p.stats[pair.String()] = 0
 	}
 
 	if len(p.pairs) == 0 {
@@ -140,43 +138,38 @@ func (p *provider) init(pp types.Provider) error {
 	return nil
 }
 
-func (p *provider) run() {
-	defer p.wg.Done()
+func (p *baseProvider) GetStats() (map[string]uint64, error) {
+	stats := map[string]uint64{}
 
-	p.logger.Info().Msg("starting oracle provider")
-
-	go func() {
-		ticker := time.NewTicker(p.config.PollingInterval)
-		defer ticker.Stop() // Always stop ticker to release resources
-
-		for {
-			select {
-			case <-ticker.C:
-				p.poll()
-			case <-p.ctx.Done():
-				return
-			}
-		}
-	}()
-}
-
-func (p *provider) Start() {
-	p.logger.Info().Msg("starting provider")
-	if p.poll == nil {
-		p.logger.Fatal().Msg("provider poller is nil")
-	}
-
-	p.wg.Add(1)
-	p.run()
-}
-
-func (p *provider) GetTickers() (map[string]types.Ticker, error) {
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
-	return p.tickers, nil
+
+	for symbol, count := range p.stats {
+		stats[symbol] = count
+		p.stats[symbol] = 0
+	}
+
+	return stats, nil
 }
 
-func (p *provider) setTicker(
+func (p *baseProvider) GetTickers() (map[string]types.Ticker, error) {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+
+	tickers := map[string]types.Ticker{}
+	for symbol, ticker := range p.tickers {
+		tickers[symbol] = types.Ticker{
+			Time:   ticker.Time,
+			Pair:   ticker.Pair,
+			Price:  new(big.Float).Set(ticker.Price),
+			Volume: new(big.Float).Set(ticker.Volume),
+		}
+	}
+
+	return tickers, nil
+}
+
+func (p *baseProvider) setTicker(
 	timestamp time.Time,
 	pair types.CurrencyPair,
 	price, baseVolume, quoteVolume *big.Float,
@@ -196,6 +189,8 @@ func (p *provider) setTicker(
 
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
+
+	p.stats[pair.String()]++
 
 	p.tickers[pair.String()] = types.Ticker{
 		Time:   timestamp,
@@ -222,24 +217,24 @@ func (p *provider) setTicker(
 	}
 }
 
-func (p *provider) httpGet(path string) ([]byte, error) {
+func (p *baseProvider) httpGet(path string) ([]byte, error) {
 	return p.httpRequest(path, "GET", nil, nil)
 }
 
-func (p *provider) httpPost(path string, body []byte) ([]byte, error) {
+func (p *baseProvider) httpPost(path string, body []byte) ([]byte, error) {
 	headers := map[string]string{
 		"Content-Type": "application/json",
 	}
 	return p.httpRequest(path, "POST", body, headers)
 }
 
-func (p *provider) httpRequest(path string, method string, body []byte, headers map[string]string) ([]byte, error) {
-	res, err := p.makeHttpRequest(p.endpoint+path, method, body, headers)
+func (p *baseProvider) httpRequest(path string, method string, body []byte, headers map[string]string) ([]byte, error) {
+	res, err := p.makeHttpRequest(p.apiEndpoint+path, method, body, headers)
 	if err != nil && len(p.config.ApiEndpoints) > 1 {
 		index := 0
 
 		for i, endpoint := range p.config.ApiEndpoints {
-			if p.endpoint == endpoint {
+			if p.apiEndpoint == endpoint {
 				index = i
 				break
 			}
@@ -249,7 +244,7 @@ func (p *provider) httpRequest(path string, method string, body []byte, headers 
 			index = 0
 		}
 
-		p.endpoint = p.config.ApiEndpoints[index]
+		p.apiEndpoint = p.config.ApiEndpoints[index]
 
 		// urls = append(urls, p.endpoints.Urls[index+1:]...)
 		// urls = append(urls, p.endpoints.Urls[:index]...)
@@ -270,7 +265,7 @@ func (p *provider) httpRequest(path string, method string, body []byte, headers 
 	return res, err
 }
 
-func (p *provider) makeHttpRequest(url string, method string, body []byte, headers map[string]string) ([]byte, error) {
+func (p *baseProvider) makeHttpRequest(url string, method string, body []byte, headers map[string]string) ([]byte, error) {
 	req, err := http.NewRequest(method, url, bytes.NewBuffer(body))
 	if err != nil {
 		return nil, err

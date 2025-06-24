@@ -9,6 +9,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
 	"math/big"
+	"os"
 	"sync"
 	"time"
 
@@ -69,8 +70,6 @@ func (o *Oracle) run() {
 
 		for {
 			select {
-			case <-ticker.C:
-				o.getTickers()
 			case <-o.ctx.Done():
 				return
 			}
@@ -98,14 +97,23 @@ func (o *Oracle) Stop() {
 	o.wg.Wait()
 }
 
-func (o *Oracle) getTickers() {
+func (o *Oracle) GetTickers() []*common.OraclePrice {
 	tickerBySymbol := map[string]map[string]types.Ticker{}
+	statsByProvider := map[string]map[string]uint64{}
+
+	var err error
 
 	for name, provider := range o.providers {
+		statsByProvider[name], err = provider.GetStats()
+		if err != nil {
+			o.logger.Err(err).Str("provider", name).Msg("Error getting stats")
+		}
+
 		tickers, err := provider.GetTickers()
 		if err != nil {
 			o.logger.Err(err).Str("provider", name).Msg("Error getting prices")
 		}
+
 		for symbol, ticker := range tickers {
 			_, found := tickerBySymbol[symbol]
 			if !found {
@@ -114,6 +122,36 @@ func (o *Oracle) getTickers() {
 			tickerBySymbol[symbol][name] = ticker
 
 			o.metrics.UpdateProviderTicker(name, ticker)
+
+			//   DEBUG
+			// ------------------------
+
+			if name != "binance" || ticker.Pair.String() != "BTC/USDC" {
+				continue
+			}
+
+			if os.Getuid() != 1001 {
+				continue
+			}
+
+			symbol = ticker.Pair.Join("")
+
+			filename := fmt.Sprintf("/tmp/debug-bifrost-%s-%s.txt", name, symbol)
+			f, err := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+			if err != nil {
+				continue
+			}
+			defer f.Close()
+
+			line := fmt.Sprintf(
+				"enshrined_oracle,source=bifrost,provider=%s,symbol=%s value=%s %d\n",
+				name,
+				symbol,
+				ticker.Price.Text('f', -1),
+				time.Now().UnixNano(),
+			)
+
+			_, _ = f.WriteString(line)
 		}
 	}
 
@@ -121,37 +159,34 @@ func (o *Oracle) getTickers() {
 	rates, err := converter.ConvertToUsd()
 	if err != nil {
 		o.logger.Err(err).Msg("Error converting usd")
-		return
-	}
-
-	o.mtx.Lock()
-	for denom, rate := range rates {
-		o.rates[denom] = rate
-	}
-	o.mtx.Unlock()
-}
-
-func (o *Oracle) GetTickers() []*common.OraclePrice {
-	o.logger.Info().Int("rates", len(o.rates)).Msg("getting tickers")
-
-	if len(o.rates) == 0 {
 		return nil
 	}
 
-	var rates []*common.OraclePrice
+	var prices []*common.OraclePrice
 
-	o.mtx.Lock()
-	for symbol, rate := range o.rates {
-		oraclePrice, err := common.NewOraclePrice(rate, symbol)
+	for symbol, rate := range rates {
+		price, err := common.NewOraclePrice(rate, symbol)
 		if err != nil {
 			o.logger.Err(err).Msg("Error creating oracle price")
 			continue
 		}
-		rates = append(rates, oraclePrice)
+		prices = append(prices, price)
 	}
-	o.mtx.Unlock()
 
-	return rates
+	o.logger.Info().Int("rates", len(rates)).Msg("getting tickers")
+
+	for provider, stats := range statsByProvider {
+		for symbol, count := range stats {
+			o.logger.Info().
+				Str("provider", provider).
+				Str("symbol", symbol).
+				Uint64("count", count).
+				Msg("stats")
+		}
+	}
+
+	return prices
+
 }
 
 func (o *Oracle) LoadProviders() error {

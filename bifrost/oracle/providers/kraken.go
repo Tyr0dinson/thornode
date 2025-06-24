@@ -3,9 +3,12 @@ package providers
 import (
 	"context"
 	"encoding/json"
+	"github.com/coder/websocket/wsjson"
 	"github.com/rs/zerolog"
+	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
+	"math/big"
 	"time"
 )
 
@@ -16,8 +19,16 @@ type KrakenTickersResponse struct {
 	} `json:"result"`
 }
 
+type KrakenWsTickerResponse struct {
+	Data []struct {
+		Symbol string  `json:"symbol"`
+		Price  float64 `json:"last"`
+		Volume float64 `json:"volume"`
+	} `json:"data"`
+}
+
 type KrakenProvider struct {
-	*provider
+	*websocketProvider
 }
 
 func NewKrakenProvider(
@@ -25,19 +36,19 @@ func NewKrakenProvider(
 	logger zerolog.Logger,
 	config config.BifrostOracleProviderConfiguration,
 ) (*KrakenProvider, error) {
-	p, err := newProvider(ctx, logger, common.ProviderKraken, config)
+	wsProvider, err := newWebsocketProvider(ctx, logger, common.ProviderKraken, config)
 	if err != nil {
 		return nil, err
 	}
 
-	pp := KrakenProvider{p}
+	provider := KrakenProvider{wsProvider}
 
-	err = pp.init(&pp)
+	err = provider.init(&provider)
 	if err != nil {
 		return nil, err
 	}
 
-	return &pp, nil
+	return &provider, nil
 }
 
 func (p *KrakenProvider) Poll() {
@@ -90,7 +101,7 @@ func (p *KrakenProvider) GetAvailablePairs() ([]string, error) {
 		return nil, err
 	}
 
-	symbols := []string{}
+	var symbols []string
 	for symbol, item := range response.Result {
 		if item.Status != "online" {
 			continue
@@ -103,4 +114,67 @@ func (p *KrakenProvider) GetAvailablePairs() ([]string, error) {
 
 func (p *KrakenProvider) ToProviderSymbol(base, quote string) string {
 	return base + quote
+}
+
+// Websocket
+
+func (p *KrakenProvider) Subscribe() error {
+	var symbols []string
+
+	for _, pair := range p.pairs {
+		symbols = append(symbols, pair.String())
+	}
+
+	msg := map[string]any{
+		"method": "subscribe",
+		"params": map[string]any{
+			"channel": "ticker",
+			"symbol":  symbols,
+		},
+	}
+
+	err := wsjson.Write(p.ctx, p.ws, msg)
+	if err != nil {
+		p.logger.Err(err).Msg("fail to subscribe")
+		return err
+	}
+
+	return nil
+}
+
+func (p *KrakenProvider) HandleWsMessage(msg []byte) error {
+	var response KrakenWsTickerResponse
+
+	err := json.Unmarshal(msg, &response)
+	if err != nil {
+		p.logger.Err(err).Msg("error unmarshalling msg")
+		return err
+	}
+
+	for _, data := range response.Data {
+		pair, err := types.NewCurrencyPair(data.Symbol)
+		if err != nil {
+			p.logger.Err(err).Msg("fail to create pair")
+			continue
+		}
+
+		symbol := p.toMappedProviderSymbol(pair)
+
+		_, found := p.pairs[symbol]
+		if !found {
+			return nil
+		}
+
+		timestamp := time.Now()
+
+		p.setTicker(
+			timestamp,
+			pair,
+			big.NewFloat(data.Price),
+			big.NewFloat(data.Volume),
+			nil,
+		)
+	}
+
+	return nil
 }

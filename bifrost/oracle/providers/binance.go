@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/coder/websocket/wsjson"
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
@@ -19,8 +20,16 @@ type BinanceTicker struct {
 	Price       string `json:"lastPrice"`
 }
 
+type BinanceWsTicker struct {
+	// Time        uint64 `json:"E"`
+	Symbol      string `json:"s"`
+	BaseVolume  string `json:"v"`
+	QuoteVolume string `json:"q"`
+	Price       string `json:"c"`
+}
+
 type BinanceProvider struct {
-	*provider
+	*websocketProvider
 }
 
 func NewBinanceProvider(
@@ -28,22 +37,51 @@ func NewBinanceProvider(
 	logger zerolog.Logger,
 	config config.BifrostOracleProviderConfiguration,
 ) (*BinanceProvider, error) {
-	p, err := newProvider(ctx, logger, common.ProviderBinance, config)
+	wsProvider, err := newWebsocketProvider(ctx, logger, common.ProviderBinance, config)
 	if err != nil {
 		return nil, err
 	}
 
-	pp := BinanceProvider{p}
-	err = pp.init(&pp)
+	provider := BinanceProvider{wsProvider}
+	err = provider.init(&provider)
 	if err != nil {
 		return nil, err
 	}
 
-	return &pp, nil
+	return &provider, nil
 }
 
+func (p *BinanceProvider) GetAvailablePairs() ([]string, error) {
+	data, err := p.httpGet("/api/v3/ticker/price")
+	if err != nil {
+		return nil, err
+	}
+
+	var response []struct {
+		Symbol string `json:"symbol"`
+	}
+
+	err = json.Unmarshal(data, &response)
+	if err != nil {
+		return nil, err
+	}
+
+	var symbols []string
+	for _, item := range response {
+		symbols = append(symbols, item.Symbol)
+	}
+
+	return symbols, nil
+}
+
+func (p *BinanceProvider) ToProviderSymbol(base, quote string) string {
+	return base + quote
+}
+
+// Polling
+
 func (p *BinanceProvider) Poll() {
-	symbols := []string{}
+	var symbols []string
 	for symbol := range p.pairs {
 		symbols = append(symbols, symbol)
 	}
@@ -84,29 +122,60 @@ func (p *BinanceProvider) Poll() {
 	}
 }
 
-func (p *BinanceProvider) GetAvailablePairs() ([]string, error) {
-	data, err := p.httpGet("/api/v3/ticker/price")
+// Websocket
+
+func (p *BinanceProvider) Subscribe() error {
+	var params []string
+
+	for _, pair := range p.pairs {
+		params = append(params, strings.ToLower(pair.Join(""))+"@miniTicker")
+	}
+
+	msg := map[string]any{
+		"method": "SUBSCRIBE",
+		"params": params,
+		"id":     1,
+	}
+
+	err := wsjson.Write(p.ctx, p.ws, msg)
 	if err != nil {
-		return nil, err
+		p.logger.Err(err).Msg("fail to subscribe")
+		return err
 	}
 
-	var response []struct {
-		Symbol string `json:"symbol"`
-	}
-
-	err = json.Unmarshal(data, &response)
-	if err != nil {
-		return nil, err
-	}
-
-	symbols := []string{}
-	for _, item := range response {
-		symbols = append(symbols, item.Symbol)
-	}
-
-	return symbols, nil
+	return nil
 }
 
-func (p *BinanceProvider) ToProviderSymbol(base, quote string) string {
-	return base + quote
+func (p *BinanceProvider) HandleWsMessage(msg []byte) error {
+	var ticker BinanceWsTicker
+	err := json.Unmarshal(msg, &ticker)
+	if err != nil {
+		p.logger.Err(err).Msg("error unmarshalling msg")
+		return err
+	}
+
+	pair, found := p.pairs[ticker.Symbol]
+	if !found {
+		return nil
+	}
+
+	timestamp := time.Now()
+
+	p.setTicker(
+		timestamp,
+		pair,
+		strToFloat(ticker.Price),
+		strToFloat(ticker.BaseVolume),
+		strToFloat(ticker.QuoteVolume),
+	)
+
+	return nil
+}
+
+func (p *BinanceProvider) Pong() {
+	msg := map[string]interface{}{}
+	err := wsjson.Write(p.ctx, p.ws, msg)
+	if err != nil {
+		p.logger.Err(err).Msg("error writing pong")
+	}
 }
