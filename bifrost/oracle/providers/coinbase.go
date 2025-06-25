@@ -129,7 +129,8 @@ func (p *CoinbaseProvider) Subscribe() error {
 	msg := map[string]any{
 		"type":        "subscribe",
 		"product_ids": symbols,
-		"channels":    []string{"ticker_batch"},
+		"channels":    []string{"ticker"},
+		// "channels":    []string{"ticker_batch"},
 	}
 
 	err := wsjson.Write(p.ctx, p.ws, msg)

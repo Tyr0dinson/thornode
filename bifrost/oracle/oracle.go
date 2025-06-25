@@ -104,6 +104,7 @@ func (o *Oracle) GetTickers() []*common.OraclePrice {
 	var err error
 
 	for name, provider := range o.providers {
+
 		statsByProvider[name], err = provider.GetStats()
 		if err != nil {
 			o.logger.Err(err).Str("provider", name).Msg("Error getting stats")
@@ -200,6 +201,10 @@ func (o *Oracle) LoadProviders() error {
 		switch providerName {
 		case common.ProviderBinance:
 			provider, err = providers.NewBinanceProvider(o.ctx, o.logger, providerConfig)
+		case common.ProviderBitget:
+			provider, err = providers.NewBitgetProvider(o.ctx, o.logger, providerConfig)
+		case common.ProviderBitstamp:
+			provider, err = providers.NewBitstampProvider(o.ctx, o.logger, providerConfig)
 		case common.ProviderBybit:
 			provider, err = providers.NewBybitProvider(o.ctx, o.logger, providerConfig)
 		case common.ProviderCrypto:

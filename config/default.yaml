@@ -389,7 +389,26 @@ bifrost:
       ws_endpoints:
         - wss://stream.binance.com:9443/ws
       pairs:
-        - BTC/USDC
+        - BTC/USDT
+
+    bitstamp:
+      polling_interval: 2s
+      api_endpoints:
+        - https://www.bitstamp.net
+      pairs:
+        - BTC/USD
+        - USDC/USD
+        - USDT/USD
+
+    bitget:
+      polling_interval: 2s
+      api_endpoints:
+        - https://api.bitget.com
+      ws_endpoints:
+        - wss://ws.bitget.com/v2/ws/public
+      pairs:
+        - BTC/USDT
+        - ETH/USDT
 
     bybit:
       polling_interval: 5s
