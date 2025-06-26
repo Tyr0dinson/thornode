@@ -44,7 +44,7 @@ bifrost:
     ask_peers: 3
     ask_peers_delay: 5s
     max_batch_size: 100
-    batch_interval: 0.2s
+    batch_interval: 200ms
     peer_timeout: 20s
     peer_concurrent_sends: 4
     peer_concurrent_receives: 5
@@ -453,6 +453,18 @@ bifrost:
       symbol_mapping:
         - USDT/USD=USDTZUSD
         - BTC/USD=XXBTZUSD
+
+    okx:
+      polling_interval: 3s
+      api_endpoints:
+        - https://www.okx.com
+      ws_endpoints:
+        - wss://ws.okx.com:8443/ws/v5/public
+      pairs:
+        - BTC/USDT
+        - ETH/USDT
+        - USDC/USDT
+        - USDT/USD
 
 
 ########################################################################################

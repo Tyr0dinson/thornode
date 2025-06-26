@@ -8,4 +8,5 @@ const (
 	ProviderCoinbase = "coinbase"
 	ProviderCrypto   = "crypto"
 	ProviderKraken   = "kraken"
+	ProviderOkx      = "okx"
 )

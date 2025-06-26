@@ -173,9 +173,16 @@ func (p *websocketProvider) Start() {
 				}
 			}
 
+			if len(msg) == 0 {
+				p.logger.Warn().Msg("message is empty")
+				continue
+			}
+
 			err = p.handleWsMessage(msg)
 			if err != nil {
-				p.logger.Err(err).Msg("fail handling message")
+				p.logger.Err(err).
+					Str("msg", string(msg)).
+					Msg("fail handling message")
 			}
 		}
 	}()

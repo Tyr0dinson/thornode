@@ -200,9 +200,6 @@ func (am AppModule) BeginBlock(goCtx context.Context) error {
 		ctx.Logger().Error("Failed to remove expired upgrade proposals", "error", err)
 	}
 
-	if err := am.mgr.OracleManager().BeginBlock(ctx); err != nil {
-		ctx.Logger().Error("fail to begin oracle manager", "error", err)
-	}
 	return nil
 }
 
@@ -245,6 +242,10 @@ func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, err
 	}
 
 	am.mgr.GasMgr().EndBlock(ctx, am.mgr.Keeper(), am.mgr.EventMgr())
+
+	if err := am.mgr.OracleManager().EndBlock(ctx); err != nil {
+		ctx.Logger().Error("fail to proces oracle manager", "error", err)
+	}
 
 	// telemetry
 	if am.telemetryEnabled {

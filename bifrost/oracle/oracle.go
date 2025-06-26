@@ -127,7 +127,7 @@ func (o *Oracle) GetTickers() []*common.OraclePrice {
 			//   DEBUG
 			// ------------------------
 
-			if name != "binance" || ticker.Pair.String() != "BTC/USDC" {
+			if name != "binance" || ticker.Pair.Base != "BTC" {
 				continue
 			}
 
@@ -213,6 +213,8 @@ func (o *Oracle) LoadProviders() error {
 			provider, err = providers.NewCoinbaseProvider(o.ctx, o.logger, providerConfig)
 		case common.ProviderKraken:
 			provider, err = providers.NewKrakenProvider(o.ctx, o.logger, providerConfig)
+		case common.ProviderOkx:
+			provider, err = providers.NewOkxProvider(o.ctx, o.logger, providerConfig)
 		default:
 			o.logger.Error().Msgf("unknown provider: %s", providerName)
 			continue

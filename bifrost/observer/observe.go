@@ -851,7 +851,6 @@ func (o *Observer) processOracle(ctx context.Context) {
 			case <-o.stopChan:
 				return
 			case <-ticker.C:
-				o.attestationGossip.sendPriceFeedAttestationsToThornode(ctx)
 				prices := o.oracle.GetTickers()
 
 				pf := common.PriceFeed{
@@ -860,6 +859,10 @@ func (o *Observer) processOracle(ctx context.Context) {
 				}
 
 				o.globalPriceFeedQueue <- pf
+
+				time.Sleep(time.Millisecond * 100)
+
+				o.attestationGossip.sendPriceFeedAttestationsToThornode(ctx)
 			}
 		}
 	}()

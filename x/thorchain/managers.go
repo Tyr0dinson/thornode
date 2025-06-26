@@ -229,7 +229,7 @@ type SwitchManager interface {
 }
 
 type OracleManager interface {
-	BeginBlock(ctx cosmos.Context) error
+	EndBlock(ctx cosmos.Context) error
 }
 
 // Mgrs is an implementation of Manager interface

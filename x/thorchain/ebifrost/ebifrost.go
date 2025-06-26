@@ -272,6 +272,7 @@ func (b *EnshrinedBifrost) SendQuorumErrataTx(ctx context.Context, e *common.Quo
 }
 
 func (b *EnshrinedBifrost) SendQuorumPriceFeeds(ctx context.Context, qpfs *common.QuorumPriceFeeds) (*SendQuorumPriceFeedResult, error) {
+	b.logger.Info("send quorum price feeds")
 	b.priceFeedCache.Lock()
 	b.priceFeedCache.items = b.priceFeedCache.items[:0]
 	b.priceFeedCache.Unlock()
@@ -285,6 +286,10 @@ func (b *EnshrinedBifrost) SendQuorumPriceFeeds(ctx context.Context, qpfs *commo
 		); err != nil {
 			return nil, err
 		}
+	}
+
+	for _, item := range b.priceFeedCache.items {
+		fmt.Println(item.Timestamp, time.UnixMilli(item.Item.PriceFeed.Time))
 	}
 
 	return &SendQuorumPriceFeedResult{}, nil

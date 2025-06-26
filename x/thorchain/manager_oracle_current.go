@@ -36,7 +36,7 @@ func newOracleMgrVCUR(
 	}
 }
 
-func (om *OracleMgrVCUR) BeginBlock(ctx cosmos.Context) error {
+func (om *OracleMgrVCUR) EndBlock(ctx cosmos.Context) error {
 	// [BTC][thor1...]*big.Float{}
 	pricesByAsset := map[string]map[string]*big.Float{}
 	for _, symbol := range strings.Split(requiredRates, ",") {

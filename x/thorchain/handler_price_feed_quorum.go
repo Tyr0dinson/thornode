@@ -7,6 +7,8 @@ import (
 	"time"
 )
 
+const priceFeedTimeout = time.Second * 2
+
 // PriceFeedQuorum to handle MsgObservedTx
 type PriceFeedQuorumHandler struct {
 	mgr Manager
@@ -51,6 +53,13 @@ func (h PriceFeedQuorumHandler) handle(ctx cosmos.Context, msg types.MsgPriceFee
 	}
 
 	pf := msg.QuoPriceFeed.PriceFeed
+
+	timestamp := time.UnixMilli(pf.Time)
+	duration := time.Since(timestamp)
+	if duration > priceFeedTimeout {
+		ctx.Logger().Error("price feed is stale", "duration", duration)
+		return &cosmos.Result{}, nil
+	}
 
 	now := time.Now().Format("15:04:05.000")
 	ts := time.UnixMilli(pf.Time).Format("15:04:05.000")
