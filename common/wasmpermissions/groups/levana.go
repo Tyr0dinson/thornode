@@ -12,8 +12,8 @@ var LevanaPermissions = map[string]types.WasmPermission{
 	},
 
 	// levana-perpswap-cosmos-market v0.1.2
-	"fe632b2fde3771d2774ab4df619920ea14df3a99a05e4b09420229cb56c33701": {
-		Origin: "https://github.com/Levana-Protocol/levana-perps/tree/02a47aff84645d37210bdbfe9d9c15501fb8a37d/contracts/market",
+	"460f431eb441f4e92344b7d674c67745d4e6a2b424685af932980c20bc797a88": {
+		Origin: "https://github.com/Levana-Protocol/levana-perps/tree/1d0f649958a5bc3651aabfc60c51fc93e6080691/contracts/market",
 		Deployers: map[string]bool{
 			"thor1440jp0ukj8ew3z2fd4zmdqgxhn5ghd7ghg2kmr": true,
 		},
