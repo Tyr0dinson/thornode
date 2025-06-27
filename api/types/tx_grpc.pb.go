@@ -42,7 +42,7 @@ const (
 	Msg_ProposeUpgrade_FullMethodName       = "/types.Msg/ProposeUpgrade"
 	Msg_ApproveUpgrade_FullMethodName       = "/types.Msg/ApproveUpgrade"
 	Msg_RejectUpgrade_FullMethodName        = "/types.Msg/RejectUpgrade"
-	Msg_PriceFeedQuorum_FullMethodName      = "/types.Msg/PriceFeedQuorum"
+	Msg_PriceFeedQuorumBatch_FullMethodName = "/types.Msg/PriceFeedQuorumBatch"
 	Msg_StoreCode_FullMethodName            = "/types.Msg/StoreCode"
 	Msg_InstantiateContract_FullMethodName  = "/types.Msg/InstantiateContract"
 	Msg_InstantiateContract2_FullMethodName = "/types.Msg/InstantiateContract2"
@@ -77,7 +77,7 @@ type MsgClient interface {
 	ProposeUpgrade(ctx context.Context, in *MsgProposeUpgrade, opts ...grpc.CallOption) (*MsgEmpty, error)
 	ApproveUpgrade(ctx context.Context, in *MsgApproveUpgrade, opts ...grpc.CallOption) (*MsgEmpty, error)
 	RejectUpgrade(ctx context.Context, in *MsgRejectUpgrade, opts ...grpc.CallOption) (*MsgEmpty, error)
-	PriceFeedQuorum(ctx context.Context, in *MsgPriceFeedQuorum, opts ...grpc.CallOption) (*MsgEmpty, error)
+	PriceFeedQuorumBatch(ctx context.Context, in *MsgPriceFeedQuorumBatch, opts ...grpc.CallOption) (*MsgEmpty, error)
 	// CosmWasm interface cloned in order so that we can register the x/thorchain message server as the server for x/wasm messages, and route through version control
 	StoreCode(ctx context.Context, in *types.MsgStoreCode, opts ...grpc.CallOption) (*types.MsgStoreCodeResponse, error)
 	InstantiateContract(ctx context.Context, in *types.MsgInstantiateContract, opts ...grpc.CallOption) (*types.MsgInstantiateContractResponse, error)
@@ -293,9 +293,9 @@ func (c *msgClient) RejectUpgrade(ctx context.Context, in *MsgRejectUpgrade, opt
 	return out, nil
 }
 
-func (c *msgClient) PriceFeedQuorum(ctx context.Context, in *MsgPriceFeedQuorum, opts ...grpc.CallOption) (*MsgEmpty, error) {
+func (c *msgClient) PriceFeedQuorumBatch(ctx context.Context, in *MsgPriceFeedQuorumBatch, opts ...grpc.CallOption) (*MsgEmpty, error) {
 	out := new(MsgEmpty)
-	err := c.cc.Invoke(ctx, Msg_PriceFeedQuorum_FullMethodName, in, out, opts...)
+	err := c.cc.Invoke(ctx, Msg_PriceFeedQuorumBatch_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -382,7 +382,7 @@ type MsgServer interface {
 	ProposeUpgrade(context.Context, *MsgProposeUpgrade) (*MsgEmpty, error)
 	ApproveUpgrade(context.Context, *MsgApproveUpgrade) (*MsgEmpty, error)
 	RejectUpgrade(context.Context, *MsgRejectUpgrade) (*MsgEmpty, error)
-	PriceFeedQuorum(context.Context, *MsgPriceFeedQuorum) (*MsgEmpty, error)
+	PriceFeedQuorumBatch(context.Context, *MsgPriceFeedQuorumBatch) (*MsgEmpty, error)
 	// CosmWasm interface cloned in order so that we can register the x/thorchain message server as the server for x/wasm messages, and route through version control
 	StoreCode(context.Context, *types.MsgStoreCode) (*types.MsgStoreCodeResponse, error)
 	InstantiateContract(context.Context, *types.MsgInstantiateContract) (*types.MsgInstantiateContractResponse, error)
@@ -463,8 +463,8 @@ func (UnimplementedMsgServer) ApproveUpgrade(context.Context, *MsgApproveUpgrade
 func (UnimplementedMsgServer) RejectUpgrade(context.Context, *MsgRejectUpgrade) (*MsgEmpty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RejectUpgrade not implemented")
 }
-func (UnimplementedMsgServer) PriceFeedQuorum(context.Context, *MsgPriceFeedQuorum) (*MsgEmpty, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method PriceFeedQuorum not implemented")
+func (UnimplementedMsgServer) PriceFeedQuorumBatch(context.Context, *MsgPriceFeedQuorumBatch) (*MsgEmpty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PriceFeedQuorumBatch not implemented")
 }
 func (UnimplementedMsgServer) StoreCode(context.Context, *types.MsgStoreCode) (*types.MsgStoreCodeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method StoreCode not implemented")
@@ -893,20 +893,20 @@ func _Msg_RejectUpgrade_Handler(srv interface{}, ctx context.Context, dec func(i
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Msg_PriceFeedQuorum_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(MsgPriceFeedQuorum)
+func _Msg_PriceFeedQuorumBatch_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MsgPriceFeedQuorumBatch)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(MsgServer).PriceFeedQuorum(ctx, in)
+		return srv.(MsgServer).PriceFeedQuorumBatch(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: Msg_PriceFeedQuorum_FullMethodName,
+		FullMethod: Msg_PriceFeedQuorumBatch_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MsgServer).PriceFeedQuorum(ctx, req.(*MsgPriceFeedQuorum))
+		return srv.(MsgServer).PriceFeedQuorumBatch(ctx, req.(*MsgPriceFeedQuorumBatch))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1115,8 +1115,8 @@ var Msg_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Msg_RejectUpgrade_Handler,
 		},
 		{
-			MethodName: "PriceFeedQuorum",
-			Handler:    _Msg_PriceFeedQuorum_Handler,
+			MethodName: "PriceFeedQuorumBatch",
+			Handler:    _Msg_PriceFeedQuorumBatch_Handler,
 		},
 		{
 			MethodName: "StoreCode",

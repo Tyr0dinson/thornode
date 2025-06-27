@@ -195,7 +195,7 @@ message QuorumPriceFeed {
     repeated Attestation attestations = 2;
 }
 
-message QuorumPriceFeeds {
+message QuorumPriceFeedBatch {
     option (gogoproto.stringer)         = true;
 
     repeated QuorumPriceFeed quorum_price_feeds = 1;

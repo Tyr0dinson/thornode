@@ -2452,23 +2452,23 @@ func (x *fastReflection_SendQuorumErrataTxResult) ProtoMethods() *protoiface.Met
 }
 
 var (
-	md_SendQuorumPriceFeedResult protoreflect.MessageDescriptor
+	md_SendQuorumPriceFeedBatchResult protoreflect.MessageDescriptor
 )
 
 func init() {
 	file_types_server_bifrost_localhost_proto_init()
-	md_SendQuorumPriceFeedResult = File_types_server_bifrost_localhost_proto.Messages().ByName("SendQuorumPriceFeedResult")
+	md_SendQuorumPriceFeedBatchResult = File_types_server_bifrost_localhost_proto.Messages().ByName("SendQuorumPriceFeedBatchResult")
 }
 
-var _ protoreflect.Message = (*fastReflection_SendQuorumPriceFeedResult)(nil)
+var _ protoreflect.Message = (*fastReflection_SendQuorumPriceFeedBatchResult)(nil)
 
-type fastReflection_SendQuorumPriceFeedResult SendQuorumPriceFeedResult
+type fastReflection_SendQuorumPriceFeedBatchResult SendQuorumPriceFeedBatchResult
 
-func (x *SendQuorumPriceFeedResult) ProtoReflect() protoreflect.Message {
-	return (*fastReflection_SendQuorumPriceFeedResult)(x)
+func (x *SendQuorumPriceFeedBatchResult) ProtoReflect() protoreflect.Message {
+	return (*fastReflection_SendQuorumPriceFeedBatchResult)(x)
 }
 
-func (x *SendQuorumPriceFeedResult) slowProtoReflect() protoreflect.Message {
+func (x *SendQuorumPriceFeedBatchResult) slowProtoReflect() protoreflect.Message {
 	mi := &file_types_server_bifrost_localhost_proto_msgTypes[6]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -2480,43 +2480,43 @@ func (x *SendQuorumPriceFeedResult) slowProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-var _fastReflection_SendQuorumPriceFeedResult_messageType fastReflection_SendQuorumPriceFeedResult_messageType
-var _ protoreflect.MessageType = fastReflection_SendQuorumPriceFeedResult_messageType{}
+var _fastReflection_SendQuorumPriceFeedBatchResult_messageType fastReflection_SendQuorumPriceFeedBatchResult_messageType
+var _ protoreflect.MessageType = fastReflection_SendQuorumPriceFeedBatchResult_messageType{}
 
-type fastReflection_SendQuorumPriceFeedResult_messageType struct{}
+type fastReflection_SendQuorumPriceFeedBatchResult_messageType struct{}
 
-func (x fastReflection_SendQuorumPriceFeedResult_messageType) Zero() protoreflect.Message {
-	return (*fastReflection_SendQuorumPriceFeedResult)(nil)
+func (x fastReflection_SendQuorumPriceFeedBatchResult_messageType) Zero() protoreflect.Message {
+	return (*fastReflection_SendQuorumPriceFeedBatchResult)(nil)
 }
-func (x fastReflection_SendQuorumPriceFeedResult_messageType) New() protoreflect.Message {
-	return new(fastReflection_SendQuorumPriceFeedResult)
+func (x fastReflection_SendQuorumPriceFeedBatchResult_messageType) New() protoreflect.Message {
+	return new(fastReflection_SendQuorumPriceFeedBatchResult)
 }
-func (x fastReflection_SendQuorumPriceFeedResult_messageType) Descriptor() protoreflect.MessageDescriptor {
-	return md_SendQuorumPriceFeedResult
+func (x fastReflection_SendQuorumPriceFeedBatchResult_messageType) Descriptor() protoreflect.MessageDescriptor {
+	return md_SendQuorumPriceFeedBatchResult
 }
 
 // Descriptor returns message descriptor, which contains only the protobuf
 // type information for the message.
-func (x *fastReflection_SendQuorumPriceFeedResult) Descriptor() protoreflect.MessageDescriptor {
-	return md_SendQuorumPriceFeedResult
+func (x *fastReflection_SendQuorumPriceFeedBatchResult) Descriptor() protoreflect.MessageDescriptor {
+	return md_SendQuorumPriceFeedBatchResult
 }
 
 // Type returns the message type, which encapsulates both Go and protobuf
 // type information. If the Go type information is not needed,
 // it is recommended that the message descriptor be used instead.
-func (x *fastReflection_SendQuorumPriceFeedResult) Type() protoreflect.MessageType {
-	return _fastReflection_SendQuorumPriceFeedResult_messageType
+func (x *fastReflection_SendQuorumPriceFeedBatchResult) Type() protoreflect.MessageType {
+	return _fastReflection_SendQuorumPriceFeedBatchResult_messageType
 }
 
 // New returns a newly allocated and mutable empty message.
-func (x *fastReflection_SendQuorumPriceFeedResult) New() protoreflect.Message {
-	return new(fastReflection_SendQuorumPriceFeedResult)
+func (x *fastReflection_SendQuorumPriceFeedBatchResult) New() protoreflect.Message {
+	return new(fastReflection_SendQuorumPriceFeedBatchResult)
 }
 
 // Interface unwraps the message reflection interface and
 // returns the underlying ProtoMessage interface.
-func (x *fastReflection_SendQuorumPriceFeedResult) Interface() protoreflect.ProtoMessage {
-	return (*SendQuorumPriceFeedResult)(x)
+func (x *fastReflection_SendQuorumPriceFeedBatchResult) Interface() protoreflect.ProtoMessage {
+	return (*SendQuorumPriceFeedBatchResult)(x)
 }
 
 // Range iterates over every populated field in an undefined order,
@@ -2524,7 +2524,7 @@ func (x *fastReflection_SendQuorumPriceFeedResult) Interface() protoreflect.Prot
 // Range returns immediately if f returns false.
 // While iterating, mutating operations may only be performed
 // on the current field descriptor.
-func (x *fastReflection_SendQuorumPriceFeedResult) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
+func (x *fastReflection_SendQuorumPriceFeedBatchResult) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
 }
 
 // Has reports whether a field is populated.
@@ -2538,13 +2538,13 @@ func (x *fastReflection_SendQuorumPriceFeedResult) Range(f func(protoreflect.Fie
 // In other cases (aside from the nullable cases above),
 // a proto3 scalar field is populated if it contains a non-zero value, and
 // a repeated field is populated if it is non-empty.
-func (x *fastReflection_SendQuorumPriceFeedResult) Has(fd protoreflect.FieldDescriptor) bool {
+func (x *fastReflection_SendQuorumPriceFeedBatchResult) Has(fd protoreflect.FieldDescriptor) bool {
 	switch fd.FullName() {
 	default:
 		if fd.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.SendQuorumPriceFeedResult"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.SendQuorumPriceFeedBatchResult"))
 		}
-		panic(fmt.Errorf("message types.SendQuorumPriceFeedResult does not contain field %s", fd.FullName()))
+		panic(fmt.Errorf("message types.SendQuorumPriceFeedBatchResult does not contain field %s", fd.FullName()))
 	}
 }
 
@@ -2554,13 +2554,13 @@ func (x *fastReflection_SendQuorumPriceFeedResult) Has(fd protoreflect.FieldDesc
 // associated with the given field number.
 //
 // Clear is a mutating operation and unsafe for concurrent use.
-func (x *fastReflection_SendQuorumPriceFeedResult) Clear(fd protoreflect.FieldDescriptor) {
+func (x *fastReflection_SendQuorumPriceFeedBatchResult) Clear(fd protoreflect.FieldDescriptor) {
 	switch fd.FullName() {
 	default:
 		if fd.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.SendQuorumPriceFeedResult"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.SendQuorumPriceFeedBatchResult"))
 		}
-		panic(fmt.Errorf("message types.SendQuorumPriceFeedResult does not contain field %s", fd.FullName()))
+		panic(fmt.Errorf("message types.SendQuorumPriceFeedBatchResult does not contain field %s", fd.FullName()))
 	}
 }
 
@@ -2570,13 +2570,13 @@ func (x *fastReflection_SendQuorumPriceFeedResult) Clear(fd protoreflect.FieldDe
 // the default value of a bytes scalar is guaranteed to be a copy.
 // For unpopulated composite types, it returns an empty, read-only view
 // of the value; to obtain a mutable reference, use Mutable.
-func (x *fastReflection_SendQuorumPriceFeedResult) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
+func (x *fastReflection_SendQuorumPriceFeedBatchResult) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
 	switch descriptor.FullName() {
 	default:
 		if descriptor.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.SendQuorumPriceFeedResult"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.SendQuorumPriceFeedBatchResult"))
 		}
-		panic(fmt.Errorf("message types.SendQuorumPriceFeedResult does not contain field %s", descriptor.FullName()))
+		panic(fmt.Errorf("message types.SendQuorumPriceFeedBatchResult does not contain field %s", descriptor.FullName()))
 	}
 }
 
@@ -2590,13 +2590,13 @@ func (x *fastReflection_SendQuorumPriceFeedResult) Get(descriptor protoreflect.F
 // empty, read-only value, then it panics.
 //
 // Set is a mutating operation and unsafe for concurrent use.
-func (x *fastReflection_SendQuorumPriceFeedResult) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
+func (x *fastReflection_SendQuorumPriceFeedBatchResult) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
 	switch fd.FullName() {
 	default:
 		if fd.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.SendQuorumPriceFeedResult"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.SendQuorumPriceFeedBatchResult"))
 		}
-		panic(fmt.Errorf("message types.SendQuorumPriceFeedResult does not contain field %s", fd.FullName()))
+		panic(fmt.Errorf("message types.SendQuorumPriceFeedBatchResult does not contain field %s", fd.FullName()))
 	}
 }
 
@@ -2610,36 +2610,36 @@ func (x *fastReflection_SendQuorumPriceFeedResult) Set(fd protoreflect.FieldDesc
 // It panics if the field does not contain a composite type.
 //
 // Mutable is a mutating operation and unsafe for concurrent use.
-func (x *fastReflection_SendQuorumPriceFeedResult) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
+func (x *fastReflection_SendQuorumPriceFeedBatchResult) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
 	switch fd.FullName() {
 	default:
 		if fd.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.SendQuorumPriceFeedResult"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.SendQuorumPriceFeedBatchResult"))
 		}
-		panic(fmt.Errorf("message types.SendQuorumPriceFeedResult does not contain field %s", fd.FullName()))
+		panic(fmt.Errorf("message types.SendQuorumPriceFeedBatchResult does not contain field %s", fd.FullName()))
 	}
 }
 
 // NewField returns a new value that is assignable to the field
 // for the given descriptor. For scalars, this returns the default value.
 // For lists, maps, and messages, this returns a new, empty, mutable value.
-func (x *fastReflection_SendQuorumPriceFeedResult) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
+func (x *fastReflection_SendQuorumPriceFeedBatchResult) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
 	switch fd.FullName() {
 	default:
 		if fd.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.SendQuorumPriceFeedResult"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.SendQuorumPriceFeedBatchResult"))
 		}
-		panic(fmt.Errorf("message types.SendQuorumPriceFeedResult does not contain field %s", fd.FullName()))
+		panic(fmt.Errorf("message types.SendQuorumPriceFeedBatchResult does not contain field %s", fd.FullName()))
 	}
 }
 
 // WhichOneof reports which field within the oneof is populated,
 // returning nil if none are populated.
 // It panics if the oneof descriptor does not belong to this message.
-func (x *fastReflection_SendQuorumPriceFeedResult) WhichOneof(d protoreflect.OneofDescriptor) protoreflect.FieldDescriptor {
+func (x *fastReflection_SendQuorumPriceFeedBatchResult) WhichOneof(d protoreflect.OneofDescriptor) protoreflect.FieldDescriptor {
 	switch d.FullName() {
 	default:
-		panic(fmt.Errorf("%s is not a oneof field in types.SendQuorumPriceFeedResult", d.FullName()))
+		panic(fmt.Errorf("%s is not a oneof field in types.SendQuorumPriceFeedBatchResult", d.FullName()))
 	}
 	panic("unreachable")
 }
@@ -2647,7 +2647,7 @@ func (x *fastReflection_SendQuorumPriceFeedResult) WhichOneof(d protoreflect.One
 // GetUnknown retrieves the entire list of unknown fields.
 // The caller may only mutate the contents of the RawFields
 // if the mutated bytes are stored back into the message with SetUnknown.
-func (x *fastReflection_SendQuorumPriceFeedResult) GetUnknown() protoreflect.RawFields {
+func (x *fastReflection_SendQuorumPriceFeedBatchResult) GetUnknown() protoreflect.RawFields {
 	return x.unknownFields
 }
 
@@ -2658,7 +2658,7 @@ func (x *fastReflection_SendQuorumPriceFeedResult) GetUnknown() protoreflect.Raw
 // An empty RawFields may be passed to clear the fields.
 //
 // SetUnknown is a mutating operation and unsafe for concurrent use.
-func (x *fastReflection_SendQuorumPriceFeedResult) SetUnknown(fields protoreflect.RawFields) {
+func (x *fastReflection_SendQuorumPriceFeedBatchResult) SetUnknown(fields protoreflect.RawFields) {
 	x.unknownFields = fields
 }
 
@@ -2670,7 +2670,7 @@ func (x *fastReflection_SendQuorumPriceFeedResult) SetUnknown(fields protoreflec
 // message type, but the details are implementation dependent.
 // Validity is not part of the protobuf data model, and may not
 // be preserved in marshaling or other operations.
-func (x *fastReflection_SendQuorumPriceFeedResult) IsValid() bool {
+func (x *fastReflection_SendQuorumPriceFeedBatchResult) IsValid() bool {
 	return x != nil
 }
 
@@ -2680,9 +2680,9 @@ func (x *fastReflection_SendQuorumPriceFeedResult) IsValid() bool {
 // The returned methods type is identical to
 // "google.golang.org/protobuf/runtime/protoiface".Methods.
 // Consult the protoiface package documentation for details.
-func (x *fastReflection_SendQuorumPriceFeedResult) ProtoMethods() *protoiface.Methods {
+func (x *fastReflection_SendQuorumPriceFeedBatchResult) ProtoMethods() *protoiface.Methods {
 	size := func(input protoiface.SizeInput) protoiface.SizeOutput {
-		x := input.Message.Interface().(*SendQuorumPriceFeedResult)
+		x := input.Message.Interface().(*SendQuorumPriceFeedBatchResult)
 		if x == nil {
 			return protoiface.SizeOutput{
 				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
@@ -2704,7 +2704,7 @@ func (x *fastReflection_SendQuorumPriceFeedResult) ProtoMethods() *protoiface.Me
 	}
 
 	marshal := func(input protoiface.MarshalInput) (protoiface.MarshalOutput, error) {
-		x := input.Message.Interface().(*SendQuorumPriceFeedResult)
+		x := input.Message.Interface().(*SendQuorumPriceFeedBatchResult)
 		if x == nil {
 			return protoiface.MarshalOutput{
 				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
@@ -2734,7 +2734,7 @@ func (x *fastReflection_SendQuorumPriceFeedResult) ProtoMethods() *protoiface.Me
 		}, nil
 	}
 	unmarshal := func(input protoiface.UnmarshalInput) (protoiface.UnmarshalOutput, error) {
-		x := input.Message.Interface().(*SendQuorumPriceFeedResult)
+		x := input.Message.Interface().(*SendQuorumPriceFeedBatchResult)
 		if x == nil {
 			return protoiface.UnmarshalOutput{
 				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
@@ -2766,10 +2766,10 @@ func (x *fastReflection_SendQuorumPriceFeedResult) ProtoMethods() *protoiface.Me
 			fieldNum := int32(wire >> 3)
 			wireType := int(wire & 0x7)
 			if wireType == 4 {
-				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: SendQuorumPriceFeedResult: wiretype end group for non-group")
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: SendQuorumPriceFeedBatchResult: wiretype end group for non-group")
 			}
 			if fieldNum <= 0 {
-				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: SendQuorumPriceFeedResult: illegal tag %d (wire type %d)", fieldNum, wire)
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: SendQuorumPriceFeedBatchResult: illegal tag %d (wire type %d)", fieldNum, wire)
 			}
 			switch fieldNum {
 			default:
@@ -3015,15 +3015,15 @@ func (*SendQuorumErrataTxResult) Descriptor() ([]byte, []int) {
 	return file_types_server_bifrost_localhost_proto_rawDescGZIP(), []int{5}
 }
 
-// SendQuorumPriceFeedResult is the empty return type
-type SendQuorumPriceFeedResult struct {
+// SendQuorumPriceFeedBatchResult is the empty return type
+type SendQuorumPriceFeedBatchResult struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 }
 
-func (x *SendQuorumPriceFeedResult) Reset() {
-	*x = SendQuorumPriceFeedResult{}
+func (x *SendQuorumPriceFeedBatchResult) Reset() {
+	*x = SendQuorumPriceFeedBatchResult{}
 	if protoimpl.UnsafeEnabled {
 		mi := &file_types_server_bifrost_localhost_proto_msgTypes[6]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -3031,14 +3031,14 @@ func (x *SendQuorumPriceFeedResult) Reset() {
 	}
 }
 
-func (x *SendQuorumPriceFeedResult) String() string {
+func (x *SendQuorumPriceFeedBatchResult) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*SendQuorumPriceFeedResult) ProtoMessage() {}
+func (*SendQuorumPriceFeedBatchResult) ProtoMessage() {}
 
-// Deprecated: Use SendQuorumPriceFeedResult.ProtoReflect.Descriptor instead.
-func (*SendQuorumPriceFeedResult) Descriptor() ([]byte, []int) {
+// Deprecated: Use SendQuorumPriceFeedBatchResult.ProtoReflect.Descriptor instead.
+func (*SendQuorumPriceFeedBatchResult) Descriptor() ([]byte, []int) {
 	return file_types_server_bifrost_localhost_proto_rawDescGZIP(), []int{6}
 }
 
@@ -3066,48 +3066,49 @@ var file_types_server_bifrost_localhost_proto_rawDesc = []byte{
 	0x75, 0x6f, 0x72, 0x75, 0x6d, 0x53, 0x6f, 0x6c, 0x76, 0x65, 0x6e, 0x63, 0x79, 0x52, 0x65, 0x73,
 	0x75, 0x6c, 0x74, 0x22, 0x1a, 0x0a, 0x18, 0x53, 0x65, 0x6e, 0x64, 0x51, 0x75, 0x6f, 0x72, 0x75,
 	0x6d, 0x45, 0x72, 0x72, 0x61, 0x74, 0x61, 0x54, 0x78, 0x52, 0x65, 0x73, 0x75, 0x6c, 0x74, 0x22,
-	0x1b, 0x0a, 0x19, 0x53, 0x65, 0x6e, 0x64, 0x51, 0x75, 0x6f, 0x72, 0x75, 0x6d, 0x50, 0x72, 0x69,
-	0x63, 0x65, 0x46, 0x65, 0x65, 0x64, 0x52, 0x65, 0x73, 0x75, 0x6c, 0x74, 0x32, 0xe0, 0x03, 0x0a,
-	0x10, 0x4c, 0x6f, 0x63, 0x61, 0x6c, 0x68, 0x6f, 0x73, 0x74, 0x42, 0x69, 0x66, 0x72, 0x6f, 0x73,
-	0x74, 0x12, 0x3b, 0x0a, 0x0c, 0x53, 0x65, 0x6e, 0x64, 0x51, 0x75, 0x6f, 0x72, 0x75, 0x6d, 0x54,
-	0x78, 0x12, 0x10, 0x2e, 0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x51, 0x75, 0x6f, 0x72, 0x75,
-	0x6d, 0x54, 0x78, 0x1a, 0x19, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2e, 0x53, 0x65, 0x6e, 0x64,
-	0x51, 0x75, 0x6f, 0x72, 0x75, 0x6d, 0x54, 0x78, 0x52, 0x65, 0x73, 0x75, 0x6c, 0x74, 0x12, 0x53,
-	0x0a, 0x14, 0x53, 0x65, 0x6e, 0x64, 0x51, 0x75, 0x6f, 0x72, 0x75, 0x6d, 0x4e, 0x65, 0x74, 0x77,
-	0x6f, 0x72, 0x6b, 0x46, 0x65, 0x65, 0x12, 0x18, 0x2e, 0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2e,
-	0x51, 0x75, 0x6f, 0x72, 0x75, 0x6d, 0x4e, 0x65, 0x74, 0x77, 0x6f, 0x72, 0x6b, 0x46, 0x65, 0x65,
-	0x1a, 0x21, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2e, 0x53, 0x65, 0x6e, 0x64, 0x51, 0x75, 0x6f,
-	0x72, 0x75, 0x6d, 0x4e, 0x65, 0x74, 0x77, 0x6f, 0x72, 0x6b, 0x46, 0x65, 0x65, 0x52, 0x65, 0x73,
-	0x75, 0x6c, 0x74, 0x12, 0x4d, 0x0a, 0x12, 0x53, 0x65, 0x6e, 0x64, 0x51, 0x75, 0x6f, 0x72, 0x75,
-	0x6d, 0x53, 0x6f, 0x6c, 0x76, 0x65, 0x6e, 0x63, 0x79, 0x12, 0x16, 0x2e, 0x63, 0x6f, 0x6d, 0x6d,
-	0x6f, 0x6e, 0x2e, 0x51, 0x75, 0x6f, 0x72, 0x75, 0x6d, 0x53, 0x6f, 0x6c, 0x76, 0x65, 0x6e, 0x63,
-	0x79, 0x1a, 0x1f, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2e, 0x53, 0x65, 0x6e, 0x64, 0x51, 0x75,
-	0x6f, 0x72, 0x75, 0x6d, 0x53, 0x6f, 0x6c, 0x76, 0x65, 0x6e, 0x63, 0x79, 0x52, 0x65, 0x73, 0x75,
-	0x6c, 0x74, 0x12, 0x4d, 0x0a, 0x12, 0x53, 0x65, 0x6e, 0x64, 0x51, 0x75, 0x6f, 0x72, 0x75, 0x6d,
-	0x45, 0x72, 0x72, 0x61, 0x74, 0x61, 0x54, 0x78, 0x12, 0x16, 0x2e, 0x63, 0x6f, 0x6d, 0x6d, 0x6f,
-	0x6e, 0x2e, 0x51, 0x75, 0x6f, 0x72, 0x75, 0x6d, 0x45, 0x72, 0x72, 0x61, 0x74, 0x61, 0x54, 0x78,
-	0x1a, 0x1f, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2e, 0x53, 0x65, 0x6e, 0x64, 0x51, 0x75, 0x6f,
-	0x72, 0x75, 0x6d, 0x45, 0x72, 0x72, 0x61, 0x74, 0x61, 0x54, 0x78, 0x52, 0x65, 0x73, 0x75, 0x6c,
-	0x74, 0x12, 0x52, 0x0a, 0x14, 0x53, 0x65, 0x6e, 0x64, 0x51, 0x75, 0x6f, 0x72, 0x75, 0x6d, 0x50,
-	0x72, 0x69, 0x63, 0x65, 0x46, 0x65, 0x65, 0x64, 0x73, 0x12, 0x18, 0x2e, 0x63, 0x6f, 0x6d, 0x6d,
-	0x6f, 0x6e, 0x2e, 0x51, 0x75, 0x6f, 0x72, 0x75, 0x6d, 0x50, 0x72, 0x69, 0x63, 0x65, 0x46, 0x65,
-	0x65, 0x64, 0x73, 0x1a, 0x20, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2e, 0x53, 0x65, 0x6e, 0x64,
-	0x51, 0x75, 0x6f, 0x72, 0x75, 0x6d, 0x50, 0x72, 0x69, 0x63, 0x65, 0x46, 0x65, 0x65, 0x64, 0x52,
-	0x65, 0x73, 0x75, 0x6c, 0x74, 0x12, 0x48, 0x0a, 0x11, 0x53, 0x75, 0x62, 0x73, 0x63, 0x72, 0x69,
-	0x62, 0x65, 0x54, 0x6f, 0x45, 0x76, 0x65, 0x6e, 0x74, 0x73, 0x12, 0x17, 0x2e, 0x74, 0x79, 0x70,
-	0x65, 0x73, 0x2e, 0x53, 0x75, 0x62, 0x73, 0x63, 0x72, 0x69, 0x62, 0x65, 0x52, 0x65, 0x71, 0x75,
-	0x65, 0x73, 0x74, 0x1a, 0x18, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2e, 0x45, 0x76, 0x65, 0x6e,
-	0x74, 0x4e, 0x6f, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x30, 0x01, 0x42,
-	0x88, 0x01, 0x0a, 0x09, 0x63, 0x6f, 0x6d, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x42, 0x1b, 0x53,
-	0x65, 0x72, 0x76, 0x65, 0x72, 0x42, 0x69, 0x66, 0x72, 0x6f, 0x73, 0x74, 0x4c, 0x6f, 0x63, 0x61,
-	0x6c, 0x68, 0x6f, 0x73, 0x74, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x2a, 0x67, 0x69,
-	0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61,
-	0x69, 0x6e, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x61,
-	0x70, 0x69, 0x2f, 0x74, 0x79, 0x70, 0x65, 0x73, 0xa2, 0x02, 0x03, 0x54, 0x58, 0x58, 0xaa, 0x02,
-	0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xca, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xe2, 0x02,
-	0x11, 0x54, 0x79, 0x70, 0x65, 0x73, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61,
-	0x74, 0x61, 0xea, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74,
-	0x6f, 0x33,
+	0x20, 0x0a, 0x1e, 0x53, 0x65, 0x6e, 0x64, 0x51, 0x75, 0x6f, 0x72, 0x75, 0x6d, 0x50, 0x72, 0x69,
+	0x63, 0x65, 0x46, 0x65, 0x65, 0x64, 0x42, 0x61, 0x74, 0x63, 0x68, 0x52, 0x65, 0x73, 0x75, 0x6c,
+	0x74, 0x32, 0xed, 0x03, 0x0a, 0x10, 0x4c, 0x6f, 0x63, 0x61, 0x6c, 0x68, 0x6f, 0x73, 0x74, 0x42,
+	0x69, 0x66, 0x72, 0x6f, 0x73, 0x74, 0x12, 0x3b, 0x0a, 0x0c, 0x53, 0x65, 0x6e, 0x64, 0x51, 0x75,
+	0x6f, 0x72, 0x75, 0x6d, 0x54, 0x78, 0x12, 0x10, 0x2e, 0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2e,
+	0x51, 0x75, 0x6f, 0x72, 0x75, 0x6d, 0x54, 0x78, 0x1a, 0x19, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73,
+	0x2e, 0x53, 0x65, 0x6e, 0x64, 0x51, 0x75, 0x6f, 0x72, 0x75, 0x6d, 0x54, 0x78, 0x52, 0x65, 0x73,
+	0x75, 0x6c, 0x74, 0x12, 0x53, 0x0a, 0x14, 0x53, 0x65, 0x6e, 0x64, 0x51, 0x75, 0x6f, 0x72, 0x75,
+	0x6d, 0x4e, 0x65, 0x74, 0x77, 0x6f, 0x72, 0x6b, 0x46, 0x65, 0x65, 0x12, 0x18, 0x2e, 0x63, 0x6f,
+	0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x51, 0x75, 0x6f, 0x72, 0x75, 0x6d, 0x4e, 0x65, 0x74, 0x77, 0x6f,
+	0x72, 0x6b, 0x46, 0x65, 0x65, 0x1a, 0x21, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2e, 0x53, 0x65,
+	0x6e, 0x64, 0x51, 0x75, 0x6f, 0x72, 0x75, 0x6d, 0x4e, 0x65, 0x74, 0x77, 0x6f, 0x72, 0x6b, 0x46,
+	0x65, 0x65, 0x52, 0x65, 0x73, 0x75, 0x6c, 0x74, 0x12, 0x4d, 0x0a, 0x12, 0x53, 0x65, 0x6e, 0x64,
+	0x51, 0x75, 0x6f, 0x72, 0x75, 0x6d, 0x53, 0x6f, 0x6c, 0x76, 0x65, 0x6e, 0x63, 0x79, 0x12, 0x16,
+	0x2e, 0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x51, 0x75, 0x6f, 0x72, 0x75, 0x6d, 0x53, 0x6f,
+	0x6c, 0x76, 0x65, 0x6e, 0x63, 0x79, 0x1a, 0x1f, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2e, 0x53,
+	0x65, 0x6e, 0x64, 0x51, 0x75, 0x6f, 0x72, 0x75, 0x6d, 0x53, 0x6f, 0x6c, 0x76, 0x65, 0x6e, 0x63,
+	0x79, 0x52, 0x65, 0x73, 0x75, 0x6c, 0x74, 0x12, 0x4d, 0x0a, 0x12, 0x53, 0x65, 0x6e, 0x64, 0x51,
+	0x75, 0x6f, 0x72, 0x75, 0x6d, 0x45, 0x72, 0x72, 0x61, 0x74, 0x61, 0x54, 0x78, 0x12, 0x16, 0x2e,
+	0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x51, 0x75, 0x6f, 0x72, 0x75, 0x6d, 0x45, 0x72, 0x72,
+	0x61, 0x74, 0x61, 0x54, 0x78, 0x1a, 0x1f, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2e, 0x53, 0x65,
+	0x6e, 0x64, 0x51, 0x75, 0x6f, 0x72, 0x75, 0x6d, 0x45, 0x72, 0x72, 0x61, 0x74, 0x61, 0x54, 0x78,
+	0x52, 0x65, 0x73, 0x75, 0x6c, 0x74, 0x12, 0x5f, 0x0a, 0x18, 0x53, 0x65, 0x6e, 0x64, 0x51, 0x75,
+	0x6f, 0x72, 0x75, 0x6d, 0x50, 0x72, 0x69, 0x63, 0x65, 0x46, 0x65, 0x65, 0x64, 0x42, 0x61, 0x74,
+	0x63, 0x68, 0x12, 0x1c, 0x2e, 0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x51, 0x75, 0x6f, 0x72,
+	0x75, 0x6d, 0x50, 0x72, 0x69, 0x63, 0x65, 0x46, 0x65, 0x65, 0x64, 0x42, 0x61, 0x74, 0x63, 0x68,
+	0x1a, 0x25, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2e, 0x53, 0x65, 0x6e, 0x64, 0x51, 0x75, 0x6f,
+	0x72, 0x75, 0x6d, 0x50, 0x72, 0x69, 0x63, 0x65, 0x46, 0x65, 0x65, 0x64, 0x42, 0x61, 0x74, 0x63,
+	0x68, 0x52, 0x65, 0x73, 0x75, 0x6c, 0x74, 0x12, 0x48, 0x0a, 0x11, 0x53, 0x75, 0x62, 0x73, 0x63,
+	0x72, 0x69, 0x62, 0x65, 0x54, 0x6f, 0x45, 0x76, 0x65, 0x6e, 0x74, 0x73, 0x12, 0x17, 0x2e, 0x74,
+	0x79, 0x70, 0x65, 0x73, 0x2e, 0x53, 0x75, 0x62, 0x73, 0x63, 0x72, 0x69, 0x62, 0x65, 0x52, 0x65,
+	0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x18, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2e, 0x45, 0x76,
+	0x65, 0x6e, 0x74, 0x4e, 0x6f, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x30,
+	0x01, 0x42, 0x88, 0x01, 0x0a, 0x09, 0x63, 0x6f, 0x6d, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x42,
+	0x1b, 0x53, 0x65, 0x72, 0x76, 0x65, 0x72, 0x42, 0x69, 0x66, 0x72, 0x6f, 0x73, 0x74, 0x4c, 0x6f,
+	0x63, 0x61, 0x6c, 0x68, 0x6f, 0x73, 0x74, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x2a,
+	0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63,
+	0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33,
+	0x2f, 0x61, 0x70, 0x69, 0x2f, 0x74, 0x79, 0x70, 0x65, 0x73, 0xa2, 0x02, 0x03, 0x54, 0x58, 0x58,
+	0xaa, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xca, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73,
+	0xe2, 0x02, 0x11, 0x54, 0x79, 0x70, 0x65, 0x73, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61,
+	0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0x62, 0x06, 0x70, 0x72,
+	0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -3124,31 +3125,31 @@ func file_types_server_bifrost_localhost_proto_rawDescGZIP() []byte {
 
 var file_types_server_bifrost_localhost_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_types_server_bifrost_localhost_proto_goTypes = []interface{}{
-	(*SendQuorumTxResult)(nil),         // 0: types.SendQuorumTxResult
-	(*SubscribeRequest)(nil),           // 1: types.SubscribeRequest
-	(*EventNotification)(nil),          // 2: types.EventNotification
-	(*SendQuorumNetworkFeeResult)(nil), // 3: types.SendQuorumNetworkFeeResult
-	(*SendQuorumSolvencyResult)(nil),   // 4: types.SendQuorumSolvencyResult
-	(*SendQuorumErrataTxResult)(nil),   // 5: types.SendQuorumErrataTxResult
-	(*SendQuorumPriceFeedResult)(nil),  // 6: types.SendQuorumPriceFeedResult
-	(*common.QuorumTx)(nil),            // 7: common.QuorumTx
-	(*common.QuorumNetworkFee)(nil),    // 8: common.QuorumNetworkFee
-	(*common.QuorumSolvency)(nil),      // 9: common.QuorumSolvency
-	(*common.QuorumErrataTx)(nil),      // 10: common.QuorumErrataTx
-	(*common.QuorumPriceFeeds)(nil),    // 11: common.QuorumPriceFeeds
+	(*SendQuorumTxResult)(nil),             // 0: types.SendQuorumTxResult
+	(*SubscribeRequest)(nil),               // 1: types.SubscribeRequest
+	(*EventNotification)(nil),              // 2: types.EventNotification
+	(*SendQuorumNetworkFeeResult)(nil),     // 3: types.SendQuorumNetworkFeeResult
+	(*SendQuorumSolvencyResult)(nil),       // 4: types.SendQuorumSolvencyResult
+	(*SendQuorumErrataTxResult)(nil),       // 5: types.SendQuorumErrataTxResult
+	(*SendQuorumPriceFeedBatchResult)(nil), // 6: types.SendQuorumPriceFeedBatchResult
+	(*common.QuorumTx)(nil),                // 7: common.QuorumTx
+	(*common.QuorumNetworkFee)(nil),        // 8: common.QuorumNetworkFee
+	(*common.QuorumSolvency)(nil),          // 9: common.QuorumSolvency
+	(*common.QuorumErrataTx)(nil),          // 10: common.QuorumErrataTx
+	(*common.QuorumPriceFeedBatch)(nil),    // 11: common.QuorumPriceFeedBatch
 }
 var file_types_server_bifrost_localhost_proto_depIdxs = []int32{
 	7,  // 0: types.LocalhostBifrost.SendQuorumTx:input_type -> common.QuorumTx
 	8,  // 1: types.LocalhostBifrost.SendQuorumNetworkFee:input_type -> common.QuorumNetworkFee
 	9,  // 2: types.LocalhostBifrost.SendQuorumSolvency:input_type -> common.QuorumSolvency
 	10, // 3: types.LocalhostBifrost.SendQuorumErrataTx:input_type -> common.QuorumErrataTx
-	11, // 4: types.LocalhostBifrost.SendQuorumPriceFeeds:input_type -> common.QuorumPriceFeeds
+	11, // 4: types.LocalhostBifrost.SendQuorumPriceFeedBatch:input_type -> common.QuorumPriceFeedBatch
 	1,  // 5: types.LocalhostBifrost.SubscribeToEvents:input_type -> types.SubscribeRequest
 	0,  // 6: types.LocalhostBifrost.SendQuorumTx:output_type -> types.SendQuorumTxResult
 	3,  // 7: types.LocalhostBifrost.SendQuorumNetworkFee:output_type -> types.SendQuorumNetworkFeeResult
 	4,  // 8: types.LocalhostBifrost.SendQuorumSolvency:output_type -> types.SendQuorumSolvencyResult
 	5,  // 9: types.LocalhostBifrost.SendQuorumErrataTx:output_type -> types.SendQuorumErrataTxResult
-	6,  // 10: types.LocalhostBifrost.SendQuorumPriceFeeds:output_type -> types.SendQuorumPriceFeedResult
+	6,  // 10: types.LocalhostBifrost.SendQuorumPriceFeedBatch:output_type -> types.SendQuorumPriceFeedBatchResult
 	2,  // 11: types.LocalhostBifrost.SubscribeToEvents:output_type -> types.EventNotification
 	6,  // [6:12] is the sub-list for method output_type
 	0,  // [0:6] is the sub-list for method input_type
@@ -3236,7 +3237,7 @@ func file_types_server_bifrost_localhost_proto_init() {
 			}
 		}
 		file_types_server_bifrost_localhost_proto_msgTypes[6].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*SendQuorumPriceFeedResult); i {
+			switch v := v.(*SendQuorumPriceFeedBatchResult); i {
 			case 0:
 				return &v.state
 			case 1:

@@ -22,13 +22,13 @@ import (
 const (
 	// This is a dummy address used for injected transactions.
 	// It is not used otherwise, as quorum msg attestations are verified within the handlers.
-	ebifrostSigner                 = "thor1zxhfu0qmmq6gmgq4sgz0xgq69h0nhqx5yrseu5"
-	cachedBlocks                   = 10
-	EventQuorumTxCommitted         = "quorum_tx_committed"
-	EventQuorumNetworkFeeCommitted = "quorum_network_fee_committed"
-	EventQuorumSolvencyCommitted   = "quorum_solvency_committed"
-	EventQuorumErrataTxCommitted   = "quorum_errata_tx_committed"
-	EventQuorumPriceFeedCommitted  = "quorum_price_feed_committed"
+	ebifrostSigner                     = "thor1zxhfu0qmmq6gmgq4sgz0xgq69h0nhqx5yrseu5"
+	cachedBlocks                       = 10
+	EventQuorumTxCommitted             = "quorum_tx_committed"
+	EventQuorumNetworkFeeCommitted     = "quorum_network_fee_committed"
+	EventQuorumSolvencyCommitted       = "quorum_solvency_committed"
+	EventQuorumErrataTxCommitted       = "quorum_errata_tx_committed"
+	EventQuorumPriceFeedBatchCommitted = "quorum_price_feed_batch:committed"
 )
 
 var ErrAlreadyStarted = errors.New("ebifrost already started")
@@ -38,7 +38,7 @@ var notifyEvents = []string{
 	EventQuorumNetworkFeeCommitted,
 	EventQuorumSolvencyCommitted,
 	EventQuorumErrataTxCommitted,
-	EventQuorumPriceFeedCommitted,
+	EventQuorumPriceFeedBatchCommitted,
 }
 
 var _, ebifrostSignerAcc, _ = bech32.DecodeAndConvert(ebifrostSigner)
@@ -56,7 +56,7 @@ type EnshrinedBifrost struct {
 	networkFeeCache *InjectCache[*common.QuorumNetworkFee]
 	solvencyCache   *InjectCache[*common.QuorumSolvency]
 	errataCache     *InjectCache[*common.QuorumErrataTx]
-	priceFeedCache  *InjectCache[*common.QuorumPriceFeed]
+	priceFeedCache  *InjectCache[*common.QuorumPriceFeedBatch]
 
 	subscribers   map[string][]chan *EventNotification
 	subscribersMu sync.Mutex
@@ -81,7 +81,7 @@ func NewEnshrinedBifrost(cdc codec.Codec, logger log.Logger, config EBifrostConf
 		networkFeeCache: NewInjectCache[*common.QuorumNetworkFee](),
 		solvencyCache:   NewInjectCache[*common.QuorumSolvency](),
 		errataCache:     NewInjectCache[*common.QuorumErrataTx](),
-		priceFeedCache:  NewInjectCache[*common.QuorumPriceFeed](),
+		priceFeedCache:  NewInjectCache[*common.QuorumPriceFeedBatch](),
 		subscribers:     make(map[string][]chan *EventNotification),
 		cfg:             config,
 		stopChan:        make(chan struct{}),
@@ -271,28 +271,37 @@ func (b *EnshrinedBifrost) SendQuorumErrataTx(ctx context.Context, e *common.Quo
 	return &SendQuorumErrataTxResult{}, nil
 }
 
-func (b *EnshrinedBifrost) SendQuorumPriceFeeds(ctx context.Context, qpfs *common.QuorumPriceFeeds) (*SendQuorumPriceFeedResult, error) {
+func (b *EnshrinedBifrost) SendQuorumPriceFeedBatch(ctx context.Context, qpfb *common.QuorumPriceFeedBatch) (*SendQuorumPriceFeedBatchResult, error) {
 	b.logger.Info("send quorum price feeds")
+
+	for _, qpf := range qpfb.QuorumPriceFeeds {
+		latency := time.Since(time.UnixMilli(qpf.PriceFeed.Time))
+		fmt.Println("latency:", latency)
+	}
+
 	b.priceFeedCache.Lock()
 	b.priceFeedCache.items = b.priceFeedCache.items[:0]
 	b.priceFeedCache.Unlock()
 
-	for _, qpf := range qpfs.QuorumPriceFeeds {
-		if err := b.priceFeedCache.AddItem(
-			qpf,
-			(*common.QuorumPriceFeed).GetAttestations,
-			(*common.QuorumPriceFeed).SetAttestations,
-			(*common.QuorumPriceFeed).Equals,
-		); err != nil {
-			return nil, err
-		}
+	if err := b.priceFeedCache.AddItem(
+		qpfb,
+		(*common.QuorumPriceFeedBatch).GetAttestations,
+		(*common.QuorumPriceFeedBatch).SetAttestations,
+		(*common.QuorumPriceFeedBatch).Equals,
+	); err != nil {
+		return nil, err
 	}
 
+	// TODO: Remove debug
 	for _, item := range b.priceFeedCache.items {
-		fmt.Println(item.Timestamp, time.UnixMilli(item.Item.PriceFeed.Time))
+		for _, qpf := range item.Item.QuorumPriceFeeds {
+			latency := time.Since(time.UnixMilli(qpf.PriceFeed.Time))
+			fmt.Println("latency:", latency)
+		}
+
 	}
 
-	return &SendQuorumPriceFeedResult{}, nil
+	return &SendQuorumPriceFeedBatchResult{}, nil
 }
 
 func (b *EnshrinedBifrost) SubscribeToEvents(req *SubscribeRequest, stream LocalhostBifrost_SubscribeToEventsServer) error {
@@ -600,53 +609,26 @@ func (b *EnshrinedBifrost) MarkQuorumErrataTxAttestationsConfirmed(ctx context.C
 	b.errataCache.CleanOldBlocks(height, cachedBlocks)
 }
 
-func (b *EnshrinedBifrost) broadcastQuorumPriceFeedEvent(pf *common.QuorumPriceFeed) {
+func (b *EnshrinedBifrost) broadcastQuorumPriceFeedBatchEvent(qpfb *common.QuorumPriceFeedBatch) {
 	b.priceFeedCache.BroadcastEvent(
-		pf,
-		func(item *common.QuorumPriceFeed) ([]byte, error) {
+		qpfb,
+		func(item *common.QuorumPriceFeedBatch) ([]byte, error) {
 			return item.Marshal()
 		},
 		b.broadcastEvent,
-		EventQuorumPriceFeedCommitted,
+		EventQuorumPriceFeedBatchCommitted,
 		b.logger,
 	)
 }
 
-// MarkQuorumPriceFeedAttestationsConfirmed is intended to be called by the bifrost post handler after a tx has been processed.
-// It will look for any matching quorum txs, remove the confirmed attestations from them, and remove the quorum txs if all attestations have been confirmed.
-func (b *EnshrinedBifrost) MarkQuorumPriceFeedAttestationsConfirmed(ctx context.Context, qpf *common.QuorumPriceFeed) {
+// MarkQuorumPriceFeedBatchAttestationsConfirmed is intended to be called by the bifrost post handler after a tx has been processed.
+// It will broadcast the commit event.
+func (b *EnshrinedBifrost) MarkQuorumPriceFeedBatchAttestationsConfirmed(ctx context.Context, qpf *common.QuorumPriceFeedBatch) {
 	if b == nil {
 		return
 	}
 
-	go b.broadcastQuorumPriceFeedEvent(qpf)
-
-	// found := b.priceFeedCache.MarkAttestationsConfirmed(
-	// 	qpf,
-	// 	b.logger,
-	// 	(*common.QuorumPriceFeed).Equals,
-	// 	(*common.QuorumPriceFeed).GetAttestations,
-	// 	(*common.QuorumPriceFeed).RemoveAttestations,
-	// 	func(qpf *common.QuorumPriceFeed, logger log.Logger) {
-	// 		pf := qpf.PriceFeed
-	// 		logger.Debug("Marking quorum price feed attestations confirmed",
-	// 			"time", pf.Time,
-	// 			"attestations", len(qpf.Attestations))
-	// 	},
-	// )
-	//
-	// if !found {
-	// 	cmpPf := qpf.PriceFeed
-	// 	b.logger.Debug("Failed to find quorum price feed to mark attestations confirmed",
-	// 		"time", cmpPf.Time,
-	// 	)
-	// }
-
-	sdkCtx := sdk.UnwrapSDKContext(ctx)
-	height := sdkCtx.BlockHeight()
-
-	b.priceFeedCache.AddToBlock(height, qpf)
-	b.priceFeedCache.CleanOldBlocks(height, cachedBlocks)
+	go b.broadcastQuorumPriceFeedBatchEvent(qpf)
 }
 
 func (b *EnshrinedBifrost) MarshalTx(msg sdk.Msg) ([]byte, error) {
@@ -766,16 +748,13 @@ func (b *EnshrinedBifrost) ProposalInjectTxs(ctx sdk.Context, maxTxBytes int64) 
 
 	// Process price feeds
 	pfBzs := b.priceFeedCache.ProcessForProposal(
-		func(qpf *common.QuorumPriceFeed) (sdk.Msg, error) {
-			return types.NewMsgPriceFeedQuorum(qpf, ebifrostSignerAcc), nil
+		func(qpfb *common.QuorumPriceFeedBatch) (sdk.Msg, error) {
+			return types.NewMsgPriceFeedQuorumBatch(qpfb.QuorumPriceFeeds, ebifrostSignerAcc), nil
 		},
 		b.MarshalTx,
-		func(qpf *common.QuorumPriceFeed, logger log.Logger) {
-			pf := qpf.PriceFeed
-			logger.Info("Injecting quorum price feed",
-				"time", pf.Time,
-				"rates", pf.Rates,
-				"attestations", len(qpf.Attestations))
+		func(qpfb *common.QuorumPriceFeedBatch, logger log.Logger) {
+			logger.Info("Injecting quorum price feed batch",
+				"price_feeds", len(qpfb.QuorumPriceFeeds))
 		},
 		b.logger,
 	)

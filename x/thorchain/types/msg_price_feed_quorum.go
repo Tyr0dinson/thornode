@@ -35,12 +35,21 @@ func (m *MsgPriceFeedQuorum) ValidateBasic() error {
 	if pf.Time <= 0 {
 		return cosmos.ErrUnknownRequest("block height is negative or zero")
 	}
-	if m.Signer.Empty() {
-		return cosmos.ErrInvalidAddress(m.Signer.String())
-	}
 	if len(pf.Rates) == 0 {
 		return cosmos.ErrUnknownRequest("rates is empty")
 	}
+
+	attestations := len(m.QuoPriceFeed.Attestations)
+	if attestations == 0 {
+		return cosmos.ErrUnknownRequest("no attestations found")
+	}
+	if attestations > 1 {
+		return cosmos.ErrUnknownRequest("more than one attestations found")
+	}
+	if m.Signer.Empty() {
+		return cosmos.ErrInvalidAddress(m.Signer.String())
+	}
+
 	return nil
 }
 

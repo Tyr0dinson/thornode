@@ -20,12 +20,12 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	LocalhostBifrost_SendQuorumTx_FullMethodName         = "/types.LocalhostBifrost/SendQuorumTx"
-	LocalhostBifrost_SendQuorumNetworkFee_FullMethodName = "/types.LocalhostBifrost/SendQuorumNetworkFee"
-	LocalhostBifrost_SendQuorumSolvency_FullMethodName   = "/types.LocalhostBifrost/SendQuorumSolvency"
-	LocalhostBifrost_SendQuorumErrataTx_FullMethodName   = "/types.LocalhostBifrost/SendQuorumErrataTx"
-	LocalhostBifrost_SendQuorumPriceFeeds_FullMethodName = "/types.LocalhostBifrost/SendQuorumPriceFeeds"
-	LocalhostBifrost_SubscribeToEvents_FullMethodName    = "/types.LocalhostBifrost/SubscribeToEvents"
+	LocalhostBifrost_SendQuorumTx_FullMethodName             = "/types.LocalhostBifrost/SendQuorumTx"
+	LocalhostBifrost_SendQuorumNetworkFee_FullMethodName     = "/types.LocalhostBifrost/SendQuorumNetworkFee"
+	LocalhostBifrost_SendQuorumSolvency_FullMethodName       = "/types.LocalhostBifrost/SendQuorumSolvency"
+	LocalhostBifrost_SendQuorumErrataTx_FullMethodName       = "/types.LocalhostBifrost/SendQuorumErrataTx"
+	LocalhostBifrost_SendQuorumPriceFeedBatch_FullMethodName = "/types.LocalhostBifrost/SendQuorumPriceFeedBatch"
+	LocalhostBifrost_SubscribeToEvents_FullMethodName        = "/types.LocalhostBifrost/SubscribeToEvents"
 )
 
 // LocalhostBifrostClient is the client API for LocalhostBifrost service.
@@ -36,7 +36,7 @@ type LocalhostBifrostClient interface {
 	SendQuorumNetworkFee(ctx context.Context, in *common.QuorumNetworkFee, opts ...grpc.CallOption) (*SendQuorumNetworkFeeResult, error)
 	SendQuorumSolvency(ctx context.Context, in *common.QuorumSolvency, opts ...grpc.CallOption) (*SendQuorumSolvencyResult, error)
 	SendQuorumErrataTx(ctx context.Context, in *common.QuorumErrataTx, opts ...grpc.CallOption) (*SendQuorumErrataTxResult, error)
-	SendQuorumPriceFeeds(ctx context.Context, in *common.QuorumPriceFeeds, opts ...grpc.CallOption) (*SendQuorumPriceFeedResult, error)
+	SendQuorumPriceFeedBatch(ctx context.Context, in *common.QuorumPriceFeedBatch, opts ...grpc.CallOption) (*SendQuorumPriceFeedBatchResult, error)
 	// Server streaming for notifications
 	SubscribeToEvents(ctx context.Context, in *SubscribeRequest, opts ...grpc.CallOption) (LocalhostBifrost_SubscribeToEventsClient, error)
 }
@@ -85,9 +85,9 @@ func (c *localhostBifrostClient) SendQuorumErrataTx(ctx context.Context, in *com
 	return out, nil
 }
 
-func (c *localhostBifrostClient) SendQuorumPriceFeeds(ctx context.Context, in *common.QuorumPriceFeeds, opts ...grpc.CallOption) (*SendQuorumPriceFeedResult, error) {
-	out := new(SendQuorumPriceFeedResult)
-	err := c.cc.Invoke(ctx, LocalhostBifrost_SendQuorumPriceFeeds_FullMethodName, in, out, opts...)
+func (c *localhostBifrostClient) SendQuorumPriceFeedBatch(ctx context.Context, in *common.QuorumPriceFeedBatch, opts ...grpc.CallOption) (*SendQuorumPriceFeedBatchResult, error) {
+	out := new(SendQuorumPriceFeedBatchResult)
+	err := c.cc.Invoke(ctx, LocalhostBifrost_SendQuorumPriceFeedBatch_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -134,7 +134,7 @@ type LocalhostBifrostServer interface {
 	SendQuorumNetworkFee(context.Context, *common.QuorumNetworkFee) (*SendQuorumNetworkFeeResult, error)
 	SendQuorumSolvency(context.Context, *common.QuorumSolvency) (*SendQuorumSolvencyResult, error)
 	SendQuorumErrataTx(context.Context, *common.QuorumErrataTx) (*SendQuorumErrataTxResult, error)
-	SendQuorumPriceFeeds(context.Context, *common.QuorumPriceFeeds) (*SendQuorumPriceFeedResult, error)
+	SendQuorumPriceFeedBatch(context.Context, *common.QuorumPriceFeedBatch) (*SendQuorumPriceFeedBatchResult, error)
 	// Server streaming for notifications
 	SubscribeToEvents(*SubscribeRequest, LocalhostBifrost_SubscribeToEventsServer) error
 	mustEmbedUnimplementedLocalhostBifrostServer()
@@ -156,8 +156,8 @@ func (UnimplementedLocalhostBifrostServer) SendQuorumSolvency(context.Context, *
 func (UnimplementedLocalhostBifrostServer) SendQuorumErrataTx(context.Context, *common.QuorumErrataTx) (*SendQuorumErrataTxResult, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SendQuorumErrataTx not implemented")
 }
-func (UnimplementedLocalhostBifrostServer) SendQuorumPriceFeeds(context.Context, *common.QuorumPriceFeeds) (*SendQuorumPriceFeedResult, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method SendQuorumPriceFeeds not implemented")
+func (UnimplementedLocalhostBifrostServer) SendQuorumPriceFeedBatch(context.Context, *common.QuorumPriceFeedBatch) (*SendQuorumPriceFeedBatchResult, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SendQuorumPriceFeedBatch not implemented")
 }
 func (UnimplementedLocalhostBifrostServer) SubscribeToEvents(*SubscribeRequest, LocalhostBifrost_SubscribeToEventsServer) error {
 	return status.Errorf(codes.Unimplemented, "method SubscribeToEvents not implemented")
@@ -247,20 +247,20 @@ func _LocalhostBifrost_SendQuorumErrataTx_Handler(srv interface{}, ctx context.C
 	return interceptor(ctx, in, info, handler)
 }
 
-func _LocalhostBifrost_SendQuorumPriceFeeds_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(common.QuorumPriceFeeds)
+func _LocalhostBifrost_SendQuorumPriceFeedBatch_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(common.QuorumPriceFeedBatch)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(LocalhostBifrostServer).SendQuorumPriceFeeds(ctx, in)
+		return srv.(LocalhostBifrostServer).SendQuorumPriceFeedBatch(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: LocalhostBifrost_SendQuorumPriceFeeds_FullMethodName,
+		FullMethod: LocalhostBifrost_SendQuorumPriceFeedBatch_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(LocalhostBifrostServer).SendQuorumPriceFeeds(ctx, req.(*common.QuorumPriceFeeds))
+		return srv.(LocalhostBifrostServer).SendQuorumPriceFeedBatch(ctx, req.(*common.QuorumPriceFeedBatch))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -310,8 +310,8 @@ var LocalhostBifrost_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _LocalhostBifrost_SendQuorumErrataTx_Handler,
 		},
 		{
-			MethodName: "SendQuorumPriceFeeds",
-			Handler:    _LocalhostBifrost_SendQuorumPriceFeeds_Handler,
+			MethodName: "SendQuorumPriceFeedBatch",
+			Handler:    _LocalhostBifrost_SendQuorumPriceFeedBatch_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

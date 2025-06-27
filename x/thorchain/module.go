@@ -185,6 +185,11 @@ func (am AppModule) BeginBlock(goCtx context.Context) error {
 		panic(fmt.Sprintf("Unsupported Version: update your binary (your version: %s, network consensus version: %s)", constants.SWVersion.String(), version.String()))
 	}
 
+	// Clear all oracle prices
+	if err := am.mgr.OracleManager().BeginBlock(ctx); err != nil {
+		ctx.Logger().Error("fail to proces oracle manager", "error", err)
+	}
+
 	am.mgr.Keeper().ClearObservingAddresses(ctx)
 
 	am.mgr.GasMgr().BeginBlock()
@@ -242,10 +247,6 @@ func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, err
 	}
 
 	am.mgr.GasMgr().EndBlock(ctx, am.mgr.Keeper(), am.mgr.EventMgr())
-
-	if err := am.mgr.OracleManager().EndBlock(ctx); err != nil {
-		ctx.Logger().Error("fail to proces oracle manager", "error", err)
-	}
 
 	// telemetry
 	if am.telemetryEnabled {

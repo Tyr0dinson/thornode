@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
-
 	"github.com/blang/semver"
 )
 
@@ -260,24 +259,24 @@ func (qe *QuorumErrataTx) Equals(other *QuorumErrataTx) bool {
 	return qe.ErrataTx.Equals(other.ErrataTx)
 }
 
-func (qpf *QuorumPriceFeed) GetAttestations() []*Attestation {
-	return qpf.Attestations
+func (qpfb *QuorumPriceFeedBatch) GetAttestations() []*Attestation {
+	for _, qpf := range qpfb.QuorumPriceFeeds {
+		return qpf.Attestations
+	}
+	return nil
 }
 
-func (qpf *QuorumPriceFeed) SetAttestations(atts []*Attestation) *QuorumPriceFeed {
-	qpf.Attestations = atts
-	return qpf
+func (qpfb *QuorumPriceFeedBatch) SetAttestations(_ []*Attestation) *QuorumPriceFeedBatch {
+	return qpfb
 }
 
 // RemoveAttestations removes matching attestations from a quorum network fee, and returns true if there are no more attestations.
-func (qpf *QuorumPriceFeed) RemoveAttestations(atts []*Attestation) bool {
-	newAtts := removeAttestations(qpf.Attestations, atts)
-	qpf.Attestations = newAtts
-	return len(newAtts) == 0
+func (qpfb *QuorumPriceFeedBatch) RemoveAttestations(_ []*Attestation) bool {
+	return true
 }
 
-func (qpf *QuorumPriceFeed) Equals(other *QuorumPriceFeed) bool {
-	return qpf.PriceFeed.Equals(other.PriceFeed)
+func (qpfb *QuorumPriceFeedBatch) Equals(_ *QuorumPriceFeedBatch) bool {
+	return false
 }
 
 func removeAttestations(

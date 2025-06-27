@@ -1,0 +1,258 @@
+package thorchain
+
+import (
+	"fmt"
+	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
+	"github.com/cosmos/cosmos-sdk/telemetry"
+	"github.com/hashicorp/go-metrics"
+	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
+	"math/big"
+	"os"
+	"sort"
+	"strings"
+	"time"
+)
+
+const (
+	requiredRates = "BTC,USDT"
+	maxDeviation  = 1
+)
+
+// PriceFeedQuorum to handle MsgObservedTx
+type PriceFeedQuorumBatchHandler struct {
+	mgr Manager
+}
+
+// NewPriceFeedQuorumBatchHandler create a new instance of PriceFeedQuorumBatchHandler
+func NewPriceFeedQuorumBatchHandler(mgr Manager) PriceFeedQuorumBatchHandler {
+	return PriceFeedQuorumBatchHandler{
+		mgr: mgr,
+	}
+}
+
+// Run is the main entry point of PriceFeedQuorumBatchHandler
+func (h PriceFeedQuorumBatchHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, error) {
+	msg, ok := m.(*types.MsgPriceFeedQuorumBatch)
+	if !ok {
+		return nil, errInvalidMessage
+	}
+
+	err := h.validate(ctx, *msg)
+	if err != nil {
+		ctx.Logger().Error("MsgPriceFeedQuorumBatch failed validation", "error", err)
+		return nil, err
+	}
+
+	result, err := h.handle(ctx, *msg)
+	if err != nil {
+		ctx.Logger().Error("fail to handle MsgPriceFeedQuorumBatch message", "error", err)
+	}
+	return result, err
+}
+
+func (h PriceFeedQuorumBatchHandler) validate(ctx cosmos.Context, msg types.MsgPriceFeedQuorumBatch) error {
+	return msg.ValidateBasic()
+}
+
+func (h PriceFeedQuorumBatchHandler) handle(ctx cosmos.Context, msg types.MsgPriceFeedQuorumBatch) (*cosmos.Result, error) {
+	ctx.Logger().Info("handle MsgPriceFeedQuorumBatch")
+
+	activeNodes, err := h.mgr.Keeper().ListActiveValidators(ctx)
+	if err != nil {
+		err = wrapError(ctx, err, "fail to list active validators")
+		return nil, err
+	}
+
+	// [BTC][thor1...]*big.Float{}
+	pricesByAsset := map[string]map[string]*big.Float{}
+	for _, symbol := range strings.Split(requiredRates, ",") {
+		pricesByAsset[symbol] = map[string]*big.Float{}
+	}
+
+	for _, qpf := range msg.QuoPriceFeeds {
+		pf, err := h.handleQuorumPriceFeed(qpf, activeNodes)
+		if err != nil {
+			ctx.Logger().Error("fail to handle QuorumPriceFeed", "error", err)
+			continue
+		}
+
+		for _, rate := range pf.Rates {
+			_, found := pricesByAsset[rate.Symbol]
+			if !found {
+				// no required asset
+				continue
+			}
+			pricesByAsset[rate.Symbol][pf.Node.String()] = rate.BigFloat()
+		}
+	}
+
+	// Verify and calculate on chain price
+
+	missingPrices := map[string]int{}
+	deviatingPrices := map[string]int{}
+
+	for _, node := range activeNodes {
+		missingPrices[node.NodeAddress.String()] = 0
+		deviatingPrices[node.NodeAddress.String()] = 0
+	}
+
+	for symbol, priceByNode := range pricesByAsset {
+		if !HasSuperMajority(len(priceByNode), len(activeNodes)) {
+			ctx.Logger().Error(
+				"not enough prices for asset", "asset", symbol,
+				"num_prices", len(priceByNode), "num_nodes", len(activeNodes))
+			continue
+		}
+
+		allPricesForSymbol := []*big.Float{}
+
+		for _, node := range activeNodes {
+			price, found := priceByNode[node.NodeAddress.String()]
+			if !found {
+				missingPrices[node.NodeAddress.String()]++
+				continue
+			}
+			allPricesForSymbol = append(allPricesForSymbol, price)
+		}
+
+		deviation, median, err := ComputeMedianAbsoluteDeviation(allPricesForSymbol)
+		if err != nil {
+			ctx.Logger().Error("fail to compute deviation", "err", err)
+			continue
+		}
+
+		margin := new(big.Float).Mul(deviation, big.NewFloat(maxDeviation))
+
+		lowerBound := new(big.Float).Sub(median, margin)
+		upperBound := new(big.Float).Add(median, margin)
+
+		for node, price := range priceByNode {
+			if price.Cmp(lowerBound) == -1 || price.Cmp(upperBound) == 1 {
+				deviatingPrices[node]++
+			}
+		}
+
+		fmt.Println(symbol, median)
+
+		err = h.mgr.Keeper().SetPrice(ctx, OraclePrice{
+			Symbol: symbol,
+			Amount: median.Text('f', -1),
+		})
+		if err != nil {
+			ctx.Logger().Error("fail to set price", "err", err)
+		}
+
+		f, _ := median.Float32()
+		telemetry.SetGaugeWithLabels(
+			[]string{"thornode", "oracle_price"},
+			f,
+			[]metrics.Label{
+				telemetry.NewLabel("symbol", strings.ToLower(symbol)),
+			},
+		)
+
+		// TODO: Remove Debugging
+		// TODO: --------------------------------------------------------------
+
+		if symbol == "BTC" {
+			if os.Getuid() != 1001 {
+				continue
+			}
+
+			filename := fmt.Sprintf("/tmp/debug-thornode-%s.txt", symbol)
+			f, err := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+			if err != nil {
+				continue
+			}
+			defer f.Close()
+
+			line := fmt.Sprintf(
+				"enshrined_oracle,source=thornode,symbol=%s value=%s %d\n",
+				symbol,
+				median.Text('f', -1),
+				time.Now().UnixNano(),
+			)
+
+			_, _ = f.WriteString(line)
+		}
+	}
+
+	return &cosmos.Result{}, nil
+}
+
+func (h PriceFeedQuorumBatchHandler) handleQuorumPriceFeed(
+	qpf *common.QuorumPriceFeed,
+	active NodeAccounts,
+) (*PriceFeed, error) {
+	pf := qpf.PriceFeed
+
+	signBz, err := pf.GetSignablePayload()
+	if err != nil {
+		return nil, fmt.Errorf("fail to get signable price feed payload: %v", err)
+	}
+
+	atts := qpf.Attestations
+
+	if len(atts) == 0 {
+		return nil, fmt.Errorf("no attestation found")
+	}
+
+	if len(atts) > 1 {
+		return nil, fmt.Errorf("found more than one attestation")
+	}
+
+	att := atts[0]
+
+	_, err = verifyQuorumAttestation(active, signBz, att)
+	if err != nil {
+		return nil, fmt.Errorf("fail to verify quorum price feed attestation: %v", err)
+	}
+
+	pk := secp256k1.PubKey{Key: att.PubKey}
+
+	return &PriceFeed{
+		Node:  cosmos.AccAddress(pk.Address()),
+		Rates: pf.Rates,
+	}, nil
+}
+
+func ComputeMedianAbsoluteDeviation(values []*big.Float) (*big.Float, *big.Float, error) {
+	median, err := ComputeMedian(values)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	deviations := make([]*big.Float, len(values))
+	for i, value := range values {
+		difference := new(big.Float).Sub(value, median)
+		deviations[i] = new(big.Float).Abs(difference)
+	}
+
+	mad, err := ComputeMedian(deviations)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return mad, median, nil
+}
+
+func ComputeMedian(values []*big.Float) (*big.Float, error) {
+	if len(values) == 1 {
+		return values[0], nil
+	}
+
+	sort.Slice(values, func(i, j int) bool {
+		return values[i].Cmp(values[j]) < 0
+	})
+
+	midpoint := len(values) / 2
+
+	if len(values)%2 == 1 {
+		return values[midpoint], nil
+	}
+
+	sum := new(big.Float).Add(values[midpoint-1], values[midpoint])
+	return sum.Quo(sum, big.NewFloat(2)), nil
+}

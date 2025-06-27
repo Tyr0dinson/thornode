@@ -219,7 +219,7 @@ func NewAttestationGossip(
 	eventClient.RegisterHandler(ebifrost.EventQuorumNetworkFeeCommitted, s.handleQuorumNetworkFeeCommitted)
 	eventClient.RegisterHandler(ebifrost.EventQuorumSolvencyCommitted, s.handleQuorumSolvencyCommitted)
 	eventClient.RegisterHandler(ebifrost.EventQuorumErrataTxCommitted, s.handleQuorumErrataTxCommitted)
-	eventClient.RegisterHandler(ebifrost.EventQuorumPriceFeedCommitted, s.handleQuorumPriceFeedCommitted)
+	eventClient.RegisterHandler(ebifrost.EventQuorumPriceFeedBatchCommitted, s.handleQuorumPriceFeedCommitted)
 
 	// Register stream handlers
 	host.SetStreamHandler(attestationStateProtocol, s.handleStreamAttestationState)

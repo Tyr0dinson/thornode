@@ -249,13 +249,15 @@ func initPrefix() {
 }
 
 func initLog(level string, pretty bool) {
+	zerolog.TimeFieldFormat = "2006-01-02T15:04:05.000Z07:00"
+
 	l, err := zerolog.ParseLevel(level)
 	if err != nil {
 		log.Warn().Msgf("%s is not a valid log-level, falling back to 'info'", level)
 	}
 	var out io.Writer = os.Stdout
 	if pretty {
-		out = zerolog.ConsoleWriter{Out: os.Stdout}
+		out = zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: "15:04:05.000"}
 	}
 	zerolog.SetGlobalLevel(l)
 	log.Logger = log.Output(out).With().Caller().Str("service", serverIdentity).Logger()

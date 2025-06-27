@@ -77,8 +77,8 @@ func (ms msgServer) ObservedTxQuorum(goCtx context.Context, msg *types.MsgObserv
 	return externalHandler(goCtx, handler, msg)
 }
 
-func (ms msgServer) PriceFeedQuorum(goCtx context.Context, msg *types.MsgPriceFeedQuorum) (*types.MsgEmpty, error) {
-	handler := NewPriceFeedQuorumHandler(ms.mgr)
+func (ms msgServer) PriceFeedQuorumBatch(goCtx context.Context, msg *types.MsgPriceFeedQuorumBatch) (*types.MsgEmpty, error) {
+	handler := NewPriceFeedQuorumBatchHandler(ms.mgr)
 	return externalHandler(goCtx, handler, msg)
 }
 

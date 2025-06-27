@@ -229,7 +229,7 @@ type SwitchManager interface {
 }
 
 type OracleManager interface {
-	EndBlock(ctx cosmos.Context) error
+	BeginBlock(ctx cosmos.Context) error
 }
 
 // Mgrs is an implementation of Manager interface
@@ -589,5 +589,5 @@ func GetSwitchManager(version semver.Version, keeper keeper.Keeper, eventMgr Eve
 }
 
 func GetOracleManager(_ semver.Version, keeper keeper.Keeper, eventMgr EventManager) (OracleManager, error) {
-	return newOracleMgrVCUR(keeper, eventMgr), nil
+	return newOracleMgrVCUR(keeper), nil
 }

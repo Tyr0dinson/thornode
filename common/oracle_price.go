@@ -64,3 +64,11 @@ func NewOraclePrice(number *big.Float, symbol string) (*OraclePrice, error) {
 		Symbol:   symbol,
 	}, nil
 }
+
+func (p *OraclePrice) BigFloat() *big.Float {
+	decimals := big.NewInt(int64(p.Decimals))
+	divisor := new(big.Int).Exp(big.NewInt(10), decimals, nil)
+	amount := new(big.Float).SetUint64(p.Amount)
+
+	return new(big.Float).Quo(amount, new(big.Float).SetInt(divisor))
+}
