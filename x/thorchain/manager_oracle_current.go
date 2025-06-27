@@ -25,7 +25,7 @@ func (om *OracleMgrVCUR) BeginBlock(ctx cosmos.Context) error {
 	for ; iterator.Valid(); iterator.Next() {
 		var price OraclePrice
 		om.keeper.Cdc().MustUnmarshal(iterator.Value(), &price)
-		om.keeper.DelPriceFeed(ctx, price.Symbol)
+		om.keeper.DelPrice(ctx, price.Symbol)
 	}
 
 	return nil

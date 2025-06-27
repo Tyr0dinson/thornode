@@ -219,7 +219,6 @@ func NewAttestationGossip(
 	eventClient.RegisterHandler(ebifrost.EventQuorumNetworkFeeCommitted, s.handleQuorumNetworkFeeCommitted)
 	eventClient.RegisterHandler(ebifrost.EventQuorumSolvencyCommitted, s.handleQuorumSolvencyCommitted)
 	eventClient.RegisterHandler(ebifrost.EventQuorumErrataTxCommitted, s.handleQuorumErrataTxCommitted)
-	eventClient.RegisterHandler(ebifrost.EventQuorumPriceFeedBatchCommitted, s.handleQuorumPriceFeedCommitted)
 
 	// Register stream handlers
 	host.SetStreamHandler(attestationStateProtocol, s.handleStreamAttestationState)
@@ -547,6 +546,13 @@ func (s *AttestationGossip) Start(ctx context.Context) {
 				state.mu.Unlock()
 			}
 			s.mu.Unlock()
+
+			// Prune price feeds
+			for k, state := range s.priceFeeds {
+				state.mu.Lock()
+				delete(s.priceFeeds, k)
+				state.mu.Unlock()
+			}
 
 			// Prune cached keysign parties
 			s.cachedKeySignMu.Lock()

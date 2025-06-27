@@ -842,27 +842,46 @@ func (o *Observer) Stop() error {
 func (o *Observer) processOracle(ctx context.Context) {
 	defer o.wg.Done()
 
+	waitBeforeUpdate := time.Millisecond * 0
+	updatesPerSecond := 5
+
+	updates := time.Duration(updatesPerSecond)
+
+	interval := (time.Second - (waitBeforeUpdate * updates)) / updates
+
 	go func() {
-		ticker := time.NewTicker(time.Millisecond * 1000)
+		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
+
+		var i = 0
 
 		for {
 			select {
 			case <-o.stopChan:
 				return
 			case <-ticker.C:
-				prices := o.oracle.GetTickers()
-
-				pf := common.PriceFeed{
-					Time:  time.Now().UnixMilli(),
-					Rates: prices,
+				if i == updatesPerSecond {
+					i = 0
 				}
 
-				o.globalPriceFeedQueue <- pf
+				if i == 0 {
+					go func() {
+						fmt.Println(time.Now().Format("15:04:05.000"))
+						prices := o.oracle.GetTickers()
 
-				time.Sleep(time.Millisecond * 100)
+						pf := common.PriceFeed{
+							Time:  time.Now().UnixMilli(),
+							Rates: prices,
+						}
+						o.globalPriceFeedQueue <- pf
+					}()
+				}
+
+				time.Sleep(waitBeforeUpdate)
 
 				o.attestationGossip.sendPriceFeedAttestationsToThornode(ctx)
+
+				i++
 			}
 		}
 	}()

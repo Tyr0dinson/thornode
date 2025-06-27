@@ -78,6 +78,8 @@ func (h PriceFeedQuorumBatchHandler) handle(ctx cosmos.Context, msg types.MsgPri
 			continue
 		}
 
+		h.telemetryLatency(pf.Node.String(), time.UnixMilli(qpf.PriceFeed.Time))
+
 		for _, rate := range pf.Rates {
 			_, found := pricesByAsset[rate.Symbol]
 			if !found {
@@ -134,24 +136,23 @@ func (h PriceFeedQuorumBatchHandler) handle(ctx cosmos.Context, msg types.MsgPri
 			}
 		}
 
-		fmt.Println(symbol, median)
-
-		err = h.mgr.Keeper().SetPrice(ctx, OraclePrice{
+		oraclePrice := OraclePrice{
 			Symbol: symbol,
-			Amount: median.Text('f', -1),
-		})
+			Price:  median.Text('f', -1),
+		}
+
+		err = h.mgr.Keeper().SetPrice(ctx, oraclePrice)
 		if err != nil {
 			ctx.Logger().Error("fail to set price", "err", err)
 		}
 
-		f, _ := median.Float32()
-		telemetry.SetGaugeWithLabels(
-			[]string{"thornode", "oracle_price"},
-			f,
-			[]metrics.Label{
-				telemetry.NewLabel("symbol", strings.ToLower(symbol)),
-			},
-		)
+		h.telemetryPrice(symbol, median, upperBound, lowerBound)
+
+		priceEvent := NewEventOraclePrice(symbol, oraclePrice.Price)
+		err = h.mgr.EventMgr().EmitEvent(ctx, priceEvent)
+		if err != nil {
+			ctx.Logger().Error("fail to emit switch event", "error", err)
+		}
 
 		// TODO: Remove Debugging
 		// TODO: --------------------------------------------------------------
@@ -161,7 +162,7 @@ func (h PriceFeedQuorumBatchHandler) handle(ctx cosmos.Context, msg types.MsgPri
 				continue
 			}
 
-			filename := fmt.Sprintf("/tmp/debug-thornode-%s.txt", symbol)
+			filename := fmt.Sprintf("/dev/shm/debug-thornode-%s.txt", symbol)
 			f, err := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 			if err != nil {
 				continue
@@ -216,6 +217,43 @@ func (h PriceFeedQuorumBatchHandler) handleQuorumPriceFeed(
 		Node:  cosmos.AccAddress(pk.Address()),
 		Rates: pf.Rates,
 	}, nil
+}
+
+func (h PriceFeedQuorumBatchHandler) telemetryPrice(
+	symbol string,
+	price, upper, lower *big.Float,
+) {
+	values := map[string]*big.Float{
+		"oracle_price": price,
+		"upper_bound":  upper,
+		"lower_bound":  lower,
+	}
+
+	for label, value := range values {
+		v, _ := value.Float32()
+		telemetry.SetGaugeWithLabels(
+			[]string{"thornode", label},
+			v,
+			[]metrics.Label{
+				telemetry.NewLabel("symbol", strings.ToLower(symbol)),
+			},
+		)
+	}
+}
+
+func (h PriceFeedQuorumBatchHandler) telemetryLatency(
+	node string,
+	timestamp time.Time,
+) {
+	latency := time.Since(timestamp).Seconds()
+
+	telemetry.SetGaugeWithLabels(
+		[]string{"thornode", "price_feed_latency"},
+		float32(latency),
+		[]metrics.Label{
+			telemetry.NewLabel("node", node),
+		},
+	)
 }
 
 func ComputeMedianAbsoluteDeviation(values []*big.Float) (*big.Float, *big.Float, error) {

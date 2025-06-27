@@ -272,34 +272,23 @@ func (b *EnshrinedBifrost) SendQuorumErrataTx(ctx context.Context, e *common.Quo
 }
 
 func (b *EnshrinedBifrost) SendQuorumPriceFeedBatch(ctx context.Context, qpfb *common.QuorumPriceFeedBatch) (*SendQuorumPriceFeedBatchResult, error) {
-	b.logger.Info("send quorum price feeds")
+	// no need to check for existing attestations or merging, update the
+	// cache immediately
 
-	for _, qpf := range qpfb.QuorumPriceFeeds {
-		latency := time.Since(time.UnixMilli(qpf.PriceFeed.Time))
-		fmt.Println("latency:", latency)
-	}
+	fmt.Println("sending quorum price feed batch", len(qpfb.QuorumPriceFeeds))
 
 	b.priceFeedCache.Lock()
 	b.priceFeedCache.items = b.priceFeedCache.items[:0]
+	if len(b.priceFeedCache.items) == 0 {
+		b.priceFeedCache.items = []TimestampedItem[*common.QuorumPriceFeedBatch]{{
+			Item:      qpfb,
+			Timestamp: time.Now(),
+		}}
+	} else {
+		b.priceFeedCache.items[0].Item = qpfb
+		b.priceFeedCache.items[0].Timestamp = time.Now()
+	}
 	b.priceFeedCache.Unlock()
-
-	if err := b.priceFeedCache.AddItem(
-		qpfb,
-		(*common.QuorumPriceFeedBatch).GetAttestations,
-		(*common.QuorumPriceFeedBatch).SetAttestations,
-		(*common.QuorumPriceFeedBatch).Equals,
-	); err != nil {
-		return nil, err
-	}
-
-	// TODO: Remove debug
-	for _, item := range b.priceFeedCache.items {
-		for _, qpf := range item.Item.QuorumPriceFeeds {
-			latency := time.Since(time.UnixMilli(qpf.PriceFeed.Time))
-			fmt.Println("latency:", latency)
-		}
-
-	}
 
 	return &SendQuorumPriceFeedBatchResult{}, nil
 }

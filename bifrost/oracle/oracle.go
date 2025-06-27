@@ -139,7 +139,7 @@ func (o *Oracle) GetTickers() []*common.OraclePrice {
 
 			symbol = ticker.Pair.Join("")
 
-			filename := fmt.Sprintf("/tmp/debug-bifrost-%s-%s.txt", name, symbol)
+			filename := fmt.Sprintf("/dev/shm/debug-bifrost-%s-%s.txt", name, symbol)
 			f, err := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 			if err != nil {
 				continue
