@@ -235,7 +235,7 @@ func (h PriceFeedQuorumBatchHandler) telemetryPrice(
 			[]string{"thornode", label},
 			v,
 			[]metrics.Label{
-				telemetry.NewLabel("symbol", strings.ToLower(symbol)),
+				telemetry.NewLabel("symbol", symbol),
 			},
 		)
 	}
