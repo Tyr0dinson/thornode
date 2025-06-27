@@ -3,7 +3,6 @@ package observer
 import (
 	"context"
 	"encoding/hex"
-	"fmt"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
@@ -342,34 +341,26 @@ func (s *AttestationGossip) handlePriceFeedAttestation(_ context.Context, apf co
 func (s *AttestationGossip) sendPriceFeedAttestationsToThornode(
 	ctx context.Context,
 ) {
-	s.logger.Info().Msg("sending all attestations to thornode")
-
 	qpfb := common.QuorumPriceFeedBatch{
-		QuorumPriceFeeds: []*common.QuorumPriceFeed{},
+		QuorumPriceFeeds: make([]*common.QuorumPriceFeed, len(s.priceFeeds)),
 	}
 
+	i := 0
 	s.mu.Lock()
 	for _, state := range s.priceFeeds {
 		state.mu.Lock()
-
-		attestations := []*common.Attestation{}
-		for _, item := range state.attestations {
-			attestations = append(attestations, item.attestation)
-		}
-
-		qpfb.QuorumPriceFeeds = append(qpfb.QuorumPriceFeeds, &common.QuorumPriceFeed{
+		qpfb.QuorumPriceFeeds[i] = &common.QuorumPriceFeed{
 			PriceFeed:    state.Item,
-			Attestations: attestations,
-		})
+			Attestations: []*common.Attestation{state.attestations[0].attestation},
+		}
 		state.mu.Unlock()
+		i++
 	}
 	s.mu.Unlock()
 
 	if len(qpfb.QuorumPriceFeeds) == 0 {
 		return
 	}
-
-	fmt.Println("sending quorum price feed to thornode", len(qpfb.QuorumPriceFeeds))
 
 	_, err := s.grpcClient.SendQuorumPriceFeedBatch(ctx, &qpfb)
 	if err != nil {

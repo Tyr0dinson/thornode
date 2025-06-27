@@ -842,8 +842,8 @@ func (o *Observer) Stop() error {
 func (o *Observer) processOracle(ctx context.Context) {
 	defer o.wg.Done()
 
-	waitBeforeUpdate := time.Millisecond * 0
-	updatesPerSecond := 5
+	waitBeforeUpdate := time.Millisecond * 200
+	updatesPerSecond := 3
 
 	updates := time.Duration(updatesPerSecond)
 

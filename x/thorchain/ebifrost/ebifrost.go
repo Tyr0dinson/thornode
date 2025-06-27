@@ -275,10 +275,7 @@ func (b *EnshrinedBifrost) SendQuorumPriceFeedBatch(ctx context.Context, qpfb *c
 	// no need to check for existing attestations or merging, update the
 	// cache immediately
 
-	fmt.Println("sending quorum price feed batch", len(qpfb.QuorumPriceFeeds))
-
 	b.priceFeedCache.Lock()
-	b.priceFeedCache.items = b.priceFeedCache.items[:0]
 	if len(b.priceFeedCache.items) == 0 {
 		b.priceFeedCache.items = []TimestampedItem[*common.QuorumPriceFeedBatch]{{
 			Item:      qpfb,
