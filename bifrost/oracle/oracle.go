@@ -16,8 +16,6 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-const PriceFeedStalenessThreshold = time.Second * 2
-
 type Oracle struct {
 	ctx       context.Context
 	cancel    context.CancelFunc

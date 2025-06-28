@@ -3,10 +3,8 @@ package observer
 import (
 	"context"
 	"encoding/hex"
-	"gitlab.com/thorchain/thornode/v3/bifrost/oracle"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
-	"time"
 )
 
 // handleObservedTxAttestation processes attestations for observed transactions
@@ -310,14 +308,6 @@ func (s *AttestationGossip) handlePriceFeedAttestation(_ context.Context, apf co
 		return
 	}
 
-	age := time.Since(time.UnixMilli(apf.PriceFeed.Time))
-	if age > oracle.PriceFeedStalenessThreshold {
-		s.logger.Error().
-			Str("age", age.String()).
-			Msg("price feed stale")
-		return
-	}
-
 	// We don't collect multiple attestations for price feeds, rather want
 	// to store the most recent price we received for every node
 	s.mu.Lock()
@@ -367,9 +357,4 @@ func (s *AttestationGossip) sendPriceFeedAttestationsToThornode(
 		s.logger.Error().Err(err).Msg("fail to send price feed")
 		return
 	}
-
-	s.logger.Info().Msgf(
-		"sent quorum price feed to thornode - price feeds: %s",
-		len(qpfb.QuorumPriceFeeds),
-	)
 }

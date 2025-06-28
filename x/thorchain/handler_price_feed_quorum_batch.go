@@ -72,13 +72,11 @@ func (h PriceFeedQuorumBatchHandler) handle(ctx cosmos.Context, msg types.MsgPri
 	}
 
 	for _, qpf := range msg.QuoPriceFeeds {
-		pf, err := h.handleQuorumPriceFeed(qpf, activeNodes)
+		pf, err := h.handleQuorumPriceFeed(ctx, qpf, activeNodes)
 		if err != nil {
 			ctx.Logger().Error("fail to handle QuorumPriceFeed", "error", err)
 			continue
 		}
-
-		h.telemetryLatency(pf.Node.String(), time.UnixMilli(qpf.PriceFeed.Time))
 
 		for _, rate := range pf.Rates {
 			_, found := pricesByAsset[rate.Symbol]
@@ -184,6 +182,7 @@ func (h PriceFeedQuorumBatchHandler) handle(ctx cosmos.Context, msg types.MsgPri
 }
 
 func (h PriceFeedQuorumBatchHandler) handleQuorumPriceFeed(
+	ctx cosmos.Context,
 	qpf *common.QuorumPriceFeed,
 	active NodeAccounts,
 ) (*PriceFeed, error) {
@@ -212,9 +211,18 @@ func (h PriceFeedQuorumBatchHandler) handleQuorumPriceFeed(
 	}
 
 	pk := secp256k1.PubKey{Key: att.PubKey}
+	address := cosmos.AccAddress(pk.Address())
+
+	timestamp := time.UnixMilli(pf.Time)
+
+	h.telemetryLatency(address.String(), time.UnixMilli(qpf.PriceFeed.Time))
+
+	if timestamp.Before(ctx.HeaderInfo().Time) {
+		return nil, fmt.Errorf("price feed too old: %s", timestamp)
+	}
 
 	return &PriceFeed{
-		Node:  cosmos.AccAddress(pk.Address()),
+		Node:  address,
 		Rates: pf.Rates,
 	}, nil
 }
