@@ -167,7 +167,6 @@ func (o *Observer) Start(ctx context.Context) error {
 	for _, chain := range o.chains {
 		chain.Start(o.globalTxsQueue, o.globalErrataQueue, o.globalSolvencyQueue, o.globalNetworkFeeQueue)
 	}
-	o.oracle.Start()
 	o.wg.Add(1)
 	go o.processOracle(ctx)
 	go o.processTxIns()
@@ -177,6 +176,8 @@ func (o *Observer) Start(ctx context.Context) error {
 	go o.processPriceFeedQueue(ctx)
 	go o.deck(ctx)
 	go o.attestationGossip.Start(ctx)
+	// oracle depends on attestation gossip
+	o.oracle.Start()
 	return nil
 }
 
@@ -827,8 +828,6 @@ func (o *Observer) Stop() error {
 		chain.Stop()
 	}
 
-	o.oracle.Stop()
-
 	close(o.stopChan)
 	if err := o.pubkeyMgr.Stop(); err != nil {
 		o.logger.Error().Err(err).Msg("fail to stop pool address manager")
@@ -836,53 +835,69 @@ func (o *Observer) Stop() error {
 	if err := o.storage.Close(); err != nil {
 		o.logger.Err(err).Msg("fail to close observer storage")
 	}
+
+	o.oracle.Stop()
+
 	return o.m.Stop()
 }
 
 func (o *Observer) processOracle(ctx context.Context) {
 	defer o.wg.Done()
 
-	waitBeforeUpdate := time.Millisecond * 200
-	updatesPerSecond := 3
-
-	updates := time.Duration(updatesPerSecond)
-
-	interval := (time.Second - (waitBeforeUpdate * updates)) / updates
+	// waitBeforeUpdate := time.Millisecond * 150
+	// updatesPerSecond := 5
+	//
+	// updates := time.Duration(updatesPerSecond)
+	//
+	// interval := (time.Second - (waitBeforeUpdate * updates)) / updates
 
 	go func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
+		// ticker := time.NewTicker(interval)
+		// defer ticker.Stop()
 
-		var i = 0
+		update := time.NewTicker(time.Millisecond * 300)
+		gossip := time.NewTicker(time.Second)
+		defer update.Stop()
+		defer gossip.Stop()
+
+		// var i = 0
 
 		for {
 			select {
 			case <-o.stopChan:
 				return
-			case <-ticker.C:
-				if i == updatesPerSecond {
-					i = 0
-				}
+			case <-gossip.C:
+				fmt.Println(time.Now().Format("15:04:05.000"), "gossip")
+				go func() {
+					t0 := time.Now()
+					prices := o.oracle.GetTickers()
 
-				if i == 0 {
-					go func() {
-						fmt.Println(time.Now().Format("15:04:05.000"))
-						prices := o.oracle.GetTickers()
-
-						pf := common.PriceFeed{
-							Time:  time.Now().UnixMilli(),
-							Rates: prices,
-						}
-						o.globalPriceFeedQueue <- pf
-					}()
-				}
-
-				time.Sleep(waitBeforeUpdate)
-
-				o.attestationGossip.sendPriceFeedAttestationsToThornode(ctx)
-
-				i++
+					pf := common.PriceFeed{
+						Time:  time.Now().UnixMilli(),
+						Rates: prices,
+					}
+					o.globalPriceFeedQueue <- pf
+					fmt.Println(">> get tickers", t0.Format("15:04:05.000"), time.Since(t0))
+				}()
+			case <-update.C:
+				fmt.Println(time.Now().Format("15:04:05.000"), "update")
+				go o.attestationGossip.sendPriceFeedAttestationsToThornode(ctx)
 			}
+			// case <-ticker.C:
+			// 	fmt.Println(time.Now().Format("15:04:05.000"))
+			// 	if i == 0 {
+			//
+			// 	}
+			//
+			// 	time.Sleep(waitBeforeUpdate)
+			// 	fmt.Println(">> send attestations", time.Now().Format("15:04:05.000"))
+			// 	go o.attestationGossip.sendPriceFeedAttestationsToThornode(ctx)
+			//
+			// 	i++
+			// 	if i == updatesPerSecond-1 {
+			// 		i = 0
+			// 	}
+			// }
 		}
 	}()
 }

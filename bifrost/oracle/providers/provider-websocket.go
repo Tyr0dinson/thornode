@@ -93,6 +93,8 @@ func (p *websocketProvider) connect() error {
 
 	p.lastKeepalive = time.Now()
 
+	time.Sleep(time.Second)
+
 	return nil
 }
 
@@ -164,13 +166,16 @@ func (p *websocketProvider) Start() {
 				}
 			}
 
+			if p.ws == nil {
+				_ = p.reconnect()
+				continue
+			}
+
 			var msg []byte
 			_, msg, err = p.ws.Read(p.ctx)
 			if err != nil {
-				err = p.reconnect()
-				if err != nil {
-					continue
-				}
+				_ = p.reconnect()
+				continue
 			}
 
 			if len(msg) == 0 {

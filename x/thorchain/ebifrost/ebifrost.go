@@ -1,6 +1,7 @@
 package ebifrost
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	fmt "fmt"
@@ -275,6 +276,8 @@ func (b *EnshrinedBifrost) SendQuorumPriceFeedBatch(ctx context.Context, qpfb *c
 	// no need to check for existing attestations or merging, update the
 	// cache immediately
 
+	fmt.Println("> SendQuorumPriceFeedBatch")
+
 	b.priceFeedCache.Lock()
 	if len(b.priceFeedCache.items) == 0 {
 		b.priceFeedCache.items = []TimestampedItem[*common.QuorumPriceFeedBatch]{{
@@ -282,7 +285,28 @@ func (b *EnshrinedBifrost) SendQuorumPriceFeedBatch(ctx context.Context, qpfb *c
 			Timestamp: time.Now(),
 		}}
 	} else {
-		b.priceFeedCache.items[0].Item = qpfb
+		qpfs := b.priceFeedCache.items[0].Item.QuorumPriceFeeds
+		for _, newQpf := range qpfb.QuorumPriceFeeds {
+			found := false
+
+			newPk := newQpf.Attestations[0].PubKey
+
+			for i, oldQpf := range qpfs {
+				oldPk := oldQpf.Attestations[0].PubKey
+
+				if bytes.Compare(oldPk, newPk) != 0 {
+					continue
+				}
+
+				qpfs[i] = newQpf
+				found = true
+				break
+			}
+			if !found {
+				qpfs = append(qpfs, newQpf)
+			}
+		}
+		b.priceFeedCache.items[0].Item.QuorumPriceFeeds = qpfs
 		b.priceFeedCache.items[0].Timestamp = time.Now()
 	}
 	b.priceFeedCache.Unlock()

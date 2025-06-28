@@ -504,6 +504,7 @@ type Bifrost struct {
 		Bybit    BifrostOracleProviderConfiguration `mapstructure:"bybit"`
 		Coinbase BifrostOracleProviderConfiguration `mapstructure:"coinbase"`
 		Crypto   BifrostOracleProviderConfiguration `mapstructure:"crypto"`
+		Gemini   BifrostOracleProviderConfiguration `mapstructure:"gemini"`
 		Kraken   BifrostOracleProviderConfiguration `mapstructure:"kraken"`
 		Okx      BifrostOracleProviderConfiguration `mapstructure:"okx"`
 	} `mapstructure:"providers"`
@@ -532,6 +533,7 @@ func (b Bifrost) GetProviders() map[string]BifrostOracleProviderConfiguration {
 		common.ProviderBybit:    b.Providers.Bybit,
 		common.ProviderCoinbase: b.Providers.Coinbase,
 		common.ProviderCrypto:   b.Providers.Crypto,
+		common.ProviderGemini:   b.Providers.Gemini,
 		common.ProviderKraken:   b.Providers.Kraken,
 		common.ProviderOkx:      b.Providers.Okx,
 	}

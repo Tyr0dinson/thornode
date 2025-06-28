@@ -84,7 +84,9 @@ func (o *Oracle) Start() {
 	for name, provider := range o.providers {
 		o.wg.Add(1)
 		o.logger.Info().Str("provider", name).Msg("starting provider")
-		provider.Start()
+		go func() {
+			provider.Start()
+		}()
 	}
 
 	o.wg.Add(1)
@@ -211,6 +213,8 @@ func (o *Oracle) LoadProviders() error {
 			provider, err = providers.NewCryptoProvider(o.ctx, o.logger, providerConfig)
 		case common.ProviderCoinbase:
 			provider, err = providers.NewCoinbaseProvider(o.ctx, o.logger, providerConfig)
+		case common.ProviderGemini:
+			provider, err = providers.NewGeminiProvider(o.ctx, o.logger, providerConfig)
 		case common.ProviderKraken:
 			provider, err = providers.NewKrakenProvider(o.ctx, o.logger, providerConfig)
 		case common.ProviderOkx:

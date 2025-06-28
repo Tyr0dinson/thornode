@@ -332,19 +332,25 @@ func (s *AttestationGossip) sendPriceFeedAttestationsToThornode(
 	ctx context.Context,
 ) {
 	qpfb := common.QuorumPriceFeedBatch{
-		QuorumPriceFeeds: make([]*common.QuorumPriceFeed, len(s.priceFeeds)),
+		QuorumPriceFeeds: []*common.QuorumPriceFeed{},
 	}
 
-	i := 0
 	s.mu.Lock()
 	for _, state := range s.priceFeeds {
 		state.mu.Lock()
-		qpfb.QuorumPriceFeeds[i] = &common.QuorumPriceFeed{
+		if state.attestations[0].sent {
+			state.mu.Unlock()
+			continue
+		}
+
+		qpfb.QuorumPriceFeeds = append(qpfb.QuorumPriceFeeds, &common.QuorumPriceFeed{
 			PriceFeed:    state.Item,
 			Attestations: []*common.Attestation{state.attestations[0].attestation},
-		}
+		})
+
+		state.attestations[0].sent = true
+
 		state.mu.Unlock()
-		i++
 	}
 	s.mu.Unlock()
 

@@ -441,6 +441,16 @@ bifrost:
         - BTC/USD
         - USDT/USD
 
+    gemini:
+      polling_interval: 2s
+      api_endpoints:
+        - https://api.gemini.com
+      pairs:
+        - BTC/USD
+        - ETH/USD
+        - USDC/USD
+        - USDT/USD
+
     kraken:
       polling_interval: 3s
       api_endpoints:
