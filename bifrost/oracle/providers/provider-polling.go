@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/rs/zerolog"
+	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/providers/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/types"
 	"gitlab.com/thorchain/thornode/v3/config"
 	"time"
@@ -19,6 +20,7 @@ func newPollingProvider(
 	logger zerolog.Logger,
 	name string,
 	config config.BifrostOracleProviderConfiguration,
+	metrics *metrics.Metrics,
 ) (*pollingProvider, error) {
 	if config.PollingInterval == 0 {
 		return nil, fmt.Errorf("polling interval cannot be zero")
@@ -28,7 +30,7 @@ func newPollingProvider(
 
 	provider := pollingProvider{}
 
-	provider.baseProvider, err = newBaseProvider(ctx, logger, name, config)
+	provider.baseProvider, err = newBaseProvider(ctx, logger, name, config, metrics)
 	if err != nil {
 		return nil, err
 	}

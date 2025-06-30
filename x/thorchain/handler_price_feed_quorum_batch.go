@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	requiredRates = "BTC,USDT"
+	requiredRates = "BTC,ETH,USDT"
 	maxDeviation  = 1
 )
 

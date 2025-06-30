@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/rs/zerolog"
+	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/providers/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/types"
 	"gitlab.com/thorchain/thornode/v3/config"
 	"io"
@@ -30,7 +31,7 @@ type baseProvider struct {
 	toProviderSymbol       func(string, string) string
 	toMappedProviderSymbol func(types.CurrencyPair) string
 	getAvailablePairs      func() ([]string, error)
-	stats                  map[string]uint64 // counting price updates
+	metrics                *metrics.Metrics
 }
 
 func newBaseProvider(
@@ -38,6 +39,7 @@ func newBaseProvider(
 	logger zerolog.Logger,
 	name string,
 	config config.BifrostOracleProviderConfiguration,
+	metrics *metrics.Metrics,
 ) (*baseProvider, error) {
 	if len(config.ApiEndpoints) == 0 {
 		return nil, fmt.Errorf("no api endpoints provided")
@@ -71,7 +73,7 @@ func newBaseProvider(
 		getAvailablePairs:      nil,
 		toProviderSymbol:       nil,
 		toMappedProviderSymbol: nil,
-		stats:                  map[string]uint64{},
+		metrics:                metrics,
 	}, nil
 }
 
@@ -128,7 +130,6 @@ func (p *baseProvider) init(provider types.Provider) error {
 		}
 
 		p.pairs[symbol] = pair
-		p.stats[pair.String()] = 0
 	}
 
 	if len(p.pairs) == 0 {
@@ -143,11 +144,6 @@ func (p *baseProvider) GetStats() (map[string]uint64, error) {
 
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
-
-	for symbol, count := range p.stats {
-		stats[symbol] = count
-		p.stats[symbol] = 0
-	}
 
 	return stats, nil
 }
@@ -190,14 +186,14 @@ func (p *baseProvider) setTicker(
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
 
-	p.stats[pair.String()]++
-
 	p.tickers[pair.String()] = types.Ticker{
 		Time:   timestamp,
 		Pair:   pair,
 		Price:  price,
 		Volume: baseVolume,
 	}
+
+	p.metrics.UpdateProviderTicker(p.name, p.tickers[pair.String()])
 
 	if quoteVolume == nil {
 		return
@@ -215,6 +211,8 @@ func (p *baseProvider) setTicker(
 		Price:  new(big.Float).Quo(big.NewFloat(1), price),
 		Volume: quoteVolume,
 	}
+
+	p.metrics.UpdateProviderTicker(p.name, p.tickers[pair.String()])
 }
 
 func (p *baseProvider) httpGet(path string) ([]byte, error) {
@@ -294,7 +292,7 @@ func (p *baseProvider) makeHttpRequest(url string, method string, body []byte, h
 			p.logger.Warn().
 				Str("url", url).
 				Str("retry_after", res.Header.Get("Retry-After")).
-				Msg("http ratelimited")
+				Msg("http rate limited")
 		}
 		return nil, fmt.Errorf("http request returned invalid status")
 	}

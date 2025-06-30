@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/coder/websocket/wsjson"
 	"github.com/rs/zerolog"
+	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/providers/metrics"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
 	"strings"
@@ -36,8 +37,9 @@ func NewBinanceProvider(
 	ctx context.Context,
 	logger zerolog.Logger,
 	config config.BifrostOracleProviderConfiguration,
+	metrics *metrics.Metrics,
 ) (*BinanceProvider, error) {
-	wsProvider, err := newWebsocketProvider(ctx, logger, common.ProviderBinance, config)
+	wsProvider, err := newWebsocketProvider(ctx, logger, common.ProviderBinance, config, metrics)
 	if err != nil {
 		return nil, err
 	}

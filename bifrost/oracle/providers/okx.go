@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"github.com/coder/websocket/wsjson"
 	"github.com/rs/zerolog"
+	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/providers/metrics"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
 	"strconv"
@@ -35,8 +36,9 @@ func NewOkxProvider(
 	ctx context.Context,
 	logger zerolog.Logger,
 	config config.BifrostOracleProviderConfiguration,
+	metrics *metrics.Metrics,
 ) (*OkxProvider, error) {
-	wsProvider, err := newWebsocketProvider(ctx, logger, common.ProviderOkx, config)
+	wsProvider, err := newWebsocketProvider(ctx, logger, common.ProviderOkx, config, metrics)
 	if err != nil {
 		return nil, err
 	}

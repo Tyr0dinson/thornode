@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/providers"
+	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/providers/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
@@ -25,7 +26,7 @@ type Oracle struct {
 	providers map[string]types.Provider
 	config    config.Bifrost
 	rates     map[string]*big.Float
-	metrics   *Metric
+	metrics   *metrics.Metrics
 }
 
 func NewOracle(config config.Bifrost) (*Oracle, error) {
@@ -47,16 +48,15 @@ func NewOracle(config config.Bifrost) (*Oracle, error) {
 		logger:  logger,
 		config:  config,
 		rates:   make(map[string]*big.Float),
-		metrics: NewMetric(),
+		metrics: metrics.NewMetrics(),
 	}
+
+	o.metrics.Register()
 
 	err = o.LoadProviders()
 	if err != nil {
 		return nil, err
 	}
-
-	// TODO: Add config for metrics
-	o.metrics.Register()
 
 	return &o, nil
 }
@@ -101,17 +101,10 @@ func (o *Oracle) Stop() {
 
 func (o *Oracle) GetTickers() []*common.OraclePrice {
 	tickerBySymbol := map[string]map[string]types.Ticker{}
-	statsByProvider := map[string]map[string]uint64{}
 
 	var err error
 
 	for name, provider := range o.providers {
-
-		statsByProvider[name], err = provider.GetStats()
-		if err != nil {
-			o.logger.Err(err).Str("provider", name).Msg("Error getting stats")
-		}
-
 		tickers, err := provider.GetTickers()
 		if err != nil {
 			o.logger.Err(err).Str("provider", name).Msg("Error getting prices")
@@ -123,8 +116,6 @@ func (o *Oracle) GetTickers() []*common.OraclePrice {
 				tickerBySymbol[symbol] = map[string]types.Ticker{}
 			}
 			tickerBySymbol[symbol][name] = ticker
-
-			o.metrics.UpdateProviderTicker(name, ticker)
 
 			//   DEBUG
 			// ------------------------
@@ -178,18 +169,7 @@ func (o *Oracle) GetTickers() []*common.OraclePrice {
 
 	o.logger.Info().Int("rates", len(rates)).Msg("getting tickers")
 
-	for provider, stats := range statsByProvider {
-		for symbol, count := range stats {
-			o.logger.Info().
-				Str("provider", provider).
-				Str("symbol", symbol).
-				Uint64("count", count).
-				Msg("stats")
-		}
-	}
-
 	return prices
-
 }
 
 func (o *Oracle) LoadProviders() error {
@@ -202,23 +182,23 @@ func (o *Oracle) LoadProviders() error {
 
 		switch providerName {
 		case common.ProviderBinance:
-			provider, err = providers.NewBinanceProvider(o.ctx, o.logger, providerConfig)
+			provider, err = providers.NewBinanceProvider(o.ctx, o.logger, providerConfig, o.metrics)
 		case common.ProviderBitget:
-			provider, err = providers.NewBitgetProvider(o.ctx, o.logger, providerConfig)
+			provider, err = providers.NewBitgetProvider(o.ctx, o.logger, providerConfig, o.metrics)
 		case common.ProviderBitstamp:
-			provider, err = providers.NewBitstampProvider(o.ctx, o.logger, providerConfig)
+			provider, err = providers.NewBitstampProvider(o.ctx, o.logger, providerConfig, o.metrics)
 		case common.ProviderBybit:
-			provider, err = providers.NewBybitProvider(o.ctx, o.logger, providerConfig)
+			provider, err = providers.NewBybitProvider(o.ctx, o.logger, providerConfig, o.metrics)
 		case common.ProviderCrypto:
-			provider, err = providers.NewCryptoProvider(o.ctx, o.logger, providerConfig)
+			provider, err = providers.NewCryptoProvider(o.ctx, o.logger, providerConfig, o.metrics)
 		case common.ProviderCoinbase:
-			provider, err = providers.NewCoinbaseProvider(o.ctx, o.logger, providerConfig)
+			provider, err = providers.NewCoinbaseProvider(o.ctx, o.logger, providerConfig, o.metrics)
 		case common.ProviderGemini:
-			provider, err = providers.NewGeminiProvider(o.ctx, o.logger, providerConfig)
+			provider, err = providers.NewGeminiProvider(o.ctx, o.logger, providerConfig, o.metrics)
 		case common.ProviderKraken:
-			provider, err = providers.NewKrakenProvider(o.ctx, o.logger, providerConfig)
+			provider, err = providers.NewKrakenProvider(o.ctx, o.logger, providerConfig, o.metrics)
 		case common.ProviderOkx:
-			provider, err = providers.NewOkxProvider(o.ctx, o.logger, providerConfig)
+			provider, err = providers.NewOkxProvider(o.ctx, o.logger, providerConfig, o.metrics)
 		default:
 			o.logger.Error().Msgf("unknown provider: %s", providerName)
 			continue

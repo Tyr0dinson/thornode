@@ -398,7 +398,4 @@ func (s *AttestationGossip) handleStreamBatchedAttestations(stream network.Strea
 		}
 		s.handlePriceFeedAttestation(context.Background(), *priceFeed)
 	}
-	if len(batch.AttestPriceFeeds) > 0 {
-		s.sendPriceFeedAttestationsToThornode(context.Background())
-	}
 }

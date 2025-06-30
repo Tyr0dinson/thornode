@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"github.com/coder/websocket/wsjson"
 	"github.com/rs/zerolog"
+	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/providers/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
@@ -35,8 +36,9 @@ func NewKrakenProvider(
 	ctx context.Context,
 	logger zerolog.Logger,
 	config config.BifrostOracleProviderConfiguration,
+	metrics *metrics.Metrics,
 ) (*KrakenProvider, error) {
-	wsProvider, err := newWebsocketProvider(ctx, logger, common.ProviderKraken, config)
+	wsProvider, err := newWebsocketProvider(ctx, logger, common.ProviderKraken, config, metrics)
 	if err != nil {
 		return nil, err
 	}

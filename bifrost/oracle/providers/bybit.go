@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"github.com/coder/websocket/wsjson"
 	"github.com/rs/zerolog"
+	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/providers/metrics"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
 	"time"
@@ -38,8 +39,9 @@ func NewBybitProvider(
 	ctx context.Context,
 	logger zerolog.Logger,
 	config config.BifrostOracleProviderConfiguration,
+	metrics *metrics.Metrics,
 ) (*BybitProvider, error) {
-	wsProvider, err := newWebsocketProvider(ctx, logger, common.ProviderBybit, config)
+	wsProvider, err := newWebsocketProvider(ctx, logger, common.ProviderBybit, config, metrics)
 	if err != nil {
 		return nil, err
 	}

@@ -808,7 +808,7 @@ func (o *Observer) processPriceFeedQueue(ctx context.Context) {
 			return
 		case priceFeed := <-o.globalPriceFeedQueue:
 			if err := priceFeed.Valid(); err != nil {
-				o.logger.Err(err).Msgf("invalid price feed - %s", priceFeed.String())
+				o.logger.Warn().Err(err).Msg("invalid price feed")
 				continue
 			}
 			if err := o.attestationGossip.AttestPriceFeed(ctx, priceFeed); err != nil {

@@ -81,7 +81,6 @@ type Keeper interface {
 	KeeperMimir
 	KeeperNetworkFee
 	KeeperObservedNetworkFeeVoter
-	KeeperPriceFeed
 	KeeperOracle
 	KeeperChainContract
 	KeeperSolvencyVoter
@@ -430,13 +429,6 @@ type KeeperChainContract interface {
 type KeeperSolvencyVoter interface {
 	SetSolvencyVoter(_ cosmos.Context, _ SolvencyVoter)
 	GetSolvencyVoter(_ cosmos.Context, _ common.TxID, _ common.Chain) (SolvencyVoter, error)
-}
-
-type KeeperPriceFeed interface {
-	SetPriceFeed(ctx cosmos.Context, priceFeed PriceFeed) error
-	GetPriceFeed(ctx cosmos.Context, node string) (PriceFeed, error)
-	DelPriceFeed(ctx cosmos.Context, node string)
-	GetPriceFeedIterator(ctx cosmos.Context) cosmos.Iterator
 }
 
 type KeeperOracle interface {

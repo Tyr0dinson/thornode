@@ -44,7 +44,7 @@ bifrost:
     ask_peers: 3
     ask_peers_delay: 5s
     max_batch_size: 100
-    batch_interval: 250ms
+    batch_interval: 2s
     peer_timeout: 20s
     peer_concurrent_sends: 4
     peer_concurrent_receives: 5

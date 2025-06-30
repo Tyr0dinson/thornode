@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/rs/zerolog"
+	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/providers/metrics"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
 	"time"
@@ -24,8 +25,9 @@ func NewBitstampProvider(
 	ctx context.Context,
 	logger zerolog.Logger,
 	config config.BifrostOracleProviderConfiguration,
+	metrics *metrics.Metrics,
 ) (*BitstampProvider, error) {
-	pollProvider, err := newPollingProvider(ctx, logger, common.ProviderBitstamp, config)
+	pollProvider, err := newPollingProvider(ctx, logger, common.ProviderBitstamp, config, metrics)
 	if err != nil {
 		return nil, err
 	}

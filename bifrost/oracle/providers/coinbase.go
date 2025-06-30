@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/coder/websocket/wsjson"
 	"github.com/rs/zerolog"
+	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/providers/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
@@ -33,8 +34,9 @@ func NewCoinbaseProvider(
 	ctx context.Context,
 	logger zerolog.Logger,
 	config config.BifrostOracleProviderConfiguration,
+	metrics *metrics.Metrics,
 ) (*CoinbaseProvider, error) {
-	wsProvider, err := newWebsocketProvider(ctx, logger, common.ProviderCoinbase, config)
+	wsProvider, err := newWebsocketProvider(ctx, logger, common.ProviderCoinbase, config, metrics)
 	if err != nil {
 		return nil, err
 	}

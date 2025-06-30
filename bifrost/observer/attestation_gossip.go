@@ -126,6 +126,8 @@ type AttestationGossip struct {
 	errataTxsPool   *AttestationStatePool[*common.ErrataTx]
 	priceFeedsPool  *AttestationStatePool[*common.PriceFeed]
 
+	priceFeedsDelay *Delay
+
 	activeVals map[peer.ID]bool // active val peer IDs
 	avMu       sync.Mutex
 
@@ -208,6 +210,8 @@ func NewAttestationGossip(
 		solvenciesPool:  NewAttestationStatePool[*common.Solvency](),
 		errataTxsPool:   NewAttestationStatePool[*common.ErrataTx](),
 		priceFeedsPool:  NewAttestationStatePool[*common.PriceFeed](),
+
+		priceFeedsDelay: NewDelay(),
 
 		cachedKeySignParties: make(map[common.PubKey]cachedKeySignParty),
 

@@ -20,6 +20,7 @@ var wasmAcceptedQueries = wasmkeeper.AcceptedQueries{
 	"/types.Query/Pool":              &apitypes.QueryPoolResponse{},
 	"/types.Query/QuoteSwap":         &apitypes.QueryQuoteSwapResponse{},
 	"/types.Query/SecuredAsset":      &apitypes.QuerySecuredAssetResponse{},
+	"/types.Query/OraclePrice":       &apitypes.QueryOraclePriceResponse{},
 }
 
 // Support slightly larger wasm files

@@ -3,9 +3,13 @@ package observer
 import (
 	"context"
 	"encoding/hex"
+	"fmt"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
+	"time"
 )
+
+const priceFeedsUpdateDelay = time.Millisecond * 100
 
 // handleObservedTxAttestation processes attestations for observed transactions
 func (s *AttestationGossip) handleObservedTxAttestation(ctx context.Context, tx common.AttestTx) {
@@ -289,7 +293,7 @@ func (s *AttestationGossip) sendErrataAttestationsToThornode(ctx context.Context
 }
 
 // handlePriceFeedAttestation processes attestations for price feeds
-func (s *AttestationGossip) handlePriceFeedAttestation(_ context.Context, apf common.AttestPriceFeed) {
+func (s *AttestationGossip) handlePriceFeedAttestation(ctx context.Context, apf common.AttestPriceFeed) {
 	// Use the pubkey as key
 	k := hex.EncodeToString(apf.Attestation.PubKey)
 
@@ -311,6 +315,7 @@ func (s *AttestationGossip) handlePriceFeedAttestation(_ context.Context, apf co
 	// We don't collect multiple attestations for price feeds, rather want
 	// to store the most recent price we received for every node
 	s.mu.Lock()
+
 	state, ok := s.priceFeeds[k]
 	if !ok || state.Item.Time < apf.PriceFeed.Time {
 		// Set new attestation state
@@ -319,8 +324,25 @@ func (s *AttestationGossip) handlePriceFeedAttestation(_ context.Context, apf co
 			{attestation: apf.Attestation, sent: false},
 		}
 		s.priceFeeds[k] = state
+		s.mu.Unlock()
+
+		// we received an updated price feed, start delay to maybe collect
+		// more updated values before sending them to thornode
+		if s.priceFeedsDelay.IsRunning() {
+			return
+		}
+
+		s.priceFeedsDelay.Start()
+		go func() {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(priceFeedsUpdateDelay):
+				s.sendPriceFeedAttestationsToThornode(ctx)
+				s.priceFeedsDelay.Done()
+			}
+		}()
 	}
-	s.mu.Unlock()
 }
 
 // sendPriceFeedAttestationsToThornode sends price feed attestations
@@ -331,6 +353,7 @@ func (s *AttestationGossip) handlePriceFeedAttestation(_ context.Context, apf co
 func (s *AttestationGossip) sendPriceFeedAttestationsToThornode(
 	ctx context.Context,
 ) {
+	fmt.Println(">>> sendPriceFeedAttestationsToThornode")
 	qpfb := common.QuorumPriceFeedBatch{
 		QuorumPriceFeeds: []*common.QuorumPriceFeed{},
 	}

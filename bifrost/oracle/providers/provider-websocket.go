@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/coder/websocket"
 	"github.com/rs/zerolog"
+	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/providers/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/types"
 	"gitlab.com/thorchain/thornode/v3/config"
 	"time"
@@ -36,6 +37,7 @@ func newWebsocketProvider(
 	logger zerolog.Logger,
 	name string,
 	config config.BifrostOracleProviderConfiguration,
+	metrics *metrics.Metrics,
 ) (*websocketProvider, error) {
 	if len(config.WsEndpoints) == 0 {
 		return nil, fmt.Errorf("no websocket endpoints provided")
@@ -48,7 +50,7 @@ func newWebsocketProvider(
 		backoff:    minBackoff,
 	}
 
-	provider.baseProvider, err = newBaseProvider(ctx, logger, name, config)
+	provider.baseProvider, err = newBaseProvider(ctx, logger, name, config, metrics)
 	if err != nil {
 		return nil, err
 	}
@@ -104,6 +106,7 @@ func (p *websocketProvider) reconnect() error {
 
 	select {
 	case <-p.ctx.Done():
+		return fmt.Errorf("context canceled")
 	case <-time.After(p.backoff):
 	}
 
@@ -150,24 +153,10 @@ func (p *websocketProvider) Start() {
 		}
 
 		for {
-			if keepalive != nil {
-				select {
-				case <-keepalive.C:
-					err = p.sendKeepalive()
-					if err != nil {
-						p.logger.Err(err).Msg("failed to send keepalive")
-					}
-				case <-check.C:
-					if time.Since(p.lastKeepalive) > p.keepaliveTimeout {
-						p.logger.Error().Msg("keepalive timeout reached")
-						err = p.reconnect()
-						if err != nil {
-							p.logger.Err(err).Msg("failed to reconnect")
-						}
-					}
-				default:
-					// pass
-				}
+			select {
+			case <-p.ctx.Done():
+				return
+			default:
 			}
 
 			if p.ws == nil {
@@ -192,6 +181,27 @@ func (p *websocketProvider) Start() {
 				p.logger.Err(err).
 					Str("msg", string(msg)).
 					Msg("fail handling message")
+			}
+
+			if keepalive == nil {
+				continue
+			}
+
+			select {
+			case <-keepalive.C:
+				err = p.sendKeepalive()
+				if err != nil {
+					p.logger.Err(err).Msg("failed to send keepalive")
+				}
+			case <-check.C:
+				if time.Since(p.lastKeepalive) > p.keepaliveTimeout {
+					p.logger.Error().Msg("keepalive timeout reached")
+					err = p.reconnect()
+					if err != nil {
+						p.logger.Err(err).Msg("failed to reconnect")
+					}
+				}
+			default:
 			}
 		}
 	}()

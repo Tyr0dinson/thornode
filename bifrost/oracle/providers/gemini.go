@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/rs/zerolog"
+	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/providers/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
@@ -25,8 +26,9 @@ func NewGeminiProvider(
 	ctx context.Context,
 	logger zerolog.Logger,
 	config config.BifrostOracleProviderConfiguration,
+	metrics *metrics.Metrics,
 ) (*GeminiProvider, error) {
-	pollProvider, err := newPollingProvider(ctx, logger, common.ProviderGemini, config)
+	pollProvider, err := newPollingProvider(ctx, logger, common.ProviderGemini, config, metrics)
 	if err != nil {
 		return nil, err
 	}
