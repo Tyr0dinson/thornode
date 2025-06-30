@@ -167,8 +167,9 @@ func (o *Observer) Start(ctx context.Context) error {
 	for _, chain := range o.chains {
 		chain.Start(o.globalTxsQueue, o.globalErrataQueue, o.globalSolvencyQueue, o.globalNetworkFeeQueue)
 	}
+	o.oracle.Start()
 	o.wg.Add(1)
-	go o.processOracle(ctx)
+	go o.processOracle()
 	go o.processTxIns()
 	go o.processErrataTx(ctx)
 	go o.processSolvencyQueue(ctx)
@@ -176,8 +177,6 @@ func (o *Observer) Start(ctx context.Context) error {
 	go o.processPriceFeedQueue(ctx)
 	go o.deck(ctx)
 	go o.attestationGossip.Start(ctx)
-	// oracle depends on attestation gossip
-	o.oracle.Start()
 	return nil
 }
 
@@ -841,63 +840,26 @@ func (o *Observer) Stop() error {
 	return o.m.Stop()
 }
 
-func (o *Observer) processOracle(ctx context.Context) {
+func (o *Observer) processOracle() {
 	defer o.wg.Done()
 
-	// waitBeforeUpdate := time.Millisecond * 150
-	// updatesPerSecond := 5
-	//
-	// updates := time.Duration(updatesPerSecond)
-	//
-	// interval := (time.Second - (waitBeforeUpdate * updates)) / updates
-
 	go func() {
-		// ticker := time.NewTicker(interval)
-		// defer ticker.Stop()
-
-		update := time.NewTicker(time.Millisecond * 300)
-		gossip := time.NewTicker(time.Second)
-		defer update.Stop()
-		defer gossip.Stop()
-
-		// var i = 0
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
 
 		for {
 			select {
 			case <-o.stopChan:
 				return
-			case <-gossip.C:
-				fmt.Println(time.Now().Format("15:04:05.000"), "gossip")
-				go func() {
-					t0 := time.Now()
-					prices := o.oracle.GetTickers()
+			case <-ticker.C:
+				prices := o.oracle.GetTickers()
 
-					pf := common.PriceFeed{
-						Time:  time.Now().UnixMilli(),
-						Rates: prices,
-					}
-					o.globalPriceFeedQueue <- pf
-					fmt.Println(">> get tickers", t0.Format("15:04:05.000"), time.Since(t0))
-				}()
-			case <-update.C:
-				fmt.Println(time.Now().Format("15:04:05.000"), "update")
-				go o.attestationGossip.sendPriceFeedAttestationsToThornode(ctx)
+				pf := common.PriceFeed{
+					Time:  time.Now().UnixMilli(),
+					Rates: prices,
+				}
+				o.globalPriceFeedQueue <- pf
 			}
-			// case <-ticker.C:
-			// 	fmt.Println(time.Now().Format("15:04:05.000"))
-			// 	if i == 0 {
-			//
-			// 	}
-			//
-			// 	time.Sleep(waitBeforeUpdate)
-			// 	fmt.Println(">> send attestations", time.Now().Format("15:04:05.000"))
-			// 	go o.attestationGossip.sendPriceFeedAttestationsToThornode(ctx)
-			//
-			// 	i++
-			// 	if i == updatesPerSecond-1 {
-			// 		i = 0
-			// 	}
-			// }
 		}
 	}()
 }

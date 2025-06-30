@@ -201,6 +201,7 @@ func (s *AttestationGossip) AttestPriceFeed(ctx context.Context, priceFeed commo
 	s.handlePriceFeedAttestation(ctx, msg)
 
 	s.batcher.AddPriceFeed(msg)
+	s.batcher.sendBatches(ctx, true)
 
 	return nil
 }
@@ -396,5 +397,8 @@ func (s *AttestationGossip) handleStreamBatchedAttestations(stream network.Strea
 			continue
 		}
 		s.handlePriceFeedAttestation(context.Background(), *priceFeed)
+	}
+	if len(batch.AttestPriceFeeds) > 0 {
+		s.sendPriceFeedAttestationsToThornode(context.Background())
 	}
 }

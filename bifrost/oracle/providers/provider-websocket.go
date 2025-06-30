@@ -77,6 +77,7 @@ func (p *websocketProvider) connect() error {
 
 	if p.ws != nil {
 		_ = p.ws.Close(websocket.StatusNormalClosure, "")
+		time.Sleep(time.Second)
 	}
 
 	p.ws, _, err = websocket.Dial(p.ctx, p.wsEndpoint, nil)
@@ -101,13 +102,16 @@ func (p *websocketProvider) connect() error {
 func (p *websocketProvider) reconnect() error {
 	p.logger.Warn().Msgf("trying to reconnect in %s", p.backoff.String())
 
-	time.Sleep(p.backoff)
+	select {
+	case <-p.ctx.Done():
+	case <-time.After(p.backoff):
+	}
 
 	err := p.connect()
 	if err == nil {
 		p.backoff = minBackoff
 	} else {
-		p.backoff = max(p.backoff*2, maxBackoff)
+		p.backoff = min(p.backoff*2, maxBackoff)
 	}
 
 	return err
