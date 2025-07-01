@@ -390,14 +390,17 @@ bifrost:
         - wss://stream.binance.com:9443/ws
       pairs:
         - BTC/USDT
+        - USDC/USDT
 
-    bitstamp:
-      polling_interval: 2s
+    bitfinex:
+      polling_interval: 3s
       api_endpoints:
-        - https://www.bitstamp.net
+        - https://api-pub.bitfinex.com
+      ws_endpoints:
+        - wss://api-pub.bitfinex.com/ws/2
       pairs:
         - BTC/USD
-        - USDC/USD
+        - ETH/USD
         - USDT/USD
 
     bitget:
@@ -410,6 +413,16 @@ bifrost:
         - BTC/USDT
         - ETH/USDT
 
+    bitstamp:
+      polling_interval: 2s
+      api_endpoints:
+        - https://www.bitstamp.net
+      pairs:
+        - BTC/USD
+        - USDC/USD
+        - USDT/USD
+
+
     bybit:
       polling_interval: 5s
       api_endpoints:
@@ -420,6 +433,7 @@ bifrost:
         - wss://stream.bybit.com/v5/public/spot
       pairs:
         - BTC/USDT
+        - USDC/USDT
 
     coinbase:
       polling_interval: 10s
@@ -430,6 +444,7 @@ bifrost:
       pairs:
         - BTC/USD
         - USDC/USD
+        - USDT/USD
 
     crypto:
       polling_interval: 3s
@@ -441,6 +456,17 @@ bifrost:
         - BTC/USD
         - USDT/USD
 
+    gate:
+      polling_interval: 3s
+      api_endpoints:
+        - https://api.gateio.ws
+      ws_endpoints:
+        - wss://api.gateio.ws/ws/v4/ # slash matters
+      pairs:
+        - BTC/USDT
+        - ETH/USDT
+        - USDC/USDT
+
     gemini:
       polling_interval: 2s
       api_endpoints:
@@ -450,6 +476,18 @@ bifrost:
         - ETH/USD
         - USDC/USD
         - USDT/USD
+
+    htx:
+      polling_interval: 3s
+      api_endpoints:
+        - https://api.huobi.pro
+        # - https://api-aws.huobi.pro
+      ws_endpoints:
+        - wss://api.huobi.pro/ws
+        # - wss://api-aws.huobi.pro/ws
+      pairs:
+        - BTC/USDT
+        - ETH/USDT
 
     kraken:
       polling_interval: 3s
@@ -463,6 +501,15 @@ bifrost:
       symbol_mapping:
         - USDT/USD=USDTZUSD
         - BTC/USD=XXBTZUSD
+
+    mexc:
+      polling_interval: 3s
+      api_endpoints:
+        - https://api.mexc.com
+      pairs:
+        - BTC/USDT
+        - ETH/USDT
+        - USDC/USDT
 
     okx:
       polling_interval: 3s

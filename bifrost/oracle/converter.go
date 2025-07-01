@@ -8,10 +8,10 @@ import (
 )
 
 const (
-	maxConversionSteps  = 3
-	maxVolumePercentage = 0.4
-	minProviders        = 1
-	maxDeviation        = 1
+	maxConversionSteps = 3
+	// maxVolumePercentage = 0.4
+	minProviders = 1
+	maxDeviation = 1
 )
 
 type Converter struct {
@@ -44,7 +44,6 @@ func (c *Converter) GetRate(denom string) (*big.Float, error) {
 	}
 
 	var err error
-	rates, err = FilterVolumes(rates)
 	rates, err = FilterDeviations(rates)
 	if err != nil {
 		return nil, err
@@ -170,26 +169,6 @@ func ComputeStandardDeviation(values []*big.Float) (*big.Float, *big.Float, erro
 	deviation := new(big.Float).Sqrt(variance)
 
 	return deviation, mean, nil
-}
-
-func FilterVolumes(tickers map[string]types.Ticker) (map[string]types.Ticker, error) {
-	total := new(big.Float)
-	for _, ticker := range tickers {
-		total.Add(total, ticker.Volume)
-	}
-
-	filtered := map[string]types.Ticker{}
-	for provider, ticker := range tickers {
-		percentage := new(big.Float).Quo(ticker.Volume, total)
-		if percentage.Cmp(big.NewFloat(maxVolumePercentage)) <= 1 {
-			// volume is too high, discard
-			continue
-		}
-
-		filtered[provider] = ticker
-	}
-
-	return filtered, nil
 }
 
 func FilterDeviations(tickers map[string]types.Ticker) (map[string]types.Ticker, error) {

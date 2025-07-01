@@ -193,10 +193,16 @@ func (o *Oracle) LoadProviders() error {
 			provider, err = providers.NewCryptoProvider(o.ctx, o.logger, providerConfig, o.metrics)
 		case common.ProviderCoinbase:
 			provider, err = providers.NewCoinbaseProvider(o.ctx, o.logger, providerConfig, o.metrics)
+		case common.ProviderGate:
+			provider, err = providers.NewGateProvider(o.ctx, o.logger, providerConfig, o.metrics)
 		case common.ProviderGemini:
 			provider, err = providers.NewGeminiProvider(o.ctx, o.logger, providerConfig, o.metrics)
+		case common.ProviderHtx:
+			provider, err = providers.NewHtxProvider(o.ctx, o.logger, providerConfig, o.metrics)
 		case common.ProviderKraken:
 			provider, err = providers.NewKrakenProvider(o.ctx, o.logger, providerConfig, o.metrics)
+		case common.ProviderMexc:
+			provider, err = providers.NewMexcProvider(o.ctx, o.logger, providerConfig, o.metrics)
 		case common.ProviderOkx:
 			provider, err = providers.NewOkxProvider(o.ctx, o.logger, providerConfig, o.metrics)
 		default:
