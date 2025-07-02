@@ -183,6 +183,8 @@ func (o *Oracle) LoadProviders() error {
 		switch providerName {
 		case common.ProviderBinance:
 			provider, err = providers.NewBinanceProvider(o.ctx, o.logger, providerConfig, o.metrics)
+		case common.ProviderBitfinex:
+			provider, err = providers.NewBitfinexProvider(o.ctx, o.logger, providerConfig, o.metrics)
 		case common.ProviderBitget:
 			provider, err = providers.NewBitgetProvider(o.ctx, o.logger, providerConfig, o.metrics)
 		case common.ProviderBitstamp:

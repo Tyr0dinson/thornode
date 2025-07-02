@@ -151,27 +151,29 @@ func (p *BinanceProvider) Subscribe() error {
 func (p *BinanceProvider) HandleWsMessage(msg []byte) error {
 	var ticker BinanceWsTicker
 	err := json.Unmarshal(msg, &ticker)
-	if err != nil {
-		p.logger.Err(err).Msg("error unmarshalling msg")
-		return err
-	}
 
-	pair, found := p.pairs[ticker.Symbol]
-	if !found {
+	if err == nil && ticker.Symbol != "" {
+		p.logger.Err(err).Msg("error unmarshalling msg")
+
+		pair, found := p.pairs[ticker.Symbol]
+		if !found {
+			return nil
+		}
+
+		timestamp := time.Now()
+
+		p.setTicker(
+			timestamp,
+			pair,
+			strToFloat(ticker.Price),
+			strToFloat(ticker.BaseVolume),
+			strToFloat(ticker.QuoteVolume),
+		)
+
 		return nil
 	}
 
-	timestamp := time.Now()
-
-	p.setTicker(
-		timestamp,
-		pair,
-		strToFloat(ticker.Price),
-		strToFloat(ticker.BaseVolume),
-		strToFloat(ticker.QuoteVolume),
-	)
-
-	return nil
+	return ErrUnknownWsMsg
 }
 
 func (p *BinanceProvider) Pong() {

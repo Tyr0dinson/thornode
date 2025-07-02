@@ -402,6 +402,8 @@ bifrost:
         - BTC/USD
         - ETH/USD
         - USDT/USD
+      symbol_mapping:
+        - USDT/USD=tUSTUSD
 
     bitget:
       polling_interval: 2s
@@ -421,7 +423,6 @@ bifrost:
         - BTC/USD
         - USDC/USD
         - USDT/USD
-
 
     bybit:
       polling_interval: 5s
@@ -443,7 +444,7 @@ bifrost:
         - wss://ws-feed.exchange.coinbase.com
       pairs:
         - BTC/USD
-        - USDC/USD
+        - ETH/USD
         - USDT/USD
 
     crypto:

@@ -499,6 +499,7 @@ type Bifrost struct {
 	Oracle          BifrostOracleConfiguration `mapstructure:"oracle"`
 	Providers       struct {
 		Binance  BifrostOracleProviderConfiguration `mapstructure:"binance"`
+		Bitfinex BifrostOracleProviderConfiguration `mapstructure:"bitfinex"`
 		Bitget   BifrostOracleProviderConfiguration `mapstructure:"bitget"`
 		Bitstamp BifrostOracleProviderConfiguration `mapstructure:"bitstamp"`
 		Bybit    BifrostOracleProviderConfiguration `mapstructure:"bybit"`
@@ -531,6 +532,7 @@ func (b Bifrost) GetChains() map[common.Chain]BifrostChainConfiguration {
 func (b Bifrost) GetProviders() map[string]BifrostOracleProviderConfiguration {
 	return map[string]BifrostOracleProviderConfiguration{
 		common.ProviderBinance:  b.Providers.Binance,
+		common.ProviderBitfinex: b.Providers.Bitfinex,
 		common.ProviderBitget:   b.Providers.Bitget,
 		common.ProviderBitstamp: b.Providers.Bitstamp,
 		common.ProviderBybit:    b.Providers.Bybit,
