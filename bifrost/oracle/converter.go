@@ -2,21 +2,23 @@ package oracle
 
 import (
 	"fmt"
+	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/types"
 	"math/big"
 	"sort"
 )
 
 const (
-	maxConversionSteps = 3
-	// maxVolumePercentage = 0.4
-	minProviders = 1
-	maxDeviation = 1
+	maxConversionSteps  = 3
+	maxVolumePercentage = 0.4
+	minProviders        = 1
+	maxDeviation        = 1.5
 )
 
 type Converter struct {
 	tickers map[string]map[string]types.Ticker // by symbol, provider: tickers[BTC/USDC][binance]
 	rates   map[string]map[string]types.Ticker // by denom, provider: rates[BTC][binance]
+	metrics metrics.Metrics
 }
 
 func NewConverter(tickers map[string]map[string]types.Ticker) *Converter {
@@ -37,91 +39,132 @@ func (c *Converter) AddRate(denom, provider string, rate types.Ticker) {
 
 // GetRate returns the USD rate of the provided denom by filtering known
 // prices in regards to maxDeviation and computing the volume weighted average
-func (c *Converter) GetRate(denom string) (*big.Float, error) {
+func (c *Converter) GetRate(denom string) (*big.Float, *big.Float, error) {
 	rates, found := c.rates[denom]
 	if !found || len(rates) < minProviders {
-		return nil, fmt.Errorf("not enough rates")
+		return nil, nil, fmt.Errorf("not enough rates")
 	}
 
 	var err error
 	rates, err = FilterDeviations(rates)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	return ComputeVwap(rates)
+	volume := new(big.Float)
+
+	// replace volume totals with capped percentages
+	values := map[string]*big.Float{}
+	for provider, rate := range rates {
+		values[provider] = new(big.Float).Copy(rate.Volume)
+		volume.Add(volume, rate.Volume)
+	}
+
+	threshold := big.NewFloat(maxVolumePercentage)
+	for provider, percent := range ComputeCappedPercentage(values, threshold) {
+		rates[provider].Volume.Copy(percent)
+	}
+
+	rate, err := ComputeVwap(rates)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return rate, volume, nil
 }
 
-// TODO: sanity check the reported volume maybe by tracking historic ratios between all configured providers
 func (c *Converter) ConvertToUsd() (map[string]*big.Float, error) {
-	// dedup symbols and add usd rates
+	pairsByQuote := map[string][]types.CurrencyPair{}
 	symbols := map[string]struct{}{}
-	pairs := []types.CurrencyPair{}
-	for symbol, tickers := range c.tickers {
+	for _, tickers := range c.tickers {
 		for provider, ticker := range tickers {
 			if ticker.Pair.Base == "USD" {
-				// we are looking for the base price in usd,
+				// we are looking for the base price in USD,
 				// this wouldn't make sense
 				continue
 			}
 
-			if ticker.Pair.Quote == "USD" {
+			quote := ticker.Pair.Quote
+
+			if quote == "USD" {
 				c.AddRate(ticker.Pair.Base, provider, ticker)
 				continue
 			}
 
-			_, found := symbols[symbol]
+			_, found := pairsByQuote[quote]
+			if !found {
+				pairsByQuote[quote] = []types.CurrencyPair{}
+			}
+
+			// dedup ticker symbols
+			symbol := ticker.Pair.String()
+			_, found = symbols[symbol]
 			if found {
 				continue
 			}
-
 			symbols[symbol] = struct{}{}
-			pairs = append(pairs, ticker.Pair)
+
+			pairsByQuote[quote] = append(pairsByQuote[quote], ticker.Pair)
 		}
 	}
 
-	// sort pairs, so new usd rates for a given base asset can be calculated
-	// at once, and in turn could be used for the next assets
-
-	sort.Slice(pairs, func(i, j int) bool {
-		return pairs[i].String() < pairs[j].String()
-	})
-
 	for round := 0; round < maxConversionSteps; round++ {
-		unresolved := []types.CurrencyPair{}
-
-		for _, pair := range pairs {
-			symbol := pair.String()
-			base := pair.Base
-			quote := pair.Quote
-
-			rate, err := c.GetRate(quote)
+		rates := []types.Ticker{}
+		for denom := range c.rates {
+			rate, volume, err := c.GetRate(denom)
 			if err != nil {
-				unresolved = append(unresolved, pair)
+				continue
+			}
+			rates = append(rates, types.Ticker{
+				Pair:   types.CurrencyPair{Base: denom, Quote: "USD"},
+				Price:  rate,
+				Volume: new(big.Float).Mul(volume, rate),
+			})
+		}
+
+		// sort rates by volume, so we convert pairs with the highes volume for
+		// the quote asset first
+
+		sort.Slice(rates, func(i, j int) bool {
+			return rates[i].Volume.Cmp(rates[j].Volume) > 0
+		})
+
+		for i := range rates {
+			// rate is BTC/USD, so we are looking for x/BTC pairs
+			quote := rates[i].Pair.Base
+			pairs, found := pairsByQuote[quote]
+			if !found {
 				continue
 			}
 
-			// get all tickers for the current symbol
-			tickers := c.tickers[symbol]
-			for provider, ticker := range tickers {
-				c.AddRate(base, provider, types.Ticker{
-					Price:  new(big.Float).Mul(ticker.Price, rate),
-					Volume: new(big.Float).Copy(ticker.Volume),
-					Time:   ticker.Time,
-				})
+			// get fresh rate, in case it was updated in the during this round
+			rate, _, err := c.GetRate(quote)
+			if err != nil {
+				continue
+			}
+
+			for _, pair := range pairs {
+				symbol := pair.String()
+				base := pair.Base
+
+				// get all tickers for the current symbol
+				tickers := c.tickers[symbol]
+				for provider, ticker := range tickers {
+					c.AddRate(base, provider, types.Ticker{
+						Price:  new(big.Float).Mul(ticker.Price, rate),
+						Volume: new(big.Float).Copy(ticker.Volume),
+						Time:   ticker.Time,
+					})
+				}
+
+				delete(pairsByQuote, quote)
 			}
 		}
 
-		// Stop if there are no unresolved symbols left or no symbol could
-		// be converted, in which case the list of unresolved symbols is
-		// the same as the list of pairs
-		if len(unresolved) == 0 || len(unresolved) == len(pairs) {
+		// Stop if all pairs could be resolved
+		if len(pairsByQuote) == 0 {
 			break
 		}
-
-		// Try the next round with all unresolved symbols
-		pairs = []types.CurrencyPair{}
-		pairs = append(pairs, unresolved...)
 	}
 
 	// get all rates
@@ -129,7 +172,7 @@ func (c *Converter) ConvertToUsd() (map[string]*big.Float, error) {
 	rates := map[string]*big.Float{}
 
 	for denom := range c.rates {
-		rate, err := c.GetRate(denom)
+		rate, _, err := c.GetRate(denom)
 		if err != nil {
 			continue
 		}
@@ -190,7 +233,7 @@ func FilterDeviations(tickers map[string]types.Ticker) (map[string]types.Ticker,
 	filtered := map[string]types.Ticker{}
 	for provider, ticker := range tickers {
 		price := ticker.Price
-		if price.Cmp(lowerBound) == 1 && price.Cmp(upperBound) == -1 {
+		if price.Cmp(lowerBound) >= 0 && price.Cmp(upperBound) <= 0 {
 			filtered[provider] = ticker
 		}
 	}
@@ -218,4 +261,66 @@ func ComputeVwap(tickers map[string]types.Ticker) (*big.Float, error) {
 	}
 
 	return new(big.Float).Quo(weightedPriceSum, volumeSum), nil
+}
+
+func ComputePercentage(
+	values map[string]*big.Float,
+) map[string]*big.Float {
+	total := new(big.Float)
+	for _, value := range values {
+		total.Add(total, value)
+	}
+
+	percentage := map[string]*big.Float{}
+	for provider, value := range values {
+		percentage[provider] = new(big.Float).Quo(value, total)
+	}
+
+	return percentage
+}
+
+func ComputeCappedPercentage(
+	values map[string]*big.Float,
+	cap *big.Float,
+) map[string]*big.Float {
+	return RedistributePercentage(ComputePercentage(values), new(big.Float), cap)
+}
+
+func RedistributePercentage(
+	values map[string]*big.Float,
+	amount, cap *big.Float,
+) map[string]*big.Float {
+	total := new(big.Float)
+	remain := new(big.Float)
+
+	for _, value := range values {
+		total.Add(total, value)
+	}
+
+	percentages := ComputePercentage(values)
+	capped := map[string]*big.Float{}
+
+	for k, v := range values {
+		share := new(big.Float).Mul(percentages[k], amount)
+		value := new(big.Float).Add(v, share)
+		if value.Cmp(cap) >= 0 {
+			remain.Sub(value, cap)
+			capped[k] = new(big.Float).Copy(cap)
+			delete(values, k)
+		} else {
+			values[k].Add(v, share)
+		}
+	}
+
+	if remain.Cmp(cap) > 0 && len(values) > 0 {
+		for k, v := range RedistributePercentage(values, remain, cap) {
+			capped[k] = new(big.Float).Copy(v)
+		}
+	}
+
+	for k, v := range values {
+		capped[k] = new(big.Float).Copy(v)
+	}
+
+	return capped
 }

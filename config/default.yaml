@@ -390,6 +390,7 @@ bifrost:
         - wss://stream.binance.com:9443/ws
       pairs:
         - BTC/USDT
+        - ETH/USDT
         - USDC/USDT
 
     bitfinex:
@@ -434,6 +435,7 @@ bifrost:
         - wss://stream.bybit.com/v5/public/spot
       pairs:
         - BTC/USDT
+        - ETH/USDT
         - USDC/USDT
 
     coinbase:
