@@ -186,16 +186,18 @@ func (p *baseProvider) setTicker(
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
 
-	p.tickers[pair.String()] = types.Ticker{
+	symbol := pair.String()
+	p.tickers[symbol] = types.Ticker{
 		Time:   timestamp,
 		Pair:   pair,
 		Price:  price,
 		Volume: baseVolume,
 	}
 
-	p.metrics.UpdateProviderTicker(p.name, p.tickers[pair.String()])
+	p.metrics.UpdateProviderTicker(p.name, p.tickers[symbol])
 
-	if quoteVolume == nil {
+	// no need to store USD/x pairs
+	if quoteVolume == nil || pair.Quote == "USD" {
 		return
 	}
 
@@ -205,14 +207,15 @@ func (p *baseProvider) setTicker(
 		return
 	}
 
-	p.tickers[pair.Swap().String()] = types.Ticker{
+	symbol = pair.Swap().String()
+	p.tickers[symbol] = types.Ticker{
 		Time:   timestamp,
 		Pair:   pair.Swap(),
 		Price:  new(big.Float).Quo(big.NewFloat(1), price),
 		Volume: quoteVolume,
 	}
 
-	p.metrics.UpdateProviderTicker(p.name, p.tickers[pair.String()])
+	p.metrics.UpdateProviderTicker(p.name, p.tickers[symbol])
 }
 
 func (p *baseProvider) httpGet(path string) ([]byte, error) {

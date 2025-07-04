@@ -3,15 +3,16 @@ package metrics
 import (
 	"github.com/prometheus/client_golang/prometheus"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/types"
+	"math/big"
 )
 
 type Metrics struct {
-	providerRate          *prometheus.GaugeVec
-	providerVolume        *prometheus.GaugeVec
-	providerUpdate        *prometheus.CounterVec
-	converterRate         *prometheus.GaugeVec
-	converterVolume       *prometheus.GaugeVec
-	converterCappedVolume *prometheus.GaugeVec
+	providerRate    *prometheus.GaugeVec
+	providerVolume  *prometheus.GaugeVec
+	providerUpdate  *prometheus.CounterVec
+	providerPrice   *prometheus.GaugeVec
+	providerBound   *prometheus.GaugeVec
+	converterVolume *prometheus.GaugeVec
 }
 
 func NewMetrics() *Metrics {
@@ -40,29 +41,29 @@ func NewMetrics() *Metrics {
 				Help:      "number of price updates for trading pair",
 			}, []string{"provider", "base", "quote"},
 		),
-		converterRate: prometheus.NewGaugeVec(
+		providerPrice: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Namespace: "oracle",
-				Subsystem: "converter",
-				Name:      "rate",
-				Help:      "rate for asset calculated by converter",
-			}, []string{"provider", "base"},
+				Subsystem: "provider",
+				Name:      "price",
+				Help:      "calculated asset price in USD",
+			}, []string{"provider", "denom"},
+		),
+		providerBound: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Namespace: "oracle",
+				Subsystem: "provider",
+				Name:      "bounds",
+				Help:      "upper and lower bounds allowed for price calculation",
+			}, []string{"denom", "type"},
 		),
 		converterVolume: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Namespace: "oracle",
 				Subsystem: "converter",
-				Name:      "volume",
+				Name:      "volume_usd",
 				Help:      "volume for asset calculated by converter",
-			}, []string{"provider", "base"},
-		),
-		converterCappedVolume: prometheus.NewGaugeVec(
-			prometheus.GaugeOpts{
-				Namespace: "oracle",
-				Subsystem: "converter",
-				Name:      "capped_volume",
-				Help:      "capped volume for asset calculated by converter",
-			}, []string{"provider", "base"},
+			}, []string{"provider", "denom", "type"},
 		),
 	}
 
@@ -73,9 +74,9 @@ func (m *Metrics) Register() {
 	prometheus.MustRegister(m.providerRate)
 	prometheus.MustRegister(m.providerVolume)
 	prometheus.MustRegister(m.providerUpdate)
-	prometheus.MustRegister(m.converterRate)
+	prometheus.MustRegister(m.providerPrice)
+	prometheus.MustRegister(m.providerBound)
 	prometheus.MustRegister(m.converterVolume)
-	prometheus.MustRegister(m.converterCappedVolume)
 }
 
 func (m *Metrics) UpdateProviderTicker(provider string, ticker types.Ticker) {
@@ -87,4 +88,26 @@ func (m *Metrics) UpdateProviderTicker(provider string, ticker types.Ticker) {
 	m.providerRate.WithLabelValues(provider, base, quote).Set(rate)
 	m.providerVolume.WithLabelValues(provider, base, quote).Set(volume)
 	m.providerUpdate.WithLabelValues(provider, base, quote).Add(1)
+}
+
+func (m *Metrics) UpdateProviderPrice(provider, denom string, price *big.Float) {
+	value, _ := price.Float64()
+	m.providerPrice.WithLabelValues(provider, denom).Set(value)
+}
+
+func (m *Metrics) UpdateConverterCappedVolume(provider, denom string, volume *big.Float) {
+	value, _ := volume.Float64()
+	m.converterVolume.WithLabelValues(provider, denom, "capped").Set(value)
+}
+
+func (m *Metrics) UpdateConverterTotalVolume(provider, denom string, volume *big.Float) {
+	value, _ := volume.Float64()
+	m.converterVolume.WithLabelValues(provider, denom, "total").Set(value)
+}
+
+func (m *Metrics) UpdateProviderBounds(denom string, upper, lower *big.Float) {
+	u, _ := upper.Float64()
+	l, _ := lower.Float64()
+	m.providerBound.WithLabelValues(denom, "upper").Set(u)
+	m.providerBound.WithLabelValues(denom, "lower").Set(l)
 }

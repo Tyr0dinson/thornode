@@ -13,11 +13,10 @@ type Ticker struct {
 	Volume *big.Float
 }
 
-func (t *Ticker) String() string {
+func (t Ticker) String() string {
 	return fmt.Sprintf(
-		"%s [%s] p=%s, v=%s",
+		"s=%s p=%s, v=%s",
 		t.Pair.Join("/"),
-		t.Time.Format(time.Stamp),
 		t.Price.Text('f', -1),
 		t.Volume.Text('f', -1),
 	)

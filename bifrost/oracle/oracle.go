@@ -10,7 +10,6 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
 	"math/big"
-	"os"
 	"sync"
 	"time"
 
@@ -116,40 +115,10 @@ func (o *Oracle) GetTickers() []*common.OraclePrice {
 				tickerBySymbol[symbol] = map[string]types.Ticker{}
 			}
 			tickerBySymbol[symbol][name] = ticker
-
-			//   DEBUG
-			// ------------------------
-
-			if name != "binance" || ticker.Pair.Base != "BTC" {
-				continue
-			}
-
-			if os.Getuid() != 1001 {
-				continue
-			}
-
-			symbol = ticker.Pair.Join("")
-
-			filename := fmt.Sprintf("/dev/shm/debug-bifrost-%s-%s.txt", name, symbol)
-			f, err := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-			if err != nil {
-				continue
-			}
-			defer f.Close()
-
-			line := fmt.Sprintf(
-				"enshrined_oracle,source=bifrost,provider=%s,symbol=%s value=%s %d\n",
-				name,
-				symbol,
-				ticker.Price.Text('f', -1),
-				time.Now().UnixNano(),
-			)
-
-			_, _ = f.WriteString(line)
 		}
 	}
 
-	converter := NewConverter(tickerBySymbol)
+	converter := NewConverter(tickerBySymbol, o.metrics)
 	rates, err := converter.ConvertToUsd()
 	if err != nil {
 		o.logger.Err(err).Msg("Error converting usd")

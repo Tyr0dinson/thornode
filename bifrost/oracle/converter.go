@@ -18,13 +18,17 @@ const (
 type Converter struct {
 	tickers map[string]map[string]types.Ticker // by symbol, provider: tickers[BTC/USDC][binance]
 	rates   map[string]map[string]types.Ticker // by denom, provider: rates[BTC][binance]
-	metrics metrics.Metrics
+	metrics *metrics.Metrics
 }
 
-func NewConverter(tickers map[string]map[string]types.Ticker) *Converter {
+func NewConverter(
+	tickers map[string]map[string]types.Ticker,
+	metrics *metrics.Metrics,
+) *Converter {
 	return &Converter{
 		tickers: tickers,
 		rates:   map[string]map[string]types.Ticker{},
+		metrics: metrics,
 	}
 }
 
@@ -34,41 +38,73 @@ func (c *Converter) AddRate(denom, provider string, rate types.Ticker) {
 		c.rates[denom] = map[string]types.Ticker{}
 	}
 
+	_, found = c.rates[denom][provider]
+	if found {
+		// don't overwrite
+		return
+	}
+
 	c.rates[denom][provider] = rate
 }
 
 // GetRate returns the USD rate of the provided denom by filtering known
-// prices in regards to maxDeviation and computing the volume weighted average
-func (c *Converter) GetRate(denom string) (*big.Float, *big.Float, error) {
+// prices with regard to maxDeviation and computing the volume weighted average
+func (c *Converter) GetRate(denom string, metrics bool) (*big.Float, *big.Float, error) {
 	rates, found := c.rates[denom]
+	if metrics {
+		for provider, rate := range rates {
+			c.metrics.UpdateProviderPrice(provider, denom, rate.Price)
+		}
+	}
+
 	if !found || len(rates) < minProviders {
 		return nil, nil, fmt.Errorf("not enough rates")
 	}
 
-	var err error
-	rates, err = FilterDeviations(rates)
+	rates, lowerBound, upperBound, err := FilterDeviations(rates)
 	if err != nil {
 		return nil, nil, err
+	}
+
+	if metrics {
+		c.metrics.UpdateProviderBounds(denom, upperBound, lowerBound)
 	}
 
 	volume := new(big.Float)
 
-	// replace volume totals with capped percentages
-	values := map[string]*big.Float{}
+	prices := map[string]*big.Float{}
+	volumes := map[string]*big.Float{}
+
 	for provider, rate := range rates {
-		values[provider] = new(big.Float).Copy(rate.Volume)
+		prices[provider] = new(big.Float).Copy(rate.Price)
+		volumes[provider] = new(big.Float).Copy(rate.Volume)
+
 		volume.Add(volume, rate.Volume)
+		if metrics {
+			c.metrics.UpdateConverterTotalVolume(provider, denom, rate.Volume)
+		}
 	}
 
+	// replace volume totals with capped percentages
 	threshold := big.NewFloat(maxVolumePercentage)
-	for provider, percent := range ComputeCappedPercentage(values, threshold) {
-		rates[provider].Volume.Copy(percent)
+	for provider, percent := range ComputeCappedPercentage(volumes, threshold) {
+		volumes[provider].Copy(percent)
+		if metrics {
+			c.metrics.UpdateConverterCappedVolume(provider, denom, percent)
+		}
 	}
 
-	rate, err := ComputeVwap(rates)
+	rate, err := ComputeVwap(prices, volumes)
 	if err != nil {
 		return nil, nil, err
 	}
+
+	if metrics {
+		c.metrics.UpdateProviderPrice("final", denom, rate)
+	}
+
+	// estimate volume in USD
+	volume.Mul(volume, rate)
 
 	return rate, volume, nil
 }
@@ -109,9 +145,9 @@ func (c *Converter) ConvertToUsd() (map[string]*big.Float, error) {
 	}
 
 	for round := 0; round < maxConversionSteps; round++ {
-		rates := []types.Ticker{}
+		var rates []types.Ticker
 		for denom := range c.rates {
-			rate, volume, err := c.GetRate(denom)
+			rate, volume, err := c.GetRate(denom, false)
 			if err != nil {
 				continue
 			}
@@ -137,8 +173,8 @@ func (c *Converter) ConvertToUsd() (map[string]*big.Float, error) {
 				continue
 			}
 
-			// get fresh rate, in case it was updated in the during this round
-			rate, _, err := c.GetRate(quote)
+			// get fresh rate, in case it was updated  during this round
+			rate, _, err := c.GetRate(quote, false)
 			if err != nil {
 				continue
 			}
@@ -151,14 +187,15 @@ func (c *Converter) ConvertToUsd() (map[string]*big.Float, error) {
 				tickers := c.tickers[symbol]
 				for provider, ticker := range tickers {
 					c.AddRate(base, provider, types.Ticker{
+						Pair:   types.CurrencyPair{Base: base, Quote: quote},
 						Price:  new(big.Float).Mul(ticker.Price, rate),
 						Volume: new(big.Float).Copy(ticker.Volume),
 						Time:   ticker.Time,
 					})
 				}
-
-				delete(pairsByQuote, quote)
 			}
+
+			delete(pairsByQuote, quote)
 		}
 
 		// Stop if all pairs could be resolved
@@ -172,7 +209,7 @@ func (c *Converter) ConvertToUsd() (map[string]*big.Float, error) {
 	rates := map[string]*big.Float{}
 
 	for denom := range c.rates {
-		rate, _, err := c.GetRate(denom)
+		rate, _, err := c.GetRate(denom, true)
 		if err != nil {
 			continue
 		}
@@ -214,7 +251,9 @@ func ComputeStandardDeviation(values []*big.Float) (*big.Float, *big.Float, erro
 	return deviation, mean, nil
 }
 
-func FilterDeviations(tickers map[string]types.Ticker) (map[string]types.Ticker, error) {
+func FilterDeviations(
+	tickers map[string]types.Ticker,
+) (map[string]types.Ticker, *big.Float, *big.Float, error) {
 	values := []*big.Float{}
 	for _, ticker := range tickers {
 		values = append(values, ticker.Price)
@@ -222,7 +261,7 @@ func FilterDeviations(tickers map[string]types.Ticker) (map[string]types.Ticker,
 
 	deviation, mean, err := ComputeStandardDeviation(values)
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
 
 	margin := new(big.Float).Mul(deviation, big.NewFloat(maxDeviation))
@@ -233,34 +272,39 @@ func FilterDeviations(tickers map[string]types.Ticker) (map[string]types.Ticker,
 	filtered := map[string]types.Ticker{}
 	for provider, ticker := range tickers {
 		price := ticker.Price
-		if price.Cmp(lowerBound) >= 0 && price.Cmp(upperBound) <= 0 {
-			filtered[provider] = ticker
+		if price.Cmp(lowerBound) == -1 || price.Cmp(upperBound) == 1 {
+			continue
 		}
+		filtered[provider] = ticker
 	}
 
-	return filtered, nil
+	return filtered, lowerBound, upperBound, nil
 }
 
-func ComputeVwap(tickers map[string]types.Ticker) (*big.Float, error) {
-	if len(tickers) == 0 {
-		return nil, fmt.Errorf("not enough tickers for vwap calculation")
+func ComputeVwap(prices, volumes map[string]*big.Float) (*big.Float, error) {
+	if len(prices) == 0 {
+		return nil, fmt.Errorf("not enough value for calculation")
 	}
 
-	volumeSum := new(big.Float)
-	weightedPriceSum := new(big.Float)
+	if len(prices) != len(volumes) {
+		return nil, fmt.Errorf("amount of values and weights don't match")
+	}
 
-	for _, ticker := range tickers {
-		volumeSum.Add(volumeSum, ticker.Volume)
-		weightedPrice := new(big.Float).Mul(ticker.Price, ticker.Volume)
-		weightedPriceSum.Add(weightedPriceSum, weightedPrice)
+	weightedTotal := new(big.Float)
+	totalVolume := new(big.Float)
+
+	for k, rate := range prices {
+		weightedPrice := new(big.Float).Mul(rate, volumes[k])
+		weightedTotal.Add(weightedTotal, weightedPrice)
+		totalVolume.Add(totalVolume, volumes[k])
 	}
 
 	// zero
-	if volumeSum.Cmp(new(big.Float)) == 0 {
-		volumeSum = big.NewFloat(1)
+	if totalVolume.Cmp(new(big.Float)) == 0 {
+		totalVolume = big.NewFloat(1)
 	}
 
-	return new(big.Float).Quo(weightedPriceSum, volumeSum), nil
+	return new(big.Float).Quo(weightedTotal, totalVolume), nil
 }
 
 func ComputePercentage(
@@ -269,6 +313,10 @@ func ComputePercentage(
 	total := new(big.Float)
 	for _, value := range values {
 		total.Add(total, value)
+	}
+
+	if total.Cmp(new(big.Float)) == 0 {
+		return values
 	}
 
 	percentage := map[string]*big.Float{}
@@ -304,7 +352,7 @@ func RedistributePercentage(
 		share := new(big.Float).Mul(percentages[k], amount)
 		value := new(big.Float).Add(v, share)
 		if value.Cmp(cap) >= 0 {
-			remain.Sub(value, cap)
+			remain.Add(remain, new(big.Float).Sub(value, cap))
 			capped[k] = new(big.Float).Copy(cap)
 			delete(values, k)
 		} else {
@@ -312,7 +360,7 @@ func RedistributePercentage(
 		}
 	}
 
-	if remain.Cmp(cap) > 0 && len(values) > 0 {
+	if remain.Cmp(new(big.Float)) > 0 && len(values) > 0 {
 		for k, v := range RedistributePercentage(values, remain, cap) {
 			capped[k] = new(big.Float).Copy(v)
 		}

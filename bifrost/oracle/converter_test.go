@@ -1,6 +1,8 @@
 package oracle
 
 import (
+	"fmt"
+	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/types"
 	. "gopkg.in/check.v1"
 	"math/big"
@@ -44,6 +46,63 @@ func (s *ConverterTestSuite) TestStandardDeviation(c *C) {
 	c.Assert(mean.Text('f', -1), Equals, "30.2")
 }
 
+func (s *ConverterTestSuite) TestCappedPercent(c *C) {
+	testCases := []struct {
+		Threshold float64
+		Precision int
+		Values    []float64
+		Result    []string
+	}{
+		{
+			Threshold: 0.4,
+			Precision: 1,
+			Values:    []float64{50, 40, 10},
+			Result:    []string{"0.4", "0.4", "0.2"},
+		},
+		{
+			Threshold: 0.25,
+			Precision: 2,
+			Values:    []float64{40, 35, 10, 10, 5},
+			Result:    []string{"0.25", "0.25", "0.20", "0.20", "0.10"},
+		},
+		{
+			Threshold: 0.125,
+			Precision: 3,
+			Values:    []float64{100, 3, 2, 1, 0},
+			Result:    []string{"0.125", "0.125", "0.125", "0.125", "0.000"},
+		},
+		{
+			Threshold: 0,
+			Precision: 0,
+			Values:    []float64{99, 1},
+			Result:    []string{"0", "0"},
+		},
+		{
+			Threshold: 1,
+			Precision: 2,
+			Values:    []float64{1, 99},
+			Result:    []string{"0.01", "0.99"},
+		},
+	}
+
+	for _, tc := range testCases {
+		values := map[string]*big.Float{}
+		results := map[string]string{}
+
+		for i, value := range tc.Values {
+			key := fmt.Sprintf("%d", i)
+			values[key] = big.NewFloat(value)
+			results[key] = tc.Result[i]
+		}
+
+		threshold := big.NewFloat(tc.Threshold)
+
+		for key, value := range ComputeCappedPercentage(values, threshold) {
+			c.Assert(value.Text('f', tc.Precision), Equals, results[key])
+		}
+	}
+}
+
 func (s *ConverterTestSuite) TestUsdConversion(c *C) {
 	// Test if USD rate calculation favors rates with higher volume
 	// Convert USDT/BTC rates first (vol: ~1.75b USD)
@@ -77,15 +136,15 @@ func (s *ConverterTestSuite) TestUsdConversion(c *C) {
 		},
 	}
 
-	converter := NewConverter(tickersBySymbol)
+	converter := NewConverter(tickersBySymbol, metrics.NewMetrics())
 
 	rates, err := converter.ConvertToUsd()
 	c.Assert(err, IsNil)
 	c.Assert(len(rates), Equals, 3)
 	c.Assert(rates["BTC"].Text('f', 1), Equals, "100000.0")
 	// most volume from USDT/BTC pairs, so nearly 1.001 USD
-	c.Assert(rates["USDT"].Text('f', 4), Equals, "1.0010")
+	c.Assert(rates["USDT"].Text('f', 8), Equals, "1.00112910")
 	// USDT/USD updated with USDT/BTC pairs before converting, ETH/USDT
-	// 2600 * 1.001 = 2602.6
-	c.Assert(rates["ETH"].Text('f', 2), Equals, "2602.60")
+	// 2600 * 1.00112910 ~ 2602.94
+	c.Assert(rates["ETH"].Text('f', 2), Equals, "2602.94")
 }
