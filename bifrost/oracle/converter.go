@@ -73,28 +73,39 @@ func (c *Converter) GetRate(denom string, metrics bool) (*big.Float, *big.Float,
 	volume := new(big.Float)
 
 	prices := map[string]*big.Float{}
-	volumes := map[string]*big.Float{}
+	totalVolumes := map[string]*big.Float{}
+	cappedVolumes := map[string]*big.Float{}
 
 	for provider, rate := range rates {
 		prices[provider] = new(big.Float).Copy(rate.Price)
-		volumes[provider] = new(big.Float).Copy(rate.Volume)
-
+		totalVolumes[provider] = new(big.Float).Copy(rate.Volume)
 		volume.Add(volume, rate.Volume)
-		if metrics {
-			c.metrics.UpdateConverterTotalVolume(provider, denom, rate.Volume)
-		}
 	}
 
 	// replace volume totals with capped percentages
 	threshold := big.NewFloat(maxVolumePercentage)
-	for provider, percent := range ComputeCappedPercentage(volumes, threshold) {
-		volumes[provider].Copy(percent)
-		if metrics {
-			c.metrics.UpdateConverterCappedVolume(provider, denom, percent)
+	for provider, percent := range ComputeCappedPercentage(totalVolumes, threshold) {
+		cappedVolumes[provider] = new(big.Float).Copy(percent)
+	}
+
+	if metrics {
+		for provider := range c.rates[denom] {
+			total, found := totalVolumes[provider]
+			if !found {
+				total = new(big.Float)
+			}
+
+			capped, found := cappedVolumes[provider]
+			if !found {
+				capped = new(big.Float)
+			}
+
+			c.metrics.UpdateConverterTotalVolume(provider, denom, total)
+			c.metrics.UpdateConverterCappedVolume(provider, denom, capped)
 		}
 	}
 
-	rate, err := ComputeVwap(prices, volumes)
+	rate, err := ComputeVwap(prices, cappedVolumes)
 	if err != nil {
 		return nil, nil, err
 	}

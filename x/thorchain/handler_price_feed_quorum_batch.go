@@ -9,16 +9,31 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 	"math/big"
-	"os"
 	"sort"
-	"strings"
 	"time"
 )
 
 const (
-	requiredRates = "BTC,ETH,USDT"
-	maxDeviation  = 1
+	maxDeviation = 1
 )
+
+var RequiredRates = []string{
+	"BTC",
+	"ETH",
+	"USDT",
+	"XRP",
+	"BNB",
+	"SOL",
+	"USDC",
+	"TRX",
+	"DOGE",
+	"ADA",
+	"BCH",
+	"AVAX",
+	"TON",
+	"LTC",
+	"ATOM",
+}
 
 // PriceFeedQuorum to handle MsgObservedTx
 type PriceFeedQuorumBatchHandler struct {
@@ -67,7 +82,7 @@ func (h PriceFeedQuorumBatchHandler) handle(ctx cosmos.Context, msg types.MsgPri
 
 	// [BTC][thor1...]*big.Float{}
 	pricesByAsset := map[string]map[string]*big.Float{}
-	for _, symbol := range strings.Split(requiredRates, ",") {
+	for _, symbol := range RequiredRates {
 		pricesByAsset[symbol] = map[string]*big.Float{}
 	}
 
@@ -114,6 +129,7 @@ func (h PriceFeedQuorumBatchHandler) handle(ctx cosmos.Context, msg types.MsgPri
 				missingPrices[node.NodeAddress.String()]++
 				continue
 			}
+			h.telemetryPrice(symbol, node.NodeAddress.String(), price)
 			allPricesForSymbol = append(allPricesForSymbol, price)
 		}
 
@@ -127,6 +143,8 @@ func (h PriceFeedQuorumBatchHandler) handle(ctx cosmos.Context, msg types.MsgPri
 
 		lowerBound := new(big.Float).Sub(median, margin)
 		upperBound := new(big.Float).Add(median, margin)
+
+		h.telemetryBounds(symbol, upperBound, lowerBound)
 
 		for node, price := range priceByNode {
 			if price.Cmp(lowerBound) == -1 || price.Cmp(upperBound) == 1 {
@@ -144,37 +162,12 @@ func (h PriceFeedQuorumBatchHandler) handle(ctx cosmos.Context, msg types.MsgPri
 			ctx.Logger().Error("fail to set price", "err", err)
 		}
 
-		h.telemetryPrice(symbol, median, upperBound, lowerBound)
+		h.telemetryPrice(symbol, "final", median)
 
 		priceEvent := NewEventOraclePrice(symbol, oraclePrice.Price)
 		err = h.mgr.EventMgr().EmitEvent(ctx, priceEvent)
 		if err != nil {
 			ctx.Logger().Error("fail to emit switch event", "error", err)
-		}
-
-		// TODO: Remove Debugging
-		// TODO: --------------------------------------------------------------
-
-		if symbol == "BTC" {
-			if os.Getuid() != 1001 {
-				continue
-			}
-
-			filename := fmt.Sprintf("/dev/shm/debug-thornode-%s.txt", symbol)
-			f, err := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-			if err != nil {
-				continue
-			}
-			defer f.Close()
-
-			line := fmt.Sprintf(
-				"enshrined_oracle,source=thornode,symbol=%s value=%s %d\n",
-				symbol,
-				median.Text('f', -1),
-				time.Now().UnixNano(),
-			)
-
-			_, _ = f.WriteString(line)
 		}
 	}
 
@@ -227,14 +220,13 @@ func (h PriceFeedQuorumBatchHandler) handleQuorumPriceFeed(
 	}, nil
 }
 
-func (h PriceFeedQuorumBatchHandler) telemetryPrice(
+func (h PriceFeedQuorumBatchHandler) telemetryBounds(
 	symbol string,
-	price, upper, lower *big.Float,
+	upper, lower *big.Float,
 ) {
 	values := map[string]*big.Float{
-		"oracle_price": price,
-		"upper_bound":  upper,
-		"lower_bound":  lower,
+		"upper_bound": upper,
+		"lower_bound": lower,
 	}
 
 	for label, value := range values {
@@ -247,6 +239,22 @@ func (h PriceFeedQuorumBatchHandler) telemetryPrice(
 			},
 		)
 	}
+}
+
+func (h PriceFeedQuorumBatchHandler) telemetryPrice(
+	symbol, node string,
+	price *big.Float,
+) {
+
+	v, _ := price.Float32()
+	telemetry.SetGaugeWithLabels(
+		[]string{"thornode", "price"},
+		v,
+		[]metrics.Label{
+			telemetry.NewLabel("symbol", symbol),
+			telemetry.NewLabel("node", node),
+		},
+	)
 }
 
 func (h PriceFeedQuorumBatchHandler) telemetryLatency(

@@ -175,11 +175,3 @@ func (p *BinanceProvider) HandleWsMessage(msg []byte) error {
 
 	return ErrUnknownWsMsg
 }
-
-func (p *BinanceProvider) Pong() {
-	msg := map[string]interface{}{}
-	err := wsjson.Write(p.ctx, p.ws, msg)
-	if err != nil {
-		p.logger.Err(err).Msg("error writing pong")
-	}
-}

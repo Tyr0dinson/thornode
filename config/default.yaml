@@ -383,7 +383,7 @@ bifrost:
     log_level: info
   providers:
     binance:
-      polling_interval: 5s
+      polling_interval: 3s
       api_endpoints:
         - https://data-api.binance.vision
       ws_endpoints:
@@ -392,10 +392,15 @@ bifrost:
         - BTC/USDT
         - ETH/USDT
         - USDC/USDT
+        - XRP/USDT
+        - BNB/USDT
+        - SOL/USDT
+        - TRX/USDT
+        - DOGE/USDT
 
     bitfinex:
-      disabled: true
       polling_interval: 3s
+      disabled: true
       api_endpoints:
         - https://api-pub.bitfinex.com
       ws_endpoints:
@@ -416,6 +421,10 @@ bifrost:
       pairs:
         - BTC/USDT
         - ETH/USDT
+        - XRP/USDT
+        - BNB/USDT
+        - SOL/USDT
+        - DOGE/USDT
 
     bitstamp:
       polling_interval: 2s
@@ -438,6 +447,11 @@ bifrost:
         - BTC/USDT
         - ETH/USDT
         - USDC/USDT
+        - XRP/USDT
+        - BNB/USDT
+        - SOL/USDT
+        - TRX/USDT
+        - DOGE/USDT
 
     coinbase:
       polling_interval: 10s
@@ -449,6 +463,9 @@ bifrost:
         - BTC/USD
         - ETH/USD
         - USDT/USD
+        - XRP/USD
+        - SOL/USD
+        - DOGE/USD
 
     crypto:
       polling_interval: 3s
@@ -460,6 +477,7 @@ bifrost:
         - BTC/USD
         - ETH/USD
         - USDT/USD
+        - XRP/USD
 
     gate:
       polling_interval: 3s
@@ -471,6 +489,10 @@ bifrost:
         - BTC/USDT
         - ETH/USDT
         - USDC/USDT
+        - BNB/USDT
+        - SOL/USDT
+        - TRX/USDT
+        - DOGE/USDT
 
     gemini:
       polling_interval: 2s
@@ -493,6 +515,10 @@ bifrost:
       pairs:
         - BTC/USDT
         - ETH/USDT
+        - XRP/USDT
+        - BNB/USDT
+        - SOL/USDT
+        - TRX/USDT
 
     kraken:
       polling_interval: 3s
@@ -503,9 +529,37 @@ bifrost:
       pairs:
         - USDT/USD
         - BTC/USD
+        - XRP/USD
+        - DOGE/USD
       symbol_mapping:
         - USDT/USD=USDTZUSD
         - BTC/USD=XXBTZUSD
+
+    kucoin:
+      polling_interval: 3s
+      api_endpoints:
+        - https://api.kucoin.com
+      ws_endpoints:
+        - wss://ws-api-spot.kucoin.com
+      pairs:
+        - XRP/USDT
+        - SOL/USDT
+        - BNB/USDT
+        - TRX/USDT
+        - DOGE/USDT
+
+    lbank:
+      polling_interval: 3s
+      api_endpoints:
+        - https://api.lbkex.com
+      ws_endpoints:
+        - wss://www.lbkex.net/ws/V2/
+      pairs:
+        - XRP/USDT
+        - BNB/USDT
+        - SOL/USDT
+        - TRX/USDT
+        - DOGE/USDT
 
     mexc:
       polling_interval: 3s
@@ -515,6 +569,11 @@ bifrost:
         - BTC/USDT
         - ETH/USDT
         - USDC/USDT
+        - XRP/USDT
+        - BNB/USDT
+        - SOL/USDT
+        - TRX/USDT
+        - DOGE/USDT
 
     okx:
       polling_interval: 3s
@@ -527,6 +586,10 @@ bifrost:
         - ETH/USDT
         - USDC/USDT
         - USDT/USD
+        - XRP/USDT
+        - SOL/USDT
+        - TRX/USDT
+        - DOGE/USDT
 
 
 ########################################################################################

@@ -20,4 +20,6 @@ type WebsocketProvider interface {
 	Poll()
 	HandleWsMessage([]byte) error
 	Subscribe() error
+	PrepareConnection() error
+	Ping() error
 }

@@ -179,6 +179,10 @@ func (o *Oracle) LoadProviders() error {
 			provider, err = providers.NewHtxProvider(o.ctx, o.logger, providerConfig, o.metrics)
 		case common.ProviderKraken:
 			provider, err = providers.NewKrakenProvider(o.ctx, o.logger, providerConfig, o.metrics)
+		case common.ProviderKucoin:
+			provider, err = providers.NewKucoinProvider(o.ctx, o.logger, providerConfig, o.metrics)
+		case common.ProviderLbank:
+			provider, err = providers.NewLbankProvider(o.ctx, o.logger, providerConfig, o.metrics)
 		case common.ProviderMexc:
 			provider, err = providers.NewMexcProvider(o.ctx, o.logger, providerConfig, o.metrics)
 		case common.ProviderOkx:

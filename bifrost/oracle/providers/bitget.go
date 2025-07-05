@@ -49,15 +49,16 @@ func NewBitgetProvider(
 		return nil, err
 	}
 
+	// https://www.bitget.com/api-doc/common/websocket-intro
+	// client needs to send a ping every 30s and expect a pong response
+	wsProvider.keepaliveInterval = time.Second * 30
+	wsProvider.keepaliveTimeout = time.Second * 35
+
 	provider := BitgetProvider{wsProvider}
 	err = provider.init(&provider)
 	if err != nil {
 		return nil, err
 	}
-
-	// https://www.bitget.com/api-doc/common/websocket-intro
-	// client needs to send a ping every 30s and expect a pong response
-	provider.setKeepalive(provider.Keepalive, time.Second*30, time.Second*35)
 
 	return &provider, nil
 }
@@ -201,7 +202,7 @@ func (p *BitgetProvider) HandleWsMessage(msg []byte) error {
 	return err
 }
 
-func (p *BitgetProvider) Keepalive() error {
+func (p *BitgetProvider) Ping() error {
 	err := p.ws.Write(p.ctx, websocket.MessageText, []byte("ping"))
 	if err != nil {
 		p.logger.Err(err).Msg("fail to write ping")

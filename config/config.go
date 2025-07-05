@@ -509,6 +509,8 @@ type Bifrost struct {
 		Gemini   BifrostOracleProviderConfiguration `mapstructure:"gemini"`
 		Htx      BifrostOracleProviderConfiguration `mapstructure:"htx"`
 		Kraken   BifrostOracleProviderConfiguration `mapstructure:"kraken"`
+		Kucoin   BifrostOracleProviderConfiguration `mapstructure:"kucoin"`
+		Lbank    BifrostOracleProviderConfiguration `mapstructure:"lbank"`
 		Mexc     BifrostOracleProviderConfiguration `mapstructure:"mexc"`
 		Okx      BifrostOracleProviderConfiguration `mapstructure:"okx"`
 	} `mapstructure:"providers"`
@@ -542,6 +544,8 @@ func (b Bifrost) GetProviders() map[string]BifrostOracleProviderConfiguration {
 		common.ProviderGemini:   b.Providers.Gemini,
 		common.ProviderHtx:      b.Providers.Htx,
 		common.ProviderKraken:   b.Providers.Kraken,
+		common.ProviderKucoin:   b.Providers.Kucoin,
+		common.ProviderLbank:    b.Providers.Lbank,
 		common.ProviderMexc:     b.Providers.Mexc,
 		common.ProviderOkx:      b.Providers.Okx,
 	}

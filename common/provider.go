@@ -13,6 +13,7 @@ const (
 	ProviderHtx      = "htx"
 	ProviderKraken   = "kraken"
 	ProviderKucoin   = "kucoin"
+	ProviderLbank    = "lbank"
 	ProviderMexc     = "mexc"
 	ProviderOkx      = "okx"
 )
