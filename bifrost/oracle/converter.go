@@ -11,8 +11,8 @@ import (
 const (
 	maxConversionSteps  = 3
 	maxVolumePercentage = 0.4
-	minProviders        = 1
-	maxDeviation        = 1.5
+	minProviders        = 3
+	maxDeviation        = 2.5
 )
 
 type Converter struct {
@@ -221,6 +221,45 @@ func (c *Converter) ConvertToUsd() (map[string]*big.Float, error) {
 
 // ----------------------------------------------------------------------------
 
+func ComputeMedianAbsoluteDeviation(values []*big.Float) (*big.Float, *big.Float, error) {
+	median, err := ComputeMedian(values)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	deviations := make([]*big.Float, len(values))
+	for i, value := range values {
+		difference := new(big.Float).Sub(value, median)
+		deviations[i] = new(big.Float).Abs(difference)
+	}
+
+	mad, err := ComputeMedian(deviations)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return mad, median, nil
+}
+
+func ComputeMedian(values []*big.Float) (*big.Float, error) {
+	if len(values) == 1 {
+		return values[0], nil
+	}
+
+	sort.Slice(values, func(i, j int) bool {
+		return values[i].Cmp(values[j]) < 0
+	})
+
+	midpoint := len(values) / 2
+
+	if len(values)%2 == 1 {
+		return values[midpoint], nil
+	}
+
+	sum := new(big.Float).Add(values[midpoint-1], values[midpoint])
+	return sum.Quo(sum, big.NewFloat(2)), nil
+}
+
 // TODO: Use MAD instead
 // ComputeStandardDeviation computes and returns the standard deviation and mean
 // of provided ticker prices
@@ -259,15 +298,16 @@ func FilterDeviations(
 		values = append(values, ticker.Price)
 	}
 
-	deviation, mean, err := ComputeStandardDeviation(values)
+	deviation, median, err := ComputeMedianAbsoluteDeviation(values)
+
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
 	margin := new(big.Float).Mul(deviation, big.NewFloat(maxDeviation))
 
-	lowerBound := new(big.Float).Sub(mean, margin)
-	upperBound := new(big.Float).Add(mean, margin)
+	lowerBound := new(big.Float).Sub(median, margin)
+	upperBound := new(big.Float).Add(median, margin)
 
 	filtered := map[string]types.Ticker{}
 	for provider, ticker := range tickers {

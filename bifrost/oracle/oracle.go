@@ -149,6 +149,13 @@ func (o *Oracle) LoadProviders() error {
 		var provider types.Provider
 		var err error
 
+		if providerConfig.Disabled {
+			o.logger.Info().
+				Str("provider", providerName).
+				Msg("provider disabled")
+			continue
+		}
+
 		switch providerName {
 		case common.ProviderBinance:
 			provider, err = providers.NewBinanceProvider(o.ctx, o.logger, providerConfig, o.metrics)

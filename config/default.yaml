@@ -394,6 +394,7 @@ bifrost:
         - USDC/USDT
 
     bitfinex:
+      disabled: true
       polling_interval: 3s
       api_endpoints:
         - https://api-pub.bitfinex.com
@@ -457,6 +458,7 @@ bifrost:
         - wss://stream.crypto.com/exchange/v1/market
       pairs:
         - BTC/USD
+        - ETH/USD
         - USDT/USD
 
     gate:
