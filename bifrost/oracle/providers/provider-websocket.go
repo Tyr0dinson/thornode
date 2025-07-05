@@ -13,7 +13,7 @@ import (
 
 const (
 	minBackoff             = time.Second
-	maxBackoff             = time.Minute * 2
+	maxBackoff             = time.Minute * 5
 	keepaliveCheckInterval = time.Second * 2
 )
 
@@ -24,12 +24,13 @@ type websocketProvider struct {
 	poll            func()
 	handleWsMessage func([]byte) error
 	subscribe       func() error
+	preconnect      func() error
+	ping            func() error
 	backoff         time.Duration
 
 	lastKeepalive     time.Time
 	keepaliveInterval time.Duration
 	keepaliveTimeout  time.Duration
-	sendKeepalive     func() error
 }
 
 func newWebsocketProvider(
@@ -68,18 +69,23 @@ func (p *websocketProvider) init(provider types.WebsocketProvider) error {
 	p.poll = provider.Poll
 	p.handleWsMessage = provider.HandleWsMessage
 	p.subscribe = provider.Subscribe
-
+	p.preconnect = provider.PrepareConnection
+	p.ping = provider.Ping
 	return nil
 }
 
 func (p *websocketProvider) connect() error {
 	p.logger.Info().Msg("connecting")
 
-	var err error
-
 	if p.ws != nil {
 		_ = p.ws.Close(websocket.StatusNormalClosure, "")
 		time.Sleep(time.Second)
+	}
+
+	err := p.preconnect()
+	if err != nil {
+		p.logger.Err(err).Msg("failed preparing websocket connection")
+		return err
 	}
 
 	p.ws, _, err = websocket.Dial(p.ctx, p.wsEndpoint, nil)
@@ -120,13 +126,12 @@ func (p *websocketProvider) reconnect() error {
 	return err
 }
 
-func (p *websocketProvider) setKeepalive(
-	keepalive func() error,
-	interval, timeout time.Duration,
-) {
-	p.keepaliveInterval = interval
-	p.keepaliveTimeout = timeout
-	p.sendKeepalive = keepalive
+func (p *websocketProvider) PrepareConnection() error {
+	return nil
+}
+
+func (p *websocketProvider) Ping() error {
+	return nil
 }
 
 func (p *websocketProvider) Start() {
@@ -145,11 +150,11 @@ func (p *websocketProvider) Start() {
 	go func() {
 		defer p.ws.Close(websocket.StatusNormalClosure, "")
 
-		var keepalive, check *time.Ticker
-		if p.keepaliveInterval > 0 && p.sendKeepalive != nil {
-			keepalive = time.NewTicker(p.keepaliveInterval)
+		var ping, check *time.Ticker
+		if p.keepaliveInterval > 0 {
+			ping = time.NewTicker(p.keepaliveInterval)
 			check = time.NewTicker(keepaliveCheckInterval)
-			defer keepalive.Stop()
+			defer ping.Stop()
 		}
 
 		for {
@@ -183,15 +188,15 @@ func (p *websocketProvider) Start() {
 					Msg("fail handling message")
 			}
 
-			if keepalive == nil {
+			if ping == nil {
 				continue
 			}
 
 			select {
-			case <-keepalive.C:
-				err = p.sendKeepalive()
+			case <-ping.C:
+				err = p.ping()
 				if err != nil {
-					p.logger.Err(err).Msg("failed to send keepalive")
+					p.logger.Err(err).Msg("failed to send ping")
 				}
 			case <-check.C:
 				if time.Since(p.lastKeepalive) > p.keepaliveTimeout {
