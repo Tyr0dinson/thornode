@@ -2,6 +2,7 @@ package oracle
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/metrics"
@@ -9,7 +10,9 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	"math/big"
+	"strings"
 	"sync"
 	"time"
 
@@ -26,6 +29,8 @@ type Oracle struct {
 	config    config.Bifrost
 	rates     map[string]*big.Float
 	metrics   *metrics.Metrics
+	symbols   []string
+	version   []byte
 }
 
 func NewOracle(config config.Bifrost) (*Oracle, error) {
@@ -38,6 +43,11 @@ func NewOracle(config config.Bifrost) (*Oracle, error) {
 		logger = logger.Level(logLevel)
 	}
 
+	cv := constants.NewConstantValue()
+	required := cv.GetStringValue(constants.RequiredPriceFeeds)
+
+	hash := sha256.Sum256([]byte(required))
+
 	ctx, cancel := context.WithCancel(context.Background())
 	o := Oracle{
 		ctx:     ctx,
@@ -48,6 +58,8 @@ func NewOracle(config config.Bifrost) (*Oracle, error) {
 		config:  config,
 		rates:   make(map[string]*big.Float),
 		metrics: metrics.NewMetrics(),
+		symbols: strings.Split(required, ","),
+		version: hash[:8],
 	}
 
 	o.metrics.Register()
@@ -98,7 +110,7 @@ func (o *Oracle) Stop() {
 	o.wg.Wait()
 }
 
-func (o *Oracle) GetTickers() []*common.OraclePrice {
+func (o *Oracle) GetPrices() ([]*common.OraclePrice, []byte) {
 	tickerBySymbol := map[string]map[string]types.Ticker{}
 
 	var err error
@@ -122,23 +134,25 @@ func (o *Oracle) GetTickers() []*common.OraclePrice {
 	rates, err := converter.ConvertToUsd()
 	if err != nil {
 		o.logger.Err(err).Msg("Error converting usd")
-		return nil
+		return nil, nil
 	}
 
-	var prices []*common.OraclePrice
+	prices := make([]*common.OraclePrice, len(o.symbols))
 
-	for symbol, rate := range rates {
-		price, err := common.NewOraclePrice(rate, symbol)
+	for i, symbol := range o.symbols {
+		rate, found := rates[symbol]
+		if !found {
+			continue
+		}
+		price, err := common.NewOraclePrice(rate)
 		if err != nil {
 			o.logger.Err(err).Msg("Error creating oracle price")
 			continue
 		}
-		prices = append(prices, price)
+		prices[i] = price
 	}
 
-	o.logger.Info().Int("rates", len(rates)).Msg("getting tickers")
-
-	return prices
+	return prices, o.version
 }
 
 func (o *Oracle) LoadProviders() error {

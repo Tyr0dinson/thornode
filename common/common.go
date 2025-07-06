@@ -161,6 +161,9 @@ func (pf *PriceFeed) Equals(other *PriceFeed) bool {
 	if pf.Time != other.Time {
 		return false
 	}
+	if !bytes.Equal(pf.Version, other.Version) {
+		return false
+	}
 	if len(pf.Rates) != len(other.Rates) {
 		return false
 	}
@@ -169,9 +172,6 @@ func (pf *PriceFeed) Equals(other *PriceFeed) bool {
 			return false
 		}
 		if rate.Decimals != other.Rates[i].Decimals {
-			return false
-		}
-		if rate.Symbol != other.Rates[i].Symbol {
 			return false
 		}
 	}

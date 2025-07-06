@@ -1,15 +1,19 @@
 package thorchain
 
 import (
+	"bytes"
+	"crypto/sha256"
 	"fmt"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	"github.com/cosmos/cosmos-sdk/telemetry"
 	"github.com/hashicorp/go-metrics"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 	"math/big"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -17,33 +21,23 @@ const (
 	maxDeviation = 1
 )
 
-var RequiredRates = []string{
-	"BTC",
-	"ETH",
-	"USDT",
-	"XRP",
-	"BNB",
-	"SOL",
-	"USDC",
-	"TRX",
-	"DOGE",
-	"ADA",
-	"BCH",
-	"AVAX",
-	"TON",
-	"LTC",
-	"ATOM",
-}
-
 // PriceFeedQuorum to handle MsgObservedTx
 type PriceFeedQuorumBatchHandler struct {
-	mgr Manager
+	mgr             Manager
+	requiredSymbols []string
+	requiredVersion []byte
 }
 
 // NewPriceFeedQuorumBatchHandler create a new instance of PriceFeedQuorumBatchHandler
 func NewPriceFeedQuorumBatchHandler(mgr Manager) PriceFeedQuorumBatchHandler {
+	symbols := mgr.GetConstants().GetStringValue(constants.RequiredPriceFeeds)
+
+	hash := sha256.Sum256([]byte(symbols))
+
 	return PriceFeedQuorumBatchHandler{
-		mgr: mgr,
+		mgr:             mgr,
+		requiredSymbols: strings.Split(symbols, ","),
+		requiredVersion: hash[:8],
 	}
 }
 
@@ -74,6 +68,13 @@ func (h PriceFeedQuorumBatchHandler) validate(ctx cosmos.Context, msg types.MsgP
 func (h PriceFeedQuorumBatchHandler) handle(ctx cosmos.Context, msg types.MsgPriceFeedQuorumBatch) (*cosmos.Result, error) {
 	ctx.Logger().Info("handle MsgPriceFeedQuorumBatch")
 
+	iterator := h.mgr.Keeper().GetPriceIterator(ctx)
+	if iterator.Valid() {
+		ctx.Logger().Error("found prices already")
+	} else {
+		ctx.Logger().Info("no prices found")
+	}
+
 	activeNodes, err := h.mgr.Keeper().ListActiveValidators(ctx)
 	if err != nil {
 		err = wrapError(ctx, err, "fail to list active validators")
@@ -82,8 +83,16 @@ func (h PriceFeedQuorumBatchHandler) handle(ctx cosmos.Context, msg types.MsgPri
 
 	// [BTC][thor1...]*big.Float{}
 	pricesByAsset := map[string]map[string]*big.Float{}
-	for _, symbol := range RequiredRates {
+	for _, symbol := range h.requiredSymbols {
 		pricesByAsset[symbol] = map[string]*big.Float{}
+	}
+
+	missingPrices := map[string]int{}
+	deviatingPrices := map[string]int{}
+
+	for _, node := range activeNodes {
+		missingPrices[node.NodeAddress.String()] = 0
+		deviatingPrices[node.NodeAddress.String()] = 0
 	}
 
 	for _, qpf := range msg.QuoPriceFeeds {
@@ -93,25 +102,17 @@ func (h PriceFeedQuorumBatchHandler) handle(ctx cosmos.Context, msg types.MsgPri
 			continue
 		}
 
-		for _, rate := range pf.Rates {
-			_, found := pricesByAsset[rate.Symbol]
-			if !found {
-				// no required asset
+		for i, symbol := range h.requiredSymbols {
+			rate := pf.Rates[i]
+			if rate == nil {
+				missingPrices[pf.Node.String()] += 1
 				continue
 			}
-			pricesByAsset[rate.Symbol][pf.Node.String()] = rate.BigFloat()
+			pricesByAsset[symbol][pf.Node.String()] = rate.BigFloat()
 		}
 	}
 
 	// Verify and calculate on chain price
-
-	missingPrices := map[string]int{}
-	deviatingPrices := map[string]int{}
-
-	for _, node := range activeNodes {
-		missingPrices[node.NodeAddress.String()] = 0
-		deviatingPrices[node.NodeAddress.String()] = 0
-	}
 
 	for symbol, priceByNode := range pricesByAsset {
 		if !HasSuperMajority(len(priceByNode), len(activeNodes)) {
@@ -180,6 +181,14 @@ func (h PriceFeedQuorumBatchHandler) handleQuorumPriceFeed(
 	active NodeAccounts,
 ) (*PriceFeed, error) {
 	pf := qpf.PriceFeed
+
+	if bytes.Compare(pf.Version, h.requiredVersion) != 0 {
+		return nil, fmt.Errorf("version does not match required version")
+	}
+
+	if len(pf.Rates) != len(h.requiredSymbols) {
+		return nil, fmt.Errorf("amount of rates does not match required symbols")
+	}
 
 	signBz, err := pf.GetSignablePayload()
 	if err != nil {

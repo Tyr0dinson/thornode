@@ -852,11 +852,12 @@ func (o *Observer) processOracle() {
 			case <-o.stopChan:
 				return
 			case <-ticker.C:
-				prices := o.oracle.GetTickers()
+				prices, version := o.oracle.GetPrices()
 
 				pf := common.PriceFeed{
-					Time:  time.Now().UnixMilli(),
-					Rates: prices,
+					Version: version,
+					Time:    time.Now().UnixMilli(),
+					Rates:   prices,
 				}
 				o.globalPriceFeedQueue <- pf
 			}

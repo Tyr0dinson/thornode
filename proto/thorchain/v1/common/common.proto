@@ -177,8 +177,9 @@ message PriceFeed {
     option (gogoproto.stringer)         = true;
     // time of sending node in milliseconds, only used to check
     // which price feed is more recent
-    int64 time = 1;
-    repeated OraclePrice rates = 2;
+    bytes version = 1;
+    int64 time = 2;
+    repeated OraclePrice rates = 3;
 }
 
 message AttestPriceFeed {
@@ -206,7 +207,6 @@ message OraclePrice {
 
     uint64 amount = 1;
     uint32 decimals = 2;
-    string symbol = 3;
 }
 
 message AttestationBatch {

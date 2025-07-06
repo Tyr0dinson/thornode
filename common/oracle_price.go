@@ -12,7 +12,7 @@ const (
 	maxIntegerLength       = 18
 )
 
-func NewOraclePrice(number *big.Float, symbol string) (*OraclePrice, error) {
+func NewOraclePrice(number *big.Float) (*OraclePrice, error) {
 	parts := strings.Split(number.Text('f', -1), ".")
 
 	if len(parts) > 2 {
@@ -35,7 +35,7 @@ func NewOraclePrice(number *big.Float, symbol string) (*OraclePrice, error) {
 		for i := 0; i < remain && i < len(parts[1]); i++ {
 			index++
 
-			// don't count zeros, if there has been a different number alredy
+			// don't count zeros, if there has been a different number already
 			// eg.: 1.0020304 -> 1.00203
 			if parts[1][i] == '0' && zeros == i {
 				zeros++
@@ -61,7 +61,6 @@ func NewOraclePrice(number *big.Float, symbol string) (*OraclePrice, error) {
 	return &OraclePrice{
 		Amount:   amount,
 		Decimals: uint32(decimals),
-		Symbol:   symbol,
 	}, nil
 }
 
