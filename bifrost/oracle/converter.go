@@ -12,7 +12,7 @@ const (
 	maxConversionSteps  = 3
 	maxVolumePercentage = 0.4
 	minProviders        = 3
-	maxDeviation        = 2.5
+	deviationFactor     = 5
 )
 
 type Converter struct {
@@ -315,7 +315,7 @@ func FilterDeviations(
 		return nil, nil, nil, err
 	}
 
-	margin := new(big.Float).Mul(deviation, big.NewFloat(maxDeviation))
+	margin := new(big.Float).Mul(deviation, big.NewFloat(deviationFactor))
 
 	lowerBound := new(big.Float).Sub(median, margin)
 	upperBound := new(big.Float).Add(median, margin)

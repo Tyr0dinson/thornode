@@ -153,8 +153,6 @@ func (p *BinanceProvider) HandleWsMessage(msg []byte) error {
 	err := json.Unmarshal(msg, &ticker)
 
 	if err == nil && ticker.Symbol != "" {
-		p.logger.Err(err).Msg("error unmarshalling msg")
-
 		pair, found := p.pairs[ticker.Symbol]
 		if !found {
 			return nil

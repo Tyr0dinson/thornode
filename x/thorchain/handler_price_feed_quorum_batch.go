@@ -68,11 +68,12 @@ func (h PriceFeedQuorumBatchHandler) validate(ctx cosmos.Context, msg types.MsgP
 func (h PriceFeedQuorumBatchHandler) handle(ctx cosmos.Context, msg types.MsgPriceFeedQuorumBatch) (*cosmos.Result, error) {
 	ctx.Logger().Info("handle MsgPriceFeedQuorumBatch")
 
+	// ignore price feed tx, if prices have already been processed to avoid
+	// to prevent reorder attacks
 	iterator := h.mgr.Keeper().GetPriceIterator(ctx)
 	if iterator.Valid() {
-		ctx.Logger().Error("found prices already")
-	} else {
-		ctx.Logger().Info("no prices found")
+		ctx.Logger().Error("price feed already processed")
+		return &cosmos.Result{}, nil
 	}
 
 	activeNodes, err := h.mgr.Keeper().ListActiveValidators(ctx)
@@ -234,17 +235,18 @@ func (h PriceFeedQuorumBatchHandler) telemetryBounds(
 	upper, lower *big.Float,
 ) {
 	values := map[string]*big.Float{
-		"upper_bound": upper,
-		"lower_bound": lower,
+		"upper": upper,
+		"lower": lower,
 	}
 
 	for label, value := range values {
 		v, _ := value.Float32()
 		telemetry.SetGaugeWithLabels(
-			[]string{"thornode", label},
+			[]string{"thornode", "oracle_price_bounds"},
 			v,
 			[]metrics.Label{
 				telemetry.NewLabel("symbol", symbol),
+				telemetry.NewLabel("type", label),
 			},
 		)
 	}
@@ -257,7 +259,7 @@ func (h PriceFeedQuorumBatchHandler) telemetryPrice(
 
 	v, _ := price.Float32()
 	telemetry.SetGaugeWithLabels(
-		[]string{"thornode", "price"},
+		[]string{"thornode", "oracle_price"},
 		v,
 		[]metrics.Label{
 			telemetry.NewLabel("symbol", symbol),

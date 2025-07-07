@@ -389,14 +389,19 @@ bifrost:
       ws_endpoints:
         - wss://stream.binance.com:9443/ws
       pairs:
-        - BTC/USDT
-        - ETH/USDT
-        - USDC/USDT
-        - XRP/USDT
+        - ATOM/USDT
+        - AVAX/USDT
+        - BCH/USDT
         - BNB/USDT
+        - BTC/USDT
+        - DOGE/USDT
+        - ETH/USDT
+        - LTC/USDT
+        - RUNE/USDT
         - SOL/USDT
         - TRX/USDT
-        - DOGE/USDT
+        - USDC/USDT
+        - XRP/USDT
 
     bitfinex:
       polling_interval: 3s
@@ -419,12 +424,17 @@ bifrost:
       ws_endpoints:
         - wss://ws.bitget.com/v2/ws/public
       pairs:
-        - BTC/USDT
-        - ETH/USDT
-        - XRP/USDT
+        - AVAX/USDT
+        - BCH/USDT
         - BNB/USDT
-        - SOL/USDT
+        - BTC/USDC
+        - BTC/USDT
         - DOGE/USDT
+        - ETH/USDT
+        - LTC/USDT
+        - RUNE/USDT
+        - SOL/USDT
+        - XRP/USDT
 
     bitstamp:
       polling_interval: 2s
@@ -444,14 +454,19 @@ bifrost:
       ws_endpoints:
         - wss://stream.bybit.com/v5/public/spot
       pairs:
-        - BTC/USDT
-        - ETH/USDT
-        - USDC/USDT
-        - XRP/USDT
+        - ATOM/USDT
+        - AVAX/USDT
+        - BCH/USDT
         - BNB/USDT
+        - BTC/USDT
+        - DOGE/USDT
+        - ETH/USDT
+        - LTC/USDT
+        - RUNE/USDT
         - SOL/USDT
         - TRX/USDT
-        - DOGE/USDT
+        - USDC/USDT
+        - XRP/USDT
 
     coinbase:
       polling_interval: 10s
@@ -460,12 +475,16 @@ bifrost:
       ws_endpoints:
         - wss://ws-feed.exchange.coinbase.com
       pairs:
+        - ATOM/USD
+        - AVAX/USD
+        - BCH/USD
         - BTC/USD
+        - DOGE/USD
         - ETH/USD
+        - LTC/USD
+        - SOL/USD
         - USDT/USD
         - XRP/USD
-        - SOL/USD
-        - DOGE/USD
 
     crypto:
       polling_interval: 3s
@@ -486,13 +505,17 @@ bifrost:
       ws_endpoints:
         - wss://api.gateio.ws/ws/v4/ # slash matters
       pairs:
-        - BTC/USDT
-        - ETH/USDT
-        - USDC/USDT
+        - ATOM/USDC
+        - BCH/USDT
         - BNB/USDT
+        - BTC/USDT
+        - DOGE/USDT
+        - ETH/USDT
+        - LTC/USDT
+        - RUNE/USDT
         - SOL/USDT
         - TRX/USDT
-        - DOGE/USDT
+        - USDC/USDT
 
     gemini:
       polling_interval: 2s
@@ -513,12 +536,16 @@ bifrost:
         - wss://api.huobi.pro/ws
         # - wss://api-aws.huobi.pro/ws
       pairs:
+        - ATOM/USDT
+        - AVAX/USDT
+        - BCH/USDT
+        - BNB/USDT
         - BTC/USDT
         - ETH/USDT
-        - XRP/USDT
-        - BNB/USDT
+        - LTC/USDT
         - SOL/USDT
         - TRX/USDT
+        - XRP/USDT
 
     kraken:
       polling_interval: 3s
@@ -527,10 +554,11 @@ bifrost:
       ws_endpoints:
         - wss://ws.kraken.com/v2
       pairs:
-        - USDT/USD
         - BTC/USD
-        - XRP/USD
         - DOGE/USD
+        - USDC/USDT
+        - USDT/USD
+        - XRP/USD
       symbol_mapping:
         - USDT/USD=USDTZUSD
         - BTC/USD=XXBTZUSD
@@ -542,11 +570,14 @@ bifrost:
       ws_endpoints:
         - wss://ws-api-spot.kucoin.com
       pairs:
-        - XRP/USDT
-        - SOL/USDT
+        - BCH/USDT
         - BNB/USDT
-        - TRX/USDT
         - DOGE/USDT
+        - LTC/USDT
+        - RUNE/USDT
+        - SOL/USDT
+        - TRX/USDT
+        - XRP/USDT
 
     lbank:
       polling_interval: 3s
@@ -555,25 +586,35 @@ bifrost:
       ws_endpoints:
         - wss://www.lbkex.net/ws/V2/
       pairs:
-        - XRP/USDT
+        - ATOM/USDT
+        - AVAX/USDT
+        - BCH/USDT
         - BNB/USDT
+        - DOGE/USDT
+        - LTC/USDT
+        - USDC/USDT
         - SOL/USDT
         - TRX/USDT
-        - DOGE/USDT
+        - XRP/USDT
 
     mexc:
       polling_interval: 3s
       api_endpoints:
         - https://api.mexc.com
       pairs:
-        - BTC/USDT
-        - ETH/USDT
-        - USDC/USDT
-        - XRP/USDT
+        - ATOM/USDT
+        - AVAX/USDT
+        - BCH/USDT
         - BNB/USDT
+        - BTC/USDT
+        - DOGE/USDT
+        - ETH/USDT
+        - LTC/USDT
+        - RUNE/USDT
         - SOL/USDT
         - TRX/USDT
-        - DOGE/USDT
+        - USDC/USDT
+        - XRP/USDT
 
     okx:
       polling_interval: 3s
@@ -582,14 +623,18 @@ bifrost:
       ws_endpoints:
         - wss://ws.okx.com:8443/ws/v5/public
       pairs:
+        - ATOM/USDT
+        - AVAX/USDT
+        - BCH/USDT
         - BTC/USDT
+        - DOGE/USDT
         - ETH/USDT
+        - LTC/USDT
+        - SOL/USDT
+        - TRX/USDT
         - USDC/USDT
         - USDT/USD
         - XRP/USDT
-        - SOL/USDT
-        - TRX/USDT
-        - DOGE/USDT
 
 
 ########################################################################################

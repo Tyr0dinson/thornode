@@ -152,8 +152,6 @@ func (p *LbankProvider) HandleWsMessage(msg []byte) error {
 
 	err := json.Unmarshal(msg, &tickerMsg)
 	if err == nil && tickerMsg.Pair != "" {
-		p.logger.Err(err).Msg("error unmarshalling msg")
-
 		pair, found := p.pairs[tickerMsg.Pair]
 		if !found {
 			return nil
