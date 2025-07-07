@@ -11,6 +11,7 @@ type erc20Recovery struct {
 	recoveryAddress string // 9R recovery address for manual fund distribution
 	asset           string // ERC20 asset (e.g., "ETH.USDT-0X...")
 	amount          string // Amount in asset's base units
+	description     string // Description for audit trail
 }
 
 var migration6to7erc20s = []erc20Recovery{
@@ -20,6 +21,7 @@ var migration6to7erc20s = []erc20Recovery{
 		recoveryAddress: "0x9AC38F2E060F058C57A0898a788aD2B0DcE862CA",
 		asset:           "ETH.USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7",
 		amount:          "100000000000", // 100,000 USDT (6 decimals)
+		description:     "User sent 100k USDT to inactive vault, recovery to 9R address",
 	},
 	{
 		originalTxHash:  "0x19D659BF519218D395A583F157D8E7C071EC77523E8E4AF88BDA4E37ACB95708",
@@ -27,6 +29,7 @@ var migration6to7erc20s = []erc20Recovery{
 		recoveryAddress: "0x9AC38F2E060F058C57A0898a788aD2B0DcE862CA",
 		asset:           "ETH.USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7",
 		amount:          "100000000000", // 100,000 USDT (6 decimals)
+		description:     "User sent 100k USDT to inactive vault, recovery to 9R address",
 	},
 	{
 		originalTxHash:  "0x9F6B1FF9E82D516788174D2FAE6EE535AAAA9ECC0B5071D16B5B8592CEA22FBD",
@@ -34,6 +37,7 @@ var migration6to7erc20s = []erc20Recovery{
 		recoveryAddress: "0x9AC38F2E060F058C57A0898a788aD2B0DcE862CA",
 		asset:           "ETH.USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7",
 		amount:          "9999000000", // 9,999 USDT (6 decimals)
+		description:     "User sent 9,999 USDT to inactive vault, recovery to 9R address",
 	},
 	{
 		originalTxHash:  "0x554D05E9C4487911FDADC884C9C44B57E9B28B337B7AF4AFDC8C37703EF3079D",
@@ -41,6 +45,7 @@ var migration6to7erc20s = []erc20Recovery{
 		recoveryAddress: "0x9AC38F2E060F058C57A0898a788aD2B0DcE862CA",
 		asset:           "ETH.USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7",
 		amount:          "20000000000", // 20,000 USDT (6 decimals)
+		description:     "User sent 20k USDT to inactive vault, recovery to 9R address",
 	},
 	{
 		originalTxHash:  "0x2D4CC8B3941908D4025CC4B9059622997A6B8745734B474BFEE43AD688729CF3",
@@ -48,6 +53,30 @@ var migration6to7erc20s = []erc20Recovery{
 		recoveryAddress: "0x9AC38F2E060F058C57A0898a788aD2B0DcE862CA",
 		asset:           "BSC.USDT-0X55D398326F99059FF775485246999027B3197955",
 		amount:          "5000000000", // 5,000 USDT (6 decimals)
+		description:     "User sent 5k USDT to inactive vault on BSC, recovery to 9R address",
+	},
+}
+
+// migration6to7nativeassets - Native asset recoveries using MsgInactiveVaultRecovery
+type nativeAssetRecovery struct {
+	originalTxHash    string // Original transaction hash
+	inactiveVaultAddr string // Inactive vault address where funds are stuck
+	recoveryAddress   string // 9R recovery address for manual fund distribution
+	asset             string // Native asset (e.g., "ETH.ETH")
+	amount            string // Amount in asset's base units
+	expectedBalance   string // Expected balance for coordination
+	description       string // Description for audit trail
+}
+
+var migration6to7nativeassets = []nativeAssetRecovery{
+	{
+		originalTxHash:    "0xf8c2e5ee98a622b1e7e845ea2a6fa13e72f3988901ad71f16ac25d5f99399b40",
+		inactiveVaultAddr: "0x9dec237EB85056C63C11bA9c5477E82685767991",
+		recoveryAddress:   "0x9AC38F2E060F058C57A0898a788aD2B0DcE862CA",
+		asset:             "ETH.ETH",
+		amount:            "19266846421188821888", // 19.266846421188821888 ETH (18 decimals)
+		expectedBalance:   "19266846421188821888",
+		description:       "ETH stuck in old vault 0x9dec237EB85056C63C11bA9c5477E82685767991, recovery to 9R address",
 	},
 }
 

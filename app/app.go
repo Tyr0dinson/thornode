@@ -396,9 +396,9 @@ func NewChainApp(
 	mgrs := thorchain.NewManagers(app.ThorchainKeeper, app.appCodec, app.BankKeeper, app.AccountKeeper, app.UpgradeKeeper, app.WasmKeeper, keys[thorchaintypes.StoreKey])
 	app.msgServiceRouter.AddCustomRoute("cosmos.bank.v1beta1.Msg", thorchain.NewBankSendHandler(thorchain.NewSendHandler(mgrs)))
 
-	thorchainModule := thorchain.NewAppModule(mgrs, telemetryEnabled, testApp)
-
 	app.EnshrinedBifrost = ebifrost.NewEnshrinedBifrost(app.appCodec, logger, ebifrostConfig)
+	
+	thorchainModule := thorchain.NewAppModule(mgrs, telemetryEnabled, testApp)
 
 	defaultProposalHandler := baseapp.NewDefaultProposalHandler(bApp.Mempool(), bApp)
 	eBifrostProposalHandler := thorchainkeeperabci.NewProposalHandler(
