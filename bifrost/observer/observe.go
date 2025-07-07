@@ -174,9 +174,9 @@ func (o *Observer) Start(ctx context.Context) error {
 	go o.processErrataTx(ctx)
 	go o.processSolvencyQueue(ctx)
 	go o.processNetworkFeeQueue(ctx)
-	go o.processPriceFeedQueue(ctx)
 	go o.deck(ctx)
 	go o.attestationGossip.Start(ctx)
+	go o.processPriceFeedQueue(ctx)
 	return nil
 }
 
@@ -853,6 +853,9 @@ func (o *Observer) processOracle() {
 				return
 			case <-ticker.C:
 				prices, version := o.oracle.GetPrices()
+				if len(prices) == 0 {
+					continue
+				}
 
 				pf := common.PriceFeed{
 					Version: version,

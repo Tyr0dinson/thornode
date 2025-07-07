@@ -105,7 +105,7 @@ func (h PriceFeedQuorumBatchHandler) handle(ctx cosmos.Context, msg types.MsgPri
 
 		for i, symbol := range h.requiredSymbols {
 			rate := pf.Rates[i]
-			if rate == nil {
+			if rate == nil || rate.Amount == 0 {
 				missingPrices[pf.Node.String()] += 1
 				continue
 			}

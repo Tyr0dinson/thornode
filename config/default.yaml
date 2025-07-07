@@ -436,6 +436,18 @@ bifrost:
         - SOL/USDT
         - XRP/USDT
 
+    bitmart:
+      polling_interval: 3s
+      api_endpoints:
+        - https://api-cloud.bitmart.com
+      ws_endpoints:
+        - wss://ws-manager-compress.bitmart.com/api?protocol=1.1
+      pairs:
+        - AVAX/USDT
+        - BTC/USDT
+        - ETH/USDT
+        - RUNE/USDT
+
     bitstamp:
       polling_interval: 2s
       api_endpoints:
@@ -485,6 +497,42 @@ bifrost:
         - SOL/USD
         - USDT/USD
         - XRP/USD
+
+    coinw:
+      polling_interval: 3s
+      api_endpoints:
+        - https://api.coinw.com
+      ws_endpoints:
+        - wss://ws.futurescw.com
+      pairs:
+        - ATOM/USDT
+        - AVAX/USDT
+        - BCH/USDT
+        - BNB/USDT
+        - BTC/USDT
+        - DOGE/USDT
+        - ETH/USDT
+        - LTC/USDT
+        - SOL/USDT
+        - TRX/USDT
+        - XRP/USDT
+
+    digifinex:
+      polling_interval: 3s
+      api_endpoints:
+        - https://openapi.digifinex.com
+      ws_endpoints:
+        - wss://openapi.digifinex.com/ws/v1/
+      pairs:
+        - ATOM/USDT
+        - AVAX/USDT
+        - BNB/USDT
+        - BTC/USDT
+        - DOGE/USDT
+        - ETH/USDT
+        - LTC/USDT
+        - SOL/USDT
+        - TRX/USDT
 
     crypto:
       polling_interval: 3s

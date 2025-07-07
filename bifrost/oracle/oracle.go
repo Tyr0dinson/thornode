@@ -142,7 +142,7 @@ func (o *Oracle) GetPrices() ([]*common.OraclePrice, []byte) {
 	for i, symbol := range o.symbols {
 		rate, found := rates[symbol]
 		if !found {
-			continue
+			rate = &big.Float{}
 		}
 		price, err := common.NewOraclePrice(rate)
 		if err != nil {
@@ -177,6 +177,8 @@ func (o *Oracle) LoadProviders() error {
 			provider, err = providers.NewBitfinexProvider(o.ctx, o.logger, providerConfig, o.metrics)
 		case common.ProviderBitget:
 			provider, err = providers.NewBitgetProvider(o.ctx, o.logger, providerConfig, o.metrics)
+		case common.ProviderBitmart:
+			provider, err = providers.NewBitmartProvider(o.ctx, o.logger, providerConfig, o.metrics)
 		case common.ProviderBitstamp:
 			provider, err = providers.NewBitstampProvider(o.ctx, o.logger, providerConfig, o.metrics)
 		case common.ProviderBybit:
@@ -185,6 +187,10 @@ func (o *Oracle) LoadProviders() error {
 			provider, err = providers.NewCryptoProvider(o.ctx, o.logger, providerConfig, o.metrics)
 		case common.ProviderCoinbase:
 			provider, err = providers.NewCoinbaseProvider(o.ctx, o.logger, providerConfig, o.metrics)
+		case common.ProviderCoinw:
+			provider, err = providers.NewCoinwProvider(o.ctx, o.logger, providerConfig, o.metrics)
+		case common.ProviderDigifinex:
+			provider, err = providers.NewDigifinexProvider(o.ctx, o.logger, providerConfig, o.metrics)
 		case common.ProviderGate:
 			provider, err = providers.NewGateProvider(o.ctx, o.logger, providerConfig, o.metrics)
 		case common.ProviderGemini:

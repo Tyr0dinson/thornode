@@ -498,21 +498,24 @@ type Bifrost struct {
 	ObserverWorkers int                        `mapstructure:"observer_workers"`
 	Oracle          BifrostOracleConfiguration `mapstructure:"oracle"`
 	Providers       struct {
-		Binance  BifrostOracleProviderConfiguration `mapstructure:"binance"`
-		Bitfinex BifrostOracleProviderConfiguration `mapstructure:"bitfinex"`
-		Bitget   BifrostOracleProviderConfiguration `mapstructure:"bitget"`
-		Bitstamp BifrostOracleProviderConfiguration `mapstructure:"bitstamp"`
-		Bybit    BifrostOracleProviderConfiguration `mapstructure:"bybit"`
-		Coinbase BifrostOracleProviderConfiguration `mapstructure:"coinbase"`
-		Crypto   BifrostOracleProviderConfiguration `mapstructure:"crypto"`
-		Gate     BifrostOracleProviderConfiguration `mapstructure:"gate"`
-		Gemini   BifrostOracleProviderConfiguration `mapstructure:"gemini"`
-		Htx      BifrostOracleProviderConfiguration `mapstructure:"htx"`
-		Kraken   BifrostOracleProviderConfiguration `mapstructure:"kraken"`
-		Kucoin   BifrostOracleProviderConfiguration `mapstructure:"kucoin"`
-		Lbank    BifrostOracleProviderConfiguration `mapstructure:"lbank"`
-		Mexc     BifrostOracleProviderConfiguration `mapstructure:"mexc"`
-		Okx      BifrostOracleProviderConfiguration `mapstructure:"okx"`
+		Binance   BifrostOracleProviderConfiguration `mapstructure:"binance"`
+		Bitfinex  BifrostOracleProviderConfiguration `mapstructure:"bitfinex"`
+		Bitget    BifrostOracleProviderConfiguration `mapstructure:"bitget"`
+		Bitmart   BifrostOracleProviderConfiguration `mapstructure:"bitmart"`
+		Bitstamp  BifrostOracleProviderConfiguration `mapstructure:"bitstamp"`
+		Bybit     BifrostOracleProviderConfiguration `mapstructure:"bybit"`
+		Coinbase  BifrostOracleProviderConfiguration `mapstructure:"coinbase"`
+		Coinw     BifrostOracleProviderConfiguration `mapstructure:"coinw"`
+		Crypto    BifrostOracleProviderConfiguration `mapstructure:"crypto"`
+		Digifinex BifrostOracleProviderConfiguration `mapstructure:"digifinex"`
+		Gate      BifrostOracleProviderConfiguration `mapstructure:"gate"`
+		Gemini    BifrostOracleProviderConfiguration `mapstructure:"gemini"`
+		Htx       BifrostOracleProviderConfiguration `mapstructure:"htx"`
+		Kraken    BifrostOracleProviderConfiguration `mapstructure:"kraken"`
+		Kucoin    BifrostOracleProviderConfiguration `mapstructure:"kucoin"`
+		Lbank     BifrostOracleProviderConfiguration `mapstructure:"lbank"`
+		Mexc      BifrostOracleProviderConfiguration `mapstructure:"mexc"`
+		Okx       BifrostOracleProviderConfiguration `mapstructure:"okx"`
 	} `mapstructure:"providers"`
 }
 
@@ -533,21 +536,24 @@ func (b Bifrost) GetChains() map[common.Chain]BifrostChainConfiguration {
 
 func (b Bifrost) GetProviders() map[string]BifrostOracleProviderConfiguration {
 	return map[string]BifrostOracleProviderConfiguration{
-		common.ProviderBinance:  b.Providers.Binance,
-		common.ProviderBitfinex: b.Providers.Bitfinex,
-		common.ProviderBitget:   b.Providers.Bitget,
-		common.ProviderBitstamp: b.Providers.Bitstamp,
-		common.ProviderBybit:    b.Providers.Bybit,
-		common.ProviderCoinbase: b.Providers.Coinbase,
-		common.ProviderCrypto:   b.Providers.Crypto,
-		common.ProviderGate:     b.Providers.Gate,
-		common.ProviderGemini:   b.Providers.Gemini,
-		common.ProviderHtx:      b.Providers.Htx,
-		common.ProviderKraken:   b.Providers.Kraken,
-		common.ProviderKucoin:   b.Providers.Kucoin,
-		common.ProviderLbank:    b.Providers.Lbank,
-		common.ProviderMexc:     b.Providers.Mexc,
-		common.ProviderOkx:      b.Providers.Okx,
+		common.ProviderBinance:   b.Providers.Binance,
+		common.ProviderBitfinex:  b.Providers.Bitfinex,
+		common.ProviderBitget:    b.Providers.Bitget,
+		common.ProviderBitmart:   b.Providers.Bitmart,
+		common.ProviderBitstamp:  b.Providers.Bitstamp,
+		common.ProviderBybit:     b.Providers.Bybit,
+		common.ProviderCoinbase:  b.Providers.Coinbase,
+		common.ProviderCoinw:     b.Providers.Coinw,
+		common.ProviderCrypto:    b.Providers.Crypto,
+		common.ProviderDigifinex: b.Providers.Digifinex,
+		common.ProviderGate:      b.Providers.Gate,
+		common.ProviderGemini:    b.Providers.Gemini,
+		common.ProviderHtx:       b.Providers.Htx,
+		common.ProviderKraken:    b.Providers.Kraken,
+		common.ProviderKucoin:    b.Providers.Kucoin,
+		common.ProviderLbank:     b.Providers.Lbank,
+		common.ProviderMexc:      b.Providers.Mexc,
+		common.ProviderOkx:       b.Providers.Okx,
 	}
 }
 
