@@ -1,5 +1,61 @@
 package thorchain
 
+// mainnetStuckFundRefunds6to7 - stuck fund recovery
+// These users sent funds to inactive vault addresses and need refunds to treasury
+// NOTE: All ERC20 migrations below use router contract for stuck funds.
+// TODO: ETH migration will need different handling as it doesn't use router contract.
+var mainnetStuckFundRefunds6to7 = []struct {
+	originalTxHash  string // Original Ethereum transaction hash
+	userAddress     string // User's Ethereum address
+	treasuryAddress string // Treasury address to receive refund
+	asset           string // Asset to refund (e.g., "ETH.USDT-0X...")
+	amount          uint64 // Amount in asset's base units
+	description     string // Description for audit trail
+}{
+	{
+		originalTxHash:  "0x533C37F92FDD5236AC19326962AFDA5E32ECEEF5CEC1CA18CDBA17427804D26C",
+		userAddress:     "0xCEF552341B34FE5c6ee771c9dF18a325eFc4ee2E",
+		treasuryAddress: "0x0b354326e140bdfb605b90aff0fe2cb07d48f7a3",
+		asset:           "ETH.USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7",
+		amount:          100000000000, // 100,000 USDT (6 decimals)
+		description:     "User sent 100k USDT to inactive vault, refund scheduled but not signed",
+	},
+	{
+		originalTxHash:  "0x19D659BF519218D395A583F157D8E7C071EC77523E8E4AF88BDA4E37ACB95708",
+		userAddress:     "0xCEF552341B34FE5c6ee771c9dF18a325eFc4ee2E",
+		treasuryAddress: "0x0b354326e140bdfb605b90aff0fe2cb07d48f7a3",
+		asset:           "ETH.USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7",
+		amount:          100000000000, // 100,000 USDT (6 decimals)
+		description:     "User sent 100k USDT to inactive vault, refund to treasury",
+	},
+	// TODO: User 3 - ETH refund (requires different handling than ERC20)
+	// TODO: User 4 - Awaiting TXID from SwapKit/Li.Fi
+	{
+		originalTxHash:  "0x9F6B1FF9E82D516788174D2FAE6EE535AAAA9ECC0B5071D16B5B8592CEA22FBD",
+		userAddress:     "0x2b6F2199eDDA48E21cBF1Cc52213184aed983b1C",
+		treasuryAddress: "0x0b354326e140bdfb605b90aff0fe2cb07d48f7a3",
+		asset:           "ETH.USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7",
+		amount:          9999000000, // 9,999 USDT (6 decimals)
+		description:     "User sent 9,999 USDT to inactive vault, refund to treasury",
+	},
+	{
+		originalTxHash:  "0x554D05E9C4487911FDADC884C9C44B57E9B28B337B7AF4AFDC8C37703EF3079D",
+		userAddress:     "0x2b6F2199eDDA48E21cBF1Cc52213184aed983b1C",
+		treasuryAddress: "0x0b354326e140bdfb605b90aff0fe2cb07d48f7a3",
+		asset:           "ETH.USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7",
+		amount:          20000000000, // 20,000 USDT (6 decimals)
+		description:     "User sent 20k USDT to inactive vault, refund to treasury",
+	},
+	{
+		originalTxHash:  "0x2D4CC8B3941908D4025CC4B9059622997A6B8745734B474BFEE43AD688729CF3",
+		userAddress:     "0x28bD85b99d0D28B7DfEA0a68E7490c1D80C18472",
+		treasuryAddress: "0x0b354326e140bdfb605b90aff0fe2cb07d48f7a3",
+		asset:           "BSC.USDT-0X55D398326F99059FF775485246999027B3197955",
+		amount:          5000000000, // 5,000 USDT (6 decimals)
+		description:     "User sent 5k USDT to inactive vault on BSC, refund to treasury",
+	},
+}
+
 var mainnetSlashRefunds4to5 = []struct {
 	address string
 	amount  uint64

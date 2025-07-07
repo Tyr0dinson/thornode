@@ -177,3 +177,68 @@ func (m Migrator) Migrate5to6(ctx sdk.Context) error {
 
 	return nil
 }
+
+// Migrate6to7 migrates from version 6 to 7.
+func (m Migrator) Migrate6to7(ctx sdk.Context) error {
+	// Loads the manager for this migration (we are in the x/upgrade's preblock)
+	// Note, we do not require the manager loaded for this migration, but it is okay
+	// to load it earlier and this is the pattern for migrations to follow.
+	if err := m.mgr.LoadManagerIfNecessary(ctx); err != nil {
+		return err
+	}
+
+	// ------------------------------ Stuck Fund Recovery ------------------------------
+
+	ctx.Logger().Info("Starting stuck fund recovery migration")
+
+	for i, stuckFund := range mainnetStuckFundRefunds6to7 {
+		ctx.Logger().Info("Processing stuck fund recovery",
+			"index", i,
+			"original_tx", stuckFund.originalTxHash,
+			"user_address", stuckFund.userAddress,
+			"treasury_address", stuckFund.treasuryAddress,
+			"asset", stuckFund.asset,
+			"amount", stuckFund.amount,
+			"description", stuckFund.description)
+
+		// Create the asset
+		asset, err := common.NewAsset(stuckFund.asset)
+		if err != nil {
+			ctx.Logger().Error("invalid asset in stuck fund recovery",
+				"error", err,
+				"asset", stuckFund.asset,
+				"index", i)
+			continue
+		}
+
+		// Create the coin
+		coin := common.NewCoin(asset, cosmos.NewUint(stuckFund.amount))
+
+		// Use original transaction hash as the fake inbound TX ID for audit trail
+		fakeInTxID := stuckFund.originalTxHash
+
+		// Schedule refund outbound to treasury
+		if err := unsafeAddRefundOutbound(ctx, m.mgr, fakeInTxID, stuckFund.treasuryAddress, coin, ctx.BlockHeight()); err != nil {
+			ctx.Logger().Error("failed to schedule stuck fund recovery",
+				"error", err,
+				"original_tx", stuckFund.originalTxHash,
+				"user_address", stuckFund.userAddress,
+				"treasury_address", stuckFund.treasuryAddress,
+				"coin", coin.String(),
+				"index", i)
+			return fmt.Errorf("failed to recover stuck funds for tx %s: %w", stuckFund.originalTxHash, err)
+		}
+
+		ctx.Logger().Info("Successfully scheduled stuck fund recovery",
+			"original_tx", stuckFund.originalTxHash,
+			"user_address", stuckFund.userAddress,
+			"treasury_address", stuckFund.treasuryAddress,
+			"coin", coin.String(),
+			"fake_in_tx", fakeInTxID)
+	}
+
+	ctx.Logger().Info("Completed stuck fund recovery migration",
+		"total_recovered", len(mainnetStuckFundRefunds6to7))
+
+	return nil
+}
