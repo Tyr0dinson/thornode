@@ -50,6 +50,9 @@ func NewHtxProvider(
 		return nil, err
 	}
 
+	// restart if we havent received any ping in the last 30s
+	wsProvider.keepaliveTimeout = time.Second * 30
+
 	provider := HtxProvider{wsProvider}
 	err = provider.init(&provider)
 	if err != nil {
@@ -117,7 +120,7 @@ func (p *HtxProvider) Poll() {
 	}
 }
 
-func (p *HtxProvider) Subscribe() error {
+func (p *HtxProvider) GetSubscriptionMsgs() ([]map[string]any, error) {
 	var subscriptions []string
 
 	for _, pair := range p.pairs {
@@ -128,17 +131,11 @@ func (p *HtxProvider) Subscribe() error {
 		)
 	}
 
-	msg := map[string]any{
+	msgs := []map[string]any{{
 		"sub": subscriptions,
-	}
+	}}
 
-	err := wsjson.Write(p.ctx, p.ws, msg)
-	if err != nil {
-		p.logger.Err(err).Msg("fail to subscribe")
-		return err
-	}
-
-	return nil
+	return msgs, nil
 }
 
 func (p *HtxProvider) HandleWsMessage(msg []byte) error {
@@ -198,6 +195,7 @@ func (p *HtxProvider) HandleWsMessage(msg []byte) error {
 			p.logger.Err(err).Msg("fail to write pong")
 			return err
 		}
+		p.lastKeepalive = time.Now()
 	}
 
 	return nil

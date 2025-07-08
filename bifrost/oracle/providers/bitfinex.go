@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/coder/websocket/wsjson"
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/metrics"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -137,26 +136,20 @@ func (p *BitfinexProvider) Poll() {
 	}
 }
 
-func (p *BitfinexProvider) Subscribe() error {
+func (p *BitfinexProvider) GetSubscriptionMsgs() ([]map[string]any, error) {
+	msgs := []map[string]any{}
+
 	for _, pair := range p.pairs {
 		symbol := p.toMappedProviderSymbol(pair)
 
-		msg := map[string]any{
+		msgs = append(msgs, map[string]any{
 			"event":   "subscribe",
 			"channel": "ticker",
 			"symbol":  symbol,
-		}
-
-		err := wsjson.Write(p.ctx, p.ws, msg)
-		if err != nil {
-			p.logger.Err(err).Msg("fail to subscribe")
-			return err
-		}
-
-		time.Sleep(time.Millisecond * 100)
+		})
 	}
 
-	return nil
+	return msgs, nil
 }
 
 func (p *BitfinexProvider) HandleWsMessage(msg []byte) error {

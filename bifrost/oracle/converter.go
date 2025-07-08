@@ -17,7 +17,7 @@ const (
 
 type Converter struct {
 	tickers map[string]map[string]types.Ticker // by symbol, provider: tickers[BTC/USDC][binance]
-	rates   map[string]map[string]types.Ticker // by denom, provider: rates[BTC][binance]
+	rates   map[string]map[string]types.Ticker // by symbol, provider: rates[BTC][binance]
 	metrics *metrics.Metrics
 }
 
@@ -32,28 +32,28 @@ func NewConverter(
 	}
 }
 
-func (c *Converter) AddRate(denom, provider string, rate types.Ticker) {
-	_, found := c.rates[denom]
+func (c *Converter) AddRate(symbol, provider string, rate types.Ticker) {
+	_, found := c.rates[symbol]
 	if !found {
-		c.rates[denom] = map[string]types.Ticker{}
+		c.rates[symbol] = map[string]types.Ticker{}
 	}
 
-	_, found = c.rates[denom][provider]
+	_, found = c.rates[symbol][provider]
 	if found {
 		// don't overwrite
 		return
 	}
 
-	c.rates[denom][provider] = rate
+	c.rates[symbol][provider] = rate
 }
 
-// GetRate returns the USD rate of the provided denom by filtering known
+// GetRate returns the USD rate of the provided symbol by filtering known
 // prices with regard to maxDeviation and computing the volume weighted average
-func (c *Converter) GetRate(denom string, metrics bool) (*big.Float, *big.Float, error) {
-	rates, found := c.rates[denom]
+func (c *Converter) GetRate(symbol string, metrics bool) (*big.Float, *big.Float, error) {
+	rates, found := c.rates[symbol]
 	if metrics {
 		for provider, rate := range rates {
-			c.metrics.UpdateProviderPrice(provider, denom, rate.Price)
+			c.metrics.UpdateProviderPrice(provider, symbol, rate.Price)
 		}
 	}
 
@@ -67,7 +67,7 @@ func (c *Converter) GetRate(denom string, metrics bool) (*big.Float, *big.Float,
 	}
 
 	if metrics {
-		c.metrics.UpdateProviderBounds(denom, upperBound, lowerBound)
+		c.metrics.UpdateProviderBounds(symbol, upperBound, lowerBound)
 	}
 
 	volume := new(big.Float)
@@ -89,7 +89,7 @@ func (c *Converter) GetRate(denom string, metrics bool) (*big.Float, *big.Float,
 	}
 
 	if metrics {
-		for provider := range c.rates[denom] {
+		for provider := range c.rates[symbol] {
 			total, found := totalVolumes[provider]
 			if !found {
 				total = new(big.Float)
@@ -100,8 +100,8 @@ func (c *Converter) GetRate(denom string, metrics bool) (*big.Float, *big.Float,
 				capped = new(big.Float)
 			}
 
-			c.metrics.UpdateConverterTotalVolume(provider, denom, total)
-			c.metrics.UpdateConverterCappedVolume(provider, denom, capped)
+			c.metrics.UpdateConverterTotalVolume(provider, symbol, total)
+			c.metrics.UpdateConverterCappedVolume(provider, symbol, capped)
 		}
 	}
 
@@ -111,7 +111,7 @@ func (c *Converter) GetRate(denom string, metrics bool) (*big.Float, *big.Float,
 	}
 
 	if metrics {
-		c.metrics.UpdateProviderPrice("final", denom, rate)
+		c.metrics.UpdateProviderPrice("final", symbol, rate)
 	}
 
 	// estimate volume in USD
@@ -253,6 +253,10 @@ func ComputeMedianAbsoluteDeviation(values []*big.Float) (*big.Float, *big.Float
 }
 
 func ComputeMedian(values []*big.Float) (*big.Float, error) {
+	if len(values) == 0 {
+		return nil, fmt.Errorf("no values provided")
+	}
+
 	if len(values) == 1 {
 		return values[0], nil
 	}
@@ -269,36 +273,6 @@ func ComputeMedian(values []*big.Float) (*big.Float, error) {
 
 	sum := new(big.Float).Add(values[midpoint-1], values[midpoint])
 	return sum.Quo(sum, big.NewFloat(2)), nil
-}
-
-// TODO: Use MAD instead
-// ComputeStandardDeviation computes and returns the standard deviation and mean
-// of provided ticker prices
-func ComputeStandardDeviation(values []*big.Float) (*big.Float, *big.Float, error) {
-	if len(values) < 2 {
-		return nil, nil, fmt.Errorf("not enough tickers for calculation")
-	}
-
-	sum := new(big.Float)
-
-	for _, value := range values {
-		sum.Add(sum, value)
-	}
-
-	count := big.NewFloat(float64(len(values)))
-	mean := new(big.Float).Quo(sum, count)
-
-	variance := new(big.Float)
-	for _, value := range values {
-		deviation := new(big.Float).Sub(value, mean)
-		variance.Add(variance, deviation.Mul(deviation, deviation))
-	}
-
-	variance.Quo(variance, count)
-
-	deviation := new(big.Float).Sqrt(variance)
-
-	return deviation, mean, nil
 }
 
 func FilterDeviations(
@@ -333,8 +307,8 @@ func FilterDeviations(
 }
 
 func ComputeVwap(prices, volumes map[string]*big.Float) (*big.Float, error) {
-	if len(prices) == 0 {
-		return nil, fmt.Errorf("not enough value for calculation")
+	if len(prices) == 0 || len(volumes) == 0 {
+		return nil, fmt.Errorf("not enough values for calculation")
 	}
 
 	if len(prices) != len(volumes) {
@@ -345,6 +319,11 @@ func ComputeVwap(prices, volumes map[string]*big.Float) (*big.Float, error) {
 	totalVolume := new(big.Float)
 
 	for k, rate := range prices {
+
+		if rate.Cmp(new(big.Float)) <= 0 {
+			continue
+		}
+
 		weightedPrice := new(big.Float).Mul(rate, volumes[k])
 		weightedTotal.Add(weightedTotal, weightedPrice)
 		totalVolume.Add(totalVolume, volumes[k])

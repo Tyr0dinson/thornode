@@ -128,7 +128,7 @@ func (p *OkxProvider) Poll() {
 
 // Websocket
 
-func (p *OkxProvider) Subscribe() error {
+func (p *OkxProvider) GetSubscriptionMsgs() ([]map[string]any, error) {
 	var args []map[string]string
 
 	for _, pair := range p.pairs {
@@ -138,19 +138,13 @@ func (p *OkxProvider) Subscribe() error {
 		})
 	}
 
-	msg := map[string]any{
+	msgs := []map[string]any{{
 		"op":   "subscribe",
 		"args": args,
 		"id":   1,
-	}
+	}}
 
-	err := wsjson.Write(p.ctx, p.ws, msg)
-	if err != nil {
-		p.logger.Err(err).Msg("fail to subscribe")
-		return err
-	}
-
-	return nil
+	return msgs, nil
 }
 
 func (p *OkxProvider) HandleWsMessage(msg []byte) error {

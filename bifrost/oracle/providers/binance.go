@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/coder/websocket/wsjson"
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/metrics"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -21,12 +20,16 @@ type BinanceTicker struct {
 	Price       string `json:"lastPrice"`
 }
 
-type BinanceWsTicker struct {
+type BinanceWsTickerMsg struct {
 	// Time        uint64 `json:"E"`
 	Symbol      string `json:"s"`
 	BaseVolume  string `json:"v"`
 	QuoteVolume string `json:"q"`
 	Price       string `json:"c"`
+}
+
+type BinanceWsSubscriptionMsg struct {
+	Id int64 `json:"id"`
 }
 
 type BinanceProvider struct {
@@ -126,48 +129,46 @@ func (p *BinanceProvider) Poll() {
 
 // Websocket
 
-func (p *BinanceProvider) Subscribe() error {
+func (p *BinanceProvider) GetSubscriptionMsgs() ([]map[string]any, error) {
 	var params []string
 
 	for _, pair := range p.pairs {
 		params = append(params, strings.ToLower(pair.Join(""))+"@miniTicker")
 	}
 
-	msg := map[string]any{
+	msgs := []map[string]any{{
 		"method": "SUBSCRIBE",
 		"params": params,
 		"id":     1,
-	}
+	}}
 
-	err := wsjson.Write(p.ctx, p.ws, msg)
-	if err != nil {
-		p.logger.Err(err).Msg("fail to subscribe")
-		return err
-	}
-
-	return nil
+	return msgs, nil
 }
 
 func (p *BinanceProvider) HandleWsMessage(msg []byte) error {
-	var ticker BinanceWsTicker
-	err := json.Unmarshal(msg, &ticker)
+	var tickerMsg BinanceWsTickerMsg
+	var subscriptionMsg BinanceWsSubscriptionMsg
 
-	if err == nil && ticker.Symbol != "" {
-		pair, found := p.pairs[ticker.Symbol]
+	err := json.Unmarshal(msg, &tickerMsg)
+	if err == nil && tickerMsg.Symbol != "" {
+		pair, found := p.pairs[tickerMsg.Symbol]
 		if !found {
 			return nil
 		}
 
-		timestamp := time.Now()
-
 		p.setTicker(
-			timestamp,
+			time.Now(),
 			pair,
-			strToFloat(ticker.Price),
-			strToFloat(ticker.BaseVolume),
-			strToFloat(ticker.QuoteVolume),
+			strToFloat(tickerMsg.Price),
+			strToFloat(tickerMsg.BaseVolume),
+			strToFloat(tickerMsg.QuoteVolume),
 		)
 
+		return nil
+	}
+
+	err = json.Unmarshal(msg, &subscriptionMsg)
+	if err == nil && subscriptionMsg.Id == 1 {
 		return nil
 	}
 

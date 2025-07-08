@@ -22,13 +22,18 @@ type BybitTickersResponse struct {
 	} `json:"result"`
 }
 
-type BybitWsTickerEvent struct {
+type BybitWsTickerMsg struct {
 	Data struct {
 		Symbol      string `json:"symbol"`
 		Price       string `json:"lastPrice"`
 		BaseVolume  string `json:"volume24h"`
 		QuoteVolume string `json:"turnover24h"`
 	} `json:"data"`
+}
+
+type BybitWsPongMsg struct {
+	RetMsg string `json:"ret_msg"`
+	Op     string `json:"op"`
 }
 
 type BybitProvider struct {
@@ -45,6 +50,11 @@ func NewBybitProvider(
 	if err != nil {
 		return nil, err
 	}
+
+	// https://bybit-exchange.github.io/docs/v5/ws/connect
+	// client needs to send a ping every few seconds using 20s as interval
+	wsProvider.keepaliveInterval = time.Second * 20
+	wsProvider.keepaliveTimeout = time.Second * 30
 
 	provider := BybitProvider{wsProvider}
 	err = provider.init(&provider)
@@ -119,16 +129,63 @@ func (p *BybitProvider) ToProviderSymbol(base, quote string) string {
 	return base + quote
 }
 
-func (p *BybitProvider) Subscribe() error {
-	var args []string
+func (p *BybitProvider) GetSubscriptionMsgs() ([]map[string]any, error) {
+	msgs := []map[string]any{}
 
-	for _, pair := range p.pairs {
-		args = append(args, "tickers."+pair.Join(""))
+	var args []string
+	for symbol := range p.pairs {
+		if len(args) >= 5 {
+			msgs = append(msgs, map[string]any{
+				"op":   "subscribe",
+				"args": args,
+			})
+
+			args = []string{}
+		}
+
+		args = append(args, "tickers."+symbol)
 	}
 
+	return msgs, nil
+}
+
+func (p *BybitProvider) HandleWsMessage(msg []byte) error {
+	var tickerMsg BybitWsTickerMsg
+	var pongMsg BybitWsPongMsg
+
+	err := json.Unmarshal(msg, &tickerMsg)
+	if err == nil && tickerMsg.Data.Symbol != "" {
+
+		pair, found := p.pairs[tickerMsg.Data.Symbol]
+		if !found {
+			return nil
+		}
+
+		timestamp := time.Now()
+
+		p.setTicker(
+			timestamp,
+			pair,
+			strToFloat(tickerMsg.Data.Price),
+			strToFloat(tickerMsg.Data.BaseVolume),
+			strToFloat(tickerMsg.Data.QuoteVolume),
+		)
+
+		return nil
+	}
+
+	err = json.Unmarshal(msg, &pongMsg)
+	if err == nil && pongMsg.RetMsg == "pong" && pongMsg.Op == "ping" {
+		p.lastKeepalive = time.Now()
+		return nil
+	}
+
+	return ErrUnknownWsMsg
+}
+
+func (p *BybitProvider) Ping() error {
 	msg := map[string]any{
-		"op":   "subscribe",
-		"args": args,
+		"op": "ping",
 	}
 
 	err := wsjson.Write(p.ctx, p.ws, msg)
@@ -136,32 +193,6 @@ func (p *BybitProvider) Subscribe() error {
 		p.logger.Err(err).Msg("fail to subscribe")
 		return err
 	}
-
-	return nil
-}
-
-func (p *BybitProvider) HandleWsMessage(msg []byte) error {
-	var event BybitWsTickerEvent
-	err := json.Unmarshal(msg, &event)
-	if err != nil {
-		p.logger.Err(err).Msg("error unmarshalling data")
-		return err
-	}
-
-	pair, found := p.pairs[event.Data.Symbol]
-	if !found {
-		return nil
-	}
-
-	timestamp := time.Now()
-
-	p.setTicker(
-		timestamp,
-		pair,
-		strToFloat(event.Data.Price),
-		strToFloat(event.Data.BaseVolume),
-		strToFloat(event.Data.QuoteVolume),
-	)
 
 	return nil
 }

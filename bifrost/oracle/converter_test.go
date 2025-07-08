@@ -21,7 +21,18 @@ func Test(t *testing.T) {
 
 func (s *ConverterTestSuite) SetUpSuite(c *C) {}
 
+func precision(s string) int {
+	parts := strings.Split(s, ".")
+	if len(parts) < 2 {
+		return 0
+	}
+	return len(parts[1])
+}
+
 func newTicker(symbol string, price, volume float64) types.Ticker {
+	if symbol == "" {
+		symbol = "FOO/BAR"
+	}
 	parts := strings.Split(symbol, "/")
 	return types.Ticker{
 		Time:   time.Now(),
@@ -31,19 +42,148 @@ func newTicker(symbol string, price, volume float64) types.Ticker {
 	}
 }
 
-func (s *ConverterTestSuite) TestStandardDeviation(c *C) {
-	values := []*big.Float{
-		big.NewFloat(32),
-		big.NewFloat(37),
-		big.NewFloat(28),
-		big.NewFloat(19),
-		big.NewFloat(35),
+func (s *ConverterTestSuite) TestMedianAverageDeviation(c *C) {
+	testCases := []struct {
+		Values    []float64
+		Deviation string
+		Median    string
+		Fail      bool
+	}{
+		{
+			Values:    []float64{4.43, 5.35, 1.26, 7.62, 7.11, 1.24, 7.01, 8.18, 9.82, 8.77},
+			Deviation: "1.71",
+			Median:    "7.06",
+		},
+		{
+			Values:    []float64{4.43, 5.35},
+			Deviation: "0.46",
+			Median:    "4.89",
+		},
+		{
+			Values:    []float64{4.43},
+			Deviation: "0",
+			Median:    "4.43",
+		},
+		{
+			Values:    []float64{0, 0, 0},
+			Deviation: "0",
+			Median:    "0",
+		},
+		{
+			Values: []float64{},
+			Fail:   true,
+		},
 	}
 
-	deviation, mean, err := ComputeStandardDeviation(values)
-	c.Assert(err, IsNil)
-	c.Assert(deviation.Text('f', 8), Equals, "6.36867333")
-	c.Assert(mean.Text('f', -1), Equals, "30.2")
+	for _, tc := range testCases {
+		values := make([]*big.Float, len(tc.Values))
+		for i, value := range tc.Values {
+			values[i] = big.NewFloat(value)
+		}
+
+		deviation, median, err := ComputeMedianAbsoluteDeviation(values)
+
+		if tc.Fail {
+			c.Assert(err, NotNil)
+			continue
+		}
+
+		c.Assert(err, IsNil)
+		c.Assert(deviation.Text('f', precision(tc.Deviation)), Equals, tc.Deviation)
+		c.Assert(median.Text('f', precision(tc.Median)), Equals, tc.Median)
+	}
+}
+
+func (s *ConverterTestSuite) TestVwap(c *C) {
+	testCases := []struct {
+		Tickers []types.Ticker
+		Vwap    string
+		Fail    bool
+	}{
+		{
+			Tickers: []types.Ticker{
+				newTicker("", 1, 3),
+				newTicker("", 2, 2),
+				newTicker("", 3, 3),
+			},
+			// 3 + 4 + 9 = 16 / 6
+			Vwap: "2.0",
+		},
+		{
+			Tickers: []types.Ticker{
+				newTicker("", 1.234, 1),
+			},
+			Vwap: "1.234",
+		},
+		{
+			Tickers: []types.Ticker{
+				newTicker("", 1.234, 1),
+				newTicker("", 1.234, 2),
+			},
+			Vwap: "1.234",
+		},
+		{
+			Tickers: []types.Ticker{
+				newTicker("", 1, 0),
+				newTicker("", 2, 2),
+				newTicker("", 3, 3),
+			},
+			Vwap: "2.6",
+		},
+		{
+			Tickers: []types.Ticker{
+				newTicker("", 2, 0),
+				newTicker("", 3, 0),
+			},
+			Vwap: "0",
+		},
+		{
+			Tickers: []types.Ticker{
+				newTicker("", 0, 1),
+				newTicker("", 3, 0),
+			},
+			Vwap: "0",
+		},
+		{
+			Tickers: []types.Ticker{
+				newTicker("", 0, 1),
+				newTicker("", 3, 1),
+			},
+			Vwap: "3.0",
+		},
+		{
+			Tickers: []types.Ticker{
+				newTicker("", 0, 1),
+				newTicker("", 3, 0),
+				newTicker("", 9, 1),
+			},
+			Vwap: "9.0",
+		},
+		{
+			Tickers: []types.Ticker{},
+			Fail:    true,
+		},
+	}
+
+	for _, tc := range testCases {
+		values := map[string]*big.Float{}
+		weights := map[string]*big.Float{}
+
+		for i, ticker := range tc.Tickers {
+			values[fmt.Sprintf("%d", i)] = new(big.Float).Copy(ticker.Price)
+			weights[fmt.Sprintf("%d", i)] = new(big.Float).Copy(ticker.Volume)
+		}
+
+		vwap, err := ComputeVwap(values, weights)
+
+		if tc.Fail {
+			c.Assert(err, NotNil)
+			continue
+		}
+
+		c.Assert(err, IsNil)
+		c.Assert(vwap.Text('f', precision(tc.Vwap)), Equals, tc.Vwap)
+	}
 }
 
 func (s *ConverterTestSuite) TestCappedPercent(c *C) {
@@ -111,40 +251,47 @@ func (s *ConverterTestSuite) TestUsdConversion(c *C) {
 
 	tickersBySymbol := map[string]map[string]types.Ticker{
 		"BTC/USD": {
-			"coinbase": newTicker("BTC/USD", 100_000, 7_500),
-			"crypto":   newTicker("BTC/USD", 100_000, 7_500),
-			"kraken":   newTicker("BTC/USD", 100_000, 1_500),
-			"bitstamp": newTicker("BTC/USD", 100_000, 1_000),
+			"coinbase": newTicker("BTC/USD", 100_000, 1),
+			"crypto":   newTicker("BTC/USD", 100_000, 1),
+			"kraken":   newTicker("BTC/USD", 100_000, 1),
 		},
-
 		"USDT/USD": {
-			"kraken":   newTicker("USDT/USD", 1.002, 370_000_000),
-			"coinbase": newTicker("USDT/USD", 1.002, 70_000_000),
-			"bitfinex": newTicker("USDT/USD", 1.002, 17_000_000),
+			"kraken":   newTicker("USDT/USD", 1.002, 100_000),
+			"coinbase": newTicker("USDT/USD", 1.002, 100_000),
+			"bitfinex": newTicker("USDT/USD", 1.002, 100_000),
 		},
-
 		"USDT/BTC": {
-			"binance": newTicker("USDT/BTC", 0.00001001, 2_000_000_000),
-			"bitget":  newTicker("USDT/BTC", 0.00001001, 900_000_000),
-			"gate":    newTicker("USDT/BTC", 0.00001001, 600_000_000),
+			"binance": newTicker("USDT/BTC", 0.00001001, 200_000),
+			"bitget":  newTicker("USDT/BTC", 0.00001001, 200_000),
+			"gate":    newTicker("USDT/BTC", 0.00001001, 200_000),
 		},
-
 		"ETH/USDT": {
-			"binance": newTicker("ETH/USDT", 2600, 800_000),
-			"bitget":  newTicker("ETH/USDT", 2600, 500_000),
-			"okx":     newTicker("ETH/USDT", 2600, 330_000),
+			"binance": newTicker("ETH/USDT", 2600, 7),
+			"bitget":  newTicker("ETH/USDT", 2600, 2),
+			"okx":     newTicker("ETH/USDT", 2600, 1),
 		},
 	}
 
 	converter := NewConverter(tickersBySymbol, metrics.NewMetrics())
 
+	// try to overwrite existing price
+	converter.AddRate("BTC", "coinbase", newTicker("BTC/USD", 101_000, 1))
+
 	rates, err := converter.ConvertToUsd()
 	c.Assert(err, IsNil)
 	c.Assert(len(rates), Equals, 3)
+	// didn't overwrite coinbase BTC/USD rate
 	c.Assert(rates["BTC"].Text('f', 1), Equals, "100000.0")
-	// most volume from USDT/BTC pairs, so nearly 1.001 USD
-	c.Assert(rates["USDT"].Text('f', 8), Equals, "1.00112910")
+	// 1/3 USDT/USD: 1.002 (volume: 300k USDT)
+	// 2/3 USDT/BTC with BTC @ 100k USD: 1.001 (volume: 600k USDT)
+	c.Assert(rates["USDT"].Text('f', 8), Equals, "1.00133333")
 	// USDT/USD updated with USDT/BTC pairs before converting, ETH/USDT
-	// 2600 * 1.00112910 ~ 2602.94
-	c.Assert(rates["ETH"].Text('f', 2), Equals, "2602.94")
+	// 2600 * 1.00133333 ~ 2603.4666
+	c.Assert(rates["ETH"].Text('f', 3), Equals, "2603.467")
+
+	// no prices for SOL
+	price, volume, err := converter.GetRate("SOL", false)
+	c.Assert(err, NotNil)
+	c.Assert(price, IsNil)
+	c.Assert(volume, IsNil)
 }

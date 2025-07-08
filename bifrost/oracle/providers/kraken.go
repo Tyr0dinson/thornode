@@ -3,7 +3,6 @@ package providers
 import (
 	"context"
 	"encoding/json"
-	"github.com/coder/websocket/wsjson"
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/types"
@@ -120,28 +119,22 @@ func (p *KrakenProvider) ToProviderSymbol(base, quote string) string {
 
 // Websocket
 
-func (p *KrakenProvider) Subscribe() error {
+func (p *KrakenProvider) GetSubscriptionMsgs() ([]map[string]any, error) {
 	var symbols []string
 
 	for _, pair := range p.pairs {
 		symbols = append(symbols, pair.String())
 	}
 
-	msg := map[string]any{
+	msgs := []map[string]any{{
 		"method": "subscribe",
 		"params": map[string]any{
 			"channel": "ticker",
 			"symbol":  symbols,
 		},
-	}
+	}}
 
-	err := wsjson.Write(p.ctx, p.ws, msg)
-	if err != nil {
-		p.logger.Err(err).Msg("fail to subscribe")
-		return err
-	}
-
-	return nil
+	return msgs, nil
 }
 
 func (p *KrakenProvider) HandleWsMessage(msg []byte) error {

@@ -5,7 +5,6 @@ import (
 	"compress/zlib"
 	"context"
 	"encoding/json"
-	"github.com/coder/websocket/wsjson"
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/metrics"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -109,26 +108,20 @@ func (p *DigifinexProvider) Poll() {
 
 // Websocket
 
-func (p *DigifinexProvider) Subscribe() error {
+func (p *DigifinexProvider) GetSubscriptionMsgs() ([]map[string]any, error) {
 	var symbols []string
 
 	for _, pair := range p.pairs {
 		symbols = append(symbols, p.ToProviderSymbol(pair.Base, pair.Quote))
 	}
 
-	msg := map[string]any{
+	msgs := []map[string]any{{
 		"method": "ticker.subscribe",
 		"id":     1,
 		"params": symbols,
-	}
+	}}
 
-	err := wsjson.Write(p.ctx, p.ws, msg)
-	if err != nil {
-		p.logger.Err(err).Msg("fail to subscribe")
-		return err
-	}
-
-	return nil
+	return msgs, nil
 }
 
 func (p *DigifinexProvider) HandleWsMessage(msg []byte) error {

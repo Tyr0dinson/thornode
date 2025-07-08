@@ -47,7 +47,7 @@ func NewMetrics() *Metrics {
 				Subsystem: "provider",
 				Name:      "price",
 				Help:      "calculated asset price in USD",
-			}, []string{"provider", "denom"},
+			}, []string{"provider", "symbol"},
 		),
 		providerBound: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
@@ -55,7 +55,7 @@ func NewMetrics() *Metrics {
 				Subsystem: "provider",
 				Name:      "bounds",
 				Help:      "upper and lower bounds allowed for price calculation",
-			}, []string{"denom", "type"},
+			}, []string{"symbol", "type"},
 		),
 		converterVolume: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
@@ -63,7 +63,7 @@ func NewMetrics() *Metrics {
 				Subsystem: "converter",
 				Name:      "volume_usd",
 				Help:      "volume for asset calculated by converter",
-			}, []string{"provider", "denom", "type"},
+			}, []string{"provider", "symbol", "type"},
 		),
 	}
 
@@ -71,12 +71,12 @@ func NewMetrics() *Metrics {
 }
 
 func (m *Metrics) Register() {
-	prometheus.MustRegister(m.providerRate)
-	prometheus.MustRegister(m.providerVolume)
-	prometheus.MustRegister(m.providerUpdate)
-	prometheus.MustRegister(m.providerPrice)
-	prometheus.MustRegister(m.providerBound)
-	prometheus.MustRegister(m.converterVolume)
+	_ = prometheus.Register(m.providerRate)
+	_ = prometheus.Register(m.providerVolume)
+	_ = prometheus.Register(m.providerUpdate)
+	_ = prometheus.Register(m.providerPrice)
+	_ = prometheus.Register(m.providerBound)
+	_ = prometheus.Register(m.converterVolume)
 }
 
 func (m *Metrics) UpdateProviderTicker(provider string, ticker types.Ticker) {
@@ -90,24 +90,24 @@ func (m *Metrics) UpdateProviderTicker(provider string, ticker types.Ticker) {
 	m.providerUpdate.WithLabelValues(provider, base, quote).Add(1)
 }
 
-func (m *Metrics) UpdateProviderPrice(provider, denom string, price *big.Float) {
+func (m *Metrics) UpdateProviderPrice(provider, symbol string, price *big.Float) {
 	value, _ := price.Float64()
-	m.providerPrice.WithLabelValues(provider, denom).Set(value)
+	m.providerPrice.WithLabelValues(provider, symbol).Set(value)
 }
 
-func (m *Metrics) UpdateConverterCappedVolume(provider, denom string, volume *big.Float) {
+func (m *Metrics) UpdateConverterCappedVolume(provider, symbol string, volume *big.Float) {
 	value, _ := volume.Float64()
-	m.converterVolume.WithLabelValues(provider, denom, "capped").Set(value)
+	m.converterVolume.WithLabelValues(provider, symbol, "capped").Set(value)
 }
 
-func (m *Metrics) UpdateConverterTotalVolume(provider, denom string, volume *big.Float) {
+func (m *Metrics) UpdateConverterTotalVolume(provider, symbol string, volume *big.Float) {
 	value, _ := volume.Float64()
-	m.converterVolume.WithLabelValues(provider, denom, "total").Set(value)
+	m.converterVolume.WithLabelValues(provider, symbol, "total").Set(value)
 }
 
-func (m *Metrics) UpdateProviderBounds(denom string, upper, lower *big.Float) {
+func (m *Metrics) UpdateProviderBounds(symbol string, upper, lower *big.Float) {
 	u, _ := upper.Float64()
 	l, _ := lower.Float64()
-	m.providerBound.WithLabelValues(denom, "upper").Set(u)
-	m.providerBound.WithLabelValues(denom, "lower").Set(l)
+	m.providerBound.WithLabelValues(symbol, "upper").Set(u)
+	m.providerBound.WithLabelValues(symbol, "lower").Set(l)
 }

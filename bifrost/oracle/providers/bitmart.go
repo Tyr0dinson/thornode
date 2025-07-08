@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/coder/websocket"
-	"github.com/coder/websocket/wsjson"
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/metrics"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -123,25 +122,19 @@ func (p *BitmartProvider) Poll() {
 
 // Websocket
 
-func (p *BitmartProvider) Subscribe() error {
+func (p *BitmartProvider) GetSubscriptionMsgs() ([]map[string]any, error) {
 	var args []string
 
 	for _, pair := range p.pairs {
 		args = append(args, "spot/ticker:"+p.ToProviderSymbol(pair.Base, pair.Quote))
 	}
 
-	msg := map[string]any{
+	msgs := []map[string]any{{
 		"op":   "subscribe",
 		"args": args,
-	}
+	}}
 
-	err := wsjson.Write(p.ctx, p.ws, msg)
-	if err != nil {
-		p.logger.Err(err).Msg("fail to subscribe")
-		return err
-	}
-
-	return nil
+	return msgs, nil
 }
 
 func (p *BitmartProvider) HandleWsMessage(msg []byte) error {

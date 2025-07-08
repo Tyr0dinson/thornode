@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/coder/websocket/wsjson"
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/types"
@@ -121,27 +120,20 @@ func (p *CoinbaseProvider) GetAvailablePairs() ([]string, error) {
 
 // Websocket
 
-func (p *CoinbaseProvider) Subscribe() error {
+func (p *CoinbaseProvider) GetSubscriptionMsgs() ([]map[string]any, error) {
 	var symbols []string
 
 	for _, pair := range p.pairs {
 		symbols = append(symbols, pair.Join("-"))
 	}
 
-	msg := map[string]any{
+	msgs := []map[string]any{{
 		"type":        "subscribe",
 		"product_ids": symbols,
 		"channels":    []string{"ticker"},
-		// "channels":    []string{"ticker_batch"},
-	}
+	}}
 
-	err := wsjson.Write(p.ctx, p.ws, msg)
-	if err != nil {
-		p.logger.Err(err).Msg("fail to subscribe")
-		return err
-	}
-
-	return nil
+	return msgs, nil
 }
 
 func (p *CoinbaseProvider) HandleWsMessage(msg []byte) error {

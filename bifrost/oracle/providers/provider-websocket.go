@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/coder/websocket"
+	"github.com/coder/websocket/wsjson"
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/types"
@@ -21,9 +22,9 @@ type websocketProvider struct {
 	*baseProvider
 	wsEndpoint      string
 	ws              *websocket.Conn
+	msgs            []map[string]any
 	poll            func()
 	handleWsMessage func([]byte) error
-	subscribe       func() error
 	preconnect      func() error
 	ping            func() error
 	backoff         time.Duration
@@ -66,11 +67,32 @@ func (p *websocketProvider) init(provider types.WebsocketProvider) error {
 		return err
 	}
 
+	p.msgs, err = provider.GetSubscriptionMsgs()
+	if err != nil {
+		p.logger.Err(err).Msg("Error getting subscriptionMsgs")
+		return err
+	}
+
 	p.poll = provider.Poll
 	p.handleWsMessage = provider.HandleWsMessage
-	p.subscribe = provider.Subscribe
 	p.preconnect = provider.PrepareConnection
 	p.ping = provider.Ping
+	return nil
+}
+
+func (p *websocketProvider) subscribe() error {
+	for i, msg := range p.msgs {
+		err := wsjson.Write(p.ctx, p.ws, msg)
+		if err != nil {
+			p.logger.Err(err).Msg("fail to subscribe")
+			return err
+		}
+
+		if i > 0 {
+			time.Sleep(time.Millisecond * 100)
+		}
+	}
+
 	return nil
 }
 
@@ -116,14 +138,9 @@ func (p *websocketProvider) reconnect() error {
 	case <-time.After(p.backoff):
 	}
 
-	err := p.connect()
-	if err == nil {
-		p.backoff = minBackoff
-	} else {
-		p.backoff = min(p.backoff*2, maxBackoff)
-	}
+	p.backoff = min(p.backoff*2, maxBackoff)
 
-	return err
+	return p.connect()
 }
 
 func (p *websocketProvider) PrepareConnection() error {
@@ -208,6 +225,9 @@ func (p *websocketProvider) Start() {
 				}
 			default:
 			}
+
+			// reset backoff
+			p.backoff = minBackoff
 		}
 	}()
 }

@@ -54,7 +54,7 @@ func NewKucoinProvider(
 	// client needs to send a ping every few seconds returned by /api/v1/bullet-public
 	// using 10s as default
 	wsProvider.keepaliveInterval = time.Second * 10
-	wsProvider.keepaliveTimeout = time.Hour * 999
+	wsProvider.keepaliveTimeout = time.Second * 20
 
 	provider := KucoinProvider{wsProvider}
 	err = provider.init(&provider)
@@ -168,26 +168,20 @@ func (p *KucoinProvider) Ping() error {
 	return wsjson.Write(p.ctx, p.ws, msg)
 }
 
-func (p *KucoinProvider) Subscribe() error {
+func (p *KucoinProvider) GetSubscriptionMsgs() ([]map[string]any, error) {
 	var symbols []string
 	for _, pair := range p.pairs {
 		symbols = append(symbols, p.ToProviderSymbol(pair.Base, pair.Quote))
 	}
 
-	msg := map[string]any{
+	msgs := []map[string]any{{
 		"id":       1,
 		"type":     "subscribe",
 		"topic":    "/market/snapshot:" + strings.Join(symbols, ","),
 		"response": true,
-	}
+	}}
 
-	err := wsjson.Write(p.ctx, p.ws, msg)
-	if err != nil {
-		p.logger.Err(err).Msg("fail to subscribe")
-		return err
-	}
-
-	return nil
+	return msgs, nil
 }
 
 func (p *KucoinProvider) HandleWsMessage(msg []byte) error {
@@ -215,6 +209,7 @@ func (p *KucoinProvider) HandleWsMessage(msg []byte) error {
 
 	err = json.Unmarshal(msg, &pongMsg)
 	if err == nil && pongMsg.Type == "pong" {
+		p.lastKeepalive = time.Now()
 		return nil
 	}
 

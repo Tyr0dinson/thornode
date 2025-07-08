@@ -125,29 +125,23 @@ func (p *CryptoProvider) ToProviderSymbol(base, quote string) string {
 
 // Websocket
 
-func (p *CryptoProvider) Subscribe() error {
+func (p *CryptoProvider) GetSubscriptionMsgs() ([]map[string]any, error) {
 	var channels []string
 
 	for _, pair := range p.pairs {
 		channels = append(channels, "ticker."+pair.Join("_"))
 	}
 
-	msg := map[string]any{
+	msgs := []map[string]any{{
 		"method": "subscribe",
 		"params": map[string]any{
 			"channels": channels,
 		},
 		"id":    1,
 		"nonce": 1,
-	}
+	}}
 
-	err := wsjson.Write(p.ctx, p.ws, msg)
-	if err != nil {
-		p.logger.Err(err).Msg("fail to subscribe")
-		return err
-	}
-
-	return nil
+	return msgs, nil
 }
 
 func (p *CryptoProvider) HandleWsMessage(msg []byte) error {

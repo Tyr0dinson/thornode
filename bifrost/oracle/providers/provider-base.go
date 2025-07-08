@@ -170,7 +170,6 @@ func (p *baseProvider) setTicker(
 	pair types.CurrencyPair,
 	price, baseVolume, quoteVolume *big.Float,
 ) {
-
 	err := checkFloat(price)
 	if err != nil {
 		p.logger.Err(err).Msg("price is invalid")

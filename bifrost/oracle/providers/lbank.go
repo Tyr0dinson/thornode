@@ -124,24 +124,18 @@ func (p *LbankProvider) Poll() {
 
 // Websocket
 
-func (p *LbankProvider) Subscribe() error {
+func (p *LbankProvider) GetSubscriptionMsgs() ([]map[string]any, error) {
+	msgs := []map[string]any{}
+
 	for _, pair := range p.pairs {
-		msg := map[string]any{
+		msgs = append(msgs, map[string]any{
 			"action":    "subscribe",
 			"subscribe": "tick",
 			"pair":      p.toMappedProviderSymbol(pair),
-		}
-
-		err := wsjson.Write(p.ctx, p.ws, msg)
-		if err != nil {
-			p.logger.Err(err).Msg("fail to subscribe")
-			return err
-		}
-
-		time.Sleep(time.Millisecond * 100)
+		})
 	}
 
-	return nil
+	return msgs, nil
 }
 
 func (p *LbankProvider) HandleWsMessage(msg []byte) error {

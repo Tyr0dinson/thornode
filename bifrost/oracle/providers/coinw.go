@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/coder/websocket/wsjson"
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/metrics"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -155,24 +154,20 @@ func (p *CoinwProvider) PrepareConnection() error {
 	return nil
 }
 
-func (p *CoinwProvider) Subscribe() error {
+func (p *CoinwProvider) GetSubscriptionMsgs() ([]map[string]any, error) {
+	msgs := []map[string]any{}
+
 	for id := range p.pairs {
-		msg := map[string]any{
+		msgs = append(msgs, map[string]any{
 			"event": "sub",
 			"params": map[string]any{
 				"biz":      "exchange",
 				"type":     "ticker",
 				"pairCode": id,
 			},
-		}
-
-		err := wsjson.Write(p.ctx, p.ws, msg)
-		if err != nil {
-			p.logger.Err(err).Msg("fail to subscribe")
-			return err
-		}
+		})
 	}
-	return nil
+	return msgs, nil
 }
 
 func (p *CoinwProvider) HandleWsMessage(msg []byte) error {

@@ -19,7 +19,7 @@ type WebsocketProvider interface {
 	Provider
 	Poll()
 	HandleWsMessage([]byte) error
-	Subscribe() error
+	GetSubscriptionMsgs() ([]map[string]any, error)
 	PrepareConnection() error
 	Ping() error
 }

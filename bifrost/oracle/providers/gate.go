@@ -3,7 +3,6 @@ package providers
 import (
 	"context"
 	"encoding/json"
-	"github.com/coder/websocket/wsjson"
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/metrics"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -102,27 +101,21 @@ func (p *GateProvider) Poll() {
 	}
 }
 
-func (p *GateProvider) Subscribe() error {
+func (p *GateProvider) GetSubscriptionMsgs() ([]map[string]any, error) {
 	var symbols []string
 
 	for _, pair := range p.pairs {
 		symbols = append(symbols, p.toMappedProviderSymbol(pair))
 	}
 
-	msg := map[string]any{
+	msgs := []map[string]any{{
 		"time":    time.Now().Unix(),
 		"channel": "spot.tickers",
 		"event":   "subscribe",
 		"payload": symbols,
-	}
+	}}
 
-	err := wsjson.Write(p.ctx, p.ws, msg)
-	if err != nil {
-		p.logger.Err(err).Msg("fail to subscribe")
-		return err
-	}
-
-	return nil
+	return msgs, nil
 }
 
 func (p *GateProvider) HandleWsMessage(msg []byte) error {

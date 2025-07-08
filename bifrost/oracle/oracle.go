@@ -39,9 +39,9 @@ func NewOracle(config config.Bifrost) (*Oracle, error) {
 	logLevel, err := zerolog.ParseLevel(config.Oracle.LogLevel)
 	if err != nil {
 		logger.Error().Err(err).Msg("invalid log level")
-	} else {
-		logger = logger.Level(logLevel)
+		logLevel = zerolog.InfoLevel
 	}
+	logger = logger.Level(logLevel)
 
 	cv := constants.NewConstantValue()
 	required := cv.GetStringValue(constants.RequiredPriceFeeds)
