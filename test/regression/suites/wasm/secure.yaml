@@ -1,0 +1,113 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-3usd-pool-state.yaml" }}
+# The following tests use the `bindings.wasm` contract, which implements these following interfaces.
+# Messages and query results are simply passed through the contract layer for testing
+
+# pub fn execute(
+#     _deps: DepsMut,
+#     _env: Env,
+#     _info: MessageInfo,
+#     msg: ExecuteMsg,
+# ) -> Result<Response, ContractError> {
+#     match msg {
+#         ExecuteMsg::Any(any_msg) => Ok(Response::default().add_message(CosmosMsg::Any(any_msg))),
+#     }
+# }
+
+# pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
+#     match msg {
+#         QueryMsg::Grpc { path, data } => to_json_binary(&deps.querier.query_grpc(path, data)?),
+#     }
+# }
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: WasmPermissionless
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-store-code
+sender: {{ addr_thor_dog }}
+wasm_file: "bindings.wasm"
+gas: 2000000
+---
+type: create-blocks
+count: 1
+---
+type: tx-instantiate-contract
+code_id: 1
+msg: {}
+label: "bindings"
+sender: {{ addr_thor_dog }}
+gas: 100000
+---
+type: create-blocks
+count: 1
+---
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: ETH
+      from_address: {{ addr_eth_fox }}
+      to_address: {{ addr_eth_dog }}
+      coins:
+        - amount: "1000000000"
+          asset: "ETH.USDX-0X9999999999999999999999999999999999999999"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "ETH.ETH"
+      memo: "secure+:tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f
+asserts:
+  - .balances|length == 1
+  - .balances[0].denom == "eth-usdx-0x9999999999999999999999999999999999999999"
+  - .balances[0].amount|tonumber == 1000000000
+---
+# 
+type: tx-execute-contract
+contract: "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
+msg:
+  {
+    "any":
+      {
+        "type_url": "/types.MsgDeposit",
+        "value": "CkwKPgoDRVRIEi9VU0RYLTBYOTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5ORoEVVNEWDABEgoxMDAwMDAwMDAwEjJzZWN1cmUtOjB4ZTNjNjQ5NzRjNzhmNTY5M2JkMmJjNjhiMzIyMWQ1OGRmNWM2ZTg3NxogreSl9YA6Q5g1xjY5Wo1kje5XsvyQ2Y3Bf6iHFZtpY4s=",
+      },
+  }
+sender: {{ addr_thor_dog }}
+gas: 200000
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs|length == 1
+  - .txs[0].result.events[10].type == "secured_asset_withdraw"
+  - .txs[0].result.events[10].asset == "ETH-USDX-0X9999999999999999999999999999999999999999"
+  - .txs[0].result.events[10].amount == "1000000000"
+  - .txs[0].result.events[10].rune_address == "tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f"
+  - .txs[0].result.events[10].asset_address == "{{ addr_eth_fox }}"
+  - .txs[0].result.events[15].type == "scheduled_outbound"
+  - .txs[0].result.events[15].coin_asset == "ETH.USDX-0X9999999999999999999999999999999999999999"
+  - .txs[0].result.events[15].coin_amount == "872000000"
+  - .txs[0].result.events[15].to_address == "{{ addr_eth_fox }}"
