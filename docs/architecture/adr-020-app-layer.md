@@ -151,22 +151,50 @@ Apps should be high-quality, audited, tested and have UX support before being pr
 
 ### Fee-sharing
 
-THORNodes provide security, L1 observation, decentralisation and execution of app-layer contracts and assets; which is significantly expensive. Transaction fees are not enough to pay for this, since users generally object to high transaction fees ($1.00 and above). THORChain has set tx fees currently to 2c. 
+HORNodes provide security, L1 observation, decentralisation and execution of app-layer contracts and assets; which is significantly expensive. Transaction fees are not enough to pay for this, since users generally object to high transaction fees ($1.00 and above). THORChain has set tx fees currently to ~20c.
 
 Instead - Apps should offer fee-sharing to THORNodes directly from their service fees; eg
 * Interest fees on lending/borrowing/stablecoins
 * Trade/Liquidity fees from liquidity protocols
 * Listing/Sale fees on marketplaces
-* etc
+etc
 
-Thus fees are collected from a variety of sustainable revenue sources that don't subject users to high on-chain transaction costs. The suggested fee-sharing arrangement should start at 50%, but over time can be reduced once the App Layer is significantly profitable - long term 15-30% (Marketplace fees) is likely. 
+Thus fees are collected from a variety of sustainable revenue sources that don't subject users to high on-chain transaction costs. The fee-sharing arrangement will start at 50%, but will drop to 30% once Rujira’s 12 month non-compete expires. The App Layer should be more profitable in the long term by reducing the fee sharing to 30% or less.  This will incentivize more apps on the app layer.
 
 To do so, ensure that the share of fees collected in an app are swapped to RUNE and sent to the RESERVE Module address:
 ```
 thor1dheycdevq39qlkxs2a6wuuzyn4aqxhve4qxtxt
 ```
 
-Fee-sharing levels can be revisited after some time. 
+Fee-sharing levels can be revisited after some time.
+
+Importantly, there are nuances between types of apps/projects that might require different fee-sharing arrangements. The core logic regarding fee sharing is the following: 
+For each transaction on the App Layer, is value accrued to the Base Layer?
+* If YES, there is no need to share revenue (the Base Layer already benefits).
+* If NO, then the 50/50 revenue split applies to pay for security.
+
+### Builders’ classification 
+Building on this premise, we suggest categorizing builders into 6 categories with corresponding guidance for fee-sharing:
+1) Rujira Alliance: This includes the apps built (and to be built) by the teams that joined the Rujira Alliance (Kujira, Levana, Fuzion, Gojira). Those constitute the Core Apps and include: orderbook DEX, AMM for the orderbook, Perps, Money market, BTC-backed stablecoin, Liquidations, Launchpad, Options, NFT marketplace and Prediction market. More teams might be invited to join the Rujira Alliance if they can offer something new and differentiated. Revenue from core apps is shared 50/50 with the Base Layer (except for the apps that execute base layer swaps).
+
+2) Value Additive to Core Apps: Projects building on top of existing core apps. Provides value-added services to users by enabling advanced features or simplifying complex processes. Those projects increase economic activity on top of core apps and are very welcome to launch as independents on the App Layer. Building on top of Rujira core apps means that those projects are already paying fees to RUJI stakers and TC Base Layer, therefore those projects get to keep 100% of their revenue.
+
+3) Differentiated - Out of Scope: Projects offering something new, not available on any of the existing core apps, and considered “non-strategic” or “out of scope” by the Rujira Team. Those projects won’t be joining the Rujira Alliance but are welcome to launch as independents. They get the same fee sharing arrangement that Rujira has at that moment in time.
+
+4) Competing with Core Apps: Projects doing something similar to any of the Rujira core apps or existing projects. After an initial 12-month non-compete period for Rujira core apps, those projects will be allowed to launch to foster healthy competition. They get the same fee sharing arrangement that Rujira has at that moment in time.
+
+5) Public Goods: Projects that do not directly generate economic activity/revenue but are perceived as net positive for the ecosystem. This includes things like tooling, analytics and education. Not expected to generate any revenue, but mentioned for completeness.
+
+6) Real World Business: In the long run, we expect to see real world businesses that decide to operate on blockchain rails because it provides them with the ability to raise capital, access real-time accounting, better payment solutions, etc. at a fraction of the cost of running a traditional business. We want them to choose THORChain App Layer because it’s the best ecosystem to access all those things, from all connected chains. We want them to fuel a thriving economic activity on top of THORChain. Imposing a 50% taxation on those businesses would stifle adoption and deter participation. Instead, they will get to keep 100% of their revenue and will generate value for THORChain and Rujira by using the core apps (e.g. raising capital on RUJI Ventures, getting their token traded on RUJI Trade, borrowing on RUJI Lending, etc.).
+
+
+### 12-month non-compete and fee sharing revision
+The Rujira team has spent a lot of time doing foundational work to make an app layer on THORChain possible at all, and building all the dev tooling and components that will make it easy for competing apps to launch. As a token of appreciation, they will be given a 12-month non-compete period. The non-compete period started from the moment THORChain v3.6 went live on 22-May-2025, and will end on 22-May-2026. Pass this head start period, apps competing with core verticals will be allowed to launch.
+
+The end of the non-compete period will also mark the moment the share of revenue the App Layer sends to the Base Layer will drop from 50% to 30%, with further drops possible to make it more attractive for new builders to join.
+
+The fee sharing arrangement is meant to be universally applied to all apps to create an equal playing field for all development teams, where no team is advantaged over another on fees.  However there may be a unique app design that warrants a different fee sharing arrangement versus the rest of the apps.  Those can be evaluated on a case by case basis.
+
 
 ### No Uncapped Systemic-risk Apps
 
@@ -175,11 +203,13 @@ These apps may be entertained only if a safe cap is enforced - a suggested cap w
 
 > Eg with 100m RUNE bonded and 50m RUNE in liquidity, a sensible LST cap would be 10m RUNE (10% of Active Bond) and a sensible RUNE collateral cap would be 10% of the liquidity - 5m RUNE. 
 
-### Duplicate Apps Discouraged 
+### Diverse Apps Encouraged 
+Apps are generally more successful if there is clear differentiation, since it attracts new users and prevents developer angst and liquidity fragmentation. Diversity of apps should be encouraged during the due diligence process of base-layer whitelisting. 
 
-Apps are generally more successful if there is clear differentiation. This prevents developer angst and liquidity fragmentation. However competition and diversity should be encouraged. Diversity of apps should be encouraged during the due diligence process of base-layer whitelisting. Any question of duplication should be addressed. 
+Directly cloned apps by different teams are not encouraged but will be permissible post non-compete period. 
 
-Duplicate apps by different teams may be permitted if a former app has failed, dev-ghosted or has no support any more. 
+Similar apps targeting the same vertical are encouraged for healthy competition as long as quality is high and intent genuine.
+
 
 ### App Upgradeability
 
