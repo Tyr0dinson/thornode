@@ -6,6 +6,7 @@ import (
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/providers/mock"
+	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
 	"net/http/httptest"
 	"os"
@@ -44,8 +45,14 @@ func (s *ProviderTestSuite) SetUpSuite(c *C) {
 	s.wsUrl = strings.Replace(s.server.URL, "http", "ws", 1)
 	s.ctx = context.Background()
 	s.logger = zerolog.New(os.Stdout).With().Timestamp().Logger()
-	s.config = map[string]config.BifrostOracleProviderConfiguration{
-		"binance": s.newProviderConfig("binance", symbols),
+	s.config = map[string]config.BifrostOracleProviderConfiguration{}
+	for _, provider := range []string{
+		common.ProviderBinance,
+		common.ProviderBitget,
+		common.ProviderBitmart,
+		common.ProviderCoinw,
+	} {
+		s.config[provider] = s.newProviderConfig(provider, symbols)
 	}
 	s.metrics = metrics.NewMetrics()
 

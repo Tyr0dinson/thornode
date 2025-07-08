@@ -3,7 +3,6 @@ package providers
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"github.com/coder/websocket"
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/metrics"
@@ -189,10 +188,7 @@ func (p *BitgetProvider) HandleWsMessage(msg []byte) error {
 		}
 	}
 
-	err = fmt.Errorf("unknown msg type")
-	p.logger.Err(err).Str("msg", string(msg)).Msg("fail to parse message")
-
-	return err
+	return ErrUnknownWsMsg
 }
 
 func (p *BitgetProvider) Ping() error {

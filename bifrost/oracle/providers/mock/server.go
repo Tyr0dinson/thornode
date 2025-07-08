@@ -6,6 +6,7 @@ import (
 	"github.com/gorilla/websocket"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 
 	_ "embed"
 )
@@ -18,27 +19,54 @@ var upgrader = websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { retu
 func NewServer() *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Println(">>>", r.URL.Path)
+
+		// Websocket
+		if strings.HasSuffix(r.URL.Path, "/ws") {
+			handleWs(w, r)
+		}
+
+		// REST
 		switch r.URL.Path {
 		case "/binance/api/v3/ticker/price":
 			returnData("binance-ticker-price.json", w)
 		case "/binance/api/v3/ticker/24hr":
 			returnData("binance-ticker-24h.json", w)
-		case "/binance/ws":
-			binanceWsHandler(w, r)
+		case "/bitget/api/v2/spot/market/tickers":
+			returnData("bitget-market-tickers.json", w)
+		case "/bitmart/spot/quotation/v3/tickers":
+			returnData("bitmart-quotation-tickers.json", w)
+		case "/coinw/api/v1/public":
+			returnData("coinw-ticker-response.json", w)
 		}
+
 	}))
-	// mux := http.NewServeMux()
-	// mux.HandleFunc("/binance/api/v3/ticker/price", binanceTickerPriceHandler)
-	// mux.HandleFunc("/binance/ws", binanceWsHandler)
-	// return httptest.NewServer(mux)
 }
 
-func binanceTickerPriceHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Println(r.URL.Path)
-}
+func handleWs(w http.ResponseWriter, r *http.Request) {
+	parts := strings.Split(r.URL.Path, "/")
+	if len(parts) != 3 {
+		return
+	}
 
-func binanceWsHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Println(r.URL.Path)
+	provider := parts[1]
+	files := []string{}
+
+	entries, err := responses.ReadDir("data")
+	if err != nil {
+		return
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		if !strings.HasPrefix(entry.Name(), provider+"-ws-") {
+			continue
+		}
+
+		files = append(files, entry.Name())
+	}
+
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return
@@ -53,14 +81,16 @@ func binanceWsHandler(w http.ResponseWriter, r *http.Request) {
 
 		writeBogusWsMsg(conn)
 
-		for _, filename := range []string{
-			"binance-ws-sub-msg.json",
-			"binance-ws-ticker-msg.json",
-		} {
-			data, _ := responses.ReadFile("data/" + filename)
+		for _, filename := range files {
+			data, err := responses.ReadFile("data/" + filename)
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
 			_ = conn.WriteMessage(websocket.TextMessage, data)
 		}
 	}
+
 }
 
 func returnData(filename string, w http.ResponseWriter) {

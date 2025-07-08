@@ -22,11 +22,11 @@ type websocketProvider struct {
 	*baseProvider
 	wsEndpoint      string
 	ws              *websocket.Conn
-	msgs            []map[string]any
 	poll            func()
 	handleWsMessage func([]byte) error
 	preconnect      func() error
 	ping            func() error
+	getSubs         func() ([]map[string]any, error)
 	backoff         time.Duration
 
 	lastKeepalive     time.Time
@@ -67,13 +67,8 @@ func (p *websocketProvider) init(provider types.WebsocketProvider) error {
 		return err
 	}
 
-	p.msgs, err = provider.GetSubscriptionMsgs()
-	if err != nil {
-		p.logger.Err(err).Msg("Error getting subscriptionMsgs")
-		return err
-	}
-
 	p.poll = provider.Poll
+	p.getSubs = provider.GetSubscriptionMsgs
 	p.handleWsMessage = provider.HandleWsMessage
 	p.preconnect = provider.PrepareConnection
 	p.ping = provider.Ping
@@ -81,7 +76,12 @@ func (p *websocketProvider) init(provider types.WebsocketProvider) error {
 }
 
 func (p *websocketProvider) subscribe() error {
-	for i, msg := range p.msgs {
+	msgs, err := p.getSubs()
+	if err != nil {
+		return err
+	}
+
+	for i, msg := range msgs {
 		err := wsjson.Write(p.ctx, p.ws, msg)
 		if err != nil {
 			p.logger.Err(err).Msg("fail to subscribe")

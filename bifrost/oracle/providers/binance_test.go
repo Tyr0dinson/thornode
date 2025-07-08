@@ -14,8 +14,8 @@ func (s *ProviderTestSuite) TestBinanceProvider(c *C) {
 	provider, err := NewBinanceProvider(s.ctx, s.logger, config, s.metrics)
 	c.Assert(err, IsNil)
 	c.Assert(provider, NotNil)
-	c.Assert(len(provider.pairs), Equals, 2)
-	c.Assert(len(provider.tickers), Equals, 0)
+	c.Assert(provider.pairs, HasLen, 2)
+	c.Assert(provider.tickers, HasLen, 0)
 
 	pair, err := types.NewCurrencyPair("BTC/USDT")
 	c.Assert(err, IsNil)
@@ -24,12 +24,17 @@ func (s *ProviderTestSuite) TestBinanceProvider(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(symbol, Equals, "BTCUSDT")
 
+	msgs, err := provider.GetSubscriptionMsgs()
+	c.Assert(err, IsNil)
+	c.Assert(msgs, HasLen, 1)
+	c.Assert(msgs[0], HasLen, 3)
+
 	provider.Poll()
-	c.Assert(len(provider.tickers), Equals, 4) // supports reversed pairs
+	c.Assert(provider.tickers, HasLen, 4) // supports reversed pairs
 
 	tickers, err := provider.GetTickers()
 	c.Assert(err, IsNil)
-	c.Assert(len(tickers), Equals, 4)
+	c.Assert(tickers, HasLen, 4)
 
 	btcusdt, found := tickers["BTC/USDT"]
 	c.Assert(found, Equals, true)
@@ -46,7 +51,7 @@ func (s *ProviderTestSuite) TestBinanceProvider(c *C) {
 	// test ws data
 	provider.Start()
 
-	time.Sleep(time.Second * 2)
+	time.Sleep(time.Second)
 
 	tickers, err = provider.GetTickers()
 	c.Assert(err, IsNil)

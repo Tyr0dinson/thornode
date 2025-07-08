@@ -15,7 +15,7 @@ type CoinwTicker struct {
 	Id     int64  `json:"id"`
 	Symbol string `json:"symbol"`
 	Price  string `json:"last"`
-	Volume string `json:"baseVolume"`
+	// Volume string `json:"baseVolume"` returning quote volume atm
 }
 
 type CoinwWsSubscriptionMsg struct {
@@ -79,7 +79,7 @@ func (p *CoinwProvider) getTickers() ([]CoinwTicker, error) {
 			Id:     ticker.Id,
 			Symbol: symbol,
 			Price:  ticker.Price,
-			Volume: ticker.Volume,
+			// Volume: ticker.Volume,
 		})
 	}
 
@@ -108,26 +108,7 @@ func (p *CoinwProvider) ToProviderSymbol(base, quote string) string {
 // Polling
 
 func (p *CoinwProvider) Poll() {
-	tickers, err := p.getTickers()
-	if err != nil {
-		p.logger.Err(err).Msg("fail to get tickers")
-		return
-	}
-
-	for _, ticker := range tickers {
-		pair, found := p.pairs[ticker.Symbol]
-		if !found {
-			continue
-		}
-
-		p.setTicker(
-			time.Now(),
-			pair,
-			strToFloat(ticker.Price),
-			strToFloat(ticker.Volume),
-			nil,
-		)
-	}
+	// can't be used currently as "baseVolume" returns the quote volume
 }
 
 // Websocket
