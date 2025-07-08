@@ -5,6 +5,7 @@ import (
 	"compress/zlib"
 	"context"
 	"encoding/json"
+	"github.com/coder/websocket/wsjson"
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/metrics"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -38,6 +39,10 @@ type DigifinexWsSubsciptionMsg struct {
 	} `json:"result"`
 }
 
+type DigifinexWsPongMsg struct {
+	Result string `json:"result"`
+}
+
 type DigifinexProvider struct {
 	*websocketProvider
 }
@@ -52,6 +57,9 @@ func NewDigifinexProvider(
 	if err != nil {
 		return nil, err
 	}
+
+	wsProvider.keepaliveInterval = time.Second * 30
+	wsProvider.keepaliveTimeout = time.Second * 40
 
 	provider := DigifinexProvider{wsProvider}
 	err = provider.init(&provider)
@@ -141,8 +149,11 @@ func (p *DigifinexProvider) HandleWsMessage(msg []byte) error {
 
 	msg = out.Bytes()
 
-	var tickerMsg DigifinexWsTickerMsg
-	var subscriptionMsg DigifinexWsSubsciptionMsg
+	var (
+		tickerMsg       DigifinexWsTickerMsg
+		subscriptionMsg DigifinexWsSubsciptionMsg
+		pongMsg         DigifinexWsPongMsg
+	)
 
 	err = json.Unmarshal(msg, &tickerMsg)
 	if err == nil && tickerMsg.Method == "ticker.update" {
@@ -170,5 +181,26 @@ func (p *DigifinexProvider) HandleWsMessage(msg []byte) error {
 		return nil
 	}
 
+	err = json.Unmarshal(msg, &pongMsg)
+	if err == nil && pongMsg.Result == "pong" {
+		p.lastKeepalive = time.Now()
+		return nil
+	}
+
 	return ErrUnknownWsMsg
+}
+
+func (p *DigifinexProvider) Ping() error {
+	msg := map[string]any{
+		"method": "server.ping",
+		"id":     1,
+	}
+
+	err := wsjson.Write(p.ctx, p.ws, msg)
+	if err != nil {
+		p.logger.Err(err).Msg("fail to subscribe")
+		return err
+	}
+
+	return nil
 }
