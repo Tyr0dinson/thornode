@@ -4,10 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/rs/zerolog"
-	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/metrics"
-	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/types"
-	"gitlab.com/thorchain/thornode/v3/config"
 	"io"
 	"math/big"
 	"net/http"
@@ -15,6 +11,11 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/rs/zerolog"
+	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/metrics"
+	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/types"
+	"gitlab.com/thorchain/thornode/v3/config"
 )
 
 type baseProvider struct {
@@ -120,7 +121,6 @@ func (p *baseProvider) init(provider types.Provider) error {
 		}
 
 		symbol := p.toMappedProviderSymbol(pair)
-		fmt.Println(symbol, pair)
 
 		_, found := available[symbol]
 		if !found {
@@ -138,15 +138,6 @@ func (p *baseProvider) init(provider types.Provider) error {
 	}
 
 	return nil
-}
-
-func (p *baseProvider) GetStats() (map[string]uint64, error) {
-	stats := map[string]uint64{}
-
-	p.mtx.Lock()
-	defer p.mtx.Unlock()
-
-	return stats, nil
 }
 
 func (p *baseProvider) GetTickers() (map[string]types.Ticker, error) {

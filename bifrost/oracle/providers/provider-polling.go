@@ -3,11 +3,12 @@ package providers
 import (
 	"context"
 	"fmt"
+	"time"
+
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/types"
 	"gitlab.com/thorchain/thornode/v3/config"
-	"time"
 )
 
 type pollingProvider struct {

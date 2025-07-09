@@ -4,13 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/big"
+	"strings"
+	"time"
+
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/metrics"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
-	"math/big"
-	"strings"
-	"time"
 )
 
 type BitfinexTicker struct {
@@ -139,7 +140,7 @@ func (p *BitfinexProvider) Poll() {
 func (p *BitfinexProvider) GetSubscriptionMsgs() ([]map[string]any, error) {
 	msgs := []map[string]any{}
 
-	for _, pair := range p.pairs {
+	for _, pair := range p.sortedPairs() {
 		symbol := p.toMappedProviderSymbol(pair)
 
 		msgs = append(msgs, map[string]any{
@@ -155,8 +156,6 @@ func (p *BitfinexProvider) GetSubscriptionMsgs() ([]map[string]any, error) {
 func (p *BitfinexProvider) HandleWsMessage(msg []byte) error {
 	var responseMsg BitfinexWsResponseMsg
 	var tickerMsg []any
-
-	fmt.Println(string(msg))
 
 	err := json.Unmarshal(msg, &responseMsg)
 	if err == nil && responseMsg.Event != "" {
@@ -180,7 +179,6 @@ func (p *BitfinexProvider) HandleWsMessage(msg []byte) error {
 
 	err = json.Unmarshal(msg, &tickerMsg)
 	if err == nil {
-		fmt.Println(tickerMsg)
 		channelId, ok := tickerMsg[0].(float64)
 		if !ok {
 			p.logger.Warn().Msg("fail to parse ticker")

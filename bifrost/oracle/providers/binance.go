@@ -4,12 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
+	"time"
+
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/metrics"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
-	"strings"
-	"time"
 )
 
 type BinanceTicker struct {

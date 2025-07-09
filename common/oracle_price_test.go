@@ -1,8 +1,9 @@
 package common
 
 import (
-	. "gopkg.in/check.v1"
 	"math/big"
+
+	. "gopkg.in/check.v1"
 )
 
 type OraclePriceSuite struct{}
@@ -20,35 +21,43 @@ func (s *OraclePriceSuite) TestNewOraclePrice(c *C) {
 			Number:           "0.12",
 			ExpectedAmount:   12,
 			ExpectedDecimals: 2,
-		}, {
+		},
+		{
 			Number:           "0.0000001",
 			ExpectedAmount:   1,
 			ExpectedDecimals: 7,
-		}, {
+		},
+		{
 			Number:           "0.000000000238467",
 			ExpectedAmount:   2384,
 			ExpectedDecimals: 13,
-		}, {
+		},
+		{
 			Number:           "0",
 			ExpectedAmount:   0,
 			ExpectedDecimals: 0,
-		}, {
+		},
+		{
 			Number:           "4247545",
 			ExpectedAmount:   4247545,
 			ExpectedDecimals: 0,
-		}, {
+		},
+		{
 			Number:           "337.00000000000",
 			ExpectedAmount:   337,
 			ExpectedDecimals: 0,
-		}, {
+		},
+		{
 			Number:           "8473.67000000",
 			ExpectedAmount:   847367,
 			ExpectedDecimals: 2,
-		}, {
+		},
+		{
 			Number:           "17.256",
 			ExpectedAmount:   17256,
 			ExpectedDecimals: 3,
-		}, {
+		},
+		{
 			Number:           "488.1564861",
 			ExpectedAmount:   4881564,
 			ExpectedDecimals: 4,
@@ -95,7 +104,8 @@ func (s *OraclePriceSuite) TestNewOraclePrice(c *C) {
 			Number:           "20474683987738.00005468",
 			ExpectedAmount:   20474683987738,
 			ExpectedDecimals: 0,
-		}, {
+		},
+		{
 			// integer 19 chars, is too big
 			Number:           "1636348227336527223",
 			ExpectedAmount:   0,

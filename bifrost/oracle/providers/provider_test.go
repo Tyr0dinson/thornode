@@ -49,14 +49,17 @@ func (s *ProviderTestSuite) SetUpSuite(c *C) {
 	s.config = map[string]config.BifrostOracleProviderConfiguration{}
 	for _, provider := range []string{
 		common.ProviderBinance,
+		common.ProviderBitfinex,
 		common.ProviderBitget,
 		common.ProviderBitmart,
+		common.ProviderBitstamp,
 		common.ProviderBybit,
 		common.ProviderCoinbase,
 		common.ProviderCoinw,
 		common.ProviderCrypto,
 		common.ProviderDigifinex,
 		common.ProviderGate,
+		common.ProviderGemini,
 		common.ProviderHtx,
 		common.ProviderKraken,
 		common.ProviderKucoin,
@@ -80,7 +83,7 @@ func (s *ProviderTestSuite) newProviderConfig(
 	return config.BifrostOracleProviderConfiguration{
 		Name:            name,
 		Disabled:        false,
-		PollingInterval: time.Second * 5,
+		PollingInterval: time.Second,
 		ApiEndpoints:    []string{fmt.Sprintf("%s/%s", s.server.URL, name)},
 		WsEndpoints:     []string{fmt.Sprintf("%s/%s/ws", s.wsUrl, name)},
 		Pairs:           symbols,

@@ -2,10 +2,11 @@ package providers
 
 import (
 	"encoding/json"
-	"gitlab.com/thorchain/thornode/v3/common"
-	. "gopkg.in/check.v1"
 	"strings"
 	"time"
+
+	"gitlab.com/thorchain/thornode/v3/common"
+	. "gopkg.in/check.v1"
 )
 
 func (s *ProviderTestSuite) TestKucoinProvider(c *C) {
@@ -57,6 +58,7 @@ func (s *ProviderTestSuite) TestKucoinProvider(c *C) {
 
 	// test connection url override
 
+	/* trunk-ignore(golangci-lint/gosec) */
 	token := "2neAiuYvAU61ZDXANAGAsiL4-iAExhsBXZxftpOeh_55i3Ysy2q2LEsEWU64mdzUOPusi34M_wGoSf7iNyEWJ6azopV1Fkhyh-QgaRrYOuDQZPYx4Ys3Z9iYB9J6i9GjsxUuhPw3Blq6rhZlGykT3Vp1phUafnulOOpts-MEmEFfDgE176QQ8boW21GeTS36JBvJHl5Vs9Y=.IxqhqVbk_kPXPr_RNv7Nhg=="
 	err = provider.PrepareConnection()
 	c.Assert(err, IsNil)
@@ -66,7 +68,7 @@ func (s *ProviderTestSuite) TestKucoinProvider(c *C) {
 
 	provider.Start()
 
-	time.Sleep(time.Second)
+	time.Sleep(time.Millisecond * 100)
 
 	tickers, err = provider.GetTickers()
 	c.Assert(err, IsNil)
@@ -78,4 +80,7 @@ func (s *ProviderTestSuite) TestKucoinProvider(c *C) {
 	ticker, found = tickers["ETH/USDT"]
 	c.Assert(found, Equals, true)
 	c.Assert(ticker.Price.Text('f', 2), Equals, "2657.23")
+
+	err = provider.Ping()
+	c.Assert(err, IsNil)
 }

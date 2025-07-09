@@ -3,13 +3,14 @@ package providers
 import (
 	"context"
 	"encoding/json"
+	"strings"
+	"time"
+
 	"github.com/coder/websocket/wsjson"
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/metrics"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
-	"strings"
-	"time"
 )
 
 type CryptoTicker struct {

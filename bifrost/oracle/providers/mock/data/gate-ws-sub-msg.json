@@ -5,10 +5,7 @@
   "trace_id": "5f5c6acf1c991af5d31e15a2994a33dd",
   "channel": "spot.tickers",
   "event": "subscribe",
-  "payload": [
-    "BTC_USDT",
-    "ETH_USDT"
-  ],
+  "payload": ["BTC_USDT", "ETH_USDT"],
   "result": {
     "status": "success"
   },

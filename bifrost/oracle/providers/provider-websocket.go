@@ -3,13 +3,14 @@ package providers
 import (
 	"context"
 	"fmt"
+	"time"
+
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/types"
 	"gitlab.com/thorchain/thornode/v3/config"
-	"time"
 )
 
 const (
@@ -158,7 +159,6 @@ func (p *websocketProvider) Start() {
 	p.poll()
 
 	err := p.connect()
-
 	if err != nil {
 		p.logger.Err(err).Msg("failed to connect")
 		return

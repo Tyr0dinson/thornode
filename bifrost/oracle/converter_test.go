@@ -2,13 +2,14 @@ package oracle
 
 import (
 	"fmt"
-	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/metrics"
-	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/types"
-	. "gopkg.in/check.v1"
 	"math/big"
 	"strings"
 	"testing"
 	"time"
+
+	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/metrics"
+	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/types"
+	. "gopkg.in/check.v1"
 )
 
 type ConverterTestSuite struct{}

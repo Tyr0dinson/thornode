@@ -38,7 +38,6 @@ To get the most recent prices into Thorchain, the oracle broadcasts the final US
 
 Price feeds use the same gossip mechanism like observed L1 transactions or fee updates, but with a twist: Because each node likely observes slightly different prices (due to latency to providers, different configured providers etc...), nodes can't verify or attest the rates they received from their peers. They only verify the signature of the feeds and forward them to their Thornode instance.
 
-
 #### Timestamps
 
 To avoid replacing a recent price feed with an older one, each feed message provides a timestamp of when it is sent by the oracle. Older messages are simply discarded.
@@ -59,9 +58,10 @@ The final calculation of the on chain price is done in the message handler of `M
 
 #### Final on-chain price
 
-To calculate the final on-chain prices, Thornode first checks the signature of each provided price feed and calculates the median absolute deviation for each asset. Prices from nodes above or below the allowed threshold are discarded. 
+To calculate the final on-chain prices, Thornode first checks the signature of each provided price feed and calculates the median absolute deviation for each asset. Prices from nodes above or below the allowed threshold are discarded.
 
 ##### Stale price feeds
+
 Price feeds that are older than the timestamp of the last block are discarded as well. This is to prevent a malicious node from storing old prices with valid signatures and use them for price manipulation.
 
 ##### Simple majority

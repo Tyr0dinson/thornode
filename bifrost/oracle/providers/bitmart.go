@@ -3,12 +3,13 @@ package providers
 import (
 	"context"
 	"encoding/json"
+	"time"
+
 	"github.com/coder/websocket"
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/metrics"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
-	"time"
 )
 
 type BitmartTicker [13]string
@@ -138,7 +139,6 @@ func (p *BitmartProvider) GetSubscriptionMsgs() ([]map[string]any, error) {
 }
 
 func (p *BitmartProvider) HandleWsMessage(msg []byte) error {
-
 	var tickerMsg BitmartWsTickerMsg
 	var subscriptionMsg BitmartWsSubscriptionMsg
 

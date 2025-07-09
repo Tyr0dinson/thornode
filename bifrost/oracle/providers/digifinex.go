@@ -5,14 +5,15 @@ import (
 	"compress/zlib"
 	"context"
 	"encoding/json"
+	"io"
+	"strings"
+	"time"
+
 	"github.com/coder/websocket/wsjson"
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/metrics"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
-	"io"
-	"strings"
-	"time"
 )
 
 type DigifinexTicker struct {
@@ -133,12 +134,14 @@ func (p *DigifinexProvider) GetSubscriptionMsgs() ([]map[string]any, error) {
 }
 
 func (p *DigifinexProvider) HandleWsMessage(msg []byte) error {
-	reader, err := zlib.NewReader(bytes.NewReader(msg))
+	zlibReader, err := zlib.NewReader(bytes.NewReader(msg))
 	if err != nil {
 		p.logger.Err(err).Msg("fail to create reader")
 		return err
 	}
-	defer reader.Close()
+	defer zlibReader.Close()
+
+	reader := io.LimitReader(zlibReader, 10240)
 
 	var out bytes.Buffer
 	_, err = io.Copy(&out, reader)

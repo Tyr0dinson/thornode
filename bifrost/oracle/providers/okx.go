@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/coder/websocket/wsjson"
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/metrics"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -182,12 +181,4 @@ func (p *OkxProvider) HandleWsMessage(msg []byte) error {
 	}
 
 	return ErrUnknownWsMsg
-}
-
-func (p *OkxProvider) Pong() {
-	msg := map[string]interface{}{}
-	err := wsjson.Write(p.ctx, p.ws, msg)
-	if err != nil {
-		p.logger.Err(err).Msg("error writing pong")
-	}
 }

@@ -62,7 +62,7 @@ func (m *MsgPriceFeedQuorumBatch) ValidateBasic() error {
 func (m *MsgPriceFeedQuorumBatch) GetSigners() []cosmos.AccAddress {
 	var addresses []cosmos.AccAddress
 	for _, pf := range m.QuoPriceFeeds {
-		addresses = append(quorumSignersCommon(pf.Attestations))
+		addresses = append(addresses, quorumSignersCommon(pf.Attestations)...)
 	}
 	return addresses
 }

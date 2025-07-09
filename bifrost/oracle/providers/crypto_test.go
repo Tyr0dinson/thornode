@@ -2,9 +2,10 @@ package providers
 
 import (
 	"encoding/json"
+	"time"
+
 	"gitlab.com/thorchain/thornode/v3/common"
 	. "gopkg.in/check.v1"
-	"time"
 )
 
 func (s *ProviderTestSuite) TestCryptoProvider(c *C) {
@@ -61,7 +62,7 @@ func (s *ProviderTestSuite) TestCryptoProvider(c *C) {
 
 	provider.Start()
 
-	time.Sleep(time.Second)
+	time.Sleep(time.Millisecond * 100)
 
 	tickers, err = provider.GetTickers()
 	c.Assert(err, IsNil)

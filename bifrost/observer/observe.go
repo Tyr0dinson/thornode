@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"gitlab.com/thorchain/thornode/v3/bifrost/oracle"
 	"os"
 	"runtime"
 	"slices"
@@ -13,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"gitlab.com/thorchain/thornode/v3/bifrost/oracle"
 
 	lru "github.com/hashicorp/golang-lru"
 	"github.com/prometheus/client_golang/prometheus"

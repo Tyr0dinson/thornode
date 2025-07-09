@@ -4,6 +4,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"math/big"
+	"strings"
+	"sync"
+	"time"
+
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/providers"
@@ -11,10 +16,6 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
 	"gitlab.com/thorchain/thornode/v3/constants"
-	"math/big"
-	"strings"
-	"sync"
-	"time"
 
 	"github.com/rs/zerolog/log"
 )

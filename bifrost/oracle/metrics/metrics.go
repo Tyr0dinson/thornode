@@ -1,9 +1,10 @@
 package metrics
 
 import (
+	"math/big"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/types"
-	"math/big"
 )
 
 type Metrics struct {
@@ -37,7 +38,7 @@ func NewMetrics() *Metrics {
 			prometheus.CounterOpts{
 				Namespace: "oracle",
 				Subsystem: "provider",
-				Name:      "updates",
+				Name:      "updates_total",
 				Help:      "number of price updates for trading pair",
 			}, []string{"provider", "base", "quote"},
 		),

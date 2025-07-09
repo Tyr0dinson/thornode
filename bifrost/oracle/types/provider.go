@@ -6,8 +6,6 @@ type Provider interface {
 
 	GetAvailablePairs() ([]string, error)
 	ToProviderSymbol(string, string) string
-
-	GetStats() (map[string]uint64, error)
 }
 
 type PollingProvider interface {

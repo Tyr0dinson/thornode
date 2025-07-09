@@ -4,6 +4,11 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"fmt"
+	"math/big"
+	"sort"
+	"strings"
+	"time"
+
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	"github.com/cosmos/cosmos-sdk/telemetry"
 	"github.com/hashicorp/go-metrics"
@@ -11,10 +16,6 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
-	"math/big"
-	"sort"
-	"strings"
-	"time"
 )
 
 const (
@@ -256,7 +257,6 @@ func (h PriceFeedQuorumBatchHandler) telemetryPrice(
 	symbol, node string,
 	price *big.Float,
 ) {
-
 	v, _ := price.Float32()
 	telemetry.SetGaugeWithLabels(
 		[]string{"thornode", "oracle_price"},

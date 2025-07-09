@@ -3,12 +3,13 @@ package providers
 import (
 	"context"
 	"encoding/json"
+	"time"
+
 	"github.com/coder/websocket/wsjson"
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/metrics"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
-	"time"
 )
 
 type BybitTickersResponse struct {
@@ -34,6 +35,10 @@ type BybitWsTickerMsg struct {
 type BybitWsPongMsg struct {
 	RetMsg string `json:"ret_msg"`
 	Op     string `json:"op"`
+}
+
+type BybitWsSubscriptionMsg struct {
+	RetMsg string `json:"ret_msg"`
 }
 
 type BybitProvider struct {
@@ -153,8 +158,11 @@ func (p *BybitProvider) GetSubscriptionMsgs() ([]map[string]any, error) {
 }
 
 func (p *BybitProvider) HandleWsMessage(msg []byte) error {
-	var tickerMsg BybitWsTickerMsg
-	var pongMsg BybitWsPongMsg
+	var (
+		tickerMsg       BybitWsTickerMsg
+		subscriptionMsg BybitWsSubscriptionMsg
+		pongMsg         BybitWsPongMsg
+	)
 
 	err := json.Unmarshal(msg, &tickerMsg)
 	if err == nil && tickerMsg.Data.Symbol != "" {
@@ -180,6 +188,11 @@ func (p *BybitProvider) HandleWsMessage(msg []byte) error {
 	err = json.Unmarshal(msg, &pongMsg)
 	if err == nil && pongMsg.RetMsg == "pong" && pongMsg.Op == "ping" {
 		p.lastKeepalive = time.Now()
+		return nil
+	}
+
+	err = json.Unmarshal(msg, &subscriptionMsg)
+	if err == nil && subscriptionMsg.RetMsg == "subscribe" {
 		return nil
 	}
 

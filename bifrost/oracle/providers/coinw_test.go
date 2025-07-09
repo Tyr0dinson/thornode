@@ -52,7 +52,7 @@ func (s *ProviderTestSuite) TestCoinwProvider(c *C) {
 	// test ws data
 	provider.Start()
 
-	time.Sleep(time.Second)
+	time.Sleep(time.Millisecond * 100)
 
 	tickers, err := provider.GetTickers()
 	c.Assert(err, IsNil)
@@ -65,4 +65,7 @@ func (s *ProviderTestSuite) TestCoinwProvider(c *C) {
 	ticker, found = tickers["ETH/USDT"]
 	c.Assert(found, Equals, true)
 	c.Assert(ticker.Price.Text('f', 2), Equals, "2617.62")
+
+	err = provider.Ping()
+	c.Assert(err, IsNil)
 }

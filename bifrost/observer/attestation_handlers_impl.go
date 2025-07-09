@@ -4,9 +4,10 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"time"
+
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
-	"time"
 )
 
 const priceFeedsUpdateDelay = time.Millisecond * 100

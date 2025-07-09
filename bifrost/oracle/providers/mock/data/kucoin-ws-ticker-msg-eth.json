@@ -51,17 +51,11 @@
         "vol": 18480.5971606,
         "volValue": 49027051.31129007
       },
-      "markets": [
-        "USDS"
-      ],
+      "markets": ["USDS"],
       "open": 2566.37,
       "quoteCurrency": "USDT",
       "sell": 2657.33,
-      "siteTypes": [
-        "turkey",
-        "global",
-        "australia"
-      ],
+      "siteTypes": ["turkey", "global", "australia"],
       "sort": 100,
       "symbol": "ETH-USDT",
       "symbolCode": "ETH-USDT",

@@ -6,11 +6,12 @@ import (
 	"compress/zlib"
 	"embed"
 	"fmt"
-	"github.com/gorilla/websocket"
-	"gitlab.com/thorchain/thornode/v3/common"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+
+	"github.com/gorilla/websocket"
+	"gitlab.com/thorchain/thornode/v3/common"
 
 	_ "embed"
 )
@@ -22,8 +23,6 @@ var upgrader = websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { retu
 
 func NewServer() *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Println(">", r.URL.Path)
-
 		// Websocket
 		if strings.HasSuffix(r.URL.Path, "/ws") {
 			handleWs(w, r)
@@ -31,16 +30,14 @@ func NewServer() *httptest.Server {
 		}
 
 		// REST
-		filename := strings.Replace(r.URL.Path[1:], "/", "-", -1)
+		filename := strings.ReplaceAll(r.URL.Path[1:], "/", "-")
 		filename = strings.ToLower(filename)
+		filename = strings.TrimSuffix(filename, "-")
 
-		switch filename {
-		case "lbank-v2-ticker-24hr.do":
+		if filename == "lbank-v2-ticker-24hr.do" {
 			symbol := r.URL.Query().Get("symbol")
 			filename += "-" + symbol
 		}
-
-		fmt.Println(">", filename)
 
 		data, err := responses.ReadFile("data/" + filename + ".json")
 		if err != nil {

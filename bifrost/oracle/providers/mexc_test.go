@@ -1,9 +1,10 @@
 package providers
 
 import (
+	"time"
+
 	"gitlab.com/thorchain/thornode/v3/common"
 	. "gopkg.in/check.v1"
-	"time"
 )
 
 func (s *ProviderTestSuite) TestMexcProvider(c *C) {
@@ -49,5 +50,4 @@ func (s *ProviderTestSuite) TestMexcProvider(c *C) {
 	ticker, found = tickers["USDT/BTC"]
 	c.Assert(found, Equals, true)
 	c.Assert(ticker.Price.Text('f', 8), Equals, "0.00000915")
-
 }

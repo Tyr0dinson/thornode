@@ -51,17 +51,11 @@
         "vol": 818.41614478,
         "volValue": 89377051.64904529
       },
-      "markets": [
-        "USDS"
-      ],
+      "markets": ["USDS"],
       "open": 108320.5,
       "quoteCurrency": "USDT",
       "sell": 109132.2,
-      "siteTypes": [
-        "turkey",
-        "global",
-        "australia"
-      ],
+      "siteTypes": ["turkey", "global", "australia"],
       "sort": 100,
       "symbol": "BTC-USDT",
       "symbolCode": "BTC-USDT",

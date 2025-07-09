@@ -405,7 +405,6 @@ bifrost:
 
     bitfinex:
       polling_interval: 3s
-      disabled: true
       api_endpoints:
         - https://api-pub.bitfinex.com
       ws_endpoints:
@@ -414,8 +413,11 @@ bifrost:
         - BTC/USD
         - ETH/USD
         - USDT/USD
+        - XRP/USDT
+        - DOGE/USD
       symbol_mapping:
         - USDT/USD=tUSTUSD
+        - XRP/USDT=tXRPUST
 
     bitget:
       polling_interval: 2s
@@ -610,6 +612,8 @@ bifrost:
       symbol_mapping:
         - USDT/USD=USDTZUSD
         - BTC/USD=XXBTZUSD
+        - XRP/USD=XRPZUSD
+        - DOGE/USD=XDGUSD
 
     kucoin:
       polling_interval: 3s

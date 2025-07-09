@@ -3,13 +3,14 @@ package providers
 import (
 	"context"
 	"encoding/json"
+	"math/big"
+	"time"
+
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
-	"math/big"
-	"time"
 )
 
 type KrakenTickersResponse struct {
@@ -21,6 +22,7 @@ type KrakenTickersResponse struct {
 
 type KrakenWsGenericMsg struct {
 	Channel string `json:"channel"`
+	Type    string `json:"type"`
 }
 
 type KrakenWsSubscriptionMsg struct {
@@ -192,8 +194,16 @@ func (p *KrakenProvider) HandleWsMessage(msg []byte) error {
 	}
 
 	err = json.Unmarshal(msg, &genericMsg)
-	if err == nil && genericMsg.Channel == "status" {
-		return nil
+	if err == nil && genericMsg.Type+genericMsg.Channel != "" {
+		switch genericMsg.Channel {
+		case "status", "heartbeat":
+			return nil
+		}
+
+		switch genericMsg.Type {
+		case "ack", "welcome":
+			return nil
+		}
 	}
 
 	return ErrUnknownWsMsg

@@ -3,11 +3,12 @@ package providers
 import (
 	"context"
 	"encoding/json"
+	"time"
+
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/metrics"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
-	"time"
 )
 
 type MexcTicker struct {

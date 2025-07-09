@@ -294,7 +294,7 @@ func (b *EnshrinedBifrost) SendQuorumPriceFeedBatch(ctx context.Context, qpfb *c
 			for i, oldQpf := range qpfs {
 				oldPk := oldQpf.Attestations[0].PubKey
 
-				if bytes.Compare(oldPk, newPk) != 0 {
+				if !bytes.Equal(oldPk, newPk) {
 					continue
 				}
 

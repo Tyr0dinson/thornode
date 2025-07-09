@@ -2,9 +2,10 @@ package providers
 
 import (
 	"encoding/json"
+	"time"
+
 	"gitlab.com/thorchain/thornode/v3/common"
 	. "gopkg.in/check.v1"
-	"time"
 )
 
 func (s *ProviderTestSuite) TestBitmartProvider(c *C) {
@@ -63,7 +64,7 @@ func (s *ProviderTestSuite) TestBitmartProvider(c *C) {
 
 	provider.Start()
 
-	time.Sleep(time.Second)
+	time.Sleep(time.Millisecond * 100)
 
 	tickers, err = provider.GetTickers()
 	c.Assert(err, IsNil)
@@ -75,4 +76,7 @@ func (s *ProviderTestSuite) TestBitmartProvider(c *C) {
 	ticker, found = tickers["ETH/USDT"]
 	c.Assert(found, Equals, true)
 	c.Assert(ticker.Price.Text('f', 2), Equals, "2604.65")
+
+	err = provider.Ping()
+	c.Assert(err, IsNil)
 }
