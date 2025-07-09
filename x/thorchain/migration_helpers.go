@@ -2,6 +2,7 @@ package thorchain
 
 import (
 	"fmt"
+	"strings"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -193,4 +194,138 @@ func getTCYClaimsFromData() ([]types.TCYClaimer, error) {
 	}
 
 	return claimers, nil
+}
+
+// broadcastInactiveVaultRecoveryMessage creates and broadcasts a MsgInactiveVaultRecovery message
+// to trigger the native asset recovery process via the event-driven architecture
+func broadcastInactiveVaultRecoveryMessage(ctx cosmos.Context, mgr *Mgrs, nativeAssets []nativeAssetRecovery) error {
+	ctx.Logger().Info("Starting native asset recovery via MsgInactiveVaultRecovery")
+
+	// Process each native asset recovery
+	for i, nativeAssetRecovery := range nativeAssets {
+		ctx.Logger().Info("Processing native asset recovery",
+			"index", i,
+			"vault_address", nativeAssetRecovery.inactiveVaultAddr,
+			"amount", nativeAssetRecovery.amount,
+			"recovery_address", nativeAssetRecovery.recoveryAddress,
+			"expected_balance", nativeAssetRecovery.expectedBalance)
+
+		// Validate that inactiveVaultAddr is the old vault address we expect
+		expectedVaultAddr := "0x9dec237EB85056C63C11bA9c5477E82685767991"
+		if !strings.EqualFold(nativeAssetRecovery.inactiveVaultAddr, expectedVaultAddr) {
+			ctx.Logger().Error("Native asset recovery vault address mismatch",
+				"expected", expectedVaultAddr,
+				"got", nativeAssetRecovery.inactiveVaultAddr,
+				"index", i)
+			continue
+		}
+
+		// Attempt to find the vault pubkey that corresponds to this Ethereum address
+		vaultPubKey, err := findVaultPubKeyForAddress(ctx, mgr, nativeAssetRecovery.inactiveVaultAddr)
+		if err != nil {
+			ctx.Logger().Error("Failed to find vault pubkey for address",
+				"address", nativeAssetRecovery.inactiveVaultAddr,
+				"error", err,
+				"index", i)
+			continue
+		}
+
+		ctx.Logger().Info("Found vault pubkey for address",
+			"address", nativeAssetRecovery.inactiveVaultAddr,
+			"vault_pubkey", vaultPubKey.String(),
+			"index", i)
+
+		// Parse the asset
+		asset, err := common.NewAsset(nativeAssetRecovery.asset)
+		if err != nil {
+			ctx.Logger().Error("Invalid asset in native asset recovery",
+				"asset", nativeAssetRecovery.asset,
+				"error", err,
+				"index", i)
+			continue
+		}
+
+		// Get the signer address (use the module account as signer)
+		signerAddr := mgr.Keeper().GetModuleAccAddress(ModuleName)
+
+		// Derive the address from the vault pubkey to use as recover_from_address
+		recoverFromAddr, err := vaultPubKey.GetAddress(asset.GetChain())
+		if err != nil {
+			ctx.Logger().Error("Failed to derive address from vault pubkey",
+				"chain", asset.GetChain(),
+				"error", err,
+				"index", i)
+			continue
+		}
+
+		// Create the MsgInactiveVaultRecovery message
+		msg := &MsgInactiveVaultRecovery{
+			RecoverFromAddress: recoverFromAddr.String(),
+			RecoverToAddress:   nativeAssetRecovery.recoveryAddress,
+			RecoverAmount:      cosmos.NewUintFromString(nativeAssetRecovery.expectedBalance),
+			Asset:              asset,
+			Memo:               "TC-7 native asset recovery from inactive vault to 9R recovery address",
+			Signer:             signerAddr,
+		}
+
+		// Validate the message
+		if err := msg.ValidateBasic(); err != nil {
+			ctx.Logger().Error("Invalid MsgInactiveVaultRecovery message",
+				"error", err,
+				"index", i)
+			continue
+		}
+
+		// Create the handler and process the message
+		handler := NewInactiveVaultRecoveryHandler(mgr)
+		_, err = handler.Run(ctx, msg)
+		if err != nil {
+			ctx.Logger().Error("Failed to process MsgInactiveVaultRecovery",
+				"error", err,
+				"index", i)
+			continue
+		}
+
+		ctx.Logger().Info("Successfully broadcast MsgInactiveVaultRecovery",
+			"inactive_vault_pubkey", vaultPubKey.String(),
+			"recover_from_address", recoverFromAddr.String(),
+			"recover_to_address", nativeAssetRecovery.recoveryAddress,
+			"recover_amount", nativeAssetRecovery.expectedBalance,
+			"asset", asset.String(),
+			"index", i)
+	}
+
+	return nil
+}
+
+// findVaultPubKeyForAddress searches through historical vaults to find the pubkey
+// that corresponds to the given Ethereum address
+func findVaultPubKeyForAddress(ctx cosmos.Context, mgr *Mgrs, ethAddress string) (common.PubKey, error) {
+	// Get all vaults (including inactive ones)
+	iterator := mgr.Keeper().GetVaultIterator(ctx)
+	defer iterator.Close()
+
+	for ; iterator.Valid(); iterator.Next() {
+		var vault Vault
+		if err := mgr.Keeper().Cdc().Unmarshal(iterator.Value(), &vault); err != nil {
+			continue
+		}
+
+		// Check if this vault's Ethereum address matches
+		vaultEthAddr, err := vault.PubKey.GetAddress(common.ETHChain)
+		if err != nil {
+			continue
+		}
+
+		if strings.EqualFold(vaultEthAddr.String(), ethAddress) {
+			ctx.Logger().Info("Found matching vault",
+				"vault_pubkey", vault.PubKey.String(),
+				"vault_status", vault.Status.String(),
+				"vault_block_height", vault.BlockHeight,
+				"eth_address", vaultEthAddr.String())
+			return vault.PubKey, nil
+		}
+	}
+
+	return common.EmptyPubKey, fmt.Errorf("no vault found with Ethereum address %s", ethAddress)
 }

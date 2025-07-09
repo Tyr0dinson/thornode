@@ -47,14 +47,14 @@ func (h InactiveVaultRecoveryHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*co
 func (h InactiveVaultRecoveryHandler) validate(ctx cosmos.Context, msg MsgInactiveVaultRecovery) error {
 	version := h.mgr.GetVersion()
 	switch {
-	case version.GTE(semver.MustParse("3.0.0")):
-		return h.validateV3_0_0(ctx, msg)
+	case version.GTE(semver.MustParse("3.8.0")):
+		return h.validateV3_8_0(ctx, msg)
 	default:
 		return errBadVersion
 	}
 }
 
-func (h InactiveVaultRecoveryHandler) validateV3_0_0(_ cosmos.Context, msg MsgInactiveVaultRecovery) error {
+func (h InactiveVaultRecoveryHandler) validateV3_8_0(_ cosmos.Context, msg MsgInactiveVaultRecovery) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}
@@ -68,14 +68,14 @@ func (h InactiveVaultRecoveryHandler) validateV3_0_0(_ cosmos.Context, msg MsgIn
 func (h InactiveVaultRecoveryHandler) handle(ctx cosmos.Context, msg MsgInactiveVaultRecovery) error {
 	version := h.mgr.GetVersion()
 	switch {
-	case version.GTE(semver.MustParse("3.0.0")):
-		return h.handleV3_0_0(ctx, msg)
+	case version.GTE(semver.MustParse("3.8.0")):
+		return h.handleV3_8_0(ctx, msg)
 	default:
 		return errBadVersion
 	}
 }
 
-func (h InactiveVaultRecoveryHandler) handleV3_0_0(ctx cosmos.Context, msg MsgInactiveVaultRecovery) error {
+func (h InactiveVaultRecoveryHandler) handleV3_8_0(ctx cosmos.Context, msg MsgInactiveVaultRecovery) error {
 	// The handler's only job is to emit an event for Bifrost to observe
 	// It does not contain complex business logic as per the security requirements
 

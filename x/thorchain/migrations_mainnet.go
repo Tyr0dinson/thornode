@@ -5,7 +5,6 @@ package thorchain
 
 import (
 	"fmt"
-	"strings"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
@@ -192,62 +191,53 @@ func (m Migrator) Migrate6to7(ctx sdk.Context) error {
 
 	ctx.Logger().Info("Starting stuck fund recovery migration")
 
-	// Separate ERC20 and ETH recoveries
-	erc20Count := 0
-	ethCount := 0
-
 	// Phase 1: ERC20 Token Recovery (USDT, etc.) - Using router contract recovery
 	ctx.Logger().Info("=== Phase 1: ERC20 Token Recovery (Router Contract) ===")
 
-	for i, stuckFund := range mainnetStuckFundRefunds6to7 {
-		asset, err := common.NewAsset(stuckFund.asset)
+	erc20Count := 0
+	for i, erc20Recovery := range migration6to7erc20s {
+		asset, err := common.NewAsset(erc20Recovery.asset)
 		if err != nil {
-			ctx.Logger().Error("invalid asset in stuck fund recovery",
+			ctx.Logger().Error("invalid asset in ERC20 recovery",
 				"error", err,
-				"asset", stuckFund.asset,
+				"asset", erc20Recovery.asset,
 				"index", i)
-			continue
-		}
-
-		// Skip ETH recovery in this phase
-		if asset.Equals(common.ETHAsset) {
-			ethCount++
 			continue
 		}
 
 		erc20Count++
 		ctx.Logger().Info("Processing ERC20 stuck fund recovery",
 			"index", i,
-			"original_tx", stuckFund.originalTxHash,
-			"user_address", stuckFund.userAddress,
-			"recovery_address", stuckFund.recoveryAddress,
-			"asset", stuckFund.asset,
-			"amount", stuckFund.amount,
-			"description", stuckFund.description)
+			"original_tx", erc20Recovery.originalTxHash,
+			"user_address", erc20Recovery.userAddress,
+			"recovery_address", erc20Recovery.recoveryAddress,
+			"asset", erc20Recovery.asset,
+			"amount", erc20Recovery.amount,
+			"description", erc20Recovery.description)
 
 		// Create the coin
-		amount := cosmos.NewUintFromString(stuckFund.amount)
+		amount := cosmos.NewUintFromString(erc20Recovery.amount)
 		coin := common.NewCoin(asset, amount)
 
 		// Use original transaction hash as the fake inbound TX ID for audit trail
-		fakeInTxID := stuckFund.originalTxHash
+		fakeInTxID := erc20Recovery.originalTxHash
 
 		// Schedule refund outbound to 9R recovery address using current active vault
-		if err := unsafeAddRefundOutbound(ctx, m.mgr, fakeInTxID, stuckFund.recoveryAddress, coin, ctx.BlockHeight()); err != nil {
+		if err := unsafeAddRefundOutbound(ctx, m.mgr, fakeInTxID, erc20Recovery.recoveryAddress, coin, ctx.BlockHeight()); err != nil {
 			ctx.Logger().Error("failed to schedule ERC20 stuck fund recovery",
 				"error", err,
-				"original_tx", stuckFund.originalTxHash,
-				"user_address", stuckFund.userAddress,
-				"recovery_address", stuckFund.recoveryAddress,
+				"original_tx", erc20Recovery.originalTxHash,
+				"user_address", erc20Recovery.userAddress,
+				"recovery_address", erc20Recovery.recoveryAddress,
 				"coin", coin.String(),
 				"index", i)
-			return fmt.Errorf("failed to recover ERC20 stuck funds for tx %s: %w", stuckFund.originalTxHash, err)
+			return fmt.Errorf("failed to recover ERC20 stuck funds for tx %s: %w", erc20Recovery.originalTxHash, err)
 		}
 
 		ctx.Logger().Info("Successfully scheduled ERC20 stuck fund recovery",
-			"original_tx", stuckFund.originalTxHash,
-			"user_address", stuckFund.userAddress,
-			"recovery_address", stuckFund.recoveryAddress,
+			"original_tx", erc20Recovery.originalTxHash,
+			"user_address", erc20Recovery.userAddress,
+			"recovery_address", erc20Recovery.recoveryAddress,
 			"coin", coin.String(),
 			"fake_in_tx", fakeInTxID)
 	}
@@ -255,161 +245,23 @@ func (m Migrator) Migrate6to7(ctx sdk.Context) error {
 	ctx.Logger().Info("Completed ERC20 stuck fund recovery",
 		"erc20_recovered", erc20Count)
 
-	// Phase 2: ETH Recovery - Using MsgInactiveVaultRecovery
-	ctx.Logger().Info("=== Phase 2: ETH Recovery (MsgInactiveVaultRecovery) ===")
+	// Phase 2: Native Asset Recovery - Using MsgInactiveVaultRecovery
+	ctx.Logger().Info("=== Phase 2: Native Asset Recovery (MsgInactiveVaultRecovery) ===")
 
-	if ethCount > 0 {
-		if err := m.broadcastInactiveVaultRecoveryMessage(ctx); err != nil {
-			ctx.Logger().Error("ETH recovery message broadcast failed", "error", err)
-			// Continue with migration - don't fail entire migration if ETH recovery fails
+	nativeAssetCount := len(migration6to7nativeassets)
+	if nativeAssetCount > 0 {
+		if err := broadcastInactiveVaultRecoveryMessage(ctx, m.mgr, migration6to7nativeassets); err != nil {
+			ctx.Logger().Error("Native asset recovery message broadcast failed", "error", err)
+			// Continue with migration - don't fail entire migration if native asset recovery fails
 			// The ERC20 recoveries are more important and should succeed
 		}
 	} else {
-		ctx.Logger().Info("No ETH recovery needed - skipping inactive vault recovery")
+		ctx.Logger().Info("No native asset recovery needed - skipping inactive vault recovery")
 	}
 
 	ctx.Logger().Info("Completed stuck fund recovery migration",
 		"total_erc20_recovered", erc20Count,
-		"total_eth_attempted", ethCount)
+		"total_native_assets_attempted", nativeAssetCount)
 
 	return nil
 }
-
-// broadcastInactiveVaultRecoveryMessage creates and broadcasts a MsgInactiveVaultRecovery message
-// to trigger the ETH recovery process via the event-driven architecture
-func (m Migrator) broadcastInactiveVaultRecoveryMessage(ctx sdk.Context) error {
-	ctx.Logger().Info("Starting ETH recovery via MsgInactiveVaultRecovery")
-
-	// Find the ETH recovery entry
-	var ethRecovery *struct {
-		originalTxHash  string
-		userAddress     string
-		recoveryAddress string
-		asset           string
-		amount          string
-		description     string
-		expectedBalance string
-	}
-
-	for _, stuckFund := range mainnetStuckFundRefunds6to7 {
-		asset, err := common.NewAsset(stuckFund.asset)
-		if err != nil {
-			continue
-		}
-		if asset.Equals(common.ETHAsset) {
-			ethRecovery = &stuckFund
-			break
-		}
-	}
-
-	if ethRecovery == nil {
-		return fmt.Errorf("no ETH recovery entry found in migration data")
-	}
-
-	ctx.Logger().Info("Found ETH recovery entry",
-		"vault_address", ethRecovery.userAddress,
-		"amount", ethRecovery.amount,
-		"recovery_address", ethRecovery.recoveryAddress,
-		"expected_balance", ethRecovery.expectedBalance)
-
-	// Validate that userAddress is the old vault address we expect
-	expectedVaultAddr := "0x9dec237EB85056C63C11bA9c5477E82685767991"
-	if !strings.EqualFold(ethRecovery.userAddress, expectedVaultAddr) {
-		return fmt.Errorf("ETH recovery vault address mismatch: expected %s, got %s",
-			expectedVaultAddr, ethRecovery.userAddress)
-	}
-
-	// Attempt to find the vault pubkey that corresponds to this Ethereum address
-	vaultPubKey, err := m.findVaultPubKeyForAddress(ctx, ethRecovery.userAddress)
-	if err != nil {
-		ctx.Logger().Error("Failed to find vault pubkey for ETH address",
-			"eth_address", ethRecovery.userAddress,
-			"error", err)
-		return fmt.Errorf("could not find vault pubkey for ETH address %s: %w", ethRecovery.userAddress, err)
-	}
-
-	ctx.Logger().Info("Found vault pubkey for ETH address",
-		"eth_address", ethRecovery.userAddress,
-		"vault_pubkey", vaultPubKey.String())
-
-	// Parse the asset
-	asset, err := common.NewAsset(ethRecovery.asset)
-	if err != nil {
-		return fmt.Errorf("invalid asset in ETH recovery: %w", err)
-	}
-
-	// Get the signer address (use the module account as signer)
-	signerAddr := m.mgr.Keeper().GetModuleAccAddress(ModuleName)
-
-	// Derive the ETH address from the vault pubkey to use as recover_from_address
-	recoverFromAddr, err := vaultPubKey.GetAddress(common.ETHChain)
-	if err != nil {
-		return fmt.Errorf("failed to derive ETH address from vault pubkey: %w", err)
-	}
-
-	// Create the MsgInactiveVaultRecovery message
-	msg := &MsgInactiveVaultRecovery{
-		RecoverFromAddress: recoverFromAddr.String(),
-		RecoverToAddress:   ethRecovery.recoveryAddress,
-		RecoverAmount:      cosmos.NewUintFromString(ethRecovery.expectedBalance),
-		Asset:              asset,
-		Memo:               "TC-7 ETH recovery from inactive vault to 9R recovery address",
-		Signer:             signerAddr,
-	}
-
-	// Validate the message
-	if err := msg.ValidateBasic(); err != nil {
-		return fmt.Errorf("invalid MsgInactiveVaultRecovery message: %w", err)
-	}
-
-	// Create the handler and process the message
-	handler := NewInactiveVaultRecoveryHandler(m.mgr)
-	_, err = handler.Run(ctx, msg)
-	if err != nil {
-		return fmt.Errorf("failed to process MsgInactiveVaultRecovery: %w", err)
-	}
-
-	ctx.Logger().Info("Successfully broadcast MsgInactiveVaultRecovery",
-		"inactive_vault_pubkey", vaultPubKey.String(),
-		"recover_from_address", recoverFromAddr.String(),
-		"recover_to_address", ethRecovery.recoveryAddress,
-		"recover_amount", ethRecovery.expectedBalance,
-		"asset", asset.String())
-
-	return nil
-}
-
-// findVaultPubKeyForAddress searches through historical vaults to find the pubkey
-// that corresponds to the given Ethereum address
-func (m Migrator) findVaultPubKeyForAddress(ctx sdk.Context, ethAddress string) (common.PubKey, error) {
-	// Get all vaults (including inactive ones)
-	iterator := m.mgr.Keeper().GetVaultIterator(ctx)
-	defer iterator.Close()
-
-	for ; iterator.Valid(); iterator.Next() {
-		var vault Vault
-		if err := m.mgr.Keeper().Cdc().Unmarshal(iterator.Value(), &vault); err != nil {
-			continue
-		}
-
-		// Check if this vault's Ethereum address matches
-		vaultEthAddr, err := vault.PubKey.GetAddress(common.ETHChain)
-		if err != nil {
-			continue
-		}
-
-		if strings.EqualFold(vaultEthAddr.String(), ethAddress) {
-			ctx.Logger().Info("Found matching vault",
-				"vault_pubkey", vault.PubKey.String(),
-				"vault_status", vault.Status.String(),
-				"vault_block_height", vault.BlockHeight,
-				"eth_address", vaultEthAddr.String())
-			return vault.PubKey, nil
-		}
-	}
-
-	return common.EmptyPubKey, fmt.Errorf("no vault found with Ethereum address %s", ethAddress)
-}
-
-// TODO: Complete implementation of MsgInactiveVaultRecovery message type and handler
-// This will be implemented in subsequent phases
