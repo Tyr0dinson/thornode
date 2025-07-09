@@ -196,11 +196,5 @@ func (p *DigifinexProvider) Ping() error {
 		"id":     1,
 	}
 
-	err := wsjson.Write(p.ctx, p.ws, msg)
-	if err != nil {
-		p.logger.Err(err).Msg("fail to subscribe")
-		return err
-	}
-
-	return nil
+	return wsjson.Write(p.ctx, p.ws, msg)
 }

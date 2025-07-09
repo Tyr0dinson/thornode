@@ -132,7 +132,7 @@ func (p *BinanceProvider) Poll() {
 func (p *BinanceProvider) GetSubscriptionMsgs() ([]map[string]any, error) {
 	var params []string
 
-	for _, pair := range p.pairs {
+	for _, pair := range p.sortedPairs() {
 		params = append(params, strings.ToLower(pair.Join(""))+"@miniTicker")
 	}
 

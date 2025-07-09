@@ -159,15 +159,6 @@ func (p *KucoinProvider) PrepareConnection() error {
 	return nil
 }
 
-func (p *KucoinProvider) Ping() error {
-	msg := map[string]any{
-		"id":   fmt.Sprintf("%d", time.Now().UnixMilli()),
-		"type": "ping",
-	}
-
-	return wsjson.Write(p.ctx, p.ws, msg)
-}
-
 func (p *KucoinProvider) GetSubscriptionMsgs() ([]map[string]any, error) {
 	var symbols []string
 	for _, pair := range p.pairs {
@@ -214,4 +205,13 @@ func (p *KucoinProvider) HandleWsMessage(msg []byte) error {
 	}
 
 	return ErrUnknownWsMsg
+}
+
+func (p *KucoinProvider) Ping() error {
+	msg := map[string]any{
+		"id":   fmt.Sprintf("%d", time.Now().UnixMilli()),
+		"type": "ping",
+	}
+
+	return wsjson.Write(p.ctx, p.ws, msg)
 }

@@ -12,15 +12,11 @@ import (
 	"time"
 )
 
-type CryptoTickersResponse struct {
-	Result struct {
-		Data []struct {
-			Time   int64  `json:"t"`
-			Symbol string `json:"i"`
-			Price  string `json:"a"`
-			Volume string `json:"v"`
-		} `json:"data"`
-	} `json:"result"`
+type CryptoTicker struct {
+	Time   int64  `json:"t"`
+	Symbol string `json:"i"`
+	Price  string `json:"a"`
+	Volume string `json:"v"`
 }
 
 type CryptoWsTickersResponse struct {
@@ -63,22 +59,53 @@ func NewCryptoProvider(
 	return &provider, nil
 }
 
-func (p *CryptoProvider) Poll() {
+func (p *CryptoProvider) getTickers() ([]CryptoTicker, error) {
 	data, err := p.httpGet("/exchange/v1/public/get-tickers")
 	if err != nil {
-		p.logger.Err(err).Msg("error fetching data")
-		return
+		return nil, err
 	}
 
-	var response CryptoTickersResponse
+	var response struct {
+		Result struct {
+			Data []CryptoTicker `json:"data"`
+		} `json:"result"`
+	}
 
 	err = json.Unmarshal(data, &response)
 	if err != nil {
-		p.logger.Err(err).Msg("error unmarshalling data")
+		return nil, err
+	}
+
+	return response.Result.Data, nil
+}
+
+func (p *CryptoProvider) GetAvailablePairs() ([]string, error) {
+	tickers, err := p.getTickers()
+	if err != nil {
+		p.logger.Err(err).Msg("fail to get tickers")
+		return nil, err
+	}
+
+	symbols := []string{}
+	for _, ticker := range tickers {
+		if strings.HasSuffix(ticker.Symbol, "-PERP") {
+			continue
+		}
+
+		symbols = append(symbols, ticker.Symbol)
+	}
+
+	return symbols, nil
+}
+
+func (p *CryptoProvider) Poll() {
+	tickers, err := p.getTickers()
+	if err != nil {
+		p.logger.Err(err).Msg("fail to get tickers")
 		return
 	}
 
-	for _, ticker := range response.Result.Data {
+	for _, ticker := range tickers {
 		pair, found := p.pairs[ticker.Symbol]
 		if !found {
 			continue
@@ -94,31 +121,6 @@ func (p *CryptoProvider) Poll() {
 	}
 }
 
-func (p *CryptoProvider) GetAvailablePairs() ([]string, error) {
-	data, err := p.httpGet("/exchange/v1/public/get-tickers")
-	if err != nil {
-		return nil, err
-	}
-
-	var response CryptoTickersResponse
-
-	err = json.Unmarshal(data, &response)
-	if err != nil {
-		return nil, err
-	}
-
-	symbols := []string{}
-	for _, item := range response.Result.Data {
-		if strings.HasSuffix(item.Symbol, "-PERP") {
-			continue
-		}
-
-		symbols = append(symbols, item.Symbol)
-	}
-
-	return symbols, nil
-}
-
 func (p *CryptoProvider) ToProviderSymbol(base, quote string) string {
 	return base + "_" + quote
 }
@@ -128,7 +130,7 @@ func (p *CryptoProvider) ToProviderSymbol(base, quote string) string {
 func (p *CryptoProvider) GetSubscriptionMsgs() ([]map[string]any, error) {
 	var channels []string
 
-	for _, pair := range p.pairs {
+	for _, pair := range p.sortedPairs() {
 		channels = append(channels, "ticker."+pair.Join("_"))
 	}
 

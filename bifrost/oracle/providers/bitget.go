@@ -129,7 +129,7 @@ func (p *BitgetProvider) Poll() {
 func (p *BitgetProvider) GetSubscriptionMsgs() ([]map[string]any, error) {
 	var args []map[string]string
 
-	for _, pair := range p.pairs {
+	for _, pair := range p.sortedPairs() {
 		args = append(args, map[string]string{
 			"instType": "SPOT",
 			"channel":  "ticker",
@@ -192,11 +192,5 @@ func (p *BitgetProvider) HandleWsMessage(msg []byte) error {
 }
 
 func (p *BitgetProvider) Ping() error {
-	err := p.ws.Write(p.ctx, websocket.MessageText, []byte("ping"))
-	if err != nil {
-		p.logger.Err(err).Msg("fail to write ping")
-		return err
-	}
-
-	return nil
+	return p.ws.Write(p.ctx, websocket.MessageText, []byte("ping"))
 }

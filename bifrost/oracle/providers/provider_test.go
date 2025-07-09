@@ -6,6 +6,7 @@ import (
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/providers/mock"
+	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
 	"net/http/httptest"
@@ -50,7 +51,17 @@ func (s *ProviderTestSuite) SetUpSuite(c *C) {
 		common.ProviderBinance,
 		common.ProviderBitget,
 		common.ProviderBitmart,
+		common.ProviderBybit,
 		common.ProviderCoinw,
+		common.ProviderCrypto,
+		common.ProviderDigifinex,
+		common.ProviderGate,
+		common.ProviderHtx,
+		common.ProviderKraken,
+		common.ProviderKucoin,
+		common.ProviderLbank,
+		common.ProviderMexc,
+		common.ProviderOkx,
 	} {
 		s.config[provider] = s.newProviderConfig(provider, symbols)
 	}
@@ -74,4 +85,12 @@ func (s *ProviderTestSuite) newProviderConfig(
 		WsEndpoints:     []string{fmt.Sprintf("%s/%s/ws", s.wsUrl, name)},
 		Pairs:           symbols,
 	}
+}
+
+func newPair(symbol string) types.CurrencyPair {
+	pair, err := types.NewCurrencyPair(symbol)
+	if err != nil {
+		return types.CurrencyPair{}
+	}
+	return pair
 }

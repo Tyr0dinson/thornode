@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/coder/websocket/wsjson"
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/metrics"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
+	"sort"
 	"time"
 )
 
@@ -33,6 +35,10 @@ type CoinwWsTicker struct {
 	Volume string `json:"vol"`
 }
 
+type CoinwWsPongMsg struct {
+	Event string `json:"event"`
+}
+
 type CoinwProvider struct {
 	*websocketProvider
 }
@@ -47,6 +53,9 @@ func NewCoinwProvider(
 	if err != nil {
 		return nil, err
 	}
+
+	wsProvider.keepaliveInterval = time.Second * 10
+	wsProvider.keepaliveTimeout = time.Second * 20
 
 	provider := CoinwProvider{wsProvider}
 	err = provider.init(&provider)
@@ -138,7 +147,14 @@ func (p *CoinwProvider) PrepareConnection() error {
 func (p *CoinwProvider) GetSubscriptionMsgs() ([]map[string]any, error) {
 	msgs := []map[string]any{}
 
+	// sort for testing
+	var ids []string
 	for id := range p.pairs {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+
+	for _, id := range ids {
 		msgs = append(msgs, map[string]any{
 			"event": "sub",
 			"params": map[string]any{
@@ -152,8 +168,11 @@ func (p *CoinwProvider) GetSubscriptionMsgs() ([]map[string]any, error) {
 }
 
 func (p *CoinwProvider) HandleWsMessage(msg []byte) error {
-	var tickerMsg CoinwWsTickerMsg
-	var subscriptionMsg CoinwWsSubscriptionMsg
+	var (
+		tickerMsg       CoinwWsTickerMsg
+		subscriptionMsg CoinwWsSubscriptionMsg
+		pongMsg         CoinwWsPongMsg
+	)
 
 	err := json.Unmarshal(msg, &tickerMsg)
 	if err == nil && tickerMsg.Type == "ticker" && tickerMsg.Data != "" {
@@ -169,10 +188,8 @@ func (p *CoinwProvider) HandleWsMessage(msg []byte) error {
 			return nil
 		}
 
-		timestamp := time.Now()
-
 		p.setTicker(
-			timestamp,
+			time.Now(),
 			pair,
 			strToFloat(ticker.Price),
 			strToFloat(ticker.Volume),
@@ -187,5 +204,20 @@ func (p *CoinwProvider) HandleWsMessage(msg []byte) error {
 		return nil
 	}
 
+	err = json.Unmarshal(msg, &pongMsg)
+	if err == nil && pongMsg.Event == "pong" {
+		p.logger.Info().Str("msg", string(msg)).Msg("pong")
+		p.lastKeepalive = time.Now()
+		return nil
+	}
+
 	return ErrUnknownWsMsg
+}
+
+func (p *CoinwProvider) Ping() error {
+	msg := map[string]any{
+		"event": "ping",
+	}
+
+	return wsjson.Write(p.ctx, p.ws, msg)
 }

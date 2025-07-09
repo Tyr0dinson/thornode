@@ -1,7 +1,7 @@
 package providers
 
 import (
-	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/types"
+	"encoding/json"
 	"gitlab.com/thorchain/thornode/v3/common"
 	. "gopkg.in/check.v1"
 	"time"
@@ -11,44 +11,57 @@ func (s *ProviderTestSuite) TestBitmartProvider(c *C) {
 	config, found := s.config[common.ProviderBitmart]
 	c.Assert(found, Equals, true)
 
+	config.Pairs = []string{
+		"BTC/USDT",
+		"ETH/USDT",
+		"RUJI/RUNE",
+	}
+
 	provider, err := NewBitmartProvider(s.ctx, s.logger, config, s.metrics)
 	c.Assert(err, IsNil)
 	c.Assert(provider, NotNil)
 	c.Assert(provider.pairs, HasLen, 2)
 	c.Assert(provider.tickers, HasLen, 0)
 
-	pair, err := types.NewCurrencyPair("BTC/USDT")
-	c.Assert(err, IsNil)
-
-	symbol := provider.toMappedProviderSymbol(pair)
+	symbol := provider.toMappedProviderSymbol(newPair("BTC/USDT"))
 	c.Assert(err, IsNil)
 	c.Assert(symbol, Equals, "BTC_USDT")
 
-	msgs, err := provider.GetSubscriptionMsgs()
-	c.Assert(err, IsNil)
-	c.Assert(msgs, HasLen, 1)
-	c.Assert(msgs[0], HasLen, 2)
+	// test polling
 
 	provider.Poll()
 	c.Assert(provider.tickers, HasLen, 4) // supports reversed pairs
 
 	tickers, err := provider.GetTickers()
 	c.Assert(err, IsNil)
+	// supports reversed pairs
 	c.Assert(tickers, HasLen, 4)
 
-	btcusdt, found := tickers["BTC/USDT"]
+	ticker, found := tickers["BTC/USDT"]
 	c.Assert(found, Equals, true)
-	c.Assert(btcusdt.Price.Text('f', 2), Equals, "108726.01")
+	c.Assert(ticker.Price.Text('f', 2), Equals, "108726.01")
 
-	ethusdt, found := tickers["ETH/USDT"]
+	ticker, found = tickers["ETH/USDT"]
 	c.Assert(found, Equals, true)
-	c.Assert(ethusdt.Price.Text('f', 2), Equals, "2606.51")
+	c.Assert(ticker.Price.Text('f', 2), Equals, "2606.51")
 
-	usdtbtc, found := tickers["USDT/BTC"]
+	ticker, found = tickers["USDT/BTC"]
 	c.Assert(found, Equals, true)
-	c.Assert(usdtbtc.Price.Text('f', 7), Equals, "0.0000092")
+	c.Assert(ticker.Price.Text('f', 8), Equals, "0.00000920")
 
-	// test ws data
+	// test subscription msg
+
+	str := `[{"args":["spot/ticker:BTC_USDT","spot/ticker:ETH_USDT"],"op":"subscribe"}]`
+
+	msgs, err := provider.GetSubscriptionMsgs()
+	c.Assert(err, IsNil)
+
+	data, err := json.Marshal(msgs)
+	c.Assert(err, IsNil)
+	c.Assert(string(data), Equals, str)
+
+	// test websocket
+
 	provider.Start()
 
 	time.Sleep(time.Second)
@@ -56,7 +69,11 @@ func (s *ProviderTestSuite) TestBitmartProvider(c *C) {
 	tickers, err = provider.GetTickers()
 	c.Assert(err, IsNil)
 
-	btcusdt, found = tickers["BTC/USDT"]
+	ticker, found = tickers["BTC/USDT"]
 	c.Assert(found, Equals, true)
-	c.Assert(btcusdt.Price.Text('f', 2), Equals, "108717.98")
+	c.Assert(ticker.Price.Text('f', 2), Equals, "108717.98")
+
+	ticker, found = tickers["ETH/USDT"]
+	c.Assert(found, Equals, true)
+	c.Assert(ticker.Price.Text('f', 2), Equals, "2604.65")
 }

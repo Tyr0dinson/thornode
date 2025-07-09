@@ -133,8 +133,13 @@ func (p *BybitProvider) GetSubscriptionMsgs() ([]map[string]any, error) {
 	msgs := []map[string]any{}
 
 	var args []string
-	for symbol := range p.pairs {
-		if len(args) >= 5 {
+	var count int
+
+	for _, pair := range p.sortedPairs() {
+		count++
+		args = append(args, "tickers."+p.toMappedProviderSymbol(pair))
+
+		if len(args) >= 5 || count == len(p.pairs) {
 			msgs = append(msgs, map[string]any{
 				"op":   "subscribe",
 				"args": args,
@@ -142,8 +147,6 @@ func (p *BybitProvider) GetSubscriptionMsgs() ([]map[string]any, error) {
 
 			args = []string{}
 		}
-
-		args = append(args, "tickers."+symbol)
 	}
 
 	return msgs, nil
@@ -188,11 +191,5 @@ func (p *BybitProvider) Ping() error {
 		"op": "ping",
 	}
 
-	err := wsjson.Write(p.ctx, p.ws, msg)
-	if err != nil {
-		p.logger.Err(err).Msg("fail to subscribe")
-		return err
-	}
-
-	return nil
+	return wsjson.Write(p.ctx, p.ws, msg)
 }

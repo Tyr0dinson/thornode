@@ -1,7 +1,7 @@
 package providers
 
 import (
-	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/types"
+	"encoding/json"
 	"gitlab.com/thorchain/thornode/v3/common"
 	. "gopkg.in/check.v1"
 	"time"
@@ -11,22 +11,41 @@ func (s *ProviderTestSuite) TestCoinwProvider(c *C) {
 	config, found := s.config[common.ProviderCoinw]
 	c.Assert(found, Equals, true)
 
+	config.Pairs = []string{
+		"BTC/USDT",
+		"ETH/USDT",
+		"RUJI/RUNE",
+	}
+
 	provider, err := NewCoinwProvider(s.ctx, s.logger, config, s.metrics)
 	c.Assert(err, IsNil)
 	c.Assert(provider, NotNil)
 	c.Assert(provider.pairs, HasLen, 2)
 	c.Assert(provider.tickers, HasLen, 0)
 
-	pair, err := types.NewCurrencyPair("BTC/USDT")
-	c.Assert(err, IsNil)
-
-	symbol := provider.toMappedProviderSymbol(pair)
+	symbol := provider.toMappedProviderSymbol(newPair("BTC/USDT"))
 	c.Assert(err, IsNil)
 	c.Assert(symbol, Equals, "BTC_USDT")
 
+	// test polling
+
+	provider.Poll()
+	// polling currently disabled
+	c.Assert(provider.tickers, HasLen, 0)
+
+	// test subscription msg
+
+	// replace symbols with ids
+	err = provider.PrepareConnection()
+
+	str := `[{"event":"sub","params":{"biz":"exchange","pairCode":"78","type":"ticker"}},{"event":"sub","params":{"biz":"exchange","pairCode":"79","type":"ticker"}}]`
+
 	msgs, err := provider.GetSubscriptionMsgs()
 	c.Assert(err, IsNil)
-	c.Assert(msgs, HasLen, 2)
+
+	data, err := json.Marshal(msgs)
+	c.Assert(err, IsNil)
+	c.Assert(string(data), Equals, str)
 
 	// test ws data
 	provider.Start()
@@ -37,11 +56,11 @@ func (s *ProviderTestSuite) TestCoinwProvider(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(tickers, HasLen, 2)
 
-	btcusdt, found := tickers["BTC/USDT"]
+	ticker, found := tickers["BTC/USDT"]
 	c.Assert(found, Equals, true)
-	c.Assert(btcusdt.Price.Text('f', 2), Equals, "108976.11")
+	c.Assert(ticker.Price.Text('f', 2), Equals, "108976.11")
 
-	ethusdt, found := tickers["ETH/USDT"]
+	ticker, found = tickers["ETH/USDT"]
 	c.Assert(found, Equals, true)
-	c.Assert(ethusdt.Price.Text('f', 2), Equals, "2617.62")
+	c.Assert(ticker.Price.Text('f', 2), Equals, "2617.62")
 }

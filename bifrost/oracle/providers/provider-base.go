@@ -11,6 +11,7 @@ import (
 	"io"
 	"math/big"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -163,6 +164,17 @@ func (p *baseProvider) GetTickers() (map[string]types.Ticker, error) {
 	}
 
 	return tickers, nil
+}
+
+func (p *baseProvider) sortedPairs() []types.CurrencyPair {
+	pairs := []types.CurrencyPair{}
+	for _, pair := range p.pairs {
+		pairs = append(pairs, pair)
+	}
+	sort.Slice(pairs, func(i, j int) bool {
+		return pairs[i].String() < pairs[j].String()
+	})
+	return pairs
 }
 
 func (p *baseProvider) setTicker(
