@@ -127,7 +127,7 @@ func (p *OkxProvider) Poll() {
 func (p *OkxProvider) GetSubscriptionMsgs() ([]map[string]any, error) {
 	var args []map[string]string
 
-	for _, pair := range p.pairs {
+	for _, pair := range p.sortedPairs() {
 		args = append(args, map[string]string{
 			"channel": "tickers",
 			"instId":  pair.Join("-"),

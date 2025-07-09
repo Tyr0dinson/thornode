@@ -124,7 +124,7 @@ func (p *HtxProvider) Poll() {
 func (p *HtxProvider) GetSubscriptionMsgs() ([]map[string]any, error) {
 	var subscriptions []string
 
-	for _, pair := range p.pairs {
+	for _, pair := range p.sortedPairs() {
 		symbol := p.toMappedProviderSymbol(pair)
 		subscriptions = append(
 			subscriptions,

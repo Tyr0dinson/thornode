@@ -161,7 +161,7 @@ func (p *KucoinProvider) PrepareConnection() error {
 
 func (p *KucoinProvider) GetSubscriptionMsgs() ([]map[string]any, error) {
 	var symbols []string
-	for _, pair := range p.pairs {
+	for _, pair := range p.sortedPairs() {
 		symbols = append(symbols, p.ToProviderSymbol(pair.Base, pair.Quote))
 	}
 

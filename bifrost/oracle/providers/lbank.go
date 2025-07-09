@@ -20,7 +20,7 @@ type LbankTicker struct {
 	Symbol string `json:"symbol"`
 	Ticker struct {
 		Price  string `json:"latest"`
-		Volume string `json:"volume"`
+		Volume string `json:"vol"`
 	} `json:"ticker"`
 }
 
@@ -96,13 +96,16 @@ func (p *LbankProvider) Poll() {
 				return
 			}
 
-			var response [1]LbankTicker
+			var response struct {
+				Data [1]LbankTicker `json:"data"`
+			}
+
 			err = json.Unmarshal(data, &response)
 			if err != nil {
 				return
 			}
 
-			ticker := response[0].Ticker
+			ticker := response.Data[0].Ticker
 
 			p.setTicker(
 				time.Now(),
@@ -127,7 +130,7 @@ func (p *LbankProvider) Poll() {
 func (p *LbankProvider) GetSubscriptionMsgs() ([]map[string]any, error) {
 	msgs := []map[string]any{}
 
-	for _, pair := range p.pairs {
+	for _, pair := range p.sortedPairs() {
 		msgs = append(msgs, map[string]any{
 			"action":    "subscribe",
 			"subscribe": "tick",

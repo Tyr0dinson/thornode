@@ -2,6 +2,7 @@ package mock
 
 import (
 	"bytes"
+	"compress/gzip"
 	"compress/zlib"
 	"embed"
 	"fmt"
@@ -32,7 +33,15 @@ func NewServer() *httptest.Server {
 		// REST
 		filename := strings.Replace(r.URL.Path[1:], "/", "-", -1)
 		filename = strings.ToLower(filename)
+
+		switch filename {
+		case "lbank-v2-ticker-24hr.do":
+			symbol := r.URL.Query().Get("symbol")
+			filename += "-" + symbol
+		}
+
 		fmt.Println(">", filename)
+
 		data, err := responses.ReadFile("data/" + filename + ".json")
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
@@ -95,6 +104,21 @@ func handleWs(w http.ResponseWriter, r *http.Request) {
 			case common.ProviderDigifinex:
 				var buf bytes.Buffer
 				writer := zlib.NewWriter(&buf)
+
+				_, err = writer.Write(data)
+				if err != nil {
+					return
+				}
+
+				err = writer.Close()
+				if err != nil {
+					return
+				}
+
+				_ = conn.WriteMessage(websocket.BinaryMessage, buf.Bytes())
+			case common.ProviderHtx:
+				var buf bytes.Buffer
+				writer := gzip.NewWriter(&buf)
 
 				_, err = writer.Write(data)
 				if err != nil {
