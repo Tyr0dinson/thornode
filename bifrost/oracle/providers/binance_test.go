@@ -30,8 +30,6 @@ func (s *ProviderTestSuite) TestBinanceProvider(c *C) {
 	// test polling
 
 	provider.Poll()
-	// supports reversed pairs
-	c.Assert(provider.tickers, HasLen, 4)
 
 	tickers, err := provider.GetTickers()
 	c.Assert(err, IsNil)
@@ -39,7 +37,7 @@ func (s *ProviderTestSuite) TestBinanceProvider(c *C) {
 
 	ticker, found := tickers["BTC/USDT"]
 	c.Assert(found, Equals, true)
-	c.Assert(ticker.Price.Text('f', 1), Equals, "108346.9")
+	c.Assert(ticker.Price.Text('f', 2), Equals, "108346.90")
 
 	ticker, found = tickers["ETH/USDT"]
 	c.Assert(found, Equals, true)

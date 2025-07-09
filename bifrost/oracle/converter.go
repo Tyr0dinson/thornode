@@ -2,10 +2,11 @@ package oracle
 
 import (
 	"fmt"
-	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/metrics"
-	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/types"
 	"math/big"
 	"sort"
+
+	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/metrics"
+	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/types"
 )
 
 const (
@@ -90,13 +91,13 @@ func (c *Converter) GetRate(symbol string, metrics bool) (*big.Float, *big.Float
 
 	if metrics {
 		for provider := range c.rates[symbol] {
-			total, found := totalVolumes[provider]
-			if !found {
+			total, ok := totalVolumes[provider]
+			if !ok {
 				total = new(big.Float)
 			}
 
-			capped, found := cappedVolumes[provider]
-			if !found {
+			capped, ok := cappedVolumes[provider]
+			if !ok {
 				capped = new(big.Float)
 			}
 
@@ -169,7 +170,7 @@ func (c *Converter) ConvertToUsd() (map[string]*big.Float, error) {
 			})
 		}
 
-		// sort rates by volume, so we convert pairs with the highes volume for
+		// sort rates by volume, so we convert pairs with the highest volume for
 		// the quote asset first
 
 		sort.Slice(rates, func(i, j int) bool {
@@ -284,7 +285,6 @@ func FilterDeviations(
 	}
 
 	deviation, median, err := ComputeMedianAbsoluteDeviation(values)
-
 	if err != nil {
 		return nil, nil, nil, err
 	}

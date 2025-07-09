@@ -79,6 +79,7 @@ func (o *Oracle) run() {
 		ticker := time.NewTicker(time.Second * 2)
 		defer ticker.Stop()
 
+		/* trunk-ignore(golangci-lint/gosimple) */
 		for {
 			select {
 			case <-o.ctx.Done():

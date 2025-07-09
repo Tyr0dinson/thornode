@@ -3,13 +3,14 @@ package providers
 import (
 	"context"
 	"encoding/json"
+	"strconv"
+	"time"
+
 	"github.com/coder/websocket/wsjson"
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/metrics"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
-	"strconv"
-	"time"
 )
 
 type OkxTicker struct {
@@ -92,11 +93,6 @@ func (p *OkxProvider) ToProviderSymbol(base, quote string) string {
 // Polling
 
 func (p *OkxProvider) Poll() {
-	var symbols []string
-	for symbol := range p.pairs {
-		symbols = append(symbols, symbol)
-	}
-
 	tickers, err := p.getTickers()
 	if err != nil {
 		p.logger.Err(err).Msg("error fetching tickers")

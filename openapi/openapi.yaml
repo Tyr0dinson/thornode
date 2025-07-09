@@ -243,7 +243,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/OraclePriceResponse"
-  
+
   /thorchain/oracle/prices:
     parameters:
       - $ref: "#/components/parameters/queryHeight"
@@ -259,7 +259,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/OraclePricesResponse"
-
 
   # ------------------------------ tcy stakers ------------------------------
 
@@ -1693,7 +1692,7 @@ components:
       schema:
         type: string
         example: asgard
-    
+
     symbol:
       name: symbol
       in: path
@@ -2052,7 +2051,7 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/OraclePrice"
-      
+
     OraclePriceResponse:
       type: object
       properties:
@@ -2070,7 +2069,6 @@ components:
         amount:
           type: string
           example: "105126.5321"
-
 
     TCYStakerSummary:
       type: object

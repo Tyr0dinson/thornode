@@ -4,12 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
+
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
-	"time"
 )
 
 type CoinbaseTicker struct {
@@ -18,7 +19,7 @@ type CoinbaseTicker struct {
 	Time   string `json:"time"`
 }
 
-type CoinbaseWsTicker struct {
+type CoinbaseWsTickerMsg struct {
 	Symbol string `json:"product_id"`
 	Price  string `json:"price"`
 	Volume string `json:"volume_24h"`
@@ -77,7 +78,7 @@ func (p *CoinbaseProvider) Poll() {
 		}(p, symbol, pair)
 		// Coinbase has a rate limit of 10req/s, sleeping 1.2s before running
 		// the next batch of requests
-		i = i + 1
+		i++
 		if i == 10 {
 			i = 0
 			time.Sleep(time.Millisecond * 1200)
@@ -123,8 +124,8 @@ func (p *CoinbaseProvider) GetAvailablePairs() ([]string, error) {
 func (p *CoinbaseProvider) GetSubscriptionMsgs() ([]map[string]any, error) {
 	var symbols []string
 
-	for _, pair := range p.pairs {
-		symbols = append(symbols, pair.Join("-"))
+	for _, pair := range p.sortedPairs() {
+		symbols = append(symbols, p.toMappedProviderSymbol(pair))
 	}
 
 	msgs := []map[string]any{{
@@ -137,14 +138,14 @@ func (p *CoinbaseProvider) GetSubscriptionMsgs() ([]map[string]any, error) {
 }
 
 func (p *CoinbaseProvider) HandleWsMessage(msg []byte) error {
-	var ticker CoinbaseWsTicker
-	err := json.Unmarshal(msg, &ticker)
+	var tickerMsg CoinbaseWsTickerMsg
+	err := json.Unmarshal(msg, &tickerMsg)
 	if err != nil {
 		p.logger.Err(err).Msg("error unmarshalling msg")
 		return err
 	}
 
-	pair, found := p.pairs[ticker.Symbol]
+	pair, found := p.pairs[tickerMsg.Symbol]
 	if !found {
 		return nil
 	}
@@ -154,8 +155,8 @@ func (p *CoinbaseProvider) HandleWsMessage(msg []byte) error {
 	p.setTicker(
 		timestamp,
 		pair,
-		strToFloat(ticker.Price),
-		strToFloat(ticker.Volume),
+		strToFloat(tickerMsg.Price),
+		strToFloat(tickerMsg.Volume),
 		nil,
 	)
 

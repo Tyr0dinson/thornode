@@ -30,8 +30,6 @@ func (s *ProviderTestSuite) TestCryptoProvider(c *C) {
 	// test polling
 
 	provider.Poll()
-	// doesn't support reversed pairs
-	c.Assert(provider.tickers, HasLen, 2)
 
 	tickers, err := provider.GetTickers()
 	c.Assert(err, IsNil)

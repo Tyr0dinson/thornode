@@ -6,15 +6,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"math/big"
+	"strings"
+	"time"
+
 	"github.com/coder/websocket/wsjson"
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/metrics"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
-	"io"
-	"math/big"
-	"strings"
-	"time"
 )
 
 type HtxTicker struct {
@@ -50,7 +51,7 @@ func NewHtxProvider(
 		return nil, err
 	}
 
-	// restart if we havent received any ping in the last 30s
+	// restart if we haven't received any ping in the last 30s
 	wsProvider.keepaliveTimeout = time.Second * 30
 
 	provider := HtxProvider{wsProvider}
@@ -139,13 +140,17 @@ func (p *HtxProvider) GetSubscriptionMsgs() ([]map[string]any, error) {
 }
 
 func (p *HtxProvider) HandleWsMessage(msg []byte) error {
+	var limit int64 = 10240 // 10 KB
+
 	// ws data from htx is compressed with GZIP
-	reader, err := gzip.NewReader(bytes.NewReader(msg))
+	gzipReader, err := gzip.NewReader(bytes.NewReader(msg))
 	if err != nil {
 		p.logger.Err(err).Msg("fail to create gzip reader")
 		return err
 	}
-	defer reader.Close()
+	defer gzipReader.Close()
+
+	reader := io.LimitReader(gzipReader, limit)
 
 	var data bytes.Buffer
 	_, err = io.Copy(&data, reader)

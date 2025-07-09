@@ -4,13 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
+	"time"
+
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
-	"strings"
-	"time"
 )
 
 type GeminiTicker struct {
@@ -46,10 +47,15 @@ func (p *GeminiProvider) GetAvailablePairs() ([]string, error) {
 	data, err := p.httpGet("/v1/symbols")
 	if err != nil {
 		p.logger.Err(err).Msg("error fetching symbols")
+		return nil, err
 	}
 
 	var symbols []string
 	err = json.Unmarshal(data, &symbols)
+	if err != nil {
+		p.logger.Err(err).Msg("fail to unmarshal data")
+		return nil, err
+	}
 
 	return symbols, nil
 }
@@ -99,7 +105,7 @@ func (p *GeminiProvider) Poll() {
 		}(p, symbol, pair)
 		// Gemini has a rate limit of 2req/s, sleeping 1.2s before running
 		// the next batch of requests
-		i = i + 1
+		i++
 		if i == 2 {
 			i = 0
 			time.Sleep(time.Millisecond * 1200)

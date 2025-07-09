@@ -2,9 +2,10 @@ package providers
 
 import (
 	"encoding/json"
+	"time"
+
 	"gitlab.com/thorchain/thornode/v3/common"
 	. "gopkg.in/check.v1"
-	"time"
 )
 
 func (s *ProviderTestSuite) TestCoinwProvider(c *C) {
@@ -37,6 +38,7 @@ func (s *ProviderTestSuite) TestCoinwProvider(c *C) {
 
 	// replace symbols with ids
 	err = provider.PrepareConnection()
+	c.Assert(err, IsNil)
 
 	str := `[{"event":"sub","params":{"biz":"exchange","pairCode":"78","type":"ticker"}},{"event":"sub","params":{"biz":"exchange","pairCode":"79","type":"ticker"}}]`
 

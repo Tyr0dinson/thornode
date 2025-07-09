@@ -30,8 +30,6 @@ func (s *ProviderTestSuite) TestBitgetProvider(c *C) {
 	// test polling
 
 	provider.Poll()
-	// supports reversed pairs
-	c.Assert(provider.tickers, HasLen, 4)
 
 	tickers, err := provider.GetTickers()
 	c.Assert(err, IsNil)

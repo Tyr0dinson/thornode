@@ -1,17 +1,17 @@
 package oracle
 
 import (
-	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/providers/mock"
-	"gitlab.com/thorchain/thornode/v3/config"
-	. "gopkg.in/check.v1"
 	"net/http/httptest"
 	"strings"
 	"time"
+
+	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/providers/mock"
+	"gitlab.com/thorchain/thornode/v3/config"
+	. "gopkg.in/check.v1"
 )
 
 type OracleTestSuite struct {
 	server *httptest.Server
-	url    string
 	wsUrl  string
 }
 

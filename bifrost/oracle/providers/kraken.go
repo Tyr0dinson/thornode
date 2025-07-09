@@ -19,8 +19,16 @@ type KrakenTickersResponse struct {
 	} `json:"result"`
 }
 
-type KrakenWsTickerResponse struct {
-	Data []struct {
+type KrakenWsGenericMsg struct {
+	Channel string `json:"channel"`
+}
+
+type KrakenWsSubscriptionMsg struct {
+	Method string `json:"method"`
+}
+type KrakenWsTickerMsg struct {
+	Channel string `json:"channel"`
+	Data    []struct {
 		Symbol string  `json:"symbol"`
 		Price  float64 `json:"last"`
 		Volume float64 `json:"volume"`
@@ -122,7 +130,7 @@ func (p *KrakenProvider) ToProviderSymbol(base, quote string) string {
 func (p *KrakenProvider) GetSubscriptionMsgs() ([]map[string]any, error) {
 	var symbols []string
 
-	for _, pair := range p.pairs {
+	for _, pair := range p.sortedPairs() {
 		symbols = append(symbols, pair.String())
 	}
 
@@ -138,19 +146,24 @@ func (p *KrakenProvider) GetSubscriptionMsgs() ([]map[string]any, error) {
 }
 
 func (p *KrakenProvider) HandleWsMessage(msg []byte) error {
-	var response KrakenWsTickerResponse
+	var (
+		tickerMsg       KrakenWsTickerMsg
+		subscriptionMsg KrakenWsSubscriptionMsg
+		genericMsg      KrakenWsGenericMsg
+	)
 
-	err := json.Unmarshal(msg, &response)
-	if err != nil {
-		p.logger.Err(err).Msg("error unmarshalling msg")
-		return err
-	}
+	err := json.Unmarshal(msg, &tickerMsg)
+	if err == nil && tickerMsg.Channel == "ticker" && len(tickerMsg.Data) > 0 {
+		if len(tickerMsg.Data) != 1 {
+			return ErrUnknownWsMsg
+		}
 
-	for _, data := range response.Data {
-		pair, err := types.NewCurrencyPair(data.Symbol)
+		ticker := tickerMsg.Data[0]
+
+		pair, err := types.NewCurrencyPair(ticker.Symbol)
 		if err != nil {
 			p.logger.Err(err).Msg("fail to create pair")
-			continue
+			return err
 		}
 
 		symbol := p.toMappedProviderSymbol(pair)
@@ -165,11 +178,23 @@ func (p *KrakenProvider) HandleWsMessage(msg []byte) error {
 		p.setTicker(
 			timestamp,
 			pair,
-			big.NewFloat(data.Price),
-			big.NewFloat(data.Volume),
+			big.NewFloat(ticker.Price),
+			big.NewFloat(ticker.Volume),
 			nil,
 		)
+
+		return nil
 	}
 
-	return nil
+	err = json.Unmarshal(msg, &subscriptionMsg)
+	if err == nil && subscriptionMsg.Method == "subscribe" {
+		return nil
+	}
+
+	err = json.Unmarshal(msg, &genericMsg)
+	if err == nil && genericMsg.Channel == "status" {
+		return nil
+	}
+
+	return ErrUnknownWsMsg
 }

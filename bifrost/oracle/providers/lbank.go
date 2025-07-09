@@ -4,15 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/big"
+	"strings"
+	"time"
+
 	"github.com/coder/websocket/wsjson"
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
-	"math/big"
-	"strings"
-	"time"
 )
 
 type LbankTicker struct {
@@ -110,11 +111,10 @@ func (p *LbankProvider) Poll() {
 				strToFloat(ticker.Volume),
 				nil,
 			)
-
 		}(p, symbol, pair)
 		// LBank has a rate limit of 20req/s, sleeping 1.2s before running
 		// the next batch of requests
-		i = i + 1
+		i++
 		if i == reqsPerSecond {
 			i = 0
 			time.Sleep(time.Millisecond * 1200)

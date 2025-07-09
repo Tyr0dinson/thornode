@@ -187,7 +187,7 @@ func (am AppModule) BeginBlock(goCtx context.Context) error {
 
 	// Clear all oracle prices
 	if err := am.mgr.OracleManager().BeginBlock(ctx); err != nil {
-		ctx.Logger().Error("fail to proces oracle manager", "error", err)
+		ctx.Logger().Error("fail to process oracle manager", "error", err)
 	}
 
 	am.mgr.Keeper().ClearObservingAddresses(ctx)

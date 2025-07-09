@@ -3,24 +3,24 @@ package providers
 import (
 	"context"
 	"fmt"
-	"github.com/rs/zerolog"
-	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/metrics"
-	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/providers/mock"
-	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/types"
-	"gitlab.com/thorchain/thornode/v3/common"
-	"gitlab.com/thorchain/thornode/v3/config"
 	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/rs/zerolog"
+	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/metrics"
+	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/providers/mock"
+	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/types"
+	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/config"
+
 	. "gopkg.in/check.v1"
 )
 
 type ProviderTestSuite struct {
 	server  *httptest.Server
-	url     string
 	wsUrl   string
 	ctx     context.Context
 	logger  zerolog.Logger
@@ -52,6 +52,7 @@ func (s *ProviderTestSuite) SetUpSuite(c *C) {
 		common.ProviderBitget,
 		common.ProviderBitmart,
 		common.ProviderBybit,
+		common.ProviderCoinbase,
 		common.ProviderCoinw,
 		common.ProviderCrypto,
 		common.ProviderDigifinex,
@@ -66,7 +67,6 @@ func (s *ProviderTestSuite) SetUpSuite(c *C) {
 		s.config[provider] = s.newProviderConfig(provider, symbols)
 	}
 	s.metrics = metrics.NewMetrics()
-
 }
 
 func (s *ProviderTestSuite) TearDownSuite(c *C) {

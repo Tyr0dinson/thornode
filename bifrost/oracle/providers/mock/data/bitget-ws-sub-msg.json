@@ -1,1 +1,4 @@
-{"event": "subscribe", "arg": {"instType": "SPOT", "channel": "ticker", "instId": "BTCUSDT"}}
+{
+  "event": "subscribe",
+  "arg": { "instType": "SPOT", "channel": "ticker", "instId": "BTCUSDT" }
+}

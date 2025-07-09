@@ -1,9 +1,12 @@
 package mock
 
 import (
+	"bytes"
+	"compress/zlib"
 	"embed"
 	"fmt"
 	"github.com/gorilla/websocket"
+	"gitlab.com/thorchain/thornode/v3/common"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -28,6 +31,7 @@ func NewServer() *httptest.Server {
 
 		// REST
 		filename := strings.Replace(r.URL.Path[1:], "/", "-", -1)
+		filename = strings.ToLower(filename)
 		fmt.Println(">", filename)
 		data, err := responses.ReadFile("data/" + filename + ".json")
 		if err != nil {
@@ -86,8 +90,26 @@ func handleWs(w http.ResponseWriter, r *http.Request) {
 				fmt.Println(err)
 				continue
 			}
-			_ = conn.WriteMessage(websocket.TextMessage, data)
+
+			switch provider {
+			case common.ProviderDigifinex:
+				var buf bytes.Buffer
+				writer := zlib.NewWriter(&buf)
+
+				_, err = writer.Write(data)
+				if err != nil {
+					return
+				}
+
+				err = writer.Close()
+				if err != nil {
+					return
+				}
+
+				_ = conn.WriteMessage(websocket.BinaryMessage, buf.Bytes())
+			default:
+				_ = conn.WriteMessage(websocket.TextMessage, data)
+			}
 		}
 	}
-
 }

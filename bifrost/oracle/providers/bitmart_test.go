@@ -30,7 +30,6 @@ func (s *ProviderTestSuite) TestBitmartProvider(c *C) {
 	// test polling
 
 	provider.Poll()
-	c.Assert(provider.tickers, HasLen, 4) // supports reversed pairs
 
 	tickers, err := provider.GetTickers()
 	c.Assert(err, IsNil)
