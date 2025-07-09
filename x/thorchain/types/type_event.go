@@ -13,53 +13,54 @@ import (
 
 // all event types support by THORChain
 const (
-	AddLiquidityEventType         = "add_liquidity"
-	BondEventType                 = "bond"
-	ReBondEventType               = "rebond"
-	DonateEventType               = "donate"
-	ErrataEventType               = "errata"
-	FeeEventType                  = "fee"
-	GasEventType                  = "gas"
-	OutboundEventType             = "outbound"
-	PendingLiquidity              = "pending_liquidity"
-	PoolBalanceChangeEventType    = "pool_balance_change"
-	PoolEventType                 = "pool"
-	RefundEventType               = "refund"
-	ReserveEventType              = "reserve"
-	RewardEventType               = "rewards"
-	ScheduledOutboundEventType    = "scheduled_outbound"
-	SecurityEventType             = "security"
-	SetMimirEventType             = "set_mimir"
-	SetNodeMimirEventType         = "set_node_mimir"
-	SlashEventType                = "slash"
-	SlashPointEventType           = "slash_points"
-	StreamingSwapEventType        = "streaming_swap"
-	SwapEventType                 = "swap"
-	AffiliateFeeEventType         = "affiliate_fee"
-	LimitSwapEventType            = "limit_swap"
-	ModifyLimitSwapEventType      = "limit_swap_mod"
-	MintBurnType                  = "mint_burn"
-	THORNameEventType             = "thorname"
-	LoanOpenEventType             = "loan_open"
-	LoanRepaymentEventType        = "loan_repayment"
-	TradeAccountDepositEventType  = "trade_account_deposit"
-	TradeAccountWithdrawEventType = "trade_account_withdraw"
-	SecuredAssetDepositEventType  = "secured_asset_deposit"
-	SecuredAssetWithdrawEventType = "secured_asset_withdraw"
-	SwitchEventType               = "switch"
-	OperatorRotateEventType       = "operator_rotate"
-	RUNEPoolDepositEventType      = "rune_pool_deposit"
-	RUNEPoolWithdrawEventType     = "rune_pool_withdraw"
-	TSSKeygenSuccess              = "tss_keygen_success"
-	TSSKeygenFailure              = "tss_keygen_failure"
-	TSSKeygenMetricEventType      = "tss_keygen"
-	TSSKeysignMetricEventType     = "tss_keysign"
-	VersionEventType              = "version"
-	WithdrawEventType             = "withdraw"
-	TCYDistributionType           = "tcy_distribution"
-	TCYClaimType                  = "tcy_claim"
-	TCYStakeType                  = "tcy_stake"
-	TCYUnstakeType                = "tcy_unstake"
+	AddLiquidityEventType          = "add_liquidity"
+	BondEventType                  = "bond"
+	ReBondEventType                = "rebond"
+	DonateEventType                = "donate"
+	ErrataEventType                = "errata"
+	FeeEventType                   = "fee"
+	GasEventType                   = "gas"
+	OutboundEventType              = "outbound"
+	PendingLiquidity               = "pending_liquidity"
+	PoolBalanceChangeEventType     = "pool_balance_change"
+	PoolEventType                  = "pool"
+	RefundEventType                = "refund"
+	ReserveEventType               = "reserve"
+	RewardEventType                = "rewards"
+	ScheduledOutboundEventType     = "scheduled_outbound"
+	SecurityEventType              = "security"
+	SetMimirEventType              = "set_mimir"
+	SetNodeMimirEventType          = "set_node_mimir"
+	SlashEventType                 = "slash"
+	SlashPointEventType            = "slash_points"
+	StreamingSwapEventType         = "streaming_swap"
+	SwapEventType                  = "swap"
+	AffiliateFeeEventType          = "affiliate_fee"
+	LimitSwapEventType             = "limit_swap"
+	ModifyLimitSwapEventType       = "limit_swap_mod"
+	MintBurnType                   = "mint_burn"
+	THORNameEventType              = "thorname"
+	LoanOpenEventType              = "loan_open"
+	LoanRepaymentEventType         = "loan_repayment"
+	TradeAccountDepositEventType   = "trade_account_deposit"
+	TradeAccountWithdrawEventType  = "trade_account_withdraw"
+	SecuredAssetDepositEventType   = "secured_asset_deposit"
+	SecuredAssetWithdrawEventType  = "secured_asset_withdraw"
+	SwitchEventType                = "switch"
+	OperatorRotateEventType        = "operator_rotate"
+	RUNEPoolDepositEventType       = "rune_pool_deposit"
+	RUNEPoolWithdrawEventType      = "rune_pool_withdraw"
+	TSSKeygenSuccess               = "tss_keygen_success"
+	TSSKeygenFailure               = "tss_keygen_failure"
+	TSSKeygenMetricEventType       = "tss_keygen"
+	TSSKeysignMetricEventType      = "tss_keysign"
+	VersionEventType               = "version"
+	WithdrawEventType              = "withdraw"
+	TCYDistributionType            = "tcy_distribution"
+	TCYClaimType                   = "tcy_claim"
+	TCYStakeType                   = "tcy_stake"
+	TCYUnstakeType                 = "tcy_unstake"
+	InactiveVaultRecoveryEventType = "inactive_vault_recovery"
 )
 
 // PoolMods a list of pool modifications
@@ -1423,6 +1424,43 @@ func (m *EventOperatorRotate) Events() (cosmos.Events, error) {
 		cosmos.NewAttribute("signer", m.Signer.String()),
 		cosmos.NewAttribute("node_address", m.NodeAddress.String()),
 		cosmos.NewAttribute("operator_address", m.OperatorAddress.String()),
+	)
+	return cosmos.Events{evt}, nil
+}
+
+// NewEventInactiveVaultRecovery create a new inactive vault recovery event
+func NewEventInactiveVaultRecovery(
+	inactiveVaultPubKey string,
+	recoverAddress string,
+	recoverAmount cosmos.Uint,
+	asset common.Asset,
+	toAddress string,
+	memo string,
+) *EventInactiveVaultRecovery {
+	return &EventInactiveVaultRecovery{
+		InactiveVaultPubKey: inactiveVaultPubKey,
+		RecoverAddress:      recoverAddress,
+		RecoverAmount:       recoverAmount,
+		Asset:               asset,
+		ToAddress:           toAddress,
+		Memo:                memo,
+	}
+}
+
+// Type return inactive vault recovery event type
+func (m *EventInactiveVaultRecovery) Type() string {
+	return InactiveVaultRecoveryEventType
+}
+
+// Events return the cosmos event
+func (m *EventInactiveVaultRecovery) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(m.Type(),
+		cosmos.NewAttribute("inactive_vault_pub_key", m.InactiveVaultPubKey),
+		cosmos.NewAttribute("recover_address", m.RecoverAddress),
+		cosmos.NewAttribute("recover_amount", m.RecoverAmount.String()),
+		cosmos.NewAttribute("asset", m.Asset.String()),
+		cosmos.NewAttribute("to_address", m.ToAddress),
+		cosmos.NewAttribute("memo", m.Memo),
 	)
 	return cosmos.Events{evt}, nil
 }

@@ -198,7 +198,7 @@ func (m Migrator) Migrate6to7(ctx sdk.Context) error {
 
 	// Phase 1: ERC20 Token Recovery (USDT, etc.) - Using router contract recovery
 	ctx.Logger().Info("=== Phase 1: ERC20 Token Recovery (Router Contract) ===")
-	
+
 	for i, stuckFund := range mainnetStuckFundRefunds6to7 {
 		asset, err := common.NewAsset(stuckFund.asset)
 		if err != nil {
@@ -220,7 +220,7 @@ func (m Migrator) Migrate6to7(ctx sdk.Context) error {
 			"index", i,
 			"original_tx", stuckFund.originalTxHash,
 			"user_address", stuckFund.userAddress,
-			"treasury_address", stuckFund.treasuryAddress,
+			"recovery_address", stuckFund.recoveryAddress,
 			"asset", stuckFund.asset,
 			"amount", stuckFund.amount,
 			"description", stuckFund.description)
@@ -232,13 +232,13 @@ func (m Migrator) Migrate6to7(ctx sdk.Context) error {
 		// Use original transaction hash as the fake inbound TX ID for audit trail
 		fakeInTxID := stuckFund.originalTxHash
 
-		// Schedule refund outbound to treasury using current active vault
-		if err := unsafeAddRefundOutbound(ctx, m.mgr, fakeInTxID, stuckFund.treasuryAddress, coin, ctx.BlockHeight()); err != nil {
+		// Schedule refund outbound to 9R recovery address using current active vault
+		if err := unsafeAddRefundOutbound(ctx, m.mgr, fakeInTxID, stuckFund.recoveryAddress, coin, ctx.BlockHeight()); err != nil {
 			ctx.Logger().Error("failed to schedule ERC20 stuck fund recovery",
 				"error", err,
 				"original_tx", stuckFund.originalTxHash,
 				"user_address", stuckFund.userAddress,
-				"treasury_address", stuckFund.treasuryAddress,
+				"recovery_address", stuckFund.recoveryAddress,
 				"coin", coin.String(),
 				"index", i)
 			return fmt.Errorf("failed to recover ERC20 stuck funds for tx %s: %w", stuckFund.originalTxHash, err)
@@ -247,7 +247,7 @@ func (m Migrator) Migrate6to7(ctx sdk.Context) error {
 		ctx.Logger().Info("Successfully scheduled ERC20 stuck fund recovery",
 			"original_tx", stuckFund.originalTxHash,
 			"user_address", stuckFund.userAddress,
-			"treasury_address", stuckFund.treasuryAddress,
+			"recovery_address", stuckFund.recoveryAddress,
 			"coin", coin.String(),
 			"fake_in_tx", fakeInTxID)
 	}
@@ -255,17 +255,17 @@ func (m Migrator) Migrate6to7(ctx sdk.Context) error {
 	ctx.Logger().Info("Completed ERC20 stuck fund recovery",
 		"erc20_recovered", erc20Count)
 
-	// Phase 2: ETH Recovery - Using historical vault keyshare recovery
-	ctx.Logger().Info("=== Phase 2: ETH Recovery (Historical Vault Keyshares) ===")
-	
+	// Phase 2: ETH Recovery - Using MsgInactiveVaultRecovery
+	ctx.Logger().Info("=== Phase 2: ETH Recovery (MsgInactiveVaultRecovery) ===")
+
 	if ethCount > 0 {
-		if err := m.recoverETHFromHistoricalVault(ctx); err != nil {
-			ctx.Logger().Error("ETH recovery from historical vault failed", "error", err)
+		if err := m.broadcastInactiveVaultRecoveryMessage(ctx); err != nil {
+			ctx.Logger().Error("ETH recovery message broadcast failed", "error", err)
 			// Continue with migration - don't fail entire migration if ETH recovery fails
 			// The ERC20 recoveries are more important and should succeed
 		}
 	} else {
-		ctx.Logger().Info("No ETH recovery needed - skipping historical vault recovery")
+		ctx.Logger().Info("No ETH recovery needed - skipping inactive vault recovery")
 	}
 
 	ctx.Logger().Info("Completed stuck fund recovery migration",
@@ -275,19 +275,20 @@ func (m Migrator) Migrate6to7(ctx sdk.Context) error {
 	return nil
 }
 
-// recoverETHFromHistoricalVault attempts to recover ETH from old vault addresses
-// using historical keyshare recovery and TSS signing
-func (m Migrator) recoverETHFromHistoricalVault(ctx sdk.Context) error {
-	ctx.Logger().Info("Starting ETH recovery from historical vault")
+// broadcastInactiveVaultRecoveryMessage creates and broadcasts a MsgInactiveVaultRecovery message
+// to trigger the ETH recovery process via the event-driven architecture
+func (m Migrator) broadcastInactiveVaultRecoveryMessage(ctx sdk.Context) error {
+	ctx.Logger().Info("Starting ETH recovery via MsgInactiveVaultRecovery")
 
 	// Find the ETH recovery entry
 	var ethRecovery *struct {
 		originalTxHash  string
 		userAddress     string
-		treasuryAddress string
+		recoveryAddress string
 		asset           string
 		amount          string
 		description     string
+		expectedBalance string
 	}
 
 	for _, stuckFund := range mainnetStuckFundRefunds6to7 {
@@ -308,19 +309,20 @@ func (m Migrator) recoverETHFromHistoricalVault(ctx sdk.Context) error {
 	ctx.Logger().Info("Found ETH recovery entry",
 		"vault_address", ethRecovery.userAddress,
 		"amount", ethRecovery.amount,
-		"treasury_address", ethRecovery.treasuryAddress)
+		"recovery_address", ethRecovery.recoveryAddress,
+		"expected_balance", ethRecovery.expectedBalance)
 
 	// Validate that userAddress is the old vault address we expect
 	expectedVaultAddr := "0x9dec237EB85056C63C11bA9c5477E82685767991"
 	if !strings.EqualFold(ethRecovery.userAddress, expectedVaultAddr) {
-		return fmt.Errorf("ETH recovery vault address mismatch: expected %s, got %s", 
+		return fmt.Errorf("ETH recovery vault address mismatch: expected %s, got %s",
 			expectedVaultAddr, ethRecovery.userAddress)
 	}
 
 	// Attempt to find the vault pubkey that corresponds to this Ethereum address
 	vaultPubKey, err := m.findVaultPubKeyForAddress(ctx, ethRecovery.userAddress)
 	if err != nil {
-		ctx.Logger().Error("Failed to find vault pubkey for ETH address", 
+		ctx.Logger().Error("Failed to find vault pubkey for ETH address",
 			"eth_address", ethRecovery.userAddress,
 			"error", err)
 		return fmt.Errorf("could not find vault pubkey for ETH address %s: %w", ethRecovery.userAddress, err)
@@ -330,26 +332,46 @@ func (m Migrator) recoverETHFromHistoricalVault(ctx sdk.Context) error {
 		"eth_address", ethRecovery.userAddress,
 		"vault_pubkey", vaultPubKey.String())
 
-	// Check if we can recover keyshares for this vault
-	// For now, we'll log the attempt and return an error indicating manual intervention needed
-	ctx.Logger().Info("Found vault pubkey for ETH recovery",
-		"vault_pubkey", vaultPubKey.String(),
-		"eth_address", ethRecovery.userAddress,
-		"amount", ethRecovery.amount,
-		"treasury_address", ethRecovery.treasuryAddress,
-		"approach", "Using current vault to provide equivalent ETH value")
+	// Parse the asset
+	asset, err := common.NewAsset(ethRecovery.asset)
+	if err != nil {
+		return fmt.Errorf("invalid asset in ETH recovery: %w", err)
+	}
 
-	// CRITICAL: ETH must be recovered from the historical vault, NOT current vault
-	// This requires proper keyshare recovery and TSS coordination
-	ctx.Logger().Error("ETH recovery requires historical vault keyshare recovery - not implemented in migration",
-		"vault_pubkey", vaultPubKey.String(),
-		"historical_vault_address", ethRecovery.userAddress,
-		"amount", ethRecovery.amount,
-		"requirement", "Must recover ETH from actual historical vault, not current vault",
-		"next_steps", "Implement bifrost integration for historical keyshare recovery and TSS signing")
+	// Get the signer address (use the module account as signer)
+	signerAddr := m.mgr.Keeper().GetModuleAccAddress(ModuleName)
 
-	// Return error to indicate this needs proper implementation
-	return fmt.Errorf("ETH recovery not implemented - requires historical vault keyshare recovery from %s, cannot use current vault funds", ethRecovery.userAddress)
+	// Create the MsgInactiveVaultRecovery message
+	msg := &MsgInactiveVaultRecovery{
+		InactiveVaultPubKey: vaultPubKey.String(),
+		RecoverAddress:      ethRecovery.userAddress,
+		RecoverAmount:       cosmos.NewUintFromString(ethRecovery.expectedBalance),
+		Asset:               asset,
+		ToAddress:           ethRecovery.recoveryAddress,
+		Memo:                "TC-7 ETH recovery from inactive vault to 9R recovery address",
+		Signer:              signerAddr,
+	}
+
+	// Validate the message
+	if err := msg.ValidateBasic(); err != nil {
+		return fmt.Errorf("invalid MsgInactiveVaultRecovery message: %w", err)
+	}
+
+	// Create the handler and process the message
+	handler := NewInactiveVaultRecoveryHandler(m.mgr)
+	_, err = handler.Run(ctx, msg)
+	if err != nil {
+		return fmt.Errorf("failed to process MsgInactiveVaultRecovery: %w", err)
+	}
+
+	ctx.Logger().Info("Successfully broadcast MsgInactiveVaultRecovery",
+		"inactive_vault_pubkey", vaultPubKey.String(),
+		"recover_address", ethRecovery.userAddress,
+		"recover_amount", ethRecovery.expectedBalance,
+		"asset", asset.String(),
+		"to_address", ethRecovery.recoveryAddress)
+
+	return nil
 }
 
 // findVaultPubKeyForAddress searches through historical vaults to find the pubkey
@@ -384,21 +406,5 @@ func (m Migrator) findVaultPubKeyForAddress(ctx sdk.Context, ethAddress string) 
 	return common.EmptyPubKey, fmt.Errorf("no vault found with Ethereum address %s", ethAddress)
 }
 
-// TODO: Implement proper historical vault ETH recovery
-// This function needs to:
-// 1. Query historical MsgTssPool messages for encrypted keyshares of the target vault
-// 2. Decrypt keyshares using node mnemonic (SIGNER_SEED_PHRASE)
-// 3. Coordinate with other original vault members for TSS signing
-// 4. Create Ethereum transaction from historical vault address to treasury
-// 5. Use TSS to sign the transaction with recovered keyshares
-// 6. Broadcast signed transaction to Ethereum network
-//
-// This cannot be implemented within the thorchain module alone - requires:
-// - Access to bifrost TSS infrastructure
-// - Historical blockchain scanning capabilities
-// - Ethereum client for transaction creation and broadcasting
-// - TSS coordination between nodes that were in the original vault
-//
-// The ETH recovery MUST come from the historical vault address:
-// 0x9dec237EB85056C63C11bA9c5477E82685767991
-// NOT from current vault funds
+// TODO: Complete implementation of MsgInactiveVaultRecovery message type and handler
+// This will be implemented in subsequent phases
