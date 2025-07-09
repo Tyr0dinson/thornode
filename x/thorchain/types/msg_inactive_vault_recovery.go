@@ -18,22 +18,20 @@ var (
 
 // NewMsgInactiveVaultRecovery is a constructor function for MsgInactiveVaultRecovery
 func NewMsgInactiveVaultRecovery(
-	inactiveVaultPubKey string,
-	recoverAddress string,
+	recoverFromAddress string,
+	recoverToAddress string,
 	recoverAmount cosmos.Uint,
 	asset common.Asset,
-	toAddress string,
 	memo string,
 	signer cosmos.AccAddress,
 ) *MsgInactiveVaultRecovery {
 	return &MsgInactiveVaultRecovery{
-		InactiveVaultPubKey: inactiveVaultPubKey,
-		RecoverAddress:      recoverAddress,
-		RecoverAmount:       recoverAmount,
-		Asset:               asset,
-		ToAddress:           toAddress,
-		Memo:                memo,
-		Signer:              signer,
+		RecoverFromAddress: recoverFromAddress,
+		RecoverToAddress:   recoverToAddress,
+		RecoverAmount:      recoverAmount,
+		Asset:              asset,
+		Memo:               memo,
+		Signer:             signer,
 	}
 }
 
@@ -43,12 +41,12 @@ func (m *MsgInactiveVaultRecovery) ValidateBasic() error {
 		return cosmos.ErrInvalidAddress(m.Signer.String())
 	}
 
-	if strings.TrimSpace(m.InactiveVaultPubKey) == "" {
-		return errors.New("inactive vault public key cannot be empty")
+	if strings.TrimSpace(m.RecoverFromAddress) == "" {
+		return errors.New("recover from address cannot be empty")
 	}
 
-	if strings.TrimSpace(m.RecoverAddress) == "" {
-		return errors.New("recover address cannot be empty")
+	if strings.TrimSpace(m.RecoverToAddress) == "" {
+		return errors.New("recover to address cannot be empty")
 	}
 
 	if m.RecoverAmount.IsZero() {
@@ -57,10 +55,6 @@ func (m *MsgInactiveVaultRecovery) ValidateBasic() error {
 
 	if m.Asset.IsEmpty() {
 		return errors.New("asset cannot be empty")
-	}
-
-	if strings.TrimSpace(m.ToAddress) == "" {
-		return errors.New("to address cannot be empty")
 	}
 
 	return nil

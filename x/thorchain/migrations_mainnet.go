@@ -341,15 +341,20 @@ func (m Migrator) broadcastInactiveVaultRecoveryMessage(ctx sdk.Context) error {
 	// Get the signer address (use the module account as signer)
 	signerAddr := m.mgr.Keeper().GetModuleAccAddress(ModuleName)
 
+	// Derive the ETH address from the vault pubkey to use as recover_from_address
+	recoverFromAddr, err := vaultPubKey.GetAddress(common.ETHChain)
+	if err != nil {
+		return fmt.Errorf("failed to derive ETH address from vault pubkey: %w", err)
+	}
+
 	// Create the MsgInactiveVaultRecovery message
 	msg := &MsgInactiveVaultRecovery{
-		InactiveVaultPubKey: vaultPubKey.String(),
-		RecoverAddress:      ethRecovery.userAddress,
-		RecoverAmount:       cosmos.NewUintFromString(ethRecovery.expectedBalance),
-		Asset:               asset,
-		ToAddress:           ethRecovery.recoveryAddress,
-		Memo:                "TC-7 ETH recovery from inactive vault to 9R recovery address",
-		Signer:              signerAddr,
+		RecoverFromAddress: recoverFromAddr.String(),
+		RecoverToAddress:   ethRecovery.recoveryAddress,
+		RecoverAmount:      cosmos.NewUintFromString(ethRecovery.expectedBalance),
+		Asset:              asset,
+		Memo:               "TC-7 ETH recovery from inactive vault to 9R recovery address",
+		Signer:             signerAddr,
 	}
 
 	// Validate the message
@@ -366,10 +371,10 @@ func (m Migrator) broadcastInactiveVaultRecoveryMessage(ctx sdk.Context) error {
 
 	ctx.Logger().Info("Successfully broadcast MsgInactiveVaultRecovery",
 		"inactive_vault_pubkey", vaultPubKey.String(),
-		"recover_address", ethRecovery.userAddress,
+		"recover_from_address", recoverFromAddr.String(),
+		"recover_to_address", ethRecovery.recoveryAddress,
 		"recover_amount", ethRecovery.expectedBalance,
-		"asset", asset.String(),
-		"to_address", ethRecovery.recoveryAddress)
+		"asset", asset.String())
 
 	return nil
 }

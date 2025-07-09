@@ -15,24 +15,22 @@ import (
 )
 
 var (
-	md_MsgInactiveVaultRecovery                        protoreflect.MessageDescriptor
-	fd_MsgInactiveVaultRecovery_inactive_vault_pub_key protoreflect.FieldDescriptor
-	fd_MsgInactiveVaultRecovery_recover_address        protoreflect.FieldDescriptor
-	fd_MsgInactiveVaultRecovery_recover_amount         protoreflect.FieldDescriptor
-	fd_MsgInactiveVaultRecovery_asset                  protoreflect.FieldDescriptor
-	fd_MsgInactiveVaultRecovery_to_address             protoreflect.FieldDescriptor
-	fd_MsgInactiveVaultRecovery_memo                   protoreflect.FieldDescriptor
-	fd_MsgInactiveVaultRecovery_signer                 protoreflect.FieldDescriptor
+	md_MsgInactiveVaultRecovery                      protoreflect.MessageDescriptor
+	fd_MsgInactiveVaultRecovery_recover_from_address protoreflect.FieldDescriptor
+	fd_MsgInactiveVaultRecovery_recover_to_address   protoreflect.FieldDescriptor
+	fd_MsgInactiveVaultRecovery_recover_amount       protoreflect.FieldDescriptor
+	fd_MsgInactiveVaultRecovery_asset                protoreflect.FieldDescriptor
+	fd_MsgInactiveVaultRecovery_memo                 protoreflect.FieldDescriptor
+	fd_MsgInactiveVaultRecovery_signer               protoreflect.FieldDescriptor
 )
 
 func init() {
 	file_types_msg_inactive_vault_recovery_proto_init()
 	md_MsgInactiveVaultRecovery = File_types_msg_inactive_vault_recovery_proto.Messages().ByName("MsgInactiveVaultRecovery")
-	fd_MsgInactiveVaultRecovery_inactive_vault_pub_key = md_MsgInactiveVaultRecovery.Fields().ByName("inactive_vault_pub_key")
-	fd_MsgInactiveVaultRecovery_recover_address = md_MsgInactiveVaultRecovery.Fields().ByName("recover_address")
+	fd_MsgInactiveVaultRecovery_recover_from_address = md_MsgInactiveVaultRecovery.Fields().ByName("recover_from_address")
+	fd_MsgInactiveVaultRecovery_recover_to_address = md_MsgInactiveVaultRecovery.Fields().ByName("recover_to_address")
 	fd_MsgInactiveVaultRecovery_recover_amount = md_MsgInactiveVaultRecovery.Fields().ByName("recover_amount")
 	fd_MsgInactiveVaultRecovery_asset = md_MsgInactiveVaultRecovery.Fields().ByName("asset")
-	fd_MsgInactiveVaultRecovery_to_address = md_MsgInactiveVaultRecovery.Fields().ByName("to_address")
 	fd_MsgInactiveVaultRecovery_memo = md_MsgInactiveVaultRecovery.Fields().ByName("memo")
 	fd_MsgInactiveVaultRecovery_signer = md_MsgInactiveVaultRecovery.Fields().ByName("signer")
 }
@@ -102,15 +100,15 @@ func (x *fastReflection_MsgInactiveVaultRecovery) Interface() protoreflect.Proto
 // While iterating, mutating operations may only be performed
 // on the current field descriptor.
 func (x *fastReflection_MsgInactiveVaultRecovery) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
-	if x.InactiveVaultPubKey != "" {
-		value := protoreflect.ValueOfString(x.InactiveVaultPubKey)
-		if !f(fd_MsgInactiveVaultRecovery_inactive_vault_pub_key, value) {
+	if x.RecoverFromAddress != "" {
+		value := protoreflect.ValueOfString(x.RecoverFromAddress)
+		if !f(fd_MsgInactiveVaultRecovery_recover_from_address, value) {
 			return
 		}
 	}
-	if x.RecoverAddress != "" {
-		value := protoreflect.ValueOfString(x.RecoverAddress)
-		if !f(fd_MsgInactiveVaultRecovery_recover_address, value) {
+	if x.RecoverToAddress != "" {
+		value := protoreflect.ValueOfString(x.RecoverToAddress)
+		if !f(fd_MsgInactiveVaultRecovery_recover_to_address, value) {
 			return
 		}
 	}
@@ -123,12 +121,6 @@ func (x *fastReflection_MsgInactiveVaultRecovery) Range(f func(protoreflect.Fiel
 	if x.Asset != nil {
 		value := protoreflect.ValueOfMessage(x.Asset.ProtoReflect())
 		if !f(fd_MsgInactiveVaultRecovery_asset, value) {
-			return
-		}
-	}
-	if x.ToAddress != "" {
-		value := protoreflect.ValueOfString(x.ToAddress)
-		if !f(fd_MsgInactiveVaultRecovery_to_address, value) {
 			return
 		}
 	}
@@ -159,16 +151,14 @@ func (x *fastReflection_MsgInactiveVaultRecovery) Range(f func(protoreflect.Fiel
 // a repeated field is populated if it is non-empty.
 func (x *fastReflection_MsgInactiveVaultRecovery) Has(fd protoreflect.FieldDescriptor) bool {
 	switch fd.FullName() {
-	case "types.MsgInactiveVaultRecovery.inactive_vault_pub_key":
-		return x.InactiveVaultPubKey != ""
-	case "types.MsgInactiveVaultRecovery.recover_address":
-		return x.RecoverAddress != ""
+	case "types.MsgInactiveVaultRecovery.recover_from_address":
+		return x.RecoverFromAddress != ""
+	case "types.MsgInactiveVaultRecovery.recover_to_address":
+		return x.RecoverToAddress != ""
 	case "types.MsgInactiveVaultRecovery.recover_amount":
 		return x.RecoverAmount != ""
 	case "types.MsgInactiveVaultRecovery.asset":
 		return x.Asset != nil
-	case "types.MsgInactiveVaultRecovery.to_address":
-		return x.ToAddress != ""
 	case "types.MsgInactiveVaultRecovery.memo":
 		return x.Memo != ""
 	case "types.MsgInactiveVaultRecovery.signer":
@@ -189,16 +179,14 @@ func (x *fastReflection_MsgInactiveVaultRecovery) Has(fd protoreflect.FieldDescr
 // Clear is a mutating operation and unsafe for concurrent use.
 func (x *fastReflection_MsgInactiveVaultRecovery) Clear(fd protoreflect.FieldDescriptor) {
 	switch fd.FullName() {
-	case "types.MsgInactiveVaultRecovery.inactive_vault_pub_key":
-		x.InactiveVaultPubKey = ""
-	case "types.MsgInactiveVaultRecovery.recover_address":
-		x.RecoverAddress = ""
+	case "types.MsgInactiveVaultRecovery.recover_from_address":
+		x.RecoverFromAddress = ""
+	case "types.MsgInactiveVaultRecovery.recover_to_address":
+		x.RecoverToAddress = ""
 	case "types.MsgInactiveVaultRecovery.recover_amount":
 		x.RecoverAmount = ""
 	case "types.MsgInactiveVaultRecovery.asset":
 		x.Asset = nil
-	case "types.MsgInactiveVaultRecovery.to_address":
-		x.ToAddress = ""
 	case "types.MsgInactiveVaultRecovery.memo":
 		x.Memo = ""
 	case "types.MsgInactiveVaultRecovery.signer":
@@ -219,11 +207,11 @@ func (x *fastReflection_MsgInactiveVaultRecovery) Clear(fd protoreflect.FieldDes
 // of the value; to obtain a mutable reference, use Mutable.
 func (x *fastReflection_MsgInactiveVaultRecovery) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
 	switch descriptor.FullName() {
-	case "types.MsgInactiveVaultRecovery.inactive_vault_pub_key":
-		value := x.InactiveVaultPubKey
+	case "types.MsgInactiveVaultRecovery.recover_from_address":
+		value := x.RecoverFromAddress
 		return protoreflect.ValueOfString(value)
-	case "types.MsgInactiveVaultRecovery.recover_address":
-		value := x.RecoverAddress
+	case "types.MsgInactiveVaultRecovery.recover_to_address":
+		value := x.RecoverToAddress
 		return protoreflect.ValueOfString(value)
 	case "types.MsgInactiveVaultRecovery.recover_amount":
 		value := x.RecoverAmount
@@ -231,9 +219,6 @@ func (x *fastReflection_MsgInactiveVaultRecovery) Get(descriptor protoreflect.Fi
 	case "types.MsgInactiveVaultRecovery.asset":
 		value := x.Asset
 		return protoreflect.ValueOfMessage(value.ProtoReflect())
-	case "types.MsgInactiveVaultRecovery.to_address":
-		value := x.ToAddress
-		return protoreflect.ValueOfString(value)
 	case "types.MsgInactiveVaultRecovery.memo":
 		value := x.Memo
 		return protoreflect.ValueOfString(value)
@@ -260,16 +245,14 @@ func (x *fastReflection_MsgInactiveVaultRecovery) Get(descriptor protoreflect.Fi
 // Set is a mutating operation and unsafe for concurrent use.
 func (x *fastReflection_MsgInactiveVaultRecovery) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
 	switch fd.FullName() {
-	case "types.MsgInactiveVaultRecovery.inactive_vault_pub_key":
-		x.InactiveVaultPubKey = value.Interface().(string)
-	case "types.MsgInactiveVaultRecovery.recover_address":
-		x.RecoverAddress = value.Interface().(string)
+	case "types.MsgInactiveVaultRecovery.recover_from_address":
+		x.RecoverFromAddress = value.Interface().(string)
+	case "types.MsgInactiveVaultRecovery.recover_to_address":
+		x.RecoverToAddress = value.Interface().(string)
 	case "types.MsgInactiveVaultRecovery.recover_amount":
 		x.RecoverAmount = value.Interface().(string)
 	case "types.MsgInactiveVaultRecovery.asset":
 		x.Asset = value.Message().Interface().(*common.Asset)
-	case "types.MsgInactiveVaultRecovery.to_address":
-		x.ToAddress = value.Interface().(string)
 	case "types.MsgInactiveVaultRecovery.memo":
 		x.Memo = value.Interface().(string)
 	case "types.MsgInactiveVaultRecovery.signer":
@@ -299,14 +282,12 @@ func (x *fastReflection_MsgInactiveVaultRecovery) Mutable(fd protoreflect.FieldD
 			x.Asset = new(common.Asset)
 		}
 		return protoreflect.ValueOfMessage(x.Asset.ProtoReflect())
-	case "types.MsgInactiveVaultRecovery.inactive_vault_pub_key":
-		panic(fmt.Errorf("field inactive_vault_pub_key of message types.MsgInactiveVaultRecovery is not mutable"))
-	case "types.MsgInactiveVaultRecovery.recover_address":
-		panic(fmt.Errorf("field recover_address of message types.MsgInactiveVaultRecovery is not mutable"))
+	case "types.MsgInactiveVaultRecovery.recover_from_address":
+		panic(fmt.Errorf("field recover_from_address of message types.MsgInactiveVaultRecovery is not mutable"))
+	case "types.MsgInactiveVaultRecovery.recover_to_address":
+		panic(fmt.Errorf("field recover_to_address of message types.MsgInactiveVaultRecovery is not mutable"))
 	case "types.MsgInactiveVaultRecovery.recover_amount":
 		panic(fmt.Errorf("field recover_amount of message types.MsgInactiveVaultRecovery is not mutable"))
-	case "types.MsgInactiveVaultRecovery.to_address":
-		panic(fmt.Errorf("field to_address of message types.MsgInactiveVaultRecovery is not mutable"))
 	case "types.MsgInactiveVaultRecovery.memo":
 		panic(fmt.Errorf("field memo of message types.MsgInactiveVaultRecovery is not mutable"))
 	case "types.MsgInactiveVaultRecovery.signer":
@@ -324,17 +305,15 @@ func (x *fastReflection_MsgInactiveVaultRecovery) Mutable(fd protoreflect.FieldD
 // For lists, maps, and messages, this returns a new, empty, mutable value.
 func (x *fastReflection_MsgInactiveVaultRecovery) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
 	switch fd.FullName() {
-	case "types.MsgInactiveVaultRecovery.inactive_vault_pub_key":
+	case "types.MsgInactiveVaultRecovery.recover_from_address":
 		return protoreflect.ValueOfString("")
-	case "types.MsgInactiveVaultRecovery.recover_address":
+	case "types.MsgInactiveVaultRecovery.recover_to_address":
 		return protoreflect.ValueOfString("")
 	case "types.MsgInactiveVaultRecovery.recover_amount":
 		return protoreflect.ValueOfString("")
 	case "types.MsgInactiveVaultRecovery.asset":
 		m := new(common.Asset)
 		return protoreflect.ValueOfMessage(m.ProtoReflect())
-	case "types.MsgInactiveVaultRecovery.to_address":
-		return protoreflect.ValueOfString("")
 	case "types.MsgInactiveVaultRecovery.memo":
 		return protoreflect.ValueOfString("")
 	case "types.MsgInactiveVaultRecovery.signer":
@@ -408,11 +387,11 @@ func (x *fastReflection_MsgInactiveVaultRecovery) ProtoMethods() *protoiface.Met
 		var n int
 		var l int
 		_ = l
-		l = len(x.InactiveVaultPubKey)
+		l = len(x.RecoverFromAddress)
 		if l > 0 {
 			n += 1 + l + runtime.Sov(uint64(l))
 		}
-		l = len(x.RecoverAddress)
+		l = len(x.RecoverToAddress)
 		if l > 0 {
 			n += 1 + l + runtime.Sov(uint64(l))
 		}
@@ -422,10 +401,6 @@ func (x *fastReflection_MsgInactiveVaultRecovery) ProtoMethods() *protoiface.Met
 		}
 		if x.Asset != nil {
 			l = options.Size(x.Asset)
-			n += 1 + l + runtime.Sov(uint64(l))
-		}
-		l = len(x.ToAddress)
-		if l > 0 {
 			n += 1 + l + runtime.Sov(uint64(l))
 		}
 		l = len(x.Memo)
@@ -470,19 +445,12 @@ func (x *fastReflection_MsgInactiveVaultRecovery) ProtoMethods() *protoiface.Met
 			copy(dAtA[i:], x.Signer)
 			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.Signer)))
 			i--
-			dAtA[i] = 0x3a
+			dAtA[i] = 0x32
 		}
 		if len(x.Memo) > 0 {
 			i -= len(x.Memo)
 			copy(dAtA[i:], x.Memo)
 			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.Memo)))
-			i--
-			dAtA[i] = 0x32
-		}
-		if len(x.ToAddress) > 0 {
-			i -= len(x.ToAddress)
-			copy(dAtA[i:], x.ToAddress)
-			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.ToAddress)))
 			i--
 			dAtA[i] = 0x2a
 		}
@@ -507,17 +475,17 @@ func (x *fastReflection_MsgInactiveVaultRecovery) ProtoMethods() *protoiface.Met
 			i--
 			dAtA[i] = 0x1a
 		}
-		if len(x.RecoverAddress) > 0 {
-			i -= len(x.RecoverAddress)
-			copy(dAtA[i:], x.RecoverAddress)
-			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.RecoverAddress)))
+		if len(x.RecoverToAddress) > 0 {
+			i -= len(x.RecoverToAddress)
+			copy(dAtA[i:], x.RecoverToAddress)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.RecoverToAddress)))
 			i--
 			dAtA[i] = 0x12
 		}
-		if len(x.InactiveVaultPubKey) > 0 {
-			i -= len(x.InactiveVaultPubKey)
-			copy(dAtA[i:], x.InactiveVaultPubKey)
-			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.InactiveVaultPubKey)))
+		if len(x.RecoverFromAddress) > 0 {
+			i -= len(x.RecoverFromAddress)
+			copy(dAtA[i:], x.RecoverFromAddress)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.RecoverFromAddress)))
 			i--
 			dAtA[i] = 0xa
 		}
@@ -572,7 +540,7 @@ func (x *fastReflection_MsgInactiveVaultRecovery) ProtoMethods() *protoiface.Met
 			switch fieldNum {
 			case 1:
 				if wireType != 2 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field InactiveVaultPubKey", wireType)
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field RecoverFromAddress", wireType)
 				}
 				var stringLen uint64
 				for shift := uint(0); ; shift += 7 {
@@ -600,11 +568,11 @@ func (x *fastReflection_MsgInactiveVaultRecovery) ProtoMethods() *protoiface.Met
 				if postIndex > l {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
 				}
-				x.InactiveVaultPubKey = string(dAtA[iNdEx:postIndex])
+				x.RecoverFromAddress = string(dAtA[iNdEx:postIndex])
 				iNdEx = postIndex
 			case 2:
 				if wireType != 2 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field RecoverAddress", wireType)
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field RecoverToAddress", wireType)
 				}
 				var stringLen uint64
 				for shift := uint(0); ; shift += 7 {
@@ -632,7 +600,7 @@ func (x *fastReflection_MsgInactiveVaultRecovery) ProtoMethods() *protoiface.Met
 				if postIndex > l {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
 				}
-				x.RecoverAddress = string(dAtA[iNdEx:postIndex])
+				x.RecoverToAddress = string(dAtA[iNdEx:postIndex])
 				iNdEx = postIndex
 			case 3:
 				if wireType != 2 {
@@ -704,38 +672,6 @@ func (x *fastReflection_MsgInactiveVaultRecovery) ProtoMethods() *protoiface.Met
 				iNdEx = postIndex
 			case 5:
 				if wireType != 2 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field ToAddress", wireType)
-				}
-				var stringLen uint64
-				for shift := uint(0); ; shift += 7 {
-					if shift >= 64 {
-						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
-					}
-					if iNdEx >= l {
-						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
-					}
-					b := dAtA[iNdEx]
-					iNdEx++
-					stringLen |= uint64(b&0x7F) << shift
-					if b < 0x80 {
-						break
-					}
-				}
-				intStringLen := int(stringLen)
-				if intStringLen < 0 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
-				}
-				postIndex := iNdEx + intStringLen
-				if postIndex < 0 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
-				}
-				if postIndex > l {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
-				}
-				x.ToAddress = string(dAtA[iNdEx:postIndex])
-				iNdEx = postIndex
-			case 6:
-				if wireType != 2 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Memo", wireType)
 				}
 				var stringLen uint64
@@ -766,7 +702,7 @@ func (x *fastReflection_MsgInactiveVaultRecovery) ProtoMethods() *protoiface.Met
 				}
 				x.Memo = string(dAtA[iNdEx:postIndex])
 				iNdEx = postIndex
-			case 7:
+			case 6:
 				if wireType != 2 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Signer", wireType)
 				}
@@ -853,13 +789,12 @@ type MsgInactiveVaultRecovery struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	InactiveVaultPubKey string        `protobuf:"bytes,1,opt,name=inactive_vault_pub_key,json=inactiveVaultPubKey,proto3" json:"inactive_vault_pub_key,omitempty"`
-	RecoverAddress      string        `protobuf:"bytes,2,opt,name=recover_address,json=recoverAddress,proto3" json:"recover_address,omitempty"`
-	RecoverAmount       string        `protobuf:"bytes,3,opt,name=recover_amount,json=recoverAmount,proto3" json:"recover_amount,omitempty"`
-	Asset               *common.Asset `protobuf:"bytes,4,opt,name=asset,proto3" json:"asset,omitempty"`
-	ToAddress           string        `protobuf:"bytes,5,opt,name=to_address,json=toAddress,proto3" json:"to_address,omitempty"`
-	Memo                string        `protobuf:"bytes,6,opt,name=memo,proto3" json:"memo,omitempty"`
-	Signer              []byte        `protobuf:"bytes,7,opt,name=signer,proto3" json:"signer,omitempty"`
+	RecoverFromAddress string        `protobuf:"bytes,1,opt,name=recover_from_address,json=recoverFromAddress,proto3" json:"recover_from_address,omitempty"`
+	RecoverToAddress   string        `protobuf:"bytes,2,opt,name=recover_to_address,json=recoverToAddress,proto3" json:"recover_to_address,omitempty"`
+	RecoverAmount      string        `protobuf:"bytes,3,opt,name=recover_amount,json=recoverAmount,proto3" json:"recover_amount,omitempty"`
+	Asset              *common.Asset `protobuf:"bytes,4,opt,name=asset,proto3" json:"asset,omitempty"`
+	Memo               string        `protobuf:"bytes,5,opt,name=memo,proto3" json:"memo,omitempty"`
+	Signer             []byte        `protobuf:"bytes,6,opt,name=signer,proto3" json:"signer,omitempty"`
 }
 
 func (x *MsgInactiveVaultRecovery) Reset() {
@@ -882,16 +817,16 @@ func (*MsgInactiveVaultRecovery) Descriptor() ([]byte, []int) {
 	return file_types_msg_inactive_vault_recovery_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *MsgInactiveVaultRecovery) GetInactiveVaultPubKey() string {
+func (x *MsgInactiveVaultRecovery) GetRecoverFromAddress() string {
 	if x != nil {
-		return x.InactiveVaultPubKey
+		return x.RecoverFromAddress
 	}
 	return ""
 }
 
-func (x *MsgInactiveVaultRecovery) GetRecoverAddress() string {
+func (x *MsgInactiveVaultRecovery) GetRecoverToAddress() string {
 	if x != nil {
-		return x.RecoverAddress
+		return x.RecoverToAddress
 	}
 	return ""
 }
@@ -908,13 +843,6 @@ func (x *MsgInactiveVaultRecovery) GetAsset() *common.Asset {
 		return x.Asset
 	}
 	return nil
-}
-
-func (x *MsgInactiveVaultRecovery) GetToAddress() string {
-	if x != nil {
-		return x.ToAddress
-	}
-	return ""
 }
 
 func (x *MsgInactiveVaultRecovery) GetMemo() string {
@@ -939,42 +867,40 @@ var file_types_msg_inactive_vault_recovery_proto_rawDesc = []byte{
 	0x65, 0x72, 0x79, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x12, 0x05, 0x74, 0x79, 0x70, 0x65, 0x73,
 	0x1a, 0x13, 0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2f, 0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2e,
 	0x70, 0x72, 0x6f, 0x74, 0x6f, 0x1a, 0x14, 0x67, 0x6f, 0x67, 0x6f, 0x70, 0x72, 0x6f, 0x74, 0x6f,
-	0x2f, 0x67, 0x6f, 0x67, 0x6f, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x22, 0x99, 0x03, 0x0a, 0x18,
+	0x2f, 0x67, 0x6f, 0x67, 0x6f, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x22, 0xfc, 0x02, 0x0a, 0x18,
 	0x4d, 0x73, 0x67, 0x49, 0x6e, 0x61, 0x63, 0x74, 0x69, 0x76, 0x65, 0x56, 0x61, 0x75, 0x6c, 0x74,
-	0x52, 0x65, 0x63, 0x6f, 0x76, 0x65, 0x72, 0x79, 0x12, 0x33, 0x0a, 0x16, 0x69, 0x6e, 0x61, 0x63,
-	0x74, 0x69, 0x76, 0x65, 0x5f, 0x76, 0x61, 0x75, 0x6c, 0x74, 0x5f, 0x70, 0x75, 0x62, 0x5f, 0x6b,
-	0x65, 0x79, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x13, 0x69, 0x6e, 0x61, 0x63, 0x74, 0x69,
-	0x76, 0x65, 0x56, 0x61, 0x75, 0x6c, 0x74, 0x50, 0x75, 0x62, 0x4b, 0x65, 0x79, 0x12, 0x27, 0x0a,
-	0x0f, 0x72, 0x65, 0x63, 0x6f, 0x76, 0x65, 0x72, 0x5f, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73,
-	0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0e, 0x72, 0x65, 0x63, 0x6f, 0x76, 0x65, 0x72, 0x41,
-	0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x12, 0x45, 0x0a, 0x0e, 0x72, 0x65, 0x63, 0x6f, 0x76, 0x65,
-	0x72, 0x5f, 0x61, 0x6d, 0x6f, 0x75, 0x6e, 0x74, 0x18, 0x03, 0x20, 0x01, 0x28, 0x09, 0x42, 0x1e,
-	0xc8, 0xde, 0x1f, 0x00, 0xda, 0xde, 0x1f, 0x16, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x73, 0x64,
-	0x6b, 0x2e, 0x69, 0x6f, 0x2f, 0x6d, 0x61, 0x74, 0x68, 0x2e, 0x55, 0x69, 0x6e, 0x74, 0x52, 0x0d,
-	0x72, 0x65, 0x63, 0x6f, 0x76, 0x65, 0x72, 0x41, 0x6d, 0x6f, 0x75, 0x6e, 0x74, 0x12, 0x5a, 0x0a,
-	0x05, 0x61, 0x73, 0x73, 0x65, 0x74, 0x18, 0x04, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x0d, 0x2e, 0x63,
-	0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x41, 0x73, 0x73, 0x65, 0x74, 0x42, 0x35, 0xc8, 0xde, 0x1f,
-	0x00, 0xda, 0xde, 0x1f, 0x2d, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f,
-	0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x6e, 0x6f,
-	0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x41, 0x73, 0x73,
-	0x65, 0x74, 0x52, 0x05, 0x61, 0x73, 0x73, 0x65, 0x74, 0x12, 0x1d, 0x0a, 0x0a, 0x74, 0x6f, 0x5f,
-	0x61, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x18, 0x05, 0x20, 0x01, 0x28, 0x09, 0x52, 0x09, 0x74,
-	0x6f, 0x41, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x12, 0x12, 0x0a, 0x04, 0x6d, 0x65, 0x6d, 0x6f,
-	0x18, 0x06, 0x20, 0x01, 0x28, 0x09, 0x52, 0x04, 0x6d, 0x65, 0x6d, 0x6f, 0x12, 0x49, 0x0a, 0x06,
-	0x73, 0x69, 0x67, 0x6e, 0x65, 0x72, 0x18, 0x07, 0x20, 0x01, 0x28, 0x0c, 0x42, 0x31, 0xfa, 0xde,
-	0x1f, 0x2d, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x63, 0x6f, 0x73,
-	0x6d, 0x6f, 0x73, 0x2f, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x2d, 0x73, 0x64, 0x6b, 0x2f, 0x74,
-	0x79, 0x70, 0x65, 0x73, 0x2e, 0x41, 0x63, 0x63, 0x41, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x52,
-	0x06, 0x73, 0x69, 0x67, 0x6e, 0x65, 0x72, 0x42, 0x8a, 0x01, 0x0a, 0x09, 0x63, 0x6f, 0x6d, 0x2e,
-	0x74, 0x79, 0x70, 0x65, 0x73, 0x42, 0x1d, 0x4d, 0x73, 0x67, 0x49, 0x6e, 0x61, 0x63, 0x74, 0x69,
-	0x76, 0x65, 0x56, 0x61, 0x75, 0x6c, 0x74, 0x52, 0x65, 0x63, 0x6f, 0x76, 0x65, 0x72, 0x79, 0x50,
-	0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x2a, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63,
-	0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74, 0x68, 0x6f,
-	0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x74, 0x79, 0x70,
-	0x65, 0x73, 0xa2, 0x02, 0x03, 0x54, 0x58, 0x58, 0xaa, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73,
-	0xca, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xe2, 0x02, 0x11, 0x54, 0x79, 0x70, 0x65, 0x73,
-	0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x05, 0x54,
-	0x79, 0x70, 0x65, 0x73, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x52, 0x65, 0x63, 0x6f, 0x76, 0x65, 0x72, 0x79, 0x12, 0x30, 0x0a, 0x14, 0x72, 0x65, 0x63, 0x6f,
+	0x76, 0x65, 0x72, 0x5f, 0x66, 0x72, 0x6f, 0x6d, 0x5f, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73,
+	0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x12, 0x72, 0x65, 0x63, 0x6f, 0x76, 0x65, 0x72, 0x46,
+	0x72, 0x6f, 0x6d, 0x41, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x12, 0x2c, 0x0a, 0x12, 0x72, 0x65,
+	0x63, 0x6f, 0x76, 0x65, 0x72, 0x5f, 0x74, 0x6f, 0x5f, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73,
+	0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x10, 0x72, 0x65, 0x63, 0x6f, 0x76, 0x65, 0x72, 0x54,
+	0x6f, 0x41, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x12, 0x45, 0x0a, 0x0e, 0x72, 0x65, 0x63, 0x6f,
+	0x76, 0x65, 0x72, 0x5f, 0x61, 0x6d, 0x6f, 0x75, 0x6e, 0x74, 0x18, 0x03, 0x20, 0x01, 0x28, 0x09,
+	0x42, 0x1e, 0xc8, 0xde, 0x1f, 0x00, 0xda, 0xde, 0x1f, 0x16, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73,
+	0x73, 0x64, 0x6b, 0x2e, 0x69, 0x6f, 0x2f, 0x6d, 0x61, 0x74, 0x68, 0x2e, 0x55, 0x69, 0x6e, 0x74,
+	0x52, 0x0d, 0x72, 0x65, 0x63, 0x6f, 0x76, 0x65, 0x72, 0x41, 0x6d, 0x6f, 0x75, 0x6e, 0x74, 0x12,
+	0x5a, 0x0a, 0x05, 0x61, 0x73, 0x73, 0x65, 0x74, 0x18, 0x04, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x0d,
+	0x2e, 0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x41, 0x73, 0x73, 0x65, 0x74, 0x42, 0x35, 0xc8,
+	0xde, 0x1f, 0x00, 0xda, 0xde, 0x1f, 0x2d, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63, 0x6f,
+	0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74, 0x68, 0x6f, 0x72,
+	0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x41,
+	0x73, 0x73, 0x65, 0x74, 0x52, 0x05, 0x61, 0x73, 0x73, 0x65, 0x74, 0x12, 0x12, 0x0a, 0x04, 0x6d,
+	0x65, 0x6d, 0x6f, 0x18, 0x05, 0x20, 0x01, 0x28, 0x09, 0x52, 0x04, 0x6d, 0x65, 0x6d, 0x6f, 0x12,
+	0x49, 0x0a, 0x06, 0x73, 0x69, 0x67, 0x6e, 0x65, 0x72, 0x18, 0x06, 0x20, 0x01, 0x28, 0x0c, 0x42,
+	0x31, 0xfa, 0xde, 0x1f, 0x2d, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f,
+	0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x2f, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x2d, 0x73, 0x64,
+	0x6b, 0x2f, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2e, 0x41, 0x63, 0x63, 0x41, 0x64, 0x64, 0x72, 0x65,
+	0x73, 0x73, 0x52, 0x06, 0x73, 0x69, 0x67, 0x6e, 0x65, 0x72, 0x42, 0x8a, 0x01, 0x0a, 0x09, 0x63,
+	0x6f, 0x6d, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x42, 0x1d, 0x4d, 0x73, 0x67, 0x49, 0x6e, 0x61,
+	0x63, 0x74, 0x69, 0x76, 0x65, 0x56, 0x61, 0x75, 0x6c, 0x74, 0x52, 0x65, 0x63, 0x6f, 0x76, 0x65,
+	0x72, 0x79, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x2a, 0x67, 0x69, 0x74, 0x6c, 0x61,
+	0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f,
+	0x74, 0x68, 0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x61, 0x70, 0x69, 0x2f,
+	0x74, 0x79, 0x70, 0x65, 0x73, 0xa2, 0x02, 0x03, 0x54, 0x58, 0x58, 0xaa, 0x02, 0x05, 0x54, 0x79,
+	0x70, 0x65, 0x73, 0xca, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xe2, 0x02, 0x11, 0x54, 0x79,
+	0x70, 0x65, 0x73, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea,
+	0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (

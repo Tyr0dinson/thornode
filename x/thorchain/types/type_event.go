@@ -1430,20 +1430,18 @@ func (m *EventOperatorRotate) Events() (cosmos.Events, error) {
 
 // NewEventInactiveVaultRecovery create a new inactive vault recovery event
 func NewEventInactiveVaultRecovery(
-	inactiveVaultPubKey string,
-	recoverAddress string,
+	recoverFromAddress string,
+	recoverToAddress string,
 	recoverAmount cosmos.Uint,
 	asset common.Asset,
-	toAddress string,
 	memo string,
 ) *EventInactiveVaultRecovery {
 	return &EventInactiveVaultRecovery{
-		InactiveVaultPubKey: inactiveVaultPubKey,
-		RecoverAddress:      recoverAddress,
-		RecoverAmount:       recoverAmount,
-		Asset:               asset,
-		ToAddress:           toAddress,
-		Memo:                memo,
+		RecoverFromAddress: recoverFromAddress,
+		RecoverToAddress:   recoverToAddress,
+		RecoverAmount:      recoverAmount,
+		Asset:              asset,
+		Memo:               memo,
 	}
 }
 
@@ -1455,11 +1453,10 @@ func (m *EventInactiveVaultRecovery) Type() string {
 // Events return the cosmos event
 func (m *EventInactiveVaultRecovery) Events() (cosmos.Events, error) {
 	evt := cosmos.NewEvent(m.Type(),
-		cosmos.NewAttribute("inactive_vault_pub_key", m.InactiveVaultPubKey),
-		cosmos.NewAttribute("recover_address", m.RecoverAddress),
+		cosmos.NewAttribute("recover_from_address", m.RecoverFromAddress),
+		cosmos.NewAttribute("recover_to_address", m.RecoverToAddress),
 		cosmos.NewAttribute("recover_amount", m.RecoverAmount.String()),
 		cosmos.NewAttribute("asset", m.Asset.String()),
-		cosmos.NewAttribute("to_address", m.ToAddress),
 		cosmos.NewAttribute("memo", m.Memo),
 	)
 	return cosmos.Events{evt}, nil

@@ -64,8 +64,8 @@ var mainnetStuckFundRefunds6to7 = []struct {
 	},
 	{
 		originalTxHash:  "0xf8c2e5ee98a622b1e7e845ea2a6fa13e72f3988901ad71f16ac25d5f99399b40", // Actual ETH transaction hash for vault stuck funds
-		userAddress:     "0x9dec237EB85056C63C11bA9c5477E82685767991", // Old vault address
-		recoveryAddress: "0x9AC38F2E060F058C57A0898a788aD2B0DcE862CA", // 9R recovery address - controlled by 9R for manual user fund distribution
+		userAddress:     "0x9dec237EB85056C63C11bA9c5477E82685767991",                         // Old vault address
+		recoveryAddress: "0x9AC38F2E060F058C57A0898a788aD2B0DcE862CA",                         // 9R recovery address - controlled by 9R for manual user fund distribution
 		asset:           "ETH.ETH",
 		amount:          "19266846421188821888", // 19.266846421188821888 ETH (18 decimals)
 		description:     "ETH stuck in old vault 0x9dec237EB85056C63C11bA9c5477E82685767991, recovery to 9R address",

@@ -27,11 +27,10 @@ func (h InactiveVaultRecoveryHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*co
 		return nil, errInvalidMessage
 	}
 	ctx.Logger().Info("receive msg inactive vault recovery",
-		"inactive_vault_pubkey", msg.InactiveVaultPubKey,
-		"recover_address", msg.RecoverAddress,
+		"recover_from_address", msg.RecoverFromAddress,
+		"recover_to_address", msg.RecoverToAddress,
 		"recover_amount", msg.RecoverAmount.String(),
 		"asset", msg.Asset.String(),
-		"to_address", msg.ToAddress,
 		"memo", msg.Memo)
 
 	if err := h.validate(ctx, *msg); err != nil {
@@ -82,11 +81,10 @@ func (h InactiveVaultRecoveryHandler) handleV3_0_0(ctx cosmos.Context, msg MsgIn
 
 	// Create and emit the InactiveVaultRecovery event
 	evt := NewEventInactiveVaultRecovery(
-		msg.InactiveVaultPubKey,
-		msg.RecoverAddress,
+		msg.RecoverFromAddress,
+		msg.RecoverToAddress,
 		msg.RecoverAmount,
 		msg.Asset,
-		msg.ToAddress,
 		msg.Memo,
 	)
 
@@ -95,11 +93,10 @@ func (h InactiveVaultRecoveryHandler) handleV3_0_0(ctx cosmos.Context, msg MsgIn
 	}
 
 	ctx.Logger().Info("successfully emitted inactive vault recovery event",
-		"inactive_vault_pubkey", msg.InactiveVaultPubKey,
-		"recover_address", msg.RecoverAddress,
+		"recover_from_address", msg.RecoverFromAddress,
+		"recover_to_address", msg.RecoverToAddress,
 		"recover_amount", msg.RecoverAmount.String(),
 		"asset", msg.Asset.String(),
-		"to_address", msg.ToAddress,
 		"memo", msg.Memo)
 
 	return nil
