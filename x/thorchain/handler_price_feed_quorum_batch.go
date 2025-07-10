@@ -116,6 +116,7 @@ func (h PriceFeedQuorumBatchHandler) handle(ctx cosmos.Context, msg types.MsgPri
 
 	// Verify and calculate on chain price
 
+	// analyze-ignore(map-iteration)
 	for symbol, priceByNode := range pricesByAsset {
 		if !HasSuperMajority(len(priceByNode), len(activeNodes)) {
 			ctx.Logger().Error(
@@ -149,6 +150,7 @@ func (h PriceFeedQuorumBatchHandler) handle(ctx cosmos.Context, msg types.MsgPri
 
 		h.telemetryBounds(symbol, upperBound, lowerBound)
 
+		// analyze-ignore(map-iteration)
 		for node, price := range priceByNode {
 			if price.Cmp(lowerBound) == -1 || price.Cmp(upperBound) == 1 {
 				deviatingPrices[node]++
@@ -240,6 +242,7 @@ func (h PriceFeedQuorumBatchHandler) telemetryBounds(
 		"lower": lower,
 	}
 
+	// analyze-ignore(map-iteration)
 	for label, value := range values {
 		v, _ := value.Float32()
 		telemetry.SetGaugeWithLabels(

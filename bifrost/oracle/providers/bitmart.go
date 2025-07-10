@@ -167,6 +167,11 @@ func (p *BitmartProvider) HandleWsMessage(msg []byte) error {
 		return nil
 	}
 
+	if len(msg) == 4 && string(msg) == "pong" {
+		p.lastKeepalive = time.Now()
+		return nil
+	}
+
 	return ErrUnknownWsMsg
 }
 

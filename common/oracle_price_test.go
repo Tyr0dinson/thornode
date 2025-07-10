@@ -125,7 +125,7 @@ func (s *OraclePriceSuite) TestNewOraclePrice(c *C) {
 		number, _, err := big.ParseFloat(tc.Number, 10, 128, big.ToNearestEven)
 		c.Assert(err, IsNil, Commentf(tc.Number))
 
-		price, err := NewOraclePrice(number, "")
+		price, err := NewOraclePrice(number)
 		if tc.ExpectedError {
 			c.Assert(err, NotNil, Commentf(tc.Number))
 			c.Assert(price, IsNil)

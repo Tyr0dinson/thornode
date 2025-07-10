@@ -36,6 +36,10 @@ type KucoinWsPongMsg struct {
 	Type string `json:"type"`
 }
 
+type KucoinWsGenericMsg struct {
+	Type string `json:"type"`
+}
+
 type KucoinProvider struct {
 	*websocketProvider
 }
@@ -177,8 +181,11 @@ func (p *KucoinProvider) GetSubscriptionMsgs() ([]map[string]any, error) {
 }
 
 func (p *KucoinProvider) HandleWsMessage(msg []byte) error {
-	var marketMsg KucoinWsMarketMsg
-	var pongMsg KucoinWsPongMsg
+	var (
+		marketMsg  KucoinWsMarketMsg
+		pongMsg    KucoinWsPongMsg
+		genericMsg KucoinWsGenericMsg
+	)
 
 	err := json.Unmarshal(msg, &marketMsg)
 	if err == nil && marketMsg.Data.Data.Symbol != "" {
@@ -203,6 +210,14 @@ func (p *KucoinProvider) HandleWsMessage(msg []byte) error {
 	if err == nil && pongMsg.Type == "pong" {
 		p.lastKeepalive = time.Now()
 		return nil
+	}
+
+	err = json.Unmarshal(msg, &genericMsg)
+	if err == nil && genericMsg.Type != "" {
+		switch genericMsg.Type {
+		case "welcome", "ack":
+			return nil
+		}
 	}
 
 	return ErrUnknownWsMsg

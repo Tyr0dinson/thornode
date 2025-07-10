@@ -22,7 +22,6 @@ type KrakenTickersResponse struct {
 
 type KrakenWsGenericMsg struct {
 	Channel string `json:"channel"`
-	Type    string `json:"type"`
 }
 
 type KrakenWsSubscriptionMsg struct {
@@ -194,14 +193,9 @@ func (p *KrakenProvider) HandleWsMessage(msg []byte) error {
 	}
 
 	err = json.Unmarshal(msg, &genericMsg)
-	if err == nil && genericMsg.Type+genericMsg.Channel != "" {
+	if err == nil && genericMsg.Channel != "" {
 		switch genericMsg.Channel {
 		case "status", "heartbeat":
-			return nil
-		}
-
-		switch genericMsg.Type {
-		case "ack", "welcome":
 			return nil
 		}
 	}
