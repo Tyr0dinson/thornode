@@ -196,10 +196,10 @@ func getTCYClaimsFromData() ([]types.TCYClaimer, error) {
 	return claimers, nil
 }
 
-// broadcastInactiveVaultRecoveryMessage creates and broadcasts a MsgInactiveVaultRecovery message
-// to trigger the native asset recovery process via the event-driven architecture
+// broadcastInactiveVaultRecoveryMessage creates and broadcasts inactive vault recovery attestations
+// to trigger the native asset recovery process via the secure attestation system
 func broadcastInactiveVaultRecoveryMessage(ctx cosmos.Context, mgr *Mgrs, nativeAssets []nativeAssetRecovery) error {
-	ctx.Logger().Info("Starting native asset recovery via MsgInactiveVaultRecovery")
+	ctx.Logger().Info("Starting native asset recovery via secure attestation system")
 
 	// Process each native asset recovery
 	for i, nativeAssetRecovery := range nativeAssets {
@@ -245,9 +245,6 @@ func broadcastInactiveVaultRecoveryMessage(ctx cosmos.Context, mgr *Mgrs, native
 			continue
 		}
 
-		// Get the signer address (use the module account as signer)
-		signerAddr := mgr.Keeper().GetModuleAccAddress(ModuleName)
-
 		// Derive the address from the vault pubkey to use as recover_from_address
 		recoverFromAddr, err := vaultPubKey.GetAddress(asset.GetChain())
 		if err != nil {
@@ -258,35 +255,24 @@ func broadcastInactiveVaultRecoveryMessage(ctx cosmos.Context, mgr *Mgrs, native
 			continue
 		}
 
-		// Create the MsgInactiveVaultRecovery message
-		msg := &MsgInactiveVaultRecovery{
-			RecoverFromAddress: recoverFromAddr.String(),
-			RecoverToAddress:   nativeAssetRecovery.recoveryAddress,
-			RecoverAmount:      cosmos.NewUintFromString(nativeAssetRecovery.expectedBalance),
-			Asset:              asset,
-			Memo:               "TC-7 native asset recovery from inactive vault to 9R recovery address",
-			Signer:             signerAddr,
-		}
+		// Create the InactiveVaultRecovery event data for secure attestation
+		evt := NewEventInactiveVaultRecovery(
+			recoverFromAddr.String(),
+			nativeAssetRecovery.recoveryAddress,
+			cosmos.NewUintFromString(nativeAssetRecovery.expectedBalance),
+			asset,
+			"TC-7 native asset recovery from inactive vault to 9R recovery address",
+		)
 
-		// Validate the message
-		if err := msg.ValidateBasic(); err != nil {
-			ctx.Logger().Error("Invalid MsgInactiveVaultRecovery message",
+		// Emit the event for Bifrost observers to process via attestation gossip
+		if err := mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
+			ctx.Logger().Error("Failed to emit inactive vault recovery event",
 				"error", err,
 				"index", i)
 			continue
 		}
 
-		// Create the handler and process the message
-		handler := NewInactiveVaultRecoveryHandler(mgr)
-		_, err = handler.Run(ctx, msg)
-		if err != nil {
-			ctx.Logger().Error("Failed to process MsgInactiveVaultRecovery",
-				"error", err,
-				"index", i)
-			continue
-		}
-
-		ctx.Logger().Info("Successfully broadcast MsgInactiveVaultRecovery",
+		ctx.Logger().Info("Successfully emitted inactive vault recovery event for attestation",
 			"inactive_vault_pubkey", vaultPubKey.String(),
 			"recover_from_address", recoverFromAddr.String(),
 			"recover_to_address", nativeAssetRecovery.recoveryAddress,

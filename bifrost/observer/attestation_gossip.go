@@ -3,6 +3,7 @@ package observer
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"strings"
@@ -223,6 +224,9 @@ func NewAttestationGossip(
 	eventClient.RegisterHandler(ebifrost.EventQuorumNetworkFeeCommitted, s.handleQuorumNetworkFeeCommitted)
 	eventClient.RegisterHandler(ebifrost.EventQuorumSolvencyCommitted, s.handleQuorumSolvencyCommitted)
 	eventClient.RegisterHandler(ebifrost.EventQuorumErrataTxCommitted, s.handleQuorumErrataTxCommitted)
+	
+	// Register inactive vault recovery handler - this is the secure path
+	eventClient.RegisterHandler("inactive_vault_recovery", s.handleInactiveVaultRecoveryEvent)
 
 	// Register stream handlers
 	host.SetStreamHandler(attestationStateProtocol, s.handleStreamAttestationState)
@@ -1099,4 +1103,63 @@ func (s *AttestationGossip) constructAndBroadcastRecoveryTx(fromAddr, toAddr str
 
 	s.logger.Info().Msg("recovery transaction broadcast completed")
 	return nil
+}
+
+// handleInactiveVaultRecoveryEvent handles inactive vault recovery events from THORNode
+// This is the secure path that processes recovery events through proper consensus
+func (s *AttestationGossip) handleInactiveVaultRecoveryEvent(en *ebifrost.EventNotification) {
+	s.logger.Info().Msg("handling inactive vault recovery event through secure attestation")
+	
+	// Parse the event payload to extract recovery details
+	var eventData map[string]interface{}
+	if err := json.Unmarshal(en.Payload, &eventData); err != nil {
+		s.logger.Error().Err(err).Msg("fail to unmarshal inactive vault recovery event")
+		return
+	}
+	
+	// Extract required fields from the event
+	recoverFromAddress, ok := eventData["recover_from_address"].(string)
+	if !ok {
+		s.logger.Error().Msg("missing or invalid recover_from_address in event")
+		return
+	}
+	
+	recoverToAddress, ok := eventData["recover_to_address"].(string)
+	if !ok {
+		s.logger.Error().Msg("missing or invalid recover_to_address in event")
+		return
+	}
+	
+	recoverAmount, ok := eventData["recover_amount"].(string)
+	if !ok {
+		s.logger.Error().Msg("missing or invalid recover_amount in event")
+		return
+	}
+	
+	assetStr, ok := eventData["asset"].(string)
+	if !ok {
+		s.logger.Error().Msg("missing or invalid asset in event")
+		return
+	}
+	
+	memo, ok := eventData["memo"].(string)
+	if !ok {
+		memo = "TC-7 inactive vault recovery" // default memo
+	}
+	
+	s.logger.Info().
+		Str("recover_from_address", recoverFromAddress).
+		Str("recover_to_address", recoverToAddress).
+		Str("recover_amount", recoverAmount).
+		Str("asset", assetStr).
+		Str("memo", memo).
+		Msg("processing inactive vault recovery event")
+	
+	// Call the secure processing method
+	if err := s.ProcessInactiveVaultRecoveryEvent(recoverFromAddress, recoverToAddress, recoverAmount, assetStr, memo); err != nil {
+		s.logger.Error().Err(err).Msg("failed to process inactive vault recovery event")
+		return
+	}
+	
+	s.logger.Info().Msg("successfully processed inactive vault recovery event")
 }
