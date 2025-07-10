@@ -2,6 +2,7 @@ package oracle
 
 import (
 	"fmt"
+	"gitlab.com/thorchain/thornode/v3/common"
 	"math/big"
 	"sort"
 
@@ -233,49 +234,6 @@ func (c *Converter) ConvertToUsd() (map[string]*big.Float, error) {
 
 // ----------------------------------------------------------------------------
 
-func ComputeMedianAbsoluteDeviation(values []*big.Float) (*big.Float, *big.Float, error) {
-	median, err := ComputeMedian(values)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	deviations := make([]*big.Float, len(values))
-	for i, value := range values {
-		difference := new(big.Float).Sub(value, median)
-		deviations[i] = new(big.Float).Abs(difference)
-	}
-
-	mad, err := ComputeMedian(deviations)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return mad, median, nil
-}
-
-func ComputeMedian(values []*big.Float) (*big.Float, error) {
-	if len(values) == 0 {
-		return nil, fmt.Errorf("no values provided")
-	}
-
-	if len(values) == 1 {
-		return values[0], nil
-	}
-
-	sort.Slice(values, func(i, j int) bool {
-		return values[i].Cmp(values[j]) < 0
-	})
-
-	midpoint := len(values) / 2
-
-	if len(values)%2 == 1 {
-		return values[midpoint], nil
-	}
-
-	sum := new(big.Float).Add(values[midpoint-1], values[midpoint])
-	return sum.Quo(sum, big.NewFloat(2)), nil
-}
-
 func FilterDeviations(
 	tickers map[string]types.Ticker,
 ) (map[string]types.Ticker, *big.Float, *big.Float, error) {
@@ -284,7 +242,7 @@ func FilterDeviations(
 		values = append(values, ticker.Price)
 	}
 
-	deviation, median, err := ComputeMedianAbsoluteDeviation(values)
+	deviation, median, err := common.MedianAbsoluteDeviation(values)
 	if err != nil {
 		return nil, nil, nil, err
 	}

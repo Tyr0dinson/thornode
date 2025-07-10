@@ -43,58 +43,6 @@ func newTicker(symbol string, price, volume float64) types.Ticker {
 	}
 }
 
-func (s *ConverterTestSuite) TestMedianAverageDeviation(c *C) {
-	testCases := []struct {
-		Values    []float64
-		Deviation string
-		Median    string
-		Fail      bool
-	}{
-		{
-			Values:    []float64{4.43, 5.35, 1.26, 7.62, 7.11, 1.24, 7.01, 8.18, 9.82, 8.77},
-			Deviation: "1.71",
-			Median:    "7.06",
-		},
-		{
-			Values:    []float64{4.43, 5.35},
-			Deviation: "0.46",
-			Median:    "4.89",
-		},
-		{
-			Values:    []float64{4.43},
-			Deviation: "0",
-			Median:    "4.43",
-		},
-		{
-			Values:    []float64{0, 0, 0},
-			Deviation: "0",
-			Median:    "0",
-		},
-		{
-			Values: []float64{},
-			Fail:   true,
-		},
-	}
-
-	for _, tc := range testCases {
-		values := make([]*big.Float, len(tc.Values))
-		for i, value := range tc.Values {
-			values[i] = big.NewFloat(value)
-		}
-
-		deviation, median, err := ComputeMedianAbsoluteDeviation(values)
-
-		if tc.Fail {
-			c.Assert(err, NotNil)
-			continue
-		}
-
-		c.Assert(err, IsNil)
-		c.Assert(deviation.Text('f', precision(tc.Deviation)), Equals, tc.Deviation)
-		c.Assert(median.Text('f', precision(tc.Median)), Equals, tc.Median)
-	}
-}
-
 func (s *ConverterTestSuite) TestVwap(c *C) {
 	testCases := []struct {
 		Tickers []types.Ticker

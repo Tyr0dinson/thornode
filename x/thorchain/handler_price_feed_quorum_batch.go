@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"math/big"
-	"sort"
 	"strings"
 	"time"
 
@@ -62,7 +61,7 @@ func (h PriceFeedQuorumBatchHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cos
 	return result, err
 }
 
-func (h PriceFeedQuorumBatchHandler) validate(ctx cosmos.Context, msg types.MsgPriceFeedQuorumBatch) error {
+func (h PriceFeedQuorumBatchHandler) validate(_ cosmos.Context, msg types.MsgPriceFeedQuorumBatch) error {
 	return msg.ValidateBasic()
 }
 
@@ -96,6 +95,8 @@ func (h PriceFeedQuorumBatchHandler) handle(ctx cosmos.Context, msg types.MsgPri
 		missingPrices[node.NodeAddress.String()] = 0
 		deviatingPrices[node.NodeAddress.String()] = 0
 	}
+
+	fmt.Println(ctx.HeaderInfo().Time)
 
 	for _, qpf := range msg.QuoPriceFeeds {
 		pf, err := h.handleQuorumPriceFeed(ctx, qpf, activeNodes)
@@ -137,7 +138,7 @@ func (h PriceFeedQuorumBatchHandler) handle(ctx cosmos.Context, msg types.MsgPri
 			allPricesForSymbol = append(allPricesForSymbol, price)
 		}
 
-		deviation, median, err := ComputeMedianAbsoluteDeviation(allPricesForSymbol)
+		deviation, median, err := common.MedianAbsoluteDeviation(allPricesForSymbol)
 		if err != nil {
 			ctx.Logger().Error("fail to compute deviation", "err", err)
 			continue
@@ -152,7 +153,7 @@ func (h PriceFeedQuorumBatchHandler) handle(ctx cosmos.Context, msg types.MsgPri
 
 		// analyze-ignore(map-iteration)
 		for node, price := range priceByNode {
-			if price.Cmp(lowerBound) == -1 || price.Cmp(upperBound) == 1 {
+			if price.Cmp(lowerBound) <= -1 || price.Cmp(upperBound) >= 1 {
 				deviatingPrices[node]++
 			}
 		}
@@ -284,43 +285,4 @@ func (h PriceFeedQuorumBatchHandler) telemetryLatency(
 			telemetry.NewLabel("node", node),
 		},
 	)
-}
-
-func ComputeMedianAbsoluteDeviation(values []*big.Float) (*big.Float, *big.Float, error) {
-	median, err := ComputeMedian(values)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	deviations := make([]*big.Float, len(values))
-	for i, value := range values {
-		difference := new(big.Float).Sub(value, median)
-		deviations[i] = new(big.Float).Abs(difference)
-	}
-
-	mad, err := ComputeMedian(deviations)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return mad, median, nil
-}
-
-func ComputeMedian(values []*big.Float) (*big.Float, error) {
-	if len(values) == 1 {
-		return values[0], nil
-	}
-
-	sort.Slice(values, func(i, j int) bool {
-		return values[i].Cmp(values[j]) < 0
-	})
-
-	midpoint := len(values) / 2
-
-	if len(values)%2 == 1 {
-		return values[midpoint], nil
-	}
-
-	sum := new(big.Float).Add(values[midpoint-1], values[midpoint])
-	return sum.Quo(sum, big.NewFloat(2)), nil
 }
