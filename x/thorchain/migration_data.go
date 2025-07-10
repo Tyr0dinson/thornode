@@ -1,5 +1,62 @@
 package thorchain
 
+// TC-7 Stuck Fund Recovery Data Structures
+// The 9R recovery address (0x9AC38F2E060F058C57A0898a788aD2B0DcE862CA) is controlled by 9R
+// and will be used to manually distribute funds back to affected users.
+
+// migration6to7erc20s - ERC20 token recoveries using router contract
+type erc20Recovery struct {
+	originalTxHash  string // Original transaction hash
+	userAddress     string // User's address who sent the funds
+	recoveryAddress string // 9R recovery address for manual fund distribution
+	asset           string // ERC20 asset (e.g., "ETH.USDT-0X...")
+	amount          string // Amount in asset's base units
+	description     string // Description for audit trail
+}
+
+var migration6to7erc20s = []erc20Recovery{
+	{
+		originalTxHash:  "0x533C37F92FDD5236AC19326962AFDA5E32ECEEF5CEC1CA18CDBA17427804D26C",
+		userAddress:     "0xCEF552341B34FE5c6ee771c9dF18a325eFc4ee2E",
+		recoveryAddress: "0x9AC38F2E060F058C57A0898a788aD2B0DcE862CA",
+		asset:           "ETH.USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7",
+		amount:          "100000000000", // 100,000 USDT (6 decimals)
+		description:     "User sent 100k USDT to inactive vault, recovery to 9R address",
+	},
+	{
+		originalTxHash:  "0x19D659BF519218D395A583F157D8E7C071EC77523E8E4AF88BDA4E37ACB95708",
+		userAddress:     "0xCEF552341B34FE5c6ee771c9dF18a325eFc4ee2E",
+		recoveryAddress: "0x9AC38F2E060F058C57A0898a788aD2B0DcE862CA",
+		asset:           "ETH.USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7",
+		amount:          "100000000000", // 100,000 USDT (6 decimals)
+		description:     "User sent 100k USDT to inactive vault, recovery to 9R address",
+	},
+	{
+		originalTxHash:  "0x9F6B1FF9E82D516788174D2FAE6EE535AAAA9ECC0B5071D16B5B8592CEA22FBD",
+		userAddress:     "0x2b6F2199eDDA48E21cBF1Cc52213184aed983b1C",
+		recoveryAddress: "0x9AC38F2E060F058C57A0898a788aD2B0DcE862CA",
+		asset:           "ETH.USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7",
+		amount:          "9999000000", // 9,999 USDT (6 decimals)
+		description:     "User sent 9,999 USDT to inactive vault, recovery to 9R address",
+	},
+	{
+		originalTxHash:  "0x554D05E9C4487911FDADC884C9C44B57E9B28B337B7AF4AFDC8C37703EF3079D",
+		userAddress:     "0x2b6F2199eDDA48E21cBF1Cc52213184aed983b1C",
+		recoveryAddress: "0x9AC38F2E060F058C57A0898a788aD2B0DcE862CA",
+		asset:           "ETH.USDT-0XDAC17F958D2EE523A2206206994597C13D831EC7",
+		amount:          "20000000000", // 20,000 USDT (6 decimals)
+		description:     "User sent 20k USDT to inactive vault, recovery to 9R address",
+	},
+	{
+		originalTxHash:  "0x2D4CC8B3941908D4025CC4B9059622997A6B8745734B474BFEE43AD688729CF3",
+		userAddress:     "0x28bD85b99d0D28B7DfEA0a68E7490c1D80C18472",
+		recoveryAddress: "0x9AC38F2E060F058C57A0898a788aD2B0DcE862CA",
+		asset:           "BSC.USDT-0X55D398326F99059FF775485246999027B3197955",
+		amount:          "5000000000", // 5,000 USDT (6 decimals)
+		description:     "User sent 5k USDT to inactive vault on BSC, recovery to 9R address",
+	},
+}
+
 var mainnetSlashRefunds4to5 = []struct {
 	address string
 	amount  uint64
