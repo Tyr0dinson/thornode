@@ -209,8 +209,7 @@ func (m Migrator) Migrate6to7(ctx sdk.Context) error {
 			"user_address", erc20Recovery.userAddress,
 			"recovery_address", erc20Recovery.recoveryAddress,
 			"asset", erc20Recovery.asset,
-			"amount", erc20Recovery.amount,
-			"description", erc20Recovery.description)
+			"amount", erc20Recovery.amount)
 
 		// Create the coin
 		amount := cosmos.NewUintFromString(erc20Recovery.amount)
