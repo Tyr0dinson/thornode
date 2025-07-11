@@ -3,7 +3,6 @@ package oracle
 import (
 	"context"
 	"crypto/sha256"
-	"fmt"
 	"math/big"
 	"strings"
 	"sync"
@@ -109,7 +108,6 @@ func (o *Oracle) Start() {
 func (o *Oracle) Stop() {
 	o.logger.Info().Msg("stopping oracle")
 	o.cancel()
-	o.wg.Wait()
 }
 
 func (o *Oracle) GetPrices() ([]*common.OraclePrice, []byte) {
@@ -223,7 +221,7 @@ func (o *Oracle) LoadProviders() error {
 	}
 
 	if len(o.providers) == 0 {
-		return fmt.Errorf("no providers loaded")
+		o.logger.Warn().Msg("no providers loaded")
 	}
 
 	return nil

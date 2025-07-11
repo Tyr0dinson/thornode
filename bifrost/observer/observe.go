@@ -824,6 +824,8 @@ func (o *Observer) Stop() error {
 	o.logger.Debug().Msg("request to stop observer")
 	defer o.logger.Debug().Msg("observer stopped")
 
+	o.oracle.Stop()
+	
 	for _, chain := range o.chains {
 		chain.Stop()
 	}
@@ -835,8 +837,6 @@ func (o *Observer) Stop() error {
 	if err := o.storage.Close(); err != nil {
 		o.logger.Err(err).Msg("fail to close observer storage")
 	}
-
-	o.oracle.Stop()
 
 	return o.m.Stop()
 }

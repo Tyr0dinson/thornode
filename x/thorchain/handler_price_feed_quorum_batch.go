@@ -96,8 +96,6 @@ func (h PriceFeedQuorumBatchHandler) handle(ctx cosmos.Context, msg types.MsgPri
 		deviatingPrices[node.NodeAddress.String()] = 0
 	}
 
-	fmt.Println(ctx.HeaderInfo().Time)
-
 	for _, qpf := range msg.QuoPriceFeeds {
 		pf, err := h.handleQuorumPriceFeed(ctx, qpf, activeNodes)
 		if err != nil {

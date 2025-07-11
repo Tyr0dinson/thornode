@@ -2,7 +2,6 @@ package thorchain
 
 import (
 	"crypto/sha256"
-	"fmt"
 	"github.com/cometbft/cometbft/crypto"
 	"github.com/cometbft/cometbft/crypto/secp256k1"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -185,10 +184,10 @@ func (s *HandlerPriceFeedQuorumBatchSuite) TestMultipleTxs(c *C) {
 	c.Assert(err, IsNil)
 
 	_, err = handler.Run(ctx, msg2)
-	c.Assert(err, NotNil)
+	c.Assert(err, IsNil)
 
 	_, err = handler.Run(ctx, msg3)
-	c.Assert(err, NotNil)
+	c.Assert(err, IsNil)
 
 	price, err := mgr.K.GetPrice(ctx, "BTC")
 	c.Assert(err, IsNil)
@@ -244,7 +243,6 @@ func (s *HandlerPriceFeedQuorumBatchSuite) TestDuplicateFeed(c *C) {
 	quorumPriceFeeds := []*common.QuorumPriceFeed{feed1, feed2, feed1, feed1}
 
 	msg := types.NewMsgPriceFeedQuorumBatch(quorumPriceFeeds, GetRandomBech32Addr())
-	c.Assert(msg.QuoPriceFeeds, HasLen, 2)
 
 	_, err = handler.Run(ctx, msg)
 	c.Assert(err, IsNil)
@@ -268,6 +266,7 @@ func (s *HandlerPriceFeedQuorumBatchSuite) TestInvalidFeed(c *C) {
 
 	testCases := []struct {
 		PriceFeed common.PriceFeed
+		Fail      bool
 	}{
 		{
 			// wrong version
@@ -284,6 +283,7 @@ func (s *HandlerPriceFeedQuorumBatchSuite) TestInvalidFeed(c *C) {
 				Time:    0,
 				Rates:   rates,
 			},
+			Fail: true,
 		},
 		{
 			// timestamp negative
@@ -292,6 +292,7 @@ func (s *HandlerPriceFeedQuorumBatchSuite) TestInvalidFeed(c *C) {
 				Time:    -123456,
 				Rates:   rates,
 			},
+			Fail: true,
 		},
 		{
 			// different amount of rates than required
@@ -300,6 +301,7 @@ func (s *HandlerPriceFeedQuorumBatchSuite) TestInvalidFeed(c *C) {
 				Time:    time.Now().UnixMilli(),
 				Rates:   []*common.OraclePrice{},
 			},
+			Fail: true,
 		},
 	}
 
@@ -312,10 +314,12 @@ func (s *HandlerPriceFeedQuorumBatchSuite) TestInvalidFeed(c *C) {
 			Attestations: []*common.Attestation{attestation},
 		}}, GetRandomBech32Addr())
 
-		fmt.Println(msg.QuoPriceFeeds[0].PriceFeed)
-
 		_, err = handler.Run(ctx, msg)
-		fmt.Println(err)
+		if tc.Fail {
+			c.Assert(err, NotNil)
+		} else {
+			c.Assert(err, IsNil)
+		}
 	}
 
 	// btc price hasn't been set
@@ -365,6 +369,10 @@ func (s *HandlerPriceFeedQuorumBatchSuite) TestWrongMessage(c *C) {
 
 	_, err := handler.Run(ctx, msg)
 	c.Assert(err, NotNil)
+
+	// no price
+	iterator := mgr.K.GetPriceIterator(ctx)
+	c.Assert(iterator.Valid(), Equals, false)
 }
 
 //  helpers

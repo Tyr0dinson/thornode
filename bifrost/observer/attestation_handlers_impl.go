@@ -354,7 +354,6 @@ func (s *AttestationGossip) handlePriceFeedAttestation(ctx context.Context, apf 
 func (s *AttestationGossip) sendPriceFeedAttestationsToThornode(
 	ctx context.Context,
 ) {
-	fmt.Println(">>> sendPriceFeedAttestationsToThornode")
 	qpfb := common.QuorumPriceFeedBatch{
 		QuorumPriceFeeds: []*common.QuorumPriceFeed{},
 	}
