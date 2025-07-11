@@ -2,9 +2,10 @@ package oracle
 
 import (
 	"fmt"
-	"gitlab.com/thorchain/thornode/v3/common"
 	"math/big"
 	"sort"
+
+	"gitlab.com/thorchain/thornode/v3/common"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/oracle/types"

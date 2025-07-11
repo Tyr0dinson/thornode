@@ -185,7 +185,7 @@ func (h PriceFeedQuorumBatchHandler) handleQuorumPriceFeed(
 ) (*PriceFeed, error) {
 	pf := qpf.PriceFeed
 
-	if bytes.Compare(pf.Version, h.requiredVersion) != 0 {
+	if !bytes.Equal(pf.Version, h.requiredVersion) {
 		return nil, fmt.Errorf("version does not match required version")
 	}
 

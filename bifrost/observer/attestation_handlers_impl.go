@@ -3,7 +3,6 @@ package observer
 import (
 	"context"
 	"encoding/hex"
-	"fmt"
 	"time"
 
 	"gitlab.com/thorchain/thornode/v3/common"

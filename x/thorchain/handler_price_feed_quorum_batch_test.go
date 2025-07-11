@@ -2,6 +2,10 @@ package thorchain
 
 import (
 	"crypto/sha256"
+	"math/big"
+	"strings"
+	"time"
+
 	"github.com/cometbft/cometbft/crypto"
 	"github.com/cometbft/cometbft/crypto/secp256k1"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -9,14 +13,9 @@ import (
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 	. "gopkg.in/check.v1"
-	"math/big"
-	"strings"
-	"time"
 )
 
 type HandlerPriceFeedQuorumBatchSuite struct {
-	ctx     cosmos.Context
-	mgr     Manager
 	symbols []string
 	version []byte
 }
@@ -114,7 +113,8 @@ func (s *HandlerPriceFeedQuorumBatchSuite) TestPriceFeedQuorumBatch(c *C) {
 			},
 			Results: map[string]string{
 				"BTC": "100145",
-			}},
+			},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -263,6 +263,7 @@ func (s *HandlerPriceFeedQuorumBatchSuite) TestInvalidFeed(c *C) {
 	c.Assert(handler.mgr.Keeper().SetNodeAccount(ctx, node), IsNil)
 
 	rates, err := s.getRates(map[string]float64{"BTC": 111149})
+	c.Assert(err, IsNil)
 
 	testCases := []struct {
 		PriceFeed common.PriceFeed

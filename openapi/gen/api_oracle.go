@@ -19,14 +19,15 @@ import (
 	"strings"
 )
 
+
 // OracleApiService OracleApi service
 type OracleApiService service
 
 type ApiOraclePriceRequest struct {
-	ctx        context.Context
+	ctx context.Context
 	ApiService *OracleApiService
-	symbol     string
-	height     *int64
+	symbol string
+	height *int64
 }
 
 // optional block height, defaults to current tip
@@ -44,27 +45,26 @@ OraclePrice Method for OraclePrice
 
 Returns oracle price for a symbol.
 
-	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-	@param symbol
-	@return ApiOraclePriceRequest
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @param symbol
+ @return ApiOraclePriceRequest
 */
 func (a *OracleApiService) OraclePrice(ctx context.Context, symbol string) ApiOraclePriceRequest {
 	return ApiOraclePriceRequest{
 		ApiService: a,
-		ctx:        ctx,
-		symbol:     symbol,
+		ctx: ctx,
+		symbol: symbol,
 	}
 }
 
 // Execute executes the request
-//
-//	@return OraclePriceResponse
+//  @return OraclePriceResponse
 func (a *OracleApiService) OraclePriceExecute(r ApiOraclePriceRequest) (*OraclePriceResponse, *http.Response, error) {
 	var (
-		localVarHTTPMethod  = http.MethodGet
-		localVarPostBody    interface{}
-		formFiles           []formFile
-		localVarReturnValue *OraclePriceResponse
+		localVarHTTPMethod   = http.MethodGet
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  *OraclePriceResponse
 	)
 
 	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "OracleApiService.OraclePrice")
@@ -137,9 +137,9 @@ func (a *OracleApiService) OraclePriceExecute(r ApiOraclePriceRequest) (*OracleP
 }
 
 type ApiOraclePricesRequest struct {
-	ctx        context.Context
+	ctx context.Context
 	ApiService *OracleApiService
-	height     *int64
+	height *int64
 }
 
 // optional block height, defaults to current tip
@@ -157,25 +157,24 @@ OraclePrices Method for OraclePrices
 
 Returns all available oracle prices.
 
-	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-	@return ApiOraclePricesRequest
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @return ApiOraclePricesRequest
 */
 func (a *OracleApiService) OraclePrices(ctx context.Context) ApiOraclePricesRequest {
 	return ApiOraclePricesRequest{
 		ApiService: a,
-		ctx:        ctx,
+		ctx: ctx,
 	}
 }
 
 // Execute executes the request
-//
-//	@return OraclePricesResponse
+//  @return OraclePricesResponse
 func (a *OracleApiService) OraclePricesExecute(r ApiOraclePricesRequest) (*OraclePricesResponse, *http.Response, error) {
 	var (
-		localVarHTTPMethod  = http.MethodGet
-		localVarPostBody    interface{}
-		formFiles           []formFile
-		localVarReturnValue *OraclePricesResponse
+		localVarHTTPMethod   = http.MethodGet
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  *OraclePricesResponse
 	)
 
 	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "OracleApiService.OraclePrices")

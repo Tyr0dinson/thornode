@@ -48,7 +48,7 @@ func NewOraclePrice(number *big.Float) (*OraclePrice, error) {
 		if index > zeros {
 			// remove trailing zeros
 			fraction := strings.TrimRight(parts[1][:index], "0")
-			integer = integer + fraction
+			integer += fraction
 			decimals = len(fraction)
 		}
 	}

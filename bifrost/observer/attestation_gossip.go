@@ -466,12 +466,6 @@ func (s *AttestationGossip) handleQuorumErrataTxCommitted(en *ebifrost.EventNoti
 	as.MarkAttestationsCommitted(qe.Attestations)
 }
 
-// Handle a committed quorum network fee event
-func (s *AttestationGossip) handleQuorumPriceFeedCommitted(en *ebifrost.EventNotification) {
-	// Only log, feeds are cleared periodically, nothing else to do
-	s.logger.Debug().Msg("handling quorum price feeds committed event")
-}
-
 // Start the attestation gossip service
 func (s *AttestationGossip) Start(ctx context.Context) {
 	ticker := time.NewTicker(s.config.ObserveReconcileInterval)

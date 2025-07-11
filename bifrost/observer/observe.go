@@ -825,7 +825,7 @@ func (o *Observer) Stop() error {
 	defer o.logger.Debug().Msg("observer stopped")
 
 	o.oracle.Stop()
-	
+
 	for _, chain := range o.chains {
 		chain.Stop()
 	}
