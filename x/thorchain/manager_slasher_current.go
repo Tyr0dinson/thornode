@@ -58,11 +58,6 @@ func (s *SlasherVCUR) BeginBlock(ctx cosmos.Context, constAccessor constants.Con
 		}
 	}
 
-	// Do not continue if there is no action to take.
-	if len(doubleSignEvidence)+len(missingSignAddresses) == 0 {
-		return
-	}
-
 	// Derive Active node validator addresses once.
 	nas, err := s.keeper.ListActiveValidators(ctx)
 	if err != nil {
@@ -380,7 +375,6 @@ func (s *SlasherVCUR) LackSigning(ctx cosmos.Context, mgr Manager) error {
 					for i, action := range voter.Actions {
 						if action.Equals(toi) {
 							voter.Actions[i].VaultPubKey = vault.PubKey
-
 							if toi.Aggregator != "" || toi.AggregatorTargetAsset != "" || toi.AggregatorTargetLimit != nil {
 								ctx.Logger().Info("clearing aggregator fields on outbound reassignment", "hash", toi.InHash)
 

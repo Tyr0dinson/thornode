@@ -139,6 +139,10 @@ func NewOperation(opMap map[string]any) Operation {
 		op = &OpTxStoreCode{}
 	case "tx-sudo-contract":
 		op = &OpTxSudoContract{}
+	case "tx-update-admin":
+		op = &OpTxUpdateAdmin{}
+	case "tx-clear-admin":
+		op = &OpTxClearAdmin{}
 
 	default:
 		log.Fatal().Str("type", t).Msg("unknown operation type")
@@ -904,23 +908,25 @@ func (op *OpTxTssKeysign) Execute(out io.Writer, _ string, _, routine int, _ *os
 // ------------------------------ OpTxTssPool ------------------------------
 
 type OpTxTssPool struct {
-	OpBase             `yaml:",inline"`
-	PubKeys            []string         `json:"pub_keys"`
-	PoolPubKey         common.PubKey    `json:"pool_pub_key"`
-	Secp256K1Signature []byte           `json:"secp256k1_signature"`
-	KeysharesBackup    []byte           `json:"keyshares_backup"`
-	KeygenType         types.KeygenType `json:"keygen_type"`
-	Height             int64            `json:"height"`
-	Blame              types.Blame      `json:"blame"`
-	Chains             []string         `json:"chains"`
-	Signer             sdk.AccAddress   `json:"signer"`
-	KeygenTime         int64            `json:"keygen_time"`
-	Sequence           *int64           `json:"sequence"`
-	Gas                *int64           `json:"gas"`
+	OpBase               `yaml:",inline"`
+	PubKeys              []string         `json:"pub_keys"`
+	PoolPubKey           common.PubKey    `json:"pool_pub_key"`
+	Secp256K1Signature   []byte           `json:"secp256k1_signature"`
+	KeysharesBackup      []byte           `json:"keyshares_backup"`
+	KeygenType           types.KeygenType `json:"keygen_type"`
+	Height               int64            `json:"height"`
+	Blame                []types.Blame    `json:"blame"`
+	Chains               []string         `json:"chains"`
+	Signer               sdk.AccAddress   `json:"signer"`
+	KeygenTime           int64            `json:"keygen_time"`
+	Sequence             *int64           `json:"sequence"`
+	Gas                  *int64           `json:"gas"`
+	PoolPubKeyEddsa      common.PubKey    `json:"pool_pub_key_eddsa"`
+	KeysharesBackupEddsa []byte           `json:"keyshares_backup_eddsa"`
 }
 
 func (op *OpTxTssPool) Execute(out io.Writer, _ string, _, routine int, _ *os.Process, logs chan string) error {
-	msg, err := types.NewMsgTssPool(op.PubKeys, op.PoolPubKey, op.Secp256K1Signature, op.KeysharesBackup, op.KeygenType, op.Height, op.Blame, op.Chains, op.Signer, op.KeygenTime)
+	msg, err := types.NewMsgTssPoolV2(op.PubKeys, op.PoolPubKey, op.Secp256K1Signature, op.KeysharesBackup, op.KeygenType, op.Height, op.Blame, op.Chains, op.Signer, op.KeygenTime, op.PoolPubKeyEddsa, op.KeysharesBackupEddsa)
 	if err != nil {
 		return err
 	}
@@ -1148,6 +1154,30 @@ type OpTxSudoContract struct {
 
 func (op *OpTxSudoContract) Execute(out io.Writer, _ string, _, routine int, _ *os.Process, logs chan string) error {
 	return sendMsg(out, routine, &op.MsgSudoContract, sdk.MustAccAddressFromBech32(op.Authority), "", op.Sequence, op.Gas, op, op.Fees, logs)
+}
+
+type OpTxUpdateAdmin struct {
+	OpBase                   `yaml:",inline"`
+	wasmtypes.MsgUpdateAdmin `yaml:",inline"`
+	Sequence                 *int64 `json:"sequence"`
+	Gas                      *int64 `json:"gas"`
+	Fees                     string `json:"fees"`
+}
+
+func (op *OpTxUpdateAdmin) Execute(out io.Writer, _ string, _, routine int, _ *os.Process, logs chan string) error {
+	return sendMsg(out, routine, &op.MsgUpdateAdmin, sdk.MustAccAddressFromBech32(op.Sender), "", op.Sequence, op.Gas, op, op.Fees, logs)
+}
+
+type OpTxClearAdmin struct {
+	OpBase                  `yaml:",inline"`
+	wasmtypes.MsgClearAdmin `yaml:",inline"`
+	Sequence                *int64 `json:"sequence"`
+	Gas                     *int64 `json:"gas"`
+	Fees                    string `json:"fees"`
+}
+
+func (op *OpTxClearAdmin) Execute(out io.Writer, _ string, _, routine int, _ *os.Process, logs chan string) error {
+	return sendMsg(out, routine, &op.MsgClearAdmin, sdk.MustAccAddressFromBech32(op.Sender), "", op.Sequence, op.Gas, op, op.Fees, logs)
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////

@@ -152,6 +152,8 @@ const (
 	TCYStakingHalt
 	TCYUnstakingHalt
 	TCYClaimingHalt
+	HaltRebond
+	HaltOperatorRotate
 	RequiredPriceFeeds
 
 	// These are the implicitly-0 Constants undisplayed in the API endpoint (no explicit value set).

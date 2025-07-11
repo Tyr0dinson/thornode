@@ -4,7 +4,7 @@ info:
     email: devs@thorchain.org
   description: Thornode REST API.
   title: Thornode API
-  version: 3.6.0
+  version: 3.8.0
 servers:
 - url: /
 paths:
@@ -1681,6 +1681,40 @@ paths:
           description: OK
       tags:
       - SecuredAssets
+  /thorchain/queue/swap/details/{tx_id}:
+    get:
+      description: Returns detailed information about a specific swap.
+      operationId: swapDetails
+      parameters:
+      - description: "optional block height, defaults to current tip"
+        explode: true
+        in: query
+        name: height
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      - description: Transaction ID of the swap
+        explode: false
+        in: path
+        name: tx_id
+        required: true
+        schema:
+          type: string
+        style: simple
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SwapDetailsResponse'
+          description: OK
+        "404":
+          description: Swap not found
+      tags:
+      - Swap
   /thorchain/queue:
     get:
       description: Returns queue statistics.
@@ -2679,6 +2713,7 @@ components:
         synth_supply: "0"
         savers_capacity_remaining: "1000"
         loan_collateral_remaining: "123456"
+        trading_halted: false
         asset_tor_price: "123456"
         synth_mint_paused: true
         pending_inbound_rune: "464993836"
@@ -2780,6 +2815,10 @@ components:
             basis points)
           example: "123456"
           type: string
+        trading_halted:
+          description: indicates if the pool can be used for swaps
+          example: false
+          type: boolean
       required:
       - LP_units
       - asset
@@ -3350,12 +3389,15 @@ components:
           router: 0x3624525075b88B24ecc29CE226b0CEc1fFcB6976
         - chain: ETH
           router: 0x3624525075b88B24ecc29CE226b0CEc1fFcB6976
+        pub_key_eddsa: pub_key_eddsa
         status: status
       properties:
         block_height:
           format: int64
           type: integer
         pub_key:
+          type: string
+        pub_key_eddsa:
           type: string
         coins:
           items:
@@ -3545,8 +3587,12 @@ components:
         - chain: ETH
           router: 0x3624525075b88B24ecc29CE226b0CEc1fFcB6976
         pub_key: thorpub1addwnpepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc
+        pub_key_eddsa: thorpub1addwnpepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc
       properties:
         pub_key:
+          example: thorpub1addwnpepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc
+          type: string
+        pub_key_eddsa:
           example: thorpub1addwnpepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc
           type: string
         routers:
@@ -3838,11 +3884,15 @@ components:
         external_observed_height: 7581334
         external_confirmation_delay_height: 7581334
         aggregator_target_limit: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
+        observed_pub_key_eddsa: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
         status: done
       properties:
         tx:
           $ref: '#/components/schemas/Tx'
         observed_pub_key:
+          example: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
+          type: string
+        observed_pub_key_eddsa:
           example: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
           type: string
         external_observed_height:
@@ -4022,14 +4072,15 @@ components:
       type: object
     TxOutItem:
       example:
+        vault_pub_key_eddsa: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
         chain: ETH
         gas_rate: 0
         in_hash: 208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
         out_hash: 0D0B2FDB6DAD6E5FD3C5E46D39128F9DA15E96F0B2CC054CE059EA3532B150FB
         aggregator: 0xe4ddca21881bac219af7f217703db0475d2a9f02
         memo: OUT:208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
-        vault_pub_key: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
         to_address: 0x66fb1cd65b97fa40457b90b7d1ca6b92cb64b32b
+        vault_pub_key: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
         aggregator_target_asset: 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
         max_gas:
         - amount: "100000"
@@ -4050,9 +4101,6 @@ components:
           example: 1234
           format: int64
           type: integer
-        vault_pub_key:
-          example: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
-          type: string
         in_hash:
           example: 208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
           type: string
@@ -4064,6 +4112,12 @@ components:
           type: string
         to_address:
           example: 0x66fb1cd65b97fa40457b90b7d1ca6b92cb64b32b
+          type: string
+        vault_pub_key:
+          example: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
+          type: string
+        vault_pub_key_eddsa:
+          example: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
           type: string
         coin:
           $ref: '#/components/schemas/Coin'
@@ -4162,6 +4216,7 @@ components:
         total_bond: "123456789"
         slash_points: 42
         forced_to_leave: true
+        missing_blocks: 0
         validator_cons_pub_key: thor104gsqwta048e80j909g6y9kkqdjrw0lff866ew
         bond_providers:
           node_operator_fee: node_operator_fee
@@ -4258,6 +4313,10 @@ components:
           description: indicates whether the node is in maintenance mode
           example: false
           type: boolean
+        missing_blocks:
+          description: the number of recent blocks the node has missed signing
+          format: int64
+          type: integer
         preflight_status:
           $ref: '#/components/schemas/NodePreflightStatus'
       required:
@@ -4269,6 +4328,7 @@ components:
       - jail
       - leave_height
       - maintenance
+      - missing_blocks
       - node_address
       - node_operator_address
       - observe_chains
@@ -4685,6 +4745,7 @@ components:
           external_observed_height: 7581334
           external_confirmation_delay_height: 7581334
           aggregator_target_limit: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
+          observed_pub_key_eddsa: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
           status: done
         keysign_metric:
           tx_id: tx_id
@@ -4753,6 +4814,7 @@ components:
           external_observed_height: 7581334
           external_confirmation_delay_height: 7581334
           aggregator_target_limit: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
+          observed_pub_key_eddsa: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
           status: done
         out_txs:
         - chain: BTC
@@ -4798,14 +4860,15 @@ components:
         tx_id: CF524818D42B63D25BBA0CCC4909F127CAA645C0F9CD07324F2824CC151A64C7
         consensus_height: 7581321
         actions:
-        - chain: ETH
+        - vault_pub_key_eddsa: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
+          chain: ETH
           gas_rate: 0
           in_hash: 208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
           out_hash: 0D0B2FDB6DAD6E5FD3C5E46D39128F9DA15E96F0B2CC054CE059EA3532B150FB
           aggregator: 0xe4ddca21881bac219af7f217703db0475d2a9f02
           memo: OUT:208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
-          vault_pub_key: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
           to_address: 0x66fb1cd65b97fa40457b90b7d1ca6b92cb64b32b
+          vault_pub_key: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
           aggregator_target_asset: 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
           max_gas:
           - amount: "100000"
@@ -4821,14 +4884,15 @@ components:
             amount: "100000"
             decimals: 6
             asset: BTC.BTC
-        - chain: ETH
+        - vault_pub_key_eddsa: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
+          chain: ETH
           gas_rate: 0
           in_hash: 208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
           out_hash: 0D0B2FDB6DAD6E5FD3C5E46D39128F9DA15E96F0B2CC054CE059EA3532B150FB
           aggregator: 0xe4ddca21881bac219af7f217703db0475d2a9f02
           memo: OUT:208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
-          vault_pub_key: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
           to_address: 0x66fb1cd65b97fa40457b90b7d1ca6b92cb64b32b
+          vault_pub_key: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
           aggregator_target_asset: 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
           max_gas:
           - amount: "100000"
@@ -4878,6 +4942,7 @@ components:
           external_observed_height: 7581334
           external_confirmation_delay_height: 7581334
           aggregator_target_limit: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
+          observed_pub_key_eddsa: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
           status: done
         - signers:
           - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
@@ -4912,6 +4977,7 @@ components:
           external_observed_height: 7581334
           external_confirmation_delay_height: 7581334
           aggregator_target_limit: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
+          observed_pub_key_eddsa: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
           status: done
         finalised_height: 7581334
         reverted: false
@@ -4996,6 +5062,7 @@ components:
           external_observed_height: 7581334
           external_confirmation_delay_height: 7581334
           aggregator_target_limit: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
+          observed_pub_key_eddsa: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
           status: done
         out_txs:
         - chain: BTC
@@ -5041,14 +5108,15 @@ components:
         tx_id: CF524818D42B63D25BBA0CCC4909F127CAA645C0F9CD07324F2824CC151A64C7
         consensus_height: 7581321
         actions:
-        - chain: ETH
+        - vault_pub_key_eddsa: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
+          chain: ETH
           gas_rate: 0
           in_hash: 208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
           out_hash: 0D0B2FDB6DAD6E5FD3C5E46D39128F9DA15E96F0B2CC054CE059EA3532B150FB
           aggregator: 0xe4ddca21881bac219af7f217703db0475d2a9f02
           memo: OUT:208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
-          vault_pub_key: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
           to_address: 0x66fb1cd65b97fa40457b90b7d1ca6b92cb64b32b
+          vault_pub_key: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
           aggregator_target_asset: 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
           max_gas:
           - amount: "100000"
@@ -5064,14 +5132,15 @@ components:
             amount: "100000"
             decimals: 6
             asset: BTC.BTC
-        - chain: ETH
+        - vault_pub_key_eddsa: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
+          chain: ETH
           gas_rate: 0
           in_hash: 208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
           out_hash: 0D0B2FDB6DAD6E5FD3C5E46D39128F9DA15E96F0B2CC054CE059EA3532B150FB
           aggregator: 0xe4ddca21881bac219af7f217703db0475d2a9f02
           memo: OUT:208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
-          vault_pub_key: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
           to_address: 0x66fb1cd65b97fa40457b90b7d1ca6b92cb64b32b
+          vault_pub_key: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
           aggregator_target_asset: 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
           max_gas:
           - amount: "100000"
@@ -5121,6 +5190,7 @@ components:
           external_observed_height: 7581334
           external_confirmation_delay_height: 7581334
           aggregator_target_limit: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
+          observed_pub_key_eddsa: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
           status: done
         - signers:
           - thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
@@ -5155,6 +5225,7 @@ components:
           external_observed_height: 7581334
           external_confirmation_delay_height: 7581334
           aggregator_target_limit: 0x0a44986b70527154e9F4290eC14e5f0D1C861822
+          observed_pub_key_eddsa: thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe
           status: done
         finalised_height: 7581334
         reverted: false
@@ -5407,12 +5478,14 @@ components:
           - chain: ETH
             router: 0x3624525075b88B24ecc29CE226b0CEc1fFcB6976
           pub_key: thorpub1addwnpepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc
+          pub_key_eddsa: thorpub1addwnpepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc
         - routers:
           - chain: ETH
             router: 0x3624525075b88B24ecc29CE226b0CEc1fFcB6976
           - chain: ETH
             router: 0x3624525075b88B24ecc29CE226b0CEc1fFcB6976
           pub_key: thorpub1addwnpepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc
+          pub_key_eddsa: thorpub1addwnpepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc
         inactive:
         - routers:
           - chain: ETH
@@ -5420,12 +5493,14 @@ components:
           - chain: ETH
             router: 0x3624525075b88B24ecc29CE226b0CEc1fFcB6976
           pub_key: thorpub1addwnpepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc
+          pub_key_eddsa: thorpub1addwnpepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc
         - routers:
           - chain: ETH
             router: 0x3624525075b88B24ecc29CE226b0CEc1fFcB6976
           - chain: ETH
             router: 0x3624525075b88B24ecc29CE226b0CEc1fFcB6976
           pub_key: thorpub1addwnpepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc
+          pub_key_eddsa: thorpub1addwnpepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc
         asgard:
         - routers:
           - chain: ETH
@@ -5433,12 +5508,14 @@ components:
           - chain: ETH
             router: 0x3624525075b88B24ecc29CE226b0CEc1fFcB6976
           pub_key: thorpub1addwnpepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc
+          pub_key_eddsa: thorpub1addwnpepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc
         - routers:
           - chain: ETH
             router: 0x3624525075b88B24ecc29CE226b0CEc1fFcB6976
           - chain: ETH
             router: 0x3624525075b88B24ecc29CE226b0CEc1fFcB6976
           pub_key: thorpub1addwnpepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc
+          pub_key_eddsa: thorpub1addwnpepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc
       properties:
         asgard:
           items:
@@ -5471,6 +5548,7 @@ components:
         tns_fee_per_block_rune: "20"
         gas_spent_rune: "1000000000"
         rune_price_in_tor: "10"
+        tor_price_halted: false
         tns_register_fee_rune: "1000000000"
         tor_price_in_rune: "10"
         vaults_liquidity_rune: "5792105087034476"
@@ -5546,6 +5624,11 @@ components:
           description: the tor price in rune
           example: "10"
           type: string
+        tor_price_halted:
+          description: "indicates if all anchor chains are halted (true), or at least\
+            \ one anchor chain is available (false)"
+          example: false
+          type: boolean
       required:
       - available_pools_rune
       - bond_reward_rune
@@ -5557,6 +5640,7 @@ components:
       - rune_price_in_tor
       - tns_fee_per_block_rune
       - tns_register_fee_rune
+      - tor_price_halted
       - tor_price_in_rune
       - total_bond_units
       - total_reserve
@@ -5700,6 +5784,55 @@ components:
       items:
         $ref: '#/components/schemas/MsgSwap'
       type: array
+    SwapDetailsResponse:
+      example:
+        queue_type: advanced
+        swap:
+          aggregator_target_address: aggregator_target_address
+          tx:
+            chain: BTC
+            coins:
+            - amount: "100000"
+              decimals: 6
+              asset: BTC.BTC
+            - amount: "100000"
+              decimals: 6
+              asset: BTC.BTC
+            gas:
+            - amount: "100000"
+              decimals: 6
+              asset: BTC.BTC
+            - amount: "100000"
+              decimals: 6
+              asset: BTC.BTC
+            memo: ADD:BTC.BTC:thor1zupk5lmc84r2dh738a9g3zscavannjy3nzplwt
+            to_address: bcrt1qf3s7q037eancht7sg0aj995dht25rwrnqsf45e
+            id: CF524818D42B63D25BBA0CCC4909F127CAA645C0F9CD07324F2824CC151A64C7
+            from_address: bcrt1q0s4mg25tu6termrk8egltfyme4q7sg3h8kkydt
+          trade_target: trade_target
+          aggregator: aggregator
+          destination: 0x66fb1cd65b97fa40457b90b7d1ca6b92cb64b32b
+          affiliate_basis_points: affiliate_basis_points
+          aggregator_target_limit: aggregator_target_limit
+          swap_type: swap_type
+          stream_quantity: 0
+          target_asset: ETH.ETH
+          stream_interval: 6
+          affiliate_address: thor1f3s7q037eancht7sg0aj995dht25rwrnu4ats5
+          signer: signer
+        status: queued
+      properties:
+        swap:
+          $ref: '#/components/schemas/MsgSwap'
+        status:
+          description: Current status of the swap
+          example: queued
+          type: string
+        queue_type:
+          description: Type of queue the swap is in
+          example: advanced
+          type: string
+      type: object
     OutboundResponse:
       items:
         $ref: '#/components/schemas/TxOutItem'
@@ -5713,14 +5846,15 @@ components:
         signature: signature
         keysign:
           tx_array:
-          - chain: ETH
+          - vault_pub_key_eddsa: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
+            chain: ETH
             gas_rate: 0
             in_hash: 208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
             out_hash: 0D0B2FDB6DAD6E5FD3C5E46D39128F9DA15E96F0B2CC054CE059EA3532B150FB
             aggregator: 0xe4ddca21881bac219af7f217703db0475d2a9f02
             memo: OUT:208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
-            vault_pub_key: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
             to_address: 0x66fb1cd65b97fa40457b90b7d1ca6b92cb64b32b
+            vault_pub_key: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
             aggregator_target_asset: 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
             max_gas:
             - amount: "100000"
@@ -5736,14 +5870,15 @@ components:
               amount: "100000"
               decimals: 6
               asset: BTC.BTC
-          - chain: ETH
+          - vault_pub_key_eddsa: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
+            chain: ETH
             gas_rate: 0
             in_hash: 208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
             out_hash: 0D0B2FDB6DAD6E5FD3C5E46D39128F9DA15E96F0B2CC054CE059EA3532B150FB
             aggregator: 0xe4ddca21881bac219af7f217703db0475d2a9f02
             memo: OUT:208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
-            vault_pub_key: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
             to_address: 0x66fb1cd65b97fa40457b90b7d1ca6b92cb64b32b
+            vault_pub_key: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
             aggregator_target_asset: 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
             max_gas:
             - amount: "100000"
@@ -6016,6 +6151,9 @@ components:
       type: object
     BlockResponse:
       example:
+        finalize_block_events:
+        - key: finalize_block_events
+        - key: finalize_block_events
         begin_block_events:
         - key: begin_block_events
         - key: begin_block_events
@@ -6082,6 +6220,12 @@ components:
           $ref: '#/components/schemas/BlockResponse_id'
         header:
           $ref: '#/components/schemas/BlockResponse_header'
+        finalize_block_events:
+          items:
+            additionalProperties:
+              type: string
+            type: object
+          type: array
         begin_block_events:
           items:
             additionalProperties:
@@ -6102,6 +6246,7 @@ components:
       required:
       - begin_block_events
       - end_block_events
+      - finalize_block_events
       - header
       - id
       - txs
@@ -7382,14 +7527,15 @@ components:
     KeysignInfo:
       example:
         tx_array:
-        - chain: ETH
+        - vault_pub_key_eddsa: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
+          chain: ETH
           gas_rate: 0
           in_hash: 208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
           out_hash: 0D0B2FDB6DAD6E5FD3C5E46D39128F9DA15E96F0B2CC054CE059EA3532B150FB
           aggregator: 0xe4ddca21881bac219af7f217703db0475d2a9f02
           memo: OUT:208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
-          vault_pub_key: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
           to_address: 0x66fb1cd65b97fa40457b90b7d1ca6b92cb64b32b
+          vault_pub_key: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
           aggregator_target_asset: 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
           max_gas:
           - amount: "100000"
@@ -7405,14 +7551,15 @@ components:
             amount: "100000"
             decimals: 6
             asset: BTC.BTC
-        - chain: ETH
+        - vault_pub_key_eddsa: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
+          chain: ETH
           gas_rate: 0
           in_hash: 208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
           out_hash: 0D0B2FDB6DAD6E5FD3C5E46D39128F9DA15E96F0B2CC054CE059EA3532B150FB
           aggregator: 0xe4ddca21881bac219af7f217703db0475d2a9f02
           memo: OUT:208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
-          vault_pub_key: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
           to_address: 0x66fb1cd65b97fa40457b90b7d1ca6b92cb64b32b
+          vault_pub_key: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
           aggregator_target_asset: 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
           max_gas:
           - amount: "100000"

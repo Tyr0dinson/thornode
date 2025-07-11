@@ -32,6 +32,7 @@
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
+    "finalize_block_events": [],
     "begin_block_events": [],
     "end_block_events": [],
     "txs": []
@@ -64,11 +65,12 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "56583AD86FD785870583D29F41778C2190E9A9D6DBECDA7D5FA3A7A294746D7D",
+      "app_hash": "43DFBA938F0CD96BAA66D22FF5959B53018F4EE974BE9BFF7513B290C1D53C76",
       "last_results_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
+    "finalize_block_events": [],
     "begin_block_events": [],
     "end_block_events": [],
     "txs": [
@@ -126,7 +128,7 @@
           "code": 99,
           "log": "failed to execute message; message index: 0: invalid memo: 2 errors occurred:\n\t* internal error\n\t* MEMO: maint:\nPARSE FAILURE(S): cannot parse '' as an AccAddress: empty address string is not allowed\n\n: internal error",
           "gas_wanted": "-1",
-          "gas_used": "69951",
+          "gas_used": "69657",
           "events": [
             {
               "amount": "2000000rune",
@@ -189,11 +191,12 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "81784A6EEEDE3B31390D308FDD95A573D70CFA319319ADDF4B111E80A1F4060C",
-      "last_results_hash": "A517A4D39773CBAE5D895B667E9CEA398A11BB3FBA8897253F825ED6A70C4BB7",
+      "app_hash": "AA033AD8C5275D29A350BFBC4A385FAD20EB4FFD04B04DF4A955D681A82844DB",
+      "last_results_hash": "F94458B891EB9E14E0C6966F500153565C53A9F965626126A0F9E6E88B8C3376",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
+    "finalize_block_events": [],
     "begin_block_events": [],
     "end_block_events": [],
     "txs": [
@@ -251,7 +254,7 @@
           "code": 99,
           "log": "failed to execute message; message index: 0: invalid memo: 2 errors occurred:\n\t* internal error\n\t* MEMO: maint:invalid-address\nPARSE FAILURE(S): cannot parse 'invalid-address' as an AccAddress: decoding bech32 failed: invalid separator index -1\n\n: internal error",
           "gas_wanted": "-1",
-          "gas_used": "56770",
+          "gas_used": "56476",
           "events": [
             {
               "amount": "2000000rune",
@@ -314,11 +317,12 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "0F29438093C9680B1C729D607457462D7E5445BAFF8A4C14BC568EFF6CFA6828",
-      "last_results_hash": "B873513A746A851D959724D63C47275D4D90A5BEF7AEFD3D19E3E54DC03B90D5",
+      "app_hash": "FA8925AF9744CA6ED1ECAEC79D8DBC85EDCE39DAB063217595294C6805705EAA",
+      "last_results_hash": "F3BFB61407E722DD4FF9D97F7C6ABF7F1E29271A15A3ED159BC7EB62E53FEC09",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
+    "finalize_block_events": [],
     "begin_block_events": [],
     "end_block_events": [],
     "txs": [
@@ -488,11 +492,12 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "E2703E2D7385BD05B6C57DAE57245912387977F6D6EDA2FAB128AC8BD7794FF4",
+      "app_hash": "D2B2232DA320DB53F7792EAD79C5EBE1979EC5EAB99B8F98DF505940EF58AAA9",
       "last_results_hash": "A00A2EF91BB06947541BC1B873CF3FA365681836C69384DC054F9245ED818621",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
+    "finalize_block_events": [],
     "begin_block_events": [],
     "end_block_events": [],
     "txs": [
@@ -549,7 +554,7 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "115038",
+          "gas_used": "114744",
           "events": [
             {
               "amount": "2000000rune",
@@ -625,11 +630,12 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "08642209474E74E6BC8C6B7D4DED27C5B5B1F8D685B7329CE4829253C01CF323",
-      "last_results_hash": "EEF69BB749A75C32FF7AC8BB67D3CD77BCCF226D9446A5148BD032DBA4085EDE",
+      "app_hash": "E5D772AB696BBD98D75C2F83BEE49001754A95D170C32772057DB1A05C62DA92",
+      "last_results_hash": "4B1EEB8C2F7ACCA67D7A4C177D606EE5381055DAEF849A43ADB7B60C7D043CC4",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
+    "finalize_block_events": [],
     "begin_block_events": [],
     "end_block_events": [],
     "txs": [
@@ -686,7 +692,7 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "124710",
+          "gas_used": "124668",
           "events": [
             {
               "amount": "2000000rune",
@@ -801,11 +807,12 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "533D5333CBEC71323297D605914ACC73CC908E79B91C45C0D858A3AA38D9D04B",
-      "last_results_hash": "374012633EC2EBCDA652698E59C5A0D91FCD0E6DD193DCCFE6582D639485F779",
+      "app_hash": "C8DBDB5CD331DE44024D77C570FEE0BD8462D005DC0D8325944731255869505C",
+      "last_results_hash": "B5376766231FA2E3B24F7F6243A9E1E09A253C82592139FEDE240D9B5E9AE55A",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
+    "finalize_block_events": [],
     "begin_block_events": [],
     "end_block_events": [],
     "txs": [
@@ -862,7 +869,7 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "114642",
+          "gas_used": "114348",
           "events": [
             {
               "amount": "2000000rune",
@@ -938,11 +945,12 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "A71899F46BA9E7C0261E823404908B4AB27AA971568D189684AF1B33A14C8BA0",
-      "last_results_hash": "CD1268F64BC031AEA1D054232D75346458ABA977ADC4C9871B78F257743EFBCC",
+      "app_hash": "DD75058E212852A5707131437A100A001BADE56CC5895573827F3A9A723F9A40",
+      "last_results_hash": "0365DBB279E58FBE546926169A256CCF6AADC48EACA35C7639C57204176286DA",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
+    "finalize_block_events": [],
     "begin_block_events": [],
     "end_block_events": [],
     "txs": [
@@ -999,7 +1007,7 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "114714",
+          "gas_used": "114420",
           "events": [
             {
               "amount": "2000000rune",
@@ -1075,11 +1083,12 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "689854949CC465CC7BDAD5E5DC5FEF579C3EF0F9647AA5DE742F3B12130BCEAF",
-      "last_results_hash": "B8F5F231DF09D63180B8B0F60854C7297EB96629221E64E7F295B41305063BD0",
+      "app_hash": "B60EBA387CCA11F0B5198158C4300E9E1E5D7C861285486A11F18E348BFF20FD",
+      "last_results_hash": "F5A3EDDB37122935DE3C87958BD04D893F931996DCAAFFF8A8A1EC48E565CB13",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
+    "finalize_block_events": [],
     "begin_block_events": [],
     "end_block_events": [],
     "txs": [
@@ -1136,7 +1145,7 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "114642",
+          "gas_used": "114348",
           "events": [
             {
               "amount": "2000000rune",
@@ -1212,11 +1221,12 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "D1EE84152939C3E3B7A9E6955786759203F94ACDA916D2E4F392E167536537B4",
-      "last_results_hash": "CD1268F64BC031AEA1D054232D75346458ABA977ADC4C9871B78F257743EFBCC",
+      "app_hash": "A60C1E29EB6E0624CE08128C2189AD2937484C7CB25C9CB4B94BB9892BC4F9D0",
+      "last_results_hash": "0365DBB279E58FBE546926169A256CCF6AADC48EACA35C7639C57204176286DA",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
+    "finalize_block_events": [],
     "begin_block_events": [],
     "end_block_events": [],
     "txs": [
@@ -1273,7 +1283,7 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "114714",
+          "gas_used": "114420",
           "events": [
             {
               "amount": "2000000rune",
@@ -1349,11 +1359,12 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "85C0601715951F2EDBE660ADFABAFBA0A11CE1986347F331257D88840E66A678",
-      "last_results_hash": "B8F5F231DF09D63180B8B0F60854C7297EB96629221E64E7F295B41305063BD0",
+      "app_hash": "9575F02BAC62624E76FA92BE557AFC6956B07EDE05FD6E083B78A171E1C25751",
+      "last_results_hash": "F5A3EDDB37122935DE3C87958BD04D893F931996DCAAFFF8A8A1EC48E565CB13",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
+    "finalize_block_events": [],
     "begin_block_events": [],
     "end_block_events": [],
     "txs": [
@@ -1411,7 +1422,7 @@
           "code": 99,
           "log": "failed to execute message; message index: 0: invalid memo: 2 errors occurred:\n\t* internal error\n\t* MEMO: maint:tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycrINVALID\nPARSE FAILURE(S): cannot parse 'tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycrINVALID' as an AccAddress: decoding bech32 failed: string not all lowercase or all uppercase\n\n: internal error",
           "gas_wanted": "-1",
-          "gas_used": "57140",
+          "gas_used": "56846",
           "events": [
             {
               "amount": "2000000rune",

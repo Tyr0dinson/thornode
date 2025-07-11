@@ -92,6 +92,7 @@ func Init() {
 	// explicit keys for the new configuration package. In the meantime we will preserve
 	// mappings from historical environment for backwards compatibility.
 	assert(viper.BindEnv("bifrost.thorchain.signer_name", "SIGNER_NAME"))
+	assert(viper.BindEnv("bifrost.thorchain.signer_name_eddsa", "SIGNER_NAME_EDDSA"))
 	assert(viper.BindEnv(
 		"bifrost.chains.btc.block_scanner.block_height_discover_back_off",
 		"BLOCK_SCANNER_BACKOFF",
@@ -357,6 +358,12 @@ type Thornode struct {
 	// consensus failure on sync from genesis.
 	StagenetAdminAddresses []string `mapstructure:"stagenet_admin_addresses"`
 
+	// QuoteRecommendedMinAmountFeeMultiplier sets the multiplier on the outbound fee
+	// for the source and destination chains, used to determine the min recommended
+	// swap amount that should be respected by clients to avoid outbounds and
+	// refunds being swallowed.
+	QuoteRecommendedMinAmountFeeMultiplier uint64 `mapstructure:"quote_recommended_min_amount_fee_multiplier"`
+
 	// Telemetry contains THORnode-specific telemetry configuration.
 	Telemetry struct {
 		// SlashPoints enables slash point telemetry. This creates a file in the node home
@@ -491,6 +498,7 @@ type Bifrost struct {
 		GAIA BifrostChainConfiguration `mapstructure:"gaia"`
 		LTC  BifrostChainConfiguration `mapstructure:"ltc"`
 		BASE BifrostChainConfiguration `mapstructure:"base"`
+		TRON BifrostChainConfiguration `mapstructure:"tron"`
 		XRP  BifrostChainConfiguration `mapstructure:"xrp"`
 	} `mapstructure:"chains"`
 	TSS             BifrostTSSConfiguration    `mapstructure:"tss"`
@@ -530,6 +538,7 @@ func (b Bifrost) GetChains() map[common.Chain]BifrostChainConfiguration {
 		common.GAIAChain: b.Chains.GAIA,
 		common.LTCChain:  b.Chains.LTC,
 		common.BASEChain: b.Chains.BASE,
+		common.TRONChain: b.Chains.TRON,
 		common.XRPChain:  b.Chains.XRP,
 	}
 }
@@ -664,6 +673,7 @@ type BifrostChainConfiguration struct {
 	UserName            string                           `mapstructure:"username"`
 	Password            string                           `mapstructure:"password"`
 	RPCHost             string                           `mapstructure:"rpc_host"`
+	APIHost             string                           `mapstructure:"api_host"`
 	CosmosGRPCHost      string                           `mapstructure:"cosmos_grpc_host"`
 	CosmosGRPCTLS       bool                             `mapstructure:"cosmos_grpc_tls"`
 	HTTPostMode         bool                             `mapstructure:"http_post_mode"` // Bitcoin core only supports HTTP POST mode
@@ -767,8 +777,19 @@ type BifrostChainConfiguration struct {
 }
 
 func (b *BifrostChainConfiguration) Validate() {
-	if b.RPCHost == "" {
-		log.Fatal().Str("chain", b.ChainID.String()).Msg("rpc host is required")
+	switch b.ChainID {
+	case common.TRONChain:
+		if b.APIHost == "" {
+			log.Fatal().
+				Str("chain", b.ChainID.String()).
+				Msg("api host is required")
+		}
+	default:
+		if b.RPCHost == "" {
+			log.Fatal().
+				Str("chain", b.ChainID.String()).
+				Msg("rpc host is required")
+		}
 	}
 }
 

@@ -14,8 +14,6 @@ import (
 	"sync"
 	"time"
 
-	"gitlab.com/thorchain/thornode/v3/common/wasmpermissions"
-
 	sdkmath "cosmossdk.io/math"
 	"github.com/blang/semver"
 	tmhttp "github.com/cometbft/cometbft/rpc/client/http"
@@ -31,6 +29,17 @@ import (
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 	keeperv1 "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/v1"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
+)
+
+// Swap status constants
+const (
+	SwapStatusQueued = "queued"
+)
+
+// Queue type constants
+const (
+	QueueTypeRegular  = "regular"
+	QueueTypeAdvanced = "advanced"
 )
 
 var (
@@ -148,6 +157,7 @@ func (qs queryServer) queryVault(ctx cosmos.Context, req *types.QueryVaultReques
 	resp := types.QueryVaultResponse{
 		BlockHeight:           v.BlockHeight,
 		PubKey:                v.PubKey.String(),
+		PubKeyEddsa:           v.PubKeyEddsa.String(),
 		Coins:                 v.Coins,
 		Type:                  v.Type.String(),
 		Status:                v.Status.String(),
@@ -183,6 +193,7 @@ func (qs queryServer) queryAsgardVaults(ctx cosmos.Context, _ *types.QueryAsgard
 			vaultsWithFunds = append(vaultsWithFunds, &types.QueryVaultResponse{
 				BlockHeight:           vault.BlockHeight,
 				PubKey:                vault.PubKey.String(),
+				PubKeyEddsa:           vault.PubKeyEddsa.String(),
 				Coins:                 vault.Coins,
 				Type:                  vault.Type.String(),
 				Status:                vault.Status.String(),
@@ -206,7 +217,7 @@ func getVaultChainAddresses(ctx cosmos.Context, vault Vault) []*types.VaultAddre
 	var result []*types.VaultAddress
 	allChains := append(vault.GetChains(), common.THORChain)
 	for _, c := range allChains.Distinct() {
-		addr, err := vault.PubKey.GetAddress(c)
+		addr, err := vault.GetAddress(c)
 		if err != nil {
 			ctx.Logger().Error("fail to get address for %s:%w", c.String(), err)
 			continue
@@ -264,8 +275,9 @@ func (qs queryServer) queryVaultsPubkeys(ctx cosmos.Context, _ *types.QueryVault
 				allMembers := vault.Membership
 				if HasSuperMajority(len(activeMembers), len(allMembers)) {
 					resp.Inactive = append(resp.Inactive, &types.VaultInfo{
-						PubKey:  vault.PubKey.String(),
-						Routers: castVaultRouters(vault.Routers),
+						PubKey:      vault.PubKey.String(),
+						PubKeyEddsa: vault.PubKeyEddsa.String(),
+						Routers:     castVaultRouters(vault.Routers),
 					})
 				}
 			}
@@ -450,6 +462,9 @@ func (qs queryServer) queryNetwork(ctx cosmos.Context, _ *types.QueryNetworkRequ
 	minMultiplierBasisPoints := qs.mgr.Keeper().GetConfigInt64(ctx, constants.MinOutboundFeeMultiplierBasisPoints)
 	outboundFeeMultiplier := qs.mgr.gasMgr.CalcOutboundFeeMultiplier(ctx, cosmos.NewUint(uint64(targetOutboundFeeSurplus)), cosmos.NewUint(data.OutboundGasSpentRune), cosmos.NewUint(data.OutboundGasWithheldRune), cosmos.NewUint(uint64(maxMultiplierBasisPoints)), cosmos.NewUint(uint64(minMultiplierBasisPoints)))
 
+	assets := qs.mgr.Keeper().GetAnchors(ctx, common.TOR)
+	median := qs.mgr.Keeper().AnchorMedian(ctx, assets).QuoUint64(constants.DollarMulti)
+
 	result := types.QueryNetworkResponse{
 		// Due to using openapi. this will be displayed in alphabetical order,
 		// so its schema (and order here) should also be in alphabetical order.
@@ -468,7 +483,8 @@ func (qs queryServer) queryNetwork(ctx cosmos.Context, _ *types.QueryNetworkRequ
 		TnsRegisterFeeRune:    qs.mgr.Keeper().GetTHORNameRegisterFee(ctx).String(),
 		TnsFeePerBlockRune:    qs.mgr.Keeper().GetTHORNamePerBlockFee(ctx).String(),
 		RunePriceInTor:        dollarsPerRuneIgnoreHalt(ctx, qs.mgr.Keeper()).String(),
-		TorPriceInRune:        qs.mgr.Keeper().RunePerDollar(ctx).String(),
+		TorPriceInRune:        runePerDollarIgnoreHalt(ctx, qs.mgr.Keeper()).String(),
+		TorPriceHalted:        median.IsZero(),
 	}
 
 	return &result, nil
@@ -510,7 +526,7 @@ func (qs queryServer) queryInboundAddresses(ctx cosmos.Context, _ *types.QueryIn
 		isChainTradingPaused := k.IsChainTradingHalted(ctx, chain)
 		isChainLpPaused := k.IsLPPaused(ctx, chain)
 
-		vaultAddress, err := vault.PubKey.GetAddress(chain)
+		vaultAddress, err := vault.GetAddress(chain)
 		if err != nil {
 			ctx.Logger().Error("fail to get address for chain", "error", err)
 			return nil, fmt.Errorf("fail to get address for chain: %w", err)
@@ -801,6 +817,7 @@ func (qs queryServer) queryNodes(ctx cosmos.Context, _ *types.QueryNodesRequest)
 			ForcedToLeave:       na.ForcedToLeave,
 			LeaveHeight:         int64(na.LeaveScore), // OpenAPI can only represent uint64 as int64
 			Maintenance:         na.Maintenance,
+			MissingBlocks:       int64(na.MissingBlocks),
 			IpAddress:           na.IPAddress,
 			Version:             na.GetVersion().String(),
 			CurrentAward:        cosmos.ZeroUint().String(), // Default display for if not overwritten.
@@ -1376,6 +1393,27 @@ func (qs queryServer) queryPool(ctx cosmos.Context, req *types.QueryPoolRequest)
 		dbps = cosmos.ZeroUint()
 	}
 
+	tradingHalted := qs.mgr.Keeper().IsGlobalTradingHalted(ctx)
+
+	l1Asset := pool.Asset.GetLayer1Asset()
+	chain := l1Asset.GetChain()
+
+	if !pool.IsAvailable() {
+		tradingHalted = true
+	}
+
+	if !tradingHalted && qs.mgr.Keeper().IsChainTradingHalted(ctx, chain) {
+		tradingHalted = true
+	}
+
+	if !tradingHalted && qs.mgr.Keeper().IsChainHalted(ctx, chain) {
+		tradingHalted = true
+	}
+
+	if !tradingHalted && qs.mgr.Keeper().IsRagnarok(ctx, []common.Asset{l1Asset}) {
+		tradingHalted = true
+	}
+
 	p := types.QueryPoolResponse{
 		Asset:               pool.Asset.String(),
 		ShortCode:           pool.Asset.ShortCode(),
@@ -1388,6 +1426,7 @@ func (qs queryServer) queryPool(ctx cosmos.Context, req *types.QueryPoolRequest)
 		PoolUnits:           pool.GetPoolUnits().String(),
 		LPUnits:             pool.LPUnits.String(),
 		SynthUnits:          pool.SynthUnits.String(),
+		TradingHalted:       tradingHalted,
 	}
 	p.SynthSupply = synthSupply.String()
 	p.SaversDepth = saversDepth.String()
@@ -1411,6 +1450,10 @@ func (qs queryServer) queryPool(ctx cosmos.Context, req *types.QueryPoolRequest)
 
 func (qs queryServer) queryPools(ctx cosmos.Context, _ *types.QueryPoolsRequest) (*types.QueryPoolsResponse, error) {
 	dollarsPerRune := dollarsPerRuneIgnoreHalt(ctx, qs.mgr.Keeper())
+
+	isGlobalTradingHalted := qs.mgr.Keeper().IsGlobalTradingHalted(ctx)
+	isChainOrChainTradingHalted := map[common.Chain]bool{}
+
 	pools := make([]*types.QueryPoolResponse, 0)
 	iterator := qs.mgr.Keeper().GetPoolIterator(ctx)
 	for ; iterator.Valid(); iterator.Next() {
@@ -1476,6 +1519,31 @@ func (qs queryServer) queryPools(ctx cosmos.Context, _ *types.QueryPoolsRequest)
 			dbps = cosmos.ZeroUint()
 		}
 
+		tradingHalted := isGlobalTradingHalted
+
+		l1Asset := pool.Asset.GetLayer1Asset()
+		chain := l1Asset.GetChain()
+
+		_, found := isChainOrChainTradingHalted[chain]
+		if !found {
+			isChainHalted := qs.mgr.Keeper().IsChainHalted(ctx, chain)
+			isChainTradingHalted := qs.mgr.Keeper().IsChainTradingHalted(ctx, chain)
+
+			isChainOrChainTradingHalted[chain] = isChainHalted || isChainTradingHalted
+		}
+
+		if !tradingHalted {
+			tradingHalted = isChainOrChainTradingHalted[chain]
+		}
+
+		if !pool.IsAvailable() {
+			tradingHalted = true
+		}
+
+		if qs.mgr.Keeper().IsRagnarok(ctx, []common.Asset{l1Asset}) {
+			tradingHalted = true
+		}
+
 		p := types.QueryPoolResponse{
 			Asset:               pool.Asset.String(),
 			ShortCode:           pool.Asset.ShortCode(),
@@ -1488,6 +1556,7 @@ func (qs queryServer) queryPools(ctx cosmos.Context, _ *types.QueryPoolsRequest)
 			PoolUnits:           pool.GetPoolUnits().String(),
 			LPUnits:             pool.LPUnits.String(),
 			SynthUnits:          pool.SynthUnits.String(),
+			TradingHalted:       tradingHalted,
 		}
 
 		p.SynthSupply = synthSupply.String()
@@ -2341,7 +2410,7 @@ func (qs queryServer) queryQueue(ctx cosmos.Context, _ *types.QueryQueueRequest)
 	defer iter2.Close()
 	for ; iter2.Valid(); iter2.Next() {
 		var msg MsgSwap
-		if err := qs.mgr.Keeper().Cdc().Unmarshal(iterator.Value(), &msg); err != nil {
+		if err := qs.mgr.Keeper().Cdc().Unmarshal(iter2.Value(), &msg); err != nil {
 			ctx.Logger().Error("failed to load MsgSwap", "error", err)
 			continue
 		}
@@ -2954,6 +3023,7 @@ func (qs queryServer) queryPendingOutbound(ctx cosmos.Context, _ *types.QueryPen
 func (qs queryServer) querySwapQueue(ctx cosmos.Context, _ *types.QuerySwapQueueRequest) (*types.QuerySwapQueueResponse, error) {
 	result := make([]*MsgSwap, 0)
 
+	// Add items from regular swap queue
 	iterator := qs.mgr.Keeper().GetSwapQueueIterator(ctx)
 	defer iterator.Close()
 	for ; iterator.Valid(); iterator.Next() {
@@ -2964,7 +3034,65 @@ func (qs queryServer) querySwapQueue(ctx cosmos.Context, _ *types.QuerySwapQueue
 		result = append(result, &msg)
 	}
 
+	// Add items from advanced swap queue if enabled
+	if qs.mgr.Keeper().AdvSwapQueueEnabled(ctx) {
+		advIterator := qs.mgr.Keeper().GetAdvSwapQueueItemIterator(ctx)
+		defer advIterator.Close()
+		for ; advIterator.Valid(); advIterator.Next() {
+			var msg MsgSwap
+			if err := qs.mgr.Keeper().Cdc().Unmarshal(advIterator.Value(), &msg); err != nil {
+				continue
+			}
+			result = append(result, &msg)
+		}
+	}
+
 	return &types.QuerySwapQueueResponse{SwapQueue: result}, nil
+}
+
+func (qs queryServer) querySwapDetails(ctx cosmos.Context, req *types.QuerySwapDetailsRequest) (*types.QuerySwapDetailsResponse, error) {
+	if len(req.TxId) == 0 {
+		return nil, fmt.Errorf("missing tx_id parameter")
+	}
+
+	txID, err := common.NewTxID(req.TxId)
+	if err != nil {
+		return nil, fmt.Errorf("invalid tx_id: %w", err)
+	}
+
+	// Check if it's in the regular swap queue
+	iterator := qs.mgr.Keeper().GetSwapQueueIterator(ctx)
+	defer iterator.Close()
+	for ; iterator.Valid(); iterator.Next() {
+		var msg MsgSwap
+		if err := qs.mgr.Keeper().Cdc().Unmarshal(iterator.Value(), &msg); err != nil {
+			continue
+		}
+		if msg.Tx.ID.Equals(txID) {
+			return &types.QuerySwapDetailsResponse{
+				Swap:      &msg,
+				Status:    SwapStatusQueued,
+				QueueType: QueueTypeRegular,
+			}, nil
+		}
+	}
+
+	// Check if it's in the advanced swap queue
+	if qs.mgr.Keeper().AdvSwapQueueEnabled(ctx) {
+		if qs.mgr.Keeper().HasAdvSwapQueueItem(ctx, txID) {
+			msg, err := qs.mgr.Keeper().GetAdvSwapQueueItem(ctx, txID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get advanced swap queue item: %w", err)
+			}
+			return &types.QuerySwapDetailsResponse{
+				Swap:      &msg,
+				Status:    SwapStatusQueued,
+				QueueType: QueueTypeAdvanced,
+			}, nil
+		}
+	}
+
+	return nil, fmt.Errorf("swap with tx_id %s not found in any queue", req.TxId)
 }
 
 func (qs queryServer) queryTssKeygenMetric(ctx cosmos.Context, req *types.QueryTssKeygenMetricRequest) (*types.QueryTssKeygenMetricResponse, error) {
@@ -3071,44 +3199,50 @@ func (qs queryServer) queryBlock(ctx cosmos.Context, req *types.QueryBlockReques
 		},
 		Header: &types.BlockResponseHeader{
 			Version: &types.BlockResponseHeaderVersion{
-				Block: strconv.FormatUint(block.Block.Header.Version.Block, 10),
-				App:   strconv.FormatUint(block.Block.Header.Version.App, 10),
+				Block: strconv.FormatUint(block.Block.Version.Block, 10),
+				App:   strconv.FormatUint(block.Block.Version.App, 10),
 			},
-			ChainId: block.Block.Header.ChainID,
-			Height:  block.Block.Header.Height,
-			Time:    block.Block.Header.Time.Format(time.RFC3339Nano),
+			ChainId: block.Block.ChainID,
+			Height:  block.Block.Height,
+			Time:    block.Block.Time.Format(time.RFC3339Nano),
 			LastBlockId: &types.BlockResponseId{
-				Hash: block.Block.Header.LastBlockID.Hash.String(),
+				Hash: block.Block.LastBlockID.Hash.String(),
 				Parts: &types.BlockResponseIdParts{
-					Total: int64(block.Block.Header.LastBlockID.PartSetHeader.Total),
-					Hash:  block.Block.Header.LastBlockID.PartSetHeader.Hash.String(),
+					Total: int64(block.Block.LastBlockID.PartSetHeader.Total),
+					Hash:  block.Block.LastBlockID.PartSetHeader.Hash.String(),
 				},
 			},
-			LastCommitHash:     block.Block.Header.LastCommitHash.String(),
-			DataHash:           block.Block.Header.DataHash.String(),
-			ValidatorsHash:     block.Block.Header.ValidatorsHash.String(),
-			NextValidatorsHash: block.Block.Header.NextValidatorsHash.String(),
-			ConsensusHash:      block.Block.Header.ConsensusHash.String(),
-			AppHash:            block.Block.Header.AppHash.String(),
-			LastResultsHash:    block.Block.Header.LastResultsHash.String(),
-			EvidenceHash:       block.Block.Header.EvidenceHash.String(),
-			ProposerAddress:    block.Block.Header.ProposerAddress.String(),
+			LastCommitHash:     block.Block.LastCommitHash.String(),
+			DataHash:           block.Block.DataHash.String(),
+			ValidatorsHash:     block.Block.ValidatorsHash.String(),
+			NextValidatorsHash: block.Block.NextValidatorsHash.String(),
+			ConsensusHash:      block.Block.ConsensusHash.String(),
+			AppHash:            block.Block.AppHash.String(),
+			LastResultsHash:    block.Block.LastResultsHash.String(),
+			EvidenceHash:       block.Block.EvidenceHash.String(),
+			ProposerAddress:    block.Block.ProposerAddress.String(),
 		},
 		Txs: make([]*types.QueryBlockTx, len(block.Block.Txs)),
 	}
 
 	// parse the events
 	for _, event := range results.FinalizeBlockEvents {
+		foundMode := false
 		for _, attr := range event.Attributes {
 			if attr.Key == "mode" {
 				if attr.Value == "BeginBlock" {
 					res.BeginBlockEvents = append(res.BeginBlockEvents, blockEvent(sdk.Event(event)))
+					foundMode = true
 				}
 				if attr.Value == "EndBlock" {
 					res.EndBlockEvents = append(res.EndBlockEvents, blockEvent(sdk.Event(event)))
+					foundMode = true
 				}
 				continue
 			}
+		}
+		if !foundMode {
+			res.FinalizeBlockEvents = append(res.FinalizeBlockEvents, blockEvent(sdk.Event(event)))
 		}
 	}
 
@@ -3164,6 +3298,7 @@ func castTxOutItem(toi TxOutItem, height int64) *types.QueryTxOutItem {
 	return &types.QueryTxOutItem{
 		Height:                height, // Omitted if 0, for use in openapi.TxDetailsResponse
 		VaultPubKey:           toi.VaultPubKey.String(),
+		VaultPubKeyEddsa:      toi.VaultPubKeyEddsa.String(),
 		InHash:                toi.InHash.String(),
 		OutHash:               toi.OutHash.String(),
 		Chain:                 toi.Chain.String(),
@@ -3321,6 +3456,16 @@ func simulate(ctx cosmos.Context, mgr Manager, msg sdk.Msg) (sdk.Events, error) 
 	return em.Events(), nil
 }
 
+// runePerDollarIgnoreHalt mirrors keeper.RunePerDollar, ignoring halts by using
+// dollarsPerRuneIgnoreHalt to return the last known price instead of "0"
+func runePerDollarIgnoreHalt(ctx cosmos.Context, k keeper.Keeper) cosmos.Uint {
+	runePerDollar := dollarsPerRuneIgnoreHalt(ctx, k)
+
+	one := cosmos.NewUint(common.One)
+
+	return common.GetUncappedShare(one, runePerDollar, one)
+}
+
 // dollarsPerRuneIgnoreHalt mirrors keeper.DollarsPerRune, but ignoring halts if all
 // anchor chains are unavailable with them. This is used for the TOR price on pools to
 // ensure a best effort price is returned whenever possible instead of zero.
@@ -3443,38 +3588,6 @@ func (qs queryServer) queryTCYClaimer(ctx cosmos.Context, req *types.QueryTCYCla
 	}
 
 	return &types.QueryTCYClaimerResponse{TcyClaimer: claimsRes}, nil
-}
-
-// queryCodes
-func (qs queryServer) queryCodes(_ cosmos.Context, _ *types.QueryCodesRequest) (*types.QueryCodesResponse, error) {
-	var codes []*types.QueryCodesCode
-
-	permissionsRaw := wasmpermissions.GetWasmPermissions()
-	// analyze-ignore(map-iteration)
-	for code, permission := range permissionsRaw.Permissions {
-		deployers := []string{}
-		// analyze-ignore(map-iteration)
-		for deployer, allowed := range permission.Deployers {
-			if !allowed {
-				continue
-			}
-			deployers = append(deployers, deployer)
-		}
-
-		sort.Strings(deployers)
-
-		codes = append(codes, &types.QueryCodesCode{
-			Code:      code,
-			Deployers: deployers,
-			Origin:    permission.Origin,
-		})
-	}
-
-	sort.Slice(codes, func(i, j int) bool {
-		return codes[i].Code < codes[j].Code
-	})
-
-	return &types.QueryCodesResponse{Codes: codes}, nil
 }
 
 // queryOraclePrices

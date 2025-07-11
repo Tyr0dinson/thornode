@@ -25,6 +25,7 @@ const (
 	Msg_ErrataTx_FullMethodName             = "/types.Msg/ErrataTx"
 	Msg_ErrataTxQuorum_FullMethodName       = "/types.Msg/ErrataTxQuorum"
 	Msg_Mimir_FullMethodName                = "/types.Msg/Mimir"
+	Msg_ModifyLimitSwap_FullMethodName      = "/types.Msg/ModifyLimitSwap"
 	Msg_NetworkFee_FullMethodName           = "/types.Msg/NetworkFee"
 	Msg_NetworkFeeQuorum_FullMethodName     = "/types.Msg/NetworkFeeQuorum"
 	Msg_NodePauseChain_FullMethodName       = "/types.Msg/NodePauseChain"
@@ -49,6 +50,8 @@ const (
 	Msg_ExecuteContract_FullMethodName      = "/types.Msg/ExecuteContract"
 	Msg_MigrateContract_FullMethodName      = "/types.Msg/MigrateContract"
 	Msg_SudoContract_FullMethodName         = "/types.Msg/SudoContract"
+	Msg_UpdateAdmin_FullMethodName          = "/types.Msg/UpdateAdmin"
+	Msg_ClearAdmin_FullMethodName           = "/types.Msg/ClearAdmin"
 )
 
 // MsgClient is the client API for Msg service.
@@ -60,6 +63,7 @@ type MsgClient interface {
 	ErrataTx(ctx context.Context, in *MsgErrataTx, opts ...grpc.CallOption) (*MsgEmpty, error)
 	ErrataTxQuorum(ctx context.Context, in *MsgErrataTxQuorum, opts ...grpc.CallOption) (*MsgEmpty, error)
 	Mimir(ctx context.Context, in *MsgMimir, opts ...grpc.CallOption) (*MsgEmpty, error)
+	ModifyLimitSwap(ctx context.Context, in *MsgModifyLimitSwap, opts ...grpc.CallOption) (*MsgEmpty, error)
 	NetworkFee(ctx context.Context, in *MsgNetworkFee, opts ...grpc.CallOption) (*MsgEmpty, error)
 	NetworkFeeQuorum(ctx context.Context, in *MsgNetworkFeeQuorum, opts ...grpc.CallOption) (*MsgEmpty, error)
 	NodePauseChain(ctx context.Context, in *MsgNodePauseChain, opts ...grpc.CallOption) (*MsgEmpty, error)
@@ -85,6 +89,8 @@ type MsgClient interface {
 	ExecuteContract(ctx context.Context, in *types.MsgExecuteContract, opts ...grpc.CallOption) (*types.MsgExecuteContractResponse, error)
 	MigrateContract(ctx context.Context, in *types.MsgMigrateContract, opts ...grpc.CallOption) (*types.MsgMigrateContractResponse, error)
 	SudoContract(ctx context.Context, in *types.MsgSudoContract, opts ...grpc.CallOption) (*types.MsgSudoContractResponse, error)
+	UpdateAdmin(ctx context.Context, in *types.MsgUpdateAdmin, opts ...grpc.CallOption) (*types.MsgUpdateAdminResponse, error)
+	ClearAdmin(ctx context.Context, in *types.MsgClearAdmin, opts ...grpc.CallOption) (*types.MsgClearAdminResponse, error)
 }
 
 type msgClient struct {
@@ -134,6 +140,15 @@ func (c *msgClient) ErrataTxQuorum(ctx context.Context, in *MsgErrataTxQuorum, o
 func (c *msgClient) Mimir(ctx context.Context, in *MsgMimir, opts ...grpc.CallOption) (*MsgEmpty, error) {
 	out := new(MsgEmpty)
 	err := c.cc.Invoke(ctx, Msg_Mimir_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *msgClient) ModifyLimitSwap(ctx context.Context, in *MsgModifyLimitSwap, opts ...grpc.CallOption) (*MsgEmpty, error) {
+	out := new(MsgEmpty)
+	err := c.cc.Invoke(ctx, Msg_ModifyLimitSwap_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -356,6 +371,24 @@ func (c *msgClient) SudoContract(ctx context.Context, in *types.MsgSudoContract,
 	return out, nil
 }
 
+func (c *msgClient) UpdateAdmin(ctx context.Context, in *types.MsgUpdateAdmin, opts ...grpc.CallOption) (*types.MsgUpdateAdminResponse, error) {
+	out := new(types.MsgUpdateAdminResponse)
+	err := c.cc.Invoke(ctx, Msg_UpdateAdmin_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *msgClient) ClearAdmin(ctx context.Context, in *types.MsgClearAdmin, opts ...grpc.CallOption) (*types.MsgClearAdminResponse, error) {
+	out := new(types.MsgClearAdminResponse)
+	err := c.cc.Invoke(ctx, Msg_ClearAdmin_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // MsgServer is the server API for Msg service.
 // All implementations must embed UnimplementedMsgServer
 // for forward compatibility
@@ -365,6 +398,7 @@ type MsgServer interface {
 	ErrataTx(context.Context, *MsgErrataTx) (*MsgEmpty, error)
 	ErrataTxQuorum(context.Context, *MsgErrataTxQuorum) (*MsgEmpty, error)
 	Mimir(context.Context, *MsgMimir) (*MsgEmpty, error)
+	ModifyLimitSwap(context.Context, *MsgModifyLimitSwap) (*MsgEmpty, error)
 	NetworkFee(context.Context, *MsgNetworkFee) (*MsgEmpty, error)
 	NetworkFeeQuorum(context.Context, *MsgNetworkFeeQuorum) (*MsgEmpty, error)
 	NodePauseChain(context.Context, *MsgNodePauseChain) (*MsgEmpty, error)
@@ -390,6 +424,8 @@ type MsgServer interface {
 	ExecuteContract(context.Context, *types.MsgExecuteContract) (*types.MsgExecuteContractResponse, error)
 	MigrateContract(context.Context, *types.MsgMigrateContract) (*types.MsgMigrateContractResponse, error)
 	SudoContract(context.Context, *types.MsgSudoContract) (*types.MsgSudoContractResponse, error)
+	UpdateAdmin(context.Context, *types.MsgUpdateAdmin) (*types.MsgUpdateAdminResponse, error)
+	ClearAdmin(context.Context, *types.MsgClearAdmin) (*types.MsgClearAdminResponse, error)
 	mustEmbedUnimplementedMsgServer()
 }
 
@@ -411,6 +447,9 @@ func (UnimplementedMsgServer) ErrataTxQuorum(context.Context, *MsgErrataTxQuorum
 }
 func (UnimplementedMsgServer) Mimir(context.Context, *MsgMimir) (*MsgEmpty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Mimir not implemented")
+}
+func (UnimplementedMsgServer) ModifyLimitSwap(context.Context, *MsgModifyLimitSwap) (*MsgEmpty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ModifyLimitSwap not implemented")
 }
 func (UnimplementedMsgServer) NetworkFee(context.Context, *MsgNetworkFee) (*MsgEmpty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method NetworkFee not implemented")
@@ -483,6 +522,12 @@ func (UnimplementedMsgServer) MigrateContract(context.Context, *types.MsgMigrate
 }
 func (UnimplementedMsgServer) SudoContract(context.Context, *types.MsgSudoContract) (*types.MsgSudoContractResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SudoContract not implemented")
+}
+func (UnimplementedMsgServer) UpdateAdmin(context.Context, *types.MsgUpdateAdmin) (*types.MsgUpdateAdminResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateAdmin not implemented")
+}
+func (UnimplementedMsgServer) ClearAdmin(context.Context, *types.MsgClearAdmin) (*types.MsgClearAdminResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ClearAdmin not implemented")
 }
 func (UnimplementedMsgServer) mustEmbedUnimplementedMsgServer() {}
 
@@ -583,6 +628,24 @@ func _Msg_Mimir_Handler(srv interface{}, ctx context.Context, dec func(interface
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(MsgServer).Mimir(ctx, req.(*MsgMimir))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Msg_ModifyLimitSwap_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MsgModifyLimitSwap)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).ModifyLimitSwap(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Msg_ModifyLimitSwap_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).ModifyLimitSwap(ctx, req.(*MsgModifyLimitSwap))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1019,6 +1082,42 @@ func _Msg_SudoContract_Handler(srv interface{}, ctx context.Context, dec func(in
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Msg_UpdateAdmin_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(types.MsgUpdateAdmin)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).UpdateAdmin(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Msg_UpdateAdmin_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).UpdateAdmin(ctx, req.(*types.MsgUpdateAdmin))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Msg_ClearAdmin_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(types.MsgClearAdmin)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).ClearAdmin(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Msg_ClearAdmin_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).ClearAdmin(ctx, req.(*types.MsgClearAdmin))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Msg_ServiceDesc is the grpc.ServiceDesc for Msg service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1045,6 +1144,10 @@ var Msg_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Mimir",
 			Handler:    _Msg_Mimir_Handler,
+		},
+		{
+			MethodName: "ModifyLimitSwap",
+			Handler:    _Msg_ModifyLimitSwap_Handler,
 		},
 		{
 			MethodName: "NetworkFee",
@@ -1141,6 +1244,14 @@ var Msg_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SudoContract",
 			Handler:    _Msg_SudoContract_Handler,
+		},
+		{
+			MethodName: "UpdateAdmin",
+			Handler:    _Msg_UpdateAdmin_Handler,
+		},
+		{
+			MethodName: "ClearAdmin",
+			Handler:    _Msg_ClearAdmin_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

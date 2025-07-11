@@ -1,17 +1,28 @@
 package thorchain
 
 import (
+	"encoding/hex"
 	"fmt"
 	"math/big"
 	"strconv"
 	"strings"
 	"time"
 
+	btcchaincfg "github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcutil"
+	dogechaincfg "github.com/eager7/dogd/chaincfg"
+	"github.com/eager7/dogutil"
+	bchchaincfg "github.com/gcash/bchd/chaincfg"
+	"github.com/gcash/bchutil"
+	ltcchaincfg "github.com/ltcsuite/ltcd/chaincfg"
+	"github.com/ltcsuite/ltcutil"
+
 	"cosmossdk.io/log"
 	sdkmath "cosmossdk.io/math"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/config"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	mem "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
@@ -25,6 +36,11 @@ const (
 	quoteWarning         = "Do not cache this response. Do not send funds after the expiry."
 	quoteExpiration      = 15 * time.Minute
 	ethBlockRewardAndFee = 3 * 1e18
+
+	dustLimitBtc  = 294
+	dustLimitLtc  = 2940
+	dustLimitDoge = 546
+	dustLimitBch  = 546
 )
 
 var nullLogger = log.NewNopLogger()
@@ -32,6 +48,21 @@ var nullLogger = log.NewNopLogger()
 // -------------------------------------------------------------------------------------
 // Helpers
 // -------------------------------------------------------------------------------------
+
+// getQuoteRecommendedMinAmountFeeMultiplier returns from config the multiplier on the
+// outbound fee for the source and destination chains, used to determine the min
+// recommended swap amount that should be respected by clients to avoid outbounds and
+// refunds being swallowed.
+// It falls back to hardcoded default (3) if config field has not been set yet.
+func getQuoteRecommendedMinAmountFeeMultiplier() uint64 {
+	// Attempt to get from config
+	if configMult := config.GetThornode().QuoteRecommendedMinAmountFeeMultiplier; configMult > 0 {
+		return configMult
+	}
+
+	// Fallback: hardcoded default of 3
+	return 3
+}
 
 func quoteParseAddress(ctx cosmos.Context, mgr *Mgrs, addrString string, chain common.Chain) (common.Address, error) {
 	if addrString == "" {
@@ -341,7 +372,7 @@ func quoteInboundInfo(ctx cosmos.Context, mgr *Mgrs, amount sdkmath.Uint, chain 
 		constAccessor := mgr.GetConstants()
 		signingTransactionPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
 		vault := mgr.Keeper().GetMostSecure(ctx, active, signingTransactionPeriod)
-		address, err = vault.PubKey.GetAddress(chain)
+		address, err = vault.GetAddress(chain)
 		if err != nil {
 			return common.NoAddress, common.NoAddress, 0, err
 		}
@@ -391,6 +422,7 @@ func quoteInboundInfo(ctx cosmos.Context, mgr *Mgrs, amount sdkmath.Uint, chain 
 		common.ETHChain:  2,
 		common.DOGEChain: 2,
 		common.BASEChain: 12, // NOTE: additional inconsistent lag since we scan the "safe" block
+		common.TRONChain: 3,  // TODO: Discuss, if enough
 	}
 	if floor := confFloor[chain]; confirmations < floor {
 		confirmations = floor
@@ -425,14 +457,11 @@ func quoteOutboundInfo(ctx cosmos.Context, mgr *Mgrs, coin common.Coin) (int64, 
 //
 // The reason the base value is the MAX of the outbound fees of each chain is because if
 // the swap is refunded the input amount will need to cover the outbound fee of the
-// source chain. A 4x buffer is applied because outbound fees can spike quickly, meaning
+// source chain. A 3x buffer is applied because outbound fees can spike quickly, meaning
 // the original input amount could be less than the new outbound fee. If this happens
 // and the swap is refunded, the refund will fail, and the user will lose the entire
-// input amount. The min amount could also be determined by the affiliate bps of the
-// swap. The affiliate bps of the input amount needs to be enough to cover the native tx fee for the
-// affiliate swap to RUNE. In this case, we give a 2x buffer on the native_tx_fee so the
-// affiliate receives some amount after the fee is deducted.
-func calculateMinSwapAmount(ctx cosmos.Context, mgr *Mgrs, fromAsset, toAsset common.Asset, affiliateBps cosmos.Uint) (cosmos.Uint, error) {
+// input amount.
+func calculateMinSwapAmount(ctx cosmos.Context, mgr *Mgrs, fromAsset, toAsset common.Asset) (cosmos.Uint, error) {
 	srcOutboundFee, err := mgr.GasMgr().GetAssetOutboundFee(ctx, fromAsset, false)
 	if err != nil {
 		return cosmos.ZeroUint(), fmt.Errorf("fail to get outbound fee for source chain gas asset %s: %w", fromAsset, err)
@@ -443,7 +472,7 @@ func calculateMinSwapAmount(ctx cosmos.Context, mgr *Mgrs, fromAsset, toAsset co
 	}
 
 	if fromAsset.GetChain().IsTHORChain() && toAsset.GetChain().IsTHORChain() {
-		// If this is a purely THORChain swap, no need to give a 4x buffer since outbound fees do not change
+		// If this is a purely THORChain swap, no need to give a 3x buffer since outbound fees do not change
 		// 2x buffer should suffice
 		return srcOutboundFee.Mul(cosmos.NewUint(2)), nil
 	}
@@ -458,25 +487,7 @@ func calculateMinSwapAmount(ctx cosmos.Context, mgr *Mgrs, fromAsset, toAsset co
 		minSwapAmount = destInSrcAsset
 	}
 
-	minSwapAmount = minSwapAmount.Mul(cosmos.NewUint(4))
-
-	if affiliateBps.GT(cosmos.ZeroUint()) {
-		nativeTxFeeRune, err := mgr.GasMgr().GetAssetOutboundFee(ctx, common.RuneNative, true)
-		if err != nil {
-			return cosmos.ZeroUint(), fmt.Errorf("fail to get native tx fee for rune: %w", err)
-		}
-		affSwapAmountRune := nativeTxFeeRune.Mul(cosmos.NewUint(2))
-		mainSwapAmountRune := affSwapAmountRune.Mul(cosmos.NewUint(10_000)).Quo(affiliateBps)
-
-		mainSwapAmount, err := quoteConvertAsset(ctx, mgr, common.RuneAsset(), mainSwapAmountRune, fromAsset)
-		if err != nil {
-			return cosmos.ZeroUint(), fmt.Errorf("fail to convert main swap amount to src asset %w", err)
-		}
-
-		if mainSwapAmount.GT(minSwapAmount) {
-			minSwapAmount = mainSwapAmount
-		}
-	}
+	minSwapAmount = minSwapAmount.Mul(cosmos.NewUint(getQuoteRecommendedMinAmountFeeMultiplier()))
 
 	return minSwapAmount, nil
 }
@@ -569,7 +580,7 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 	if fromAsset.IsSyntheticAsset() || fromAsset.IsDerivedAsset() || fromAsset.IsTradeAsset() || fromAsset.IsSecuredAsset() {
 		fromChain = common.THORChain
 	}
-	fromPubkey := types.GetRandomPubKey()
+	fromPubkey := types.GetRandomPubkeyForChain(fromChain)
 	fromAddress, err := fromPubkey.GetAddress(fromChain)
 	if err != nil {
 		return nil, fmt.Errorf("bad from address: %w", err)
@@ -601,7 +612,8 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 		if !toAsset.IsSyntheticAsset() {
 			chain = toAsset.Chain
 		}
-		destination, err = types.GetRandomPubKey().GetAddress(chain)
+
+		destination, err = types.GetRandomPubkeyForChain(chain).GetAddress(chain)
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate address: %w", err)
 		}
@@ -653,11 +665,18 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 		return nil, fmt.Errorf("bad affiliate params: %w", err)
 	}
 
+	// always attempt to shorten the to asset to fuzzy match
+	fuzzyToAsset, err := quoteReverseFuzzyAsset(ctx, qs.mgr, toAsset)
+	memoToAsset := toAsset
+	if err == nil {
+		memoToAsset = fuzzyToAsset
+	}
+
 	// create the memo
 	memo := &SwapMemo{
 		MemoBase: mem.MemoBase{
 			TxType: TxSwap,
-			Asset:  toAsset,
+			Asset:  memoToAsset,
 		},
 		Destination:           destination,
 		SlipLimit:             limit,
@@ -668,7 +687,7 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 		StreamQuantity:        streamingQuantity,
 		RefundAddress:         refundAddress,
 	}
-	memoString := memo.String()
+	memoString := memo.ShortString()
 
 	// if from asset is a trade asset, create fake balance
 	if fromAsset.IsTradeAsset() {
@@ -791,24 +810,17 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 	if liquidityToleranceBps.GT(sdkmath.ZeroUint()) {
 		outputLimit := emitAmount.Sub(outboundFeeAmount).MulUint64(10000 - liquidityToleranceBps.Uint64()).QuoUint64(10000)
 		memo.SlipLimit = outputLimit
-		memoString = memo.String()
+		memoString = memo.ShortString()
 	}
 
 	// shorten the memo if necessary
-	memoShortString := memo.ShortString()
 	if !fromAsset.IsNative() && len(memoString) > fromAsset.GetChain().MaxMemoLength() {
-		if len(memoShortString) < len(memoString) { // use short codes if available
-			memoString = memoShortString
-		} else { // otherwise attempt to shorten
-			fuzzyAsset, err := quoteReverseFuzzyAsset(ctx, qs.mgr, toAsset)
-			if err == nil {
-				memo.Asset = fuzzyAsset
-				memoString = memo.String()
-			}
-		}
-
 		// this is the shortest we can make it
-		if len(memoString) > fromAsset.GetChain().MaxMemoLength() {
+		maxMemoLength := fromAsset.GetChain().MaxMemoLength()
+		if fromChain.IsUTXO() && req.Extended {
+			maxMemoLength = constants.MaxMemoSizeUtxoExtended
+		}
+		if len(memoString) > maxMemoLength {
 			return nil, fmt.Errorf("generated memo too long for source chain")
 		}
 	}
@@ -871,7 +883,7 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 	res.Notes = fromAsset.GetChain().InboundNotes()
 	res.Warning = quoteWarning
 	res.Expiry = time.Now().Add(quoteExpiration).Unix()
-	minSwapAmount, err := calculateMinSwapAmount(ctx, qs.mgr, fromAsset, toAsset, totalBps)
+	minSwapAmount, err := calculateMinSwapAmount(ctx, qs.mgr, fromAsset, toAsset)
 	if err != nil {
 		return nil, fmt.Errorf("failed to calculate min amount in: %s", err.Error())
 	}
@@ -883,6 +895,96 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 		res.RecommendedGasRate = inboundGas.String()
 		res.GasRateUnits = fromAsset.Chain.GetGasUnits()
 	}
+
+	if !fromChain.IsUTXO() || !req.Extended {
+		return res, nil
+	}
+
+	network := common.CurrentChainNetwork
+	parts := splitMemo(memoString)
+	vout := make([]*types.Vout, len(parts))
+
+	for i, part := range parts {
+		if i == 0 {
+			vout[i] = &types.Vout{
+				Type:   "op_return",
+				Data:   part,
+				Amount: 0,
+			}
+			continue
+		}
+
+		data, err := hex.DecodeString(part)
+		if err != nil {
+			return nil, err
+		}
+
+		var address string
+		var amount int64
+
+		switch fromChain {
+		case common.BTCChain:
+			// https://github.com/bitcoin/bitcoin/blob/29.x/src/policy/policy.cpp#L28-L41
+			amount = dustLimitBtc
+			params := &btcchaincfg.MainNetParams
+			if network == common.MockNet {
+				params = &btcchaincfg.RegressionNetParams
+			}
+			hash, err := btcutil.NewAddressWitnessPubKeyHash(data, params)
+			if err != nil {
+				return nil, err
+			}
+			address = hash.String()
+		case common.LTCChain:
+			// dust relay fee in 'lits' is 10x of the fees on btc (30k vs 3k)
+			// https://github.com/litecoin-project/litecoin/blob/v0.21.4/src/policy/policy.h#L52
+			// https://github.com/litecoin-project/litecoin/blob/v0.21.4/src/policy/policy.cpp#L17-L30
+			amount = dustLimitLtc
+			params := &ltcchaincfg.MainNetParams
+			if network == common.MockNet {
+				params = &ltcchaincfg.RegressionNetParams
+			}
+			hash, err := ltcutil.NewAddressWitnessPubKeyHash(data, params)
+			if err != nil {
+				return nil, err
+			}
+			address = hash.String()
+		case common.DOGEChain:
+			// using bitcoin default for p2pkh txout
+			amount = dustLimitDoge
+			params := &dogechaincfg.MainNetParams
+			if network == common.MockNet {
+				params = &dogechaincfg.RegressionNetParams
+			}
+			hash, err := dogutil.NewAddressPubKeyHash(data, params)
+			if err != nil {
+				return nil, err
+			}
+			address = hash.String()
+		case common.BCHChain:
+			// using bitcoin default for p2pkh txout
+			amount = dustLimitBch
+			params := &bchchaincfg.MainNetParams
+			if network == common.MockNet {
+				params = &bchchaincfg.RegressionNetParams
+			}
+			hash, err := bchutil.NewAddressPubKeyHash(data, params)
+			if err != nil {
+				return nil, err
+			}
+			address = hash.String()
+		default:
+			return nil, fmt.Errorf("chain not supported")
+		}
+
+		vout[i] = &types.Vout{
+			Type:   "address",
+			Data:   address,
+			Amount: amount,
+		}
+	}
+
+	res.Vout = vout
 
 	return res, nil
 }
@@ -1164,7 +1266,7 @@ func (qs queryServer) queryQuoteLoanOpen(ctx cosmos.Context, req *types.QueryQuo
 	}
 
 	// generate random address for collateral owner
-	randomCollateralOwner, err := types.GetRandomPubKey().GetAddress(asset.Chain)
+	randomCollateralOwner, err := types.GetRandomPubkeyForChain(asset.Chain).GetAddress(asset.Chain)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate address: %w", err)
 	}
@@ -1201,7 +1303,7 @@ func (qs queryServer) queryQuoteLoanOpen(ctx cosmos.Context, req *types.QueryQuo
 		}
 
 	} else {
-		destination, err = types.GetRandomPubKey().GetAddress(targetAsset.Chain)
+		destination, err = types.GetRandomPubkeyForChain(targetAsset.Chain).GetAddress(targetAsset.Chain)
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate address: %w", err)
 		}
@@ -1418,7 +1520,7 @@ func (qs queryServer) queryQuoteLoanOpen(ctx cosmos.Context, req *types.QueryQuo
 		res.Memo = memoString
 	}
 
-	minLoanOpenAmount, err := calculateMinSwapAmount(ctx, qs.mgr, asset, targetAsset, cosmos.ZeroUint())
+	minLoanOpenAmount, err := calculateMinSwapAmount(ctx, qs.mgr, asset, targetAsset)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to calculate min amount in: %s", err.Error())
 	}
@@ -1651,7 +1753,7 @@ func quoteSimulateCloseLoan(ctx cosmos.Context, mgr *Mgrs, msg *MsgLoanRepayment
 	}
 	res.Memo = memo.String()
 
-	minLoanCloseAmount, err := calculateMinSwapAmount(ctx, mgr, msg.Coin.Asset, msg.CollateralAsset, cosmos.ZeroUint())
+	minLoanCloseAmount, err := calculateMinSwapAmount(ctx, mgr, msg.Coin.Asset, msg.CollateralAsset)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to calculate min amount in: %s", err.Error())
 	}
@@ -1724,7 +1826,7 @@ func (qs queryServer) queryQuoteLoanClose(ctx cosmos.Context, req *types.QueryQu
 	}
 
 	// generate random from address
-	fromAddress, err := types.GetRandomPubKey().GetAddress(asset.Chain)
+	fromAddress, err := types.GetRandomPubkeyForChain(asset.Chain).GetAddress(asset.Chain)
 	if err != nil {
 		return nil, fmt.Errorf("bad from address: %w", err)
 	}
@@ -1806,4 +1908,37 @@ func (qs queryServer) queryQuoteLoanClose(ctx cosmos.Context, req *types.QueryQu
 	}
 
 	return res, nil
+}
+
+// splitMemo converts an arbitrary string into a hex string and splits that
+// into one or more parts, with the first part being 80 bytes and every other
+// part 20 bytes, appending zero to the last part until it matches 20 bytes.
+// It is used for sending memos longer than 80 bytes on UTXO chains.
+func splitMemo(memo string) []string {
+	chunks := []string{}
+
+	encoded := hex.EncodeToString([]byte(memo))
+
+	// OP_RETURN data part: use first 79 chars + "^"
+	// calculation uses hex encoded data representation (bytes * 2)
+	if len(encoded) > 160 {
+		chunks = append(chunks, encoded[:158]+"5e") // 0x5e == "^"
+		encoded = encoded[158:]
+	} else {
+		chunks = append(chunks, encoded)
+		encoded = ""
+	}
+
+	// encode remaining memo data into "fake addresses" of 20 bytes each
+	for len(encoded) > 0 {
+		index := min(len(encoded), 40)
+		chunk := encoded[0:index]
+		encoded = encoded[index:]
+		for len(chunk) < 40 {
+			chunk += "00"
+		}
+		chunks = append(chunks, chunk)
+	}
+
+	return chunks
 }

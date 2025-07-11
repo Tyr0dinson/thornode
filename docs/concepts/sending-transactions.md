@@ -11,20 +11,72 @@ You are ready to make the transaction and swap via THORChain.
 
 ## UTXO Chains
 
+### Memo less or equal 80 characters
+
+For UTXO-based chains (e.g., BTC, BCH, LTC, DOGE), transactions must follow a specific structure to be processed by THORChain. Ensure the following steps are completed to avoid transaction failures or loss of funds.
+
+#### Checklist for UTXO Transactions
+
+- [ ] **Verify supported address type**: Ensure the address type (e.g., P2PKH, P2SH) is supported by THORChain. Check supported formats in [Querying THORChain](./querying-thorchain.md#supported-address-formats).
+- [ ] **Set Asgard vault as VOUT0**: Send the transaction amount to the current Asgard vault address as the first output (VOUT0), obtainable from the [Inbound Addresses](https://thornode.ninerealms.com/thorchain/inbound_addresses) endpoint.
+- [ ] **Return change to VIN0**: Direct all change back to the input address (VIN0) in a subsequent output, e.g., VOUT1, as THORChain identifies the user by VIN0 for refunds.
+- [ ] **Include memo in OP_RETURN**: Add the transaction memo as an OP_RETURN output, typically in VOUT2, to specify the user’s intent (e.g., swap, add liquidity). Refer to [Memos](./memos.md) for format details.
+- [ ] **Use sufficient gas rate**: Set a `gas_rate` high enough to ensure inclusion in the next block, as specified in the [Inbound Addresses](https://thornode.ninerealms.com/thorchain/inbound_addresses) endpoint.
+- [ ] **Exceed dust threshold**: Ensure the transaction amount exceeds the chain’s dust threshold. Verify the latest values in the [Inbound Addresses](https://thornode.ninerealms.com/thorchain/inbound_addresses) endpoint or [Dust Thresholds and Transaction Validation](#dust-thresholds-and-transaction-validation).
+- [ ] **Limit to 10 outputs**: Ensure the transaction has no more than 10 outputs to comply with THORChain’s processing limits.
+- [ ] Do not send funds that are part of a transaction with more than 10 outputs
+
+### Memo greater than 80 characters
+
 - [ ] Ensure the [address type](./querying-thorchain.md#supported-address-formats) is supported
 - [ ] Send the transaction with Asgard vault as VOUT0
 - [ ] Pass all change back to the VIN0 address in a subsequent VOUT e.g. VOUT1
-- [ ] Include the memo as an OP_RETURN in a subsequent VOUT e.g. VOUT2
+- [ ] Take the first 79 characters of the memo and append '^' and use that as an OP_RETURN in a subsequent VOUT e.g. VOUT2
+- [ ] Add remaining characters encoded as p2wpkh address as subsequent VOUT
+  - [ ] encode remaining characters to hex representation
+  - [ ] split the resulting string into chunks of 40 characters each, append "00" to the last chunk until its length also matches 40 characters
+  - [ ] for each hex encoded chunk, create a VOUT sending the [minimum allowed amount of sats](../../x/thorchain/querier_quotes.go#L39) for the specific chain to the script pub key: '0014' + `<chunk>`
 - [ ] Use a high enough `gas_rate` to be included
-- [ ] Do not send below the dust threshold (e.g., 10k sats for BTC, BCH, LTC; 1 DOGE). See [Dust Thresholds and Transaction Validation](#dust-thresholds-and-transaction-validation) for exhaustive values.
-- [ ] Do not send funds that are part of a transaction with more than 10 outputs
+- [ ] Do not send below the dust threshold (10k Sats BTC, BCH, LTC, 1m DOGE), exhaustive values can be found on the [Inbound Addresses](https://thornode.ninerealms.com/thorchain/inbound_addresses) endpoint
+
+### Examples using dummy txs
+
+#### P2WPKH (BTC, LTC)
+
+Memo:
+`SWAP:GAIA.ATOM:cosmos1fegapd4jc3ejqeg0eu3jk4hvr74hg66076gyyd/bc1qnfw0gkk05qxl38mslc69hc6vc64mksyw6zzxhg`
+
+1. Put first 79 characters + `^` into `OP_RETURN`: `SWAP:GAIA.ATOM:cosmos1fegapd4jc3ejqeg0eu3jk4hvr74hg66076gyyd/bc1qnfw0gkk05qxl38^`
+2. Hex encode remaining string `mslc69hc6vc64mksyw6zzxhg` and split it into chunks of 40 characters (fill the last chunk with zeros): `6d736c633639686336766336346d6b737977367a`, `7a78686700000000000000000000000000000000`
+3. Create two subsequent VOUTs (prepend `0014`):
+   1. send 294sats (2940sats on LTC) to: `00146d736c633639686336766336346d6b737977367a`
+      - BTC: bc1qd4ekccek895xxdnkvvmrgmttwduhwdn622k6gj
+      - LTC: ltc1qd4ekccek895xxdnkvvmrgmttwduhwdn6wkv7sz
+   2. send 294sats (2940sats on LTC) to: `00147a78686700000000000000000000000000000000`
+      - BTC: bc1q0fuxsecqqqqqqqqqqqqqqqqqqqqqqqqq2alhdv
+      - LTC: ltc1q0fuxsecqqqqqqqqqqqqqqqqqqqqqqqqqwp9n4u
+
+#### P2PKH (BCH, DOGE)
+
+Memo:
+`SWAP:GAIA.ATOM:cosmos1fegapd4jc3ejqeg0eu3jk4hvr74hg66076gyyd/bc1qnfw0gkk05qxl38mslc69hc6vc64mksyw6zzxhg`
+
+1. Put first 79 characters + `^` into `OP_RETURN`: `SWAP:GAIA.ATOM:cosmos1fegapd4jc3ejqeg0eu3jk4hvr74hg66076gyyd/bc1qnfw0gkk05qxl38^`
+2. Hex encode remaining string `mslc69hc6vc64mksyw6zzxhg` and split it into chunks of 40 characters (fill the last chunk with zeros): `6d736c633639686336766336346d6b737977367a`, `7a78686700000000000000000000000000000000`
+3. Create two subsequent VOUTs (prepend `76a914` & append `88ac`):
+   1. send 546sats to: `76a9146d736c633639686336766336346d6b737977367a88ac`
+      - BCH: qpkhxmrrxcukscekwe3nvdrdddehjaek0gldczy2mv
+      - DOGE: DF7pTvdzyY2zoVJ3AFQr8oSYDiqw3m6hCy
+   2. send 546sats to: `76a9147a7868670000000000000000000000000000000088ac`
+      - BCH: qpa8s6r8qqqqqqqqqqqqqqqqqqqqqqqqqq99h3g9e2
+      - DOGE: DGJfDk6cwyNpzebP7MyzueRtXEWGEaaHz9
 
 ```admonish warning
-Inbound transactions should not be delayed for any reason else there is risk funds will be sent to an unreachable address. Use standard transactions, check the [`Inbound_Address`](querying-thorchain.md#getting-the-asgard-vault) before sending and use the recommended [`gas rate`](querying-thorchain.md#getting-the-asgard-vault) to ensure transactions are confirmed in the next block to the latest `Inbound_Address`.
+Inbound transactions must not be delayed to avoid sending funds to an outdated Asgard vault address, which may be unreachable. Use standard transactions, verify the latest Asgard vault address via the [Inbound Addresses](https://thornode.ninerealms.com/thorchain/inbound_addresses) endpoint, and use the recommended `gas_rate` to ensure confirmation in the next block.
 ```
 
 ```admonish info
-Memo limited to 80 bytes on BTC, BCH, LTC and DOGE. Use [abbreviated options](./memo-length-reduction.md) where possible.
+Memo limited to 80 bytes in `OP_RETURN` on BTC, BCH, LTC and DOGE. Use [abbreviated options](./memo-length-reduction.md) where possible.
 ```
 
 ```admonish warning
@@ -37,24 +89,47 @@ Override randomised VOUT ordering; THORChain requires specific output ordering. 
 
 ### EVM Chains
 
-{{#embed https://gitlab.com/thorchain/thornode/-/blob/develop/chain/ethereum/contracts/THORChain_Router.sol }}
+To perform a transaction on EVM-based chains (e.g., ETH, BSC, AVAX, BASE), use the `depositWithExpiry` function on the THORChain Router contract (version 4.1). The contract source is available at [THORChain_Router.sol](https://gitlab.com/thorchain/thornode/-/blob/develop/chain/ethereum/contracts/THORChain_Router.sol). Ensure the following steps are completed to avoid transaction failures or loss of funds.
 
-```go
-depositWithExpiry(vault, asset, amount, memo, expiry)
+#### Checklist for EVM Transactions
+
+- [ ] **Approve ERC-20 tokens (if applicable)**: For ERC-20 tokens, call `approve` on the token contract to allow the THORChain Router to spend the specified amount. This step is not required for native assets (e.g., ETH on Ethereum, AVAX on Avalanche, BNB on BSC).
+- [ ] **Target the Asgard vault**: Set the `vault` parameter to the current Asgard vault address, obtainable from the [Inbound Addresses](https://thornode.ninerealms.com/thorchain/inbound_addresses) endpoint.
+- [ ] **Specify the asset**: Use the token contract address for ERC-20 tokens or `0x0000000000000000000000000000000000000000` for the chain’s native asset (e.g., ETH, AVAX, BNB).
+- [ ] **Include the memo**: Provide the transaction memo as a UTF-8 encoded string to specify the user’s intent (e.g., swap, add liquidity). Refer to [Memos](./memos.md) for format details.
+- [ ] **Set an expiry**: Use a Unix timestamp (in seconds) at least 60 minutes in the future for the `expiry` parameter. Transactions delayed beyond this timestamp will be refunded.
+- [ ] **Use sufficient gas**: Set a `gas_rate` high enough to ensure inclusion in the next block, as specified in the [Inbound Addresses](https://thornode.ninerealms.com/thorchain/inbound_addresses) endpoint.
+- [ ] **Exceed dust threshold**: Ensure the transaction amount exceeds the chain’s dust threshold. See [Dust Thresholds and Transaction Validation](#dust-thresholds-and-transaction-validation) for details.
+- [ ] **Call `depositWithExpiry`**: Execute the `depositWithExpiry` function on the THORChain Router contract, passing the vault address, asset, amount, memo, and expiry. For native assets, include the amount in the transaction’s `value` field.
+
+#### Calling `depositWithExpiry`
+
+The `depositWithExpiry` function on the THORChain Router contract is defined as:
+
+```solidity
+function depositWithExpiry(
+    address payable vault,
+    address asset,
+    uint256 amount,
+    string memory memo,
+    uint256 expiry
+) external payable;
 ```
 
-- [ ] If ERC20, approve the router to spend an allowance of the token first
-- [ ] Send the transaction as a `depositWithExpiry()` on the router
-- [ ] Vault is the Asgard vault address, asset is the token address to swap, memo as a string
-- [ ] Use an expiry which is +60mins on the current time (if the tx is delayed, it will get refunded). The timestamp is in seconds (Solidity's `block.timestamp`).
-- [ ] Use a high enough `gas_rate` to be included, otherwise the tx will get stuck
-
 ```admonish info
-ETH is `0x0000000000000000000000000000000000000000`
+For native assets like ETH, set `asset` to `0x0000000000000000000000000000000000000000` and include the `amount` in the transaction’s `value` field.
+```
+
+```admonish warning
+Ensure the transaction’s `gas_rate` is sufficient for inclusion in the next block. Check the [Inbound Addresses](https://thornode.ninerealms.com/thorchain/inbound_addresses) endpoint for the recommended `gas_rate`.
 ```
 
 ```admonish danger
 ETH is sent and received as an internal transaction. Your wallet may not be set to read internal balances and transactions.
+```
+
+```admonish danger
+EIP-7702 abstracted accounts are currently not supported by THORChain. This includes all type-4 transactions and transactions from abstracted account wallets. Using this pattern or its variations will lead to loss of funds.
 ```
 
 ### BFT Chains
@@ -230,12 +305,9 @@ As of [ADR-009](https://gitlab.com/thorchain/thornode/-/blob/develop/docs/archit
 
 ```json
 {
-  ...
   "native_outbound_fee_rune": "2000000", // (1e8) Outbound fee for $Asset -> $RUNE swaps
   "native_tx_fee_rune": "2000000", // (1e8) Fee for $RUNE transfers or $RUNE -> $Asset swaps
-  ...
-  "rune_price_in_tor": "354518918", // (1e8) Current $RUNE price in USD
-  ...
+  "rune_price_in_tor": "354518918" // (1e8) Current $RUNE price in USD
 }
 ```
 

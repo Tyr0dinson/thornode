@@ -62,6 +62,7 @@ var (
 	_ jsonpb.JSONPBMarshaler = &QueryStreamingSwapsResponse{}
 	_ jsonpb.JSONPBMarshaler = &SwapperClout{}
 	_ jsonpb.JSONPBMarshaler = &QuerySwapQueueResponse{}
+	_ jsonpb.JSONPBMarshaler = &QuerySwapDetailsResponse{}
 	_ jsonpb.JSONPBMarshaler = &QueryThornameResponse{}
 	_ jsonpb.JSONPBMarshaler = &QueryTradeAccountsResponse{}
 	_ jsonpb.JSONPBMarshaler = &QueryTradeUnitsResponse{}
@@ -392,6 +393,43 @@ func (m *QuerySwapQueueResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, err
 	return jsonify(result)
 }
 
+// QuerySwapDetailsResponse
+func (m *QuerySwapDetailsResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
+	if m.Swap == nil {
+		return jsonify(openapi.SwapDetailsResponse{
+			Status:    wrapString(m.Status),
+			QueueType: wrapString(m.QueueType),
+		})
+	}
+
+	// Only display the SwapType if it is "limit", not if "market".
+	var swapType *string
+	if m.Swap.SwapType != SwapType_market {
+		swapType = wrapString(m.Swap.SwapType.String())
+	}
+
+	result := openapi.SwapDetailsResponse{
+		Swap: &openapi.MsgSwap{
+			Tx:                      castTx(m.Swap.Tx),
+			TargetAsset:             m.Swap.TargetAsset.String(),
+			Destination:             wrapString(m.Swap.Destination.String()),
+			TradeTarget:             m.Swap.TradeTarget.String(),
+			AffiliateAddress:        wrapString(m.Swap.AffiliateAddress.String()),
+			AffiliateBasisPoints:    m.Swap.AffiliateBasisPoints.String(),
+			Signer:                  wrapString(m.Swap.Signer.String()),
+			Aggregator:              wrapString(m.Swap.Aggregator),
+			AggregatorTargetAddress: wrapString(m.Swap.AggregatorTargetAddress),
+			AggregatorTargetLimit:   wrapUintPtr(m.Swap.AggregatorTargetLimit),
+			SwapType:                swapType,
+			StreamQuantity:          wrapInt64(int64(m.Swap.StreamQuantity)),
+			StreamInterval:          wrapInt64(int64(m.Swap.StreamInterval)),
+		},
+		Status:    wrapString(m.Status),
+		QueueType: wrapString(m.QueueType),
+	}
+	return jsonify(result)
+}
+
 // QueryThornameResponse
 func (m *QueryThornameResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
 	return jsonify(m)
@@ -566,8 +604,9 @@ func (m *QueryBlockResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) 
 				EvidenceHash:       m.Header.EvidenceHash,
 				ProposerAddress:    m.Header.ProposerAddress,
 			},
-			BeginBlockEvents: []map[string]string{},
-			EndBlockEvents:   []map[string]string{},
+			BeginBlockEvents:    []map[string]string{},
+			EndBlockEvents:      []map[string]string{},
+			FinalizeBlockEvents: []map[string]string{},
 		},
 		Txs: make([]QueryOpenApiBlockTx, len(m.Txs)),
 	}
@@ -578,6 +617,10 @@ func (m *QueryBlockResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) 
 
 	for _, event := range m.EndBlockEvents {
 		res.EndBlockEvents = append(res.EndBlockEvents, eventMap(event))
+	}
+
+	for _, event := range m.FinalizeBlockEvents {
+		res.FinalizeBlockEvents = append(res.FinalizeBlockEvents, eventMap(event))
 	}
 
 	for i, tx := range m.Txs {

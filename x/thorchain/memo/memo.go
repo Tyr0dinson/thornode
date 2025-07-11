@@ -23,6 +23,7 @@ const (
 	TxWithdraw
 	TxSwap
 	TxLimitSwap
+	TxModifyLimitSwap
 	TxOutbound
 	TxDonate
 	TxBond
@@ -49,6 +50,8 @@ const (
 	TxTCYStake
 	TxTCYUnstake
 	TxMaint
+	TxRebond
+	TxOperatorRotate
 )
 
 var stringToTxTypeMap = map[string]TxType{
@@ -61,11 +64,13 @@ var stringToTxTypeMap = map[string]TxType{
 	"s":           TxSwap,
 	"=":           TxSwap,
 	"=<":          TxLimitSwap,
+	"m=<":         TxModifyLimitSwap,
 	"out":         TxOutbound,
 	"donate":      TxDonate,
 	"d":           TxDonate,
 	"bond":        TxBond,
 	"unbond":      TxUnbond,
+	"rebond":      TxRebond,
 	"leave":       TxLeave,
 	"reserve":     TxReserve,
 	"refund":      TxRefund,
@@ -93,6 +98,7 @@ var stringToTxTypeMap = map[string]TxType{
 	"tcy+":        TxTCYStake,
 	"tcy-":        TxTCYUnstake,
 	"maint":       TxMaint,
+	"operator":    TxOperatorRotate,
 }
 
 var txToStringMap = map[TxType]string{
@@ -100,11 +106,13 @@ var txToStringMap = map[TxType]string{
 	TxWithdraw:               "withdraw",
 	TxSwap:                   "swap",
 	TxLimitSwap:              "=<",
+	TxModifyLimitSwap:        "m=<",
 	TxOutbound:               "out",
 	TxRefund:                 "refund",
 	TxDonate:                 "donate",
 	TxBond:                   "bond",
 	TxUnbond:                 "unbond",
+	TxRebond:                 "rebond",
 	TxLeave:                  "leave",
 	TxReserve:                "reserve",
 	TxMigrate:                "migrate",
@@ -149,9 +157,11 @@ func (tx TxType) IsInbound() bool {
 		TxSecuredAssetWithdraw,
 		TxSwap,
 		TxLimitSwap,
+		TxModifyLimitSwap,
 		TxDonate,
 		TxBond,
 		TxUnbond,
+		TxRebond,
 		TxLeave,
 		TxMaint,
 		TxReserve,
@@ -163,7 +173,8 @@ func (tx TxType) IsInbound() bool {
 		TxSwitch,
 		TxTCYClaim,
 		TxTCYStake,
-		TxTCYUnstake:
+		TxTCYUnstake,
+		TxOperatorRotate:
 		return true
 	default:
 		return false

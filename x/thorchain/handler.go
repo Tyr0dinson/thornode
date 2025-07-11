@@ -51,6 +51,7 @@ func getInternalHandlerMapping(mgr Manager) map[string]MsgHandler {
 	m[sdk.MsgTypeURL(&MsgReserveContributor{})] = NewReserveContributorHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgBond{})] = NewBondHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgUnBond{})] = NewUnBondHandler(mgr)
+	m[sdk.MsgTypeURL(&MsgReBond{})] = NewReBondHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgLeave{})] = NewLeaveHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgMaint{})] = NewMaintHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgDonate{})] = NewDonateHandler(mgr)
@@ -70,11 +71,13 @@ func getInternalHandlerMapping(mgr Manager) map[string]MsgHandler {
 	m[sdk.MsgTypeURL(&MsgSecuredAssetWithdraw{})] = NewSecuredAssetWithdrawHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgRunePoolDeposit{})] = NewRunePoolDepositHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgRunePoolWithdraw{})] = NewRunePoolWithdrawHandler(mgr)
+	m[sdk.MsgTypeURL(&MsgModifyLimitSwap{})] = NewModifyLimitSwapHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgWasmExec{})] = NewWasmExecHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgSwitch{})] = NewSwitchHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgTCYClaim{})] = NewTCYClaimHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgTCYStake{})] = NewTCYStakeHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgTCYUnstake{})] = NewTCYUnstakeHandler(mgr)
+	m[sdk.MsgTypeURL(&MsgOperatorRotate{})] = NewOperatorRotateHandler(mgr)
 	return m
 }
 
@@ -122,6 +125,10 @@ func getMsgDonateFromMemo(memo DonateMemo, tx ObservedTx, signer cosmos.AccAddre
 	return NewMsgDonate(tx.Tx, memo.GetAsset(), runeCoin.Amount, assetCoin.Amount, signer), nil
 }
 
+func getMsgModifyLimitSwap(memo ModifyLimitSwapMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
+	return NewMsgModifyLimitSwap(tx.Tx.FromAddress, memo.Source, memo.Target, memo.ModifiedTargetAmount, signer), nil
+}
+
 func getMsgRefundFromMemo(memo RefundMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
 	return NewMsgRefundTx(tx, memo.GetTxID(), signer), nil
 }
@@ -158,6 +165,10 @@ func getMsgBondFromMemo(memo BondMemo, tx ObservedTx, signer cosmos.AccAddress) 
 
 func getMsgUnbondFromMemo(memo UnbondMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
 	return NewMsgUnBond(tx.Tx, memo.GetAccAddress(), memo.GetAmount(), tx.Tx.FromAddress, memo.BondProviderAddress, signer), nil
+}
+
+func getMsgRebondFromMemo(memo RebondMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
+	return NewMsgReBond(tx.Tx, memo.GetNodeAddress(), memo.GetNewProviderAddress(), memo.GetAmount(), signer), nil
 }
 
 func getMsgMaintFromMemo(memo MaintMemo, signer cosmos.AccAddress) (cosmos.Msg, error) {
@@ -197,6 +208,8 @@ func processOneTxIn(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, sig
 		m.Asset = fuzzyAssetMatch(ctx, keeper, m.Asset)
 		m.DexTargetAddress = externalAssetMatch(m.Asset.GetChain(), m.DexTargetAddress)
 		newMsg, err = getMsgSwapFromMemo(m, tx, signer)
+	case ModifyLimitSwapMemo:
+		newMsg, err = getMsgModifyLimitSwap(m, tx, signer)
 	case DonateMemo:
 		m.Asset = fuzzyAssetMatch(ctx, keeper, m.Asset)
 		newMsg, err = getMsgDonateFromMemo(m, tx, signer)
@@ -210,6 +223,8 @@ func processOneTxIn(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, sig
 		newMsg, err = getMsgBondFromMemo(m, tx, signer)
 	case UnbondMemo:
 		newMsg, err = getMsgUnbondFromMemo(m, tx, signer)
+	case RebondMemo:
+		newMsg, err = getMsgRebondFromMemo(m, tx, signer)
 	case RagnarokMemo:
 		newMsg, err = getMsgRagnarokFromMemo(m, tx, signer)
 	case LeaveMemo:
@@ -263,6 +278,8 @@ func processOneTxIn(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, sig
 		newMsg = NewMsgTCYUnstake(tx.Tx, m.BasisPoints, signer)
 	case MaintMemo:
 		newMsg, err = getMsgMaintFromMemo(m, signer)
+	case OperatorRotateMemo:
+		newMsg = NewMsgOperatorRotate(signer, m.OperatorAddress, tx.Tx.Coins[0])
 	default:
 		return nil, errInvalidMemo
 	}

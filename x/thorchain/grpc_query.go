@@ -437,6 +437,14 @@ func (s *queryServer) SwapQueue(c context.Context, req *types.QuerySwapQueueRequ
 	return s.querySwapQueue(ctx, req)
 }
 
+func (s *queryServer) SwapDetails(c context.Context, req *types.QuerySwapDetailsRequest) (*types.QuerySwapDetailsResponse, error) {
+	if err := checkHeightParam(req.Height); err != nil {
+		return nil, err
+	}
+	ctx := s.unwrapSdkContext(c)
+	return s.querySwapDetails(ctx, req)
+}
+
 func (s *queryServer) LastBlocks(c context.Context, req *types.QueryLastBlocksRequest) (*types.QueryLastBlocksResponse, error) {
 	if err := checkHeightParam(req.Height); err != nil {
 		return nil, err
@@ -673,14 +681,6 @@ func (s *queryServer) TCYClaimers(c context.Context, req *types.QueryTCYClaimers
 	}
 	ctx := s.unwrapSdkContext(c)
 	return s.queryTCYClaimers(ctx, req)
-}
-
-func (s *queryServer) Codes(c context.Context, req *types.QueryCodesRequest) (*types.QueryCodesResponse, error) {
-	if err := checkHeightParam(req.Height); err != nil {
-		return nil, err
-	}
-	ctx := s.unwrapSdkContext(c)
-	return s.queryCodes(ctx, req)
 }
 
 func (s *queryServer) OraclePrices(c context.Context, req *types.QueryOraclePricesRequest) (*types.QueryOraclePricesResponse, error) {

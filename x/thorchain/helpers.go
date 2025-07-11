@@ -52,14 +52,30 @@ func refundTx(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32,
 				}
 			}
 
+			var vault Vault
+			if !tx.ObservedPubKey.IsEmpty() {
+				vault, err = mgr.Keeper().GetVault(ctx, tx.ObservedPubKey)
+				if err != nil {
+					return fmt.Errorf("fail to get vault: %w", err)
+				}
+			}
+
 			toi := TxOutItem{
-				Chain:       coin.Asset.GetChain(),
-				InHash:      tx.Tx.ID,
-				ToAddress:   toAddr,
-				VaultPubKey: tx.ObservedPubKey,
-				Coin:        coin,
-				Memo:        NewRefundMemo(tx.Tx.ID).String(),
-				ModuleName:  sourceModuleName,
+				Chain:                 coin.Asset.GetChain(),
+				ToAddress:             toAddr,
+				VaultPubKey:           vault.PubKey,
+				VaultPubKeyEddsa:      vault.PubKeyEddsa,
+				Coin:                  coin,
+				Memo:                  NewRefundMemo(tx.Tx.ID).String(),
+				MaxGas:                []common.Coin{},
+				GasRate:               0,
+				InHash:                tx.Tx.ID,
+				OutHash:               "",
+				ModuleName:            sourceModuleName,
+				Aggregator:            "",
+				AggregatorTargetAsset: "",
+				AggregatorTargetLimit: &cosmos.Uint{},
+				CloutSpent:            &cosmos.Uint{},
 			}
 
 			success, err := mgr.TxOutStore().TryAddTxOutItem(ctx, mgr, toi, cosmos.ZeroUint())
@@ -411,6 +427,10 @@ func wrapError(ctx cosmos.Context, err error, wrap string) error {
 func addGasFees(ctx cosmos.Context, mgr Manager, tx ObservedTx) error {
 	// If there's no gas, then nothing to do.
 	if tx.Tx.Gas.IsEmpty() {
+		return nil
+	}
+
+	if isTronZeroGasTx(tx) {
 		return nil
 	}
 
@@ -1129,6 +1149,23 @@ func willSwapOutputExceedLimitAndFees(ctx cosmos.Context, mgr Manager, msg MsgSw
 	return err == nil && emit.GT(target.Amount.Add(transactionFeeAsset))
 }
 
+// getLastChurnHeight returns the block height of the last churn.
+func getLastChurnHeight(ctx cosmos.Context, k keeper.Keeper) int64 {
+	vaults, err := k.GetAsgardVaultsByStatus(ctx, ActiveVault)
+	if err != nil {
+		ctx.Logger().Error("failed to get asgard vaults", "error", err)
+		return ctx.BlockHeight()
+	}
+	// calculate last churn block height
+	var lastChurnHeight int64 // the last block height we had a successful churn
+	for _, vault := range vaults {
+		if vault.StatusSince > lastChurnHeight {
+			lastChurnHeight = vault.StatusSince
+		}
+	}
+	return lastChurnHeight
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////
 // RUNEPool and POL
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -1272,4 +1309,13 @@ func trimKeyPrefix(key []byte) string {
 
 func IsPeriodLastBlock(ctx cosmos.Context, blocksPerPeriod int64) bool {
 	return ctx.BlockHeight()%blocksPerPeriod == 0
+}
+
+func isTronZeroGasTx(tx ObservedTx) bool {
+	if !tx.Tx.Chain.Equals(common.TRONChain) {
+		return false
+	}
+
+	gasAmount := tx.Tx.Gas.ToCoins().GetCoin(common.TRXAsset).Amount
+	return gasAmount.Equal(cosmos.NewUint(1))
 }

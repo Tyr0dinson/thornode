@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -46,9 +47,13 @@ func (s *FileStateMgrTestSuite) TestNewFileStateMgr(c *C) {
 }
 
 func (s *FileStateMgrTestSuite) TestSaveLocalState(c *C) {
+	localData := keygen.NewLocalPartySaveData(5)
+	localDataBytes, err := json.Marshal(localData)
+	c.Assert(err, IsNil)
+
 	stateItem := KeygenLocalState{
 		PubKey:    "wasdfasdfasdfasdfasdfasdf",
-		LocalData: keygen.NewLocalPartySaveData(5),
+		LocalData: localDataBytes,
 		ParticipantKeys: []string{
 			"A", "B", "C",
 		},
@@ -72,6 +77,24 @@ func (s *FileStateMgrTestSuite) TestSaveLocalState(c *C) {
 	item, err := fsm.GetLocalState(stateItem.PubKey)
 	c.Assert(err, IsNil)
 	c.Assert(reflect.DeepEqual(stateItem, item), Equals, true)
+
+	// test migration from v1 to v2
+	stateItemV1 := keygenLocalStateV1{
+		PubKey:    "wasdfasdfasdfasdfasdfasdf",
+		LocalData: keygen.NewLocalPartySaveData(5),
+		ParticipantKeys: []string{
+			"A", "B", "C",
+		},
+		LocalPartyKey: "A",
+	}
+	stateItemV1.PubKey = stateItem.PubKey
+	buf, err := json.Marshal(stateItemV1)
+	c.Assert(err, IsNil)
+	err = os.WriteFile(filePathName, buf, 0o600)
+	c.Assert(err, IsNil)
+	itemV1, err := fsm.GetLocalState(stateItemV1.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(item, DeepEquals, itemV1)
 }
 
 func (s *FileStateMgrTestSuite) TestSaveAddressBook(c *C) {
