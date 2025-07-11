@@ -359,8 +359,6 @@ func (s *AttestationGossip) sendAttestationState(stream network.Stream) {
 
 // Add a function to handle receiving batched attestation state
 func (s *AttestationGossip) receiveBatchedAttestationState(stream network.Stream, initialData []byte) error {
-	s.logger.Info().Msg("received batched attestation state")
-
 	remotePeer := stream.Conn().RemotePeer()
 	logger := s.logger.With().Str("peer", remotePeer.String()).Str("who", "receiver").Logger()
 
@@ -370,7 +368,7 @@ func (s *AttestationGossip) receiveBatchedAttestationState(stream network.Stream
 	}
 
 	totalBatches := int(binary.LittleEndian.Uint32(initialData[:4]))
-	logger.Info().Int("total_batches", totalBatches).Msg("receiving batched attestation state")
+	logger.Debug().Int("total_batches", totalBatches).Msg("receiving batched attestation state")
 
 	if totalBatches == 0 {
 		// If there are no transactions, we still need to send the end signal

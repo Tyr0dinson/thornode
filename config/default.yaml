@@ -382,13 +382,10 @@ bifrost:
   oracle:
     log_level: info
   providers:
-    default: &default-provider
+    binance:
+      name: binance
       disabled: true
       polling_interval: 3s
-      symbol_mapping: []
-    binance:
-      <<: *default-provider
-      name: binance
       api_endpoints:
         - https://data-api.binance.vision
       ws_endpoints:
@@ -407,10 +404,12 @@ bifrost:
         - TRX/USDT
         - USDC/USDT
         - XRP/USDT
+      symbol_mapping: []
 
     bitfinex:
-      <<: *default-provider
       name: bitfinex
+      disabled: true
+      polling_interval: 3s
       api_endpoints:
         - https://api-pub.bitfinex.com
       ws_endpoints:
@@ -426,8 +425,8 @@ bifrost:
         - XRP/USDT=tXRPUST
 
     bitget:
-      <<: *default-provider
       name: bitget
+      disabled: true
       polling_interval: 2s
       api_endpoints:
         - https://api.bitget.com
@@ -445,10 +444,12 @@ bifrost:
         - RUNE/USDT
         - SOL/USDT
         - XRP/USDT
+      symbol_mapping: []
 
     bitmart:
-      <<: *default-provider
       name: bitmart
+      disabled: true
+      polling_interval: 3s
       api_endpoints:
         - https://api-cloud.bitmart.com
       ws_endpoints:
@@ -458,21 +459,24 @@ bifrost:
         - BTC/USDT
         - ETH/USDT
         - RUNE/USDT
+      symbol_mapping: []
 
     bitstamp:
-      <<: *default-provider
       name: bitstamp
+      disabled: true
       polling_interval: 2s
       api_endpoints:
         - https://www.bitstamp.net
+      ws_endpoints: []
       pairs:
         - BTC/USD
         - USDC/USD
         - USDT/USD
+      symbol_mapping: []
 
     bybit:
-      <<: *default-provider
       name: bybit
+      disabled: true
       polling_interval: 5s
       api_endpoints:
         # check https://bybit-exchange.github.io/docs/v5/guide
@@ -494,10 +498,11 @@ bifrost:
         - TRX/USDT
         - USDC/USDT
         - XRP/USDT
+      symbol_mapping: []
 
     coinbase:
-      <<: *default-provider
       name: coinbase
+      disabled: true
       polling_interval: 10s
       api_endpoints:
         - https://api.exchange.coinbase.com
@@ -514,10 +519,12 @@ bifrost:
         - SOL/USD
         - USDT/USD
         - XRP/USD
+      symbol_mapping: []
 
     coinw:
-      <<: *default-provider
       name: coinw
+      disabled: true
+      polling_interval: 3s
       api_endpoints:
         - https://api.coinw.com
       ws_endpoints:
@@ -534,10 +541,12 @@ bifrost:
         - SOL/USDT
         - TRX/USDT
         - XRP/USDT
+      symbol_mapping: []
 
     digifinex:
-      <<: *default-provider
       name: digifinex
+      disabled: true
+      polling_interval: 3s
       api_endpoints:
         - https://openapi.digifinex.com
       ws_endpoints:
@@ -552,10 +561,12 @@ bifrost:
         - LTC/USDT
         - SOL/USDT
         - TRX/USDT
+      symbol_mapping: []
 
     crypto:
-      <<: *default-provider
       name: crypto
+      disabled: true
+      polling_interval: 3s
       api_endpoints:
         - https://api.crypto.com
       ws_endpoints:
@@ -565,10 +576,12 @@ bifrost:
         - ETH/USD
         - USDT/USD
         - XRP/USD
+      symbol_mapping: []
 
     gate:
-      <<: *default-provider
       name: gate
+      disabled: true
+      polling_interval: 3s
       api_endpoints:
         - https://api.gateio.ws
       ws_endpoints:
@@ -585,22 +598,26 @@ bifrost:
         - SOL/USDT
         - TRX/USDT
         - USDC/USDT
+      symbol_mapping: []
 
     gemini:
-      <<: *default-provider
       name: gemini
+      disabled: true
       polling_interval: 2s
       api_endpoints:
         - https://api.gemini.com
+      ws_endpoints: []
       pairs:
         - BTC/USD
         - ETH/USD
         - USDC/USD
         - USDT/USD
+      symbol_mapping: []
 
     htx:
-      <<: *default-provider
       name: htx
+      disabled: true
+      polling_interval: 3s
       api_endpoints:
         - https://api.huobi.pro
         # - https://api-aws.huobi.pro
@@ -618,10 +635,12 @@ bifrost:
         - SOL/USDT
         - TRX/USDT
         - XRP/USDT
+      symbol_mapping: []
 
     kraken:
-      <<: *default-provider
       name: kraken
+      disabled: true
+      polling_interval: 3s
       api_endpoints:
         - https://api.kraken.com
       ws_endpoints:
@@ -639,8 +658,9 @@ bifrost:
         - DOGE/USD=XDGUSD
 
     kucoin:
-      <<: *default-provider
       name: kucoin
+      disabled: true
+      polling_interval: 3s
       api_endpoints:
         - https://api.kucoin.com
       ws_endpoints:
@@ -654,10 +674,12 @@ bifrost:
         - SOL/USDT
         - TRX/USDT
         - XRP/USDT
+      symbol_mapping: []
 
     lbank:
-      <<: *default-provider
       name: lbank
+      disabled: true
+      polling_interval: 3s
       api_endpoints:
         - https://api.lbkex.com
       ws_endpoints:
@@ -673,12 +695,15 @@ bifrost:
         - SOL/USDT
         - TRX/USDT
         - XRP/USDT
+      symbol_mapping: []
 
     mexc:
-      <<: *default-provider
       name: mexc
+      disabled: true
+      polling_interval: 3s
       api_endpoints:
         - https://api.mexc.com
+      ws_endpoints: []
       pairs:
         - ATOM/USDT
         - AVAX/USDT
@@ -693,10 +718,12 @@ bifrost:
         - TRX/USDT
         - USDC/USDT
         - XRP/USDT
+      symbol_mapping: []
 
     okx:
-      <<: *default-provider
       name: okx
+      disabled: true
+      polling_interval: 3s
       api_endpoints:
         - https://www.okx.com
       ws_endpoints:
@@ -714,6 +741,7 @@ bifrost:
         - USDC/USDT
         - USDT/USD
         - XRP/USDT
+      symbol_mapping: []
 
 ########################################################################################
 # Thor

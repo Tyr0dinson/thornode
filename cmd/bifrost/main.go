@@ -179,9 +179,9 @@ func main() {
 	}
 	poolMgr := thorclient.NewPoolMgr(thorchainBridge)
 	chains, restart := chainclients.LoadChains(k, cfgChains, tssIns, thorchainBridge, m, pubkeyMgr, poolMgr)
-	// if len(chains) == 0 {
-	// 	log.Fatal().Msg("fail to load any chains")
-	// }
+	if len(chains) == 0 {
+		log.Fatal().Msg("fail to load any chains")
+	}
 	tssKeysignMetricMgr := metrics.NewTssKeysignMetricMgr()
 	healthServer := NewHealthServer(cfg.TSS.InfoAddress, tssIns, chains)
 	go func() {
@@ -249,15 +249,13 @@ func initPrefix() {
 }
 
 func initLog(level string, pretty bool) {
-	zerolog.TimeFieldFormat = "2006-01-02T15:04:05.000Z07:00"
-
 	l, err := zerolog.ParseLevel(level)
 	if err != nil {
 		log.Warn().Msgf("%s is not a valid log-level, falling back to 'info'", level)
 	}
 	var out io.Writer = os.Stdout
 	if pretty {
-		out = zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: "15:04:05.000"}
+		out = zerolog.ConsoleWriter{Out: os.Stdout}
 	}
 	zerolog.SetGlobalLevel(l)
 	log.Logger = log.Output(out).With().Caller().Str("service", serverIdentity).Logger()

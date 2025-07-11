@@ -6,8 +6,6 @@ package main
 import (
 	"os"
 
-	"github.com/rs/zerolog"
-
 	"cosmossdk.io/log"
 
 	svrcmd "github.com/cosmos/cosmos-sdk/server/cmd"
@@ -16,8 +14,6 @@ import (
 )
 
 func main() {
-	zerolog.TimeFieldFormat = "15:04:05.000"
-
 	rootCmd := NewRootCmd()
 
 	if err := svrcmd.Execute(rootCmd, "", app.DefaultNodeHome); err != nil {

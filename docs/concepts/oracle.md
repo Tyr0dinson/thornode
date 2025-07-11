@@ -20,7 +20,7 @@ The oracle tries to calculate the USD rates for every asset by "traversing" the 
 
 That means, that the oracle needs enough assets paired with USD to begin with. It will, for example, use `BTC/USD` to calculate the `USDT/USD` rate from `BTC/USDT`, if it has no, or not enough `USDT/USD` rates collected.
 
-#### Catching outliers
+#### Outlier detection
 
 Before sending the USD rates for every asset, the oracle also checks for outliers, in case one of the providers reports prices. It is doing that by calculating the median absolute deviation of all prices for each asset and removes all prices outside the set boundaries.
 
@@ -54,11 +54,11 @@ To reduce calls to Thornode but allow for fast updates (multiple times per secon
 
 #### Processing
 
-The final calculation of the on chain price is done in the message handler of `MsgPriceFeedsBatch`. This message contains all observed price feeds ov every node up to this point. It is a single batch transaction to prevent reorder attacks. On every `BeginBlock` all oracle prices are removed, so if a node tries to execute a message before the price feed transaction, there are no oracle prices and the transaction fails.
+The final calculation of the on chain price is done in the message handler of `MsgPriceFeedsBatch`. This message contains all observed price feeds of every node up to this point. It is a single batch transaction to prevent reorder attacks. On every `BeginBlock` all oracle prices are removed. Should a node try to execute a message before the price feed transaction, there are no oracle prices and the transaction fails.
 
 #### Final on-chain price
 
-To calculate the final on-chain prices, Thornode first checks the signature of each provided price feed and calculates the median absolute deviation for each asset. Prices from nodes above or below the allowed threshold are discarded.
+To calculate the final on-chain prices, Thornode first checks the signature and timestamp of each provided price feed. If a feed is older than one block or has an invalid signature, it is discarded. The resulting price for each asset is the median of all provided prices for that asset.
 
 ##### Stale price feeds
 
@@ -67,3 +67,86 @@ Price feeds that are older than the timestamp of the last block are discarded as
 ##### Simple majority
 
 If a simple majority of nodes have provided a valid price for an asset, this price is persisted to the KVStore and can be consumed inside the current block.
+
+## Configuration
+
+The price oracle itself has no special configuration besides the logging verbosity, which defaults to `info`.
+
+```golang
+type BifrostOracleConfiguration struct {
+	LogLevel string `mapstructure:"log_level"`
+}
+```
+
+### Providers
+
+Price providers can be configured configured independently and are disabled by default.
+
+Nodes can change the configuration by providing the corresponding environment variable:
+
+```sh
+BIFROST_PROVIDERS_COINBASE_DISABLED="false"
+```
+
+All rest api and websockets URLs, as well as trading pairs are predefined in `default.yaml`:
+
+```yaml
+coinbase:
+  name: coinbase
+  disabled: true
+  polling_interval: 10s
+  api_endpoints:
+    - https://api.exchange.coinbase.com
+  ws_endpoints:
+    - wss://ws-feed.exchange.coinbase.com
+  pairs:
+    - ATOM/USD
+    - AVAX/USD
+    - BCH/USD
+    - BTC/USD
+    - DOGE/USD
+    - ETH/USD
+    - LTC/USD
+    - SOL/USD
+    - USDT/USD
+    - XRP/USD
+  symbol_mapping: []
+```
+
+Disabling all providers, also disables the oracle (technically it just doesn't run)
+
+> [!important]
+> Note: Certain providers will not be available from specific jurisdictions
+
+```golang
+type BifrostOracleProviderConfiguration struct {
+	Name            string        `mapstructure:"name"`
+	Disabled        bool          `mapstructure:"disabled"`
+	PollingInterval time.Duration `mapstructure:"polling_interval"`
+	ApiEndpoints    []string      `mapstructure:"api_endpoints"`
+	WsEndpoints     []string      `mapstructure:"ws_endpoints"`
+	Pairs           []string      `mapstructure:"pairs"`
+	SymbolMapping   []string      `mapstructure:"symbol_mapping"`
+}
+```
+
+## Metrics
+
+The price oracle provides metrics to the collected ticker prices and calculations, which can be accessed via the prometheus endpoint:
+
+### Bifrost
+
+| Name                          | Notes                                                                  |
+| ----------------------------- | ---------------------------------------------------------------------- |
+| oracle_provider_bounds        | Upper- and lower bounds for outlier detection                          |
+| oracle_provider_price         | Final asset price in USD for each provider                             |
+| oracle_provider_rate          | Reported rate for each trading pair and provider                       |
+| oracle_provider_updates_total | Counter of ticker updates                                              |
+| oracle_provider_volume        | Reported 24h volume for each trading pair and provider (in base asset) |
+
+### Thornode
+
+| Name                         | Notes                                                        |
+| ---------------------------- | ------------------------------------------------------------ |
+| thornode_oracle_price_bounds | Upper- and lower bounds for outlier detection (not used yet) |
+| thornode_oracle_price        | Final on chain price for any asset                           |

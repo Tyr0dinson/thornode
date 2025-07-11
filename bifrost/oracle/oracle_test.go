@@ -28,8 +28,8 @@ func (s *OracleTestSuite) TearDownSuite(c *C) {
 
 func (s *OracleTestSuite) TestNewOracle(c *C) {
 	o, err := NewOracle(config.Bifrost{})
-	c.Assert(err, NotNil)
-	c.Assert(o, IsNil)
+	c.Assert(err, IsNil)
+	c.Assert(o, NotNil)
 
 	cfg := config.Bifrost{
 		Oracle: config.BifrostOracleConfiguration{

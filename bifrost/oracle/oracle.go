@@ -90,6 +90,11 @@ func (o *Oracle) run() {
 }
 
 func (o *Oracle) Start() {
+	if len(o.providers) == 0 {
+		o.logger.Info().Msg("no providers found, exiting...")
+		return
+	}
+
 	// set global price feed queue
 	o.logger.Info().Msg("starting oracle")
 
