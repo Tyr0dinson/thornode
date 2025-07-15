@@ -303,23 +303,21 @@ func (mgr *Mgrs) LoadManagerIfNecessary(ctx cosmos.Context) error {
 		}
 	}
 
-	// TODO: remove version check after the next hard fork
-	if v.GTE(semver.MustParse("2.136.0")) {
-		storedVer, hasStoredVer := mgr.Keeper().GetVersionWithCtx(ctx)
-		if !hasStoredVer || v.GT(storedVer) {
-			// store the version for contextual lookups if it has been upgraded
-			mgr.Keeper().SetVersionWithCtx(ctx, v)
-		}
+	storedVer, hasStoredVer := mgr.Keeper().GetVersionWithCtx(ctx)
+	if !hasStoredVer || v.GT(storedVer) {
+		// store the version for contextual lookups if it has been upgraded
+		mgr.Keeper().SetVersionWithCtx(ctx, v)
+	}
 
-		// Emit a version event as long as there was indeed a previously-recorded version changed from.
-		// (As indicated by the keeper rather than by the manager.)
-		if hasStoredVer && v.GT(storedVer) {
-			evt := NewEventVersion(v)
-			if err := mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
-				ctx.Logger().Error("fail to emit version event", "error", err)
-			}
+	// Emit a version event as long as there was indeed a previously-recorded version changed from.
+	// (As indicated by the keeper rather than by the manager.)
+	if hasStoredVer && v.GT(storedVer) {
+		evt := NewEventVersion(v)
+		if err := mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
+			ctx.Logger().Error("fail to emit version event", "error", err)
 		}
 	}
+
 	return nil
 }
 
@@ -333,20 +331,6 @@ func (mgr *Mgrs) recreateManagers(ctx cosmos.Context, v semver.Version) error {
 		return fmt.Errorf("fail to create keeper: %w", err)
 	}
 
-	// TODO: Remove this under-V136-only section (including shouldEmitVersion) after the next hard fork
-	shouldEmitVersion := false
-	if v.LT(semver.MustParse("2.136.0")) {
-		storedVer, hasStoredVer := mgr.Keeper().GetVersionWithCtx(ctx)
-		if !hasStoredVer || v.GT(storedVer) {
-			// store the version for contextual lookups if it has been upgraded
-			mgr.Keeper().SetVersionWithCtx(ctx, v)
-		}
-
-		// Managers might be new from a fresh node,
-		// but the keeper should be consistent.
-		shouldEmitVersion = (hasStoredVer && v.GT(storedVer))
-	}
-
 	mgr.gasMgr, err = GetGasManager(v, mgr.K)
 	if err != nil {
 		return fmt.Errorf("fail to create gas manager: %w", err)
@@ -355,13 +339,6 @@ func (mgr *Mgrs) recreateManagers(ctx cosmos.Context, v semver.Version) error {
 	mgr.eventMgr, err = GetEventManager(v)
 	if err != nil {
 		return fmt.Errorf("fail to get event manager: %w", err)
-	}
-	// TODO: Remove this under-V136-only event emission after the next hard fork.
-	if shouldEmitVersion {
-		evt := NewEventVersion(v)
-		if err := mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
-			ctx.Logger().Error("fail to emit version event", "error", err)
-		}
 	}
 
 	mgr.txOutStore, err = GetTxOutStore(v, mgr.K, mgr.eventMgr, mgr.gasMgr)
