@@ -680,6 +680,9 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 		}
 		elapse = time.Since(startKeySign)
 	}
+	if observation == nil {
+		return nil, nil, fmt.Errorf("Dev Error: SignTx did not make an observation")
+	}
 
 	// looks like the transaction is already signed
 	if len(signedTx) == 0 {
