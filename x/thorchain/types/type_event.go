@@ -15,6 +15,7 @@ import (
 const (
 	AddLiquidityEventType         = "add_liquidity"
 	BondEventType                 = "bond"
+	ReBondEventType               = "rebond"
 	DonateEventType               = "donate"
 	ErrataEventType               = "errata"
 	FeeEventType                  = "fee"
@@ -36,6 +37,7 @@ const (
 	SwapEventType                 = "swap"
 	AffiliateFeeEventType         = "affiliate_fee"
 	LimitSwapEventType            = "limit_swap"
+	ModifyLimitSwapEventType      = "limit_swap_mod"
 	MintBurnType                  = "mint_burn"
 	THORNameEventType             = "thorname"
 	LoanOpenEventType             = "loan_open"
@@ -45,6 +47,7 @@ const (
 	SecuredAssetDepositEventType  = "secured_asset_deposit"
 	SecuredAssetWithdrawEventType = "secured_asset_withdraw"
 	SwitchEventType               = "switch"
+	OperatorRotateEventType       = "operator_rotate"
 	RUNEPoolDepositEventType      = "rune_pool_deposit"
 	RUNEPoolWithdrawEventType     = "rune_pool_withdraw"
 	TSSKeygenSuccess              = "tss_keygen_success"
@@ -93,6 +96,32 @@ func (m *EventLimitSwap) Events() (cosmos.Events, error) {
 		cosmos.NewAttribute("source", m.Source.String()),
 		cosmos.NewAttribute("target", m.Target.String()),
 		cosmos.NewAttribute("txid", m.TxID.String()),
+	)
+	return cosmos.Events{evt}, nil
+}
+
+// NewEventModifyLimitSwap create a new modify limit swap event
+func NewEventModifyLimitSwap(from common.Address, source, target common.Coin, mod cosmos.Uint) *EventModifyLimitSwap {
+	return &EventModifyLimitSwap{
+		From:                 from,
+		Source:               source,
+		Target:               target,
+		ModifiedTargetAmount: mod,
+	}
+}
+
+// Type return a string that represent the type, it should not duplicated with other event
+func (m *EventModifyLimitSwap) Type() string {
+	return ModifyLimitSwapEventType
+}
+
+// Events convert EventModifyLimitSwap to key value pairs used in cosmos
+func (m *EventModifyLimitSwap) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(m.Type(),
+		cosmos.NewAttribute("from", m.From.String()),
+		cosmos.NewAttribute("source", m.Source.String()),
+		cosmos.NewAttribute("target", m.Target.String()),
+		cosmos.NewAttribute("modified_target_amount", m.ModifiedTargetAmount.String()),
 	)
 	return cosmos.Events{evt}, nil
 }
@@ -415,6 +444,37 @@ func (m *EventBond) Events() (cosmos.Events, error) {
 		cosmos.NewAttribute("bond_type", m.BondType.String()),
 		cosmos.NewAttribute("node_address", m.NodeAddress.String()),
 		cosmos.NewAttribute("bond_address", m.BondAddress.String()))
+	evt = evt.AppendAttributes(m.TxIn.ToAttributes()...)
+	return cosmos.Events{evt}, nil
+}
+
+// NewEventReBond create a new ReBond Event
+func NewEventReBond(
+	amount cosmos.Uint, txIn common.Tx,
+	nodeAccount *NodeAccount,
+	oldProvider, newProvider cosmos.AccAddress,
+) *EventReBond {
+	return &EventReBond{
+		Amount:         amount,
+		TxIn:           txIn,
+		NodeAddress:    nodeAccount.NodeAddress,
+		OldBondAddress: oldProvider,
+		NewBondAddress: newProvider,
+	}
+}
+
+// Type return bond event Type
+func (m *EventReBond) Type() string {
+	return ReBondEventType
+}
+
+// Events return all the event attributes
+func (m *EventReBond) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(m.Type(),
+		cosmos.NewAttribute("amount", m.Amount.String()),
+		cosmos.NewAttribute("node_address", m.NodeAddress.String()),
+		cosmos.NewAttribute("old_bond_address", m.OldBondAddress.String()),
+		cosmos.NewAttribute("new_bond_address", m.NewBondAddress.String()))
 	evt = evt.AppendAttributes(m.TxIn.ToAttributes()...)
 	return cosmos.Events{evt}, nil
 }
@@ -1337,6 +1397,32 @@ func (m *EventTCYUnstake) Events() (cosmos.Events, error) {
 	evt := cosmos.NewEvent(m.Type(),
 		cosmos.NewAttribute("address", m.Address.String()),
 		cosmos.NewAttribute("amount", m.Amount.String()),
+	)
+	return cosmos.Events{evt}, nil
+}
+
+// NewEventOperatorRotate creates a new rotate event.
+func NewEventOperatorRotate(
+	signer, nodeAddress, operatorAddress cosmos.AccAddress,
+) *EventOperatorRotate {
+	return &EventOperatorRotate{
+		Signer:          signer,
+		NodeAddress:     nodeAddress,
+		OperatorAddress: operatorAddress,
+	}
+}
+
+// Type return the rotate event type.
+func (m *EventOperatorRotate) Type() string {
+	return OperatorRotateEventType
+}
+
+// Events return the cosmos event.
+func (m *EventOperatorRotate) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(m.Type(),
+		cosmos.NewAttribute("signer", m.Signer.String()),
+		cosmos.NewAttribute("node_address", m.NodeAddress.String()),
+		cosmos.NewAttribute("operator_address", m.OperatorAddress.String()),
 	)
 	return cosmos.Events{evt}, nil
 }

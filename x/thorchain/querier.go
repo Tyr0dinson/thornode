@@ -8,19 +8,17 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-
-	"gitlab.com/thorchain/thornode/v3/common/wasmpermissions"
 
 	sdkmath "cosmossdk.io/math"
 	"github.com/blang/semver"
 	tmhttp "github.com/cometbft/cometbft/rpc/client/http"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/tx/signing"
+	"github.com/cosmos/evm/ethereum/eip712"
 	"github.com/rs/zerolog/log"
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/conversion"
 
@@ -31,6 +29,17 @@ import (
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 	keeperv1 "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/v1"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
+)
+
+// Swap status constants
+const (
+	SwapStatusQueued = "queued"
+)
+
+// Queue type constants
+const (
+	QueueTypeRegular  = "regular"
+	QueueTypeAdvanced = "advanced"
 )
 
 var (
@@ -148,6 +157,7 @@ func (qs queryServer) queryVault(ctx cosmos.Context, req *types.QueryVaultReques
 	resp := types.QueryVaultResponse{
 		BlockHeight:           v.BlockHeight,
 		PubKey:                v.PubKey.String(),
+		PubKeyEddsa:           v.PubKeyEddsa.String(),
 		Coins:                 v.Coins,
 		Type:                  v.Type.String(),
 		Status:                v.Status.String(),
@@ -183,6 +193,7 @@ func (qs queryServer) queryAsgardVaults(ctx cosmos.Context, _ *types.QueryAsgard
 			vaultsWithFunds = append(vaultsWithFunds, &types.QueryVaultResponse{
 				BlockHeight:           vault.BlockHeight,
 				PubKey:                vault.PubKey.String(),
+				PubKeyEddsa:           vault.PubKeyEddsa.String(),
 				Coins:                 vault.Coins,
 				Type:                  vault.Type.String(),
 				Status:                vault.Status.String(),
@@ -206,7 +217,7 @@ func getVaultChainAddresses(ctx cosmos.Context, vault Vault) []*types.VaultAddre
 	var result []*types.VaultAddress
 	allChains := append(vault.GetChains(), common.THORChain)
 	for _, c := range allChains.Distinct() {
-		addr, err := vault.PubKey.GetAddress(c)
+		addr, err := vault.GetAddress(c)
 		if err != nil {
 			ctx.Logger().Error("fail to get address for %s:%w", c.String(), err)
 			continue
@@ -264,8 +275,9 @@ func (qs queryServer) queryVaultsPubkeys(ctx cosmos.Context, _ *types.QueryVault
 				allMembers := vault.Membership
 				if HasSuperMajority(len(activeMembers), len(allMembers)) {
 					resp.Inactive = append(resp.Inactive, &types.VaultInfo{
-						PubKey:  vault.PubKey.String(),
-						Routers: castVaultRouters(vault.Routers),
+						PubKey:      vault.PubKey.String(),
+						PubKeyEddsa: vault.PubKeyEddsa.String(),
+						Routers:     castVaultRouters(vault.Routers),
 					})
 				}
 			}
@@ -514,7 +526,7 @@ func (qs queryServer) queryInboundAddresses(ctx cosmos.Context, _ *types.QueryIn
 		isChainTradingPaused := k.IsChainTradingHalted(ctx, chain)
 		isChainLpPaused := k.IsLPPaused(ctx, chain)
 
-		vaultAddress, err := vault.PubKey.GetAddress(chain)
+		vaultAddress, err := vault.GetAddress(chain)
 		if err != nil {
 			ctx.Logger().Error("fail to get address for chain", "error", err)
 			return nil, fmt.Errorf("fail to get address for chain: %w", err)
@@ -615,6 +627,7 @@ func (qs queryServer) queryNode(ctx cosmos.Context, req *types.QueryNodeRequest)
 		ForcedToLeave:       nodeAcc.ForcedToLeave,
 		LeaveHeight:         int64(nodeAcc.LeaveScore), // OpenAPI can only represent uint64 as int64
 		Maintenance:         nodeAcc.Maintenance,
+		MissingBlocks:       int64(nodeAcc.MissingBlocks),
 		IpAddress:           nodeAcc.IPAddress,
 		Version:             nodeAcc.GetVersion().String(),
 		CurrentAward:        cosmos.ZeroUint().String(), // Default display for if not overwritten.
@@ -1444,6 +1457,7 @@ func (qs queryServer) queryPools(ctx cosmos.Context, _ *types.QueryPoolsRequest)
 
 	pools := make([]*types.QueryPoolResponse, 0)
 	iterator := qs.mgr.Keeper().GetPoolIterator(ctx)
+	defer iterator.Close()
 	for ; iterator.Valid(); iterator.Next() {
 		var pool Pool
 		if err := qs.mgr.Keeper().Cdc().Unmarshal(iterator.Value(), &pool); err != nil {
@@ -1579,6 +1593,7 @@ func (qs queryServer) queryPoolSlips(ctx cosmos.Context, asset string) (*types.Q
 		assets = []common.Asset{assetObj}
 	} else {
 		iterator := qs.mgr.Keeper().GetPoolIterator(ctx)
+		defer iterator.Close()
 		for ; iterator.Valid(); iterator.Next() {
 			var pool Pool
 			if err := qs.mgr.Keeper().Cdc().Unmarshal(iterator.Value(), &pool); err != nil {
@@ -1689,6 +1704,7 @@ func (qs queryServer) queryDerivedPool(ctx cosmos.Context, req *types.QueryDeriv
 func (qs queryServer) queryDerivedPools(ctx cosmos.Context, _ *types.QueryDerivedPoolsRequest) (*types.QueryDerivedPoolsResponse, error) {
 	pools := make([]*types.QueryDerivedPoolResponse, 0)
 	iterator := qs.mgr.Keeper().GetPoolIterator(ctx)
+	defer iterator.Close()
 	for ; iterator.Valid(); iterator.Next() {
 		var pool Pool
 		if err := qs.mgr.Keeper().Cdc().Unmarshal(iterator.Value(), &pool); err != nil {
@@ -2398,7 +2414,7 @@ func (qs queryServer) queryQueue(ctx cosmos.Context, _ *types.QueryQueueRequest)
 	defer iter2.Close()
 	for ; iter2.Valid(); iter2.Next() {
 		var msg MsgSwap
-		if err := qs.mgr.Keeper().Cdc().Unmarshal(iterator.Value(), &msg); err != nil {
+		if err := qs.mgr.Keeper().Cdc().Unmarshal(iter2.Value(), &msg); err != nil {
 			ctx.Logger().Error("failed to load MsgSwap", "error", err)
 			continue
 		}
@@ -2854,6 +2870,7 @@ func (qs queryServer) queryOutboundFees(ctx cosmos.Context, asset string) (*type
 		// Even Staged pool Assets can incur outbound fees (from withdraw outbounds).
 		assets = []common.Asset{common.RuneAsset()}
 		iterator := qs.mgr.Keeper().GetPoolIterator(ctx)
+		defer iterator.Close()
 		for ; iterator.Valid(); iterator.Next() {
 			var pool Pool
 			if err := qs.mgr.Keeper().Cdc().Unmarshal(iterator.Value(), &pool); err != nil {
@@ -3011,6 +3028,7 @@ func (qs queryServer) queryPendingOutbound(ctx cosmos.Context, _ *types.QueryPen
 func (qs queryServer) querySwapQueue(ctx cosmos.Context, _ *types.QuerySwapQueueRequest) (*types.QuerySwapQueueResponse, error) {
 	result := make([]*MsgSwap, 0)
 
+	// Add items from regular swap queue
 	iterator := qs.mgr.Keeper().GetSwapQueueIterator(ctx)
 	defer iterator.Close()
 	for ; iterator.Valid(); iterator.Next() {
@@ -3021,7 +3039,65 @@ func (qs queryServer) querySwapQueue(ctx cosmos.Context, _ *types.QuerySwapQueue
 		result = append(result, &msg)
 	}
 
+	// Add items from advanced swap queue if enabled
+	if qs.mgr.Keeper().AdvSwapQueueEnabled(ctx) {
+		advIterator := qs.mgr.Keeper().GetAdvSwapQueueItemIterator(ctx)
+		defer advIterator.Close()
+		for ; advIterator.Valid(); advIterator.Next() {
+			var msg MsgSwap
+			if err := qs.mgr.Keeper().Cdc().Unmarshal(advIterator.Value(), &msg); err != nil {
+				continue
+			}
+			result = append(result, &msg)
+		}
+	}
+
 	return &types.QuerySwapQueueResponse{SwapQueue: result}, nil
+}
+
+func (qs queryServer) querySwapDetails(ctx cosmos.Context, req *types.QuerySwapDetailsRequest) (*types.QuerySwapDetailsResponse, error) {
+	if len(req.TxId) == 0 {
+		return nil, fmt.Errorf("missing tx_id parameter")
+	}
+
+	txID, err := common.NewTxID(req.TxId)
+	if err != nil {
+		return nil, fmt.Errorf("invalid tx_id: %w", err)
+	}
+
+	// Check if it's in the regular swap queue
+	iterator := qs.mgr.Keeper().GetSwapQueueIterator(ctx)
+	defer iterator.Close()
+	for ; iterator.Valid(); iterator.Next() {
+		var msg MsgSwap
+		if err := qs.mgr.Keeper().Cdc().Unmarshal(iterator.Value(), &msg); err != nil {
+			continue
+		}
+		if msg.Tx.ID.Equals(txID) {
+			return &types.QuerySwapDetailsResponse{
+				Swap:      &msg,
+				Status:    SwapStatusQueued,
+				QueueType: QueueTypeRegular,
+			}, nil
+		}
+	}
+
+	// Check if it's in the advanced swap queue
+	if qs.mgr.Keeper().AdvSwapQueueEnabled(ctx) {
+		if qs.mgr.Keeper().HasAdvSwapQueueItem(ctx, txID) {
+			msg, err := qs.mgr.Keeper().GetAdvSwapQueueItem(ctx, txID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get advanced swap queue item: %w", err)
+			}
+			return &types.QuerySwapDetailsResponse{
+				Swap:      &msg,
+				Status:    SwapStatusQueued,
+				QueueType: QueueTypeAdvanced,
+			}, nil
+		}
+	}
+
+	return nil, fmt.Errorf("swap with tx_id %s not found in any queue", req.TxId)
 }
 
 func (qs queryServer) queryTssKeygenMetric(ctx cosmos.Context, req *types.QueryTssKeygenMetricRequest) (*types.QueryTssKeygenMetricResponse, error) {
@@ -3227,6 +3303,7 @@ func castTxOutItem(toi TxOutItem, height int64) *types.QueryTxOutItem {
 	return &types.QueryTxOutItem{
 		Height:                height, // Omitted if 0, for use in openapi.TxDetailsResponse
 		VaultPubKey:           toi.VaultPubKey.String(),
+		VaultPubKeyEddsa:      toi.VaultPubKeyEddsa.String(),
 		InHash:                toi.InHash.String(),
 		OutHash:               toi.OutHash.String(),
 		Chain:                 toi.Chain.String(),
@@ -3518,34 +3595,16 @@ func (qs queryServer) queryTCYClaimer(ctx cosmos.Context, req *types.QueryTCYCla
 	return &types.QueryTCYClaimerResponse{TcyClaimer: claimsRes}, nil
 }
 
-// queryCodes
-func (qs queryServer) queryCodes(_ cosmos.Context, _ *types.QueryCodesRequest) (*types.QueryCodesResponse, error) {
-	var codes []*types.QueryCodesCode
-
-	permissionsRaw := wasmpermissions.GetWasmPermissions()
-	// analyze-ignore(map-iteration)
-	for code, permission := range permissionsRaw.Permissions {
-		deployers := []string{}
-		// analyze-ignore(map-iteration)
-		for deployer, allowed := range permission.Deployers {
-			if !allowed {
-				continue
-			}
-			deployers = append(deployers, deployer)
-		}
-
-		sort.Strings(deployers)
-
-		codes = append(codes, &types.QueryCodesCode{
-			Code:      code,
-			Deployers: deployers,
-			Origin:    permission.Origin,
-		})
+func (qs queryServer) queryEip712TypedData(_ cosmos.Context, req *types.QueryEip712TypedDataRequest) (*types.QueryEip712TypedDataResponse, error) {
+	typedData, err := eip712.GetEIP712TypedDataForMsg(req.SignBytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert to EIP-712 typed data: %w", err)
 	}
 
-	sort.Slice(codes, func(i, j int) bool {
-		return codes[i].Code < codes[j].Code
-	})
-
-	return &types.QueryCodesResponse{Codes: codes}, nil
+	// Convert to JSON for output
+	data, err := json.Marshal(typedData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal EIP-712 typed data: %w", err)
+	}
+	return &types.QueryEip712TypedDataResponse{TypedData: string(data)}, nil
 }

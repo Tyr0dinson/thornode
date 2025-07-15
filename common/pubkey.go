@@ -1,6 +1,7 @@
 package common
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -14,14 +15,14 @@ import (
 	"github.com/cosmos/cosmos-sdk/crypto/codec"
 	dogchaincfg "github.com/eager7/dogd/chaincfg"
 	"github.com/eager7/dogutil"
+	bchchaincfg "github.com/gcash/bchd/chaincfg"
+	"github.com/gcash/bchutil"
 	ltcchaincfg "github.com/ltcsuite/ltcd/chaincfg"
 	"github.com/ltcsuite/ltcutil"
 
-	bchchaincfg "github.com/gcash/bchd/chaincfg"
-	"github.com/gcash/bchutil"
-
 	"github.com/cometbft/cometbft/crypto"
 	eth "github.com/ethereum/go-ethereum/crypto"
+	"github.com/mr-tron/base58"
 
 	xrpkm "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/xrp/keymanager"
 
@@ -208,6 +209,32 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 			return NoAddress, fmt.Errorf("fail to encode the address, err: %w", err)
 		}
 		addressString = addr.String()
+	case SOLChain:
+		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, p.String())
+		if err != nil {
+			return NoAddress, err
+		}
+
+		// Encode the public key to base58 to get the Solana address
+		addressString = base58.Encode(pk.Bytes())
+	case TRONChain:
+		pub, err := p.Secp256K1()
+		if err != nil {
+			return NoAddress, err
+		}
+
+		addr := eth.PubkeyToAddress(*pub.ToECDSA()).Bytes()
+		addr = append([]byte{65}, addr...)
+
+		sha256sum := func(data []byte) []byte {
+			h := sha256.New()
+			h.Write(data)
+			return h.Sum(nil)
+		}
+
+		checksum := sha256sum(sha256sum(addr))
+
+		addressString = base58.Encode(append(addr, checksum[:4]...))
 	default:
 		// Only EVM chains remain.
 		if !chain.IsEVM() {

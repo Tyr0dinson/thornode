@@ -48,14 +48,15 @@ The following functions can be put into a memo:
 1. [**REPAY Loan**](memos.md#repay-loan)
 1. [**DEPOSIT RUNEPool**](memos.md#deposit-runepool)
 1. [**WITHDRAW RUNEPool**](memos.md#withdraw-runepool)
-1. [**BOND**, **UNBOND** & **LEAVE**](memos.md#bond-unbond-and-leave)
+1. [**BOND**, **UNBOND**, **REBOND** & **LEAVE**](memos.md#bond-unbond-and-leave)
+1. [**OPERATOR ROTATE**](memos.md#operator-rotate)
 1. [**DONATE** & **RESERVE**](memos.md#donate-and-reserve)
 1. [**MIGRATE**](memos.md#migrate)
 1. [**NOOP**](memos.md#noop)
 
 ### Swap
 
-Perform an asset swap.
+Perform an asset swap. If you'd like to implement a limit swap, use the `=<` prefix.
 
 **`SWAP:ASSET:DESTADDR:LIM/INTERVAL/QUANTITY:AFFILIATE:FEE`**
 
@@ -66,7 +67,7 @@ For the DEX aggregator-oriented variation of the `SWAP` memo, see [Aggregators M
 | Parameter     | Notes                                                                                 | Conditions                                                                                                                                      |
 | ------------- | ------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
 | Payload       | Send the asset to swap.                                                               | Must be an active pool on THORChain.                                                                                                            |
-| `SWAP`        | The swap handler.                                                                     | Also `s` or `=`                                                                                                                                 |
+| `SWAP`        | The swap handler.                                                                     | Also `s` or `=` or `=<`                                                                                                                         |
 | `:ASSET`      | The [asset identifier](asset-notation.md).                                            | Can be shortened.                                                                                                                               |
 | `:DESTADDR`   | The destination address to send to.                                                   | Can use THORName.                                                                                                                               |
 | `/REFUNDADDR` | The destination address for a refund to be sent to.                                   | Optional. If provided, the refund will be sent to this address; otherwise, it will be sent to the originator’s address.                         |
@@ -293,6 +294,21 @@ One way switch for external tokens to be a native THORChain asset. Supported Ass
 | `switch`  | The Secured Asset handler.         |                                      |
 | `ADDR`    | The thor address for native asset  | Must be a thor address               |
 
+### Limit Swap Modification
+
+**`m=<:SOURCE:TARGET:MODIFIEDTARGETAMOUNT`**
+
+A trader can modify a limit swap by changing the target amount. Setting this
+value to 0 will cancel the limit swap.
+
+| Parameter               | Description                               | Notes            |
+| ----------------------- | ----------------------------------------- | ---------------- |
+| `Payload`               | None required                             | Use `MsgDeposit` |
+| `m=<`                   | The limit swap modifier handler           |                  |
+| `:SOURCE`               | The source coin (e.g., `1234BTC.BTC`)     |                  |
+| `:TARGET`               | The target coin (e.g., `1234ETH.ETH`)     |                  |
+| `:MODIFIEDTARGETAMOUNT` | The modified target amount (e.g., `1235`) |                  |
+
 ### **Deposit Savers**
 
 Deposit an asset into THORChain Savers.
@@ -431,7 +447,7 @@ Donate to the THORChain Reserve.
 | Payload   | THOR.RUNE            | The RUNE to credit to the THORChain Reserve. |
 | `RESERVE` | The reserve handler. |                                              |
 
-### BOND, UNBOND and LEAVE
+### BOND, UNBOND, REBOND and LEAVE
 
 Perform node maintenance features. Also see [Pooled Nodes](https://docs.thorchain.org/thornodes/pooled-thornodes).
 
@@ -455,6 +471,18 @@ Perform node maintenance features. Also see [Pooled Nodes](https://docs.thorchai
 | `:AMOUNT`   | The amount to unbond.    | In 1e8 format. If setting more than actual bond, then capped at bond. |
 | `:PROVIDER` | Unwhitelist a provider.  | Optional. Remove a provider.                                          |
 
+**`REBOND:NODEADDR:NEWADDR:AMOUNT`**
+
+Migrate bonded RUNE to a different whitelisted address on the same node
+
+| Parameter   | Notes                                   | Conditions                                                                                            |
+| ----------- | --------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Payload     | None required                           | Use `MsgDeposit`                                                                                      |
+| `REBOND`    | The rebond handler.                     |                                                                                                       |
+| `:NODEADDR` | The node to unbond from.                | Can be in any state.                                                                                  |
+| `:NEWADDR`  | The address to receive the bonded RUNE. | Must be whitelisted and on the same node.                                                             |
+| `:AMOUNT`   | The amount to migrate.                  | Optional. Default is 0. In 1e8 format. If setting is 0 or more than actual bond, then capped at bond. |
+
 **`LEAVE:NODEADDR`**
 
 | Parameter   | Notes                       | Conditions                                                                                               |
@@ -468,6 +496,18 @@ Perform node maintenance features. Also see [Pooled Nodes](https://docs.thorchai
 - `BOND:thor19m4kqulyqvya339jfja84h6qp8tkjgxuxa4n4a`
 - `UNBOND:thor1x2whgc2nt665y0kc44uywhynazvp0l8tp0vtu6:750000000000`
 - `LEAVE:thor1hlhdm0ngr2j4lt8tt8wuvqxz6aus58j57nxnps`
+
+### Operator Rotate
+
+**`OPERATOR:NEWOPADDR`**
+
+The operator address can send a `OPERATOR` memo to change the operator address for all their nodes. No nodes for the old or new operator can be active at the time of operator rotation. Operator rotation can only occur in the first half of churn cycle.
+
+| Parameter    | Notes                        | Extra             |
+| ------------ | ---------------------------- | ----------------- |
+| Payload      | None required.               | Use `MsgDeposit`. |
+| `OPERATOR`   | The operator rotate handler. |                   |
+| `:NEWOPADDR` | The new operator address.    |                   |
 
 ### MIGRATE
 
@@ -517,7 +557,6 @@ Refunds cost fees to prevent DoS (denial-of-service) attacks. The user will pay 
 ## **Other Internal Memos**
 
 - `consolidate` &mdash; consolidate UTXO transactions
-- `=>` &mdash; limit swap functions (to be implemented)
 - `name` or `n` or `~` &mdash; THORName operations; see [THORName Guide](../affiliate-guide/thorname-guide.md)
 - `out` &mdash; for outbound transaction, set within a outbound transaction
 - `ragnarok` &mdash; used to delist pools, set within a outbound transaction

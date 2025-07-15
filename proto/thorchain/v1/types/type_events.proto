@@ -23,6 +23,13 @@ message EventLimitSwap {
   string tx_id = 3 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/v3/common.TxID", (gogoproto.customname) = "TxID"];
 }
 
+message EventModifyLimitSwap {
+  string from = 1 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/v3/common.Address"];
+  common.Coin source = 2 [(gogoproto.nullable) = false];
+  common.Coin target = 3 [(gogoproto.nullable) = false];
+  string modified_target_amount = 4 [(gogoproto.customtype) = "cosmossdk.io/math.Uint", (gogoproto.nullable) = false];
+}
+
 message EventStreamingSwap {
   string tx_id = 1 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/v3/common.TxID", (gogoproto.customname) = "TxID"];
   uint64 interval = 2;
@@ -143,6 +150,14 @@ message EventBond {
   common.Tx tx_in = 3 [(gogoproto.nullable) = false];
   bytes node_address = 4 [(gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress"];
   bytes bond_address = 5 [(gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress"];
+}
+
+message EventReBond {
+  string amount = 1 [(gogoproto.customtype) = "cosmossdk.io/math.Uint", (gogoproto.nullable) = false];
+  common.Tx tx_in = 2 [(gogoproto.nullable) = false];
+  bytes node_address = 3 [(gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress"];
+  bytes old_bond_address = 4 [(gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress"];
+  bytes new_bond_address = 5 [(gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress"];
 }
 
 message GasPool {
@@ -341,6 +356,12 @@ message EventSwitch {
   string asset_address = 3 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/v3/common.Address"];
   string rune_address = 4 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/v3/common.Address"];
   string tx_id = 5 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/v3/common.TxID", (gogoproto.customname) = "TxID"];
+}
+
+message EventOperatorRotate {
+  bytes signer = 1 [(gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress"];
+  bytes node_address = 2 [(gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress"];
+  bytes operator_address = 3 [(gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress"];
 }
 
 message EventTCYDistribution {

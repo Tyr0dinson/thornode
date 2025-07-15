@@ -261,7 +261,9 @@
               }
             ],
             "non_critical_extension_options": [],
-            "timeout_height": "0"
+            "timeout_height": "0",
+            "timeout_timestamp": null,
+            "unordered": false
           },
           "signatures": [
             "gIMQJy9e21hbihso9lfFCfs2+wiwI0EHmj83Ozl3+ZtXitiaSg41Md1+p1wNwwydEYE+COy66YttaCG0MvZ5gA=="
@@ -270,7 +272,7 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "1055819",
+          "gas_used": "1043170",
           "events": [
             {
               "acc_seq": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m/0",
@@ -325,7 +327,7 @@
               "coin_decimals": "8",
               "gas_rate": "10",
               "in_hash": "0000000000000000000000000000000000000000000000000000000000000001",
-              "max_gas_amount_0": "10500",
+              "max_gas_amount_0": "10000",
               "max_gas_asset_0": "BTC.BTC",
               "max_gas_decimals_0": "8",
               "memo": "REFUND:0000000000000000000000000000000000000000000000000000000000000001",
@@ -381,8 +383,8 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "CB9B3133A24AD8D001B8A8F8AF70A93DB3D610FD29659D725E285BA838F99F83",
-      "last_results_hash": "A9435059A910EF11C217B678B1D73144128B725089B992C9AB5ECDC96D99600B",
+      "app_hash": "FE7770BF3A4FF689B7219078F5752002E178D9D9E5875C8C99B8F0BF1C2625A6",
+      "last_results_hash": "4EB1694D4EA0B05A416D099E29F4E9433E9790A19FFD1FFD0843E907B6C89FE0",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
@@ -551,7 +553,9 @@
               }
             ],
             "non_critical_extension_options": [],
-            "timeout_height": "0"
+            "timeout_height": "0",
+            "timeout_timestamp": null,
+            "unordered": false
           },
           "signatures": [
             "tMLzYGiAkH0uLy8JfcsBK3axoMTbMIrQyZLvM6LjWj0e0JVvTJt2z+dexUSysELrl5EdtvkgCtKoD0L1Tebs2g=="
@@ -560,7 +564,7 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "251195",
+          "gas_used": "254362",
           "events": [
             {
               "acc_seq": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m/1",
@@ -621,8 +625,8 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "8EC8D6ED9364D723E1412F82B57AC40971B698C2250B60FF941E01DCF7A98110",
-      "last_results_hash": "C8D354D8430F5AE676E45CC84A06941E137F0A6A5EE0B38EB8C5F1CB5EA91BC0",
+      "app_hash": "596A99F3B083456AEDB51FBFC871DB3FBC27D2D7A9B8728E14322FE548272DBC",
+      "last_results_hash": "556195AEB52DEA6484CA3848C3839CB4A4B46CE5AF85B24A4836C9845A8A7572",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },

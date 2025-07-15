@@ -32,6 +32,7 @@ import "types/query_balance_module.proto";
 import "types/query_quotes.proto";
 import "types/query_constant_values.proto";
 import "types/query_swap_queue.proto";
+import "types/query_swap_details.proto";
 import "types/query_last_block.proto";
 import "types/query_vault.proto";
 import "types/query_tx.proto";
@@ -51,6 +52,7 @@ import "types/query_secured_asset.proto";
 import "types/query_tcy_stakers.proto";
 import "types/query_tcy_claimers.proto";
 import "types/query_codes.proto";
+import "types/query_eip712.proto";
 
 option (gogoproto.marshaler_all) = true;
 
@@ -273,6 +275,10 @@ service Query {
     option (google.api.http).get = "/thorchain/queue/swap";
   }
 
+  rpc SwapDetails(QuerySwapDetailsRequest) returns (QuerySwapDetailsResponse) {
+    option (google.api.http).get = "/thorchain/queue/swap/details/{tx_id}";
+  }
+
   rpc LastBlocks(QueryLastBlocksRequest) returns (QueryLastBlocksResponse) {
     option (google.api.http).get = "/thorchain/lastblock";
   }
@@ -381,7 +387,7 @@ service Query {
     option (google.api.http).get = "/thorchain/tcy_claimers";
   }
 
-  rpc Codes(QueryCodesRequest) returns (QueryCodesResponse) {
-    option (google.api.http).get = "/thorchain/codes";
+  rpc Eip712TypedData(QueryEip712TypedDataRequest) returns (QueryEip712TypedDataResponse) {
+    option (google.api.http).get = "/thorchain/eip715/tx";
   }
 }

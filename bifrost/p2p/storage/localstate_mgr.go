@@ -13,17 +13,61 @@ import (
 	"github.com/binance-chain/tss-lib/ecdsa/keygen"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-peerstore/addr"
-	ma "github.com/multiformats/go-multiaddr"
+	maddr "github.com/multiformats/go-multiaddr"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/conversion"
 )
 
 // KeygenLocalState is a structure used to represent the data we saved locally for different keygen
 type KeygenLocalState struct {
+	PubKey          string   `json:"pub_key"`
+	LocalData       []byte   `json:"local_data"`
+	ParticipantKeys []string `json:"participant_keys"` // the participant of last key gen
+	LocalPartyKey   string   `json:"local_party_key"`
+}
+
+// keygenLocalStateV1 is the pre-EDDSA format necessary for migration.
+// TODO: remove after network has churned with new format.
+type keygenLocalStateV1 struct {
 	PubKey          string                    `json:"pub_key"`
 	LocalData       keygen.LocalPartySaveData `json:"local_data"`
-	ParticipantKeys []string                  `json:"participant_keys"` // the participant of last key gen
+	ParticipantKeys []string                  `json:"participant_keys"`
 	LocalPartyKey   string                    `json:"local_party_key"`
+}
+
+// UnmarshalJSON implements custom JSON unmarshaling to handle format migration.
+// TODO: remove after network has churned with new format.
+func (kls *KeygenLocalState) UnmarshalJSON(data []byte) error {
+	// attempt unmarshal as the new format
+	type Alias KeygenLocalState
+	aux := &struct {
+		*Alias
+	}{
+		Alias: (*Alias)(kls),
+	}
+
+	if err := json.Unmarshal(data, aux); err == nil {
+		return nil
+	}
+
+	// if that fails, attempt unmarshal as the old format
+	var oldState keygenLocalStateV1
+	if err := json.Unmarshal(data, &oldState); err != nil {
+		return fmt.Errorf("failed to unmarshal both new and old KeygenLocalState formats: %w", err)
+	}
+
+	// marshal the local data to bytes for the new format
+	localDataBytes, err := json.Marshal(oldState.LocalData)
+	if err != nil {
+		return fmt.Errorf("failed to marshal LocalPartySaveData: %w", err)
+	}
+
+	kls.PubKey = oldState.PubKey
+	kls.LocalData = localDataBytes
+	kls.ParticipantKeys = oldState.ParticipantKeys
+	kls.LocalPartyKey = oldState.LocalPartyKey
+
+	return nil
 }
 
 // LocalStateManager provide necessary methods to manage the local state, save it , and read it back
@@ -153,13 +197,13 @@ func (fsm *FileStateMgr) RetrieveP2PAddresses() (addr.AddrList, error) {
 	}
 	fsm.writeLock.RUnlock()
 	data := strings.Split(string(input), "\n")
-	var peerAddresses []ma.Multiaddr
+	var peerAddresses []maddr.Multiaddr
 	for _, el := range data {
 		// we skip the empty entry
 		if len(el) == 0 {
 			continue
 		}
-		addr, err := ma.NewMultiaddr(el)
+		addr, err := maddr.NewMultiaddr(el)
 		if err != nil {
 			return nil, fmt.Errorf("invalid address in address book %w", err)
 		}

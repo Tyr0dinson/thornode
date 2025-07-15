@@ -237,7 +237,9 @@
               }
             ],
             "non_critical_extension_options": [],
-            "timeout_height": "0"
+            "timeout_height": "0",
+            "timeout_timestamp": null,
+            "unordered": false
           },
           "signatures": [
             "IZkCmZXmvtwCG2Lq9mYgiy1BUATBIy6qZFlomfW+aGJDDtQ0nU63GpPmyByzZaLHz80Mcv47s2KQFDIkPAVWbA=="
@@ -246,7 +248,7 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "92687",
+          "gas_used": "94687",
           "events": [
             {
               "acc_seq": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m/0",
@@ -319,7 +321,9 @@
               }
             ],
             "non_critical_extension_options": [],
-            "timeout_height": "0"
+            "timeout_height": "0",
+            "timeout_timestamp": null,
+            "unordered": false
           },
           "signatures": [
             "PNJ+J0ousD7pcypJOLpV5s4pwetDOqvyHnZFXiQQiz1rJt5avTOXxG40LbCtth+nSZA1Ql4mo9QmQnrqRpLzJg=="

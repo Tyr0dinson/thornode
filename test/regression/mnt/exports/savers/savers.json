@@ -314,7 +314,9 @@
         {
           "actions": [
             {
+              "aggregator_target_limit": "0",
               "chain": "BTC",
+              "clout_spent": "0",
               "coin": {
                 "amount": "86000",
                 "asset": "BTC.BTC",
@@ -324,7 +326,7 @@
               "in_hash": "000000000000000000000000000000000000000000000000000000000000000c",
               "max_gas": [
                 {
-                  "amount": "10500",
+                  "amount": "10000",
                   "asset": "BTC.BTC",
                   "decimals": "8"
                 }
@@ -488,7 +490,7 @@
               "in_hash": "000000000000000000000000000000000000000000000000000000000000000c",
               "max_gas": [
                 {
-                  "amount": "10500",
+                  "amount": "10000",
                   "asset": "BTC.BTC",
                   "decimals": "8"
                 }

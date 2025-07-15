@@ -1,7 +1,7 @@
 openapi: 3.0.0
 info:
   title: Thornode API
-  version: 3.7.0
+  version: 3.8.0
   contact:
     email: devs@thorchain.org
   description: Thornode REST API.
@@ -986,6 +986,32 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SecuredAssetsResponse"
+
+  # ------------------------------ swap ------------------------------
+
+  /thorchain/queue/swap/details/{tx_id}:
+    parameters:
+      - $ref: "#/components/parameters/queryHeight"
+      - name: tx_id
+        in: path
+        required: true
+        description: Transaction ID of the swap
+        schema:
+          type: string
+    get:
+      description: Returns detailed information about a specific swap.
+      operationId: swapDetails
+      tags:
+        - Swap
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SwapDetailsResponse"
+        404:
+          description: Swap not found
 
   # ------------------------------ queue ------------------------------
 
@@ -2168,6 +2194,8 @@ components:
           format: int64
         pub_key:
           type: string
+        pub_key_eddsa:
+          type: string
         coins:
           type: array
           items:
@@ -2311,6 +2339,9 @@ components:
         - routers
       properties:
         pub_key:
+          type: string
+          example: "thorpub1addwnpepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc"
+        pub_key_eddsa:
           type: string
           example: "thorpub1addwnpepq068dr0x7ue973drmq4eqmzhcq3650n7nx5fhgn9gl207luxp6vaklu52tc"
         routers:
@@ -2507,6 +2538,9 @@ components:
         observed_pub_key:
           type: string
           example: "thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe"
+        observed_pub_key_eddsa:
+          type: string
+          example: "thorpub1addwnpepq27ck6u44zl8qqdnmzjjc8rg72amrxrsp42p9vd7kt6marhy6ww76z8shwe"
         external_observed_height:
           type: integer
           format: int64
@@ -2643,9 +2677,6 @@ components:
           type: integer
           format: int64
           example: 1234
-        vault_pub_key:
-          type: string
-          example: "thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4"
         in_hash:
           type: string
           example: "208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA"
@@ -2658,6 +2689,12 @@ components:
         to_address:
           type: string
           example: "0x66fb1cd65b97fa40457b90b7d1ca6b92cb64b32b"
+        vault_pub_key:
+          type: string
+          example: "thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4"
+        vault_pub_key_eddsa:
+          type: string
+          example: "thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4"
         coin:
           $ref: "#/components/schemas/Coin"
         max_gas:
@@ -3830,6 +3867,20 @@ components:
       type: array
       items:
         $ref: "#/components/schemas/MsgSwap"
+
+    SwapDetailsResponse:
+      type: object
+      properties:
+        swap:
+          $ref: "#/components/schemas/MsgSwap"
+        status:
+          type: string
+          description: Current status of the swap
+          example: "queued"
+        queue_type:
+          type: string
+          description: Type of queue the swap is in
+          example: "advanced"
 
     OutboundResponse:
       type: array

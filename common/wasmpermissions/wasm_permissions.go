@@ -1,24 +1,25 @@
 package wasmpermissions
 
 import (
-	"encoding/hex"
 	"errors"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
 type WasmPermissions struct {
-	Permissions map[string]WasmPermission
+	Store       map[string]bool
+	Instantiate map[string]bool
 }
 
-type WasmPermission struct {
-	Origin    string          `json:"origin"`
-	Deployers map[string]bool `json:"deployers"`
+func (w WasmPermissions) CanStore(actor sdk.AccAddress) error {
+	if w.Store[actor.String()] {
+		return nil
+	}
+	return errors.New("unauthorized")
 }
 
-func (w WasmPermissions) Permit(actor sdk.AccAddress, checksum []byte) error {
-	hexChecksum := hex.EncodeToString(checksum)
-	if permission, exists := w.Permissions[hexChecksum]; exists && permission.Deployers[actor.String()] {
+func (w WasmPermissions) CanInstantiate(actor sdk.AccAddress) error {
+	if w.Instantiate[actor.String()] {
 		return nil
 	}
 	return errors.New("unauthorized")
