@@ -32,7 +32,7 @@ func (m Migrator) Migrate1to2(ctx sdk.Context) error {
 	if err := m.mgr.LoadManagerIfNecessary(ctx); err != nil {
 		return err
 	}
-	return v2.MigrateStore(ctx, m.mgr.storeKey)
+	return v2.MigrateStore(ctx, m.mgr.storeService)
 }
 
 // Migrate2to3 migrates from version 2 to 3.
@@ -126,5 +126,10 @@ func (m Migrator) Migrate4to5(ctx sdk.Context) error {
 
 // Migrate5to6 migrates from version 5 to 6.
 func (m Migrator) Migrate5to6(ctx sdk.Context) error {
+	return nil
+}
+
+// Migrate6to7 migrates from version 6 to 7.
+func (m Migrator) Migrate6to7(ctx sdk.Context) error {
 	return nil
 }
