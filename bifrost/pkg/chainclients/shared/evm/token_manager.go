@@ -18,7 +18,6 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/evm/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
-	"gitlab.com/thorchain/thornode/v3/common/tokenlist"
 )
 
 const (
@@ -32,7 +31,7 @@ type TokenManager struct {
 	defaultDecimals uint64
 	nativeAsset     common.Asset
 	requestTimeout  time.Duration
-	tokenWhitelist  []tokenlist.ERC20Token
+	tokenWhitelist  []common.Token
 	erc20ABI        *abi.ABI
 	vaultABI        *abi.ABI
 	client          *ethclient.Client
@@ -45,7 +44,7 @@ func NewTokenManager(db *leveldb.DB,
 	nativeAsset common.Asset,
 	defaultDecimals uint64,
 	requestTimeout time.Duration,
-	tokenWhitelist []tokenlist.ERC20Token,
+	tokenWhitelist []common.Token,
 	ethClient *ethclient.Client,
 	routerContractABI,
 	erc20ContractABI string,

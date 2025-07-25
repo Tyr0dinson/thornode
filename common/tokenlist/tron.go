@@ -6,7 +6,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/tokenlist/trontokens"
 )
 
-var tronTokenList EVMTokenList
+var tronTokenList TokenList
 
 func init() {
 	err := json.Unmarshal(trontokens.TRONTokenListRaw, &tronTokenList)
@@ -15,6 +15,6 @@ func init() {
 	}
 }
 
-func GetTRONTokenList() EVMTokenList {
+func GetTRONTokenList() TokenList {
 	return tronTokenList
 }

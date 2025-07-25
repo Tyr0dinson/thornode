@@ -385,3 +385,24 @@ message EventTCYUnstake {
   string address = 1 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/v3/common.Address"];
   string amount = 2 [(gogoproto.customtype) = "cosmossdk.io/math.Uint",(gogoproto.nullable) = false];
 }
+
+message EventBindExportAsset {
+  common.Asset asset = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "gitlab.com/thorchain/thornode/v3/common.Asset"];
+  string amount = 2 [(gogoproto.customtype) = "cosmossdk.io/math.Uint", (gogoproto.nullable) = false];
+}
+
+message EventFundExportAsset {
+  common.Asset asset = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "gitlab.com/thorchain/thornode/v3/common.Asset"];
+  string amount_rune = 2 [(gogoproto.customtype) = "cosmossdk.io/math.Uint", (gogoproto.nullable) = false];
+  string amount_l1 = 3 [(gogoproto.customtype) = "cosmossdk.io/math.Uint", (gogoproto.nullable) = false];
+}
+
+message EventIssueExportAsset {
+  common.Asset asset = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "gitlab.com/thorchain/thornode/v3/common.Asset"];
+  string amount = 2 [(gogoproto.customtype) = "cosmossdk.io/math.Uint", (gogoproto.nullable) = false];
+}
+
+message EventRedeemExportAsset {
+  common.Asset asset = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "gitlab.com/thorchain/thornode/v3/common.Asset"];
+  string amount = 2 [(gogoproto.customtype) = "cosmossdk.io/math.Uint", (gogoproto.nullable) = false];
+}

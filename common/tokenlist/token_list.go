@@ -1,40 +1,20 @@
 package tokenlist
 
 import (
-	"fmt"
-	"strings"
-
 	"gitlab.com/thorchain/thornode/v3/common"
 )
 
-// ERC20Token is a struct to represent the token
-type ERC20Token struct {
-	Address  string `json:"address"`
-	Symbol   string `json:"symbol"`
-	Name     string `json:"name"`
-	Decimals int    `json:"decimals"`
+type TokenList struct {
+	Name   string         `json:"name"`
+	Tokens []common.Token `json:"tokens"`
 }
 
-// Asset returns the common.Asset representation of the token.
-func (t ERC20Token) Asset(chain common.Chain) common.Asset {
-	return common.Asset{
-		Chain:  chain,
-		Ticker: common.Ticker(t.Symbol),
-		Symbol: common.Symbol(strings.ToUpper(fmt.Sprintf("%s-%s", t.Symbol, t.Address))),
-	}
-}
-
-type EVMTokenList struct {
-	Name   string       `json:"name"`
-	Tokens []ERC20Token `json:"tokens"`
-}
-
-// GetEVMTokenList returns all available tokens for external asset matching for a
-// particular EVM chain and version.
+// GetTokenList returns all available tokens for external asset matching for a
+// particular.
 //
 // NOTE: These tokens are NOT necessarily the same tokens that are whitelisted for each
 // chain - whitelisting happens in each chain's bifrost chain client.
-func GetEVMTokenList(chain common.Chain) EVMTokenList {
+func GetTokenList(chain common.Chain) TokenList {
 	switch chain {
 	case common.ETHChain:
 		return GetETHTokenList()
@@ -47,6 +27,6 @@ func GetEVMTokenList(chain common.Chain) EVMTokenList {
 	case common.TRONChain:
 		return GetTRONTokenList()
 	default:
-		return EVMTokenList{}
+		return TokenList{}
 	}
 }

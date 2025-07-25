@@ -6,7 +6,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/tokenlist/bsctokens"
 )
 
-var bscTokenList EVMTokenList
+var bscTokenList TokenList
 
 func init() {
 	if err := json.Unmarshal(bsctokens.BSCTokenListRaw, &bscTokenList); err != nil {
@@ -14,6 +14,6 @@ func init() {
 	}
 }
 
-func GetBSCTokenList() EVMTokenList {
+func GetBSCTokenList() TokenList {
 	return bscTokenList
 }

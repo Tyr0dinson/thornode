@@ -96,6 +96,7 @@ const (
 	prefixUpgradeVotes            types.DbPrefix = "upgr_votes/"
 	prefixTCYClaimer              types.DbPrefix = "tcy_claimer/"
 	prefixTCYStaker               types.DbPrefix = "tcy_staker/"
+	prefixExportLedger            types.DbPrefix = "export_ledger/"
 )
 
 func dbError(ctx cosmos.Context, wrapper string, err error) error {

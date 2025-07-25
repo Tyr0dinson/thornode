@@ -62,6 +62,7 @@ func RegisterLegacyAminoCodec(cdc *codec.LegacyAmino) {
 	cdc.RegisterConcrete(&MsgTCYClaim{}, ModuleName+"/MsgTCYClaim", nil)
 	cdc.RegisterConcrete(&MsgTCYStake{}, ModuleName+"/MsgTCYStake", nil)
 	cdc.RegisterConcrete(&MsgTCYUnstake{}, ModuleName+"/MsgTCYUnstake", nil)
+	cdc.RegisterConcrete(&MsgExportAssetBind{}, ModuleName+"/MsgExportAssetBind", nil)
 }
 
 // RegisterInterfaces register the types

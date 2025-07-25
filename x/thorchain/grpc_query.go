@@ -687,3 +687,13 @@ func (s *queryServer) Eip712TypedData(c context.Context, req *types.QueryEip712T
 	ctx := s.unwrapSdkContext(c)
 	return s.queryEip712TypedData(ctx, req)
 }
+
+func (s *queryServer) ExportLedger(c context.Context, req *types.QueryExportLedgerRequest) (*types.QueryExportLedgerResponse, error) {
+	ctx := s.unwrapSdkContext(c)
+	return s.queryExportLedger(ctx, req)
+}
+
+func (s *queryServer) ExportLedgers(c context.Context, req *types.QueryExportLedgersRequest) (*types.QueryExportLedgersResponse, error) {
+	ctx := s.unwrapSdkContext(c)
+	return s.queryExportLedgers(ctx, req)
+}

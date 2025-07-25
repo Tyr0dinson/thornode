@@ -3608,3 +3608,35 @@ func (qs queryServer) queryEip712TypedData(_ cosmos.Context, req *types.QueryEip
 	}
 	return &types.QueryEip712TypedDataResponse{TypedData: string(data)}, nil
 }
+
+func (qs queryServer) queryExportLedger(ctx cosmos.Context, req *types.QueryExportLedgerRequest) (*types.QueryExportLedgerResponse, error) {
+	asset, err := common.NewAsset(req.Asset)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse asset: %w", err)
+
+	}
+
+	ledger, err := qs.mgr.Keeper().GetExportLedger(ctx, asset)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get export ledger: %w", err)
+	}
+
+	return &types.QueryExportLedgerResponse{Export: &ledger}, nil
+}
+
+func (qs queryServer) queryExportLedgers(ctx cosmos.Context, req *types.QueryExportLedgersRequest) (*types.QueryExportLedgersResponse, error) {
+	ledgers := []*types.ExportLedger{}
+
+	iterator := qs.mgr.Keeper().GetExportLedgerIterator(ctx)
+	defer iterator.Close()
+	for ; iterator.Valid(); iterator.Next() {
+		var ledger types.ExportLedger
+
+		qs.mgr.Keeper().Cdc().MustUnmarshal(iterator.Value(), &ledger)
+		if ledger.Asset.Symbol.String() == req.Asset {
+			ledgers = append(ledgers, &ledger)
+		}
+	}
+
+	return &types.QueryExportLedgersResponse{Exports: ledgers}, nil
+}

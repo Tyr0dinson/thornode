@@ -59,7 +59,7 @@ type TronClient struct {
 	rpc                *rpc.TronRpc
 	abi                abi.ABI
 
-	whitelist           map[string]tokenlist.ERC20Token
+	whitelist           map[string]common.Token
 	bridge              thorclient.ThorchainBridge
 	globalSolvencyQueue chan types.Solvency
 	wg                  *sync.WaitGroup
@@ -78,9 +78,9 @@ func NewTronClient(
 
 	logger := log.With().Str("module", config.ChainID.String()).Logger()
 
-	tokens := tokenlist.GetEVMTokenList(config.ChainID).Tokens
+	tokens := tokenlist.GetTokenList(config.ChainID).Tokens
 
-	whitelist := map[string]tokenlist.ERC20Token{}
+	whitelist := map[string]common.Token{}
 	for _, token := range tokens {
 		for _, address := range config.BlockScanner.WhitelistTokens {
 			if strings.EqualFold(address, token.Address) {
@@ -387,7 +387,7 @@ func (c *TronClient) SignTx(
 	} else {
 		found := false
 		var contract string
-		var token tokenlist.ERC20Token
+		var token common.Token
 
 		for contract, token = range c.whitelist {
 			symbol := strings.ToUpper(token.Symbol + "-" + contract)

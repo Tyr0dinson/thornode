@@ -78,6 +78,7 @@ func getInternalHandlerMapping(mgr Manager) map[string]MsgHandler {
 	m[sdk.MsgTypeURL(&MsgTCYStake{})] = NewTCYStakeHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgTCYUnstake{})] = NewTCYUnstakeHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgOperatorRotate{})] = NewOperatorRotateHandler(mgr)
+	m[sdk.MsgTypeURL(&MsgExportAssetBind{})] = NewExportAssetBindHandler(mgr)
 	return m
 }
 
@@ -182,6 +183,24 @@ func getMsgManageTHORNameFromMemo(memo ManageTHORNameMemo, tx ObservedTx, signer
 	return NewMsgManageTHORName(memo.Name, memo.Chain, memo.Address, tx.Tx.Coins[0], memo.Expire, memo.PreferredAsset, memo.Owner, signer), nil
 }
 
+func getMsgExportAssetBindFromMemo(ctx cosmos.Context, memo ExportAssetBindMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
+	symbol := memo.GetAsset().Symbol
+	chain := tx.Tx.Chain
+
+	assetStr := fmt.Sprintf("%s.%s", chain.String(), symbol)
+	asset, err := common.NewAsset(assetStr)
+	if err != nil {
+		return nil, err
+	}
+
+	assetCoin := tx.Tx.Coins.GetCoin(asset)
+	feeCoin := tx.Tx.Coins.GetCoin(chain.GetGasAsset())
+
+	return NewMsgExportAssetBind(
+		tx.Tx, asset, assetCoin.Amount, feeCoin.Amount, signer,
+	), nil
+}
+
 func processOneTxIn(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
 	if len(tx.Tx.Coins) != 1 {
 		return nil, cosmos.ErrInvalidCoins("only send 1 coins per message")
@@ -280,6 +299,8 @@ func processOneTxIn(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, sig
 		newMsg, err = getMsgMaintFromMemo(m, signer)
 	case OperatorRotateMemo:
 		newMsg = NewMsgOperatorRotate(signer, m.OperatorAddress, tx.Tx.Coins[0])
+	case ExportAssetBindMemo:
+		newMsg, err = getMsgExportAssetBindFromMemo(ctx, m, tx, signer)
 	default:
 		return nil, errInvalidMemo
 	}
@@ -366,7 +387,7 @@ func externalAssetMatch(chain common.Chain, hint string) string {
 		// find all potential matches
 		firstMatch := ""
 		addrHint := strings.ToLower(hint)
-		for _, token := range tokenlist.GetEVMTokenList(chain).Tokens {
+		for _, token := range tokenlist.GetTokenList(chain).Tokens {
 			if strings.HasSuffix(strings.ToLower(token.Address), addrHint) {
 				// store first found address
 				if firstMatch == "" {

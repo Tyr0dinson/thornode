@@ -180,6 +180,10 @@ var (
 	NewEventLoanRepayment          = types.NewEventLoanRepayment
 	NewEventSwitch                 = types.NewEventSwitch
 	NewEventOperatorRotate         = types.NewEventOperatorRotate
+	NewEventBindExportAsset        = types.NewEventBindExportAsset
+	NewEventFundExportAsset        = types.NewEventFundExportAsset
+	NewEventIssueExportAsset       = types.NewEventIssueExportAsset
+	NewEventRedeemExportAsset      = types.NewEventRedeemExportAsset
 	NewPoolMod                     = types.NewPoolMod
 	NewMsgRefundTx                 = types.NewMsgRefundTx
 	NewMsgOutboundTx               = types.NewMsgOutboundTx
@@ -208,6 +212,9 @@ var (
 	NewMsgSetIPAddress             = types.NewMsgSetIPAddress
 	NewMsgNetworkFee               = types.NewMsgNetworkFee
 	NewMsgWasmExec                 = types.NewMsgWasmExec
+	NewMsgExportAssetBind          = types.NewMsgExportAssetBind
+	NewMsgExportAssetIssue         = types.NewMsgExportAssetIssue
+	NewMsgExportAssetRedeem        = types.NewMsgExportAssetRedeem
 	NewNetworkFee                  = types.NewNetworkFee
 	NewTHORName                    = types.NewTHORName
 	NewLoan                        = types.NewLoan
@@ -310,6 +317,9 @@ type (
 	MsgTCYStake               = types.MsgTCYStake
 	MsgTCYUnstake             = types.MsgTCYUnstake
 	MsgOperatorRotate         = types.MsgOperatorRotate
+	MsgExportAssetBind        = types.MsgExportAssetBind
+	MsgExportAssetIssue       = types.MsgExportAssetIssue
+	MsgExportAssetRedeem      = types.MsgExportAssetRedeem
 
 	// Keeper structs
 	PoolStatus               = types.PoolStatus
@@ -343,6 +353,10 @@ type (
 	EventReserve             = types.EventReserve
 	EventLoanOpen            = types.EventLoanOpen
 	EventLoanRepayment       = types.EventLoanRepayment
+	EventBindExportAsset     = types.EventBindExportAsset
+	EventFundExportAsset     = types.EventFundExportAsset
+	EventIssueExportAsset    = types.EventIssueExportAsset
+	EventRedeemExportAsset   = types.EventRedeemExportAsset
 	PoolAmt                  = types.PoolAmt
 	PoolMod                  = types.PoolMod
 	PoolMods                 = types.PoolMods
@@ -420,6 +434,9 @@ type (
 	TCYStakeMemo               = mem.TCYStakeMemo
 	TCYUnstakeMemo             = mem.TCYUnstakeMemo
 	OperatorRotateMemo         = mem.OperatorRotateMemo
+	ExportAssetBindMemo        = mem.ExportAssetBindMemo
+	ExportAssetIssueMemo       = mem.ExportAssetIssueMemo
+	ExportAssetRedeemMemo      = mem.ExportAssetRedeemMemo
 
 	// Proto
 	ProtoStrings = types.ProtoStrings

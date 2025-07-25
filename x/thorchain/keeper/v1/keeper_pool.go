@@ -46,7 +46,7 @@ func (k KVStore) GetPools(ctx cosmos.Context) (Pools, error) {
 		var pool Pool
 		err := k.Cdc().Unmarshal(iterator.Value(), &pool)
 		if err != nil {
-			return nil, dbError(ctx, "Unmarsahl: pool", err)
+			return nil, dbError(ctx, "Unmarshal: pool", err)
 		}
 		pools = append(pools, pool)
 	}

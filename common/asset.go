@@ -44,6 +44,15 @@ var (
 	TOR        = Asset{Chain: THORChain, Symbol: "TOR", Ticker: "TOR", Synth: false}
 	THORBTC    = Asset{Chain: THORChain, Symbol: "BTC", Ticker: "BTC", Synth: false}
 	USDCAsset  = Asset{Chain: NOBLEChain, Symbol: "USDC", Ticker: "USDC", Synth: false}
+
+	VULT = Asset{Chain: THORChain, Symbol: "VULT", Ticker: "VULT", Synth: false}
+
+	NTRN = Asset{
+		Chain:  THORChain,
+		Symbol: "NTRN",
+		Ticker: "NTRN",
+		Synth:  false,
+	}
 )
 
 var _ sdk.CustomProtobufType = (*Asset)(nil)
@@ -255,6 +264,8 @@ func (a Asset) Native() string {
 		return "tor"
 	case a.Equals(TCY):
 		return "tcy"
+	case a.Equals(NTRN):
+		return "ntrn"
 	case a.IsRUJI():
 		return "x/ruji"
 	}

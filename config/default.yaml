@@ -345,6 +345,9 @@ bifrost:
           - symbol: LQDY
             decimals: 6
             denom: ibc/CF52BFC8A11248F05151BFEC0FB033C3531E40C7BAFC72E277F49346EF76E981
+          - symbol: NTRN
+            decimals: 6
+            denom: ibc/5DB84693CB3F67A2D25D133C177B06786F423D6D1AFF2B8E080F0753B2E4D585
 
       mempool_tx_id_cache_size: 0
       scanner_leveldb: *default-leveldb

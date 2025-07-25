@@ -93,6 +93,7 @@ type Keeper interface {
 	KeeperRUNEPool
 	KeeperTCYClaimer
 	KeeperTCYStaker
+	KeeperExportLedger
 }
 
 type KeeperConfig interface {
@@ -477,4 +478,10 @@ type KeeperTCYStaker interface {
 	ListTCYStakers(ctx cosmos.Context) ([]TCYStaker, error)
 	TCYStakerExists(ctx cosmos.Context, address common.Address) bool
 	UpdateTCYStaker(ctx cosmos.Context, address common.Address, amount math.Uint) error
+}
+
+type KeeperExportLedger interface {
+	GetExportLedgerIterator(ctx cosmos.Context) cosmos.Iterator
+	GetExportLedger(ctx cosmos.Context, asset common.Asset) (ExportLedger, error)
+	SetExportLedger(ctx cosmos.Context, ledger ExportLedger) error
 }

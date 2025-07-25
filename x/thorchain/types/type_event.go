@@ -60,6 +60,10 @@ const (
 	TCYClaimType                  = "tcy_claim"
 	TCYStakeType                  = "tcy_stake"
 	TCYUnstakeType                = "tcy_unstake"
+	BindExportAssetType           = "bind_export_asset"
+	FundExportAssetType           = "fund_export_asset"
+	IssueExportAssetType          = "issue_export_asset"
+	RedeemExportAssetType         = "redeem_export_asset"
 )
 
 // PoolMods a list of pool modifications
@@ -1424,5 +1428,112 @@ func (m *EventOperatorRotate) Events() (cosmos.Events, error) {
 		cosmos.NewAttribute("node_address", m.NodeAddress.String()),
 		cosmos.NewAttribute("operator_address", m.OperatorAddress.String()),
 	)
+	return cosmos.Events{evt}, nil
+}
+
+// NewEventBindExportAsset create a new bind export asset event
+func NewEventBindExportAsset(
+	asset common.Asset,
+	amount cosmos.Uint,
+) *EventBindExportAsset {
+	return &EventBindExportAsset{
+		Asset:  asset,
+		Amount: amount,
+	}
+}
+
+// Type return the event type
+func (m *EventBindExportAsset) Type() string {
+	return BindExportAssetType
+}
+
+// Events return cosmos.Events
+func (m *EventBindExportAsset) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(m.Type(),
+		cosmos.NewAttribute("asset", m.Asset.String()),
+		cosmos.NewAttribute("amount", m.Amount.String()),
+	)
+
+	return cosmos.Events{evt}, nil
+}
+
+// NewEventFundExportAsset create a new fund export asset event
+func NewEventFundExportAsset(
+	asset common.Asset,
+	amountL1 cosmos.Uint,
+	amountRune cosmos.Uint,
+) *EventFundExportAsset {
+	return &EventFundExportAsset{
+		Asset:      asset,
+		AmountL1:   amountL1,
+		AmountRune: amountRune,
+	}
+}
+
+// Type return the event type
+func (m *EventFundExportAsset) Type() string {
+	return FundExportAssetType
+}
+
+// Events return cosmos.Events
+func (m *EventFundExportAsset) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(m.Type(),
+		cosmos.NewAttribute("asset", m.Asset.String()),
+		cosmos.NewAttribute("l1_amount", m.AmountL1.String()),
+		cosmos.NewAttribute("rune_amount", m.AmountRune.String()),
+	)
+
+	return cosmos.Events{evt}, nil
+}
+
+// NewEventIssueExportAsset create a new issue export asset event
+func NewEventIssueExportAsset(
+	asset common.Asset,
+	amount cosmos.Uint,
+) *EventIssueExportAsset {
+	return &EventIssueExportAsset{
+		Asset:  asset,
+		Amount: amount,
+	}
+}
+
+// Type return the event type
+func (m *EventIssueExportAsset) Type() string {
+	return IssueExportAssetType
+}
+
+// Events return cosmos.Events
+func (m *EventIssueExportAsset) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(m.Type(),
+		cosmos.NewAttribute("asset", m.Asset.String()),
+		cosmos.NewAttribute("amount", m.Amount.String()),
+	)
+
+	return cosmos.Events{evt}, nil
+}
+
+// NewEventRedeemExportAsset create a new redeem export asset event
+func NewEventRedeemExportAsset(
+	asset common.Asset,
+	amount cosmos.Uint,
+) *EventRedeemExportAsset {
+	return &EventRedeemExportAsset{
+		Asset:  asset,
+		Amount: amount,
+	}
+}
+
+// Type return the event type
+func (m *EventRedeemExportAsset) Type() string {
+	return RedeemExportAssetType
+}
+
+// Events return cosmos.Events
+func (m *EventRedeemExportAsset) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(m.Type(),
+		cosmos.NewAttribute("asset", m.Asset.String()),
+		cosmos.NewAttribute("amount", m.Amount.String()),
+	)
+
 	return cosmos.Events{evt}, nil
 }

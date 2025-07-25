@@ -41,7 +41,7 @@ type TronBlockScanner struct {
 	logger                zerolog.Logger
 	bridge                thorclient.ThorchainBridge
 	api                   *api.TronApi
-	whitelist             map[string]tokenlist.ERC20Token
+	whitelist             map[string]common.Token
 	abi                   abi.ABI
 	refBlocks             []RefBlock
 	refAddress            string // needed for energy estimation via api
@@ -79,9 +79,9 @@ func NewTronBlockScanner(
 	}
 
 	// load whitelisted tokens
-	tokens := tokenlist.GetEVMTokenList(cfg.ChainID).Tokens
+	tokens := tokenlist.GetTokenList(cfg.ChainID).Tokens
 
-	whitelist := map[string]tokenlist.ERC20Token{}
+	whitelist := map[string]common.Token{}
 	for _, token := range tokens {
 		for _, address := range cfg.BlockScanner.WhitelistTokens {
 			if strings.EqualFold(address, token.Address) {

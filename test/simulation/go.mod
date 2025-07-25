@@ -48,7 +48,7 @@ require (
 	github.com/bytedance/sonic v1.13.2 // indirect
 	github.com/bytedance/sonic/loader v0.2.4 // indirect
 	github.com/cloudwego/base64x v0.1.5 // indirect
-	github.com/cosmos/evm v1.0.0-rc2 // indirect
+	github.com/cosmos/evm v1.0.0-rc1 // indirect
 	github.com/dgraph-io/badger/v4 v4.2.0 // indirect
 	github.com/google/flatbuffers v24.3.25+incompatible // indirect
 	github.com/naoina/go-stringutil v0.1.0 // indirect

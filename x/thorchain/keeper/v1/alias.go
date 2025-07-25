@@ -96,6 +96,7 @@ var (
 	NewSwapperClout            = types.NewSwapperClout
 	NewTCYClaimer              = types.NewTCYClaimer
 	NewTCYStaker               = types.NewTCYStaker
+	NewExportLedger            = types.NewExportLedger
 )
 
 type (
@@ -153,6 +154,7 @@ type (
 	MsgTCYUnstake            = types.MsgTCYUnstake
 	TCYClaimer               = types.TCYClaimer
 	TCYStaker                = types.TCYStaker
+	ExportLedger             = types.ExportLedger
 
 	ProtoInt64        = types.ProtoInt64
 	ProtoUint64       = types.ProtoUint64

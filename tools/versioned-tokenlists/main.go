@@ -44,7 +44,7 @@ func check(chain common.Chain) {
 		fmt.Println("Check:", chain, version)
 
 		// get token list
-		err = enc.Encode(tokenlist.GetEVMTokenList(chain))
+		err = enc.Encode(tokenlist.GetTokenList(chain))
 		if err != nil {
 			panic(err)
 		}

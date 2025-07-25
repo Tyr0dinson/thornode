@@ -64,7 +64,7 @@ type EVMScanner struct {
 	currentBlockHeight    int64
 	gasCache              []*big.Int
 	solvencyReporter      SolvencyReporter
-	whitelistTokens       []tokenlist.ERC20Token
+	whitelistTokens       []common.Token
 	whitelistContracts    []common.Address
 	signerCacheManager    *signercache.CacheManager
 	tokenManager          *evm.TokenManager
@@ -119,8 +119,8 @@ func NewEVMScanner(cfg config.BifrostBlockScannerConfiguration,
 	}
 
 	// load token list
-	allTokens := tokenlist.GetEVMTokenList(cfg.ChainID).Tokens
-	var whitelistTokens []tokenlist.ERC20Token
+	allTokens := tokenlist.GetTokenList(cfg.ChainID).Tokens
+	var whitelistTokens []common.Token
 	for _, addr := range cfg.WhitelistTokens {
 		// find matching token in token list
 		found := false

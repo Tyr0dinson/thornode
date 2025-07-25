@@ -42,6 +42,7 @@ The following functions can be put into a memo:
 1. [**WITHDRAW Secured Asset**](memos.md#withdraw-secured-asset)
 1. [**EXECUTE Smart Contract**](memos.md#execute)
 1. [**SWITCH Asset**](memos.md#switch)
+1. [**BIND, ISSUE, REDEEM Asset**](memos.md#bind-issue-and-redeem)
 1. [**DEPOSIT** **Savers**](memos.md#deposit-savers)
 1. [**WITHDRAW Savers**](memos.md#withdraw-savers)
 1. [**OPEN** **Loan**](memos.md#open-loan)
@@ -293,6 +294,29 @@ One way switch for external tokens to be a native THORChain asset. Supported Ass
 | Payload   | The asset to become a Native Asset | Must be a L1 supported on THORChain. |
 | `switch`  | The Secured Asset handler.         |                                      |
 | `ADDR`    | The thor address for native asset  | Must be a thor address               |
+
+### Bind, Issue and Redeem
+
+`BIND:ASSET`
+
+Binding an asset provides liquidity on either an external L1 or Thorchain which can be exchanged for the same amount on the other side (via issue or reedem).
+
+The BIND transaction can contain either the native asset to bind, the gas L1 gas asset for funding or both.
+
+| Parameter | Description                                                        | Notes                                             |
+|-----------|--------------------------------------------------------------------|---------------------------------------------------|
+| *Payload* | The L1 asset to bind and/or the L1 gas asset to fund churning fees | Asset must be whitelisted via merge request first |
+| `BIND`    | The bind handler                                                   |                                                   |
+| `:ASSET`  | The export asset to bind and/or fund                               |                                                   |
+
+**Examples:**
+
+- `BIND:ETH.RUJI` &mdash; bind ERC20 RUJI token and or fund the export vault with ETH.ETH
+- `BIND:THOR.RUJI` &mdash; bind native RUJI and or fund export vault with THOR.RUNE
+
+`ISSUE:ASSET:ADDRESS`
+
+`REDEEM:ASSET:ADDRESS`
 
 ### Limit Swap Modification
 

@@ -75,7 +75,7 @@ type ETHScanner struct {
 	currentBlockHeight    int64
 	gasCache              []*big.Int
 	solvencyReporter      SolvencyReporter
-	whitelistTokens       []tokenlist.ERC20Token
+	whitelistTokens       []common.Token
 	signerCacheManager    *signercache.CacheManager
 }
 
