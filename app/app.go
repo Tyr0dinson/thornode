@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"sync"
 
 	"github.com/gorilla/mux"
@@ -31,7 +33,6 @@ import (
 	"github.com/cosmos/cosmos-sdk/client/grpc/cmtservice"
 	nodeservice "github.com/cosmos/cosmos-sdk/client/grpc/node"
 	"github.com/cosmos/cosmos-sdk/codec"
-	"github.com/cosmos/cosmos-sdk/codec/types"
 	"github.com/cosmos/cosmos-sdk/runtime"
 	runtimeservices "github.com/cosmos/cosmos-sdk/runtime/services"
 	"github.com/cosmos/cosmos-sdk/server"
@@ -47,7 +48,6 @@ import (
 	authcodec "github.com/cosmos/cosmos-sdk/x/auth/codec"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
 	authsims "github.com/cosmos/cosmos-sdk/x/auth/simulation"
-	"github.com/cosmos/cosmos-sdk/x/auth/tx"
 	authtx "github.com/cosmos/cosmos-sdk/x/auth/tx"
 	txmodule "github.com/cosmos/cosmos-sdk/x/auth/tx/config"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
@@ -88,6 +88,11 @@ import (
 
 	evm "github.com/cosmos/evm/encoding/codec"
 	"github.com/cosmos/evm/ethereum/eip712"
+
+	errorsmod "cosmossdk.io/errors"
+	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
+	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
+	protov2 "google.golang.org/protobuf/proto"
 )
 
 const (
@@ -134,7 +139,7 @@ type THORChainApp struct {
 	legacyAmino       *codec.LegacyAmino
 	appCodec          codec.Codec
 	txConfig          client.TxConfig
-	interfaceRegistry types.InterfaceRegistry
+	interfaceRegistry codectypes.InterfaceRegistry
 
 	// keys to access the substores
 	keys  map[string]*storetypes.KVStoreKey
@@ -167,6 +172,9 @@ type THORChainApp struct {
 	// module configurator
 	configurator module.Configurator
 	once         sync.Once
+
+	// query multistore
+	qms *QueryMultiStore
 }
 
 // NewChainApp returns a reference to an initialized ChainApp.
@@ -262,6 +270,9 @@ func NewChainApp(
 	}
 	app.SetInterfaceRegistry(interfaceRegistry)
 
+	app.qms = NewQueryMultiStore(bApp.CommitMultiStore())
+	app.BaseApp.SetQueryMultiStore(app.qms)
+
 	app.ParamsKeeper = initParamsKeeper(
 		app.appCodec,
 		app.legacyAmino,
@@ -298,7 +309,7 @@ func NewChainApp(
 		logger,
 	)
 
-	txSigningOptions, err := tx.NewDefaultSigningOptions()
+	txSigningOptions, err := authtx.NewDefaultSigningOptions()
 	if err != nil {
 		panic(err)
 	}
@@ -597,7 +608,7 @@ func NewChainApp(
 	// Please note that changing any of the anteHandler or postHandler chain is
 	// likely to be a state-machine breaking change, which needs a coordinated
 	// upgrade.
-	app.setPostHandler()
+	app.SetPostHandler(sdk.ChainPostDecorators(ebifrost.NewEnshrineBifrostPostDecorator(app.EnshrinedBifrost)))
 
 	// At startup, after all modules have been registered, check that all proto
 	// annotations are correct.
@@ -650,8 +661,183 @@ func (app *THORChainApp) FinalizeBlock(req *abci.RequestFinalizeBlock) (*abci.Re
 	return app.BaseApp.FinalizeBlock(req)
 }
 
-func (app *THORChainApp) setPostHandler() {
-	app.SetPostHandler(sdk.ChainPostDecorators(ebifrost.NewEnshrineBifrostPostDecorator(app.EnshrinedBifrost)))
+func (app *THORChainApp) CheckTx(req *abci.RequestCheckTx) (*abci.ResponseCheckTx, error) {
+	response, err := app.BaseApp.CheckTx(req)
+	if err != nil {
+		return nil, err
+	}
+	if response.Code != errorsmod.SuccessABCICode {
+		return response, nil
+	}
+	if req.Type != abci.CheckTxType_New {
+		return response, nil
+	}
+
+	app.optimisticallyRunCheckTx(req.Tx)
+
+	return response, nil
+}
+
+func (app *THORChainApp) Commit() (*abci.ResponseCommit, error) {
+	response, err := app.BaseApp.Commit()
+	if err != nil {
+		return response, err
+	}
+	app.qms.Commit()
+	return response, err
+}
+
+func (app *THORChainApp) optimisticallyRunCheckTx(txBytes []byte) (gInfo sdk.GasInfo, result *sdk.Result, err error) {
+	ctx := app.GetContextForCheckTx(txBytes)
+
+	if blockGasMeter := ctx.BlockGasMeter(); blockGasMeter != nil && blockGasMeter.IsOutOfGas() {
+		return gInfo, nil, errorsmod.Wrap(sdkerrors.ErrOutOfGas, "no block gas left to run tx")
+	}
+
+	// The AnteHandler should have already been called by this point.
+	// We should know the gas wanted by the tx.
+
+	gasWanted := ctx.GasMeter().Limit()
+	gasConsumedSoFar := ctx.GasMeter().GasConsumed()
+
+	defer func() {
+		// NOTE(kenta): we are not running any other run tx recovery middleware here.
+		if r := recover(); r != nil {
+			if gasErr, ok := r.(storetypes.ErrorOutOfGas); ok {
+				err, result = errorsmod.Wrap(sdkerrors.ErrOutOfGas, fmt.Sprintf(
+					"out of gas in location: %v; gasWanted: %d, gasUsed: %d",
+					gasErr.Descriptor, gasWanted, ctx.GasMeter().GasConsumed(),
+				)), nil
+			}
+			ctx.Logger().Error("panic recovered in runTx", "err", err)
+		}
+
+		gInfo = sdk.GasInfo{GasWanted: gasWanted, GasUsed: ctx.GasMeter().GasConsumed()}
+	}()
+
+	blockGasConsumed := false
+
+	// consumeBlockGas makes sure block gas is consumed at most once. It must
+	// happen after tx processing, and must be executed even if tx processing
+	// fails. Hence, it's execution is deferred.
+	consumeBlockGas := func() {
+		if !blockGasConsumed {
+			blockGasConsumed = true
+			if blockGasMeter := ctx.BlockGasMeter(); blockGasMeter != nil {
+				blockGasMeter.ConsumeGas(
+					ctx.GasMeter().GasConsumedToLimit()-gasConsumedSoFar, "block gas meter",
+				)
+			}
+		}
+	}
+
+	defer consumeBlockGas()
+
+	// If CheckTx returned a successful ABCI response, then we can assume that req.Tx, tx.Msgs
+	// and tx.MsgsV2 is populated and valid.
+
+	tx, _ := app.TxDecode(txBytes)
+	msgs := tx.GetMsgs()
+	msgsV2, _ := tx.GetMsgsV2()
+
+	app.qms.EnsureLatestMultiStore(ctx.MultiStore())
+
+	optimistic := app.qms.CacheMultiStore()
+	ctx = ctx.WithMultiStore(optimistic)
+
+	result, err = app.runMsgs(ctx, msgs, msgsV2)
+	if err != nil {
+		return gInfo, result, err
+	}
+
+	// NOTE(kenta): we assume that postHandlers were already executed for CheckTx.
+	// This is because the postHandler is executed in the same store branch as runMsgs.
+	// This means that both runMsgs and postHandler state will be committed if both are
+	// successful, and both will be reverted if any of the two fails.
+
+	consumeBlockGas()
+	optimistic.Write()
+
+	return gInfo, result, nil
+}
+
+func (app *THORChainApp) runMsgs(ctx sdk.Context, msgs []sdk.Msg, msgsV2 []protov2.Message) (*sdk.Result, error) {
+	events := sdk.EmptyEvents()
+	var msgResponses []*codectypes.Any
+
+	for i, msg := range msgs {
+		handler := app.msgServiceRouter.Handler(msg)
+		if handler == nil {
+			return nil, errorsmod.Wrapf(sdkerrors.ErrUnknownRequest, "no message handler found for %T", msg)
+		}
+
+		msgResult, err := handler(ctx, msg)
+		if err != nil {
+			return nil, errorsmod.Wrapf(err, "failed to execute message; message index: %d", i)
+		}
+
+		msgEvents, err := createEvents(app.appCodec, msgResult.GetEvents(), msg, msgsV2[i])
+		if err != nil {
+			return nil, errorsmod.Wrapf(err, "failed to create message events; message index: %d", i)
+		}
+
+		for j, event := range msgEvents {
+			msgEvents[j] = event.AppendAttributes(sdk.NewAttribute("msg_index", strconv.Itoa(i)))
+		}
+
+		events = events.AppendEvents(msgEvents)
+
+		if len(msgResult.MsgResponses) > 0 {
+			msgResponse := msgResult.MsgResponses[0]
+			if msgResponse == nil {
+				return nil, sdkerrors.ErrLogic.Wrapf("got nil Msg response at index %d for msg %s", i, sdk.MsgTypeURL(msg))
+			}
+			msgResponses = append(msgResponses, msgResponse)
+		}
+	}
+
+	data, err := makeABCIData(msgResponses)
+	if err != nil {
+		return nil, errorsmod.Wrap(err, "failed to marshal tx data")
+	}
+
+	return &sdk.Result{
+		Data:         data,
+		Events:       events.ToABCIEvents(),
+		MsgResponses: msgResponses,
+	}, nil
+}
+
+// makeABCIData generates the Data field to be sent to ABCI Check/DeliverTx.
+func makeABCIData(msgResponses []*codectypes.Any) ([]byte, error) {
+	return proto.Marshal(&sdk.TxMsgData{MsgResponses: msgResponses})
+}
+
+func createEvents(cdc codec.Codec, events sdk.Events, msg sdk.Msg, msgV2 protov2.Message) (sdk.Events, error) {
+	eventMsgName := sdk.MsgTypeURL(msg)
+	msgEvent := sdk.NewEvent(sdk.EventTypeMessage, sdk.NewAttribute(sdk.AttributeKeyAction, eventMsgName))
+
+	// we set the signer attribute as the sender
+	signers, err := cdc.GetMsgV2Signers(msgV2)
+	if err != nil {
+		return nil, err
+	}
+	if len(signers) > 0 && signers[0] != nil {
+		addrStr, err := cdc.InterfaceRegistry().SigningContext().AddressCodec().BytesToString(signers[0])
+		if err != nil {
+			return nil, err
+		}
+		msgEvent = msgEvent.AppendAttributes(sdk.NewAttribute(sdk.AttributeKeySender, addrStr))
+	}
+
+	// verify that events have no module attribute set
+	if _, found := events.GetAttributes(sdk.AttributeKeyModule); !found {
+		if moduleName := sdk.GetModuleNameFromTypeURL(eventMsgName); moduleName != "" {
+			msgEvent = msgEvent.AppendAttributes(sdk.NewAttribute(sdk.AttributeKeyModule, moduleName))
+		}
+	}
+
+	return sdk.Events{msgEvent}.AppendEvents(events), nil
 }
 
 // Name returns the name of the App
@@ -702,7 +888,7 @@ func (app *THORChainApp) AppCodec() codec.Codec {
 }
 
 // InterfaceRegistry returns ChainApp's InterfaceRegistry
-func (app *THORChainApp) InterfaceRegistry() types.InterfaceRegistry {
+func (app *THORChainApp) InterfaceRegistry() codectypes.InterfaceRegistry {
 	return app.interfaceRegistry
 }
 
@@ -864,12 +1050,7 @@ func (app *THORChainApp) Close() error {
 //
 // NOTE: This is solely to be used for testing purposes.
 func GetMaccPerms() map[string][]string {
-	dupMaccPerms := make(map[string][]string)
-	for k, v := range maccPerms {
-		dupMaccPerms[k] = v
-	}
-
-	return dupMaccPerms
+	return maps.Clone(maccPerms)
 }
 
 // BlockedAddresses returns all the app's blocked account addresses.
@@ -892,7 +1073,7 @@ func (app *THORChainApp) MsgServiceRouter() *MsgServiceRouter {
 }
 
 // SetInterfaceRegistry sets the InterfaceRegistry.
-func (app *THORChainApp) SetInterfaceRegistry(registry types.InterfaceRegistry) {
+func (app *THORChainApp) SetInterfaceRegistry(registry codectypes.InterfaceRegistry) {
 	app.interfaceRegistry = registry
 	app.msgServiceRouter.SetInterfaceRegistry(registry)
 	app.BaseApp.SetInterfaceRegistry(registry)
