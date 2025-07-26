@@ -270,9 +270,6 @@ func NewChainApp(
 	}
 	app.SetInterfaceRegistry(interfaceRegistry)
 
-	app.qms = NewQueryMultiStore(bApp.CommitMultiStore())
-	app.BaseApp.SetQueryMultiStore(app.qms)
-
 	app.ParamsKeeper = initParamsKeeper(
 		app.appCodec,
 		app.legacyAmino,
@@ -561,6 +558,9 @@ func NewChainApp(
 	app.MountKVStores(keys)
 	app.MountTransientStores(tkeys)
 
+	app.qms = NewQueryMultiStore(app.BaseApp.CommitMultiStore())
+	app.BaseApp.SetQueryMultiStore(app.qms)
+
 	// initialize BaseApp
 	app.SetInitChainer(app.InitChainer)
 	app.SetPreBlocker(app.PreBlocker)
@@ -666,10 +666,10 @@ func (app *THORChainApp) CheckTx(req *abci.RequestCheckTx) (*abci.ResponseCheckT
 	if err != nil {
 		return nil, err
 	}
-	if response.Code != errorsmod.SuccessABCICode {
+	if req.Type != abci.CheckTxType_New {
 		return response, nil
 	}
-	if req.Type != abci.CheckTxType_New {
+	if response.Code != errorsmod.SuccessABCICode {
 		return response, nil
 	}
 
@@ -683,55 +683,12 @@ func (app *THORChainApp) Commit() (*abci.ResponseCommit, error) {
 	if err != nil {
 		return response, err
 	}
-	app.qms.Commit()
+	app.qms.SetLatestMultistore(nil)
 	return response, err
 }
 
 func (app *THORChainApp) optimisticallyRunCheckTx(txBytes []byte) (gInfo sdk.GasInfo, result *sdk.Result, err error) {
 	ctx := app.GetContextForCheckTx(txBytes)
-
-	if blockGasMeter := ctx.BlockGasMeter(); blockGasMeter != nil && blockGasMeter.IsOutOfGas() {
-		return gInfo, nil, errorsmod.Wrap(sdkerrors.ErrOutOfGas, "no block gas left to run tx")
-	}
-
-	// The AnteHandler should have already been called by this point.
-	// We should know the gas wanted by the tx.
-
-	gasWanted := ctx.GasMeter().Limit()
-	gasConsumedSoFar := ctx.GasMeter().GasConsumed()
-
-	defer func() {
-		// NOTE(kenta): we are not running any other run tx recovery middleware here.
-		if r := recover(); r != nil {
-			if gasErr, ok := r.(storetypes.ErrorOutOfGas); ok {
-				err, result = errorsmod.Wrap(sdkerrors.ErrOutOfGas, fmt.Sprintf(
-					"out of gas in location: %v; gasWanted: %d, gasUsed: %d",
-					gasErr.Descriptor, gasWanted, ctx.GasMeter().GasConsumed(),
-				)), nil
-			}
-			ctx.Logger().Error("panic recovered in runTx", "err", err)
-		}
-
-		gInfo = sdk.GasInfo{GasWanted: gasWanted, GasUsed: ctx.GasMeter().GasConsumed()}
-	}()
-
-	blockGasConsumed := false
-
-	// consumeBlockGas makes sure block gas is consumed at most once. It must
-	// happen after tx processing, and must be executed even if tx processing
-	// fails. Hence, it's execution is deferred.
-	consumeBlockGas := func() {
-		if !blockGasConsumed {
-			blockGasConsumed = true
-			if blockGasMeter := ctx.BlockGasMeter(); blockGasMeter != nil {
-				blockGasMeter.ConsumeGas(
-					ctx.GasMeter().GasConsumedToLimit()-gasConsumedSoFar, "block gas meter",
-				)
-			}
-		}
-	}
-
-	defer consumeBlockGas()
 
 	// If CheckTx returned a successful ABCI response, then we can assume that req.Tx, tx.Msgs
 	// and tx.MsgsV2 is populated and valid.
@@ -740,12 +697,9 @@ func (app *THORChainApp) optimisticallyRunCheckTx(txBytes []byte) (gInfo sdk.Gas
 	msgs := tx.GetMsgs()
 	msgsV2, _ := tx.GetMsgsV2()
 
-	app.qms.EnsureLatestMultiStore(ctx.MultiStore())
+	optimistic := ctx.MultiStore().CacheMultiStore()
 
-	optimistic := app.qms.CacheMultiStore()
-	ctx = ctx.WithMultiStore(optimistic)
-
-	result, err = app.runMsgs(ctx, msgs, msgsV2)
+	result, err = app.runMsgs(ctx.WithMultiStore(optimistic), msgs, msgsV2)
 	if err != nil {
 		return gInfo, result, err
 	}
@@ -755,8 +709,7 @@ func (app *THORChainApp) optimisticallyRunCheckTx(txBytes []byte) (gInfo sdk.Gas
 	// This means that both runMsgs and postHandler state will be committed if both are
 	// successful, and both will be reverted if any of the two fails.
 
-	consumeBlockGas()
-	optimistic.Write()
+	app.qms.SetLatestMultistore(optimistic)
 
 	return gInfo, result, nil
 }

@@ -20,15 +20,10 @@ func NewQueryMultiStore(root storetypes.CommitMultiStore) *QueryMultiStore {
 	}
 }
 
-// EnsureLatestMultiStore ensures that the latest multistore is set.
-func (q *QueryMultiStore) EnsureLatestMultiStore(root storetypes.MultiStore) {
-	if q.latest == nil {
-		q.latest = root
-	}
+// SetLatestMultistore sets the multistore that queries are made against.
+func (q *QueryMultiStore) SetLatestMultistore(latest storetypes.MultiStore) {
+	q.latest = latest
 }
-
-// SetLatestMultiStore sets the multistore that queries are made against.
-func (q *QueryMultiStore) Commit() { q.latest = nil }
 
 // CacheMultiStore implements types.MultiStore.
 func (q *QueryMultiStore) CacheMultiStore() storetypes.CacheMultiStore {
