@@ -2,17 +2,17 @@ package app
 
 import (
 	"io"
+	"sync"
 
 	storetypes "cosmossdk.io/store/types"
-	"github.com/cosmos/cosmos-sdk/types"
 )
 
 var _ storetypes.MultiStore = &QueryMultiStore{}
 
 type QueryMultiStore struct {
-	root    storetypes.CommitMultiStore
-	latest  storetypes.MultiStore
-	applied []types.Tx
+	mu     sync.RWMutex
+	root   storetypes.CommitMultiStore
+	latest storetypes.MultiStore
 }
 
 // NewQueryMultiStore creates a new QueryMultiStore.
@@ -24,19 +24,25 @@ func NewQueryMultiStore(root storetypes.CommitMultiStore) *QueryMultiStore {
 
 // SetLatestMultistore sets the multistore that queries are made against.
 func (q *QueryMultiStore) SetLatestMultistore(latest storetypes.MultiStore) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
 	q.latest = latest
 }
 
-// Commit resets the latest multistore and applied txs.
+// Commit resets the latest multistore.
 func (q *QueryMultiStore) Commit() {
+	q.mu.Lock()
+	defer q.mu.Unlock()
 	q.latest = nil
-	q.applied = nil
 }
 
 // CacheMultiStore implements types.MultiStore.
 func (q *QueryMultiStore) CacheMultiStore() storetypes.CacheMultiStore {
-	if q.latest != nil {
-		return q.latest.CacheMultiStore()
+	q.mu.RLock()
+	latest := q.latest
+	q.mu.RUnlock()
+	if latest != nil {
+		return latest.CacheMultiStore()
 	}
 	return q.root.CacheMultiStore()
 }
@@ -44,8 +50,14 @@ func (q *QueryMultiStore) CacheMultiStore() storetypes.CacheMultiStore {
 // CacheMultiStoreWithVersion implements types.MultiStore.
 func (q *QueryMultiStore) CacheMultiStoreWithVersion(version int64) (storetypes.CacheMultiStore, error) {
 	latestVersion := q.root.LatestVersion()
-	if version == latestVersion && q.latest != nil {
-		return q.latest.CacheMultiStore(), nil
+	if version == latestVersion {
+		q.mu.RLock()
+		latest := q.latest
+		q.mu.RUnlock()
+
+		if latest != nil {
+			return latest.CacheMultiStore(), nil
+		}
 	}
 	return q.root.CacheMultiStoreWithVersion(version)
 }
@@ -60,16 +72,22 @@ func (q *QueryMultiStore) CacheWrapWithTrace(w io.Writer, tc storetypes.TraceCon
 
 // GetKVStore implements types.MultiStore.
 func (q *QueryMultiStore) GetKVStore(key storetypes.StoreKey) storetypes.KVStore {
-	if q.latest != nil {
-		return q.latest.GetKVStore(key)
+	q.mu.RLock()
+	latest := q.latest
+	q.mu.RUnlock()
+	if latest != nil {
+		return latest.GetKVStore(key)
 	}
 	return q.root.GetKVStore(key)
 }
 
 // GetStore implements types.MultiStore.
 func (q *QueryMultiStore) GetStore(key storetypes.StoreKey) storetypes.Store {
-	if q.latest != nil {
-		return q.latest.GetStore(key)
+	q.mu.RLock()
+	latest := q.latest
+	q.mu.RUnlock()
+	if latest != nil {
+		return latest.GetStore(key)
 	}
 	return q.root.GetStore(key)
 }
@@ -86,8 +104,11 @@ func (q *QueryMultiStore) LatestVersion() int64 {
 
 // SetTracer implements types.MultiStore.
 func (q *QueryMultiStore) SetTracer(w io.Writer) storetypes.MultiStore {
-	if q.latest != nil {
-		q.latest.SetTracer(w)
+	q.mu.RLock()
+	latest := q.latest
+	q.mu.RUnlock()
+	if latest != nil {
+		latest.SetTracer(w)
 	}
 	q.root.SetTracer(w)
 	return q
@@ -95,8 +116,11 @@ func (q *QueryMultiStore) SetTracer(w io.Writer) storetypes.MultiStore {
 
 // SetTracingContext implements types.MultiStore.
 func (q *QueryMultiStore) SetTracingContext(tc storetypes.TraceContext) storetypes.MultiStore {
-	if q.latest != nil {
-		q.latest.SetTracingContext(tc)
+	q.mu.RLock()
+	latest := q.latest
+	q.mu.RUnlock()
+	if latest != nil {
+		latest.SetTracingContext(tc)
 	}
 	q.root.SetTracingContext(tc)
 	return q
@@ -104,8 +128,11 @@ func (q *QueryMultiStore) SetTracingContext(tc storetypes.TraceContext) storetyp
 
 // TracingEnabled implements types.MultiStore.
 func (q *QueryMultiStore) TracingEnabled() bool {
-	if q.latest != nil {
-		return q.latest.TracingEnabled()
+	q.mu.RLock()
+	latest := q.latest
+	q.mu.RUnlock()
+	if latest != nil {
+		return latest.TracingEnabled()
 	}
 	return q.root.TracingEnabled()
 }

@@ -39,7 +39,6 @@ import (
 	"github.com/cosmos/cosmos-sdk/server/api"
 	"github.com/cosmos/cosmos-sdk/server/config"
 	servertypes "github.com/cosmos/cosmos-sdk/server/types"
-	"github.com/cosmos/cosmos-sdk/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module"
 	"github.com/cosmos/cosmos-sdk/types/msgservice"
@@ -699,9 +698,10 @@ func (app *THORChainApp) optimisticallyRunCheckTx(txBytes []byte) (result *sdk.R
 		return nil, err
 	}
 
-	optimistic := ctx.MultiStore().CacheMultiStore()
+	ms := ctx.MultiStore()
+	optimistic := ms.CacheMultiStore()
 
-	result, err = app.runMsgs(ctx.WithMultiStore(optimistic), tx)
+	result, err = app.applyTx(ctx.WithMultiStore(optimistic), tx)
 	if err != nil {
 		return nil, err
 	}
@@ -711,56 +711,54 @@ func (app *THORChainApp) optimisticallyRunCheckTx(txBytes []byte) (result *sdk.R
 	// This means that both runMsgs and postHandler state will be committed if both are
 	// successful, and both will be reverted if any of the two fails.
 
-	app.qms.SetLatestMultistore(optimistic)
+	optimistic.Write()
+
+	app.qms.SetLatestMultistore(ms)
 
 	return result, nil
 }
 
-func (app *THORChainApp) runMsgs(ctx sdk.Context, tx types.Tx) (*sdk.Result, error) {
+func (app *THORChainApp) applyTx(ctx sdk.Context, tx sdk.Tx) (*sdk.Result, error) {
 	events := sdk.EmptyEvents()
 	var msgResponses []*codectypes.Any
 
-	app.qms.applied = append(app.qms.applied, tx)
+	msgs := tx.GetMsgs()
+	msgsV2, err := tx.GetMsgsV2()
+	if err != nil {
+		return nil, err
+	}
 
-	for _, tx := range app.qms.applied {
-		msgs := tx.GetMsgs()
-		msgsV2, err := tx.GetMsgsV2()
-		if err != nil {
-			return nil, err
+	for i := range msgs {
+		msg := msgs[i]
+		msgV2 := msgsV2[i]
+
+		handler := app.msgServiceRouter.Handler(msg)
+		if handler == nil {
+			return nil, errorsmod.Wrapf(sdkerrors.ErrUnknownRequest, "no message handler found for %T", msg)
 		}
 
-		for i := range msgs {
-			msg := msgs[i]
-			msgV2 := msgsV2[i]
+		msgResult, err := handler(ctx, msg)
+		if err != nil {
+			return nil, errorsmod.Wrapf(err, "failed to execute message; message index: %d", i)
+		}
 
-			handler := app.msgServiceRouter.Handler(msg)
-			if handler == nil {
-				return nil, errorsmod.Wrapf(sdkerrors.ErrUnknownRequest, "no message handler found for %T", msg)
+		msgEvents, err := createEvents(app.appCodec, msgResult.GetEvents(), msg, msgV2)
+		if err != nil {
+			return nil, errorsmod.Wrapf(err, "failed to create message events; message index: %d", i)
+		}
+
+		for j, event := range msgEvents {
+			msgEvents[j] = event.AppendAttributes(sdk.NewAttribute("msg_index", strconv.Itoa(i)))
+		}
+
+		events = events.AppendEvents(msgEvents)
+
+		if len(msgResult.MsgResponses) > 0 {
+			msgResponse := msgResult.MsgResponses[0]
+			if msgResponse == nil {
+				return nil, sdkerrors.ErrLogic.Wrapf("got nil Msg response at index %d for msg %s", i, sdk.MsgTypeURL(msg))
 			}
-
-			msgResult, err := handler(ctx, msg)
-			if err != nil {
-				return nil, errorsmod.Wrapf(err, "failed to execute message; message index: %d", i)
-			}
-
-			msgEvents, err := createEvents(app.appCodec, msgResult.GetEvents(), msg, msgV2)
-			if err != nil {
-				return nil, errorsmod.Wrapf(err, "failed to create message events; message index: %d", i)
-			}
-
-			for j, event := range msgEvents {
-				msgEvents[j] = event.AppendAttributes(sdk.NewAttribute("msg_index", strconv.Itoa(i)))
-			}
-
-			events = events.AppendEvents(msgEvents)
-
-			if len(msgResult.MsgResponses) > 0 {
-				msgResponse := msgResult.MsgResponses[0]
-				if msgResponse == nil {
-					return nil, sdkerrors.ErrLogic.Wrapf("got nil Msg response at index %d for msg %s", i, sdk.MsgTypeURL(msg))
-				}
-				msgResponses = append(msgResponses, msgResponse)
-			}
+			msgResponses = append(msgResponses, msgResponse)
 		}
 	}
 
