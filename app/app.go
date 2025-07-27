@@ -683,7 +683,7 @@ func (app *THORChainApp) CheckTx(req *abci.RequestCheckTx) (*abci.ResponseCheckT
 		return response, nil
 	}
 
-	app.optimisticallyRunCheckTx(req.Tx)
+	_, _ = app.optimisticallyRunCheckTx(req.Tx)
 
 	return response, nil
 }
