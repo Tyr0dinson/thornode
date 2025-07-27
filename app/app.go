@@ -39,6 +39,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/server/api"
 	"github.com/cosmos/cosmos-sdk/server/config"
 	servertypes "github.com/cosmos/cosmos-sdk/server/types"
+	"github.com/cosmos/cosmos-sdk/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module"
 	"github.com/cosmos/cosmos-sdk/types/msgservice"
@@ -661,6 +662,15 @@ func (app *THORChainApp) FinalizeBlock(req *abci.RequestFinalizeBlock) (*abci.Re
 	return app.BaseApp.FinalizeBlock(req)
 }
 
+func (app *THORChainApp) Commit() (*abci.ResponseCommit, error) {
+	response, err := app.BaseApp.Commit()
+	if err != nil {
+		return response, err
+	}
+	app.qms.Commit()
+	return response, err
+}
+
 func (app *THORChainApp) CheckTx(req *abci.RequestCheckTx) (*abci.ResponseCheckTx, error) {
 	response, err := app.BaseApp.CheckTx(req)
 	if err != nil {
@@ -678,30 +688,22 @@ func (app *THORChainApp) CheckTx(req *abci.RequestCheckTx) (*abci.ResponseCheckT
 	return response, nil
 }
 
-func (app *THORChainApp) Commit() (*abci.ResponseCommit, error) {
-	response, err := app.BaseApp.Commit()
-	if err != nil {
-		return response, err
-	}
-	app.qms.SetLatestMultistore(nil)
-	return response, err
-}
-
-func (app *THORChainApp) optimisticallyRunCheckTx(txBytes []byte) (gInfo sdk.GasInfo, result *sdk.Result, err error) {
+func (app *THORChainApp) optimisticallyRunCheckTx(txBytes []byte) (result *sdk.Result, err error) {
 	ctx := app.GetContextForCheckTx(txBytes)
 
 	// If CheckTx returned a successful ABCI response, then we can assume that req.Tx, tx.Msgs
 	// and tx.MsgsV2 is populated and valid.
 
-	tx, _ := app.TxDecode(txBytes)
-	msgs := tx.GetMsgs()
-	msgsV2, _ := tx.GetMsgsV2()
+	tx, err := app.TxDecode(txBytes)
+	if err != nil {
+		return nil, err
+	}
 
 	optimistic := ctx.MultiStore().CacheMultiStore()
 
-	result, err = app.runMsgs(ctx.WithMultiStore(optimistic), msgs, msgsV2)
+	result, err = app.runMsgs(ctx.WithMultiStore(optimistic), tx)
 	if err != nil {
-		return gInfo, result, err
+		return nil, err
 	}
 
 	// NOTE(kenta): we assume that postHandlers were already executed for CheckTx.
@@ -711,41 +713,54 @@ func (app *THORChainApp) optimisticallyRunCheckTx(txBytes []byte) (gInfo sdk.Gas
 
 	app.qms.SetLatestMultistore(optimistic)
 
-	return gInfo, result, nil
+	return result, nil
 }
 
-func (app *THORChainApp) runMsgs(ctx sdk.Context, msgs []sdk.Msg, msgsV2 []protov2.Message) (*sdk.Result, error) {
+func (app *THORChainApp) runMsgs(ctx sdk.Context, tx types.Tx) (*sdk.Result, error) {
 	events := sdk.EmptyEvents()
 	var msgResponses []*codectypes.Any
 
-	for i, msg := range msgs {
-		handler := app.msgServiceRouter.Handler(msg)
-		if handler == nil {
-			return nil, errorsmod.Wrapf(sdkerrors.ErrUnknownRequest, "no message handler found for %T", msg)
-		}
+	app.qms.applied = append(app.qms.applied, tx)
 
-		msgResult, err := handler(ctx, msg)
+	for _, tx := range app.qms.applied {
+		msgs := tx.GetMsgs()
+		msgsV2, err := tx.GetMsgsV2()
 		if err != nil {
-			return nil, errorsmod.Wrapf(err, "failed to execute message; message index: %d", i)
+			return nil, err
 		}
 
-		msgEvents, err := createEvents(app.appCodec, msgResult.GetEvents(), msg, msgsV2[i])
-		if err != nil {
-			return nil, errorsmod.Wrapf(err, "failed to create message events; message index: %d", i)
-		}
+		for i := range msgs {
+			msg := msgs[i]
+			msgV2 := msgsV2[i]
 
-		for j, event := range msgEvents {
-			msgEvents[j] = event.AppendAttributes(sdk.NewAttribute("msg_index", strconv.Itoa(i)))
-		}
-
-		events = events.AppendEvents(msgEvents)
-
-		if len(msgResult.MsgResponses) > 0 {
-			msgResponse := msgResult.MsgResponses[0]
-			if msgResponse == nil {
-				return nil, sdkerrors.ErrLogic.Wrapf("got nil Msg response at index %d for msg %s", i, sdk.MsgTypeURL(msg))
+			handler := app.msgServiceRouter.Handler(msg)
+			if handler == nil {
+				return nil, errorsmod.Wrapf(sdkerrors.ErrUnknownRequest, "no message handler found for %T", msg)
 			}
-			msgResponses = append(msgResponses, msgResponse)
+
+			msgResult, err := handler(ctx, msg)
+			if err != nil {
+				return nil, errorsmod.Wrapf(err, "failed to execute message; message index: %d", i)
+			}
+
+			msgEvents, err := createEvents(app.appCodec, msgResult.GetEvents(), msg, msgV2)
+			if err != nil {
+				return nil, errorsmod.Wrapf(err, "failed to create message events; message index: %d", i)
+			}
+
+			for j, event := range msgEvents {
+				msgEvents[j] = event.AppendAttributes(sdk.NewAttribute("msg_index", strconv.Itoa(i)))
+			}
+
+			events = events.AppendEvents(msgEvents)
+
+			if len(msgResult.MsgResponses) > 0 {
+				msgResponse := msgResult.MsgResponses[0]
+				if msgResponse == nil {
+					return nil, sdkerrors.ErrLogic.Wrapf("got nil Msg response at index %d for msg %s", i, sdk.MsgTypeURL(msg))
+				}
+				msgResponses = append(msgResponses, msgResponse)
+			}
 		}
 	}
 

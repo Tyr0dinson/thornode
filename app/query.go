@@ -4,13 +4,15 @@ import (
 	"io"
 
 	storetypes "cosmossdk.io/store/types"
+	"github.com/cosmos/cosmos-sdk/types"
 )
 
 var _ storetypes.MultiStore = &QueryMultiStore{}
 
 type QueryMultiStore struct {
-	root   storetypes.CommitMultiStore
-	latest storetypes.MultiStore
+	root    storetypes.CommitMultiStore
+	latest  storetypes.MultiStore
+	applied []types.Tx
 }
 
 // NewQueryMultiStore creates a new QueryMultiStore.
@@ -23,6 +25,12 @@ func NewQueryMultiStore(root storetypes.CommitMultiStore) *QueryMultiStore {
 // SetLatestMultistore sets the multistore that queries are made against.
 func (q *QueryMultiStore) SetLatestMultistore(latest storetypes.MultiStore) {
 	q.latest = latest
+}
+
+// Commit resets the latest multistore and applied txs.
+func (q *QueryMultiStore) Commit() {
+	q.latest = nil
+	q.applied = nil
 }
 
 // CacheMultiStore implements types.MultiStore.
