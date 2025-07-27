@@ -29,6 +29,11 @@ genesis:
 type: create-blocks
 count: 1
 ---
+type: check
+endpoint: http://localhost:1317/thorchain/dpool/THOR.BTC
+asserts:
+  - .status == "Suspended"
+---
 type: tx-mimir
 key: DerivedDepthBasisPts
 value: 10000
@@ -40,11 +45,6 @@ key: EnableDerivedAssets
 value: 1
 signer: {{ addr_thor_dog }}
 sequence: 1
----
-type: check
-endpoint: http://localhost:1317/thorchain/dpool/THOR.BTC
-asserts:
-  - .status == "Suspended"
 ---
 type: create-blocks
 count: 2
