@@ -3314,6 +3314,25 @@ func (qs queryServer) streamAppliedTxs(_ *types.SubscribeToTxAppliedRequest, str
 	}
 }
 
+func (qs queryServer) streamFinalizedBlocks(_ *types.SubscribeToBlockFinalizedRequest, stream types.Query_SubscribeToBlockFinalizedServer) error {
+	ch := qs.mgr.EventBus().SubscribeBlockFinalized()
+	defer qs.mgr.EventBus().UnsubscribeBlockFinalized(ch)
+
+	for {
+		select {
+		case <-stream.Context().Done():
+			return stream.Context().Err()
+		case notification, ok := <-ch:
+			if !ok {
+				return nil
+			}
+			if err := stream.Send(notification); err != nil {
+				return err
+			}
+		}
+	}
+}
+
 // -------------------------------------------------------------------------------------
 // Generic Helpers
 // -------------------------------------------------------------------------------------

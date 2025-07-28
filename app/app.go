@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,7 +12,9 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/gorilla/mux"
 
@@ -25,6 +28,7 @@ import (
 	upgradekeeper "cosmossdk.io/x/upgrade/keeper"
 	upgradetypes "cosmossdk.io/x/upgrade/types"
 	abci "github.com/cometbft/cometbft/abci/types"
+	"github.com/cometbft/cometbft/crypto/tmhash"
 	tmproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	dbm "github.com/cosmos/cosmos-db"
 	"github.com/cosmos/cosmos-sdk/baseapp"
@@ -664,7 +668,102 @@ func (app *THORChainApp) FinalizeBlock(req *abci.RequestFinalizeBlock) (*abci.Re
 		}
 	})
 
-	return app.BaseApp.FinalizeBlock(req)
+	lastCommitId := app.LastCommitID()
+
+	res, err := app.BaseApp.FinalizeBlock(req)
+	if err != nil {
+		return res, err
+	}
+
+	notification := &thorchaintypes.BlockFinalizedNotification{
+		Header: &thorchaintypes.BlockFinalizedNotificationHeader{
+			Hash:               strings.ToUpper(hex.EncodeToString(req.Hash)),
+			ChainId:            app.BaseApp.ChainID(),
+			Height:             req.Height,
+			Time:               req.Time.Format(time.RFC3339Nano),
+			LastBlockHeight:    lastCommitId.Version,
+			LastCommitHash:     strings.ToUpper(hex.EncodeToString(lastCommitId.Hash)),
+			NextValidatorsHash: strings.ToUpper(hex.EncodeToString(req.NextValidatorsHash)),
+			ProposerAddress:    strings.ToUpper(hex.EncodeToString(req.ProposerAddress)),
+			AppHash:            strings.ToUpper(hex.EncodeToString(res.AppHash)),
+		},
+		Txs: make([]*thorchaintypes.QueryBlockTx, len(req.Txs)),
+	}
+
+	for _, event := range res.Events {
+		foundMode := false
+		for _, attr := range event.Attributes {
+			if attr.Key == "mode" {
+				if attr.Value == "BeginBlock" {
+					notification.BeginBlockEvents = append(notification.BeginBlockEvents, blockEvent(sdk.Event(event)))
+					foundMode = true
+				}
+				if attr.Value == "EndBlock" {
+					notification.EndBlockEvents = append(notification.EndBlockEvents, blockEvent(sdk.Event(event)))
+					foundMode = true
+				}
+				continue
+			}
+		}
+		if !foundMode {
+			notification.FinalizeBlockEvents = append(notification.FinalizeBlockEvents, blockEvent(sdk.Event(event)))
+		}
+	}
+
+	for i, tx := range req.Txs {
+		// decode the protobuf and encode to json
+		dtx, err := app.txConfig.TxDecoder()(tx)
+		if err != nil {
+			return nil, fmt.Errorf("fail to decode tx: %w", err)
+		}
+
+		etx, err := app.txConfig.TxJSONEncoder()(dtx)
+		if err != nil {
+			return nil, fmt.Errorf("fail to encode tx: %w", err)
+		}
+
+		txResult := res.TxResults[i]
+
+		notification.Txs[i] = &thorchaintypes.QueryBlockTx{
+			Tx:   etx,
+			Hash: strings.ToUpper(hex.EncodeToString(tmhash.Sum(tx))),
+			Result: &thorchaintypes.BlockTxResult{
+				Code:      int64(txResult.Code),
+				Data:      string(txResult.Data),
+				Log:       txResult.Log,
+				Info:      txResult.Info,
+				GasWanted: strconv.FormatInt(txResult.GasWanted, 10),
+				GasUsed:   strconv.FormatInt(txResult.GasUsed, 10),
+				Events:    make([]*thorchaintypes.BlockEvent, len(txResult.Events)),
+			},
+		}
+
+		for j, event := range txResult.Events {
+			notification.Txs[i].Result.Events[j] = blockEvent(sdk.Event(event))
+		}
+	}
+
+	app.EventBus.BroadcastBlockFinalized(notification)
+
+	return res, nil
+}
+
+func blockEvent(e sdk.Event) *thorchaintypes.BlockEvent {
+	var event thorchaintypes.BlockEvent
+
+	event.EventKvPair = append(event.EventKvPair, &thorchaintypes.EventKeyValuePair{
+		Key:   "type",
+		Value: e.Type,
+	})
+
+	for _, a := range e.Attributes {
+		event.EventKvPair = append(event.EventKvPair, &thorchaintypes.EventKeyValuePair{
+			Key:   a.Key,
+			Value: a.Value,
+		})
+	}
+
+	return &event
 }
 
 func (app *THORChainApp) Commit() (*abci.ResponseCommit, error) {

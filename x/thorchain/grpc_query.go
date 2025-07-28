@@ -691,3 +691,7 @@ func (s *queryServer) Eip712TypedData(c context.Context, req *types.QueryEip712T
 func (s *queryServer) SubscribeToTxApplied(req *types.SubscribeToTxAppliedRequest, stream types.Query_SubscribeToTxAppliedServer) error {
 	return s.streamAppliedTxs(req, stream)
 }
+
+func (s *queryServer) SubscribeToBlockFinalized(req *types.SubscribeToBlockFinalizedRequest, stream types.Query_SubscribeToBlockFinalizedServer) error {
+	return s.streamFinalizedBlocks(req, stream)
+}

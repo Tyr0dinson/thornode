@@ -4534,6 +4534,23 @@ func request_Query_SubscribeToTxApplied_0(ctx context.Context, marshaler runtime
 
 }
 
+func request_Query_SubscribeToBlockFinalized_0(ctx context.Context, marshaler runtime.Marshaler, client QueryClient, req *http.Request, pathParams map[string]string) (Query_SubscribeToBlockFinalizedClient, runtime.ServerMetadata, error) {
+	var protoReq SubscribeToBlockFinalizedRequest
+	var metadata runtime.ServerMetadata
+
+	stream, err := client.SubscribeToBlockFinalized(ctx, &protoReq)
+	if err != nil {
+		return nil, metadata, err
+	}
+	header, err := stream.Header()
+	if err != nil {
+		return nil, metadata, err
+	}
+	metadata.HeaderMD = header
+	return stream, metadata, nil
+
+}
+
 // RegisterQueryHandlerServer registers the http handlers for service Query to "mux".
 // UnaryRPC     :call QueryServer directly.
 // StreamingRPC :currently unsupported pending https://github.com/grpc/grpc-go/issues/906.
@@ -6410,6 +6427,13 @@ func RegisterQueryHandlerServer(ctx context.Context, mux *runtime.ServeMux, serv
 		return
 	})
 
+	mux.Handle("GET", pattern_Query_SubscribeToBlockFinalized_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		err := status.Error(codes.Unimplemented, "streaming calls are not yet supported in the in-process transport")
+		_, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+		return
+	})
+
 	return nil
 }
 
@@ -8091,6 +8115,26 @@ func RegisterQueryHandlerClient(ctx context.Context, mux *runtime.ServeMux, clie
 
 	})
 
+	mux.Handle("GET", pattern_Query_SubscribeToBlockFinalized_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		rctx, err := runtime.AnnotateContext(ctx, mux, req)
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := request_Query_SubscribeToBlockFinalized_0(rctx, inboundMarshaler, client, req, pathParams)
+		ctx = runtime.NewServerMetadataContext(ctx, md)
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+
+		forward_Query_SubscribeToBlockFinalized_0(ctx, mux, outboundMarshaler, w, req, func() (proto.Message, error) { return resp.Recv() }, mux.GetForwardResponseOptions()...)
+
+	})
+
 	return nil
 }
 
@@ -8258,6 +8302,8 @@ var (
 	pattern_Query_Eip712TypedData_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"thorchain", "eip715", "tx"}, "", runtime.AssumeColonVerbOpt(false)))
 
 	pattern_Query_SubscribeToTxApplied_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3}, []string{"thorchain", "node", "tx", "applied"}, "", runtime.AssumeColonVerbOpt(false)))
+
+	pattern_Query_SubscribeToBlockFinalized_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3}, []string{"thorchain", "node", "block", "finalized"}, "", runtime.AssumeColonVerbOpt(false)))
 )
 
 var (
@@ -8424,4 +8470,6 @@ var (
 	forward_Query_Eip712TypedData_0 = runtime.ForwardResponseMessage
 
 	forward_Query_SubscribeToTxApplied_0 = runtime.ForwardResponseStream
+
+	forward_Query_SubscribeToBlockFinalized_0 = runtime.ForwardResponseStream
 )

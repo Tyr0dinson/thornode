@@ -78,3 +78,34 @@ message BlockTxResult{
   repeated BlockEvent events = 7;
   string codespace = 8;
 }
+
+message SubscribeToBlockFinalizedRequest {}
+
+message BlockFinalizedNotificationHeader {
+  // The merkle root hash of the fields of the decided block.
+  string hash = 1 [(gogoproto.jsontag) = "hash"];
+  // The chain id of the block.
+  string chain_id = 2 [(gogoproto.jsontag) = "chain_id"];
+  // Block height.
+  int64 height = 3 [(gogoproto.jsontag) = "height"];
+  // Block time.
+  string time = 4 [(gogoproto.jsontag) = "time"];
+  // Last block height.
+  int64 last_block_height = 5 [(gogoproto.jsontag) = "last_block_height"];
+  // Last commit hash.
+  string last_commit_hash = 6 [(gogoproto.jsontag) = "last_commit_hash"];
+  // Next validators hash.
+  string next_validators_hash = 7 [(gogoproto.jsontag) = "next_validators_hash"];
+  // Proposer address.
+  string proposer_address = 8 [(gogoproto.jsontag) = "proposer_address"];
+  // App hash.
+  string app_hash = 9 [(gogoproto.jsontag) = "app_hash"];
+}
+
+message BlockFinalizedNotification {
+  BlockFinalizedNotificationHeader header = 1 [(gogoproto.jsontag) = "header"];
+  repeated BlockEvent begin_block_events = 2 [(gogoproto.jsontag) = "begin_block_events"];
+  repeated BlockEvent end_block_events = 3 [(gogoproto.jsontag) = "end_block_events"];
+  repeated BlockEvent finalize_block_events = 4 [(gogoproto.jsontag) = "finalize_block_events"];
+  repeated QueryBlockTx txs = 5 [(gogoproto.jsontag) = "txs"];
+}

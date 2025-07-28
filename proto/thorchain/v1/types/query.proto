@@ -394,4 +394,8 @@ service Query {
   rpc SubscribeToTxApplied(SubscribeToTxAppliedRequest) returns (stream TxAppliedNotification) {
     option (google.api.http).get = "/thorchain/node/tx/applied";
   }
+
+  rpc SubscribeToBlockFinalized(SubscribeToBlockFinalizedRequest) returns (stream BlockFinalizedNotification) {
+    option (google.api.http).get = "/thorchain/node/block/finalized";
+  }
 }
