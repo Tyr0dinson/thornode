@@ -10,15 +10,17 @@ import (
 var _ storetypes.MultiStore = &QueryMultiStore{}
 
 type QueryMultiStore struct {
-	mu     sync.RWMutex
-	root   storetypes.CommitMultiStore
-	latest storetypes.MultiStore
+	mu      sync.RWMutex
+	root    storetypes.CommitMultiStore
+	latest  storetypes.MultiStore
+	applied int64
 }
 
 // NewQueryMultiStore creates a new QueryMultiStore.
 func NewQueryMultiStore(root storetypes.CommitMultiStore) *QueryMultiStore {
 	return &QueryMultiStore{
-		root: root,
+		root:    root,
+		applied: 0,
 	}
 }
 
@@ -27,6 +29,7 @@ func (q *QueryMultiStore) SetLatestMultistore(latest storetypes.MultiStore) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	q.latest = latest
+	q.applied++
 }
 
 // Commit resets the latest multistore.
@@ -34,6 +37,7 @@ func (q *QueryMultiStore) Commit() {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	q.latest = nil
+	q.applied = 0
 }
 
 // CacheMultiStore implements types.MultiStore.

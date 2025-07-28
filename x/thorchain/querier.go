@@ -3295,6 +3295,25 @@ func (qs queryServer) queryBlock(ctx cosmos.Context, req *types.QueryBlockReques
 	return &res, nil
 }
 
+func (qs queryServer) streamAppliedTxs(_ *types.SubscribeToTxAppliedRequest, stream types.Query_SubscribeToTxAppliedServer) error {
+	ch := qs.mgr.EventBus().SubscribeTxApplied()
+	defer qs.mgr.EventBus().UnsubscribeTxApplied(ch)
+
+	for {
+		select {
+		case <-stream.Context().Done():
+			return stream.Context().Err()
+		case notification, ok := <-ch:
+			if !ok {
+				return nil
+			}
+			if err := stream.Send(notification); err != nil {
+				return err
+			}
+		}
+	}
+}
+
 // -------------------------------------------------------------------------------------
 // Generic Helpers
 // -------------------------------------------------------------------------------------

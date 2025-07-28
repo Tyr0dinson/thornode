@@ -687,3 +687,7 @@ func (s *queryServer) Eip712TypedData(c context.Context, req *types.QueryEip712T
 	ctx := s.unwrapSdkContext(c)
 	return s.queryEip712TypedData(ctx, req)
 }
+
+func (s *queryServer) SubscribeToTxApplied(req *types.SubscribeToTxAppliedRequest, stream types.Query_SubscribeToTxAppliedServer) error {
+	return s.streamAppliedTxs(req, stream)
+}

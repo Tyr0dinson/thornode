@@ -10,6 +10,8 @@ import "types/type_tx_out.proto";
 import "types/type_observed_tx.proto";
 import "common/common.proto";
 import "types/misc.proto";
+import "cosmos/base/abci/v1beta1/abci.proto";
+import "cosmos/tx/v1beta1/tx.proto";
 
 option (gogoproto.marshaler_all) = true;
 
@@ -165,4 +167,17 @@ message OutboundSignedStage{
   ProtoInt64 blocks_since_scheduled = 2;
 	// returns true if an external transaction has been signed and broadcast (and observed in its mempool)
   bool completed = 3 [(gogoproto.jsontag) = "completed"];
+}
+
+message SubscribeToTxAppliedRequest {}
+
+message TxAppliedNotification {
+  // The latest finalized block height.
+  int64 latest_block_height = 1;
+  // The number of optimistic transactions applied by this node so far since the latest block.
+  int64 num_applied = 2;
+  // The result of the optimistic transaction.
+  cosmos.base.abci.v1beta1.Result result = 3;
+  // The optimistic transaction.
+  bytes tx = 4;
 }

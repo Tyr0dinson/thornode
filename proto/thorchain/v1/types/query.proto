@@ -390,4 +390,8 @@ service Query {
   rpc Eip712TypedData(QueryEip712TypedDataRequest) returns (QueryEip712TypedDataResponse) {
     option (google.api.http).get = "/thorchain/eip715/tx";
   }
+
+  rpc SubscribeToTxApplied(SubscribeToTxAppliedRequest) returns (stream TxAppliedNotification) {
+    option (google.api.http).get = "/thorchain/node/tx/applied";
+  }
 }

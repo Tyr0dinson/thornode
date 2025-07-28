@@ -192,7 +192,7 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 	}), IsNil)
 
 	os.Setenv("NET", "mocknet")
-	mgr := NewManagers(k, encodingConfig.Codec, serviceThorchain, bk, ak, uk, wk)
+	mgr := NewManagers(k, encodingConfig.Codec, serviceThorchain, bk, ak, uk, wk, NewEventBus())
 	constants.SWVersion = GetCurrentVersion()
 
 	_, hasVerStored := k.GetVersionWithCtx(ctx)

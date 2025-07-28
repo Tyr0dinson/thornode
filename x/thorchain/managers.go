@@ -261,6 +261,7 @@ type Mgrs struct {
 	accountKeeper authkeeper.AccountKeeper
 	upgradeKeeper *upgradekeeper.Keeper
 	wasmKeeper    wasmkeeper.Keeper
+	eventBus      *EventBus
 	storeService  store.KVStoreService
 }
 
@@ -273,6 +274,7 @@ func NewManagers(
 	accountKeeper authkeeper.AccountKeeper,
 	upgradeKeeper *upgradekeeper.Keeper,
 	wasmKeeper wasmkeeper.Keeper,
+	eventBus *EventBus,
 ) *Mgrs {
 	return &Mgrs{
 		K:             keeper,
@@ -282,6 +284,7 @@ func NewManagers(
 		upgradeKeeper: upgradeKeeper,
 		wasmKeeper:    wasmKeeper,
 		storeService:  storeService,
+		eventBus:      eventBus,
 	}
 }
 
@@ -445,6 +448,8 @@ func (mgr *Mgrs) SecuredAssetManager() SecuredAssetManager { return mgr.securedM
 func (mgr *Mgrs) WasmManager() WasmManager { return mgr.wasmManager }
 
 func (mgr *Mgrs) SwitchManager() SwitchManager { return mgr.switchManager }
+
+func (mgr *Mgrs) EventBus() *EventBus { return mgr.eventBus }
 
 // GetKeeper return Keeper
 func GetKeeper(

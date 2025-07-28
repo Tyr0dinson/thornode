@@ -176,6 +176,9 @@ type THORChainApp struct {
 
 	// query multistore
 	qms *QueryMultiStore
+
+	// event bus
+	EventBus *thorchain.EventBus
 }
 
 // NewChainApp returns a reference to an initialized ChainApp.
@@ -270,6 +273,8 @@ func NewChainApp(
 		msgServiceRouter:  NewMsgServiceRouter(bApp.MsgServiceRouter()),
 	}
 	app.SetInterfaceRegistry(interfaceRegistry)
+
+	app.EventBus = thorchain.NewEventBus()
 
 	app.ParamsKeeper = initParamsKeeper(
 		app.appCodec,
@@ -405,7 +410,7 @@ func NewChainApp(
 	telemetryEnabled := cast.ToBool(appOpts.Get("telemetry.enabled"))
 	testApp := cast.ToBool(appOpts.Get(TestApp))
 
-	mgrs := thorchain.NewManagers(app.ThorchainKeeper, app.appCodec, runtime.NewKVStoreService(keys[thorchaintypes.StoreKey]), app.BankKeeper, app.AccountKeeper, app.UpgradeKeeper, app.WasmKeeper)
+	mgrs := thorchain.NewManagers(app.ThorchainKeeper, app.appCodec, runtime.NewKVStoreService(keys[thorchaintypes.StoreKey]), app.BankKeeper, app.AccountKeeper, app.UpgradeKeeper, app.WasmKeeper, app.EventBus)
 	app.msgServiceRouter.AddCustomRoute("cosmos.bank.v1beta1.Msg", thorchain.NewBankSendHandler(thorchain.NewSendHandler(mgrs)))
 
 	thorchainModule := thorchain.NewAppModule(mgrs, telemetryEnabled, testApp)
@@ -676,6 +681,10 @@ func (app *THORChainApp) CheckTx(req *abci.RequestCheckTx) (*abci.ResponseCheckT
 	if err != nil {
 		return nil, err
 	}
+	optimisticTransactionsEnabled := appconfig.GetThornode().OptimisticTransactions.Enabled
+	if !optimisticTransactionsEnabled {
+		return response, nil
+	}
 	if req.Type != abci.CheckTxType_New {
 		return response, nil
 	}
@@ -683,18 +692,17 @@ func (app *THORChainApp) CheckTx(req *abci.RequestCheckTx) (*abci.ResponseCheckT
 		return response, nil
 	}
 
-	optimisticTransactionsEnabled := appconfig.GetThornode().OptimisticTransactions.Enabled
-	if optimisticTransactionsEnabled {
-		// NOTE(kenta): if a tx fails to be optimistically applied, or if processing the
-		// 	tx results in events, we silently ignore them for now. Will expose a new
-		// 	ABCI event to relay all optimistic tx results to clients in the future.
-		_, _ = app.optimisticallyRunCheckTx(req.Tx)
+	err = app.optimisticallyRunCheckTx(req.Tx)
+	if err != nil {
+		// NOTE(kenta): we do not signify to the client that the tx failed checks just because
+		//	it failed to be optimistically applied.
+		return response, nil
 	}
 
 	return response, nil
 }
 
-func (app *THORChainApp) optimisticallyRunCheckTx(txBytes []byte) (result *sdk.Result, err error) {
+func (app *THORChainApp) optimisticallyRunCheckTx(txBytes []byte) (err error) {
 	ctx := app.GetContextForCheckTx(txBytes)
 
 	// If CheckTx returned a successful ABCI response, then we can assume that req.Tx, tx.Msgs
@@ -702,15 +710,15 @@ func (app *THORChainApp) optimisticallyRunCheckTx(txBytes []byte) (result *sdk.R
 
 	tx, err := app.TxDecode(txBytes)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	ms := ctx.MultiStore()
 	optimistic := ms.CacheMultiStore()
 
-	result, err = app.optimisticallyApplyTx(ctx.WithMultiStore(optimistic), tx)
+	result, err := app.optimisticallyApplyTx(ctx.WithMultiStore(optimistic), tx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// NOTE(kenta): we assume that postHandlers were already executed for CheckTx.
@@ -722,7 +730,16 @@ func (app *THORChainApp) optimisticallyRunCheckTx(txBytes []byte) (result *sdk.R
 
 	app.qms.SetLatestMultistore(ms)
 
-	return result, nil
+	event := &thorchaintypes.TxAppliedNotification{
+		LatestBlockHeight: ctx.BlockHeight(),
+		NumApplied:        app.qms.applied,
+		Result:            result,
+		Tx:                txBytes,
+	}
+
+	app.EventBus.BroadcastTxApplied(event)
+
+	return nil
 }
 
 func (app *THORChainApp) optimisticallyApplyTx(ctx sdk.Context, tx sdk.Tx) (*sdk.Result, error) {
