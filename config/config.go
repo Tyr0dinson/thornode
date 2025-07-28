@@ -398,6 +398,10 @@ type Thornode struct {
 		Peers []string `mapstructure:"peers"`
 	} `mapstructure:"auto_state_sync"`
 
+	OptimisticTransactions struct {
+		Enabled bool `mapstructure:"enabled"`
+	} `mapstructure:"optimistic_transactions"`
+
 	// Cosmos contains values used in templating the Cosmos app.toml.
 	Cosmos struct {
 		Pruning         string `mapstructure:"pruning"`

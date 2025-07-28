@@ -74,6 +74,7 @@ import (
 	wasmkeeper "github.com/CosmWasm/wasmd/x/wasm/keeper"
 	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
 	appparams "gitlab.com/thorchain/thornode/v3/app/params"
+	appconfig "gitlab.com/thorchain/thornode/v3/config"
 	"gitlab.com/thorchain/thornode/v3/openapi"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/ebifrost"
@@ -682,7 +683,13 @@ func (app *THORChainApp) CheckTx(req *abci.RequestCheckTx) (*abci.ResponseCheckT
 		return response, nil
 	}
 
-	_, _ = app.optimisticallyRunCheckTx(req.Tx)
+	optimisticTransactionsEnabled := appconfig.GetThornode().OptimisticTransactions.Enabled
+	if optimisticTransactionsEnabled {
+		// NOTE(kenta): if a tx fails to be optimistically applied, or if processing the
+		// 	tx results in events, we silently ignore them for now. Will expose a new
+		// 	ABCI event to relay all optimistic tx results to clients in the future.
+		_, _ = app.optimisticallyRunCheckTx(req.Tx)
+	}
 
 	return response, nil
 }
@@ -701,7 +708,7 @@ func (app *THORChainApp) optimisticallyRunCheckTx(txBytes []byte) (result *sdk.R
 	ms := ctx.MultiStore()
 	optimistic := ms.CacheMultiStore()
 
-	result, err = app.applyTx(ctx.WithMultiStore(optimistic), tx)
+	result, err = app.optimisticallyApplyTx(ctx.WithMultiStore(optimistic), tx)
 	if err != nil {
 		return nil, err
 	}
@@ -718,7 +725,7 @@ func (app *THORChainApp) optimisticallyRunCheckTx(txBytes []byte) (result *sdk.R
 	return result, nil
 }
 
-func (app *THORChainApp) applyTx(ctx sdk.Context, tx sdk.Tx) (*sdk.Result, error) {
+func (app *THORChainApp) optimisticallyApplyTx(ctx sdk.Context, tx sdk.Tx) (*sdk.Result, error) {
 	events := sdk.EmptyEvents()
 	var msgResponses []*codectypes.Any
 
