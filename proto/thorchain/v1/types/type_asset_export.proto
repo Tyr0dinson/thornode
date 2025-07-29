@@ -1,0 +1,25 @@
+syntax = "proto3";
+package types;
+
+option go_package = "gitlab.com/thorchain/thornode/v3/x/thorchain/types";
+option (gogoproto.goproto_stringer_all) = false;
+option (gogoproto.stringer_all)         = false;
+option (gogoproto.goproto_getters_all) = false;
+
+import "common/common.proto";
+import "gogoproto/gogo.proto";
+
+
+message AssetExport {
+  enum Status {
+    Unknown = 0;
+    Available = 1;
+    Staged = 2;
+  };
+  common.Asset asset = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "gitlab.com/thorchain/thornode/v3/common.Asset"];
+  Status status = 2;
+  string amount_external = 3 [(gogoproto.customtype) = "cosmossdk.io/math.Uint", (gogoproto.nullable) = false];
+  string amount_native = 4 [(gogoproto.customtype) = "cosmossdk.io/math.Uint", (gogoproto.nullable) = false];
+  string gas_reserve_l1 = 5 [(gogoproto.customtype) = "cosmossdk.io/math.Uint", (gogoproto.nullable) = false];
+  string gas_reserve_rune = 6 [(gogoproto.customtype) = "cosmossdk.io/math.Uint", (gogoproto.nullable) = false];
+}

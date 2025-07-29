@@ -1,0 +1,25 @@
+syntax = "proto3";
+package types;
+
+option go_package = "gitlab.com/thorchain/thornode/v3/x/thorchain/types";
+
+import "types/type_asset_export.proto";
+import "gogoproto/gogo.proto";
+
+option (gogoproto.marshaler_all) = true;
+
+message QueryAssetExportRequest{
+  string asset = 1;
+}
+
+message QueryAssetExportResponse{
+  types.AssetExport export = 1;
+}
+
+message QueryAssetExportsRequest{
+  string asset = 1;
+}
+
+message QueryAssetExportsResponse{
+  repeated types.AssetExport exports = 1;
+}

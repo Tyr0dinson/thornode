@@ -184,20 +184,15 @@ func getMsgManageTHORNameFromMemo(memo ManageTHORNameMemo, tx ObservedTx, signer
 }
 
 func getMsgExportAssetBindFromMemo(ctx cosmos.Context, memo ExportAssetBindMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
-	symbol := memo.GetAsset().Symbol
-	chain := tx.Tx.Chain
-
-	assetStr := fmt.Sprintf("%s.%s", chain.String(), symbol)
-	asset, err := common.NewAsset(assetStr)
-	if err != nil {
-		return nil, err
+	if !common.IsSupportedExportAsset(memo.Asset) {
+		return nil, fmt.Errorf("export asset not supported: %s", memo.Asset.String())
 	}
 
-	assetCoin := tx.Tx.Coins.GetCoin(asset)
-	feeCoin := tx.Tx.Coins.GetCoin(chain.GetGasAsset())
+	assetCoin := tx.Tx.Coins.GetCoin(memo.Asset)
+	feeCoin := tx.Tx.Coins.GetCoin(tx.Tx.Chain.GetGasAsset())
 
 	return NewMsgExportAssetBind(
-		tx.Tx, asset, assetCoin.Amount, feeCoin.Amount, signer,
+		tx.Tx, memo.Asset, assetCoin.Amount, feeCoin.Amount, signer,
 	), nil
 }
 

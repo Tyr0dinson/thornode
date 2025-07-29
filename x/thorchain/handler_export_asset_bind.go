@@ -55,6 +55,22 @@ func (h ExportAssetBindHandler) validate(ctx cosmos.Context, msg MsgExportAssetB
 		return fmt.Errorf("export asset not supported: %s", msg.Asset.String())
 	}
 
+	if !msg.GasAmount.IsZero() {
+		if msg.Tx.Chain.Equals(common.THORChain) && msg.Asset.Chain.Equals(common.THORChain) {
+			return fmt.Errorf("native asset cannot be funded with RUNE")
+		}
+
+		if !msg.Tx.Chain.Equals(common.THORChain) && !msg.Tx.Chain.Equals(msg.Asset.Chain) {
+			return fmt.Errorf("gas asset must match asset chain")
+		}
+	}
+
+	if !msg.AssetAmount.IsZero() {
+		if !msg.Tx.Chain.Equals(msg.Asset.Chain) {
+			return fmt.Errorf("tx does not match asset chain")
+		}
+	}
+
 	return nil
 }
 
@@ -63,33 +79,38 @@ func (h ExportAssetBindHandler) handle(ctx cosmos.Context, msg MsgExportAssetBin
 		return fmt.Errorf("export asset not supported: %s", msg.Asset.String())
 	}
 
-	ledger, err := h.mgr.Keeper().GetExportLedger(ctx, msg.Asset)
+	ctx.Logger().Info("handle bind export asset", "asset", msg.Asset.String())
+
+	export, err := h.mgr.Keeper().GetAssetExport(ctx, msg.Asset)
 	if err != nil {
 		return err
 	}
 
-	if ledger.Asset.IsEmpty() {
-		ledger.Asset = msg.Asset
+	ctx.Logger().Info("export: " + export.String())
 
+	if export.Asset.IsEmpty() {
+		export.Asset = msg.Asset
 	}
 
 	gasAmountRune := cosmos.ZeroUint()
 	gasAmountL1 := cosmos.ZeroUint()
 
 	if msg.Asset.Chain.Equals(common.THORChain) {
-		ledger.BalanceNative = ledger.BalanceNative.Add(msg.AssetAmount)
-		ledger.GasReserveRune = ledger.GasReserveRune.Add(msg.GasAmount)
+		export.AmountNative = export.AmountNative.Add(msg.AssetAmount)
+		export.GasReserveRune = export.GasReserveRune.Add(msg.GasAmount)
 		gasAmountRune = msg.GasAmount
 	} else {
-		ledger.BalanceExternal = ledger.BalanceExternal.Add(msg.AssetAmount)
-		ledger.GasReserveL1 = ledger.GasReserveL1.Add(msg.GasAmount)
+		export.AmountExternal = export.AmountExternal.Add(msg.AssetAmount)
+		export.GasReserveL1 = export.GasReserveL1.Add(msg.GasAmount)
 		gasAmountL1 = msg.GasAmount
 	}
 
-	err = h.mgr.Keeper().SetExportLedger(ctx, ledger)
+	err = h.mgr.Keeper().SetAssetExport(ctx, export)
 	if err != nil {
 		return err
 	}
+
+	ctx.Logger().Info("ledger set")
 
 	if !msg.AssetAmount.IsZero() {
 		event := NewEventBindExportAsset(msg.Asset, msg.AssetAmount)

@@ -79,5 +79,5 @@ type (
 	Upgrade                  = types.Upgrade
 	TCYClaimer               = types.TCYClaimer
 	TCYStaker                = types.TCYStaker
-	ExportLedger             = types.ExportLedger
+	AssetExport              = types.AssetExport
 )

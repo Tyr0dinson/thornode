@@ -15,34 +15,36 @@ import (
 )
 
 var (
-	md_ExportLedger                  protoreflect.MessageDescriptor
-	fd_ExportLedger_asset            protoreflect.FieldDescriptor
-	fd_ExportLedger_balance_external protoreflect.FieldDescriptor
-	fd_ExportLedger_balance_native   protoreflect.FieldDescriptor
-	fd_ExportLedger_gas_reserve_l1   protoreflect.FieldDescriptor
-	fd_ExportLedger_gas_reserve_rune protoreflect.FieldDescriptor
+	md_AssetExport                  protoreflect.MessageDescriptor
+	fd_AssetExport_asset            protoreflect.FieldDescriptor
+	fd_AssetExport_status           protoreflect.FieldDescriptor
+	fd_AssetExport_amount_external  protoreflect.FieldDescriptor
+	fd_AssetExport_amount_native    protoreflect.FieldDescriptor
+	fd_AssetExport_gas_reserve_l1   protoreflect.FieldDescriptor
+	fd_AssetExport_gas_reserve_rune protoreflect.FieldDescriptor
 )
 
 func init() {
-	file_types_type_export_ledger_proto_init()
-	md_ExportLedger = File_types_type_export_ledger_proto.Messages().ByName("ExportLedger")
-	fd_ExportLedger_asset = md_ExportLedger.Fields().ByName("asset")
-	fd_ExportLedger_balance_external = md_ExportLedger.Fields().ByName("balance_external")
-	fd_ExportLedger_balance_native = md_ExportLedger.Fields().ByName("balance_native")
-	fd_ExportLedger_gas_reserve_l1 = md_ExportLedger.Fields().ByName("gas_reserve_l1")
-	fd_ExportLedger_gas_reserve_rune = md_ExportLedger.Fields().ByName("gas_reserve_rune")
+	file_types_type_asset_export_proto_init()
+	md_AssetExport = File_types_type_asset_export_proto.Messages().ByName("AssetExport")
+	fd_AssetExport_asset = md_AssetExport.Fields().ByName("asset")
+	fd_AssetExport_status = md_AssetExport.Fields().ByName("status")
+	fd_AssetExport_amount_external = md_AssetExport.Fields().ByName("amount_external")
+	fd_AssetExport_amount_native = md_AssetExport.Fields().ByName("amount_native")
+	fd_AssetExport_gas_reserve_l1 = md_AssetExport.Fields().ByName("gas_reserve_l1")
+	fd_AssetExport_gas_reserve_rune = md_AssetExport.Fields().ByName("gas_reserve_rune")
 }
 
-var _ protoreflect.Message = (*fastReflection_ExportLedger)(nil)
+var _ protoreflect.Message = (*fastReflection_AssetExport)(nil)
 
-type fastReflection_ExportLedger ExportLedger
+type fastReflection_AssetExport AssetExport
 
-func (x *ExportLedger) ProtoReflect() protoreflect.Message {
-	return (*fastReflection_ExportLedger)(x)
+func (x *AssetExport) ProtoReflect() protoreflect.Message {
+	return (*fastReflection_AssetExport)(x)
 }
 
-func (x *ExportLedger) slowProtoReflect() protoreflect.Message {
-	mi := &file_types_type_export_ledger_proto_msgTypes[0]
+func (x *AssetExport) slowProtoReflect() protoreflect.Message {
+	mi := &file_types_type_asset_export_proto_msgTypes[0]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -53,43 +55,43 @@ func (x *ExportLedger) slowProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-var _fastReflection_ExportLedger_messageType fastReflection_ExportLedger_messageType
-var _ protoreflect.MessageType = fastReflection_ExportLedger_messageType{}
+var _fastReflection_AssetExport_messageType fastReflection_AssetExport_messageType
+var _ protoreflect.MessageType = fastReflection_AssetExport_messageType{}
 
-type fastReflection_ExportLedger_messageType struct{}
+type fastReflection_AssetExport_messageType struct{}
 
-func (x fastReflection_ExportLedger_messageType) Zero() protoreflect.Message {
-	return (*fastReflection_ExportLedger)(nil)
+func (x fastReflection_AssetExport_messageType) Zero() protoreflect.Message {
+	return (*fastReflection_AssetExport)(nil)
 }
-func (x fastReflection_ExportLedger_messageType) New() protoreflect.Message {
-	return new(fastReflection_ExportLedger)
+func (x fastReflection_AssetExport_messageType) New() protoreflect.Message {
+	return new(fastReflection_AssetExport)
 }
-func (x fastReflection_ExportLedger_messageType) Descriptor() protoreflect.MessageDescriptor {
-	return md_ExportLedger
+func (x fastReflection_AssetExport_messageType) Descriptor() protoreflect.MessageDescriptor {
+	return md_AssetExport
 }
 
 // Descriptor returns message descriptor, which contains only the protobuf
 // type information for the message.
-func (x *fastReflection_ExportLedger) Descriptor() protoreflect.MessageDescriptor {
-	return md_ExportLedger
+func (x *fastReflection_AssetExport) Descriptor() protoreflect.MessageDescriptor {
+	return md_AssetExport
 }
 
 // Type returns the message type, which encapsulates both Go and protobuf
 // type information. If the Go type information is not needed,
 // it is recommended that the message descriptor be used instead.
-func (x *fastReflection_ExportLedger) Type() protoreflect.MessageType {
-	return _fastReflection_ExportLedger_messageType
+func (x *fastReflection_AssetExport) Type() protoreflect.MessageType {
+	return _fastReflection_AssetExport_messageType
 }
 
 // New returns a newly allocated and mutable empty message.
-func (x *fastReflection_ExportLedger) New() protoreflect.Message {
-	return new(fastReflection_ExportLedger)
+func (x *fastReflection_AssetExport) New() protoreflect.Message {
+	return new(fastReflection_AssetExport)
 }
 
 // Interface unwraps the message reflection interface and
 // returns the underlying ProtoMessage interface.
-func (x *fastReflection_ExportLedger) Interface() protoreflect.ProtoMessage {
-	return (*ExportLedger)(x)
+func (x *fastReflection_AssetExport) Interface() protoreflect.ProtoMessage {
+	return (*AssetExport)(x)
 }
 
 // Range iterates over every populated field in an undefined order,
@@ -97,34 +99,40 @@ func (x *fastReflection_ExportLedger) Interface() protoreflect.ProtoMessage {
 // Range returns immediately if f returns false.
 // While iterating, mutating operations may only be performed
 // on the current field descriptor.
-func (x *fastReflection_ExportLedger) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
+func (x *fastReflection_AssetExport) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
 	if x.Asset != nil {
 		value := protoreflect.ValueOfMessage(x.Asset.ProtoReflect())
-		if !f(fd_ExportLedger_asset, value) {
+		if !f(fd_AssetExport_asset, value) {
 			return
 		}
 	}
-	if x.BalanceExternal != "" {
-		value := protoreflect.ValueOfString(x.BalanceExternal)
-		if !f(fd_ExportLedger_balance_external, value) {
+	if x.Status != 0 {
+		value := protoreflect.ValueOfEnum((protoreflect.EnumNumber)(x.Status))
+		if !f(fd_AssetExport_status, value) {
 			return
 		}
 	}
-	if x.BalanceNative != "" {
-		value := protoreflect.ValueOfString(x.BalanceNative)
-		if !f(fd_ExportLedger_balance_native, value) {
+	if x.AmountExternal != "" {
+		value := protoreflect.ValueOfString(x.AmountExternal)
+		if !f(fd_AssetExport_amount_external, value) {
+			return
+		}
+	}
+	if x.AmountNative != "" {
+		value := protoreflect.ValueOfString(x.AmountNative)
+		if !f(fd_AssetExport_amount_native, value) {
 			return
 		}
 	}
 	if x.GasReserveL1 != "" {
 		value := protoreflect.ValueOfString(x.GasReserveL1)
-		if !f(fd_ExportLedger_gas_reserve_l1, value) {
+		if !f(fd_AssetExport_gas_reserve_l1, value) {
 			return
 		}
 	}
 	if x.GasReserveRune != "" {
 		value := protoreflect.ValueOfString(x.GasReserveRune)
-		if !f(fd_ExportLedger_gas_reserve_rune, value) {
+		if !f(fd_AssetExport_gas_reserve_rune, value) {
 			return
 		}
 	}
@@ -141,23 +149,25 @@ func (x *fastReflection_ExportLedger) Range(f func(protoreflect.FieldDescriptor,
 // In other cases (aside from the nullable cases above),
 // a proto3 scalar field is populated if it contains a non-zero value, and
 // a repeated field is populated if it is non-empty.
-func (x *fastReflection_ExportLedger) Has(fd protoreflect.FieldDescriptor) bool {
+func (x *fastReflection_AssetExport) Has(fd protoreflect.FieldDescriptor) bool {
 	switch fd.FullName() {
-	case "types.ExportLedger.asset":
+	case "types.AssetExport.asset":
 		return x.Asset != nil
-	case "types.ExportLedger.balance_external":
-		return x.BalanceExternal != ""
-	case "types.ExportLedger.balance_native":
-		return x.BalanceNative != ""
-	case "types.ExportLedger.gas_reserve_l1":
+	case "types.AssetExport.status":
+		return x.Status != 0
+	case "types.AssetExport.amount_external":
+		return x.AmountExternal != ""
+	case "types.AssetExport.amount_native":
+		return x.AmountNative != ""
+	case "types.AssetExport.gas_reserve_l1":
 		return x.GasReserveL1 != ""
-	case "types.ExportLedger.gas_reserve_rune":
+	case "types.AssetExport.gas_reserve_rune":
 		return x.GasReserveRune != ""
 	default:
 		if fd.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.ExportLedger"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.AssetExport"))
 		}
-		panic(fmt.Errorf("message types.ExportLedger does not contain field %s", fd.FullName()))
+		panic(fmt.Errorf("message types.AssetExport does not contain field %s", fd.FullName()))
 	}
 }
 
@@ -167,23 +177,25 @@ func (x *fastReflection_ExportLedger) Has(fd protoreflect.FieldDescriptor) bool 
 // associated with the given field number.
 //
 // Clear is a mutating operation and unsafe for concurrent use.
-func (x *fastReflection_ExportLedger) Clear(fd protoreflect.FieldDescriptor) {
+func (x *fastReflection_AssetExport) Clear(fd protoreflect.FieldDescriptor) {
 	switch fd.FullName() {
-	case "types.ExportLedger.asset":
+	case "types.AssetExport.asset":
 		x.Asset = nil
-	case "types.ExportLedger.balance_external":
-		x.BalanceExternal = ""
-	case "types.ExportLedger.balance_native":
-		x.BalanceNative = ""
-	case "types.ExportLedger.gas_reserve_l1":
+	case "types.AssetExport.status":
+		x.Status = 0
+	case "types.AssetExport.amount_external":
+		x.AmountExternal = ""
+	case "types.AssetExport.amount_native":
+		x.AmountNative = ""
+	case "types.AssetExport.gas_reserve_l1":
 		x.GasReserveL1 = ""
-	case "types.ExportLedger.gas_reserve_rune":
+	case "types.AssetExport.gas_reserve_rune":
 		x.GasReserveRune = ""
 	default:
 		if fd.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.ExportLedger"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.AssetExport"))
 		}
-		panic(fmt.Errorf("message types.ExportLedger does not contain field %s", fd.FullName()))
+		panic(fmt.Errorf("message types.AssetExport does not contain field %s", fd.FullName()))
 	}
 }
 
@@ -193,28 +205,31 @@ func (x *fastReflection_ExportLedger) Clear(fd protoreflect.FieldDescriptor) {
 // the default value of a bytes scalar is guaranteed to be a copy.
 // For unpopulated composite types, it returns an empty, read-only view
 // of the value; to obtain a mutable reference, use Mutable.
-func (x *fastReflection_ExportLedger) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
+func (x *fastReflection_AssetExport) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
 	switch descriptor.FullName() {
-	case "types.ExportLedger.asset":
+	case "types.AssetExport.asset":
 		value := x.Asset
 		return protoreflect.ValueOfMessage(value.ProtoReflect())
-	case "types.ExportLedger.balance_external":
-		value := x.BalanceExternal
+	case "types.AssetExport.status":
+		value := x.Status
+		return protoreflect.ValueOfEnum((protoreflect.EnumNumber)(value))
+	case "types.AssetExport.amount_external":
+		value := x.AmountExternal
 		return protoreflect.ValueOfString(value)
-	case "types.ExportLedger.balance_native":
-		value := x.BalanceNative
+	case "types.AssetExport.amount_native":
+		value := x.AmountNative
 		return protoreflect.ValueOfString(value)
-	case "types.ExportLedger.gas_reserve_l1":
+	case "types.AssetExport.gas_reserve_l1":
 		value := x.GasReserveL1
 		return protoreflect.ValueOfString(value)
-	case "types.ExportLedger.gas_reserve_rune":
+	case "types.AssetExport.gas_reserve_rune":
 		value := x.GasReserveRune
 		return protoreflect.ValueOfString(value)
 	default:
 		if descriptor.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.ExportLedger"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.AssetExport"))
 		}
-		panic(fmt.Errorf("message types.ExportLedger does not contain field %s", descriptor.FullName()))
+		panic(fmt.Errorf("message types.AssetExport does not contain field %s", descriptor.FullName()))
 	}
 }
 
@@ -228,23 +243,25 @@ func (x *fastReflection_ExportLedger) Get(descriptor protoreflect.FieldDescripto
 // empty, read-only value, then it panics.
 //
 // Set is a mutating operation and unsafe for concurrent use.
-func (x *fastReflection_ExportLedger) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
+func (x *fastReflection_AssetExport) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
 	switch fd.FullName() {
-	case "types.ExportLedger.asset":
+	case "types.AssetExport.asset":
 		x.Asset = value.Message().Interface().(*common.Asset)
-	case "types.ExportLedger.balance_external":
-		x.BalanceExternal = value.Interface().(string)
-	case "types.ExportLedger.balance_native":
-		x.BalanceNative = value.Interface().(string)
-	case "types.ExportLedger.gas_reserve_l1":
+	case "types.AssetExport.status":
+		x.Status = (AssetExport_Status)(value.Enum())
+	case "types.AssetExport.amount_external":
+		x.AmountExternal = value.Interface().(string)
+	case "types.AssetExport.amount_native":
+		x.AmountNative = value.Interface().(string)
+	case "types.AssetExport.gas_reserve_l1":
 		x.GasReserveL1 = value.Interface().(string)
-	case "types.ExportLedger.gas_reserve_rune":
+	case "types.AssetExport.gas_reserve_rune":
 		x.GasReserveRune = value.Interface().(string)
 	default:
 		if fd.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.ExportLedger"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.AssetExport"))
 		}
-		panic(fmt.Errorf("message types.ExportLedger does not contain field %s", fd.FullName()))
+		panic(fmt.Errorf("message types.AssetExport does not contain field %s", fd.FullName()))
 	}
 }
 
@@ -258,60 +275,64 @@ func (x *fastReflection_ExportLedger) Set(fd protoreflect.FieldDescriptor, value
 // It panics if the field does not contain a composite type.
 //
 // Mutable is a mutating operation and unsafe for concurrent use.
-func (x *fastReflection_ExportLedger) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
+func (x *fastReflection_AssetExport) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
 	switch fd.FullName() {
-	case "types.ExportLedger.asset":
+	case "types.AssetExport.asset":
 		if x.Asset == nil {
 			x.Asset = new(common.Asset)
 		}
 		return protoreflect.ValueOfMessage(x.Asset.ProtoReflect())
-	case "types.ExportLedger.balance_external":
-		panic(fmt.Errorf("field balance_external of message types.ExportLedger is not mutable"))
-	case "types.ExportLedger.balance_native":
-		panic(fmt.Errorf("field balance_native of message types.ExportLedger is not mutable"))
-	case "types.ExportLedger.gas_reserve_l1":
-		panic(fmt.Errorf("field gas_reserve_l1 of message types.ExportLedger is not mutable"))
-	case "types.ExportLedger.gas_reserve_rune":
-		panic(fmt.Errorf("field gas_reserve_rune of message types.ExportLedger is not mutable"))
+	case "types.AssetExport.status":
+		panic(fmt.Errorf("field status of message types.AssetExport is not mutable"))
+	case "types.AssetExport.amount_external":
+		panic(fmt.Errorf("field amount_external of message types.AssetExport is not mutable"))
+	case "types.AssetExport.amount_native":
+		panic(fmt.Errorf("field amount_native of message types.AssetExport is not mutable"))
+	case "types.AssetExport.gas_reserve_l1":
+		panic(fmt.Errorf("field gas_reserve_l1 of message types.AssetExport is not mutable"))
+	case "types.AssetExport.gas_reserve_rune":
+		panic(fmt.Errorf("field gas_reserve_rune of message types.AssetExport is not mutable"))
 	default:
 		if fd.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.ExportLedger"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.AssetExport"))
 		}
-		panic(fmt.Errorf("message types.ExportLedger does not contain field %s", fd.FullName()))
+		panic(fmt.Errorf("message types.AssetExport does not contain field %s", fd.FullName()))
 	}
 }
 
 // NewField returns a new value that is assignable to the field
 // for the given descriptor. For scalars, this returns the default value.
 // For lists, maps, and messages, this returns a new, empty, mutable value.
-func (x *fastReflection_ExportLedger) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
+func (x *fastReflection_AssetExport) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
 	switch fd.FullName() {
-	case "types.ExportLedger.asset":
+	case "types.AssetExport.asset":
 		m := new(common.Asset)
 		return protoreflect.ValueOfMessage(m.ProtoReflect())
-	case "types.ExportLedger.balance_external":
+	case "types.AssetExport.status":
+		return protoreflect.ValueOfEnum(0)
+	case "types.AssetExport.amount_external":
 		return protoreflect.ValueOfString("")
-	case "types.ExportLedger.balance_native":
+	case "types.AssetExport.amount_native":
 		return protoreflect.ValueOfString("")
-	case "types.ExportLedger.gas_reserve_l1":
+	case "types.AssetExport.gas_reserve_l1":
 		return protoreflect.ValueOfString("")
-	case "types.ExportLedger.gas_reserve_rune":
+	case "types.AssetExport.gas_reserve_rune":
 		return protoreflect.ValueOfString("")
 	default:
 		if fd.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.ExportLedger"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.AssetExport"))
 		}
-		panic(fmt.Errorf("message types.ExportLedger does not contain field %s", fd.FullName()))
+		panic(fmt.Errorf("message types.AssetExport does not contain field %s", fd.FullName()))
 	}
 }
 
 // WhichOneof reports which field within the oneof is populated,
 // returning nil if none are populated.
 // It panics if the oneof descriptor does not belong to this message.
-func (x *fastReflection_ExportLedger) WhichOneof(d protoreflect.OneofDescriptor) protoreflect.FieldDescriptor {
+func (x *fastReflection_AssetExport) WhichOneof(d protoreflect.OneofDescriptor) protoreflect.FieldDescriptor {
 	switch d.FullName() {
 	default:
-		panic(fmt.Errorf("%s is not a oneof field in types.ExportLedger", d.FullName()))
+		panic(fmt.Errorf("%s is not a oneof field in types.AssetExport", d.FullName()))
 	}
 	panic("unreachable")
 }
@@ -319,7 +340,7 @@ func (x *fastReflection_ExportLedger) WhichOneof(d protoreflect.OneofDescriptor)
 // GetUnknown retrieves the entire list of unknown fields.
 // The caller may only mutate the contents of the RawFields
 // if the mutated bytes are stored back into the message with SetUnknown.
-func (x *fastReflection_ExportLedger) GetUnknown() protoreflect.RawFields {
+func (x *fastReflection_AssetExport) GetUnknown() protoreflect.RawFields {
 	return x.unknownFields
 }
 
@@ -330,7 +351,7 @@ func (x *fastReflection_ExportLedger) GetUnknown() protoreflect.RawFields {
 // An empty RawFields may be passed to clear the fields.
 //
 // SetUnknown is a mutating operation and unsafe for concurrent use.
-func (x *fastReflection_ExportLedger) SetUnknown(fields protoreflect.RawFields) {
+func (x *fastReflection_AssetExport) SetUnknown(fields protoreflect.RawFields) {
 	x.unknownFields = fields
 }
 
@@ -342,7 +363,7 @@ func (x *fastReflection_ExportLedger) SetUnknown(fields protoreflect.RawFields) 
 // message type, but the details are implementation dependent.
 // Validity is not part of the protobuf data model, and may not
 // be preserved in marshaling or other operations.
-func (x *fastReflection_ExportLedger) IsValid() bool {
+func (x *fastReflection_AssetExport) IsValid() bool {
 	return x != nil
 }
 
@@ -352,9 +373,9 @@ func (x *fastReflection_ExportLedger) IsValid() bool {
 // The returned methods type is identical to
 // "google.golang.org/protobuf/runtime/protoiface".Methods.
 // Consult the protoiface package documentation for details.
-func (x *fastReflection_ExportLedger) ProtoMethods() *protoiface.Methods {
+func (x *fastReflection_AssetExport) ProtoMethods() *protoiface.Methods {
 	size := func(input protoiface.SizeInput) protoiface.SizeOutput {
-		x := input.Message.Interface().(*ExportLedger)
+		x := input.Message.Interface().(*AssetExport)
 		if x == nil {
 			return protoiface.SizeOutput{
 				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
@@ -370,11 +391,14 @@ func (x *fastReflection_ExportLedger) ProtoMethods() *protoiface.Methods {
 			l = options.Size(x.Asset)
 			n += 1 + l + runtime.Sov(uint64(l))
 		}
-		l = len(x.BalanceExternal)
+		if x.Status != 0 {
+			n += 1 + runtime.Sov(uint64(x.Status))
+		}
+		l = len(x.AmountExternal)
 		if l > 0 {
 			n += 1 + l + runtime.Sov(uint64(l))
 		}
-		l = len(x.BalanceNative)
+		l = len(x.AmountNative)
 		if l > 0 {
 			n += 1 + l + runtime.Sov(uint64(l))
 		}
@@ -396,7 +420,7 @@ func (x *fastReflection_ExportLedger) ProtoMethods() *protoiface.Methods {
 	}
 
 	marshal := func(input protoiface.MarshalInput) (protoiface.MarshalOutput, error) {
-		x := input.Message.Interface().(*ExportLedger)
+		x := input.Message.Interface().(*AssetExport)
 		if x == nil {
 			return protoiface.MarshalOutput{
 				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
@@ -420,28 +444,33 @@ func (x *fastReflection_ExportLedger) ProtoMethods() *protoiface.Methods {
 			copy(dAtA[i:], x.GasReserveRune)
 			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.GasReserveRune)))
 			i--
-			dAtA[i] = 0x2a
+			dAtA[i] = 0x32
 		}
 		if len(x.GasReserveL1) > 0 {
 			i -= len(x.GasReserveL1)
 			copy(dAtA[i:], x.GasReserveL1)
 			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.GasReserveL1)))
 			i--
+			dAtA[i] = 0x2a
+		}
+		if len(x.AmountNative) > 0 {
+			i -= len(x.AmountNative)
+			copy(dAtA[i:], x.AmountNative)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.AmountNative)))
+			i--
 			dAtA[i] = 0x22
 		}
-		if len(x.BalanceNative) > 0 {
-			i -= len(x.BalanceNative)
-			copy(dAtA[i:], x.BalanceNative)
-			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.BalanceNative)))
+		if len(x.AmountExternal) > 0 {
+			i -= len(x.AmountExternal)
+			copy(dAtA[i:], x.AmountExternal)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.AmountExternal)))
 			i--
 			dAtA[i] = 0x1a
 		}
-		if len(x.BalanceExternal) > 0 {
-			i -= len(x.BalanceExternal)
-			copy(dAtA[i:], x.BalanceExternal)
-			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.BalanceExternal)))
+		if x.Status != 0 {
+			i = runtime.EncodeVarint(dAtA, i, uint64(x.Status))
 			i--
-			dAtA[i] = 0x12
+			dAtA[i] = 0x10
 		}
 		if x.Asset != nil {
 			encoded, err := options.Marshal(x.Asset)
@@ -468,7 +497,7 @@ func (x *fastReflection_ExportLedger) ProtoMethods() *protoiface.Methods {
 		}, nil
 	}
 	unmarshal := func(input protoiface.UnmarshalInput) (protoiface.UnmarshalOutput, error) {
-		x := input.Message.Interface().(*ExportLedger)
+		x := input.Message.Interface().(*AssetExport)
 		if x == nil {
 			return protoiface.UnmarshalOutput{
 				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
@@ -500,10 +529,10 @@ func (x *fastReflection_ExportLedger) ProtoMethods() *protoiface.Methods {
 			fieldNum := int32(wire >> 3)
 			wireType := int(wire & 0x7)
 			if wireType == 4 {
-				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: ExportLedger: wiretype end group for non-group")
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: AssetExport: wiretype end group for non-group")
 			}
 			if fieldNum <= 0 {
-				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: ExportLedger: illegal tag %d (wire type %d)", fieldNum, wire)
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: AssetExport: illegal tag %d (wire type %d)", fieldNum, wire)
 			}
 			switch fieldNum {
 			case 1:
@@ -543,10 +572,10 @@ func (x *fastReflection_ExportLedger) ProtoMethods() *protoiface.Methods {
 				}
 				iNdEx = postIndex
 			case 2:
-				if wireType != 2 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field BalanceExternal", wireType)
+				if wireType != 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Status", wireType)
 				}
-				var stringLen uint64
+				x.Status = 0
 				for shift := uint(0); ; shift += 7 {
 					if shift >= 64 {
 						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
@@ -556,27 +585,14 @@ func (x *fastReflection_ExportLedger) ProtoMethods() *protoiface.Methods {
 					}
 					b := dAtA[iNdEx]
 					iNdEx++
-					stringLen |= uint64(b&0x7F) << shift
+					x.Status |= AssetExport_Status(b&0x7F) << shift
 					if b < 0x80 {
 						break
 					}
 				}
-				intStringLen := int(stringLen)
-				if intStringLen < 0 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
-				}
-				postIndex := iNdEx + intStringLen
-				if postIndex < 0 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
-				}
-				if postIndex > l {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
-				}
-				x.BalanceExternal = string(dAtA[iNdEx:postIndex])
-				iNdEx = postIndex
 			case 3:
 				if wireType != 2 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field BalanceNative", wireType)
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field AmountExternal", wireType)
 				}
 				var stringLen uint64
 				for shift := uint(0); ; shift += 7 {
@@ -604,9 +620,41 @@ func (x *fastReflection_ExportLedger) ProtoMethods() *protoiface.Methods {
 				if postIndex > l {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
 				}
-				x.BalanceNative = string(dAtA[iNdEx:postIndex])
+				x.AmountExternal = string(dAtA[iNdEx:postIndex])
 				iNdEx = postIndex
 			case 4:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field AmountNative", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.AmountNative = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 5:
 				if wireType != 2 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field GasReserveL1", wireType)
 				}
@@ -638,7 +686,7 @@ func (x *fastReflection_ExportLedger) ProtoMethods() *protoiface.Methods {
 				}
 				x.GasReserveL1 = string(dAtA[iNdEx:postIndex])
 				iNdEx = postIndex
-			case 5:
+			case 6:
 				if wireType != 2 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field GasReserveRune", wireType)
 				}
@@ -709,7 +757,7 @@ func (x *fastReflection_ExportLedger) ProtoMethods() *protoiface.Methods {
 // versions:
 // 	protoc-gen-go v1.27.0
 // 	protoc        (unknown)
-// source: types/type_export_ledger.proto
+// source: types/type_asset_export.proto
 
 const (
 	// Verify that this generated code is sufficiently up-to-date.
@@ -718,152 +766,218 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-type ExportLedger struct {
+type AssetExport_Status int32
+
+const (
+	AssetExport_Unknown   AssetExport_Status = 0
+	AssetExport_Available AssetExport_Status = 1
+	AssetExport_Staged    AssetExport_Status = 2
+)
+
+// Enum value maps for AssetExport_Status.
+var (
+	AssetExport_Status_name = map[int32]string{
+		0: "Unknown",
+		1: "Available",
+		2: "Staged",
+	}
+	AssetExport_Status_value = map[string]int32{
+		"Unknown":   0,
+		"Available": 1,
+		"Staged":    2,
+	}
+)
+
+func (x AssetExport_Status) Enum() *AssetExport_Status {
+	p := new(AssetExport_Status)
+	*p = x
+	return p
+}
+
+func (x AssetExport_Status) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (AssetExport_Status) Descriptor() protoreflect.EnumDescriptor {
+	return file_types_type_asset_export_proto_enumTypes[0].Descriptor()
+}
+
+func (AssetExport_Status) Type() protoreflect.EnumType {
+	return &file_types_type_asset_export_proto_enumTypes[0]
+}
+
+func (x AssetExport_Status) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use AssetExport_Status.Descriptor instead.
+func (AssetExport_Status) EnumDescriptor() ([]byte, []int) {
+	return file_types_type_asset_export_proto_rawDescGZIP(), []int{0, 0}
+}
+
+type AssetExport struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Asset           *common.Asset `protobuf:"bytes,1,opt,name=asset,proto3" json:"asset,omitempty"`
-	BalanceExternal string        `protobuf:"bytes,2,opt,name=balance_external,json=balanceExternal,proto3" json:"balance_external,omitempty"`
-	BalanceNative   string        `protobuf:"bytes,3,opt,name=balance_native,json=balanceNative,proto3" json:"balance_native,omitempty"`
-	GasReserveL1    string        `protobuf:"bytes,4,opt,name=gas_reserve_l1,json=gasReserveL1,proto3" json:"gas_reserve_l1,omitempty"`
-	GasReserveRune  string        `protobuf:"bytes,5,opt,name=gas_reserve_rune,json=gasReserveRune,proto3" json:"gas_reserve_rune,omitempty"`
+	Asset          *common.Asset      `protobuf:"bytes,1,opt,name=asset,proto3" json:"asset,omitempty"`
+	Status         AssetExport_Status `protobuf:"varint,2,opt,name=status,proto3,enum=types.AssetExport_Status" json:"status,omitempty"`
+	AmountExternal string             `protobuf:"bytes,3,opt,name=amount_external,json=amountExternal,proto3" json:"amount_external,omitempty"`
+	AmountNative   string             `protobuf:"bytes,4,opt,name=amount_native,json=amountNative,proto3" json:"amount_native,omitempty"`
+	GasReserveL1   string             `protobuf:"bytes,5,opt,name=gas_reserve_l1,json=gasReserveL1,proto3" json:"gas_reserve_l1,omitempty"`
+	GasReserveRune string             `protobuf:"bytes,6,opt,name=gas_reserve_rune,json=gasReserveRune,proto3" json:"gas_reserve_rune,omitempty"`
 }
 
-func (x *ExportLedger) Reset() {
-	*x = ExportLedger{}
+func (x *AssetExport) Reset() {
+	*x = AssetExport{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_types_type_export_ledger_proto_msgTypes[0]
+		mi := &file_types_type_asset_export_proto_msgTypes[0]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
 }
 
-func (x *ExportLedger) String() string {
+func (x *AssetExport) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*ExportLedger) ProtoMessage() {}
+func (*AssetExport) ProtoMessage() {}
 
-// Deprecated: Use ExportLedger.ProtoReflect.Descriptor instead.
-func (*ExportLedger) Descriptor() ([]byte, []int) {
-	return file_types_type_export_ledger_proto_rawDescGZIP(), []int{0}
+// Deprecated: Use AssetExport.ProtoReflect.Descriptor instead.
+func (*AssetExport) Descriptor() ([]byte, []int) {
+	return file_types_type_asset_export_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *ExportLedger) GetAsset() *common.Asset {
+func (x *AssetExport) GetAsset() *common.Asset {
 	if x != nil {
 		return x.Asset
 	}
 	return nil
 }
 
-func (x *ExportLedger) GetBalanceExternal() string {
+func (x *AssetExport) GetStatus() AssetExport_Status {
 	if x != nil {
-		return x.BalanceExternal
+		return x.Status
+	}
+	return AssetExport_Unknown
+}
+
+func (x *AssetExport) GetAmountExternal() string {
+	if x != nil {
+		return x.AmountExternal
 	}
 	return ""
 }
 
-func (x *ExportLedger) GetBalanceNative() string {
+func (x *AssetExport) GetAmountNative() string {
 	if x != nil {
-		return x.BalanceNative
+		return x.AmountNative
 	}
 	return ""
 }
 
-func (x *ExportLedger) GetGasReserveL1() string {
+func (x *AssetExport) GetGasReserveL1() string {
 	if x != nil {
 		return x.GasReserveL1
 	}
 	return ""
 }
 
-func (x *ExportLedger) GetGasReserveRune() string {
+func (x *AssetExport) GetGasReserveRune() string {
 	if x != nil {
 		return x.GasReserveRune
 	}
 	return ""
 }
 
-var File_types_type_export_ledger_proto protoreflect.FileDescriptor
+var File_types_type_asset_export_proto protoreflect.FileDescriptor
 
-var file_types_type_export_ledger_proto_rawDesc = []byte{
-	0x0a, 0x1e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2f, 0x74, 0x79, 0x70, 0x65, 0x5f, 0x65, 0x78, 0x70,
-	0x6f, 0x72, 0x74, 0x5f, 0x6c, 0x65, 0x64, 0x67, 0x65, 0x72, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f,
-	0x12, 0x05, 0x74, 0x79, 0x70, 0x65, 0x73, 0x1a, 0x13, 0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2f,
-	0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x1a, 0x14, 0x67, 0x6f,
-	0x67, 0x6f, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2f, 0x67, 0x6f, 0x67, 0x6f, 0x2e, 0x70, 0x72, 0x6f,
-	0x74, 0x6f, 0x22, 0x8c, 0x03, 0x0a, 0x0c, 0x45, 0x78, 0x70, 0x6f, 0x72, 0x74, 0x4c, 0x65, 0x64,
-	0x67, 0x65, 0x72, 0x12, 0x5a, 0x0a, 0x05, 0x61, 0x73, 0x73, 0x65, 0x74, 0x18, 0x01, 0x20, 0x01,
-	0x28, 0x0b, 0x32, 0x0d, 0x2e, 0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x41, 0x73, 0x73, 0x65,
-	0x74, 0x42, 0x35, 0xc8, 0xde, 0x1f, 0x00, 0xda, 0xde, 0x1f, 0x2d, 0x67, 0x69, 0x74, 0x6c, 0x61,
-	0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f,
-	0x74, 0x68, 0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x63, 0x6f, 0x6d, 0x6d,
-	0x6f, 0x6e, 0x2e, 0x41, 0x73, 0x73, 0x65, 0x74, 0x52, 0x05, 0x61, 0x73, 0x73, 0x65, 0x74, 0x12,
-	0x49, 0x0a, 0x10, 0x62, 0x61, 0x6c, 0x61, 0x6e, 0x63, 0x65, 0x5f, 0x65, 0x78, 0x74, 0x65, 0x72,
-	0x6e, 0x61, 0x6c, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x42, 0x1e, 0xc8, 0xde, 0x1f, 0x00, 0xda,
+var file_types_type_asset_export_proto_rawDesc = []byte{
+	0x0a, 0x1d, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2f, 0x74, 0x79, 0x70, 0x65, 0x5f, 0x61, 0x73, 0x73,
+	0x65, 0x74, 0x5f, 0x65, 0x78, 0x70, 0x6f, 0x72, 0x74, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x12,
+	0x05, 0x74, 0x79, 0x70, 0x65, 0x73, 0x1a, 0x13, 0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2f, 0x63,
+	0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x1a, 0x14, 0x67, 0x6f, 0x67,
+	0x6f, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2f, 0x67, 0x6f, 0x67, 0x6f, 0x2e, 0x70, 0x72, 0x6f, 0x74,
+	0x6f, 0x22, 0xec, 0x03, 0x0a, 0x0b, 0x41, 0x73, 0x73, 0x65, 0x74, 0x45, 0x78, 0x70, 0x6f, 0x72,
+	0x74, 0x12, 0x5a, 0x0a, 0x05, 0x61, 0x73, 0x73, 0x65, 0x74, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b,
+	0x32, 0x0d, 0x2e, 0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x41, 0x73, 0x73, 0x65, 0x74, 0x42,
+	0x35, 0xc8, 0xde, 0x1f, 0x00, 0xda, 0xde, 0x1f, 0x2d, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e,
+	0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74, 0x68,
+	0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e,
+	0x2e, 0x41, 0x73, 0x73, 0x65, 0x74, 0x52, 0x05, 0x61, 0x73, 0x73, 0x65, 0x74, 0x12, 0x31, 0x0a,
+	0x06, 0x73, 0x74, 0x61, 0x74, 0x75, 0x73, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0e, 0x32, 0x19, 0x2e,
+	0x74, 0x79, 0x70, 0x65, 0x73, 0x2e, 0x41, 0x73, 0x73, 0x65, 0x74, 0x45, 0x78, 0x70, 0x6f, 0x72,
+	0x74, 0x2e, 0x53, 0x74, 0x61, 0x74, 0x75, 0x73, 0x52, 0x06, 0x73, 0x74, 0x61, 0x74, 0x75, 0x73,
+	0x12, 0x47, 0x0a, 0x0f, 0x61, 0x6d, 0x6f, 0x75, 0x6e, 0x74, 0x5f, 0x65, 0x78, 0x74, 0x65, 0x72,
+	0x6e, 0x61, 0x6c, 0x18, 0x03, 0x20, 0x01, 0x28, 0x09, 0x42, 0x1e, 0xc8, 0xde, 0x1f, 0x00, 0xda,
 	0xde, 0x1f, 0x16, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x73, 0x64, 0x6b, 0x2e, 0x69, 0x6f, 0x2f,
-	0x6d, 0x61, 0x74, 0x68, 0x2e, 0x55, 0x69, 0x6e, 0x74, 0x52, 0x0f, 0x62, 0x61, 0x6c, 0x61, 0x6e,
-	0x63, 0x65, 0x45, 0x78, 0x74, 0x65, 0x72, 0x6e, 0x61, 0x6c, 0x12, 0x45, 0x0a, 0x0e, 0x62, 0x61,
-	0x6c, 0x61, 0x6e, 0x63, 0x65, 0x5f, 0x6e, 0x61, 0x74, 0x69, 0x76, 0x65, 0x18, 0x03, 0x20, 0x01,
-	0x28, 0x09, 0x42, 0x1e, 0xc8, 0xde, 0x1f, 0x00, 0xda, 0xde, 0x1f, 0x16, 0x63, 0x6f, 0x73, 0x6d,
-	0x6f, 0x73, 0x73, 0x64, 0x6b, 0x2e, 0x69, 0x6f, 0x2f, 0x6d, 0x61, 0x74, 0x68, 0x2e, 0x55, 0x69,
-	0x6e, 0x74, 0x52, 0x0d, 0x62, 0x61, 0x6c, 0x61, 0x6e, 0x63, 0x65, 0x4e, 0x61, 0x74, 0x69, 0x76,
-	0x65, 0x12, 0x44, 0x0a, 0x0e, 0x67, 0x61, 0x73, 0x5f, 0x72, 0x65, 0x73, 0x65, 0x72, 0x76, 0x65,
-	0x5f, 0x6c, 0x31, 0x18, 0x04, 0x20, 0x01, 0x28, 0x09, 0x42, 0x1e, 0xc8, 0xde, 0x1f, 0x00, 0xda,
-	0xde, 0x1f, 0x16, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x73, 0x64, 0x6b, 0x2e, 0x69, 0x6f, 0x2f,
-	0x6d, 0x61, 0x74, 0x68, 0x2e, 0x55, 0x69, 0x6e, 0x74, 0x52, 0x0c, 0x67, 0x61, 0x73, 0x52, 0x65,
-	0x73, 0x65, 0x72, 0x76, 0x65, 0x4c, 0x31, 0x12, 0x48, 0x0a, 0x10, 0x67, 0x61, 0x73, 0x5f, 0x72,
-	0x65, 0x73, 0x65, 0x72, 0x76, 0x65, 0x5f, 0x72, 0x75, 0x6e, 0x65, 0x18, 0x05, 0x20, 0x01, 0x28,
-	0x09, 0x42, 0x1e, 0xc8, 0xde, 0x1f, 0x00, 0xda, 0xde, 0x1f, 0x16, 0x63, 0x6f, 0x73, 0x6d, 0x6f,
-	0x73, 0x73, 0x64, 0x6b, 0x2e, 0x69, 0x6f, 0x2f, 0x6d, 0x61, 0x74, 0x68, 0x2e, 0x55, 0x69, 0x6e,
-	0x74, 0x52, 0x0e, 0x67, 0x61, 0x73, 0x52, 0x65, 0x73, 0x65, 0x72, 0x76, 0x65, 0x52, 0x75, 0x6e,
-	0x65, 0x42, 0x8e, 0x01, 0x0a, 0x09, 0x63, 0x6f, 0x6d, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x42,
-	0x15, 0x54, 0x79, 0x70, 0x65, 0x45, 0x78, 0x70, 0x6f, 0x72, 0x74, 0x4c, 0x65, 0x64, 0x67, 0x65,
-	0x72, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x2a, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62,
-	0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74,
-	0x68, 0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x74,
-	0x79, 0x70, 0x65, 0x73, 0xa2, 0x02, 0x03, 0x54, 0x58, 0x58, 0xaa, 0x02, 0x05, 0x54, 0x79, 0x70,
-	0x65, 0x73, 0xca, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xe2, 0x02, 0x11, 0x54, 0x79, 0x70,
-	0x65, 0x73, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02,
-	0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xc8, 0xe1, 0x1e, 0x00, 0xd8, 0xe1, 0x1e, 0x00, 0x80, 0xe2,
-	0x1e, 0x00, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x6d, 0x61, 0x74, 0x68, 0x2e, 0x55, 0x69, 0x6e, 0x74, 0x52, 0x0e, 0x61, 0x6d, 0x6f, 0x75, 0x6e,
+	0x74, 0x45, 0x78, 0x74, 0x65, 0x72, 0x6e, 0x61, 0x6c, 0x12, 0x43, 0x0a, 0x0d, 0x61, 0x6d, 0x6f,
+	0x75, 0x6e, 0x74, 0x5f, 0x6e, 0x61, 0x74, 0x69, 0x76, 0x65, 0x18, 0x04, 0x20, 0x01, 0x28, 0x09,
+	0x42, 0x1e, 0xc8, 0xde, 0x1f, 0x00, 0xda, 0xde, 0x1f, 0x16, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73,
+	0x73, 0x64, 0x6b, 0x2e, 0x69, 0x6f, 0x2f, 0x6d, 0x61, 0x74, 0x68, 0x2e, 0x55, 0x69, 0x6e, 0x74,
+	0x52, 0x0c, 0x61, 0x6d, 0x6f, 0x75, 0x6e, 0x74, 0x4e, 0x61, 0x74, 0x69, 0x76, 0x65, 0x12, 0x44,
+	0x0a, 0x0e, 0x67, 0x61, 0x73, 0x5f, 0x72, 0x65, 0x73, 0x65, 0x72, 0x76, 0x65, 0x5f, 0x6c, 0x31,
+	0x18, 0x05, 0x20, 0x01, 0x28, 0x09, 0x42, 0x1e, 0xc8, 0xde, 0x1f, 0x00, 0xda, 0xde, 0x1f, 0x16,
+	0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x73, 0x64, 0x6b, 0x2e, 0x69, 0x6f, 0x2f, 0x6d, 0x61, 0x74,
+	0x68, 0x2e, 0x55, 0x69, 0x6e, 0x74, 0x52, 0x0c, 0x67, 0x61, 0x73, 0x52, 0x65, 0x73, 0x65, 0x72,
+	0x76, 0x65, 0x4c, 0x31, 0x12, 0x48, 0x0a, 0x10, 0x67, 0x61, 0x73, 0x5f, 0x72, 0x65, 0x73, 0x65,
+	0x72, 0x76, 0x65, 0x5f, 0x72, 0x75, 0x6e, 0x65, 0x18, 0x06, 0x20, 0x01, 0x28, 0x09, 0x42, 0x1e,
+	0xc8, 0xde, 0x1f, 0x00, 0xda, 0xde, 0x1f, 0x16, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x73, 0x64,
+	0x6b, 0x2e, 0x69, 0x6f, 0x2f, 0x6d, 0x61, 0x74, 0x68, 0x2e, 0x55, 0x69, 0x6e, 0x74, 0x52, 0x0e,
+	0x67, 0x61, 0x73, 0x52, 0x65, 0x73, 0x65, 0x72, 0x76, 0x65, 0x52, 0x75, 0x6e, 0x65, 0x22, 0x30,
+	0x0a, 0x06, 0x53, 0x74, 0x61, 0x74, 0x75, 0x73, 0x12, 0x0b, 0x0a, 0x07, 0x55, 0x6e, 0x6b, 0x6e,
+	0x6f, 0x77, 0x6e, 0x10, 0x00, 0x12, 0x0d, 0x0a, 0x09, 0x41, 0x76, 0x61, 0x69, 0x6c, 0x61, 0x62,
+	0x6c, 0x65, 0x10, 0x01, 0x12, 0x0a, 0x0a, 0x06, 0x53, 0x74, 0x61, 0x67, 0x65, 0x64, 0x10, 0x02,
+	0x42, 0x8d, 0x01, 0x0a, 0x09, 0x63, 0x6f, 0x6d, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x42, 0x14,
+	0x54, 0x79, 0x70, 0x65, 0x41, 0x73, 0x73, 0x65, 0x74, 0x45, 0x78, 0x70, 0x6f, 0x72, 0x74, 0x50,
+	0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x2a, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63,
+	0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74, 0x68, 0x6f,
+	0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x74, 0x79, 0x70,
+	0x65, 0x73, 0xa2, 0x02, 0x03, 0x54, 0x58, 0x58, 0xaa, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73,
+	0xca, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xe2, 0x02, 0x11, 0x54, 0x79, 0x70, 0x65, 0x73,
+	0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x05, 0x54,
+	0x79, 0x70, 0x65, 0x73, 0xc8, 0xe1, 0x1e, 0x00, 0xd8, 0xe1, 0x1e, 0x00, 0x80, 0xe2, 0x1e, 0x00,
+	0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
-	file_types_type_export_ledger_proto_rawDescOnce sync.Once
-	file_types_type_export_ledger_proto_rawDescData = file_types_type_export_ledger_proto_rawDesc
+	file_types_type_asset_export_proto_rawDescOnce sync.Once
+	file_types_type_asset_export_proto_rawDescData = file_types_type_asset_export_proto_rawDesc
 )
 
-func file_types_type_export_ledger_proto_rawDescGZIP() []byte {
-	file_types_type_export_ledger_proto_rawDescOnce.Do(func() {
-		file_types_type_export_ledger_proto_rawDescData = protoimpl.X.CompressGZIP(file_types_type_export_ledger_proto_rawDescData)
+func file_types_type_asset_export_proto_rawDescGZIP() []byte {
+	file_types_type_asset_export_proto_rawDescOnce.Do(func() {
+		file_types_type_asset_export_proto_rawDescData = protoimpl.X.CompressGZIP(file_types_type_asset_export_proto_rawDescData)
 	})
-	return file_types_type_export_ledger_proto_rawDescData
+	return file_types_type_asset_export_proto_rawDescData
 }
 
-var file_types_type_export_ledger_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
-var file_types_type_export_ledger_proto_goTypes = []interface{}{
-	(*ExportLedger)(nil), // 0: types.ExportLedger
-	(*common.Asset)(nil), // 1: common.Asset
+var file_types_type_asset_export_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_types_type_asset_export_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
+var file_types_type_asset_export_proto_goTypes = []interface{}{
+	(AssetExport_Status)(0), // 0: types.AssetExport.Status
+	(*AssetExport)(nil),     // 1: types.AssetExport
+	(*common.Asset)(nil),    // 2: common.Asset
 }
-var file_types_type_export_ledger_proto_depIdxs = []int32{
-	1, // 0: types.ExportLedger.asset:type_name -> common.Asset
-	1, // [1:1] is the sub-list for method output_type
-	1, // [1:1] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+var file_types_type_asset_export_proto_depIdxs = []int32{
+	2, // 0: types.AssetExport.asset:type_name -> common.Asset
+	0, // 1: types.AssetExport.status:type_name -> types.AssetExport.Status
+	2, // [2:2] is the sub-list for method output_type
+	2, // [2:2] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
-func init() { file_types_type_export_ledger_proto_init() }
-func file_types_type_export_ledger_proto_init() {
-	if File_types_type_export_ledger_proto != nil {
+func init() { file_types_type_asset_export_proto_init() }
+func file_types_type_asset_export_proto_init() {
+	if File_types_type_asset_export_proto != nil {
 		return
 	}
 	if !protoimpl.UnsafeEnabled {
-		file_types_type_export_ledger_proto_msgTypes[0].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*ExportLedger); i {
+		file_types_type_asset_export_proto_msgTypes[0].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*AssetExport); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -879,18 +993,19 @@ func file_types_type_export_ledger_proto_init() {
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: file_types_type_export_ledger_proto_rawDesc,
-			NumEnums:      0,
+			RawDescriptor: file_types_type_asset_export_proto_rawDesc,
+			NumEnums:      1,
 			NumMessages:   1,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
-		GoTypes:           file_types_type_export_ledger_proto_goTypes,
-		DependencyIndexes: file_types_type_export_ledger_proto_depIdxs,
-		MessageInfos:      file_types_type_export_ledger_proto_msgTypes,
+		GoTypes:           file_types_type_asset_export_proto_goTypes,
+		DependencyIndexes: file_types_type_asset_export_proto_depIdxs,
+		EnumInfos:         file_types_type_asset_export_proto_enumTypes,
+		MessageInfos:      file_types_type_asset_export_proto_msgTypes,
 	}.Build()
-	File_types_type_export_ledger_proto = out.File
-	file_types_type_export_ledger_proto_rawDesc = nil
-	file_types_type_export_ledger_proto_goTypes = nil
-	file_types_type_export_ledger_proto_depIdxs = nil
+	File_types_type_asset_export_proto = out.File
+	file_types_type_asset_export_proto_rawDesc = nil
+	file_types_type_asset_export_proto_goTypes = nil
+	file_types_type_asset_export_proto_depIdxs = nil
 }

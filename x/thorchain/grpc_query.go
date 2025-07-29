@@ -688,12 +688,12 @@ func (s *queryServer) Eip712TypedData(c context.Context, req *types.QueryEip712T
 	return s.queryEip712TypedData(ctx, req)
 }
 
-func (s *queryServer) ExportLedger(c context.Context, req *types.QueryExportLedgerRequest) (*types.QueryExportLedgerResponse, error) {
+func (s *queryServer) AssetExport(c context.Context, req *types.QueryAssetExportRequest) (*types.QueryAssetExportResponse, error) {
 	ctx := s.unwrapSdkContext(c)
-	return s.queryExportLedger(ctx, req)
+	return s.queryAssetExport(ctx, req)
 }
 
-func (s *queryServer) ExportLedgers(c context.Context, req *types.QueryExportLedgersRequest) (*types.QueryExportLedgersResponse, error) {
+func (s *queryServer) AssetExports(c context.Context, req *types.QueryAssetExportsRequest) (*types.QueryAssetExportsResponse, error) {
 	ctx := s.unwrapSdkContext(c)
-	return s.queryExportLedgers(ctx, req)
+	return s.queryAssetExports(ctx, req)
 }
