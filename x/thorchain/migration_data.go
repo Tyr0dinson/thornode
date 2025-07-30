@@ -930,6 +930,10 @@ func mainnetManualInbounds6to7() (ObservedTxs, error) {
 	return unobservedTxs, nil
 }
 
+// mainnetAssetGasMultiplierAdjustments returns the assets we want to set to equilibrium multiplier (100% multiplier)
+// and the assets we want to set to target surplus (min multiplier).
+//
+// trunk-ignore(golangci-lint/unused)
 func mainnetAssetGasMultiplierAdjustments() ([]common.Asset, []common.Asset, error) {
 	// Assets we want to set to equilibrium multiplier (100% multiplier)
 	equilibriumAssetsStr := []string{

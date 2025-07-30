@@ -225,7 +225,7 @@ func (m Migrator) Migrate7to8(ctx sdk.Context) error {
 		return err
 	}
 
-	equillibriumAssets, maxSurplusAssets, err := mainnetAssetGasMultiplierAdjustments()
+	equilibriumAssets, maxSurplusAssets, err := mainnetAssetGasMultiplierAdjustments()
 	if err != nil {
 		return err
 	}
@@ -251,7 +251,7 @@ func (m Migrator) Migrate7to8(ctx sdk.Context) error {
 	maxMinusMin := maxMultiplier.Sub(minMultiplier)
 	equilibriumSurplus := deltaTo100.Quo(maxMinusMin).Mul(targetSurplus)
 
-	for _, asset := range equillibriumAssets {
+	for _, asset := range equilibriumAssets {
 		withheld, err := m.mgr.Keeper().GetOutboundFeeWithheldRune(ctx, asset)
 		if err != nil {
 			return err
@@ -274,7 +274,7 @@ func (m Migrator) Migrate7to8(ctx sdk.Context) error {
 		m.mgr.Keeper().AddToOutboundFeeWithheldRune(ctx, asset, withheldAdjustment)
 	}
 
-	// Find the delta betwen the actual surplus and the target surplus, and adjust the withheld amount
+	// Find the delta between the actual surplus and the target surplus, and adjust the withheld amount
 	// so that the surplus is equal to the target surplus.
 	for _, asset := range maxSurplusAssets {
 		withheld, err := m.mgr.Keeper().GetOutboundFeeWithheldRune(ctx, asset)
