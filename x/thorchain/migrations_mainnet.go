@@ -268,7 +268,7 @@ func (m Migrator) Migrate7to8(ctx sdk.Context) error {
 		}
 
 		// Increase withheld so that the surplus is equal to the target surplus
-		withheldAdjustment := targetSurplus.Sub(surplus)
+		withheldAdjustment := equilibriumSurplus.Sub(surplus)
 		ctx.Logger().Info("surplus is less than equilibrium surplus", "asset", asset, "surplus", surplus,
 			"equilibrium_surplus", equilibriumSurplus, "adjustment", withheldAdjustment)
 		m.mgr.Keeper().AddToOutboundFeeWithheldRune(ctx, asset, withheldAdjustment)
