@@ -92,7 +92,7 @@ func (s MigrationDataSuite) TestMigrate5to6AddressValidation(c *C) {
 }
 
 func (s MigrationDataSuite) TestMigrate7to8AssetValidation(c *C) {
-	// Verify that the assets we are migrating witheld fee's for parse correctly
+	// Verify that the assets we are migrating withheld fees for parse correctly
 	_, _, err := mainnetAssetGasMultiplierAdjustments()
 	c.Assert(err, IsNil)
 }
