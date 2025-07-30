@@ -932,20 +932,20 @@ func mainnetManualInbounds6to7() (ObservedTxs, error) {
 
 func mainnetAssetGasMultiplierAdjustments() ([]common.Asset, []common.Asset, error) {
 	// Assets we want to set to equilibrium multiplier (100% multiplier)
-	equillibriumAssetsStr := []string{
+	equilibriumAssetsStr := []string{
 		"ETH.LINK-0X514910771AF9CA656AF840DFF83E8264ECF986CA",
 		"ETH.AAVE-0X7FC66500C84A76AD7E9C93437BFC5AC33E2DDAE9",
 		"ETH.USDP-0X8E870D67F660D95D5BE530380D0EC0BD388289E1",
 		"ETH.LUSD-0X5F98805A4E8BE255A32880FDEC7F6728C6568BA0",
 		"ETH.GUSD-0X056FD409E1D7A124BD7017459DFEA2F387B6D5CD",
 	}
-	var equillibriumAssets []common.Asset
-	for _, assetStr := range equillibriumAssetsStr {
+	var equilibriumAssets []common.Asset
+	for _, assetStr := range equilibriumAssetsStr {
 		asset, err := common.NewAsset(assetStr)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to create asset: %w", err)
 		}
-		equillibriumAssets = append(equillibriumAssets, asset)
+		equilibriumAssets = append(equilibriumAssets, asset)
 	}
 
 	// Assets we want to set to target surplus (min multiplier)
@@ -985,5 +985,5 @@ func mainnetAssetGasMultiplierAdjustments() ([]common.Asset, []common.Asset, err
 		maxSurplusAssets = append(maxSurplusAssets, asset)
 	}
 
-	return equillibriumAssets, maxSurplusAssets, nil
+	return equilibriumAssets, maxSurplusAssets, nil
 }

@@ -247,7 +247,7 @@ func (m Migrator) Migrate7to8(ctx sdk.Context) error {
 	//
 	//	(max - 10_000) = (surplus / target) * (max - min)
 	//	surplus = ((max - 10_000) / (max - min)) * target
-	deltaTo100 := maxMultiplier.Sub(cosmos.NewUint(10_000)) // max - 100%
+	deltaTo100 := maxMultiplier.Sub(cosmos.NewUint(10_000)) // max - 100% (10_000 bps)
 	maxMinusMin := maxMultiplier.Sub(minMultiplier)
 	equilibriumSurplus := deltaTo100.Quo(maxMinusMin).Mul(targetSurplus)
 
