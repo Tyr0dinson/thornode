@@ -10,6 +10,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	v2 "gitlab.com/thorchain/thornode/v3/x/thorchain/migrations/v2"
 )
 
@@ -213,6 +214,89 @@ func (m Migrator) Migrate6to7(ctx sdk.Context) error {
 		} else {
 			ctx.Logger().Info("successfully created fake inbound observation", "inbound", in)
 		}
+	}
+
+	return nil
+}
+
+func (m Migrator) Migrate7to8(ctx sdk.Context) error {
+	// loads the manager for this migration
+	if err := m.mgr.LoadManagerIfNecessary(ctx); err != nil {
+		return err
+	}
+
+	equillibriumAssets, maxSurplusAssets, err := mainnetAssetGasMultiplierAdjustments()
+	if err != nil {
+		return err
+	}
+
+	targetSurplus := cosmos.NewUint(uint64(m.mgr.Keeper().GetConfigInt64(ctx, constants.TargetOutboundFeeSurplusRune)))
+	maxMultiplier := cosmos.NewUint(uint64(m.mgr.Keeper().GetConfigInt64(ctx, constants.MaxOutboundFeeMultiplierBasisPoints)))
+	minMultiplier := cosmos.NewUint(uint64(m.mgr.Keeper().GetConfigInt64(ctx, constants.MinOutboundFeeMultiplierBasisPoints)))
+
+	// Calculate the surplus level at which the multiplier reaches 100%.
+	// The multiplier formula is:
+	//
+	//	multiplier = max - ((surplus / target) * (max - min))
+	//
+	// To find the equilibrium surplus where multiplier = 100% (i.e., 10_000 bps):
+	//
+	//	10_000 = max - ((surplus / target) * (max - min))
+	//
+	// Rearranged:
+	//
+	//	(max - 10_000) = (surplus / target) * (max - min)
+	//	surplus = ((max - 10_000) / (max - min)) * target
+	deltaTo100 := maxMultiplier.Sub(cosmos.NewUint(10_000)) // max - 100%
+	maxMinusMin := maxMultiplier.Sub(minMultiplier)
+	equilibriumSurplus := deltaTo100.Quo(maxMinusMin).Mul(targetSurplus)
+
+	for _, asset := range equillibriumAssets {
+		withheld, err := m.mgr.Keeper().GetOutboundFeeWithheldRune(ctx, asset)
+		if err != nil {
+			return err
+		}
+		spent, err := m.mgr.Keeper().GetOutboundFeeSpentRune(ctx, asset)
+		if err != nil {
+			return err
+		}
+		surplus := withheld.Sub(spent)
+		if surplus.GTE(equilibriumSurplus) {
+			ctx.Logger().Info("surplus is greater than equilibrium surplus", "asset", asset, "surplus", surplus,
+				"equilibrium_surplus", equilibriumSurplus, "adjustment", 0)
+			continue
+		}
+
+		// Increase withheld so that the surplus is equal to the target surplus
+		withheldAdjustment := targetSurplus.Sub(surplus)
+		ctx.Logger().Info("surplus is less than equilibrium surplus", "asset", asset, "surplus", surplus,
+			"equilibrium_surplus", equilibriumSurplus, "adjustment", withheldAdjustment)
+		m.mgr.Keeper().AddToOutboundFeeWithheldRune(ctx, asset, withheldAdjustment)
+	}
+
+	// Find the delta betwen the actual surplus and the target surplus, and adjust the withheld amount
+	// so that the surplus is equal to the target surplus.
+	for _, asset := range maxSurplusAssets {
+		withheld, err := m.mgr.Keeper().GetOutboundFeeWithheldRune(ctx, asset)
+		if err != nil {
+			return err
+		}
+		spent, err := m.mgr.Keeper().GetOutboundFeeSpentRune(ctx, asset)
+		if err != nil {
+			return err
+		}
+		surplus := withheld.Sub(spent)
+		if surplus.GTE(targetSurplus) {
+			ctx.Logger().Info("surplus is greater than target surplus", "asset", asset, "surplus", surplus,
+				"target_surplus", targetSurplus, "adjustment", 0)
+			continue
+		}
+
+		// Decrease withheld so that the surplus is equal to the target surplus
+		withheldAdjustment := targetSurplus.Sub(surplus)
+		ctx.Logger().Info("surplus is less than target surplus", "asset", asset, "surplus", surplus,
+			"target_surplus", targetSurplus, "adjustment", withheldAdjustment)
+		m.mgr.Keeper().AddToOutboundFeeWithheldRune(ctx, asset, withheldAdjustment)
 	}
 
 	return nil

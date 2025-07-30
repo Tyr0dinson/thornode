@@ -133,3 +133,7 @@ func (m Migrator) Migrate5to6(ctx sdk.Context) error {
 func (m Migrator) Migrate6to7(ctx sdk.Context) error {
 	return nil
 }
+
+func (m Migrator) Migrate7to8(ctx sdk.Context) error {
+	return nil
+}
