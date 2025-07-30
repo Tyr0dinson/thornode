@@ -292,7 +292,7 @@ func (m Migrator) Migrate7to8(ctx sdk.Context) error {
 			continue
 		}
 
-		// Decrease withheld so that the surplus is equal to the target surplus
+		// Increase withheld so that the surplus is equal to the target surplus
 		withheldAdjustment := targetSurplus.Sub(surplus)
 		ctx.Logger().Info("surplus is less than target surplus", "asset", asset, "surplus", surplus,
 			"target_surplus", targetSurplus, "adjustment", withheldAdjustment)
