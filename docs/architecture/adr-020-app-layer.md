@@ -189,11 +189,9 @@ Building on this premise, we suggest categorizing builders into 6 categories wit
 
 
 ### 12-month non-compete and fee sharing revision
-The Rujira team has spent a lot of time doing foundational work to make an app layer on THORChain possible at all, and building all the dev tooling and components that will make it easy for competing apps to launch. As a token of appreciation, they will be given a 12-month non-compete period. The non-compete period started from the moment THORChain v3.6 went live on 22-May-2025, and will end on 22-May-2026. Pass this head start period, apps competing with core verticals will be allowed to launch.
+The Rujira team has spent a lot of time completing foundational work to make an app layer on THORChain possible at all, and building all the dev tooling and components that will make it easy for competing apps to launch. Rujira will be given a 12-month exclusivity period, which started from the moment THORChain v3.6 went live on 22-May-2025, and will end on 22-May-2026. 
 
-The end of the non-compete period will also mark the moment the share of revenue the App Layer sends to the Base Layer will drop from 50% to 30%, with further drops possible to make it more attractive for new builders to join.
-
-The fee sharing arrangement is meant to be universally applied to all apps to create an equal playing field for all development teams, where no team is advantaged over another on fees.  However there may be a unique app design that warrants a different fee sharing arrangement versus the rest of the apps.  Those can be evaluated on a case by case basis.
+At the comclusion of the exclusivity period the community will vote on whether to extend the exclusivity, or open it up to other apps. This will likely be judged by the performance of Rujira (fees, users, apps) in the preceding 12 months. If the exclusivity is relaxed, then the base-layer should also drop the fee-sharing, likely down to 30% or lower. This will encourage more developers to build on the App-layer.
 
 
 ### No Uncapped Systemic-risk Apps
