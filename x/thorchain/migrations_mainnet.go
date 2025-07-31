@@ -233,7 +233,7 @@ func (m Migrator) Migrate7to8(ctx sdk.Context) error {
 	// 4. If the multiplier is greater than 100%, increase the withheld amount so that the multiplier is equal to 100%
 
 	// Adjust the target surplus to 10k RUNE
-	m.mgr.Keeper().SetMimir(ctx, constants.TargetOutboundFeeSurplusRune.String(), 10_000)
+	m.mgr.Keeper().SetMimir(ctx, constants.TargetOutboundFeeSurplusRune.String(), 10_00000000)
 
 	// Gather all the parameters for the multiplier calculation
 	targetSurplus := cosmos.NewUint(uint64(m.mgr.Keeper().GetConfigInt64(ctx, constants.TargetOutboundFeeSurplusRune)))
