@@ -18,7 +18,19 @@ func (k KVStore) GetOutboundTxFee(ctx cosmos.Context) cosmos.Uint {
 func (k KVStore) GetOutboundFeeWithheldRune(ctx cosmos.Context, outAsset common.Asset) (cosmos.Uint, error) {
 	var record uint64
 	_, err := k.getUint64(ctx, k.GetKey(prefixOutboundFeeWithheldRune, outAsset.String()), &record)
-	return cosmos.NewUint(record), err
+	withheld := cosmos.NewUint(record)
+
+	// If the withheld amount is zero, initialize it to the initial withheld amount
+	if withheld.IsZero() {
+		withheld = k.GetSurplusForTargetMultiplier(ctx, cosmos.NewUint(10_000))
+		err = k.AddToOutboundFeeWithheldRune(ctx, outAsset, withheld)
+		if err != nil {
+			return cosmos.ZeroUint(), err
+		}
+		return withheld, nil
+	}
+
+	return withheld, err
 }
 
 // AddToOutboundFeeWithheldRune - add to record of RUNE collected by the Reserve for an Asset's outbound fees
@@ -28,9 +40,47 @@ func (k KVStore) AddToOutboundFeeWithheldRune(ctx cosmos.Context, outAsset commo
 		return err
 	}
 
+	// If the withheld amount is zero, initialize it to the initial withheld amount before adding the new amount
+	if outboundFeeWithheldRune.IsZero() {
+		outboundFeeWithheldRune = k.GetSurplusForTargetMultiplier(ctx, cosmos.NewUint(10_000))
+	}
+
 	outboundFeeWithheldRune = outboundFeeWithheldRune.Add(withheld)
 	k.setUint64(ctx, k.GetKey(prefixOutboundFeeWithheldRune, outAsset.String()), outboundFeeWithheldRune.Uint64())
 	return nil
+}
+
+func (k KVStore) GetSurplusForTargetMultiplier(ctx cosmos.Context, targetMultiplierBps cosmos.Uint) cosmos.Uint {
+	// Calculate the surplus level at which the multiplier reaches 100%.
+	// The multiplier formula is:
+	//
+	//	multiplier = max - ((surplus / target) * (max - min))
+	//
+	// To find the equilibrium surplus where multiplier = 100% (i.e., 10_000 bps):
+	//
+	//	10_000 = max - ((surplus / target) * (max - min))
+	//
+	// Rearranged:
+	//
+	//	(max - 10_000) = (surplus / target) * (max - min)
+	//	surplus = ((max - 10_000) / (max - min)) * target
+
+	targetSurplus := cosmos.NewUint(uint64(k.GetConfigInt64(ctx, constants.TargetOutboundFeeSurplusRune)))
+	maxMultiplier := cosmos.NewUint(uint64(k.GetConfigInt64(ctx, constants.MaxOutboundFeeMultiplierBasisPoints)))
+	minMultiplier := cosmos.NewUint(uint64(k.GetConfigInt64(ctx, constants.MinOutboundFeeMultiplierBasisPoints)))
+
+	if targetMultiplierBps.LT(minMultiplier) {
+		targetMultiplierBps = minMultiplier
+	}
+
+	if targetMultiplierBps.GT(maxMultiplier) {
+		targetMultiplierBps = maxMultiplier
+	}
+
+	deltaToTarget := maxMultiplier.Sub(targetMultiplierBps)
+	maxMinusMin := maxMultiplier.Sub(minMultiplier)
+	equilibriumSurplus := deltaToTarget.Quo(maxMinusMin).Mul(targetSurplus)
+	return equilibriumSurplus
 }
 
 // GetOutboundFeeWithheldRuneIterator to iterate through all Assets' OutboundFeeWithheldRune
