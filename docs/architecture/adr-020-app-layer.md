@@ -64,6 +64,8 @@ HaltSecuredDeposit-%s
 // Use with Chain
 HaltSecuredWithdraw-%s
 // Use with Chain
+WASMPERMISSIONLESS
+// Enable permissionless deployment
 ```
 
 Implemented as per https://gitlab.com/thorchain/thornode/-/merge_requests/3721
@@ -97,7 +99,7 @@ The App Layer is designed with a strict separation of concerns from THORChain’
 To mitigate risk the following security measures are taken for every contract:
 
 * Audits: All deployed contracts undergo internal reviews from core team members and third-party audits before mainnet launch.
-* Permissioned Deployment: Only pre-approved contract bytecode and deployer addresses are allowed on mainnet.
+* Permissioned Deployment: Only pre-approved contract bytecode and whitelisted deployer addresses are allowed on mainnet.
 * Operational Controls: THORChain’s Mimir governance can pause individual apps, all apps, or secured asset minting/burning in response to threats.
 * Impact Isolation: If an exploit occurs, only the users of the affected app are impacted—the Base Layer and its liquidity pools remain unaffected.
 * No Elevated Privileges: Contracts cannot mint or burn secured assets or interfere with Base Layer consensus. Their rights are no greater than any regular user with a thor address.
@@ -159,19 +161,22 @@ Instead - Apps should offer fee-sharing to THORNodes directly from their service
 * Listing/Sale fees on marketplaces
 etc
 
-Thus fees are collected from a variety of sustainable revenue sources that don't subject users to high on-chain transaction costs. The fee-sharing arrangement will start at 50%, but will drop to 30% once Rujira’s 12 month non-compete expires. The App Layer should be more profitable in the long term by reducing the fee sharing to 30% or less.  This will incentivize more apps on the app layer.
+Thus fees are collected from a variety of sustainable revenue sources that don't subject users to high on-chain transaction costs. The fee-sharing arrangement will start at 50% whilst Rujira’s 12 month non-compete is in place (see below).
 
 To do so, ensure that the share of fees collected in an app are swapped to RUNE and sent to the RESERVE Module address:
 ```
 thor1dheycdevq39qlkxs2a6wuuzyn4aqxhve4qxtxt
 ```
 
-Fee-sharing levels can be revisited after some time.
-
 Importantly, there are nuances between types of apps/projects that might require different fee-sharing arrangements. The core logic regarding fee sharing is the following: 
 For each transaction on the App Layer, is value accrued to the Base Layer?
 * If YES, there is no need to share revenue (the Base Layer already benefits).
 * If NO, then the 50/50 revenue split applies to pay for security.
+
+### 12-month non-compete and fee sharing revision
+The Rujira team has spent a lot of time completing foundational work to make an app layer on THORChain possible at all, and building all the dev tooling and components that will make it easy for competing apps to launch. Rujira will be given a 12-month exclusivity period, which started from the moment THORChain v3.6 went live on 22-May-2025, and will end on 22-May-2026. 
+
+At the comclusion of the exclusivity period the community will vote on whether to extend the exclusivity, or open it up to other apps. This will likely be judged by the performance of Rujira (fees, users, apps) in the preceding 12 months. If the exclusivity is relaxed, then the base-layer should also drop the fee-sharing, likely down to 30% or lower. This will encourage more developers to build on the App-layer.
 
 ### Builders’ classification 
 Building on this premise, we suggest categorizing builders into 6 categories with corresponding guidance for fee-sharing:
@@ -186,12 +191,6 @@ Building on this premise, we suggest categorizing builders into 6 categories wit
 5) Public Goods: Projects that do not directly generate economic activity/revenue but are perceived as net positive for the ecosystem. This includes things like tooling, analytics and education. Not expected to generate any revenue, but mentioned for completeness.
 
 6) Real World Business: In the long run, we expect to see real world businesses that decide to operate on blockchain rails because it provides them with the ability to raise capital, access real-time accounting, better payment solutions, etc. at a fraction of the cost of running a traditional business. We want them to choose THORChain App Layer because it’s the best ecosystem to access all those things, from all connected chains. We want them to fuel a thriving economic activity on top of THORChain. Imposing a 50% taxation on those businesses would stifle adoption and deter participation. Instead, they will get to keep 100% of their revenue and will generate value for THORChain and Rujira by using the core apps (e.g. raising capital on RUJI Ventures, getting their token traded on RUJI Trade, borrowing on RUJI Lending, etc.).
-
-
-### 12-month non-compete and fee sharing revision
-The Rujira team has spent a lot of time completing foundational work to make an app layer on THORChain possible at all, and building all the dev tooling and components that will make it easy for competing apps to launch. Rujira will be given a 12-month exclusivity period, which started from the moment THORChain v3.6 went live on 22-May-2025, and will end on 22-May-2026. 
-
-At the comclusion of the exclusivity period the community will vote on whether to extend the exclusivity, or open it up to other apps. This will likely be judged by the performance of Rujira (fees, users, apps) in the preceding 12 months. If the exclusivity is relaxed, then the base-layer should also drop the fee-sharing, likely down to 30% or lower. This will encourage more developers to build on the App-layer.
 
 
 ### No Uncapped Systemic-risk Apps
