@@ -225,14 +225,45 @@ func (m Migrator) Migrate7to8(ctx sdk.Context) error {
 		return err
 	}
 
-	equilibriumAssets, maxSurplusAssets, err := mainnetAssetGasMultiplierAdjustments()
-	if err != nil {
-		return err
-	}
+	// ------------------------------ Asset Gas Multiplier Adjustments ------------------------------
+	// We are going to adjust the target surplus and multipliers for all assets. The steps are:
+	// 1. Adjust the target surplus to 10k RUNE
+	// 2. Compute the new multiplier for each asset
+	// 3. If the multiplier is less than or equal to 100%, do nothing
+	// 4. If the multiplier is greater than 100%, increase the withheld amount so that the multiplier is equal to 100%
 
+	// Adjust the target surplus to 10k RUNE
+	m.mgr.Keeper().SetMimir(ctx, constants.TargetOutboundFeeSurplusRune.String(), 10_000)
+
+	// Gather all the parameters for the multiplier calculation
 	targetSurplus := cosmos.NewUint(uint64(m.mgr.Keeper().GetConfigInt64(ctx, constants.TargetOutboundFeeSurplusRune)))
 	maxMultiplier := cosmos.NewUint(uint64(m.mgr.Keeper().GetConfigInt64(ctx, constants.MaxOutboundFeeMultiplierBasisPoints)))
 	minMultiplier := cosmos.NewUint(uint64(m.mgr.Keeper().GetConfigInt64(ctx, constants.MinOutboundFeeMultiplierBasisPoints)))
+
+	// Collect all the assets via pool iterator (copied from querier.go outbound fees endpoint)
+	assets := []common.Asset{common.RuneAsset()}
+	iterator := m.mgr.Keeper().GetPoolIterator(ctx)
+	defer iterator.Close()
+	for ; iterator.Valid(); iterator.Next() {
+		var pool Pool
+		if err := m.mgr.Keeper().Cdc().Unmarshal(iterator.Value(), &pool); err != nil {
+			return fmt.Errorf("fail to unmarshal pool: %w", err)
+		}
+
+		if pool.Asset.IsNative() {
+			// To avoid clutter do not by default display the outbound fees
+			// of THORChain Assets other than RUNE.
+			continue
+		}
+		if pool.BalanceAsset.IsZero() || pool.BalanceRune.IsZero() {
+			// A Layer 1 Asset's pool must have both depths be non-zero
+			// for any outbound fee withholding or gas reimbursement to take place.
+			// (This can take place even if the PoolUnits are zero and all liquidity is synths.)
+			continue
+		}
+
+		assets = append(assets, pool.Asset)
+	}
 
 	// Calculate the surplus level at which the multiplier reaches 100%.
 	// The multiplier formula is:
@@ -247,56 +278,71 @@ func (m Migrator) Migrate7to8(ctx sdk.Context) error {
 	//
 	//	(max - 10_000) = (surplus / target) * (max - min)
 	//	surplus = ((max - 10_000) / (max - min)) * target
-	deltaTo100 := maxMultiplier.Sub(cosmos.NewUint(10_000)) // max - 100% (10_000 bps)
+
+t 	deltaTo100 := maxMultiplier.Sub(cosmos.NewUint(10_000)) // max - 100% (10_000 bps)
 	maxMinusMin := maxMultiplier.Sub(minMultiplier)
 	equilibriumSurplus := deltaTo100.Quo(maxMinusMin).Mul(targetSurplus)
 
-	for _, asset := range equilibriumAssets {
-		withheld, err := m.mgr.Keeper().GetOutboundFeeWithheldRune(ctx, asset)
-		if err != nil {
-			return err
-		}
-		spent, err := m.mgr.Keeper().GetOutboundFeeSpentRune(ctx, asset)
-		if err != nil {
-			return err
-		}
-		surplus := withheld.Sub(spent)
-		if surplus.GTE(equilibriumSurplus) {
-			ctx.Logger().Info("surplus is greater than equilibrium surplus", "asset", asset, "surplus", surplus,
-				"equilibrium_surplus", equilibriumSurplus, "adjustment", 0)
-			continue
-		}
-
-		// Increase withheld so that the surplus is equal to the target surplus
-		withheldAdjustment := equilibriumSurplus.Sub(surplus)
-		ctx.Logger().Info("surplus is less than equilibrium surplus", "asset", asset, "surplus", surplus,
-			"equilibrium_surplus", equilibriumSurplus, "adjustment", withheldAdjustment)
-		m.mgr.Keeper().AddToOutboundFeeWithheldRune(ctx, asset, withheldAdjustment)
+	type feesAndMultiplier struct {
+		withheld   cosmos.Uint
+		spent      cosmos.Uint
+		surplus    cosmos.Uint
+		multiplier cosmos.Uint
 	}
 
-	// Find the delta between the actual surplus and the target surplus, and adjust the withheld amount
-	// so that the surplus is equal to the target surplus.
-	for _, asset := range maxSurplusAssets {
-		withheld, err := m.mgr.Keeper().GetOutboundFeeWithheldRune(ctx, asset)
+	getFeesAndMultiplier := func(ctx cosmos.Context, asset common.Asset) (feesAndMultiplier, error) {
+		var err error
+		var fem feesAndMultiplier
+		fem.withheld, err = m.mgr.Keeper().GetOutboundFeeWithheldRune(ctx, asset)
+		if err != nil {
+			return fem, err
+		}
+		fem.spent, err = m.mgr.Keeper().GetOutboundFeeSpentRune(ctx, asset)
+		if err != nil {
+			return fem, err
+		}
+		fem.surplus = fem.withheld.Sub(fem.spent)
+		fem.multiplier = m.mgr.GasMgr().CalcOutboundFeeMultiplier(ctx, targetSurplus,
+			fem.spent, fem.withheld, maxMultiplier, minMultiplier)
+		return fem, nil
+	}
+
+	for _, asset := range assets {
+		before, err := getFeesAndMultiplier(ctx, asset)
 		if err != nil {
 			return err
 		}
-		spent, err := m.mgr.Keeper().GetOutboundFeeSpentRune(ctx, asset)
-		if err != nil {
-			return err
-		}
-		surplus := withheld.Sub(spent)
-		if surplus.GTE(targetSurplus) {
-			ctx.Logger().Info("surplus is greater than target surplus", "asset", asset, "surplus", surplus,
-				"target_surplus", targetSurplus, "adjustment", 0)
+
+		if before.multiplier.LTE(cosmos.NewUint(10_000)) {
+			ctx.Logger().Info("multiplier is less than 100%; no adjustment needed",
+				"asset", asset,
+				"multiplier", before.multiplier,
+				"surplus", before.surplus,
+				"equilibrium_surplus", equilibriumSurplus,
+				"withheld_adjustment", "none",
+			)
 			continue
 		}
 
-		// Increase withheld so that the surplus is equal to the target surplus
-		withheldAdjustment := targetSurplus.Sub(surplus)
-		ctx.Logger().Info("surplus is less than target surplus", "asset", asset, "surplus", surplus,
-			"target_surplus", targetSurplus, "adjustment", withheldAdjustment)
+		// Increase withheld so that the multiplier is equal to 100%
+		withheldAdjustment := equilibriumSurplus.Sub(before.surplus)
 		m.mgr.Keeper().AddToOutboundFeeWithheldRune(ctx, asset, withheldAdjustment)
+
+		after, err := getFeesAndMultiplier(ctx, asset)
+		if err != nil {
+			return err
+		}
+
+		ctx.Logger().Info("multiplier was greater than 100%; adjusted",
+			"asset", asset,
+			"before_withheld", before.withheld,
+			"before_surplus", before.surplus,
+			"before_multiplier", before.multiplier,
+			"adjustment", withheldAdjustment,
+			"after_withheld", after.withheld,
+			"after_surplus", after.surplus,
+			"after_multiplier", after.multiplier,
+		)
 	}
 
 	return nil

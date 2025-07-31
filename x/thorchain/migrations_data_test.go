@@ -90,9 +90,3 @@ func (s MigrationDataSuite) TestMigrate5to6AddressValidation(c *C) {
 		c.Assert(refund.amount > 0, Equals, true, Commentf("Amount at index %d should be positive: %d", i, refund.amount))
 	}
 }
-
-func (s MigrationDataSuite) TestMigrate7to8AssetValidation(c *C) {
-	// Verify that the assets we are migrating withheld fees for parse correctly
-	_, _, err := mainnetAssetGasMultiplierAdjustments()
-	c.Assert(err, IsNil)
-}
