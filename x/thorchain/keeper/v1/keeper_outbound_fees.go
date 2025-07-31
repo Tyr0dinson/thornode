@@ -18,19 +18,20 @@ func (k KVStore) GetOutboundTxFee(ctx cosmos.Context) cosmos.Uint {
 func (k KVStore) GetOutboundFeeWithheldRune(ctx cosmos.Context, outAsset common.Asset) (cosmos.Uint, error) {
 	var record uint64
 	_, err := k.getUint64(ctx, k.GetKey(prefixOutboundFeeWithheldRune, outAsset.String()), &record)
+	if err != nil {
+		return cosmos.ZeroUint(), err
+	}
 	withheld := cosmos.NewUint(record)
 
 	// If the withheld amount is zero, initialize it to the initial withheld amount
 	if withheld.IsZero() {
 		withheld = k.GetSurplusForTargetMultiplier(ctx, cosmos.NewUint(10_000))
-		err = k.AddToOutboundFeeWithheldRune(ctx, outAsset, withheld)
-		if err != nil {
-			return cosmos.ZeroUint(), err
-		}
+		// use set instead of AddToOutboundFeeWithheldRune to avoid infinite loop
+		k.setUint64(ctx, k.GetKey(prefixOutboundFeeWithheldRune, outAsset.String()), withheld.Uint64())
 		return withheld, nil
 	}
 
-	return withheld, err
+	return withheld, nil
 }
 
 // AddToOutboundFeeWithheldRune - add to record of RUNE collected by the Reserve for an Asset's outbound fees
@@ -40,18 +41,13 @@ func (k KVStore) AddToOutboundFeeWithheldRune(ctx cosmos.Context, outAsset commo
 		return err
 	}
 
-	// If the withheld amount is zero, initialize it to the initial withheld amount before adding the new amount
-	if outboundFeeWithheldRune.IsZero() {
-		outboundFeeWithheldRune = k.GetSurplusForTargetMultiplier(ctx, cosmos.NewUint(10_000))
-	}
-
 	outboundFeeWithheldRune = outboundFeeWithheldRune.Add(withheld)
 	k.setUint64(ctx, k.GetKey(prefixOutboundFeeWithheldRune, outAsset.String()), outboundFeeWithheldRune.Uint64())
 	return nil
 }
 
 func (k KVStore) GetSurplusForTargetMultiplier(ctx cosmos.Context, targetMultiplierBps cosmos.Uint) cosmos.Uint {
-	// Calculate the surplus level at which the multiplier reaches 100%.
+	// Calculate the surplus level at which the multiplier reaches targetMultiplierBps.
 	// The multiplier formula is:
 	//
 	//	multiplier = max - ((surplus / target) * (max - min))
@@ -79,7 +75,28 @@ func (k KVStore) GetSurplusForTargetMultiplier(ctx cosmos.Context, targetMultipl
 
 	deltaToTarget := maxMultiplier.Sub(targetMultiplierBps)
 	maxMinusMin := maxMultiplier.Sub(minMultiplier)
-	equilibriumSurplus := deltaToTarget.Quo(maxMinusMin).Mul(targetSurplus)
+
+	// Convert to cosmos.Dec to avoid integer division.
+	deltaToTargetDec, err := cosmos.NewDecFromStr(deltaToTarget.String())
+	if err != nil {
+		return cosmos.ZeroUint()
+	}
+
+	maxMinusMinDec, err := cosmos.NewDecFromStr(maxMinusMin.String())
+	if err != nil {
+		return cosmos.ZeroUint()
+	}
+
+	targetSurplusDec, err := cosmos.NewDecFromStr(targetSurplus.String())
+	if err != nil {
+		return cosmos.ZeroUint()
+	}
+
+	// Perform decimal division: (deltaToTarget / maxMinusMin) * targetSurplus
+	ratio := deltaToTargetDec.Quo(maxMinusMinDec)
+	equilibriumSurplusDec := ratio.Mul(targetSurplusDec)
+	equilibriumSurplus := cosmos.NewUintFromBigInt(equilibriumSurplusDec.RoundInt().BigInt())
+
 	return equilibriumSurplus
 }
 
