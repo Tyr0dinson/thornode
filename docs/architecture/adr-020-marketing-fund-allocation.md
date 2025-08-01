@@ -3,6 +3,7 @@
 ## Changelog
 14 Jan 25: Added timeframe, additional funding option and further steps.
 21 Jan 25: Amended funding options.
+01 Aug 25: Adjusted funding source and updated for latest changes in ecosystem.
 
 ## Status
 Draft
@@ -11,7 +12,7 @@ Draft
 Thorchain is leading decentralized liquidity protocol that facilitates cross-chain native swaps and is integrated in numerous wallets and front end platforms. Despite its technical innovations and widespread utility, there is currently no dedicated fund allocation for marketing efforts. This lack of marketing support limits overall protocol awareness, which in turn reduces the ability to attract new users, and ecosystem growth. As a result, Thorchain's full potential remains underutilized, especially among less-informed audiences who are not yet familiar with its capabilities.
 
 ## Proposal
-This ADR proposes the creation of a dedicated marketing fund, sourced from a small portion of the protocol’s existing revenue streams or treasury. The fund will support initiatives aimed at promoting the Thorchain ecosystem and its integrations. Marketing campaigns will highlight Thorchain's unique features and benefits to increase adoption and engagement across the crypto industry.
+This ADR proposes the allocation of a dedicated marketing fund, sourced from a portion of the protocol’s existing burn allocation. The fund will support initiatives aimed at promoting the Thorchain ecosystem and its technology. Marketing campaigns will highlight Thorchain's unique features and benefits to increase adoption and engagement across the crypto industry.
 
 ### Key Benefits of Marketing
 1. **Increased Adoption**:
@@ -30,13 +31,12 @@ This ADR proposes the creation of a dedicated marketing fund, sourced from a sma
    Educating users about Thorchain’s innovations (e.g. native swaps) strengthens its position in a competitive DeFi landscape, leading to more sustainable growth.
 
 ### Proposed Marketing Initiatives
-1. **Hire Marketing Company **:
-   - Partner with at least one professional marketing company, that specialises in the crypto industry, to product and action a broad marketing strategy to grow overall awareness and understanding of Thorchain and its associated products. This marketing strategy could include:
-
+**Hire Marketing/PR Company **:
+   Partner with at least one professional marketing company, that specialises in the crypto industry, to product and action a broad marketing strategy to grow overall awareness and understanding of Thorchain and its associated products. This marketing strategy could include:
    - Produce and distrubute blogs, videos, and infographics explaining Thorchain’s technology and benefits.
-   - Launch referral programs and trading competitions to incentivize user engagement.
+   - Launch referral programs and trading competitions to incentivize user engagement towards a dedicated frontend.
    - Host and distribute webinars, interviews and AMA sessions with the core team and community leaders.
-   - Collaborate with wallets and dApps that integrate Thorchain for joint promotional efforts.
+   - Collaborate with DeFi analysis websites to ensure accurate integratation of Thorchain data for joint promotional efforts.
    - Highlight case studies showcasing successful use cases and integrations.
    - Represent Thorchain at blockchain conferences and hackathons to increase visibility.
    - Sponsor industry events to attract the attention of institutional and retail users.
@@ -44,12 +44,11 @@ This ADR proposes the creation of a dedicated marketing fund, sourced from a sma
    - Focus on regions and demographics with high adoption potential for DeFi solutions.
 
 ### Funding and Governance
-- **Allocation**:
-  Funding can be supplied as either a percentage of Thorchains revenue (e.g 5%), via treasury allocation or from existing quarterly grant submission. The specific percentage or amount can be adjusted based on community consensus and actual spending within limits.
+**Allocation**:
+  Funding can be supplied as either a percentage of Thorchains revenue (e.g 5%), via treasury allocation or as an alternative to the existing 5% burn. The specific percentage or amount can be adjusted based on community consensus and actual spending within limits.
    - 1. 5% revenue (generated from fees). Small Rune sell pressure. Less LP and Bonder rewards
-   - 2. Treasury allocation - $250,000 per month. 
-   - 3. Regular grant submission
-   - 4. Swap 5% burn for 5% marketing. Results in small Rune sell pressure.
+   - 2. Treasury allocation - $50,000 per month. 
+   - 3. Swap 5% burn for 5% marketing. Results in small Rune sell pressure to allocate stable coins for marketing payments.
 
 - **Governance**:
   Marketing initiatives and budget allocations will be managed by a dedicated marketing committee represented by active members of the Thorchain developers discord.
