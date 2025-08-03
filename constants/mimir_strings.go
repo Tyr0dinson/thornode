@@ -5,6 +5,7 @@ package constants
 // Each string should clearly indicate its usage for the final Mimir key (key, template, reference)
 // and no Mimir key should require the combination of more than two strings.
 const (
+	MimirKeyMemolessOutbound       = "MemolessOutbound"
 	MimirKeySecuredAssetHaltGlobal = "HaltSecuredGlobal"
 	MimirKeyWasmPermissionless     = "WasmPermissionless"
 	MimirKeyWasmHaltGlobal         = "HaltWasmGlobal"

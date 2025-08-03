@@ -48,13 +48,17 @@ func refundTx(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32,
 		// Only attempt an outbound if a fee can be taken from the coin.
 		if coin.IsRune() || !pool.BalanceRune.IsZero() {
 			toAddr := tx.Tx.FromAddress
-			memo, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), tx.Tx.Memo)
-			if err == nil && memo.IsType(TxSwap) && !memo.GetRefundAddress().IsEmpty() && !coin.Asset.GetChain().IsTHORChain() {
-				// If the memo specifies a refund address, send the refund to that address. If
-				// refund memo can't be parsed or is invalid for the refund chain, it will
-				// default back to the sender address
-				if memo.GetRefundAddress().IsChain(coin.Asset.GetChain()) {
-					toAddr = memo.GetRefundAddress()
+			memolessOutboundMimir, _ := mgr.Keeper().GetMimir(ctx, constants.MimirKeyMemolessOutbound)
+			memolessOutboundActive := memolessOutboundMimir > 0
+			if !memolessOutboundActive {
+				memo, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), tx.Tx.Memo)
+				if err == nil && memo.IsType(TxSwap) && !memo.GetRefundAddress().IsEmpty() && !coin.Asset.GetChain().IsTHORChain() {
+					// If the memo specifies a refund address, send the refund to that address. If
+					// refund memo can't be parsed or is invalid for the refund chain, it will
+					// default back to the sender address
+					if memo.GetRefundAddress().IsChain(coin.Asset.GetChain()) {
+						toAddr = memo.GetRefundAddress()
+					}
 				}
 			}
 
@@ -66,13 +70,18 @@ func refundTx(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32,
 				}
 			}
 
+			var memo string
+			if !memolessOutboundActive {
+				memo = NewRefundMemo(tx.Tx.ID).String()
+			}
+
 			toi := TxOutItem{
 				Chain:                 coin.Asset.GetChain(),
 				ToAddress:             toAddr,
 				VaultPubKey:           vault.PubKey,
 				VaultPubKeyEddsa:      vault.PubKeyEddsa,
 				Coin:                  coin,
-				Memo:                  NewRefundMemo(tx.Tx.ID).String(),
+				Memo:                  memo,
 				MaxGas:                []common.Coin{},
 				GasRate:               0,
 				InHash:                tx.Tx.ID,

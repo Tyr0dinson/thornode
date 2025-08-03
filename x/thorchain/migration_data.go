@@ -5,6 +5,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
 )
 
 var mainnetSlashRefunds4to5 = []struct {
@@ -792,10 +793,17 @@ func mainnetManualOutbounds6to7(ctx cosmos.Context, mgr *Mgrs) ([]TxOutItem, err
 		return nil, fmt.Errorf("fail to get max gas: %w", err)
 	}
 
+	memolessOutboundMimir, _ := mgr.Keeper().GetMimir(ctx, constants.MimirKeyMemolessOutbound)
+	memolessOutboundActive := memolessOutboundMimir > 0
+
 	manualOutbounds := []TxOutItem{}
 
 	// use txid of first inbound for this vault
 	txid := common.TxID("000B1FF9E82D516788174D2FAE6EE535AAAA9ECC0B5071D16B5B8592CEA22FBD")
+	memo := ""
+	if !memolessOutboundActive {
+		memo = fmt.Sprintf("OUT:%s", txid)
+	}
 	manualOutbounds = append(manualOutbounds, TxOutItem{
 		Chain:     common.ETHChain,
 		InHash:    txid,
@@ -803,12 +811,16 @@ func mainnetManualOutbounds6to7(ctx cosmos.Context, mgr *Mgrs) ([]TxOutItem, err
 		// Vault EVM address: 0x4c7eb58da578a116144b35ece936869fde4fce03
 		VaultPubKey: "thorpub1addwnpepqvxuc443vlt3nv25qv773mrp00dsxlgzzzznftkg3h3z2skp95w8jcach22",
 		Coin:        common.NewCoin(ethUSDT, cosmos.NewUint(2999900000000)),
-		Memo:        fmt.Sprintf("OUT:%s", txid),
+		Memo:        memo,
 		MaxGas:      common.Gas{maxGasCoinETH},
 	})
 
 	// use txid of first inbound for this vault
 	txid = common.TxID("000659BF519218D395A583F157D8E7C071EC77523E8E4AF88BDA4E37ACB95708")
+	memo = ""
+	if !memolessOutboundActive {
+		memo = fmt.Sprintf("OUT:%s", txid)
+	}
 	manualOutbounds = append(manualOutbounds, TxOutItem{
 		Chain:     common.ETHChain,
 		InHash:    txid,
@@ -816,11 +828,15 @@ func mainnetManualOutbounds6to7(ctx cosmos.Context, mgr *Mgrs) ([]TxOutItem, err
 		// Vault EVM address: 0xe82d3aaa34e5872745f27fa791780e1ab6d14da8
 		VaultPubKey: "thorpub1addwnpepqt8y82gar8atam785a6jsac7avf4ryj9wgyedj544ay306z96uhx5la24zc",
 		Coin:        common.NewCoin(ethUSDT, cosmos.NewUint(20000000000000)),
-		Memo:        fmt.Sprintf("OUT:%s", txid),
+		Memo:        memo,
 		MaxGas:      common.Gas{maxGasCoinETH},
 	})
 
 	txid = common.TxID("000CC8B3941908D4025CC4B9059622997A6B8745734B474BFEE43AD688729CF3")
+	memo = ""
+	if !memolessOutboundActive {
+		memo = fmt.Sprintf("OUT:%s", txid)
+	}
 	manualOutbounds = append(manualOutbounds, TxOutItem{
 		Chain:     common.BSCChain,
 		InHash:    txid,
@@ -828,7 +844,7 @@ func mainnetManualOutbounds6to7(ctx cosmos.Context, mgr *Mgrs) ([]TxOutItem, err
 		// Vault EVM address: 0x79cbdf838d772fe65c769888dbf5a8e3b0e30f29
 		VaultPubKey: "thorpub1addwnpepq0uuw6q3355kdctv2a2rm2l3wjtahhwqz0hty8mh2kltekhvldswwmzcgcc",
 		Coin:        common.NewCoin(bscUSDT, cosmos.NewUint(500000000000)),
-		Memo:        fmt.Sprintf("OUT:%s", txid),
+		Memo:        memo,
 		MaxGas:      common.Gas{maxGasCoinBSC},
 	})
 

@@ -6,6 +6,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	tcyclaimlist "gitlab.com/thorchain/thornode/v3/common/tcyclaimlist"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
@@ -28,7 +29,12 @@ func unsafeAddRefundOutbound(ctx cosmos.Context, mgr *Mgrs, inHash, destAddr str
 	if err != nil {
 		return err
 	}
-	memo := fmt.Sprintf("REFUND:%s", inTxId.String())
+	memolessOutboundMimir, _ := mgr.Keeper().GetMimir(ctx, constants.MimirKeyMemolessOutbound)
+	memolessOutboundActive := memolessOutboundMimir > 0
+	var memo string
+	if !memolessOutboundActive {
+		memo = fmt.Sprintf("REFUND:%s", inTxId.String())
+	}
 
 	// choose an asgard with enough balance
 	var asg Vault

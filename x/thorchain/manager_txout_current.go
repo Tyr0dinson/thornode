@@ -15,6 +15,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
+	memo "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
 )
 
 // TxOutStorageVCUR is going to manage all the outgoing tx
@@ -178,8 +179,12 @@ func (tos *TxOutStorageVCUR) TryAddTxOutItem(ctx cosmos.Context, mgr Manager, to
 // fee(s)
 func (tos *TxOutStorageVCUR) takeAffiliateFee(ctx cosmos.Context, mgr Manager, toi TxOutItem) (cosmos.Uint, error) {
 	// no affiliate fee for refunds or migrate txs
-	if strings.Split(toi.Memo, ":")[0] == constants.MemoPrefixRefund || strings.Split(toi.Memo, ":")[0] == constants.MemoPrefixMigrate {
-		return toi.Coin.Amount, nil
+	memolessOutboundMimir, _ := tos.keeper.GetMimir(ctx, constants.MimirKeyMemolessOutbound)
+	memolessOutboundActive := memolessOutboundMimir > 0
+	if !memolessOutboundActive {
+		if strings.Split(toi.Memo, ":")[0] == constants.MemoPrefixRefund || strings.Split(toi.Memo, ":")[0] == constants.MemoPrefixMigrate {
+			return toi.Coin.Amount, nil
+		}
 	}
 
 	// Get inbound tx
@@ -463,15 +468,20 @@ func (tos *TxOutStorageVCUR) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 	var outputs []TxOutItem
 	var remaining cosmos.Uint
 
+	memolessOutboundMimir, _ := tos.keeper.GetMimir(ctx, constants.MimirKeyMemolessOutbound)
+	memolessOutboundActive := memolessOutboundMimir > 0
+
 	// Default the memo to the standard outbound memo
 	if toi.Memo == "" {
-		toi.Memo = NewOutboundMemo(toi.InHash).String()
+		if !memolessOutboundActive {
+			toi.Memo = NewOutboundMemo(toi.InHash).String()
+		}
 	}
 
 	// Ensure the InHash is set
 	if toi.InHash.IsEmpty() {
 		toi.InHash = common.BlankTxID
-	} else {
+	} else if !memolessOutboundActive {
 		// fetch inbound txn memo, and append arbitrary data (if applicable)
 		inboundVoter, err := tos.keeper.GetObservedTxInVoter(ctx, toi.InHash)
 		if err == nil {
@@ -598,9 +608,13 @@ func (tos *TxOutStorageVCUR) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 			outputs[i].GasRate = gasRate
 		}
 
+		var memo memo.Memo
+		feeDeduction := false
 		// If the memo is unparsable, or Ragnarok, don't deduct an outbound fee.
-		memo, err := ParseMemoWithTHORNames(ctx, tos.keeper, outputs[i].Memo)
-		feeDeduction := (err == nil && !memo.IsType(TxRagnarok))
+		if !memolessOutboundActive {
+			memo, err = ParseMemoWithTHORNames(ctx, tos.keeper, outputs[i].Memo)
+			feeDeduction = (err == nil && !memo.IsType(TxRagnarok))
+		}
 
 		// THORChain txouts by nature allow fee deduction, but InactiveVault outbounds
 		// require either no deduction or gas cost deduction instead.

@@ -396,10 +396,6 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 		return nil, nil, nil, fmt.Errorf("vault public key is empty")
 	}
 
-	if len(tx.Memo) == 0 {
-		return nil, nil, nil, fmt.Errorf("can't sign tx when it doesn't have memo")
-	}
-
 	memo, err := mem.ParseMemo(common.LatestVersion, tx.Memo)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("fail to parse memo(%s):%w", tx.Memo, err)

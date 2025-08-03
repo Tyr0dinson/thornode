@@ -144,8 +144,10 @@ func (h WithdrawLiquidityHandler) handleV3_0_0(ctx cosmos.Context, msg MsgWithdr
 		}
 	}
 
+	memolessOutboundMimir, _ := h.mgr.Keeper().GetMimir(ctx, constants.MimirKeyMemolessOutbound)
+	memolessOutboundActive := memolessOutboundMimir > 0
 	memo := ""
-	if msg.Tx.ID.Equals(common.BlankTxID) {
+	if !memolessOutboundActive && msg.Tx.ID.Equals(common.BlankTxID) {
 		// tx id is blank, must be triggered by the ragnarok protocol
 		memo = NewRagnarokMemo(ctx.BlockHeight()).String()
 	}

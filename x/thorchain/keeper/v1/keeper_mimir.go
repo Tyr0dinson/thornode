@@ -111,6 +111,7 @@ func (k KVStore) SetNodePauseChain(ctx cosmos.Context, acc cosmos.AccAddress) {
 
 func (k KVStore) IsOperationalMimir(key string) bool {
 	exactMatches := []string{
+		"MemolessOutbound",
 		"MintSynths",
 		"TradeAccountsEnabled",
 		"RUNEPoolEnabled",

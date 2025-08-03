@@ -748,6 +748,12 @@ func (vm *NetworkMgrVCUR) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 						}
 					}
 				}
+				memolessOutboundMimir, _ := mgr.Keeper().GetMimir(ctx, constants.MimirKeyMemolessOutbound)
+				memolessOutboundActive := memolessOutboundMimir > 0
+				var memo string
+				if !memolessOutboundActive {
+					memo = NewMigrateMemo(ctx.BlockHeight()).String()
+				}
 				toi := TxOutItem{
 					Chain:            chain,
 					InHash:           common.BlankTxID,
@@ -758,7 +764,7 @@ func (vm *NetworkMgrVCUR) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 						Asset:  coin.Asset,
 						Amount: amt,
 					},
-					Memo: NewMigrateMemo(ctx.BlockHeight()).String(),
+					Memo: memo,
 				}
 				ok, err := vm.txOutStore.TryAddTxOutItem(ctx, mgr, toi, cosmos.ZeroUint())
 				if err != nil && !errors.Is(err, ErrNotEnoughToPayFee) {

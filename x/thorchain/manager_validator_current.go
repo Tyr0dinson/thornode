@@ -772,13 +772,20 @@ func (vm *ValidatorMgrVCUR) ragnarokBond(ctx cosmos.Context, nth int64, mgr Mana
 		}
 		amt := na.Bond.MulUint64(uint64(nth)).QuoUint64(10)
 
+		memolessOutboundMimir, _ := mgr.Keeper().GetMimir(ctx, constants.MimirKeyMemolessOutbound)
+		memolessOutboundActive := memolessOutboundMimir > 0
+		var memo string
+		if !memolessOutboundActive {
+			memo = NewRagnarokMemo(ctx.BlockHeight()).String()
+		}
+
 		// refund bond
 		txOutItem := TxOutItem{
 			Chain:      common.RuneAsset().Chain,
 			ToAddress:  na.BondAddress,
 			InHash:     common.BlankTxID,
 			Coin:       common.NewCoin(common.RuneAsset(), amt),
-			Memo:       NewRagnarokMemo(ctx.BlockHeight()).String(),
+			Memo:       memo,
 			ModuleName: BondName,
 		}
 		ok, err := vm.txOutStore.TryAddTxOutItem(ctx, mgr, txOutItem, cosmos.ZeroUint())

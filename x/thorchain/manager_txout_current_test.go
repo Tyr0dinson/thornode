@@ -1112,3 +1112,102 @@ func (s *TxOutStoreVCURSuite) TestSplitCloutRuneValueExceedingClouts(c *check.C)
 	c.Check(amountFromClout2.Equal(cosmos.NewUint(40)), check.Equals, true)
 	c.Check(remainingRune.Equal(cosmos.NewUint(40)), check.Equals, true)
 }
+
+func (s TxOutStoreVCURSuite) TestMemolessOutboundCollision(c *C) {
+	// Test that two txOut's with same outbound parameters but different InHash
+	// are handled correctly when memoless outbound is enabled
+	w := getHandlerTestWrapper(c, 1, true, true)
+	vault := GetRandomVault()
+	vault.Coins = common.Coins{
+		common.NewCoin(common.RuneAsset(), cosmos.NewUint(10000*common.One)),
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(10000*common.One)),
+	}
+	c.Assert(w.keeper.SetVault(w.ctx, vault), IsNil)
+
+	// Enable memoless outbound
+	w.keeper.SetMimir(w.ctx, constants.MimirKeyMemolessOutbound, 1)
+
+	// Create two different inbound transactions
+	inTxID1 := GetRandomTxHash()
+	inTxID2 := GetRandomTxHash()
+	toAddress := GetRandomBTCAddress()
+
+	// Create voter for first transaction (use GetRandomTx for simplicity)
+	voter1 := NewObservedTxVoter(inTxID1, common.ObservedTxs{
+		common.ObservedTx{
+			Tx:             GetRandomTx(),
+			Status:         common.Status_incomplete,
+			BlockHeight:    1,
+			Signers:        []string{w.activeNodeAccount.NodeAddress.String()},
+			KeysignMs:      0,
+			FinaliseHeight: 1,
+		},
+	})
+	// Override the ID to match our test
+	voter1.Tx.Tx.ID = inTxID1
+	voter1.TxID = inTxID1
+	w.keeper.SetObservedTxInVoter(w.ctx, voter1)
+
+	// Create voter for second transaction
+	voter2 := NewObservedTxVoter(inTxID2, common.ObservedTxs{
+		common.ObservedTx{
+			Tx:             GetRandomTx(),
+			Status:         common.Status_incomplete,
+			BlockHeight:    1,
+			Signers:        []string{w.activeNodeAccount.NodeAddress.String()},
+			KeysignMs:      0,
+			FinaliseHeight: 1,
+		},
+	})
+	// Override the ID to match our test
+	voter2.Tx.Tx.ID = inTxID2
+	voter2.TxID = inTxID2
+	w.keeper.SetObservedTxInVoter(w.ctx, voter2)
+
+	txOutStore := newTxOutStorageVCUR(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), w.mgr.GasMgr())
+
+	// Create two identical TxOutItems except for InHash
+	item1 := TxOutItem{
+		Chain:     common.BTCChain,
+		ToAddress: toAddress,
+		InHash:    inTxID1,
+		Coin:      common.NewCoin(common.BTCAsset, cosmos.NewUint(20*common.One)), // 20 BTC
+	}
+
+	item2 := TxOutItem{
+		Chain:     common.BTCChain,
+		ToAddress: toAddress,
+		InHash:    inTxID2,                                                        // Different InHash
+		Coin:      common.NewCoin(common.BTCAsset, cosmos.NewUint(20*common.One)), // 20 BTC
+	}
+
+	// Add first outbound - should succeed
+	ok1, err1 := txOutStore.TryAddTxOutItem(w.ctx, w.mgr, item1, cosmos.ZeroUint())
+	c.Assert(err1, IsNil)
+	c.Assert(ok1, Equals, true)
+
+	// Add second outbound with same parameters but different InHash - should also succeed
+	// This tests the collision scenario where memoless outbound creates identical-looking
+	// transactions that differ only in InHash
+	ok2, err2 := txOutStore.TryAddTxOutItem(w.ctx, w.mgr, item2, cosmos.ZeroUint())
+	c.Assert(err2, IsNil)
+	c.Assert(ok2, Equals, true)
+
+	// Verify both outbounds are added
+	msgs, err := txOutStore.GetOutboundItems(w.ctx)
+	c.Assert(err, IsNil)
+	c.Assert(msgs, HasLen, 2)
+
+	// Both should have empty memos due to memoless mode
+	c.Assert(msgs[0].Memo, Equals, "")
+	c.Assert(msgs[1].Memo, Equals, "")
+
+	// Verify they have different InHashes but same other parameters
+	c.Assert(msgs[0].InHash.Equals(inTxID1) || msgs[0].InHash.Equals(inTxID2), Equals, true)
+	c.Assert(msgs[1].InHash.Equals(inTxID1) || msgs[1].InHash.Equals(inTxID2), Equals, true)
+	c.Assert(msgs[0].InHash.Equals(msgs[1].InHash), Equals, false) // Different InHashes
+
+	// Same outbound parameters
+	c.Assert(msgs[0].Chain.Equals(msgs[1].Chain), Equals, true)
+	c.Assert(msgs[0].ToAddress.Equals(msgs[1].ToAddress), Equals, true)
+}
