@@ -105,16 +105,6 @@ func (m Migrator) Migrate7to8(ctx sdk.Context) error {
 		}
 	}
 
-	return nil
-}
-
-// Migrate8to9 migrates from version 8 to 9.
-func (m Migrator) Migrate8to9(ctx sdk.Context) error {
-	// loads the manager for this migration
-	if err := m.mgr.LoadManagerIfNecessary(ctx); err != nil {
-		return err
-	}
-
 	// ------------------------------ Asset Gas Multiplier Adjustments ------------------------------
 	// We are going to adjust the target surplus and multipliers for all assets. The steps are:
 	// 1. Adjust the target surplus to 10k RUNE

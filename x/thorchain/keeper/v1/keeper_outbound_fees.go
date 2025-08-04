@@ -100,6 +100,24 @@ func (k KVStore) GetSurplusForTargetMultiplier(ctx cosmos.Context, targetMultipl
 	return equilibriumSurplus
 }
 
+// ResetMultiplierForAsset resets the fee multiplier for an asset to the given multiplier
+func (k KVStore) ResetMultiplierForAsset(ctx cosmos.Context, asset common.Asset, multiplier cosmos.Uint) error {
+	surplus := k.GetSurplusForTargetMultiplier(ctx, multiplier)
+	spent, err := k.GetOutboundFeeSpentRune(ctx, asset)
+	if err != nil {
+		return err
+	}
+	withheld, err := k.GetOutboundFeeWithheldRune(ctx, asset)
+	if err != nil {
+		return err
+	}
+	if surplus.GT(withheld.Sub(spent)) {
+		return k.AddToOutboundFeeWithheldRune(ctx, asset, surplus.Sub(withheld.Sub(spent)))
+	} else {
+		return k.AddToOutboundFeeSpentRune(ctx, asset, withheld.Sub(spent).Sub(surplus))
+	}
+}
+
 // GetOutboundFeeWithheldRuneIterator to iterate through all Assets' OutboundFeeWithheldRune
 // (e.g. for hard-fork GenesisState export)
 func (k KVStore) GetOutboundFeeWithheldRuneIterator(ctx cosmos.Context) cosmos.Iterator {

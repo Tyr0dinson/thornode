@@ -835,6 +835,10 @@ func (k KVStoreDummy) GetSurplusForTargetMultiplier(ctx cosmos.Context, targetMu
 	return cosmos.ZeroUint()
 }
 
+func (k KVStoreDummy) ResetMultiplierForAsset(ctx cosmos.Context, asset common.Asset, multiplier cosmos.Uint) error {
+	return kaboom
+}
+
 func (k KVStoreDummy) GetOutboundTxFee(ctx cosmos.Context) cosmos.Uint {
 	return cosmos.ZeroUint()
 }
