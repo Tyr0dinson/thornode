@@ -77,7 +77,7 @@ count: 2
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/test
 asserts:
-  - .affiliate_collector_rune == "722638857"
+  - .affiliate_collector_rune == "722751541"
 ---
 # Observe the outbound.
 type: tx-observed-out

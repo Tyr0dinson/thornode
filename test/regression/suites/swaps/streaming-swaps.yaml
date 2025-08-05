@@ -25,18 +25,18 @@ asserts:
   - .[0] == {"asset":"THOR.RUNE","outbound_fee":"2000000"}
   ###
   - .[1].asset == "BTC.BTC"
-  - .[1].outbound_fee == "14000"
-  - .[1].fee_withheld_rune == "0"
+  - .[1].outbound_fee == "7000"
+  - .[1].fee_withheld_rune == "689655172"
   - .[1].fee_spent_rune == "0"
-  - .[1].surplus_rune == "0"
-  - .[1].dynamic_multiplier_basis_points == "20000"
+  - .[1].surplus_rune == "689655172"
+  - .[1].dynamic_multiplier_basis_points == "10000"
   ###
   - .[2].asset == "ETH.ETH"
-  - .[2].outbound_fee == "1280000"
-  - .[2].fee_withheld_rune == "0"
+  - .[2].outbound_fee == "640000"
+  - .[2].fee_withheld_rune == "689655172"
   - .[2].fee_spent_rune == "0"
-  - .[2].surplus_rune == "0"
-  - .[2].dynamic_multiplier_basis_points == "20000"
+  - .[2].surplus_rune == "689655172"
+  - .[2].dynamic_multiplier_basis_points == "10000"
 ---
 ########################################################################################
 # check 1/2 of vault block_height
@@ -117,7 +117,7 @@ asserts:
   - .|length == 1
   - .[0]|.in_hash == "${INBOUND_TXID}"
   - .[0]|.coin.asset == "${OUTPUT_ASSET}"
-  - .[0]|.coin.amount == "${OUTPUT_AMOUNT=43741063}"
+  - .[0]|.coin.amount == "${OUTPUT_AMOUNT=44381063}"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -240,7 +240,7 @@ asserts:
   - .|length == 1
   - .[0]|.in_hash == "${INBOUND_TXID}"
   - .[0]|.coin.asset == "${OUTPUT_ASSET}"
-  - .[0]|.coin.amount == "${OUTPUT_AMOUNT=43049941}"
+  - .[0]|.coin.amount == "${OUTPUT_AMOUNT=43566790}"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -311,10 +311,10 @@ asserts:
   - .[0]|.in_hash == "${INBOUND_TXID}"
   - .[0]|.coin.asset == "${OUTPUT_ASSET}"
   - .[0]|.memo == "OUT:${INBOUND_TXID}"
-  - .[0]|.coin.amount == "${OUTPUT_AMOUNT=6501016}"
+  - .[0]|.coin.amount == "${OUTPUT_AMOUNT=6999523}"
   - .[1]|.in_hash == "${INBOUND_TXID}"
   - .[1]|.coin.asset == "${INPUT_ASSET}"
-  - .[1]|.coin.amount == "${REFUND_AMOUNT=4786000}"
+  - .[1]|.coin.amount == "${REFUND_AMOUNT=4793000}"
   - .[1]|.memo == "REFUND:${INBOUND_TXID}"
 ---
 type: tx-observed-out
@@ -406,7 +406,7 @@ asserts:
   - .|length == 1
   - .[0]|.in_hash == "${INBOUND_TXID}"
   - .[0]|.coin.asset == "${OUTPUT_ASSET}"
-  - .[0]|.coin.amount == "${OUTPUT_AMOUNT=31186255}"
+  - .[0]|.coin.amount == "${OUTPUT_AMOUNT=31546461}"
   - .[0]|.memo == "OUT:${INBOUND_TXID}"
 ---
 type: create-blocks
@@ -477,7 +477,7 @@ asserts:
   - .|length == 1
   - .[0]|.in_hash == "${INBOUND_TXID}"
   - .[0]|.coin.asset == "${OUTPUT_ASSET}"
-  - .[0]|.coin.amount == "${OUTPUT_AMOUNT=342184}"
+  - .[0]|.coin.amount == "${OUTPUT_AMOUNT=770603}"
   - .[0]|.memo == "OUT:${INBOUND_TXID}"
 ---
 type: create-blocks
@@ -625,15 +625,15 @@ asserts:
   - .[0] == {"asset":"THOR.RUNE","outbound_fee":"2000000"}
   ###
   - .[1].asset == "BTC.BTC"
-  - .[1].outbound_fee == "14000"
-  - .[1].fee_withheld_rune == "11128723"
-  - .[1].fee_spent_rune == "8345590"
-  - .[1].surplus_rune == "2783133"
-  - .[1].dynamic_multiplier_basis_points == "20000"
+  - .[1].outbound_fee == "7057"
+  - .[1].fee_withheld_rune == "695219880"
+  - .[1].fee_spent_rune == "8346630"
+  - .[1].surplus_rune == "686873250"
+  - .[1].dynamic_multiplier_basis_points == "10081"
   ###
   - .[2].asset == "ETH.ETH"
-  - .[2].outbound_fee == "1279936"
-  - .[2].fee_withheld_rune == "788461016"
-  - .[2].fee_spent_rune == "590533224"
-  - .[2].surplus_rune == "197927792"
-  - .[2].dynamic_multiplier_basis_points == "19999"
+  - .[2].outbound_fee == "872512"
+  - .[2].fee_withheld_rune == "1157069077"
+  - .[2].fee_spent_rune == "592695508"
+  - .[2].surplus_rune == "564373569"
+  - .[2].dynamic_multiplier_basis_points == "13633"

@@ -194,7 +194,7 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/inbound_addresses
 asserts:
-  - .[]|select(.chain == "BTC").outbound_fee == "${OUT_FEE=14000}"
+  - .[]|select(.chain == "BTC").outbound_fee == "${OUT_FEE=7000}"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound

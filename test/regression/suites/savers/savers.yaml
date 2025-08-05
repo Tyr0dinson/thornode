@@ -129,7 +129,7 @@ asserts:
   - .memo == "-:BTC/BTC:5000"
   - .inbound_address == "{{ addr_btc_dog }}"
   - .fees.liquidity == "121618"
-  - .fees.outbound == "14000"
+  - .fees.outbound == "7000"
   - (.fees.total|tonumber) == (.fees.liquidity|tonumber)+(.fees.outbound|tonumber)
   - .fees.slippage_bps == 173
   - .fees.total_bps == 193
@@ -216,7 +216,7 @@ asserts:
   - .memo == "-:BTC/BTC:10000"
   - .inbound_address == "{{ addr_btc_dog }}"
   - .fees.liquidity == "123024"
-  - .fees.outbound == "14000"
+  - .fees.outbound == "7000"
   - (.fees.total|tonumber) == (.fees.liquidity|tonumber)+(.fees.outbound|tonumber)
   - .fees.slippage_bps == 175
   - .fees.total_bps == 195

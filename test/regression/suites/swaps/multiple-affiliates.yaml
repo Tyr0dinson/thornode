@@ -83,7 +83,7 @@ type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
 asserts:
   - .result|length == 1
-  - .result[]|select(.denom == "rune").amount == "96855041"
+  - .result[]|select(.denom == "rune").amount == "96870047"
 ---
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_cat }}

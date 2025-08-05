@@ -520,7 +520,7 @@ asserts:
   - .total_repay_seconds|tonumber == 48
   - .fees.total_bps|tonumber == 409
   - .fees.slippage_bps|tonumber == 99
-  - .fees.outbound|tonumber == 14000
+  - .fees.outbound|tonumber == 7000
   - .fees.liquidity|tonumber == 24397
   - (.fees.total|tonumber) == (.fees.liquidity|tonumber)+(.fees.outbound|tonumber)
   - .recommended_gas_rate == "120"

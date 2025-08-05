@@ -21,15 +21,15 @@ params:
   amount: 1000000000
   destination: {{ addr_btc_fox }}
 asserts:
-  - .expected_amount_out|tonumber == ${AMT_OUT=966292}
+  - .expected_amount_out|tonumber == ${AMT_OUT=973292}
   - .memo == "=:b:{{ addr_btc_fox }}"
   - .inbound_address == null
-  - .recommended_min_amount_in == "42000147"
+  - .recommended_min_amount_in == "42000047"
   - .fees.liquidity == "9998"
-  - .fees.outbound == "14000"
+  - .fees.outbound == "7000"
   - (.fees.total|tonumber) == (.fees.liquidity|tonumber)+(.fees.outbound|tonumber)
   - .fees.slippage_bps == 100
-  - .fees.total_bps == 238
+  - .fees.total_bps == 183
   - has("recommended_gas_rate")|not # skipped for native
   - has("gas_rate_units")|not
 ---
@@ -252,7 +252,7 @@ asserts:
   - .recommended_min_amount_in == "39350607"
   - .fees.affiliate == "0"
   - .fees.liquidity == "10949"
-  - .fees.outbound == "${OF=14000}"
+  - .fees.outbound == "${OF=7000}"
   - (.fees.total|tonumber) == (.fees.liquidity|tonumber)+(.fees.outbound|tonumber)+(.fees.affiliate|tonumber)
   - .fees.slippage_bps == 103
   - .fees.total_bps == 233
@@ -276,10 +276,10 @@ asserts:
   - .recommended_min_amount_in == "39350607"
   - .fees.affiliate == "52288"
   - .fees.liquidity == "10949"
-  - .fees.outbound == "14000"
+  - .fees.outbound == "7000"
   - (.fees.total|tonumber) == (.fees.liquidity|tonumber)+(.fees.outbound|tonumber)+(.fees.affiliate|tonumber)
   - .fees.slippage_bps == 103
-  - .fees.total_bps == 687
+  - .fees.total_bps == 632
 ---
 type: tx-deposit
 signer: {{ addr_thor_fox }}
@@ -376,10 +376,10 @@ asserts:
   - .recommended_min_amount_in == "3840000"
   - .fees.affiliate == "50311"
   - .fees.liquidity == "20486"
-  - .fees.outbound == "14000"
+  - .fees.outbound == "7000"
   - (.fees.total|tonumber) == (.fees.liquidity|tonumber)+(.fees.outbound|tonumber)+(.fees.affiliate|tonumber)
   - .fees.slippage_bps == 199
-  - .fees.total_bps == 777
+  - .fees.total_bps == 722
 ---
 type: tx-observed-in
 signer: {{ addr_thor_dog }}
@@ -615,10 +615,10 @@ asserts:
   - .max_streaming_quantity == 19
   - .streaming_swap_blocks == 180
   - .fees.liquidity == "99731"
-  - .fees.outbound == "14000"
+  - .fees.outbound == "7000"
   - (.fees.total|tonumber) == (.fees.liquidity|tonumber)+(.fees.outbound|tonumber)
   - .fees.slippage_bps == 101
-  - .fees.total_bps == 116
+  - .fees.total_bps == 111
   - .streaming_swap_seconds == 1080
   - .total_swap_seconds == 1104
   - .expected_amount_out == "9666063"
@@ -655,10 +655,10 @@ asserts:
   - .streaming_swap_blocks == 90
   - .streaming_swap_seconds == 540
   - .fees.liquidity == "186910"
-  - .fees.outbound == "14000"
+  - .fees.outbound == "7000"
   - (.fees.total|tonumber) == (.fees.liquidity|tonumber)+(.fees.outbound|tonumber)
   - .fees.slippage_bps == 192
-  - .fees.total_bps == 206
+  - .fees.total_bps == 201
   - .total_swap_seconds == 564
   - .expected_amount_out == "9492870"
 ---
@@ -684,10 +684,10 @@ asserts:
   - .streaming_swap_blocks == 180
   - .streaming_swap_seconds == 1080
   - .fees.liquidity == "99731"
-  - .fees.outbound == "14000"
+  - .fees.outbound == "7000"
   - (.fees.total|tonumber) == (.fees.liquidity|tonumber)+(.fees.outbound|tonumber)
   - .fees.slippage_bps == 101
-  - .fees.total_bps == 116
+  - .fees.total_bps == 111
   - .total_swap_seconds == 1104
   - .expected_amount_out == "9666063"
 ---
@@ -703,7 +703,7 @@ params:
   destination: {{ addr_btc_fox }}
 asserts:
   - .fees.liquidity == "100561887"
-  - .fees.outbound == "14000"
+  - .fees.outbound == "7000"
   - (.fees.total|tonumber) == (.fees.liquidity|tonumber)+(.fees.outbound|tonumber)
   - .fees.slippage_bps == 9989
   - .fees.total_bps == 9989

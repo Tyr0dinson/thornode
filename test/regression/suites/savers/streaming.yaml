@@ -107,12 +107,12 @@ asserts:
   - .inbound_address == "{{ addr_btc_dog }}"
   - .dust_amount|tonumber == 11000
   - .dust_threshold|tonumber == 1000
-  - .expected_amount_out|tonumber == 9787144
+  - .expected_amount_out|tonumber == 9794144
   - .fees.liquidity|tonumber == 98730
-  - .fees.outbound|tonumber == 14000
+  - .fees.outbound|tonumber == 7000
   - .fees.slippage_bps|tonumber == 99
-  - .fees.total|tonumber == 112730
-  - .fees.total_bps|tonumber == 113
+  - .fees.total|tonumber == 105730
+  - .fees.total_bps|tonumber == 106
   - (.fees.total|tonumber) == (.fees.liquidity|tonumber)+(.fees.outbound|tonumber)
 ---
 ########################################################################################

@@ -52,7 +52,7 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/inbound_addresses
 asserts:
-  - .[]|select(.chain == "BTC")|.outbound_fee == "14000" # 2x estimated gas cost (7 * 1000 satoshi)
+  - .[]|select(.chain == "BTC")|.outbound_fee == "7000" # 2x estimated gas cost (7 * 1000 satoshi)
 ---
 ########################################################################################
 # small amount should refund and not result in swallowed funds

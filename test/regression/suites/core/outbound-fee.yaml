@@ -12,7 +12,7 @@ asserts:
   - .[0] == {"asset":"THOR.RUNE","outbound_fee":"2000000"} # Only those two fields, others omitted.
   ###
   - .[1].asset == "BTC.BTC"
-  - .[1].outbound_fee == "14000"
+  - .[1].outbound_fee == "7000"
   - .[1].fee_withheld_rune == "0"
   - .[1].fee_spent_rune == "0"
   - .[1].surplus_rune == "0"
@@ -112,7 +112,7 @@ asserts:
   - .[0] == {"asset":"THOR.RUNE","outbound_fee":"2000000"}
   ###
   - .[1].asset == "BTC.BTC"
-  - .[1].outbound_fee == "14000"
+  - .[1].outbound_fee == "7000"
   - .[1].fee_withheld_rune == "${FEE_WITHHELD}"
   - .[1].fee_spent_rune == "${FEE_SPENT}"
   - .[1].surplus_rune|tonumber == ${FEE_WITHHELD} - ${FEE_SPENT}
@@ -124,5 +124,5 @@ asserts:
   - .[2].fee_spent_rune == "0"
   - .[2].surplus_rune == "0"
   - .[2].dynamic_multiplier_basis_points == "20000"
-  ### 
+  ###
   # No change from the THOR.RUNE outbound, since not an external Layer 1 Asset.

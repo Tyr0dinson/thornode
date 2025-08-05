@@ -156,7 +156,7 @@ count: 2
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/test
 asserts:
-  - .affiliate_collector_rune == "472787908"
+  - .affiliate_collector_rune == "472822488"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/balance/module/affiliate_collector

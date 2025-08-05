@@ -67,8 +67,8 @@ asserts:
   - .expected_debt_issued|tonumber == 980290000
   - .recommended_min_amount_in == "42000"
   - .fees.slippage_bps|tonumber == 293
-  - .fees.total_bps|tonumber == 437
-  - .fees.outbound|tonumber == 14000
+  - .fees.total_bps|tonumber == 432
+  - .fees.outbound|tonumber == 7000
   - .fees.liquidity|tonumber == 28538
   - (.fees.total|tonumber) == (.fees.liquidity|tonumber)+(.fees.outbound|tonumber)
 ---
@@ -89,8 +89,8 @@ asserts:
   - .expected_debt_issued|tonumber == 961160000
   - .recommended_min_amount_in|tonumber == 42000
   - .fees.slippage_bps|tonumber == 382
-  - .fees.total_bps|tonumber == 525
-  - .fees.outbound|tonumber == 14000
+  - .fees.total_bps|tonumber == 520
+  - .fees.outbound|tonumber == 7000
   - .fees.liquidity|tonumber == 37549
   - (.fees.total|tonumber) == (.fees.liquidity|tonumber)+(.fees.outbound|tonumber)
 ---
