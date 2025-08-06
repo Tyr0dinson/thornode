@@ -1,0 +1,8 @@
+{
+  "reference": "12345",
+  "memo": "SWAP:BTC.BTC",
+  "chain_id": "BTC",
+  "registered_at": 100,
+  "expires_at": 144100,
+  "status": "active"
+}

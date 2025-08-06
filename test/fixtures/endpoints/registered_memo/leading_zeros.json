@@ -1,0 +1,8 @@
+{
+  "reference": "00123",
+  "memo": "SWAP:ETH.ETH:tthor1abc123",
+  "chain_id": "ETH",
+  "registered_at": 150,
+  "expires_at": 144150,
+  "status": "active"
+}

@@ -1,0 +1,8 @@
+{
+  "reference": "bad reference here",
+  "memo": "",
+  "chain_id": 123,
+  "registered_at": "invalid",
+  "expires_at": null,
+  "status": false
+}

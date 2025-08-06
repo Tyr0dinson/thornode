@@ -1,0 +1,8 @@
+{
+  "reference": "99999",
+  "memo": "ADD:ETH.ETH",
+  "chain_id": "ETH",
+  "registered_at": 50,
+  "expires_at": 100,
+  "status": "active"
+}
