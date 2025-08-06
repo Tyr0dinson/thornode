@@ -159,6 +159,13 @@ const (
 	HaltOracle
 	OracleUpdateInterval
 
+	// Memoless Protocol Constants
+	MemolessTTL
+	MemolessEnabled
+	MemolessMaxMemoLength
+	MemolessCollisionLimit
+	MemolessCleanupInterval
+
 	// These are the implicitly-0 Constants undisplayed in the API endpoint (no explicit value set).
 	ArtificialRagnarokBlockHeight
 	BondLockupPeriod
