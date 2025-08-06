@@ -58,7 +58,7 @@ func getDefaultChainConfigs() map[common.Chain]*ChainConfig {
 	configs[common.ETHChain] = &ChainConfig{
 		Chain:               common.ETHChain,
 		MinAmount:           cosmos.NewUint(1000000000000000), // 0.001 ETH
-		MaxAmount:           cosmos.NewUint(1000000000000000000000000), // 1M ETH
+		MaxAmount:           cosmos.NewUintFromString("1000000000000000000000000"), // 1M ETH
 		AssetRegex:          `^ETH\.[A-Z0-9-]+$`,
 		AddressRegex:        `^0x[a-fA-F0-9]{40}$`,
 		SupportsSynthetics:  true,
@@ -84,7 +84,7 @@ func getDefaultChainConfigs() map[common.Chain]*ChainConfig {
 	configs[common.BSCChain] = &ChainConfig{
 		Chain:               common.BSCChain,
 		MinAmount:           cosmos.NewUint(10000000000000000), // 0.01 BNB
-		MaxAmount:           cosmos.NewUint(200000000000000000000000), // 200K BNB
+		MaxAmount:           cosmos.NewUintFromString("200000000000000000000000"), // 200K BNB
 		AssetRegex:          `^BSC\.[A-Z0-9-]+$`,
 		AddressRegex:        `^0x[a-fA-F0-9]{40}$`,
 		SupportsSynthetics:  true,

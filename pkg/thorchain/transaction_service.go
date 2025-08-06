@@ -93,8 +93,8 @@ type RegisterMemoResult struct {
 	Confirmation   *ConfirmationDetails `json:"confirmation,omitempty"`
 	
 	// Status tracking
-	Status         TransactionStatus `json:"status"`
-	StatusHistory  []StatusUpdate    `json:"status_history,omitempty"`
+	Status         TransactionState `json:"status"`
+	StatusHistory  []StatusUpdate   `json:"status_history,omitempty"`
 	
 	// Events and logs
 	Events         []Event           `json:"events,omitempty"`
@@ -116,22 +116,22 @@ type ConfirmationDetails struct {
 	FinalizedHeight    int64     `json:"finalized_height,omitempty"`
 }
 
-// TransactionStatus represents various transaction states
-type TransactionStatus string
+// TransactionState represents various transaction states
+type TransactionState string
 
 const (
-	StatusPending     TransactionStatus = "PENDING"
-	StatusSubmitted   TransactionStatus = "SUBMITTED"
-	StatusConfirmed   TransactionStatus = "CONFIRMED"
-	StatusFinalized   TransactionStatus = "FINALIZED"
-	StatusFailed      TransactionStatus = "FAILED"
-	StatusRetrying    TransactionStatus = "RETRYING"
-	StatusCanceled    TransactionStatus = "CANCELED"
+	StatusPending     TransactionState = "PENDING"
+	StatusSubmitted   TransactionState = "SUBMITTED"
+	StatusConfirmed   TransactionState = "CONFIRMED"
+	StatusFinalized   TransactionState = "FINALIZED"
+	StatusFailed      TransactionState = "FAILED"
+	StatusRetrying    TransactionState = "RETRYING"
+	StatusCanceled    TransactionState = "CANCELED"
 )
 
 // StatusUpdate represents a status change event
 type StatusUpdate struct {
-	Status     TransactionStatus `json:"status"`
+	Status     TransactionState `json:"status"`
 	Timestamp  time.Time        `json:"timestamp"`
 	BlockHeight int64           `json:"block_height,omitempty"`
 	Details    string          `json:"details,omitempty"`
