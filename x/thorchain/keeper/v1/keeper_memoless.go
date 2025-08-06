@@ -1,192 +1,294 @@
 package keeperv1
 
 import (
-	"encoding/json"
+	"encoding/binary"
 	"fmt"
 
-	"github.com/cosmos/cosmos-sdk/store/prefix"
-	"github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/runtime"
 
-	"gitlab.com/thorchain/thornode/common/cosmos"
-	"gitlab.com/thorchain/thornode/constants"
-	keeper "gitlab.com/thorchain/thornode/x/thorchain/keeper/types"
-	thorchaintypes "gitlab.com/thorchain/thornode/x/thorchain/types"
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/types"
+	thorchaintypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 // Key prefixes for memo storage
-var (
-	MemoRegistrationPrefix = []byte("memo_reg:")
-	MemoExpiryPrefix      = []byte("memo_exp:")
+const (
+	prefixMemoRegistration types.DbPrefix = "memo_registration/"
+	prefixMemoExpiry      types.DbPrefix = "memo_expiry/"
+	prefixMemoStats       types.DbPrefix = "memo_stats/"
 )
 
 // SetRegisteredMemo stores a registered memo in the keeper
 func (k KVStore) SetRegisteredMemo(ctx cosmos.Context, memo thorchaintypes.RegisteredMemo) error {
-	store := ctx.KVStore(k.storeKey)
-
-	// Store by reference
-	key := append(MemoRegistrationPrefix, []byte(memo.Reference)...)
-	bz, err := json.Marshal(memo)
-	if err != nil {
-		return fmt.Errorf("failed to marshal memo: %w", err)
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	key := k.GetKey(prefixMemoRegistration, memo.Reference)
+	
+	buf := k.cdc.MustMarshal(&memo)
+	if buf == nil {
+		return dbError(ctx, "SetRegisteredMemo", fmt.Errorf("could not marshal registered memo"))
 	}
-	store.Set(key, bz)
-
+	store.Set(key, buf)
+	
 	// Store expiry index for cleanup
-	expiryKey := append(MemoExpiryPrefix, types.Uint64ToBigEndian(uint64(memo.ExpiresAt))...)
-	expiryKey = append(expiryKey, []byte(memo.Reference)...)
+	expiryKey := k.GetKey(prefixMemoExpiry, fmt.Sprintf("%d", memo.ExpiresAt), memo.Reference)
 	store.Set(expiryKey, []byte(memo.Reference))
-
+	
 	return nil
 }
 
 // GetRegisteredMemo retrieves a registered memo by reference
 func (k KVStore) GetRegisteredMemo(ctx cosmos.Context, reference string) (thorchaintypes.RegisteredMemo, error) {
-	store := ctx.KVStore(k.storeKey)
-	key := append(MemoRegistrationPrefix, []byte(reference)...)
-
-	bz := store.Get(key)
-	if bz == nil {
-		return thorchaintypes.RegisteredMemo{}, fmt.Errorf("memo not found for reference: %s", reference)
-	}
-
-	var memo thorchaintypes.RegisteredMemo
-	err := json.Unmarshal(bz, &memo)
+	memo := thorchaintypes.RegisteredMemo{}
+	key := k.GetKey(prefixMemoRegistration, reference)
+	ok, err := k.getRegisteredMemo(ctx, key, &memo)
 	if err != nil {
-		return thorchaintypes.RegisteredMemo{}, fmt.Errorf("failed to unmarshal memo: %w", err)
+		return memo, err
 	}
-
-	// Check if expired
-	if ctx.BlockHeight() > memo.ExpiresAt {
-		return thorchaintypes.RegisteredMemo{}, fmt.Errorf("memo expired for reference: %s", reference)
+	if !ok {
+		return memo, fmt.Errorf("registered memo not found: %s", reference)
 	}
-
 	return memo, nil
+}
+
+// getRegisteredMemo is a helper method for retrieving memo data
+func (k KVStore) getRegisteredMemo(ctx cosmos.Context, key []byte, memo *thorchaintypes.RegisteredMemo) (bool, error) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	if !store.Has(key) {
+		return false, nil
+	}
+	bz := store.Get(key)
+	if err := k.cdc.Unmarshal(bz, memo); err != nil {
+		return false, dbError(ctx, "getRegisteredMemo", err)
+	}
+	return true, nil
 }
 
 // HasRegisteredMemo checks if a memo exists for the given reference
 func (k KVStore) HasRegisteredMemo(ctx cosmos.Context, reference string) bool {
-	_, err := k.GetRegisteredMemo(ctx, reference)
-	return err == nil
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	key := k.GetKey(prefixMemoRegistration, reference)
+	return store.Has(key)
 }
 
-// DeleteRegisteredMemo removes a registered memo
+// DeleteRegisteredMemo removes a registered memo from storage
 func (k KVStore) DeleteRegisteredMemo(ctx cosmos.Context, reference string) error {
-	store := ctx.KVStore(k.storeKey)
-	key := append(MemoRegistrationPrefix, []byte(reference)...)
-
-	// Get memo for cleanup
+	// First get the memo to get expiry time
 	memo, err := k.GetRegisteredMemo(ctx, reference)
 	if err != nil {
 		return err // Memo doesn't exist
 	}
-
-	// Delete main entry
+	
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	
+	// Delete main record
+	key := k.GetKey(prefixMemoRegistration, reference)
 	store.Delete(key)
-
+	
 	// Delete expiry index
-	expiryKey := append(MemoExpiryPrefix, types.Uint64ToBigEndian(uint64(memo.ExpiresAt))...)
-	expiryKey = append(expiryKey, []byte(reference)...)
+	expiryKey := k.GetKey(prefixMemoExpiry, fmt.Sprintf("%d", memo.ExpiresAt), reference)
 	store.Delete(expiryKey)
-
+	
 	return nil
 }
 
-// DeleteExpiredMemos removes all expired memos up to the given block height
+// DeleteExpiredMemos removes all memos that have expired before the given block height
 func (k KVStore) DeleteExpiredMemos(ctx cosmos.Context, blockHeight int64) error {
-	store := ctx.KVStore(k.storeKey)
-	expiryStore := prefix.NewStore(store, MemoExpiryPrefix)
-
-	// Iterate through expired memos
-	iterator := expiryStore.Iterator(nil, types.Uint64ToBigEndian(uint64(blockHeight+1)))
-	defer iterator.Close()
-
-	var toDelete []string
-	for ; iterator.Valid(); iterator.Next() {
-		reference := string(iterator.Value())
-		toDelete = append(toDelete, reference)
-	}
-
-	// Delete expired memos
-	for _, reference := range toDelete {
-		if err := k.DeleteRegisteredMemo(ctx, reference); err != nil {
-			ctx.Logger().Error("Failed to delete expired memo", "reference", reference, "error", err)
-		}
-	}
-
-	if len(toDelete) > 0 {
-		ctx.Logger().Info("Cleaned up expired memos", "count", len(toDelete), "block_height", blockHeight)
-	}
-
-	return nil
-}
-
-// GetRegisteredMemoIterator returns an iterator over all registered memos
-func (k KVStore) GetRegisteredMemoIterator(ctx cosmos.Context) types.Iterator {
-	store := ctx.KVStore(k.storeKey)
-	return types.KVStorePrefixIterator(store, MemoRegistrationPrefix)
-}
-
-// QueryRegisteredMemo queries a registered memo by reference with usage tracking
-func (k KVStore) QueryRegisteredMemo(ctx cosmos.Context, reference string) (thorchaintypes.RegisteredMemo, error) {
-	memo, err := k.GetRegisteredMemo(ctx, reference)
-	if err != nil {
-		return thorchaintypes.RegisteredMemo{}, err
-	}
-
-	// Log memo usage for monitoring
-	ctx.Logger().Debug("Memo accessed", "reference", reference, "chain_id", memo.ChainID)
-
-	return memo, nil
-}
-
-// ResolveCollision handles reference collisions through sequential generation with salt
-func (k KVStore) ResolveCollision(ctx cosmos.Context, memo string, blockHeight int64, constantProvider keeper.ConstantValues) (string, error) {
-	maxAttempts := int(constantProvider.GetInt64Value(constants.MemolessCollisionLimit))
-	if maxAttempts <= 0 {
-		maxAttempts = 1000 // Default fallback
-	}
-
-	for attempt := 0; attempt < maxAttempts; attempt++ {
-		candidate := GenerateReferenceWithSalt(memo, blockHeight, attempt)
-
-		if !k.HasRegisteredMemo(ctx, candidate) {
-			return candidate, nil
-		}
-	}
-
-	return "", fmt.Errorf("unable to resolve collision after %d attempts", maxAttempts)
-}
-
-// QueryActiveMemos returns active memos with pagination support
-func (k KVStore) QueryActiveMemos(ctx cosmos.Context, limit, offset int) ([]thorchaintypes.RegisteredMemo, error) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 	iterator := k.GetRegisteredMemoIterator(ctx)
 	defer iterator.Close()
-
-	var memos []thorchaintypes.RegisteredMemo
-	count := 0
-	skipped := 0
-
-	for ; iterator.Valid() && count < limit; iterator.Next() {
-		if skipped < offset {
-			skipped++
-			continue
-		}
-
+	
+	expiredCount := int64(0)
+	for ; iterator.Valid(); iterator.Next() {
 		var memo thorchaintypes.RegisteredMemo
-		err := json.Unmarshal(iterator.Value(), &memo)
-		if err != nil {
-			ctx.Logger().Error("Failed to unmarshal memo in iterator", "error", err)
+		if err := k.cdc.Unmarshal(iterator.Value(), &memo); err != nil {
+			ctx.Logger().Error("Failed to unmarshal memo during cleanup", "error", err)
 			continue
 		}
-
-		// Skip expired memos
-		if ctx.BlockHeight() > memo.ExpiresAt {
-			continue
+		
+		// Check if expired (using block timestamp approximation)
+		if memo.ExpiresAt < blockHeight {
+			// Delete expired memo
+			store.Delete(iterator.Key())
+			
+			// Delete expiry index
+			expiryKey := k.GetKey(prefixMemoExpiry, fmt.Sprintf("%d", memo.ExpiresAt), memo.Reference)
+			store.Delete(expiryKey)
+			
+			expiredCount++
 		}
-
-		memos = append(memos, memo)
-		count++
 	}
+	
+	if expiredCount > 0 {
+		ctx.Logger().Info("Cleaned up expired memos", "count", expiredCount, "block_height", blockHeight)
+	}
+	
+	return k.UpdateLastCleanup(ctx, blockHeight, expiredCount)
+}
 
+// GetRegisteredMemoIterator returns an iterator for all registered memos
+func (k KVStore) GetRegisteredMemoIterator(ctx cosmos.Context) cosmos.Iterator {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	key := k.GetKey(prefixMemoRegistration, "")
+	return cosmos.KVStorePrefixIterator(store, key)
+}
+
+// QueryRegisteredMemo queries a memo (alias for GetRegisteredMemo for compatibility)
+func (k KVStore) QueryRegisteredMemo(ctx cosmos.Context, reference string) (thorchaintypes.RegisteredMemo, error) {
+	return k.GetRegisteredMemo(ctx, reference)
+}
+
+// QueryActiveMemos returns active memos with pagination
+func (k KVStore) QueryActiveMemos(ctx cosmos.Context, limit, offset int) ([]thorchaintypes.RegisteredMemo, error) {
+	memos := make([]thorchaintypes.RegisteredMemo, 0)
+	iterator := k.GetRegisteredMemoIterator(ctx)
+	defer iterator.Close()
+	
+	currentOffset := 0
+	added := 0
+	
+	for ; iterator.Valid() && (limit == 0 || added < limit); iterator.Next() {
+		// Skip items for offset
+		if currentOffset < offset {
+			currentOffset++
+			continue
+		}
+		
+		var memo thorchaintypes.RegisteredMemo
+		if err := k.cdc.Unmarshal(iterator.Value(), &memo); err != nil {
+			continue // Skip invalid entries
+		}
+		
+		// Only include active (non-expired) memos
+		currentTime := ctx.BlockTime().Unix()
+		if memo.ExpiresAt > currentTime {
+			memos = append(memos, memo)
+			added++
+		}
+		currentOffset++
+	}
+	
 	return memos, nil
+}
+
+// ValidateMemoRegistration validates a memo registration message
+func (k KVStore) ValidateMemoRegistration(ctx cosmos.Context, msg thorchaintypes.MsgRegisterMemo, constantProvider constants.ConstantValues) error {
+	// Get configuration values
+	enabled := constantProvider.GetInt64Value(constants.MemolessEnabled)
+	if enabled == 0 {
+		return fmt.Errorf("memoless protocol is disabled")
+	}
+	
+	maxLength := constantProvider.GetInt64Value(constants.MemolessMaxMemoLength)
+	if int64(len(msg.Memo)) > maxLength {
+		return fmt.Errorf("memo length %d exceeds maximum %d", len(msg.Memo), maxLength)
+	}
+	
+	// Basic validation is handled by the message ValidateBasic method
+	return nil
+}
+
+// ResolveCollision resolves reference collisions by generating a new reference
+func (k KVStore) ResolveCollision(ctx cosmos.Context, memo string, blockHeight int64, constantProvider constants.ConstantValues) (string, error) {
+	collisionLimit := constantProvider.GetInt64Value(constants.MemolessCollisionLimit)
+	
+	for attempt := int64(0); attempt < collisionLimit; attempt++ {
+		// Generate reference with collision attempt offset
+		reference := GenerateReference(memo, blockHeight+attempt)
+		
+		// Check if this reference is available
+		if !k.HasRegisteredMemo(ctx, reference) {
+			if attempt > 0 {
+				ctx.Logger().Info("Resolved memo collision", "reference", reference, "attempts", attempt+1)
+				k.IncrementCollisions(ctx) // Track collision metrics
+			}
+			return reference, nil
+		}
+	}
+	
+	return "", fmt.Errorf("failed to resolve collision after %d attempts", collisionLimit)
+}
+
+// GetActiveMemoCount returns the count of active (non-expired) memos
+func (k KVStore) GetActiveMemoCount(ctx cosmos.Context) int64 {
+	count := int64(0)
+	iterator := k.GetRegisteredMemoIterator(ctx)
+	defer iterator.Close()
+	
+	currentTime := ctx.BlockTime().Unix()
+	for ; iterator.Valid(); iterator.Next() {
+		var memo thorchaintypes.RegisteredMemo
+		if err := k.cdc.Unmarshal(iterator.Value(), &memo); err != nil {
+			continue
+		}
+		
+		if memo.ExpiresAt > currentTime {
+			count++
+		}
+	}
+	
+	return count
+}
+
+// Statistics and monitoring methods
+
+// IncrementRegistrations increments the registration counter
+func (k KVStore) IncrementRegistrations(ctx cosmos.Context) error {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	key := k.GetKey(prefixMemoStats, "registrations")
+	
+	// Get current count
+	bz := store.Get(key)
+	count := int64(0)
+	if bz != nil {
+		count = int64(binary.BigEndian.Uint64(bz))
+	}
+	
+	// Increment and store
+	count++
+	buf := make([]byte, 8)
+	binary.BigEndian.PutUint64(buf, uint64(count))
+	store.Set(key, buf)
+	
+	return nil
+}
+
+// IncrementCollisions increments the collision counter
+func (k KVStore) IncrementCollisions(ctx cosmos.Context) error {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	key := k.GetKey(prefixMemoStats, "collisions")
+	
+	// Get current count
+	bz := store.Get(key)
+	count := int64(0)
+	if bz != nil {
+		count = int64(binary.BigEndian.Uint64(bz))
+	}
+	
+	// Increment and store
+	count++
+	buf := make([]byte, 8)
+	binary.BigEndian.PutUint64(buf, uint64(count))
+	store.Set(key, buf)
+	
+	return nil
+}
+
+// UpdateLastCleanup updates the last cleanup timestamp and expired count
+func (k KVStore) UpdateLastCleanup(ctx cosmos.Context, height int64, expiredCount int64) error {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	
+	// Store last cleanup height
+	heightKey := k.GetKey(prefixMemoStats, "last_cleanup_height")
+	heightBuf := make([]byte, 8)
+	binary.BigEndian.PutUint64(heightBuf, uint64(height))
+	store.Set(heightKey, heightBuf)
+	
+	// Store expired count
+	countKey := k.GetKey(prefixMemoStats, "last_expired_count")
+	countBuf := make([]byte, 8)
+	binary.BigEndian.PutUint64(countBuf, uint64(expiredCount))
+	store.Set(countKey, countBuf)
+	
+	return nil
 }
