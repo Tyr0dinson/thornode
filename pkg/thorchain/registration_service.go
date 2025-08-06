@@ -5,9 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
-	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 // RegistrationService provides the main interface for memo registration functionality
@@ -474,7 +472,7 @@ func (rs *RegistrationService) GetRegistrationStatus(ctx context.Context, refere
 		RegisteredAt: time.Unix(memo.RegisteredAt, 0),
 		ExpiresAt:    time.Unix(memo.ExpiresAt, 0),
 		Memo:         memo.Memo,
-		ChainID:      memo.ChainID,
+		ChainID:      memo.ChainId,
 		IsExpired:    time.Now().Unix() > memo.ExpiresAt,
 	}
 	

@@ -361,7 +361,7 @@ func (ts *TransactionService) submitTransaction(ctx context.Context, req *Regist
 	// Create MsgRegisterMemo
 	msg := &types.MsgRegisterMemo{
 		Memo:    req.Memo,
-		ChainID: req.ChainID,
+		ChainId: req.ChainID,
 	}
 	
 	// Submit to network
@@ -440,7 +440,7 @@ func (ts *TransactionService) processStatusUpdate(result *RegisterMemoResult, st
 
 // Helper methods for status and logging
 
-func (ts *TransactionService) updateStatus(result *RegisterMemoResult, status TransactionStatus, details string) {
+func (ts *TransactionService) updateStatus(result *RegisterMemoResult, status TransactionState, details string) {
 	result.Status = status
 	result.StatusHistory = append(result.StatusHistory, StatusUpdate{
 		Status:    status,

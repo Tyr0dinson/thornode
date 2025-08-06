@@ -123,7 +123,7 @@ func getDefaultChainConfigs() map[common.Chain]*ChainConfig {
 	configs[common.DOGEChain] = &ChainConfig{
 		Chain:               common.DOGEChain,
 		MinAmount:           cosmos.NewUint(100000000),   // 1 DOGE
-		MaxAmount:           cosmos.NewUint(100000000000000000000), // Large supply
+		MaxAmount:           cosmos.NewUintFromString("100000000000000000000"), // Large supply
 		AssetRegex:          `^DOGE\.DOGE$`,
 		AddressRegex:        `^[AD9][a-zA-HJ-NP-Z0-9]{25,34}$`,
 		SupportsSynthetics:  true,
@@ -133,8 +133,8 @@ func getDefaultChainConfigs() map[common.Chain]*ChainConfig {
 		ConfirmationBlocks: 20,
 	}
 	
-	configs[common.ATOMChain] = &ChainConfig{
-		Chain:               common.ATOMChain,
+	configs[common.GAIAChain] = &ChainConfig{
+		Chain:               common.GAIAChain,
 		MinAmount:           cosmos.NewUint(1000000),     // 1 ATOM
 		MaxAmount:           cosmos.NewUint(100000000000000), // Large supply
 		AssetRegex:          `^GAIA\.[A-Z0-9]+$`,
