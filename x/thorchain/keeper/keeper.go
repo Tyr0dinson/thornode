@@ -94,6 +94,7 @@ type Keeper interface {
 	KeeperRUNEPool
 	KeeperTCYClaimer
 	KeeperTCYStaker
+	KeeperMemoless
 }
 
 type KeeperConfig interface {
@@ -485,4 +486,30 @@ type KeeperTCYStaker interface {
 	ListTCYStakers(ctx cosmos.Context) ([]TCYStaker, error)
 	TCYStakerExists(ctx cosmos.Context, address common.Address) bool
 	UpdateTCYStaker(ctx cosmos.Context, address common.Address, amount math.Uint) error
+}
+
+type KeeperMemoless interface {
+	// Core memo operations
+	SetRegisteredMemo(ctx cosmos.Context, memo types.RegisteredMemo) error
+	GetRegisteredMemo(ctx cosmos.Context, reference string) (types.RegisteredMemo, error)
+	HasRegisteredMemo(ctx cosmos.Context, reference string) bool
+	DeleteRegisteredMemo(ctx cosmos.Context, reference string) error
+	
+	// Cleanup and maintenance
+	DeleteExpiredMemos(ctx cosmos.Context, blockHeight int64) error
+	GetRegisteredMemoIterator(ctx cosmos.Context) cosmos.Iterator
+	
+	// Query methods
+	QueryRegisteredMemo(ctx cosmos.Context, reference string) (types.RegisteredMemo, error)
+	QueryActiveMemos(ctx cosmos.Context, limit, offset int) ([]types.RegisteredMemo, error)
+	
+	// Validation and collision handling
+	ValidateMemoRegistration(ctx cosmos.Context, msg types.MsgRegisterMemo, constantProvider constants.ConstantValues) error
+	ResolveCollision(ctx cosmos.Context, memo string, blockHeight int64, constantProvider constants.ConstantValues) (string, error)
+	
+	// Statistics and monitoring
+	GetActiveMemoCount(ctx cosmos.Context) int64
+	IncrementRegistrations(ctx cosmos.Context) error
+	IncrementCollisions(ctx cosmos.Context) error
+	UpdateLastCleanup(ctx cosmos.Context, height int64, expiredCount int64) error
 }
