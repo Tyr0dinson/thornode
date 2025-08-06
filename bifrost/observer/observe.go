@@ -76,6 +76,7 @@ type Observer struct {
 	thorchainBridge       thorclient.ThorchainBridge
 	storage               *ObserverStorage
 	tssKeysignMetricMgr   *metrics.TssKeysignMetricMgr
+	memolessHandler       *MemolessHandler
 
 	// signedTxOutCache is a cache to keep track of observations for outbounds which were
 	// manually observed after completion of signing and should be filtered from future
@@ -155,6 +156,7 @@ func NewObserver(pubkeyMgr *pubkeymanager.PubKeyManager,
 		attestationGossip:     attestationGossip,
 		observerWorkers:       observerWorkers,
 		deckDumpFile:          deckDumpFile,
+		memolessHandler:       NewMemolessHandler(thorchainBridge, logger),
 	}, nil
 }
 
@@ -582,7 +584,20 @@ func (o *Observer) filterObservations(chain common.Chain, items []*types.TxInIte
 		if ok, cpi := o.pubkeyMgr.IsValidPoolAddress(txInItem.To, chain); ok && (!memPool || isInternal) {
 			tx := txInItem.Copy()
 			tx.ObservedVaultPubKey = cpi.PubKey
-			txs = append(txs, tx)
+
+			// Process memoless transactions - check if this transaction needs memo resolution
+			processedTx, err := o.memolessHandler.ProcessMemolessTransaction(tx)
+			if err != nil {
+				o.logger.Error().
+					Err(err).
+					Str("chain", chain.String()).
+					Str("tx", tx.Tx).
+					Msg("failed to process memoless transaction, skipping")
+				continue // Skip this transaction if memoless processing fails
+			}
+
+			// Use the processed transaction (which may have resolved memo)
+			txs = append(txs, processedTx)
 		}
 	}
 	return txs

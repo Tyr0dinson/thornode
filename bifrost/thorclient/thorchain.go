@@ -57,6 +57,7 @@ const (
 	InboundAddressesEndpoint = "/thorchain/inbound_addresses"
 	PoolsEndpoint            = "/thorchain/pools"
 	THORNameEndpoint         = "/thorchain/thorname/%s"
+	RegisteredMemoEndpoint   = "/thorchain/registered_memo/%s"
 )
 
 // thorchainBridge will be used to send tx to THORChain
@@ -111,6 +112,7 @@ type ThorchainBridge interface {
 	GetNodeAccount(string) (*stypes.NodeAccount, error)
 	GetNodeAccounts() ([]*stypes.NodeAccount, error)
 	GetKeygenBlock(int64, string) (stypes.KeygenBlock, error)
+	GetRegisteredMemo(reference string) (*stypes.RegisteredMemo, error)
 }
 
 // httpResponseCache used for caching HTTP responses for less frequent querying
@@ -877,4 +879,24 @@ func (b *thorchainBridge) GetTHORName(name string) (stypes.THORName, error) {
 		return stypes.THORName{}, fmt.Errorf("fail to unmarshal THORNames from json: %w", err)
 	}
 	return tn, nil
+}
+
+// GetRegisteredMemo retrieves a registered memo by reference from THORChain
+func (b *thorchainBridge) GetRegisteredMemo(reference string) (*stypes.RegisteredMemo, error) {
+	p := fmt.Sprintf(RegisteredMemoEndpoint, reference)
+	buf, s, err := b.getWithPath(p)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get registered memo for reference %s: %w", reference, err)
+	}
+	if s == http.StatusNotFound {
+		return nil, fmt.Errorf("registered memo not found for reference: %s", reference)
+	}
+	if s != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code %d for reference %s", s, reference)
+	}
+	var memo stypes.RegisteredMemo
+	if err = json.Unmarshal(buf, &memo); err != nil {
+		return nil, fmt.Errorf("fail to unmarshal registered memo from json: %w", err)
+	}
+	return &memo, nil
 }
