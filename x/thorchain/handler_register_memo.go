@@ -5,7 +5,7 @@ import (
 
 	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/telemetry"
-	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/hashicorp/go-metrics"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -91,8 +91,8 @@ func (h RegisterMemoHandler) handle(ctx cosmos.Context, msg types.MsgRegisterMem
 	ctx.Logger().Info("Processing memo registration",
 		"memo_length", len(msg.Memo),
 		"signer", msg.Signer,
-		"ttl", msg.TTL,
-		"chain_id", msg.ChainID,
+		"ttl", msg.Ttl,
+		"chain_id", msg.ChainId,
 	)
 
 	// Validate memo format using existing memo parser
@@ -101,19 +101,19 @@ func (h RegisterMemoHandler) handle(ctx cosmos.Context, msg types.MsgRegisterMem
 	}
 
 	// Generate reference with collision handling
-	reference, err := h.generateReference(ctx, msg.Memo, msg.ChainID)
+	reference, err := h.generateReference(ctx, msg.Memo, msg.ChainId)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate reference: %w", err)
 	}
 
 	// Calculate expiry
-	expiresAt := h.calculateExpiry(ctx, msg.TTL)
+	expiresAt := h.calculateExpiry(ctx, msg.Ttl)
 
 	// Create registration
 	registration := types.NewRegisteredMemo(
 		reference,
 		msg.Memo,
-		msg.ChainID,
+		msg.ChainId,
 		ctx.BlockHeight(),
 		expiresAt,
 	)
@@ -130,11 +130,11 @@ func (h RegisterMemoHandler) handle(ctx cosmos.Context, msg types.MsgRegisterMem
 	h.emitEvents(ctx, registration)
 
 	// Record telemetry
-	h.recordTelemetry(ctx, msg.ChainID)
+	h.recordTelemetry(ctx, msg.ChainId)
 
 	ctx.Logger().Info("Memo registration completed",
 		"reference", reference,
-		"chain_id", msg.ChainID,
+		"chain_id", msg.ChainId,
 		"expires_at", expiresAt,
 	)
 
@@ -147,7 +147,7 @@ func (h RegisterMemoHandler) handle(ctx cosmos.Context, msg types.MsgRegisterMem
 // validateMemo validates memo using existing THORChain memo parser
 func (h RegisterMemoHandler) validateMemo(ctx cosmos.Context, memo string) error {
 	// Use the existing memo parser to validate the memo
-	_, err := ParseMemoWithTHORNames(ctx, h.mgr.Keeper(), memo, common.Tx{}, h.mgr.GetVersion())
+	_, err := ParseMemoWithTHORNames(ctx, h.mgr.Keeper(), memo)
 	if err != nil {
 		return fmt.Errorf("memo parsing failed: %w", err)
 	}
@@ -227,7 +227,7 @@ func (h RegisterMemoHandler) emitEvents(ctx cosmos.Context, registration types.R
 		cosmos.NewEvent(
 			"memo_registered",
 			cosmos.NewAttribute("reference", registration.Reference),
-			cosmos.NewAttribute("chain_id", registration.ChainID),
+			cosmos.NewAttribute("chain_id", registration.ChainId),
 			cosmos.NewAttribute("expires_at", fmt.Sprintf("%d", registration.ExpiresAt)),
 			cosmos.NewAttribute("registered_at", fmt.Sprintf("%d", registration.RegisteredAt)),
 			cosmos.NewAttribute("status", registration.Status),
@@ -240,7 +240,7 @@ func (h RegisterMemoHandler) emitEvents(ctx cosmos.Context, registration types.R
 			"memoless_protocol",
 			cosmos.NewAttribute("action", "register"),
 			cosmos.NewAttribute("reference", registration.Reference),
-			cosmos.NewAttribute("chain_id", registration.ChainID),
+			cosmos.NewAttribute("chain_id", registration.ChainId),
 		),
 	)
 }
@@ -251,7 +251,7 @@ func (h RegisterMemoHandler) recordTelemetry(ctx cosmos.Context, chainID string)
 	telemetry.IncrCounterWithLabels(
 		[]string{"thornode", "memoless", "registrations"},
 		1,
-		[]telemetry.Label{
+		[]metrics.Label{
 			telemetry.NewLabel("chain_id", chainID),
 		},
 	)
@@ -265,7 +265,7 @@ func (h RegisterMemoHandler) recordTelemetry(ctx cosmos.Context, chainID string)
 		telemetry.SetGaugeWithLabels(
 			[]string{"thornode", "memoless", "active_memos"},
 			float32(activeCount),
-			[]telemetry.Label{
+			[]metrics.Label{
 				telemetry.NewLabel("chain_id", chainID),
 			},
 		)
