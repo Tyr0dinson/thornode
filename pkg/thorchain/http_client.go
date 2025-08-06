@@ -126,10 +126,10 @@ func (c *HTTPClient) SubmitMsgRegisterMemo(ctx context.Context, msg *types.MsgRe
 
 	// Create transaction body
 	txBody := map[string]interface{}{
-		"messages": []interface{}{msg},
-		"memo":     "",
-		"timeout_height": "0",
-		"extension_options": []interface{}{},
+		"messages":                       []interface{}{msg},
+		"memo":                           "",
+		"timeout_height":                 "0",
+		"extension_options":              []interface{}{},
 		"non_critical_extension_options": []interface{}{},
 	}
 
@@ -640,7 +640,7 @@ func (c *HTTPClient) doRequest(ctx context.Context, method, endpoint string, bod
 // doHTTPRequest performs the actual HTTP request with retries
 func (c *HTTPClient) doHTTPRequest(ctx context.Context, method, endpoint string, body interface{}) ([]byte, error) {
 	var lastErr error
-	
+
 	for attempt := 0; attempt <= c.config.RetryAttempts; attempt++ {
 		// Add delay for retries
 		if attempt > 0 {
@@ -723,7 +723,7 @@ func (c *HTTPClient) performHTTPRequest(ctx context.Context, method, endpoint st
 	// Check status code
 	if resp.StatusCode >= 400 {
 		var errorMessage string
-		
+
 		// Try to parse error response
 		var errorResp struct {
 			Error   string `json:"error"`
@@ -737,7 +737,7 @@ func (c *HTTPClient) performHTTPRequest(ctx context.Context, method, endpoint st
 				errorMessage = errorResp.Message
 			}
 		}
-		
+
 		if errorMessage == "" {
 			errorMessage = "HTTP " + resp.Status
 		}

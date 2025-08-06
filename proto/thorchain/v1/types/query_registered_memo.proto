@@ -1,0 +1,26 @@
+syntax = "proto3";
+package types;
+
+option go_package = "gitlab.com/thorchain/thornode/v3/x/thorchain/types";
+
+import "gogoproto/gogo.proto";
+import "types/msg_register_memo.proto";
+
+option (gogoproto.marshaler_all) = true;
+
+// QueryRegisteredMemoRequest is the request for querying a registered memo by reference
+message QueryRegisteredMemoRequest {
+  option (gogoproto.equal) = false;
+  option (gogoproto.goproto_getters) = false;
+
+  string reference = 1; // 5-digit reference code
+  string height = 2;    // optional block height
+}
+
+// QueryRegisteredMemoResponse is the response containing the registered memo data
+message QueryRegisteredMemoResponse {
+  option (gogoproto.equal) = false;
+  option (gogoproto.goproto_getters) = false;
+
+  RegisteredMemo memo = 1 [(gogoproto.nullable) = false]; // The registered memo data
+}

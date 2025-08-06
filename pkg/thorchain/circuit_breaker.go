@@ -53,17 +53,16 @@ func NewCircuitBreaker(config *CircuitBreakerConfig) *CircuitBreaker {
 // Execute executes a function with circuit breaker protection
 func (cb *CircuitBreaker) Execute(fn func() ([]byte, error)) ([]byte, error) {
 	if !cb.canExecute() {
-		return nil, NewClientError(ErrCodeServiceUnavailable, "circuit breaker is open", 
+		return nil, NewClientError(ErrCodeServiceUnavailable, "circuit breaker is open",
 			fmt.Sprintf("circuit breaker state: %s", cb.GetState()), nil)
 	}
 
 	result, err := fn()
-	
 	if err != nil {
 		cb.recordFailure()
 		return nil, err
 	}
-	
+
 	cb.recordSuccess()
 	return result, nil
 }
@@ -190,7 +189,7 @@ func (cb *CircuitBreaker) IsHalfOpen() bool {
 func (cb *CircuitBreaker) Reset() {
 	cb.mutex.Lock()
 	defer cb.mutex.Unlock()
-	
+
 	cb.state = StateClosed
 	cb.failureCount = 0
 	cb.successCount = 0
@@ -202,7 +201,7 @@ func (cb *CircuitBreaker) Reset() {
 func (cb *CircuitBreaker) ForceOpen() {
 	cb.mutex.Lock()
 	defer cb.mutex.Unlock()
-	
+
 	cb.state = StateOpen
 	cb.lastFailureTime = time.Now()
 	cb.halfOpenRequests = 0
@@ -212,7 +211,7 @@ func (cb *CircuitBreaker) ForceOpen() {
 func (cb *CircuitBreaker) ForceClose() {
 	cb.mutex.Lock()
 	defer cb.mutex.Unlock()
-	
+
 	cb.state = StateClosed
 	cb.failureCount = 0
 	cb.successCount = 0
@@ -223,7 +222,7 @@ func (cb *CircuitBreaker) ForceClose() {
 func (cb *CircuitBreaker) GetStats() CircuitBreakerStats {
 	cb.mutex.RLock()
 	defer cb.mutex.RUnlock()
-	
+
 	return CircuitBreakerStats{
 		State:               cb.state,
 		FailureCount:        cb.failureCount,
@@ -283,12 +282,12 @@ func (m *CircuitBreakerMiddleware) GetBreaker(key string) *CircuitBreaker {
 
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
-	
+
 	// Double-check pattern
 	if breaker, exists := m.breakers[key]; exists {
 		return breaker
 	}
-	
+
 	breaker := NewCircuitBreaker(m.config)
 	m.breakers[key] = breaker
 	return breaker
@@ -304,7 +303,7 @@ func (m *CircuitBreakerMiddleware) Execute(key string, fn func() ([]byte, error)
 func (m *CircuitBreakerMiddleware) GetAllStats() map[string]CircuitBreakerStats {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
-	
+
 	stats := make(map[string]CircuitBreakerStats)
 	for key, breaker := range m.breakers {
 		stats[key] = breaker.GetStats()
@@ -316,7 +315,7 @@ func (m *CircuitBreakerMiddleware) GetAllStats() map[string]CircuitBreakerStats 
 func (m *CircuitBreakerMiddleware) ResetAll() {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
-	
+
 	for _, breaker := range m.breakers {
 		breaker.Reset()
 	}

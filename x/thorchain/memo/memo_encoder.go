@@ -18,33 +18,33 @@ func NewMemoEncoder() *MemoEncoder {
 
 // SwapMemoParams contains parameters for swap memo encoding
 type SwapMemoParams struct {
-	TargetAsset           common.Asset
-	DestinationAddress    common.Address
-	SlipLimit             cosmos.Uint
-	AffiliateAddress      common.Address
-	AffiliateBasisPoints  cosmos.Uint
-	DexAggregator         string
-	DexTargetAddress      string
-	DexTargetLimit        *cosmos.Uint
-	StreamQuantity        uint64
-	StreamInterval        uint64
-	RefundAddress         common.Address
+	TargetAsset          common.Asset
+	DestinationAddress   common.Address
+	SlipLimit            cosmos.Uint
+	AffiliateAddress     common.Address
+	AffiliateBasisPoints cosmos.Uint
+	DexAggregator        string
+	DexTargetAddress     string
+	DexTargetLimit       *cosmos.Uint
+	StreamQuantity       uint64
+	StreamInterval       uint64
+	RefundAddress        common.Address
 }
 
 // AddLiquidityMemoParams contains parameters for add liquidity memo encoding
 type AddLiquidityMemoParams struct {
-	Asset               common.Asset
-	SymmetricAddress    common.Address
-	AffiliateAddress    common.Address
+	Asset                common.Asset
+	SymmetricAddress     common.Address
+	AffiliateAddress     common.Address
 	AffiliateBasisPoints cosmos.Uint
 }
 
 // WithdrawMemoParams contains parameters for withdraw memo encoding
 type WithdrawMemoParams struct {
-	Asset               common.Asset
-	WithdrawBasisPoints cosmos.Uint
-	TargetAsset         common.Asset
-	AffiliateAddress    common.Address
+	Asset                common.Asset
+	WithdrawBasisPoints  cosmos.Uint
+	TargetAsset          common.Asset
+	AffiliateAddress     common.Address
 	AffiliateBasisPoints cosmos.Uint
 }
 
@@ -548,7 +548,7 @@ func (e *MemoEncoder) GetMemoDescription(memo string) (string, error) {
 	}
 
 	txType := strings.ToUpper(strings.TrimSpace(parts[0]))
-	
+
 	switch txType {
 	case "SWAP", "=":
 		if len(parts) > 1 {

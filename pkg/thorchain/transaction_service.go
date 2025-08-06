@@ -18,14 +18,14 @@ type TransactionService struct {
 
 // TransactionConfig holds configuration for transaction service
 type TransactionConfig struct {
-	DefaultTimeout       time.Duration `json:"default_timeout"`
-	ConfirmationTimeout  time.Duration `json:"confirmation_timeout"`  
-	MaxConfirmationAttempts int        `json:"max_confirmation_attempts"`
-	ConfirmationInterval time.Duration `json:"confirmation_interval"`
-	EnableStatusTracking bool          `json:"enable_status_tracking"`
-	RetryFailedTx        bool          `json:"retry_failed_tx"`
-	MaxRetries           int           `json:"max_retries"`
-	RetryDelay           time.Duration `json:"retry_delay"`
+	DefaultTimeout          time.Duration `json:"default_timeout"`
+	ConfirmationTimeout     time.Duration `json:"confirmation_timeout"`
+	MaxConfirmationAttempts int           `json:"max_confirmation_attempts"`
+	ConfirmationInterval    time.Duration `json:"confirmation_interval"`
+	EnableStatusTracking    bool          `json:"enable_status_tracking"`
+	RetryFailedTx           bool          `json:"retry_failed_tx"`
+	MaxRetries              int           `json:"max_retries"`
+	RetryDelay              time.Duration `json:"retry_delay"`
 }
 
 // NewTransactionService creates a new transaction service
@@ -51,60 +51,60 @@ func NewDefaultTransactionConfig() *TransactionConfig {
 		MaxConfirmationAttempts: 30,
 		ConfirmationInterval:    10 * time.Second,
 		EnableStatusTracking:    true,
-		RetryFailedTx:          true,
-		MaxRetries:             3,
-		RetryDelay:             5 * time.Second,
+		RetryFailedTx:           true,
+		MaxRetries:              3,
+		RetryDelay:              5 * time.Second,
 	}
 }
 
 // RegisterMemoRequest represents a comprehensive memo registration request
 type RegisterMemoRequest struct {
 	// Core memo data
-	Memo        string `json:"memo"`
-	ChainID     string `json:"chain_id,omitempty"`
-	
+	Memo    string `json:"memo"`
+	ChainID string `json:"chain_id,omitempty"`
+
 	// Transaction options
-	Timeout     time.Duration `json:"timeout,omitempty"`
-	WaitForConfirmation bool `json:"wait_for_confirmation"`
-	
+	Timeout             time.Duration `json:"timeout,omitempty"`
+	WaitForConfirmation bool          `json:"wait_for_confirmation"`
+
 	// Retry configuration
-	MaxRetries  int           `json:"max_retries,omitempty"`
-	RetryDelay  time.Duration `json:"retry_delay,omitempty"`
-	
+	MaxRetries int           `json:"max_retries,omitempty"`
+	RetryDelay time.Duration `json:"retry_delay,omitempty"`
+
 	// Validation options
-	ValidateMemo     bool `json:"validate_memo"`
-	CheckCollisions  bool `json:"check_collisions"`
-	
+	ValidateMemo    bool `json:"validate_memo"`
+	CheckCollisions bool `json:"check_collisions"`
+
 	// Metadata
-	Metadata    map[string]string `json:"metadata,omitempty"`
+	Metadata map[string]string `json:"metadata,omitempty"`
 }
 
 // RegisterMemoResult represents the comprehensive result of memo registration
 type RegisterMemoResult struct {
 	// Registration details
-	Reference       string    `json:"reference"`
-	Memo           string    `json:"memo"`
-	ExpiresAt      int64     `json:"expires_at"`
-	RegisteredAt   int64     `json:"registered_at"`
-	
+	Reference    string `json:"reference"`
+	Memo         string `json:"memo"`
+	ExpiresAt    int64  `json:"expires_at"`
+	RegisteredAt int64  `json:"registered_at"`
+
 	// Transaction details
-	TxHash         string    `json:"tx_hash"`
-	BlockHeight    int64     `json:"block_height"`
-	Confirmation   *ConfirmationDetails `json:"confirmation,omitempty"`
-	
+	TxHash       string               `json:"tx_hash"`
+	BlockHeight  int64                `json:"block_height"`
+	Confirmation *ConfirmationDetails `json:"confirmation,omitempty"`
+
 	// Status tracking
-	Status         TransactionState `json:"status"`
-	StatusHistory  []StatusUpdate   `json:"status_history,omitempty"`
-	
+	Status        TransactionState `json:"status"`
+	StatusHistory []StatusUpdate   `json:"status_history,omitempty"`
+
 	// Events and logs
-	Events         []Event           `json:"events,omitempty"`
-	Logs           []TransactionLog  `json:"logs,omitempty"`
-	
+	Events []Event          `json:"events,omitempty"`
+	Logs   []TransactionLog `json:"logs,omitempty"`
+
 	// Performance metrics
-	Metrics        TransactionMetrics `json:"metrics"`
-	
+	Metrics TransactionMetrics `json:"metrics"`
+
 	// Error information (if any)
-	Error          *TransactionError `json:"error,omitempty"`
+	Error *TransactionError `json:"error,omitempty"`
 }
 
 // ConfirmationDetails provides detailed confirmation information
@@ -120,50 +120,50 @@ type ConfirmationDetails struct {
 type TransactionState string
 
 const (
-	StatusPending     TransactionState = "PENDING"
-	StatusSubmitted   TransactionState = "SUBMITTED"
-	StatusConfirmed   TransactionState = "CONFIRMED"
-	StatusFinalized   TransactionState = "FINALIZED"
-	StatusFailed      TransactionState = "FAILED"
-	StatusRetrying    TransactionState = "RETRYING"
-	StatusCanceled    TransactionState = "CANCELED"
+	StatusPending   TransactionState = "PENDING"
+	StatusSubmitted TransactionState = "SUBMITTED"
+	StatusConfirmed TransactionState = "CONFIRMED"
+	StatusFinalized TransactionState = "FINALIZED"
+	StatusFailed    TransactionState = "FAILED"
+	StatusRetrying  TransactionState = "RETRYING"
+	StatusCanceled  TransactionState = "CANCELED"
 )
 
 // StatusUpdate represents a status change event
 type StatusUpdate struct {
-	Status     TransactionState `json:"status"`
-	Timestamp  time.Time        `json:"timestamp"`
-	BlockHeight int64           `json:"block_height,omitempty"`
-	Details    string          `json:"details,omitempty"`
+	Status      TransactionState `json:"status"`
+	Timestamp   time.Time        `json:"timestamp"`
+	BlockHeight int64            `json:"block_height,omitempty"`
+	Details     string           `json:"details,omitempty"`
 }
 
 // TransactionLog represents a transaction log entry
 type TransactionLog struct {
-	Timestamp  time.Time `json:"timestamp"`
-	Level      string    `json:"level"`
-	Message    string    `json:"message"`
-	Context    map[string]interface{} `json:"context,omitempty"`
+	Timestamp time.Time              `json:"timestamp"`
+	Level     string                 `json:"level"`
+	Message   string                 `json:"message"`
+	Context   map[string]interface{} `json:"context,omitempty"`
 }
 
 // TransactionMetrics provides performance and timing metrics
 type TransactionMetrics struct {
-	SubmissionTime     time.Time     `json:"submission_time"`
-	ConfirmationTime   time.Time     `json:"confirmation_time,omitempty"`
-	TotalDuration      time.Duration `json:"total_duration,omitempty"`
-	NetworkDelay       time.Duration `json:"network_delay,omitempty"`
-	ProcessingDelay    time.Duration `json:"processing_delay,omitempty"`
-	RetryCount         int          `json:"retry_count"`
-	GasUsed            int64        `json:"gas_used,omitempty"`
-	FeePaid           cosmos.Uint   `json:"fee_paid,omitempty"`
+	SubmissionTime   time.Time     `json:"submission_time"`
+	ConfirmationTime time.Time     `json:"confirmation_time,omitempty"`
+	TotalDuration    time.Duration `json:"total_duration,omitempty"`
+	NetworkDelay     time.Duration `json:"network_delay,omitempty"`
+	ProcessingDelay  time.Duration `json:"processing_delay,omitempty"`
+	RetryCount       int           `json:"retry_count"`
+	GasUsed          int64         `json:"gas_used,omitempty"`
+	FeePaid          cosmos.Uint   `json:"fee_paid,omitempty"`
 }
 
 // TransactionError represents transaction-specific errors
 type TransactionError struct {
-	Code           TransactionErrorCode `json:"code"`
-	Message        string               `json:"message"`
-	Details        string               `json:"details,omitempty"`
-	Retryable      bool                 `json:"retryable"`
-	SuggestedAction string              `json:"suggested_action,omitempty"`
+	Code            TransactionErrorCode `json:"code"`
+	Message         string               `json:"message"`
+	Details         string               `json:"details,omitempty"`
+	Retryable       bool                 `json:"retryable"`
+	SuggestedAction string               `json:"suggested_action,omitempty"`
 }
 
 // TransactionErrorCode represents specific transaction error types
@@ -186,15 +186,15 @@ const (
 // RegisterMemo submits a memo registration with comprehensive handling
 func (ts *TransactionService) RegisterMemo(ctx context.Context, req *RegisterMemoRequest) (*RegisterMemoResult, error) {
 	startTime := time.Now()
-	
+
 	// Validate request
 	if err := ts.validateRegisterMemoRequest(req); err != nil {
 		return nil, fmt.Errorf("invalid request: %w", err)
 	}
-	
+
 	// Apply defaults
 	ts.applyDefaults(req)
-	
+
 	// Create result structure
 	result := &RegisterMemoResult{
 		Memo:         req.Memo,
@@ -211,36 +211,36 @@ func (ts *TransactionService) RegisterMemo(ctx context.Context, req *RegisterMem
 			Message:   "Starting memo registration",
 			Context: map[string]interface{}{
 				"memo_length": len(req.Memo),
-				"chain_id":   req.ChainID,
+				"chain_id":    req.ChainID,
 			},
 		}},
 		Metrics: TransactionMetrics{
 			SubmissionTime: startTime,
 		},
 	}
-	
+
 	// Create context with timeout
 	reqCtx, cancel := context.WithTimeout(ctx, req.Timeout)
 	defer cancel()
-	
+
 	// Perform validation if requested
 	if req.ValidateMemo {
 		if err := ts.validateMemo(reqCtx, req.Memo, result); err != nil {
 			return result, err
 		}
 	}
-	
+
 	// Check for collisions if requested
 	if req.CheckCollisions {
 		if err := ts.checkCollisions(reqCtx, req.Memo, result); err != nil {
 			return result, err
 		}
 	}
-	
+
 	// Submit transaction with retries
 	var submitResult *MsgRegisterMemoResponse
 	var submitErr error
-	
+
 	for attempt := 0; attempt <= req.MaxRetries; attempt++ {
 		if attempt > 0 {
 			// Add retry delay
@@ -249,28 +249,28 @@ func (ts *TransactionService) RegisterMemo(ctx context.Context, req *RegisterMem
 				return ts.handleTimeout(result), reqCtx.Err()
 			case <-time.After(req.RetryDelay):
 			}
-			
-			ts.updateStatus(result, StatusRetrying, 
+
+			ts.updateStatus(result, StatusRetrying,
 				fmt.Sprintf("Retry attempt %d/%d", attempt, req.MaxRetries))
 		}
-		
+
 		submitResult, submitErr = ts.submitTransaction(reqCtx, req, result)
 		if submitErr == nil {
 			break
 		}
-		
+
 		// Check if error is retryable
 		if !ts.isRetryableError(submitErr) || attempt >= req.MaxRetries {
 			break
 		}
-		
+
 		ts.logError(result, fmt.Sprintf("Submission failed (attempt %d): %s", attempt+1, submitErr.Error()))
 	}
-	
+
 	if submitErr != nil {
 		return ts.handleSubmissionError(result, submitErr), submitErr
 	}
-	
+
 	// Update result with submission details
 	result.Reference = submitResult.Reference
 	result.ExpiresAt = submitResult.ExpiresAt
@@ -278,22 +278,22 @@ func (ts *TransactionService) RegisterMemo(ctx context.Context, req *RegisterMem
 	result.BlockHeight = submitResult.Height
 	result.Events = submitResult.Events
 	result.Metrics.RetryCount = len(result.StatusHistory) - 1
-	
+
 	ts.updateStatus(result, StatusSubmitted, "Transaction submitted successfully")
-	
+
 	// Wait for confirmation if requested
 	if req.WaitForConfirmation {
 		if err := ts.waitForConfirmation(reqCtx, result); err != nil {
 			return result, err
 		}
 	}
-	
+
 	// Calculate final metrics
 	result.Metrics.TotalDuration = time.Since(startTime)
 	if !result.Metrics.ConfirmationTime.IsZero() {
 		result.Metrics.NetworkDelay = result.Metrics.ConfirmationTime.Sub(result.Metrics.SubmissionTime)
 	}
-	
+
 	return result, nil
 }
 
@@ -302,15 +302,15 @@ func (ts *TransactionService) validateRegisterMemoRequest(req *RegisterMemoReque
 	if req == nil {
 		return fmt.Errorf("request cannot be nil")
 	}
-	
+
 	if req.Memo == "" {
 		return fmt.Errorf("memo cannot be empty")
 	}
-	
+
 	if len(req.Memo) > 1024 { // Default max length
 		return fmt.Errorf("memo too long: %d characters (max 1024)", len(req.Memo))
 	}
-	
+
 	return nil
 }
 
@@ -319,11 +319,11 @@ func (ts *TransactionService) applyDefaults(req *RegisterMemoRequest) {
 	if req.Timeout == 0 {
 		req.Timeout = ts.config.DefaultTimeout
 	}
-	
+
 	if req.MaxRetries == 0 {
 		req.MaxRetries = ts.config.MaxRetries
 	}
-	
+
 	if req.RetryDelay == 0 {
 		req.RetryDelay = ts.config.RetryDelay
 	}
@@ -332,84 +332,84 @@ func (ts *TransactionService) applyDefaults(req *RegisterMemoRequest) {
 // validateMemo performs memo validation
 func (ts *TransactionService) validateMemo(ctx context.Context, memo string, result *RegisterMemoResult) error {
 	ts.logInfo(result, "Validating memo content")
-	
+
 	// Add validation logic here - this could include:
 	// - Format validation
-	// - Content validation  
+	// - Content validation
 	// - Security checks
 	// - Policy compliance
-	
+
 	return nil
 }
 
 // checkCollisions checks for reference collisions
 func (ts *TransactionService) checkCollisions(ctx context.Context, memo string, result *RegisterMemoResult) error {
 	ts.logInfo(result, "Checking for potential collisions")
-	
+
 	// This would implement collision checking logic
 	// For now, we'll assume no collisions
-	
+
 	return nil
 }
 
 // submitTransaction submits the actual transaction
-func (ts *TransactionService) submitTransaction(ctx context.Context, req *RegisterMemoRequest, 
-	result *RegisterMemoResult) (*MsgRegisterMemoResponse, error) {
-	
+func (ts *TransactionService) submitTransaction(ctx context.Context, req *RegisterMemoRequest,
+	result *RegisterMemoResult,
+) (*MsgRegisterMemoResponse, error) {
 	ts.logInfo(result, "Submitting transaction to network")
-	
+
 	// Create MsgRegisterMemo
 	msg := &types.MsgRegisterMemo{
 		Memo:    req.Memo,
 		ChainId: req.ChainID,
 	}
-	
+
 	// Submit to network
 	response, err := ts.client.SubmitMsgRegisterMemo(ctx, msg)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	ts.logInfo(result, fmt.Sprintf("Transaction submitted with hash: %s", response.TxHash))
-	
+
 	return response, nil
 }
 
 // waitForConfirmation waits for transaction confirmation
 func (ts *TransactionService) waitForConfirmation(ctx context.Context, result *RegisterMemoResult) error {
 	ts.updateStatus(result, StatusConfirmed, "Waiting for confirmation")
-	
+
 	confirmCtx, cancel := context.WithTimeout(ctx, ts.config.ConfirmationTimeout)
 	defer cancel()
-	
+
 	ticker := time.NewTicker(ts.config.ConfirmationInterval)
 	defer ticker.Stop()
-	
+
 	attempts := 0
-	
+
 	for {
 		select {
 		case <-confirmCtx.Done():
 			return ts.handleConfirmationTimeout(result)
 		case <-ticker.C:
 			attempts++
-			
+
 			// Check transaction status
 			status, err := ts.client.GetTransactionStatus(confirmCtx, result.TxHash)
 			if err != nil {
 				ts.logError(result, fmt.Sprintf("Failed to check status (attempt %d): %s", attempts, err.Error()))
-				
+
 				if attempts >= ts.config.MaxConfirmationAttempts {
 					return ts.handleConfirmationFailed(result, err)
 				}
 				continue
 			}
-			
+
 			// Process status update
 			if ts.processStatusUpdate(result, status) {
 				return nil // Confirmed
 			}
-			
+
 			if attempts >= ts.config.MaxConfirmationAttempts {
 				return ts.handleConfirmationTimeout(result)
 			}
@@ -421,7 +421,7 @@ func (ts *TransactionService) waitForConfirmation(ctx context.Context, result *R
 func (ts *TransactionService) processStatusUpdate(result *RegisterMemoResult, status *TransactionStatus) bool {
 	// This would process the actual transaction status
 	// For now, assume confirmation after some time
-	
+
 	if len(result.StatusHistory) > 3 { // Simulate confirmation after a few attempts
 		result.Confirmation = &ConfirmationDetails{
 			Confirmed:          true,
@@ -429,12 +429,12 @@ func (ts *TransactionService) processStatusUpdate(result *RegisterMemoResult, st
 			ConfirmationHeight: result.BlockHeight + 1,
 			ConfirmationCount:  1,
 		}
-		
+
 		result.Metrics.ConfirmationTime = time.Now()
 		ts.updateStatus(result, StatusConfirmed, "Transaction confirmed")
 		return true
 	}
-	
+
 	return false
 }
 
@@ -552,7 +552,7 @@ func (tm *TransactionMonitor) GetMonitoredTransactions() map[string]*RegisterMem
 // BatchRegisterMemos registers multiple memos in a batch operation
 func (ts *TransactionService) BatchRegisterMemos(ctx context.Context, requests []*RegisterMemoRequest) ([]*RegisterMemoResult, error) {
 	results := make([]*RegisterMemoResult, len(requests))
-	
+
 	for i, req := range requests {
 		result, err := ts.RegisterMemo(ctx, req)
 		if err != nil {
@@ -568,7 +568,7 @@ func (ts *TransactionService) BatchRegisterMemos(ctx context.Context, requests [
 		}
 		results[i] = result
 	}
-	
+
 	return results, nil
 }
 
@@ -579,20 +579,20 @@ func (ts *TransactionService) GetTransactionHistory(ctx context.Context, txHash 
 	if err != nil {
 		return nil, fmt.Errorf("failed to get transaction status: %w", err)
 	}
-	
+
 	// Get transaction details
 	tx, err := ts.client.GetTransaction(ctx, txHash)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get transaction details: %w", err)
 	}
-	
+
 	history := &TransactionHistory{
 		TxHash:      txHash,
 		Transaction: tx,
 		Status:      status,
 		Timeline:    ts.buildTimeline(status),
 	}
-	
+
 	return history, nil
 }
 
@@ -617,12 +617,12 @@ func (ts *TransactionService) buildTimeline(status *TransactionStatus) []Timelin
 	// This would build a comprehensive timeline from the transaction status
 	// For now, return a basic timeline
 	timeline := make([]TimelineEvent, 0)
-	
+
 	timeline = append(timeline, TimelineEvent{
 		Timestamp:   time.Now(),
 		Event:       "SUBMITTED",
 		Description: "Transaction submitted to network",
 	})
-	
+
 	return timeline
 }

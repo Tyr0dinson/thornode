@@ -703,3 +703,11 @@ func (s *queryServer) Eip712TypedData(c context.Context, req *types.QueryEip712T
 	ctx := s.unwrapSdkContext(c)
 	return s.queryEip712TypedData(ctx, req)
 }
+
+func (s *queryServer) RegisteredMemo(c context.Context, req *types.QueryRegisteredMemoRequest) (*types.QueryRegisteredMemoResponse, error) {
+	if err := checkHeightParam(req.Height); err != nil {
+		return nil, err
+	}
+	ctx := s.unwrapSdkContext(c)
+	return s.queryRegisteredMemo(ctx, req)
+}

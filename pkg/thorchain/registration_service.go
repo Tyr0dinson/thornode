@@ -10,11 +10,11 @@ import (
 
 // RegistrationService provides the main interface for memo registration functionality
 type RegistrationService struct {
-	client            Client
-	enhancedClient    *EnhancedClient
+	client             Client
+	enhancedClient     *EnhancedClient
 	transactionService *TransactionService
-	quoteService      *QuoteService
-	config            *RegistrationConfig
+	quoteService       *QuoteService
+	config             *RegistrationConfig
 }
 
 // RegistrationConfig holds comprehensive configuration for the registration service
@@ -23,21 +23,21 @@ type RegistrationConfig struct {
 	DefaultTimeout      time.Duration `json:"default_timeout"`
 	EnableValidation    bool          `json:"enable_validation"`
 	EnableQuoteChecking bool          `json:"enable_quote_checking"`
-	
+
 	// Transaction settings
 	WaitForConfirmation bool          `json:"wait_for_confirmation"`
-	MaxRetries         int           `json:"max_retries"`
-	RetryDelay         time.Duration `json:"retry_delay"`
-	
+	MaxRetries          int           `json:"max_retries"`
+	RetryDelay          time.Duration `json:"retry_delay"`
+
 	// Safety settings
 	RequireQuoteValidation bool `json:"require_quote_validation"`
 	MaxMemoLength          int  `json:"max_memo_length"`
 	CheckDuplicates        bool `json:"check_duplicates"`
-	
+
 	// Performance settings
-	EnableBatching     bool `json:"enable_batching"`
-	BatchSize          int  `json:"batch_size"`
-	BatchTimeout       time.Duration `json:"batch_timeout"`
+	EnableBatching bool          `json:"enable_batching"`
+	BatchSize      int           `json:"batch_size"`
+	BatchTimeout   time.Duration `json:"batch_timeout"`
 }
 
 // NewRegistrationService creates a new registration service with all dependencies
@@ -45,17 +45,17 @@ func NewRegistrationService(client Client, config *RegistrationConfig) *Registra
 	if config == nil {
 		config = NewDefaultRegistrationConfig()
 	}
-	
+
 	enhancedClient := NewEnhancedClient(client, nil)
 	transactionService := NewTransactionService(client, nil)
 	quoteService := NewQuoteService(client, nil)
-	
+
 	return &RegistrationService{
-		client:            client,
-		enhancedClient:    enhancedClient,
+		client:             client,
+		enhancedClient:     enhancedClient,
 		transactionService: transactionService,
-		quoteService:      quoteService,
-		config:            config,
+		quoteService:       quoteService,
+		config:             config,
 	}
 }
 
@@ -66,14 +66,14 @@ func NewDefaultRegistrationConfig() *RegistrationConfig {
 		EnableValidation:       true,
 		EnableQuoteChecking:    true,
 		WaitForConfirmation:    true,
-		MaxRetries:            3,
-		RetryDelay:            5 * time.Second,
+		MaxRetries:             3,
+		RetryDelay:             5 * time.Second,
 		RequireQuoteValidation: false,
-		MaxMemoLength:         1024,
-		CheckDuplicates:       true,
-		EnableBatching:        false,
-		BatchSize:             10,
-		BatchTimeout:          30 * time.Second,
+		MaxMemoLength:          1024,
+		CheckDuplicates:        true,
+		EnableBatching:         false,
+		BatchSize:              10,
+		BatchTimeout:           30 * time.Second,
 	}
 }
 
@@ -82,23 +82,23 @@ type MemoRegistrationRequest struct {
 	// Core memo information
 	Memo    string `json:"memo"`
 	ChainID string `json:"chain_id,omitempty"`
-	
+
 	// Quote validation (optional)
-	ValidateQuote  bool             `json:"validate_quote"`
-	SwapDetails    *SwapQuoteRequest `json:"swap_details,omitempty"`
-	
+	ValidateQuote bool              `json:"validate_quote"`
+	SwapDetails   *SwapQuoteRequest `json:"swap_details,omitempty"`
+
 	// Transaction preferences
-	Priority       TransactionPriority `json:"priority"`
-	Timeout        time.Duration      `json:"timeout,omitempty"`
-	WaitForConfirmation bool          `json:"wait_for_confirmation"`
-	
+	Priority            TransactionPriority `json:"priority"`
+	Timeout             time.Duration       `json:"timeout,omitempty"`
+	WaitForConfirmation bool                `json:"wait_for_confirmation"`
+
 	// Validation preferences
-	SkipValidation bool `json:"skip_validation"`
+	SkipValidation  bool            `json:"skip_validation"`
 	ValidationLevel ValidationLevel `json:"validation_level"`
-	
+
 	// User context
-	UserAddress    string            `json:"user_address,omitempty"`
-	Metadata       map[string]string `json:"metadata,omitempty"`
+	UserAddress string            `json:"user_address,omitempty"`
+	Metadata    map[string]string `json:"metadata,omitempty"`
 }
 
 // TransactionPriority represents transaction priority levels
@@ -129,37 +129,37 @@ func (tp TransactionPriority) String() string {
 // MemoRegistrationResponse represents the comprehensive response from memo registration
 type MemoRegistrationResponse struct {
 	// Registration result
-	Success    bool                 `json:"success"`
-	Reference  string               `json:"reference,omitempty"`
-	ExpiresAt  int64               `json:"expires_at,omitempty"`
-	
+	Success   bool   `json:"success"`
+	Reference string `json:"reference,omitempty"`
+	ExpiresAt int64  `json:"expires_at,omitempty"`
+
 	// Transaction details
-	TxHash     string               `json:"tx_hash,omitempty"`
-	BlockHeight int64              `json:"block_height,omitempty"`
-	
+	TxHash      string `json:"tx_hash,omitempty"`
+	BlockHeight int64  `json:"block_height,omitempty"`
+
 	// Quote validation results (if performed)
 	QuoteValidation *QuoteValidationResult `json:"quote_validation,omitempty"`
-	
+
 	// Full transaction result
 	TransactionResult *RegisterMemoResult `json:"transaction_result,omitempty"`
-	
+
 	// Usage information
-	Instructions *UsageInstructions   `json:"instructions,omitempty"`
-	
+	Instructions *UsageInstructions `json:"instructions,omitempty"`
+
 	// Error information (if failed)
-	Error        *RegistrationError   `json:"error,omitempty"`
-	
+	Error *RegistrationError `json:"error,omitempty"`
+
 	// Performance metrics
-	Metrics      RegistrationMetrics  `json:"metrics"`
+	Metrics RegistrationMetrics `json:"metrics"`
 }
 
 // QuoteValidationResult represents quote validation results
 type QuoteValidationResult struct {
-	Valid          bool                `json:"valid"`
-	SwapQuote      *EnhancedSwapQuote  `json:"swap_quote,omitempty"`
+	Valid           bool                `json:"valid"`
+	SwapQuote       *EnhancedSwapQuote  `json:"swap_quote,omitempty"`
 	AssetValidation *SwapPairValidation `json:"asset_validation,omitempty"`
-	Warnings       []string            `json:"warnings,omitempty"`
-	Errors         []string            `json:"errors,omitempty"`
+	Warnings        []string            `json:"warnings,omitempty"`
+	Errors          []string            `json:"errors,omitempty"`
 }
 
 // UsageInstructions provides instructions for using the registered memo
@@ -176,12 +176,12 @@ type UsageInstructions struct {
 
 // RegistrationError represents registration-specific errors
 type RegistrationError struct {
-	Code           RegistrationErrorCode `json:"code"`
-	Message        string                `json:"message"`
-	Details        string                `json:"details,omitempty"`
-	SuggestedFix   string                `json:"suggested_fix,omitempty"`
-	UserFriendlyMessage string           `json:"user_friendly_message,omitempty"`
-	Retryable      bool                  `json:"retryable"`
+	Code                RegistrationErrorCode `json:"code"`
+	Message             string                `json:"message"`
+	Details             string                `json:"details,omitempty"`
+	SuggestedFix        string                `json:"suggested_fix,omitempty"`
+	UserFriendlyMessage string                `json:"user_friendly_message,omitempty"`
+	Retryable           bool                  `json:"retryable"`
 }
 
 // RegistrationErrorCode represents specific registration error types
@@ -202,33 +202,33 @@ const (
 
 // RegistrationMetrics provides detailed metrics about the registration process
 type RegistrationMetrics struct {
-	StartTime           time.Time     `json:"start_time"`
-	EndTime             time.Time     `json:"end_time"`
-	TotalDuration       time.Duration `json:"total_duration"`
-	ValidationDuration  time.Duration `json:"validation_duration,omitempty"`
-	QuoteDuration       time.Duration `json:"quote_duration,omitempty"`
-	SubmissionDuration  time.Duration `json:"submission_duration,omitempty"`
+	StartTime            time.Time     `json:"start_time"`
+	EndTime              time.Time     `json:"end_time"`
+	TotalDuration        time.Duration `json:"total_duration"`
+	ValidationDuration   time.Duration `json:"validation_duration,omitempty"`
+	QuoteDuration        time.Duration `json:"quote_duration,omitempty"`
+	SubmissionDuration   time.Duration `json:"submission_duration,omitempty"`
 	ConfirmationDuration time.Duration `json:"confirmation_duration,omitempty"`
-	RetryCount          int           `json:"retry_count"`
+	RetryCount           int           `json:"retry_count"`
 }
 
 // RegisterMemo registers a memo with comprehensive validation and handling
 func (rs *RegistrationService) RegisterMemo(ctx context.Context, req *MemoRegistrationRequest) (*MemoRegistrationResponse, error) {
 	startTime := time.Now()
-	
+
 	// Initialize response
 	response := &MemoRegistrationResponse{
 		Metrics: RegistrationMetrics{
 			StartTime: startTime,
 		},
 	}
-	
+
 	// Apply defaults and validate request
 	if err := rs.validateAndPrepareRequest(req); err != nil {
 		response.Error = rs.mapRegistrationError(RegErrorInvalidMemo, err)
 		return response, err
 	}
-	
+
 	// Set timeout context
 	timeout := req.Timeout
 	if timeout == 0 {
@@ -236,7 +236,7 @@ func (rs *RegistrationService) RegisterMemo(ctx context.Context, req *MemoRegist
 	}
 	reqCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	
+
 	// Perform quote validation if requested
 	if req.ValidateQuote && req.SwapDetails != nil {
 		if err := rs.validateQuote(reqCtx, req, response); err != nil {
@@ -247,30 +247,30 @@ func (rs *RegistrationService) RegisterMemo(ctx context.Context, req *MemoRegist
 			// Continue with warning if validation is not required
 		}
 	}
-	
+
 	// Prepare transaction request
 	txRequest := &RegisterMemoRequest{
 		Memo:                req.Memo,
-		ChainID:            req.ChainID,
-		Timeout:            timeout,
+		ChainID:             req.ChainID,
+		Timeout:             timeout,
 		WaitForConfirmation: req.WaitForConfirmation || rs.config.WaitForConfirmation,
-		ValidateMemo:       rs.config.EnableValidation && !req.SkipValidation,
-		CheckCollisions:    rs.config.CheckDuplicates,
-		MaxRetries:         rs.config.MaxRetries,
-		RetryDelay:         rs.config.RetryDelay,
-		Metadata:           req.Metadata,
+		ValidateMemo:        rs.config.EnableValidation && !req.SkipValidation,
+		CheckCollisions:     rs.config.CheckDuplicates,
+		MaxRetries:          rs.config.MaxRetries,
+		RetryDelay:          rs.config.RetryDelay,
+		Metadata:            req.Metadata,
 	}
-	
+
 	// Register the memo
 	submissionStart := time.Now()
 	txResult, err := rs.transactionService.RegisterMemo(reqCtx, txRequest)
 	response.Metrics.SubmissionDuration = time.Since(submissionStart)
-	
+
 	if err != nil {
 		response.Error = rs.mapRegistrationError(RegErrorTransactionFailed, err)
 		return response, err
 	}
-	
+
 	// Update response with results
 	response.Success = true
 	response.Reference = txResult.Reference
@@ -279,19 +279,19 @@ func (rs *RegistrationService) RegisterMemo(ctx context.Context, req *MemoRegist
 	response.BlockHeight = txResult.BlockHeight
 	response.TransactionResult = txResult
 	response.Metrics.RetryCount = txResult.Metrics.RetryCount
-	
+
 	// Generate usage instructions
 	response.Instructions = rs.generateUsageInstructions(req, txResult)
-	
+
 	// Set confirmation duration if available
 	if txResult.Confirmation != nil {
 		response.Metrics.ConfirmationDuration = txResult.Confirmation.ConfirmationTime.Sub(submissionStart)
 	}
-	
+
 	// Calculate total duration
 	response.Metrics.EndTime = time.Now()
 	response.Metrics.TotalDuration = response.Metrics.EndTime.Sub(startTime)
-	
+
 	return response, nil
 }
 
@@ -300,53 +300,53 @@ func (rs *RegistrationService) validateAndPrepareRequest(req *MemoRegistrationRe
 	if req == nil {
 		return fmt.Errorf("request cannot be nil")
 	}
-	
+
 	if req.Memo == "" {
 		return fmt.Errorf("memo cannot be empty")
 	}
-	
+
 	if len(req.Memo) > rs.config.MaxMemoLength {
 		return fmt.Errorf("memo too long: %d characters (max %d)", len(req.Memo), rs.config.MaxMemoLength)
 	}
-	
+
 	// Set defaults
 	if req.ValidationLevel == 0 {
 		req.ValidationLevel = ValidationLevelStandard
 	}
-	
+
 	if req.Priority == 0 {
 		req.Priority = PriorityNormal
 	}
-	
+
 	return nil
 }
 
 // validateQuote performs quote validation if swap details are provided
-func (rs *RegistrationService) validateQuote(ctx context.Context, req *MemoRegistrationRequest, 
-	response *MemoRegistrationResponse) error {
-	
+func (rs *RegistrationService) validateQuote(ctx context.Context, req *MemoRegistrationRequest,
+	response *MemoRegistrationResponse,
+) error {
 	quoteStart := time.Now()
 	defer func() {
 		response.Metrics.QuoteDuration = time.Since(quoteStart)
 	}()
-	
+
 	// Validate assets
-	pairValidation, err := rs.enhancedClient.ValidateSwapPair(ctx, 
+	pairValidation, err := rs.enhancedClient.ValidateSwapPair(ctx,
 		req.SwapDetails.FromAsset, req.SwapDetails.ToAsset)
 	if err != nil {
 		return fmt.Errorf("failed to validate asset pair: %w", err)
 	}
-	
+
 	// Get enhanced quote
 	enhancedReq := &EnhancedSwapQuoteRequest{
 		SwapQuoteRequest: *req.SwapDetails,
 	}
-	
+
 	quote, err := rs.enhancedClient.GetEnhancedSwapQuote(ctx, enhancedReq)
 	if err != nil {
 		return fmt.Errorf("failed to get swap quote: %w", err)
 	}
-	
+
 	// Prepare validation result
 	validation := &QuoteValidationResult{
 		Valid:           pairValidation.Valid && len(quote.Errors) == 0,
@@ -355,7 +355,7 @@ func (rs *RegistrationService) validateQuote(ctx context.Context, req *MemoRegis
 		Warnings:        make([]string, 0),
 		Errors:          make([]string, 0),
 	}
-	
+
 	// Collect warnings
 	for _, warning := range pairValidation.Warnings {
 		validation.Warnings = append(validation.Warnings, warning.Message)
@@ -363,26 +363,26 @@ func (rs *RegistrationService) validateQuote(ctx context.Context, req *MemoRegis
 	if quote.Warning != "" {
 		validation.Warnings = append(validation.Warnings, quote.Warning)
 	}
-	
+
 	// Collect errors
 	for _, err := range pairValidation.Errors {
 		validation.Errors = append(validation.Errors, err.Message)
 	}
 	validation.Errors = append(validation.Errors, quote.Errors...)
-	
+
 	response.QuoteValidation = validation
-	
+
 	if !validation.Valid {
 		return fmt.Errorf("quote validation failed: %v", validation.Errors)
 	}
-	
+
 	return nil
 }
 
 // generateUsageInstructions generates usage instructions for the registered memo
-func (rs *RegistrationService) generateUsageInstructions(req *MemoRegistrationRequest, 
-	result *RegisterMemoResult) *UsageInstructions {
-	
+func (rs *RegistrationService) generateUsageInstructions(req *MemoRegistrationRequest,
+	result *RegisterMemoResult,
+) *UsageInstructions {
 	instructions := &UsageInstructions{
 		Reference:  result.Reference,
 		ValidUntil: time.Unix(result.ExpiresAt, 0),
@@ -397,19 +397,19 @@ func (rs *RegistrationService) generateUsageInstructions(req *MemoRegistrationRe
 			fmt.Sprintf("Registration expires at %s", time.Unix(result.ExpiresAt, 0).Format(time.RFC3339)),
 		},
 	}
-	
+
 	// Add swap-specific instructions if quote validation was performed
 	if req.SwapDetails != nil {
 		instructions.UsageSteps = append(instructions.UsageSteps,
 			fmt.Sprintf("Send %s %s", req.SwapDetails.Amount.String(), req.SwapDetails.FromAsset.String()),
 			fmt.Sprintf("Receive approximately %s", req.SwapDetails.ToAsset.String()),
 		)
-		
-		instructions.MinAmount = cosmos.NewUint(1000000) // Default minimum
+
+		instructions.MinAmount = cosmos.NewUint(1000000)                       // Default minimum
 		instructions.MaxAmount = req.SwapDetails.Amount.Mul(cosmos.NewUint(2)) // 2x as max
-		instructions.EstimatedTime = 5 * time.Minute // Default estimate
+		instructions.EstimatedTime = 5 * time.Minute                           // Default estimate
 	}
-	
+
 	return instructions
 }
 
@@ -420,41 +420,41 @@ func (rs *RegistrationService) mapRegistrationError(code RegistrationErrorCode, 
 		Details:   err.Error(),
 		Retryable: false,
 	}
-	
+
 	switch code {
 	case RegErrorInvalidMemo:
 		regErr.Message = "Invalid memo format"
 		regErr.UserFriendlyMessage = "The memo you provided is not in the correct format"
 		regErr.SuggestedFix = "Check the memo format and try again"
-		
+
 	case RegErrorMemoTooLong:
 		regErr.Message = "Memo exceeds maximum length"
 		regErr.UserFriendlyMessage = "Your memo is too long"
 		regErr.SuggestedFix = fmt.Sprintf("Shorten your memo to %d characters or less", rs.config.MaxMemoLength)
-		
+
 	case RegErrorQuoteValidationFailed:
 		regErr.Message = "Quote validation failed"
 		regErr.UserFriendlyMessage = "The swap details could not be validated"
 		regErr.SuggestedFix = "Check your asset symbols and amounts"
-		
+
 	case RegErrorTransactionFailed:
 		regErr.Message = "Transaction submission failed"
 		regErr.UserFriendlyMessage = "Failed to register your memo on the network"
 		regErr.SuggestedFix = "Check network connectivity and try again"
 		regErr.Retryable = true
-		
+
 	case RegErrorNetworkUnavailable:
 		regErr.Message = "Network unavailable"
 		regErr.UserFriendlyMessage = "The THORChain network is currently unavailable"
 		regErr.SuggestedFix = "Please try again later"
 		regErr.Retryable = true
-		
+
 	default:
 		regErr.Message = "Unknown error"
 		regErr.UserFriendlyMessage = "An unexpected error occurred"
 		regErr.SuggestedFix = "Please try again or contact support"
 	}
-	
+
 	return regErr
 }
 
@@ -465,7 +465,7 @@ func (rs *RegistrationService) GetRegistrationStatus(ctx context.Context, refere
 	if err != nil {
 		return nil, fmt.Errorf("failed to query memo: %w", err)
 	}
-	
+
 	status := &RegistrationStatus{
 		Reference:    reference,
 		Status:       "ACTIVE",
@@ -475,11 +475,11 @@ func (rs *RegistrationService) GetRegistrationStatus(ctx context.Context, refere
 		ChainID:      memo.ChainId,
 		IsExpired:    time.Now().Unix() > memo.ExpiresAt,
 	}
-	
+
 	if status.IsExpired {
 		status.Status = "EXPIRED"
 	}
-	
+
 	return status, nil
 }
 
@@ -505,11 +505,11 @@ func (rs *RegistrationService) ListActiveRegistrations(ctx context.Context, limi
 // EstimateRegistrationCost estimates the cost of registering a memo
 func (rs *RegistrationService) EstimateRegistrationCost(ctx context.Context, req *MemoRegistrationRequest) (*RegistrationCostEstimate, error) {
 	estimate := &RegistrationCostEstimate{
-		BaseFee:     cosmos.NewUint(1000000), // 1 RUNE base fee
-		NetworkFee:  cosmos.NewUint(500000),  // 0.5 RUNE network fee
-		Priority:    req.Priority,
+		BaseFee:    cosmos.NewUint(1000000), // 1 RUNE base fee
+		NetworkFee: cosmos.NewUint(500000),  // 0.5 RUNE network fee
+		Priority:   req.Priority,
 	}
-	
+
 	// Adjust based on priority
 	switch req.Priority {
 	case PriorityHigh:
@@ -517,10 +517,10 @@ func (rs *RegistrationService) EstimateRegistrationCost(ctx context.Context, req
 	case PriorityUrgent:
 		estimate.PriorityFee = cosmos.NewUint(1000000) // 1 RUNE
 	}
-	
+
 	// Calculate total
 	estimate.TotalFee = estimate.BaseFee.Add(estimate.NetworkFee).Add(estimate.PriorityFee)
-	
+
 	// Add estimated time
 	switch req.Priority {
 	case PriorityLow:
@@ -532,31 +532,31 @@ func (rs *RegistrationService) EstimateRegistrationCost(ctx context.Context, req
 	case PriorityUrgent:
 		estimate.EstimatedTime = 1 * time.Minute
 	}
-	
+
 	return estimate, nil
 }
 
 // RegistrationCostEstimate represents cost estimation for memo registration
 type RegistrationCostEstimate struct {
-	BaseFee       cosmos.Uint       `json:"base_fee"`
-	NetworkFee    cosmos.Uint       `json:"network_fee"`
-	PriorityFee   cosmos.Uint       `json:"priority_fee"`
-	TotalFee      cosmos.Uint       `json:"total_fee"`
+	BaseFee       cosmos.Uint         `json:"base_fee"`
+	NetworkFee    cosmos.Uint         `json:"network_fee"`
+	PriorityFee   cosmos.Uint         `json:"priority_fee"`
+	TotalFee      cosmos.Uint         `json:"total_fee"`
 	Priority      TransactionPriority `json:"priority"`
-	EstimatedTime time.Duration     `json:"estimated_time"`
-	Currency      string            `json:"currency"`
+	EstimatedTime time.Duration       `json:"estimated_time"`
+	Currency      string              `json:"currency"`
 }
 
 // GetServiceHealth returns the health status of the registration service
 func (rs *RegistrationService) GetServiceHealth(ctx context.Context) (*ServiceHealth, error) {
 	health := &ServiceHealth{
-		Service:     "RegistrationService",
-		Status:      "HEALTHY",
-		Version:     "1.0.0",
-		Timestamp:   time.Now(),
+		Service:      "RegistrationService",
+		Status:       "HEALTHY",
+		Version:      "1.0.0",
+		Timestamp:    time.Now(),
 		Dependencies: make(map[string]string),
 	}
-	
+
 	// Check client connectivity
 	if err := rs.client.Ping(ctx); err != nil {
 		health.Status = "DEGRADED"
@@ -565,20 +565,20 @@ func (rs *RegistrationService) GetServiceHealth(ctx context.Context) (*ServiceHe
 	} else {
 		health.Dependencies["thornode_client"] = "HEALTHY"
 	}
-	
+
 	// Check network constants availability
 	if _, err := rs.client.GetConstants(ctx); err != nil {
-		health.Status = "DEGRADED"  
+		health.Status = "DEGRADED"
 		health.Dependencies["network_constants"] = "UNHEALTHY"
 		health.Issues = append(health.Issues, fmt.Sprintf("Constants unavailable: %s", err.Error()))
 	} else {
 		health.Dependencies["network_constants"] = "HEALTHY"
 	}
-	
+
 	if len(health.Issues) > 2 {
 		health.Status = "UNHEALTHY"
 	}
-	
+
 	return health, nil
 }
 

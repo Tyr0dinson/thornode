@@ -18,11 +18,11 @@ type QuoteService struct {
 
 // QuoteConfig holds configuration for quote service
 type QuoteConfig struct {
-	DefaultTimeout       time.Duration
-	SwapSlippageTolerance int64  // basis points
-	MinQuoteAge          time.Duration
-	MaxRetries           int
-	EnableCaching        bool
+	DefaultTimeout        time.Duration
+	SwapSlippageTolerance int64 // basis points
+	MinQuoteAge           time.Duration
+	MaxRetries            int
+	EnableCaching         bool
 }
 
 // NewQuoteService creates a new quote service with enhanced functionality
@@ -30,7 +30,7 @@ func NewQuoteService(client Client, config *QuoteConfig) *QuoteService {
 	if config == nil {
 		config = NewDefaultQuoteConfig()
 	}
-	
+
 	return &QuoteService{
 		client: client,
 		config: config,
@@ -42,9 +42,9 @@ func NewDefaultQuoteConfig() *QuoteConfig {
 	return &QuoteConfig{
 		DefaultTimeout:        30 * time.Second,
 		SwapSlippageTolerance: 300, // 3%
-		MinQuoteAge:          5 * time.Second,
-		MaxRetries:           3,
-		EnableCaching:        true,
+		MinQuoteAge:           5 * time.Second,
+		MaxRetries:            3,
+		EnableCaching:         true,
 	}
 }
 
@@ -52,10 +52,10 @@ func NewDefaultQuoteConfig() *QuoteConfig {
 type EnhancedSwapQuoteRequest struct {
 	SwapQuoteRequest
 	// Enhanced options
-	AllowSynthetic       bool   `json:"allow_synthetic,omitempty"`
-	PreferredRouter      string `json:"preferred_router,omitempty"`
-	MaxSlippageBasisPts  int64  `json:"max_slippage_basis_pts,omitempty"`
-	MinExpectedAmountOut cosmos.Uint `json:"min_expected_amount_out,omitempty"`
+	AllowSynthetic       bool          `json:"allow_synthetic,omitempty"`
+	PreferredRouter      string        `json:"preferred_router,omitempty"`
+	MaxSlippageBasisPts  int64         `json:"max_slippage_basis_pts,omitempty"`
+	MinExpectedAmountOut cosmos.Uint   `json:"min_expected_amount_out,omitempty"`
 	QuoteTimeout         time.Duration `json:"quote_timeout,omitempty"`
 }
 
@@ -63,60 +63,60 @@ type EnhancedSwapQuoteRequest struct {
 type EnhancedSwapQuote struct {
 	SwapQuote
 	// Enhanced metadata
-	QuoteTimestamp       int64             `json:"quote_timestamp"`
-	ValidUntil           int64             `json:"valid_until"`
-	AssetValidation      AssetValidation   `json:"asset_validation"`
-	RouteAnalysis        RouteAnalysis     `json:"route_analysis"`
-	RiskAssessment       RiskAssessment    `json:"risk_assessment"`
-	RecommendedSettings  RecommendedSettings `json:"recommended_settings"`
+	QuoteTimestamp      int64               `json:"quote_timestamp"`
+	ValidUntil          int64               `json:"valid_until"`
+	AssetValidation     AssetValidation     `json:"asset_validation"`
+	RouteAnalysis       RouteAnalysis       `json:"route_analysis"`
+	RiskAssessment      RiskAssessment      `json:"risk_assessment"`
+	RecommendedSettings RecommendedSettings `json:"recommended_settings"`
 }
 
 // AssetValidation provides detailed asset validation information
 type AssetValidation struct {
-	FromAssetValid   bool     `json:"from_asset_valid"`
-	ToAssetValid     bool     `json:"to_asset_valid"`
-	FromAssetStatus  string   `json:"from_asset_status"`
-	ToAssetStatus    string   `json:"to_asset_status"`
-	FromAssetWarnings []string `json:"from_asset_warnings,omitempty"`
-	ToAssetWarnings   []string `json:"to_asset_warnings,omitempty"`
-	ChainAnalysis    ChainAnalysis `json:"chain_analysis"`
+	FromAssetValid    bool          `json:"from_asset_valid"`
+	ToAssetValid      bool          `json:"to_asset_valid"`
+	FromAssetStatus   string        `json:"from_asset_status"`
+	ToAssetStatus     string        `json:"to_asset_status"`
+	FromAssetWarnings []string      `json:"from_asset_warnings,omitempty"`
+	ToAssetWarnings   []string      `json:"to_asset_warnings,omitempty"`
+	ChainAnalysis     ChainAnalysis `json:"chain_analysis"`
 }
 
 // ChainAnalysis provides chain-specific analysis
 type ChainAnalysis struct {
-	FromChain        common.Chain `json:"from_chain"`
-	ToChain          common.Chain `json:"to_chain"`
-	FromChainHalted  bool         `json:"from_chain_halted"`
-	ToChainHalted    bool         `json:"to_chain_halted"`
-	FromChainHeight  int64        `json:"from_chain_height"`
-	ToChainHeight    int64        `json:"to_chain_height"`
-	CrossChainSwap   bool         `json:"cross_chain_swap"`
+	FromChain       common.Chain `json:"from_chain"`
+	ToChain         common.Chain `json:"to_chain"`
+	FromChainHalted bool         `json:"from_chain_halted"`
+	ToChainHalted   bool         `json:"to_chain_halted"`
+	FromChainHeight int64        `json:"from_chain_height"`
+	ToChainHeight   int64        `json:"to_chain_height"`
+	CrossChainSwap  bool         `json:"cross_chain_swap"`
 }
 
 // RouteAnalysis provides routing analysis
 type RouteAnalysis struct {
-	DirectRoute      bool     `json:"direct_route"`
-	HopCount         int      `json:"hop_count"`
+	DirectRoute        bool           `json:"direct_route"`
+	HopCount           int            `json:"hop_count"`
 	IntermediateAssets []common.Asset `json:"intermediate_assets,omitempty"`
-	RouteEfficiency  float64  `json:"route_efficiency"`
-	EstimatedTime    time.Duration `json:"estimated_time"`
+	RouteEfficiency    float64        `json:"route_efficiency"`
+	EstimatedTime      time.Duration  `json:"estimated_time"`
 }
 
 // RiskAssessment provides risk analysis
 type RiskAssessment struct {
-	RiskLevel        string   `json:"risk_level"` // LOW, MEDIUM, HIGH
-	RiskFactors      []string `json:"risk_factors,omitempty"`
-	LiquidityDepth   string   `json:"liquidity_depth"` // DEEP, MEDIUM, SHALLOW
-	SlippageRisk     string   `json:"slippage_risk"`   // LOW, MEDIUM, HIGH
-	ImpermanentLoss  cosmos.Uint `json:"impermanent_loss"`
+	RiskLevel       string      `json:"risk_level"` // LOW, MEDIUM, HIGH
+	RiskFactors     []string    `json:"risk_factors,omitempty"`
+	LiquidityDepth  string      `json:"liquidity_depth"` // DEEP, MEDIUM, SHALLOW
+	SlippageRisk    string      `json:"slippage_risk"`   // LOW, MEDIUM, HIGH
+	ImpermanentLoss cosmos.Uint `json:"impermanent_loss"`
 }
 
 // RecommendedSettings provides recommended settings
 type RecommendedSettings struct {
-	RecommendedSlippageTolerance int64       `json:"recommended_slippage_tolerance"`
-	RecommendedTimeout          time.Duration `json:"recommended_timeout"`
-	SuggestedStreamingParams    *StreamingParams `json:"suggested_streaming_params,omitempty"`
-	OptimalTiming               string       `json:"optimal_timing"`
+	RecommendedSlippageTolerance int64            `json:"recommended_slippage_tolerance"`
+	RecommendedTimeout           time.Duration    `json:"recommended_timeout"`
+	SuggestedStreamingParams     *StreamingParams `json:"suggested_streaming_params,omitempty"`
+	OptimalTiming                string           `json:"optimal_timing"`
 }
 
 // StreamingParams represents streaming swap parameters
@@ -149,8 +149,8 @@ func (qs *QuoteService) GetEnhancedSwapQuote(ctx context.Context, req *EnhancedS
 
 	// Check for critical asset issues
 	if !assetValidation.FromAssetValid || !assetValidation.ToAssetValid {
-		return nil, NewQuoteError(QuoteErrorInvalidAsset, 
-			fmt.Sprintf("invalid assets: from=%v, to=%v", 
+		return nil, NewQuoteError(QuoteErrorInvalidAsset,
+			fmt.Sprintf("invalid assets: from=%v, to=%v",
 				assetValidation.FromAssetValid, assetValidation.ToAssetValid), nil)
 	}
 
@@ -166,7 +166,7 @@ func (qs *QuoteService) GetEnhancedSwapQuote(ctx context.Context, req *EnhancedS
 	recommendedSettings := qs.generateRecommendations(req, basicQuote, riskAssessment)
 
 	timestamp := time.Now().Unix()
-	
+
 	enhancedQuote := &EnhancedSwapQuote{
 		SwapQuote:           *basicQuote,
 		QuoteTimestamp:      timestamp,
@@ -183,10 +183,10 @@ func (qs *QuoteService) GetEnhancedSwapQuote(ctx context.Context, req *EnhancedS
 // validateAssets performs comprehensive asset validation
 func (qs *QuoteService) validateAssets(ctx context.Context, fromAsset, toAsset common.Asset) (*AssetValidation, error) {
 	validation := &AssetValidation{
-		FromAssetValid:   true,
-		ToAssetValid:     true,
-		FromAssetStatus:  "ACTIVE",
-		ToAssetStatus:    "ACTIVE",
+		FromAssetValid:    true,
+		ToAssetValid:      true,
+		FromAssetStatus:   "ACTIVE",
+		ToAssetStatus:     "ACTIVE",
 		FromAssetWarnings: make([]string, 0),
 		ToAssetWarnings:   make([]string, 0),
 	}
@@ -196,7 +196,7 @@ func (qs *QuoteService) validateAssets(ctx context.Context, fromAsset, toAsset c
 		validation.FromAssetValid = false
 		validation.FromAssetStatus = "INVALID_FORMAT"
 	}
-	
+
 	if toAsset.IsEmpty() {
 		validation.ToAssetValid = false
 		validation.ToAssetStatus = "INVALID_FORMAT"
@@ -209,14 +209,14 @@ func (qs *QuoteService) validateAssets(ctx context.Context, fromAsset, toAsset c
 
 	// Get pool information for validation
 	if validation.FromAssetValid && !fromAsset.IsRune() {
-		if err := qs.validatePoolAsset(ctx, fromAsset, &validation.FromAssetValid, 
+		if err := qs.validatePoolAsset(ctx, fromAsset, &validation.FromAssetValid,
 			&validation.FromAssetStatus, &validation.FromAssetWarnings); err != nil {
 			return nil, fmt.Errorf("failed to validate from asset: %w", err)
 		}
 	}
 
 	if validation.ToAssetValid && !toAsset.IsRune() {
-		if err := qs.validatePoolAsset(ctx, toAsset, &validation.ToAssetValid, 
+		if err := qs.validatePoolAsset(ctx, toAsset, &validation.ToAssetValid,
 			&validation.ToAssetStatus, &validation.ToAssetWarnings); err != nil {
 			return nil, fmt.Errorf("failed to validate to asset: %w", err)
 		}
@@ -233,9 +233,9 @@ func (qs *QuoteService) validateAssets(ctx context.Context, fromAsset, toAsset c
 }
 
 // validatePoolAsset validates a single pool asset
-func (qs *QuoteService) validatePoolAsset(ctx context.Context, asset common.Asset, 
-	valid *bool, status *string, warnings *[]string) error {
-	
+func (qs *QuoteService) validatePoolAsset(ctx context.Context, asset common.Asset,
+	valid *bool, status *string, warnings *[]string,
+) error {
 	// Try to get pool information
 	pool, err := qs.client.GetPool(ctx, asset)
 	if err != nil {
@@ -295,14 +295,14 @@ func (qs *QuoteService) analyzeRoute(fromAsset, toAsset common.Asset, quote *Swa
 }
 
 // assessRisk assesses swap risk
-func (qs *QuoteService) assessRisk(req *EnhancedSwapQuoteRequest, quote *SwapQuote, 
-	validation *AssetValidation) *RiskAssessment {
-	
+func (qs *QuoteService) assessRisk(req *EnhancedSwapQuoteRequest, quote *SwapQuote,
+	validation *AssetValidation,
+) *RiskAssessment {
 	assessment := &RiskAssessment{
-		RiskLevel:    "LOW",
-		RiskFactors:  make([]string, 0),
+		RiskLevel:      "LOW",
+		RiskFactors:    make([]string, 0),
 		LiquidityDepth: "DEEP",
-		SlippageRisk: "LOW",
+		SlippageRisk:   "LOW",
 	}
 
 	// Assess slippage risk
@@ -334,13 +334,13 @@ func (qs *QuoteService) assessRisk(req *EnhancedSwapQuoteRequest, quote *SwapQuo
 }
 
 // generateRecommendations generates recommendations for the swap
-func (qs *QuoteService) generateRecommendations(req *EnhancedSwapQuoteRequest, quote *SwapQuote, 
-	risk *RiskAssessment) *RecommendedSettings {
-	
+func (qs *QuoteService) generateRecommendations(req *EnhancedSwapQuoteRequest, quote *SwapQuote,
+	risk *RiskAssessment,
+) *RecommendedSettings {
 	settings := &RecommendedSettings{
 		RecommendedSlippageTolerance: qs.config.SwapSlippageTolerance,
-		RecommendedTimeout:          qs.config.DefaultTimeout,
-		OptimalTiming:              "NOW",
+		RecommendedTimeout:           qs.config.DefaultTimeout,
+		OptimalTiming:                "NOW",
 	}
 
 	// Adjust recommendations based on risk
@@ -383,7 +383,7 @@ func (qs *QuoteService) mapQuoteError(err error) error {
 			return NewQuoteError(QuoteErrorInternal, "internal error", err)
 		}
 	}
-	
+
 	return NewQuoteError(QuoteErrorInternal, "unknown error", err)
 }
 
@@ -431,11 +431,11 @@ func NewQuoteError(code QuoteErrorCode, message string, err error) *QuoteError {
 		Message: message,
 		Err:     err,
 	}
-	
+
 	if err != nil {
 		quoteErr.Details = err.Error()
 	}
-	
+
 	return quoteErr
 }
 
@@ -444,32 +444,32 @@ func ValidateSwapRequest(req *SwapQuoteRequest) error {
 	if req == nil {
 		return NewQuoteError(QuoteErrorInvalidRequest, "request cannot be nil", nil)
 	}
-	
+
 	if req.FromAsset.IsEmpty() {
 		return NewQuoteError(QuoteErrorInvalidAsset, "from asset cannot be empty", nil)
 	}
-	
+
 	if req.ToAsset.IsEmpty() {
 		return NewQuoteError(QuoteErrorInvalidAsset, "to asset cannot be empty", nil)
 	}
-	
+
 	if req.FromAsset.Equals(req.ToAsset) {
 		return NewQuoteError(QuoteErrorSameAsset, "from and to assets cannot be the same", nil)
 	}
-	
+
 	if req.Amount.IsZero() {
 		return NewQuoteError(QuoteErrorAmountTooSmall, "amount must be greater than zero", nil)
 	}
-	
+
 	// Validate basis points
 	if !req.TolerateBasisPts.IsZero() && req.TolerateBasisPts.GT(cosmos.NewUint(10000)) {
 		return NewQuoteError(QuoteErrorInvalidRequest, "tolerate basis points cannot exceed 10000", nil)
 	}
-	
+
 	if !req.AffiliateBasisPts.IsZero() && req.AffiliateBasisPts.GT(cosmos.NewUint(10000)) {
 		return NewQuoteError(QuoteErrorInvalidRequest, "affiliate basis points cannot exceed 10000", nil)
 	}
-	
+
 	return nil
 }
 
@@ -486,19 +486,19 @@ func (ata *AssetTypeAnalyzer) GetAssetType(asset common.Asset) AssetType {
 	if asset.IsRune() {
 		return AssetTypeNative
 	}
-	
+
 	if asset.IsSyntheticAsset() {
 		return AssetTypeSynthetic
 	}
-	
+
 	if asset.IsVaultAsset() {
 		return AssetTypeVault
 	}
-	
+
 	if asset.IsDerivedAsset() {
 		return AssetTypeDerived
 	}
-	
+
 	return AssetTypeExternal
 }
 
@@ -537,12 +537,12 @@ func (qs *QuoteService) GetSupportedChains(ctx context.Context) ([]common.Chain,
 	if err != nil {
 		return nil, fmt.Errorf("failed to get inbound addresses: %w", err)
 	}
-	
+
 	chains := make([]common.Chain, 0, len(addresses))
 	for _, addr := range addresses {
 		chains = append(chains, addr.Chain)
 	}
-	
+
 	return chains, nil
 }
 
@@ -552,10 +552,10 @@ func (qs *QuoteService) GetAssetPairs(ctx context.Context) ([]AssetPair, error) 
 	if err != nil {
 		return nil, fmt.Errorf("failed to get pools: %w", err)
 	}
-	
+
 	pairs := make([]AssetPair, 0)
 	runeAsset := common.RuneNative
-	
+
 	// Add RUNE pairs
 	for _, pool := range pools {
 		if strings.ToUpper(pool.Status) == "AVAILABLE" {
@@ -569,7 +569,7 @@ func (qs *QuoteService) GetAssetPairs(ctx context.Context) ([]AssetPair, error) 
 			})
 		}
 	}
-	
+
 	// Add asset-to-asset pairs (via RUNE)
 	availablePools := make([]common.Asset, 0)
 	for _, pool := range pools {
@@ -577,7 +577,7 @@ func (qs *QuoteService) GetAssetPairs(ctx context.Context) ([]AssetPair, error) 
 			availablePools = append(availablePools, pool.Asset)
 		}
 	}
-	
+
 	for i, asset1 := range availablePools {
 		for j, asset2 := range availablePools {
 			if i != j {
@@ -588,7 +588,7 @@ func (qs *QuoteService) GetAssetPairs(ctx context.Context) ([]AssetPair, error) 
 			}
 		}
 	}
-	
+
 	return pairs, nil
 }
 

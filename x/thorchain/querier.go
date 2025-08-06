@@ -3634,3 +3634,22 @@ func (qs queryServer) queryEip712TypedData(_ cosmos.Context, req *types.QueryEip
 	}
 	return &types.QueryEip712TypedDataResponse{TypedData: string(data)}, nil
 }
+
+func (qs queryServer) queryRegisteredMemo(ctx cosmos.Context, req *types.QueryRegisteredMemoRequest) (*types.QueryRegisteredMemoResponse, error) {
+	if len(req.Reference) == 0 {
+		return nil, errors.New("reference not provided")
+	}
+
+	// Validate reference format (5 digits)
+	if len(req.Reference) != 5 {
+		return nil, fmt.Errorf("reference must be exactly 5 digits, got %d", len(req.Reference))
+	}
+
+	memo, err := qs.mgr.Keeper().GetRegisteredMemo(ctx, req.Reference)
+	if err != nil {
+		ctx.Logger().Error("fail to get registered memo", "reference", req.Reference, "error", err)
+		return nil, fmt.Errorf("could not get registered memo for reference %s: %w", req.Reference, err)
+	}
+
+	return &types.QueryRegisteredMemoResponse{Memo: memo}, nil
+}

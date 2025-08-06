@@ -54,6 +54,7 @@ import "types/query_tcy_claimers.proto";
 import "types/query_codes.proto";
 import "types/query_oracle_price.proto";
 import "types/query_eip712.proto";
+import "types/query_registered_memo.proto";
 
 option (gogoproto.marshaler_all) = true;
 
@@ -398,5 +399,10 @@ service Query {
 
   rpc Eip712TypedData(QueryEip712TypedDataRequest) returns (QueryEip712TypedDataResponse) {
     option (google.api.http).get = "/thorchain/eip715/tx";
+  }
+
+  // RegisteredMemo returns the registered memo for a given reference code
+  rpc RegisteredMemo(QueryRegisteredMemoRequest) returns (QueryRegisteredMemoResponse) {
+    option (google.api.http).get = "/thorchain/registered_memo/{reference}";
   }
 }

@@ -13,25 +13,25 @@ import (
 
 // Validation constants for memoless protocol
 const (
-	MinMemoLength        = 1
-	MaxMemoLength        = 1024
-	MinTTL              = 0
-	MaxTTL              = 864000 // 10 days in seconds
-	MinChainIDLength    = 1
-	MaxChainIDLength    = 50
-	ReferenceLength     = 5
-	MinReferenceValue   = 10000
-	MaxReferenceValue   = 99999
+	MinMemoLength     = 1
+	MaxMemoLength     = 1024
+	MinTTL            = 0
+	MaxTTL            = 864000 // 10 days in seconds
+	MinChainIDLength  = 1
+	MaxChainIDLength  = 50
+	ReferenceLength   = 5
+	MinReferenceValue = 10000
+	MaxReferenceValue = 99999
 )
 
 // Regular expressions for validation
 var (
 	// Chain ID should contain only alphanumeric characters, dots, and hyphens
 	chainIDRegex = regexp.MustCompile(`^[a-zA-Z0-9.-]+$`)
-	
+
 	// Reference should be exactly 5 digits
 	referenceRegex = regexp.MustCompile(`^\d{5}$`)
-	
+
 	// Memo should not contain null bytes or other control characters (except newlines/tabs)
 	invalidMemoCharsRegex = regexp.MustCompile(`[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]`)
 )
@@ -344,7 +344,7 @@ func IsValidMemoForChain(memo string, chainID string) error {
 func DetectPotentialAbuse(memo string, signer sdk.AccAddress) error {
 	// Check for common spam patterns
 	lowerMemo := strings.ToLower(memo)
-	
+
 	spamKeywords := []string{
 		"click here", "free money", "guaranteed profit", "lottery winner",
 		"nigerian prince", "inheritance", "tax refund", "suspended account",

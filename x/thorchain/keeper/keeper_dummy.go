@@ -873,42 +873,55 @@ func (k KVStoreDummy) GetPriceIterator(_ cosmos.Context) cosmos.Iterator {
 func (k KVStoreDummy) SetRegisteredMemo(_ cosmos.Context, _ types.RegisteredMemo) error {
 	return nil
 }
+
 func (k KVStoreDummy) GetRegisteredMemo(_ cosmos.Context, _ string) (types.RegisteredMemo, error) {
 	return types.RegisteredMemo{}, nil
 }
+
 func (k KVStoreDummy) HasRegisteredMemo(_ cosmos.Context, _ string) bool {
 	return false
 }
+
 func (k KVStoreDummy) DeleteRegisteredMemo(_ cosmos.Context, _ string) error {
 	return nil
 }
+
 func (k KVStoreDummy) DeleteExpiredMemos(_ cosmos.Context, _ int64) error {
 	return nil
 }
+
 func (k KVStoreDummy) GetRegisteredMemoIterator(_ cosmos.Context) cosmos.Iterator {
 	return NewDummyIterator()
 }
+
 func (k KVStoreDummy) QueryRegisteredMemo(_ cosmos.Context, _ string) (types.RegisteredMemo, error) {
 	return types.RegisteredMemo{}, nil
 }
+
 func (k KVStoreDummy) QueryActiveMemos(_ cosmos.Context, _, _ int) ([]types.RegisteredMemo, error) {
 	return []types.RegisteredMemo{}, nil
 }
+
 func (k KVStoreDummy) ValidateMemoRegistration(_ cosmos.Context, _ types.MsgRegisterMemo, _ constants.ConstantValues) error {
 	return nil
 }
+
 func (k KVStoreDummy) ResolveCollision(_ cosmos.Context, _ string, _ int64, _ constants.ConstantValues) (string, error) {
 	return "12345", nil
 }
+
 func (k KVStoreDummy) GetActiveMemoCount(_ cosmos.Context) int64 {
 	return 0
 }
+
 func (k KVStoreDummy) IncrementRegistrations(_ cosmos.Context) error {
 	return nil
 }
+
 func (k KVStoreDummy) IncrementCollisions(_ cosmos.Context) error {
 	return nil
 }
+
 func (k KVStoreDummy) UpdateLastCleanup(_ cosmos.Context, _ int64, _ int64) error {
 	return nil
 }

@@ -18,16 +18,16 @@ type AssetValidator struct {
 
 // ChainConfig holds chain-specific configuration for validation
 type ChainConfig struct {
-	Chain                common.Chain  `json:"chain"`
-	MinAmount            cosmos.Uint   `json:"min_amount"`
-	MaxAmount            cosmos.Uint   `json:"max_amount"`
-	AssetRegex           string        `json:"asset_regex"`
-	AddressRegex         string        `json:"address_regex"`
-	SupportsSynthetics   bool          `json:"supports_synthetics"`
-	SupportsStreamSwaps  bool          `json:"supports_stream_swaps"`
-	DecimalPlaces        int           `json:"decimal_places"`
-	BlockTime            int64         `json:"block_time_seconds"`
-	ConfirmationBlocks   int64         `json:"confirmation_blocks"`
+	Chain               common.Chain `json:"chain"`
+	MinAmount           cosmos.Uint  `json:"min_amount"`
+	MaxAmount           cosmos.Uint  `json:"max_amount"`
+	AssetRegex          string       `json:"asset_regex"`
+	AddressRegex        string       `json:"address_regex"`
+	SupportsSynthetics  bool         `json:"supports_synthetics"`
+	SupportsStreamSwaps bool         `json:"supports_stream_swaps"`
+	DecimalPlaces       int          `json:"decimal_places"`
+	BlockTime           int64        `json:"block_time_seconds"`
+	ConfirmationBlocks  int64        `json:"confirmation_blocks"`
 }
 
 // NewAssetValidator creates a new asset validator with default chain configurations
@@ -41,124 +41,124 @@ func NewAssetValidator(client Client) *AssetValidator {
 // getDefaultChainConfigs returns default configurations for supported chains
 func getDefaultChainConfigs() map[common.Chain]*ChainConfig {
 	configs := make(map[common.Chain]*ChainConfig)
-	
+
 	configs[common.BTCChain] = &ChainConfig{
 		Chain:               common.BTCChain,
-		MinAmount:           cosmos.NewUint(10000),      // 0.0001 BTC
+		MinAmount:           cosmos.NewUint(10000),            // 0.0001 BTC
 		MaxAmount:           cosmos.NewUint(2100000000000000), // 21M BTC
 		AssetRegex:          `^BTC\.BTC$`,
 		AddressRegex:        `^(bc1|[13])[a-zA-HJ-NP-Z0-9]{25,62}$`,
 		SupportsSynthetics:  true,
 		SupportsStreamSwaps: true,
 		DecimalPlaces:       8,
-		BlockTime:          600,
-		ConfirmationBlocks: 6,
+		BlockTime:           600,
+		ConfirmationBlocks:  6,
 	}
-	
+
 	configs[common.ETHChain] = &ChainConfig{
 		Chain:               common.ETHChain,
-		MinAmount:           cosmos.NewUint(1000000000000000), // 0.001 ETH
+		MinAmount:           cosmos.NewUint(1000000000000000),                      // 0.001 ETH
 		MaxAmount:           cosmos.NewUintFromString("1000000000000000000000000"), // 1M ETH
 		AssetRegex:          `^ETH\.[A-Z0-9-]+$`,
 		AddressRegex:        `^0x[a-fA-F0-9]{40}$`,
 		SupportsSynthetics:  true,
 		SupportsStreamSwaps: true,
 		DecimalPlaces:       18,
-		BlockTime:          12,
-		ConfirmationBlocks: 50,
+		BlockTime:           12,
+		ConfirmationBlocks:  50,
 	}
-	
+
 	configs[common.THORChain] = &ChainConfig{
 		Chain:               common.THORChain,
-		MinAmount:           cosmos.NewUint(1000000),     // 1 RUNE
+		MinAmount:           cosmos.NewUint(1000000),         // 1 RUNE
 		MaxAmount:           cosmos.NewUint(500000000000000), // 500M RUNE
 		AssetRegex:          `^THOR\.RUNE$`,
 		AddressRegex:        `^thor[a-z0-9]{39}$`,
 		SupportsSynthetics:  false,
 		SupportsStreamSwaps: true,
 		DecimalPlaces:       8,
-		BlockTime:          6,
-		ConfirmationBlocks: 1,
+		BlockTime:           6,
+		ConfirmationBlocks:  1,
 	}
-	
+
 	configs[common.BSCChain] = &ChainConfig{
 		Chain:               common.BSCChain,
-		MinAmount:           cosmos.NewUint(10000000000000000), // 0.01 BNB
+		MinAmount:           cosmos.NewUint(10000000000000000),                    // 0.01 BNB
 		MaxAmount:           cosmos.NewUintFromString("200000000000000000000000"), // 200K BNB
 		AssetRegex:          `^BSC\.[A-Z0-9-]+$`,
 		AddressRegex:        `^0x[a-fA-F0-9]{40}$`,
 		SupportsSynthetics:  true,
 		SupportsStreamSwaps: true,
 		DecimalPlaces:       18,
-		BlockTime:          3,
-		ConfirmationBlocks: 15,
+		BlockTime:           3,
+		ConfirmationBlocks:  15,
 	}
-	
+
 	configs[common.LTCChain] = &ChainConfig{
 		Chain:               common.LTCChain,
-		MinAmount:           cosmos.NewUint(100000),      // 0.001 LTC
+		MinAmount:           cosmos.NewUint(100000),           // 0.001 LTC
 		MaxAmount:           cosmos.NewUint(8400000000000000), // 84M LTC
 		AssetRegex:          `^LTC\.LTC$`,
 		AddressRegex:        `^[LM3][a-km-zA-HJ-NP-Z1-9]{26,33}$`,
 		SupportsSynthetics:  true,
 		SupportsStreamSwaps: true,
 		DecimalPlaces:       8,
-		BlockTime:          150,
-		ConfirmationBlocks: 6,
+		BlockTime:           150,
+		ConfirmationBlocks:  6,
 	}
-	
+
 	configs[common.BCHChain] = &ChainConfig{
 		Chain:               common.BCHChain,
-		MinAmount:           cosmos.NewUint(10000),       // 0.0001 BCH
+		MinAmount:           cosmos.NewUint(10000),            // 0.0001 BCH
 		MaxAmount:           cosmos.NewUint(2100000000000000), // 21M BCH
 		AssetRegex:          `^BCH\.BCH$`,
 		AddressRegex:        `^[13qp][a-zA-HJ-NP-Z0-9]{25,62}$`,
 		SupportsSynthetics:  true,
 		SupportsStreamSwaps: true,
 		DecimalPlaces:       8,
-		BlockTime:          600,
-		ConfirmationBlocks: 6,
+		BlockTime:           600,
+		ConfirmationBlocks:  6,
 	}
-	
+
 	configs[common.DOGEChain] = &ChainConfig{
 		Chain:               common.DOGEChain,
-		MinAmount:           cosmos.NewUint(100000000),   // 1 DOGE
+		MinAmount:           cosmos.NewUint(100000000),                         // 1 DOGE
 		MaxAmount:           cosmos.NewUintFromString("100000000000000000000"), // Large supply
 		AssetRegex:          `^DOGE\.DOGE$`,
 		AddressRegex:        `^[AD9][a-zA-HJ-NP-Z0-9]{25,34}$`,
 		SupportsSynthetics:  true,
 		SupportsStreamSwaps: true,
 		DecimalPlaces:       8,
-		BlockTime:          60,
-		ConfirmationBlocks: 20,
+		BlockTime:           60,
+		ConfirmationBlocks:  20,
 	}
-	
+
 	configs[common.GAIAChain] = &ChainConfig{
 		Chain:               common.GAIAChain,
-		MinAmount:           cosmos.NewUint(1000000),     // 1 ATOM
+		MinAmount:           cosmos.NewUint(1000000),         // 1 ATOM
 		MaxAmount:           cosmos.NewUint(100000000000000), // Large supply
 		AssetRegex:          `^GAIA\.[A-Z0-9]+$`,
 		AddressRegex:        `^cosmos[a-z0-9]{39}$`,
 		SupportsSynthetics:  true,
 		SupportsStreamSwaps: true,
 		DecimalPlaces:       6,
-		BlockTime:          6,
-		ConfirmationBlocks: 1,
+		BlockTime:           6,
+		ConfirmationBlocks:  1,
 	}
-	
+
 	return configs
 }
 
 // ValidationResult represents the result of asset validation
 type ValidationResult struct {
-	Valid           bool                   `json:"valid"`
-	Asset           common.Asset          `json:"asset"`
-	AssetType       AssetType             `json:"asset_type"`
-	Chain           common.Chain          `json:"chain"`
-	ValidationLevel ValidationLevel       `json:"validation_level"`
-	Warnings        []ValidationWarning   `json:"warnings,omitempty"`
-	Errors          []ValidationError     `json:"errors,omitempty"`
-	Metadata        ValidationMetadata    `json:"metadata"`
+	Valid           bool                `json:"valid"`
+	Asset           common.Asset        `json:"asset"`
+	AssetType       AssetType           `json:"asset_type"`
+	Chain           common.Chain        `json:"chain"`
+	ValidationLevel ValidationLevel     `json:"validation_level"`
+	Warnings        []ValidationWarning `json:"warnings,omitempty"`
+	Errors          []ValidationError   `json:"errors,omitempty"`
+	Metadata        ValidationMetadata  `json:"metadata"`
 }
 
 // ValidationLevel represents different levels of validation
@@ -185,29 +185,29 @@ func (vl ValidationLevel) String() string {
 
 // ValidationWarning represents a validation warning
 type ValidationWarning struct {
-	Code        string `json:"code"`
-	Message     string `json:"message"`
-	Severity    string `json:"severity"`
-	Suggestion  string `json:"suggestion,omitempty"`
+	Code       string `json:"code"`
+	Message    string `json:"message"`
+	Severity   string `json:"severity"`
+	Suggestion string `json:"suggestion,omitempty"`
 }
 
 // ValidationError represents a validation error
 type ValidationError struct {
-	Code        string `json:"code"`
-	Message     string `json:"message"`
-	Field       string `json:"field,omitempty"`
-	Suggestion  string `json:"suggestion,omitempty"`
+	Code       string `json:"code"`
+	Message    string `json:"message"`
+	Field      string `json:"field,omitempty"`
+	Suggestion string `json:"suggestion,omitempty"`
 }
 
 // ValidationMetadata provides additional metadata about the asset
 type ValidationMetadata struct {
-	PoolExists          bool        `json:"pool_exists"`
-	PoolStatus          string      `json:"pool_status,omitempty"`
-	LiquidityDepth      cosmos.Uint `json:"liquidity_depth,omitempty"`
-	ChainHeight         int64       `json:"chain_height,omitempty"`
-	LastBlockTime       int64       `json:"last_block_time,omitempty"`
-	EstimatedConfirmTime int64      `json:"estimated_confirm_time,omitempty"`
-	SupportedFeatures   []string    `json:"supported_features,omitempty"`
+	PoolExists           bool        `json:"pool_exists"`
+	PoolStatus           string      `json:"pool_status,omitempty"`
+	LiquidityDepth       cosmos.Uint `json:"liquidity_depth,omitempty"`
+	ChainHeight          int64       `json:"chain_height,omitempty"`
+	LastBlockTime        int64       `json:"last_block_time,omitempty"`
+	EstimatedConfirmTime int64       `json:"estimated_confirm_time,omitempty"`
+	SupportedFeatures    []string    `json:"supported_features,omitempty"`
 }
 
 // ValidateAsset performs comprehensive asset validation
@@ -218,7 +218,7 @@ func (av *AssetValidator) ValidateAsset(ctx context.Context, asset common.Asset,
 		Valid:           true,
 		Warnings:        make([]ValidationWarning, 0),
 		Errors:          make([]ValidationError, 0),
-		Metadata:        ValidationMetadata{
+		Metadata: ValidationMetadata{
 			SupportedFeatures: make([]string, 0),
 		},
 	}
@@ -272,12 +272,12 @@ func (av *AssetValidator) validateAssetFormat(asset common.Asset, result *Valida
 	// Validate asset string format
 	assetStr := asset.String()
 	parts := strings.Split(assetStr, ".")
-	
+
 	if len(parts) < 2 {
 		result.Errors = append(result.Errors, ValidationError{
-			Code:    "INVALID_FORMAT",
-			Message: "Asset must be in CHAIN.SYMBOL format",
-			Field:   "asset",
+			Code:       "INVALID_FORMAT",
+			Message:    "Asset must be in CHAIN.SYMBOL format",
+			Field:      "asset",
 			Suggestion: "Use format like BTC.BTC or ETH.ETH",
 		})
 		return nil
@@ -307,13 +307,13 @@ func (av *AssetValidator) validateAssetFormat(asset common.Asset, result *Valida
 	// Check for synthetic assets
 	if asset.IsSyntheticAsset() {
 		result.Metadata.SupportedFeatures = append(result.Metadata.SupportedFeatures, "SYNTHETIC")
-		
+
 		// Extract base asset for synthetics
 		if !strings.HasSuffix(symbol, "/") {
 			result.Warnings = append(result.Warnings, ValidationWarning{
-				Code:     "SYNTHETIC_FORMAT",
-				Message:  "Synthetic asset format may be incorrect",
-				Severity: "LOW",
+				Code:       "SYNTHETIC_FORMAT",
+				Message:    "Synthetic asset format may be incorrect",
+				Severity:   "LOW",
 				Suggestion: "Synthetic assets should end with '/' suffix",
 			})
 		}
@@ -326,7 +326,7 @@ func (av *AssetValidator) validateAssetFormat(asset common.Asset, result *Valida
 func (av *AssetValidator) validateChainSpecific(ctx context.Context, asset common.Asset, result *ValidationResult) error {
 	chain := asset.GetChain()
 	config, exists := av.chainConfigs[chain]
-	
+
 	if !exists {
 		result.Warnings = append(result.Warnings, ValidationWarning{
 			Code:     "UNSUPPORTED_CHAIN",
@@ -344,9 +344,9 @@ func (av *AssetValidator) validateChainSpecific(ctx context.Context, asset commo
 		}
 		if !matched {
 			result.Errors = append(result.Errors, ValidationError{
-				Code:    "INVALID_ASSET_FORMAT",
-				Message: fmt.Sprintf("Asset format does not match %s chain requirements", chain.String()),
-				Field:   "asset",
+				Code:       "INVALID_ASSET_FORMAT",
+				Message:    fmt.Sprintf("Asset format does not match %s chain requirements", chain.String()),
+				Field:      "asset",
 				Suggestion: fmt.Sprintf("Expected format matching: %s", config.AssetRegex),
 			})
 		}
@@ -381,9 +381,9 @@ func (av *AssetValidator) validatePool(ctx context.Context, asset common.Asset, 
 		if clientErr, ok := err.(*ClientError); ok && clientErr.Code == ErrCodeNotFound {
 			result.Metadata.PoolExists = false
 			result.Errors = append(result.Errors, ValidationError{
-				Code:    "POOL_NOT_FOUND",
-				Message: "Pool does not exist for this asset",
-				Field:   "asset",
+				Code:       "POOL_NOT_FOUND",
+				Message:    "Pool does not exist for this asset",
+				Field:      "asset",
 				Suggestion: "Check if the asset is supported and has an active pool",
 			})
 			return nil
@@ -400,16 +400,16 @@ func (av *AssetValidator) validatePool(ctx context.Context, asset common.Asset, 
 		// Pool is active and ready
 	case "STAGED":
 		result.Warnings = append(result.Warnings, ValidationWarning{
-			Code:     "POOL_STAGED",
-			Message:  "Pool is in staged status",
-			Severity: "MEDIUM",
+			Code:       "POOL_STAGED",
+			Message:    "Pool is in staged status",
+			Severity:   "MEDIUM",
 			Suggestion: "Pool functionality may be limited",
 		})
 	case "SUSPENDED":
 		result.Errors = append(result.Errors, ValidationError{
-			Code:    "POOL_SUSPENDED",
-			Message: "Pool is suspended",
-			Field:   "asset",
+			Code:       "POOL_SUSPENDED",
+			Message:    "Pool is suspended",
+			Field:      "asset",
 			Suggestion: "Wait for pool to be reactivated",
 		})
 	default:
@@ -440,23 +440,23 @@ func (av *AssetValidator) validateLiquidity(ctx context.Context, asset common.As
 	}
 
 	liquidity := result.Metadata.LiquidityDepth
-	
+
 	// Define liquidity thresholds (in RUNE terms)
-	lowLiquidityThreshold := cosmos.NewUint(100000000000) // 1000 RUNE
+	lowLiquidityThreshold := cosmos.NewUint(100000000000)     // 1000 RUNE
 	mediumLiquidityThreshold := cosmos.NewUint(1000000000000) // 10K RUNE
-	
+
 	if liquidity.LT(lowLiquidityThreshold) {
 		result.Warnings = append(result.Warnings, ValidationWarning{
-			Code:     "LOW_LIQUIDITY",
-			Message:  "Pool has low liquidity",
-			Severity: "HIGH",
+			Code:       "LOW_LIQUIDITY",
+			Message:    "Pool has low liquidity",
+			Severity:   "HIGH",
 			Suggestion: "Large swaps may experience high slippage",
 		})
 	} else if liquidity.LT(mediumLiquidityThreshold) {
 		result.Warnings = append(result.Warnings, ValidationWarning{
-			Code:     "MEDIUM_LIQUIDITY",
-			Message:  "Pool has moderate liquidity",
-			Severity: "MEDIUM",
+			Code:       "MEDIUM_LIQUIDITY",
+			Message:    "Pool has moderate liquidity",
+			Severity:   "MEDIUM",
 			Suggestion: "Monitor slippage for large swaps",
 		})
 	}
@@ -465,50 +465,50 @@ func (av *AssetValidator) validateLiquidity(ctx context.Context, asset common.As
 }
 
 // ValidateSwapPair validates a pair of assets for swapping
-func (av *AssetValidator) ValidateSwapPair(ctx context.Context, fromAsset, toAsset common.Asset, 
-	level ValidationLevel) (*SwapPairValidation, error) {
-	
+func (av *AssetValidator) ValidateSwapPair(ctx context.Context, fromAsset, toAsset common.Asset,
+	level ValidationLevel,
+) (*SwapPairValidation, error) {
 	// Validate individual assets
 	fromResult, err := av.ValidateAsset(ctx, fromAsset, level)
 	if err != nil {
 		return nil, fmt.Errorf("failed to validate from asset: %w", err)
 	}
-	
+
 	toResult, err := av.ValidateAsset(ctx, toAsset, level)
 	if err != nil {
 		return nil, fmt.Errorf("failed to validate to asset: %w", err)
 	}
-	
+
 	pairValidation := &SwapPairValidation{
-		FromAsset:       fromResult,
-		ToAsset:         toResult,
-		Valid:           fromResult.Valid && toResult.Valid,
-		SwapType:        av.determineSwapType(fromAsset, toAsset),
-		EstimatedSteps:  av.calculateSwapSteps(fromAsset, toAsset),
-		Warnings:        make([]ValidationWarning, 0),
-		Errors:          make([]ValidationError, 0),
+		FromAsset:      fromResult,
+		ToAsset:        toResult,
+		Valid:          fromResult.Valid && toResult.Valid,
+		SwapType:       av.determineSwapType(fromAsset, toAsset),
+		EstimatedSteps: av.calculateSwapSteps(fromAsset, toAsset),
+		Warnings:       make([]ValidationWarning, 0),
+		Errors:         make([]ValidationError, 0),
 	}
-	
+
 	// Check for same asset
 	if fromAsset.Equals(toAsset) {
 		pairValidation.Valid = false
 		pairValidation.Errors = append(pairValidation.Errors, ValidationError{
-			Code:    "SAME_ASSET",
-			Message: "From and to assets cannot be the same",
+			Code:       "SAME_ASSET",
+			Message:    "From and to assets cannot be the same",
 			Suggestion: "Choose different assets for swapping",
 		})
 	}
-	
+
 	// Add cross-chain warnings
 	if !fromAsset.GetChain().Equals(toAsset.GetChain()) {
 		pairValidation.Warnings = append(pairValidation.Warnings, ValidationWarning{
-			Code:     "CROSS_CHAIN_SWAP",
-			Message:  "Cross-chain swap will require additional confirmations",
-			Severity: "LOW",
+			Code:       "CROSS_CHAIN_SWAP",
+			Message:    "Cross-chain swap will require additional confirmations",
+			Severity:   "LOW",
 			Suggestion: "Allow extra time for cross-chain transactions",
 		})
 	}
-	
+
 	return pairValidation, nil
 }
 
@@ -517,8 +517,8 @@ type SwapPairValidation struct {
 	FromAsset      *ValidationResult   `json:"from_asset"`
 	ToAsset        *ValidationResult   `json:"to_asset"`
 	Valid          bool                `json:"valid"`
-	SwapType       SwapType           `json:"swap_type"`
-	EstimatedSteps int                `json:"estimated_steps"`
+	SwapType       SwapType            `json:"swap_type"`
+	EstimatedSteps int                 `json:"estimated_steps"`
 	Warnings       []ValidationWarning `json:"warnings,omitempty"`
 	Errors         []ValidationError   `json:"errors,omitempty"`
 }
@@ -553,15 +553,15 @@ func (av *AssetValidator) determineSwapType(fromAsset, toAsset common.Asset) Swa
 	if fromAsset.IsSyntheticAsset() || toAsset.IsSyntheticAsset() {
 		return SwapTypeSynthetic
 	}
-	
+
 	if fromAsset.IsRune() && !toAsset.IsRune() {
 		return SwapTypeRuneToAsset
 	}
-	
+
 	if !fromAsset.IsRune() && toAsset.IsRune() {
 		return SwapTypeAssetToRune
 	}
-	
+
 	return SwapTypeAssetToAsset
 }
 
@@ -579,17 +579,17 @@ func (av *AssetValidator) GetSupportedAssetTypes(chain common.Chain) []AssetType
 	if !exists {
 		return []AssetType{AssetTypeExternal}
 	}
-	
+
 	types := []AssetType{AssetTypeExternal}
-	
+
 	if chain == common.THORChain {
 		types = append(types, AssetTypeNative)
 	}
-	
+
 	if config.SupportsSynthetics {
 		types = append(types, AssetTypeSynthetic)
 	}
-	
+
 	return types
 }
 

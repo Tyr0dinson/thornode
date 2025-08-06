@@ -49,15 +49,15 @@ func (h RegisterMemoHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Resu
 func (h RegisterMemoHandler) validate(ctx cosmos.Context, msg types.MsgRegisterMemo) error {
 	version := h.mgr.GetVersion()
 	switch {
-	case version.GTE(semver.MustParse("1.0.0")):
-		return h.validateV1(ctx, msg)
+	case version.GTE(semver.MustParse("3.0.0")):
+		return h.validateV3_0_0(ctx, msg)
 	default:
 		return errInvalidVersion
 	}
 }
 
-// validateV1 performs v1-specific validation
-func (h RegisterMemoHandler) validateV1(ctx cosmos.Context, msg types.MsgRegisterMemo) error {
+// validateV3_0_0 performs v3.0.0-specific validation
+func (h RegisterMemoHandler) validateV3_0_0(ctx cosmos.Context, msg types.MsgRegisterMemo) error {
 	// Basic validation
 	if err := msg.ValidateBasicEnhanced(); err != nil {
 		return err
@@ -174,7 +174,7 @@ func (h RegisterMemoHandler) generateReference(ctx cosmos.Context, memo string, 
 
 	// Handle collision
 	ctx.Logger().Debug("Reference collision detected, resolving", "reference", baseReference)
-	
+
 	resolvedReference, err := keeper.ResolveCollision(ctx, memo, ctx.BlockHeight(), h.mgr.GetConstants())
 	if err != nil {
 		return "", fmt.Errorf("collision resolution failed: %w", err)
