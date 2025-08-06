@@ -2,11 +2,10 @@ package thorchain
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 
-	"gitlab.com/thorchain/thornode/common"
-	"gitlab.com/thorchain/thornode/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
 // MemoEncoder provides functionality to encode various THORChain transaction types into memo strings
