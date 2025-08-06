@@ -6,10 +6,9 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	errorsmod "cosmossdk.io/errors"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
-
-	"gitlab.com/thorchain/thornode/common"
 )
 
 // Validation constants for memoless protocol
@@ -46,22 +45,22 @@ func (m *MsgRegisterMemo) ValidateBasicEnhanced() error {
 
 	// Enhanced memo validation
 	if err := ValidateMemoContent(m.Memo); err != nil {
-		return sdkerrors.Wrap(sdkerrors.ErrInvalidRequest, fmt.Sprintf("invalid memo content: %v", err))
+		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, fmt.Sprintf("invalid memo content: %v", err))
 	}
 
 	// Enhanced chain ID validation
-	if err := ValidateChainID(m.ChainID); err != nil {
-		return sdkerrors.Wrap(sdkerrors.ErrInvalidRequest, fmt.Sprintf("invalid chain_id: %v", err))
+	if err := ValidateChainID(m.ChainId); err != nil {
+		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, fmt.Sprintf("invalid chain_id: %v", err))
 	}
 
 	// Enhanced TTL validation
-	if err := ValidateTTL(m.TTL); err != nil {
-		return sdkerrors.Wrap(sdkerrors.ErrInvalidRequest, fmt.Sprintf("invalid TTL: %v", err))
+	if err := ValidateTTL(m.Ttl); err != nil {
+		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, fmt.Sprintf("invalid TTL: %v", err))
 	}
 
 	// Enhanced signer validation
 	if err := ValidateSigner(m.Signer); err != nil {
-		return sdkerrors.Wrap(sdkerrors.ErrInvalidAddress, fmt.Sprintf("invalid signer: %v", err))
+		return errorsmod.Wrap(sdkerrors.ErrInvalidAddress, fmt.Sprintf("invalid signer: %v", err))
 	}
 
 	return nil
@@ -223,7 +222,7 @@ func (rm RegisteredMemo) Validate() error {
 	}
 
 	// Validate chain ID
-	if err := ValidateChainID(rm.ChainID); err != nil {
+	if err := ValidateChainID(rm.ChainId); err != nil {
 		return fmt.Errorf("invalid chain_id: %w", err)
 	}
 
@@ -290,8 +289,8 @@ func ValidateMemoRegistrationRequest(memo string, chainID string, ttl int64, sig
 	// Create a temp message for validation
 	msg := &MsgRegisterMemo{
 		Memo:    memo,
-		ChainID: chainID,
-		TTL:     ttl,
+		ChainId: chainID,
+		Ttl:     ttl,
 		Signer:  signer,
 	}
 
