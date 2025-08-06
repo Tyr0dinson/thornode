@@ -26,9 +26,9 @@ func (m *MemolessUtils) ExtractReferenceFromAmount(amount cosmos.Uint) (string, 
 
 	amountStr := amount.String()
 	
-	// Need at least 5 digits for a reference
-	if len(amountStr) < 5 {
-		return "", fmt.Errorf("amount too small for memoless reference: %s", amountStr)
+	// Need at least 6 digits for base amount + 5-digit reference
+	if len(amountStr) < 6 {
+		return "", fmt.Errorf("amount too small for memoless reference: %s (need at least 6 digits)", amountStr)
 	}
 
 	// Extract last 5 digits
@@ -124,6 +124,12 @@ func (m *MemolessUtils) EncodeAmountWithReference(baseAmount cosmos.Uint, refere
 	if len(baseStr) >= 5 {
 		// Remove last 5 digits and append new reference
 		baseWithoutRef := baseStr[:len(baseStr)-5]
+		
+		// If baseWithoutRef is empty, use "1" as minimum base
+		if baseWithoutRef == "" {
+			baseWithoutRef = "1"
+		}
+		
 		encodedStr := baseWithoutRef + reference
 		encodedAmount := cosmos.NewUintFromString(encodedStr)
 		return encodedAmount, nil
