@@ -1,20 +1,15 @@
 package types
 
 import (
-	"errors"
 	"fmt"
 
-	"github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
-	"github.com/cosmos/cosmos-sdk/x/auth/signing"
-	"github.com/cosmos/cosmos-sdk/x/auth/legacy/legacytx"
 )
 
 var (
 	_ sdk.Msg              = &MsgRegisterMemo{}
 	_ sdk.HasValidateBasic = &MsgRegisterMemo{}
-	_ legacytx.LegacyMsg    = &MsgRegisterMemo{}
 )
 
 // NewMsgRegisterMemo creates a new MsgRegisterMemo instance
@@ -37,8 +32,9 @@ func (m *MsgRegisterMemo) Type() string {
 	return "register_memo"
 }
 
-// ValidateBasic performs basic validation
+// ValidateBasic performs basic validation (required by sdk.Msg interface)
 func (m *MsgRegisterMemo) ValidateBasic() error {
+	// Basic non-empty checks
 	if len(m.Memo) == 0 {
 		return sdkerrors.Wrap(sdkerrors.ErrInvalidRequest, "memo cannot be empty")
 	}
