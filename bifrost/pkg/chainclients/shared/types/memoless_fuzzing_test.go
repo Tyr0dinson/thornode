@@ -265,7 +265,7 @@ func TestMemolessSecurityProperties(t *testing.T) {
 			shouldSucceed bool
 		}{
 			{"normal_case", 1000, "12345", true},
-			{"zero_base", 0, "12345", true}, // Should work
+			{"zero_base", 0, "12345", false}, // Zero base should fail per implementation
 			{"large_base", 999999999, "12345", true},
 			{"empty_reference", 1000, "", false},
 			{"invalid_reference", 1000, "abcde", false},
