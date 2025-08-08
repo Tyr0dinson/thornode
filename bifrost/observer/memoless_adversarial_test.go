@@ -15,7 +15,7 @@ import (
 	
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
-	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
+	stypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 	btypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	shareTypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
 )
@@ -285,7 +285,7 @@ func (suite *MemolessAdversarialTestSuite) executeReplayAttack(ctx context.Conte
 	suite.T().Logf("🔥 Executing replay attack")
 	
 	// Create legitimate transaction first
-	originalTx := &types.ObservedTx{
+	originalTx := &btypes.TxInItem{
 		Tx: common.Tx{
 			ID:    common.TxID("original-tx-replay-test"),
 			Coins: common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(100012345))},
@@ -304,17 +304,17 @@ func (suite *MemolessAdversarialTestSuite) executeReplayAttack(ctx context.Conte
 	// Attempt replay attacks with variations
 	replayVariations := []struct {
 		name string
-		modifier func(*types.ObservedTx) *types.ObservedTx
+		modifier func(*btypes.TxInItem) *btypes.TxInItem
 	}{
 		{
 			name: "exact_replay",
-			modifier: func(tx *types.ObservedTx) *types.ObservedTx {
+			modifier: func(tx *btypes.TxInItem) *btypes.TxInItem {
 				return tx // Exact same transaction
 			},
 		},
 		{
 			name: "height_modified_replay",
-			modifier: func(tx *types.ObservedTx) *types.ObservedTx {
+			modifier: func(tx *btypes.TxInItem) *btypes.TxInItem {
 				newTx := *tx
 				newTx.BlockHeight = tx.BlockHeight + 1
 				return &newTx
@@ -322,7 +322,7 @@ func (suite *MemolessAdversarialTestSuite) executeReplayAttack(ctx context.Conte
 		},
 		{
 			name: "id_modified_replay", 
-			modifier: func(tx *types.ObservedTx) *types.ObservedTx {
+			modifier: func(tx *btypes.TxInItem) *btypes.TxInItem {
 				newTx := *tx
 				newTx.Tx.ID = common.TxID("replayed-" + string(tx.Tx.ID))
 				return &newTx
@@ -356,9 +356,9 @@ func (suite *MemolessAdversarialTestSuite) executeTimingAttack(ctx context.Conte
 	timingMeasurements := make(map[string][]time.Duration)
 	
 	// Test different scenarios that might have timing differences
-	scenarios := map[string]func() (*types.ObservedTx, bool){
-		"valid_memoless": func() (*types.ObservedTx, bool) {
-			return &types.ObservedTx{
+	scenarios := map[string]func() (*btypes.TxInItem, bool){
+		"valid_memoless": func() (*btypes.TxInItem, bool) {
+			return &btypes.TxInItem{
 				Tx: common.Tx{
 					ID:    common.TxID(fmt.Sprintf("timing-valid-%d", rand.Intn(100000))),
 					Coins: common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(100012345))},
@@ -367,8 +367,8 @@ func (suite *MemolessAdversarialTestSuite) executeTimingAttack(ctx context.Conte
 				BlockHeight: 144000,
 			}, true
 		},
-		"invalid_memoless": func() (*types.ObservedTx, bool) {
-			return &types.ObservedTx{
+		"invalid_memoless": func() (*btypes.TxInItem, bool) {
+			return &btypes.TxInItem{
 				Tx: common.Tx{
 					ID:    common.TxID(fmt.Sprintf("timing-invalid-%d", rand.Intn(100000))),
 					Coins: common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(50000))},
@@ -377,8 +377,8 @@ func (suite *MemolessAdversarialTestSuite) executeTimingAttack(ctx context.Conte
 				BlockHeight: 144000,
 			}, false
 		},
-		"nonexistent_reference": func() (*types.ObservedTx, bool) {
-			return &types.ObservedTx{
+		"nonexistent_reference": func() (*btypes.TxInItem, bool) {
+			return &btypes.TxInItem{
 				Tx: common.Tx{
 					ID:    common.TxID(fmt.Sprintf("timing-nonexistent-%d", rand.Intn(100000))),
 					Coins: common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(100099999))},
@@ -536,7 +536,7 @@ func (suite *MemolessAdversarialTestSuite) attemptMemoInjection(reference, paylo
 	baseAmount := uint64(1000)
 	memolessAmount := baseAmount*100000 + parseReference(reference)
 	
-	tx := &types.ObservedTx{
+	tx := &btypes.TxInItem{
 		Tx: common.Tx{
 			ID:    common.TxID(fmt.Sprintf("injection-test-%s", reference)),
 			Coins: common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(memolessAmount))},
@@ -555,7 +555,7 @@ func (suite *MemolessAdversarialTestSuite) attemptMemoInjection(reference, paylo
 	return processedTx != nil && processedTx.Tx.Memo == payload
 }
 
-func (suite *MemolessAdversarialTestSuite) attemptReplayAttack(attackName string, replayTx *types.ObservedTx) bool {
+func (suite *MemolessAdversarialTestSuite) attemptReplayAttack(attackName string, replayTx *btypes.TxInItem) bool {
 	// Process the replayed transaction
 	processedTx, err := suite.memoHandler.ProcessMemolessTransaction(replayTx)
 	
@@ -645,7 +645,7 @@ func (suite *MemolessAdversarialTestSuite) runResourceExhaustionWorker(ctx conte
 			baseAmount := uint64(rand.Intn(1000000) + 1000)
 			memolessAmount := baseAmount*100000 + parseReference(reference)
 			
-			tx := &types.ObservedTx{
+			tx := &btypes.TxInItem{
 				Tx: common.Tx{
 					ID:    common.TxID(fmt.Sprintf("exhaust-%d-%d", workerID, i)),
 					Coins: common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(memolessAmount))},
@@ -677,7 +677,7 @@ func (suite *MemolessAdversarialTestSuite) monitorResourceUsage(ctx context.Cont
 
 func (suite *MemolessAdversarialTestSuite) validateSystemFunctionality() {
 	// Test that system is still functional after resource exhaustion attack
-	normalTx := &types.ObservedTx{
+	normalTx := &btypes.TxInItem{
 		Tx: common.Tx{
 			ID:    common.TxID("functionality-test-post-attack"),
 			Coins: common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(100054321))},
@@ -693,7 +693,7 @@ func (suite *MemolessAdversarialTestSuite) validateSystemFunctionality() {
 
 func (suite *MemolessAdversarialTestSuite) testOracleManipulation(manipulation OracleManipulation) bool {
 	// Create test transaction
-	tx := &types.ObservedTx{
+	tx := &btypes.TxInItem{
 		Tx: common.Tx{
 			ID:    common.TxID(fmt.Sprintf("oracle-test-%s", manipulation.name)),
 			Coins: common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(100012345))},
@@ -843,7 +843,12 @@ func NewAdversarialThorClient(engine *AdversarialEngine) *AdversarialThorClient 
 	}
 }
 
-func (atc *AdversarialThorClient) GetRegisteredMemo(reference string) (*types.RegisteredMemo, error) {
+func (atc *AdversarialThorClient) Broadcast(msgs ...cosmos.Msg) (common.TxID, error) {
+	// Mock implementation for testing
+	return common.TxID("test-broadcast-tx"), nil
+}
+
+func (atc *AdversarialThorClient) GetRegisteredMemo(reference string) (*stypes.RegisteredMemo, error) {
 	atc.attackEngine.mu.RLock()
 	
 	// Check for malicious memo injection

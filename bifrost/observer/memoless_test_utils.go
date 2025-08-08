@@ -148,9 +148,15 @@ type TimingStats struct {
 	avg     time.Duration
 }
 
-type OracleManipulationStruct struct {
+type OracleManipulation struct {
 	name     string
 	strategy OracleStrategy
 	payload  string
 	delay    time.Duration
 }
+
+type DelayedResponse OracleStrategy
+
+const (
+	DelayedResponse OracleStrategy = iota + 4  // Continue from existing values
+)
