@@ -184,6 +184,33 @@ func (k KVStore) ValidateMemoRegistration(ctx cosmos.Context, msg thorchaintypes
 		return fmt.Errorf("memo length %d exceeds maximum %d", len(msg.Memo), maxLength)
 	}
 
+	// Validate chain support and amount requirements
+	if err := k.ValidateChainForMemoless(ctx, msg.ChainId); err != nil {
+		return fmt.Errorf("chain validation failed: %w", err)
+	}
+
+	// Get chain configuration for amount validation
+	chainConfig, err := k.GetChainConfig(ctx, msg.ChainId)
+	if err != nil {
+		return fmt.Errorf("failed to get chain config for %s: %w", msg.ChainId, err)
+	}
+
+	// Parse and validate amount
+	amount := cosmos.NewUintFromString(msg.Amount)
+	if amount.IsZero() && msg.Amount != "0" {
+		return fmt.Errorf("invalid amount format: %s", msg.Amount)
+	}
+
+	// Check minimum amount requirement
+	if amount.LT(chainConfig.MinAmount) {
+		return fmt.Errorf("amount %s below minimum %s for chain %s", msg.Amount, chainConfig.MinAmount.String(), msg.ChainId)
+	}
+
+	// Check maximum amount requirement  
+	if amount.GT(chainConfig.MaxAmount) {
+		return fmt.Errorf("amount %s exceeds maximum %s for chain %s", msg.Amount, chainConfig.MaxAmount.String(), msg.ChainId)
+	}
+
 	// Basic validation is handled by the message ValidateBasic method
 	return nil
 }

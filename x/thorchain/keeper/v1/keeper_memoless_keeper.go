@@ -2,8 +2,10 @@ package keeperv1
 
 import (
 	"crypto/sha256"
+	"encoding/binary"
 	"fmt"
 
+	"github.com/cosmos/cosmos-sdk/runtime"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	thorchaintypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
@@ -17,6 +19,15 @@ type MemoRegistrationResult struct {
 	RegisteredAt int64  `json:"registered_at"`
 	ExpiresAt    int64  `json:"expires_at"`
 	Status       string `json:"status"`
+}
+
+// MemolessStats tracks memoless protocol statistics
+type MemolessStats struct {
+	TotalRegistrations  int64 `json:"total_registrations"`
+	ActiveRegistrations int64 `json:"active_registrations"`
+	TotalCollisions     int64 `json:"total_collisions"`
+	LastCleanupHeight   int64 `json:"last_cleanup_height"`
+	LastExpiredCount    int64 `json:"last_expired_count"`
 }
 
 // ProcessMemoRegistration processes a memo registration request with optimized validation flow
@@ -326,5 +337,65 @@ func (k KVStore) generateReference(memo string, height int64, attempt int64) str
 	// Create hash input with memo, height, and attempt for uniqueness
 	input := fmt.Sprintf("%s:%d:%d", memo, height, attempt)
 	return k.generateReferenceOptimized(input, 0)
+}
+
+// Handler integration methods - these are thin wrappers for the existing methods
+
+// GetMemolessStats retrieves memoless protocol statistics
+func (k KVStore) GetMemolessStats(ctx cosmos.Context) MemolessStats {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	
+	// Read individual stats using binary encoding (following existing pattern)
+	stats := MemolessStats{}
+	
+	// Get total registrations
+	if bz := store.Get(k.GetKey(prefixMemoStats, "registrations")); bz != nil {
+		stats.TotalRegistrations = int64(binary.BigEndian.Uint64(bz))
+	}
+	
+	// Get total collisions
+	if bz := store.Get(k.GetKey(prefixMemoStats, "collisions")); bz != nil {
+		stats.TotalCollisions = int64(binary.BigEndian.Uint64(bz))
+	}
+	
+	// Get last cleanup height
+	if bz := store.Get(k.GetKey(prefixMemoStats, "last_cleanup_height")); bz != nil {
+		stats.LastCleanupHeight = int64(binary.BigEndian.Uint64(bz))
+	}
+	
+	// Get last expired count
+	if bz := store.Get(k.GetKey(prefixMemoStats, "last_expired_count")); bz != nil {
+		stats.LastExpiredCount = int64(binary.BigEndian.Uint64(bz))
+	}
+	
+	// Calculate active registrations (this is a derived value, not stored separately)
+	// For now, just return total - we can improve this later with actual counting
+	stats.ActiveRegistrations = stats.TotalRegistrations
+	
+	return stats
+}
+
+// SetMemolessStats stores memoless protocol statistics
+func (k KVStore) SetMemolessStats(ctx cosmos.Context, stats MemolessStats) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	
+	// Store individual stats using binary encoding (following existing pattern)
+	buf := make([]byte, 8)
+	
+	// Store total registrations
+	binary.BigEndian.PutUint64(buf, uint64(stats.TotalRegistrations))
+	store.Set(k.GetKey(prefixMemoStats, "registrations"), buf)
+	
+	// Store total collisions
+	binary.BigEndian.PutUint64(buf, uint64(stats.TotalCollisions))
+	store.Set(k.GetKey(prefixMemoStats, "collisions"), buf)
+	
+	// Store last cleanup height
+	binary.BigEndian.PutUint64(buf, uint64(stats.LastCleanupHeight))
+	store.Set(k.GetKey(prefixMemoStats, "last_cleanup_height"), buf)
+	
+	// Store last expired count
+	binary.BigEndian.PutUint64(buf, uint64(stats.LastExpiredCount))
+	store.Set(k.GetKey(prefixMemoStats, "last_expired_count"), buf)
 }
 

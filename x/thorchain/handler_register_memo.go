@@ -63,8 +63,12 @@ func (h RegisterMemoHandler) validateV3_0_0(ctx cosmos.Context, msg types.MsgReg
 		return err
 	}
 
-	// Check if memoless protocol is enabled
-	enabled := h.mgr.GetConstants().GetInt64Value(constants.MemolessEnabled)
+	// Check if memoless protocol is enabled (check both Mimir and Constants)
+	enabled, err := h.mgr.Keeper().GetMimir(ctx, constants.MemolessEnabled.String())
+	if err != nil || enabled == -1 {
+		// If not set in Mimir or error, check constants as fallback
+		enabled = h.mgr.GetConstants().GetInt64Value(constants.MemolessEnabled)
+	}
 	if enabled == 0 {
 		return fmt.Errorf("memoless protocol is disabled")
 	}
@@ -95,10 +99,8 @@ func (h RegisterMemoHandler) handle(ctx cosmos.Context, msg types.MsgRegisterMem
 		"chain_id", msg.ChainId,
 	)
 
-	// Validate memo format using existing memo parser
-	if err := h.validateMemo(ctx, msg.Memo); err != nil {
-		return nil, fmt.Errorf("invalid memo format: %w", err)
-	}
+	// Skip memo validation - memoless protocol accepts arbitrary memo content
+	// The memo will be validated when it's actually used later
 
 	// Generate reference with collision handling
 	reference, err := h.generateReference(ctx, msg.Memo, msg.ChainId)
