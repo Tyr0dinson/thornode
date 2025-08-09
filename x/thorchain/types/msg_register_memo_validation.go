@@ -19,9 +19,13 @@ const (
 	MaxTTL            = 864000 // 10 days in seconds
 	MinChainIDLength  = 1
 	MaxChainIDLength  = 50
-	ReferenceLength   = 5
-	MinReferenceValue = 10000
-	MaxReferenceValue = 99999
+	
+	// Reference constants for 5-digit user-friendly codes
+	ReferenceLength   = 5     // All references must be exactly 5 digits
+	MinReferenceValue = 10000 // Smallest 5-digit number (ensures exactly 5 digits)
+	MaxReferenceValue = 99999 // Largest 5-digit number (prevents 6+ digit codes)
+	// This gives us 90,000 possible references (10000-99999) for collision resistance
+	// while maintaining simple user experience with consistent 5-digit codes
 )
 
 // Regular expressions for validation
@@ -51,6 +55,16 @@ func (m *MsgRegisterMemo) ValidateBasicEnhanced() error {
 	// Enhanced chain ID validation
 	if err := ValidateChainID(m.ChainId); err != nil {
 		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, fmt.Sprintf("invalid chain_id: %v", err))
+	}
+
+	// ENHANCED: Chain precision support validation (Task 4)
+	if err := ValidateChainPrecisionSupport(m.ChainId); err != nil {
+		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, fmt.Sprintf("chain precision validation failed: %v", err))
+	}
+
+	// ENHANCED: Memo size validation for chain-specific limits (Task 4)
+	if err := ValidateMemoSizeForChain(m.Memo, m.ChainId); err != nil {
+		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, fmt.Sprintf("memo size validation failed: %v", err))
 	}
 
 	// Enhanced TTL validation
@@ -295,6 +309,83 @@ func ValidateMemoRegistrationRequest(memo string, chainID string, ttl int64, sig
 	}
 
 	return msg.ValidateBasicEnhanced()
+}
+
+// ENHANCED VALIDATION FUNCTIONS (Task 4)
+
+// ValidateMemoRegistrationWithAmount validates registration with amount-based reference encoding
+func ValidateMemoRegistrationWithAmount(memo string, chainID string, amount string, reference string, ttl int64, signer sdk.AccAddress) error {
+	// First validate basic registration parameters
+	if err := ValidateMemoRegistrationRequest(memo, chainID, ttl, signer); err != nil {
+		return err
+	}
+
+	// ENHANCED: Validate amount can safely encode reference without precision loss
+	if err := ValidateAmountForReference(amount, reference, chainID); err != nil {
+		return fmt.Errorf("amount-reference validation failed: %w", err)
+	}
+
+	// ENHANCED: Check integer overflow protection
+	if err := CheckIntegerOverflowProtection(amount, chainID); err != nil {
+		return fmt.Errorf("overflow protection failed: %w", err)
+	}
+
+	// ENHANCED: Validate dust threshold
+	if err := ValidateDustThreshold(amount, chainID); err != nil {
+		return fmt.Errorf("dust threshold validation failed: %w", err)
+	}
+
+	return nil
+}
+
+// ValidateMemoRegistrationWithAsset validates registration with asset-specific precision requirements
+func ValidateMemoRegistrationWithAsset(memo string, chainID string, amount string, asset string, reference string, ttl int64, signer sdk.AccAddress) error {
+	// First validate with amount
+	if err := ValidateMemoRegistrationWithAmount(memo, chainID, amount, reference, ttl, signer); err != nil {
+		return err
+	}
+
+	// ENHANCED: Validate asset-specific precision
+	if err := ValidateAssetPrecision(amount, asset, chainID); err != nil {
+		return fmt.Errorf("asset precision validation failed: %w", err)
+	}
+
+	return nil
+}
+
+// ValidateMemoRegistrationBatch validates multiple registrations for dust attack prevention
+func ValidateMemoRegistrationBatch(registrations []MemoRegistrationRequest, timeWindow int64) error {
+	if len(registrations) == 0 {
+		return nil
+	}
+
+	// Group by chain for chain-specific validation
+	chainAmounts := make(map[string][]string)
+	for _, reg := range registrations {
+		if reg.Amount != "" {
+			chainAmounts[reg.ChainID] = append(chainAmounts[reg.ChainID], reg.Amount)
+		}
+	}
+
+	// Check each chain for dust attack patterns
+	for chainID, amounts := range chainAmounts {
+		if err := PreventDustAttack(amounts, chainID, timeWindow); err != nil {
+			return fmt.Errorf("dust attack prevention for chain %s: %w", chainID, err)
+		}
+	}
+
+	return nil
+}
+
+// MemoRegistrationRequest represents a registration request for batch validation
+type MemoRegistrationRequest struct {
+	Memo      string
+	ChainID   string
+	Amount    string
+	Asset     string
+	Reference string
+	TTL       int64
+	Signer    sdk.AccAddress
 }
 
 // ValidateMemoLookupRequest validates parameters for memo lookup
