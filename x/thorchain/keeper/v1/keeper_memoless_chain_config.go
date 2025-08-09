@@ -1,6 +1,7 @@
 package keeperv1
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/cosmos/cosmos-sdk/runtime"
@@ -98,9 +99,9 @@ func (k KVStore) SetChainConfig(ctx cosmos.Context, config ChainConfig) error {
 	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 	key := k.GetKey(prefixMemolessChainConfig, config.ChainID)
 
-	buf := k.cdc.MustMarshal(&config)
-	if buf == nil {
-		return dbError(ctx, "SetChainConfig", fmt.Errorf("could not marshal chain config"))
+	buf, err := json.Marshal(config)
+	if err != nil {
+		return dbError(ctx, "SetChainConfig", fmt.Errorf("could not marshal chain config: %w", err))
 	}
 	store.Set(key, buf)
 
@@ -133,7 +134,7 @@ func (k KVStore) getChainConfig(ctx cosmos.Context, key []byte, config *ChainCon
 		return false, nil
 	}
 	bz := store.Get(key)
-	if err := k.cdc.Unmarshal(bz, config); err != nil {
+	if err := json.Unmarshal(bz, config); err != nil {
 		return false, dbError(ctx, "getChainConfig", err)
 	}
 	return true, nil
@@ -270,7 +271,7 @@ func (k KVStore) GetSupportedChains(ctx cosmos.Context) ([]string, error) {
 
 	for ; iterator.Valid(); iterator.Next() {
 		var config ChainConfig
-		if err := k.cdc.Unmarshal(iterator.Value(), &config); err != nil {
+		if err := json.Unmarshal(iterator.Value(), &config); err != nil {
 			continue // Skip invalid entries
 		}
 
@@ -308,7 +309,7 @@ func (k KVStore) EstimateGasCost(ctx cosmos.Context, chainID string, baseGasCost
 	}
 
 	// Apply chain-specific gas multiplier
-	gasCostDec := cosmos.NewDecFromInt(baseGasCost.BigInt())
+	gasCostDec := cosmos.NewDecFromBigInt(baseGasCost.BigInt())
 	adjustedGasCost := gasCostDec.Mul(config.GasMultiplier)
 	
 	return cosmos.NewUintFromBigInt(adjustedGasCost.TruncateInt().BigInt()), nil
@@ -322,7 +323,7 @@ func GetChainAsset(chainID string) (common.Asset, error) {
 	case "ETH":
 		return common.ETHAsset, nil
 	case "BNB":
-		return common.BNBAsset, nil
+		return common.BNBBEP20Asset, nil
 	case "BCH":
 		return common.BCHAsset, nil
 	case "LTC":

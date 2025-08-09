@@ -160,10 +160,15 @@ const (
 	OracleUpdateInterval
 
 	// Memoless Protocol Constants
-	MemolessTTL
 	MemolessEnabled
+	MemolessTTL
 	MemolessMaxMemoLength
 	MemolessCollisionLimit
+	MemolessSlashAmount
+	MemolessMinAmount
+	MemolessMaxTTL
+	MemolessGracePeriod
+	MemolessMaxActiveRefs
 	MemolessCleanupInterval
 
 	// These are the implicitly-0 Constants undisplayed in the API endpoint (no explicit value set).
@@ -178,17 +183,6 @@ const (
 	SignerConcurrency
 	StrictBondLiquidityRatio
 	SwapOutDexAggregationDisabled
-
-	// Memoless Protocol Constants
-	MemolessEnabled
-	MemolessTTL
-	MemolessMaxMemoLength
-	MemolessCollisionLimit
-	MemolessSlashAmount
-	MemolessMinAmount
-	MemolessMaxTTL
-	MemolessGracePeriod
-	MemolessMaxActiveRefs
 )
 
 // ConstantValues define methods used to get constant values

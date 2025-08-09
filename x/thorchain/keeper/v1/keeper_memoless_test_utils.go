@@ -8,7 +8,6 @@ import (
 
 	. "gopkg.in/check.v1"
 
-	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
@@ -112,16 +111,18 @@ func (suite *MemolessTestSuite) CreateTestMsgRegisterMemo(memo, chainID string, 
 }
 
 // CreateExtendedTestMsgRegisterMemo creates a test message with additional validation fields
+// Note: Extended fields will be available after protobuf regeneration
 func (suite *MemolessTestSuite) CreateExtendedTestMsgRegisterMemo(memo, chainID, amount, destination string, ttl int64, signer cosmos.AccAddress, forceCollision bool, tags []string) types.MsgRegisterMemo {
 	msg := types.MsgRegisterMemo{
-		Memo:           memo,
-		Ttl:            ttl,
-		ChainId:        chainID,
-		Signer:         signer,
-		Amount:         amount,
-		Destination:    destination,
-		ForceCollision: forceCollision,
-		Tags:           tags,
+		Memo:    memo,
+		Ttl:     ttl,
+		ChainId: chainID,
+		Signer:  signer,
+		// TODO: Add extended fields after protobuf regeneration:
+		// Amount:         amount,
+		// Destination:    destination,
+		// ForceCollision: forceCollision,
+		// Tags:           tags,
 	}
 	return msg
 }
@@ -199,7 +200,7 @@ func (suite *MemolessTestSuite) ValidateCollisionRate(c *C, totalRegistrations i
 	observedRate := float64(observedCollisions) / float64(totalRegistrations)
 	tolerance := 0.005 // 0.5% tolerance
 	
-	c.Assert(observedRate, LessEqual, expectedRate+tolerance, 
+	c.Assert(observedRate <= expectedRate+tolerance, Equals, true, 
 		Commentf("Collision rate %.4f exceeds expected rate %.4f", observedRate, expectedRate))
 	
 	c.Logf("Collision validation: %d collisions out of %d registrations (%.4f%% rate)", 
@@ -349,7 +350,7 @@ func (suite *MemolessTestSuite) ValidateTestResults(c *C, testName string, resul
 	switch testName {
 	case "CollisionTest":
 		if rate, ok := results["collision_rate"].(float64); ok {
-			c.Assert(rate, LessEqual, 0.0001, Commentf("Collision rate %.6f exceeds 0.01%% threshold", rate*100))
+			c.Assert(rate <= 0.0001, Equals, true, Commentf("Collision rate %.6f exceeds 0.01%% threshold", rate*100))
 		}
 	case "PrecisionTest":
 		if lossCount, ok := results["precision_loss_count"].(int); ok {
@@ -357,7 +358,7 @@ func (suite *MemolessTestSuite) ValidateTestResults(c *C, testName string, resul
 		}
 	case "PerformanceTest":
 		if avgLatency, ok := results["avg_latency_ms"].(float64); ok {
-			c.Assert(avgLatency, LessEqual, 1.0, Commentf("Average latency %.2fms exceeds 1ms threshold", avgLatency))
+			c.Assert(avgLatency <= 1.0, Equals, true, Commentf("Average latency %.2fms exceeds 1ms threshold", avgLatency))
 		}
 	}
 }

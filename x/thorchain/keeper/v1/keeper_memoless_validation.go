@@ -8,7 +8,6 @@ import (
 
 	"github.com/blang/semver"
 
-	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
@@ -108,24 +107,25 @@ func (k KVStore) validateBasicMessage(msg types.MsgRegisterMemo, validationCtx E
 
 // validateEnhancedMessage performs enhanced validation with additional fields
 func (k KVStore) validateEnhancedMessage(ctx cosmos.Context, msg types.MsgRegisterMemo, validationCtx EnhancedValidationContext) error {
+	// TODO: Enable after protobuf regeneration adds extended fields
 	// Amount validation (if provided)
-	if msg.Amount != "" {
-		if err := k.validateAmountField(msg.Amount, msg.ChainId, validationCtx); err != nil {
-			return fmt.Errorf("amount validation failed: %w", err)
-		}
-	}
+	// if msg.Amount != "" {
+	// 	if err := k.validateAmountField(msg.Amount, msg.ChainId, validationCtx); err != nil {
+	// 		return fmt.Errorf("amount validation failed: %w", err)
+	// 	}
+	// }
 	
 	// Destination validation (if provided)
-	if msg.Destination != "" {
-		if err := k.validateDestinationField(msg.Destination, msg.ChainId); err != nil {
-			return fmt.Errorf("destination validation failed: %w", err)
-		}
-	}
+	// if msg.Destination != "" {
+	// 	if err := k.validateDestinationField(msg.Destination, msg.ChainId); err != nil {
+	// 		return fmt.Errorf("destination validation failed: %w", err)
+	// 	}
+	// }
 	
 	// Tags validation (if provided)
-	if err := k.validateTagsField(msg.Tags); err != nil {
-		return fmt.Errorf("tags validation failed: %w", err)
-	}
+	// if err := k.validateTagsField(msg.Tags); err != nil {
+	// 	return fmt.Errorf("tags validation failed: %w", err)
+	// }
 	
 	return nil
 }
@@ -158,22 +158,23 @@ func (k KVStore) validateChainSpecificMessage(ctx cosmos.Context, msg types.MsgR
 		return fmt.Errorf("chain not supported: %w", err)
 	}
 	
+	// TODO: Enable after protobuf regeneration adds Amount field
 	// Amount validation for chain precision
-	if msg.Amount != "" {
-		amount, err := cosmos.ParseUint(msg.Amount)
-		if err != nil {
-			return fmt.Errorf("invalid amount format: %w", err)
-		}
-		
-		if err := k.ValidateAmountForChain(ctx, msg.ChainId, amount); err != nil {
-			return fmt.Errorf("amount invalid for chain: %w", err)
-		}
-		
-		// Test reference encoding to ensure no precision loss
-		if err := k.ValidateAmountForReference(ctx, msg.ChainId, amount); err != nil {
-			return fmt.Errorf("amount incompatible with reference encoding: %w", err)
-		}
-	}
+	// if msg.Amount != "" {
+	// 	amount, err := cosmos.ParseUint(msg.Amount)
+	// 	if err != nil {
+	// 		return fmt.Errorf("invalid amount format: %w", err)
+	// 	}
+	// 	
+	// 	if err := k.ValidateAmountForChain(ctx, msg.ChainId, amount); err != nil {
+	// 		return fmt.Errorf("amount invalid for chain: %w", err)
+	// 	}
+	// 	
+	// 	// Test reference encoding to ensure no precision loss
+	// 	if err := k.ValidateAmountForReference(ctx, msg.ChainId, amount); err != nil {
+	// 		return fmt.Errorf("amount incompatible with reference encoding: %w", err)
+	// 	}
+	// }
 	
 	return nil
 }

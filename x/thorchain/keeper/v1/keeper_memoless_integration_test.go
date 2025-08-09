@@ -2,25 +2,20 @@ package keeperv1
 
 import (
 	"fmt"
-	"math/big"
-	"math/rand"
 	"sync"
 	"time"
 
 	. "gopkg.in/check.v1"
 
-	"github.com/blang/semver"
-
-	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
-	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 // MemolessIntegrationTestSuite provides comprehensive integration testing for memoless protocol
 type MemolessIntegrationTestSuite struct {
 	*MemolessTestSuite
-	benchmarker *PerformanceBenchmark
+	benchmarker      *PerformanceBenchmark
+	constantProvider constants.ConstantValues
 }
 
 // NewMemolessIntegrationTestSuite creates a new integration test suite
@@ -32,6 +27,7 @@ func NewMemolessIntegrationTestSuite(c *C) *MemolessIntegrationTestSuite {
 	return &MemolessIntegrationTestSuite{
 		MemolessTestSuite: baseTestSuite,
 		benchmarker:       benchmarker,
+		constantProvider:  constantProvider,
 	}
 }
 
@@ -285,9 +281,12 @@ func (its *MemolessIntegrationTestSuite) TestPillar2PrecisionPreservation(c *C, 
 			testsPassed++
 		}
 		
-		// Test precision preservation
-		reconstructedAmount := amountWithRef.SubUint64(cosmos.ParseUint(reference).Uint64()).AddUint64(0)
-		baseAmountRecovered := reconstructedAmount.Quo(cosmos.NewUint(100000)).Mul(cosmos.NewUint(100000))
+		// Test precision preservation  
+		refUint, _ := cosmos.ParseUint(reference)
+		reconstructedAmount := amountWithRef.SubUint64(refUint.Uint64()).AddUint64(0)
+		// Extract last 5 digits and restore original amount  
+		divisor := cosmos.NewUint(100000)
+		baseAmountRecovered := reconstructedAmount.Quo(divisor).Mul(divisor)
 		
 		its.ValidateMemoPrecision(c, testCase.chainID, testCase.baseAmount, baseAmountRecovered)
 	}
@@ -740,7 +739,7 @@ func (its *MemolessIntegrationTestSuite) ValidateInfrastructurePrerequisites(c *
 	c.Assert(enabled, Equals, int64(1), Commentf("Memoless protocol should be enabled"))
 	
 	// Test 2: Error codes are registered
-	_, err := its.keeper.ValidateChainForMemoless(its.ctx, "INVALID")
+	err := its.keeper.ValidateChainForMemoless(its.ctx, "INVALID")
 	c.Assert(err, NotNil, Commentf("Should return error for invalid chain"))
 	
 	// Test 3: Chain configuration is accessible  
