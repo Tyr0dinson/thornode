@@ -42,6 +42,18 @@ const (
 	CodeTCYClaimFailValidation   uint32 = 140
 	CodeTCYStakeFailValidation   uint32 = 141
 	CodeTCYUnstakeFailValidation uint32 = 142
+
+	// Memoless Protocol Error Codes (starting at 1100 to avoid conflicts)
+	CodeMemolessDisabled       uint32 = 1100
+	CodeMemolessCollisionLimit uint32 = 1101
+	CodeMemolessPrecisionLoss  uint32 = 1102
+	CodeMemolessExpired        uint32 = 1103
+	CodeMemolessInvalidChain   uint32 = 1104
+	CodeMemolessRefNotFound    uint32 = 1105
+	CodeMemolessDustAmount     uint32 = 1106
+	CodeMemolessOverflow       uint32 = 1107
+	CodeMemolessTTLTooLarge    uint32 = 1108
+	CodeMemolessRateLimited    uint32 = 1109
 )
 
 var (
@@ -69,6 +81,18 @@ var (
 	errTCYClaimFailValidation       = errorsmod.Register(DefaultCodespace, CodeTCYClaimFailValidation, "fail to validate tcy claim")
 	errTCYStakeFailValidation       = errorsmod.Register(DefaultCodespace, CodeTCYStakeFailValidation, "fail to validate tcy stake")
 	errTCYUnstakeFailValidation     = errorsmod.Register(DefaultCodespace, CodeTCYUnstakeFailValidation, "fail to validate tcy unstake")
+
+	// Memoless Protocol Error Variables
+	errMemolessDisabled       = errorsmod.Register(DefaultCodespace, CodeMemolessDisabled, "memoless protocol disabled")
+	errMemolessCollisionLimit = errorsmod.Register(DefaultCodespace, CodeMemolessCollisionLimit, "collision resolution failed")
+	errMemolessPrecisionLoss  = errorsmod.Register(DefaultCodespace, CodeMemolessPrecisionLoss, "amount precision would be lost")
+	errMemolessExpired        = errorsmod.Register(DefaultCodespace, CodeMemolessExpired, "memo registration expired")
+	errMemolessInvalidChain   = errorsmod.Register(DefaultCodespace, CodeMemolessInvalidChain, "chain not supported for memoless")
+	errMemolessRefNotFound    = errorsmod.Register(DefaultCodespace, CodeMemolessRefNotFound, "reference not found")
+	errMemolessDustAmount     = errorsmod.Register(DefaultCodespace, CodeMemolessDustAmount, "amount too small for memoless")
+	errMemolessOverflow       = errorsmod.Register(DefaultCodespace, CodeMemolessOverflow, "amount exceeds maximum safe value")
+	errMemolessTTLTooLarge    = errorsmod.Register(DefaultCodespace, CodeMemolessTTLTooLarge, "ttl exceeds maximum allowed")
+	errMemolessRateLimited    = errorsmod.Register(DefaultCodespace, CodeMemolessRateLimited, "registration rate limit exceeded")
 )
 
 // ErrInternal return an error  of errInternal with additional message

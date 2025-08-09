@@ -13,6 +13,12 @@ message MsgRegisterMemo {
   int64 ttl = 2;
   string chain_id = 3;
   bytes signer = 4 [(gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress", (amino.encoding) = "bech32"];
+  
+  // ADD these fields for Tasks 1-3 validation:
+  string amount = 5;           // For precision validation
+  string destination = 6;      // For refund validation
+  bool force_collision = 7;    // For collision testing
+  repeated string tags = 8;    // For metadata/debugging
 }
 
 message RegisteredMemo {

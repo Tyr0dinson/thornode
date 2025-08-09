@@ -178,6 +178,17 @@ const (
 	SignerConcurrency
 	StrictBondLiquidityRatio
 	SwapOutDexAggregationDisabled
+
+	// Memoless Protocol Constants
+	MemolessEnabled
+	MemolessTTL
+	MemolessMaxMemoLength
+	MemolessCollisionLimit
+	MemolessSlashAmount
+	MemolessMinAmount
+	MemolessMaxTTL
+	MemolessGracePeriod
+	MemolessMaxActiveRefs
 )
 
 // ConstantValues define methods used to get constant values
