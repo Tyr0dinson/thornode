@@ -37,7 +37,7 @@ func (s *MemolessKeeperImplementationTestSuite) TestMemoRegistrationFlow(c *C) {
 		Amount:         amount,
 		Destination:    "thor1destination",
 		ForceCollision: false,
-		Tags:           []string{"test", "task1"},
+		Tags:           []string{"test", "memoless", "keeper"},
 	}
 
 	// RED: This should fail initially - ProcessMemoRegistration method doesn't exist yet
