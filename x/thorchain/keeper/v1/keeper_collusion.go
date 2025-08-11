@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/cosmos/cosmos-sdk/runtime"
+	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/types"
 )
@@ -166,3 +167,87 @@ func (k KVStore) GetNodeReferenceCount(ctx cosmos.Context, nodeAddr string) int6
 // 2. Minimal data marshaling/unmarshaling  
 // 3. Early return for common cases (no users, single user)
 // 4. Efficient prefix iteration for multi-user scenarios
+
+// =============================================================================
+// TASK 5B: BASIC SLASHING INTEGRATION
+// =============================================================================
+
+// CollusionEvidence represents evidence of node operator misbehavior
+type CollusionEvidence struct {
+	NodeOperator  string `json:"node_operator"`
+	Reference     string `json:"reference"`
+	CollusionType string `json:"collusion_type"`
+	BlockHeight   int64  `json:"block_height"`
+	EvidenceHash  string `json:"evidence_hash"`
+}
+
+// SlashNodeForCollusion executes slashing for detected collusion
+// Integration scope: Uses existing NodeAccount slashing infrastructure
+func (k KVStore) SlashNodeForCollusion(ctx cosmos.Context, nodeAddr cosmos.AccAddress, evidence CollusionEvidence) error {
+	// Get the node account
+	nodeAccount, err := k.GetNodeAccount(ctx, nodeAddr)
+	if err != nil {
+		return fmt.Errorf("failed to get node account %s: %w", nodeAddr, err)
+	}
+	
+	// Calculate penalty based on collusion type
+	penaltyAmount := k.GetBasePenaltyForCollusionType(evidence.CollusionType)
+	
+	// Ensure we don't slash more than available bond
+	if penaltyAmount.GT(nodeAccount.Bond) {
+		penaltyAmount = nodeAccount.Bond
+	}
+	
+	// Reduce bond
+	nodeAccount.Bond = common.SafeSub(nodeAccount.Bond, penaltyAmount)
+	
+	// Calculate slash points to add (using same pattern as existing slashing)
+	slashPoints := k.calculateSlashPointsForCollusion(evidence.CollusionType)
+	
+	// Increment slash points
+	if err := k.IncNodeAccountSlashPoints(ctx, nodeAddr, slashPoints); err != nil {
+		return fmt.Errorf("failed to increment slash points for %s: %w", nodeAddr, err)
+	}
+	
+	// Save updated node account
+	if err := k.SetNodeAccount(ctx, nodeAccount); err != nil {
+		return fmt.Errorf("failed to save node account %s: %w", nodeAddr, err)
+	}
+	
+	ctx.Logger().Info("slashed node for collusion", 
+		"node", nodeAddr.String(),
+		"type", evidence.CollusionType,
+		"penalty", penaltyAmount.String(),
+		"slash_points", slashPoints,
+		"reference", evidence.Reference)
+	
+	return nil
+}
+
+// GetBasePenaltyForCollusionType returns the base penalty amount for different collusion types
+func (k KVStore) GetBasePenaltyForCollusionType(collusionType string) cosmos.Uint {
+	switch collusionType {
+	case "duplicate_reference":
+		return cosmos.NewUint(100000000)    // 1 RUNE (10^8 smallest units)
+	case "reference_hoarding":
+		return cosmos.NewUint(500000000)    // 5 RUNE
+	case "cross_node_collusion":
+		return cosmos.NewUint(2000000000)   // 20 RUNE
+	default:
+		return cosmos.NewUint(100000000)    // Default: 1 RUNE
+	}
+}
+
+// calculateSlashPointsForCollusion returns slash points to add for different collusion types
+func (k KVStore) calculateSlashPointsForCollusion(collusionType string) int64 {
+	switch collusionType {
+	case "duplicate_reference":
+		return 1000  // 10 basis points (0.1%) - moderate offense
+	case "reference_hoarding":
+		return 2000  // 20 basis points (0.2%) - more serious
+	case "cross_node_collusion":
+		return 5000  // 50 basis points (0.5%) - severe offense
+	default:
+		return 1000  // Default slash points
+	}
+}
