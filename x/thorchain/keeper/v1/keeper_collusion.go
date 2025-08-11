@@ -373,3 +373,138 @@ func (k KVStore) getCollusionConsensusRecord(ctx cosmos.Context, key []byte, rec
 	
 	return true, nil
 }
+
+// =============================================================================
+// TASK 5D: PROGRESSIVE PENALTY CALCULATION
+// =============================================================================
+
+// ProgressivePenaltyResult represents escalated penalty based on history
+type ProgressivePenaltyResult struct {
+	BasePenalty      cosmos.Uint `json:"base_penalty"`
+	EscalationFactor float64     `json:"escalation_factor"`
+	FinalPenalty     cosmos.Uint `json:"final_penalty"`
+	SlashPointsUsed  int64       `json:"slash_points_used"`
+}
+
+// CalculateProgressivePenalty calculates escalated penalties based on node's slash point history
+// Integration scope: SlashPoints + Math only
+func (k KVStore) CalculateProgressivePenalty(ctx cosmos.Context, nodeAddr cosmos.AccAddress, collusionType string) (ProgressivePenaltyResult, error) {
+	// Get base penalty for the collusion type
+	basePenalty := k.GetBasePenaltyForCollusionType(collusionType)
+	
+	// Get current slash points history
+	slashPoints, err := k.GetNodeAccountSlashPoints(ctx, nodeAddr)
+	if err != nil {
+		return ProgressivePenaltyResult{}, fmt.Errorf("failed to get slash points for %s: %w", nodeAddr, err)
+	}
+	
+	// Calculate escalation factor based on slash point history
+	escalationFactor := k.GetSlashPointsEscalationFactor(slashPoints)
+	
+	// Calculate final penalty with escalation
+	finalPenalty := k.applyEscalationToPenalty(basePenalty, escalationFactor)
+	
+	result := ProgressivePenaltyResult{
+		BasePenalty:      basePenalty,
+		EscalationFactor: escalationFactor,
+		FinalPenalty:     finalPenalty,
+		SlashPointsUsed:  slashPoints,
+	}
+	
+	ctx.Logger().Info("calculated progressive penalty",
+		"node", nodeAddr.String(),
+		"collusion_type", collusionType,
+		"base_penalty", basePenalty.String(),
+		"slash_points", slashPoints,
+		"escalation_factor", escalationFactor,
+		"final_penalty", finalPenalty.String())
+	
+	return result, nil
+}
+
+// GetSlashPointsEscalationFactor calculates escalation multiplier based on accumulated slash points
+// Formula: 1.0 + (slashPoints / 10000) * 1.0, capped at 5.0x maximum
+func (k KVStore) GetSlashPointsEscalationFactor(slashPoints int64) float64 {
+	// Handle edge cases
+	if slashPoints <= 0 {
+		return 1.0 // No escalation for zero or negative points
+	}
+	
+	// Progressive escalation formula:
+	// - Every 10,000 slash points adds 1.0x multiplier
+	// - 0 points = 1.0x, 5000 points = 1.5x, 10000 points = 2.0x, etc.
+	escalation := 1.0 + (float64(slashPoints) / 10000.0)
+	
+	// Cap at 5.0x maximum escalation to prevent extreme penalties
+	if escalation > 5.0 {
+		escalation = 5.0
+	}
+	
+	return escalation
+}
+
+// applyEscalationToPenalty applies the escalation factor to the base penalty
+func (k KVStore) applyEscalationToPenalty(basePenalty cosmos.Uint, escalationFactor float64) cosmos.Uint {
+	if escalationFactor <= 1.0 {
+		return basePenalty // No escalation
+	}
+	
+	// Convert to float for calculation
+	baseFloat := float64(basePenalty.Uint64())
+	escalatedFloat := baseFloat * escalationFactor
+	
+	// Convert back to cosmos.Uint
+	return cosmos.NewUint(uint64(escalatedFloat))
+}
+
+// SlashNodeForCollusionWithProgression executes slashing with progressive penalty escalation
+// This integrates Task 5B (slashing) with Task 5D (progressive penalties)
+func (k KVStore) SlashNodeForCollusionWithProgression(ctx cosmos.Context, nodeAddr cosmos.AccAddress, evidence CollusionEvidence) error {
+	// Get the node account
+	nodeAccount, err := k.GetNodeAccount(ctx, nodeAddr)
+	if err != nil {
+		return fmt.Errorf("failed to get node account %s: %w", nodeAddr, err)
+	}
+	
+	// Calculate progressive penalty based on history
+	penaltyResult, err := k.CalculateProgressivePenalty(ctx, nodeAddr, evidence.CollusionType)
+	if err != nil {
+		return fmt.Errorf("failed to calculate progressive penalty: %w", err)
+	}
+	
+	// Use the escalated penalty amount
+	penaltyAmount := penaltyResult.FinalPenalty
+	
+	// Ensure we don't slash more than available bond
+	if penaltyAmount.GT(nodeAccount.Bond) {
+		penaltyAmount = nodeAccount.Bond
+	}
+	
+	// Reduce bond
+	nodeAccount.Bond = common.SafeSub(nodeAccount.Bond, penaltyAmount)
+	
+	// Calculate slash points to add (using same pattern as existing slashing)
+	slashPoints := k.calculateSlashPointsForCollusion(evidence.CollusionType)
+	
+	// Increment slash points (this increases the escalation for future offenses)
+	if err := k.IncNodeAccountSlashPoints(ctx, nodeAddr, slashPoints); err != nil {
+		return fmt.Errorf("failed to increment slash points for %s: %w", nodeAddr, err)
+	}
+	
+	// Save updated node account
+	if err := k.SetNodeAccount(ctx, nodeAccount); err != nil {
+		return fmt.Errorf("failed to save node account %s: %w", nodeAddr, err)
+	}
+	
+	ctx.Logger().Info("slashed node with progressive penalty", 
+		"node", nodeAddr.String(),
+		"type", evidence.CollusionType,
+		"base_penalty", penaltyResult.BasePenalty.String(),
+		"escalation_factor", penaltyResult.EscalationFactor,
+		"final_penalty", penaltyAmount.String(),
+		"previous_slash_points", penaltyResult.SlashPointsUsed,
+		"added_slash_points", slashPoints,
+		"reference", evidence.Reference)
+	
+	return nil
+}
