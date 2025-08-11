@@ -2,6 +2,7 @@ package keeperv1
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -250,4 +251,125 @@ func (k KVStore) calculateSlashPointsForCollusion(collusionType string) int64 {
 	default:
 		return 1000  // Default slash points
 	}
+}
+
+// =============================================================================
+// TASK 5C: OBSERVER CONSENSUS VALIDATION
+// =============================================================================
+
+// CollusionConsensusEvidence represents evidence with observer consensus data
+type CollusionConsensusEvidence struct {
+	CollusionEvidence
+	ReportingObservers []cosmos.AccAddress `json:"reporting_observers"`
+	TotalObservers     int                 `json:"total_observers"`
+}
+
+// CollusionConsensusRecord represents stored consensus evidence for audit trail
+type CollusionConsensusRecord struct {
+	Evidence           CollusionEvidence   `json:"evidence"`
+	ReportingObservers []cosmos.AccAddress `json:"reporting_observers"`
+	TotalObservers     int                 `json:"total_observers"`
+	ConsensusReached   bool                `json:"consensus_reached"`
+	RecordedHeight     int64               `json:"recorded_height"`
+}
+
+const (
+	// Database prefix for consensus evidence storage
+	prefixCollusionConsensus types.DbPrefix = "collusion_consensus/" // collusion_consensus/{reference}/{nodeAddr} -> ConsensusRecord
+)
+
+// ValidateCollusionConsensus validates that observer consensus meets the 67% supermajority threshold
+// Integration scope: Uses existing HasSuperMajority function
+func (k KVStore) ValidateCollusionConsensus(ctx cosmos.Context, evidence CollusionConsensusEvidence) (bool, error) {
+	// Validate input
+	if evidence.TotalObservers <= 0 {
+		return false, fmt.Errorf("total observers must be greater than 0")
+	}
+	
+	if len(evidence.ReportingObservers) > evidence.TotalObservers {
+		return false, fmt.Errorf("reporting observers (%d) cannot exceed total observers (%d)", 
+			len(evidence.ReportingObservers), evidence.TotalObservers)
+	}
+	
+	// Use existing THORNode HasSuperMajority function to validate 67% consensus
+	reportingCount := len(evidence.ReportingObservers)
+	hasConsensus := HasSuperMajority(reportingCount, evidence.TotalObservers)
+	
+	ctx.Logger().Info("validating observer consensus for collusion",
+		"reference", evidence.Reference,
+		"node", evidence.NodeOperator,
+		"reporting_count", reportingCount,
+		"total_observers", evidence.TotalObservers,
+		"has_consensus", hasConsensus)
+	
+	return hasConsensus, nil
+}
+
+// RecordObserverConsensus stores consensus evidence for audit trail
+func (k KVStore) RecordObserverConsensus(ctx cosmos.Context, evidence CollusionConsensusEvidence) error {
+	// Validate consensus first
+	consensusReached, err := k.ValidateCollusionConsensus(ctx, evidence)
+	if err != nil {
+		return fmt.Errorf("failed to validate consensus: %w", err)
+	}
+	
+	// Create consensus record
+	record := CollusionConsensusRecord{
+		Evidence:           evidence.CollusionEvidence,
+		ReportingObservers: evidence.ReportingObservers,
+		TotalObservers:     evidence.TotalObservers,
+		ConsensusReached:   consensusReached,
+		RecordedHeight:     ctx.BlockHeight(),
+	}
+	
+	// Store the consensus record
+	key := k.GetKey(prefixCollusionConsensus, fmt.Sprintf("%s/%s", evidence.Reference, evidence.NodeOperator))
+	return k.setCollusionConsensusRecord(ctx, key, record)
+}
+
+// GetCollusionConsensusRecord retrieves stored consensus evidence
+func (k KVStore) GetCollusionConsensusRecord(ctx cosmos.Context, reference string, nodeOperator string) (CollusionConsensusRecord, error) {
+	key := k.GetKey(prefixCollusionConsensus, fmt.Sprintf("%s/%s", reference, nodeOperator))
+	record := CollusionConsensusRecord{}
+	
+	found, err := k.getCollusionConsensusRecord(ctx, key, &record)
+	if err != nil {
+		return record, err
+	}
+	
+	if !found {
+		return record, fmt.Errorf("consensus record not found for reference %s and node %s", reference, nodeOperator)
+	}
+	
+	return record, nil
+}
+
+// setCollusionConsensusRecord stores a consensus record using THORNode patterns
+func (k KVStore) setCollusionConsensusRecord(ctx cosmos.Context, key []byte, record CollusionConsensusRecord) error {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	
+	// Use JSON marshaling for complex structure (following THORNode patterns for complex types)
+	buf, err := json.Marshal(&record)
+	if err != nil {
+		return fmt.Errorf("failed to marshal consensus record: %w", err)
+	}
+	
+	store.Set(key, buf)
+	return nil
+}
+
+// getCollusionConsensusRecord retrieves a consensus record
+func (k KVStore) getCollusionConsensusRecord(ctx cosmos.Context, key []byte, record *CollusionConsensusRecord) (bool, error) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	
+	if !store.Has(key) {
+		return false, nil
+	}
+	
+	buf := store.Get(key)
+	if err := json.Unmarshal(buf, record); err != nil {
+		return true, fmt.Errorf("failed to unmarshal consensus record: %w", err)
+	}
+	
+	return true, nil
 }
