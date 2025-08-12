@@ -28,7 +28,7 @@ func (s *Task4Pillar2Suite) TestPillar2_5DigitEmbeddingOn3DecimalChains_MUST_FAI
 
 	testCases := []struct {
 		amount        string
-		reference     string  
+		reference     string
 		chainID       string
 		decimalPlaces int
 		shouldReject  bool
@@ -36,8 +36,8 @@ func (s *Task4Pillar2Suite) TestPillar2_5DigitEmbeddingOn3DecimalChains_MUST_FAI
 	}{
 		// 3-decimal chain should reject memoless encoding (insufficient precision)
 		{
-			amount:        "1.000",    // 3 decimals
-			reference:     "12345",    
+			amount:        "1.000", // 3 decimals
+			reference:     "12345",
 			chainID:       "MOCK3DEC", // Hypothetical 3-decimal chain
 			decimalPlaces: 3,
 			shouldReject:  true,
@@ -45,18 +45,18 @@ func (s *Task4Pillar2Suite) TestPillar2_5DigitEmbeddingOn3DecimalChains_MUST_FAI
 		},
 		// 4-decimal chain should reject (still insufficient)
 		{
-			amount:        "1.0000",   // 4 decimals  
+			amount:        "1.0000", // 4 decimals
 			reference:     "54321",
 			chainID:       "MOCK4DEC", // Hypothetical 4-decimal chain
 			decimalPlaces: 4,
-			shouldReject:  true, 
+			shouldReject:  true,
 			reason:        "insufficient decimal precision for reference encoding",
 		},
 		// 5-decimal chain should accept (minimum safe precision)
 		{
-			amount:        "1.00000",  // 5 decimals
+			amount:        "1.00000", // 5 decimals
 			reference:     "11111",
-			chainID:       "MOCK5DEC", // Hypothetical 5-decimal chain  
+			chainID:       "MOCK5DEC", // Hypothetical 5-decimal chain
 			decimalPlaces: 5,
 			shouldReject:  false,
 			reason:        "sufficient precision for safe encoding",
@@ -95,42 +95,42 @@ func (s *Task4Pillar2Suite) TestPillar2_5DigitEmbeddingOn3DecimalChains_MUST_FAI
 // REQUIREMENT: "Integer division causing 1-wei accumulation over 1000 txs"
 func (s *Task4Pillar2Suite) TestPillar2_IntegerDivision1WeiAccumulation_MUST_FAIL_FIRST(c *C) {
 	// This tests precision loss accumulation over many transactions
-	
+
 	// Simulate 1000 transactions with amounts that might cause precision loss
 	var accumulatedError cosmos.Dec = cosmos.ZeroDec()
-	
+
 	for i := 0; i < 1000; i++ {
 		// Create amounts that might have precision issues during encoding/decoding
 		originalAmount := cosmos.NewDec(int64(i + 1)).Quo(cosmos.NewDec(10000)) // 0.0001, 0.0002, etc.
-		reference := fmt.Sprintf("%05d", 10000+(i%90000)) // Valid 5-digit references
-		
+		reference := fmt.Sprintf("%05d", 10000+(i%90000))                       // Valid 5-digit references
+
 		// THIS WILL FAIL - no function exists yet!
 		encodedAmount, err := EncodeReferenceInAmount(originalAmount.String(), reference, "ETH")
 		c.Assert(err, IsNil, Commentf("Should encode amount %s with reference %s", originalAmount.String(), reference))
-		
+
 		// THIS WILL ALSO FAIL - no function exists yet!
 		decodedAmount, decodedRef, err := DecodeReferenceFromAmount(encodedAmount, "ETH")
 		c.Assert(err, IsNil, Commentf("Should decode amount %s", encodedAmount))
 		c.Assert(decodedRef, Equals, reference, Commentf("Reference should decode correctly"))
-		
+
 		// Calculate precision loss
 		decodedDec, _ := cosmos.NewDecFromStr(decodedAmount)
 		precisionLoss := originalAmount.Sub(decodedDec).Abs()
 		accumulatedError = accumulatedError.Add(precisionLoss)
 	}
-	
+
 	// REQUIREMENT: Accumulated error should not exceed acceptable threshold
 	maxAcceptableError := cosmos.NewDec(1000) // 1000 wei total acceptable loss
-	c.Assert(accumulatedError.LTE(maxAcceptableError), Equals, true, 
-		Commentf("Accumulated precision loss %s exceeds threshold %s", 
-		accumulatedError.String(), maxAcceptableError.String()))
+	c.Assert(accumulatedError.LTE(maxAcceptableError), Equals, true,
+		Commentf("Accumulated precision loss %s exceeds threshold %s",
+			accumulatedError.String(), maxAcceptableError.String()))
 }
 
-// TestPillar2_DustAttackFlooding tests the DoS scenario from Pillar 2  
+// TestPillar2_DustAttackFlooding tests the DoS scenario from Pillar 2
 // REQUIREMENT: "Dust attack flooding with micro-amounts mimicking codes"
 func (s *Task4Pillar2Suite) TestPillar2_DustAttackFlooding_MUST_FAIL_FIRST(c *C) {
 	// This tests resistance to dust attacks that try to mimic valid references
-	
+
 	// Create dust attack pattern - many micro-amounts that look like reference codes
 	dustAttackAmounts := make([]string, 100)
 	for i := 0; i < 100; i++ {
@@ -138,12 +138,12 @@ func (s *Task4Pillar2Suite) TestPillar2_DustAttackFlooding_MUST_FAIL_FIRST(c *C)
 		dustAmount := cosmos.NewDec(int64(10000 + i)).Quo(cosmos.NewDec(100000000)) // Micro amounts
 		dustAttackAmounts[i] = dustAmount.String()
 	}
-	
+
 	// THIS WILL FAIL - no function exists yet!
 	isDustAttack, err := DetectDustAttackPattern(dustAttackAmounts, "BTC", 3600) // 1 hour window
 	c.Assert(err, IsNil, Commentf("Dust attack detection should not error"))
 	c.Assert(isDustAttack, Equals, true, Commentf("Should detect dust attack pattern"))
-	
+
 	// Test that normal transaction patterns are NOT flagged as dust attacks
 	normalAmounts := []string{"1.00000000", "2.50000000", "0.05000000", "10.00000000"}
 	isDustAttack, err = DetectDustAttackPattern(normalAmounts, "BTC", 3600)
@@ -159,11 +159,11 @@ func (s *Task4Pillar2Suite) TestPillar2_DustAttackFlooding_MUST_FAIL_FIRST(c *C)
 // REQUIREMENT: "Performance: ValidateAmountForReference <1ms per call"
 func (s *Task4Pillar2Suite) TestPillar2_Performance_ValidateAmountForReference_Under1ms_MUST_FAIL_FIRST(c *C) {
 	amount := "1.00000000"
-	reference := "12345" 
+	reference := "12345"
 	chainID := "BTC"
-	
+
 	start := time.Now()
-	
+
 	// Run validation many times to get average performance
 	iterations := 1000
 	for i := 0; i < iterations; i++ {
@@ -171,25 +171,25 @@ func (s *Task4Pillar2Suite) TestPillar2_Performance_ValidateAmountForReference_U
 		err := ValidateAmountForReference(amount, reference, chainID)
 		c.Assert(err, IsNil, Commentf("Validation should succeed"))
 	}
-	
+
 	elapsed := time.Since(start)
 	averageTime := elapsed / time.Duration(iterations)
-	
+
 	// REQUIREMENT: Must be under 1ms per call
 	maxAllowedTime := time.Millisecond
-	c.Assert(averageTime < maxAllowedTime, Equals, true, 
+	c.Assert(averageTime < maxAllowedTime, Equals, true,
 		Commentf("Average time %v exceeds requirement of %v", averageTime, maxAllowedTime))
 }
 
 // =============================================================================
-// FUZZING TDD TESTS - Acceptance Criteria Requirements  
+// FUZZING TDD TESTS - Acceptance Criteria Requirements
 // =============================================================================
 
 // TestPillar2_FuzzingScenarios tests acceptance criteria fuzzing requirement
 // REQUIREMENT: "100% test coverage including fuzzing scenarios"
 func (s *Task4Pillar2Suite) TestPillar2_FuzzingScenarios_MUST_FAIL_FIRST(c *C) {
 	// Property-based testing with random inputs
-	
+
 	for i := 0; i < 100; i++ {
 		// Generate random valid inputs that won't cause precision loss
 		// Use larger base amounts to avoid precision issues
@@ -197,31 +197,31 @@ func (s *Task4Pillar2Suite) TestPillar2_FuzzingScenarios_MUST_FAIL_FIRST(c *C) {
 		randomReference := fmt.Sprintf("%05d", 10000+(i*900)%90000)
 		chains := []string{"BTC", "ETH", "BSC"}
 		randomChain := chains[i%len(chains)]
-		
+
 		// THIS WILL FAIL - no function exists yet!
 		err := ValidateAmountForReference(randomAmount.String(), randomReference, randomChain)
 		c.Assert(err, IsNil, Commentf("Valid random inputs should pass validation"))
-		
+
 		// Test that encoding/decoding is reversible (property-based test)
 		// THIS WILL ALSO FAIL - no functions exist yet!
 		encoded, err := EncodeReferenceInAmount(randomAmount.String(), randomReference, randomChain)
 		c.Assert(err, IsNil, Commentf("Should encode random valid inputs"))
-		
+
 		decoded, decodedRef, err := DecodeReferenceFromAmount(encoded, randomChain)
 		c.Assert(err, IsNil, Commentf("Should decode encoded amounts"))
 		c.Assert(decodedRef, Equals, randomReference, Commentf("Reference should survive encode/decode"))
-		
+
 		// Property: decoded amount should be close to original (within chain's dust threshold)
 		decodedDec, _ := cosmos.NewDecFromStr(decoded)
 		precisionDiff := randomAmount.Sub(decodedDec).Abs()
-		
+
 		// THIS WILL FAIL - no function exists yet!
 		maxAllowedDiff, err := GetChainDustThreshold(randomChain)
 		c.Assert(err, IsNil, Commentf("Should get dust threshold for chain"))
-		
+
 		c.Assert(precisionDiff.LTE(maxAllowedDiff), Equals, true,
-			Commentf("Precision loss %s exceeds dust threshold %s for chain %s", 
-			precisionDiff.String(), maxAllowedDiff.String(), randomChain))
+			Commentf("Precision loss %s exceeds dust threshold %s for chain %s",
+				precisionDiff.String(), maxAllowedDiff.String(), randomChain))
 	}
 }
 
@@ -238,14 +238,14 @@ func (s *Task4Pillar2Suite) TestPillar2_AcceptanceCriteria_ChainDecimalRejection
 		shouldReject  bool
 	}{
 		{"MOCK1DEC", 1, true},  // Too few decimals
-		{"MOCK2DEC", 2, true},  // Too few decimals  
+		{"MOCK2DEC", 2, true},  // Too few decimals
 		{"MOCK3DEC", 3, true},  // Too few decimals
 		{"MOCK4DEC", 4, true},  // Still too few decimals
 		{"MOCK5DEC", 5, false}, // Minimum acceptable
 		{"BTC", 8, false},      // Standard high precision
 		{"ETH", 18, false},     // Very high precision
 	}
-	
+
 	for _, tc := range testCases {
 		// THIS WILL FAIL - no function exists yet!
 		err := ValidateChainPrecisionRequirements(tc.chainID, tc.decimalPlaces)
@@ -278,12 +278,12 @@ func ValidateAmountPrecisionForChain(amount string, chainID string) error {
 	if amount == "" {
 		return fmt.Errorf("amount cannot be empty")
 	}
-	
+
 	// For chains we know should be rejected, reject them
 	if chainID == "MOCK3DEC" || chainID == "MOCK4DEC" {
 		return fmt.Errorf("chain %s has insufficient precision for memoless transactions", chainID)
 	}
-	
+
 	return nil
 }
 
@@ -294,24 +294,24 @@ func EncodeReferenceInAmount(amount string, reference string, chainID string) (s
 	if err != nil {
 		return "", fmt.Errorf("invalid amount format: %w", err)
 	}
-	
-	// Correct memoless encoding: (baseAmount * 100000 + reference) / scale  
+
+	// Correct memoless encoding: (baseAmount * 100000 + reference) / scale
 	// where scale preserves the original decimal precision
-	
+
 	// Convert to smallest units (e.g., wei for ETH, satoshis for BTC)
 	// For simplicity, assume 8 decimal places for now
 	scale := cosmos.NewDec(100000000) // 10^8
 	amountInSmallestUnits := amountDec.Mul(scale).TruncateInt()
-	
+
 	refInt, err := cosmos.NewDecFromStr(reference)
 	if err != nil {
-		return "", fmt.Errorf("invalid reference format: %w", err)  
+		return "", fmt.Errorf("invalid reference format: %w", err)
 	}
-	
+
 	// Encode: (baseAmount * 100000 + reference)
 	encodedInt := amountInSmallestUnits.Int64()*100000 + refInt.TruncateInt().Int64()
 	finalAmount := cosmos.NewDec(encodedInt).Quo(scale)
-	
+
 	return finalAmount.String(), nil
 }
 
@@ -322,19 +322,19 @@ func DecodeReferenceFromAmount(encodedAmount string, chainID string) (string, st
 	if err != nil {
 		return "", "", fmt.Errorf("invalid encoded amount format: %w", err)
 	}
-	
+
 	// Decode: reverse the encoding process
 	scale := cosmos.NewDec(100000000) // 10^8, must match encoding
 	encodedInSmallestUnits := encodedDec.Mul(scale).TruncateInt()
-	
+
 	// Extract reference (last 5 digits) and base amount
 	reference := encodedInSmallestUnits.Int64() % 100000
 	baseAmountInSmallestUnits := encodedInSmallestUnits.Int64() / 100000
-	
+
 	// Convert back to original decimal representation
 	decodedAmount := cosmos.NewDec(baseAmountInSmallestUnits).Quo(scale)
 	referenceStr := fmt.Sprintf("%05d", reference) // Ensure 5 digits
-	
+
 	return decodedAmount.String(), referenceStr, nil
 }
 
@@ -344,28 +344,28 @@ func DetectDustAttackPattern(amounts []string, chainID string, timeWindowSeconds
 	if len(amounts) == 0 {
 		return false, nil
 	}
-	
+
 	// Count how many amounts are very small (potential dust)
 	dustCount := 0
 	totalCount := len(amounts)
-	
+
 	for _, amountStr := range amounts {
 		amount, err := cosmos.NewDecFromStr(amountStr)
 		if err != nil {
 			continue // Skip invalid amounts
 		}
-		
+
 		// Consider amounts < 0.001 as potential dust (this is chain-agnostic for now)
 		dustThreshold := cosmos.NewDec(1).Quo(cosmos.NewDec(1000)) // 0.001
 		if amount.LT(dustThreshold) {
 			dustCount++
 		}
 	}
-	
+
 	// If more than 70% of transactions are dust-like, consider it a dust attack
 	dustRatio := float64(dustCount) / float64(totalCount)
 	isDustAttack := dustRatio > 0.7 && totalCount >= 10 // Need at least 10 transactions
-	
+
 	return isDustAttack, nil
 }
 

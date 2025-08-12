@@ -18,14 +18,14 @@ const (
 
 // ChainConfig defines memoless configuration for a specific chain
 type ChainConfig struct {
-	ChainID           string      `json:"chain_id"`
-	DecimalPlaces     int         `json:"decimal_places"`
-	MinAmount         cosmos.Uint `json:"min_amount"`
-	MaxAmount         cosmos.Uint `json:"max_amount"`
-	DustThreshold     cosmos.Uint `json:"dust_threshold"`
-	SupportsMemoless  bool        `json:"supports_memoless"`
-	PrecisionLoss     bool        `json:"precision_loss"`
-	GasMultiplier     cosmos.Dec  `json:"gas_multiplier"`
+	ChainID          string      `json:"chain_id"`
+	DecimalPlaces    int         `json:"decimal_places"`
+	MinAmount        cosmos.Uint `json:"min_amount"`
+	MaxAmount        cosmos.Uint `json:"max_amount"`
+	DustThreshold    cosmos.Uint `json:"dust_threshold"`
+	SupportsMemoless bool        `json:"supports_memoless"`
+	PrecisionLoss    bool        `json:"precision_loss"`
+	GasMultiplier    cosmos.Dec  `json:"gas_multiplier"`
 }
 
 // GetDefaultChainConfigs returns the default chain configurations for memoless protocol
@@ -34,7 +34,7 @@ func GetDefaultChainConfigs() map[string]ChainConfig {
 		"BTC": {
 			ChainID:          "BTC",
 			DecimalPlaces:    8,
-			MinAmount:        cosmos.NewUint(100000), // 0.001 BTC
+			MinAmount:        cosmos.NewUint(100000),           // 0.001 BTC
 			MaxAmount:        cosmos.NewUint(2100000000000000), // 21M BTC
 			DustThreshold:    cosmos.NewUint(546),
 			SupportsMemoless: true,
@@ -54,8 +54,8 @@ func GetDefaultChainConfigs() map[string]ChainConfig {
 		"DOGE": {
 			ChainID:          "DOGE",
 			DecimalPlaces:    8,
-			MinAmount:        cosmos.NewUint(100000000), // 1 DOGE
-			MaxAmount:        cosmos.NewUint(21000000000000000), // 210B DOGE  
+			MinAmount:        cosmos.NewUint(100000000),         // 1 DOGE
+			MaxAmount:        cosmos.NewUint(21000000000000000), // 210B DOGE
 			DustThreshold:    cosmos.NewUint(1000000),
 			SupportsMemoless: false, // Precision issues prevent support
 			PrecisionLoss:    true,
@@ -64,7 +64,7 @@ func GetDefaultChainConfigs() map[string]ChainConfig {
 		"BCH": {
 			ChainID:          "BCH",
 			DecimalPlaces:    8,
-			MinAmount:        cosmos.NewUint(100000), // 0.001 BCH
+			MinAmount:        cosmos.NewUint(100000),           // 0.001 BCH
 			MaxAmount:        cosmos.NewUint(2100000000000000), // 21M BCH
 			DustThreshold:    cosmos.NewUint(546),
 			SupportsMemoless: true,
@@ -74,7 +74,7 @@ func GetDefaultChainConfigs() map[string]ChainConfig {
 		"LTC": {
 			ChainID:          "LTC",
 			DecimalPlaces:    8,
-			MinAmount:        cosmos.NewUint(100000), // 0.001 LTC
+			MinAmount:        cosmos.NewUint(100000),           // 0.001 LTC
 			MaxAmount:        cosmos.NewUint(8400000000000000), // 84M LTC
 			DustThreshold:    cosmos.NewUint(546),
 			SupportsMemoless: true,
@@ -84,7 +84,7 @@ func GetDefaultChainConfigs() map[string]ChainConfig {
 		"BNB": {
 			ChainID:          "BNB",
 			DecimalPlaces:    8,
-			MinAmount:        cosmos.NewUint(100000), // 0.001 BNB
+			MinAmount:        cosmos.NewUint(100000),            // 0.001 BNB
 			MaxAmount:        cosmos.NewUint(20000000000000000), // 200M BNB
 			DustThreshold:    cosmos.NewUint(1),
 			SupportsMemoless: true,
@@ -232,7 +232,7 @@ func (k KVStore) ValidateAmountForReference(ctx cosmos.Context, chainID string, 
 	}
 
 	if amount.LT(minRequiredAmount) {
-		return fmt.Errorf("amount %s too small for 5-digit reference encoding on chain %s (minimum: %s)", 
+		return fmt.Errorf("amount %s too small for 5-digit reference encoding on chain %s (minimum: %s)",
 			amount.String(), chainID, minRequiredAmount.String())
 	}
 
@@ -249,7 +249,7 @@ func (k KVStore) GetChainConfigIterator(ctx cosmos.Context) cosmos.Iterator {
 // InitializeDefaultChainConfigs initializes default chain configurations if they don't exist
 func (k KVStore) InitializeDefaultChainConfigs(ctx cosmos.Context) error {
 	defaultConfigs := GetDefaultChainConfigs()
-	
+
 	for chainID, config := range defaultConfigs {
 		if !k.HasChainConfig(ctx, chainID) {
 			if err := k.SetChainConfig(ctx, config); err != nil {
@@ -259,7 +259,7 @@ func (k KVStore) InitializeDefaultChainConfigs(ctx cosmos.Context) error {
 			ctx.Logger().Info("Initialized default chain config", "chain", chainID)
 		}
 	}
-	
+
 	return nil
 }
 
@@ -311,7 +311,7 @@ func (k KVStore) EstimateGasCost(ctx cosmos.Context, chainID string, baseGasCost
 	// Apply chain-specific gas multiplier
 	gasCostDec := cosmos.NewDecFromBigInt(baseGasCost.BigInt())
 	adjustedGasCost := gasCostDec.Mul(config.GasMultiplier)
-	
+
 	return cosmos.NewUintFromBigInt(adjustedGasCost.TruncateInt().BigInt()), nil
 }
 

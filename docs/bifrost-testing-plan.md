@@ -13,6 +13,7 @@ Unlike traditional software testing, blockchain systems require validation again
 ### 1.1 Consensus Layer Testing
 
 #### **BFT Consensus Scenarios**
+
 - **Leader Election Failures**: Test memoless processing during validator set changes
 - **Network Partitions**: Validate memo resolution with isolated validator subsets
 - **Byzantine Validators**: Test with up to 1/3 malicious validators providing false memo data
@@ -20,6 +21,7 @@ Unlike traditional software testing, blockchain systems require validation again
 - **Fork Resolution**: Test memo consistency across competing blockchain forks
 
 #### **Block Production Edge Cases**
+
 - **Empty Blocks**: Ensure memo expiry calculations work with missing blocks
 - **Large Block Gaps**: Test with significant time jumps between blocks
 - **Block Reorganizations**: Validate memo consistency during chain reorgs
@@ -29,6 +31,7 @@ Unlike traditional software testing, blockchain systems require validation again
 ### 1.2 Network Layer Testing
 
 #### **P2P Network Attacks**
+
 - **Eclipse Attacks**: Test memo resolution with manipulated peer connections
 - **Sybil Attacks**: Validate against fake nodes providing incorrect memo data
 - **Message Flooding**: Test system stability under memo query spam
@@ -36,6 +39,7 @@ Unlike traditional software testing, blockchain systems require validation again
 - **Latency Attacks**: Test with artificially delayed memo responses
 
 #### **Cross-Chain Communication**
+
 - **Bridge Failures**: Test when cross-chain communication is disrupted
 - **Oracle Manipulation**: Validate against false cross-chain data feeds
 - **Chain Halt Scenarios**: Handle memo processing when external chains halt
@@ -49,6 +53,7 @@ Unlike traditional software testing, blockchain systems require validation again
 ### 2.1 Memoless Protocol Fuzzing
 
 #### **Reference Code Fuzzing**
+
 ```rust
 // Property: All valid 5-digit references should extract correctly
 property_extract_reference(amount: u64) {
@@ -61,6 +66,7 @@ property_extract_reference(amount: u64) {
 ```
 
 **Fuzzing Targets:**
+
 - **Amount Range Testing**: Test with u64::MAX, 0, and overflow conditions
 - **Reference Pattern Edge Cases**: Test 00000, 99999, invalid patterns
 - **Unicode Reference Injection**: Test with non-ASCII numeric characters
@@ -68,6 +74,7 @@ property_extract_reference(amount: u64) {
 - **Mathematical Overflow**: Test amount calculations near integer limits
 
 #### **Memo Content Fuzzing**
+
 - **Malformed Memo Strings**: Invalid UTF-8, control characters, null bytes
 - **Extremely Long Memos**: Test with memos exceeding blockchain limits
 - **Memo Injection Attacks**: Test with embedded commands or scripts
@@ -77,6 +84,7 @@ property_extract_reference(amount: u64) {
 ### 2.2 State Machine Property Testing
 
 #### **Invariant Properties**
+
 ```go
 // Property: Memo registration should be idempotent
 property_memo_registration_idempotent(memo RegisteredMemo) {
@@ -90,13 +98,14 @@ property_reference_reversible(base_amount u64, reference string) {
     encoded := encode_amount_with_reference(base_amount, reference)
     extracted := extract_reference(encoded)
     adjusted := adjust_amount(encoded, reference)
-    
+
     assert_eq(extracted, reference)
     assert_eq(adjusted, base_amount)
 }
 ```
 
 #### **State Consistency Properties**
+
 - **Memo Expiry Monotonicity**: Expired memos stay expired
 - **Reference Uniqueness**: No two active memos share references
 - **Transaction Atomicity**: Failed memo resolution doesn't corrupt state
@@ -110,6 +119,7 @@ property_reference_reversible(base_amount u64, reference string) {
 ### 3.1 Economic Attack Vectors
 
 #### **MEV and Front-Running**
+
 - **Memo Sniping**: Test against attackers monitoring memo registrations
 - **Reference Collision Attacks**: Attempt to register conflicting references
 - **Expiry Racing**: Test attacks based on memo expiry timing
@@ -117,6 +127,7 @@ property_reference_reversible(base_amount u64, reference string) {
 - **Liquidity Attacks**: Test with artificial scarcity of memo references
 
 #### **Griefing Attacks**
+
 - **Reference Space Exhaustion**: Register maximum number of references
 - **Storage Spam**: Register many short-lived memos to consume storage
 - **Computation Attacks**: Submit expensive memo validation operations
@@ -126,6 +137,7 @@ property_reference_reversible(base_amount u64, reference string) {
 ### 3.2 Cryptographic Attack Scenarios
 
 #### **Hash and Signature Attacks**
+
 - **Hash Collision Attempts**: Test with crafted reference hash collisions
 - **Signature Malleability**: Test with modified but valid signatures
 - **Key Recovery Attacks**: Test against attempts to derive private keys
@@ -133,6 +145,7 @@ property_reference_reversible(base_amount u64, reference string) {
 - **Time-Based Attacks**: Exploit timing differences in memo validation
 
 #### **Data Integrity Attacks**
+
 - **Bit-Flip Attacks**: Test with corrupted memo data
 - **Truncation Attacks**: Test with partially transmitted memo data
 - **Padding Oracle Attacks**: Test encrypted memo storage scenarios
@@ -146,18 +159,19 @@ property_reference_reversible(base_amount u64, reference string) {
 ### 4.1 Byzantine Validator Behavior
 
 #### **Malicious Validator Scenarios**
+
 ```yaml
 byzantine_test_scenarios:
   - name: "memo_data_manipulation"
     description: "1/3 validators return incorrect memo content"
     byzantine_fraction: 0.33
     attack_vector: "false_memo_content"
-    
-  - name: "selective_memo_censorship" 
+
+  - name: "selective_memo_censorship"
     description: "Byzantine validators ignore specific references"
     byzantine_fraction: 0.25
     attack_vector: "reference_filtering"
-    
+
   - name: "timing_manipulation"
     description: "Delay memo responses to cause timeouts"
     byzantine_fraction: 0.20
@@ -165,6 +179,7 @@ byzantine_test_scenarios:
 ```
 
 #### **Consensus Split Scenarios**
+
 - **Competing Memo Versions**: Different validator subsets return different memos
 - **Partial Network Availability**: Some validators unreachable during memo lookup
 - **Historical Data Corruption**: Byzantine validators corrupt past memo data
@@ -174,6 +189,7 @@ byzantine_test_scenarios:
 ### 4.2 Network Partition Testing
 
 #### **CAP Theorem Scenarios**
+
 - **Consistency vs Availability**: Test memo service during network splits
 - **Partition Tolerance**: Validate memo processing with isolated nodes
 - **Split-Brain Scenarios**: Handle multiple validator groups claiming leadership
@@ -187,6 +203,7 @@ byzantine_test_scenarios:
 ### 5.1 Load Testing Scenarios
 
 #### **High-Throughput Testing**
+
 ```go
 load_test_scenarios := []LoadTest{
     {
@@ -196,7 +213,7 @@ load_test_scenarios := []LoadTest{
         operation: "register_memo",
     },
     {
-        name: "memo_lookup_storm", 
+        name: "memo_lookup_storm",
         tps: 50000,
         duration: "5m",
         operation: "lookup_memo",
@@ -211,6 +228,7 @@ load_test_scenarios := []LoadTest{
 ```
 
 #### **Resource Exhaustion Testing**
+
 - **Memory Pressure**: Test with maximum memo storage utilization
 - **CPU Saturation**: Test memo processing under high computational load
 - **Network Bandwidth**: Test with saturated network connections
@@ -220,6 +238,7 @@ load_test_scenarios := []LoadTest{
 ### 5.2 Scalability Edge Cases
 
 #### **State Growth Scenarios**
+
 - **Maximum Memo Count**: Test with theoretical maximum registered memos
 - **Long-Running Networks**: Test memo processing after years of operation
 - **Historical Query Load**: Test access to old memo data under load
@@ -233,6 +252,7 @@ load_test_scenarios := []LoadTest{
 ### 6.1 Cross-Chain Integration
 
 #### **Multi-Chain Memoless Scenarios**
+
 - **Chain-Specific References**: Test reference conflicts across chains
 - **Cross-Chain Memo Consistency**: Validate memo data across bridge operations
 - **Chain Halt Propagation**: Test memo processing when external chains halt
@@ -240,6 +260,7 @@ load_test_scenarios := []LoadTest{
 - **Multi-Asset Scenarios**: Test with various asset types and chains
 
 #### **External Oracle Integration**
+
 - **Oracle Failure Scenarios**: Test when price/data oracles fail
 - **Oracle Data Manipulation**: Test against false oracle data
 - **Oracle Network Partitions**: Handle isolated oracle networks
@@ -249,6 +270,7 @@ load_test_scenarios := []LoadTest{
 ### 6.2 Wallet Integration Testing
 
 #### **Wallet Compatibility Edge Cases**
+
 - **Wallet State Desynchronization**: Test with outdated wallet state
 - **Transaction Broadcasting Failures**: Handle failed memo transactions
 - **Wallet Network Switching**: Test memo consistency across networks
@@ -262,18 +284,19 @@ load_test_scenarios := []LoadTest{
 ### 7.1 Chaos Engineering Scenarios
 
 #### **Infrastructure Chaos**
+
 ```yaml
 chaos_experiments:
   - name: "random_node_failures"
     description: "Randomly kill observer nodes during memo processing"
     failure_rate: "10%"
     duration: "1h"
-    
+
   - name: "network_latency_injection"
     description: "Add random latency to memo API calls"
-    latency_range: "100ms-10s" 
+    latency_range: "100ms-10s"
     affected_percentage: "30%"
-    
+
   - name: "disk_corruption_simulation"
     description: "Simulate disk failures during memo storage"
     corruption_rate: "0.1%"
@@ -281,6 +304,7 @@ chaos_experiments:
 ```
 
 #### **Service Degradation Testing**
+
 - **Partial Service Outages**: Test with some memo services unavailable
 - **Cascading Failure Recovery**: Test recovery from multiple simultaneous failures
 - **Dependency Failure Isolation**: Isolate failures in external dependencies
@@ -290,6 +314,7 @@ chaos_experiments:
 ### 7.2 Disaster Recovery Testing
 
 #### **Data Recovery Scenarios**
+
 - **State Snapshot Recovery**: Test memo state recovery from snapshots
 - **Transaction Log Replay**: Recover memo state from transaction logs
 - **Cross-Node State Sync**: Synchronize memo state across recovered nodes
@@ -303,13 +328,14 @@ chaos_experiments:
 ### 8.1 Threat Model Validation
 
 #### **Attack Surface Analysis**
+
 ```mermaid
 graph TD
     A[Memoless Transaction] --> B[Reference Extraction]
     B --> C[THORChain Query]
-    C --> D[Memo Validation] 
+    C --> D[Memo Validation]
     D --> E[Transaction Processing]
-    
+
     B --> F[Amount Manipulation Attack]
     C --> G[Oracle Manipulation Attack]
     D --> H[Memo Injection Attack]
@@ -317,6 +343,7 @@ graph TD
 ```
 
 #### **Vulnerability Assessment**
+
 - **Input Validation Bypasses**: Test all input validation mechanisms
 - **Authorization Bypass**: Test access control around memo operations
 - **Information Disclosure**: Test for sensitive information leakage
@@ -326,6 +353,7 @@ graph TD
 ### 8.2 Penetration Testing Scenarios
 
 #### **Red Team Exercises**
+
 - **Coordinated Multi-Vector Attacks**: Combined technical and social attacks
 - **Insider Threat Simulation**: Test against malicious insider scenarios
 - **Supply Chain Attacks**: Test against compromised dependencies
@@ -339,6 +367,7 @@ graph TD
 ### 9.1 Data Privacy Testing
 
 #### **Privacy-Preserving Properties**
+
 - **Memo Content Privacy**: Ensure memo content isn't leaked inappropriately
 - **Transaction Graph Analysis**: Test resistance to transaction analysis
 - **Timing Analysis**: Test resistance to timing-based user identification
@@ -348,6 +377,7 @@ graph TD
 ### 9.2 Audit Trail Testing
 
 #### **Auditability Requirements**
+
 - **Transaction Traceability**: Maintain complete audit trails
 - **Memo Provenance**: Track memo creation and modification history
 - **Validator Accountability**: Audit validator behavior with memo operations
@@ -361,6 +391,7 @@ graph TD
 ### 10.1 Automated Test Execution
 
 #### **Continuous Testing Pipeline**
+
 ```yaml
 testing_pipeline:
   stages:
@@ -368,7 +399,7 @@ testing_pipeline:
         parallel: true
         timeout: "10m"
     - integration_tests:
-        parallel: false  
+        parallel: false
         timeout: "30m"
     - chaos_tests:
         parallel: true
@@ -376,7 +407,7 @@ testing_pipeline:
     - security_tests:
         parallel: false
         timeout: "4h"
-  
+
   triggers:
     - pull_request
     - nightly_build
@@ -384,18 +415,20 @@ testing_pipeline:
 ```
 
 #### **Test Environment Management**
+
 - **Multi-Network Testing**: Automated deployment across test networks
 - **State Management**: Automated setup/teardown of test scenarios
-- **Data Generation**: Automated generation of test data and scenarios  
+- **Data Generation**: Automated generation of test data and scenarios
 - **Result Analysis**: Automated analysis and reporting of test results
 - **Regression Detection**: Automated detection of performance regressions
 
 ### 10.2 Monitoring and Observability
 
 #### **Test Observability Stack**
+
 - **Metrics Collection**: Comprehensive metrics on memo processing performance
 - **Distributed Tracing**: End-to-end tracing of memo resolution flows
-- **Alerting Systems**: Automated alerts on test failures or anomalies  
+- **Alerting Systems**: Automated alerts on test failures or anomalies
 - **Dashboard Visualization**: Real-time visibility into system health
 - **Log Aggregation**: Centralized logging for debugging and analysis
 
@@ -404,18 +437,21 @@ testing_pipeline:
 ## 11. Test Implementation Priorities
 
 ### Phase 1: Foundation (Week 1-2)
+
 1. **Property-based fuzzing framework** for reference extraction
 2. **Basic BFT consensus testing** with simulated Byzantine validators
 3. **Load testing infrastructure** with automated scenario execution
 4. **Security testing baseline** with common attack vectors
 
 ### Phase 2: Advanced Scenarios (Week 3-4)
+
 1. **Chaos engineering framework** with controlled failure injection
 2. **Cross-chain integration testing** with multiple blockchain networks
 3. **Advanced adversarial testing** with economic attack simulations
 4. **Performance regression testing** with automated benchmarking
 
 ### Phase 3: Production Readiness (Week 5-6)
+
 1. **Full disaster recovery testing** with complete system recovery
 2. **Regulatory compliance validation** with audit trail verification
 3. **Red team penetration testing** with coordinated attack scenarios
@@ -426,13 +462,15 @@ testing_pipeline:
 ## 12. Success Criteria and Metrics
 
 ### Functional Correctness Metrics
+
 - **Zero false positives**: No valid transactions incorrectly rejected
 - **Zero false negatives**: No invalid transactions incorrectly accepted
 - **100% state consistency**: All nodes maintain identical memo state
 - **Sub-second memo resolution**: Memo lookups complete within 1 second
 - **99.9% availability**: Memo service availability under normal conditions
 
-### Security Assurance Metrics  
+### Security Assurance Metrics
+
 - **Zero critical vulnerabilities**: No exploitable security issues discovered
 - **Resistance to 33% Byzantine**: System functions with up to 1/3 malicious validators
 - **Attack surface minimization**: Minimal exposed attack vectors
@@ -440,6 +478,7 @@ testing_pipeline:
 - **Privacy preservation**: No unintended information disclosure
 
 ### Performance and Scalability Metrics
+
 - **10K TPS memo processing**: Handle 10,000 memoless transactions per second
 - **Linear scaling**: Performance scales linearly with additional validators
 - **Sub-100ms latency**: 99th percentile memo processing under 100ms

@@ -127,7 +127,7 @@ func (m *MemolessHandler) adjustCoinsForMemoless(coins common.Coins, reference s
 
 	coin := coins[0]
 	originalAmount := coin.Amount
-	
+
 	// Extract the base amount by removing the reference digits
 	amountStr := originalAmount.String()
 	if len(amountStr) <= 5 {
@@ -137,7 +137,7 @@ func (m *MemolessHandler) adjustCoinsForMemoless(coins common.Coins, reference s
 			Str("original_amount", originalAmount.String()).
 			Str("adjusted_amount", adjustedAmount.String()).
 			Msg("amount too small for reference removal")
-		
+
 		return common.Coins{common.NewCoin(coin.Asset, adjustedAmount)}
 	}
 
@@ -150,7 +150,7 @@ func (m *MemolessHandler) adjustCoinsForMemoless(coins common.Coins, reference s
 	baseAmount := cosmos.NewUintFromString(baseAmountStr)
 
 	adjustedCoin := common.NewCoin(coin.Asset, baseAmount)
-	
+
 	m.logger.Debug().
 		Str("original_amount", originalAmount.String()).
 		Str("base_amount", baseAmount.String()).

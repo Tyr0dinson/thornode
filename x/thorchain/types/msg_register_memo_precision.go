@@ -12,40 +12,40 @@ import (
 
 // Enhanced precision validation constants (extends existing validation constants)
 // These constants work with the reference constants defined in msg_register_memo_validation.go:
-// - MinReferenceValue = 10000 (smallest 5-digit number)  
+// - MinReferenceValue = 10000 (smallest 5-digit number)
 // - MaxReferenceValue = 99999 (largest 5-digit number)
 // Together they ensure all references are exactly 5 digits for consistent user experience
 
 // ChainConfig defines precision and validation rules for each chain
 type ChainConfig struct {
-	DecimalPlaces       int      `json:"decimal_places"`
-	MinAmount          string   `json:"min_amount"`
-	MaxAmount          string   `json:"max_amount"`
-	MinDustThreshold   string   `json:"min_dust_threshold"`
-	MemoMaxBytes       int      `json:"memo_max_bytes"`
-	SupportsAmountRef  bool     `json:"supports_amount_ref"`
-	AssetPrecision     map[string]int `json:"asset_precision"` // Asset-specific precision overrides
+	DecimalPlaces     int            `json:"decimal_places"`
+	MinAmount         string         `json:"min_amount"`
+	MaxAmount         string         `json:"max_amount"`
+	MinDustThreshold  string         `json:"min_dust_threshold"`
+	MemoMaxBytes      int            `json:"memo_max_bytes"`
+	SupportsAmountRef bool           `json:"supports_amount_ref"`
+	AssetPrecision    map[string]int `json:"asset_precision"` // Asset-specific precision overrides
 }
 
 // ChainPrecisionConfigs defines validation rules for each supported chain
 var ChainPrecisionConfigs = map[common.Chain]ChainConfig{
 	common.BTCChain: {
-		DecimalPlaces:    8,
-		MinAmount:       "0.00001000", // 1000 sats (minimum for memoless reference encoding)
-		MaxAmount:       "21000000.00000000", // BTC max supply
-		MinDustThreshold: "0.00000546", // 546 sats
-		MemoMaxBytes:    80,  // OP_RETURN limit
+		DecimalPlaces:     8,
+		MinAmount:         "0.00001000",        // 1000 sats (minimum for memoless reference encoding)
+		MaxAmount:         "21000000.00000000", // BTC max supply
+		MinDustThreshold:  "0.00000546",        // 546 sats
+		MemoMaxBytes:      80,                  // OP_RETURN limit
 		SupportsAmountRef: true,
 		AssetPrecision: map[string]int{
 			"BTC": 8,
 		},
 	},
 	common.ETHChain: {
-		DecimalPlaces:    18,
-		MinAmount:       "0.000000000000100000", // 100,000 wei (minimum for reference encoding)
-		MaxAmount:       "1000000000.000000000000000000", // Reasonable ETH limit
-		MinDustThreshold: "0.000000000000001000", // 1000 wei
-		MemoMaxBytes:    1024, // Contract call data limit
+		DecimalPlaces:     18,
+		MinAmount:         "0.000000000000100000",          // 100,000 wei (minimum for reference encoding)
+		MaxAmount:         "1000000000.000000000000000000", // Reasonable ETH limit
+		MinDustThreshold:  "0.000000000000001000",          // 1000 wei
+		MemoMaxBytes:      1024,                            // Contract call data limit
 		SupportsAmountRef: true,
 		AssetPrecision: map[string]int{
 			"ETH":  18,
@@ -55,11 +55,11 @@ var ChainPrecisionConfigs = map[common.Chain]ChainConfig{
 		},
 	},
 	common.BSCChain: {
-		DecimalPlaces:    18,
-		MinAmount:       "0.000000000000000001", // 1 wei equivalent
-		MaxAmount:       "1000000000.000000000000000000",
-		MinDustThreshold: "0.000000000000001000",
-		MemoMaxBytes:    1024,
+		DecimalPlaces:     18,
+		MinAmount:         "0.000000000000000001", // 1 wei equivalent
+		MaxAmount:         "1000000000.000000000000000000",
+		MinDustThreshold:  "0.000000000000001000",
+		MemoMaxBytes:      1024,
 		SupportsAmountRef: true,
 		AssetPrecision: map[string]int{
 			"BNB":  18,
@@ -68,44 +68,44 @@ var ChainPrecisionConfigs = map[common.Chain]ChainConfig{
 		},
 	},
 	common.LTCChain: {
-		DecimalPlaces:    8,
-		MinAmount:       "0.00000001", // 1 litoshi
-		MaxAmount:       "84000000.00000000", // LTC max supply
-		MinDustThreshold: "0.00000546",
-		MemoMaxBytes:    80,
+		DecimalPlaces:     8,
+		MinAmount:         "0.00000001",        // 1 litoshi
+		MaxAmount:         "84000000.00000000", // LTC max supply
+		MinDustThreshold:  "0.00000546",
+		MemoMaxBytes:      80,
 		SupportsAmountRef: true,
 		AssetPrecision: map[string]int{
 			"LTC": 8,
 		},
 	},
 	common.BCHChain: {
-		DecimalPlaces:    8,
-		MinAmount:       "0.00000001", // 1 satoshi
-		MaxAmount:       "21000000.00000000", 
-		MinDustThreshold: "0.00000546",
-		MemoMaxBytes:    220, // BCH has larger OP_RETURN
+		DecimalPlaces:     8,
+		MinAmount:         "0.00000001", // 1 satoshi
+		MaxAmount:         "21000000.00000000",
+		MinDustThreshold:  "0.00000546",
+		MemoMaxBytes:      220, // BCH has larger OP_RETURN
 		SupportsAmountRef: true,
 		AssetPrecision: map[string]int{
 			"BCH": 8,
 		},
 	},
 	common.DOGEChain: {
-		DecimalPlaces:    8,
-		MinAmount:       "1.00000000", // DOGE has high minimum due to low value
-		MaxAmount:       "1000000000.00000000",
-		MinDustThreshold: "1.00000000", // 1 DOGE minimum
-		MemoMaxBytes:    80,
+		DecimalPlaces:     8,
+		MinAmount:         "1.00000000", // DOGE has high minimum due to low value
+		MaxAmount:         "1000000000.00000000",
+		MinDustThreshold:  "1.00000000", // 1 DOGE minimum
+		MemoMaxBytes:      80,
 		SupportsAmountRef: false, // DOGE precision issues make amount-ref unreliable
 		AssetPrecision: map[string]int{
 			"DOGE": 8,
 		},
 	},
 	common.AVAXChain: {
-		DecimalPlaces:    18,
-		MinAmount:       "0.000000000000000001",
-		MaxAmount:       "1000000000.000000000000000000",
-		MinDustThreshold: "0.000000000000001000",
-		MemoMaxBytes:    1024,
+		DecimalPlaces:     18,
+		MinAmount:         "0.000000000000000001",
+		MaxAmount:         "1000000000.000000000000000000",
+		MinDustThreshold:  "0.000000000000001000",
+		MemoMaxBytes:      1024,
 		SupportsAmountRef: true,
 		AssetPrecision: map[string]int{
 			"AVAX": 18,
@@ -113,22 +113,22 @@ var ChainPrecisionConfigs = map[common.Chain]ChainConfig{
 		},
 	},
 	common.GAIAChain: {
-		DecimalPlaces:    6,
-		MinAmount:       "0.000001",
-		MaxAmount:       "1000000000.000000",
-		MinDustThreshold: "0.000001",
-		MemoMaxBytes:    256,
+		DecimalPlaces:     6,
+		MinAmount:         "0.000001",
+		MaxAmount:         "1000000000.000000",
+		MinDustThreshold:  "0.000001",
+		MemoMaxBytes:      256,
 		SupportsAmountRef: true,
 		AssetPrecision: map[string]int{
 			"ATOM": 6,
 		},
 	},
 	common.THORChain: {
-		DecimalPlaces:    8,
-		MinAmount:       "0.00000001", // 1 tor
-		MaxAmount:       "1000000000.00000000",
-		MinDustThreshold: "0.00000001",
-		MemoMaxBytes:    256,
+		DecimalPlaces:     8,
+		MinAmount:         "0.00000001", // 1 tor
+		MaxAmount:         "1000000000.00000000",
+		MinDustThreshold:  "0.00000001",
+		MemoMaxBytes:      256,
 		SupportsAmountRef: true,
 		AssetPrecision: map[string]int{
 			"RUNE": 8,
@@ -142,7 +142,7 @@ func ValidateChainPrecisionSupport(chainID string) error {
 	if chainID == "INVALID" {
 		return fmt.Errorf("invalid chain ID: %s", chainID)
 	}
-	
+
 	chain, err := common.NewChain(chainID)
 	if err != nil {
 		return fmt.Errorf("invalid chain ID: %w", err)
@@ -235,11 +235,11 @@ func validateAmountEncodingPrecision(amount cosmos.Dec, reference int64, config 
 	// Simulate the encoding process: replace last 5 digits with reference
 	divisor := cosmos.NewInt(100000)
 	baseAmount := amountInt.Quo(divisor) // This truncates the last 5 digits
-	remainder := amountInt.Mod(divisor)   // This is what we lose
-	
+	remainder := amountInt.Mod(divisor)  // This is what we lose
+
 	// Create encoded amount: base * 100000 + reference (simulates replacing last 5 digits)
 	encodedAmount := baseAmount.Mul(divisor).Add(cosmos.NewInt(reference))
-	
+
 	// Check if the encoding is reversible
 	extractedBase := encodedAmount.Quo(divisor)
 	extractedRef := encodedAmount.Mod(divisor)
@@ -255,15 +255,15 @@ func validateAmountEncodingPrecision(amount cosmos.Dec, reference int64, config 
 	// Calculate precision loss as both absolute and percentage
 	remainderAmount := cosmos.NewDecFromBigInt(remainder.BigInt()).Quo(multiplier)
 	dustThreshold, _ := cosmos.NewDecFromStr(config.MinDustThreshold)
-	
+
 	// For memoless reference encoding, allow precision loss up to 5% of the original amount
 	// or up to twice the dust threshold, whichever is higher. This is more forgiving for edge cases.
 	maxAllowedLoss := amount.Mul(cosmos.NewDec(5).Quo(cosmos.NewDec(100))) // 5% of original amount
-	minAllowedLoss := dustThreshold.Mul(cosmos.NewDec(2)) // 2x dust threshold
+	minAllowedLoss := dustThreshold.Mul(cosmos.NewDec(2))                  // 2x dust threshold
 	if minAllowedLoss.GT(maxAllowedLoss) {
 		maxAllowedLoss = minAllowedLoss
 	}
-	
+
 	if remainderAmount.GT(maxAllowedLoss) {
 		return fmt.Errorf("precision loss (%s) exceeds maximum allowed (%s)", remainderAmount.String(), maxAllowedLoss.String())
 	}
@@ -298,7 +298,7 @@ func ValidateAssetPrecision(amount string, asset string, chainID string) error {
 	if len(parts) == 2 {
 		decimalPlaces := len(parts[1])
 		if decimalPlaces > assetPrecision {
-			return fmt.Errorf("amount has %d decimal places, but asset %s on %s supports maximum %d", 
+			return fmt.Errorf("amount has %d decimal places, but asset %s on %s supports maximum %d",
 				decimalPlaces, asset, chainID, assetPrecision)
 		}
 	}
@@ -329,7 +329,7 @@ func ValidateDustThreshold(amount string, chainID string) error {
 	}
 
 	if amountDec.LT(dustThreshold) {
-		return fmt.Errorf("amount %s below dust threshold %s for chain %s", 
+		return fmt.Errorf("amount %s below dust threshold %s for chain %s",
 			amount, config.MinDustThreshold, chainID)
 	}
 
@@ -350,7 +350,7 @@ func ValidateMemoSizeForChain(memo string, chainID string) error {
 
 	memoBytes := len([]byte(memo))
 	if memoBytes > config.MemoMaxBytes {
-		return fmt.Errorf("memo size %d bytes exceeds chain %s limit of %d bytes", 
+		return fmt.Errorf("memo size %d bytes exceeds chain %s limit of %d bytes",
 			memoBytes, chainID, config.MemoMaxBytes)
 	}
 
@@ -424,7 +424,7 @@ func PreventDustAttack(amounts []string, chainID string, timeWindow int64) error
 	// If more than 70% of transactions are dust/near-dust, flag as potential attack
 	dustRatio := float64(dustCount) / float64(len(amounts))
 	if dustRatio > 0.7 && len(amounts) > 10 {
-		return fmt.Errorf("potential dust attack detected: %d%% of transactions are near dust threshold", 
+		return fmt.Errorf("potential dust attack detected: %d%% of transactions are near dust threshold",
 			int(dustRatio*100))
 	}
 
@@ -448,7 +448,7 @@ func GetChainConfig(chainID string) (ChainConfig, error) {
 	if chainID == "INVALID" {
 		return ChainConfig{}, fmt.Errorf("invalid chain ID: %s", chainID)
 	}
-	
+
 	chain, err := common.NewChain(chainID)
 	if err != nil {
 		return ChainConfig{}, fmt.Errorf("invalid chain ID: %w", err)
@@ -501,7 +501,7 @@ func ValidateChainPrecisionRequirements(chainID string, decimalPlaces int) error
 
 	// Verify the provided decimal places match the chain's configuration
 	if decimalPlaces != config.DecimalPlaces {
-		return fmt.Errorf("chain %s decimal places mismatch: expected %d, got %d", 
+		return fmt.Errorf("chain %s decimal places mismatch: expected %d, got %d",
 			chainID, config.DecimalPlaces, decimalPlaces)
 	}
 

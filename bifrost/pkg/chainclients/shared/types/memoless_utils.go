@@ -25,7 +25,7 @@ func (m *MemolessUtils) ExtractReferenceFromAmount(amount cosmos.Uint) (string, 
 	}
 
 	amountStr := amount.String()
-	
+
 	// Need at least 6 digits for base amount + 5-digit reference
 	if len(amountStr) < 6 {
 		return "", fmt.Errorf("amount too small for memoless reference: %s (need at least 6 digits)", amountStr)
@@ -33,7 +33,7 @@ func (m *MemolessUtils) ExtractReferenceFromAmount(amount cosmos.Uint) (string, 
 
 	// Extract last 5 digits
 	reference := amountStr[len(amountStr)-5:]
-	
+
 	// Validate reference format (5 digits)
 	if len(reference) != 5 {
 		return "", fmt.Errorf("invalid reference length: %d", len(reference))
@@ -65,7 +65,7 @@ func (m *MemolessUtils) IsMemolessTransaction(memo string, coins common.Coins) (
 	}
 
 	coin := coins[0]
-	
+
 	// Check minimum amount threshold (need at least 6 digits for base+reference)
 	minAmount := cosmos.NewUint(100000) // 10^5 = 100,000 (6 digits minimum)
 	if coin.Amount.LT(minAmount) {
@@ -114,7 +114,7 @@ func (m *MemolessUtils) EncodeAmountWithReference(baseAmount cosmos.Uint, refere
 
 	// Convert base amount to string and append reference
 	baseStr := baseAmount.String()
-	
+
 	// Ensure base amount has at least 1 digit
 	if baseAmount.IsZero() {
 		return cosmos.ZeroUint(), fmt.Errorf("base amount cannot be zero")
@@ -124,12 +124,12 @@ func (m *MemolessUtils) EncodeAmountWithReference(baseAmount cosmos.Uint, refere
 	if len(baseStr) >= 5 {
 		// Remove last 5 digits and append new reference
 		baseWithoutRef := baseStr[:len(baseStr)-5]
-		
+
 		// If baseWithoutRef is empty, use "1" as minimum base
 		if baseWithoutRef == "" {
 			baseWithoutRef = "1"
 		}
-		
+
 		encodedStr := baseWithoutRef + reference
 		encodedAmount := cosmos.NewUintFromString(encodedStr)
 		return encodedAmount, nil
@@ -138,6 +138,6 @@ func (m *MemolessUtils) EncodeAmountWithReference(baseAmount cosmos.Uint, refere
 	// If base amount is less than 5 digits, just append reference
 	encodedStr := baseStr + reference
 	encodedAmount := cosmos.NewUintFromString(encodedStr)
-	
+
 	return encodedAmount, nil
 }

@@ -66,10 +66,10 @@ func TestExtractReferenceFromAmount(t *testing.T) {
 			if tt.wantErr {
 				require.Error(t, err)
 				if tt.amount.IsZero() {
-					require.Contains(t, err.Error(), "amount cannot be zero", 
+					require.Contains(t, err.Error(), "amount cannot be zero",
 						"Error should mention zero amount")
 				} else {
-					require.Contains(t, err.Error(), "amount too small for memoless reference", 
+					require.Contains(t, err.Error(), "amount too small for memoless reference",
 						"Error should mention amount too small")
 				}
 				return
@@ -123,8 +123,8 @@ func TestIsMemolessTransaction(t *testing.T) {
 			wantErr:        false,
 		},
 		{
-			name:           "multiple coins",
-			memo:           "",
+			name: "multiple coins",
+			memo: "",
 			coins: common.Coins{
 				common.NewCoin(common.BTCAsset, cosmos.NewUint(100012345)),
 				common.NewCoin(common.RuneNative, cosmos.NewUint(1000)),
@@ -199,11 +199,11 @@ func TestIsMemolessTransaction(t *testing.T) {
 			}
 
 			require.NoError(t, err)
-			require.Equal(t, tt.expectMemoless, isMemoless, 
+			require.Equal(t, tt.expectMemoless, isMemoless,
 				"Memoless detection result should match expected")
-			
+
 			if tt.expectMemoless {
-				require.Equal(t, tt.expectedRef, ref, 
+				require.Equal(t, tt.expectedRef, ref,
 					"Reference should match expected value")
 				require.Len(t, ref, 5, "Reference should be 5 characters")
 				require.Regexp(t, `^\d{5}$`, ref, "Reference should be 5 digits")
@@ -294,7 +294,7 @@ func TestValidateReference(t *testing.T) {
 			if tt.wantErr {
 				require.Error(t, err)
 				if tt.errMsg != "" {
-					require.Contains(t, err.Error(), tt.errMsg, 
+					require.Contains(t, err.Error(), tt.errMsg,
 						"Error message should contain expected text")
 				}
 			} else {
@@ -403,14 +403,14 @@ func TestEncodeAmountWithReference(t *testing.T) {
 					require.Contains(t, err.Error(), tt.errMsg,
 						"Error message should contain expected text")
 				}
-				require.True(t, result.IsZero(), 
+				require.True(t, result.IsZero(),
 					"Result should be zero on error")
 				return
 			}
 
 			require.NoError(t, err)
 			require.Equal(t, tt.expected, result)
-			
+
 			// Verify we can extract the reference back
 			extractedRef, err := utils.ExtractReferenceFromAmount(result)
 			require.NoError(t, err)
@@ -423,10 +423,10 @@ func TestEncodeAmountWithReference(t *testing.T) {
 func TestGetMinimumMemolessAmount(t *testing.T) {
 	utils := NewMemolessUtils()
 	minAmount := utils.GetMinimumMemolessAmount()
-	
+
 	require.Equal(t, cosmos.NewUint(100000), minAmount,
 		"Minimum amount should be 100,000 base units")
-	require.False(t, minAmount.IsZero(), 
+	require.False(t, minAmount.IsZero(),
 		"Minimum amount should not be zero")
 	require.True(t, minAmount.GT(cosmos.NewUint(99999)),
 		"Minimum amount should be greater than 99,999")
@@ -435,92 +435,92 @@ func TestGetMinimumMemolessAmount(t *testing.T) {
 func TestMemolessUtilsIntegration(t *testing.T) {
 	// Test the complete flow of memoless utilities working together
 	utils := NewMemolessUtils()
-	
+
 	// Test data
 	baseAmount := cosmos.NewUint(1500000)
 	reference := "54321"
-	
+
 	// Step 1: Encode amount with reference
 	encodedAmount, err := utils.EncodeAmountWithReference(baseAmount, reference)
 	require.NoError(t, err)
-	
+
 	// Step 2: Create coins for transaction
 	coins := common.Coins{common.NewCoin(common.BTCAsset, encodedAmount)}
-	
+
 	// Step 3: Detect memoless transaction
 	isMemoless, extractedRef, err := utils.IsMemolessTransaction("", coins)
 	require.NoError(t, err)
 	require.True(t, isMemoless, "Should detect as memoless transaction")
 	require.Equal(t, reference, extractedRef, "Should extract correct reference")
-	
+
 	// Step 4: Validate the reference
 	err = utils.ValidateReference(extractedRef)
 	require.NoError(t, err, "Reference should be valid")
-	
+
 	// Step 5: Extract reference directly from amount
 	directRef, err := utils.ExtractReferenceFromAmount(encodedAmount)
 	require.NoError(t, err)
 	require.Equal(t, reference, directRef, "Direct extraction should match")
-	
+
 	// Verify the full cycle works
 	t.Logf("Integration test successful:")
 	t.Logf("  Base amount: %s", baseAmount.String())
-	t.Logf("  Reference: %s", reference) 
+	t.Logf("  Reference: %s", reference)
 	t.Logf("  Encoded amount: %s", encodedAmount.String())
 	t.Logf("  Extracted reference: %s", extractedRef)
 }
 
 func TestBoundaryConditions(t *testing.T) {
 	utils := NewMemolessUtils()
-	
+
 	tests := []struct {
-		name        string
-		memo        string
-		amount      cosmos.Uint
+		name           string
+		memo           string
+		amount         cosmos.Uint
 		expectMemoless bool
-		description string
+		description    string
 	}{
 		{
-			name:        "minimum valid amount",
-			memo:        "",
-			amount:      cosmos.NewUint(100000), // Exactly minimum
-			expectMemoless: true, // Should detect as memoless, validation separate
-			description: "Amount at minimum threshold with invalid reference",
+			name:           "minimum valid amount",
+			memo:           "",
+			amount:         cosmos.NewUint(100000), // Exactly minimum
+			expectMemoless: true,                   // Should detect as memoless, validation separate
+			description:    "Amount at minimum threshold with invalid reference",
 		},
 		{
-			name:        "just above minimum",
-			memo:        "",
-			amount:      cosmos.NewUint(100001),
+			name:           "just above minimum",
+			memo:           "",
+			amount:         cosmos.NewUint(100001),
 			expectMemoless: true,
-			description: "Just above minimum with valid reference",
+			description:    "Just above minimum with valid reference",
 		},
 		{
-			name:        "maximum memo length",
-			memo:        "ab", // Exactly 2 characters (max for memoless)
-			amount:      cosmos.NewUint(100012345),
+			name:           "maximum memo length",
+			memo:           "ab", // Exactly 2 characters (max for memoless)
+			amount:         cosmos.NewUint(100012345),
 			expectMemoless: true,
-			description: "Maximum allowed memo length for memoless",
+			description:    "Maximum allowed memo length for memoless",
 		},
 		{
-			name:        "memo too long by one char",
-			memo:        "abc", // 3 characters (too long)
-			amount:      cosmos.NewUint(100012345),
+			name:           "memo too long by one char",
+			memo:           "abc", // 3 characters (too long)
+			amount:         cosmos.NewUint(100012345),
 			expectMemoless: false,
-			description: "Memo one character too long",
+			description:    "Memo one character too long",
 		},
 		{
-			name:        "very large amount",
-			memo:        "",
-			amount:      cosmos.NewUintFromString("999999999999999999999999999912345"),
+			name:           "very large amount",
+			memo:           "",
+			amount:         cosmos.NewUintFromString("999999999999999999999999999912345"),
 			expectMemoless: true,
-			description: "Very large amount with valid reference",
+			description:    "Very large amount with valid reference",
 		},
 		{
-			name:        "amount with leading zeros in reference",
-			memo:        "",
-			amount:      cosmos.NewUint(100000123), // Reference: "00123"
+			name:           "amount with leading zeros in reference",
+			memo:           "",
+			amount:         cosmos.NewUint(100000123), // Reference: "00123"
 			expectMemoless: true,
-			description: "Reference with leading zeros",
+			description:    "Reference with leading zeros",
 		},
 	}
 
@@ -528,7 +528,7 @@ func TestBoundaryConditions(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			coins := common.Coins{common.NewCoin(common.BTCAsset, tt.amount)}
 			isMemoless, _, err := utils.IsMemolessTransaction(tt.memo, coins)
-			
+
 			require.NoError(t, err)
 			require.Equal(t, tt.expectMemoless, isMemoless, tt.description)
 		})
@@ -537,38 +537,38 @@ func TestBoundaryConditions(t *testing.T) {
 
 func TestEdgeCasesAndErrorHandling(t *testing.T) {
 	utils := NewMemolessUtils()
-	
+
 	t.Run("nil coins slice", func(t *testing.T) {
 		isMemoless, ref, err := utils.IsMemolessTransaction("", nil)
 		require.NoError(t, err)
 		require.False(t, isMemoless)
 		require.Empty(t, ref)
 	})
-	
+
 	t.Run("empty coins slice", func(t *testing.T) {
 		isMemoless, ref, err := utils.IsMemolessTransaction("", common.Coins{})
 		require.NoError(t, err)
 		require.False(t, isMemoless)
 		require.Empty(t, ref)
 	})
-	
+
 	t.Run("very long memo", func(t *testing.T) {
 		longMemo := string(make([]byte, 1000))
 		for i := range longMemo {
 			longMemo = longMemo[:i] + "a" + longMemo[i+1:]
 		}
 		coins := common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(100012345))}
-		
+
 		isMemoless, ref, err := utils.IsMemolessTransaction(longMemo, coins)
 		require.NoError(t, err)
 		require.False(t, isMemoless, "Very long memo should not be memoless")
 		require.Empty(t, ref)
 	})
-	
+
 	t.Run("unicode in memo", func(t *testing.T) {
 		unicodeMemo := "🚀💎"
 		coins := common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(100012345))}
-		
+
 		isMemoless, ref, err := utils.IsMemolessTransaction(unicodeMemo, coins)
 		require.NoError(t, err)
 		require.False(t, isMemoless, "Unicode memo should not be memoless")

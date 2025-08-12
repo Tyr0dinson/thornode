@@ -70,9 +70,9 @@ func (k KVStore) ProcessMemoRegistration(ctx cosmos.Context, msg thorchaintypes.
 	}
 
 	// Log successful registration for monitoring
-	ctx.Logger().Info("Memo registration successful", 
-		"reference", reference, 
-		"chain", msg.ChainId, 
+	ctx.Logger().Info("Memo registration successful",
+		"reference", reference,
+		"chain", msg.ChainId,
 		"expires_at", expirationHeight)
 
 	return &MemoRegistrationResult{
@@ -143,31 +143,31 @@ func (k KVStore) ValidateMemoRegistrationComplete(ctx cosmos.Context, msg thorch
 // HandleCollisionResolution handles reference collisions with optimized reference generation
 func (k KVStore) HandleCollisionResolution(ctx cosmos.Context, memo string, height int64, constantProvider constants.ConstantValues) (string, error) {
 	maxCollisionAttempts := constantProvider.GetInt64Value(constants.MemolessCollisionLimit)
-	
+
 	// Pre-generate hash input base for performance
 	baseInput := fmt.Sprintf("%s:%d", memo, height)
-	
+
 	for attempt := int64(0); attempt < maxCollisionAttempts; attempt++ {
 		// Generate reference with optimized hashing
 		reference := k.generateReferenceOptimized(baseInput, attempt)
-		
+
 		// Fast existence check
 		if !k.HasRegisteredMemo(ctx, reference) {
 			if attempt > 0 {
 				// Log collision resolution for monitoring
-				ctx.Logger().Info("Collision resolved", 
-					"attempts", attempt+1, 
+				ctx.Logger().Info("Collision resolved",
+					"attempts", attempt+1,
 					"reference", reference)
 			}
 			return reference, nil
 		}
 	}
-	
+
 	// Log collision resolution failure for analysis
-	ctx.Logger().Error("Collision resolution exhausted", 
+	ctx.Logger().Error("Collision resolution exhausted",
 		"max_attempts", maxCollisionAttempts,
 		"memo_prefix", memo[:min(len(memo), 20)])
-	
+
 	return "", fmt.Errorf("collision resolution failed after %d attempts", maxCollisionAttempts)
 }
 
@@ -176,7 +176,7 @@ func (k KVStore) CleanupExpiredMemos(ctx cosmos.Context, currentHeight int64) (i
 	cleanedCount := int64(0)
 	batchSize := int64(100) // Process in batches to avoid blocking
 	processedCount := int64(0)
-	
+
 	// Get iterator for all registered memos
 	iterator := k.GetRegisteredMemoIterator(ctx)
 	defer iterator.Close()
@@ -219,11 +219,11 @@ func (k KVStore) CleanupExpiredMemos(ctx cosmos.Context, currentHeight int64) (i
 		}
 	}
 
-	ctx.Logger().Info("Cleanup completed", 
-		"expired_count", cleanedCount, 
-		"processed_count", processedCount, 
+	ctx.Logger().Info("Cleanup completed",
+		"expired_count", cleanedCount,
+		"processed_count", processedCount,
 		"height", currentHeight)
-	
+
 	return cleanedCount, nil
 }
 
@@ -231,8 +231,8 @@ func (k KVStore) CleanupExpiredMemos(ctx cosmos.Context, currentHeight int64) (i
 func (k KVStore) processBatchExpiredMemos(ctx cosmos.Context, expiredMemos []thorchaintypes.RegisteredMemo) error {
 	for _, memo := range expiredMemos {
 		if err := k.SetRegisteredMemo(ctx, memo); err != nil {
-			ctx.Logger().Error("Failed to mark memo as expired", 
-				"reference", memo.Reference, 
+			ctx.Logger().Error("Failed to mark memo as expired",
+				"reference", memo.Reference,
 				"error", err)
 			return err
 		}
@@ -296,7 +296,7 @@ func (k KVStore) validateAmountRequirements(ctx cosmos.Context, msg thorchaintyp
 func (k KVStore) validateBusinessLogic(ctx cosmos.Context, msg thorchaintypes.MsgRegisterMemo, constantProvider constants.ConstantValues) error {
 	// Check rate limiting (simplified implementation)
 	// In production, this would check recent registrations by signer
-	
+
 	// Check destination format if provided
 	if msg.Destination != "" && len(msg.Destination) < 10 {
 		return fmt.Errorf("destination address too short: %s", msg.Destination)
@@ -320,13 +320,13 @@ func (k KVStore) generateReferenceOptimized(baseInput string, attempt int64) str
 	// Append attempt to pre-computed base for efficiency
 	input := fmt.Sprintf("%s:%d", baseInput, attempt)
 	hash := sha256.Sum256([]byte(input))
-	
+
 	// Convert first 8 bytes to uint64 and mod to get 5 digits
 	var num uint64
 	for i := 0; i < 8; i++ {
 		num = (num << 8) | uint64(hash[i])
 	}
-	
+
 	// Ensure 5-digit number (10000-99999)
 	reference := (num % 90000) + 10000
 	return fmt.Sprintf("%05d", reference)
@@ -344,58 +344,57 @@ func (k KVStore) generateReference(memo string, height int64, attempt int64) str
 // GetMemolessStats retrieves memoless protocol statistics
 func (k KVStore) GetMemolessStats(ctx cosmos.Context) MemolessStats {
 	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
-	
+
 	// Read individual stats using binary encoding (following existing pattern)
 	stats := MemolessStats{}
-	
+
 	// Get total registrations
 	if bz := store.Get(k.GetKey(prefixMemoStats, "registrations")); bz != nil {
 		stats.TotalRegistrations = int64(binary.BigEndian.Uint64(bz))
 	}
-	
+
 	// Get total collisions
 	if bz := store.Get(k.GetKey(prefixMemoStats, "collisions")); bz != nil {
 		stats.TotalCollisions = int64(binary.BigEndian.Uint64(bz))
 	}
-	
+
 	// Get last cleanup height
 	if bz := store.Get(k.GetKey(prefixMemoStats, "last_cleanup_height")); bz != nil {
 		stats.LastCleanupHeight = int64(binary.BigEndian.Uint64(bz))
 	}
-	
+
 	// Get last expired count
 	if bz := store.Get(k.GetKey(prefixMemoStats, "last_expired_count")); bz != nil {
 		stats.LastExpiredCount = int64(binary.BigEndian.Uint64(bz))
 	}
-	
+
 	// Calculate active registrations (this is a derived value, not stored separately)
 	// For now, just return total - we can improve this later with actual counting
 	stats.ActiveRegistrations = stats.TotalRegistrations
-	
+
 	return stats
 }
 
 // SetMemolessStats stores memoless protocol statistics
 func (k KVStore) SetMemolessStats(ctx cosmos.Context, stats MemolessStats) {
 	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
-	
+
 	// Store individual stats using binary encoding (following existing pattern)
 	buf := make([]byte, 8)
-	
+
 	// Store total registrations
 	binary.BigEndian.PutUint64(buf, uint64(stats.TotalRegistrations))
 	store.Set(k.GetKey(prefixMemoStats, "registrations"), buf)
-	
+
 	// Store total collisions
 	binary.BigEndian.PutUint64(buf, uint64(stats.TotalCollisions))
 	store.Set(k.GetKey(prefixMemoStats, "collisions"), buf)
-	
+
 	// Store last cleanup height
 	binary.BigEndian.PutUint64(buf, uint64(stats.LastCleanupHeight))
 	store.Set(k.GetKey(prefixMemoStats, "last_cleanup_height"), buf)
-	
+
 	// Store last expired count
 	binary.BigEndian.PutUint64(buf, uint64(stats.LastExpiredCount))
 	store.Set(k.GetKey(prefixMemoStats, "last_expired_count"), buf)
 }
-

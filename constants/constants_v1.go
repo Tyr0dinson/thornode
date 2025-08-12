@@ -146,15 +146,15 @@ func NewConstantValue() *ConstantVals {
 			TCYClaimingHalt:                     1,                  // enable/disable tcy claiming
 
 			// Memoless Protocol Constants
-			MemolessEnabled:         1,       // Enable memoless protocol
-			MemolessTTL:             14400,   // 4 hours in blocks (5s blocks) 
-			MemolessMaxMemoLength:   512,     // Max memo length
-			MemolessCollisionLimit:  100,     // Max collision resolution attempts
-			MemolessSlashAmount:     1000000, // Bond slash for malicious registrations
-			MemolessMinAmount:       100000,  // Minimum amount for memoless tx
-			MemolessMaxTTL:          1008000, // Max TTL (1 week in blocks)
-			MemolessGracePeriod:     720,     // Grace period blocks (1 hour)
-			MemolessMaxActiveRefs:   100000,  // Max active references per chain
+			MemolessEnabled:        1,       // Enable memoless protocol
+			MemolessTTL:            14400,   // 4 hours in blocks (5s blocks)
+			MemolessMaxMemoLength:  512,     // Max memo length
+			MemolessCollisionLimit: 100,     // Max collision resolution attempts
+			MemolessSlashAmount:    1000000, // Bond slash for malicious registrations
+			MemolessMinAmount:      100000,  // Minimum amount for memoless tx
+			MemolessMaxTTL:         1008000, // Max TTL (1 week in blocks)
+			MemolessGracePeriod:    720,     // Grace period blocks (1 hour)
+			MemolessMaxActiveRefs:  100000,  // Max active references per chain
 		},
 		boolValues: map[ConstantName]bool{
 			StrictBondLiquidityRatio: true,

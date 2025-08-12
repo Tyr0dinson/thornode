@@ -14,18 +14,18 @@ import (
 
 // BenchmarkResult represents the result of a performance benchmark
 type BenchmarkResult struct {
-	OperationName     string        `json:"operation_name"`
-	TotalOperations   int64         `json:"total_operations"`
-	TotalDuration     time.Duration `json:"total_duration"`
-	AvgLatency        time.Duration `json:"avg_latency"`
-	MinLatency        time.Duration `json:"min_latency"`
-	MaxLatency        time.Duration `json:"max_latency"`
-	OperationsPerSec  float64       `json:"operations_per_sec"`
-	ErrorCount        int64         `json:"error_count"`
-	SuccessRate       float64       `json:"success_rate"`
-	MemoryAllocated   uint64        `json:"memory_allocated"`
-	GoroutinesUsed    int           `json:"goroutines_used"`
-	Timestamp         time.Time     `json:"timestamp"`
+	OperationName    string        `json:"operation_name"`
+	TotalOperations  int64         `json:"total_operations"`
+	TotalDuration    time.Duration `json:"total_duration"`
+	AvgLatency       time.Duration `json:"avg_latency"`
+	MinLatency       time.Duration `json:"min_latency"`
+	MaxLatency       time.Duration `json:"max_latency"`
+	OperationsPerSec float64       `json:"operations_per_sec"`
+	ErrorCount       int64         `json:"error_count"`
+	SuccessRate      float64       `json:"success_rate"`
+	MemoryAllocated  uint64        `json:"memory_allocated"`
+	GoroutinesUsed   int           `json:"goroutines_used"`
+	Timestamp        time.Time     `json:"timestamp"`
 }
 
 // BenchmarkConfig configures benchmark parameters
@@ -83,13 +83,13 @@ func (pb *PerformanceBenchmark) BenchmarkMemoRegistration(config BenchmarkConfig
 	return pb.runBenchmark("MemoRegistration", config, func() error {
 		id := atomic.AddInt64(&counter, 1)
 		memo := fmt.Sprintf("SWAP:BTC.BTC::%d", id)
-		
+
 		// Generate reference
 		reference, err := pb.keeper.ResolveCollision(pb.ctx, memo, pb.ctx.BlockHeight(), pb.constantProvider)
 		if err != nil {
 			return err
 		}
-		
+
 		// Create and store memo
 		registeredMemo := types.RegisteredMemo{
 			Reference:    reference,
@@ -99,7 +99,7 @@ func (pb *PerformanceBenchmark) BenchmarkMemoRegistration(config BenchmarkConfig
 			ChainId:      "BTC",
 			Status:       "active",
 		}
-		
+
 		return pb.keeper.SetRegisteredMemo(pb.ctx, registeredMemo)
 	})
 }
@@ -109,11 +109,11 @@ func (pb *PerformanceBenchmark) BenchmarkMemoLookup(config BenchmarkConfig) Benc
 	// Pre-populate with test data
 	references := pb.prepareTestData(config.Operations)
 	counter := int64(0)
-	
+
 	return pb.runBenchmark("MemoLookup", config, func() error {
 		id := atomic.AddInt64(&counter, 1) % int64(len(references))
 		reference := references[id]
-		
+
 		_, err := pb.keeper.GetRegisteredMemo(pb.ctx, reference)
 		return err
 	})
@@ -124,11 +124,11 @@ func (pb *PerformanceBenchmark) BenchmarkMemoExists(config BenchmarkConfig) Benc
 	// Pre-populate with test data
 	references := pb.prepareTestData(config.Operations)
 	counter := int64(0)
-	
+
 	return pb.runBenchmark("MemoExists", config, func() error {
 		id := atomic.AddInt64(&counter, 1) % int64(len(references))
 		reference := references[id]
-		
+
 		_ = pb.keeper.HasRegisteredMemo(pb.ctx, reference)
 		return nil
 	})
@@ -150,7 +150,7 @@ func (pb *PerformanceBenchmark) BenchmarkCollisionResolution(config BenchmarkCon
 		}
 		pb.keeper.SetRegisteredMemo(pb.ctx, registeredMemo)
 	}
-	
+
 	counter := int64(0)
 	return pb.runBenchmark("CollisionResolution", config, func() error {
 		id := atomic.AddInt64(&counter, 1)
@@ -164,11 +164,11 @@ func (pb *PerformanceBenchmark) BenchmarkCollisionResolution(config BenchmarkCon
 func (pb *PerformanceBenchmark) BenchmarkChainValidation(config BenchmarkConfig) BenchmarkResult {
 	chains := []string{"BTC", "ETH", "BNB", "BCH", "LTC"}
 	counter := int64(0)
-	
+
 	return pb.runBenchmark("ChainValidation", config, func() error {
 		id := atomic.AddInt64(&counter, 1) % int64(len(chains))
 		chainID := chains[id]
-		
+
 		return pb.keeper.ValidateChainForMemoless(pb.ctx, chainID)
 	})
 }
@@ -182,11 +182,11 @@ func (pb *PerformanceBenchmark) BenchmarkAmountValidation(config BenchmarkConfig
 		cosmos.NewUint(1000000000),
 	}
 	counter := int64(0)
-	
+
 	return pb.runBenchmark("AmountValidation", config, func() error {
 		id := atomic.AddInt64(&counter, 1) % int64(len(amounts))
 		amount := amounts[id]
-		
+
 		return pb.keeper.ValidateAmountForChain(pb.ctx, "BTC", amount)
 	})
 }
@@ -195,7 +195,7 @@ func (pb *PerformanceBenchmark) BenchmarkAmountValidation(config BenchmarkConfig
 func (pb *PerformanceBenchmark) BenchmarkCleanupOperation(config BenchmarkConfig) BenchmarkResult {
 	// Create expired memos for cleanup
 	pb.prepareExpiredTestData(1000)
-	
+
 	return pb.runBenchmark("CleanupOperation", config, func() error {
 		return pb.keeper.DeleteExpiredMemos(pb.ctx, pb.ctx.BlockHeight())
 	})
@@ -205,12 +205,12 @@ func (pb *PerformanceBenchmark) BenchmarkCleanupOperation(config BenchmarkConfig
 func (pb *PerformanceBenchmark) BenchmarkConcurrentRegistration(config BenchmarkConfig) BenchmarkResult {
 	return pb.runConcurrentBenchmark("ConcurrentRegistration", config, func(workerID int) error {
 		memo := fmt.Sprintf("SWAP:BTC.BTC::worker:%d:%d", workerID, time.Now().UnixNano())
-		
+
 		reference, err := pb.keeper.ResolveCollision(pb.ctx, memo, pb.ctx.BlockHeight(), pb.constantProvider)
 		if err != nil {
 			return err
 		}
-		
+
 		registeredMemo := types.RegisteredMemo{
 			Reference:    reference,
 			Memo:         memo,
@@ -219,27 +219,27 @@ func (pb *PerformanceBenchmark) BenchmarkConcurrentRegistration(config Benchmark
 			ChainId:      "BTC",
 			Status:       "active",
 		}
-		
+
 		return pb.keeper.SetRegisteredMemo(pb.ctx, registeredMemo)
 	})
 }
 
-// BenchmarkMessageValidation benchmarks enhanced message validation performance  
+// BenchmarkMessageValidation benchmarks enhanced message validation performance
 func (pb *PerformanceBenchmark) BenchmarkMessageValidation(config BenchmarkConfig) BenchmarkResult {
 	version := GetCurrentVersion()
 	counter := int64(0)
-	
+
 	return pb.runBenchmark("MessageValidation", config, func() error {
 		id := atomic.AddInt64(&counter, 1)
 		signer := GetRandomBech32Addr()
-		
+
 		msg := types.MsgRegisterMemo{
 			Memo:    fmt.Sprintf("SWAP:BTC.BTC::%d", id),
 			Ttl:     14400,
 			ChainId: "BTC",
 			Signer:  signer,
 		}
-		
+
 		return pb.keeper.ValidateMemoRegistrationWithVersion(pb.ctx, msg, version, pb.constantProvider)
 	})
 }
@@ -251,27 +251,27 @@ func (pb *PerformanceBenchmark) runBenchmark(name string, config BenchmarkConfig
 		runtime.GC()
 		runtime.ReadMemStats(&memBefore)
 	}
-	
+
 	// Warmup
 	for i := 0; i < config.WarmupRounds; i++ {
 		operation()
 	}
-	
+
 	// Initialize tracking variables
 	var totalDuration time.Duration
 	var minLatency = time.Hour // Initialize to large value
 	var maxLatency time.Duration
 	var errorCount int64
 	var successCount int64
-	
+
 	start := time.Now()
-	
+
 	// Run benchmark
 	for i := 0; i < config.Operations; i++ {
 		opStart := time.Now()
 		err := operation()
 		opDuration := time.Since(opStart)
-		
+
 		totalDuration += opDuration
 		if opDuration < minLatency {
 			minLatency = opDuration
@@ -279,20 +279,20 @@ func (pb *PerformanceBenchmark) runBenchmark(name string, config BenchmarkConfig
 		if opDuration > maxLatency {
 			maxLatency = opDuration
 		}
-		
+
 		if err != nil {
 			atomic.AddInt64(&errorCount, 1)
 		} else {
 			atomic.AddInt64(&successCount, 1)
 		}
 	}
-	
+
 	actualDuration := time.Since(start)
-	
+
 	if config.CollectMemory {
 		runtime.ReadMemStats(&memAfter)
 	}
-	
+
 	// Calculate results
 	result := BenchmarkResult{
 		OperationName:    name,
@@ -307,15 +307,15 @@ func (pb *PerformanceBenchmark) runBenchmark(name string, config BenchmarkConfig
 		GoroutinesUsed:   1,
 		Timestamp:        time.Now(),
 	}
-	
+
 	if config.CollectMemory {
 		result.MemoryAllocated = memAfter.TotalAlloc - memBefore.TotalAlloc
 	}
-	
+
 	if minLatency == time.Hour {
 		result.MinLatency = 0
 	}
-	
+
 	pb.addResult(result)
 	return result
 }
@@ -327,35 +327,35 @@ func (pb *PerformanceBenchmark) runConcurrentBenchmark(name string, config Bench
 		runtime.GC()
 		runtime.ReadMemStats(&memBefore)
 	}
-	
+
 	// Shared counters
 	var totalOps int64
 	var errorCount int64
-	var totalDuration int64 // in nanoseconds
+	var totalDuration int64     // in nanoseconds
 	var minLatency int64 = 1e18 // Initialize to large value
 	var maxLatency int64
-	
+
 	operationsPerWorker := config.Operations / config.Concurrency
 	if operationsPerWorker == 0 {
 		operationsPerWorker = 1
 	}
-	
+
 	var wg sync.WaitGroup
 	start := time.Now()
-	
+
 	for worker := 0; worker < config.Concurrency; worker++ {
 		wg.Add(1)
 		go func(workerID int) {
 			defer wg.Done()
-			
+
 			for i := 0; i < operationsPerWorker; i++ {
 				opStart := time.Now()
 				err := operation(workerID)
 				opDuration := time.Since(opStart)
-				
+
 				atomic.AddInt64(&totalOps, 1)
 				atomic.AddInt64(&totalDuration, opDuration.Nanoseconds())
-				
+
 				// Update min latency
 				for {
 					current := atomic.LoadInt64(&minLatency)
@@ -366,7 +366,7 @@ func (pb *PerformanceBenchmark) runConcurrentBenchmark(name string, config Bench
 						break
 					}
 				}
-				
+
 				// Update max latency
 				for {
 					current := atomic.LoadInt64(&maxLatency)
@@ -377,23 +377,23 @@ func (pb *PerformanceBenchmark) runConcurrentBenchmark(name string, config Bench
 						break
 					}
 				}
-				
+
 				if err != nil {
 					atomic.AddInt64(&errorCount, 1)
 				}
 			}
 		}(worker)
 	}
-	
+
 	wg.Wait()
 	actualDuration := time.Since(start)
-	
+
 	if config.CollectMemory {
 		runtime.ReadMemStats(&memAfter)
 	}
-	
+
 	successCount := totalOps - errorCount
-	
+
 	// Calculate results
 	result := BenchmarkResult{
 		OperationName:    name,
@@ -408,15 +408,15 @@ func (pb *PerformanceBenchmark) runConcurrentBenchmark(name string, config Bench
 		GoroutinesUsed:   config.Concurrency,
 		Timestamp:        time.Now(),
 	}
-	
+
 	if config.CollectMemory {
 		result.MemoryAllocated = memAfter.TotalAlloc - memBefore.TotalAlloc
 	}
-	
+
 	if atomic.LoadInt64(&minLatency) == 1e18 {
 		result.MinLatency = 0
 	}
-	
+
 	pb.addResult(result)
 	return result
 }
@@ -424,11 +424,11 @@ func (pb *PerformanceBenchmark) runConcurrentBenchmark(name string, config Bench
 // prepareTestData creates test data for benchmarks
 func (pb *PerformanceBenchmark) prepareTestData(count int) []string {
 	references := make([]string, 0, count)
-	
+
 	for i := 0; i < count; i++ {
 		memo := fmt.Sprintf("BENCH:TEST:MEMO:%d", i)
 		reference := fmt.Sprintf("%05d", (i%90000)+10000)
-		
+
 		registeredMemo := types.RegisteredMemo{
 			Reference:    reference,
 			Memo:         memo,
@@ -437,22 +437,22 @@ func (pb *PerformanceBenchmark) prepareTestData(count int) []string {
 			ChainId:      "BTC",
 			Status:       "active",
 		}
-		
+
 		pb.keeper.SetRegisteredMemo(pb.ctx, registeredMemo)
 		references = append(references, reference)
 	}
-	
+
 	return references
 }
 
 // prepareExpiredTestData creates expired test data for cleanup benchmarks
 func (pb *PerformanceBenchmark) prepareExpiredTestData(count int) {
 	currentHeight := pb.ctx.BlockHeight()
-	
+
 	for i := 0; i < count; i++ {
 		memo := fmt.Sprintf("EXPIRED:BENCH:MEMO:%d", i)
 		reference := fmt.Sprintf("%05d", (i%90000)+10000)
-		
+
 		registeredMemo := types.RegisteredMemo{
 			Reference:    reference,
 			Memo:         memo,
@@ -461,7 +461,7 @@ func (pb *PerformanceBenchmark) prepareExpiredTestData(count int) {
 			ChainId:      "BTC",
 			Status:       "expired",
 		}
-		
+
 		pb.keeper.SetRegisteredMemo(pb.ctx, registeredMemo)
 	}
 }
@@ -477,7 +477,7 @@ func (pb *PerformanceBenchmark) addResult(result BenchmarkResult) {
 func (pb *PerformanceBenchmark) GetResults() []BenchmarkResult {
 	pb.mutex.RLock()
 	defer pb.mutex.RUnlock()
-	
+
 	results := make([]BenchmarkResult, len(pb.results))
 	copy(results, pb.results)
 	return results
@@ -489,9 +489,9 @@ func (pb *PerformanceBenchmark) GenerateReport() string {
 	if len(results) == 0 {
 		return "No benchmark results available"
 	}
-	
+
 	report := "=== MEMOLESS PROTOCOL PERFORMANCE BENCHMARK REPORT ===\n\n"
-	
+
 	for _, result := range results {
 		report += fmt.Sprintf("Operation: %s\n", result.OperationName)
 		report += fmt.Sprintf("  Total Operations: %d\n", result.TotalOperations)
@@ -508,54 +508,54 @@ func (pb *PerformanceBenchmark) GenerateReport() string {
 		}
 		report += fmt.Sprintf("  Timestamp: %v\n\n", result.Timestamp.Format(time.RFC3339))
 	}
-	
+
 	return report
 }
 
 // RunFullBenchmarkSuite runs a comprehensive benchmark suite
 func (pb *PerformanceBenchmark) RunFullBenchmarkSuite(baseConfig BenchmarkConfig) map[string]BenchmarkResult {
 	results := make(map[string]BenchmarkResult)
-	
+
 	// Reference generation benchmarks
 	config := baseConfig
 	config.Operations = 10000
 	results["ReferenceGeneration"] = pb.BenchmarkReferenceGeneration(config)
-	
+
 	config.Operations = 10000
 	results["ReferenceGenerationWithSalt"] = pb.BenchmarkReferenceGenerationWithSalt(config)
-	
+
 	// Storage operation benchmarks
 	config.Operations = 5000
 	results["MemoRegistration"] = pb.BenchmarkMemoRegistration(config)
-	
+
 	config.Operations = 10000
 	results["MemoLookup"] = pb.BenchmarkMemoLookup(config)
-	
+
 	config.Operations = 10000
 	results["MemoExists"] = pb.BenchmarkMemoExists(config)
-	
+
 	// Collision resolution benchmarks
 	config.Operations = 1000
 	results["CollisionResolution"] = pb.BenchmarkCollisionResolution(config)
-	
+
 	// Validation benchmarks
 	config.Operations = 5000
 	results["ChainValidation"] = pb.BenchmarkChainValidation(config)
-	
+
 	config.Operations = 5000
 	results["AmountValidation"] = pb.BenchmarkAmountValidation(config)
-	
+
 	config.Operations = 5000
 	results["MessageValidation"] = pb.BenchmarkMessageValidation(config)
-	
+
 	// Cleanup benchmarks
 	config.Operations = 10
 	results["CleanupOperation"] = pb.BenchmarkCleanupOperation(config)
-	
+
 	// Concurrent benchmarks
 	config.Operations = 1000
 	config.Concurrency = 10
 	results["ConcurrentRegistration"] = pb.BenchmarkConcurrentRegistration(config)
-	
+
 	return results
 }

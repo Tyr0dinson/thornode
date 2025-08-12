@@ -26,11 +26,11 @@ func NewMockThorClient() *MockThorClient {
 func (mtc *MockThorClient) GetRegisteredMemo(reference string) (*types.RegisteredMemo, error) {
 	mtc.mu.RLock()
 	defer mtc.mu.RUnlock()
-	
+
 	if memo, exists := mtc.memos[reference]; exists {
 		return memo, nil
 	}
-	
+
 	return nil, fmt.Errorf("memo not found for reference: %s", reference)
 }
 
@@ -147,4 +147,3 @@ type TimingStats struct {
 	max     time.Duration
 	avg     time.Duration
 }
-

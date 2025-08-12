@@ -6,7 +6,7 @@ import (
 
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
-	
+
 	btypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -28,14 +28,14 @@ func (m *MockThorchainBridgeForMemoless) GetRegisteredMemo(reference string) (*s
 
 func TestMemolessHandler_ProcessMemolessTransaction(t *testing.T) {
 	logger := zerolog.New(zerolog.NewTestWriter(t))
-	
+
 	tests := []struct {
-		name            string
-		txIn            *btypes.TxInItem
-		setupMocks      func(*MockThorchainBridgeForMemoless)
-		expectedResult  *btypes.TxInItem
-		expectError     bool
-		errorContains   string
+		name           string
+		txIn           *btypes.TxInItem
+		setupMocks     func(*MockThorchainBridgeForMemoless)
+		expectedResult *btypes.TxInItem
+		expectError    bool
+		errorContains  string
 	}{
 		{
 			name: "non-memoless transaction should pass through unchanged",
@@ -254,7 +254,7 @@ func TestMemolessHandler_adjustCoinsForMemoless(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := handler.adjustCoinsForMemoless(tt.coins, tt.reference)
-			
+
 			require.Equal(t, 1, len(result))
 			require.Equal(t, tt.coins[0].Asset, result[0].Asset)
 			if !tt.expectedAmount.IsZero() {
@@ -342,7 +342,7 @@ func TestMemolessHandler_validateRegisteredMemo(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := handler.validateRegisteredMemo(tt.memo, tt.currentHeight)
-			
+
 			if tt.expectError {
 				require.Error(t, err)
 				if tt.errorContains != "" {
@@ -393,7 +393,7 @@ func TestMemolessHandler_IsMemolessTransaction(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			isMemoless, ref := handler.IsMemolessTransaction(tt.memo, tt.coins)
-			
+
 			require.Equal(t, tt.expectMemoless, isMemoless)
 			require.Equal(t, tt.expectedRef, ref)
 		})
@@ -402,7 +402,7 @@ func TestMemolessHandler_IsMemolessTransaction(t *testing.T) {
 
 func TestMemolessHandler_EdgeCases(t *testing.T) {
 	logger := zerolog.New(zerolog.NewTestWriter(t))
-	
+
 	t.Run("nil transaction input should panic", func(t *testing.T) {
 		mockBridge := &MockThorchainBridgeForMemoless{}
 		handler := NewMemolessHandler(mockBridge, logger)
@@ -466,7 +466,7 @@ func TestMemolessHandler_EdgeCases(t *testing.T) {
 
 func TestMemolessHandler_CircuitBreakerScenarios(t *testing.T) {
 	logger := zerolog.New(zerolog.NewTestWriter(t))
-	
+
 	t.Run("repeated failures should be handled gracefully", func(t *testing.T) {
 		mockBridge := &MockThorchainBridgeForMemoless{}
 		mockBridge.getRegisteredMemoFunc = func(reference string) (*stypes.RegisteredMemo, error) {

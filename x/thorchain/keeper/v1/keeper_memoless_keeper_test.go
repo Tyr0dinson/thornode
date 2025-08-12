@@ -51,11 +51,11 @@ func (s *MemolessKeeperImplementationTestSuite) TestMemoRegistrationFlow(c *C) {
 // TestMemoLookupFlow tests memo lookup functionality (RED PHASE)
 func (s *MemolessKeeperImplementationTestSuite) TestMemoLookupFlow(c *C) {
 	ctx, k := setupKeeperForTest(c)
-	
+
 	// Test data
 	reference := "12345"
 	expectedMemo := "SWAP:ETH.ETH::thor1lookup"
-	
+
 	// Set up test memo
 	registeredMemo := thorchaintypes.RegisteredMemo{
 		Reference:    reference,
@@ -110,7 +110,7 @@ func (s *MemolessKeeperImplementationTestSuite) TestMemoValidationFlow(c *C) {
 	c.Assert(err, NotNil, Commentf("ValidateMemoRegistrationComplete should reject empty memo"))
 }
 
-// TestCollisionResolutionFlow tests collision handling (RED PHASE)  
+// TestCollisionResolutionFlow tests collision handling (RED PHASE)
 func (s *MemolessKeeperImplementationTestSuite) TestCollisionResolutionFlow(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	constantProvider := constants.GetConstantValues(GetCurrentVersion())
@@ -118,7 +118,7 @@ func (s *MemolessKeeperImplementationTestSuite) TestCollisionResolutionFlow(c *C
 	memo := "COLLISION:TEST"
 	height := ctx.BlockHeight()
 
-	// RED: This should fail initially - HandleCollisionResolution method doesn't exist yet  
+	// RED: This should fail initially - HandleCollisionResolution method doesn't exist yet
 	reference1, err := k.HandleCollisionResolution(ctx, memo, height, constantProvider)
 	c.Assert(err, IsNil, Commentf("HandleCollisionResolution should be implemented"))
 	c.Assert(len(reference1), Equals, 5, Commentf("First reference should be 5 digits"))
@@ -150,7 +150,7 @@ func (s *MemolessKeeperImplementationTestSuite) TestMemoExpirationFlow(c *C) {
 	expiredMemo := thorchaintypes.RegisteredMemo{
 		Reference:    "99999",
 		Memo:         "EXPIRED:TEST",
-		ChainId:      "BTC", 
+		ChainId:      "BTC",
 		RegisteredAt: ctx.BlockHeight() - 20000,
 		ExpiresAt:    ctx.BlockHeight() - 1000, // Expired 1000 blocks ago
 		Status:       "active",

@@ -206,7 +206,7 @@ func (k KVStore) ValidateMemoRegistration(ctx cosmos.Context, msg thorchaintypes
 		return fmt.Errorf("amount %s below minimum %s for chain %s", msg.Amount, chainConfig.MinAmount.String(), msg.ChainId)
 	}
 
-	// Check maximum amount requirement  
+	// Check maximum amount requirement
 	if amount.GT(chainConfig.MaxAmount) {
 		return fmt.Errorf("amount %s exceeds maximum %s for chain %s", msg.Amount, chainConfig.MaxAmount.String(), msg.ChainId)
 	}

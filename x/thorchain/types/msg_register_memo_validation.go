@@ -13,13 +13,13 @@ import (
 
 // Validation constants for memoless protocol
 const (
-	MinMemoLength     = 1
-	MaxMemoLength     = 1024
-	MinTTL            = 0
-	MaxTTL            = 864000 // 10 days in seconds
-	MinChainIDLength  = 1
-	MaxChainIDLength  = 50
-	
+	MinMemoLength    = 1
+	MaxMemoLength    = 1024
+	MinTTL           = 0
+	MaxTTL           = 864000 // 10 days in seconds
+	MinChainIDLength = 1
+	MaxChainIDLength = 50
+
 	// Reference constants for 5-digit user-friendly codes
 	ReferenceLength   = 5     // All references must be exactly 5 digits
 	MinReferenceValue = 10000 // Smallest 5-digit number (ensures exactly 5 digits)

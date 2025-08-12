@@ -16,13 +16,13 @@ import (
 type MemolessDetector struct {
 	// Compiled regex for 5-digit reference detection (thread-safe)
 	referencePattern *regexp.Regexp
-	// Pattern for REF: prefix detection (thread-safe)  
+	// Pattern for REF: prefix detection (thread-safe)
 	prefixPattern *regexp.Regexp
-	
+
 	// Chain-specific configuration cache
 	chainConfigCache map[common.Chain]*ChainMemolessConfig
 	configLock       sync.RWMutex
-	
+
 	// Performance metrics
 	totalProcessed int64
 	metricsLock    sync.Mutex
@@ -30,11 +30,11 @@ type MemolessDetector struct {
 
 // ChainMemolessConfig holds memoless configuration for a specific chain
 type ChainMemolessConfig struct {
-	Supported         bool        `json:"supported"`
-	MinAmount         cosmos.Uint `json:"min_amount"`
-	DecimalPlaces     int         `json:"decimal_places"`
-	HasPrecisionLoss  bool        `json:"has_precision_loss"`
-	GasMultiplier     float64     `json:"gas_multiplier"`
+	Supported        bool        `json:"supported"`
+	MinAmount        cosmos.Uint `json:"min_amount"`
+	DecimalPlaces    int         `json:"decimal_places"`
+	HasPrecisionLoss bool        `json:"has_precision_loss"`
+	GasMultiplier    float64     `json:"gas_multiplier"`
 }
 
 // MemolessTransactionResult contains the result of memoless transaction processing
@@ -64,10 +64,10 @@ func NewMemolessDetector() *MemolessDetector {
 		chainConfigCache: make(map[common.Chain]*ChainMemolessConfig),
 		totalProcessed:   0,
 	}
-	
+
 	// Initialize default chain configurations
 	detector.initializeChainConfigs()
-	
+
 	return detector
 }
 
@@ -75,50 +75,50 @@ func NewMemolessDetector() *MemolessDetector {
 func (d *MemolessDetector) initializeChainConfigs() {
 	d.configLock.Lock()
 	defer d.configLock.Unlock()
-	
+
 	// Bitcoin - primary memoless target
 	d.chainConfigCache[common.BTCChain] = &ChainMemolessConfig{
-		Supported:         true,
-		MinAmount:         cosmos.NewUint(100000), // 0.001 BTC (100,000 satoshis)
-		DecimalPlaces:     8,
-		HasPrecisionLoss:  false,
-		GasMultiplier:     1.0,
+		Supported:        true,
+		MinAmount:        cosmos.NewUint(100000), // 0.001 BTC (100,000 satoshis)
+		DecimalPlaces:    8,
+		HasPrecisionLoss: false,
+		GasMultiplier:    1.0,
 	}
-	
+
 	// Ethereum - supported with higher minimum
 	d.chainConfigCache[common.ETHChain] = &ChainMemolessConfig{
-		Supported:         true,
-		MinAmount:         cosmos.NewUint(1000000000000000), // 0.001 ETH (1e15 wei)
-		DecimalPlaces:     18,
-		HasPrecisionLoss:  false,
-		GasMultiplier:     1.2, // Higher gas for Ethereum
+		Supported:        true,
+		MinAmount:        cosmos.NewUint(1000000000000000), // 0.001 ETH (1e15 wei)
+		DecimalPlaces:    18,
+		HasPrecisionLoss: false,
+		GasMultiplier:    1.2, // Higher gas for Ethereum
 	}
-	
+
 	// Bitcoin Cash - supported like Bitcoin
 	d.chainConfigCache[common.BCHChain] = &ChainMemolessConfig{
-		Supported:         true,
-		MinAmount:         cosmos.NewUint(100000), // 0.001 BCH
-		DecimalPlaces:     8,
-		HasPrecisionLoss:  false,
-		GasMultiplier:     1.0,
+		Supported:        true,
+		MinAmount:        cosmos.NewUint(100000), // 0.001 BCH
+		DecimalPlaces:    8,
+		HasPrecisionLoss: false,
+		GasMultiplier:    1.0,
 	}
-	
+
 	// Litecoin - supported like Bitcoin
 	d.chainConfigCache[common.LTCChain] = &ChainMemolessConfig{
-		Supported:         true,
-		MinAmount:         cosmos.NewUint(100000), // 0.001 LTC
-		DecimalPlaces:     8,
-		HasPrecisionLoss:  false,
-		GasMultiplier:     1.0,
+		Supported:        true,
+		MinAmount:        cosmos.NewUint(100000), // 0.001 LTC
+		DecimalPlaces:    8,
+		HasPrecisionLoss: false,
+		GasMultiplier:    1.0,
 	}
-	
+
 	// Dogecoin - not supported due to precision issues
 	d.chainConfigCache[common.DOGEChain] = &ChainMemolessConfig{
-		Supported:         false,
-		MinAmount:         cosmos.ZeroUint(),
-		DecimalPlaces:     8,
-		HasPrecisionLoss:  true, // Precision loss prevents safe reference encoding
-		GasMultiplier:     1.0,
+		Supported:        false,
+		MinAmount:        cosmos.ZeroUint(),
+		DecimalPlaces:    8,
+		HasPrecisionLoss: true, // Precision loss prevents safe reference encoding
+		GasMultiplier:    1.0,
 	}
 }
 
@@ -162,7 +162,7 @@ func (d *MemolessDetector) ProcessMemolessTransaction(txItem *types.TxInItem) (*
 	}
 
 	reference, isMemoless := d.DetectMemolessReference(txItem.Memo)
-	
+
 	return &MemolessTransactionResult{
 		Reference:    reference,
 		OriginalMemo: txItem.Memo,
@@ -207,11 +207,11 @@ func (d *MemolessDetector) ValidateMemolessTransaction(chain common.Chain, amoun
 	d.configLock.RLock()
 	config, exists := d.chainConfigCache[chain]
 	d.configLock.RUnlock()
-	
+
 	if !exists {
 		return false, fmt.Errorf("chain %s not configured for memoless", chain)
 	}
-	
+
 	// Check if chain supports memoless
 	if !config.Supported {
 		if config.HasPrecisionLoss {
@@ -219,13 +219,13 @@ func (d *MemolessDetector) ValidateMemolessTransaction(chain common.Chain, amoun
 		}
 		return false, fmt.Errorf("chain %s not supported for memoless", chain)
 	}
-	
+
 	// Validate minimum amount
 	if amount.LT(config.MinAmount) {
-		return false, fmt.Errorf("amount %s too small for memoless on %s (minimum: %s)", 
+		return false, fmt.Errorf("amount %s too small for memoless on %s (minimum: %s)",
 			amount.String(), chain, config.MinAmount.String())
 	}
-	
+
 	return true, nil
 }
 
@@ -233,12 +233,12 @@ func (d *MemolessDetector) ValidateMemolessTransaction(chain common.Chain, amoun
 func (d *MemolessDetector) GetChainConfig(chain common.Chain) (*ChainMemolessConfig, bool) {
 	d.configLock.RLock()
 	defer d.configLock.RUnlock()
-	
+
 	config, exists := d.chainConfigCache[chain]
 	if !exists {
 		return nil, false
 	}
-	
+
 	// Return a copy to prevent external modifications
 	configCopy := *config
 	return &configCopy, true
@@ -251,25 +251,25 @@ func (d *MemolessDetector) ProcessBatchWithMetrics(transactions []*types.TxInIte
 	}
 
 	startTime := time.Now()
-	
+
 	memolessCount, regularCount, err := d.RouteMemolessTransactions(transactions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to route transactions: %w", err)
 	}
-	
+
 	processingTime := time.Since(startTime)
-	
+
 	// Update global metrics with thread safety
 	d.metricsLock.Lock()
 	d.totalProcessed += int64(len(transactions))
 	d.metricsLock.Unlock()
-	
+
 	// Ensure minimum 1ms processing time for metrics consistency
 	processingTimeMs := processingTime.Milliseconds()
 	if processingTimeMs == 0 {
 		processingTimeMs = 1
 	}
-	
+
 	return &MemolessProcessingMetrics{
 		TotalProcessed:   int64(len(transactions)),
 		MemolessCount:    int64(memolessCount),

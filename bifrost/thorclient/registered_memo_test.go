@@ -106,9 +106,9 @@ func (s *ThorchainSuite) TestGetRegisteredMemo_MalformedJSON(c *C) {
 func (s *ThorchainSuite) TestGetRegisteredMemo_MultipleTypes(c *C) {
 	// Test various memo types (SWAP, ADD, WITHDRAW)
 	fixtures := map[string]string{
-		"12345": "../../test/fixtures/endpoints/registered_memo/active.json",       // SWAP
+		"12345": "../../test/fixtures/endpoints/registered_memo/active.json",        // SWAP
 		"54321": "../../test/fixtures/endpoints/registered_memo/add_liquidity.json", // ADD
-		"11111": "../../test/fixtures/endpoints/registered_memo/withdraw.json",   // WITHDRAW
+		"11111": "../../test/fixtures/endpoints/registered_memo/withdraw.json",      // WITHDRAW
 		"00123": "../../test/fixtures/endpoints/registered_memo/leading_zeros.json", // Reference with leading zeros
 	}
 
@@ -343,9 +343,9 @@ func (s *ThorchainSuite) TestGetRegisteredMemo_LongRunningRequest(c *C) {
 func (s *ThorchainSuite) TestGetRegisteredMemo_InvalidJSONFields(c *C) {
 	// Test various types of JSON field issues
 	testCases := map[string]string{
-		"missing_required_fields": `{"reference": "12345"}`, // Missing other fields
+		"missing_required_fields": `{"reference": "12345"}`,                              // Missing other fields
 		"wrong_field_types":       `{"reference": 12345, "memo": true, "chain_id": 999}`, // Wrong types
-		"empty_json_object":       `{}`, // Completely empty
+		"empty_json_object":       `{}`,                                                  // Completely empty
 	}
 
 	for testName, jsonContent := range testCases {
@@ -386,14 +386,14 @@ func (s *ThorchainSuite) TestGetRegisteredMemo_InvalidJSONFields(c *C) {
 func (s *ThorchainSuite) TestGetRegisteredMemo_SpecialReferences(c *C) {
 	// Test special reference formats that might cause issues
 	specialRefs := []string{
-		"12345",     // Normal reference
-		"00000",     // All zeros
-		"99999",     // All nines
-		"00001",     // Leading zeros
-		"54321",     // Reverse
-		" 12345 ",   // With spaces (URL encoded)
-		"123.45",    // With special characters
-		"12345a",    // Mixed alphanumeric
+		"12345",   // Normal reference
+		"00000",   // All zeros
+		"99999",   // All nines
+		"00001",   // Leading zeros
+		"54321",   // Reverse
+		" 12345 ", // With spaces (URL encoded)
+		"123.45",  // With special characters
+		"12345a",  // Mixed alphanumeric
 	}
 
 	// Create fixture mapping

@@ -57,7 +57,7 @@ func (ci *ChainClientIntegration) ProcessTransactionBatch(txs []*types.TxInItem)
 			// Validate the memoless transaction for this chain
 			totalAmount := ci.getTotalTransactionAmount(tx)
 			valid, err := ci.detector.ValidateMemolessTransaction(ci.chain, totalAmount, reference)
-			
+
 			if err != nil || !valid {
 				ci.logger.Warn().
 					Str("chain", ci.chain.String()).
@@ -98,8 +98,8 @@ func (ci *ChainClientIntegration) ProcessTransactionBatch(txs []*types.TxInItem)
 
 // BatchProcessingResult contains the results of processing a transaction batch
 type BatchProcessingResult struct {
-	MemolessTransactions []*types.TxInItem         `json:"memoless_transactions"`
-	RegularTransactions  []*types.TxInItem         `json:"regular_transactions"`
+	MemolessTransactions []*types.TxInItem          `json:"memoless_transactions"`
+	RegularTransactions  []*types.TxInItem          `json:"regular_transactions"`
 	ProcessingMetrics    *MemolessProcessingMetrics `json:"processing_metrics"`
 }
 
@@ -147,7 +147,7 @@ func (ci *ChainClientIntegration) ProcessSingleTransaction(tx *types.TxInItem) (
 	if result.IsMemoless {
 		totalAmount := ci.getTotalTransactionAmount(tx)
 		valid, err := ci.detector.ValidateMemolessTransaction(ci.chain, totalAmount, result.Reference)
-		
+
 		if err != nil || !valid {
 			ci.logger.Warn().
 				Str("reference", result.Reference).
@@ -158,12 +158,12 @@ func (ci *ChainClientIntegration) ProcessSingleTransaction(tx *types.TxInItem) (
 					return "validation failed"
 				}()).
 				Msg("Memoless transaction failed validation")
-			
+
 			return &SingleTransactionResult{
-				Transaction:    tx,
-				IsMemoless:     false,
-				Reference:      "",
-				ValidationErr:  err,
+				Transaction:   tx,
+				IsMemoless:    false,
+				Reference:     "",
+				ValidationErr: err,
 			}, nil
 		}
 	}

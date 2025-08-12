@@ -21,14 +21,14 @@ var _ = Suite(&MemolessDetectorTestSuite{})
 // TestMemolessReferenceDetection tests detection of 5-digit memoless references (RED PHASE)
 func (s *MemolessDetectorTestSuite) TestMemolessReferenceDetection(c *C) {
 	detector := NewMemolessDetector()
-	
+
 	// Test data with various reference patterns
 	testCases := []struct {
-		name           string
-		memo           string
-		expectedRef    string
-		shouldDetect   bool
-		description    string
+		name         string
+		memo         string
+		expectedRef  string
+		shouldDetect bool
+		description  string
 	}{
 		{
 			name:         "valid_5digit_reference",
@@ -87,10 +87,10 @@ func (s *MemolessDetectorTestSuite) TestMemolessReferenceDetection(c *C) {
 			description:  "Should detect references with leading zeros",
 		},
 	}
-	
+
 	for _, tc := range testCases {
 		c.Logf("Testing case: %s - %s", tc.name, tc.description)
-		
+
 		// RED: This should fail initially - DetectMemolessReference method doesn't exist yet
 		reference, detected := detector.DetectMemolessReference(tc.memo)
 		c.Assert(detected, Equals, tc.shouldDetect, Commentf("Case %s: Detection result mismatch", tc.name))
@@ -101,7 +101,7 @@ func (s *MemolessDetectorTestSuite) TestMemolessReferenceDetection(c *C) {
 // TestTxInItemMemolessProcessing tests processing TxInItem for memoless transactions (RED PHASE)
 func (s *MemolessDetectorTestSuite) TestTxInItemMemolessProcessing(c *C) {
 	detector := NewMemolessDetector()
-	
+
 	// Create test TxInItem with memoless reference
 	txInItem := &types.TxInItem{
 		BlockHeight:         12345,
@@ -113,7 +113,7 @@ func (s *MemolessDetectorTestSuite) TestTxInItemMemolessProcessing(c *C) {
 		Gas:                 common.Gas{common.NewCoin(common.BTCAsset, cosmos.NewUint(10000))},
 		ObservedVaultPubKey: common.EmptyPubKey,
 	}
-	
+
 	// RED: This should fail initially - ProcessMemolessTransaction method doesn't exist yet
 	result, err := detector.ProcessMemolessTransaction(txInItem)
 	c.Assert(err, IsNil, Commentf("ProcessMemolessTransaction should be implemented"))
@@ -126,7 +126,7 @@ func (s *MemolessDetectorTestSuite) TestTxInItemMemolessProcessing(c *C) {
 // TestMemolessTransactionRouting tests routing of memoless transactions (RED PHASE)
 func (s *MemolessDetectorTestSuite) TestMemolessTransactionRouting(c *C) {
 	detector := NewMemolessDetector()
-	
+
 	// Create test transactions - mix of memoless and regular
 	testTransactions := []*types.TxInItem{
 		{
@@ -136,16 +136,16 @@ func (s *MemolessDetectorTestSuite) TestMemolessTransactionRouting(c *C) {
 		},
 		{
 			Memo:   "SWAP:ETH.ETH::thor1dest", // Regular swap
-			Sender: "sender2", 
+			Sender: "sender2",
 			Coins:  common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(1000000000000000000))},
 		},
 		{
-			Memo:   "67890", // Memoless  
+			Memo:   "67890", // Memoless
 			Sender: "sender3",
 			Coins:  common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(25000000))},
 		},
 	}
-	
+
 	// RED: This should fail initially - RouteMemolessTransactions method doesn't exist yet
 	memolessCount, regularCount, err := detector.RouteMemolessTransactions(testTransactions)
 	c.Assert(err, IsNil, Commentf("RouteMemolessTransactions should be implemented"))
@@ -156,7 +156,7 @@ func (s *MemolessDetectorTestSuite) TestMemolessTransactionRouting(c *C) {
 // TestMemolessValidationIntegration tests integration with chain validation (RED PHASE)
 func (s *MemolessDetectorTestSuite) TestMemolessValidationIntegration(c *C) {
 	detector := NewMemolessDetector()
-	
+
 	// Test validation of memoless transactions for different chains
 	testCases := []struct {
 		chain       common.Chain
@@ -194,10 +194,10 @@ func (s *MemolessDetectorTestSuite) TestMemolessValidationIntegration(c *C) {
 			description: "DOGE transactions should fail due to precision issues",
 		},
 	}
-	
+
 	for _, tc := range testCases {
 		c.Logf("Testing validation: %s", tc.description)
-		
+
 		// RED: This should fail initially - ValidateMemolessTransaction method doesn't exist yet
 		valid, err := detector.ValidateMemolessTransaction(tc.chain, tc.amount, tc.reference)
 		if tc.shouldPass {
@@ -212,24 +212,24 @@ func (s *MemolessDetectorTestSuite) TestMemolessValidationIntegration(c *C) {
 // TestMemolessPerformanceMetrics tests performance monitoring for memoless processing (RED PHASE)
 func (s *MemolessDetectorTestSuite) TestMemolessPerformanceMetrics(c *C) {
 	detector := NewMemolessDetector()
-	
+
 	// Create batch of transactions for performance testing
 	batchSize := 100
 	transactions := make([]*types.TxInItem, batchSize)
-	
+
 	for i := 0; i < batchSize; i++ {
 		memo := "12345" // All memoless for this test
 		if i%10 == 0 {
 			memo = "SWAP:BTC.BTC::thor1dest" // 10% regular transactions
 		}
-		
+
 		transactions[i] = &types.TxInItem{
 			Memo:   memo,
 			Sender: fmt.Sprintf("sender%d", i),
 			Coins:  common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(100000000))},
 		}
 	}
-	
+
 	// RED: This should fail initially - ProcessBatchWithMetrics method doesn't exist yet
 	metrics, err := detector.ProcessBatchWithMetrics(transactions)
 	c.Assert(err, IsNil, Commentf("ProcessBatchWithMetrics should be implemented"))

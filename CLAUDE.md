@@ -3,18 +3,28 @@
 This file extends the root CLAUDE.md with Go/THORNode-specific standards. For high-level docs, workflows, and documentation management, refer to root CLAUDE.md.
 
 ## Pre-Commit Requirements
+
 Before committing any code changes, ensure ALL of the following checks pass:
+
 ### Pre-Push Hook Compliance
+
 **CRITICAL**: All changes must pass the pre-push hooks before pushing to remote:
+
 ```bash
 # This is what pre-push hooks run - must pass
 trunk check --ci
 ```
+
 **Note**: Pre-push hooks will block pushes if trunk checks fail. Always run this command before attempting to push.
+
 ### Go Code Quality
+
 #### THORNode-Specific Go Coding Standards
+
 Based on analysis of the THORNode repository patterns, follow these specific conventions:
+
 ##### **Error Handling Patterns**
+
 1. **Cosmos SDK Error Integration**
    ```go
    // Use errorsmod.Register for standardized error codes
@@ -46,7 +56,9 @@ Based on analysis of the THORNode repository patterns, follow these specific con
        errInvalidMessage = errorsmod.Register(DefaultCodespace, CodeInvalidMessage, "invalid message")
    )
    ```
+
 ##### **Handler Patterns**
+
 1. **Standard Handler Structure**
    ```go
    type DepositHandler struct {
@@ -88,7 +100,9 @@ Based on analysis of the THORNode repository patterns, follow these specific con
        // ... business logic
    }
    ```
+
 ##### **Keeper Patterns**
+
 1. **Key Prefix Organization**
    ```go
    // Always end dbPrefix with slash and use lowercase with underscores
@@ -144,7 +158,9 @@ Based on analysis of the THORNode repository patterns, follow these specific con
        return err
    }
    ```
+
 ##### **Bifrost Patterns**
+
 1. **Chain Client Interface Implementation**
    ```go
    type ChainClient interface {
@@ -174,10 +190,12 @@ Based on analysis of the THORNode repository patterns, follow these specific con
        if err != nil {
            if status == http.StatusNotFound {
                return types.TxOut{}, First, the user is confused about my reference to the thornode CLAUDE.md. I mentioned querying the public THORNode repo on GitLab, but it doesn't have a CLAUDE.md – that's custom to their setup. They're asking for a clean version of how thornode/CLAUDE.md should be, and at the bottom, a small section on what I changed.
+   ```
 
 I need to create the thornode/CLAUDE.md based on our plan: It's the specialized extension with Go-specific standards moved from the original root CLAUDE.md, plus TDD pillars from DEVELOPMENT_GUIDE.md, verification protocols, etc.
 
 Structure:
+
 - Start with an introduction noting it's an extension of root CLAUDE.md.
 - Include all the deleted sections from root: Go Code Quality Standards, THORNode Testing Standards, etc.
 - Add AI behavior and task verification tailored to code.
@@ -191,24 +209,36 @@ Finally, output the full CLAUDE.md content for thornode.# Thornode CLAUDE.md (Su
 This file extends the root CLAUDE.md with Go/THORNode-specific standards. For high-level docs, workflows, and documentation management, refer to root CLAUDE.md.
 
 ## Pre-Commit Requirements
+
 Before committing any code changes, ensure ALL of the following checks pass:
+
 ### Pre-Push Hook Compliance
+
 **CRITICAL**: All changes must pass the pre-push hooks before pushing to remote:
+
 ```bash
 # This is what pre-push hooks run - must pass
 trunk check --ci
 ```
+
 ## Commit Message Standards
+
 **IMPORTANT**: Never add the following to commit messages:
+
 - "🤖 Generated with [Claude Code](https://claude.ai/code)"
 - "Co-Authored-By: Claude <noreply@anthropic.com>"
-Use standard commit message format without automated attributions.
+  Use standard commit message format without automated attributions.
 
 **Note**: Pre-push hooks will block pushes if trunk checks fail. Always run this command before attempting to push.
+
 ### Go Code Quality
+
 #### THORNode-Specific Go Coding Standards
+
 Based on analysis of the THORNode repository patterns, follow these specific conventions:
+
 ##### **Error Handling Patterns**
+
 1. **Cosmos SDK Error Integration**
    ```go
    // Use errorsmod.Register for standardized error codes
@@ -240,7 +270,9 @@ Based on analysis of the THORNode repository patterns, follow these specific con
        errInvalidMessage = errorsmod.Register(DefaultCodespace, CodeInvalidMessage, "invalid message")
    )
    ```
+
 ##### **Handler Patterns**
+
 1. **Standard Handler Structure**
    ```go
    type DepositHandler struct {
@@ -282,7 +314,9 @@ Based on analysis of the THORNode repository patterns, follow these specific con
        // ... business logic
    }
    ```
+
 ##### **Keeper Patterns**
+
 1. **Key Prefix Organization**
    ```go
    // Always end dbPrefix with slash and use lowercase with underscores
@@ -338,7 +372,9 @@ Based on analysis of the THORNode repository patterns, follow these specific con
        return err
    }
    ```
+
 ##### **Bifrost Patterns**
+
 1. **Chain Client Interface Implementation**
    ```go
    type ChainClient interface {
@@ -374,8 +410,11 @@ Based on analysis of the THORNode repository patterns, follow these specific con
        // ... unmarshaling and validation
    }
    ```
+
 ##### **Testing Patterns**
+
 1. **Test Setup with Cosmos SDK**
+
    ```go
    func setupKeeperForTest(c *C) (cosmos.Context, KVStore) {
        keys := cosmos.NewKVStoreKeys(
@@ -390,6 +429,7 @@ Based on analysis of the THORNode repository patterns, follow these specific con
        return ctx, keeper
    }
    ```
+
 2. **Module Funding in Tests**
    ```go
    func FundModule(c *C, ctx cosmos.Context, k KVStore, name string, amt uint64) {
@@ -408,7 +448,9 @@ Based on analysis of the THORNode repository patterns, follow these specific con
    c.Assert(err, IsNil)
    c.Assert(result, NotNil)
    ```
+
 ##### **Naming Conventions**
+
 1. **File Organization**
    - Handler files: `handler_<message_type>.go`
    - Keeper files: `keeper_<domain>.go`
@@ -420,7 +462,9 @@ Based on analysis of the THORNode repository patterns, follow these specific con
 3. **Variable Naming**
    - Error variables: `err<ErrorType>`
    - Constants: Database prefixes with `prefix<Type>`
+
 ##### **Import Organization**
+
 ```go
 import (
     // Standard library
@@ -435,7 +479,9 @@ import (
     "gitlab.com/thorchain/thornode/v3/constants"
 )
 ```
+
 #### General Go Standards
+
 1. **Go Formatting and Linting**
    ```bash
    go fmt ./...
@@ -447,9 +493,13 @@ import (
    ```
 
 ## THORNode Testing Standards
+
 Based on analysis of the THORNode repository testing patterns and CI requirements:
+
 ### **Testing Frameworks & Libraries**
+
 1. **Primary Framework: Check.v1**
+
    ```go
    import . "gopkg.in/check.v1"
 
@@ -458,7 +508,9 @@ Based on analysis of the THORNode repository testing patterns and CI requirement
    type HandlerSuite struct{}
    var _ = Suite(&HandlerSuite{})
    ```
+
 2. **Secondary Framework: Testify**
+
    ```go
    import "github.com/stretchr/testify/require"
 
@@ -467,12 +519,16 @@ Based on analysis of the THORNode repository testing patterns and CI requirement
        require.Equal(t, expected, actual)
    }
    ```
+
 3. **Framework Usage Patterns**:
    - **Check.v1**: Primary for x/thorchain keeper and handler tests
    - **Testify**: Used in bifrost and chain client tests
    - **Standard testing**: Basic Go tests for simple functionality
+
 ### **Mocking Strategy**
+
 1. **Keeper Interface Mocking**
+
    ```go
    type MockKeeper struct {
        keeper.KVStoreDummy // Embed base dummy implementation
@@ -487,6 +543,7 @@ Based on analysis of the THORNode repository testing patterns and CI requirement
        return m.currentPool, nil
    }
    ```
+
 2. **Mocking Patterns**:
    - **Manual Mocks**: Hand-written mock implementations
    - **Dummy Embedding**: Use `KVStoreDummy` as base for keeper mocks
@@ -496,8 +553,11 @@ Based on analysis of the THORNode repository testing patterns and CI requirement
    - Inline mocks in test files (not separate mock files)
    - Named with `Mock<Interface>` convention
    - Implement only needed methods, embed dummy for rest
+
 ### **Integration Testing**
+
 1. **Testing Levels**:
+
    ```bash
    # Unit tests (default)
    make test
@@ -511,6 +571,7 @@ Based on analysis of the THORNode repository testing patterns and CI requirement
    # Simulation tests (end-to-end)
    make test-simulation
    ```
+
 2. **Test Environment Types**:
    - **Mocknet**: Local development/testing environment
    - **Stagenet**: Integration testing environment
@@ -520,12 +581,15 @@ Based on analysis of the THORNode repository testing patterns and CI requirement
    - YAML-defined test suites in `test/regression/suites/`
    - Coverage collection and reporting
    - Parallel execution support
+
 ### **Code Coverage Standards**
+
 1. **Coverage Requirements**:
    - CI requires coverage reporting via Cobertura format
    - Coverage regex: `/total:\s+\(statements\)\s+(\d+.\d+\%)/`
    - Generated files (`.pb.go`) excluded from coverage
 2. **Coverage Commands**:
+
    ```bash
    # Generate coverage report
    make test-coverage
@@ -536,12 +600,15 @@ Based on analysis of the THORNode repository testing patterns and CI requirement
    # Coverage with XML output for CI
    make test-coverage-sum
    ```
+
 3. **Coverage Exclusions**:
    - Protobuf generated files (`.pb.go`)
    - Archive files (`archive.go`)
    - Version-specific files (`v[0-9]+.go`)
    - OpenAPI generated code
+
 ### **Testing Best Practices**
+
 1. **Test Setup Patterns**:
    ```go
    func setupKeeperForTest(c *C) (cosmos.Context, KVStore) {
@@ -565,7 +632,9 @@ Based on analysis of the THORNode repository testing patterns and CI requirement
    - Use descriptive test names
    - Setup/teardown in suite methods
    - Parallel test execution support
+
 ### **Testing Commands Reference**
+
 ```bash
 # Unit Tests
 make test # Standard unit tests
@@ -583,8 +652,11 @@ make test-coverage-sum # Coverage with XML/JUnit output
 make test-go-tss # TSS library tests (compute-intensive)
 make test-sync-mainnet # Mainnet sync tests
 ```
+
 ### **Testing Discernment Principles**
+
 Use these principles to determine testing requirements:
+
 1. **Unit Tests Required**:
    - Pure business logic functions
    - Data structure methods and validation
@@ -609,7 +681,9 @@ Use these principles to determine testing requirements:
    - Pure pass-through functions
 
 ## Go Project Structure Standards
+
 **Standard Layout:**
+
 ```
 project/
 ├── cmd/ # Main applications
@@ -623,13 +697,17 @@ project/
 ├── test/ # Additional test files
 └── deploy/ # Deployment configurations
 ```
+
 **Package Naming:**
+
 - Use lowercase, single-word names
 - Avoid stutter: `memoless/encoder` not `memoless/memolessencoder`
 - Internal packages for private code
 
 ## Go Naming Conventions
+
 **Variables and Functions:**
+
 ```go
 // ✅ Good
 func encodeSwapMemo(intent SwapIntent) string
@@ -638,7 +716,9 @@ userID := getUserID()
 func EncodeSwapMemo(intent SwapIntent) string // Exported unnecessarily
 userid := getUserId() // Inconsistent casing
 ```
+
 **Types and Interfaces:**
+
 ```go
 // ✅ Good
 type SwapIntent struct {
@@ -652,7 +732,9 @@ type MemoEncoder interface {
 type swapIntent struct {} // Unexported struct
 type MemoEncoderInterface interface {} // Redundant suffix
 ```
+
 **Constants:**
+
 ```go
 // ✅ Good
 const (
@@ -664,7 +746,9 @@ const DEFAULT_TIMEOUT = 30 // Wrong case, no unit
 ```
 
 ## Go Error Handling Standards
+
 **Error Definition:**
+
 ```go
 // Package-level errors
 var (
@@ -681,7 +765,9 @@ func (c *Client) GetQuote(ctx context.Context, req QuoteRequest) (*Quote, error)
     return resp, nil
 }
 ```
+
 **Error Checking:**
+
 ```go
 // ✅ Good - check error immediately
 resp, err := client.GetQuote(ctx, req)
@@ -697,7 +783,9 @@ if err != nil { // Too far from source
 ```
 
 ## Go Context Usage
+
 **Always propagate context:**
+
 ```go
 // ✅ Good
 func (s *Service) RegisterIntent(ctx context.Context, intent SwapIntent) error {
@@ -720,7 +808,9 @@ func (s *Service) RegisterIntent(intent SwapIntent) error {
 ```
 
 ## Go Concurrency Patterns
+
 **Use errgroup for concurrent operations:**
+
 ```go
 func (s *Service) ProcessBatch(ctx context.Context, intents []SwapIntent) error {
     g, ctx := errgroup.WithContext(ctx)
@@ -741,7 +831,9 @@ func (s *Service) ProcessBatch(ctx context.Context, intents []SwapIntent) error 
     return g.Wait()
 }
 ```
+
 **Channel Patterns:**
+
 ```go
 // ✅ Good - sender closes channel
 func (s *Service) StreamQuotes(ctx context.Context) <-chan Quote {
@@ -774,7 +866,9 @@ func (s *Service) StreamQuotes(ctx context.Context) <-chan Quote {
 ```
 
 ## Go Testing Standards
+
 **Table-driven tests:**
+
 ```go
 func TestEncodeMemo(t *testing.T) {
     tests := []struct {
@@ -817,7 +911,9 @@ func TestEncodeMemo(t *testing.T) {
 ```
 
 ## Go HTTP Handler Patterns
+
 **Handler Structure:**
+
 ```go
 // ✅ Good - separate concerns
 func (s *Server) handleRegisterIntent() http.HandlerFunc {
@@ -851,7 +947,9 @@ func (s *Server) handleRegisterIntent() http.HandlerFunc {
 ```
 
 ## Go Security Practices
+
 **Input Validation:**
+
 ```go
 // Validate all inputs
 func ValidateAsset(asset string) error {
@@ -870,7 +968,9 @@ func ValidateAsset(asset string) error {
     return nil
 }
 ```
+
 **Secure Defaults:**
+
 ```go
 // Timeouts on all external calls
 client := &http.Client{
@@ -887,7 +987,9 @@ tlsConfig := &tls.Config{
 ```
 
 ## Go Documentation Standards
+
 **Package Documentation:**
+
 ```go
 // Package memoless provides a registration service for THORChain swap intents.
 // It enables wallets with limited memo support to interact with THORChain
@@ -902,7 +1004,9 @@ tlsConfig := &tls.Config{
 // }
 package memoless
 ```
+
 **Function Documentation:**
+
 ```go
 // RegisterIntent registers a swap intent with THORChain and returns
 // simplified transaction instructions. The intent is stored on-chain
@@ -920,50 +1024,70 @@ func (s *Service) RegisterIntent(ctx context.Context, intent SwapIntent) (*Regis
 ```
 
 ## Common Issues to Avoid
+
 ### Go Code Quality Issues
+
 #### **Error Handling**
+
 - Always check and handle errors from CGO calls
 - Implement proper cleanup with `defer` statements
 - Use structured error types for better debugging
 - Wrap errors with context using `fmt.Errorf("context: %w", err)`
 - Check errors immediately after function calls
+
 #### **Concurrency Safety**
+
 - Test concurrent access to CGO functions
 - Verify handle uniqueness in multi-threaded scenarios
 - Use proper synchronization when needed
 - Prefer channels over mutexes for communication
 - Use errgroup for managing concurrent operations
+
 #### **Project Structure**
+
 - Follow standard Go project layout with `cmd/`, `internal/`, `pkg/`
 - Use lowercase, single-word package names
 - Avoid package name stuttering
+
 #### **Testing Standards**
+
 - Use table-driven tests for comprehensive coverage
 - Create test fixtures for reusable test data
 - Use interface-based mocking for external dependencies
 - Test concurrent scenarios explicitly
+
 #### **HTTP and API Standards**
+
 - Separate concerns in HTTP handlers (parse, validate, process, respond)
 - Use middleware chains for cross-cutting concerns
 - Implement proper input validation and sanitization
 - Set secure defaults (timeouts, TLS configuration)
+
 #### **Context Usage**
+
 - Always propagate context from request to external calls
 - Use context.WithTimeout for operations with time limits
 - Check context cancellation in long-running operations
+
 ### Pre-Push Hook Issues
+
 #### **golangci-lint Compatibility**
+
 - **Issue**: Go version newer than golangci-lint support
 - **Detection**: `Error: the Go language version (go1.23) used to build golangci-lint is lower than the targeted Go version (1.24.4)`
 - **Solution**: Temporarily disable or upgrade golangci-lint version
 - **Config**: Comment out in `.trunk/trunk.yaml` with explanation
+
 #### **Code Formatting**
+
 - Always run `trunk fmt` before committing
 - Check for missing newlines at end of files
 - Ensure consistent whitespace formatting
 
 ## AI Agent Behavior Guidelines
+
 To prevent common issues with instruction following, progress overstatement, and drifting:
+
 - **Self-Awareness of Tendencies**: Recognize that you have a tendency to conflate substantial work (e.g., file creation) with task completion (e.g., passing tests). Always assume you might be drifting and self-check against guidelines.
 - **Course Correction Protocol**: If uncertain about progress or adherence, explicitly ask the user for confirmation or course correction before proceeding. Use phrases like: "Before continuing, confirm if this aligns with expectations."
 - **Pre-Task Evaluation**: Before starting any task:
@@ -975,7 +1099,9 @@ To prevent common issues with instruction following, progress overstatement, and
 - **When in thornode**: Prioritize code standards and TDD; defer to root CLAUDE.md for doc-related queries.
 
 ## Task Completion Verification Protocol
+
 **MANDATORY**: Before marking any task as "completed":
+
 1. **Run the actual tests and show output**:
    ```bash
    go test ./path/to/tests -v -run "SpecificTest"
@@ -987,24 +1113,26 @@ To prevent common issues with instruction following, progress overstatement, and
 3. **Verify acceptance criteria met**:
    - List each acceptance criterion from task specification.
    - Demonstrate how each is satisfied (e.g., test output, function behavior).
-**FORBIDDEN**: Progress Claims Without Verification
+     **FORBIDDEN**: Progress Claims Without Verification
+
 - ❌ NEVER claim: "Task X completed" without showing test results.
 - ✅ ALWAYS: Show failing tests (Red), passing tests (Green), refactor, then "Task X verified complete - all tests pass."
-**Session Continuity Protocol**:
+  **Session Continuity Protocol**:
 - When resuming: Ignore prior claims; re-verify by running tests; treat summaries as "work attempted."
-**TDD Cycle Enforcement**:
+  **TDD Cycle Enforcement**:
 - Red: Show failing output.
 - Green: Show passing output.
 - Refactor: Show tests still pass.
 - Completion: "TDD cycle verified complete."
-**Completion Statement Format**:
-TASK [X] VERIFICATION COMPLETE:
-✅ Tests: [show output with PASS]
-✅ Acceptance Criteria: [list satisfied]
-✅ TDD Cycle: Red → Green → Refactor verified
-✅ Status: Task verified functionally complete
+  **Completion Statement Format**:
+  TASK [X] VERIFICATION COMPLETE:
+  ✅ Tests: [show output with PASS]
+  ✅ Acceptance Criteria: [list satisfied]
+  ✅ TDD Cycle: Red → Green → Refactor verified
+  ✅ Status: Task verified functionally complete
 
 ## Notes
+
 - Focus on code implementation here; defer to root for doc management.
 - This project uses trunk.io for unified linting
 - Focus on defensive security - only implement protective/detection capabilities

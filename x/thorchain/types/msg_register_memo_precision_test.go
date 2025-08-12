@@ -52,23 +52,23 @@ func (s *PrecisionValidationSuite) TestValidateAmountForReference(c *C) {
 		{"1.00000000", "12345", "BTC", false, ""},
 		{"0.50000000", "54321", "BTC", false, ""},
 		{"100.000000000000000000", "11111", "ETH", false, ""},
-		
+
 		// Amount too small
 		{"0.00000001", "12345", "BTC", true, "below minimum threshold"},
 		{"0.000000000000000001", "12345", "ETH", true, "below minimum threshold"},
-		
+
 		// Amount too large
 		{"25000000.00000000", "12345", "BTC", true, "exceeds maximum threshold"},
-		
+
 		// Invalid reference
 		{"1.00000000", "9999", "BTC", true, "out of valid range"},
 		{"1.00000000", "100000", "BTC", true, "out of valid range"},
 		{"1.00000000", "abcde", "BTC", true, "invalid reference format"},
-		
+
 		// Invalid amount format
 		{"abc.def", "12345", "BTC", true, "invalid amount format"},
 		{"", "12345", "BTC", true, "invalid amount format"},
-		
+
 		// Precision loss scenarios - amounts that would lose precision in encoding
 		{"0.0005000099", "12345", "BTC", true, "precision loss"},
 	}
@@ -96,18 +96,18 @@ func (s *PrecisionValidationSuite) TestValidateAssetPrecision(c *C) {
 		errMatch  string
 	}{
 		// Valid cases
-		{"100.123456", "USDC", "ETH", false, ""}, // USDC has 6 decimals
+		{"100.123456", "USDC", "ETH", false, ""},            // USDC has 6 decimals
 		{"100.123456789012345678", "ETH", "ETH", false, ""}, // ETH has 18 decimals
-		{"100.12345678", "BTC", "BTC", false, ""}, // BTC has 8 decimals
-		
+		{"100.12345678", "BTC", "BTC", false, ""},           // BTC has 8 decimals
+
 		// Invalid cases - too many decimal places
 		{"100.1234567", "USDC", "ETH", true, "supports maximum 6"},
 		{"100.123456789", "BTC", "BTC", true, "supports maximum 8"},
-		
+
 		// Edge cases
-		{"100", "USDC", "ETH", false, ""}, // Integer amount is fine
+		{"100", "USDC", "ETH", false, ""},        // Integer amount is fine
 		{"100.000000", "USDC", "ETH", false, ""}, // Exact precision match
-		
+
 		// Invalid amount format
 		{"100.123.456", "USDC", "ETH", true, "invalid amount format"},
 	}
@@ -137,12 +137,12 @@ func (s *PrecisionValidationSuite) TestValidateDustThreshold(c *C) {
 		{"0.00001000", "BTC", false, ""},
 		{"1.00000000", "DOGE", false, ""},
 		{"0.000001", "GAIA", false, ""},
-		
+
 		// Below dust threshold
 		{"0.00000545", "BTC", true, "below dust threshold"},
 		{"0.00000001", "BTC", true, "below dust threshold"},
 		{"0.99999999", "DOGE", true, "below dust threshold"},
-		
+
 		// Invalid format
 		{"invalid", "BTC", true, "invalid amount format"},
 	}
@@ -164,8 +164,8 @@ func (s *PrecisionValidationSuite) TestValidateDustThreshold(c *C) {
 func (s *PrecisionValidationSuite) TestValidateMemoSizeForChain(c *C) {
 	// Create test memos of various sizes
 	shortMemo := "short memo"
-	mediumMemo := string(make([]byte, 100)) // 100 bytes
-	longMemo := string(make([]byte, 500))   // 500 bytes
+	mediumMemo := string(make([]byte, 100))    // 100 bytes
+	longMemo := string(make([]byte, 500))      // 500 bytes
 	veryLongMemo := string(make([]byte, 2000)) // 2000 bytes
 
 	testCases := []struct {
@@ -177,13 +177,13 @@ func (s *PrecisionValidationSuite) TestValidateMemoSizeForChain(c *C) {
 		// BTC - 80 byte limit
 		{shortMemo, "BTC", false, ""},
 		{mediumMemo, "BTC", true, "exceeds chain BTC limit of 80"},
-		
+
 		// ETH - 1024 byte limit
 		{shortMemo, "ETH", false, ""},
 		{mediumMemo, "ETH", false, ""},
 		{longMemo, "ETH", false, ""},
 		{veryLongMemo, "ETH", true, "exceeds chain ETH limit of 1024"},
-		
+
 		// GAIA - 256 byte limit
 		{shortMemo, "GAIA", false, ""},
 		{mediumMemo, "GAIA", false, ""},
@@ -214,13 +214,13 @@ func (s *PrecisionValidationSuite) TestCheckIntegerOverflowProtection(c *C) {
 		// Valid amounts
 		{"1000.00000000", "BTC", false, ""},
 		{"1000000.000000000000000000", "ETH", false, ""},
-		
+
 		// Amounts that would cause overflow
 		{"999999999999999999999999999999999999999.00000000", "BTC", true, "overflow"},
 		{"999999999999999999999999999999999999999.000000000000000000", "ETH", true, "overflow"},
-		
+
 		// Edge case - maximum safe amounts
-		{"21000000.00000000", "BTC", false, ""}, // BTC max supply
+		{"21000000.00000000", "BTC", false, ""},             // BTC max supply
 		{"1000000000.000000000000000000", "ETH", false, ""}, // Large but safe ETH amount
 	}
 
@@ -303,25 +303,25 @@ func (s *PrecisionValidationSuite) TestGetChainConfig(c *C) {
 // Test precision encoding/decoding reversibility
 func (s *PrecisionValidationSuite) TestAmountEncodingReversibility(c *C) {
 	testCases := []struct {
-		amount    string
-		reference string
-		chainID   string
+		amount     string
+		reference  string
+		chainID    string
 		shouldWork bool
 	}{
 		// Cases that should work
 		{"1.00000000", "12345", "BTC", true},
 		{"0.50000000", "54321", "BTC", true},
 		{"100.000000000000000000", "11111", "ETH", true},
-		
+
 		// Cases that might have precision issues
-		{"0.000000123456789", "12345", "BTC", false}, // Too much precision for encoding
+		{"0.000000123456789", "12345", "BTC", false},   // Too much precision for encoding
 		{"0.123456789012345678", "54321", "ETH", true}, // Should work for ETH
 	}
 
 	for _, tc := range testCases {
 		err := ValidateAmountForReference(tc.amount, tc.reference, tc.chainID)
 		if tc.shouldWork {
-			c.Assert(err, IsNil, Commentf("Amount %s with reference %s should work on %s", 
+			c.Assert(err, IsNil, Commentf("Amount %s with reference %s should work on %s",
 				tc.amount, tc.reference, tc.chainID))
 		} else {
 			// We don't require it to fail, but if it does, that's expected for precision cases

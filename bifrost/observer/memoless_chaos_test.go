@@ -11,7 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	
+
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
@@ -37,16 +37,16 @@ func (suite *MemolessChaosTestSuite) SetupTest() {
 		thorClient: suite.thorClient,
 		logger:     NewTestLogger(),
 	}
-	
+
 	suite.chaosEngine = &ChaosEngine{
-		failureRate:      0.1,  // 10% failure rate
-		latencyVariance:  500,  // 500ms max additional latency
-		corruptionRate:   0.05, // 5% data corruption rate
-		partitionRate:    0.02, // 2% network partition rate
-		recoveryTime:     time.Second * 30,
-		active:           false,
+		failureRate:     0.1,  // 10% failure rate
+		latencyVariance: 500,  // 500ms max additional latency
+		corruptionRate:  0.05, // 5% data corruption rate
+		partitionRate:   0.02, // 2% network partition rate
+		recoveryTime:    time.Second * 30,
+		active:          false,
 	}
-	
+
 	// Define chaos experiments
 	suite.testScenarios = []ChaosExperiment{
 		{
@@ -71,7 +71,7 @@ func (suite *MemolessChaosTestSuite) SetupTest() {
 			faultType:   MemoryPressure,
 		},
 		{
-			name:        "disk_corruption_simulation", 
+			name:        "disk_corruption_simulation",
 			description: "Simulate disk failures during memo storage",
 			duration:    time.Minute * 4,
 			failureRate: 0.08,
@@ -99,33 +99,33 @@ func (suite *MemolessChaosTestSuite) runChaosExperiment(experiment ChaosExperime
 	suite.T().Logf("🔥 Starting chaos experiment: %s", experiment.name)
 	suite.T().Logf("📝 Description: %s", experiment.description)
 	suite.T().Logf("⏱️  Duration: %v, Failure Rate: %.2f", experiment.duration, experiment.failureRate)
-	
+
 	// Configure chaos engine for this experiment
 	suite.chaosEngine.Configure(experiment)
-	
+
 	// Start chaos injection
 	ctx, cancel := context.WithTimeout(context.Background(), experiment.duration)
 	defer cancel()
-	
+
 	suite.chaosEngine.Start(ctx)
 	defer suite.chaosEngine.Stop()
-	
+
 	// Create metrics collector
 	metrics := &ChaosMetrics{
-		startTime:        time.Now(),
-		totalRequests:    0,
-		successfulReqs:   0,
-		failedReqs:      0,
-		averageLatency:  0,
-		maxLatency:      0,
-		errors:          make(map[string]int),
+		startTime:      time.Now(),
+		totalRequests:  0,
+		successfulReqs: 0,
+		failedReqs:     0,
+		averageLatency: 0,
+		maxLatency:     0,
+		errors:         make(map[string]int),
 	}
-	
+
 	// Run concurrent memoless transactions under chaos
 	var wg sync.WaitGroup
 	const concurrentWorkers = 20
 	const transactionsPerWorker = 100
-	
+
 	for worker := 0; worker < concurrentWorkers; worker++ {
 		wg.Add(1)
 		go func(workerID int) {
@@ -133,24 +133,24 @@ func (suite *MemolessChaosTestSuite) runChaosExperiment(experiment ChaosExperime
 			suite.runChaosWorker(ctx, workerID, transactionsPerWorker, metrics)
 		}(worker)
 	}
-	
+
 	// Wait for all workers to complete or timeout
 	done := make(chan bool, 1)
 	go func() {
 		wg.Wait()
 		done <- true
 	}()
-	
+
 	select {
 	case <-done:
 		suite.T().Logf("✅ All workers completed")
 	case <-ctx.Done():
 		suite.T().Logf("⏰ Experiment timed out")
 	}
-	
+
 	// Analyze chaos experiment results
 	suite.analyzeChaosResults(experiment, metrics)
-	
+
 	// Validate system resilience
 	suite.validateSystemResilience(experiment, metrics)
 }
@@ -162,7 +162,7 @@ func (suite *MemolessChaosTestSuite) runChaosWorker(ctx context.Context, workerI
 			return
 		default:
 			suite.processChaosTransaction(workerID, i, metrics)
-			
+
 			// Random delay between transactions
 			time.Sleep(time.Duration(rand.Intn(100)) * time.Millisecond)
 		}
@@ -171,12 +171,12 @@ func (suite *MemolessChaosTestSuite) runChaosWorker(ctx context.Context, workerI
 
 func (suite *MemolessChaosTestSuite) processChaosTransaction(workerID, txID int, metrics *ChaosMetrics) {
 	atomic.AddInt64(&metrics.totalRequests, 1)
-	
+
 	// Create test transaction with memoless amount
 	reference := fmt.Sprintf("%05d", rand.Intn(100000))
 	baseAmount := uint64(rand.Intn(1000000) + 1000)
 	memolessAmount := baseAmount*100000 + parseUint64(reference)
-	
+
 	tx := &types.ObservedTx{
 		Tx: common.Tx{
 			ID:    common.TxID(fmt.Sprintf("chaos-tx-%d-%d", workerID, txID)),
@@ -185,37 +185,37 @@ func (suite *MemolessChaosTestSuite) processChaosTransaction(workerID, txID int,
 		},
 		BlockHeight: int64(144000 + rand.Intn(1000)),
 	}
-	
+
 	// Measure processing time
 	startTime := time.Now()
-	
+
 	// Process transaction through chaos-affected system
 	processedTx, err := suite.memoHandler.ProcessMemolessTransaction(tx)
-	
+
 	latency := time.Since(startTime)
 	atomic.AddInt64(&metrics.averageLatency, int64(latency))
-	
+
 	if latency > time.Duration(atomic.LoadInt64(&metrics.maxLatency)) {
 		atomic.StoreInt64(&metrics.maxLatency, int64(latency))
 	}
-	
+
 	// Record results
 	if err != nil {
 		atomic.AddInt64(&metrics.failedReqs, 1)
-		
+
 		// Categorize errors
 		metrics.mu.Lock()
 		errorType := categorizeError(err)
 		metrics.errors[errorType]++
 		metrics.mu.Unlock()
-		
+
 		// Log significant errors (but not all to avoid spam)
 		if rand.Float32() < 0.1 { // Log 10% of errors
 			suite.T().Logf("🚨 Worker %d transaction %d failed: %v", workerID, txID, err)
 		}
 	} else {
 		atomic.AddInt64(&metrics.successfulReqs, 1)
-		
+
 		// Validate processed transaction
 		if processedTx != nil {
 			suite.validateProcessedTransaction(tx, processedTx)
@@ -228,18 +228,18 @@ func (suite *MemolessChaosTestSuite) analyzeChaosResults(experiment ChaosExperim
 	totalReqs := atomic.LoadInt64(&metrics.totalRequests)
 	successReqs := atomic.LoadInt64(&metrics.successfulReqs)
 	failedReqs := atomic.LoadInt64(&metrics.failedReqs)
-	
+
 	if totalReqs == 0 {
 		suite.T().Logf("⚠️  No requests processed during chaos experiment")
 		return
 	}
-	
+
 	successRate := float64(successReqs) / float64(totalReqs)
 	failureRate := float64(failedReqs) / float64(totalReqs)
 	avgLatency := time.Duration(atomic.LoadInt64(&metrics.averageLatency) / totalReqs)
 	maxLatency := time.Duration(atomic.LoadInt64(&metrics.maxLatency))
 	throughput := float64(totalReqs) / duration.Seconds()
-	
+
 	suite.T().Logf("📊 Chaos Experiment Results for %s:", experiment.name)
 	suite.T().Logf("   Total Duration: %v", duration)
 	suite.T().Logf("   Total Requests: %d", totalReqs)
@@ -248,7 +248,7 @@ func (suite *MemolessChaosTestSuite) analyzeChaosResults(experiment ChaosExperim
 	suite.T().Logf("   Average Latency: %v", avgLatency)
 	suite.T().Logf("   Maximum Latency: %v", maxLatency)
 	suite.T().Logf("   Throughput: %.2f req/sec", throughput)
-	
+
 	// Log error breakdown
 	if len(metrics.errors) > 0 {
 		suite.T().Logf("📈 Error Breakdown:")
@@ -262,67 +262,67 @@ func (suite *MemolessChaosTestSuite) analyzeChaosResults(experiment ChaosExperim
 func (suite *MemolessChaosTestSuite) validateSystemResilience(experiment ChaosExperiment, metrics *ChaosMetrics) {
 	totalReqs := atomic.LoadInt64(&metrics.totalRequests)
 	successReqs := atomic.LoadInt64(&metrics.successfulReqs)
-	
+
 	if totalReqs == 0 {
 		suite.T().Errorf("❌ System failed to process any requests during %s", experiment.name)
 		return
 	}
-	
+
 	successRate := float64(successReqs) / float64(totalReqs)
 	avgLatency := time.Duration(atomic.LoadInt64(&metrics.averageLatency) / totalReqs)
 	maxLatency := time.Duration(atomic.LoadInt64(&metrics.maxLatency))
-	
+
 	// Define resilience thresholds based on experiment type
 	var minSuccessRate float64
 	var maxAvgLatency, maxMaxLatency time.Duration
-	
+
 	switch experiment.faultType {
 	case NodeFailure:
-		minSuccessRate = 0.85     // 85% success rate under node failures
+		minSuccessRate = 0.85 // 85% success rate under node failures
 		maxAvgLatency = time.Second * 2
 		maxMaxLatency = time.Second * 10
-		
+
 	case LatencyInjection:
-		minSuccessRate = 0.90     // 90% success rate under latency injection
+		minSuccessRate = 0.90 // 90% success rate under latency injection
 		maxAvgLatency = time.Second * 3
 		maxMaxLatency = time.Second * 15
-		
+
 	case MemoryPressure:
-		minSuccessRate = 0.80     // 80% success rate under memory pressure
+		minSuccessRate = 0.80 // 80% success rate under memory pressure
 		maxAvgLatency = time.Second * 5
 		maxMaxLatency = time.Second * 20
-		
+
 	case DiskCorruption:
-		minSuccessRate = 0.75     // 75% success rate under disk corruption
+		minSuccessRate = 0.75 // 75% success rate under disk corruption
 		maxAvgLatency = time.Second * 3
 		maxMaxLatency = time.Second * 12
-		
+
 	case CascadingFailure:
-		minSuccessRate = 0.70     // 70% success rate under cascading failures
+		minSuccessRate = 0.70 // 70% success rate under cascading failures
 		maxAvgLatency = time.Second * 8
 		maxMaxLatency = time.Second * 30
-		
+
 	default:
 		minSuccessRate = 0.90
 		maxAvgLatency = time.Second * 2
 		maxMaxLatency = time.Second * 10
 	}
-	
+
 	// Validate resilience metrics
 	suite.Require().GreaterOrEqual(successRate, minSuccessRate,
 		"🔴 Success rate %.2f%% below threshold %.2f%% for %s",
 		successRate*100, minSuccessRate*100, experiment.name)
-	
+
 	suite.Require().LessOrEqual(avgLatency, maxAvgLatency,
 		"🔴 Average latency %v exceeds threshold %v for %s",
 		avgLatency, maxAvgLatency, experiment.name)
-	
+
 	suite.Require().LessOrEqual(maxLatency, maxMaxLatency,
-		"🔴 Maximum latency %v exceeds threshold %v for %s", 
+		"🔴 Maximum latency %v exceeds threshold %v for %s",
 		maxLatency, maxMaxLatency, experiment.name)
-	
+
 	suite.T().Logf("✅ System resilience validated for %s", experiment.name)
-	suite.T().Logf("   Success Rate: %.2f%% (threshold: %.2f%%)", 
+	suite.T().Logf("   Success Rate: %.2f%% (threshold: %.2f%%)",
 		successRate*100, minSuccessRate*100)
 	suite.T().Logf("   Avg Latency: %v (threshold: %v)", avgLatency, maxAvgLatency)
 	suite.T().Logf("   Max Latency: %v (threshold: %v)", maxLatency, maxMaxLatency)
@@ -333,12 +333,12 @@ func (suite *MemolessChaosTestSuite) validateProcessedTransaction(original, proc
 	if len(original.Tx.Memo) == 0 && len(processed.Tx.Memo) > 0 {
 		// Original had no memo, processed should have resolved memo
 		suite.Require().NotEmpty(processed.Tx.Memo, "Processed transaction should have resolved memo")
-		
+
 		// Amount should be adjusted
 		if len(original.Tx.Coins) > 0 && len(processed.Tx.Coins) > 0 {
 			originalAmount := original.Tx.Coins[0].Amount.Uint64()
 			processedAmount := processed.Tx.Coins[0].Amount.Uint64()
-			
+
 			// Processed amount should be smaller (reference removed)
 			suite.Require().Less(processedAmount, originalAmount,
 				"Processed amount should be less than original after reference removal")
@@ -355,30 +355,30 @@ func (suite *MemolessChaosTestSuite) TestSpecificFailureScenarios() {
 			faultType:   NodeFailure,
 			duration:    time.Minute,
 		})
-		
+
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 		defer cancel()
-		
+
 		suite.chaosEngine.Start(ctx)
 		defer suite.chaosEngine.Stop()
-		
+
 		// Process transactions until circuit breaker opens
 		circuitOpened := false
 		for i := 0; i < 100 && !circuitOpened; i++ {
 			tx := suite.createTestTransaction(fmt.Sprintf("cb-test-%d", i))
 			_, err := suite.memoHandler.ProcessMemolessTransaction(tx)
-			
+
 			if err != nil && containsCircuitBreakerError(err) {
 				circuitOpened = true
 				suite.T().Logf("🔄 Circuit breaker opened after %d requests", i+1)
 			}
-			
+
 			time.Sleep(time.Millisecond * 50)
 		}
-		
+
 		suite.Require().True(circuitOpened, "Circuit breaker should open under high failure rate")
 	})
-	
+
 	suite.Run("graceful_degradation", func() {
 		// Test that system maintains core functionality under partial failures
 		suite.chaosEngine.Configure(ChaosExperiment{
@@ -387,13 +387,13 @@ func (suite *MemolessChaosTestSuite) TestSpecificFailureScenarios() {
 			faultType:   LatencyInjection,
 			duration:    time.Minute * 2,
 		})
-		
+
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute*2)
 		defer cancel()
-		
+
 		suite.chaosEngine.Start(ctx)
 		defer suite.chaosEngine.Stop()
-		
+
 		// Test that non-memoless transactions still work
 		normalTx := &types.ObservedTx{
 			Tx: common.Tx{
@@ -403,7 +403,7 @@ func (suite *MemolessChaosTestSuite) TestSpecificFailureScenarios() {
 			},
 			BlockHeight: 144000,
 		}
-		
+
 		processedTx, err := suite.memoHandler.ProcessMemolessTransaction(normalTx)
 		suite.Require().NoError(err, "Normal transactions should work during chaos")
 		suite.Require().NotNil(processedTx)
@@ -415,7 +415,7 @@ func (suite *MemolessChaosTestSuite) createTestTransaction(txID string) *types.O
 	reference := fmt.Sprintf("%05d", rand.Intn(100000))
 	baseAmount := uint64(rand.Intn(1000000) + 1000)
 	memolessAmount := baseAmount*100000 + parseUint64(reference)
-	
+
 	return &types.ObservedTx{
 		Tx: common.Tx{
 			ID:    common.TxID(txID),
@@ -460,9 +460,9 @@ type ChaosEngine struct {
 func (ce *ChaosEngine) Configure(experiment ChaosExperiment) {
 	ce.mu.Lock()
 	defer ce.mu.Unlock()
-	
+
 	ce.failureRate = experiment.failureRate
-	
+
 	// Adjust parameters based on fault type
 	switch experiment.faultType {
 	case LatencyInjection:
@@ -478,7 +478,7 @@ func (ce *ChaosEngine) Start(ctx context.Context) {
 	ce.mu.Lock()
 	ce.active = true
 	ce.mu.Unlock()
-	
+
 	// Chaos engineering runs in background
 	go ce.runChaosLoop(ctx)
 }
@@ -492,7 +492,7 @@ func (ce *ChaosEngine) Stop() {
 func (ce *ChaosEngine) runChaosLoop(ctx context.Context) {
 	ticker := time.NewTicker(time.Millisecond * 100) // Check every 100ms
 	defer ticker.Stop()
-	
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -504,7 +504,7 @@ func (ce *ChaosEngine) runChaosLoop(ctx context.Context) {
 				return
 			}
 			ce.mu.RUnlock()
-			
+
 			// Randomly inject chaos
 			ce.maybeInjectChaos()
 		}
@@ -519,30 +519,30 @@ func (ce *ChaosEngine) maybeInjectChaos() {
 func (ce *ChaosEngine) ShouldFail() bool {
 	ce.mu.RLock()
 	defer ce.mu.RUnlock()
-	
+
 	return ce.active && rand.Float64() < ce.failureRate
 }
 
 func (ce *ChaosEngine) GetLatencyPenalty() time.Duration {
 	ce.mu.RLock()
 	defer ce.mu.RUnlock()
-	
+
 	if !ce.active {
 		return 0
 	}
-	
+
 	penalty := rand.Int63n(ce.latencyVariance)
 	return time.Duration(penalty) * time.Millisecond
 }
 
 // Chaos-aware THORChain client
 type ChaosThorClient struct {
-	chaosEngine   *ChaosEngine
-	normalClient  *MockThorClient
-	circuitOpen   bool
-	failureCount  int64
-	lastFailure   time.Time
-	mu            sync.RWMutex
+	chaosEngine  *ChaosEngine
+	normalClient *MockThorClient
+	circuitOpen  bool
+	failureCount int64
+	lastFailure  time.Time
+	mu           sync.RWMutex
 }
 
 func NewChaosThorClient() *ChaosThorClient {
@@ -557,59 +557,59 @@ func (ctc *ChaosThorClient) GetRegisteredMemo(reference string) (*types.Register
 	if ctc.isCircuitOpen() {
 		return nil, fmt.Errorf("circuit breaker open")
 	}
-	
+
 	// Apply chaos if configured
 	if ctc.chaosEngine != nil {
 		if ctc.chaosEngine.ShouldFail() {
 			ctc.recordFailure()
 			return nil, fmt.Errorf("chaos-injected failure")
 		}
-		
+
 		// Add latency penalty
 		penalty := ctc.chaosEngine.GetLatencyPenalty()
 		if penalty > 0 {
 			time.Sleep(penalty)
 		}
 	}
-	
+
 	// Call normal client
 	memo, err := ctc.normalClient.GetRegisteredMemo(reference)
 	if err != nil {
 		ctc.recordFailure()
 	}
-	
+
 	return memo, err
 }
 
 func (ctc *ChaosThorClient) isCircuitOpen() bool {
 	ctc.mu.RLock()
 	defer ctc.mu.RUnlock()
-	
+
 	// Simple circuit breaker logic
 	if ctc.failureCount > 10 && time.Since(ctc.lastFailure) < time.Minute {
 		return true
 	}
-	
+
 	return false
 }
 
 func (ctc *ChaosThorClient) recordFailure() {
 	ctc.mu.Lock()
 	defer ctc.mu.Unlock()
-	
+
 	ctc.failureCount++
 	ctc.lastFailure = time.Now()
 }
 
 type ChaosMetrics struct {
-	startTime       time.Time
-	totalRequests   int64
-	successfulReqs  int64
-	failedReqs      int64
-	averageLatency  int64
-	maxLatency      int64
-	errors          map[string]int
-	mu              sync.Mutex
+	startTime      time.Time
+	totalRequests  int64
+	successfulReqs int64
+	failedReqs     int64
+	averageLatency int64
+	maxLatency     int64
+	errors         map[string]int
+	mu             sync.Mutex
 }
 
 // Helper functions
