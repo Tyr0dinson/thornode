@@ -1420,3 +1420,59 @@ func (s *QuerierSuite) TestNetwork(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(resp.TorPriceHalted, Equals, false)
 }
+
+func (s *QuerierSuite) TestRegisteredMemoQuery(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	txConfig, err := params.TxConfig(s.mgr.cdc, nil)
+	c.Assert(err, IsNil)
+	queryServer := NewQueryServerImpl(mgr, txConfig, s.kb)
+
+	// Test query for non-existent memo
+	queryRegisteredMemoResp, err := queryServer.RegisteredMemo(ctx, &types.QueryRegisteredMemoRequest{
+		Reference: "12345",
+	})
+	c.Assert(err, NotNil)
+	c.Assert(queryRegisteredMemoResp, IsNil)
+
+	// Create and store a registered memo
+	registeredMemo := types.RegisteredMemo{
+		Reference:    "12345",
+		Memo:         "SWAP:ETH.ETH:0x1234567890123456789012345678901234567890",
+		RegisteredAt: ctx.BlockHeight(),
+		ExpiresAt:    ctx.BlockHeight() + 3600, // 1 hour TTL
+		ChainId:      "BTC",
+		Status:       "active",
+	}
+
+	// Store the registered memo using keeper
+	err = mgr.Keeper().SetRegisteredMemo(ctx, registeredMemo)
+	c.Assert(err, IsNil)
+
+	// Test query for existing memo
+	queryRegisteredMemoResp, err = queryServer.RegisteredMemo(ctx, &types.QueryRegisteredMemoRequest{
+		Reference: "12345",
+	})
+	c.Assert(err, IsNil)
+	c.Assert(queryRegisteredMemoResp, NotNil)
+
+	// Verify the response structure
+	c.Assert(queryRegisteredMemoResp.Memo.Reference, Equals, "12345")
+	c.Assert(queryRegisteredMemoResp.Memo.Memo, Equals, "SWAP:ETH.ETH:0x1234567890123456789012345678901234567890")
+	c.Assert(queryRegisteredMemoResp.Memo.ChainId, Equals, "BTC")
+	c.Assert(queryRegisteredMemoResp.Memo.Status, Equals, "active")
+	c.Assert(queryRegisteredMemoResp.Memo.RegisteredAt, Equals, ctx.BlockHeight())
+	c.Assert(queryRegisteredMemoResp.Memo.ExpiresAt, Equals, ctx.BlockHeight()+3600)
+
+	// QueryRegisteredMemoResponse does not require JSONPBMarshaler implementation
+	result, err := json.Marshal(queryRegisteredMemoResp)
+	c.Assert(err, IsNil)
+	c.Assert(result, NotNil)
+
+	var registeredMemoResp types.QueryRegisteredMemoResponse
+	err = json.Unmarshal(result, &registeredMemoResp)
+	c.Assert(err, IsNil)
+	c.Assert(registeredMemoResp.Memo.Reference, Equals, queryRegisteredMemoResp.Memo.Reference)
+	c.Assert(registeredMemoResp.Memo.Memo, Equals, queryRegisteredMemoResp.Memo.Memo)
+	c.Assert(registeredMemoResp.Memo.ChainId, Equals, queryRegisteredMemoResp.Memo.ChainId)
+	c.Assert(registeredMemoResp.Memo.Status, Equals, queryRegisteredMemoResp.Memo.Status)
+}
