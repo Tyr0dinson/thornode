@@ -544,6 +544,42 @@ paths:
               schema:
                 $ref: "#/components/schemas/TxStatusResponse"
 
+  # ------------------------------ memoless ------------------------------
+
+  /thorchain/registered_memo/{reference}:
+    parameters:
+      - $ref: "#/components/parameters/queryHeight"
+      - name: reference
+        in: path
+        required: true
+        description: The 5-digit reference code for the registered memo
+        schema:
+          type: string
+          example: "12345"
+          pattern: "^[0-9]{5}$"
+    get:
+      description: Returns the registered memo for the provided reference code.
+      operationId: registeredMemo
+      tags:
+        - Memoless
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegisteredMemoResponse"
+        404:
+          description: Memo not found or expired
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "memo not found"
+
   # ------------------------------ nodes ------------------------------
 
   /thorchain/node/{address}:
@@ -4617,3 +4653,36 @@ components:
           format: int64
           description: The total expected duration for a repayment, measured in seconds, which includes the time for inbound confirmation, the duration of streaming swaps, and any outbound delays.
           example: 600
+
+    RegisteredMemoResponse:
+      type: object
+      required:
+        - memo
+        - reference
+        - expires_at
+        - chain_id
+        - registered_at
+      properties:
+        memo:
+          type: string
+          description: The registered memo content
+          example: "SWAP:ETH.ETH:0x1c7b17362c84287bd1184447e6dfeaf920c31bbe"
+        reference:
+          type: string
+          description: The 5-digit reference code
+          example: "12345"
+          pattern: "^[0-9]{5}$"
+        expires_at:
+          type: integer
+          format: int64
+          description: Unix timestamp when the memo expires
+          example: 1692345600
+        chain_id:
+          type: string
+          description: Chain identifier for the memo
+          example: "BTC"
+        registered_at:
+          type: integer
+          format: int64
+          description: Unix timestamp when the memo was registered
+          example: 1692342000
