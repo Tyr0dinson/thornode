@@ -40,6 +40,7 @@ type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .|length == 1
+  - .[0]|.coin.amount|tonumber == ${OUT_AMOUNT=493000}
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -50,7 +51,7 @@ txs:
       from_address: {{ addr_btc_dog }}
       to_address: {{ addr_btc_fox }}
       coins:
-        - amount: "486000"
+        - amount: "${OUT_AMOUNT}"
           asset: "BTC.BTC"
           decimals: 8
       gas:
@@ -156,6 +157,7 @@ type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .|length == 1
+  - .[0]|.coin.amount|tonumber == ${OUT_AMOUNT=493000}
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -166,7 +168,7 @@ txs:
       from_address: {{ addr_btc_dog }}
       to_address: {{ addr_btc_fox }}
       coins:
-        - amount: "486000"
+        - amount: "${OUT_AMOUNT}"
           asset: "BTC.BTC"
           decimals: 8
       gas:
@@ -240,6 +242,7 @@ type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .|length == 1
+  - .[0]|.coin.amount|tonumber == ${OUT_AMOUNT=493000}
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -250,7 +253,7 @@ txs:
       from_address: {{ addr_btc_dog }}
       to_address: {{ addr_btc_fox }}
       coins:
-        - amount: "486000"
+        - amount: "${OUT_AMOUNT}"
           asset: "BTC.BTC"
           decimals: 8
       gas:
@@ -317,6 +320,7 @@ type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .|length == 1
+  - .[0]|.coin.amount|tonumber == ${OUT_AMOUNT=493000}
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -327,7 +331,7 @@ txs:
       from_address: {{ addr_btc_dog }}
       to_address: {{ addr_btc_fox }}
       coins:
-        - amount: "486000"
+        - amount: "${OUT_AMOUNT}"
           asset: "BTC.BTC"
           decimals: 8
       gas:
@@ -381,6 +385,7 @@ type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .|length == 1
+  - .[0]|.coin.amount|tonumber == ${OUT_AMOUNT=493000}
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -391,7 +396,7 @@ txs:
       from_address: {{ addr_btc_dog }}
       to_address: {{ addr_btc_fox }}
       coins:
-        - amount: "486000"
+        - amount: "${OUT_AMOUNT}"
           asset: "BTC.BTC"
           decimals: 8
       gas:
@@ -453,6 +458,7 @@ type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .|length == 1
+  - .[0]|.coin.amount|tonumber == ${OUT_AMOUNT=492999}
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -463,7 +469,7 @@ txs:
       from_address: {{ addr_btc_dog }}
       to_address: {{ addr_btc_fox }}
       coins:
-        - amount: "486000"
+        - amount: "${OUT_AMOUNT}"
           asset: "BTC.BTC"
           decimals: 8
       gas:
@@ -533,6 +539,7 @@ type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .|length == 1
+  - .[0]|.coin.amount|tonumber == ${OUT_AMOUNT=492999}
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -543,7 +550,7 @@ txs:
       from_address: {{ addr_btc_dog }}
       to_address: {{ addr_btc_fox }}
       coins:
-        - amount: "486000"
+        - amount: "${OUT_AMOUNT}"
           asset: "BTC.BTC"
           decimals: 8
       gas:
@@ -618,7 +625,7 @@ type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 1
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == ${INITIAL_BALANCE=2500483175495}
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == ${INITIAL_BALANCE=2500483646223}
 ---
 type: tx-deposit
 signer: {{ addr_thor_fox }}
@@ -682,14 +689,14 @@ type: check
 endpoint: http://localhost:1317/thorchain/pool/btc.btc/borrowers
 asserts:
   - .|length == 1
-  - .[0].debt_repaid|tonumber == 494989518
-  - .[0].collateral_withdrawn|tonumber == 495062
+  - .[0].debt_repaid|tonumber == 494989523
+  - .[0].collateral_withdrawn|tonumber == 495060
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - length == 1
-  - .[0].coin.amount == "${OUT_AMOUNT=471312}"
+  - .[0].coin.amount == "${OUT_AMOUNT=478305}"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}

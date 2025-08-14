@@ -79,6 +79,12 @@ endpoint: http://localhost:1317/thorchain/thorname/test
 asserts:
   - .affiliate_collector_rune == "722751541"
 ---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0]|.coin.amount|tonumber == ${OUT_AMOUNT=10760967}
+---
 # Observe the outbound.
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -89,7 +95,7 @@ txs:
       from_address: {{ addr_btc_dog }}
       to_address: {{ addr_btc_cat }}
       coins:
-        - amount: "10760967"
+        - amount: "${OUT_AMOUNT}"
           asset: "BTC.BTC"
           decimals: 8
       gas:

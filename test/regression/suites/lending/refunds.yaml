@@ -86,7 +86,7 @@ endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .|length == 1
   - .[0].coin.asset == "BTC.BTC"
-  - .[0].coin.amount == "10000" # dust over outbound fee
+  - .[0].coin.amount == "17000" # dust over outbound fee
   - .[0].max_gas[0].asset == "BTC.BTC"
   - .[0].max_gas[0].amount == "10000" # 1.5x estimated gas (7000 satoshi)
 ---

@@ -126,17 +126,17 @@ params:
 asserts:
   - .memo == "$+:ETH.USDX-9999:{{ addr_eth_fox }}:0:test:100"
   - .inbound_address == "{{ addr_btc_dog }}"
-  - .expected_amount_out|tonumber == 349291200
+  - .expected_amount_out|tonumber == 412683300
   - .expected_collateral_deposited|tonumber == 490159
   - .expected_collateralization_ratio|tonumber == 10000
   - .expected_debt_issued|tonumber == 485340000
   - .streaming_swap_blocks|tonumber == 4
   - .streaming_swap_seconds|tonumber == 24
   - .total_open_loan_seconds|tonumber == 624
-  - .recommended_min_amount_in == "384000"
+  - .recommended_min_amount_in == "192000"
   - .fees.slippage_bps|tonumber == 195
-  - .fees.total_bps|tonumber == 2879
-  - .fees.outbound|tonumber == 126784100
+  - .fees.total_bps|tonumber == 1587
+  - .fees.outbound|tonumber == 63392000
   - .fees.liquidity|tonumber == 9483100
   - .fees.affiliate|tonumber == 4999400
   - (.fees.total|tonumber) == (.fees.liquidity|tonumber)+(.fees.outbound|tonumber)+(.fees.affiliate|tonumber)
@@ -174,7 +174,7 @@ endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - length == 1
   - .[0].in_hash == "{{ observe_txid 1 }}"
-  - .[0].coin.amount == "${OUT_AMOUNT=349291200}"
+  - .[0].coin.amount == "${OUT_AMOUNT=412683300}"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/btc.btc/borrowers
@@ -254,9 +254,9 @@ params:
 asserts:
   - .memo == "$+:ETH.USDX-9999:{{ addr_eth_fox }}:0:test:500"
   - .inbound_address == "{{ addr_btc_dog }}"
-  - .expected_amount_out == "3417715400"
+  - .expected_amount_out == "3472860200"
   - .expected_collateral_deposited == "138302308"
-  - .expected_debt_issued == "4146670000"
+  - .expected_debt_issued == "4141400000"
 ---
 ########################################################################################
 # Open loan with preferred asset - make sure collateral_deposited / debt_issued matches sum of previous two quotes
@@ -294,14 +294,14 @@ endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - length == 1
   - .[0].in_hash == "{{ observe_txid 2 }}"
-  - .[0].coin.amount == "${OUT_AMOUNT=3417715400}"
+  - .[0].coin.amount == "${OUT_AMOUNT=3472860200}"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/btc.btc/borrowers
 asserts:
   - length == 1
   - .[0].collateral_deposited == "138792467"
-  - .[0].debt_issued == "4632010000"
+  - .[0].debt_issued == "4626740000"
 ---
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
@@ -311,12 +311,12 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/balance/module/affiliate_collector
 asserts:
-  - .coins[]|select(.denom == "rune").amount == "691318345"
+  - .coins[]|select(.denom == "rune").amount == "691318344"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/test
 asserts:
-  - .affiliate_collector_rune == "691318345"
+  - .affiliate_collector_rune == "691318344"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -376,9 +376,9 @@ type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - length == 2
-  - .[].coin|select(.asset|contains("ETH.USDX")).amount == "${USDX_OUTPUT_AMOUNT=58906700}"
-  - .[].coin|select(.asset=="BTC.BTC").amount == "${BTC_OUTPUT_AMOUNT=5250577}"
-  - .[]|select(.coin.asset=="BTC.BTC").in_hash == "${BTC_IN_HASH=F4EF6790B32AD1D5B496FE3FDCB9BBF7183E88FD4241E1F353294BAE0939FF4F}"
+  - .[].coin|select(.asset|contains("ETH.USDX")).amount == "${USDX_OUTPUT_AMOUNT=117806200}"
+  - .[].coin|select(.asset=="BTC.BTC").amount == "${BTC_OUTPUT_AMOUNT=5256415}"
+  - .[]|select(.coin.asset=="BTC.BTC").in_hash == "${BTC_IN_HASH=8F7A10D48A3BBC6AB762B1D78DD82E78E1FE1894A74CB54549C0CADAD0101981}"
 ---
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
@@ -468,12 +468,12 @@ count: 1
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
 asserts:
-  - .result[]|select(.denom == "rune").amount == "10060488795"
+  - .result[]|select(.denom == "rune").amount == "10050892647"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/balance/module/affiliate_collector
 asserts:
-  - .coins[]|select(.denom == "rune").amount == "1281940"
+  - .coins[]|select(.denom == "rune").amount == "1281931"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound

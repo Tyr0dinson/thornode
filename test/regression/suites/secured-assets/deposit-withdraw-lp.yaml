@@ -258,14 +258,14 @@ endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 2
   - .balances[0].denom == "btc-btc"
-  - .balances[0].amount == "100000609"
+  - .balances[0].amount == "50000000"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/securedasset/BTC-BTC
 asserts:
   - .asset == "BTC-BTC"
-  - .supply == "100000609"
-  - .depth == "100000609"
+  - .supply == "50000000"
+  - .depth == "50000000"
 ---
 ###############################################################################
 # Withdraw half single sided as RUNE -> fail
@@ -292,14 +292,14 @@ endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 2
   - .balances[0].denom == "btc-btc"
-  - .balances[0].amount == "100000609"
+  - .balances[0].amount == "50000000"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/securedasset/BTC-BTC
 asserts:
   - .asset == "BTC-BTC"
-  - .supply == "100000609"
-  - .depth == "100000609"
+  - .supply == "50000000"
+  - .depth == "50000000"
 ---
 ###############################################################################
 # Withdraw half single sided as BTC -> fail
@@ -326,14 +326,14 @@ endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 2
   - .balances[0].denom == "btc-btc"
-  - .balances[0].amount == "100000609"
+  - .balances[0].amount == "50000000"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/securedasset/BTC-BTC
 asserts:
   - .asset == "BTC-BTC"
-  - .supply == "100000609"
-  - .depth == "100000609"
+  - .supply == "50000000"
+  - .depth == "50000000"
 ---
 ###############################################################################
 # Withdraw remainder to secured assets
@@ -353,14 +353,14 @@ endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 2
   - .balances[0].denom == "btc-btc"
-  - .balances[0].amount == "150001218"
+  - .balances[0].amount == "50000000"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/securedasset/BTC-BTC
 asserts:
   - .asset == "BTC-BTC"
-  - .supply == "150001218"
-  - .depth == "150001218"
+  - .supply == "50000000"
+  - .depth == "50000000"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_providers
@@ -411,16 +411,16 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
 asserts:
-  - .balance_asset == "125002282"
-  - .balance_rune == "125004158382"
+  - .balance_asset == "150007000"
+  - .balance_rune == "250002262146"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_provider/{{ addr_thor_fox }}
 asserts:
   - .pending_asset == "0"
   - .pending_rune == "0"
-  - .rune_deposit_value == "25000128753"
-  - .asset_deposit_value == "24999871"
+  - .rune_deposit_value == "100000532724"
+  - .asset_deposit_value == "99999467"
   - .rune_address == "{{ addr_thor_fox }}"
   - .asset_address == "{{ addr_btc_fox }}"
 ---
@@ -428,12 +428,12 @@ type: check
 endpoint: http://localhost:1317/thorchain/securedasset/BTC-BTC
 asserts:
   - .asset == "BTC-BTC"
-  - .supply == "150001218"
-  - .depth == "150001218"
+  - .supply == "50000000"
+  - .depth == "50000000"
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 2
   - .balances[0].denom == "btc-btc"
-  - .balances[0].amount == "150001218"
+  - .balances[0].amount == "50000000"

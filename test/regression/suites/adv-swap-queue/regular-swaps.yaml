@@ -73,7 +73,7 @@ endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - length == 1
   - .[0].in_hash == "{{ native_txid -1 }}"
-  - .[0].coin.amount == "${OUT_AMOUNT=8998437}"
+  - .[0].coin.amount == "${OUT_AMOUNT=9005437}"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -134,7 +134,7 @@ endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - length == 1
   - .[0].in_hash == "{{ observe_txid 3 }}"
-  - .[0].coin.amount == "${OUT_AMOUNT=43746991}"
+  - .[0].coin.amount == "${OUT_AMOUNT=44392615}"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}

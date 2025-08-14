@@ -125,17 +125,17 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/test
 asserts:
-  - .affiliate_collector_rune == "226763410"
+  - .affiliate_collector_rune == "24814326"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/balance/module/affiliate_collector
 asserts:
-  - .coins[]|select(.denom == "rune")|.amount == "226763410"
+  - .coins[]|select(.denom == "rune")|.amount == "24814326"
 ---
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
 asserts:
-  - .result[]|select(.denom == "rune")|.amount == "4994000000"
+  - .result[]|select(.denom == "rune")|.amount == "5227148958"
 ---
 ########################################################################################
 # Swap RUNE -> BTC w/ affiliate "test"

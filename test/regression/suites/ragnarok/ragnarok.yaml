@@ -296,6 +296,7 @@ type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .|length == 1
+  - .[0]|.coin.amount|tonumber == ${OUT_AMOUNT=100000000}
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_cat }}
@@ -312,7 +313,7 @@ txs:
       from_address: {{ addr_eth_dog }}
       to_address: {{ addr_eth_cat }}
       coins:
-        - amount: "100000000"
+        - amount: "${OUT_AMOUNT}"
           asset: "ETH.FOO"
           decimals: 8
       gas:

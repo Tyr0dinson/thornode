@@ -318,8 +318,8 @@ type: check
 endpoint: http://localhost:1317/thorchain/securedassets
 asserts:
 - .|length == 1
-- .[0].supply|tonumber == 100000000
-- .[0].depth|tonumber == 100000000
+- .[0].supply|tonumber == 50000000
+- .[0].depth|tonumber == 50000000
 ---
 ########################################################################################
 # withdraw from txin
