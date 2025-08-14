@@ -167,6 +167,7 @@ func (GasManagerTestSuiteVCUR) TestGetAssetOutboundFee(c *C) {
 	// target surplus: 100 RUNE
 	// min multiplier: 10_000
 	// max multiplier: 30_000
+
 	//k.SetMimir(ctx, constants.TargetOutboundFeeSurplusRune.String(), 100_00000000) // 100 $RUNE
 	//k.SetMimir(ctx, constants.MinOutboundFeeMultiplierBasisPoints.String(), 10_000)
 	//k.SetMimir(ctx, constants.MaxOutboundFeeMultiplierBasisPoints.String(), 30_000)
@@ -185,6 +186,7 @@ func (GasManagerTestSuiteVCUR) TestGetAssetOutboundFee(c *C) {
 	// Add more surplus for BTC, should be at min multiplier
 	c.Assert(k.AddToOutboundFeeWithheldRune(ctx, common.BTCAsset, cosmos.NewUint(50_00000000)), IsNil)
 	fee, _ = gasMgr.GetAssetOutboundFee(ctx, common.BTCAsset, false)
+	// This condition hits the minimum outbound fee threshold, so the fee is 20000000 instead of 1000*50000*0.1
 	c.Assert(fee.Uint64(), Equals, uint64(1000*20000), Commentf("%d vs %d", fee.Uint64(), uint64(1000*20000)))
 	c.Assert(err, IsNil)
 
@@ -211,7 +213,8 @@ func (GasManagerTestSuiteVCUR) TestGetAssetOutboundFee(c *C) {
 	// Add more surplus for BTC.USDC, should be at min multiplier
 	c.Assert(k.AddToOutboundFeeWithheldRune(ctx, btcUsd, cosmos.NewUint(50_00000000)), IsNil)
 	fee, err = gasMgr.GetAssetOutboundFee(ctx, btcUsd, false)
-	c.Assert(fee.Uint64(), Equals, uint64(2*(1000*20000)), Commentf("%d vs %d", fee.Uint64(), uint64(2*(1000*20000))))
+	// This condition hits the minimum outbound fee threshold, so the fee is 20000000 instead of 1000*50000*0.1
+	c.Assert(fee.Uint64(), Equals, uint64(1000*20000*2), Commentf("%d vs %d", fee.Uint64(), uint64(1000*20000*2)))
 	c.Assert(err, IsNil)
 }
 
