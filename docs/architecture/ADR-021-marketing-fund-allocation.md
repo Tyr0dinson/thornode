@@ -4,6 +4,7 @@
 14 Jan 25: Added timeframe, additional funding option and further steps.
 21 Jan 25: Amended funding options.
 01 Aug 25: Adjusted funding source and updated for latest changes in ecosystem.
+15 Aug 25: Rewrite of ADR 021. Added research and updated plan details for execution. Included front end update.
 
 ## Status
 Draft
