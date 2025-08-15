@@ -26,16 +26,16 @@ asserts:
   ###
   - .[1].asset == "BTC.BTC"
   - .[1].outbound_fee == "7000"
-  - .[1].fee_withheld_rune == "689655172"
+  - .[1].fee_withheld_rune == "689655172414"
   - .[1].fee_spent_rune == "0"
-  - .[1].surplus_rune == "689655172"
+  - .[1].surplus_rune == "689655172414"
   - .[1].dynamic_multiplier_basis_points == "10000"
   ###
   - .[2].asset == "ETH.ETH"
   - .[2].outbound_fee == "640000"
-  - .[2].fee_withheld_rune == "689655172"
+  - .[2].fee_withheld_rune == "689655172414"
   - .[2].fee_spent_rune == "0"
-  - .[2].surplus_rune == "689655172"
+  - .[2].surplus_rune == "689655172414"
   - .[2].dynamic_multiplier_basis_points == "10000"
 ---
 ########################################################################################
@@ -240,7 +240,7 @@ asserts:
   - .|length == 1
   - .[0]|.in_hash == "${INBOUND_TXID}"
   - .[0]|.coin.asset == "${OUTPUT_ASSET}"
-  - .[0]|.coin.amount == "${OUTPUT_AMOUNT=43566790}"
+  - .[0]|.coin.amount == "${OUTPUT_AMOUNT=43631686}"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -311,7 +311,7 @@ asserts:
   - .[0]|.in_hash == "${INBOUND_TXID}"
   - .[0]|.coin.asset == "${OUTPUT_ASSET}"
   - .[0]|.memo == "OUT:${INBOUND_TXID}"
-  - .[0]|.coin.amount == "${OUTPUT_AMOUNT=6999523}"
+  - .[0]|.coin.amount == "${OUTPUT_AMOUNT=7120218}"
   - .[1]|.in_hash == "${INBOUND_TXID}"
   - .[1]|.coin.asset == "${INPUT_ASSET}"
   - .[1]|.coin.amount == "${REFUND_AMOUNT=4793000}"
@@ -406,7 +406,7 @@ asserts:
   - .|length == 1
   - .[0]|.in_hash == "${INBOUND_TXID}"
   - .[0]|.coin.asset == "${OUTPUT_ASSET}"
-  - .[0]|.coin.amount == "${OUTPUT_AMOUNT=31546461}"
+  - .[0]|.coin.amount == "${OUTPUT_AMOUNT=31700046}"
   - .[0]|.memo == "OUT:${INBOUND_TXID}"
 ---
 type: create-blocks
@@ -477,7 +477,7 @@ asserts:
   - .|length == 1
   - .[0]|.in_hash == "${INBOUND_TXID}"
   - .[0]|.coin.asset == "${OUTPUT_ASSET}"
-  - .[0]|.coin.amount == "${OUTPUT_AMOUNT=770603}"
+  - .[0]|.coin.amount == "${OUTPUT_AMOUNT=973312}"
   - .[0]|.memo == "OUT:${INBOUND_TXID}"
 ---
 type: create-blocks
@@ -625,15 +625,15 @@ asserts:
   - .[0] == {"asset":"THOR.RUNE","outbound_fee":"2000000"}
   ###
   - .[1].asset == "BTC.BTC"
-  - .[1].outbound_fee == "7057"
-  - .[1].fee_withheld_rune == "695219880"
+  - .[1].outbound_fee == "7000"
+  - .[1].fee_withheld_rune == "689660737122"
   - .[1].fee_spent_rune == "8346630"
-  - .[1].surplus_rune == "686873250"
-  - .[1].dynamic_multiplier_basis_points == "10081"
+  - .[1].surplus_rune == "689652390492"
+  - .[1].dynamic_multiplier_basis_points == "10000"
   ###
   - .[2].asset == "ETH.ETH"
-  - .[2].outbound_fee == "872512"
-  - .[2].fee_withheld_rune == "1157069077"
-  - .[2].fee_spent_rune == "592695508"
-  - .[2].surplus_rune == "564373569"
-  - .[2].dynamic_multiplier_basis_points == "13633"
+  - .[2].outbound_fee == "640384"
+  - .[2].fee_withheld_rune == "690050872205"
+  - .[2].fee_spent_rune == "593018125"
+  - .[2].surplus_rune == "689457854080"
+  - .[2].dynamic_multiplier_basis_points == "10006"

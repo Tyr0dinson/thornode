@@ -41,7 +41,7 @@ func init() {
 		MaxSynthsForSaversYield:             5000,
 		PauseLoans:                          0,
 		AllowWideBlame:                      1,
-		TargetOutboundFeeSurplusRune:        10_00000000,
+		TargetOutboundFeeSurplusRune:        10_000_00000000,
 		MaxOutboundFeeMultiplierBasisPoints: 30_000,
 		MinOutboundFeeMultiplierBasisPoints: 10_00,
 		OperationalVotesMin:                 1, // For regtest single-signer Mimir changes without Admin
