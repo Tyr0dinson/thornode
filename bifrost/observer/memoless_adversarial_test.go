@@ -10,13 +10,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
+	"github.com/blang/semver"
+	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/stretchr/testify/suite"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	shareTypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
 	btypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/config"
 	stypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
@@ -286,11 +289,9 @@ func (suite *MemolessAdversarialTestSuite) executeReplayAttack(ctx context.Conte
 
 	// Create legitimate transaction first
 	originalTx := &btypes.TxInItem{
-		Tx: common.Tx{
-			ID:    common.TxID("original-tx-replay-test"),
-			Coins: common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(100012345))},
-			Memo:  "",
-		},
+		Tx:          "original-tx-replay-test",
+		Coins:       common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(100012345))},
+		Memo:        "",
 		BlockHeight: 144000,
 	}
 
@@ -324,7 +325,7 @@ func (suite *MemolessAdversarialTestSuite) executeReplayAttack(ctx context.Conte
 			name: "id_modified_replay",
 			modifier: func(tx *btypes.TxInItem) *btypes.TxInItem {
 				newTx := *tx
-				newTx.Tx.ID = common.TxID("replayed-" + string(tx.Tx.ID))
+				newTx.Tx = "replayed-" + tx.Tx
 				return &newTx
 			},
 		},
@@ -359,31 +360,25 @@ func (suite *MemolessAdversarialTestSuite) executeTimingAttack(ctx context.Conte
 	scenarios := map[string]func() (*btypes.TxInItem, bool){
 		"valid_memoless": func() (*btypes.TxInItem, bool) {
 			return &btypes.TxInItem{
-				Tx: common.Tx{
-					ID:    common.TxID(fmt.Sprintf("timing-valid-%d", rand.Intn(100000))),
-					Coins: common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(100012345))},
-					Memo:  "",
-				},
+				Tx:          fmt.Sprintf("timing-valid-%d", rand.Intn(100000)),
+				Coins:       common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(100012345))},
+				Memo:        "",
 				BlockHeight: 144000,
 			}, true
 		},
 		"invalid_memoless": func() (*btypes.TxInItem, bool) {
 			return &btypes.TxInItem{
-				Tx: common.Tx{
-					ID:    common.TxID(fmt.Sprintf("timing-invalid-%d", rand.Intn(100000))),
-					Coins: common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(50000))},
-					Memo:  "",
-				},
+				Tx:          fmt.Sprintf("timing-invalid-%d", rand.Intn(100000)),
+				Coins:       common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(50000))},
+				Memo:        "",
 				BlockHeight: 144000,
 			}, false
 		},
 		"nonexistent_reference": func() (*btypes.TxInItem, bool) {
 			return &btypes.TxInItem{
-				Tx: common.Tx{
-					ID:    common.TxID(fmt.Sprintf("timing-nonexistent-%d", rand.Intn(100000))),
-					Coins: common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(100099999))},
-					Memo:  "",
-				},
+				Tx:          fmt.Sprintf("timing-nonexistent-%d", rand.Intn(100000)),
+				Coins:       common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(100099999))},
+				Memo:        "",
 				BlockHeight: 144000,
 			}, true // Will be detected as memoless but memo lookup will fail
 		},
@@ -455,7 +450,7 @@ func (suite *MemolessAdversarialTestSuite) executeOracleManipulationAttack(ctx c
 	suite.T().Logf("🔥 Executing oracle manipulation attack")
 
 	// Configure adversarial oracle responses
-	manipulationStrategies := []OracleManipulation{
+	manipulationStrategies := []OracleManipulationConfig{
 		{
 			name:     "false_memo_content",
 			strategy: FalseMemoResponse,
@@ -463,7 +458,7 @@ func (suite *MemolessAdversarialTestSuite) executeOracleManipulationAttack(ctx c
 		},
 		{
 			name:     "delayed_response",
-			strategy: DelayedResponse,
+			strategy: DelayedOracleResponse,
 			delay:    time.Second * 10,
 		},
 		{
@@ -537,11 +532,9 @@ func (suite *MemolessAdversarialTestSuite) attemptMemoInjection(reference, paylo
 	memolessAmount := baseAmount*100000 + parseReference(reference)
 
 	tx := &btypes.TxInItem{
-		Tx: common.Tx{
-			ID:    common.TxID(fmt.Sprintf("injection-test-%s", reference)),
-			Coins: common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(memolessAmount))},
-			Memo:  "",
-		},
+		Tx:          fmt.Sprintf("injection-test-%s", reference),
+		Coins:       common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(memolessAmount))},
+		Memo:        "",
 		BlockHeight: 144000,
 	}
 
@@ -552,7 +545,7 @@ func (suite *MemolessAdversarialTestSuite) attemptMemoInjection(reference, paylo
 	}
 
 	// Check if malicious content made it through
-	return processedTx != nil && processedTx.Tx.Memo == payload
+	return processedTx != nil && processedTx.Memo == payload
 }
 
 func (suite *MemolessAdversarialTestSuite) attemptReplayAttack(attackName string, replayTx *btypes.TxInItem) bool {
@@ -646,11 +639,9 @@ func (suite *MemolessAdversarialTestSuite) runResourceExhaustionWorker(ctx conte
 			memolessAmount := baseAmount*100000 + parseReference(reference)
 
 			tx := &btypes.TxInItem{
-				Tx: common.Tx{
-					ID:    common.TxID(fmt.Sprintf("exhaust-%d-%d", workerID, i)),
-					Coins: common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(memolessAmount))},
-					Memo:  "",
-				},
+				Tx:          fmt.Sprintf("exhaust-%d-%d", workerID, i),
+				Coins:       common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(memolessAmount))},
+				Memo:        "",
 				BlockHeight: int64(144000 + rand.Intn(1000)),
 			}
 
@@ -678,11 +669,9 @@ func (suite *MemolessAdversarialTestSuite) monitorResourceUsage(ctx context.Cont
 func (suite *MemolessAdversarialTestSuite) validateSystemFunctionality() {
 	// Test that system is still functional after resource exhaustion attack
 	normalTx := &btypes.TxInItem{
-		Tx: common.Tx{
-			ID:    common.TxID("functionality-test-post-attack"),
-			Coins: common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(100054321))},
-			Memo:  "",
-		},
+		Tx:          "functionality-test-post-attack",
+		Coins:       common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(100054321))},
+		Memo:        "",
 		BlockHeight: 144000,
 	}
 
@@ -691,14 +680,12 @@ func (suite *MemolessAdversarialTestSuite) validateSystemFunctionality() {
 	suite.Require().NotNil(processedTx, "Transaction processing should work after attack")
 }
 
-func (suite *MemolessAdversarialTestSuite) testOracleManipulation(manipulation OracleManipulation) bool {
+func (suite *MemolessAdversarialTestSuite) testOracleManipulation(manipulation OracleManipulationConfig) bool {
 	// Create test transaction
 	tx := &btypes.TxInItem{
-		Tx: common.Tx{
-			ID:    common.TxID(fmt.Sprintf("oracle-test-%s", manipulation.name)),
-			Coins: common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(100012345))},
-			Memo:  "",
-		},
+		Tx:          fmt.Sprintf("oracle-test-%s", manipulation.name),
+		Coins:       common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(100012345))},
+		Memo:        "",
 		BlockHeight: 144000,
 	}
 
@@ -708,8 +695,8 @@ func (suite *MemolessAdversarialTestSuite) testOracleManipulation(manipulation O
 	// Check if manipulation succeeded
 	switch manipulation.strategy {
 	case FalseMemoResponse:
-		return err == nil && processedTx != nil && processedTx.Tx.Memo == manipulation.payload
-	case DelayedResponse:
+		return err == nil && processedTx != nil && processedTx.Memo == manipulation.payload
+	case DelayedOracleResponse:
 		// If it completed quickly, the delay didn't work
 		return false
 	case CorruptedMetadata:
@@ -787,10 +774,18 @@ func (suite *MemolessAdversarialTestSuite) validateSecurityInvariants(scenario A
 
 // Supporting types and structures defined in memoless_test_utils.go
 
+// OracleManipulationConfig represents an oracle attack configuration
+type OracleManipulationConfig struct {
+	name     string
+	strategy OracleStrategy
+	payload  string
+	delay    time.Duration
+}
+
 type AdversarialEngine struct {
 	activeAttacks  map[AttackType]bool
 	maliciousMemos map[string]string
-	oracleConfig   OracleManipulation
+	oracleConfig   OracleManipulationConfig
 	mu             sync.RWMutex
 }
 
@@ -823,7 +818,7 @@ func (ae *AdversarialEngine) SetMaliciousMemo(reference, payload string) {
 	ae.maliciousMemos[reference] = payload
 }
 
-func (ae *AdversarialEngine) ConfigureOracle(manipulation OracleManipulation) {
+func (ae *AdversarialEngine) ConfigureOracle(manipulation OracleManipulationConfig) {
 	ae.mu.Lock()
 	defer ae.mu.Unlock()
 	ae.oracleConfig = manipulation
@@ -832,14 +827,14 @@ func (ae *AdversarialEngine) ConfigureOracle(manipulation OracleManipulation) {
 // OracleManipulation and OracleStrategy types defined in memoless_test_utils.go
 
 type AdversarialThorClient struct {
+	*MockThorClient // Embed to inherit all interface methods
 	attackEngine *AdversarialEngine
-	normalClient *MockThorClient
 }
 
 func NewAdversarialThorClient(engine *AdversarialEngine) *AdversarialThorClient {
 	return &AdversarialThorClient{
-		attackEngine: engine,
-		normalClient: NewMockThorClient(),
+		MockThorClient: NewMockThorClient(),
+		attackEngine:   engine,
 	}
 }
 
@@ -854,7 +849,7 @@ func (atc *AdversarialThorClient) GetRegisteredMemo(reference string) (*stypes.R
 	// Check for malicious memo injection
 	if payload, exists := atc.attackEngine.maliciousMemos[reference]; exists {
 		atc.attackEngine.mu.RUnlock()
-		return &types.RegisteredMemo{
+		return &stypes.RegisteredMemo{
 			Reference:    reference,
 			Memo:         payload,
 			ChainId:      "BTC",
@@ -865,15 +860,160 @@ func (atc *AdversarialThorClient) GetRegisteredMemo(reference string) (*stypes.R
 	}
 
 	// Check for oracle manipulation
-	if atc.attackEngine.oracleConfig.strategy == DelayedResponse {
+	if atc.attackEngine.oracleConfig.strategy == DelayedOracleResponse {
 		delay := atc.attackEngine.oracleConfig.delay
 		atc.attackEngine.mu.RUnlock()
 		time.Sleep(delay)
-		return atc.normalClient.GetRegisteredMemo(reference)
+		return atc.MockThorClient.GetRegisteredMemo(reference)
 	}
 
 	atc.attackEngine.mu.RUnlock()
-	return atc.normalClient.GetRegisteredMemo(reference)
+	return atc.MockThorClient.GetRegisteredMemo(reference)
+}
+
+// Implement required ThorchainBridge interface methods
+func (atc *AdversarialThorClient) EnsureNodeWhitelisted() error {
+	return nil
+}
+
+func (atc *AdversarialThorClient) EnsureNodeWhitelistedWithTimeout() error {
+	return nil
+}
+
+func (atc *AdversarialThorClient) FetchNodeStatus() (stypes.NodeStatus, error) {
+	return stypes.NodeStatus_Active, nil
+}
+
+func (atc *AdversarialThorClient) FetchActiveNodes() ([]common.PubKey, error) {
+	return []common.PubKey{}, nil
+}
+
+func (atc *AdversarialThorClient) GetAsgards() (stypes.Vaults, error) {
+	return stypes.Vaults{}, nil
+}
+
+func (atc *AdversarialThorClient) GetVault(pubkey string) (stypes.Vault, error) {
+	return stypes.Vault{}, nil
+}
+
+func (atc *AdversarialThorClient) GetConfig() config.BifrostClientConfiguration {
+	return config.BifrostClientConfiguration{}
+}
+
+func (atc *AdversarialThorClient) GetConstants() (map[string]int64, error) {
+	return make(map[string]int64), nil
+}
+
+func (atc *AdversarialThorClient) GetContext() client.Context {
+	return client.Context{}
+}
+
+func (atc *AdversarialThorClient) GetContractAddress() ([]thorclient.PubKeyContractAddressPair, error) {
+	return []thorclient.PubKeyContractAddressPair{}, nil
+}
+
+func (atc *AdversarialThorClient) GetErrataMsg(txID common.TxID, chain common.Chain) cosmos.Msg {
+	return nil
+}
+
+func (atc *AdversarialThorClient) GetKeygenStdTx(poolPubKey common.PubKey, secp256k1Signature, keysharesBackup []byte, blame []stypes.Blame, inputPks common.PubKeys, keygenType stypes.KeygenType, chains common.Chains, height, keygenTime int64, poolPubKeyEddsa common.PubKey, keysharesBackupEddsa []byte) (cosmos.Msg, error) {
+	return nil, nil
+}
+
+func (atc *AdversarialThorClient) GetKeysignParty(vaultPubKey common.PubKey) (common.PubKeys, error) {
+	return common.PubKeys{}, nil
+}
+
+func (atc *AdversarialThorClient) GetMimir(key string) (int64, error) {
+	return 0, nil
+}
+
+func (atc *AdversarialThorClient) GetMimirWithRef(template, ref string) (int64, error) {
+	return 0, nil
+}
+
+func (atc *AdversarialThorClient) GetInboundOutbound(txIns common.ObservedTxs) (common.ObservedTxs, common.ObservedTxs, error) {
+	return common.ObservedTxs{}, common.ObservedTxs{}, nil
+}
+
+func (atc *AdversarialThorClient) GetPools() (stypes.Pools, error) {
+	return stypes.Pools{}, nil
+}
+
+func (atc *AdversarialThorClient) GetPubKeys() ([]thorclient.PubKeyContractAddressPair, error) {
+	return []thorclient.PubKeyContractAddressPair{}, nil
+}
+
+func (atc *AdversarialThorClient) GetAsgardPubKeys() ([]thorclient.PubKeyContractAddressPair, error) {
+	return []thorclient.PubKeyContractAddressPair{}, nil
+}
+
+func (atc *AdversarialThorClient) GetSolvencyMsg(height int64, chain common.Chain, pubKey common.PubKey, coins common.Coins) *stypes.MsgSolvency {
+	return nil
+}
+
+func (atc *AdversarialThorClient) GetTHORName(name string) (stypes.THORName, error) {
+	return stypes.THORName{}, nil
+}
+
+func (atc *AdversarialThorClient) GetThorchainVersion() (semver.Version, error) {
+	return semver.Version{}, nil
+}
+
+func (atc *AdversarialThorClient) IsCatchingUp() (bool, error) {
+	return false, nil
+}
+
+func (atc *AdversarialThorClient) HasNetworkFee(chain common.Chain) (bool, error) {
+	return false, nil
+}
+
+func (atc *AdversarialThorClient) GetNetworkFee(chain common.Chain) (transactionSize, transactionFeeRate uint64, err error) {
+	return 0, 0, nil
+}
+
+func (atc *AdversarialThorClient) PostKeysignFailure(blame stypes.Blame, height int64, memo string, coins common.Coins, pubkey common.PubKey) (common.TxID, error) {
+	return common.TxID(""), nil
+}
+
+func (atc *AdversarialThorClient) PostNetworkFee(height int64, chain common.Chain, transactionSize, transactionRate uint64) (common.TxID, error) {
+	return common.TxID(""), nil
+}
+
+func (atc *AdversarialThorClient) RagnarokInProgress() (bool, error) {
+	return false, nil
+}
+
+func (atc *AdversarialThorClient) WaitToCatchUp() error {
+	return nil
+}
+
+func (atc *AdversarialThorClient) GetBlockHeight() (int64, error) {
+	return 100, nil
+}
+
+func (atc *AdversarialThorClient) GetLastObservedInHeight(chain common.Chain) (int64, error) {
+	return 100, nil
+}
+
+func (atc *AdversarialThorClient) GetLastSignedOutHeight(chain common.Chain) (int64, error) {
+	return 100, nil
+}
+
+func (atc *AdversarialThorClient) GetKeysign(blockHeight int64, pk string) (btypes.TxOut, error) {
+	return btypes.TxOut{}, nil
+}
+
+func (atc *AdversarialThorClient) GetNodeAccount(nodeAddr string) (*stypes.NodeAccount, error) {
+	return &stypes.NodeAccount{}, nil
+}
+
+func (atc *AdversarialThorClient) GetNodeAccounts() ([]*stypes.NodeAccount, error) {
+	return []*stypes.NodeAccount{}, nil
+}
+
+func (atc *AdversarialThorClient) GetKeygenBlock(height int64, pk string) (stypes.KeygenBlock, error) {
+	return stypes.KeygenBlock{}, nil
 }
 
 func parseReference(ref string) uint64 {

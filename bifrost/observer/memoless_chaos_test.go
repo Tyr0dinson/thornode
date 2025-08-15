@@ -9,11 +9,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
+	"github.com/blang/semver"
+	"github.com/cosmos/cosmos-sdk/client"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/stretchr/testify/suite"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/config"
+	btypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
+	stypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
@@ -34,8 +40,8 @@ func (suite *MemolessChaosTestSuite) SetupTest() {
 	// Initialize chaos engineering components
 	suite.thorClient = NewChaosThorClient()
 	suite.memoHandler = &MemolessHandler{
-		thorClient: suite.thorClient,
-		logger:     NewTestLogger(),
+		bridge: suite.thorClient,
+		logger: NewTestLogger(),
 	}
 
 	suite.chaosEngine = &ChaosEngine{
@@ -177,13 +183,13 @@ func (suite *MemolessChaosTestSuite) processChaosTransaction(workerID, txID int,
 	baseAmount := uint64(rand.Intn(1000000) + 1000)
 	memolessAmount := baseAmount*100000 + parseUint64(reference)
 
-	tx := &types.ObservedTx{
-		Tx: common.Tx{
-			ID:    common.TxID(fmt.Sprintf("chaos-tx-%d-%d", workerID, txID)),
-			Coins: common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(memolessAmount))},
-			Memo:  "", // Empty memo for memoless transaction
-		},
+	tx := &btypes.TxInItem{
+		Tx:          fmt.Sprintf("chaos-tx-%d-%d", workerID, txID),
+		Coins:       common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(memolessAmount))},
+		Memo:        "", // Empty memo for memoless transaction
 		BlockHeight: int64(144000 + rand.Intn(1000)),
+		Sender:      "chaos-sender",
+		To:          "chaos-receiver",
 	}
 
 	// Measure processing time
@@ -328,16 +334,16 @@ func (suite *MemolessChaosTestSuite) validateSystemResilience(experiment ChaosEx
 	suite.T().Logf("   Max Latency: %v (threshold: %v)", maxLatency, maxMaxLatency)
 }
 
-func (suite *MemolessChaosTestSuite) validateProcessedTransaction(original, processed *types.ObservedTx) {
+func (suite *MemolessChaosTestSuite) validateProcessedTransaction(original, processed *btypes.TxInItem) {
 	// Validate that memoless processing was correct
-	if len(original.Tx.Memo) == 0 && len(processed.Tx.Memo) > 0 {
+	if len(original.Memo) == 0 && len(processed.Memo) > 0 {
 		// Original had no memo, processed should have resolved memo
-		suite.Require().NotEmpty(processed.Tx.Memo, "Processed transaction should have resolved memo")
+		suite.Require().NotEmpty(processed.Memo, "Processed transaction should have resolved memo")
 
 		// Amount should be adjusted
-		if len(original.Tx.Coins) > 0 && len(processed.Tx.Coins) > 0 {
-			originalAmount := original.Tx.Coins[0].Amount.Uint64()
-			processedAmount := processed.Tx.Coins[0].Amount.Uint64()
+		if len(original.Coins) > 0 && len(processed.Coins) > 0 {
+			originalAmount := original.Coins[0].Amount.Uint64()
+			processedAmount := processed.Coins[0].Amount.Uint64()
 
 			// Processed amount should be smaller (reference removed)
 			suite.Require().Less(processedAmount, originalAmount,
@@ -395,34 +401,34 @@ func (suite *MemolessChaosTestSuite) TestSpecificFailureScenarios() {
 		defer suite.chaosEngine.Stop()
 
 		// Test that non-memoless transactions still work
-		normalTx := &types.ObservedTx{
-			Tx: common.Tx{
-				ID:    common.TxID("normal-tx-test"),
-				Coins: common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(1000))},
-				Memo:  "SWAP:BTC.BTC", // Regular memo
-			},
+		normalTx := &btypes.TxInItem{
+			Tx:          "normal-tx-test",
+			Coins:       common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(1000))},
+			Memo:        "SWAP:BTC.BTC", // Regular memo
 			BlockHeight: 144000,
+			Sender:      "normal-sender",
+			To:          "normal-receiver",
 		}
 
 		processedTx, err := suite.memoHandler.ProcessMemolessTransaction(normalTx)
 		suite.Require().NoError(err, "Normal transactions should work during chaos")
 		suite.Require().NotNil(processedTx)
-		suite.Require().Equal(normalTx.Tx.Memo, processedTx.Tx.Memo, "Normal memo should be unchanged")
+		suite.Require().Equal(normalTx.Memo, processedTx.Memo, "Normal memo should be unchanged")
 	})
 }
 
-func (suite *MemolessChaosTestSuite) createTestTransaction(txID string) *types.ObservedTx {
+func (suite *MemolessChaosTestSuite) createTestTransaction(txID string) *btypes.TxInItem {
 	reference := fmt.Sprintf("%05d", rand.Intn(100000))
 	baseAmount := uint64(rand.Intn(1000000) + 1000)
 	memolessAmount := baseAmount*100000 + parseUint64(reference)
 
-	return &types.ObservedTx{
-		Tx: common.Tx{
-			ID:    common.TxID(txID),
-			Coins: common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(memolessAmount))},
-			Memo:  "",
-		},
+	return &btypes.TxInItem{
+		Tx:          txID,
+		Coins:       common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(memolessAmount))},
+		Memo:        "",
 		BlockHeight: int64(144000 + rand.Intn(1000)),
+		Sender:      "test-sender",
+		To:          "test-receiver",
 	}
 }
 
@@ -535,10 +541,15 @@ func (ce *ChaosEngine) GetLatencyPenalty() time.Duration {
 	return time.Duration(penalty) * time.Millisecond
 }
 
+// GetLatency returns latency to inject (alias for GetLatencyPenalty)
+func (ce *ChaosEngine) GetLatency() time.Duration {
+	return ce.GetLatencyPenalty()
+}
+
 // Chaos-aware THORChain client
 type ChaosThorClient struct {
+	*MockThorClient
 	chaosEngine  *ChaosEngine
-	normalClient *MockThorClient
 	circuitOpen  bool
 	failureCount int64
 	lastFailure  time.Time
@@ -547,8 +558,8 @@ type ChaosThorClient struct {
 
 func NewChaosThorClient() *ChaosThorClient {
 	return &ChaosThorClient{
-		normalClient: NewMockThorClient(),
-		circuitOpen:  false,
+		MockThorClient: NewMockThorClient(),
+		circuitOpen:    false,
 	}
 }
 
@@ -573,7 +584,7 @@ func (ctc *ChaosThorClient) GetRegisteredMemo(reference string) (*types.Register
 	}
 
 	// Call normal client
-	memo, err := ctc.normalClient.GetRegisteredMemo(reference)
+	memo, err := ctc.MockThorClient.GetRegisteredMemo(reference)
 	if err != nil {
 		ctc.recordFailure()
 	}
@@ -600,6 +611,68 @@ func (ctc *ChaosThorClient) recordFailure() {
 	ctc.failureCount++
 	ctc.lastFailure = time.Now()
 }
+
+// Broadcast is required by ThorchainBridge interface
+func (ctc *ChaosThorClient) Broadcast(msgs ...sdk.Msg) (common.TxID, error) {
+	// Check circuit breaker
+	if ctc.isCircuitOpen() {
+		return common.TxID(""), fmt.Errorf("circuit breaker open")
+	}
+
+	// Apply chaos if configured
+	if ctc.chaosEngine != nil {
+		if ctc.chaosEngine.ShouldFail() {
+			ctc.recordFailure()
+			return common.TxID(""), fmt.Errorf("chaos-injected broadcast failure")
+		}
+		if delay := ctc.chaosEngine.GetLatency(); delay > 0 {
+			time.Sleep(delay)
+		}
+	}
+
+	// Mock successful broadcast
+	return common.TxID("chaos-broadcast-tx-success"), nil
+}
+
+// EnsureNodeWhitelisted is required by ThorchainBridge interface
+func (ctc *ChaosThorClient) EnsureNodeWhitelisted() error { return nil }
+
+// Copy of all ThorchainBridge interface methods from AdversarialThorClient for testing
+func (ctc *ChaosThorClient) EnsureNodeWhitelistedWithTimeout() error { return nil }
+func (ctc *ChaosThorClient) FetchNodeStatus() (stypes.NodeStatus, error) { return stypes.NodeStatus_Unknown, nil }
+func (ctc *ChaosThorClient) FetchActiveNodes() ([]common.PubKey, error) { return nil, nil }
+func (ctc *ChaosThorClient) GetAsgards() (stypes.Vaults, error) { return nil, nil }
+func (ctc *ChaosThorClient) GetVault(pubkey string) (stypes.Vault, error) { return stypes.Vault{}, nil }
+func (ctc *ChaosThorClient) GetConfig() config.BifrostClientConfiguration { return config.BifrostClientConfiguration{} }
+func (ctc *ChaosThorClient) GetConstants() (map[string]int64, error) { return nil, nil }
+func (ctc *ChaosThorClient) GetContext() client.Context { return client.Context{} }
+func (ctc *ChaosThorClient) GetContractAddress() ([]thorclient.PubKeyContractAddressPair, error) { return nil, nil }
+func (ctc *ChaosThorClient) GetErrataMsg(txID common.TxID, chain common.Chain) sdk.Msg { return nil }
+func (ctc *ChaosThorClient) GetKeygenStdTx(poolPubKey common.PubKey, secp256k1Signature, keysharesBackup []byte, blame []stypes.Blame, inputPks common.PubKeys, keygenType stypes.KeygenType, chains common.Chains, height, keygenTime int64, poolPubKeyEddsa common.PubKey, keysharesBackupEddsa []byte) (sdk.Msg, error) { return nil, nil }
+func (ctc *ChaosThorClient) GetKeysignParty(vaultPubKey common.PubKey) (common.PubKeys, error) { return nil, nil }
+func (ctc *ChaosThorClient) GetMimir(key string) (int64, error) { return 0, nil }
+func (ctc *ChaosThorClient) GetMimirWithRef(template, ref string) (int64, error) { return 0, nil }
+func (ctc *ChaosThorClient) GetInboundOutbound(txIns common.ObservedTxs) (common.ObservedTxs, common.ObservedTxs, error) { return nil, nil, nil }
+func (ctc *ChaosThorClient) GetPools() (stypes.Pools, error) { return nil, nil }
+func (ctc *ChaosThorClient) GetPubKeys() ([]thorclient.PubKeyContractAddressPair, error) { return nil, nil }
+func (ctc *ChaosThorClient) GetAsgardPubKeys() ([]thorclient.PubKeyContractAddressPair, error) { return nil, nil }
+func (ctc *ChaosThorClient) GetSolvencyMsg(height int64, chain common.Chain, pubKey common.PubKey, coins common.Coins) *stypes.MsgSolvency { return nil }
+func (ctc *ChaosThorClient) GetTHORName(name string) (stypes.THORName, error) { return stypes.THORName{}, nil }
+func (ctc *ChaosThorClient) GetThorchainVersion() (semver.Version, error) { return semver.Version{}, nil }
+func (ctc *ChaosThorClient) IsCatchingUp() (bool, error) { return false, nil }
+func (ctc *ChaosThorClient) HasNetworkFee(chain common.Chain) (bool, error) { return false, nil }
+func (ctc *ChaosThorClient) GetNetworkFee(chain common.Chain) (transactionSize, transactionFeeRate uint64, err error) { return 0, 0, nil }
+func (ctc *ChaosThorClient) PostKeysignFailure(blame stypes.Blame, height int64, memo string, coins common.Coins, pubkey common.PubKey) (common.TxID, error) { return "", nil }
+func (ctc *ChaosThorClient) PostNetworkFee(height int64, chain common.Chain, transactionSize, transactionRate uint64) (common.TxID, error) { return "", nil }
+func (ctc *ChaosThorClient) RagnarokInProgress() (bool, error) { return false, nil }
+func (ctc *ChaosThorClient) WaitToCatchUp() error { return nil }
+func (ctc *ChaosThorClient) GetBlockHeight() (int64, error) { return 100, nil }
+func (ctc *ChaosThorClient) GetLastObservedInHeight(chain common.Chain) (int64, error) { return 100, nil }
+func (ctc *ChaosThorClient) GetLastSignedOutHeight(chain common.Chain) (int64, error) { return 100, nil }
+func (ctc *ChaosThorClient) GetKeysign(blockHeight int64, pk string) (btypes.TxOut, error) { return btypes.TxOut{}, nil }
+func (ctc *ChaosThorClient) GetNodeAccount(nodeAddress string) (*stypes.NodeAccount, error) { return nil, nil }
+func (ctc *ChaosThorClient) GetNodeAccounts() ([]*stypes.NodeAccount, error) { return nil, nil }
+func (ctc *ChaosThorClient) GetKeygenBlock(height int64, pk string) (stypes.KeygenBlock, error) { return stypes.KeygenBlock{}, nil }
 
 type ChaosMetrics struct {
 	startTime      time.Time

@@ -4,16 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/rand"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	shareTypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
-	"gitlab.com/thorchain/thornode/v3/common"
-	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
