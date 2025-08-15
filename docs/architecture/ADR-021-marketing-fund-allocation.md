@@ -248,7 +248,7 @@ A positive correlation of marketing spend to user acquisition might be developed
 4.	Action and continuously manage marketing activities with discord updates when available.
 
 ## Conclusion
-Investing in marketing is essential for THORChain to achieve its long-term vision of becoming the largest crypto exchange in the world.. By increasing awareness and adoption, a dedicated marketing fund will catalyze growth, enhance the protocol’s reputation, and solidify its position in the DeFi ecosystem.
+Investing in marketing is essential for THORChain to achieve its long-term vision of becoming the largest crypto exchange in the world. By increasing awareness and adoption, a dedicated marketing fund will catalyze growth, enhance the protocol’s reputation, and solidify its position in the DeFi ecosystem.
 
 ## Decision
 TBD
