@@ -559,7 +559,7 @@ type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .|length == 1
-  - .[0]|.coin.amount|tonumber == ${OUT_AMOUNT=493000}
+  - .[0]|.coin.amount|tonumber == ${OUT_AMOUNT=492931}
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block

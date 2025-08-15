@@ -163,7 +163,7 @@ endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - length == 1
   - .[0].memo == "OUT:{{ observe_txid 4 }}"
-  - .[0].coin.amount == "${OUT_AMOUNT=907051900}"
+  - .[0].coin.amount == "${OUT_AMOUNT=918745600}"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}

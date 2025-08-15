@@ -406,7 +406,7 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "203865",
+          "gas_used": "196885",
           "events": [
             {
               "acc_seq": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m/0",
@@ -422,13 +422,6 @@
               "msg_index": "0",
               "sender": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
               "type": "message"
-            },
-            {
-              "msg_index": "0",
-              "source": "5000000 BTC.BTC",
-              "target": "0 THOR.RUNE",
-              "txid": "0000000000000000000000000000000000000000000000000000000000000001",
-              "type": "limit_swap"
             }
           ]
         }
@@ -463,8 +456,8 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "6B98DE76B946C8420C15D7DB255E0E10E99EB71948001EDCE82ABD8A73DF8AFA",
-      "last_results_hash": "C02ED9FE71ECA5B52488602E1430534D968668BB7894B1CA648B77E7A117F3C3",
+      "app_hash": "2D605A976C316363037ADDA646074D1F85C198B9764BAAB04947F03BDE3083F3",
+      "last_results_hash": "E9B81999BB67B5D792CFC6CB5296C005F5A359DE48A63417B9B4F65EF6D3EBC5",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
@@ -1219,7 +1212,7 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "190825",
+          "gas_used": "183845",
           "events": [
             {
               "acc_seq": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m/3",
@@ -1235,13 +1228,6 @@
               "msg_index": "0",
               "sender": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
               "type": "message"
-            },
-            {
-              "msg_index": "0",
-              "source": "5000000 ETH.ETH",
-              "target": "0 THOR.RUNE",
-              "txid": "0000000000000000000000000000000000000000000000000000000000000002",
-              "type": "limit_swap"
             }
           ]
         }
@@ -1276,8 +1262,8 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "5BE4F02D9E4308BAD0B926911E2A368855C593C9C33B71AE9B8F9F6EBD9635ED",
-      "last_results_hash": "C49E10B1FDBD2757EDF61D69CF606B845FEA575D1C704ED1B45DD07A47E0ABE6",
+      "app_hash": "57A29222DEA054CDF4974BF1A9928E2EFD49FA9BA7C44625E35DBFD907A6C0FA",
+      "last_results_hash": "4D31FA432C732FCE80FA5379E48E5B55538180AEBCE8BE2FBAD0E7459B2FDE13",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
@@ -1602,7 +1588,7 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "193267",
+          "gas_used": "186287",
           "events": [
             {
               "acc_seq": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m/4",
@@ -1618,13 +1604,6 @@
               "msg_index": "0",
               "sender": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
               "type": "message"
-            },
-            {
-              "msg_index": "0",
-              "source": "50000000 ETH.ETH",
-              "target": "0 THOR.RUNE",
-              "txid": "0000000000000000000000000000000000000000000000000000000000000003",
-              "type": "limit_swap"
             }
           ]
         }

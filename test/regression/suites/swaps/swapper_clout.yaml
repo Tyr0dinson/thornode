@@ -210,9 +210,9 @@ type: check
 endpoint: http://localhost:1317/thorchain/clout/swap/{{ addr_btc_fox }}
 asserts:
   - .address == "{{ addr_btc_fox }}"
-  - .score|tonumber == 549143498
+  - .score|tonumber == 549148098
   - .reclaimed|tonumber == 612551860
-  - .spent|tonumber == 1161695358
+  - .spent|tonumber == 1161699958
   - .last_spent_height == 17
   - .last_reclaim_height == 4
 ---
@@ -220,9 +220,9 @@ type: check
 endpoint: http://localhost:1317/thorchain/clout/swap/{{ addr_eth_fox }}
 asserts:
   - .address == "{{ addr_eth_fox }}"
-  - .score|tonumber == 549143501
+  - .score|tonumber == 549148102
   - .reclaimed|tonumber == 612551863
-  - .spent|tonumber == 1161695364
+  - .spent|tonumber == 1161699965
   - .last_spent_height == 17
   - .last_reclaim_height == 4
 ---
@@ -230,8 +230,8 @@ type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .|length == 2
-  - .[0].coin.amount == "${OUT_ONE=34476239}"
-  - .[1].coin.amount == "${OUT_TWO=29506626}"
+  - .[0].coin.amount == "${OUT_ONE=34411471}"
+  - .[1].coin.amount == "${OUT_TWO=29599540}"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -303,5 +303,5 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
-  - .[0].coin.amount == "${OUT_AMOUNT=66209768}"
+  - .[0].coin.amount == "${OUT_AMOUNT=65975231}"
   - .[0].clout_spent == "0"

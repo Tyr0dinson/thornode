@@ -1491,7 +1491,7 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "151412",
+          "gas_used": "144432",
           "events": [
             {
               "amount": "2000000rune",
@@ -1551,13 +1551,6 @@
               "msg_index": "0",
               "sender": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
               "type": "message"
-            },
-            {
-              "msg_index": "0",
-              "source": "200000000000 THOR.RUNE",
-              "target": "0 BTC/BTC",
-              "txid": "506631CF180A23EA2CF212CAD267E54D9892DCAEACA3491387708FE382314B7F",
-              "type": "limit_swap"
             }
           ]
         }
@@ -1617,7 +1610,7 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "155736",
+          "gas_used": "144332",
           "events": [
             {
               "amount": "2000000rune",
@@ -1677,13 +1670,6 @@
               "msg_index": "0",
               "sender": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
               "type": "message"
-            },
-            {
-              "msg_index": "0",
-              "source": "50000000000 THOR.RUNE",
-              "target": "0 BTC/BTC",
-              "txid": "24890481A6BD928ADAB9725C3E4257A219059560CDC9C0868B0A9E73BC8A34B7",
-              "type": "limit_swap"
             }
           ]
         }
@@ -1719,7 +1705,7 @@
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
       "app_hash": "02803D83A01425BDEF41A5F6E911222411DBCDC61680C22B8C93CCF07709CB3D",
-      "last_results_hash": "2F1E00B3F097BBFA868A5FCBC34CCF91252387B5982738E676803430AD73A02F",
+      "last_results_hash": "AE914CF5D7E4BC9D9E1D83E2E862AC5F971F926E55BF6333379B788DE321FFD7",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
@@ -2413,7 +2399,7 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "132823",
+          "gas_used": "125843",
           "events": [
             {
               "amount": "2000000rune",
@@ -2473,13 +2459,6 @@
               "msg_index": "0",
               "sender": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
               "type": "message"
-            },
-            {
-              "msg_index": "0",
-              "source": "49998666 BTC/BTC",
-              "target": "0 THOR.RUNE",
-              "txid": "95AAEA7A0F5FE48E3C6EA7441BEFB8331B2D9826B120D6226AEE5ED405C917E7",
-              "type": "limit_swap"
             }
           ]
         }
@@ -2539,7 +2518,7 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "137271",
+          "gas_used": "125867",
           "events": [
             {
               "amount": "2000000rune",
@@ -2599,13 +2578,6 @@
               "msg_index": "0",
               "sender": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
               "type": "message"
-            },
-            {
-              "msg_index": "0",
-              "source": "24488478 BTC/BTC",
-              "target": "0 THOR.RUNE",
-              "txid": "85312176A579809E79D727035A6D1255CB1905329DCE608215FEA828DFABCC8B",
-              "type": "limit_swap"
             }
           ]
         }
@@ -2761,7 +2733,7 @@
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
       "app_hash": "EE3134FE97894FEF6224C069C8F7866FD8047B881832FC33E1FE962D2F741CA1",
-      "last_results_hash": "C78CC51D319D184A6DD17D988AAD342365CD777E36E66D189275BA8B831B2E70",
+      "last_results_hash": "29DDBF2529A4A8E65D04D4D8598E4DE50D337736F09847D92EA065C5BC9E243E",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },

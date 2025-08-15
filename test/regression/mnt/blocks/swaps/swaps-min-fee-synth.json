@@ -467,7 +467,7 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "155496",
+          "gas_used": "148516",
           "events": [
             {
               "amount": "2000000rune",
@@ -527,13 +527,6 @@
               "msg_index": "0",
               "sender": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
               "type": "message"
-            },
-            {
-              "msg_index": "0",
-              "source": "20000000 THOR.RUNE",
-              "target": "0 BTC/BTC",
-              "txid": "4AB634DEAD4731FE31126D11D2DD5283D8911518AC745CB65571FC430DE9E08E",
-              "type": "limit_swap"
             }
           ]
         }
@@ -569,7 +562,7 @@
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
       "app_hash": "7FCBD842512D8BD0F3253ACCC2C34573DA9A0C5310E7B2933635931894C82AA3",
-      "last_results_hash": "F2D170A0ED8C8E1650E3AA639E5156B1B71A33F8AB57CF2D5427FC1A27281E82",
+      "last_results_hash": "48A90DC23FE36F657798708DAF2FA4636DA8C3516C4AA9E8A430B640085F8CBB",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
@@ -1592,7 +1585,7 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "142300",
+          "gas_used": "135320",
           "events": [
             {
               "amount": "2000000rune",
@@ -1652,13 +1645,6 @@
               "msg_index": "0",
               "sender": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
               "type": "message"
-            },
-            {
-              "msg_index": "0",
-              "source": "20000000 THOR.RUNE",
-              "target": "0 BTC/BTC",
-              "txid": "DA383C58771351988E5FF2BA86B0568A9B84B88A8B2148515C26E1AA07309713",
-              "type": "limit_swap"
             }
           ]
         }

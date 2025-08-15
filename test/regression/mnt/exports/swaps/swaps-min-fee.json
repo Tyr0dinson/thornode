@@ -172,7 +172,7 @@
           "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
           "coins": [
             {
-              "amount": "200061929208",
+              "amount": "200061858128",
               "denom": "rune"
             }
           ]
@@ -190,7 +190,7 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "35000009957857",
+              "amount": "35000010028937",
               "denom": "rune"
             }
           ]
@@ -435,7 +435,7 @@
             {
               "chain": "BTC",
               "coin": {
-                "amount": "21472",
+                "amount": "21401",
                 "asset": "BTC.BTC"
               },
               "gas_rate": "10",
@@ -502,7 +502,7 @@
       ],
       "outbound_fee_withheld_rune": [
         {
-          "amount": "689669184544",
+          "amount": "703738382",
           "asset": "BTC.BTC"
         }
       ],
@@ -510,8 +510,8 @@
         {
           "LP_units": "100000000000",
           "asset": "BTC.BTC",
-          "balance_asset": "99945047",
-          "balance_rune": "100060291242",
+          "balance_asset": "99945118",
+          "balance_rune": "100060220162",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -568,7 +568,7 @@
               "chain": "BTC",
               "clout_spent": "0",
               "coin": {
-                "amount": "21472",
+                "amount": "21401",
                 "asset": "BTC.BTC"
               },
               "gas_rate": "10",

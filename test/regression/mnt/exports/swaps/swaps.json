@@ -286,11 +286,11 @@
       ],
       "outbound_fee_withheld_rune": [
         {
-          "amount": "689662786828",
+          "amount": "697269586",
           "asset": "BTC.BTC"
         },
         {
-          "amount": "689725304464",
+          "amount": "759787222",
           "asset": "ETH.ETH"
         }
       ],

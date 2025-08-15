@@ -102,7 +102,7 @@ endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .|length == 1
   - .[0]|.in_hash == "{{ observe_txid 3 }}"
-  - .[0]|.coin.amount|tonumber == ${OUT_AMOUNT=4993000}
+  - .[0]|.coin.amount|tonumber == ${OUT_AMOUNT=4992929}
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -163,7 +163,7 @@ endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .|length == 1
   - .[0]|.in_hash == "{{ observe_txid 5 }}"
-  - .[0]|.coin.amount|tonumber == ${OUT_AMOUNT=4993000}
+  - .[0]|.coin.amount|tonumber == ${OUT_AMOUNT=4992859}
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -224,7 +224,7 @@ endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .|length == 1
   - .[0]|.in_hash == "{{ observe_txid 7 }}"
-  - .[0]|.coin.amount|tonumber == ${OUT_AMOUNT=4993000}
+  - .[0]|.coin.amount|tonumber == ${OUT_AMOUNT=4992791}
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -283,7 +283,7 @@ endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .|length == 1
   - .[0]|.in_hash == "{{ observe_txid 9 }}"
-  - .[0]|.coin.amount|tonumber == ${OUT_AMOUNT=4993000}
+  - .[0]|.coin.amount|tonumber == ${OUT_AMOUNT=4992724}
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}

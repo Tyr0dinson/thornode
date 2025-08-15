@@ -218,14 +218,14 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/inbound_addresses
 asserts:
-  - .[]|select(.chain == "BTC").outbound_fee == "${OUT_FEE=7000}"
+  - .[]|select(.chain == "BTC").outbound_fee == "${OUT_FEE=6859}"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - length == 1
   - .[0].in_hash == "{{ native_txid -1 }}"
-  - .[0].coin.amount == "${OUT_AMOUNT=6502485}"
+  - .[0].coin.amount == "${OUT_AMOUNT=6509485}"
   - ${WITHDRAW_AMOUNT} - ${OUT_FEE} == ${OUT_AMOUNT}
 ---
 type: tx-observed-out

@@ -125,17 +125,17 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/test
 asserts:
-  - .affiliate_collector_rune == "24814326"
+  - .affiliate_collector_rune == "226763410"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/balance/module/affiliate_collector
 asserts:
-  - .coins[]|select(.denom == "rune")|.amount == "24814326"
+  - .coins[]|select(.denom == "rune")|.amount == "226763410"
 ---
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
 asserts:
-  - .result[]|select(.denom == "rune")|.amount == "5227148958"
+  - .result[]|select(.denom == "rune")|.amount == "4994000000"
 ---
 ########################################################################################
 # Swap RUNE -> BTC w/ affiliate "test"
@@ -161,7 +161,7 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/balance/module/affiliate_collector
 asserts:
-  - .coins[]|select(.denom == "rune")|.amount == "472787908"
+  - .coins[]|select(.denom == "rune")|.amount == "472822488"
 ---
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
@@ -215,7 +215,7 @@ endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - length == 1
   - .[0].memo == "OUT:{{ native_txid -1 }}"
-  - .[0].coin.amount == "${OUT_AMOUNT=21143340}"
+  - .[0].coin.amount == "${OUT_AMOUNT=4710583}"
 ---
 # Observe the main swap outbound.
 type: tx-observed-out
@@ -272,7 +272,7 @@ count: 2
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/test
 asserts:
-  - .affiliate_collector_rune == "0"
+  - .affiliate_collector_rune == "2564660191"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/balance/module/affiliate_collector
@@ -296,7 +296,7 @@ type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - length == 1
-  - .[0].in_hash == "${IN_HASH=1F7AB31B73C55AEFEFDB85BD1F4691B8D0862F6465ADFBFEBD1EF0A058003C33}"
+  - .[0].in_hash == "${IN_HASH=3761FF40D4C6CE570B3A10B558DA32AAC9F5A6CC91F3F91222E85C73AF9509E8}"
   - .[0].coin.amount == "${OUT_ONE}"
 ---
 # Observe the preferred asset swap outbound.
@@ -357,7 +357,7 @@ count: 1
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/test
 asserts:
-  - .affiliate_collector_rune == "${RUNE_AMOUNT=384481146}"
+  - .affiliate_collector_rune == "${RUNE_AMOUNT=2564660191}"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/balance/module/affiliate_collector
@@ -402,8 +402,8 @@ type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - length == 1
-  - .[0].in_hash == "${IN_HASH=F7B3511C55618B34293F9BC879D703152966A25AC8F346506F4017C1F23A39B5}"
-  - .[0].coin.amount == "${OUT_AMOUNT=198716993}"
+  - .[0].in_hash == "${IN_HASH=3761FF40D4C6CE570B3A10B558DA32AAC9F5A6CC91F3F91222E85C73AF9509E8}"
+  - .[0].coin.amount == "${OUT_AMOUNT=4710583}"
   # Despite the section title, no PreferredAsset swap refund?
 ---
 type: tx-observed-out
@@ -463,8 +463,8 @@ count: 2
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/test
 asserts:
-  - .affiliate_collector_rune == "${TEST_THORNAME_RUNE=6536800126}"
-  - .preferred_asset_swap_threshold_rune == "${SWAP_THRESHOLD_RUNE=2160289600}"
+  - .affiliate_collector_rune == "${TEST_THORNAME_RUNE=8789093105}"
+  - .preferred_asset_swap_threshold_rune == "${SWAP_THRESHOLD_RUNE=1710071700}"
   # Also confirm full THORName response format.
   - |
     . == {

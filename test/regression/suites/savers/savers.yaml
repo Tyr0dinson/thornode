@@ -212,11 +212,11 @@ params:
   address: {{ addr_btc_pig }}
   withdraw_bps: 10000
 asserts:
-  - .expected_amount_out == "6875655"
+  - .expected_amount_out == "6875645"
   - .memo == "-:BTC/BTC:10000"
   - .inbound_address == "{{ addr_btc_dog }}"
   - .fees.liquidity == "123026"
-  - .fees.outbound == "7000"
+  - .fees.outbound == "7010"
   - (.fees.total|tonumber) == (.fees.liquidity|tonumber)+(.fees.outbound|tonumber)
   - .fees.slippage_bps == 175
   - .fees.total_bps == 185
@@ -259,7 +259,7 @@ endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - length == 1
   - .[0].in_hash == "{{ observe_txid 5 }}"
-  - .[0].coin.amount == "${OUT_AMOUNT=6876400}"
+  - .[0].coin.amount == "${OUT_AMOUNT=6876390}"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -294,7 +294,7 @@ endpoint: http://localhost:1317/thorchain/pools
 asserts:
   - length == 1
   - .[0].savers_fill_bps == "0"
-  - .[0].savers_capacity_remaining == "594036343"
+  - .[0].savers_capacity_remaining == "594036353"
 ---
 ########################################################################################
 # turn on streaming swaps for savers adds (set interval to 1)
@@ -481,7 +481,7 @@ endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - length == 1
   - .[0].in_hash == "{{ observe_txid 9 }}"
-  - .[0].coin.amount == "${OUTPUT_AMOUNT=23084664}"
+  - .[0].coin.amount == "${OUTPUT_AMOUNT=23084644}"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/savers
@@ -694,7 +694,7 @@ params:
   asset: BTC.BTC
   amount: ${ADD=200000}
 asserts:
-  - .expected_amount_deposit == "198022"
+  - .expected_amount_deposit == "198023"
   - .memo == "+:BTC/BTC"
   - .inbound_address == "{{ addr_btc_dog }}"
   - .recommended_min_amount_in == "1000"
@@ -738,10 +738,10 @@ type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/savers
 asserts:
   - .|length == 1
-  - .[0].asset_deposit_value == "20038133"
+  - .[0].asset_deposit_value == "20038134"
   - .[0].asset_deposit_value | tonumber > ${PRE_ADD_DEPOSIT} + (${ADD} * 0.99)
   - .[0].asset_deposit_value | tonumber < ${PRE_ADD_DEPOSIT} + ${ADD}
-  - .[0].asset_redeem_value == "20039205"
+  - .[0].asset_redeem_value == "20039206"
   - .[0].asset_redeem_value | tonumber > ${PRE_ADD_REDEEM} + (${ADD} * 0.99)
   # Larger-than-add increase is hypothetically possible due to savers yield.
   - .[0].last_add_height == 29

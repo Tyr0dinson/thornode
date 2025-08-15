@@ -26,16 +26,16 @@ asserts:
   ###
   - .[1].asset == "BTC.BTC"
   - .[1].outbound_fee == "7000"
-  - .[1].fee_withheld_rune == "689655172414"
+  - .[1].fee_withheld_rune == "689655172"
   - .[1].fee_spent_rune == "0"
-  - .[1].surplus_rune == "689655172414"
+  - .[1].surplus_rune == "689655172"
   - .[1].dynamic_multiplier_basis_points == "10000"
   ###
   - .[2].asset == "ETH.ETH"
   - .[2].outbound_fee == "640000"
-  - .[2].fee_withheld_rune == "689655172414"
+  - .[2].fee_withheld_rune == "689655172"
   - .[2].fee_spent_rune == "0"
-  - .[2].surplus_rune == "689655172414"
+  - .[2].surplus_rune == "689655172"
   - .[2].dynamic_multiplier_basis_points == "10000"
 ---
 ########################################################################################

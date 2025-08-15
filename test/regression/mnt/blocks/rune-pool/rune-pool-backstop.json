@@ -1682,7 +1682,7 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "151412",
+          "gas_used": "144432",
           "events": [
             {
               "amount": "2000000rune",
@@ -1742,13 +1742,6 @@
               "msg_index": "0",
               "sender": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
               "type": "message"
-            },
-            {
-              "msg_index": "0",
-              "source": "200000000000 THOR.RUNE",
-              "target": "0 BTC/BTC",
-              "txid": "506631CF180A23EA2CF212CAD267E54D9892DCAEACA3491387708FE382314B7F",
-              "type": "limit_swap"
             }
           ]
         }
@@ -1808,7 +1801,7 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "155736",
+          "gas_used": "144332",
           "events": [
             {
               "amount": "2000000rune",
@@ -1868,13 +1861,6 @@
               "msg_index": "0",
               "sender": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
               "type": "message"
-            },
-            {
-              "msg_index": "0",
-              "source": "50000000000 THOR.RUNE",
-              "target": "0 BTC/BTC",
-              "txid": "24890481A6BD928ADAB9725C3E4257A219059560CDC9C0868B0A9E73BC8A34B7",
-              "type": "limit_swap"
             }
           ]
         }
@@ -1910,7 +1896,7 @@
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
       "app_hash": "A8BBDFFD8CC7609352105E90204BD5DB7E1AE734B69C4BC6C434A3DB9D29712E",
-      "last_results_hash": "2F1E00B3F097BBFA868A5FCBC34CCF91252387B5982738E676803430AD73A02F",
+      "last_results_hash": "AE914CF5D7E4BC9D9E1D83E2E862AC5F971F926E55BF6333379B788DE321FFD7",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
@@ -2346,7 +2332,7 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "141570",
+          "gas_used": "134590",
           "events": [
             {
               "amount": "2000000rune",
@@ -2406,13 +2392,6 @@
               "msg_index": "0",
               "sender": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
               "type": "message"
-            },
-            {
-              "msg_index": "0",
-              "source": "10000000000 THOR.RUNE",
-              "target": "0 BTC.BTC",
-              "txid": "EDE5F404960ABD5F49AAAC560B4FF2F14D860207F3730E4072F8086279AAF70B",
-              "type": "limit_swap"
             }
           ]
         }
@@ -2447,8 +2426,8 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "A62DCA2D5769FFA8CDD723D064012FDAF69375D4E6B8FC0BC862B41D01DABE69",
-      "last_results_hash": "AC90890C74D8E6584D637BAA2E73DE7D70E94AA3AF828E110D7284B7A8563FB4",
+      "app_hash": "7436B7DF088A185DE6F0361FEA0387796B8757BFA4BBCE2D41423578215C3223",
+      "last_results_hash": "2096E55E48AF6EF966AD3A600067848D5DAA699B4C5DC4D79761E221D809EA3C",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"
     },
@@ -2584,7 +2563,7 @@
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
-      "app_hash": "D48D63D68BE0778ABDCBBC98AF7F3258EBF33C783B7F9E6ABC68A69F7769B7AE",
+      "app_hash": "B6473082A18E71706694130140AFF9244D4A6F87839789A5803B39B0BCF8F88C",
       "last_results_hash": "C455F952848109914E8A12E1D84EC9DB1E552EA46F9A119775D578BE96727219",
       "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
       "proposer_address": "E557CD61B142A7E76E89BB3020D395A15D97C452"

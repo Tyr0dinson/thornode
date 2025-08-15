@@ -333,7 +333,7 @@
         "result": {
           "code": 0,
           "gas_wanted": "-1",
-          "gas_used": "204351",
+          "gas_used": "197371",
           "events": [
             {
               "acc_seq": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m/0",
@@ -349,13 +349,6 @@
               "msg_index": "0",
               "sender": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
               "type": "message"
-            },
-            {
-              "msg_index": "0",
-              "source": "5000000000 BTC.BTC",
-              "target": "0 BTC/BTC",
-              "txid": "0000000000000000000000000000000000000000000000000000000000000001",
-              "type": "limit_swap"
             }
           ]
         }

@@ -108,7 +108,7 @@ asserts:
   - .[0].in_hash == "{{ observe_txid 1 }}"
   - .[0].coin.amount == "${OUT_AMOUNT_1=4166927}"
   - .[1].in_hash == "{{ observe_txid 2 }}"
-  - .[1].coin.amount == "${OUT_AMOUNT_2=4081381}"
+  - .[1].coin.amount == "${OUT_AMOUNT_2=4201125}"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -218,7 +218,7 @@ endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - length == 1
   - .[0].in_hash == "{{ observe_txid 3 }}"
-  - .[0].coin.amount == "${OUT_AMOUNT=3976736}"
+  - .[0].coin.amount == "${OUT_AMOUNT=3831433}"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}

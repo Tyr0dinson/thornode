@@ -227,8 +227,8 @@ asserts:
   - .[0].coin.amount == "${OUTPUT_AMOUNTS=4476796200}"
   - .[1].coin.amount == "${OUTPUT_AMOUNTS=4476796200}"
   - .[2].coin.amount == "${OUTPUT_AMOUNTS=4476796200}"
-  - .[3].coin.amount == "${OUTPUT_AMOUNT_4=4094434200}"
-  - .[4].coin.amount == "${OUTPUT_AMOUNT_5=4094442900}"
+  - .[3].coin.amount == "${OUTPUT_AMOUNT_4=4104314700}"
+  - .[4].coin.amount == "${OUTPUT_AMOUNT_5=4104323500}"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}

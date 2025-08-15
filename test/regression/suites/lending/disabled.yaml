@@ -157,7 +157,7 @@ type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .|length == 1
-  - .[0]|.coin.amount|tonumber == ${OUT_AMOUNT=493000}
+  - .[0]|.coin.amount|tonumber == ${OUT_AMOUNT=492929}
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -242,7 +242,7 @@ type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .|length == 1
-  - .[0]|.coin.amount|tonumber == ${OUT_AMOUNT=493000}
+  - .[0]|.coin.amount|tonumber == ${OUT_AMOUNT=492859}
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -320,7 +320,7 @@ type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .|length == 1
-  - .[0]|.coin.amount|tonumber == ${OUT_AMOUNT=493000}
+  - .[0]|.coin.amount|tonumber == ${OUT_AMOUNT=492791}
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -385,7 +385,7 @@ type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .|length == 1
-  - .[0]|.coin.amount|tonumber == ${OUT_AMOUNT=493000}
+  - .[0]|.coin.amount|tonumber == ${OUT_AMOUNT=492724}
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -458,7 +458,7 @@ type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .|length == 1
-  - .[0]|.coin.amount|tonumber == ${OUT_AMOUNT=492999}
+  - .[0]|.coin.amount|tonumber == ${OUT_AMOUNT=492659}
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -539,7 +539,7 @@ type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .|length == 1
-  - .[0]|.coin.amount|tonumber == ${OUT_AMOUNT=492999}
+  - .[0]|.coin.amount|tonumber == ${OUT_AMOUNT=492595}
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -625,7 +625,7 @@ type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 1
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == ${INITIAL_BALANCE=2500483646223}
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == ${INITIAL_BALANCE=2500483636417}
 ---
 type: tx-deposit
 signer: {{ addr_thor_fox }}
@@ -696,7 +696,7 @@ type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - length == 1
-  - .[0].coin.amount == "${OUT_AMOUNT=478305}"
+  - .[0].coin.amount == "${OUT_AMOUNT=477838}"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}

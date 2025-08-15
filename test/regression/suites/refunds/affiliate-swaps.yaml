@@ -454,7 +454,7 @@ endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 2
   - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 9070835
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2489982000000
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2499982000000
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
@@ -484,7 +484,7 @@ endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 2
   - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 9069016
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2489980000000
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2499980000000
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
@@ -514,7 +514,7 @@ endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 2
   - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 9067197
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2489978000000
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2499978000000
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
@@ -544,7 +544,7 @@ endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 2
   - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 9065378
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2489976000000
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2499976000000
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
@@ -576,7 +576,7 @@ endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 2
   - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 9065378
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2489974000000
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2499974000000
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
@@ -612,7 +612,7 @@ endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 2
   - .balances[]|select(.denom == "btc/btc")|.amount|tonumber == 9063559
-  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2489972000000
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2499972000000
 ---
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}

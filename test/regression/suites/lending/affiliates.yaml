@@ -254,7 +254,7 @@ params:
 asserts:
   - .memo == "$+:ETH.USDX-9999:{{ addr_eth_fox }}:0:test:500"
   - .inbound_address == "{{ addr_btc_dog }}"
-  - .expected_amount_out == "3472860200"
+  - .expected_amount_out == "3467369900"
   - .expected_collateral_deposited == "138302308"
   - .expected_debt_issued == "4141400000"
 ---
@@ -294,7 +294,7 @@ endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - length == 1
   - .[0].in_hash == "{{ observe_txid 2 }}"
-  - .[0].coin.amount == "${OUT_AMOUNT=3472860200}"
+  - .[0].coin.amount == "${OUT_AMOUNT=3467369900}"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/btc.btc/borrowers
@@ -376,8 +376,8 @@ type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - length == 2
-  - .[].coin|select(.asset|contains("ETH.USDX")).amount == "${USDX_OUTPUT_AMOUNT=117806200}"
-  - .[].coin|select(.asset=="BTC.BTC").amount == "${BTC_OUTPUT_AMOUNT=5256415}"
+  - .[].coin|select(.asset|contains("ETH.USDX")).amount == "${USDX_OUTPUT_AMOUNT=107861400}"
+  - .[].coin|select(.asset=="BTC.BTC").amount == "${BTC_OUTPUT_AMOUNT=5256413}"
   - .[]|select(.coin.asset=="BTC.BTC").in_hash == "${BTC_IN_HASH=8F7A10D48A3BBC6AB762B1D78DD82E78E1FE1894A74CB54549C0CADAD0101981}"
 ---
 type: check
@@ -468,12 +468,12 @@ count: 1
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
 asserts:
-  - .result[]|select(.denom == "rune").amount == "10050892647"
+  - .result[]|select(.denom == "rune").amount == "10060489938"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/balance/module/affiliate_collector
 asserts:
-  - .coins[]|select(.denom == "rune").amount == "1281931"
+  - .coins[]|select(.denom == "rune").amount == "1281935"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound

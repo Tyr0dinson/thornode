@@ -108,7 +108,7 @@ type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .|length == 1
-  - .[0]|.coin.amount|tonumber == ${OUT_AMOUNT=9993000}
+  - .[0]|.coin.amount|tonumber == ${OUT_AMOUNT=9992929}
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -201,7 +201,7 @@ type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .|length == 1
-  - .[0]|.coin.amount|tonumber == ${OUT_AMOUNT=99993000}
+  - .[0]|.coin.amount|tonumber == ${OUT_AMOUNT=99992859}
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
