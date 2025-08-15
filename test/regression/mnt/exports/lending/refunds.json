@@ -124,7 +124,7 @@
           "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
           "coins": [
             {
-              "amount": "301725885634",
+              "amount": "300015826824",
               "denom": "rune"
             }
           ]
@@ -133,7 +133,7 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "35000855133659",
+              "amount": "34999989573855",
               "denom": "rune"
             }
           ]
@@ -160,7 +160,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "4997418980707",
+              "amount": "4999994599321",
               "denom": "rune"
             }
           ]
@@ -268,9 +268,9 @@
         }
       ],
       "network": {
-        "LPIncomeSplit": "9396",
-        "NodeIncomeSplit": "604",
-        "bond_reward_rune": "600170",
+        "LPIncomeSplit": "9400",
+        "NodeIncomeSplit": "600",
+        "bond_reward_rune": "599321",
         "total_bond_units": "9"
       },
       "network_fees": [
@@ -305,7 +305,7 @@
       "node_accounts": [
         {
           "active_block_height": "1",
-          "bond": "4997418380537",
+          "bond": "4999994000000",
           "bond_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
           "ip_address": "1.1.1.1",
           "node_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
@@ -317,286 +317,17 @@
           "validator_cons_pub_key": "tthorcpub1zcjduepqq75h7uy6qhesh9d3a9tuk0mzrnc46u8rye44ze6peua3zmpfh23q8z37sz"
         }
       ],
-      "observed_tx_in_voters": [
-        {
-          "actions": [
-            {
-              "aggregator_target_limit": "0",
-              "chain": "BTC",
-              "clout_spent": "0",
-              "coin": {
-                "amount": "17000",
-                "asset": "BTC.BTC"
-              },
-              "gas_rate": "10",
-              "in_hash": "0000000000000000000000000000000000000000000000000000000000000001",
-              "max_gas": [
-                {
-                  "amount": "10000",
-                  "asset": "BTC.BTC",
-                  "decimals": "8"
-                }
-              ],
-              "memo": "REFUND:0000000000000000000000000000000000000000000000000000000000000001",
-              "to_address": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw",
-              "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
-            }
-          ],
-          "finalised_height": "4",
-          "height": "4",
-          "out_txs": null,
-          "outbound_height": "4",
-          "tx": {
-            "block_height": "1",
-            "finalise_height": "1",
-            "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
-            "signers": [
-              "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m"
-            ],
-            "tx": {
-              "chain": "BTC",
-              "coins": [
-                {
-                  "amount": "24000",
-                  "asset": "BTC.BTC",
-                  "decimals": "8"
-                }
-              ],
-              "from_address": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw",
-              "gas": [
-                {
-                  "amount": "10000",
-                  "asset": "BTC.BTC"
-                }
-              ],
-              "id": "0000000000000000000000000000000000000000000000000000000000000001",
-              "memo": "LOAN+:ETH.ETH:0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
-              "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-            }
-          },
-          "tx_id": "0000000000000000000000000000000000000000000000000000000000000001",
-          "txs": [
-            {
-              "block_height": "1",
-              "finalise_height": "1",
-              "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
-              "signers": [
-                "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m"
-              ],
-              "tx": {
-                "chain": "BTC",
-                "coins": [
-                  {
-                    "amount": "24000",
-                    "asset": "BTC.BTC",
-                    "decimals": "8"
-                  }
-                ],
-                "from_address": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw",
-                "gas": [
-                  {
-                    "amount": "10000",
-                    "asset": "BTC.BTC"
-                  }
-                ],
-                "id": "0000000000000000000000000000000000000000000000000000000000000001",
-                "memo": "LOAN+:ETH.ETH:0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
-                "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-              }
-            }
-          ],
-          "updated_vault": true
-        },
-        {
-          "actions": [
-            {
-              "aggregator_target_limit": "0",
-              "chain": "BTC",
-              "clout_spent": "0",
-              "coin": {
-                "amount": "1692939",
-                "asset": "BTC.BTC",
-                "decimals": "8"
-              },
-              "gas_rate": "10",
-              "in_hash": "0000000000000000000000000000000000000000000000000000000000000003",
-              "max_gas": [
-                {
-                  "amount": "10000",
-                  "asset": "BTC.BTC",
-                  "decimals": "8"
-                }
-              ],
-              "memo": "REFUND:0000000000000000000000000000000000000000000000000000000000000003",
-              "to_address": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw",
-              "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
-            }
-          ],
-          "finalised_height": "7",
-          "height": "7",
-          "out_txs": null,
-          "outbound_height": "7",
-          "tx": {
-            "block_height": "3",
-            "finalise_height": "3",
-            "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
-            "signers": [
-              "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m"
-            ],
-            "tx": {
-              "chain": "BTC",
-              "coins": [
-                {
-                  "amount": "1700000",
-                  "asset": "BTC.BTC",
-                  "decimals": "8"
-                }
-              ],
-              "from_address": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw",
-              "gas": [
-                {
-                  "amount": "10000",
-                  "asset": "BTC.BTC"
-                }
-              ],
-              "id": "0000000000000000000000000000000000000000000000000000000000000003",
-              "memo": "LOAN+:ETH.ETH:0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
-              "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-            }
-          },
-          "tx_id": "0000000000000000000000000000000000000000000000000000000000000003",
-          "txs": [
-            {
-              "block_height": "3",
-              "finalise_height": "3",
-              "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
-              "signers": [
-                "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m"
-              ],
-              "tx": {
-                "chain": "BTC",
-                "coins": [
-                  {
-                    "amount": "1700000",
-                    "asset": "BTC.BTC",
-                    "decimals": "8"
-                  }
-                ],
-                "from_address": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw",
-                "gas": [
-                  {
-                    "amount": "10000",
-                    "asset": "BTC.BTC"
-                  }
-                ],
-                "id": "0000000000000000000000000000000000000000000000000000000000000003",
-                "memo": "LOAN+:ETH.ETH:0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
-                "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-              }
-            }
-          ],
-          "updated_vault": true
-        },
-        {
-          "actions": [
-            {
-              "aggregator_target_limit": "0",
-              "chain": "BTC",
-              "clout_spent": "0",
-              "coin": {
-                "amount": "2962",
-                "asset": "BTC.BTC"
-              },
-              "gas_rate": "10",
-              "in_hash": "0000000000000000000000000000000000000000000000000000000000000005",
-              "max_gas": [
-                {
-                  "amount": "10000",
-                  "asset": "BTC.BTC",
-                  "decimals": "8"
-                }
-              ],
-              "memo": "REFUND:0000000000000000000000000000000000000000000000000000000000000005",
-              "to_address": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw",
-              "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
-            }
-          ],
-          "finalised_height": "9",
-          "height": "9",
-          "out_txs": null,
-          "outbound_height": "9",
-          "tx": {
-            "block_height": "1",
-            "finalise_height": "1",
-            "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
-            "signers": [
-              "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m"
-            ],
-            "tx": {
-              "chain": "BTC",
-              "coins": [
-                {
-                  "amount": "10100",
-                  "asset": "BTC.BTC",
-                  "decimals": "8"
-                }
-              ],
-              "from_address": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw",
-              "gas": [
-                {
-                  "amount": "10000",
-                  "asset": "BTC.BTC"
-                }
-              ],
-              "id": "0000000000000000000000000000000000000000000000000000000000000005",
-              "memo": "LOAN+:ETH.ETH:0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
-              "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-            }
-          },
-          "tx_id": "0000000000000000000000000000000000000000000000000000000000000005",
-          "txs": [
-            {
-              "block_height": "1",
-              "finalise_height": "1",
-              "observed_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
-              "signers": [
-                "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m"
-              ],
-              "tx": {
-                "chain": "BTC",
-                "coins": [
-                  {
-                    "amount": "10100",
-                    "asset": "BTC.BTC",
-                    "decimals": "8"
-                  }
-                ],
-                "from_address": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw",
-                "gas": [
-                  {
-                    "amount": "10000",
-                    "asset": "BTC.BTC"
-                  }
-                ],
-                "id": "0000000000000000000000000000000000000000000000000000000000000005",
-                "memo": "LOAN+:ETH.ETH:0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
-                "to_address": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk"
-              }
-            }
-          ],
-          "updated_vault": true
-        }
-      ],
+      "observed_tx_in_voters": null,
       "observed_tx_out_voters": null,
       "outbound_fee_spent_rune": [
         {
-          "amount": "20869011",
+          "amount": "20498213",
           "asset": "BTC.BTC"
         }
       ],
       "outbound_fee_withheld_rune": [
         {
-          "amount": "711106665",
+          "amount": "703715827",
           "asset": "BTC.BTC"
         }
       ],
@@ -604,8 +335,8 @@
         {
           "LP_units": "100000000000",
           "asset": "BTC.BTC",
-          "balance_asset": "98284199",
-          "balance_rune": "101719634658",
+          "balance_asset": "99993561",
+          "balance_rune": "100009567284",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -616,7 +347,7 @@
           "LP_units": "100000000000",
           "asset": "ETH.ETH",
           "balance_asset": "1000000000",
-          "balance_rune": "100003125488",
+          "balance_rune": "100003129770",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -627,7 +358,7 @@
           "LP_units": "100000000000",
           "asset": "ETH.USDC-0X9999999999999999999999999999999999999999",
           "balance_asset": "100000000000",
-          "balance_rune": "100003125488",
+          "balance_rune": "100003129770",
           "decimals": "6",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -637,8 +368,8 @@
         {
           "LP_units": "0",
           "asset": "THOR.BTC",
-          "balance_asset": "98277060",
-          "balance_rune": "101726671096",
+          "balance_asset": "99993560",
+          "balance_rune": "100009219520",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
           "status": "Available",
@@ -648,8 +379,8 @@
         {
           "LP_units": "0",
           "asset": "THOR.ETH",
-          "balance_asset": "1000000000",
-          "balance_rune": "100002779846",
+          "balance_asset": "999999999",
+          "balance_rune": "100002782028",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
           "status": "Available",
@@ -660,7 +391,7 @@
           "LP_units": "0",
           "asset": "THOR.TOR",
           "balance_asset": "99999999999",
-          "balance_rune": "100002779846",
+          "balance_rune": "100002782028",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
           "status": "Available",
@@ -684,87 +415,7 @@
       "tcy_stakers": [],
       "trade_accounts": [],
       "trade_units": [],
-      "tx_outs": [
-        {
-          "height": "4",
-          "tx_array": [
-            {
-              "aggregator_target_limit": "0",
-              "chain": "BTC",
-              "clout_spent": "0",
-              "coin": {
-                "amount": "17000",
-                "asset": "BTC.BTC"
-              },
-              "gas_rate": "10",
-              "in_hash": "0000000000000000000000000000000000000000000000000000000000000001",
-              "max_gas": [
-                {
-                  "amount": "10000",
-                  "asset": "BTC.BTC",
-                  "decimals": "8"
-                }
-              ],
-              "memo": "REFUND:0000000000000000000000000000000000000000000000000000000000000001",
-              "to_address": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw",
-              "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
-            }
-          ]
-        },
-        {
-          "height": "7",
-          "tx_array": [
-            {
-              "aggregator_target_limit": "0",
-              "chain": "BTC",
-              "clout_spent": "0",
-              "coin": {
-                "amount": "1692939",
-                "asset": "BTC.BTC",
-                "decimals": "8"
-              },
-              "gas_rate": "10",
-              "in_hash": "0000000000000000000000000000000000000000000000000000000000000003",
-              "max_gas": [
-                {
-                  "amount": "10000",
-                  "asset": "BTC.BTC",
-                  "decimals": "8"
-                }
-              ],
-              "memo": "REFUND:0000000000000000000000000000000000000000000000000000000000000003",
-              "to_address": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw",
-              "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
-            }
-          ]
-        },
-        {
-          "height": "9",
-          "tx_array": [
-            {
-              "aggregator_target_limit": "0",
-              "chain": "BTC",
-              "clout_spent": "0",
-              "coin": {
-                "amount": "2962",
-                "asset": "BTC.BTC"
-              },
-              "gas_rate": "10",
-              "in_hash": "0000000000000000000000000000000000000000000000000000000000000005",
-              "max_gas": [
-                {
-                  "amount": "10000",
-                  "asset": "BTC.BTC",
-                  "decimals": "8"
-                }
-              ],
-              "memo": "REFUND:0000000000000000000000000000000000000000000000000000000000000005",
-              "to_address": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw",
-              "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
-            }
-          ]
-        }
-      ],
+      "tx_outs": null,
       "vaults": [
         {
           "block_height": "2",
@@ -780,7 +431,7 @@
           ],
           "coins": [
             {
-              "amount": "100017600",
+              "amount": "99994661",
               "asset": "BTC.BTC",
               "decimals": "8"
             },

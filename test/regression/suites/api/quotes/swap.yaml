@@ -371,7 +371,7 @@ params:
   affiliate_bps: 500
   destination: {{ addr_btc_fox }}
 asserts:
-  - .memo == "=:b:{{ addr_btc_fox }}:942292:{{ addr_thor_pig }}:500"
+  - .memo == "=:b:{{ addr_btc_fox }}:942040:{{ addr_thor_pig }}:500"
   - .expected_amount_out|tonumber == 948512
   - .recommended_min_amount_in == "1920000"
   - .fees.affiliate == "50297"
@@ -650,7 +650,7 @@ params:
   streaming_quantity: 10
   tolerance_bps: 3500
 asserts:
-  - .memo == "=:b:{{ addr_btc_fox }}:6421402/10/10"
+  - .memo == "=:b:{{ addr_btc_fox }}:6418839/10/10"
   - .max_streaming_quantity == 19
   - .streaming_swap_blocks == 90
   - .streaming_swap_seconds == 540
@@ -892,7 +892,7 @@ params:
   destination: {{ addr_thor_fox }}
   liquidity_tolerance_bps: 100
 asserts:
-  - .memo == "=:r:{{ addr_thor_fox }}:884730757:xx:500"
+  - .memo == "=:r:{{ addr_thor_fox }}:884730755:xx:500"
   - .expected_amount_out|tonumber == 893667430
 ---
 ########################################################################################

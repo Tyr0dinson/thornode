@@ -588,12 +588,6 @@ asserts:
  - .[] | select(.node_address == "{{ addr_thor_goat }}") | .slash_points == 2
  - .[] | select(.node_address == "{{ addr_thor_hawk }}") | .slash_points == 8
 ---
-type: check
-endpoint: http://localhost:1317/thorchain/queue/outbound
-asserts:
-  - length == 1
-  - .[0]|.coin.amount|tonumber == ${OUT_AMOUNT=986000}
----
 ########################################################################################
 # unfinalized outbound - unslash late observers within flexibility window
 ########################################################################################

@@ -107,7 +107,7 @@ type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
 asserts:
   - .result|length == 1
-  - .result[]|select(.denom == "rune").amount|tonumber == ${BAL_PIG} + ${FEE_AMT=1248018013}
+  - .result[]|select(.denom == "rune").amount|tonumber == ${BAL_PIG} + ${FEE_AMT=1248140094}
 ---
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fox }}

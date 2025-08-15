@@ -656,7 +656,7 @@ endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 1
   - .balances[]|select(.denom == "rune").amount == "${AFTER_BALANCE=2503845877869}"
-  - ${AFTER_BALANCE} - ${INITIAL_BALANCE} == ${BALANCE_DIFFERENCE_ONE=3864832911}
+  - ${AFTER_BALANCE} - ${INITIAL_BALANCE} == ${BALANCE_DIFFERENCE_ONE=3864462476}
 ---
 type: create-blocks
 count: 1

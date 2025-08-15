@@ -215,7 +215,7 @@ type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_fox }}
 asserts:
   - .result|length == 1
-  - .result[]|select(.denom == "rune").amount|tonumber == ${FOX_BAL} + 2606530511
+  - .result[]|select(.denom == "rune").amount|tonumber == ${FOX_BAL} + 2606525254
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/thorname/test
