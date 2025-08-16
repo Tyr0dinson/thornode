@@ -10,7 +10,6 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
-	keeperv1 "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/v1"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
@@ -156,33 +155,23 @@ func (h RegisterMemoHandler) validateMemo(ctx cosmos.Context, memo string) error
 	return nil
 }
 
-// generateReference generates a reference with collision handling
+// generateReference generates a reference using incremental counter
 func (h RegisterMemoHandler) generateReference(ctx cosmos.Context, memo string, chainID string) (string, error) {
-	// Generate base reference
-	baseReference := keeperv1.GenerateReference(memo, ctx.BlockHeight())
-
-	// Check for collision
+	// Use incremental counter approach (NEW ARCHITECTURE)
 	keeper, ok := h.mgr.Keeper().(interface {
-		HasRegisteredMemo(ctx cosmos.Context, reference string) bool
-		ResolveCollision(ctx cosmos.Context, memo string, blockHeight int64, constantProvider constants.ConstantValues) (string, error)
+		GetNextReferenceID(ctx cosmos.Context, chainID string) (string, error)
 	})
 	if !ok {
-		return "", fmt.Errorf("keeper does not support memoless operations")
+		return "", fmt.Errorf("keeper does not support incremental counter operations")
 	}
 
-	if !keeper.HasRegisteredMemo(ctx, baseReference) {
-		return baseReference, nil
-	}
-
-	// Handle collision
-	ctx.Logger().Debug("Reference collision detected, resolving", "reference", baseReference)
-
-	resolvedReference, err := keeper.ResolveCollision(ctx, memo, ctx.BlockHeight(), h.mgr.GetConstants())
+	// Get next sequential reference ID
+	reference, err := keeper.GetNextReferenceID(ctx, chainID)
 	if err != nil {
-		return "", fmt.Errorf("collision resolution failed: %w", err)
+		return "", fmt.Errorf("failed to generate incremental reference: %w", err)
 	}
 
-	return resolvedReference, nil
+	return reference, nil
 }
 
 // calculateExpiry calculates the expiry block height

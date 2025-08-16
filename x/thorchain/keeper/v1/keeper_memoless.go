@@ -12,9 +12,10 @@ import (
 	thorchaintypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
-// Key prefixes for memo storage
+// Key prefixes for memo storage (2-prefix architecture per docs)
 const (
 	prefixMemoRegistration types.DbPrefix = "memo_registration/"
+	prefixMemoCounter      types.DbPrefix = "memo_counter/"
 	prefixMemoExpiry       types.DbPrefix = "memo_expiry/"
 	prefixMemoStats        types.DbPrefix = "memo_stats/"
 )
@@ -215,25 +216,12 @@ func (k KVStore) ValidateMemoRegistration(ctx cosmos.Context, msg thorchaintypes
 	return nil
 }
 
-// ResolveCollision resolves reference collisions by generating a new reference
+// ResolveCollision resolves reference collisions using incremental counter approach
 func (k KVStore) ResolveCollision(ctx cosmos.Context, memo string, blockHeight int64, constantProvider constants.ConstantValues) (string, error) {
-	collisionLimit := constantProvider.GetInt64Value(constants.MemolessCollisionLimit)
-
-	for attempt := int64(0); attempt < collisionLimit; attempt++ {
-		// Generate reference with collision attempt offset
-		reference := GenerateReference(memo, blockHeight+attempt)
-
-		// Check if this reference is available
-		if !k.HasRegisteredMemo(ctx, reference) {
-			if attempt > 0 {
-				ctx.Logger().Info("Resolved memo collision", "reference", reference, "attempts", attempt+1)
-				k.IncrementCollisions(ctx) // Track collision metrics
-			}
-			return reference, nil
-		}
-	}
-
-	return "", fmt.Errorf("failed to resolve collision after %d attempts", collisionLimit)
+	// With incremental counter, collision resolution is automatic
+	// Just get next reference ID which handles collisions internally
+	chainID := "BTC" // Default chain for backward compatibility
+	return k.GetNextReferenceID(ctx, chainID)
 }
 
 // GetActiveMemoCount returns the count of active (non-expired) memos
@@ -318,4 +306,74 @@ func (k KVStore) UpdateLastCleanup(ctx cosmos.Context, height int64, expiredCoun
 	store.Set(countKey, countBuf)
 
 	return nil
+}
+
+// Incremental Counter Methods (NEW ARCHITECTURE)
+
+// GetReferenceCounter gets the current reference counter for a chain
+func (k KVStore) GetReferenceCounter(ctx cosmos.Context, chainID string) (int64, error) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	key := k.GetKey(prefixMemoCounter, chainID)
+	
+	bz := store.Get(key)
+	if bz == nil {
+		return 9999, nil // Start at 9999 so first increment gives 10000
+	}
+	
+	counter := int64(binary.BigEndian.Uint64(bz))
+	return counter, nil
+}
+
+// SetReferenceCounter sets the reference counter for a chain
+func (k KVStore) SetReferenceCounter(ctx cosmos.Context, chainID string, counter int64) error {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	key := k.GetKey(prefixMemoCounter, chainID)
+	
+	buf := make([]byte, 8)
+	binary.BigEndian.PutUint64(buf, uint64(counter))
+	store.Set(key, buf)
+	
+	return nil
+}
+
+// GetNextReferenceID generates the next sequential reference ID for a chain
+func (k KVStore) GetNextReferenceID(ctx cosmos.Context, chainID string) (string, error) {
+	// Get current counter
+	counter, err := k.GetReferenceCounter(ctx, chainID)
+	if err != nil {
+		return "", fmt.Errorf("failed to get counter for chain %s: %w", chainID, err)
+	}
+	
+	// Increment counter
+	counter++
+	if counter > 99999 {
+		counter = 10000 // Wraparound to start of range
+	}
+	
+	// Check for collision (during wraparound period)
+	reference := fmt.Sprintf("%05d", counter)
+	if k.HasRegisteredMemo(ctx, reference) {
+		// Linear search for next available reference
+		attempts := 0
+		for attempts = 0; attempts < 90000; attempts++ {
+			counter++
+			if counter > 99999 {
+				counter = 10000
+			}
+			reference = fmt.Sprintf("%05d", counter)
+			if !k.HasRegisteredMemo(ctx, reference) {
+				break
+			}
+		}
+		if attempts == 90000 {
+			return "", fmt.Errorf("reference pool exhausted for chain %s", chainID)
+		}
+	}
+	
+	// Store updated counter
+	if err := k.SetReferenceCounter(ctx, chainID, counter); err != nil {
+		return "", fmt.Errorf("failed to update counter for chain %s: %w", chainID, err)
+	}
+	
+	return reference, nil
 }

@@ -46,29 +46,30 @@ func (s *MemolessKeeperTestSuite) TestBasicInfrastructure(c *C) {
 	c.Logf("✓ Basic infrastructure validation passed")
 }
 
-// TestReferenceGeneration tests reference generation functionality
+// TestReferenceGeneration tests incremental counter reference generation functionality
 func (s *MemolessKeeperTestSuite) TestReferenceGeneration(c *C) {
-	// Test reference generation
-	memo1 := "SWAP:BTC.BTC::thor123"
-	memo2 := "SWAP:ETH.ETH::thor456"
-	height := int64(100)
-
-	ref1 := GenerateReference(memo1, height)
-	ref2 := GenerateReference(memo2, height)
+	ctx, k := setupKeeperForTest(c)
+	
+	// Test incremental counter reference generation
+	ref1, err := k.GetNextReferenceID(ctx, "BTC")
+	c.Assert(err, IsNil)
+	
+	ref2, err := k.GetNextReferenceID(ctx, "BTC")
+	c.Assert(err, IsNil)
 
 	// References should be 5 digits
 	c.Assert(len(ref1), Equals, 5, Commentf("Reference should be 5 digits"))
 	c.Assert(len(ref2), Equals, 5, Commentf("Reference should be 5 digits"))
 
-	// Different memos should generate different references
-	c.Assert(ref1, Not(Equals), ref2, Commentf("Different memos should generate different references"))
-
-	// Same memo and height should generate same reference (deterministic)
-	ref1_repeat := GenerateReference(memo1, height)
-	c.Assert(ref1, Equals, ref1_repeat, Commentf("Reference generation should be deterministic"))
+	// Sequential references should be different and increment
+	c.Assert(ref1, Not(Equals), ref2, Commentf("Sequential references should be different"))
+	
+	// Test incremental behavior
+	c.Assert(ref1, Equals, "10000", Commentf("First reference should be 10000"))
+	c.Assert(ref2, Equals, "10001", Commentf("Second reference should be 10001"))
 
 	// Test reference validation
-	err := ValidateReference(ref1)
+	err = ValidateReference(ref1)
 	c.Assert(err, IsNil, Commentf("Generated reference should be valid"))
 
 	err = ValidateReference("12345")
@@ -86,11 +87,12 @@ func (s *MemolessKeeperTestSuite) TestReferenceGeneration(c *C) {
 // TestMemoRegistrationBasic tests basic memo registration functionality
 func (s *MemolessKeeperTestSuite) TestMemoRegistrationBasic(c *C) {
 	ctx, k := setupKeeperForTest(c)
-	constantProvider := constants.GetConstantValues(GetCurrentVersion())
 
-	// Test basic memo registration
-	memo := "SWAP:BTC.BTC::thor789"
-	reference, err := k.ResolveCollision(ctx, memo, ctx.BlockHeight(), constantProvider)
+	// Test data
+	memo := "SWAP:ETH.ETH:thor1abc123:14400"
+
+	// Test basic memo registration with incremental counter
+	reference, err := k.GetNextReferenceID(ctx, "BTC")
 	c.Assert(err, IsNil, Commentf("Should be able to resolve collision for new memo"))
 	c.Assert(len(reference), Equals, 5, Commentf("Reference should be 5 digits"))
 
@@ -150,14 +152,14 @@ func (s *MemolessKeeperTestSuite) TestInfrastructurePrerequisites(c *C) {
 	c.Logf("✓ Chain configuration accessible: %d supported chains", len(supportedChains))
 
 	// Test 4: Reference generation works
-	reference := GenerateReference("TEST:MEMO", ctx.BlockHeight())
+	reference, _ := k.GetNextReferenceID(ctx, "BTC")
 	c.Assert(len(reference), Equals, 5, Commentf("Reference should be 5 digits"))
 	err = ValidateReference(reference)
 	c.Assert(err, IsNil, Commentf("Generated reference should be valid"))
 	c.Logf("✓ Reference generation working: Generated reference %s", reference)
 
 	// Test 5: Memo registration works
-	testReference, err := k.ResolveCollision(ctx, "INFRA:TEST", ctx.BlockHeight(), constantProvider)
+	testReference, err := k.GetNextReferenceID(ctx, "BTC")
 	c.Assert(err, IsNil, Commentf("Should resolve collision"))
 	c.Assert(len(testReference), Equals, 5, Commentf("Reference should be 5 digits"))
 	c.Logf("✓ Memo registration working: Test reference %s", testReference)
