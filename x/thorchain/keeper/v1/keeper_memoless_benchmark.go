@@ -56,24 +56,24 @@ func NewPerformanceBenchmark(keeper KVStore, ctx cosmos.Context, constantProvide
 	}
 }
 
-// BenchmarkReferenceGeneration benchmarks reference generation performance
+// BenchmarkReferenceGeneration benchmarks incremental counter reference generation
 func (pb *PerformanceBenchmark) BenchmarkReferenceGeneration(config BenchmarkConfig) BenchmarkResult {
-	return pb.runBenchmark("ReferenceGeneration", config, func() error {
-		memo := "SWAP:BTC.BTC::thor123"
-		blockHeight := pb.ctx.BlockHeight()
-		_ = GenerateReference(memo, blockHeight)
-		return nil
+	return pb.runBenchmark("IncrementalReferenceGeneration", config, func() error {
+		chainID := "BTC"
+		_, err := pb.keeper.GetNextReferenceID(pb.ctx, chainID)
+		return err
 	})
 }
 
-// BenchmarkReferenceGenerationWithSalt benchmarks salted reference generation
-func (pb *PerformanceBenchmark) BenchmarkReferenceGenerationWithSalt(config BenchmarkConfig) BenchmarkResult {
-	return pb.runBenchmark("ReferenceGenerationWithSalt", config, func() error {
-		memo := "SWAP:BTC.BTC::thor123"
-		blockHeight := pb.ctx.BlockHeight()
-		salt := 42
-		_ = GenerateReferenceWithSalt(memo, blockHeight, salt)
-		return nil
+// BenchmarkReferenceCounter benchmarks counter operations  
+func (pb *PerformanceBenchmark) BenchmarkReferenceCounter(config BenchmarkConfig) BenchmarkResult {
+	return pb.runBenchmark("ReferenceCounter", config, func() error {
+		chainID := "BTC"
+		counter, err := pb.keeper.GetReferenceCounter(pb.ctx, chainID)
+		if err != nil {
+			return err
+		}
+		return pb.keeper.SetReferenceCounter(pb.ctx, chainID, counter+1)
 	})
 }
 
@@ -85,7 +85,7 @@ func (pb *PerformanceBenchmark) BenchmarkMemoRegistration(config BenchmarkConfig
 		memo := fmt.Sprintf("SWAP:BTC.BTC::%d", id)
 
 		// Generate reference
-		reference, err := pb.keeper.ResolveCollision(pb.ctx, memo, pb.ctx.BlockHeight(), pb.constantProvider)
+		reference, err := pb.keeper.GetNextReferenceID(pb.ctx, "BTC")
 		if err != nil {
 			return err
 		}
@@ -154,8 +154,8 @@ func (pb *PerformanceBenchmark) BenchmarkCollisionResolution(config BenchmarkCon
 	counter := int64(0)
 	return pb.runBenchmark("CollisionResolution", config, func() error {
 		id := atomic.AddInt64(&counter, 1)
-		testMemo := fmt.Sprintf("%s:collision:%d", memo, id)
-		_, err := pb.keeper.ResolveCollision(pb.ctx, testMemo, pb.ctx.BlockHeight(), pb.constantProvider)
+		chainID := fmt.Sprintf("BTC_%d", id%3) // Vary chain IDs for testing
+		_, err := pb.keeper.GetNextReferenceID(pb.ctx, chainID)
 		return err
 	})
 }
@@ -206,7 +206,7 @@ func (pb *PerformanceBenchmark) BenchmarkConcurrentRegistration(config Benchmark
 	return pb.runConcurrentBenchmark("ConcurrentRegistration", config, func(workerID int) error {
 		memo := fmt.Sprintf("SWAP:BTC.BTC::worker:%d:%d", workerID, time.Now().UnixNano())
 
-		reference, err := pb.keeper.ResolveCollision(pb.ctx, memo, pb.ctx.BlockHeight(), pb.constantProvider)
+		reference, err := pb.keeper.GetNextReferenceID(pb.ctx, "BTC")
 		if err != nil {
 			return err
 		}
@@ -522,7 +522,7 @@ func (pb *PerformanceBenchmark) RunFullBenchmarkSuite(baseConfig BenchmarkConfig
 	results["ReferenceGeneration"] = pb.BenchmarkReferenceGeneration(config)
 
 	config.Operations = 10000
-	results["ReferenceGenerationWithSalt"] = pb.BenchmarkReferenceGenerationWithSalt(config)
+	results["ReferenceCounter"] = pb.BenchmarkReferenceCounter(config)
 
 	// Storage operation benchmarks
 	config.Operations = 5000

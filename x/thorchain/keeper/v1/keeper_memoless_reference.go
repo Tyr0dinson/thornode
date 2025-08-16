@@ -1,36 +1,13 @@
 package keeperv1
 
 import (
-	"crypto/sha256"
-	"encoding/binary"
 	"fmt"
 	"strconv"
 )
 
-// GenerateReference creates a deterministic 5-digit reference from memo and timestamp
-func GenerateReference(memo string, blockHeight int64) string {
-	// Create deterministic hash from memo + block height
-	data := fmt.Sprintf("%s_%d", memo, blockHeight)
-	hash := sha256.Sum256([]byte(data))
-
-	// Extract 5 digits from hash
-	entropy := binary.BigEndian.Uint64(hash[:8])
-	reference := (entropy % 90000) + 10000 // Range: 10000-99999
-
-	return fmt.Sprintf("%05d", reference)
-}
-
-// GenerateReferenceWithSalt generates reference with additional salt for collision resolution
-func GenerateReferenceWithSalt(memo string, blockHeight int64, salt int) string {
-	// Add salt to prevent collisions
-	data := fmt.Sprintf("%s_%d_%d", memo, blockHeight, salt)
-	hash := sha256.Sum256([]byte(data))
-
-	entropy := binary.BigEndian.Uint64(hash[:8])
-	reference := (entropy % 90000) + 10000
-
-	return fmt.Sprintf("%05d", reference)
-}
+// NOTE: This file now contains incremental counter reference utilities
+// Old hash-based GenerateReference and GenerateReferenceWithSalt functions removed
+// per architecture decision to use incremental counter approach
 
 // ValidateReference checks if a reference is in valid format and range
 func ValidateReference(reference string) error {
