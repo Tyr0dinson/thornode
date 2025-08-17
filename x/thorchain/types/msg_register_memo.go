@@ -89,3 +89,4 @@ func (rm RegisteredMemo) IsExpired(blockHeight int64) bool {
 func (rm RegisteredMemo) IsActive(blockHeight int64) bool {
 	return rm.Status == "active" && !rm.IsExpired(blockHeight)
 }
+
