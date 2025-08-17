@@ -230,8 +230,8 @@ func (k KVStore) CleanupExpiredMemos(ctx cosmos.Context, currentHeight int64) (i
 // processBatchExpiredMemos processes a batch of expired memos for performance
 func (k KVStore) processBatchExpiredMemos(ctx cosmos.Context, expiredMemos []thorchaintypes.RegisteredMemo) error {
 	for _, memo := range expiredMemos {
-		if err := k.SetRegisteredMemo(ctx, memo); err != nil {
-			ctx.Logger().Error("Failed to mark memo as expired",
+		if err := k.DeleteRegisteredMemo(ctx, memo.Reference); err != nil {
+			ctx.Logger().Error("Failed to delete expired memo",
 				"reference", memo.Reference,
 				"error", err)
 			return err

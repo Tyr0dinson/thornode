@@ -266,3 +266,91 @@ func (s *MemolessKeeperTestSuite) TestSlashingLogic(c *C) {
 	err = k.SlashValidatorForMaliciousBehavior(ctx, maliciousValidator, "collusion_detected", ctx.BlockHeight())
 	c.Assert(err, IsNil, Commentf("Should be able to slash validator for malicious behavior"))
 }
+
+// TestTTLExpiryManagement tests TTL expiry management system
+func (s *MemolessKeeperTestSuite) TestTTLExpiryManagement(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	
+	// Initialize chain configs
+	err := k.InitializeDefaultChainConfigs(ctx)
+	c.Assert(err, IsNil)
+	
+	// Create memo with short TTL that should expire
+	signer := GetRandomValidatorNode(NodeActive).NodeAddress
+	reference, err := k.GetNextReferenceID(ctx, "BTC")
+	c.Assert(err, IsNil)
+	
+	shortTTL := int64(5) // 5 blocks
+	registration := thorchaintypes.RegisteredMemo{
+		Reference:    reference,
+		Memo:         "SWAP:BTC.BTC:thor1test:100",
+		ChainId:      "BTC",
+		RegisteredAt: ctx.BlockHeight(),
+		ExpiresAt:    ctx.BlockHeight() + shortTTL,
+		Status:       "active",
+		Signer:       signer,
+	}
+	err = k.SetRegisteredMemo(ctx, registration)
+	c.Assert(err, IsNil)
+	
+	// Test TTL expiry checking - this should fail initially since CheckMemoExpiry doesn't exist
+	expired, err := k.CheckMemoExpiry(ctx, reference, ctx.BlockHeight() + shortTTL + 1)
+	c.Assert(err, IsNil)
+	c.Assert(expired, Equals, true, Commentf("Memo should be expired after TTL"))
+}
+
+// TestAutomatedMemoCleanup tests automated memo cleanup process
+func (s *MemolessKeeperTestSuite) TestAutomatedMemoCleanup(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	
+	// Initialize chain configs
+	err := k.InitializeDefaultChainConfigs(ctx)
+	c.Assert(err, IsNil)
+	
+	// Create multiple memos with different expiry times
+	signer := GetRandomValidatorNode(NodeActive).NodeAddress
+	currentBlock := ctx.BlockHeight()
+	
+	// Memo 1: Already expired
+	ref1, err := k.GetNextReferenceID(ctx, "BTC")
+	c.Assert(err, IsNil)
+	expired1 := thorchaintypes.RegisteredMemo{
+		Reference:    ref1,
+		Memo:         "SWAP:BTC.BTC:thor1expired:100",
+		ChainId:      "BTC",
+		RegisteredAt: currentBlock - 10,
+		ExpiresAt:    currentBlock - 5, // Expired 5 blocks ago
+		Status:       "active",
+		Signer:       signer,
+	}
+	err = k.SetRegisteredMemo(ctx, expired1)
+	c.Assert(err, IsNil)
+	
+	// Memo 2: Still active
+	ref2, err := k.GetNextReferenceID(ctx, "BTC")
+	c.Assert(err, IsNil)
+	active1 := thorchaintypes.RegisteredMemo{
+		Reference:    ref2,
+		Memo:         "SWAP:BTC.BTC:thor1active:100",
+		ChainId:      "BTC",
+		RegisteredAt: currentBlock,
+		ExpiresAt:    currentBlock + 100, // Future expiry
+		Status:       "active",
+		Signer:       signer,
+	}
+	err = k.SetRegisteredMemo(ctx, active1)
+	c.Assert(err, IsNil)
+	
+	// Test automated cleanup - this should fail initially since CleanupExpiredMemos doesn't exist
+	cleanedCount, err := k.CleanupExpiredMemos(ctx, currentBlock)
+	c.Assert(err, IsNil)
+	c.Assert(cleanedCount, Equals, int64(1), Commentf("Should clean up 1 expired memo"))
+	
+	// Verify expired memo is gone
+	exists := k.HasRegisteredMemo(ctx, ref1)
+	c.Assert(exists, Equals, false, Commentf("Expired memo should be cleaned up"))
+	
+	// Verify active memo still exists
+	exists = k.HasRegisteredMemo(ctx, ref2)
+	c.Assert(exists, Equals, true, Commentf("Active memo should remain"))
+}

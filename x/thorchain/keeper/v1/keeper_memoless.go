@@ -448,3 +448,17 @@ func (k KVStore) SlashValidatorForMaliciousBehavior(ctx cosmos.Context, validato
 	
 	return nil
 }
+
+// CheckMemoExpiry checks if a memo has expired based on current block height
+func (k KVStore) CheckMemoExpiry(ctx cosmos.Context, reference string, currentBlockHeight int64) (bool, error) {
+	memo, err := k.GetRegisteredMemo(ctx, reference)
+	if err != nil {
+		return false, fmt.Errorf("failed to get memo for expiry check: %w", err)
+	}
+	
+	// Check if memo has expired
+	expired := memo.ExpiresAt <= currentBlockHeight
+	
+	return expired, nil
+}
+

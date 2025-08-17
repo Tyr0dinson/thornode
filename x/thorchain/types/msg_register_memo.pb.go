@@ -218,6 +218,7 @@ func (m *RegisteredMemo) GetSigner() github_com_cosmos_cosmos_sdk_types.AccAddre
 	return nil
 }
 
+
 func init() {
 	proto.RegisterType((*MsgRegisterMemo)(nil), "types.MsgRegisterMemo")
 	proto.RegisterType((*RegisteredMemo)(nil), "types.RegisteredMemo")
