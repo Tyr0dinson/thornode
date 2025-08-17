@@ -462,3 +462,48 @@ func (k KVStore) CheckMemoExpiry(ctx cosmos.Context, reference string, currentBl
 	return expired, nil
 }
 
+// ExtendMemoTTL extends the TTL of an existing memo registration
+func (k KVStore) ExtendMemoTTL(ctx cosmos.Context, reference string, newTTL int64, signer cosmos.AccAddress, constantProvider constants.ConstantValues) error {
+	// Get existing memo
+	memo, err := k.GetRegisteredMemo(ctx, reference)
+	if err != nil {
+		return fmt.Errorf("memo not found: %w", err)
+	}
+	
+	// Verify authorization - only original signer can extend TTL
+	if !memo.Signer.Equals(signer) {
+		return fmt.Errorf("unauthorized: only original signer can extend TTL")
+	}
+	
+	// Check if memo is still active
+	if memo.IsExpired(ctx.BlockHeight()) {
+		return fmt.Errorf("cannot extend TTL of expired memo")
+	}
+	
+	// Validate new TTL against governance limits
+	maxTTL := constantProvider.GetInt64Value(constants.MemolessMaxTTL)
+	if newTTL > maxTTL {
+		return fmt.Errorf("new TTL %d exceeds governance maximum %d", newTTL, maxTTL)
+	}
+	
+	// Calculate new expiry time (from current block, not original registration)
+	newExpiry := ctx.BlockHeight() + newTTL
+	
+	// Update memo with new expiry
+	memo.ExpiresAt = newExpiry
+	
+	// Save updated memo
+	if err := k.SetRegisteredMemo(ctx, memo); err != nil {
+		return fmt.Errorf("failed to update memo TTL: %w", err)
+	}
+	
+	// Log TTL extension
+	ctx.Logger().Info("Memo TTL extended",
+		"reference", reference,
+		"new_expiry", newExpiry,
+		"new_ttl", newTTL,
+		"signer", signer.String())
+	
+	return nil
+}
+

@@ -354,3 +354,88 @@ func (s *MemolessKeeperTestSuite) TestAutomatedMemoCleanup(c *C) {
 	exists = k.HasRegisteredMemo(ctx, ref2)
 	c.Assert(exists, Equals, true, Commentf("Active memo should remain"))
 }
+
+// TestConfigurableTTLLimits tests governance-controlled TTL configuration
+func (s *MemolessKeeperTestSuite) TestConfigurableTTLLimits(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	
+	// Initialize chain configs
+	err := k.InitializeDefaultChainConfigs(ctx)
+	c.Assert(err, IsNil)
+	
+	signer := GetRandomValidatorNode(NodeActive).NodeAddress
+	constantProvider := constants.GetConstantValues(GetCurrentVersion())
+	
+	// Test 1: Attempt memo registration with TTL exceeding governance maximum
+	// This should fail since governance sets maximum TTL
+	maxTTLFromGov := constantProvider.GetInt64Value(constants.MemolessMaxTTL)
+	
+	msg := thorchaintypes.MsgRegisterMemo{
+		Memo:    "SWAP:BTC.BTC:thor1test:100",
+		ChainId: "BTC",
+		Ttl:     maxTTLFromGov + 1000, // Exceed governance limit
+		Signer:  signer,
+	}
+	
+	// Should fail validation due to governance TTL limit
+	err = k.ValidateMemoRegistration(ctx, msg, constantProvider)
+	c.Assert(err, NotNil, Commentf("Should reject TTL exceeding governance maximum"))
+	c.Assert(err.Error(), Matches, ".*TTL.*exceeds.*maximum.*", Commentf("Error should mention TTL exceeding maximum"))
+	
+	// Test 2: Registration with TTL within governance limits should succeed
+	validMsg := thorchaintypes.MsgRegisterMemo{
+		Memo:    "SWAP:BTC.BTC:thor1valid:100",
+		ChainId: "BTC", 
+		Ttl:     maxTTLFromGov - 100, // Within governance limit
+		Signer:  signer,
+	}
+	
+	// Should pass validation
+	err = k.ValidateMemoRegistration(ctx, validMsg, constantProvider)
+	c.Assert(err, IsNil, Commentf("Should accept TTL within governance limits"))
+}
+
+// TestTTLExtensionCapabilities tests TTL extension functionality
+func (s *MemolessKeeperTestSuite) TestTTLExtensionCapabilities(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	
+	// Initialize chain configs
+	err := k.InitializeDefaultChainConfigs(ctx)
+	c.Assert(err, IsNil)
+	
+	// Create memo with specific TTL
+	signer := GetRandomValidatorNode(NodeActive).NodeAddress
+	reference, err := k.GetNextReferenceID(ctx, "BTC")
+	c.Assert(err, IsNil)
+	
+	originalTTL := int64(1000)
+	registration := thorchaintypes.RegisteredMemo{
+		Reference:    reference,
+		Memo:         "SWAP:BTC.BTC:thor1extension:100",
+		ChainId:      "BTC",
+		RegisteredAt: ctx.BlockHeight(),
+		ExpiresAt:    ctx.BlockHeight() + originalTTL,
+		Status:       "active",
+		Signer:       signer,
+	}
+	err = k.SetRegisteredMemo(ctx, registration)
+	c.Assert(err, IsNil)
+	
+	// Test TTL extension - this should fail initially since ExtendMemoTTL doesn't exist
+	newTTL := int64(2000)
+	constantProvider := constants.GetConstantValues(GetCurrentVersion())
+	err = k.ExtendMemoTTL(ctx, reference, newTTL, signer, constantProvider)
+	c.Assert(err, IsNil, Commentf("Should be able to extend memo TTL"))
+	
+	// Verify TTL was extended
+	updated, err := k.GetRegisteredMemo(ctx, reference)
+	c.Assert(err, IsNil)
+	expectedExpiry := ctx.BlockHeight() + newTTL
+	c.Assert(updated.ExpiresAt, Equals, expectedExpiry, Commentf("TTL should be extended"))
+	
+	// Test unauthorized extension (different signer)
+	otherSigner := GetRandomValidatorNode(NodeActive).NodeAddress
+	err = k.ExtendMemoTTL(ctx, reference, 3000, otherSigner, constantProvider)
+	c.Assert(err, NotNil, Commentf("Should reject TTL extension from unauthorized signer"))
+	c.Assert(err.Error(), Matches, ".*unauthorized.*", Commentf("Error should mention unauthorized access"))
+}
