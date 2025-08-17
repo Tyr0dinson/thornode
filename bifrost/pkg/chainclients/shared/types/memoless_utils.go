@@ -66,16 +66,41 @@ func (m *MemolessUtils) IsMemolessTransaction(memo string, coins common.Coins) (
 
 	coin := coins[0]
 
-	// Check minimum amount threshold (need at least 6 digits for base+reference)
+	// Enhanced amount validation against manipulation attacks
+	amountStr := coin.Amount.String()
+	
+	// Protect against integer overflow attacks
+	if len(amountStr) > 20 { // Prevent amounts larger than reasonable limits
+		return false, "", nil
+	}
+
+	// Protect against negative amount simulation (amounts too small)
 	minAmount := cosmos.NewUint(100000) // 10^5 = 100,000 (6 digits minimum)
 	if coin.Amount.LT(minAmount) {
 		return false, "", nil
 	}
 
-	// Try to extract reference
+	// Protect against precision attacks (amounts too large)
+	maxSafeAmount := cosmos.NewUintFromString("1000000000000000000") // 10^18 - reasonable limit
+	if coin.Amount.GT(maxSafeAmount) {
+		return false, "", nil
+	}
+
+	// Try to extract reference with enhanced validation
 	reference, err := m.ExtractReferenceFromAmount(coin.Amount)
 	if err != nil {
 		return false, "", nil // Cannot extract valid reference
+	}
+
+	// Additional security validation for the extracted reference
+	if err := m.ValidateReference(reference); err != nil {
+		return false, "", nil // Reference doesn't pass security validation
+	}
+
+	// Validate reference is in valid range (10000-99999)
+	refInt, err := strconv.Atoi(reference)
+	if err != nil || refInt < 10000 || refInt > 99999 {
+		return false, "", nil
 	}
 
 	return true, reference, nil
@@ -83,17 +108,32 @@ func (m *MemolessUtils) IsMemolessTransaction(memo string, coins common.Coins) (
 
 // ValidateReference validates that a reference string is properly formatted
 func (m *MemolessUtils) ValidateReference(reference string) error {
-	if len(reference) != 5 {
-		return fmt.Errorf("reference must be exactly 5 digits, got %d", len(reference))
+	// Strict byte length check (not character count to prevent Unicode attacks)
+	if len([]byte(reference)) != 5 {
+		return fmt.Errorf("reference must be exactly 5 ASCII bytes")
 	}
 
-	if _, err := strconv.ParseUint(reference, 10, 32); err != nil {
-		return fmt.Errorf("reference must be numeric: %w", err)
+	// Strict ASCII digit validation (prevents Unicode digit attacks)
+	for i, b := range []byte(reference) {
+		if b < '0' || b > '9' {
+			return fmt.Errorf("reference contains invalid character at position %d: must be ASCII digits 0-9 only", i)
+		}
 	}
 
-	// Additional validation - reference cannot be all zeros
-	if reference == "00000" {
-		return fmt.Errorf("reference cannot be all zeros")
+	// Parse as integer (additional validation)
+	refInt, err := strconv.Atoi(reference)
+	if err != nil {
+		return fmt.Errorf("invalid reference format: %w", err)
+	}
+
+	// Strict range enforcement
+	if refInt < 10000 || refInt > 99999 {
+		return fmt.Errorf("reference must be in range 10000-99999, got %d", refInt)
+	}
+
+	// Additional security: reject common attack patterns
+	if reference == "00000" || reference == "99999" || reference == "12345" {
+		return fmt.Errorf("reference %s is reserved and cannot be used", reference)
 	}
 
 	return nil

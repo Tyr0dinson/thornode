@@ -109,6 +109,36 @@ func ValidateMemoContent(memo string) error {
 		return fmt.Errorf("memo cannot contain null bytes")
 	}
 
+	// Enhanced security: Block injection attack patterns
+	dangerousPatterns := []string{
+		"';", "')", "'; --", "'; DROP", "'; DELETE", "'; UPDATE",
+		"<script", "</script>", "javascript:", "vbscript:",
+		"${", "%{", "#{", "${{", "#{", "{{",
+		"\\x", "\\u00", "\\r\\n", "\r\n\r\n",
+		"jndi:", "ldap://", "rmi://", "dns://",
+		"../", "..\\", "/etc/", "\\windows\\",
+		"union select", "union all", "or 1=1", "and 1=1",
+		"eval(", "exec(", "system(", "shell_exec(",
+	}
+
+	lowerMemo := strings.ToLower(memo)
+	for _, pattern := range dangerousPatterns {
+		if strings.Contains(lowerMemo, pattern) {
+			return fmt.Errorf("memo contains potentially dangerous content: %s", pattern)
+		}
+	}
+
+	// Check for excessive special characters (potential obfuscation attempt)
+	specialCharCount := 0
+	for _, char := range memo {
+		if char < 32 || char > 126 || strings.ContainsRune("'\"<>{}()[];|&$", char) {
+			specialCharCount++
+		}
+	}
+	if float64(specialCharCount)/float64(len(memo)) > 0.3 {
+		return fmt.Errorf("memo contains excessive special characters (potential obfuscation)")
+	}
+
 	// Check for excessively long lines (potential DoS protection)
 	lines := strings.Split(memo, "\n")
 	for i, line := range lines {
