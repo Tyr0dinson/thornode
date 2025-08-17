@@ -9,6 +9,8 @@ import (
 	errorsmod "cosmossdk.io/errors"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
+	
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
 // Validation constants for memoless protocol
@@ -75,6 +77,20 @@ func (m *MsgRegisterMemo) ValidateBasicEnhanced() error {
 	// Enhanced signer validation
 	if err := ValidateSigner(m.Signer); err != nil {
 		return errorsmod.Wrap(sdkerrors.ErrInvalidAddress, fmt.Sprintf("invalid signer: %v", err))
+	}
+
+	// Enhanced amount validation if provided
+	if m.Amount != "" {
+		amount, err := cosmos.ParseUint(m.Amount)
+		if err != nil {
+			return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "invalid amount format")
+		}
+		
+		// Minimum amount check (100,000 units for reference encoding)
+		minAmount := cosmos.NewUint(100000)
+		if amount.LT(minAmount) {
+			return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "amount too small for reference encoding")
+		}
 	}
 
 	return nil
