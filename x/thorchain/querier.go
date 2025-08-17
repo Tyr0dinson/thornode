@@ -3640,15 +3640,20 @@ func (qs queryServer) queryRegisteredMemo(ctx cosmos.Context, req *types.QueryRe
 		return nil, errors.New("reference not provided")
 	}
 
-	// Validate reference format (5 digits)
-	if len(req.Reference) != 5 {
-		return nil, fmt.Errorf("reference must be exactly 5 digits, got %d", len(req.Reference))
+	// Use enhanced reference validation for security
+	if err := types.ValidateReference(req.Reference); err != nil {
+		return nil, fmt.Errorf("invalid reference: %w", err)
 	}
 
 	memo, err := qs.mgr.Keeper().GetRegisteredMemo(ctx, req.Reference)
 	if err != nil {
 		ctx.Logger().Error("fail to get registered memo", "reference", req.Reference, "error", err)
 		return nil, fmt.Errorf("could not get registered memo for reference %s: %w", req.Reference, err)
+	}
+
+	// Check if memo has expired
+	if memo.IsExpired(ctx.BlockHeight()) {
+		return nil, fmt.Errorf("memo reference %s has expired", req.Reference)
 	}
 
 	return &types.QueryRegisteredMemoResponse{Memo: memo}, nil
