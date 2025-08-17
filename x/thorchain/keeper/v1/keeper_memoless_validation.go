@@ -168,20 +168,43 @@ func (k KVStore) validateLayer1Basic(msg types.MsgRegisterMemo, validationCtx En
 
 // validateLayer2Chain performs Layer 2 validation - Chain decimal precision requirements (≥5 decimals)
 func (k KVStore) validateLayer2Chain(ctx cosmos.Context, msg types.MsgRegisterMemo, validationCtx EnhancedValidationContext) error {
-	// Validate chain supports at least 5 decimal places for amount encoding
-	if validationCtx.ChainConfig.DecimalPlaces < 5 {
-		return fmt.Errorf("chain %s has insufficient decimal places (%d) for memoless encoding (requires ≥5)", 
-			msg.ChainId, validationCtx.ChainConfig.DecimalPlaces)
-	}
-
-	// Validate chain ID against supported chains
-	supportedChains := map[string]bool{
-		"BTC": true, "ETH": true, "BNB": true, "LTC": true, "BCH": true,
-		"DOGE": true, "AVAX": true, "ATOM": true, "BSC": true, "THOR": true,
+	// Get actual chain configuration using keeper method
+	chainConfig, err := k.GetChainConfig(ctx, msg.ChainId)
+	if err != nil {
+		return fmt.Errorf("failed to get chain config for %s: %w", msg.ChainId, err)
 	}
 	
-	if !supportedChains[strings.ToUpper(msg.ChainId)] {
+	// Check for precision loss issues first (more specific error)
+	if chainConfig.PrecisionLoss {
+		return fmt.Errorf("chain %s has precision loss issues, memoless not supported", msg.ChainId)
+	}
+
+	// Validate chain is supported
+	if !chainConfig.SupportsMemoless {
 		return fmt.Errorf("chain %s not supported for memoless protocol", msg.ChainId)
+	}
+
+	// Validate chain supports at least 5 decimal places for amount encoding
+	if chainConfig.DecimalPlaces < 5 {
+		return fmt.Errorf("chain %s has insufficient decimal places (%d) for memoless encoding (requires ≥5)", 
+			msg.ChainId, chainConfig.DecimalPlaces)
+	}
+
+	// Validate chain configuration consistency
+	if chainConfig.ChainID != strings.ToUpper(msg.ChainId) {
+		return fmt.Errorf("chain ID case mismatch: expected %s, got %s", chainConfig.ChainID, msg.ChainId)
+	}
+
+	// Validate minimum amount requirements for the chain
+	if chainConfig.MinAmount.IsZero() {
+		return fmt.Errorf("invalid chain configuration: minimum amount must be positive")
+	}
+
+	// Ensure minimum amount allows for reference encoding (need 6+ digits)
+	minRequiredForEncoding := cosmos.NewUint(100000) // 6 digits minimum
+	if chainConfig.MinAmount.LT(minRequiredForEncoding) {
+		return fmt.Errorf("chain %s minimum amount (%s) too small for reference encoding", 
+			msg.ChainId, chainConfig.MinAmount.String())
 	}
 
 	return nil
@@ -219,6 +242,14 @@ func (k KVStore) validateLayer4Business(ctx cosmos.Context, msg types.MsgRegiste
 	enabled := validationCtx.ConstantProvider.GetInt64Value(constants.MemolessEnabled)
 	if enabled == 0 {
 		return fmt.Errorf("memoless protocol disabled by governance")
+	}
+
+	// Collusion detection - check registration count per signer per block
+	signerBlockCount := k.GetSignerRegistrationCountInBlock(ctx, msg.Signer, validationCtx.BlockHeight)
+	maxSignerPerBlock := int64(3) // Allow up to 3 registrations per signer per block
+	if signerBlockCount >= maxSignerPerBlock {
+		return fmt.Errorf("collusion detected: signer %s has %d registrations in block %d (max %d)", 
+			msg.Signer.String(), signerBlockCount, validationCtx.BlockHeight, maxSignerPerBlock)
 	}
 
 	return nil

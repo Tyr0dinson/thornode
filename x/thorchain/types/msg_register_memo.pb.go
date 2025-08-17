@@ -127,12 +127,13 @@ func (m *MsgRegisterMemo) GetTags() []string {
 }
 
 type RegisteredMemo struct {
-	Reference    string `protobuf:"bytes,1,opt,name=reference,proto3" json:"reference,omitempty"`
-	Memo         string `protobuf:"bytes,2,opt,name=memo,proto3" json:"memo,omitempty"`
-	RegisteredAt int64  `protobuf:"varint,3,opt,name=registered_at,json=registeredAt,proto3" json:"registered_at,omitempty"`
-	ExpiresAt    int64  `protobuf:"varint,4,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
-	ChainId      string `protobuf:"bytes,5,opt,name=chain_id,json=chainId,proto3" json:"chain_id,omitempty"`
-	Status       string `protobuf:"bytes,6,opt,name=status,proto3" json:"status,omitempty"`
+	Reference    string                                        `protobuf:"bytes,1,opt,name=reference,proto3" json:"reference,omitempty"`
+	Memo         string                                        `protobuf:"bytes,2,opt,name=memo,proto3" json:"memo,omitempty"`
+	RegisteredAt int64                                         `protobuf:"varint,3,opt,name=registered_at,json=registeredAt,proto3" json:"registered_at,omitempty"`
+	ExpiresAt    int64                                         `protobuf:"varint,4,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	ChainId      string                                        `protobuf:"bytes,5,opt,name=chain_id,json=chainId,proto3" json:"chain_id,omitempty"`
+	Status       string                                        `protobuf:"bytes,6,opt,name=status,proto3" json:"status,omitempty"`
+	Signer       github_com_cosmos_cosmos_sdk_types.AccAddress `protobuf:"bytes,7,opt,name=signer,proto3,casttype=github.com/cosmos/cosmos-sdk/types.AccAddress" json:"signer,omitempty"`
 }
 
 func (m *RegisteredMemo) Reset()         { *m = RegisteredMemo{} }
@@ -208,6 +209,13 @@ func (m *RegisteredMemo) GetStatus() string {
 		return m.Status
 	}
 	return ""
+}
+
+func (m *RegisteredMemo) GetSigner() github_com_cosmos_cosmos_sdk_types.AccAddress {
+	if m != nil {
+		return m.Signer
+	}
+	return nil
 }
 
 func init() {
@@ -352,6 +360,13 @@ func (m *RegisteredMemo) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if len(m.Signer) > 0 {
+		i -= len(m.Signer)
+		copy(dAtA[i:], m.Signer)
+		i = encodeVarintMsgRegisterMemo(dAtA, i, uint64(len(m.Signer)))
+		i--
+		dAtA[i] = 0x3a
+	}
 	if len(m.Status) > 0 {
 		i -= len(m.Status)
 		copy(dAtA[i:], m.Status)
@@ -470,6 +485,10 @@ func (m *RegisteredMemo) Size() (n int) {
 		n += 1 + l + sovMsgRegisterMemo(uint64(l))
 	}
 	l = len(m.Status)
+	if l > 0 {
+		n += 1 + l + sovMsgRegisterMemo(uint64(l))
+	}
+	l = len(m.Signer)
 	if l > 0 {
 		n += 1 + l + sovMsgRegisterMemo(uint64(l))
 	}
@@ -959,6 +978,40 @@ func (m *RegisteredMemo) Unmarshal(dAtA []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			m.Status = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 7:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Signer", wireType)
+			}
+			var byteLen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowMsgRegisterMemo
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if byteLen < 0 {
+				return ErrInvalidLengthMsgRegisterMemo
+			}
+			postIndex := iNdEx + byteLen
+			if postIndex < 0 {
+				return ErrInvalidLengthMsgRegisterMemo
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Signer = append(m.Signer[:0], dAtA[iNdEx:postIndex]...)
+			if m.Signer == nil {
+				m.Signer = []byte{}
+			}
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex

@@ -1,6 +1,8 @@
 package keeperv1
 
 import (
+	"fmt"
+	
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/constants"
@@ -165,4 +167,102 @@ func (s *MemolessKeeperTestSuite) TestInfrastructurePrerequisites(c *C) {
 	c.Logf("✓ Memo registration working: Test reference %s", testReference)
 
 	c.Logf("=== ✅ ALL INFRASTRUCTURE PREREQUISITES VALIDATED ===")
+}
+
+// TestEnhancedChainPrecisionValidation tests enhanced chain precision validation using 5-layer framework
+func (s *MemolessKeeperTestSuite) TestEnhancedChainPrecisionValidation(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	
+	// Initialize chain configs
+	err := k.InitializeDefaultChainConfigs(ctx)
+	c.Assert(err, IsNil)
+	
+	// Create enhanced validation context
+	constantProvider := constants.GetConstantValues(GetCurrentVersion())
+	chainConfig, err := k.GetChainConfig(ctx, "DOGE")
+	c.Assert(err, IsNil)
+	
+	validationCtx := EnhancedValidationContext{
+		Version:          GetCurrentVersion(),
+		BlockHeight:      ctx.BlockHeight(),
+		ConstantProvider: constantProvider,
+		ChainConfig:      chainConfig,
+	}
+	
+	// Test that DOGE (precision loss chain) is properly rejected in Layer 2
+	msg := thorchaintypes.MsgRegisterMemo{
+		Memo:    "SWAP:BTC.BTC:thor1abc123:14400",
+		ChainId: "DOGE", // DOGE has PrecisionLoss: true in config
+		Ttl:     14400,
+		Signer:  GetRandomValidatorNode(NodeActive).NodeAddress,
+	}
+	
+	// This should fail at Layer 2 validation because DOGE has precision loss issues
+	err = k.ValidateMemoRegistrationEnhanced(ctx, msg, validationCtx)
+	c.Assert(err, NotNil, Commentf("DOGE should be rejected due to precision loss"))
+	c.Assert(err.Error(), Matches, ".*Layer 2.*precision loss.*", Commentf("Error should mention Layer 2 and precision loss"))
+}
+
+// TestCollusionDetection tests collusion detection and prevention mechanisms
+func (s *MemolessKeeperTestSuite) TestCollusionDetection(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	
+	// Initialize chain configs
+	err := k.InitializeDefaultChainConfigs(ctx)
+	c.Assert(err, IsNil)
+	
+	// Use consistent signer for all registrations to trigger collusion detection
+	testSigner := GetRandomValidatorNode(NodeActive).NodeAddress
+	
+	// Pre-create 3 registrations in this block to trigger limit
+	for i := 0; i < 3; i++ {
+		reference, err := k.GetNextReferenceID(ctx, "BTC")
+		c.Assert(err, IsNil)
+		
+		registration := thorchaintypes.RegisteredMemo{
+			Reference:    reference,
+			Memo:         fmt.Sprintf("SWAP:BTC.BTC:thor1test%d", i),
+			ChainId:      "BTC",
+			RegisteredAt: ctx.BlockHeight(),
+			ExpiresAt:    ctx.BlockHeight() + 14400,
+			Status:       "active",
+			Signer:       testSigner, // Same signer for collusion tracking
+		}
+		err = k.SetRegisteredMemo(ctx, registration)
+		c.Assert(err, IsNil)
+	}
+	
+	// Now attempt 4th registration - should fail due to collusion detection
+	msg := thorchaintypes.MsgRegisterMemo{
+		Memo:    "SWAP:BTC.BTC:thor1collision:14400",
+		ChainId: "BTC",
+		Ttl:     14400,
+		Signer:  testSigner, // Same signer attempting 4th registration
+		Amount:  "1000000",
+	}
+	
+	// This should fail due to collusion detection (too many registrations in same block)
+	constantProvider := constants.GetConstantValues(GetCurrentVersion())
+	
+	// Use same validation path as handler (ValidateMemoRegistration -> Enhanced internally)
+	err = k.ValidateMemoRegistration(ctx, msg, constantProvider)
+	c.Assert(err, NotNil, Commentf("Should detect collusion - too many registrations in same block"))
+	c.Assert(err.Error(), Matches, ".*collusion.*", Commentf("Error should mention collusion"))
+}
+
+// TestSlashingLogic tests slashing logic for malicious behavior
+func (s *MemolessKeeperTestSuite) TestSlashingLogic(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	
+	// Initialize chain configs
+	err := k.InitializeDefaultChainConfigs(ctx)
+	c.Assert(err, IsNil)
+	
+	// Create a malicious validator that attempts collusion
+	maliciousValidator := GetRandomValidatorNode(NodeActive).NodeAddress
+	
+	// Test slashing when collusion is detected
+	// This should fail initially since SlashValidatorForMaliciousBehavior doesn't exist yet
+	err = k.SlashValidatorForMaliciousBehavior(ctx, maliciousValidator, "collusion_detected", ctx.BlockHeight())
+	c.Assert(err, IsNil, Commentf("Should be able to slash validator for malicious behavior"))
 }
