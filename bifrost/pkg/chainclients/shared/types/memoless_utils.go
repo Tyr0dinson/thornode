@@ -1,3 +1,57 @@
+// Package types implements memoless transaction detection and validation utilities.
+//
+// MEMOLESS TRANSACTION DETECTION
+//
+// This package provides utilities for detecting and processing memoless transactions
+// in the THORChain bifrost observer system using the "Full with Last 5 Digits" encoding.
+//
+// DETECTION ALGORITHM:
+//
+// A transaction is identified as memoless when:
+//   1. Memo field is empty or minimal (≤2 characters)
+//   2. Transaction contains exactly one coin
+//   3. Amount is ≥100,000 base units (6+ digits for reference encoding)
+//   4. Last 5 digits form a valid reference (10000-99999 range)
+//   5. Reference passes security validation (ASCII-only, no reserved patterns)
+//
+// AMOUNT ENCODING STRATEGY:
+//
+// References are encoded in the last 5 digits of transaction amounts:
+//   - Original amount: 1,500,000 base units
+//   - Reference: 12345
+//   - Encoded amount: 1,512,345 base units
+//   - Detection: Extract "12345" from last 5 digits
+//
+// SECURITY FEATURES:
+//
+// Transaction Amount Validation:
+//   - Integer overflow protection (max 10^18)
+//   - Minimum amount enforcement (prevents dust attacks)
+//   - Precision attack prevention (rejects excessive amounts)
+//   - Boundary condition handling (edge case protection)
+//
+// Reference Validation:
+//   - Strict ASCII byte validation (prevents Unicode attacks)
+//   - Reserved pattern blocking (00000, 99999, 12345)
+//   - Range enforcement (10000-99999)
+//   - Format validation (exactly 5 digits)
+//
+// CHAIN COMPATIBILITY:
+//
+// Supports chains with ≥5 decimal places:
+//   - BTC: 8 decimals (compatible)
+//   - ETH: 18 decimals (compatible) 
+//   - Most major chains: 6-18 decimals (compatible)
+//   - Rejects chains with <5 decimals automatically
+//
+// INTEGRATION:
+//
+// This utility integrates with:
+//   - Bifrost Observer: Transaction detection in filterObservations()
+//   - THORNode Keeper: Reference validation and memo lookup
+//   - Security Framework: Adversarial testing and vulnerability detection
+//   - Performance Monitoring: Transaction processing metrics
+//
 package types
 
 import (

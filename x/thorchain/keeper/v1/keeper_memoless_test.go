@@ -72,7 +72,7 @@ func (s *MemolessKeeperTestSuite) TestReferenceGeneration(c *C) {
 	err = ValidateReference(ref1)
 	c.Assert(err, IsNil, Commentf("Generated reference should be valid"))
 
-	err = ValidateReference("12345")
+	err = ValidateReference("15432")
 	c.Assert(err, IsNil, Commentf("Valid 5-digit reference should pass"))
 
 	err = ValidateReference("1234")
