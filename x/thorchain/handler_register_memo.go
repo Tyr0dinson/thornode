@@ -1,6 +1,6 @@
 // Package thorchain implements the RegisterMemoHandler for the THORChain memoless protocol.
 //
-// MEMOLESS PROTOCOL REGISTRATION HANDLER
+// # MEMOLESS PROTOCOL REGISTRATION HANDLER
 //
 // This handler processes MsgRegisterMemo transactions to enable memoless swaps by
 // registering complex memo content off-chain and generating simple 5-digit references.
@@ -8,7 +8,7 @@
 // WORKFLOW:
 //
 // 1. Validation: 5-layer validation framework ensures security and compatibility
-// 2. Reference Generation: Incremental counter produces sequential 5-digit codes  
+// 2. Reference Generation: Incremental counter produces sequential 5-digit codes
 // 3. Storage: 2-prefix architecture stores registration with TTL expiry
 // 4. Response: Returns reference ID for use in subsequent transactions
 //
@@ -23,10 +23,10 @@
 // COLLISION HANDLING:
 //
 // When a generated reference already exists:
-//   1. Linear search from counter+1 to counter+1000 (max search limit)
-//   2. Return first available reference in search range
-//   3. Update counter to found reference + 1 for next generation
-//   4. If no reference found in 1000 attempts, return error (pool exhausted)
+//  1. Linear search from counter+1 to counter+1000 (max search limit)
+//  2. Return first available reference in search range
+//  3. Update counter to found reference + 1 for next generation
+//  4. If no reference found in 1000 attempts, return error (pool exhausted)
 //
 // SECURITY INTEGRATION:
 //
@@ -44,7 +44,6 @@
 //   - Validation: <1ms for all 5 layers combined
 //   - Storage: O(1) complexity for registration and lookup operations
 //   - Collision Resolution: O(k) where k is collision count (typically 0-5)
-//
 package thorchain
 
 import (

@@ -62,6 +62,7 @@ func (k KVStore) ProcessMemoRegistration(ctx cosmos.Context, msg thorchaintypes.
 		RegisteredAt: currentHeight,
 		ExpiresAt:    expirationHeight,
 		Status:       "active",
+		Signer:       msg.Signer,
 	}
 
 	if err := k.SetRegisteredMemo(ctx, registeredMemo); err != nil {

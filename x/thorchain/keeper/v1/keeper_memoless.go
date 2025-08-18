@@ -1,6 +1,6 @@
 // Package keeperv1 implements the THORChain memoless protocol keeper with incremental counter approach.
 //
-// INCREMENTAL COUNTER-BASED REFERENCE GENERATION
+// # INCREMENTAL COUNTER-BASED REFERENCE GENERATION
 //
 // This implementation follows the architectural decision to use incremental counters
 // instead of hash-based reference generation for improved predictability and security.
@@ -46,7 +46,6 @@
 // Storage Operations: O(1) for registration/lookup, O(n) for cleanup
 // Collision Handling: O(k) where k is number of collisions (typically 0-5)
 // Memory Usage: ~18MB storage projection for 90K active registrations
-//
 package keeperv1
 
 import (
@@ -57,17 +56,10 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
-	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/types"
 	thorchaintypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
-// Key prefixes for memo storage (2-prefix architecture per docs)
-const (
-	prefixMemoRegistration types.DbPrefix = "memo_registration/"
-	prefixMemoCounter      types.DbPrefix = "memo_counter/"
-	prefixMemoExpiry       types.DbPrefix = "memo_expiry/"
-	prefixMemoStats        types.DbPrefix = "memo_stats/"
-)
+// Memoless storage uses prefixes defined in keeper.go
 
 // SetRegisteredMemo stores a registered memo in the keeper
 func (k KVStore) SetRegisteredMemo(ctx cosmos.Context, memo thorchaintypes.RegisteredMemo) error {
@@ -338,12 +330,12 @@ func (k KVStore) UpdateLastCleanup(ctx cosmos.Context, height int64, expiredCoun
 func (k KVStore) GetReferenceCounter(ctx cosmos.Context, chainID string) (int64, error) {
 	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 	key := k.GetKey(prefixMemoCounter, chainID)
-	
+
 	bz := store.Get(key)
 	if bz == nil {
 		return 9999, nil // Start at 9999 so first increment gives 10000
 	}
-	
+
 	counter := int64(binary.BigEndian.Uint64(bz))
 	return counter, nil
 }
@@ -352,11 +344,11 @@ func (k KVStore) GetReferenceCounter(ctx cosmos.Context, chainID string) (int64,
 func (k KVStore) SetReferenceCounter(ctx cosmos.Context, chainID string, counter int64) error {
 	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 	key := k.GetKey(prefixMemoCounter, chainID)
-	
+
 	buf := make([]byte, 8)
 	binary.BigEndian.PutUint64(buf, uint64(counter))
 	store.Set(key, buf)
-	
+
 	return nil
 }
 
@@ -367,13 +359,13 @@ func (k KVStore) GetNextReferenceID(ctx cosmos.Context, chainID string) (string,
 	if err != nil {
 		return "", fmt.Errorf("failed to get counter for chain %s: %w", chainID, err)
 	}
-	
+
 	// Increment counter
 	counter++
 	if counter > 99999 {
 		counter = 10000 // Wraparound to start of range
 	}
-	
+
 	// Check for collision (during wraparound period)
 	reference := fmt.Sprintf("%05d", counter)
 	if k.HasRegisteredMemo(ctx, reference) {
@@ -393,16 +385,16 @@ func (k KVStore) GetNextReferenceID(ctx cosmos.Context, chainID string) (string,
 			return "", fmt.Errorf("reference pool exhausted for chain %s", chainID)
 		}
 	}
-	
+
 	// Store updated counter
 	if err := k.SetReferenceCounter(ctx, chainID, counter); err != nil {
 		return "", fmt.Errorf("failed to update counter for chain %s: %w", chainID, err)
 	}
-	
+
 	return reference, nil
 }
 
-// GetSignerRegistrationCountInBlock returns registrations from a signer in a specific block  
+// GetSignerRegistrationCountInBlock returns registrations from a signer in a specific block
 func (k KVStore) GetSignerRegistrationCountInBlock(ctx cosmos.Context, signer cosmos.AccAddress, blockHeight int64) int64 {
 	count := int64(0)
 	iterator := k.GetRegisteredMemoIterator(ctx)
@@ -428,7 +420,7 @@ func (k KVStore) SlashValidatorForMaliciousBehavior(ctx cosmos.Context, validato
 	// Slash validator by reducing their stake
 	// This integrates with THORChain's existing slashing system
 	slashPoints := int64(100) // 1% slash for memoless protocol violations
-	
+
 	// Record the slashing event
 	ctx.EventManager().EmitEvent(
 		cosmos.NewEvent(
@@ -439,13 +431,13 @@ func (k KVStore) SlashValidatorForMaliciousBehavior(ctx cosmos.Context, validato
 			cosmos.NewAttribute("block_height", fmt.Sprintf("%d", blockHeight)),
 		),
 	)
-	
+
 	ctx.Logger().Info("Validator slashed for memoless protocol violation",
 		"validator", validator.String(),
 		"reason", reason,
 		"slash_points", slashPoints,
 		"block_height", blockHeight)
-	
+
 	return nil
 }
 
@@ -455,10 +447,10 @@ func (k KVStore) CheckMemoExpiry(ctx cosmos.Context, reference string, currentBl
 	if err != nil {
 		return false, fmt.Errorf("failed to get memo for expiry check: %w", err)
 	}
-	
+
 	// Check if memo has expired
 	expired := memo.ExpiresAt <= currentBlockHeight
-	
+
 	return expired, nil
 }
 
@@ -469,41 +461,40 @@ func (k KVStore) ExtendMemoTTL(ctx cosmos.Context, reference string, newTTL int6
 	if err != nil {
 		return fmt.Errorf("memo not found: %w", err)
 	}
-	
+
 	// Verify authorization - only original signer can extend TTL
 	if !memo.Signer.Equals(signer) {
 		return fmt.Errorf("unauthorized: only original signer can extend TTL")
 	}
-	
+
 	// Check if memo is still active
 	if memo.IsExpired(ctx.BlockHeight()) {
 		return fmt.Errorf("cannot extend TTL of expired memo")
 	}
-	
+
 	// Validate new TTL against governance limits
 	maxTTL := constantProvider.GetInt64Value(constants.MemolessMaxTTL)
 	if newTTL > maxTTL {
 		return fmt.Errorf("new TTL %d exceeds governance maximum %d", newTTL, maxTTL)
 	}
-	
+
 	// Calculate new expiry time (from current block, not original registration)
 	newExpiry := ctx.BlockHeight() + newTTL
-	
+
 	// Update memo with new expiry
 	memo.ExpiresAt = newExpiry
-	
+
 	// Save updated memo
 	if err := k.SetRegisteredMemo(ctx, memo); err != nil {
 		return fmt.Errorf("failed to update memo TTL: %w", err)
 	}
-	
+
 	// Log TTL extension
 	ctx.Logger().Info("Memo TTL extended",
 		"reference", reference,
 		"new_expiry", newExpiry,
 		"new_ttl", newTTL,
 		"signer", signer.String())
-	
+
 	return nil
 }
-

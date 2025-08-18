@@ -1,6 +1,6 @@
 // Package keeperv1 implements the 5-layer validation framework for the THORChain memoless protocol.
 //
-// MEMOLESS PROTOCOL 5-LAYER VALIDATION FRAMEWORK
+// # MEMOLESS PROTOCOL 5-LAYER VALIDATION FRAMEWORK
 //
 // The memoless protocol implements a defense-in-depth validation approach using 5 distinct
 // validation layers, each with specific responsibilities and security considerations.
@@ -19,7 +19,7 @@
 //   - Maintains whitelist of supported chains (BTC, ETH, BNB, etc.)
 //   - Prevents memoless transactions on incompatible chains
 //
-// Layer 3 (Amount): Economic constraints and encoding validation  
+// Layer 3 (Amount): Economic constraints and encoding validation
 //   - Validates economic feasibility of registration costs
 //   - Ensures amount encoding doesn't cause precision loss
 //   - Prevents dust attacks through minimum amount requirements
@@ -43,7 +43,7 @@
 // for a registration to be accepted. This creates multiple security barriers:
 //
 // 1. Fail-fast validation catches obvious problems early
-// 2. Chain-specific validation prevents incompatible registrations  
+// 2. Chain-specific validation prevents incompatible registrations
 // 3. Economic validation prevents resource exhaustion
 // 4. Governance validation allows operational control
 // 5. Security validation blocks advanced attacks
@@ -52,7 +52,7 @@
 //
 // This validation framework integrates with:
 // - RegisterMemoHandler: Pre-registration validation
-// - gRPC Query Interface: Query-time validation  
+// - gRPC Query Interface: Query-time validation
 // - Bifrost Observer: Transaction detection validation
 // - Adversarial Testing: Security vulnerability detection
 //
@@ -173,7 +173,7 @@ func (k KVStore) validateLayer2Chain(ctx cosmos.Context, msg types.MsgRegisterMe
 	if err != nil {
 		return fmt.Errorf("failed to get chain config for %s: %w", msg.ChainId, err)
 	}
-	
+
 	// Check for precision loss issues first (more specific error)
 	if chainConfig.PrecisionLoss {
 		return fmt.Errorf("chain %s has precision loss issues, memoless not supported", msg.ChainId)
@@ -186,7 +186,7 @@ func (k KVStore) validateLayer2Chain(ctx cosmos.Context, msg types.MsgRegisterMe
 
 	// Validate chain supports at least 5 decimal places for amount encoding
 	if chainConfig.DecimalPlaces < 5 {
-		return fmt.Errorf("chain %s has insufficient decimal places (%d) for memoless encoding (requires ≥5)", 
+		return fmt.Errorf("chain %s has insufficient decimal places (%d) for memoless encoding (requires ≥5)",
 			msg.ChainId, chainConfig.DecimalPlaces)
 	}
 
@@ -203,7 +203,7 @@ func (k KVStore) validateLayer2Chain(ctx cosmos.Context, msg types.MsgRegisterMe
 	// Ensure minimum amount allows for reference encoding (need 6+ digits)
 	minRequiredForEncoding := cosmos.NewUint(100000) // 6 digits minimum
 	if chainConfig.MinAmount.LT(minRequiredForEncoding) {
-		return fmt.Errorf("chain %s minimum amount (%s) too small for reference encoding", 
+		return fmt.Errorf("chain %s minimum amount (%s) too small for reference encoding",
 			msg.ChainId, chainConfig.MinAmount.String())
 	}
 
@@ -214,26 +214,26 @@ func (k KVStore) validateLayer2Chain(ctx cosmos.Context, msg types.MsgRegisterMe
 func (k KVStore) validateLayer3Amount(ctx cosmos.Context, msg types.MsgRegisterMemo, validationCtx EnhancedValidationContext) error {
 	// TODO: Enable when protobuf adds Amount field to MsgRegisterMemo
 	// For now, validation happens at transaction detection time in bifrost
-	
+
 	// Basic economic validation using existing constants
 	if len(msg.Memo) > 1024 {
 		return fmt.Errorf("memo too large for economic efficiency")
 	}
-	
+
 	return nil
 }
 
-// validateLayer4Business performs Layer 4 validation - Rate limiting, TTL bounds, governance policies  
+// validateLayer4Business performs Layer 4 validation - Rate limiting, TTL bounds, governance policies
 func (k KVStore) validateLayer4Business(ctx cosmos.Context, msg types.MsgRegisterMemo, validationCtx EnhancedValidationContext) error {
 	// Use existing constants for rate limiting validation
 	maxTTL := validationCtx.ConstantProvider.GetInt64Value(constants.MemolessMaxTTL)
 	defaultTTL := validationCtx.ConstantProvider.GetInt64Value(constants.MemolessTTL)
-	
+
 	ttl := msg.Ttl
 	if ttl == 0 {
 		ttl = defaultTTL
 	}
-	
+
 	if ttl > maxTTL {
 		return fmt.Errorf("TTL %d exceeds governance maximum %d", ttl, maxTTL)
 	}
@@ -248,7 +248,7 @@ func (k KVStore) validateLayer4Business(ctx cosmos.Context, msg types.MsgRegiste
 	signerBlockCount := k.GetSignerRegistrationCountInBlock(ctx, msg.Signer, validationCtx.BlockHeight)
 	maxSignerPerBlock := int64(3) // Allow up to 3 registrations per signer per block
 	if signerBlockCount >= maxSignerPerBlock {
-		return fmt.Errorf("collusion detected: signer %s has %d registrations in block %d (max %d)", 
+		return fmt.Errorf("collusion detected: signer %s has %d registrations in block %d (max %d)",
 			msg.Signer.String(), signerBlockCount, validationCtx.BlockHeight, maxSignerPerBlock)
 	}
 
@@ -267,7 +267,7 @@ func (k KVStore) validateLayer5Security(ctx cosmos.Context, msg types.MsgRegiste
 		return fmt.Errorf("memo content already registered (potential replay attack)")
 	}
 
-	// Content-based abuse detection  
+	// Content-based abuse detection
 	if err := types.DetectPotentialAbuse(msg.Memo, msg.Signer); err != nil {
 		return fmt.Errorf("potential abuse detected: %w", err)
 	}

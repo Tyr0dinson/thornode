@@ -9,7 +9,7 @@ import (
 	errorsmod "cosmossdk.io/errors"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
-	
+
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
@@ -85,7 +85,7 @@ func (m *MsgRegisterMemo) ValidateBasicEnhanced() error {
 		if err != nil {
 			return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "invalid amount format")
 		}
-		
+
 		// Minimum amount check (100,000 units for reference encoding)
 		minAmount := cosmos.NewUint(100000)
 		if amount.LT(minAmount) {

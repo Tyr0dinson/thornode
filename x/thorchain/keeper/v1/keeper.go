@@ -98,6 +98,13 @@ const (
 	prefixTCYStaker               types.DbPrefix = "tcy_staker/"
 	prefixOraclePrice             types.DbPrefix = "oracle_price/"
 	prefixPriceFeed               types.DbPrefix = "price_feed/"
+
+	// Memoless protocol prefixes
+	prefixMemoRegistration types.DbPrefix = "memo_registration/"
+	prefixMemoCounter      types.DbPrefix = "memo_counter/"
+	prefixMemoExpiry       types.DbPrefix = "memo_expiry/"
+	prefixMemoStats        types.DbPrefix = "memo_stats/"
+	prefixMemoChainConfig  types.DbPrefix = "memo_chain_config/"
 )
 
 func dbError(ctx cosmos.Context, wrapper string, err error) error {

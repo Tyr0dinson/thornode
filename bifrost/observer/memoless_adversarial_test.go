@@ -14,8 +14,8 @@ import (
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/stretchr/testify/suite"
 
-	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	shareTypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
+	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	btypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -828,7 +828,7 @@ func (ae *AdversarialEngine) ConfigureOracle(manipulation OracleManipulationConf
 
 type AdversarialThorClient struct {
 	*MockThorClient // Embed to inherit all interface methods
-	attackEngine *AdversarialEngine
+	attackEngine    *AdversarialEngine
 }
 
 func NewAdversarialThorClient(engine *AdversarialEngine) *AdversarialThorClient {

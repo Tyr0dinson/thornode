@@ -1,6 +1,6 @@
 // Package types implements memoless transaction detection and validation utilities.
 //
-// MEMOLESS TRANSACTION DETECTION
+// # MEMOLESS TRANSACTION DETECTION
 //
 // This package provides utilities for detecting and processing memoless transactions
 // in the THORChain bifrost observer system using the "Full with Last 5 Digits" encoding.
@@ -8,11 +8,11 @@
 // DETECTION ALGORITHM:
 //
 // A transaction is identified as memoless when:
-//   1. Memo field is empty or minimal (≤2 characters)
-//   2. Transaction contains exactly one coin
-//   3. Amount is ≥100,000 base units (6+ digits for reference encoding)
-//   4. Last 5 digits form a valid reference (10000-99999 range)
-//   5. Reference passes security validation (ASCII-only, no reserved patterns)
+//  1. Memo field is empty or minimal (≤2 characters)
+//  2. Transaction contains exactly one coin
+//  3. Amount is ≥100,000 base units (6+ digits for reference encoding)
+//  4. Last 5 digits form a valid reference (10000-99999 range)
+//  5. Reference passes security validation (ASCII-only, no reserved patterns)
 //
 // AMOUNT ENCODING STRATEGY:
 //
@@ -40,7 +40,7 @@
 //
 // Supports chains with ≥5 decimal places:
 //   - BTC: 8 decimals (compatible)
-//   - ETH: 18 decimals (compatible) 
+//   - ETH: 18 decimals (compatible)
 //   - Most major chains: 6-18 decimals (compatible)
 //   - Rejects chains with <5 decimals automatically
 //
@@ -51,7 +51,6 @@
 //   - THORNode Keeper: Reference validation and memo lookup
 //   - Security Framework: Adversarial testing and vulnerability detection
 //   - Performance Monitoring: Transaction processing metrics
-//
 package types
 
 import (
@@ -122,7 +121,7 @@ func (m *MemolessUtils) IsMemolessTransaction(memo string, coins common.Coins) (
 
 	// Enhanced amount validation against manipulation attacks
 	amountStr := coin.Amount.String()
-	
+
 	// Protect against integer overflow attacks
 	if len(amountStr) > 40 { // Prevent amounts larger than reasonable limits
 		return false, "", nil
@@ -135,7 +134,7 @@ func (m *MemolessUtils) IsMemolessTransaction(memo string, coins common.Coins) (
 	}
 
 	// Protect against precision attacks (amounts too large) - but allow test amounts
-	// Check if string representation would cause overflow issues  
+	// Check if string representation would cause overflow issues
 	if len(amountStr) > 40 { // Allow very large test amounts, block truly excessive ones
 		return false, "", nil
 	}
@@ -208,7 +207,7 @@ func (m *MemolessUtils) EncodeAmountWithReference(baseAmount cosmos.Uint, refere
 		baseWithoutRef := baseStr[:len(baseStr)-5]
 
 		// If baseWithoutRef is empty (base was exactly 5 digits), just use the reference
-		// Note: This edge case sacrifices reversibility for simplicity 
+		// Note: This edge case sacrifices reversibility for simplicity
 		if baseWithoutRef == "" {
 			// Convert reference to int first, then to string to handle leading zeros
 			refInt, _ := strconv.Atoi(reference)

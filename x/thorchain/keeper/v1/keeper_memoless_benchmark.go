@@ -65,7 +65,7 @@ func (pb *PerformanceBenchmark) BenchmarkReferenceGeneration(config BenchmarkCon
 	})
 }
 
-// BenchmarkReferenceCounter benchmarks counter operations  
+// BenchmarkReferenceCounter benchmarks counter operations
 func (pb *PerformanceBenchmark) BenchmarkReferenceCounter(config BenchmarkConfig) BenchmarkResult {
 	return pb.runBenchmark("ReferenceCounter", config, func() error {
 		chainID := "BTC"

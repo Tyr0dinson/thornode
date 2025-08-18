@@ -56,7 +56,7 @@ func NewStateValidator() *StateValidator {
 func (sv *StateValidator) RegisterMemo(reference, memo string) {
 	sv.mu.Lock()
 	defer sv.mu.Unlock()
-	
+
 	sv.memos[reference] = &RegisteredMemo{
 		Reference: reference,
 		Memo:      memo,
@@ -67,10 +67,10 @@ func (sv *StateValidator) RegisterMemo(reference, memo string) {
 func (sv *StateValidator) ValidateStateConsistency() StateResult {
 	sv.mu.RLock()
 	defer sv.mu.RUnlock()
-	
+
 	var corruptionEvents []CorruptionEvent
 	isValid := true
-	
+
 	// Check for system crash state
 	if sv.crashed {
 		isValid = false
@@ -79,7 +79,7 @@ func (sv *StateValidator) ValidateStateConsistency() StateResult {
 			Reference: "system",
 		})
 	}
-	
+
 	// Validate memo consistency - check for corrupted content
 	for ref, memo := range sv.memos {
 		if memo.Memo == "CORRUPTED_DATA" {
@@ -89,7 +89,7 @@ func (sv *StateValidator) ValidateStateConsistency() StateResult {
 				Reference: ref,
 			})
 		}
-		
+
 		// Validate reference format consistency (allow 00000 for now in tests)
 		if len(ref) != 5 {
 			isValid = false
@@ -99,7 +99,7 @@ func (sv *StateValidator) ValidateStateConsistency() StateResult {
 			})
 		}
 	}
-	
+
 	return StateResult{
 		IsValid:          isValid,
 		CorruptionEvents: corruptionEvents,
@@ -110,7 +110,7 @@ func (sv *StateValidator) ValidateStateConsistency() StateResult {
 func (sv *StateValidator) CorruptMemo(reference, corruptedData string) {
 	sv.mu.Lock()
 	defer sv.mu.Unlock()
-	
+
 	if memo, exists := sv.memos[reference]; exists {
 		memo.Memo = corruptedData
 	}
@@ -120,9 +120,9 @@ func (sv *StateValidator) CorruptMemo(reference, corruptedData string) {
 func (sv *StateValidator) DetectStateCorruption() []CorruptionEvent {
 	sv.mu.RLock()
 	defer sv.mu.RUnlock()
-	
+
 	var events []CorruptionEvent
-	
+
 	// Check for corrupted memo content
 	for ref, memo := range sv.memos {
 		if memo.Memo == "CORRUPTED_DATA" {
@@ -132,7 +132,7 @@ func (sv *StateValidator) DetectStateCorruption() []CorruptionEvent {
 			})
 		}
 	}
-	
+
 	return events
 }
 
@@ -140,7 +140,7 @@ func (sv *StateValidator) DetectStateCorruption() []CorruptionEvent {
 func (sv *StateValidator) ExecuteBatch(operations []StateOperation) error {
 	sv.mu.Lock()
 	defer sv.mu.Unlock()
-	
+
 	// Pre-validate all operations (Consistency check)
 	for _, op := range operations {
 		if op.Type == "invalid" {
@@ -150,7 +150,7 @@ func (sv *StateValidator) ExecuteBatch(operations []StateOperation) error {
 			return fmt.Errorf("invalid reference format: %s", op.Reference)
 		}
 	}
-	
+
 	// Create backup for rollback (Atomicity support)
 	backup := make(map[string]*RegisteredMemo)
 	for ref, memo := range sv.memos {
@@ -159,7 +159,7 @@ func (sv *StateValidator) ExecuteBatch(operations []StateOperation) error {
 			Memo:      memo.Memo,
 		}
 	}
-	
+
 	// Execute all operations
 	for _, op := range operations {
 		switch op.Type {
@@ -176,7 +176,7 @@ func (sv *StateValidator) ExecuteBatch(operations []StateOperation) error {
 			return fmt.Errorf("unknown operation type: %s", op.Type)
 		}
 	}
-	
+
 	// All operations succeeded - batch committed
 	return nil
 }
@@ -185,11 +185,11 @@ func (sv *StateValidator) ExecuteBatch(operations []StateOperation) error {
 func (sv *StateValidator) GetMemo(reference string) (*RegisteredMemo, error) {
 	sv.mu.RLock()
 	defer sv.mu.RUnlock()
-	
+
 	if memo, exists := sv.memos[reference]; exists {
 		return memo, nil
 	}
-	
+
 	return nil, fmt.Errorf("memo not found: %s", reference)
 }
 
@@ -197,7 +197,7 @@ func (sv *StateValidator) GetMemo(reference string) (*RegisteredMemo, error) {
 func (sv *StateValidator) SimulateCrash() {
 	sv.mu.Lock()
 	defer sv.mu.Unlock()
-	
+
 	sv.crashed = true
 }
 
@@ -205,9 +205,9 @@ func (sv *StateValidator) SimulateCrash() {
 func (sv *StateValidator) Recover() {
 	sv.mu.Lock()
 	defer sv.mu.Unlock()
-	
+
 	sv.crashed = false
-	
+
 	// In real implementation, would restore from persistent storage
 	// For now, preserve existing memos (simulating durability)
 	// Validate restored state integrity
@@ -218,7 +218,7 @@ func (sv *StateValidator) Recover() {
 			corruptedRefs = append(corruptedRefs, ref)
 		}
 	}
-	
+
 	// Clean up corrupted entries during recovery
 	for _, ref := range corruptedRefs {
 		delete(sv.memos, ref)
@@ -228,7 +228,7 @@ func (sv *StateValidator) Recover() {
 // ExecuteConcurrentOperations executes operations concurrently
 func (sv *StateValidator) ExecuteConcurrentOperations(count int) {
 	var wg sync.WaitGroup
-	
+
 	for i := 0; i < count; i++ {
 		wg.Add(1)
 		go func(id int) {
@@ -238,7 +238,7 @@ func (sv *StateValidator) ExecuteConcurrentOperations(count int) {
 			sv.RegisterMemo(reference, memo)
 		}(i)
 	}
-	
+
 	wg.Wait()
 }
 

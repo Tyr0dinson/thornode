@@ -15,12 +15,12 @@ import (
 	"github.com/stretchr/testify/suite"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
+	btypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
-	btypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
-	stypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
+	stypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 // Chaos engineering test suite for memoless protocol resilience
@@ -639,40 +639,78 @@ func (ctc *ChaosThorClient) EnsureNodeWhitelisted() error { return nil }
 
 // Copy of all ThorchainBridge interface methods from AdversarialThorClient for testing
 func (ctc *ChaosThorClient) EnsureNodeWhitelistedWithTimeout() error { return nil }
-func (ctc *ChaosThorClient) FetchNodeStatus() (stypes.NodeStatus, error) { return stypes.NodeStatus_Unknown, nil }
-func (ctc *ChaosThorClient) FetchActiveNodes() ([]common.PubKey, error) { return nil, nil }
-func (ctc *ChaosThorClient) GetAsgards() (stypes.Vaults, error) { return nil, nil }
+func (ctc *ChaosThorClient) FetchNodeStatus() (stypes.NodeStatus, error) {
+	return stypes.NodeStatus_Unknown, nil
+}
+func (ctc *ChaosThorClient) FetchActiveNodes() ([]common.PubKey, error)   { return nil, nil }
+func (ctc *ChaosThorClient) GetAsgards() (stypes.Vaults, error)           { return nil, nil }
 func (ctc *ChaosThorClient) GetVault(pubkey string) (stypes.Vault, error) { return stypes.Vault{}, nil }
-func (ctc *ChaosThorClient) GetConfig() config.BifrostClientConfiguration { return config.BifrostClientConfiguration{} }
+func (ctc *ChaosThorClient) GetConfig() config.BifrostClientConfiguration {
+	return config.BifrostClientConfiguration{}
+}
 func (ctc *ChaosThorClient) GetConstants() (map[string]int64, error) { return nil, nil }
-func (ctc *ChaosThorClient) GetContext() client.Context { return client.Context{} }
-func (ctc *ChaosThorClient) GetContractAddress() ([]thorclient.PubKeyContractAddressPair, error) { return nil, nil }
+func (ctc *ChaosThorClient) GetContext() client.Context              { return client.Context{} }
+func (ctc *ChaosThorClient) GetContractAddress() ([]thorclient.PubKeyContractAddressPair, error) {
+	return nil, nil
+}
 func (ctc *ChaosThorClient) GetErrataMsg(txID common.TxID, chain common.Chain) sdk.Msg { return nil }
-func (ctc *ChaosThorClient) GetKeygenStdTx(poolPubKey common.PubKey, secp256k1Signature, keysharesBackup []byte, blame []stypes.Blame, inputPks common.PubKeys, keygenType stypes.KeygenType, chains common.Chains, height, keygenTime int64, poolPubKeyEddsa common.PubKey, keysharesBackupEddsa []byte) (sdk.Msg, error) { return nil, nil }
-func (ctc *ChaosThorClient) GetKeysignParty(vaultPubKey common.PubKey) (common.PubKeys, error) { return nil, nil }
-func (ctc *ChaosThorClient) GetMimir(key string) (int64, error) { return 0, nil }
+func (ctc *ChaosThorClient) GetKeygenStdTx(poolPubKey common.PubKey, secp256k1Signature, keysharesBackup []byte, blame []stypes.Blame, inputPks common.PubKeys, keygenType stypes.KeygenType, chains common.Chains, height, keygenTime int64, poolPubKeyEddsa common.PubKey, keysharesBackupEddsa []byte) (sdk.Msg, error) {
+	return nil, nil
+}
+func (ctc *ChaosThorClient) GetKeysignParty(vaultPubKey common.PubKey) (common.PubKeys, error) {
+	return nil, nil
+}
+func (ctc *ChaosThorClient) GetMimir(key string) (int64, error)                  { return 0, nil }
 func (ctc *ChaosThorClient) GetMimirWithRef(template, ref string) (int64, error) { return 0, nil }
-func (ctc *ChaosThorClient) GetInboundOutbound(txIns common.ObservedTxs) (common.ObservedTxs, common.ObservedTxs, error) { return nil, nil, nil }
+func (ctc *ChaosThorClient) GetInboundOutbound(txIns common.ObservedTxs) (common.ObservedTxs, common.ObservedTxs, error) {
+	return nil, nil, nil
+}
 func (ctc *ChaosThorClient) GetPools() (stypes.Pools, error) { return nil, nil }
-func (ctc *ChaosThorClient) GetPubKeys() ([]thorclient.PubKeyContractAddressPair, error) { return nil, nil }
-func (ctc *ChaosThorClient) GetAsgardPubKeys() ([]thorclient.PubKeyContractAddressPair, error) { return nil, nil }
-func (ctc *ChaosThorClient) GetSolvencyMsg(height int64, chain common.Chain, pubKey common.PubKey, coins common.Coins) *stypes.MsgSolvency { return nil }
-func (ctc *ChaosThorClient) GetTHORName(name string) (stypes.THORName, error) { return stypes.THORName{}, nil }
-func (ctc *ChaosThorClient) GetThorchainVersion() (semver.Version, error) { return semver.Version{}, nil }
-func (ctc *ChaosThorClient) IsCatchingUp() (bool, error) { return false, nil }
+func (ctc *ChaosThorClient) GetPubKeys() ([]thorclient.PubKeyContractAddressPair, error) {
+	return nil, nil
+}
+func (ctc *ChaosThorClient) GetAsgardPubKeys() ([]thorclient.PubKeyContractAddressPair, error) {
+	return nil, nil
+}
+func (ctc *ChaosThorClient) GetSolvencyMsg(height int64, chain common.Chain, pubKey common.PubKey, coins common.Coins) *stypes.MsgSolvency {
+	return nil
+}
+func (ctc *ChaosThorClient) GetTHORName(name string) (stypes.THORName, error) {
+	return stypes.THORName{}, nil
+}
+func (ctc *ChaosThorClient) GetThorchainVersion() (semver.Version, error) {
+	return semver.Version{}, nil
+}
+func (ctc *ChaosThorClient) IsCatchingUp() (bool, error)                    { return false, nil }
 func (ctc *ChaosThorClient) HasNetworkFee(chain common.Chain) (bool, error) { return false, nil }
-func (ctc *ChaosThorClient) GetNetworkFee(chain common.Chain) (transactionSize, transactionFeeRate uint64, err error) { return 0, 0, nil }
-func (ctc *ChaosThorClient) PostKeysignFailure(blame stypes.Blame, height int64, memo string, coins common.Coins, pubkey common.PubKey) (common.TxID, error) { return "", nil }
-func (ctc *ChaosThorClient) PostNetworkFee(height int64, chain common.Chain, transactionSize, transactionRate uint64) (common.TxID, error) { return "", nil }
+func (ctc *ChaosThorClient) GetNetworkFee(chain common.Chain) (transactionSize, transactionFeeRate uint64, err error) {
+	return 0, 0, nil
+}
+func (ctc *ChaosThorClient) PostKeysignFailure(blame stypes.Blame, height int64, memo string, coins common.Coins, pubkey common.PubKey) (common.TxID, error) {
+	return "", nil
+}
+func (ctc *ChaosThorClient) PostNetworkFee(height int64, chain common.Chain, transactionSize, transactionRate uint64) (common.TxID, error) {
+	return "", nil
+}
 func (ctc *ChaosThorClient) RagnarokInProgress() (bool, error) { return false, nil }
-func (ctc *ChaosThorClient) WaitToCatchUp() error { return nil }
-func (ctc *ChaosThorClient) GetBlockHeight() (int64, error) { return 100, nil }
-func (ctc *ChaosThorClient) GetLastObservedInHeight(chain common.Chain) (int64, error) { return 100, nil }
-func (ctc *ChaosThorClient) GetLastSignedOutHeight(chain common.Chain) (int64, error) { return 100, nil }
-func (ctc *ChaosThorClient) GetKeysign(blockHeight int64, pk string) (btypes.TxOut, error) { return btypes.TxOut{}, nil }
-func (ctc *ChaosThorClient) GetNodeAccount(nodeAddress string) (*stypes.NodeAccount, error) { return nil, nil }
+func (ctc *ChaosThorClient) WaitToCatchUp() error              { return nil }
+func (ctc *ChaosThorClient) GetBlockHeight() (int64, error)    { return 100, nil }
+func (ctc *ChaosThorClient) GetLastObservedInHeight(chain common.Chain) (int64, error) {
+	return 100, nil
+}
+func (ctc *ChaosThorClient) GetLastSignedOutHeight(chain common.Chain) (int64, error) {
+	return 100, nil
+}
+func (ctc *ChaosThorClient) GetKeysign(blockHeight int64, pk string) (btypes.TxOut, error) {
+	return btypes.TxOut{}, nil
+}
+func (ctc *ChaosThorClient) GetNodeAccount(nodeAddress string) (*stypes.NodeAccount, error) {
+	return nil, nil
+}
 func (ctc *ChaosThorClient) GetNodeAccounts() ([]*stypes.NodeAccount, error) { return nil, nil }
-func (ctc *ChaosThorClient) GetKeygenBlock(height int64, pk string) (stypes.KeygenBlock, error) { return stypes.KeygenBlock{}, nil }
+func (ctc *ChaosThorClient) GetKeygenBlock(height int64, pk string) (stypes.KeygenBlock, error) {
+	return stypes.KeygenBlock{}, nil
+}
 
 type ChaosMetrics struct {
 	startTime      time.Time
