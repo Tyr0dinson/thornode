@@ -117,22 +117,27 @@ func (s *QuotesSuite) TestQuoteHandleAffiliate(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	amount := cosmos.NewUint(1000000000) // 1000 RUNE
 
+	// Create valid THOR addresses for testing
+	validAddr := GetRandomTHORAddress().String()
+	validAddr2 := GetRandomTHORAddress().String()
+
 	// Test single affiliate
-	affiliate, memo, bps, newAmount, affAmt, err := quoteHandleAffiliate(ctx, mgr, "dx", "100", amount)
+	_, memo, bps, newAmount, affAmt, err := quoteHandleAffiliate(ctx, mgr, validAddr, "100", amount)
 	c.Assert(err, IsNil)
-	c.Assert(memo, Equals, "dx")
+	c.Assert(memo, Equals, validAddr)
 	c.Assert(bps.Uint64(), Equals, uint64(100))
 	c.Assert(newAmount.LT(amount), Equals, true) // Amount should be reduced by affiliate fee
 	c.Assert(affAmt.GT(cosmos.ZeroUint()), Equals, true)
 
 	// Test slash-separated (should take first values)
-	affiliate, memo, bps, newAmount, affAmt, err = quoteHandleAffiliate(ctx, mgr, "dx/ss", "100/200", amount)
+	slashSeparated := validAddr + "/" + validAddr2
+	_, memo, bps, newAmount, affAmt, err = quoteHandleAffiliate(ctx, mgr, slashSeparated, "100/200", amount)
 	c.Assert(err, IsNil)
-	c.Assert(memo, Equals, "dx")                // Should take first affiliate
+	c.Assert(memo, Equals, validAddr)           // Should take first affiliate
 	c.Assert(bps.Uint64(), Equals, uint64(100)) // Should take first bps
 
 	// Test empty strings
-	affiliate, memo, bps, newAmount, affAmt, err = quoteHandleAffiliate(ctx, mgr, "", "", amount)
+	_, memo, bps, newAmount, affAmt, err = quoteHandleAffiliate(ctx, mgr, "", "", amount)
 	c.Assert(err, IsNil)
 	c.Assert(memo, Equals, "")
 	c.Assert(bps.Uint64(), Equals, uint64(0))
@@ -140,18 +145,18 @@ func (s *QuotesSuite) TestQuoteHandleAffiliate(c *C) {
 	c.Assert(affAmt.Equal(cosmos.ZeroUint()), Equals, true)
 
 	// Test whitespace trimming
-	affiliate, memo, bps, newAmount, affAmt, err = quoteHandleAffiliate(ctx, mgr, " dx ", " 100 ", amount)
+	_, memo, bps, newAmount, affAmt, err = quoteHandleAffiliate(ctx, mgr, " "+validAddr+" ", " 100 ", amount)
 	c.Assert(err, IsNil)
-	c.Assert(memo, Equals, "dx")
+	c.Assert(memo, Equals, validAddr)
 	c.Assert(bps.Uint64(), Equals, uint64(100))
 
 	// Test bps exceeding limit
-	affiliate, memo, bps, newAmount, affAmt, err = quoteHandleAffiliate(ctx, mgr, "dx", "15000", amount)
+	_, memo, bps, newAmount, affAmt, err = quoteHandleAffiliate(ctx, mgr, validAddr, "15000", amount)
 	c.Assert(err, NotNil)
 	c.Assert(err.Error(), Equals, "affiliate fee must be less than 10000 bps")
 
 	// Test invalid bps
-	affiliate, memo, bps, newAmount, affAmt, err = quoteHandleAffiliate(ctx, mgr, "dx", "invalid", amount)
+	_, memo, bps, newAmount, affAmt, err = quoteHandleAffiliate(ctx, mgr, validAddr, "invalid", amount)
 	c.Assert(err, NotNil)
 	c.Assert(err.Error(), Matches, "bad affiliate fee:.*")
 }
