@@ -13,98 +13,6 @@ import (
 	sync "sync"
 )
 
-var _ protoreflect.List = (*_QueryQuoteSwapRequest_9_list)(nil)
-
-type _QueryQuoteSwapRequest_9_list struct {
-	list *[]string
-}
-
-func (x *_QueryQuoteSwapRequest_9_list) Len() int {
-	if x.list == nil {
-		return 0
-	}
-	return len(*x.list)
-}
-
-func (x *_QueryQuoteSwapRequest_9_list) Get(i int) protoreflect.Value {
-	return protoreflect.ValueOfString((*x.list)[i])
-}
-
-func (x *_QueryQuoteSwapRequest_9_list) Set(i int, value protoreflect.Value) {
-	valueUnwrapped := value.String()
-	concreteValue := valueUnwrapped
-	(*x.list)[i] = concreteValue
-}
-
-func (x *_QueryQuoteSwapRequest_9_list) Append(value protoreflect.Value) {
-	valueUnwrapped := value.String()
-	concreteValue := valueUnwrapped
-	*x.list = append(*x.list, concreteValue)
-}
-
-func (x *_QueryQuoteSwapRequest_9_list) AppendMutable() protoreflect.Value {
-	panic(fmt.Errorf("AppendMutable can not be called on message QueryQuoteSwapRequest at list field Affiliate as it is not of Message kind"))
-}
-
-func (x *_QueryQuoteSwapRequest_9_list) Truncate(n int) {
-	*x.list = (*x.list)[:n]
-}
-
-func (x *_QueryQuoteSwapRequest_9_list) NewElement() protoreflect.Value {
-	v := ""
-	return protoreflect.ValueOfString(v)
-}
-
-func (x *_QueryQuoteSwapRequest_9_list) IsValid() bool {
-	return x.list != nil
-}
-
-var _ protoreflect.List = (*_QueryQuoteSwapRequest_10_list)(nil)
-
-type _QueryQuoteSwapRequest_10_list struct {
-	list *[]string
-}
-
-func (x *_QueryQuoteSwapRequest_10_list) Len() int {
-	if x.list == nil {
-		return 0
-	}
-	return len(*x.list)
-}
-
-func (x *_QueryQuoteSwapRequest_10_list) Get(i int) protoreflect.Value {
-	return protoreflect.ValueOfString((*x.list)[i])
-}
-
-func (x *_QueryQuoteSwapRequest_10_list) Set(i int, value protoreflect.Value) {
-	valueUnwrapped := value.String()
-	concreteValue := valueUnwrapped
-	(*x.list)[i] = concreteValue
-}
-
-func (x *_QueryQuoteSwapRequest_10_list) Append(value protoreflect.Value) {
-	valueUnwrapped := value.String()
-	concreteValue := valueUnwrapped
-	*x.list = append(*x.list, concreteValue)
-}
-
-func (x *_QueryQuoteSwapRequest_10_list) AppendMutable() protoreflect.Value {
-	panic(fmt.Errorf("AppendMutable can not be called on message QueryQuoteSwapRequest at list field AffiliateBps as it is not of Message kind"))
-}
-
-func (x *_QueryQuoteSwapRequest_10_list) Truncate(n int) {
-	*x.list = (*x.list)[:n]
-}
-
-func (x *_QueryQuoteSwapRequest_10_list) NewElement() protoreflect.Value {
-	v := ""
-	return protoreflect.ValueOfString(v)
-}
-
-func (x *_QueryQuoteSwapRequest_10_list) IsValid() bool {
-	return x.list != nil
-}
-
 var (
 	md_QueryQuoteSwapRequest                         protoreflect.MessageDescriptor
 	fd_QueryQuoteSwapRequest_from_asset              protoreflect.FieldDescriptor
@@ -253,14 +161,14 @@ func (x *fastReflection_QueryQuoteSwapRequest) Range(f func(protoreflect.FieldDe
 			return
 		}
 	}
-	if len(x.Affiliate) != 0 {
-		value := protoreflect.ValueOfList(&_QueryQuoteSwapRequest_9_list{list: &x.Affiliate})
+	if x.Affiliate != "" {
+		value := protoreflect.ValueOfString(x.Affiliate)
 		if !f(fd_QueryQuoteSwapRequest_affiliate, value) {
 			return
 		}
 	}
-	if len(x.AffiliateBps) != 0 {
-		value := protoreflect.ValueOfList(&_QueryQuoteSwapRequest_10_list{list: &x.AffiliateBps})
+	if x.AffiliateBps != "" {
+		value := protoreflect.ValueOfString(x.AffiliateBps)
 		if !f(fd_QueryQuoteSwapRequest_affiliate_bps, value) {
 			return
 		}
@@ -315,9 +223,9 @@ func (x *fastReflection_QueryQuoteSwapRequest) Has(fd protoreflect.FieldDescript
 	case "types.QueryQuoteSwapRequest.refund_address":
 		return x.RefundAddress != ""
 	case "types.QueryQuoteSwapRequest.affiliate":
-		return len(x.Affiliate) != 0
+		return x.Affiliate != ""
 	case "types.QueryQuoteSwapRequest.affiliate_bps":
-		return len(x.AffiliateBps) != 0
+		return x.AffiliateBps != ""
 	case "types.QueryQuoteSwapRequest.height":
 		return x.Height != ""
 	case "types.QueryQuoteSwapRequest.liquidity_tolerance_bps":
@@ -357,9 +265,9 @@ func (x *fastReflection_QueryQuoteSwapRequest) Clear(fd protoreflect.FieldDescri
 	case "types.QueryQuoteSwapRequest.refund_address":
 		x.RefundAddress = ""
 	case "types.QueryQuoteSwapRequest.affiliate":
-		x.Affiliate = nil
+		x.Affiliate = ""
 	case "types.QueryQuoteSwapRequest.affiliate_bps":
-		x.AffiliateBps = nil
+		x.AffiliateBps = ""
 	case "types.QueryQuoteSwapRequest.height":
 		x.Height = ""
 	case "types.QueryQuoteSwapRequest.liquidity_tolerance_bps":
@@ -407,17 +315,11 @@ func (x *fastReflection_QueryQuoteSwapRequest) Get(descriptor protoreflect.Field
 		value := x.RefundAddress
 		return protoreflect.ValueOfString(value)
 	case "types.QueryQuoteSwapRequest.affiliate":
-		if len(x.Affiliate) == 0 {
-			return protoreflect.ValueOfList(&_QueryQuoteSwapRequest_9_list{})
-		}
-		listValue := &_QueryQuoteSwapRequest_9_list{list: &x.Affiliate}
-		return protoreflect.ValueOfList(listValue)
+		value := x.Affiliate
+		return protoreflect.ValueOfString(value)
 	case "types.QueryQuoteSwapRequest.affiliate_bps":
-		if len(x.AffiliateBps) == 0 {
-			return protoreflect.ValueOfList(&_QueryQuoteSwapRequest_10_list{})
-		}
-		listValue := &_QueryQuoteSwapRequest_10_list{list: &x.AffiliateBps}
-		return protoreflect.ValueOfList(listValue)
+		value := x.AffiliateBps
+		return protoreflect.ValueOfString(value)
 	case "types.QueryQuoteSwapRequest.height":
 		value := x.Height
 		return protoreflect.ValueOfString(value)
@@ -464,13 +366,9 @@ func (x *fastReflection_QueryQuoteSwapRequest) Set(fd protoreflect.FieldDescript
 	case "types.QueryQuoteSwapRequest.refund_address":
 		x.RefundAddress = value.Interface().(string)
 	case "types.QueryQuoteSwapRequest.affiliate":
-		lv := value.List()
-		clv := lv.(*_QueryQuoteSwapRequest_9_list)
-		x.Affiliate = *clv.list
+		x.Affiliate = value.Interface().(string)
 	case "types.QueryQuoteSwapRequest.affiliate_bps":
-		lv := value.List()
-		clv := lv.(*_QueryQuoteSwapRequest_10_list)
-		x.AffiliateBps = *clv.list
+		x.AffiliateBps = value.Interface().(string)
 	case "types.QueryQuoteSwapRequest.height":
 		x.Height = value.Interface().(string)
 	case "types.QueryQuoteSwapRequest.liquidity_tolerance_bps":
@@ -497,18 +395,6 @@ func (x *fastReflection_QueryQuoteSwapRequest) Set(fd protoreflect.FieldDescript
 // Mutable is a mutating operation and unsafe for concurrent use.
 func (x *fastReflection_QueryQuoteSwapRequest) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
 	switch fd.FullName() {
-	case "types.QueryQuoteSwapRequest.affiliate":
-		if x.Affiliate == nil {
-			x.Affiliate = []string{}
-		}
-		value := &_QueryQuoteSwapRequest_9_list{list: &x.Affiliate}
-		return protoreflect.ValueOfList(value)
-	case "types.QueryQuoteSwapRequest.affiliate_bps":
-		if x.AffiliateBps == nil {
-			x.AffiliateBps = []string{}
-		}
-		value := &_QueryQuoteSwapRequest_10_list{list: &x.AffiliateBps}
-		return protoreflect.ValueOfList(value)
 	case "types.QueryQuoteSwapRequest.from_asset":
 		panic(fmt.Errorf("field from_asset of message types.QueryQuoteSwapRequest is not mutable"))
 	case "types.QueryQuoteSwapRequest.to_asset":
@@ -525,6 +411,10 @@ func (x *fastReflection_QueryQuoteSwapRequest) Mutable(fd protoreflect.FieldDesc
 		panic(fmt.Errorf("field tolerance_bps of message types.QueryQuoteSwapRequest is not mutable"))
 	case "types.QueryQuoteSwapRequest.refund_address":
 		panic(fmt.Errorf("field refund_address of message types.QueryQuoteSwapRequest is not mutable"))
+	case "types.QueryQuoteSwapRequest.affiliate":
+		panic(fmt.Errorf("field affiliate of message types.QueryQuoteSwapRequest is not mutable"))
+	case "types.QueryQuoteSwapRequest.affiliate_bps":
+		panic(fmt.Errorf("field affiliate_bps of message types.QueryQuoteSwapRequest is not mutable"))
 	case "types.QueryQuoteSwapRequest.height":
 		panic(fmt.Errorf("field height of message types.QueryQuoteSwapRequest is not mutable"))
 	case "types.QueryQuoteSwapRequest.liquidity_tolerance_bps":
@@ -561,11 +451,9 @@ func (x *fastReflection_QueryQuoteSwapRequest) NewField(fd protoreflect.FieldDes
 	case "types.QueryQuoteSwapRequest.refund_address":
 		return protoreflect.ValueOfString("")
 	case "types.QueryQuoteSwapRequest.affiliate":
-		list := []string{}
-		return protoreflect.ValueOfList(&_QueryQuoteSwapRequest_9_list{list: &list})
+		return protoreflect.ValueOfString("")
 	case "types.QueryQuoteSwapRequest.affiliate_bps":
-		list := []string{}
-		return protoreflect.ValueOfList(&_QueryQuoteSwapRequest_10_list{list: &list})
+		return protoreflect.ValueOfString("")
 	case "types.QueryQuoteSwapRequest.height":
 		return protoreflect.ValueOfString("")
 	case "types.QueryQuoteSwapRequest.liquidity_tolerance_bps":
@@ -673,17 +561,13 @@ func (x *fastReflection_QueryQuoteSwapRequest) ProtoMethods() *protoiface.Method
 		if l > 0 {
 			n += 1 + l + runtime.Sov(uint64(l))
 		}
-		if len(x.Affiliate) > 0 {
-			for _, s := range x.Affiliate {
-				l = len(s)
-				n += 1 + l + runtime.Sov(uint64(l))
-			}
+		l = len(x.Affiliate)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
 		}
-		if len(x.AffiliateBps) > 0 {
-			for _, s := range x.AffiliateBps {
-				l = len(s)
-				n += 1 + l + runtime.Sov(uint64(l))
-			}
+		l = len(x.AffiliateBps)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
 		}
 		l = len(x.Height)
 		if l > 0 {
@@ -750,22 +634,18 @@ func (x *fastReflection_QueryQuoteSwapRequest) ProtoMethods() *protoiface.Method
 			dAtA[i] = 0x5a
 		}
 		if len(x.AffiliateBps) > 0 {
-			for iNdEx := len(x.AffiliateBps) - 1; iNdEx >= 0; iNdEx-- {
-				i -= len(x.AffiliateBps[iNdEx])
-				copy(dAtA[i:], x.AffiliateBps[iNdEx])
-				i = runtime.EncodeVarint(dAtA, i, uint64(len(x.AffiliateBps[iNdEx])))
-				i--
-				dAtA[i] = 0x52
-			}
+			i -= len(x.AffiliateBps)
+			copy(dAtA[i:], x.AffiliateBps)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.AffiliateBps)))
+			i--
+			dAtA[i] = 0x52
 		}
 		if len(x.Affiliate) > 0 {
-			for iNdEx := len(x.Affiliate) - 1; iNdEx >= 0; iNdEx-- {
-				i -= len(x.Affiliate[iNdEx])
-				copy(dAtA[i:], x.Affiliate[iNdEx])
-				i = runtime.EncodeVarint(dAtA, i, uint64(len(x.Affiliate[iNdEx])))
-				i--
-				dAtA[i] = 0x4a
-			}
+			i -= len(x.Affiliate)
+			copy(dAtA[i:], x.Affiliate)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.Affiliate)))
+			i--
+			dAtA[i] = 0x4a
 		}
 		if len(x.RefundAddress) > 0 {
 			i -= len(x.RefundAddress)
@@ -1158,7 +1038,7 @@ func (x *fastReflection_QueryQuoteSwapRequest) ProtoMethods() *protoiface.Method
 				if postIndex > l {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
 				}
-				x.Affiliate = append(x.Affiliate, string(dAtA[iNdEx:postIndex]))
+				x.Affiliate = string(dAtA[iNdEx:postIndex])
 				iNdEx = postIndex
 			case 10:
 				if wireType != 2 {
@@ -1190,7 +1070,7 @@ func (x *fastReflection_QueryQuoteSwapRequest) ProtoMethods() *protoiface.Method
 				if postIndex > l {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
 				}
-				x.AffiliateBps = append(x.AffiliateBps, string(dAtA[iNdEx:postIndex]))
+				x.AffiliateBps = string(dAtA[iNdEx:postIndex])
 				iNdEx = postIndex
 			case 11:
 				if wireType != 2 {
@@ -2968,98 +2848,6 @@ func (x *fastReflection_QueryQuoteSwapResponse) ProtoMethods() *protoiface.Metho
 	}
 }
 
-var _ protoreflect.List = (*_QueryQuoteSaverDepositRequest_3_list)(nil)
-
-type _QueryQuoteSaverDepositRequest_3_list struct {
-	list *[]string
-}
-
-func (x *_QueryQuoteSaverDepositRequest_3_list) Len() int {
-	if x.list == nil {
-		return 0
-	}
-	return len(*x.list)
-}
-
-func (x *_QueryQuoteSaverDepositRequest_3_list) Get(i int) protoreflect.Value {
-	return protoreflect.ValueOfString((*x.list)[i])
-}
-
-func (x *_QueryQuoteSaverDepositRequest_3_list) Set(i int, value protoreflect.Value) {
-	valueUnwrapped := value.String()
-	concreteValue := valueUnwrapped
-	(*x.list)[i] = concreteValue
-}
-
-func (x *_QueryQuoteSaverDepositRequest_3_list) Append(value protoreflect.Value) {
-	valueUnwrapped := value.String()
-	concreteValue := valueUnwrapped
-	*x.list = append(*x.list, concreteValue)
-}
-
-func (x *_QueryQuoteSaverDepositRequest_3_list) AppendMutable() protoreflect.Value {
-	panic(fmt.Errorf("AppendMutable can not be called on message QueryQuoteSaverDepositRequest at list field Affiliate as it is not of Message kind"))
-}
-
-func (x *_QueryQuoteSaverDepositRequest_3_list) Truncate(n int) {
-	*x.list = (*x.list)[:n]
-}
-
-func (x *_QueryQuoteSaverDepositRequest_3_list) NewElement() protoreflect.Value {
-	v := ""
-	return protoreflect.ValueOfString(v)
-}
-
-func (x *_QueryQuoteSaverDepositRequest_3_list) IsValid() bool {
-	return x.list != nil
-}
-
-var _ protoreflect.List = (*_QueryQuoteSaverDepositRequest_4_list)(nil)
-
-type _QueryQuoteSaverDepositRequest_4_list struct {
-	list *[]string
-}
-
-func (x *_QueryQuoteSaverDepositRequest_4_list) Len() int {
-	if x.list == nil {
-		return 0
-	}
-	return len(*x.list)
-}
-
-func (x *_QueryQuoteSaverDepositRequest_4_list) Get(i int) protoreflect.Value {
-	return protoreflect.ValueOfString((*x.list)[i])
-}
-
-func (x *_QueryQuoteSaverDepositRequest_4_list) Set(i int, value protoreflect.Value) {
-	valueUnwrapped := value.String()
-	concreteValue := valueUnwrapped
-	(*x.list)[i] = concreteValue
-}
-
-func (x *_QueryQuoteSaverDepositRequest_4_list) Append(value protoreflect.Value) {
-	valueUnwrapped := value.String()
-	concreteValue := valueUnwrapped
-	*x.list = append(*x.list, concreteValue)
-}
-
-func (x *_QueryQuoteSaverDepositRequest_4_list) AppendMutable() protoreflect.Value {
-	panic(fmt.Errorf("AppendMutable can not be called on message QueryQuoteSaverDepositRequest at list field AffiliateBps as it is not of Message kind"))
-}
-
-func (x *_QueryQuoteSaverDepositRequest_4_list) Truncate(n int) {
-	*x.list = (*x.list)[:n]
-}
-
-func (x *_QueryQuoteSaverDepositRequest_4_list) NewElement() protoreflect.Value {
-	v := ""
-	return protoreflect.ValueOfString(v)
-}
-
-func (x *_QueryQuoteSaverDepositRequest_4_list) IsValid() bool {
-	return x.list != nil
-}
-
 var (
 	md_QueryQuoteSaverDepositRequest               protoreflect.MessageDescriptor
 	fd_QueryQuoteSaverDepositRequest_asset         protoreflect.FieldDescriptor
@@ -3156,14 +2944,14 @@ func (x *fastReflection_QueryQuoteSaverDepositRequest) Range(f func(protoreflect
 			return
 		}
 	}
-	if len(x.Affiliate) != 0 {
-		value := protoreflect.ValueOfList(&_QueryQuoteSaverDepositRequest_3_list{list: &x.Affiliate})
+	if x.Affiliate != "" {
+		value := protoreflect.ValueOfString(x.Affiliate)
 		if !f(fd_QueryQuoteSaverDepositRequest_affiliate, value) {
 			return
 		}
 	}
-	if len(x.AffiliateBps) != 0 {
-		value := protoreflect.ValueOfList(&_QueryQuoteSaverDepositRequest_4_list{list: &x.AffiliateBps})
+	if x.AffiliateBps != "" {
+		value := protoreflect.ValueOfString(x.AffiliateBps)
 		if !f(fd_QueryQuoteSaverDepositRequest_affiliate_bps, value) {
 			return
 		}
@@ -3194,9 +2982,9 @@ func (x *fastReflection_QueryQuoteSaverDepositRequest) Has(fd protoreflect.Field
 	case "types.QueryQuoteSaverDepositRequest.amount":
 		return x.Amount != ""
 	case "types.QueryQuoteSaverDepositRequest.affiliate":
-		return len(x.Affiliate) != 0
+		return x.Affiliate != ""
 	case "types.QueryQuoteSaverDepositRequest.affiliate_bps":
-		return len(x.AffiliateBps) != 0
+		return x.AffiliateBps != ""
 	case "types.QueryQuoteSaverDepositRequest.height":
 		return x.Height != ""
 	default:
@@ -3220,9 +3008,9 @@ func (x *fastReflection_QueryQuoteSaverDepositRequest) Clear(fd protoreflect.Fie
 	case "types.QueryQuoteSaverDepositRequest.amount":
 		x.Amount = ""
 	case "types.QueryQuoteSaverDepositRequest.affiliate":
-		x.Affiliate = nil
+		x.Affiliate = ""
 	case "types.QueryQuoteSaverDepositRequest.affiliate_bps":
-		x.AffiliateBps = nil
+		x.AffiliateBps = ""
 	case "types.QueryQuoteSaverDepositRequest.height":
 		x.Height = ""
 	default:
@@ -3248,17 +3036,11 @@ func (x *fastReflection_QueryQuoteSaverDepositRequest) Get(descriptor protorefle
 		value := x.Amount
 		return protoreflect.ValueOfString(value)
 	case "types.QueryQuoteSaverDepositRequest.affiliate":
-		if len(x.Affiliate) == 0 {
-			return protoreflect.ValueOfList(&_QueryQuoteSaverDepositRequest_3_list{})
-		}
-		listValue := &_QueryQuoteSaverDepositRequest_3_list{list: &x.Affiliate}
-		return protoreflect.ValueOfList(listValue)
+		value := x.Affiliate
+		return protoreflect.ValueOfString(value)
 	case "types.QueryQuoteSaverDepositRequest.affiliate_bps":
-		if len(x.AffiliateBps) == 0 {
-			return protoreflect.ValueOfList(&_QueryQuoteSaverDepositRequest_4_list{})
-		}
-		listValue := &_QueryQuoteSaverDepositRequest_4_list{list: &x.AffiliateBps}
-		return protoreflect.ValueOfList(listValue)
+		value := x.AffiliateBps
+		return protoreflect.ValueOfString(value)
 	case "types.QueryQuoteSaverDepositRequest.height":
 		value := x.Height
 		return protoreflect.ValueOfString(value)
@@ -3287,13 +3069,9 @@ func (x *fastReflection_QueryQuoteSaverDepositRequest) Set(fd protoreflect.Field
 	case "types.QueryQuoteSaverDepositRequest.amount":
 		x.Amount = value.Interface().(string)
 	case "types.QueryQuoteSaverDepositRequest.affiliate":
-		lv := value.List()
-		clv := lv.(*_QueryQuoteSaverDepositRequest_3_list)
-		x.Affiliate = *clv.list
+		x.Affiliate = value.Interface().(string)
 	case "types.QueryQuoteSaverDepositRequest.affiliate_bps":
-		lv := value.List()
-		clv := lv.(*_QueryQuoteSaverDepositRequest_4_list)
-		x.AffiliateBps = *clv.list
+		x.AffiliateBps = value.Interface().(string)
 	case "types.QueryQuoteSaverDepositRequest.height":
 		x.Height = value.Interface().(string)
 	default:
@@ -3316,22 +3094,14 @@ func (x *fastReflection_QueryQuoteSaverDepositRequest) Set(fd protoreflect.Field
 // Mutable is a mutating operation and unsafe for concurrent use.
 func (x *fastReflection_QueryQuoteSaverDepositRequest) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
 	switch fd.FullName() {
-	case "types.QueryQuoteSaverDepositRequest.affiliate":
-		if x.Affiliate == nil {
-			x.Affiliate = []string{}
-		}
-		value := &_QueryQuoteSaverDepositRequest_3_list{list: &x.Affiliate}
-		return protoreflect.ValueOfList(value)
-	case "types.QueryQuoteSaverDepositRequest.affiliate_bps":
-		if x.AffiliateBps == nil {
-			x.AffiliateBps = []string{}
-		}
-		value := &_QueryQuoteSaverDepositRequest_4_list{list: &x.AffiliateBps}
-		return protoreflect.ValueOfList(value)
 	case "types.QueryQuoteSaverDepositRequest.asset":
 		panic(fmt.Errorf("field asset of message types.QueryQuoteSaverDepositRequest is not mutable"))
 	case "types.QueryQuoteSaverDepositRequest.amount":
 		panic(fmt.Errorf("field amount of message types.QueryQuoteSaverDepositRequest is not mutable"))
+	case "types.QueryQuoteSaverDepositRequest.affiliate":
+		panic(fmt.Errorf("field affiliate of message types.QueryQuoteSaverDepositRequest is not mutable"))
+	case "types.QueryQuoteSaverDepositRequest.affiliate_bps":
+		panic(fmt.Errorf("field affiliate_bps of message types.QueryQuoteSaverDepositRequest is not mutable"))
 	case "types.QueryQuoteSaverDepositRequest.height":
 		panic(fmt.Errorf("field height of message types.QueryQuoteSaverDepositRequest is not mutable"))
 	default:
@@ -3352,11 +3122,9 @@ func (x *fastReflection_QueryQuoteSaverDepositRequest) NewField(fd protoreflect.
 	case "types.QueryQuoteSaverDepositRequest.amount":
 		return protoreflect.ValueOfString("")
 	case "types.QueryQuoteSaverDepositRequest.affiliate":
-		list := []string{}
-		return protoreflect.ValueOfList(&_QueryQuoteSaverDepositRequest_3_list{list: &list})
+		return protoreflect.ValueOfString("")
 	case "types.QueryQuoteSaverDepositRequest.affiliate_bps":
-		list := []string{}
-		return protoreflect.ValueOfList(&_QueryQuoteSaverDepositRequest_4_list{list: &list})
+		return protoreflect.ValueOfString("")
 	case "types.QueryQuoteSaverDepositRequest.height":
 		return protoreflect.ValueOfString("")
 	default:
@@ -3436,17 +3204,13 @@ func (x *fastReflection_QueryQuoteSaverDepositRequest) ProtoMethods() *protoifac
 		if l > 0 {
 			n += 1 + l + runtime.Sov(uint64(l))
 		}
-		if len(x.Affiliate) > 0 {
-			for _, s := range x.Affiliate {
-				l = len(s)
-				n += 1 + l + runtime.Sov(uint64(l))
-			}
+		l = len(x.Affiliate)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
 		}
-		if len(x.AffiliateBps) > 0 {
-			for _, s := range x.AffiliateBps {
-				l = len(s)
-				n += 1 + l + runtime.Sov(uint64(l))
-			}
+		l = len(x.AffiliateBps)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
 		}
 		l = len(x.Height)
 		if l > 0 {
@@ -3489,22 +3253,18 @@ func (x *fastReflection_QueryQuoteSaverDepositRequest) ProtoMethods() *protoifac
 			dAtA[i] = 0x2a
 		}
 		if len(x.AffiliateBps) > 0 {
-			for iNdEx := len(x.AffiliateBps) - 1; iNdEx >= 0; iNdEx-- {
-				i -= len(x.AffiliateBps[iNdEx])
-				copy(dAtA[i:], x.AffiliateBps[iNdEx])
-				i = runtime.EncodeVarint(dAtA, i, uint64(len(x.AffiliateBps[iNdEx])))
-				i--
-				dAtA[i] = 0x22
-			}
+			i -= len(x.AffiliateBps)
+			copy(dAtA[i:], x.AffiliateBps)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.AffiliateBps)))
+			i--
+			dAtA[i] = 0x22
 		}
 		if len(x.Affiliate) > 0 {
-			for iNdEx := len(x.Affiliate) - 1; iNdEx >= 0; iNdEx-- {
-				i -= len(x.Affiliate[iNdEx])
-				copy(dAtA[i:], x.Affiliate[iNdEx])
-				i = runtime.EncodeVarint(dAtA, i, uint64(len(x.Affiliate[iNdEx])))
-				i--
-				dAtA[i] = 0x1a
-			}
+			i -= len(x.Affiliate)
+			copy(dAtA[i:], x.Affiliate)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.Affiliate)))
+			i--
+			dAtA[i] = 0x1a
 		}
 		if len(x.Amount) > 0 {
 			i -= len(x.Amount)
@@ -3663,7 +3423,7 @@ func (x *fastReflection_QueryQuoteSaverDepositRequest) ProtoMethods() *protoifac
 				if postIndex > l {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
 				}
-				x.Affiliate = append(x.Affiliate, string(dAtA[iNdEx:postIndex]))
+				x.Affiliate = string(dAtA[iNdEx:postIndex])
 				iNdEx = postIndex
 			case 4:
 				if wireType != 2 {
@@ -3695,7 +3455,7 @@ func (x *fastReflection_QueryQuoteSaverDepositRequest) ProtoMethods() *protoifac
 				if postIndex > l {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
 				}
-				x.AffiliateBps = append(x.AffiliateBps, string(dAtA[iNdEx:postIndex]))
+				x.AffiliateBps = string(dAtA[iNdEx:postIndex])
 				iNdEx = postIndex
 			case 5:
 				if wireType != 2 {
@@ -7142,98 +6902,6 @@ func (x *fastReflection_QueryQuoteSaverWithdrawResponse) ProtoMethods() *protoif
 	}
 }
 
-var _ protoreflect.List = (*_QueryQuoteLoanOpenRequest_6_list)(nil)
-
-type _QueryQuoteLoanOpenRequest_6_list struct {
-	list *[]string
-}
-
-func (x *_QueryQuoteLoanOpenRequest_6_list) Len() int {
-	if x.list == nil {
-		return 0
-	}
-	return len(*x.list)
-}
-
-func (x *_QueryQuoteLoanOpenRequest_6_list) Get(i int) protoreflect.Value {
-	return protoreflect.ValueOfString((*x.list)[i])
-}
-
-func (x *_QueryQuoteLoanOpenRequest_6_list) Set(i int, value protoreflect.Value) {
-	valueUnwrapped := value.String()
-	concreteValue := valueUnwrapped
-	(*x.list)[i] = concreteValue
-}
-
-func (x *_QueryQuoteLoanOpenRequest_6_list) Append(value protoreflect.Value) {
-	valueUnwrapped := value.String()
-	concreteValue := valueUnwrapped
-	*x.list = append(*x.list, concreteValue)
-}
-
-func (x *_QueryQuoteLoanOpenRequest_6_list) AppendMutable() protoreflect.Value {
-	panic(fmt.Errorf("AppendMutable can not be called on message QueryQuoteLoanOpenRequest at list field Affiliate as it is not of Message kind"))
-}
-
-func (x *_QueryQuoteLoanOpenRequest_6_list) Truncate(n int) {
-	*x.list = (*x.list)[:n]
-}
-
-func (x *_QueryQuoteLoanOpenRequest_6_list) NewElement() protoreflect.Value {
-	v := ""
-	return protoreflect.ValueOfString(v)
-}
-
-func (x *_QueryQuoteLoanOpenRequest_6_list) IsValid() bool {
-	return x.list != nil
-}
-
-var _ protoreflect.List = (*_QueryQuoteLoanOpenRequest_7_list)(nil)
-
-type _QueryQuoteLoanOpenRequest_7_list struct {
-	list *[]string
-}
-
-func (x *_QueryQuoteLoanOpenRequest_7_list) Len() int {
-	if x.list == nil {
-		return 0
-	}
-	return len(*x.list)
-}
-
-func (x *_QueryQuoteLoanOpenRequest_7_list) Get(i int) protoreflect.Value {
-	return protoreflect.ValueOfString((*x.list)[i])
-}
-
-func (x *_QueryQuoteLoanOpenRequest_7_list) Set(i int, value protoreflect.Value) {
-	valueUnwrapped := value.String()
-	concreteValue := valueUnwrapped
-	(*x.list)[i] = concreteValue
-}
-
-func (x *_QueryQuoteLoanOpenRequest_7_list) Append(value protoreflect.Value) {
-	valueUnwrapped := value.String()
-	concreteValue := valueUnwrapped
-	*x.list = append(*x.list, concreteValue)
-}
-
-func (x *_QueryQuoteLoanOpenRequest_7_list) AppendMutable() protoreflect.Value {
-	panic(fmt.Errorf("AppendMutable can not be called on message QueryQuoteLoanOpenRequest at list field AffiliateBps as it is not of Message kind"))
-}
-
-func (x *_QueryQuoteLoanOpenRequest_7_list) Truncate(n int) {
-	*x.list = (*x.list)[:n]
-}
-
-func (x *_QueryQuoteLoanOpenRequest_7_list) NewElement() protoreflect.Value {
-	v := ""
-	return protoreflect.ValueOfString(v)
-}
-
-func (x *_QueryQuoteLoanOpenRequest_7_list) IsValid() bool {
-	return x.list != nil
-}
-
 var (
 	md_QueryQuoteLoanOpenRequest               protoreflect.MessageDescriptor
 	fd_QueryQuoteLoanOpenRequest_from_asset    protoreflect.FieldDescriptor
@@ -7354,14 +7022,14 @@ func (x *fastReflection_QueryQuoteLoanOpenRequest) Range(f func(protoreflect.Fie
 			return
 		}
 	}
-	if len(x.Affiliate) != 0 {
-		value := protoreflect.ValueOfList(&_QueryQuoteLoanOpenRequest_6_list{list: &x.Affiliate})
+	if x.Affiliate != "" {
+		value := protoreflect.ValueOfString(x.Affiliate)
 		if !f(fd_QueryQuoteLoanOpenRequest_affiliate, value) {
 			return
 		}
 	}
-	if len(x.AffiliateBps) != 0 {
-		value := protoreflect.ValueOfList(&_QueryQuoteLoanOpenRequest_7_list{list: &x.AffiliateBps})
+	if x.AffiliateBps != "" {
+		value := protoreflect.ValueOfString(x.AffiliateBps)
 		if !f(fd_QueryQuoteLoanOpenRequest_affiliate_bps, value) {
 			return
 		}
@@ -7398,9 +7066,9 @@ func (x *fastReflection_QueryQuoteLoanOpenRequest) Has(fd protoreflect.FieldDesc
 	case "types.QueryQuoteLoanOpenRequest.destination":
 		return x.Destination != ""
 	case "types.QueryQuoteLoanOpenRequest.affiliate":
-		return len(x.Affiliate) != 0
+		return x.Affiliate != ""
 	case "types.QueryQuoteLoanOpenRequest.affiliate_bps":
-		return len(x.AffiliateBps) != 0
+		return x.AffiliateBps != ""
 	case "types.QueryQuoteLoanOpenRequest.height":
 		return x.Height != ""
 	default:
@@ -7430,9 +7098,9 @@ func (x *fastReflection_QueryQuoteLoanOpenRequest) Clear(fd protoreflect.FieldDe
 	case "types.QueryQuoteLoanOpenRequest.destination":
 		x.Destination = ""
 	case "types.QueryQuoteLoanOpenRequest.affiliate":
-		x.Affiliate = nil
+		x.Affiliate = ""
 	case "types.QueryQuoteLoanOpenRequest.affiliate_bps":
-		x.AffiliateBps = nil
+		x.AffiliateBps = ""
 	case "types.QueryQuoteLoanOpenRequest.height":
 		x.Height = ""
 	default:
@@ -7467,17 +7135,11 @@ func (x *fastReflection_QueryQuoteLoanOpenRequest) Get(descriptor protoreflect.F
 		value := x.Destination
 		return protoreflect.ValueOfString(value)
 	case "types.QueryQuoteLoanOpenRequest.affiliate":
-		if len(x.Affiliate) == 0 {
-			return protoreflect.ValueOfList(&_QueryQuoteLoanOpenRequest_6_list{})
-		}
-		listValue := &_QueryQuoteLoanOpenRequest_6_list{list: &x.Affiliate}
-		return protoreflect.ValueOfList(listValue)
+		value := x.Affiliate
+		return protoreflect.ValueOfString(value)
 	case "types.QueryQuoteLoanOpenRequest.affiliate_bps":
-		if len(x.AffiliateBps) == 0 {
-			return protoreflect.ValueOfList(&_QueryQuoteLoanOpenRequest_7_list{})
-		}
-		listValue := &_QueryQuoteLoanOpenRequest_7_list{list: &x.AffiliateBps}
-		return protoreflect.ValueOfList(listValue)
+		value := x.AffiliateBps
+		return protoreflect.ValueOfString(value)
 	case "types.QueryQuoteLoanOpenRequest.height":
 		value := x.Height
 		return protoreflect.ValueOfString(value)
@@ -7512,13 +7174,9 @@ func (x *fastReflection_QueryQuoteLoanOpenRequest) Set(fd protoreflect.FieldDesc
 	case "types.QueryQuoteLoanOpenRequest.destination":
 		x.Destination = value.Interface().(string)
 	case "types.QueryQuoteLoanOpenRequest.affiliate":
-		lv := value.List()
-		clv := lv.(*_QueryQuoteLoanOpenRequest_6_list)
-		x.Affiliate = *clv.list
+		x.Affiliate = value.Interface().(string)
 	case "types.QueryQuoteLoanOpenRequest.affiliate_bps":
-		lv := value.List()
-		clv := lv.(*_QueryQuoteLoanOpenRequest_7_list)
-		x.AffiliateBps = *clv.list
+		x.AffiliateBps = value.Interface().(string)
 	case "types.QueryQuoteLoanOpenRequest.height":
 		x.Height = value.Interface().(string)
 	default:
@@ -7541,18 +7199,6 @@ func (x *fastReflection_QueryQuoteLoanOpenRequest) Set(fd protoreflect.FieldDesc
 // Mutable is a mutating operation and unsafe for concurrent use.
 func (x *fastReflection_QueryQuoteLoanOpenRequest) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
 	switch fd.FullName() {
-	case "types.QueryQuoteLoanOpenRequest.affiliate":
-		if x.Affiliate == nil {
-			x.Affiliate = []string{}
-		}
-		value := &_QueryQuoteLoanOpenRequest_6_list{list: &x.Affiliate}
-		return protoreflect.ValueOfList(value)
-	case "types.QueryQuoteLoanOpenRequest.affiliate_bps":
-		if x.AffiliateBps == nil {
-			x.AffiliateBps = []string{}
-		}
-		value := &_QueryQuoteLoanOpenRequest_7_list{list: &x.AffiliateBps}
-		return protoreflect.ValueOfList(value)
 	case "types.QueryQuoteLoanOpenRequest.from_asset":
 		panic(fmt.Errorf("field from_asset of message types.QueryQuoteLoanOpenRequest is not mutable"))
 	case "types.QueryQuoteLoanOpenRequest.to_asset":
@@ -7563,6 +7209,10 @@ func (x *fastReflection_QueryQuoteLoanOpenRequest) Mutable(fd protoreflect.Field
 		panic(fmt.Errorf("field min_out of message types.QueryQuoteLoanOpenRequest is not mutable"))
 	case "types.QueryQuoteLoanOpenRequest.destination":
 		panic(fmt.Errorf("field destination of message types.QueryQuoteLoanOpenRequest is not mutable"))
+	case "types.QueryQuoteLoanOpenRequest.affiliate":
+		panic(fmt.Errorf("field affiliate of message types.QueryQuoteLoanOpenRequest is not mutable"))
+	case "types.QueryQuoteLoanOpenRequest.affiliate_bps":
+		panic(fmt.Errorf("field affiliate_bps of message types.QueryQuoteLoanOpenRequest is not mutable"))
 	case "types.QueryQuoteLoanOpenRequest.height":
 		panic(fmt.Errorf("field height of message types.QueryQuoteLoanOpenRequest is not mutable"))
 	default:
@@ -7589,11 +7239,9 @@ func (x *fastReflection_QueryQuoteLoanOpenRequest) NewField(fd protoreflect.Fiel
 	case "types.QueryQuoteLoanOpenRequest.destination":
 		return protoreflect.ValueOfString("")
 	case "types.QueryQuoteLoanOpenRequest.affiliate":
-		list := []string{}
-		return protoreflect.ValueOfList(&_QueryQuoteLoanOpenRequest_6_list{list: &list})
+		return protoreflect.ValueOfString("")
 	case "types.QueryQuoteLoanOpenRequest.affiliate_bps":
-		list := []string{}
-		return protoreflect.ValueOfList(&_QueryQuoteLoanOpenRequest_7_list{list: &list})
+		return protoreflect.ValueOfString("")
 	case "types.QueryQuoteLoanOpenRequest.height":
 		return protoreflect.ValueOfString("")
 	default:
@@ -7685,17 +7333,13 @@ func (x *fastReflection_QueryQuoteLoanOpenRequest) ProtoMethods() *protoiface.Me
 		if l > 0 {
 			n += 1 + l + runtime.Sov(uint64(l))
 		}
-		if len(x.Affiliate) > 0 {
-			for _, s := range x.Affiliate {
-				l = len(s)
-				n += 1 + l + runtime.Sov(uint64(l))
-			}
+		l = len(x.Affiliate)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
 		}
-		if len(x.AffiliateBps) > 0 {
-			for _, s := range x.AffiliateBps {
-				l = len(s)
-				n += 1 + l + runtime.Sov(uint64(l))
-			}
+		l = len(x.AffiliateBps)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
 		}
 		l = len(x.Height)
 		if l > 0 {
@@ -7738,22 +7382,18 @@ func (x *fastReflection_QueryQuoteLoanOpenRequest) ProtoMethods() *protoiface.Me
 			dAtA[i] = 0x42
 		}
 		if len(x.AffiliateBps) > 0 {
-			for iNdEx := len(x.AffiliateBps) - 1; iNdEx >= 0; iNdEx-- {
-				i -= len(x.AffiliateBps[iNdEx])
-				copy(dAtA[i:], x.AffiliateBps[iNdEx])
-				i = runtime.EncodeVarint(dAtA, i, uint64(len(x.AffiliateBps[iNdEx])))
-				i--
-				dAtA[i] = 0x3a
-			}
+			i -= len(x.AffiliateBps)
+			copy(dAtA[i:], x.AffiliateBps)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.AffiliateBps)))
+			i--
+			dAtA[i] = 0x3a
 		}
 		if len(x.Affiliate) > 0 {
-			for iNdEx := len(x.Affiliate) - 1; iNdEx >= 0; iNdEx-- {
-				i -= len(x.Affiliate[iNdEx])
-				copy(dAtA[i:], x.Affiliate[iNdEx])
-				i = runtime.EncodeVarint(dAtA, i, uint64(len(x.Affiliate[iNdEx])))
-				i--
-				dAtA[i] = 0x32
-			}
+			i -= len(x.Affiliate)
+			copy(dAtA[i:], x.Affiliate)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.Affiliate)))
+			i--
+			dAtA[i] = 0x32
 		}
 		if len(x.Destination) > 0 {
 			i -= len(x.Destination)
@@ -8029,7 +7669,7 @@ func (x *fastReflection_QueryQuoteLoanOpenRequest) ProtoMethods() *protoiface.Me
 				if postIndex > l {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
 				}
-				x.Affiliate = append(x.Affiliate, string(dAtA[iNdEx:postIndex]))
+				x.Affiliate = string(dAtA[iNdEx:postIndex])
 				iNdEx = postIndex
 			case 7:
 				if wireType != 2 {
@@ -8061,7 +7701,7 @@ func (x *fastReflection_QueryQuoteLoanOpenRequest) ProtoMethods() *protoiface.Me
 				if postIndex > l {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
 				}
-				x.AffiliateBps = append(x.AffiliateBps, string(dAtA[iNdEx:postIndex]))
+				x.AffiliateBps = string(dAtA[iNdEx:postIndex])
 				iNdEx = postIndex
 			case 8:
 				if wireType != 2 {
@@ -13522,19 +13162,19 @@ type QueryQuoteSwapRequest struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	FromAsset             string   `protobuf:"bytes,1,opt,name=from_asset,json=fromAsset,proto3" json:"from_asset,omitempty"`
-	ToAsset               string   `protobuf:"bytes,2,opt,name=to_asset,json=toAsset,proto3" json:"to_asset,omitempty"`
-	Amount                string   `protobuf:"bytes,3,opt,name=amount,proto3" json:"amount,omitempty"`
-	StreamingInterval     string   `protobuf:"bytes,4,opt,name=streaming_interval,json=streamingInterval,proto3" json:"streaming_interval,omitempty"`
-	StreamingQuantity     string   `protobuf:"bytes,5,opt,name=streaming_quantity,json=streamingQuantity,proto3" json:"streaming_quantity,omitempty"`
-	Destination           string   `protobuf:"bytes,6,opt,name=destination,proto3" json:"destination,omitempty"`
-	ToleranceBps          string   `protobuf:"bytes,7,opt,name=tolerance_bps,json=toleranceBps,proto3" json:"tolerance_bps,omitempty"`
-	RefundAddress         string   `protobuf:"bytes,8,opt,name=refund_address,json=refundAddress,proto3" json:"refund_address,omitempty"`
-	Affiliate             []string `protobuf:"bytes,9,rep,name=affiliate,proto3" json:"affiliate,omitempty"`
-	AffiliateBps          []string `protobuf:"bytes,10,rep,name=affiliate_bps,json=affiliateBps,proto3" json:"affiliate_bps,omitempty"`
-	Height                string   `protobuf:"bytes,11,opt,name=height,proto3" json:"height,omitempty"`
-	LiquidityToleranceBps string   `protobuf:"bytes,12,opt,name=liquidity_tolerance_bps,json=liquidityToleranceBps,proto3" json:"liquidity_tolerance_bps,omitempty"`
-	Extended              bool     `protobuf:"varint,13,opt,name=extended,proto3" json:"extended,omitempty"`
+	FromAsset             string `protobuf:"bytes,1,opt,name=from_asset,json=fromAsset,proto3" json:"from_asset,omitempty"`
+	ToAsset               string `protobuf:"bytes,2,opt,name=to_asset,json=toAsset,proto3" json:"to_asset,omitempty"`
+	Amount                string `protobuf:"bytes,3,opt,name=amount,proto3" json:"amount,omitempty"`
+	StreamingInterval     string `protobuf:"bytes,4,opt,name=streaming_interval,json=streamingInterval,proto3" json:"streaming_interval,omitempty"`
+	StreamingQuantity     string `protobuf:"bytes,5,opt,name=streaming_quantity,json=streamingQuantity,proto3" json:"streaming_quantity,omitempty"`
+	Destination           string `protobuf:"bytes,6,opt,name=destination,proto3" json:"destination,omitempty"`
+	ToleranceBps          string `protobuf:"bytes,7,opt,name=tolerance_bps,json=toleranceBps,proto3" json:"tolerance_bps,omitempty"`
+	RefundAddress         string `protobuf:"bytes,8,opt,name=refund_address,json=refundAddress,proto3" json:"refund_address,omitempty"`
+	Affiliate             string `protobuf:"bytes,9,opt,name=affiliate,proto3" json:"affiliate,omitempty"`
+	AffiliateBps          string `protobuf:"bytes,10,opt,name=affiliate_bps,json=affiliateBps,proto3" json:"affiliate_bps,omitempty"`
+	Height                string `protobuf:"bytes,11,opt,name=height,proto3" json:"height,omitempty"`
+	LiquidityToleranceBps string `protobuf:"bytes,12,opt,name=liquidity_tolerance_bps,json=liquidityToleranceBps,proto3" json:"liquidity_tolerance_bps,omitempty"`
+	Extended              bool   `protobuf:"varint,13,opt,name=extended,proto3" json:"extended,omitempty"`
 }
 
 func (x *QueryQuoteSwapRequest) Reset() {
@@ -13613,18 +13253,18 @@ func (x *QueryQuoteSwapRequest) GetRefundAddress() string {
 	return ""
 }
 
-func (x *QueryQuoteSwapRequest) GetAffiliate() []string {
+func (x *QueryQuoteSwapRequest) GetAffiliate() string {
 	if x != nil {
 		return x.Affiliate
 	}
-	return nil
+	return ""
 }
 
-func (x *QueryQuoteSwapRequest) GetAffiliateBps() []string {
+func (x *QueryQuoteSwapRequest) GetAffiliateBps() string {
 	if x != nil {
 		return x.AffiliateBps
 	}
-	return nil
+	return ""
 }
 
 func (x *QueryQuoteSwapRequest) GetHeight() string {
@@ -13868,11 +13508,11 @@ type QueryQuoteSaverDepositRequest struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Asset        string   `protobuf:"bytes,1,opt,name=asset,proto3" json:"asset,omitempty"`
-	Amount       string   `protobuf:"bytes,2,opt,name=amount,proto3" json:"amount,omitempty"`
-	Affiliate    []string `protobuf:"bytes,3,rep,name=affiliate,proto3" json:"affiliate,omitempty"`
-	AffiliateBps []string `protobuf:"bytes,4,rep,name=affiliate_bps,json=affiliateBps,proto3" json:"affiliate_bps,omitempty"`
-	Height       string   `protobuf:"bytes,5,opt,name=height,proto3" json:"height,omitempty"`
+	Asset        string `protobuf:"bytes,1,opt,name=asset,proto3" json:"asset,omitempty"`
+	Amount       string `protobuf:"bytes,2,opt,name=amount,proto3" json:"amount,omitempty"`
+	Affiliate    string `protobuf:"bytes,3,opt,name=affiliate,proto3" json:"affiliate,omitempty"`
+	AffiliateBps string `protobuf:"bytes,4,opt,name=affiliate_bps,json=affiliateBps,proto3" json:"affiliate_bps,omitempty"`
+	Height       string `protobuf:"bytes,5,opt,name=height,proto3" json:"height,omitempty"`
 }
 
 func (x *QueryQuoteSaverDepositRequest) Reset() {
@@ -13909,18 +13549,18 @@ func (x *QueryQuoteSaverDepositRequest) GetAmount() string {
 	return ""
 }
 
-func (x *QueryQuoteSaverDepositRequest) GetAffiliate() []string {
+func (x *QueryQuoteSaverDepositRequest) GetAffiliate() string {
 	if x != nil {
 		return x.Affiliate
 	}
-	return nil
+	return ""
 }
 
-func (x *QueryQuoteSaverDepositRequest) GetAffiliateBps() []string {
+func (x *QueryQuoteSaverDepositRequest) GetAffiliateBps() string {
 	if x != nil {
 		return x.AffiliateBps
 	}
-	return nil
+	return ""
 }
 
 func (x *QueryQuoteSaverDepositRequest) GetHeight() string {
@@ -14352,14 +13992,14 @@ type QueryQuoteLoanOpenRequest struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	FromAsset    string   `protobuf:"bytes,1,opt,name=from_asset,json=fromAsset,proto3" json:"from_asset,omitempty"`
-	ToAsset      string   `protobuf:"bytes,2,opt,name=to_asset,json=toAsset,proto3" json:"to_asset,omitempty"`
-	Amount       string   `protobuf:"bytes,3,opt,name=amount,proto3" json:"amount,omitempty"`
-	MinOut       string   `protobuf:"bytes,4,opt,name=min_out,json=minOut,proto3" json:"min_out,omitempty"`
-	Destination  string   `protobuf:"bytes,5,opt,name=destination,proto3" json:"destination,omitempty"`
-	Affiliate    []string `protobuf:"bytes,6,rep,name=affiliate,proto3" json:"affiliate,omitempty"`
-	AffiliateBps []string `protobuf:"bytes,7,rep,name=affiliate_bps,json=affiliateBps,proto3" json:"affiliate_bps,omitempty"`
-	Height       string   `protobuf:"bytes,8,opt,name=height,proto3" json:"height,omitempty"`
+	FromAsset    string `protobuf:"bytes,1,opt,name=from_asset,json=fromAsset,proto3" json:"from_asset,omitempty"`
+	ToAsset      string `protobuf:"bytes,2,opt,name=to_asset,json=toAsset,proto3" json:"to_asset,omitempty"`
+	Amount       string `protobuf:"bytes,3,opt,name=amount,proto3" json:"amount,omitempty"`
+	MinOut       string `protobuf:"bytes,4,opt,name=min_out,json=minOut,proto3" json:"min_out,omitempty"`
+	Destination  string `protobuf:"bytes,5,opt,name=destination,proto3" json:"destination,omitempty"`
+	Affiliate    string `protobuf:"bytes,6,opt,name=affiliate,proto3" json:"affiliate,omitempty"`
+	AffiliateBps string `protobuf:"bytes,7,opt,name=affiliate_bps,json=affiliateBps,proto3" json:"affiliate_bps,omitempty"`
+	Height       string `protobuf:"bytes,8,opt,name=height,proto3" json:"height,omitempty"`
 }
 
 func (x *QueryQuoteLoanOpenRequest) Reset() {
@@ -14417,18 +14057,18 @@ func (x *QueryQuoteLoanOpenRequest) GetDestination() string {
 	return ""
 }
 
-func (x *QueryQuoteLoanOpenRequest) GetAffiliate() []string {
+func (x *QueryQuoteLoanOpenRequest) GetAffiliate() string {
 	if x != nil {
 		return x.Affiliate
 	}
-	return nil
+	return ""
 }
 
-func (x *QueryQuoteLoanOpenRequest) GetAffiliateBps() []string {
+func (x *QueryQuoteLoanOpenRequest) GetAffiliateBps() string {
 	if x != nil {
 		return x.AffiliateBps
 	}
-	return nil
+	return ""
 }
 
 func (x *QueryQuoteLoanOpenRequest) GetHeight() string {
@@ -15131,10 +14771,10 @@ var file_types_query_quotes_proto_rawDesc = []byte{
 	0x72, 0x61, 0x6e, 0x63, 0x65, 0x42, 0x70, 0x73, 0x12, 0x25, 0x0a, 0x0e, 0x72, 0x65, 0x66, 0x75,
 	0x6e, 0x64, 0x5f, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x18, 0x08, 0x20, 0x01, 0x28, 0x09,
 	0x52, 0x0d, 0x72, 0x65, 0x66, 0x75, 0x6e, 0x64, 0x41, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x12,
-	0x1c, 0x0a, 0x09, 0x61, 0x66, 0x66, 0x69, 0x6c, 0x69, 0x61, 0x74, 0x65, 0x18, 0x09, 0x20, 0x03,
+	0x1c, 0x0a, 0x09, 0x61, 0x66, 0x66, 0x69, 0x6c, 0x69, 0x61, 0x74, 0x65, 0x18, 0x09, 0x20, 0x01,
 	0x28, 0x09, 0x52, 0x09, 0x61, 0x66, 0x66, 0x69, 0x6c, 0x69, 0x61, 0x74, 0x65, 0x12, 0x23, 0x0a,
 	0x0d, 0x61, 0x66, 0x66, 0x69, 0x6c, 0x69, 0x61, 0x74, 0x65, 0x5f, 0x62, 0x70, 0x73, 0x18, 0x0a,
-	0x20, 0x03, 0x28, 0x09, 0x52, 0x0c, 0x61, 0x66, 0x66, 0x69, 0x6c, 0x69, 0x61, 0x74, 0x65, 0x42,
+	0x20, 0x01, 0x28, 0x09, 0x52, 0x0c, 0x61, 0x66, 0x66, 0x69, 0x6c, 0x69, 0x61, 0x74, 0x65, 0x42,
 	0x70, 0x73, 0x12, 0x16, 0x0a, 0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x18, 0x0b, 0x20, 0x01,
 	0x28, 0x09, 0x52, 0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x12, 0x36, 0x0a, 0x17, 0x6c, 0x69,
 	0x71, 0x75, 0x69, 0x64, 0x69, 0x74, 0x79, 0x5f, 0x74, 0x6f, 0x6c, 0x65, 0x72, 0x61, 0x6e, 0x63,
@@ -15217,9 +14857,9 @@ var file_types_query_quotes_proto_rawDesc = []byte{
 	0x74, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x05, 0x61, 0x73, 0x73, 0x65, 0x74, 0x12, 0x16,
 	0x0a, 0x06, 0x61, 0x6d, 0x6f, 0x75, 0x6e, 0x74, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06,
 	0x61, 0x6d, 0x6f, 0x75, 0x6e, 0x74, 0x12, 0x1c, 0x0a, 0x09, 0x61, 0x66, 0x66, 0x69, 0x6c, 0x69,
-	0x61, 0x74, 0x65, 0x18, 0x03, 0x20, 0x03, 0x28, 0x09, 0x52, 0x09, 0x61, 0x66, 0x66, 0x69, 0x6c,
+	0x61, 0x74, 0x65, 0x18, 0x03, 0x20, 0x01, 0x28, 0x09, 0x52, 0x09, 0x61, 0x66, 0x66, 0x69, 0x6c,
 	0x69, 0x61, 0x74, 0x65, 0x12, 0x23, 0x0a, 0x0d, 0x61, 0x66, 0x66, 0x69, 0x6c, 0x69, 0x61, 0x74,
-	0x65, 0x5f, 0x62, 0x70, 0x73, 0x18, 0x04, 0x20, 0x03, 0x28, 0x09, 0x52, 0x0c, 0x61, 0x66, 0x66,
+	0x65, 0x5f, 0x62, 0x70, 0x73, 0x18, 0x04, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0c, 0x61, 0x66, 0x66,
 	0x69, 0x6c, 0x69, 0x61, 0x74, 0x65, 0x42, 0x70, 0x73, 0x12, 0x16, 0x0a, 0x06, 0x68, 0x65, 0x69,
 	0x67, 0x68, 0x74, 0x18, 0x05, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x68, 0x65, 0x69, 0x67, 0x68,
 	0x74, 0x22, 0x89, 0x07, 0x0a, 0x1e, 0x51, 0x75, 0x65, 0x72, 0x79, 0x51, 0x75, 0x6f, 0x74, 0x65,
@@ -15359,9 +14999,9 @@ var file_types_query_quotes_proto_rawDesc = []byte{
 	0x0a, 0x0b, 0x64, 0x65, 0x73, 0x74, 0x69, 0x6e, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x18, 0x05, 0x20,
 	0x01, 0x28, 0x09, 0x52, 0x0b, 0x64, 0x65, 0x73, 0x74, 0x69, 0x6e, 0x61, 0x74, 0x69, 0x6f, 0x6e,
 	0x12, 0x1c, 0x0a, 0x09, 0x61, 0x66, 0x66, 0x69, 0x6c, 0x69, 0x61, 0x74, 0x65, 0x18, 0x06, 0x20,
-	0x03, 0x28, 0x09, 0x52, 0x09, 0x61, 0x66, 0x66, 0x69, 0x6c, 0x69, 0x61, 0x74, 0x65, 0x12, 0x23,
+	0x01, 0x28, 0x09, 0x52, 0x09, 0x61, 0x66, 0x66, 0x69, 0x6c, 0x69, 0x61, 0x74, 0x65, 0x12, 0x23,
 	0x0a, 0x0d, 0x61, 0x66, 0x66, 0x69, 0x6c, 0x69, 0x61, 0x74, 0x65, 0x5f, 0x62, 0x70, 0x73, 0x18,
-	0x07, 0x20, 0x03, 0x28, 0x09, 0x52, 0x0c, 0x61, 0x66, 0x66, 0x69, 0x6c, 0x69, 0x61, 0x74, 0x65,
+	0x07, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0c, 0x61, 0x66, 0x66, 0x69, 0x6c, 0x69, 0x61, 0x74, 0x65,
 	0x42, 0x70, 0x73, 0x12, 0x16, 0x0a, 0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x18, 0x08, 0x20,
 	0x01, 0x28, 0x09, 0x52, 0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x22, 0xf9, 0x0a, 0x0a, 0x1a,
 	0x51, 0x75, 0x65, 0x72, 0x79, 0x51, 0x75, 0x6f, 0x74, 0x65, 0x4c, 0x6f, 0x61, 0x6e, 0x4f, 0x70,

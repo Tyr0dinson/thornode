@@ -93,22 +93,48 @@ func quoteParseAddress(ctx cosmos.Context, mgr *Mgrs, addrString string, chain c
 }
 
 // parseMultipleAffiliateParams - attempts to parse one or more affiliates + affiliate
-// bps. skips any that are invalid
-func parseMultipleAffiliateParams(ctx cosmos.Context, mgr *Mgrs, affiliateParams, bpParams []string) ([]string, []sdkmath.Uint, sdkmath.Uint, error) {
+// bps from slash-separated strings. skips any that are invalid
+func parseMultipleAffiliateParams(ctx cosmos.Context, mgr *Mgrs, affiliateParam, bpParam string) ([]string, []sdkmath.Uint, sdkmath.Uint, error) {
 	affParams := make([]string, 0)
 	affiliateBps := make([]sdkmath.Uint, 0)
 	totalBps := sdkmath.ZeroUint()
 
+	// Split by slash to get individual values, filter out empty strings
+	var affiliateParams []string
+	var bpParams []string
+
+	if affiliateParam != "" {
+		parts := strings.Split(affiliateParam, "/")
+		for _, part := range parts {
+			if strings.TrimSpace(part) != "" {
+				affiliateParams = append(affiliateParams, strings.TrimSpace(part))
+			}
+		}
+	}
+
+	if bpParam != "" {
+		parts := strings.Split(bpParam, "/")
+		for _, part := range parts {
+			if strings.TrimSpace(part) != "" {
+				bpParams = append(bpParams, strings.TrimSpace(part))
+			}
+		}
+	}
+
 	// If there is only one bps defined, but multiple affiliates, apply the bps to all affiliates
 	if len(bpParams) == 1 && len(affiliateParams) > 1 {
+		bpValue := bpParams[0]
 		bpParams = make([]string, len(affiliateParams))
 		for i := range bpParams {
-			bpParams[i] = bpParams[0]
+			bpParams[i] = bpValue
 		}
 	}
 
 	if len(affiliateParams) > 0 {
 		for i, p := range affiliateParams {
+			if i >= len(bpParams) {
+				continue // skip if no corresponding bps
+			}
 			bpParam := bpParams[i]
 			bps, err := cosmos.ParseUint(bpParam)
 			if err != nil {
@@ -133,26 +159,34 @@ func parseMultipleAffiliateParams(ctx cosmos.Context, mgr *Mgrs, affiliateParams
 	return affParams, affiliateBps, totalBps, nil
 }
 
-func quoteHandleAffiliate(ctx cosmos.Context, mgr *Mgrs, affiliateParam, affiliateBpsParam []string, amount sdkmath.Uint) (affiliate common.Address, memo string, bps, newAmount, affiliateAmt sdkmath.Uint, err error) {
-	// parse affiliate
+func quoteHandleAffiliate(ctx cosmos.Context, mgr *Mgrs, affiliateParam, affiliateBpsParam string, amount sdkmath.Uint) (affiliate common.Address, memo string, bps, newAmount, affiliateAmt sdkmath.Uint, err error) {
+	// parse affiliate - take first one from slash-separated string
 	affAmt := cosmos.ZeroUint()
 	memo = "" // do not resolve thorname for the memo
-	if len(affiliateParam) > 0 {
-		affiliate, err = quoteParseAddress(ctx, mgr, affiliateParam[0], common.THORChain)
-		if err != nil {
-			err = fmt.Errorf("bad affiliate address: %w", err)
-			return
+	if affiliateParam != "" {
+		// Split and take first affiliate
+		affiliates := strings.Split(affiliateParam, "/")
+		if len(affiliates) > 0 && strings.TrimSpace(affiliates[0]) != "" {
+			affiliate, err = quoteParseAddress(ctx, mgr, strings.TrimSpace(affiliates[0]), common.THORChain)
+			if err != nil {
+				err = fmt.Errorf("bad affiliate address: %w", err)
+				return
+			}
+			memo = strings.TrimSpace(affiliates[0])
 		}
-		memo = affiliateParam[0]
 	}
 
-	// parse affiliate fee
+	// parse affiliate fee - take first one from slash-separated string
 	bps = sdkmath.NewUint(0)
-	if len(affiliateBpsParam) > 0 {
-		bps, err = sdkmath.ParseUint(affiliateBpsParam[0])
-		if err != nil {
-			err = fmt.Errorf("bad affiliate fee: %w", err)
-			return
+	if affiliateBpsParam != "" {
+		// Split and take first bps
+		bpsParams := strings.Split(affiliateBpsParam, "/")
+		if len(bpsParams) > 0 && strings.TrimSpace(bpsParams[0]) != "" {
+			bps, err = sdkmath.ParseUint(strings.TrimSpace(bpsParams[0]))
+			if err != nil {
+				err = fmt.Errorf("bad affiliate fee: %w", err)
+				return
+			}
 		}
 	}
 
