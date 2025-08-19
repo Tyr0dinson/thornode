@@ -1,6 +1,7 @@
 package thorchain
 
 import (
+	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
@@ -16,7 +17,7 @@ func (m UnbondMemo) GetAmount() cosmos.Uint           { return m.Amount }
 
 func NewUnbondMemo(addr, additional cosmos.AccAddress, amt cosmos.Uint) UnbondMemo {
 	return UnbondMemo{
-		MemoBase:            MemoBase{TxType: TxUnbond},
+		MemoBase:            MemoBase{TxType: common.TxUnbond},
 		NodeAddress:         addr,
 		Amount:              amt,
 		BondProviderAddress: additional,

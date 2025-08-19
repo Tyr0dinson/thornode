@@ -18,7 +18,7 @@ func (m OutboundMemo) String() string {
 
 func NewOutboundMemo(txID common.TxID) OutboundMemo {
 	return OutboundMemo{
-		MemoBase: MemoBase{TxType: TxOutbound},
+		MemoBase: MemoBase{TxType: common.TxOutbound},
 		TxID:     txID,
 	}
 }

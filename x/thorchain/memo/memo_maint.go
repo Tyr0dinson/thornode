@@ -3,6 +3,7 @@ package thorchain
 import (
 	"fmt"
 
+	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
@@ -15,7 +16,7 @@ type MaintMemo struct {
 // NewMaintMemo creates a new MaintMemo with the given node address
 func NewMaintMemo(addr cosmos.AccAddress) MaintMemo {
 	return MaintMemo{
-		MemoBase:    MemoBase{TxType: TxMaint},
+		MemoBase:    MemoBase{TxType: common.TxMaint},
 		NodeAddress: addr,
 	}
 }

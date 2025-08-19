@@ -396,12 +396,16 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 		return nil, nil, nil, fmt.Errorf("vault public key is empty")
 	}
 
-	memo, err := mem.ParseMemo(common.LatestVersion, tx.Memo)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("fail to parse memo(%s):%w", tx.Memo, err)
+	txType := tx.TxType
+	if txType.IsEmpty() {
+		memo, err := mem.ParseMemo(common.LatestVersion, tx.Memo)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("fail to parse memo(%s):%w", tx.Memo, err)
+		}
+		txType = memo.GetType()
 	}
 
-	if memo.IsInbound() {
+	if txType.IsInbound() {
 		return nil, nil, nil, fmt.Errorf("inbound memo should not be used for outbound tx")
 	}
 
@@ -431,17 +435,16 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 	dest := ecommon.HexToAddress(tx.ToAddress.String())
 	var data []byte
 
-	switch memo.GetType() {
-	case mem.TxOutbound, mem.TxRefund, mem.TxRagnarok:
+	switch txType {
+	case common.TxOutbound, common.TxRefund, common.TxRagnarok:
 		if tx.Aggregator == "" {
 			data, err = c.vaultABI.Pack("transferOut", dest, ecommon.HexToAddress(tokenAddr), value, tx.Memo)
 			if err != nil {
 				return nil, nil, nil, fmt.Errorf("fail to create data to call smart contract(transferOut): %w", err)
 			}
 		} else {
-			memoType := memo.GetType()
-			if memoType == mem.TxRefund || memoType == mem.TxRagnarok {
-				return nil, nil, nil, fmt.Errorf("%s can't use transferOutAndCall", memoType)
+			if txType == common.TxRefund || txType == common.TxRagnarok {
+				return nil, nil, nil, fmt.Errorf("%s can't use transferOutAndCall", txType)
 			}
 			c.logger.Info().Msgf("aggregator target address: %s", tx.AggregatorTargetAsset)
 			if ethValue.Uint64() == 0 {
@@ -468,7 +471,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 				return nil, nil, nil, fmt.Errorf("fail to create data to call smart contract(transferOutAndCall): %w", err)
 			}
 		}
-	case mem.TxMigrate:
+	case common.TxMigrate:
 		if tx.Aggregator != "" || tx.AggregatorTargetAsset != "" {
 			return nil, nil, nil, fmt.Errorf("migration can't use aggregator")
 		}

@@ -131,6 +131,7 @@ func (HandlerMigrateSuite) TestMigrateHappyPath(c *C) {
 		VaultPubKey: retireVault.PubKey,
 		Coin:        common.NewCoin(common.ETHAsset, cosmos.NewUint(1024)),
 		Memo:        NewMigrateMemo(1).String(),
+		TxType:      common.TxMigrate,
 	})
 	keeper := &TestMigrateKeeperHappyPath{
 		Keeper:            k,

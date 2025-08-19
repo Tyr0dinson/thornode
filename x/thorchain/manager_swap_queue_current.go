@@ -230,6 +230,7 @@ func (vm *SwapQueueVCUR) EndBlock(ctx cosmos.Context, mgr Manager) error {
 						Aggregator:            dexAgg,
 						AggregatorTargetAsset: dexAggTargetAsset,
 						AggregatorTargetLimit: pick.msg.AggregatorTargetLimit,
+						TxType:                TxOutbound,
 					}
 
 					if _, err := mgr.TxOutStore().TryAddTxOutItem(ctx, mgr, toi, cosmos.ZeroUint()); err != nil {

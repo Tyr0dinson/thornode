@@ -787,6 +787,7 @@ func (vm *ValidatorMgrVCUR) ragnarokBond(ctx cosmos.Context, nth int64, mgr Mana
 			Coin:       common.NewCoin(common.RuneAsset(), amt),
 			Memo:       memo,
 			ModuleName: BondName,
+			TxType:     TxRagnarok,
 		}
 		ok, err := vm.txOutStore.TryAddTxOutItem(ctx, mgr, txOutItem, cosmos.ZeroUint())
 		if err != nil {

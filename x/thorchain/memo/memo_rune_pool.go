@@ -29,7 +29,7 @@ func (m RunePoolDepositMemo) string(short bool) string {
 
 func NewRunePoolDepositMemo() RunePoolDepositMemo {
 	return RunePoolDepositMemo{
-		MemoBase: MemoBase{TxType: TxRunePoolDeposit},
+		MemoBase: MemoBase{TxType: common.TxRunePoolDeposit},
 	}
 }
 
@@ -53,13 +53,13 @@ func (m RunePoolWithdrawMemo) GetAffiliateBasisPoints() cosmos.Uint  { return m.
 func (m RunePoolWithdrawMemo) GetAffiliateTHORName() *types.THORName { return m.AffiliateTHORName }
 
 func (m RunePoolWithdrawMemo) String() string {
-	args := []string{TxRunePoolWithdraw.String(), m.BasisPoints.String(), m.AffiliateAddress.String(), m.AffiliateBasisPoints.String()}
+	args := []string{common.TxRunePoolWithdraw.String(), m.BasisPoints.String(), m.AffiliateAddress.String(), m.AffiliateBasisPoints.String()}
 	return strings.Join(args, ":")
 }
 
 func NewRunePoolWithdrawMemo(basisPoints cosmos.Uint, affAddr common.Address, affBps cosmos.Uint, tn types.THORName) RunePoolWithdrawMemo {
 	mem := RunePoolWithdrawMemo{
-		MemoBase:             MemoBase{TxType: TxRunePoolWithdraw},
+		MemoBase:             MemoBase{TxType: common.TxRunePoolWithdraw},
 		BasisPoints:          basisPoints,
 		AffiliateAddress:     affAddr,
 		AffiliateBasisPoints: affBps,

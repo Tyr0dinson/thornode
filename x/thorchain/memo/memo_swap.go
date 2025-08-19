@@ -65,7 +65,7 @@ func (m SwapMemo) string(short bool) string {
 
 	// prefer short notation for generate swap memo
 	txType := m.TxType.String()
-	if m.TxType == TxSwap {
+	if m.TxType == common.TxSwap {
 		txType = "="
 	}
 
@@ -128,7 +128,7 @@ func (m SwapMemo) string(short bool) string {
 
 func NewSwapMemo(asset common.Asset, dest common.Address, slip cosmos.Uint, affAddr common.Address, affPts cosmos.Uint, dexAgg, dexTargetAddress string, dexTargetLimit cosmos.Uint, swapType types.SwapType, quan, interval uint64, tn types.THORName, refundAddress common.Address, affiliates []string, affiliatesFeeBps []cosmos.Uint) SwapMemo {
 	swapMemo := SwapMemo{
-		MemoBase:              MemoBase{TxType: TxSwap, Asset: asset},
+		MemoBase:              MemoBase{TxType: common.TxSwap, Asset: asset},
 		Destination:           dest,
 		SlipLimit:             slip,
 		AffiliateAddress:      affAddr,
@@ -206,7 +206,7 @@ func (p *parser) ParseSwapMemoV3_0_0() (SwapMemo, error) {
 	}
 
 	var swapType types.SwapType
-	if strings.EqualFold(p.parts[0], TxLimitSwap.String()) && !slip.IsZero() {
+	if strings.EqualFold(p.parts[0], common.TxLimitSwap.String()) && !slip.IsZero() {
 		swapType = types.SwapType_limit
 	}
 

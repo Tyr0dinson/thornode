@@ -419,8 +419,9 @@ func quoteInboundInfo(ctx cosmos.Context, mgr *Mgrs, amount sdkmath.Uint, chain 
 
 func quoteOutboundInfo(ctx cosmos.Context, mgr *Mgrs, coin common.Coin) (int64, error) {
 	toi := TxOutItem{
-		Memo: "OUT:-",
-		Coin: coin,
+		Memo:   "OUT:-",
+		Coin:   coin,
+		TxType: TxOutbound,
 	}
 	outboundHeight, _, err := mgr.txOutStore.CalcTxOutHeight(ctx, mgr.GetVersion(), toi)
 	if err != nil {

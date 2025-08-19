@@ -1,6 +1,7 @@
 package thorchain
 
 import (
+	"gitlab.com/thorchain/thornode/v3/common"
 	cosmos "gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
@@ -11,7 +12,7 @@ type OperatorRotateMemo struct {
 
 func NewOperatorRotateMemo(operatorAddr cosmos.AccAddress) OperatorRotateMemo {
 	return OperatorRotateMemo{
-		MemoBase:        MemoBase{TxType: TxOperatorRotate},
+		MemoBase:        MemoBase{TxType: common.TxOperatorRotate},
 		OperatorAddress: operatorAddr,
 	}
 }

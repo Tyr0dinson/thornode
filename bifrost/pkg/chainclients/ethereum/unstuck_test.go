@@ -325,6 +325,7 @@ func (s *UnstuckTestSuite) TestUnstuckProcess(c *C) {
 		GasRate:     5,
 		InHash:      inHash,
 		Height:      800,
+		TxType:      common.TxOutbound,
 	}
 	stuckTxID := "0x88df016429689c079f3b2f6ad39fa052532c56795b733da78a91ebe6a713944b"
 	err = e.signerCacheManager.SetSigned(toi.CacheHash(), toi.CacheVault(e.GetChain()), stuckTxID)

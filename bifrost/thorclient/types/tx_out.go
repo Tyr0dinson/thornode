@@ -26,17 +26,18 @@ type TxOutItem struct {
 	Checkpoint            []byte         `json:"-"`
 	Height                int64          `json:"height"`
 	VaultPubKeyEddsa      common.PubKey  `json:"vault_pub_key_eddsa,omitempty"`
+	TxType                common.TxType  `json:"tx_type"`
 }
 
 // Hash return a sha256 hash that can uniquely represent the TxOutItem
 func (tx TxOutItem) Hash() string {
-	str := fmt.Sprintf("%s|%s|%s|%s|%s|%s", tx.Chain, tx.ToAddress, tx.VaultPubKey, tx.Coins, tx.Memo, tx.InHash)
+	str := fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s", tx.Chain, tx.ToAddress, tx.VaultPubKey, tx.Coins, tx.Memo, tx.InHash, tx.TxType)
 	return fmt.Sprintf("%X", sha256.Sum256([]byte(str)))
 }
 
 // CacheHash return a hash that doesn't include VaultPubKey , thus this one can be used as cache key for txOutItem across different vaults
 func (tx TxOutItem) CacheHash() string {
-	str := fmt.Sprintf("%s|%s|%s|%s|%s", tx.Chain, tx.ToAddress, tx.Coins, tx.Memo, tx.InHash)
+	str := fmt.Sprintf("%s|%s|%s|%s|%s|%s", tx.Chain, tx.ToAddress, tx.Coins, tx.Memo, tx.InHash, tx.TxType)
 	return fmt.Sprintf("%X", sha256.Sum256([]byte(str)))
 }
 
@@ -92,6 +93,9 @@ func (tx TxOutItem) Equals(tx2 TxOutItem) bool {
 	if !tx.VaultPubKeyEddsa.Equals(tx2.VaultPubKeyEddsa) {
 		return false
 	}
+	if !tx.TxType.Equals(tx2.TxType) {
+		return false
+	}
 	return true
 }
 
@@ -114,6 +118,7 @@ type TxArrayItem struct {
 	AggregatorTargetLimit *cosmos.Uint   `json:"aggregator_target_limit,omitempty"`
 	CloutSpent            string         `json:"clout_spent,omitempty"`
 	VaultPubKeyEddsa      common.PubKey  `json:"vault_pub_key_eddsa,omitempty"`
+	TxType                common.TxType  `json:"tx_type,omitempty"`
 }
 
 // TxOutItem convert the information to TxOutItem
@@ -133,6 +138,7 @@ func (tx TxArrayItem) TxOutItem(height int64) TxOutItem {
 		AggregatorTargetLimit: tx.AggregatorTargetLimit,
 		Height:                height,
 		VaultPubKeyEddsa:      tx.VaultPubKeyEddsa,
+		TxType:                tx.TxType,
 	}
 }
 

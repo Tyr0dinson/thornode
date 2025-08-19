@@ -483,7 +483,7 @@ func (c *Client) getTxIn(tx *btcjson.TxRawResult, height int64, isMemPool bool, 
 	if err != nil {
 		c.log.Debug().Err(err).Str("memo", memo).Msg("fail to parse memo")
 	}
-	output, err := c.getOutput(sender, tx, m.IsType(mem.TxConsolidate))
+	output, err := c.getOutput(sender, tx, m.IsType(common.TxConsolidate))
 	if err != nil {
 		if errors.Is(err, btypes.ErrFailOutputMatchCriteria) {
 			c.log.Debug().Int64("height", height).Str("txid", tx.Hash).Msg("ignore tx not matching format")

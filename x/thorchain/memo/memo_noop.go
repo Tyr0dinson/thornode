@@ -2,6 +2,8 @@ package thorchain
 
 import (
 	"fmt"
+
+	"gitlab.com/thorchain/thornode/v3/common"
 )
 
 type NoOpMemo struct {
@@ -20,7 +22,7 @@ func (m NoOpMemo) String() string {
 // NewNoOpMemo create a new instance of NoOpMemo
 func NewNoOpMemo(action string) NoOpMemo {
 	return NoOpMemo{
-		MemoBase: MemoBase{TxType: TxNoOp},
+		MemoBase: MemoBase{TxType: common.TxNoOp},
 		Action:   action,
 	}
 }

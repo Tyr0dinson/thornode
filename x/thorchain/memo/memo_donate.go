@@ -15,6 +15,6 @@ func (m DonateMemo) String() string {
 func (p *parser) ParseDonateMemo() (DonateMemo, error) {
 	asset := p.getAsset(1, true, common.EmptyAsset)
 	return DonateMemo{
-		MemoBase: MemoBase{TxType: TxDonate, Asset: asset},
+		MemoBase: MemoBase{TxType: common.TxDonate, Asset: asset},
 	}, p.Error()
 }

@@ -14,7 +14,7 @@ func (m SecuredAssetDepositMemo) GetAccAddress() cosmos.AccAddress { return m.Ad
 
 func NewSecuredAssetDepositMemo(addr cosmos.AccAddress) SecuredAssetDepositMemo {
 	return SecuredAssetDepositMemo{
-		MemoBase: MemoBase{TxType: TxSecuredAssetDeposit},
+		MemoBase: MemoBase{TxType: common.TxSecuredAssetDeposit},
 		Address:  addr,
 	}
 }
@@ -35,7 +35,7 @@ func (m SecuredAssetWithdrawMemo) GetAmount() cosmos.Uint     { return m.Amount 
 
 func NewSecuredAssetWithdrawMemo(addr common.Address) SecuredAssetWithdrawMemo {
 	return SecuredAssetWithdrawMemo{
-		MemoBase: MemoBase{TxType: TxSecuredAssetWithdraw},
+		MemoBase: MemoBase{TxType: common.TxSecuredAssetWithdraw},
 		Address:  addr,
 	}
 }

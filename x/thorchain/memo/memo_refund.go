@@ -21,7 +21,7 @@ func (m RefundMemo) String() string {
 // NewRefundMemo create a new RefundMemo
 func NewRefundMemo(txID common.TxID) RefundMemo {
 	return RefundMemo{
-		MemoBase: MemoBase{TxType: TxRefund},
+		MemoBase: MemoBase{TxType: common.TxRefund},
 		TxID:     txID,
 	}
 }

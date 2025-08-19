@@ -22,7 +22,7 @@ func (m ManageTHORNameMemo) GetBlockExpire() int64      { return m.Expire }
 
 func NewManageTHORNameMemo(name string, chain common.Chain, addr common.Address, expire int64, asset common.Asset, owner cosmos.AccAddress) ManageTHORNameMemo {
 	return ManageTHORNameMemo{
-		MemoBase:       MemoBase{TxType: TxTHORName},
+		MemoBase:       MemoBase{TxType: common.TxTHORName},
 		Name:           name,
 		Chain:          chain,
 		Address:        addr,

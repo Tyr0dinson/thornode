@@ -14,7 +14,7 @@ func (m TradeAccountDepositMemo) GetAccAddress() cosmos.AccAddress { return m.Ad
 
 func NewTradeAccountDepositMemo(addr cosmos.AccAddress) TradeAccountDepositMemo {
 	return TradeAccountDepositMemo{
-		MemoBase: MemoBase{TxType: TxTradeAccountDeposit},
+		MemoBase: MemoBase{TxType: common.TxTradeAccountDeposit},
 		Address:  addr,
 	}
 }
@@ -35,7 +35,7 @@ func (m TradeAccountWithdrawalMemo) GetAmount() cosmos.Uint     { return m.Amoun
 
 func NewTradeAccountWithdrawalMemo(addr common.Address) TradeAccountWithdrawalMemo {
 	return TradeAccountWithdrawalMemo{
-		MemoBase: MemoBase{TxType: TxTradeAccountWithdrawal},
+		MemoBase: MemoBase{TxType: common.TxTradeAccountWithdrawal},
 		Address:  addr,
 	}
 }

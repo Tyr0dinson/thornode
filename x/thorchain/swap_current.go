@@ -148,6 +148,7 @@ func (s *SwapperVCUR) Swap(ctx cosmos.Context,
 			Aggregator:            dexAgg,
 			AggregatorTargetAsset: dexAggTargetAsset,
 			AggregatorTargetLimit: dexAggLimit,
+			TxType:                TxOutbound,
 		}
 
 		// streaming swap outbounds are handled in the swap queue manager

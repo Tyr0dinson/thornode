@@ -15,7 +15,7 @@ func (m TCYClaimMemo) GetAddress() common.Address {
 
 func NewTCYClaimMemo(address common.Address) TCYClaimMemo {
 	return TCYClaimMemo{
-		MemoBase: MemoBase{TxType: TxTCYClaim},
+		MemoBase: MemoBase{TxType: common.TxTCYClaim},
 		Address:  address,
 	}
 }

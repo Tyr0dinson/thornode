@@ -1,6 +1,7 @@
 package thorchain
 
 import (
+	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
@@ -28,7 +29,7 @@ func NewRebondMemo(
 	amount cosmos.Uint,
 ) RebondMemo {
 	return RebondMemo{
-		MemoBase:               MemoBase{TxType: TxRebond},
+		MemoBase:               MemoBase{TxType: common.TxRebond},
 		NodeAddress:            nodeAddress,
 		NewBondProviderAddress: newProvider,
 		Amount:                 amount,

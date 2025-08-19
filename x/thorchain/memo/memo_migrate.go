@@ -2,6 +2,8 @@ package thorchain
 
 import (
 	"fmt"
+
+	"gitlab.com/thorchain/thornode/v3/common"
 )
 
 type MigrateMemo struct {
@@ -19,7 +21,7 @@ func (m MigrateMemo) GetBlockHeight() int64 {
 
 func NewMigrateMemo(blockHeight int64) MigrateMemo {
 	return MigrateMemo{
-		MemoBase:    MemoBase{TxType: TxMigrate},
+		MemoBase:    MemoBase{TxType: common.TxMigrate},
 		BlockHeight: blockHeight,
 	}
 }

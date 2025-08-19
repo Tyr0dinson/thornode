@@ -2,6 +2,8 @@ package thorchain
 
 import (
 	"fmt"
+
+	"gitlab.com/thorchain/thornode/v3/common"
 )
 
 type RagnarokMemo struct {
@@ -19,7 +21,7 @@ func (m RagnarokMemo) GetBlockHeight() int64 {
 
 func NewRagnarokMemo(blockHeight int64) RagnarokMemo {
 	return RagnarokMemo{
-		MemoBase:    MemoBase{TxType: TxRagnarok},
+		MemoBase:    MemoBase{TxType: common.TxRagnarok},
 		BlockHeight: blockHeight,
 	}
 }

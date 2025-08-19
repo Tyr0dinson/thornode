@@ -17,7 +17,7 @@ func (m WithdrawLiquidityMemo) GetWithdrawalAsset() common.Asset { return m.With
 
 func NewWithdrawLiquidityMemo(asset common.Asset, amt cosmos.Uint, withdrawalAsset common.Asset) WithdrawLiquidityMemo {
 	return WithdrawLiquidityMemo{
-		MemoBase:        MemoBase{TxType: TxWithdraw, Asset: asset},
+		MemoBase:        MemoBase{TxType: common.TxWithdraw, Asset: asset},
 		Amount:          amt,
 		WithdrawalAsset: withdrawalAsset,
 	}

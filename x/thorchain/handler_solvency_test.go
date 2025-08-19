@@ -107,6 +107,7 @@ func (s *HandlerSolvencyTestSuite) TestValidate(c *C) {
 			Coin:        common.NewCoin(common.ETHAsset, cosmos.NewUint(20*common.One)),
 			Memo:        "OUT:693c3337193b1185fb0a36d8b7ec3f612ad57e599fd25e7ad6ec887aae43b291",
 			InHash:      "693c3337193b1185fb0a36d8b7ec3f612ad57e599fd25e7ad6ec887aae43b291",
+			TxType:      TxOutbound,
 		},
 	}
 	c.Assert(mgr.Keeper().SetTxOut(ctx, txOut), IsNil)

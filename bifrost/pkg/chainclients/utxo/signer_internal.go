@@ -446,13 +446,13 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte) (*wire.MsgTx,
 		if gasAmtSats > maxGasCoin.Amount.Uint64() {
 			c.log.Info().Msgf("max gas: %s, however estimated gas need %d", tx.MaxGas, gasAmtSats)
 			gasAmtSats = maxGasCoin.Amount.Uint64()
-		} else if gasAmtSats < maxGasCoin.Amount.Uint64() && memo.GetType() == mem.TxMigrate {
+		} else if gasAmtSats < maxGasCoin.Amount.Uint64() && memo.GetType() == common.TxMigrate {
 			// if the tx spend less gas then the estimated MaxGas , then the extra can be added to the coinToCustomer
 			gap := maxGasCoin.Amount.Uint64() - gasAmtSats
 			c.log.Info().Msgf("max gas is: %s, however only: %d is required, gap: %d goes to the vault migrated to", tx.MaxGas, gasAmtSats, gap)
 			coinToCustomer.Amount = coinToCustomer.Amount.Add(cosmos.NewUint(gap))
 		}
-	} else if memo.GetType() == mem.TxConsolidate {
+	} else if memo.GetType() == common.TxConsolidate {
 		gap := gasAmtSats
 		c.log.Info().Msgf("consolidate tx, need gas: %d", gap)
 		coinToCustomer.Amount = common.SafeSub(coinToCustomer.Amount, cosmos.NewUint(gap))
@@ -638,6 +638,7 @@ func (c *Client) consolidateUTXOs() {
 			Memo:    mem.NewConsolidateMemo().String(),
 			MaxGas:  nil,
 			GasRate: int64(feeRate),
+			TxType:  common.TxConsolidate,
 		}
 		var height int64
 		height, err = c.bridge.GetBlockHeight()

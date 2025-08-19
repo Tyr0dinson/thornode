@@ -479,7 +479,7 @@ func (c *EVMClient) getOutboundTxData(txOutItem stypes.TxOutItem, memo mem.Memo,
 	toAddr := ecommon.HexToAddress(txOutItem.ToAddress.String())
 
 	switch memo.GetType() {
-	case mem.TxOutbound, mem.TxRefund, mem.TxRagnarok:
+	case common.TxOutbound, common.TxRefund, common.TxRagnarok:
 		if txOutItem.Aggregator == "" {
 			data, err = c.vaultABI.Pack("transferOut", toAddr, ecommon.HexToAddress(tokenAddr), value, txOutItem.Memo)
 			if err != nil {
@@ -487,7 +487,7 @@ func (c *EVMClient) getOutboundTxData(txOutItem stypes.TxOutItem, memo mem.Memo,
 			}
 		} else {
 			memoType := memo.GetType()
-			if memoType == mem.TxRefund || memoType == mem.TxRagnarok {
+			if memoType == common.TxRefund || memoType == common.TxRagnarok {
 				return nil, hasRouterUpdated, nil, fmt.Errorf("%s can't use transferOutAndCall", memoType)
 			}
 			c.logger.Info().Msgf("aggregator target asset address: %s", txOutItem.AggregatorTargetAsset)
@@ -515,7 +515,7 @@ func (c *EVMClient) getOutboundTxData(txOutItem stypes.TxOutItem, memo mem.Memo,
 				return nil, hasRouterUpdated, nil, fmt.Errorf("fail to create data to call smart contract(transferOutAndCall): %w", err)
 			}
 		}
-	case mem.TxMigrate:
+	case common.TxMigrate:
 		if txOutItem.Aggregator != "" || txOutItem.AggregatorTargetAsset != "" {
 			return nil, hasRouterUpdated, nil, fmt.Errorf("migration can't use aggregator")
 		}
@@ -543,7 +543,7 @@ func (c *EVMClient) buildOutboundTx(txOutItem stypes.TxOutItem, memo mem.Memo, n
 	if contractAddr.IsEmpty() {
 		// we may be churning from a vault that does not have a contract
 		// try getting the toAddress (new vault) contract instead
-		if memo.GetType() == mem.TxMigrate {
+		if memo.GetType() == common.TxMigrate {
 			contractAddr = c.getSmartContractByAddress(txOutItem.ToAddress)
 		}
 		if contractAddr.IsEmpty() {

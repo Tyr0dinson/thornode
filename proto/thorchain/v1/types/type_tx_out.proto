@@ -49,6 +49,8 @@ message TxOutItem {
     (gogoproto.casttype) = "gitlab.com/thorchain/thornode/v3/common.PubKey",
     (gogoproto.nullable) = true
   ];
+  int32 tx_type = 16 [ (gogoproto.casttype) =
+                           "gitlab.com/thorchain/thornode/v3/common.TxType" ];
 }
 
 message TxOut {

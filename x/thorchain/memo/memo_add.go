@@ -21,7 +21,7 @@ func (m AddLiquidityMemo) GetDestination() common.Address { return m.Address }
 
 func (m AddLiquidityMemo) String() string {
 	txType := m.TxType.String()
-	if m.TxType == TxAdd {
+	if m.TxType == common.TxAdd {
 		txType = "+"
 	}
 
@@ -46,7 +46,7 @@ func (m AddLiquidityMemo) String() string {
 
 func NewAddLiquidityMemo(asset common.Asset, addr, affAddr common.Address, affPts cosmos.Uint) AddLiquidityMemo {
 	return AddLiquidityMemo{
-		MemoBase:             MemoBase{TxType: TxAdd, Asset: asset},
+		MemoBase:             MemoBase{TxType: common.TxAdd, Asset: asset},
 		Address:              addr,
 		AffiliateAddress:     affAddr,
 		AffiliateBasisPoints: affPts,

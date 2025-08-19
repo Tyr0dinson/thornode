@@ -50,7 +50,7 @@ func (m LoanOpenMemo) string(short bool) string {
 	}
 
 	args := []string{
-		TxLoanOpen.String(),
+		common.TxLoanOpen.String(),
 		assetString,
 		m.TargetAddress.String(),
 		m.MinOut.String(),
@@ -82,7 +82,7 @@ func (m LoanOpenMemo) string(short bool) string {
 
 func NewLoanOpenMemo(targetAsset common.Asset, targetAddr common.Address, minOut cosmos.Uint, affAddr common.Address, affPts cosmos.Uint, dexAgg, dexTargetAddr string, dexTargetLimit cosmos.Uint, tn types.THORName) LoanOpenMemo {
 	return LoanOpenMemo{
-		MemoBase:             MemoBase{TxType: TxLoanOpen},
+		MemoBase:             MemoBase{TxType: common.TxLoanOpen},
 		TargetAsset:          targetAsset,
 		TargetAddress:        targetAddr,
 		MinOut:               minOut,
@@ -117,7 +117,7 @@ type LoanRepaymentMemo struct {
 }
 
 func (m LoanRepaymentMemo) String() string {
-	args := []string{TxLoanRepayment.String(), m.Asset.String(), m.Owner.String()}
+	args := []string{common.TxLoanRepayment.String(), m.Asset.String(), m.Owner.String()}
 	if !m.MinOut.IsZero() {
 		args = append(args, m.MinOut.String())
 	}
@@ -126,7 +126,7 @@ func (m LoanRepaymentMemo) String() string {
 
 func NewLoanRepaymentMemo(asset common.Asset, owner common.Address, minOut cosmos.Uint) LoanRepaymentMemo {
 	return LoanRepaymentMemo{
-		MemoBase: MemoBase{TxType: TxLoanRepayment, Asset: asset},
+		MemoBase: MemoBase{TxType: common.TxLoanRepayment, Asset: asset},
 		Owner:    owner,
 		MinOut:   minOut,
 	}

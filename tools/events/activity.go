@@ -20,7 +20,6 @@ import (
 	"gitlab.com/thorchain/thornode/v3/tools/events/pkg/util"
 	"gitlab.com/thorchain/thornode/v3/tools/thorscan"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain"
-	memo "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
@@ -76,7 +75,7 @@ func LargeUnconfirmedInbounds(block *thorscan.BlockResponse) {
 				// skip consolidate inbounds and trade/secured asset deposits
 				if tx.Tx.Memo != "" { // saver deposits have empty memo
 					memoParts := strings.Split(tx.Tx.Memo, ":")
-					memoType, err := memo.StringToTxType(memoParts[0])
+					memoType, err := common.StringToTxType(memoParts[0])
 					if err != nil {
 						log.Error().Err(err).
 							Int64("height", block.Header.Height).
@@ -84,7 +83,7 @@ func LargeUnconfirmedInbounds(block *thorscan.BlockResponse) {
 							Msg("failed to parse memo type")
 					}
 					switch memoType {
-					case memo.TxConsolidate, memo.TxTradeAccountDeposit, memo.TxSecuredAssetDeposit:
+					case common.TxConsolidate, common.TxTradeAccountDeposit, common.TxSecuredAssetDeposit:
 						continue
 					}
 				}
@@ -414,8 +413,8 @@ func rescheduledOutbounds(height int64, event map[string]string) bool {
 
 		// add track link for swaps
 		memoParts := strings.Split(*status.Tx.Memo, ":")
-		var memoType memo.TxType
-		memoType, err = memo.StringToTxType(memoParts[0])
+		var memoType common.TxType
+		memoType, err = common.StringToTxType(memoParts[0])
 		if err != nil {
 			log.Error().Err(err).Str("txid", event["in_hash"]).Msg("failed to parse memo type")
 		}
@@ -529,10 +528,10 @@ func scheduledOutbound(height int64, events []map[string]string) {
 			Int64("height", height).
 			Msg("failed to get transaction status")
 	}
-	memoType := memo.TxUnknown
+	memoType := common.TxUnknown
 	if status.Tx != nil {
 		memoParts := strings.Split(*status.Tx.Memo, ":")
-		memoType, err = memo.StringToTxType(memoParts[0])
+		memoType, err = common.StringToTxType(memoParts[0])
 		if err != nil {
 			log.Error().Err(err).Msg("failed to parse memo type")
 		}
@@ -540,7 +539,7 @@ func scheduledOutbound(height int64, events []map[string]string) {
 
 	// consider from address clout for swaps and trade/secured asset withdraws
 	switch memoType {
-	case memo.TxSwap, memo.TxTradeAccountWithdrawal, memo.TxSecuredAssetWithdraw:
+	case common.TxSwap, common.TxTradeAccountWithdrawal, common.TxSecuredAssetWithdraw:
 		clout := util.Clout(height, *status.Tx.FromAddress)
 		cloutUSD := util.USDValue(height, clout)
 		totalCloutUSD += uint64(cloutUSD)

@@ -365,6 +365,7 @@ func (s *EthereumSuite) TestClient(c *C) {
 	out := txOut.TxArray[0].TxOutItem(txOut.Height)
 	out.Chain = common.ETHChain
 	out.Memo = "OUT:B6BD1A69831B9CCC0A1E9939E9AFBFCA144C427B3F61E176EBDCB14E57981C1B"
+	out.TxType = common.TxOutbound
 	r, _, obs, err := e2.SignTx(out, 1)
 	c.Assert(err, IsNil)
 	c.Assert(r, NotNil)
@@ -482,6 +483,7 @@ func (s *EthereumSuite) TestSignETHTx(c *C) {
 		ToAddress:   addr,
 		VaultPubKey: e.localPubKey,
 		Memo:        "swap:ETH.ETH",
+		TxType:      common.TxSwap,
 	}, 1)
 	c.Assert(err, NotNil)
 	c.Assert(result, IsNil)
@@ -500,6 +502,7 @@ func (s *EthereumSuite) TestSignETHTx(c *C) {
 		},
 		GasRate: 10, // 10 gwei
 		Memo:    "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
+		TxType:  common.TxOutbound,
 	}, 1)
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
@@ -524,6 +527,7 @@ func (s *EthereumSuite) TestSignETHTx(c *C) {
 		},
 		GasRate: 1,
 		Memo:    "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
+		TxType:  common.TxOutbound,
 	}, 1)
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
@@ -545,6 +549,7 @@ func (s *EthereumSuite) TestSignETHTx(c *C) {
 		},
 		GasRate: 1,
 		Memo:    "REFUND:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
+		TxType:  common.TxRefund,
 	}, 1)
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
@@ -566,6 +571,7 @@ func (s *EthereumSuite) TestSignETHTx(c *C) {
 		},
 		GasRate: 1,
 		Memo:    "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
+		TxType:  common.TxOutbound,
 	}, 1)
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
@@ -587,6 +593,7 @@ func (s *EthereumSuite) TestSignETHTx(c *C) {
 		},
 		GasRate: 1,
 		Memo:    "MIGRATE:1024",
+		TxType:  common.TxMigrate,
 	}, 1)
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
@@ -608,6 +615,7 @@ func (s *EthereumSuite) TestSignETHTx(c *C) {
 		},
 		GasRate: 1,
 		Memo:    "MIGRATE:1024",
+		TxType:  common.TxMigrate,
 	}, 1)
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)

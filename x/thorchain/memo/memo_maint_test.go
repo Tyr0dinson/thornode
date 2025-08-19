@@ -6,6 +6,7 @@ import (
 	"github.com/blang/semver"
 	. "gopkg.in/check.v1"
 
+	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
@@ -30,7 +31,7 @@ func (s *MemoMaintSuite) TestMaintMemo(c *C) {
 	// Create parser and test ParseMaintMemo
 	parsedMemo, err := ParseMemo(semver.MustParse("1.0.0"), memo.String())
 	c.Assert(err, IsNil)
-	c.Assert(parsedMemo.GetType(), Equals, TxMaint)
+	c.Assert(parsedMemo.GetType(), Equals, common.TxMaint)
 
 	maintMemo, ok := parsedMemo.(MaintMemo)
 	c.Assert(ok, Equals, true)

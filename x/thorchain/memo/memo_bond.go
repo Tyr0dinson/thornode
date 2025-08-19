@@ -1,6 +1,7 @@
 package thorchain
 
 import (
+	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
@@ -15,7 +16,7 @@ func (m BondMemo) GetAccAddress() cosmos.AccAddress { return m.NodeAddress }
 
 func NewBondMemo(addr, additional cosmos.AccAddress, operatorFee int64) BondMemo {
 	return BondMemo{
-		MemoBase:            MemoBase{TxType: TxBond},
+		MemoBase:            MemoBase{TxType: common.TxBond},
 		NodeAddress:         addr,
 		BondProviderAddress: additional,
 		NodeOperatorFee:     operatorFee,

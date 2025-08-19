@@ -78,28 +78,28 @@ const (
 	BurnSupplyType = types.MintBurnSupplyType_burn
 
 	// Memos
-	TxSwap            = mem.TxSwap
-	TxLimitSwap       = mem.TxLimitSwap
-	TxModifyLimitSwap = mem.TxModifyLimitSwap
-	TxAdd             = mem.TxAdd
-	TxBond            = mem.TxBond
-	TxMigrate         = mem.TxMigrate
-	TxRagnarok        = mem.TxRagnarok
-	TxReserve         = mem.TxReserve
-	TxOutbound        = mem.TxOutbound
-	TxRefund          = mem.TxRefund
-	TxUnBond          = mem.TxUnbond
-	TxRebond          = mem.TxRebond
-	TxLeave           = mem.TxLeave
-	TxMaint           = mem.TxMaint
-	TxWithdraw        = mem.TxWithdraw
-	TxTHORName        = mem.TxTHORName
-	TxLoanOpen        = mem.TxLoanOpen
-	TxLoanRepayment   = mem.TxLoanRepayment
-	TxTCYClaim        = mem.TxTCYClaim
-	TxTCYStake        = mem.TxTCYStake
-	TxTCYUnstake      = mem.TxTCYUnstake
-	TxOperatorRotate  = mem.TxOperatorRotate
+	TxSwap            = common.TxSwap
+	TxLimitSwap       = common.TxLimitSwap
+	TxModifyLimitSwap = common.TxModifyLimitSwap
+	TxAdd             = common.TxAdd
+	TxBond            = common.TxBond
+	TxMigrate         = common.TxMigrate
+	TxRagnarok        = common.TxRagnarok
+	TxReserve         = common.TxReserve
+	TxOutbound        = common.TxOutbound
+	TxRefund          = common.TxRefund
+	TxUnBond          = common.TxUnbond
+	TxRebond          = common.TxRebond
+	TxLeave           = common.TxLeave
+	TxMaint           = common.TxMaint
+	TxWithdraw        = common.TxWithdraw
+	TxTHORName        = common.TxTHORName
+	TxLoanOpen        = common.TxLoanOpen
+	TxLoanRepayment   = common.TxLoanRepayment
+	TxTCYClaim        = common.TxTCYClaim
+	TxTCYStake        = common.TxTCYStake
+	TxTCYUnstake      = common.TxTCYUnstake
+	TxOperatorRotate  = common.TxOperatorRotate
 )
 
 var (

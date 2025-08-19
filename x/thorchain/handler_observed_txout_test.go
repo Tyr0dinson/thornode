@@ -213,6 +213,7 @@ func (s *HandlerObservedTxOutSuite) TestHandle(c *C) {
 		VaultPubKey: vault.PubKey,
 		Coin:        tx.Coins[0],
 		Memo:        tx.Memo,
+		TxType:      TxOutbound,
 	})
 	keeper.txOutStore = txOutStore
 
@@ -310,6 +311,7 @@ func (s *HandlerObservedTxOutSuite) TestHandleFailedTransaction(c *C) {
 		VaultPubKey: vault.PubKey,
 		Coin:        common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One)), // Different from the observed Amount.
 		Memo:        tx.Memo,
+		TxType:      TxOutbound,
 	})
 	keeper.txOutStore = txOutStore
 

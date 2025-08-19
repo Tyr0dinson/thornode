@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"strings"
 
+	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
@@ -15,13 +16,13 @@ type ExecMemo struct {
 
 func (m ExecMemo) GetAccAddress() cosmos.AccAddress { return m.ContractAddress }
 func (m ExecMemo) String() string {
-	args := []string{TxExec.String(), m.ContractAddress.String(), base64.StdEncoding.EncodeToString(m.Msg)}
+	args := []string{common.TxExec.String(), m.ContractAddress.String(), base64.StdEncoding.EncodeToString(m.Msg)}
 	return strings.Join(args, ":")
 }
 
 func NewExecMemo(contract cosmos.AccAddress, msg []byte) ExecMemo {
 	return ExecMemo{
-		MemoBase:        MemoBase{TxType: TxExec},
+		MemoBase:        MemoBase{TxType: common.TxExec},
 		ContractAddress: contract,
 		Msg:             msg,
 	}

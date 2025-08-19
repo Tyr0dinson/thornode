@@ -2,6 +2,8 @@ package thorchain
 
 import (
 	"cosmossdk.io/math"
+
+	"gitlab.com/thorchain/thornode/v3/common"
 )
 
 type TCYUnstakeMemo struct {
@@ -11,7 +13,7 @@ type TCYUnstakeMemo struct {
 
 func NewTCYUnstakeMemo(basisPoints math.Uint) TCYUnstakeMemo {
 	return TCYUnstakeMemo{
-		MemoBase:    MemoBase{TxType: TxTCYUnstake},
+		MemoBase:    MemoBase{TxType: common.TxTCYUnstake},
 		BasisPoints: basisPoints,
 	}
 }

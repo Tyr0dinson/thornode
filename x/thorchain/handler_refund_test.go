@@ -188,6 +188,7 @@ func newRefundTxHandlerTestHelper(c *C, txIds ...common.TxID) refundTxHandlerTes
 		Coin:        common.NewCoin(common.ETHAsset, cosmos.NewUint(2*common.One)),
 		Memo:        NewRefundMemo(tx.Tx.ID).String(),
 		InHash:      tx.Tx.ID,
+		TxType:      common.TxRefund,
 	}
 	result, err := txOutStorage.TryAddTxOutItem(ctx, mgr, toi, cosmos.ZeroUint())
 	c.Assert(err, IsNil)

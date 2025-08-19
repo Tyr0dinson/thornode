@@ -18,7 +18,7 @@ func (m ModifyLimitSwapMemo) GetModifiedTargetAmount() cosmos.Uint { return m.Mo
 
 func NewModifyLimitSwapMemo(source, target common.Coin, mod cosmos.Uint) ModifyLimitSwapMemo {
 	return ModifyLimitSwapMemo{
-		MemoBase:             MemoBase{TxType: TxModifyLimitSwap},
+		MemoBase:             MemoBase{TxType: common.TxModifyLimitSwap},
 		Source:               source,
 		Target:               target,
 		ModifiedTargetAmount: mod,

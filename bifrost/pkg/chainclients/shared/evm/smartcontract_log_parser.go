@@ -216,7 +216,7 @@ func (scp *SmartContractLogParser) GetTxInItem(logs []*etypes.Log, txInItem *typ
 				scp.logger.Err(err).Str("memo", transferOutEvt.Memo).Msg("failed to parse transferOutEvent memo")
 				continue
 			}
-			if !m.IsOutbound() && !m.IsType(memo.TxMigrate) {
+			if !m.IsOutbound() && !m.IsType(common.TxMigrate) {
 				scp.logger.Error().Str("memo", transferOutEvt.Memo).Msg("incorrect memo for transferOutEvent")
 				continue
 			}
@@ -264,7 +264,7 @@ func (scp *SmartContractLogParser) GetTxInItem(logs []*etypes.Log, txInItem *typ
 				scp.logger.Err(err).Str("memo", transferAllowanceEvt.Memo).Msg("failed to parse transferAllowanceEvt memo")
 				continue
 			}
-			if !m.IsType(memo.TxMigrate) {
+			if !m.IsType(common.TxMigrate) {
 				scp.logger.Error().Str("memo", transferAllowanceEvt.Memo).Msg("incorrect memo for transferAllowanceEvt")
 				continue
 			}
@@ -298,7 +298,7 @@ func (scp *SmartContractLogParser) GetTxInItem(logs []*etypes.Log, txInItem *typ
 				scp.logger.Err(err).Msgf("fail to parse memo: %s", transferOutAndCall.Memo)
 				continue
 			}
-			if !m.IsType(memo.TxOutbound) {
+			if !m.IsType(common.TxOutbound) {
 				scp.logger.Error().Msgf("%s is not an outbound memo", transferOutAndCall.Memo)
 				continue
 			}

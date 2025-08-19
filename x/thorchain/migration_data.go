@@ -813,6 +813,7 @@ func mainnetManualOutbounds6to7(ctx cosmos.Context, mgr *Mgrs) ([]TxOutItem, err
 		Coin:        common.NewCoin(ethUSDT, cosmos.NewUint(2999900000000)),
 		Memo:        memo,
 		MaxGas:      common.Gas{maxGasCoinETH},
+		TxType:      common.TxOutbound,
 	})
 
 	// use txid of first inbound for this vault
@@ -830,6 +831,7 @@ func mainnetManualOutbounds6to7(ctx cosmos.Context, mgr *Mgrs) ([]TxOutItem, err
 		Coin:        common.NewCoin(ethUSDT, cosmos.NewUint(20000000000000)),
 		Memo:        memo,
 		MaxGas:      common.Gas{maxGasCoinETH},
+		TxType:      common.TxOutbound,
 	})
 
 	txid = common.TxID("000CC8B3941908D4025CC4B9059622997A6B8745734B474BFEE43AD688729CF3")
@@ -846,6 +848,7 @@ func mainnetManualOutbounds6to7(ctx cosmos.Context, mgr *Mgrs) ([]TxOutItem, err
 		Coin:        common.NewCoin(bscUSDT, cosmos.NewUint(500000000000)),
 		Memo:        memo,
 		MaxGas:      common.Gas{maxGasCoinBSC},
+		TxType:      common.TxOutbound,
 	})
 
 	return manualOutbounds, nil

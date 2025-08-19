@@ -421,6 +421,7 @@ func (s *HandlerObservedTxInSuite) TestMigrateMemo(c *C) {
 		VaultPubKey: vault.PubKey,
 		Coin:        common.NewCoin(common.ETHAsset, cosmos.NewUint(1024)),
 		Memo:        NewMigrateMemo(1).String(),
+		TxType:      TxMigrate,
 	})
 	tx := NewObservedTx(common.Tx{
 		ID:    GetRandomTxHash(),

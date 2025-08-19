@@ -147,9 +147,13 @@ func (h WithdrawLiquidityHandler) handleV3_0_0(ctx cosmos.Context, msg MsgWithdr
 	memolessOutboundMimir, _ := h.mgr.Keeper().GetMimir(ctx, constants.MimirKeyMemolessOutbound)
 	memolessOutboundActive := memolessOutboundMimir > 0
 	memo := ""
-	if !memolessOutboundActive && msg.Tx.ID.Equals(common.BlankTxID) {
+	var txType common.TxType
+	if msg.Tx.ID.Equals(common.BlankTxID) {
 		// tx id is blank, must be triggered by the ragnarok protocol
-		memo = NewRagnarokMemo(ctx.BlockHeight()).String()
+		txType = TxRagnarok
+		if !memolessOutboundActive {
+			memo = NewRagnarokMemo(ctx.BlockHeight()).String()
+		}
 	}
 
 	// Thanks to CacheContext, the withdraw event can be emitted before handling outbounds,
@@ -198,6 +202,7 @@ func (h WithdrawLiquidityHandler) handleV3_0_0(ctx cosmos.Context, msg MsgWithdr
 			ToAddress: addr,
 			Coin:      coin,
 			Memo:      memo,
+			TxType:    txType,
 		}
 		if !gasAsset.IsZero() {
 			// TODO: chain specific logic should be in a single location

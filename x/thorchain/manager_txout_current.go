@@ -185,6 +185,10 @@ func (tos *TxOutStorageVCUR) takeAffiliateFee(ctx cosmos.Context, mgr Manager, t
 		if strings.Split(toi.Memo, ":")[0] == constants.MemoPrefixRefund || strings.Split(toi.Memo, ":")[0] == constants.MemoPrefixMigrate {
 			return toi.Coin.Amount, nil
 		}
+	} else {
+		if toi.TxType == common.TxRefund || toi.TxType == common.TxMigrate {
+			return toi.Coin.Amount, nil
+		}
 	}
 
 	// Get inbound tx
@@ -610,10 +614,13 @@ func (tos *TxOutStorageVCUR) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 
 		var memo memo.Memo
 		feeDeduction := false
-		// If the memo is unparsable, or Ragnarok, don't deduct an outbound fee.
 		if !memolessOutboundActive {
+			// If the memo is unparsable, or Ragnarok, don't deduct an outbound fee.
 			memo, err = ParseMemoWithTHORNames(ctx, tos.keeper, outputs[i].Memo)
 			feeDeduction = (err == nil && !memo.IsType(TxRagnarok))
+		} else {
+			// If the tx is Ragnarok, don't deduct an outbound fee
+			feeDeduction = toi.TxType != common.TxRagnarok
 		}
 
 		// THORChain txouts by nature allow fee deduction, but InactiveVault outbounds
@@ -644,7 +651,13 @@ func (tos *TxOutStorageVCUR) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 
 		// Deduct OutboundTransactionFee from TOI and add to Reserve.
 		// Migrate transaction coins remain in their pools and their gas costs are covered by the Reserve.
-		if feeDeduction && !memo.IsType(TxMigrate) && !toi.ToAddress.Equals(lendAddr) {
+		var isMigrate bool
+		if !memolessOutboundActive {
+			isMigrate = memo.IsType(TxMigrate)
+		} else {
+			isMigrate = (toi.TxType == common.TxMigrate)
+		}
+		if feeDeduction && !isMigrate && !toi.ToAddress.Equals(lendAddr) {
 			if outputs[i].Coin.Asset.IsRune() {
 				runeFee := transactionFeeAmount // Fee is the prescribed RUNE fee
 				if runeFee.GT(outputs[i].Coin.Amount) {

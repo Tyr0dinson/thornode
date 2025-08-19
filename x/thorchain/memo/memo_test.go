@@ -103,8 +103,8 @@ func (s *MemoSuite) SetUpSuite(c *C) {
 }
 
 func (s *MemoSuite) TestTxType(c *C) {
-	for _, trans := range []TxType{TxAdd, TxWithdraw, TxSwap, TxOutbound, TxDonate, TxBond, TxUnbond, TxLeave} {
-		tx, err := StringToTxType(trans.String())
+	for _, trans := range []common.TxType{common.TxAdd, common.TxWithdraw, common.TxSwap, common.TxOutbound, common.TxDonate, common.TxBond, common.TxUnbond, common.TxLeave} {
+		tx, err := common.StringToTxType(trans.String())
 		c.Assert(err, IsNil)
 		c.Check(tx, Equals, trans)
 		c.Check(tx.IsEmpty(), Equals, false)
@@ -119,7 +119,7 @@ func (s *MemoSuite) TestParseWithAbbreviated(c *C) {
 	memo, err := ParseMemoWithTHORNames(ctx, k, "d:"+common.RuneAsset().String())
 	c.Assert(err, IsNil)
 	c.Check(memo.GetAsset().String(), Equals, common.RuneAsset().String())
-	c.Check(memo.IsType(TxDonate), Equals, true, Commentf("MEMO: %+v", memo))
+	c.Check(memo.IsType(common.TxDonate), Equals, true, Commentf("MEMO: %+v", memo))
 	c.Check(memo.IsInbound(), Equals, true)
 	c.Check(memo.IsInternal(), Equals, false)
 	c.Check(memo.IsOutbound(), Equals, false)
@@ -127,7 +127,7 @@ func (s *MemoSuite) TestParseWithAbbreviated(c *C) {
 	memo, err = ParseMemoWithTHORNames(ctx, k, "+:"+common.RuneAsset().String())
 	c.Assert(err, IsNil)
 	c.Check(memo.GetAsset().String(), Equals, common.RuneAsset().String())
-	c.Check(memo.IsType(TxAdd), Equals, true, Commentf("MEMO: %+v", memo))
+	c.Check(memo.IsType(common.TxAdd), Equals, true, Commentf("MEMO: %+v", memo))
 	c.Check(memo.IsInbound(), Equals, true)
 	c.Check(memo.IsInternal(), Equals, false)
 	c.Check(memo.IsOutbound(), Equals, false)
@@ -138,7 +138,7 @@ func (s *MemoSuite) TestParseWithAbbreviated(c *C) {
 	memo, err = ParseMemoWithTHORNames(ctx, k, fmt.Sprintf("-:%s:25", common.RuneAsset().String()))
 	c.Assert(err, IsNil)
 	c.Check(memo.GetAsset().String(), Equals, common.RuneAsset().String())
-	c.Check(memo.IsType(TxWithdraw), Equals, true, Commentf("MEMO: %+v", memo))
+	c.Check(memo.IsType(common.TxWithdraw), Equals, true, Commentf("MEMO: %+v", memo))
 	c.Check(memo.GetAmount().Uint64(), Equals, uint64(25), Commentf("%d", memo.GetAmount().Uint64()))
 	c.Check(memo.IsInbound(), Equals, true)
 	c.Check(memo.IsInternal(), Equals, false)
@@ -147,7 +147,7 @@ func (s *MemoSuite) TestParseWithAbbreviated(c *C) {
 	memo, err = ParseMemoWithTHORNames(ctx, k, "=:r:0x90f2b1ae50e6018230e90a33f98c7844a0ab635a:87e7")
 	c.Assert(err, IsNil)
 	c.Check(memo.GetAsset().String(), Equals, common.RuneAsset().String())
-	c.Check(memo.IsType(TxSwap), Equals, true, Commentf("MEMO: %+v", memo))
+	c.Check(memo.IsType(common.TxSwap), Equals, true, Commentf("MEMO: %+v", memo))
 	c.Check(memo.GetDestination().String(), Equals, "0x90f2b1ae50e6018230e90a33f98c7844a0ab635a")
 	c.Check(memo.GetSlipLimit().Equal(cosmos.NewUint(870000000)), Equals, true)
 	c.Check(memo.IsInbound(), Equals, true)
@@ -252,7 +252,7 @@ func (s *MemoSuite) TestParseWithAbbreviated(c *C) {
 	memo, err = ParseMemoWithTHORNames(ctx, k, "=:"+common.RuneAsset().String()+":0x90f2b1ae50e6018230e90a33f98c7844a0ab635a:1200/10/20")
 	c.Assert(err, IsNil)
 	c.Check(memo.GetAsset().String(), Equals, common.RuneAsset().String())
-	c.Check(memo.IsType(TxSwap), Equals, true, Commentf("MEMO: %+v", memo))
+	c.Check(memo.IsType(common.TxSwap), Equals, true, Commentf("MEMO: %+v", memo))
 	c.Check(memo.GetDestination().String(), Equals, "0x90f2b1ae50e6018230e90a33f98c7844a0ab635a")
 	c.Check(memo.GetSlipLimit().Equal(cosmos.NewUint(1200)), Equals, true)
 	c.Check(memo.IsInbound(), Equals, true)
@@ -287,7 +287,7 @@ func (s *MemoSuite) TestParseWithAbbreviated(c *C) {
 	memo, err = ParseMemoWithTHORNames(ctx, k, "=:"+common.RuneAsset().String()+":0x90f2b1ae50e6018230e90a33f98c7844a0ab635a")
 	c.Assert(err, IsNil)
 	c.Check(memo.GetAsset().String(), Equals, common.RuneAsset().String())
-	c.Check(memo.IsType(TxSwap), Equals, true, Commentf("MEMO: %+v", memo))
+	c.Check(memo.IsType(common.TxSwap), Equals, true, Commentf("MEMO: %+v", memo))
 	c.Check(memo.GetDestination().String(), Equals, "0x90f2b1ae50e6018230e90a33f98c7844a0ab635a")
 	c.Check(memo.GetSlipLimit().Uint64(), Equals, uint64(0))
 	c.Check(memo.IsInbound(), Equals, true)
@@ -296,7 +296,7 @@ func (s *MemoSuite) TestParseWithAbbreviated(c *C) {
 	memo, err = ParseMemoWithTHORNames(ctx, k, "=:"+common.RuneAsset().String()+":0x90f2b1ae50e6018230e90a33f98c7844a0ab635a::::123:0x2354234523452345:1234444")
 	c.Assert(err, IsNil)
 	c.Check(memo.GetAsset().String(), Equals, common.RuneAsset().String())
-	c.Check(memo.IsType(TxSwap), Equals, true, Commentf("MEMO: %+v", memo))
+	c.Check(memo.IsType(common.TxSwap), Equals, true, Commentf("MEMO: %+v", memo))
 	c.Check(memo.GetDestination().String(), Equals, "0x90f2b1ae50e6018230e90a33f98c7844a0ab635a")
 	c.Check(memo.GetSlipLimit().Equal(cosmos.ZeroUint()), Equals, true)
 	c.Check(memo.GetDexAggregator(), Equals, "123")
@@ -310,7 +310,7 @@ func (s *MemoSuite) TestParseWithAbbreviated(c *C) {
 
 	memo, err = ParseMemoWithTHORNames(ctx, k, "OUT:MUKVQILIHIAUSEOVAXBFEZAJKYHFJYHRUUYGQJZGFYBYVXCXYNEMUOAIQKFQLLCX")
 	c.Assert(err, IsNil)
-	c.Check(memo.IsType(TxOutbound), Equals, true, Commentf("%s", memo.GetType()))
+	c.Check(memo.IsType(common.TxOutbound), Equals, true, Commentf("%s", memo.GetType()))
 	c.Check(memo.IsOutbound(), Equals, true)
 	c.Check(memo.IsInbound(), Equals, false)
 	c.Check(memo.IsInternal(), Equals, false)
@@ -325,54 +325,54 @@ func (s *MemoSuite) TestParseWithAbbreviated(c *C) {
 
 	memo, err = ParseMemoWithTHORNames(ctx, k, "REFUND:MUKVQILIHIAUSEOVAXBFEZAJKYHFJYHRUUYGQJZGFYBYVXCXYNEMUOAIQKFQLLCX")
 	c.Assert(err, IsNil)
-	c.Check(memo.IsType(TxRefund), Equals, true)
+	c.Check(memo.IsType(common.TxRefund), Equals, true)
 	c.Check(memo.IsOutbound(), Equals, true)
 
 	memo, err = ParseMemoWithTHORNames(ctx, k, "leave:whatever")
 	c.Assert(err, NotNil)
-	c.Check(memo.IsType(TxLeave), Equals, true)
+	c.Check(memo.IsType(common.TxLeave), Equals, true)
 
 	addr := types.GetRandomBech32Addr()
 	memo, err = ParseMemoWithTHORNames(ctx, k, fmt.Sprintf("leave:%s", addr.String()))
 	c.Assert(err, IsNil)
-	c.Check(memo.IsType(TxLeave), Equals, true)
+	c.Check(memo.IsType(common.TxLeave), Equals, true)
 	c.Check(memo.GetAccAddress().String(), Equals, addr.String())
 
 	memo, err = ParseMemoWithTHORNames(ctx, k, "migrate:100")
 	c.Assert(err, IsNil)
-	c.Check(memo.IsType(TxMigrate), Equals, true)
+	c.Check(memo.IsType(common.TxMigrate), Equals, true)
 	c.Check(memo.IsInternal(), Equals, true)
 
 	memo, err = ParseMemoWithTHORNames(ctx, k, "ragnarok:100")
 	c.Assert(err, IsNil)
-	c.Check(memo.IsType(TxRagnarok), Equals, true)
+	c.Check(memo.IsType(common.TxRagnarok), Equals, true)
 	c.Check(memo.IsOutbound(), Equals, true)
 
 	memo, err = ParseMemoWithTHORNames(ctx, k, "reserve")
 	c.Check(err, IsNil)
-	c.Check(memo.IsType(TxReserve), Equals, true)
+	c.Check(memo.IsType(common.TxReserve), Equals, true)
 	c.Check(memo.IsInbound(), Equals, true)
 	c.Check(memo.IsInternal(), Equals, false)
 	c.Check(memo.IsOutbound(), Equals, false)
 
 	memo, err = ParseMemoWithTHORNames(ctx, k, "noop")
 	c.Check(err, IsNil)
-	c.Check(memo.IsType(TxNoOp), Equals, true)
+	c.Check(memo.IsType(common.TxNoOp), Equals, true)
 	c.Check(memo.IsInbound(), Equals, true)
 	c.Check(memo.IsInternal(), Equals, false)
 	c.Check(memo.IsOutbound(), Equals, false)
 
 	memo, err = ParseMemoWithTHORNames(ctx, k, "noop:novault")
 	c.Check(err, IsNil)
-	c.Check(memo.IsType(TxNoOp), Equals, true)
+	c.Check(memo.IsType(common.TxNoOp), Equals, true)
 	c.Check(memo.IsInbound(), Equals, true)
 	c.Check(memo.IsInternal(), Equals, false)
 	c.Check(memo.IsOutbound(), Equals, false)
 
 	memo, err = ParseMemoWithTHORNames(ctx, k, "$+:BTC.BTC:bc1qwqdg6squsna38e46795at95yu9atm8azzmyvckulcc7kytlcckxswvvzej")
 	c.Assert(err, IsNil)
-	c.Check(memo.IsType(TxLoanOpen), Equals, true)
-	c.Check(memo.IsType(TxLoanOpen), Equals, true)
+	c.Check(memo.IsType(common.TxLoanOpen), Equals, true)
+	c.Check(memo.IsType(common.TxLoanOpen), Equals, true)
 	c.Check(memo.IsInbound(), Equals, true)
 	c.Check(memo.IsInternal(), Equals, false)
 	c.Check(memo.IsOutbound(), Equals, false)
@@ -392,7 +392,7 @@ func (s *MemoSuite) TestParseWithAbbreviated(c *C) {
 
 	memo, err = ParseMemoWithTHORNames(ctx, k, "$-:BTC.BTC:bc1qwqdg6squsna38e46795at95yu9atm8azzmyvckulcc7kytlcckxswvvzej:78e4")
 	c.Check(err, IsNil)
-	c.Check(memo.IsType(TxLoanRepayment), Equals, true)
+	c.Check(memo.IsType(common.TxLoanRepayment), Equals, true)
 	c.Check(memo.IsInbound(), Equals, true)
 	c.Check(memo.IsInternal(), Equals, false)
 	c.Check(memo.IsOutbound(), Equals, false)
@@ -443,13 +443,13 @@ func (s *MemoSuite) TestParse(c *C) {
 	memo, err := ParseMemoWithTHORNames(ctx, k, "d:"+common.RuneAsset().String())
 	c.Assert(err, IsNil)
 	c.Check(memo.GetAsset().String(), Equals, common.RuneAsset().String())
-	c.Check(memo.IsType(TxDonate), Equals, true, Commentf("MEMO: %+v", memo))
+	c.Check(memo.IsType(common.TxDonate), Equals, true, Commentf("MEMO: %+v", memo))
 	c.Check(memo.String(), Equals, "DONATE:"+common.RuneAsset().String())
 
 	memo, err = ParseMemoWithTHORNames(ctx, k, "ADD:"+common.RuneAsset().String())
 	c.Assert(err, IsNil)
 	c.Check(memo.GetAsset().String(), Equals, common.RuneAsset().String())
-	c.Check(memo.IsType(TxAdd), Equals, true, Commentf("MEMO: %+v", memo))
+	c.Check(memo.IsType(common.TxAdd), Equals, true, Commentf("MEMO: %+v", memo))
 	c.Check(memo.String(), Equals, "+:THOR.RUNE")
 
 	_, err = ParseMemoWithTHORNames(ctx, k, "ADD:BTC.BTC")
@@ -457,23 +457,23 @@ func (s *MemoSuite) TestParse(c *C) {
 	memo, err = ParseMemoWithTHORNames(ctx, k, "ADD:BTC.BTC:bc1qwqdg6squsna38e46795at95yu9atm8azzmyvckulcc7kytlcckxswvvzej")
 	c.Assert(err, IsNil)
 	c.Check(memo.GetDestination().String(), Equals, "bc1qwqdg6squsna38e46795at95yu9atm8azzmyvckulcc7kytlcckxswvvzej")
-	c.Check(memo.IsType(TxAdd), Equals, true, Commentf("MEMO: %+v", memo))
+	c.Check(memo.IsType(common.TxAdd), Equals, true, Commentf("MEMO: %+v", memo))
 
 	_, err = ParseMemoWithTHORNames(ctx, k, "ADD:ETH.ETH:0x90f2b1ae50e6018230e90a33f98c7844a0ab635a:tthor176xrckly4p7efq7fshhcuc2kax3dyxu9hguzl7:1000")
 	c.Assert(err, IsNil)
 
 	memo, err = ParseMemoWithTHORNames(ctx, k, "TCY:"+thorAddr.String())
 	c.Assert(err, IsNil)
-	c.Check(memo.IsType(TxTCYClaim), Equals, true, Commentf("MEMO: %+v", memo))
+	c.Check(memo.IsType(common.TxTCYClaim), Equals, true, Commentf("MEMO: %+v", memo))
 	c.Check(memo.GetAddress(), Equals, thorAddr)
 
 	memo, err = ParseMemoWithTHORNames(ctx, k, "tcy+")
 	c.Assert(err, IsNil)
-	c.Check(memo.IsType(TxTCYStake), Equals, true, Commentf("MEMO: %+v", memo))
+	c.Check(memo.IsType(common.TxTCYStake), Equals, true, Commentf("MEMO: %+v", memo))
 
 	memo, err = ParseMemoWithTHORNames(ctx, k, "tcy-:10000")
 	c.Assert(err, IsNil)
-	c.Check(memo.IsType(TxTCYUnstake), Equals, true, Commentf("MEMO: %+v", memo))
+	c.Check(memo.IsType(common.TxTCYUnstake), Equals, true, Commentf("MEMO: %+v", memo))
 
 	// trade account unit tests
 	trAccAddr := types.GetRandomBech32Addr()
@@ -494,13 +494,13 @@ func (s *MemoSuite) TestParse(c *C) {
 	memo, err = ParseMemoWithTHORNames(ctx, k, "WITHDRAW:"+common.RuneAsset().String()+":25")
 	c.Assert(err, IsNil)
 	c.Check(memo.GetAsset().String(), Equals, common.RuneAsset().String())
-	c.Check(memo.IsType(TxWithdraw), Equals, true, Commentf("MEMO: %+v", memo))
+	c.Check(memo.IsType(common.TxWithdraw), Equals, true, Commentf("MEMO: %+v", memo))
 	c.Check(memo.GetAmount().Equal(cosmos.NewUint(25)), Equals, true, Commentf("%d", memo.GetAmount().Uint64()))
 
 	memo, err = ParseMemoWithTHORNames(ctx, k, "SWAP:"+common.RuneAsset().String()+":0x90f2b1ae50e6018230e90a33f98c7844a0ab635a:870000000:hello:100")
 	c.Assert(err, IsNil)
 	c.Check(memo.GetAsset().String(), Equals, common.RuneAsset().String())
-	c.Check(memo.IsType(TxSwap), Equals, true, Commentf("MEMO: %+v", memo))
+	c.Check(memo.IsType(common.TxSwap), Equals, true, Commentf("MEMO: %+v", memo))
 	c.Check(memo.GetDestination().String(), Equals, "0x90f2b1ae50e6018230e90a33f98c7844a0ab635a")
 	c.Check(memo.GetSlipLimit().Equal(cosmos.NewUint(870000000)), Equals, true)
 	c.Check(len(memo.GetAffiliates()), Equals, 1)
@@ -511,14 +511,14 @@ func (s *MemoSuite) TestParse(c *C) {
 	memo, err = ParseMemoWithTHORNames(ctx, k, "SWAP:"+common.RuneAsset().String()+":0x90f2b1ae50e6018230e90a33f98c7844a0ab635a")
 	c.Assert(err, IsNil)
 	c.Check(memo.GetAsset().String(), Equals, common.RuneAsset().String())
-	c.Check(memo.IsType(TxSwap), Equals, true, Commentf("MEMO: %+v", memo))
+	c.Check(memo.IsType(common.TxSwap), Equals, true, Commentf("MEMO: %+v", memo))
 	c.Check(memo.GetDestination().String(), Equals, "0x90f2b1ae50e6018230e90a33f98c7844a0ab635a")
 	c.Check(memo.GetSlipLimit().Uint64(), Equals, uint64(0))
 
 	memo, err = ParseMemoWithTHORNames(ctx, k, "SWAP:"+common.RuneAsset().String()+":0x90f2b1ae50e6018230e90a33f98c7844a0ab635a:")
 	c.Assert(err, IsNil)
 	c.Check(memo.GetAsset().String(), Equals, common.RuneAsset().String())
-	c.Check(memo.IsType(TxSwap), Equals, true, Commentf("MEMO: %+v", memo))
+	c.Check(memo.IsType(common.TxSwap), Equals, true, Commentf("MEMO: %+v", memo))
 	c.Check(memo.GetDestination().String(), Equals, "0x90f2b1ae50e6018230e90a33f98c7844a0ab635a")
 	c.Check(memo.GetSlipLimit().Uint64(), Equals, uint64(0))
 
@@ -526,7 +526,7 @@ func (s *MemoSuite) TestParse(c *C) {
 	bondProvider := types.GetRandomBech32Addr()
 	memo, err = ParseMemoWithTHORNames(ctx, k, fmt.Sprintf("BOND:%s:%s", whiteListAddr, bondProvider))
 	c.Assert(err, IsNil)
-	c.Assert(memo.IsType(TxBond), Equals, true)
+	c.Assert(memo.IsType(common.TxBond), Equals, true)
 	c.Assert(memo.GetAccAddress().String(), Equals, whiteListAddr.String())
 	// trunk-ignore(golangci-lint/govet): shadow false positive
 	parser, _ := newParser(ctx, k, k.GetVersion(), fmt.Sprintf("BOND:%s:%s", whiteListAddr.String(), bondProvider.String()))
@@ -547,11 +547,11 @@ func (s *MemoSuite) TestParse(c *C) {
 
 	memo, err = ParseMemoWithTHORNames(ctx, k, "leave:"+types.GetRandomBech32Addr().String())
 	c.Assert(err, IsNil)
-	c.Assert(memo.IsType(TxLeave), Equals, true)
+	c.Assert(memo.IsType(common.TxLeave), Equals, true)
 
 	memo, err = ParseMemoWithTHORNames(ctx, k, "unbond:"+whiteListAddr.String()+":300")
 	c.Assert(err, IsNil)
-	c.Assert(memo.IsType(TxUnbond), Equals, true)
+	c.Assert(memo.IsType(common.TxUnbond), Equals, true)
 	c.Assert(memo.GetAccAddress().String(), Equals, whiteListAddr.String())
 	c.Assert(memo.GetAmount().Equal(cosmos.NewUint(300)), Equals, true)
 	parser, _ = newParser(ctx, k, k.GetVersion(), fmt.Sprintf("UNBOND:%s:400:%s", whiteListAddr.String(), bondProvider.String()))
@@ -561,7 +561,7 @@ func (s *MemoSuite) TestParse(c *C) {
 
 	memo, err = ParseMemoWithTHORNames(ctx, k, "migrate:100")
 	c.Assert(err, IsNil)
-	c.Check(memo.IsType(TxMigrate), Equals, true)
+	c.Check(memo.IsType(common.TxMigrate), Equals, true)
 	c.Check(memo.GetBlockHeight(), Equals, int64(100))
 	c.Check(memo.String(), Equals, "MIGRATE:100")
 
@@ -581,7 +581,7 @@ func (s *MemoSuite) TestParse(c *C) {
 	ragnarokMemo := "RAGNAROK:1024"
 	memo, err = ParseMemoWithTHORNames(ctx, k, ragnarokMemo)
 	c.Check(err, IsNil)
-	c.Check(memo.IsType(TxRagnarok), Equals, true)
+	c.Check(memo.IsType(common.TxRagnarok), Equals, true)
 	c.Check(memo.GetBlockHeight(), Equals, int64(1024))
 	c.Check(memo.String(), Equals, ragnarokMemo)
 
@@ -604,7 +604,7 @@ func (s *MemoSuite) TestParse(c *C) {
 	// aff fee valid, don't change
 	memo, err = ParseMemoWithTHORNames(ctx, k, "swap:eth.eth:0x90f2b1ae50e6018230e90a33f98c7844a0ab635a:100:thor1z83z5t9vqxys8nhpkxk5zp6zym0lalcp8ywhvj:5000")
 	c.Assert(err, IsNil)
-	c.Check(memo.IsType(TxSwap), Equals, true)
+	c.Check(memo.IsType(common.TxSwap), Equals, true)
 	c.Check(memo.String(), Equals, "=:ETH.ETH:0x90f2b1ae50e6018230e90a33f98c7844a0ab635a:100:thor1z83z5t9vqxys8nhpkxk5zp6zym0lalcp8ywhvj:5000")
 
 	// add memo parsing
@@ -615,7 +615,7 @@ func (s *MemoSuite) TestParse(c *C) {
 	// aff fee valid, don't change
 	memo, err = ParseMemoWithTHORNames(ctx, k, "add:btc.btc:thor1z83z5t9vqxys8nhpkxk5zp6zym0lalcp8ywhvj:thor1z83z5t9vqxys8nhpkxk5zp6zym0lalcp8ywhvj:5000")
 	c.Assert(err, IsNil)
-	c.Check(memo.IsType(TxAdd), Equals, true)
+	c.Check(memo.IsType(common.TxAdd), Equals, true)
 	c.Check(memo.String(), Equals, "+:BTC.BTC:thor1z83z5t9vqxys8nhpkxk5zp6zym0lalcp8ywhvj:thor1z83z5t9vqxys8nhpkxk5zp6zym0lalcp8ywhvj:5000")
 
 	// aff fee savers memo
@@ -631,13 +631,13 @@ func (s *MemoSuite) TestParse(c *C) {
 	// no address or aff fee
 	memo, err = ParseMemoWithTHORNames(ctx, k, "add:btc.btc")
 	c.Assert(err, IsNil)
-	c.Check(memo.IsType(TxAdd), Equals, true)
+	c.Check(memo.IsType(common.TxAdd), Equals, true)
 	c.Check(memo.String(), Equals, "+:BTC.BTC")
 
 	// no aff fee
 	memo, err = ParseMemoWithTHORNames(ctx, k, "add:btc.btc:thor1z83z5t9vqxys8nhpkxk5zp6zym0lalcp8ywhvj")
 	c.Assert(err, IsNil)
-	c.Check(memo.IsType(TxAdd), Equals, true)
+	c.Check(memo.IsType(common.TxAdd), Equals, true)
 	c.Check(memo.String(), Equals, "+:BTC.BTC:thor1z83z5t9vqxys8nhpkxk5zp6zym0lalcp8ywhvj")
 
 	// unhappy paths
@@ -692,7 +692,7 @@ func (s *MemoSuite) TestParse(c *C) {
 
 	memo, err = ParseMemoWithTHORNames(ctx, k, "x:tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f:AA==")
 	c.Assert(err, IsNil)
-	c.Check(memo.IsType(TxExec), Equals, true)
+	c.Check(memo.IsType(common.TxExec), Equals, true)
 	c.Check(memo.String(), Equals, "x:tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f:AA==")
 	_, err = ParseMemoWithTHORNames(ctx, k, "tcy:0x90f2b1ae50e6018230e90a33f98c7844a0ab635a") // invalid thor address
 	c.Assert(err, NotNil)

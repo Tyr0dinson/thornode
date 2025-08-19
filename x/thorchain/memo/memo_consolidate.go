@@ -1,5 +1,9 @@
 package thorchain
 
+import (
+	"gitlab.com/thorchain/thornode/v3/common"
+)
+
 type ConsolidateMemo struct {
 	MemoBase
 }
@@ -12,7 +16,7 @@ func (m ConsolidateMemo) String() string {
 // NewConsolidateMemo create a new instance of ConsolidateMemo
 func NewConsolidateMemo() ConsolidateMemo {
 	return ConsolidateMemo{
-		MemoBase: MemoBase{TxType: TxConsolidate},
+		MemoBase: MemoBase{TxType: common.TxConsolidate},
 	}
 }
 

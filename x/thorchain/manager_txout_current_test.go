@@ -401,8 +401,9 @@ func (s TxOutStoreVCURSuite) TestCalcTxOutHeight(c *C) {
 	c.Assert(err, IsNil)
 
 	toi := TxOutItem{
-		Coin: common.NewCoin(common.ETHAsset, cosmos.NewUint(2*common.One)),
-		Memo: "OUT:nomnomnom",
+		Coin:   common.NewCoin(common.ETHAsset, cosmos.NewUint(2*common.One)),
+		Memo:   "OUT:nomnomnom",
+		TxType: common.TxOutbound,
 	}
 	value := pool.AssetValueInRune(toi.Coin.Amount)
 	c.Check(value.Uint64(), Equals, uint64(129_13957141), Commentf("%d", value.Uint64()))

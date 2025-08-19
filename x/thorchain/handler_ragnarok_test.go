@@ -140,6 +140,7 @@ func (HandlerRagnarokSuite) TestRagnarokHappyPath(c *C) {
 		VaultPubKey: retireVault.PubKey,
 		Coin:        common.NewCoin(common.ETHAsset, cosmos.NewUint(1024)),
 		Memo:        NewRagnarokMemo(1).String(),
+		TxType:      common.TxRagnarok,
 	})
 	keeper := &TestRagnarokKeeperHappyPath{
 		Keeper:            k,

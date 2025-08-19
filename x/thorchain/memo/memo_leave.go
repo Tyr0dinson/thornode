@@ -1,6 +1,7 @@
 package thorchain
 
 import (
+	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
@@ -13,7 +14,7 @@ func (m LeaveMemo) GetAccAddress() cosmos.AccAddress { return m.NodeAddress }
 
 func NewLeaveMemo(addr cosmos.AccAddress) LeaveMemo {
 	return LeaveMemo{
-		MemoBase:    MemoBase{TxType: TxLeave},
+		MemoBase:    MemoBase{TxType: common.TxLeave},
 		NodeAddress: addr,
 	}
 }

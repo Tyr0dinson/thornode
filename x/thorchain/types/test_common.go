@@ -83,6 +83,7 @@ func GetRandomTxOutItem() TxOutItem {
 		Memo:        "OUT:xyz",
 		MaxGas:      common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(100))},
 		InHash:      GetRandomTxHash(),
+		TxType:      common.TxOutbound,
 	}
 }
 

@@ -232,6 +232,7 @@ func (s *BitcoinSignerSuite) TestSignTxHappyPathWithPrivateKey(c *C) {
 		InHash:  inHash,
 		OutHash: "",
 		Memo:    memo,
+		TxType:  common.TxOutbound,
 	}
 	txHash := "256222fb25a9950479bb26049a2c00e75b89abbb7f0cf646c623b93e942c4c34"
 	c.Assert(err, IsNil)
@@ -267,6 +268,7 @@ func (s *BitcoinSignerSuite) TestSignTxWithoutPredefinedMaxGas(c *C) {
 		GasRate: 25,
 		InHash:  "",
 		OutHash: "",
+		TxType:  common.TxMigrate,
 	}
 	txHash := "256222fb25a9950479bb26049a2c00e75b89abbb7f0cf646c623b93e942c4c34"
 	c.Assert(err, IsNil)

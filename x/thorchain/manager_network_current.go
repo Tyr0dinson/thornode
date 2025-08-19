@@ -764,7 +764,8 @@ func (vm *NetworkMgrVCUR) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 						Asset:  coin.Asset,
 						Amount: amt,
 					},
-					Memo: memo,
+					Memo:   memo,
+					TxType: TxMigrate,
 				}
 				ok, err := vm.txOutStore.TryAddTxOutItem(ctx, mgr, toi, cosmos.ZeroUint())
 				if err != nil && !errors.Is(err, ErrNotEnoughToPayFee) {

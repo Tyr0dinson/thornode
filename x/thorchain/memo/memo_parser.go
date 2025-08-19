@@ -15,7 +15,7 @@ import (
 
 type parser struct {
 	memo           string
-	txType         TxType
+	txType         common.TxType
 	ctx            cosmos.Context
 	keeper         keeper.Keeper
 	parts          []string
@@ -30,7 +30,7 @@ func newParser(ctx cosmos.Context, keeper keeper.Keeper, version semver.Version,
 	}
 	memo = strings.Split(memo, "|")[0]
 	parts := strings.Split(memo, ":")
-	memoType, err := StringToTxType(parts[0])
+	memoType, err := common.StringToTxType(parts[0])
 	if err != nil {
 		return parser{}, err
 	}
@@ -46,7 +46,7 @@ func newParser(ctx cosmos.Context, keeper keeper.Keeper, version semver.Version,
 	}, nil
 }
 
-func (p *parser) getType() TxType {
+func (p *parser) getType() common.TxType {
 	return p.txType
 }
 
@@ -63,69 +63,69 @@ func (p *parser) parse() (mem Memo, err error) {
 		}
 	}()
 	switch p.getType() {
-	case TxLeave:
+	case common.TxLeave:
 		return p.ParseLeaveMemo()
-	case TxDonate:
+	case common.TxDonate:
 		return p.ParseDonateMemo()
-	case TxAdd:
+	case common.TxAdd:
 		return p.ParseAddLiquidityMemo()
-	case TxWithdraw:
+	case common.TxWithdraw:
 		return p.ParseWithdrawLiquidityMemo()
-	case TxRunePoolDeposit:
+	case common.TxRunePoolDeposit:
 		return p.ParseRunePoolDepositMemo()
-	case TxRunePoolWithdraw:
+	case common.TxRunePoolWithdraw:
 		return p.ParseRunePoolWithdrawMemo()
-	case TxSwap, TxLimitSwap:
+	case common.TxSwap, common.TxLimitSwap:
 		return p.ParseSwapMemo()
-	case TxModifyLimitSwap:
+	case common.TxModifyLimitSwap:
 		return p.ParseModifyLimitSwap()
-	case TxOutbound:
+	case common.TxOutbound:
 		return p.ParseOutboundMemo()
-	case TxRefund:
+	case common.TxRefund:
 		return p.ParseRefundMemo()
-	case TxBond:
+	case common.TxBond:
 		return p.ParseBondMemo()
-	case TxUnbond:
+	case common.TxUnbond:
 		return p.ParseUnbondMemo()
-	case TxRebond:
+	case common.TxRebond:
 		return p.ParseRebondMemo()
-	case TxReserve:
+	case common.TxReserve:
 		return p.ParseReserveMemo()
-	case TxMigrate:
+	case common.TxMigrate:
 		return p.ParseMigrateMemo()
-	case TxRagnarok:
+	case common.TxRagnarok:
 		return p.ParseRagnarokMemo()
-	case TxNoOp:
+	case common.TxNoOp:
 		return p.ParseNoOpMemo()
-	case TxConsolidate:
+	case common.TxConsolidate:
 		return p.ParseConsolidateMemo()
-	case TxTHORName:
+	case common.TxTHORName:
 		return p.ParseManageTHORNameMemo()
-	case TxLoanOpen:
+	case common.TxLoanOpen:
 		return p.ParseLoanOpenMemo()
-	case TxLoanRepayment:
+	case common.TxLoanRepayment:
 		return p.ParseLoanRepaymentMemo()
-	case TxTradeAccountDeposit:
+	case common.TxTradeAccountDeposit:
 		return p.ParseTradeAccountDeposit()
-	case TxTradeAccountWithdrawal:
+	case common.TxTradeAccountWithdrawal:
 		return p.ParseTradeAccountWithdrawal()
-	case TxSecuredAssetDeposit:
+	case common.TxSecuredAssetDeposit:
 		return p.ParseSecuredAssetDeposit()
-	case TxSecuredAssetWithdraw:
+	case common.TxSecuredAssetWithdraw:
 		return p.ParseSecuredAssetWithdraw()
-	case TxExec:
+	case common.TxExec:
 		return p.ParseExecMemo()
-	case TxSwitch:
+	case common.TxSwitch:
 		return p.ParseSwitch()
-	case TxTCYClaim:
+	case common.TxTCYClaim:
 		return p.ParseTCYClaimMemo()
-	case TxTCYStake:
+	case common.TxTCYStake:
 		return p.ParseTCYStakeMemo()
-	case TxTCYUnstake:
+	case common.TxTCYUnstake:
 		return p.ParseTCYUnstakeMemo()
-	case TxMaint:
+	case common.TxMaint:
 		return p.ParseMaintMemo()
-	case TxOperatorRotate:
+	case common.TxOperatorRotate:
 		return p.ParseOperatorRotate()
 
 	default:
