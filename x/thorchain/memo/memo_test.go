@@ -209,7 +209,7 @@ func (s *MemoSuite) TestParseWithAbbreviated(c *C) {
 	c.Assert(err.Error(), Equals, "total affiliate fee basis points can't be more than 10000")
 
 	// test whitespace trimming in affiliates (edge case)
-	ms = "=:e:0x90f2b1ae50e6018230e90a33f98c7844a0ab635a:: t / t1 / t2 : 10 / 20 / 30 "
+	ms = "=:e:0x90f2b1ae50e6018230e90a33f98c7844a0ab635a:: t / t1 / t2 :10/20/30"
 	memo, err = ParseMemoWithTHORNames(ctx, k, ms)
 	c.Assert(err, IsNil)
 	c.Check(len(memo.GetAffiliates()), Equals, 3)
