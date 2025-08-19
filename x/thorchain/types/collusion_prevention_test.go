@@ -9,21 +9,21 @@ import (
 	. "gopkg.in/check.v1"
 )
 
-// Task5CollusionSlashingTDDSuite implements TDD for Task 5: Collusion/Slashing Logic
-// This drives development of slashing mechanisms for node operator misbehavior
-type Task5CollusionSlashingTDDSuite struct{}
+// CollusionSlashingValidationSuite implements TDD for collusion detection and slashing logic
+// This drives development of slashing mechanisms for node operator misbehavior in memoless reference systems
+type CollusionSlashingValidationSuite struct{}
 
-var _ = Suite(&Task5CollusionSlashingTDDSuite{})
+var _ = Suite(&CollusionSlashingValidationSuite{})
 
-func TestTask5CollusionSlashingTDD(t *testing.T) { TestingT(t) }
+func TestCollusionSlashingValidationTDD(t *testing.T) { TestingT(t) }
 
 // =============================================================================
 // TASK 5 TDD TESTS - These should FAIL initially and drive implementation
 // =============================================================================
 
-// TestCollusionSlashing_DuplicateReferenceGeneration tests the core Task 5 scenario
-// REQUIREMENT: "Node operators generating duplicate references"
-func (s *Task5CollusionSlashingTDDSuite) TestCollusionSlashing_DuplicateReferenceGeneration_MUST_FAIL_FIRST(c *C) {
+// TestCollusionSlashing_DuplicateReferenceGeneration tests duplicate reference detection
+// REQUIREMENT: "Detect and penalize node operators generating duplicate memoless references"
+func (s *CollusionSlashingValidationSuite) TestCollusionSlashing_DuplicateReferenceGeneration_MUST_FAIL_FIRST(c *C) {
 	// This test defines what should happen when nodes generate duplicate references
 
 	// Simulate node operators
@@ -81,7 +81,7 @@ func (s *Task5CollusionSlashingTDDSuite) TestCollusionSlashing_DuplicateReferenc
 
 // TestCollusionSlashing_ReferenceHoarding tests hoarding scenarios
 // REQUIREMENT: "Node operators hoarding reference space"
-func (s *Task5CollusionSlashingTDDSuite) TestCollusionSlashing_ReferenceHoarding_MUST_FAIL_FIRST(c *C) {
+func (s *CollusionSlashingValidationSuite) TestCollusionSlashing_ReferenceHoarding_MUST_FAIL_FIRST(c *C) {
 	// This tests detection of nodes registering many references without corresponding transactions
 
 	nodeOperator := "thor1potentialhoarder"
@@ -113,7 +113,7 @@ func (s *Task5CollusionSlashingTDDSuite) TestCollusionSlashing_ReferenceHoarding
 
 // TestCollusionSlashing_CrossNodeCollusion tests cross-node collusion patterns
 // REQUIREMENT: "Cross-node reference conflicts and coordinated abuse"
-func (s *Task5CollusionSlashingTDDSuite) TestCollusionSlashing_CrossNodeCollusion_MUST_FAIL_FIRST(c *C) {
+func (s *CollusionSlashingValidationSuite) TestCollusionSlashing_CrossNodeCollusion_MUST_FAIL_FIRST(c *C) {
 	// Test detection of nodes coordinating to abuse the system
 
 	colludingNodes := []string{
@@ -164,7 +164,7 @@ func (s *Task5CollusionSlashingTDDSuite) TestCollusionSlashing_CrossNodeCollusio
 
 // TestCollusionSlashing_SlashingExecution tests actual slashing execution
 // REQUIREMENT: "Proper slashing amounts and execution"
-func (s *Task5CollusionSlashingTDDSuite) TestCollusionSlashing_SlashingExecution_MUST_FAIL_FIRST(c *C) {
+func (s *CollusionSlashingValidationSuite) TestCollusionSlashing_SlashingExecution_MUST_FAIL_FIRST(c *C) {
 	// Test that slashing is properly calculated and executed
 
 	nodeOperator := "thor1badactor"
@@ -197,7 +197,7 @@ func (s *Task5CollusionSlashingTDDSuite) TestCollusionSlashing_SlashingExecution
 
 // TestCollusionSlashing_Performance_DetectCollusion_Under10ms tests performance requirement
 // REQUIREMENT: "Performance: Collusion detection <10ms per reference check"
-func (s *Task5CollusionSlashingTDDSuite) TestCollusionSlashing_Performance_DetectCollusion_Under10ms_MUST_FAIL_FIRST(c *C) {
+func (s *CollusionSlashingValidationSuite) TestCollusionSlashing_Performance_DetectCollusion_Under10ms_MUST_FAIL_FIRST(c *C) {
 	nodeOperator := "thor1testnode"
 	reference := "99999"
 	blockHeight := int64(1000)
@@ -228,7 +228,7 @@ func (s *Task5CollusionSlashingTDDSuite) TestCollusionSlashing_Performance_Detec
 
 // TestCollusionSlashing_SlashingAmounts tests correct slashing amount calculation
 // REQUIREMENT: "Graduated slashing amounts based on offense severity"
-func (s *Task5CollusionSlashingTDDSuite) TestCollusionSlashing_SlashingAmounts_MUST_FAIL_FIRST(c *C) {
+func (s *CollusionSlashingValidationSuite) TestCollusionSlashing_SlashingAmounts_MUST_FAIL_FIRST(c *C) {
 	testCases := []struct {
 		offense         string
 		offenseCount    int

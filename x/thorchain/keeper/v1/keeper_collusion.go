@@ -474,7 +474,7 @@ func (k KVStore) applyEscalationToPenalty(basePenalty cosmos.Uint, escalationFac
 }
 
 // SlashNodeForCollusionWithProgression executes slashing with progressive penalty escalation
-// This integrates Task 5B (slashing) with Task 5D (progressive penalties)
+// This integrates collusion slashing mechanisms with progressive penalty calculations for repeat offenders
 func (k KVStore) SlashNodeForCollusionWithProgression(ctx cosmos.Context, nodeAddr cosmos.AccAddress, evidence CollusionEvidence) error {
 	// Get the node account
 	nodeAccount, err := k.GetNodeAccount(ctx, nodeAddr)

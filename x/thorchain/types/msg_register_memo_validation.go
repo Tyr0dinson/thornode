@@ -59,12 +59,12 @@ func (m *MsgRegisterMemo) ValidateBasicEnhanced() error {
 		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, fmt.Sprintf("invalid chain_id: %v", err))
 	}
 
-	// ENHANCED: Chain precision support validation (Task 4)
+	// ENHANCED: Chain precision support validation for decimal compatibility
 	if err := ValidateChainPrecisionSupport(m.ChainId); err != nil {
 		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, fmt.Sprintf("chain precision validation failed: %v", err))
 	}
 
-	// ENHANCED: Memo size validation for chain-specific limits (Task 4)
+	// ENHANCED: Memo size validation for chain-specific limits and encoding constraints
 	if err := ValidateMemoSizeForChain(m.Memo, m.ChainId); err != nil {
 		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, fmt.Sprintf("memo size validation failed: %v", err))
 	}
@@ -357,7 +357,7 @@ func ValidateMemoRegistrationRequest(memo string, chainID string, ttl int64, sig
 	return msg.ValidateBasicEnhanced()
 }
 
-// ENHANCED VALIDATION FUNCTIONS (Task 4)
+// ENHANCED VALIDATION FUNCTIONS - Chain Precision and Memo Size Validation
 
 // ValidateMemoRegistrationWithAmount validates registration with amount-based reference encoding
 func ValidateMemoRegistrationWithAmount(memo string, chainID string, amount string, reference string, ttl int64, signer sdk.AccAddress) error {

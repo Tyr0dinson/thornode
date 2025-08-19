@@ -13,7 +13,7 @@ type KeeperProgressiveSuite struct{}
 
 var _ = Suite(&KeeperProgressiveSuite{})
 
-// RED Phase Test - This should FAIL initially to drive Task 5D implementation
+// RED Phase Test - This should FAIL initially to drive progressive penalty implementation
 func (s *KeeperProgressiveSuite) TestCalculateProgressivePenalty_EscalatesWithHistory(c *C) {
 	ctx, keeper := setupKeeperForTest(c)
 

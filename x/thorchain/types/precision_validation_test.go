@@ -9,13 +9,13 @@ import (
 	. "gopkg.in/check.v1"
 )
 
-// Task4Pillar2Suite implements TDD for Pillar 2: Precision Truncation
-// This drives development of precision/chain validation enhancements
-type Task4Pillar2Suite struct{}
+// PrecisionTruncationValidationSuite implements TDD for precision truncation handling
+// This drives development of precision/chain validation enhancements for memoless references
+type PrecisionTruncationValidationSuite struct{}
 
-var _ = Suite(&Task4Pillar2Suite{})
+var _ = Suite(&PrecisionTruncationValidationSuite{})
 
-func TestTask4Pillar2TDD(t *testing.T) { TestingT(t) }
+func TestPrecisionTruncationValidationTDD(t *testing.T) { TestingT(t) }
 
 // =============================================================================
 // PILLAR 2 TDD TESTS - These should FAIL initially and drive implementation
@@ -23,7 +23,7 @@ func TestTask4Pillar2TDD(t *testing.T) { TestingT(t) }
 
 // TestPillar2_5DigitEmbeddingOn3DecimalChains tests the core Pillar 2 scenario
 // REQUIREMENT: "5-digit embedding on 3-decimal chains with safe rejection"
-func (s *Task4Pillar2Suite) TestPillar2_5DigitEmbeddingOn3DecimalChains_MUST_FAIL_FIRST(c *C) {
+func (s *PrecisionTruncationValidationSuite) TestPillar2_5DigitEmbeddingOn3DecimalChains_MUST_FAIL_FIRST(c *C) {
 	// This test defines what should happen - it will FAIL until we implement
 
 	testCases := []struct {
@@ -93,7 +93,7 @@ func (s *Task4Pillar2Suite) TestPillar2_5DigitEmbeddingOn3DecimalChains_MUST_FAI
 
 // TestPillar2_IntegerDivision1WeiAccumulation tests the edge case from Pillar 2
 // REQUIREMENT: "Integer division causing 1-wei accumulation over 1000 txs"
-func (s *Task4Pillar2Suite) TestPillar2_IntegerDivision1WeiAccumulation_MUST_FAIL_FIRST(c *C) {
+func (s *PrecisionTruncationValidationSuite) TestPillar2_IntegerDivision1WeiAccumulation_MUST_FAIL_FIRST(c *C) {
 	// This tests precision loss accumulation over many transactions
 
 	// Simulate 1000 transactions with amounts that might cause precision loss
@@ -128,7 +128,7 @@ func (s *Task4Pillar2Suite) TestPillar2_IntegerDivision1WeiAccumulation_MUST_FAI
 
 // TestPillar2_DustAttackFlooding tests the DoS scenario from Pillar 2
 // REQUIREMENT: "Dust attack flooding with micro-amounts mimicking codes"
-func (s *Task4Pillar2Suite) TestPillar2_DustAttackFlooding_MUST_FAIL_FIRST(c *C) {
+func (s *PrecisionTruncationValidationSuite) TestPillar2_DustAttackFlooding_MUST_FAIL_FIRST(c *C) {
 	// This tests resistance to dust attacks that try to mimic valid references
 
 	// Create dust attack pattern - many micro-amounts that look like reference codes
@@ -157,7 +157,7 @@ func (s *Task4Pillar2Suite) TestPillar2_DustAttackFlooding_MUST_FAIL_FIRST(c *C)
 
 // TestPillar2_Performance_ValidateAmountForReference_Under1ms tests acceptance criteria
 // REQUIREMENT: "Performance: ValidateAmountForReference <1ms per call"
-func (s *Task4Pillar2Suite) TestPillar2_Performance_ValidateAmountForReference_Under1ms_MUST_FAIL_FIRST(c *C) {
+func (s *PrecisionTruncationValidationSuite) TestPillar2_Performance_ValidateAmountForReference_Under1ms_MUST_FAIL_FIRST(c *C) {
 	amount := "1.00000000"
 	reference := "12345"
 	chainID := "BTC"
@@ -187,7 +187,7 @@ func (s *Task4Pillar2Suite) TestPillar2_Performance_ValidateAmountForReference_U
 
 // TestPillar2_FuzzingScenarios tests acceptance criteria fuzzing requirement
 // REQUIREMENT: "100% test coverage including fuzzing scenarios"
-func (s *Task4Pillar2Suite) TestPillar2_FuzzingScenarios_MUST_FAIL_FIRST(c *C) {
+func (s *PrecisionTruncationValidationSuite) TestPillar2_FuzzingScenarios_MUST_FAIL_FIRST(c *C) {
 	// Property-based testing with random inputs
 
 	for i := 0; i < 100; i++ {
@@ -231,7 +231,7 @@ func (s *Task4Pillar2Suite) TestPillar2_FuzzingScenarios_MUST_FAIL_FIRST(c *C) {
 
 // TestPillar2_AcceptanceCriteria_ChainDecimalRejection tests Task 4 requirement
 // REQUIREMENT: "Reject registrations for chains with <5 decimals (Pillar 2)"
-func (s *Task4Pillar2Suite) TestPillar2_AcceptanceCriteria_ChainDecimalRejection_MUST_FAIL_FIRST(c *C) {
+func (s *PrecisionTruncationValidationSuite) TestPillar2_AcceptanceCriteria_ChainDecimalRejection_MUST_FAIL_FIRST(c *C) {
 	testCases := []struct {
 		chainID       string
 		decimalPlaces int

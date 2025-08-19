@@ -12,7 +12,7 @@ type KeeperCollusionSuite struct{}
 
 var _ = Suite(&KeeperCollusionSuite{})
 
-// RED Phase Test - This should FAIL initially to drive Task 5A implementation
+// RED Phase Test - This should FAIL initially to drive duplicate reference detection implementation
 func (s *KeeperCollusionSuite) TestDetectDuplicateReference_ReturnsTrueForDuplicates(c *C) {
 	ctx, keeper := setupKeeperForTest(c)
 

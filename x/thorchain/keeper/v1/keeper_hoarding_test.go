@@ -12,7 +12,7 @@ type KeeperHoardingSuite struct{}
 
 var _ = Suite(&KeeperHoardingSuite{})
 
-// RED Phase Test - This should FAIL initially to drive Task 5E implementation
+// RED Phase Test - This should FAIL initially to drive reference hoarding detection implementation
 func (s *KeeperHoardingSuite) TestDetectReferenceHoarding_ExceedsThreshold(c *C) {
 	ctx, keeper := setupKeeperForTest(c)
 

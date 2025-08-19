@@ -14,7 +14,7 @@ type KeeperSlashingSuite struct{}
 
 var _ = Suite(&KeeperSlashingSuite{})
 
-// RED Phase Test - This should FAIL initially to drive Task 5B implementation
+// RED Phase Test - This should FAIL initially to drive collusion slashing implementation
 func (s *KeeperSlashingSuite) TestSlashNodeForCollusion_ReducesBond(c *C) {
 	ctx, keeper := setupKeeperForTest(c)
 

@@ -13,7 +13,7 @@ type KeeperConsensusSuite struct{}
 
 var _ = Suite(&KeeperConsensusSuite{})
 
-// RED Phase Test - This should FAIL initially to drive Task 5C implementation
+// RED Phase Test - This should FAIL initially to drive consensus validation implementation
 func (s *KeeperConsensusSuite) TestValidateCollusionConsensus_RequiresSuperMajority(c *C) {
 	ctx, keeper := setupKeeperForTest(c)
 

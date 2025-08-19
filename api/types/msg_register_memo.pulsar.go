@@ -1648,7 +1648,7 @@ type MsgRegisterMemo struct {
 	Ttl     int64  `protobuf:"varint,2,opt,name=ttl,proto3" json:"ttl,omitempty"`
 	ChainId string `protobuf:"bytes,3,opt,name=chain_id,json=chainId,proto3" json:"chain_id,omitempty"`
 	Signer  []byte `protobuf:"bytes,4,opt,name=signer,proto3" json:"signer,omitempty"`
-	// ADD these fields for Tasks 1-3 validation:
+	// Memoless reference validation fields for precision and routing support:
 	Amount         string   `protobuf:"bytes,5,opt,name=amount,proto3" json:"amount,omitempty"`                                        // For precision validation
 	Destination    string   `protobuf:"bytes,6,opt,name=destination,proto3" json:"destination,omitempty"`                              // For refund validation
 	ForceCollision bool     `protobuf:"varint,7,opt,name=force_collision,json=forceCollision,proto3" json:"force_collision,omitempty"` // For collision testing
