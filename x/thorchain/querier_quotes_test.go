@@ -68,7 +68,7 @@ func (s *QuotesSuite) TestParseMultipleAffiliateParams(c *C) {
 	c.Assert(totalBps.Uint64(), Equals, uint64(0))
 
 	// Test whitespace trimming
-	affiliates, bps, totalBps, err = parseMultipleAffiliateParams(ctx, mgr, " a1 / a2 ", " 100 / 200 ")
+	affiliates, bps, _, err = parseMultipleAffiliateParams(ctx, mgr, " a1 / a2 ", " 100 / 200 ")
 	c.Assert(err, IsNil)
 	c.Assert(len(affiliates), Equals, 2)
 	c.Assert(affiliates[0], Equals, "a1")
@@ -77,7 +77,7 @@ func (s *QuotesSuite) TestParseMultipleAffiliateParams(c *C) {
 	c.Assert(bps[1].Uint64(), Equals, uint64(200))
 
 	// Test empty parts in slash-separated string
-	affiliates, bps, totalBps, err = parseMultipleAffiliateParams(ctx, mgr, "a1//a3", "100//300")
+	affiliates, bps, _, err = parseMultipleAffiliateParams(ctx, mgr, "a1//a3", "100//300")
 	c.Assert(err, IsNil)
 	c.Assert(len(affiliates), Equals, 2)
 	c.Assert(affiliates[0], Equals, "a1")
@@ -86,7 +86,7 @@ func (s *QuotesSuite) TestParseMultipleAffiliateParams(c *C) {
 	c.Assert(bps[1].Uint64(), Equals, uint64(300))
 
 	// Test mismatch between affiliates and bps (more affiliates than bps)
-	affiliates, bps, totalBps, err = parseMultipleAffiliateParams(ctx, mgr, "a1/a2/a3", "100/200")
+	affiliates, bps, _, err = parseMultipleAffiliateParams(ctx, mgr, "a1/a2/a3", "100/200")
 	c.Assert(err, IsNil)
 	c.Assert(len(affiliates), Equals, 2) // Only processes affiliates with corresponding bps
 	c.Assert(len(bps), Equals, 2)
@@ -94,7 +94,7 @@ func (s *QuotesSuite) TestParseMultipleAffiliateParams(c *C) {
 	c.Assert(affiliates[1], Equals, "a2")
 
 	// Test invalid bps (should skip invalid ones)
-	affiliates, bps, totalBps, err = parseMultipleAffiliateParams(ctx, mgr, "a1/a2/a3", "100/invalid/300")
+	affiliates, bps, _, err = parseMultipleAffiliateParams(ctx, mgr, "a1/a2/a3", "100/invalid/300")
 	c.Assert(err, IsNil)
 	c.Assert(len(affiliates), Equals, 2) // Skips a2 because of invalid bps
 	c.Assert(affiliates[0], Equals, "a1")
@@ -103,12 +103,12 @@ func (s *QuotesSuite) TestParseMultipleAffiliateParams(c *C) {
 	c.Assert(bps[1].Uint64(), Equals, uint64(300))
 
 	// Test total bps exceeding limit (1000)
-	affiliates, bps, totalBps, err = parseMultipleAffiliateParams(ctx, mgr, "a1/a2", "600/500")
+	_, _, _, err = parseMultipleAffiliateParams(ctx, mgr, "a1/a2", "600/500")
 	c.Assert(err, NotNil)
 	c.Assert(err.Error(), Equals, "total affiliate fee must not be more than 1000 bps")
 
 	// Test edge case: exactly at limit
-	affiliates, bps, totalBps, err = parseMultipleAffiliateParams(ctx, mgr, "a1/a2", "500/500")
+	_, _, totalBps, err = parseMultipleAffiliateParams(ctx, mgr, "a1/a2", "500/500")
 	c.Assert(err, IsNil)
 	c.Assert(totalBps.Uint64(), Equals, uint64(1000))
 }
@@ -131,7 +131,7 @@ func (s *QuotesSuite) TestQuoteHandleAffiliate(c *C) {
 
 	// Test slash-separated (should take first values)
 	slashSeparated := validAddr + "/" + validAddr2
-	_, memo, bps, newAmount, affAmt, err = quoteHandleAffiliate(ctx, mgr, slashSeparated, "100/200", amount)
+	_, memo, bps, _, _, err = quoteHandleAffiliate(ctx, mgr, slashSeparated, "100/200", amount)
 	c.Assert(err, IsNil)
 	c.Assert(memo, Equals, validAddr)           // Should take first affiliate
 	c.Assert(bps.Uint64(), Equals, uint64(100)) // Should take first bps
@@ -145,18 +145,18 @@ func (s *QuotesSuite) TestQuoteHandleAffiliate(c *C) {
 	c.Assert(affAmt.Equal(cosmos.ZeroUint()), Equals, true)
 
 	// Test whitespace trimming
-	_, memo, bps, newAmount, affAmt, err = quoteHandleAffiliate(ctx, mgr, " "+validAddr+" ", " 100 ", amount)
+	_, memo, bps, _, _, err = quoteHandleAffiliate(ctx, mgr, " "+validAddr+" ", " 100 ", amount)
 	c.Assert(err, IsNil)
 	c.Assert(memo, Equals, validAddr)
 	c.Assert(bps.Uint64(), Equals, uint64(100))
 
 	// Test bps exceeding limit
-	_, memo, bps, newAmount, affAmt, err = quoteHandleAffiliate(ctx, mgr, validAddr, "15000", amount)
+	_, _, _, _, _, err = quoteHandleAffiliate(ctx, mgr, validAddr, "15000", amount)
 	c.Assert(err, NotNil)
 	c.Assert(err.Error(), Equals, "affiliate fee must be less than 10000 bps")
 
 	// Test invalid bps
-	_, memo, bps, newAmount, affAmt, err = quoteHandleAffiliate(ctx, mgr, validAddr, "invalid", amount)
+	_, _, _, _, _, err = quoteHandleAffiliate(ctx, mgr, validAddr, "invalid", amount)
 	c.Assert(err, NotNil)
 	c.Assert(err.Error(), Matches, "bad affiliate fee:.*")
 }
