@@ -436,6 +436,7 @@
               ],
               "memo": "OUT:000000000000000000000000000000000000000000000000000000000000000b",
               "to_address": "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
+              "tx_type": 6,
               "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
             },
             {
@@ -454,7 +455,8 @@
                 }
               ],
               "memo": "OUT:000000000000000000000000000000000000000000000000000000000000000b",
-              "to_address": "tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u"
+              "to_address": "tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u",
+              "tx_type": 6
             }
           ],
           "finalised_height": "24",
@@ -732,6 +734,7 @@
               ],
               "memo": "OUT:000000000000000000000000000000000000000000000000000000000000000b",
               "to_address": "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
+              "tx_type": 6,
               "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
             }
           ]
