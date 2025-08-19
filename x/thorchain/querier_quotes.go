@@ -135,8 +135,8 @@ func parseMultipleAffiliateParams(ctx cosmos.Context, mgr *Mgrs, affiliateParam,
 			if i >= len(bpParams) {
 				continue // skip if no corresponding bps
 			}
-			bpParam := bpParams[i]
-			bps, err := cosmos.ParseUint(bpParam)
+			currentBpParam := bpParams[i]
+			bps, err := cosmos.ParseUint(currentBpParam)
 			if err != nil {
 				continue
 			}
