@@ -1366,7 +1366,8 @@ func (s *QuerierSuite) TestQuerySwap(c *C) {
 	c.Assert(queryPoolsResp, NotNil)
 
 	// Verify memo contains both affiliates with correct basis points
-	expectedMemo := fmt.Sprintf("=:r:%s:%s/%s:30/15", request.Destination, affiliate1, affiliate2)
+	// The memo format includes streaming params: =:r:destination/refund:amount/streaming_interval/streaming_quantity:affiliates:affiliate_bps
+	expectedMemo := fmt.Sprintf("=:r:%s/%s:970000000/1/1:%s/%s:30/15", request.Destination, request.RefundAddress, affiliate1, affiliate2)
 	c.Assert(queryPoolsResp.Memo, Equals, expectedMemo)
 }
 
