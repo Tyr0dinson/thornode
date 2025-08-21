@@ -7,7 +7,12 @@
 15 Aug 25: Rewrite of ADR 021. Added research and updated plan details for execution. Included front end update.
 
 ## Status
-Draft
+Proposed
+
+## Vote options
+Make mimir ADR21 with one of the following options
+1. End 5% burn, add 5% marketing
+2. Keep 5% burn, add 5% marketing
 
 ## Context
 THORChain is the leading decentralized liquidity protocol that facilitates cross-chain native swaps and is integrated in numerous wallets and front end platforms. Despite its technical innovations and widespread utility, there is currently no dedicated fund allocation for marketing efforts. It also lacks its own dedicated front end that purely supports THORChain. This lack of marketing limits overall protocol awareness, which in turn reduces the ability to attract new users, and ecosystem growth. As a result, THORChain's full potential remains underutilized, especially among less-informed audiences who are not yet familiar with its capabilities. This is evident by numerous mainstream DeFi analytics platforms omitting the THORChain protocol from its research or results. 
@@ -210,6 +215,9 @@ Engagement is encouraged since there is a lot of intellectual capital within the
 ### Timeframe
 
 The intention of the marketing fund is to last forever.  Marketing is an ongoing process no different than research and development.
+
+**Review Period**
+A 12 month review period will occur with the community and NOs. A decision to keep or adjust the marketing members will occur via mimir vote.
 
 ### Alternatives Considered
 
