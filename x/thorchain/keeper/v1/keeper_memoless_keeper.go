@@ -1,7 +1,6 @@
 package keeperv1
 
 import (
-	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
 
@@ -47,12 +46,8 @@ func (k KVStore) ProcessMemoRegistration(ctx cosmos.Context, msg thorchaintypes.
 		return nil, fmt.Errorf("memo registration validation failed: %w", err)
 	}
 
-	// Optimized collision resolution with performance logging
-	reference, err := k.HandleCollisionResolution(ctx, msg.Memo, currentHeight, constantProvider)
-	if err != nil {
-		ctx.Logger().Error("Collision resolution failed", "memo_prefix", msg.Memo[:min(len(msg.Memo), 20)], "error", err)
-		return nil, fmt.Errorf("collision resolution failed: %w", err)
-	}
+	// Use user-provided reference (already validated in Layer 3)
+	reference := msg.Reference
 
 	// Create and store registered memo atomically
 	registeredMemo := thorchaintypes.RegisteredMemo{
@@ -121,11 +116,9 @@ func (k KVStore) ValidateMemoRegistrationComplete(ctx cosmos.Context, msg thorch
 		return fmt.Errorf("chain validation failed: %w", err)
 	}
 
-	// Layer 3: Amount validation (if provided)
-	if msg.Amount != "" {
-		if err := k.validateAmountRequirements(ctx, msg, constantProvider); err != nil {
-			return fmt.Errorf("amount validation failed: %w", err)
-		}
+	// Layer 3: Reference validation (user-provided)
+	if err := k.ValidateUserReference(ctx, msg.Reference); err != nil {
+		return fmt.Errorf("reference validation failed: %w", err)
 	}
 
 	// Layer 4: Business logic validation
@@ -141,36 +134,6 @@ func (k KVStore) ValidateMemoRegistrationComplete(ctx cosmos.Context, msg thorch
 	return nil
 }
 
-// HandleCollisionResolution handles reference collisions with optimized reference generation
-func (k KVStore) HandleCollisionResolution(ctx cosmos.Context, memo string, height int64, constantProvider constants.ConstantValues) (string, error) {
-	maxCollisionAttempts := constantProvider.GetInt64Value(constants.MemolessCollisionLimit)
-
-	// Pre-generate hash input base for performance
-	baseInput := fmt.Sprintf("%s:%d", memo, height)
-
-	for attempt := int64(0); attempt < maxCollisionAttempts; attempt++ {
-		// Generate reference with optimized hashing
-		reference := k.generateReferenceOptimized(baseInput, attempt)
-
-		// Fast existence check
-		if !k.HasRegisteredMemo(ctx, reference) {
-			if attempt > 0 {
-				// Log collision resolution for monitoring
-				ctx.Logger().Info("Collision resolved",
-					"attempts", attempt+1,
-					"reference", reference)
-			}
-			return reference, nil
-		}
-	}
-
-	// Log collision resolution failure for analysis
-	ctx.Logger().Error("Collision resolution exhausted",
-		"max_attempts", maxCollisionAttempts,
-		"memo_prefix", memo[:min(len(memo), 20)])
-
-	return "", fmt.Errorf("collision resolution failed after %d attempts", maxCollisionAttempts)
-}
 
 // CleanupExpiredMemos cleans up expired memo registrations with batch processing
 func (k KVStore) CleanupExpiredMemos(ctx cosmos.Context, currentHeight int64) (int64, error) {
@@ -282,26 +245,12 @@ func (k KVStore) validateChainSpecificRequirements(ctx cosmos.Context, msg thorc
 	return nil
 }
 
-func (k KVStore) validateAmountRequirements(ctx cosmos.Context, msg thorchaintypes.MsgRegisterMemo, constantProvider constants.ConstantValues) error {
-	// Parse amount
-	amount := cosmos.NewUintFromString(msg.Amount)
-
-	// Validate amount for chain
-	if err := k.ValidateAmountForChain(ctx, msg.ChainId, amount); err != nil {
-		return err
-	}
-
-	return nil
-}
 
 func (k KVStore) validateBusinessLogic(ctx cosmos.Context, msg thorchaintypes.MsgRegisterMemo, constantProvider constants.ConstantValues) error {
 	// Check rate limiting (simplified implementation)
 	// In production, this would check recent registrations by signer
 
 	// Check destination format if provided
-	if msg.Destination != "" && len(msg.Destination) < 10 {
-		return fmt.Errorf("destination address too short: %s", msg.Destination)
-	}
 
 	return nil
 }
@@ -316,29 +265,7 @@ func (k KVStore) validateSecurityRequirements(ctx cosmos.Context, msg thorchaint
 	return nil
 }
 
-// generateReferenceOptimized generates a 5-digit reference with pre-computed base input
-func (k KVStore) generateReferenceOptimized(baseInput string, attempt int64) string {
-	// Append attempt to pre-computed base for efficiency
-	input := fmt.Sprintf("%s:%d", baseInput, attempt)
-	hash := sha256.Sum256([]byte(input))
 
-	// Convert first 8 bytes to uint64 and mod to get 5 digits
-	var num uint64
-	for i := 0; i < 8; i++ {
-		num = (num << 8) | uint64(hash[i])
-	}
-
-	// Ensure 5-digit number (10000-99999)
-	reference := (num % 90000) + 10000
-	return fmt.Sprintf("%05d", reference)
-}
-
-// generateReference generates a 5-digit reference from memo and height (legacy method for compatibility)
-func (k KVStore) generateReference(memo string, height int64, attempt int64) string {
-	// Create hash input with memo, height, and attempt for uniqueness
-	input := fmt.Sprintf("%s:%d:%d", memo, height, attempt)
-	return k.generateReferenceOptimized(input, 0)
-}
 
 // Handler integration methods - these are thin wrappers for the existing methods
 

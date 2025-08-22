@@ -82,5 +82,5 @@ func EncodeAmountWithReference(baseAmount cosmos.Uint, reference string) (cosmos
 		return cosmos.ZeroUint(), fmt.Errorf("failed to encode amount: %v", err)
 	}
 	
-	return encodedAmount, nil
+    return encodedAmount, nil
 }

@@ -101,7 +101,6 @@ const (
 
 	// Memoless protocol prefixes
 	prefixMemoRegistration types.DbPrefix = "memo_registration/"
-	prefixMemoCounter      types.DbPrefix = "memo_counter/"
 	prefixMemoExpiry       types.DbPrefix = "memo_expiry/"
 	prefixMemoStats        types.DbPrefix = "memo_stats/"
 	prefixMemoChainConfig  types.DbPrefix = "memo_chain_config/"

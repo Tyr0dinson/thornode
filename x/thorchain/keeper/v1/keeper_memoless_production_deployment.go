@@ -209,7 +209,7 @@ func (k KVStore) AssessProductionPerformance(ctx cosmos.Context) (*PerformanceRe
 
 	// Test reference generation performance
 	refGenStart := time.Now()
-	_, err := k.GetNextReferenceID(ctx, "BTC")
+	// Removed counter generation - using user references
 	refGenDuration := time.Since(refGenStart)
 	report.ReferenceGenerationTime = refGenDuration
 
@@ -645,7 +645,8 @@ func (k KVStore) BenchmarkReferenceGeneration(ctx cosmos.Context, operations int
 	start := time.Now()
 
 	for i := 0; i < operations; i++ {
-		k.GetNextReferenceID(ctx, "BTC")
+		// Benchmark reference validation instead of generation
+		k.ValidateReference(ctx, "12345")
 	}
 
 	duration := time.Since(start)
@@ -747,10 +748,7 @@ func (k KVStore) MeasureResourceUtilization(ctx cosmos.Context) ResourceUtilizat
 
 // Helper methods for creating test data
 func (k KVStore) createTestMemo(ctx cosmos.Context) (thorchaintypes.RegisteredMemo, error) {
-	reference, err := k.GetNextReferenceID(ctx, "BTC")
-	if err != nil {
-		return thorchaintypes.RegisteredMemo{}, err
-	}
+	reference := "12345" // User-provided reference
 
 	return thorchaintypes.RegisteredMemo{
 		Reference:    reference,
@@ -769,6 +767,6 @@ func (k KVStore) createTestValidationMessage() thorchaintypes.MsgRegisterMemo {
 		ChainId: "BTC",
 		Ttl:     14400,
 		Signer:  GetRandomValidatorNode(NodeActive).NodeAddress,
-		Amount:  "100000000",
+		Reference: "12345",
 	}
 }

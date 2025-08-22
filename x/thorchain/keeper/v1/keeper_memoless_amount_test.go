@@ -38,6 +38,7 @@ func (s *KeeperAmountSuite) TestValidateUserReference(c *C) {
 	// Note: This would require setting up a registered memo to test collision detection
 }
 
+
 // TestExtractReferenceFromAmount tests stateless reference extraction
 func (s *KeeperAmountSuite) TestExtractReferenceFromAmount(c *C) {
 	_, k := setupKeeperForTest(c)

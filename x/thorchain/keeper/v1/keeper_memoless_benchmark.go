@@ -56,24 +56,22 @@ func NewPerformanceBenchmark(keeper KVStore, ctx cosmos.Context, constantProvide
 	}
 }
 
-// BenchmarkReferenceGeneration benchmarks incremental counter reference generation
-func (pb *PerformanceBenchmark) BenchmarkReferenceGeneration(config BenchmarkConfig) BenchmarkResult {
-	return pb.runBenchmark("IncrementalReferenceGeneration", config, func() error {
-		chainID := "BTC"
-		_, err := pb.keeper.GetNextReferenceID(pb.ctx, chainID)
-		return err
+// BenchmarkReferenceValidation benchmarks user reference validation performance
+func (pb *PerformanceBenchmark) BenchmarkReferenceValidation(config BenchmarkConfig) BenchmarkResult {
+	return pb.runBenchmark("ReferenceValidation", config, func() error {
+		return pb.keeper.ValidateReference(pb.ctx, "12345")
 	})
 }
 
-// BenchmarkReferenceCounter benchmarks counter operations
-func (pb *PerformanceBenchmark) BenchmarkReferenceCounter(config BenchmarkConfig) BenchmarkResult {
-	return pb.runBenchmark("ReferenceCounter", config, func() error {
-		chainID := "BTC"
-		counter, err := pb.keeper.GetReferenceCounter(pb.ctx, chainID)
+// BenchmarkMemoLookup benchmarks memo lookup by reference performance
+func (pb *PerformanceBenchmark) BenchmarkMemoLookup(config BenchmarkConfig) BenchmarkResult {
+	return pb.runBenchmark("MemoLookup", config, func() error {
+		_, err := pb.keeper.GetRegisteredMemo(pb.ctx, "12345")
 		if err != nil {
-			return err
+			// Expected error for non-existent memo
+			return nil
 		}
-		return pb.keeper.SetReferenceCounter(pb.ctx, chainID, counter+1)
+		return nil
 	})
 }
 
@@ -84,11 +82,8 @@ func (pb *PerformanceBenchmark) BenchmarkMemoRegistration(config BenchmarkConfig
 		id := atomic.AddInt64(&counter, 1)
 		memo := fmt.Sprintf("SWAP:BTC.BTC::%d", id)
 
-		// Generate reference
-		reference, err := pb.keeper.GetNextReferenceID(pb.ctx, "BTC")
-		if err != nil {
-			return err
-		}
+		// Use user-provided reference
+		reference := fmt.Sprintf("%05d", 10000+(id%90000))
 
 		// Create and store memo
 		registeredMemo := types.RegisteredMemo{
@@ -104,13 +99,13 @@ func (pb *PerformanceBenchmark) BenchmarkMemoRegistration(config BenchmarkConfig
 	})
 }
 
-// BenchmarkMemoLookup benchmarks memo lookup performance
-func (pb *PerformanceBenchmark) BenchmarkMemoLookup(config BenchmarkConfig) BenchmarkResult {
+// BenchmarkMemoLookupWithData benchmarks memo lookup performance with test data
+func (pb *PerformanceBenchmark) BenchmarkMemoLookupWithData(config BenchmarkConfig) BenchmarkResult {
 	// Pre-populate with test data
 	references := pb.prepareTestData(config.Operations)
 	counter := int64(0)
 
-	return pb.runBenchmark("MemoLookup", config, func() error {
+	return pb.runBenchmark("MemoLookupWithData", config, func() error {
 		id := atomic.AddInt64(&counter, 1) % int64(len(references))
 		reference := references[id]
 
@@ -154,9 +149,8 @@ func (pb *PerformanceBenchmark) BenchmarkCollisionResolution(config BenchmarkCon
 	counter := int64(0)
 	return pb.runBenchmark("CollisionResolution", config, func() error {
 		id := atomic.AddInt64(&counter, 1)
-		chainID := fmt.Sprintf("BTC_%d", id%3) // Vary chain IDs for testing
-		_, err := pb.keeper.GetNextReferenceID(pb.ctx, chainID)
-		return err
+		// Test reference validation
+		return pb.keeper.ValidateReference(pb.ctx, fmt.Sprintf("%05d", 10000+(id%90000)))
 	})
 }
 
@@ -206,10 +200,8 @@ func (pb *PerformanceBenchmark) BenchmarkConcurrentRegistration(config Benchmark
 	return pb.runConcurrentBenchmark("ConcurrentRegistration", config, func(workerID int) error {
 		memo := fmt.Sprintf("SWAP:BTC.BTC::worker:%d:%d", workerID, time.Now().UnixNano())
 
-		reference, err := pb.keeper.GetNextReferenceID(pb.ctx, "BTC")
-		if err != nil {
-			return err
-		}
+		// Use deterministic user reference
+		reference := fmt.Sprintf("%05d", 10000+(workerID%90000))
 
 		registeredMemo := types.RegisteredMemo{
 			Reference:    reference,
@@ -519,10 +511,10 @@ func (pb *PerformanceBenchmark) RunFullBenchmarkSuite(baseConfig BenchmarkConfig
 	// Reference generation benchmarks
 	config := baseConfig
 	config.Operations = 10000
-	results["ReferenceGeneration"] = pb.BenchmarkReferenceGeneration(config)
+	results["ReferenceValidation"] = pb.BenchmarkReferenceValidation(config)
 
 	config.Operations = 10000
-	results["ReferenceCounter"] = pb.BenchmarkReferenceCounter(config)
+	results["MemoLookup"] = pb.BenchmarkMemoLookup(config)
 
 	// Storage operation benchmarks
 	config.Operations = 5000

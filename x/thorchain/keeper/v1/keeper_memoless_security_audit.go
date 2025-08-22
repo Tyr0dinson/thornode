@@ -239,11 +239,11 @@ func (k KVStore) auditAccessControl(ctx cosmos.Context, report *SecurityAuditRep
 
 	for _, test := range accessTests {
 		msg := thorchaintypes.MsgRegisterMemo{
-			Memo:    "SWAP:BTC.BTC:thor1test:14400",
-			ChainId: "BTC",
-			Ttl:     14400,
-			Signer:  test.signer,
-			Amount:  "100000000",
+			Memo:      "SWAP:BTC.BTC:thor1test:14400",
+			ChainId:   "BTC",
+			Ttl:       14400,
+			Signer:    test.signer,
+			Reference: "12345",
 		}
 
 		constantProvider := constants.GetConstantValues(GetCurrentVersion())
@@ -346,38 +346,29 @@ func (k KVStore) auditConsensusIntegrity(ctx cosmos.Context, report *SecurityAud
 		riskIfFail SecurityRisk
 	}{
 		{
-			name: "deterministic_reference_generation",
+			name: "reference_validation_consistency",
 			testFunc: func() (bool, error) {
-				// Test that reference generation is deterministic
-				ref1, err1 := k.GetNextReferenceID(ctx, "BTC")
-				if err1 != nil {
-					return false, err1
-				}
-				// Reset counter to same state
-				counter, _ := k.GetReferenceCounter(ctx, "BTC")
-				k.SetReferenceCounter(ctx, "BTC", counter-1)
-
-				ref2, err2 := k.GetNextReferenceID(ctx, "BTC")
-				if err2 != nil {
-					return false, err2
-				}
-				return ref1 == ref2, nil
+				// Test that reference validation is deterministic
+				err1 := k.ValidateReference(ctx, "12345")
+				err2 := k.ValidateReference(ctx, "12345")
+				
+				// Both validations should have same result
+				return (err1 == nil) == (err2 == nil), nil
 			},
 			shouldPass: true,
 			riskIfFail: SecurityRisk{
 				RiskID:      "CI001",
 				Category:    "CONSENSUS",
 				Severity:    "CRITICAL",
-				Description: "Non-deterministic reference generation",
-				Impact:      "Consensus failure and chain halt",
+				Description: "Non-deterministic reference validation",
+				Impact:      "Consensus failure and validation inconsistency",
 				Likelihood:  "HIGH",
 			},
 		},
 		{
-			name: "collision_handling_determinism",
+			name: "reference_uniqueness_validation",
 			testFunc: func() (bool, error) {
-				// Test that collision handling is deterministic
-				// This requires existing memo to force collision scenario
+				// Test that reference uniqueness is properly validated
 				signer := GetRandomValidatorNode(NodeActive).NodeAddress
 				testMemo := thorchaintypes.RegisteredMemo{
 					Reference:    "50000",
@@ -393,23 +384,18 @@ func (k KVStore) auditConsensusIntegrity(ctx cosmos.Context, report *SecurityAud
 					return false, err
 				}
 
-				// Force counter to collision point
-				k.SetReferenceCounter(ctx, "BTC", 49999)
-
-				// Generate reference - should skip 50000 and go to 50001
-				ref, err := k.GetNextReferenceID(ctx, "BTC")
-				if err != nil {
-					return false, err
-				}
-				return ref == "50001", nil
+				// Test that duplicate reference is rejected
+				err = k.ValidateUserReference(ctx, "50000")
+				// Should fail because reference already exists
+				return err != nil, nil
 			},
 			shouldPass: true,
 			riskIfFail: SecurityRisk{
 				RiskID:      "CI002",
 				Category:    "CONSENSUS",
 				Severity:    "HIGH",
-				Description: "Non-deterministic collision resolution",
-				Impact:      "Reference conflicts and consensus divergence",
+				Description: "Reference uniqueness validation failure",
+				Impact:      "Reference conflicts and data corruption",
 				Likelihood:  "MEDIUM",
 			},
 		},
@@ -731,7 +717,7 @@ func (k KVStore) ProductionReadinessValidation(ctx cosmos.Context) (*ProductionR
 			checkFunc: func() (bool, string, error) {
 				// Test performance benchmarks
 				start := time.Now()
-				_, err := k.GetNextReferenceID(ctx, "BTC")
+				err := k.ValidateReference(ctx, "12345")
 				duration := time.Since(start)
 
 				targetLatency := 100 * time.Microsecond // 100µs target

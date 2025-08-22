@@ -14,62 +14,13 @@ import (
 	sync "sync"
 )
 
-var _ protoreflect.List = (*_MsgRegisterMemo_8_list)(nil)
-
-type _MsgRegisterMemo_8_list struct {
-	list *[]string
-}
-
-func (x *_MsgRegisterMemo_8_list) Len() int {
-	if x.list == nil {
-		return 0
-	}
-	return len(*x.list)
-}
-
-func (x *_MsgRegisterMemo_8_list) Get(i int) protoreflect.Value {
-	return protoreflect.ValueOfString((*x.list)[i])
-}
-
-func (x *_MsgRegisterMemo_8_list) Set(i int, value protoreflect.Value) {
-	valueUnwrapped := value.String()
-	concreteValue := valueUnwrapped
-	(*x.list)[i] = concreteValue
-}
-
-func (x *_MsgRegisterMemo_8_list) Append(value protoreflect.Value) {
-	valueUnwrapped := value.String()
-	concreteValue := valueUnwrapped
-	*x.list = append(*x.list, concreteValue)
-}
-
-func (x *_MsgRegisterMemo_8_list) AppendMutable() protoreflect.Value {
-	panic(fmt.Errorf("AppendMutable can not be called on message MsgRegisterMemo at list field Tags as it is not of Message kind"))
-}
-
-func (x *_MsgRegisterMemo_8_list) Truncate(n int) {
-	*x.list = (*x.list)[:n]
-}
-
-func (x *_MsgRegisterMemo_8_list) NewElement() protoreflect.Value {
-	v := ""
-	return protoreflect.ValueOfString(v)
-}
-
-func (x *_MsgRegisterMemo_8_list) IsValid() bool {
-	return x.list != nil
-}
-
 var (
-	md_MsgRegisterMemo                 protoreflect.MessageDescriptor
-	fd_MsgRegisterMemo_memo            protoreflect.FieldDescriptor
-	fd_MsgRegisterMemo_ttl             protoreflect.FieldDescriptor
-	fd_MsgRegisterMemo_chain_id        protoreflect.FieldDescriptor
-	fd_MsgRegisterMemo_signer          protoreflect.FieldDescriptor
-	fd_MsgRegisterMemo_amount          protoreflect.FieldDescriptor
-	fd_MsgRegisterMemo_destination     protoreflect.FieldDescriptor
-	fd_MsgRegisterMemo_force_collision protoreflect.FieldDescriptor
-	fd_MsgRegisterMemo_tags            protoreflect.FieldDescriptor
+	md_MsgRegisterMemo           protoreflect.MessageDescriptor
+	fd_MsgRegisterMemo_memo      protoreflect.FieldDescriptor
+	fd_MsgRegisterMemo_ttl       protoreflect.FieldDescriptor
+	fd_MsgRegisterMemo_chain_id  protoreflect.FieldDescriptor
+	fd_MsgRegisterMemo_signer    protoreflect.FieldDescriptor
+	fd_MsgRegisterMemo_reference protoreflect.FieldDescriptor
 )
 
 func init() {
@@ -79,10 +30,7 @@ func init() {
 	fd_MsgRegisterMemo_ttl = md_MsgRegisterMemo.Fields().ByName("ttl")
 	fd_MsgRegisterMemo_chain_id = md_MsgRegisterMemo.Fields().ByName("chain_id")
 	fd_MsgRegisterMemo_signer = md_MsgRegisterMemo.Fields().ByName("signer")
-	fd_MsgRegisterMemo_amount = md_MsgRegisterMemo.Fields().ByName("amount")
-	fd_MsgRegisterMemo_destination = md_MsgRegisterMemo.Fields().ByName("destination")
-	fd_MsgRegisterMemo_force_collision = md_MsgRegisterMemo.Fields().ByName("force_collision")
-	fd_MsgRegisterMemo_tags = md_MsgRegisterMemo.Fields().ByName("tags")
+	fd_MsgRegisterMemo_reference = md_MsgRegisterMemo.Fields().ByName("reference")
 }
 
 var _ protoreflect.Message = (*fastReflection_MsgRegisterMemo)(nil)
@@ -174,27 +122,9 @@ func (x *fastReflection_MsgRegisterMemo) Range(f func(protoreflect.FieldDescript
 			return
 		}
 	}
-	if x.Amount != "" {
-		value := protoreflect.ValueOfString(x.Amount)
-		if !f(fd_MsgRegisterMemo_amount, value) {
-			return
-		}
-	}
-	if x.Destination != "" {
-		value := protoreflect.ValueOfString(x.Destination)
-		if !f(fd_MsgRegisterMemo_destination, value) {
-			return
-		}
-	}
-	if x.ForceCollision != false {
-		value := protoreflect.ValueOfBool(x.ForceCollision)
-		if !f(fd_MsgRegisterMemo_force_collision, value) {
-			return
-		}
-	}
-	if len(x.Tags) != 0 {
-		value := protoreflect.ValueOfList(&_MsgRegisterMemo_8_list{list: &x.Tags})
-		if !f(fd_MsgRegisterMemo_tags, value) {
+	if x.Reference != "" {
+		value := protoreflect.ValueOfString(x.Reference)
+		if !f(fd_MsgRegisterMemo_reference, value) {
 			return
 		}
 	}
@@ -221,14 +151,8 @@ func (x *fastReflection_MsgRegisterMemo) Has(fd protoreflect.FieldDescriptor) bo
 		return x.ChainId != ""
 	case "types.MsgRegisterMemo.signer":
 		return len(x.Signer) != 0
-	case "types.MsgRegisterMemo.amount":
-		return x.Amount != ""
-	case "types.MsgRegisterMemo.destination":
-		return x.Destination != ""
-	case "types.MsgRegisterMemo.force_collision":
-		return x.ForceCollision != false
-	case "types.MsgRegisterMemo.tags":
-		return len(x.Tags) != 0
+	case "types.MsgRegisterMemo.reference":
+		return x.Reference != ""
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.MsgRegisterMemo"))
@@ -253,14 +177,8 @@ func (x *fastReflection_MsgRegisterMemo) Clear(fd protoreflect.FieldDescriptor) 
 		x.ChainId = ""
 	case "types.MsgRegisterMemo.signer":
 		x.Signer = nil
-	case "types.MsgRegisterMemo.amount":
-		x.Amount = ""
-	case "types.MsgRegisterMemo.destination":
-		x.Destination = ""
-	case "types.MsgRegisterMemo.force_collision":
-		x.ForceCollision = false
-	case "types.MsgRegisterMemo.tags":
-		x.Tags = nil
+	case "types.MsgRegisterMemo.reference":
+		x.Reference = ""
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.MsgRegisterMemo"))
@@ -289,21 +207,9 @@ func (x *fastReflection_MsgRegisterMemo) Get(descriptor protoreflect.FieldDescri
 	case "types.MsgRegisterMemo.signer":
 		value := x.Signer
 		return protoreflect.ValueOfBytes(value)
-	case "types.MsgRegisterMemo.amount":
-		value := x.Amount
+	case "types.MsgRegisterMemo.reference":
+		value := x.Reference
 		return protoreflect.ValueOfString(value)
-	case "types.MsgRegisterMemo.destination":
-		value := x.Destination
-		return protoreflect.ValueOfString(value)
-	case "types.MsgRegisterMemo.force_collision":
-		value := x.ForceCollision
-		return protoreflect.ValueOfBool(value)
-	case "types.MsgRegisterMemo.tags":
-		if len(x.Tags) == 0 {
-			return protoreflect.ValueOfList(&_MsgRegisterMemo_8_list{})
-		}
-		listValue := &_MsgRegisterMemo_8_list{list: &x.Tags}
-		return protoreflect.ValueOfList(listValue)
 	default:
 		if descriptor.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.MsgRegisterMemo"))
@@ -332,16 +238,8 @@ func (x *fastReflection_MsgRegisterMemo) Set(fd protoreflect.FieldDescriptor, va
 		x.ChainId = value.Interface().(string)
 	case "types.MsgRegisterMemo.signer":
 		x.Signer = value.Bytes()
-	case "types.MsgRegisterMemo.amount":
-		x.Amount = value.Interface().(string)
-	case "types.MsgRegisterMemo.destination":
-		x.Destination = value.Interface().(string)
-	case "types.MsgRegisterMemo.force_collision":
-		x.ForceCollision = value.Bool()
-	case "types.MsgRegisterMemo.tags":
-		lv := value.List()
-		clv := lv.(*_MsgRegisterMemo_8_list)
-		x.Tags = *clv.list
+	case "types.MsgRegisterMemo.reference":
+		x.Reference = value.Interface().(string)
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.MsgRegisterMemo"))
@@ -362,12 +260,6 @@ func (x *fastReflection_MsgRegisterMemo) Set(fd protoreflect.FieldDescriptor, va
 // Mutable is a mutating operation and unsafe for concurrent use.
 func (x *fastReflection_MsgRegisterMemo) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
 	switch fd.FullName() {
-	case "types.MsgRegisterMemo.tags":
-		if x.Tags == nil {
-			x.Tags = []string{}
-		}
-		value := &_MsgRegisterMemo_8_list{list: &x.Tags}
-		return protoreflect.ValueOfList(value)
 	case "types.MsgRegisterMemo.memo":
 		panic(fmt.Errorf("field memo of message types.MsgRegisterMemo is not mutable"))
 	case "types.MsgRegisterMemo.ttl":
@@ -376,12 +268,8 @@ func (x *fastReflection_MsgRegisterMemo) Mutable(fd protoreflect.FieldDescriptor
 		panic(fmt.Errorf("field chain_id of message types.MsgRegisterMemo is not mutable"))
 	case "types.MsgRegisterMemo.signer":
 		panic(fmt.Errorf("field signer of message types.MsgRegisterMemo is not mutable"))
-	case "types.MsgRegisterMemo.amount":
-		panic(fmt.Errorf("field amount of message types.MsgRegisterMemo is not mutable"))
-	case "types.MsgRegisterMemo.destination":
-		panic(fmt.Errorf("field destination of message types.MsgRegisterMemo is not mutable"))
-	case "types.MsgRegisterMemo.force_collision":
-		panic(fmt.Errorf("field force_collision of message types.MsgRegisterMemo is not mutable"))
+	case "types.MsgRegisterMemo.reference":
+		panic(fmt.Errorf("field reference of message types.MsgRegisterMemo is not mutable"))
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.MsgRegisterMemo"))
@@ -403,15 +291,8 @@ func (x *fastReflection_MsgRegisterMemo) NewField(fd protoreflect.FieldDescripto
 		return protoreflect.ValueOfString("")
 	case "types.MsgRegisterMemo.signer":
 		return protoreflect.ValueOfBytes(nil)
-	case "types.MsgRegisterMemo.amount":
+	case "types.MsgRegisterMemo.reference":
 		return protoreflect.ValueOfString("")
-	case "types.MsgRegisterMemo.destination":
-		return protoreflect.ValueOfString("")
-	case "types.MsgRegisterMemo.force_collision":
-		return protoreflect.ValueOfBool(false)
-	case "types.MsgRegisterMemo.tags":
-		list := []string{}
-		return protoreflect.ValueOfList(&_MsgRegisterMemo_8_list{list: &list})
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.MsgRegisterMemo"))
@@ -496,22 +377,9 @@ func (x *fastReflection_MsgRegisterMemo) ProtoMethods() *protoiface.Methods {
 		if l > 0 {
 			n += 1 + l + runtime.Sov(uint64(l))
 		}
-		l = len(x.Amount)
+		l = len(x.Reference)
 		if l > 0 {
 			n += 1 + l + runtime.Sov(uint64(l))
-		}
-		l = len(x.Destination)
-		if l > 0 {
-			n += 1 + l + runtime.Sov(uint64(l))
-		}
-		if x.ForceCollision {
-			n += 2
-		}
-		if len(x.Tags) > 0 {
-			for _, s := range x.Tags {
-				l = len(s)
-				n += 1 + l + runtime.Sov(uint64(l))
-			}
 		}
 		if x.unknownFields != nil {
 			n += len(x.unknownFields)
@@ -542,36 +410,10 @@ func (x *fastReflection_MsgRegisterMemo) ProtoMethods() *protoiface.Methods {
 			i -= len(x.unknownFields)
 			copy(dAtA[i:], x.unknownFields)
 		}
-		if len(x.Tags) > 0 {
-			for iNdEx := len(x.Tags) - 1; iNdEx >= 0; iNdEx-- {
-				i -= len(x.Tags[iNdEx])
-				copy(dAtA[i:], x.Tags[iNdEx])
-				i = runtime.EncodeVarint(dAtA, i, uint64(len(x.Tags[iNdEx])))
-				i--
-				dAtA[i] = 0x42
-			}
-		}
-		if x.ForceCollision {
-			i--
-			if x.ForceCollision {
-				dAtA[i] = 1
-			} else {
-				dAtA[i] = 0
-			}
-			i--
-			dAtA[i] = 0x38
-		}
-		if len(x.Destination) > 0 {
-			i -= len(x.Destination)
-			copy(dAtA[i:], x.Destination)
-			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.Destination)))
-			i--
-			dAtA[i] = 0x32
-		}
-		if len(x.Amount) > 0 {
-			i -= len(x.Amount)
-			copy(dAtA[i:], x.Amount)
-			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.Amount)))
+		if len(x.Reference) > 0 {
+			i -= len(x.Reference)
+			copy(dAtA[i:], x.Reference)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.Reference)))
 			i--
 			dAtA[i] = 0x2a
 		}
@@ -769,7 +611,7 @@ func (x *fastReflection_MsgRegisterMemo) ProtoMethods() *protoiface.Methods {
 				iNdEx = postIndex
 			case 5:
 				if wireType != 2 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Amount", wireType)
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Reference", wireType)
 				}
 				var stringLen uint64
 				for shift := uint(0); ; shift += 7 {
@@ -797,91 +639,7 @@ func (x *fastReflection_MsgRegisterMemo) ProtoMethods() *protoiface.Methods {
 				if postIndex > l {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
 				}
-				x.Amount = string(dAtA[iNdEx:postIndex])
-				iNdEx = postIndex
-			case 6:
-				if wireType != 2 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Destination", wireType)
-				}
-				var stringLen uint64
-				for shift := uint(0); ; shift += 7 {
-					if shift >= 64 {
-						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
-					}
-					if iNdEx >= l {
-						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
-					}
-					b := dAtA[iNdEx]
-					iNdEx++
-					stringLen |= uint64(b&0x7F) << shift
-					if b < 0x80 {
-						break
-					}
-				}
-				intStringLen := int(stringLen)
-				if intStringLen < 0 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
-				}
-				postIndex := iNdEx + intStringLen
-				if postIndex < 0 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
-				}
-				if postIndex > l {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
-				}
-				x.Destination = string(dAtA[iNdEx:postIndex])
-				iNdEx = postIndex
-			case 7:
-				if wireType != 0 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field ForceCollision", wireType)
-				}
-				var v int
-				for shift := uint(0); ; shift += 7 {
-					if shift >= 64 {
-						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
-					}
-					if iNdEx >= l {
-						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
-					}
-					b := dAtA[iNdEx]
-					iNdEx++
-					v |= int(b&0x7F) << shift
-					if b < 0x80 {
-						break
-					}
-				}
-				x.ForceCollision = bool(v != 0)
-			case 8:
-				if wireType != 2 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Tags", wireType)
-				}
-				var stringLen uint64
-				for shift := uint(0); ; shift += 7 {
-					if shift >= 64 {
-						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
-					}
-					if iNdEx >= l {
-						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
-					}
-					b := dAtA[iNdEx]
-					iNdEx++
-					stringLen |= uint64(b&0x7F) << shift
-					if b < 0x80 {
-						break
-					}
-				}
-				intStringLen := int(stringLen)
-				if intStringLen < 0 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
-				}
-				postIndex := iNdEx + intStringLen
-				if postIndex < 0 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
-				}
-				if postIndex > l {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
-				}
-				x.Tags = append(x.Tags, string(dAtA[iNdEx:postIndex]))
+				x.Reference = string(dAtA[iNdEx:postIndex])
 				iNdEx = postIndex
 			default:
 				iNdEx = preIndex
@@ -926,6 +684,7 @@ var (
 	fd_RegisteredMemo_expires_at    protoreflect.FieldDescriptor
 	fd_RegisteredMemo_chain_id      protoreflect.FieldDescriptor
 	fd_RegisteredMemo_status        protoreflect.FieldDescriptor
+	fd_RegisteredMemo_signer        protoreflect.FieldDescriptor
 )
 
 func init() {
@@ -937,6 +696,7 @@ func init() {
 	fd_RegisteredMemo_expires_at = md_RegisteredMemo.Fields().ByName("expires_at")
 	fd_RegisteredMemo_chain_id = md_RegisteredMemo.Fields().ByName("chain_id")
 	fd_RegisteredMemo_status = md_RegisteredMemo.Fields().ByName("status")
+	fd_RegisteredMemo_signer = md_RegisteredMemo.Fields().ByName("signer")
 }
 
 var _ protoreflect.Message = (*fastReflection_RegisteredMemo)(nil)
@@ -1040,6 +800,12 @@ func (x *fastReflection_RegisteredMemo) Range(f func(protoreflect.FieldDescripto
 			return
 		}
 	}
+	if len(x.Signer) != 0 {
+		value := protoreflect.ValueOfBytes(x.Signer)
+		if !f(fd_RegisteredMemo_signer, value) {
+			return
+		}
+	}
 }
 
 // Has reports whether a field is populated.
@@ -1067,6 +833,8 @@ func (x *fastReflection_RegisteredMemo) Has(fd protoreflect.FieldDescriptor) boo
 		return x.ChainId != ""
 	case "types.RegisteredMemo.status":
 		return x.Status != ""
+	case "types.RegisteredMemo.signer":
+		return len(x.Signer) != 0
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.RegisteredMemo"))
@@ -1095,6 +863,8 @@ func (x *fastReflection_RegisteredMemo) Clear(fd protoreflect.FieldDescriptor) {
 		x.ChainId = ""
 	case "types.RegisteredMemo.status":
 		x.Status = ""
+	case "types.RegisteredMemo.signer":
+		x.Signer = nil
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.RegisteredMemo"))
@@ -1129,6 +899,9 @@ func (x *fastReflection_RegisteredMemo) Get(descriptor protoreflect.FieldDescrip
 	case "types.RegisteredMemo.status":
 		value := x.Status
 		return protoreflect.ValueOfString(value)
+	case "types.RegisteredMemo.signer":
+		value := x.Signer
+		return protoreflect.ValueOfBytes(value)
 	default:
 		if descriptor.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.RegisteredMemo"))
@@ -1161,6 +934,8 @@ func (x *fastReflection_RegisteredMemo) Set(fd protoreflect.FieldDescriptor, val
 		x.ChainId = value.Interface().(string)
 	case "types.RegisteredMemo.status":
 		x.Status = value.Interface().(string)
+	case "types.RegisteredMemo.signer":
+		x.Signer = value.Bytes()
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.RegisteredMemo"))
@@ -1193,6 +968,8 @@ func (x *fastReflection_RegisteredMemo) Mutable(fd protoreflect.FieldDescriptor)
 		panic(fmt.Errorf("field chain_id of message types.RegisteredMemo is not mutable"))
 	case "types.RegisteredMemo.status":
 		panic(fmt.Errorf("field status of message types.RegisteredMemo is not mutable"))
+	case "types.RegisteredMemo.signer":
+		panic(fmt.Errorf("field signer of message types.RegisteredMemo is not mutable"))
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.RegisteredMemo"))
@@ -1218,6 +995,8 @@ func (x *fastReflection_RegisteredMemo) NewField(fd protoreflect.FieldDescriptor
 		return protoreflect.ValueOfString("")
 	case "types.RegisteredMemo.status":
 		return protoreflect.ValueOfString("")
+	case "types.RegisteredMemo.signer":
+		return protoreflect.ValueOfBytes(nil)
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.RegisteredMemo"))
@@ -1309,6 +1088,10 @@ func (x *fastReflection_RegisteredMemo) ProtoMethods() *protoiface.Methods {
 		if l > 0 {
 			n += 1 + l + runtime.Sov(uint64(l))
 		}
+		l = len(x.Signer)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
 		if x.unknownFields != nil {
 			n += len(x.unknownFields)
 		}
@@ -1337,6 +1120,13 @@ func (x *fastReflection_RegisteredMemo) ProtoMethods() *protoiface.Methods {
 		if x.unknownFields != nil {
 			i -= len(x.unknownFields)
 			copy(dAtA[i:], x.unknownFields)
+		}
+		if len(x.Signer) > 0 {
+			i -= len(x.Signer)
+			copy(dAtA[i:], x.Signer)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.Signer)))
+			i--
+			dAtA[i] = 0x3a
 		}
 		if len(x.Status) > 0 {
 			i -= len(x.Status)
@@ -1591,6 +1381,40 @@ func (x *fastReflection_RegisteredMemo) ProtoMethods() *protoiface.Methods {
 				}
 				x.Status = string(dAtA[iNdEx:postIndex])
 				iNdEx = postIndex
+			case 7:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Signer", wireType)
+				}
+				var byteLen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					byteLen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if byteLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + byteLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.Signer = append(x.Signer[:0], dAtA[iNdEx:postIndex]...)
+				if x.Signer == nil {
+					x.Signer = []byte{}
+				}
+				iNdEx = postIndex
 			default:
 				iNdEx = preIndex
 				skippy, err := runtime.Skip(dAtA[iNdEx:])
@@ -1644,15 +1468,11 @@ type MsgRegisterMemo struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Memo    string `protobuf:"bytes,1,opt,name=memo,proto3" json:"memo,omitempty"`
-	Ttl     int64  `protobuf:"varint,2,opt,name=ttl,proto3" json:"ttl,omitempty"`
-	ChainId string `protobuf:"bytes,3,opt,name=chain_id,json=chainId,proto3" json:"chain_id,omitempty"`
-	Signer  []byte `protobuf:"bytes,4,opt,name=signer,proto3" json:"signer,omitempty"`
-	// Memoless reference validation fields for precision and routing support:
-	Amount         string   `protobuf:"bytes,5,opt,name=amount,proto3" json:"amount,omitempty"`                                        // For precision validation
-	Destination    string   `protobuf:"bytes,6,opt,name=destination,proto3" json:"destination,omitempty"`                              // For refund validation
-	ForceCollision bool     `protobuf:"varint,7,opt,name=force_collision,json=forceCollision,proto3" json:"force_collision,omitempty"` // For collision testing
-	Tags           []string `protobuf:"bytes,8,rep,name=tags,proto3" json:"tags,omitempty"`                                            // For metadata/debugging
+	Memo      string `protobuf:"bytes,1,opt,name=memo,proto3" json:"memo,omitempty"`
+	Ttl       int64  `protobuf:"varint,2,opt,name=ttl,proto3" json:"ttl,omitempty"`
+	ChainId   string `protobuf:"bytes,3,opt,name=chain_id,json=chainId,proto3" json:"chain_id,omitempty"`
+	Signer    []byte `protobuf:"bytes,4,opt,name=signer,proto3" json:"signer,omitempty"`
+	Reference string `protobuf:"bytes,5,opt,name=reference,proto3" json:"reference,omitempty"` // User must provide 5-digit reference
 }
 
 func (x *MsgRegisterMemo) Reset() {
@@ -1703,32 +1523,11 @@ func (x *MsgRegisterMemo) GetSigner() []byte {
 	return nil
 }
 
-func (x *MsgRegisterMemo) GetAmount() string {
+func (x *MsgRegisterMemo) GetReference() string {
 	if x != nil {
-		return x.Amount
+		return x.Reference
 	}
 	return ""
-}
-
-func (x *MsgRegisterMemo) GetDestination() string {
-	if x != nil {
-		return x.Destination
-	}
-	return ""
-}
-
-func (x *MsgRegisterMemo) GetForceCollision() bool {
-	if x != nil {
-		return x.ForceCollision
-	}
-	return false
-}
-
-func (x *MsgRegisterMemo) GetTags() []string {
-	if x != nil {
-		return x.Tags
-	}
-	return nil
 }
 
 type RegisteredMemo struct {
@@ -1742,6 +1541,7 @@ type RegisteredMemo struct {
 	ExpiresAt    int64  `protobuf:"varint,4,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
 	ChainId      string `protobuf:"bytes,5,opt,name=chain_id,json=chainId,proto3" json:"chain_id,omitempty"`
 	Status       string `protobuf:"bytes,6,opt,name=status,proto3" json:"status,omitempty"`
+	Signer       []byte `protobuf:"bytes,7,opt,name=signer,proto3" json:"signer,omitempty"`
 }
 
 func (x *RegisteredMemo) Reset() {
@@ -1806,6 +1606,13 @@ func (x *RegisteredMemo) GetStatus() string {
 	return ""
 }
 
+func (x *RegisteredMemo) GetSigner() []byte {
+	if x != nil {
+		return x.Signer
+	}
+	return nil
+}
+
 var File_types_msg_register_memo_proto protoreflect.FileDescriptor
 
 var file_types_msg_register_memo_proto_rawDesc = []byte{
@@ -1814,7 +1621,7 @@ var file_types_msg_register_memo_proto_rawDesc = []byte{
 	0x05, 0x74, 0x79, 0x70, 0x65, 0x73, 0x1a, 0x14, 0x67, 0x6f, 0x67, 0x6f, 0x70, 0x72, 0x6f, 0x74,
 	0x6f, 0x2f, 0x67, 0x6f, 0x67, 0x6f, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x1a, 0x11, 0x61, 0x6d,
 	0x69, 0x6e, 0x6f, 0x2f, 0x61, 0x6d, 0x69, 0x6e, 0x6f, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x22,
-	0xbf, 0x02, 0x0a, 0x0f, 0x4d, 0x73, 0x67, 0x52, 0x65, 0x67, 0x69, 0x73, 0x74, 0x65, 0x72, 0x4d,
+	0xe6, 0x01, 0x0a, 0x0f, 0x4d, 0x73, 0x67, 0x52, 0x65, 0x67, 0x69, 0x73, 0x74, 0x65, 0x72, 0x4d,
 	0x65, 0x6d, 0x6f, 0x12, 0x12, 0x0a, 0x04, 0x6d, 0x65, 0x6d, 0x6f, 0x18, 0x01, 0x20, 0x01, 0x28,
 	0x09, 0x52, 0x04, 0x6d, 0x65, 0x6d, 0x6f, 0x12, 0x10, 0x0a, 0x03, 0x74, 0x74, 0x6c, 0x18, 0x02,
 	0x20, 0x01, 0x28, 0x03, 0x52, 0x03, 0x74, 0x74, 0x6c, 0x12, 0x19, 0x0a, 0x08, 0x63, 0x68, 0x61,
@@ -1824,37 +1631,37 @@ var file_types_msg_register_memo_proto_rawDesc = []byte{
 	0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x2f, 0x63, 0x6f, 0x73, 0x6d,
 	0x6f, 0x73, 0x2d, 0x73, 0x64, 0x6b, 0x2f, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2e, 0x41, 0x63, 0x63,
 	0x41, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x9a, 0xe7, 0xb0, 0x2a, 0x06, 0x62, 0x65, 0x63, 0x68,
-	0x33, 0x32, 0x52, 0x06, 0x73, 0x69, 0x67, 0x6e, 0x65, 0x72, 0x12, 0x16, 0x0a, 0x06, 0x61, 0x6d,
-	0x6f, 0x75, 0x6e, 0x74, 0x18, 0x05, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x61, 0x6d, 0x6f, 0x75,
-	0x6e, 0x74, 0x12, 0x20, 0x0a, 0x0b, 0x64, 0x65, 0x73, 0x74, 0x69, 0x6e, 0x61, 0x74, 0x69, 0x6f,
-	0x6e, 0x18, 0x06, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0b, 0x64, 0x65, 0x73, 0x74, 0x69, 0x6e, 0x61,
-	0x74, 0x69, 0x6f, 0x6e, 0x12, 0x27, 0x0a, 0x0f, 0x66, 0x6f, 0x72, 0x63, 0x65, 0x5f, 0x63, 0x6f,
-	0x6c, 0x6c, 0x69, 0x73, 0x69, 0x6f, 0x6e, 0x18, 0x07, 0x20, 0x01, 0x28, 0x08, 0x52, 0x0e, 0x66,
-	0x6f, 0x72, 0x63, 0x65, 0x43, 0x6f, 0x6c, 0x6c, 0x69, 0x73, 0x69, 0x6f, 0x6e, 0x12, 0x12, 0x0a,
-	0x04, 0x74, 0x61, 0x67, 0x73, 0x18, 0x08, 0x20, 0x03, 0x28, 0x09, 0x52, 0x04, 0x74, 0x61, 0x67,
-	0x73, 0x3a, 0x1e, 0x8a, 0xe7, 0xb0, 0x2a, 0x19, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69,
-	0x6e, 0x2f, 0x4d, 0x73, 0x67, 0x52, 0x65, 0x67, 0x69, 0x73, 0x74, 0x65, 0x72, 0x4d, 0x65, 0x6d,
-	0x6f, 0x22, 0xb9, 0x01, 0x0a, 0x0e, 0x52, 0x65, 0x67, 0x69, 0x73, 0x74, 0x65, 0x72, 0x65, 0x64,
-	0x4d, 0x65, 0x6d, 0x6f, 0x12, 0x1c, 0x0a, 0x09, 0x72, 0x65, 0x66, 0x65, 0x72, 0x65, 0x6e, 0x63,
-	0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x09, 0x72, 0x65, 0x66, 0x65, 0x72, 0x65, 0x6e,
-	0x63, 0x65, 0x12, 0x12, 0x0a, 0x04, 0x6d, 0x65, 0x6d, 0x6f, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09,
-	0x52, 0x04, 0x6d, 0x65, 0x6d, 0x6f, 0x12, 0x23, 0x0a, 0x0d, 0x72, 0x65, 0x67, 0x69, 0x73, 0x74,
-	0x65, 0x72, 0x65, 0x64, 0x5f, 0x61, 0x74, 0x18, 0x03, 0x20, 0x01, 0x28, 0x03, 0x52, 0x0c, 0x72,
-	0x65, 0x67, 0x69, 0x73, 0x74, 0x65, 0x72, 0x65, 0x64, 0x41, 0x74, 0x12, 0x1d, 0x0a, 0x0a, 0x65,
-	0x78, 0x70, 0x69, 0x72, 0x65, 0x73, 0x5f, 0x61, 0x74, 0x18, 0x04, 0x20, 0x01, 0x28, 0x03, 0x52,
-	0x09, 0x65, 0x78, 0x70, 0x69, 0x72, 0x65, 0x73, 0x41, 0x74, 0x12, 0x19, 0x0a, 0x08, 0x63, 0x68,
-	0x61, 0x69, 0x6e, 0x5f, 0x69, 0x64, 0x18, 0x05, 0x20, 0x01, 0x28, 0x09, 0x52, 0x07, 0x63, 0x68,
-	0x61, 0x69, 0x6e, 0x49, 0x64, 0x12, 0x16, 0x0a, 0x06, 0x73, 0x74, 0x61, 0x74, 0x75, 0x73, 0x18,
-	0x06, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x73, 0x74, 0x61, 0x74, 0x75, 0x73, 0x42, 0x81, 0x01,
-	0x0a, 0x09, 0x63, 0x6f, 0x6d, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x42, 0x14, 0x4d, 0x73, 0x67,
-	0x52, 0x65, 0x67, 0x69, 0x73, 0x74, 0x65, 0x72, 0x4d, 0x65, 0x6d, 0x6f, 0x50, 0x72, 0x6f, 0x74,
-	0x6f, 0x50, 0x01, 0x5a, 0x2a, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f,
-	0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x6e, 0x6f,
-	0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x74, 0x79, 0x70, 0x65, 0x73, 0xa2,
-	0x02, 0x03, 0x54, 0x58, 0x58, 0xaa, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xca, 0x02, 0x05,
-	0x54, 0x79, 0x70, 0x65, 0x73, 0xe2, 0x02, 0x11, 0x54, 0x79, 0x70, 0x65, 0x73, 0x5c, 0x47, 0x50,
-	0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65,
-	0x73, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x33, 0x32, 0x52, 0x06, 0x73, 0x69, 0x67, 0x6e, 0x65, 0x72, 0x12, 0x1c, 0x0a, 0x09, 0x72, 0x65,
+	0x66, 0x65, 0x72, 0x65, 0x6e, 0x63, 0x65, 0x18, 0x05, 0x20, 0x01, 0x28, 0x09, 0x52, 0x09, 0x72,
+	0x65, 0x66, 0x65, 0x72, 0x65, 0x6e, 0x63, 0x65, 0x3a, 0x1e, 0x8a, 0xe7, 0xb0, 0x2a, 0x19, 0x74,
+	0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x4d, 0x73, 0x67, 0x52, 0x65, 0x67, 0x69,
+	0x73, 0x74, 0x65, 0x72, 0x4d, 0x65, 0x6d, 0x6f, 0x22, 0x8f, 0x02, 0x0a, 0x0e, 0x52, 0x65, 0x67,
+	0x69, 0x73, 0x74, 0x65, 0x72, 0x65, 0x64, 0x4d, 0x65, 0x6d, 0x6f, 0x12, 0x1c, 0x0a, 0x09, 0x72,
+	0x65, 0x66, 0x65, 0x72, 0x65, 0x6e, 0x63, 0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x09,
+	0x72, 0x65, 0x66, 0x65, 0x72, 0x65, 0x6e, 0x63, 0x65, 0x12, 0x12, 0x0a, 0x04, 0x6d, 0x65, 0x6d,
+	0x6f, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x04, 0x6d, 0x65, 0x6d, 0x6f, 0x12, 0x23, 0x0a,
+	0x0d, 0x72, 0x65, 0x67, 0x69, 0x73, 0x74, 0x65, 0x72, 0x65, 0x64, 0x5f, 0x61, 0x74, 0x18, 0x03,
+	0x20, 0x01, 0x28, 0x03, 0x52, 0x0c, 0x72, 0x65, 0x67, 0x69, 0x73, 0x74, 0x65, 0x72, 0x65, 0x64,
+	0x41, 0x74, 0x12, 0x1d, 0x0a, 0x0a, 0x65, 0x78, 0x70, 0x69, 0x72, 0x65, 0x73, 0x5f, 0x61, 0x74,
+	0x18, 0x04, 0x20, 0x01, 0x28, 0x03, 0x52, 0x09, 0x65, 0x78, 0x70, 0x69, 0x72, 0x65, 0x73, 0x41,
+	0x74, 0x12, 0x19, 0x0a, 0x08, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x5f, 0x69, 0x64, 0x18, 0x05, 0x20,
+	0x01, 0x28, 0x09, 0x52, 0x07, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x49, 0x64, 0x12, 0x16, 0x0a, 0x06,
+	0x73, 0x74, 0x61, 0x74, 0x75, 0x73, 0x18, 0x06, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x73, 0x74,
+	0x61, 0x74, 0x75, 0x73, 0x12, 0x54, 0x0a, 0x06, 0x73, 0x69, 0x67, 0x6e, 0x65, 0x72, 0x18, 0x07,
+	0x20, 0x01, 0x28, 0x0c, 0x42, 0x3c, 0xfa, 0xde, 0x1f, 0x2d, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62,
+	0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x2f, 0x63, 0x6f, 0x73, 0x6d,
+	0x6f, 0x73, 0x2d, 0x73, 0x64, 0x6b, 0x2f, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2e, 0x41, 0x63, 0x63,
+	0x41, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x9a, 0xe7, 0xb0, 0x2a, 0x06, 0x62, 0x65, 0x63, 0x68,
+	0x33, 0x32, 0x52, 0x06, 0x73, 0x69, 0x67, 0x6e, 0x65, 0x72, 0x42, 0x81, 0x01, 0x0a, 0x09, 0x63,
+	0x6f, 0x6d, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x42, 0x14, 0x4d, 0x73, 0x67, 0x52, 0x65, 0x67,
+	0x69, 0x73, 0x74, 0x65, 0x72, 0x4d, 0x65, 0x6d, 0x6f, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01,
+	0x5a, 0x2a, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f,
+	0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f,
+	0x76, 0x33, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x74, 0x79, 0x70, 0x65, 0x73, 0xa2, 0x02, 0x03, 0x54,
+	0x58, 0x58, 0xaa, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xca, 0x02, 0x05, 0x54, 0x79, 0x70,
+	0x65, 0x73, 0xe2, 0x02, 0x11, 0x54, 0x79, 0x70, 0x65, 0x73, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65,
+	0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0x62, 0x06,
+	0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (

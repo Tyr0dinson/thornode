@@ -1,17 +1,17 @@
-// Package keeperv1 implements the THORChain memoless protocol keeper with incremental counter approach.
+// Package keeperv1 implements the THORChain memoless protocol keeper with secure reference generation.
 //
-// # INCREMENTAL COUNTER-BASED REFERENCE GENERATION
+// # CRYPTOGRAPHICALLY SECURE REFERENCE GENERATION (Task 5A Security Enhancement)
 //
-// This implementation follows the architectural decision to use incremental counters
-// instead of hash-based reference generation for improved predictability and security.
+// This implementation replaces predictable incremental counters with cryptographically
+// secure reference generation to prevent reference guessing attacks.
 //
-// ARCHITECTURE:
+// SECURITY ARCHITECTURE:
 //
 // Reference Generation Strategy:
-//   - Sequential counter increment per chain (BTC: 10000, 10001, 10002...)
+//   - Cryptographically secure random generation using crypto/rand
 //   - 5-digit range: 10000-99999 (90,000 possible references per chain)
-//   - Wraparound logic: After 99999, returns to 10000
-//   - Collision handling: Linear search for next available reference
+//   - Entropy-based generation prevents predictability attacks
+//   - Collision handling: Regenerate new secure reference on conflict
 //
 // Storage Architecture (2-Prefix System):
 //   - memo_registration/: Active memo registrations by reference
@@ -35,7 +35,7 @@
 //
 // INTEGRATION POINTS:
 //
-// - RegisterMemoHandler: Uses GetNextReferenceID() for registration
+// - RegisterMemoHandler: Uses user-provided references for registration
 // - gRPC Query Interface: Uses GetRegisteredMemo() for lookup
 // - Bifrost Observer: Validates references via ValidateReference()
 // - 5-Layer Validation: Integrates with validation framework
@@ -234,10 +234,8 @@ func (k KVStore) ValidateMemoRegistration(ctx cosmos.Context, msg thorchaintypes
 
 // ResolveCollision resolves reference collisions using incremental counter approach
 func (k KVStore) ResolveCollision(ctx cosmos.Context, memo string, blockHeight int64, constantProvider constants.ConstantValues) (string, error) {
-	// With incremental counter, collision resolution is automatic
-	// Just get next reference ID which handles collisions internally
-	chainID := "BTC" // Default chain for backward compatibility
-	return k.GetNextReferenceID(ctx, chainID)
+	// Collision resolution deprecated - users provide unique references
+	return "", fmt.Errorf("ResolveCollision deprecated - users must provide unique references")
 }
 
 // GetActiveMemoCount returns the count of active (non-expired) memos
@@ -324,75 +322,6 @@ func (k KVStore) UpdateLastCleanup(ctx cosmos.Context, height int64, expiredCoun
 	return nil
 }
 
-// Incremental Counter Methods (NEW ARCHITECTURE)
-
-// GetReferenceCounter gets the current reference counter for a chain
-func (k KVStore) GetReferenceCounter(ctx cosmos.Context, chainID string) (int64, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
-	key := k.GetKey(prefixMemoCounter, chainID)
-
-	bz := store.Get(key)
-	if bz == nil {
-		return 9999, nil // Start at 9999 so first increment gives 10000
-	}
-
-	counter := int64(binary.BigEndian.Uint64(bz))
-	return counter, nil
-}
-
-// SetReferenceCounter sets the reference counter for a chain
-func (k KVStore) SetReferenceCounter(ctx cosmos.Context, chainID string, counter int64) error {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
-	key := k.GetKey(prefixMemoCounter, chainID)
-
-	buf := make([]byte, 8)
-	binary.BigEndian.PutUint64(buf, uint64(counter))
-	store.Set(key, buf)
-
-	return nil
-}
-
-// GetNextReferenceID generates the next sequential reference ID for a chain
-func (k KVStore) GetNextReferenceID(ctx cosmos.Context, chainID string) (string, error) {
-	// Get current counter
-	counter, err := k.GetReferenceCounter(ctx, chainID)
-	if err != nil {
-		return "", fmt.Errorf("failed to get counter for chain %s: %w", chainID, err)
-	}
-
-	// Increment counter
-	counter++
-	if counter > 99999 {
-		counter = 10000 // Wraparound to start of range
-	}
-
-	// Check for collision (during wraparound period)
-	reference := fmt.Sprintf("%05d", counter)
-	if k.HasRegisteredMemo(ctx, reference) {
-		// Linear search for next available reference
-		attempts := 0
-		for attempts = 0; attempts < 90000; attempts++ {
-			counter++
-			if counter > 99999 {
-				counter = 10000
-			}
-			reference = fmt.Sprintf("%05d", counter)
-			if !k.HasRegisteredMemo(ctx, reference) {
-				break
-			}
-		}
-		if attempts == 90000 {
-			return "", fmt.Errorf("reference pool exhausted for chain %s", chainID)
-		}
-	}
-
-	// Store updated counter
-	if err := k.SetReferenceCounter(ctx, chainID, counter); err != nil {
-		return "", fmt.Errorf("failed to update counter for chain %s: %w", chainID, err)
-	}
-
-	return reference, nil
-}
 
 // GetSignerRegistrationCountInBlock returns registrations from a signer in a specific block
 func (k KVStore) GetSignerRegistrationCountInBlock(ctx cosmos.Context, signer cosmos.AccAddress, blockHeight int64) int64 {

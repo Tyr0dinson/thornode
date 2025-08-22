@@ -58,14 +58,6 @@ func (k KVStore) RecoverCounterFromMemos(ctx cosmos.Context, chainID string) (in
 		nextCounter = 10000 // Wraparound
 	}
 
-	// Store recovered counter
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
-	key := k.GetKey(prefixMemoCounter, chainID)
-	buf := k.cdc.MustMarshal(&thorchaintypes.MemoCounter{
-		ChainId: chainID,
-		Counter: nextCounter,
-	})
-	store.Set(key, buf)
 
 	ctx.Logger().Info("Counter recovery completed",
 		"chain", chainID,
@@ -98,7 +90,7 @@ func (k KVStore) TestRegistrationUnderLoad(ctx cosmos.Context, concurrentCount i
 				ChainId: "BTC",
 				Ttl:     14400,
 				Signer:  signer,
-				Amount:  fmt.Sprintf("10000%05d", index%100000),
+				Reference: fmt.Sprintf("%05d", 10000+(index%90000)), // User reference 10000-99999
 			}
 
 			if err := k.ValidateMemoRegistration(ctx, msg, constantProvider); err == nil {
@@ -130,8 +122,6 @@ func (k KVStore) SimulatePartialFailure(ctx cosmos.Context, failureType string) 
 	switch failureType {
 	case "storage_corruption":
 		return k.simulateStorageCorruption(ctx)
-	case "counter_desync":
-		return k.simulateCounterDesync(ctx)
 	case "memo_corruption":
 		return k.simulateMemoCorruption(ctx)
 	default:
@@ -141,15 +131,15 @@ func (k KVStore) SimulatePartialFailure(ctx cosmos.Context, failureType string) 
 
 // simulateStorageCorruption tests recovery from storage corruption scenarios
 func (k KVStore) simulateStorageCorruption(ctx cosmos.Context) error {
-	// Simulate by creating invalid counter entry
+	// Simulate by creating corrupted memo entry
 	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
-	key := k.GetKey(prefixMemoCounter, "BTC")
+	key := k.GetKey(prefixMemoRegistration, "12345")
 	store.Set(key, []byte("corrupted_data"))
 
-	// Test recovery
-	_, err := k.GetNextReferenceID(ctx, "BTC")
+	// Test recovery by attempting to read corrupted data
+	_, err := k.GetRegisteredMemo(ctx, "12345")
 	if err != nil {
-		// Recovery should work by falling back to scanning existing memos
+		// Recovery should work by cleaning up corrupted data
 		ctx.Logger().Info("Storage corruption detected, attempting recovery")
 		_, err = k.RecoverCounterFromMemos(ctx, "BTC")
 		if err != nil {
@@ -160,27 +150,6 @@ func (k KVStore) simulateStorageCorruption(ctx cosmos.Context) error {
 	return nil
 }
 
-// simulateCounterDesync tests recovery from counter synchronization issues
-func (k KVStore) simulateCounterDesync(ctx cosmos.Context) error {
-	// Create artificial counter desync by setting counter too low
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
-	key := k.GetKey(prefixMemoCounter, "BTC")
-	buf := k.cdc.MustMarshal(&thorchaintypes.MemoCounter{
-		ChainId: "BTC",
-		Counter: 5000, // Below valid range
-	})
-	store.Set(key, buf)
-
-	// Test recovery
-	_, err := k.GetNextReferenceID(ctx, "BTC")
-	if err != nil {
-		ctx.Logger().Info("Counter desync detected, attempting recovery")
-		_, err := k.RecoverCounterFromMemos(ctx, "BTC")
-		return err
-	}
-
-	return nil
-}
 
 // simulateMemoCorruption tests recovery from corrupted memo data
 func (k KVStore) simulateMemoCorruption(ctx cosmos.Context) error {
@@ -202,20 +171,6 @@ func (k KVStore) simulateMemoCorruption(ctx cosmos.Context) error {
 	return nil
 }
 
-// ForceCounterToMax forces counter to maximum value for wraparound testing
-func (k KVStore) ForceCounterToMax(ctx cosmos.Context, chainID string) error {
-	ctx.Logger().Info("Forcing counter to maximum for wraparound testing", "chain", chainID)
-
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
-	key := k.GetKey(prefixMemoCounter, chainID)
-	buf := k.cdc.MustMarshal(&thorchaintypes.MemoCounter{
-		ChainId: chainID,
-		Counter: 99999, // Maximum value
-	})
-	store.Set(key, buf)
-
-	return nil
-}
 
 // SimulateStorageFailure simulates various storage failure scenarios
 func (k KVStore) SimulateStorageFailure(ctx cosmos.Context, component string) error {
@@ -225,47 +180,11 @@ func (k KVStore) SimulateStorageFailure(ctx cosmos.Context, component string) er
 	case "memo_registration":
 		// Simulate failure by temporarily disabling memo storage
 		return fmt.Errorf("simulated memo registration storage failure")
-	case "counter_storage":
-		// Simulate counter storage failure
-		return fmt.Errorf("simulated counter storage failure")
 	default:
 		return fmt.Errorf("unknown storage component: %s", component)
 	}
 }
 
-// TestConcurrentCollisions tests collision detection under concurrent load
-func (k KVStore) TestConcurrentCollisions(ctx cosmos.Context, chainID string, goroutineCount int) (int64, error) {
-	ctx.Logger().Info("Testing concurrent collisions", "chain", chainID, "goroutines", goroutineCount)
-
-	collisionCount := int64(0)
-	var wg sync.WaitGroup
-	var mu sync.Mutex
-
-	// Launch concurrent reference generation
-	for i := 0; i < goroutineCount; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-
-			ref1, err1 := k.GetNextReferenceID(ctx, chainID)
-			ref2, err2 := k.GetNextReferenceID(ctx, chainID)
-
-			if err1 == nil && err2 == nil && ref1 == ref2 {
-				mu.Lock()
-				collisionCount++
-				mu.Unlock()
-			}
-		}()
-	}
-
-	wg.Wait()
-
-	ctx.Logger().Info("Concurrent collision testing completed",
-		"detected_collisions", collisionCount,
-		"goroutines", goroutineCount)
-
-	return collisionCount, nil
-}
 
 // SimulateChainHalt simulates chain halt scenarios
 func (k KVStore) SimulateChainHalt(ctx cosmos.Context, chainID string) error {
@@ -308,11 +227,10 @@ func (k KVStore) TestSystemRecoveryAfterSlashing(ctx cosmos.Context, slashedVali
 	ctx.Logger().Info("Testing system recovery after slashing", "validator", slashedValidator.String())
 
 	// Check if system can continue operating after slashing
-	// Test by attempting normal operations
-
-	_, err := k.GetNextReferenceID(ctx, "BTC")
+	// Test by attempting normal operations (reference validation)
+	err := k.ValidateReference(ctx, "12345")
 	if err != nil {
-		return false, fmt.Errorf("system not recovered: reference generation failed: %w", err)
+		return false, fmt.Errorf("system not recovered: reference validation failed: %w", err)
 	}
 
 	// Test memo registration still works
@@ -324,7 +242,7 @@ func (k KVStore) TestSystemRecoveryAfterSlashing(ctx cosmos.Context, slashedVali
 		ChainId: "BTC",
 		Ttl:     14400,
 		Signer:  testSigner,
-		Amount:  "100000000",
+		Reference: "12345",
 	}
 
 	err = k.ValidateMemoRegistration(ctx, msg, constantProvider)
@@ -357,21 +275,18 @@ func (k KVStore) CorruptMemoData(ctx cosmos.Context, reference string) error {
 func (k KVStore) ValidateSystemIntegrity(ctx cosmos.Context) error {
 	ctx.Logger().Info("Validating system integrity")
 
-	// Check 1: Counter consistency across chains
+	// Check 1: Reference validation consistency across chains
 	supportedChains, err := k.GetSupportedChains(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get supported chains: %w", err)
 	}
 
 	for _, chainID := range supportedChains {
-		counter, err := k.GetCurrentCounter(ctx, chainID)
-		if err != nil {
-			return fmt.Errorf("counter integrity check failed for chain %s: %w", chainID, err)
+		// Test reference validation for each chain
+		if err := k.ValidateReference(ctx, "12345"); err != nil {
+			return fmt.Errorf("reference validation failed for chain %s: %w", chainID, err)
 		}
-
-		if counter < 10000 || counter > 99999 {
-			return fmt.Errorf("counter out of valid range for chain %s: %d", chainID, counter)
-		}
+		ctx.Logger().Info("Chain reference validation verified", "chain", chainID)
 	}
 
 	// Check 2: Memo storage consistency
@@ -399,18 +314,6 @@ func (k KVStore) PerformChaosRecovery(ctx cosmos.Context, scenario string) error
 	ctx.Logger().Info("Performing chaos recovery", "scenario", scenario)
 
 	switch scenario {
-	case "counter_corruption":
-		// Recover all chain counters
-		supportedChains, err := k.GetSupportedChains(ctx)
-		if err != nil {
-			return err
-		}
-
-		for _, chainID := range supportedChains {
-			if _, err := k.RecoverCounterFromMemos(ctx, chainID); err != nil {
-				return fmt.Errorf("failed to recover counter for chain %s: %w", chainID, err)
-			}
-		}
 
 	case "memo_corruption":
 		// Clean up corrupted memo entries
@@ -418,9 +321,6 @@ func (k KVStore) PerformChaosRecovery(ctx cosmos.Context, scenario string) error
 
 	case "full_recovery":
 		// Comprehensive recovery
-		if err := k.PerformChaosRecovery(ctx, "counter_corruption"); err != nil {
-			return err
-		}
 		if err := k.PerformChaosRecovery(ctx, "memo_corruption"); err != nil {
 			return err
 		}
@@ -466,25 +366,6 @@ func (k KVStore) CleanupCorruptedMemos(ctx cosmos.Context) error {
 	return nil
 }
 
-// GetCurrentCounter safely retrieves the current counter for a chain
-func (k KVStore) GetCurrentCounter(ctx cosmos.Context, chainID string) (int64, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
-	key := k.GetKey(prefixMemoCounter, chainID)
-
-	if !store.Has(key) {
-		return 10000, nil // Default starting value
-	}
-
-	var counter thorchaintypes.MemoCounter
-	bz := store.Get(key)
-	if err := k.cdc.Unmarshal(bz, &counter); err != nil {
-		// If unmarshaling fails, recover from existing memos
-		ctx.Logger().Warn("Counter unmarshaling failed, attempting recovery", "chain", chainID)
-		return k.RecoverCounterFromMemos(ctx, chainID)
-	}
-
-	return counter.Counter, nil
-}
 
 // ChaosTestMetrics tracks metrics during chaos testing
 type ChaosTestMetrics struct {
@@ -523,7 +404,7 @@ func (k KVStore) RunChaosTestSuite(ctx cosmos.Context, config ChaosTestingConfig
 	// Test 3: Failure simulation and recovery
 	if err := k.SimulatePartialFailure(ctx, "storage_corruption"); err != nil {
 		metrics.RecoveryAttempts++
-		if err := k.PerformChaosRecovery(ctx, "counter_corruption"); err == nil {
+		if err := k.PerformChaosRecovery(ctx, "memo_corruption"); err == nil {
 			metrics.RecoverySuccesses++
 		}
 	}

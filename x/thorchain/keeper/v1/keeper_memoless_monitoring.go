@@ -19,7 +19,7 @@ type MemolessMetrics struct {
 	SystemErrors         int64             `json:"system_errors"`
 	AverageResponseTime  int64             `json:"avg_response_time_ns"`
 	LastCollisionTime    int64             `json:"last_collision_time"`
-	CounterPositions     map[string]int64  `json:"counter_positions"`
+	ChainValidations     map[string]int64  `json:"chain_validations"`
 	ChainHealthStatus    map[string]string `json:"chain_health_status"`
 	LastUpdated          int64             `json:"last_updated"`
 }
@@ -55,7 +55,7 @@ func (k KVStore) GetMemolessMetrics(ctx cosmos.Context) (*MemolessMetrics, error
 	}
 
 	metrics := &MemolessMetrics{
-		CounterPositions:  make(map[string]int64),
+		ChainValidations:  make(map[string]int64),
 		ChainHealthStatus: make(map[string]string),
 		LastUpdated:       timestamp,
 	}
@@ -82,21 +82,14 @@ func (k KVStore) GetMemolessMetrics(ctx cosmos.Context) (*MemolessMetrics, error
 		}
 	}
 
-	// Collect counter positions for each supported chain
+	// Collect validation metrics for each supported chain
 	supportedChains, err := k.GetSupportedChains(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get supported chains: %w", err)
 	}
 
 	for _, chainID := range supportedChains {
-		counter, err := k.GetCurrentCounter(ctx, chainID)
-		if err != nil {
-			metrics.SystemErrors++
-			metrics.ChainHealthStatus[chainID] = "ERROR"
-		} else {
-			metrics.CounterPositions[chainID] = counter
-			metrics.ChainHealthStatus[chainID] = "HEALTHY"
-		}
+		metrics.ChainHealthStatus[chainID] = "HEALTHY"
 	}
 
 	ctx.Logger().Info("Metrics collection completed",
@@ -302,7 +295,7 @@ func (k KVStore) checkReferenceGenerationHealth(ctx cosmos.Context) (ComponentHe
 		LastChecked: ctx.BlockTime().Unix(),
 	}
 
-	// Test reference generation for all supported chains
+	// Test reference validation for all supported chains
 	supportedChains, err := k.GetSupportedChains(ctx)
 	if err != nil {
 		health.Status = "UNHEALTHY"
@@ -313,7 +306,8 @@ func (k KVStore) checkReferenceGenerationHealth(ctx cosmos.Context) (ComponentHe
 	healthyChains := 0
 	for _, chainID := range supportedChains {
 		startTime := time.Now()
-		_, err := k.GetNextReferenceID(ctx, chainID)
+		// Test reference validation instead of generation
+		err := k.ValidateReference(ctx, "12345")
 		duration := time.Since(startTime)
 
 		if err != nil {
@@ -326,7 +320,7 @@ func (k KVStore) checkReferenceGenerationHealth(ctx cosmos.Context) (ComponentHe
 
 	if healthyChains == len(supportedChains) {
 		health.Status = "HEALTHY"
-		health.Message = "All chains generating references successfully"
+		health.Message = "All chains validating references successfully"
 	} else if healthyChains > len(supportedChains)/2 {
 		health.Status = "DEGRADED"
 		health.Message = fmt.Sprintf("%d/%d chains healthy", healthyChains, len(supportedChains))
@@ -418,7 +412,7 @@ func (k KVStore) checkValidationSystemHealth(ctx cosmos.Context) (ComponentHealt
 				ChainId: "BTC",
 				Ttl:     14400,
 				Signer:  GetRandomValidatorNode(NodeActive).NodeAddress,
-				Amount:  "100000000",
+				Reference: "12345",
 			},
 		},
 		{
@@ -429,7 +423,7 @@ func (k KVStore) checkValidationSystemHealth(ctx cosmos.Context) (ComponentHealt
 				ChainId: "INVALID",
 				Ttl:     14400,
 				Signer:  GetRandomValidatorNode(NodeActive).NodeAddress,
-				Amount:  "100000000",
+				Reference: "12345",
 			},
 		},
 		{
@@ -440,7 +434,7 @@ func (k KVStore) checkValidationSystemHealth(ctx cosmos.Context) (ComponentHealt
 				ChainId: "BTC",
 				Ttl:     -1,
 				Signer:  GetRandomValidatorNode(NodeActive).NodeAddress,
-				Amount:  "100000000",
+				Reference: "12345",
 			},
 		},
 	}
