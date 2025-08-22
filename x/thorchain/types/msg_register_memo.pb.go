@@ -26,15 +26,11 @@ var _ = math.Inf
 const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 
 type MsgRegisterMemo struct {
-	Memo    string                                        `protobuf:"bytes,1,opt,name=memo,proto3" json:"memo,omitempty"`
-	Ttl     int64                                         `protobuf:"varint,2,opt,name=ttl,proto3" json:"ttl,omitempty"`
-	ChainId string                                        `protobuf:"bytes,3,opt,name=chain_id,json=chainId,proto3" json:"chain_id,omitempty"`
-	Signer  github_com_cosmos_cosmos_sdk_types.AccAddress `protobuf:"bytes,4,opt,name=signer,proto3,casttype=github.com/cosmos/cosmos-sdk/types.AccAddress" json:"signer,omitempty"`
-	// Memoless reference validation fields for precision and routing support:
-	Amount         string   `protobuf:"bytes,5,opt,name=amount,proto3" json:"amount,omitempty"`
-	Destination    string   `protobuf:"bytes,6,opt,name=destination,proto3" json:"destination,omitempty"`
-	ForceCollision bool     `protobuf:"varint,7,opt,name=force_collision,json=forceCollision,proto3" json:"force_collision,omitempty"`
-	Tags           []string `protobuf:"bytes,8,rep,name=tags,proto3" json:"tags,omitempty"`
+	Memo      string                                        `protobuf:"bytes,1,opt,name=memo,proto3" json:"memo,omitempty"`
+	Ttl       int64                                         `protobuf:"varint,2,opt,name=ttl,proto3" json:"ttl,omitempty"`
+	ChainId   string                                        `protobuf:"bytes,3,opt,name=chain_id,json=chainId,proto3" json:"chain_id,omitempty"`
+	Signer    github_com_cosmos_cosmos_sdk_types.AccAddress `protobuf:"bytes,4,opt,name=signer,proto3,casttype=github.com/cosmos/cosmos-sdk/types.AccAddress" json:"signer,omitempty"`
+	Reference string                                        `protobuf:"bytes,5,opt,name=reference,proto3" json:"reference,omitempty"`
 }
 
 func (m *MsgRegisterMemo) Reset()         { *m = MsgRegisterMemo{} }
@@ -98,32 +94,11 @@ func (m *MsgRegisterMemo) GetSigner() github_com_cosmos_cosmos_sdk_types.AccAddr
 	return nil
 }
 
-func (m *MsgRegisterMemo) GetAmount() string {
+func (m *MsgRegisterMemo) GetReference() string {
 	if m != nil {
-		return m.Amount
+		return m.Reference
 	}
 	return ""
-}
-
-func (m *MsgRegisterMemo) GetDestination() string {
-	if m != nil {
-		return m.Destination
-	}
-	return ""
-}
-
-func (m *MsgRegisterMemo) GetForceCollision() bool {
-	if m != nil {
-		return m.ForceCollision
-	}
-	return false
-}
-
-func (m *MsgRegisterMemo) GetTags() []string {
-	if m != nil {
-		return m.Tags
-	}
-	return nil
 }
 
 type RegisteredMemo struct {
@@ -218,97 +193,40 @@ func (m *RegisteredMemo) GetSigner() github_com_cosmos_cosmos_sdk_types.AccAddre
 	return nil
 }
 
-type MemoCounter struct {
-	ChainId string `protobuf:"bytes,1,opt,name=chain_id,json=chainId,proto3" json:"chain_id,omitempty"`
-	Counter int64  `protobuf:"varint,2,opt,name=counter,proto3" json:"counter,omitempty"`
-}
-
-func (m *MemoCounter) Reset()         { *m = MemoCounter{} }
-func (m *MemoCounter) String() string { return proto.CompactTextString(m) }
-func (*MemoCounter) ProtoMessage()    {}
-func (*MemoCounter) Descriptor() ([]byte, []int) {
-	return fileDescriptor_196e68e1aecacab6, []int{2}
-}
-func (m *MemoCounter) XXX_Unmarshal(b []byte) error {
-	return m.Unmarshal(b)
-}
-func (m *MemoCounter) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
-	if deterministic {
-		return xxx_messageInfo_MemoCounter.Marshal(b, m, deterministic)
-	} else {
-		b = b[:cap(b)]
-		n, err := m.MarshalToSizedBuffer(b)
-		if err != nil {
-			return nil, err
-		}
-		return b[:n], nil
-	}
-}
-func (m *MemoCounter) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_MemoCounter.Merge(m, src)
-}
-func (m *MemoCounter) XXX_Size() int {
-	return m.Size()
-}
-func (m *MemoCounter) XXX_DiscardUnknown() {
-	xxx_messageInfo_MemoCounter.DiscardUnknown(m)
-}
-
-var xxx_messageInfo_MemoCounter proto.InternalMessageInfo
-
-func (m *MemoCounter) GetChainId() string {
-	if m != nil {
-		return m.ChainId
-	}
-	return ""
-}
-
-func (m *MemoCounter) GetCounter() int64 {
-	if m != nil {
-		return m.Counter
-	}
-	return 0
-}
-
 func init() {
 	proto.RegisterType((*MsgRegisterMemo)(nil), "types.MsgRegisterMemo")
 	proto.RegisterType((*RegisteredMemo)(nil), "types.RegisteredMemo")
-	proto.RegisterType((*MemoCounter)(nil), "types.MemoCounter")
 }
 
 func init() { proto.RegisterFile("types/msg_register_memo.proto", fileDescriptor_196e68e1aecacab6) }
 
 var fileDescriptor_196e68e1aecacab6 = []byte{
-	// 450 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x5c, 0x92, 0x31, 0x6f, 0xd3, 0x40,
-	0x14, 0xc7, 0x73, 0x71, 0xe2, 0x26, 0x47, 0x69, 0xe1, 0x84, 0x2a, 0xb7, 0xa2, 0xc6, 0x2a, 0x03,
-	0x51, 0xa5, 0xc6, 0x52, 0xb3, 0x21, 0x96, 0x94, 0x09, 0x89, 0x2e, 0x16, 0x13, 0x8b, 0xe5, 0x9c,
-	0x5f, 0x2f, 0x27, 0x6c, 0x5f, 0x74, 0xf7, 0x82, 0xca, 0x57, 0x60, 0x62, 0xe6, 0x53, 0x74, 0x65,
-	0x62, 0x65, 0xec, 0xc8, 0x84, 0x50, 0x32, 0xf4, 0x3b, 0x30, 0xa1, 0xbb, 0x5c, 0x9b, 0xb4, 0x8b,
-	0xfd, 0x7f, 0xbf, 0xf7, 0xf4, 0xee, 0xde, 0xff, 0x1d, 0x3d, 0xc4, 0x2f, 0x33, 0x30, 0x69, 0x6d,
-	0x44, 0xae, 0x41, 0x48, 0x83, 0xa0, 0xf3, 0x1a, 0x6a, 0x35, 0x9c, 0x69, 0x85, 0x8a, 0x75, 0x5d,
-	0xfa, 0xe0, 0x99, 0x50, 0x42, 0x39, 0x92, 0x5a, 0xb5, 0x4a, 0x1e, 0x3c, 0x2d, 0x6a, 0xd9, 0xa8,
-	0xd4, 0x7d, 0x57, 0xe8, 0xe8, 0x67, 0x9b, 0xee, 0x9e, 0x1b, 0x91, 0xf9, 0x56, 0xe7, 0x50, 0x2b,
-	0xc6, 0x68, 0xc7, 0x76, 0x8c, 0x48, 0x42, 0x06, 0xfd, 0xcc, 0x69, 0xf6, 0x84, 0x06, 0x88, 0x55,
-	0xd4, 0x4e, 0xc8, 0x20, 0xc8, 0xac, 0x64, 0xfb, 0xb4, 0xc7, 0xa7, 0x85, 0x6c, 0x72, 0x59, 0x46,
-	0x81, 0xab, 0xdc, 0x72, 0xf1, 0xbb, 0x92, 0x7d, 0xa0, 0xa1, 0x91, 0xa2, 0x01, 0x1d, 0x75, 0x12,
-	0x32, 0xd8, 0x3e, 0x7b, 0xf3, 0xef, 0xcf, 0x8b, 0x13, 0x21, 0x71, 0x3a, 0x9f, 0x0c, 0xb9, 0xaa,
-	0x53, 0xae, 0x4c, 0xad, 0x8c, 0xff, 0x9d, 0x98, 0xf2, 0x53, 0xea, 0x6e, 0x3d, 0x1c, 0x73, 0x3e,
-	0x2e, 0x4b, 0x0d, 0xc6, 0x7c, 0xbf, 0xb9, 0x3a, 0x0e, 0x27, 0xc0, 0xa7, 0xa3, 0xd3, 0xcc, 0xf7,
-	0x62, 0x7b, 0x34, 0x2c, 0x6a, 0x35, 0x6f, 0x30, 0xea, 0xba, 0xe3, 0x7c, 0xc4, 0x12, 0xfa, 0xa8,
-	0x04, 0x83, 0xb2, 0x29, 0x50, 0xaa, 0x26, 0x0a, 0x5d, 0x72, 0x13, 0xb1, 0x57, 0x74, 0xf7, 0x42,
-	0x69, 0x0e, 0x39, 0x57, 0x55, 0x25, 0x8d, 0xad, 0xda, 0x4a, 0xc8, 0xa0, 0x97, 0xed, 0x38, 0xfc,
-	0xf6, 0x96, 0xda, 0xc9, 0xb1, 0x10, 0x26, 0xea, 0x25, 0x81, 0x9d, 0xdc, 0xea, 0xd7, 0xf1, 0xd7,
-	0x9b, 0xab, 0xe3, 0x7d, 0x9c, 0x2a, 0xed, 0xc6, 0x4b, 0x1f, 0xb8, 0x75, 0xf4, 0x83, 0xd0, 0x9d,
-	0x5b, 0x00, 0xa5, 0x33, 0xf0, 0x39, 0xed, 0x6b, 0xb8, 0x00, 0x0d, 0x0d, 0x07, 0xef, 0xe2, 0x1a,
-	0xdc, 0xd9, 0xdb, 0xde, 0xb0, 0xf7, 0x25, 0x7d, 0xac, 0xef, 0x7a, 0xe4, 0x05, 0x3a, 0x47, 0x83,
-	0x6c, 0x7b, 0x0d, 0xc7, 0xc8, 0x0e, 0x29, 0x85, 0xcb, 0x99, 0xd4, 0x60, 0x6c, 0x45, 0xc7, 0x55,
-	0xf4, 0x3d, 0x19, 0xe3, 0xbd, 0x85, 0x74, 0xef, 0x2f, 0x64, 0x8f, 0x86, 0x06, 0x0b, 0x9c, 0x1b,
-	0xef, 0x8e, 0x8f, 0xce, 0xde, 0xff, 0x5a, 0xc4, 0xe4, 0x7a, 0x11, 0x93, 0xbf, 0x8b, 0x98, 0x7c,
-	0x5b, 0xc6, 0xad, 0xeb, 0x65, 0xdc, 0xfa, 0xbd, 0x8c, 0x5b, 0x1f, 0x4f, 0x85, 0xc4, 0xaa, 0x58,
-	0xad, 0x6b, 0x3d, 0xbb, 0x55, 0x8d, 0x2a, 0x21, 0xfd, 0x3c, 0x4a, 0x2f, 0x37, 0xb9, 0x5d, 0xdf,
-	0x24, 0x74, 0x4f, 0x6a, 0xf4, 0x3f, 0x00, 0x00, 0xff, 0xff, 0x61, 0xd4, 0xe0, 0x32, 0xa3, 0x02,
-	0x00, 0x00,
+	// 398 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xac, 0x92, 0xbf, 0xae, 0xda, 0x30,
+	0x14, 0xc6, 0x31, 0x81, 0x50, 0x2c, 0xfa, 0xcf, 0xaa, 0xaa, 0x80, 0x4a, 0x8a, 0xe8, 0x82, 0x90,
+	0xc0, 0x12, 0x6c, 0x55, 0x97, 0xb0, 0x55, 0x2a, 0x4b, 0xd4, 0xa9, 0x4b, 0x14, 0x92, 0x53, 0xc7,
+	0x2a, 0x89, 0x91, 0x6d, 0x2a, 0xfa, 0x0a, 0x5d, 0xda, 0xb9, 0x4f, 0xc1, 0x63, 0x74, 0x64, 0xec,
+	0x54, 0x5d, 0x81, 0x74, 0x79, 0x87, 0x3b, 0x5d, 0xc5, 0xe4, 0xf2, 0x6f, 0xbe, 0x4b, 0xf2, 0xf9,
+	0x3b, 0x47, 0x9f, 0xcf, 0xf9, 0xc9, 0xb8, 0xad, 0x7f, 0x2c, 0x40, 0xd1, 0x54, 0xb1, 0x40, 0x02,
+	0xe3, 0x4a, 0x83, 0x0c, 0x52, 0x48, 0xc5, 0x70, 0x21, 0x85, 0x16, 0xa4, 0x6a, 0xca, 0xad, 0x57,
+	0x4c, 0x30, 0x61, 0x1c, 0x9a, 0xab, 0x43, 0xb1, 0xf5, 0x32, 0x4c, 0x79, 0x26, 0xa8, 0xf9, 0x1e,
+	0xac, 0xee, 0x2d, 0xc2, 0xcf, 0xa7, 0x8a, 0xf9, 0x45, 0xd4, 0x14, 0x52, 0x41, 0x08, 0xae, 0xe4,
+	0x89, 0x0e, 0xea, 0xa0, 0x5e, 0xdd, 0x37, 0x9a, 0xbc, 0xc0, 0x96, 0xd6, 0x73, 0xa7, 0xdc, 0x41,
+	0x3d, 0xcb, 0xcf, 0x25, 0x69, 0xe2, 0x27, 0x51, 0x12, 0xf2, 0x2c, 0xe0, 0xb1, 0x63, 0x99, 0xce,
+	0x9a, 0x39, 0x7f, 0x8c, 0xc9, 0x67, 0x6c, 0x2b, 0xce, 0x32, 0x90, 0x4e, 0xa5, 0x83, 0x7a, 0x8d,
+	0xc9, 0x87, 0xbb, 0xff, 0x6f, 0x07, 0x8c, 0xeb, 0x64, 0x39, 0x1b, 0x46, 0x22, 0xa5, 0x91, 0x50,
+	0xa9, 0x50, 0xc5, 0x6f, 0xa0, 0xe2, 0x6f, 0xd4, 0x4c, 0x3d, 0xf4, 0xa2, 0xc8, 0x8b, 0x63, 0x09,
+	0x4a, 0xfd, 0xd9, 0xaf, 0xfb, 0xf6, 0x0c, 0xa2, 0x64, 0x3c, 0xf2, 0x8b, 0x2c, 0xf2, 0x06, 0xd7,
+	0x25, 0x7c, 0x05, 0x09, 0x59, 0x04, 0x4e, 0xd5, 0xdc, 0x78, 0x32, 0xde, 0xbb, 0x3f, 0xf7, 0xeb,
+	0x7e, 0x53, 0x27, 0x42, 0x9a, 0x29, 0xe8, 0xd5, 0x52, 0xdd, 0x5f, 0x65, 0xfc, 0xec, 0xc1, 0x80,
+	0xd8, 0xec, 0x79, 0x11, 0x88, 0xae, 0x02, 0x8f, 0x14, 0xca, 0x67, 0x14, 0xde, 0xe1, 0xa7, 0xf2,
+	0x98, 0x11, 0x84, 0xda, 0x2c, 0x6e, 0xf9, 0x8d, 0x93, 0xe9, 0x69, 0xd2, 0xc6, 0x18, 0x56, 0x0b,
+	0x2e, 0x41, 0xe5, 0x1d, 0x15, 0xd3, 0x51, 0x2f, 0x1c, 0x4f, 0x5f, 0x70, 0xab, 0x5e, 0x72, 0x7b,
+	0x8d, 0x6d, 0xa5, 0x43, 0xbd, 0x54, 0x8e, 0x6d, 0x0a, 0xc5, 0xe9, 0x8c, 0x67, 0xed, 0xf1, 0x78,
+	0x4e, 0x3e, 0xfd, 0xdd, 0xba, 0x68, 0xb3, 0x75, 0xd1, 0xcd, 0xd6, 0x45, 0xbf, 0x77, 0x6e, 0x69,
+	0xb3, 0x73, 0x4b, 0xff, 0x76, 0x6e, 0xe9, 0xcb, 0x88, 0x71, 0x3d, 0x0f, 0x0f, 0xd9, 0x27, 0xa2,
+	0xb9, 0xca, 0x44, 0x0c, 0xf4, 0xfb, 0x98, 0xae, 0xce, 0xfd, 0xfc, 0xae, 0x99, 0x6d, 0xde, 0xd3,
+	0xf8, 0x3e, 0x00, 0x00, 0xff, 0xff, 0x85, 0x51, 0x93, 0x43, 0xa0, 0x02, 0x00, 0x00,
 }
 
 func (m *MsgRegisterMemo) Marshal() (dAtA []byte, err error) {
@@ -331,36 +249,10 @@ func (m *MsgRegisterMemo) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
-	if len(m.Tags) > 0 {
-		for iNdEx := len(m.Tags) - 1; iNdEx >= 0; iNdEx-- {
-			i -= len(m.Tags[iNdEx])
-			copy(dAtA[i:], m.Tags[iNdEx])
-			i = encodeVarintMsgRegisterMemo(dAtA, i, uint64(len(m.Tags[iNdEx])))
-			i--
-			dAtA[i] = 0x42
-		}
-	}
-	if m.ForceCollision {
-		i--
-		if m.ForceCollision {
-			dAtA[i] = 1
-		} else {
-			dAtA[i] = 0
-		}
-		i--
-		dAtA[i] = 0x38
-	}
-	if len(m.Destination) > 0 {
-		i -= len(m.Destination)
-		copy(dAtA[i:], m.Destination)
-		i = encodeVarintMsgRegisterMemo(dAtA, i, uint64(len(m.Destination)))
-		i--
-		dAtA[i] = 0x32
-	}
-	if len(m.Amount) > 0 {
-		i -= len(m.Amount)
-		copy(dAtA[i:], m.Amount)
-		i = encodeVarintMsgRegisterMemo(dAtA, i, uint64(len(m.Amount)))
+	if len(m.Reference) > 0 {
+		i -= len(m.Reference)
+		copy(dAtA[i:], m.Reference)
+		i = encodeVarintMsgRegisterMemo(dAtA, i, uint64(len(m.Reference)))
 		i--
 		dAtA[i] = 0x2a
 	}
@@ -493,22 +385,9 @@ func (m *MsgRegisterMemo) Size() (n int) {
 	if l > 0 {
 		n += 1 + l + sovMsgRegisterMemo(uint64(l))
 	}
-	l = len(m.Amount)
+	l = len(m.Reference)
 	if l > 0 {
 		n += 1 + l + sovMsgRegisterMemo(uint64(l))
-	}
-	l = len(m.Destination)
-	if l > 0 {
-		n += 1 + l + sovMsgRegisterMemo(uint64(l))
-	}
-	if m.ForceCollision {
-		n += 2
-	}
-	if len(m.Tags) > 0 {
-		for _, s := range m.Tags {
-			l = len(s)
-			n += 1 + l + sovMsgRegisterMemo(uint64(l))
-		}
 	}
 	return n
 }
@@ -702,7 +581,7 @@ func (m *MsgRegisterMemo) Unmarshal(dAtA []byte) error {
 			iNdEx = postIndex
 		case 5:
 			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Amount", wireType)
+				return fmt.Errorf("proto: wrong wireType = %d for field Reference", wireType)
 			}
 			var stringLen uint64
 			for shift := uint(0); ; shift += 7 {
@@ -730,91 +609,7 @@ func (m *MsgRegisterMemo) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.Amount = string(dAtA[iNdEx:postIndex])
-			iNdEx = postIndex
-		case 6:
-			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Destination", wireType)
-			}
-			var stringLen uint64
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowMsgRegisterMemo
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				stringLen |= uint64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			intStringLen := int(stringLen)
-			if intStringLen < 0 {
-				return ErrInvalidLengthMsgRegisterMemo
-			}
-			postIndex := iNdEx + intStringLen
-			if postIndex < 0 {
-				return ErrInvalidLengthMsgRegisterMemo
-			}
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.Destination = string(dAtA[iNdEx:postIndex])
-			iNdEx = postIndex
-		case 7:
-			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field ForceCollision", wireType)
-			}
-			var v int
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowMsgRegisterMemo
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				v |= int(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			m.ForceCollision = bool(v != 0)
-		case 8:
-			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Tags", wireType)
-			}
-			var stringLen uint64
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowMsgRegisterMemo
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				stringLen |= uint64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			intStringLen := int(stringLen)
-			if intStringLen < 0 {
-				return ErrInvalidLengthMsgRegisterMemo
-			}
-			postIndex := iNdEx + intStringLen
-			if postIndex < 0 {
-				return ErrInvalidLengthMsgRegisterMemo
-			}
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.Tags = append(m.Tags, string(dAtA[iNdEx:postIndex]))
+			m.Reference = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
@@ -1164,159 +959,6 @@ func skipMsgRegisterMemo(dAtA []byte) (n int, err error) {
 		}
 	}
 	return 0, io.ErrUnexpectedEOF
-}
-
-func (m *MemoCounter) Marshal() (dAtA []byte, err error) {
-	size := m.Size()
-	dAtA = make([]byte, size)
-	n, err := m.MarshalToSizedBuffer(dAtA[:size])
-	if err != nil {
-		return nil, err
-	}
-	return dAtA[:n], nil
-}
-
-func (m *MemoCounter) MarshalTo(dAtA []byte) (int, error) {
-	size := m.Size()
-	return m.MarshalToSizedBuffer(dAtA[:size])
-}
-
-func (m *MemoCounter) MarshalToSizedBuffer(dAtA []byte) (int, error) {
-	i := len(dAtA)
-	_ = i
-	var l int
-	_ = l
-	if m.Counter != 0 {
-		i = encodeVarintMsgRegisterMemo(dAtA, i, uint64(m.Counter))
-		i--
-		dAtA[i] = 0x10
-	}
-	if len(m.ChainId) > 0 {
-		i -= len(m.ChainId)
-		copy(dAtA[i:], m.ChainId)
-		i = encodeVarintMsgRegisterMemo(dAtA, i, uint64(len(m.ChainId)))
-		i--
-		dAtA[i] = 0xa
-	}
-	return len(dAtA) - i, nil
-}
-
-func (m *MemoCounter) Unmarshal(dAtA []byte) error {
-	l := len(dAtA)
-	iNdEx := 0
-	for iNdEx < l {
-		preIndex := iNdEx
-		var wire uint64
-		for shift := uint(0); ; shift += 7 {
-			if shift >= 64 {
-				return ErrIntOverflowMsgRegisterMemo
-			}
-			if iNdEx >= l {
-				return io.ErrUnexpectedEOF
-			}
-			b := dAtA[iNdEx]
-			iNdEx++
-			wire |= uint64(b&0x7F) << shift
-			if b < 0x80 {
-				break
-			}
-		}
-		fieldNum := int32(wire >> 3)
-		wireType := int(wire & 0x7)
-		if wireType == 4 {
-			return fmt.Errorf("proto: MemoCounter: wiretype end group for non-group")
-		}
-		if fieldNum <= 0 {
-			return fmt.Errorf("proto: MemoCounter: illegal tag %d (wire type %d)", fieldNum, wire)
-		}
-		switch fieldNum {
-		case 1:
-			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field ChainId", wireType)
-			}
-			var stringLen uint64
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowMsgRegisterMemo
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				stringLen |= uint64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			intStringLen := int(stringLen)
-			if intStringLen < 0 {
-				return ErrInvalidLengthMsgRegisterMemo
-			}
-			postIndex := iNdEx + intStringLen
-			if postIndex < 0 {
-				return ErrInvalidLengthMsgRegisterMemo
-			}
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.ChainId = string(dAtA[iNdEx:postIndex])
-			iNdEx = postIndex
-		case 2:
-			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Counter", wireType)
-			}
-			m.Counter = 0
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowMsgRegisterMemo
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				m.Counter |= int64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-		default:
-			iNdEx = preIndex
-			skippy, err := skipMsgRegisterMemo(dAtA[iNdEx:])
-			if err != nil {
-				return err
-			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
-				return ErrInvalidLengthMsgRegisterMemo
-			}
-			if (iNdEx + skippy) > l {
-				return io.ErrUnexpectedEOF
-			}
-			iNdEx += skippy
-		}
-	}
-
-	if iNdEx > l {
-		return io.ErrUnexpectedEOF
-	}
-	return nil
-}
-
-func (m *MemoCounter) Size() (n int) {
-	if m == nil {
-		return 0
-	}
-	var l int
-	_ = l
-	l = len(m.ChainId)
-	if l > 0 {
-		n += 1 + l + sovMsgRegisterMemo(uint64(l))
-	}
-	if m.Counter != 0 {
-		n += 1 + sovMsgRegisterMemo(uint64(m.Counter))
-	}
-	return n
 }
 
 var (

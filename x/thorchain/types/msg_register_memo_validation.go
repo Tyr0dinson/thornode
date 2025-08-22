@@ -3,14 +3,13 @@ package types
 import (
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
 	errorsmod "cosmossdk.io/errors"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
-
-	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
 // Validation constants for memoless protocol
@@ -79,18 +78,40 @@ func (m *MsgRegisterMemo) ValidateBasicEnhanced() error {
 		return errorsmod.Wrap(sdkerrors.ErrInvalidAddress, fmt.Sprintf("invalid signer: %v", err))
 	}
 
-	// Enhanced amount validation if provided
-	if m.Amount != "" {
-		amount, err := cosmos.ParseUint(m.Amount)
-		if err != nil {
-			return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "invalid amount format")
-		}
+	// User reference validation - required field
+	if err := ValidateUserReference(m.Reference); err != nil {
+		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, fmt.Sprintf("invalid reference: %v", err))
+	}
 
-		// Minimum amount check (100,000 units for reference encoding)
-		minAmount := cosmos.NewUint(100000)
-		if amount.LT(minAmount) {
-			return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "amount too small for reference encoding")
+	return nil
+}
+
+// ValidateUserReference validates user-provided 5-digit reference format and range
+func ValidateUserReference(reference string) error {
+	if reference == "" {
+		return fmt.Errorf("reference cannot be empty")
+	}
+
+	// Check exact length (5 digits)
+	if len(reference) != 5 {
+		return fmt.Errorf("reference must be exactly 5 digits, got %d", len(reference))
+	}
+
+	// Check if all characters are numeric
+	for _, char := range reference {
+		if char < '0' || char > '9' {
+			return fmt.Errorf("reference must contain only numeric characters")
 		}
+	}
+
+	// Check valid range (10000-99999)
+	refInt, err := strconv.ParseInt(reference, 10, 64)
+	if err != nil {
+		return fmt.Errorf("failed to parse reference as number: %v", err)
+	}
+
+	if refInt < 10000 || refInt > 99999 {
+		return fmt.Errorf("reference must be in range 10000-99999, got %d", refInt)
 	}
 
 	return nil
@@ -125,16 +146,53 @@ func ValidateMemoContent(memo string) error {
 		return fmt.Errorf("memo cannot contain null bytes")
 	}
 
-	// Enhanced security: Block injection attack patterns
+	// ENHANCED SECURITY (Task 5B): Comprehensive injection attack patterns
 	dangerousPatterns := []string{
-		"';", "')", "'; --", "'; DROP", "'; DELETE", "'; UPDATE",
-		"<script", "</script>", "javascript:", "vbscript:",
-		"${", "%{", "#{", "${{", "#{", "{{",
-		"\\x", "\\u00", "\\r\\n", "\r\n\r\n",
-		"jndi:", "ldap://", "rmi://", "dns://",
-		"../", "..\\", "/etc/", "\\windows\\",
-		"union select", "union all", "or 1=1", "and 1=1",
-		"eval(", "exec(", "system(", "shell_exec(",
+		// SQL Injection patterns
+		"';", "')", "'; --", "'; DROP", "'; DELETE", "'; UPDATE", "'; INSERT",
+		"union select", "union all", "or 1=1", "and 1=1", "having 1=1",
+		"' or '1'='1", "\" or \"1\"=\"1", "' or 'a'='a", "admin'--", "admin'#",
+		
+		// XSS/Script injection
+		"<script", "</script>", "javascript:", "vbscript:", "onload=", "onerror=",
+		"<iframe", "<object", "<embed", "<applet", "<form", "<input",
+		"alert(", "confirm(", "prompt(", "document.", "window.",
+		
+		// Template injection
+		"${", "%{", "#{", "${{", "#{", "{{", "}}", "<%", "%>",
+		"@{", "#{", "~{", "${ctx", "${env", "${sys",
+		
+		// Code injection patterns
+		"eval(", "exec(", "system(", "shell_exec(", "passthru(", "popen(",
+		"proc_open", "shell(", "cmd(", "command(", "require(", "include(",
+		"import ", "from ", "__import__", "getattr(", "setattr(",
+		
+		// LDAP/JNDI injection
+		"jndi:", "ldap://", "rmi://", "dns://", "iiop://", "corba:",
+		"${jndi:", "${ldap:", "${rmi:", "${dns:",
+		
+		// Path traversal
+		"../", "..\\", "/etc/", "\\windows\\", "../../", "..\\..\\",
+		"/boot/", "/dev/", "/proc/", "/sys/", "/var/log/",
+		
+		// Encoded injection attempts
+		"\\x", "\\u00", "%20", "%27", "%22", "%3c", "%3e", "%2f",
+		"&#", "&lt;", "&gt;", "&quot;", "&amp;", "\\r\\n", "\r\n\r\n",
+		
+		// Command injection
+		"|", "&&", "||", ";", "`", "$(", "&", ">", "<", ">>",
+		"curl ", "wget ", "nc ", "netcat", "telnet", "ssh ",
+		
+		// Format string attacks
+		"%s", "%d", "%x", "%n", "%p", "%%", "%c", "%u",
+		
+		// NoSQL injection
+		"$where", "$ne", "$in", "$nin", "$gt", "$lt", "$regex",
+		"';return", "';var", "function(", "this.",
+		
+		// Protocol injection
+		"http://", "https://", "ftp://", "file://", "data:",
+		"gopher://", "dict://", "expect://", "sftp://",
 	}
 
 	lowerMemo := strings.ToLower(memo)
@@ -144,15 +202,9 @@ func ValidateMemoContent(memo string) error {
 		}
 	}
 
-	// Check for excessive special characters (potential obfuscation attempt)
-	specialCharCount := 0
-	for _, char := range memo {
-		if char < 32 || char > 126 || strings.ContainsRune("'\"<>{}()[];|&$", char) {
-			specialCharCount++
-		}
-	}
-	if float64(specialCharCount)/float64(len(memo)) > 0.3 {
-		return fmt.Errorf("memo contains excessive special characters (potential obfuscation)")
+	// ENHANCED SECURITY: Multi-layer character analysis
+	if err := validateMemoCharacterSecurity(memo); err != nil {
+		return err
 	}
 
 	// Check for excessively long lines (potential DoS protection)
@@ -166,6 +218,37 @@ func ValidateMemoContent(memo string) error {
 	// Check for excessive repetition (potential DoS protection)
 	if err := validateMemoRepetition(memo); err != nil {
 		return err
+	}
+
+	return nil
+}
+
+// validateMemoCharacterSecurity performs enhanced character-level security validation
+func validateMemoCharacterSecurity(memo string) error {
+	// Check for null bytes and control characters (except common whitespace)
+	for i, char := range memo {
+		if char == 0 {
+			return fmt.Errorf("memo contains null byte at position %d", i)
+		}
+		
+		// Allow common whitespace (space, tab, newline, carriage return)
+		// Block other control characters (0x00-0x1F except 0x09, 0x0A, 0x0D)
+		if char < 32 && char != 9 && char != 10 && char != 13 {
+			return fmt.Errorf("memo contains control character (0x%02X) at position %d", char, i)
+		}
+		
+		// Block high control characters (0x7F-0x9F)
+		if (char >= 127 && char <= 159) {
+			return fmt.Errorf("memo contains control character (0x%02X) at position %d", char, i)
+		}
+	}
+
+	// Check for zero-width characters that could be used for steganography
+	zeroWidthChars := []rune{0x200B, 0x200C, 0x200D, 0xFEFF}
+	for _, zwChar := range zeroWidthChars {
+		if strings.ContainsRune(memo, zwChar) {
+			return fmt.Errorf("memo contains zero-width character (potential steganography)")
+		}
 	}
 
 	return nil

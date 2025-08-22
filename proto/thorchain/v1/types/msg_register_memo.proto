@@ -13,12 +13,7 @@ message MsgRegisterMemo {
   int64 ttl = 2;
   string chain_id = 3;
   bytes signer = 4 [(gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress", (amino.encoding) = "bech32"];
-  
-  // Memoless reference validation fields for precision and routing support:
-  string amount = 5;           // For precision validation
-  string destination = 6;      // For refund validation
-  bool force_collision = 7;    // For collision testing
-  repeated string tags = 8;    // For metadata/debugging
+  string reference = 5; // User must provide 5-digit reference
 }
 
 message RegisteredMemo {
@@ -29,9 +24,4 @@ message RegisteredMemo {
   string chain_id = 5;
   string status = 6;
   bytes signer = 7 [(gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress", (amino.encoding) = "bech32"];
-}
-
-message MemoCounter {
-  string chain_id = 1;
-  int64 counter = 2;
 }
