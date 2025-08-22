@@ -24,8 +24,8 @@ func TestExtractReferenceFromAmount(t *testing.T) {
 		},
 		{
 			name:     "minimum valid amount",
-			amount:   cosmos.NewUint(100000),
-			expected: "00000", // Will be rejected by ValidateReference later
+			amount:   cosmos.NewUint(10000),
+			expected: "10000", // Updated to valid 10000-99999 range
 			wantErr:  false,
 		},
 		{
@@ -45,9 +45,9 @@ func TestExtractReferenceFromAmount(t *testing.T) {
 			wantErr:  false,
 		},
 		{
-			name:     "reference with leading zeros",
-			amount:   cosmos.NewUint(100000123),
-			expected: "00123",
+			name:     "reference with valid leading zeros",
+			amount:   cosmos.NewUint(100010123),
+			expected: "10123", // Updated to valid 10000-99999 range
 			wantErr:  false,
 		},
 		{
@@ -65,13 +65,9 @@ func TestExtractReferenceFromAmount(t *testing.T) {
 
 			if tt.wantErr {
 				require.Error(t, err)
-				if tt.amount.IsZero() {
-					require.Contains(t, err.Error(), "amount cannot be zero",
-						"Error should mention zero amount")
-				} else {
-					require.Contains(t, err.Error(), "amount too small for memoless reference",
-						"Error should mention amount too small")
-				}
+				// Updated to match new canonical error messages
+				require.Contains(t, err.Error(), "amount too small for reference extraction",
+					"Error should mention amount too small for reference extraction")
 				return
 			}
 
@@ -135,7 +131,7 @@ func TestIsMemolessTransaction(t *testing.T) {
 		{
 			name:           "amount too small",
 			memo:           "",
-			coins:          common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(99999))},
+			coins:          common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(9999))},
 			expectMemoless: false,
 			wantErr:        false,
 		},
@@ -155,11 +151,11 @@ func TestIsMemolessTransaction(t *testing.T) {
 			wantErr:        false,
 		},
 		{
-			name:           "reference all zeros (should still detect but fail validation later)",
+			name:           "invalid range reference (below minimum)",
 			memo:           "",
-			coins:          common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(100000000))},
-			expectMemoless: true, // Should be true, validation happens separately
-			expectedRef:    "00000",
+			coins:          common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(100009999))},
+			expectMemoless: false, // Should be false, reference below 10000
+			expectedRef:    "",
 			wantErr:        false,
 		},
 		{
@@ -173,17 +169,17 @@ func TestIsMemolessTransaction(t *testing.T) {
 		{
 			name:           "exactly minimum amount",
 			memo:           "",
-			coins:          common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(100000))},
-			expectMemoless: true, // Should detect as memoless, validation separate
-			expectedRef:    "00000",
+			coins:          common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(10000))},
+			expectMemoless: true, // Should detect as memoless with valid 10000 reference
+			expectedRef:    "10000",
 			wantErr:        false,
 		},
 		{
 			name:           "just above minimum with valid reference",
 			memo:           "",
-			coins:          common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(100001))},
+			coins:          common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(10001))},
 			expectMemoless: true,
-			expectedRef:    "00001",
+			expectedRef:    "10001",
 			wantErr:        false,
 		},
 	}
@@ -227,8 +223,8 @@ func TestValidateReference(t *testing.T) {
 			wantErr:   false,
 		},
 		{
-			name:      "valid reference with leading zeros",
-			reference: "00123",
+			name:      "valid reference with valid leading zero",
+			reference: "10123",
 			wantErr:   false,
 		},
 		{
@@ -237,10 +233,10 @@ func TestValidateReference(t *testing.T) {
 			wantErr:   false,
 		},
 		{
-			name:      "all zeros - invalid",
+			name:      "all zeros - invalid (below range)",
 			reference: "00000",
 			wantErr:   true,
-			errMsg:    "reference cannot be all zeros",
+			errMsg:    "reference must be in range 10000-99999",
 		},
 		{
 			name:      "too short",
@@ -258,31 +254,31 @@ func TestValidateReference(t *testing.T) {
 			name:      "non-numeric",
 			reference: "1234a",
 			wantErr:   true,
-			errMsg:    "reference must be numeric",
+			errMsg:    "reference must contain only numeric characters",
 		},
 		{
 			name:      "empty",
 			reference: "",
 			wantErr:   true,
-			errMsg:    "reference must be exactly 5 digits",
+			errMsg:    "reference cannot be empty",
 		},
 		{
 			name:      "special characters",
 			reference: "12-45",
 			wantErr:   true,
-			errMsg:    "reference must be numeric",
+			errMsg:    "reference must contain only numeric characters",
 		},
 		{
 			name:      "spaces",
 			reference: "1 345",
 			wantErr:   true,
-			errMsg:    "reference must be numeric",
+			errMsg:    "reference must contain only numeric characters",
 		},
 		{
 			name:      "negative sign",
 			reference: "-1234",
 			wantErr:   true,
-			errMsg:    "reference must be numeric",
+			errMsg:    "reference must contain only numeric characters",
 		},
 	}
 
@@ -315,7 +311,7 @@ func TestEncodeAmountWithReference(t *testing.T) {
 	}{
 		{
 			name:       "encode with valid reference",
-			baseAmount: cosmos.NewUint(1000),
+			baseAmount: cosmos.NewUint(100000000), // 8 digits minimum to support encoding
 			reference:  "12345",
 			expected:   cosmos.NewUint(100012345),
 			wantErr:    false,
@@ -328,11 +324,11 @@ func TestEncodeAmountWithReference(t *testing.T) {
 			wantErr:    false,
 		},
 		{
-			name:       "small base amount",
-			baseAmount: cosmos.NewUint(1),
+			name:       "small base amount (below 5 digits)",
+			baseAmount: cosmos.NewUint(1234), // Less than 5 digits  
 			reference:  "12345",
-			expected:   cosmos.NewUint(112345),
-			wantErr:    false,
+			expected:   cosmos.ZeroUint(),
+			wantErr:    true, // Should fail - base amount too small
 		},
 		{
 			name:       "large base amount",
@@ -353,42 +349,42 @@ func TestEncodeAmountWithReference(t *testing.T) {
 			baseAmount: cosmos.ZeroUint(),
 			reference:  "12345",
 			wantErr:    true,
-			errMsg:     "base amount cannot be zero",
+			errMsg:     "base amount too small for reference encoding",
 		},
 		{
-			name:       "invalid reference - all zeros",
-			baseAmount: cosmos.NewUint(1000),
+			name:       "invalid reference - all zeros (below range)",
+			baseAmount: cosmos.NewUint(100000000),
 			reference:  "00000",
 			wantErr:    true,
-			errMsg:     "invalid reference",
+			errMsg:     "reference out of valid range",
 		},
 		{
 			name:       "invalid reference - too short",
-			baseAmount: cosmos.NewUint(1000),
+			baseAmount: cosmos.NewUint(100000000),
 			reference:  "1234",
 			wantErr:    true,
-			errMsg:     "invalid reference",
+			errMsg:     "reference must be exactly 5 digits",
 		},
 		{
 			name:       "invalid reference - too long",
-			baseAmount: cosmos.NewUint(1000),
+			baseAmount: cosmos.NewUint(100000000),
 			reference:  "123456",
 			wantErr:    true,
-			errMsg:     "invalid reference",
+			errMsg:     "reference must be exactly 5 digits",
 		},
 		{
 			name:       "invalid reference - non-numeric",
-			baseAmount: cosmos.NewUint(1000),
+			baseAmount: cosmos.NewUint(100000000),
 			reference:  "1234a",
 			wantErr:    true,
-			errMsg:     "invalid reference",
+			errMsg:     "reference must be numeric",
 		},
 		{
-			name:       "reference with leading zeros",
-			baseAmount: cosmos.NewUint(1000),
-			reference:  "00123",
-			expected:   cosmos.NewUint(100000123),
-			wantErr:    false,
+			name:       "reference with invalid leading zeros (below range)",
+			baseAmount: cosmos.NewUint(100000000),
+			reference:  "00123", // Below 10000 range
+			expected:   cosmos.ZeroUint(),
+			wantErr:    true,
 		},
 	}
 
@@ -426,12 +422,12 @@ func TestGetMinimumMemolessAmount(t *testing.T) {
 	utils := NewMemolessUtils()
 	minAmount := utils.GetMinimumMemolessAmount()
 
-	require.Equal(t, cosmos.NewUint(100000), minAmount,
-		"Minimum amount should be 100,000 base units")
+	require.Equal(t, cosmos.NewUint(10000), minAmount,
+		"Minimum amount should be 10,000 base units")
 	require.False(t, minAmount.IsZero(),
 		"Minimum amount should not be zero")
-	require.True(t, minAmount.GT(cosmos.NewUint(99999)),
-		"Minimum amount should be greater than 99,999")
+	require.True(t, minAmount.GT(cosmos.NewUint(9999)),
+		"Minimum amount should be greater than 9,999")
 }
 
 func TestMemolessUtilsIntegration(t *testing.T) {
@@ -485,14 +481,14 @@ func TestBoundaryConditions(t *testing.T) {
 		{
 			name:           "minimum valid amount",
 			memo:           "",
-			amount:         cosmos.NewUint(100000), // Exactly minimum
-			expectMemoless: true,                   // Should detect as memoless, validation separate
-			description:    "Amount at minimum threshold with invalid reference",
+			amount:         cosmos.NewUint(10000), // Exactly minimum with valid reference
+			expectMemoless: true,                  // Should detect as memoless with valid 10000 reference
+			description:    "Amount at minimum threshold with valid reference",
 		},
 		{
 			name:           "just above minimum",
 			memo:           "",
-			amount:         cosmos.NewUint(100001),
+			amount:         cosmos.NewUint(10001),
 			expectMemoless: true,
 			description:    "Just above minimum with valid reference",
 		},
@@ -518,11 +514,11 @@ func TestBoundaryConditions(t *testing.T) {
 			description:    "Very large amount with valid reference",
 		},
 		{
-			name:           "amount with leading zeros in reference",
+			name:           "amount with valid reference (no leading zeros issue)",
 			memo:           "",
-			amount:         cosmos.NewUint(100000123), // Reference: "00123"
+			amount:         cosmos.NewUint(100012345), // Reference: "12345" (valid)
 			expectMemoless: true,
-			description:    "Reference with leading zeros",
+			description:    "Reference within valid 10000-99999 range",
 		},
 	}
 

@@ -54,12 +54,12 @@
 package types
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 // MemolessUtils provides utility functions for memoless transaction processing
@@ -71,33 +71,11 @@ func NewMemolessUtils() *MemolessUtils {
 }
 
 // ExtractReferenceFromAmount extracts a 5-digit reference code from a transaction amount
-// The reference is encoded as the last 5 digits of the amount
+// The reference is encoded as the last 5 digits of the amount.
+// This now delegates to the canonical implementation for consistency.
 func (m *MemolessUtils) ExtractReferenceFromAmount(amount cosmos.Uint) (string, error) {
-	if amount.IsZero() {
-		return "", fmt.Errorf("amount cannot be zero for memoless transactions")
-	}
-
-	amountStr := amount.String()
-
-	// Need at least 6 digits for base amount + 5-digit reference
-	if len(amountStr) < 6 {
-		return "", fmt.Errorf("amount too small for memoless reference: %s (need at least 6 digits)", amountStr)
-	}
-
-	// Extract last 5 digits
-	reference := amountStr[len(amountStr)-5:]
-
-	// Validate reference format (5 digits)
-	if len(reference) != 5 {
-		return "", fmt.Errorf("invalid reference length: %d", len(reference))
-	}
-
-	// Ensure all characters are digits
-	if _, err := strconv.ParseUint(reference, 10, 32); err != nil {
-		return "", fmt.Errorf("reference contains non-numeric characters: %s", reference)
-	}
-
-	return reference, nil
+	// Use canonical extraction function for consistency
+	return ExtractReferenceFromAmount(amount)
 }
 
 // IsMemolessTransaction determines if a transaction is a memoless transaction
@@ -128,7 +106,7 @@ func (m *MemolessUtils) IsMemolessTransaction(memo string, coins common.Coins) (
 	}
 
 	// Protect against negative amount simulation (amounts too small)
-	minAmount := cosmos.NewUint(100000) // 10^5 = 100,000 (6 digits minimum)
+	minAmount := cosmos.NewUint(10000) // 10^4 = 10,000 (5 digits minimum for 10000-99999 range)
 	if coin.Amount.LT(minAmount) {
 		return false, "", nil
 	}
@@ -159,70 +137,21 @@ func (m *MemolessUtils) IsMemolessTransaction(memo string, coins common.Coins) (
 }
 
 // ValidateReference validates that a reference string is properly formatted
+// Updated to align with 10000-99999 range requirement for consistency
 func (m *MemolessUtils) ValidateReference(reference string) error {
-	// Length validation
-	if len(reference) != 5 {
-		return fmt.Errorf("reference must be exactly 5 digits")
-	}
-
-	// Strict ASCII digit validation
-	for _, r := range reference {
-		if r < '0' || r > '9' {
-			return fmt.Errorf("reference must be numeric")
-		}
-	}
-
-	// Check for reserved pattern (all zeros)
-	if reference == "00000" {
-		return fmt.Errorf("reference cannot be all zeros")
-	}
-
-	return nil
+	// Delegate to canonical validation for consistency
+	return types.ValidateUserReference(reference)
 }
 
 // GetMinimumMemolessAmount returns the minimum amount required for memoless transactions
-// This ensures there's enough room for both the base amount and 5-digit reference
+// Updated to align with new 10000-99999 range requirement
 func (m *MemolessUtils) GetMinimumMemolessAmount() cosmos.Uint {
-	return cosmos.NewUint(100000) // 100,000 base units
+	return cosmos.NewUint(10000) // 10,000 base units (minimum for valid reference)
 }
 
 // EncodeAmountWithReference encodes a reference into a transaction amount
-// This is used when creating outbound transactions with memoless references
+// This delegates to the canonical implementation for consistency
 func (m *MemolessUtils) EncodeAmountWithReference(baseAmount cosmos.Uint, reference string) (cosmos.Uint, error) {
-	if err := m.ValidateReference(reference); err != nil {
-		return cosmos.ZeroUint(), fmt.Errorf("invalid reference: %w", err)
-	}
-
-	// Convert base amount to string and append reference
-	baseStr := baseAmount.String()
-
-	// Ensure base amount has at least 1 digit
-	if baseAmount.IsZero() {
-		return cosmos.ZeroUint(), fmt.Errorf("base amount cannot be zero")
-	}
-
-	// Remove last 5 digits from base if they exist, then append reference
-	if len(baseStr) >= 5 {
-		// Remove last 5 digits and append new reference
-		baseWithoutRef := baseStr[:len(baseStr)-5]
-
-		// If baseWithoutRef is empty (base was exactly 5 digits), just use the reference
-		// Note: This edge case sacrifices reversibility for simplicity
-		if baseWithoutRef == "" {
-			// Convert reference to int first, then to string to handle leading zeros
-			refInt, _ := strconv.Atoi(reference)
-			encodedAmount := cosmos.NewUint(uint64(refInt))
-			return encodedAmount, nil
-		}
-
-		encodedStr := baseWithoutRef + reference
-		encodedAmount := cosmos.NewUintFromString(encodedStr)
-		return encodedAmount, nil
-	}
-
-	// If base amount is less than 5 digits, just append reference
-	encodedStr := baseStr + reference
-	encodedAmount := cosmos.NewUintFromString(encodedStr)
-
-	return encodedAmount, nil
+	// Use canonical encoding function for consistency
+	return EncodeAmountWithReference(baseAmount, reference)
 }
