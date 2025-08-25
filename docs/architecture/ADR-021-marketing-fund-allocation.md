@@ -5,6 +5,7 @@
 21 Jan 25: Amended funding options.
 01 Aug 25: Adjusted funding source and updated for latest changes in ecosystem.
 15 Aug 25: Rewrite of ADR 021. Added research and updated plan details for execution. Included front end update.
+23 Aug 25: Instead of ending 5% burn to pay for marketing fund, change reserve income to network revenue to pay for marketing fund
 
 ## Status
 Proposed
@@ -12,7 +13,7 @@ Proposed
 ## Vote options
 Make mimir ADR21 with one of the following options
 1. End 5% burn, add 5% marketing
-2. Keep 5% burn, add 5% marketing
+2. Keep 5% burn, change reserve income (roughly 5%) to network revenue to pay for 5% marketing
 
 ## Context
 THORChain is the leading decentralized liquidity protocol that facilitates cross-chain native swaps and is integrated in numerous wallets and front end platforms. Despite its technical innovations and widespread utility, there is currently no dedicated fund allocation for marketing efforts. It also lacks its own dedicated front end that purely supports THORChain. This lack of marketing limits overall protocol awareness, which in turn reduces the ability to attract new users, and ecosystem growth. As a result, THORChain's full potential remains underutilized, especially among less-informed audiences who are not yet familiar with its capabilities. This is evident by numerous mainstream DeFi analytics platforms omitting the THORChain protocol from its research or results. 
@@ -184,15 +185,17 @@ Per week / week / QTR
 
 5% of THORChain’s revenue. The specific percentage will be controlled by node mimir.
 
-The 5% burn can be cancelled so the total revenue payout to nodes and pools does not change.
+The loss in revenue to the network can be offset by redirecting the reserve income to the network revenue.  The reserve income currently equates to ~5% of the network revenue therefore will result in no change to node or pool income.
 
-Burning tokens should only occur when there is no better use for the capital.  Since THORChain is still in its growth phase, the 5% going towards marketing should have a much higher impact on the RUNE price than burning tokens.
+The 5% Burn can be preserved since reserve income will cover the 5% marketing fund.
 
 The Treasury will kick start the marketing fund with $250,000.
 
-If a marketing campaign is obviously successful and warrants further investment, but the marketing fund has no money left, the nodes can be campaigned to raise the % of revenue going towards the marketing fund and/or the Treasury can be asked to add more to the marketing fund to keep the campaign going.
+If a marketing campaign is obviously successful and warrants further investment, but the marketing fund has no money left, the nodes can be campaigned to raise the % of revenue going towards the marketing fund, nodes could distribute RUNE from the reserve, and/or the Treasury can be asked to add more to the marketing fund to keep the campaign going.
 
-The goal of the marketing fund is to be high velocity.  As money comes in, it will be spent.  As THORChain’s revenue goes up, so too does the marketing spend.  The revenue will be highest during a bull market, therefore the marketing spend will be the highest during a bull market, which matters because that is when people are paying the most attention and THORChain can capture market share.  After the peak of the bull market, perhaps then the marketing fund could slow down expenditures to preserve cash for the bear market to ensure there is constant and consistent marketing going on until the next bull market occurs.
+The goal of the marketing fund is to be high velocity.  As money comes in, it will be spent.  As THORChain’s revenue goes up, so too does the marketing spend.  The revenue will be highest during a bull market, therefore the marketing spend will be the highest during a bull market, which matters because that is when people are paying the most attention and THORChain can capture market share.  After the peak of the bull market, the marketing fund should slow down expenditures to preserve cash for the bear market to ensure there is constant and consistent marketing going on until the next bull market occurs.
+
+The fund may need to save up cash to make large purchases in the future.  Such as paying for wallet integrations.
 
 **Governance**
 
@@ -242,9 +245,9 @@ The effects of marketing are notoriously hard to measure.  It may not be readily
 A positive correlation of marketing spend to user acquisition might be developed, and decisions made based on that correlation, only to realize after the fact the correlation was spurious.
 
 ## Consequences
-1.	5% of revenue going to marketing efforts will result in a reduction of buy pressure on the RUNE token.  This will also reduce the yield for nodes and pools.
+1.	5% of revenue going to marketing efforts will result in a reduction of buy pressure on the RUNE token. 
 
-2.	If the 5% burn is cancelled to ensure no change to the node and pool yield, it will result in Rune sell pressure but have a neutral impact on yield for nodes and pools.
+2.	The reserve will stop growing when the income stops.
 
 ## Next Steps
 1.	Present this ADR to the THORChain community, solicit feedback and approve funding and governance course of action.
