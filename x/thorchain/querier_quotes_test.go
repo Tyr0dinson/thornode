@@ -85,13 +85,35 @@ func (s *QuotesSuite) TestParseMultipleAffiliateParams(c *C) {
 	c.Assert(bps[0].Uint64(), Equals, uint64(100))
 	c.Assert(bps[1].Uint64(), Equals, uint64(300))
 
-	// Test mismatch between affiliates and bps (more affiliates than bps)
-	affiliates, bps, _, err = parseMultipleAffiliateParams(ctx, mgr, "a1/a2/a3", "100/200")
+	// Test mismatch between affiliates and bps (more affiliates than bps) - should use last BPS for extra affiliates
+	affiliates, bps, totalBps, err = parseMultipleAffiliateParams(ctx, mgr, "a1/a2/a3", "100/200")
 	c.Assert(err, IsNil)
-	c.Assert(len(affiliates), Equals, 2) // Only processes affiliates with corresponding bps
-	c.Assert(len(bps), Equals, 2)
+	c.Assert(len(affiliates), Equals, 3) // All affiliates should be processed
+	c.Assert(len(bps), Equals, 3)
 	c.Assert(affiliates[0], Equals, "a1")
 	c.Assert(affiliates[1], Equals, "a2")
+	c.Assert(affiliates[2], Equals, "a3")
+	c.Assert(bps[0].Uint64(), Equals, uint64(100))   // First BPS
+	c.Assert(bps[1].Uint64(), Equals, uint64(200))   // Second BPS
+	c.Assert(bps[2].Uint64(), Equals, uint64(200))   // Last BPS reused for third affiliate
+	c.Assert(totalBps.Uint64(), Equals, uint64(500)) // 100 + 200 + 200
+
+	// Test more affiliates than bps with multiple extra affiliates
+	affiliates, bps, totalBps, err = parseMultipleAffiliateParams(ctx, mgr, "xx/yy/zz/aa/bb", "10/20")
+	c.Assert(err, IsNil)
+	c.Assert(len(affiliates), Equals, 5)
+	c.Assert(len(bps), Equals, 5)
+	c.Assert(affiliates[0], Equals, "xx")
+	c.Assert(affiliates[1], Equals, "yy")
+	c.Assert(affiliates[2], Equals, "zz")
+	c.Assert(affiliates[3], Equals, "aa")
+	c.Assert(affiliates[4], Equals, "bb")
+	c.Assert(bps[0].Uint64(), Equals, uint64(10))   // First BPS
+	c.Assert(bps[1].Uint64(), Equals, uint64(20))   // Second BPS
+	c.Assert(bps[2].Uint64(), Equals, uint64(20))   // Last BPS reused
+	c.Assert(bps[3].Uint64(), Equals, uint64(20))   // Last BPS reused
+	c.Assert(bps[4].Uint64(), Equals, uint64(20))   // Last BPS reused
+	c.Assert(totalBps.Uint64(), Equals, uint64(90)) // 10 + 20 + 20 + 20 + 20
 
 	// Test invalid bps (should skip invalid ones)
 	affiliates, bps, _, err = parseMultipleAffiliateParams(ctx, mgr, "a1/a2/a3", "100/invalid/300")
