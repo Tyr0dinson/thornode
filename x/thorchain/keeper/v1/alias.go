@@ -96,6 +96,7 @@ var (
 	NewSwapperClout            = types.NewSwapperClout
 	NewTCYClaimer              = types.NewTCYClaimer
 	NewTCYStaker               = types.NewTCYStaker
+	NewExportAsset             = types.NewExportAsset
 	NewAssetExport             = types.NewAssetExport
 )
 
@@ -154,6 +155,7 @@ type (
 	MsgTCYUnstake            = types.MsgTCYUnstake
 	TCYClaimer               = types.TCYClaimer
 	TCYStaker                = types.TCYStaker
+	ExportAsset              = types.ExportAsset
 	AssetExport              = types.AssetExport
 
 	ProtoInt64        = types.ProtoInt64

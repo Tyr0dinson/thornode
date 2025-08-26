@@ -15,24 +15,22 @@ import (
 )
 
 var (
-	md_AssetExport                  protoreflect.MessageDescriptor
-	fd_AssetExport_asset            protoreflect.FieldDescriptor
-	fd_AssetExport_status           protoreflect.FieldDescriptor
-	fd_AssetExport_amount_external  protoreflect.FieldDescriptor
-	fd_AssetExport_amount_native    protoreflect.FieldDescriptor
-	fd_AssetExport_gas_reserve_l1   protoreflect.FieldDescriptor
-	fd_AssetExport_gas_reserve_rune protoreflect.FieldDescriptor
+	md_AssetExport                 protoreflect.MessageDescriptor
+	fd_AssetExport_asset           protoreflect.FieldDescriptor
+	fd_AssetExport_address         protoreflect.FieldDescriptor
+	fd_AssetExport_decimals        protoreflect.FieldDescriptor
+	fd_AssetExport_amount_external protoreflect.FieldDescriptor
+	fd_AssetExport_amount_native   protoreflect.FieldDescriptor
 )
 
 func init() {
 	file_types_type_asset_export_proto_init()
 	md_AssetExport = File_types_type_asset_export_proto.Messages().ByName("AssetExport")
 	fd_AssetExport_asset = md_AssetExport.Fields().ByName("asset")
-	fd_AssetExport_status = md_AssetExport.Fields().ByName("status")
+	fd_AssetExport_address = md_AssetExport.Fields().ByName("address")
+	fd_AssetExport_decimals = md_AssetExport.Fields().ByName("decimals")
 	fd_AssetExport_amount_external = md_AssetExport.Fields().ByName("amount_external")
 	fd_AssetExport_amount_native = md_AssetExport.Fields().ByName("amount_native")
-	fd_AssetExport_gas_reserve_l1 = md_AssetExport.Fields().ByName("gas_reserve_l1")
-	fd_AssetExport_gas_reserve_rune = md_AssetExport.Fields().ByName("gas_reserve_rune")
 }
 
 var _ protoreflect.Message = (*fastReflection_AssetExport)(nil)
@@ -106,9 +104,15 @@ func (x *fastReflection_AssetExport) Range(f func(protoreflect.FieldDescriptor, 
 			return
 		}
 	}
-	if x.Status != 0 {
-		value := protoreflect.ValueOfEnum((protoreflect.EnumNumber)(x.Status))
-		if !f(fd_AssetExport_status, value) {
+	if x.Address != "" {
+		value := protoreflect.ValueOfString(x.Address)
+		if !f(fd_AssetExport_address, value) {
+			return
+		}
+	}
+	if x.Decimals != uint64(0) {
+		value := protoreflect.ValueOfUint64(x.Decimals)
+		if !f(fd_AssetExport_decimals, value) {
 			return
 		}
 	}
@@ -121,18 +125,6 @@ func (x *fastReflection_AssetExport) Range(f func(protoreflect.FieldDescriptor, 
 	if x.AmountNative != "" {
 		value := protoreflect.ValueOfString(x.AmountNative)
 		if !f(fd_AssetExport_amount_native, value) {
-			return
-		}
-	}
-	if x.GasReserveL1 != "" {
-		value := protoreflect.ValueOfString(x.GasReserveL1)
-		if !f(fd_AssetExport_gas_reserve_l1, value) {
-			return
-		}
-	}
-	if x.GasReserveRune != "" {
-		value := protoreflect.ValueOfString(x.GasReserveRune)
-		if !f(fd_AssetExport_gas_reserve_rune, value) {
 			return
 		}
 	}
@@ -153,16 +145,14 @@ func (x *fastReflection_AssetExport) Has(fd protoreflect.FieldDescriptor) bool {
 	switch fd.FullName() {
 	case "types.AssetExport.asset":
 		return x.Asset != nil
-	case "types.AssetExport.status":
-		return x.Status != 0
+	case "types.AssetExport.address":
+		return x.Address != ""
+	case "types.AssetExport.decimals":
+		return x.Decimals != uint64(0)
 	case "types.AssetExport.amount_external":
 		return x.AmountExternal != ""
 	case "types.AssetExport.amount_native":
 		return x.AmountNative != ""
-	case "types.AssetExport.gas_reserve_l1":
-		return x.GasReserveL1 != ""
-	case "types.AssetExport.gas_reserve_rune":
-		return x.GasReserveRune != ""
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.AssetExport"))
@@ -181,16 +171,14 @@ func (x *fastReflection_AssetExport) Clear(fd protoreflect.FieldDescriptor) {
 	switch fd.FullName() {
 	case "types.AssetExport.asset":
 		x.Asset = nil
-	case "types.AssetExport.status":
-		x.Status = 0
+	case "types.AssetExport.address":
+		x.Address = ""
+	case "types.AssetExport.decimals":
+		x.Decimals = uint64(0)
 	case "types.AssetExport.amount_external":
 		x.AmountExternal = ""
 	case "types.AssetExport.amount_native":
 		x.AmountNative = ""
-	case "types.AssetExport.gas_reserve_l1":
-		x.GasReserveL1 = ""
-	case "types.AssetExport.gas_reserve_rune":
-		x.GasReserveRune = ""
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.AssetExport"))
@@ -210,20 +198,17 @@ func (x *fastReflection_AssetExport) Get(descriptor protoreflect.FieldDescriptor
 	case "types.AssetExport.asset":
 		value := x.Asset
 		return protoreflect.ValueOfMessage(value.ProtoReflect())
-	case "types.AssetExport.status":
-		value := x.Status
-		return protoreflect.ValueOfEnum((protoreflect.EnumNumber)(value))
+	case "types.AssetExport.address":
+		value := x.Address
+		return protoreflect.ValueOfString(value)
+	case "types.AssetExport.decimals":
+		value := x.Decimals
+		return protoreflect.ValueOfUint64(value)
 	case "types.AssetExport.amount_external":
 		value := x.AmountExternal
 		return protoreflect.ValueOfString(value)
 	case "types.AssetExport.amount_native":
 		value := x.AmountNative
-		return protoreflect.ValueOfString(value)
-	case "types.AssetExport.gas_reserve_l1":
-		value := x.GasReserveL1
-		return protoreflect.ValueOfString(value)
-	case "types.AssetExport.gas_reserve_rune":
-		value := x.GasReserveRune
 		return protoreflect.ValueOfString(value)
 	default:
 		if descriptor.IsExtension() {
@@ -247,16 +232,14 @@ func (x *fastReflection_AssetExport) Set(fd protoreflect.FieldDescriptor, value 
 	switch fd.FullName() {
 	case "types.AssetExport.asset":
 		x.Asset = value.Message().Interface().(*common.Asset)
-	case "types.AssetExport.status":
-		x.Status = (AssetExport_Status)(value.Enum())
+	case "types.AssetExport.address":
+		x.Address = value.Interface().(string)
+	case "types.AssetExport.decimals":
+		x.Decimals = value.Uint()
 	case "types.AssetExport.amount_external":
 		x.AmountExternal = value.Interface().(string)
 	case "types.AssetExport.amount_native":
 		x.AmountNative = value.Interface().(string)
-	case "types.AssetExport.gas_reserve_l1":
-		x.GasReserveL1 = value.Interface().(string)
-	case "types.AssetExport.gas_reserve_rune":
-		x.GasReserveRune = value.Interface().(string)
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.AssetExport"))
@@ -282,16 +265,14 @@ func (x *fastReflection_AssetExport) Mutable(fd protoreflect.FieldDescriptor) pr
 			x.Asset = new(common.Asset)
 		}
 		return protoreflect.ValueOfMessage(x.Asset.ProtoReflect())
-	case "types.AssetExport.status":
-		panic(fmt.Errorf("field status of message types.AssetExport is not mutable"))
+	case "types.AssetExport.address":
+		panic(fmt.Errorf("field address of message types.AssetExport is not mutable"))
+	case "types.AssetExport.decimals":
+		panic(fmt.Errorf("field decimals of message types.AssetExport is not mutable"))
 	case "types.AssetExport.amount_external":
 		panic(fmt.Errorf("field amount_external of message types.AssetExport is not mutable"))
 	case "types.AssetExport.amount_native":
 		panic(fmt.Errorf("field amount_native of message types.AssetExport is not mutable"))
-	case "types.AssetExport.gas_reserve_l1":
-		panic(fmt.Errorf("field gas_reserve_l1 of message types.AssetExport is not mutable"))
-	case "types.AssetExport.gas_reserve_rune":
-		panic(fmt.Errorf("field gas_reserve_rune of message types.AssetExport is not mutable"))
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.AssetExport"))
@@ -308,15 +289,13 @@ func (x *fastReflection_AssetExport) NewField(fd protoreflect.FieldDescriptor) p
 	case "types.AssetExport.asset":
 		m := new(common.Asset)
 		return protoreflect.ValueOfMessage(m.ProtoReflect())
-	case "types.AssetExport.status":
-		return protoreflect.ValueOfEnum(0)
+	case "types.AssetExport.address":
+		return protoreflect.ValueOfString("")
+	case "types.AssetExport.decimals":
+		return protoreflect.ValueOfUint64(uint64(0))
 	case "types.AssetExport.amount_external":
 		return protoreflect.ValueOfString("")
 	case "types.AssetExport.amount_native":
-		return protoreflect.ValueOfString("")
-	case "types.AssetExport.gas_reserve_l1":
-		return protoreflect.ValueOfString("")
-	case "types.AssetExport.gas_reserve_rune":
 		return protoreflect.ValueOfString("")
 	default:
 		if fd.IsExtension() {
@@ -391,22 +370,18 @@ func (x *fastReflection_AssetExport) ProtoMethods() *protoiface.Methods {
 			l = options.Size(x.Asset)
 			n += 1 + l + runtime.Sov(uint64(l))
 		}
-		if x.Status != 0 {
-			n += 1 + runtime.Sov(uint64(x.Status))
+		l = len(x.Address)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		if x.Decimals != 0 {
+			n += 1 + runtime.Sov(uint64(x.Decimals))
 		}
 		l = len(x.AmountExternal)
 		if l > 0 {
 			n += 1 + l + runtime.Sov(uint64(l))
 		}
 		l = len(x.AmountNative)
-		if l > 0 {
-			n += 1 + l + runtime.Sov(uint64(l))
-		}
-		l = len(x.GasReserveL1)
-		if l > 0 {
-			n += 1 + l + runtime.Sov(uint64(l))
-		}
-		l = len(x.GasReserveRune)
 		if l > 0 {
 			n += 1 + l + runtime.Sov(uint64(l))
 		}
@@ -439,38 +414,31 @@ func (x *fastReflection_AssetExport) ProtoMethods() *protoiface.Methods {
 			i -= len(x.unknownFields)
 			copy(dAtA[i:], x.unknownFields)
 		}
-		if len(x.GasReserveRune) > 0 {
-			i -= len(x.GasReserveRune)
-			copy(dAtA[i:], x.GasReserveRune)
-			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.GasReserveRune)))
-			i--
-			dAtA[i] = 0x32
-		}
-		if len(x.GasReserveL1) > 0 {
-			i -= len(x.GasReserveL1)
-			copy(dAtA[i:], x.GasReserveL1)
-			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.GasReserveL1)))
-			i--
-			dAtA[i] = 0x2a
-		}
 		if len(x.AmountNative) > 0 {
 			i -= len(x.AmountNative)
 			copy(dAtA[i:], x.AmountNative)
 			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.AmountNative)))
 			i--
-			dAtA[i] = 0x22
+			dAtA[i] = 0x2a
 		}
 		if len(x.AmountExternal) > 0 {
 			i -= len(x.AmountExternal)
 			copy(dAtA[i:], x.AmountExternal)
 			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.AmountExternal)))
 			i--
-			dAtA[i] = 0x1a
+			dAtA[i] = 0x22
 		}
-		if x.Status != 0 {
-			i = runtime.EncodeVarint(dAtA, i, uint64(x.Status))
+		if x.Decimals != 0 {
+			i = runtime.EncodeVarint(dAtA, i, uint64(x.Decimals))
 			i--
-			dAtA[i] = 0x10
+			dAtA[i] = 0x18
+		}
+		if len(x.Address) > 0 {
+			i -= len(x.Address)
+			copy(dAtA[i:], x.Address)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.Address)))
+			i--
+			dAtA[i] = 0x12
 		}
 		if x.Asset != nil {
 			encoded, err := options.Marshal(x.Asset)
@@ -572,10 +540,10 @@ func (x *fastReflection_AssetExport) ProtoMethods() *protoiface.Methods {
 				}
 				iNdEx = postIndex
 			case 2:
-				if wireType != 0 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Status", wireType)
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Address", wireType)
 				}
-				x.Status = 0
+				var stringLen uint64
 				for shift := uint(0); ; shift += 7 {
 					if shift >= 64 {
 						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
@@ -585,12 +553,44 @@ func (x *fastReflection_AssetExport) ProtoMethods() *protoiface.Methods {
 					}
 					b := dAtA[iNdEx]
 					iNdEx++
-					x.Status |= AssetExport_Status(b&0x7F) << shift
+					stringLen |= uint64(b&0x7F) << shift
 					if b < 0x80 {
 						break
 					}
 				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.Address = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
 			case 3:
+				if wireType != 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Decimals", wireType)
+				}
+				x.Decimals = 0
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					x.Decimals |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+			case 4:
 				if wireType != 2 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field AmountExternal", wireType)
 				}
@@ -622,7 +622,7 @@ func (x *fastReflection_AssetExport) ProtoMethods() *protoiface.Methods {
 				}
 				x.AmountExternal = string(dAtA[iNdEx:postIndex])
 				iNdEx = postIndex
-			case 4:
+			case 5:
 				if wireType != 2 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field AmountNative", wireType)
 				}
@@ -653,70 +653,6 @@ func (x *fastReflection_AssetExport) ProtoMethods() *protoiface.Methods {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
 				}
 				x.AmountNative = string(dAtA[iNdEx:postIndex])
-				iNdEx = postIndex
-			case 5:
-				if wireType != 2 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field GasReserveL1", wireType)
-				}
-				var stringLen uint64
-				for shift := uint(0); ; shift += 7 {
-					if shift >= 64 {
-						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
-					}
-					if iNdEx >= l {
-						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
-					}
-					b := dAtA[iNdEx]
-					iNdEx++
-					stringLen |= uint64(b&0x7F) << shift
-					if b < 0x80 {
-						break
-					}
-				}
-				intStringLen := int(stringLen)
-				if intStringLen < 0 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
-				}
-				postIndex := iNdEx + intStringLen
-				if postIndex < 0 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
-				}
-				if postIndex > l {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
-				}
-				x.GasReserveL1 = string(dAtA[iNdEx:postIndex])
-				iNdEx = postIndex
-			case 6:
-				if wireType != 2 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field GasReserveRune", wireType)
-				}
-				var stringLen uint64
-				for shift := uint(0); ; shift += 7 {
-					if shift >= 64 {
-						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
-					}
-					if iNdEx >= l {
-						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
-					}
-					b := dAtA[iNdEx]
-					iNdEx++
-					stringLen |= uint64(b&0x7F) << shift
-					if b < 0x80 {
-						break
-					}
-				}
-				intStringLen := int(stringLen)
-				if intStringLen < 0 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
-				}
-				postIndex := iNdEx + intStringLen
-				if postIndex < 0 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
-				}
-				if postIndex > l {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
-				}
-				x.GasReserveRune = string(dAtA[iNdEx:postIndex])
 				iNdEx = postIndex
 			default:
 				iNdEx = preIndex
@@ -766,66 +702,16 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-type AssetExport_Status int32
-
-const (
-	AssetExport_Unknown   AssetExport_Status = 0
-	AssetExport_Available AssetExport_Status = 1
-	AssetExport_Staged    AssetExport_Status = 2
-)
-
-// Enum value maps for AssetExport_Status.
-var (
-	AssetExport_Status_name = map[int32]string{
-		0: "Unknown",
-		1: "Available",
-		2: "Staged",
-	}
-	AssetExport_Status_value = map[string]int32{
-		"Unknown":   0,
-		"Available": 1,
-		"Staged":    2,
-	}
-)
-
-func (x AssetExport_Status) Enum() *AssetExport_Status {
-	p := new(AssetExport_Status)
-	*p = x
-	return p
-}
-
-func (x AssetExport_Status) String() string {
-	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
-}
-
-func (AssetExport_Status) Descriptor() protoreflect.EnumDescriptor {
-	return file_types_type_asset_export_proto_enumTypes[0].Descriptor()
-}
-
-func (AssetExport_Status) Type() protoreflect.EnumType {
-	return &file_types_type_asset_export_proto_enumTypes[0]
-}
-
-func (x AssetExport_Status) Number() protoreflect.EnumNumber {
-	return protoreflect.EnumNumber(x)
-}
-
-// Deprecated: Use AssetExport_Status.Descriptor instead.
-func (AssetExport_Status) EnumDescriptor() ([]byte, []int) {
-	return file_types_type_asset_export_proto_rawDescGZIP(), []int{0, 0}
-}
-
 type AssetExport struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Asset          *common.Asset      `protobuf:"bytes,1,opt,name=asset,proto3" json:"asset,omitempty"`
-	Status         AssetExport_Status `protobuf:"varint,2,opt,name=status,proto3,enum=types.AssetExport_Status" json:"status,omitempty"`
-	AmountExternal string             `protobuf:"bytes,3,opt,name=amount_external,json=amountExternal,proto3" json:"amount_external,omitempty"`
-	AmountNative   string             `protobuf:"bytes,4,opt,name=amount_native,json=amountNative,proto3" json:"amount_native,omitempty"`
-	GasReserveL1   string             `protobuf:"bytes,5,opt,name=gas_reserve_l1,json=gasReserveL1,proto3" json:"gas_reserve_l1,omitempty"`
-	GasReserveRune string             `protobuf:"bytes,6,opt,name=gas_reserve_rune,json=gasReserveRune,proto3" json:"gas_reserve_rune,omitempty"`
+	Asset          *common.Asset `protobuf:"bytes,1,opt,name=asset,proto3" json:"asset,omitempty"`
+	Address        string        `protobuf:"bytes,2,opt,name=address,proto3" json:"address,omitempty"`
+	Decimals       uint64        `protobuf:"varint,3,opt,name=decimals,proto3" json:"decimals,omitempty"`
+	AmountExternal string        `protobuf:"bytes,4,opt,name=amount_external,json=amountExternal,proto3" json:"amount_external,omitempty"`
+	AmountNative   string        `protobuf:"bytes,5,opt,name=amount_native,json=amountNative,proto3" json:"amount_native,omitempty"`
 }
 
 func (x *AssetExport) Reset() {
@@ -855,11 +741,18 @@ func (x *AssetExport) GetAsset() *common.Asset {
 	return nil
 }
 
-func (x *AssetExport) GetStatus() AssetExport_Status {
+func (x *AssetExport) GetAddress() string {
 	if x != nil {
-		return x.Status
+		return x.Address
 	}
-	return AssetExport_Unknown
+	return ""
+}
+
+func (x *AssetExport) GetDecimals() uint64 {
+	if x != nil {
+		return x.Decimals
+	}
+	return 0
 }
 
 func (x *AssetExport) GetAmountExternal() string {
@@ -876,20 +769,6 @@ func (x *AssetExport) GetAmountNative() string {
 	return ""
 }
 
-func (x *AssetExport) GetGasReserveL1() string {
-	if x != nil {
-		return x.GasReserveL1
-	}
-	return ""
-}
-
-func (x *AssetExport) GetGasReserveRune() string {
-	if x != nil {
-		return x.GasReserveRune
-	}
-	return ""
-}
-
 var File_types_type_asset_export_proto protoreflect.FileDescriptor
 
 var file_types_type_asset_export_proto_rawDesc = []byte{
@@ -898,47 +777,35 @@ var file_types_type_asset_export_proto_rawDesc = []byte{
 	0x05, 0x74, 0x79, 0x70, 0x65, 0x73, 0x1a, 0x13, 0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2f, 0x63,
 	0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x1a, 0x14, 0x67, 0x6f, 0x67,
 	0x6f, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2f, 0x67, 0x6f, 0x67, 0x6f, 0x2e, 0x70, 0x72, 0x6f, 0x74,
-	0x6f, 0x22, 0xec, 0x03, 0x0a, 0x0b, 0x41, 0x73, 0x73, 0x65, 0x74, 0x45, 0x78, 0x70, 0x6f, 0x72,
+	0x6f, 0x22, 0xad, 0x02, 0x0a, 0x0b, 0x41, 0x73, 0x73, 0x65, 0x74, 0x45, 0x78, 0x70, 0x6f, 0x72,
 	0x74, 0x12, 0x5a, 0x0a, 0x05, 0x61, 0x73, 0x73, 0x65, 0x74, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b,
 	0x32, 0x0d, 0x2e, 0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x41, 0x73, 0x73, 0x65, 0x74, 0x42,
 	0x35, 0xc8, 0xde, 0x1f, 0x00, 0xda, 0xde, 0x1f, 0x2d, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e,
 	0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74, 0x68,
 	0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e,
-	0x2e, 0x41, 0x73, 0x73, 0x65, 0x74, 0x52, 0x05, 0x61, 0x73, 0x73, 0x65, 0x74, 0x12, 0x31, 0x0a,
-	0x06, 0x73, 0x74, 0x61, 0x74, 0x75, 0x73, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0e, 0x32, 0x19, 0x2e,
-	0x74, 0x79, 0x70, 0x65, 0x73, 0x2e, 0x41, 0x73, 0x73, 0x65, 0x74, 0x45, 0x78, 0x70, 0x6f, 0x72,
-	0x74, 0x2e, 0x53, 0x74, 0x61, 0x74, 0x75, 0x73, 0x52, 0x06, 0x73, 0x74, 0x61, 0x74, 0x75, 0x73,
-	0x12, 0x47, 0x0a, 0x0f, 0x61, 0x6d, 0x6f, 0x75, 0x6e, 0x74, 0x5f, 0x65, 0x78, 0x74, 0x65, 0x72,
-	0x6e, 0x61, 0x6c, 0x18, 0x03, 0x20, 0x01, 0x28, 0x09, 0x42, 0x1e, 0xc8, 0xde, 0x1f, 0x00, 0xda,
-	0xde, 0x1f, 0x16, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x73, 0x64, 0x6b, 0x2e, 0x69, 0x6f, 0x2f,
-	0x6d, 0x61, 0x74, 0x68, 0x2e, 0x55, 0x69, 0x6e, 0x74, 0x52, 0x0e, 0x61, 0x6d, 0x6f, 0x75, 0x6e,
-	0x74, 0x45, 0x78, 0x74, 0x65, 0x72, 0x6e, 0x61, 0x6c, 0x12, 0x43, 0x0a, 0x0d, 0x61, 0x6d, 0x6f,
-	0x75, 0x6e, 0x74, 0x5f, 0x6e, 0x61, 0x74, 0x69, 0x76, 0x65, 0x18, 0x04, 0x20, 0x01, 0x28, 0x09,
-	0x42, 0x1e, 0xc8, 0xde, 0x1f, 0x00, 0xda, 0xde, 0x1f, 0x16, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73,
-	0x73, 0x64, 0x6b, 0x2e, 0x69, 0x6f, 0x2f, 0x6d, 0x61, 0x74, 0x68, 0x2e, 0x55, 0x69, 0x6e, 0x74,
-	0x52, 0x0c, 0x61, 0x6d, 0x6f, 0x75, 0x6e, 0x74, 0x4e, 0x61, 0x74, 0x69, 0x76, 0x65, 0x12, 0x44,
-	0x0a, 0x0e, 0x67, 0x61, 0x73, 0x5f, 0x72, 0x65, 0x73, 0x65, 0x72, 0x76, 0x65, 0x5f, 0x6c, 0x31,
-	0x18, 0x05, 0x20, 0x01, 0x28, 0x09, 0x42, 0x1e, 0xc8, 0xde, 0x1f, 0x00, 0xda, 0xde, 0x1f, 0x16,
-	0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x73, 0x64, 0x6b, 0x2e, 0x69, 0x6f, 0x2f, 0x6d, 0x61, 0x74,
-	0x68, 0x2e, 0x55, 0x69, 0x6e, 0x74, 0x52, 0x0c, 0x67, 0x61, 0x73, 0x52, 0x65, 0x73, 0x65, 0x72,
-	0x76, 0x65, 0x4c, 0x31, 0x12, 0x48, 0x0a, 0x10, 0x67, 0x61, 0x73, 0x5f, 0x72, 0x65, 0x73, 0x65,
-	0x72, 0x76, 0x65, 0x5f, 0x72, 0x75, 0x6e, 0x65, 0x18, 0x06, 0x20, 0x01, 0x28, 0x09, 0x42, 0x1e,
-	0xc8, 0xde, 0x1f, 0x00, 0xda, 0xde, 0x1f, 0x16, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x73, 0x64,
-	0x6b, 0x2e, 0x69, 0x6f, 0x2f, 0x6d, 0x61, 0x74, 0x68, 0x2e, 0x55, 0x69, 0x6e, 0x74, 0x52, 0x0e,
-	0x67, 0x61, 0x73, 0x52, 0x65, 0x73, 0x65, 0x72, 0x76, 0x65, 0x52, 0x75, 0x6e, 0x65, 0x22, 0x30,
-	0x0a, 0x06, 0x53, 0x74, 0x61, 0x74, 0x75, 0x73, 0x12, 0x0b, 0x0a, 0x07, 0x55, 0x6e, 0x6b, 0x6e,
-	0x6f, 0x77, 0x6e, 0x10, 0x00, 0x12, 0x0d, 0x0a, 0x09, 0x41, 0x76, 0x61, 0x69, 0x6c, 0x61, 0x62,
-	0x6c, 0x65, 0x10, 0x01, 0x12, 0x0a, 0x0a, 0x06, 0x53, 0x74, 0x61, 0x67, 0x65, 0x64, 0x10, 0x02,
-	0x42, 0x8d, 0x01, 0x0a, 0x09, 0x63, 0x6f, 0x6d, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x42, 0x14,
-	0x54, 0x79, 0x70, 0x65, 0x41, 0x73, 0x73, 0x65, 0x74, 0x45, 0x78, 0x70, 0x6f, 0x72, 0x74, 0x50,
-	0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x2a, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63,
-	0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74, 0x68, 0x6f,
-	0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x74, 0x79, 0x70,
-	0x65, 0x73, 0xa2, 0x02, 0x03, 0x54, 0x58, 0x58, 0xaa, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73,
-	0xca, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xe2, 0x02, 0x11, 0x54, 0x79, 0x70, 0x65, 0x73,
-	0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x05, 0x54,
-	0x79, 0x70, 0x65, 0x73, 0xc8, 0xe1, 0x1e, 0x00, 0xd8, 0xe1, 0x1e, 0x00, 0x80, 0xe2, 0x1e, 0x00,
-	0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x2e, 0x41, 0x73, 0x73, 0x65, 0x74, 0x52, 0x05, 0x61, 0x73, 0x73, 0x65, 0x74, 0x12, 0x18, 0x0a,
+	0x07, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x07,
+	0x61, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x12, 0x1a, 0x0a, 0x08, 0x64, 0x65, 0x63, 0x69, 0x6d,
+	0x61, 0x6c, 0x73, 0x18, 0x03, 0x20, 0x01, 0x28, 0x04, 0x52, 0x08, 0x64, 0x65, 0x63, 0x69, 0x6d,
+	0x61, 0x6c, 0x73, 0x12, 0x47, 0x0a, 0x0f, 0x61, 0x6d, 0x6f, 0x75, 0x6e, 0x74, 0x5f, 0x65, 0x78,
+	0x74, 0x65, 0x72, 0x6e, 0x61, 0x6c, 0x18, 0x04, 0x20, 0x01, 0x28, 0x09, 0x42, 0x1e, 0xc8, 0xde,
+	0x1f, 0x00, 0xda, 0xde, 0x1f, 0x16, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x73, 0x64, 0x6b, 0x2e,
+	0x69, 0x6f, 0x2f, 0x6d, 0x61, 0x74, 0x68, 0x2e, 0x55, 0x69, 0x6e, 0x74, 0x52, 0x0e, 0x61, 0x6d,
+	0x6f, 0x75, 0x6e, 0x74, 0x45, 0x78, 0x74, 0x65, 0x72, 0x6e, 0x61, 0x6c, 0x12, 0x43, 0x0a, 0x0d,
+	0x61, 0x6d, 0x6f, 0x75, 0x6e, 0x74, 0x5f, 0x6e, 0x61, 0x74, 0x69, 0x76, 0x65, 0x18, 0x05, 0x20,
+	0x01, 0x28, 0x09, 0x42, 0x1e, 0xc8, 0xde, 0x1f, 0x00, 0xda, 0xde, 0x1f, 0x16, 0x63, 0x6f, 0x73,
+	0x6d, 0x6f, 0x73, 0x73, 0x64, 0x6b, 0x2e, 0x69, 0x6f, 0x2f, 0x6d, 0x61, 0x74, 0x68, 0x2e, 0x55,
+	0x69, 0x6e, 0x74, 0x52, 0x0c, 0x61, 0x6d, 0x6f, 0x75, 0x6e, 0x74, 0x4e, 0x61, 0x74, 0x69, 0x76,
+	0x65, 0x42, 0x8d, 0x01, 0x0a, 0x09, 0x63, 0x6f, 0x6d, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x42,
+	0x14, 0x54, 0x79, 0x70, 0x65, 0x41, 0x73, 0x73, 0x65, 0x74, 0x45, 0x78, 0x70, 0x6f, 0x72, 0x74,
+	0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x2a, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e,
+	0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74, 0x68,
+	0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x74, 0x79,
+	0x70, 0x65, 0x73, 0xa2, 0x02, 0x03, 0x54, 0x58, 0x58, 0xaa, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65,
+	0x73, 0xca, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xe2, 0x02, 0x11, 0x54, 0x79, 0x70, 0x65,
+	0x73, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x05,
+	0x54, 0x79, 0x70, 0x65, 0x73, 0xc8, 0xe1, 0x1e, 0x00, 0xd8, 0xe1, 0x1e, 0x00, 0x80, 0xe2, 0x1e,
+	0x00, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -953,21 +820,18 @@ func file_types_type_asset_export_proto_rawDescGZIP() []byte {
 	return file_types_type_asset_export_proto_rawDescData
 }
 
-var file_types_type_asset_export_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
 var file_types_type_asset_export_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
 var file_types_type_asset_export_proto_goTypes = []interface{}{
-	(AssetExport_Status)(0), // 0: types.AssetExport.Status
-	(*AssetExport)(nil),     // 1: types.AssetExport
-	(*common.Asset)(nil),    // 2: common.Asset
+	(*AssetExport)(nil),  // 0: types.AssetExport
+	(*common.Asset)(nil), // 1: common.Asset
 }
 var file_types_type_asset_export_proto_depIdxs = []int32{
-	2, // 0: types.AssetExport.asset:type_name -> common.Asset
-	0, // 1: types.AssetExport.status:type_name -> types.AssetExport.Status
-	2, // [2:2] is the sub-list for method output_type
-	2, // [2:2] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	1, // 0: types.AssetExport.asset:type_name -> common.Asset
+	1, // [1:1] is the sub-list for method output_type
+	1, // [1:1] is the sub-list for method input_type
+	1, // [1:1] is the sub-list for extension type_name
+	1, // [1:1] is the sub-list for extension extendee
+	0, // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_types_type_asset_export_proto_init() }
@@ -994,14 +858,13 @@ func file_types_type_asset_export_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_types_type_asset_export_proto_rawDesc,
-			NumEnums:      1,
+			NumEnums:      0,
 			NumMessages:   1,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
 		GoTypes:           file_types_type_asset_export_proto_goTypes,
 		DependencyIndexes: file_types_type_asset_export_proto_depIdxs,
-		EnumInfos:         file_types_type_asset_export_proto_enumTypes,
 		MessageInfos:      file_types_type_asset_export_proto_msgTypes,
 	}.Build()
 	File_types_type_asset_export_proto = out.File

@@ -697,3 +697,13 @@ func (s *queryServer) AssetExports(c context.Context, req *types.QueryAssetExpor
 	ctx := s.unwrapSdkContext(c)
 	return s.queryAssetExports(ctx, req)
 }
+
+func (s *queryServer) ExportAsset(c context.Context, req *types.QueryExportAssetRequest) (*types.QueryExportAssetResponse, error) {
+	ctx := s.unwrapSdkContext(c)
+	return s.queryExportAsset(ctx, req)
+}
+
+func (s *queryServer) ExportAssets(c context.Context, req *types.QueryExportAssetsRequest) (*types.QueryExportAssetsResponse, error) {
+	ctx := s.unwrapSdkContext(c)
+	return s.queryExportAssets(ctx, req)
+}

@@ -96,6 +96,7 @@ const (
 	prefixUpgradeVotes            types.DbPrefix = "upgr_votes/"
 	prefixTCYClaimer              types.DbPrefix = "tcy_claimer/"
 	prefixTCYStaker               types.DbPrefix = "tcy_staker/"
+	prefixExportAsset             types.DbPrefix = "export_asset/"
 	prefixAssetExport             types.DbPrefix = "asset_export/"
 )
 

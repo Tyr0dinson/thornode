@@ -4,13 +4,14 @@ package types;
 option go_package = "gitlab.com/thorchain/thornode/v3/x/thorchain/types";
 option (gogoproto.goproto_stringer_all) = false;
 option (gogoproto.stringer_all)         = false;
-option (gogoproto.goproto_getters_all) = false;
+option (gogoproto.goproto_getters_all)  = false;
 
 import "common/common.proto";
+import "types/type_asset_export.proto";
 import "gogoproto/gogo.proto";
 
 message ExportAsset {
   common.Asset asset = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "gitlab.com/thorchain/thornode/v3/common.Asset"];
-  string amount_bound = 2 [(gogoproto.nullable) = false, (gogoproto.customtype) = "cosmossdk.io/math.Uint"];
-  repeated string chains = 3 [(gogoproto.nullable) = false];
+  string amount_bound = 2 [(gogoproto.customtype) = "cosmossdk.io/math.Uint", (gogoproto.nullable) = false];
+  string amount_exported = 3 [(gogoproto.customtype) = "cosmossdk.io/math.Uint", (gogoproto.nullable) = false];
 }

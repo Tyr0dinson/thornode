@@ -857,6 +857,19 @@ func (k KVStoreDummy) RemoveLowBondValidatorAccounts(ctx cosmos.Context) error {
 	return kaboom
 }
 
+func (k KVStoreDummy) GetExportAssetIterator(_ cosmos.Context) cosmos.Iterator { return nil }
+func (k KVStoreDummy) GetExportAsset(_ cosmos.Context, _ common.Asset) (ExportAsset, error) {
+	return ExportAsset{}, kaboom
+}
+func (k KVStoreDummy) SetExportAsset(_ cosmos.Context, _ ExportAsset) error { return kaboom }
+func (k KVStoreDummy) GetAssetExportIterator(_ cosmos.Context, _ common.Asset) cosmos.Iterator {
+	return nil
+}
+func (k KVStoreDummy) GetAssetExport(_ cosmos.Context, _ common.Asset) (AssetExport, error) {
+	return AssetExport{}, kaboom
+}
+func (k KVStoreDummy) SetAssetExport(_ cosmos.Context, _ AssetExport) error { return kaboom }
+
 // a mock cosmos.Iterator implementation for testing purposes
 type DummyIterator struct {
 	cosmos.Iterator

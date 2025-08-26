@@ -93,6 +93,7 @@ type Keeper interface {
 	KeeperRUNEPool
 	KeeperTCYClaimer
 	KeeperTCYStaker
+	KeeperExportAsset
 	KeeperAssetExport
 }
 
@@ -480,8 +481,14 @@ type KeeperTCYStaker interface {
 	UpdateTCYStaker(ctx cosmos.Context, address common.Address, amount math.Uint) error
 }
 
+type KeeperExportAsset interface {
+	GetExportAssetIterator(ctx cosmos.Context) cosmos.Iterator
+	GetExportAsset(ctx cosmos.Context, commonAsset common.Asset) (ExportAsset, error)
+	SetExportAsset(ctx cosmos.Context, exportAsset ExportAsset) error
+}
+
 type KeeperAssetExport interface {
-	GetAssetExportIterator(ctx cosmos.Context) cosmos.Iterator
+	GetAssetExportIterator(ctx cosmos.Context, asset common.Asset) cosmos.Iterator
 	GetAssetExport(ctx cosmos.Context, asset common.Asset) (AssetExport, error)
-	SetAssetExport(ctx cosmos.Context, ledger AssetExport) error
+	SetAssetExport(ctx cosmos.Context, export AssetExport) error
 }

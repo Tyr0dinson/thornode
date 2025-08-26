@@ -175,7 +175,6 @@ func (s *QuerierSuite) TestQueryPool(c *C) {
 	c.Assert(err, IsNil)
 	res, err := queryPoolsResp.MarshalJSONPB(nil)
 	c.Assert(err, IsNil)
-
 	var out Pools
 
 	err = json.Unmarshal(res, &out)

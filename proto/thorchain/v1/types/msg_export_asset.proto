@@ -26,7 +26,6 @@ message MsgExportAssetRedeem {
 message MsgExportAssetBind {
   common.Tx tx = 1 [(gogoproto.nullable) = false];
   common.Asset asset = 2 [(gogoproto.nullable) = false, (gogoproto.customtype) = "gitlab.com/thorchain/thornode/v3/common.Asset"];
-  string asset_amount = 3 [(gogoproto.customtype) = "cosmossdk.io/math.Uint", (gogoproto.nullable) = false];
-  string gas_amount = 4 [(gogoproto.customtype) = "cosmossdk.io/math.Uint", (gogoproto.nullable) = false];
+  string amount = 3 [(gogoproto.customtype) = "cosmossdk.io/math.Uint", (gogoproto.nullable) = false];
   bytes signer = 5 [(gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress"];
 }

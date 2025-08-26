@@ -1,26 +1,40 @@
 package types
 
 import (
-	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"errors"
+	"strconv"
 	"strings"
+
+	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
 func NewAssetExport() AssetExport {
 	return AssetExport{
-		Status:         AssetExport_Unknown,
+		Asset:          common.EmptyAsset,
 		AmountExternal: cosmos.ZeroUint(),
 		AmountNative:   cosmos.ZeroUint(),
-		GasReserveL1:   cosmos.ZeroUint(),
-		GasReserveRune: cosmos.ZeroUint(),
 	}
 }
 
-func (l AssetExport) String() string {
+func (m AssetExport) Valid() error {
+	if m.Asset.IsEmpty() {
+		return errors.New("asset is empty")
+	}
+
+	if m.Address == "" {
+		return errors.New("address is empty")
+	}
+
+	return nil
+}
+
+func (m AssetExport) String() string {
 	builder := strings.Builder{}
-	builder.WriteString("status: " + l.Status.String())
-	builder.WriteString("balance-external: " + l.AmountExternal.String())
-	builder.WriteString("balance-native: " + l.AmountNative.String())
-	builder.WriteString("gas-reserve-external: " + l.GasReserveL1.String())
-	builder.WriteString("gas-reserve-rune: " + l.GasReserveRune.String())
+	builder.WriteString("asset: " + m.Asset.String())
+	builder.WriteString(" address: " + m.Address)
+	builder.WriteString(" decimals: " + strconv.FormatUint(m.Decimals, 10))
+	builder.WriteString(" amount-external: " + m.AmountExternal.String())
+	builder.WriteString(" amount-native: " + m.AmountNative.String())
 	return builder.String()
 }

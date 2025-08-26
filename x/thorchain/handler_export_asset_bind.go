@@ -2,8 +2,10 @@ package thorchain
 
 import (
 	"fmt"
+
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 type ExportAssetBindHandler struct {
@@ -55,20 +57,12 @@ func (h ExportAssetBindHandler) validate(ctx cosmos.Context, msg MsgExportAssetB
 		return fmt.Errorf("export asset not supported: %s", msg.Asset.String())
 	}
 
-	if !msg.GasAmount.IsZero() {
-		if msg.Tx.Chain.Equals(common.THORChain) && msg.Asset.Chain.Equals(common.THORChain) {
-			return fmt.Errorf("native asset cannot be funded with RUNE")
-		}
-
-		if !msg.Tx.Chain.Equals(common.THORChain) && !msg.Tx.Chain.Equals(msg.Asset.Chain) {
-			return fmt.Errorf("gas asset must match asset chain")
-		}
+	if msg.Amount.IsZero() {
+		return fmt.Errorf("amount must be greater than zero: %s", msg.Amount.String())
 	}
 
-	if !msg.AssetAmount.IsZero() {
-		if !msg.Tx.Chain.Equals(msg.Asset.Chain) {
-			return fmt.Errorf("tx does not match asset chain")
-		}
+	if !msg.Tx.Chain.Equals(msg.Asset.Chain) {
+		return fmt.Errorf("tx does not match asset chain")
 	}
 
 	return nil
@@ -81,50 +75,56 @@ func (h ExportAssetBindHandler) handle(ctx cosmos.Context, msg MsgExportAssetBin
 
 	ctx.Logger().Info("handle bind export asset", "asset", msg.Asset.String())
 
-	export, err := h.mgr.Keeper().GetAssetExport(ctx, msg.Asset)
+	asset, err := h.mgr.Keeper().GetExportAsset(ctx, msg.Asset)
 	if err != nil {
-		return err
+		asset = types.NewExportAsset()
+		asset.Asset, err = common.NewAsset("THOR." + msg.Asset.Symbol.String())
+		if err != nil {
+			return err
+		}
 	}
-
-	ctx.Logger().Info("export: " + export.String())
-
-	if export.Asset.IsEmpty() {
-		export.Asset = msg.Asset
-	}
-
-	gasAmountRune := cosmos.ZeroUint()
-	gasAmountL1 := cosmos.ZeroUint()
 
 	if msg.Asset.Chain.Equals(common.THORChain) {
-		export.AmountNative = export.AmountNative.Add(msg.AssetAmount)
-		export.GasReserveRune = export.GasReserveRune.Add(msg.GasAmount)
-		gasAmountRune = msg.GasAmount
+		return h.handleAsset(ctx, msg)
 	} else {
-		export.AmountExternal = export.AmountExternal.Add(msg.AssetAmount)
-		export.GasReserveL1 = export.GasReserveL1.Add(msg.GasAmount)
-		gasAmountL1 = msg.GasAmount
+		return h.handleExport(ctx, msg)
 	}
+}
 
-	err = h.mgr.Keeper().SetAssetExport(ctx, export)
+func (h ExportAssetBindHandler) handleAsset(ctx cosmos.Context, msg MsgExportAssetBind) error {
+	asset, err := h.mgr.Keeper().GetExportAsset(ctx, msg.Asset)
 	if err != nil {
-		return err
+		asset = types.NewExportAsset()
+		asset.Asset = msg.Asset
 	}
 
-	ctx.Logger().Info("ledger set")
+	asset.AmountBound = asset.AmountBound.Add(msg.Amount)
 
-	if !msg.AssetAmount.IsZero() {
-		event := NewEventBindExportAsset(msg.Asset, msg.AssetAmount)
-		if err = h.mgr.EventMgr().EmitEvent(ctx, event); err != nil {
-			return ErrInternal(err, "fail to emit bind export asset event")
+	return h.mgr.Keeper().SetExportAsset(ctx, asset)
+}
+
+func (h ExportAssetBindHandler) handleExport(ctx cosmos.Context, msg MsgExportAssetBind) error {
+	export, err := h.mgr.Keeper().GetAssetExport(ctx, msg.Asset)
+	fmt.Println(export)
+	if err != nil {
+		export = types.NewAssetExport()
+		export.Asset = msg.Asset
+
+		native, err := common.NewAsset(msg.Asset.Symbol.String())
+		if err != nil {
+			return err
 		}
-	}
 
-	if !msg.GasAmount.IsZero() {
-		event := NewEventFundExportAsset(msg.Asset, gasAmountL1, gasAmountRune)
-		if err = h.mgr.EventMgr().EmitEvent(ctx, event); err != nil {
-			return ErrInternal(err, "fail to emit fund export asset event")
+		token, found := common.AssetExports[native][msg.Asset.Chain]
+		if !found {
+			return fmt.Errorf("asset %s not found in export %s", native, msg.Asset.String())
 		}
+
+		export.Address = token.Address
+		export.Decimals = uint64(token.Decimals)
 	}
 
-	return nil
+	export.AmountExternal = export.AmountExternal.Add(msg.Amount)
+
+	return h.mgr.Keeper().SetAssetExport(ctx, export)
 }

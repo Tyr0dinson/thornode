@@ -188,11 +188,10 @@ func getMsgExportAssetBindFromMemo(ctx cosmos.Context, memo ExportAssetBindMemo,
 		return nil, fmt.Errorf("export asset not supported: %s", memo.Asset.String())
 	}
 
-	assetCoin := tx.Tx.Coins.GetCoin(memo.Asset)
-	feeCoin := tx.Tx.Coins.GetCoin(tx.Tx.Chain.GetGasAsset())
+	coin := tx.Tx.Coins.GetCoin(memo.Asset)
 
 	return NewMsgExportAssetBind(
-		tx.Tx, memo.Asset, assetCoin.Amount, feeCoin.Amount, signer,
+		tx.Tx, memo.Asset, coin.Amount, signer,
 	), nil
 }
 

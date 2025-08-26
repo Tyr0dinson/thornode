@@ -1,12 +1,12 @@
 package common
 
 func IsSupportedExportAsset(asset Asset) bool {
-	asset, err := NewAsset("THOR." + asset.Symbol.String())
+	native, err := NewAsset(asset.Symbol.String())
 	if err != nil {
 		return false
 	}
 
-	_, found := AssetExports[asset]
+	_, found := AssetExports[native]
 	if !found {
 		return false
 	}
@@ -15,6 +15,6 @@ func IsSupportedExportAsset(asset Asset) bool {
 		return true
 	}
 
-	_, found = AssetExports[asset][asset.Chain]
+	_, found = AssetExports[native][asset.Chain]
 	return found
 }

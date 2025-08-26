@@ -100,6 +100,8 @@ const (
 	Query_TCYClaimer_FullMethodName          = "/types.Query/TCYClaimer"
 	Query_TCYClaimers_FullMethodName         = "/types.Query/TCYClaimers"
 	Query_Eip712TypedData_FullMethodName     = "/types.Query/Eip712TypedData"
+	Query_ExportAsset_FullMethodName         = "/types.Query/ExportAsset"
+	Query_ExportAssets_FullMethodName        = "/types.Query/ExportAssets"
 	Query_AssetExport_FullMethodName         = "/types.Query/AssetExport"
 	Query_AssetExports_FullMethodName        = "/types.Query/AssetExports"
 )
@@ -198,6 +200,8 @@ type QueryClient interface {
 	TCYClaimer(ctx context.Context, in *QueryTCYClaimerRequest, opts ...grpc.CallOption) (*QueryTCYClaimerResponse, error)
 	TCYClaimers(ctx context.Context, in *QueryTCYClaimersRequest, opts ...grpc.CallOption) (*QueryTCYClaimersResponse, error)
 	Eip712TypedData(ctx context.Context, in *QueryEip712TypedDataRequest, opts ...grpc.CallOption) (*QueryEip712TypedDataResponse, error)
+	ExportAsset(ctx context.Context, in *QueryExportAssetRequest, opts ...grpc.CallOption) (*QueryExportAssetResponse, error)
+	ExportAssets(ctx context.Context, in *QueryExportAssetsRequest, opts ...grpc.CallOption) (*QueryExportAssetsResponse, error)
 	AssetExport(ctx context.Context, in *QueryAssetExportRequest, opts ...grpc.CallOption) (*QueryAssetExportResponse, error)
 	AssetExports(ctx context.Context, in *QueryAssetExportsRequest, opts ...grpc.CallOption) (*QueryAssetExportsResponse, error)
 }
@@ -939,6 +943,24 @@ func (c *queryClient) Eip712TypedData(ctx context.Context, in *QueryEip712TypedD
 	return out, nil
 }
 
+func (c *queryClient) ExportAsset(ctx context.Context, in *QueryExportAssetRequest, opts ...grpc.CallOption) (*QueryExportAssetResponse, error) {
+	out := new(QueryExportAssetResponse)
+	err := c.cc.Invoke(ctx, Query_ExportAsset_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *queryClient) ExportAssets(ctx context.Context, in *QueryExportAssetsRequest, opts ...grpc.CallOption) (*QueryExportAssetsResponse, error) {
+	out := new(QueryExportAssetsResponse)
+	err := c.cc.Invoke(ctx, Query_ExportAssets_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *queryClient) AssetExport(ctx context.Context, in *QueryAssetExportRequest, opts ...grpc.CallOption) (*QueryAssetExportResponse, error) {
 	out := new(QueryAssetExportResponse)
 	err := c.cc.Invoke(ctx, Query_AssetExport_FullMethodName, in, out, opts...)
@@ -1051,6 +1073,8 @@ type QueryServer interface {
 	TCYClaimer(context.Context, *QueryTCYClaimerRequest) (*QueryTCYClaimerResponse, error)
 	TCYClaimers(context.Context, *QueryTCYClaimersRequest) (*QueryTCYClaimersResponse, error)
 	Eip712TypedData(context.Context, *QueryEip712TypedDataRequest) (*QueryEip712TypedDataResponse, error)
+	ExportAsset(context.Context, *QueryExportAssetRequest) (*QueryExportAssetResponse, error)
+	ExportAssets(context.Context, *QueryExportAssetsRequest) (*QueryExportAssetsResponse, error)
 	AssetExport(context.Context, *QueryAssetExportRequest) (*QueryAssetExportResponse, error)
 	AssetExports(context.Context, *QueryAssetExportsRequest) (*QueryAssetExportsResponse, error)
 	mustEmbedUnimplementedQueryServer()
@@ -1302,6 +1326,12 @@ func (UnimplementedQueryServer) TCYClaimers(context.Context, *QueryTCYClaimersRe
 }
 func (UnimplementedQueryServer) Eip712TypedData(context.Context, *QueryEip712TypedDataRequest) (*QueryEip712TypedDataResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Eip712TypedData not implemented")
+}
+func (UnimplementedQueryServer) ExportAsset(context.Context, *QueryExportAssetRequest) (*QueryExportAssetResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ExportAsset not implemented")
+}
+func (UnimplementedQueryServer) ExportAssets(context.Context, *QueryExportAssetsRequest) (*QueryExportAssetsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ExportAssets not implemented")
 }
 func (UnimplementedQueryServer) AssetExport(context.Context, *QueryAssetExportRequest) (*QueryAssetExportResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AssetExport not implemented")
@@ -2780,6 +2810,42 @@ func _Query_Eip712TypedData_Handler(srv interface{}, ctx context.Context, dec fu
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Query_ExportAsset_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryExportAssetRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).ExportAsset(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Query_ExportAsset_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).ExportAsset(ctx, req.(*QueryExportAssetRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Query_ExportAssets_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryExportAssetsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).ExportAssets(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Query_ExportAssets_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).ExportAssets(ctx, req.(*QueryExportAssetsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Query_AssetExport_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(QueryAssetExportRequest)
 	if err := dec(in); err != nil {
@@ -3146,6 +3212,14 @@ var Query_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Eip712TypedData",
 			Handler:    _Query_Eip712TypedData_Handler,
+		},
+		{
+			MethodName: "ExportAsset",
+			Handler:    _Query_ExportAsset_Handler,
+		},
+		{
+			MethodName: "ExportAssets",
+			Handler:    _Query_ExportAssets_Handler,
 		},
 		{
 			MethodName: "AssetExport",

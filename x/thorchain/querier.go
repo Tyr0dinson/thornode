@@ -3609,34 +3609,62 @@ func (qs queryServer) queryEip712TypedData(_ cosmos.Context, req *types.QueryEip
 	return &types.QueryEip712TypedDataResponse{TypedData: string(data)}, nil
 }
 
+func (qs queryServer) queryExportAssets(ctx cosmos.Context, _ *types.QueryExportAssetsRequest) (*types.QueryExportAssetsResponse, error) {
+	var assets []*types.ExportAsset
+
+	iterator := qs.mgr.Keeper().GetExportAssetIterator(ctx)
+	for ; iterator.Valid(); iterator.Next() {
+		var asset types.ExportAsset
+		qs.mgr.Keeper().Cdc().MustUnmarshal(iterator.Value(), &asset)
+		assets = append(assets, &asset)
+	}
+
+	return &types.QueryExportAssetsResponse{Assets: assets}, nil
+}
+
+func (qs queryServer) queryExportAsset(ctx cosmos.Context, req *types.QueryExportAssetRequest) (*types.QueryExportAssetResponse, error) {
+	commonAsset, err := common.NewAsset(req.Asset)
+	if err != nil {
+		ctx.Logger().Error("failed to parse asset", "error", err)
+	}
+
+	exportAsset, err := qs.mgr.Keeper().GetExportAsset(ctx, commonAsset)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get export asset: %w", err)
+	}
+
+	return &types.QueryExportAssetResponse{Asset: &exportAsset}, nil
+}
+
+func (qs queryServer) queryAssetExports(ctx cosmos.Context, req *types.QueryAssetExportsRequest) (*types.QueryAssetExportsResponse, error) {
+	var exports []*types.AssetExport
+
+	asset, err := common.NewAsset(req.Asset)
+	if err != nil {
+		ctx.Logger().Error("failed to parse asset", "error", err)
+	}
+
+	iterator := qs.mgr.Keeper().GetAssetExportIterator(ctx, asset)
+	defer iterator.Close()
+	for ; iterator.Valid(); iterator.Next() {
+		var export types.AssetExport
+		qs.mgr.Keeper().Cdc().MustUnmarshal(iterator.Value(), &export)
+		exports = append(exports, &export)
+	}
+
+	return &types.QueryAssetExportsResponse{Exports: exports}, nil
+}
+
 func (qs queryServer) queryAssetExport(ctx cosmos.Context, req *types.QueryAssetExportRequest) (*types.QueryAssetExportResponse, error) {
 	asset, err := common.NewAsset(req.Asset)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse asset: %w", err)
-
+		return nil, fmt.Errorf("invalid asset: %w", err)
 	}
 
-	ledger, err := qs.mgr.Keeper().GetAssetExport(ctx, asset)
+	export, err := qs.mgr.Keeper().GetAssetExport(ctx, asset)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get export ledger: %w", err)
 	}
 
-	return &types.QueryAssetExportResponse{Export: &ledger}, nil
-}
-
-func (qs queryServer) queryAssetExports(ctx cosmos.Context, req *types.QueryAssetExportsRequest) (*types.QueryAssetExportsResponse, error) {
-	ledgers := []*types.AssetExport{}
-
-	iterator := qs.mgr.Keeper().GetAssetExportIterator(ctx)
-	defer iterator.Close()
-	for ; iterator.Valid(); iterator.Next() {
-		var ledger types.AssetExport
-
-		qs.mgr.Keeper().Cdc().MustUnmarshal(iterator.Value(), &ledger)
-		if ledger.Asset.Symbol.String() == req.Asset {
-			ledgers = append(ledgers, &ledger)
-		}
-	}
-
-	return &types.QueryAssetExportsResponse{Exports: ledgers}, nil
+	return &types.QueryAssetExportResponse{Export: &export}, nil
 }

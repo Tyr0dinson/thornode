@@ -53,6 +53,7 @@ import "types/query_tcy_stakers.proto";
 import "types/query_tcy_claimers.proto";
 import "types/query_codes.proto";
 import "types/query_eip712.proto";
+import "types/query_export_asset.proto";
 import "types/query_asset_export.proto";
 
 option (gogoproto.marshaler_all) = true;
@@ -390,6 +391,14 @@ service Query {
 
   rpc Eip712TypedData(QueryEip712TypedDataRequest) returns (QueryEip712TypedDataResponse) {
     option (google.api.http).get = "/thorchain/eip715/tx";
+  }
+
+  rpc ExportAsset(QueryExportAssetRequest) returns (QueryExportAssetResponse) {
+    option (google.api.http).get = "/thorchain/export_asset/{asset}";
+  }
+
+  rpc ExportAssets(QueryExportAssetsRequest) returns (QueryExportAssetsResponse) {
+    option (google.api.http).get = "/thorchain/export_assets";
   }
 
   rpc AssetExport(QueryAssetExportRequest) returns (QueryAssetExportResponse) {

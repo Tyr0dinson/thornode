@@ -2,17 +2,20 @@ package keeperv1
 
 import (
 	"fmt"
+
 	"github.com/cosmos/cosmos-sdk/runtime"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/types"
 )
 
 func (k KVStore) SetAssetExport(ctx cosmos.Context, export AssetExport) error {
-	if export.Asset.IsEmpty() {
-		return fmt.Errorf("cannot save an export export with empty asset")
+	err := export.Valid()
+	if err != nil {
+		return err
 	}
 
-	key := k.GetKey(prefixAssetExport, export.Asset.String())
+	key := k.GetKey(prefixAssetExport, export.Asset.Symbol.String(), export.Asset.Chain.String())
 
 	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 
@@ -32,11 +35,11 @@ func (k KVStore) GetAssetExport(
 ) (AssetExport, error) {
 	export := NewAssetExport()
 
-	key := k.GetKey(prefixAssetExport, asset.String())
+	key := k.GetKey(prefixAssetExport, asset.Symbol.String(), asset.Chain.String())
 
 	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 	if !store.Has(key) {
-		return export, nil
+		return export, fmt.Errorf("asset export %s not found in store", export.String())
 	}
 
 	data := store.Get(key)
@@ -50,6 +53,6 @@ func (k KVStore) GetAssetExport(
 	return export, nil
 }
 
-func (k KVStore) GetAssetExportIterator(ctx cosmos.Context) cosmos.Iterator {
-	return k.getIterator(ctx, prefixAssetExport)
+func (k KVStore) GetAssetExportIterator(ctx cosmos.Context, asset common.Asset) cosmos.Iterator {
+	return k.getIterator(ctx, prefixAssetExport+types.DbPrefix("/"+asset.Symbol.String()))
 }
