@@ -128,14 +128,24 @@ func parseMultipleAffiliateParams(ctx cosmos.Context, mgr *Mgrs, affiliateParam,
 		for i := range bpParams {
 			bpParams[i] = bpValue
 		}
+	} else if len(bpParams) > 1 && len(bpParams) != len(affiliateParams) {
+		// If there are multiple BPS values but they don't match the number of affiliates, return an error
+		return nil, nil, sdkmath.ZeroUint(), fmt.Errorf("mismatch between number of affiliates (%d) and BPS values (%d)", len(affiliateParams), len(bpParams))
 	}
 
 	if len(affiliateParams) > 0 {
 		for i, p := range affiliateParams {
-			if i >= len(bpParams) {
-				continue // skip if no corresponding bps
+			var currentBpParam string
+			switch {
+			case len(bpParams) == 0:
+				continue // Skip if no BPS values at all
+			case i >= len(bpParams):
+				// This should not happen after the validation above, but keep as safety
+				continue
+			default:
+				currentBpParam = bpParams[i]
 			}
-			currentBpParam := bpParams[i]
+
 			bps, err := cosmos.ParseUint(currentBpParam)
 			if err != nil {
 				continue
