@@ -70,7 +70,7 @@ This ADR proposes the allocation of a dedicated marketing fund, sourced from 5% 
 
 ### Analytics
 
-**Value of a User to THORChain**
+#### Value of a User to THORChain
 
 830k unique addresses have swapped on THORChain since the launch of MCCN. Let’s assume each address represents one user, so 830k people have used THORChain to date. A total of $85.3M in liquidity fees have been paid. That means the average user on THORChain has paid $103 in fees to the network.
 
@@ -82,7 +82,7 @@ If we can spend less than $103 to get a new user to THORChain, the marketing cam
 
 The numbers above have to be constantly monitored and more detailed analysis can be done, however this gives us a starting point on how much can be spent on SEO, PPC, PPV, to attract new users.
 
-**Marketing Fund Budget**
+#### Marketing Fund Budget
 
 5% of revenue from the last 3 months:
 
@@ -98,7 +98,8 @@ USD/month: ($92,416.70 + $56,335.98 + $18,857.83) ÷ 3 = $55,870.17
 Therefore, if you redirected 5% of revenue to marketing, you’d have roughly:
 ~37.8k RUNE or ~$55.9k USD per month.
 
-**Marketing Quotes**
+#### Marketing Quotes
+
 The following are quotes received from various platforms to give you an idea on how much things cost.
 
 _Blockman_
@@ -189,7 +190,7 @@ Per week / week / QTR
 
 ### Funds and Governance
 
-**Allocation**
+#### Allocation
 
 5% of THORChain’s revenue. The specific percentage will be controlled by node mimir.
 
@@ -205,7 +206,7 @@ The goal of the marketing fund is to be high velocity. As money comes in, it wil
 
 The fund may need to save up cash to make large purchases in the future. Such as paying for wallet integrations.
 
-**Governance**
+#### Governance
 
 The marketing fund will be overseen and managed by a marketing committee made up of two node operators, Kenton and Scorch, and a member of Nine Realms (9R).
 
@@ -217,7 +218,7 @@ Vultisig will be used with a 2 of 3 signature approval.
 
 All receipts and expenditures will be detailed and saved in a google drive folder for the community to review.
 
-**Accountability and transparency**
+#### Accountability and transparency
 
 Marketing committee members will provide updates and reports to the Discord and THORChain community as necessary. These reports will include spend, ROI and general marketing performance to enable the community to assess the effectiveness of campaigns, provide feedback and to allow the committee to make adjustments, cancellations or new deals.
 
