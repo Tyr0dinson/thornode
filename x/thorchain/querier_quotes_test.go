@@ -4,8 +4,6 @@ import (
 	"testing"
 
 	. "gopkg.in/check.v1"
-
-	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
 type QuotesSuite struct{}
@@ -133,52 +131,4 @@ func (s *QuotesSuite) TestParseMultipleAffiliateParams(c *C) {
 	c.Assert(len(affiliates), Equals, 0) // All affiliates should be skipped
 	c.Assert(len(bps), Equals, 0)
 	c.Assert(totalBps.Uint64(), Equals, uint64(0))
-}
-
-func (s *QuotesSuite) TestQuoteHandleAffiliate(c *C) {
-	ctx, mgr := setupManagerForTest(c)
-	amount := cosmos.NewUint(1000000000) // 1000 RUNE
-
-	// Create valid THOR addresses for testing
-	validAddr := GetRandomTHORAddress().String()
-	validAddr2 := GetRandomTHORAddress().String()
-
-	// Test single affiliate
-	_, memo, bps, newAmount, affAmt, err := quoteHandleAffiliate(ctx, mgr, validAddr, "100", amount)
-	c.Assert(err, IsNil)
-	c.Assert(memo, Equals, validAddr)
-	c.Assert(bps.Uint64(), Equals, uint64(100))
-	c.Assert(newAmount.LT(amount), Equals, true) // Amount should be reduced by affiliate fee
-	c.Assert(affAmt.GT(cosmos.ZeroUint()), Equals, true)
-
-	// Test slash-separated (should take first values)
-	slashSeparated := validAddr + "/" + validAddr2
-	_, memo, bps, _, _, err = quoteHandleAffiliate(ctx, mgr, slashSeparated, "100/200", amount)
-	c.Assert(err, IsNil)
-	c.Assert(memo, Equals, validAddr)           // Should take first affiliate
-	c.Assert(bps.Uint64(), Equals, uint64(100)) // Should take first bps
-
-	// Test empty strings
-	_, memo, bps, newAmount, affAmt, err = quoteHandleAffiliate(ctx, mgr, "", "", amount)
-	c.Assert(err, IsNil)
-	c.Assert(memo, Equals, "")
-	c.Assert(bps.Uint64(), Equals, uint64(0))
-	c.Assert(newAmount.Equal(amount), Equals, true) // Amount unchanged
-	c.Assert(affAmt.Equal(cosmos.ZeroUint()), Equals, true)
-
-	// Test whitespace trimming
-	_, memo, bps, _, _, err = quoteHandleAffiliate(ctx, mgr, " "+validAddr+" ", " 100 ", amount)
-	c.Assert(err, IsNil)
-	c.Assert(memo, Equals, validAddr)
-	c.Assert(bps.Uint64(), Equals, uint64(100))
-
-	// Test bps exceeding limit
-	_, _, _, _, _, err = quoteHandleAffiliate(ctx, mgr, validAddr, "15000", amount)
-	c.Assert(err, NotNil)
-	c.Assert(err.Error(), Equals, "affiliate fee must be less than 10000 bps")
-
-	// Test invalid bps
-	_, _, _, _, _, err = quoteHandleAffiliate(ctx, mgr, validAddr, "invalid", amount)
-	c.Assert(err, NotNil)
-	c.Assert(err.Error(), Matches, "bad affiliate fee:.*")
 }

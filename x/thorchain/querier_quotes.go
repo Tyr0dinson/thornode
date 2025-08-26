@@ -169,34 +169,26 @@ func parseMultipleAffiliateParams(ctx cosmos.Context, mgr *Mgrs, affiliateParam,
 	return affParams, affiliateBps, totalBps, nil
 }
 
-func quoteHandleAffiliate(ctx cosmos.Context, mgr *Mgrs, affiliateParam, affiliateBpsParam string, amount sdkmath.Uint) (affiliate common.Address, memo string, bps, newAmount, affiliateAmt sdkmath.Uint, err error) {
-	// parse affiliate - take first one from slash-separated string
+func quoteHandleAffiliate(ctx cosmos.Context, mgr *Mgrs, affiliateParam, affiliateBpsParam []string, amount sdkmath.Uint) (affiliate common.Address, memo string, bps, newAmount, affiliateAmt sdkmath.Uint, err error) {
+	// parse affiliate
 	affAmt := cosmos.ZeroUint()
 	memo = "" // do not resolve thorname for the memo
-	if affiliateParam != "" {
-		// Split and take first affiliate
-		affiliates := strings.Split(affiliateParam, "/")
-		if len(affiliates) > 0 && strings.TrimSpace(affiliates[0]) != "" {
-			affiliate, err = quoteParseAddress(ctx, mgr, strings.TrimSpace(affiliates[0]), common.THORChain)
-			if err != nil {
-				err = fmt.Errorf("bad affiliate address: %w", err)
-				return
-			}
-			memo = strings.TrimSpace(affiliates[0])
+	if len(affiliateParam) > 0 {
+		affiliate, err = quoteParseAddress(ctx, mgr, affiliateParam[0], common.THORChain)
+		if err != nil {
+			err = fmt.Errorf("bad affiliate address: %w", err)
+			return
 		}
+		memo = affiliateParam[0]
 	}
 
-	// parse affiliate fee - take first one from slash-separated string
+	// parse affiliate fee
 	bps = sdkmath.NewUint(0)
-	if affiliateBpsParam != "" {
-		// Split and take first bps
-		bpsParams := strings.Split(affiliateBpsParam, "/")
-		if len(bpsParams) > 0 && strings.TrimSpace(bpsParams[0]) != "" {
-			bps, err = sdkmath.ParseUint(strings.TrimSpace(bpsParams[0]))
-			if err != nil {
-				err = fmt.Errorf("bad affiliate fee: %w", err)
-				return
-			}
+	if len(affiliateBpsParam) > 0 {
+		bps, err = sdkmath.ParseUint(affiliateBpsParam[0])
+		if err != nil {
+			err = fmt.Errorf("bad affiliate fee: %w", err)
+			return
 		}
 	}
 
@@ -1073,7 +1065,14 @@ func (qs queryServer) queryQuoteSaverDeposit(ctx cosmos.Context, req *types.Quer
 	}
 
 	// parse affiliate
-	affiliate, affiliateMemo, affiliateBps, depositAmount, _, err := quoteHandleAffiliate(ctx, qs.mgr, req.Affiliate, req.AffiliateBps, amount)
+	var affiliateSlice, affiliateBpsSlice []string
+	if req.Affiliate != "" {
+		affiliateSlice = strings.Split(req.Affiliate, "/")
+	}
+	if req.AffiliateBps != "" {
+		affiliateBpsSlice = strings.Split(req.AffiliateBps, "/")
+	}
+	affiliate, affiliateMemo, affiliateBps, depositAmount, _, err := quoteHandleAffiliate(ctx, qs.mgr, affiliateSlice, affiliateBpsSlice, amount)
 	if err != nil {
 		return nil, err
 	}
@@ -1317,7 +1316,14 @@ func (qs queryServer) queryQuoteLoanOpen(ctx cosmos.Context, req *types.QueryQuo
 	affiliateRuneAmt := sdkmath.ZeroUint()
 
 	// parse affiliate
-	affiliate, affiliateMemo, affiliateBps, amt, affiliateAmt, err := quoteHandleAffiliate(ctx, qs.mgr, req.Affiliate, req.AffiliateBps, amount)
+	var affiliateSlice, affiliateBpsSlice []string
+	if req.Affiliate != "" {
+		affiliateSlice = strings.Split(req.Affiliate, "/")
+	}
+	if req.AffiliateBps != "" {
+		affiliateBpsSlice = strings.Split(req.AffiliateBps, "/")
+	}
+	affiliate, affiliateMemo, affiliateBps, amt, affiliateAmt, err := quoteHandleAffiliate(ctx, qs.mgr, affiliateSlice, affiliateBpsSlice, amount)
 	if err != nil {
 		return nil, err
 	}
