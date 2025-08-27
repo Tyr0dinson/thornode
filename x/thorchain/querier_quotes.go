@@ -122,16 +122,17 @@ func parseMultipleAffiliateParams(ctx cosmos.Context, mgr *Mgrs, affiliateParam,
 	}
 
 	// If there is only one bps defined, but multiple affiliates, apply the bps to all affiliates
-	if len(bpParams) == 1 && len(affiliateParams) > 1 {
+	switch {
+	case len(bpParams) == 1 && len(affiliateParams) > 1:
 		bpValue := bpParams[0]
 		bpParams = make([]string, len(affiliateParams))
 		for i := range bpParams {
 			bpParams[i] = bpValue
 		}
-	} else if len(bpParams) == 1 && len(affiliateParams) == 0 {
+	case len(bpParams) == 1 && len(affiliateParams) == 0:
 		// Handle specific case: BPS provided but no affiliate
 		return nil, nil, sdkmath.ZeroUint(), fmt.Errorf("BPS value specified but no affiliate: (%d affiliates, %d BPS values)", len(affiliateParams), len(bpParams))
-	} else if len(bpParams) != len(affiliateParams) {
+	case len(bpParams) != len(affiliateParams):
 		// Handle general mismatch case
 		return nil, nil, sdkmath.ZeroUint(), fmt.Errorf("mismatch between number of affiliates (%d) and BPS values (%d)", len(affiliateParams), len(bpParams))
 	}
