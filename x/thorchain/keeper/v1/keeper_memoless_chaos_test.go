@@ -1,6 +1,8 @@
 package keeperv1
 
 import (
+	"fmt"
+	
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/constants"
@@ -11,21 +13,18 @@ type MemolessChaosTestSuite struct{}
 
 var _ = Suite(&MemolessChaosTestSuite{})
 
-// TestCounterRecoveryAfterStorageCorruption tests counter recovery from corrupted storage
-func (s *MemolessChaosTestSuite) TestCounterRecoveryAfterStorageCorruption(c *C) {
+// TestUserReferenceCollisionRecovery tests collision recovery with user-provided references
+func (s *MemolessChaosTestSuite) TestUserReferenceCollisionRecovery(c *C) {
 	ctx, k := setupKeeperForTest(c)
 
 	// Initialize chain configs
 	err := k.InitializeDefaultChainConfigs(ctx)
 	c.Assert(err, IsNil)
 
-	// GREEN: RecoverCounterFromMemos method now exists and works
-	recoveredCounter, err := k.RecoverCounterFromMemos(ctx, "BTC")
-	c.Assert(err, IsNil, Commentf("RecoverCounterFromMemos should work"))
-	c.Assert(recoveredCounter, Equals, int64(10000), Commentf("Should start at minimum reference"))
-
-	// Test that it can recover even with existing memos
+	// Test collision detection with user references
 	signer := GetRandomValidatorNode(NodeActive).NodeAddress
+	
+	// Register first memo with reference "15432"
 	testMemo := thorchaintypes.RegisteredMemo{
 		Reference:    "15432",
 		Memo:         "SWAP:BTC.BTC:thor1test:14400",
@@ -38,86 +37,137 @@ func (s *MemolessChaosTestSuite) TestCounterRecoveryAfterStorageCorruption(c *C)
 	err = k.SetRegisteredMemo(ctx, testMemo)
 	c.Assert(err, IsNil)
 
-	// Recovery should find highest reference and set counter to next value
-	recoveredCounter, err = k.RecoverCounterFromMemos(ctx, "BTC")
-	c.Assert(err, IsNil, Commentf("Recovery should work with existing memos"))
-	c.Assert(recoveredCounter, Equals, int64(15433), Commentf("Should recover to next counter after highest found reference"))
+	// Test that user cannot reuse same reference
+	err = k.ValidateUserReference(ctx, "15432")
+	c.Assert(err, NotNil, Commentf("Should reject duplicate user reference"))
+	
+	// Test that user can use different reference
+	err = k.ValidateUserReference(ctx, "15433")
+	c.Assert(err, IsNil, Commentf("Should accept different user reference"))
 }
 
-// TestGracefulDegradationUnderLoad tests system behavior under extreme load conditions
-func (s *MemolessChaosTestSuite) TestGracefulDegradationUnderLoad(c *C) {
+// TestUserReferenceLoadTesting tests user reference validation under load
+func (s *MemolessChaosTestSuite) TestUserReferenceLoadTesting(c *C) {
 	ctx, k := setupKeeperForTest(c)
 
 	// Initialize chain configs
 	err := k.InitializeDefaultChainConfigs(ctx)
 	c.Assert(err, IsNil)
 
-	// GREEN: TestRegistrationUnderLoad method now exists and works
-	successCount, err := k.TestRegistrationUnderLoad(ctx, 50) // 50 concurrent registrations for testing
-	c.Assert(err, IsNil, Commentf("Load testing should work"))
-	c.Assert(successCount > 0, Equals, true, Commentf("Should have some successful registrations"))
-	c.Assert(successCount <= 50, Equals, true, Commentf("Success count should not exceed total attempts"))
+	// Test multiple user reference validations
+	successCount := 0
+	totalAttempts := 50
+	
+	for i := 0; i < totalAttempts; i++ {
+		// Generate unique reference for each attempt
+		reference := fmt.Sprintf("%05d", 10000+i)
+		err := k.ValidateUserReference(ctx, reference)
+		if err == nil {
+			successCount++
+		}
+	}
+	
+	c.Assert(successCount > 0, Equals, true, Commentf("Should have some successful validations"))
+	c.Assert(successCount <= totalAttempts, Equals, true, Commentf("Success count should not exceed total attempts"))
 }
 
-// TestDataIntegrityAfterPartialFailures tests data consistency after partial system failures
-func (s *MemolessChaosTestSuite) TestDataIntegrityAfterPartialFailures(c *C) {
+// TestUserReferenceValidationIntegrity tests reference validation consistency
+func (s *MemolessChaosTestSuite) TestUserReferenceValidationIntegrity(c *C) {
 	ctx, k := setupKeeperForTest(c)
 
 	// Initialize chain configs
 	err := k.InitializeDefaultChainConfigs(ctx)
 	c.Assert(err, IsNil)
 
-	// This test should initially fail - we don't have failure simulation logic yet
-	// RED: No SimulatePartialFailure method exists
-	err = k.SimulatePartialFailure(ctx, "storage_corruption")
-	c.Assert(err, NotNil, Commentf("Should fail - SimulatePartialFailure not implemented yet"))
+	// Test validation consistency with edge cases
+	testCases := []struct {
+		reference string
+		shouldPass bool
+		reason string
+	}{
+		{"10000", true, "minimum valid reference"},
+		{"99999", true, "maximum valid reference"},
+		{"09999", false, "below minimum range"},
+		{"100000", false, "above maximum range"},
+		{"1234", false, "too short"},
+		{"123456", false, "too long"},
+		{"abcde", false, "non-numeric"},
+	}
+	
+	for _, tc := range testCases {
+		err := k.ValidateUserReference(ctx, tc.reference)
+		if tc.shouldPass {
+			c.Assert(err, IsNil, Commentf("Reference %s should pass: %s", tc.reference, tc.reason))
+		} else {
+			c.Assert(err, NotNil, Commentf("Reference %s should fail: %s", tc.reference, tc.reason))
+		}
+	}
 }
 
-// TestReferenceCounterWrapAroundScenario tests wraparound behavior at reference limits
-func (s *MemolessChaosTestSuite) TestReferenceCounterWrapAroundScenario(c *C) {
+// TestUserReferenceBoundaryConditions tests boundary conditions for user references
+func (s *MemolessChaosTestSuite) TestUserReferenceBoundaryConditions(c *C) {
 	ctx, k := setupKeeperForTest(c)
 
 	// Initialize chain configs
 	err := k.InitializeDefaultChainConfigs(ctx)
 	c.Assert(err, IsNil)
 
-	// This test should initially fail - we need to implement wraparound testing
-	// RED: No ForceCounterToMax method exists to simulate wraparound
-	err = k.ForceCounterToMax(ctx, "BTC")
-	c.Assert(err, NotNil, Commentf("Should fail - ForceCounterToMax not implemented yet"))
+	// Test exact boundaries of valid reference range
+	boundaryTests := []string{
+		"09999", // Just below minimum (should fail)
+		"10000", // Minimum valid (should pass)
+		"10001", // Just above minimum (should pass)
+		"99998", // Just below maximum (should pass)  
+		"99999", // Maximum valid (should pass)
+	}
+	
+	expectedResults := []bool{false, true, true, true, true}
+	
+	for i, ref := range boundaryTests {
+		err := k.ValidateUserReference(ctx, ref)
+		if expectedResults[i] {
+			c.Assert(err, IsNil, Commentf("Boundary reference %s should be valid", ref))
+		} else {
+			c.Assert(err, NotNil, Commentf("Boundary reference %s should be invalid", ref))
+		}
+	}
 }
 
-// TestMemoStorageFailureRecovery tests recovery from memo storage failures
-func (s *MemolessChaosTestSuite) TestMemoStorageFailureRecovery(c *C) {
+// TestMemoStorageConsistency tests storage consistency with user references
+func (s *MemolessChaosTestSuite) TestMemoStorageConsistency(c *C) {
 	ctx, k := setupKeeperForTest(c)
 
 	// Initialize chain configs
 	err := k.InitializeDefaultChainConfigs(ctx)
 	c.Assert(err, IsNil)
 
-	// This test should initially fail - we need storage failure simulation
-	// RED: No SimulateStorageFailure method exists
-	err = k.SimulateStorageFailure(ctx, "memo_registration")
-	c.Assert(err, NotNil, Commentf("Should fail - SimulateStorageFailure not implemented yet"))
+	signer := GetRandomValidatorNode(NodeActive).NodeAddress
+	
+	// Test storage and retrieval consistency
+	testReference := "25000"
+	testMemo := thorchaintypes.RegisteredMemo{
+		Reference:    testReference,
+		Memo:         "SWAP:BTC.BTC:thor1storage:14400",
+		ChainId:      "BTC",
+		RegisteredAt: ctx.BlockHeight(),
+		ExpiresAt:    ctx.BlockHeight() + 14400,
+		Status:       "active",
+		Signer:       signer,
+	}
+	
+	// Store memo
+	err = k.SetRegisteredMemo(ctx, testMemo)
+	c.Assert(err, IsNil, Commentf("Should store memo successfully"))
+	
+	// Retrieve and verify
+	retrieved, err := k.GetRegisteredMemo(ctx, testReference)
+	c.Assert(err, IsNil, Commentf("Should retrieve memo successfully"))
+	c.Assert(retrieved.Reference, Equals, testReference, Commentf("Retrieved reference should match"))
+	c.Assert(retrieved.Memo, Equals, testMemo.Memo, Commentf("Retrieved memo should match"))
 }
 
-// TestConcurrentRegistrationCollisionRecovery tests collision recovery under concurrent load
-func (s *MemolessChaosTestSuite) TestConcurrentRegistrationCollisionRecovery(c *C) {
-	ctx, k := setupKeeperForTest(c)
-
-	// Initialize chain configs
-	err := k.InitializeDefaultChainConfigs(ctx)
-	c.Assert(err, IsNil)
-
-	// This test should initially fail - we need concurrent collision testing
-	// RED: No TestConcurrentCollisions method exists
-	collisions, err := k.TestConcurrentCollisions(ctx, "BTC", 100)
-	c.Assert(err, NotNil, Commentf("Should fail - TestConcurrentCollisions not implemented yet"))
-	c.Assert(collisions, Equals, int64(0), Commentf("No collisions expected when method doesn't exist"))
-}
-
-// TestChainHaltRecoveryScenario tests protocol behavior during chain halt/resume cycles
-func (s *MemolessChaosTestSuite) TestChainHaltRecoveryScenario(c *C) {
+// TestMemoRetrievalResilience tests memo retrieval under various conditions
+func (s *MemolessChaosTestSuite) TestMemoRetrievalResilience(c *C) {
 	ctx, k := setupKeeperForTest(c)
 
 	// Initialize chain configs
@@ -127,80 +177,43 @@ func (s *MemolessChaosTestSuite) TestChainHaltRecoveryScenario(c *C) {
 	constantProvider := constants.GetConstantValues(GetCurrentVersion())
 	signer := GetRandomValidatorNode(NodeActive).NodeAddress
 
-	// Step 1: Register memo while chain is active
+	// Step 1: Register memo with user reference
 	msg := thorchaintypes.MsgRegisterMemo{
-		Memo:    "SWAP:BTC.BTC:thor1halt:14400",
-		ChainId: "BTC",
-		Ttl:     14400,
-		Signer:  signer,
-		Amount:  "100000000",
+		Memo:      "SWAP:BTC.BTC:thor1resilience:14400",
+		ChainId:   "BTC",
+		Ttl:       14400,
+		Signer:    signer,
+		Reference: "35000", // User-provided reference
 	}
 
 	result, err := k.ProcessMemoRegistration(ctx, msg, constantProvider)
 	c.Assert(err, IsNil, Commentf("Should register memo successfully"))
 
-	// Step 2: Simulate chain halt - this should initially fail
-	// RED: No SimulateChainHalt method exists
-	err = k.SimulateChainHalt(ctx, "BTC")
-	c.Assert(err, NotNil, Commentf("Should fail - SimulateChainHalt not implemented yet"))
-
-	// Step 3: Verify memo retrieval still works during halt
-	retrieved, err := k.LookupMemoByReference(ctx, result.Reference)
-	c.Assert(err, IsNil, Commentf("Should still be able to lookup memo during halt"))
-	c.Assert(retrieved.Status, Equals, "active", Commentf("Memo should remain active"))
+	// Step 2: Verify memo can be retrieved multiple times consistently
+	for i := 0; i < 5; i++ {
+		retrieved, err := k.LookupMemoByReference(ctx, result.Reference)
+		c.Assert(err, IsNil, Commentf("Should be able to lookup memo consistently (attempt %d)", i+1))
+		c.Assert(retrieved.Status, Equals, "active", Commentf("Memo should remain active"))
+		c.Assert(retrieved.Reference, Equals, "35000", Commentf("Reference should remain consistent"))
+	}
 }
 
-// TestNetworkPartitionRecovery tests behavior during network partition scenarios
-func (s *MemolessChaosTestSuite) TestNetworkPartitionRecovery(c *C) {
+// TestUserReferenceRobustness tests robustness of user reference handling
+func (s *MemolessChaosTestSuite) TestUserReferenceRobustness(c *C) {
 	ctx, k := setupKeeperForTest(c)
 
 	// Initialize chain configs
 	err := k.InitializeDefaultChainConfigs(ctx)
 	c.Assert(err, IsNil)
 
-	// This test should initially fail - we need partition simulation
-	// RED: No SimulateNetworkPartition method exists
-	err = k.SimulateNetworkPartition(ctx, 50) // 50% node partition
-	c.Assert(err, NotNil, Commentf("Should fail - SimulateNetworkPartition not implemented yet"))
-}
-
-// TestValidatorSlashingRecovery tests system behavior after validator slashing events
-func (s *MemolessChaosTestSuite) TestValidatorSlashingRecovery(c *C) {
-	ctx, k := setupKeeperForTest(c)
-
-	// Initialize chain configs
-	err := k.InitializeDefaultChainConfigs(ctx)
-	c.Assert(err, IsNil)
-
-	maliciousValidator := GetRandomValidatorNode(NodeActive).NodeAddress
-
-	// Step 1: Slash validator for malicious behavior
-	err = k.SlashValidatorForMaliciousBehavior(ctx, maliciousValidator, "collusion_detected", ctx.BlockHeight())
-	c.Assert(err, IsNil, Commentf("Should be able to slash validator"))
-
-	// Step 2: Test system recovery - this should initially fail
-	// RED: No TestSystemRecoveryAfterSlashing method exists
-	recovered, err := k.TestSystemRecoveryAfterSlashing(ctx, maliciousValidator)
-	c.Assert(err, NotNil, Commentf("Should fail - TestSystemRecoveryAfterSlashing not implemented yet"))
-	c.Assert(recovered, Equals, false, Commentf("Recovery status should be false when method doesn't exist"))
-}
-
-// TestCorruptedMemoRecovery tests recovery from corrupted memo data
-func (s *MemolessChaosTestSuite) TestCorruptedMemoRecovery(c *C) {
-	ctx, k := setupKeeperForTest(c)
-
-	// Initialize chain configs
-	err := k.InitializeDefaultChainConfigs(ctx)
-	c.Assert(err, IsNil)
-
-	// Register valid memo first
+	// Test various edge cases for user references
 	signer := GetRandomValidatorNode(NodeActive).NodeAddress
-	reference, err := k.GetNextReferenceID(ctx, "BTC")
-	c.Assert(err, IsNil)
-
+	
+	// Test 1: Register memo with user reference
+	testReference := "45000"
 	validMemo := thorchaintypes.RegisteredMemo{
-		Reference:    reference,
-		Memo:         "SWAP:BTC.BTC:thor1valid:14400",
+		Reference:    testReference,
+		Memo:         "SWAP:BTC.BTC:thor1robust:14400",
 		ChainId:      "BTC",
 		RegisteredAt: ctx.BlockHeight(),
 		ExpiresAt:    ctx.BlockHeight() + 14400,
@@ -208,10 +221,18 @@ func (s *MemolessChaosTestSuite) TestCorruptedMemoRecovery(c *C) {
 		Signer:       signer,
 	}
 	err = k.SetRegisteredMemo(ctx, validMemo)
-	c.Assert(err, IsNil)
+	c.Assert(err, IsNil, Commentf("Should register memo with user reference"))
 
-	// This test should initially fail - we need corruption simulation
-	// RED: No CorruptMemoData method exists
-	err = k.CorruptMemoData(ctx, reference)
-	c.Assert(err, NotNil, Commentf("Should fail - CorruptMemoData not implemented yet"))
+	// Test 2: Verify reference collision detection
+	err = k.ValidateUserReference(ctx, testReference)
+	c.Assert(err, NotNil, Commentf("Should detect reference collision"))
+
+	// Test 3: Verify different reference works
+	err = k.ValidateUserReference(ctx, "45001")
+	c.Assert(err, IsNil, Commentf("Different reference should be valid"))
+
+	// Test 4: Verify retrieval consistency
+	retrieved, err := k.GetRegisteredMemo(ctx, testReference)
+	c.Assert(err, IsNil, Commentf("Should retrieve memo by user reference"))
+	c.Assert(retrieved.Reference, Equals, testReference, Commentf("Retrieved reference should match"))
 }

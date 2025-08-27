@@ -85,7 +85,7 @@ func (s *MemolessSecurityAuditTestSuite) TestAccessControlSecurity(c *C) {
 		ChainId: "BTC",
 		Ttl:     14400,
 		Signer:  authorizedSigner,
-		Amount:  "100000000",
+		Reference: "44002", // User-provided reference
 	}
 
 	result, err := k.ProcessMemoRegistration(ctx, authorizedMsg, constantProvider)
@@ -116,19 +116,16 @@ func (s *MemolessSecurityAuditTestSuite) TestConsensusIntegritySecurity(c *C) {
 	err := k.InitializeDefaultChainConfigs(ctx)
 	c.Assert(err, IsNil)
 
-	// Test deterministic reference generation
-	ref1, err := k.GetNextReferenceID(ctx, "BTC")
-	c.Assert(err, IsNil, Commentf("First reference generation should work"))
+	// Test user-controlled reference validation (no counter manipulation possible)
+	ref1 := "12345" // User-provided reference
+	err = k.ValidateUserReference(ctx, ref1)
+	c.Assert(err, IsNil, Commentf("Valid user reference should pass validation"))
 
-	// Reset counter to same state and test again
-	counter, err := k.GetReferenceCounter(ctx, "BTC")
-	c.Assert(err, IsNil)
-	err = k.SetReferenceCounter(ctx, "BTC", counter-1)
-	c.Assert(err, IsNil)
-
-	ref2, err := k.GetNextReferenceID(ctx, "BTC")
-	c.Assert(err, IsNil, Commentf("Second reference generation should work"))
-	c.Assert(ref1, Equals, ref2, Commentf("Reference generation should be deterministic"))
+	ref2 := "67890" // Different user-provided reference  
+	err = k.ValidateUserReference(ctx, ref2)
+	c.Assert(err, IsNil, Commentf("Different valid user reference should pass validation"))
+	
+	c.Assert(ref1, Not(Equals), ref2, Commentf("Different user references should be unique"))
 
 	// Test collision handling determinism
 	signer := GetRandomValidatorNode(NodeActive).NodeAddress
@@ -146,16 +143,24 @@ func (s *MemolessSecurityAuditTestSuite) TestConsensusIntegritySecurity(c *C) {
 	err = k.SetRegisteredMemo(ctx, collisionMemo)
 	c.Assert(err, IsNil)
 
-	// Force counter to collision point
-	err = k.SetReferenceCounter(ctx, "BTC", 49999)
-	c.Assert(err, IsNil)
+	// Test reference collision detection (user must avoid collisions)
+	// Register memo with reference "50000"
+	msg := thorchaintypes.MsgRegisterMemo{
+		Memo:      "SWAP:BTC.BTC:thor1test:50000",
+		ChainId:   "BTC",
+		Ttl:       14400,
+		Signer:    signer,
+		Reference: "50000", // User-provided reference
+	}
+	constantProvider := constants.GetConstantValues(GetCurrentVersion())
+	_, err = k.ProcessMemoRegistration(ctx, msg, constantProvider)
+	c.Assert(err, IsNil, Commentf("First registration should succeed"))
 
-	// Generate reference - should skip collision and be deterministic
-	ref3, err := k.GetNextReferenceID(ctx, "BTC")
-	c.Assert(err, IsNil, Commentf("Collision handling should work"))
-	c.Assert(ref3, Equals, "50001", Commentf("Should skip collision and use next reference"))
+	// Try to use same reference - should fail
+	err = k.ValidateUserReference(ctx, "50000")
+	c.Assert(err, NotNil, Commentf("Duplicate reference should fail validation"))
 
-	c.Logf("✓ Consensus integrity verified: deterministic generation %s=%s, collision handling %s", ref1, ref2, ref3)
+	c.Logf("✓ User reference uniqueness enforced: %s blocked duplicate, %s≠%s", "50000", ref1, ref2)
 }
 
 // TestStorageSecurityValidation tests storage security controls
@@ -378,22 +383,23 @@ func (s *MemolessSecurityAuditTestSuite) TestCollisionHandlingSecurity(c *C) {
 		c.Assert(err, IsNil, Commentf("Should store collision test memo %s", ref))
 	}
 
-	// Force counter to collision zone
-	err = k.SetReferenceCounter(ctx, "BTC", 9999)
-	c.Assert(err, IsNil)
+	// Test user reference collision detection
+	// User must choose references that don't collide with existing ones
+	
+	// Try to use reference that collides with pre-created memo
+	err = k.ValidateUserReference(ctx, "10000")
+	c.Assert(err, NotNil, Commentf("Should reject reference that collides with existing memo"))
+	
+	// User chooses available reference
+	availableRef := "10005" // User selects available reference
+	err = k.ValidateUserReference(ctx, availableRef)
+	c.Assert(err, IsNil, Commentf("Available user reference should be valid"))
 
-	// Generate references - should skip occupied ones
-	expectedNextRef := "10005" // Should skip 10000-10004
-	actualRef, err := k.GetNextReferenceID(ctx, "BTC")
-	c.Assert(err, IsNil, Commentf("Collision handling should work"))
-	c.Assert(actualRef, Equals, expectedNextRef, Commentf("Should skip to first unoccupied reference"))
+	// Test that users must manage collision avoidance themselves
+	// (No automatic collision resolution - users control reference selection)
 
-	// Test collision search limit (prevent infinite loops)
-	// This would require filling all 90K references which is impractical for tests
-	// So we verify the logic exists in GetNextReferenceID with attempt counter
-
-	c.Logf("✓ Collision handling security verified: skipped %d occupied references, found %s",
-		len(occupiedRefs), actualRef)
+	c.Logf("✓ User reference collision detection verified: blocked collision, found available %s",
+		availableRef)
 }
 
 // TestMemoLifecycleSecurity tests security across memo lifecycle operations
@@ -413,7 +419,7 @@ func (s *MemolessSecurityAuditTestSuite) TestMemoLifecycleSecurity(c *C) {
 		ChainId: "BTC",
 		Ttl:     14400,
 		Signer:  signer,
-		Amount:  "100000000",
+		Reference: "44001", // User-provided reference
 	}
 
 	result, err := k.ProcessMemoRegistration(ctx, msg, constantProvider)
@@ -471,7 +477,7 @@ func (s *MemolessSecurityAuditTestSuite) TestValidationLayerSecurity(c *C) {
 				ChainId: "BTC",
 				Ttl:     14400,
 				Signer:  signer,
-				Amount:  "100000000",
+				Reference: "44002", // User-provided reference
 			},
 			shouldPass: true,
 			layer:      "ALL",
@@ -483,7 +489,7 @@ func (s *MemolessSecurityAuditTestSuite) TestValidationLayerSecurity(c *C) {
 				ChainId: "INVALID",
 				Ttl:     14400,
 				Signer:  signer,
-				Amount:  "100000000",
+				Reference: "44003", // User-provided reference
 			},
 			shouldPass: false,
 			layer:      "CHAIN_VALIDATION",
@@ -495,7 +501,7 @@ func (s *MemolessSecurityAuditTestSuite) TestValidationLayerSecurity(c *C) {
 				ChainId: "BTC",
 				Ttl:     -1,
 				Signer:  signer,
-				Amount:  "100000000",
+				Reference: "44004", // User-provided reference
 			},
 			shouldPass: false,
 			layer:      "TTL_VALIDATION",
@@ -507,7 +513,7 @@ func (s *MemolessSecurityAuditTestSuite) TestValidationLayerSecurity(c *C) {
 				ChainId: "BTC",
 				Ttl:     14400,
 				Signer:  signer,
-				Amount:  "100000000",
+				Reference: "44005", // User-provided reference
 			},
 			shouldPass: false,
 			layer:      "MEMO_VALIDATION",
@@ -531,31 +537,54 @@ func (s *MemolessSecurityAuditTestSuite) TestValidationLayerSecurity(c *C) {
 		passedValidation, len(validationTests))
 }
 
-// TestSystemResilienceSecurity tests security under system stress conditions
-func (s *MemolessSecurityAuditTestSuite) TestSystemResilienceSecurity(c *C) {
+// TestUserReferenceSecurityResilience tests security resilience with user-provided references
+func (s *MemolessSecurityAuditTestSuite) TestUserReferenceSecurityResilience(c *C) {
 	ctx, k := setupKeeperForTest(c)
 
 	// Initialize chain configs
 	err := k.InitializeDefaultChainConfigs(ctx)
 	c.Assert(err, IsNil)
 
-	// Test reference pool exhaustion protection
-	// Verify that GetNextReferenceID has collision search limit
-	_, err = k.GetReferenceCounter(ctx, "BTC")
+	// Test reference range security - users cannot use references outside valid range
+	invalidReferences := []string{
+		"09999", // Below minimum
+		"100000", // Above maximum  
+		"00001", // Below minimum
+		"99999999", // Way above maximum
+	}
+	
+	for _, invalidRef := range invalidReferences {
+		err = k.ValidateUserReference(ctx, invalidRef)
+		c.Assert(err, NotNil, Commentf("Invalid reference %s should be rejected for security", invalidRef))
+	}
+
+	// Test valid range security - users can use references within range
+	validReferences := []string{"10000", "50000", "99999"}
+	for _, validRef := range validReferences {
+		err = k.ValidateUserReference(ctx, validRef)
+		c.Assert(err, IsNil, Commentf("Valid reference %s should be accepted", validRef))
+	}
+
+	// Test collision detection security - prevent reference reuse
+	signer := GetRandomValidatorNode(NodeActive).NodeAddress
+	usedReference := "75000"
+	
+	// Register memo with reference
+	testMemo := thorchaintypes.RegisteredMemo{
+		Reference:    usedReference,
+		Memo:         "SWAP:BTC.BTC:thor1security:14400",
+		ChainId:      "BTC",
+		RegisteredAt: ctx.BlockHeight(),
+		ExpiresAt:    ctx.BlockHeight() + 14400,
+		Status:       "active",
+		Signer:       signer,
+	}
+	err = k.SetRegisteredMemo(ctx, testMemo)
 	c.Assert(err, IsNil)
+	
+	// Try to reuse same reference - should fail for security
+	err = k.ValidateUserReference(ctx, usedReference)
+	c.Assert(err, NotNil, Commentf("Used reference should be rejected for security"))
 
-	// Test counter wraparound security
-	err = k.SetReferenceCounter(ctx, "BTC", 99999)
-	c.Assert(err, IsNil)
-
-	ref, err := k.GetNextReferenceID(ctx, "BTC")
-	c.Assert(err, IsNil, Commentf("Wraparound should work"))
-	c.Assert(ref, Equals, "10000", Commentf("Should wrap to start of range"))
-
-	// Test that system maintains security even during high load
-	successCount, err := k.TestRegistrationUnderLoad(ctx, 10)
-	c.Assert(err, IsNil, Commentf("Load testing should work"))
-	c.Assert(successCount > 0, Equals, true, Commentf("Should have successful registrations under load"))
-
-	c.Logf("✓ System resilience security verified: wraparound works, %d successful under load", successCount)
+	c.Logf("✓ User reference security resilience verified: range validation and collision detection working")
 }

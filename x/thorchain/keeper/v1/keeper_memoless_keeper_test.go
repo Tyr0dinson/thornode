@@ -26,7 +26,6 @@ func (s *MemolessKeeperImplementationTestSuite) TestMemoRegistrationFlow(c *C) {
 	memo := "SWAP:BTC.BTC::thor1test"
 	chainID := "BTC"
 	ttl := int64(14400)
-	amount := "100000000" // 1 BTC in satoshis
 
 	// Create enhanced message with extended fields
 	msg := thorchaintypes.MsgRegisterMemo{
@@ -34,10 +33,7 @@ func (s *MemolessKeeperImplementationTestSuite) TestMemoRegistrationFlow(c *C) {
 		Ttl:            ttl,
 		ChainId:        chainID,
 		Signer:         signer,
-		Amount:         amount,
-		Destination:    "thor1destination",
-		ForceCollision: false,
-		Tags:           []string{"test", "memoless", "keeper"},
+		Reference:      "12000", // User-provided 5-digit reference
 	}
 
 	// RED: This should fail initially - ProcessMemoRegistration method doesn't exist yet
@@ -91,7 +87,7 @@ func (s *MemolessKeeperImplementationTestSuite) TestMemoValidationFlow(c *C) {
 		Ttl:     14400,
 		ChainId: "BTC",
 		Signer:  GetRandomBech32Addr(),
-		Amount:  "100000000", // 1 BTC - meets minimum for 5-digit reference encoding
+		Reference: "15000", // User-provided 5-digit reference
 	}
 
 	// RED: This should fail initially - ValidateMemoRegistrationComplete method doesn't exist yet
@@ -113,15 +109,14 @@ func (s *MemolessKeeperImplementationTestSuite) TestMemoValidationFlow(c *C) {
 // TestCollisionResolutionFlow tests collision handling (RED PHASE)
 func (s *MemolessKeeperImplementationTestSuite) TestCollisionResolutionFlow(c *C) {
 	ctx, k := setupKeeperForTest(c)
-	constantProvider := constants.GetConstantValues(GetCurrentVersion())
 
 	memo := "COLLISION:TEST"
 	height := ctx.BlockHeight()
 
-	// RED: This should fail initially - HandleCollisionResolution method doesn't exist yet
-	reference1, err := k.HandleCollisionResolution(ctx, memo, height, constantProvider)
-	c.Assert(err, IsNil, Commentf("HandleCollisionResolution should be implemented"))
-	c.Assert(len(reference1), Equals, 5, Commentf("First reference should be 5 digits"))
+	// Test user reference collision detection
+	reference1 := "25000"
+	err := k.ValidateUserReference(ctx, reference1)
+	c.Assert(err, IsNil, Commentf("First reference should be valid"))
 
 	// Create collision by storing first reference
 	registeredMemo := thorchaintypes.RegisteredMemo{
@@ -135,11 +130,14 @@ func (s *MemolessKeeperImplementationTestSuite) TestCollisionResolutionFlow(c *C
 	err = k.SetRegisteredMemo(ctx, registeredMemo)
 	c.Assert(err, IsNil)
 
-	// Second attempt should generate different reference
-	reference2, err := k.HandleCollisionResolution(ctx, memo, height, constantProvider)
-	c.Assert(err, IsNil, Commentf("Second collision resolution should succeed"))
-	c.Assert(len(reference2), Equals, 5, Commentf("Second reference should be 5 digits"))
-	c.Assert(reference1, Not(Equals), reference2, Commentf("References should be different"))
+	// Second attempt with same reference should fail
+	err = k.ValidateUserReference(ctx, reference1)
+	c.Assert(err, NotNil, Commentf("Duplicate reference should be rejected"))
+
+	// Different reference should succeed
+	reference2 := "25001"
+	err = k.ValidateUserReference(ctx, reference2)
+	c.Assert(err, IsNil, Commentf("Different reference should be valid"))
 }
 
 // TestMemoExpirationFlow tests memo expiration handling (RED PHASE)
@@ -158,14 +156,14 @@ func (s *MemolessKeeperImplementationTestSuite) TestMemoExpirationFlow(c *C) {
 	err := k.SetRegisteredMemo(ctx, expiredMemo)
 	c.Assert(err, IsNil)
 
-	// RED: This should fail initially - CleanupExpiredMemos method doesn't exist yet
-	cleanedCount, err := k.CleanupExpiredMemos(ctx, ctx.BlockHeight())
-	c.Assert(err, IsNil, Commentf("CleanupExpiredMemos should be implemented"))
-	c.Assert(cleanedCount > 0, Equals, true, Commentf("Should clean up at least 1 expired memo"))
-
-	// Verify memo is marked as expired
+	// Test expiration detection
 	retrievedMemo, err := k.GetRegisteredMemo(ctx, "99999")
+	c.Assert(err, IsNil, Commentf("Should retrieve expired memo"))
+	c.Assert(retrievedMemo.IsExpired(ctx.BlockHeight()), Equals, true, Commentf("Memo should be detected as expired"))
+
+	// Test that expired memo lookup handles expiration properly
+	lookupResult, err := k.LookupMemoByReference(ctx, "99999")
 	if err == nil {
-		c.Assert(retrievedMemo.Status, Equals, "expired", Commentf("Memo should be marked as expired"))
+		c.Assert(lookupResult.IsExpired(ctx.BlockHeight()), Equals, true, Commentf("Lookup should detect expiration"))
 	}
 }

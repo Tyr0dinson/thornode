@@ -1,6 +1,7 @@
 package keeperv1
 
 import (
+	"fmt"
 	"testing"
 
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -8,13 +9,17 @@ import (
 	thorchaintypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
-// BenchmarkReferenceGeneration benchmarks incremental reference generation
-func BenchmarkReferenceGeneration(b *testing.B) {
+// BenchmarkUserReferenceValidation benchmarks user reference validation performance
+func BenchmarkUserReferenceValidation(b *testing.B) {
 	ctx, k := setupKeeperForTestBenchmark(b)
+
+	// Use realistic user-provided references for benchmarking
+	references := []string{"12345", "67890", "15000", "98765", "50000"}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = k.GetNextReferenceID(ctx, "BTC")
+		ref := references[i%len(references)]
+		_ = k.ValidateUserReference(ctx, ref)
 	}
 }
 
@@ -29,12 +34,14 @@ func BenchmarkMemoRegistration(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
+		// Use different reference for each iteration to avoid collisions
+		reference := fmt.Sprintf("%05d", 10000+(i%90000))
 		msg := thorchaintypes.MsgRegisterMemo{
-			Memo:    "SWAP:BTC.BTC:thor1benchmark:14400",
-			ChainId: "BTC",
-			Ttl:     14400,
-			Signer:  signer,
-			Amount:  "100000000",
+			Memo:      "SWAP:BTC.BTC:thor1benchmark:14400",
+			ChainId:   "BTC",
+			Ttl:       14400,
+			Signer:    signer,
+			Reference: reference, // User-provided reference
 		}
 		_, _ = k.ProcessMemoRegistration(ctx, msg, constantProvider)
 	}
@@ -50,11 +57,11 @@ func BenchmarkMemoLookup(b *testing.B) {
 	signer := GetRandomValidatorNode(NodeActive).NodeAddress
 
 	msg := thorchaintypes.MsgRegisterMemo{
-		Memo:    "SWAP:BTC.BTC:thor1lookup:14400",
-		ChainId: "BTC",
-		Ttl:     14400,
-		Signer:  signer,
-		Amount:  "100000000",
+		Memo:      "SWAP:BTC.BTC:thor1lookup:14400",
+		ChainId:   "BTC",
+		Ttl:       14400,
+		Signer:    signer,
+		Reference: "55000", // User-provided reference for lookup test
 	}
 	result, _ := k.ProcessMemoRegistration(ctx, msg, constantProvider)
 
@@ -73,11 +80,11 @@ func BenchmarkValidation(b *testing.B) {
 	signer := GetRandomValidatorNode(NodeActive).NodeAddress
 
 	msg := thorchaintypes.MsgRegisterMemo{
-		Memo:    "SWAP:BTC.BTC:thor1validation:14400",
-		ChainId: "BTC",
-		Ttl:     14400,
-		Signer:  signer,
-		Amount:  "100000000",
+		Memo:      "SWAP:BTC.BTC:thor1validation:14400",
+		ChainId:   "BTC",
+		Ttl:       14400,
+		Signer:    signer,
+		Reference: "77000", // User-provided reference for validation test
 	}
 
 	b.ResetTimer()

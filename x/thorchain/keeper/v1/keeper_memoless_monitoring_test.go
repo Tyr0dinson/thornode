@@ -29,7 +29,7 @@ func (s *MemolessMonitoringTestSuite) TestMemolessMetricsCollection(c *C) {
 		ChainId: "BTC",
 		Ttl:     14400,
 		Signer:  signer,
-		Amount:  "100000000",
+		Reference: "77000", // User-provided reference
 	}
 	_, err = k.ProcessMemoRegistration(ctx, msg1, constantProvider)
 	c.Assert(err, IsNil)
@@ -57,9 +57,9 @@ func (s *MemolessMonitoringTestSuite) TestMemolessMetricsCollection(c *C) {
 	c.Assert(metrics.ActiveRegistrations >= 1, Equals, true, Commentf("Should count active memos"))
 	c.Assert(metrics.ExpiredRegistrations >= 1, Equals, true, Commentf("Should count expired memos"))
 
-	// Verify counter positions are tracked
-	c.Assert(len(metrics.CounterPositions) > 0, Equals, true, Commentf("Should track counter positions"))
-	c.Assert(metrics.CounterPositions["BTC"] > 0, Equals, true, Commentf("Should have BTC counter position"))
+	// Verify basic metrics structure
+	c.Assert(metrics, NotNil, Commentf("Should return metrics object"))
+	c.Assert(metrics.TotalRegistrations >= 0, Equals, true, Commentf("Should track total registrations"))
 
 	// Verify chain health status
 	c.Assert(len(metrics.ChainHealthStatus) > 0, Equals, true, Commentf("Should track chain health"))
@@ -83,7 +83,6 @@ func (s *MemolessMonitoringTestSuite) TestAlertThresholdMonitoring(c *C) {
 		TotalRegistrations:  100,
 		ValidationFailures:  10,      // 10% failure rate
 		AverageResponseTime: 2000000, // 2ms (above 1ms threshold)
-		CounterPositions:    map[string]int64{"BTC": 15000},
 		ChainHealthStatus:   map[string]string{"BTC": "HEALTHY", "ETH": "ERROR"},
 		LastUpdated:         ctx.BlockTime().Unix(),
 	}
@@ -182,7 +181,7 @@ func (s *MemolessMonitoringTestSuite) TestOperationalReportGeneration(c *C) {
 		ChainId: "BTC",
 		Ttl:     14400,
 		Signer:  signer,
-		Amount:  "100000000",
+		Reference: "88000", // User-provided reference
 	}
 	_, err = k.ProcessMemoRegistration(ctx, msg, constantProvider)
 	c.Assert(err, IsNil)

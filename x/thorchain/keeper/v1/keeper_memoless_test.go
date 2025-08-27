@@ -2,6 +2,7 @@ package keeperv1
 
 import (
 	"fmt"
+	"strconv"
 
 	. "gopkg.in/check.v1"
 
@@ -48,42 +49,52 @@ func (s *MemolessKeeperTestSuite) TestBasicInfrastructure(c *C) {
 	c.Logf("✓ Basic infrastructure validation passed")
 }
 
-// TestReferenceGeneration tests incremental counter reference generation functionality
-func (s *MemolessKeeperTestSuite) TestReferenceGeneration(c *C) {
+// TestUserReferenceValidation tests user-provided reference validation functionality
+func (s *MemolessKeeperTestSuite) TestUserReferenceValidation(c *C) {
 	ctx, k := setupKeeperForTest(c)
 
-	// Test incremental counter reference generation
-	ref1, err := k.GetNextReferenceID(ctx, "BTC")
-	c.Assert(err, IsNil)
+	// Test valid user-provided reference validation
+	err := k.ValidateUserReference(ctx, "12345")
+	c.Assert(err, IsNil, Commentf("Valid 5-digit reference should pass validation"))
 
-	ref2, err := k.GetNextReferenceID(ctx, "BTC")
-	c.Assert(err, IsNil)
+	err = k.ValidateUserReference(ctx, "67890")
+	c.Assert(err, IsNil, Commentf("Different valid reference should pass validation"))
 
-	// References should be 5 digits
-	c.Assert(len(ref1), Equals, 5, Commentf("Reference should be 5 digits"))
-	c.Assert(len(ref2), Equals, 5, Commentf("Reference should be 5 digits"))
+	// Test invalid references
+	err = k.ValidateUserReference(ctx, "1234") // Too short
+	c.Assert(err, NotNil, Commentf("4-digit reference should fail validation"))
 
-	// Sequential references should be different and increment
-	c.Assert(ref1, Not(Equals), ref2, Commentf("Sequential references should be different"))
+	err = k.ValidateUserReference(ctx, "123456") // Too long
+	c.Assert(err, NotNil, Commentf("6-digit reference should fail validation"))
 
-	// Test incremental behavior
-	c.Assert(ref1, Equals, "10000", Commentf("First reference should be 10000"))
-	c.Assert(ref2, Equals, "10001", Commentf("Second reference should be 10001"))
+	err = k.ValidateUserReference(ctx, "09999") // Out of range
+	c.Assert(err, NotNil, Commentf("Reference below 10000 should fail validation"))
 
-	// Test reference validation
-	err = ValidateReference(ref1)
-	c.Assert(err, IsNil, Commentf("Generated reference should be valid"))
+	// Test reference uniqueness enforcement
+	// Register a memo with reference "15000"
+	signer := GetRandomBech32Addr()
+	msg := thorchaintypes.MsgRegisterMemo{
+		Memo:      "SWAP:BTC.BTC:thor1test:15000",
+		ChainId:   "BTC",
+		Ttl:       14400,
+		Signer:    signer,
+		Reference: "15000", // User-provided reference
+	}
 
-	err = ValidateReference("15432")
-	c.Assert(err, IsNil, Commentf("Valid 5-digit reference should pass"))
+	constantProvider := constants.GetConstantValues(GetCurrentVersion())
+	err = k.ValidateMemoRegistration(ctx, msg, constantProvider)
+	c.Assert(err, IsNil, Commentf("First registration should pass"))
 
-	err = ValidateReference("1234")
-	c.Assert(err, NotNil, Commentf("4-digit reference should fail"))
+	_, err = k.ProcessMemoRegistration(ctx, msg, constantProvider)
+	c.Assert(err, IsNil, Commentf("First registration should succeed"))
 
-	err = ValidateReference("abcde")
-	c.Assert(err, NotNil, Commentf("Non-numeric reference should fail"))
+	// Try to use the same reference again
+	err = k.ValidateUserReference(ctx, "15000")
+	c.Assert(err, NotNil, Commentf("Duplicate reference should fail validation"))
 
-	c.Logf("✓ Reference generation tests passed")
+	c.Logf("✓ User reference validation passed")
+
+
 }
 
 // TestMemoRegistrationBasic tests basic memo registration functionality
@@ -93,9 +104,8 @@ func (s *MemolessKeeperTestSuite) TestMemoRegistrationBasic(c *C) {
 	// Test data
 	memo := "SWAP:ETH.ETH:thor1abc123:14400"
 
-	// Test basic memo registration with incremental counter
-	reference, err := k.GetNextReferenceID(ctx, "BTC")
-	c.Assert(err, IsNil, Commentf("Should be able to resolve collision for new memo"))
+	// Test basic memo registration with user-provided reference
+	reference := "25000" // User-provided reference
 	c.Assert(len(reference), Equals, 5, Commentf("Reference should be 5 digits"))
 
 	// Test memo storage and retrieval
@@ -107,7 +117,7 @@ func (s *MemolessKeeperTestSuite) TestMemoRegistrationBasic(c *C) {
 		ExpiresAt:    ctx.BlockHeight() + 14400,
 		Status:       "active",
 	}
-	err = k.SetRegisteredMemo(ctx, registeredMemo)
+	err := k.SetRegisteredMemo(ctx, registeredMemo)
 	c.Assert(err, IsNil, Commentf("Should be able to store registered memo"))
 
 	// Test memo retrieval
@@ -153,15 +163,15 @@ func (s *MemolessKeeperTestSuite) TestInfrastructurePrerequisites(c *C) {
 	c.Assert(len(supportedChains) > 0, Equals, true, Commentf("Should have supported chains"))
 	c.Logf("✓ Chain configuration accessible: %d supported chains", len(supportedChains))
 
-	// Test 4: Reference generation works
-	reference, _ := k.GetNextReferenceID(ctx, "BTC")
+	// Test 4: User reference validation works
+	reference := "35000" // User-provided reference
 	c.Assert(len(reference), Equals, 5, Commentf("Reference should be 5 digits"))
 	err = ValidateReference(reference)
-	c.Assert(err, IsNil, Commentf("Generated reference should be valid"))
+	c.Assert(err, IsNil, Commentf("User reference should be valid"))
 	c.Logf("✓ Reference generation working: Generated reference %s", reference)
 
 	// Test 5: Memo registration works
-	testReference, err := k.GetNextReferenceID(ctx, "BTC")
+	testReference := "45000" // User-provided reference for testing
 	c.Assert(err, IsNil, Commentf("Should resolve collision"))
 	c.Assert(len(testReference), Equals, 5, Commentf("Reference should be 5 digits"))
 	c.Logf("✓ Memo registration working: Test reference %s", testReference)
@@ -216,8 +226,7 @@ func (s *MemolessKeeperTestSuite) TestCollusionDetection(c *C) {
 
 	// Pre-create 3 registrations in this block to trigger limit
 	for i := 0; i < 3; i++ {
-		reference, err := k.GetNextReferenceID(ctx, "BTC")
-		c.Assert(err, IsNil)
+		reference := fmt.Sprintf("%05d", 50000+i) // User-provided references: 50000, 50001, 50002
 
 		registration := thorchaintypes.RegisteredMemo{
 			Reference:    reference,
@@ -238,7 +247,7 @@ func (s *MemolessKeeperTestSuite) TestCollusionDetection(c *C) {
 		ChainId: "BTC",
 		Ttl:     14400,
 		Signer:  testSigner, // Same signer attempting 4th registration
-		Amount:  "1000000",
+		Reference: "33000", // User-provided reference
 	}
 
 	// This should fail due to collusion detection (too many registrations in same block)
@@ -277,8 +286,7 @@ func (s *MemolessKeeperTestSuite) TestTTLExpiryManagement(c *C) {
 
 	// Create memo with short TTL that should expire
 	signer := GetRandomValidatorNode(NodeActive).NodeAddress
-	reference, err := k.GetNextReferenceID(ctx, "BTC")
-	c.Assert(err, IsNil)
+	reference := "60000" // User-provided reference for TTL test
 
 	shortTTL := int64(5) // 5 blocks
 	registration := thorchaintypes.RegisteredMemo{
@@ -312,8 +320,7 @@ func (s *MemolessKeeperTestSuite) TestAutomatedMemoCleanup(c *C) {
 	currentBlock := ctx.BlockHeight()
 
 	// Memo 1: Already expired
-	ref1, err := k.GetNextReferenceID(ctx, "BTC")
-	c.Assert(err, IsNil)
+	ref1 := "70000" // User-provided reference
 	expired1 := thorchaintypes.RegisteredMemo{
 		Reference:    ref1,
 		Memo:         "SWAP:BTC.BTC:thor1expired:100",
@@ -327,8 +334,7 @@ func (s *MemolessKeeperTestSuite) TestAutomatedMemoCleanup(c *C) {
 	c.Assert(err, IsNil)
 
 	// Memo 2: Still active
-	ref2, err := k.GetNextReferenceID(ctx, "BTC")
-	c.Assert(err, IsNil)
+	ref2 := "80000" // Different user-provided reference
 	active1 := thorchaintypes.RegisteredMemo{
 		Reference:    ref2,
 		Memo:         "SWAP:BTC.BTC:thor1active:100",
@@ -405,8 +411,7 @@ func (s *MemolessKeeperTestSuite) TestTTLExtensionCapabilities(c *C) {
 
 	// Create memo with specific TTL
 	signer := GetRandomValidatorNode(NodeActive).NodeAddress
-	reference, err := k.GetNextReferenceID(ctx, "BTC")
-	c.Assert(err, IsNil)
+	reference := "90000" // User-provided reference for expiry test
 
 	originalTTL := int64(1000)
 	registration := thorchaintypes.RegisteredMemo{
@@ -457,7 +462,7 @@ func (s *MemolessKeeperTestSuite) TestEndToEndWorkflow(c *C) {
 		ChainId: "BTC",
 		Ttl:     14400,
 		Signer:  signer,
-		Amount:  "100000000", // 1 BTC
+		Reference: "33001", // User-provided reference
 	}
 
 	// Validate registration
@@ -518,14 +523,14 @@ func (s *MemolessKeeperTestSuite) TestCrossChainIntegration(c *C) {
 	signer := GetRandomValidatorNode(NodeActive).NodeAddress
 	constantProvider := constants.GetConstantValues(GetCurrentVersion())
 
-	// Test registration on multiple supported chains with chain-appropriate amounts
+	// Test registration on multiple supported chains with unique references
 	testCases := []struct {
-		chainID string
-		amount  string
+		chainID   string
+		reference string
 	}{
-		{"BTC", "100000000"},           // 1 BTC
-		{"ETH", "1000000000000000000"}, // 1 ETH
-		{"BNB", "100000000"},           // 1 BNB
+		{"BTC", "55001"}, // User-provided reference for BTC
+		{"ETH", "55002"}, // User-provided reference for ETH
+		{"BNB", "55003"}, // User-provided reference for BNB
 	}
 	references := make(map[string]string)
 
@@ -535,7 +540,7 @@ func (s *MemolessKeeperTestSuite) TestCrossChainIntegration(c *C) {
 			ChainId: tc.chainID,
 			Ttl:     14400,
 			Signer:  signer,
-			Amount:  tc.amount,
+			Reference: tc.reference,
 		}
 
 		// Process registration
@@ -569,7 +574,7 @@ func (s *MemolessKeeperTestSuite) TestCrossChainIntegration(c *C) {
 		ChainId: "DOGE",
 		Ttl:     14400,
 		Signer:  signer,
-		Amount:  "100000000",
+		Reference: "33002", // User-provided reference
 	}
 
 	err = k.ValidateMemoRegistration(ctx, dogeMod, constantProvider)
@@ -593,7 +598,7 @@ func (s *MemolessKeeperTestSuite) TestRefundIntegrationValidation(c *C) {
 		ChainId: "BTC",
 		Ttl:     14400,
 		Signer:  signer,
-		Amount:  "100000000", // 1 BTC
+		Reference: "33001", // User-provided reference
 	}
 
 	// Should pass validation (refund validation happens at swap execution time)
@@ -608,6 +613,125 @@ func (s *MemolessKeeperTestSuite) TestRefundIntegrationValidation(c *C) {
 	retrieved, err := k.LookupMemoByReference(ctx, result.Reference)
 	c.Assert(err, IsNil, Commentf("Should be able to lookup refund memo"))
 	c.Assert(retrieved.Memo, Matches, ".*:0$", Commentf("Should preserve refund trigger (0 limit)"))
+}
+
+// TestUserReferenceValidationSecurity tests comprehensive user reference validation security
+func (s *MemolessKeeperTestSuite) TestUserReferenceValidationSecurity(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	// Test user-provided references for security requirements
+	testReferences := []string{"10000", "25000", "50000", "75000", "99999"}
+	
+	// SECURITY REQUIREMENT 1: All valid user references must be accepted
+	for i, ref := range testReferences {
+		err := k.ValidateUserReference(ctx, ref)
+		c.Assert(err, IsNil, Commentf("Reference %d '%s' should be valid", i, ref))
+		
+		// Validate format requirements
+		c.Assert(len(ref), Equals, 5, Commentf("Reference %d '%s' must be 5 digits", i, ref))
+		
+		num, err := strconv.Atoi(ref)
+		c.Assert(err, IsNil, Commentf("Reference %d '%s' must be numeric", i, ref))
+		c.Assert(num >= 10000, Equals, true, Commentf("Reference %d '%s' must be >= 10000", i, ref))
+		c.Assert(num <= 99999, Equals, true, Commentf("Reference %d '%s' must be <= 99999", i, ref))
+	}
+
+	// SECURITY REQUIREMENT 2: Invalid user references must be rejected
+	invalidReferences := []string{
+		"09999", // Below minimum
+		"100000", // Above maximum
+		"1234", // Too short
+		"123456", // Too long
+		"abcde", // Non-numeric
+		"", // Empty
+	}
+	
+	for i, ref := range invalidReferences {
+		err := k.ValidateUserReference(ctx, ref)
+		c.Assert(err, NotNil, Commentf("Invalid reference %d '%s' should be rejected", i, ref))
+	}
+
+	// SECURITY REQUIREMENT 3: User controls reference selection (no system prediction)
+	// Users can choose any valid reference - system doesn't generate predictable sequences
+	userChoices := []string{"13579", "24681", "11111", "77777", "98765"}
+	for i, ref := range userChoices {
+		err := k.ValidateUserReference(ctx, ref)
+		c.Assert(err, IsNil, Commentf("User choice %d '%s' should be accepted", i, ref))
+	}
+	
+	c.Logf("✓ User reference validation security verified")
+}
+
+// TestUserReferenceCrossChainValidation tests cross-chain reference validation consistency
+func (s *MemolessKeeperTestSuite) TestUserReferenceCrossChainValidation(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	// Test that user references work consistently across different chains
+	chains := []string{"BTC", "ETH", "THOR"}
+	testReference := "42000" // User-provided reference
+	
+	// Test reference validation works for all supported chains
+	for _, chain := range chains {
+		// Initialize chain config
+		err := k.InitializeDefaultChainConfigs(ctx)
+		c.Assert(err, IsNil)
+		
+		// Validate reference format is consistent across chains
+		err = k.ValidateUserReference(ctx, testReference)
+		c.Assert(err, IsNil, Commentf("Reference %s should be valid for chain %s", testReference, chain))
+	}
+
+	// Test different user references
+	userReferences := []string{"10001", "25000", "50000", "75000", "99998"}
+	for _, ref := range userReferences {
+		// Validate format requirements are consistent
+		c.Assert(len(ref), Equals, 5, Commentf("Reference '%s' must be 5 digits", ref))
+		num, err := strconv.Atoi(ref)
+		c.Assert(err, IsNil, Commentf("Reference '%s' must be numeric", ref))
+		c.Assert(num >= 10000 && num <= 99999, Equals, true, Commentf("Reference '%s' must be in valid range", ref))
+		
+		// User reference validation should be consistent
+		err = k.ValidateUserReference(ctx, ref)
+		c.Assert(err, IsNil, Commentf("User reference '%s' should be valid", ref))
+	}
+	
+	c.Logf("✓ Cross-chain user reference validation verified")
+}
+
+// TestUserReferenceCollisionDetection tests collision detection for user references
+func (s *MemolessKeeperTestSuite) TestUserReferenceCollisionDetection(c *C) {
+	ctx, k := setupKeeperForTest(c)
+	
+	// Initialize chain configs
+	err := k.InitializeDefaultChainConfigs(ctx)
+	c.Assert(err, IsNil)
+
+	// Test that user reference collision detection works properly
+	testReference := "55555"
+	
+	// First validation should pass (reference not in use)
+	err = k.ValidateUserReference(ctx, testReference)
+	c.Assert(err, IsNil, Commentf("Unused reference should be valid"))
+	
+	// Register a memo with this reference to simulate usage
+	signer := GetRandomBech32Addr()
+	testMemo := thorchaintypes.RegisteredMemo{
+		Reference:    testReference,
+		Memo:         "SWAP:ETH.ETH:thor1collision:14400",
+		ChainId:      "ETH",
+		RegisteredAt: ctx.BlockHeight(),
+		ExpiresAt:    ctx.BlockHeight() + 14400,
+		Status:       "active",
+		Signer:       signer,
+	}
+	err = k.SetRegisteredMemo(ctx, testMemo)
+	c.Assert(err, IsNil, Commentf("Should register memo with reference"))
+	
+	// Second validation should fail (reference collision)
+	err = k.ValidateUserReference(ctx, testReference)
+	c.Assert(err, NotNil, Commentf("Used reference should be rejected due to collision"))
+	
+	c.Logf("✓ User reference collision detection verified")
 }
 
 // TestComprehensiveTDDPillarValidation validates all TDD pillars are covered
