@@ -140,8 +140,8 @@ func parseMultipleAffiliateParams(ctx cosmos.Context, mgr *Mgrs, affiliateParam,
 			case len(bpParams) == 0:
 				continue // Skip if no BPS values at all
 			case i >= len(bpParams):
-				// Use the last BPS value for any additional affiliates
-				currentBpParam = bpParams[len(bpParams)-1]
+				// This should not happen after the validation above, but keep as safety
+				continue
 			default:
 				currentBpParam = bpParams[i]
 			}

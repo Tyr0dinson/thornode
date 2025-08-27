@@ -3,7 +3,6 @@ package thorchain
 import (
 	"testing"
 
-	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	. "gopkg.in/check.v1"
 )
 
@@ -84,42 +83,28 @@ func (s *QuotesSuite) TestParseMultipleAffiliateParams(c *C) {
 	c.Assert(bps[0].Uint64(), Equals, uint64(100))
 	c.Assert(bps[1].Uint64(), Equals, uint64(300))
 
-	// Test mismatch between affiliates and bps (more affiliates than bps) - should use last BPS for extra affiliates
-	affiliates, bps, totalBps, err = parseMultipleAffiliateParams(ctx, mgr, "a1/a2/a3", "100/200")
+	// Test mismatch between affiliates and bps (more affiliates than bps) - should now return error
+	_, _, _, err = parseMultipleAffiliateParams(ctx, mgr, "a1/a2/a3", "100/200")
+	c.Assert(err, NotNil)
+	c.Assert(err.Error(), Equals, "mismatch between number of affiliates (3) and BPS values (2)")
+
+	// Test mismatch between affiliates and bps (more bps than affiliates) - should also return error
+	_, _, _, err = parseMultipleAffiliateParams(ctx, mgr, "a1/a2", "100/200/300")
+	c.Assert(err, NotNil)
+	c.Assert(err.Error(), Equals, "mismatch between number of affiliates (2) and BPS values (3)")
+
+	// Test equal numbers of affiliates and bps - should work
+	affiliates, bps, totalBps, err = parseMultipleAffiliateParams(ctx, mgr, "a1/a2/a3", "100/200/150")
 	c.Assert(err, IsNil)
-	c.Assert(len(affiliates), Equals, 3) // All affiliates should be processed
+	c.Assert(len(affiliates), Equals, 3)
 	c.Assert(len(bps), Equals, 3)
 	c.Assert(affiliates[0], Equals, "a1")
 	c.Assert(affiliates[1], Equals, "a2")
 	c.Assert(affiliates[2], Equals, "a3")
-	c.Assert(bps[0].Uint64(), Equals, uint64(100))   // First BPS
-	c.Assert(bps[1].Uint64(), Equals, uint64(200))   // Second BPS
-	c.Assert(bps[2].Uint64(), Equals, uint64(200))   // Last BPS reused for third affiliate
-	c.Assert(totalBps.Uint64(), Equals, uint64(500)) // 100 + 200 + 200
-
-	// Test more affiliates than bps with multiple extra affiliates
-	affiliates, bps, totalBps, err = parseMultipleAffiliateParams(ctx, mgr, "xx/yy/zz/aa/bb", "10/20")
-	c.Assert(err, IsNil)
-	c.Assert(len(affiliates), Equals, 5)
-	c.Assert(len(bps), Equals, 5)
-	c.Assert(affiliates[0], Equals, "xx")
-	c.Assert(affiliates[1], Equals, "yy")
-	c.Assert(affiliates[2], Equals, "zz")
-	c.Assert(affiliates[3], Equals, "aa")
-	c.Assert(affiliates[4], Equals, "bb")
-	c.Assert(bps[0].Uint64(), Equals, uint64(10))   // First BPS
-	c.Assert(bps[1].Uint64(), Equals, uint64(20))   // Second BPS
-	c.Assert(bps[2].Uint64(), Equals, uint64(20))   // Last BPS reused
-	c.Assert(bps[3].Uint64(), Equals, uint64(20))   // Last BPS reused
-	c.Assert(bps[4].Uint64(), Equals, uint64(20))   // Last BPS reused
-	c.Assert(totalBps.Uint64(), Equals, uint64(90)) // 10 + 20 + 20 + 20 + 20
-
-	// Test affiliates with no BPS values (should skip all affiliates)
-	affiliates, bps, totalBps, err = parseMultipleAffiliateParams(ctx, mgr, "a1/a2/a3", "")
-	c.Assert(err, IsNil)
-	c.Assert(len(affiliates), Equals, 0) // All affiliates should be skipped
-	c.Assert(len(bps), Equals, 0)
-	c.Assert(totalBps.Uint64(), Equals, uint64(0))
+	c.Assert(bps[0].Uint64(), Equals, uint64(100))
+	c.Assert(bps[1].Uint64(), Equals, uint64(200))
+	c.Assert(bps[2].Uint64(), Equals, uint64(150))
+	c.Assert(totalBps.Uint64(), Equals, uint64(450))
 
 	// Test invalid bps (should skip invalid ones)
 	affiliates, bps, _, err = parseMultipleAffiliateParams(ctx, mgr, "a1/a2/a3", "100/invalid/300")
@@ -139,15 +124,6 @@ func (s *QuotesSuite) TestParseMultipleAffiliateParams(c *C) {
 	_, _, totalBps, err = parseMultipleAffiliateParams(ctx, mgr, "a1/a2", "500/500")
 	c.Assert(err, IsNil)
 	c.Assert(totalBps.Uint64(), Equals, uint64(1000))
-}
-
-func (s *QuotesSuite) TestQuoteHandleAffiliate(c *C) {
-	ctx, mgr := setupManagerForTest(c)
-	amount := cosmos.NewUint(1000000000) // 1000 RUNE
-
-	// Create valid THOR addresses for testing
-	validAddr := GetRandomTHORAddress().String()
-	validAddr2 := GetRandomTHORAddress().String()
 
 	// Test affiliates with no BPS values (should skip all affiliates)
 	affiliates, bps, totalBps, err = parseMultipleAffiliateParams(ctx, mgr, "a1/a2/a3", "")
