@@ -2,6 +2,7 @@ package keeperv1
 
 import (
     . "gopkg.in/check.v1"
+    "gitlab.com/thorchain/thornode/v3/common/cosmos"
     "gitlab.com/thorchain/thornode/v3/constants"
     thorchaintypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
@@ -120,4 +121,36 @@ func (s *MemolessGuardrailsSuite) TestPerSignerActiveLimit(c *C) {
         Reference: "43567",
     }
     c.Assert(k.ValidateMemoRegistrationComplete(ctx, msgOther, cp), IsNil)
+}
+
+
+// TestNegativeLookupCacheTTL ensures negative cache entries respect TTL and expire.
+func (s *MemolessGuardrailsSuite) TestNegativeLookupCacheTTL(c *C) {
+    ctx, k := setupKeeperForTest(c)
+
+    // Set negative cache TTL to 5 blocks via Mimir key string
+    k.SetMimir(ctx, "MemolessNegativeCacheTTL", 5)
+
+    // Access new methods via type assertion
+    type negCache interface {
+        SetNegativeRegistrationLookup(ctx cosmos.Context, reference string, ttlBlocks int64) error
+        HasNegativeRegistrationLookup(ctx cosmos.Context, reference string) bool
+    }
+    nc, ok := any(k).(negCache)
+    c.Assert(ok, Equals, true)
+
+    ref := "55555"
+
+    // Compute TTL from Mimir (or use 5 directly)
+    ttl := int64(5)
+    c.Assert(nc.SetNegativeRegistrationLookup(ctx, ref, ttl), IsNil)
+    c.Assert(nc.HasNegativeRegistrationLookup(ctx, ref), Equals, true)
+
+    // Advance 4 blocks ⇒ still cached
+    ctx = ctx.WithBlockHeight(ctx.BlockHeight() + 4)
+    c.Assert(nc.HasNegativeRegistrationLookup(ctx, ref), Equals, true)
+
+    // Advance to expiry ⇒ expired and evicted
+    ctx = ctx.WithBlockHeight(ctx.BlockHeight() + 1)
+    c.Assert(nc.HasNegativeRegistrationLookup(ctx, ref), Equals, false)
 }

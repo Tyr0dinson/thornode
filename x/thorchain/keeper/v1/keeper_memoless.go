@@ -110,6 +110,36 @@ func (k KVStore) HasRegisteredMemo(ctx cosmos.Context, reference string) bool {
 	return store.Has(key)
 }
 
+
+// SetNegativeRegistrationLookup caches a negative lookup for a reference with a TTL in blocks.
+func (k KVStore) SetNegativeRegistrationLookup(ctx cosmos.Context, reference string, ttlBlocks int64) error {
+    if ttlBlocks <= 0 {
+        return nil
+    }
+    store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+    expiry := ctx.BlockHeight() + ttlBlocks
+    key := k.GetKey(prefixMemoNegativeCache, reference)
+    store.Set(key, k.int64ToBytes(expiry))
+    return nil
+}
+
+// HasNegativeRegistrationLookup returns true if a recent negative lookup exists and has not expired.
+func (k KVStore) HasNegativeRegistrationLookup(ctx cosmos.Context, reference string) bool {
+    store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+    key := k.GetKey(prefixMemoNegativeCache, reference)
+    bz := store.Get(key)
+    if bz == nil {
+        return false
+    }
+    expiry := k.bytesToInt64(bz)
+    if expiry <= 0 || ctx.BlockHeight() >= expiry {
+        // expired; delete and return false
+        store.Delete(key)
+        return false
+    }
+    return true
+}
+
 // DeleteRegisteredMemo removes a registered memo from storage
 func (k KVStore) DeleteRegisteredMemo(ctx cosmos.Context, reference string) error {
 	// First get the memo to get expiry time
