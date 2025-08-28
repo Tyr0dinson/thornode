@@ -7,6 +7,7 @@ import (
 
 	"github.com/cosmos/cosmos-sdk/runtime"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	thorchaintypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
@@ -61,7 +62,7 @@ func (k KVStore) ShouldRunCleanup(ctx cosmos.Context) (bool, error) {
 	lastCleanupHeight := k.getLastCleanupHeight(ctx)
 
 	// Get cleanup interval from constants (default: 100 blocks)
-	cleanupInterval := k.getCleanupInterval()
+    cleanupInterval := k.getCleanupInterval(ctx)
 
 	// If no previous cleanup (lastCleanupHeight == 0), should always run
 	shouldRun := lastCleanupHeight == 0 || currentHeight-lastCleanupHeight >= cleanupInterval
@@ -194,9 +195,19 @@ func (k KVStore) cleanupMemosAtHeight(ctx cosmos.Context, blockHeight int64, bat
 }
 
 // getCleanupInterval returns the cleanup interval from configuration
-func (k KVStore) getCleanupInterval() int64 {
-	// Default cleanup interval: 100 blocks (~8 minutes)
-	return int64(100)
+func (k KVStore) getCleanupInterval(ctx cosmos.Context) int64 {
+    // Prefer Mimir override if present
+    if val, err := k.GetMimir(ctx, constants.MemolessCleanupInterval.String()); err == nil && val > 0 {
+        return val
+    }
+    // Fall back to constant values if set
+    if k.constAccessor != nil {
+        if v := k.constAccessor.GetInt64Value(constants.MemolessCleanupInterval); v > 0 {
+            return v
+        }
+    }
+    // Default cleanup interval: 100 blocks (~8 minutes)
+    return int64(100)
 }
 
 // getLastCleanupHeight retrieves the last cleanup height

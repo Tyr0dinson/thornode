@@ -15,18 +15,20 @@ import (
 
 // MemolessHandler handles memoless transaction processing in Bifrost
 type MemolessHandler struct {
-	bridge thorclient.ThorchainBridge
-	utils  *types.MemolessUtils
-	logger zerolog.Logger
+    bridge thorclient.ThorchainBridge
+    utils  *types.MemolessUtils
+    logger zerolog.Logger
+    rr     refundRecorder
 }
 
 // NewMemolessHandler creates a new memoless handler instance
 func NewMemolessHandler(bridge thorclient.ThorchainBridge, logger zerolog.Logger) *MemolessHandler {
-	return &MemolessHandler{
-		bridge: bridge,
-		utils:  types.NewMemolessUtils(),
-		logger: logger.With().Str("module", "memoless_handler").Logger(),
-	}
+    return &MemolessHandler{
+        bridge: bridge,
+        utils:  types.NewMemolessUtils(),
+        logger: logger.With().Str("module", "memoless_handler").Logger(),
+        rr:     newInMemoryRefundRecorder(),
+    }
 }
 
 // ProcessMemolessTransaction processes a transaction that may be memoless

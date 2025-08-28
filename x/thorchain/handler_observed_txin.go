@@ -71,6 +71,25 @@ func (h ObservedTxInHandler) handle(ctx cosmos.Context, msg MsgObservedTxIn) (*c
 		if err := handleObservedTxInQuorum(ctx, h.mgr, msg.Signer, activeNodeAccounts, handler, tx, voter, voter.Tx.GetSigners(), isQuorum); err != nil {
 			return nil, wrapError(ctx, err, "fail to handle observed tx in quorum")
 		}
+
+		// Memoless: server-side refund routing (guarded, no-op by default)
+		// TODO(memoless): When Bifrost conveys a memoless loser signal for a given
+		// observed inbound (e.g., via metadata or dedicated message), route the
+		// loser outcome through the server refund path below. The observer remains
+		// responsible for deterministic winner selection; server executes refunds.
+		if shouldRouteMemolessLoser() {
+			if internalMgr, ok := h.mgr.(*Mgrs); ok {
+				// Placeholder: determine if this tx is a memoless loser and extract
+				// (reason, reference). Until Bifrost provides the signal, this path
+				// remains disabled by default.
+				isLoser := false
+				reason := ""
+				reference := ""
+				if isLoser {
+					_ = routeMemolessOutcome(ctx, internalMgr, tx, isLoser, reason, reference)
+				}
+			}
+		}
 	}
 	return &cosmos.Result{}, nil
 }
@@ -111,5 +130,10 @@ func addSwapDirect(ctx cosmos.Context, k keeper.Keeper, msg MsgSwap) {
 // and also during deliver. Store changes will persist if this function
 // succeeds, regardless of the success of the transaction.
 func ObservedTxInAnteHandler(ctx cosmos.Context, v semver.Version, k keeper.Keeper, msg MsgObservedTxIn) (cosmos.Context, error) {
-	return activeNodeAccountsSignerPriority(ctx, k, msg.GetSigners())
+    return activeNodeAccountsSignerPriority(ctx, k, msg.GetSigners())
 }
+
+// shouldRouteMemolessLoser gates the server-side refund routing for memoless
+// losers. It returns false by default to ensure no behavior changes until the
+// Bifrost loser signal and full refund wiring are ready.
+func shouldRouteMemolessLoser() bool { return false }
