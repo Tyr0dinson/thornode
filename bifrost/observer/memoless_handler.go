@@ -50,8 +50,8 @@ func (m *MemolessHandler) ProcessMemolessTransaction(txIn *btypes.TxInItem) (*bt
 		Str("amount", txIn.Coins[0].Amount.String()).
 		Msg("detected memoless transaction")
 
-	// Query THORChain for the registered memo
-	registeredMemo, err := m.bridge.GetRegisteredMemo(reference)
+    // Query THORChain for the registered memo
+    registeredMemo, err := m.bridge.GetRegisteredMemo(reference)
 	if err != nil {
 		m.logger.Error().
 			Err(err).
@@ -61,8 +61,8 @@ func (m *MemolessHandler) ProcessMemolessTransaction(txIn *btypes.TxInItem) (*bt
 		return nil, fmt.Errorf("failed to get registered memo for reference %s: %w", reference, err)
 	}
 
-	// Validate that the registered memo is still valid (not expired)
-	if err := m.validateRegisteredMemo(registeredMemo, txIn.BlockHeight); err != nil {
+    // Validate that the registered memo is still valid (not expired)
+    if err := m.validateRegisteredMemo(registeredMemo, txIn.BlockHeight); err != nil {
 		m.logger.Warn().
 			Err(err).
 			Str("reference", reference).
@@ -73,8 +73,26 @@ func (m *MemolessHandler) ProcessMemolessTransaction(txIn *btypes.TxInItem) (*bt
 		return nil, fmt.Errorf("registered memo validation failed for reference %s: %w", reference, err)
 	}
 
-	// Create a new TxInItem with the full memo from THORChain
-	processedTx := &btypes.TxInItem{
+    // Phase 1 (scaffold): Deterministic collision wiring (no-op by default)
+    // Build candidate set and compute winner using the lexicographic
+    // (inbound_height, txid) rule. For now, we only include the current
+    // transaction to avoid behavior changes until full wiring is ready.
+    if m.shouldApplyCollisionWiring() {
+        candidates := m.buildCollisionCandidates(txIn, reference, registeredMemo.ChainId)
+        winner, losers := DetermineCollisionWinner(candidates)
+        if len(losers) > 0 {
+            m.logger.Info().
+                Str("tx", txIn.Tx).
+                Str("reference", reference).
+                Int64("inbound_height", txIn.BlockHeight).
+                Str("winner_txid", winner.TxID).
+                Msg("collision detected (scaffold); loser handling deferred to refunds phase")
+            // NOTE: Loser refund scheduling will be implemented in Phase 2.
+        }
+    }
+
+    // Create a new TxInItem with the full memo from THORChain
+    processedTx := &btypes.TxInItem{
 		BlockHeight:           txIn.BlockHeight,
 		Tx:                    txIn.Tx,
 		Memo:                  registeredMemo.Memo, // Replace with full memo from THORChain
@@ -114,6 +132,26 @@ func (m *MemolessHandler) validateRegisteredMemo(memo *stypes.RegisteredMemo, cu
 
 	// Additional validation can be added here as needed
 	return nil
+}
+
+// shouldApplyCollisionWiring returns whether Phase 1 collision decisioning
+// should be applied. Default is false to avoid behavior changes until the
+// full flow (including loser refunds) is in place.
+func (m *MemolessHandler) shouldApplyCollisionWiring() bool {
+    return false
+}
+
+// buildCollisionCandidates constructs a minimal candidate set for the current
+// transaction and reference within the scope (chain_id, vault_pubkey, ref).
+// For the scaffold, only the current transaction is included.
+func (m *MemolessHandler) buildCollisionCandidates(txIn *btypes.TxInItem, reference, chainID string) []CollisionCandidate {
+    return []CollisionCandidate{{
+        ChainID:       chainID,
+        VaultPubKey:   txIn.ObservedVaultPubKey.String(),
+        Reference:     reference,
+        InboundHeight: txIn.BlockHeight,
+        TxID:          txIn.Tx,
+    }}
 }
 
 // adjustCoinsForMemoless removes the reference digits from the transaction amount
