@@ -53,7 +53,13 @@ func (m *MemolessHandler) ScheduleLoserRefund(txIn *btypes.TxInItem, reason, ref
         }
     }
     // Build canonical refund memo (placeholder used later in plumbing)
-    _ = fmt.Sprintf("REFUND:MEMOLESS:%s:%s:%s", reason, reference, txIn.Tx)
+    _ = buildCanonicalRefundMemo(reason, reference, txIn.Tx)
     // TODO: Integrate with refund plumbing; return job id when available
     return "", nil
+}
+
+// buildCanonicalRefundMemo constructs the canonical refund memo string for
+// memoless loser/refund scenarios.
+func buildCanonicalRefundMemo(reason, reference, txidIn string) string {
+    return fmt.Sprintf("REFUND:MEMOLESS:%s:%s:%s", reason, reference, txidIn)
 }

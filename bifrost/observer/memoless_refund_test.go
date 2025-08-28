@@ -42,3 +42,7 @@ func TestScheduleLoserRefund_Idempotency(t *testing.T) {
     require.True(t, handler.rr.HasRefundRecord(tx.Tx))
 }
 
+func TestBuildCanonicalRefundMemo_Format(t *testing.T) {
+    memo := buildCanonicalRefundMemo("REF_COLLISION_LOST", "12345", "txid-abc")
+    require.Equal(t, "REFUND:MEMOLESS:REF_COLLISION_LOST:12345:txid-abc", memo)
+}
