@@ -75,3 +75,49 @@ func (s *MemolessGuardrailsSuite) TestCleanupIntervalMimirOverride(c *C) {
     c.Assert(err, IsNil)
     c.Assert(should, Equals, true)
 }
+
+// TestPerSignerActiveLimit enforces a maximum number of active registrations per signer.
+func (s *MemolessGuardrailsSuite) TestPerSignerActiveLimit(c *C) {
+    ctx, k := setupKeeperForTest(c)
+
+    // Set per-signer limit to 2 via Mimir (string key; no ConstantName required)
+    k.SetMimir(ctx, "MemolessActivePerSender", 2)
+    cp := constants.GetConstantValues(GetCurrentVersion())
+
+    signer := GetRandomBech32Addr()
+
+    // Helper to build a message with given reference
+    mk := func(ref string) thorchaintypes.MsgRegisterMemo {
+        return thorchaintypes.MsgRegisterMemo{
+            Memo:      "SWAP:BTC.BTC:thor1xyz:14400",
+            ChainId:   "BTC",
+            Ttl:       14400,
+            Signer:    signer,
+            Reference: ref,
+        }
+    }
+
+    // Two registrations OK
+    for i := 0; i < 2; i++ {
+        ref := "4" + string(rune('0'+i)) + "567" // 40567, 41567
+        msg := mk(ref)
+        c.Assert(k.ValidateMemoRegistrationComplete(ctx, msg, cp), IsNil)
+        _, err := k.ProcessMemoRegistration(ctx, msg, cp)
+        c.Assert(err, IsNil)
+    }
+
+    // Third registration for same signer should fail
+    msg := mk("42567")
+    err := k.ValidateMemoRegistrationComplete(ctx, msg, cp)
+    c.Assert(err, NotNil, Commentf("expected per-signer cap enforcement error"))
+
+    // Different signer should still be able to register
+    msgOther := thorchaintypes.MsgRegisterMemo{
+        Memo:      "SWAP:BTC.BTC:thor1xyz:14400",
+        ChainId:   "BTC",
+        Ttl:       14400,
+        Signer:    GetRandomBech32Addr(),
+        Reference: "43567",
+    }
+    c.Assert(k.ValidateMemoRegistrationComplete(ctx, msgOther, cp), IsNil)
+}
