@@ -16,7 +16,7 @@ import (
 	"github.com/gcash/bchutil"
 	bchtxscript "gitlab.com/thorchain/thornode/v3/bifrost/txscript/bchd-txscript"
 
-	"github.com/ltcsuite/ltcutil"
+	"github.com/ltcsuite/ltcd/ltcutil"
 	ltctxscript "gitlab.com/thorchain/thornode/v3/bifrost/txscript/ltcd-txscript"
 
 	"github.com/btcsuite/btcutil"

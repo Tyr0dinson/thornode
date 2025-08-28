@@ -92,8 +92,7 @@ require (
 	github.com/libp2p/go-libp2p-kad-dht v0.10.0
 	github.com/libp2p/go-libp2p-peerstore v0.2.6
 	github.com/libp2p/go-libp2p-testing v0.2.0
-	github.com/ltcsuite/ltcd v0.20.1-beta.0.20201210074626-c807bfe31ef0
-	github.com/ltcsuite/ltcutil v1.0.2-beta
+	github.com/ltcsuite/ltcd v0.23.6
 	github.com/magiconair/properties v1.8.10
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/multiformats/go-multiaddr v0.3.1
@@ -127,6 +126,9 @@ require (
 	cosmossdk.io/collections v1.2.1
 	github.com/coder/websocket v1.8.13
 	github.com/decred/dcrd/dcrec/secp256k1 v1.0.4
+	github.com/ltcsuite/ltcd/btcec/v2 v2.3.2
+	github.com/ltcsuite/ltcd/chaincfg/chainhash v1.0.2
+	github.com/ltcsuite/ltcd/ltcutil v1.1.4-0.20250505084124-c37ac1524e04
 )
 
 require github.com/decred/dcrd/dcrec/secp256k1/v2 v2.0.0 // indirect
@@ -139,9 +141,11 @@ require (
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.48.1 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.48.1 // indirect
 	github.com/cncf/xds/go v0.0.0-20250121191232-2f005788dc42 // indirect
+	github.com/decred/dcrd/crypto/blake256 v1.1.0 // indirect
 	github.com/envoyproxy/go-control-plane/envoy v1.32.4 // indirect
 	github.com/envoyproxy/protoc-gen-validate v1.2.1 // indirect
 	github.com/go-jose/go-jose/v4 v4.0.5 // indirect
+	github.com/ltcsuite/secp256k1 v0.1.1 // indirect
 	github.com/mdp/qrterminal/v3 v3.2.1 // indirect
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
 	github.com/spiffe/go-spiffe/v2 v2.5.0 // indirect

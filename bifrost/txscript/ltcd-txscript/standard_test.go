@@ -12,7 +12,7 @@ import (
 
 	"github.com/ltcsuite/ltcd/chaincfg"
 	"github.com/ltcsuite/ltcd/wire"
-	"github.com/ltcsuite/ltcutil"
+	"github.com/ltcsuite/ltcd/ltcutil"
 )
 
 // mustParseShortForm parses the passed short form script and returns the

@@ -8,12 +8,12 @@ import (
 	"encoding/hex"
 	"fmt"
 
-	"github.com/ltcsuite/ltcd/btcec"
+	"github.com/ltcsuite/ltcd/btcec/v2"
 	"github.com/ltcsuite/ltcd/chaincfg"
 	"github.com/ltcsuite/ltcd/chaincfg/chainhash"
 	"github.com/ltcsuite/ltcd/txscript"
 	"github.com/ltcsuite/ltcd/wire"
-	"github.com/ltcsuite/ltcutil"
+	"github.com/ltcsuite/ltcd/ltcutil"
 )
 
 // This example demonstrates creating a script which pays to a bitcoin address.
@@ -89,7 +89,7 @@ func ExampleSignTxOutput() {
 		fmt.Println(err)
 		return
 	}
-	privKey, pubKey := btcec.PrivKeyFromBytes(btcec.S256(), privKeyBytes)
+	privKey, pubKey := btcec.PrivKeyFromBytes(privKeyBytes)
 	pubKeyHash := ltcutil.Hash160(pubKey.SerializeCompressed())
 	addr, err := ltcutil.NewAddressPubKeyHash(pubKeyHash,
 		&chaincfg.MainNetParams)
@@ -166,7 +166,7 @@ func ExampleSignTxOutput() {
 		txscript.ScriptStrictMultiSig |
 		txscript.ScriptDiscourageUpgradableNops
 	vm, err := txscript.NewEngine(originTx.TxOut[0].PkScript, redeemTx, 0,
-		flags, nil, nil, -1)
+		flags, nil, nil, -1, nil)
 	if err != nil {
 		fmt.Println(err)
 		return

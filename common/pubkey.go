@@ -18,7 +18,7 @@ import (
 	bchchaincfg "github.com/gcash/bchd/chaincfg"
 	"github.com/gcash/bchutil"
 	ltcchaincfg "github.com/ltcsuite/ltcd/chaincfg"
-	"github.com/ltcsuite/ltcutil"
+	"github.com/ltcsuite/ltcd/ltcutil"
 
 	"github.com/cometbft/cometbft/crypto"
 	eth "github.com/ethereum/go-ethereum/crypto"

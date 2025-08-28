@@ -3,7 +3,7 @@ package utxo
 import (
 	"fmt"
 
-	ltcec "github.com/ltcsuite/ltcd/btcec"
+	ltcec "github.com/ltcsuite/ltcd/btcec/v2"
 	ltcchaincfg "github.com/ltcsuite/ltcd/chaincfg"
 	ltcwire "github.com/ltcsuite/ltcd/wire"
 	ltctxscript "gitlab.com/thorchain/thornode/v3/bifrost/txscript/ltcd-txscript"
@@ -30,7 +30,9 @@ func (c *Client) signUTXOLTC(redeemTx *ltcwire.MsgTx, tx stypes.TxOutItem, amoun
 
 	var signable ltctxscript.Signable
 	if tx.VaultPubKey.Equals(c.nodePubKey) {
-		signable = ltctxscript.NewPrivateKeySignable((*ltcec.PrivateKey)(c.nodePrivKey))
+		// Convert from btcec v1 PrivateKey to ltcec v2 PrivateKey
+		ltcPrivKey, _ := ltcec.PrivKeyFromBytes(c.nodePrivKey.Serialize())
+		signable = ltctxscript.NewPrivateKeySignable(ltcPrivKey)
 	} else {
 		signable = newTssSignableLTC(tx.VaultPubKey, c.tssKeySigner, c.log)
 	}

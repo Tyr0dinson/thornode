@@ -1,6 +1,9 @@
 package txscript
 
-import "github.com/ltcsuite/ltcd/btcec"
+import (
+	"github.com/ltcsuite/ltcd/btcec/v2"
+	"github.com/ltcsuite/ltcd/btcec/v2/ecdsa"
+)
 
 type PrivateKeySignable struct {
 	privateKey *btcec.PrivateKey
@@ -12,8 +15,8 @@ func NewPrivateKeySignable(priKey *btcec.PrivateKey) *PrivateKeySignable {
 }
 
 // Sign the given hash bytes
-func (p *PrivateKeySignable) Sign(hash []byte) (*btcec.Signature, error) {
-	return p.privateKey.Sign(hash)
+func (p *PrivateKeySignable) Sign(hash []byte) (*ecdsa.Signature, error) {
+	return ecdsa.Sign(p.privateKey, hash), nil
 }
 
 // GetPubKey return the PubKey

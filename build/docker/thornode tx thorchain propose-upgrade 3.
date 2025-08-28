@@ -1,0 +1,1 @@
+thornode tx thorchain propose-upgrade 3.9.0 22198000 --node http://localhost:27147 --chain-id thorchain-1 --keyring-backend file --from thorchain

@@ -5,10 +5,11 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/ltcsuite/ltcd/btcec"
+	"github.com/ltcsuite/ltcd/btcec/v2"
+	"github.com/ltcsuite/ltcd/btcec/v2/ecdsa"
 	"github.com/ltcsuite/ltcd/chaincfg"
 	"github.com/ltcsuite/ltcd/wire"
-	"github.com/ltcsuite/ltcutil"
+	"github.com/ltcsuite/ltcd/ltcutil"
 	"golang.org/x/crypto/ripemd160"
 )
 
@@ -20,7 +21,7 @@ const (
 	//   Signature hash type (1 byte)
 	//   Public key length (1 byte)
 	//   Public key (33 byte)
-	minPubKeyHashSigScriptLen = 1 + btcec.MinSigLen + 1 + 1 + 33
+	minPubKeyHashSigScriptLen = 1 + ecdsa.MinSigLen + 1 + 1 + 33
 
 	// maxPubKeyHashSigScriptLen is the maximum length of a signature script
 	// that spends a P2PKH output. The length is composed of the following:

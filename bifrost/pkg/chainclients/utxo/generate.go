@@ -33,7 +33,7 @@ func main() {
 		"doge": "github.com/eager7/dogd/btcec",
 		"btc":  "github.com/btcsuite/btcd/btcec",
 		"bch":  "github.com/gcash/bchd/bchec",
-		"ltc":  "github.com/ltcsuite/ltcd/btcec",
+		"ltc":  "github.com/ltcsuite/ltcd/btcec/v2",
 	}
 
 	err = tmpl.ExecuteTemplate(f, "signable.tmpl", data)

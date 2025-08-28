@@ -16,7 +16,7 @@ import (
 	bchchaincfg "github.com/gcash/bchd/chaincfg"
 	"github.com/gcash/bchutil"
 	ltcchaincfg "github.com/ltcsuite/ltcd/chaincfg"
-	"github.com/ltcsuite/ltcutil"
+	"github.com/ltcsuite/ltcd/ltcutil"
 
 	"cosmossdk.io/log"
 	sdkmath "cosmossdk.io/math"

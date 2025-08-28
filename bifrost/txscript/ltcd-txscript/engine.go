@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"math/big"
 
-	"github.com/ltcsuite/ltcd/btcec"
+	"github.com/ltcsuite/ltcd/btcec/v2"
 	"github.com/ltcsuite/ltcd/wire"
 )
 
@@ -94,6 +94,10 @@ const (
 	// operation whose public key isn't serialized in a compressed format
 	// non-standard.
 	ScriptVerifyWitnessPubKeyType
+
+	// ScriptVerifyTaproot defines whether to verify taproot transactions
+	// according to BIP 341.
+	ScriptVerifyTaproot
 )
 
 const (
@@ -111,6 +115,13 @@ const (
 	// payToWitnessScriptHashDataSize is the size of the witness program's
 	// data push for a pay-to-witness-script-hash output.
 	payToWitnessScriptHashDataSize = 32
+
+	// TaprootWitnessVersion is the witness version used for taproot outputs.
+	TaprootWitnessVersion = 1
+
+	// payToTaprootDataSize is the size of the witness program's data push
+	// for a pay-to-taproot output.
+	payToTaprootDataSize = 32
 )
 
 // halforder is used to tame ECDSA malleability (see BIP0062).
@@ -328,6 +339,27 @@ func (vm *Engine) verifyWitnessProgram(witness [][]byte) error {
 				len(vm.witnessProgram))
 			return scriptError(ErrWitnessProgramWrongLength, errStr)
 		}
+	} else if vm.isWitnessVersionActive(TaprootWitnessVersion) {
+		// For taproot (version 1), validate the witness program length
+		if len(vm.witnessProgram) != payToTaprootDataSize {
+			errStr := fmt.Sprintf("taproot witness program must be "+
+				"exactly %d bytes, got %d bytes",
+				payToTaprootDataSize, len(vm.witnessProgram))
+			return scriptError(ErrWitnessProgramWrongLength, errStr)
+		}
+
+		// For taproot, the witness structure validation is more complex
+		// and would require implementing BIP 341 signature validation.
+		// For now, we perform basic validation and defer full implementation.
+		if len(witness) == 0 {
+			return scriptError(ErrWitnessProgramEmpty, "taproot requires witness")
+		}
+
+		// TODO: Implement full BIP 341 taproot validation including:
+		// - Key spend validation
+		// - Script spend validation with Merkle proof
+		// - Schnorr signature validation
+		
 	} else if vm.hasFlag(ScriptVerifyDiscourageUpgradeableWitnessProgram) {
 		errStr := fmt.Sprintf("new witness program versions "+
 			"invalid: %v", vm.witnessProgram)

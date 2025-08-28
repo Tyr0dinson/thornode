@@ -32,10 +32,10 @@ import (
 	"github.com/gcash/bchutil"
 	bchtxscript "gitlab.com/thorchain/thornode/v3/bifrost/txscript/bchd-txscript"
 
-	ltcec "github.com/ltcsuite/ltcd/btcec"
+	ltcec "github.com/ltcsuite/ltcd/btcec/v2"
 	ltcchaincfg "github.com/ltcsuite/ltcd/chaincfg"
 	ltcwire "github.com/ltcsuite/ltcd/wire"
-	"github.com/ltcsuite/ltcutil"
+	"github.com/ltcsuite/ltcd/ltcutil"
 	ltctxscript "gitlab.com/thorchain/thornode/v3/bifrost/txscript/ltcd-txscript"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/rpc"

@@ -11,7 +11,8 @@ import (
 	"github.com/cosmos/cosmos-sdk/crypto/codec"
 	dogeec "github.com/eager7/dogd/btcec"
 	bchec "github.com/gcash/bchd/bchec"
-	ltcec "github.com/ltcsuite/ltcd/btcec"
+	ltcec "github.com/ltcsuite/ltcd/btcec/v2"
+	"github.com/ltcsuite/ltcd/btcec/v2/ecdsa"
 	"github.com/rs/zerolog"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss"
@@ -193,15 +194,22 @@ func newTssSignableLTC(poolPubKey common.PubKey, tssKeyManager tss.ThorchainKeyM
 		log:           log,
 	}
 }
-func (ts *tssSignableLTC) Sign(payload []byte) (*ltcec.Signature, error) {
+func (ts *tssSignableLTC) Sign(payload []byte) (*ecdsa.Signature, error) {
 	ts.log.Info().Msgf("msg to sign: %s", base64.StdEncoding.EncodeToString(payload))
 	result, _, err := ts.tssKeyManager.RemoteSign(payload, common.SigningAlgoSecp256k1, ts.poolPubKey.String())
 	if err != nil {
 		return nil, err
 	}
-	var sig ltcec.Signature
-	sig.R = new(big.Int).SetBytes(result[:32])
-	sig.S = new(big.Int).SetBytes(result[32:])
+	// Create DER-encoded signature from R and S bytes
+	r := new(big.Int).SetBytes(result[:32])
+	s := new(big.Int).SetBytes(result[32:])
+	
+	// Create DER encoded signature
+	derBytes := encodeDERSignature(r, s)
+	sig, err := ecdsa.ParseDERSignature(derBytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse signature: %w", err)
+	}
 
 	// verify the signature
 	if sig.Verify(payload, ts.GetPubKey()) {
@@ -210,7 +218,7 @@ func (ts *tssSignableLTC) Sign(payload []byte) (*ltcec.Signature, error) {
 		ts.log.Info().Msg("the signature can't be verified")
 	}
 
-	return &sig, nil
+	return sig, nil
 }
 
 func (ts *tssSignableLTC) GetPubKey() *ltcec.PublicKey {
@@ -224,10 +232,48 @@ func (ts *tssSignableLTC) GetPubKey() *ltcec.PublicKey {
 		ts.log.Err(err).Msgf("%s is not a secp256 k1 public key", ts.poolPubKey)
 		return nil
 	}
-	newPubkey, err := ltcec.ParsePubKey(secpPubKey.Bytes(), ltcec.S256())
+	newPubkey, err := ltcec.ParsePubKey(secpPubKey.Bytes())
 	if err != nil {
 		ts.log.Err(err).Msg("fail to parse public key")
 		return nil
 	}
 	return newPubkey
+}
+
+// encodeDERSignature encodes an ECDSA signature as DER format
+func encodeDERSignature(r, s *big.Int) []byte {
+	// DER encoding for ECDSA signature:
+	// SEQUENCE { r INTEGER, s INTEGER }
+	
+	rBytes := r.Bytes()
+	sBytes := s.Bytes()
+	
+	// Add padding if high bit is set to ensure positive encoding
+	if len(rBytes) > 0 && rBytes[0]&0x80 != 0 {
+		rBytes = append([]byte{0x00}, rBytes...)
+	}
+	if len(sBytes) > 0 && sBytes[0]&0x80 != 0 {
+		sBytes = append([]byte{0x00}, sBytes...)
+	}
+	
+	// Build DER structure
+	der := []byte{}
+	
+	// R INTEGER
+	der = append(der, 0x02)                    // INTEGER tag
+	der = append(der, byte(len(rBytes)))       // length
+	der = append(der, rBytes...)               // value
+	
+	// S INTEGER  
+	der = append(der, 0x02)                    // INTEGER tag
+	der = append(der, byte(len(sBytes)))       // length
+	der = append(der, sBytes...)               // value
+	
+	// Wrap in SEQUENCE
+	totalLen := len(der)
+	result := []byte{0x30}                     // SEQUENCE tag
+	result = append(result, byte(totalLen))    // total length
+	result = append(result, der...)            // content
+	
+	return result
 }

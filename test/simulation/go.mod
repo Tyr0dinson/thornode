@@ -15,8 +15,10 @@ require (
 	github.com/gcash/bchd v0.17.1
 	github.com/gcash/bchutil v0.0.0-20201025062739-fc759989ee3e
 	github.com/hashicorp/go-multierror v1.1.1
-	github.com/ltcsuite/ltcd v0.20.1-beta.0.20201210074626-c807bfe31ef0
-	github.com/ltcsuite/ltcutil v1.0.2-beta
+	github.com/ltcsuite/ltcd v0.23.6
+	github.com/ltcsuite/ltcd/btcec/v2 v2.3.2
+	github.com/ltcsuite/ltcd/chaincfg/chainhash v1.0.2
+	github.com/ltcsuite/ltcd/ltcutil v1.1.4-0.20250505084124-c37ac1524e04
 	github.com/rs/zerolog v1.34.0
 	gitlab.com/thorchain/thornode/v3 v3.0.0-00010101000000-000000000000
 	google.golang.org/grpc v1.72.0
@@ -139,6 +141,7 @@ require (
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/lib/pq v1.10.9 // indirect
 	github.com/linxGnu/grocksdb v1.9.8 // indirect
+	github.com/ltcsuite/secp256k1 v0.1.1 // indirect
 	github.com/manifoldco/promptui v0.9.0 // indirect
 	github.com/minio/highwayhash v1.0.3 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect

@@ -2058,8 +2058,8 @@
     "",
     "1 0x14 0x91b24bf9f5288532960ac687abb035127b1d28a5",
     "DISCOURAGE_UPGRADABLE_WITNESS_PROGRAM,P2SH,WITNESS",
-    "DISCOURAGE_UPGRADABLE_WITNESS_PROGRAM",
-    "P2WPKH with future witness version"
+    "WITNESS_PROGRAM_WRONG_LENGTH",
+    "P2WPKH with future witness version (now taproot with wrong length)"
 ],
 [
     [

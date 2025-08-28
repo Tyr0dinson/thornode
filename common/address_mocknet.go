@@ -13,7 +13,7 @@ import (
 	bchchaincfg "github.com/gcash/bchd/chaincfg"
 	"github.com/gcash/bchutil"
 	ltcchaincfg "github.com/ltcsuite/ltcd/chaincfg"
-	"github.com/ltcsuite/ltcutil"
+	"github.com/ltcsuite/ltcd/ltcutil"
 )
 
 // newAddress in this file with build tags checks Mocknet(/Testnet)-specific addresses.

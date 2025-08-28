@@ -8,10 +8,11 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/ltcsuite/ltcd/btcec"
+	"github.com/ltcsuite/ltcd/btcec/v2"
+	"github.com/ltcsuite/ltcd/btcec/v2/ecdsa"
 	"github.com/ltcsuite/ltcd/chaincfg"
 	"github.com/ltcsuite/ltcd/wire"
-	"github.com/ltcsuite/ltcutil"
+	"github.com/ltcsuite/ltcd/ltcutil"
 )
 
 // RawTxInWitnessSignature returns the serialized ECDA signature for the input
@@ -336,7 +337,7 @@ sigLoop:
 		tSig := sig[:len(sig)-1]
 		hashType := SigHashType(sig[len(sig)-1])
 
-		pSig, err := btcec.ParseDERSignature(tSig, btcec.S256())
+		pSig, err := ecdsa.ParseDERSignature(tSig)
 		if err != nil {
 			continue
 		}

@@ -16,7 +16,7 @@ import (
 	bchchaincfg "github.com/gcash/bchd/chaincfg"
 	"github.com/gcash/bchutil"
 	ltcchaincfg "github.com/ltcsuite/ltcd/chaincfg"
-	"github.com/ltcsuite/ltcutil"
+	"github.com/ltcsuite/ltcd/ltcutil"
 	"github.com/mr-tron/base58"
 
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"

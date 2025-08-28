@@ -9,7 +9,7 @@ import (
 
 	"github.com/ltcsuite/ltcd/chaincfg"
 	"github.com/ltcsuite/ltcd/wire"
-	"github.com/ltcsuite/ltcutil"
+	"github.com/ltcsuite/ltcd/ltcutil"
 )
 
 const (
@@ -42,7 +42,8 @@ const (
 		ScriptVerifyWitness |
 		ScriptVerifyDiscourageUpgradeableWitnessProgram |
 		ScriptVerifyMinimalIf |
-		ScriptVerifyWitnessPubKeyType
+		ScriptVerifyWitnessPubKeyType |
+		ScriptVerifyTaproot
 )
 
 // ScriptClass is an enumeration for the list of standard types of script.
@@ -58,6 +59,7 @@ const (
 	WitnessV0ScriptHashTy                    // Pay to witness script hash.
 	MultiSigTy                               // Multi signature.
 	NullDataTy                               // Empty data-only (provably prunable).
+	WitnessV1TaprootTy                       // Pay to taproot.
 )
 
 // scriptClassToName houses the human-readable strings which describe each
@@ -71,6 +73,7 @@ var scriptClassToName = []string{
 	WitnessV0ScriptHashTy: "witness_v0_scripthash",
 	MultiSigTy:            "multisig",
 	NullDataTy:            "nulldata",
+	WitnessV1TaprootTy:    "witness_v1_taproot",
 }
 
 // String implements the Stringer interface by returning the name of
@@ -155,6 +158,16 @@ func isNullData(pops []parsedOpcode) bool {
 		len(pops[1].data) <= MaxDataCarrierSize
 }
 
+// isTaproot returns true if the passed script is a pay-to-taproot transaction,
+// false otherwise.
+func isTaproot(pops []parsedOpcode) bool {
+	// A taproot output script is a witness program version 1 with a 32-byte
+	// witness program (the taproot output key).
+	return len(pops) == 2 &&
+		pops[0].opcode.value == OP_1 &&
+		len(pops[1].data) == payToTaprootDataSize
+}
+
 // scriptType returns the type of the script being inspected from the known
 // standard types.
 func typeOfScript(pops []parsedOpcode) ScriptClass {
@@ -168,6 +181,8 @@ func typeOfScript(pops []parsedOpcode) ScriptClass {
 		return ScriptHashTy
 	} else if isWitnessScriptHash(pops) {
 		return WitnessV0ScriptHashTy
+	} else if isTaproot(pops) {
+		return WitnessV1TaprootTy
 	} else if isMultiSig(pops) {
 		return MultiSigTy
 	} else if isNullData(pops) {
@@ -407,6 +422,12 @@ func payToScriptHashScript(scriptHash []byte) ([]byte, error) {
 // script hash witness program. The passed hash is expected to be valid.
 func payToWitnessScriptHashScript(scriptHash []byte) ([]byte, error) {
 	return NewScriptBuilder().AddOp(OP_0).AddData(scriptHash).Script()
+}
+
+// payToTaprootScript creates a new script to pay to a version 1 (taproot) 
+// witness program. The passed outputKey is expected to be a valid 32-byte key.
+func payToTaprootScript(outputKey []byte) ([]byte, error) {
+	return NewScriptBuilder().AddOp(OP_1).AddData(outputKey).Script()
 }
 
 // payToPubkeyScript creates a new script to pay a transaction output to a

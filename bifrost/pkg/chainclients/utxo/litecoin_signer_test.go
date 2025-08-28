@@ -375,7 +375,7 @@ func (s *LitecoinSignerSuite) TestSignAddressPubKeyShouldFail(c *C) {
 func (s *LitecoinSignerSuite) TestToAddressCanNotRoundTripShouldBlock(c *C) {
 	txOutItem := stypes.TxOutItem{
 		Chain:       common.LTCChain,
-		ToAddress:   "05ae1a62fe09c5f51b13905f07f06b99a2f7159b2225f374cd378d71302fa28414e7aab37397f554a7df5f142c21c1b7303b8a0626f1baded5c72a704f7e6cd84c",
+		ToAddress:   "04ae1a62fe09c5f51b13905f07f06b99a2f7159b2225f374cd378d71302fa28414e7aab37397f554a7df5f142c21c1b7303b8a0626f1baded5c72a704f7e6cd84c",
 		VaultPubKey: "tthorpub1addwnpepqw2k68efthm08f0f5akhjs6fk5j2pze4wkwt4fmnymf9yd463puruhh0lyz",
 		Coins: common.Coins{
 			common.NewCoin(common.LTCAsset, cosmos.NewUint(10)),

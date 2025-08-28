@@ -98,6 +98,16 @@ func IsPayToWitnessPubKeyHash(script []byte) bool {
 	return isWitnessPubKeyHash(pops)
 }
 
+// IsPayToTaproot returns true if the script is in the standard
+// pay-to-taproot (P2TR) format, false otherwise.
+func IsPayToTaproot(script []byte) bool {
+	pops, err := parseScript(script)
+	if err != nil {
+		return false
+	}
+	return isTaproot(pops)
+}
+
 // isWitnessPubKeyHash returns true if the passed script is a
 // pay-to-witness-pubkey-hash, and false otherwise.
 func isWitnessPubKeyHash(pops []parsedOpcode) bool {
