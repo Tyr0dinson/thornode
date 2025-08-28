@@ -923,7 +923,15 @@ func (k KVStoreDummy) IncrementCollisions(_ cosmos.Context) error {
 }
 
 func (k KVStoreDummy) UpdateLastCleanup(_ cosmos.Context, _ int64, _ int64) error {
-	return nil
+    return nil
+}
+
+func (k KVStoreDummy) SetRefundRecord(_ cosmos.Context, _ string, _ string) error {
+    return nil
+}
+
+func (k KVStoreDummy) HasRefundRecord(_ cosmos.Context, _ string) bool {
+    return false
 }
 
 // a mock cosmos.Iterator implementation for testing purposes

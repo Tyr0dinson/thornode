@@ -512,4 +512,8 @@ type KeeperMemoless interface {
 	IncrementRegistrations(ctx cosmos.Context) error
 	IncrementCollisions(ctx cosmos.Context) error
 	UpdateLastCleanup(ctx cosmos.Context, height int64, expiredCount int64) error
+
+	// Refund idempotency (Phase 2)
+	SetRefundRecord(ctx cosmos.Context, txidIn string, reason string) error
+	HasRefundRecord(ctx cosmos.Context, txidIn string) bool
 }

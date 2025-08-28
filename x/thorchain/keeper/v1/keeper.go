@@ -104,6 +104,7 @@ const (
 	prefixMemoExpiry       types.DbPrefix = "memo_expiry/"
 	prefixMemoStats        types.DbPrefix = "memo_stats/"
 	prefixMemoChainConfig  types.DbPrefix = "memo_chain_config/"
+	prefixMemoRefundRecord types.DbPrefix = "memo_refund_record/"
 )
 
 func dbError(ctx cosmos.Context, wrapper string, err error) error {
