@@ -244,6 +244,11 @@ func (k KVStore) validateLayer4Business(ctx cosmos.Context, msg types.MsgRegiste
 		return fmt.Errorf("memoless protocol disabled by governance")
 	}
 
+	// Extended kill-switch via Mimir (operator override)
+	if v, err := k.GetMimir(ctx, "MemolessKillSwitch"); err == nil && v == 1 {
+		return fmt.Errorf("memoless protocol disabled by kill-switch")
+	}
+
 	// Collusion detection - check registration count per signer per block
 	signerBlockCount := k.GetSignerRegistrationCountInBlock(ctx, msg.Signer, validationCtx.BlockHeight)
 	maxSignerPerBlock := int64(3) // Allow up to 3 registrations per signer per block

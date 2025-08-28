@@ -154,3 +154,28 @@ func (s *MemolessGuardrailsSuite) TestNegativeLookupCacheTTL(c *C) {
     ctx = ctx.WithBlockHeight(ctx.BlockHeight() + 1)
     c.Assert(nc.HasNegativeRegistrationLookup(ctx, ref), Equals, false)
 }
+
+
+// TestKillSwitch disables memoless via Mimir key and expects validation to fail.
+func (s *MemolessGuardrailsSuite) TestKillSwitch(c *C) {
+    ctx, k := setupKeeperForTest(c)
+    cp := constants.GetConstantValues(GetCurrentVersion())
+
+    // Enable kill-switch
+    k.SetMimir(ctx, "MemolessKillSwitch", 1)
+
+    msg := thorchaintypes.MsgRegisterMemo{
+        Memo:      "SWAP:BTC.BTC:thor1xyz:14400",
+        ChainId:   "BTC",
+        Ttl:       14400,
+        Signer:    GetRandomBech32Addr(),
+        Reference: "44567",
+    }
+
+    err := k.ValidateMemoRegistrationComplete(ctx, msg, cp)
+    c.Assert(err, NotNil, Commentf("expected validation to fail when kill-switch is on"))
+
+    // Disable kill-switch
+    k.SetMimir(ctx, "MemolessKillSwitch", 0)
+    c.Assert(k.ValidateMemoRegistrationComplete(ctx, msg, cp), IsNil)
+}
