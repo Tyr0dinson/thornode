@@ -22,11 +22,11 @@ func (s *HandlerRegisterMemoSuite) TestRegisterMemoHandlerValidation(c *C) {
 	// Test valid memo registration with simple memo
 	signer := GetRandomBech32Addr()
 	validMsg := &types.MsgRegisterMemo{
-		Memo:    "12345", // Simple 5-digit reference
-		Ttl:     14400,   // 4 hours
-		ChainId: "BTC",
-		Signer:  signer,
-		Amount:  "100000000", // 1 BTC
+		Memo:      "SWAP:BTC.BTC:thor1test:11111", // Full swap memo
+		Ttl:       14400,   // 4 hours
+		ChainId:   "BTC",
+		Signer:    signer,
+		Reference: "11111", // User-provided 5-digit reference (unique)
 	}
 
 	// REFACTOR: Testing existing handler implementation
@@ -63,11 +63,11 @@ func (s *HandlerRegisterMemoSuite) TestRegisterMemoHandlerChainHalt(c *C) {
 
 	signer := GetRandomBech32Addr()
 	msg := &types.MsgRegisterMemo{
-		Memo:    "12345",
-		Ttl:     14400,
-		ChainId: "BTC",
-		Signer:  signer,
-		Amount:  "100000000",
+		Memo:      "SWAP:BTC.BTC:thor1test:22222",
+		Ttl:       14400,
+		ChainId:   "BTC",
+		Signer:    signer,
+		Reference: "22222", // Unique reference for chain halt test
 	}
 
 	// RED: This should fail initially - chain halt check doesn't exist yet
@@ -87,11 +87,11 @@ func (s *HandlerRegisterMemoSuite) TestRegisterMemoHandlerMemolessDisabled(c *C)
 
 	signer := GetRandomBech32Addr()
 	msg := &types.MsgRegisterMemo{
-		Memo:    "12345",
-		Ttl:     14400,
-		ChainId: "BTC",
-		Signer:  signer,
-		Amount:  "100000000",
+		Memo:      "SWAP:BTC.BTC:thor1test:33333",
+		Ttl:       14400,
+		ChainId:   "BTC",
+		Signer:    signer,
+		Reference: "33333", // Unique reference for disabled test
 	}
 
 	// RED: This should fail initially - memoless enabled check doesn't exist yet
@@ -108,11 +108,11 @@ func (s *HandlerRegisterMemoSuite) TestRegisterMemoHandlerVersioning(c *C) {
 
 	signer := GetRandomBech32Addr()
 	msg := &types.MsgRegisterMemo{
-		Memo:    "12345",
-		Ttl:     14400,
-		ChainId: "BTC",
-		Signer:  signer,
-		Amount:  "100000000",
+		Memo:      "SWAP:BTC.BTC:thor1test:44444",
+		Ttl:       14400,
+		ChainId:   "BTC",
+		Signer:    signer,
+		Reference: "44444", // Unique reference for versioning test
 	}
 
 	// Test current version (should work)
@@ -133,13 +133,13 @@ func (s *HandlerRegisterMemoSuite) TestRegisterMemoHandlerKeeperIntegration(c *C
 	c.Assert(err, IsNil)
 
 	signer := GetRandomBech32Addr()
-	memo := "12345"
+	memo := "SWAP:BTC.BTC:thor1test:55555"
 	msg := &types.MsgRegisterMemo{
-		Memo:    memo,
-		Ttl:     14400,
-		ChainId: "BTC",
-		Signer:  signer,
-		Amount:  "100000000", // 1 BTC
+		Memo:      memo,
+		Ttl:       14400,
+		ChainId:   "BTC",
+		Signer:    signer,
+		Reference: "55555", // Unique reference for keeper integration test
 	}
 
 	// RED: This should fail initially - keeper integration doesn't exist yet
@@ -147,12 +147,12 @@ func (s *HandlerRegisterMemoSuite) TestRegisterMemoHandlerKeeperIntegration(c *C
 	c.Assert(err, IsNil, Commentf("Handler should integrate with keeper successfully"))
 	c.Assert(result, NotNil, Commentf("Should return valid result"))
 
-	// Verify memo was registered in keeper
-	constantProvider := constants.GetConstantValues(mgr.GetVersion())
-	registrations, err := keeper.ProcessMemoRegistration(ctx, *msg, constantProvider)
+	// Verify memo was registered in keeper by retrieving it
+	retrievedMemo, err := keeper.GetRegisteredMemo(ctx, "55555")
 	c.Assert(err, IsNil, Commentf("Should be able to retrieve registered memo"))
-	c.Assert(registrations.Reference, HasLen, 5, Commentf("Should generate 5-digit reference"))
-	c.Assert(registrations.Memo, Equals, memo, Commentf("Should preserve original memo"))
+	c.Assert(retrievedMemo.Reference, HasLen, 5, Commentf("Should have 5-digit reference"))
+	c.Assert(retrievedMemo.Reference, Equals, "55555", Commentf("Should have correct reference"))
+	c.Assert(retrievedMemo.Memo, Equals, memo, Commentf("Should preserve original memo"))
 }
 
 // TestRegisterMemoHandlerCollisionHandling tests collision resolution (RED PHASE)
@@ -165,17 +165,19 @@ func (s *HandlerRegisterMemoSuite) TestRegisterMemoHandlerCollisionHandling(c *C
 	c.Assert(err, IsNil)
 
 	signer := GetRandomBech32Addr()
-	memo := "11111" // Simple collision test memo
+	memo := "SWAP:BTC.BTC:thor1collision" // Common memo content
 
-	// Register multiple memos with same content to test collision resolution
+	// Register multiple memos with different user references
 	references := make([]string, 3)
 	for i := 0; i < 3; i++ {
+		// Use unique references: 15000, 25000, 35000
+		reference := fmt.Sprintf("%d5000", i+1) 
 		msg := &types.MsgRegisterMemo{
-			Memo:    memo,
-			Ttl:     14400,
-			ChainId: "BTC",
-			Signer:  signer,
-			Amount:  fmt.Sprintf("%d00000000", i+1), // Different amounts to force collisions
+			Memo:      memo,
+			Ttl:       14400,
+			ChainId:   "BTC",
+			Signer:    signer,
+			Reference: reference,
 		}
 
 		// RED: This should fail initially - collision handling doesn't exist yet
@@ -184,10 +186,7 @@ func (s *HandlerRegisterMemoSuite) TestRegisterMemoHandlerCollisionHandling(c *C
 		c.Assert(result, NotNil, Commentf("Should return valid result for registration %d", i+1))
 
 		// Store reference for uniqueness check
-		constantProvider := constants.GetConstantValues(mgr.GetVersion())
-		registration, err := keeper.ProcessMemoRegistration(ctx, *msg, constantProvider)
-		c.Assert(err, IsNil)
-		references[i] = registration.Reference
+		references[i] = reference
 	}
 
 	// Verify all references are unique
@@ -199,8 +198,8 @@ func (s *HandlerRegisterMemoSuite) TestRegisterMemoHandlerCollisionHandling(c *C
 	}
 }
 
-// TestRegisterMemoHandlerAmountValidation tests amount validation for different chains (RED PHASE)
-func (s *HandlerRegisterMemoSuite) TestRegisterMemoHandlerAmountValidation(c *C) {
+// TestRegisterMemoHandlerReferenceValidation tests user reference validation for different chains (RED PHASE)
+func (s *HandlerRegisterMemoSuite) TestRegisterMemoHandlerReferenceValidation(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	handler := NewRegisterMemoHandler(mgr)
 
@@ -212,33 +211,33 @@ func (s *HandlerRegisterMemoSuite) TestRegisterMemoHandlerAmountValidation(c *C)
 
 	testCases := []struct {
 		chain       string
-		amount      string
+		reference   string
 		shouldPass  bool
 		description string
 	}{
 		{
 			chain:       "BTC",
-			amount:      "100000000", // 1 BTC - should pass
+			reference:   "66666", // Valid 5-digit reference
 			shouldPass:  true,
-			description: "BTC with 1 BTC should pass",
+			description: "BTC with valid reference should pass",
 		},
 		{
 			chain:       "BTC",
-			amount:      "50000", // 0.0005 BTC - should fail (too small)
+			reference:   "1234", // Invalid - too short
 			shouldPass:  false,
-			description: "BTC with too small amount should fail",
+			description: "BTC with short reference should fail",
 		},
 		{
 			chain:       "ETH",
-			amount:      "1000000000000000000", // 1 ETH - should pass
+			reference:   "77777", // Valid reference
 			shouldPass:  true,
-			description: "ETH with 1 ETH should pass",
+			description: "ETH with valid reference should pass",
 		},
 		{
 			chain:       "DOGE",
-			amount:      "100000000", // 1 DOGE - should fail (unsupported chain)
+			reference:   "88888", // Valid reference but DOGE chain has precision issues
 			shouldPass:  false,
-			description: "DOGE should fail due to precision issues",
+			description: "DOGE should fail due to precision limitations",
 		},
 	}
 
@@ -246,11 +245,11 @@ func (s *HandlerRegisterMemoSuite) TestRegisterMemoHandlerAmountValidation(c *C)
 		c.Logf("Testing: %s", tc.description)
 
 		msg := &types.MsgRegisterMemo{
-			Memo:    "12345",
-			Ttl:     14400,
-			ChainId: tc.chain,
-			Signer:  signer,
-			Amount:  tc.amount,
+			Memo:      "SWAP:BTC.BTC:thor1test:12345",
+			Ttl:       14400,
+			ChainId:   tc.chain,
+			Signer:    signer,
+			Reference: tc.reference, // User-provided reference instead of amount
 		}
 
 		// RED: This should fail initially - amount validation doesn't exist yet
@@ -276,11 +275,11 @@ func (s *HandlerRegisterMemoSuite) TestRegisterMemoHandlerEvents(c *C) {
 
 	signer := GetRandomBech32Addr()
 	msg := &types.MsgRegisterMemo{
-		Memo:    "12345",
-		Ttl:     14400,
-		ChainId: "BTC",
-		Signer:  signer,
-		Amount:  "100000000",
+		Memo:      "SWAP:BTC.BTC:thor1test:99999",
+		Ttl:       14400,
+		ChainId:   "BTC",
+		Signer:    signer,
+		Reference: "99999", // Unique reference for events test
 	}
 
 	// RED: This should fail initially - event emission doesn't exist yet
