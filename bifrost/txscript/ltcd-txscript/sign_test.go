@@ -12,8 +12,8 @@ import (
 	"github.com/ltcsuite/ltcd/btcec/v2"
 	"github.com/ltcsuite/ltcd/chaincfg"
 	"github.com/ltcsuite/ltcd/chaincfg/chainhash"
-	"github.com/ltcsuite/ltcd/wire"
 	"github.com/ltcsuite/ltcd/ltcutil"
+	"github.com/ltcsuite/ltcd/wire"
 )
 
 type addressToKey struct {

@@ -8,8 +8,8 @@ import (
 	"fmt"
 
 	"github.com/ltcsuite/ltcd/chaincfg"
-	"github.com/ltcsuite/ltcd/wire"
 	"github.com/ltcsuite/ltcd/ltcutil"
+	"github.com/ltcsuite/ltcd/wire"
 )
 
 const (
@@ -424,7 +424,7 @@ func payToWitnessScriptHashScript(scriptHash []byte) ([]byte, error) {
 	return NewScriptBuilder().AddOp(OP_0).AddData(scriptHash).Script()
 }
 
-// payToTaprootScript creates a new script to pay to a version 1 (taproot) 
+// payToTaprootScript creates a new script to pay to a version 1 (taproot)
 // witness program. The passed outputKey is expected to be a valid 32-byte key.
 func payToTaprootScript(outputKey []byte) ([]byte, error) {
 	return NewScriptBuilder().AddOp(OP_1).AddData(outputKey).Script()

@@ -359,7 +359,7 @@ func (vm *Engine) verifyWitnessProgram(witness [][]byte) error {
 		// - Key spend validation
 		// - Script spend validation with Merkle proof
 		// - Schnorr signature validation
-		
+
 	} else if vm.hasFlag(ScriptVerifyDiscourageUpgradeableWitnessProgram) {
 		errStr := fmt.Sprintf("new witness program versions "+
 			"invalid: %v", vm.witnessProgram)

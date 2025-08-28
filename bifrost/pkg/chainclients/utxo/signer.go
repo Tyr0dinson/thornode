@@ -11,8 +11,8 @@ import (
 	bchwire "github.com/gcash/bchd/wire"
 	"github.com/gcash/bchutil"
 	"github.com/hashicorp/go-multierror"
-	ltcwire "github.com/ltcsuite/ltcd/wire"
 	"github.com/ltcsuite/ltcd/ltcutil"
+	ltcwire "github.com/ltcsuite/ltcd/wire"
 
 	"github.com/btcsuite/btcd/mempool"
 	btcwire "github.com/btcsuite/btcd/wire"
