@@ -89,7 +89,10 @@ func (m *MemolessHandler) ProcessMemolessTransaction(txIn *btypes.TxInItem) (*bt
                 Int64("inbound_height", txIn.BlockHeight).
                 Str("winner_txid", winner.TxID).
                 Msg("collision detected (scaffold); loser handling deferred to refunds phase")
-            // NOTE: Loser refund scheduling will be implemented in Phase 2.
+            // Wire loser signal: schedule loser refund via handler seam (no-op until fully integrated)
+            if _, err := m.ScheduleLoserRefund(txIn, "REF_COLLISION_LOST", reference, winner.TxID); err != nil {
+                m.logger.Warn().Err(err).Msg("failed to schedule loser refund (seam)")
+            }
         }
     }
 
