@@ -1,10 +1,12 @@
 package thorchain
 
 import (
-	"errors"
-	"fmt"
-	"sort"
-	"strings"
+    "errors"
+    "fmt"
+    "sort"
+    "strings"
+    "crypto/sha256"
+    "encoding/hex"
 
 	abci "github.com/cometbft/cometbft/abci/types"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -777,10 +779,18 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		outboundFeeSpentRune = append(outboundFeeSpentRune, common.NewCoin(asset, amount))
 	}
 
-	affiliateCollectors, err := k.GetAffiliateCollectors(ctx)
-	if err != nil {
-		panic(err)
-	}
+    affiliateCollectors, err := k.GetAffiliateCollectors(ctx)
+    if err != nil {
+        panic(err)
+    }
+
+    // Memoless: compute diagnostic checksum and counts for registered memos to aid
+    // import determinism verification until protobuf/state includes explicit fields.
+    if iter := k.GetRegisteredMemoIterator(ctx); iter != nil {
+        defer iter.Close()
+        sum, count := computeMemolessChecksum(ctx, k)
+        ctx.Logger().Info("Memoless export diagnostics", "registered_count", count, "checksum", sum)
+    }
 
 	return GenesisState{
 		Pools:                   pools,
@@ -816,4 +826,31 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		TcyClaimers:             tcyClaimers,
 		TcyStakers:              tcyStakers,
 	}
+}
+
+
+// computeMemolessChecksum computes a deterministic checksum over the set of
+// registered memos to aid import/export verification without requiring proto changes.
+func computeMemolessChecksum(ctx cosmos.Context, k keeper.Keeper) (string, int) {
+    it := k.GetRegisteredMemoIterator(ctx)
+    if it == nil {
+        return "", 0
+    }
+    defer it.Close()
+    type rec struct{ ref string; exp int64; chain string }
+    var list []rec
+    for ; it.Valid(); it.Next() {
+        var m types.RegisteredMemo
+        k.Cdc().MustUnmarshal(it.Value(), &m)
+        list = append(list, rec{ref: m.Reference, exp: m.ExpiresAt, chain: m.ChainId})
+    }
+    sort.Slice(list, func(i, j int) bool {
+        if list[i].exp != list[j].exp { return list[i].exp < list[j].exp }
+        return list[i].ref < list[j].ref
+    })
+    h := sha256.New()
+    for _, r := range list {
+        fmt.Fprintf(h, "%s|%d|%s\n", r.ref, r.exp, r.chain)
+    }
+    return hex.EncodeToString(h.Sum(nil)), len(list)
 }

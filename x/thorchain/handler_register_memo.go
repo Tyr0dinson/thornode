@@ -1,32 +1,32 @@
 // Package thorchain implements the RegisterMemoHandler for the THORChain memoless protocol.
 //
-// # MEMOLESS PROTOCOL REGISTRATION HANDLER
+// # USER-PROVIDED REFERENCE ARCHITECTURE (MR #2989)
 //
 // This handler processes MsgRegisterMemo transactions to enable memoless swaps by
-// registering complex memo content off-chain and generating simple 5-digit references.
+// registering complex memo content off-chain using user-provided 5-digit references.
 //
 // WORKFLOW:
 //
 // 1. Validation: 5-layer validation framework ensures security and compatibility
-// 2. Reference Generation: Incremental counter produces sequential 5-digit codes
+// 2. Reference Validation: User-provided reference (10000-99999) validated for format and uniqueness
 // 3. Storage: 2-prefix architecture stores registration with TTL expiry
-// 4. Response: Returns reference ID for use in subsequent transactions
+// 4. Response: Returns confirmation of successful registration with user's reference
 //
-// INCREMENTAL COUNTER APPROACH:
+// USER-PROVIDED REFERENCE APPROACH:
 //
-// Instead of hash-based generation, this implementation uses predictable sequential
-// counters per chain:
-//   - BTC chain: 10000 → 10001 → 10002 → ... → 99999 → 10000 (wraparound)
-//   - ETH chain: 10000 → 10001 → 10002 → ... (independent counter)
-//   - Each chain maintains separate counter state for isolation
+// Users specify their own 5-digit references extracted from transaction amounts:
+//   - Extract last 5 digits from transaction amounts ≥10,000
+//   - Users control reference uniqueness through amount selection
+//   - No server-side generation or collision resolution needed
+//   - Stateless, user-controlled reference management
 //
-// COLLISION HANDLING:
+// REFERENCE VALIDATION:
 //
-// When a generated reference already exists:
-//  1. Linear search from counter+1 to counter+1000 (max search limit)
-//  2. Return first available reference in search range
-//  3. Update counter to found reference + 1 for next generation
-//  4. If no reference found in 1000 attempts, return error (pool exhausted)
+// User-provided references must meet strict criteria:
+//   - Exactly 5 digits in range 10000-99999
+//   - ASCII-only validation prevents Unicode attacks
+//   - Uniqueness enforcement via existence checks
+//   - No collision resolution - users select unique amounts
 //
 // SECURITY INTEGRATION:
 //
@@ -40,10 +40,10 @@
 // PERFORMANCE:
 //
 // Target performance characteristics:
-//   - Reference Generation: <0.1ms (currently achieving ~25µs average)
+//   - Reference Validation: <0.1ms (deterministic format + uniqueness check)
 //   - Validation: <1ms for all 5 layers combined
 //   - Storage: O(1) complexity for registration and lookup operations
-//   - Collision Resolution: O(k) where k is collision count (typically 0-5)
+//   - No collision resolution overhead - users handle uniqueness
 package thorchain
 
 import (
@@ -137,33 +137,41 @@ func (h RegisterMemoHandler) handle(ctx cosmos.Context, msg types.MsgRegisterMem
 		return nil, fmt.Errorf("unable to register memo while THORChain is halted")
 	}
 
-	ctx.Logger().Info("Processing memo registration",
-		"memo_length", len(msg.Memo),
-		"signer", msg.Signer,
-		"ttl", msg.Ttl,
+	ctx.Logger().Info("Processing user-provided memo registration",
+		"reference", msg.Reference,
 		"chain_id", msg.ChainId,
+		"memo_length", len(msg.Memo),
+		"ttl_requested", msg.Ttl,
+		"signer", msg.Signer,
 	)
 
 	// Skip memo validation - memoless protocol accepts arbitrary memo content
 	// The memo will be validated when it's actually used later
 
-	// Generate reference with collision handling
-	reference, err := h.generateReference(ctx, msg.Memo, msg.ChainId)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate reference: %w", err)
+	// Validate user-provided reference (format, range, and uniqueness)
+	if err := h.validateUserReference(ctx, msg.Reference); err != nil {
+		ctx.Logger().Error("User reference validation failed",
+			"reference", msg.Reference,
+			"error", err)
+		return nil, fmt.Errorf("invalid reference: %w", err)
 	}
+
+	reference := msg.Reference
+	ctx.Logger().Debug("User reference validated successfully", "reference", reference)
 
 	// Calculate expiry
 	expiresAt := h.calculateExpiry(ctx, msg.Ttl)
 
-	// Create registration
-	registration := types.NewRegisteredMemo(
-		reference,
-		msg.Memo,
-		msg.ChainId,
-		ctx.BlockHeight(),
-		expiresAt,
-	)
+	// Create registration with user reference and signer
+	registration := types.RegisteredMemo{
+		Reference:    reference,
+		Memo:         msg.Memo,
+		ChainId:      msg.ChainId,
+		RegisteredAt: ctx.BlockHeight(),
+		ExpiresAt:    expiresAt,
+		Status:       "active",
+		Signer:       msg.Signer,
+	}
 
 	// Store registration using keeper
 	if err := h.storeRegistration(ctx, registration); err != nil {
@@ -179,10 +187,12 @@ func (h RegisterMemoHandler) handle(ctx cosmos.Context, msg types.MsgRegisterMem
 	// Record telemetry
 	h.recordTelemetry(ctx, msg.ChainId)
 
-	ctx.Logger().Info("Memo registration completed",
+	ctx.Logger().Info("User memo registration completed successfully",
 		"reference", reference,
 		"chain_id", msg.ChainId,
 		"expires_at", expiresAt,
+		"registered_at", ctx.BlockHeight(),
+		"status", "active",
 	)
 
 	return &cosmos.Result{
@@ -201,34 +211,39 @@ func (h RegisterMemoHandler) validateMemo(ctx cosmos.Context, memo string) error
 	return nil
 }
 
-// generateReference generates a reference using incremental counter
-func (h RegisterMemoHandler) generateReference(ctx cosmos.Context, memo string, chainID string) (string, error) {
-	// Use incremental counter approach (NEW ARCHITECTURE)
+// validateUserReference validates the user-provided reference using comprehensive validation
+func (h RegisterMemoHandler) validateUserReference(ctx cosmos.Context, reference string) error {
+	// Ensure keeper supports user reference validation
 	keeper, ok := h.mgr.Keeper().(interface {
-		GetNextReferenceID(ctx cosmos.Context, chainID string) (string, error)
+		ValidateUserReference(ctx cosmos.Context, reference string) error
 	})
 	if !ok {
-		return "", fmt.Errorf("keeper does not support incremental counter operations")
+		return fmt.Errorf("keeper does not support user reference validation - incompatible keeper version")
 	}
 
-	// Get next sequential reference ID
-	reference, err := keeper.GetNextReferenceID(ctx, chainID)
-	if err != nil {
-		return "", fmt.Errorf("failed to generate incremental reference: %w", err)
+	// Comprehensive validation: format (5 digits), range (10000-99999), and uniqueness
+	if err := keeper.ValidateUserReference(ctx, reference); err != nil {
+		// Enhanced error context for better debugging
+		return fmt.Errorf("reference validation failed: %w", err)
 	}
 
-	return reference, nil
+	ctx.Logger().Debug("User reference passed all validation checks", "reference", reference)
+	return nil
 }
 
-// calculateExpiry calculates the expiry block height
+// calculateExpiry calculates the expiry block height with improved defaults handling
 func (h RegisterMemoHandler) calculateExpiry(ctx cosmos.Context, ttl int64) int64 {
 	if ttl <= 0 {
-		// Use default TTL from constants
+		// Use governance-controlled default TTL from constants
 		defaultTTL := h.mgr.GetConstants().GetInt64Value(constants.MemolessTTL)
 		if defaultTTL <= 0 {
-			defaultTTL = 144000 // Default 24 hours in blocks (5 second blocks)
+			// Fallback to 24 hours (assumes ~6s block time)
+			defaultTTL = 14400 // 24 hours: 24*60*60/6 = 14400 blocks
 		}
 		ttl = defaultTTL
+		ctx.Logger().Debug("Using default TTL", "ttl_blocks", ttl, "approximate_hours", ttl/600)
+	} else {
+		ctx.Logger().Debug("Using user-specified TTL", "ttl_blocks", ttl, "approximate_hours", ttl/600)
 	}
 
 	return ctx.BlockHeight() + ttl

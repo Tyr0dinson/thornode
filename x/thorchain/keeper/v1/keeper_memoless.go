@@ -1,50 +1,47 @@
-// Package keeperv1 implements the THORChain memoless protocol keeper with secure reference generation.
+// Package keeperv1 implements the THORChain memoless protocol keeper with user-provided references.
 //
-// # CRYPTOGRAPHICALLY SECURE REFERENCE GENERATION (Task 5A Security Enhancement)
+// # USER-PROVIDED REFERENCE ARCHITECTURE (MR #2989)
 //
-// This implementation replaces predictable incremental counters with cryptographically
-// secure reference generation to prevent reference guessing attacks.
+// This implementation uses stateless user-controlled references extracted from transaction
+// amounts, replacing server-side reference generation for improved security and simplicity.
 //
-// SECURITY ARCHITECTURE:
+// ARCHITECTURE:
 //
-// Reference Generation Strategy:
-//   - Cryptographically secure random generation using crypto/rand
-//   - 5-digit range: 10000-99999 (90,000 possible references per chain)
-//   - Entropy-based generation prevents predictability attacks
-//   - Collision handling: Regenerate new secure reference on conflict
+// Reference Strategy:
+//   - User-provided 5-digit references (10000-99999)
+//   - Extracted from last 5 digits of transaction amounts ≥10,000
+//   - No server-side generation or collision resolution needed
+//   - Users control reference uniqueness through amount selection
 //
-// Storage Architecture (2-Prefix System):
+// Storage Architecture:
 //   - memo_registration/: Active memo registrations by reference
-//   - memo_counter/: Per-chain counter state for reference generation
 //   - memo_expiry/: Time-indexed expiry for automated cleanup
 //   - memo_stats/: Protocol statistics and monitoring data
 //
 // SECURITY FEATURES:
 //
-// Reference Security:
+// Reference Validation:
 //   - ASCII-only validation prevents Unicode attacks
-//   - Reserved pattern blocking (00000, 99999, 12345)
 //   - Strict 5-digit format enforcement
 //   - Range validation (10000-99999)
+//   - Uniqueness enforcement via existence checks
 //
-// Collision Handling:
-//   - Deterministic linear search for conflicts
-//   - Maximum search limit prevents infinite loops
-//   - Chain-specific counter isolation
-//   - Reference uniqueness enforcement
+// Collision Prevention:
+//   - Users select unique amounts to avoid reference collisions
+//   - Reference existence validation before registration
+//   - Deterministic validation ensures consensus safety
 //
 // INTEGRATION POINTS:
 //
-// - RegisterMemoHandler: Uses user-provided references for registration
+// - RegisterMemoHandler: Uses msg.Reference field from user
 // - gRPC Query Interface: Uses GetRegisteredMemo() for lookup
-// - Bifrost Observer: Validates references via ValidateReference()
-// - 5-Layer Validation: Integrates with validation framework
+// - Bifrost Observer: Extracts references from transaction amounts
+// - Amount Extraction: Uses bifrost/pkg/chainclients/shared/types functions
 //
 // PERFORMANCE CHARACTERISTICS:
 //
-// Reference Generation: <0.1ms per reference (target: 25µs average)
+// Reference Validation: <0.1ms per validation (deterministic)
 // Storage Operations: O(1) for registration/lookup, O(n) for cleanup
-// Collision Handling: O(k) where k is number of collisions (typically 0-5)
 // Memory Usage: ~18MB storage projection for 90K active registrations
 package keeperv1
 
@@ -111,6 +108,36 @@ func (k KVStore) HasRegisteredMemo(ctx cosmos.Context, reference string) bool {
 	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 	key := k.GetKey(prefixMemoRegistration, reference)
 	return store.Has(key)
+}
+
+
+// SetNegativeRegistrationLookup caches a negative lookup for a reference with a TTL in blocks.
+func (k KVStore) SetNegativeRegistrationLookup(ctx cosmos.Context, reference string, ttlBlocks int64) error {
+    if ttlBlocks <= 0 {
+        return nil
+    }
+    store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+    expiry := ctx.BlockHeight() + ttlBlocks
+    key := k.GetKey(prefixMemoNegativeCache, reference)
+    store.Set(key, k.int64ToBytes(expiry))
+    return nil
+}
+
+// HasNegativeRegistrationLookup returns true if a recent negative lookup exists and has not expired.
+func (k KVStore) HasNegativeRegistrationLookup(ctx cosmos.Context, reference string) bool {
+    store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+    key := k.GetKey(prefixMemoNegativeCache, reference)
+    bz := store.Get(key)
+    if bz == nil {
+        return false
+    }
+    expiry := k.bytesToInt64(bz)
+    if expiry <= 0 || ctx.BlockHeight() >= expiry {
+        // expired; delete and return false
+        store.Delete(key)
+        return false
+    }
+    return true
 }
 
 // DeleteRegisteredMemo removes a registered memo from storage

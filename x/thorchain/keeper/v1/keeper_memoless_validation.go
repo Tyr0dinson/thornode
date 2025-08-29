@@ -244,6 +244,11 @@ func (k KVStore) validateLayer4Business(ctx cosmos.Context, msg types.MsgRegiste
 		return fmt.Errorf("memoless protocol disabled by governance")
 	}
 
+	// Extended kill-switch via Mimir (operator override)
+	if v, err := k.GetMimir(ctx, "MemolessKillSwitch"); err == nil && v == 1 {
+		return fmt.Errorf("memoless protocol disabled by kill-switch")
+	}
+
 	// Collusion detection - check registration count per signer per block
 	signerBlockCount := k.GetSignerRegistrationCountInBlock(ctx, msg.Signer, validationCtx.BlockHeight)
 	maxSignerPerBlock := int64(3) // Allow up to 3 registrations per signer per block
@@ -252,7 +257,33 @@ func (k KVStore) validateLayer4Business(ctx cosmos.Context, msg types.MsgRegiste
 			msg.Signer.String(), signerBlockCount, validationCtx.BlockHeight, maxSignerPerBlock)
 	}
 
+	// Per-signer active limit (guardrail): enforce maximum active registrations per signer if configured
+	if maxPerSigner, err := k.GetMimir(ctx, "MemolessActivePerSender"); err == nil && maxPerSigner > 0 {
+		activeBySigner := k.countActiveRegistrationsBySigner(ctx, msg.Signer)
+		if activeBySigner >= maxPerSigner {
+			return fmt.Errorf("active memo limit per signer reached: signer=%s %d/%d", msg.Signer.String(), activeBySigner, maxPerSigner)
+		}
+	}
+
 	return nil
+}
+
+// countActiveRegistrationsBySigner counts non-expired registrations associated with a signer.
+func (k KVStore) countActiveRegistrationsBySigner(ctx cosmos.Context, signer cosmos.AccAddress) int64 {
+    iter := k.GetRegisteredMemoIterator(ctx)
+    defer iter.Close()
+    var count int64
+    now := ctx.BlockHeight()
+    for ; iter.Valid(); iter.Next() {
+        var m types.RegisteredMemo
+        if err := k.cdc.Unmarshal(iter.Value(), &m); err != nil {
+            continue
+        }
+        if m.Signer.Equals(signer) && (m.ExpiresAt <= 0 || m.ExpiresAt > now) {
+            count++
+        }
+    }
+    return count
 }
 
 // validateLayer5Security performs Layer 5 validation - Pattern detection and abuse prevention
