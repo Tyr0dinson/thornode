@@ -136,4 +136,4 @@ func ObservedTxInAnteHandler(ctx cosmos.Context, v semver.Version, k keeper.Keep
 // shouldRouteMemolessLoser gates the server-side refund routing for memoless
 // losers. It returns false by default to ensure no behavior changes until the
 // Bifrost loser signal and full refund wiring are ready.
-func shouldRouteMemolessLoser() bool { return false }
+func shouldRouteMemolessLoser() bool { return true }

@@ -143,7 +143,7 @@ func (m *MemolessHandler) validateRegisteredMemo(memo *stypes.RegisteredMemo, cu
 // should be applied. Default is false to avoid behavior changes until the
 // full flow (including loser refunds) is in place.
 func (m *MemolessHandler) shouldApplyCollisionWiring() bool {
-    return false
+    return true
 }
 
 // buildCollisionCandidates constructs a minimal candidate set for the current
