@@ -257,15 +257,20 @@ func (k KVStore) validateLayer4Business(ctx cosmos.Context, msg types.MsgRegiste
 			msg.Signer.String(), signerBlockCount, validationCtx.BlockHeight, maxSignerPerBlock)
 	}
 
-	// Per-signer active limit (guardrail): enforce maximum active registrations per signer if configured
-	if maxPerSigner, err := k.GetMimir(ctx, "MemolessActivePerSender"); err == nil && maxPerSigner > 0 {
-		activeBySigner := k.countActiveRegistrationsBySigner(ctx, msg.Signer)
-		if activeBySigner >= maxPerSigner {
-			return fmt.Errorf("active memo limit per signer reached: signer=%s %d/%d", msg.Signer.String(), activeBySigner, maxPerSigner)
-		}
-	}
+    // Per-signer active limit (guardrail): enforce maximum active registrations per signer if configured
+    if maxPerSigner, err := k.GetMimir(ctx, "MemolessActivePerSender"); err == nil && maxPerSigner > 0 {
+        activeBySigner := k.countActiveRegistrationsBySigner(ctx, msg.Signer)
+        if activeBySigner >= maxPerSigner {
+            return fmt.Errorf("active memo limit per signer reached: signer=%s %d/%d", msg.Signer.String(), activeBySigner, maxPerSigner)
+        }
+    }
 
-	return nil
+    // Protocol-wide active cap: enforce after per-signer checks
+    if err := k.validateRegistrationLimits(ctx, validationCtx); err != nil {
+        return err
+    }
+
+    return nil
 }
 
 // countActiveRegistrationsBySigner counts non-expired registrations associated with a signer.
@@ -621,14 +626,20 @@ func (k KVStore) validateBasisPoints(basisPoints string) error {
 
 // validateRegistrationLimits validates protocol-wide registration limits
 func (k KVStore) validateRegistrationLimits(ctx cosmos.Context, validationCtx EnhancedValidationContext) error {
-	activeCount := k.GetActiveMemoCount(ctx)
-	maxActive := validationCtx.ConstantProvider.GetInt64Value(constants.MemolessMaxActiveRefs)
+    activeCount := k.GetActiveMemoCount(ctx)
+    // Allow operator override via Mimir; fall back to constant when not set
+    maxActive := int64(0)
+    if v, err := k.GetMimir(ctx, constants.MemolessMaxActiveRefs.String()); err == nil && v > 0 {
+        maxActive = v
+    } else {
+        maxActive = validationCtx.ConstantProvider.GetInt64Value(constants.MemolessMaxActiveRefs)
+    }
 
-	if activeCount >= maxActive {
-		return fmt.Errorf("active memo limit reached: %d/%d", activeCount, maxActive)
-	}
+    if activeCount >= maxActive {
+        return fmt.Errorf("active memo limit reached: %d/%d", activeCount, maxActive)
+    }
 
-	return nil
+    return nil
 }
 
 // ValidateMemoRegistrationWithVersion validates a memo registration with version-specific rules

@@ -126,12 +126,29 @@ func (k KVStore) ValidateMemoRegistrationComplete(ctx cosmos.Context, msg thorch
 		return fmt.Errorf("business logic validation failed: %w", err)
 	}
 
-	// Layer 5: Security validation
-	if err := k.validateSecurityRequirements(ctx, msg, constantProvider); err != nil {
-		return fmt.Errorf("security validation failed: %w", err)
-	}
+    // Layer 5: Security validation
+    if err := k.validateSecurityRequirements(ctx, msg, constantProvider); err != nil {
+        return fmt.Errorf("security validation failed: %w", err)
+    }
 
-	return nil
+    // Ensure enhanced (guardrail) validations are applied consistently (kill-switch,
+    // per-signer active limit, and other Layer 4 checks implemented in the enhanced path).
+    // Build a minimal validation context and delegate to ValidateMemoRegistrationEnhanced.
+    chainConfig, err := k.GetChainConfig(ctx, msg.ChainId)
+    if err != nil {
+        return fmt.Errorf("failed to get chain configuration: %w", err)
+    }
+    validationCtx := EnhancedValidationContext{
+        Version:          GetCurrentVersion(),
+        BlockHeight:      ctx.BlockHeight(),
+        ConstantProvider: constantProvider,
+        ChainConfig:      chainConfig,
+    }
+    if err := k.ValidateMemoRegistrationEnhanced(ctx, msg, validationCtx); err != nil {
+        return err
+    }
+
+    return nil
 }
 
 
