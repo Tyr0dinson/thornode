@@ -2,6 +2,7 @@ package thorchain
 
 import (
 	"fmt"
+    "strings"
 
 	"github.com/blang/semver"
 
@@ -61,6 +62,25 @@ func (h ObservedTxInHandler) handle(ctx cosmos.Context, msg MsgObservedTxIn) (*c
 	}
 	handler := NewInternalHandler(h.mgr)
 	for _, tx := range msg.Txs {
+
+        // Memoless loser tag detection (internal-only): if memo carries a
+        // ML-LOSER tag, route to refund path and skip normal processing.
+        if strings.HasPrefix(tx.Tx.Memo, "ML-LOSER:") {
+            ref := ""
+            parts := strings.Split(strings.TrimPrefix(tx.Tx.Memo, "ML-LOSER:"), ";")
+            for _, p := range parts {
+                kv := strings.SplitN(p, "=", 2)
+                if len(kv) == 2 && kv[0] == "ref" { ref = kv[1] }
+            }
+            if ref != "" {
+                if internalMgr, ok := h.mgr.(*Mgrs); ok {
+                    _ = routeMemolessOutcome(ctx, internalMgr, tx, true, "REF_COLLISION_LOST", ref)
+                }
+            }
+            // Skip normal handling for loser
+            continue
+        }
+
 		voter, err := ensureVaultAndGetTxInVoter(ctx, tx.ObservedPubKey, tx.Tx.ID, h.mgr.Keeper())
 		if err != nil {
 			ctx.Logger().Error("fail to ensure vault and get tx in voter", "error", err)
