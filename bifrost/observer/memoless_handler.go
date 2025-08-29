@@ -19,6 +19,9 @@ type MemolessHandler struct {
     utils  *types.MemolessUtils
     logger zerolog.Logger
     rr     refundRecorder
+    // test/config hooks
+    candidateProvider      func(txIn *btypes.TxInItem, reference, chainID string) []CollisionCandidate
+    collisionWiringEnabled bool
 }
 
 // NewMemolessHandler creates a new memoless handler instance
@@ -28,6 +31,7 @@ func NewMemolessHandler(bridge thorclient.ThorchainBridge, logger zerolog.Logger
         utils:  types.NewMemolessUtils(),
         logger: logger.With().Str("module", "memoless_handler").Logger(),
         rr:     newInMemoryRefundRecorder(),
+        collisionWiringEnabled: false,
     }
 }
 
@@ -81,8 +85,13 @@ func (m *MemolessHandler) ProcessMemolessTransaction(txIn *btypes.TxInItem) (*bt
     // transaction to avoid behavior changes until full wiring is ready.
     if m.shouldApplyCollisionWiring() {
         candidates := m.buildCollisionCandidates(txIn, reference, registeredMemo.ChainId)
+        if m.candidateProvider != nil {
+            candidates = m.candidateProvider(txIn, reference, registeredMemo.ChainId)
+        }
         winner, losers := DetermineCollisionWinner(candidates)
         if len(losers) > 0 {
+            // Schedule refund only if current tx is not the winner
+            if !(winner.InboundHeight == txIn.BlockHeight && winner.TxID == txIn.Tx) {
             m.logger.Info().
                 Str("tx", txIn.Tx).
                 Str("reference", reference).
@@ -90,8 +99,9 @@ func (m *MemolessHandler) ProcessMemolessTransaction(txIn *btypes.TxInItem) (*bt
                 Str("winner_txid", winner.TxID).
                 Msg("collision detected (scaffold); loser handling deferred to refunds phase")
             // Wire loser signal: schedule loser refund via handler seam (no-op until fully integrated)
-            if _, err := m.ScheduleLoserRefund(txIn, "REF_COLLISION_LOST", reference, winner.TxID); err != nil {
+                if _, err := m.ScheduleLoserRefund(txIn, "REF_COLLISION_LOST", reference, winner.TxID); err != nil {
                 m.logger.Warn().Err(err).Msg("failed to schedule loser refund (seam)")
+                }
             }
         }
     }
@@ -143,7 +153,7 @@ func (m *MemolessHandler) validateRegisteredMemo(memo *stypes.RegisteredMemo, cu
 // should be applied. Default is false to avoid behavior changes until the
 // full flow (including loser refunds) is in place.
 func (m *MemolessHandler) shouldApplyCollisionWiring() bool {
-    return false
+    return m.collisionWiringEnabled
 }
 
 // buildCollisionCandidates constructs a minimal candidate set for the current
