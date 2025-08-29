@@ -84,6 +84,7 @@ func main() {
 		{Name: "bootstrap", Default: true},
 		{Name: "arb", Default: true},
 		{Name: "swaps", Default: true},
+		{Name: "special-address-outbounds", Default: true},
 		{Name: "consolidate", Default: true},
 		{Name: "churn", Default: false},
 		{Name: "solvency", Default: true},
@@ -157,6 +158,7 @@ func main() {
 	appendIfEnabled("arb", core.NewArbActor)
 	appendIfEnabled("swaps", suites.Swaps)
 	appendIfEnabled("consolidate", features.Consolidate)
+	appendIfEnabled("special-address-outbounds", features.SpecialAddressOutbounds)
 	appendIfEnabled("churn", core.NewChurnActor)
 	appendIfEnabled("solvency", core.NewSolvencyCheckActor)
 	appendIfEnabled("ragnarok", suites.Ragnarok)
