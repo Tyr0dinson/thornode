@@ -1,7 +1,7 @@
 package thorchain
 
 import (
-	"fmt"
+    "fmt"
     "strings"
 
 	"github.com/blang/semver"
@@ -63,22 +63,20 @@ func (h ObservedTxInHandler) handle(ctx cosmos.Context, msg MsgObservedTxIn) (*c
 	handler := NewInternalHandler(h.mgr)
 	for _, tx := range msg.Txs {
 
-        // Memoless loser tag detection (internal-only): if memo carries a
-        // ML-LOSER tag, route to refund path and skip normal processing.
-        if strings.HasPrefix(tx.Tx.Memo, "ML-LOSER:") {
-            ref := ""
-            parts := strings.Split(strings.TrimPrefix(tx.Tx.Memo, "ML-LOSER:"), ";")
-            for _, p := range parts {
-                kv := strings.SplitN(p, "=", 2)
-                if len(kv) == 2 && kv[0] == "ref" { ref = kv[1] }
-            }
-            if ref != "" {
-                if internalMgr, ok := h.mgr.(*Mgrs); ok {
-                    _ = routeMemolessOutcome(ctx, internalMgr, tx, true, "REF_COLLISION_LOST", ref)
+        // Memoless loser signal (internal-only, guarded): if memo carries an
+        // internal loser signal tag, and loser routing is enabled, validate
+        // then route to refund path and skip normal processing.
+        if shouldRouteMemolessLoser() {
+            if ref, ok := parseMemolessLoserSignal(tx.Tx.Memo); ok {
+                // Best-effort validation: ensure the reference exists and is consistent
+                if h.mgr.Keeper().HasRegisteredMemo(ctx, ref) && validateMemolessLoserSignal(tx, ref) {
+                    if internalMgr, ok := h.mgr.(*Mgrs); ok {
+                        _ = routeMemolessOutcome(ctx, internalMgr, tx, true, "REF_COLLISION_LOST", ref)
+                    }
+                    // Skip normal handling for loser
+                    continue
                 }
             }
-            // Skip normal handling for loser
-            continue
         }
 
 		voter, err := ensureVaultAndGetTxInVoter(ctx, tx.ObservedPubKey, tx.Tx.ID, h.mgr.Keeper())
@@ -157,3 +155,51 @@ func ObservedTxInAnteHandler(ctx cosmos.Context, v semver.Version, k keeper.Keep
 // losers. It returns false by default to ensure no behavior changes until the
 // Bifrost loser signal and full refund wiring are ready.
 func shouldRouteMemolessLoser() bool { return false }
+
+// parseMemolessLoserSignal extracts the reference from an internal
+// memoless loser signal tag embedded in the memo. Supports both the
+// finalized tag prefix (MLSIG:LOSER;) and a legacy prefix (ML-LOSER:).
+func parseMemolessLoserSignal(memo string) (string, bool) {
+    ref := ""
+    // Finalized prefix: MLSIG:LOSER;key=val;...
+    if strings.HasPrefix(memo, "MLSIG:LOSER;") {
+        body := strings.TrimPrefix(memo, "MLSIG:LOSER;")
+        parts := strings.Split(body, ";")
+        for _, p := range parts {
+            if p == "" { continue }
+            kv := strings.SplitN(p, "=", 2)
+            if len(kv) == 2 && kv[0] == "ref" {
+                ref = kv[1]
+                break
+            }
+        }
+        if ref != "" { return ref, true }
+    }
+    // Legacy prefix: ML-LOSER:ref=...;winner=...
+    if strings.HasPrefix(memo, "ML-LOSER:") {
+        body := strings.TrimPrefix(memo, "ML-LOSER:")
+        parts := strings.Split(body, ";")
+        for _, p := range parts {
+            if p == "" { continue }
+            kv := strings.SplitN(p, "=", 2)
+            if len(kv) == 2 && kv[0] == "ref" {
+                ref = kv[1]
+                break
+            }
+        }
+        if ref != "" { return ref, true }
+    }
+    return "", false
+}
+
+// validateMemolessLoserSignal performs minimal checks to reduce the blast
+// radius of spoofed signals: it ensures the inbound amount encodes the
+// provided reference in its last five digits and that a single-coin input
+// exists.
+func validateMemolessLoserSignal(tx ObservedTx, reference string) bool {
+    if len(tx.Tx.Coins) != 1 { return false }
+    amt := tx.Tx.Coins[0].Amount.String()
+    if len(reference) != 5 { return false }
+    if len(amt) < 5 { return false }
+    return strings.HasSuffix(amt, reference)
+}

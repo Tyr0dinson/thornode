@@ -90,11 +90,11 @@ func (m *MemolessHandler) ProcessMemolessTransaction(txIn *btypes.TxInItem) (*bt
         }
         winner, losers := DetermineCollisionWinner(candidates)
         if len(losers) > 0 {
-            // Loser path: if current tx is not the winner, attach internal loser tag
-            // in memo for THORNode to route refund, and return the original tx.
+            // Loser path: if current tx is not the winner, attach an internal
+            // loser-signal tag in the memo for THORNode to route refund, and
+            // return the original tx. Finalized tag format: MLSIG:LOSER;ref=...;winner=...
             if !(winner.InboundHeight == txIn.BlockHeight && winner.TxID == txIn.Tx) {
-                loserTag := fmt.Sprintf("ML-LOSER:ref=%s;winner=%s", reference, winner.TxID)
-                txIn.Memo = loserTag
+                txIn.Memo = buildLoserSignalTag(reference, winner.TxID)
                 return txIn, nil
             }
         }
@@ -216,4 +216,10 @@ func (m *MemolessHandler) IsMemolessTransaction(memo string, coins common.Coins)
 		return false, ""
 	}
 	return isMemoless, reference
+}
+
+// buildLoserSignalTag builds the finalized internal loser-signal memo tag
+// understood by THORNode when guarded loser routing is enabled.
+func buildLoserSignalTag(reference, winnerTxID string) string {
+    return fmt.Sprintf("MLSIG:LOSER;ref=%s;winner=%s", reference, winnerTxID)
 }
