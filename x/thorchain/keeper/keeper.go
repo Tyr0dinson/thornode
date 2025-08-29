@@ -243,6 +243,7 @@ type KeeperOutboundFees interface {
 	GetOutboundFeeSpentRune(ctx cosmos.Context, outAsset common.Asset) (cosmos.Uint, error)
 	GetOutboundFeeSpentRuneIterator(ctx cosmos.Context) cosmos.Iterator
 	GetOutboundTxFee(ctx cosmos.Context) cosmos.Uint
+	GetSurplusForTargetMultiplier(ctx cosmos.Context, targetMultiplierBps cosmos.Uint) cosmos.Uint
 }
 
 type KeeperSwapSlip interface {
@@ -387,8 +388,10 @@ type KeeperAdvSwapQueues interface {
 	GetAdvSwapQueueIndex(_ cosmos.Context, _ MsgSwap) ([]types.AdvSwapQueueIndexItem, error)
 	HasAdvSwapQueueIndex(_ cosmos.Context, _ MsgSwap) (bool, error)
 	RemoveAdvSwapQueueIndex(_ cosmos.Context, _ MsgSwap) error
-	SetAdvSwapQueueProcessor(_ cosmos.Context, _ []bool) error
-	GetAdvSwapQueueProcessor(_ cosmos.Context) ([]bool, error)
+	SetLimitSwapTTL(ctx cosmos.Context, blockHeight int64, txHashes []common.TxID) error
+	GetLimitSwapTTL(ctx cosmos.Context, blockHeight int64) ([]common.TxID, error)
+	RemoveLimitSwapTTL(ctx cosmos.Context, blockHeight int64)
+	AddToLimitSwapTTL(ctx cosmos.Context, blockHeight int64, txHash common.TxID) error
 }
 
 type KeeperMimir interface {

@@ -597,13 +597,19 @@ func (k KVStoreDummy) RemoveAdvSwapQueueIndex(_ cosmos.Context, _ MsgSwap) error
 	return kaboom
 }
 
-func (k KVStoreDummy) SetAdvSwapQueueProcessor(ctx cosmos.Context, record []bool) error {
+func (k KVStoreDummy) SetLimitSwapTTL(ctx cosmos.Context, blockHeight int64, txHashes []common.TxID) error {
 	return kaboom
 }
 
-// GetAdvSwapQueueProcessor - get a list of asset pairs to process
-func (k KVStoreDummy) GetAdvSwapQueueProcessor(ctx cosmos.Context) ([]bool, error) {
-	return nil, kaboom
+func (k KVStoreDummy) GetLimitSwapTTL(ctx cosmos.Context, blockHeight int64) ([]common.TxID, error) {
+	return []common.TxID{}, kaboom
+}
+
+func (k KVStoreDummy) RemoveLimitSwapTTL(ctx cosmos.Context, blockHeight int64) {
+}
+
+func (k KVStoreDummy) AddToLimitSwapTTL(ctx cosmos.Context, blockHeight int64, txHash common.TxID) error {
+	return kaboom
 }
 
 func (k KVStoreDummy) GetTCYClaimer(ctx cosmos.Context, l1Address common.Address, asset common.Asset) (TCYClaimer, error) {
@@ -832,6 +838,10 @@ func (k KVStoreDummy) GetOutboundFeeSpentRune(ctx cosmos.Context, outAsset commo
 
 func (k KVStoreDummy) GetOutboundFeeSpentRuneIterator(ctx cosmos.Context) cosmos.Iterator {
 	return nil
+}
+
+func (k KVStoreDummy) GetSurplusForTargetMultiplier(ctx cosmos.Context, targetMultiplierBps cosmos.Uint) cosmos.Uint {
+	return cosmos.ZeroUint()
 }
 
 func (k KVStoreDummy) GetOutboundTxFee(ctx cosmos.Context) cosmos.Uint {

@@ -33,6 +33,7 @@ func init() {
 		AsgardSize:                          6,
 		StreamingSwapMinBPFee:               100, // TODO: remove on hard fork
 		EnableAdvSwapQueue:                  1,
+		AdvSwapQueueRapidSwapMax:            1, // For testing rapid swaps
 		VirtualMultSynthsBasisPoints:        20_000,
 		MinTxOutVolumeThreshold:             2000000_00000000,
 		MissingBlockChurnOut:                100,
@@ -43,8 +44,8 @@ func init() {
 		PauseLoans:                          0,
 		AllowWideBlame:                      1,
 		TargetOutboundFeeSurplusRune:        10_000_00000000,
-		MaxOutboundFeeMultiplierBasisPoints: 20_000,
-		MinOutboundFeeMultiplierBasisPoints: 15_000,
+		MaxOutboundFeeMultiplierBasisPoints: 30_000,
+		MinOutboundFeeMultiplierBasisPoints: 10_00,
 		OperationalVotesMin:                 1, // For regtest single-signer Mimir changes without Admin
 		PreferredAssetOutboundFeeMultiplier: 100,
 		TradeAccountsEnabled:                1,

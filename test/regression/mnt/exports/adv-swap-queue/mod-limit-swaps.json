@@ -115,6 +115,9 @@
         "tx_size_cost_per_byte": "10"
       }
     },
+    "authz": {
+      "authorization": []
+    },
     "bank": {
       "balances": [
         {
@@ -206,12 +209,10 @@
           "state": {
             "deposit": "1000000",
             "in": "0",
-            "interval": "1",
             "out": "0",
             "quantity": "1",
             "withdrawn": "0"
           },
-          "stream_interval": "1",
           "swap_type": 1,
           "target_asset": "ETH.ETH",
           "trade_target": "500000000000000000",
@@ -244,12 +245,10 @@
           "state": {
             "deposit": "10000000000",
             "in": "0",
-            "interval": "1",
             "out": "0",
             "quantity": "1",
             "withdrawn": "0"
           },
-          "stream_interval": "1",
           "swap_type": 1,
           "target_asset": "BTC.BTC",
           "trade_target": "9500000",
@@ -277,12 +276,10 @@
           "state": {
             "deposit": "2000000000",
             "in": "0",
-            "interval": "1",
             "out": "0",
             "quantity": "1",
             "withdrawn": "0"
           },
-          "stream_interval": "1",
           "swap_type": 1,
           "target_asset": "BTC.BTC",
           "trade_target": "22000000",
@@ -310,12 +307,10 @@
           "state": {
             "deposit": "3000000000",
             "in": "0",
-            "interval": "1",
             "out": "0",
             "quantity": "1",
             "withdrawn": "0"
           },
-          "stream_interval": "1",
           "swap_type": 1,
           "target_asset": "BTC.BTC",
           "trade_target": "4500000",
@@ -343,12 +338,10 @@
           "state": {
             "deposit": "2000000000",
             "in": "0",
-            "interval": "1",
             "out": "0",
             "quantity": "1",
             "withdrawn": "0"
           },
-          "stream_interval": "1",
           "swap_type": 1,
           "target_asset": "BTC.BTC",
           "trade_target": "15000000",
@@ -459,7 +452,12 @@
       "observed_tx_in_voters": null,
       "observed_tx_out_voters": null,
       "outbound_fee_spent_rune": [],
-      "outbound_fee_withheld_rune": [],
+      "outbound_fee_withheld_rune": [
+        {
+          "amount": "689655172414",
+          "asset": "BTC.BTC"
+        }
+      ],
       "pools": [
         {
           "LP_units": "100000000000",

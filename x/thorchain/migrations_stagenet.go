@@ -133,3 +133,16 @@ func (m Migrator) Migrate5to6(ctx sdk.Context) error {
 func (m Migrator) Migrate6to7(ctx sdk.Context) error {
 	return nil
 }
+
+// Migrate8to9 migrates from version 8 to 9.
+func (m Migrator) Migrate8to9(ctx sdk.Context) error {
+	// loads the manager for this migration
+	if err := m.mgr.LoadManagerIfNecessary(ctx); err != nil {
+		return err
+	}
+
+	err = m.CommonMigrate8to9(ctx)
+	if err != nil {
+		return err
+	}
+}

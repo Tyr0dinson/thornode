@@ -73,6 +73,10 @@ func (c *Converter) GetRate(symbol string, metrics bool) (*big.Float, *big.Float
 		c.metrics.UpdateProviderBounds(symbol, upperBound, lowerBound)
 	}
 
+	if len(rates) == 0 {
+		return nil, nil, fmt.Errorf("no rates found")
+	}
+
 	volume := new(big.Float)
 
 	prices := map[string]*big.Float{}
@@ -83,6 +87,22 @@ func (c *Converter) GetRate(symbol string, metrics bool) (*big.Float, *big.Float
 		prices[provider] = new(big.Float).Copy(rate.Price)
 		totalVolumes[provider] = new(big.Float).Copy(rate.Volume)
 		volume.Add(volume, rate.Volume)
+	}
+
+	// temporary hack for RUNE until on chain volume data is available:
+	// set the volume reported by thorchain to twice the amount of the highest
+	// reported volume
+	_, found = totalVolumes[common.ProviderThorchain]
+	if symbol == "RUNE" && found {
+		maxVolume := new(big.Float)
+		for _, providerVolume := range totalVolumes {
+			if providerVolume.Cmp(maxVolume) > 0 {
+				maxVolume = new(big.Float).Copy(providerVolume)
+			}
+		}
+		newVolume := new(big.Float).Mul(maxVolume, big.NewFloat(2))
+		totalVolumes[common.ProviderThorchain] = newVolume
+		volume.Add(volume, newVolume)
 	}
 
 	// replace volume totals with capped percentages
@@ -327,12 +347,7 @@ func RedistributePercentage(
 	values map[string]*big.Float,
 	amount, cap *big.Float,
 ) map[string]*big.Float {
-	total := new(big.Float)
 	remain := new(big.Float)
-
-	for _, value := range values {
-		total.Add(total, value)
-	}
 
 	percentages := ComputePercentage(values)
 	capped := map[string]*big.Float{}
