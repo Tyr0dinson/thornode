@@ -53,7 +53,7 @@ func (h ExportAssetBindHandler) Run(
 }
 
 func (h ExportAssetBindHandler) validate(ctx cosmos.Context, msg MsgExportAssetBind) error {
-	if !common.IsSupportedExportAsset(msg.Asset) {
+	if !msg.Asset.IsExportAsset() {
 		return fmt.Errorf("export asset not supported: %s", msg.Asset.String())
 	}
 
@@ -69,20 +69,7 @@ func (h ExportAssetBindHandler) validate(ctx cosmos.Context, msg MsgExportAssetB
 }
 
 func (h ExportAssetBindHandler) handle(ctx cosmos.Context, msg MsgExportAssetBind) error {
-	if !common.IsSupportedExportAsset(msg.Asset) {
-		return fmt.Errorf("export asset not supported: %s", msg.Asset.String())
-	}
-
 	ctx.Logger().Info("handle bind export asset", "asset", msg.Asset.String())
-
-	asset, err := h.mgr.Keeper().GetExportAsset(ctx, msg.Asset)
-	if err != nil {
-		asset = types.NewExportAsset()
-		asset.Asset, err = common.NewAsset("THOR." + msg.Asset.Symbol.String())
-		if err != nil {
-			return err
-		}
-	}
 
 	if msg.Asset.Chain.Equals(common.THORChain) {
 		return h.handleAsset(ctx, msg)
@@ -94,8 +81,7 @@ func (h ExportAssetBindHandler) handle(ctx cosmos.Context, msg MsgExportAssetBin
 func (h ExportAssetBindHandler) handleAsset(ctx cosmos.Context, msg MsgExportAssetBind) error {
 	asset, err := h.mgr.Keeper().GetExportAsset(ctx, msg.Asset)
 	if err != nil {
-		asset = types.NewExportAsset()
-		asset.Asset = msg.Asset
+		asset = types.NewExportAsset(msg.Asset.Symbol.String())
 	}
 
 	asset.AmountBound = asset.AmountBound.Add(msg.Amount)
@@ -105,7 +91,6 @@ func (h ExportAssetBindHandler) handleAsset(ctx cosmos.Context, msg MsgExportAss
 
 func (h ExportAssetBindHandler) handleExport(ctx cosmos.Context, msg MsgExportAssetBind) error {
 	export, err := h.mgr.Keeper().GetAssetExport(ctx, msg.Asset)
-	fmt.Println(export)
 	if err != nil {
 		export = types.NewAssetExport()
 		export.Asset = msg.Asset

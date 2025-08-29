@@ -14,22 +14,35 @@ var (
 
 func NewMsgExportAssetRedeem(
 	tx common.Tx,
+	asset common.Asset,
+	amount cosmos.Uint,
 	address common.Address,
 	signer cosmos.AccAddress,
 ) *MsgExportAssetRedeem {
 	return &MsgExportAssetRedeem{
 		Tx:      tx,
+		Asset:   asset,
+		Amount:  amount,
 		Address: address,
 		Signer:  signer,
 	}
 }
 
 func (m *MsgExportAssetRedeem) ValidateBasic() error {
-	if m.Address.IsEmpty() {
-		return cosmos.ErrUnknownRequest("asset address cannot be empty")
+	if m.Asset.IsEmpty() {
+		return cosmos.ErrUnknownRequest("redeemed asset cannot be empty")
 	}
-	if !m.Address.IsChain(common.THORChain) {
-		return cosmos.ErrUnknownRequest("address must be thorchain")
+	if !m.Asset.IsNative() {
+		return cosmos.ErrUnknownRequest("redeemed asset must be native")
+	}
+	if m.Amount.IsZero() {
+		return cosmos.ErrUnknownRequest("redeemed amount cannot be zero")
+	}
+	if m.Address.IsEmpty() {
+		return cosmos.ErrUnknownRequest("address cannot be empty")
+	}
+	if !m.Address.IsChain(m.Asset.GetLayer1Asset().GetChain()) {
+		return cosmos.ErrUnknownRequest("address does not match asset chain")
 	}
 	if m.Signer.Empty() {
 		return cosmos.ErrInvalidAddress(m.Signer.String())

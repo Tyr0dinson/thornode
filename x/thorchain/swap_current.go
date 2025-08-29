@@ -304,7 +304,6 @@ func (s *SwapperVCUR) swapOne(ctx cosmos.Context,
 	emitAssets = cosmos.RoundToDecimal(emitAssets, pool.Decimals)
 	swapEvt.EmitAsset = common.NewCoin(target, emitAssets)
 	swapEvt.LiquidityFee = liquidityFee
-
 	// do THORNode have enough balance to swap?
 	if emitAssets.GTE(Y) {
 		return cosmos.ZeroUint(), evt, errSwapFailNotEnoughBalance

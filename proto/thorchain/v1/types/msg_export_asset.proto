@@ -8,8 +8,7 @@ import "gogoproto/gogo.proto";
 
 message MsgExportAssetIssue {
   common.Tx tx = 1 [(gogoproto.nullable) = false];
-  common.Asset export_asset = 2 [(gogoproto.nullable) = false, (gogoproto.customtype) = "gitlab.com/thorchain/thornode/v3/common.Asset"];
-  common.Asset native_asset = 3 [(gogoproto.nullable) = false, (gogoproto.customtype) = "gitlab.com/thorchain/thornode/v3/common.Asset"];
+  common.Asset asset = 2 [(gogoproto.nullable) = false, (gogoproto.customtype) = "gitlab.com/thorchain/thornode/v3/common.Asset"];
   string amount = 4 [(gogoproto.customtype) = "cosmossdk.io/math.Uint", (gogoproto.nullable) = false];
   string address = 5 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/v3/common.Address"];
   bytes signer = 6 [(gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress"];

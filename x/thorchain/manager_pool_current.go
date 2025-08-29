@@ -52,11 +52,11 @@ func (pm *PoolMgrVCUR) EndBlock(ctx cosmos.Context, mgr Manager) error {
 // cyclePools update the set of Available and Staged pools
 // Available non-gas pools not meeting the fee quota since last cycle, or not
 // meeting availability requirements, are demoted to Staged.
-// Staged pools are charged a fee and those with with zero rune depth and
+// Staged pools are charged a fee and those with zero rune depth and
 // non-zero asset depth are removed along with their liquidity providers, and
 // remaining assets are abandoned.
 // The valid Staged pool with the highest rune depth is promoted to Available.
-// If there are more than the maximum available pools, the Available pool with
+// If there are more than the maximum available pools, the Available pool
 // with the lowest rune depth is demoted to Staged
 func (pm *PoolMgrVCUR) cyclePools(ctx cosmos.Context, maxAvailablePools, minRunePoolDepth, stagedPoolCost int64, mgr Manager) error {
 	var availblePoolCount int64

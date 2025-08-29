@@ -76,9 +76,13 @@ func (c Coin) Valid() error {
 	if c.Asset.IsEmpty() {
 		return errors.New("denom cannot be empty")
 	}
+	if c.Amount.IsNil() {
+		return errors.New("amount cannot be nil")
+	}
 	if c.Amount.IsZero() {
 		return errors.New("amount cannot be zero")
 	}
+
 	return nil
 }
 

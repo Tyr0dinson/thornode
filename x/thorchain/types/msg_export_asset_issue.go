@@ -14,44 +14,56 @@ var (
 
 func NewMsgExportAssetIssue(
 	tx common.Tx,
-	exportAsset common.Asset,
-	nativeAsset common.Asset,
+	asset common.Asset,
+	amount cosmos.Uint,
 	address common.Address,
 	signer cosmos.AccAddress,
 ) *MsgExportAssetIssue {
 	return &MsgExportAssetIssue{
-		Tx:          tx,
-		ExportAsset: exportAsset,
-		NativeAsset: nativeAsset,
-		Address:     address,
-		Signer:      signer,
+		Tx:      tx,
+		Asset:   asset,
+		Amount:  amount,
+		Address: address,
+		Signer:  signer,
 	}
 }
 
 func (m *MsgExportAssetIssue) ValidateBasic() error {
-	if m.ExportAsset.IsEmpty() {
-		return cosmos.ErrUnknownRequest("export asset cannot be empty")
-	}
-	if m.ExportAsset.IsNative() {
-		return cosmos.ErrUnknownRequest("export asset cannot be native")
-	}
-	if m.NativeAsset.IsEmpty() {
-		return cosmos.ErrUnknownRequest("native asset cannot be empty")
-	}
-	if !m.NativeAsset.IsNative() {
-		return cosmos.ErrUnknownRequest("native asset must be native")
-	}
-	if m.Address.IsEmpty() {
-		return cosmos.ErrUnknownRequest("asset address cannot be empty")
-	}
-	if !m.Address.IsChain(m.ExportAsset.GetLayer1Asset().GetChain()) {
-		return cosmos.ErrUnknownRequest("asset address does not match asset chain")
-	}
 	if m.Signer.Empty() {
 		return cosmos.ErrInvalidAddress(m.Signer.String())
 	}
-	if m.Tx.ID.IsEmpty() {
-		return cosmos.ErrUnknownRequest("txID cannot be empty")
+	if err := m.Tx.Valid(); err != nil {
+		return cosmos.ErrUnknownRequest(err.Error())
+	}
+	if m.Tx.FromAddress.Equals(m.Tx.ToAddress) {
+		return cosmos.ErrUnknownRequest("from and to address cannot be ")
+	}
+	if len(m.Tx.Coins) != 1 {
+		return cosmos.ErrUnknownRequest("must provide exactly one coin")
+	}
+	if m.Tx.Coins.IsEmpty() {
+		return cosmos.ErrUnknownRequest("export coin cannot be empty")
+	}
+	if !m.Tx.Coins[0].Asset.IsNative() {
+		return cosmos.ErrUnknownRequest("must provide a native asset")
+	}
+	if !m.Tx.Coins[0].Asset.IsExportAsset() {
+		return cosmos.ErrUnknownRequest("must provide an export asset")
+	}
+	if m.Asset.IsEmpty() {
+		return cosmos.ErrUnknownRequest("issued asset cannot be empty")
+	}
+	if !m.Tx.Coins[0].Asset.HasAssetExport(m.Asset) {
+		return cosmos.ErrUnknownRequest("asset is no valid export asset")
+	}
+	if m.Amount.IsZero() {
+		return cosmos.ErrUnknownRequest("issued amount cannot be zero")
+	}
+	if m.Address.IsEmpty() {
+		return cosmos.ErrUnknownRequest("address cannot be empty")
+	}
+	if !m.Address.IsChain(m.Asset.GetLayer1Asset().GetChain()) {
+		return cosmos.ErrUnknownRequest("address does not match chain")
 	}
 	return nil
 }

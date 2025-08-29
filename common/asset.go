@@ -162,7 +162,7 @@ func (a Asset) GetChain() Chain {
 
 // Get layer1 asset version
 func (a Asset) GetLayer1Asset() Asset {
-	if !a.IsSyntheticAsset() && !a.IsTradeAsset() && !a.IsSecuredAsset() {
+	if a.IsL1Asset() {
 		return a
 	}
 	return Asset{
@@ -241,6 +241,10 @@ func (a Asset) IsVaultAsset() bool {
 	return a.IsSyntheticAsset()
 }
 
+func (a Asset) IsL1Asset() bool {
+	return !a.IsSyntheticAsset() && !a.IsTradeAsset() && !a.IsSecuredAsset()
+}
+
 // Check if asset is a derived asset
 func (a Asset) IsDerivedAsset() bool {
 	return !a.Synth && !a.Trade && !a.Secured && a.GetChain().IsTHORChain() && !a.IsRune() && !a.IsTCY() && !a.IsRUJI()
@@ -265,6 +269,51 @@ func (a Asset) Native() string {
 // IsEmpty will be true when any of the field is empty, chain,symbol or ticker
 func (a Asset) IsEmpty() bool {
 	return a.Chain.IsEmpty() || a.Symbol.IsEmpty() || a.Ticker.IsEmpty()
+}
+
+// IsExportAsset returns true if asset is either native asset or external asset
+// defined in AssetExports
+func (a Asset) IsExportAsset() bool {
+	if !a.IsL1Asset() {
+		return false
+	}
+
+	native, err := NewAsset(a.Symbol.String())
+	if err != nil {
+		return false
+	}
+
+	_, found := AssetExports[native]
+	if !found {
+		return false
+	}
+
+	if a.IsNative() {
+		return true
+	}
+
+	_, found = AssetExports[native][a.Chain]
+	return found
+}
+
+// HasAssetExport return true if asset is an export asset and the other asset
+// is a valid export of it
+func (a Asset) HasAssetExport(other Asset) bool {
+	if !other.IsL1Asset() {
+		return false
+	}
+
+	exports, found := AssetExports[a]
+	if !found {
+		return false
+	}
+
+	token, found := exports[other.Chain]
+	if !found {
+		return false
+	}
+
+	return token.Symbol == other.Symbol.String()
 }
 
 // String implement fmt.Stringer , return the string representation of Asset

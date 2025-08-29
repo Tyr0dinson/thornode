@@ -41,7 +41,7 @@ func (m *MsgExportAssetBind) ValidateBasic() error {
 		return cosmos.ErrUnknownRequest("fee and asset amounts are zero")
 	}
 
-	if !common.IsSupportedExportAsset(m.Asset) {
+	if !m.Asset.IsExportAsset() {
 		return cosmos.ErrUnknownRequest("unsupported export asset")
 	}
 

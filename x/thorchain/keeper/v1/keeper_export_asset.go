@@ -32,6 +32,14 @@ func (k KVStore) GetExportAsset(
 	ctx cosmos.Context,
 	commonAsset common.Asset,
 ) (ExportAsset, error) {
+	var err error
+	if !commonAsset.IsNative() {
+		commonAsset, err = common.NewAsset(commonAsset.Symbol.String())
+		if err != nil {
+			return ExportAsset{}, err
+		}
+	}
+
 	key := k.GetKey(prefixExportAsset, commonAsset.String())
 
 	var exportAsset ExportAsset
@@ -43,7 +51,7 @@ func (k KVStore) GetExportAsset(
 
 	data := store.Get(key)
 
-	err := k.cdc.Unmarshal(data, &exportAsset)
+	err = k.cdc.Unmarshal(data, &exportAsset)
 	if err != nil {
 		wrapper := fmt.Sprintf("Unmarshal kvstore: (%T) %s", commonAsset, key)
 		return exportAsset, dbError(ctx, wrapper, err)

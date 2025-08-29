@@ -1,8 +1,9 @@
 package types
 
 import (
-	"cosmossdk.io/math"
 	"fmt"
+
+	"cosmossdk.io/math"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -210,7 +211,7 @@ func (MsgExportAssetBindSuite) TestMsgExportAssetBind(c *C) {
 		c.Assert(err, IsNil)
 
 		msg := NewMsgExportAssetBind(
-			tx, asset, tc.AssetAmount, tc.FeeAmount, signer,
+			tx, asset, tc.AssetAmount, signer,
 		)
 
 		fmt.Println(tc.Note)

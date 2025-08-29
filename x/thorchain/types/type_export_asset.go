@@ -8,9 +8,13 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
-func NewExportAsset() ExportAsset {
+func NewExportAsset(symbol string) ExportAsset {
+	asset, err := common.NewAsset(symbol)
+	if err != nil {
+		asset = common.EmptyAsset
+	}
 	return ExportAsset{
-		Asset:          common.EmptyAsset,
+		Asset:          asset,
 		AmountBound:    cosmos.ZeroUint(),
 		AmountExported: cosmos.ZeroUint(),
 	}

@@ -24,5 +24,10 @@ var AssetExports = map[Asset]map[Chain]Token{
 			Address:  "0xVULT",
 			Decimals: 18,
 		},
+		ETHChain: {
+			Symbol:   "VULT",
+			Address:  "0xVULT",
+			Decimals: 18,
+		},
 	},
 }

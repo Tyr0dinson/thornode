@@ -79,6 +79,8 @@ func getInternalHandlerMapping(mgr Manager) map[string]MsgHandler {
 	m[sdk.MsgTypeURL(&MsgTCYUnstake{})] = NewTCYUnstakeHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgOperatorRotate{})] = NewOperatorRotateHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgExportAssetBind{})] = NewExportAssetBindHandler(mgr)
+	m[sdk.MsgTypeURL(&MsgExportAssetIssue{})] = NewExportAssetIssueHandler(mgr)
+	m[sdk.MsgTypeURL(&MsgExportAssetRedeem{})] = NewExportAssetRedeemHandler(mgr)
 	return m
 }
 
@@ -183,8 +185,8 @@ func getMsgManageTHORNameFromMemo(memo ManageTHORNameMemo, tx ObservedTx, signer
 	return NewMsgManageTHORName(memo.Name, memo.Chain, memo.Address, tx.Tx.Coins[0], memo.Expire, memo.PreferredAsset, memo.Owner, signer), nil
 }
 
-func getMsgExportAssetBindFromMemo(ctx cosmos.Context, memo ExportAssetBindMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
-	if !common.IsSupportedExportAsset(memo.Asset) {
+func getMsgExportAssetBindFromMemo(_ cosmos.Context, memo ExportAssetBindMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
+	if !memo.Asset.IsExportAsset() {
 		return nil, fmt.Errorf("export asset not supported: %s", memo.Asset.String())
 	}
 
@@ -192,6 +194,30 @@ func getMsgExportAssetBindFromMemo(ctx cosmos.Context, memo ExportAssetBindMemo,
 
 	return NewMsgExportAssetBind(
 		tx.Tx, memo.Asset, coin.Amount, signer,
+	), nil
+}
+
+func getMsgExportAssetIssueFromMemo(_ cosmos.Context, memo ExportAssetIssueMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
+	if !memo.Asset.IsExportAsset() {
+		return nil, fmt.Errorf("export asset not supported: %s", memo.Asset.String())
+	}
+
+	coin := tx.Tx.Coins.GetCoin(memo.Asset)
+
+	return NewMsgExportAssetIssue(
+		tx.Tx, memo.Asset, coin.Amount, memo.Address, signer,
+	), nil
+}
+
+func getMsgExportAssetRedeemFromMemo(_ cosmos.Context, memo ExportAssetRedeemMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
+	if !memo.Asset.IsExportAsset() {
+		return nil, fmt.Errorf("export asset not supported: %s", memo.Asset.String())
+	}
+
+	coin := tx.Tx.Coins.GetCoin(memo.Asset)
+
+	return NewMsgExportAssetRedeem(
+		tx.Tx, memo.Asset, coin.Amount, memo.Address, signer,
 	), nil
 }
 
@@ -295,6 +321,10 @@ func processOneTxIn(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, sig
 		newMsg = NewMsgOperatorRotate(signer, m.OperatorAddress, tx.Tx.Coins[0])
 	case ExportAssetBindMemo:
 		newMsg, err = getMsgExportAssetBindFromMemo(ctx, m, tx, signer)
+	case ExportAssetIssueMemo:
+		newMsg, err = getMsgExportAssetIssueFromMemo(ctx, m, tx, signer)
+	case ExportAssetRedeemMemo:
+		newMsg, err = getMsgExportAssetRedeemFromMemo(ctx, m, tx, signer)
 	default:
 		return nil, errInvalidMemo
 	}

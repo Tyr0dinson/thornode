@@ -130,6 +130,8 @@ func (p *parser) parse() (mem Memo, err error) {
 		return p.ParseOperatorRotate()
 	case TxExportAssetBind:
 		return p.ParseExportAssetBindMemo()
+	case TxExportAssetIssue:
+		return p.ParseExportAssetIssueMemo()
 	default:
 		return EmptyMemo, fmt.Errorf("TxType not supported: %s", p.getType().String())
 	}

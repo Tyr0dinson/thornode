@@ -600,6 +600,12 @@ func (s *MemoSuite) TestParse(c *C) {
 	c.Check(memo.IsType(TxAdd), Equals, true)
 	c.Check(memo.String(), Equals, "+:BTC.BTC:thor1z83z5t9vqxys8nhpkxk5zp6zym0lalcp8ywhvj")
 
+	// issue
+	memo, err = ParseMemoWithTHORNames(ctx, k, "issue:eth.ruji:0x90f2b1ae50e6018230e90a33f98c7844a0ab635a")
+	c.Assert(err, IsNil)
+	c.Check(memo.IsType(TxExportAssetIssue), Equals, true)
+	c.Check(memo.String(), Equals, "issue:ETH.RUJI:0x90f2b1ae50e6018230e90a33f98c7844a0ab635a")
+
 	// unhappy paths
 	memo, err = ParseMemoWithTHORNames(ctx, k, "")
 	c.Assert(err, NotNil)
@@ -648,6 +654,12 @@ func (s *MemoSuite) TestParse(c *C) {
 	_, err = ParseMemoWithTHORNames(ctx, k, "bond:what") // invalid address
 	c.Assert(err, NotNil)
 	_, err = ParseMemoWithTHORNames(ctx, k, "whatever") // not support
+	c.Assert(err, NotNil)
+	_, err = ParseMemoWithTHORNames(ctx, k, "issue")
+	c.Assert(err, NotNil)
+	_, err = ParseMemoWithTHORNames(ctx, k, "issue:ETH.RUJI") // missing address
+	c.Assert(err, NotNil)
+	_, err = ParseMemoWithTHORNames(ctx, k, "issue:0x90f2b1ae50e6018230e90a33f98c7844a0ab635a") // missing asset
 	c.Assert(err, NotNil)
 
 	memo, err = ParseMemoWithTHORNames(ctx, k, "x:tthor14hj2tavq8fpesdwxxcu44rty3hh90vhujrvcmstl4zr3txmfvw9sw58u9f:AA==")
