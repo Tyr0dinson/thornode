@@ -18,10 +18,6 @@ type MemolessHandler struct {
     bridge thorclient.ThorchainBridge
     utils  *types.MemolessUtils
     logger zerolog.Logger
-    rr     refundRecorder
-    // test/config hooks
-    candidateProvider      func(txIn *btypes.TxInItem, reference, chainID string) []CollisionCandidate
-    collisionWiringEnabled bool
 }
 
 // NewMemolessHandler creates a new memoless handler instance
@@ -30,8 +26,6 @@ func NewMemolessHandler(bridge thorclient.ThorchainBridge, logger zerolog.Logger
         bridge: bridge,
         utils:  types.NewMemolessUtils(),
         logger: logger.With().Str("module", "memoless_handler").Logger(),
-        rr:     newInMemoryRefundRecorder(),
-        collisionWiringEnabled: false,
     }
 }
 
@@ -79,26 +73,7 @@ func (m *MemolessHandler) ProcessMemolessTransaction(txIn *btypes.TxInItem) (*bt
 		return nil, fmt.Errorf("registered memo validation failed for reference %s: %w", reference, err)
 	}
 
-    // Phase 1 (scaffold): Deterministic collision wiring (no-op by default)
-    // Build candidate set and compute winner using the lexicographic
-    // (inbound_height, txid) rule. For now, we only include the current
-    // transaction to avoid behavior changes until full wiring is ready.
-    if m.shouldApplyCollisionWiring() {
-        candidates := m.buildCollisionCandidates(txIn, reference, registeredMemo.ChainId)
-        if m.candidateProvider != nil {
-            candidates = m.candidateProvider(txIn, reference, registeredMemo.ChainId)
-        }
-        winner, losers := DetermineCollisionWinner(candidates)
-        if len(losers) > 0 {
-            // Loser path: if current tx is not the winner, attach an internal
-            // loser-signal tag in the memo for THORNode to route refund, and
-            // return the original tx. Finalized tag format: MLSIG:LOSER;ref=...;winner=...
-            if !(winner.InboundHeight == txIn.BlockHeight && winner.TxID == txIn.Tx) {
-                txIn.Memo = buildLoserSignalTag(reference, winner.TxID)
-                return txIn, nil
-            }
-        }
-    }
+    // Note: collision loser signaling is intentionally disabled for v1.
 
     // Create a new TxInItem with the full memo from THORChain
     processedTx := &btypes.TxInItem{
@@ -146,22 +121,7 @@ func (m *MemolessHandler) validateRegisteredMemo(memo *stypes.RegisteredMemo, cu
 // shouldApplyCollisionWiring returns whether Phase 1 collision decisioning
 // should be applied. Default is false to avoid behavior changes until the
 // full flow (including loser refunds) is in place.
-func (m *MemolessHandler) shouldApplyCollisionWiring() bool {
-    return false
-}
-
-// buildCollisionCandidates constructs a minimal candidate set for the current
-// transaction and reference within the scope (chain_id, vault_pubkey, ref).
-// For the scaffold, only the current transaction is included.
-func (m *MemolessHandler) buildCollisionCandidates(txIn *btypes.TxInItem, reference, chainID string) []CollisionCandidate {
-    return []CollisionCandidate{{
-        ChainID:       chainID,
-        VaultPubKey:   txIn.ObservedVaultPubKey.String(),
-        Reference:     reference,
-        InboundHeight: txIn.BlockHeight,
-        TxID:          txIn.Tx,
-    }}
-}
+// Note: collision decision scaffolding removed for v1 to avoid drift.
 
 // adjustCoinsForMemoless removes the reference digits from the transaction amount
 // This restores the original intended amount by removing the 5-digit reference
@@ -220,6 +180,4 @@ func (m *MemolessHandler) IsMemolessTransaction(memo string, coins common.Coins)
 
 // buildLoserSignalTag builds the finalized internal loser-signal memo tag
 // understood by THORNode when guarded loser routing is enabled.
-func buildLoserSignalTag(reference, winnerTxID string) string {
-    return fmt.Sprintf("MLSIG:LOSER;ref=%s;winner=%s", reference, winnerTxID)
-}
+// Note: loser-signal tag emission removed for v1.

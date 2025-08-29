@@ -2,7 +2,6 @@ package thorchain
 
 import (
     "fmt"
-    "strings"
 
 	"github.com/blang/semver"
 
@@ -60,55 +59,19 @@ func (h ObservedTxInHandler) handle(ctx cosmos.Context, msg MsgObservedTxIn) (*c
 	if err != nil {
 		return nil, wrapError(ctx, err, "fail to get list of active node accounts")
 	}
-	handler := NewInternalHandler(h.mgr)
-	for _, tx := range msg.Txs {
-
-        // Memoless loser signal (internal-only, guarded): if memo carries an
-        // internal loser signal tag, and loser routing is enabled, validate
-        // then route to refund path and skip normal processing.
-        if shouldRouteMemolessLoser() {
-            if ref, ok := parseMemolessLoserSignal(tx.Tx.Memo); ok {
-                // Best-effort validation: ensure the reference exists and is consistent
-                if h.mgr.Keeper().HasRegisteredMemo(ctx, ref) && validateMemolessLoserSignal(tx, ref) {
-                    if internalMgr, ok := h.mgr.(*Mgrs); ok {
-                        _ = routeMemolessOutcome(ctx, internalMgr, tx, true, "REF_COLLISION_LOST", ref)
-                    }
-                    // Skip normal handling for loser
-                    continue
-                }
-            }
+    handler := NewInternalHandler(h.mgr)
+    for _, tx := range msg.Txs {
+        voter, err := ensureVaultAndGetTxInVoter(ctx, tx.ObservedPubKey, tx.Tx.ID, h.mgr.Keeper())
+        if err != nil {
+            ctx.Logger().Error("fail to ensure vault and get tx in voter", "error", err)
+            continue
         }
 
-		voter, err := ensureVaultAndGetTxInVoter(ctx, tx.ObservedPubKey, tx.Tx.ID, h.mgr.Keeper())
-		if err != nil {
-			ctx.Logger().Error("fail to ensure vault and get tx in voter", "error", err)
-			continue
-		}
-
-		voter, isQuorum := processTxInAttestation(ctx, h.mgr, voter, activeNodeAccounts, tx, msg.Signer, true)
-		if err := handleObservedTxInQuorum(ctx, h.mgr, msg.Signer, activeNodeAccounts, handler, tx, voter, voter.Tx.GetSigners(), isQuorum); err != nil {
-			return nil, wrapError(ctx, err, "fail to handle observed tx in quorum")
-		}
-
-		// Memoless: server-side refund routing (guarded, no-op by default)
-		// TODO(memoless): When Bifrost conveys a memoless loser signal for a given
-		// observed inbound (e.g., via metadata or dedicated message), route the
-		// loser outcome through the server refund path below. The observer remains
-		// responsible for deterministic winner selection; server executes refunds.
-		if shouldRouteMemolessLoser() {
-			if internalMgr, ok := h.mgr.(*Mgrs); ok {
-				// Placeholder: determine if this tx is a memoless loser and extract
-				// (reason, reference). Until Bifrost provides the signal, this path
-				// remains disabled by default.
-				isLoser := false
-				reason := ""
-				reference := ""
-				if isLoser {
-					_ = routeMemolessOutcome(ctx, internalMgr, tx, isLoser, reason, reference)
-				}
-			}
-		}
-	}
+        voter, isQuorum := processTxInAttestation(ctx, h.mgr, voter, activeNodeAccounts, tx, msg.Signer, true)
+        if err := handleObservedTxInQuorum(ctx, h.mgr, msg.Signer, activeNodeAccounts, handler, tx, voter, voter.Tx.GetSigners(), isQuorum); err != nil {
+            return nil, wrapError(ctx, err, "fail to handle observed tx in quorum")
+        }
+    }
 	return &cosmos.Result{}, nil
 }
 
@@ -156,50 +119,4 @@ func ObservedTxInAnteHandler(ctx cosmos.Context, v semver.Version, k keeper.Keep
 // Bifrost loser signal and full refund wiring are ready.
 func shouldRouteMemolessLoser() bool { return false }
 
-// parseMemolessLoserSignal extracts the reference from an internal
-// memoless loser signal tag embedded in the memo. Supports both the
-// finalized tag prefix (MLSIG:LOSER;) and a legacy prefix (ML-LOSER:).
-func parseMemolessLoserSignal(memo string) (string, bool) {
-    ref := ""
-    // Finalized prefix: MLSIG:LOSER;key=val;...
-    if strings.HasPrefix(memo, "MLSIG:LOSER;") {
-        body := strings.TrimPrefix(memo, "MLSIG:LOSER;")
-        parts := strings.Split(body, ";")
-        for _, p := range parts {
-            if p == "" { continue }
-            kv := strings.SplitN(p, "=", 2)
-            if len(kv) == 2 && kv[0] == "ref" {
-                ref = kv[1]
-                break
-            }
-        }
-        if ref != "" { return ref, true }
-    }
-    // Legacy prefix: ML-LOSER:ref=...;winner=...
-    if strings.HasPrefix(memo, "ML-LOSER:") {
-        body := strings.TrimPrefix(memo, "ML-LOSER:")
-        parts := strings.Split(body, ";")
-        for _, p := range parts {
-            if p == "" { continue }
-            kv := strings.SplitN(p, "=", 2)
-            if len(kv) == 2 && kv[0] == "ref" {
-                ref = kv[1]
-                break
-            }
-        }
-        if ref != "" { return ref, true }
-    }
-    return "", false
-}
-
-// validateMemolessLoserSignal performs minimal checks to reduce the blast
-// radius of spoofed signals: it ensures the inbound amount encodes the
-// provided reference in its last five digits and that a single-coin input
-// exists.
-func validateMemolessLoserSignal(tx ObservedTx, reference string) bool {
-    if len(tx.Tx.Coins) != 1 { return false }
-    amt := tx.Tx.Coins[0].Amount.String()
-    if len(reference) != 5 { return false }
-    if len(amt) < 5 { return false }
-    return strings.HasSuffix(amt, reference)
-}
+// Note: loser tag parsing and validation are removed for v1 to avoid drift.
