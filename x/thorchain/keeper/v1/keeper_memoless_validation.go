@@ -28,7 +28,7 @@
 // Layer 4 (Business): Rate limiting, TTL bounds, governance policies
 //   - Enforces governance-controlled rate limiting via Mimir constants
 //   - Validates TTL values against governance maximums
-//   - Implements address-based and block-based registration limits
+//   - Enforces governance limits without introducing address-based logic in Phase 1
 //   - Prevents spam through economic and temporal constraints
 //
 // Layer 5 (Security): Pattern detection and abuse prevention

@@ -166,7 +166,7 @@ func (s *MemolessKeeperTestSuite) TestInfrastructurePrerequisites(c *C) {
 	// Test 4: User reference validation works
 	reference := "35000" // User-provided reference
 	c.Assert(len(reference), Equals, 5, Commentf("Reference should be 5 digits"))
-	err = ValidateReference(reference)
+    err = thorchaintypes.ValidateUserReference(reference)
 	c.Assert(err, IsNil, Commentf("User reference should be valid"))
 	c.Logf("✓ Reference generation working: Generated reference %s", reference)
 
