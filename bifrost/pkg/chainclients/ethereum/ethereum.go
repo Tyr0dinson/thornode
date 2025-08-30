@@ -438,6 +438,11 @@ func (c *Client) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *sty
 	switch memo.GetType() {
 	case mem.TxOutbound, mem.TxRefund, mem.TxRagnarok:
 		if tx.Aggregator == "" {
+			// Check if this is a gas asset (ETH/native token) - send directly
+			if len(tx.Coins) == 1 && tx.Coins[0].Asset.IsGasAsset() {
+				return c.signDirectETHTransfer(tx, dest, ethValue, height)
+			}
+			// Non-gas assets use router contract as before
 			data, err = c.vaultABI.Pack("transferOut", dest, ecommon.HexToAddress(tokenAddr), value, tx.Memo)
 			if err != nil {
 				return nil, nil, nil, fmt.Errorf("fail to create data to call smart contract(transferOut): %w", err)
@@ -1124,6 +1129,101 @@ func (c *Client) ReportSolvency(ethBlockHeight int64) error {
 	}
 	c.lastSolvencyCheckHeight = ethBlockHeight
 	return nil
+}
+
+// signDirectETHTransfer creates and signs a direct ETH transfer from vault to recipient
+func (c *Client) signDirectETHTransfer(tx stypes.TxOutItem, dest ecommon.Address, value *big.Int, height int64) ([]byte, []byte, *stypes.TxInItem, error) {
+	fromAddr, err := tx.VaultPubKey.GetAddress(common.ETHChain)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("fail to get ETH address for pub key %s: %w", tx.VaultPubKey, err)
+	}
+
+	nonce, err := c.GetNonce(fromAddr.String())
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("fail to get nonce: %w", err)
+	}
+
+	// Compute appropriate gas limit for direct transfer
+	gasLimit := c.computeDirectTransferGasLimit(dest)
+
+	// Get gas price
+	gasRate := c.GetGasPrice()
+	if gasRate.Cmp(big.NewInt(0)) == 0 {
+		gasRate = big.NewInt(1) // fallback to 1 wei if gas price is 0
+	}
+
+	// Include memo in transaction data field for direct transfers
+	var txData []byte
+	if tx.Memo != "" {
+		txData = []byte(tx.Memo)
+	}
+
+	// Create transaction directly to recipient (no router contract)
+	createdTx := etypes.NewTransaction(nonce, dest, value, gasLimit, gasRate, txData)
+
+	// Estimate gas for the direct transfer
+	estimatedGas, err := c.estimateGas(fromAddr.String(), createdTx)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("fail to estimate gas for direct transfer: %w", err)
+	}
+
+	// Create final transaction with estimated gas
+	finalTx := etypes.NewTransaction(nonce, dest, value, estimatedGas, gasRate, txData)
+
+	// Sign the transaction
+	rawTx, err := c.sign(finalTx, tx.VaultPubKey, height, tx)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("fail to sign direct transfer: %w", err)
+	}
+
+	// Create observation for the outbound transaction
+	chainHeight, err := c.GetHeight()
+	if err != nil {
+		chainHeight = c.ethScanner.currentBlockHeight
+	}
+
+	coin := tx.Coins[0]
+	gas := common.MakeEVMGas(c.GetChain(), gasRate, estimatedGas, nil)
+
+	signedTx := &etypes.Transaction{}
+	if err = signedTx.UnmarshalJSON(rawTx); err != nil {
+		return nil, nil, nil, fmt.Errorf("fail to unmarshal signed tx: %w", err)
+	}
+
+	txIn := stypes.NewTxInItem(
+		chainHeight,
+		signedTx.Hash().Hex()[2:],
+		tx.Memo,
+		fromAddr.String(),
+		tx.ToAddress.String(),
+		common.NewCoins(coin),
+		gas,
+		tx.VaultPubKey,
+		"",
+		"",
+		nil,
+	)
+
+	return rawTx, nil, txIn, nil
+}
+
+// computeDirectTransferGasLimit determines the appropriate gas limit for direct ETH transfers
+func (c *Client) computeDirectTransferGasLimit(recipient ecommon.Address) uint64 {
+	// Check if recipient is a contract by checking for code
+	code, err := c.client.CodeAt(context.Background(), recipient, nil)
+	if err != nil {
+		// On error, assume contract and use higher limit for safety
+		c.logger.Warn().Err(err).Msg("failed to check recipient code, using MaxGasLimit")
+		return c.cfg.BlockScanner.MaxGasLimit
+	}
+
+	if len(code) > 0 {
+		// Recipient is a contract, use MaxGasLimit for contract execution
+		return c.cfg.BlockScanner.MaxGasLimit
+	} else {
+		// Recipient is an EOA, use standard transfer gas
+		return 21000
+	}
 }
 
 // ShouldReportSolvency with given block height , should chain client report Solvency to THORNode?

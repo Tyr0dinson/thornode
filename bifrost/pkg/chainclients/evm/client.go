@@ -481,6 +481,11 @@ func (c *EVMClient) getOutboundTxData(txOutItem stypes.TxOutItem, memo mem.Memo,
 	switch memo.GetType() {
 	case mem.TxOutbound, mem.TxRefund, mem.TxRagnarok:
 		if txOutItem.Aggregator == "" {
+			// Check if this is a gas asset (native token) - use direct transfer
+			if len(txOutItem.Coins) == 1 && txOutItem.Coins[0].Asset.IsGasAsset() {
+				return c.buildDirectTransferData(txOutItem, evmValue)
+			}
+			// Non-gas assets use router contract as before
 			data, err = c.vaultABI.Pack("transferOut", toAddr, ecommon.HexToAddress(tokenAddr), value, txOutItem.Memo)
 			if err != nil {
 				return nil, hasRouterUpdated, nil, fmt.Errorf("fail to create data to call smart contract(transferOut): %w", err)
@@ -539,6 +544,17 @@ func (c *EVMClient) getOutboundTxData(txOutItem stypes.TxOutItem, memo mem.Memo,
 }
 
 func (c *EVMClient) buildOutboundTx(txOutItem stypes.TxOutItem, memo mem.Memo, nonce uint64) (*etypes.Transaction, error) {
+	fromAddr, err := txOutItem.VaultPubKey.GetAddress(c.cfg.ChainID)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get EVM address for pub key(%s): %w", txOutItem.VaultPubKey, err)
+	}
+
+	// Check if this is a direct transfer (gas asset)
+	if len(txOutItem.Coins) == 1 && txOutItem.Coins[0].Asset.IsGasAsset() {
+		return c.buildDirectTransferTx(txOutItem, memo, nonce, fromAddr)
+	}
+
+	// For non-gas assets, use router contract as before
 	contractAddr := c.getSmartContractAddr(txOutItem.VaultPubKey)
 	if contractAddr.IsEmpty() {
 		// we may be churning from a vault that does not have a contract
@@ -549,11 +565,6 @@ func (c *EVMClient) buildOutboundTx(txOutItem stypes.TxOutItem, memo mem.Memo, n
 		if contractAddr.IsEmpty() {
 			return nil, fmt.Errorf("can't sign tx, fail to get smart contract address")
 		}
-	}
-
-	fromAddr, err := txOutItem.VaultPubKey.GetAddress(c.cfg.ChainID)
-	if err != nil {
-		return nil, fmt.Errorf("fail to get EVM address for pub key(%s): %w", txOutItem.VaultPubKey, err)
 	}
 
 	txData, _, evmValue, err := c.getOutboundTxData(txOutItem, memo, contractAddr)
@@ -1027,6 +1038,91 @@ func (c *EVMClient) ReportSolvency(height int64) error {
 // ShouldReportSolvency returns true if the given height is a solvency report height.
 func (c *EVMClient) ShouldReportSolvency(height int64) bool {
 	return height%c.cfg.SolvencyBlocks == 0
+}
+
+// buildDirectTransferData creates transaction data for direct native token transfers
+func (c *EVMClient) buildDirectTransferData(txOutItem stypes.TxOutItem, evmValue *big.Int) ([]byte, bool, *big.Int, error) {
+	// For direct transfers, include memo in transaction data field
+	var txData []byte
+	if txOutItem.Memo != "" {
+		txData = []byte(txOutItem.Memo)
+	}
+
+	// Return data, hasRouterUpdated=false, and the native token value
+	return txData, false, evmValue, nil
+}
+
+// buildDirectTransferTx creates a direct transfer transaction for gas assets
+func (c *EVMClient) buildDirectTransferTx(txOutItem stypes.TxOutItem, memo mem.Memo, nonce uint64, fromAddr common.Address) (*etypes.Transaction, error) {
+	// Include memo in transaction data field for direct transfers
+	var txData []byte
+	if txOutItem.Memo != "" {
+		txData = []byte(txOutItem.Memo)
+	}
+
+	// Get the native token value
+	evmValue := big.NewInt(0)
+	if len(txOutItem.Coins) == 1 {
+		coin := txOutItem.Coins[0]
+		tokenAddr := c.getTokenAddressFromAsset(coin.Asset)
+		value := coin.Amount.BigInt()
+		value = c.evmScanner.tokenManager.ConvertSigningAmount(value, tokenAddr)
+		if strings.EqualFold(tokenAddr, evm.NativeTokenAddr) {
+			evmValue = value
+		}
+	}
+
+	// Compute appropriate gas limit for direct transfer
+	gasLimit := c.computeDirectTransferGasLimit(txOutItem.ToAddress)
+
+	// Get gas price (same logic as buildOutboundTx)
+	_, gasRateUnitsPerOne := c.cfg.ChainID.GetGasUnits()
+	toiGasRateWei := cosmos.NewUint(uint64(txOutItem.GasRate)).MulUint64(common.WeiPerOne).Quo(gasRateUnitsPerOne).BigInt()
+
+	gasRate := c.GetGasPrice()
+	if c.cfg.BlockScanner.FixedGasRate > 0 || gasRate.Cmp(big.NewInt(0)) == 0 {
+		gasRate = toiGasRateWei
+	} else {
+		lowerBound := toiGasRateWei
+		lowerBound.Mul(lowerBound, big.NewInt(2))
+		lowerBound.Div(lowerBound, big.NewInt(3))
+		if gasRate.Cmp(lowerBound) < 0 {
+			gasRate = lowerBound
+		}
+	}
+
+	// Create transaction directly to recipient
+	toAddr := ecommon.HexToAddress(txOutItem.ToAddress.String())
+	createdTx := etypes.NewTransaction(nonce, toAddr, evmValue, gasLimit, gasRate, txData)
+
+	// Estimate gas for the direct transfer
+	estimatedGas, err := c.evmScanner.ethRpc.EstimateGas(fromAddr.String(), createdTx)
+	if err != nil {
+		return nil, fmt.Errorf("fail to estimate gas for direct transfer: %w", err)
+	}
+
+	// Create final transaction with estimated gas
+	finalTx := etypes.NewTransaction(nonce, toAddr, evmValue, estimatedGas, gasRate, txData)
+	return finalTx, nil
+}
+
+// computeDirectTransferGasLimit determines the appropriate gas limit for direct native token transfers
+func (c *EVMClient) computeDirectTransferGasLimit(recipient common.Address) uint64 {
+	// Check if recipient is a contract by checking for code
+	code, err := c.evmScanner.ethRpc.GetCode(recipient.String())
+	if err != nil {
+		// On error, assume contract and use higher limit for safety
+		c.logger.Warn().Err(err).Msg("failed to check recipient code, using MaxGasLimit")
+		return c.cfg.BlockScanner.MaxGasLimit
+	}
+
+	if len(code) > 0 {
+		// Recipient is a contract, use MaxGasLimit for contract execution
+		return c.cfg.BlockScanner.MaxGasLimit
+	} else {
+		// Recipient is an EOA, use standard transfer gas
+		return 21000
+	}
 }
 
 // --------------------------------- helpers ---------------------------------

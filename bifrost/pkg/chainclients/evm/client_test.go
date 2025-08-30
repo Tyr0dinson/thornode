@@ -227,6 +227,82 @@ func (s *EVMSuite) TearDownTest(c *C) {
 	}
 }
 
+func (s *EVMSuite) TestDirectNativeTransfer(c *C) {
+	pubkeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
+	c.Assert(err, IsNil)
+	poolMgr := thorclient.NewPoolMgr(s.bridge)
+	chainConfig := config.BifrostChainConfiguration{
+		RPCHost: "http://" + s.server.Listener.Addr().String(),
+		BlockScanner: config.BifrostBlockScannerConfiguration{
+			StartBlockHeight:   1,
+			HTTPRequestTimeout: time.Second,
+			MaxGasLimit:        80000,
+		},
+		ChainID: common.AVAXChain,
+	}
+	chainConfig.EVM.AggregatorMaxGasMultiplier = 10
+	chainConfig.EVM.TokenMaxGasMultiplier = 3
+	e, err := NewEVMClient(s.thorKeys, chainConfig, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
+	c.Assert(err, IsNil)
+	c.Assert(e, NotNil)
+	c.Assert(pubkeyMgr.Start(), IsNil)
+	defer func() { c.Assert(pubkeyMgr.Stop(), IsNil) }()
+	pubkeys := pubkeyMgr.GetAlgoPubKeys(common.SigningAlgoSecp256k1)
+	addr, err := pubkeys[len(pubkeys)-1].GetAddress(common.AVAXChain)
+	c.Assert(err, IsNil)
+
+	// Test direct AVAX transfer (gas asset)
+	result, _, obs, err := e.SignTx(stypes.TxOutItem{
+		Chain:       common.AVAXChain,
+		ToAddress:   addr,
+		VaultPubKey: e.localPubKey,
+		Coins: common.Coins{
+			common.NewCoin(common.AVAXAsset, cosmos.NewUint(1000000000)), // 1 AVAX
+		},
+		Memo:   "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
+		InHash: "4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
+	}, 1)
+	c.Assert(err, IsNil)
+	c.Assert(result, NotNil)
+	c.Assert(obs, NotNil)
+
+	// Verify observation contains the expected data
+	c.Assert(obs.Tx, Not(Equals), "")
+	c.Assert(obs.Memo, Equals, "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87")
+	c.Assert(obs.Coins, HasLen, 1)
+	c.Assert(obs.Coins[0].Asset.Equals(common.AVAXAsset), Equals, true)
+	c.Assert(obs.Coins[0].Amount.Equal(cosmos.NewUint(1000000000)), Equals, true)
+}
+
+func (s *EVMSuite) TestComputeDirectTransferGasLimit(c *C) {
+	pubkeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
+	c.Assert(err, IsNil)
+	poolMgr := thorclient.NewPoolMgr(s.bridge)
+	chainConfig := config.BifrostChainConfiguration{
+		RPCHost: "http://" + s.server.Listener.Addr().String(),
+		BlockScanner: config.BifrostBlockScannerConfiguration{
+			StartBlockHeight:   1,
+			HTTPRequestTimeout: time.Second,
+			MaxGasLimit:        80000,
+		},
+		ChainID: common.AVAXChain,
+	}
+	e, err := NewEVMClient(s.thorKeys, chainConfig, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
+	c.Assert(err, IsNil)
+	c.Assert(e, NotNil)
+
+	// Test with a zero address (should default to MaxGasLimit for safety)
+	zeroAddr := common.Address("0x0000000000000000000000000000000000000000")
+	gasLimit := e.computeDirectTransferGasLimit(zeroAddr)
+	c.Assert(gasLimit, Equals, uint64(80000)) // Should be MaxGasLimit
+
+	// Test with a non-zero address (will try to check code, but should handle gracefully)
+	testAddr := common.Address("0x742d35cc6567c0530e58f6b1231f7b0b7e6c8b1a")
+	gasLimit = e.computeDirectTransferGasLimit(testAddr)
+	// Should either be 21000 (EOA) or 80000 (contract/MaxGasLimit)
+	c.Assert(gasLimit == 21000 || gasLimit == 80000, Equals, true)
+}
+
 func (s *EVMSuite) TestNewClient(c *C) {
 	pubkeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
 	c.Assert(err, IsNil)

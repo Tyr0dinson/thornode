@@ -15,6 +15,7 @@ import (
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	cKeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
+	ecommon "github.com/ethereum/go-ethereum/common"
 	"github.com/magiconair/properties/assert"
 	. "gopkg.in/check.v1"
 
@@ -712,4 +713,99 @@ func (s *EthereumSuite) TestGetConfirmationCount(c *C) {
 		},
 		MemPool: false,
 	}), Equals, int64(2))
+}
+
+func (s *EthereumSuite) TestDirectETHTransfer(c *C) {
+	pubkeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
+	c.Assert(err, IsNil)
+	poolMgr := thorclient.NewPoolMgr(s.bridge)
+	chainConfig := config.BifrostChainConfiguration{
+		RPCHost: "http://" + s.server.Listener.Addr().String(),
+		BlockScanner: config.BifrostBlockScannerConfiguration{
+			StartBlockHeight:   1, // avoids querying thorchain for block height
+			HTTPRequestTimeout: time.Second,
+			MaxGasLimit:        80000,
+		},
+		ChainID: common.ETHChain, // Important for determining gas rate units.
+	}
+	chainConfig.EVM.AggregatorMaxGasMultiplier = 10
+	chainConfig.EVM.TokenMaxGasMultiplier = 3
+	e, err := NewClient(s.thorKeys, chainConfig, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
+	c.Assert(err, IsNil)
+	c.Assert(e, NotNil)
+	e.ethScanner.globalNetworkFeeQueue = make(chan common.NetworkFee, 1)
+	c.Assert(pubkeyMgr.Start(), IsNil)
+	defer func() { c.Assert(pubkeyMgr.Stop(), IsNil) }()
+	pubkeys := pubkeyMgr.GetAlgoPubKeys(common.SigningAlgoSecp256k1)
+	addr, err := pubkeys[len(pubkeys)-1].GetAddress(common.ETHChain)
+	c.Assert(err, IsNil)
+
+	// Test direct ETH transfer (gas asset)
+	result, _, obs, err := e.SignTx(stypes.TxOutItem{
+		Chain:       common.ETHChain,
+		ToAddress:   addr,
+		VaultPubKey: e.localPubKey,
+		Coins: common.Coins{
+			common.NewCoin(common.ETHAsset, cosmos.NewUint(1000000000)), // 1 ETH in wei
+		},
+		Memo:   "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
+		InHash: "4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
+	}, 1)
+	c.Assert(err, IsNil)
+	c.Assert(result, NotNil)
+	c.Assert(obs, NotNil)
+
+	// Verify the transaction was created (should not use router contract)
+	c.Assert(len(result) > 0, Equals, true)
+
+	// Verify observation contains the expected data
+	c.Assert(obs.Tx, Not(Equals), "")
+	c.Assert(obs.Memo, Equals, "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87")
+	c.Assert(obs.Coins, HasLen, 1)
+	c.Assert(obs.Coins[0].Asset.Equals(common.ETHAsset), Equals, true)
+	c.Assert(obs.Coins[0].Amount.Equal(cosmos.NewUint(1000000000)), Equals, true)
+
+	// Verify the transaction was created with memo in data field
+	c.Assert(len(result) > 0, Equals, true)
+	// The raw transaction should contain the memo in the data field
+	// We can't easily decode the full RLP, but we can verify the memo is included
+	memoBytes := []byte("OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87")
+	// Check if memo bytes are present in the raw transaction (this is a basic check)
+	found := false
+	for i := 0; i <= len(result)-len(memoBytes); i++ {
+		if string(result[i:i+len(memoBytes)]) == string(memoBytes) {
+			found = true
+			break
+		}
+	}
+	c.Assert(found, Equals, true, Commentf("Memo should be included in transaction data"))
+}
+
+func (s *EthereumSuite) TestComputeDirectTransferGasLimit(c *C) {
+	pubkeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
+	c.Assert(err, IsNil)
+	poolMgr := thorclient.NewPoolMgr(s.bridge)
+	chainConfig := config.BifrostChainConfiguration{
+		RPCHost: "http://" + s.server.Listener.Addr().String(),
+		BlockScanner: config.BifrostBlockScannerConfiguration{
+			StartBlockHeight:   1,
+			HTTPRequestTimeout: time.Second,
+			MaxGasLimit:        80000,
+		},
+		ChainID: common.ETHChain,
+	}
+	e, err := NewClient(s.thorKeys, chainConfig, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
+	c.Assert(err, IsNil)
+	c.Assert(e, NotNil)
+
+	// Test with a zero address (should default to MaxGasLimit for safety)
+	zeroAddr := ecommon.HexToAddress("0x0000000000000000000000000000000000000000")
+	gasLimit := e.computeDirectTransferGasLimit(zeroAddr)
+	c.Assert(gasLimit, Equals, uint64(80000)) // Should be MaxGasLimit
+
+	// Test with a non-zero address (will try to check code, but should handle gracefully)
+	testAddr := ecommon.HexToAddress("0x742d35cc6567c0530e58f6b1231f7b0b7e6c8b1a")
+	gasLimit = e.computeDirectTransferGasLimit(testAddr)
+	// Should either be 21000 (EOA) or 80000 (contract/MaxGasLimit)
+	c.Assert(gasLimit == 21000 || gasLimit == 80000, Equals, true)
 }

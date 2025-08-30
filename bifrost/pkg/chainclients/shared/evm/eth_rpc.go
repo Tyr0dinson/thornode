@@ -121,6 +121,13 @@ func (e *EthRPC) GetNonceFinalized(addr string) (uint64, error) {
 	return nonce, nil
 }
 
+// GetCode returns the code stored at the given address
+func (e *EthRPC) GetCode(addr string) ([]byte, error) {
+	ctx, cancel := e.getContext()
+	defer cancel()
+	return e.client.CodeAt(ctx, ecommon.HexToAddress(addr), nil)
+}
+
 // CheckTransaction returns true if a transaction is found and successful on chain. This
 // is used to determine when a transaction has been dropped from the chain or failed on
 // subsequent execution after reorgs. This can return false positives, but should not
