@@ -902,6 +902,46 @@ paths:
           description: OK
       tags:
       - Transactions
+  /thorchain/registered_memo/{reference}:
+    get:
+      description: Returns the registered memo for the provided reference code.
+      operationId: registeredMemo
+      parameters:
+      - description: "optional block height, defaults to current tip"
+        explode: true
+        in: query
+        name: height
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      - description: The 5-digit reference code for the registered memo
+        explode: false
+        in: path
+        name: reference
+        required: true
+        schema:
+          example: "12345"
+          pattern: "^[0-9]{5}$"
+          type: string
+        style: simple
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisteredMemoResponse'
+          description: OK
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/registeredMemo_404_response'
+          description: Memo not found or expired
+      tags:
+      - Memoless
   /thorchain/node/{address}:
     get:
       description: Returns node information for the provided node address.
@@ -7002,6 +7042,44 @@ components:
       - total_repay_seconds
       - warning
       type: object
+    RegisteredMemoResponse:
+      example:
+        reference: "12345"
+        expires_at: 1692345600
+        chain_id: BTC
+        registered_at: 1692342000
+        memo: SWAP:ETH.ETH:0x1c7b17362c84287bd1184447e6dfeaf920c31bbe
+      properties:
+        memo:
+          description: The registered memo content
+          example: SWAP:ETH.ETH:0x1c7b17362c84287bd1184447e6dfeaf920c31bbe
+          type: string
+        reference:
+          description: The 5-digit reference code
+          example: "12345"
+          pattern: "^[0-9]{5}$"
+          type: string
+        expires_at:
+          description: Unix timestamp when the memo expires
+          example: 1692345600
+          format: int64
+          type: integer
+        chain_id:
+          description: Chain identifier for the memo
+          example: BTC
+          type: string
+        registered_at:
+          description: Unix timestamp when the memo was registered
+          example: 1692342000
+          format: int64
+          type: integer
+      required:
+      - chain_id
+      - expires_at
+      - memo
+      - reference
+      - registered_at
+      type: object
     Ping:
       example:
         ping: pong
@@ -7010,6 +7088,12 @@ components:
           example: pong
           type: string
       title: Ping
+      type: object
+    registeredMemo_404_response:
+      properties:
+        error:
+          example: memo not found
+          type: string
       type: object
     NodePubKeySet:
       example:

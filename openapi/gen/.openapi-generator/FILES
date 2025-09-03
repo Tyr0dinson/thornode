@@ -12,6 +12,7 @@ api_export.go
 api_health.go
 api_invariants.go
 api_liquidity_providers.go
+api_memoless.go
 api_mimir.go
 api_network.go
 api_nodes.go
@@ -85,6 +86,7 @@ docs/LastBlock.md
 docs/LiquidityProvider.md
 docs/LiquidityProviderSummary.md
 docs/LiquidityProvidersApi.md
+docs/MemolessApi.md
 docs/MetricsResponse.md
 docs/MimirApi.md
 docs/MimirNodesResponse.md
@@ -129,6 +131,8 @@ docs/RUNEPoolResponse.md
 docs/RUNEPoolResponseProviders.md
 docs/RUNEPoolResponseReserve.md
 docs/RUNEProvider.md
+docs/RegisteredMemo404Response.md
+docs/RegisteredMemoResponse.md
 docs/Saver.md
 docs/SaversApi.md
 docs/SecuredAssetApi.md
@@ -249,6 +253,8 @@ model_quote_loan_open_response.go
 model_quote_saver_deposit_response.go
 model_quote_saver_withdraw_response.go
 model_quote_swap_response.go
+model_registered_memo_404_response.go
+model_registered_memo_response.go
 model_rune_pool_response.go
 model_rune_pool_response_providers.go
 model_rune_pool_response_reserve.go
