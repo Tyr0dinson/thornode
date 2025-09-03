@@ -90,7 +90,6 @@ Class | Method | HTTP request | Description
 *InvariantsApi* | [**Invariants**](docs/InvariantsApi.md#invariants) | **Get** /thorchain/invariants | 
 *LiquidityProvidersApi* | [**LiquidityProvider**](docs/LiquidityProvidersApi.md#liquidityprovider) | **Get** /thorchain/pool/{asset}/liquidity_provider/{address} | 
 *LiquidityProvidersApi* | [**LiquidityProviders**](docs/LiquidityProvidersApi.md#liquidityproviders) | **Get** /thorchain/pool/{asset}/liquidity_providers | 
-*MemolessApi* | [**RegisteredMemo**](docs/MemolessApi.md#registeredmemo) | **Get** /thorchain/registered_memo/{reference} | 
 *MimirApi* | [**Mimir**](docs/MimirApi.md#mimir) | **Get** /thorchain/mimir | 
 *MimirApi* | [**MimirAdmin**](docs/MimirApi.md#mimiradmin) | **Get** /thorchain/mimir/admin | 
 *MimirApi* | [**MimirKey**](docs/MimirApi.md#mimirkey) | **Get** /thorchain/mimir/key/{key} | 
@@ -237,8 +236,6 @@ Class | Method | HTTP request | Description
  - [RUNEPoolResponseProviders](docs/RUNEPoolResponseProviders.md)
  - [RUNEPoolResponseReserve](docs/RUNEPoolResponseReserve.md)
  - [RUNEProvider](docs/RUNEProvider.md)
- - [RegisteredMemo404Response](docs/RegisteredMemo404Response.md)
- - [RegisteredMemoResponse](docs/RegisteredMemoResponse.md)
  - [Saver](docs/Saver.md)
  - [SecuredAssetResponse](docs/SecuredAssetResponse.md)
  - [StreamingStatus](docs/StreamingStatus.md)
