@@ -36,16 +36,16 @@ The queue provides detailed per-trading-pair metrics with labels:
 
 #### Per-Pair Queue Depth
 
-- **`thornode_adv_swap_queue_pair_limit_swaps`**: Limit swaps per trading pair
+- **`thornode_adv_swap_queue_limit_swaps_by_pair`**: Limit swaps per trading pair
   - Labels: `source_asset`, `target_asset`
 
 #### Per-Pair Value Metrics
 
-- **`thornode_adv_swap_queue_pair_limit_swap_value_rune`**: RUNE value per trading pair
+- **`thornode_adv_swap_queue_limit_swap_value_by_pair_rune`**: RUNE value per trading pair
 
   - Labels: `source_asset`, `target_asset`
 
-- **`thornode_adv_swap_queue_pair_limit_swap_value_usd`**: USD value per trading pair
+- **`thornode_adv_swap_queue_limit_swap_value_by_pair_usd`**: USD value per trading pair
   - Labels: `source_asset`, `target_asset`
 
 ### Example Prometheus Queries
@@ -70,10 +70,10 @@ rate(thornode_adv_swap_queue_swaps_completed_total[5m])
 thornode_adv_swap_queue_total_limit_swap_value{currency="usd"}
 
 # Largest trading pairs by limit swap count
-topk(10, thornode_adv_swap_queue_pair_limit_swaps)
+topk(10, thornode_adv_swap_queue_limit_swaps_by_pair)
 
 # Most valuable trading pairs by USD volume
-topk(10, thornode_adv_swap_queue_pair_limit_swap_value_usd)
+topk(10, thornode_adv_swap_queue_limit_swap_value_by_pair_usd)
 ```
 
 #### Performance Monitoring
@@ -122,7 +122,8 @@ GET /thorchain/queue/limit_swaps
       },
       "ratio": "50000000",
       "blocks_since_created": 1200,
-      "time_to_expiry_blocks": 42000
+      "time_to_expiry_blocks": 42000,
+      "created_timestamp": 1693840200
     }
   ],
   "pagination": {
@@ -151,14 +152,15 @@ GET /thorchain/queue/limit_swaps/summary
 ```json
 {
   "total_limit_swaps": "42",
-  "total_value_rune": "150000000000",
   "total_value_usd": "75000000",
+  "oldest_swap_blocks": "12500",
+  "average_age_blocks": "8200",
   "asset_pairs": [
     {
       "source_asset": "BTC.BTC",
       "target_asset": "ETH.ETH",
       "count": "15",
-      "total_value_rune": "50000000000"
+      "total_value_usd": "30000000"
     }
   ]
 }
@@ -237,7 +239,7 @@ Identify busy trading pairs for targeted optimization:
 
 ```promql
 # Top 5 most active trading pairs
-topk(5, increase(thornode_adv_swap_queue_pair_limit_swaps[1h]))
+topk(5, increase(thornode_adv_swap_queue_limit_swaps_by_pair[1h]))
 ```
 
 ### Dashboarding

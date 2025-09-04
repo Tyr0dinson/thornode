@@ -72,11 +72,12 @@ SWAP:ETH.ETH:0xaddress:250000000  # Single swap
 
 ### Processing Order
 
-The advanced queue processes swaps in two phases:
+The advanced queue processes swaps using a rapid iteration framework with two phases per iteration:
 
 1. **Market Swaps Phase**: All market swaps are fetched and processed for immediate execution
 2. **Limit Swaps Phase**: Limit swaps are evaluated per trading pair for conditional execution
-3. **Rapid Processing**: Multiple iterations per block when configured
+
+**Rapid Processing Framework**: The entire two-phase process can be repeated multiple times per block (controlled by `AdvSwapQueueRapidSwapMax` setting), enabling higher throughput when there are swaps ready to execute.
 
 ### Key Behavioral Differences
 
