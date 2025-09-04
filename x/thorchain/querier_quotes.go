@@ -2,9 +2,12 @@ package thorchain
 
 import (
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
+	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -45,6 +48,79 @@ const (
 )
 
 var nullLogger = log.NewNopLogger()
+
+// -------------------------------------------------------------------------------------
+// Sync Status Validation
+// -------------------------------------------------------------------------------------
+
+// ErrNodeCatchingUp is returned when the node is catching up and sync checking is enabled
+var ErrNodeCatchingUp = errors.New("node is currently catching up to the tip of the blockchain, quotes may be stale")
+
+// isNodeCatchingUp checks if the ThorNode is currently catching up to the tip
+func isNodeCatchingUp(ctx cosmos.Context) (bool, error) {
+	// Get the RPC endpoint from config
+	rpcEndpoint := config.GetThornode().Tendermint.RPC.ListenAddress
+	if rpcEndpoint == "" {
+		rpcEndpoint = "tcp://0.0.0.0:26657" // default
+	}
+
+	// Parse the endpoint to get the proper URL
+	u, err := url.Parse(rpcEndpoint)
+	if err != nil {
+		return false, fmt.Errorf("failed to parse RPC endpoint: %w", err)
+	}
+
+	// Convert to HTTP URL
+	statusURL := fmt.Sprintf("http://%s/status", u.Host)
+
+	// Make HTTP request to get status
+	resp, err := http.Get(statusURL)
+	if err != nil {
+		return false, fmt.Errorf("failed to get status from tendermint: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return false, fmt.Errorf("tendermint status endpoint returned status %d", resp.StatusCode)
+	}
+
+	// Parse the response
+	var statusResp struct {
+		Result struct {
+			SyncInfo struct {
+				CatchingUp bool `json:"catching_up"`
+			} `json:"sync_info"`
+		} `json:"result"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&statusResp); err != nil {
+		return false, fmt.Errorf("failed to decode status response: %w", err)
+	}
+
+	return statusResp.Result.SyncInfo.CatchingUp, nil
+}
+
+// validateSyncStatus checks if the node is synced and returns an error if catching up
+func validateSyncStatus(ctx cosmos.Context, mgr *Mgrs) error {
+	// Check if sync validation is enabled via constant
+	// This allows disabling the check if needed
+	if !mgr.GetConstants().GetBoolValue(constants.QuoteSyncCheckEnabled) {
+		return nil // Sync check is disabled
+	}
+
+	catchingUp, err := isNodeCatchingUp(ctx)
+	if err != nil {
+		// Log the error but don't fail the request
+		ctx.Logger().Error("failed to check sync status", "error", err)
+		return nil // Allow the request to proceed if we can't check sync status
+	}
+
+	if catchingUp {
+		return ErrNodeCatchingUp
+	}
+
+	return nil
+}
 
 // -------------------------------------------------------------------------------------
 // Helpers
@@ -495,6 +571,11 @@ func calculateMinSwapAmount(ctx cosmos.Context, mgr *Mgrs, fromAsset, toAsset co
 }
 
 func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSwapRequest) (*types.QueryQuoteSwapResponse, error) {
+	// Check if node is synced before processing quote
+	if err := validateSyncStatus(ctx, qs.mgr); err != nil {
+		return nil, err
+	}
+
 	// validate required parameters
 	if len(req.FromAsset) == 0 {
 		return nil, fmt.Errorf("missing from_asset parameter")

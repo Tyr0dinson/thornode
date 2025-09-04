@@ -174,6 +174,7 @@ const (
 	SignerConcurrency
 	StrictBondLiquidityRatio
 	SwapOutDexAggregationDisabled
+	QuoteSyncCheckEnabled
 )
 
 // ConstantValues define methods used to get constant values

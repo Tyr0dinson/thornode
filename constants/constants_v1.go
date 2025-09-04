@@ -150,6 +150,7 @@ func NewConstantValue() *ConstantVals {
 		},
 		boolValues: map[ConstantName]bool{
 			StrictBondLiquidityRatio: true,
+			QuoteSyncCheckEnabled:    true, // Enable sync check by default
 		},
 		stringValues: map[ConstantName]string{
 			DefaultPoolStatus:  "Staged",
