@@ -68,6 +68,8 @@ type APIClient struct {
 
 	LiquidityProvidersApi *LiquidityProvidersApiService
 
+	MemolessApi *MemolessApiService
+
 	MimirApi *MimirApiService
 
 	NetworkApi *NetworkApiService
@@ -143,6 +145,7 @@ func NewAPIClient(cfg *Configuration) *APIClient {
 	c.HealthApi = (*HealthApiService)(&c.common)
 	c.InvariantsApi = (*InvariantsApiService)(&c.common)
 	c.LiquidityProvidersApi = (*LiquidityProvidersApiService)(&c.common)
+	c.MemolessApi = (*MemolessApiService)(&c.common)
 	c.MimirApi = (*MimirApiService)(&c.common)
 	c.NetworkApi = (*NetworkApiService)(&c.common)
 	c.NodesApi = (*NodesApiService)(&c.common)
