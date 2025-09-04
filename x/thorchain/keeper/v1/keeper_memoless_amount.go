@@ -24,7 +24,6 @@ func (k KVStore) ValidateUserReference(ctx cosmos.Context, reference string) err
 	return nil
 }
 
-
 // ExtractReferenceFromAmount extracts 5-digit references from transaction amounts
 // This implements task1-3 guide line 82: stateless reference extraction
 func (k KVStore) ExtractReferenceFromAmount(amount cosmos.Uint) (string, error) {

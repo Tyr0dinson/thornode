@@ -152,44 +152,44 @@ func ValidateMemoContent(memo string) error {
 		"';", "')", "'; --", "'; DROP", "'; DELETE", "'; UPDATE", "'; INSERT",
 		"union select", "union all", "or 1=1", "and 1=1", "having 1=1",
 		"' or '1'='1", "\" or \"1\"=\"1", "' or 'a'='a", "admin'--", "admin'#",
-		
+
 		// XSS/Script injection
 		"<script", "</script>", "javascript:", "vbscript:", "onload=", "onerror=",
 		"<iframe", "<object", "<embed", "<applet", "<form", "<input",
 		"alert(", "confirm(", "prompt(", "document.", "window.",
-		
+
 		// Template injection
 		"${", "%{", "#{", "${{", "#{", "{{", "}}", "<%", "%>",
 		"@{", "#{", "~{", "${ctx", "${env", "${sys",
-		
+
 		// Code injection patterns
 		"eval(", "exec(", "system(", "shell_exec(", "passthru(", "popen(",
 		"proc_open", "shell(", "cmd(", "command(", "require(", "include(",
 		"import ", "from ", "__import__", "getattr(", "setattr(",
-		
+
 		// LDAP/JNDI injection
 		"jndi:", "ldap://", "rmi://", "dns://", "iiop://", "corba:",
 		"${jndi:", "${ldap:", "${rmi:", "${dns:",
-		
+
 		// Path traversal
 		"../", "..\\", "/etc/", "\\windows\\", "../../", "..\\..\\",
 		"/boot/", "/dev/", "/proc/", "/sys/", "/var/log/",
-		
+
 		// Encoded injection attempts
 		"\\x", "\\u00", "%20", "%27", "%22", "%3c", "%3e", "%2f",
 		"&#", "&lt;", "&gt;", "&quot;", "&amp;", "\\r\\n", "\r\n\r\n",
-		
+
 		// Command injection
 		"|", "&&", "||", ";", "`", "$(", "&", ">", "<", ">>",
 		"curl ", "wget ", "nc ", "netcat", "telnet", "ssh ",
-		
+
 		// Format string attacks
 		"%s", "%d", "%x", "%n", "%p", "%%", "%c", "%u",
-		
+
 		// NoSQL injection
 		"$where", "$ne", "$in", "$nin", "$gt", "$lt", "$regex",
 		"';return", "';var", "function(", "this.",
-		
+
 		// Protocol injection
 		"http://", "https://", "ftp://", "file://", "data:",
 		"gopher://", "dict://", "expect://", "sftp://",
@@ -230,15 +230,15 @@ func validateMemoCharacterSecurity(memo string) error {
 		if char == 0 {
 			return fmt.Errorf("memo contains null byte at position %d", i)
 		}
-		
+
 		// Allow common whitespace (space, tab, newline, carriage return)
 		// Block other control characters (0x00-0x1F except 0x09, 0x0A, 0x0D)
 		if char < 32 && char != 9 && char != 10 && char != 13 {
 			return fmt.Errorf("memo contains control character (0x%02X) at position %d", char, i)
 		}
-		
+
 		// Block high control characters (0x7F-0x9F)
-		if (char >= 127 && char <= 159) {
+		if char >= 127 && char <= 159 {
 			return fmt.Errorf("memo contains control character (0x%02X) at position %d", char, i)
 		}
 	}

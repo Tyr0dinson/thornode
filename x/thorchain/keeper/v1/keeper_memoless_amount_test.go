@@ -23,11 +23,11 @@ func (s *KeeperAmountSuite) TestValidateUserReference(c *C) {
 	c.Assert(err, IsNil, Commentf("Valid unused reference should pass"))
 
 	// Test 2: Invalid format should fail
-	err = k.ValidateUserReference(ctx, "1234")  // Too short
+	err = k.ValidateUserReference(ctx, "1234") // Too short
 	c.Assert(err, NotNil, Commentf("Invalid format should fail"))
 
 	// Test 3: Invalid range should fail
-	err = k.ValidateUserReference(ctx, "09999")  // Below minimum
+	err = k.ValidateUserReference(ctx, "09999") // Below minimum
 	c.Assert(err, NotNil, Commentf("Invalid range should fail"))
 
 	// Test 4: Valid format in valid range should pass (when available)
@@ -37,7 +37,6 @@ func (s *KeeperAmountSuite) TestValidateUserReference(c *C) {
 	// Test 5: Reference collision detection (requires mock registered memo)
 	// Note: This would require setting up a registered memo to test collision detection
 }
-
 
 // TestExtractReferenceFromAmount tests stateless reference extraction
 func (s *KeeperAmountSuite) TestExtractReferenceFromAmount(c *C) {
@@ -89,7 +88,7 @@ func (s *KeeperAmountSuite) TestExtractReferenceFromAmount(c *C) {
 
 	for _, tc := range testCases {
 		result, err := k.ExtractReferenceFromAmount(tc.amount)
-		
+
 		if tc.shouldErr {
 			c.Assert(err, NotNil, Commentf("Test %s: expected error but got none", tc.name))
 		} else {
@@ -149,12 +148,12 @@ func (s *KeeperAmountSuite) TestEncodeAmountWithReference(c *C) {
 
 	for _, tc := range testCases {
 		result, err := k.EncodeAmountWithReference(tc.baseAmount, tc.reference)
-		
+
 		if tc.shouldErr {
 			c.Assert(err, NotNil, Commentf("Test %s: expected error but got none", tc.name))
 		} else {
 			c.Assert(err, IsNil, Commentf("Test %s: unexpected error: %v", tc.name, err))
-			c.Assert(result.Equal(tc.expected), Equals, true, 
+			c.Assert(result.Equal(tc.expected), Equals, true,
 				Commentf("Test %s: got %s, expected %s", tc.name, result.String(), tc.expected.String()))
 		}
 	}

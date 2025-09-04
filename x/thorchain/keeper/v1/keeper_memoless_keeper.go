@@ -126,31 +126,30 @@ func (k KVStore) ValidateMemoRegistrationComplete(ctx cosmos.Context, msg thorch
 		return fmt.Errorf("business logic validation failed: %w", err)
 	}
 
-    // Layer 5: Security validation
-    if err := k.validateSecurityRequirements(ctx, msg, constantProvider); err != nil {
-        return fmt.Errorf("security validation failed: %w", err)
-    }
+	// Layer 5: Security validation
+	if err := k.validateSecurityRequirements(ctx, msg, constantProvider); err != nil {
+		return fmt.Errorf("security validation failed: %w", err)
+	}
 
-    // Ensure enhanced (guardrail) validations are applied consistently (kill-switch,
-    // per-signer active limit, and other Layer 4 checks implemented in the enhanced path).
-    // Build a minimal validation context and delegate to ValidateMemoRegistrationEnhanced.
-    chainConfig, err := k.GetChainConfig(ctx, msg.ChainId)
-    if err != nil {
-        return fmt.Errorf("failed to get chain configuration: %w", err)
-    }
-    validationCtx := EnhancedValidationContext{
-        Version:          GetCurrentVersion(),
-        BlockHeight:      ctx.BlockHeight(),
-        ConstantProvider: constantProvider,
-        ChainConfig:      chainConfig,
-    }
-    if err := k.ValidateMemoRegistrationEnhanced(ctx, msg, validationCtx); err != nil {
-        return err
-    }
+	// Ensure enhanced (guardrail) validations are applied consistently (kill-switch,
+	// per-signer active limit, and other Layer 4 checks implemented in the enhanced path).
+	// Build a minimal validation context and delegate to ValidateMemoRegistrationEnhanced.
+	chainConfig, err := k.GetChainConfig(ctx, msg.ChainId)
+	if err != nil {
+		return fmt.Errorf("failed to get chain configuration: %w", err)
+	}
+	validationCtx := EnhancedValidationContext{
+		Version:          GetCurrentVersion(),
+		BlockHeight:      ctx.BlockHeight(),
+		ConstantProvider: constantProvider,
+		ChainConfig:      chainConfig,
+	}
+	if err := k.ValidateMemoRegistrationEnhanced(ctx, msg, validationCtx); err != nil {
+		return err
+	}
 
-    return nil
+	return nil
 }
-
 
 // CleanupExpiredMemos cleans up expired memo registrations with batch processing
 func (k KVStore) CleanupExpiredMemos(ctx cosmos.Context, currentHeight int64) (int64, error) {
@@ -262,7 +261,6 @@ func (k KVStore) validateChainSpecificRequirements(ctx cosmos.Context, msg thorc
 	return nil
 }
 
-
 func (k KVStore) validateBusinessLogic(ctx cosmos.Context, msg thorchaintypes.MsgRegisterMemo, constantProvider constants.ConstantValues) error {
 	// Check rate limiting (simplified implementation)
 	// In production, this would check recent registrations by signer
@@ -281,8 +279,6 @@ func (k KVStore) validateSecurityRequirements(ctx cosmos.Context, msg thorchaint
 	// Additional security checks can be added here
 	return nil
 }
-
-
 
 // Handler integration methods - these are thin wrappers for the existing methods
 

@@ -551,7 +551,6 @@ func (suite *MemolessAdversarialTestSuite) attemptMemoInjection(reference, paylo
 func (suite *MemolessAdversarialTestSuite) attemptReplayAttack(attackName string, replayTx *btypes.TxInItem) bool {
 	// Process the replayed transaction
 	processedTx, err := suite.memoHandler.ProcessMemolessTransaction(replayTx)
-
 	// Replay should be detected and rejected
 	if err != nil {
 		suite.T().Logf("✅ Replay attack '%s' correctly rejected: %v", attackName, err)

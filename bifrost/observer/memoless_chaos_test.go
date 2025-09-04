@@ -639,6 +639,7 @@ func (ctc *ChaosThorClient) EnsureNodeWhitelisted() error { return nil }
 
 // Copy of all ThorchainBridge interface methods from AdversarialThorClient for testing
 func (ctc *ChaosThorClient) EnsureNodeWhitelistedWithTimeout() error { return nil }
+
 func (ctc *ChaosThorClient) FetchNodeStatus() (stypes.NodeStatus, error) {
 	return stypes.NodeStatus_Unknown, nil
 }
@@ -657,6 +658,7 @@ func (ctc *ChaosThorClient) GetErrataMsg(txID common.TxID, chain common.Chain) s
 func (ctc *ChaosThorClient) GetKeygenStdTx(poolPubKey common.PubKey, secp256k1Signature, keysharesBackup []byte, blame []stypes.Blame, inputPks common.PubKeys, keygenType stypes.KeygenType, chains common.Chains, height, keygenTime int64, poolPubKeyEddsa common.PubKey, keysharesBackupEddsa []byte) (sdk.Msg, error) {
 	return nil, nil
 }
+
 func (ctc *ChaosThorClient) GetKeysignParty(vaultPubKey common.PubKey) (common.PubKeys, error) {
 	return nil, nil
 }
@@ -669,15 +671,19 @@ func (ctc *ChaosThorClient) GetPools() (stypes.Pools, error) { return nil, nil }
 func (ctc *ChaosThorClient) GetPubKeys() ([]thorclient.PubKeyContractAddressPair, error) {
 	return nil, nil
 }
+
 func (ctc *ChaosThorClient) GetAsgardPubKeys() ([]thorclient.PubKeyContractAddressPair, error) {
 	return nil, nil
 }
+
 func (ctc *ChaosThorClient) GetSolvencyMsg(height int64, chain common.Chain, pubKey common.PubKey, coins common.Coins) *stypes.MsgSolvency {
 	return nil
 }
+
 func (ctc *ChaosThorClient) GetTHORName(name string) (stypes.THORName, error) {
 	return stypes.THORName{}, nil
 }
+
 func (ctc *ChaosThorClient) GetThorchainVersion() (semver.Version, error) {
 	return semver.Version{}, nil
 }
@@ -686,9 +692,11 @@ func (ctc *ChaosThorClient) HasNetworkFee(chain common.Chain) (bool, error) { re
 func (ctc *ChaosThorClient) GetNetworkFee(chain common.Chain) (transactionSize, transactionFeeRate uint64, err error) {
 	return 0, 0, nil
 }
+
 func (ctc *ChaosThorClient) PostKeysignFailure(blame stypes.Blame, height int64, memo string, coins common.Coins, pubkey common.PubKey) (common.TxID, error) {
 	return "", nil
 }
+
 func (ctc *ChaosThorClient) PostNetworkFee(height int64, chain common.Chain, transactionSize, transactionRate uint64) (common.TxID, error) {
 	return "", nil
 }
@@ -698,12 +706,15 @@ func (ctc *ChaosThorClient) GetBlockHeight() (int64, error)    { return 100, nil
 func (ctc *ChaosThorClient) GetLastObservedInHeight(chain common.Chain) (int64, error) {
 	return 100, nil
 }
+
 func (ctc *ChaosThorClient) GetLastSignedOutHeight(chain common.Chain) (int64, error) {
 	return 100, nil
 }
+
 func (ctc *ChaosThorClient) GetKeysign(blockHeight int64, pk string) (btypes.TxOut, error) {
 	return btypes.TxOut{}, nil
 }
+
 func (ctc *ChaosThorClient) GetNodeAccount(nodeAddress string) (*stypes.NodeAccount, error) {
 	return nil, nil
 }

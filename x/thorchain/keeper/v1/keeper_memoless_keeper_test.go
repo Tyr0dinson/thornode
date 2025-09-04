@@ -29,11 +29,11 @@ func (s *MemolessKeeperImplementationTestSuite) TestMemoRegistrationFlow(c *C) {
 
 	// Create enhanced message with extended fields
 	msg := thorchaintypes.MsgRegisterMemo{
-		Memo:           memo,
-		Ttl:            ttl,
-		ChainId:        chainID,
-		Signer:         signer,
-		Reference:      "12000", // User-provided 5-digit reference
+		Memo:      memo,
+		Ttl:       ttl,
+		ChainId:   chainID,
+		Signer:    signer,
+		Reference: "12000", // User-provided 5-digit reference
 	}
 
 	// RED: This should fail initially - ProcessMemoRegistration method doesn't exist yet
@@ -83,10 +83,10 @@ func (s *MemolessKeeperImplementationTestSuite) TestMemoValidationFlow(c *C) {
 
 	// Test valid memo
 	validMsg := thorchaintypes.MsgRegisterMemo{
-		Memo:    "SWAP:BTC.BTC::thor1valid",
-		Ttl:     14400,
-		ChainId: "BTC",
-		Signer:  GetRandomBech32Addr(),
+		Memo:      "SWAP:BTC.BTC::thor1valid",
+		Ttl:       14400,
+		ChainId:   "BTC",
+		Signer:    GetRandomBech32Addr(),
 		Reference: "15000", // User-provided 5-digit reference
 	}
 

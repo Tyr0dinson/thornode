@@ -1,7 +1,7 @@
 package thorchain
 
 import (
-    "fmt"
+	"fmt"
 
 	"github.com/blang/semver"
 
@@ -59,19 +59,19 @@ func (h ObservedTxInHandler) handle(ctx cosmos.Context, msg MsgObservedTxIn) (*c
 	if err != nil {
 		return nil, wrapError(ctx, err, "fail to get list of active node accounts")
 	}
-    handler := NewInternalHandler(h.mgr)
-    for _, tx := range msg.Txs {
-        voter, err := ensureVaultAndGetTxInVoter(ctx, tx.ObservedPubKey, tx.Tx.ID, h.mgr.Keeper())
-        if err != nil {
-            ctx.Logger().Error("fail to ensure vault and get tx in voter", "error", err)
-            continue
-        }
+	handler := NewInternalHandler(h.mgr)
+	for _, tx := range msg.Txs {
+		voter, err := ensureVaultAndGetTxInVoter(ctx, tx.ObservedPubKey, tx.Tx.ID, h.mgr.Keeper())
+		if err != nil {
+			ctx.Logger().Error("fail to ensure vault and get tx in voter", "error", err)
+			continue
+		}
 
-        voter, isQuorum := processTxInAttestation(ctx, h.mgr, voter, activeNodeAccounts, tx, msg.Signer, true)
-        if err := handleObservedTxInQuorum(ctx, h.mgr, msg.Signer, activeNodeAccounts, handler, tx, voter, voter.Tx.GetSigners(), isQuorum); err != nil {
-            return nil, wrapError(ctx, err, "fail to handle observed tx in quorum")
-        }
-    }
+		voter, isQuorum := processTxInAttestation(ctx, h.mgr, voter, activeNodeAccounts, tx, msg.Signer, true)
+		if err := handleObservedTxInQuorum(ctx, h.mgr, msg.Signer, activeNodeAccounts, handler, tx, voter, voter.Tx.GetSigners(), isQuorum); err != nil {
+			return nil, wrapError(ctx, err, "fail to handle observed tx in quorum")
+		}
+	}
 	return &cosmos.Result{}, nil
 }
 
@@ -111,7 +111,7 @@ func addSwapDirect(ctx cosmos.Context, k keeper.Keeper, msg MsgSwap) {
 // and also during deliver. Store changes will persist if this function
 // succeeds, regardless of the success of the transaction.
 func ObservedTxInAnteHandler(ctx cosmos.Context, v semver.Version, k keeper.Keeper, msg MsgObservedTxIn) (cosmos.Context, error) {
-    return activeNodeAccountsSignerPriority(ctx, k, msg.GetSigners())
+	return activeNodeAccountsSignerPriority(ctx, k, msg.GetSigners())
 }
 
 // shouldRouteMemolessLoser gates the server-side refund routing for memoless

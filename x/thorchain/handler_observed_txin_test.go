@@ -936,23 +936,24 @@ func (s *HandlerObservedTxInSuite) TestObservingSlashing(c *C) {
 	// Note that nas[6], the Standby node, remains unaffected by the Actives nodes' observations.
 }
 
-
 func (s *QuerierSuite) TestMemolessLoserTagRoutesRefund(c *C) {
-    ctx, mgr := setupManagerForTest(c)
+	ctx, mgr := setupManagerForTest(c)
 
-    // Create an observed tx carrying the internal loser tag
-    loserMemo := "ML-LOSER:ref=12345;winner=txid-winner"
-    tx := NewObservedTx(common.Tx{ID: GetRandomTxHash(), Chain: common.BTCChain, FromAddress: GetRandomBTCAddress(), ToAddress: GetRandomBTCAddress(), Coins: common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(100012345))}, Gas: nil, Memo: loserMemo}, 1, GetRandomPubKey(), 1)
+	// Create an observed tx carrying the internal loser tag
+	loserMemo := "ML-LOSER:ref=12345;winner=txid-winner"
+	tx := NewObservedTx(common.Tx{ID: GetRandomTxHash(), Chain: common.BTCChain, FromAddress: GetRandomBTCAddress(), ToAddress: GetRandomBTCAddress(), Coins: common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(100012345))}, Gas: nil, Memo: loserMemo}, 1, GetRandomPubKey(), 1)
 
-    handler := NewObservedTxInHandler(mgr)
-    msg := NewMsgObservedTxIn(common.ObservedTxs{tx}, GetRandomBech32Addr())
+	handler := NewObservedTxInHandler(mgr)
+	msg := NewMsgObservedTxIn(common.ObservedTxs{tx}, GetRandomBech32Addr())
 
-    // Run handler; expect no error
-    _, err := handler.Run(ctx, msg)
-    c.Assert(err, IsNil)
+	// Run handler; expect no error
+	_, err := handler.Run(ctx, msg)
+	c.Assert(err, IsNil)
 
-    // Verify refund record written (idempotency record)
-    if km, ok := mgr.Keeper().(interface{ HasRefundRecord(ctx cosmos.Context, txidIn string) bool }); ok {
-        c.Assert(km.HasRefundRecord(ctx, tx.Tx.ID.String()), Equals, true)
-    }
+	// Verify refund record written (idempotency record)
+	if km, ok := mgr.Keeper().(interface {
+		HasRefundRecord(ctx cosmos.Context, txidIn string) bool
+	}); ok {
+		c.Assert(km.HasRefundRecord(ctx, tx.Tx.ID.String()), Equals, true)
+	}
 }

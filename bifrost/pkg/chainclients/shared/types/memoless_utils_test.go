@@ -325,7 +325,7 @@ func TestEncodeAmountWithReference(t *testing.T) {
 		},
 		{
 			name:       "small base amount (below 5 digits)",
-			baseAmount: cosmos.NewUint(1234), // Less than 5 digits  
+			baseAmount: cosmos.NewUint(1234), // Less than 5 digits
 			reference:  "12345",
 			expected:   cosmos.ZeroUint(),
 			wantErr:    true, // Should fail - base amount too small

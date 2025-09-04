@@ -23,7 +23,7 @@ func (s *HandlerRegisterMemoSuite) TestRegisterMemoHandlerValidation(c *C) {
 	signer := GetRandomBech32Addr()
 	validMsg := &types.MsgRegisterMemo{
 		Memo:      "SWAP:BTC.BTC:thor1test:11111", // Full swap memo
-		Ttl:       14400,   // 4 hours
+		Ttl:       14400,                          // 4 hours
 		ChainId:   "BTC",
 		Signer:    signer,
 		Reference: "11111", // User-provided 5-digit reference (unique)
@@ -171,7 +171,7 @@ func (s *HandlerRegisterMemoSuite) TestRegisterMemoHandlerCollisionHandling(c *C
 	references := make([]string, 3)
 	for i := 0; i < 3; i++ {
 		// Use unique references: 15000, 25000, 35000
-		reference := fmt.Sprintf("%d5000", i+1) 
+		reference := fmt.Sprintf("%d5000", i+1)
 		msg := &types.MsgRegisterMemo{
 			Memo:      memo,
 			Ttl:       14400,

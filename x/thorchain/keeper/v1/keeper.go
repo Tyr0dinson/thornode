@@ -100,11 +100,11 @@ const (
 	prefixPriceFeed               types.DbPrefix = "price_feed/"
 
 	// Memoless protocol prefixes
-	prefixMemoRegistration types.DbPrefix = "memo_registration/"
-	prefixMemoExpiry       types.DbPrefix = "memo_expiry/"
-	prefixMemoStats        types.DbPrefix = "memo_stats/"
-	prefixMemoChainConfig  types.DbPrefix = "memo_chain_config/"
-	prefixMemoRefundRecord types.DbPrefix = "memo_refund_record/"
+	prefixMemoRegistration  types.DbPrefix = "memo_registration/"
+	prefixMemoExpiry        types.DbPrefix = "memo_expiry/"
+	prefixMemoStats         types.DbPrefix = "memo_stats/"
+	prefixMemoChainConfig   types.DbPrefix = "memo_chain_config/"
+	prefixMemoRefundRecord  types.DbPrefix = "memo_refund_record/"
 	prefixMemoNegativeCache types.DbPrefix = "memo_neg_cache/"
 )
 

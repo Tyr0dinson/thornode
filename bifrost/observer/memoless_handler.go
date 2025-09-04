@@ -15,18 +15,18 @@ import (
 
 // MemolessHandler handles memoless transaction processing in Bifrost
 type MemolessHandler struct {
-    bridge thorclient.ThorchainBridge
-    utils  *types.MemolessUtils
-    logger zerolog.Logger
+	bridge thorclient.ThorchainBridge
+	utils  *types.MemolessUtils
+	logger zerolog.Logger
 }
 
 // NewMemolessHandler creates a new memoless handler instance
 func NewMemolessHandler(bridge thorclient.ThorchainBridge, logger zerolog.Logger) *MemolessHandler {
-    return &MemolessHandler{
-        bridge: bridge,
-        utils:  types.NewMemolessUtils(),
-        logger: logger.With().Str("module", "memoless_handler").Logger(),
-    }
+	return &MemolessHandler{
+		bridge: bridge,
+		utils:  types.NewMemolessUtils(),
+		logger: logger.With().Str("module", "memoless_handler").Logger(),
+	}
 }
 
 // ProcessMemolessTransaction processes a transaction that may be memoless
@@ -50,8 +50,8 @@ func (m *MemolessHandler) ProcessMemolessTransaction(txIn *btypes.TxInItem) (*bt
 		Str("amount", txIn.Coins[0].Amount.String()).
 		Msg("detected memoless transaction")
 
-    // Query THORChain for the registered memo
-    registeredMemo, err := m.bridge.GetRegisteredMemo(reference)
+	// Query THORChain for the registered memo
+	registeredMemo, err := m.bridge.GetRegisteredMemo(reference)
 	if err != nil {
 		m.logger.Error().
 			Err(err).
@@ -61,8 +61,8 @@ func (m *MemolessHandler) ProcessMemolessTransaction(txIn *btypes.TxInItem) (*bt
 		return nil, fmt.Errorf("failed to get registered memo for reference %s: %w", reference, err)
 	}
 
-    // Validate that the registered memo is still valid (not expired)
-    if err := m.validateRegisteredMemo(registeredMemo, txIn.BlockHeight); err != nil {
+	// Validate that the registered memo is still valid (not expired)
+	if err := m.validateRegisteredMemo(registeredMemo, txIn.BlockHeight); err != nil {
 		m.logger.Warn().
 			Err(err).
 			Str("reference", reference).
@@ -73,10 +73,10 @@ func (m *MemolessHandler) ProcessMemolessTransaction(txIn *btypes.TxInItem) (*bt
 		return nil, fmt.Errorf("registered memo validation failed for reference %s: %w", reference, err)
 	}
 
-    // Note: collision loser signaling is intentionally disabled for v1.
+	// Note: collision loser signaling is intentionally disabled for v1.
 
-    // Create a new TxInItem with the full memo from THORChain
-    processedTx := &btypes.TxInItem{
+	// Create a new TxInItem with the full memo from THORChain
+	processedTx := &btypes.TxInItem{
 		BlockHeight:           txIn.BlockHeight,
 		Tx:                    txIn.Tx,
 		Memo:                  registeredMemo.Memo, // Replace with full memo from THORChain

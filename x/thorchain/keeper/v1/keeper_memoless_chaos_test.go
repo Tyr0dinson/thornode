@@ -2,7 +2,7 @@ package keeperv1
 
 import (
 	"fmt"
-	
+
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/constants"
@@ -23,7 +23,7 @@ func (s *MemolessChaosTestSuite) TestUserReferenceCollisionRecovery(c *C) {
 
 	// Test collision detection with user references
 	signer := GetRandomValidatorNode(NodeActive).NodeAddress
-	
+
 	// Register first memo with reference "15432"
 	testMemo := thorchaintypes.RegisteredMemo{
 		Reference:    "15432",
@@ -40,7 +40,7 @@ func (s *MemolessChaosTestSuite) TestUserReferenceCollisionRecovery(c *C) {
 	// Test that user cannot reuse same reference
 	err = k.ValidateUserReference(ctx, "15432")
 	c.Assert(err, NotNil, Commentf("Should reject duplicate user reference"))
-	
+
 	// Test that user can use different reference
 	err = k.ValidateUserReference(ctx, "15433")
 	c.Assert(err, IsNil, Commentf("Should accept different user reference"))
@@ -57,7 +57,7 @@ func (s *MemolessChaosTestSuite) TestUserReferenceLoadTesting(c *C) {
 	// Test multiple user reference validations
 	successCount := 0
 	totalAttempts := 50
-	
+
 	for i := 0; i < totalAttempts; i++ {
 		// Generate unique reference for each attempt
 		reference := fmt.Sprintf("%05d", 10000+i)
@@ -66,7 +66,7 @@ func (s *MemolessChaosTestSuite) TestUserReferenceLoadTesting(c *C) {
 			successCount++
 		}
 	}
-	
+
 	c.Assert(successCount > 0, Equals, true, Commentf("Should have some successful validations"))
 	c.Assert(successCount <= totalAttempts, Equals, true, Commentf("Success count should not exceed total attempts"))
 }
@@ -81,9 +81,9 @@ func (s *MemolessChaosTestSuite) TestUserReferenceValidationIntegrity(c *C) {
 
 	// Test validation consistency with edge cases
 	testCases := []struct {
-		reference string
+		reference  string
 		shouldPass bool
-		reason string
+		reason     string
 	}{
 		{"10000", true, "minimum valid reference"},
 		{"99999", true, "maximum valid reference"},
@@ -93,7 +93,7 @@ func (s *MemolessChaosTestSuite) TestUserReferenceValidationIntegrity(c *C) {
 		{"123456", false, "too long"},
 		{"abcde", false, "non-numeric"},
 	}
-	
+
 	for _, tc := range testCases {
 		err := k.ValidateUserReference(ctx, tc.reference)
 		if tc.shouldPass {
@@ -117,12 +117,12 @@ func (s *MemolessChaosTestSuite) TestUserReferenceBoundaryConditions(c *C) {
 		"09999", // Just below minimum (should fail)
 		"10000", // Minimum valid (should pass)
 		"10001", // Just above minimum (should pass)
-		"99998", // Just below maximum (should pass)  
+		"99998", // Just below maximum (should pass)
 		"99999", // Maximum valid (should pass)
 	}
-	
+
 	expectedResults := []bool{false, true, true, true, true}
-	
+
 	for i, ref := range boundaryTests {
 		err := k.ValidateUserReference(ctx, ref)
 		if expectedResults[i] {
@@ -142,7 +142,7 @@ func (s *MemolessChaosTestSuite) TestMemoStorageConsistency(c *C) {
 	c.Assert(err, IsNil)
 
 	signer := GetRandomValidatorNode(NodeActive).NodeAddress
-	
+
 	// Test storage and retrieval consistency
 	testReference := "25000"
 	testMemo := thorchaintypes.RegisteredMemo{
@@ -154,11 +154,11 @@ func (s *MemolessChaosTestSuite) TestMemoStorageConsistency(c *C) {
 		Status:       "active",
 		Signer:       signer,
 	}
-	
+
 	// Store memo
 	err = k.SetRegisteredMemo(ctx, testMemo)
 	c.Assert(err, IsNil, Commentf("Should store memo successfully"))
-	
+
 	// Retrieve and verify
 	retrieved, err := k.GetRegisteredMemo(ctx, testReference)
 	c.Assert(err, IsNil, Commentf("Should retrieve memo successfully"))
@@ -208,7 +208,7 @@ func (s *MemolessChaosTestSuite) TestUserReferenceRobustness(c *C) {
 
 	// Test various edge cases for user references
 	signer := GetRandomValidatorNode(NodeActive).NodeAddress
-	
+
 	// Test 1: Register memo with user reference
 	testReference := "45000"
 	validMemo := thorchaintypes.RegisteredMemo{

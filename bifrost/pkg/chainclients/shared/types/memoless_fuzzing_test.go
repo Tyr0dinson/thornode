@@ -120,8 +120,8 @@ func TestMemolessAdversarialFuzzing(t *testing.T) {
 		}{
 			{"valid_reference", "12345", true},
 			{"leading_zeros", "00123", false}, // Updated: below 10000 range - invalid
-			{"all_zeros", "00000", false},      // Below 10000 range - invalid
-			{"all_nines", "99999", true},       // At top of range - valid
+			{"all_zeros", "00000", false},     // Below 10000 range - invalid
+			{"all_nines", "99999", true},      // At top of range - valid
 			{"negative_sign", "-1234", false},
 			{"hex_digits", "ABCDE", false},
 			{"mixed_case", "1a2B3", false},
@@ -264,10 +264,10 @@ func TestMemolessSecurityProperties(t *testing.T) {
 			reference     string
 			shouldSucceed bool
 		}{
-			{"normal_case", 100000, "12345", true},   // 5 digits minimum is correct
-			{"zero_base", 0, "12345", false},         // Zero base should fail per implementation
+			{"normal_case", 100000, "12345", true}, // 5 digits minimum is correct
+			{"zero_base", 0, "12345", false},       // Zero base should fail per implementation
 			{"large_base", 999999999, "12345", true},
-			{"small_base", 1000, "12345", false},     // Less than 5 digits - should fail
+			{"small_base", 1000, "12345", false}, // Less than 5 digits - should fail
 			{"empty_reference", 100000, "", false},
 			{"invalid_reference", 100000, "abcde", false},
 		}
