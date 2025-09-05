@@ -3,6 +3,7 @@ package types
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -496,8 +497,14 @@ func ValidateMemoRegistrationBatch(registrations []MemoRegistrationRequest, time
 		}
 	}
 
-	// Check each chain for dust attack patterns
-	for chainID, amounts := range chainAmounts {
+	// Check each chain for dust attack patterns deterministically
+	keys := make([]string, 0, len(chainAmounts))
+	for k := range chainAmounts {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, chainID := range keys {
+		amounts := chainAmounts[chainID]
 		if err := PreventDustAttack(amounts, chainID, timeWindow); err != nil {
 			return fmt.Errorf("dust attack prevention for chain %s: %w", chainID, err)
 		}

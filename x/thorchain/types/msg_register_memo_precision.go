@@ -3,6 +3,7 @@ package types
 import (
 	"fmt"
 	"math/big"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -434,9 +435,16 @@ func PreventDustAttack(amounts []string, chainID string, timeWindow int64) error
 // GetSupportedChains returns a list of chains that support memoless transactions
 func GetSupportedChains() []string {
 	var supported []string
-	for chain, config := range ChainPrecisionConfigs {
+	// iterate deterministically over map keys
+	keys := make([]common.Chain, 0, len(ChainPrecisionConfigs))
+	for ch := range ChainPrecisionConfigs {
+		keys = append(keys, ch)
+	}
+	sort.Slice(keys, func(i, j int) bool { return keys[i].String() < keys[j].String() })
+	for _, ch := range keys {
+		config := ChainPrecisionConfigs[ch]
 		if config.SupportsAmountRef && config.DecimalPlaces >= 5 {
-			supported = append(supported, chain.String())
+			supported = append(supported, ch.String())
 		}
 	}
 	return supported

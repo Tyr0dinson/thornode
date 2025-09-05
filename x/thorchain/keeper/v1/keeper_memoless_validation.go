@@ -499,16 +499,16 @@ func (k KVStore) validateMemoFormat(memo string, version semver.Version) error {
 	// Version-specific validation
 	switch {
 	case version.GTE(semver.MustParse("3.0.0")):
-		return k.validateMemoFormatV3(parts, version)
+		return k.validateMemoFormatV3_0_0(parts, version)
 	case version.GTE(semver.MustParse("2.0.0")):
-		return k.validateMemoFormatV2(parts, version)
+		return k.validateMemoFormatV2_0_0(parts, version)
 	default:
 		return k.validateMemoFormatV1(parts)
 	}
 }
 
-// validateMemoFormatV3 validates memo format for version 3.0.0+
-func (k KVStore) validateMemoFormatV3(parts []string, version semver.Version) error {
+// validateMemoFormatV3_0_0 validates memo format for version 3.0.0+
+func (k KVStore) validateMemoFormatV3_0_0(parts []string, version semver.Version) error {
 	memoType := strings.ToUpper(parts[0])
 
 	switch memoType {
@@ -573,8 +573,8 @@ func (k KVStore) validateMemoFormatV3(parts []string, version semver.Version) er
 	return nil
 }
 
-// validateMemoFormatV2 validates memo format for version 2.0.0+
-func (k KVStore) validateMemoFormatV2(parts []string, version semver.Version) error {
+// validateMemoFormatV2_0_0 validates memo format for version 2.0.0+
+func (k KVStore) validateMemoFormatV2_0_0(parts []string, version semver.Version) error {
 	// Similar to V3 but with different rules for older versions
 	return k.validateMemoFormatV3(parts, version)
 }

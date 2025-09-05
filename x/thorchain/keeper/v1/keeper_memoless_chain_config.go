@@ -3,6 +3,7 @@ package keeperv1
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 
 	"github.com/cosmos/cosmos-sdk/runtime"
 
@@ -250,7 +251,14 @@ func (k KVStore) GetChainConfigIterator(ctx cosmos.Context) cosmos.Iterator {
 func (k KVStore) InitializeDefaultChainConfigs(ctx cosmos.Context) error {
 	defaultConfigs := GetDefaultChainConfigs()
 
-	for chainID, config := range defaultConfigs {
+	// iterate deterministically over default configs
+	keys := make([]string, 0, len(defaultConfigs))
+	for chainID := range defaultConfigs {
+		keys = append(keys, chainID)
+	}
+	sort.Strings(keys)
+	for _, chainID := range keys {
+		config := defaultConfigs[chainID]
 		if !k.HasChainConfig(ctx, chainID) {
 			if err := k.SetChainConfig(ctx, config); err != nil {
 				ctx.Logger().Error("Failed to initialize default config", "chain", chainID, "error", err)
@@ -282,7 +290,13 @@ func (k KVStore) GetSupportedChains(ctx cosmos.Context) ([]string, error) {
 
 	// Also include default supported chains that might not be stored yet
 	defaultConfigs := GetDefaultChainConfigs()
-	for chainID, config := range defaultConfigs {
+	keys := make([]string, 0, len(defaultConfigs))
+	for chainID := range defaultConfigs {
+		keys = append(keys, chainID)
+	}
+	sort.Strings(keys)
+	for _, chainID := range keys {
+		config := defaultConfigs[chainID]
 		if config.SupportsMemoless && !config.PrecisionLoss {
 			// Check if already in list
 			found := false
