@@ -53,6 +53,7 @@ The following functions can be put into a memo:
 1. [**BOND**, **UNBOND**, **REBOND** & **LEAVE**](memos.md#bond-unbond-rebond-and-leave)
 1. [**OPERATOR Rotate**](memos.md#operator-rotate)
 1. [**DONATE** & **RESERVE**](memos.md#donate--reserve)
+1. [**REFERENCE MEMO** - Memoless Transactions](memos.md#reference-memo---memoless-transactions)
 1. [**MIGRATE**](memos.md#migrate)
 1. [**NOOP**](memos.md#noop)
 1. [**Other Internal Memos**](memos.md#other-internal-memos)
@@ -485,6 +486,60 @@ Donate to the THORChain Reserve.
 | --------- | -------------------- | -------------------------------------------- |
 | Payload   | THOR.RUNE            | The RUNE to credit to the THORChain Reserve. |
 | `RESERVE` | The reserve handler. |                                              |
+
+### REFERENCE MEMO - Memoless Transactions
+
+Memoless transactions allow users to register a memo on THORChain and then reference it in future transactions using a short reference number, enabling transactions on chains with limited memo space (like Bitcoin's 80-byte OP_RETURN limit).
+
+#### Register Reference Memo
+
+Register a memo for future memoless transactions.
+
+**`REFERENCE:ASSET:MEMO`**
+
+| Parameter   | Notes                                                   | Conditions                                           |
+| ----------- | ------------------------------------------------------- | ---------------------------------------------------- |
+| Payload     | THOR.RUNE                                               | [Dust thresholds](#dust-thresholds) must be met.     |
+| `REFERENCE` | The reference memo registration handler.                | Also `reference`                                     |
+| `:ASSET`    | The [asset identifier](asset-notation.md) for the memo. | Must be an active asset on THORChain.                |
+| `:MEMO`     | The memo to register for memoless transactions.         | Any valid THORChain memo (swap, add liquidity, etc.) |
+
+#### Use Reference Memo
+
+Use a previously registered reference memo in a transaction.
+
+**`R:REFERENCE`**
+
+| Parameter    | Notes                                              | Conditions                                              |
+| ------------ | -------------------------------------------------- | ------------------------------------------------------- |
+| Payload      | The asset for the memoless transaction.            | Must match the asset and amount referenced in the memo. |
+| `R`          | The reference memo usage handler.                  | Also `r`                                                |
+| `:REFERENCE` | The reference number assigned during registration. | Must be a valid, non-expired reference number.          |
+
+**Configuration:**
+
+- **TTL (Time To Live)**: Reference memos expire after a configurable number of blocks (default: 3600 blocks ≈ 6 hours)
+- **Reference Range**: Reference numbers are assigned within a configurable range (default: 10,001 - 99,999)
+- **Cost**: Optional RUNE cost for registering reference memos (default: 0)
+- **HaltMemoless**: Operational mimir to emergency halt all memoless functionality
+
+**Examples:**
+
+Registration:
+
+- `REFERENCE:BTC.BTC:=:ETH.ETH:0x1c7b17362c84287bd1184447e6dfeaf920c31bbe`
+  - Registers a swap from BTC to ETH memo for the specified address
+  - Returns reference number (e.g., 20002)
+
+Usage:
+
+- `R:20002` - Uses the registered memo with reference number 20002
+- The actual swap will be executed using the originally registered memo
+
+**API Endpoints:**
+
+- `GET /thorchain/memo/{asset}/{reference}` - Retrieve memo by asset and reference number
+- `GET /thorchain/memo/{registration_hash}` - Retrieve memo by registration transaction hash
 
 ### BOND, UNBOND, REBOND and LEAVE
 

@@ -204,3 +204,4 @@ THORChain supports multiple network types, each with specific configurations:
 - this code repository is a gitlab repository, so remember to use the GitLab CLI ('glab') for all GitLab-related tasks
 
 - when modifying gitlab ci file (.gitlab-ci.yaml), validate it with the glab cli (`glab ci lint`)
+- when updating a proto file, use make proto-format to ensure the formatting of that file is correct

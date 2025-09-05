@@ -117,6 +117,11 @@ func NewConstantValue() *ConstantVals {
 			TradeAccountsDepositEnabled:         1,
 			EVMDisableContractWhitelist:         0,                  // enable/disable contract whitelist
 			OperationalVotesMin:                 3,                  // Minimum node votes to set an Operational Mimir
+			MemolessTxnTTL:                      3600,               // number of blocks before a memoless txn expires (operational mimir)
+			MemolessTxnStartRef:                 10_001,             // memoless txn reference ids start range (operational mimir)
+			MemolessTxnEndRef:                   99_999,             // memoless txn reference ids end range (operational mimir)
+			MemolessTxnCost:                     0,                  // additional cost in RUNE to register a memoless txn (operational mimir)
+			MemolessTxnMaxUse:                   1,                  // maximum times a reference id can be utilized before refunding (operational mimir)
 			L1SlipMinBps:                        0,                  // Minimum L1 asset swap fee in basis points
 			TradeAccountsSlipMinBps:             0,                  // Minimum trade asset swap fee in basis points
 			SecuredAssetSlipMinBps:              5,                  // Minimum secured asset swap fee in basis points

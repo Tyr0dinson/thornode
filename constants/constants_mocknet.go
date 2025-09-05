@@ -27,6 +27,10 @@ func init() {
 		ChurnInterval:                       60,
 		ChurnRetryInterval:                  30,
 		MinimumBondInRune:                   100_000_000, // 1 rune
+		MemolessTxnTTL:                      10,
+		MemolessTxnStartRef:                 10_001, // memoless txn reference ids start range (operational mimir)
+		MemolessTxnEndRef:                   99_999, // memoless txn reference ids end range (operational mimir)
+		MemolessTxnMaxUse:                   5,      // higher limit for testing
 		ValidatorMaxRewardRatio:             3,
 		FundMigrationInterval:               15,
 		LiquidityLockUpBlocks:               0,
