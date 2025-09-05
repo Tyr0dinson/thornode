@@ -86,6 +86,7 @@ func main() {
 		{Name: "bootstrap", Default: true},
 		{Name: "arb", Default: true},
 		{Name: "swaps", Default: true},
+		{Name: "memoless-swaps", Default: true},
 		{Name: "consolidate", Default: true},
 		{Name: "churn", Default: false},
 		{Name: "inactive-vault-refunds", Default: false},
@@ -152,13 +153,14 @@ func main() {
 	root := NewActor("Root")
 
 	appendIfEnabled := func(key string, constructor func() *Actor) {
-		if enabledStages[key] || enabledStages["all"] {
+		if enabledStages[key] || (enabledStages["all"] && key != "memoless-swaps") { // disable memoless until implemented
 			root.Append(constructor())
 		}
 	}
 	appendIfEnabled("bootstrap", suites.Bootstrap)
 	appendIfEnabled("arb", core.NewArbActor)
 	appendIfEnabled("swaps", suites.Swaps)
+	appendIfEnabled("memoless-swaps", suites.MemolessSwaps)
 	appendIfEnabled("consolidate", features.Consolidate)
 	appendIfEnabled("churn", core.NewChurnActor)
 	appendIfEnabled("inactive-vault-refunds", features.InactiveVaultRefunds)
