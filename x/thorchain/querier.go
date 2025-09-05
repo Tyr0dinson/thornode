@@ -3759,3 +3759,55 @@ func (qs queryServer) queryEip712TypedData(_ cosmos.Context, req *types.QueryEip
 	}
 	return &types.QueryEip712TypedDataResponse{TypedData: string(data)}, nil
 }
+
+func (qs queryServer) queryReferenceMemo(ctx cosmos.Context, req *types.QueryReferenceMemoRequest) (*types.QueryReferenceMemoResponse, error) {
+	chain, err := common.NewChain(req.Chain)
+	if err != nil {
+		return nil, fmt.Errorf("invalid chain: %w", err)
+	}
+
+	if req.Reference == "" {
+		return nil, fmt.Errorf("reference cannot be empty")
+	}
+
+	memo, err := qs.mgr.Keeper().GetReferenceMemo(ctx, chain, req.Reference)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get reference memo: %w", err)
+	}
+
+	return &types.QueryReferenceMemoResponse{
+		Chain:            memo.Chain,
+		Memo:             memo.Memo,
+		Reference:        memo.Reference,
+		Height:           memo.Height,
+		ReferenceHash:    memo.ReferenceHash,
+		RegistrationHash: memo.RegistrationHash,
+		RegisteredBy:     memo.RegisteredBy,
+	}, nil
+}
+
+func (qs queryServer) queryReferenceMemoByHash(ctx cosmos.Context, req *types.QueryReferenceMemoByHashRequest) (*types.QueryReferenceMemoByHashResponse, error) {
+	if req.Hash == "" {
+		return nil, fmt.Errorf("hash cannot be empty")
+	}
+
+	hash, err := common.NewTxID(req.Hash)
+	if err != nil {
+		return nil, fmt.Errorf("invalid hash: %w", err)
+	}
+
+	memo, err := qs.mgr.Keeper().GetReferenceMemoByTxnHash(ctx, hash)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get reference memo by hash: %w", err)
+	}
+
+	return &types.QueryReferenceMemoByHashResponse{
+		Chain:            memo.Chain,
+		Memo:             memo.Memo,
+		Reference:        memo.Reference,
+		Height:           memo.Height,
+		ReferenceHash:    memo.ReferenceHash,
+		RegistrationHash: memo.RegistrationHash,
+		RegisteredBy:     memo.RegisteredBy,
+	}, nil
+}

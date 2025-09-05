@@ -24,6 +24,7 @@ func init() {
 		ChurnInterval:                       60,
 		ChurnRetryInterval:                  30,
 		MinimumBondInRune:                   100_000_000, // 1 rune
+		MemolessTxnTTL:                      10,
 		ValidatorMaxRewardRatio:             3,
 		FundMigrationInterval:               15,
 		LiquidityLockUpBlocks:               0,

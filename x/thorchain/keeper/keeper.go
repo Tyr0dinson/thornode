@@ -85,6 +85,7 @@ type Keeper interface {
 	KeeperChainContract
 	KeeperSolvencyVoter
 	KeeperTHORName
+	KeeperReferenceMemo
 	KeeperHalt
 	KeeperAnchors
 	KeeperStreamingSwap
@@ -439,6 +440,17 @@ type KeeperOracle interface {
 	GetPrice(ctx cosmos.Context, symbol string) (OraclePrice, error)
 	DelPrice(ctx cosmos.Context, symbol string)
 	GetPriceIterator(ctx cosmos.Context) cosmos.Iterator
+}
+
+type KeeperReferenceMemo interface {
+	ReferenceMemoExists(ctx cosmos.Context, _ common.Chain, _ string) bool
+	GetReferenceMemo(ctx cosmos.Context, _ common.Chain, _ string) (ReferenceMemo, error)
+	GetReferenceMemoByTxnHash(ctx cosmos.Context, _ common.TxID) (ReferenceMemo, error)
+	SetReferenceMemo(ctx cosmos.Context, _ ReferenceMemo)
+	GetReferenceMemoIterator(ctx cosmos.Context) cosmos.Iterator
+	DeleteReferenceMemo(ctx cosmos.Context, _ common.Chain, _ string) error
+	GetLastReferenceNumber(ctx cosmos.Context, _ common.Chain) string
+	SetLastReferenceNumber(ctx cosmos.Context, _ common.Chain, _ string)
 }
 
 // NewKeeper creates new instances of the thorchain Keeper

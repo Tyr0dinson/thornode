@@ -19,6 +19,9 @@ func NewConstantValue() *ConstantVals {
 			MinimumNodesForBFT:                  4,                  // Minimum node count to keep network running. Below this, Ragnarök is performed.
 			DesiredValidatorSet:                 100,                // desire validator set
 			AsgardSize:                          40,                 // desired node operators in an asgard vault
+			MemolessTxnTTL:                      0,                  // number of blocks before a memoless txn expires
+			MemolessTxnStartRef:                 20_002,             // number memoless txn reference ids start
+			MemolessTxnEndRef:                   30_000,             // number memoless txn reference ids end
 			DerivedDepthBasisPts:                0,                  // Basis points to increase/decrease derived pool depth (10k == 1x)
 			DerivedMinDepth:                     100,                // in basis points, min derived pool depth
 			MaxAnchorSlip:                       1500,               // basis points of rune depth to trigger pausing a derived virtual pool

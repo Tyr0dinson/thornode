@@ -45,6 +45,9 @@ const MaxETHGas = 50000000
 // max amount of data that can be provided with OP_RETURN (bytes)
 const MaxOpReturnDataSize = 80
 
+// number of characters in a memoless txn reference string
+const MemolessTxnRefLength = 5
+
 // when using fake transactions to encode further memo information, support up
 // to eight fake addresses (20 bytes each):
 // 80 (op_return) + 8 * 20 (addresses) - 1 ('^' marker)

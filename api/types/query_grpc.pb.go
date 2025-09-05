@@ -104,6 +104,8 @@ const (
 	Query_OraclePrices_FullMethodName        = "/types.Query/OraclePrices"
 	Query_OraclePrice_FullMethodName         = "/types.Query/OraclePrice"
 	Query_Eip712TypedData_FullMethodName     = "/types.Query/Eip712TypedData"
+	Query_ReferenceMemo_FullMethodName       = "/types.Query/ReferenceMemo"
+	Query_ReferenceMemoByHash_FullMethodName = "/types.Query/ReferenceMemoByHash"
 )
 
 // QueryClient is the client API for Query service.
@@ -204,6 +206,8 @@ type QueryClient interface {
 	OraclePrices(ctx context.Context, in *QueryOraclePricesRequest, opts ...grpc.CallOption) (*QueryOraclePricesResponse, error)
 	OraclePrice(ctx context.Context, in *QueryOraclePriceRequest, opts ...grpc.CallOption) (*QueryOraclePriceResponse, error)
 	Eip712TypedData(ctx context.Context, in *QueryEip712TypedDataRequest, opts ...grpc.CallOption) (*QueryEip712TypedDataResponse, error)
+	ReferenceMemo(ctx context.Context, in *QueryReferenceMemoRequest, opts ...grpc.CallOption) (*QueryReferenceMemoResponse, error)
+	ReferenceMemoByHash(ctx context.Context, in *QueryReferenceMemoByHashRequest, opts ...grpc.CallOption) (*QueryReferenceMemoByHashResponse, error)
 }
 
 type queryClient struct {
@@ -979,6 +983,24 @@ func (c *queryClient) Eip712TypedData(ctx context.Context, in *QueryEip712TypedD
 	return out, nil
 }
 
+func (c *queryClient) ReferenceMemo(ctx context.Context, in *QueryReferenceMemoRequest, opts ...grpc.CallOption) (*QueryReferenceMemoResponse, error) {
+	out := new(QueryReferenceMemoResponse)
+	err := c.cc.Invoke(ctx, Query_ReferenceMemo_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *queryClient) ReferenceMemoByHash(ctx context.Context, in *QueryReferenceMemoByHashRequest, opts ...grpc.CallOption) (*QueryReferenceMemoByHashResponse, error) {
+	out := new(QueryReferenceMemoByHashResponse)
+	err := c.cc.Invoke(ctx, Query_ReferenceMemoByHash_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // QueryServer is the server API for Query service.
 // All implementations must embed UnimplementedQueryServer
 // for forward compatibility
@@ -1077,6 +1099,8 @@ type QueryServer interface {
 	OraclePrices(context.Context, *QueryOraclePricesRequest) (*QueryOraclePricesResponse, error)
 	OraclePrice(context.Context, *QueryOraclePriceRequest) (*QueryOraclePriceResponse, error)
 	Eip712TypedData(context.Context, *QueryEip712TypedDataRequest) (*QueryEip712TypedDataResponse, error)
+	ReferenceMemo(context.Context, *QueryReferenceMemoRequest) (*QueryReferenceMemoResponse, error)
+	ReferenceMemoByHash(context.Context, *QueryReferenceMemoByHashRequest) (*QueryReferenceMemoByHashResponse, error)
 	mustEmbedUnimplementedQueryServer()
 }
 
@@ -1338,6 +1362,12 @@ func (UnimplementedQueryServer) OraclePrice(context.Context, *QueryOraclePriceRe
 }
 func (UnimplementedQueryServer) Eip712TypedData(context.Context, *QueryEip712TypedDataRequest) (*QueryEip712TypedDataResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Eip712TypedData not implemented")
+}
+func (UnimplementedQueryServer) ReferenceMemo(context.Context, *QueryReferenceMemoRequest) (*QueryReferenceMemoResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReferenceMemo not implemented")
+}
+func (UnimplementedQueryServer) ReferenceMemoByHash(context.Context, *QueryReferenceMemoByHashRequest) (*QueryReferenceMemoByHashResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReferenceMemoByHash not implemented")
 }
 func (UnimplementedQueryServer) mustEmbedUnimplementedQueryServer() {}
 
@@ -2882,6 +2912,42 @@ func _Query_Eip712TypedData_Handler(srv interface{}, ctx context.Context, dec fu
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Query_ReferenceMemo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryReferenceMemoRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).ReferenceMemo(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Query_ReferenceMemo_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).ReferenceMemo(ctx, req.(*QueryReferenceMemoRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Query_ReferenceMemoByHash_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryReferenceMemoByHashRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).ReferenceMemoByHash(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Query_ReferenceMemoByHash_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).ReferenceMemoByHash(ctx, req.(*QueryReferenceMemoByHashRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Query_ServiceDesc is the grpc.ServiceDesc for Query service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -3228,6 +3294,14 @@ var Query_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Eip712TypedData",
 			Handler:    _Query_Eip712TypedData_Handler,
+		},
+		{
+			MethodName: "ReferenceMemo",
+			Handler:    _Query_ReferenceMemo_Handler,
+		},
+		{
+			MethodName: "ReferenceMemoByHash",
+			Handler:    _Query_ReferenceMemoByHash_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

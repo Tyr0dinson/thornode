@@ -129,3 +129,158 @@ type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .|length == 0
+---
+########################################################################################
+# test creating a memoless txn
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "0"
+    asset: "rune"
+memo: "reference:ETH:10464C8CDFF11B4AF1057FD48DC23C183E9864AA266C4B2E8B69032B6756A48C:=:BTC.BTC:{{ addr_btc_fox }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/memo/ETH/20002
+asserts:
+  - .chain == "ETH"
+  - .memo == "=:BTC.BTC:{{ addr_btc_fox }}"
+  - .reference == "20002"
+  - .height == "6"
+  - .reference_hash == "10464C8CDFF11B4AF1057FD48DC23C183E9864AA266C4B2E8B69032B6756A48C"
+  - .registration_hash == "{{ native_txid -1 }}"
+  - .registered_by == "{{ addr_thor_fox }}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/memohash/10464C8CDFF11B4AF1057FD48DC23C183E9864AA266C4B2E8B69032B6756A48C
+asserts:
+  - .chain == "ETH"
+  - .memo == "=:BTC.BTC:{{ addr_btc_fox }}"
+  - .reference == "20002"
+  - .height == "6"
+  - .reference_hash == "10464C8CDFF11B4AF1057FD48DC23C183E9864AA266C4B2E8B69032B6756A48C"
+  - .registration_hash == "{{ native_txid -1 }}"
+  - .registered_by == "{{ addr_thor_fox }}"
+---
+########################################################################################
+# test that memo is utilized by direct reference
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: ETH
+      from_address: {{ addr_eth_fox }}
+      to_address: {{ addr_eth_dog }}
+      coins:
+        - amount: "5000000"
+          asset: "ETH.ETH"
+          decimals: 8
+      gas:
+        - amount: "960000"
+          asset: "ETH.ETH"
+      memo: "r:20002"
+    block_height: 3
+    finalise_height: 3
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0]|.in_hash == "{{ observe_txid 2 }}"
+---
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 3 }}'
+    chain: BTC
+    from_address: {{ addr_btc_dog }}
+    to_address: {{ addr_btc_fox }}
+    coins:
+      - amount: "580265"
+        asset: "BTC.BTC"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "BTC.BTC"
+    memo: "OUT:{{ observe_txid 2 }}"
+  block_height: 5
+  finalise_height: 5
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+########################################################################################
+# test that memo is utilized by direct reference, again. Ensure that it can be used twice
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 4 }}"
+      chain: ETH
+      from_address: {{ addr_eth_fox }}
+      to_address: {{ addr_eth_dog }}
+      coins:
+        - amount: "5000000"
+          asset: "ETH.ETH"
+          decimals: 8
+      gas:
+        - amount: "960000"
+          asset: "ETH.ETH"
+      memo: "r:20002"
+    block_height: 3
+    finalise_height: 3
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0]|.in_hash == "{{ observe_txid 4 }}"
+---
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 5 }}'
+    chain: BTC
+    from_address: {{ addr_btc_dog }}
+    to_address: {{ addr_btc_fox }}
+    coins:
+      - amount: "567798"
+        asset: "BTC.BTC"
+        decimals: 8
+    gas:
+      - amount: "100000"
+        asset: "BTC.BTC"
+    memo: "OUT:{{ observe_txid 4 }}"
+  block_height: 5
+  finalise_height: 5
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0

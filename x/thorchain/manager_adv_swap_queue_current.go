@@ -849,7 +849,7 @@ func (vm *SwapQueueAdvVCUR) processExpiredLimitSwaps(ctx cosmos.Context, mgr Man
 
 // emitAdvSwapQueueTelemetry emits telemetry metrics for the advanced swap queue
 // This method should only be called when telemetry is enabled
-func (vm *SwapQueueAdvVCUR) emitAdvSwapQueueTelemetry(ctx cosmos.Context, mgr Manager, iterationCount int64, totalSwapsProcessed int64, marketSwapCount int64, limitSwapCount int64, completedSwapCount int64) {
+func (vm *SwapQueueAdvVCUR) emitAdvSwapQueueTelemetry(ctx cosmos.Context, mgr Manager, iterationCount, totalSwapsProcessed, marketSwapCount, limitSwapCount, completedSwapCount int64) {
 	// Emit core metrics
 	telemetry.SetGauge(float32(iterationCount), "thornode", "adv_swap_queue", "iterations_per_block")
 	telemetry.SetGauge(float32(totalSwapsProcessed), "thornode", "adv_swap_queue", "total_swaps_per_block")

@@ -1,0 +1,17 @@
+
+syntax = "proto3";
+package types;
+
+option go_package = "gitlab.com/thorchain/thornode/v3/x/thorchain/types";
+
+import "gogoproto/gogo.proto";
+
+message ReferenceMemo {
+  string chain = 1 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/v3/common.Chain"];
+  string memo = 2;
+  string reference = 3;
+  int64 height = 4;
+  string reference_hash = 5 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/v3/common.TxID"];
+  string registration_hash = 6 [(gogoproto.casttype) = "gitlab.com/thorchain/thornode/v3/common.TxID"];
+  bytes registered_by = 7  [(gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress"];
+}

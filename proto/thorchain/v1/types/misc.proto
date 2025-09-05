@@ -21,6 +21,10 @@ message ProtoAccAddresses {
   repeated bytes value = 1  [(gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress"];
 }
 
+message ProtoString {
+  string value = 1;
+}
+
 message ProtoStrings {
   repeated string value = 1;
 }

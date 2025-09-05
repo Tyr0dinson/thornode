@@ -172,6 +172,9 @@ const (
 	MintSynths
 	NumberOfNewNodesPerChurn
 	SignerConcurrency
+	MemolessTxnTTL
+	MemolessTxnStartRef
+	MemolessTxnEndRef
 	StrictBondLiquidityRatio
 	SwapOutDexAggregationDisabled
 )

@@ -6,6 +6,7 @@ import (
 
 	"github.com/blang/semver"
 	se "github.com/cosmos/cosmos-sdk/types/errors"
+	"gopkg.in/check.v1"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -946,4 +947,30 @@ func (s *HandlerObservedTxInSuite) TestObservingSlashing(c *C) {
 	checkSlashPoints(c, ctx, nas, [7]int64{2, 0, 0, 0, 0, 4, 0})
 
 	// Note that nas[6], the Standby node, remains unaffected by the Actives nodes' observations.
+}
+
+func (s *HandlerObservedTxInSuite) TestMemolessTxns(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(15)
+	handler := NewObservedTxInHandler(mgr)
+	chain := common.BTCChain
+
+	// Test when memo is not empty
+	memo := handler.fetchMemo(ctx, chain, "myMemo")
+	c.Check(memo, check.Equals, "myMemo", check.Commentf("Expected to return the same memo when memo is not empty"))
+
+	// Test when amount length is less than constants.MemolessTxnRefLength
+	memo = handler.fetchMemo(ctx, chain, "")
+	c.Check(memo, check.Equals, "", check.Commentf("Expected to return empty memo when memo is empty"))
+
+	// Test when reference memo is not expired, happy path
+	refMemo := NewReferenceMemo(chain, "the memo", "30000", 10)
+	mgr.Keeper().SetReferenceMemo(ctx, refMemo)
+	memo = handler.fetchMemo(ctx, chain, "r:30000")
+	c.Check(memo, check.Equals, "the memo", check.Commentf("Expected to return reference memo when it's not expired"))
+
+	// Test when reference memo is expired
+	ctx = ctx.WithBlockHeight(25)
+	memo = handler.fetchMemo(ctx, chain, "r:30000")
+	c.Check(memo, check.Equals, "", check.Commentf("Expected to return empty memo when reference memo is expired"))
 }

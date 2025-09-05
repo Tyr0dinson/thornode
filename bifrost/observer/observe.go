@@ -161,7 +161,7 @@ func NewObserver(pubkeyMgr *pubkeymanager.PubKeyManager,
 func (o *Observer) getChain(chainID common.Chain) (chainclients.ChainClient, error) {
 	chain, ok := o.chains[chainID]
 	if !ok {
-		o.logger.Debug().Str("chain", chainID.String()).Msg("is not supported yet")
+		// o.logger.Debug().Str("chain", chainID.String()).Msg("is not supported yet")
 		return nil, errors.New("not supported")
 	}
 	return chain, nil
@@ -264,11 +264,11 @@ func (o *Observer) handleObservedTxCommitted(tx common.ObservedTx) {
 			continue
 		}
 		if isFinal {
-			o.logger.Debug().Msgf("tx final %s - %s removing from tx array", tx.Tx.Chain, tx.Tx.ID)
+			// o.logger.Debug().Msgf("tx final %s - %s removing from tx array", tx.Tx.Chain, tx.Tx.ID)
 			// if the tx is in the tx array, and it is final, remove it from the tx array.
 			deck.TxArray = slices.Delete(deck.TxArray, j, j+1)
 			if len(deck.TxArray) == 0 {
-				o.logger.Debug().Msgf("deck is empty, removing from ondeck")
+				// o.logger.Debug().Msgf("deck is empty, removing from ondeck")
 
 				// if the deck is empty after removing, remove it from ondeck.
 				delete(o.onDeck, k)
@@ -304,22 +304,23 @@ func (o *Observer) handleObservedTxCommitted(tx common.ObservedTx) {
 	}
 
 	if !madeChanges {
-		o.logger.Debug().Msgf("no changes made to ondeck, size: %d", len(o.onDeck))
+		// o.logger.Debug().Msgf("no changes made to ondeck, size: %d", len(o.onDeck))
 		return
 	}
 
-	o.logger.Debug().
-		Int("ondeck_size", len(o.onDeck)).
-		Str("id", tx.Tx.ID.String()).
-		Str("chain", tx.Tx.Chain.String()).
-		Int64("height", tx.BlockHeight).
-		Str("from", tx.Tx.FromAddress.String()).
-		Str("to", tx.Tx.ToAddress.String()).
-		Str("memo", tx.Tx.Memo).
-		Str("coins", tx.Tx.Coins.String()).
-		Str("gas", common.Coins(tx.Tx.Gas).String()).
-		Str("observed_vault_pubkey", tx.ObservedPubKey.String()).
-		Msg("observed tx committed to thorchain")
+	/* o.logger.Debug().
+	Int("ondeck_size", len(o.onDeck)).
+	Str("id", tx.Tx.ID.String()).
+	Str("chain", tx.Tx.Chain.String()).
+	Int64("height", tx.BlockHeight).
+	Str("from", tx.Tx.FromAddress.String()).
+	Str("to", tx.Tx.ToAddress.String()).
+	Str("memo", tx.Tx.Memo).
+	Str("coins", tx.Tx.Coins.String()).
+	Str("gas", common.Coins(tx.Tx.Gas).String()).
+	Str("observed_vault_pubkey", tx.ObservedPubKey.String()).
+	Msg("observed tx committed to thorchain")
+	*/
 }
 
 func (o *Observer) sendDeck(ctx context.Context) {
@@ -366,7 +367,7 @@ func (o *Observer) sendDeck(ctx context.Context) {
 		}
 	}
 	if nodeStatus != stypes.NodeStatus_Active {
-		o.logger.Debug().Msg("node is not active, will not handle tx in")
+		// o.logger.Debug().Msg("node is not active, will not handle tx in")
 		return
 	}
 
@@ -456,9 +457,8 @@ func (o *Observer) processTxIns() {
 					<-sem
 				}()
 
-				start := time.Now()
 				o.processObservedTx(tx)
-				o.logger.Debug().Msgf("processObservedTx took %s", time.Since(start))
+				// o.logger.Debug().Msgf("processObservedTx took %s", time.Since(start))
 			}(txIn)
 		}
 	}
@@ -476,12 +476,11 @@ func (o *Observer) processObservedTx(txIn types.TxIn) {
 
 	// Check if we need to filter the incoming transactions
 	if !txIn.Filtered {
-		filterStart := time.Now()
 		// First, get a read lock to check existing transactions
 		// Filter without modifying shared state
 		filteredTxArray = o.filterObservations(txIn.Chain, txIn.TxArray, txIn.MemPool)
 		if len(filteredTxArray) == 0 {
-			o.logger.Debug().Msgf("txin is empty after filtering, ignore it")
+			// o.logger.Debug().Msgf("txin is empty after filtering, ignore it")
 			return
 		}
 
@@ -496,7 +495,7 @@ func (o *Observer) processObservedTx(txIn types.TxIn) {
 		} else {
 			o.logger.Error().Err(err).Msg("fail to get chain client for confirmation count")
 		}
-		o.logger.Debug().Msgf("filterObservations took %s", time.Since(filterStart))
+		// o.logger.Debug().Msgf("filterObservations took %s", time.Since(filterStart))
 	}
 
 	k := TxInKey(&txIn)
@@ -508,7 +507,6 @@ func (o *Observer) processObservedTx(txIn types.TxIn) {
 	in, ok := o.onDeck[k]
 	if ok {
 		// tx is already in the onDeck, dedupe incoming txs
-		dedupeStart := time.Now()
 		var newTxs []*types.TxInItem
 		for _, txInItem := range txIn.TxArray {
 			foundTx := false
@@ -533,25 +531,23 @@ func (o *Observer) processObservedTx(txIn types.TxIn) {
 				newTxs = append(newTxs, txInItem)
 			}
 		}
-		o.logger.Debug().Msgf("Dedupe took %s", time.Since(dedupeStart))
+		// o.logger.Debug().Msgf("Dedupe took %s", time.Since(dedupeStart))
 		if len(newTxs) > 0 {
 			in.TxArray = append(in.TxArray, newTxs...)
-			setDeckStart := time.Now()
 			if err := o.storage.AddOrUpdateTx(in); err != nil {
 				o.logger.Error().Err(err).Msg("fail to add tx to storage")
 			}
-			o.logger.Debug().Msgf("AddOrUpdateTx existing took %s", time.Since(setDeckStart))
+			// o.logger.Debug().Msgf("AddOrUpdateTx existing took %s", time.Since(setDeckStart))
 		}
 
 		return
 	}
 	o.onDeck[k] = &txIn
 
-	setDeckStart := time.Now()
 	if err := o.storage.AddOrUpdateTx(&txIn); err != nil {
 		o.logger.Error().Err(err).Msg("fail to add tx to storage")
 	}
-	o.logger.Debug().Msgf("AddOrUpdateTx new took %s", time.Since(setDeckStart))
+	// o.logger.Debug().Msgf("AddOrUpdateTx new took %s", time.Since(setDeckStart))
 }
 
 func (o *Observer) filterObservations(chain common.Chain, items []*types.TxInItem, memPool bool) []*types.TxInItem {
@@ -649,17 +645,25 @@ BlockLoop:
 	}
 }
 
-// getSaversMemo returns an add or withdraw memo for a Savers Vault
-// If the tx is not a valid savers tx, an empty string will be returned
-// Savers tx criteria:
-// - Inbound amount must be gas asset
+// getMemo returns a memo to be injected into the transaction. This is for
+// different types of memoless transactions 0-10,000 above dust threshold is a
+// savers withdraw, specifying the withdraw amount (in basis points) 10,001 is
+// reserved for savers deposits. start - end is for memoless transactions > end
+// is for savers deposits
+
 // - Inbound amount must be greater than the Dust Threshold of the tx chain (see chain.DustThreshold())
-func (o *Observer) getSaversMemo(chain common.Chain, tx *types.TxInItem) string {
+func (o *Observer) getMemo(chain common.Chain, tx types.TxInItem, ttl, start, end int64) string {
 	// Savers txs should have one Coin input
 	if len(tx.Coins) != 1 {
 		return ""
 	}
 
+	// If memoless tx TTL is disabled, ignore
+	if ttl <= 0 {
+		return ""
+	}
+
+	asset := tx.Coins[0].Asset
 	txAmt := tx.Coins[0].Amount
 	dustThreshold := chain.DustThreshold()
 
@@ -668,28 +672,42 @@ func (o *Observer) getSaversMemo(chain common.Chain, tx *types.TxInItem) string 
 		return ""
 	}
 
-	asset := tx.Coins[0].Asset
-	synthAsset := asset.GetSyntheticAsset()
-	bps := txAmt.Sub(dustThreshold)
-
-	switch {
-	case bps.IsZero():
-		// Amount is too low, ignore
-		return ""
-	case bps.LTE(cosmos.NewUint(10_000)):
-		// Amount is within or includes dustThreshold + 10_000, generate withdraw memo
-		return fmt.Sprintf("-:%s:%s", synthAsset.String(), bps.String())
-	default:
-		// Amount is above dustThreshold + 10_000, generate add memo
-		return fmt.Sprintf("+:%s", synthAsset.String())
+	// check for hash via txn hash
+	ref, err := o.thorchainBridge.GetReferenceMemoByTxHash(tx.Tx)
+	if err != nil {
+		o.logger.Error().Err(err).Msg("fail to fetch reference memo via tx hash")
 	}
+	if len(ref) > 0 {
+		return ref
+	}
+
+	amtOverDust := txAmt.Sub(dustThreshold)
+	if amtOverDust.IsZero() {
+		return ""
+	}
+	st := common.SafeSub(cosmos.SafeUintFromInt64(start), dustThreshold)
+	en := common.SafeSub(cosmos.SafeUintFromInt64(end), dustThreshold)
+
+	if amtOverDust.GTE(st) && amtOverDust.LTE(en) {
+		// this transaction appears to be using a memoless transaction
+		ref2, err2 := o.thorchainBridge.GetReferenceMemo(asset.GetChain(), amtOverDust.String())
+		if err2 != nil {
+			o.logger.Error().Err(err2).Msg("fail to fetch reference memo")
+		}
+		return ref2
+	}
+	return ""
 }
 
 // getThorchainTxIns convert to the type thorchain expected
 // maybe in later THORNode can just refactor this to use the type in thorchain
 func (o *Observer) getThorchainTxIns(txIn *types.TxIn, finalized bool, finaliseHeight int64) (common.ObservedTxs, error) {
+	ttl, _ := o.thorchainBridge.GetMimir(constants.MemolessTxnTTL.String())
+	start, _ := o.thorchainBridge.GetMimir(constants.MemolessTxnStartRef.String())
+	end, _ := o.thorchainBridge.GetMimir(constants.MemolessTxnEndRef.String())
+
 	obsTxs := make(common.ObservedTxs, 0, len(txIn.TxArray))
-	o.logger.Debug().Msgf("len %d", len(txIn.TxArray))
+	// o.logger.Debug().Msgf("len %d", len(txIn.TxArray))
 	for _, item := range txIn.TxArray {
 		if item.CommittedUnFinalised && !finalized {
 			// we have already committed this tx in the un-finalized state,
@@ -707,7 +725,7 @@ func (o *Observer) getThorchainTxIns(txIn *types.TxIn, finalized bool, finaliseH
 
 		// If memo is empty, see if it is a memo-less savers add or withdraw
 		if strings.EqualFold(item.Memo, "") {
-			memo := o.getSaversMemo(txIn.Chain, item)
+			memo := o.getMemo(txIn.Chain, *item, ttl, start, end)
 			if !strings.EqualFold(memo, "") {
 				o.logger.Info().Str("memo", memo).Str("txId", item.Tx).Msg("created savers memo")
 				item.Memo = memo
@@ -718,7 +736,7 @@ func (o *Observer) getThorchainTxIns(txIn *types.TxIn, finalized bool, finaliseH
 			o.logger.Info().Msgf("tx (%s) to address is empty,ignore it", item.Tx)
 			continue
 		}
-		o.logger.Debug().Str("tx-hash", item.Tx).Msg("txInItem")
+		// o.logger.Debug().Str("tx-hash", item.Tx).Msg("txInItem")
 		blockHeight := strconv.FormatInt(item.BlockHeight, 10)
 		txID, err := common.NewTxID(item.Tx)
 		if err != nil {
@@ -741,9 +759,9 @@ func (o *Observer) getThorchainTxIns(txIn *types.TxIn, finalized bool, finaliseH
 			continue
 		}
 
-		o.logger.Debug().Msgf("pool pubkey %s", item.ObservedVaultPubKey)
-		chainAddr, err := item.ObservedVaultPubKey.GetAddress(txIn.Chain)
-		o.logger.Debug().Msgf("%s address %s", txIn.Chain.String(), chainAddr)
+		// o.logger.Debug().Msgf("pool pubkey %s", item.ObservedVaultPubKey)
+		_, err = item.ObservedVaultPubKey.GetAddress(txIn.Chain)
+		// o.logger.Debug().Msgf("%s address %s", txIn.Chain.String(), chainAddr)
 		if err != nil {
 			o.errCounter.WithLabelValues("fail to parse observed pool address", item.ObservedVaultPubKey.String()).Inc()
 			o.logger.Err(err).Msgf("fail to parse observed pool address: %s", item.ObservedVaultPubKey.String())
@@ -777,7 +795,7 @@ func (o *Observer) processSolvencyQueue(ctx context.Context) {
 			if solvencyItem.Chain.IsEmpty() || solvencyItem.Coins.IsEmpty() || solvencyItem.PubKey.IsEmpty() {
 				continue
 			}
-			o.logger.Debug().Msgf("solvency:%+v", solvencyItem)
+			// o.logger.Debug().Msgf("solvency:%+v", solvencyItem)
 			if err := o.attestationGossip.AttestSolvency(ctx, common.Solvency{
 				Chain:  solvencyItem.Chain,
 				Height: solvencyItem.Height,
