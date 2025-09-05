@@ -3,6 +3,7 @@ Thornode API
 
 Thornode REST API.
 
+API version: 3.9.0
 Contact: devs@thorchain.org
 */
 
@@ -295,7 +296,7 @@ func (o *Borrower) SetLastRepayHeight(v int64) {
 	o.LastRepayHeight = v
 }
 
-func (o Borrower) MarshalJSON_deprecated() ([]byte, error) {
+func (o Borrower) MarshalJSON() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
 		toSerialize["owner"] = o.Owner
@@ -357,7 +358,7 @@ func NewNullableBorrower(val *Borrower) *NullableBorrower {
 	return &NullableBorrower{value: val, isSet: true}
 }
 
-func (v NullableBorrower) MarshalJSON_deprecated() ([]byte, error) {
+func (v NullableBorrower) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

@@ -3,6 +3,7 @@ Thornode API
 
 Thornode REST API.
 
+API version: 3.9.0
 Contact: devs@thorchain.org
 */
 
@@ -491,7 +492,7 @@ func (o *YggdrasilVault) SetAddresses(v []VaultAddress) {
 	o.Addresses = v
 }
 
-func (o YggdrasilVault) MarshalJSON_deprecated() ([]byte, error) {
+func (o YggdrasilVault) MarshalJSON() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if o.BlockHeight != nil {
 		toSerialize["block_height"] = o.BlockHeight
@@ -568,7 +569,7 @@ func NewNullableYggdrasilVault(val *YggdrasilVault) *NullableYggdrasilVault {
 	return &NullableYggdrasilVault{value: val, isSet: true}
 }
 
-func (v NullableYggdrasilVault) MarshalJSON_deprecated() ([]byte, error) {
+func (v NullableYggdrasilVault) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

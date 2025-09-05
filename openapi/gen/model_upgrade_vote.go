@@ -3,6 +3,7 @@ Thornode API
 
 Thornode REST API.
 
+API version: 3.9.0
 Contact: devs@thorchain.org
 */
 
@@ -89,7 +90,7 @@ func (o *UpgradeVote) SetVote(v string) {
 	o.Vote = v
 }
 
-func (o UpgradeVote) MarshalJSON_deprecated() ([]byte, error) {
+func (o UpgradeVote) MarshalJSON() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
 		toSerialize["node_address"] = o.NodeAddress
@@ -127,7 +128,7 @@ func NewNullableUpgradeVote(val *UpgradeVote) *NullableUpgradeVote {
 	return &NullableUpgradeVote{value: val, isSet: true}
 }
 
-func (v NullableUpgradeVote) MarshalJSON_deprecated() ([]byte, error) {
+func (v NullableUpgradeVote) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

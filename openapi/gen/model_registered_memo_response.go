@@ -3,6 +3,7 @@ Thornode API
 
 Thornode REST API.
 
+API version: 3.9.0
 Contact: devs@thorchain.org
 */
 
@@ -170,7 +171,7 @@ func (o *RegisteredMemoResponse) SetRegisteredAt(v int64) {
 	o.RegisteredAt = v
 }
 
-func (o RegisteredMemoResponse) MarshalJSON_deprecated() ([]byte, error) {
+func (o RegisteredMemoResponse) MarshalJSON() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
 		toSerialize["memo"] = o.Memo
@@ -217,7 +218,7 @@ func NewNullableRegisteredMemoResponse(val *RegisteredMemoResponse) *NullableReg
 	return &NullableRegisteredMemoResponse{value: val, isSet: true}
 }
 
-func (v NullableRegisteredMemoResponse) MarshalJSON_deprecated() ([]byte, error) {
+func (v NullableRegisteredMemoResponse) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

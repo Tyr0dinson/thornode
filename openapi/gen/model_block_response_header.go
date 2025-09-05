@@ -3,6 +3,7 @@ Thornode API
 
 Thornode REST API.
 
+API version: 3.9.0
 Contact: devs@thorchain.org
 */
 
@@ -399,7 +400,7 @@ func (o *BlockResponseHeader) SetProposerAddress(v string) {
 	o.ProposerAddress = v
 }
 
-func (o BlockResponseHeader) MarshalJSON_deprecated() ([]byte, error) {
+func (o BlockResponseHeader) MarshalJSON() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
 		toSerialize["version"] = o.Version
@@ -473,7 +474,7 @@ func NewNullableBlockResponseHeader(val *BlockResponseHeader) *NullableBlockResp
 	return &NullableBlockResponseHeader{value: val, isSet: true}
 }
 
-func (v NullableBlockResponseHeader) MarshalJSON_deprecated() ([]byte, error) {
+func (v NullableBlockResponseHeader) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

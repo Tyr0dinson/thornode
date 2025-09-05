@@ -3,6 +3,7 @@ Thornode API
 
 Thornode REST API.
 
+API version: 3.9.0
 Contact: devs@thorchain.org
 */
 
@@ -665,7 +666,7 @@ func (o *QuoteSwapResponse) SetTotalSwapSeconds(v int64) {
 	o.TotalSwapSeconds = &v
 }
 
-func (o QuoteSwapResponse) MarshalJSON_deprecated() ([]byte, error) {
+func (o QuoteSwapResponse) MarshalJSON() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if o.InboundAddress != nil {
 		toSerialize["inbound_address"] = o.InboundAddress
@@ -757,7 +758,7 @@ func NewNullableQuoteSwapResponse(val *QuoteSwapResponse) *NullableQuoteSwapResp
 	return &NullableQuoteSwapResponse{value: val, isSet: true}
 }
 
-func (v NullableQuoteSwapResponse) MarshalJSON_deprecated() ([]byte, error) {
+func (v NullableQuoteSwapResponse) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

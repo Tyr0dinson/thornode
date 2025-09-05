@@ -3,6 +3,7 @@ Thornode API
 
 Thornode REST API.
 
+API version: 3.9.0
 Contact: devs@thorchain.org
 */
 
@@ -68,7 +69,7 @@ func (o *OraclePricesResponse) SetPrices(v []OraclePrice) {
 	o.Prices = v
 }
 
-func (o OraclePricesResponse) MarshalJSON_deprecated() ([]byte, error) {
+func (o OraclePricesResponse) MarshalJSON() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if o.Prices != nil {
 		toSerialize["prices"] = o.Prices
@@ -103,7 +104,7 @@ func NewNullableOraclePricesResponse(val *OraclePricesResponse) *NullableOracleP
 	return &NullableOraclePricesResponse{value: val, isSet: true}
 }
 
-func (v NullableOraclePricesResponse) MarshalJSON_deprecated() ([]byte, error) {
+func (v NullableOraclePricesResponse) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

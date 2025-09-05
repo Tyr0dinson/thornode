@@ -3,6 +3,7 @@ Thornode API
 
 Thornode REST API.
 
+API version: 3.9.0
 Contact: devs@thorchain.org
 */
 
@@ -101,7 +102,7 @@ func (o *KeysignMetrics) SetNodeTssTimes(v []TssMetric) {
 	o.NodeTssTimes = v
 }
 
-func (o KeysignMetrics) MarshalJSON_deprecated() ([]byte, error) {
+func (o KeysignMetrics) MarshalJSON() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if o.TxId != nil {
 		toSerialize["tx_id"] = o.TxId
@@ -139,7 +140,7 @@ func NewNullableKeysignMetrics(val *KeysignMetrics) *NullableKeysignMetrics {
 	return &NullableKeysignMetrics{value: val, isSet: true}
 }
 
-func (v NullableKeysignMetrics) MarshalJSON_deprecated() ([]byte, error) {
+func (v NullableKeysignMetrics) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

@@ -3,6 +3,7 @@ Thornode API
 
 Thornode REST API.
 
+API version: 3.9.0
 Contact: devs@thorchain.org
 */
 
@@ -130,7 +131,7 @@ func (o *OutboundDelayStage) SetCompleted(v bool) {
 	o.Completed = v
 }
 
-func (o OutboundDelayStage) MarshalJSON_deprecated() ([]byte, error) {
+func (o OutboundDelayStage) MarshalJSON() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if o.RemainingDelayBlocks != nil {
 		toSerialize["remaining_delay_blocks"] = o.RemainingDelayBlocks
@@ -171,7 +172,7 @@ func NewNullableOutboundDelayStage(val *OutboundDelayStage) *NullableOutboundDel
 	return &NullableOutboundDelayStage{value: val, isSet: true}
 }
 
-func (v NullableOutboundDelayStage) MarshalJSON_deprecated() ([]byte, error) {
+func (v NullableOutboundDelayStage) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

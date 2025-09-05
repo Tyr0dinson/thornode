@@ -3,6 +3,7 @@ Thornode API
 
 Thornode REST API.
 
+API version: 3.9.0
 Contact: devs@thorchain.org
 */
 
@@ -340,7 +341,7 @@ func (o *TxSignersResponse) SetOutboundHeight(v int64) {
 	o.OutboundHeight = &v
 }
 
-func (o TxSignersResponse) MarshalJSON_deprecated() ([]byte, error) {
+func (o TxSignersResponse) MarshalJSON() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if o.TxId != nil {
 		toSerialize["tx_id"] = o.TxId
@@ -402,7 +403,7 @@ func NewNullableTxSignersResponse(val *TxSignersResponse) *NullableTxSignersResp
 	return &NullableTxSignersResponse{value: val, isSet: true}
 }
 
-func (v NullableTxSignersResponse) MarshalJSON_deprecated() ([]byte, error) {
+func (v NullableTxSignersResponse) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

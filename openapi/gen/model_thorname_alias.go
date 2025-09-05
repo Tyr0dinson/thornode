@@ -3,6 +3,7 @@ Thornode API
 
 Thornode REST API.
 
+API version: 3.9.0
 Contact: devs@thorchain.org
 */
 
@@ -101,7 +102,7 @@ func (o *ThornameAlias) SetAddress(v string) {
 	o.Address = &v
 }
 
-func (o ThornameAlias) MarshalJSON_deprecated() ([]byte, error) {
+func (o ThornameAlias) MarshalJSON() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if o.Chain != nil {
 		toSerialize["chain"] = o.Chain
@@ -139,7 +140,7 @@ func NewNullableThornameAlias(val *ThornameAlias) *NullableThornameAlias {
 	return &NullableThornameAlias{value: val, isSet: true}
 }
 
-func (v NullableThornameAlias) MarshalJSON_deprecated() ([]byte, error) {
+func (v NullableThornameAlias) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

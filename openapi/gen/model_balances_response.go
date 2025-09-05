@@ -3,6 +3,7 @@ Thornode API
 
 Thornode REST API.
 
+API version: 3.9.0
 Contact: devs@thorchain.org
 */
 
@@ -68,7 +69,7 @@ func (o *BalancesResponse) SetResult(v []Amount) {
 	o.Result = v
 }
 
-func (o BalancesResponse) MarshalJSON_deprecated() ([]byte, error) {
+func (o BalancesResponse) MarshalJSON() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if o.Result != nil {
 		toSerialize["result"] = o.Result
@@ -103,7 +104,7 @@ func NewNullableBalancesResponse(val *BalancesResponse) *NullableBalancesRespons
 	return &NullableBalancesResponse{value: val, isSet: true}
 }
 
-func (v NullableBalancesResponse) MarshalJSON_deprecated() ([]byte, error) {
+func (v NullableBalancesResponse) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

@@ -3,6 +3,7 @@ Thornode API
 
 Thornode REST API.
 
+API version: 3.9.0
 Contact: devs@thorchain.org
 */
 
@@ -130,7 +131,7 @@ func (o *OutboundSignedStage) SetCompleted(v bool) {
 	o.Completed = v
 }
 
-func (o OutboundSignedStage) MarshalJSON_deprecated() ([]byte, error) {
+func (o OutboundSignedStage) MarshalJSON() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if o.ScheduledOutboundHeight != nil {
 		toSerialize["scheduled_outbound_height"] = o.ScheduledOutboundHeight
@@ -171,7 +172,7 @@ func NewNullableOutboundSignedStage(val *OutboundSignedStage) *NullableOutboundS
 	return &NullableOutboundSignedStage{value: val, isSet: true}
 }
 
-func (v NullableOutboundSignedStage) MarshalJSON_deprecated() ([]byte, error) {
+func (v NullableOutboundSignedStage) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

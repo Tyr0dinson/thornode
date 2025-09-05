@@ -3,6 +3,7 @@ Thornode API
 
 Thornode REST API.
 
+API version: 3.9.0
 Contact: devs@thorchain.org
 */
 
@@ -116,7 +117,7 @@ func (o *StreamingStatus) SetCount(v int64) {
 	o.Count = v
 }
 
-func (o StreamingStatus) MarshalJSON_deprecated() ([]byte, error) {
+func (o StreamingStatus) MarshalJSON() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
 		toSerialize["interval"] = o.Interval
@@ -157,7 +158,7 @@ func NewNullableStreamingStatus(val *StreamingStatus) *NullableStreamingStatus {
 	return &NullableStreamingStatus{value: val, isSet: true}
 }
 
-func (v NullableStreamingStatus) MarshalJSON_deprecated() ([]byte, error) {
+func (v NullableStreamingStatus) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

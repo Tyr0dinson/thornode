@@ -3,6 +3,7 @@ Thornode API
 
 Thornode REST API.
 
+API version: 3.9.0
 Contact: devs@thorchain.org
 */
 
@@ -645,7 +646,7 @@ func (o *Node) SetPreflightStatus(v NodePreflightStatus) {
 	o.PreflightStatus = v
 }
 
-func (o Node) MarshalJSON_deprecated() ([]byte, error) {
+func (o Node) MarshalJSON() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
 		toSerialize["node_address"] = o.NodeAddress
@@ -746,7 +747,7 @@ func NewNullableNode(val *Node) *NullableNode {
 	return &NullableNode{value: val, isSet: true}
 }
 
-func (v NullableNode) MarshalJSON_deprecated() ([]byte, error) {
+func (v NullableNode) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

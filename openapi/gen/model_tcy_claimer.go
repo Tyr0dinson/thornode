@@ -3,6 +3,7 @@ Thornode API
 
 Thornode REST API.
 
+API version: 3.9.0
 Contact: devs@thorchain.org
 */
 
@@ -120,7 +121,7 @@ func (o *TCYClaimer) SetAsset(v string) {
 	o.Asset = v
 }
 
-func (o TCYClaimer) MarshalJSON_deprecated() ([]byte, error) {
+func (o TCYClaimer) MarshalJSON() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if o.L1Address != nil {
 		toSerialize["l1_address"] = o.L1Address
@@ -161,7 +162,7 @@ func NewNullableTCYClaimer(val *TCYClaimer) *NullableTCYClaimer {
 	return &NullableTCYClaimer{value: val, isSet: true}
 }
 
-func (v NullableTCYClaimer) MarshalJSON_deprecated() ([]byte, error) {
+func (v NullableTCYClaimer) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

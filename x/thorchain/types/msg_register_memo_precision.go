@@ -437,6 +437,7 @@ func GetSupportedChains() []string {
 	var supported []string
 	// iterate deterministically over map keys
 	keys := make([]common.Chain, 0, len(ChainPrecisionConfigs))
+	// analyze-ignore(map-iteration)
 	for ch := range ChainPrecisionConfigs {
 		keys = append(keys, ch)
 	}

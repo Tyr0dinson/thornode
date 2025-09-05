@@ -3,6 +3,7 @@ Thornode API
 
 Thornode REST API.
 
+API version: 3.9.0
 Contact: devs@thorchain.org
 */
 
@@ -225,7 +226,7 @@ func (o *OutboundFee) SetDynamicMultiplierBasisPoints(v string) {
 	o.DynamicMultiplierBasisPoints = &v
 }
 
-func (o OutboundFee) MarshalJSON_deprecated() ([]byte, error) {
+func (o OutboundFee) MarshalJSON() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
 		toSerialize["asset"] = o.Asset
@@ -275,7 +276,7 @@ func NewNullableOutboundFee(val *OutboundFee) *NullableOutboundFee {
 	return &NullableOutboundFee{value: val, isSet: true}
 }
 
-func (v NullableOutboundFee) MarshalJSON_deprecated() ([]byte, error) {
+func (v NullableOutboundFee) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

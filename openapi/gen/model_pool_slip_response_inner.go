@@ -3,6 +3,7 @@ Thornode API
 
 Thornode REST API.
 
+API version: 3.9.0
 Contact: devs@thorchain.org
 */
 
@@ -203,7 +204,7 @@ func (o *PoolSlipResponseInner) SetSummedRollup(v int64) {
 	o.SummedRollup = &v
 }
 
-func (o PoolSlipResponseInner) MarshalJSON_deprecated() ([]byte, error) {
+func (o PoolSlipResponseInner) MarshalJSON() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
 		toSerialize["asset"] = o.Asset
@@ -253,7 +254,7 @@ func NewNullablePoolSlipResponseInner(val *PoolSlipResponseInner) *NullablePoolS
 	return &NullablePoolSlipResponseInner{value: val, isSet: true}
 }
 
-func (v NullablePoolSlipResponseInner) MarshalJSON_deprecated() ([]byte, error) {
+func (v NullablePoolSlipResponseInner) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

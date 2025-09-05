@@ -3,6 +3,7 @@ Thornode API
 
 Thornode REST API.
 
+API version: 3.9.0
 Contact: devs@thorchain.org
 */
 
@@ -429,7 +430,7 @@ func (o *ObservedTx) SetStatus(v string) {
 	o.Status = &v
 }
 
-func (o ObservedTx) MarshalJSON_deprecated() ([]byte, error) {
+func (o ObservedTx) MarshalJSON() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
 		toSerialize["tx"] = o.Tx
@@ -497,7 +498,7 @@ func NewNullableObservedTx(val *ObservedTx) *NullableObservedTx {
 	return &NullableObservedTx{value: val, isSet: true}
 }
 
-func (v NullableObservedTx) MarshalJSON_deprecated() ([]byte, error) {
+func (v NullableObservedTx) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

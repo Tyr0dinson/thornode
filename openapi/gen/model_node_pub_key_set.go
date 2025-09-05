@@ -3,6 +3,7 @@ Thornode API
 
 Thornode REST API.
 
+API version: 3.9.0
 Contact: devs@thorchain.org
 */
 
@@ -101,7 +102,7 @@ func (o *NodePubKeySet) SetEd25519(v string) {
 	o.Ed25519 = &v
 }
 
-func (o NodePubKeySet) MarshalJSON_deprecated() ([]byte, error) {
+func (o NodePubKeySet) MarshalJSON() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if o.Secp256k1 != nil {
 		toSerialize["secp256k1"] = o.Secp256k1
@@ -139,7 +140,7 @@ func NewNullableNodePubKeySet(val *NodePubKeySet) *NullableNodePubKeySet {
 	return &NullableNodePubKeySet{value: val, isSet: true}
 }
 
-func (v NullableNodePubKeySet) MarshalJSON_deprecated() ([]byte, error) {
+func (v NullableNodePubKeySet) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

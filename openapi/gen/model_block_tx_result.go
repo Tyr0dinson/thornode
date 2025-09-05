@@ -3,6 +3,7 @@ Thornode API
 
 Thornode REST API.
 
+API version: 3.9.0
 Contact: devs@thorchain.org
 */
 
@@ -300,7 +301,7 @@ func (o *BlockTxResult) SetCodespace(v string) {
 	o.Codespace = &v
 }
 
-func (o BlockTxResult) MarshalJSON_deprecated() ([]byte, error) {
+func (o BlockTxResult) MarshalJSON() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if o.Code != nil {
 		toSerialize["code"] = o.Code
@@ -356,7 +357,7 @@ func NewNullableBlockTxResult(val *BlockTxResult) *NullableBlockTxResult {
 	return &NullableBlockTxResult{value: val, isSet: true}
 }
 
-func (v NullableBlockTxResult) MarshalJSON_deprecated() ([]byte, error) {
+func (v NullableBlockTxResult) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

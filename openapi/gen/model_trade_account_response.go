@@ -3,6 +3,7 @@ Thornode API
 
 Thornode REST API.
 
+API version: 3.9.0
 Contact: devs@thorchain.org
 */
 
@@ -184,7 +185,7 @@ func (o *TradeAccountResponse) SetLastWithdrawHeight(v int64) {
 	o.LastWithdrawHeight = &v
 }
 
-func (o TradeAccountResponse) MarshalJSON_deprecated() ([]byte, error) {
+func (o TradeAccountResponse) MarshalJSON() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
 		toSerialize["asset"] = o.Asset
@@ -231,7 +232,7 @@ func NewNullableTradeAccountResponse(val *TradeAccountResponse) *NullableTradeAc
 	return &NullableTradeAccountResponse{value: val, isSet: true}
 }
 
-func (v NullableTradeAccountResponse) MarshalJSON_deprecated() ([]byte, error) {
+func (v NullableTradeAccountResponse) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

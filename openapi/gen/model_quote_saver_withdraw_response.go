@@ -3,6 +3,7 @@ Thornode API
 
 Thornode REST API.
 
+API version: 3.9.0
 Contact: devs@thorchain.org
 */
 
@@ -528,7 +529,7 @@ func (o *QuoteSaverWithdrawResponse) SetExpectedAmountOut(v string) {
 	o.ExpectedAmountOut = v
 }
 
-func (o QuoteSaverWithdrawResponse) MarshalJSON_deprecated() ([]byte, error) {
+func (o QuoteSaverWithdrawResponse) MarshalJSON() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
 		toSerialize["inbound_address"] = o.InboundAddress
@@ -611,7 +612,7 @@ func NewNullableQuoteSaverWithdrawResponse(val *QuoteSaverWithdrawResponse) *Nul
 	return &NullableQuoteSaverWithdrawResponse{value: val, isSet: true}
 }
 
-func (v NullableQuoteSaverWithdrawResponse) MarshalJSON_deprecated() ([]byte, error) {
+func (v NullableQuoteSaverWithdrawResponse) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

@@ -3,6 +3,7 @@ Thornode API
 
 Thornode REST API.
 
+API version: 3.9.0
 Contact: devs@thorchain.org
 */
 
@@ -87,7 +88,7 @@ func (o *Amount) SetAmount(v string) {
 	o.Amount = v
 }
 
-func (o Amount) MarshalJSON_deprecated() ([]byte, error) {
+func (o Amount) MarshalJSON() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
 		toSerialize["denom"] = o.Denom
@@ -125,7 +126,7 @@ func NewNullableAmount(val *Amount) *NullableAmount {
 	return &NullableAmount{value: val, isSet: true}
 }
 
-func (v NullableAmount) MarshalJSON_deprecated() ([]byte, error) {
+func (v NullableAmount) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

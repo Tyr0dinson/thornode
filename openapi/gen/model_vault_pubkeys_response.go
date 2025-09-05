@@ -3,6 +3,7 @@ Thornode API
 
 Thornode REST API.
 
+API version: 3.9.0
 Contact: devs@thorchain.org
 */
 
@@ -113,7 +114,7 @@ func (o *VaultPubkeysResponse) SetInactive(v []VaultInfo) {
 	o.Inactive = v
 }
 
-func (o VaultPubkeysResponse) MarshalJSON_deprecated() ([]byte, error) {
+func (o VaultPubkeysResponse) MarshalJSON() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
 		toSerialize["asgard"] = o.Asgard
@@ -154,7 +155,7 @@ func NewNullableVaultPubkeysResponse(val *VaultPubkeysResponse) *NullableVaultPu
 	return &NullableVaultPubkeysResponse{value: val, isSet: true}
 }
 
-func (v NullableVaultPubkeysResponse) MarshalJSON_deprecated() ([]byte, error) {
+func (v NullableVaultPubkeysResponse) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

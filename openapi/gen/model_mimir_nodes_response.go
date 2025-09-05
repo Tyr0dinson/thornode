@@ -3,6 +3,7 @@ Thornode API
 
 Thornode REST API.
 
+API version: 3.9.0
 Contact: devs@thorchain.org
 */
 
@@ -68,7 +69,7 @@ func (o *MimirNodesResponse) SetMimirs(v []MimirVote) {
 	o.Mimirs = v
 }
 
-func (o MimirNodesResponse) MarshalJSON_deprecated() ([]byte, error) {
+func (o MimirNodesResponse) MarshalJSON() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if o.Mimirs != nil {
 		toSerialize["mimirs"] = o.Mimirs
@@ -103,7 +104,7 @@ func NewNullableMimirNodesResponse(val *MimirNodesResponse) *NullableMimirNodesR
 	return &NullableMimirNodesResponse{value: val, isSet: true}
 }
 
-func (v NullableMimirNodesResponse) MarshalJSON_deprecated() ([]byte, error) {
+func (v NullableMimirNodesResponse) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

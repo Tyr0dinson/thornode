@@ -3,6 +3,7 @@ Thornode API
 
 Thornode REST API.
 
+API version: 3.9.0
 Contact: devs@thorchain.org
 */
 
@@ -501,7 +502,7 @@ func (o *NetworkResponse) SetTorPriceHalted(v bool) {
 	o.TorPriceHalted = v
 }
 
-func (o NetworkResponse) MarshalJSON_deprecated() ([]byte, error) {
+func (o NetworkResponse) MarshalJSON() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
 		toSerialize["bond_reward_rune"] = o.BondRewardRune
@@ -584,7 +585,7 @@ func NewNullableNetworkResponse(val *NetworkResponse) *NullableNetworkResponse {
 	return &NullableNetworkResponse{value: val, isSet: true}
 }
 
-func (v NullableNetworkResponse) MarshalJSON_deprecated() ([]byte, error) {
+func (v NullableNetworkResponse) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

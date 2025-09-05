@@ -3,6 +3,7 @@ Thornode API
 
 Thornode REST API.
 
+API version: 3.9.0
 Contact: devs@thorchain.org
 */
 
@@ -87,7 +88,7 @@ func (o *KeygenResponse) SetSignature(v string) {
 	o.Signature = v
 }
 
-func (o KeygenResponse) MarshalJSON_deprecated() ([]byte, error) {
+func (o KeygenResponse) MarshalJSON() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
 		toSerialize["keygen_block"] = o.KeygenBlock
@@ -125,7 +126,7 @@ func NewNullableKeygenResponse(val *KeygenResponse) *NullableKeygenResponse {
 	return &NullableKeygenResponse{value: val, isSet: true}
 }
 
-func (v NullableKeygenResponse) MarshalJSON_deprecated() ([]byte, error) {
+func (v NullableKeygenResponse) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

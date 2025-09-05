@@ -3,6 +3,7 @@ Thornode API
 
 Thornode REST API.
 
+API version: 3.9.0
 Contact: devs@thorchain.org
 */
 
@@ -61,7 +62,7 @@ func (o *TCYStakerSummary) SetAmount(v string) {
 	o.Amount = v
 }
 
-func (o TCYStakerSummary) MarshalJSON_deprecated() ([]byte, error) {
+func (o TCYStakerSummary) MarshalJSON() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
 		toSerialize["amount"] = o.Amount
@@ -96,7 +97,7 @@ func NewNullableTCYStakerSummary(val *TCYStakerSummary) *NullableTCYStakerSummar
 	return &NullableTCYStakerSummary{value: val, isSet: true}
 }
 
-func (v NullableTCYStakerSummary) MarshalJSON_deprecated() ([]byte, error) {
+func (v NullableTCYStakerSummary) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

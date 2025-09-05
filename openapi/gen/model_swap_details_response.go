@@ -3,6 +3,7 @@ Thornode API
 
 Thornode REST API.
 
+API version: 3.9.0
 Contact: devs@thorchain.org
 */
 
@@ -136,7 +137,7 @@ func (o *SwapDetailsResponse) SetQueueType(v string) {
 	o.QueueType = &v
 }
 
-func (o SwapDetailsResponse) MarshalJSON_deprecated() ([]byte, error) {
+func (o SwapDetailsResponse) MarshalJSON() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if o.Swap != nil {
 		toSerialize["swap"] = o.Swap
@@ -177,7 +178,7 @@ func NewNullableSwapDetailsResponse(val *SwapDetailsResponse) *NullableSwapDetai
 	return &NullableSwapDetailsResponse{value: val, isSet: true}
 }
 
-func (v NullableSwapDetailsResponse) MarshalJSON_deprecated() ([]byte, error) {
+func (v NullableSwapDetailsResponse) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

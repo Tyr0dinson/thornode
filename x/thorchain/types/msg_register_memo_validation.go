@@ -499,6 +499,7 @@ func ValidateMemoRegistrationBatch(registrations []MemoRegistrationRequest, time
 
 	// Check each chain for dust attack patterns deterministically
 	keys := make([]string, 0, len(chainAmounts))
+	// analyze-ignore(map-iteration)
 	for k := range chainAmounts {
 		keys = append(keys, k)
 	}
