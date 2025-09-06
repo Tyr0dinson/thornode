@@ -3,7 +3,6 @@ Thornode API
 
 Thornode REST API.
 
-API version: 3.9.0
 Contact: devs@thorchain.org
 */
 
@@ -244,7 +243,7 @@ func (o *RUNEProvider) SetLastWithdrawHeight(v int64) {
 	o.LastWithdrawHeight = v
 }
 
-func (o RUNEProvider) MarshalJSON() ([]byte, error) {
+func (o RUNEProvider) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
 		toSerialize["rune_address"] = o.RuneAddress
@@ -300,7 +299,7 @@ func NewNullableRUNEProvider(val *RUNEProvider) *NullableRUNEProvider {
 	return &NullableRUNEProvider{value: val, isSet: true}
 }
 
-func (v NullableRUNEProvider) MarshalJSON() ([]byte, error) {
+func (v NullableRUNEProvider) MarshalJSON_deprecated() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

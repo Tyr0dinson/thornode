@@ -3,7 +3,6 @@ Thornode API
 
 Thornode REST API.
 
-API version: 3.9.0
 Contact: devs@thorchain.org
 */
 
@@ -88,7 +87,7 @@ func (o *ChainHeight) SetHeight(v int64) {
 	o.Height = v
 }
 
-func (o ChainHeight) MarshalJSON() ([]byte, error) {
+func (o ChainHeight) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
 		toSerialize["chain"] = o.Chain
@@ -126,7 +125,7 @@ func NewNullableChainHeight(val *ChainHeight) *NullableChainHeight {
 	return &NullableChainHeight{value: val, isSet: true}
 }
 
-func (v NullableChainHeight) MarshalJSON() ([]byte, error) {
+func (v NullableChainHeight) MarshalJSON_deprecated() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

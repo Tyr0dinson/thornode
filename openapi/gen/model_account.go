@@ -3,7 +3,6 @@ Thornode API
 
 Thornode REST API.
 
-API version: 3.9.0
 Contact: devs@thorchain.org
 */
 
@@ -201,7 +200,7 @@ func (o *Account) SetAccountNumber(v int64) {
 	o.AccountNumber = &v
 }
 
-func (o Account) MarshalJSON() ([]byte, error) {
+func (o Account) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if o.Type != nil {
 		toSerialize["type"] = o.Type
@@ -248,7 +247,7 @@ func NewNullableAccount(val *Account) *NullableAccount {
 	return &NullableAccount{value: val, isSet: true}
 }
 
-func (v NullableAccount) MarshalJSON() ([]byte, error) {
+func (v NullableAccount) MarshalJSON_deprecated() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

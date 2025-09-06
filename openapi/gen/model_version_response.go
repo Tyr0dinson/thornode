@@ -3,7 +3,6 @@ Thornode API
 
 Thornode REST API.
 
-API version: 3.9.0
 Contact: devs@thorchain.org
 */
 
@@ -151,7 +150,7 @@ func (o *VersionResponse) SetQuerier(v string) {
 	o.Querier = v
 }
 
-func (o VersionResponse) MarshalJSON() ([]byte, error) {
+func (o VersionResponse) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
 		toSerialize["current"] = o.Current
@@ -195,7 +194,7 @@ func NewNullableVersionResponse(val *VersionResponse) *NullableVersionResponse {
 	return &NullableVersionResponse{value: val, isSet: true}
 }
 
-func (v NullableVersionResponse) MarshalJSON() ([]byte, error) {
+func (v NullableVersionResponse) MarshalJSON_deprecated() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

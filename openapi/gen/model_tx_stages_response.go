@@ -3,7 +3,6 @@ Thornode API
 
 Thornode REST API.
 
-API version: 3.9.0
 Contact: devs@thorchain.org
 */
 
@@ -260,7 +259,7 @@ func (o *TxStagesResponse) SetOutboundSigned(v OutboundSignedStage) {
 	o.OutboundSigned = &v
 }
 
-func (o TxStagesResponse) MarshalJSON() ([]byte, error) {
+func (o TxStagesResponse) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
 		toSerialize["inbound_observed"] = o.InboundObserved
@@ -313,7 +312,7 @@ func NewNullableTxStagesResponse(val *TxStagesResponse) *NullableTxStagesRespons
 	return &NullableTxStagesResponse{value: val, isSet: true}
 }
 
-func (v NullableTxStagesResponse) MarshalJSON() ([]byte, error) {
+func (v NullableTxStagesResponse) MarshalJSON_deprecated() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

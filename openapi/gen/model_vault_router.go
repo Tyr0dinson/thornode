@@ -3,7 +3,6 @@ Thornode API
 
 Thornode REST API.
 
-API version: 3.9.0
 Contact: devs@thorchain.org
 */
 
@@ -102,7 +101,7 @@ func (o *VaultRouter) SetRouter(v string) {
 	o.Router = &v
 }
 
-func (o VaultRouter) MarshalJSON() ([]byte, error) {
+func (o VaultRouter) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if o.Chain != nil {
 		toSerialize["chain"] = o.Chain
@@ -140,7 +139,7 @@ func NewNullableVaultRouter(val *VaultRouter) *NullableVaultRouter {
 	return &NullableVaultRouter{value: val, isSet: true}
 }
 
-func (v NullableVaultRouter) MarshalJSON() ([]byte, error) {
+func (v NullableVaultRouter) MarshalJSON_deprecated() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

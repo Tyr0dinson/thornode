@@ -3,7 +3,6 @@ Thornode API
 
 Thornode REST API.
 
-API version: 3.9.0
 Contact: devs@thorchain.org
 */
 
@@ -88,7 +87,7 @@ func (o *BlockResponseHeaderVersion) SetApp(v string) {
 	o.App = v
 }
 
-func (o BlockResponseHeaderVersion) MarshalJSON() ([]byte, error) {
+func (o BlockResponseHeaderVersion) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
 		toSerialize["block"] = o.Block
@@ -126,7 +125,7 @@ func NewNullableBlockResponseHeaderVersion(val *BlockResponseHeaderVersion) *Nul
 	return &NullableBlockResponseHeaderVersion{value: val, isSet: true}
 }
 
-func (v NullableBlockResponseHeaderVersion) MarshalJSON() ([]byte, error) {
+func (v NullableBlockResponseHeaderVersion) MarshalJSON_deprecated() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

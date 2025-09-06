@@ -3,7 +3,6 @@ Thornode API
 
 Thornode REST API.
 
-API version: 3.9.0
 Contact: devs@thorchain.org
 */
 
@@ -96,7 +95,7 @@ func (o *SwapStatus) SetStreaming(v StreamingStatus) {
 	o.Streaming = &v
 }
 
-func (o SwapStatus) MarshalJSON() ([]byte, error) {
+func (o SwapStatus) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
 		toSerialize["pending"] = o.Pending
@@ -134,7 +133,7 @@ func NewNullableSwapStatus(val *SwapStatus) *NullableSwapStatus {
 	return &NullableSwapStatus{value: val, isSet: true}
 }
 
-func (v NullableSwapStatus) MarshalJSON() ([]byte, error) {
+func (v NullableSwapStatus) MarshalJSON_deprecated() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

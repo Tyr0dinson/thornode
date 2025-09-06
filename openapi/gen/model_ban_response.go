@@ -3,7 +3,6 @@ Thornode API
 
 Thornode REST API.
 
-API version: 3.9.0
 Contact: devs@thorchain.org
 */
 
@@ -135,7 +134,7 @@ func (o *BanResponse) SetSigners(v []string) {
 	o.Signers = v
 }
 
-func (o BanResponse) MarshalJSON() ([]byte, error) {
+func (o BanResponse) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if o.NodeAddress != nil {
 		toSerialize["node_address"] = o.NodeAddress
@@ -176,7 +175,7 @@ func NewNullableBanResponse(val *BanResponse) *NullableBanResponse {
 	return &NullableBanResponse{value: val, isSet: true}
 }
 
-func (v NullableBanResponse) MarshalJSON() ([]byte, error) {
+func (v NullableBanResponse) MarshalJSON_deprecated() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

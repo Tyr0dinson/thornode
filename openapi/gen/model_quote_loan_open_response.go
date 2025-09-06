@@ -3,7 +3,6 @@ Thornode API
 
 Thornode REST API.
 
-API version: 3.9.0
 Contact: devs@thorchain.org
 */
 
@@ -678,7 +677,7 @@ func (o *QuoteLoanOpenResponse) SetTotalOpenLoanSeconds(v int64) {
 	o.TotalOpenLoanSeconds = v
 }
 
-func (o QuoteLoanOpenResponse) MarshalJSON() ([]byte, error) {
+func (o QuoteLoanOpenResponse) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if o.InboundAddress != nil {
 		toSerialize["inbound_address"] = o.InboundAddress
@@ -776,7 +775,7 @@ func NewNullableQuoteLoanOpenResponse(val *QuoteLoanOpenResponse) *NullableQuote
 	return &NullableQuoteLoanOpenResponse{value: val, isSet: true}
 }
 
-func (v NullableQuoteLoanOpenResponse) MarshalJSON() ([]byte, error) {
+func (v NullableQuoteLoanOpenResponse) MarshalJSON_deprecated() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

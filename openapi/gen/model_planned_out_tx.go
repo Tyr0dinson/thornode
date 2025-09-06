@@ -3,7 +3,6 @@ Thornode API
 
 Thornode REST API.
 
-API version: 3.9.0
 Contact: devs@thorchain.org
 */
 
@@ -141,7 +140,7 @@ func (o *PlannedOutTx) SetRefund(v bool) {
 	o.Refund = v
 }
 
-func (o PlannedOutTx) MarshalJSON() ([]byte, error) {
+func (o PlannedOutTx) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
 		toSerialize["chain"] = o.Chain
@@ -185,7 +184,7 @@ func NewNullablePlannedOutTx(val *PlannedOutTx) *NullablePlannedOutTx {
 	return &NullablePlannedOutTx{value: val, isSet: true}
 }
 
-func (v NullablePlannedOutTx) MarshalJSON() ([]byte, error) {
+func (v NullablePlannedOutTx) MarshalJSON_deprecated() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

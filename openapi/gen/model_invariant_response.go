@@ -3,7 +3,6 @@ Thornode API
 
 Thornode REST API.
 
-API version: 3.9.0
 Contact: devs@thorchain.org
 */
 
@@ -117,7 +116,7 @@ func (o *InvariantResponse) SetMsg(v []string) {
 	o.Msg = v
 }
 
-func (o InvariantResponse) MarshalJSON() ([]byte, error) {
+func (o InvariantResponse) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
 		toSerialize["invariant"] = o.Invariant
@@ -158,7 +157,7 @@ func NewNullableInvariantResponse(val *InvariantResponse) *NullableInvariantResp
 	return &NullableInvariantResponse{value: val, isSet: true}
 }
 
-func (v NullableInvariantResponse) MarshalJSON() ([]byte, error) {
+func (v NullableInvariantResponse) MarshalJSON_deprecated() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

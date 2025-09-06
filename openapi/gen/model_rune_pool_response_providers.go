@@ -3,7 +3,6 @@ Thornode API
 
 Thornode REST API.
 
-API version: 3.9.0
 Contact: devs@thorchain.org
 */
 
@@ -198,7 +197,7 @@ func (o *RUNEPoolResponseProviders) SetCurrentDeposit(v string) {
 	o.CurrentDeposit = v
 }
 
-func (o RUNEPoolResponseProviders) MarshalJSON() ([]byte, error) {
+func (o RUNEPoolResponseProviders) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
 		toSerialize["units"] = o.Units
@@ -248,7 +247,7 @@ func NewNullableRUNEPoolResponseProviders(val *RUNEPoolResponseProviders) *Nulla
 	return &NullableRUNEPoolResponseProviders{value: val, isSet: true}
 }
 
-func (v NullableRUNEPoolResponseProviders) MarshalJSON() ([]byte, error) {
+func (v NullableRUNEPoolResponseProviders) MarshalJSON_deprecated() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

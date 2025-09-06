@@ -3,7 +3,6 @@ Thornode API
 
 Thornode REST API.
 
-API version: 3.9.0
 Contact: devs@thorchain.org
 */
 
@@ -204,7 +203,7 @@ func (o *TxResponse) SetKeysignMetric(v TssKeysignMetric) {
 	o.KeysignMetric = &v
 }
 
-func (o TxResponse) MarshalJSON() ([]byte, error) {
+func (o TxResponse) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if o.ObservedTx != nil {
 		toSerialize["observed_tx"] = o.ObservedTx
@@ -251,7 +250,7 @@ func NewNullableTxResponse(val *TxResponse) *NullableTxResponse {
 	return &NullableTxResponse{value: val, isSet: true}
 }
 
-func (v NullableTxResponse) MarshalJSON() ([]byte, error) {
+func (v NullableTxResponse) MarshalJSON_deprecated() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

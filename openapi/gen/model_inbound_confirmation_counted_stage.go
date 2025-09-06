@@ -3,7 +3,6 @@ Thornode API
 
 Thornode REST API.
 
-API version: 3.9.0
 Contact: devs@thorchain.org
 */
 
@@ -233,7 +232,7 @@ func (o *InboundConfirmationCountedStage) SetCompleted(v bool) {
 	o.Completed = v
 }
 
-func (o InboundConfirmationCountedStage) MarshalJSON() ([]byte, error) {
+func (o InboundConfirmationCountedStage) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if o.CountingStartHeight != nil {
 		toSerialize["counting_start_height"] = o.CountingStartHeight
@@ -283,7 +282,7 @@ func NewNullableInboundConfirmationCountedStage(val *InboundConfirmationCountedS
 	return &NullableInboundConfirmationCountedStage{value: val, isSet: true}
 }
 
-func (v NullableInboundConfirmationCountedStage) MarshalJSON() ([]byte, error) {
+func (v NullableInboundConfirmationCountedStage) MarshalJSON_deprecated() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

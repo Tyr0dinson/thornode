@@ -3,7 +3,6 @@ Thornode API
 
 Thornode REST API.
 
-API version: 3.9.0
 Contact: devs@thorchain.org
 */
 
@@ -63,7 +62,7 @@ func (o *SwapFinalisedStage) SetCompleted(v bool) {
 	o.Completed = v
 }
 
-func (o SwapFinalisedStage) MarshalJSON() ([]byte, error) {
+func (o SwapFinalisedStage) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
 		toSerialize["completed"] = o.Completed
@@ -98,7 +97,7 @@ func NewNullableSwapFinalisedStage(val *SwapFinalisedStage) *NullableSwapFinalis
 	return &NullableSwapFinalisedStage{value: val, isSet: true}
 }
 
-func (v NullableSwapFinalisedStage) MarshalJSON() ([]byte, error) {
+func (v NullableSwapFinalisedStage) MarshalJSON_deprecated() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 
