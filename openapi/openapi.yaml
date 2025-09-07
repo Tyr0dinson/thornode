@@ -1393,6 +1393,49 @@ paths:
               schema:
                 $ref: "#/components/schemas/MimirResponse"
 
+  # ------------------------------ reference memos ------------------------------
+
+  /thorchain/memo/{chain}/{reference}:
+    parameters:
+      - $ref: "#/components/parameters/queryHeight"
+      - $ref: "#/components/parameters/chain"
+      - name: reference
+        in: path
+        description: the reference number to lookup
+        required: true
+        schema:
+          type: string
+          example: "20002"
+    get:
+      description: Returns the memoless transaction memo for the provided chain and reference number.
+      operationId: referenceMemo
+      tags:
+        - Reference Memos
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReferenceMemoResponse"
+
+  /thorchain/memohash/{hash}:
+    parameters:
+      - $ref: "#/components/parameters/queryHeight"
+      - $ref: "#/components/parameters/hash"
+    get:
+      description: Returns the memoless transaction memo for the provided reference hash.
+      operationId: referenceMemoByHash
+      tags:
+        - Reference Memos
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReferenceMemoResponse"
+
   # ------------------------------ quotes ------------------------------
 
   /thorchain/quote/swap:
@@ -4886,3 +4929,44 @@ components:
           format: int64
           description: The total expected duration for a repayment, measured in seconds, which includes the time for inbound confirmation, the duration of streaming swaps, and any outbound delays.
           example: 600
+
+    ReferenceMemoResponse:
+      type: object
+      required:
+        - chain
+        - memo
+        - reference
+        - height
+        - reference_hash
+        - registration_hash
+        - registered_by
+      properties:
+        chain:
+          type: string
+          description: the chain for which this reference memo is valid
+          example: "BTC"
+        memo:
+          type: string
+          description: the original memo that was registered for memoless transactions
+          example: "=:ETH.ETH:0x1c7b17362c84287bd1184447e6dfeaf920c31bbe:1000:0:100"
+        reference:
+          type: string
+          description: the reference number used to identify this memo
+          example: "20002"
+        height:
+          type: integer
+          format: int64
+          description: the block height when this reference memo was registered
+          example: 12345678
+        reference_hash:
+          type: string
+          description: the transaction hash that is referenced by this memo
+          example: "CF524818D42B63D25BBA0CCC4909F127CAA645C0F9CD07324F2824CC151A64C7"
+        registration_hash:
+          type: string
+          description: the transaction hash where this reference memo was registered
+          example: "AF524818D42B63D25BBA0CCC4909F127CAA645C0F9CD07324F2824CC151A64C8"
+        registered_by:
+          type: string
+          description: the address that registered this reference memo
+          example: "thor1zupk5lmc84r2dh738a9g3zscavannjy3nzplwt"
