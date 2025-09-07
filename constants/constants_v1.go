@@ -19,9 +19,6 @@ func NewConstantValue() *ConstantVals {
 			MinimumNodesForBFT:                  4,                  // Minimum node count to keep network running. Below this, Ragnarök is performed.
 			DesiredValidatorSet:                 100,                // desire validator set
 			AsgardSize:                          40,                 // desired node operators in an asgard vault
-			MemolessTxnTTL:                      0,                  // number of blocks before a memoless txn expires
-			MemolessTxnStartRef:                 20_002,             // number memoless txn reference ids start
-			MemolessTxnEndRef:                   30_000,             // number memoless txn reference ids end
 			DerivedDepthBasisPts:                0,                  // Basis points to increase/decrease derived pool depth (10k == 1x)
 			DerivedMinDepth:                     100,                // in basis points, min derived pool depth
 			MaxAnchorSlip:                       1500,               // basis points of rune depth to trigger pausing a derived virtual pool
@@ -120,6 +117,9 @@ func NewConstantValue() *ConstantVals {
 			TradeAccountsDepositEnabled:         1,
 			EVMDisableContractWhitelist:         0,                  // enable/disable contract whitelist
 			OperationalVotesMin:                 3,                  // Minimum node votes to set an Operational Mimir
+			MemolessTxnTTL:                      0,                  // number of blocks before a memoless txn expires (operational mimir)
+			MemolessTxnStartRef:                 10_001,             // memoless txn reference ids start range (operational mimir)
+			MemolessTxnEndRef:                   99_999,             // memoless txn reference ids end range (operational mimir)
 			L1SlipMinBps:                        0,                  // Minimum L1 asset swap fee in basis points
 			TradeAccountsSlipMinBps:             0,                  // Minimum trade asset swap fee in basis points
 			SecuredAssetSlipMinBps:              5,                  // Minimum secured asset swap fee in basis points

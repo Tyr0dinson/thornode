@@ -118,6 +118,9 @@ func (k KVStore) IsOperationalMimir(key string) bool {
 		"MaxOutboundAttempts",
 		"AdvSwapQueueRapidSwapMax",
 		"EnableADVSwapQueue",
+		"MemolessTxnTTL",
+		"MemolessTxnStartRef",
+		"MemolessTxnEndRef",
 	}
 	for i := range exactMatches {
 		if strings.EqualFold(key, exactMatches[i]) {
