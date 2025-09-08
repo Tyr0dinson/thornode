@@ -121,6 +121,7 @@ func (k KVStore) IsOperationalMimir(key string) bool {
 		"MemolessTxnTTL",
 		"MemolessTxnStartRef",
 		"MemolessTxnEndRef",
+		"MemolessTxnCost",
 	}
 	for i := range exactMatches {
 		if strings.EqualFold(key, exactMatches[i]) {

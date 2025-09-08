@@ -120,6 +120,7 @@ func NewConstantValue() *ConstantVals {
 			MemolessTxnTTL:                      0,                  // number of blocks before a memoless txn expires (operational mimir)
 			MemolessTxnStartRef:                 10_001,             // memoless txn reference ids start range (operational mimir)
 			MemolessTxnEndRef:                   99_999,             // memoless txn reference ids end range (operational mimir)
+			MemolessTxnCost:                     0,                  // additional cost in RUNE to register a memoless txn (operational mimir)
 			L1SlipMinBps:                        0,                  // Minimum L1 asset swap fee in basis points
 			TradeAccountsSlipMinBps:             0,                  // Minimum trade asset swap fee in basis points
 			SecuredAssetSlipMinBps:              5,                  // Minimum secured asset swap fee in basis points

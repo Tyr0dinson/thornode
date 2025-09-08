@@ -175,6 +175,7 @@ const (
 	MemolessTxnTTL
 	MemolessTxnStartRef
 	MemolessTxnEndRef
+	MemolessTxnCost
 	StrictBondLiquidityRatio
 	SwapOutDexAggregationDisabled
 )

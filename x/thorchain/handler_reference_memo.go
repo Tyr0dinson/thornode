@@ -56,6 +56,15 @@ func (h ReferenceMemoHandler) validate(ctx cosmos.Context, msg MsgReferenceMemo)
 		return errors.New("memoless transactions is currently disabled")
 	}
 
+	cost := h.mgr.Keeper().GetConfigInt64(ctx, constants.MemolessTxnCost)
+	if cost > 0 {
+		runeAmount := cosmos.NewInt(cost)
+		cosmosRuneCoin := cosmos.NewCoin(common.RuneNative.Native(), runeAmount)
+		if !h.mgr.Keeper().HasCoins(ctx, msg.Signer, cosmos.NewCoins(cosmosRuneCoin)) {
+			return fmt.Errorf("insufficient RUNE balance to pay memoless transaction cost of %d", cost)
+		}
+	}
+
 	return nil
 }
 
@@ -64,6 +73,15 @@ func (h ReferenceMemoHandler) handle(ctx cosmos.Context, msg MsgReferenceMemo) (
 	start := h.mgr.Keeper().GetConfigInt64(ctx, constants.MemolessTxnStartRef)
 	end := h.mgr.Keeper().GetConfigInt64(ctx, constants.MemolessTxnEndRef)
 	ttl := h.mgr.Keeper().GetConfigInt64(ctx, constants.MemolessTxnTTL)
+	cost := h.mgr.Keeper().GetConfigInt64(ctx, constants.MemolessTxnCost)
+
+	if cost > 0 {
+		runeCoin := common.NewCoin(common.RuneNative, cosmos.NewUint(uint64(cost)))
+		if err := h.mgr.Keeper().SendFromAccountToModule(ctx, msg.Signer, ReserveName, common.NewCoins(runeCoin)); err != nil {
+			return nil, fmt.Errorf("fail to transfer memoless transaction cost to reserve: %w", err)
+		}
+	}
+
 	posStr := h.mgr.Keeper().GetLastReferenceNumber(ctx, msg.Chain)
 	next := h.nextRefence(ctx, msg.Chain, posStr, start, end, ttl)
 	if next == "" {
