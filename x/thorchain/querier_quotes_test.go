@@ -125,10 +125,8 @@ func (s *QuotesSuite) TestParseMultipleAffiliateParams(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(totalBps.Uint64(), Equals, uint64(1000))
 
-	// Test affiliates with no BPS values (should skip all affiliates)
-	affiliates, bps, totalBps, err = parseMultipleAffiliateParams(ctx, mgr, "a1/a2/a3", "")
-	c.Assert(err, IsNil)
-	c.Assert(len(affiliates), Equals, 0) // All affiliates should be skipped
-	c.Assert(len(bps), Equals, 0)
-	c.Assert(totalBps.Uint64(), Equals, uint64(0))
+	// Test affiliates with no BPS values (should return error due to mismatch)
+	_, _, _, err = parseMultipleAffiliateParams(ctx, mgr, "a1/a2/a3", "")
+	c.Assert(err, NotNil)
+	c.Assert(err.Error(), Equals, "mismatch between number of affiliates (3) and BPS values (0)")
 }
