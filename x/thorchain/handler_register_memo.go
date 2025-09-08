@@ -137,13 +137,12 @@ func (h RegisterMemoHandler) handle(ctx cosmos.Context, msg types.MsgRegisterMem
 		return nil, fmt.Errorf("unable to register memo while THORChain is halted")
 	}
 
-	ctx.Logger().Info("Processing user-provided memo registration",
-		"reference", msg.Reference,
-		"chain_id", msg.ChainId,
-		"memo_length", len(msg.Memo),
-		"ttl_requested", msg.Ttl,
-		"signer", msg.Signer,
-	)
+    ctx.Logger().Info("Processing user-provided memo registration",
+        "reference", msg.Reference,
+        "chain_id", msg.ChainId,
+        "memo_length", len(msg.Memo),
+        "signer", msg.Signer,
+    )
 
 	// Skip memo validation - memoless protocol accepts arbitrary memo content
 	// The memo will be validated when it's actually used later
@@ -232,21 +231,21 @@ func (h RegisterMemoHandler) validateUserReference(ctx cosmos.Context, reference
 }
 
 // calculateExpiry calculates the expiry block height with improved defaults handling
-func (h RegisterMemoHandler) calculateExpiry(ctx cosmos.Context, ttl int64) int64 {
-	if ttl <= 0 {
-		// Use governance-controlled default TTL from constants
-		defaultTTL := h.mgr.GetConstants().GetInt64Value(constants.MemolessTTL)
-		if defaultTTL <= 0 {
-			// Fallback to 24 hours (assumes ~6s block time)
-			defaultTTL = 14400 // 24 hours: 24*60*60/6 = 14400 blocks
-		}
-		ttl = defaultTTL
-		ctx.Logger().Debug("Using default TTL", "ttl_blocks", ttl, "approximate_hours", ttl/600)
-	} else {
-		ctx.Logger().Debug("Using user-specified TTL", "ttl_blocks", ttl, "approximate_hours", ttl/600)
-	}
-
-	return ctx.BlockHeight() + ttl
+func (h RegisterMemoHandler) calculateExpiry(ctx cosmos.Context, _ int64) int64 {
+    // v1 policy: ignore client-provided TTL; use global TTL via Mimir (fallback to constants)
+    ttl := int64(0)
+    if keeper, ok := h.mgr.Keeper().(interface{ GetCurrentTTL(ctx cosmos.Context) int64 }); ok {
+        ttl = keeper.GetCurrentTTL(ctx)
+    }
+    if ttl <= 0 {
+        // Fallback to governance constants if keeper method not available
+        ttl = h.mgr.GetConstants().GetInt64Value(constants.MemolessTTL)
+        if ttl <= 0 {
+            ttl = 14400 // 4 hours default
+        }
+    }
+    ctx.Logger().Debug("Using global TTL", "ttl_blocks", ttl)
+    return ctx.BlockHeight() + ttl
 }
 
 // storeRegistration stores the memo registration using the keeper

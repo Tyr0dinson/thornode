@@ -38,8 +38,9 @@ func (k KVStore) ProcessMemoRegistration(ctx cosmos.Context, msg thorchaintypes.
 
 	// Pre-calculate values used in multiple places
 	currentHeight := ctx.BlockHeight()
-	ttl := constantProvider.GetInt64Value(constants.MemolessTTL)
-	expirationHeight := currentHeight + ttl
+    // v1 policy: use global TTL via Mimir (capped), ignore client-provided TTL
+    ttl := k.GetCurrentTTL(ctx)
+    expirationHeight := currentHeight + ttl
 
 	// Comprehensive validation with early returns for performance
 	if err := k.ValidateMemoRegistrationComplete(ctx, msg, constantProvider); err != nil {
@@ -234,11 +235,7 @@ func (k KVStore) validateBasicMemoRegistration(ctx cosmos.Context, msg thorchain
 		return fmt.Errorf("memo length %d exceeds maximum %d", len(msg.Memo), maxLength)
 	}
 
-	// Check TTL
-	maxTTL := constantProvider.GetInt64Value(constants.MemolessMaxTTL)
-	if msg.Ttl > maxTTL {
-		return fmt.Errorf("ttl %d exceeds maximum %d", msg.Ttl, maxTTL)
-	}
+    // TTL (v1): advisory and ignored by protocol; only non-negative is enforced elsewhere
 
 	// Check signer is valid
 	if msg.Signer.Empty() {

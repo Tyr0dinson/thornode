@@ -23,13 +23,12 @@ func (s *MemolessGuardrailsSuite) TestRegistrationCapEnforced(c *C) {
 	// Register two memos
 	for i := 0; i < 2; i++ {
 		ref := "3" + string(rune('0'+i)) + "123" // 30123, 31123
-		msg := thorchaintypes.MsgRegisterMemo{
-			Memo:      "SWAP:BTC.BTC:thor1xyz:14400",
-			ChainId:   "BTC",
-			Ttl:       14400,
-			Signer:    GetRandomBech32Addr(),
-			Reference: ref,
-		}
+        msg := thorchaintypes.MsgRegisterMemo{
+            Memo:      "SWAP:BTC.BTC:thor1xyz:14400",
+            ChainId:   "BTC",
+            Signer:    GetRandomBech32Addr(),
+            Reference: ref,
+        }
 		err := k.ValidateMemoRegistrationComplete(ctx, msg, cp)
 		c.Assert(err, IsNil)
 		_, err = k.ProcessMemoRegistration(ctx, msg, cp)
@@ -37,13 +36,12 @@ func (s *MemolessGuardrailsSuite) TestRegistrationCapEnforced(c *C) {
 	}
 
 	// Third registration should fail due to cap
-	msg := thorchaintypes.MsgRegisterMemo{
-		Memo:      "SWAP:BTC.BTC:thor1xyz:14400",
-		ChainId:   "BTC",
-		Ttl:       14400,
-		Signer:    GetRandomBech32Addr(),
-		Reference: "33123",
-	}
+    msg := thorchaintypes.MsgRegisterMemo{
+        Memo:      "SWAP:BTC.BTC:thor1xyz:14400",
+        ChainId:   "BTC",
+        Signer:    GetRandomBech32Addr(),
+        Reference: "33123",
+    }
 	err := k.ValidateMemoRegistrationComplete(ctx, msg, cp)
 	c.Assert(err, NotNil, Commentf("expected cap enforcement error"))
 }
@@ -88,15 +86,14 @@ func (s *MemolessGuardrailsSuite) TestPerSignerActiveLimit(c *C) {
 	signer := GetRandomBech32Addr()
 
 	// Helper to build a message with given reference
-	mk := func(ref string) thorchaintypes.MsgRegisterMemo {
-		return thorchaintypes.MsgRegisterMemo{
-			Memo:      "SWAP:BTC.BTC:thor1xyz:14400",
-			ChainId:   "BTC",
-			Ttl:       14400,
-			Signer:    signer,
-			Reference: ref,
-		}
-	}
+    mk := func(ref string) thorchaintypes.MsgRegisterMemo {
+        return thorchaintypes.MsgRegisterMemo{
+            Memo:      "SWAP:BTC.BTC:thor1xyz:14400",
+            ChainId:   "BTC",
+            Signer:    signer,
+            Reference: ref,
+        }
+    }
 
 	// Two registrations OK
 	for i := 0; i < 2; i++ {
@@ -113,13 +110,12 @@ func (s *MemolessGuardrailsSuite) TestPerSignerActiveLimit(c *C) {
 	c.Assert(err, NotNil, Commentf("expected per-signer cap enforcement error"))
 
 	// Different signer should still be able to register
-	msgOther := thorchaintypes.MsgRegisterMemo{
-		Memo:      "SWAP:BTC.BTC:thor1xyz:14400",
-		ChainId:   "BTC",
-		Ttl:       14400,
-		Signer:    GetRandomBech32Addr(),
-		Reference: "43567",
-	}
+    msgOther := thorchaintypes.MsgRegisterMemo{
+        Memo:      "SWAP:BTC.BTC:thor1xyz:14400",
+        ChainId:   "BTC",
+        Signer:    GetRandomBech32Addr(),
+        Reference: "43567",
+    }
 	c.Assert(k.ValidateMemoRegistrationComplete(ctx, msgOther, cp), IsNil)
 }
 
@@ -162,13 +158,12 @@ func (s *MemolessGuardrailsSuite) TestKillSwitch(c *C) {
 	// Enable kill-switch
 	k.SetMimir(ctx, "MemolessKillSwitch", 1)
 
-	msg := thorchaintypes.MsgRegisterMemo{
-		Memo:      "SWAP:BTC.BTC:thor1xyz:14400",
-		ChainId:   "BTC",
-		Ttl:       14400,
-		Signer:    GetRandomBech32Addr(),
-		Reference: "44567",
-	}
+    msg := thorchaintypes.MsgRegisterMemo{
+        Memo:      "SWAP:BTC.BTC:thor1xyz:14400",
+        ChainId:   "BTC",
+        Signer:    GetRandomBech32Addr(),
+        Reference: "44567",
+    }
 
 	err := k.ValidateMemoRegistrationComplete(ctx, msg, cp)
 	c.Assert(err, NotNil, Commentf("expected validation to fail when kill-switch is on"))

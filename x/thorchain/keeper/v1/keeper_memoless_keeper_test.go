@@ -25,16 +25,15 @@ func (s *MemolessKeeperImplementationTestSuite) TestMemoRegistrationFlow(c *C) {
 	signer := GetRandomBech32Addr()
 	memo := "SWAP:BTC.BTC::thor1test"
 	chainID := "BTC"
-	ttl := int64(14400)
+    // ttl removed from MsgRegisterMemo in v1 (global TTL applied)
 
 	// Create enhanced message with extended fields
-	msg := thorchaintypes.MsgRegisterMemo{
-		Memo:      memo,
-		Ttl:       ttl,
-		ChainId:   chainID,
-		Signer:    signer,
-		Reference: "12000", // User-provided 5-digit reference
-	}
+    msg := thorchaintypes.MsgRegisterMemo{
+        Memo:      memo,
+        ChainId:   chainID,
+        Signer:    signer,
+        Reference: "12000", // User-provided 5-digit reference
+    }
 
 	// RED: This should fail initially - ProcessMemoRegistration method doesn't exist yet
 	registration, err := k.ProcessMemoRegistration(ctx, msg, constantProvider)
@@ -82,25 +81,23 @@ func (s *MemolessKeeperImplementationTestSuite) TestMemoValidationFlow(c *C) {
 	c.Assert(err, IsNil)
 
 	// Test valid memo
-	validMsg := thorchaintypes.MsgRegisterMemo{
-		Memo:      "SWAP:BTC.BTC::thor1valid",
-		Ttl:       14400,
-		ChainId:   "BTC",
-		Signer:    GetRandomBech32Addr(),
-		Reference: "15000", // User-provided 5-digit reference
-	}
+    validMsg := thorchaintypes.MsgRegisterMemo{
+        Memo:      "SWAP:BTC.BTC::thor1valid",
+        ChainId:   "BTC",
+        Signer:    GetRandomBech32Addr(),
+        Reference: "15000", // User-provided 5-digit reference
+    }
 
 	// RED: This should fail initially - ValidateMemoRegistrationComplete method doesn't exist yet
 	err = k.ValidateMemoRegistrationComplete(ctx, validMsg, constantProvider)
 	c.Assert(err, IsNil, Commentf("ValidateMemoRegistrationComplete should accept valid memo"))
 
 	// Test invalid memo (empty)
-	invalidMsg := thorchaintypes.MsgRegisterMemo{
-		Memo:    "",
-		Ttl:     14400,
-		ChainId: "BTC",
-		Signer:  GetRandomBech32Addr(),
-	}
+    invalidMsg := thorchaintypes.MsgRegisterMemo{
+        Memo:    "",
+        ChainId: "BTC",
+        Signer:  GetRandomBech32Addr(),
+    }
 
 	err = k.ValidateMemoRegistrationComplete(ctx, invalidMsg, constantProvider)
 	c.Assert(err, NotNil, Commentf("ValidateMemoRegistrationComplete should reject empty memo"))

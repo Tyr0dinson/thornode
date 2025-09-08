@@ -178,13 +178,12 @@ func (s *MemolessChaosTestSuite) TestMemoRetrievalResilience(c *C) {
 	signer := GetRandomValidatorNode(NodeActive).NodeAddress
 
 	// Step 1: Register memo with user reference
-	msg := thorchaintypes.MsgRegisterMemo{
-		Memo:      "SWAP:BTC.BTC:thor1resilience:14400",
-		ChainId:   "BTC",
-		Ttl:       14400,
-		Signer:    signer,
-		Reference: "35000", // User-provided reference
-	}
+    msg := thorchaintypes.MsgRegisterMemo{
+        Memo:      "SWAP:BTC.BTC:thor1resilience:14400",
+        ChainId:   "BTC",
+        Signer:    signer,
+        Reference: "35000", // User-provided reference
+    }
 
 	result, err := k.ProcessMemoRegistration(ctx, msg, constantProvider)
 	c.Assert(err, IsNil, Commentf("Should register memo successfully"))

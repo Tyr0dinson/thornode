@@ -21,13 +21,12 @@ func (s *HandlerRegisterMemoSuite) TestRegisterMemoHandlerValidation(c *C) {
 
 	// Test valid memo registration with simple memo
 	signer := GetRandomBech32Addr()
-	validMsg := &types.MsgRegisterMemo{
-		Memo:      "SWAP:BTC.BTC:thor1test:11111", // Full swap memo
-		Ttl:       14400,                          // 4 hours
-		ChainId:   "BTC",
-		Signer:    signer,
-		Reference: "11111", // User-provided 5-digit reference (unique)
-	}
+    validMsg := &types.MsgRegisterMemo{
+        Memo:      "SWAP:BTC.BTC:thor1test:11111", // Full swap memo
+        ChainId:   "BTC",
+        Signer:    signer,
+        Reference: "11111", // User-provided 5-digit reference (unique)
+    }
 
 	// REFACTOR: Testing existing handler implementation
 	result, err := handler.Run(ctx, validMsg)
@@ -41,12 +40,11 @@ func (s *HandlerRegisterMemoSuite) TestRegisterMemoHandlerValidation(c *C) {
 	}
 
 	// Test invalid memo (empty)
-	invalidMsg := &types.MsgRegisterMemo{
-		Memo:    "", // Empty memo should fail
-		Ttl:     14400,
-		ChainId: "BTC",
-		Signer:  signer,
-	}
+    invalidMsg := &types.MsgRegisterMemo{
+        Memo:    "", // Empty memo should fail
+        ChainId: "BTC",
+        Signer:  signer,
+    }
 
 	result, err = handler.Run(ctx, invalidMsg)
 	c.Assert(err, NotNil, Commentf("Empty memo should fail validation"))
@@ -62,13 +60,12 @@ func (s *HandlerRegisterMemoSuite) TestRegisterMemoHandlerChainHalt(c *C) {
 	mgr.Keeper().SetMimir(ctx, "HaltTHORChain", 1)
 
 	signer := GetRandomBech32Addr()
-	msg := &types.MsgRegisterMemo{
-		Memo:      "SWAP:BTC.BTC:thor1test:22222",
-		Ttl:       14400,
-		ChainId:   "BTC",
-		Signer:    signer,
-		Reference: "22222", // Unique reference for chain halt test
-	}
+    msg := &types.MsgRegisterMemo{
+        Memo:      "SWAP:BTC.BTC:thor1test:22222",
+        ChainId:   "BTC",
+        Signer:    signer,
+        Reference: "22222", // Unique reference for chain halt test
+    }
 
 	// RED: This should fail initially - chain halt check doesn't exist yet
 	result, err := handler.Run(ctx, msg)
@@ -86,13 +83,12 @@ func (s *HandlerRegisterMemoSuite) TestRegisterMemoHandlerMemolessDisabled(c *C)
 	mgr.Keeper().SetMimir(ctx, constants.MemolessEnabled.String(), 0)
 
 	signer := GetRandomBech32Addr()
-	msg := &types.MsgRegisterMemo{
-		Memo:      "SWAP:BTC.BTC:thor1test:33333",
-		Ttl:       14400,
-		ChainId:   "BTC",
-		Signer:    signer,
-		Reference: "33333", // Unique reference for disabled test
-	}
+    msg := &types.MsgRegisterMemo{
+        Memo:      "SWAP:BTC.BTC:thor1test:33333",
+        ChainId:   "BTC",
+        Signer:    signer,
+        Reference: "33333", // Unique reference for disabled test
+    }
 
 	// RED: This should fail initially - memoless enabled check doesn't exist yet
 	result, err := handler.Run(ctx, msg)
@@ -107,13 +103,12 @@ func (s *HandlerRegisterMemoSuite) TestRegisterMemoHandlerVersioning(c *C) {
 	handler := NewRegisterMemoHandler(mgr)
 
 	signer := GetRandomBech32Addr()
-	msg := &types.MsgRegisterMemo{
-		Memo:      "SWAP:BTC.BTC:thor1test:44444",
-		Ttl:       14400,
-		ChainId:   "BTC",
-		Signer:    signer,
-		Reference: "44444", // Unique reference for versioning test
-	}
+    msg := &types.MsgRegisterMemo{
+        Memo:      "SWAP:BTC.BTC:thor1test:44444",
+        ChainId:   "BTC",
+        Signer:    signer,
+        Reference: "44444", // Unique reference for versioning test
+    }
 
 	// Test current version (should work)
 	// RED: This should fail initially - versioned validate method doesn't exist yet
@@ -134,13 +129,12 @@ func (s *HandlerRegisterMemoSuite) TestRegisterMemoHandlerKeeperIntegration(c *C
 
 	signer := GetRandomBech32Addr()
 	memo := "SWAP:BTC.BTC:thor1test:55555"
-	msg := &types.MsgRegisterMemo{
-		Memo:      memo,
-		Ttl:       14400,
-		ChainId:   "BTC",
-		Signer:    signer,
-		Reference: "55555", // Unique reference for keeper integration test
-	}
+    msg := &types.MsgRegisterMemo{
+        Memo:      memo,
+        ChainId:   "BTC",
+        Signer:    signer,
+        Reference: "55555", // Unique reference for keeper integration test
+    }
 
 	// RED: This should fail initially - keeper integration doesn't exist yet
 	result, err := handler.Run(ctx, msg)
@@ -172,13 +166,12 @@ func (s *HandlerRegisterMemoSuite) TestRegisterMemoHandlerCollisionHandling(c *C
 	for i := 0; i < 3; i++ {
 		// Use unique references: 15000, 25000, 35000
 		reference := fmt.Sprintf("%d5000", i+1)
-		msg := &types.MsgRegisterMemo{
-			Memo:      memo,
-			Ttl:       14400,
-			ChainId:   "BTC",
-			Signer:    signer,
-			Reference: reference,
-		}
+        msg := &types.MsgRegisterMemo{
+            Memo:      memo,
+            ChainId:   "BTC",
+            Signer:    signer,
+            Reference: reference,
+        }
 
 		// RED: This should fail initially - collision handling doesn't exist yet
 		result, err := handler.Run(ctx, msg)
@@ -244,13 +237,12 @@ func (s *HandlerRegisterMemoSuite) TestRegisterMemoHandlerReferenceValidation(c 
 	for _, tc := range testCases {
 		c.Logf("Testing: %s", tc.description)
 
-		msg := &types.MsgRegisterMemo{
-			Memo:      "SWAP:BTC.BTC:thor1test:12345",
-			Ttl:       14400,
-			ChainId:   tc.chain,
-			Signer:    signer,
-			Reference: tc.reference, // User-provided reference instead of amount
-		}
+        msg := &types.MsgRegisterMemo{
+            Memo:      "SWAP:BTC.BTC:thor1test:12345",
+            ChainId:   tc.chain,
+            Signer:    signer,
+            Reference: tc.reference, // User-provided reference instead of amount
+        }
 
 		// RED: This should fail initially - amount validation doesn't exist yet
 		result, err := handler.Run(ctx, msg)
@@ -274,13 +266,12 @@ func (s *HandlerRegisterMemoSuite) TestRegisterMemoHandlerEvents(c *C) {
 	c.Assert(err, IsNil)
 
 	signer := GetRandomBech32Addr()
-	msg := &types.MsgRegisterMemo{
-		Memo:      "SWAP:BTC.BTC:thor1test:99999",
-		Ttl:       14400,
-		ChainId:   "BTC",
-		Signer:    signer,
-		Reference: "99999", // Unique reference for events test
-	}
+    msg := &types.MsgRegisterMemo{
+        Memo:      "SWAP:BTC.BTC:thor1test:99999",
+        ChainId:   "BTC",
+        Signer:    signer,
+        Reference: "99999", // Unique reference for events test
+    }
 
 	// RED: This should fail initially - event emission doesn't exist yet
 	result, err := handler.Run(ctx, msg)

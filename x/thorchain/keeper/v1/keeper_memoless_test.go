@@ -73,13 +73,12 @@ func (s *MemolessKeeperTestSuite) TestUserReferenceValidation(c *C) {
 	// Test reference uniqueness enforcement
 	// Register a memo with reference "15000"
 	signer := GetRandomBech32Addr()
-	msg := thorchaintypes.MsgRegisterMemo{
-		Memo:      "SWAP:BTC.BTC:thor1test:15000",
-		ChainId:   "BTC",
-		Ttl:       14400,
-		Signer:    signer,
-		Reference: "15000", // User-provided reference
-	}
+    msg := thorchaintypes.MsgRegisterMemo{
+        Memo:      "SWAP:BTC.BTC:thor1test:15000",
+        ChainId:   "BTC",
+        Signer:    signer,
+        Reference: "15000", // User-provided reference
+    }
 
 	constantProvider := constants.GetConstantValues(GetCurrentVersion())
 	err = k.ValidateMemoRegistration(ctx, msg, constantProvider)
@@ -198,12 +197,11 @@ func (s *MemolessKeeperTestSuite) TestEnhancedChainPrecisionValidation(c *C) {
 	}
 
 	// Test that DOGE (precision loss chain) is properly rejected in Layer 2
-	msg := thorchaintypes.MsgRegisterMemo{
-		Memo:    "SWAP:BTC.BTC:thor1abc123:14400",
-		ChainId: "DOGE", // DOGE has PrecisionLoss: true in config
-		Ttl:     14400,
-		Signer:  GetRandomValidatorNode(NodeActive).NodeAddress,
-	}
+    msg := thorchaintypes.MsgRegisterMemo{
+        Memo:    "SWAP:BTC.BTC:thor1abc123:14400",
+        ChainId: "DOGE", // DOGE has PrecisionLoss: true in config
+        Signer:  GetRandomValidatorNode(NodeActive).NodeAddress,
+    }
 
 	// This should fail at Layer 2 validation because DOGE has precision loss issues
 	err = k.ValidateMemoRegistrationEnhanced(ctx, msg, validationCtx)
@@ -240,13 +238,12 @@ func (s *MemolessKeeperTestSuite) TestCollusionDetection(c *C) {
 	}
 
 	// Now attempt 4th registration - should fail due to collusion detection
-	msg := thorchaintypes.MsgRegisterMemo{
-		Memo:      "SWAP:BTC.BTC:thor1collision:14400",
-		ChainId:   "BTC",
-		Ttl:       14400,
-		Signer:    testSigner, // Same signer attempting 4th registration
-		Reference: "33000",    // User-provided reference
-	}
+    msg := thorchaintypes.MsgRegisterMemo{
+        Memo:      "SWAP:BTC.BTC:thor1collision:14400",
+        ChainId:   "BTC",
+        Signer:    testSigner, // Same signer attempting 4th registration
+        Reference: "33000",    // User-provided reference
+    }
 
 	// This should fail due to collusion detection (too many registrations in same block)
 	constantProvider := constants.GetConstantValues(GetCurrentVersion())
@@ -360,7 +357,7 @@ func (s *MemolessKeeperTestSuite) TestAutomatedMemoCleanup(c *C) {
 }
 
 // TestConfigurableTTLLimits tests governance-controlled TTL configuration
-func (s *MemolessKeeperTestSuite) TestConfigurableTTLLimits(c *C) {
+func (s *MemolessKeeperTestSuite) TestTTLAdvisoryIgnoredInV1(c *C) {
 	ctx, k := setupKeeperForTest(c)
 
 	// Initialize chain configs
@@ -370,33 +367,30 @@ func (s *MemolessKeeperTestSuite) TestConfigurableTTLLimits(c *C) {
 	signer := GetRandomValidatorNode(NodeActive).NodeAddress
 	constantProvider := constants.GetConstantValues(GetCurrentVersion())
 
-	// Test 1: Attempt memo registration with TTL exceeding governance maximum
-	// This should fail since governance sets maximum TTL
-	maxTTLFromGov := constantProvider.GetInt64Value(constants.MemolessMaxTTL)
+    // Client-provided TTL is advisory in v1 and ignored by protocol
+    // max TTL from governance unused in v1 client request validation
 
-	msg := thorchaintypes.MsgRegisterMemo{
-		Memo:    "SWAP:BTC.BTC:thor1test:100",
-		ChainId: "BTC",
-		Ttl:     maxTTLFromGov + 1000, // Exceed governance limit
-		Signer:  signer,
-	}
+    // Case 1: TTL exceeding governance maximum should still pass validation
+    msg := thorchaintypes.MsgRegisterMemo{
+        Memo:    "SWAP:BTC.BTC:thor1test:100",
+        ChainId: "BTC",
+        Signer:  signer,
+    }
 
-	// Should fail validation due to governance TTL limit
-	err = k.ValidateMemoRegistration(ctx, msg, constantProvider)
-	c.Assert(err, NotNil, Commentf("Should reject TTL exceeding governance maximum"))
-	c.Assert(err.Error(), Matches, ".*TTL.*exceeds.*maximum.*", Commentf("Error should mention TTL exceeding maximum"))
+    // Should pass validation; TTL field is ignored in v1
+    err = k.ValidateMemoRegistration(ctx, msg, constantProvider)
+    c.Assert(err, IsNil, Commentf("TTL exceeding governance maximum should be ignored in v1"))
 
-	// Test 2: Registration with TTL within governance limits should succeed
-	validMsg := thorchaintypes.MsgRegisterMemo{
-		Memo:    "SWAP:BTC.BTC:thor1valid:100",
-		ChainId: "BTC",
-		Ttl:     maxTTLFromGov - 100, // Within governance limit
-		Signer:  signer,
-	}
+    // Case 2: TTL within governance limits also passes (equivalently ignored)
+    validMsg := thorchaintypes.MsgRegisterMemo{
+        Memo:    "SWAP:BTC.BTC:thor1valid:100",
+        ChainId: "BTC",
+        Signer:  signer,
+    }
 
-	// Should pass validation
-	err = k.ValidateMemoRegistration(ctx, validMsg, constantProvider)
-	c.Assert(err, IsNil, Commentf("Should accept TTL within governance limits"))
+    // Should pass validation
+    err = k.ValidateMemoRegistration(ctx, validMsg, constantProvider)
+    c.Assert(err, IsNil, Commentf("Should accept TTL within governance limits"))
 }
 
 // TestTTLExtensionCapabilities tests TTL extension functionality
@@ -411,7 +405,7 @@ func (s *MemolessKeeperTestSuite) TestTTLExtensionCapabilities(c *C) {
 	signer := GetRandomValidatorNode(NodeActive).NodeAddress
 	reference := "90000" // User-provided reference for expiry test
 
-	originalTTL := int64(1000)
+    originalTTL := int64(1000)
 	registration := thorchaintypes.RegisteredMemo{
 		Reference:    reference,
 		Memo:         "SWAP:BTC.BTC:thor1extension:100",
@@ -455,13 +449,12 @@ func (s *MemolessKeeperTestSuite) TestEndToEndWorkflow(c *C) {
 	constantProvider := constants.GetConstantValues(GetCurrentVersion())
 
 	// Step 1: Register memo
-	msg := thorchaintypes.MsgRegisterMemo{
-		Memo:      "SWAP:BTC.BTC:thor1endtoend:14400",
-		ChainId:   "BTC",
-		Ttl:       14400,
-		Signer:    signer,
-		Reference: "33001", // User-provided reference
-	}
+    msg := thorchaintypes.MsgRegisterMemo{
+        Memo:      "SWAP:BTC.BTC:thor1endtoend:14400",
+        ChainId:   "BTC",
+        Signer:    signer,
+        Reference: "33001", // User-provided reference
+    }
 
 	// Validate registration
 	err = k.ValidateMemoRegistration(ctx, msg, constantProvider)
@@ -533,13 +526,12 @@ func (s *MemolessKeeperTestSuite) TestCrossChainIntegration(c *C) {
 	references := make(map[string]string)
 
 	for _, tc := range testCases {
-		msg := thorchaintypes.MsgRegisterMemo{
-			Memo:      fmt.Sprintf("SWAP:%s.%s:thor1multi:14400", tc.chainID, tc.chainID),
-			ChainId:   tc.chainID,
-			Ttl:       14400,
-			Signer:    signer,
-			Reference: tc.reference,
-		}
+        msg := thorchaintypes.MsgRegisterMemo{
+            Memo:      fmt.Sprintf("SWAP:%s.%s:thor1multi:14400", tc.chainID, tc.chainID),
+            ChainId:   tc.chainID,
+            Signer:    signer,
+            Reference: tc.reference,
+        }
 
 		// Process registration
 		result, err := k.ProcessMemoRegistration(ctx, msg, constantProvider)
@@ -567,13 +559,12 @@ func (s *MemolessKeeperTestSuite) TestCrossChainIntegration(c *C) {
 	}
 
 	// Test unsupported chain (DOGE) should fail
-	dogeMod := thorchaintypes.MsgRegisterMemo{
-		Memo:      "SWAP:DOGE.DOGE:thor1doge:14400",
-		ChainId:   "DOGE",
-		Ttl:       14400,
-		Signer:    signer,
-		Reference: "33002", // User-provided reference
-	}
+    dogeMod := thorchaintypes.MsgRegisterMemo{
+        Memo:      "SWAP:DOGE.DOGE:thor1doge:14400",
+        ChainId:   "DOGE",
+        Signer:    signer,
+        Reference: "33002", // User-provided reference
+    }
 
 	err = k.ValidateMemoRegistration(ctx, dogeMod, constantProvider)
 	c.Assert(err, NotNil, Commentf("DOGE should be rejected due to precision loss"))
@@ -591,13 +582,12 @@ func (s *MemolessKeeperTestSuite) TestRefundIntegrationValidation(c *C) {
 	constantProvider := constants.GetConstantValues(GetCurrentVersion())
 
 	// Register a memo that would typically trigger refund scenarios
-	msg := thorchaintypes.MsgRegisterMemo{
-		Memo:      "SWAP:BTC.BTC:thor1refund:0", // 0 limit triggers refund
-		ChainId:   "BTC",
-		Ttl:       14400,
-		Signer:    signer,
-		Reference: "33001", // User-provided reference
-	}
+    msg := thorchaintypes.MsgRegisterMemo{
+        Memo:      "SWAP:BTC.BTC:thor1refund:0", // 0 limit triggers refund
+        ChainId:   "BTC",
+        Signer:    signer,
+        Reference: "33001", // User-provided reference
+    }
 
 	// Should pass validation (refund validation happens at swap execution time)
 	err = k.ValidateMemoRegistration(ctx, msg, constantProvider)

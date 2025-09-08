@@ -69,10 +69,7 @@ func (m *MsgRegisterMemo) ValidateBasicEnhanced() error {
 		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, fmt.Sprintf("memo size validation failed: %v", err))
 	}
 
-	// Enhanced TTL validation
-	if err := ValidateTTL(m.Ttl); err != nil {
-		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, fmt.Sprintf("invalid TTL: %v", err))
-	}
+    // TTL removed from v1 message; no validation required.
 
 	// Enhanced signer validation
 	if err := ValidateSigner(m.Signer); err != nil {
@@ -323,15 +320,11 @@ func ValidateChainID(chainID string) error {
 
 // ValidateTTL validates time-to-live value
 func ValidateTTL(ttl int64) error {
-	if ttl < MinTTL {
-		return fmt.Errorf("TTL cannot be negative")
-	}
-
-	if ttl > MaxTTL {
-		return fmt.Errorf("TTL too large (maximum %d seconds = 10 days)", MaxTTL)
-	}
-
-	return nil
+    // v1: TTL is advisory and ignored; only enforce non-negative
+    if ttl < MinTTL {
+        return fmt.Errorf("TTL cannot be negative")
+    }
+    return nil
 }
 
 // ValidateSigner validates signer address format and properties
@@ -429,14 +422,13 @@ func ValidateReferenceUniqueness(reference string, existingRefs map[string]bool)
 }
 
 // ValidateMemoRegistrationRequest validates the complete registration request
-func ValidateMemoRegistrationRequest(memo string, chainID string, ttl int64, signer sdk.AccAddress) error {
+func ValidateMemoRegistrationRequest(memo string, chainID string, signer sdk.AccAddress) error {
 	// Create a temp message for validation
-	msg := &MsgRegisterMemo{
-		Memo:    memo,
-		ChainId: chainID,
-		Ttl:     ttl,
-		Signer:  signer,
-	}
+    msg := &MsgRegisterMemo{
+        Memo:    memo,
+        ChainId: chainID,
+        Signer:  signer,
+    }
 
 	return msg.ValidateBasicEnhanced()
 }
@@ -444,11 +436,11 @@ func ValidateMemoRegistrationRequest(memo string, chainID string, ttl int64, sig
 // ENHANCED VALIDATION FUNCTIONS - Chain Precision and Memo Size Validation
 
 // ValidateMemoRegistrationWithAmount validates registration with amount-based reference encoding
-func ValidateMemoRegistrationWithAmount(memo string, chainID string, amount string, reference string, ttl int64, signer sdk.AccAddress) error {
+func ValidateMemoRegistrationWithAmount(memo string, chainID string, amount string, reference string, signer sdk.AccAddress) error {
 	// First validate basic registration parameters
-	if err := ValidateMemoRegistrationRequest(memo, chainID, ttl, signer); err != nil {
-		return err
-	}
+    if err := ValidateMemoRegistrationRequest(memo, chainID, signer); err != nil {
+        return err
+    }
 
 	// ENHANCED: Validate amount can safely encode reference without precision loss
 	if err := ValidateAmountForReference(amount, reference, chainID); err != nil {
@@ -469,11 +461,11 @@ func ValidateMemoRegistrationWithAmount(memo string, chainID string, amount stri
 }
 
 // ValidateMemoRegistrationWithAsset validates registration with asset-specific precision requirements
-func ValidateMemoRegistrationWithAsset(memo string, chainID string, amount string, asset string, reference string, ttl int64, signer sdk.AccAddress) error {
+func ValidateMemoRegistrationWithAsset(memo string, chainID string, amount string, asset string, reference string, signer sdk.AccAddress) error {
 	// First validate with amount
-	if err := ValidateMemoRegistrationWithAmount(memo, chainID, amount, reference, ttl, signer); err != nil {
-		return err
-	}
+    if err := ValidateMemoRegistrationWithAmount(memo, chainID, amount, reference, signer); err != nil {
+        return err
+    }
 
 	// ENHANCED: Validate asset-specific precision
 	if err := ValidateAssetPrecision(amount, asset, chainID); err != nil {

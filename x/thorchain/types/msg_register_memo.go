@@ -12,13 +12,12 @@ var (
 )
 
 // NewMsgRegisterMemo creates a new MsgRegisterMemo instance
-func NewMsgRegisterMemo(memo string, signer sdk.AccAddress, ttl int64, chainID string) *MsgRegisterMemo {
-	return &MsgRegisterMemo{
-		Memo:    memo,
-		Signer:  signer,
-		Ttl:     ttl,
-		ChainId: chainID,
-	}
+func NewMsgRegisterMemo(memo string, signer sdk.AccAddress, chainID string) *MsgRegisterMemo {
+    return &MsgRegisterMemo{
+        Memo:    memo,
+        Signer:  signer,
+        ChainId: chainID,
+    }
 }
 
 // Route returns the route for MsgRegisterMemo
@@ -46,9 +45,10 @@ func (m *MsgRegisterMemo) ValidateBasic() error {
 		return errorsmod.Wrap(sdkerrors.ErrInvalidAddress, "signer cannot be empty")
 	}
 
-	if m.Ttl < 0 || m.Ttl > 864000 { // Max 10 days in seconds
-		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "invalid TTL")
-	}
+    // v1: TTL is advisory and ignored; only enforce non-negative
+    if m.Ttl < 0 { // Non-negative required
+        return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "invalid TTL")
+    }
 
 	if len(m.ChainId) == 0 {
 		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "chain_id cannot be empty")
