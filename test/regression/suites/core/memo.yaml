@@ -144,11 +144,11 @@ type: create-blocks
 count: 1
 ---
 type: check
-endpoint: http://localhost:1317/thorchain/memo/ETH/20002
+endpoint: http://localhost:1317/thorchain/memo/ETH/10001
 asserts:
   - .chain == "ETH"
   - .memo == "=:BTC.BTC:{{ addr_btc_fox }}"
-  - .reference == "20002"
+  - .reference == "10001"
   - .height == "6"
   - .reference_hash == "10464C8CDFF11B4AF1057FD48DC23C183E9864AA266C4B2E8B69032B6756A48C"
   - .registration_hash == "{{ native_txid -1 }}"
@@ -159,7 +159,7 @@ endpoint: http://localhost:1317/thorchain/memohash/10464C8CDFF11B4AF1057FD48DC23
 asserts:
   - .chain == "ETH"
   - .memo == "=:BTC.BTC:{{ addr_btc_fox }}"
-  - .reference == "20002"
+  - .reference == "10001"
   - .height == "6"
   - .reference_hash == "10464C8CDFF11B4AF1057FD48DC23C183E9864AA266C4B2E8B69032B6756A48C"
   - .registration_hash == "{{ native_txid -1 }}"
@@ -183,7 +183,7 @@ txs:
       gas:
         - amount: "960000"
           asset: "ETH.ETH"
-      memo: "r:20002"
+      memo: "r:10001"
     block_height: 3
     finalise_height: 3
     observed_pub_key: {{ pubkey_dog }}
@@ -243,7 +243,7 @@ txs:
       gas:
         - amount: "960000"
           asset: "ETH.ETH"
-      memo: "r:20002"
+      memo: "r:10001"
     block_height: 3
     finalise_height: 3
     observed_pub_key: {{ pubkey_dog }}
