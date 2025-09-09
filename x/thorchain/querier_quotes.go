@@ -167,51 +167,6 @@ func parseMultipleAffiliateParams(ctx cosmos.Context, mgr *Mgrs, affiliateParam,
 	return affParams, affiliateBps, totalBps, nil
 }
 
-func quoteHandleAffiliate(ctx cosmos.Context, mgr *Mgrs, affiliateParam, affiliateBpsParam []string, amount sdkmath.Uint) (affiliate common.Address, memo string, bps, newAmount, affiliateAmt sdkmath.Uint, err error) {
-	// parse affiliate
-	affAmt := cosmos.ZeroUint()
-	memo = "" // do not resolve thorname for the memo
-	if len(affiliateParam) > 0 {
-		affiliate, err = quoteParseAddress(ctx, mgr, affiliateParam[0], common.THORChain)
-		if err != nil {
-			err = fmt.Errorf("bad affiliate address: %w", err)
-			return
-		}
-		memo = affiliateParam[0]
-	}
-
-	// parse affiliate fee
-	bps = sdkmath.NewUint(0)
-	if len(affiliateBpsParam) > 0 {
-		bps, err = sdkmath.ParseUint(affiliateBpsParam[0])
-		if err != nil {
-			err = fmt.Errorf("bad affiliate fee: %w", err)
-			return
-		}
-	}
-
-	// verify affiliate fee
-	if bps.GT(sdkmath.NewUint(10000)) {
-		err = fmt.Errorf("affiliate fee must be less than 10000 bps")
-		return
-	}
-
-	// compute the new swap amount if an affiliate fee will be taken first
-	if affiliate != common.NoAddress && !bps.IsZero() {
-		// calculate the affiliate amount
-		affAmt = common.GetSafeShare(
-			bps,
-			cosmos.NewUint(10000),
-			amount,
-		)
-
-		// affiliate fee modifies amount at observation before the swap
-		amount = amount.Sub(affAmt)
-	}
-
-	return affiliate, memo, bps, amount, affAmt, nil
-}
-
 func hasSuffixMatch(suffix string, values []string) bool {
 	for _, value := range values {
 		if strings.HasSuffix(value, suffix) {
@@ -1034,6 +989,51 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 	res.Vout = vout
 
 	return res, nil
+}
+
+func quoteHandleAffiliate(ctx cosmos.Context, mgr *Mgrs, affiliateParam, affiliateBpsParam []string, amount sdkmath.Uint) (affiliate common.Address, memo string, bps, newAmount, affiliateAmt sdkmath.Uint, err error) {
+	// parse affiliate
+	affAmt := cosmos.ZeroUint()
+	memo = "" // do not resolve thorname for the memo
+	if len(affiliateParam) > 0 {
+		affiliate, err = quoteParseAddress(ctx, mgr, affiliateParam[0], common.THORChain)
+		if err != nil {
+			err = fmt.Errorf("bad affiliate address: %w", err)
+			return
+		}
+		memo = affiliateParam[0]
+	}
+
+	// parse affiliate fee
+	bps = sdkmath.NewUint(0)
+	if len(affiliateBpsParam) > 0 {
+		bps, err = sdkmath.ParseUint(affiliateBpsParam[0])
+		if err != nil {
+			err = fmt.Errorf("bad affiliate fee: %w", err)
+			return
+		}
+	}
+
+	// verify affiliate fee
+	if bps.GT(sdkmath.NewUint(10000)) {
+		err = fmt.Errorf("affiliate fee must be less than 10000 bps")
+		return
+	}
+
+	// compute the new swap amount if an affiliate fee will be taken first
+	if affiliate != common.NoAddress && !bps.IsZero() {
+		// calculate the affiliate amount
+		affAmt = common.GetSafeShare(
+			bps,
+			cosmos.NewUint(10000),
+			amount,
+		)
+
+		// affiliate fee modifies amount at observation before the swap
+		amount = amount.Sub(affAmt)
+	}
+
+	return affiliate, memo, bps, amount, affAmt, nil
 }
 
 // -------------------------------------------------------------------------------------

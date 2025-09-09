@@ -265,7 +265,6 @@ message QueryQuoteLoanCloseResponse{
 	// The total expected duration for a repayment, measured in seconds, which includes the time for inbound confirmation, the duration of streaming swaps, and any outbound delays.
   int64 total_repay_seconds = 22 [(gogoproto.jsontag) = "total_repay_seconds"];
 }
-
 message QuoteFees{
 	// the target asset used for all fees
   string asset = 1 [(gogoproto.jsontag) = "asset"];
