@@ -123,6 +123,12 @@ func parseMultipleAffiliateParams(ctx cosmos.Context, mgr *Mgrs, affiliateParam,
 
 	// If there is only one bps defined, but multiple affiliates, apply the bps to all affiliates
 	switch {
+	case len(bpParams) == 1 && len(affiliateParams) > 1:
+		bpValue := bpParams[0]
+		bpParams = make([]string, len(affiliateParams))
+		for i := range bpParams {
+			bpParams[i] = bpValue
+		}
 	case len(bpParams) == 1 && len(affiliateParams) == 0:
 		// Handle specific case: BPS provided but no affiliate
 		return nil, nil, sdkmath.ZeroUint(), fmt.Errorf("BPS value specified but no affiliate: (%d affiliates, %d BPS values)", len(affiliateParams), len(bpParams))

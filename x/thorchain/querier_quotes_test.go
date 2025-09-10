@@ -48,10 +48,15 @@ func (s *QuotesSuite) TestParseMultipleAffiliateParams(c *C) {
 	c.Assert(bps[2].Uint64(), Equals, uint64(25))
 	c.Assert(totalBps.Uint64(), Equals, uint64(150))
 
-	// Test single bps applied to multiple affiliates (should now return error due to mismatch)
-	_, _, _, err = parseMultipleAffiliateParams(ctx, mgr, "a1/a2/a3", "100")
-	c.Assert(err, NotNil)
-	c.Assert(err.Error(), Equals, "mismatch between number of affiliates (3) and BPS values (1)")
+	// Test single bps applied to multiple affiliates
+	affiliates, bps, totalBps, err = parseMultipleAffiliateParams(ctx, mgr, "a1/a2/a3", "100")
+	c.Assert(err, IsNil)
+	c.Assert(len(affiliates), Equals, 3)
+	c.Assert(len(bps), Equals, 3)
+	c.Assert(bps[0].Uint64(), Equals, uint64(100))
+	c.Assert(bps[1].Uint64(), Equals, uint64(100))
+	c.Assert(bps[2].Uint64(), Equals, uint64(100))
+	c.Assert(totalBps.Uint64(), Equals, uint64(300))
 
 	// Test empty strings
 	affiliates, bps, totalBps, err = parseMultipleAffiliateParams(ctx, mgr, "", "")
