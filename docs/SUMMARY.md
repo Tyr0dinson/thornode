@@ -21,6 +21,7 @@
   - [Querying THORChain](concepts/querying-thorchain.md)
   - [Sending Transactions](concepts/sending-transactions.md)
   - [Transaction Memos](concepts/memos.md)
+  - [Modify Limit Swaps](concepts/modify-limit-swaps.md)
   - [Swap Queue Monitoring](concepts/swap-queue-monitoring.md)
   - [Quote Examples](examples/tutorials.md)
   - [Asset Notation](concepts/asset-notation.md)

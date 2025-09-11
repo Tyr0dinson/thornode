@@ -348,6 +348,10 @@ value to 0 will cancel the limit swap.
 | `:TARGET`               | The target coin (e.g., `1234ETH.ETH`)     |                  |
 | `:MODIFIEDTARGETAMOUNT` | The modified target amount (e.g., `1235`) |                  |
 
+```admonish info
+For comprehensive documentation on modify limit swap functionality, implementation details, and developer integration, see [Modify Limit Swaps Guide](modify-limit-swaps.md).
+```
+
 ### **Deposit Savers**
 
 Deposit an asset into THORChain Savers.

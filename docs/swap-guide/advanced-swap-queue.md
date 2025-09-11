@@ -203,6 +203,10 @@ m=<:1234BTC.BTC:5678ETH.ETH:0           # Cancel swap (set to 0)
 - Modification transaction funds are donated to pools
 - Full validation of source and target assets
 
+```admonish info
+For comprehensive documentation on modify limit swap functionality, including implementation details, security considerations, API integration, and troubleshooting, see [Modify Limit Swaps Guide](../concepts/modify-limit-swaps.md).
+```
+
 ### Telemetry and Monitoring
 
 The advanced queue provides comprehensive metrics:
