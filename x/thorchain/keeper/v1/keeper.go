@@ -21,6 +21,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/types"
+	stypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 // NOTE: Always end a dbPrefix with a slash ("/"). This is to ensure that there
@@ -131,6 +132,7 @@ const (
 	prefixDynamicFee                types.DbPrefix = "dynfee/"
 	prefixDynamicFeeAcc             types.DbPrefix = "dynfeeacc/"
 	prefixDynamicFeeEpochBlocks     types.DbPrefix = "dynfeeebo/"
+	prefixPendingAltNativeTxFee     types.DbPrefix = "pending_alt_native_fee/"
 )
 
 func dbError(ctx cosmos.Context, wrapper string, err error) error {
@@ -431,6 +433,45 @@ func (k KVStore) getUint(ctx cosmos.Context, key []byte, record *cosmos.Uint) (b
 	}
 	*record = value.Value
 	return true, nil
+}
+
+// --- Pending Alt-Native Fee (ante-collected alt-native fees) ---
+
+// AppendPendingAltNativeTxFeeEntry appends a pending alt-native fee entry to the txid's record.
+func (k KVStore) AppendPendingAltNativeTxFeeEntry(ctx cosmos.Context, txid common.TxID, entry stypes.PendingAltNativeFeeEntry) {
+	key := k.GetKey(prefixPendingAltNativeTxFee, txid.String())
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	var pending stypes.PendingAltNativeFee
+	if store.Has(key) {
+		if err := k.cdc.Unmarshal(store.Get(key), &pending); err != nil {
+			pending = stypes.PendingAltNativeFee{}
+		}
+	}
+	pending.Entries = append(pending.Entries, entry)
+	store.Set(key, k.cdc.MustMarshal(&pending))
+}
+
+// GetPendingAltNativeTxFee retrieves the pending alt-native fee record for the given txid.
+func (k KVStore) GetPendingAltNativeTxFee(ctx cosmos.Context, txid common.TxID) stypes.PendingAltNativeFee {
+	key := k.GetKey(prefixPendingAltNativeTxFee, txid.String())
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	var pending stypes.PendingAltNativeFee
+	if !store.Has(key) {
+		return pending
+	}
+	k.cdc.Unmarshal(store.Get(key), &pending)
+	return pending
+}
+
+// ClearPendingAltNativeTxFee removes the pending record for the given txid.
+func (k KVStore) ClearPendingAltNativeTxFee(ctx cosmos.Context, txid common.TxID) {
+	key := k.GetKey(prefixPendingAltNativeTxFee, txid.String())
+	k.DeleteKey(ctx, key)
+}
+
+// GetPendingAltNativeTxFeeIterator returns an iterator over all pending alt-native fee entries.
+func (k KVStore) GetPendingAltNativeTxFeeIterator(ctx cosmos.Context) cosmos.Iterator {
+	return k.getIterator(ctx, types.DbPrefix(prefixPendingAltNativeTxFee))
 }
 
 // GetRuneBalanceOfModule get the RUNE balance

@@ -171,6 +171,13 @@ func (m Pool) RuneValueInAsset(amt cosmos.Uint) cosmos.Uint {
 	return cosmos.RoundToDecimal(assetAmt, m.Decimals)
 }
 
+// RuneValueInAssetV2 convert a specific amount of rune amt into its asset value
+// Uses the new GetUncappedShareV2
+func (m Pool) RuneValueInAssetV2(amt cosmos.Uint) cosmos.Uint {
+	assetAmt := common.GetUncappedShareV2(m.BalanceAsset, m.BalanceRune, amt)
+	return cosmos.RoundToDecimal(assetAmt, m.Decimals)
+}
+
 func (m Pools) Get(asset common.Asset) (Pool, bool) {
 	for _, p := range m {
 		if p.Asset.Equals(asset) {

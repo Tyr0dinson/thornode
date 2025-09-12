@@ -98,6 +98,8 @@ func init() {
 		MultipleAffiliatesMaxCount:          5,
 		BankSendEnabled:                     1,
 		MaxAbsentKeygenReporters:            0,
+		AltNativeTxFeeEnabled:               1,
+		AltNativeTxFeeAddedBps:              5000, // add 50% gas to tx with native asset
 	}
 	boolOverrides = map[ConstantName]bool{
 		StrictBondLiquidityRatio: false,

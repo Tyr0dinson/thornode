@@ -55,6 +55,11 @@ func (h DepositHandler) validate(ctx cosmos.Context, msg MsgDeposit) error {
 }
 
 func (h DepositHandler) handle(ctx cosmos.Context, msg MsgDeposit, idx uint16) (*cosmos.Result, error) {
+    // Settle any pending alt-native tx fee at the start (settle from signer)
+    if err := settlePendingAltNativeTxFee(ctx, h.mgr); err != nil {
+        return nil, err
+    }
+
 	if h.mgr.Keeper().IsChainHalted(ctx, common.THORChain) {
 		return nil, fmt.Errorf("unable to use MsgDeposit while THORChain is halted")
 	}
@@ -322,5 +327,5 @@ func (h DepositHandler) extractReferenceFromNativeAmount(ctx cosmos.Context, amo
 // and also during deliver. Store changes will persist if this function
 // succeeds, regardless of the success of the transaction.
 func DepositAnteHandler(ctx cosmos.Context, v semver.Version, k keeper.Keeper, msg MsgDeposit) (cosmos.Context, error) {
-	return ctx, k.DeductNativeTxFeeFromAccount(ctx, msg.GetSigners()[0])
+	return ctx, deductNativeTxFeeFromAccount(ctx, v, k, nil, msg.GetSigners()[0], &msg)
 }

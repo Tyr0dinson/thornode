@@ -463,3 +463,230 @@ func (s *HandlerDepositSuite) TestMemolessNativeDepositReferenceResolution(c *C)
 	c.Assert(err, IsNil)
 	c.Check(storedReference.GetUsageCount(), Equals, int64(1))
 }
+
+func (s *HandlerDepositSuite) TestAltNativeTxFeeWithShallowPool(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	// pool: NAMI:RUNE = 1:200 (5,000:1,000,000)
+	pool := NewPool()
+	pool.Asset = common.NAMI
+	pool.BalanceAsset = cosmos.NewUint(5_000)
+	pool.BalanceRune = cosmos.NewUint(1_000_000)
+	pool.Status = PoolAvailable
+	pool.Decimals = 6
+	c.Assert(k.SetPool(ctx, pool), IsNil)
+
+	// pool is too shallow for using for alt native tx fee - should fail
+	fee, err := calculateAltNativeTxFee(ctx, k, common.NAMI)
+	c.Assert(err, NotNil)
+	c.Assert(fee.IsZero(), Equals, true)
+	c.Assert(strings.Contains(err.Error(), "calculated alt native tx fee is outside acceptable precision"), Equals, true)
+}
+
+func (s *HandlerDepositSuite) TestAltNativeTxFeeRecalcOnPoolRatioChange(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	// nami:rune = 1:200 (5,000:1,000,000)
+	pool := NewPool()
+	pool.Asset = common.NAMI
+	pool.BalanceAsset = cosmos.NewUint(5_000 * common.One)
+	pool.BalanceRune = cosmos.NewUint(1_000_000 * common.One)
+	pool.Status = PoolAvailable
+	pool.Decimals = 6
+	c.Assert(k.SetPool(ctx, pool), IsNil)
+
+	// calculate the alt native tx fee
+	fee, err := calculateAltNativeTxFee(ctx, k, common.NAMI)
+	c.Assert(err, IsNil)
+	c.Assert(fee.IsZero(), Equals, false)
+
+	// change the nami:rune pool ratio from 1:200 to 1:100 and verify fee is 2x
+	pool.BalanceAsset = cosmos.NewUint(10_000 * common.One)
+	pool.BalanceRune = cosmos.NewUint(1_000_000 * common.One)
+	err = k.SetPool(ctx, pool)
+	c.Assert(err, IsNil)
+	// recalculate the alt native tx fee
+	var newFee cosmos.Uint
+	newFee, err = calculateAltNativeTxFee(ctx, k, pool.Asset)
+	c.Assert(err, IsNil)
+
+	// gas ~= 2x of the previous gas due to the pool ratio change
+	c.Check(isWithinTolerance(newFee, fee.MulUint64(2), 10), Equals, true) // within 10 bps tolerance
+}
+
+func (s *HandlerDepositSuite) TestAltNativeTxFeeDeposit(c *C) {
+	type testCase struct {
+		name string
+		seed func()
+		bal  func() cosmos.Uint
+	}
+
+	var (
+		ctx     cosmos.Context
+		mgr     *Mgrs
+		k       keeper.Keeper
+		signer  cosmos.AccAddress
+		ad      AnteDecorator
+		handler DepositHandler
+		err     error
+		toAddr  common.Address
+		asset   common.Asset
+		pool    types.Pool
+		msg     *types.MsgDeposit
+	)
+
+	// helpers
+	seedPool := func(asset common.Asset, balAsset, balRune cosmos.Uint) {
+		pool = NewPool()
+		pool.Asset = asset
+		pool.BalanceAsset = balAsset
+		pool.BalanceRune = balRune
+		pool.Status = PoolAvailable
+		c.Assert(k.SetPool(ctx, pool), IsNil)
+	}
+
+	getAccBal := func(acc cosmos.AccAddress, asset common.Asset) cosmos.Uint {
+		return cosmos.NewUintFromBigInt(k.GetBalance(ctx, acc).AmountOf(asset.Native()).BigInt())
+	}
+
+	// runSwap runs ante + handler for a deposit and flushes the advanced swap queue.
+	runSwap := func(coins common.Coins, expCheck1, expCheck2 Checker, expErrStr string) {
+		toAddr = GetRandomTHORAddress()
+		memo := fmt.Sprintf("=:r:%s", toAddr)
+		msg = NewMsgDeposit(coins, memo, signer)
+		ctx = ctx.WithTxBytes([]byte(common.RandHexString(32)))
+		_, err := ad.anteHandleMessage(ctx, mgr.GetVersion(), msg)
+		c.Assert(err, expCheck1)
+		if expCheck1 == NotNil {
+			c.Assert(strings.Contains(err.Error(), expErrStr), Equals, true)
+			return
+		}
+		_, err = handler.Run(ctx, msg)
+		c.Assert(err, expCheck2)
+		if expCheck2 == NotNil {
+			c.Assert(strings.Contains(err.Error(), expErrStr), Equals, true)
+			return
+		}
+		c.Assert(mgr.AdvSwapQueueMgr().EndBlock(ctx, mgr, false), IsNil)
+	}
+
+	setup := func() {
+		ctx, mgr = setupManagerForTest(c)
+		k = mgr.Keeper()
+		signer = GetRandomBech32Addr()
+		ad = AnteDecorator{keeper: k}
+		handler = NewDepositHandler(mgr)
+		mgr.advSwapQueue = newSwapQueueAdvVCUR(k)
+	}
+
+	seedPegged := func(deposit func(cosmos.Context, common.Asset, cosmos.Uint, cosmos.AccAddress, common.Address, common.TxID) (cosmos.Uint, error)) {
+		// Seed L1 pool
+		seedPool(asset.GetLayer1Asset(), cosmos.NewUint(1_000_000*common.One), cosmos.NewUint(200_000_000*common.One))
+		// Deposit to pegged account balance
+		depositAmt := cosmos.NewUint(10 * common.One)
+		_, err = deposit(ctx, asset.GetLayer1Asset(), depositAmt, signer, common.NoAddress, common.BlankTxID)
+		c.Assert(err, IsNil)
+	}
+
+	cases := []testCase{
+		{
+			name: "native-alt-fee-on-deposit",
+			seed: func() {
+				asset = common.NAMI
+				seedPool(asset, cosmos.NewUint(1_000_000*common.One), cosmos.NewUint(200_000_000*common.One))
+				pool.Decimals = 6                                                      // NAMI has 6 decimals
+				c.Assert(k.SetPool(ctx, pool), IsNil)                                  // persist decimals change
+				fundAccountWith(c, ctx, k, signer, asset, cosmos.NewUint(100_000_000)) // fund with 100 nami
+			},
+			bal: func() cosmos.Uint {
+				return getAccBal(signer, asset)
+			},
+		},
+		{
+			name: "trade-alt-fee-on-deposit",
+			seed: func() {
+				asset = common.BTCAsset.GetTradeAsset()
+				seedPegged(mgr.TradeAccountManager().Deposit)
+			},
+			bal: func() cosmos.Uint {
+				tu, err := k.GetTradeUnit(ctx, asset)
+				c.Assert(err, IsNil)
+				c.Assert(tu.Asset.String(), Equals, asset.String())
+				return tu.Depth
+			},
+		},
+		{
+			name: "secured-alt-fee-on-deposit",
+			seed: func() {
+				asset = common.BTCAsset.GetSecuredAsset()
+				seedPegged(
+					func(ctx cosmos.Context, asset common.Asset, amount cosmos.Uint, owner cosmos.AccAddress, assetAddr common.Address, txid common.TxID) (cosmos.Uint, error) {
+						coin, err := mgr.SecuredAssetManager().Deposit(ctx, asset, amount, owner, assetAddr, txid)
+						return cosmos.NewUintFromBigInt(coin.Amount.BigInt()), err
+					},
+				)
+				fundAccountWith(c, ctx, k, signer, asset, cosmos.NewUint(10*common.One)) // fund with nami
+			},
+			bal: func() cosmos.Uint {
+				sa, err := k.GetSecuredAsset(ctx, asset)
+				c.Assert(err, IsNil)
+				c.Assert(sa.Asset.String(), Equals, asset.String())
+				return sa.Depth
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		c.Logf("running %s", tc.name)
+		setup()
+		tc.seed()
+
+		// -- Test swap - no rune in account - should succeed
+		pow10 := func(x uint64) uint64 {
+			result := uint64(1)
+			for range x {
+				result *= 10
+			}
+			return result
+		}
+		coins := common.Coins{common.NewCoin(asset, cosmos.NewUint(pow10(uint64(pool.Decimals))))}
+		runSwap(coins, IsNil, IsNil, "")
+		feeAsset := asset.GetLayer1Asset()
+
+		// -- Test staged pool - fee calculation & deposit ante should fail
+		pool.Status = PoolStaged
+		c.Assert(k.SetPool(ctx, pool), IsNil)
+		// calculate the alt native tx fee - should fail
+		fee, err := calculateAltNativeTxFee(ctx, k, feeAsset)
+		c.Assert(err, NotNil)
+		c.Assert(strings.Contains(err.Error(), "cannot provide alt-native tx fee (unavailable or empty)"), Equals, true)
+		c.Assert(fee.IsZero(), Equals, true)
+		// deposit ante - should fail
+		runSwap(coins, NotNil, NotNil, "insufficient funds")
+		// set pool back to available
+		pool.Status = PoolAvailable
+		c.Assert(k.SetPool(ctx, pool), IsNil)
+		fee, err = calculateAltNativeTxFee(ctx, k, feeAsset)
+		c.Assert(err, IsNil)
+
+		// -- Test spam protection
+		// swap out balance - 1,5 x of the tx fee in asset -> 0.5 x fee remains in account
+		toAddr = GetRandomTHORAddress()
+		bal := tc.bal()
+		swapOutAmt := bal.Sub(fee.MulUint64(3).QuoUint64(2)) // bal - 1.5 x fee
+		coins = common.Coins{common.NewCoin(asset, swapOutAmt)}
+		runSwap(coins, IsNil, IsNil, "") // should succeed
+		// 0 < amount left in account < fee
+		bal = tc.bal()
+		c.Assert(!bal.IsZero() && bal.LT(fee), Equals, true)
+		// now try swap the smallest unit of asset - should fail due to insufficient funds for tx fee
+		coins = common.Coins{common.NewCoin(asset, cosmos.OneUint())}
+		// ante should succeed (deduct the entire balance), swap should fail
+		runSwap(coins, IsNil, NotNil, "insufficient funds")
+		// the entire account balance was deducted
+		c.Assert(tc.bal().IsZero(), Equals, true)
+		// one more attempt – balance is zero, so ante should return error
+		ctx = ctx.WithTxBytes([]byte(common.RandHexString(32)))
+		runSwap(coins, NotNil, NotNil, "insufficient funds")
+	}
+}

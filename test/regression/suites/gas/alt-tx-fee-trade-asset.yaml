@@ -1,0 +1,117 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+# save cat rune balance
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_cat }}
+asserts:
+  - .balances[]|select(.denom=="rune")|.amount|tonumber == ${CAT_BAL=2500000000000}
+---
+# send away all fox rune - ensure no rune balance
+type: tx-send
+from_address: {{ addr_thor_fox }}
+to_address: {{ addr_thor_cat }}
+amount:
+  - amount: "2499998000000"
+    denom: "rune"
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# verify fox rune balance is zero
+########################################################################################
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - '[.balances[]|select(.denom=="rune")]|length == 0' # no rune
+---
+########################################################################################
+# deposit btc
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "10000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+      memo: "trade+:{{ addr_thor_fox }}"
+    block_height: 1
+    finalise_height: 1
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/trade/unit/BTC~BTC
+asserts:
+  - .asset == "BTC~BTC"
+  - .units|tonumber == 10000000
+  - .depth|tonumber == 10000000
+---
+type: check
+endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_fox }}
+asserts:
+  - .|length == 1
+  - .[0].asset == "BTC~BTC"
+  - .[0].units|tonumber == 10000000
+  - .[0].owner == "{{ addr_thor_fox }}"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs|length == 1
+  - '[.txs[0].result.events[]|select(.type == "trade_account_deposit")]|length == 1'
+  - .txs[0].result.events[]|select(.type == "trade_account_deposit")|.asset == "BTC~BTC"
+  - .txs[0].result.events[]|select(.type == "trade_account_deposit")|.amount == "10000000"
+  - .txs[0].result.events[]|select(.type == "trade_account_deposit")|.rune_address == "{{ addr_thor_fox }}"
+  - .txs[0].result.events[]|select(.type == "trade_account_deposit")|.asset_address == "{{ addr_btc_fox }}"
+---
+########################################################################################
+# swap trade asset BTC~BTC to rune - pay fee in BTC~BTC
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "${SWAP_AMT=1000000}"
+    asset: "BTC~BTC"
+memo: "=:r:{{ addr_thor_cat }}"
+---
+type: create-blocks
+count: 1
+---
+# verify cat rune balance has increased
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_cat }}
+asserts:
+  - .balances[]|select(.denom=="rune")|.amount|tonumber > ${CAT_BAL}
+---
+# verify fox rune balance is zero
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - '[.balances[]|select(.denom=="rune")]|length == 0' # no rune
+---
+## verify reserve rune fee via events (0.02 RUNE)
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - 100000 == ${PRECISION=100000} # 10 bps precision for RUNE (1e8)
+# verify that a coin_received event exists to the Reserve for the native tx fee (exact 0.02 RUNE)
+  - '.end_block_events | map(select(.type == "coin_received" and .receiver == "{{ addr_module_reserve }}" and ((.amount | sub("rune$";"") | tonumber) == ${GAS=2000000}))) | length == 1'
+# verify the matching fee end_block event amount
+  - '.end_block_events | map(select(.type == "fee" and (.coins | sub(" THOR.RUNE$";"") | tonumber) == ${GAS})) | length == 1'

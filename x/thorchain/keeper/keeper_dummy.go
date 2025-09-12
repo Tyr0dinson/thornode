@@ -1101,6 +1101,15 @@ func (k KVStoreDummy) GetReferenceMemoWindow(ctx cosmos.Context, _ common.Asset)
 
 func (k KVStoreDummy) SetReferenceMemoWindow(ctx cosmos.Context, _ common.Asset, _, _, _, _ int64) {}
 
+// Pending alt-native fee stubs
+func (k KVStoreDummy) AppendPendingAltNativeTxFeeEntry(ctx cosmos.Context, txid common.TxID, entry types.PendingAltNativeFeeEntry) {
+}
+func (k KVStoreDummy) GetPendingAltNativeTxFee(ctx cosmos.Context, txid common.TxID) types.PendingAltNativeFee {
+    return types.PendingAltNativeFee{}
+}
+func (k KVStoreDummy) ClearPendingAltNativeTxFee(ctx cosmos.Context, txid common.TxID)    {}
+func (k KVStoreDummy) GetPendingAltNativeTxFeeIterator(ctx cosmos.Context) cosmos.Iterator { return nil }
+
 func (k KVStoreDummy) GetSwapperCloutIterator(ctx cosmos.Context) cosmos.Iterator    { return nil }
 func (k KVStoreDummy) SetSwapperClout(ctx cosmos.Context, record SwapperClout) error { return kaboom }
 

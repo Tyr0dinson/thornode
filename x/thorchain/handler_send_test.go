@@ -1,9 +1,14 @@
 package thorchain
 
 import (
+	"strings"
+
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	cosmos "gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 
 	. "gopkg.in/check.v1"
 )
@@ -266,4 +271,187 @@ func (s *HandlerSendSuiteV87) TestBankSendEnabledGateInHandler(c *C) {
 	k.SetMimir(ctx, "BankSendEnabled", 1)
 	_, err = handler.Send(ctx, msg)
 	c.Assert(err, IsNil)
+}
+
+// helpers
+func fundAccountWith(c *C, ctx cosmos.Context, k keeper.Keeper, addr cosmos.AccAddress, asset common.Asset, amt cosmos.Uint) {
+	coin := common.NewCoin(asset, amt)
+	c.Assert(k.MintToModule(ctx, ModuleName, coin), IsNil)
+	c.Assert(k.SendFromModuleToAccount(ctx, ModuleName, addr, common.NewCoins(coin)), IsNil)
+}
+
+func isWithinTolerance(a, b cosmos.Uint, bps uint64) bool {
+	if a.Equal(b) {
+		return true
+	}
+	base := a
+	if b.GT(base) {
+		base = b
+	}
+	tol := base.Mul(cosmos.NewUint(bps)).Quo(cosmos.NewUint(10000))
+	var diff cosmos.Uint
+	if a.GT(b) {
+		diff = a.Sub(b)
+	} else {
+		diff = b.Sub(a)
+	}
+	return diff.LTE(tol)
+}
+
+func (s *HandlerSendSuiteV87) TestAltNativeTxFeeSend(c *C) {
+	// message factories to test both thor MsgSend and bank MsgSend
+	factories := []struct {
+		name string
+		make func(from, to cosmos.AccAddress, amt cosmos.Coins) cosmos.Msg
+		set  func(msg cosmos.Msg, amt cosmos.Coins) cosmos.Msg
+	}{
+		{
+			name: "thorchain.MsgSend",
+			make: func(from, to cosmos.AccAddress, amt cosmos.Coins) cosmos.Msg {
+				return &types.MsgSend{FromAddress: from, ToAddress: to, Amount: amt}
+			},
+			set: func(msg cosmos.Msg, amt cosmos.Coins) cosmos.Msg {
+				m := msg.(*types.MsgSend)
+				m.Amount = amt
+				return m
+			},
+		},
+		{
+			name: "banktypes.MsgSend",
+			make: func(from, to cosmos.AccAddress, amt cosmos.Coins) cosmos.Msg {
+				return &banktypes.MsgSend{FromAddress: from.String(), ToAddress: to.String(), Amount: amt}
+			},
+			set: func(msg cosmos.Msg, amt cosmos.Coins) cosmos.Msg {
+				m := msg.(*banktypes.MsgSend)
+				m.Amount = amt
+				return m
+			},
+		},
+	}
+
+	for _, f := range factories {
+		c.Log("case:", f.name)
+
+		ctx, k := setupKeeperForTest(c)
+		altNativeTxFeeAddedBps := uint64(max(0, k.GetConfigInt64(ctx, constants.AltNativeTxFeeAddedBps)))
+		altNativeTxFeeAddedBps = min(altNativeTxFeeAddedBps, 90000) // sanity cap: max 10x of the normal native tx fee
+
+		signer := GetRandomBech32Addr()
+		toAcc := GetRandomBech32Addr()
+		mgr := NewDummyMgrWithKeeper(k)
+		ad := AnteDecorator{keeper: k}
+		handler := NewSendHandler(mgr)
+
+		feeAsset := common.NAMI
+		fundAccountWith(c, ctx, k, signer, feeAsset, cosmos.NewUint(100*common.One))
+		getAccBal := func(acc cosmos.AccAddress, asset common.Asset) cosmos.Uint {
+			return cosmos.NewUintFromBigInt(k.GetBalance(ctx, acc).AmountOf(asset.Native()).BigInt())
+		}
+
+		// build initial message with 15 NAMI
+		sentAmt := cosmos.NewUint(15 * common.One)
+
+		tryMsg := func(m cosmos.Msg) cosmos.Uint {
+			// balances before
+			fromBefore := getAccBal(signer, feeAsset)
+			toBefore := getAccBal(toAcc, feeAsset)
+			poolBefore, err := k.GetPool(ctx, feeAsset)
+			c.Assert(err, IsNil)
+
+			// process
+			_, err = ad.anteHandleMessage(ctx, mgr.GetVersion(), m)
+			c.Assert(err, IsNil)
+			_, err = handler.Run(ctx, m)
+			c.Assert(err, IsNil)
+
+			// balances after
+			fromAfter := getAccBal(signer, feeAsset)
+			toAfter := getAccBal(toAcc, feeAsset)
+
+			// receiver gets exactly sent amount in NAMI
+			c.Assert(toAfter.String(), Equals, toBefore.Add(sentAmt).String())
+			// sender balance decreased by sent amount + alt-native fee
+			c.Assert(fromAfter.LT(fromBefore.Sub(sentAmt)), Equals, true)
+
+			// the alt-native fee valued in RUNE is ~= NativeTxFee within one NAMI unit
+			maxDiff := cosmos.NewUintFromBigInt(poolBefore.BalanceRune.Quo(poolBefore.BalanceAsset).BigInt())
+			feeInNami := fromBefore.Sub(sentAmt).Sub(fromAfter)
+			swapper, err := GetSwapper(k.GetVersion())
+			c.Assert(err, IsNil)
+			feeInRune := swapper.CalcAssetEmission(poolBefore.BalanceAsset, feeInNami, poolBefore.BalanceRune)
+			nativeFee := k.GetNativeTxFee(ctx)
+			nativeFee = nativeFee.MulUint64(altNativeTxFeeAddedBps + 10000).QuoUint64(10000)
+
+			inTol := nativeFee.Sub(maxDiff).LTE(feeInRune) && feeInRune.LTE(nativeFee.Add(maxDiff))
+			c.Assert(inTol, Equals, true)
+			return feeInNami
+		}
+
+		// pool: NAMI:RUNE = 1:200 (5,000:1,000,000)
+		pool := NewPool()
+		pool.Asset = feeAsset
+		pool.BalanceAsset = cosmos.NewUint(5_000 * common.One)
+		pool.BalanceRune = cosmos.NewUint(1_000_000 * common.One)
+		pool.Status = PoolAvailable
+		c.Assert(k.SetPool(ctx, pool), IsNil)
+
+		nativeCoins, err := common.Coins{common.NewCoin(feeAsset, sentAmt)}.Native()
+		c.Assert(err, IsNil)
+		msg := f.make(signer, toAcc, nativeCoins)
+
+		prevFeeInNami := tryMsg(msg)
+
+		// Change pool ratio to 1:100 and verify fee ~ doubles
+		pool.BalanceAsset = cosmos.NewUint(10_000 * common.One)
+		pool.BalanceRune = cosmos.NewUint(1_000_000 * common.One)
+		c.Assert(k.SetPool(ctx, pool), IsNil)
+
+		curFeeInNami := tryMsg(msg)
+
+		c.Assert(isWithinTolerance(curFeeInNami, prevFeeInNami.MulUint64(2), 10), Equals, true) // within 10 bps tolerance
+
+		// Disabled when pool unavailable
+		pool.Status = PoolStaged
+		c.Assert(k.SetPool(ctx, pool), IsNil)
+		_, err = ad.anteHandleMessage(ctx, mgr.GetVersion(), msg)
+		c.Assert(err, NotNil)
+		c.Assert(strings.Contains(err.Error(), "insufficient funds"), Equals, true)
+
+		// Tets spam protection
+		pool.Status = PoolAvailable
+		c.Assert(k.SetPool(ctx, pool), IsNil)
+		nativeFeeInNami, err := calculateAltNativeTxFee(ctx, k, feeAsset)
+		c.Assert(err, IsNil)
+		signer = GetRandomBech32Addr()
+		fundAccountWith(c, ctx, mgr.Keeper(), signer, feeAsset, nativeFeeInNami.MulUint64(3).QuoUint64(2)) // 1.5x fee
+		smallSend, err := common.Coins{common.NewCoin(feeAsset, cosmos.OneUint())}.Native()
+		c.Assert(err, IsNil)
+		toAcc = GetRandomBech32Addr()
+		msg = f.set(f.make(signer, toAcc, smallSend), smallSend)
+
+		_, err = ad.anteHandleMessage(ctx, mgr.GetVersion(), msg)
+		c.Assert(err, IsNil)
+		_, err = handler.Run(ctx, msg)
+		c.Assert(err, IsNil)
+		fromAfter := getAccBal(signer, feeAsset)
+		toAfter := getAccBal(toAcc, feeAsset)
+		c.Assert(!fromAfter.IsZero() && fromAfter.LT(nativeFeeInNami), Equals, true)
+		c.Assert(toAfter.String(), Equals, "1")
+
+		// Next run should revert and drain remaining NAMI; recipient unchanged
+		_, err = ad.anteHandleMessage(ctx, mgr.GetVersion(), msg)
+		c.Assert(err, IsNil)
+		_, err = handler.Run(ctx, msg)
+		c.Assert(err, NotNil)
+		c.Assert(strings.Contains(err.Error(), "insufficient funds"), Equals, true)
+		fromAfter = getAccBal(signer, feeAsset)
+		toAfter = getAccBal(toAcc, feeAsset)
+		c.Assert(fromAfter.IsZero(), Equals, true)
+		c.Assert(toAfter.String(), Equals, "1")
+
+		// One more time – balance is zero, so ante decorator should return error
+		_, err = ad.anteHandleMessage(ctx, mgr.GetVersion(), msg)
+		c.Assert(err, NotNil)
+		c.Assert(strings.Contains(err.Error(), "insufficient funds"), Equals, true)
+	}
 }

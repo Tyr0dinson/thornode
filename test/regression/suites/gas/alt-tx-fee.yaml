@@ -1,0 +1,204 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+# Create initial NAMI pool and balances needed by this test
+type: state
+genesis:
+  app_state:
+    bank:
+      balances:
+        # Give fox some NAMI to pay native gas and send
+        - address: {{ addr_thor_fox }}
+          coins:
+            - amount: "400000"
+              denom: thor.nami
+        - address: {{ addr_module_asgard }}
+          coins:
+            - amount: "1000000000"
+              denom: thor.nami
+            - amount: "10200000000000"
+              denom: rune
+    thorchain:
+      pools:
+        - LP_units: "100000000000"
+          asset: THOR.NAMI
+          # Depth ratio tuned so 0.02 RUNE ~ 200 NAMI (BalanceAsset/BalanceRune ~= 1/10000)
+          balance_asset: "1000000000"
+          balance_rune: "10000000000000"
+          decimals: "6"
+          pending_inbound_asset: "0"
+          pending_inbound_rune: "0"
+          status: Available
+          synth_units: "0"
+---
+type: create-blocks
+count: 1
+---
+# ensure no premium initially (0% added bps)
+type: tx-mimir
+key: AltNativeTxFeeAddedBps
+value: 0
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+# save cat rune balance
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_cat }}
+asserts:
+  - .balances[]|select(.denom=="rune")|.amount|tonumber == ${CAT_BAL=2500000000000}
+  - '[.balances[]|select(.denom=="thor.nami")]|length == 0' # no NAMI
+---
+# send away all fox rune - ensure no rune balance
+type: tx-send
+from_address: {{ addr_thor_fox }}
+to_address: {{ addr_thor_cat }}
+amount:
+  - amount: "2499998000000"
+    denom: "rune"
+---
+type: create-blocks
+count: 1
+---
+# save fox NAMI balance and check it has no rune
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - '[.balances[]|select(.denom=="rune")]|length == 0' # no rune
+  - .balances[]|select(.denom=="thor.nami")|.amount|tonumber == ${FOX_NAMI_BAL=400000}
+---
+# save reserve rune balance
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_module_reserve }}
+asserts:
+  - .balances[]|select(.denom=="rune")|.amount|tonumber == ${RES_BAL=35000000670474}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# send NAMI - pay fee in NAMI
+########################################################################################
+type: tx-send
+from_address: {{ addr_thor_fox }}
+to_address: {{ addr_thor_cat }}
+amount:
+  - amount: "${SEND_AMT=15000}"
+    denom: "thor.nami"
+---
+type: create-blocks
+count: 1
+---
+# verify cat NAMI balance
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_cat }}
+asserts:
+  - .balances[]|select(.denom=="thor.nami")|.amount|tonumber == ${SEND_AMT} # amount sent/received
+---
+# verify fox rune and NAMI balance
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - '[.balances[]|select(.denom=="rune")]|length == 0' # no rune
+  - .balances[]|select(.denom=="thor.nami")|.amount|tonumber == ${FOX_NAMI_BAL} - ${SEND_AMT} - ${GAS_IN_NAMI=200} # previous balance - sent amount - gas in NAMI (pool ratio 10:1)
+  - ${FOX_NAMI_BAL=384800} == 384800
+---
+# verify reserve rune fee via events (0.02 RUNE)
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - 100000 == ${PRECISION=100000} # 10 bps precision for RUNE (1e8)
+  - '((.txs[0].result.events | map(select(.type == "swap" and .memo == "")) | .[0].emit_asset | split(" ")[0] | tonumber) / ${PRECISION} | floor + 1) * ${PRECISION} == ${GAS=2000000}'
+  - '.txs[0].result.events | map(select(.type == "coin_received" and .receiver == "{{ addr_module_reserve }}" and (((.amount | sub("rune$";"") | tonumber) / ${PRECISION} | floor + 1) * ${PRECISION}) == ${GAS})) | length == 1'
+---
+########################################################################################
+# swap NAMI to RUNE - pay fee in NAMI
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "${SWAP_AMT=15000}"
+    asset: "THOR.NAMI"
+memo: "=:r:{{ addr_thor_cat }}"
+---
+type: create-blocks
+count: 1
+---
+# verify cat rune balance (increased)
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_cat }}
+asserts:
+  - .balances[]|select(.denom=="rune")|.amount|tonumber > ${CAT_BAL}
+---
+# verify fox rune and NAMI balance
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - '[.balances[]|select(.denom=="rune")]|length == 0' # no rune
+  - .balances[]|select(.denom=="thor.nami")|.amount|tonumber == ${FOX_NAMI_BAL} - ${SWAP_AMT} - ${GAS_IN_NAMI} # previous balance - swap amount - gas in NAMI
+---
+# verify reserve rune fee distribution (0.02 RUNE)
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - 100000 == ${PRECISION=100000} # 10 bps precision for RUNE (1e8)
+# Verify the fee-swap result is ~the expected 0.02 RUNE fee, and capture the actual amount
+  - '((.txs[0].result.events | map(select(.type == "swap" and .memo == "")) | .[0].emit_asset | split(" ")[0] | tonumber) / ${PRECISION} | floor + 1) * ${PRECISION} == ${GAS=2000000}'
+# Verify that a coin_received event exists for the full fee distribution to the Reserve, based on the actual fee swap result
+  - '.txs[0].result.events | map(select(.type == "coin_received" and .receiver == "{{ addr_module_reserve }}" and (((.amount | sub("rune$";"") | tonumber) / ${PRECISION} | floor + 1) * ${PRECISION}) == ${GAS})) | length == 1'
+---
+########################################################################################
+# Add premium 100% fee for using native gas fee
+########################################################################################
+type: tx-mimir
+key: AltNativeTxFeeAddedBps
+value: ${PREMIUM=10000} #100%
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+# capture fox NAMI balance after first section to use as new baseline
+# save fox NAMI balance
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances[]|select(.denom=="thor.nami")|.amount|tonumber == ${FOX_NAMI_BAL=369600}
+---
+########################################################################################
+# swap NAMI to RUNE - pay fee in NAMI
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "${SWAP_AMT=15000}"
+    asset: "THOR.NAMI"
+memo: "=:r:{{ addr_thor_cat }}"
+---
+type: create-blocks
+count: 1
+---
+# verify cat rune balance (increased)
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_cat }}
+asserts:
+  - .balances[]|select(.denom=="rune")|.amount|tonumber > ${CAT_BAL}
+---
+# verify fox rune and NAMI balance
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - '[.balances[]|select(.denom=="rune")]|length == 0' # no rune
+  - .balances[]|select(.denom=="thor.nami")|.amount|tonumber == ${FOX_NAMI_BAL} - ${SWAP_AMT} - ${GAS_IN_NAMI} * (10000 + ${PREMIUM}) / 10000 # previous balance - swap amount - gas in NAMI with premium bps
+---
+# verify reserve rune fee distribution with premium
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - 100000 == ${PRECISION=100000} # 10 bps precision for RUNE (1e8)
+# Verify the fee-swap result is ~the expected 0.02 RUNE fee (with premium), and capture the actual amount
+  - '((.txs[0].result.events | map(select(.type == "swap" and .memo == "")) | .[0].emit_asset | split(" ")[0] | tonumber) / ${PRECISION} | floor + 1) * ${PRECISION} == ${GAS=2000000} * (10000 + ${PREMIUM}) / 10000'
+# Verify that a coin_received event exists for the full fee distribution to the Reserve, based on the actual fee swap result
+  - '.txs[0].result.events | map(select(.type == "coin_received" and .receiver == "{{ addr_module_reserve }}" and (((.amount | sub("rune$";"") | tonumber) / ${PRECISION} | floor + 1) * ${PRECISION}) == ((${GAS} * (10000 + ${PREMIUM}) / 10000) | floor))) | length == 1'

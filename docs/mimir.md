@@ -258,6 +258,8 @@ Operational notes:
 - `Ragnarok-<Asset>`#: Ragnaroks a specific pool
 - `BankSendEnabled`: Enable/Disable cosmos bank send messages
 - `ObservationDelayFlexibility`\*: Number of blocks of flexibility for a validator to get their slash points taken off for making an observation
+- `AltNativeTxFeeEnabled`: Enable/disable gas fee payment in native assets
+- `AltNativeTxFeeAddedBps`: Additional premium basis points added to the base network fee when paying with a native asset instead of RUNE; eg. 0 = no premium (gas = 0.02 RUNE in asset), 5000 = 50% premium (0.03 RUNE)
 
 ### Router Upgrading (DO NOT TOUCH!)
 

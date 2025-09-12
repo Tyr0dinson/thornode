@@ -1,0 +1,22 @@
+syntax = "proto3";
+package types;
+
+option go_package = "gitlab.com/thorchain/thornode/v3/x/thorchain/types";
+//option (gogoproto.goproto_stringer_all) = false;
+option (gogoproto.stringer_all)         = false;
+option (gogoproto.goproto_getters_all) = false;
+
+import "gogoproto/gogo.proto";
+import "common/common.proto";
+
+// PendingAltNativeFeeEntry stores a pending alt-native fee entry.
+message PendingAltNativeFeeEntry {
+  bytes signer = 1 [(gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress"];
+  common.Coin coin = 2 [(gogoproto.nullable) = false];
+  bool insufficient = 3;
+}
+
+// PendingAltNativeFee stores pending alt-native fee entries keyed by txid.
+message PendingAltNativeFee {
+    repeated PendingAltNativeFeeEntry entries = 1 [(gogoproto.nullable) = false];
+}

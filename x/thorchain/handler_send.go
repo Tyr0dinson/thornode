@@ -5,9 +5,12 @@ import (
 	"fmt"
 	"strings"
 
+	"cosmossdk.io/errors"
 	math "cosmossdk.io/math"
 	"github.com/blang/semver"
+	tmtypes "github.com/cometbft/cometbft/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	se "github.com/cosmos/cosmos-sdk/types/errors"
 	"github.com/cosmos/cosmos-sdk/x/bank/types"
 	bank "github.com/cosmos/cosmos-sdk/x/bank/types"
 
@@ -15,6 +18,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
+	stypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 var _ types.MsgServer = (*BankSendHandler)(nil)
@@ -169,7 +173,101 @@ func SendAnteHandler(ctx cosmos.Context, v semver.Version, k keeper.Keeper, m sd
 	if err != nil {
 		return ctx, err
 	}
-	return ctx, k.DeductNativeTxFeeFromAccount(ctx, msg.GetSigners()[0])
+	return ctx, deductNativeTxFeeFromAccount(ctx, v, k, msg.Amount, msg.GetSigners()[0], msg)
+}
+
+func deductNativeTxFeeFromAccount(ctx cosmos.Context, v semver.Version, k keeper.Keeper, coins cosmos.Coins, signer cosmos.AccAddress, m sdk.Msg) error {
+	switch {
+	case v.GTE(semver.MustParse("3.10.0")):
+		return deductNativeTxFeeFromAccountV3_10_0(ctx, v, k, coins, signer, m)
+	default:
+		return k.DeductNativeTxFeeFromAccount(ctx, signer)
+	}
+}
+
+func deductNativeTxFeeFromAccountV3_10_0(ctx cosmos.Context, v semver.Version, k keeper.Keeper, csCoins cosmos.Coins, signer cosmos.AccAddress, m sdk.Msg) error {
+	nativeTxFee := k.GetNativeTxFee(ctx)
+	nativeTxFeeCoins, err := common.NewCoins(common.NewCoin(common.RuneNative, nativeTxFee)).Native()
+	if err != nil {
+		return fmt.Errorf("fail to convert native tx fee to sdk coins: %w", err)
+	}
+	// If the sender has enough RUNE to cover the fee, deduct it and return
+	if k.HasCoins(ctx, signer, nativeTxFeeCoins) {
+		return k.DeductNativeTxFeeFromAccount(ctx, signer)
+	}
+
+	// --- Alt native tx fee processing ---
+	altNativeTxFeeEnabled := k.GetConfigInt64(ctx, constants.AltNativeTxFeeEnabled)
+	if altNativeTxFeeEnabled <= 0 {
+		return se.ErrInsufficientFunds
+	}
+
+	// Verify account has any balance to cover alt native tx fee
+	var coins common.Coins
+	switch msg := m.(type) {
+	case *MsgSend:
+		if csCoins == nil { // sanity check - should never happen
+			return se.ErrInsufficientFunds
+		}
+		coins = csCoinsToCoins(csCoins)
+	case *MsgDeposit:
+		coins = msg.Coins
+	default:
+		return se.ErrInsufficientFunds
+	}
+	asset := coins[0].Asset
+	balanceCsCoins := k.GetBalance(ctx, signer)
+	if len(coins) == 0 || len(balanceCsCoins) == 0 && !asset.IsTradeAsset() {
+		// if no balance && not a trade asset, account can't pay fee
+		return se.ErrInsufficientFunds
+	}
+
+    feeCoin, err := fetchAltNativeTxFeeCoin(ctx, k, coins)
+	if err != nil {
+		return errors.Wrapf(se.ErrInsufficientFunds, "fail to fetch alt native tx fee coins (%s)", err)
+	}
+
+	// Verify account has enough balance to cover alt native tx fee
+	insufficient := false
+	var balanceFeeCoin cosmos.Uint
+	// in case of trade asset, fetch the balance from the trade account
+	switch {
+	case asset.IsTradeAsset():
+		balanceFeeCoin = getTradeAssetBalanceOf(ctx, k, coins[0].Asset, signer)
+	case asset.IsSecuredAsset():
+		balanceFeeCoin = getSecuredAssetBalanceOf(ctx, k, coins[0].Asset, signer)
+	default:
+		balanceFeeCoin = csCoinsToCoins(balanceCsCoins).GetCoin(feeCoin.Asset).Amount
+	}
+	if balanceFeeCoin.IsZero() {
+		// no balance of the asset to pay alt native tx fee
+		return se.ErrInsufficientFunds
+	}
+	if balanceFeeCoin.LT(feeCoin.Amount) {
+		// Not enough balance to cover alt native tx fee
+		// Spam protection: If a wallet cannot pay the full native tx fee,
+		// its entire remaining asset balance is confiscated and
+		// sent to the reserve as a spam deterrent.
+		// The message handler will fail.
+		// Use whatever balance is available
+		feeCoin.Amount = balanceFeeCoin
+		insufficient = true
+	}
+
+    // record pending alt-native fee keyed by txid with support for multiple eligible messages
+	hash := tmtypes.Tx(ctx.TxBytes()).Hash()
+	txID, err := common.NewTxID(fmt.Sprintf("%X", hash))
+	if err != nil {
+		return errors.Wrapf(se.ErrInsufficientFunds, "fail to create tx hash from `%X` (%s)", hash, err)
+	}
+	altNativeFeeEntry := stypes.PendingAltNativeFeeEntry{
+		Signer:       signer,
+		Coin:         feeCoin,
+		Insufficient: insufficient,
+	}
+    k.AppendPendingAltNativeTxFeeEntry(ctx, txID, altNativeFeeEntry)
+
+	return nil
 }
 
 func MsgSendValidate(ctx cosmos.Context, mgr Manager, m sdk.Msg) error {
@@ -233,6 +331,11 @@ func MsgSendHandle(ctx cosmos.Context, mgr Manager, m sdk.Msg) (*cosmos.Result, 
 		return nil, err
 	}
 
+    // Settle any pending alt-native tx fee at the start (settle from signer)
+    if err := settlePendingAltNativeTxFee(ctx, mgr); err != nil {
+        return nil, err
+    }
+
 	k := mgr.Keeper()
 
 	if k.IsChainHalted(ctx, common.THORChain) {
@@ -251,6 +354,5 @@ func MsgSendHandle(ctx cosmos.Context, mgr Manager, m sdk.Msg) (*cosmos.Result, 
 	} else if err := k.SendCoins(ctx, msg.FromAddress, msg.ToAddress, msg.Amount); err != nil {
 		return nil, err
 	}
-
 	return &cosmos.Result{}, nil
 }
