@@ -10,6 +10,39 @@ import (
 )
 
 ////////////////////////////////////////////////////////////////////////////////////////
+// MemolessSwaps
+////////////////////////////////////////////////////////////////////////////////////////
+
+func MemolessSwaps() *Actor {
+	a := NewActor("Memoless Swaps")
+
+	// TODO: remove after bifrost fixed to fallback to constants
+	a.Append(core.NewMimirActor("MemolessTxnTTL", 100))
+	a.Append(core.NewMimirActor("MemolessTxnStartRef", 10001))
+	a.Append(core.NewMimirActor("MemolessTxnEndRef", 99999))
+
+	// memoless swaps
+	simChains1e8 := []common.Chain{}
+	for _, chain := range SimChains {
+		if chain.GetGasAssetDecimal() == 8 {
+			simChains1e8 = append(simChains1e8, chain)
+		}
+	}
+	for _, t := range []core.MemolessType{core.MemolessTypeHash, core.MemolessTypeAmount, core.MemolessTypeHash} {
+		for i, pool := range simChains1e8 {
+			// choose a random (other) pool to swap to
+			j := rand.Intn(len(SimChains))
+			for j == i {
+				j = rand.Intn(len(SimChains))
+			}
+			a.Children[core.NewSwapMemolessActor(pool.GetGasAsset(), SimChains[j].GetGasAsset(), t)] = true
+		}
+	}
+
+	return a
+}
+
+////////////////////////////////////////////////////////////////////////////////////////
 // Swaps
 ////////////////////////////////////////////////////////////////////////////////////////
 

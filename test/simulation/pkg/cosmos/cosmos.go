@@ -2,6 +2,7 @@ package cosmos
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"time"
 
@@ -259,6 +260,13 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 	}
 
 	return txBytes, nil
+}
+
+func (c *Client) HashTx(signed []byte) (string, error) {
+	// For Cosmos transactions, we can calculate the hash directly from the bytes
+	// The transaction hash is the SHA256 hash of the signed transaction bytes
+	hash := fmt.Sprintf("%X", sha256.Sum256(signed))
+	return hash, nil
 }
 
 func (c *Client) BroadcastTx(signed []byte) (string, error) {

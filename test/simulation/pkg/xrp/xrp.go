@@ -159,6 +159,30 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 	return hex.DecodeString(txHex)
 }
 
+func (c *Client) HashTx(signed []byte) (string, error) {
+	txHex := hex.EncodeToString(signed)
+
+	// decode to get the transaction hash
+	flatTx, err := binarycodec.Decode(txHex)
+	if err != nil {
+		return "", fmt.Errorf("fail to decode tx hex: %w", err)
+	}
+
+	// calculate the hash
+	encodedTx, err := binarycodec.EncodeForSigningClaim(flatTx)
+	if err != nil {
+		return "", fmt.Errorf("fail to encode for hash: %w", err)
+	}
+
+	// extract just the transaction hash from XRPL library
+	hashBytes, err := hex.DecodeString(encodedTx)
+	if err != nil {
+		return "", fmt.Errorf("fail to decode hash hex: %w", err)
+	}
+
+	return hex.EncodeToString(hashBytes[:32]), nil
+}
+
 func (c *Client) BroadcastTx(signed []byte) (string, error) {
 	txBlob := hex.EncodeToString(signed)
 	resp, err := c.rpcClient.SubmitAndWait(txBlob, true)

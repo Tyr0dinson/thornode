@@ -147,6 +147,15 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 	return txBytes, nil
 }
 
+func (c *Client) HashTx(signed []byte) (string, error) {
+	var tronTx api.Transaction
+	if err := json.Unmarshal(signed, &tronTx); err != nil {
+		return "", fmt.Errorf("fail to unmarshal tron tx: %w", err)
+	}
+
+	return tronTx.TxId, nil
+}
+
 func (c *Client) BroadcastTx(signed []byte) (string, error) {
 	response, err := c.api.BroadcastTransaction(signed)
 	if err != nil {

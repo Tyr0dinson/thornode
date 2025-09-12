@@ -2,6 +2,8 @@ package solana
 
 import (
 	"encoding/base64"
+	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"time"
 
@@ -141,6 +143,38 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 
 func (c *Client) sign(msg []byte) ([]byte, error) {
 	return c.signer.Sign(msg), nil
+}
+
+func (c *Client) HashTx(signed []byte) (string, error) {
+	// Parse the serialized transaction to extract the first signature
+	// Format: [signature_count][signature1][signature2]...[message_data]
+
+	if len(signed) == 0 {
+		return "", fmt.Errorf("empty transaction data")
+	}
+
+	// Read the signature count using varint decoding
+	sigCount, bytesRead := binary.Uvarint(signed)
+	if bytesRead <= 0 {
+		return "", fmt.Errorf("failed to read signature count")
+	}
+
+	if sigCount == 0 {
+		return "", fmt.Errorf("transaction has no signatures")
+	}
+
+	// Each signature is 64 bytes
+	signatureSize := 64
+	expectedMinSize := bytesRead + int(sigCount)*signatureSize
+	if len(signed) < expectedMinSize {
+		return "", fmt.Errorf("transaction data too short for signatures")
+	}
+
+	// Extract the first signature (64 bytes after the signature count)
+	firstSignature := signed[bytesRead : bytesRead+signatureSize]
+
+	// Return the first signature as hex string (transaction hash in Solana)
+	return hex.EncodeToString(firstSignature), nil
 }
 
 func (c *Client) BroadcastTx(signed []byte) (string, error) {

@@ -32,6 +32,9 @@ type LiteChainClient interface {
 	// SignTx returns the signed transaction.
 	SignTx(tx SimTx) ([]byte, error)
 
+	// HashTx returns the hash of the signed transaction.
+	HashTx([]byte) (string, error)
+
 	// BroadcastTx broadcasts the transaction and returns the hash.
 	BroadcastTx([]byte) (string, error)
 }
