@@ -956,21 +956,21 @@ func (s *HandlerObservedTxInSuite) TestMemolessTxns(c *C) {
 	chain := common.BTCChain
 
 	// Test when memo is not empty
-	memo := handler.fetchMemo(ctx, chain, "myMemo")
+	memo := fetchMemo(ctx, handler.mgr, chain, "myMemo")
 	c.Check(memo, check.Equals, "myMemo", check.Commentf("Expected to return the same memo when memo is not empty"))
 
 	// Test when amount length is less than constants.MemolessTxnRefLength
-	memo = handler.fetchMemo(ctx, chain, "")
+	memo = fetchMemo(ctx, handler.mgr, chain, "")
 	c.Check(memo, check.Equals, "", check.Commentf("Expected to return empty memo when memo is empty"))
 
 	// Test when reference memo is not expired, happy path
 	refMemo := NewReferenceMemo(chain, "the memo", "30000", 10)
 	mgr.Keeper().SetReferenceMemo(ctx, refMemo)
-	memo = handler.fetchMemo(ctx, chain, "r:30000")
+	memo = fetchMemo(ctx, handler.mgr, chain, "r:30000")
 	c.Check(memo, check.Equals, "the memo", check.Commentf("Expected to return reference memo when it's not expired"))
 
 	// Test when reference memo is expired
 	ctx = ctx.WithBlockHeight(25)
-	memo = handler.fetchMemo(ctx, chain, "r:30000")
+	memo = fetchMemo(ctx, handler.mgr, chain, "r:30000")
 	c.Check(memo, check.Equals, "", check.Commentf("Expected to return empty memo when reference memo is expired"))
 }

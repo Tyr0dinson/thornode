@@ -128,6 +128,26 @@ func ensureVaultAndGetTxInVoter(ctx cosmos.Context, vaultPubKey common.PubKey, t
 	return voter, nil
 }
 
+func fetchMemo(ctx cosmos.Context, mgr Manager, chain common.Chain, memo string) string {
+	mem, _ := ParseMemo(mgr.GetVersion(), memo) // ignore err
+	if mem.GetType() == TxReferenceReadMemo {
+		m, ok := mem.(ReferenceReadMemo)
+		if !ok {
+			return memo
+		}
+		refMemo, err := mgr.Keeper().GetReferenceMemo(ctx, chain, m.Reference)
+		if err != nil {
+			ctx.Logger().Error("fail to get tx in voter", "error", err)
+		}
+		ttl := mgr.Keeper().GetConfigInt64(ctx, constants.MemolessTxnTTL)
+		if !refMemo.IsExpired(ctx.BlockHeight(), ttl) {
+			return refMemo.Memo
+		}
+		return ""
+	}
+	return memo
+}
+
 // handleObservedTxInQuorum - will process the observed tx in quorum.
 // used by both MsgObservedTxIn and MsgObservedTxInQuorum after processing
 // attestation(s).
@@ -164,6 +184,11 @@ func handleObservedTxInQuorum(
 	if err != nil {
 		ctx.Logger().Error("fail to get vault", "error", err)
 		return nil
+	}
+
+	// add memo for memoless transactions
+	if len(tx.Tx.Coins) > 0 {
+		tx.Tx.Memo = fetchMemo(ctx, mgr, tx.Tx.Chain, tx.Tx.Memo)
 	}
 
 	voter.Tx.Tx.Memo = tx.Tx.Memo

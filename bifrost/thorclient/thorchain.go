@@ -893,7 +893,7 @@ func (b *thorchainBridge) GetReferenceMemo(chain common.Chain, ref string) (stri
 	if s != http.StatusOK {
 		return "", fmt.Errorf("unexpected status code: %d", s)
 	}
-	var r stypes.ReferenceMemo
+	var r openapi.ReferenceMemoResponse
 	if err := json.Unmarshal(buf, &r); err != nil { // nolint
 		return "", fmt.Errorf("fail to unmarshal reference memo from json: %w", err)
 	}
@@ -910,7 +910,7 @@ func (b *thorchainBridge) GetReferenceMemoByTxHash(hash string) (string, error) 
 	if s != http.StatusOK {
 		return "", fmt.Errorf("unexpected status code: %d", s)
 	}
-	var r stypes.ReferenceMemo
+	var r openapi.ReferenceMemoResponse
 	if err := json.Unmarshal(buf, &r); err != nil { // nolint
 		return "", fmt.Errorf("fail to unmarshal reference memo from json: %w", err)
 	}

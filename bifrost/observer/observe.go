@@ -26,7 +26,6 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
-	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	stypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
@@ -678,6 +677,7 @@ func (o *Observer) getMemo(chain common.Chain, tx types.TxInItem, ttl, start, en
 		o.logger.Error().Err(err).Msg("fail to fetch reference memo via tx hash")
 	}
 	if len(ref) > 0 {
+		o.logger.Info().Str("memo", ref).Str("txId", tx.Tx).Msg("found reference memo via tx hash")
 		return ref
 	}
 
@@ -685,18 +685,21 @@ func (o *Observer) getMemo(chain common.Chain, tx types.TxInItem, ttl, start, en
 	if amtOverDust.IsZero() {
 		return ""
 	}
-	st := common.SafeSub(cosmos.SafeUintFromInt64(start), dustThreshold)
-	en := common.SafeSub(cosmos.SafeUintFromInt64(end), dustThreshold)
 
-	if amtOverDust.GTE(st) && amtOverDust.LTE(en) {
-		// this transaction appears to be using a memoless transaction
-		ref2, err2 := o.thorchainBridge.GetReferenceMemo(asset.GetChain(), amtOverDust.String())
-		if err2 != nil {
-			o.logger.Error().Err(err2).Msg("fail to fetch reference memo")
-		}
-		return ref2
+	refAmt := amtOverDust.Uint64() % uint64(end-start+1)
+
+	ref2, err2 := o.thorchainBridge.GetReferenceMemo(asset.GetChain(), fmt.Sprintf("%d", refAmt))
+	if err2 != nil {
+		o.logger.Error().Err(err2).Msg("fail to fetch reference memo")
 	}
-	return ""
+	if len(ref2) > 0 {
+		o.logger.Info().
+			Str("memo", ref2).
+			Str("txId", tx.Tx).
+			Uint64("refAmt", refAmt).
+			Msg("found reference memo via amount")
+	}
+	return ref2
 }
 
 // getThorchainTxIns convert to the type thorchain expected

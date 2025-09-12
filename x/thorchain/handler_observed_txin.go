@@ -7,7 +7,6 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
-	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 )
 
@@ -68,11 +67,6 @@ func (h ObservedTxInHandler) handle(ctx cosmos.Context, msg MsgObservedTxIn) (*c
 			continue
 		}
 
-		// add memo for memoless transactions
-		if len(tx.Tx.Coins) > 0 {
-			tx.Tx.Memo = h.fetchMemo(ctx, tx.Tx.Chain, tx.Tx.Memo)
-		}
-
 		voter, isQuorum := processTxInAttestation(ctx, h.mgr, voter, activeNodeAccounts, tx, msg.Signer, true)
 		if err := handleObservedTxInQuorum(ctx, h.mgr, msg.Signer, activeNodeAccounts, handler, tx, voter, voter.Tx.GetSigners(), isQuorum); err != nil {
 			return nil, wrapError(ctx, err, "fail to handle observed tx in quorum")
@@ -121,24 +115,4 @@ func addSwapDirect(ctx cosmos.Context, k keeper.Keeper, msg MsgSwap) {
 // succeeds, regardless of the success of the transaction.
 func ObservedTxInAnteHandler(ctx cosmos.Context, v semver.Version, k keeper.Keeper, msg MsgObservedTxIn) (cosmos.Context, error) {
 	return activeNodeAccountsSignerPriority(ctx, k, msg.GetSigners())
-}
-
-func (h ObservedTxInHandler) fetchMemo(ctx cosmos.Context, chain common.Chain, memo string) string {
-	mem, _ := ParseMemo(h.mgr.GetVersion(), memo) // ignore err
-	if mem.GetType() == TxReferenceReadMemo {
-		m, ok := mem.(ReferenceReadMemo)
-		if !ok {
-			return memo
-		}
-		refMemo, err := h.mgr.Keeper().GetReferenceMemo(ctx, chain, m.Reference)
-		if err != nil {
-			ctx.Logger().Error("fail to get tx in voter", "error", err)
-		}
-		ttl := h.mgr.Keeper().GetConfigInt64(ctx, constants.MemolessTxnTTL)
-		if !refMemo.IsExpired(ctx.BlockHeight(), ttl) {
-			return refMemo.Memo
-		}
-		return ""
-	}
-	return memo
 }
