@@ -2644,10 +2644,6 @@ func swapAltNativeTxFee(ctx cosmos.Context, mgr Manager, from common.Address, fe
 // into RUNE and crediting the Reserve. Returns ErrInsufficientFunds if any
 // entry was flagged insufficient after settlement.
 func settlePendingAltNativeTxFee(ctx cosmos.Context, mgr Manager) error {
-	// alt-native tx fee only supported from v3.10.0
-	if mgr.GetVersion().LT(semver.MustParse("3.10.0")) {
-		return nil
-	}
 	// derive txid key
 	hash := tmtypes.Tx(ctx.TxBytes()).Hash()
 	txID, err := common.NewTxID(fmt.Sprintf("%X", hash))
