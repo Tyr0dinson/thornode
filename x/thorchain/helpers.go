@@ -788,7 +788,7 @@ func getAvailablePoolsRune(ctx cosmos.Context, keeper keeper.Keeper) (Pools, cos
 		if !pool.IsAvailable() {
 			continue
 		}
-		if pool.Asset.IsNative() {
+		if pool.Asset.IsNative() && !pool.Asset.IsWhitelisted() {
 			continue
 		}
 		if pool.BalanceRune.IsZero() {

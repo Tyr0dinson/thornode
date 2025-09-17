@@ -1,0 +1,170 @@
+########################################################################################
+# Test THOR.RUJI swap to USDC and verify RUJI pool receives its share of fees
+########################################################################################
+
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-usdc-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Enable WASM and deploy RUJI contract
+########################################################################################
+type: tx-mimir
+key: WasmPermissionless
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-store-code
+sender: {{ addr_thor_dog }}
+wasm_file: "mint.wasm"
+gas: 2000000
+---
+type: create-blocks
+count: 1
+---
+type: tx-instantiate-contract
+code_id: 1
+msg: { "id": "ruji", "amount": "10000000000000000", "metadata": { "description": "Rujira Token", "display": "RUJI", "name": "Rujira", "symbol": "RUJI", "uri": "https://rujira.network" }}
+label: "ruji"
+sender: {{ addr_thor_dog }}
+gas: 100000
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_dog }}
+asserts:
+  - .balances|length == 2
+  - .balances[0].denom == "rune"
+  - .balances[0].amount == "5000000000000"
+  - .balances[1].denom == "x/ruji"
+  - .balances[1].amount == "10000000000000000"
+---
+########################################################################################
+# Create RUJI/RUNE pool
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_dog }}
+coins:
+  - amount: "1000000000000000"
+    asset: "THOR.RUJI"
+memo: "ADD:THOR.RUJI:{{ addr_thor_dog }}"
+---
+type: create-blocks
+count: 1
+---
+type: tx-deposit
+signer: {{ addr_thor_dog }}
+coins:
+  - amount: "1000000000000"
+    asset: "rune"
+memo: "ADD:THOR.RUJI:{{ addr_thor_dog }}"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/THOR.RUJI
+asserts:
+  - .status == "Available"
+  - .balance_asset == "1000000000000000"
+  - .balance_rune == "1000000000000"
+  - .pool_units == "1000000000000"
+  - .LP_units == "1000000000000"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 4  # BTC, ETH, USDC, and RUJI pools
+---
+########################################################################################
+# Swap THOR.RUJI to ETH.USDC (double swap through RUNE)
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_dog }}
+coins:
+  - amount: "100000000000000"  # 0.1 of total RUJI supply
+    asset: "THOR.RUJI"
+memo: "SWAP:ETH.USDC-0X9999999999999999999999999999999999999999:{{ addr_eth_fox }}::{{ observe_txid 100 }}"
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Check that the swap was successful
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - length == 1
+  - .[0].coin.asset == "ETH.USDC-0X9999999999999999999999999999999999999999"
+  - .[0].to_address == "{{ addr_eth_fox }}"
+---
+########################################################################################
+# Check rewards event includes RUJI pool
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  # Check that rewards event exists and contains both pools
+  - .. | select(.type? == "rewards") | has("THOR.RUJI") # RUJI pool should receive rewards
+  - .. | select(.type? == "rewards") | has("ETH.USDC-0X9999999999999999999999999999999999999999") # USDC pool should receive rewards
+  - .. | select(.type? == "rewards")["THOR.RUJI"] | tonumber > 0 # RUJI pool rewards should be positive
+  - .. | select(.type? == "rewards")["ETH.USDC-0X9999999999999999999999999999999999999999"] | tonumber > 0 # USDC pool rewards should be positive
+  # Check that swap events occurred for both pools
+  - .|[..|select(.type?=="swap")] | length == 2 # Should have 2 swap events (RUJI->RUNE, RUNE->USDC)
+  - .|[..|select(.type?=="swap" and .pool=="THOR.RUJI")] | length == 1
+  - .|[..|select(.type?=="swap" and .pool=="ETH.USDC-0X9999999999999999999999999999999999999999")] | length == 1
+---
+########################################################################################
+# Observe the outbound to complete the swap
+########################################################################################
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 100 }}'
+    chain: ETH
+    from_address: {{ addr_eth_dog }}
+    to_address: {{ addr_eth_fox }}
+    coins:
+      - amount: "8000000000"  # Approximate amount after fees
+        asset: "ETH.USDC-0X9999999999999999999999999999999999999999"
+        decimals: 6
+    gas:
+      - amount: "960000"
+        asset: "ETH.ETH"
+    memo: "OUT:{{ native_txid -2 }}"
+  block_height: 2
+  finalise_height: 2
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+########################################################################################
+# Final check: Verify pool balances changed correctly
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/pool/THOR.RUJI
+asserts:
+  - .balance_asset|tonumber > 1000000000000000  # Asset increased (received RUJI)
+  - .balance_rune|tonumber < 1000000000000     # Rune decreased (swapped out)
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/ETH.USDC-0X9999999999999999999999999999999999999999
+asserts:
+  - .balance_asset|tonumber < 100000000000  # USDC decreased (swapped out)
+  - .balance_rune|tonumber > 100000000000   # Rune increased (swapped in)
