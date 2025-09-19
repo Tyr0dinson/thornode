@@ -139,11 +139,11 @@
           "address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
           "coins": [
             {
-              "amount": "4859798781317",
+              "amount": "4859989706552",
               "denom": "rune"
             },
             {
-              "amount": "9951842999376683",
+              "amount": "9951842993269322",
               "denom": "x/ruji"
             }
           ]
@@ -152,11 +152,11 @@
           "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
           "coins": [
             {
-              "amount": "129783830370",
+              "amount": "129975797381",
               "denom": "rune"
             },
             {
-              "amount": "48157000623317",
+              "amount": "48157006730678",
               "denom": "x/ruji"
             }
           ]
@@ -165,7 +165,7 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "35010419388313",
+              "amount": "35010015560252",
               "denom": "rune"
             }
           ]
@@ -192,7 +192,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "4999998000000",
+              "amount": "5000018935815",
               "denom": "rune"
             }
           ]
@@ -288,8 +288,10 @@
         }
       ],
       "network": {
-        "bond_reward_rune": "0",
-        "total_bond_units": "0"
+        "LPIncomeSplit": "9740",
+        "NodeIncomeSplit": "260",
+        "bond_reward_rune": "20935815",
+        "total_bond_units": "4"
       },
       "network_fees": [],
       "nodeMimirs": [
@@ -322,8 +324,8 @@
         {
           "LP_units": "125000000000",
           "asset": "THOR.RUJI",
-          "balance_asset": "48157000623317",
-          "balance_rune": "129783830370",
+          "balance_asset": "48157006730678",
+          "balance_rune": "129975797381",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
           "status": "Available",
@@ -345,7 +347,7 @@
         {
           "address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
           "reclaimed": "0",
-          "score": "399388359",
+          "score": "399386683",
           "spent": "0"
         }
       ],

@@ -463,7 +463,7 @@ asserts:
   - .[0]|.debt_issued == "${DEBT_ISSUED}"
   - .[0]|.owner == "{{ addr_btc_fox }}"
   - .[0]|.collateral_withdrawn == "${INITIAL_COLLATERAL_DEPOSITED}" # should now be fully repaid
-  - .[0]|.debt_repaid == "${DEBT_REPAID=4684542245}" # over repaid
+  - .[0]|.debt_repaid == "${DEBT_REPAID=495027457}" # over repaid
   - ${DEBT_REPAID} > ${DEBT_ISSUED}
   - ${DEBT_REPAID} > ${DEBT_ISSUED} * 4 # (Greatly over-repaid.)
 ---
@@ -548,8 +548,8 @@ type: check
 endpoint: http://localhost:1317/thorchain/pool/btc.btc/borrowers
 asserts:
   - length == 1
-  - .[0].collateral_deposited == "1484310"
-  - .[0].debt_issued == "5173622245"
+  - .[0].collateral_deposited == "1484311"
+  - .[0].debt_issued == "5173522245"
   - .[0].owner == "{{ addr_btc_fox }}"
   - .[0].collateral_withdrawn == "${INITIAL_COLLATERAL_DEPOSITED}"
   - .[0].debt_repaid == "${DEBT_REPAID}"
@@ -558,7 +558,7 @@ type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 1
-  - .balances[]|select(.denom == "rune").amount == "${AFTER_BALANCE=2503846256170}"
+  - .balances[]|select(.denom == "rune").amount == "${AFTER_BALANCE=2503846171422}"
   - ${AFTER_BALANCE} - ${INITIAL_BALANCE} == ${BALANCE_DIFFERENCE_ONE=3864839807}
 ---
 type: create-blocks
@@ -599,7 +599,7 @@ type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 1
-  - .balances[]|select(.denom == "rune").amount == "${INITIAL_BALANCE=2503846256170}"
+  - .balances[]|select(.denom == "rune").amount == "${INITIAL_BALANCE=2503846171422}"
 ---
 type: create-blocks
 count: 1
@@ -608,8 +608,8 @@ type: check
 endpoint: http://localhost:1317/thorchain/pool/btc.btc/borrowers
 asserts:
   - .|length == 1
-  - .[0].collateral_deposited == "1978447"
-  - .[0].debt_issued == "5657702245"
+  - .[0].collateral_deposited == "1978449"
+  - .[0].debt_issued == "5657502245"
   - .[0].owner == "{{ addr_btc_fox }}"
   - .[0].collateral_withdrawn == "${INITIAL_COLLATERAL_DEPOSITED}"
   - .[0].debt_repaid == "${DEBT_REPAID}"
@@ -618,7 +618,7 @@ type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - .balances|length == 1
-  - .balances[]|select(.denom == "rune").amount == "${AFTER_BALANCE=2504323695787}"
+  - .balances[]|select(.denom == "rune").amount == "${AFTER_BALANCE=2504323512944}"
   - ${AFTER_BALANCE} - ${INITIAL_BALANCE} == ${BALANCE_DIFFERENCE_TWO=477439617}
   - ${BALANCE_DIFFERENCE_ONE} > ${BALANCE_DIFFERENCE_TWO} # Over-repayment output is greater than no-over-repayment output.
   - ${BALANCE_DIFFERENCE_ONE} > ${BALANCE_DIFFERENCE_TWO} * 8
@@ -665,8 +665,8 @@ type: check
 endpoint: http://localhost:1317/thorchain/pool/btc.btc/borrowers
 asserts:
   - length == 1
-  - .[0].collateral_deposited == "2472378"
-  - .[0].debt_issued == "6136842245"
+  - .[0].collateral_deposited == "2472380"
+  - .[0].debt_issued == "6136542245"
   - .[0].collateral_withdrawn == "${INITIAL_COLLATERAL_DEPOSITED}"
   - .[0].debt_repaid == "${DEBT_REPAID}"
   - .[0].owner == "{{ addr_btc_fox }}"
@@ -676,7 +676,7 @@ endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - length == 1
   - .[0].in_hash == "{{ observe_txid 9 }}"
-  - .[0].coin.amount == "${OUT_AMOUNT=411879400}"
+  - .[0].coin.amount == "${OUT_AMOUNT=944158}"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -794,8 +794,8 @@ type: check
 endpoint: http://localhost:1317/thorchain/pool/btc.btc/borrowers
 asserts:
   - length == 1
-  - .[0].collateral_deposited == "2961209"
-  - .[0].debt_issued == "6602582245"
+  - .[0].collateral_deposited == "2961212"
+  - .[0].debt_issued == "6602182245"
   - .[0].collateral_withdrawn == "989978"
   - .[0].debt_repaid == "4684542245"
   - .[0].owner == "{{ addr_btc_fox }}"
@@ -803,4 +803,4 @@ asserts:
 type: check
 endpoint: http://localhost:1317/bank/balances/{{ addr_thor_pig }}
 asserts:
-  - .result[]|select(.denom == "rune").amount == "10000803192"
+  - .result[]|select(.denom == "rune").amount == "10000802203"
