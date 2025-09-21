@@ -133,6 +133,7 @@ const (
 	prefixDynamicFeeAcc             types.DbPrefix = "dynfeeacc/"
 	prefixDynamicFeeEpochBlocks     types.DbPrefix = "dynfeeebo/"
 	prefixPendingAltNativeTxFee     types.DbPrefix = "pending_alt_native_fee/"
+	prefixAltNativeFeeEscrow        types.DbPrefix = "alt_native_fee_escrow/"
 )
 
 func dbError(ctx cosmos.Context, wrapper string, err error) error {
@@ -435,43 +436,64 @@ func (k KVStore) getUint(ctx cosmos.Context, key []byte, record *cosmos.Uint) (b
 	return true, nil
 }
 
-// --- Pending Alt-Native Fee (ante-collected alt-native fees) ---
+// --- Alt-Native Fee Escrow (accumulated alt-gas balances) ---
 
-// AppendPendingAltNativeTxFeeEntry appends a pending alt-native fee entry to the txid's record.
-func (k KVStore) AppendPendingAltNativeTxFeeEntry(ctx cosmos.Context, txid common.TxID, entry stypes.PendingAltNativeFeeEntry) {
-	key := k.GetKey(prefixPendingAltNativeTxFee, txid.String())
+// AddAltNativeFeeEscrowBalance increments the escrow balance for the provided asset.
+func (k KVStore) AddAltNativeFeeEscrowBalance(ctx cosmos.Context, asset common.Asset, amount cosmos.Uint) {
+	if amount.IsZero() {
+		return
+	}
+	asset = asset.GetLayer1Asset()
+	key := k.GetKey(prefixAltNativeFeeEscrow, asset.String())
 	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
-	var pending stypes.PendingAltNativeFee
+	var escrow stypes.AltNativeFeeEscrow
 	if store.Has(key) {
-		if err := k.cdc.Unmarshal(store.Get(key), &pending); err != nil {
-			pending = stypes.PendingAltNativeFee{}
+		if err := k.cdc.Unmarshal(store.Get(key), &escrow); err != nil {
+			escrow = stypes.AltNativeFeeEscrow{}
 		}
 	}
-	pending.Entries = append(pending.Entries, entry)
-	store.Set(key, k.cdc.MustMarshal(&pending))
-}
-
-// GetPendingAltNativeTxFee retrieves the pending alt-native fee record for the given txid.
-func (k KVStore) GetPendingAltNativeTxFee(ctx cosmos.Context, txid common.TxID) stypes.PendingAltNativeFee {
-	key := k.GetKey(prefixPendingAltNativeTxFee, txid.String())
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
-	var pending stypes.PendingAltNativeFee
-	if !store.Has(key) {
-		return pending
+	if escrow.Balance.IsEmpty() || !escrow.Balance.Asset.Equals(asset) {
+		escrow.Balance = common.NewCoin(asset, amount)
+	} else {
+		escrow.Balance.Amount = escrow.Balance.Amount.Add(amount)
 	}
-	k.cdc.Unmarshal(store.Get(key), &pending)
-	return pending
+	store.Set(key, k.cdc.MustMarshal(&escrow))
 }
 
-// ClearPendingAltNativeTxFee removes the pending record for the given txid.
-func (k KVStore) ClearPendingAltNativeTxFee(ctx cosmos.Context, txid common.TxID) {
-	key := k.GetKey(prefixPendingAltNativeTxFee, txid.String())
+// GetAltNativeFeeEscrow retrieves the escrow balance for the provided asset.
+func (k KVStore) GetAltNativeFeeEscrow(ctx cosmos.Context, asset common.Asset) (stypes.AltNativeFeeEscrow, bool) {
+	asset = asset.GetLayer1Asset()
+	key := k.GetKey(prefixAltNativeFeeEscrow, asset.String())
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	if !store.Has(key) {
+		return stypes.AltNativeFeeEscrow{}, false
+	}
+	var escrow stypes.AltNativeFeeEscrow
+	if err := k.cdc.Unmarshal(store.Get(key), &escrow); err != nil {
+		return stypes.AltNativeFeeEscrow{}, false
+	}
+	return escrow, true
+}
+
+// SetAltNativeFeeEscrow overwrites the escrow record for the provided asset.
+func (k KVStore) SetAltNativeFeeEscrow(ctx cosmos.Context, asset common.Asset, escrow stypes.AltNativeFeeEscrow) {
+	asset = asset.GetLayer1Asset()
+	escrow.Balance.Asset = asset
+	key := k.GetKey(prefixAltNativeFeeEscrow, asset.String())
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store.Set(key, k.cdc.MustMarshal(&escrow))
+}
+
+// RemoveAltNativeFeeEscrow deletes the escrow record for the provided asset.
+func (k KVStore) RemoveAltNativeFeeEscrow(ctx cosmos.Context, asset common.Asset) {
+	asset = asset.GetLayer1Asset()
+	key := k.GetKey(prefixAltNativeFeeEscrow, asset.String())
 	k.DeleteKey(ctx, key)
 }
 
-// GetPendingAltNativeTxFeeIterator returns an iterator over all pending alt-native fee entries.
-func (k KVStore) GetPendingAltNativeTxFeeIterator(ctx cosmos.Context) cosmos.Iterator {
-	return k.getIterator(ctx, types.DbPrefix(prefixPendingAltNativeTxFee))
+// GetAltNativeFeeEscrowIterator returns an iterator across all escrowed balances.
+func (k KVStore) GetAltNativeFeeEscrowIterator(ctx cosmos.Context) cosmos.Iterator {
+	return k.getIterator(ctx, prefixAltNativeFeeEscrow)
 }
 
 // GetRuneBalanceOfModule get the RUNE balance

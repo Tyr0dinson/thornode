@@ -369,9 +369,6 @@ func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, err
 	luviStep.end(luviCtx, am.mgr)
 	telemetry.ModuleMeasureSince("gas", start, "thornode", "block", "endblock")
 
-	// Sweep any leftover pending alt-native tx fees (safety net)
-	sweepPendingAltNativeTxFees(ctx, am.mgr)
-
 	// telemetry
 	if am.telemetryEnabled {
 		start = telemetry.Now()

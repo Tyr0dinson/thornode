@@ -5,6 +5,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	stypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 // InvariantRoutes return the keeper's invariant routes
@@ -81,6 +82,26 @@ func AsgardInvariant(k KVStore) common.Invariant {
 					poolCoins = poolCoins.Add(whitelistedCoin)
 				}
 			}
+		}
+
+		// Escrowed alt-native fee balances will eventually be swapped into the pool,
+		// so count them toward Asgard's expected holdings while they await settlement.
+		escrowIter := k.GetAltNativeFeeEscrowIterator(ctx)
+		defer escrowIter.Close()
+		for ; escrowIter.Valid(); escrowIter.Next() {
+			var escrow stypes.AltNativeFeeEscrow
+			if err := k.Cdc().Unmarshal(escrowIter.Value(), &escrow); err != nil {
+				ctx.Logger().Error("error decoding alt-native fee escrow during invariant", "error", err)
+				continue
+			}
+			coin := escrow.Balance
+			if coin.IsEmpty() || coin.Amount.IsZero() {
+				continue
+			}
+			if !coin.Asset.IsNative() || coin.Asset.IsTradeAsset() || coin.Asset.IsSecuredAsset() {
+				continue
+			}
+			poolCoins = poolCoins.Add(coin)
 		}
 
 		processSwaps := func(ctx cosmos.Context, k KVStore, swapIter cosmos.Iterator) common.Coins { // Replace IteratorType with the actual iterator type

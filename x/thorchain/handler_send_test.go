@@ -311,7 +311,8 @@ func (s *HandlerSendSuiteV87) TestAltNativeTxFeeSend(c *C) {
 				return &types.MsgSend{FromAddress: from, ToAddress: to, Amount: amt}
 			},
 			set: func(msg cosmos.Msg, amt cosmos.Coins) cosmos.Msg {
-				m := msg.(*types.MsgSend)
+				m, ok := msg.(*types.MsgSend)
+				c.Assert(ok, Equals, true)
 				m.Amount = amt
 				return m
 			},
@@ -322,7 +323,8 @@ func (s *HandlerSendSuiteV87) TestAltNativeTxFeeSend(c *C) {
 				return &banktypes.MsgSend{FromAddress: from.String(), ToAddress: to.String(), Amount: amt}
 			},
 			set: func(msg cosmos.Msg, amt cosmos.Coins) cosmos.Msg {
-				m := msg.(*banktypes.MsgSend)
+				m, ok := msg.(*banktypes.MsgSend)
+				c.Assert(ok, Equals, true)
 				m.Amount = amt
 				return m
 			},
@@ -341,6 +343,7 @@ func (s *HandlerSendSuiteV87) TestAltNativeTxFeeSend(c *C) {
 		mgr := NewDummyMgrWithKeeper(k)
 		ad := AnteDecorator{keeper: k}
 		handler := NewSendHandler(mgr)
+		mgr.networkMgr = newNetworkMgrVCUR(k, mgr.TxOutStore(), mgr.EventMgr())
 
 		feeAsset := common.NAMI
 		fundAccountWith(c, ctx, k, signer, feeAsset, cosmos.NewUint(100*common.One))

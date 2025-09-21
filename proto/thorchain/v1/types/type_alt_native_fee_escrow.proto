@@ -9,14 +9,9 @@ option (gogoproto.goproto_getters_all) = false;
 import "gogoproto/gogo.proto";
 import "common/common.proto";
 
-// PendingAltNativeFeeEntry stores a pending alt-native fee entry.
-message PendingAltNativeFeeEntry {
-  bytes signer = 1 [(gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress"];
-  common.Coin coin = 2 [(gogoproto.nullable) = false];
-  bool insufficient = 3;
-}
-
-// PendingAltNativeFee stores pending alt-native fee entries keyed by txid.
-message PendingAltNativeFee {
-    repeated PendingAltNativeFeeEntry entries = 1 [(gogoproto.nullable) = false];
+// AltNativeFeeEscrow records the accumulated amount of a native non-RUNE asset
+// that has been collected as transaction fees and is awaiting swap to RUNE.
+// Each entry is stored under a key derived from the asset identifier.
+message AltNativeFeeEscrow {
+  common.Coin balance = 1 [(gogoproto.nullable) = false];
 }

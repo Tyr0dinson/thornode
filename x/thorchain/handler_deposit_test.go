@@ -568,6 +568,7 @@ func (s *HandlerDepositSuite) TestAltNativeTxFeeDeposit(c *C) {
 			return
 		}
 		c.Assert(mgr.AdvSwapQueueMgr().EndBlock(ctx, mgr, false), IsNil)
+		c.Assert(mgr.NetworkMgr().EndBlock(ctx, mgr), IsNil)
 	}
 
 	setup := func() {
@@ -577,6 +578,7 @@ func (s *HandlerDepositSuite) TestAltNativeTxFeeDeposit(c *C) {
 		ad = AnteDecorator{keeper: k}
 		handler = NewDepositHandler(mgr)
 		mgr.advSwapQueue = newSwapQueueAdvVCUR(k)
+		mgr.networkMgr = newNetworkMgrVCUR(k, mgr.TxOutStore(), mgr.EventMgr())
 	}
 
 	seedPegged := func(deposit func(cosmos.Context, common.Asset, cosmos.Uint, cosmos.AccAddress, common.Address, common.TxID) (cosmos.Uint, error)) {

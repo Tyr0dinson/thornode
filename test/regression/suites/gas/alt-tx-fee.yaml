@@ -41,6 +41,11 @@ key: AltNativeTxFeeAddedBps
 value: 0
 signer: {{ addr_thor_dog }}
 ---
+type: tx-mimir
+key: AltNativeTxFeeSwapThresholdBps
+value: 0
+signer: {{ addr_thor_dog }}
+---
 type: create-blocks
 count: 1
 ---
@@ -105,13 +110,12 @@ asserts:
   - .balances[]|select(.denom=="thor.nami")|.amount|tonumber == ${FOX_NAMI_BAL} - ${SEND_AMT} - ${GAS_IN_NAMI=200} # previous balance - sent amount - gas in NAMI (pool ratio 10:1)
   - ${FOX_NAMI_BAL=384800} == 384800
 ---
-# verify reserve rune fee via events (0.02 RUNE)
+# verify reserve rune fee via end-block events (0.02 RUNE)
 type: check
 endpoint: http://localhost:1317/thorchain/block
 asserts:
-  - 100000 == ${PRECISION=100000} # 10 bps precision for RUNE (1e8)
-  - '((.txs[0].result.events | map(select(.type == "swap" and .memo == "")) | .[0].emit_asset | split(" ")[0] | tonumber) / ${PRECISION} | floor + 1) * ${PRECISION} == ${GAS=2000000}'
-  - '.txs[0].result.events | map(select(.type == "coin_received" and .receiver == "{{ addr_module_reserve }}" and (((.amount | sub("rune$";"") | tonumber) / ${PRECISION} | floor + 1) * ${PRECISION}) == ${GAS})) | length == 1'
+  - 10 == ${PRECISION=10} # 10 bps precision for RUNE (1e8)
+  - .end_block_events | map(select(.type == "swap" and .memo == "ALT-NATIVE-FEE-SWAP" and ((.emit_asset | sub(" THOR.RUNE$";"") | tonumber) >= (2000000 - (2000000 * ${PRECISION} / 10000))) and ((.emit_asset | sub(" THOR.RUNE$";"") | tonumber) <= (2000000 + (2000000 * ${PRECISION} / 10000))))) | length == 1
 ---
 ########################################################################################
 # swap NAMI to RUNE - pay fee in NAMI
@@ -139,15 +143,12 @@ asserts:
   - '[.balances[]|select(.denom=="rune")]|length == 0' # no rune
   - .balances[]|select(.denom=="thor.nami")|.amount|tonumber == ${FOX_NAMI_BAL} - ${SWAP_AMT} - ${GAS_IN_NAMI} # previous balance - swap amount - gas in NAMI
 ---
-# verify reserve rune fee distribution (0.02 RUNE)
+# verify reserve rune fee via end-block events (0.02 RUNE)
 type: check
 endpoint: http://localhost:1317/thorchain/block
 asserts:
-  - 100000 == ${PRECISION=100000} # 10 bps precision for RUNE (1e8)
-# Verify the fee-swap result is ~the expected 0.02 RUNE fee, and capture the actual amount
-  - '((.txs[0].result.events | map(select(.type == "swap" and .memo == "")) | .[0].emit_asset | split(" ")[0] | tonumber) / ${PRECISION} | floor + 1) * ${PRECISION} == ${GAS=2000000}'
-# Verify that a coin_received event exists for the full fee distribution to the Reserve, based on the actual fee swap result
-  - '.txs[0].result.events | map(select(.type == "coin_received" and .receiver == "{{ addr_module_reserve }}" and (((.amount | sub("rune$";"") | tonumber) / ${PRECISION} | floor + 1) * ${PRECISION}) == ${GAS})) | length == 1'
+  - 10 == ${PRECISION}
+  - .end_block_events | map(select(.type == "swap" and .memo == "ALT-NATIVE-FEE-SWAP" and ((.emit_asset | sub(" THOR.RUNE$";"") | tonumber) >= (2000000 - (2000000 * ${PRECISION} / 10000))) and ((.emit_asset | sub(" THOR.RUNE$";"") | tonumber) <= (2000000 + (2000000 * ${PRECISION} / 10000))))) | length == 1
 ---
 ########################################################################################
 # Add premium 100% fee for using native gas fee
@@ -193,12 +194,8 @@ asserts:
   - '[.balances[]|select(.denom=="rune")]|length == 0' # no rune
   - .balances[]|select(.denom=="thor.nami")|.amount|tonumber == ${FOX_NAMI_BAL} - ${SWAP_AMT} - ${GAS_IN_NAMI} * (10000 + ${PREMIUM}) / 10000 # previous balance - swap amount - gas in NAMI with premium bps
 ---
-# verify reserve rune fee distribution with premium
+# verify reserve rune fee via end-block events with premium
 type: check
 endpoint: http://localhost:1317/thorchain/block
 asserts:
-  - 100000 == ${PRECISION=100000} # 10 bps precision for RUNE (1e8)
-# Verify the fee-swap result is ~the expected 0.02 RUNE fee (with premium), and capture the actual amount
-  - '((.txs[0].result.events | map(select(.type == "swap" and .memo == "")) | .[0].emit_asset | split(" ")[0] | tonumber) / ${PRECISION} | floor + 1) * ${PRECISION} == ${GAS=2000000} * (10000 + ${PREMIUM}) / 10000'
-# Verify that a coin_received event exists for the full fee distribution to the Reserve, based on the actual fee swap result
-  - '.txs[0].result.events | map(select(.type == "coin_received" and .receiver == "{{ addr_module_reserve }}" and (((.amount | sub("rune$";"") | tonumber) / ${PRECISION} | floor + 1) * ${PRECISION}) == ((${GAS} * (10000 + ${PREMIUM}) / 10000) | floor))) | length == 1'
+  - .end_block_events | map(select(.type == "swap" and .memo == "ALT-NATIVE-FEE-SWAP" and ((.emit_asset | sub(" THOR.RUNE$";"") | tonumber) >= (4000000 - (4000000 * ${PRECISION} / 10000))) and ((.emit_asset | sub(" THOR.RUNE$";"") | tonumber) <= (4000000 + (4000000 * ${PRECISION} / 10000))))) | length == 1

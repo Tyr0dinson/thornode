@@ -112,6 +112,8 @@ endpoint: http://localhost:1317/thorchain/block
 asserts:
   - 100000 == ${PRECISION=100000} # 10 bps precision for RUNE (1e8)
 # verify that a coin_received event exists to the Reserve for the native tx fee (exact 0.02 RUNE)
-  - '.end_block_events | map(select(.type == "coin_received" and .receiver == "{{ addr_module_reserve }}" and ((.amount | sub("rune$";"") | tonumber) == ${GAS=2000000}))) | length == 1'
+  - .end_block_events | map(select(.type == "coin_received" and .receiver == "{{ addr_module_reserve }}" and ((.amount | sub("rune$";"") | tonumber) == ${GAS=2000000}))) | length == 1
 # verify the matching fee end_block event amount
-  - '.end_block_events | map(select(.type == "fee" and (.coins | sub(" THOR.RUNE$";"") | tonumber) == ${GAS})) | length == 1'
+  - .end_block_events | map(select(.type == "fee" and (.coins | sub(" THOR.RUNE$";"") | tonumber) == ${GAS})) | length == 1
+# verify the fee swap end_block event amount
+  - .end_block_events | map(select(.type == "swap" and .memo == "ALT-NATIVE-FEE-SWAP" and ((.emit_asset | sub(" THOR.RUNE$";"") | tonumber) >= (2000000 - (2000000 * ${PRECISION} / 10000))) and ((.emit_asset | sub(" THOR.RUNE$";"") | tonumber) <= (2000000 + (2000000 * ${PRECISION} / 10000))))) | length == 1

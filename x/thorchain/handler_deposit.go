@@ -55,11 +55,6 @@ func (h DepositHandler) validate(ctx cosmos.Context, msg MsgDeposit) error {
 }
 
 func (h DepositHandler) handle(ctx cosmos.Context, msg MsgDeposit, idx uint16) (*cosmos.Result, error) {
-    // Settle any pending alt-native tx fee at the start (settle from signer)
-    if err := settlePendingAltNativeTxFee(ctx, h.mgr); err != nil {
-        return nil, err
-    }
-
 	if h.mgr.Keeper().IsChainHalted(ctx, common.THORChain) {
 		return nil, fmt.Errorf("unable to use MsgDeposit while THORChain is halted")
 	}

@@ -100,6 +100,7 @@ func init() {
 		MaxAbsentKeygenReporters:            0,
 		AltNativeTxFeeEnabled:               1,
 		AltNativeTxFeeAddedBps:              5000, // add 50% gas to tx with native asset
+		AltNativeTxFeeSwapThresholdBps:      0,    // immediate swapping of alt asset native tx fees to RUNE (0% threshold)
 	}
 	boolOverrides = map[ConstantName]bool{
 		StrictBondLiquidityRatio: false,

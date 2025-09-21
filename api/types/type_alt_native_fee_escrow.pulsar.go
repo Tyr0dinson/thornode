@@ -15,29 +15,25 @@ import (
 )
 
 var (
-	md_PendingAltNativeFeeEntry              protoreflect.MessageDescriptor
-	fd_PendingAltNativeFeeEntry_signer       protoreflect.FieldDescriptor
-	fd_PendingAltNativeFeeEntry_coin         protoreflect.FieldDescriptor
-	fd_PendingAltNativeFeeEntry_insufficient protoreflect.FieldDescriptor
+	md_AltNativeFeeEscrow         protoreflect.MessageDescriptor
+	fd_AltNativeFeeEscrow_balance protoreflect.FieldDescriptor
 )
 
 func init() {
 	file_types_type_alt_native_fee_escrow_proto_init()
-	md_PendingAltNativeFeeEntry = File_types_type_alt_native_fee_escrow_proto.Messages().ByName("PendingAltNativeFeeEntry")
-	fd_PendingAltNativeFeeEntry_signer = md_PendingAltNativeFeeEntry.Fields().ByName("signer")
-	fd_PendingAltNativeFeeEntry_coin = md_PendingAltNativeFeeEntry.Fields().ByName("coin")
-	fd_PendingAltNativeFeeEntry_insufficient = md_PendingAltNativeFeeEntry.Fields().ByName("insufficient")
+	md_AltNativeFeeEscrow = File_types_type_alt_native_fee_escrow_proto.Messages().ByName("AltNativeFeeEscrow")
+	fd_AltNativeFeeEscrow_balance = md_AltNativeFeeEscrow.Fields().ByName("balance")
 }
 
-var _ protoreflect.Message = (*fastReflection_PendingAltNativeFeeEntry)(nil)
+var _ protoreflect.Message = (*fastReflection_AltNativeFeeEscrow)(nil)
 
-type fastReflection_PendingAltNativeFeeEntry PendingAltNativeFeeEntry
+type fastReflection_AltNativeFeeEscrow AltNativeFeeEscrow
 
-func (x *PendingAltNativeFeeEntry) ProtoReflect() protoreflect.Message {
-	return (*fastReflection_PendingAltNativeFeeEntry)(x)
+func (x *AltNativeFeeEscrow) ProtoReflect() protoreflect.Message {
+	return (*fastReflection_AltNativeFeeEscrow)(x)
 }
 
-func (x *PendingAltNativeFeeEntry) slowProtoReflect() protoreflect.Message {
+func (x *AltNativeFeeEscrow) slowProtoReflect() protoreflect.Message {
 	mi := &file_types_type_alt_native_fee_escrow_proto_msgTypes[0]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -49,43 +45,43 @@ func (x *PendingAltNativeFeeEntry) slowProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-var _fastReflection_PendingAltNativeFeeEntry_messageType fastReflection_PendingAltNativeFeeEntry_messageType
-var _ protoreflect.MessageType = fastReflection_PendingAltNativeFeeEntry_messageType{}
+var _fastReflection_AltNativeFeeEscrow_messageType fastReflection_AltNativeFeeEscrow_messageType
+var _ protoreflect.MessageType = fastReflection_AltNativeFeeEscrow_messageType{}
 
-type fastReflection_PendingAltNativeFeeEntry_messageType struct{}
+type fastReflection_AltNativeFeeEscrow_messageType struct{}
 
-func (x fastReflection_PendingAltNativeFeeEntry_messageType) Zero() protoreflect.Message {
-	return (*fastReflection_PendingAltNativeFeeEntry)(nil)
+func (x fastReflection_AltNativeFeeEscrow_messageType) Zero() protoreflect.Message {
+	return (*fastReflection_AltNativeFeeEscrow)(nil)
 }
-func (x fastReflection_PendingAltNativeFeeEntry_messageType) New() protoreflect.Message {
-	return new(fastReflection_PendingAltNativeFeeEntry)
+func (x fastReflection_AltNativeFeeEscrow_messageType) New() protoreflect.Message {
+	return new(fastReflection_AltNativeFeeEscrow)
 }
-func (x fastReflection_PendingAltNativeFeeEntry_messageType) Descriptor() protoreflect.MessageDescriptor {
-	return md_PendingAltNativeFeeEntry
+func (x fastReflection_AltNativeFeeEscrow_messageType) Descriptor() protoreflect.MessageDescriptor {
+	return md_AltNativeFeeEscrow
 }
 
 // Descriptor returns message descriptor, which contains only the protobuf
 // type information for the message.
-func (x *fastReflection_PendingAltNativeFeeEntry) Descriptor() protoreflect.MessageDescriptor {
-	return md_PendingAltNativeFeeEntry
+func (x *fastReflection_AltNativeFeeEscrow) Descriptor() protoreflect.MessageDescriptor {
+	return md_AltNativeFeeEscrow
 }
 
 // Type returns the message type, which encapsulates both Go and protobuf
 // type information. If the Go type information is not needed,
 // it is recommended that the message descriptor be used instead.
-func (x *fastReflection_PendingAltNativeFeeEntry) Type() protoreflect.MessageType {
-	return _fastReflection_PendingAltNativeFeeEntry_messageType
+func (x *fastReflection_AltNativeFeeEscrow) Type() protoreflect.MessageType {
+	return _fastReflection_AltNativeFeeEscrow_messageType
 }
 
 // New returns a newly allocated and mutable empty message.
-func (x *fastReflection_PendingAltNativeFeeEntry) New() protoreflect.Message {
-	return new(fastReflection_PendingAltNativeFeeEntry)
+func (x *fastReflection_AltNativeFeeEscrow) New() protoreflect.Message {
+	return new(fastReflection_AltNativeFeeEscrow)
 }
 
 // Interface unwraps the message reflection interface and
 // returns the underlying ProtoMessage interface.
-func (x *fastReflection_PendingAltNativeFeeEntry) Interface() protoreflect.ProtoMessage {
-	return (*PendingAltNativeFeeEntry)(x)
+func (x *fastReflection_AltNativeFeeEscrow) Interface() protoreflect.ProtoMessage {
+	return (*AltNativeFeeEscrow)(x)
 }
 
 // Range iterates over every populated field in an undefined order,
@@ -93,22 +89,10 @@ func (x *fastReflection_PendingAltNativeFeeEntry) Interface() protoreflect.Proto
 // Range returns immediately if f returns false.
 // While iterating, mutating operations may only be performed
 // on the current field descriptor.
-func (x *fastReflection_PendingAltNativeFeeEntry) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
-	if len(x.Signer) != 0 {
-		value := protoreflect.ValueOfBytes(x.Signer)
-		if !f(fd_PendingAltNativeFeeEntry_signer, value) {
-			return
-		}
-	}
-	if x.Coin != nil {
-		value := protoreflect.ValueOfMessage(x.Coin.ProtoReflect())
-		if !f(fd_PendingAltNativeFeeEntry_coin, value) {
-			return
-		}
-	}
-	if x.Insufficient != false {
-		value := protoreflect.ValueOfBool(x.Insufficient)
-		if !f(fd_PendingAltNativeFeeEntry_insufficient, value) {
+func (x *fastReflection_AltNativeFeeEscrow) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
+	if x.Balance != nil {
+		value := protoreflect.ValueOfMessage(x.Balance.ProtoReflect())
+		if !f(fd_AltNativeFeeEscrow_balance, value) {
 			return
 		}
 	}
@@ -125,19 +109,15 @@ func (x *fastReflection_PendingAltNativeFeeEntry) Range(f func(protoreflect.Fiel
 // In other cases (aside from the nullable cases above),
 // a proto3 scalar field is populated if it contains a non-zero value, and
 // a repeated field is populated if it is non-empty.
-func (x *fastReflection_PendingAltNativeFeeEntry) Has(fd protoreflect.FieldDescriptor) bool {
+func (x *fastReflection_AltNativeFeeEscrow) Has(fd protoreflect.FieldDescriptor) bool {
 	switch fd.FullName() {
-	case "types.PendingAltNativeFeeEntry.signer":
-		return len(x.Signer) != 0
-	case "types.PendingAltNativeFeeEntry.coin":
-		return x.Coin != nil
-	case "types.PendingAltNativeFeeEntry.insufficient":
-		return x.Insufficient != false
+	case "types.AltNativeFeeEscrow.balance":
+		return x.Balance != nil
 	default:
 		if fd.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.PendingAltNativeFeeEntry"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.AltNativeFeeEscrow"))
 		}
-		panic(fmt.Errorf("message types.PendingAltNativeFeeEntry does not contain field %s", fd.FullName()))
+		panic(fmt.Errorf("message types.AltNativeFeeEscrow does not contain field %s", fd.FullName()))
 	}
 }
 
@@ -147,19 +127,15 @@ func (x *fastReflection_PendingAltNativeFeeEntry) Has(fd protoreflect.FieldDescr
 // associated with the given field number.
 //
 // Clear is a mutating operation and unsafe for concurrent use.
-func (x *fastReflection_PendingAltNativeFeeEntry) Clear(fd protoreflect.FieldDescriptor) {
+func (x *fastReflection_AltNativeFeeEscrow) Clear(fd protoreflect.FieldDescriptor) {
 	switch fd.FullName() {
-	case "types.PendingAltNativeFeeEntry.signer":
-		x.Signer = nil
-	case "types.PendingAltNativeFeeEntry.coin":
-		x.Coin = nil
-	case "types.PendingAltNativeFeeEntry.insufficient":
-		x.Insufficient = false
+	case "types.AltNativeFeeEscrow.balance":
+		x.Balance = nil
 	default:
 		if fd.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.PendingAltNativeFeeEntry"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.AltNativeFeeEscrow"))
 		}
-		panic(fmt.Errorf("message types.PendingAltNativeFeeEntry does not contain field %s", fd.FullName()))
+		panic(fmt.Errorf("message types.AltNativeFeeEscrow does not contain field %s", fd.FullName()))
 	}
 }
 
@@ -169,22 +145,16 @@ func (x *fastReflection_PendingAltNativeFeeEntry) Clear(fd protoreflect.FieldDes
 // the default value of a bytes scalar is guaranteed to be a copy.
 // For unpopulated composite types, it returns an empty, read-only view
 // of the value; to obtain a mutable reference, use Mutable.
-func (x *fastReflection_PendingAltNativeFeeEntry) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
+func (x *fastReflection_AltNativeFeeEscrow) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
 	switch descriptor.FullName() {
-	case "types.PendingAltNativeFeeEntry.signer":
-		value := x.Signer
-		return protoreflect.ValueOfBytes(value)
-	case "types.PendingAltNativeFeeEntry.coin":
-		value := x.Coin
+	case "types.AltNativeFeeEscrow.balance":
+		value := x.Balance
 		return protoreflect.ValueOfMessage(value.ProtoReflect())
-	case "types.PendingAltNativeFeeEntry.insufficient":
-		value := x.Insufficient
-		return protoreflect.ValueOfBool(value)
 	default:
 		if descriptor.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.PendingAltNativeFeeEntry"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.AltNativeFeeEscrow"))
 		}
-		panic(fmt.Errorf("message types.PendingAltNativeFeeEntry does not contain field %s", descriptor.FullName()))
+		panic(fmt.Errorf("message types.AltNativeFeeEscrow does not contain field %s", descriptor.FullName()))
 	}
 }
 
@@ -198,19 +168,15 @@ func (x *fastReflection_PendingAltNativeFeeEntry) Get(descriptor protoreflect.Fi
 // empty, read-only value, then it panics.
 //
 // Set is a mutating operation and unsafe for concurrent use.
-func (x *fastReflection_PendingAltNativeFeeEntry) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
+func (x *fastReflection_AltNativeFeeEscrow) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
 	switch fd.FullName() {
-	case "types.PendingAltNativeFeeEntry.signer":
-		x.Signer = value.Bytes()
-	case "types.PendingAltNativeFeeEntry.coin":
-		x.Coin = value.Message().Interface().(*common.Coin)
-	case "types.PendingAltNativeFeeEntry.insufficient":
-		x.Insufficient = value.Bool()
+	case "types.AltNativeFeeEscrow.balance":
+		x.Balance = value.Message().Interface().(*common.Coin)
 	default:
 		if fd.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.PendingAltNativeFeeEntry"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.AltNativeFeeEscrow"))
 		}
-		panic(fmt.Errorf("message types.PendingAltNativeFeeEntry does not contain field %s", fd.FullName()))
+		panic(fmt.Errorf("message types.AltNativeFeeEscrow does not contain field %s", fd.FullName()))
 	}
 }
 
@@ -224,52 +190,44 @@ func (x *fastReflection_PendingAltNativeFeeEntry) Set(fd protoreflect.FieldDescr
 // It panics if the field does not contain a composite type.
 //
 // Mutable is a mutating operation and unsafe for concurrent use.
-func (x *fastReflection_PendingAltNativeFeeEntry) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
+func (x *fastReflection_AltNativeFeeEscrow) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
 	switch fd.FullName() {
-	case "types.PendingAltNativeFeeEntry.coin":
-		if x.Coin == nil {
-			x.Coin = new(common.Coin)
+	case "types.AltNativeFeeEscrow.balance":
+		if x.Balance == nil {
+			x.Balance = new(common.Coin)
 		}
-		return protoreflect.ValueOfMessage(x.Coin.ProtoReflect())
-	case "types.PendingAltNativeFeeEntry.signer":
-		panic(fmt.Errorf("field signer of message types.PendingAltNativeFeeEntry is not mutable"))
-	case "types.PendingAltNativeFeeEntry.insufficient":
-		panic(fmt.Errorf("field insufficient of message types.PendingAltNativeFeeEntry is not mutable"))
+		return protoreflect.ValueOfMessage(x.Balance.ProtoReflect())
 	default:
 		if fd.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.PendingAltNativeFeeEntry"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.AltNativeFeeEscrow"))
 		}
-		panic(fmt.Errorf("message types.PendingAltNativeFeeEntry does not contain field %s", fd.FullName()))
+		panic(fmt.Errorf("message types.AltNativeFeeEscrow does not contain field %s", fd.FullName()))
 	}
 }
 
 // NewField returns a new value that is assignable to the field
 // for the given descriptor. For scalars, this returns the default value.
 // For lists, maps, and messages, this returns a new, empty, mutable value.
-func (x *fastReflection_PendingAltNativeFeeEntry) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
+func (x *fastReflection_AltNativeFeeEscrow) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
 	switch fd.FullName() {
-	case "types.PendingAltNativeFeeEntry.signer":
-		return protoreflect.ValueOfBytes(nil)
-	case "types.PendingAltNativeFeeEntry.coin":
+	case "types.AltNativeFeeEscrow.balance":
 		m := new(common.Coin)
 		return protoreflect.ValueOfMessage(m.ProtoReflect())
-	case "types.PendingAltNativeFeeEntry.insufficient":
-		return protoreflect.ValueOfBool(false)
 	default:
 		if fd.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.PendingAltNativeFeeEntry"))
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.AltNativeFeeEscrow"))
 		}
-		panic(fmt.Errorf("message types.PendingAltNativeFeeEntry does not contain field %s", fd.FullName()))
+		panic(fmt.Errorf("message types.AltNativeFeeEscrow does not contain field %s", fd.FullName()))
 	}
 }
 
 // WhichOneof reports which field within the oneof is populated,
 // returning nil if none are populated.
 // It panics if the oneof descriptor does not belong to this message.
-func (x *fastReflection_PendingAltNativeFeeEntry) WhichOneof(d protoreflect.OneofDescriptor) protoreflect.FieldDescriptor {
+func (x *fastReflection_AltNativeFeeEscrow) WhichOneof(d protoreflect.OneofDescriptor) protoreflect.FieldDescriptor {
 	switch d.FullName() {
 	default:
-		panic(fmt.Errorf("%s is not a oneof field in types.PendingAltNativeFeeEntry", d.FullName()))
+		panic(fmt.Errorf("%s is not a oneof field in types.AltNativeFeeEscrow", d.FullName()))
 	}
 	panic("unreachable")
 }
@@ -277,7 +235,7 @@ func (x *fastReflection_PendingAltNativeFeeEntry) WhichOneof(d protoreflect.Oneo
 // GetUnknown retrieves the entire list of unknown fields.
 // The caller may only mutate the contents of the RawFields
 // if the mutated bytes are stored back into the message with SetUnknown.
-func (x *fastReflection_PendingAltNativeFeeEntry) GetUnknown() protoreflect.RawFields {
+func (x *fastReflection_AltNativeFeeEscrow) GetUnknown() protoreflect.RawFields {
 	return x.unknownFields
 }
 
@@ -288,7 +246,7 @@ func (x *fastReflection_PendingAltNativeFeeEntry) GetUnknown() protoreflect.RawF
 // An empty RawFields may be passed to clear the fields.
 //
 // SetUnknown is a mutating operation and unsafe for concurrent use.
-func (x *fastReflection_PendingAltNativeFeeEntry) SetUnknown(fields protoreflect.RawFields) {
+func (x *fastReflection_AltNativeFeeEscrow) SetUnknown(fields protoreflect.RawFields) {
 	x.unknownFields = fields
 }
 
@@ -300,7 +258,7 @@ func (x *fastReflection_PendingAltNativeFeeEntry) SetUnknown(fields protoreflect
 // message type, but the details are implementation dependent.
 // Validity is not part of the protobuf data model, and may not
 // be preserved in marshaling or other operations.
-func (x *fastReflection_PendingAltNativeFeeEntry) IsValid() bool {
+func (x *fastReflection_AltNativeFeeEscrow) IsValid() bool {
 	return x != nil
 }
 
@@ -310,9 +268,9 @@ func (x *fastReflection_PendingAltNativeFeeEntry) IsValid() bool {
 // The returned methods type is identical to
 // "google.golang.org/protobuf/runtime/protoiface".Methods.
 // Consult the protoiface package documentation for details.
-func (x *fastReflection_PendingAltNativeFeeEntry) ProtoMethods() *protoiface.Methods {
+func (x *fastReflection_AltNativeFeeEscrow) ProtoMethods() *protoiface.Methods {
 	size := func(input protoiface.SizeInput) protoiface.SizeOutput {
-		x := input.Message.Interface().(*PendingAltNativeFeeEntry)
+		x := input.Message.Interface().(*AltNativeFeeEscrow)
 		if x == nil {
 			return protoiface.SizeOutput{
 				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
@@ -324,16 +282,9 @@ func (x *fastReflection_PendingAltNativeFeeEntry) ProtoMethods() *protoiface.Met
 		var n int
 		var l int
 		_ = l
-		l = len(x.Signer)
-		if l > 0 {
+		if x.Balance != nil {
+			l = options.Size(x.Balance)
 			n += 1 + l + runtime.Sov(uint64(l))
-		}
-		if x.Coin != nil {
-			l = options.Size(x.Coin)
-			n += 1 + l + runtime.Sov(uint64(l))
-		}
-		if x.Insufficient {
-			n += 2
 		}
 		if x.unknownFields != nil {
 			n += len(x.unknownFields)
@@ -345,7 +296,7 @@ func (x *fastReflection_PendingAltNativeFeeEntry) ProtoMethods() *protoiface.Met
 	}
 
 	marshal := func(input protoiface.MarshalInput) (protoiface.MarshalOutput, error) {
-		x := input.Message.Interface().(*PendingAltNativeFeeEntry)
+		x := input.Message.Interface().(*AltNativeFeeEscrow)
 		if x == nil {
 			return protoiface.MarshalOutput{
 				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
@@ -364,18 +315,8 @@ func (x *fastReflection_PendingAltNativeFeeEntry) ProtoMethods() *protoiface.Met
 			i -= len(x.unknownFields)
 			copy(dAtA[i:], x.unknownFields)
 		}
-		if x.Insufficient {
-			i--
-			if x.Insufficient {
-				dAtA[i] = 1
-			} else {
-				dAtA[i] = 0
-			}
-			i--
-			dAtA[i] = 0x18
-		}
-		if x.Coin != nil {
-			encoded, err := options.Marshal(x.Coin)
+		if x.Balance != nil {
+			encoded, err := options.Marshal(x.Balance)
 			if err != nil {
 				return protoiface.MarshalOutput{
 					NoUnkeyedLiterals: input.NoUnkeyedLiterals,
@@ -385,13 +326,6 @@ func (x *fastReflection_PendingAltNativeFeeEntry) ProtoMethods() *protoiface.Met
 			i -= len(encoded)
 			copy(dAtA[i:], encoded)
 			i = runtime.EncodeVarint(dAtA, i, uint64(len(encoded)))
-			i--
-			dAtA[i] = 0x12
-		}
-		if len(x.Signer) > 0 {
-			i -= len(x.Signer)
-			copy(dAtA[i:], x.Signer)
-			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.Signer)))
 			i--
 			dAtA[i] = 0xa
 		}
@@ -406,7 +340,7 @@ func (x *fastReflection_PendingAltNativeFeeEntry) ProtoMethods() *protoiface.Met
 		}, nil
 	}
 	unmarshal := func(input protoiface.UnmarshalInput) (protoiface.UnmarshalOutput, error) {
-		x := input.Message.Interface().(*PendingAltNativeFeeEntry)
+		x := input.Message.Interface().(*AltNativeFeeEscrow)
 		if x == nil {
 			return protoiface.UnmarshalOutput{
 				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
@@ -438,49 +372,15 @@ func (x *fastReflection_PendingAltNativeFeeEntry) ProtoMethods() *protoiface.Met
 			fieldNum := int32(wire >> 3)
 			wireType := int(wire & 0x7)
 			if wireType == 4 {
-				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: PendingAltNativeFeeEntry: wiretype end group for non-group")
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: AltNativeFeeEscrow: wiretype end group for non-group")
 			}
 			if fieldNum <= 0 {
-				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: PendingAltNativeFeeEntry: illegal tag %d (wire type %d)", fieldNum, wire)
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: AltNativeFeeEscrow: illegal tag %d (wire type %d)", fieldNum, wire)
 			}
 			switch fieldNum {
 			case 1:
 				if wireType != 2 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Signer", wireType)
-				}
-				var byteLen int
-				for shift := uint(0); ; shift += 7 {
-					if shift >= 64 {
-						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
-					}
-					if iNdEx >= l {
-						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
-					}
-					b := dAtA[iNdEx]
-					iNdEx++
-					byteLen |= int(b&0x7F) << shift
-					if b < 0x80 {
-						break
-					}
-				}
-				if byteLen < 0 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
-				}
-				postIndex := iNdEx + byteLen
-				if postIndex < 0 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
-				}
-				if postIndex > l {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
-				}
-				x.Signer = append(x.Signer[:0], dAtA[iNdEx:postIndex]...)
-				if x.Signer == nil {
-					x.Signer = []byte{}
-				}
-				iNdEx = postIndex
-			case 2:
-				if wireType != 2 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Coin", wireType)
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Balance", wireType)
 				}
 				var msglen int
 				for shift := uint(0); ; shift += 7 {
@@ -507,524 +407,10 @@ func (x *fastReflection_PendingAltNativeFeeEntry) ProtoMethods() *protoiface.Met
 				if postIndex > l {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
 				}
-				if x.Coin == nil {
-					x.Coin = &common.Coin{}
+				if x.Balance == nil {
+					x.Balance = &common.Coin{}
 				}
-				if err := options.Unmarshal(dAtA[iNdEx:postIndex], x.Coin); err != nil {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
-				}
-				iNdEx = postIndex
-			case 3:
-				if wireType != 0 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Insufficient", wireType)
-				}
-				var v int
-				for shift := uint(0); ; shift += 7 {
-					if shift >= 64 {
-						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
-					}
-					if iNdEx >= l {
-						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
-					}
-					b := dAtA[iNdEx]
-					iNdEx++
-					v |= int(b&0x7F) << shift
-					if b < 0x80 {
-						break
-					}
-				}
-				x.Insufficient = bool(v != 0)
-			default:
-				iNdEx = preIndex
-				skippy, err := runtime.Skip(dAtA[iNdEx:])
-				if err != nil {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
-				}
-				if (skippy < 0) || (iNdEx+skippy) < 0 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
-				}
-				if (iNdEx + skippy) > l {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
-				}
-				if !options.DiscardUnknown {
-					x.unknownFields = append(x.unknownFields, dAtA[iNdEx:iNdEx+skippy]...)
-				}
-				iNdEx += skippy
-			}
-		}
-
-		if iNdEx > l {
-			return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
-		}
-		return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, nil
-	}
-	return &protoiface.Methods{
-		NoUnkeyedLiterals: struct{}{},
-		Flags:             protoiface.SupportMarshalDeterministic | protoiface.SupportUnmarshalDiscardUnknown,
-		Size:              size,
-		Marshal:           marshal,
-		Unmarshal:         unmarshal,
-		Merge:             nil,
-		CheckInitialized:  nil,
-	}
-}
-
-var _ protoreflect.List = (*_PendingAltNativeFee_1_list)(nil)
-
-type _PendingAltNativeFee_1_list struct {
-	list *[]*PendingAltNativeFeeEntry
-}
-
-func (x *_PendingAltNativeFee_1_list) Len() int {
-	if x.list == nil {
-		return 0
-	}
-	return len(*x.list)
-}
-
-func (x *_PendingAltNativeFee_1_list) Get(i int) protoreflect.Value {
-	return protoreflect.ValueOfMessage((*x.list)[i].ProtoReflect())
-}
-
-func (x *_PendingAltNativeFee_1_list) Set(i int, value protoreflect.Value) {
-	valueUnwrapped := value.Message()
-	concreteValue := valueUnwrapped.Interface().(*PendingAltNativeFeeEntry)
-	(*x.list)[i] = concreteValue
-}
-
-func (x *_PendingAltNativeFee_1_list) Append(value protoreflect.Value) {
-	valueUnwrapped := value.Message()
-	concreteValue := valueUnwrapped.Interface().(*PendingAltNativeFeeEntry)
-	*x.list = append(*x.list, concreteValue)
-}
-
-func (x *_PendingAltNativeFee_1_list) AppendMutable() protoreflect.Value {
-	v := new(PendingAltNativeFeeEntry)
-	*x.list = append(*x.list, v)
-	return protoreflect.ValueOfMessage(v.ProtoReflect())
-}
-
-func (x *_PendingAltNativeFee_1_list) Truncate(n int) {
-	for i := n; i < len(*x.list); i++ {
-		(*x.list)[i] = nil
-	}
-	*x.list = (*x.list)[:n]
-}
-
-func (x *_PendingAltNativeFee_1_list) NewElement() protoreflect.Value {
-	v := new(PendingAltNativeFeeEntry)
-	return protoreflect.ValueOfMessage(v.ProtoReflect())
-}
-
-func (x *_PendingAltNativeFee_1_list) IsValid() bool {
-	return x.list != nil
-}
-
-var (
-	md_PendingAltNativeFee         protoreflect.MessageDescriptor
-	fd_PendingAltNativeFee_entries protoreflect.FieldDescriptor
-)
-
-func init() {
-	file_types_type_alt_native_fee_escrow_proto_init()
-	md_PendingAltNativeFee = File_types_type_alt_native_fee_escrow_proto.Messages().ByName("PendingAltNativeFee")
-	fd_PendingAltNativeFee_entries = md_PendingAltNativeFee.Fields().ByName("entries")
-}
-
-var _ protoreflect.Message = (*fastReflection_PendingAltNativeFee)(nil)
-
-type fastReflection_PendingAltNativeFee PendingAltNativeFee
-
-func (x *PendingAltNativeFee) ProtoReflect() protoreflect.Message {
-	return (*fastReflection_PendingAltNativeFee)(x)
-}
-
-func (x *PendingAltNativeFee) slowProtoReflect() protoreflect.Message {
-	mi := &file_types_type_alt_native_fee_escrow_proto_msgTypes[1]
-	if protoimpl.UnsafeEnabled && x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-var _fastReflection_PendingAltNativeFee_messageType fastReflection_PendingAltNativeFee_messageType
-var _ protoreflect.MessageType = fastReflection_PendingAltNativeFee_messageType{}
-
-type fastReflection_PendingAltNativeFee_messageType struct{}
-
-func (x fastReflection_PendingAltNativeFee_messageType) Zero() protoreflect.Message {
-	return (*fastReflection_PendingAltNativeFee)(nil)
-}
-func (x fastReflection_PendingAltNativeFee_messageType) New() protoreflect.Message {
-	return new(fastReflection_PendingAltNativeFee)
-}
-func (x fastReflection_PendingAltNativeFee_messageType) Descriptor() protoreflect.MessageDescriptor {
-	return md_PendingAltNativeFee
-}
-
-// Descriptor returns message descriptor, which contains only the protobuf
-// type information for the message.
-func (x *fastReflection_PendingAltNativeFee) Descriptor() protoreflect.MessageDescriptor {
-	return md_PendingAltNativeFee
-}
-
-// Type returns the message type, which encapsulates both Go and protobuf
-// type information. If the Go type information is not needed,
-// it is recommended that the message descriptor be used instead.
-func (x *fastReflection_PendingAltNativeFee) Type() protoreflect.MessageType {
-	return _fastReflection_PendingAltNativeFee_messageType
-}
-
-// New returns a newly allocated and mutable empty message.
-func (x *fastReflection_PendingAltNativeFee) New() protoreflect.Message {
-	return new(fastReflection_PendingAltNativeFee)
-}
-
-// Interface unwraps the message reflection interface and
-// returns the underlying ProtoMessage interface.
-func (x *fastReflection_PendingAltNativeFee) Interface() protoreflect.ProtoMessage {
-	return (*PendingAltNativeFee)(x)
-}
-
-// Range iterates over every populated field in an undefined order,
-// calling f for each field descriptor and value encountered.
-// Range returns immediately if f returns false.
-// While iterating, mutating operations may only be performed
-// on the current field descriptor.
-func (x *fastReflection_PendingAltNativeFee) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
-	if len(x.Entries) != 0 {
-		value := protoreflect.ValueOfList(&_PendingAltNativeFee_1_list{list: &x.Entries})
-		if !f(fd_PendingAltNativeFee_entries, value) {
-			return
-		}
-	}
-}
-
-// Has reports whether a field is populated.
-//
-// Some fields have the property of nullability where it is possible to
-// distinguish between the default value of a field and whether the field
-// was explicitly populated with the default value. Singular message fields,
-// member fields of a oneof, and proto2 scalar fields are nullable. Such
-// fields are populated only if explicitly set.
-//
-// In other cases (aside from the nullable cases above),
-// a proto3 scalar field is populated if it contains a non-zero value, and
-// a repeated field is populated if it is non-empty.
-func (x *fastReflection_PendingAltNativeFee) Has(fd protoreflect.FieldDescriptor) bool {
-	switch fd.FullName() {
-	case "types.PendingAltNativeFee.entries":
-		return len(x.Entries) != 0
-	default:
-		if fd.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.PendingAltNativeFee"))
-		}
-		panic(fmt.Errorf("message types.PendingAltNativeFee does not contain field %s", fd.FullName()))
-	}
-}
-
-// Clear clears the field such that a subsequent Has call reports false.
-//
-// Clearing an extension field clears both the extension type and value
-// associated with the given field number.
-//
-// Clear is a mutating operation and unsafe for concurrent use.
-func (x *fastReflection_PendingAltNativeFee) Clear(fd protoreflect.FieldDescriptor) {
-	switch fd.FullName() {
-	case "types.PendingAltNativeFee.entries":
-		x.Entries = nil
-	default:
-		if fd.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.PendingAltNativeFee"))
-		}
-		panic(fmt.Errorf("message types.PendingAltNativeFee does not contain field %s", fd.FullName()))
-	}
-}
-
-// Get retrieves the value for a field.
-//
-// For unpopulated scalars, it returns the default value, where
-// the default value of a bytes scalar is guaranteed to be a copy.
-// For unpopulated composite types, it returns an empty, read-only view
-// of the value; to obtain a mutable reference, use Mutable.
-func (x *fastReflection_PendingAltNativeFee) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
-	switch descriptor.FullName() {
-	case "types.PendingAltNativeFee.entries":
-		if len(x.Entries) == 0 {
-			return protoreflect.ValueOfList(&_PendingAltNativeFee_1_list{})
-		}
-		listValue := &_PendingAltNativeFee_1_list{list: &x.Entries}
-		return protoreflect.ValueOfList(listValue)
-	default:
-		if descriptor.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.PendingAltNativeFee"))
-		}
-		panic(fmt.Errorf("message types.PendingAltNativeFee does not contain field %s", descriptor.FullName()))
-	}
-}
-
-// Set stores the value for a field.
-//
-// For a field belonging to a oneof, it implicitly clears any other field
-// that may be currently set within the same oneof.
-// For extension fields, it implicitly stores the provided ExtensionType.
-// When setting a composite type, it is unspecified whether the stored value
-// aliases the source's memory in any way. If the composite value is an
-// empty, read-only value, then it panics.
-//
-// Set is a mutating operation and unsafe for concurrent use.
-func (x *fastReflection_PendingAltNativeFee) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
-	switch fd.FullName() {
-	case "types.PendingAltNativeFee.entries":
-		lv := value.List()
-		clv := lv.(*_PendingAltNativeFee_1_list)
-		x.Entries = *clv.list
-	default:
-		if fd.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.PendingAltNativeFee"))
-		}
-		panic(fmt.Errorf("message types.PendingAltNativeFee does not contain field %s", fd.FullName()))
-	}
-}
-
-// Mutable returns a mutable reference to a composite type.
-//
-// If the field is unpopulated, it may allocate a composite value.
-// For a field belonging to a oneof, it implicitly clears any other field
-// that may be currently set within the same oneof.
-// For extension fields, it implicitly stores the provided ExtensionType
-// if not already stored.
-// It panics if the field does not contain a composite type.
-//
-// Mutable is a mutating operation and unsafe for concurrent use.
-func (x *fastReflection_PendingAltNativeFee) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
-	switch fd.FullName() {
-	case "types.PendingAltNativeFee.entries":
-		if x.Entries == nil {
-			x.Entries = []*PendingAltNativeFeeEntry{}
-		}
-		value := &_PendingAltNativeFee_1_list{list: &x.Entries}
-		return protoreflect.ValueOfList(value)
-	default:
-		if fd.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.PendingAltNativeFee"))
-		}
-		panic(fmt.Errorf("message types.PendingAltNativeFee does not contain field %s", fd.FullName()))
-	}
-}
-
-// NewField returns a new value that is assignable to the field
-// for the given descriptor. For scalars, this returns the default value.
-// For lists, maps, and messages, this returns a new, empty, mutable value.
-func (x *fastReflection_PendingAltNativeFee) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
-	switch fd.FullName() {
-	case "types.PendingAltNativeFee.entries":
-		list := []*PendingAltNativeFeeEntry{}
-		return protoreflect.ValueOfList(&_PendingAltNativeFee_1_list{list: &list})
-	default:
-		if fd.IsExtension() {
-			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.PendingAltNativeFee"))
-		}
-		panic(fmt.Errorf("message types.PendingAltNativeFee does not contain field %s", fd.FullName()))
-	}
-}
-
-// WhichOneof reports which field within the oneof is populated,
-// returning nil if none are populated.
-// It panics if the oneof descriptor does not belong to this message.
-func (x *fastReflection_PendingAltNativeFee) WhichOneof(d protoreflect.OneofDescriptor) protoreflect.FieldDescriptor {
-	switch d.FullName() {
-	default:
-		panic(fmt.Errorf("%s is not a oneof field in types.PendingAltNativeFee", d.FullName()))
-	}
-	panic("unreachable")
-}
-
-// GetUnknown retrieves the entire list of unknown fields.
-// The caller may only mutate the contents of the RawFields
-// if the mutated bytes are stored back into the message with SetUnknown.
-func (x *fastReflection_PendingAltNativeFee) GetUnknown() protoreflect.RawFields {
-	return x.unknownFields
-}
-
-// SetUnknown stores an entire list of unknown fields.
-// The raw fields must be syntactically valid according to the wire format.
-// An implementation may panic if this is not the case.
-// Once stored, the caller must not mutate the content of the RawFields.
-// An empty RawFields may be passed to clear the fields.
-//
-// SetUnknown is a mutating operation and unsafe for concurrent use.
-func (x *fastReflection_PendingAltNativeFee) SetUnknown(fields protoreflect.RawFields) {
-	x.unknownFields = fields
-}
-
-// IsValid reports whether the message is valid.
-//
-// An invalid message is an empty, read-only value.
-//
-// An invalid message often corresponds to a nil pointer of the concrete
-// message type, but the details are implementation dependent.
-// Validity is not part of the protobuf data model, and may not
-// be preserved in marshaling or other operations.
-func (x *fastReflection_PendingAltNativeFee) IsValid() bool {
-	return x != nil
-}
-
-// ProtoMethods returns optional fastReflectionFeature-path implementations of various operations.
-// This method may return nil.
-//
-// The returned methods type is identical to
-// "google.golang.org/protobuf/runtime/protoiface".Methods.
-// Consult the protoiface package documentation for details.
-func (x *fastReflection_PendingAltNativeFee) ProtoMethods() *protoiface.Methods {
-	size := func(input protoiface.SizeInput) protoiface.SizeOutput {
-		x := input.Message.Interface().(*PendingAltNativeFee)
-		if x == nil {
-			return protoiface.SizeOutput{
-				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
-				Size:              0,
-			}
-		}
-		options := runtime.SizeInputToOptions(input)
-		_ = options
-		var n int
-		var l int
-		_ = l
-		if len(x.Entries) > 0 {
-			for _, e := range x.Entries {
-				l = options.Size(e)
-				n += 1 + l + runtime.Sov(uint64(l))
-			}
-		}
-		if x.unknownFields != nil {
-			n += len(x.unknownFields)
-		}
-		return protoiface.SizeOutput{
-			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
-			Size:              n,
-		}
-	}
-
-	marshal := func(input protoiface.MarshalInput) (protoiface.MarshalOutput, error) {
-		x := input.Message.Interface().(*PendingAltNativeFee)
-		if x == nil {
-			return protoiface.MarshalOutput{
-				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
-				Buf:               input.Buf,
-			}, nil
-		}
-		options := runtime.MarshalInputToOptions(input)
-		_ = options
-		size := options.Size(x)
-		dAtA := make([]byte, size)
-		i := len(dAtA)
-		_ = i
-		var l int
-		_ = l
-		if x.unknownFields != nil {
-			i -= len(x.unknownFields)
-			copy(dAtA[i:], x.unknownFields)
-		}
-		if len(x.Entries) > 0 {
-			for iNdEx := len(x.Entries) - 1; iNdEx >= 0; iNdEx-- {
-				encoded, err := options.Marshal(x.Entries[iNdEx])
-				if err != nil {
-					return protoiface.MarshalOutput{
-						NoUnkeyedLiterals: input.NoUnkeyedLiterals,
-						Buf:               input.Buf,
-					}, err
-				}
-				i -= len(encoded)
-				copy(dAtA[i:], encoded)
-				i = runtime.EncodeVarint(dAtA, i, uint64(len(encoded)))
-				i--
-				dAtA[i] = 0xa
-			}
-		}
-		if input.Buf != nil {
-			input.Buf = append(input.Buf, dAtA...)
-		} else {
-			input.Buf = dAtA
-		}
-		return protoiface.MarshalOutput{
-			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
-			Buf:               input.Buf,
-		}, nil
-	}
-	unmarshal := func(input protoiface.UnmarshalInput) (protoiface.UnmarshalOutput, error) {
-		x := input.Message.Interface().(*PendingAltNativeFee)
-		if x == nil {
-			return protoiface.UnmarshalOutput{
-				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
-				Flags:             input.Flags,
-			}, nil
-		}
-		options := runtime.UnmarshalInputToOptions(input)
-		_ = options
-		dAtA := input.Buf
-		l := len(dAtA)
-		iNdEx := 0
-		for iNdEx < l {
-			preIndex := iNdEx
-			var wire uint64
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
-				}
-				if iNdEx >= l {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				wire |= uint64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			fieldNum := int32(wire >> 3)
-			wireType := int(wire & 0x7)
-			if wireType == 4 {
-				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: PendingAltNativeFee: wiretype end group for non-group")
-			}
-			if fieldNum <= 0 {
-				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: PendingAltNativeFee: illegal tag %d (wire type %d)", fieldNum, wire)
-			}
-			switch fieldNum {
-			case 1:
-				if wireType != 2 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Entries", wireType)
-				}
-				var msglen int
-				for shift := uint(0); ; shift += 7 {
-					if shift >= 64 {
-						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
-					}
-					if iNdEx >= l {
-						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
-					}
-					b := dAtA[iNdEx]
-					iNdEx++
-					msglen |= int(b&0x7F) << shift
-					if b < 0x80 {
-						break
-					}
-				}
-				if msglen < 0 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
-				}
-				postIndex := iNdEx + msglen
-				if postIndex < 0 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
-				}
-				if postIndex > l {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
-				}
-				x.Entries = append(x.Entries, &PendingAltNativeFeeEntry{})
-				if err := options.Unmarshal(dAtA[iNdEx:postIndex], x.Entries[len(x.Entries)-1]); err != nil {
+				if err := options.Unmarshal(dAtA[iNdEx:postIndex], x.Balance); err != nil {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
 				}
 				iNdEx = postIndex
@@ -1076,19 +462,19 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// PendingAltNativeFeeEntry stores a pending alt-native fee entry.
-type PendingAltNativeFeeEntry struct {
+// AltNativeFeeEscrow records the accumulated amount of a native non-RUNE asset
+// that has been collected as transaction fees and is awaiting swap to RUNE.
+// Each entry is stored under a key derived from the asset identifier.
+type AltNativeFeeEscrow struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Signer       []byte       `protobuf:"bytes,1,opt,name=signer,proto3" json:"signer,omitempty"`
-	Coin         *common.Coin `protobuf:"bytes,2,opt,name=coin,proto3" json:"coin,omitempty"`
-	Insufficient bool         `protobuf:"varint,3,opt,name=insufficient,proto3" json:"insufficient,omitempty"`
+	Balance *common.Coin `protobuf:"bytes,1,opt,name=balance,proto3" json:"balance,omitempty"`
 }
 
-func (x *PendingAltNativeFeeEntry) Reset() {
-	*x = PendingAltNativeFeeEntry{}
+func (x *AltNativeFeeEscrow) Reset() {
+	*x = AltNativeFeeEscrow{}
 	if protoimpl.UnsafeEnabled {
 		mi := &file_types_type_alt_native_fee_escrow_proto_msgTypes[0]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -1096,70 +482,20 @@ func (x *PendingAltNativeFeeEntry) Reset() {
 	}
 }
 
-func (x *PendingAltNativeFeeEntry) String() string {
+func (x *AltNativeFeeEscrow) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*PendingAltNativeFeeEntry) ProtoMessage() {}
+func (*AltNativeFeeEscrow) ProtoMessage() {}
 
-// Deprecated: Use PendingAltNativeFeeEntry.ProtoReflect.Descriptor instead.
-func (*PendingAltNativeFeeEntry) Descriptor() ([]byte, []int) {
+// Deprecated: Use AltNativeFeeEscrow.ProtoReflect.Descriptor instead.
+func (*AltNativeFeeEscrow) Descriptor() ([]byte, []int) {
 	return file_types_type_alt_native_fee_escrow_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *PendingAltNativeFeeEntry) GetSigner() []byte {
+func (x *AltNativeFeeEscrow) GetBalance() *common.Coin {
 	if x != nil {
-		return x.Signer
-	}
-	return nil
-}
-
-func (x *PendingAltNativeFeeEntry) GetCoin() *common.Coin {
-	if x != nil {
-		return x.Coin
-	}
-	return nil
-}
-
-func (x *PendingAltNativeFeeEntry) GetInsufficient() bool {
-	if x != nil {
-		return x.Insufficient
-	}
-	return false
-}
-
-// PendingAltNativeFee stores pending alt-native fee entries keyed by txid.
-type PendingAltNativeFee struct {
-	state         protoimpl.MessageState
-	sizeCache     protoimpl.SizeCache
-	unknownFields protoimpl.UnknownFields
-
-	Entries []*PendingAltNativeFeeEntry `protobuf:"bytes,1,rep,name=entries,proto3" json:"entries,omitempty"`
-}
-
-func (x *PendingAltNativeFee) Reset() {
-	*x = PendingAltNativeFee{}
-	if protoimpl.UnsafeEnabled {
-		mi := &file_types_type_alt_native_fee_escrow_proto_msgTypes[1]
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		ms.StoreMessageInfo(mi)
-	}
-}
-
-func (x *PendingAltNativeFee) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*PendingAltNativeFee) ProtoMessage() {}
-
-// Deprecated: Use PendingAltNativeFee.ProtoReflect.Descriptor instead.
-func (*PendingAltNativeFee) Descriptor() ([]byte, []int) {
-	return file_types_type_alt_native_fee_escrow_proto_rawDescGZIP(), []int{1}
-}
-
-func (x *PendingAltNativeFee) GetEntries() []*PendingAltNativeFeeEntry {
-	if x != nil {
-		return x.Entries
+		return x.Balance
 	}
 	return nil
 }
@@ -1172,34 +508,21 @@ var file_types_type_alt_native_fee_escrow_proto_rawDesc = []byte{
 	0x6f, 0x77, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x12, 0x05, 0x74, 0x79, 0x70, 0x65, 0x73, 0x1a,
 	0x14, 0x67, 0x6f, 0x67, 0x6f, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2f, 0x67, 0x6f, 0x67, 0x6f, 0x2e,
 	0x70, 0x72, 0x6f, 0x74, 0x6f, 0x1a, 0x13, 0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2f, 0x63, 0x6f,
-	0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x22, 0xb1, 0x01, 0x0a, 0x18, 0x50,
-	0x65, 0x6e, 0x64, 0x69, 0x6e, 0x67, 0x41, 0x6c, 0x74, 0x4e, 0x61, 0x74, 0x69, 0x76, 0x65, 0x46,
-	0x65, 0x65, 0x45, 0x6e, 0x74, 0x72, 0x79, 0x12, 0x49, 0x0a, 0x06, 0x73, 0x69, 0x67, 0x6e, 0x65,
-	0x72, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0c, 0x42, 0x31, 0xfa, 0xde, 0x1f, 0x2d, 0x67, 0x69, 0x74,
-	0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x2f, 0x63,
-	0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x2d, 0x73, 0x64, 0x6b, 0x2f, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2e,
-	0x41, 0x63, 0x63, 0x41, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x52, 0x06, 0x73, 0x69, 0x67, 0x6e,
-	0x65, 0x72, 0x12, 0x26, 0x0a, 0x04, 0x63, 0x6f, 0x69, 0x6e, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b,
-	0x32, 0x0c, 0x2e, 0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x43, 0x6f, 0x69, 0x6e, 0x42, 0x04,
-	0xc8, 0xde, 0x1f, 0x00, 0x52, 0x04, 0x63, 0x6f, 0x69, 0x6e, 0x12, 0x22, 0x0a, 0x0c, 0x69, 0x6e,
-	0x73, 0x75, 0x66, 0x66, 0x69, 0x63, 0x69, 0x65, 0x6e, 0x74, 0x18, 0x03, 0x20, 0x01, 0x28, 0x08,
-	0x52, 0x0c, 0x69, 0x6e, 0x73, 0x75, 0x66, 0x66, 0x69, 0x63, 0x69, 0x65, 0x6e, 0x74, 0x22, 0x56,
-	0x0a, 0x13, 0x50, 0x65, 0x6e, 0x64, 0x69, 0x6e, 0x67, 0x41, 0x6c, 0x74, 0x4e, 0x61, 0x74, 0x69,
-	0x76, 0x65, 0x46, 0x65, 0x65, 0x12, 0x3f, 0x0a, 0x07, 0x65, 0x6e, 0x74, 0x72, 0x69, 0x65, 0x73,
-	0x18, 0x01, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x1f, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2e, 0x50,
-	0x65, 0x6e, 0x64, 0x69, 0x6e, 0x67, 0x41, 0x6c, 0x74, 0x4e, 0x61, 0x74, 0x69, 0x76, 0x65, 0x46,
-	0x65, 0x65, 0x45, 0x6e, 0x74, 0x72, 0x79, 0x42, 0x04, 0xc8, 0xde, 0x1f, 0x00, 0x52, 0x07, 0x65,
-	0x6e, 0x74, 0x72, 0x69, 0x65, 0x73, 0x42, 0x90, 0x01, 0x0a, 0x09, 0x63, 0x6f, 0x6d, 0x2e, 0x74,
-	0x79, 0x70, 0x65, 0x73, 0x42, 0x1b, 0x54, 0x79, 0x70, 0x65, 0x41, 0x6c, 0x74, 0x4e, 0x61, 0x74,
-	0x69, 0x76, 0x65, 0x46, 0x65, 0x65, 0x45, 0x73, 0x63, 0x72, 0x6f, 0x77, 0x50, 0x72, 0x6f, 0x74,
-	0x6f, 0x50, 0x01, 0x5a, 0x2a, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f,
-	0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x6e, 0x6f,
-	0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x74, 0x79, 0x70, 0x65, 0x73, 0xa2,
-	0x02, 0x03, 0x54, 0x58, 0x58, 0xaa, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xca, 0x02, 0x05,
-	0x54, 0x79, 0x70, 0x65, 0x73, 0xe2, 0x02, 0x11, 0x54, 0x79, 0x70, 0x65, 0x73, 0x5c, 0x47, 0x50,
-	0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65,
-	0x73, 0xc8, 0xe1, 0x1e, 0x00, 0x80, 0xe2, 0x1e, 0x00, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f,
-	0x33,
+	0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x22, 0x42, 0x0a, 0x12, 0x41, 0x6c,
+	0x74, 0x4e, 0x61, 0x74, 0x69, 0x76, 0x65, 0x46, 0x65, 0x65, 0x45, 0x73, 0x63, 0x72, 0x6f, 0x77,
+	0x12, 0x2c, 0x0a, 0x07, 0x62, 0x61, 0x6c, 0x61, 0x6e, 0x63, 0x65, 0x18, 0x01, 0x20, 0x01, 0x28,
+	0x0b, 0x32, 0x0c, 0x2e, 0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x43, 0x6f, 0x69, 0x6e, 0x42,
+	0x04, 0xc8, 0xde, 0x1f, 0x00, 0x52, 0x07, 0x62, 0x61, 0x6c, 0x61, 0x6e, 0x63, 0x65, 0x42, 0x90,
+	0x01, 0x0a, 0x09, 0x63, 0x6f, 0x6d, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x42, 0x1b, 0x54, 0x79,
+	0x70, 0x65, 0x41, 0x6c, 0x74, 0x4e, 0x61, 0x74, 0x69, 0x76, 0x65, 0x46, 0x65, 0x65, 0x45, 0x73,
+	0x63, 0x72, 0x6f, 0x77, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x2a, 0x67, 0x69, 0x74,
+	0x6c, 0x61, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69,
+	0x6e, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x61, 0x70,
+	0x69, 0x2f, 0x74, 0x79, 0x70, 0x65, 0x73, 0xa2, 0x02, 0x03, 0x54, 0x58, 0x58, 0xaa, 0x02, 0x05,
+	0x54, 0x79, 0x70, 0x65, 0x73, 0xca, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xe2, 0x02, 0x11,
+	0x54, 0x79, 0x70, 0x65, 0x73, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74,
+	0x61, 0xea, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xc8, 0xe1, 0x1e, 0x00, 0x80, 0xe2, 0x1e,
+	0x00, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -1214,20 +537,18 @@ func file_types_type_alt_native_fee_escrow_proto_rawDescGZIP() []byte {
 	return file_types_type_alt_native_fee_escrow_proto_rawDescData
 }
 
-var file_types_type_alt_native_fee_escrow_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_types_type_alt_native_fee_escrow_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
 var file_types_type_alt_native_fee_escrow_proto_goTypes = []interface{}{
-	(*PendingAltNativeFeeEntry)(nil), // 0: types.PendingAltNativeFeeEntry
-	(*PendingAltNativeFee)(nil),      // 1: types.PendingAltNativeFee
-	(*common.Coin)(nil),              // 2: common.Coin
+	(*AltNativeFeeEscrow)(nil), // 0: types.AltNativeFeeEscrow
+	(*common.Coin)(nil),        // 1: common.Coin
 }
 var file_types_type_alt_native_fee_escrow_proto_depIdxs = []int32{
-	2, // 0: types.PendingAltNativeFeeEntry.coin:type_name -> common.Coin
-	0, // 1: types.PendingAltNativeFee.entries:type_name -> types.PendingAltNativeFeeEntry
-	2, // [2:2] is the sub-list for method output_type
-	2, // [2:2] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	2, // [2:2] is the sub-list for extension extendee
-	0, // [0:2] is the sub-list for field type_name
+	1, // 0: types.AltNativeFeeEscrow.balance:type_name -> common.Coin
+	1, // [1:1] is the sub-list for method output_type
+	1, // [1:1] is the sub-list for method input_type
+	1, // [1:1] is the sub-list for extension type_name
+	1, // [1:1] is the sub-list for extension extendee
+	0, // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_types_type_alt_native_fee_escrow_proto_init() }
@@ -1237,19 +558,7 @@ func file_types_type_alt_native_fee_escrow_proto_init() {
 	}
 	if !protoimpl.UnsafeEnabled {
 		file_types_type_alt_native_fee_escrow_proto_msgTypes[0].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*PendingAltNativeFeeEntry); i {
-			case 0:
-				return &v.state
-			case 1:
-				return &v.sizeCache
-			case 2:
-				return &v.unknownFields
-			default:
-				return nil
-			}
-		}
-		file_types_type_alt_native_fee_escrow_proto_msgTypes[1].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*PendingAltNativeFee); i {
+			switch v := v.(*AltNativeFeeEscrow); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -1267,7 +576,7 @@ func file_types_type_alt_native_fee_escrow_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_types_type_alt_native_fee_escrow_proto_rawDesc,
 			NumEnums:      0,
-			NumMessages:   2,
+			NumMessages:   1,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

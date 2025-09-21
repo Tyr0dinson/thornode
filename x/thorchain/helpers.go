@@ -8,17 +8,9 @@ import (
 	"sort"
 	"strings"
 
-	"cosmossdk.io/errors"
-	math "cosmossdk.io/math"
-
-	"cosmossdk.io/errors"
-	math "cosmossdk.io/math"
-
 	sdkmath "cosmossdk.io/math"
 	"github.com/blang/semver"
-	tmtypes "github.com/cometbft/cometbft/types"
 	"github.com/cosmos/cosmos-sdk/telemetry"
-	se "github.com/cosmos/cosmos-sdk/types/errors"
 	"github.com/hashicorp/go-metrics"
 	"github.com/hashicorp/go-multierror"
 
@@ -2503,7 +2495,7 @@ func getSecuredAssetBalanceOf(ctx cosmos.Context, k keeper.Keeper, asset common.
 	shareSupply := k.GetTotalSupply(ctx, asset)
 
 	// Proportion of total Pool Depth that the account's x/bank share tokens entitle it to:
-	return common.GetSafeShare(math.Uint(balance.Amount), shareSupply, pool.Depth)
+	return common.GetSafeShare(cosmos.Uint(balance.Amount), shareSupply, pool.Depth)
 }
 
 // getTradeAssetBalanceOf returns the caller's effective balance for a Trade Asset
@@ -2614,127 +2606,207 @@ func fetchAltNativeTxFeeCoin(ctx cosmos.Context, k keeper.Keeper, coins common.C
 	return common.Coin{}, fmt.Errorf("fail to find coins to pay tx fee")
 }
 
-// swapAltNativeTxFee swaps the provided alt-native fee coin into RUNE.
-func swapAltNativeTxFee(ctx cosmos.Context, mgr Manager, from common.Address, fee common.Coin) (common.Coin, error) {
-	swapper, err := GetSwapper(mgr.GetVersion())
-	if err != nil {
-		return common.Coin{}, fmt.Errorf("fail to get swapper: %w", err)
+// collectAltNativeTxFee deducts the alt-native fee from the signer using the
+// correct asset-specific mechanics (native, secured, or trade) and credits the
+// corresponding amount into the escrow ledger. Returns the underlying L1 amount
+// actually collected.
+func collectAltNativeTxFee(ctx cosmos.Context, k keeper.Keeper, signer cosmos.AccAddress, fee common.Coin) (cosmos.Uint, error) {
+	switch {
+	case fee.Asset.IsTradeAsset():
+		return collectAltNativeTxFeeFromTrade(ctx, k, signer, fee)
+	case fee.Asset.IsSecuredAsset():
+		return collectAltNativeTxFeeFromSecured(ctx, k, signer, fee)
+	default:
+		return collectAltNativeTxFeeFromNative(ctx, k, signer, fee)
 	}
-
-	hash := tmtypes.Tx(ctx.TxBytes()).Hash()
-	var txID common.TxID
-	txID, err = common.NewTxID(fmt.Sprintf("%X", hash))
-	if err != nil {
-		return common.Coin{}, fmt.Errorf("fail to get tx hash: %w", err)
-	}
-	// we swap native non-rune to rune in the same account so to == from
-	tx := common.NewTx(txID, from, from, common.Coins{fee}, common.Gas{}, "")
-	tx.Chain = common.THORChain
-	var emit cosmos.Uint
-	emit, _, err = swapper.Swap(ctx, mgr.Keeper(), tx, common.RuneNative, common.NoopAddress, cosmos.ZeroUint(), "", "", nil, StreamingSwap{}, 0, mgr)
-	if err != nil {
-		return common.Coin{}, fmt.Errorf("fail to get swap alt native tx fee to rune: %w", err)
-	}
-	emitAltTxFeeRune := common.NewCoin(common.RuneNative, emit)
-	return emitAltTxFeeRune, nil
 }
 
-// settlePendingAltNativeTxFee settles any pending alt-native tx fee entries
-// recorded for the current tx (if supported by version), by swapping them
-// into RUNE and crediting the Reserve. Returns ErrInsufficientFunds if any
-// entry was flagged insufficient after settlement.
-func settlePendingAltNativeTxFee(ctx cosmos.Context, mgr Manager) error {
-	// derive txid key
-	hash := tmtypes.Tx(ctx.TxBytes()).Hash()
-	txID, err := common.NewTxID(fmt.Sprintf("%X", hash))
-	if err != nil {
-		return errors.Wrapf(se.ErrInsufficientFunds, "fail to create tx hash from `%X` (%s)", hash, err)
+// collectAltNativeTxFeeFromNative transfers a native (non-RUNE) coin from the
+// signer to Asgard and records the amount in the escrow ledger.
+func collectAltNativeTxFeeFromNative(ctx cosmos.Context, k keeper.Keeper, signer cosmos.AccAddress, fee common.Coin) (cosmos.Uint, error) {
+	if fee.Amount.IsZero() {
+		return cosmos.ZeroUint(), fmt.Errorf("alt-native fee amount cannot be zero")
 	}
-
-	if insufficient, err := settlePendingAltNativeTxFeeForTx(ctx, mgr, txID); insufficient || err != nil {
-		if err != nil {
-			ctx.Logger().Error("failed to settle alt-native tx fee", "error", err)
-		}
-		if insufficient {
-			ctx.Logger().Error("insufficient alt-native tx fee settled")
-			return se.ErrInsufficientFunds
-		}
+	if err := k.SendFromAccountToModule(ctx, signer, AsgardName, common.NewCoins(fee)); err != nil {
+		return cosmos.ZeroUint(), fmt.Errorf("failed to move alt-native fee to asgard: %w", err)
 	}
-	return nil
+	k.AddAltNativeFeeEscrowBalance(ctx, fee.Asset, fee.Amount)
+	return fee.Amount, nil
 }
 
-// settlePendingAltNativeTxFeeForTx swaps all recorded pending alt-native fee
-// for the provided txID into RUNE and transfers it to the Reserve.
-func settlePendingAltNativeTxFeeForTx(ctx cosmos.Context, mgr Manager, txID common.TxID) (bool, error) {
-	pending := mgr.Keeper().GetPendingAltNativeTxFee(ctx, txID)
-	insufficientAny, err := settlePendingAltNativeTxFeeEntries(ctx, mgr, pending)
+// collectAltNativeTxFeeFromSecured burns the signer’s secured share tokens and
+// reduces the secured pool depth, recording the released L1 collateral in the
+// escrow ledger.
+func collectAltNativeTxFeeFromSecured(ctx cosmos.Context, k keeper.Keeper, signer cosmos.AccAddress, fee common.Coin) (cosmos.Uint, error) {
+	asset := fee.Asset.GetSecuredAsset()
+	pool, err := k.GetSecuredAsset(ctx, asset)
 	if err != nil {
-		return insufficientAny, err
+		return cosmos.ZeroUint(), fmt.Errorf("fail to get secured asset: %w", err)
 	}
-	mgr.Keeper().ClearPendingAltNativeTxFee(ctx, txID)
-	return insufficientAny, nil
+	shareBalance := cosmos.Uint(k.GetBalanceOf(ctx, signer, asset).Amount)
+	if shareBalance.IsZero() {
+		return cosmos.ZeroUint(), fmt.Errorf("insufficient secured asset balance")
+	}
+	assetAvailable := getSecuredAssetBalanceOf(ctx, k, asset, signer)
+	if assetAvailable.IsZero() {
+		return cosmos.ZeroUint(), fmt.Errorf("secured asset balance unavailable")
+	}
+	// Determine how many share tokens correspond to the requested fee amount.
+	burnAmt := common.GetSafeShare(fee.Amount, assetAvailable, shareBalance)
+	if burnAmt.IsZero() {
+		return cosmos.ZeroUint(), fmt.Errorf("secured asset fee below precision")
+	}
+	shareCoin := common.NewCoin(asset, burnAmt)
+	// Move the share tokens into the module and burn them to reduce the signer’s entitlement.
+	if err := k.SendFromAccountToModule(ctx, signer, ModuleName, common.NewCoins(shareCoin)); err != nil {
+		return cosmos.ZeroUint(), fmt.Errorf("failed to move secured asset shares: %w", err)
+	}
+	if err := k.BurnFromModule(ctx, ModuleName, shareCoin); err != nil {
+		return cosmos.ZeroUint(), fmt.Errorf("failed to burn secured asset shares: %w", err)
+	}
+	// Translate the burned shares back into underlying collateral.
+	tokensToConfiscate := common.GetSafeShare(burnAmt, shareBalance, assetAvailable)
+	if tokensToConfiscate.IsZero() {
+		return cosmos.ZeroUint(), fmt.Errorf("secured asset produced zero underlying amount")
+	}
+	pool.Depth = common.SafeSub(pool.Depth, tokensToConfiscate)
+	k.SetSecuredAsset(ctx, pool)
+	// Record the confiscated collateral in the fee escrow ledger.
+	k.AddAltNativeFeeEscrowBalance(ctx, asset.GetLayer1Asset(), tokensToConfiscate)
+	return tokensToConfiscate, nil
 }
 
-// settlePendingAltNativeTxFeeEntries processes and settles a set of pending alt-native fee entries.
-func settlePendingAltNativeTxFeeEntries(ctx cosmos.Context, mgr Manager, pending types.PendingAltNativeFee) (bool, error) {
-	if len(pending.Entries) == 0 {
-		return false, nil
+// collectAltNativeTxFeeFromTrade reduces the signer’s trade-units balance, in
+// turn shrinking the trade pool depth, and books the derived L1 amount into the
+// escrow ledger.
+func collectAltNativeTxFeeFromTrade(ctx cosmos.Context, k keeper.Keeper, signer cosmos.AccAddress, fee common.Coin) (cosmos.Uint, error) {
+	asset := fee.Asset.GetTradeAsset()
+	tu, err := k.GetTradeUnit(ctx, asset)
+	if err != nil {
+		return cosmos.ZeroUint(), fmt.Errorf("fail to get trade unit: %w", err)
 	}
-	insufficientAny := false
-	for _, e := range pending.Entries {
-		if e.Insufficient {
-			insufficientAny = true
-		}
-		fee := e.Coin
-		if fee.Amount.IsZero() {
+	tr, err := k.GetTradeAccount(ctx, signer, asset)
+	if err != nil {
+		return cosmos.ZeroUint(), fmt.Errorf("fail to get trade account: %w", err)
+	}
+	assetAvailable := getTradeAssetBalanceOf(ctx, k, asset, signer)
+	if assetAvailable.IsZero() {
+		return cosmos.ZeroUint(), fmt.Errorf("trade asset balance unavailable")
+	}
+	// Determine how many trade units correspond to the requested fee amount.
+	unitsToClaim := common.GetSafeShare(fee.Amount, assetAvailable, tr.Units)
+	if unitsToClaim.IsZero() {
+		return cosmos.ZeroUint(), fmt.Errorf("trade asset fee below precision")
+	}
+	// Convert those units into the actual asset depth that will be confiscated.
+	tokensToConfiscate := common.GetSafeShare(unitsToClaim, tr.Units, assetAvailable)
+	if tokensToConfiscate.IsZero() {
+		return cosmos.ZeroUint(), fmt.Errorf("trade asset produced zero underlying amount")
+	}
+	tu.Units = common.SafeSub(tu.Units, unitsToClaim)
+	tr.Units = common.SafeSub(tr.Units, unitsToClaim)
+	tu.Depth = common.SafeSub(tu.Depth, tokensToConfiscate)
+	tr.LastWithdrawHeight = ctx.BlockHeight()
+	k.SetTradeUnit(ctx, tu)
+	k.SetTradeAccount(ctx, tr)
+	// Record the confiscated underlying amount in the escrow ledger.
+	k.AddAltNativeFeeEscrowBalance(ctx, asset.GetLayer1Asset(), tokensToConfiscate)
+	return tokensToConfiscate, nil
+}
+
+// processAltNativeFeeEscrows swaps any escrowed alt-native balances that meet
+// the configured pool-depth threshold into RUNE and credits the Reserve.
+func processAltNativeFeeEscrows(ctx cosmos.Context, mgr Manager) {
+	iter := mgr.Keeper().GetAltNativeFeeEscrowIterator(ctx)
+	defer iter.Close()
+
+	thresholdBps := uint64(max(0, mgr.Keeper().GetConfigInt64(ctx, constants.AltNativeTxFeeSwapThresholdBps)))
+
+	for ; iter.Valid(); iter.Next() {
+		var escrow types.AltNativeFeeEscrow
+		if err := mgr.Keeper().Cdc().Unmarshal(iter.Value(), &escrow); err != nil {
+			ctx.Logger().Error("failed to decode alt-native fee escrow", "error", err)
 			continue
 		}
-		signerAddr, err := common.NewAddress(e.Signer.String())
-		if err != nil {
-			return insufficientAny, err
+		asset := escrow.Balance.Asset.GetLayer1Asset()
+		if escrow.Balance.Amount.IsZero() {
+			mgr.Keeper().RemoveAltNativeFeeEscrow(ctx, asset)
+			continue
 		}
-		if !(fee.Asset.IsTradeAsset() || fee.Asset.IsSecuredAsset()) {
-			// Single hop: move the fee asset directly into Asgard to back pool depth
-			if err := mgr.Keeper().SendFromAccountToModule(ctx, e.Signer, AsgardName, common.NewCoins(fee)); err != nil {
-				return insufficientAny, fmt.Errorf("failed to send alt native tx fee asset to asgard: %w", err)
+		pool, err := mgr.Keeper().GetPool(ctx, asset)
+		if err != nil {
+			ctx.Logger().Error("failed to load pool for alt-native fee escrow", "asset", asset, "error", err)
+			continue
+		}
+		if pool.BalanceAsset.IsZero() || pool.BalanceRune.IsZero() || !pool.IsAvailable() {
+			ctx.Logger().Error("pool unavailable for alt-native fee escrow swap", "asset", asset)
+			mgr.Keeper().RemoveAltNativeFeeEscrow(ctx, asset)
+			continue
+		}
+
+		if thresholdBps > 0 {
+			// Only act once the escrow exceeds the configured fraction of the pool depth.
+			threshold := pool.BalanceAsset.MulUint64(thresholdBps).QuoUint64(10000)
+			if escrow.Balance.Amount.LT(threshold) {
+				continue
 			}
 		}
-		emitAltTxFeeRune, err := swapAltNativeTxFee(ctx, mgr, signerAddr, fee)
-		if err != nil {
-			return insufficientAny, err
+
+		// Swap the accumulated asset into RUNE and credit it to the reserve.
+		if _, err := swapAltNativeFeeEscrowBalance(ctx, mgr, asset, escrow.Balance.Amount); err != nil {
+			ctx.Logger().Error("failed to swap alt-native fee escrow", "asset", asset, "amount", escrow.Balance.Amount, "error", err)
+			continue
 		}
-		if emitAltTxFeeRune.IsEmpty() || !emitAltTxFeeRune.Asset.IsRune() {
-			return insufficientAny, fmt.Errorf("unexpected swapped alt native tx fee result: %s", emitAltTxFeeRune)
-		}
-		// Reduce Asgard RUNE by the emitted amount and transfer to Reserve
-		if err := mgr.Keeper().SendFromModuleToModule(ctx, AsgardName, ReserveName, common.NewCoins(emitAltTxFeeRune)); err != nil {
-			return insufficientAny, err
-		}
+
+		mgr.Keeper().RemoveAltNativeFeeEscrow(ctx, asset)
 	}
-	return insufficientAny, nil
 }
 
-// sweepPendingAltNativeTxFees iterates all pending alt-native tx fee entries and settles them.
-func sweepPendingAltNativeTxFees(ctx cosmos.Context, mgr *Mgrs) {
-	iter := mgr.Keeper().GetPendingAltNativeTxFeeIterator(ctx)
-	defer iter.Close()
-	for ; iter.Valid(); iter.Next() {
-		var pending types.PendingAltNativeFee
-		if err := mgr.cdc.Unmarshal(iter.Value(), &pending); err != nil {
-			ctx.Logger().Error("failed to decode pending alt-native tx fee entry", "error", err)
-			continue
-		}
-		if _, err := settlePendingAltNativeTxFeeEntries(ctx, mgr, pending); err != nil {
-			ctx.Logger().Error("failed to settle pending alt-native tx fee", "error", err)
-			continue
-		}
-		key := string(iter.Key())
-		parts := strings.Split(key, "/")
-		hash := parts[len(parts)-1]
-		txid, err := common.NewTxID(fmt.Sprintf("%X", hash))
-		if err != nil {
-			ctx.Logger().Error("fail to create tx hash", "hash", hash, "error", err)
-		}
-		mgr.Keeper().ClearPendingAltNativeTxFee(ctx, txid)
+// swapAltNativeFeeEscrowBalance performs the actual swap of the escrowed asset
+// to RUNE and transfers the proceeds from Asgard to the Reserve.
+func swapAltNativeFeeEscrowBalance(ctx cosmos.Context, mgr Manager, asset common.Asset, amount cosmos.Uint) (cosmos.Uint, error) {
+	if amount.IsZero() {
+		return cosmos.ZeroUint(), nil
 	}
+	swapper, err := GetSwapper(mgr.GetVersion())
+	if err != nil {
+		return cosmos.ZeroUint(), fmt.Errorf("fail to get swapper: %w", err)
+	}
+
+	asgardAcc := mgr.Keeper().GetModuleAccAddress(AsgardName)
+	asgardAddr, err := common.NewAddress(asgardAcc.String())
+	if err != nil {
+		return cosmos.ZeroUint(), fmt.Errorf("fail to derive asgard address: %w", err)
+	}
+
+	// Generate a deterministic synthetic tx hash to represent the swap.
+	hash := sha256.Sum256([]byte(fmt.Sprintf("alt-native-fee|%s|%d", asset.String(), ctx.BlockHeight())))
+	txID, err := common.NewTxID(fmt.Sprintf("%X", hash))
+	if err != nil {
+		return cosmos.ZeroUint(), fmt.Errorf("fail to construct tx id: %w", err)
+	}
+
+	// Build a THORChain Tx that swaps the escrowed asset back into native RUNE.
+	tx := common.NewTx(txID, asgardAddr, asgardAddr, common.NewCoins(common.NewCoin(asset, amount)), common.Gas{}, "ALT-NATIVE-FEE-SWAP")
+	tx.Chain = common.THORChain
+
+	emit, _, err := swapper.Swap(ctx, mgr.Keeper(), tx, common.RuneNative, common.NoopAddress, cosmos.ZeroUint(), "", "", nil, StreamingSwap{}, 0, mgr)
+	if err != nil {
+		return cosmos.ZeroUint(), fmt.Errorf("fail to swap alt-native fees: %w", err)
+	}
+	if emit.IsZero() {
+		return cosmos.ZeroUint(), fmt.Errorf("alt-native fee swap emitted zero rune for asset %s", asset)
+	}
+
+	runeCoin := common.NewCoin(common.RuneNative, emit)
+	if err := mgr.Keeper().SendFromModuleToModule(ctx, AsgardName, ReserveName, common.NewCoins(runeCoin)); err != nil {
+		return cosmos.ZeroUint(), fmt.Errorf("fail to transfer swapped rune to reserve: %w", err)
+	}
+
+	feeEvt := NewEventFee(tx.ID, common.NewFee(common.NewCoins(runeCoin), cosmos.ZeroUint()), cosmos.ZeroUint())
+	if err := mgr.EventMgr().EmitEvent(ctx, feeEvt); err != nil {
+		ctx.Logger().Error("fail to emit fee event for alt-native fee swap", "error", err, "asset", asset, "amount", emit)
+	}
+
+	return emit, nil
 }

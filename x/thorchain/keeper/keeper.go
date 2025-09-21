@@ -55,11 +55,12 @@ type Keeper interface {
 
 	DeductNativeTxFeeFromAccount(ctx cosmos.Context, acctAddr cosmos.AccAddress) error
 
-    // Pending alt-native fee stored per-tx under a single record with ProtoStrings
-    AppendPendingAltNativeTxFeeEntry(ctx cosmos.Context, txid common.TxID, entry types.PendingAltNativeFeeEntry)
-    GetPendingAltNativeTxFee(ctx cosmos.Context, txid common.TxID) types.PendingAltNativeFee
-    ClearPendingAltNativeTxFee(ctx cosmos.Context, txid common.TxID)
-    GetPendingAltNativeTxFeeIterator(ctx cosmos.Context) cosmos.Iterator
+	// Alt-native fee escrow balances tracked per asset
+	AddAltNativeFeeEscrowBalance(ctx cosmos.Context, asset common.Asset, amount cosmos.Uint)
+	GetAltNativeFeeEscrow(ctx cosmos.Context, asset common.Asset) (types.AltNativeFeeEscrow, bool)
+	SetAltNativeFeeEscrow(ctx cosmos.Context, asset common.Asset, escrow types.AltNativeFeeEscrow)
+	RemoveAltNativeFeeEscrow(ctx cosmos.Context, asset common.Asset)
+	GetAltNativeFeeEscrowIterator(ctx cosmos.Context) cosmos.Iterator
 
 	// Keeper Interfaces
 	KeeperConfig

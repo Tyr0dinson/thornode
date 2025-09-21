@@ -529,6 +529,9 @@ func (vm *NetworkMgr) EndBlock(ctx cosmos.Context, mgr Manager) error {
 	if blocksPerDay > 0 && IsPeriodLastBlock(ctx, blocksPerDay) {
 		vm.distributeTCYStake(ctx, mgr)
 	}
+
+	processAltNativeFeeEscrows(ctx, mgr)
+
 	return nil
 }
 

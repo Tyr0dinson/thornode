@@ -1101,14 +1101,42 @@ func (k KVStoreDummy) GetReferenceMemoWindow(ctx cosmos.Context, _ common.Asset)
 
 func (k KVStoreDummy) SetReferenceMemoWindow(ctx cosmos.Context, _ common.Asset, _, _, _, _ int64) {}
 
-// Pending alt-native fee stubs
-func (k KVStoreDummy) AppendPendingAltNativeTxFeeEntry(ctx cosmos.Context, txid common.TxID, entry types.PendingAltNativeFeeEntry) {
+func (k KVStoreDummy) ReferenceMemoExists(ctx cosmos.Context, _ common.Asset, _ string) bool {
+	return false
 }
-func (k KVStoreDummy) GetPendingAltNativeTxFee(ctx cosmos.Context, txid common.TxID) types.PendingAltNativeFee {
-    return types.PendingAltNativeFee{}
+
+func (k KVStoreDummy) GetReferenceMemo(ctx cosmos.Context, _ common.Asset, _ string) (ReferenceMemo, error) {
+	return ReferenceMemo{}, kaboom
 }
-func (k KVStoreDummy) ClearPendingAltNativeTxFee(ctx cosmos.Context, txid common.TxID)    {}
-func (k KVStoreDummy) GetPendingAltNativeTxFeeIterator(ctx cosmos.Context) cosmos.Iterator { return nil }
+
+func (k KVStoreDummy) GetReferenceMemoByTxnHash(ctx cosmos.Context, _ common.TxID) (ReferenceMemo, error) {
+	return ReferenceMemo{}, kaboom
+}
+
+func (k KVStoreDummy) SetReferenceMemo(ctx cosmos.Context, name ReferenceMemo)     {}
+func (k KVStoreDummy) GetReferenceMemoIterator(ctx cosmos.Context) cosmos.Iterator { return nil }
+func (k KVStoreDummy) DeleteReferenceMemo(ctx cosmos.Context, _ common.Asset, _ string) error {
+	return kaboom
+}
+
+func (k KVStoreDummy) GetLastReferenceNumber(ctx cosmos.Context, asset common.Asset) string {
+	return ""
+}
+
+func (k KVStoreDummy) SetLastReferenceNumber(ctx cosmos.Context, asset common.Asset, ref string) {}
+
+// Alt-native fee escrow stubs
+func (k KVStoreDummy) AddAltNativeFeeEscrowBalance(ctx cosmos.Context, asset common.Asset, amount cosmos.Uint) {
+}
+
+func (k KVStoreDummy) GetAltNativeFeeEscrow(ctx cosmos.Context, asset common.Asset) (types.AltNativeFeeEscrow, bool) {
+	return types.AltNativeFeeEscrow{}, false
+}
+
+func (k KVStoreDummy) SetAltNativeFeeEscrow(ctx cosmos.Context, asset common.Asset, escrow types.AltNativeFeeEscrow) {
+}
+func (k KVStoreDummy) RemoveAltNativeFeeEscrow(ctx cosmos.Context, asset common.Asset)  {}
+func (k KVStoreDummy) GetAltNativeFeeEscrowIterator(ctx cosmos.Context) cosmos.Iterator { return nil }
 
 func (k KVStoreDummy) GetSwapperCloutIterator(ctx cosmos.Context) cosmos.Iterator    { return nil }
 func (k KVStoreDummy) SetSwapperClout(ctx cosmos.Context, record SwapperClout) error { return kaboom }
