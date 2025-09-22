@@ -16,13 +16,12 @@ message MsgMoveLiquidity {
     (gogoproto.customtype) = "cosmossdk.io/math.Uint",
     (gogoproto.nullable) = false
   ];
-  string new_asset_address = 4 [
-    (gogoproto.casttype) =
-        "gitlab.com/thorchain/thornode/v3/common.Address" ];
-  string new_rune_address = 5 [
-    (gogoproto.casttype) =
-      "gitlab.com/thorchain/thornode/v3/common.Address" ];
-  bytes signer = 6 [
-    (gogoproto.casttype) =
-      "github.com/cosmos/cosmos-sdk/types.AccAddress" ];
+  string new_asset_address = 4
+      [ (gogoproto.casttype) =
+            "gitlab.com/thorchain/thornode/v3/common.Address" ];
+  string new_rune_address = 5
+      [ (gogoproto.casttype) =
+            "gitlab.com/thorchain/thornode/v3/common.Address" ];
+  bytes signer = 6 [ (gogoproto.casttype) =
+                         "github.com/cosmos/cosmos-sdk/types.AccAddress" ];
 }
