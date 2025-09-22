@@ -1,0 +1,94 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+###############################################################################
+# Move LP from Cat to Fish (dual to single sided RUNE) => fail
+###############################################################################
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - asset: rune
+    amount: "0"
+memo: "MOVELP:BTC.BTC:{{ addr_thor_fish }}::5000"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.code == 99
+  - .txs[0].result.log | contains("cannot change lp type to single sided")
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_providers
+asserts:
+  - .|length == 1
+---
+###############################################################################
+# Move LP from Cat to Fish (dual to single sided BTC) => fail
+###############################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: BTC
+      from_address: {{ addr_btc_cat }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "10000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10500"
+          asset: "BTC.BTC"
+      memo: "MOVELP:BTC.BTC:{{ addr_btc_fish }}::5000"
+    block_height: 4
+    finalise_height: 4
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.code == 0
+  - .txs[0].result.events[-1].type == "refund"
+  - .txs[0].result.events[-1].reason | contains("no lp found")
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_providers
+asserts:
+  - .|length == 1
+---
+###############################################################################
+# Move LP from Cat to Fish (dual to dual) => ok
+###############################################################################
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - asset: rune
+    amount: "0"
+memo: "MOVELP:BTC.BTC:{{ addr_btc_fish }}:{{ addr_thor_fish }}:2000"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.code == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_providers
+asserts:
+  - .|length == 2
+  - .[]|select(.rune_address == "{{ addr_thor_cat }}").units == "80000000000"
+  - .[]|select(.rune_address == "{{ addr_thor_fish }}").units == "20000000000"
+  - .[0].last_add_height == .[1].last_add_height

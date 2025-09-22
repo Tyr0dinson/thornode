@@ -402,6 +402,14 @@ func (s *MemoSuite) TestParseWithAbbreviated(c *C) {
 	c.Check(mLoanRepayment.Owner.String(), Equals, "bc1qwqdg6squsna38e46795at95yu9atm8azzmyvckulcc7kytlcckxswvvzej")
 	c.Check(mLoanRepayment.MinOut.Uint64(), Equals, uint64(780000))
 
+	// move lp
+	memo, err = ParseMemoWithTHORNames(ctx, k, "movelp:BTC.BTC:bc1qwqdg6squsna38e46795at95yu9atm8azzmyvckulcc7kytlcckxswvvzej:thor1z83z5t9vqxys8nhpkxk5zp6zym0lalcp8ywhvj")
+	c.Assert(err, IsNil)
+	c.Check(memo.IsType(TxMoveLp), Equals, true)
+	c.Check(memo.IsInbound(), Equals, true)
+	c.Check(memo.IsInternal(), Equals, false)
+	c.Check(memo.IsOutbound(), Equals, false)
+
 	// unhappy paths
 	_, err = ParseMemoWithTHORNames(ctx, k, "")
 	c.Assert(err, NotNil)
@@ -426,6 +434,8 @@ func (s *MemoSuite) TestParseWithAbbreviated(c *C) {
 	_, err = ParseMemoWithTHORNames(ctx, k, "nextpool:whatever")
 	c.Assert(err, NotNil)
 	_, err = ParseMemoWithTHORNames(ctx, k, "migrate")
+	c.Assert(err, NotNil)
+	_, err = ParseMemoWithTHORNames(ctx, k, "movelp:::10")
 	c.Assert(err, NotNil)
 }
 

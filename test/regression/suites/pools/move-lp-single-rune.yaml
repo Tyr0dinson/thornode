@@ -1,0 +1,119 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+###############################################################################
+# Single sided RUNE deposit
+###############################################################################
+type: tx-deposit
+signer: {{ addr_thor_dog }}
+coins:
+  - amount: "10000000000"
+    asset: "rune"
+memo: "+:BTC.BTC"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.events[] | select(.type=="add_liquidity")
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_providers
+asserts:
+  - .|length == 2
+---
+###############################################################################
+# Move LP from Dog to Fish (single to dual) => fail
+###############################################################################
+type: tx-deposit
+signer: {{ addr_thor_dog }}
+coins:
+  - asset: rune
+    amount: "0"
+memo: "MOVELP:BTC.BTC:{{ addr_btc_fish }}:{{ addr_thor_fish }}:5000"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.code == 99
+  - .txs[0].result.log | contains("cannot change single sided lp type")
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_providers
+asserts:
+  - .|length == 2
+---
+###############################################################################
+# Move LP from Dog to Fish (single to single sided BTC) => fail
+###############################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: BTC
+      from_address: {{ addr_btc_dog }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "1"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10500"
+          asset: "BTC.BTC"
+      memo: "MOVELP:BTC.BTC:{{ addr_btc_fish }}::5000"
+    block_height: 4
+    finalise_height: 4
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.code == 0
+  - .txs[0].result.events[-1].type == "refund"
+  - .txs[0].result.events[-1].reason | contains("no lp found")
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_providers
+asserts:
+  - .|length == 2
+---
+###############################################################################
+# Move LP from Dog to Fish (single to single sided RUNE) => ok
+###############################################################################
+type: tx-deposit
+signer: {{ addr_thor_dog }}
+coins:
+  - asset: rune
+    amount: "0"
+memo: "MOVELP:BTC.BTC:{{ addr_thor_fish }}::3000"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.code == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_providers
+asserts:
+  - .|length == 3
+  - .[]|select(.rune_address == "{{ addr_thor_dog }}").rune_deposit_value == "3500000000"
+  - .[]|select(.rune_address == "{{ addr_thor_fish }}").rune_deposit_value == "1500000000"
+  - .[]|select(.rune_address == "{{ addr_thor_cat }}").rune_deposit_value == "100000000000"
+  - .[]|select(.rune_address == "{{ addr_thor_dog }}").last_add_height == 2
+  - .[]|select(.rune_address == "{{ addr_thor_fish }}").last_add_height == 2

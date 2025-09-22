@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
-
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/common/tokenlist"
@@ -83,6 +82,7 @@ func getInternalHandlerMapping(mgr Manager) map[string]MsgHandler {
 	m[sdk.MsgTypeURL(&MsgTCYStake{})] = NewTCYStakeHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgTCYUnstake{})] = NewTCYUnstakeHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgOperatorRotate{})] = NewOperatorRotateHandler(mgr)
+	m[sdk.MsgTypeURL(&MsgMoveLiquidity{})] = NewMoveLiquidityHandler(mgr)
 	return m
 }
 
@@ -201,6 +201,10 @@ func getMsgManageTHORNameFromMemo(memo ManageTHORNameMemo, tx ObservedTx, signer
 	return NewMsgManageTHORName(memo.Name, memo.Chain, memo.Address, tx.Tx.Coins[0], memo.Expire, memo.PreferredAsset, memo.Owner, signer), nil
 }
 
+func getMsgMoveLpFromMemo(memo MoveLpMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
+	return NewMsgMoveLiquidity(tx.Tx, memo.Asset, memo.Amount, memo.NewRuneAddress, memo.NewAssetAddress, signer), nil
+}
+
 func processOneTxIn(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
 	if len(tx.Tx.Coins) != 1 {
 		return nil, cosmos.ErrInvalidCoins("only send 1 coins per message")
@@ -299,6 +303,8 @@ func processOneTxIn(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, sig
 		newMsg, err = getMsgMaintFromMemo(m, signer)
 	case OperatorRotateMemo:
 		newMsg = NewMsgOperatorRotate(signer, m.OperatorAddress, tx.Tx.Coins[0])
+	case MoveLpMemo:
+		newMsg, err = getMsgMoveLpFromMemo(m, tx, signer)
 	default:
 		return nil, errInvalidMemo
 	}

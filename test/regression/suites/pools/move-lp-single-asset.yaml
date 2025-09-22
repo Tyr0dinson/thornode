@@ -1,0 +1,131 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+###############################################################################
+# Single sided BTC deposit
+###############################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "5000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10500"
+          asset: "BTC.BTC"
+      memo: "+:BTC.BTC"
+    block_height: 2
+    finalise_height: 2
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.events[] | select(.type=="add_liquidity")
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_providers
+asserts:
+  - .|length == 2
+---
+###############################################################################
+# Move LP from Fox to Fish (single to dual) => fail
+###############################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - asset: rune
+    amount: "0"
+memo: "MOVELP:BTC.BTC:{{ addr_btc_fish }}:{{ addr_thor_fish }}:5000"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.code == 99
+  - .txs[0].result.log | contains("no lp found")
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_providers
+asserts:
+  - .|length == 2
+---
+###############################################################################
+# Move LP from Fox to Fish (single to single sided RUNE) => fail
+###############################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - asset: rune
+    amount: "0"
+memo: "MOVELP:BTC.BTC:{{ addr_thor_fish }}::5000"
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.code == 99
+  - .txs[0].result.log | contains("no lp found")
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_providers
+asserts:
+  - .|length == 2
+---
+###############################################################################
+# Move LP from Fox to Fish (single to single sided BTC) => ok
+###############################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "1"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10500"
+          asset: "BTC.BTC"
+      memo: "MOVELP:BTC.BTC:{{ addr_btc_fish }}::4000"
+    block_height: 4
+    finalise_height: 4
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[0].result.code == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/liquidity_providers
+asserts:
+  - .|length == 3
+  - .[]|select(.asset_address == "{{ addr_btc_fox }}").asset_deposit_value == "1500000"
+  - .[]|select(.asset_address == "{{ addr_btc_fish }}").asset_deposit_value == "1000000"
+  - .[]|select(.rune_address == "{{ addr_thor_cat }}").asset_deposit_value == "100000000"
+  - .[]|select(.asset_address == "{{ addr_btc_fox }}").last_add_height == 2
+  - .[]|select(.asset_address == "{{ addr_btc_fish }}").last_add_height == 2

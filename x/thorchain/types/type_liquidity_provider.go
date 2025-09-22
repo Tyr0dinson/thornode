@@ -120,3 +120,7 @@ func (lp LiquidityProvider) GetSaversAssetRedeemValue(pool Pool) cosmos.Uint {
 	result := bigInt.Quo(num, denom)
 	return cosmos.NewUintFromBigInt(result)
 }
+
+func (lp LiquidityProvider) IsSingleSided() bool {
+	return lp.RuneAddress.IsEmpty() || lp.AssetAddress.IsEmpty()
+}

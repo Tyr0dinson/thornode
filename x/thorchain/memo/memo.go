@@ -52,6 +52,7 @@ const (
 	TxMaint
 	TxRebond
 	TxOperatorRotate
+	TxMoveLp
 )
 
 var stringToTxTypeMap = map[string]TxType{
@@ -99,6 +100,7 @@ var stringToTxTypeMap = map[string]TxType{
 	"tcy-":        TxTCYUnstake,
 	"maint":       TxMaint,
 	"operator":    TxOperatorRotate,
+	"movelp":      TxMoveLp,
 }
 
 var txToStringMap = map[TxType]string{
@@ -132,6 +134,7 @@ var txToStringMap = map[TxType]string{
 	TxTCYStake:               "tcy+",
 	TxTCYUnstake:             "tcy-",
 	TxMaint:                  "maint",
+	TxMoveLp:                 "movelp",
 }
 
 // converts a string into a txType
@@ -174,6 +177,7 @@ func (tx TxType) IsInbound() bool {
 		TxTCYClaim,
 		TxTCYStake,
 		TxTCYUnstake,
+		TxMoveLp,
 		TxOperatorRotate:
 		return true
 	default:

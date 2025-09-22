@@ -100,6 +100,7 @@ const (
 	TxTCYStake        = mem.TxTCYStake
 	TxTCYUnstake      = mem.TxTCYUnstake
 	TxOperatorRotate  = mem.TxOperatorRotate
+	TxMoveLP          = mem.TxMoveLp
 )
 
 var (
@@ -132,6 +133,7 @@ var (
 	NewMsgConsolidate              = types.NewMsgConsolidate
 	NewMsgDonate                   = types.NewMsgDonate
 	NewMsgAddLiquidity             = types.NewMsgAddLiquidity
+	NewMsgMoveLiquidity            = types.NewMsgMoveLiquidity
 	NewMsgWithdrawLiquidity        = types.NewMsgWithdrawLiquidity
 	NewMsgSwap                     = types.NewMsgSwap
 	NewMsgModifyLimitSwap          = types.NewMsgModifyLimitSwap
@@ -283,6 +285,7 @@ type (
 	MsgDonate                 = types.MsgDonate
 	MsgWithdrawLiquidity      = types.MsgWithdrawLiquidity
 	MsgAddLiquidity           = types.MsgAddLiquidity
+	MsgMoveLiquidity          = types.MsgMoveLiquidity
 	MsgOutboundTx             = types.MsgOutboundTx
 	MsgMimir                  = types.MsgMimir
 	MsgNodePauseChain         = types.MsgNodePauseChain
@@ -431,6 +434,7 @@ type (
 	TCYStakeMemo               = mem.TCYStakeMemo
 	TCYUnstakeMemo             = mem.TCYUnstakeMemo
 	OperatorRotateMemo         = mem.OperatorRotateMemo
+	MoveLpMemo                 = mem.MoveLpMemo
 
 	// Proto
 	ProtoStrings = types.ProtoStrings

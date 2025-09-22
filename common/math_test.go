@@ -2,6 +2,7 @@ package common
 
 import (
 	"errors"
+	"fmt"
 	"math/big"
 
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -127,5 +128,54 @@ func (s *MathSuite) TestMedianAverageDeviation(c *C) {
 		c.Assert(err, IsNil)
 		c.Assert(deviation.Text('f', 2), Equals, tc.Deviation)
 		c.Assert(median.Text('f', 2), Equals, tc.Median)
+	}
+}
+
+func (s *MathSuite) TestPercentage(c *C) {
+	testCases := []struct {
+		amount uint64
+		bips   uint64
+		result uint64
+	}{
+		{
+			amount: 0,
+			bips:   100,
+			result: 0,
+		},
+		{
+			amount: 1234,
+			bips:   0,
+			result: 0,
+		},
+		{
+			amount: 1234,
+			bips:   10000,
+			result: 1234,
+		},
+		{
+			amount: 1234,
+			bips:   92182727,
+			result: 1234,
+		},
+		{
+			amount: 1360,
+			bips:   2000,
+			result: 272,
+		},
+		{
+			amount: 5,
+			bips:   5000,
+			result: 2,
+		},
+		{
+			amount: 7,
+			bips:   2500,
+			result: 1,
+		},
+	}
+
+	for _, tc := range testCases {
+		result := GetPercentage(cosmos.NewUint(tc.amount), cosmos.NewUint(tc.bips))
+		c.Assert(result.String(), Equals, fmt.Sprintf("%d", tc.result))
 	}
 }
