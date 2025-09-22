@@ -77,28 +77,28 @@ func (MsgMoveLiquiditySuite) TestValidateBasic(c *C) {
 			Asset:    common.ETHAsset,
 			RuneAddr: GetRandomBTCAddress(),
 			Signer:   GetRandomBech32Addr(),
-			Error:    ".*doesnt match THORChain.*",
+			Error:    ".*does not match THORChain.*",
 		},
 		{
 			// Bogus RUNE address => Fail
 			Asset:    common.ETHAsset,
 			RuneAddr: "bogus",
 			Signer:   GetRandomBech32Addr(),
-			Error:    ".*doesnt match THORChain.*",
+			Error:    ".*does not match THORChain.*",
 		},
 		{
 			// Wrong Asset address => Fail
 			Asset:     common.ETHAsset,
 			AssetAddr: GetRandomBTCAddress(),
 			Signer:    GetRandomBech32Addr(),
-			Error:     ".*doesnt match asset chain.*",
+			Error:     ".*does not match asset chain.*",
 		},
 		{
 			// Bogus Asset address => Fail
 			Asset:     common.ETHAsset,
 			AssetAddr: "bogus",
 			Signer:    GetRandomBech32Addr(),
-			Error:     ".*doesnt match asset chain.*",
+			Error:     ".*does not match asset chain.*",
 		},
 	}
 

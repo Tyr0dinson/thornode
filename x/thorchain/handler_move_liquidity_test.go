@@ -1,7 +1,8 @@
 package thorchain
 
 import (
-	"math/rand"
+	"crypto/rand"
+	"math/big"
 
 	. "gopkg.in/check.v1"
 
@@ -197,10 +198,13 @@ func (s *HandlerMoveLiquiditySuite) TestMoveLiquidityHandlerDual(c *C) {
 	tx.Coins = common.Coins{}
 	tx.FromAddress = runeAddr2
 	for i := 0; i < len(providers); i++ {
+		amount, err := rand.Int(rand.Reader, big.NewInt(10_000))
+		c.Assert(err, IsNil)
+
 		_, err = moveHandler.Run(ctx, NewMsgMoveLiquidity(
 			tx,
 			common.ETHAsset,
-			cosmos.NewUint(uint64(rand.Intn(10_000))),
+			cosmos.NewUintFromBigInt(amount),
 			runeAddr1,
 			ethAddr1,
 			GetRandomBech32Addr(),
@@ -262,11 +266,13 @@ func (s *HandlerMoveLiquiditySuite) TestMoveLiquidityHandlerDual(c *C) {
 
 	// Test 11: Move single to single sided => OK
 	for i := 0; i < 10; i++ {
-		amount := rand.Intn(10_000)
+		amount, err := rand.Int(rand.Reader, big.NewInt(10_000))
+		c.Assert(err, IsNil)
+
 		_, err = moveHandler.Run(ctx, NewMsgMoveLiquidity(
 			tx,
 			common.ETHAsset,
-			cosmos.NewUint(uint64(amount)),
+			cosmos.NewUintFromBigInt(amount),
 			runeAddr5,
 			"",
 			GetRandomBech32Addr(),
@@ -317,11 +323,13 @@ func (s *HandlerMoveLiquiditySuite) TestMoveLiquidityHandlerDual(c *C) {
 
 	// Test 14: Move single to single sided => OK
 	for i := 0; i < 10; i++ {
-		amount := rand.Intn(10_000)
+		amount, err := rand.Int(rand.Reader, big.NewInt(10_000))
+		c.Assert(err, IsNil)
+
 		_, err = moveHandler.Run(ctx, NewMsgMoveLiquidity(
 			tx,
 			common.ETHAsset,
-			cosmos.NewUint(uint64(amount)),
+			cosmos.NewUintFromBigInt(amount),
 			"",
 			ethAddr5,
 			GetRandomBech32Addr(),

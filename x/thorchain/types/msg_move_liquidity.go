@@ -49,10 +49,10 @@ func (m *MsgMoveLiquidity) ValidateBasic() error {
 		return cosmos.ErrUnknownRequest("asset is no L1 asset")
 	}
 	if !m.NewRuneAddress.IsEmpty() && !m.NewRuneAddress.IsChain(common.THORChain) {
-		return cosmos.ErrUnknownRequest("rune address doesnt match THORChain")
+		return cosmos.ErrUnknownRequest("rune address does not match THORChain")
 	}
 	if !m.NewAssetAddress.IsEmpty() && !m.NewAssetAddress.IsChain(m.Asset.GetChain()) {
-		return cosmos.ErrUnknownRequest("asset address doesnt match asset chain")
+		return cosmos.ErrUnknownRequest("asset address does not match asset chain")
 	}
 	if m.NewRuneAddress.IsEmpty() && m.NewAssetAddress.IsEmpty() {
 		return cosmos.ErrUnknownRequest("no address provided")

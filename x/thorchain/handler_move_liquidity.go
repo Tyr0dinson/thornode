@@ -92,10 +92,8 @@ func (h MoveLiquidityHandler) handle(ctx cosmos.Context, msg MsgMoveLiquidity) e
 		if oldLp.AssetAddress.IsEmpty() && !msg.NewAssetAddress.IsEmpty() {
 			return fmt.Errorf("cannot change single sided lp type")
 		}
-	} else {
-		if msg.NewRuneAddress.IsEmpty() || msg.NewAssetAddress.IsEmpty() {
-			return fmt.Errorf("cannot change lp type to single sided")
-		}
+	} else if msg.NewRuneAddress.IsEmpty() || msg.NewAssetAddress.IsEmpty() {
+		return fmt.Errorf("cannot change lp type to single sided")
 	}
 
 	address := msg.NewRuneAddress

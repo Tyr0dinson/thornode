@@ -162,14 +162,14 @@ Migrate a LP position to a new/different address
 
 LP positions can be migrated to a different address, but need to stay in kind. Dual sided positions can only be migrated to dual sided (hence need to provide two new addresses) and single sided position can only migrated into new single sided positions of the same kind (either single sided RUNE or ASSET)
 
-| Parameter | Notes                                                                                       | Conditions                                                                     |
-|-----------|---------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------|
-| Payload   | Send the dust threshold of the asset to cause the transaction to be picked up by THORChain. | [Dust thresholds](#dust-thresholds) must be met.                               |[Dust thresholds](#dust-thresholds) must be met.|
-| `MOVELP`  | The migrate liquity handler                                                                 |                                                                                |
-| `:POOL`   | The pool to migrate liquidity in                                                            |                                                                                |
-| `:ADDR1`  | The new address to migrate the position to                                                  | Either thor- or asset address                                                  |
-| `:ADDR2`  | The second new address to migrate the position to                | The second address (either thor- or asset) when migrating dual-sided positions |
-| `:BASISPOINTS` | Basis points.                                                                               | Range 0-10000, where 0 or >= 10000 = 100%  |
+| Parameter      | Notes                                                                                       | Conditions                                                                     |
+| -------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Payload        | Send the dust threshold of the asset to cause the transaction to be picked up by THORChain. | [Dust thresholds](#dust-thresholds) must be met.                               |
+| `MOVELP`       | The migrate liquity handler                                                                 |                                                                                |
+| `:POOL`        | The pool to migrate liquidity in                                                            |                                                                                |
+| `:ADDR1`       | The new address to migrate the position to                                                  | Either thor- or asset address                                                  |
+| `:ADDR2`       | The second new address to migrate the position to                                           | The second address (either thor- or asset) when migrating dual-sided positions |
+| `:BASISPOINTS` | Basis points.                                                                               | Range 0-10000, where 0 or >= 10000 = 100%                                      |
 
 ### Claim TCY
 
