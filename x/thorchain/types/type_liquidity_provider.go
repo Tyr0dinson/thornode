@@ -122,5 +122,9 @@ func (lp LiquidityProvider) GetSaversAssetRedeemValue(pool Pool) cosmos.Uint {
 }
 
 func (lp LiquidityProvider) IsSingleSided() bool {
-	return lp.RuneAddress.IsEmpty() || lp.AssetAddress.IsEmpty()
+	return lp.RuneAddress.IsEmpty() != lp.AssetAddress.IsEmpty()
+}
+
+func (lp LiquidityProvider) IsDualSided() bool {
+	return !lp.RuneAddress.IsEmpty() && !lp.AssetAddress.IsEmpty()
 }

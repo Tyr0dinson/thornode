@@ -132,6 +132,17 @@ func (s *HandlerMoveLiquiditySuite) TestMoveLiquidityHandlerDual(c *C) {
 	))
 	c.Assert(err, IsNil)
 
+	// Test 4.1: Move to address 2, wrong eth address
+	_, err = moveHandler.Run(ctx, NewMsgMoveLiquidity(
+		tx,
+		common.ETHAsset,
+		cosmos.NewUint(1000),
+		runeAddr2,
+		ethAddr3,
+		GetRandomBech32Addr(),
+	))
+	c.Assert(err, NotNil)
+
 	// Test 5: Move to address 3
 	_, err = moveHandler.Run(ctx, NewMsgMoveLiquidity(
 		tx,

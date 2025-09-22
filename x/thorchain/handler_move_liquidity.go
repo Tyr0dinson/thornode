@@ -106,8 +106,13 @@ func (h MoveLiquidityHandler) handle(ctx cosmos.Context, msg MsgMoveLiquidity) e
 		return ErrInternal(err, "fail to get liquidity provider")
 	}
 
-	newLp.RuneAddress = msg.NewRuneAddress
-	newLp.AssetAddress = msg.NewAssetAddress
+	if oldLp.IsDualSided() {
+		if newLp.IsSingleSided() {
+			newLp.AssetAddress = msg.NewAssetAddress
+		} else if !newLp.AssetAddress.Equals(msg.NewAssetAddress) {
+			return fmt.Errorf("asset address does not match")
+		}
+	}
 
 	runeAmount := common.GetPercentage(oldLp.RuneDepositValue, msg.Amount)
 	assetAmount := common.GetPercentage(oldLp.AssetDepositValue, msg.Amount)
