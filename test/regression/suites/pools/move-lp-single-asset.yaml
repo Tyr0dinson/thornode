@@ -129,3 +129,5 @@ asserts:
   - .[]|select(.rune_address == "{{ addr_thor_cat }}").asset_deposit_value == "100000000"
   - .[]|select(.asset_address == "{{ addr_btc_fox }}").last_add_height == 2
   - .[]|select(.asset_address == "{{ addr_btc_fish }}").last_add_height == 2
+---
+type: fail-export-invariants
