@@ -7,9 +7,7 @@ import "common/common.proto";
 import "gogoproto/gogo.proto";
 
 message MsgMoveLiquidity {
-  common.Tx tx_in = 1 [
-    (gogoproto.nullable) = false
-  ];
+  common.Tx tx_in = 1 [ (gogoproto.nullable) = false ];
   common.Asset asset = 2 [
     (gogoproto.nullable) = false,
     (gogoproto.customtype) = "gitlab.com/thorchain/thornode/v3/common.Asset"
@@ -18,13 +16,12 @@ message MsgMoveLiquidity {
     (gogoproto.customtype) = "cosmossdk.io/math.Uint",
     (gogoproto.nullable) = false
   ];
-  string new_asset_address = 4 [
-    (gogoproto.casttype) = "gitlab.com/thorchain/thornode/v3/common.Address"
-  ];
-  string new_rune_address = 5 [
-    (gogoproto.casttype) = "gitlab.com/thorchain/thornode/v3/common.Address"
-  ];
-  bytes signer = 6 [
-    (gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress"
-  ];
+  string new_asset_address = 4
+  [ (gogoproto.casttype) =
+      "gitlab.com/thorchain/thornode/v3/common.Address" ];
+  string new_rune_address = 5
+  [ (gogoproto.casttype) =
+      "gitlab.com/thorchain/thornode/v3/common.Address" ];
+  bytes signer = 6 [ (gogoproto.casttype) =
+      "github.com/cosmos/cosmos-sdk/types.AccAddress" ];
 }
