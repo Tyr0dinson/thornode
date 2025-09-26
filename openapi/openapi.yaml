@@ -4795,10 +4795,9 @@ components:
           description: the reference number used to identify this memo
           example: "20002"
         height:
-          type: integer
-          format: int64
+          type: string
           description: the block height when this reference memo was registered
-          example: 12345678
+          example: "12345678"
         registration_hash:
           type: string
           description: the transaction hash where this reference memo was registered

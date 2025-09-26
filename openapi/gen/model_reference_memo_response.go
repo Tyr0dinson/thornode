@@ -23,7 +23,7 @@ type ReferenceMemoResponse struct {
 	// the reference number used to identify this memo
 	Reference string `json:"reference"`
 	// the block height when this reference memo was registered
-	Height int64 `json:"height"`
+	Height string `json:"height"`
 	// the transaction hash where this reference memo was registered
 	RegistrationHash string `json:"registration_hash"`
 	// the address that registered this reference memo
@@ -34,7 +34,7 @@ type ReferenceMemoResponse struct {
 // This constructor will assign default values to properties that have it defined,
 // and makes sure properties required by API are set, but the set of arguments
 // will change when the set of required properties is changed
-func NewReferenceMemoResponse(asset string, memo string, reference string, height int64, registrationHash string, registeredBy string) *ReferenceMemoResponse {
+func NewReferenceMemoResponse(asset string, memo string, reference string, height string, registrationHash string, registeredBy string) *ReferenceMemoResponse {
 	this := ReferenceMemoResponse{}
 	this.Asset = asset
 	this.Memo = memo
@@ -126,9 +126,9 @@ func (o *ReferenceMemoResponse) SetReference(v string) {
 }
 
 // GetHeight returns the Height field value
-func (o *ReferenceMemoResponse) GetHeight() int64 {
+func (o *ReferenceMemoResponse) GetHeight() string {
 	if o == nil {
-		var ret int64
+		var ret string
 		return ret
 	}
 
@@ -137,7 +137,7 @@ func (o *ReferenceMemoResponse) GetHeight() int64 {
 
 // GetHeightOk returns a tuple with the Height field value
 // and a boolean to check if the value has been set.
-func (o *ReferenceMemoResponse) GetHeightOk() (*int64, bool) {
+func (o *ReferenceMemoResponse) GetHeightOk() (*string, bool) {
 	if o == nil {
 		return nil, false
 	}
@@ -145,7 +145,7 @@ func (o *ReferenceMemoResponse) GetHeightOk() (*int64, bool) {
 }
 
 // SetHeight sets field value
-func (o *ReferenceMemoResponse) SetHeight(v int64) {
+func (o *ReferenceMemoResponse) SetHeight(v string) {
 	o.Height = v
 }
 

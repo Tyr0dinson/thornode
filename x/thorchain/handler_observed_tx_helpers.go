@@ -274,6 +274,7 @@ func handleObservedTxInQuorum(
 		asset := tx.Tx.Coins[0].Asset
 		resolvedMemo := fetchMemoFromReference(ctx, mgr, asset, voter.Tx.Tx.Memo, voter.UnfinalizedHeight)
 		voter.Tx.Tx.Memo = resolvedMemo
+		k.SetObservedTxInVoter(ctx, voter)
 	}
 
 	// construct msg from memo
