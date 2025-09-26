@@ -7328,7 +7328,7 @@ components:
         memo: =:ETH.ETH:0x1c7b17362c84287bd1184447e6dfeaf920c31bbe:1000:0:100
         asset: BTC.BTC
         registration_hash: AF524818D42B63D25BBA0CCC4909F127CAA645C0F9CD07324F2824CC151A64C8
-        height: 12345678
+        height: "12345678"
       properties:
         asset:
           description: the asset for which this reference memo is valid
@@ -7344,9 +7344,8 @@ components:
           type: string
         height:
           description: the block height when this reference memo was registered
-          example: 12345678
-          format: int64
-          type: integer
+          example: "12345678"
+          type: string
         registration_hash:
           description: the transaction hash where this reference memo was registered
           example: AF524818D42B63D25BBA0CCC4909F127CAA645C0F9CD07324F2824CC151A64C8

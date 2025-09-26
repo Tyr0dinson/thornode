@@ -7,7 +7,7 @@ Name | Type | Description | Notes
 **Asset** | **string** | the asset for which this reference memo is valid | 
 **Memo** | **string** | the original memo that was registered for memoless transactions | 
 **Reference** | **string** | the reference number used to identify this memo | 
-**Height** | **int64** | the block height when this reference memo was registered | 
+**Height** | **string** | the block height when this reference memo was registered | 
 **RegistrationHash** | **string** | the transaction hash where this reference memo was registered | 
 **RegisteredBy** | **string** | the address that registered this reference memo | 
 
@@ -15,7 +15,7 @@ Name | Type | Description | Notes
 
 ### NewReferenceMemoResponse
 
-`func NewReferenceMemoResponse(asset string, memo string, reference string, height int64, registrationHash string, registeredBy string, ) *ReferenceMemoResponse`
+`func NewReferenceMemoResponse(asset string, memo string, reference string, height string, registrationHash string, registeredBy string, ) *ReferenceMemoResponse`
 
 NewReferenceMemoResponse instantiates a new ReferenceMemoResponse object
 This constructor will assign default values to properties that have it defined,
@@ -92,20 +92,20 @@ SetReference sets Reference field to given value.
 
 ### GetHeight
 
-`func (o *ReferenceMemoResponse) GetHeight() int64`
+`func (o *ReferenceMemoResponse) GetHeight() string`
 
 GetHeight returns the Height field if non-nil, zero value otherwise.
 
 ### GetHeightOk
 
-`func (o *ReferenceMemoResponse) GetHeightOk() (*int64, bool)`
+`func (o *ReferenceMemoResponse) GetHeightOk() (*string, bool)`
 
 GetHeightOk returns a tuple with the Height field if it's non-nil, zero value otherwise
 and a boolean to check if the value has been set.
 
 ### SetHeight
 
-`func (o *ReferenceMemoResponse) SetHeight(v int64)`
+`func (o *ReferenceMemoResponse) SetHeight(v string)`
 
 SetHeight sets Height field to given value.
 

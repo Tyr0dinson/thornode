@@ -234,24 +234,29 @@ func (s *HandlerReferenceMemoSuite) TestCalculateAssetBasedInterval(c *check.C) 
 
 	// Test 8-decimal assets (BTC, ETH) - should have interval of 1
 	btcAsset := common.BTCAsset
-	interval := handler.calculateAssetBasedInterval(ctx, btcAsset)
+	interval, err := handler.calculateAssetBasedInterval(ctx, btcAsset)
+	c.Assert(err, IsNil)
 	c.Assert(interval, check.Equals, int64(1), check.Commentf("BTC should have interval 1 for 8 decimals"))
 
 	ethAsset := common.ETHAsset
-	interval = handler.calculateAssetBasedInterval(ctx, ethAsset)
+	interval, err = handler.calculateAssetBasedInterval(ctx, ethAsset)
+	c.Assert(err, IsNil)
 	c.Assert(interval, check.Equals, int64(1), check.Commentf("ETH should have interval 1 for 8 decimals"))
 
 	// Test 6-decimal assets (XRP, GAIA) - should have interval of 100
 	xrpAsset := common.XRPAsset
-	interval = handler.calculateAssetBasedInterval(ctx, xrpAsset)
+	interval, err = handler.calculateAssetBasedInterval(ctx, xrpAsset)
+	c.Assert(err, IsNil)
 	c.Assert(interval, check.Equals, int64(100), check.Commentf("XRP should have interval 100 for 6 decimals"))
 
 	gaiaAtom := common.ATOMAsset // GAIA/ATOM uses 6 decimals
-	interval = handler.calculateAssetBasedInterval(ctx, gaiaAtom)
+	interval, err = handler.calculateAssetBasedInterval(ctx, gaiaAtom)
+	c.Assert(err, IsNil)
 	c.Assert(interval, check.Equals, int64(100), check.Commentf("ATOM should have interval 100 for 6 decimals"))
 
 	// Test empty asset - should fallback to interval of 1
 	emptyAsset := common.EmptyAsset
-	interval = handler.calculateAssetBasedInterval(ctx, emptyAsset)
+	interval, err = handler.calculateAssetBasedInterval(ctx, emptyAsset)
+	c.Assert(err, NotNil)
 	c.Assert(interval, check.Equals, int64(0), check.Commentf("Empty asset should fallback to interval 0"))
 }

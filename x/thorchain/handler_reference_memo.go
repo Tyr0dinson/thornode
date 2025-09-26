@@ -93,24 +93,22 @@ func (h ReferenceMemoHandler) extractAssetFromMemo(ctx cosmos.Context, memo stri
 // For assets with different decimal precision, we need different intervals:
 // - 8 decimals (BTC, etc.): interval = 1 (common.One / 10^8 = 1)
 // - 6 decimals (XRP, GAIA): interval = 100 (common.One / 10^6 = 100)
-func (h ReferenceMemoHandler) calculateAssetBasedInterval(ctx cosmos.Context, asset common.Asset) int64 {
+func (h ReferenceMemoHandler) calculateAssetBasedInterval(ctx cosmos.Context, asset common.Asset) (int64, error) {
 	if asset.IsEmpty() {
 		// Fallback to interval of 1 for empty assets
-		ctx.Logger().Error("fail to get asset in calculating asset interval", "error", "is empty")
-		return 0
+		return 0, fmt.Errorf("fail to get asset in calculating asset interval")
 	}
 
 	// Get pool-specific decimals for the asset
 	pool, err := h.mgr.Keeper().GetPool(ctx, asset)
 	if err != nil {
 		// Fallback to gas asset decimals if pool not found
-		ctx.Logger().Error("fail to get pool", "error", err)
-		return 0
+		return 0, err
 	}
 
 	decimals := pool.Decimals
 	if decimals >= 8 {
-		return 1 // No adjustment needed for 8+ decimal assets
+		return 1, nil // No adjustment needed for 8+ decimal assets
 	}
 
 	// For assets with fewer decimals, we need larger intervals
@@ -121,7 +119,7 @@ func (h ReferenceMemoHandler) calculateAssetBasedInterval(ctx cosmos.Context, as
 		interval *= 10
 	}
 
-	return interval
+	return interval, nil
 }
 
 // handle process MsgReferenceMemo
@@ -144,9 +142,9 @@ func (h ReferenceMemoHandler) handle(ctx cosmos.Context, msg MsgReferenceMemo) (
 
 	// Use original message asset for reference tracking (where the transaction occurred)
 	posStr := h.mgr.Keeper().GetLastReferenceNumber(ctx, msg.Asset)
-	next := h.nextReference(ctx, msg.Asset, targetAsset, posStr, ttl)
-	if next == "" {
-		return nil, errors.New("unable to find an available reference")
+	next, err := h.nextReference(ctx, msg.Asset, targetAsset, posStr, ttl)
+	if next == "" || err != nil {
+		return nil, fmt.Errorf("unable to find an available reference: %w", err)
 	}
 
 	hash := sha256.New()
@@ -225,11 +223,11 @@ func (h ReferenceMemoHandler) nextReferenceWithInterval(ctx cosmos.Context, asse
 }
 
 // nextReference finds the next available reference by calculating interval and range from target asset
-func (h ReferenceMemoHandler) nextReference(ctx cosmos.Context, asset, targetAsset common.Asset, posStr string, ttl int64) string {
+func (h ReferenceMemoHandler) nextReference(ctx cosmos.Context, asset, targetAsset common.Asset, posStr string, ttl int64) (string, error) {
 	// Calculate dynamic start/end based on target asset decimals
-	interval := h.calculateAssetBasedInterval(ctx, targetAsset)
-	if interval == 0 {
-		return ""
+	interval, err := h.calculateAssetBasedInterval(ctx, targetAsset)
+	if interval == 0 || err != nil {
+		return "", err
 	}
 	baseStart := h.mgr.Keeper().GetConfigInt64(ctx, constants.MemolessTxnStartRef)
 	baseEnd := h.mgr.Keeper().GetConfigInt64(ctx, constants.MemolessTxnEndRef)
@@ -241,5 +239,5 @@ func (h ReferenceMemoHandler) nextReference(ctx cosmos.Context, asset, targetAss
 	}
 	end := (baseEnd / interval) * interval
 
-	return h.nextReferenceWithInterval(ctx, asset, posStr, start, end, interval, ttl)
+	return h.nextReferenceWithInterval(ctx, asset, posStr, start, end, interval, ttl), nil
 }
