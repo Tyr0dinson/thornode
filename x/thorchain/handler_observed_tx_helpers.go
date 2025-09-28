@@ -193,8 +193,6 @@ func handleObservedTxInQuorum(
 			}
 		}
 
-		// Track reference memo usage only after consensus is reached
-		trackReferenceMemoUsage(ctx, mgr, asset, voter.Tx.Tx.Memo, tx.Tx.ID)
 	}
 
 	// memo errors are ignored here and will be caught later in processing,
@@ -272,7 +270,7 @@ func handleObservedTxInQuorum(
 	// Resolve reference memo if needed before processing
 	if len(tx.Tx.Coins) > 0 {
 		asset := tx.Tx.Coins[0].Asset
-		resolvedMemo := fetchMemoFromReference(ctx, mgr, asset, voter.Tx.Tx.Memo, voter.UnfinalizedHeight)
+		resolvedMemo := fetchMemoFromReference(ctx, mgr, asset, voter.Tx.Tx, voter.UnfinalizedHeight)
 		voter.Tx.Tx.Memo = resolvedMemo
 		k.SetObservedTxInVoter(ctx, voter)
 	}
@@ -651,12 +649,12 @@ func handleObservedTxOutQuorum(
 }
 
 // fetchMemoFromReference fetches memo from reference if it's a memoless transaction
-func fetchMemoFromReference(ctx cosmos.Context, mgr Manager, asset common.Asset, memo string, txObservationHeight int64) string {
-	mem, _ := ParseMemoWithTHORNames(ctx, mgr.Keeper(), memo) // ignore err
+func fetchMemoFromReference(ctx cosmos.Context, mgr Manager, asset common.Asset, tx common.Tx, txObservationHeight int64) string {
+	mem, _ := ParseMemoWithTHORNames(ctx, mgr.Keeper(), tx.Memo) // ignore err
 	if mem.GetType() == TxReferenceReadMemo {
 		m, ok := mem.(ReferenceReadMemo)
 		if !ok {
-			return memo
+			return tx.Memo
 		}
 		// Check if memoless transactions are halted
 		haltMemoless, err := mgr.Keeper().GetMimir(ctx, "HaltMemoless")
@@ -673,6 +671,8 @@ func fetchMemoFromReference(ctx cosmos.Context, mgr Manager, asset common.Asset,
 		// Ensure transaction was observed after the reference memo was created
 		if txObservationHeight <= refMemo.Height {
 			ctx.Logger().Info("transaction observed before reference memo creation", "tx_height", txObservationHeight, "memo_height", refMemo.Height, "reference", m.Reference)
+			// Track failure usage
+			trackReferenceMemoUsage(ctx, mgr, asset, tx.Memo, tx.ID)
 			return ""
 		}
 
@@ -682,14 +682,22 @@ func fetchMemoFromReference(ctx cosmos.Context, mgr Manager, asset common.Asset,
 			maxUse := mgr.Keeper().GetConfigInt64(ctx, constants.MemolessTxnMaxUse)
 			if maxUse > 0 && refMemo.GetUsageCount() >= maxUse {
 				ctx.Logger().Info("reference memo usage limit exceeded in fetchMemoFromReference", "reference", m.Reference, "usage_count", refMemo.GetUsageCount(), "max_use", maxUse)
+
+				// Track failure usage
+				trackReferenceMemoUsage(ctx, mgr, asset, tx.Memo, tx.ID)
 				return ""
 			}
 
+			// Track successful usage
+			trackReferenceMemoUsage(ctx, mgr, asset, tx.Memo, tx.ID)
 			return refMemo.Memo
 		}
+
+		// Track failure usage
+		trackReferenceMemoUsage(ctx, mgr, asset, tx.Memo, tx.ID)
 		return ""
 	}
-	return memo
+	return tx.Memo
 }
 
 // trackReferenceMemoUsage tracks that a transaction has used a reference memo
