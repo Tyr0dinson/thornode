@@ -888,21 +888,25 @@ func (s *HandlerObservedTxInSuite) TestMemolessTxns(c *C) {
 	mgr.Keeper().SetMimir(ctx, constants.MemolessTxnTTL.String(), 10)
 
 	// Test when memo is not empty
-	memo := fetchMemoFromReference(ctx, mgr, asset, "myMemo", 15)
+	testTx := common.NewTx(common.TxID(""), common.NoAddress, common.NoAddress, common.Coins{}, common.Gas{}, "myMemo")
+	memo := fetchMemoFromReference(ctx, mgr, asset, testTx, 15)
 	c.Check(memo, check.Equals, "myMemo", check.Commentf("Expected to return the same memo when memo is not empty"))
 
-	memo = fetchMemoFromReference(ctx, mgr, asset, "", 15)
+	testTx2 := common.NewTx(common.TxID(""), common.NoAddress, common.NoAddress, common.Coins{}, common.Gas{}, "")
+	memo = fetchMemoFromReference(ctx, mgr, asset, testTx2, 15)
 	c.Check(memo, check.Equals, "", check.Commentf("Expected to return empty memo when memo is empty"))
 
 	// Test when reference memo is not expired, happy path
 	refMemo := NewReferenceMemo(asset, "the memo", "30000", 10)
 	mgr.Keeper().SetReferenceMemo(ctx, refMemo)
-	memo = fetchMemoFromReference(ctx, mgr, asset, "r:30000", 15) // tx observed at height 15, memo created at height 10
+	testTx3 := common.NewTx(common.TxID(""), common.NoAddress, common.NoAddress, common.Coins{}, common.Gas{}, "r:30000")
+	memo = fetchMemoFromReference(ctx, mgr, asset, testTx3, 15) // tx observed at height 15, memo created at height 10
 	c.Check(memo, check.Equals, "the memo", check.Commentf("Expected to return reference memo when it's not expired"))
 
 	// Test when reference memo is expired
 	ctx = ctx.WithBlockHeight(25)
-	memo = fetchMemoFromReference(ctx, mgr, asset, "r:30000", 15) // tx observed at height 15, memo created at height 10
+	testTx4 := common.NewTx(common.TxID(""), common.NoAddress, common.NoAddress, common.Coins{}, common.Gas{}, "r:30000")
+	memo = fetchMemoFromReference(ctx, mgr, asset, testTx4, 15) // tx observed at height 15, memo created at height 10
 	c.Check(memo, check.Equals, "", check.Commentf("Expected to return empty memo when reference memo is expired"))
 }
 
@@ -913,8 +917,8 @@ func (s *HandlerObservedTxInSuite) TestMemoUsageTracking(c *C) {
 
 	// Set TTL for memoless transactions
 	mgr.Keeper().SetMimir(ctx, constants.MemolessTxnTTL.String(), 100)
-	// Set max usage limit to 2
-	mgr.Keeper().SetMimir(ctx, constants.MemolessTxnMaxUse.String(), 2)
+	// Set max usage limit to 1
+	mgr.Keeper().SetMimir(ctx, constants.MemolessTxnMaxUse.String(), 1)
 
 	// Create a reference memo
 	refMemo := NewReferenceMemo(asset, "test memo", "12345", ctx.BlockHeight())
@@ -923,12 +927,11 @@ func (s *HandlerObservedTxInSuite) TestMemoUsageTracking(c *C) {
 	// Create test transaction IDs
 	txID1, _ := common.NewTxID("0000000000000000000000000000000000000000000000000000000000000001")
 	txID2, _ := common.NewTxID("0000000000000000000000000000000000000000000000000000000000000002")
-	txID3, _ := common.NewTxID("0000000000000000000000000000000000000000000000000000000000000003")
 
 	// First usage should succeed
-	memo := fetchMemoFromReference(ctx, mgr, asset, "r:12345", 16) // tx observed at height 16, memo created at height 15
+	testTx := common.NewTx(txID1, common.NoAddress, common.NoAddress, common.Coins{}, common.Gas{}, "r:12345")
+	memo := fetchMemoFromReference(ctx, mgr, asset, testTx, 16) // tx observed at height 16, memo created at height 15
 	c.Check(memo, check.Equals, "test memo", check.Commentf("First usage should succeed"))
-	trackReferenceMemoUsage(ctx, mgr, asset, "r:12345", txID1)
 
 	// Verify usage count and transaction tracking
 	updatedMemo, err := mgr.Keeper().GetReferenceMemo(ctx, asset, "12345")
@@ -936,29 +939,20 @@ func (s *HandlerObservedTxInSuite) TestMemoUsageTracking(c *C) {
 	c.Check(updatedMemo.GetUsageCount(), check.Equals, int64(1))
 	c.Check(updatedMemo.HasBeenUsedBy(txID1), check.Equals, true)
 
-	// Second usage should succeed
-	memo = fetchMemoFromReference(ctx, mgr, asset, "r:12345", 17) // tx observed at height 17, memo created at height 15
-	c.Check(memo, check.Equals, "test memo", check.Commentf("Second usage should succeed"))
-	trackReferenceMemoUsage(ctx, mgr, asset, "r:12345", txID2)
+	// Second usage should fail (exceed limit of 1)
+	testTx2 := common.NewTx(txID2, common.NoAddress, common.NoAddress, common.Coins{}, common.Gas{}, "r:12345")
+	memo = fetchMemoFromReference(ctx, mgr, asset, testTx2, 17) // tx observed at height 17, memo created at height 15
+	c.Check(memo, check.Equals, "", check.Commentf("Second usage should fail"))
 
 	// Verify usage count incremented
 	updatedMemo, err = mgr.Keeper().GetReferenceMemo(ctx, asset, "12345")
 	c.Assert(err, check.IsNil)
 	c.Check(updatedMemo.GetUsageCount(), check.Equals, int64(2))
-	c.Check(updatedMemo.HasBeenUsedBy(txID2), check.Equals, true)
+	c.Check(updatedMemo.HasBeenUsedBy(txID1), check.Equals, true)
 
-	// Third usage should fail (exceed limit of 2)
-	memo = fetchMemoFromReference(ctx, mgr, asset, "r:12345", 18) // tx observed at height 18, memo created at height 15
-	c.Check(memo, check.Equals, "", check.Commentf("Third usage should fail due to limit exceeded"))
-
-	// Verify usage count remained at 2 (txID3 should not be added)
-	updatedMemo, err = mgr.Keeper().GetReferenceMemo(ctx, asset, "12345")
-	c.Assert(err, check.IsNil)
-	c.Check(updatedMemo.GetUsageCount(), check.Equals, int64(2))
-	c.Check(updatedMemo.HasBeenUsedBy(txID3), check.Equals, false)
-
-	// Test duplicate tracking - same txID should not increase count
-	trackReferenceMemoUsage(ctx, mgr, asset, "r:12345", txID1)
+	// Test duplicate tracking - same txID called again should not increase count
+	testTx3 := common.NewTx(txID1, common.NoAddress, common.NoAddress, common.Coins{}, common.Gas{}, "r:12345")
+	fetchMemoFromReference(ctx, mgr, asset, testTx3, 18) // Call with same txID1 again
 	updatedMemo, err = mgr.Keeper().GetReferenceMemo(ctx, asset, "12345")
 	c.Assert(err, check.IsNil)
 	c.Check(updatedMemo.GetUsageCount(), check.Equals, int64(2), check.Commentf("Duplicate tracking should not increase count"))
@@ -980,12 +974,11 @@ func (s *HandlerObservedTxInSuite) TestMemoUsageTrackingDisabled(c *C) {
 
 	// Multiple usages should succeed when limit is disabled (0)
 	for i := 0; i < 10; i++ {
-		memo := fetchMemoFromReference(ctx, mgr, asset, "r:54321", int64(16+i)) // tx observed at heights 16-25, memo created at height 15
-		c.Check(memo, check.Equals, "test memo", check.Commentf("Usage %d should succeed when limit disabled", i+1))
-
 		// Track each usage with unique transaction ID
 		txID, _ := common.NewTxID(fmt.Sprintf("%064d", i+1))
-		trackReferenceMemoUsage(ctx, mgr, asset, "r:54321", txID)
+		testTx := common.NewTx(txID, common.NoAddress, common.NoAddress, common.Coins{}, common.Gas{}, "r:54321")
+		memo := fetchMemoFromReference(ctx, mgr, asset, testTx, int64(16+i)) // tx observed at heights 16-25, memo created at height 15
+		c.Check(memo, check.Equals, "test memo", check.Commentf("Usage %d should succeed when limit disabled", i+1))
 	}
 
 	// Verify usage count was incremented for all transactions
@@ -1196,37 +1189,42 @@ func (s *HandlerObservedTxInSuite) TestFetchMemoFromReferenceHeightValidation(c 
 	refMemo1 := NewReferenceMemo(asset, "test memo 1", "11111", 50) // memo created at height 50
 	mgr.Keeper().SetReferenceMemo(ctx, refMemo1)
 
-	memo := fetchMemoFromReference(ctx, mgr, asset, "r:11111", 30) // tx observed at height 30 (BEFORE memo creation)
+	testTx1 := common.NewTx(common.TxID(""), common.NoAddress, common.NoAddress, common.Coins{}, common.Gas{}, "r:11111")
+	memo := fetchMemoFromReference(ctx, mgr, asset, testTx1, 30) // tx observed at height 30 (BEFORE memo creation)
 	c.Check(memo, check.Equals, "", check.Commentf("Transaction observed before memo creation should be rejected"))
 
 	// Test case 2: Transaction observed AT SAME HEIGHT as memo creation (should fail for safety)
 	refMemo2 := NewReferenceMemo(asset, "test memo 2", "22222", 60) // memo created at height 60
 	mgr.Keeper().SetReferenceMemo(ctx, refMemo2)
 
-	memo = fetchMemoFromReference(ctx, mgr, asset, "r:22222", 60) // tx observed at height 60 (SAME as memo creation)
+	testTx2 := common.NewTx(common.TxID(""), common.NoAddress, common.NoAddress, common.Coins{}, common.Gas{}, "r:22222")
+	memo = fetchMemoFromReference(ctx, mgr, asset, testTx2, 60) // tx observed at height 60 (SAME as memo creation)
 	c.Check(memo, check.Equals, "", check.Commentf("Transaction observed at same height as memo creation should be rejected"))
 
 	// Test case 3: Transaction observed AFTER memo creation (should succeed)
 	refMemo3 := NewReferenceMemo(asset, "test memo 3", "33333", 70) // memo created at height 70
 	mgr.Keeper().SetReferenceMemo(ctx, refMemo3)
 
-	ctx = ctx.WithBlockHeight(80)                                 // current height is 80, memo not expired (70 + 100 > 80)
-	memo = fetchMemoFromReference(ctx, mgr, asset, "r:33333", 75) // tx observed at height 75 (AFTER memo creation)
+	ctx = ctx.WithBlockHeight(80) // current height is 80, memo not expired (70 + 100 > 80)
+	testTx3 := common.NewTx(common.TxID(""), common.NoAddress, common.NoAddress, common.Coins{}, common.Gas{}, "r:33333")
+	memo = fetchMemoFromReference(ctx, mgr, asset, testTx3, 75) // tx observed at height 75 (AFTER memo creation)
 	c.Check(memo, check.Equals, "test memo 3", check.Commentf("Transaction observed after memo creation should succeed"))
 
 	// Test case 4: Transaction observed way after memo creation (should succeed)
 	refMemo4 := NewReferenceMemo(asset, "test memo 4", "44444", 10) // memo created at height 10
 	mgr.Keeper().SetReferenceMemo(ctx, refMemo4)
 
-	ctx = ctx.WithBlockHeight(50)                                 // current height is 50, memo not expired (10 + 100 > 50)
-	memo = fetchMemoFromReference(ctx, mgr, asset, "r:44444", 45) // tx observed at height 45 (way after memo creation)
+	ctx = ctx.WithBlockHeight(50) // current height is 50, memo not expired (10 + 100 > 50)
+	testTx4 := common.NewTx(common.TxID(""), common.NoAddress, common.NoAddress, common.Coins{}, common.Gas{}, "r:44444")
+	memo = fetchMemoFromReference(ctx, mgr, asset, testTx4, 45) // tx observed at height 45 (way after memo creation)
 	c.Check(memo, check.Equals, "test memo 4", check.Commentf("Transaction observed way after memo creation should succeed"))
 
 	// Test case 5: Edge case - transaction observed 1 block after memo creation (should succeed)
 	refMemo5 := NewReferenceMemo(asset, "test memo 5", "55555", 100) // memo created at height 100
 	mgr.Keeper().SetReferenceMemo(ctx, refMemo5)
 
-	ctx = ctx.WithBlockHeight(150)                                 // current height is 150, memo not expired (100 + 100 > 150 is false, but we test height validation first)
-	memo = fetchMemoFromReference(ctx, mgr, asset, "r:55555", 101) // tx observed at height 101 (1 block after memo creation)
+	ctx = ctx.WithBlockHeight(150) // current height is 150, memo not expired (100 + 100 > 150 is false, but we test height validation first)
+	testTx5 := common.NewTx(common.TxID(""), common.NoAddress, common.NoAddress, common.Coins{}, common.Gas{}, "r:55555")
+	memo = fetchMemoFromReference(ctx, mgr, asset, testTx5, 101) // tx observed at height 101 (1 block after memo creation)
 	c.Check(memo, check.Equals, "test memo 5", check.Commentf("Transaction observed 1 block after memo creation should succeed"))
 }

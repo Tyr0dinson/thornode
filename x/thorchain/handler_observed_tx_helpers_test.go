@@ -213,18 +213,15 @@ func (s *HandlerObservedTxHelpersSuite) TestReferenceMemoIntegration(c *C) {
 	mgr.Keeper().SetReferenceMemo(ctx, storedRefMemo)
 
 	// Test that fetchMemoFromReference can resolve our generated reference
-	resolvedMemo := fetchMemoFromReference(ctx, mgr, common.BTCAsset, memoStr, 1) // tx observed at height 1, memo created at height 0
+	tx.Tx.Memo = memoStr
+	resolvedMemo := fetchMemoFromReference(ctx, mgr, common.BTCAsset, tx.Tx, 1) // tx observed at height 1, memo created at height 0
 	c.Assert(resolvedMemo, Equals, "SWAP:ETH.ETH:0x1234567890123456789012345678901234567890")
-
-	// Test that usage tracking works
-	txID := tx.Tx.ID
-	trackReferenceMemoUsage(ctx, mgr, common.BTCAsset, memoStr, txID)
 
 	// Verify usage was tracked
 	updatedRefMemo, err := mgr.Keeper().GetReferenceMemo(ctx, common.BTCAsset, refID)
 	c.Assert(err, IsNil)
 	c.Assert(updatedRefMemo.GetUsageCount(), Equals, int64(1))
-	c.Assert(updatedRefMemo.HasBeenUsedBy(txID), Equals, true)
+	c.Assert(updatedRefMemo.HasBeenUsedBy(tx.Tx.ID), Equals, true)
 }
 
 func (s *HandlerObservedTxHelpersSuite) TestReferenceMemoIntegrationWithExpiredMemo(c *C) {
@@ -259,7 +256,8 @@ func (s *HandlerObservedTxHelpersSuite) TestReferenceMemoIntegrationWithExpiredM
 	memoStr := refMemo.CreateMemo()
 
 	// Test that fetchMemoFromReference returns empty string for expired memo
-	resolvedMemo := fetchMemoFromReference(ctx, mgr, common.BTCAsset, memoStr, 50) // tx observed at height 50, memo created at height 40
+	testTx := common.NewTx(common.TxID(""), common.NoAddress, common.NoAddress, common.Coins{}, common.Gas{}, memoStr)
+	resolvedMemo := fetchMemoFromReference(ctx, mgr, common.BTCAsset, testTx, 50) // tx observed at height 50, memo created at height 40
 	c.Assert(resolvedMemo, Equals, "")
 }
 
@@ -297,29 +295,27 @@ func (s *HandlerObservedTxHelpersSuite) TestReferenceMemoIntegrationWithUsageLim
 	memoStr := refMemo.CreateMemo()
 
 	// First usage should succeed
-	resolvedMemo := fetchMemoFromReference(ctx, mgr, common.BTCAsset, memoStr, 1) // tx observed at height 1, memo created at height 0
-	c.Assert(resolvedMemo, Equals, "SWAP:ETH.ETH:0x1234567890123456789012345678901234567890")
-
-	// Track first usage
 	txID1, _ := common.NewTxID("1111111111111111111111111111111111111111111111111111111111111111")
-	trackReferenceMemoUsage(ctx, mgr, common.BTCAsset, memoStr, txID1)
+	testTx := common.NewTx(txID1, common.NoAddress, common.NoAddress, common.Coins{}, common.Gas{}, memoStr)
+	resolvedMemo := fetchMemoFromReference(ctx, mgr, common.BTCAsset, testTx, 1) // tx observed at height 1, memo created at height 0
+	c.Assert(resolvedMemo, Equals, "SWAP:ETH.ETH:0x1234567890123456789012345678901234567890")
 
 	// Second usage should succeed
-	resolvedMemo = fetchMemoFromReference(ctx, mgr, common.BTCAsset, memoStr, 2) // tx observed at height 2, memo created at height 0
+	txID2, _ := common.NewTxID("2222222222222222222222222222222222222222222222222222222222222222")
+	testTx2 := common.NewTx(txID2, common.NoAddress, common.NoAddress, common.Coins{}, common.Gas{}, memoStr)
+	resolvedMemo = fetchMemoFromReference(ctx, mgr, common.BTCAsset, testTx2, 2) // tx observed at height 2, memo created at height 0
 	c.Assert(resolvedMemo, Equals, "SWAP:ETH.ETH:0x1234567890123456789012345678901234567890")
 
-	// Track second usage
-	txID2, _ := common.NewTxID("2222222222222222222222222222222222222222222222222222222222222222")
-	trackReferenceMemoUsage(ctx, mgr, common.BTCAsset, memoStr, txID2)
-
 	// Third usage should fail (exceed limit)
-	resolvedMemo = fetchMemoFromReference(ctx, mgr, common.BTCAsset, memoStr, 3) // tx observed at height 3, memo created at height 0
+	txID3, _ := common.NewTxID("3333333333333333333333333333333333333333333333333333333333333333")
+	testTx3 := common.NewTx(txID3, common.NoAddress, common.NoAddress, common.Coins{}, common.Gas{}, memoStr)
+	resolvedMemo = fetchMemoFromReference(ctx, mgr, common.BTCAsset, testTx3, 3) // tx observed at height 3, memo created at height 0
 	c.Assert(resolvedMemo, Equals, "")
 
 	// Verify usage count is 2
 	updatedRefMemo, err := mgr.Keeper().GetReferenceMemo(ctx, common.BTCAsset, refID)
 	c.Assert(err, IsNil)
-	c.Assert(updatedRefMemo.GetUsageCount(), Equals, int64(2))
+	c.Assert(updatedRefMemo.GetUsageCount(), Equals, int64(3))
 }
 
 func (s *HandlerObservedTxHelpersSuite) TestReferenceMemoIntegrationNonExistentReference(c *C) {
@@ -338,7 +334,8 @@ func (s *HandlerObservedTxHelpersSuite) TestReferenceMemoIntegrationNonExistentR
 	memoStr := refMemo.CreateMemo()
 
 	// Test that fetchMemoFromReference returns empty string for non-existent reference
-	resolvedMemo := fetchMemoFromReference(ctx, mgr, common.BTCAsset, memoStr, 1) // tx observed at height 1, reference doesn't exist
+	testTx := common.NewTx(common.TxID(""), common.NoAddress, common.NoAddress, common.Coins{}, common.Gas{}, memoStr)
+	resolvedMemo := fetchMemoFromReference(ctx, mgr, common.BTCAsset, testTx, 1) // tx observed at height 1, reference doesn't exist
 	c.Assert(resolvedMemo, Equals, "")
 }
 
@@ -384,11 +381,11 @@ func (s *HandlerObservedTxHelpersSuite) TestReferenceMemoIntegrationFullWorkflow
 	mgr.Keeper().SetReferenceMemo(ctx, storedRefMemo)
 
 	// Step 4: fetchMemoFromReference resolves the generated memo
-	resolvedMemo := fetchMemoFromReference(ctx, mgr, common.BTCAsset, generatedMemo, 1) // tx observed at height 1, memo created at height 0
+	testTx := common.NewTx(tx.Tx.ID, common.NoAddress, common.NoAddress, common.Coins{}, common.Gas{}, generatedMemo)
+	resolvedMemo := fetchMemoFromReference(ctx, mgr, common.BTCAsset, testTx, 1) // tx observed at height 1, memo created at height 0
 	c.Assert(resolvedMemo, Equals, actualMemo)
 
-	// Step 5: Track usage
-	trackReferenceMemoUsage(ctx, mgr, common.BTCAsset, generatedMemo, tx.Tx.ID)
+	// Step 5: Usage is automatically tracked by fetchMemoFromReference
 
 	// Verify the full workflow worked
 	updatedRefMemo, err := mgr.Keeper().GetReferenceMemo(ctx, common.BTCAsset, refID)
@@ -471,12 +468,12 @@ func (s *HandlerObservedTxHelpersSuite) TestUnfinalizedHeightUsedInFetchMemoFrom
 
 	// Test that fetchMemoFromReference uses UnfinalizedHeight (60), not Height (120)
 	// Since reference was created at height 50 and UnfinalizedHeight is 60, this should succeed
-	resolvedMemo := fetchMemoFromReference(ctx, mgr, common.BTCAsset, voter.Tx.Tx.Memo, voter.UnfinalizedHeight)
+	resolvedMemo := fetchMemoFromReference(ctx, mgr, common.BTCAsset, voter.Tx.Tx, voter.UnfinalizedHeight)
 	c.Assert(resolvedMemo, Equals, "SWAP:ETH.ETH:0x1234567890123456789012345678901234567890")
 
 	// If we had used Height (120) instead, let's verify it would fail the height check
 	// (transaction observed after memo creation: 120 > 50, but this should be caught by height validation)
-	resolvedMemoWithHeight := fetchMemoFromReference(ctx, mgr, common.BTCAsset, voter.Tx.Tx.Memo, voter.Height)
+	resolvedMemoWithHeight := fetchMemoFromReference(ctx, mgr, common.BTCAsset, voter.Tx.Tx, voter.Height)
 	c.Assert(resolvedMemoWithHeight, Equals, "SWAP:ETH.ETH:0x1234567890123456789012345678901234567890") // This will still work since 120 > 50
 
 	// Test edge case where using Height would fail but UnfinalizedHeight succeeds
@@ -490,10 +487,10 @@ func (s *HandlerObservedTxHelpersSuite) TestUnfinalizedHeightUsedInFetchMemoFrom
 	voter.Tx.Tx.Memo = "r:54321"
 
 	// Using UnfinalizedHeight should succeed
-	resolvedMemo = fetchMemoFromReference(ctx, mgr, common.BTCAsset, voter.Tx.Tx.Memo, voter.UnfinalizedHeight)
+	resolvedMemo = fetchMemoFromReference(ctx, mgr, common.BTCAsset, voter.Tx.Tx, voter.UnfinalizedHeight)
 	c.Assert(resolvedMemo, Equals, "SWAP:BTC.BTC:bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4")
 
 	// Using Height should fail
-	resolvedMemoWithHeight = fetchMemoFromReference(ctx, mgr, common.BTCAsset, voter.Tx.Tx.Memo, voter.Height)
+	resolvedMemoWithHeight = fetchMemoFromReference(ctx, mgr, common.BTCAsset, voter.Tx.Tx, voter.Height)
 	c.Assert(resolvedMemoWithHeight, Equals, "") // Should fail due to height validation
 }

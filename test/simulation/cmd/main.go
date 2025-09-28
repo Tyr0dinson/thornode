@@ -153,7 +153,7 @@ func main() {
 	root := NewActor("Root")
 
 	appendIfEnabled := func(key string, constructor func() *Actor) {
-		if enabledStages[key] || (enabledStages["all"] && key != "memoless-swaps") { // disable memoless until implemented
+		if enabledStages[key] || enabledStages["all"] {
 			root.Append(constructor())
 		}
 	}
