@@ -146,15 +146,3 @@ func GetMedianBigFloat(values []*big.Float) (*big.Float, error) {
 		return new(big.Float).Quo(sum, big.NewFloat(2)), nil
 	}
 }
-
-func GetPercentage(number, bips cosmos.Uint) cosmos.Uint {
-	if number.Equal(cosmos.ZeroUint()) || bips.Equal(cosmos.ZeroUint()) {
-		return cosmos.ZeroUint()
-	}
-
-	if bips.GT(cosmos.NewUint(10_000)) {
-		return number
-	}
-
-	return number.Mul(bips).Quo(cosmos.NewUint(10_000))
-}

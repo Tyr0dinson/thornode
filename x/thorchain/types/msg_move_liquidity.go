@@ -57,6 +57,9 @@ func (m *MsgMoveLiquidity) ValidateBasic() error {
 	if m.NewRuneAddress.IsEmpty() && m.NewAssetAddress.IsEmpty() {
 		return cosmos.ErrUnknownRequest("no address provided")
 	}
+	if m.Asset.IsNative() && !m.NewRuneAddress.Equals(m.NewAssetAddress) {
+		return cosmos.ErrUnknownRequest("rune address does not match asset address")
+	}
 	return nil
 }
 

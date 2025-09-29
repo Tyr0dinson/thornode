@@ -410,6 +410,23 @@ func (s *MemoSuite) TestParseWithAbbreviated(c *C) {
 	c.Check(memo.IsInternal(), Equals, false)
 	c.Check(memo.IsOutbound(), Equals, false)
 
+	thor1 := types.GetRandomTHORAddress().String()
+	thor2 := types.GetRandomTHORAddress().String()
+	btc1 := types.GetRandomBTCAddress().String()
+	for _, tc := range [][3]string{
+		{thor1, thor1, thor1 + ":" + thor1},
+		{thor1, thor2, thor2 + ":"},
+		{thor1, btc1, thor1 + ":" + btc1},
+		{btc1, btc1, btc1 + ":" + btc1},
+		{btc1, thor1, thor1 + ":" + btc1},
+		{btc1, thor2, thor2 + ":" + btc1},
+	} {
+		str := fmt.Sprintf("movelp:BTC.BTC:%s:%s", tc[0], tc[1])
+		memo, err = ParseMemoWithTHORNames(ctx, k, str)
+		c.Assert(err, IsNil)
+		c.Assert(memo.String(), Equals, "MOVELP:BTC.BTC:"+tc[2]+":0")
+	}
+
 	// unhappy paths
 	_, err = ParseMemoWithTHORNames(ctx, k, "")
 	c.Assert(err, NotNil)

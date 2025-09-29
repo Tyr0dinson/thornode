@@ -114,9 +114,9 @@ func (h MoveLiquidityHandler) handle(ctx cosmos.Context, msg MsgMoveLiquidity) e
 		}
 	}
 
-	runeAmount := common.GetPercentage(oldLp.RuneDepositValue, msg.Amount)
-	assetAmount := common.GetPercentage(oldLp.AssetDepositValue, msg.Amount)
-	units := common.GetPercentage(oldLp.Units, msg.Amount)
+	runeAmount := h.percentage(oldLp.RuneDepositValue, msg.Amount)
+	assetAmount := h.percentage(oldLp.AssetDepositValue, msg.Amount)
+	units := h.percentage(oldLp.Units, msg.Amount)
 
 	one := cosmos.NewUint(1)
 
@@ -140,4 +140,16 @@ func (h MoveLiquidityHandler) handle(ctx cosmos.Context, msg MsgMoveLiquidity) e
 	h.mgr.Keeper().SetLiquidityProvider(ctx, oldLp)
 
 	return nil
+}
+
+func (h MoveLiquidityHandler) percentage(number, bips cosmos.Uint) cosmos.Uint {
+	if number.Equal(cosmos.ZeroUint()) || bips.Equal(cosmos.ZeroUint()) {
+		return cosmos.ZeroUint()
+	}
+
+	if bips.GT(cosmos.NewUint(10_000)) {
+		return number
+	}
+
+	return number.Mul(bips).Quo(cosmos.NewUint(10_000))
 }

@@ -11,6 +11,9 @@ type MsgMoveLiquiditySuite struct{}
 var _ = Suite(&MsgMoveLiquiditySuite{})
 
 func (MsgMoveLiquiditySuite) TestValidateBasic(c *C) {
+	runeAddress := GetRandomRUNEAddress()
+	btcAddress := GetRandomBTCAddress()
+
 	testCases := []struct {
 		Asset     common.Asset
 		RuneAddr  common.Address
@@ -71,6 +74,50 @@ func (MsgMoveLiquiditySuite) TestValidateBasic(c *C) {
 			AssetAddr: GetRandomBTCAddress(),
 			Amount:    cosmos.NewUint(2726252524),
 			Signer:    GetRandomBech32Addr(),
+		},
+		{
+			// Two different Rune addresses, non Rune Asset => fail
+			Asset:     common.BTCAsset,
+			RuneAddr:  GetRandomRUNEAddress(),
+			AssetAddr: GetRandomRUNEAddress(),
+			Amount:    cosmos.NewUint(1),
+			Signer:    GetRandomBech32Addr(),
+			Error:     ".*does not match asset chain.*",
+		},
+		{
+			// Two different Rune addresses, Rune Asset => fail
+			Asset:     common.RUJI,
+			RuneAddr:  GetRandomRUNEAddress(),
+			AssetAddr: GetRandomRUNEAddress(),
+			Amount:    cosmos.NewUint(1),
+			Signer:    GetRandomBech32Addr(),
+			Error:     ".*rune address does not match asset address.*",
+		},
+		{
+			// Two Rune address, non Rune Asset => fail
+			Asset:     common.BTCAsset,
+			RuneAddr:  runeAddress,
+			AssetAddr: runeAddress,
+			Amount:    cosmos.NewUint(1),
+			Signer:    GetRandomBech32Addr(),
+			Error:     ".*does not match asset chain.*",
+		},
+		{
+			// Two Rune addresses, Rune Asset => OK
+			Asset:     common.RUJI,
+			RuneAddr:  runeAddress,
+			AssetAddr: runeAddress,
+			Amount:    cosmos.NewUint(1),
+			Signer:    GetRandomBech32Addr(),
+		},
+		{
+			// Two Asset addresses => fail
+			Asset:     common.BTCAsset,
+			RuneAddr:  btcAddress,
+			AssetAddr: btcAddress,
+			Amount:    cosmos.NewUint(1),
+			Signer:    GetRandomBech32Addr(),
+			Error:     ".*does not match THORChain.*",
 		},
 		{
 			// Wrong RUNE address => Fail

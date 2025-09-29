@@ -14,6 +14,16 @@ type MoveLpMemo struct {
 	Amount          cosmos.Uint
 }
 
+func (m MoveLpMemo) String() string {
+	return fmt.Sprintf(
+		"MOVELP:%s:%s:%s:%s",
+		m.GetAsset(),
+		m.NewRuneAddress,
+		m.NewAssetAddress,
+		m.GetAmount(),
+	)
+}
+
 func NewMoveLpMemo(
 	asset common.Asset,
 	newRuneAddress, newAssetAddress common.Address,
@@ -27,7 +37,6 @@ func NewMoveLpMemo(
 	}
 }
 
-// MOVELP:ETH.ETH:5000:rune1...:0x...
 func (p *parser) ParseMoveLpMemo() (MoveLpMemo, error) {
 	asset := p.getAsset(1, true, common.EmptyAsset)
 	address1 := p.getAddress(2, true, common.NoAddress)
@@ -37,21 +46,22 @@ func (p *parser) ParseMoveLpMemo() (MoveLpMemo, error) {
 	var newRuneAddress common.Address
 	var newAssetAddress common.Address
 
-	for _, address := range []common.Address{address1, address2} {
-		fmt.Println(">>>>", address, address.IsChain(common.THORChain))
+	if address1.Equals(address2) {
+		newRuneAddress = address1
+		newAssetAddress = address1
+	} else {
+		for _, address := range []common.Address{address1, address2} {
+			if address.IsEmpty() {
+				continue
+			}
 
-		if address.IsEmpty() {
-			continue
-		}
-
-		if address.IsChain(common.THORChain) {
-			newRuneAddress = address
-		} else {
-			newAssetAddress = address
+			if address.IsChain(common.THORChain) {
+				newRuneAddress = address
+			} else {
+				newAssetAddress = address
+			}
 		}
 	}
-
-	fmt.Println(">>>", newRuneAddress, newAssetAddress, amount)
 
 	return NewMoveLpMemo(asset, newRuneAddress, newAssetAddress, amount), p.Error()
 }

@@ -2,6 +2,7 @@ package thorchain
 
 import (
 	"crypto/rand"
+	"fmt"
 	"math/big"
 
 	. "gopkg.in/check.v1"
@@ -379,4 +380,56 @@ func checkLpVsPool(ctx cosmos.Context, mgr *Mgrs, asset common.Asset, c *C) {
 	c.Assert(totalRune.Equal(pool.BalanceRune), Equals, true)
 	c.Assert(totalAsset.Equal(pool.BalanceAsset), Equals, true)
 	c.Assert(totalUnits.Equal(pool.LPUnits), Equals, true)
+}
+
+func (s *HandlerMoveLiquiditySuite) TestPercentage(c *C) {
+	_, mgr := setupManagerForTest(c)
+	handler := NewMoveLiquidityHandler(mgr)
+
+	testCases := []struct {
+		amount uint64
+		bips   uint64
+		result uint64
+	}{
+		{
+			amount: 0,
+			bips:   100,
+			result: 0,
+		},
+		{
+			amount: 1234,
+			bips:   0,
+			result: 0,
+		},
+		{
+			amount: 1234,
+			bips:   10000,
+			result: 1234,
+		},
+		{
+			amount: 1234,
+			bips:   92182727,
+			result: 1234,
+		},
+		{
+			amount: 1360,
+			bips:   2000,
+			result: 272,
+		},
+		{
+			amount: 5,
+			bips:   5000,
+			result: 2,
+		},
+		{
+			amount: 7,
+			bips:   2500,
+			result: 1,
+		},
+	}
+
+	for _, tc := range testCases {
+		result := handler.percentage(cosmos.NewUint(tc.amount), cosmos.NewUint(tc.bips))
+		c.Assert(result.String(), Equals, fmt.Sprintf("%d", tc.result))
+	}
 }
