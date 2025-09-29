@@ -214,13 +214,12 @@ type ReferenceMemoResponse struct {
 	Memo             string `json:"memo"`
 	Reference        string `json:"reference"`
 	Height           string `json:"height"`
-	ReferenceHash    string `json:"reference_hash"`
 	RegistrationHash string `json:"registration_hash"`
 	RegisteredBy     string `json:"registered_by"`
 }
 
 func GetMemoHash(txid string) (ReferenceMemoResponse, error) {
-	url := fmt.Sprintf("%s/thorchain/memohash/%s", thornodeURL, txid)
+	url := fmt.Sprintf("%s/thorchain/memo/%s", thornodeURL, txid)
 	var memoHash ReferenceMemoResponse
 	err := Get(url, &memoHash)
 	return memoHash, err
