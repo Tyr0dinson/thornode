@@ -141,7 +141,7 @@ func (AppModule) IsAppModule() {}
 func (AppModule) IsOnePerModuleType() {}
 
 func (AppModule) ConsensusVersion() uint64 {
-	return 9
+	return 10
 }
 
 func (am AppModule) RegisterInvariants(_ sdk.InvariantRegistry) {}
@@ -253,6 +253,11 @@ func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, err
 		if err := emitEndBlockTelemetry(ctx, am.mgr); err != nil {
 			ctx.Logger().Error("unable to emit end block telemetry", "error", err)
 		}
+	}
+
+	// update volumes
+	if err := am.mgr.VolumeManager().EndBlock(ctx); err != nil {
+		ctx.Logger().Error("fail update volumes", "error", err)
 	}
 
 	return validators, nil

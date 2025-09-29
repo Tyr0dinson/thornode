@@ -400,6 +400,7 @@ type (
 	RUNEPool                 = types.RUNEPool
 	TCYClaimer               = types.TCYClaimer
 	TCYStaker                = types.TCYStaker
+	VolumeBucket             = types.VolumeBucket
 
 	// Memo
 	SwapMemo                   = mem.SwapMemo

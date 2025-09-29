@@ -125,6 +125,13 @@ func GetPools() ([]openapi.Pool, error) {
 	return pools, err
 }
 
+func GetVault(pubkey string) (openapi.Vault, error) {
+	url := fmt.Sprintf("%s/thorchain/vault/%s", thornodeURL, pubkey)
+	var vault openapi.Vault
+	err := Get(url, &vault)
+	return vault, err
+}
+
 func GetVaults() ([]openapi.Vault, error) {
 	url := fmt.Sprintf("%s/thorchain/vaults/asgard", thornodeURL)
 	var vaults []openapi.Vault
@@ -215,8 +222,7 @@ func Get(url string, target interface{}) error {
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("(%s) HTTP: %d => %s", url, resp.StatusCode, body)
+		return fmt.Errorf("(%s) HTTP: %d => %s", url, resp.StatusCode, buf)
 	}
 
 	// extract error if the request failed

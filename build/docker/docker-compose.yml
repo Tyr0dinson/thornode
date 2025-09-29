@@ -24,12 +24,8 @@ services:
     profiles:
       - _
     restart: unless-stopped
-    image: registry.gitlab.com/thorchain/thornode:mocknet
-    build:
-      context: ../..
-      dockerfile: ./build/docker/Dockerfile
-      args:
-        TAG: mocknet
+    # Use a local tag so that it is never pulled from a remote registry
+    image: thornode:mocknet
     environment: &thorchain-environment
       CHAIN_ID: thorchain
       SIGNER_NAME: thorchain
@@ -87,13 +83,10 @@ services:
 
   # ------------------------------ thornode ------------------------------
 
-  thornode: &thornode
+  # Common configuration for thornode, used by single node and cluster nodes
+  _thornode: &thornode
     <<: *thorchain-defaults
     hostname: thornode # required for genesis.sh
-    profiles:
-      - thornode
-      - mocknet
-      - mocknet-cluster
     depends_on:
       - ethereum
       - avalanche
@@ -137,6 +130,20 @@ services:
       retries: 10
       start_period: 10s
 
+  thornode:
+    <<: *thornode
+    # build is only on the main thornode service, not the cluster nodes
+    # this ensures the image is built only once and shared by all (including bifrost)
+    build:
+      context: ../..
+      dockerfile: ./build/docker/Dockerfile
+      args:
+        TAG: mocknet
+    profiles:
+      - thornode
+      - mocknet
+      - mocknet-cluster
+
   # ------------------------------ bifrost ------------------------------
 
   bifrost: &bifrost
@@ -178,8 +185,8 @@ services:
       BIFROST_SIGNER_BACKUP_KEYSHARES: "true"
       BIFROST_SIGNER_RESCHEDULE_BUFFER_BLOCKS: "5"
       BIFROST_SIGNER_AUTO_OBSERVE: "false"
-      BIFROST_SIGNER_KEYGEN_TIMEOUT: 30s
-      BIFROST_SIGNER_KEYSIGN_TIMEOUT: 30s
+      BIFROST_SIGNER_KEYGEN_TIMEOUT: 6s
+      BIFROST_SIGNER_KEYSIGN_TIMEOUT: 6s
       BIFROST_CHAINS_AVAX_BLOCK_SCANNER_OBSERVATION_FLEXIBILITY_BLOCKS: "5"
       BIFROST_CHAINS_BCH_BLOCK_SCANNER_OBSERVATION_FLEXIBILITY_BLOCKS: "5"
       BIFROST_CHAINS_BTC_BLOCK_SCANNER_OBSERVATION_FLEXIBILITY_BLOCKS: "5"
@@ -651,7 +658,7 @@ services:
       - mocknet
       - mocknet-cluster
     restart: unless-stopped
-    image: anzaxyz/agave:v2.2.10
+    image: anzaxyz/agave:v2.3.8
     volumes:
       - "./mocknet/solana:/mocknet"
     entrypoint: /mocknet/entrypoint.sh
