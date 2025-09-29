@@ -1244,3 +1244,304 @@ func (s *TypeObservedTxSuite) TestGetTxMatchesOracle(c *C) {
 	// the generator must reach both kinds of consensus often enough to matter
 	c.Assert(selected[true] > 150 && selected[false] > 150, Equals, true, Commentf("selections: %v", selected))
 }
+
+func (TypeObservedTxSuite) TestObservedTxVoterChainConsensus(c *C) {
+	txID := GetRandomTxHash()
+	acc1 := GetRandomBech32Addr()
+	acc2 := GetRandomBech32Addr()
+	acc3 := GetRandomBech32Addr()
+	acc4 := GetRandomBech32Addr()
+
+	accConsPub1 := GetRandomBech32ConsensusPubKey()
+	accConsPub2 := GetRandomBech32ConsensusPubKey()
+	accConsPub3 := GetRandomBech32ConsensusPubKey()
+
+	accPubKeySet1 := GetRandomPubKeySet()
+	accPubKeySet2 := GetRandomPubKeySet()
+	accPubKeySet3 := GetRandomPubKeySet()
+
+	tx1 := GetRandomTx()
+	tx1.Memo = "chain-aware-test"
+	observePoolAddr := GetRandomPubKey()
+	voter := NewObservedTxVoter(txID, nil)
+
+	obTx1 := common.NewObservedTx(tx1, 0, observePoolAddr, 1)
+
+	// Create eligible accounts (chain-specific vault members)
+	// Only acc1, acc2, acc3 are vault members for this chain
+	eligibleNodes := NodeAccounts{
+		NodeAccount{
+			NodeAddress:         acc1,
+			Status:              NodeStatus_Active,
+			PubKeySet:           accPubKeySet1,
+			ValidatorConsPubKey: accConsPub1,
+		},
+		NodeAccount{
+			NodeAddress:         acc2,
+			Status:              NodeStatus_Active,
+			PubKeySet:           accPubKeySet2,
+			ValidatorConsPubKey: accConsPub2,
+		},
+		NodeAccount{
+			NodeAddress:         acc3,
+			Status:              NodeStatus_Active,
+			PubKeySet:           accPubKeySet3,
+			ValidatorConsPubKey: accConsPub3,
+		},
+	}
+
+	// Add votes from eligible nodes
+	voter.Add(obTx1, acc1)
+	c.Assert(voter.Txs, HasLen, 1)
+
+	// One vote is not enough for consensus (need super majority of 3)
+	c.Assert(voter.HasChainConsensus(eligibleNodes), Equals, false)
+	c.Assert(voter.HasChainFinalised(eligibleNodes), Equals, false)
+
+	// Add second vote from eligible node
+	voter.Add(obTx1, acc2)
+	c.Assert(voter.Txs, HasLen, 1)
+	c.Assert(voter.Txs[0].Signers, HasLen, 2)
+
+	// Two votes should give us super majority (2/3 = 67%)
+	c.Assert(voter.HasChainConsensus(eligibleNodes), Equals, true)
+	c.Assert(voter.HasChainFinalised(eligibleNodes), Equals, false) // not finalised yet
+
+	// Verify GetChainTx returns the correct tx
+	chainTx := voter.GetChainTx(eligibleNodes)
+	c.Assert(chainTx.IsEmpty(), Equals, false)
+	c.Assert(chainTx.Tx.Memo, Equals, "chain-aware-test")
+
+	// Add vote from non-eligible node (acc4) - should not affect chain consensus
+	voter.Add(obTx1, acc4)
+	c.Assert(voter.Txs[0].Signers, HasLen, 3)
+	// Chain consensus should still be based only on eligible nodes
+	c.Assert(voter.HasChainConsensus(eligibleNodes), Equals, true)
+
+	// Now test finalised consensus
+	obTx1Finalised := common.NewObservedTx(tx1, 1, observePoolAddr, 1)
+
+	voter.Add(obTx1Finalised, acc1)
+	c.Assert(voter.Txs, HasLen, 2)
+	c.Assert(voter.HasChainFinalised(eligibleNodes), Equals, false) // only 1 vote
+
+	voter.Add(obTx1Finalised, acc2)
+	c.Assert(voter.Txs, HasLen, 2)
+	c.Assert(voter.Txs[1].Signers, HasLen, 2)
+	// Two votes should give super majority for finalised
+	c.Assert(voter.HasChainFinalised(eligibleNodes), Equals, true)
+
+	// Verify GetChainTx prioritizes finalised tx
+	finalTx := voter.GetChainTx(eligibleNodes)
+	c.Assert(finalTx.IsEmpty(), Equals, false)
+	c.Assert(finalTx.IsFinal(), Equals, true)
+	c.Assert(finalTx.Tx.Memo, Equals, "chain-aware-test")
+
+	// Test that non-eligible node votes don't contribute to finalised consensus
+	voter2 := NewObservedTxVoter(GetRandomTxHash(), nil)
+	tx2 := GetRandomTx()
+	obTx2 := common.NewObservedTx(tx2, 1, observePoolAddr, 1)
+
+	// Add votes from non-eligible nodes only
+	voter2.Add(obTx2, acc4) // acc4 is not in eligibleNodes
+	c.Assert(voter2.HasChainConsensus(eligibleNodes), Equals, false)
+	c.Assert(voter2.HasChainFinalised(eligibleNodes), Equals, false)
+}
+
+func (TypeObservedTxSuite) TestObservedTxVoterGetChainTx(c *C) {
+	txID := GetRandomTxHash()
+	acc1 := GetRandomBech32Addr()
+	acc2 := GetRandomBech32Addr()
+	acc3 := GetRandomBech32Addr()
+
+	accConsPub1 := GetRandomBech32ConsensusPubKey()
+	accConsPub2 := GetRandomBech32ConsensusPubKey()
+	accConsPub3 := GetRandomBech32ConsensusPubKey()
+
+	accPubKeySet1 := GetRandomPubKeySet()
+	accPubKeySet2 := GetRandomPubKeySet()
+	accPubKeySet3 := GetRandomPubKeySet()
+
+	eligibleNodes := NodeAccounts{
+		NodeAccount{
+			NodeAddress:         acc1,
+			Status:              NodeStatus_Active,
+			PubKeySet:           accPubKeySet1,
+			ValidatorConsPubKey: accConsPub1,
+		},
+		NodeAccount{
+			NodeAddress:         acc2,
+			Status:              NodeStatus_Active,
+			PubKeySet:           accPubKeySet2,
+			ValidatorConsPubKey: accConsPub2,
+		},
+		NodeAccount{
+			NodeAddress:         acc3,
+			Status:              NodeStatus_Active,
+			PubKeySet:           accPubKeySet3,
+			ValidatorConsPubKey: accConsPub3,
+		},
+	}
+
+	tx1 := GetRandomTx()
+	tx1.Memo = "discover"
+	observePoolAddr := GetRandomPubKey()
+	voter := NewObservedTxVoter(txID, nil)
+
+	// Test 1: No consensus yet, should return empty
+	chainTx := voter.GetChainTx(eligibleNodes)
+	c.Assert(chainTx.IsEmpty(), Equals, true)
+
+	// Test 2: Add non-finalised consensus
+	obTx1 := common.NewObservedTx(tx1, 0, observePoolAddr, 1)
+	voter.Add(obTx1, acc1)
+	voter.Add(obTx1, acc2)
+	c.Assert(voter.HasChainConsensus(eligibleNodes), Equals, true)
+
+	chainTx = voter.GetChainTx(eligibleNodes)
+	c.Assert(chainTx.IsEmpty(), Equals, false)
+	c.Assert(chainTx.IsFinal(), Equals, false)
+	c.Assert(chainTx.Tx.Memo, Equals, "discover")
+
+	// Test 3: Add finalised consensus - should prioritize over non-finalised
+	tx2 := GetRandomTx()
+	tx2.Memo = "finalised"
+	obTx2Finalised := common.NewObservedTx(tx2, 1, observePoolAddr, 1)
+	voter.Add(obTx2Finalised, acc1)
+	voter.Add(obTx2Finalised, acc2)
+	c.Assert(voter.HasChainFinalised(eligibleNodes), Equals, true)
+
+	chainTx = voter.GetChainTx(eligibleNodes)
+	c.Assert(chainTx.IsEmpty(), Equals, false)
+	c.Assert(chainTx.IsFinal(), Equals, true)
+	c.Assert(chainTx.Tx.Memo, Equals, "finalised")
+
+	// Test 4: If voter.Tx is set and final, it should return that
+	tx3 := GetRandomTx()
+	tx3.Memo = "cached"
+	cachedTx := common.NewObservedTx(tx3, 2, observePoolAddr, 2)
+	voter.Tx = cachedTx
+
+	chainTx = voter.GetChainTx(eligibleNodes)
+	c.Assert(chainTx.IsEmpty(), Equals, false)
+	c.Assert(chainTx.IsFinal(), Equals, true)
+	c.Assert(chainTx.Tx.Memo, Equals, "cached")
+
+	// Test 5: Empty voter.Tx should fall through to consensus logic
+	voter.Tx = common.ObservedTx{}
+	chainTx = voter.GetChainTx(eligibleNodes)
+	c.Assert(chainTx.IsEmpty(), Equals, false)
+	c.Assert(chainTx.Tx.Memo, Equals, "finalised") // Should get finalised consensus
+}
+
+func (TypeObservedTxSuite) TestChainConsensusVsGlobalConsensus(c *C) {
+	txID := GetRandomTxHash()
+	acc1 := GetRandomBech32Addr()
+	acc2 := GetRandomBech32Addr()
+	acc3 := GetRandomBech32Addr()
+	acc4 := GetRandomBech32Addr()
+
+	accConsPub1 := GetRandomBech32ConsensusPubKey()
+	accConsPub2 := GetRandomBech32ConsensusPubKey()
+	accConsPub3 := GetRandomBech32ConsensusPubKey()
+	accConsPub4 := GetRandomBech32ConsensusPubKey()
+
+	accPubKeySet1 := GetRandomPubKeySet()
+	accPubKeySet2 := GetRandomPubKeySet()
+	accPubKeySet3 := GetRandomPubKeySet()
+	accPubKeySet4 := GetRandomPubKeySet()
+
+	// All network nodes
+	allNodes := NodeAccounts{
+		NodeAccount{
+			NodeAddress:         acc1,
+			Status:              NodeStatus_Active,
+			PubKeySet:           accPubKeySet1,
+			ValidatorConsPubKey: accConsPub1,
+		},
+		NodeAccount{
+			NodeAddress:         acc2,
+			Status:              NodeStatus_Active,
+			PubKeySet:           accPubKeySet2,
+			ValidatorConsPubKey: accConsPub2,
+		},
+		NodeAccount{
+			NodeAddress:         acc3,
+			Status:              NodeStatus_Active,
+			PubKeySet:           accPubKeySet3,
+			ValidatorConsPubKey: accConsPub3,
+		},
+		NodeAccount{
+			NodeAddress:         acc4,
+			Status:              NodeStatus_Active,
+			PubKeySet:           accPubKeySet4,
+			ValidatorConsPubKey: accConsPub4,
+		},
+	}
+
+	// Chain-specific eligible nodes (only 2 vault members)
+	eligibleNodes := NodeAccounts{
+		NodeAccount{
+			NodeAddress:         acc1,
+			Status:              NodeStatus_Active,
+			PubKeySet:           accPubKeySet1,
+			ValidatorConsPubKey: accConsPub1,
+		},
+		NodeAccount{
+			NodeAddress:         acc2,
+			Status:              NodeStatus_Active,
+			PubKeySet:           accPubKeySet2,
+			ValidatorConsPubKey: accConsPub2,
+		},
+	}
+
+	tx1 := GetRandomTx()
+	observePoolAddr := GetRandomPubKey()
+	voter := NewObservedTxVoter(txID, nil)
+
+	obTx1 := common.NewObservedTx(tx1, 0, observePoolAddr, 1)
+
+	// Scenario 1: Chain consensus exists but global doesn't
+	// Add votes from eligible nodes (super majority of 2)
+	voter.Add(obTx1, acc1)
+	voter.Add(obTx1, acc2)
+
+	// Chain consensus should pass (2/2 = 100%)
+	c.Assert(voter.HasChainConsensus(eligibleNodes), Equals, true)
+	// Global consensus should NOT pass (2/4 = 50%, need 67%)
+	c.Assert(voter.HasConsensus(allNodes), Equals, false)
+
+	// Scenario 2: Global consensus exists but chain doesn't
+	voter2 := NewObservedTxVoter(GetRandomTxHash(), nil)
+	tx2 := GetRandomTx()
+	obTx2 := common.NewObservedTx(tx2, 0, observePoolAddr, 1)
+
+	// Add votes from non-eligible nodes to get global consensus
+	voter2.Add(obTx2, acc1)
+	voter2.Add(obTx2, acc3)
+	voter2.Add(obTx2, acc4)
+
+	// Global consensus should pass (3/4 = 75%)
+	c.Assert(voter2.HasConsensus(allNodes), Equals, true)
+	// Chain consensus should NOT pass (only 1/2 = 50%, need super majority)
+	c.Assert(voter2.HasChainConsensus(eligibleNodes), Equals, false)
+
+	// Scenario 3: Both consensus types work independently
+	voter3 := NewObservedTxVoter(GetRandomTxHash(), nil)
+	tx3 := GetRandomTx()
+	obTx3 := common.NewObservedTx(tx3, 0, observePoolAddr, 1)
+
+	// Add votes from all nodes
+	voter3.Add(obTx3, acc1)
+	voter3.Add(obTx3, acc2)
+	voter3.Add(obTx3, acc3)
+
+	// Both should have consensus
+	c.Assert(voter3.HasConsensus(allNodes), Equals, true)
+	c.Assert(voter3.HasChainConsensus(eligibleNodes), Equals, true)
+
+	// Verify GetTx and GetChainTx return the same transaction
+	globalTx := voter3.GetTx(allNodes)
+	chainTx := voter3.GetChainTx(eligibleNodes)
+	c.Assert(globalTx.Tx.EqualsEx(chainTx.Tx), Equals, true)
+}

@@ -147,6 +147,7 @@ func IsOperationalMimir(key string) bool {
 		"RUNEPoolEnabled",
 		"EVMDisableContractWhitelist",
 		"MaxOutboundAttempts",
+		"EnableNodeChainConsensus",
 		"AdvSwapQueueRapidSwapMax",
 		"EnableADVSwapQueue",
 		"StreamingLimitSwapMaxAge",

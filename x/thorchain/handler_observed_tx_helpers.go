@@ -127,7 +127,7 @@ func applyTxInAttestation(
 		voter.ExcusedObservers = append(voter.ExcusedObservers, signer.String())
 		slasher.DecSlashPoints(slashCtx, lackOfObservationPenalty, signer)
 	}
-	if voter.HasFinalised(nas) {
+	if hasObservedTxChainFinalised(ctx, k, voter, tx.Tx.Chain.String()) {
 		switch {
 		case voter.FinalisedHeight == 0:
 			telemetry.IncrCounterWithLabels(
@@ -146,7 +146,7 @@ func applyTxInAttestation(
 			// This signer brings the voter to consensus;
 			// decrement all the signers' slash points and increment the non-signers' slash points.
 			signers := voter.GetInboundObserveSigners()
-			nonSigners := getNonSigners(nas, signers)
+			nonSigners := getChainAwareNonSigners(ctx, k, tx.Tx.Chain.String(), signers)
 			slasher.DecSlashPoints(slashCtx, observeSlashPoints, signers...)
 			slasher.IncSlashPoints(slashCtx, lackOfObservationPenalty, nonSigners...)
 			if !nonFinalCredited {
@@ -181,7 +181,7 @@ func applyTxInAttestation(
 			attResult = "late"
 		}
 	}
-	if !ok && voter.HasConsensus(nas) && !tx.IsFinal() && voter.FinalisedHeight == 0 {
+	if !ok && hasObservedTxChainConsensus(ctx, k, voter, tx.Tx.Chain.String()) && !tx.IsFinal() && voter.FinalisedHeight == 0 {
 		if voter.Height == 0 {
 			telemetry.IncrCounterWithLabels(
 				[]string{"thornode", "observe", "consensus"}, 1,
@@ -199,7 +199,7 @@ func applyTxInAttestation(
 			// decrement all the signers' slash points and increment the non-signers' slash points.
 			signers := voter.GetInboundObserveSigners()
 			observers := excuseOtherTierObservers(&voter, signers, voter.GetInboundOtherTierObserveSigners())
-			nonSigners := getNonSigners(nas, observers)
+			nonSigners := getChainAwareNonSigners(ctx, k, tx.Tx.Chain.String(), observers)
 			slasher.DecSlashPoints(slashCtx, observeSlashPoints, signers...)
 			slasher.IncSlashPoints(slashCtx, lackOfObservationPenalty, nonSigners...)
 			// Persist the credited signer set, including legacy XMR observers,
@@ -340,7 +340,7 @@ func handleObservedTxInQuorum(
 
 	voter.Tx.Tx.Memo = tx.Tx.Memo
 
-	hasFinalised := voter.HasFinalised(activeNodeAccounts)
+	hasFinalised := hasObservedTxChainFinalised(ctx, mgr.Keeper(), voter, tx.Tx.Chain.String())
 
 	compromised, compromisedErr := isVaultCompromised(ctx, k, vault.PubKey)
 	if compromisedErr != nil {
@@ -512,6 +512,24 @@ func handleObservedTxInQuorum(
 	// check if we've halted trading
 	swapMsg, isSwap := m.(*MsgSwap)
 	_, isAddLiquidity := m.(*MsgAddLiquidity)
+	_, isSecuredAssetDeposit := m.(*MsgSecuredAssetDeposit)
+	_, isTradeAccountDeposit := m.(*MsgTradeAccountDeposit)
+
+	if isSwap || isAddLiquidity || isSecuredAssetDeposit || isTradeAccountDeposit {
+		// Check if vault has sufficient BFT membership to sign transactions
+		minimumBFT := mgr.GetConstants().GetInt64Value(constants.MinimumNodesForBFT)
+		vaultMembershipCount := int64(len(vault.GetMembership()))
+		if vaultMembershipCount < minimumBFT && activeNodeAccounts.Len() >= int(minimumBFT) {
+			ctx.Logger().Error("vault has insufficient BFT membership",
+				"vault", vault.PubKey.String(),
+				"membership_count", vaultMembershipCount,
+				"minimum_required", minimumBFT)
+			if newErr := refundTx(ctx, tx, mgr, se.ErrUnauthorized.ABCICode(), "vault has insufficient BFT membership", ""); nil != newErr {
+				ctx.Logger().Error("fail to refund for insufficient BFT membership", "error", newErr)
+			}
+			return nil
+		}
+	}
 
 	if isSwap || isAddLiquidity {
 		if k.IsTradingHalt(ctx, m) || k.RagnarokInProgress(ctx) {
@@ -812,7 +830,7 @@ func applyTxOutAttestation(
 		slasher.DecSlashPoints(slashCtx, lackOfObservationPenalty, signer)
 	}
 
-	if voter.HasFinalised(nas) {
+	if hasObservedTxChainFinalised(ctx, k, voter, tx.Tx.Chain.String()) {
 		switch {
 		case voter.FinalisedHeight == 0:
 			telemetry.IncrCounterWithLabels(
@@ -847,7 +865,7 @@ func applyTxOutAttestation(
 			// This signer brings the voter to consensus;
 			// decrement all the signers' slash points and increment the non-signers' slash points.
 			signers := voter.GetOutboundObserveSigners()
-			nonSigners := getNonSigners(nas, signers)
+			nonSigners := getChainAwareNonSigners(ctx, k, tx.Tx.Chain.String(), signers)
 			slasher.DecSlashPoints(slashCtx, observeSlashPoints, signers...)
 			slasher.IncSlashPoints(slashCtx, lackOfObservationPenalty, nonSigners...)
 			if !nonFinalCredited {
@@ -898,7 +916,7 @@ func applyTxOutAttestation(
 			}
 		}
 	}
-	if !ok && voter.HasConsensus(nas) && !tx.IsFinal() && voter.FinalisedHeight == 0 {
+	if !ok && hasObservedTxChainConsensus(ctx, k, voter, tx.Tx.Chain.String()) && !tx.IsFinal() && voter.FinalisedHeight == 0 {
 		if voter.Height == 0 {
 			telemetry.IncrCounterWithLabels(
 				[]string{"thornode", "observe", "consensus"}, 1,
@@ -918,7 +936,7 @@ func applyTxOutAttestation(
 			// decrement all the signers' slash points and increment the non-signers' slash points.
 			signers := voter.GetOutboundObserveSigners()
 			observers := excuseOtherTierObservers(&voter, signers, voter.GetOutboundOtherTierObserveSigners())
-			nonSigners := getNonSigners(nas, observers)
+			nonSigners := getChainAwareNonSigners(ctx, k, tx.Tx.Chain.String(), observers)
 			slasher.DecSlashPoints(slashCtx, observeSlashPoints, signers...)
 			slasher.IncSlashPoints(slashCtx, lackOfObservationPenalty, nonSigners...)
 			// Record the credited gas-agnostic observers on the consensus Tx so the

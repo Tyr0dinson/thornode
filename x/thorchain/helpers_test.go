@@ -2782,3 +2782,523 @@ func (s *HelperSuite) TestIsStableToStableMatchesGetAnchors(c *C) {
 	}
 	c.Check(isStableToStable(ctx, k, usdc, usdt), Equals, true)
 }
+
+func (s *HelperSuite) TestChainAwareConsensusWithMimir(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	// Create some test node accounts
+	na1 := GetRandomValidatorNode(NodeActive)
+	na2 := GetRandomValidatorNode(NodeActive)
+	na3 := GetRandomValidatorNode(NodeActive)
+
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na1), IsNil)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na2), IsNil)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na3), IsNil)
+
+	// Create a vault with specific members for BTC chain
+	btcVault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, na1.PubKeySet.Secp256k1, common.Chains{common.BTCChain}.Strings(), []ChainContract{})
+	btcVault.Membership = []string{na1.PubKeySet.Secp256k1.String(), na2.PubKeySet.Secp256k1.String()}
+	c.Assert(mgr.Keeper().SetVault(ctx, btcVault), IsNil)
+
+	// Create a voter with observations
+	txID := GetRandomTxHash()
+	voter := NewObservedTxVoter(txID, []ObservedTx{
+		{
+			Tx: common.Tx{
+				ID:    txID,
+				Chain: common.BTCChain,
+			},
+			Signers: []string{na1.NodeAddress.String()},
+		},
+	})
+
+	// Test 1: With mimir disabled (default), should use all active validators
+	// Only 1 out of 3 validators signed, so no consensus
+	hasConsensus := hasObservedTxChainConsensus(ctx, mgr.Keeper(), voter, common.BTCChain.String())
+	c.Assert(hasConsensus, Equals, false, Commentf("Should not have consensus with 1/3 signatures"))
+
+	// Add another signature to reach consensus with all active validators
+	voter.Add(ObservedTx{
+		Tx: common.Tx{
+			ID:    txID,
+			Chain: common.BTCChain,
+		},
+		Signers: []string{na2.NodeAddress.String()},
+	}, na2.NodeAddress)
+
+	hasConsensus = hasObservedTxChainConsensus(ctx, mgr.Keeper(), voter, common.BTCChain.String())
+	c.Assert(hasConsensus, Equals, true, Commentf("Should have consensus with 2/3 signatures (super majority)"))
+
+	// Add third signature
+	voter.Add(ObservedTx{
+		Tx: common.Tx{
+			ID:    txID,
+			Chain: common.BTCChain,
+		},
+		Signers: []string{na3.NodeAddress.String()},
+	}, na3.NodeAddress)
+
+	hasConsensus = hasObservedTxChainConsensus(ctx, mgr.Keeper(), voter, common.BTCChain.String())
+	c.Assert(hasConsensus, Equals, true, Commentf("Should have consensus with 3/3 signatures"))
+
+	// Test 2: Enable chain-aware consensus via mimir
+	mgr.Keeper().SetMimir(ctx, constants.EnableNodeChainConsensus.String(), 1)
+
+	// Create a new voter for testing chain-aware consensus
+	txID2 := GetRandomTxHash()
+	voter2 := NewObservedTxVoter(txID2, []ObservedTx{
+		{
+			Tx: common.Tx{
+				ID:    txID2,
+				Chain: common.BTCChain,
+			},
+			Signers: []string{na1.NodeAddress.String()},
+		},
+	})
+
+	// With chain-aware consensus enabled, only vault members (na1, na2) matter
+	// 1 out of 2 vault members signed, so no consensus yet
+	hasConsensus = hasObservedTxChainConsensus(ctx, mgr.Keeper(), voter2, common.BTCChain.String())
+	c.Assert(hasConsensus, Equals, false, Commentf("Should not have chain-aware consensus with 1/2 vault member signatures"))
+
+	// Add signature from second vault member
+	voter2.Add(ObservedTx{
+		Tx: common.Tx{
+			ID:    txID2,
+			Chain: common.BTCChain,
+		},
+		Signers: []string{na2.NodeAddress.String()},
+	}, na2.NodeAddress)
+
+	hasConsensus = hasObservedTxChainConsensus(ctx, mgr.Keeper(), voter2, common.BTCChain.String())
+	c.Assert(hasConsensus, Equals, true, Commentf("Should have chain-aware consensus with 2/2 vault member signatures"))
+
+	// na3 is not a vault member, so their signature doesn't affect chain-aware consensus
+	voter3 := NewObservedTxVoter(GetRandomTxHash(), []ObservedTx{
+		{
+			Tx: common.Tx{
+				ID:    GetRandomTxHash(),
+				Chain: common.BTCChain,
+			},
+			Signers: []string{na3.NodeAddress.String()},
+		},
+	})
+
+	hasConsensus = hasObservedTxChainConsensus(ctx, mgr.Keeper(), voter3, common.BTCChain.String())
+	c.Assert(hasConsensus, Equals, false, Commentf("Non-vault member signature should not create consensus"))
+
+	// Test 3: Disable chain-aware consensus again
+	mgr.Keeper().SetMimir(ctx, constants.EnableNodeChainConsensus.String(), 0)
+
+	// Should go back to using all active validators
+	voter4 := NewObservedTxVoter(GetRandomTxHash(), []ObservedTx{
+		{
+			Tx: common.Tx{
+				ID:    GetRandomTxHash(),
+				Chain: common.BTCChain,
+			},
+			Signers: []string{na1.NodeAddress.String(), na2.NodeAddress.String()},
+		},
+	})
+
+	hasConsensus = hasObservedTxChainConsensus(ctx, mgr.Keeper(), voter4, common.BTCChain.String())
+	c.Assert(hasConsensus, Equals, true, Commentf("With mimir disabled, should have consensus with 2/3 validators (super majority)"))
+}
+
+func (s *HelperSuite) TestNetworkFeeChainConsensusWithMimir(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	// Create test node accounts
+	na1 := GetRandomValidatorNode(NodeActive)
+	na2 := GetRandomValidatorNode(NodeActive)
+	na3 := GetRandomValidatorNode(NodeActive)
+
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na1), IsNil)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na2), IsNil)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na3), IsNil)
+
+	// Create a vault with specific members for ETH chain
+	ethVault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, na1.PubKeySet.Secp256k1, common.Chains{common.ETHChain}.Strings(), []ChainContract{})
+	ethVault.Membership = []string{na1.PubKeySet.Secp256k1.String(), na2.PubKeySet.Secp256k1.String()}
+	c.Assert(mgr.Keeper().SetVault(ctx, ethVault), IsNil)
+
+	// Test 1: With mimir disabled (default), should use all active validators
+	voter1 := types.NewObservedNetworkFeeVoter(1000, common.ETHChain)
+	voter1.Sign(na1.NodeAddress)
+
+	hasConsensus := hasNetworkFeeChainConsensus(ctx, mgr.Keeper(), voter1)
+	c.Assert(hasConsensus, Equals, false, Commentf("Should not have consensus with 1/3 signatures"))
+
+	// Add second signature
+	voter1.Sign(na2.NodeAddress)
+	hasConsensus = hasNetworkFeeChainConsensus(ctx, mgr.Keeper(), voter1)
+	c.Assert(hasConsensus, Equals, true, Commentf("Should have consensus with 2/3 signatures (super majority)"))
+
+	// Test 2: Enable chain-aware consensus via mimir
+	mgr.Keeper().SetMimir(ctx, constants.EnableNodeChainConsensus.String(), 1)
+
+	// Create new voter for chain-aware testing
+	voter2 := types.NewObservedNetworkFeeVoter(1001, common.ETHChain)
+	voter2.Sign(na1.NodeAddress)
+
+	// With chain-aware consensus, only vault members (na1, na2) matter
+	// 1 out of 2 vault members signed, no consensus yet
+	hasConsensus = hasNetworkFeeChainConsensus(ctx, mgr.Keeper(), voter2)
+	c.Assert(hasConsensus, Equals, false, Commentf("Should not have chain-aware consensus with 1/2 vault member signatures"))
+
+	// Add signature from second vault member
+	voter2.Sign(na2.NodeAddress)
+	hasConsensus = hasNetworkFeeChainConsensus(ctx, mgr.Keeper(), voter2)
+	c.Assert(hasConsensus, Equals, true, Commentf("Should have chain-aware consensus with 2/2 vault member signatures"))
+
+	// na3 is not a vault member, so their signature alone doesn't create consensus
+	voter3 := types.NewObservedNetworkFeeVoter(1002, common.ETHChain)
+	voter3.Sign(na3.NodeAddress)
+	hasConsensus = hasNetworkFeeChainConsensus(ctx, mgr.Keeper(), voter3)
+	c.Assert(hasConsensus, Equals, false, Commentf("Non-vault member signature should not create consensus"))
+
+	// Test 3: Disable chain-aware consensus again
+	mgr.Keeper().SetMimir(ctx, constants.EnableNodeChainConsensus.String(), 0)
+
+	// Should go back to using all active validators
+	voter4 := types.NewObservedNetworkFeeVoter(1003, common.ETHChain)
+	voter4.Sign(na1.NodeAddress)
+	voter4.Sign(na2.NodeAddress)
+	hasConsensus = hasNetworkFeeChainConsensus(ctx, mgr.Keeper(), voter4)
+	c.Assert(hasConsensus, Equals, true, Commentf("With mimir disabled, should have consensus with 2/3 validators (super majority)"))
+}
+
+func (s *HelperSuite) TestSolvencyChainConsensusWithMimir(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	// Create test node accounts
+	na1 := GetRandomValidatorNode(NodeActive)
+	na2 := GetRandomValidatorNode(NodeActive)
+	na3 := GetRandomValidatorNode(NodeActive)
+
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na1), IsNil)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na2), IsNil)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na3), IsNil)
+
+	// Create a vault with specific members for BTC chain
+	btcVault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, na1.PubKeySet.Secp256k1, common.Chains{common.BTCChain}.Strings(), []ChainContract{})
+	btcVault.Membership = []string{na1.PubKeySet.Secp256k1.String(), na2.PubKeySet.Secp256k1.String()}
+	c.Assert(mgr.Keeper().SetVault(ctx, btcVault), IsNil)
+
+	// Test 1: With mimir disabled (default), should use all active validators
+	txID1 := GetRandomTxHash()
+	voter1 := types.NewSolvencyVoter(txID1, common.BTCChain, btcVault.PubKey, btcVault.Coins, ctx.BlockHeight())
+	voter1.Sign(na1.NodeAddress)
+
+	hasConsensus := hasSolvencyChainConsensus(ctx, mgr.Keeper(), voter1)
+	c.Assert(hasConsensus, Equals, true, Commentf("Should have minority consensus with 1/3 signatures"))
+
+	// Test 2: Enable chain-aware consensus via mimir
+	mgr.Keeper().SetMimir(ctx, constants.EnableNodeChainConsensus.String(), 1)
+
+	// Create new voter for chain-aware testing
+	txID2 := GetRandomTxHash()
+	voter2 := types.NewSolvencyVoter(txID2, common.BTCChain, btcVault.PubKey, btcVault.Coins, ctx.BlockHeight()+1)
+	voter2.Sign(na1.NodeAddress)
+
+	// With chain-aware consensus, only vault members (na1, na2) matter
+	// 1 out of 2 vault members signed, has minority consensus
+	hasConsensus = hasSolvencyChainConsensus(ctx, mgr.Keeper(), voter2)
+	c.Assert(hasConsensus, Equals, true, Commentf("Should have chain-aware minority consensus with 1/2 vault member signatures"))
+
+	// na3 is not a vault member, their signature alone doesn't create consensus with vault members
+	txID3 := GetRandomTxHash()
+	voter3 := types.NewSolvencyVoter(txID3, common.BTCChain, btcVault.PubKey, btcVault.Coins, ctx.BlockHeight()+2)
+	voter3.Sign(na3.NodeAddress)
+	hasConsensus = hasSolvencyChainConsensus(ctx, mgr.Keeper(), voter3)
+	c.Assert(hasConsensus, Equals, false, Commentf("Non-vault member signature should not create consensus"))
+
+	// Test 3: Disable chain-aware consensus again
+	mgr.Keeper().SetMimir(ctx, constants.EnableNodeChainConsensus.String(), 0)
+
+	// Should go back to using all active validators
+	txID4 := GetRandomTxHash()
+	voter4 := types.NewSolvencyVoter(txID4, common.BTCChain, btcVault.PubKey, btcVault.Coins, ctx.BlockHeight()+3)
+	voter4.Sign(na1.NodeAddress)
+	hasConsensus = hasSolvencyChainConsensus(ctx, mgr.Keeper(), voter4)
+	c.Assert(hasConsensus, Equals, true, Commentf("With mimir disabled, should have minority consensus with 1/3 validators"))
+}
+
+func (s *HelperSuite) TestGetVaultMembersForChain(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	// Test 1: No active vaults for the chain
+	members, err := getVaultMembersForChain(ctx, mgr.Keeper(), common.BTCChain.String())
+	c.Assert(err, IsNil)
+	c.Assert(len(members), Equals, 0, Commentf("Should return empty slice when no vaults exist"))
+
+	// Create test node accounts
+	na1 := GetRandomValidatorNode(NodeActive)
+	na2 := GetRandomValidatorNode(NodeActive)
+	na3 := GetRandomValidatorNode(NodeActive)
+
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na1), IsNil)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na2), IsNil)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na3), IsNil)
+
+	// Test 2: Single vault with members for BTC chain
+	btcVault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, na1.PubKeySet.Secp256k1, common.Chains{common.BTCChain}.Strings(), []ChainContract{})
+	btcVault.Membership = []string{na1.PubKeySet.Secp256k1.String(), na2.PubKeySet.Secp256k1.String()}
+	c.Assert(mgr.Keeper().SetVault(ctx, btcVault), IsNil)
+
+	members, err = getVaultMembersForChain(ctx, mgr.Keeper(), common.BTCChain.String())
+	c.Assert(err, IsNil)
+	c.Assert(len(members), Equals, 2, Commentf("Should return 2 vault members"))
+
+	// Verify the members are correct
+	foundNA1 := false
+	foundNA2 := false
+	for _, member := range members {
+		if member.Equals(na1.NodeAddress) {
+			foundNA1 = true
+		}
+		if member.Equals(na2.NodeAddress) {
+			foundNA2 = true
+		}
+	}
+	c.Assert(foundNA1, Equals, true, Commentf("Should include na1"))
+	c.Assert(foundNA2, Equals, true, Commentf("Should include na2"))
+
+	// Test 3: Multiple vaults for the same chain with overlapping members
+	btcVault2 := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, na3.PubKeySet.Secp256k1, common.Chains{common.BTCChain}.Strings(), []ChainContract{})
+	btcVault2.Membership = []string{na2.PubKeySet.Secp256k1.String(), na3.PubKeySet.Secp256k1.String()} // na2 is in both vaults
+	c.Assert(mgr.Keeper().SetVault(ctx, btcVault2), IsNil)
+
+	members, err = getVaultMembersForChain(ctx, mgr.Keeper(), common.BTCChain.String())
+	c.Assert(err, IsNil)
+	c.Assert(len(members), Equals, 3, Commentf("Should return 3 unique vault members"))
+
+	// Test 4: No vaults for ETH chain (BTC vaults exist but not for ETH)
+	members, err = getVaultMembersForChain(ctx, mgr.Keeper(), common.ETHChain.String())
+	c.Assert(err, IsNil)
+	c.Assert(len(members), Equals, 0, Commentf("Should return empty slice for ETH chain"))
+
+	// Test 5: Vault with invalid pubkey in membership (should skip and continue)
+	btcVault3 := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain}.Strings(), []ChainContract{})
+	btcVault3.Membership = []string{
+		na1.PubKeySet.Secp256k1.String(),
+		"invalid-pubkey", // This should be skipped
+		na2.PubKeySet.Secp256k1.String(),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, btcVault3), IsNil)
+
+	// Should still work and skip the invalid pubkey
+	members, err = getVaultMembersForChain(ctx, mgr.Keeper(), common.BTCChain.String())
+	c.Assert(err, IsNil)
+	c.Assert(len(members) >= 2, Equals, true, Commentf("Should handle invalid pubkey gracefully"))
+}
+
+func (s *HelperSuite) TestGetChainAwareNonSigners(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	// Create test node accounts
+	na1 := GetRandomValidatorNode(NodeActive)
+	na2 := GetRandomValidatorNode(NodeActive)
+	na3 := GetRandomValidatorNode(NodeActive)
+
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na1), IsNil)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na2), IsNil)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na3), IsNil)
+
+	// Set nodes to support BTC chain
+	na1.SupportedChains = []string{common.BTCChain.String()}
+	na2.SupportedChains = []string{common.BTCChain.String()}
+	na3.SupportedChains = []string{common.ETHChain.String()} // na3 doesn't support BTC
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na1), IsNil)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na2), IsNil)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na3), IsNil)
+
+	// Create a vault with specific members for BTC chain
+	btcVault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, na1.PubKeySet.Secp256k1, common.Chains{common.BTCChain}.Strings(), []ChainContract{})
+	btcVault.Membership = []string{na1.PubKeySet.Secp256k1.String(), na2.PubKeySet.Secp256k1.String()}
+	c.Assert(mgr.Keeper().SetVault(ctx, btcVault), IsNil)
+
+	// Test 1: With chain-aware consensus enabled (default in mocknet), only vault members matter
+	signers := []cosmos.AccAddress{na1.NodeAddress}
+	nonSigners := getChainAwareNonSigners(ctx, mgr.Keeper(), common.BTCChain.String(), signers)
+	c.Assert(len(nonSigners), Equals, 1, Commentf("Should return 1 non-signer from vault members"))
+	c.Assert(nonSigners[0].Equals(na2.NodeAddress), Equals, true, Commentf("na2 should be the only non-signer"))
+
+	// Test 2: All vault members signed
+	signers = []cosmos.AccAddress{na1.NodeAddress, na2.NodeAddress}
+	nonSigners = getChainAwareNonSigners(ctx, mgr.Keeper(), common.BTCChain.String(), signers)
+	c.Assert(len(nonSigners), Equals, 0, Commentf("Should return empty when all vault members signed"))
+
+	// Test 3: None of the vault members signed
+	signers = []cosmos.AccAddress{na3.NodeAddress} // na3 is not a vault member
+	nonSigners = getChainAwareNonSigners(ctx, mgr.Keeper(), common.BTCChain.String(), signers)
+	c.Assert(len(nonSigners), Equals, 2, Commentf("Should return all vault members as non-signers"))
+
+	// Test 4: No vault members for chain (should return empty to avoid slashing)
+	nonSigners = getChainAwareNonSigners(ctx, mgr.Keeper(), common.ETHChain.String(), signers)
+	c.Assert(len(nonSigners), Equals, 0, Commentf("Should return empty when no vault members for chain"))
+
+	// Test 5: Disable chain-aware consensus to test legacy behavior
+	mgr.Keeper().SetMimir(ctx, constants.EnableNodeChainConsensus.String(), 0)
+
+	signers = []cosmos.AccAddress{na1.NodeAddress}
+	nonSigners = getChainAwareNonSigners(ctx, mgr.Keeper(), common.BTCChain.String(), signers)
+	c.Assert(len(nonSigners), Equals, 2, Commentf("Should return 2 non-signers from all active validators in legacy mode"))
+
+	// Verify na2 and na3 are non-signers
+	foundNA2 := false
+	foundNA3 := false
+	for _, addr := range nonSigners {
+		if addr.Equals(na2.NodeAddress) {
+			foundNA2 = true
+		}
+		if addr.Equals(na3.NodeAddress) {
+			foundNA3 = true
+		}
+	}
+	c.Assert(foundNA2, Equals, true, Commentf("na2 should be a non-signer"))
+	c.Assert(foundNA3, Equals, true, Commentf("na3 should be a non-signer"))
+}
+
+func (s *HelperSuite) TestGetNodeSupportedChains(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+
+	// Test 1: Node has explicit SupportedChains
+	na.SupportedChains = []string{common.BTCChain.String(), common.ETHChain.String()}
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+
+	chains := getNodeSupportedChains(ctx, mgr.Keeper(), na)
+	c.Assert(len(chains), Equals, 2, Commentf("Should return explicit supported chains"))
+	c.Assert(chains[0], Equals, common.BTCChain.String())
+	c.Assert(chains[1], Equals, common.ETHChain.String())
+
+	// Test 2: Node has empty SupportedChains - backwards compatibility with no active vaults
+	na.SupportedChains = []string{}
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+
+	chains = getNodeSupportedChains(ctx, mgr.Keeper(), na)
+	c.Assert(len(chains), Equals, 0, Commentf("Should return empty when no active vaults"))
+
+	// Test 3: Node has empty SupportedChains - inherit from active vaults
+	vault1 := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, na.PubKeySet.Secp256k1, common.Chains{common.BTCChain, common.ETHChain}.Strings(), []ChainContract{})
+	c.Assert(mgr.Keeper().SetVault(ctx, vault1), IsNil)
+
+	chains = getNodeSupportedChains(ctx, mgr.Keeper(), na)
+	c.Assert(len(chains), Equals, 2, Commentf("Should inherit chains from active vaults"))
+
+	// Verify chains are sorted
+	foundBTC := false
+	foundETH := false
+	for _, chain := range chains {
+		if chain == common.BTCChain.String() {
+			foundBTC = true
+		}
+		if chain == common.ETHChain.String() {
+			foundETH = true
+		}
+	}
+	c.Assert(foundBTC, Equals, true, Commentf("Should include BTC chain"))
+	c.Assert(foundETH, Equals, true, Commentf("Should include ETH chain"))
+
+	// Test 4: Multiple active vaults with different chains
+	vault2 := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.LTCChain, common.ETHChain}.Strings(), []ChainContract{})
+	c.Assert(mgr.Keeper().SetVault(ctx, vault2), IsNil)
+
+	chains = getNodeSupportedChains(ctx, mgr.Keeper(), na)
+	c.Assert(len(chains), Equals, 3, Commentf("Should return unique chains from all active vaults"))
+
+	// Verify all chains are present
+	foundBTC = false
+	foundETH = false
+	foundLTC := false
+	for _, chain := range chains {
+		if chain == common.BTCChain.String() {
+			foundBTC = true
+		}
+		if chain == common.ETHChain.String() {
+			foundETH = true
+		}
+		if chain == common.LTCChain.String() {
+			foundLTC = true
+		}
+	}
+	c.Assert(foundBTC, Equals, true, Commentf("Should include BTC chain"))
+	c.Assert(foundETH, Equals, true, Commentf("Should include ETH chain"))
+	c.Assert(foundLTC, Equals, true, Commentf("Should include LTC chain"))
+}
+
+func (s *HelperSuite) TestHasErrataTxChainConsensus(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	// Create test node accounts
+	na1 := GetRandomValidatorNode(NodeActive)
+	na2 := GetRandomValidatorNode(NodeActive)
+	na3 := GetRandomValidatorNode(NodeActive)
+
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na1), IsNil)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na2), IsNil)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na3), IsNil)
+
+	// Create a vault with specific members for BTC chain
+	btcVault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, na1.PubKeySet.Secp256k1, common.Chains{common.BTCChain}.Strings(), []ChainContract{})
+	btcVault.Membership = []string{na1.PubKeySet.Secp256k1.String(), na2.PubKeySet.Secp256k1.String()}
+	c.Assert(mgr.Keeper().SetVault(ctx, btcVault), IsNil)
+
+	// Test 1: With mimir disabled (default), should use all active validators with super majority
+	txID1 := GetRandomTxHash()
+	voter1 := types.NewErrataTxVoter(txID1, common.BTCChain)
+	voter1.Sign(na1.NodeAddress)
+
+	hasConsensus := hasErrataTxChainConsensus(ctx, mgr.Keeper(), voter1)
+	c.Assert(hasConsensus, Equals, false, Commentf("Should not have consensus with 1/3 signatures (need super majority)"))
+
+	// Add second signature to reach super majority
+	voter1.Sign(na2.NodeAddress)
+	hasConsensus = hasErrataTxChainConsensus(ctx, mgr.Keeper(), voter1)
+	c.Assert(hasConsensus, Equals, true, Commentf("Should have consensus with 2/3 signatures (super majority)"))
+
+	// Test 2: Enable chain-aware consensus via mimir
+	mgr.Keeper().SetMimir(ctx, constants.EnableNodeChainConsensus.String(), 1)
+
+	// Create new voter for chain-aware testing
+	txID2 := GetRandomTxHash()
+	voter2 := types.NewErrataTxVoter(txID2, common.BTCChain)
+	voter2.Sign(na1.NodeAddress)
+
+	// With chain-aware consensus, only vault members (na1, na2) matter
+	// 1 out of 2 vault members signed, no super majority yet
+	hasConsensus = hasErrataTxChainConsensus(ctx, mgr.Keeper(), voter2)
+	c.Assert(hasConsensus, Equals, false, Commentf("Should not have chain-aware consensus with 1/2 vault member signatures"))
+
+	// Add signature from second vault member to reach super majority
+	voter2.Sign(na2.NodeAddress)
+	hasConsensus = hasErrataTxChainConsensus(ctx, mgr.Keeper(), voter2)
+	c.Assert(hasConsensus, Equals, true, Commentf("Should have chain-aware consensus with 2/2 vault member signatures (super majority)"))
+
+	// Test 3: Non-vault member signature should not create consensus
+	txID3 := GetRandomTxHash()
+	voter3 := types.NewErrataTxVoter(txID3, common.BTCChain)
+	voter3.Sign(na3.NodeAddress) // na3 is not a vault member
+	hasConsensus = hasErrataTxChainConsensus(ctx, mgr.Keeper(), voter3)
+	c.Assert(hasConsensus, Equals, false, Commentf("Non-vault member signature should not create consensus"))
+
+	// Test 4: No vault members for chain
+	voter4 := types.NewErrataTxVoter(GetRandomTxHash(), common.ETHChain)
+	voter4.Sign(na1.NodeAddress)
+	hasConsensus = hasErrataTxChainConsensus(ctx, mgr.Keeper(), voter4)
+	c.Assert(hasConsensus, Equals, false, Commentf("Should not have consensus when no vault members for chain"))
+
+	// Test 5: Disable chain-aware consensus again
+	mgr.Keeper().SetMimir(ctx, constants.EnableNodeChainConsensus.String(), 0)
+
+	// Should go back to using all active validators
+	txID5 := GetRandomTxHash()
+	voter5 := types.NewErrataTxVoter(txID5, common.BTCChain)
+	voter5.Sign(na1.NodeAddress)
+	voter5.Sign(na2.NodeAddress)
+	hasConsensus = hasErrataTxChainConsensus(ctx, mgr.Keeper(), voter5)
+	c.Assert(hasConsensus, Equals, true, Commentf("With mimir disabled, should have consensus with 2/3 validators (super majority)"))
+}

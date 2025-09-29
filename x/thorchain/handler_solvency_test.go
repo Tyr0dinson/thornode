@@ -56,6 +56,13 @@ func (s *HandlerSolvencyTestSuite) TestValidate(c *C) {
 		common.LTCChain.String(),
 		common.BCHChain.String(),
 	}, nil)
+	// Add active nodes as vault members for consensus to work
+	asgard.Membership = []string{
+		activeNodes[0].PubKeySet.Secp256k1.String(),
+		activeNodes[1].PubKeySet.Secp256k1.String(),
+		activeNodes[2].PubKeySet.Secp256k1.String(),
+		activeNodes[3].PubKeySet.Secp256k1.String(),
+	}
 	asgard.AddFunds(common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1024*common.One))))
 	c.Assert(mgr.Keeper().SetVault(ctx, asgard), IsNil)
 
@@ -169,11 +176,6 @@ func (s *HandlerSolvencyTestSuite) TestObservingSlashing(c *C) {
 	c.Assert(lackOfObservationPenalty, Equals, int64(2))
 	c.Assert(observeFlex, Equals, int64(10))
 
-	asgardVault := GetRandomVault()
-	asgardVault.Chains = []string{common.ETHChain.String()}
-	asgardVault.AddFunds(common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1000*common.One))))
-	c.Assert(mgr.Keeper().SetVault(ctx, asgardVault), IsNil)
-
 	nas := NodeAccounts{
 		// 6 Active nodes, 1 Standby node; 1/3rd SolvencyVoter consensus needs 2.
 		GetRandomValidatorNode(NodeActive),
@@ -187,6 +189,17 @@ func (s *HandlerSolvencyTestSuite) TestObservingSlashing(c *C) {
 	for _, item := range nas {
 		c.Assert(mgr.Keeper().SetNodeAccount(ctx, item), IsNil)
 	}
+
+	// Create vault with the active node accounts as members for ETH chain
+	asgardVault := GetRandomVault()
+	asgardVault.Chains = []string{common.ETHChain.String()}
+	asgardVault.AddFunds(common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1000*common.One))))
+	// Add active nodes (first 6) as vault members
+	asgardVault.Membership = make([]string, 6)
+	for i := 0; i < 6; i++ {
+		asgardVault.Membership[i] = nas[i].PubKeySet.Secp256k1.String()
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, asgardVault), IsNil)
 
 	msg, err := NewMsgSolvency(common.ETHChain,
 		asgardVault.PubKey,

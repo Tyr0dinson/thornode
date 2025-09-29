@@ -1123,6 +1123,7 @@ func (qs queryServer) queryNode(ctx cosmos.Context, req *types.QueryNodeRequest)
 		IpAddress:           nodeAcc.IPAddress,
 		Version:             nodeAcc.GetVersion().String(),
 		CurrentAward:        cosmos.ZeroUint().String(), // Default display for if not overwritten.
+		SupportedChains:     nodeAcc.SupportedChains,
 	}
 	result.PeerId = getPeerIDFromPubKey(nodeAcc.PubKeySet.Secp256k1)
 	result.SlashPoints = slashPts
@@ -1311,6 +1312,7 @@ func (qs queryServer) queryNodes(ctx cosmos.Context, _ *types.QueryNodesRequest)
 			IpAddress:           na.IPAddress,
 			Version:             na.GetVersion().String(),
 			CurrentAward:        cosmos.ZeroUint().String(), // Default display for if not overwritten.
+			SupportedChains:     na.SupportedChains,
 		}
 		result[i].PeerId = getPeerIDFromPubKey(na.PubKeySet.Secp256k1)
 		result[i].SlashPoints = slashPts

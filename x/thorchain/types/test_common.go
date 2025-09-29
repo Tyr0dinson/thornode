@@ -41,6 +41,8 @@ func GetRandomValidatorNode(status NodeStatus) NodeAccount {
 	}
 	na.IPAddress = "192.168.0.1"
 	na.Type = NodeType_TypeValidator
+	// Set supported chains for chain-aware consensus
+	na.SupportedChains = common.Chains(common.AllChains[:]).Strings()
 
 	return na
 }
@@ -66,6 +68,8 @@ func GetRandomVaultNode(status NodeStatus) NodeAccount {
 	}
 	na.IPAddress = "192.168.0.1"
 	na.Type = NodeType_TypeVault
+	// Set supported chains for chain-aware consensus
+	na.SupportedChains = common.Chains(common.AllChains[:]).Strings()
 
 	return na
 }

@@ -693,10 +693,19 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 			voter.BlockHeight = ctx.BlockHeight()
 			h.mgr.Keeper().SetTssVoter(ctx, voter)
 
+			keygenBlock, err := h.mgr.Keeper().GetKeygenBlock(ctx, msg.Height)
+			if err != nil {
+				return fmt.Errorf("fail to get keygen block, err: %w, height: %d", err, msg.Height)
+			}
+
 			vaultType := AsgardVault
 			chains := voter.ConsensusChains()
 			if msg.KeygenType == XMRMonovaultKeygen {
 				chains = xmrMonovaultChains()
+			} else if targetChains := findKeygenTargetChains(keygenBlock, msg.KeygenType, voter.PubKeys); len(targetChains) > 0 {
+				// Chain-aware keygens carry the chain group the vault is created for.
+				ctx.Logger().Info("using target chains from keygen", "chains", targetChains.Strings())
+				chains = targetChains
 			}
 			vaultPubKeyEddsa := voter.PoolPubKeyEddsa
 			if msg.KeygenType == XMRMonovaultKeygen {
@@ -727,12 +736,8 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 				vault.VaultCreationHeightXmr = xmrHeight
 			}
 
-			if err := h.mgr.Keeper().SetVault(ctx, vault); err != nil {
+			if err = h.mgr.Keeper().SetVault(ctx, vault); err != nil {
 				return fmt.Errorf("fail to save vault: %w", err)
-			}
-			keygenBlock, err := h.mgr.Keeper().GetKeygenBlock(ctx, msg.Height)
-			if err != nil {
-				return fmt.Errorf("fail to get keygen block, err: %w, height: %d", err, msg.Height)
 			}
 			var metric *keeper.TssKeygenMetric
 			metric, err = h.mgr.Keeper().GetTssKeygenMetric(ctx, msg.PoolPubKey)
@@ -843,6 +848,16 @@ func (h TssHandler) refreshInitVaultChains(ctx cosmos.Context, msg *MsgTssPool, 
 		return nil
 	}
 
+	keygenBlock, err := h.mgr.Keeper().GetKeygenBlock(ctx, msg.Height)
+	if err != nil {
+		return fmt.Errorf("fail to get keygen block, err: %w, height: %d", err, msg.Height)
+	}
+	// A chain-aware keygen fixes the vault's chain set to its target chains;
+	// late reports must not widen it past the chain group.
+	if len(findKeygenTargetChains(keygenBlock, msg.KeygenType, voter.PubKeys)) > 0 {
+		return nil
+	}
+
 	// Start from the sorted consensus set and keep whatever the vault already
 	// carries: AddFunds appends a chain when a coin for it is observed, and an
 	// inbound must not be undone by a later keygen report.
@@ -872,10 +887,6 @@ func (h TssHandler) refreshInitVaultChains(ctx cosmos.Context, msg *MsgTssPool, 
 		return fmt.Errorf("fail to save vault: %w", err)
 	}
 
-	keygenBlock, err := h.mgr.Keeper().GetKeygenBlock(ctx, msg.Height)
-	if err != nil {
-		return fmt.Errorf("fail to get keygen block, err: %w, height: %d", err, msg.Height)
-	}
 	// Return rather than log on failure: tryRotateInitVaults returns nil for a
 	// chain set mismatch, so an error here is a keeper failure partway through
 	// the per-vault rotation loop. Reverting the tx is better than leaving the
@@ -888,7 +899,10 @@ func (h TssHandler) refreshInitVaultChains(ctx cosmos.Context, msg *MsgTssPool, 
 // Active, so an asymmetric set would leave some Asgards permanently
 // without an address for a chain. ChurnRetryInterval retries on skip.
 func (h TssHandler) tryRotateInitVaults(ctx cosmos.Context, initVaults Vaults) error {
-	if !initVaultsAgreeOnChains(initVaults) {
+	// With chain-aware consensus, each init vault is created for its own chain
+	// group, so differing chain sets are expected.
+	chainAware := h.mgr.Keeper().GetConfigInt64(ctx, constants.EnableNodeChainConsensus) > 0
+	if !chainAware && !initVaultsAgreeOnChains(initVaults) {
 		chainSets := make([]string, len(initVaults))
 		for i, v := range initVaults {
 			chainSets[i] = fmt.Sprintf("%s:[%s]", v.PubKey.String(), strings.Join(v.Chains, ","))
@@ -1091,6 +1105,39 @@ func judgeLateSigner(ctx cosmos.Context, mgr Manager, msg *MsgTssPool, voter *Ts
 			}
 		}
 	}
+}
+
+// findKeygenTargetChains returns the target chains of the keygen in
+// keygenBlock with the given type and membership, or nil when there is no such
+// keygen or it carries no target chains (legacy, non chain-aware keygens).
+func findKeygenTargetChains(keygenBlock KeygenBlock, keygenType types.KeygenType, members []string) common.Chains {
+	for _, keygen := range keygenBlock.Keygens {
+		if keygen.Type != keygenType || len(keygen.TargetChains) == 0 {
+			continue
+		}
+		if len(keygen.Members) != len(members) {
+			continue
+		}
+		match := true
+		for _, member := range keygen.Members {
+			if !slices.Contains(members, member) {
+				match = false
+				break
+			}
+		}
+		if !match {
+			continue
+		}
+		var chains common.Chains
+		for _, chainStr := range keygen.TargetChains {
+			if chain, err := common.NewChain(chainStr); err == nil && !chains.Has(chain) {
+				chains = append(chains, chain)
+			}
+		}
+		sort.SliceStable(chains, func(i, j int) bool { return chains[i].String() < chains[j].String() })
+		return chains
+	}
+	return nil
 }
 
 // TssAnteHandler called by the ante handler to gate mempool entry

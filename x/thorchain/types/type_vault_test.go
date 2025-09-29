@@ -374,3 +374,68 @@ func (s *VaultSuite) TestVaultSort(c *C) {
 	c.Check(err, IsNil)
 	c.Check(hasXMRAddr, Equals, true)
 }
+
+func (s *VaultSuite) TestVaultHasChain(c *C) {
+	pk := GetRandomPubKey()
+
+	// Test 1: Vault with single chain
+	vault1 := NewVault(1024, VaultStatus_ActiveVault, VaultType_AsgardVault, pk,
+		common.Chains{common.ETHChain}.Strings(),
+		[]ChainContract{})
+	c.Check(vault1.HasChain(common.ETHChain), Equals, true)
+	c.Check(vault1.HasChain(common.Chain("ETH")), Equals, true)
+	c.Check(vault1.HasChain(common.BTCChain), Equals, false)
+	c.Check(vault1.HasChain(common.Chain("BTC")), Equals, false)
+
+	// Test 2: Vault with multiple chains
+	vault2 := NewVault(1024, VaultStatus_ActiveVault, VaultType_AsgardVault, pk,
+		common.Chains{common.ETHChain, common.BTCChain, common.GAIAChain}.Strings(),
+		[]ChainContract{})
+	c.Check(vault2.HasChain(common.ETHChain), Equals, true)
+	c.Check(vault2.HasChain(common.BTCChain), Equals, true)
+	c.Check(vault2.HasChain(common.GAIAChain), Equals, true)
+	c.Check(vault2.HasChain(common.Chain("GAIA")), Equals, true)
+	c.Check(vault2.HasChain(common.LTCChain), Equals, false)
+	c.Check(vault2.HasChain(common.Chain("LTC")), Equals, false)
+
+	// Test 3: Vault with no chains
+	vault3 := NewVault(1024, VaultStatus_ActiveVault, VaultType_AsgardVault, pk,
+		[]string{},
+		[]ChainContract{})
+	c.Check(vault3.HasChain(common.ETHChain), Equals, false)
+	c.Check(vault3.HasChain(common.BTCChain), Equals, false)
+
+	// Test 4: Invalid chain string input
+	c.Check(vault2.HasChain(common.Chain("INVALID")), Equals, false)
+	c.Check(vault2.HasChain(common.Chain("")), Equals, false)
+	c.Check(vault2.HasChain(common.Chain("NOTACHAIN")), Equals, false)
+
+	// Test 5: Case sensitivity - chain names should be case-insensitive
+	vault4 := NewVault(1024, VaultStatus_ActiveVault, VaultType_AsgardVault, pk,
+		common.Chains{common.ETHChain, common.BTCChain}.Strings(),
+		[]ChainContract{})
+	c.Check(vault4.HasChain(common.Chain("eth")), Equals, true)
+	c.Check(vault4.HasChain(common.Chain("ETH")), Equals, true)
+	c.Check(vault4.HasChain(common.Chain("Eth")), Equals, true)
+	c.Check(vault4.HasChain(common.Chain("btc")), Equals, true)
+	c.Check(vault4.HasChain(common.Chain("BTC")), Equals, true)
+	c.Check(vault4.HasChain(common.Chain("Btc")), Equals, true)
+
+	// Test 6: Vault with duplicate chains (shouldn't matter)
+	vault5 := NewVault(1024, VaultStatus_ActiveVault, VaultType_AsgardVault, pk,
+		[]string{"ETH", "BTC", "ETH"},
+		[]ChainContract{})
+	c.Check(vault5.HasChain(common.ETHChain), Equals, true)
+	c.Check(vault5.HasChain(common.BTCChain), Equals, true)
+
+	// Test 7: Vault chains added via AddFunds should be searchable
+	vault6 := NewVault(1024, VaultStatus_ActiveVault, VaultType_AsgardVault, pk,
+		[]string{},
+		[]ChainContract{})
+	c.Check(vault6.HasChain(common.ETHChain), Equals, false)
+	vault6.AddFunds(common.Coins{
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One)),
+	})
+	c.Check(vault6.HasChain(common.ETHChain), Equals, true)
+	c.Check(vault6.HasChain(common.BTCChain), Equals, false)
+}

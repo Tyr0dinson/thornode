@@ -1190,8 +1190,29 @@ func (s *QuerierSuite) TestQueryNodeWasmResponseIsDeterministic(c *C) {
 func (s *QuerierSuite) TestQueryPoolAddresses(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 
+	// Set up nodes with ETH chain support for chain-aware consensus
+	// Need at least MinimumNodesForBFT nodes (default 4)
+	na1 := GetRandomValidatorNode(NodeActive)
+	na1.SupportedChains = []string{common.ETHChain.String()}
+	na2 := GetRandomValidatorNode(NodeActive)
+	na2.SupportedChains = []string{common.ETHChain.String()}
+	na3 := GetRandomValidatorNode(NodeActive)
+	na3.SupportedChains = []string{common.ETHChain.String()}
+	na4 := GetRandomValidatorNode(NodeActive)
+	na4.SupportedChains = []string{common.ETHChain.String()}
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na1), IsNil)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na2), IsNil)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na3), IsNil)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na4), IsNil)
+
 	pubKey := GetRandomPubKey()
 	asgard := NewVault(ctx.BlockHeight()-1, ActiveVault, AsgardVault, pubKey, common.Chains{common.ETHChain}.Strings(), nil)
+	asgard.Membership = []string{
+		na1.PubKeySet.Secp256k1.String(),
+		na2.PubKeySet.Secp256k1.String(),
+		na3.PubKeySet.Secp256k1.String(),
+		na4.PubKeySet.Secp256k1.String(),
+	}
 	c.Assert(mgr.Keeper().SetVault(ctx, asgard), IsNil)
 
 	txConfig, err := params.TxConfig(s.mgr.cdc, nil)
@@ -1247,6 +1268,227 @@ func (s *QuerierSuite) TestQueryPoolAddressesXMRUsesFrostPubKey(c *C) {
 	c.Assert(resp[0].Chain, Equals, common.XMRChain)
 	c.Assert(resp[0].PubKey, Equals, frostPubKey)
 	c.Assert(resp[0].ViewKey, Not(Equals), "")
+}
+
+func (s *QuerierSuite) TestQueryInboundAddressesLegacyMode(c *C) {
+	// Test legacy behavior when EnableNodeChainConsensus is disabled
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(100)
+
+	// Disable chain-aware consensus
+	mgr.Keeper().SetMimir(ctx, constants.EnableNodeChainConsensus.String(), 0)
+
+	// Create a single active vault with multiple chains
+	pubKey := GetRandomPubKey()
+	vault := NewVault(ctx.BlockHeight()-1, ActiveVault, AsgardVault, pubKey, common.Chains{common.ETHChain, common.BTCChain}.Strings(), nil)
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	txConfig, err := params.TxConfig(s.mgr.cdc, nil)
+	c.Assert(err, IsNil)
+	queryServer := NewQueryServerImpl(mgr, txConfig, s.kb)
+
+	// Query inbound addresses
+	resp, err := queryServer.InboundAddresses(ctx, &types.QueryInboundAddressesRequest{})
+	c.Assert(err, IsNil)
+	c.Assert(resp, NotNil)
+	c.Assert(len(resp.InboundAddresses), Equals, 2, Commentf("Should return 2 chains (ETH and BTC)"))
+
+	// Verify both chains are present
+	chains := make(map[string]bool)
+	for _, addr := range resp.InboundAddresses {
+		chains[addr.Chain] = true
+		// All addresses should use the same vault pubkey in legacy mode
+		c.Check(addr.PubKey, Equals, pubKey.String(), Commentf("Legacy mode should use same vault for all chains"))
+	}
+	c.Check(chains["ETH"], Equals, true, Commentf("ETH chain should be present"))
+	c.Check(chains["BTC"], Equals, true, Commentf("BTC chain should be present"))
+}
+
+func (s *QuerierSuite) TestQueryInboundAddressesChainAwareMode(c *C) {
+	// Test chain-aware behavior when EnableNodeChainConsensus is enabled
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(100)
+
+	// Enable chain-aware consensus
+	mgr.Keeper().SetMimir(ctx, constants.EnableNodeChainConsensus.String(), 1)
+
+	// Create multiple active vaults with different chains
+	// Default MinimumNodesForBFT is 4, so add 4 members to each vault
+	pubKey1 := GetRandomPubKey()
+	vault1 := NewVault(ctx.BlockHeight()-1, ActiveVault, AsgardVault, pubKey1, common.Chains{common.ETHChain}.Strings(), nil)
+	vault1.Membership = []string{
+		GetRandomPubKey().String(),
+		GetRandomPubKey().String(),
+		GetRandomPubKey().String(),
+		GetRandomPubKey().String(),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, vault1), IsNil)
+
+	pubKey2 := GetRandomPubKey()
+	vault2 := NewVault(ctx.BlockHeight()-1, ActiveVault, AsgardVault, pubKey2, common.Chains{common.BTCChain}.Strings(), nil)
+	vault2.Membership = []string{
+		GetRandomPubKey().String(),
+		GetRandomPubKey().String(),
+		GetRandomPubKey().String(),
+		GetRandomPubKey().String(),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, vault2), IsNil)
+
+	txConfig, err := params.TxConfig(s.mgr.cdc, nil)
+	c.Assert(err, IsNil)
+	queryServer := NewQueryServerImpl(mgr, txConfig, s.kb)
+
+	// Query inbound addresses
+	resp, err := queryServer.InboundAddresses(ctx, &types.QueryInboundAddressesRequest{})
+	c.Assert(err, IsNil)
+	c.Assert(resp, NotNil)
+	c.Assert(len(resp.InboundAddresses), Equals, 2, Commentf("Should return 2 chains (ETH and BTC)"))
+
+	// Verify each chain uses its specific vault
+	chainVaults := make(map[string]string)
+	for _, addr := range resp.InboundAddresses {
+		chainVaults[addr.Chain] = addr.PubKey
+	}
+	c.Check(chainVaults["ETH"], Equals, pubKey1.String(), Commentf("ETH should use vault1"))
+	c.Check(chainVaults["BTC"], Equals, pubKey2.String(), Commentf("BTC should use vault2"))
+}
+
+func (s *QuerierSuite) TestQueryInboundAddressesMinimumNodesForBFT(c *C) {
+	// Test MinimumNodesForBFT filtering in chain-aware mode
+	// Default MinimumNodesForBFT is 4
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(100)
+
+	// Enable chain-aware consensus
+	mgr.Keeper().SetMimir(ctx, constants.EnableNodeChainConsensus.String(), 1)
+
+	// Create vault with ETH chain (4 members - exactly meets threshold)
+	pubKeyETH := GetRandomPubKey()
+	vaultETH := NewVault(ctx.BlockHeight()-1, ActiveVault, AsgardVault, pubKeyETH, common.Chains{common.ETHChain}.Strings(), nil)
+	vaultETH.Membership = []string{
+		GetRandomPubKey().String(),
+		GetRandomPubKey().String(),
+		GetRandomPubKey().String(),
+		GetRandomPubKey().String(),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, vaultETH), IsNil)
+
+	// Create vault with BTC chain (3 members - below threshold of 4)
+	pubKeyBTC := GetRandomPubKey()
+	vaultBTC := NewVault(ctx.BlockHeight()-1, ActiveVault, AsgardVault, pubKeyBTC, common.Chains{common.BTCChain}.Strings(), nil)
+	vaultBTC.Membership = []string{
+		GetRandomPubKey().String(),
+		GetRandomPubKey().String(),
+		GetRandomPubKey().String(),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, vaultBTC), IsNil)
+
+	txConfig, err := params.TxConfig(s.mgr.cdc, nil)
+	c.Assert(err, IsNil)
+	queryServer := NewQueryServerImpl(mgr, txConfig, s.kb)
+
+	// Query inbound addresses
+	resp, err := queryServer.InboundAddresses(ctx, &types.QueryInboundAddressesRequest{})
+	c.Assert(err, IsNil)
+	c.Assert(resp, NotNil)
+	c.Assert(len(resp.InboundAddresses), Equals, 1, Commentf("Should return 1 chain (ETH), BTC should be filtered out"))
+
+	// Verify only ETH is present (BTC should be filtered out)
+	c.Check(resp.InboundAddresses[0].Chain, Equals, "ETH", Commentf("ETH should be present (4 members meets threshold)"))
+	c.Check(resp.InboundAddresses[0].PubKey, Equals, pubKeyETH.String())
+}
+
+func (s *QuerierSuite) TestQueryInboundAddressesMultipleVaultsPerChain(c *C) {
+	// Test chain-aware mode with multiple vaults supporting the same chain
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(100)
+
+	// Enable chain-aware consensus
+	mgr.Keeper().SetMimir(ctx, constants.EnableNodeChainConsensus.String(), 1)
+
+	// Create first vault for ETH (created earlier, less secure)
+	pubKey1 := GetRandomPubKey()
+	vault1 := NewVault(ctx.BlockHeight()-10, ActiveVault, AsgardVault, pubKey1, common.Chains{common.ETHChain}.Strings(), nil)
+	vault1.Membership = []string{
+		GetRandomPubKey().String(),
+		GetRandomPubKey().String(),
+		GetRandomPubKey().String(),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, vault1), IsNil)
+
+	// Create second vault for ETH (created more recently, more secure)
+	pubKey2 := GetRandomPubKey()
+	vault2 := NewVault(ctx.BlockHeight()-1, ActiveVault, AsgardVault, pubKey2, common.Chains{common.ETHChain}.Strings(), nil)
+	vault2.Membership = []string{
+		GetRandomPubKey().String(),
+		GetRandomPubKey().String(),
+		GetRandomPubKey().String(),
+		GetRandomPubKey().String(), // More members
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, vault2), IsNil)
+
+	txConfig, err := params.TxConfig(s.mgr.cdc, nil)
+	c.Assert(err, IsNil)
+	queryServer := NewQueryServerImpl(mgr, txConfig, s.kb)
+
+	// Query inbound addresses
+	resp, err := queryServer.InboundAddresses(ctx, &types.QueryInboundAddressesRequest{})
+	c.Assert(err, IsNil)
+	c.Assert(resp, NotNil)
+	c.Assert(len(resp.InboundAddresses), Equals, 1, Commentf("Should return 1 chain (ETH)"))
+
+	// Verify ETH uses the most secure vault (vault2 - more recent and more members)
+	c.Check(resp.InboundAddresses[0].Chain, Equals, "ETH")
+	c.Check(resp.InboundAddresses[0].PubKey, Equals, pubKey2.String(), Commentf("Should use most secure vault (vault2)"))
+}
+
+func (s *QuerierSuite) TestQueryInboundAddressesEdgeCases(c *C) {
+	// Test various edge cases for queryInboundAddresses
+	ctx, mgr := setupManagerForTest(c)
+	ctx = ctx.WithBlockHeight(100)
+
+	txConfig, err := params.TxConfig(s.mgr.cdc, nil)
+	c.Assert(err, IsNil)
+	queryServer := NewQueryServerImpl(mgr, txConfig, s.kb)
+
+	// Edge Case 1: Vault with no chains - Legacy mode
+	// Setup for legacy mode first
+	mgr.Keeper().SetMimir(ctx, constants.EnableNodeChainConsensus.String(), -1)
+	pubKey := GetRandomPubKey()
+	vaultNoChains := NewVault(ctx.BlockHeight()-1, ActiveVault, AsgardVault, pubKey, []string{}, nil)
+	c.Assert(mgr.Keeper().SetVault(ctx, vaultNoChains), IsNil)
+
+	resp, err := queryServer.InboundAddresses(ctx, &types.QueryInboundAddressesRequest{})
+	c.Assert(err, IsNil)
+	// Should return THOR chain as fallback, but THORChain is skipped in the loop
+	c.Assert(len(resp.InboundAddresses), Equals, 0, Commentf("THORChain should be skipped"))
+
+	// Edge Case 2: Vault with THOR chain only (should be skipped)
+	vaultTHOR := NewVault(ctx.BlockHeight()-1, ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.THORChain}.Strings(), nil)
+	c.Assert(mgr.Keeper().SetVault(ctx, vaultTHOR), IsNil)
+
+	resp, err = queryServer.InboundAddresses(ctx, &types.QueryInboundAddressesRequest{})
+	c.Assert(err, IsNil)
+	c.Assert(len(resp.InboundAddresses), Equals, 0, Commentf("THORChain should be skipped in output"))
+
+	// Edge Case 3: Chain-aware mode with mimir = 0 (should use legacy)
+	mgr.Keeper().SetMimir(ctx, constants.EnableNodeChainConsensus.String(), 0)
+	pubKeyETH := GetRandomPubKey()
+	vaultETH := NewVault(ctx.BlockHeight()-1, ActiveVault, AsgardVault, pubKeyETH, common.Chains{common.ETHChain}.Strings(), nil)
+	// Add members to avoid issues with vault selection
+	vaultETH.Membership = []string{
+		GetRandomPubKey().String(),
+		GetRandomPubKey().String(),
+		GetRandomPubKey().String(),
+		GetRandomPubKey().String(),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, vaultETH), IsNil)
+
+	resp, err = queryServer.InboundAddresses(ctx, &types.QueryInboundAddressesRequest{})
+	c.Assert(err, IsNil)
+	c.Assert(len(resp.InboundAddresses), Equals, 1, Commentf("Should use legacy mode when mimir = 0"))
+	c.Check(resp.InboundAddresses[0].Chain, Equals, "ETH")
+	c.Check(resp.InboundAddresses[0].PubKey, Equals, pubKeyETH.String())
 }
 
 func (s *QuerierSuite) TestQueryKeysignArrayPubKey(c *C) {

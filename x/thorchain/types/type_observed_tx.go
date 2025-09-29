@@ -604,3 +604,28 @@ func (m *ObservedTxVoter) shouldRefundRedundantObservation(tx common.ObservedTx,
 	}
 	return count == 1 && hasRefundableMatch
 }
+
+// HasChainConsensus is to check whether the tx with finalise = false in this ObservedTxVoter reach consensus
+// among the provided eligible node accounts (typically vault members for a specific chain)
+func (m *ObservedTxVoter) HasChainConsensus(eligibleAccounts NodeAccounts) bool {
+	consensusTx := m.GetChainTx(eligibleAccounts)
+	return !consensusTx.IsEmpty()
+}
+
+// HasChainFinalised is to check whether the tx with finalise = true reach super majority
+// among the provided eligible node accounts (typically vault members for a specific chain)
+func (m *ObservedTxVoter) HasChainFinalised(eligibleAccounts NodeAccounts) bool {
+	finalTx := m.GetChainTx(eligibleAccounts)
+	if finalTx.IsEmpty() {
+		return false
+	}
+	return finalTx.IsFinal()
+}
+
+// GetChainTx return the tx that has super majority among the provided eligible
+// node accounts. It shares GetTx's consensus matching (EqualsConsensus, active
+// signer indexing) so chain-aware consensus cannot diverge from global consensus
+// semantics; only the eligible account set differs.
+func (m *ObservedTxVoter) GetChainTx(eligibleAccounts NodeAccounts) *common.ObservedTx {
+	return m.GetTx(eligibleAccounts)
+}

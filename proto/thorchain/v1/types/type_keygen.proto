@@ -21,6 +21,7 @@ message Keygen {
   ];
   KeygenType type = 2;
   repeated string members = 3;
+  repeated string target_chains = 4;
 }
 
 message KeygenBlock {

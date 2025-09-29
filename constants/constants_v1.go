@@ -98,6 +98,7 @@ func NewConstantValue() *ConstantVals {
 			SynthYieldCycle:                     0,                // number of blocks when the network pays out rewards to yield bearing synths
 			MinimumL1OutboundFeeUSD:             1000000,          // Minimum fee in USD to charge for LP swap, default to $0.01 , nodes need to vote it to a larger value
 			MinimumPoolLiquidityFee:             0,                // Minimum liquidity fee made by the pool,active pool fail to meet this within a PoolCycle will be demoted
+			ChainLiquidityRunePerValidator:      100_000_00000000, // Maximum RUNE allowed per validator for pools without super majority chain support
 			ChurnMigrateRounds:                  5,                // Number of rounds to migrate vaults during churn
 			AllowWideBlame:                      0,                // allow for a wide blame, only set in mocknet for regression testing tss keysign failures
 			MaxAffiliateFeeBasisPoints:          10_000,           // Max allowed affiliate fee basis points
@@ -155,6 +156,7 @@ func NewConstantValue() *ConstantVals {
 			TCYUnstakingHalt:                    1,                  // enable/disable tcy unstaking
 			TCYClaimingHalt:                     1,                  // enable/disable tcy claiming
 			ReserveMaxCap:                       0,                  // maximum reserve balance before EmissionCurve is overridden, 0 = disabled
+			MinNodeChainSupport:                 1,                  // minimum number of chains a node must support
 			MaxDepositTxIDRetries:               100,                // maximum retries for deposit txid auto-increment to avoid collisions
 			OverSolvencyToTreasuryBps:           0,                  // basis points (0-10000) of over-solvent liquidity to swap to RUNE and transfer to over-solvency sweep destination address
 			OverSolvencyCheckInterval:           600,                // interval in blocks for over-solvency checks (approximately 30 days)

@@ -98,6 +98,16 @@ func (ms msgServer) SetNodeKeys(goCtx context.Context, msg *types.MsgSetNodeKeys
 	return ms.externalHandler(goCtx, handler, msg)
 }
 
+func (ms msgServer) AddNodeChainSupport(goCtx context.Context, msg *types.MsgAddNodeChainSupport) (*types.MsgEmpty, error) {
+	handler := NewNodeChainSupportHandler(ms.mgr)
+	return externalHandler(goCtx, handler, msg)
+}
+
+func (ms msgServer) RemoveNodeChainSupport(goCtx context.Context, msg *types.MsgRemoveNodeChainSupport) (*types.MsgEmpty, error) {
+	handler := NewNodeChainSupportHandler(ms.mgr)
+	return externalHandler(goCtx, handler, msg)
+}
+
 func (ms msgServer) Solvency(goCtx context.Context, msg *types.MsgSolvency) (*types.MsgEmpty, error) {
 	handler := NewSolvencyHandler(ms.mgr)
 	return ms.externalHandler(goCtx, handler, msg)

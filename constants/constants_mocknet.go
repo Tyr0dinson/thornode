@@ -68,6 +68,7 @@ func init() {
 		JailTimeKeygen:                      30,
 		JailTimeKeygenBase:                  30,
 		JailTimeKeysign:                     10,
+		EnableNodeChainConsensus:            1,
 		AsgardSize:                          6,
 		StreamingSwapMinBPFee:               100, // TODO: remove on hard fork
 		EnableAdvSwapQueue:                  1,
@@ -98,6 +99,7 @@ func init() {
 		MultipleAffiliatesMaxCount:          5,
 		BankSendEnabled:                     1,
 		MaxAbsentKeygenReporters:            0,
+		MinNodeChainSupport:                 1,
 	}
 	boolOverrides = map[ConstantName]bool{
 		StrictBondLiquidityRatio: false,

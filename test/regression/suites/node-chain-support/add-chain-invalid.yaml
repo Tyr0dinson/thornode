@@ -1,0 +1,64 @@
+{{ template "1-active-validator-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+# Enable chain-aware consensus feature
+type: tx-mimir
+key: EnableNodeChainConsensus
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Verify node account is Active with no supported chains
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_dog }}
+asserts:
+  - .status == "Active"
+  - (.supported_chains == null) or ((.supported_chains | type) == "array" and (.supported_chains | length) == 0)
+---
+# Try to add invalid chain name "FAKE"
+type: tx-add-node-chain-support
+signer: {{ addr_thor_dog }}
+chain: "FAKE"
+---
+type: create-blocks
+count: 1
+---
+# Verify invalid chain was NOT added (supported_chains should still be empty)
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_dog }}
+asserts:
+  - (.supported_chains == null) or ((.supported_chains | type) == "array" and (.supported_chains | length) == 0)
+---
+# Add valid chain (BTC) to ensure system still works
+type: tx-add-node-chain-support
+signer: {{ addr_thor_dog }}
+chain: "BTC"
+---
+type: create-blocks
+count: 1
+---
+# Verify valid chain was added successfully
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_dog }}
+asserts:
+  - .supported_chains|length == 1
+  - .supported_chains[0] == "BTC"
+---
+# Try to add another invalid chain "FAKE" when we already have BTC
+type: tx-add-node-chain-support
+signer: {{ addr_thor_dog }}
+chain: "FAKE"
+---
+type: create-blocks
+count: 1
+---
+# Verify FAKE was not added (still only BTC)
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_dog }}
+asserts:
+  - .supported_chains|length == 1
+  - .supported_chains[0] == "BTC"

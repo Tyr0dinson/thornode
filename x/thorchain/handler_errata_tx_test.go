@@ -474,7 +474,26 @@ func (s *HandlerErrataTxSuite) TestErrataHandlerDifferentError(c *C) {
 		ctx, mgr := setupManagerForTest(c)
 		helper := NewErrataTxHandlerTestHelper(mgr.Keeper())
 		mgr.K = helper
+
+		// Create a vault with BTC chain support for chain-aware consensus
+		vaultPubKey := GetRandomPubKey()
+		vault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, vaultPubKey, []string{common.BTCChain.String()}, []ChainContract{})
+
 		msg := tc.messageProvider(ctx, helper)
+
+		// If nodes were created in messageProvider, add BTC support and vault membership
+		activeNodes, _ := helper.ListActiveValidators(ctx)
+		if len(activeNodes) > 0 {
+			var membership []string
+			for _, na := range activeNodes {
+				na.SupportedChains = []string{common.BTCChain.String()}
+				membership = append(membership, na.PubKeySet.Secp256k1.String())
+				c.Assert(helper.SetNodeAccount(ctx, na), IsNil)
+			}
+			vault.Membership = membership
+		}
+		c.Assert(helper.SetVault(ctx, vault), IsNil)
+
 		handler := NewErrataTxHandler(mgr)
 		result, err := handler.Run(ctx, msg)
 		tc.validator(c, ctx, result, err, helper, tc.name)
@@ -630,9 +649,13 @@ func (*HandlerErrataTxSuite) TestProcessErrataOutboundTx_EnsureFundsAreCreditedT
 	k := mgr.Keeper()
 	eventMgr := mgr.EventMgr()
 	handler := NewErrataTxHandler(mgr)
+
 	node1 := GetRandomValidatorNode(NodeActive)
+	node1.SupportedChains = []string{common.LTCChain.String(), common.BTCChain.String(), common.ETHChain.String()}
 	node2 := GetRandomValidatorNode(NodeActive)
+	node2.SupportedChains = []string{common.LTCChain.String(), common.BTCChain.String(), common.ETHChain.String()}
 	node3 := GetRandomValidatorNode(NodeActive)
+	node3.SupportedChains = []string{common.LTCChain.String(), common.BTCChain.String(), common.ETHChain.String()}
 	c.Assert(helper.Keeper.SetNodeAccount(ctx, node1), IsNil)
 	c.Assert(helper.Keeper.SetNodeAccount(ctx, node2), IsNil)
 	c.Assert(helper.Keeper.SetNodeAccount(ctx, node3), IsNil)
@@ -645,12 +668,14 @@ func (*HandlerErrataTxSuite) TestProcessErrataOutboundTx_EnsureFundsAreCreditedT
 		common.BTCChain.String(),
 		common.ETHChain.String(),
 	}, []ChainContract{})
+	inactiveVault.Membership = []string{node1.PubKeySet.Secp256k1.String(), node2.PubKeySet.Secp256k1.String(), node3.PubKeySet.Secp256k1.String()}
 
 	activeVault := NewVault(1, types.VaultStatus_ActiveVault, AsgardVault, activePubKey, []string{
 		common.LTCChain.String(),
 		common.BTCChain.String(),
 		common.ETHChain.String(),
 	}, []ChainContract{})
+	activeVault.Membership = []string{node1.PubKeySet.Secp256k1.String(), node2.PubKeySet.Secp256k1.String(), node3.PubKeySet.Secp256k1.String()}
 	c.Assert(helper.Keeper.SetVault(ctx, inactiveVault), IsNil)
 	c.Assert(helper.Keeper.SetVault(ctx, activeVault), IsNil)
 	// migration , internal tx , should cause the vault to be set back to retiring
@@ -753,9 +778,6 @@ func (s *HandlerErrataTxSuite) TestObservingSlashing(c *C) {
 	c.Assert(lackOfObservationPenalty, Equals, int64(2))
 	c.Assert(observeFlex, Equals, int64(10))
 
-	asgardVault := GetRandomVault()
-	c.Assert(mgr.Keeper().SetVault(ctx, asgardVault), IsNil)
-
 	nas := NodeAccounts{
 		// 6 Active nodes, 1 Standby node; 2/3rds consensus needs 4.
 		GetRandomValidatorNode(NodeActive),
@@ -766,9 +788,22 @@ func (s *HandlerErrataTxSuite) TestObservingSlashing(c *C) {
 		GetRandomValidatorNode(NodeActive),
 		GetRandomValidatorNode(NodeStandby),
 	}
-	for _, item := range nas {
-		c.Assert(mgr.Keeper().SetNodeAccount(ctx, item), IsNil)
+	// Set up nodes with BTC chain support for chain-aware consensus
+	var membership []string
+	for i, item := range nas {
+		if item.Status == NodeActive {
+			item.SupportedChains = []string{common.BTCChain.String()}
+			membership = append(membership, item.PubKeySet.Secp256k1.String())
+		}
+		nas[i] = item
+		c.Assert(mgr.Keeper().SetNodeAccount(ctx, nas[i]), IsNil)
 	}
+
+	// Create vault with BTC chain support and proper membership
+	asgardVault := GetRandomVault()
+	asgardVault.Chains = []string{common.BTCChain.String()}
+	asgardVault.Membership = membership
+	c.Assert(mgr.Keeper().SetVault(ctx, asgardVault), IsNil)
 
 	txID := GetRandomTxHash()
 	addr := GetRandomETHAddress()

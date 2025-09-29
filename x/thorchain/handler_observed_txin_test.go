@@ -769,6 +769,15 @@ func (k *TestObservedTxInHandleKeeper) GetErrataTxVoter(_ cosmos.Context, txID c
 	return NewErrataTxVoter(txID, chain), nil
 }
 
+func (k *TestObservedTxInHandleKeeper) GetNodeAccount(_ cosmos.Context, addr cosmos.AccAddress) (NodeAccount, error) {
+	for _, na := range k.nas {
+		if na.NodeAddress.Equals(addr) {
+			return na, nil
+		}
+	}
+	return NodeAccount{}, errKaboom
+}
+
 func (k *TestObservedTxInHandleKeeper) GetObservedTxInVoter(_ cosmos.Context, _ common.TxID) (ObservedTxVoter, error) {
 	return k.voter, nil
 }
@@ -807,6 +816,16 @@ func (k *TestObservedTxInHandleKeeper) GetVault(_ cosmos.Context, key common.Pub
 
 func (k *TestObservedTxInHandleKeeper) GetAsgardVaults(_ cosmos.Context) (Vaults, error) {
 	return Vaults{k.vault}, nil
+}
+
+func (k *TestObservedTxInHandleKeeper) GetActiveAsgardVaultsByChain(_ cosmos.Context, chain string) Vaults {
+	// Check if vault supports the chain
+	for _, vaultChain := range k.vault.Chains {
+		if vaultChain == chain {
+			return Vaults{k.vault}
+		}
+	}
+	return Vaults{}
 }
 
 func (k *TestObservedTxInHandleKeeper) SetVault(_ cosmos.Context, vault Vault) error {
@@ -916,13 +935,22 @@ func (s *HandlerObservedTxInSuite) testHandleWithConfirmation(c *C) {
 	vault := GetRandomVault()
 	vault.PubKey = obTx.ObservedPubKey
 
+	nas := NodeAccounts{
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+		GetRandomValidatorNode(NodeActive),
+	}
+	// Add all nodes as vault members for consensus to work
+	vault.Membership = []string{
+		nas[0].PubKeySet.Secp256k1.String(),
+		nas[1].PubKeySet.Secp256k1.String(),
+		nas[2].PubKeySet.Secp256k1.String(),
+		nas[3].PubKeySet.Secp256k1.String(),
+	}
+
 	keeper := &TestObservedTxInHandleKeeper{
-		nas: NodeAccounts{
-			GetRandomValidatorNode(NodeActive),
-			GetRandomValidatorNode(NodeActive),
-			GetRandomValidatorNode(NodeActive),
-			GetRandomValidatorNode(NodeActive),
-		},
+		nas:   nas,
 		vault: vault,
 		pool: Pool{
 			Asset:        common.ETHAsset,
@@ -1056,11 +1084,20 @@ func (s *HandlerObservedTxInSuite) testHandleWithVersion(c *C) {
 	pk := GetRandomPubKey()
 	txs[0].Tx.ToAddress, err = pk.GetAddress(txs[0].Tx.Coins[0].Asset.Chain)
 
+	activeNode := GetRandomValidatorNode(NodeActive)
 	vault := GetRandomVault()
 	vault.PubKey = obTx.ObservedPubKey
+	// Add the active node as a vault member for consensus to work
+	// Add enough members to meet MinimumNodesForBFT requirement (4)
+	vault.Membership = []string{
+		activeNode.PubKeySet.Secp256k1.String(),
+		GetRandomPubKey().String(),
+		GetRandomPubKey().String(),
+		GetRandomPubKey().String(),
+	}
 
 	keeper := &TestObservedTxInHandleKeeper{
-		nas:   NodeAccounts{GetRandomValidatorNode(NodeActive)},
+		nas:   NodeAccounts{activeNode},
 		voter: NewObservedTxVoter(tx.ID, make(ObservedTxs, 0)),
 		vault: vault,
 		pool: Pool{
@@ -1152,7 +1189,16 @@ func (s *HandlerObservedTxInSuite) TestMigrateMemo(c *C) {
 	var err error
 	ctx, _ := setupKeeperForTest(c)
 
+	nas := NodeAccounts{GetRandomValidatorNode(NodeActive)}
 	vault := GetRandomVault()
+	// Add the active node as a vault member for consensus to work
+	// Add enough members to meet MinimumNodesForBFT requirement (4)
+	vault.Membership = []string{
+		nas[0].PubKeySet.Secp256k1.String(),
+		GetRandomPubKey().String(),
+		GetRandomPubKey().String(),
+		GetRandomPubKey().String(),
+	}
 	addr, err := vault.PubKey.GetAddress(common.ETHChain)
 	c.Assert(err, IsNil)
 	newVault := GetRandomVault()
@@ -1184,7 +1230,7 @@ func (s *HandlerObservedTxInSuite) TestMigrateMemo(c *C) {
 
 	txs := ObservedTxs{tx}
 	keeper := &TestObservedTxInHandleKeeper{
-		nas:   NodeAccounts{GetRandomValidatorNode(NodeActive)},
+		nas:   nas,
 		voter: NewObservedTxVoter(tx.Tx.ID, make(ObservedTxs, 0)),
 		vault: vault,
 		pool: Pool{
@@ -1386,6 +1432,11 @@ func setupAnLegitObservedTx(ctx cosmos.Context, helper *ObservedTxInHandlerTestH
 	c.Assert(err, IsNil)
 	vault := GetRandomVault()
 	vault.PubKey = obTx.ObservedPubKey
+	// Add the active node as the only vault member for consensus to work with single observation
+	// For chain-aware consensus, a single member with single observation achieves super majority
+	vault.Membership = []string{
+		activeNodeAccount.PubKeySet.Secp256k1.String(),
+	}
 	c.Assert(helper.Keeper.SetNodeAccount(ctx, activeNodeAccount), IsNil)
 	c.Assert(helper.SetVault(ctx, vault), IsNil)
 	p := NewPool()
@@ -1773,10 +1824,19 @@ func (s *HandlerObservedTxInSuite) TestVaultStatus(c *C) {
 		tx.Memo = "SWAP:BTC.BTC:" + GetRandomBTCAddress().String()
 		obTx := NewObservedTx(tx, 12, GetRandomPubKey(), 15)
 		txs := ObservedTxs{obTx}
+		nas := NodeAccounts{GetRandomValidatorNode(NodeActive)}
 		vault := GetRandomVault()
 		vault.PubKey = obTx.ObservedPubKey
+		// Add the active node as a vault member for consensus to work
+		// Add enough members to meet MinimumNodesForBFT requirement (4)
+		vault.Membership = []string{
+			nas[0].PubKeySet.Secp256k1.String(),
+			GetRandomPubKey().String(),
+			GetRandomPubKey().String(),
+			GetRandomPubKey().String(),
+		}
 		keeper := &TestObservedTxInHandleKeeper{
-			nas:         NodeAccounts{GetRandomValidatorNode(NodeActive)},
+			nas:         nas,
 			voter:       NewObservedTxVoter(tx.ID, make(ObservedTxs, 0)),
 			vault:       vault,
 			vaultExists: true,
@@ -2125,8 +2185,14 @@ func (s *HandlerObservedTxInSuite) TestMemolessTransactionReferenceGeneration(c 
 	vault.PubKey = obTx.ObservedPubKey
 	vault.Status = ActiveVault
 
-	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
 	na := GetRandomValidatorNode(NodeActive)
+	// Add the active node as the only vault member for consensus to work with single observation
+	// For chain-aware consensus, a single member with single observation achieves super majority
+	vault.Membership = []string{
+		na.PubKeySet.Secp256k1.String(),
+	}
+
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
 	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
 
 	// Create reference memo that matches our expected generated reference
@@ -2174,8 +2240,15 @@ func (s *HandlerObservedTxInSuite) TestMemolessTransactionWithDifferentAssetDeci
 	vault := GetRandomVault()
 	vault.PubKey = obTx.ObservedPubKey
 	vault.Status = ActiveVault
-	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
 	na := GetRandomValidatorNode(NodeActive)
+	// Add the active node as the only vault member for consensus to work with single observation
+	// For chain-aware consensus, a single member with single observation achieves super majority
+	vault.Membership = []string{
+		na.PubKeySet.Secp256k1.String(),
+	}
+
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
 	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
 
 	// Create reference memo for expected reference
@@ -2275,22 +2348,27 @@ func (s *HandlerObservedTxInSuite) TestMemolessTransactionWithExistingMemo(c *C)
 	vault.PubKey = obTx.ObservedPubKey
 	vault.Status = ActiveVault
 
-	keeper := &TestObservedTxInHandleKeeper{
-		nas:         NodeAccounts{GetRandomValidatorNode(NodeActive)},
-		voter:       NewObservedTxVoter(tx.ID, make(ObservedTxs, 0)),
-		vault:       vault,
-		vaultExists: true,
+	na := GetRandomValidatorNode(NodeActive)
+	// Add the active node as the only vault member for consensus to work with single observation
+	// For chain-aware consensus, a single member with single observation achieves super majority
+	vault.Membership = []string{
+		na.PubKeySet.Secp256k1.String(),
 	}
-	mgr.K = keeper
+
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
 
 	// Process transaction with existing memo
 	handler := NewObservedTxInHandler(mgr)
-	msg := NewMsgObservedTxIn(ObservedTxs{obTx}, keeper.nas[0].NodeAddress)
+	msg := NewMsgObservedTxIn(ObservedTxs{obTx}, na.NodeAddress)
 	_, err := handler.handle(ctx, *msg)
 	c.Assert(err, IsNil)
 
+	voter, err := mgr.Keeper().GetObservedTxInVoter(ctx, tx.ID)
+	c.Assert(err, IsNil)
+
 	// Memo should remain the original memo (no reference memo generation for non-empty memos)
-	c.Assert(keeper.voter.Tx.Tx.Memo, Equals, existingMemo, check.Commentf("Existing memo should be preserved"))
+	c.Assert(voter.Tx.Tx.Memo, Equals, existingMemo, check.Commentf("Existing memo should be preserved"))
 }
 
 func (s *HandlerObservedTxInSuite) TestFetchMemoFromReferenceHeightValidation(c *C) {

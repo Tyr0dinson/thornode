@@ -41,7 +41,7 @@ func processNetworkFeeAttestation(
 	}
 
 	// doesn't have consensus yet
-	if !voter.HasConsensus(active) {
+	if !hasNetworkFeeChainConsensus(ctx, mgr.Keeper(), *voter) {
 		// Before consensus, slash until consensus.
 		mgr.Slasher().IncSlashPoints(slashCtx, observeSlashPoints, attester)
 		return nil
@@ -70,7 +70,7 @@ func processNetworkFeeAttestation(
 	// then decrement all the signers' slash points and increment the non-signers' slash points.
 	mgr.Slasher().IncSlashPoints(slashCtx, observeSlashPoints, attester)
 	signers := voter.GetSigners()
-	nonSigners := getNonSigners(active, signers)
+	nonSigners := getChainAwareNonSigners(ctx, mgr.Keeper(), nf.Chain.String(), signers)
 	mgr.Slasher().DecSlashPoints(slashCtx, observeSlashPoints, signers...)
 	mgr.Slasher().IncSlashPoints(slashCtx, lackOfObservationPenalty, nonSigners...)
 	queueObservationTally(ctx, mgr.Keeper(), observationTallyKindNetworkFee, voter.Chain,

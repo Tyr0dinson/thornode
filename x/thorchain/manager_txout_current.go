@@ -808,6 +808,9 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]
 
 			signingTransactionPeriod := tos.constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
 
+			// Check if chain-aware consensus is enabled
+			enableChainConsensus := tos.keeper.GetConfigInt64(ctx, constants.EnableNodeChainConsensus)
+
 			// ///////////// COLLECT ACTIVE ASGARD VAULTS ///////////////////
 			var activeAsgards Vaults
 			activeAsgards, err = tos.keeper.GetAsgardVaultsByStatus(ctx, ActiveVault)
@@ -817,6 +820,22 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]
 			// Compromised vaults stay Active on-chain so they can be observed and
 			// recovered, but they must not receive newly scheduled outbounds.
 			activeAsgards = filterCompromisedVaults(ctx, tos.keeper, activeAsgards)
+
+			// Filter to only vaults that support this chain when chain-aware consensus is enabled
+			if enableChainConsensus > 0 {
+				chainStr := toi.Chain.String()
+				filteredActive := make(Vaults, 0)
+				for _, vault := range activeAsgards {
+					if vault.HasChain(toi.Chain) {
+						filteredActive = append(filteredActive, vault)
+					}
+				}
+				ctx.Logger().Debug("filtered active vaults by chain support",
+					"chain", chainStr,
+					"total_vaults", len(activeAsgards),
+					"filtered_vaults", len(filteredActive))
+				activeAsgards = filteredActive
+			}
 
 			// All else being equal, prefer lower-security vaults for outbounds.
 			activeAsgards = tos.keeper.SortBySecurity(ctx, activeAsgards, signingTransactionPeriod)
@@ -837,6 +856,22 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]
 			// Retiring vaults are still valid outbound candidates, so apply the same
 			// compromised-vault exclusion before they are considered for fallback.
 			retiringAsgards = filterCompromisedVaults(ctx, tos.keeper, retiringAsgards)
+
+			// Filter to only vaults that support this chain when chain-aware consensus is enabled
+			if enableChainConsensus > 0 {
+				chainStr := toi.Chain.String()
+				filteredRetiring := make(Vaults, 0)
+				for _, vault := range retiringAsgards {
+					if vault.HasChain(toi.Chain) {
+						filteredRetiring = append(filteredRetiring, vault)
+					}
+				}
+				ctx.Logger().Debug("filtered retiring vaults by chain support",
+					"chain", chainStr,
+					"total_vaults", len(retiringAsgards),
+					"filtered_vaults", len(filteredRetiring))
+				retiringAsgards = filteredRetiring
+			}
 
 			// All else being equal, prefer lower-security vaults for outbounds.
 			retiringAsgards = tos.keeper.SortBySecurity(ctx, retiringAsgards, signingTransactionPeriod)

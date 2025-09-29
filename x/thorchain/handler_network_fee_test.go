@@ -52,6 +52,12 @@ func (*HandlerObserveNetworkFeeSuite) testHandlerObserveNetworkFeeWithVersion(c 
 	ctx, keeper := setupKeeperForTest(c)
 	activeNodeAccount := GetRandomValidatorNode(NodeActive)
 	c.Assert(keeper.SetNodeAccount(ctx, activeNodeAccount), IsNil)
+
+	// Create vault with the active node account as a member for ETH chain
+	vault := GetRandomVault()
+	vault.Membership = []string{activeNodeAccount.PubKeySet.Secp256k1.String()}
+	c.Assert(keeper.SetVault(ctx, vault), IsNil)
+
 	handler := NewNetworkFeeHandler(NewDummyMgrWithKeeper(keeper))
 	msg := NewMsgNetworkFee(1024, common.ETHChain, 256, 100, activeNodeAccount.NodeAddress)
 	result, err := handler.Run(ctx, msg)
@@ -125,9 +131,6 @@ func (s *HandlerObserveNetworkFeeSuite) TestObservingSlashing(c *C) {
 	c.Assert(lackOfObservationPenalty, Equals, int64(2))
 	c.Assert(observeFlex, Equals, int64(10))
 
-	asgardVault := GetRandomVault()
-	c.Assert(mgr.Keeper().SetVault(ctx, asgardVault), IsNil)
-
 	nas := NodeAccounts{
 		// 6 Active nodes, 1 Standby node; 2/3rds consensus needs 4.
 		GetRandomValidatorNode(NodeActive),
@@ -141,6 +144,15 @@ func (s *HandlerObserveNetworkFeeSuite) TestObservingSlashing(c *C) {
 	for _, item := range nas {
 		c.Assert(mgr.Keeper().SetNodeAccount(ctx, item), IsNil)
 	}
+
+	// Create vault with the active node accounts as members for ETH chain
+	asgardVault := GetRandomVault()
+	// Add active nodes (first 6) as vault members
+	asgardVault.Membership = make([]string, 6)
+	for i := 0; i < 6; i++ {
+		asgardVault.Membership[i] = nas[i].PubKeySet.Secp256k1.String()
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, asgardVault), IsNil)
 
 	msg := NewMsgNetworkFee(1024, common.ETHChain, 256, 100, cosmos.AccAddress{})
 	handler := NewNetworkFeeHandler(mgr)

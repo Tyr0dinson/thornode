@@ -229,6 +229,8 @@ func (ad AnteDecorator) anteHandleMessage(ctx sdk.Context, version semver.Versio
 		return MimirAnteHandler(ctx, version, ad.keeper, *m)
 	case *types.MsgNodePauseChain:
 		return NodePauseChainAnteHandler(ctx, version, ad.keeper, *m)
+	case *types.MsgAddNodeChainSupport, *types.MsgRemoveNodeChainSupport:
+		return NodeChainSupportAnteHandler(ctx, ad.keeper, msg)
 	case *types.MsgSetNodeKeys:
 		return SetNodeKeysAnteHandler(ctx, version, ad.keeper, *m)
 	case *types.MsgSetVersion:

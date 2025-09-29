@@ -3457,6 +3457,7 @@ components:
         - maintenance
         - missing_blocks
         - preflight_status
+        - supported_chains
       properties:
         node_address:
           type: string
@@ -3615,6 +3616,12 @@ components:
               type: integer
               format: int64
               example: 0
+        supported_chains:
+          type: array
+          description: the list of chains this node supports
+          items:
+            type: string
+            example: "BTC"
 
     KeygenMetric:
       type: object

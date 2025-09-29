@@ -118,6 +118,8 @@ genesis:
             ed25519: {{ pubkey_dog_eddsa }}
           signer_membership: []
           status: Active
+          supported_chains:
+            - BTC
           # matches the priv_validator_key.json mounted in the test container
           validator_cons_pub_key: tthorcpub1zcjduepqq75h7uy6qhesh9d3a9tuk0mzrnc46u8rye44ze6peua3zmpfh23q8z37sz
           version: {{ version }}

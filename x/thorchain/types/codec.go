@@ -52,6 +52,8 @@ func RegisterLegacyAminoCodec(cdc *codec.LegacyAmino) {
 	cdc.RegisterConcrete(&MsgRefundTx{}, ModuleName+"/MsgRefundTx", nil)
 	cdc.RegisterConcrete(&MsgSend{}, ModuleName+"/MsgSend", nil)
 	cdc.RegisterConcrete(&MsgNodePauseChain{}, ModuleName+"/MsgNodePauseChain", nil)
+	cdc.RegisterConcrete(&MsgAddNodeChainSupport{}, ModuleName+"/MsgAddNodeChainSupport", nil)
+	cdc.RegisterConcrete(&MsgRemoveNodeChainSupport{}, ModuleName+"/MsgRemoveNodeChainSupport", nil)
 	cdc.RegisterConcrete(&MsgSolvency{}, ModuleName+"/MsgSolvency", nil)
 	cdc.RegisterConcrete(&MsgSolvencyQuorum{}, ModuleName+"/MsgSolvencyQuorum", nil)
 	cdc.RegisterConcrete(&MsgSolNonceAttest{}, ModuleName+"/MsgSolNonceAttest", nil)
@@ -106,6 +108,8 @@ func RegisterInterfaces(registry cdctypes.InterfaceRegistry) {
 		&MsgRefundTx{},
 		&MsgSend{},
 		&MsgNodePauseChain{},
+		&MsgAddNodeChainSupport{},
+		&MsgRemoveNodeChainSupport{},
 		&MsgManageTHORName{},
 		&MsgSolvency{},
 		&MsgReferenceMemo{},
@@ -135,6 +139,8 @@ func DefineCustomGetSigners(signingOptions *signing.Options) {
 	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgNetworkFee"), MsgNetworkFeeCustomGetSigners)
 	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgNetworkFeeQuorum"), MsgNetworkFeeQuorumCustomGetSigners)
 	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgNodePauseChain"), MsgNodePauseChainCustomGetSigners)
+	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgAddNodeChainSupport"), MsgAddNodeChainSupportCustomGetSigners)
+	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgRemoveNodeChainSupport"), MsgRemoveNodeChainSupportCustomGetSigners)
 	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgObservedTxIn"), MsgObservedTxInCustomGetSigners)
 	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgObservedTxQuorum"), MsgObservedTxQuorumCustomGetSigners)
 	signingOptions.DefineCustomGetSigners(protoreflect.FullName("types.MsgObservedTxOut"), MsgObservedTxOutCustomGetSigners)

@@ -94,6 +94,12 @@ func (k *TestObservedTxOutHandleKeeper) GetNodeAccountByPubKey(_ cosmos.Context,
 
 func (k *TestObservedTxOutHandleKeeper) SetNodeAccount(_ cosmos.Context, na NodeAccount) error {
 	k.na = na
+	for i, n := range k.nas {
+		if n.NodeAddress.Equals(na.NodeAddress) {
+			k.nas[i] = na
+			break
+		}
+	}
 	return nil
 }
 
@@ -173,6 +179,29 @@ func (k *TestObservedTxOutHandleKeeper) GetObservedLink(ctx cosmos.Context, inha
 	return k.hashes
 }
 
+func (k *TestObservedTxOutHandleKeeper) GetActiveAsgardVaultsByChain(_ cosmos.Context, chain string) Vaults {
+	// Only return vault if it's active and supports the chain
+	if k.vault.Status != ActiveVault {
+		return Vaults{}
+	}
+	// Check if vault supports the chain
+	for _, vaultChain := range k.vault.Chains {
+		if vaultChain == chain {
+			return Vaults{k.vault}
+		}
+	}
+	return Vaults{}
+}
+
+func (k *TestObservedTxOutHandleKeeper) GetNodeAccount(_ cosmos.Context, addr cosmos.AccAddress) (NodeAccount, error) {
+	for _, na := range k.nas {
+		if na.NodeAddress.Equals(addr) {
+			return na, nil
+		}
+	}
+	return NodeAccount{}, nil
+}
+
 func (s *HandlerObservedTxOutSuite) TestHandle(c *C) {
 	var err error
 	ctx, mgr := setupManagerForTest(c)
@@ -189,15 +218,17 @@ func (s *HandlerObservedTxOutSuite) TestHandle(c *C) {
 	na := GetRandomValidatorNode(NodeActive)
 	na.Bond = cosmos.NewUint(1000000 * common.One)
 	na.PubKeySet.Secp256k1 = pk
+	na.NodeAddress, _ = pk.GetThorAddress() // Update NodeAddress to match the new pubkey
 
 	vault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, pk, common.Chains{common.ETHChain}.Strings(), []ChainContract{})
-	vault.Membership = []string{pk.String()}
+	// Add the active node as a vault member for consensus to work
+	vault.Membership = []string{na.PubKeySet.Secp256k1.String()}
 	vault.Coins = common.Coins{
 		common.NewCoin(common.RuneAsset(), cosmos.NewUint(500)),
 		common.NewCoin(common.ETHAsset, cosmos.NewUint(200*common.One)),
 	}
 	keeper := &TestObservedTxOutHandleKeeper{
-		nas:       NodeAccounts{GetRandomValidatorNode(NodeActive)},
+		nas:       NodeAccounts{na},
 		voter:     NewObservedTxVoter(tx.ID, make(ObservedTxs, 0)),
 		txInVoter: NewObservedTxVoter(txInHash, make(ObservedTxs, 0)),
 		pool: Pool{
@@ -261,7 +292,7 @@ func (s *HandlerObservedTxOutSuite) TestHandle(c *C) {
 	vault, err = keeper.GetVault(ctx, pk)
 	c.Assert(err, IsNil)
 	// make sure the coin has been subtract from the vault
-	c.Check(vault.Coins.GetCoin(common.ETHAsset).Amount.Equal(cosmos.NewUint(19999962499)), Equals, true, Commentf("%d", vault.Coins.GetCoin(common.ETHAsset).Amount.Uint64()))
+	c.Check(keeper.vault.Coins.GetCoin(common.ETHAsset).Amount.Equal(cosmos.NewUint(19999962499)), Equals, true, Commentf("%d", keeper.vault.Coins.GetCoin(common.ETHAsset).Amount.Uint64()))
 	// Gas 37500 and Amount 1 have been subtracted from the 200*common.One vault balance.
 
 	hashes := keeper.GetObservedLink(ctx, tx.ID)
@@ -288,15 +319,17 @@ func (s *HandlerObservedTxOutSuite) TestHandleFailedTransaction(c *C) {
 	na := GetRandomValidatorNode(NodeActive)
 	na.Bond = cosmos.NewUint(1000000 * common.One)
 	na.PubKeySet.Secp256k1 = pk
+	na.NodeAddress, _ = pk.GetThorAddress() // Update NodeAddress to match the new pubkey
 
 	vault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, pk, common.Chains{common.ETHChain}.Strings(), []ChainContract{})
-	vault.Membership = []string{pk.String()}
+	// Add the active node as a vault member for consensus to work
+	vault.Membership = []string{na.PubKeySet.Secp256k1.String()}
 	vault.Coins = common.Coins{
 		common.NewCoin(common.RuneAsset(), cosmos.NewUint(500)),
 		common.NewCoin(common.ETHAsset, cosmos.NewUint(200*common.One)),
 	}
 	keeper := &TestObservedTxOutHandleKeeper{
-		nas:       NodeAccounts{GetRandomValidatorNode(NodeActive)},
+		nas:       NodeAccounts{na},
 		voter:     NewObservedTxVoter(tx.ID, make(ObservedTxs, 0)),
 		txInVoter: NewObservedTxVoter(txInHash, make(ObservedTxs, 0)),
 		pool: Pool{
@@ -388,15 +421,18 @@ func (s *HandlerObservedTxOutSuite) TestHandleStolenFundsInvalidMemo(c *C) {
 	na := GetRandomValidatorNode(NodeActive)
 	na.Bond = cosmos.NewUint(1000000 * common.One)
 	na.PubKeySet.Secp256k1 = pk
+	na.NodeAddress, _ = pk.GetThorAddress() // Update NodeAddress to match the new pubkey
 
 	vault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, pk, common.Chains{common.ETHChain}.Strings(), []ChainContract{})
-	vault.Membership = []string{pk.String()}
+	// Add the active node as a vault member for consensus to work
+	vault.Membership = []string{na.PubKeySet.Secp256k1.String()}
 	vault.Coins = common.Coins{
 		common.NewCoin(common.RuneAsset(), cosmos.NewUint(500*common.One)),
 		common.NewCoin(common.ETHAsset, cosmos.NewUint(200*common.One)),
 	}
 	keeper := &TestObservedTxOutHandleKeeper{
 		nas:   NodeAccounts{na},
+		na:    na,
 		voter: NewObservedTxVoter(tx.ID, make(ObservedTxs, 0)),
 		pool: Pool{
 			Asset:        common.ETHAsset,
@@ -681,9 +717,6 @@ func (s *HandlerObservedTxOutSuite) TestObservingSlashing(c *C) {
 	c.Assert(lackOfObservationPenalty, Equals, int64(2))
 	c.Assert(observeFlex, Equals, int64(10))
 
-	asgardVault := GetRandomVault()
-	c.Assert(mgr.Keeper().SetVault(ctx, asgardVault), IsNil)
-
 	nas := NodeAccounts{
 		// 6 Active nodes, 1 Standby node; 2/3rds consensus needs 4.
 		GetRandomValidatorNode(NodeActive),
@@ -697,6 +730,15 @@ func (s *HandlerObservedTxOutSuite) TestObservingSlashing(c *C) {
 	for _, item := range nas {
 		c.Assert(mgr.Keeper().SetNodeAccount(ctx, item), IsNil)
 	}
+
+	// Create vault with the active node accounts as members for ETH chain
+	asgardVault := GetRandomVault()
+	// Add active nodes (first 6) as vault members
+	asgardVault.Membership = make([]string, 6)
+	for i := 0; i < 6; i++ {
+		asgardVault.Membership[i] = nas[i].PubKeySet.Secp256k1.String()
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, asgardVault), IsNil)
 
 	observedTx := GetRandomObservedTx()
 	observedTx.BlockHeight = height

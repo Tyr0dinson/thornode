@@ -635,6 +635,20 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 					// for rescheduling; do not pick that same compromised vault again.
 					active = filterCompromisedVaults(ctx, s.keeper, active)
 					active = filterActiveVaultsForOutboundChain(active, toi.Chain)
+					// Filter to only vaults that support this chain when chain-aware consensus is enabled
+					if s.keeper.GetConfigInt64(ctx, constants.EnableNodeChainConsensus) > 0 {
+						filteredActive := make(Vaults, 0, len(active))
+						for _, v := range active {
+							if v.HasChain(toi.Chain) {
+								filteredActive = append(filteredActive, v)
+							}
+						}
+						ctx.Logger().Debug("filtered active vaults by chain support for vault reassignment",
+							"chain", toi.Chain.String(),
+							"total_vaults", len(active),
+							"filtered_vaults", len(filteredActive))
+						active = filteredActive
+					}
 					// Deduct the asset's pending outbound funds to represent only the available funds.
 					pendingOutbounds := mgr.Keeper().GetPendingOutbounds(ctx, toi.Coin.Asset)
 					for i := range active {

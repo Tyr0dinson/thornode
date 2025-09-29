@@ -444,3 +444,56 @@ func (s *KeeperVaultSuite) TestGetMostSecureStrict(c *C) {
 	vault = k.GetMostSecureStrict(ctx, vaults, signingPeriod)
 	c.Assert(vault.IsEmpty(), Equals, true)
 }
+
+func (s *KeeperVaultSuite) TestGetActiveAsgardVaultsByChain(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	// Create vaults with different statuses and chains
+	activeETHVault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.ETHChain}.Strings(), []ChainContract{})
+	c.Assert(k.SetVault(ctx, activeETHVault), IsNil)
+
+	activeBTCVault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain}.Strings(), []ChainContract{})
+	c.Assert(k.SetVault(ctx, activeBTCVault), IsNil)
+
+	activeMultiChainVault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.ETHChain, common.BTCChain}.Strings(), []ChainContract{})
+	c.Assert(k.SetVault(ctx, activeMultiChainVault), IsNil)
+
+	// Retiring vault with ETH - should NOT be returned
+	retiringETHVault := NewVault(ctx.BlockHeight(), RetiringVault, AsgardVault, GetRandomPubKey(), common.Chains{common.ETHChain}.Strings(), []ChainContract{})
+	c.Assert(k.SetVault(ctx, retiringETHVault), IsNil)
+
+	// Inactive vault with BTC - should NOT be returned
+	inactiveBTCVault := NewVault(ctx.BlockHeight(), InactiveVault, AsgardVault, GetRandomPubKey(), common.Chains{common.BTCChain}.Strings(), []ChainContract{})
+	c.Assert(k.SetVault(ctx, inactiveBTCVault), IsNil)
+
+	// Test: Get active ETH vaults
+	ethVaults := k.GetActiveAsgardVaultsByChain(ctx, common.ETHChain.String())
+	c.Assert(ethVaults, HasLen, 2, Commentf("Should return 2 active ETH vaults"))
+	// Verify both vaults support ETH
+	for _, v := range ethVaults {
+		c.Assert(v.Status, Equals, ActiveVault, Commentf("All returned vaults should be active"))
+		hasETH := false
+		for _, chain := range v.Chains {
+			if chain == common.ETHChain.String() {
+				hasETH = true
+				break
+			}
+		}
+		c.Assert(hasETH, Equals, true, Commentf("All returned vaults should support ETH"))
+	}
+
+	// Test: Get active BTC vaults
+	btcVaults := k.GetActiveAsgardVaultsByChain(ctx, common.BTCChain.String())
+	c.Assert(btcVaults, HasLen, 2, Commentf("Should return 2 active BTC vaults"))
+	for _, v := range btcVaults {
+		c.Assert(v.Status, Equals, ActiveVault, Commentf("All returned vaults should be active"))
+	}
+
+	// Test: Get vaults for chain with no active vaults
+	avaxVaults := k.GetActiveAsgardVaultsByChain(ctx, common.AVAXChain.String())
+	c.Assert(avaxVaults, HasLen, 0, Commentf("Should return no vaults for unsupported chain"))
+
+	// Test: Invalid chain string
+	invalidVaults := k.GetActiveAsgardVaultsByChain(ctx, "INVALID")
+	c.Assert(invalidVaults, HasLen, 0, Commentf("Should return empty list for invalid chain"))
+}

@@ -699,3 +699,44 @@ func (k KVStore) DeleteVault(ctx cosmos.Context, pubkey common.PubKey) error {
 	k.del(ctx, k.GetKey(prefixVault, vault.PubKey.String()))
 	return nil
 }
+
+// GetMostSecureForChain finds the most secure vault that supports the specified chain
+func (k KVStore) GetMostSecureForChain(ctx cosmos.Context, chain string) Vault {
+	vaults := k.GetActiveAsgardVaultsByChain(ctx, chain)
+	if len(vaults) == 0 {
+		return Vault{}
+	}
+	return k.GetMostSecure(ctx, vaults, 0)
+}
+
+// GetActiveAsgardVaultsByChain returns all active Asgard vaults that support the specified chain
+func (k KVStore) GetActiveAsgardVaultsByChain(ctx cosmos.Context, chain string) Vaults {
+	activeVaults, err := k.GetAsgardVaultsByStatus(ctx, ActiveVault)
+	if err != nil {
+		ctx.Logger().Error("fail to get active asgard vaults", "error", err)
+		return Vaults{}
+	}
+
+	requestedChain, err := common.NewChain(chain)
+	if err != nil {
+		ctx.Logger().Error("invalid chain", "chain", chain, "error", err)
+		return Vaults{}
+	}
+
+	var chainVaults Vaults
+	for _, vault := range activeVaults {
+		// Check if vault supports the requested chain
+		for _, vaultChain := range vault.Chains {
+			vaultChainObj, err := common.NewChain(vaultChain)
+			if err != nil {
+				ctx.Logger().Error("invalid vault chain", "chain", vaultChain, "error", err)
+				continue
+			}
+			if vaultChainObj.Equals(requestedChain) {
+				chainVaults = append(chainVaults, vault)
+				break
+			}
+		}
+	}
+	return chainVaults
+}

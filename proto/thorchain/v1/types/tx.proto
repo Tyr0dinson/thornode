@@ -22,6 +22,7 @@ import "types/msg_tss_pool.proto";
 import "types/msg_version.proto";
 import "types/msg_upgrade.proto";
 import "types/msg_maint.proto";
+import "types/msg_node_chain_support.proto";
 import "cosmwasm/wasm/v1/tx.proto";
 
 option go_package = "gitlab.com/thorchain/thornode/v3/x/thorchain/types";
@@ -44,6 +45,8 @@ service Msg {
   rpc ThorSend(MsgSend) returns (MsgEmpty);
   rpc SetIPAddress(MsgSetIPAddress) returns (MsgEmpty);
   rpc SetNodeKeys(MsgSetNodeKeys) returns (MsgEmpty);
+  rpc AddNodeChainSupport(MsgAddNodeChainSupport) returns (MsgEmpty);
+  rpc RemoveNodeChainSupport(MsgRemoveNodeChainSupport) returns (MsgEmpty);
   rpc Solvency(MsgSolvency) returns (MsgEmpty);
   rpc SolvencyQuorum(MsgSolvencyQuorum) returns (MsgEmpty);
   rpc SolNonceAttest(MsgSolNonceAttest) returns (MsgEmpty);

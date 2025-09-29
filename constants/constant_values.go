@@ -160,6 +160,8 @@ const (
 	HaltRebond
 	HaltOperatorRotate
 	HaltMemoless
+	EnableNodeChainConsensus
+	MinNodeChainSupport
 	RequiredPriceFeeds
 	HaltOracle
 	OracleUpdateInterval
@@ -190,6 +192,7 @@ const (
 	EnableMemolessOutbound
 	ManualSwapsToSynthDisabled
 	MaximumLiquidityRune
+	ChainLiquidityRunePerValidator
 	MintSynths
 	NumberOfNewNodesPerChurn
 	SignerConcurrency

@@ -17,9 +17,9 @@ type: check
 endpoint: http://localhost:1317/thorchain/inbound_addresses
 asserts:
   - .|length == 15
-  - .[0].chain == "BTC"
-  - .[0].outbound_tx_size == "3"
-  - .[0].outbound_fee == "21"
+  - .|map(select(.chain == "BTC"))|length == 1
+  - .|map(select(.chain == "BTC"))[0].outbound_tx_size == "3"
+  - .|map(select(.chain == "BTC"))[0].outbound_fee == "21"
 ---
 type: tx-network-fee
 signer: {{ addr_thor_fox }}
@@ -40,6 +40,6 @@ type: check
 endpoint: http://localhost:1317/thorchain/inbound_addresses
 asserts:
   - .|length == 15
-  - .[0].chain == "BTC"
-  - .[0].outbound_tx_size == "3"
-  - .[0].outbound_fee == "21"
+  - .|map(select(.chain == "BTC"))|length == 1
+  - .|map(select(.chain == "BTC"))[0].outbound_tx_size == "3"
+  - .|map(select(.chain == "BTC"))[0].outbound_fee == "21"

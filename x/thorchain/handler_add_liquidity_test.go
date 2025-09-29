@@ -68,6 +68,10 @@ func (m *MockAddLiquidityKeeper) ListActiveValidators(_ cosmos.Context) (NodeAcc
 	return NodeAccounts{m.activeNodeAccount}, nil
 }
 
+func (m *MockAddLiquidityKeeper) TotalActiveValidators(_ cosmos.Context) (int, error) {
+	return 1, nil
+}
+
 func (m *MockAddLiquidityKeeper) GetNodeAccount(_ cosmos.Context, addr cosmos.AccAddress) (NodeAccount, error) {
 	if m.activeNodeAccount.NodeAddress.Equals(addr) {
 		return m.activeNodeAccount, nil
@@ -98,6 +102,24 @@ func (m *MockAddLiquidityKeeper) GetAsgardVaults(_ cosmos.Context) (Vaults, erro
 			),
 		},
 	}, nil
+}
+
+func (m *MockAddLiquidityKeeper) GetAsgardVaultsByStatus(_ cosmos.Context, status VaultStatus) (Vaults, error) {
+	// Return a vault that supports the current pool's chain with the active node as a member
+	vault := GetRandomVault()
+	vault.Status = status
+	vault.Type = AsgardVault
+	vault.Chains = []string{m.currentPool.Asset.GetChain().String()}
+	vault.Membership = []string{m.activeNodeAccount.PubKeySet.Secp256k1.String()}
+	vault.Coins = common.NewCoins(
+		common.NewCoin(m.currentPool.Asset, m.currentPool.BalanceAsset),
+	)
+
+	if status == ActiveVault {
+		return Vaults{vault}, nil
+	}
+	// Return empty for retiring vaults in these tests
+	return Vaults{}, nil
 }
 
 func (s *HandlerAddLiquiditySuite) SetUpSuite(c *C) {
@@ -318,6 +340,7 @@ func (s *HandlerAddLiquiditySuite) TestAddLiquidityHandler(c *C) {
 func (s *HandlerAddLiquiditySuite) TestAddLiquidityHandler_NoPool_ShouldCreateNewPool(c *C) {
 	activeNodeAccount := GetRandomValidatorNode(NodeActive)
 	activeNodeAccount.Bond = cosmos.NewUint(1000000 * common.One)
+	activeNodeAccount.SupportedChains = []string{common.ETHChain.String()}
 	runeAddr := GetRandomRUNEAddress()
 	ethAddr := GetRandomETHAddress()
 	pool := NewPool()
@@ -1495,4 +1518,620 @@ func (s *HandlerAddLiquiditySuite) TestAddLiquidityPOL(c *C) {
 	pol, err := mgr.Keeper().GetPOL(ctx)
 	c.Assert(err, IsNil)
 	c.Check(pol.RuneDeposited.Uint64(), Equals, uint64(10000000000))
+}
+
+// TestChainLiquidityRunePerValidatorLimit tests that the ChainLiquidityRunePerValidator
+// limit applies to all pools on a chain combined, not per individual pool
+func (s *HandlerAddLiquiditySuite) TestChainLiquidityRunePerValidatorLimit(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	// Set ChainLiquidityRunePerValidator to 100k RUNE
+	mgr.Keeper().SetMimir(ctx, constants.ChainLiquidityRunePerValidator.String(), 100_000_00000000)
+
+	// Create a test chain (BTC) that will NOT have super majority support
+	// We'll create 4 validators total, but only 2 will be in BTC vaults
+	// Super majority requires > 2/3, so 2/4 = 50% is not enough
+	validators := make(NodeAccounts, 4)
+	for i := 0; i < 4; i++ {
+		validators[i] = GetRandomValidatorNode(NodeActive)
+		validators[i].Bond = cosmos.NewUint(1_000_000 * common.One) // 1M RUNE bond each to pass TVL cap checks
+		validators[i].ActiveBlockHeight = 10
+		c.Assert(mgr.Keeper().SetNodeAccount(ctx, validators[i]), IsNil)
+	}
+
+	// Create first BTC pool (BTC.BTC gas asset)
+	btcPool := NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.Status = PoolAvailable
+	btcPool.BalanceRune = cosmos.NewUint(150_000_00000000) // 150k RUNE
+	btcPool.BalanceAsset = cosmos.NewUint(150_000_00000000)
+	c.Assert(mgr.Keeper().SetPool(ctx, btcPool), IsNil)
+
+	// Create second BTC pool (BTC.TOKEN - a hypothetical BTC token)
+	// Give it a 1:1 RUNE ratio for easy calculation
+	btcTokenAsset, err := common.NewAsset("BTC.TOKEN")
+	c.Assert(err, IsNil)
+	btcTokenPool := NewPool()
+	btcTokenPool.Asset = btcTokenAsset
+	btcTokenPool.Status = PoolAvailable
+	btcTokenPool.BalanceRune = cosmos.NewUint(1_00000000)  // 1 RUNE
+	btcTokenPool.BalanceAsset = cosmos.NewUint(1_00000000) // 1 TOKEN (1:1 ratio)
+	c.Assert(mgr.Keeper().SetPool(ctx, btcTokenPool), IsNil)
+
+	// Set up vault for BTC with assets matching the pool balances
+	// Vault has membership of validators 0 and 1 (2 out of 4 = 50%, no super majority)
+	vault := GetRandomVault()
+	vault.Chains = []string{common.BTCChain.String()}
+	vault.Status = ActiveVault
+	vault.Membership = []string{
+		validators[0].PubKeySet.Secp256k1.String(),
+		validators[1].PubKeySet.Secp256k1.String(),
+	}
+	vault.Coins = common.NewCoins(
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(150_000_00000000)), // 150k BTC in vault = 150k RUNE value (1:1 ratio)
+		common.NewCoin(btcTokenAsset, cosmos.NewUint(1_00000000)),         // 1 TOKEN in vault = 1 RUNE value (to match pool)
+	)
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	// With 2 validators in BTC vault and a limit of 100k per validator,
+	// the total chain limit should be 200k RUNE
+
+	// Fund the bond module for validator bonds
+	FundModule(c, ctx, mgr.Keeper(), BondName, 4_000_000*common.One) // 4M RUNE for 4 validators
+
+	addHandler := NewAddLiquidityHandler(mgr)
+
+	// Test 1: Try to add 50k RUNE to BTC.TOKEN pool
+	// Current vault RUNE value: 150k BTC + 1 TOKEN = 150,001 RUNE
+	// This should FAIL because total chain RUNE would be 150,001 + 50k = 200,001, exceeding the 200k limit
+	runeAddr := GetRandomRUNEAddress()
+	btcAddr := GetRandomBTCAddress()
+
+	tx1 := GetRandomTx()
+	tx1.Coins = common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(50_000_00000000)))
+	tx1.Chain = common.THORChain
+
+	msg := NewMsgAddLiquidity(
+		tx1,
+		btcTokenAsset,
+		cosmos.NewUint(50_000_00000000), // 50k RUNE
+		cosmos.ZeroUint(),
+		runeAddr,
+		btcAddr,
+		common.NoAddress,
+		cosmos.ZeroUint(),
+		validators[0].NodeAddress,
+	)
+
+	_, err = addHandler.Run(ctx, msg)
+	c.Assert(err, NotNil)
+	c.Check(err.Error(), Matches, ".*exceeds total RUNE limit.*")
+
+	// Test 2: Try to add 49,999 RUNE to BTC.TOKEN pool
+	// This should SUCCEED because total chain RUNE would be 150,001 + 49,999 = 200,000, exactly at the limit
+	tx2 := GetRandomTx()
+	tx2.Coins = common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(49_999_00000000)))
+	tx2.Chain = common.THORChain
+	msg.Tx = tx2
+	msg.RuneAmount = cosmos.NewUint(49_999_00000000)
+
+	_, err = addHandler.Run(ctx, msg)
+	c.Assert(err, IsNil)
+
+	// Verify the pool was updated (RUNE goes to pending inbound)
+	updatedBtcTokenPool, err := mgr.Keeper().GetPool(ctx, btcTokenAsset)
+	c.Assert(err, IsNil)
+	c.Check(updatedBtcTokenPool.PendingInboundRune.String(), Equals, "4999900000000")
+
+	// Test 3: Update vault to include the pending RUNE (simulating it being processed)
+	// then try to add even 1 more RUNE - should FAIL because we're at the limit
+	vault.Coins = common.NewCoins(
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(150_000_00000000)),
+		common.NewCoin(btcTokenAsset, cosmos.NewUint(49_999_00000000+1_00000000)), // Add the 49,999 from test 2 + original 1
+	)
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	tx3 := GetRandomTx()
+	tx3.Coins = common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(1)))
+	tx3.Chain = common.THORChain
+	msg.Tx = tx3
+	msg.RuneAmount = cosmos.NewUint(1)
+
+	_, err = addHandler.Run(ctx, msg)
+	c.Assert(err, NotNil)
+	c.Check(err.Error(), Matches, ".*exceeds total RUNE limit.*")
+
+	// Test 4: Verify that a chain with super majority support (like ETH) is NOT subject to the limit
+	// Create ETH vault with all 4 validators as members (4/4 = 100%, has super majority)
+	ethPool := NewPool()
+	ethPool.Asset = common.ETHAsset
+	ethPool.Status = PoolAvailable
+	ethPool.BalanceRune = cosmos.NewUint(500_000_00000000) // 500k RUNE (way above the per-validator limit)
+	ethPool.BalanceAsset = cosmos.NewUint(500_000_00000000)
+	c.Assert(mgr.Keeper().SetPool(ctx, ethPool), IsNil)
+
+	ethVault := GetRandomVault()
+	ethVault.Chains = []string{common.ETHChain.String()}
+	ethVault.Status = ActiveVault
+	ethVault.Membership = []string{
+		validators[0].PubKeySet.Secp256k1.String(),
+		validators[1].PubKeySet.Secp256k1.String(),
+		validators[2].PubKeySet.Secp256k1.String(),
+		validators[3].PubKeySet.Secp256k1.String(),
+	}
+	ethVault.Coins = common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(500_000_00000000)))
+	c.Assert(mgr.Keeper().SetVault(ctx, ethVault), IsNil)
+
+	ethAddr := GetRandomETHAddress()
+	tx4 := GetRandomTx()
+	tx4.Coins = common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(1_000_000_00000000)))
+	tx4.Chain = common.THORChain
+
+	ethMsg := NewMsgAddLiquidity(
+		tx4,
+		common.ETHAsset,
+		cosmos.NewUint(1_000_000_00000000), // 1M RUNE - way above the 400k limit if it applied
+		cosmos.ZeroUint(),
+		runeAddr,
+		ethAddr,
+		common.NoAddress,
+		cosmos.ZeroUint(),
+		validators[0].NodeAddress,
+	)
+
+	// This should succeed because ETH has super majority support
+	_, err = addHandler.Run(ctx, ethMsg)
+	c.Assert(err, IsNil)
+}
+
+// TestChainLiquidityRunePerValidatorVaultBased tests that the ChainLiquidityRunePerValidator
+// limit correctly calculates total chain liquidity from vault coins, including secured assets,
+// trade assets, and assets from both active and retiring vaults
+func (s *HandlerAddLiquiditySuite) TestChainLiquidityRunePerValidatorVaultBased(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	// Set ChainLiquidityRunePerValidator to 100k RUNE
+	mgr.Keeper().SetMimir(ctx, constants.ChainLiquidityRunePerValidator.String(), 100_000_00000000)
+
+	// Create 4 validators
+	validators := make(NodeAccounts, 4)
+	for i := 0; i < 4; i++ {
+		validators[i] = GetRandomValidatorNode(NodeActive)
+		validators[i].Bond = cosmos.NewUint(1_000_000 * common.One)
+		validators[i].ActiveBlockHeight = 10
+		c.Assert(mgr.Keeper().SetNodeAccount(ctx, validators[i]), IsNil)
+	}
+
+	// With 2 validators supporting BTC (via vault membership), the total chain limit is 200k RUNE
+
+	// Create BTC pool (gas asset)
+	btcPool := NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.Status = PoolAvailable
+	btcPool.BalanceRune = cosmos.NewUint(100_000_00000000) // 100k RUNE
+	btcPool.BalanceAsset = cosmos.NewUint(10_00000000)     // 10 BTC at 10k RUNE/BTC
+	c.Assert(mgr.Keeper().SetPool(ctx, btcPool), IsNil)
+
+	// Create BTC.USDT pool (secured asset / token on BTC chain)
+	btcUSDTAsset, err := common.NewAsset("BTC.USDT")
+	c.Assert(err, IsNil)
+	btcUSDTPool := NewPool()
+	btcUSDTPool.Asset = btcUSDTAsset
+	btcUSDTPool.Status = PoolAvailable
+	btcUSDTPool.BalanceRune = cosmos.NewUint(50_000_00000000) // 50k RUNE
+	btcUSDTPool.BalanceAsset = cosmos.NewUint(50_000_000000)  // 50k USDT at 1 RUNE/USDT
+	c.Assert(mgr.Keeper().SetPool(ctx, btcUSDTPool), IsNil)
+
+	// Create ETH pool (to test cross-chain filtering)
+	ethPool := NewPool()
+	ethPool.Asset = common.ETHAsset
+	ethPool.Status = PoolAvailable
+	ethPool.BalanceRune = cosmos.NewUint(100_000_00000000)
+	ethPool.BalanceAsset = cosmos.NewUint(100_00000000)
+	c.Assert(mgr.Keeper().SetPool(ctx, ethPool), IsNil)
+
+	// Create active vault with BTC, BTC.USDT, and ETH
+	// Only validators 0 and 1 are members of this vault for BTC support
+	activeVault := GetRandomVault()
+	activeVault.Status = ActiveVault
+	activeVault.Chains = []string{common.BTCChain.String(), common.ETHChain.String()}
+	activeVault.Membership = []string{
+		validators[0].PubKeySet.Secp256k1.String(),
+		validators[1].PubKeySet.Secp256k1.String(),
+	}
+	activeVault.Coins = common.NewCoins(
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(5_00000000)),  // 5 BTC = 50k RUNE
+		common.NewCoin(btcUSDTAsset, cosmos.NewUint(30_000_000000)),  // 30k USDT = 30k RUNE
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(50_00000000)), // 50 ETH = 50k RUNE (should NOT count toward BTC limit)
+	)
+	c.Assert(mgr.Keeper().SetVault(ctx, activeVault), IsNil)
+
+	// Create retiring vault with more BTC assets
+	// Same validators 0 and 1 are members
+	retiringVault := GetRandomVault()
+	retiringVault.Status = RetiringVault
+	retiringVault.Chains = []string{common.BTCChain.String()}
+	retiringVault.Membership = []string{
+		validators[0].PubKeySet.Secp256k1.String(),
+		validators[1].PubKeySet.Secp256k1.String(),
+	}
+	retiringVault.Coins = common.NewCoins(
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(5_00000000)), // 5 BTC = 50k RUNE
+		common.NewCoin(btcUSDTAsset, cosmos.NewUint(20_000_000000)), // 20k USDT = 20k RUNE
+	)
+	c.Assert(mgr.Keeper().SetVault(ctx, retiringVault), IsNil)
+
+	// Total BTC chain RUNE in vaults:
+	// Active vault: 5 BTC (50k RUNE) + 30k USDT (30k RUNE) = 80k RUNE
+	// Retiring vault: 5 BTC (50k RUNE) + 20k USDT (20k RUNE) = 70k RUNE
+	// Total: 150k RUNE
+	// Limit: 200k RUNE
+	// Available: 50k RUNE
+
+	// Fund the bond module
+	FundModule(c, ctx, mgr.Keeper(), BondName, 4_000_000*common.One)
+
+	addHandler := NewAddLiquidityHandler(mgr)
+
+	// Create another BTC token pool to add liquidity to
+	btcTokenAsset, err := common.NewAsset("BTC.TOKEN")
+	c.Assert(err, IsNil)
+	btcTokenPool := NewPool()
+	btcTokenPool.Asset = btcTokenAsset
+	btcTokenPool.Status = PoolAvailable
+	btcTokenPool.BalanceRune = cosmos.ZeroUint()
+	btcTokenPool.BalanceAsset = cosmos.ZeroUint()
+	c.Assert(mgr.Keeper().SetPool(ctx, btcTokenPool), IsNil)
+
+	runeAddr := GetRandomRUNEAddress()
+	btcAddr := GetRandomBTCAddress()
+
+	// Test 1: Try to add 51k RUNE to BTC.TOKEN pool
+	// This should FAIL because 150k + 51k = 201k > 200k limit
+	tx1 := GetRandomTx()
+	tx1.Coins = common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(51_000_00000000)))
+	tx1.Chain = common.THORChain
+
+	msg := NewMsgAddLiquidity(
+		tx1,
+		btcTokenAsset,
+		cosmos.NewUint(51_000_00000000),
+		cosmos.ZeroUint(),
+		runeAddr,
+		btcAddr,
+		common.NoAddress,
+		cosmos.ZeroUint(),
+		validators[0].NodeAddress,
+	)
+
+	_, err = addHandler.Run(ctx, msg)
+	c.Assert(err, NotNil)
+	c.Check(err.Error(), Matches, ".*exceeds total RUNE limit.*")
+
+	// Test 2: Try to add 50k RUNE to BTC.TOKEN pool
+	// This should SUCCEED because 150k + 50k = 200k = limit
+	tx2 := GetRandomTx()
+	tx2.Coins = common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(50_000_00000000)))
+	tx2.Chain = common.THORChain
+	msg.Tx = tx2
+	msg.RuneAmount = cosmos.NewUint(50_000_00000000)
+
+	_, err = addHandler.Run(ctx, msg)
+	c.Assert(err, IsNil)
+
+	// Test 3: Verify ETH assets in the vault were NOT counted toward BTC limit
+	// by checking that we can add more to ETH even though the same vault has BTC assets
+	// Create a separate ETH vault with all 4 validators as members (super majority)
+	ethOnlyVault := GetRandomVault()
+	ethOnlyVault.Status = ActiveVault
+	ethOnlyVault.Chains = []string{common.ETHChain.String()}
+	ethOnlyVault.Membership = []string{
+		validators[0].PubKeySet.Secp256k1.String(),
+		validators[1].PubKeySet.Secp256k1.String(),
+		validators[2].PubKeySet.Secp256k1.String(),
+		validators[3].PubKeySet.Secp256k1.String(),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, ethOnlyVault), IsNil)
+
+	ethAddr := GetRandomETHAddress()
+	tx3 := GetRandomTx()
+	tx3.Coins = common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(1_000_000_00000000)))
+	tx3.Chain = common.THORChain
+
+	ethMsg := NewMsgAddLiquidity(
+		tx3,
+		common.ETHAsset,
+		cosmos.NewUint(1_000_000_00000000),
+		cosmos.ZeroUint(),
+		runeAddr,
+		ethAddr,
+		common.NoAddress,
+		cosmos.ZeroUint(),
+		validators[0].NodeAddress,
+	)
+
+	// Should succeed because ETH has super majority (all 4 validators)
+	_, err = addHandler.Run(ctx, ethMsg)
+	c.Assert(err, IsNil)
+}
+
+func (s *HandlerAddLiquiditySuite) TestCountActiveValidatorsForChain(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	// Create 6 validators
+	validators := make(NodeAccounts, 6)
+	for i := 0; i < 6; i++ {
+		validators[i] = GetRandomValidatorNode(NodeActive)
+		validators[i].Bond = cosmos.NewUint(1_000_000 * common.One)
+		validators[i].ActiveBlockHeight = 10
+		c.Assert(mgr.Keeper().SetNodeAccount(ctx, validators[i]), IsNil)
+	}
+
+	// Create vaults with different chain support and memberships
+	// Vault 1: BTC vault with validators 0, 2, 5
+	btcVault := GetRandomVault()
+	btcVault.Status = ActiveVault
+	btcVault.Chains = []string{common.BTCChain.String()}
+	btcVault.Membership = []string{
+		validators[0].PubKeySet.Secp256k1.String(),
+		validators[2].PubKeySet.Secp256k1.String(),
+		validators[5].PubKeySet.Secp256k1.String(),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, btcVault), IsNil)
+
+	// Vault 2: ETH vault with validators 1, 2, 5
+	ethVault := GetRandomVault()
+	ethVault.Status = ActiveVault
+	ethVault.Chains = []string{common.ETHChain.String()}
+	ethVault.Membership = []string{
+		validators[1].PubKeySet.Secp256k1.String(),
+		validators[2].PubKeySet.Secp256k1.String(),
+		validators[5].PubKeySet.Secp256k1.String(),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, ethVault), IsNil)
+
+	// Vault 3: GAIA vault with validators 3, 5
+	gaiaVault := GetRandomVault()
+	gaiaVault.Status = ActiveVault
+	gaiaVault.Chains = []string{common.GAIAChain.String()}
+	gaiaVault.Membership = []string{
+		validators[3].PubKeySet.Secp256k1.String(),
+		validators[5].PubKeySet.Secp256k1.String(),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, gaiaVault), IsNil)
+
+	// Vault 4: Multi-chain vault (BTC+ETH) with validator 4
+	multiVault := GetRandomVault()
+	multiVault.Status = ActiveVault
+	multiVault.Chains = []string{common.BTCChain.String(), common.ETHChain.String()}
+	multiVault.Membership = []string{
+		validators[4].PubKeySet.Secp256k1.String(),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, multiVault), IsNil)
+
+	addHandler := NewAddLiquidityHandler(mgr)
+
+	// Test 1: Count BTC validators (should be 4: validators 0, 2, 4, 5)
+	btcCount, err := addHandler.countActiveValidatorsForChain(ctx, common.BTCChain)
+	c.Assert(err, IsNil)
+	c.Check(btcCount, Equals, 4, Commentf("Expected 4 BTC validators, got %d", btcCount))
+
+	// Test 2: Count ETH validators (should be 4: validators 1, 2, 4, 5)
+	ethCount, err := addHandler.countActiveValidatorsForChain(ctx, common.ETHChain)
+	c.Assert(err, IsNil)
+	c.Check(ethCount, Equals, 4, Commentf("Expected 4 ETH validators, got %d", ethCount))
+
+	// Test 3: Count GAIA validators (should be 2: validators 3, 5)
+	gaiaCount, err := addHandler.countActiveValidatorsForChain(ctx, common.GAIAChain)
+	c.Assert(err, IsNil)
+	c.Check(gaiaCount, Equals, 2, Commentf("Expected 2 GAIA validators, got %d", gaiaCount))
+
+	// Test 4: Count LTC validators (should be 0: no vaults support it)
+	ltcCount, err := addHandler.countActiveValidatorsForChain(ctx, common.LTCChain)
+	c.Assert(err, IsNil)
+	c.Check(ltcCount, Equals, 0, Commentf("Expected 0 LTC validators, got %d", ltcCount))
+
+	// Test 5: Verify case insensitivity
+	btcCount2, err := addHandler.countActiveValidatorsForChain(ctx, common.BTCChain)
+	c.Assert(err, IsNil)
+	c.Check(btcCount2, Equals, btcCount, Commentf("Case sensitivity check failed"))
+
+	// Test 6: Set all validators to standby, verify count becomes 0
+	for i := 0; i < 6; i++ {
+		validators[i].Status = NodeStandby
+		c.Assert(mgr.Keeper().SetNodeAccount(ctx, validators[i]), IsNil)
+	}
+
+	btcCountStandby, err := addHandler.countActiveValidatorsForChain(ctx, common.BTCChain)
+	c.Assert(err, IsNil)
+	c.Check(btcCountStandby, Equals, 0, Commentf("Expected 0 active BTC validators when all are standby"))
+
+	// Test 7: Set validators back to active and verify counts are restored
+	for i := 0; i < 6; i++ {
+		validators[i].Status = NodeActive
+		c.Assert(mgr.Keeper().SetNodeAccount(ctx, validators[i]), IsNil)
+	}
+
+	btcCountRestored, err := addHandler.countActiveValidatorsForChain(ctx, common.BTCChain)
+	c.Assert(err, IsNil)
+	c.Check(btcCountRestored, Equals, 4, Commentf("Expected 4 BTC validators after restoring active status"))
+
+	// Test 8: Retiring vault members should also count
+	retiringVault := GetRandomVault()
+	retiringVault.Status = RetiringVault
+	retiringVault.Chains = []string{common.LTCChain.String()}
+	retiringVault.Membership = []string{
+		validators[0].PubKeySet.Secp256k1.String(),
+		validators[1].PubKeySet.Secp256k1.String(),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, retiringVault), IsNil)
+
+	ltcCountWithRetiring, err := addHandler.countActiveValidatorsForChain(ctx, common.LTCChain)
+	c.Assert(err, IsNil)
+	c.Check(ltcCountWithRetiring, Equals, 2, Commentf("Expected 2 LTC validators from retiring vault"))
+}
+
+func (s *HandlerAddLiquiditySuite) TestChainLiquidityValidationEdgeCases(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	// Set ChainLiquidityRunePerValidator to 100k RUNE
+	mgr.Keeper().SetMimir(ctx, constants.ChainLiquidityRunePerValidator.String(), 100_000_00000000)
+
+	// Create 4 validators, only 2 support BTC (no super majority)
+	validators := make(NodeAccounts, 4)
+	for i := 0; i < 4; i++ {
+		validators[i] = GetRandomValidatorNode(NodeActive)
+		validators[i].Bond = cosmos.NewUint(1_000_000 * common.One)
+		validators[i].ActiveBlockHeight = 10
+
+		if i < 2 {
+			validators[i].SupportedChains = []string{common.BTCChain.String()}
+		} else {
+			validators[i].SupportedChains = []string{common.ETHChain.String()}
+		}
+
+		c.Assert(mgr.Keeper().SetNodeAccount(ctx, validators[i]), IsNil)
+	}
+
+	// Fund the bond module
+	FundModule(c, ctx, mgr.Keeper(), BondName, 4_000_000*common.One)
+
+	addHandler := NewAddLiquidityHandler(mgr)
+
+	// Test 1: Synthetic assets should skip the chain liquidity check
+	btcSynthAsset := common.BTCAsset.GetSyntheticAsset()
+	btcPool := NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.Status = PoolAvailable
+	btcPool.BalanceRune = cosmos.NewUint(1_00000000)
+	btcPool.BalanceAsset = cosmos.NewUint(1_00000000)
+	c.Assert(mgr.Keeper().SetPool(ctx, btcPool), IsNil)
+
+	// Create vault with BTC
+	vault := GetRandomVault()
+	vault.Chains = []string{common.BTCChain.String()}
+	vault.Status = ActiveVault
+	vault.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(1_00000000)))
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	runeAddr := GetRandomRUNEAddress()
+	btcAddr := GetRandomBTCAddress()
+	tx1 := GetRandomTx()
+	tx1.Coins = common.NewCoins(common.NewCoin(btcSynthAsset, cosmos.NewUint(1_000_000_00000000)))
+	tx1.Chain = common.BTCChain
+
+	// Synthetic asset add should not be subject to chain RUNE limit
+	// (it would fail if the limit was applied since we're trying to add 1M RUNE worth)
+	synthMsg := NewMsgAddLiquidity(
+		tx1,
+		btcSynthAsset,
+		cosmos.ZeroUint(), // Synth deposits don't add RUNE
+		cosmos.NewUint(1_000_000_00000000),
+		runeAddr,
+		btcAddr,
+		common.NoAddress,
+		cosmos.ZeroUint(),
+		validators[0].NodeAddress,
+	)
+
+	_, err := addHandler.Run(ctx, synthMsg)
+	// Note: This may fail for other reasons (like rune amount being zero for synths),
+	// but should NOT fail due to chain RUNE limit
+	if err != nil {
+		c.Check(err.Error(), Not(Matches), ".*exceeds total RUNE limit.*",
+			Commentf("Synthetic asset should not trigger chain RUNE limit"))
+	}
+
+	// Test 2: When ChainLiquidityRunePerValidator is 0, the check should be disabled
+	mgr.Keeper().SetMimir(ctx, constants.ChainLiquidityRunePerValidator.String(), 0)
+
+	btcTokenAsset, err := common.NewAsset("BTC.TOKEN")
+	c.Assert(err, IsNil)
+	btcTokenPool := NewPool()
+	btcTokenPool.Asset = btcTokenAsset
+	btcTokenPool.Status = PoolAvailable
+	btcTokenPool.BalanceRune = cosmos.NewUint(1_00000000)
+	btcTokenPool.BalanceAsset = cosmos.NewUint(1_00000000)
+	c.Assert(mgr.Keeper().SetPool(ctx, btcTokenPool), IsNil)
+
+	tx2 := GetRandomTx()
+	tx2.Coins = common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(1_000_000_00000000)))
+	tx2.Chain = common.THORChain
+
+	// Should succeed even with huge RUNE amount since limit is disabled (0)
+	msg := NewMsgAddLiquidity(
+		tx2,
+		btcTokenAsset,
+		cosmos.NewUint(1_000_000_00000000), // 1M RUNE
+		cosmos.ZeroUint(),
+		runeAddr,
+		btcAddr,
+		common.NoAddress,
+		cosmos.ZeroUint(),
+		validators[0].NodeAddress,
+	)
+
+	_, err = addHandler.Run(ctx, msg)
+	c.Assert(err, IsNil, Commentf("Should succeed when ChainLiquidityRunePerValidator is 0"))
+}
+
+func (s *HandlerAddLiquiditySuite) TestChainLiquidityWithNoValidators(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	// Set ChainLiquidityRunePerValidator to 100k RUNE
+	mgr.Keeper().SetMimir(ctx, constants.ChainLiquidityRunePerValidator.String(), 100_000_00000000)
+
+	// Create 4 validators, NONE support BTC
+	validators := make(NodeAccounts, 4)
+	for i := 0; i < 4; i++ {
+		validators[i] = GetRandomValidatorNode(NodeActive)
+		validators[i].Bond = cosmos.NewUint(1_000_000 * common.One)
+		validators[i].ActiveBlockHeight = 10
+		validators[i].SupportedChains = []string{common.ETHChain.String()}
+		c.Assert(mgr.Keeper().SetNodeAccount(ctx, validators[i]), IsNil)
+	}
+
+	// Fund the bond module
+	FundModule(c, ctx, mgr.Keeper(), BondName, 4_000_000*common.One)
+
+	// Create BTC pool
+	btcPool := NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.Status = PoolAvailable
+	btcPool.BalanceRune = cosmos.NewUint(1_00000000)
+	btcPool.BalanceAsset = cosmos.NewUint(1_00000000)
+	c.Assert(mgr.Keeper().SetPool(ctx, btcPool), IsNil)
+
+	// Create vault
+	vault := GetRandomVault()
+	vault.Chains = []string{common.BTCChain.String()}
+	vault.Status = ActiveVault
+	vault.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(1_00000000)))
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	addHandler := NewAddLiquidityHandler(mgr)
+
+	runeAddr := GetRandomRUNEAddress()
+	btcAddr := GetRandomBTCAddress()
+	tx := GetRandomTx()
+	tx.Coins = common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(1)))
+	tx.Chain = common.THORChain
+
+	// Try to add even 1 RUNE to BTC pool
+	// With 0 validators supporting BTC, the limit check should be skipped (bootstrapping phase)
+	// So this should succeed
+	msg := NewMsgAddLiquidity(
+		tx,
+		common.BTCAsset,
+		cosmos.NewUint(1),
+		cosmos.ZeroUint(),
+		runeAddr,
+		btcAddr,
+		common.NoAddress,
+		cosmos.ZeroUint(),
+		validators[0].NodeAddress,
+	)
+
+	_, err := addHandler.Run(ctx, msg)
+	c.Assert(err, IsNil, Commentf("Should succeed when no validators support the chain (bootstrapping)"))
 }

@@ -804,6 +804,13 @@ func (vm *ValidatorMgr) payNodeAccountBondAward(ctx cosmos.Context, lastChurnHei
 		reward = network.BondRewardRune
 	}
 
+	return vm.applyNodeAccountBondReward(ctx, na, network, reward, slashPts, totalActiveBlocks, mgr)
+}
+
+// applyNodeAccountBondReward pays reward to a node and its bond providers and
+// persists the network ledger, the node's slash points, bond and providers.
+// network must already reflect any reward-bucket deductions made by the caller.
+func (vm *ValidatorMgr) applyNodeAccountBondReward(ctx cosmos.Context, na NodeAccount, network Network, reward cosmos.Uint, slashPts, totalActiveBlocks int64, mgr Manager) error {
 	// Load and normalize bond providers before applying this reward, so any
 	// previous rewards or legacy provider state are already accounted for.
 	bp, err := vm.k.GetBondProviders(ctx, na.NodeAddress)
@@ -943,6 +950,76 @@ func (vm *ValidatorMgr) payNodeAccountBondAward(ctx cosmos.Context, lastChurnHei
 	}
 
 	return nil
+}
+
+// payNodeAccountChainRewards calculates and pays rewards to a node based on per-chain participation
+func (vm *ValidatorMgr) payNodeAccountChainRewards(ctx cosmos.Context, lastChurnHeight int64, na NodeAccount, totalEffectiveBond, bondHardCap cosmos.Uint, mgr Manager) error {
+	if na.ActiveBlockHeight == 0 || na.Bond.IsZero() {
+		return nil
+	}
+
+	network, err := vm.k.GetNetwork(ctx)
+	if err != nil {
+		return fmt.Errorf("fail to get network: %w", err)
+	}
+
+	slashPts, err := vm.k.GetNodeAccountSlashPoints(ctx, na.NodeAddress)
+	if err != nil {
+		return fmt.Errorf("fail to get node slash points: %w", err)
+	}
+
+	// Find number of blocks since the last churn (the last bond reward payout)
+	totalActiveBlocks := ctx.BlockHeight() - lastChurnHeight
+
+	// find number of blocks they were well behaved (ie active - slash points)
+	earnedBlocks := totalActiveBlocks - slashPts
+	if earnedBlocks < 0 {
+		earnedBlocks = 0
+	}
+
+	naEffectiveBond := na.Bond
+	if naEffectiveBond.GT(bondHardCap) {
+		naEffectiveBond = bondHardCap
+	}
+
+	totalReward := cosmos.ZeroUint()
+
+	// Calculate rewards for each chain this node supports (with backwards
+	// compatibility for nodes with empty SupportedChains)
+	for _, chainStr := range getNodeSupportedChains(ctx, vm.k, na) {
+		chainRewards := network.GetChainRewardAmount(chainStr)
+		if chainRewards.IsZero() {
+			continue
+		}
+		chainBondUnits := network.GetChainBondUnitsAmount(chainStr)
+		if chainBondUnits.IsZero() {
+			continue
+		}
+
+		// reward = chainRewards * (naEffectiveBond / totalEffectiveBond) * (unslashed blocks / total blocks)
+		nodeShare := common.GetUncappedShare(naEffectiveBond, totalEffectiveBond, chainRewards)
+		nodeReward := common.GetUncappedShare(cosmos.NewUint(uint64(earnedBlocks)), cosmos.NewUint(uint64(totalActiveBlocks)), nodeShare)
+		if nodeReward.GT(chainRewards) {
+			nodeReward = chainRewards
+		}
+		if nodeReward.IsZero() {
+			continue
+		}
+
+		totalReward = totalReward.Add(nodeReward)
+
+		// Deduct from chain rewards and bond units
+		network.SetChainRewardAmount(chainStr, common.SafeSub(chainRewards, nodeReward))
+		network.SetChainBondUnitsAmount(chainStr, common.SafeSub(chainBondUnits, cosmos.NewUint(uint64(totalActiveBlocks))))
+	}
+
+	// Per-chain buckets are an attribution of BondRewardRune; never pay out more
+	// than the remaining ledger.
+	if totalReward.GT(network.BondRewardRune) {
+		totalReward = network.BondRewardRune
+	}
+
+	return vm.applyNodeAccountBondReward(ctx, na, network, totalReward, slashPts, totalActiveBlocks, mgr)
 }
 
 // determines when/if to run each part of the ragnarok process
@@ -1086,11 +1163,21 @@ func (vm *ValidatorMgr) distributeBondReward(ctx cosmos.Context, mgr Manager) er
 		return fmt.Errorf("fail to get network: %w", err)
 	}
 
+	// With chain-aware consensus, nodes are paid from the per-chain reward
+	// buckets of the chains they support rather than the global bond reward.
+	chainAware := vm.k.GetConfigInt64(ctx, constants.EnableNodeChainConsensus) > 0
+
 	for _, item := range active {
 		cacheCtx, commit := ctx.CacheContext()
-		if err := vm.payNodeAccountBondAward(cacheCtx, lastChurnHeight, item, network.BondRewardRune, totalEffectiveBond, bondHardCap, mgr); err != nil {
-			resultErr = errors.Join(resultErr, err)
-			ctx.Logger().Error("fail to pay node account bond award", "node address", item.NodeAddress.String(), "error", err)
+		var payErr error
+		if chainAware {
+			payErr = vm.payNodeAccountChainRewards(cacheCtx, lastChurnHeight, item, totalEffectiveBond, bondHardCap, mgr)
+		} else {
+			payErr = vm.payNodeAccountBondAward(cacheCtx, lastChurnHeight, item, network.BondRewardRune, totalEffectiveBond, bondHardCap, mgr)
+		}
+		if payErr != nil {
+			resultErr = errors.Join(resultErr, payErr)
+			ctx.Logger().Error("fail to pay node account bond award", "node address", item.NodeAddress.String(), "chain_aware", chainAware, "error", payErr)
 			// No per-node label: a node bech32 address is unbounded-cardinality
 			// label material. The failing node address is already in the log line.
 			telemetry.IncrCounter(float32(1), "thornode", "churn", "bond_reward_failed")
@@ -1098,6 +1185,7 @@ func (vm *ValidatorMgr) distributeBondReward(ctx cosmos.Context, mgr Manager) er
 			commit()
 		}
 	}
+
 	return resultErr
 }
 
@@ -1979,6 +2067,11 @@ func (vm *ValidatorMgr) keygenChainSetCheck(ctx cosmos.Context, na NodeAccount) 
 	if disabled, err := vm.k.GetMimir(ctx, constants.MimirKeyPreflightChainSetDisabled); err == nil && disabled > 0 {
 		return nil
 	}
+	// With chain-aware consensus a node declares the chains it supports and
+	// vaults are created per chain group, so a partial chain set is expected.
+	if vm.k.GetConfigInt64(ctx, constants.EnableNodeChainConsensus) > 0 {
+		return nil
+	}
 
 	required, vaultHeight, err := vm.activeVaultChains(ctx)
 	if err != nil {
@@ -2179,6 +2272,10 @@ func (vm *ValidatorMgr) nextVaultNodeAccounts(ctx cosmos.Context, targetCount in
 func (vm *ValidatorMgr) chainSetFaultyNodes(ctx cosmos.Context, active NodeAccounts) (NodeAccounts, error) {
 	maxFaulty, err := vm.k.GetMimir(ctx, constants.MimirKeyChainSetChurnOutMax)
 	if err != nil || maxFaulty <= 0 {
+		return nil, nil
+	}
+	// With chain-aware consensus a partial keygen chain set is expected, not a fault.
+	if vm.k.GetConfigInt64(ctx, constants.EnableNodeChainConsensus) > 0 {
 		return nil, nil
 	}
 	required, vaultHeight, err := vm.activeVaultChains(ctx)

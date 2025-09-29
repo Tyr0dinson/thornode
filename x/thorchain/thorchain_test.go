@@ -135,6 +135,8 @@ func (s *ThorchainSuite) TestChurn(c *C) {
 		na.Bond = cosmos.NewUint(uint64(minBond))
 		addresses[i] = na.NodeAddress
 		na.SignerMembership = common.PubKeys{vault.PubKey}.Strings()
+		// Set supported chains for chain-aware consensus
+		na.SupportedChains = []string{common.ETHChain.String()}
 		if i == 0 { // give the first node account slash points
 			na.RequestedToLeave = true
 		}
@@ -153,6 +155,8 @@ func (s *ThorchainSuite) TestChurn(c *C) {
 	// create new node account to rotate in
 	na := GetRandomValidatorNode(NodeReady)
 	na.Bond = cosmos.NewUint(uint64(minBond))
+	// Set supported chains for chain-aware consensus
+	na.SupportedChains = []string{common.ETHChain.String()}
 	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
 
 	// trigger marking bad actors as well as a keygen

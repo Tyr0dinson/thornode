@@ -356,6 +356,7 @@ type KeeperVault interface {
 	HasValidVaultPools(ctx cosmos.Context) (bool, error)
 	GetAsgardVaults(ctx cosmos.Context) (Vaults, error)
 	GetAsgardVaultsByStatus(_ cosmos.Context, _ VaultStatus) (Vaults, error)
+	GetActiveAsgardVaultsByChain(_ cosmos.Context, _ string) Vaults
 	GetLeastSecure(_ cosmos.Context, _ Vaults, _ int64) Vault
 	GetMostSecure(_ cosmos.Context, _ Vaults, _ int64) Vault
 	GetMostSecureStrict(_ cosmos.Context, _ Vaults, _ int64) Vault

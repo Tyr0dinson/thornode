@@ -2902,3 +2902,212 @@ func (s *HandlerTssSuite) TestKeygenFailRecordsBlameForActiveNode(c *C) {
 	c.Assert(err, IsNil)
 	c.Check(naAfter.Bond.Equal(cosmos.NewUint(10000*common.One)), Equals, true)
 }
+
+func (s *HandlerTssSuite) TestFindKeygenTargetChains(c *C) {
+	members1 := common.PubKeys{GetRandomPubKey(), GetRandomPubKey(), GetRandomPubKey()}
+	members2 := common.PubKeys{GetRandomPubKey(), GetRandomPubKey(), GetRandomPubKey(), GetRandomPubKey()}
+
+	keygenBlock := NewKeygenBlock(100)
+	keygenBlock.Keygens = []Keygen{
+		{
+			ID:           "keygen1",
+			Type:         AsgardKeygen,
+			Members:      members1.Strings(),
+			TargetChains: []string{"ETH", "BTC", "BCH"},
+		},
+		{
+			ID:           "keygen2",
+			Type:         AsgardKeygen,
+			Members:      members2.Strings(),
+			TargetChains: []string{"BTC", "ETH"},
+		},
+	}
+
+	// Matching keygen: target chains are returned sorted.
+	c.Assert(findKeygenTargetChains(keygenBlock, AsgardKeygen, members1.Strings()), DeepEquals,
+		common.Chains{common.BCHChain, common.BTCChain, common.ETHChain})
+	c.Assert(findKeygenTargetChains(keygenBlock, AsgardKeygen, members2.Strings()), DeepEquals,
+		common.Chains{common.BTCChain, common.ETHChain})
+
+	// Membership order does not matter.
+	reversed := []string{members1[2].String(), members1[1].String(), members1[0].String()}
+	c.Assert(findKeygenTargetChains(keygenBlock, AsgardKeygen, reversed), HasLen, 3)
+
+	// Different keygen type: no match.
+	c.Assert(findKeygenTargetChains(keygenBlock, XMRMonovaultKeygen, members1.Strings()), HasLen, 0)
+
+	// Unknown membership: no match.
+	members3 := common.PubKeys{GetRandomPubKey(), GetRandomPubKey(), GetRandomPubKey()}
+	c.Assert(findKeygenTargetChains(keygenBlock, AsgardKeygen, members3.Strings()), HasLen, 0)
+
+	// Legacy keygen without target chains: no match.
+	legacy := NewKeygenBlock(100)
+	legacy.Keygens = []Keygen{{ID: "legacy", Type: AsgardKeygen, Members: members1.Strings()}}
+	c.Assert(findKeygenTargetChains(legacy, AsgardKeygen, members1.Strings()), HasLen, 0)
+}
+
+func (s *HandlerTssSuite) TestVaultCreationWithTargetChains(c *C) {
+	// bypass signature checks on TssPool messages
+	verifySecp256K1Signature = func(_ common.PubKey, _ []byte) error {
+		return nil
+	}
+
+	helper := newTssHandlerTestHelper(c)
+	handler := NewTssHandler(NewDummyMgrWithKeeper(helper.keeper))
+	fakeSig := []byte("fakeSignature1234567890123456789012345678901234567890123456789012")
+	keygenTime := int64(1024)
+
+	// Setup keygen with specific target chains (must include THOR chain)
+	targetChains := []string{"THOR", "BTC", "ETH", "BCH"}
+	keygenBlock := NewKeygenBlock(helper.ctx.BlockHeight())
+	keygenBlock.Keygens = []Keygen{
+		{
+			Type:         AsgardKeygen,
+			Members:      helper.members.Strings(),
+			TargetChains: targetChains,
+		},
+	}
+	helper.keeper.SetKeygenBlock(helper.ctx, keygenBlock)
+
+	// Create success message
+	tssMsg, err := NewMsgTssPoolV2(
+		helper.members.Strings(),
+		helper.poolPk,
+		fakeSig,
+		nil,
+		AsgardKeygen,
+		helper.ctx.BlockHeight(),
+		nil,
+		common.Chains{common.RuneAsset().Chain}.Strings(),
+		helper.signer,
+		keygenTime,
+		helper.poolPkEddsa,
+		[]byte("backup"),
+		nil,
+		common.EmptyPubKey,
+	)
+	c.Assert(err, IsNil)
+
+	// Get voter and simulate complete consensus
+	voter, err := helper.keeper.GetTssVoter(helper.ctx, tssMsg.ID)
+	c.Assert(err, IsNil)
+
+	// Add all members as signers to reach complete consensus
+	for _, pk := range helper.members {
+		var addr cosmos.AccAddress
+		addr, err = pk.GetThorAddress()
+		c.Assert(err, IsNil)
+		if addr.Equals(helper.signer) {
+			continue
+		}
+		voter.Signers = append(voter.Signers, addr.String())
+		voter.Secp256K1Signatures = append(voter.Secp256K1Signatures, string(fakeSig))
+	}
+	helper.keeper.SetTssVoter(helper.ctx, voter)
+
+	// Execute handler
+	result, err := handler.Run(helper.ctx, tssMsg)
+	c.Assert(err, IsNil)
+	c.Assert(result, NotNil)
+
+	// Verify vault was created with target chains from keygen
+	vaults, err := helper.keeper.GetAsgardVaultsByStatus(helper.ctx, InitVault)
+	c.Assert(err, IsNil)
+	c.Assert(len(vaults), Equals, 1)
+
+	vault := vaults[0]
+	c.Assert(vault.PubKey.Equals(helper.poolPk), Equals, true)
+	c.Assert(len(vault.Chains), Equals, len(targetChains))
+
+	// Verify the vault has the correct chains (sort both for comparison)
+	expectedChains := make([]string, len(targetChains))
+	copy(expectedChains, targetChains)
+	sort.Strings(expectedChains)
+	actualChains := make([]string, len(vault.Chains))
+	copy(actualChains, vault.Chains)
+	sort.Strings(actualChains)
+	c.Assert(actualChains, DeepEquals, expectedChains)
+}
+
+func (s *HandlerTssSuite) TestVaultCreationFallbackToConsensusChains(c *C) {
+	// bypass signature checks on TssPool messages
+	verifySecp256K1Signature = func(_ common.PubKey, _ []byte) error {
+		return nil
+	}
+
+	helper := newTssHandlerTestHelper(c)
+	handler := NewTssHandler(NewDummyMgrWithKeeper(helper.keeper))
+	fakeSig := []byte("fakeSignature1234567890123456789012345678901234567890123456789012")
+	keygenTime := int64(1024)
+
+	// Setup keygen WITHOUT target chains (empty)
+	keygenBlock := NewKeygenBlock(helper.ctx.BlockHeight())
+	keygenBlock.Keygens = []Keygen{
+		{
+			Type:         AsgardKeygen,
+			Members:      helper.members.Strings(),
+			TargetChains: []string{}, // Empty target chains
+		},
+	}
+	helper.keeper.SetKeygenBlock(helper.ctx, keygenBlock)
+
+	// Create success message with specific chains (must include THOR)
+	consensusChains := common.Chains{common.RuneAsset().Chain, common.BTCChain, common.ETHChain}
+	tssMsg, err := NewMsgTssPoolV2(
+		helper.members.Strings(),
+		helper.poolPk,
+		fakeSig,
+		nil,
+		AsgardKeygen,
+		helper.ctx.BlockHeight(),
+		nil,
+		consensusChains.Strings(),
+		helper.signer,
+		keygenTime,
+		helper.poolPkEddsa,
+		[]byte("backup"),
+		nil,
+		common.EmptyPubKey,
+	)
+	c.Assert(err, IsNil)
+
+	// Get voter and simulate complete consensus
+	voter, err := helper.keeper.GetTssVoter(helper.ctx, tssMsg.ID)
+	c.Assert(err, IsNil)
+
+	// Add all members as signers to reach complete consensus
+	// Use Sign() method to properly add signers with chains
+	for _, pk := range helper.members {
+		var addr cosmos.AccAddress
+		addr, err = pk.GetThorAddress()
+		c.Assert(err, IsNil)
+		if addr.Equals(helper.signer) {
+			continue
+		}
+		// Sign with consensus chains to establish consensus
+		voter.Sign(addr, consensusChains.Strings(), string(fakeSig))
+	}
+	helper.keeper.SetTssVoter(helper.ctx, voter)
+
+	// Execute handler
+	result, err := handler.Run(helper.ctx, tssMsg)
+	c.Assert(err, IsNil)
+	c.Assert(result, NotNil)
+
+	// Verify vault was created with consensus chains (fallback)
+	vaults, err := helper.keeper.GetAsgardVaultsByStatus(helper.ctx, InitVault)
+	c.Assert(err, IsNil)
+	c.Assert(len(vaults), Equals, 1)
+
+	vault := vaults[0]
+	c.Assert(vault.PubKey.Equals(helper.poolPk), Equals, true)
+	c.Assert(len(vault.Chains), Equals, len(consensusChains))
+
+	// Verify the vault has the correct chains from consensus (sort both for comparison)
+	expectedChains := consensusChains.Strings()
+	sort.Strings(expectedChains)
+	actualChains := make([]string, len(vault.Chains))
+	copy(actualChains, vault.Chains)
+	sort.Strings(actualChains)
+	c.Assert(actualChains, DeepEquals, expectedChains)
+}

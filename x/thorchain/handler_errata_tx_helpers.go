@@ -53,7 +53,7 @@ func processErrataTxAttestation(
 	// For XMR, BlockHeight also closes the observe-charge window: a new signer
 	// is not charged if churn has removed current quorum after settlement.
 	// Non-XMR retains its historical charge in that case.
-	if !voter.HasConsensus(active) {
+	if !hasErrataTxChainConsensus(ctx, k, *voter) {
 		if newSigner && (!terminalOutcome || voter.BlockHeight == 0) {
 			slasher.IncSlashPoints(slashCtx, observeSlashPoints, attester)
 		}
@@ -82,7 +82,7 @@ func processErrataTxAttestation(
 			slasher.IncSlashPoints(slashCtx, observeSlashPoints, attester)
 		}
 		signers := voter.GetSigners()
-		nonSigners := getNonSigners(active, signers)
+		nonSigners := getChainAwareNonSigners(ctx, k, er.Chain.String(), signers)
 		slasher.DecSlashPoints(slashCtx, observeSlashPoints, signers...)
 		slasher.IncSlashPoints(slashCtx, lackOfObservationPenalty, nonSigners...)
 		queueObservationTally(ctx, k, observationTallyKindErrata, voter.Chain, voter.TxID.String())

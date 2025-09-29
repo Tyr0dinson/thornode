@@ -1,0 +1,59 @@
+{{ template "1-active-validator-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+# Enable chain-aware consensus feature
+type: tx-mimir
+key: EnableNodeChainConsensus
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Add BTC chain support
+type: tx-add-node-chain-support
+signer: {{ addr_thor_dog }}
+chain: "BTC"
+---
+type: create-blocks
+count: 1
+---
+# Verify BTC was added
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_dog }}
+asserts:
+  - .supported_chains|length == 1
+  - .supported_chains[0] == "BTC"
+---
+# Try to add BTC again (duplicate)
+type: tx-add-node-chain-support
+signer: {{ addr_thor_dog }}
+chain: "BTC"
+---
+type: create-blocks
+count: 1
+---
+# Verify still only one BTC entry (no duplicate)
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_dog }}
+asserts:
+  - .supported_chains|length == 1
+  - .supported_chains[0] == "BTC"
+---
+# Add ETH to verify we can still add other chains
+type: tx-add-node-chain-support
+signer: {{ addr_thor_dog }}
+chain: "ETH"
+---
+type: create-blocks
+count: 1
+---
+# Verify we have BTC and ETH (exactly 2 chains)
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_dog }}
+asserts:
+  - .supported_chains|length == 2
+  - .supported_chains|contains(["BTC"])
+  - .supported_chains|contains(["ETH"])

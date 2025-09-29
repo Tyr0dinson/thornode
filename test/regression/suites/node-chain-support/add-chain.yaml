@@ -1,0 +1,59 @@
+{{ template "1-active-validator-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+# Enable chain-aware consensus feature
+type: tx-mimir
+key: EnableNodeChainConsensus
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Verify node account is Active and has no supported chains yet
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_dog }}
+asserts:
+  - .status == "Active"
+  - (.supported_chains == null) or ((.supported_chains | type) == "array" and (.supported_chains | length) == 0)
+---
+# Add BTC chain support
+type: tx-add-node-chain-support
+signer: {{ addr_thor_dog }}
+chain: "BTC"
+---
+type: create-blocks
+count: 1
+---
+# Verify BTC was added to supported chains
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_dog }}
+asserts:
+  - .supported_chains|length == 1
+  - .supported_chains[0] == "BTC"
+---
+# Add ETH chain support
+type: tx-add-node-chain-support
+signer: {{ addr_thor_dog }}
+chain: "ETH"
+---
+type: create-blocks
+count: 1
+---
+# Verify both BTC and ETH are in supported chains
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_dog }}
+asserts:
+  - .supported_chains|length == 2
+  - .supported_chains|contains(["BTC"])
+  - .supported_chains|contains(["ETH"])
+---
+# Verify supported chains are also present in /thorchain/nodes endpoint
+type: check
+endpoint: http://localhost:1317/thorchain/nodes
+asserts:
+  - (.[] | select(.node_address == "{{ addr_thor_dog }}") | .supported_chains | length) == 2
+  - (.[] | select(.node_address == "{{ addr_thor_dog }}") | .supported_chains | contains(["BTC"]))
+  - (.[] | select(.node_address == "{{ addr_thor_dog }}") | .supported_chains | contains(["ETH"]))

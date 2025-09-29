@@ -262,6 +262,8 @@ var (
 	NewMsgTCYStake                 = types.NewMsgTCYStake
 	NewMsgTCYUnstake               = types.NewMsgTCYUnstake
 	NewNodeBlameRecord             = types.NewNodeBlameRecord
+	NewMsgAddNodeChainSupport      = types.NewMsgAddNodeChainSupport
+	NewMsgRemoveNodeChainSupport   = types.NewMsgRemoveNodeChainSupport
 
 	// Memo
 	ParseMemo                    = mem.ParseMemo
@@ -332,6 +334,8 @@ type (
 	MsgTCYStake               = types.MsgTCYStake
 	MsgTCYUnstake             = types.MsgTCYUnstake
 	MsgOperatorRotate         = types.MsgOperatorRotate
+	MsgAddNodeChainSupport    = types.MsgAddNodeChainSupport
+	MsgRemoveNodeChainSupport = types.MsgRemoveNodeChainSupport
 
 	// Keeper structs
 	PoolStatus               = types.PoolStatus
@@ -392,6 +396,7 @@ type (
 	PriceFeed                = types.PriceFeed
 	OraclePrice              = types.OraclePrice
 	ObservedNetworkFeeVoter  = types.ObservedNetworkFeeVoter
+	SolvencyVoter            = types.SolvencyVoter
 	Jail                     = types.Jail
 	RagnarokWithdrawPosition = types.RagnarokWithdrawPosition
 	ChainContract            = types.ChainContract

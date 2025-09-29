@@ -117,6 +117,10 @@ func NewOperation(opMap map[string]any) (Operation, error) {
 		op = &OpTxSetIPAddress{}
 	case "tx-set-node-keys":
 		op = &OpTxSetNodeKeys{}
+	case "tx-add-node-chain-support":
+		op = &OpTxAddNodeChainSupport{}
+	case "tx-remove-node-chain-support":
+		op = &OpTxRemoveNodeChainSupport{}
 	case "tx-solvency":
 		op = &OpTxSolvency{}
 	case "tx-tss-keysign":
@@ -184,6 +188,8 @@ func NewOperation(opMap map[string]any) (Operation, error) {
 		*OpTxSend,
 		*OpTxSetIPAddress,
 		*OpTxSetNodeKeys,
+		*OpTxAddNodeChainSupport,
+		*OpTxRemoveNodeChainSupport,
 		*OpTxVersion,
 		*OpTxProposeUpgrade,
 		*OpTxApproveUpgrade,
@@ -1053,6 +1059,36 @@ type OpTxSetNodeKeys struct {
 
 func (op *OpTxSetNodeKeys) Execute(out io.Writer, _ string, _, routine int, _ *os.Process, logs chan string) error {
 	msg := types.NewMsgSetNodeKeys(op.PubKeySet, op.ValidatorConsPubKey, op.Signer)
+	return sendMsg(out, routine, msg, op.Signer, "", op.Sequence, op.Gas, op, "", logs)
+}
+
+// ------------------------------ OpTxAddNodeChainSupport ------------------------------
+
+type OpTxAddNodeChainSupport struct {
+	OpBase   `yaml:",inline"`
+	Chain    string         `json:"chain"`
+	Signer   sdk.AccAddress `json:"signer"`
+	Sequence *int64         `json:"sequence"`
+	Gas      *int64         `json:"gas"`
+}
+
+func (op *OpTxAddNodeChainSupport) Execute(out io.Writer, _ string, _, routine int, _ *os.Process, logs chan string) error {
+	msg := types.NewMsgAddNodeChainSupport(op.Chain, op.Signer)
+	return sendMsg(out, routine, msg, op.Signer, "", op.Sequence, op.Gas, op, "", logs)
+}
+
+// ------------------------------ OpTxRemoveNodeChainSupport ------------------------------
+
+type OpTxRemoveNodeChainSupport struct {
+	OpBase   `yaml:",inline"`
+	Chain    string         `json:"chain"`
+	Signer   sdk.AccAddress `json:"signer"`
+	Sequence *int64         `json:"sequence"`
+	Gas      *int64         `json:"gas"`
+}
+
+func (op *OpTxRemoveNodeChainSupport) Execute(out io.Writer, _ string, _, routine int, _ *os.Process, logs chan string) error {
+	msg := types.NewMsgRemoveNodeChainSupport(op.Chain, op.Signer)
 	return sendMsg(out, routine, msg, op.Signer, "", op.Sequence, op.Gas, op, "", logs)
 }
 

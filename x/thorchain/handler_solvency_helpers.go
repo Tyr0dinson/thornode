@@ -111,7 +111,7 @@ func processSolvencyAttestation(
 		return nil
 	}
 
-	if !voter.HasConsensus(active) {
+	if !hasSolvencyChainConsensus(ctx, mgr.Keeper(), *voter) {
 		// Before consensus, slash until consensus.
 		if slashObservations {
 			slasher.IncSlashPoints(slashCtx, observeSlashPoints, attester)
@@ -152,7 +152,7 @@ func processSolvencyAttestation(
 	if slashObservations {
 		slasher.IncSlashPoints(slashCtx, observeSlashPoints, attester)
 		signers := voter.GetSigners()
-		nonSigners := getNonSigners(active, signers)
+		nonSigners := getChainAwareNonSigners(ctx, k, s.Chain.String(), signers)
 		slasher.DecSlashPoints(slashCtx, observeSlashPoints, signers...)
 		slasher.IncSlashPoints(slashCtx, lackOfObservationPenalty, nonSigners...)
 		// Fragmented balances must not count as missed observations for churn-out either.

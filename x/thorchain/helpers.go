@@ -682,6 +682,51 @@ func activeNodeAccountsSignerPriority(ctx cosmos.Context, k keeper.Keeper, signe
 	return ctx, cosmos.ErrUnauthorized(fmt.Sprintf("%+v are not authorized", signers))
 }
 
+// nodeAccountSignerPriority validates that signers are node accounts (any status)
+// This is used for operations that any node account should be able to perform
+func nodeAccountSignerPriority(ctx cosmos.Context, k keeper.Keeper, signers []cosmos.AccAddress) (cosmos.Context, error) {
+	if isSignedByNodeAccounts(ctx, k, signers) {
+		return ctx.WithPriority(ActiveNodePriority), nil
+	}
+	return ctx, cosmos.ErrUnauthorized(fmt.Sprintf("%+v are not authorized", signers))
+}
+
+// isSignedByNodeAccounts checks if all signers are node accounts (any status)
+func isSignedByNodeAccounts(ctx cosmos.Context, k keeper.Keeper, signers []cosmos.AccAddress) bool {
+	if len(signers) == 0 {
+		return false
+	}
+	for _, signer := range signers {
+		if signer.Equals(k.GetModuleAccAddress(AsgardName)) {
+			continue
+		}
+		if err := signedByNodeAccount(ctx, k, signer); err != nil {
+			ctx.Logger().Error("unauthorized account", "error", err)
+			return false
+		}
+	}
+	return true
+}
+
+// signedByNodeAccount returns an error unless the signer is a validator node (any status)
+func signedByNodeAccount(ctx cosmos.Context, k keeper.Keeper, signer cosmos.AccAddress) error {
+	nodeAccount, err := k.GetNodeAccount(ctx, signer)
+	if err != nil {
+		return fmt.Errorf("error fetching node account: %s: %w", signer.String(), err)
+	}
+	if nodeAccount.IsEmpty() {
+		return fmt.Errorf("node account is unexpectedly empty: %s", signer.String())
+	}
+	if nodeAccount.Type != NodeTypeValidator {
+		return fmt.Errorf(
+			"node account %s is not a validator: %s",
+			signer.String(),
+			nodeAccount.Type,
+		)
+	}
+	return nil
+}
+
 // signedByActiveNodeAccounts returns an error unless all signers are active validator nodes
 func signedByActiveNodeAccount(ctx cosmos.Context, k keeper.Keeper, signer cosmos.AccAddress) error {
 	nodeAccount, err := k.GetNodeAccount(ctx, signer)
@@ -1653,6 +1698,401 @@ func getNonSigners(nas []NodeAccount, signers []cosmos.AccAddress) []cosmos.AccA
 		}
 	}
 	return nonSigners
+}
+
+// getVaultMembersForChain returns all node addresses that are members of active vaults supporting the specified chain
+func getVaultMembersForChain(ctx cosmos.Context, k keeper.Keeper, chain string) ([]cosmos.AccAddress, error) {
+	// Get all active Asgard vaults that support this chain
+	vaults := k.GetActiveAsgardVaultsByChain(ctx, chain)
+	if len(vaults) == 0 {
+		ctx.Logger().Debug("no active vaults found for chain", "chain", chain)
+		return nil, nil
+	}
+
+	// Collect all unique node addresses from vault members
+	// vault.Membership contains public keys, need to convert to AccAddress
+	memberMap := make(map[string]cosmos.AccAddress)
+	for _, vault := range vaults {
+		for _, memberStr := range vault.Membership {
+			// Convert public key string to PubKey
+			pubKey, err := common.NewPubKey(memberStr)
+			if err != nil {
+				ctx.Logger().Error("invalid vault member pubkey", "pubkey", memberStr, "error", err)
+				continue
+			}
+			// Convert PubKey to AccAddress
+			memberAddr, err := pubKey.GetThorAddress()
+			if err != nil {
+				ctx.Logger().Error("fail to get thor address from pubkey", "pubkey", memberStr, "error", err)
+				continue
+			}
+			memberMap[memberStr] = memberAddr
+		}
+	}
+
+	// Convert map to slice with deterministic order
+	memberKeys := make([]string, 0, len(memberMap))
+	// analyze-ignore(map-iteration) - intentional: sorting keys for deterministic order
+	for key := range memberMap {
+		memberKeys = append(memberKeys, key)
+	}
+	sort.Strings(memberKeys)
+
+	members := make([]cosmos.AccAddress, 0, len(memberMap))
+	for _, key := range memberKeys {
+		members = append(members, memberMap[key])
+	}
+
+	ctx.Logger().Debug("found vault members for chain", "chain", chain, "members", len(members))
+	return members, nil
+}
+
+// getChainAwareNonSigners returns nodes who should have observed the transaction but didn't sign
+// Checks the EnableNodeChainConsensus mimir to enable/disable the feature
+// When enabled, only includes nodes that are members of active vaults supporting the specific chain
+// When disabled, falls back to all active validators
+func getChainAwareNonSigners(ctx cosmos.Context, k keeper.Keeper, chain string, signers []cosmos.AccAddress) []cosmos.AccAddress {
+	// Check if chain-aware consensus is enabled via mimir
+	enableChainConsensus := k.GetConfigInt64(ctx, constants.EnableNodeChainConsensus)
+	if enableChainConsensus <= 0 {
+		// If mimir is not set or disabled, fall back to all active validators
+		var activeNodeAccounts NodeAccounts
+		activeNodeAccounts, err := k.ListActiveValidators(ctx)
+		if err != nil {
+			ctx.Logger().Error("failed to get active validators for non-signers", "error", err)
+			return nil
+		}
+		return getNonSigners(activeNodeAccounts, signers)
+	}
+
+	// Get all nodes who should be observing this chain (vault members)
+	vaultMembers, err := getVaultMembersForChain(ctx, k, chain)
+	if err != nil {
+		ctx.Logger().Error("failed to get vault members for chain", "chain", chain, "error", err)
+		return nil
+	}
+
+	if len(vaultMembers) == 0 {
+		ctx.Logger().Debug("no vault members found for chain, no slashing will occur", "chain", chain)
+		return nil
+	}
+
+	// From vault members, find those who didn't sign
+	var nonSigners []cosmos.AccAddress
+	for _, member := range vaultMembers {
+		signed := false
+		for _, signer := range signers {
+			if member.Equals(signer) {
+				signed = true
+				break
+			}
+		}
+
+		if !signed {
+			nonSigners = append(nonSigners, member)
+		}
+	}
+
+	ctx.Logger().Debug("chain-aware non-signers identified",
+		"chain", chain,
+		"total_vault_members", len(vaultMembers),
+		"non_signers", len(nonSigners))
+
+	return nonSigners
+}
+
+// getNodeSupportedChains returns the chains supported by a node.
+// If the node has explicitly set SupportedChains, returns them.
+// If SupportedChains is empty (backwards compatibility), returns all chains from active vaults.
+func getNodeSupportedChains(ctx cosmos.Context, k keeper.Keeper, node NodeAccount) []string {
+	// If node explicitly supports chains, use them
+	if len(node.SupportedChains) > 0 {
+		return node.SupportedChains
+	}
+
+	// Backwards compatibility: If node has no supported chains, inherit all chains from active vaults
+	activeVaults, err := k.GetAsgardVaultsByStatus(ctx, ActiveVault)
+	if err != nil {
+		ctx.Logger().Error("fail to get active vaults for chain inference", "error", err)
+		return nil
+	}
+
+	// Collect all unique chains from active vaults
+	chainSet := make(map[string]bool)
+	for _, vault := range activeVaults {
+		for _, chain := range vault.GetChains() {
+			chainSet[chain.String()] = true
+		}
+	}
+
+	// Convert map to sorted slice for deterministic behavior
+	chains := make([]string, 0, len(chainSet))
+	// analyze-ignore(map-iteration)
+	for chain := range chainSet {
+		chains = append(chains, chain)
+	}
+	sort.Strings(chains)
+
+	ctx.Logger().Debug("node has no explicit chain support, inheriting from active vaults",
+		"node", node.NodeAddress.String(),
+		"inherited_chains", chains)
+
+	return chains
+}
+
+// hasNetworkFeeChainConsensus determines if network fee has enough signers among chain-specific vault members
+// Checks the EnableNodeChainConsensus mimir to enable/disable the feature
+func hasNetworkFeeChainConsensus(ctx cosmos.Context, k keeper.Keeper, voter ObservedNetworkFeeVoter) bool {
+	// Check if chain-aware consensus is enabled via mimir
+	enableChainConsensus := k.GetConfigInt64(ctx, constants.EnableNodeChainConsensus)
+	if enableChainConsensus <= 0 {
+		// If mimir is not set or disabled, fall back to all active validators
+		var activeNodeAccounts NodeAccounts
+		activeNodeAccounts, err := k.ListActiveValidators(ctx)
+		if err != nil {
+			ctx.Logger().Error("failed to get active validators for network fee consensus", "error", err)
+			return false
+		}
+
+		var count int
+		for _, signer := range voter.GetSigners() {
+			if activeNodeAccounts.IsNodeKeys(signer) {
+				count++
+			}
+		}
+		return HasSuperMajority(count, len(activeNodeAccounts))
+	}
+
+	// Get eligible vault members for this chain
+	vaultMembers, err := getVaultMembersForChain(ctx, k, voter.Chain.String())
+	if err != nil {
+		ctx.Logger().Error("failed to get vault members for chain consensus", "chain", voter.Chain.String(), "error", err)
+		return false
+	}
+
+	if len(vaultMembers) == 0 {
+		ctx.Logger().Debug("no vault members found for chain consensus", "chain", voter.Chain.String())
+		return false
+	}
+
+	// Create a NodeAccounts structure from vault members for compatibility
+	eligibleAccounts := make(NodeAccounts, 0, len(vaultMembers))
+	for _, member := range vaultMembers {
+		// Get the full node account for each vault member
+		nodeAccount, err := k.GetNodeAccount(ctx, member)
+		if err != nil {
+			ctx.Logger().Error("failed to get node account for vault member", "address", member, "error", err)
+			continue
+		}
+		eligibleAccounts = append(eligibleAccounts, nodeAccount)
+	}
+
+	var count int
+	for _, signer := range voter.GetSigners() {
+		if eligibleAccounts.IsNodeKeys(signer) {
+			count++
+		}
+	}
+
+	return HasSuperMajority(count, len(eligibleAccounts))
+}
+
+// hasSolvencyChainConsensus determines if solvency has enough signers among chain-specific vault members
+// Checks the EnableNodeChainConsensus mimir to enable/disable the feature
+func hasSolvencyChainConsensus(ctx cosmos.Context, k keeper.Keeper, voter SolvencyVoter) bool {
+	// Check if chain-aware consensus is enabled via mimir
+	enableChainConsensus := k.GetConfigInt64(ctx, constants.EnableNodeChainConsensus)
+	if enableChainConsensus <= 0 {
+		// If mimir is not set or disabled, fall back to all active validators
+		var activeNodeAccounts NodeAccounts
+		activeNodeAccounts, err := k.ListActiveValidators(ctx)
+		if err != nil {
+			ctx.Logger().Error("failed to get active validators for solvency consensus", "error", err)
+			return false
+		}
+
+		var count int
+		for _, signer := range voter.GetSigners() {
+			if activeNodeAccounts.IsNodeKeys(signer) {
+				count++
+			}
+		}
+		return HasMinority(count, len(activeNodeAccounts))
+	}
+
+	// Get eligible vault members for this chain
+	vaultMembers, err := getVaultMembersForChain(ctx, k, voter.Chain.String())
+	if err != nil {
+		ctx.Logger().Error("failed to get vault members for chain consensus", "chain", voter.Chain.String(), "error", err)
+		return false
+	}
+
+	if len(vaultMembers) == 0 {
+		ctx.Logger().Debug("no vault members found for chain consensus", "chain", voter.Chain.String())
+		return false
+	}
+
+	// Create a NodeAccounts structure from vault members for compatibility
+	eligibleAccounts := make(NodeAccounts, 0, len(vaultMembers))
+	for _, member := range vaultMembers {
+		// Get the full node account for each vault member
+		nodeAccount, err := k.GetNodeAccount(ctx, member)
+		if err != nil {
+			ctx.Logger().Error("failed to get node account for vault member", "address", member, "error", err)
+			continue
+		}
+		eligibleAccounts = append(eligibleAccounts, nodeAccount)
+	}
+
+	var count int
+	for _, signer := range voter.GetSigners() {
+		if eligibleAccounts.IsNodeKeys(signer) {
+			count++
+		}
+	}
+
+	return HasMinority(count, len(eligibleAccounts))
+}
+
+// hasErrataTxChainConsensus determines if errata tx has enough signers among chain-specific vault members
+// Checks the EnableNodeChainConsensus mimir to enable/disable the feature
+func hasErrataTxChainConsensus(ctx cosmos.Context, k keeper.Keeper, voter ErrataTxVoter) bool {
+	// Check if chain-aware consensus is enabled via mimir
+	enableChainConsensus := k.GetConfigInt64(ctx, constants.EnableNodeChainConsensus)
+	if enableChainConsensus <= 0 {
+		// If mimir is not set or disabled, fall back to all active validators
+		var activeNodeAccounts NodeAccounts
+		activeNodeAccounts, err := k.ListActiveValidators(ctx)
+		if err != nil {
+			ctx.Logger().Error("failed to get active validators for errata tx consensus", "error", err)
+			return false
+		}
+
+		var count int
+		for _, signer := range voter.GetSigners() {
+			if activeNodeAccounts.IsNodeKeys(signer) {
+				count++
+			}
+		}
+		return HasSuperMajority(count, len(activeNodeAccounts))
+	}
+
+	// Get eligible vault members for this chain
+	vaultMembers, err := getVaultMembersForChain(ctx, k, voter.Chain.String())
+	if err != nil {
+		ctx.Logger().Error("failed to get vault members for chain consensus", "chain", voter.Chain.String(), "error", err)
+		return false
+	}
+
+	if len(vaultMembers) == 0 {
+		ctx.Logger().Debug("no vault members found for chain consensus", "chain", voter.Chain.String())
+		return false
+	}
+
+	// Create a NodeAccounts structure from vault members for compatibility
+	eligibleAccounts := make(NodeAccounts, 0, len(vaultMembers))
+	for _, member := range vaultMembers {
+		// Get the full node account for each vault member
+		nodeAccount, err := k.GetNodeAccount(ctx, member)
+		if err != nil {
+			ctx.Logger().Error("failed to get node account for vault member", "address", member, "error", err)
+			continue
+		}
+		eligibleAccounts = append(eligibleAccounts, nodeAccount)
+	}
+
+	var count int
+	for _, signer := range voter.GetSigners() {
+		if eligibleAccounts.IsNodeKeys(signer) {
+			count++
+		}
+	}
+
+	return HasSuperMajority(count, len(eligibleAccounts))
+}
+
+// hasObservedTxChainConsensus determines if an observed tx voter has chain-aware consensus
+// Checks the EnableNodeChainConsensus mimir to enable/disable the feature
+func hasObservedTxChainConsensus(ctx cosmos.Context, k keeper.Keeper, voter ObservedTxVoter, chain string) bool {
+	// Check if chain-aware consensus is enabled via mimir
+	enableChainConsensus := k.GetConfigInt64(ctx, constants.EnableNodeChainConsensus)
+	if enableChainConsensus <= 0 {
+		// If mimir is not set or disabled, fall back to all active validators
+		var activeNodeAccounts NodeAccounts
+		activeNodeAccounts, err := k.ListActiveValidators(ctx)
+		if err != nil {
+			ctx.Logger().Error("failed to get active validators for consensus", "error", err)
+			return false
+		}
+		return voter.HasConsensus(activeNodeAccounts)
+	}
+
+	// Get eligible vault members for this chain
+	vaultMembers, err := getVaultMembersForChain(ctx, k, chain)
+	if err != nil {
+		ctx.Logger().Error("failed to get vault members for chain consensus", "chain", chain, "error", err)
+		return false
+	}
+
+	if len(vaultMembers) == 0 {
+		ctx.Logger().Debug("no vault members found for chain consensus", "chain", chain)
+		return false
+	}
+
+	// Create a NodeAccounts structure from vault members
+	eligibleAccounts := make(NodeAccounts, 0, len(vaultMembers))
+	for _, member := range vaultMembers {
+		nodeAccount, err := k.GetNodeAccount(ctx, member)
+		if err != nil {
+			ctx.Logger().Error("failed to get node account for vault member", "address", member, "error", err)
+			continue
+		}
+		eligibleAccounts = append(eligibleAccounts, nodeAccount)
+	}
+
+	return voter.HasChainConsensus(eligibleAccounts)
+}
+
+// hasObservedTxChainFinalised determines if an observed tx voter has chain-aware finalization
+// Checks the EnableNodeChainConsensus mimir to enable/disable the feature
+func hasObservedTxChainFinalised(ctx cosmos.Context, k keeper.Keeper, voter ObservedTxVoter, chain string) bool {
+	// Check if chain-aware consensus is enabled via mimir
+	enableChainConsensus := k.GetConfigInt64(ctx, constants.EnableNodeChainConsensus)
+	if enableChainConsensus <= 0 {
+		// If mimir is not set or disabled, fall back to all active validators
+		var activeNodeAccounts NodeAccounts
+		activeNodeAccounts, err := k.ListActiveValidators(ctx)
+		if err != nil {
+			ctx.Logger().Error("failed to get active validators for finalization", "error", err)
+			return false
+		}
+		return voter.HasFinalised(activeNodeAccounts)
+	}
+
+	// Get eligible vault members for this chain
+	vaultMembers, err := getVaultMembersForChain(ctx, k, chain)
+	if err != nil {
+		ctx.Logger().Error("failed to get vault members for chain consensus", "chain", chain, "error", err)
+		return false
+	}
+
+	if len(vaultMembers) == 0 {
+		ctx.Logger().Debug("no vault members found for chain consensus", "chain", chain)
+		return false
+	}
+
+	// Create a NodeAccounts structure from vault members
+	eligibleAccounts := make(NodeAccounts, 0, len(vaultMembers))
+	for _, member := range vaultMembers {
+		nodeAccount, err := k.GetNodeAccount(ctx, member)
+		if err != nil {
+			ctx.Logger().Error("failed to get node account for vault member", "address", member, "error", err)
+			continue
+		}
+		eligibleAccounts = append(eligibleAccounts, nodeAccount)
+	}
+
+	return voter.HasChainFinalised(eligibleAccounts)
 }
 
 // In the case where the max gas of the chain of a queued outbound tx has changed

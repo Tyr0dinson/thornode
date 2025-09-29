@@ -6698,3 +6698,325 @@ func (s *NetworkManagerTestSuite) TestWithdrawLPsDustPendingRemovesLP(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(got.PendingRune.IsZero(), Equals, true, Commentf("dust pending record should be removed, got %s", got.PendingRune))
 }
+
+func (s *NetworkManagerTestSuite) TestTriggerKeygenWithMimir(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+
+	// Create test node accounts with different chain support
+	na1 := GetRandomValidatorNode(NodeActive)
+	na1.SupportedChains = []string{common.BTCChain.String(), common.ETHChain.String()}
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na1), IsNil)
+
+	na2 := GetRandomValidatorNode(NodeActive)
+	na2.SupportedChains = []string{common.BTCChain.String(), common.ETHChain.String()}
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na2), IsNil)
+
+	na3 := GetRandomValidatorNode(NodeActive)
+	na3.SupportedChains = []string{common.BTCChain.String()} // Only BTC
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na3), IsNil)
+
+	nas := NodeAccounts{na1, na2, na3}
+
+	// Test 1: With mimir disabled (default), should use legacy single-vault behavior
+	err := networkMgr.TriggerKeygen(ctx, nas)
+	c.Assert(err, IsNil)
+
+	keygenBlock, err := mgr.Keeper().GetKeygenBlock(ctx, ctx.BlockHeight())
+	c.Assert(err, IsNil)
+	// Should have ONE keygen with all 3 members
+	c.Assert(len(keygenBlock.Keygens), Equals, 1)
+	c.Assert(len(keygenBlock.Keygens[0].Members), Equals, 3)
+	// Legacy mode doesn't set TargetChains
+	c.Assert(len(keygenBlock.Keygens[0].TargetChains), Equals, 0)
+
+	// Clear keygenBlock for next test
+	keygenBlock.Keygens = nil
+	mgr.Keeper().SetKeygenBlock(ctx, keygenBlock)
+
+	// Test 2: Enable chain-aware consensus via mimir
+	mgr.Keeper().SetMimir(ctx, constants.EnableNodeChainConsensus.String(), 1)
+
+	err = networkMgr.TriggerKeygen(ctx, nas)
+	c.Assert(err, IsNil)
+
+	keygenBlock, err = mgr.Keeper().GetKeygenBlock(ctx, ctx.BlockHeight())
+	c.Assert(err, IsNil)
+	// Should have TWO keygens: one for BTC with all 3 nodes, one for ETH with na1+na2
+	c.Assert(len(keygenBlock.Keygens), Equals, 2)
+
+	// Find the keygens by member count
+	var keygenETH, keygenBTC *Keygen
+	for i := range keygenBlock.Keygens {
+		if len(keygenBlock.Keygens[i].Members) == 2 {
+			keygenETH = &keygenBlock.Keygens[i]
+		} else if len(keygenBlock.Keygens[i].Members) == 3 {
+			keygenBTC = &keygenBlock.Keygens[i]
+		}
+	}
+
+	c.Assert(keygenETH, NotNil)
+	c.Assert(keygenBTC, NotNil)
+
+	// Verify ETH keygen (only 2 nodes support ETH)
+	c.Assert(len(keygenETH.TargetChains), Equals, 1)
+	c.Assert(keygenETH.TargetChains[0], Equals, common.ETHChain.String())
+
+	// Verify BTC keygen (all 3 nodes support BTC)
+	c.Assert(len(keygenBTC.TargetChains), Equals, 1)
+	c.Assert(keygenBTC.TargetChains[0], Equals, common.BTCChain.String())
+
+	// Clear keygenBlock for next test
+	keygenBlock.Keygens = nil
+	mgr.Keeper().SetKeygenBlock(ctx, keygenBlock)
+
+	// Test 3: Disable chain-aware consensus again
+	mgr.Keeper().SetMimir(ctx, constants.EnableNodeChainConsensus.String(), 0)
+
+	err = networkMgr.TriggerKeygen(ctx, nas)
+	c.Assert(err, IsNil)
+
+	keygenBlock, err = mgr.Keeper().GetKeygenBlock(ctx, ctx.BlockHeight())
+	c.Assert(err, IsNil)
+	// Should be back to ONE keygen with all members
+	c.Assert(len(keygenBlock.Keygens), Equals, 1)
+	c.Assert(len(keygenBlock.Keygens[0].Members), Equals, 3)
+	c.Assert(len(keygenBlock.Keygens[0].TargetChains), Equals, 0)
+}
+
+func (s *NetworkManagerTestSuite) TestTriggerKeygenSkipExistingVault(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+
+	// Create test node accounts
+	na1 := GetRandomValidatorNode(NodeActive)
+	na1.SupportedChains = []string{common.BTCChain.String()}
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na1), IsNil)
+
+	na2 := GetRandomValidatorNode(NodeActive)
+	na2.SupportedChains = []string{common.BTCChain.String()}
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na2), IsNil)
+
+	nas := NodeAccounts{na1, na2}
+
+	// Create an existing active vault with same membership
+	existingVault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, na1.PubKeySet.Secp256k1, []string{common.BTCChain.String()}, []ChainContract{})
+	existingVault.Membership = []string{na1.PubKeySet.Secp256k1.String(), na2.PubKeySet.Secp256k1.String()}
+	c.Assert(mgr.Keeper().SetVault(ctx, existingVault), IsNil)
+
+	// Test with legacy mode - should skip keygen due to existing vault
+	err := networkMgr.TriggerKeygen(ctx, nas)
+	c.Assert(err, IsNil)
+
+	keygenBlock, err := mgr.Keeper().GetKeygenBlock(ctx, ctx.BlockHeight())
+	c.Assert(err, IsNil)
+	// Should have no keygens since vault already exists
+	c.Assert(len(keygenBlock.Keygens), Equals, 0)
+}
+
+func (s *NetworkManagerTestSuite) TestGroupChainsByNodeSets(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+
+	// Create test node accounts with different chain support
+	na1 := GetRandomValidatorNode(NodeActive)
+	na1.SupportedChains = []string{common.BTCChain.String(), common.ETHChain.String()}
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na1), IsNil)
+
+	na2 := GetRandomValidatorNode(NodeActive)
+	na2.SupportedChains = []string{common.BTCChain.String(), common.ETHChain.String()}
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na2), IsNil)
+
+	na3 := GetRandomValidatorNode(NodeActive)
+	na3.SupportedChains = []string{common.BTCChain.String()}
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na3), IsNil)
+
+	nas := NodeAccounts{na1, na2, na3}
+
+	// Test grouping
+	groups, keys := networkMgr.groupChainsByNodeSets(ctx, nas)
+
+	// Should have 2 groups:
+	// - Group 1: BTC+ETH supported by na1, na2
+	// - Group 2: BTC supported by na1, na2, na3
+	c.Assert(len(groups), Equals, 2)
+	c.Assert(len(keys), Equals, 2)
+
+	// Find groups by member count
+	var groupTwoNodes, groupThreeNodes *ChainGroup
+	for _, key := range keys {
+		group := groups[key]
+		if len(group.Members) == 2 {
+			groupTwoNodes = group
+		} else if len(group.Members) == 3 {
+			groupThreeNodes = group
+		}
+	}
+
+	c.Assert(groupTwoNodes, NotNil)
+	c.Assert(groupThreeNodes, NotNil)
+
+	// ETH should be in the 2-node group
+	c.Assert(len(groupTwoNodes.Chains), Equals, 1)
+	c.Assert(groupTwoNodes.Chains[0], Equals, common.ETHChain.String())
+
+	// BTC should be in the 3-node group
+	c.Assert(len(groupThreeNodes.Chains), Equals, 1)
+	c.Assert(groupThreeNodes.Chains[0], Equals, common.BTCChain.String())
+
+	// Test with all nodes supporting all chains
+	na1.SupportedChains = []string{common.BTCChain.String(), common.ETHChain.String()}
+	na2.SupportedChains = []string{common.BTCChain.String(), common.ETHChain.String()}
+	na3.SupportedChains = []string{common.BTCChain.String(), common.ETHChain.String()}
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na1), IsNil)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na2), IsNil)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na3), IsNil)
+
+	// Create new NodeAccounts slice with updated values
+	nasUpdated := NodeAccounts{na1, na2, na3}
+	groups, keys = networkMgr.groupChainsByNodeSets(ctx, nasUpdated)
+
+	// Should have 1 group with all chains and all nodes
+	c.Assert(len(groups), Equals, 1)
+	c.Assert(len(keys), Equals, 1)
+	c.Assert(len(groups[keys[0]].Chains), Equals, 2)
+	c.Assert(len(groups[keys[0]].Members), Equals, 3)
+
+	// Test with single node
+	singleNas := NodeAccounts{na1}
+	groups, keys = networkMgr.groupChainsByNodeSets(ctx, singleNas)
+	c.Assert(len(groups), Equals, 1)
+	c.Assert(len(groups[keys[0]].Members), Equals, 1)
+}
+
+func (s *NetworkManagerTestSuite) TestCreateNodeSetKey(c *C) {
+	na1 := GetRandomValidatorNode(NodeActive)
+	na2 := GetRandomValidatorNode(NodeActive)
+	na3 := GetRandomValidatorNode(NodeActive)
+
+	// Test that key is deterministic regardless of order
+	nas1 := NodeAccounts{na1, na2, na3}
+	nas2 := NodeAccounts{na3, na1, na2}
+	nas3 := NodeAccounts{na2, na3, na1}
+
+	key1 := createNodeSetKey(nas1)
+	key2 := createNodeSetKey(nas2)
+	key3 := createNodeSetKey(nas3)
+
+	c.Assert(key1, Equals, key2)
+	c.Assert(key2, Equals, key3)
+
+	// Test that different node sets produce different keys
+	nas4 := NodeAccounts{na1, na2}
+	key4 := createNodeSetKey(nas4)
+	c.Assert(key1, Not(Equals), key4)
+
+	// Test empty node set
+	key5 := createNodeSetKey(NodeAccounts{})
+	c.Assert(key5, Equals, "")
+}
+
+func (s *NetworkManagerTestSuite) TestDistributePoolFeesByChain(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+
+	// Create nodes and vault for BTC
+	na1 := GetRandomValidatorNode(NodeActive)
+	na1.SupportedChains = []string{common.BTCChain.String()}
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na1), IsNil)
+
+	na2 := GetRandomValidatorNode(NodeActive)
+	na2.SupportedChains = []string{common.BTCChain.String()}
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na2), IsNil)
+
+	// Create an active vault for BTC
+	vault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, na1.PubKeySet.Secp256k1, []string{common.BTCChain.String()}, []ChainContract{})
+	vault.Membership = []string{na1.PubKeySet.Secp256k1.String(), na2.PubKeySet.Secp256k1.String()}
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	// Create network
+	network := NewNetwork()
+	c.Assert(mgr.Keeper().SetNetwork(ctx, network), IsNil)
+
+	// Test distributing fees
+	reward := cosmos.NewUint(1000 * common.One)
+	attributed, err := networkMgr.distributePoolFeesByChain(ctx, common.BTCChain.String(), reward, &network)
+	c.Assert(err, IsNil)
+	c.Assert(attributed, Equals, true)
+
+	// Check that chain reward was set
+	chainReward := network.GetChainRewardAmount(common.BTCChain.String())
+	c.Assert(chainReward.Equal(reward), Equals, true)
+
+	// Test with zero reward
+	network2 := NewNetwork()
+	attributed, err = networkMgr.distributePoolFeesByChain(ctx, common.BTCChain.String(), cosmos.ZeroUint(), &network2)
+	c.Assert(err, IsNil)
+	c.Assert(attributed, Equals, false)
+	c.Assert(network2.GetChainRewardAmount(common.BTCChain.String()).IsZero(), Equals, true)
+
+	// Test with chain that has no vault members
+	network3 := NewNetwork()
+	attributed, err = networkMgr.distributePoolFeesByChain(ctx, common.LTCChain.String(), reward, &network3)
+	// Should not error; the caller spreads the unattributed reward across all chains
+	c.Assert(err, IsNil)
+	c.Assert(attributed, Equals, false)
+	c.Assert(network3.GetChainRewardAmount(common.LTCChain.String()).IsZero(), Equals, true)
+}
+
+func (s *NetworkManagerTestSuite) TestAttributeChainBondRewards(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	networkMgr := newNetworkMgr(mgr.Keeper(), mgr.TxOutStore(), mgr.EventMgr())
+
+	// na1 supports BTC and ETH, na2 supports BTC only
+	na1 := GetRandomValidatorNode(NodeActive)
+	na1.SupportedChains = []string{common.BTCChain.String(), common.ETHChain.String()}
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na1), IsNil)
+	na2 := GetRandomValidatorNode(NodeActive)
+	na2.SupportedChains = []string{common.BTCChain.String()}
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na2), IsNil)
+
+	ethPool := NewPool()
+	ethPool.Asset = common.ETHAsset
+	ethPool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	ethPool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	ethPool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, ethPool), IsNil)
+	btcPool := NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	btcPool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	btcPool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, btcPool), IsNil)
+
+	ethVault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), []string{common.ETHChain.String()}, []ChainContract{})
+	ethVault.Membership = []string{na1.PubKeySet.Secp256k1.String()}
+	c.Assert(mgr.Keeper().SetVault(ctx, ethVault), IsNil)
+	btcVault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, GetRandomPubKey(), []string{common.BTCChain.String()}, []ChainContract{})
+	btcVault.Membership = []string{na1.PubKeySet.Secp256k1.String(), na2.PubKeySet.Secp256k1.String()}
+	c.Assert(mgr.Keeper().SetVault(ctx, btcVault), IsNil)
+
+	// Only the ETH pool earned fees this block
+	c.Assert(mgr.Keeper().AddToLiquidityFees(ctx, ethPool.Asset, cosmos.NewUint(100*common.One)), IsNil)
+	totalLiquidityFees := cosmos.NewUint(100 * common.One)
+
+	// No fees: the whole bond reward is spread by node participation
+	// (BTC: 2 nodes, ETH: 1 node).
+	network := NewNetwork()
+	bondReward := cosmos.NewUint(300)
+	c.Assert(networkMgr.attributeChainBondRewards(ctx, bondReward, cosmos.NewUint(100_000_000*common.One), cosmos.ZeroUint(), 6, 5256000, Pools{ethPool, btcPool}, uint64(ctx.BlockHeight()), &network), IsNil)
+	c.Assert(network.GetChainRewardAmount(common.BTCChain.String()).Uint64(), Equals, uint64(200))
+	c.Assert(network.GetChainRewardAmount(common.ETHChain.String()).Uint64(), Equals, uint64(100))
+
+	// Fees only (zero reserve, so no emission): the whole bond reward goes to
+	// the chain of the pool that earned the fees.
+	network = NewNetwork()
+	c.Assert(networkMgr.attributeChainBondRewards(ctx, bondReward, cosmos.ZeroUint(), totalLiquidityFees, 6, 5256000, Pools{ethPool, btcPool}, uint64(ctx.BlockHeight()), &network), IsNil)
+	c.Assert(network.GetChainRewardAmount(common.ETHChain.String()).Uint64(), Equals, uint64(300))
+	c.Assert(network.GetChainRewardAmount(common.BTCChain.String()).IsZero(), Equals, true)
+
+	// Zero bond reward: nothing attributed
+	network = NewNetwork()
+	c.Assert(networkMgr.attributeChainBondRewards(ctx, cosmos.ZeroUint(), cosmos.ZeroUint(), totalLiquidityFees, 6, 5256000, Pools{ethPool, btcPool}, uint64(ctx.BlockHeight()), &network), IsNil)
+	c.Assert(network.ChainRewards, HasLen, 0)
+}

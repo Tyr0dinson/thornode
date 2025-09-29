@@ -586,7 +586,8 @@ func (k KVStoreDummy) SetVault(_ cosmos.Context, _ Vault) error { return kaboom 
 func (k KVStoreDummy) GetVault(_ cosmos.Context, _ common.PubKey) (Vault, error) {
 	return Vault{}, kaboom
 }
-func (k KVStoreDummy) GetAsgardVaults(_ cosmos.Context) (Vaults, error) { return nil, kaboom }
+func (k KVStoreDummy) GetAsgardVaults(_ cosmos.Context) (Vaults, error)               { return nil, kaboom }
+func (k KVStoreDummy) GetActiveAsgardVaultsByChain(_ cosmos.Context, _ string) Vaults { return nil }
 func (k KVStoreDummy) GetAsgardVaultsByStatus(_ cosmos.Context, _ VaultStatus) (Vaults, error) {
 	return nil, kaboom
 }

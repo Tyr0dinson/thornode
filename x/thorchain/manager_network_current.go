@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -786,7 +787,11 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 					continue
 				}
 				targetVaults := filterVaultsByChain(active, chain)
-				if len(targetVaults) == 0 && !chain.Equals(common.XMRChain) {
+				// With chain-aware consensus, vaults intentionally carry different
+				// chain sets, so never fall back to a vault that does not support
+				// the chain being migrated.
+				chainAwareMigration := vm.k.GetConfigInt64(ctx, constants.EnableNodeChainConsensus) > 0
+				if len(targetVaults) == 0 && !chain.Equals(common.XMRChain) && !chainAwareMigration {
 					// Some churn/bootstrap paths still materialize regular Asgards without a
 					// fully populated external-chain list. In that case, keep migration on
 					// the regular Asgard family rather than stalling or ever targeting a
@@ -1631,6 +1636,14 @@ func (vm *NetworkMgr) scheduleKeygen(ctx cosmos.Context, nas NodeAccounts, keyge
 	}
 	nas = eligible
 
+	// With chain-aware consensus, regular Asgard keygens are split per group of
+	// chains supported by an identical node set. The dedicated XMR monovault
+	// family keeps its single-keygen path.
+	if keygenType == AsgardKeygen && vm.k.GetConfigInt64(ctx, constants.EnableNodeChainConsensus) > 0 {
+		ctx.Logger().Info("using chain-aware keygen (multiple vaults per chain group)")
+		return vm.scheduleKeygenChainAware(ctx, nas, keygenHeight)
+	}
+
 	var members []string
 	for i := range nas {
 		members = append(members, nas[i].PubKeySet.Secp256k1.String())
@@ -1694,6 +1707,158 @@ func (vm *NetworkMgr) scheduleKeygen(ctx cosmos.Context, nas NodeAccounts, keyge
 		}
 	}
 	return nil
+}
+
+// scheduleKeygenChainAware implements the chain-aware keygen scheduling.
+// Groups chains by node sets and creates multiple keygens, one for each unique node set.
+// Each keygen specifies its target chains, resulting in chain-specific vaults.
+func (vm *NetworkMgr) scheduleKeygenChainAware(ctx cosmos.Context, nas NodeAccounts, keygenHeight int64) error {
+	// Group chains by identical node sets
+	chainNodeSets, nodeSetKeys := vm.groupChainsByNodeSets(ctx, nas)
+
+	keygenBlock, err := vm.k.GetKeygenBlock(ctx, keygenHeight)
+	if err != nil {
+		return fmt.Errorf("fail to get keygen block from data store: %w", err)
+	}
+
+	// Get existing active vaults to avoid duplicates
+	active, err := vm.k.GetAsgardVaultsByStatus(ctx, ActiveVault)
+	if err != nil {
+		return fmt.Errorf("fail to get active vaults: %w", err)
+	}
+
+	// Create keygens for each unique node set using pre-sorted keys
+	for _, nodeSetKey := range nodeSetKeys {
+		chainGroup := chainNodeSets[nodeSetKey]
+
+		// Create member pubkey list
+		var members []string
+		for _, member := range chainGroup.Members {
+			members = append(members, member.PubKeySet.Secp256k1.String())
+		}
+
+		// Create keygen with target chains
+		var keygen Keygen
+		keygen, err = NewKeygen(keygenHeight, members, AsgardKeygen)
+		if err != nil {
+			return fmt.Errorf("fail to create a new keygen: %w", err)
+		}
+		keygen.TargetChains = chainGroup.Chains
+
+		// Check if we already have an active regular Asgard with the same membership
+		skipKeygen := false
+		for _, vault := range active {
+			if vault.HasChain(common.XMRChain) {
+				continue
+			}
+			if vault.MembershipEquals(keygen.GetMembers()) {
+				ctx.Logger().Info("skip keygen due to vault already existing",
+					"chains", chainGroup.Chains,
+					"members", len(members))
+				skipKeygen = true
+				break
+			}
+		}
+		if skipKeygen {
+			continue
+		}
+
+		// Add keygen if not already present
+		if !keygenBlock.Contains(keygen) {
+			keygenBlock.Keygens = append(keygenBlock.Keygens, keygen)
+			ctx.Logger().Info("created keygen for chain group",
+				"chains", chainGroup.Chains,
+				"members", len(members))
+		}
+	}
+
+	vm.k.SetKeygenBlock(ctx, keygenBlock)
+	telemetry.IncrCounterWithLabels(
+		[]string{"thornode", "churn", "keygen_scheduled"}, 1,
+		[]metrics.Label{telemetry.NewLabel("keygen_type", AsgardKeygen.String())},
+	)
+
+	// Clear empty init vaults
+	initVaults, err := vm.k.GetAsgardVaultsByStatus(ctx, InitVault)
+	if err != nil {
+		ctx.Logger().Error("fail to get init vault", "error", err)
+		return nil
+	}
+	for _, v := range initVaults {
+		if v.HasFunds() {
+			continue
+		}
+		v.UpdateStatus(InactiveVault, ctx.BlockHeight())
+		if err := vm.k.SetVault(ctx, v); err != nil {
+			ctx.Logger().Error("fail to save vault", "error", err)
+		}
+	}
+	return nil
+}
+
+// ChainGroup represents a group of chains supported by the same set of nodes
+type ChainGroup struct {
+	Chains  []string
+	Members NodeAccounts
+}
+
+// groupChainsByNodeSets groups chains by identical node sets
+func (vm *NetworkMgr) groupChainsByNodeSets(ctx cosmos.Context, nas NodeAccounts) (map[string]*ChainGroup, []string) {
+	// Resolve each node's supported chains once
+	nodeChains := make([][]string, len(nas))
+	var chains []string
+	for i, na := range nas {
+		// Get the chains this node supports (with backwards compatibility for empty SupportedChains)
+		nodeChains[i] = getNodeSupportedChains(ctx, vm.k, na)
+		for _, chain := range nodeChains[i] {
+			if !slices.Contains(chains, chain) {
+				chains = append(chains, chain)
+			}
+		}
+	}
+	sort.Strings(chains)
+
+	// Group chains by identical node sets
+	nodeSetGroups := make(map[string]*ChainGroup)
+	var nodeSetKeys []string
+	// Use sorted chains for deterministic iteration
+	for _, chain := range chains {
+		var nodes NodeAccounts
+		for i, na := range nas {
+			if slices.Contains(nodeChains[i], chain) {
+				nodes = append(nodes, na)
+			}
+		}
+		// Create a key representing this node set
+		nodeSetKey := createNodeSetKey(nodes)
+
+		if group, exists := nodeSetGroups[nodeSetKey]; exists {
+			// Add chain to existing group
+			group.Chains = append(group.Chains, chain)
+		} else {
+			nodeSetGroups[nodeSetKey] = &ChainGroup{
+				Chains:  []string{chain},
+				Members: nodes,
+			}
+			nodeSetKeys = append(nodeSetKeys, nodeSetKey)
+		}
+	}
+
+	// Sort keys for deterministic order
+	sort.Strings(nodeSetKeys)
+
+	return nodeSetGroups, nodeSetKeys
+}
+
+// createNodeSetKey creates a unique key for a set of nodes
+func createNodeSetKey(nodes NodeAccounts) string {
+	keys := make([]string, 0, len(nodes))
+	for _, node := range nodes {
+		keys = append(keys, node.NodeAddress.String())
+	}
+	// Sort to ensure consistent key regardless of order
+	sort.Strings(keys)
+	return strings.Join(keys, ",")
 }
 
 // RotateVault update vault to Retiring and new vault to active
@@ -2400,6 +2565,13 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, mgr Manager) error {
 	}
 	network.BondRewardRune = network.BondRewardRune.Add(bondReward) // Add here for individual Node collection later
 
+	// Attribute the bond reward to per-chain buckets for chain-aware node payouts.
+	// The totals (and every Reserve transfer above) are unchanged; only the
+	// per-chain attribution of bondReward is recorded here.
+	if err = vm.attributeChainBondRewards(cacheCtx, bondReward, totalReserve, totalLiquidityFees, emissionCurve, blocksPerYear, availablePools, currentHeight, &network); err != nil {
+		return fmt.Errorf("fail to attribute chain bond rewards: %w", err)
+	}
+
 	rewardEvt := NewEventRewards(bondReward, evtPools, devFundDeduct, systemIncomeBurnDeduct, tcyStakeDeduct, marketingFundDeduct, polReserveDeduct)
 	if err = eventMgr.EmitEvent(cacheCtx, rewardEvt); err != nil {
 		return fmt.Errorf("fail to emit reward event: %w", err)
@@ -2410,6 +2582,9 @@ func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, mgr Manager) error {
 		return fmt.Errorf("fail to get total active node account: %w", err)
 	}
 	network.TotalBondUnits = network.TotalBondUnits.Add(cosmos.NewUint(uint64(i))) // Add 1 unit for each active Node
+	if err = vm.updateChainBondUnits(cacheCtx, i, &network); err != nil {
+		return fmt.Errorf("fail to update chain bond units: %w", err)
+	}
 
 	if err = vm.k.SetNetwork(cacheCtx, network); err != nil {
 		return err
@@ -3699,5 +3874,143 @@ func (vm *NetworkMgr) SwapToOverSolvencyIncome(ctx cosmos.Context, mgr Manager, 
 		"asset", coin.Asset,
 		"amount", coin.Amount,
 	)
+	return nil
+}
+
+// attributeChainBondRewards splits bondReward into per-chain reward buckets.
+// The liquidity-fee share of the bond reward is attributed to the chain of the
+// pool that earned the fees; the block-emission share (and any rounding
+// remainder) is spread across chains by active node participation.
+func (vm *NetworkMgr) attributeChainBondRewards(ctx cosmos.Context, bondReward, totalReserve, totalLiquidityFees cosmos.Uint, emissionCurve, blocksPerYear int64, availablePools Pools, currentHeight uint64, network *Network) error {
+	if bondReward.IsZero() {
+		return nil
+	}
+	remaining := bondReward
+	if !totalLiquidityFees.IsZero() && emissionCurve > 0 && blocksPerYear > 0 {
+		blockRewardD := cosmos.NewDec(int64(totalReserve.Uint64())).Quo(cosmos.NewDec(emissionCurve)).Quo(cosmos.NewDec(blocksPerYear))
+		blockReward := cosmos.NewUint(uint64(blockRewardD.RoundInt64()))
+		feeBondReward := common.GetSafeShare(totalLiquidityFees, blockReward.Add(totalLiquidityFees), bondReward)
+		for _, pool := range availablePools {
+			poolFees, err := vm.k.GetPoolLiquidityFees(ctx, currentHeight, pool.Asset)
+			if err != nil {
+				ctx.Logger().Error("fail to get pool fees", "error", err)
+				continue
+			}
+			poolBondReward := common.GetSafeShare(poolFees, totalLiquidityFees, feeBondReward)
+			if poolBondReward.IsZero() {
+				continue
+			}
+			attributed, err := vm.distributePoolFeesByChain(ctx, pool.Asset.GetChain().String(), poolBondReward, network)
+			if err != nil {
+				return err
+			}
+			if attributed {
+				remaining = common.SafeSub(remaining, poolBondReward)
+			}
+		}
+	}
+	return vm.distributeChainRewards(ctx, remaining, network)
+}
+
+// distributePoolFeesByChain attributes pool fees to validators supporting a
+// specific chain. It reports whether the reward was attributed; with no vault
+// members for the chain the caller spreads it across all chains instead.
+func (vm *NetworkMgr) distributePoolFeesByChain(ctx cosmos.Context, chain string, reward cosmos.Uint, network *Network) (bool, error) {
+	if reward.IsZero() {
+		return false, nil
+	}
+
+	vaultMembers, err := getVaultMembersForChain(ctx, vm.k, chain)
+	if err != nil {
+		return false, fmt.Errorf("fail to get vault members for chain %s: %w", chain, err)
+	}
+
+	if len(vaultMembers) == 0 {
+		ctx.Logger().Debug("no vault members for chain, attributing pool fees to all chains", "chain", chain)
+		return false, nil
+	}
+
+	existing := network.GetChainRewardAmount(chain)
+	network.SetChainRewardAmount(chain, existing.Add(reward))
+	return true, nil
+}
+
+// distributeChainRewards distributes bond rewards across chains based on active node chain support
+func (vm *NetworkMgr) distributeChainRewards(ctx cosmos.Context, totalBondReward cosmos.Uint, network *Network) error {
+	if totalBondReward.IsZero() {
+		return nil
+	}
+
+	// Collect chains and node counts
+	chainStrs, chainNodeCounts, err := vm.collectChainNodeCounts(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Calculate total weight (sum of all node counts across chains)
+	totalWeight := int64(0)
+	for _, chainStr := range chainStrs {
+		totalWeight += chainNodeCounts[chainStr]
+	}
+	if totalWeight == 0 {
+		return nil
+	}
+
+	// Distribute rewards proportionally based on node participation
+	totalWeightUint := cosmos.NewUint(uint64(totalWeight))
+	for _, chainStr := range chainStrs {
+		nodeCount := chainNodeCounts[chainStr]
+		if nodeCount > 0 {
+			chainReward := common.GetSafeShare(cosmos.NewUint(uint64(nodeCount)), totalWeightUint, totalBondReward)
+			existing := network.GetChainRewardAmount(chainStr)
+			network.SetChainRewardAmount(chainStr, existing.Add(chainReward))
+		}
+	}
+
+	return nil
+}
+
+// collectChainNodeCounts collects unique chains and counts node participation for each chain
+func (vm *NetworkMgr) collectChainNodeCounts(ctx cosmos.Context) (chainStrs []string, chainNodeCounts map[string]int64, err error) {
+	active, err := vm.k.ListActiveValidators(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("fail to get active validators: %w", err)
+	}
+
+	chainNodeCounts = make(map[string]int64)
+	for _, node := range active {
+		// Get the chains this node supports (with backwards compatibility for empty SupportedChains)
+		for _, chainStr := range getNodeSupportedChains(ctx, vm.k, node) {
+			if _, ok := chainNodeCounts[chainStr]; !ok {
+				chainStrs = append(chainStrs, chainStr)
+			}
+			chainNodeCounts[chainStr]++
+		}
+	}
+	sort.Strings(chainStrs)
+
+	return chainStrs, chainNodeCounts, nil
+}
+
+// updateChainBondUnits updates per-chain bond units based on node participation
+func (vm *NetworkMgr) updateChainBondUnits(ctx cosmos.Context, totalActiveNodes int64, network *Network) error {
+	if totalActiveNodes == 0 {
+		return nil
+	}
+
+	chainStrs, chainNodeCounts, err := vm.collectChainNodeCounts(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Add bond units for each chain based on node participation
+	for _, chainStr := range chainStrs {
+		nodeCount := chainNodeCounts[chainStr]
+		if nodeCount > 0 {
+			existing := network.GetChainBondUnitsAmount(chainStr)
+			network.SetChainBondUnitsAmount(chainStr, existing.Add(cosmos.NewUint(uint64(nodeCount))))
+		}
+	}
+
 	return nil
 }

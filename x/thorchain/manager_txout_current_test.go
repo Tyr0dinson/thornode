@@ -250,12 +250,31 @@ func (s TxOutStoreSuite) TestNativeTxOutWithoutActiveVaults(c *C) {
 
 func (s TxOutStoreSuite) TestAddOutTxItem(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
+
+	acc1 := GetRandomValidatorNode(NodeActive)
+	acc2 := GetRandomValidatorNode(NodeActive)
+	acc3 := GetRandomValidatorNode(NodeActive)
+	// Set up nodes with chain support for chain-aware consensus
+	acc1.SupportedChains = []string{common.DOGEChain.String(), common.BCHChain.String()}
+	acc2.SupportedChains = []string{common.DOGEChain.String(), common.BCHChain.String()}
+	acc3.SupportedChains = []string{common.DOGEChain.String(), common.BCHChain.String()}
+	c.Assert(w.keeper.SetNodeAccount(w.ctx, acc1), IsNil)
+	c.Assert(w.keeper.SetNodeAccount(w.ctx, acc2), IsNil)
+	c.Assert(w.keeper.SetNodeAccount(w.ctx, acc3), IsNil)
+
 	vault := GetRandomVault()
 	vault.Coins = common.Coins{
 		common.NewCoin(common.RuneAsset(), cosmos.NewUint(10000*common.One)),
 		common.NewCoin(common.ETHAsset, cosmos.NewUint(10000*common.One)),
 		common.NewCoin(common.BCHAsset, cosmos.NewUint(10000*common.One)),
 		common.NewCoin(common.DOGEAsset, cosmos.NewUint(10000*common.One)),
+	}
+	vault.Chains = []string{common.DOGEChain.String(), common.BCHChain.String()}
+	vault.Membership = []string{
+		w.activeNodeAccount.PubKeySet.Secp256k1.String(),
+		acc1.PubKeySet.Secp256k1.String(),
+		acc2.PubKeySet.Secp256k1.String(),
+		acc3.PubKeySet.Secp256k1.String(),
 	}
 	c.Assert(w.keeper.SetVault(w.ctx, vault), IsNil)
 
@@ -265,13 +284,6 @@ func (s TxOutStoreSuite) TestAddOutTxItem(c *C) {
 	c.Assert(err, IsNil)
 	c.Check(initialOutboundFeeWithheldRune.String(), Equals, w.keeper.GetSurplusForTargetMultiplier(w.ctx, cosmos.NewUint(10_000)).String())
 	c.Check(outboundFeeSpentRune.String(), Equals, "0")
-
-	acc1 := GetRandomValidatorNode(NodeActive)
-	acc2 := GetRandomValidatorNode(NodeActive)
-	acc3 := GetRandomValidatorNode(NodeActive)
-	c.Assert(w.keeper.SetNodeAccount(w.ctx, acc1), IsNil)
-	c.Assert(w.keeper.SetNodeAccount(w.ctx, acc2), IsNil)
-	c.Assert(w.keeper.SetNodeAccount(w.ctx, acc3), IsNil)
 
 	// Create voter
 	inTxID := GetRandomTxHash()

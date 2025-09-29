@@ -1,0 +1,84 @@
+{{ template "1-active-validator-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+# Enable chain-aware consensus feature
+type: tx-mimir
+key: EnableNodeChainConsensus
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Add only BTC chain support
+type: tx-add-node-chain-support
+signer: {{ addr_thor_dog }}
+chain: "BTC"
+---
+type: create-blocks
+count: 1
+---
+# Verify only BTC is present
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_dog }}
+asserts:
+  - .supported_chains|length == 1
+  - .supported_chains[0] == "BTC"
+---
+# Try to remove ETH (which is not in the list)
+type: tx-remove-node-chain-support
+signer: {{ addr_thor_dog }}
+chain: "ETH"
+---
+type: create-blocks
+count: 1
+---
+# Verify BTC is still there (unchanged)
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_dog }}
+asserts:
+  - .supported_chains|length == 1
+  - .supported_chains[0] == "BTC"
+---
+# Add ETH and AVAX
+type: tx-add-node-chain-support
+signer: {{ addr_thor_dog }}
+chain: "ETH"
+---
+type: create-blocks
+count: 1
+---
+type: tx-add-node-chain-support
+signer: {{ addr_thor_dog }}
+chain: "AVAX"
+---
+type: create-blocks
+count: 1
+---
+# Verify all three chains are present
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_dog }}
+asserts:
+  - .supported_chains|length == 3
+  - .supported_chains|contains(["BTC"])
+  - .supported_chains|contains(["ETH"])
+  - .supported_chains|contains(["AVAX"])
+---
+# Try to remove BSC (which is not in the list)
+type: tx-remove-node-chain-support
+signer: {{ addr_thor_dog }}
+chain: "BSC"
+---
+type: create-blocks
+count: 1
+---
+# Verify all three chains are still there (unchanged)
+type: check
+endpoint: http://localhost:1317/thorchain/node/{{ addr_thor_dog }}
+asserts:
+  - .supported_chains|length == 3
+  - .supported_chains|contains(["BTC"])
+  - .supported_chains|contains(["ETH"])
+  - .supported_chains|contains(["AVAX"])
