@@ -197,7 +197,7 @@ func deductNativeTxFeeFromAccount(ctx cosmos.Context, k keeper.Keeper, csCoins c
 	case *MsgDeposit:
 		coins = msg.Coins
 	default:
-		return se.ErrInsufficientFunds
+		return fmt.Errorf("not a supported send message type: %T", msg)
 	}
 	if len(coins) == 0 {
 		return se.ErrInsufficientFunds
@@ -205,7 +205,7 @@ func deductNativeTxFeeFromAccount(ctx cosmos.Context, k keeper.Keeper, csCoins c
 
 	feeCoin, err := fetchAltNativeTxFeeCoin(ctx, k, coins)
 	if err != nil {
-		return se.ErrInsufficientFunds
+		return fmt.Errorf("fail to fetch native coin to pay tx fee: %w", err)
 	}
 
 	asset := feeCoin.Asset
