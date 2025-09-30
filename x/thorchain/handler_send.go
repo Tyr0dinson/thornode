@@ -170,10 +170,10 @@ func SendAnteHandler(ctx cosmos.Context, v semver.Version, k keeper.Keeper, m sd
 	if err != nil {
 		return ctx, err
 	}
-	return ctx, deductNativeTxFeeFromAccount(ctx, v, k, msg.Amount, msg.GetSigners()[0], msg)
+	return ctx, deductNativeTxFeeFromAccount(ctx, k, msg.Amount, msg.GetSigners()[0], msg)
 }
 
-func deductNativeTxFeeFromAccount(ctx cosmos.Context, v semver.Version, k keeper.Keeper, csCoins cosmos.Coins, signer cosmos.AccAddress, m sdk.Msg) error {
+func deductNativeTxFeeFromAccount(ctx cosmos.Context, k keeper.Keeper, csCoins cosmos.Coins, signer cosmos.AccAddress, m sdk.Msg) error {
 	nativeTxFee := k.GetNativeTxFee(ctx)
 	nativeTxFeeCoins, err := common.NewCoins(common.NewCoin(common.RuneNative, nativeTxFee)).Native()
 	if err != nil {

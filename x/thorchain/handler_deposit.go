@@ -322,5 +322,5 @@ func (h DepositHandler) extractReferenceFromNativeAmount(ctx cosmos.Context, amo
 // and also during deliver. Store changes will persist if this function
 // succeeds, regardless of the success of the transaction.
 func DepositAnteHandler(ctx cosmos.Context, v semver.Version, k keeper.Keeper, msg MsgDeposit) (cosmos.Context, error) {
-	return ctx, deductNativeTxFeeFromAccount(ctx, v, k, nil, msg.GetSigners()[0], &msg)
+	return ctx, deductNativeTxFeeFromAccount(ctx, k, nil, msg.GetSigners()[0], &msg)
 }
