@@ -2549,9 +2549,10 @@ func calculateAltNativeTxFee(ctx cosmos.Context, k keeper.Keeper, asset common.A
 	// Check the fee in asset is equal to native tx fee in rune with required precision
 	emit := pool.RuneDisbursementForAssetAdd(feeInAsset)
 
-	// The maximum acceptable discrepancy is the value of one single, smallest unit
-	// of the asset, calculated at the current pool ratio.
-	maxDiff := pool.BalanceRune.Quo(pool.BalanceAsset)
+	// The maximum acceptable discrepancy is the RUNE value of one smallest asset unit.
+	// Uses ceil(BalanceRune / BalanceAsset) to avoid zero when BalanceAsset > BalanceRune.
+	// This represents the maximum possible rounding (quantization) error.
+	maxDiff := pool.BalanceRune.Add(pool.BalanceAsset.Sub(cosmos.OneUint())).Quo(pool.BalanceAsset)
 
 	var diff cosmos.Uint
 	if nativeFee.GTE(emit) {
@@ -2565,7 +2566,7 @@ func calculateAltNativeTxFee(ctx cosmos.Context, k keeper.Keeper, asset common.A
 			"asset", pool.Asset,
 			"target_fee", nativeFee,
 			"emitted_fee", emit,
-			"fee_in_aset", feeInAsset,
+			"fee_in_asset", feeInAsset,
 			"discrepancy", diff,
 			"max_allowed_discrepancy", maxDiff,
 		)
