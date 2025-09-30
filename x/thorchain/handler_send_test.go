@@ -418,7 +418,7 @@ func (s *HandlerSendSuiteV87) TestAltNativeTxFeeSend(c *C) {
 		c.Assert(k.SetPool(ctx, pool), IsNil)
 		_, err = ad.anteHandleMessage(ctx, mgr.GetVersion(), msg)
 		c.Assert(err, NotNil)
-		c.Assert(strings.Contains(err.Error(), "insufficient funds"), Equals, true)
+		c.Assert(strings.Contains(err.Error(), "fail to fetch native coin to pay tx fee: fail to find coins to pay tx fee"), Equals, true)
 
 		// Tets spam protection
 		pool.Status = PoolAvailable

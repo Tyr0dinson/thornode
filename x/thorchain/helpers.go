@@ -2546,36 +2546,30 @@ func calculateAltNativeTxFee(ctx cosmos.Context, k keeper.Keeper, asset common.A
 		return cosmos.ZeroUint(), fmt.Errorf("fail to calculate alt native tx fee, BalanceRune: %s, BalanceAsset: %s, asset: %s", pool.BalanceRune, pool.BalanceAsset, pool.Asset)
 	}
 
-	{ // Sanity check the fee in asset is equal to native tx fee in rune with required precision
-		version, _ := k.GetVersionWithCtx(ctx)
-		swapper, err := GetSwapper(version)
-		if err != nil {
-			return cosmos.ZeroUint(), fmt.Errorf("fail to get swapper: %w", err)
-		}
-		emit := swapper.CalcAssetEmission(pool.BalanceAsset, feeInAsset, pool.BalanceRune)
+	// Check the fee in asset is equal to native tx fee in rune with required precision
+	emit := pool.RuneDisbursementForAssetAdd(feeInAsset)
 
-		// The maximum acceptable discrepancy is the value of one single, smallest unit
-		// of the asset, calculated at the current pool ratio.
-		maxDiff := pool.BalanceRune.Quo(pool.BalanceAsset)
+	// The maximum acceptable discrepancy is the value of one single, smallest unit
+	// of the asset, calculated at the current pool ratio.
+	maxDiff := pool.BalanceRune.Quo(pool.BalanceAsset)
 
-		var diff cosmos.Uint
-		if nativeFee.GTE(emit) {
-			diff = nativeFee.Sub(emit)
-		} else {
-			diff = emit.Sub(nativeFee)
-		}
+	var diff cosmos.Uint
+	if nativeFee.GTE(emit) {
+		diff = nativeFee.Sub(emit)
+	} else {
+		diff = emit.Sub(nativeFee)
+	}
 
-		if diff.GT(maxDiff) {
-			ctx.Logger().Error("calculated alt native tx fee is outside acceptable precision",
-				"asset", pool.Asset,
-				"target_fee", nativeFee,
-				"emitted_fee", emit,
-				"fee_in_aset", feeInAsset,
-				"discrepancy", diff,
-				"max_allowed_discrepancy", maxDiff,
-			)
-			return cosmos.ZeroUint(), fmt.Errorf("calculated alt native tx fee is outside acceptable precision asset=%s", pool.Asset)
-		}
+	if diff.GT(maxDiff) {
+		ctx.Logger().Error("calculated alt native tx fee is outside acceptable precision",
+			"asset", pool.Asset,
+			"target_fee", nativeFee,
+			"emitted_fee", emit,
+			"fee_in_aset", feeInAsset,
+			"discrepancy", diff,
+			"max_allowed_discrepancy", maxDiff,
+		)
+		return cosmos.ZeroUint(), fmt.Errorf("calculated alt native tx fee is outside acceptable precision asset=%s", pool.Asset)
 	}
 
 	return feeInAsset, nil

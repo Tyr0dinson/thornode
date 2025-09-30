@@ -664,7 +664,7 @@ func (s *HandlerDepositSuite) TestAltNativeTxFeeDeposit(c *C) {
 		c.Assert(strings.Contains(err.Error(), "cannot provide alt-native tx fee (unavailable or empty)"), Equals, true)
 		c.Assert(fee.IsZero(), Equals, true)
 		// deposit ante - should fail
-		runSwap(coins, NotNil, NotNil, "insufficient funds")
+		runSwap(coins, NotNil, NotNil, "fail to fetch native coin to pay tx fee: fail to find coins to pay tx fee")
 		// set pool back to available
 		pool.Status = PoolAvailable
 		c.Assert(k.SetPool(ctx, pool), IsNil)
