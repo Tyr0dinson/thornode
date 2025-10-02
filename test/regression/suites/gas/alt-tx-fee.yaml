@@ -107,15 +107,20 @@ type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
   - '[.balances[]|select(.denom=="rune")]|length == 0' # no rune
-  - .balances[]|select(.denom=="thor.nami")|.amount|tonumber == ${FOX_NAMI_BAL} - ${SEND_AMT} - ${GAS_IN_NAMI=200} # previous balance - sent amount - gas in NAMI (pool ratio 10:1)
-  - ${FOX_NAMI_BAL=384800} == 384800
+  - .balances[]|select(.denom=="thor.nami")|.amount|tonumber == ${FOX_NAMI_BAL} - ${SEND_AMT} - ${GAS_IN_NAMI=201} # previous balance - sent amount - gas in NAMI (pool ratio 10:1)
+  - .balances[]|select(.denom=="thor.nami")|.amount|tonumber == ${FOX_NAMI_BAL=384799}
 ---
 # verify reserve rune fee via end-block events (0.02 RUNE)
 type: check
 endpoint: http://localhost:1317/thorchain/block
 asserts:
-  - 10 == ${PRECISION=10} # 10 bps precision for RUNE (1e8)
-  - .end_block_events | map(select(.type == "swap" and .memo == "ALT-NATIVE-FEE-SWAP" and ((.emit_asset | sub(" THOR.RUNE$";"") | tonumber) >= (2000000 - (2000000 * ${PRECISION} / 10000))) and ((.emit_asset | sub(" THOR.RUNE$";"") | tonumber) <= (2000000 + (2000000 * ${PRECISION} / 10000))))) | length == 1
+  - ${GAS=2000000}
+  - ${GAS_LOWER=1980000} == ${GAS} * 99 / 100  # 1% precision
+  - ${GAS_UPPER=2020000} == ${GAS} * 101 / 100 # 1% precision
+  - (.end_block_events | map(select(.type == "swap" and .memo == "ALT-NATIVE-FEE-SWAP")) | .[0].emit_asset | sub(" THOR.RUNE$";"") | tonumber) >= ${GAS_LOWER}
+  - (.end_block_events | map(select(.type == "swap" and .memo == "ALT-NATIVE-FEE-SWAP")) | .[0].emit_asset | sub(" THOR.RUNE$";"") | tonumber) <= ${GAS_UPPER}
+  - '. as $root | ($root.end_block_events | map(select(.type == "swap" and .memo == "ALT-NATIVE-FEE-SWAP")) | .[0]) as $alt_fee_swap | ($root.end_block_events | map(select(.type == "coin_received" and .receiver == "{{ addr_module_reserve }}" and (.amount | sub("rune$";"") | tonumber) == ($alt_fee_swap.emit_asset | sub(" THOR.RUNE$";"") | tonumber)))) | length == 1'
+  - '. as $root | ($root.end_block_events | map(select(.type == "swap" and .memo == "ALT-NATIVE-FEE-SWAP")) | .[0].id) as $alt_fee_tx_id | ($root.end_block_events | map(select(.type == "fee" and .tx_id == $alt_fee_tx_id and (.coins | sub(" THOR.RUNE$";"") | tonumber) >= ${GAS_LOWER} and (.coins | sub(" THOR.RUNE$";"") | tonumber) <= ${GAS_UPPER}))) | length == 1'
 ---
 ########################################################################################
 # swap NAMI to RUNE - pay fee in NAMI
@@ -147,8 +152,10 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/block
 asserts:
-  - 10 == ${PRECISION}
-  - .end_block_events | map(select(.type == "swap" and .memo == "ALT-NATIVE-FEE-SWAP" and ((.emit_asset | sub(" THOR.RUNE$";"") | tonumber) >= (2000000 - (2000000 * ${PRECISION} / 10000))) and ((.emit_asset | sub(" THOR.RUNE$";"") | tonumber) <= (2000000 + (2000000 * ${PRECISION} / 10000))))) | length == 1
+  - (.end_block_events | map(select(.type == "swap" and .memo == "ALT-NATIVE-FEE-SWAP")) | .[0].emit_asset | sub(" THOR.RUNE$";"") | tonumber) >= ${GAS_LOWER}
+  - (.end_block_events | map(select(.type == "swap" and .memo == "ALT-NATIVE-FEE-SWAP")) | .[0].emit_asset | sub(" THOR.RUNE$";"") | tonumber) <= ${GAS_UPPER}
+  - '. as $root | ($root.end_block_events | map(select(.type == "swap" and .memo == "ALT-NATIVE-FEE-SWAP")) | .[0]) as $alt_fee_swap | ($root.end_block_events | map(select(.type == "coin_received" and .receiver == "{{ addr_module_reserve }}" and (.amount | sub("rune$";"") | tonumber) == ($alt_fee_swap.emit_asset | sub(" THOR.RUNE$";"") | tonumber)))) | length == 1'
+  - '. as $root | ($root.end_block_events | map(select(.type == "swap" and .memo == "ALT-NATIVE-FEE-SWAP")) | .[0].id) as $alt_fee_tx_id | ($root.end_block_events | map(select(.type == "fee" and .tx_id == $alt_fee_tx_id and (.coins | sub(" THOR.RUNE$";"") | tonumber) >= ${GAS_LOWER} and (.coins | sub(" THOR.RUNE$";"") | tonumber) <= ${GAS_UPPER}))) | length == 1'
 ---
 ########################################################################################
 # Add premium 100% fee for using native gas fee
@@ -166,7 +173,7 @@ count: 1
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
-  - .balances[]|select(.denom=="thor.nami")|.amount|tonumber == ${FOX_NAMI_BAL=369600}
+  - .balances[]|select(.denom=="thor.nami")|.amount|tonumber == ${FOX_NAMI_BAL=369598}
 ---
 ########################################################################################
 # swap NAMI to RUNE - pay fee in NAMI
@@ -198,4 +205,10 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/block
 asserts:
-  - .end_block_events | map(select(.type == "swap" and .memo == "ALT-NATIVE-FEE-SWAP" and ((.emit_asset | sub(" THOR.RUNE$";"") | tonumber) >= (4000000 - (4000000 * ${PRECISION} / 10000))) and ((.emit_asset | sub(" THOR.RUNE$";"") | tonumber) <= (4000000 + (4000000 * ${PRECISION} / 10000))))) | length == 1
+  - ${GAS_PREMIUM=4000000} == ${GAS} * (10000 + ${PREMIUM}) / 10000
+  - ${GAS_PREMIUM_LOWER=3960000} == ${GAS_PREMIUM} * 99 / 100  # 1% precision
+  - ${GAS_PREMIUM_UPPER=4040000} == ${GAS_PREMIUM} * 101 / 100 # 1% precision
+  - (.end_block_events | map(select(.type == "swap" and .memo == "ALT-NATIVE-FEE-SWAP")) | .[0].emit_asset | sub(" THOR.RUNE$";"") | tonumber) >= ${GAS_PREMIUM_LOWER}
+  - (.end_block_events | map(select(.type == "swap" and .memo == "ALT-NATIVE-FEE-SWAP")) | .[0].emit_asset | sub(" THOR.RUNE$";"") | tonumber) <= ${GAS_PREMIUM_UPPER}
+  - '. as $root | ($root.end_block_events | map(select(.type == "swap" and .memo == "ALT-NATIVE-FEE-SWAP")) | .[0]) as $alt_fee_swap | ($root.end_block_events | map(select(.type == "coin_received" and .receiver == "{{ addr_module_reserve }}" and (.amount | sub("rune$";"") | tonumber) == ($alt_fee_swap.emit_asset | sub(" THOR.RUNE$";"") | tonumber)))) | length == 1'
+  - '. as $root | ($root.end_block_events | map(select(.type == "swap" and .memo == "ALT-NATIVE-FEE-SWAP")) | .[0].id) as $alt_fee_tx_id | ($root.end_block_events | map(select(.type == "fee" and .tx_id == $alt_fee_tx_id and (.coins | sub(" THOR.RUNE$";"") | tonumber) >= ${GAS_PREMIUM_LOWER} and (.coins | sub(" THOR.RUNE$";"") | tonumber) <= ${GAS_PREMIUM_UPPER}))) | length == 1'
