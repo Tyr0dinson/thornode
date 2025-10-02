@@ -124,11 +124,9 @@ func (h ReferenceMemoHandler) calculateAssetBasedInterval(ctx cosmos.Context, as
 
 // handle process MsgReferenceMemo
 func (h ReferenceMemoHandler) handle(ctx cosmos.Context, msg MsgReferenceMemo) (*cosmos.Result, error) {
-	// Extract asset from embedded memo to determine proper interval
-	targetAsset, err := h.extractAssetFromMemo(ctx, msg.Memo)
-	if err != nil {
-		return nil, fmt.Errorf("fail to extract asset from memo: %w", err)
-	}
+	// Use source asset (where the transaction will occur) for interval calculation
+	// This ensures reference assignment and extraction use the same asset's decimals
+	sourceAsset := msg.Asset
 
 	ttl := h.mgr.Keeper().GetConfigInt64(ctx, constants.MemolessTxnTTL)
 	cost := h.mgr.Keeper().GetConfigInt64(ctx, constants.MemolessTxnCost)
@@ -142,7 +140,7 @@ func (h ReferenceMemoHandler) handle(ctx cosmos.Context, msg MsgReferenceMemo) (
 
 	// Use original message asset for reference tracking (where the transaction occurred)
 	posStr := h.mgr.Keeper().GetLastReferenceNumber(ctx, msg.Asset)
-	next, err := h.nextReference(ctx, msg.Asset, targetAsset, posStr, ttl)
+	next, err := h.nextReference(ctx, msg.Asset, sourceAsset, posStr, ttl)
 	if next == "" || err != nil {
 		return nil, fmt.Errorf("unable to find an available reference: %w", err)
 	}
@@ -164,7 +162,7 @@ func (h ReferenceMemoHandler) handle(ctx cosmos.Context, msg MsgReferenceMemo) (
 
 	h.mgr.Keeper().SetReferenceMemo(ctx, refMemo)
 	h.mgr.Keeper().SetLastReferenceNumber(ctx, msg.Asset, next)
-	ctx.Logger().Info("successfully registered memo", "asset", refMemo.Asset, "reference", refMemo.Reference, "memo", refMemo.Memo, "height", refMemo.Height)
+	ctx.Logger().Info("successfully registered memo", "asset", refMemo.Asset, "reference", refMemo.Reference, "memo", refMemo.Memo, "height", refMemo.Height, "registration_hash", refMemo.RegistrationHash)
 	return &cosmos.Result{}, nil
 }
 

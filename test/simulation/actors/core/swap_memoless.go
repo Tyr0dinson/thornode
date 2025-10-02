@@ -79,7 +79,7 @@ func NewSwapMemolessActor(from, to common.Asset, memolessType MemolessType) *Act
 		a.Ops = append(a.Ops, a.broadcastSwap)
 	case MemolessTypeHash:
 		a.Ops = append(a.Ops, a.signSwap)
-		a.Ops = append(a.Ops, a.registerSwap) // uses a.swapTxID from previous step
+		a.Ops = append(a.Ops, a.registerSwap)
 		a.Ops = append(a.Ops, a.broadcastSwap)
 	}
 
@@ -106,6 +106,10 @@ func (a *SwapMemolessActor) registerSwap(config *OpConfig) OpResult {
 	a.registeredMemo = fmt.Sprintf("=:%s:%s", a.to, a.toAddress)
 	registerMemo := fmt.Sprintf("REFERENCE:%s:%s", a.from, a.registeredMemo)
 
+	a.Log().Info().
+		Str("registerMemo", registerMemo).
+		Msg("registering memoless swap")
+
 	thorAddress, err := a.user.PubKey(common.THORChain).GetAddress(common.THORChain)
 	if err != nil {
 		a.Log().Error().Err(err).Msg("failed to get thor address")
@@ -125,8 +129,8 @@ func (a *SwapMemolessActor) registerSwap(config *OpConfig) OpResult {
 	deposit := types.NewMsgDeposit(common.NewCoins(coin), registerMemo, thorAccAddr)
 	a.Log().Info().Interface("deposit", deposit).Msg("registering memoless swap")
 
-	// broadcast the registration
-	a.registrationTxID, err = a.user.Thorchain.Broadcast(deposit)
+	// broadcast the registration with blocking to wait for block commitment
+	a.registrationTxID, err = a.user.Thorchain.BroadcastWithBlocking(deposit)
 	if err != nil {
 		a.Log().Error().Err(err).Msg("failed to broadcast tx")
 		return OpResult{
@@ -153,7 +157,7 @@ func (a *SwapMemolessActor) getMemolessRef(config *OpConfig) OpResult {
 	}
 
 	if referenceMemo.Memo == "" {
-		a.Log().Error().Msg("reference memo not found")
+		a.Log().Error().Stringer("registrationTxID", a.registrationTxID).Msg("reference memo not found")
 		return OpResult{
 			Continue: false,
 		}
@@ -200,16 +204,21 @@ func (a *SwapMemolessActor) prepareSwapMemolessByAmount(config *OpConfig) OpResu
 			Continue: false,
 		}
 	}
-	start := mimirs["MEMOLESSTXNSTARTREF"]
 	end := mimirs["MEMOLESSTXNENDREF"]
-	memolessRefCount := uint64(end - start + 1)
+
+	// Calculate modulus based on the number of digits in end
+	// This matches the calculation in generateReferenceMemoID
+	endStr := fmt.Sprintf("%d", end)
+	modulus := uint64(1)
+	for i := 0; i < len(endStr); i++ {
+		modulus *= 10
+	}
 
 	// encode the memoless ref in the amount
-	a.Log().Info().Uint64("memolessRefCount", memolessRefCount).Msg("preparing memoless by amount")
+	a.Log().Info().Uint64("modulus", modulus).Msg("preparing memoless by amount")
 	before := a.swapAmount
-	a.swapAmount = a.swapAmount.Sub(a.swapAmount.Mod(sdkmath.NewUint(memolessRefCount)))
+	a.swapAmount = a.swapAmount.Sub(a.swapAmount.Mod(sdkmath.NewUint(modulus)))
 	a.swapAmount = a.swapAmount.Add(sdkmath.NewUint(a.memolessRef))
-	a.swapAmount = a.swapAmount.Add(a.from.Chain.DustThreshold())
 	a.Log().Info().
 		Stringer("before", before).
 		Stringer("after", a.swapAmount).

@@ -109,6 +109,7 @@ type ThorchainBridge interface {
 	GetLastObservedInHeight(chain common.Chain) (int64, error)
 	GetLastSignedOutHeight(chain common.Chain) (int64, error)
 	Broadcast(msgs ...sdk.Msg) (common.TxID, error)
+	BroadcastWithBlocking(msgs ...sdk.Msg) (common.TxID, error)
 	GetKeysign(blockHeight int64, pk string) (types.TxOut, error)
 	GetNodeAccount(string) (*stypes.NodeAccount, error)
 	GetNodeAccounts() ([]*stypes.NodeAccount, error)
