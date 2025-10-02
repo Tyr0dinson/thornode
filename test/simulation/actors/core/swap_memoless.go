@@ -104,14 +104,7 @@ func (a *SwapMemolessActor) registerSwap(config *OpConfig) OpResult {
 	// build the swap
 	coin := common.NewCoin(common.RuneNative, sdkmath.ZeroUint())
 	a.registeredMemo = fmt.Sprintf("=:%s:%s", a.to, a.toAddress)
-
-	registerHash := a.swapTxID // if preregistering hash
-	if a.swapTxID == "" {
-		// generate dummy hash since current required to register
-		// TODO: fix in memoless PR to not require
-		registerHash = common.RandHexString(64)
-	}
-	registerMemo := fmt.Sprintf("REFERENCE:%s:%s:%s", a.from.Chain, registerHash, a.registeredMemo)
+	registerMemo := fmt.Sprintf("REFERENCE:%s:%s", a.from, a.registeredMemo)
 
 	thorAddress, err := a.user.PubKey(common.THORChain).GetAddress(common.THORChain)
 	if err != nil {
@@ -270,6 +263,7 @@ func (a *SwapMemolessActor) broadcastSwap(config *OpConfig) OpResult {
 			Continue: false,
 		}
 	}
+	a.swapTxID = txid
 
 	a.Log().Info().Str("txid", txid).Msg("broadcasted swap tx")
 	return OpResult{
