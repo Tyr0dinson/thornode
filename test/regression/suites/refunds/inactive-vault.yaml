@@ -220,7 +220,7 @@ endpoint: http://localhost:1317/thorchain/vault/{{ pubkey_fish }}
 asserts:
   - .status == "InactiveVault"
   - .coins | length == 1
-  - .coins[100000].amount == "100000"
+  - .coins[0].amount == "0"
 ---
 # Check the pool balances.
 type: check
