@@ -480,7 +480,18 @@ func (s *HandlerDepositSuite) TestAltNativeTxFeeWithShallowPool(c *C) {
 	fee, err := calculateAltNativeTxFee(ctx, k, common.NAMI)
 	c.Assert(err, NotNil)
 	c.Assert(fee.IsZero(), Equals, true)
-	c.Assert(strings.Contains(err.Error(), "calculated alt native tx fee is outside acceptable precision"), Equals, true)
+	c.Assert(strings.Contains(err.Error(), "fail to determine native asset gas fee: target rune 2000000 exceeds pool balance 1000000"), Equals, true)
+
+	// pool: NAMI:RUNE = 1:200 (5,000:1,000,000)
+	pool.BalanceAsset = cosmos.NewUint(50_000)
+	pool.BalanceRune = cosmos.NewUint(10_000_000)
+	c.Assert(k.SetPool(ctx, pool), IsNil)
+
+	// pool is too shallow for using for alt native tx fee - should fail
+	fee, err = calculateAltNativeTxFee(ctx, k, common.NAMI)
+	c.Assert(err, NotNil)
+	c.Assert(fee.IsZero(), Equals, true)
+	c.Assert(strings.Contains(err.Error(), "native gas request 18750 THOR.NAMI exceeds 0.1% of pool asset depth 50000"), Equals, true)
 }
 
 func (s *HandlerDepositSuite) TestAltNativeTxFeeRecalcOnPoolRatioChange(c *C) {

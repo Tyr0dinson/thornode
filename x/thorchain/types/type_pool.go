@@ -171,13 +171,6 @@ func (m Pool) RuneValueInAsset(amt cosmos.Uint) cosmos.Uint {
 	return cosmos.RoundToDecimal(assetAmt, m.Decimals)
 }
 
-// RuneValueInAssetV2 convert a specific amount of rune amt into its asset value
-// Uses the new GetUncappedShareV2
-func (m Pool) RuneValueInAssetV2(amt cosmos.Uint) cosmos.Uint {
-	assetAmt := common.GetUncappedShareV2(m.BalanceAsset, m.BalanceRune, amt)
-	return cosmos.RoundToDecimal(assetAmt, m.Decimals)
-}
-
 func (m Pools) Get(asset common.Asset) (Pool, bool) {
 	for _, p := range m {
 		if p.Asset.Equals(asset) {
@@ -220,6 +213,33 @@ func (m Pool) AssetDisbursementForRuneAdd(amt cosmos.Uint) cosmos.Uint {
 	denom := m.BalanceRune.Add(amt)
 	outAmt := common.GetUncappedShare(m.BalanceAsset, denom, amt)
 	return cosmos.RoundToDecimal(outAmt, m.Decimals)
+}
+
+// AssetRequiredForRuneOut returns the minimum asset amount that must be added to the pool in order to
+// emit at least the requested rune amount (after swap slip is considered).
+// This is the inverse operation to RuneDisbursementForAssetAdd.
+func (m Pool) AssetRequiredForRuneOut(target cosmos.Uint) (cosmos.Uint, error) {
+	if target.IsZero() {
+		return cosmos.ZeroUint(), nil
+	}
+	if m.BalanceRune.IsZero() || m.BalanceAsset.IsZero() {
+		return cosmos.ZeroUint(), fmt.Errorf("pool %s has zero balance", m.Asset)
+	}
+	if !m.BalanceRune.GT(target) {
+		return cosmos.ZeroUint(), fmt.Errorf("target rune %s exceeds pool balance %s", target, m.BalanceRune)
+	}
+	numerator := target.Mul(m.BalanceAsset)
+	denominator := m.BalanceRune.Sub(target)
+	feeInAsset := numerator.Quo(denominator)
+	if !numerator.Mod(denominator).IsZero() {
+		feeInAsset = feeInAsset.Add(cosmos.OneUint())
+	}
+	emit := m.RuneDisbursementForAssetAdd(feeInAsset)
+	for emit.LT(target) {
+		feeInAsset = feeInAsset.Add(cosmos.OneUint())
+		emit = m.RuneDisbursementForAssetAdd(feeInAsset)
+	}
+	return feeInAsset, nil
 }
 
 func (m Pool) GetLUVI() cosmos.Uint {

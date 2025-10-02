@@ -2523,10 +2523,7 @@ func getTradeAssetBalanceOf(ctx cosmos.Context, k keeper.Keeper, asset common.As
 // back to the native fee within one smallest asset unit at the current
 // pool ratio.
 func calculateAltNativeTxFee(ctx cosmos.Context, k keeper.Keeper, asset common.Asset) (cosmos.Uint, error) {
-	altNativeTxFeeAddedBps := uint64(max(0, k.GetConfigInt64(ctx, constants.AltNativeTxFeeAddedBps)))
-	altNativeTxFeeAddedBps = min(altNativeTxFeeAddedBps, 90000) // sanity cap: max 10x of the normal native tx fee
 	nativeFee := k.GetNativeTxFee(ctx)
-	nativeFee = nativeFee.MulUint64(altNativeTxFeeAddedBps + 10000).QuoUint64(10000)
 
 	// Disable alt native tx fee for invalid or unavailable pool asset
 	pool, err := k.GetPool(ctx, asset.GetLayer1Asset())
@@ -2538,12 +2535,12 @@ func calculateAltNativeTxFee(ctx cosmos.Context, k keeper.Keeper, asset common.A
 	}
 
 	// Get the tx fee value in asset
-	feeInAsset := pool.RuneValueInAssetV2(nativeFee)
-	ctx.Logger().Info("calculated alt native tx fee", "value", feeInAsset, "asset", pool.Asset)
-
-	// If we can't calculate the alt native tx fee it's zero
+	feeInAsset, err := pool.AssetRequiredForRuneOut(nativeFee)
+	if err != nil {
+		return cosmos.ZeroUint(), fmt.Errorf("fail to determine native asset gas fee: %w", err)
+	}
 	if feeInAsset.IsZero() {
-		return cosmos.ZeroUint(), fmt.Errorf("fail to calculate alt native tx fee, BalanceRune: %s, BalanceAsset: %s, asset: %s", pool.BalanceRune, pool.BalanceAsset, pool.Asset)
+		return cosmos.ZeroUint(), fmt.Errorf("fail to calculate native asset gas fee, BalanceRune: %s, BalanceAsset: %s, asset: %s", pool.BalanceRune, pool.BalanceAsset, pool.Asset)
 	}
 
 	// Check the fee in asset is equal to native tx fee in rune with required precision
@@ -2573,7 +2570,24 @@ func calculateAltNativeTxFee(ctx cosmos.Context, k keeper.Keeper, asset common.A
 		return cosmos.ZeroUint(), fmt.Errorf("calculated alt native tx fee is outside acceptable precision asset=%s", pool.Asset)
 	}
 
-	return feeInAsset, nil
+	altNativeTxFeeAddedBps := uint64(max(0, k.GetConfigInt64(ctx, constants.AltNativeTxFeeAddedBps)))
+	altNativeTxFeeAddedBps = min(altNativeTxFeeAddedBps, 90000) // sanity cap: max 10x of the normal native tx fee
+	feeInAssetWithPremium := feeInAsset.MulUint64(altNativeTxFeeAddedBps + 10000).QuoUint64(10000)
+
+	const maxNativeGasAssetFractionDenominator = 1000 // cap gas swaps at 0.1% of pool asset depth
+	if feeInAssetWithPremium.MulUint64(maxNativeGasAssetFractionDenominator).GT(pool.BalanceAsset) {
+		ctx.Logger().Error("pool too shallow for native gas",
+			"asset", pool.Asset,
+			"base_fee", feeInAsset,
+			"fee_with_premium", feeInAssetWithPremium,
+			"asset_depth", pool.BalanceAsset,
+		)
+		return cosmos.ZeroUint(), fmt.Errorf("native gas request %s %s exceeds 0.1%% of pool asset depth %s", feeInAssetWithPremium, pool.Asset, pool.BalanceAsset)
+	}
+
+	ctx.Logger().Info("calculated native asset gas fee", "base_fee", feeInAsset, "fee_with_premium", feeInAssetWithPremium, "asset", pool.Asset)
+
+	return feeInAssetWithPremium, nil
 }
 
 // fetchAltNativeTxFeeCoin returns a common.Coin representing the alt-native
