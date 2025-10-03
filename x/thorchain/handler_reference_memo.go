@@ -74,21 +74,6 @@ func (h ReferenceMemoHandler) validate(ctx cosmos.Context, msg MsgReferenceMemo)
 	return nil
 }
 
-// extractAssetFromMemo parses the embedded memo to extract the asset information
-func (h ReferenceMemoHandler) extractAssetFromMemo(ctx cosmos.Context, memo string) (common.Asset, error) {
-	parsedMemo, err := ParseMemoWithTHORNames(ctx, h.mgr.Keeper(), memo)
-	if err != nil {
-		return common.EmptyAsset, fmt.Errorf("fail to parse memo for asset extraction: %w", err)
-	}
-
-	asset := parsedMemo.GetAsset()
-	if asset.IsEmpty() {
-		return common.EmptyAsset, fmt.Errorf("no asset found in memo")
-	}
-
-	return asset, nil
-}
-
 // calculateAssetBasedInterval calculates the interval based on pool decimals
 // For assets with different decimal precision, we need different intervals:
 // - 8 decimals (BTC, etc.): interval = 1 (common.One / 10^8 = 1)
