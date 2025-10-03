@@ -22,7 +22,7 @@
             "@type": "/cosmos.crypto.secp256k1.PubKey",
             "key": "AmF4AUTWZEUSBtgqiR5n2Lgic/Yrr1mWupMo5TAubNRO"
           },
-          "sequence": "4"
+          "sequence": "5"
         },
         {
           "@type": "/cosmos.auth.v1beta1.ModuleAccount",
@@ -152,7 +152,7 @@
           "address": "tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u",
           "coins": [
             {
-              "amount": "481583095",
+              "amount": "786178260",
               "denom": "rune"
             }
           ]
@@ -170,7 +170,7 @@
           "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
           "coins": [
             {
-              "amount": "228532373405",
+              "amount": "197636953773",
               "denom": "rune"
             }
           ]
@@ -179,16 +179,7 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "35000400677074",
-              "denom": "rune"
-            }
-          ]
-        },
-        {
-          "address": "tthor1dl7un46w7l7f3ewrnrm6nq58nerjtp0d82uzjg",
-          "coins": [
-            {
-              "amount": "96847586",
+              "amount": "35000402676545",
               "denom": "rune"
             }
           ]
@@ -197,7 +188,7 @@
           "address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
           "coins": [
             {
-              "amount": "2469992000000",
+              "amount": "2499383433398",
               "denom": "rune"
             }
           ]
@@ -215,7 +206,7 @@
           "address": "tthor1anq4fk6l89w3sfuxehwyprxqjdj3kuzpfwlrav",
           "coins": [
             {
-              "amount": "388129962",
+              "amount": "997320291",
               "denom": "rune"
             }
           ]
@@ -224,7 +215,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "5000117981544",
+              "amount": "5000803030399",
               "denom": "rune"
             }
           ]
@@ -280,11 +271,43 @@
           "preferred_asset": "ETH.ETH"
         }
       ],
-      "adv_swap_queue_items": [],
+      "adv_swap_queue_items": [
+        {
+          "affiliate_basis_points": "0",
+          "destination": "0x1b03d088612a00df0049634e9cc8684d622cada2",
+          "initial_block_height": "15",
+          "signer": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
+          "state": {
+            "deposit": "249145168",
+            "in": "0",
+            "out": "0",
+            "quantity": "1",
+            "withdrawn": "0"
+          },
+          "stream_quantity": "1",
+          "target_asset": "ETH.ETH",
+          "trade_target": "0",
+          "tx": {
+            "chain": "THOR",
+            "coins": [
+              {
+                "amount": "249145168",
+                "asset": "THOR.RUNE"
+              }
+            ],
+            "from_address": "tthor1dl7un46w7l7f3ewrnrm6nq58nerjtp0d82uzjg",
+            "gas": null,
+            "id": "44B618D1C033C264C12978B221917FB23F7B36CE72C921855369FA150B41FDC2",
+            "memo": "THOR-PREFERRED-ASSET-a",
+            "to_address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2"
+          },
+          "version": 1
+        }
+      ],
       "affiliate_collectors": [
         {
           "owner_address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
-          "rune_amount": "96847586"
+          "rune_amount": "0"
         }
       ],
       "bond_providers": [
@@ -295,7 +318,12 @@
         }
       ],
       "chain_contracts": [],
-      "last_chain_heights": [],
+      "last_chain_heights": [
+        {
+          "chain": "BTC",
+          "height": "2"
+        }
+      ],
       "last_signed_height": "13",
       "liquidity_providers": [
         {
@@ -330,9 +358,9 @@
         }
       ],
       "network": {
-        "LPIncomeSplit": "9543",
-        "NodeIncomeSplit": "457",
-        "bond_reward_rune": "119981544",
+        "LPIncomeSplit": "9642",
+        "NodeIncomeSplit": "358",
+        "bond_reward_rune": "805030399",
         "total_bond_units": "15"
       },
       "network_fees": [
@@ -373,7 +401,7 @@
       "observed_tx_out_voters": null,
       "outbound_fee_spent_rune": [
         {
-          "amount": "44068585",
+          "amount": "44068507",
           "asset": "BTC.BTC"
         }
       ],
@@ -391,8 +419,8 @@
         {
           "LP_units": "100000000000",
           "asset": "BTC.BTC",
-          "balance_asset": "79556184",
-          "balance_rune": "128527886231",
+          "balance_asset": "129556184",
+          "balance_rune": "97383784936",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -403,7 +431,7 @@
           "LP_units": "100000000000",
           "asset": "ETH.ETH",
           "balance_asset": "1000000000",
-          "balance_rune": "100004487174",
+          "balance_rune": "100004023669",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -426,13 +454,13 @@
         {
           "address": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw",
           "reclaimed": "0",
-          "score": "1365903269",
+          "score": "10937603086",
           "spent": "0"
         },
         {
           "address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
           "reclaimed": "0",
-          "score": "1367372939",
+          "score": "10939072756",
           "spent": "0"
         },
         {
@@ -480,7 +508,7 @@
           ],
           "coins": [
             {
-              "amount": "79556184",
+              "amount": "129556184",
               "asset": "BTC.BTC",
               "decimals": "8"
             },
@@ -490,7 +518,7 @@
               "decimals": "8"
             }
           ],
-          "inbound_tx_count": "2",
+          "inbound_tx_count": "3",
           "membership": [
             "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
           ],
