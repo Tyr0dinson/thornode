@@ -45,7 +45,7 @@ asserts:
   - '[.balances[]|select(.denom=="rune")]|length == 0' # no rune
 ---
 ########################################################################################
-# deposit btc
+# deposit btc secured asset
 ########################################################################################
 type: tx-observed-in
 signer: {{ addr_thor_dog }}
@@ -62,7 +62,7 @@ txs:
       gas:
         - amount: "10000"
           asset: "BTC.BTC"
-      memo: "trade+:{{ addr_thor_fox }}"
+      memo: "secure+:{{ addr_thor_fox }}"
     block_height: 1
     finalise_height: 1
     observed_pub_key: {{ pubkey_dog }}
@@ -71,38 +71,35 @@ type: create-blocks
 count: 1
 ---
 type: check
-endpoint: http://localhost:1317/thorchain/trade/unit/BTC~BTC
+endpoint: http://localhost:1317/thorchain/securedasset/BTC-BTC
 asserts:
-  - .asset == "BTC~BTC"
-  - .units|tonumber == 10000000
+  - .asset == "BTC-BTC"
+  - .supply|tonumber == 10000000
   - .depth|tonumber == 10000000
 ---
 type: check
-endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_fox }}
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
 asserts:
-  - .|length == 1
-  - .[0].asset == "BTC~BTC"
-  - .[0].units|tonumber == 10000000
-  - .[0].owner == "{{ addr_thor_fox }}"
+  - .balances[]|select(.denom=="btc-btc")|.amount|tonumber == 10000000
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/block
 asserts:
   - .txs|length == 1
-  - '[.txs[0].result.events[]|select(.type == "trade_account_deposit")]|length == 1'
-  - .txs[0].result.events[]|select(.type == "trade_account_deposit")|.asset == "BTC~BTC"
-  - .txs[0].result.events[]|select(.type == "trade_account_deposit")|.amount == "10000000"
-  - .txs[0].result.events[]|select(.type == "trade_account_deposit")|.rune_address == "{{ addr_thor_fox }}"
-  - .txs[0].result.events[]|select(.type == "trade_account_deposit")|.asset_address == "{{ addr_btc_fox }}"
+  - '[.txs[0].result.events[]|select(.type == "secured_asset_deposit")]|length == 1'
+  - .txs[0].result.events[]|select(.type == "secured_asset_deposit")|.asset == "BTC-BTC"
+  - .txs[0].result.events[]|select(.type == "secured_asset_deposit")|.amount == "10000000"
+  - .txs[0].result.events[]|select(.type == "secured_asset_deposit")|.rune_address == "{{ addr_thor_fox }}"
+  - .txs[0].result.events[]|select(.type == "secured_asset_deposit")|.asset_address == "{{ addr_btc_fox }}"
 ---
 ########################################################################################
-# swap trade asset BTC~BTC to rune - pay fee in BTC~BTC
+# swap secured asset BTC-BTC to rune - pay fee in BTC-BTC
 ########################################################################################
 type: tx-deposit
 signer: {{ addr_thor_fox }}
 coins:
   - amount: "${SWAP_AMT=1000000}"
-    asset: "BTC~BTC"
+    asset: "BTC-BTC"
 memo: "=:r:{{ addr_thor_cat }}"
 ---
 type: create-blocks
@@ -125,7 +122,7 @@ type: check
 endpoint: http://localhost:1317/thorchain/block
 asserts:
   - ${GAS=2000000}
-# use 5% precision - the pool price has been skewed by the preceding secured-account withdrawal so the BTC->RUNE rate is now worse therefore we need such tolerance
+# use 5% precision - secured asset swaps skew the pool price so the BTC->RUNE rate is now worse therefore we need such tolerance
   - ${GAS_LOWER=1900000} == ${GAS} * 95 / 100
   - ${GAS_UPPER=2100000} == ${GAS} * 105 / 100
 # verify the fee swap end_block event amount stays within tolerance
