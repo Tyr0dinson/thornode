@@ -2749,7 +2749,6 @@ func processAltNativeFeeEscrows(ctx cosmos.Context, mgr Manager) {
 		}
 		if pool.BalanceAsset.IsZero() || pool.BalanceRune.IsZero() || !pool.IsAvailable() {
 			ctx.Logger().Error("pool unavailable for alt-native fee escrow swap", "asset", asset)
-			mgr.Keeper().RemoveAltNativeFeeEscrow(ctx, asset)
 			continue
 		}
 
@@ -2762,37 +2761,40 @@ func processAltNativeFeeEscrows(ctx cosmos.Context, mgr Manager) {
 		}
 
 		// Swap the accumulated asset into RUNE and credit it to the reserve.
-		if _, err := swapAltNativeFeeEscrowBalance(ctx, mgr, asset, escrow.Balance.Amount); err != nil {
+		if _, isSwapped, err := swapAltNativeFeeEscrowBalance(ctx, mgr, asset, escrow.Balance.Amount); err != nil {
 			ctx.Logger().Error("failed to swap alt-native fee escrow", "asset", asset, "amount", escrow.Balance.Amount, "error", err)
-			continue
+			if !isSwapped {
+				continue
+			}
 		}
 
+		// Fee swap succeeded
 		mgr.Keeper().RemoveAltNativeFeeEscrow(ctx, asset)
 	}
 }
 
 // swapAltNativeFeeEscrowBalance performs the actual swap of the escrowed asset
 // to RUNE and transfers the proceeds from Asgard to the Reserve.
-func swapAltNativeFeeEscrowBalance(ctx cosmos.Context, mgr Manager, asset common.Asset, amount cosmos.Uint) (cosmos.Uint, error) {
+func swapAltNativeFeeEscrowBalance(ctx cosmos.Context, mgr Manager, asset common.Asset, amount cosmos.Uint) (cosmos.Uint, bool, error) {
 	if amount.IsZero() {
-		return cosmos.ZeroUint(), nil
+		return cosmos.ZeroUint(), false, nil
 	}
 	swapper, err := GetSwapper(mgr.GetVersion())
 	if err != nil {
-		return cosmos.ZeroUint(), fmt.Errorf("fail to get swapper: %w", err)
+		return cosmos.ZeroUint(), false, fmt.Errorf("fail to get swapper: %w", err)
 	}
 
 	asgardAcc := mgr.Keeper().GetModuleAccAddress(AsgardName)
 	asgardAddr, err := common.NewAddress(asgardAcc.String())
 	if err != nil {
-		return cosmos.ZeroUint(), fmt.Errorf("fail to derive asgard address: %w", err)
+		return cosmos.ZeroUint(), false, fmt.Errorf("fail to derive asgard address: %w", err)
 	}
 
 	// Generate a deterministic synthetic tx hash to represent the swap.
 	hash := sha256.Sum256([]byte(fmt.Sprintf("alt-native-fee|%s|%d", asset.String(), ctx.BlockHeight())))
 	txID, err := common.NewTxID(fmt.Sprintf("%X", hash))
 	if err != nil {
-		return cosmos.ZeroUint(), fmt.Errorf("fail to construct tx id: %w", err)
+		return cosmos.ZeroUint(), false, fmt.Errorf("fail to construct tx id: %w", err)
 	}
 
 	// Build a THORChain Tx that swaps the escrowed asset back into native RUNE.
@@ -2801,15 +2803,15 @@ func swapAltNativeFeeEscrowBalance(ctx cosmos.Context, mgr Manager, asset common
 
 	emit, _, err := swapper.Swap(ctx, mgr.Keeper(), tx, common.RuneNative, common.NoopAddress, cosmos.ZeroUint(), "", "", nil, StreamingSwap{}, 0, mgr)
 	if err != nil {
-		return cosmos.ZeroUint(), fmt.Errorf("fail to swap alt-native fees: %w", err)
+		return cosmos.ZeroUint(), false, fmt.Errorf("fail to swap alt-native fees: %w", err)
 	}
 	if emit.IsZero() {
-		return cosmos.ZeroUint(), fmt.Errorf("alt-native fee swap emitted zero rune for asset %s", asset)
+		return cosmos.ZeroUint(), true, fmt.Errorf("alt-native fee swap emitted zero rune for asset %s", asset)
 	}
 
 	runeCoin := common.NewCoin(common.RuneNative, emit)
 	if err := mgr.Keeper().SendFromModuleToModule(ctx, AsgardName, ReserveName, common.NewCoins(runeCoin)); err != nil {
-		return cosmos.ZeroUint(), fmt.Errorf("fail to transfer swapped rune to reserve: %w", err)
+		return cosmos.ZeroUint(), true, fmt.Errorf("fail to transfer swapped rune to reserve: %w", err)
 	}
 
 	feeEvt := NewEventFee(tx.ID, common.NewFee(common.NewCoins(runeCoin), cosmos.ZeroUint()), cosmos.ZeroUint())
@@ -2817,5 +2819,5 @@ func swapAltNativeFeeEscrowBalance(ctx cosmos.Context, mgr Manager, asset common
 		ctx.Logger().Error("fail to emit fee event for alt-native fee swap", "error", err, "asset", asset, "amount", emit)
 	}
 
-	return emit, nil
+	return emit, true, nil
 }
