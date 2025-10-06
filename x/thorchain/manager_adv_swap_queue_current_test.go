@@ -1253,10 +1253,14 @@ func (s AdvSwapQueueVCURSuite) TestIsDone(c *C) {
 			Count:    5,
 		},
 	}
-	c.Assert(vm.IsDone(ctx, msg), Equals, false)
+	done, reason := vm.IsDone(ctx, msg)
+	c.Assert(done, Equals, false)
+	c.Assert(reason, Equals, "")
 
 	msg.State.Count = 10
-	c.Assert(vm.IsDone(ctx, msg), Equals, true)
+	done, reason = vm.IsDone(ctx, msg)
+	c.Assert(done, Equals, true)
+	c.Assert(reason, Equals, "swap has been completed")
 
 	// Test 2: Limit swap - done when in == deposit
 	msg = types.MsgSwap{
@@ -1266,10 +1270,14 @@ func (s AdvSwapQueueVCURSuite) TestIsDone(c *C) {
 			In:      cosmos.NewUint(500),
 		},
 	}
-	c.Assert(vm.IsDone(ctx, msg), Equals, false)
+	done, reason = vm.IsDone(ctx, msg)
+	c.Assert(done, Equals, false)
+	c.Assert(reason, Equals, "")
 
 	msg.State.In = cosmos.NewUint(1000)
-	c.Assert(vm.IsDone(ctx, msg), Equals, true)
+	done, reason = vm.IsDone(ctx, msg)
+	c.Assert(done, Equals, true)
+	c.Assert(reason, Equals, "swap has been completed")
 
 	// Test 3: Limit swap - done when expired
 	k.SetMimir(ctx, "StreamingLimitSwapMaxAge", 100)
@@ -1282,7 +1290,9 @@ func (s AdvSwapQueueVCURSuite) TestIsDone(c *C) {
 		},
 	}
 	ctx = ctx.WithBlockHeight(151)
-	c.Assert(vm.IsDone(ctx, msg), Equals, true)
+	done, reason = vm.IsDone(ctx, msg)
+	c.Assert(done, Equals, true)
+	c.Assert(reason, Equals, "limit swap expired")
 
 	// Test 4: Already marked as done via IsDone() method
 	msg = types.MsgSwap{
@@ -1293,7 +1303,9 @@ func (s AdvSwapQueueVCURSuite) TestIsDone(c *C) {
 		},
 	}
 	c.Assert(msg.IsDone(), Equals, true)
-	c.Assert(vm.IsDone(ctx, msg), Equals, true)
+	done, reason = vm.IsDone(ctx, msg)
+	c.Assert(done, Equals, true)
+	c.Assert(reason, Equals, "swap has been completed")
 }
 
 func (s AdvSwapQueueVCURSuite) TestRapidSwapMimirIntegration(c *C) {

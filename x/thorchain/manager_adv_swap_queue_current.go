@@ -230,8 +230,8 @@ func (vm *SwapQueueAdvVCUR) discoverLimitSwaps(ctx cosmos.Context, mgr Manager, 
 			}
 
 			// Check if our swap is already completed, ie a limit swap has expired
-			if vm.IsDone(ctx, msg) {
-				if err := settleSwap(ctx, mgr, msg, "swap has been completed."); err != nil {
+			if done, settleMsg := vm.IsDone(ctx, msg); done {
+				if err := settleSwap(ctx, mgr, msg, settleMsg); err != nil {
 					ctx.Logger().Error("fail to handle completed streaming limit swap", "error", err)
 				}
 				continue
@@ -253,19 +253,25 @@ func (vm *SwapQueueAdvVCUR) discoverLimitSwaps(ctx cosmos.Context, mgr Manager, 
 	return items
 }
 
-func (vm *SwapQueueAdvVCUR) IsDone(ctx cosmos.Context, msg MsgSwap) bool {
+func (vm *SwapQueueAdvVCUR) IsDone(ctx cosmos.Context, msg MsgSwap) (bool, string) {
 	if msg.IsDone() {
-		return true
+		return true, "swap has been completed"
 	}
 
-	if msg.IsLimitSwap() {
-		ttl := vm.getTTL(ctx, msg)
-		if ctx.BlockHeight()-msg.InitialBlockHeight >= ttl {
-			return true
-		}
+	if vm.IsExpired(ctx, msg) {
+		return true, "limit swap expired"
 	}
 
-	return false
+	return false, ""
+}
+
+// IsExpired checks if a limit swap has expired due to TTL
+func (vm *SwapQueueAdvVCUR) IsExpired(ctx cosmos.Context, msg MsgSwap) bool {
+	if !msg.IsLimitSwap() {
+		return false
+	}
+	ttl := vm.getTTL(ctx, msg)
+	return ctx.BlockHeight()-msg.InitialBlockHeight >= ttl
 }
 
 // getTTL calculates the custom TTL for a limit swap message
@@ -686,8 +692,12 @@ func (vm *SwapQueueAdvVCUR) EndBlock(ctx cosmos.Context, mgr Manager, telemetryE
 			if err := vm.k.SetAdvSwapQueueItem(ctx, msg); err != nil {
 				ctx.Logger().Error("fail to save swap item", "error", err)
 			}
-			if vm.IsDone(ctx, msg) {
-				if err := settleSwap(ctx, mgr, msg, settleMsg); err != nil {
+			if done, doneReason := vm.IsDone(ctx, msg); done {
+				// Use the done reason if available, otherwise fall back to settleMsg
+				if doneReason == "" {
+					doneReason = "dev err: unknown reason"
+				}
+				if err := settleSwap(ctx, mgr, msg, doneReason); err != nil {
 					ctx.Logger().Error("fail to handle completed streaming limit swap", "error", err)
 				}
 				completedSwapCount++
