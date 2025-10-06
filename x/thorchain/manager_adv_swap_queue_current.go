@@ -695,6 +695,30 @@ func (vm *SwapQueueAdvVCUR) EndBlock(ctx cosmos.Context, mgr Manager, telemetryE
 			if err := vm.k.SetAdvSwapQueueItem(ctx, msg); err != nil {
 				ctx.Logger().Error("fail to save swap item", "error", err)
 			}
+
+			// Emit streaming swap event if this is a streaming/market swap
+			// This ensures the /block endpoint shows up-to-date count and quantity values
+			// Emit on both success and failure to track progress in real-time
+			if msg.IsStreaming() {
+				swp := StreamingSwap{
+					TxID:              msg.Tx.ID,
+					Interval:          msg.State.Interval,
+					Quantity:          msg.State.Quantity,
+					Count:             msg.State.Count,
+					LastHeight:        msg.State.LastHeight,
+					TradeTarget:       msg.TradeTarget,
+					Deposit:           msg.State.Deposit,
+					In:                msg.State.In,
+					Out:               msg.State.Out,
+					FailedSwaps:       msg.State.FailedSwaps,
+					FailedSwapReasons: msg.State.FailedSwapReasons,
+				}
+				evt := NewEventStreamingSwap(msg.Tx.Coins[0].Asset, msg.TargetAsset, swp)
+				if err := mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
+					ctx.Logger().Error("fail to emit streaming swap event", "error", err)
+				}
+			}
+
 			if done, doneReason := vm.IsDone(ctx, msg); done {
 				// Use the done reason if available, otherwise fall back to settleMsg
 				if doneReason == "" {
