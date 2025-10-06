@@ -17,7 +17,7 @@ func NewSwapperClout(addr common.Address) SwapperClout {
 }
 
 func (c SwapperClout) Valid() error {
-	if ok := c.Address.IsEmpty(); ok {
+	if c.Address.IsEmpty() {
 		return fmt.Errorf("invalid swapper clout address: %s", c.Address)
 	}
 	return nil

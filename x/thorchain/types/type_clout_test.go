@@ -10,6 +10,18 @@ type CloutSuite struct{}
 
 var _ = Suite(&CloutSuite{})
 
+func (s *CloutSuite) TestValid(c *C) {
+	// Valid clout with non-empty address
+	addr := GetRandomTHORAddress()
+	clout := NewSwapperClout(addr)
+	c.Assert(clout.Valid(), IsNil)
+
+	// Invalid clout with empty address
+	emptyClout := NewSwapperClout("")
+	c.Assert(emptyClout.Valid(), NotNil)
+	c.Check(emptyClout.Valid().Error(), Equals, "invalid swapper clout address: ")
+}
+
 func (s *CloutSuite) TestClout(c *C) {
 	addr := GetRandomTHORAddress()
 
