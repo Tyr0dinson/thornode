@@ -262,6 +262,12 @@ func (vm *SwapQueueAdvVCUR) IsDone(ctx cosmos.Context, msg MsgSwap) (bool, strin
 		return true, "limit swap expired"
 	}
 
+	// Check if first swap failed in a market swap - should refund immediately
+	if msg.IsMarketSwap() && msg.State.Count == 1 &&
+		msg.State.In.IsZero() && msg.State.Out.IsZero() {
+		return true, "first swap failed"
+	}
+
 	return false, ""
 }
 
@@ -662,18 +668,15 @@ func (vm *SwapQueueAdvVCUR) EndBlock(ctx cosmos.Context, mgr Manager, telemetryE
 			cacheCtx, commit := ctx.CacheContext()
 
 			// make the primary swap using the cached context
-			var settleMsg string
 			_, emit, handleErr := swapHandler.RunWithEmit(cacheCtx, &msg)
 			if handleErr != nil {
 				// Don't commit - this discards all state changes
 				ctx.Logger().Error("fail to handle completed streaming limit swap", "error", handleErr)
 				msg.State.FailedSwaps = append(msg.State.FailedSwaps, msg.State.Count)
 				msg.State.FailedSwapReasons = append(msg.State.FailedSwapReasons, handleErr.Error())
-				settleMsg = handleErr.Error()
 			} else {
 				// Success - commit the changes
 				commit()
-				settleMsg = "swap has been completed"
 
 				// Update state for successful swap
 				msg.State.In = msg.State.In.Add(msg.Tx.Coins[0].Amount)
@@ -696,6 +699,10 @@ func (vm *SwapQueueAdvVCUR) EndBlock(ctx cosmos.Context, mgr Manager, telemetryE
 				// Use the done reason if available, otherwise fall back to settleMsg
 				if doneReason == "" {
 					doneReason = "dev err: unknown reason"
+				}
+				// Append the actual error if we have one
+				if handleErr != nil {
+					doneReason = fmt.Sprintf("%s: %s", doneReason, handleErr.Error())
 				}
 				if err := settleSwap(ctx, mgr, msg, doneReason); err != nil {
 					ctx.Logger().Error("fail to handle completed streaming limit swap", "error", err)
