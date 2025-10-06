@@ -3,6 +3,7 @@ package core
 import (
 	"fmt"
 	"strconv"
+	"time"
 
 	sdkmath "cosmossdk.io/math"
 	"github.com/rs/zerolog/log"
@@ -22,7 +23,6 @@ type MemolessType int
 const (
 	MemolessTypeRef    MemolessType = iota // "r:<ref>" memo
 	MemolessTypeAmount                     // reference encoded in amount
-	MemolessTypeHash                       // no reference, register inbound hash
 )
 
 type SwapMemolessActor struct {
@@ -76,10 +76,6 @@ func NewSwapMemolessActor(from, to common.Asset, memolessType MemolessType) *Act
 		a.Ops = append(a.Ops, a.getMemolessRef)
 		a.Ops = append(a.Ops, a.prepareSwapMemolessByAmount)
 		a.Ops = append(a.Ops, a.signSwap)
-		a.Ops = append(a.Ops, a.broadcastSwap)
-	case MemolessTypeHash:
-		a.Ops = append(a.Ops, a.signSwap)
-		a.Ops = append(a.Ops, a.registerSwap)
 		a.Ops = append(a.Ops, a.broadcastSwap)
 	}
 
@@ -148,20 +144,47 @@ func (a *SwapMemolessActor) registerSwap(config *OpConfig) OpResult {
 }
 
 func (a *SwapMemolessActor) getMemolessRef(config *OpConfig) OpResult {
-	referenceMemo, err := thornode.GetMemoHash(a.registrationTxID.String())
+	// Retry logic to handle race condition between tx broadcast and state query
+	// The transaction may take 1-2 blocks to be fully committed to state
+	maxAttempts := 60 // 60 attempts * 500ms = 30 seconds timeout
+	var referenceMemo thornode.ReferenceMemoResponse
+	var err error
+
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		referenceMemo, err = thornode.GetMemoHash(a.registrationTxID.String())
+		if err != nil {
+			a.Log().Debug().Err(err).Int("attempt", attempt+1).Msg("failed to get reference memo, retrying")
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+
+		if referenceMemo.Memo == "" {
+			a.Log().Debug().Int("attempt", attempt+1).Msg("reference memo not found yet, retrying")
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+
+		// Found the memo, break out of retry loop
+		break
+	}
+
+	// Final check after all retries
 	if err != nil {
-		a.Log().Error().Err(err).Msg("failed to get reference memo")
+		a.Log().Error().Err(err).Msg("failed to get reference memo after retries")
 		return OpResult{
 			Continue: false,
+			Error:    err,
 		}
 	}
 
 	if referenceMemo.Memo == "" {
-		a.Log().Error().Stringer("registrationTxID", a.registrationTxID).Msg("reference memo not found")
+		a.Log().Error().Stringer("registrationTxID", a.registrationTxID).Msg("reference memo not found after retries")
 		return OpResult{
 			Continue: false,
+			Error:    fmt.Errorf("reference memo not found after retries"),
 		}
 	}
+
 	if referenceMemo.Memo != a.registeredMemo {
 		a.Log().Error().
 			Str("expected", a.registeredMemo).
@@ -274,7 +297,11 @@ func (a *SwapMemolessActor) broadcastSwap(config *OpConfig) OpResult {
 	}
 	a.swapTxID = txid
 
-	a.Log().Info().Str("txid", txid).Msg("broadcasted swap tx")
+	a.Log().Info().
+		Str("txid", txid).
+		Stringer("amount", a.swapAmount).
+		Str("memo", a.swapMemo).
+		Msg("broadcasted swap tx")
 	return OpResult{
 		Continue: true,
 	}

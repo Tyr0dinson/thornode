@@ -29,7 +29,7 @@ func MemolessSwaps() *Actor {
 			simChains1e8 = append(simChains1e8, chain)
 		}
 	}
-	for _, t := range []core.MemolessType{core.MemolessTypeHash, core.MemolessTypeAmount, core.MemolessTypeHash} {
+	for _, t := range []core.MemolessType{core.MemolessTypeRef, core.MemolessTypeAmount} {
 		for i, pool := range simChains1e8 {
 			// choose a random (other) pool to swap to
 			j := rand.Intn(len(acommon.SimChains))

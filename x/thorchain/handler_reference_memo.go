@@ -147,7 +147,7 @@ func (h ReferenceMemoHandler) handle(ctx cosmos.Context, msg MsgReferenceMemo) (
 
 	h.mgr.Keeper().SetReferenceMemo(ctx, refMemo)
 	h.mgr.Keeper().SetLastReferenceNumber(ctx, msg.Asset, next)
-	ctx.Logger().Info("successfully registered memo", "asset", refMemo.Asset, "reference", refMemo.Reference, "memo", refMemo.Memo, "height", refMemo.Height, "registration_hash", refMemo.RegistrationHash)
+	ctx.Logger().Info("successfully registered memo", "asset", refMemo.Asset, "reference", fmt.Sprintf("%s", refMemo.Reference), "memo", refMemo.Memo, "height", refMemo.Height, "registration_hash", refMemo.RegistrationHash)
 	return &cosmos.Result{}, nil
 }
 

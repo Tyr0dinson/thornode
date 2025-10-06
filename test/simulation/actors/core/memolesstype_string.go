@@ -10,12 +10,11 @@ func _() {
 	var x [1]struct{}
 	_ = x[MemolessTypeRef-0]
 	_ = x[MemolessTypeAmount-1]
-	_ = x[MemolessTypeHash-2]
 }
 
-const _MemolessType_name = "MemolessTypeRefMemolessTypeAmountMemolessTypeHash"
+const _MemolessType_name = "MemolessTypeRefMemolessTypeAmount"
 
-var _MemolessType_index = [...]uint8{0, 15, 33, 49}
+var _MemolessType_index = [...]uint8{0, 15, 33}
 
 func (i MemolessType) String() string {
 	if i < 0 || i >= MemolessType(len(_MemolessType_index)-1) {

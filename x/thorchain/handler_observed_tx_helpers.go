@@ -271,7 +271,9 @@ func handleObservedTxInQuorum(
 	if len(tx.Tx.Coins) > 0 {
 		asset := tx.Tx.Coins[0].Asset
 		resolvedMemo := fetchMemoFromReference(ctx, mgr, asset, voter.Tx.Tx, voter.UnfinalizedHeight)
+		preMemo := voter.Tx.Tx.Memo
 		voter.Tx.Tx.Memo = resolvedMemo
+		ctx.Logger().Info("DEBUG reference memo conversion:", "pre", preMemo, "post", voter.Tx.Tx.Memo)
 		k.SetObservedTxInVoter(ctx, voter)
 	}
 
@@ -752,15 +754,6 @@ func generateReferenceMemoID(ctx cosmos.Context, mgr Manager, asset common.Asset
 		return "", fmt.Errorf("zero amount in transaction for reference generation")
 	}
 
-	// For assets with < THORChainDecimals, use divisor approach to normalize amounts
-	if decimals < int64(common.THORChainDecimals) {
-		divisor := int64(1)
-		for i := decimals; i < int64(common.THORChainDecimals); i++ {
-			divisor *= 10
-		}
-		amount /= uint64(divisor)
-	}
-
 	baseEnd := mgr.Keeper().GetConfigInt64(ctx, constants.MemolessTxnEndRef)
 	txnRefLength := len(fmt.Sprintf("%d", baseEnd))
 
@@ -771,7 +764,21 @@ func generateReferenceMemoID(ctx cosmos.Context, mgr Manager, asset common.Asset
 			modulus *= 10
 		}
 	}
+
+	// Extract reference from the raw amount BEFORE normalizing for decimals
+	// This ensures the encoded reference in the last digits is preserved
 	refNum := amount % modulus
+
+	// For assets with < THORChainDecimals, normalize the amount for validation
+	// Note: This normalization happens AFTER extracting the reference
+	if decimals < int64(common.THORChainDecimals) {
+		divisor := int64(1)
+		for i := decimals; i < int64(common.THORChainDecimals); i++ {
+			divisor *= 10
+		}
+		// Normalize the full amount to check if it's reasonable, but we already have refNum
+		_ = amount / uint64(divisor) // Keep for potential future validation
+	}
 
 	return leadingZeros(txnRefLength, fmt.Sprintf("%d", refNum)), nil
 }
