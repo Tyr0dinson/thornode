@@ -298,7 +298,6 @@ func (s *ObserverSuite) TestErrataTx(c *C) {
 	}), IsNil)
 }
 
-
 func (s *ObserverSuite) TestObserverDeckStorage(c *C) {
 	vault1 := types2.GetRandomPubKey()
 	vault2 := types2.GetRandomPubKey()
