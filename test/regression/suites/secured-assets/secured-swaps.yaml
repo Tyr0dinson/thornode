@@ -521,10 +521,15 @@ asserts:
   - .|[..|select(.type? == "secured_asset_withdraw")] | length == 1
   - ..|select(.type? == "secured_asset_withdraw").amount == "${INPUT_1}"
   ##
-  - .|[..|select(.type? == "streaming_swap")] | length == 0
+  - .|[..|select(.type? == "streaming_swap")] | length == 1
+  - ..|select(.type? == "streaming_swap").deposit == "${TOTAL_INPUT} BTC-BTC"
+  - ..|select(.type? == "streaming_swap").in == "${INPUT_1} BTC-BTC"
+  - ..|select(.type? == "streaming_swap").out == "${OUTPUT_1} THOR.RUNE"
+  - ..|select(.type? == "streaming_swap").count == "1"
+  - ..|select(.type? == "streaming_swap").quantity == "${QUANTITY}"
   - .|[..|select(.type? == "fee")] | length == 0
   - .|[..|select(.type? == "outbound")] | length == 0
-  # No outbound or completed streaming swap yet.
+  # No outbound yet, but streaming swap event is emitted for each sub-swap.
   ##
   - ${TOTAL_INPUT} / 4 | floor == ${INPUT_2=2338007} # Prepare the double-spend attempt's input amount.
 ---
@@ -595,14 +600,15 @@ asserts:
   - ${OUTPUT_3} / ${INPUT_3} | floor == 832
   # The output ratios are consistent, going down as the input depth increases and the output depth decreases.
   ##
-  - .|[..|select(.type? == "streaming_swap")] | length == 1
-  - ..|select(.type? == "streaming_swap").deposit == "${TOTAL_INPUT} BTC-BTC"
-  - ..|select(.type? == "streaming_swap").in == "${TOTAL_INPUT} BTC-BTC"
+  - .|[..|select(.type? == "streaming_swap")] | length == 2
+  - .|[..|select(.type? == "streaming_swap")][0].deposit == "${TOTAL_INPUT} BTC-BTC"
+  - .|[..|select(.type? == "streaming_swap")][0].in == "${TOTAL_INPUT} BTC-BTC"
   # The streaming swap reflects the initial attempted amount, rather than the post-withdraw input sum;
   # this is perhaps consistent with that any non-Deposit In is treated as to be refunded from failed sub-swaps.
   # TODO:  Perhaps revisit this in future.
   - ${OUTPUT_1} + ${OUTPUT_3} == ${TOTAL_STREAMING_OUTPUT=6183362105}
-  - ..|select(.type? == "streaming_swap").out == "${TOTAL_STREAMING_OUTPUT} THOR.RUNE" # As it should be.
+  - .|[..|select(.type? == "streaming_swap")][0].out == "${TOTAL_STREAMING_OUTPUT} THOR.RUNE"
+  # Streaming swap event is emitted twice when the swap completes.
   ##
   - .|[..|select(.type? == "fee")] | length == 1
   - ..|select(.type? == "fee").coins == "${FEE} THOR.RUNE"
