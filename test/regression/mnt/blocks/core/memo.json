@@ -849,7 +849,7 @@
         "id": "0000000000000000000000000000000000000000000000000000000000000003",
         "memo": "=:ETH.BAR:0xe3c64974c78f5693bd2bc68b3221d58df5c6e877|hello world",
         "mode": "EndBlock",
-        "reason": "pool ETH.BAR doesn't exist",
+        "reason": "swap has been completed: pool ETH.BAR doesn't exist",
         "to": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk",
         "type": "refund"
       },

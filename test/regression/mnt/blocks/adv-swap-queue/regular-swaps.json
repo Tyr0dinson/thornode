@@ -1992,7 +1992,7 @@
         "id": "0000000000000000000000000000000000000000000000000000000000000005",
         "memo": "=:THOR.RUNE:tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr:10000000000",
         "mode": "EndBlock",
-        "reason": "emit asset 975303990 less than price limit 10000000000",
+        "reason": "swap has been completed: emit asset 975303990 less than price limit 10000000000",
         "to": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk",
         "type": "refund"
       },
@@ -4650,7 +4650,7 @@
         "id": "000000000000000000000000000000000000000000000000000000000000000f",
         "memo": "=:ETH.ETH:0xe3c64974c78f5693bd2bc68b3221d58df5c6e877:100000000",
         "mode": "EndBlock",
-        "reason": "emit asset 9508148 less than price limit 100000000",
+        "reason": "swap has been completed: emit asset 9508148 less than price limit 100000000",
         "to": "bcrt1qzf3gsk7edzwl9syyefvfhle37cjtql35tlzesk",
         "type": "refund"
       },

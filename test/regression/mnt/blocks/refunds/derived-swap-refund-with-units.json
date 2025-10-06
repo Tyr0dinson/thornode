@@ -1124,7 +1124,7 @@
         "id": "F4570F901FD2375740603F36AB80E06B9595FDE358D022FED7DC8F20F78CCB52",
         "memo": "=:nonsense:tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
         "mode": "EndBlock",
-        "reason": "pool THOR.NONSENSE doesn't exist",
+        "reason": "swap has been completed: pool THOR.NONSENSE doesn't exist",
         "to": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "refund"
       },

@@ -1384,6 +1384,7 @@ func (s AdvSwapQueueVCURSuite) TestRapidSwapMimirIntegration(c *C) {
 
 func (s AdvSwapQueueVCURSuite) TestRapidSwapMultipleIterations(c *C) {
 	ctx, mgr := setupManagerForTest(c)
+	mgr.txOutStore = NewTxStoreDummy()
 	book := newSwapQueueAdvVCUR(mgr.Keeper())
 
 	// Setup pools for testing
@@ -1417,8 +1418,9 @@ func (s AdvSwapQueueVCURSuite) TestRapidSwapMultipleIterations(c *C) {
 
 	// Create streaming swap that will execute across iterations
 	tx := GetRandomTx()
-	tx.Coins = common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(5*common.One)))
 	ethAddr := GetRandomETHAddress()
+	tx.Memo = fmt.Sprintf("swap:ETH.ETH:%s", ethAddr)
+	tx.Coins = common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(5*common.One)))
 	streamingSwap := NewMsgSwap(
 		tx, common.ETHAsset, ethAddr, cosmos.ZeroUint(),
 		"", cosmos.ZeroUint(),
@@ -1466,6 +1468,7 @@ func (s AdvSwapQueueVCURSuite) TestRapidSwapMultipleIterations(c *C) {
 	// Create multiple market swaps to test iteration behavior
 	for i := 0; i < 3; i++ {
 		marketTx := GetRandomTx()
+		marketTx.Memo = fmt.Sprintf("swap:ETH.ETH:%s", ethAddr)
 		marketTx.Coins = common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(1*common.One)))
 		marketSwap := NewMsgSwap(
 			marketTx, common.ETHAsset, ethAddr, cosmos.ZeroUint(),
