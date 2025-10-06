@@ -55,13 +55,6 @@ type Keeper interface {
 
 	DeductNativeTxFeeFromAccount(ctx cosmos.Context, acctAddr cosmos.AccAddress) error
 
-	// Alt-native fee escrow balances tracked per asset
-	AddAltNativeFeeEscrowBalance(ctx cosmos.Context, asset common.Asset, amount cosmos.Uint)
-	GetAltNativeFeeEscrow(ctx cosmos.Context, asset common.Asset) (types.AltNativeFeeEscrow, bool)
-	SetAltNativeFeeEscrow(ctx cosmos.Context, asset common.Asset, escrow types.AltNativeFeeEscrow)
-	RemoveAltNativeFeeEscrow(ctx cosmos.Context, asset common.Asset)
-	GetAltNativeFeeEscrowIterator(ctx cosmos.Context) cosmos.Iterator
-
 	// Keeper Interfaces
 	KeeperConfig
 	KeeperPool
@@ -112,6 +105,7 @@ type Keeper interface {
 	KeeperSolVaultNonce
 	KeeperDynamicFee
 	KeeperObservationTally
+	KeeperAltNativeFeeEscrow
 }
 
 type KeeperConfig interface {
@@ -631,4 +625,12 @@ type KeeperTCYStaker interface {
 	ListTCYStakers(ctx cosmos.Context) ([]TCYStaker, error)
 	TCYStakerExists(ctx cosmos.Context, address common.Address) bool
 	UpdateTCYStaker(ctx cosmos.Context, address common.Address, amount math.Uint) error
+}
+
+// Alt-native fee escrow balances tracked per asset
+type KeeperAltNativeFeeEscrow interface {
+	AddAltNativeFeeEscrowBalance(ctx cosmos.Context, asset common.Asset, amount cosmos.Uint) error
+	GetAltNativeFeeEscrow(ctx cosmos.Context, asset common.Asset) (types.AltNativeFeeEscrow, bool)
+	RemoveAltNativeFeeEscrow(ctx cosmos.Context, asset common.Asset)
+	GetAltNativeFeeEscrowIterator(ctx cosmos.Context) cosmos.Iterator
 }

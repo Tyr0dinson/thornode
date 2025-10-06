@@ -1126,15 +1126,14 @@ func (k KVStoreDummy) GetLastReferenceNumber(ctx cosmos.Context, asset common.As
 func (k KVStoreDummy) SetLastReferenceNumber(ctx cosmos.Context, asset common.Asset, ref string) {}
 
 // Alt-native fee escrow stubs
-func (k KVStoreDummy) AddAltNativeFeeEscrowBalance(ctx cosmos.Context, asset common.Asset, amount cosmos.Uint) {
+func (k KVStoreDummy) AddAltNativeFeeEscrowBalance(ctx cosmos.Context, asset common.Asset, amount cosmos.Uint) error {
+	return nil
 }
 
 func (k KVStoreDummy) GetAltNativeFeeEscrow(ctx cosmos.Context, asset common.Asset) (types.AltNativeFeeEscrow, bool) {
 	return types.AltNativeFeeEscrow{}, false
 }
 
-func (k KVStoreDummy) SetAltNativeFeeEscrow(ctx cosmos.Context, asset common.Asset, escrow types.AltNativeFeeEscrow) {
-}
 func (k KVStoreDummy) RemoveAltNativeFeeEscrow(ctx cosmos.Context, asset common.Asset)  {}
 func (k KVStoreDummy) GetAltNativeFeeEscrowIterator(ctx cosmos.Context) cosmos.Iterator { return nil }
 

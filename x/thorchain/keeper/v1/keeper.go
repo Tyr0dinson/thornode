@@ -21,7 +21,6 @@ import (
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/types"
-	stypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 // NOTE: Always end a dbPrefix with a slash ("/"). This is to ensure that there
@@ -434,66 +433,6 @@ func (k KVStore) getUint(ctx cosmos.Context, key []byte, record *cosmos.Uint) (b
 	}
 	*record = value.Value
 	return true, nil
-}
-
-// --- Alt-Native Fee Escrow (accumulated alt-gas balances) ---
-
-// AddAltNativeFeeEscrowBalance increments the escrow balance for the provided asset.
-func (k KVStore) AddAltNativeFeeEscrowBalance(ctx cosmos.Context, asset common.Asset, amount cosmos.Uint) {
-	if amount.IsZero() {
-		return
-	}
-	asset = asset.GetLayer1Asset()
-	key := k.GetKey(prefixAltNativeFeeEscrow, asset.String())
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
-	var escrow stypes.AltNativeFeeEscrow
-	if store.Has(key) {
-		if err := k.cdc.Unmarshal(store.Get(key), &escrow); err != nil {
-			escrow = stypes.AltNativeFeeEscrow{}
-		}
-	}
-	if escrow.Balance.IsEmpty() || !escrow.Balance.Asset.Equals(asset) {
-		escrow.Balance = common.NewCoin(asset, amount)
-	} else {
-		escrow.Balance.Amount = escrow.Balance.Amount.Add(amount)
-	}
-	store.Set(key, k.cdc.MustMarshal(&escrow))
-}
-
-// GetAltNativeFeeEscrow retrieves the escrow balance for the provided asset.
-func (k KVStore) GetAltNativeFeeEscrow(ctx cosmos.Context, asset common.Asset) (stypes.AltNativeFeeEscrow, bool) {
-	asset = asset.GetLayer1Asset()
-	key := k.GetKey(prefixAltNativeFeeEscrow, asset.String())
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
-	if !store.Has(key) {
-		return stypes.AltNativeFeeEscrow{}, false
-	}
-	var escrow stypes.AltNativeFeeEscrow
-	if err := k.cdc.Unmarshal(store.Get(key), &escrow); err != nil {
-		return stypes.AltNativeFeeEscrow{}, false
-	}
-	return escrow, true
-}
-
-// SetAltNativeFeeEscrow overwrites the escrow record for the provided asset.
-func (k KVStore) SetAltNativeFeeEscrow(ctx cosmos.Context, asset common.Asset, escrow stypes.AltNativeFeeEscrow) {
-	asset = asset.GetLayer1Asset()
-	escrow.Balance.Asset = asset
-	key := k.GetKey(prefixAltNativeFeeEscrow, asset.String())
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
-	store.Set(key, k.cdc.MustMarshal(&escrow))
-}
-
-// RemoveAltNativeFeeEscrow deletes the escrow record for the provided asset.
-func (k KVStore) RemoveAltNativeFeeEscrow(ctx cosmos.Context, asset common.Asset) {
-	asset = asset.GetLayer1Asset()
-	key := k.GetKey(prefixAltNativeFeeEscrow, asset.String())
-	k.DeleteKey(ctx, key)
-}
-
-// GetAltNativeFeeEscrowIterator returns an iterator across all escrowed balances.
-func (k KVStore) GetAltNativeFeeEscrowIterator(ctx cosmos.Context) cosmos.Iterator {
-	return k.getIterator(ctx, prefixAltNativeFeeEscrow)
 }
 
 // GetRuneBalanceOfModule get the RUNE balance

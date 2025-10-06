@@ -2639,8 +2639,8 @@ func collectAltNativeTxFeeFromNative(ctx cosmos.Context, k keeper.Keeper, signer
 	if err := k.SendFromAccountToModule(ctx, signer, AsgardName, common.NewCoins(fee)); err != nil {
 		return cosmos.ZeroUint(), fmt.Errorf("failed to move alt-native fee to asgard: %w", err)
 	}
-	k.AddAltNativeFeeEscrowBalance(ctx, fee.Asset, fee.Amount)
-	return fee.Amount, nil
+	err := k.AddAltNativeFeeEscrowBalance(ctx, fee.Asset, fee.Amount)
+	return fee.Amount, err
 }
 
 // collectAltNativeTxFeeFromSecured burns the signer’s secured share tokens and
@@ -2681,8 +2681,8 @@ func collectAltNativeTxFeeFromSecured(ctx cosmos.Context, k keeper.Keeper, signe
 	pool.Depth = common.SafeSub(pool.Depth, tokensToConfiscate)
 	k.SetSecuredAsset(ctx, pool)
 	// Record the confiscated collateral in the fee escrow ledger.
-	k.AddAltNativeFeeEscrowBalance(ctx, asset.GetLayer1Asset(), tokensToConfiscate)
-	return tokensToConfiscate, nil
+	err = k.AddAltNativeFeeEscrowBalance(ctx, asset.GetLayer1Asset(), tokensToConfiscate)
+	return tokensToConfiscate, err
 }
 
 // collectAltNativeTxFeeFromTrade reduces the signer’s trade-units balance, in
@@ -2719,8 +2719,8 @@ func collectAltNativeTxFeeFromTrade(ctx cosmos.Context, k keeper.Keeper, signer 
 	k.SetTradeUnit(ctx, tu)
 	k.SetTradeAccount(ctx, tr)
 	// Record the confiscated underlying amount in the escrow ledger.
-	k.AddAltNativeFeeEscrowBalance(ctx, asset.GetLayer1Asset(), tokensToConfiscate)
-	return tokensToConfiscate, nil
+	err = k.AddAltNativeFeeEscrowBalance(ctx, asset.GetLayer1Asset(), tokensToConfiscate)
+	return tokensToConfiscate, err
 }
 
 // processAltNativeFeeEscrows swaps any escrowed alt-native balances that meet

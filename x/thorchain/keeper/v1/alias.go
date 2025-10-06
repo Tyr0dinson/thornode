@@ -170,6 +170,7 @@ type (
 	VolumeBucket             = types.VolumeBucket
 	DynamicFeeRecord         = types.DynamicFeeRecord
 	DynamicFeeAccumulator    = types.DynamicFeeAccumulator
+	AltNativeFeeEscrow       = types.AltNativeFeeEscrow
 
 	ProtoInt64        = types.ProtoInt64
 	ProtoUint64       = types.ProtoUint64
