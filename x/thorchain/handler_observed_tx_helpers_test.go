@@ -494,3 +494,62 @@ func (s *HandlerObservedTxHelpersSuite) TestUnfinalizedHeightUsedInFetchMemoFrom
 	resolvedMemoWithHeight = fetchMemoFromReference(ctx, mgr, common.BTCAsset, voter.Tx.Tx, voter.Height)
 	c.Assert(resolvedMemoWithHeight, Equals, "") // Should fail due to height validation
 }
+
+func (s *HandlerObservedTxHelpersSuite) TestFetchMemoFromReferenceAntiSniping(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	// Setup pools for different chain types
+	btcPool := NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.Decimals = 8
+	btcPool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	btcPool.BalanceRune = cosmos.NewUint(100 * common.One)
+	c.Assert(mgr.Keeper().SetPool(ctx, btcPool), IsNil)
+
+	ethPool := NewPool()
+	ethPool.Asset = common.ETHAsset
+	ethPool.Decimals = 18
+	ethPool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	ethPool.BalanceRune = cosmos.NewUint(100 * common.One)
+	c.Assert(mgr.Keeper().SetPool(ctx, ethPool), IsNil)
+
+	// Set TTL for memoless transactions
+	mgr.Keeper().SetMimir(ctx, constants.MemolessTxnTTL.String(), 100)
+
+	// Create memo string for reference
+	refMemo := NewReferenceReadMemo("12345")
+	memoStr := refMemo.CreateMemo()
+
+	// Test Case 1: Fast chain (ETH) - sniping protection should trigger
+	storedRefMemo1 := NewReferenceMemo(common.ETHAsset, "SWAP:BTC.BTC:bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4", "12345", 30) // registered at height 30
+	mgr.Keeper().SetReferenceMemo(ctx, storedRefMemo1)
+
+	txID1, _ := common.NewTxID("1111111111111111111111111111111111111111111111111111111111111111")
+	testTx1 := common.NewTx(txID1, common.NoAddress, common.NoAddress, common.Coins{}, common.Gas{}, memoStr)
+	resolvedMemo1 := fetchMemoFromReference(ctx, mgr, common.ETHAsset, testTx1, 25) // tx observed at height 25 (before memo registration at height 30)
+	c.Assert(resolvedMemo1, Equals, "") // Should return empty string to trigger refund due to sniping
+
+	// Test Case 2: Slow chain (BTC) - sniping protection should NOT trigger
+	storedRefMemo2 := NewReferenceMemo(common.BTCAsset, "SWAP:ETH.ETH:0x1234567890123456789012345678901234567890", "54321", 30) // registered at height 30
+	mgr.Keeper().SetReferenceMemo(ctx, storedRefMemo2)
+
+	refMemo2 := NewReferenceReadMemo("54321")
+	memoStr2 := refMemo2.CreateMemo()
+
+	txID2, _ := common.NewTxID("2222222222222222222222222222222222222222222222222222222222222222")
+	testTx2 := common.NewTx(txID2, common.NoAddress, common.NoAddress, common.Coins{}, common.Gas{}, memoStr2)
+	resolvedMemo2 := fetchMemoFromReference(ctx, mgr, common.BTCAsset, testTx2, 25) // tx observed at height 25 (before memo registration at height 30)
+	c.Assert(resolvedMemo2, Equals, "SWAP:ETH.ETH:0x1234567890123456789012345678901234567890") // Should succeed since BTC is not a fast chain
+
+	// Test Case 3: Fast chain (ETH) - normal case should still work
+	storedRefMemo3 := NewReferenceMemo(common.ETHAsset, "SWAP:RUNE", "67890", 10) // registered at height 10
+	mgr.Keeper().SetReferenceMemo(ctx, storedRefMemo3)
+
+	refMemo3 := NewReferenceReadMemo("67890")
+	memoStr3 := refMemo3.CreateMemo()
+
+	txID3, _ := common.NewTxID("3333333333333333333333333333333333333333333333333333333333333333")
+	testTx3 := common.NewTx(txID3, common.NoAddress, common.NoAddress, common.Coins{}, common.Gas{}, memoStr3)
+	resolvedMemo3 := fetchMemoFromReference(ctx, mgr, common.ETHAsset, testTx3, 20) // tx observed at height 20 (after memo registration)
+	c.Assert(resolvedMemo3, Equals, "SWAP:RUNE") // Should succeed since registration was before observation
+}

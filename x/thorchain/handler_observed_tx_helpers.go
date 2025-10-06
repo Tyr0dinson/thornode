@@ -669,7 +669,7 @@ func fetchMemoFromReference(ctx cosmos.Context, mgr Manager, asset common.Asset,
 		}
 
 		// Ensure transaction was observed after the reference memo was created
-		if txObservationHeight <= refMemo.Height {
+		if isFastChain(asset.GetChain()) && txObservationHeight <= refMemo.Height {
 			ctx.Logger().Info("transaction observed before reference memo creation", "tx_height", txObservationHeight, "memo_height", refMemo.Height, "reference", m.Reference)
 			// Track failure usage
 			trackReferenceMemoUsage(ctx, mgr, asset, tx.Memo, tx.ID)
@@ -774,4 +774,16 @@ func generateReferenceMemoID(ctx cosmos.Context, mgr Manager, asset common.Asset
 	refNum := amount % modulus
 
 	return leadingZeros(txnRefLength, fmt.Sprintf("%d", refNum)), nil
+}
+
+// `true` if the chain is a BFT or EVM chain
+func isFastChain(chain common.Chain) bool {
+	if chain.IsEVM() {
+		return true
+	}
+	switch chain {
+	case common.GAIAChain, common.NOBLEChain:
+		return true
+	}
+	return false
 }
