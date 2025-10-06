@@ -3008,6 +3008,20 @@
         "type": "swap"
       },
       {
+        "count": "1",
+        "deposit": "30000000 ETH.ETH",
+        "failed_swap_reasons": "",
+        "failed_swaps": "",
+        "in": "5000000 ETH.ETH",
+        "interval": "1",
+        "last_height": "11",
+        "mode": "EndBlock",
+        "out": "495043155 THOR.RUNE",
+        "quantity": "6",
+        "tx_id": "0000000000000000000000000000000000000000000000000000000000000003",
+        "type": "streaming_swap"
+      },
+      {
         "amount": "3226684rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -3258,6 +3272,20 @@
         "type": "swap"
       },
       {
+        "count": "2",
+        "deposit": "30000000 ETH.ETH",
+        "failed_swap_reasons": "",
+        "failed_swaps": "",
+        "in": "10000000 ETH.ETH",
+        "interval": "1",
+        "last_height": "12",
+        "mode": "EndBlock",
+        "out": "985212920 THOR.RUNE",
+        "quantity": "6",
+        "tx_id": "0000000000000000000000000000000000000000000000000000000000000003",
+        "type": "streaming_swap"
+      },
+      {
         "amount": "3194129rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -3396,6 +3424,20 @@
         "swap_target": "0",
         "to": "0xd58610f89265a2fb637ac40edf59141ff873b266",
         "type": "swap"
+      },
+      {
+        "count": "3",
+        "deposit": "30000000 ETH.ETH",
+        "failed_swap_reasons": "",
+        "failed_swaps": "",
+        "in": "15000000 ETH.ETH",
+        "interval": "1",
+        "last_height": "13",
+        "mode": "EndBlock",
+        "out": "1470544936 THOR.RUNE",
+        "quantity": "6",
+        "tx_id": "0000000000000000000000000000000000000000000000000000000000000003",
+        "type": "streaming_swap"
       },
       {
         "amount": "3194652rune",
@@ -3538,6 +3580,20 @@
         "type": "swap"
       },
       {
+        "count": "4",
+        "deposit": "30000000 ETH.ETH",
+        "failed_swap_reasons": "",
+        "failed_swaps": "",
+        "in": "20000000 ETH.ETH",
+        "interval": "1",
+        "last_height": "14",
+        "mode": "EndBlock",
+        "out": "1951134377 THOR.RUNE",
+        "quantity": "6",
+        "tx_id": "0000000000000000000000000000000000000000000000000000000000000003",
+        "type": "streaming_swap"
+      },
+      {
         "amount": "3173538rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -3678,6 +3734,20 @@
         "type": "swap"
       },
       {
+        "count": "5",
+        "deposit": "30000000 ETH.ETH",
+        "failed_swap_reasons": "",
+        "failed_swaps": "",
+        "in": "25000000 ETH.ETH",
+        "interval": "1",
+        "last_height": "15",
+        "mode": "EndBlock",
+        "out": "2427050544 THOR.RUNE",
+        "quantity": "6",
+        "tx_id": "0000000000000000000000000000000000000000000000000000000000000003",
+        "type": "streaming_swap"
+      },
+      {
         "amount": "3152729rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -3816,6 +3886,20 @@
         "swap_target": "0",
         "to": "0xd58610f89265a2fb637ac40edf59141ff873b266",
         "type": "swap"
+      },
+      {
+        "count": "6",
+        "deposit": "30000000 ETH.ETH",
+        "failed_swap_reasons": "",
+        "failed_swaps": "",
+        "in": "30000000 ETH.ETH",
+        "interval": "1",
+        "last_height": "16",
+        "mode": "EndBlock",
+        "out": "2898361393 THOR.RUNE",
+        "quantity": "6",
+        "tx_id": "0000000000000000000000000000000000000000000000000000000000000003",
+        "type": "streaming_swap"
       },
       {
         "amount": "289836139rune",

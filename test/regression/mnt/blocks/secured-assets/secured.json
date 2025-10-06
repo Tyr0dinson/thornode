@@ -1336,6 +1336,20 @@
         "type": "swap"
       },
       {
+        "count": "1",
+        "deposit": "41483406 ETH-ETH",
+        "failed_swap_reasons": "",
+        "failed_swaps": "",
+        "in": "4609268 ETH-ETH",
+        "interval": "1",
+        "last_height": "6",
+        "mode": "EndBlock",
+        "out": "541827 BTC-BTC",
+        "quantity": "9",
+        "tx_id": "1007F3E6658BA84F76D88A64FD3ED2D6F0E0A308D6226093BCEA376CD95145A0",
+        "type": "streaming_swap"
+      },
+      {
         "amount": "3033813rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -1692,6 +1706,20 @@
         "type": "swap"
       },
       {
+        "count": "2",
+        "deposit": "41483406 ETH-ETH",
+        "failed_swap_reasons": "",
+        "failed_swaps": "",
+        "in": "9218536 ETH-ETH",
+        "interval": "1",
+        "last_height": "7",
+        "mode": "EndBlock",
+        "out": "1073047 BTC-BTC",
+        "quantity": "9",
+        "tx_id": "1007F3E6658BA84F76D88A64FD3ED2D6F0E0A308D6226093BCEA376CD95145A0",
+        "type": "streaming_swap"
+      },
+      {
         "amount": "2969952rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -1943,6 +1971,20 @@
         "swap_target": "0",
         "to": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "swap"
+      },
+      {
+        "count": "3",
+        "deposit": "41483406 ETH-ETH",
+        "failed_swap_reasons": "",
+        "failed_swaps": "",
+        "in": "13827804 ETH-ETH",
+        "interval": "1",
+        "last_height": "8",
+        "mode": "EndBlock",
+        "out": "1593969 BTC-BTC",
+        "quantity": "9",
+        "tx_id": "1007F3E6658BA84F76D88A64FD3ED2D6F0E0A308D6226093BCEA376CD95145A0",
+        "type": "streaming_swap"
       },
       {
         "amount": "2907868rune",
@@ -2198,6 +2240,20 @@
         "type": "swap"
       },
       {
+        "count": "4",
+        "deposit": "41483406 ETH-ETH",
+        "failed_swap_reasons": "",
+        "failed_swaps": "",
+        "in": "18437071 ETH-ETH",
+        "interval": "1",
+        "last_height": "9",
+        "mode": "EndBlock",
+        "out": "2104888 BTC-BTC",
+        "quantity": "9",
+        "tx_id": "1007F3E6658BA84F76D88A64FD3ED2D6F0E0A308D6226093BCEA376CD95145A0",
+        "type": "streaming_swap"
+      },
+      {
         "amount": "2847701rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -2449,6 +2505,20 @@
         "swap_target": "0",
         "to": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "swap"
+      },
+      {
+        "count": "5",
+        "deposit": "41483406 ETH-ETH",
+        "failed_swap_reasons": "",
+        "failed_swaps": "",
+        "in": "23046338 ETH-ETH",
+        "interval": "1",
+        "last_height": "10",
+        "mode": "EndBlock",
+        "out": "2606038 BTC-BTC",
+        "quantity": "9",
+        "tx_id": "1007F3E6658BA84F76D88A64FD3ED2D6F0E0A308D6226093BCEA376CD95145A0",
+        "type": "streaming_swap"
       },
       {
         "amount": "2843904rune",
@@ -2704,6 +2774,20 @@
         "type": "swap"
       },
       {
+        "count": "6",
+        "deposit": "41483406 ETH-ETH",
+        "failed_swap_reasons": "",
+        "failed_swaps": "",
+        "in": "27655605 ETH-ETH",
+        "interval": "1",
+        "last_height": "11",
+        "mode": "EndBlock",
+        "out": "3097713 BTC-BTC",
+        "quantity": "9",
+        "tx_id": "1007F3E6658BA84F76D88A64FD3ED2D6F0E0A308D6226093BCEA376CD95145A0",
+        "type": "streaming_swap"
+      },
+      {
         "amount": "2821780rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -2955,6 +3039,20 @@
         "swap_target": "0",
         "to": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "swap"
+      },
+      {
+        "count": "7",
+        "deposit": "41483406 ETH-ETH",
+        "failed_swap_reasons": "",
+        "failed_swaps": "",
+        "in": "32264872 ETH-ETH",
+        "interval": "1",
+        "last_height": "12",
+        "mode": "EndBlock",
+        "out": "3580178 BTC-BTC",
+        "quantity": "9",
+        "tx_id": "1007F3E6658BA84F76D88A64FD3ED2D6F0E0A308D6226093BCEA376CD95145A0",
+        "type": "streaming_swap"
       },
       {
         "amount": "2800647rune",
@@ -3210,6 +3308,20 @@
         "type": "swap"
       },
       {
+        "count": "8",
+        "deposit": "41483406 ETH-ETH",
+        "failed_swap_reasons": "",
+        "failed_swaps": "",
+        "in": "36874139 ETH-ETH",
+        "interval": "1",
+        "last_height": "13",
+        "mode": "EndBlock",
+        "out": "4053691 BTC-BTC",
+        "quantity": "9",
+        "tx_id": "1007F3E6658BA84F76D88A64FD3ED2D6F0E0A308D6226093BCEA376CD95145A0",
+        "type": "streaming_swap"
+      },
+      {
         "amount": "2779517rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
@@ -3461,6 +3573,20 @@
         "swap_target": "0",
         "to": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
         "type": "swap"
+      },
+      {
+        "count": "9",
+        "deposit": "41483406 ETH-ETH",
+        "failed_swap_reasons": "",
+        "failed_swaps": "",
+        "in": "41483406 ETH-ETH",
+        "interval": "1",
+        "last_height": "14",
+        "mode": "EndBlock",
+        "out": "4518499 BTC-BTC",
+        "quantity": "9",
+        "tx_id": "1007F3E6658BA84F76D88A64FD3ED2D6F0E0A308D6226093BCEA376CD95145A0",
+        "type": "streaming_swap"
       },
       {
         "coins": "2014 BTC-BTC",
