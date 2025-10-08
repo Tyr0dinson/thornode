@@ -28,11 +28,14 @@ func DepositL1(log *zerolog.Logger, client LiteChainClient, asset common.Asset, 
 		return "", err
 	}
 
+	// create coin with proper decimals for gas assets
+	coin := common.NewCoin(asset, amount).WithDecimals(asset.Chain.GetGasAssetDecimal())
+
 	// create tx out
 	tx := SimTx{
 		Chain:     asset.Chain,
 		ToAddress: inboundAddr,
-		Coin:      common.NewCoin(asset, amount),
+		Coin:      coin,
 		Memo:      memo,
 	}
 

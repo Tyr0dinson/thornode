@@ -527,7 +527,7 @@ func (c *Client) getTxIn(tx *btcjson.TxRawResult, height int64, isMemPool bool, 
 		Sender:      sender,
 		To:          toAddr,
 		Coins: common.Coins{
-			common.NewCoin(c.cfg.ChainID.GetGasAsset(), cosmos.NewUint(amt)),
+			common.NewCoin(c.cfg.ChainID.GetGasAsset(), cosmos.NewUint(amt)).WithDecimals(c.cfg.ChainID.GetGasAssetDecimal()),
 		},
 		Memo: memo,
 		Gas:  gas,
@@ -1031,7 +1031,7 @@ func (c *Client) getGas(tx *btcjson.TxRawResult, isInbound bool) (common.Gas, er
 	}
 	totalGas := sumVin - sumVout
 	return common.Gas{
-		common.NewCoin(c.cfg.ChainID.GetGasAsset(), cosmos.NewUint(totalGas)),
+		common.NewCoin(c.cfg.ChainID.GetGasAsset(), cosmos.NewUint(totalGas)).WithDecimals(c.cfg.ChainID.GetGasAssetDecimal()),
 	}, nil
 }
 

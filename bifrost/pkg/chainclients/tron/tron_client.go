@@ -497,7 +497,7 @@ func (c *TronClient) SignTx(
 	gasCoin := common.NewCoin(
 		common.TRXAsset,
 		cosmos.NewUint(uint64(txOutItem.GasRate)),
-	)
+	).WithDecimals(common.TRONChain.GetGasAssetDecimal())
 
 	txIn := types.NewTxInItem(
 		currentHeight,

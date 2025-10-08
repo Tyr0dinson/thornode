@@ -852,7 +852,7 @@ func (e *ETHScanner) getTxInFromTransaction(tx *etypes.Transaction, receipt *ety
 		}
 	}
 	ethValue := e.convertAmount(ethToken, tx.Value())
-	txInItem.Coins = append(txInItem.Coins, common.NewCoin(asset, ethValue))
+	txInItem.Coins = append(txInItem.Coins, common.NewCoin(asset, ethValue).WithDecimals(common.ETHChain.GetGasAssetDecimal()))
 	txGasPrice := receipt.EffectiveGasPrice
 
 	txInItem.Gas = common.MakeEVMGas(common.ETHChain, txGasPrice, receipt.GasUsed, nil)
@@ -862,7 +862,7 @@ func (e *ETHScanner) getTxInFromTransaction(tx *etypes.Transaction, receipt *ety
 			// and for Tx-received Valid() a non-zero Amount is needed to observe
 			// the transaction fees (THORChain gas cost) of unstuck.go's cancel transactions.
 			observableAmount := common.ETHChain.DustThreshold()
-			txInItem.Coins = common.NewCoins(common.NewCoin(common.ETHAsset, observableAmount))
+			txInItem.Coins = common.NewCoins(common.NewCoin(common.ETHAsset, observableAmount).WithDecimals(common.ETHChain.GetGasAssetDecimal()))
 
 			// remove the outbound from signer cache so it can be re-attempted
 			if e.signerCacheManager != nil {
@@ -956,7 +956,7 @@ func (e *ETHScanner) getTxInFromFailedTransaction(tx *etypes.Transaction, receip
 		Memo:   memo.NewOutboundMemo(common.TxID(txHash)).String(),
 		Sender: strings.ToLower(fromAddr.String()),
 		To:     strings.ToLower(tx.To().String()),
-		Coins:  common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1))),
+		Coins:  common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1)).WithDecimals(common.ETHChain.GetGasAssetDecimal())),
 		Gas:    common.MakeEVMGas(common.ETHChain, txGasPrice, receipt.GasUsed, nil),
 	}
 }

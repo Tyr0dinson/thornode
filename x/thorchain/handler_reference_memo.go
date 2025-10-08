@@ -92,6 +92,10 @@ func (h ReferenceMemoHandler) calculateAssetBasedInterval(ctx cosmos.Context, as
 	}
 
 	decimals := pool.Decimals
+	if decimals == 0 {
+		return 0, fmt.Errorf("pool decimals are set to zero")
+	}
+
 	if decimals >= 8 {
 		return 1, nil // No adjustment needed for 8+ decimal assets
 	}
@@ -125,7 +129,7 @@ func (h ReferenceMemoHandler) handle(ctx cosmos.Context, msg MsgReferenceMemo) (
 
 	// Use original message asset for reference tracking (where the transaction occurred)
 	posStr := h.mgr.Keeper().GetLastReferenceNumber(ctx, msg.Asset)
-	next, err := h.nextReference(ctx, msg.Asset, sourceAsset, posStr, ttl)
+	next, err := h.nextReference(ctx, sourceAsset, posStr, ttl)
 	if next == "" || err != nil {
 		return nil, fmt.Errorf("unable to find an available reference: %w", err)
 	}
@@ -147,7 +151,7 @@ func (h ReferenceMemoHandler) handle(ctx cosmos.Context, msg MsgReferenceMemo) (
 
 	h.mgr.Keeper().SetReferenceMemo(ctx, refMemo)
 	h.mgr.Keeper().SetLastReferenceNumber(ctx, msg.Asset, next)
-	ctx.Logger().Info("successfully registered memo", "asset", refMemo.Asset, "reference", fmt.Sprintf("%s", refMemo.Reference), "memo", refMemo.Memo, "height", refMemo.Height, "registration_hash", refMemo.RegistrationHash)
+	ctx.Logger().Info("successfully registered memo", "asset", refMemo.Asset, "reference", refMemo.Reference, "memo", refMemo.Memo, "height", refMemo.Height, "registration_hash", refMemo.RegistrationHash)
 	return &cosmos.Result{}, nil
 }
 
@@ -181,9 +185,14 @@ func (h ReferenceMemoHandler) nextReferenceWithInterval(ctx cosmos.Context, asse
 		posStr = leadingZeros(txnRefLength, fmt.Sprintf("%d", end))
 	}
 
+	reachedEnd := false
 	for {
 		if pos > end {
 			pos = start
+			if reachedEnd {
+				return ""
+			}
+			reachedEnd = true
 		}
 		ref := leadingZeros(txnRefLength, fmt.Sprintf("%d", pos))
 		refMemo, err := h.mgr.Keeper().GetReferenceMemo(ctx, asset, ref)
@@ -207,14 +216,18 @@ func (h ReferenceMemoHandler) nextReferenceWithInterval(ctx cosmos.Context, asse
 }
 
 // nextReference finds the next available reference by calculating interval and range from target asset
-func (h ReferenceMemoHandler) nextReference(ctx cosmos.Context, asset, targetAsset common.Asset, posStr string, ttl int64) (string, error) {
+func (h ReferenceMemoHandler) nextReference(ctx cosmos.Context, asset common.Asset, posStr string, ttl int64) (string, error) {
 	// Calculate dynamic start/end based on target asset decimals
-	interval, err := h.calculateAssetBasedInterval(ctx, targetAsset)
+	interval, err := h.calculateAssetBasedInterval(ctx, asset)
 	if interval == 0 || err != nil {
 		return "", err
 	}
 	baseStart := h.mgr.Keeper().GetConfigInt64(ctx, constants.MemolessTxnStartRef)
 	baseEnd := h.mgr.Keeper().GetConfigInt64(ctx, constants.MemolessTxnEndRef)
+
+	if interval > baseEnd {
+		return "", fmt.Errorf("interval (%d of %s) exceeds end (%d)", interval, asset.String(), baseEnd)
+	}
 
 	// Adjust start and end to be multiples of the interval
 	start := (baseStart / interval) * interval
@@ -222,6 +235,10 @@ func (h ReferenceMemoHandler) nextReference(ctx cosmos.Context, asset, targetAss
 		start += interval
 	}
 	end := (baseEnd / interval) * interval
+	// If interval adjustment makes end too small, use baseEnd instead
+	if end == 0 || end < start {
+		end = baseEnd
+	}
 
 	return h.nextReferenceWithInterval(ctx, asset, posStr, start, end, interval, ttl), nil
 }

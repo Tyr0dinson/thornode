@@ -507,7 +507,7 @@ func (c *CosmosBlockScanner) processTxs(height int64, rawTxs []tmtypes.Tx) ([]*t
 			// then fake gas as `0.000001 ATOM`, the fee is not used but cannot be empty
 			if gasFees.IsEmpty() {
 				gasFees = append(gasFees, common.NewCoin(
-					c.cfg.ChainID.GetGasAsset(), cosmos.NewUint(1)),
+					c.cfg.ChainID.GetGasAsset(), cosmos.NewUint(1)).WithDecimals(c.cfg.ChainID.GetGasAssetDecimal()),
 				)
 			}
 

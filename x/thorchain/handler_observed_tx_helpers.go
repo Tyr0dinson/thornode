@@ -273,7 +273,7 @@ func handleObservedTxInQuorum(
 		resolvedMemo := fetchMemoFromReference(ctx, mgr, asset, voter.Tx.Tx, voter.UnfinalizedHeight)
 		preMemo := voter.Tx.Tx.Memo
 		voter.Tx.Tx.Memo = resolvedMemo
-		ctx.Logger().Info("DEBUG reference memo conversion:", "pre", preMemo, "post", voter.Tx.Tx.Memo)
+		ctx.Logger().Info("reference memo conversion", "pre", preMemo, "post", voter.Tx.Tx.Memo, "asset", asset)
 		k.SetObservedTxInVoter(ctx, voter)
 	}
 
@@ -664,11 +664,48 @@ func fetchMemoFromReference(ctx cosmos.Context, mgr Manager, asset common.Asset,
 			return ""
 		}
 
-		refMemo, err := mgr.Keeper().GetReferenceMemo(ctx, asset, m.Reference)
+		// Normalize the reference ID with leading zeros to match storage format
+		// Calculate the expected reference length based on config and asset decimals
+		pool, err := mgr.Keeper().GetPool(ctx, asset)
 		if err != nil {
-			ctx.Logger().Error("fail to get tx in voter", "error", err)
+			ctx.Logger().Error("unable to fetch pool for ref memo lookup", "error", err, "asset", asset)
 			return ""
 		}
+		decimals := pool.Decimals
+
+		// Calculate interval based on asset decimals (same as registration)
+		interval := int64(1)
+		if decimals < 8 {
+			for i := decimals; i < 8; i++ {
+				interval *= 10
+			}
+		}
+
+		baseEnd := mgr.Keeper().GetConfigInt64(ctx, constants.MemolessTxnEndRef)
+		baseStart := mgr.Keeper().GetConfigInt64(ctx, constants.MemolessTxnStartRef)
+
+		// Adjust end to match registration logic (same as nextReference)
+		start := (baseStart / interval) * interval
+		if start < baseStart {
+			start += interval
+		}
+		end := (baseEnd / interval) * interval
+		// If interval adjustment makes end too small, use baseEnd instead
+		if end == 0 || end < start {
+			end = baseEnd
+		}
+		txnRefLength := len(fmt.Sprintf("%d", end))
+
+		// Apply leading zeros to match how references are stored
+		normalizedRef := leadingZeros(txnRefLength, m.Reference)
+
+		refMemo, err := mgr.Keeper().GetReferenceMemo(ctx, asset, normalizedRef)
+		if err != nil {
+			ctx.Logger().Error("fail to get reference memo", "error", err, "asset", asset, "reference", normalizedRef, "original_reference", m.Reference)
+			return ""
+		}
+
+		ctx.Logger().Info("found reference memo", "asset", asset, "reference", m.Reference, "memo", refMemo.Memo, "height", refMemo.Height)
 
 		// Ensure transaction was observed after the reference memo was created
 		if txObservationHeight <= refMemo.Height {
@@ -691,11 +728,13 @@ func fetchMemoFromReference(ctx cosmos.Context, mgr Manager, asset common.Asset,
 			}
 
 			// Track successful usage
+			ctx.Logger().Info("returning reference memo successfully", "reference", m.Reference, "memo", refMemo.Memo)
 			trackReferenceMemoUsage(ctx, mgr, asset, tx.Memo, tx.ID)
 			return refMemo.Memo
 		}
 
-		// Track failure usage
+		// Track failure usage (expired)
+		ctx.Logger().Info("reference memo expired", "reference", m.Reference, "height", refMemo.Height, "current", ctx.BlockHeight(), "ttl", ttl)
 		trackReferenceMemoUsage(ctx, mgr, asset, tx.Memo, tx.ID)
 		return ""
 	}
@@ -727,7 +766,7 @@ func trackReferenceMemoUsage(ctx cosmos.Context, mgr Manager, asset common.Asset
 		if refMemo.AddUsage(txID) {
 			mgr.Keeper().SetReferenceMemo(ctx, refMemo)
 			maxUse := mgr.Keeper().GetConfigInt64(ctx, constants.MemolessTxnMaxUse)
-			ctx.Logger().Info("reference memo usage tracked", "reference", m.Reference, "usage_count", refMemo.GetUsageCount(), "max_use", maxUse, "txid", txID)
+			ctx.Logger().Info("reference memo usage tracked", "reference", m.Reference, "usage_count", refMemo.GetUsageCount(), "max_use", maxUse, "txid", txID, "asset", asset, "memo", refMemo.Memo)
 		}
 	}
 }
@@ -754,8 +793,30 @@ func generateReferenceMemoID(ctx cosmos.Context, mgr Manager, asset common.Asset
 		return "", fmt.Errorf("zero amount in transaction for reference generation")
 	}
 
+	// Calculate interval based on asset decimals (same as registration)
+	interval := int64(1)
+	if decimals < 8 {
+		for i := decimals; i < 8; i++ {
+			interval *= 10
+		}
+	}
+
 	baseEnd := mgr.Keeper().GetConfigInt64(ctx, constants.MemolessTxnEndRef)
-	txnRefLength := len(fmt.Sprintf("%d", baseEnd))
+	baseStart := mgr.Keeper().GetConfigInt64(ctx, constants.MemolessTxnStartRef)
+
+	// Adjust end to match registration logic (same as nextReference)
+	start := (baseStart / interval) * interval
+	if start < baseStart {
+		start += interval
+	}
+	end := (baseEnd / interval) * interval
+	// If interval adjustment makes end too small, use baseEnd instead
+	if end == 0 || end < start {
+		end = baseEnd
+	}
+
+	// Calculate reference length based on adjusted end value
+	txnRefLength := len(fmt.Sprintf("%d", end))
 
 	// Calculate modulus based on reference length (10^txnRefLength)
 	var modulus uint64 = 1
