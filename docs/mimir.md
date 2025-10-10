@@ -260,6 +260,7 @@ Operational notes:
 - `ObservationDelayFlexibility`\*: Number of blocks of flexibility for a validator to get their slash points taken off for making an observation
 - `AltNativeTxFeeEnabled`: Enable/disable gas fee payment in native assets
 - `AltNativeTxFeeAddedBps`: Additional premium basis points added to the base network fee when paying with a native asset instead of RUNE; eg. 0 = no premium (gas = 0.02 RUNE in asset), 5000 = 50% premium (0.03 RUNE)
+- `AltNativeTxFeeSwapThresholdBps`: Percentage of pool depth (basis points) to accumulate before swapping collected alt-native fees to RUNE; 100 = 1%
 
 ### Router Upgrading (DO NOT TOUCH!)
 
