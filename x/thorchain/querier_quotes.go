@@ -544,13 +544,38 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 			return nil, fmt.Errorf("bad streaming quantity amount: %w", err)
 		}
 	}
-	swp := StreamingSwap{
-		Interval: streamingInterval,
-		Deposit:  amount,
-	}
-	maxSwapQuantity, err := getMaxSwapQuantity(ctx, qs.mgr, fromAsset, toAsset, swp)
-	if err != nil {
-		return nil, fmt.Errorf("failed to calculate max streaming swap quantity: %w", err)
+	// Use the correct getMaxSwapQuantity based on whether advanced swap queue is enabled
+	var maxSwapQuantity uint64
+	enableAdvSwapQueue := qs.mgr.Keeper().GetConfigInt64(ctx, constants.EnableAdvSwapQueue)
+	if enableAdvSwapQueue > 0 {
+		// Advanced swap queue is enabled - use the advanced queue's getMaxSwapQuantity
+		// which has different logic than the legacy helper function
+		tempMsg := MsgSwap{
+			Tx: common.Tx{
+				Coins: common.Coins{common.NewCoin(fromAsset, amount)},
+			},
+			TargetAsset: toAsset,
+			State: &types.SwapState{
+				Interval: streamingInterval,
+				Deposit:  amount,
+				Quantity: streamingQuantity,
+			},
+		}
+		advQueue := newSwapQueueAdvVCUR(qs.mgr.Keeper())
+		maxSwapQuantity, err = advQueue.getMaxSwapQuantity(ctx, qs.mgr, fromAsset, toAsset, tempMsg)
+		if err != nil {
+			return nil, fmt.Errorf("failed to calculate max streaming swap quantity: %w", err)
+		}
+	} else {
+		// Legacy swap queue - use the helper function
+		swp := StreamingSwap{
+			Interval: streamingInterval,
+			Deposit:  amount,
+		}
+		maxSwapQuantity, err = getMaxSwapQuantity(ctx, qs.mgr, fromAsset, toAsset, swp)
+		if err != nil {
+			return nil, fmt.Errorf("failed to calculate max streaming swap quantity: %w", err)
+		}
 	}
 
 	// cap the streaming quantity to the max swap quantity
