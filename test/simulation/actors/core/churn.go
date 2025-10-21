@@ -91,7 +91,7 @@ func (a *ChurnActor) startChurn(config *OpConfig) OpResult {
 	}
 }
 
-func (a *ChurnActor) waitForChurnComplete(config *OpConfig) OpResult {
+func (a *ChurnActor) waitForChurnComplete(_ *OpConfig) OpResult {
 	network, err := thornode.GetNetwork()
 	if err != nil {
 		a.Log().Error().Err(err).Msg("failed to get network")

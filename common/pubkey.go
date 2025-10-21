@@ -19,6 +19,8 @@ import (
 	"github.com/gcash/bchutil"
 	ltcchaincfg "github.com/ltcsuite/ltcd/chaincfg"
 	"github.com/ltcsuite/ltcutil"
+	"github.com/rs/zerolog/log"
+	"github.com/xssnick/tonutils-go/ton/wallet"
 
 	"github.com/cometbft/cometbft/crypto"
 	eth "github.com/ethereum/go-ethereum/crypto"
@@ -241,6 +243,24 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 		checksum := sha256sum(sha256sum(addr))
 
 		addressString = base58.Encode(append(addr, checksum[:4]...))
+	case TONChain:
+		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, p.String())
+		if err != nil {
+			return NoAddress, err
+		}
+
+		addr, err := wallet.AddressFromPubKey(pk.Bytes(), wallet.V3R2, wallet.DefaultSubwallet)
+		if err != nil {
+			log.Err(err).Msg("")
+			return NoAddress, err
+		}
+		// never bounce
+		addr.SetBounce(false)
+
+		// use test addresses in mocknet only
+		addr.SetTestnetOnly(IsMocknet)
+
+		addressString = addr.String()
 	default:
 		// Only EVM chains remain.
 		if !chain.IsEVM() {

@@ -18,8 +18,8 @@ func MemolessSwaps() *Actor {
 	a := NewActor("Memoless Swaps")
 
 	// memoless swaps
-	simChains1e8 := []common.Chain{}
-	for _, chain := range acommon.SimChains {
+	var simChains1e8 []common.Chain
+	for _, chain := range acommon.SimChains() {
 		if chain.GetGasAssetDecimal() == 8 {
 			simChains1e8 = append(simChains1e8, chain)
 		}
@@ -28,11 +28,11 @@ func MemolessSwaps() *Actor {
 	for _, t := range []core.MemolessType{core.MemolessTypeRef, core.MemolessTypeAmount} {
 		for _, chain := range simChains1e8 {
 			// choose a random (other) pool to swap to
-			j := rand.Intn(len(acommon.SimChains))
-			for chain.Equals(acommon.SimChains[j]) {
-				j = rand.Intn(len(acommon.SimChains))
+			j := rand.Intn(len(acommon.SimChains()))
+			for chain.Equals(acommon.SimChains()[j]) {
+				j = rand.Intn(len(acommon.SimChains()))
 			}
-			a.Children[core.NewSwapMemolessActor(chain.GetGasAsset(), acommon.SimChains[j].GetGasAsset(), t)] = true
+			a.Children[core.NewSwapMemolessActor(chain.GetGasAsset(), acommon.SimChains()[j].GetGasAsset(), t)] = true
 		}
 	}
 
@@ -47,8 +47,8 @@ func Swaps() *Actor {
 	a := NewActor("Swaps")
 
 	// gather all pools we expect to swap through
-	swapPools := []common.Asset{}
-	for _, chain := range acommon.SimChains {
+	var swapPools []common.Asset
+	for _, chain := range acommon.SimChains() {
 		swapPools = append(swapPools, chain.GetGasAsset())
 
 		// add tokens to swap pools

@@ -60,7 +60,7 @@ func NewArbActor() *Actor {
 // Ops
 ////////////////////////////////////////////////////////////////////////////////////////
 
-func (a *ArbActor) init(config *OpConfig) OpResult {
+func (a *ArbActor) init(_ *OpConfig) OpResult {
 	// get all pools
 	pools, err := thornode.GetPools()
 	if err != nil {

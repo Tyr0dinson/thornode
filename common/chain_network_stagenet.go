@@ -4,3 +4,4 @@
 package common
 
 const CurrentChainNetwork = StageNet
+const IsMocknet = false

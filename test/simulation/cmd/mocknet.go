@@ -41,6 +41,7 @@ var chainRPCs = map[common.Chain]string{
 	common.TRONChain:  "http://localhost:8090",
 	common.XRPChain:   "http://localhost:5005",
 	common.SOLChain:   "http://localhost:8899",
+	common.TONChain:   "localhost:40004",
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -93,17 +94,22 @@ func InitConfig(parallelism int, seed bool) *OpConfig {
 	sem := make(chan struct{}, 8)
 
 	// since we reuse the bifrost thorclient, load endpoints into config package
-	os.Setenv("BIFROST_THORCHAIN_CHAIN_HOST", "localhost:1317")
-	os.Setenv("BIFROST_THORCHAIN_CHAIN_RPC", "localhost:26657")
-	os.Setenv("BIFROST_THORCHAIN_CHAIN_EBIFROST", "localhost:50051")
+	_ = os.Setenv("BIFROST_THORCHAIN_CHAIN_HOST", "localhost:1317")
+	_ = os.Setenv("BIFROST_THORCHAIN_CHAIN_RPC", "localhost:26657")
+	_ = os.Setenv("BIFROST_THORCHAIN_CHAIN_EBIFROST", "localhost:50051")
 	config.Init()
+
+	constructors := map[common.Chain]LiteChainClientConstructor{}
+	for _, chain := range acommon.SimChains() {
+		constructors[chain] = liteClientConstructors[chain]
+	}
 
 	// validators
 	for i, mnemonic := range mocknetValidatorMnemonics {
 		wg.Add(1)
 		sem <- struct{}{}
 		go func(i int, mnemonic string) {
-			a := NewUser(mnemonic, liteClientConstructors)
+			a := NewUser(mnemonic, constructors)
 			mu.Lock()
 			c.NodeUsers[i] = a
 			mu.Unlock()
@@ -151,6 +157,7 @@ func InitConfig(parallelism int, seed bool) *OpConfig {
 				{common.LTCChain, 250, 103},
 				{common.BCHChain, 1500, 7},
 				{common.DOGEChain, 1000, 1500000},
+				{common.TONChain, 1, 550_000},
 			}
 			for _, fee := range defaultFees {
 				log.Info().Msgf("posting %s network fee", fee.chain)
@@ -171,7 +178,7 @@ func InitConfig(parallelism int, seed bool) *OpConfig {
 		wg.Add(1)
 		sem <- struct{}{}
 		go func(mnemonic string) {
-			a := NewUser(mnemonic, liteClientConstructors)
+			a := NewUser(mnemonic, constructors)
 			mu.Lock()
 			c.Users = append(c.Users, a)
 			mu.Unlock()
@@ -184,14 +191,32 @@ func InitConfig(parallelism int, seed bool) *OpConfig {
 	wg.Wait()
 
 	// fund all user accounts from master
-	master := NewUser(mocknetMasterMnemonic, liteClientConstructors)
+	master := NewUser(mocknetMasterMnemonic, constructors)
 
 	// log all configured tokens, their decimals, and master balance
-	for chain := range liteClientConstructors {
+	for chain := range constructors {
 		account, err := master.ChainClients[chain].GetAccount(nil)
 		if err != nil {
 			log.Fatal().Stringer("chain", chain).Err(err).Msg("failed to get master account")
 		}
+
+		if chain == common.TONChain {
+			// TON chain takes a LONG time to start up.
+			// TODO see if MyLocalTON can start up with funded master account faster.
+			for i := 0; account.Coins[0].Amount.IsZero() && i < 30; i++ {
+				log.Info().Msg("TON chain is not ready yet, waiting...")
+				<-time.After(5 * time.Second)
+				account, err = master.ChainClients[chain].GetAccount(nil)
+				if err != nil {
+					log.Fatal().Stringer("chain", chain).Err(err).Msg("failed to get master account")
+				}
+				continue
+			}
+			if account.Coins[0].Amount.IsZero() {
+				log.Fatal().Msg("TON chain is still not ready")
+			}
+		}
+
 		for _, coin := range account.Coins {
 			ctxLog := log.Info().
 				Stringer("chain", chain).
@@ -232,7 +257,7 @@ func InitConfig(parallelism int, seed bool) *OpConfig {
 	log.Info().Msg("initializing mocknet simulation user accounts")
 
 	// fund all user accounts
-	funded := []*User{}
+	var funded []*User
 	for _, user := range c.Users {
 		if fundUserThorAccount(master, user) {
 			funded = append(funded, user)
@@ -241,7 +266,7 @@ func InitConfig(parallelism int, seed bool) *OpConfig {
 
 	// fund user accounts with one goroutine per chain
 	wg = &sync.WaitGroup{}
-	for _, chain := range acommon.SimChains {
+	for _, chain := range acommon.SimChains() {
 		// determine the amount to seed
 		chainSeedAmount := sdkmath.ZeroUint()
 		switch chain {
@@ -257,6 +282,8 @@ func InitConfig(parallelism int, seed bool) *OpConfig {
 		case common.DOGEChain:
 			chainSeedAmount = sdkmath.NewUint(100000 * common.One)
 		case common.TRONChain:
+			chainSeedAmount = sdkmath.NewUint(100000 * common.One)
+		case common.TONChain:
 			chainSeedAmount = sdkmath.NewUint(100000 * common.One)
 		default:
 			continue // all other chains currently unsupported
@@ -311,7 +338,7 @@ func fundUserChainAccount(master, user *User, chain common.Chain, amount sdkmath
 		log.Fatal().Err(err).Interface("tx", tx).Msg("failed to broadcast funding tx")
 	}
 
-	amountFloat := float64(amount.Uint64()) / float64(common.One)
+	amountFloat := float64(amount.Uint64()) / common.One
 	log.Info().
 		Str("txid", txid).
 		Str("user", user.Name()).
@@ -352,7 +379,7 @@ func fundUserChainAccount(master, user *User, chain common.Chain, amount sdkmath
 				Stringer("from", from).
 				Msg("failed to broadcast funding token tx")
 		}
-		amountFloat := float64(amount.Uint64()) / float64(common.One)
+		amountFloat := float64(amount.Uint64()) / common.One
 		log.Info().
 			Str("txid", tokenTxid).
 			Str("account", user.Name()).
@@ -387,7 +414,7 @@ func fundUserThorAccount(master, user *User) bool {
 		log.Fatal().Err(err).Msg("failed to get user thor address")
 	}
 	seedAmount := sdkmath.NewInt(1000 * common.One)
-	seedAmountFloat := float64(seedAmount.Uint64()) / float64(common.One)
+	seedAmountFloat := float64(seedAmount.Uint64()) / common.One
 	tx := &ttypes.MsgSend{
 		FromAddress: masterThorAddress,
 		ToAddress:   userThorAccAddress,

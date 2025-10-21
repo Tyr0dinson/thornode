@@ -2,6 +2,8 @@ package common
 
 import (
 	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"math/big"
@@ -40,18 +42,28 @@ func NewTxID(hash string) (TxID, error) {
 	}
 
 	switch len(hash) {
+	case 44:
+		// TON tx hash
+		data, err := base64.StdEncoding.DecodeString(hash)
+		if err != nil {
+			return "", err
+		}
+		if len(data) != 32 {
+			return "", fmt.Errorf("txid error: no valid ton hash")
+		}
+		hash = hex.EncodeToString(data)
 	case 64:
 		// do nothing
 	case 66: // ETH check
 		if !strings.HasPrefix(hash, "0x") {
 			err := fmt.Errorf("txid error: must be 66 characters (got %d)", len(hash))
-			return TxID(""), err
+			return "", err
 		}
 	case 87, 88:
 		// SOL transaction hash, do nothing
 	default:
 		err := fmt.Errorf("txid error: must be 64 characters (got %d)", len(hash))
-		return TxID(""), err
+		return "", err
 	}
 
 	return TxID(strings.ToUpper(hash)), nil

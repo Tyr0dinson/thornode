@@ -17,7 +17,7 @@ func Ragnarok() *Actor {
 	a := NewActor("Ragnarok")
 
 	// ragnarok all gas asset pools (should apply to tokens implicitly)
-	for _, chain := range acommon.SimChains {
+	for _, chain := range acommon.SimChains() {
 		a.Children[core.NewRagnarokPoolActor(chain.GetGasAsset())] = true
 	}
 

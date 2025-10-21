@@ -18,10 +18,13 @@ import (
 func Consolidate() *Actor {
 	a := NewActor("Consolidate")
 
-	a.Children[NewConsolidateActor(common.BTCAsset, 10)] = true
-	a.Children[NewConsolidateActor(common.BCHAsset, 10)] = true
-	a.Children[NewConsolidateActor(common.DOGEAsset, 10)] = true
-	a.Children[NewConsolidateActor(common.LTCAsset, 10)] = true
+	for _, chain := range SimChains() {
+		asset := chain.GetGasAsset()
+		switch asset {
+		case common.BTCAsset, common.BCHAsset, common.DOGEAsset, common.LTCAsset:
+			a.Children[NewConsolidateActor(asset, 10)] = true
+		}
+	}
 
 	return a
 }
@@ -125,7 +128,7 @@ func (a *ConsolidateActor) acquireUser(config *OpConfig) OpResult {
 	}
 }
 
-func (a *ConsolidateActor) getHeight(config *OpConfig) OpResult {
+func (a *ConsolidateActor) getHeight(_ *OpConfig) OpResult {
 	// get the current block height
 	block, err := thornode.GetBlock(0)
 	if err != nil {
@@ -143,7 +146,7 @@ func (a *ConsolidateActor) getHeight(config *OpConfig) OpResult {
 	}
 }
 
-func (a *ConsolidateActor) donate(config *OpConfig) OpResult {
+func (a *ConsolidateActor) donate(_ *OpConfig) OpResult {
 	memo := fmt.Sprintf("DONATE:%s", a.asset)
 	client := a.account.ChainClients[a.asset.Chain]
 	txid, err := DepositL1(a.Log(), client, a.asset, memo, a.donateAmount)
@@ -160,7 +163,7 @@ func (a *ConsolidateActor) donate(config *OpConfig) OpResult {
 	}
 }
 
-func (a *ConsolidateActor) verifyConsolidate(config *OpConfig) OpResult {
+func (a *ConsolidateActor) verifyConsolidate(_ *OpConfig) OpResult {
 	type FilterBlockResponse struct {
 		Txs []struct {
 			Tx struct {

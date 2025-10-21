@@ -180,6 +180,17 @@ func (a *SolvencyCheckActor) checkSolvency(config *OpConfig) OpResult {
 		if !ok {
 			a.Log().Error().Str("asset", asset).Msg("L1 amount not found for asset")
 		}
+
+		// TODO: find a more elegant way for handling unpredictable fees
+		switch asset {
+		case "TON.TON":
+			// ignore difference up to 0.01 TON
+			diff := vaultAmount.Sub(l1Amount)
+			if diff.LT(cosmos.NewUint(1e6)) {
+				l1Amount = vaultAmount
+			}
+		}
+
 		if !vaultAmount.Equal(l1Amount) {
 			a.Log().Error().
 				Str("asset", asset).

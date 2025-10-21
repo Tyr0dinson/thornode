@@ -21,8 +21,8 @@ import (
 func InactiveVaultRefunds() *Actor {
 	a := NewActor("Feature-InactiveVaultRefunds")
 
-	for _, asset := range acommon.SimChains {
-		a.Children[NewInactiveVaultRefundActor(asset.GetGasAsset())] = true
+	for _, chain := range acommon.SimChains() {
+		a.Children[NewInactiveVaultRefundActor(chain.GetGasAsset())] = true
 	}
 
 	return a
@@ -120,7 +120,7 @@ func (a *InactiveVaultRefundActor) acquireUser(config *OpConfig) OpResult {
 	}
 }
 
-func (a *InactiveVaultRefundActor) sendInactiveVaultInbound(config *OpConfig) OpResult {
+func (a *InactiveVaultRefundActor) sendInactiveVaultInbound(_ *OpConfig) OpResult {
 	memo := "TEST-INACTIVE-VAULT-REFUND"
 	client := a.account.ChainClients[a.asset.Chain]
 
@@ -192,7 +192,7 @@ func (a *InactiveVaultRefundActor) sendInactiveVaultInbound(config *OpConfig) Op
 	}
 }
 
-func (a *InactiveVaultRefundActor) verifyRefund(config *OpConfig) OpResult {
+func (a *InactiveVaultRefundActor) verifyRefund(_ *OpConfig) OpResult {
 	// get swap stages
 	stages, err := thornode.GetTxStages(a.inboundTxid)
 	if err != nil {

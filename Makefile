@@ -228,9 +228,10 @@ _test-regression:
 
 # ------------------------------ Simulation Tests ------------------------------
 
-test-simulation: build-mocknet reset-mocknet test-simulation-no-reset
+test-simulation: stop-mocknet build-mocknet run-mocknet test-simulation-no-reset
 
 STAGES ?= all
+CHAINS ?= ""
 test-simulation-cluster: build-test-simulation build-mocknet-cluster reset-mocknet-cluster
 	@STAGES=$(STAGES) docker run --rm ${DOCKER_TTY_ARGS} \
 		-e PARALLELISM -e STAGES --network host -w /app \
@@ -238,7 +239,7 @@ test-simulation-cluster: build-test-simulation build-mocknet-cluster reset-mockn
 
 test-simulation-no-reset: build-test-simulation
 	@docker run --rm ${DOCKER_TTY_ARGS} \
-		-e PARALLELISM -e STAGES --network host -w /app \
+		-e PARALLELISM -e STAGES -e CHAINS --network host -w /app \
 		thornode-simtest sh -c 'make _test-simulation'
 
 build-test-simulation:
@@ -265,8 +266,12 @@ cli-mocknet:
 	@docker compose $(DOCKER_COMPOSE_FILES) run --rm cli
 
 run-mocknet:
-	@docker compose $(DOCKER_COMPOSE_FILES) \
-		--profile mocknet --profile midgard up -d
+	@if [ -n "$(CHAINS)" ]; then \
+  		export COMPOSE_PROFILES="thornode,bifrost,$(CHAINS)"; \
+	else \
+	  	export COMPOSE_PROFILES="mocknet,midgard"; \
+	fi; \
+	docker compose $(DOCKER_COMPOSE_FILES) up -d
 
 stop-mocknet:
 	@docker compose $(DOCKER_COMPOSE_FILES) --profile mocknet --profile midgard down -v

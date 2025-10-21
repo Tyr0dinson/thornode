@@ -26,14 +26,14 @@ func Bootstrap() *Actor {
 
 	// bootstrap pools for all chains
 	count := 0
-	for _, chain := range acommon.SimChains {
+	for _, chain := range acommon.SimChains() {
 		count++
 		a.Children[core.NewDualLPActor(chain.GetGasAsset())] = true
 	}
 
 	// create token pools
 	tokenPools := NewActor("Bootstrap-TokenPools")
-	for _, chain := range common.AllChains {
+	for _, chain := range acommon.SimChains() {
 		if !chain.IsEVM() {
 			continue
 		}

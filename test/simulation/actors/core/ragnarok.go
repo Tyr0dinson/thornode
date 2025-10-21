@@ -91,7 +91,7 @@ func (a *RagnarokPoolActor) sendMimir(config *OpConfig) OpResult {
 	}
 }
 
-func (a *RagnarokPoolActor) verifyPoolRemoval(config *OpConfig) OpResult {
+func (a *RagnarokPoolActor) verifyPoolRemoval(_ *OpConfig) OpResult {
 	// fetch pools
 	pools, err := thornode.GetPools()
 	if err != nil {

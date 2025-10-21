@@ -11,6 +11,8 @@ import (
 	"github.com/rivo/tview"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	acommon "gitlab.com/thorchain/thornode/v3/test/simulation/actors/common"
+	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/ton"
 	"golang.org/x/term"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -50,6 +52,7 @@ var liteClientConstructors = map[common.Chain]LiteChainClientConstructor{
 	common.XRPChain:   xrp.NewConstructor(chainRPCs[common.XRPChain]),
 	common.NOBLEChain: pkgcosmos.NewConstructor(chainRPCs[common.NOBLEChain]),
 	common.SOLChain:   solana.NewConstructor(chainRPCs[common.SOLChain]),
+	common.TONChain:   ton.NewConstructor(chainRPCs[common.TONChain]),
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -112,7 +115,7 @@ func main() {
 	}
 
 	// wait for tron chain to produce its first block
-	for _, chain := range common.AllChains {
+	for _, chain := range acommon.SimChains() {
 		if chain != common.TRONChain {
 			continue
 		}

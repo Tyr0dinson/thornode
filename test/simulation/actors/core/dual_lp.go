@@ -136,7 +136,7 @@ func (a *DualLPActor) acquireUser(config *OpConfig) OpResult {
 	}
 }
 
-func (a *DualLPActor) depositL1Token(config *OpConfig) OpResult {
+func (a *DualLPActor) depositL1Token(_ *OpConfig) OpResult {
 	memo := fmt.Sprintf("+:%s:%s", a.asset, a.thorAddress)
 	client := a.account.ChainClients[a.asset.Chain]
 	txid, err := DepositL1Token(a.Log(), client, a.asset, memo, a.l1Amount)
@@ -153,7 +153,7 @@ func (a *DualLPActor) depositL1Token(config *OpConfig) OpResult {
 	}
 }
 
-func (a *DualLPActor) depositL1(config *OpConfig) OpResult {
+func (a *DualLPActor) depositL1(_ *OpConfig) OpResult {
 	memo := fmt.Sprintf("+:%s:%s", a.asset, a.thorAddress)
 	client := a.account.ChainClients[a.asset.Chain]
 	txid, err := DepositL1(a.Log(), client, a.asset, memo, a.l1Amount)
@@ -170,7 +170,7 @@ func (a *DualLPActor) depositL1(config *OpConfig) OpResult {
 	}
 }
 
-func (a *DualLPActor) depositRune(config *OpConfig) OpResult {
+func (a *DualLPActor) depositRune(_ *OpConfig) OpResult {
 	memo := fmt.Sprintf("+:%s:%s", a.asset, a.l1Address)
 	accAddr, err := a.account.PubKey(common.THORChain).GetThorAddress()
 	if err != nil {
@@ -198,7 +198,7 @@ func (a *DualLPActor) depositRune(config *OpConfig) OpResult {
 	}
 }
 
-func (a *DualLPActor) verifyLP(config *OpConfig) OpResult {
+func (a *DualLPActor) verifyLP(_ *OpConfig) OpResult {
 	lps, err := thornode.GetLiquidityProviders(a.asset)
 	if err != nil {
 		a.Log().Error().Err(err).Msg("failed to get liquidity providers")

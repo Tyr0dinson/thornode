@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/rs/zerolog/log"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/ton"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/tss"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
@@ -55,6 +56,8 @@ func LoadChains(thorKeys *thorclient.Keys,
 			return xrp.NewClient(thorKeys, chain, server, thorchainBridge, m)
 		case common.SOLChain:
 			return solana.NewSOLClient(thorKeys, chain, server, thorchainBridge, m, pubKeyValidator, poolMgr)
+		case common.TONChain:
+			return ton.NewTonClient(thorKeys, chain, server, thorchainBridge, m, common.IsMocknet)
 		default:
 			log.Fatal().Msgf("chain %s is not supported", chain.ChainID)
 			return nil, nil

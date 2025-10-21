@@ -160,7 +160,7 @@ func (a *SwapActor) acquireUser(config *OpConfig) OpResult {
 	}
 }
 
-func (a *SwapActor) getQuote(config *OpConfig) OpResult {
+func (a *SwapActor) getQuote(_ *OpConfig) OpResult {
 	quote, err := thornode.GetSwapQuote(a.from, a.to, a.swapAmount)
 	if err != nil {
 		a.Log().Error().Err(err).Str("amount", a.swapAmount.String()).Msg("failed to get swap quote")
@@ -187,7 +187,7 @@ func (a *SwapActor) getQuote(config *OpConfig) OpResult {
 	}
 }
 
-func (a *SwapActor) sendSwap(config *OpConfig) OpResult {
+func (a *SwapActor) sendSwap(_ *OpConfig) OpResult {
 	// get inbound address
 	inboundAddr, _, err := thornode.GetInboundAddress(a.from.Chain)
 	if err != nil {
@@ -239,7 +239,7 @@ func (a *SwapActor) sendSwap(config *OpConfig) OpResult {
 	}
 }
 
-func (a *SwapActor) sendTokenSwap(config *OpConfig) OpResult {
+func (a *SwapActor) sendTokenSwap(_ *OpConfig) OpResult {
 	// get router address
 	inboundAddr, routerAddr, err := thornode.GetInboundAddress(a.from.Chain)
 	if err != nil {
@@ -342,7 +342,7 @@ func (a *SwapActor) sendTokenSwap(config *OpConfig) OpResult {
 	}
 }
 
-func (a *SwapActor) verifyOutbound(config *OpConfig) OpResult {
+func (a *SwapActor) verifyOutbound(_ *OpConfig) OpResult {
 	// get swap stages
 	stages, err := thornode.GetTxStages(a.swapTxID)
 	if err != nil {

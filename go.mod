@@ -1,8 +1,8 @@
 module gitlab.com/thorchain/thornode/v3
 
-go 1.23.8
+go 1.24.0
 
-toolchain go1.23.10
+toolchain go1.24.9
 
 // overrides
 replace (
@@ -65,7 +65,7 @@ require (
 	github.com/cosmos/cosmos-db v1.1.1
 	github.com/cosmos/cosmos-proto v1.0.0-beta.5
 	github.com/cosmos/cosmos-sdk v0.53.0
-	github.com/cosmos/evm v1.0.0-rc2
+	github.com/cosmos/evm v1.0.0-rc1
 	github.com/cosmos/go-bip39 v1.0.0
 	github.com/cosmos/gogogateway v1.2.0
 	github.com/cosmos/gogoproto v1.7.0
@@ -118,11 +118,11 @@ require (
 	github.com/syndtr/goleveldb v1.0.1-0.20220721030215-126854af5e6d
 	github.com/tendermint/btcd v0.1.1
 	go.uber.org/atomic v1.11.0
-	golang.org/x/crypto v0.38.0
+	golang.org/x/crypto v0.42.0
 	golang.org/x/oauth2 v0.27.0
-	golang.org/x/sync v0.14.0
-	golang.org/x/text v0.25.0
-	golang.org/x/tools v0.31.0
+	golang.org/x/sync v0.17.0
+	golang.org/x/text v0.29.0
+	golang.org/x/tools v0.36.0
 	google.golang.org/genproto/googleapis/api v0.0.0-20250414145226-207652e42e2e
 	google.golang.org/grpc v1.72.0
 	google.golang.org/protobuf v1.36.6
@@ -135,6 +135,7 @@ require (
 	cosmossdk.io/collections v1.2.1
 	github.com/coder/websocket v1.8.13
 	github.com/decred/dcrd/dcrec/secp256k1 v1.0.4
+	github.com/xssnick/tonutils-go v1.15.5
 )
 
 require github.com/decred/dcrd/dcrec/secp256k1/v2 v2.0.0 // indirect
@@ -414,10 +415,10 @@ require (
 	go.uber.org/zap v1.24.0 // indirect
 	golang.org/x/arch v0.15.0 // indirect
 	golang.org/x/exp v0.0.0-20250305212735-054e65f0b394 // indirect
-	golang.org/x/mod v0.24.0 // indirect
-	golang.org/x/net v0.39.0 // indirect
-	golang.org/x/sys v0.33.0 // indirect
-	golang.org/x/term v0.32.0 // indirect
+	golang.org/x/mod v0.27.0 // indirect
+	golang.org/x/net v0.43.0 // indirect
+	golang.org/x/sys v0.36.0 // indirect
+	golang.org/x/term v0.35.0 // indirect
 	golang.org/x/time v0.10.0 // indirect
 	gonum.org/v1/gonum v0.15.1 // indirect
 	google.golang.org/api v0.222.0 // indirect

@@ -92,14 +92,14 @@ func NewSwapMemolessActor(from, to common.Asset, memolessType MemolessType) *Act
 // Ops
 ////////////////////////////////////////////////////////////////////////////////////////
 
-func (a *SwapMemolessActor) updateLogContext(config *OpConfig) OpResult {
+func (a *SwapMemolessActor) updateLogContext(_ *OpConfig) OpResult {
 	a.SetLogger(log.With().Stringer("type", a.memolessType).Logger())
 	return OpResult{
 		Continue: true,
 	}
 }
 
-func (a *SwapMemolessActor) registerSwap(config *OpConfig) OpResult {
+func (a *SwapMemolessActor) registerSwap(_ *OpConfig) OpResult {
 	// build the swap
 	coin := common.NewCoin(common.RuneNative, sdkmath.ZeroUint())
 	a.registeredMemo = fmt.Sprintf("=:%s:%s", a.to, a.toAddress)
@@ -146,7 +146,7 @@ func (a *SwapMemolessActor) registerSwap(config *OpConfig) OpResult {
 	}
 }
 
-func (a *SwapMemolessActor) getMemolessRef(config *OpConfig) OpResult {
+func (a *SwapMemolessActor) getMemolessRef(_ *OpConfig) OpResult {
 	// Retry logic to handle race condition between tx broadcast and state query
 	// The transaction may take 1-2 blocks to be fully committed to state
 	maxAttempts := 60 // 60 attempts * 500ms = 30 seconds timeout
@@ -214,7 +214,7 @@ func (a *SwapMemolessActor) getMemolessRef(config *OpConfig) OpResult {
 	}
 }
 
-func (a *SwapMemolessActor) prepareSwapMemolessByRef(config *OpConfig) OpResult {
+func (a *SwapMemolessActor) prepareSwapMemolessByRef(_ *OpConfig) OpResult {
 	// encode reference memo with leading zeros
 	modulusStr := fmt.Sprintf("%d", a.amountModulus())
 	memolessRefFormatString := fmt.Sprintf("r:%%0%dd", len(modulusStr)-1)
@@ -225,7 +225,7 @@ func (a *SwapMemolessActor) prepareSwapMemolessByRef(config *OpConfig) OpResult 
 	}
 }
 
-func (a *SwapMemolessActor) prepareSwapMemolessByAmount(config *OpConfig) OpResult {
+func (a *SwapMemolessActor) prepareSwapMemolessByAmount(_ *OpConfig) OpResult {
 	// encode the memoless ref in the amount
 	modulus := a.amountModulus()
 	a.Log().Info().Uint64("modulus", modulus).Msg("preparing memoless by amount")
@@ -242,7 +242,7 @@ func (a *SwapMemolessActor) prepareSwapMemolessByAmount(config *OpConfig) OpResu
 	}
 }
 
-func (a *SwapMemolessActor) signSwap(config *OpConfig) OpResult {
+func (a *SwapMemolessActor) signSwap(_ *OpConfig) OpResult {
 	// get inbound address
 	inboundAddr, _, err := thornode.GetInboundAddress(a.from.Chain)
 	if err != nil {
@@ -275,7 +275,7 @@ func (a *SwapMemolessActor) signSwap(config *OpConfig) OpResult {
 	}
 }
 
-func (a *SwapMemolessActor) broadcastSwap(config *OpConfig) OpResult {
+func (a *SwapMemolessActor) broadcastSwap(_ *OpConfig) OpResult {
 	// broadcast transaction
 	client := a.user.ChainClients[a.from.Chain]
 	var err error

@@ -1,6 +1,8 @@
 module gitlab.com/thorchain/thornode/v3/test/simulation
 
-go 1.23.8
+go 1.24.0
+
+toolchain go1.24.9
 
 require (
 	cosmossdk.io/math v1.5.3
@@ -19,6 +21,7 @@ require (
 	github.com/ltcsuite/ltcd v0.20.1-beta.0.20201210074626-c807bfe31ef0
 	github.com/ltcsuite/ltcutil v1.0.2-beta
 	github.com/rs/zerolog v1.34.0
+	github.com/xssnick/tonutils-go v1.15.5
 	gitlab.com/thorchain/thornode/v3 v3.0.0-00010101000000-000000000000
 	google.golang.org/grpc v1.72.0
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c
@@ -50,7 +53,7 @@ require (
 	github.com/bytedance/sonic v1.14.1 // indirect
 	github.com/bytedance/sonic/loader v0.3.0 // indirect
 	github.com/cloudwego/base64x v0.1.6 // indirect
-	github.com/cosmos/evm v1.0.0-rc2 // indirect
+	github.com/cosmos/evm v1.0.0-rc1 // indirect
 	github.com/dgraph-io/badger/v4 v4.2.0 // indirect
 	github.com/google/flatbuffers v24.3.25+incompatible // indirect
 	github.com/naoina/go-stringutil v0.1.0 // indirect
@@ -373,14 +376,14 @@ require (
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.24.0 // indirect
-	golang.org/x/crypto v0.38.0 // indirect
+	golang.org/x/crypto v0.42.0 // indirect
 	golang.org/x/exp v0.0.0-20250305212735-054e65f0b394 // indirect
-	golang.org/x/net v0.39.0 // indirect
+	golang.org/x/net v0.43.0 // indirect
 	golang.org/x/oauth2 v0.27.0 // indirect
-	golang.org/x/sync v0.14.0 // indirect
-	golang.org/x/sys v0.33.0 // indirect
-	golang.org/x/term v0.32.0
-	golang.org/x/text v0.25.0 // indirect
+	golang.org/x/sync v0.17.0 // indirect
+	golang.org/x/sys v0.36.0 // indirect
+	golang.org/x/term v0.35.0
+	golang.org/x/text v0.29.0 // indirect
 	golang.org/x/time v0.10.0 // indirect
 	gonum.org/v1/gonum v0.15.1 // indirect
 	google.golang.org/genproto v0.0.0-20241118233622-e639e219e697 // indirect

@@ -4,3 +4,4 @@
 package common
 
 const CurrentChainNetwork = MainNet
+const IsMocknet = false
