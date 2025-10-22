@@ -47,7 +47,7 @@ func LoadChains(thorKeys *thorclient.Keys,
 			return evm.NewEVMClient(thorKeys, chain, server, thorchainBridge, m, pubKeyValidator, poolMgr)
 		case common.GAIAChain, common.NOBLEChain:
 			return gaia.NewCosmosClient(thorKeys, chain, server, thorchainBridge, m)
-		case common.BTCChain, common.BCHChain, common.LTCChain, common.DOGEChain:
+		case common.BTCChain, common.BCHChain, common.LTCChain, common.DOGEChain, common.ZECChain:
 			return utxo.NewClient(thorKeys, chain, server, thorchainBridge, m)
 		case common.TRONChain:
 			return tron.NewTronClient(thorKeys, chain, server, thorchainBridge, m)
@@ -76,7 +76,7 @@ func LoadChains(thorKeys *thorclient.Keys,
 
 		// trunk-ignore-all(golangci-lint/forcetypeassert)
 		switch chain.ChainID {
-		case common.BTCChain, common.BCHChain, common.LTCChain, common.DOGEChain:
+		case common.BTCChain, common.BCHChain, common.LTCChain, common.DOGEChain, common.ZECChain:
 			pubKeyValidator.RegisterCallback(client.(*utxo.Client).RegisterPublicKey)
 		}
 		chains[chain.ChainID] = client
