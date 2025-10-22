@@ -16,6 +16,7 @@ import (
 
 	"github.com/btcsuite/btcd/mempool"
 	btcwire "github.com/btcsuite/btcd/wire"
+	btcchaincfg "github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcutil"
 	dogewire "github.com/eager7/dogd/wire"
 	"github.com/eager7/dogutil"
@@ -82,8 +83,14 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 			return nil, nil, nil, fmt.Errorf("fail to decode next address: %w", err)
 		}
 		outputAddrStr = outputAddr.(ltcutil.Address).String() // trunk-ignore(golangci-lint/forcetypeassert)
-	case common.BTCChain:
-		outputAddr, err = btcutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgBTC())
+	case common.BTCChain, common.ZECChain:
+		var cfg *btcchaincfg.Params
+		if c.cfg.ChainID.Equals(common.ZECChain) {
+			cfg = c.getChainCfgZEC()
+		} else {
+			cfg = c.getChainCfgBTC()
+		}
+		outputAddr, err = btcutil.DecodeAddress(tx.ToAddress.String(), cfg)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("fail to decode next address: %w", err)
 		}
@@ -168,6 +175,8 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 		stx = wireToLTC(redeemTx)
 	case common.BTCChain:
 		stx = wireToBTC(redeemTx)
+	case common.ZECChain:
+		stx = wireToZEC(redeemTx)
 	default:
 		c.log.Fatal().Msg("unsupported chain")
 	}
@@ -194,6 +203,8 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 				err = c.signUTXOLTC(stx.(*ltcwire.MsgTx), tx, amount, sourceScript, i)
 			case common.BTCChain:
 				err = c.signUTXOBTC(stx.(*btcwire.MsgTx), tx, amount, sourceScript, i)
+			case common.ZECChain:
+				err = c.signUTXOZEC(stx.(*btcwire.MsgTx), tx, amount, sourceScript, i)
 			default:
 				c.log.Fatal().Msg("unsupported chain")
 			}
@@ -221,6 +232,8 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 		redeemTx = ltcToWire(stx.(*ltcwire.MsgTx))
 	case common.BTCChain:
 		redeemTx = btcToWire(stx.(*btcwire.MsgTx))
+	case common.ZECChain:
+		redeemTx = zecToWire(stx.(*btcwire.MsgTx))
 	default:
 		c.log.Fatal().Msg("unsupported chain")
 	}
@@ -317,7 +330,7 @@ func (c *Client) BroadcastTx(txOut stypes.TxOutItem, payload []byte) (string, er
 	switch c.cfg.ChainID {
 	case common.DOGEChain, common.BCHChain:
 		maxFee = true // "allowHighFees"
-	case common.LTCChain, common.BTCChain:
+	case common.LTCChain, common.BTCChain, common.ZECChain:
 		maxFee = 10_000_000
 	}
 

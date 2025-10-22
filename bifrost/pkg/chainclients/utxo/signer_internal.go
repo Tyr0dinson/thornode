@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/btcsuite/btcd/btcjson"
+	btcchaincfg "github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 
@@ -198,9 +199,15 @@ func (c *Client) getSourceScript(tx stypes.TxOutItem) ([]byte, error) {
 			return nil, fmt.Errorf("fail to decode source address(%s): %w", sourceAddr.String(), err)
 		}
 		return ltctxscript.PayToAddrScript(addr)
-	case common.BTCChain:
+	case common.BTCChain, common.ZECChain:
 		var addr btcutil.Address
-		addr, err = btcutil.DecodeAddress(sourceAddr.String(), c.getChainCfgBTC())
+		var cfg *btcchaincfg.Params
+		if c.cfg.ChainID.Equals(common.ZECChain) {
+			cfg = c.getChainCfgZEC()
+		} else {
+			cfg = c.getChainCfgBTC()
+		}
+		addr, err = btcutil.DecodeAddress(sourceAddr.String(), cfg)
 		if err != nil {
 			return nil, fmt.Errorf("fail to decode source address(%s): %w", sourceAddr.String(), err)
 		}
@@ -281,7 +288,7 @@ func (c *Client) estimateTxSize(txes []btcjson.ListUnspentResult, memoScripts []
 // isSegwitChain returns true if the chain supports segwit transactions
 func (c *Client) isSegwitChain() bool {
 	switch c.cfg.ChainID {
-	case common.BTCChain, common.LTCChain:
+	case common.BTCChain, common.LTCChain, common.ZECChain:
 		return true
 	case common.DOGEChain, common.BCHChain:
 		return false
@@ -392,9 +399,15 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte) (*wire.MsgTx,
 		if err != nil {
 			return nil, nil, fmt.Errorf("fail to generate null data script: %w", err)
 		}
-	case common.BTCChain:
+	case common.BTCChain, common.ZECChain:
 		var outputAddr btcutil.Address
-		outputAddr, err = btcutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgBTC())
+		var cfg *btcchaincfg.Params
+		if c.cfg.ChainID.Equals(common.ZECChain) {
+			cfg = c.getChainCfgZEC()
+		} else {
+			cfg = c.getChainCfgBTC()
+		}
+		outputAddr, err = btcutil.DecodeAddress(tx.ToAddress.String(), cfg)
 		if err != nil {
 			return nil, nil, fmt.Errorf("fail to decode next address: %w", err)
 		}

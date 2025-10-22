@@ -829,10 +829,14 @@ func (c *Client) getSender(tx *btcjson.TxRawResult, vinZeroTxs map[string]*btcjs
 }
 
 func (c *Client) getAddressesFromScriptPubKey(scriptPubKey btcjson.ScriptPubKeyResult) []string {
-	if c.cfg.ChainID.Equals(common.BTCChain) {
+	switch c.cfg.ChainID {
+	case common.BTCChain:
 		return c.getAddressesFromScriptPubKeyBTC(scriptPubKey)
+	case common.ZECChain:
+		return c.getAddressesFromScriptPubKeyZEC(scriptPubKey)
+	default:
+		return scriptPubKey.Addresses
 	}
-	return scriptPubKey.Addresses
 }
 
 // getMemo returns memo for a btc tx, using vout OP_RETURN
@@ -861,7 +865,7 @@ func (c *Client) getMemo(tx *btcjson.TxRawResult) (string, error) {
 			asm, err = bchtxscript.DisasmString(buf)
 		case common.LTCChain:
 			asm, err = ltctxscript.DisasmString(buf)
-		case common.BTCChain:
+		case common.BTCChain, common.ZECChain:
 			asm, err = btctxscript.DisasmString(buf)
 		default:
 			c.log.Fatal().Msg("unsupported chain")
