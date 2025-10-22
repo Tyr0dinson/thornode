@@ -1,0 +1,41 @@
+{
+  "result": {
+    "txid": "1cb7e858e34379ef816ad094909f014a5123a67b1fdd2eae67e26cfb0bb06d31",
+    "hex": "",
+    "overwintered": true,
+    "version": 5,
+    "versiongroupid": "26a7270a",
+    "locktime": 0,
+    "expiryheight": 0,
+    "vin": [],
+    "vout": [
+      {
+        "value": 16.49343,
+        "n": 0,
+        "scriptPubKey": {
+          "asm": "",
+          "hex": "",
+          "type": "pubkeyhash",
+          "addresses": ["t1_dummy"]
+        }
+      },
+      {
+        "value": 4.50647,
+        "n": 1,
+        "scriptPubKey": {
+          "asm": "",
+          "hex": "",
+          "type": "pubkeyhash",
+          "addresses": ["t1_dummy"]
+        }
+      }
+    ],
+    "vjoinsplit": [],
+    "valueBalance": 0,
+    "valueBalanceZat": 0,
+    "vShieldedSpend": [],
+    "vShieldedOutput": []
+  },
+  "error": null,
+  "id": 3
+}

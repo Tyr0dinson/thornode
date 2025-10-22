@@ -159,6 +159,7 @@ services:
       - dogecoin
       - gaia
       - litecoin
+      - zcash
       - tron-supernode
       - tron-fullnode
       - thornode
@@ -174,6 +175,7 @@ services:
       DOGE_HOST: ${DOGE_HOST:-dogecoin:18332}
       BCH_HOST: ${BCH_HOST:-bitcoin-cash:28443}
       LTC_HOST: ${LTC_HOST:-litecoin:38443}
+      ZEC_HOST: ${ZEC_HOST:-zcash:18232}
       ETH_HOST: ${ETH_HOST:-http://ethereum:8545}
       AVAX_HOST: ${AVAX_HOST:-http://avalanche:9650/ext/bc/C/rpc}
       GAIA_HOST: ${GAIA_HOST:-http://gaia:26657}
@@ -194,6 +196,7 @@ services:
       BIFROST_CHAINS_ETH_BLOCK_SCANNER_OBSERVATION_FLEXIBILITY_BLOCKS: "5"
       BIFROST_CHAINS_GAIA_BLOCK_SCANNER_OBSERVATION_FLEXIBILITY_BLOCKS: "5"
       BIFROST_CHAINS_LTC_BLOCK_SCANNER_OBSERVATION_FLEXIBILITY_BLOCKS: "5"
+      BIFROST_CHAINS_ZEC_BLOCK_SCANNER_OBSERVATION_FLEXIBILITY_BLOCKS: "5"
       BIFROST_CHAINS_BASE_BLOCK_SCANNER_OBSERVATION_FLEXIBILITY_BLOCKS: "5"
       BIFROST_CHAINS_XRP_BLOCK_SCANNER_OBSERVATION_FLEXIBILITY_BLOCKS: "5"
 
@@ -533,6 +536,25 @@ services:
     volumes:
       - "./mocknet:/mocknet"
     entrypoint: "/mocknet/litecoin-entrypoint.sh"
+
+  # ------------------------------ zcash ------------------------------
+
+  zcash:
+    user: root
+    profiles:
+      - mocknet
+      - mocknet-cluster
+    image: electriccoinco/zcashd:v6.3.0
+    restart: unless-stopped
+    environment:
+      ZCASH_MASTER_ADDR: ${ZCASH_MASTER_ADDR:-tmGn7qKhnpbnwZPsaPt9XXAQz1Q3HAUCrwh}
+      BLOCK_TIME: ${BLOCK_TIME:-1}
+    volumes:
+      - "./mocknet/zec/zcash.conf:/srv/zcashd/.zcash/zcash.conf"
+      - "./mocknet/zec/start-zcash.sh:/srv/zcashd/start-zcash.sh"
+    ports:
+      - 18232:18232
+    entrypoint: /srv/zcashd/start-zcash.sh
 
   # ------------------------------ ethereum ------------------------------
 
