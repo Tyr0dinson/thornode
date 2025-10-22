@@ -43,6 +43,16 @@ ldflags = -X gitlab.com/thorchain/thornode/v3/constants.Version=$(VERSION) \
       -X github.com/cosmos/cosmos-sdk/version.BuildTags=$(TAG) \
       -buildid=
 
+# ZEC library configuration
+ZEC_DIR?=${PWD}/lib
+ifeq ($(shell uname -s),Darwin)
+	LIB_EXT=dylib
+	CGO_VARS=CGO_LDFLAGS="-L$(ZEC_DIR) -Wl,-rpath,$(ZEC_DIR) -lzec" DYLD_LIBRARY_PATH="$(ZEC_DIR)" CGO_ENABLED=1
+else
+	LIB_EXT=so
+	CGO_VARS=CGO_LDFLAGS="-L$(ZEC_DIR) -Wl,-rpath,$(ZEC_DIR) -lzec" LD_LIBRARY_PATH="$(ZEC_DIR)" CGO_ENABLED=1
+endif
+
 # golang settings
 TEST_PATHS=$(shell go list ./... | grep -v bifrost/tss/go-tss) # Skip compute-intensive tests by default
 
@@ -87,6 +97,10 @@ HTTPS_GIT := gitlab.com/thorchain/thornode.git
 ########################################################################################
 
 # ------------------------------ Generate ------------------------------
+
+.PHONY: zec-ensure-lib
+zec-ensure-lib:
+	@test -f $(ZEC_DIR)/libzec.$(LIB_EXT) || { echo "Missing $(ZEC_DIR)/libzec.$(LIB_EXT). Run: cd chain/zec && ZEC_FEATURES='uniffi' ./build.sh -t go"; exit 1; }
 
 generate: go-generate openapi proto-gen
 	@./scripts/generate.py
@@ -147,16 +161,16 @@ docs-dev: docs-init
 
 # ------------------------------ Build ------------------------------
 
-build:
-	go build ${BUILD_FLAGS} ${BINARIES}
+build: zec-ensure-lib
+	$(CGO_VARS) go build ${BUILD_FLAGS} ${BINARIES}
 
-install:
-	go install ${BUILD_FLAGS} ${BINARIES}
+install: zec-ensure-lib
+	$(CGO_VARS) go install ${BUILD_FLAGS} ${BINARIES}
 
-tools:
-	go install -tags ${TAG} ./tools/pubkey2address
-	go install -tags ${TAG} ./tools/p2p-check
-	go install -tags ${TAG} ./tools/recover-keyshare-backup
+tools: zec-ensure-lib
+	$(CGO_VARS) go install -tags ${TAG} ./tools/pubkey2address
+	$(CGO_VARS) go install -tags ${TAG} ./tools/p2p-check
+	$(CGO_VARS) go install -tags ${TAG} ./tools/recover-keyshare-backup
 
 # ------------------------------ Gitlab CI ------------------------------
 
@@ -195,22 +209,22 @@ test-coverage-sum: test-network-specific
 
 test:
 ifeq ($(TEST_DIR),$(TEST_PATHS))
-	@$(MAKE) test-network-specific
+	@$(MAKE) test-network-specific zec-ensure-lib
 endif
 	@go test ${TEST_BUILD_FLAGS} ${RUN_FLAG} ${TEST_DIR}
 
-test-all: test-network-specific
+test-all: test-network-specific zec-ensure-lib
 	@go test ${TEST_BUILD_FLAGS} ${RUN_FLAG} "./..."
 
-test-go-tss:
+test-go-tss: zec-ensure-lib
 	@go test ${TEST_BUILD_FLAGS} ${RUN_FLAG} --race "./bifrost/tss/go-tss/..."
 
-test-network-specific:
+test-network-specific: zec-ensure-lib
 	@go test -tags stagenet ${RUN_FLAG} ./common
 	@go test -tags mainnet ${RUN_FLAG} ./common ./bifrost/pkg/chainclients/utxo/...
 	@go test -tags mocknet ${RUN_FLAG} ./common ./bifrost/pkg/chainclients/utxo/...
 
-test-race:
+test-race: zec-ensure-lib
 	@go test -race ${TEST_BUILD_FLAGS} ${RUN_FLAG} ${TEST_DIR}
 
 # ------------------------------ Regression Tests ------------------------------

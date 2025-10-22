@@ -8,11 +8,13 @@ lint:
     - name: codespell
       commands:
         # IDae = base64 found in wasm bytecode expected to be "idea"
-        - run: codespell --uri-ignore-words-list=* --ignore-words-list=toi,amountIn,IDae,liquify,refErr ${target}
+        - run: codespell --uri-ignore-words-list=* --ignore-words-list=toi,amountIn,IDae,liquify,refErr,BU,crate ${target}
     - name: golangci-lint
       environment:
         - name: CGO_ENABLED
           value: "1"
+        - name: CGO_LDFLAGS
+          value: "-lzec"
   enabled:
     - codespell@2.3.0
     - black@24.10.0
@@ -36,6 +38,7 @@ lint:
         # TODO: fix all lint errors in imported repos and enable lint for these.
         - bifrost/tss/go-tss
         - bifrost/txscript
+        - chain/zec/go/zec
     - linters:
         - prettier
         - yamllint
