@@ -1,0 +1,14 @@
+# Rust build artifacts
+/target/
+Cargo.lock
+
+# TypeScript bindings (not needed for THORNode)
+/ts/
+
+# Node modules (if using TypeScript bindings)
+node_modules/
+dist/
+
+# Keep pre-built libraries in lib/
+!/lib/*.dylib
+!/lib/*.so

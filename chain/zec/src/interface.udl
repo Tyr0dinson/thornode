@@ -1,0 +1,203 @@
+[Error]
+enum ZecError {
+    "GenericError",
+    "InvalidVaultPubkey",
+    "InvalidAddress",
+    "InitError",
+    "InvalidMemo",
+    "InvalidAmount",
+    "InvalidOVK",
+    "ScanError",
+    "NonTransparentRefundAddress",
+};
+
+enum Network {
+    "Main",
+    "Regtest",
+    "Test",
+};
+
+enum BranchId {
+    "Overwinter",
+    "Sapling",
+    "Blossom",
+    "Heartwood",
+    "Canopy",
+    "NU5",
+};
+
+dictionary UTXO {
+    string txid;
+    u32 height;
+    u32 vout;
+    string script;
+    u64 value;
+};
+
+dictionary Output {
+    string address;
+    u64 amount;
+    string memo;
+};
+
+dictionary PartialTx {
+    u32 height;
+    bytes txid;
+    sequence<UTXO> inputs;
+    sequence<Output> outputs;
+    u64 fee;
+    sequence<bytes> sighashes;
+    u32 expiry_height;
+    u32 version;
+};
+
+dictionary ZecAccount {
+    bytes private_key;
+    bytes public_key;
+    u32 index;
+    string transparent;
+    string sapling;
+    string orchard;
+    string unified;
+};
+
+dictionary SpendableNote {
+    bytes diversifier; // 11 bytes
+    u64 value;
+    bytes rseed;       // 32 bytes
+    boolean zip212;
+    bytes witness;
+};
+
+dictionary WitnessParts {
+    bytes witness_bytes; // serialized IncrementalWitness
+    bytes anchor_bytes;  // must be length 32
+};
+
+dictionary OrchardSpendableNote {
+    bytes diversifier; // 11 bytes
+    u64 value;
+    bytes rseed;       // 32 bytes
+    bytes rho;         // 32 bytes
+    bytes witness;
+    bytes cmx;         // 32 bytes - store the actual commitment to avoid reconstruction mismatch
+    bytes addr_bytes;  // 43 bytes - store the exact address bytes to avoid derivation mismatch
+};
+
+dictionary OrchardWitnessParts {
+    bytes witness_bytes; // serialized IncrementalWitness
+    bytes anchor_bytes;  // must be length 32
+};
+
+dictionary OrchardDecryptedNote {
+    bytes diversifier;
+    u64 value;
+    bytes rseed;
+    bytes rho;  // 32 bytes
+    bytes cmx;  // 32 bytes - the actual commitment
+    bytes addr_bytes;  // 43 bytes - store the exact address bytes to avoid derivation mismatch
+};
+
+dictionary DecryptedNote {
+    bytes diversifier;
+    u64 value;
+    bytes rseed;
+    boolean zip212;
+};
+
+namespace zec {
+    [Throws=ZecError]
+    void init_zec();
+
+    [Throws=ZecError]
+    PartialTx build_ptx(bytes vault, PartialTx ptx, Network network);
+
+    [Throws=ZecError]
+    bytes apply_signatures(bytes vault, PartialTx ptx, sequence<bytes> signatures, Network network);
+
+    [Throws=ZecError]
+    bytes get_ovk(bytes vault);
+
+    [Throws=ZecError]
+    string compute_txid(bytes vault, PartialTx ptx, Network network);
+    
+    [Throws=ZecError]
+    boolean validate_shielded_source(string address, Network network);
+    
+    boolean is_transparent_address(string address, Network network);
+
+    [Throws=ZecError]
+    ZecAccount derive_account_from_mnemonic(string mnemonic, Network network);    
+
+    [Throws=ZecError]
+    bytes send_from_sapling_to_transparent(
+        string mnemonic,
+        Network network,
+        sequence<SpendableNote> notes_to_spend,
+        string to_transparent_address,
+        bytes anchor_bytes,   // 32 bytes
+        u32 target_height,
+        string? memo
+    );
+
+    [Throws=ZecError]
+    WitnessParts build_witness_from_blocks(
+        string   mnemonic,
+        Network  network,
+        bytes    diversifier,
+        u64      value,
+        bytes    rseed,
+        boolean  zip212,
+                                               // raw tx bytes grouped by block, in ascending height order
+        sequence<sequence<bytes>> blocks_txs,  // Vec<Vec<Vec<u8>>> -> sequence<sequence<bytes>>
+        BranchId branch_id_at_anchor,
+        bytes? expected_root         // Option<[u8; 32]>
+    );
+
+    [Throws=ZecError]
+    sequence<DecryptedNote> decrypt_notes_in_tx(
+        string mnemonic,
+        Network network,
+        bytes tx_bytes,
+        u32 mined_height
+    );
+
+    [Throws=ZecError]
+    void validate_address_v124(string address, Network network);
+
+    [Throws=ZecError]
+    void validate_address_v1(string address, Network network);
+
+    [Throws=ZecError]
+    bytes send_from_orchard_to_transparent(
+        string mnemonic,
+        Network network,
+        sequence<OrchardSpendableNote> notes_to_spend,
+        string to_transparent_address,
+        bytes anchor_bytes,   // 32 bytes
+        u32 target_height,
+        string? memo
+    );
+
+    [Throws=ZecError]
+    sequence<OrchardDecryptedNote> decrypt_orchard_notes_in_tx(
+        string mnemonic,
+        Network network,
+        bytes tx_bytes,
+        u32 mined_height
+    );
+
+    [Throws=ZecError]
+    OrchardWitnessParts build_orchard_witness_from_blocks(
+        string   mnemonic,
+        Network  network,
+        bytes    diversifier,
+        u64      value,
+        bytes    rseed,
+        bytes    rho,                // 32 bytes
+        bytes    cmx,                // 32 bytes - the actual commitment
+        sequence<sequence<bytes>> blocks_txs,  // Vec<Vec<Vec<u8>>> -> sequence<sequence<bytes>>
+        BranchId branch_id_at_anchor,
+        bytes? expected_root         // Option<[u8; 32]>
+    );
+};
