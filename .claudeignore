@@ -1,0 +1,25 @@
+# .claudeignore
+# Excludes files from Claude Code's context to reduce token usage and improve focus
+
+# Go dependency files (can be very large, rarely need to be edited)
+go.mod
+go.sum
+test/simulation/go.mod
+test/simulation/go.sum
+
+# Generated protobuf files (regenerated via `make generate`, should not be edited)
+**/*pb.go
+**/*pulsar.go
+**/*_grpc.pb.go
+
+# Generated OpenAPI code (regenerated via `make generate`, should not be edited)
+openapi/gen/
+
+# Test data and artifacts
+test/regression/mnt/
+
+# Build artifacts and cache (already in .gitignore but explicit here)
+.cache/
+.go/
+app/data/
+tmp/
