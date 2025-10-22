@@ -164,6 +164,24 @@ func (a *SolvencyCheckActor) checkSolvency(config *OpConfig) OpResult {
 				}
 			}
 			l1CoinAmounts[assetStr] = balance
+		} else if asset.Chain.Equals(common.TRONChain) && !asset.IsGasAsset() {
+			// for TRON tokens, query balance directly from vault address
+			vaultAddr, err := pubkey.GetAddress(asset.Chain)
+			if err != nil {
+				a.Log().Error().Err(err).Msg("failed to get vault address")
+				return OpResult{
+					Continue: false,
+				}
+			}
+			vaultAddrs[assetStr] = vaultAddr
+			l1Acct, err := user.ChainClients[asset.Chain].GetAccount(&pubkey)
+			if err != nil {
+				a.Log().Error().Err(err).Msg("failed to get TRON account")
+				return OpResult{
+					Continue: false,
+				}
+			}
+			l1CoinAmounts[assetStr] = l1Acct.Coins.GetCoin(asset).Amount
 		} else {
 			a.Log().Error().Msgf("unsupported asset %s", asset)
 			return OpResult{

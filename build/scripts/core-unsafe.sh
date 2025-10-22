@@ -28,6 +28,22 @@ deploy_evm_contracts() {
   wait
 }
 
+deploy_tron_contracts() {
+  echo "Deploying TRON contracts"
+  if ! python3 /docker/scripts/tron/tron-deploy-working.py --rpc "http://tron-fullnode:8090" --action deploy >/tmp/tron-tool.log 2>&1; then
+    cat /tmp/tron-tool.log && exit 1
+  fi
+  cat /tmp/tron-tool.log
+  
+  # Extract contract address from log
+  TOKEN_ADDRESS=$(grep </tmp/tron-tool.log "Token Contract Address:" | awk '{print $NF}')
+  
+  if [ -n "$TOKEN_ADDRESS" ]; then
+    echo "TRON Token Address: $TOKEN_ADDRESS"
+    # Note: Token address should be updated in tron_nile_latest.json
+  fi
+}
+
 init_mocknet() {
   NODE_ADDRESS=$(echo "$SIGNER_PASSWD" | thornode keys show "$SIGNER_NAME" -a --keyring-backend file)
 

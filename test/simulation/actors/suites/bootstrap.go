@@ -5,10 +5,12 @@ import (
 
 	"github.com/rs/zerolog/log"
 	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/common/tokenlist"
 	acommon "gitlab.com/thorchain/thornode/v3/test/simulation/actors/common"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/actors/core"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/evm"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/thornode"
+	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/tron"
 	. "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
 )
 
@@ -34,16 +36,23 @@ func Bootstrap() *Actor {
 	// create token pools
 	tokenPools := NewActor("Bootstrap-TokenPools")
 	for _, chain := range common.AllChains {
-		if !chain.IsEVM() {
-			continue
-		}
 		// BSC not compatible with sim tests
 		if chain.Equals(common.BSCChain) {
 			continue
 		}
-		count++
 
-		for asset := range evm.Tokens(chain) {
+		var tokenMap map[common.Asset]tokenlist.ERC20Token
+
+		if chain.IsEVM() {
+			tokenMap = evm.Tokens(chain)
+		} else if chain.Equals(common.TRONChain) {
+			tokenMap = tron.Tokens(chain)
+		} else {
+			continue
+		}
+
+		for asset := range tokenMap {
+			count++
 			tokenPools.Children[core.NewDualLPActor(asset)] = true
 		}
 	}

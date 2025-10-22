@@ -37,7 +37,7 @@ RUN apt-get update && \
   python3=3.9.2-3 \
   python3-pip=20.3.4-4+deb11u1 && \
   rm -rf /var/lib/apt/lists/* && \
-  pip3 install --no-cache-dir requests==2.32.3 web3==7.5.0 retry==0.9.2
+  pip3 install --no-cache-dir requests==2.32.3 web3==7.5.0 retry==0.9.2 ecdsa==0.18.0 base58==2.1.1 pycryptodome==3.20.0 mnemonic==0.20 bip32==3.4
 
 # Copy the compiled binaries over.
 COPY --from=build /go/bin/thornode /go/bin/bifrost /go/bin/recover-keyshare-backup /usr/bin/

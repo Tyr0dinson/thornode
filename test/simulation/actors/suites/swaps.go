@@ -4,9 +4,11 @@ import (
 	"math/rand"
 
 	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/common/tokenlist"
 	acommon "gitlab.com/thorchain/thornode/v3/test/simulation/actors/common"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/actors/core"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/evm"
+	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/tron"
 	. "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
 )
 
@@ -52,10 +54,17 @@ func Swaps() *Actor {
 		swapPools = append(swapPools, chain.GetGasAsset())
 
 		// add tokens to swap pools
-		if !chain.IsEVM() {
+		var tokenMap map[common.Asset]tokenlist.ERC20Token
+
+		if chain.IsEVM() {
+			tokenMap = evm.Tokens(chain)
+		} else if chain.Equals(common.TRONChain) {
+			tokenMap = tron.Tokens(chain)
+		} else {
 			continue
 		}
-		for asset := range evm.Tokens(chain) {
+
+		for asset := range tokenMap {
 			swapPools = append(swapPools, asset)
 		}
 	}

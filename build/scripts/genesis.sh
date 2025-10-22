@@ -56,6 +56,9 @@ genesis_init() {
 
     # deploy evm contracts
     deploy_evm_contracts
+    
+    # deploy tron contracts
+    deploy_tron_contracts
   fi
 
   if [ "$NET" = "stagenet" ]; then

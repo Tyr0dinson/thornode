@@ -19,6 +19,7 @@ import (
 	acommon "gitlab.com/thorchain/thornode/v3/test/simulation/actors/common"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/evm"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/thornode"
+	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/tron"
 	. "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain"
 	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
@@ -147,6 +148,7 @@ func InitConfig(parallelism int, seed bool) *OpConfig {
 				{common.BASEChain, 80000, 300000},
 				{common.ETHChain, 80000, 300},
 				{common.SOLChain, 1, 5000},
+				{common.TRONChain, 1, 1_000_000},
 				{common.BTCChain, 1000, 4},
 				{common.LTCChain, 250, 103},
 				{common.BCHChain, 1500, 7},
@@ -320,12 +322,17 @@ func fundUserChainAccount(master, user *User, chain common.Chain, amount sdkmath
 		Str("amount", fmt.Sprintf("%08f", amountFloat)).
 		Msg("account funded")
 
-	// if this is an EVM chain also fund token balances
-	if !chain.IsEVM() {
-		return
+	// fund token balances based on chain type
+	switch {
+	case chain.IsEVM():
+		fundEVMTokens(master, user, chain, addr, amount)
+	case chain == common.TRONChain:
+		fundTRONTokens(master, user, chain, addr, amount)
 	}
+}
 
-	// fund token balances
+// fundEVMTokens funds ERC20 token balances for EVM chains
+func fundEVMTokens(master, user *User, chain common.Chain, addr common.Address, amount sdkmath.Uint) {
 	eAddr := ecommon.HexToAddress(addr.String())
 	for asset, token := range evm.Tokens(chain) {
 		// convert funding amount to token decimals
@@ -342,7 +349,7 @@ func fundUserChainAccount(master, user *User, chain common.Chain, amount sdkmath
 		}
 		tokenSigned, err := master.ChainClients[chain].(*evm.Client).SignContractTx(tokenTx)
 		if err != nil {
-			log.Fatal().Err(err).Msg("failed to sign master token tx")
+			log.Fatal().Err(err).Msg("failed to sign master ERC20 token tx")
 		}
 		tokenTxid, err := master.ChainClients[chain].BroadcastTx(tokenSigned)
 		if err != nil {
@@ -350,7 +357,7 @@ func fundUserChainAccount(master, user *User, chain common.Chain, amount sdkmath
 			log.Fatal().Err(err).
 				Stringer("chain", chain).
 				Stringer("from", from).
-				Msg("failed to broadcast funding token tx")
+				Msg("failed to broadcast funding ERC20 token tx")
 		}
 		amountFloat := float64(amount.Uint64()) / float64(common.One)
 		log.Info().
@@ -360,7 +367,56 @@ func fundUserChainAccount(master, user *User, chain common.Chain, amount sdkmath
 			Stringer("address", addr).
 			Str("token", token.Address).
 			Str("amount", fmt.Sprintf("%08f", amountFloat)).
-			Msg("token balance funded")
+			Msg("ERC20 token balance funded")
+	}
+}
+
+// fundTRONTokens funds TRC20 token balances for TRON chain
+func fundTRONTokens(master, user *User, chain common.Chain, addr common.Address, amount sdkmath.Uint) {
+	for asset, token := range tron.Tokens(chain) {
+		// convert funding amount to token decimals
+		factor := big.NewInt(1).Exp(big.NewInt(10), big.NewInt(int64(token.Decimals)), nil)
+		tokenAmount := amount.Mul(sdkmath.NewUintFromBigInt(factor))
+		tokenAmount = tokenAmount.Quo(sdkmath.NewUint(common.One))
+
+		// For TRON, we need to convert the address to the proper format
+		// The address is already in TRON format (T...), so we can use it directly
+		tokenTx := SimContractTx{
+			Chain:    chain,
+			Contract: common.Address(token.Address),
+			ABI:      tron.TRC20ABI(),
+			Method:   "transfer",
+			Args:     []interface{}{ecommon.HexToAddress(addr.String()), tokenAmount.BigInt()},
+		}
+		tokenSigned, err := master.ChainClients[chain].(*tron.Client).SignContractTx(tokenTx)
+		if err != nil {
+			// Skip tokens that fail to sign (e.g., contract doesn't exist yet)
+			log.Warn().
+				Err(err).
+				Stringer("asset", asset).
+				Str("token", token.Address).
+				Msg("skipping TRC20 token funding (contract may not be deployed)")
+			continue
+		}
+		tokenTxid, err := master.ChainClients[chain].BroadcastTx(tokenSigned)
+		if err != nil {
+			// Skip tokens that fail to broadcast
+			log.Warn().
+				Err(err).
+				Stringer("asset", asset).
+				Str("token", token.Address).
+				Msg("skipping TRC20 token funding (broadcast failed)")
+			continue
+		}
+		amountFloat := float64(amount.Uint64()) / float64(common.One)
+		log.Info().
+			Str("txid", tokenTxid).
+			Str("account", user.Name()).
+			Stringer("asset", asset).
+			Stringer("address", addr).
+			Str("token", token.Address).
+			Str("amount", fmt.Sprintf("%08f", amountFloat)).
+			Msg("TRC20 token balance funded")
 	}
 }
 
