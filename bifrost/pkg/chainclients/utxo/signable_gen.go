@@ -4,15 +4,16 @@ package utxo
 
 import (
 	"encoding/base64"
-	"fmt"
+  "fmt"
 	"math/big"
 
-	btcec "github.com/btcsuite/btcd/btcec"
 	"github.com/cosmos/cosmos-sdk/crypto/codec"
-	dogeec "github.com/eager7/dogd/btcec"
-	bchec "github.com/gcash/bchd/bchec"
-	ltcec "github.com/ltcsuite/ltcd/btcec"
 	"github.com/rs/zerolog"
+  bchec "github.com/gcash/bchd/bchec"
+  btcec "github.com/btcsuite/btcd/btcec"
+  dogeec "github.com/eager7/dogd/btcec"
+  ltcec "github.com/ltcsuite/ltcd/btcec"
+  zecec "github.com/btcsuite/btcd/btcec"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -51,7 +52,6 @@ func (ts *tssSignableBCH) SignECDSA(payload []byte) (*bchec.Signature, error) {
 
 	return &sig, nil
 }
-
 // SignSchnorr signs the given payload using Schnorr
 func (ts *tssSignableBCH) SignSchnorr(payload []byte) (*bchec.Signature, error) {
 	return nil, fmt.Errorf("schnorr signature not yet implemented in TSS")
@@ -225,6 +225,58 @@ func (ts *tssSignableLTC) GetPubKey() *ltcec.PublicKey {
 		return nil
 	}
 	newPubkey, err := ltcec.ParsePubKey(secpPubKey.Bytes(), ltcec.S256())
+	if err != nil {
+		ts.log.Err(err).Msg("fail to parse public key")
+		return nil
+	}
+	return newPubkey
+}
+
+type tssSignableZEC struct {
+	poolPubKey    common.PubKey
+	tssKeyManager tss.ThorchainKeyManager
+	log           zerolog.Logger
+}
+
+func newTssSignableZEC(poolPubKey common.PubKey, tssKeyManager tss.ThorchainKeyManager, log zerolog.Logger) *tssSignableZEC {
+	return &tssSignableZEC{
+		poolPubKey:    poolPubKey,
+		tssKeyManager: tssKeyManager,
+		log:           log,
+	}
+}
+func (ts *tssSignableZEC) Sign(payload []byte) (*zecec.Signature, error) {
+	ts.log.Info().Msgf("msg to sign: %s", base64.StdEncoding.EncodeToString(payload))
+	result, _, err := ts.tssKeyManager.RemoteSign(payload, common.SigningAlgoSecp256k1, ts.poolPubKey.String())
+	if err != nil {
+		return nil, err
+	}
+	var sig zecec.Signature
+	sig.R = new(big.Int).SetBytes(result[:32])
+	sig.S = new(big.Int).SetBytes(result[32:])
+
+	// verify the signature
+	if sig.Verify(payload, ts.GetPubKey()) {
+		ts.log.Info().Msg("we can verify the signature successfully")
+	} else {
+		ts.log.Info().Msg("the signature can't be verified")
+	}
+
+	return &sig, nil
+}
+
+func (ts *tssSignableZEC) GetPubKey() *zecec.PublicKey {
+	cpk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, ts.poolPubKey.String())
+	if err != nil {
+		ts.log.Err(err).Str("pubkey", ts.poolPubKey.String()).Msg("fail to get pubic key from the bech32 pool public key string")
+		return nil
+	}
+	secpPubKey, err := codec.ToCmtPubKeyInterface(cpk)
+	if err != nil {
+		ts.log.Err(err).Msgf("%s is not a secp256 k1 public key", ts.poolPubKey)
+		return nil
+	}
+	newPubkey, err := zecec.ParsePubKey(secpPubKey.Bytes(), zecec.S256())
 	if err != nil {
 		ts.log.Err(err).Msg("fail to parse public key")
 		return nil
