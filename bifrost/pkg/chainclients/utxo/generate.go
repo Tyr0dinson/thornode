@@ -34,6 +34,7 @@ func main() {
 		"btc":  "github.com/btcsuite/btcd/btcec",
 		"bch":  "github.com/gcash/bchd/bchec",
 		"ltc":  "github.com/ltcsuite/ltcd/btcec",
+		"zec":  "github.com/btcsuite/btcd/btcec",
 	}
 
 	err = tmpl.ExecuteTemplate(f, "signable.tmpl", data)
@@ -55,6 +56,7 @@ func main() {
 		"bch":  "github.com/gcash/bchd",
 		"ltc":  "github.com/ltcsuite/ltcd",
 		"btc":  "github.com/btcsuite/btcd",
+		"zec":  "github.com/btcsuite/btcd",
 	}
 
 	err = tmpl.ExecuteTemplate(f, "wire.tmpl", data)
