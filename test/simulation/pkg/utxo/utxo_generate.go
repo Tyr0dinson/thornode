@@ -34,6 +34,7 @@ func main() {
 		"bch":  "github.com/gcash/bchd",
 		"ltc":  "github.com/ltcsuite/ltcd",
 		"btc":  "github.com/btcsuite/btcd",
+		"zec":  "github.com/btcsuite/btcd",
 	}
 
 	err = tmpl.ExecuteTemplate(f, "utxo_wire.tmpl", data)

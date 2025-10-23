@@ -65,6 +65,24 @@ func NewClient(host, user, password string, maxRetries int, log zerolog.Logger) 
 	}, nil
 }
 
+////////////////////////////////////////////////////////////////////////////////////////
+// Types
+////////////////////////////////////////////////////////////////////////////////////////
+
+// Utxo represents a single Unspent Transaction Output (UTXO)
+// as returned by the ZEC RPC call 'getaddressutxos'.
+type Utxo struct {
+	Txid   string `json:"txid"`
+	Vout   uint32 `json:"outputIndex"`
+	Script string `json:"script"`
+	Value  int64  `json:"satoshis"`
+	Height int64  `json:"height"`
+}
+
+////////////////////////////////////////////////////////////////////////////////////////
+// Methods
+////////////////////////////////////////////////////////////////////////////////////////
+
 // GetBlockCount returns the number of blocks in the longest block chain.
 func (c *Client) GetBlockCount() (int64, error) {
 	var count int64
@@ -246,6 +264,20 @@ func (c *Client) ListUnspent(address string) ([]btcjson.ListUnspentResult, error
 	const maxConfirm = 9999999
 	err := c.Call(&unspent, "listunspent", minConfirm, maxConfirm, []string{address})
 	return unspent, extractBTCError(err)
+}
+
+// GetAddressUtxos retrieves all UTXOs for a single address using the getaddressutxos RPC call.
+// This is primarily used for ZEC which supports this RPC method.
+func (c *Client) GetAddressUtxos(address string) ([]Utxo, error) {
+	// Prepare the parameters for the RPC call
+	// 'getaddressutxos' expects a JSON object: {"addresses": ["address1", ...]}
+	params := map[string]interface{}{
+		"addresses": []string{address},
+	}
+
+	var utxos []Utxo
+	err := c.Call(&utxos, "getaddressutxos", params)
+	return utxos, extractBTCError(err)
 }
 
 func (c *Client) GetNetworkInfo() (*btcjson.GetNetworkInfoResult, error) {

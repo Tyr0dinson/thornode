@@ -101,13 +101,16 @@ func NewClient(chain common.Chain, host string, keys *thorclient.Keys) (LiteChai
 	}
 
 	// import address to wallet, rescan if master account
-	if keys.GetSignerInfo().Name == "master" {
-		err = rpc.ImportAddressRescan(address.String())
-	} else {
-		err = rpc.ImportAddress(address.String())
-	}
-	if err != nil {
-		return nil, fmt.Errorf("fail to import address(%s): %w", address, err)
+	// ZEC doesn't support address importing
+	if !chain.Equals(common.ZECChain) {
+		if keys.GetSignerInfo().Name == "master" {
+			err = rpc.ImportAddressRescan(address.String())
+		} else {
+			err = rpc.ImportAddress(address.String())
+		}
+		if err != nil {
+			return nil, fmt.Errorf("fail to import address(%s): %w", address, err)
+		}
 	}
 
 	return &Client{
@@ -135,20 +138,37 @@ func (c *Client) GetAccount(pk *common.PubKey) (*common.Account, error) {
 		}
 	}
 
-	// get unspent utxos
-	utxos, err := c.rpc.ListUnspent(addr.String())
-	if err != nil {
-		return nil, fmt.Errorf("fail to get UTXOs: %w", err)
-	}
+	var totalAmt btcutil.Amount
 
-	// sum balance
-	total := 0.0
-	for _, item := range utxos {
-		total += item.Amount
-	}
-	totalAmt, err := btcutil.NewAmount(total)
-	if err != nil {
-		return nil, fmt.Errorf("fail to convert total amount: %w", err)
+	// ZEC uses getaddressutxos instead of listunspent
+	if c.chain.Equals(common.ZECChain) {
+		zecUtxos, err := c.rpc.GetAddressUtxos(addr.String())
+		if err != nil {
+			return nil, fmt.Errorf("fail to get ZEC UTXOs: %w", err)
+		}
+
+		// sum balance from satoshis
+		totalSatoshis := int64(0)
+		for _, item := range zecUtxos {
+			totalSatoshis += item.Value
+		}
+		totalAmt = btcutil.Amount(totalSatoshis)
+	} else {
+		// get unspent utxos for BTC, LTC, BCH, DOGE
+		utxos, err := c.rpc.ListUnspent(addr.String())
+		if err != nil {
+			return nil, fmt.Errorf("fail to get UTXOs: %w", err)
+		}
+
+		// sum balance
+		total := 0.0
+		for _, item := range utxos {
+			total += item.Amount
+		}
+		totalAmt, err = btcutil.NewAmount(total)
+		if err != nil {
+			return nil, fmt.Errorf("fail to convert total amount: %w", err)
+		}
 	}
 
 	// create account
@@ -199,6 +219,8 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 		stx = wireToLTC(redeemTx)
 	case common.BTCChain:
 		stx = wireToBTC(redeemTx)
+	case common.ZECChain:
+		stx = wireToZEC(redeemTx)
 	default:
 		log.Fatal().Msg("unsupported chain")
 	}
@@ -222,6 +244,8 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 				err = c.signUTXOLTC(stx.(*ltcwire.MsgTx), amount, sourceScript, i)
 			case common.BTCChain:
 				err = c.signUTXOBTC(stx.(*btcwire.MsgTx), amount, sourceScript, i)
+			case common.ZECChain:
+				err = c.signUTXOZEC(stx.(*btcwire.MsgTx), amount, sourceScript, i)
 			default:
 				log.Fatal().Msg("unsupported chain")
 			}
@@ -248,6 +272,8 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 		redeemTx = ltcToWire(stx.(*ltcwire.MsgTx))
 	case common.BTCChain:
 		redeemTx = btcToWire(stx.(*btcwire.MsgTx))
+	case common.ZECChain:
+		redeemTx = zecToWire(stx.(*btcwire.MsgTx))
 	default:
 		log.Fatal().Msg("unsupported chain")
 	}
@@ -276,7 +302,7 @@ func (c *Client) BroadcastTx(payload []byte) (string, error) {
 	switch c.chain {
 	case common.DOGEChain, common.BCHChain:
 		maxFee = true // "allowHighFees"
-	case common.LTCChain, common.BTCChain:
+	case common.LTCChain, common.BTCChain, common.ZECChain:
 		maxFee = 10_000_000
 	}
 
@@ -318,6 +344,13 @@ func (c *Client) getSourceScript(tx SimTx) ([]byte, error) {
 			return nil, fmt.Errorf("fail to decode source address(%s): %w", c.address, err)
 		}
 		return btctxscript.PayToAddrScript(addr)
+	case common.ZECChain:
+		var addr btcutil.Address
+		addr, err := btcutil.DecodeAddress(c.address.String(), c.getChainCfgZEC())
+		if err != nil {
+			return nil, fmt.Errorf("fail to decode source address(%s): %w", c.address, err)
+		}
+		return btctxscript.PayToAddrScript(addr)
 	default:
 		log.Fatal().Msg("unsupported chain")
 		return nil, nil
@@ -325,9 +358,46 @@ func (c *Client) getSourceScript(tx SimTx) ([]byte, error) {
 }
 
 func (c *Client) getUtxoToSpend(total float64) ([]btcjson.ListUnspentResult, error) {
-	utxos, err := c.rpc.ListUnspent(c.address.String())
-	if err != nil {
-		return nil, fmt.Errorf("fail to get UTXOs: %w", err)
+	var utxos []btcjson.ListUnspentResult
+	var err error
+
+	// ZEC uses getaddressutxos instead of listunspent
+	if c.chain.Equals(common.ZECChain) {
+		zecUtxos, err := c.rpc.GetAddressUtxos(c.address.String())
+		if err != nil {
+			return nil, fmt.Errorf("fail to get ZEC UTXOs: %w", err)
+		}
+
+		// get current height to calculate confirmations
+		currentHeight, err := c.rpc.GetBlockCount()
+		if err != nil {
+			return nil, fmt.Errorf("fail to get current block height: %w", err)
+		}
+
+		// convert ZEC UTXOs to ListUnspentResult format
+		utxos = make([]btcjson.ListUnspentResult, 0, len(zecUtxos))
+		for _, zecUtxo := range zecUtxos {
+			// convert satoshis to BTC
+			amountBTC := btcutil.Amount(zecUtxo.Value).ToBTC()
+
+			// calculate confirmations (currentHeight - utxoHeight + 1)
+			confirmations := currentHeight - zecUtxo.Height + 1
+
+			utxos = append(utxos, btcjson.ListUnspentResult{
+				TxID:          zecUtxo.Txid,
+				Vout:          zecUtxo.Vout,
+				Address:       c.address.String(),
+				ScriptPubKey:  zecUtxo.Script,
+				Amount:        amountBTC,
+				Confirmations: confirmations,
+			})
+		}
+	} else {
+		// get unspent utxos for BTC, LTC, BCH, DOGE
+		utxos, err = c.rpc.ListUnspent(c.address.String())
+		if err != nil {
+			return nil, fmt.Errorf("fail to get UTXOs: %w", err)
+		}
 	}
 
 	// spend UTXOs older to younger
@@ -367,7 +437,7 @@ func (c *Client) getGasSats() float64 {
 		return 0.0001
 	case common.LTCChain:
 		return 0.0001
-	case common.BTCChain:
+	case common.BTCChain, common.ZECChain:
 		return 0.0001
 	default:
 		log.Fatal().Msg("unsupported chain")
@@ -453,6 +523,16 @@ func (c *Client) buildTx(tx SimTx, sourceScript []byte) (
 		if err != nil {
 			return nil, nil, fmt.Errorf("fail to get pay to address script: %w", err)
 		}
+	case common.ZECChain:
+		var outputAddr btcutil.Address
+		outputAddr, err = btcutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgZEC())
+		if err != nil {
+			return nil, nil, fmt.Errorf("fail to decode next address: %w", err)
+		}
+		buf, err = btctxscript.PayToAddrScript(outputAddr)
+		if err != nil {
+			return nil, nil, fmt.Errorf("fail to get pay to address script: %w", err)
+		}
 	default:
 		log.Fatal().Msg("unsupported chain")
 	}
@@ -476,7 +556,7 @@ func (c *Client) buildTx(tx SimTx, sourceScript []byte) (
 		nullDataScript, err = bchtxscript.NullDataScript([]byte(tx.Memo))
 	case common.LTCChain:
 		nullDataScript, err = ltctxscript.NullDataScript([]byte(tx.Memo))
-	case common.BTCChain:
+	case common.BTCChain, common.ZECChain:
 		nullDataScript, err = btctxscript.NullDataScript([]byte(tx.Memo))
 	default:
 		log.Fatal().Msg("unsupported chain")
@@ -540,6 +620,20 @@ func (c *Client) getChainCfgDOGE() *dogechaincfg.Params {
 		return &dogechaincfg.MainNetParams
 	case common.StageNet:
 		return &dogechaincfg.MainNetParams
+	default:
+		log.Fatal().Msg("unsupported network")
+		return nil
+	}
+}
+
+func (c *Client) getChainCfgZEC() *btcchaincfg.Params {
+	switch common.CurrentChainNetwork {
+	case common.MockNet:
+		return &btcchaincfg.RegressionNetParams
+	case common.MainNet:
+		return &btcchaincfg.MainNetParams
+	case common.StageNet:
+		return &btcchaincfg.MainNetParams
 	default:
 		log.Fatal().Msg("unsupported network")
 		return nil
@@ -617,6 +711,26 @@ func (c *Client) signUTXOLTC(redeemTx *ltcwire.MsgTx, amount int64, sourceScript
 }
 
 func (c *Client) signUTXOBTC(redeemTx *btcwire.MsgTx, amount int64, sourceScript []byte, idx int) error {
+	sigHashes := btctxscript.NewTxSigHashes(redeemTx)
+	signable := btctxscript.NewPrivateKeySignable(c.privKey)
+	witness, err := btctxscript.WitnessSignature(redeemTx, sigHashes, idx, amount, sourceScript, btctxscript.SigHashAll, signable, true)
+	if err != nil {
+		return fmt.Errorf("fail to get witness: %w", err)
+	}
+
+	redeemTx.TxIn[idx].Witness = witness
+	flag := btctxscript.StandardVerifyFlags
+	engine, err := btctxscript.NewEngine(sourceScript, redeemTx, idx, flag, nil, nil, amount)
+	if err != nil {
+		return fmt.Errorf("fail to create engine: %w", err)
+	}
+	if err = engine.Execute(); err != nil {
+		return fmt.Errorf("fail to execute the script: %w", err)
+	}
+	return nil
+}
+
+func (c *Client) signUTXOZEC(redeemTx *btcwire.MsgTx, amount int64, sourceScript []byte, idx int) error {
 	sigHashes := btctxscript.NewTxSigHashes(redeemTx)
 	signable := btctxscript.NewPrivateKeySignable(c.privKey)
 	witness, err := btctxscript.WitnessSignature(redeemTx, sigHashes, idx, amount, sourceScript, btctxscript.SigHashAll, signable, true)

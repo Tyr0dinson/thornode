@@ -33,6 +33,7 @@ var chainRPCs = map[common.Chain]string{
 	common.LTCChain:   "http://localhost:38443",
 	common.BCHChain:   "http://localhost:28443",
 	common.DOGEChain:  "http://localhost:18332",
+	common.ZECChain:   "http://localhost:18232",
 	common.ETHChain:   "http://localhost:8545",
 	common.AVAXChain:  "http://localhost:9650/ext/bc/C/rpc",
 	common.GAIAChain:  "localhost:9091",
@@ -151,6 +152,7 @@ func InitConfig(parallelism int, seed bool) *OpConfig {
 				{common.LTCChain, 250, 103},
 				{common.BCHChain, 1500, 7},
 				{common.DOGEChain, 1000, 1500000},
+				{common.ZECChain, 1000, 4},
 			}
 			for _, fee := range defaultFees {
 				log.Info().Msgf("posting %s network fee", fee.chain)
@@ -208,16 +210,24 @@ func InitConfig(parallelism int, seed bool) *OpConfig {
 					log.Fatal().Err(err).Msg("failed to get token decimals")
 				}
 
-				// sanity check our configured token decimals
-				if tokenDecimals != token.Decimals {
-					log.Fatal().
-						Int("actual", tokenDecimals).
-						Int("configured", token.Decimals).
-						Err(err).
-						Msg("token decimals mismatch")
-				}
+				// skip validation if contract doesn't exist (returns 0 decimals)
+				if tokenDecimals == 0 {
+					log.Warn().
+						Stringer("asset", coin.Asset).
+						Str("address", token.Address).
+						Msg("token contract not deployed, skipping decimals validation")
+				} else {
+					// sanity check our configured token decimals
+					if tokenDecimals != token.Decimals {
+						log.Fatal().
+							Int("actual", tokenDecimals).
+							Int("configured", token.Decimals).
+							Err(err).
+							Msg("token decimals mismatch")
+					}
 
-				ctxLog = ctxLog.Int("decimals", tokenDecimals)
+					ctxLog = ctxLog.Int("decimals", tokenDecimals)
+				}
 			}
 
 			// log balance
@@ -245,7 +255,7 @@ func InitConfig(parallelism int, seed bool) *OpConfig {
 		// determine the amount to seed
 		chainSeedAmount := sdkmath.ZeroUint()
 		switch chain {
-		case common.BTCChain, common.LTCChain, common.BCHChain:
+		case common.BTCChain, common.LTCChain, common.BCHChain, common.ZECChain:
 			chainSeedAmount = sdkmath.NewUint(10 * common.One)
 		case common.BSCChain, common.BASEChain, common.ETHChain, common.SOLChain:
 			chainSeedAmount = sdkmath.NewUint(100 * common.One)

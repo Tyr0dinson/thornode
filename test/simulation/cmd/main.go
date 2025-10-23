@@ -42,6 +42,7 @@ var liteClientConstructors = map[common.Chain]LiteChainClientConstructor{
 	common.LTCChain:   utxo.NewConstructor(chainRPCs[common.LTCChain]),
 	common.BCHChain:   utxo.NewConstructor(chainRPCs[common.BCHChain]),
 	common.DOGEChain:  utxo.NewConstructor(chainRPCs[common.DOGEChain]),
+	common.ZECChain:   utxo.NewConstructor(chainRPCs[common.ZECChain]),
 	common.ETHChain:   evm.NewConstructor(chainRPCs[common.ETHChain]),
 	common.AVAXChain:  evm.NewConstructor(chainRPCs[common.AVAXChain]),
 	common.GAIAChain:  pkgcosmos.NewConstructor(chainRPCs[common.GAIAChain]),
