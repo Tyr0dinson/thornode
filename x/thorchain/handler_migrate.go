@@ -95,15 +95,13 @@ func (h MigrateHandler) handleV3_0_0(ctx cosmos.Context, msg MsgMigrate) (*cosmo
 		// migrate is the memo used by thorchain to identify fund migration between asgard vault.
 		// it use migrate:{block height} to mark a tx out caused by vault rotation
 		// this type of tx out is special , because it doesn't have relevant tx in to trigger it, it is trigger by thorchain itself.
-		var fromAddress common.Address
-		switch tx.Chain.GetSigningAlgo() {
-		case common.SigningAlgoSecp256k1:
-			fromAddress, _ = tx.VaultPubKey.GetAddress(tx.Chain)
-		case common.SigningAlgoEd25519:
-			fromAddress, _ = tx.VaultPubKeyEddsa.GetAddress(tx.Chain)
-		default:
+
+		pubKey := tx.GetPubKey()
+		if pubKey.IsEmpty() {
 			ctx.Logger().Error("unknown signing algo", "signing_algo", tx.Chain.GetSigningAlgo())
 		}
+
+		fromAddress, _ := pubKey.GetAddress(tx.Chain)
 
 		if tx.InHash.Equals(common.BlankTxID) &&
 			tx.OutHash.IsEmpty() &&

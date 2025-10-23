@@ -4,6 +4,8 @@ import (
 	"errors"
 	"strconv"
 	"strings"
+
+	"gitlab.com/thorchain/thornode/v3/common"
 )
 
 // Valid check whether TxOutItem hold valid information
@@ -102,4 +104,16 @@ func (m *TxOut) Valid() error {
 		}
 	}
 	return nil
+}
+
+// GetPubKey returns the pubkey used by the chains signing algorithm
+func (m TxOutItem) GetPubKey() common.PubKey {
+	switch m.Chain.GetSigningAlgo() {
+	case common.SigningAlgoEd25519:
+		return m.VaultPubKeyEddsa
+	case common.SigningAlgoSecp256k1:
+		return m.VaultPubKey
+	default:
+		return common.EmptyPubKey
+	}
 }

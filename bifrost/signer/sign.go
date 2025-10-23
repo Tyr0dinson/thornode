@@ -701,6 +701,11 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 
 		return nil, observation, err
 	}
+
+	if tx.Chain.Equals(common.TONChain) && observation != nil {
+		observation.Tx = hash
+	}
+
 	s.logger.Info().
 		Str("chain", chain.GetChain().String()).
 		Str("txid", hash).

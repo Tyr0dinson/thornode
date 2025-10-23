@@ -3,7 +3,6 @@ package ton
 import (
 	"context"
 	"crypto/ed25519"
-	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -458,7 +457,26 @@ func (c *TonClient) SignTx(
 		return nil, nil, nil, err
 	}
 
-	return signed, nil, nil, nil
+	currentHeight, err := c.tonScanner.GetHeight()
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	txIn := types.NewTxInItem(
+		currentHeight,
+		"",
+		txOutItem.Memo,
+		c.GetAddress(txOutItem.VaultPubKeyEddsa),
+		txOutItem.ToAddress.String(),
+		txOutItem.Coins,
+		append(common.Gas{}, txOutItem.MaxGas.ToCoins()...),
+		txOutItem.VaultPubKeyEddsa,
+		"",
+		"",
+		nil,
+	)
+
+	return signed, nil, txIn, nil
 }
 
 // BroadcastTx sends the transaction to TON chain
@@ -545,8 +563,7 @@ func (c *TonClient) BroadcastTx(
 		return "", fmt.Errorf("failed to broadcast transaction: %w", err)
 	}
 
-	c.logger.Info().Msg("Broadcasted tx")
-	txHash := base64.StdEncoding.EncodeToString(tx.Hash)
+	txHash := hex.EncodeToString(tx.Hash)
 
 	if err = c.signerCacheManager.SetSigned(txOut.CacheHash(), txOut.CacheVault(c.GetChain()), txHash); err != nil {
 		c.logger.Err(err).Msg("fail to set signer cache")

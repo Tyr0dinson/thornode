@@ -2,6 +2,7 @@ package thorchain
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/telemetry"
@@ -80,6 +81,7 @@ func (h RagnarokHandler) slash(ctx cosmos.Context, tx ObservedTx) error {
 }
 
 func (h RagnarokHandler) handleV3_0_0(ctx cosmos.Context, msg MsgRagnarok) (*cosmos.Result, error) {
+	fmt.Println("30", msg)
 	// for ragnarok on thorchain ,
 	if msg.Tx.Tx.Chain.Equals(common.THORChain) {
 		return &cosmos.Result{}, nil
@@ -100,7 +102,12 @@ func (h RagnarokHandler) handleV3_0_0(ctx cosmos.Context, msg MsgRagnarok) (*cos
 			// this type of tx out is special, because it doesn't have relevant tx
 			// in to trigger it, it is trigger by thorchain itself.
 
-			fromAddress, _ := tx.VaultPubKey.GetAddress(tx.Chain)
+			pubKey := tx.GetPubKey()
+			if pubKey.IsEmpty() {
+				ctx.Logger().Error("unknown signing algo", "signing_algo", tx.Chain.GetSigningAlgo())
+			}
+
+			fromAddress, _ := pubKey.GetAddress(tx.Chain)
 
 			if tx.InHash.Equals(common.BlankTxID) &&
 				tx.OutHash.IsEmpty() &&
