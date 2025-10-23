@@ -398,8 +398,6 @@ func (c *TonClient) ConfirmationCountReady(_ types.TxIn) bool {
 
 // OnObservedTxIn is called when a new observed tx is received.
 func (c *TonClient) OnObservedTxIn(txIn types.TxInItem, height int64) {
-	c.logger.Info().Msgf("OnObservedTxIn height: %d", height)
-
 	m, err := tcmemo.ParseMemo(common.LatestVersion, txIn.Memo)
 	if err != nil {
 		// Debug log only as ParseMemo error is expected for THORName inbounds.
@@ -796,7 +794,7 @@ func (c *TonClient) createAndSignTx(
 		return nil, err
 	}
 
-	c.logger.Info().
+	c.logger.Debug().
 		Str("vault", txOutItem.VaultPubKeyEddsa.String()).
 		Str("from", fromAddress.String()).
 		Str("to", txOutItem.ToAddress.String()).
