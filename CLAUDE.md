@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Prerequisites
 
-- Go (as specified in go.mod)
+- Go
 - Make
 - Docker and Docker Compose V2
 - Protobuf compiler
