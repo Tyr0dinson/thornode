@@ -204,33 +204,27 @@ services:
       BIFROST_CHAINS_BSC_BLOCK_SCANNER_MAX_GAS_LIMIT: 80000
       BIFROST_CHAINS_BASE_BLOCK_SCANNER_MAX_GAS_LIMIT: 80000
 
-      BIFROST_CHAINS_AVAX_DISABLED: "true"
-      BIFROST_CHAINS_ETH_DISABLED: "true"
-      BIFROST_CHAINS_BTC_DISABLED: "true"
-      BIFROST_CHAINS_BCH_DISABLED: "true"
-      BIFROST_CHAINS_LTC_DISABLED: "true"
-      BIFROST_CHAINS_DOGE_DISABLED: "true"
-      BIFROST_CHAINS_TRON_DISABLED: "true"
 
       # enable bsc
-      BIFROST_CHAINS_BSC_DISABLED: "true"
+      BIFROST_CHAINS_BSC_DISABLED: "false"
       BIFROST_CHAINS_BSC_RPC_HOST: ${BSC_HOST:-http://binance-smart:8545}
 
       # enable base
-      BIFROST_CHAINS_BASE_DISABLED: "true"
+      BIFROST_CHAINS_BASE_DISABLED: "false"
       BIFROST_CHAINS_BASE_RPC_HOST: http://base:8545
 
       # enable xrp
-      BIFROST_CHAINS_XRP_DISABLED: "true"
+      BIFROST_CHAINS_XRP_DISABLED: "false"
       BIFROST_CHAINS_XRP_RPC_HOST: http://xrp:5005
       BIFROST_CHAINS_XRP_CHAIN_NETWORK: "1234"
 
       # enable tron
+      BIFROST_CHAINS_TRON_DISABLED: "false"
       BIFROST_CHAINS_TRON_API_HOST: http://tron-fullnode:8090
       BIFROST_CHAINS_TRON_RPC_HOST: http://tron-fullnode:8091
 
       # enable gaia
-      BIFROST_CHAINS_GAIA_DISABLED: "true"
+      BIFROST_CHAINS_GAIA_DISABLED: "false"
       BIFROST_CHAINS_GAIA_RPC_HOST: ${GAIA_HOST:-http://gaia:26657}
       BIFROST_CHAINS_GAIA_COSMOS_GRPC_HOST: ${GAIA_GRPC_HOST:-gaia:9090}
       BIFROST_CHAINS_GAIA_COSMOS_CHAIN_ID: "localgaia"
@@ -242,7 +236,7 @@ services:
       BIFROST_CHAINS_NOBLE_COSMOS_CHAIN_ID: "localnoble"
 
       # enable solana
-      BIFROST_CHAINS_SOL_DISABLED: "true"
+      BIFROST_CHAINS_SOL_DISABLED: "false"
       BIFROST_CHAINS_SOL_RPC_HOST: ${SOL_HOST:-http://solana:8899}
 
       # enable ton
