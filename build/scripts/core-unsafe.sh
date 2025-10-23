@@ -34,10 +34,10 @@ deploy_tron_contracts() {
     cat /tmp/tron-tool.log && exit 1
   fi
   cat /tmp/tron-tool.log
-  
+
   # Extract contract address from log
   TOKEN_ADDRESS=$(grep </tmp/tron-tool.log "Token Contract Address:" | awk '{print $NF}')
-  
+
   if [ -n "$TOKEN_ADDRESS" ]; then
     echo "TRON Token Address: $TOKEN_ADDRESS"
     # Note: Token address should be updated in tron_nile_latest.json
