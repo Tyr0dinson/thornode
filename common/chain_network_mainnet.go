@@ -3,5 +3,7 @@
 
 package common
 
-const CurrentChainNetwork = MainNet
-const IsMocknet = false
+const (
+	CurrentChainNetwork = MainNet
+	IsMocknet           = false
+)

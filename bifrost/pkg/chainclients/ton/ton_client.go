@@ -356,7 +356,6 @@ func (c *TonClient) GetAccountByAddress(
 			Decimals: decimals,
 		}},
 	}, nil
-
 }
 
 // GetBlockScannerHeight returns block scanner height for chain
@@ -556,7 +555,6 @@ func (c *TonClient) BroadcastTx(
 	}
 
 	tx, _, _, err := c.api.SendExternalMessageWaitTransaction(ctx, msg)
-
 	if err != nil {
 		return "", fmt.Errorf("failed to broadcast transaction: %w", err)
 	}
