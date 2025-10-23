@@ -87,9 +87,9 @@ services:
   _thornode: &thornode
     <<: *thorchain-defaults
     hostname: thornode # required for genesis.sh
-#    depends_on:
-#      - ethereum
-#      - avalanche
+    #    depends_on:
+    #      - ethereum
+    #      - avalanche
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment: &thornode-environment
@@ -154,14 +154,14 @@ services:
       - bifrost
       - validator
     depends_on:
-#      - bitcoin
-#      - bitcoin-cash
-#      - dogecoin
-#      - gaia
-#      - litecoin
-#      - tron-supernode
-#      - tron-fullnode
-#      - ton
+      #      - bitcoin
+      #      - bitcoin-cash
+      #      - dogecoin
+      #      - gaia
+      #      - litecoin
+      #      - tron-supernode
+      #      - tron-fullnode
+      #      - ton
       - thornode
     extra_hosts:
       - "host.docker.internal:host-gateway"
