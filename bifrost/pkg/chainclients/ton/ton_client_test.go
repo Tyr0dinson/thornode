@@ -13,7 +13,6 @@ import (
 
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
-	"github.com/xssnick/tonutils-go/ton"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/cmd"
@@ -31,7 +30,7 @@ type TonTestSuite struct {
 	keys    *thorclient.Keys
 	bridge  thorclient.ThorchainBridge
 	metrics *metrics.Metrics
-	client  ton.APIClientWrapped
+	// client  ton.APIClientWrapped
 }
 
 var _ = Suite(&TonTestSuite{})
