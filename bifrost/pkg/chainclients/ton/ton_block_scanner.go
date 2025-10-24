@@ -22,7 +22,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// var txOutRegexp = regexp.MustCompile("^(OUT|MIGRATE|RAGNAROK):.*")
+const minimumFeeRate uint64 = 3_500_000 // 0.0035 TON
 
 type TonBlockScanner struct {
 	config     config.BifrostBlockScannerConfiguration
@@ -31,7 +31,7 @@ type TonBlockScanner struct {
 	api        ton.APIClientWrapped
 	lastShards map[string]uint32
 
-	feeRateCache []uint64
+	feeRateCache [][]uint64
 	lastFeeRate  uint64
 	netFeeInit   bool
 
@@ -45,6 +45,10 @@ func NewTonBlockScanner(
 	api ton.APIClientWrapped,
 	testnet bool,
 ) (*TonBlockScanner, error) {
+	if cfg.GasCacheBlocks <= 0 {
+		cfg.GasCacheBlocks = 10
+	}
+
 	return &TonBlockScanner{
 		config: cfg,
 		logger: log.Logger.With().
@@ -55,7 +59,7 @@ func NewTonBlockScanner(
 		api:          api,
 		testnet:      testnet,
 		lastFeeRate:  0,
-		feeRateCache: make([]uint64, 0),
+		feeRateCache: make([][]uint64, 0),
 		lastShards:   make(map[string]uint32),
 	}, nil
 }
@@ -122,18 +126,35 @@ func (s *TonBlockScanner) sendNetworkFeeIfNecessary(height int64) {
 		return
 	}
 
-	if len(s.feeRateCache) < s.config.GasCacheBlocks && s.netFeeInit {
-		// We are beyond the initial fee post, but not enough txs yet
+	if len(s.feeRateCache) < s.config.GasCacheBlocks {
+		// not enough txs yet
 		return
 	}
 
 	// Calculate the median fee rate from the gas cache
 
-	medianFeeRate := calculateMedian(s.feeRateCache)
+	var allRates []uint64
+	for _, rates := range s.feeRateCache {
+		allRates = append(allRates, rates...)
+	}
+
+	if len(allRates) < 10 {
+		s.logger.Info().
+			Int64("height", height).
+			Int("rates", len(allRates)).
+			Int("blocks", len(s.feeRateCache)).
+			Msg("not enough fee rates available")
+		return
+	}
+
+	medianFeeRate := common.GetMedianUint64(allRates)
 
 	// round medianFeeRate to the nearest resolution
 	resolution := uint64(s.config.GasPriceResolution)
-	roundedFeeRate := ((medianFeeRate + (resolution / 2)) / resolution) * resolution
+	roundedFeeRate := max(
+		minimumFeeRate,
+		((medianFeeRate+(resolution/2))/resolution)*resolution,
+	)
 
 	// truncate gas prices older than our max cached transactions
 	if len(s.feeRateCache) > s.config.GasCacheBlocks {
@@ -145,11 +166,9 @@ func (s *TonBlockScanner) sendNetworkFeeIfNecessary(height int64) {
 		return
 	}
 
-	s.netFeeInit = true
-
 	// Update the fee rate if it has changed
 	if roundedFeeRate == s.lastFeeRate {
-		s.logger.Info().Uint64("fee", roundedFeeRate).Msg("network fee is already up to date")
+		s.logger.Debug().Uint64("fee", roundedFeeRate).Msg("network fee is already up to date")
 		return
 	}
 
@@ -168,16 +187,6 @@ func (s *TonBlockScanner) sendNetworkFeeIfNecessary(height int64) {
 		Msg("sent network fee to THORChain")
 }
 
-// Calculates the median of a slice of uint64
-func calculateMedian(arr []uint64) uint64 {
-	sort.Slice(arr, func(i, j int) bool { return arr[i] < arr[j] })
-	n := len(arr)
-	if n%2 == 0 {
-		return (arr[n/2-1] + arr[n/2]) / 2
-	}
-	return arr[n/2]
-}
-
 func (s *TonBlockScanner) processMaster(masterSeqno uint32) ([]*types.TxInItem, error) {
 	master, err := s.api.LookupBlock(
 		context.Background(),
@@ -194,9 +203,12 @@ func (s *TonBlockScanner) processMaster(masterSeqno uint32) ([]*types.TxInItem, 
 		return nil, fmt.Errorf("failed to get shards for master block %d: %w", masterSeqno, err)
 	}
 
-	// sort.Slice(shards, func(i, j int) bool {
-	// 	return shards[i].Shard < shards[j].Shard
-	// })
+	sort.Slice(shards, func(i, j int) bool {
+		return shards[i].Shard < shards[j].Shard
+	})
+
+	// add rates slice for the current master block
+	s.feeRateCache = append(s.feeRateCache, []uint64{})
 
 	var txInItems []*types.TxInItem
 	var mu sync.Mutex
@@ -362,7 +374,8 @@ func (s *TonBlockScanner) processShard(
 		}
 
 		if isInternalOnly && !txDescription.Aborted {
-			s.feeRateCache = append(s.feeRateCache, tx.TotalFees.Coins.Nano().Uint64())
+			index := len(s.feeRateCache) - 1
+			s.feeRateCache[index] = append(s.feeRateCache[index], tx.TotalFees.Coins.Nano().Uint64())
 		}
 	}
 

@@ -462,7 +462,8 @@ bifrost:
       block_scanner:
         <<: *default-block-scanner
         chain_id: TON
-        gas_price_resolution: 1_000_000_000
+        gas_price_resolution: 1_000_000
+        gas_cache_blocks: 100
         observation_flexibility_blocks: 40
       mempool_tx_id_cache_size: 0
       scanner_leveldb: *default-leveldb
