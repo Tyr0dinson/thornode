@@ -223,6 +223,9 @@ func main() {
 
 	// start observer notifier
 	ag, err := observer.NewAttestationGossip(comm.GetHost(), k, cfg.Thorchain.ChainEBifrost, thorchainBridge, m, cfg.AttestationGossip)
+	if err != nil {
+		log.Fatal().Err(err).Msg("fail to create attestation gossip")
+	}
 
 	// start observer
 	obs, err := observer.NewObserver(pubkeyMgr, chains, thorchainBridge, m, cfgChains[tcommon.BTCChain].BlockScanner.DBPath, tssKeysignMetricMgr, ag, *deckDump)
