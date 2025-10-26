@@ -2900,3 +2900,149 @@ func applyMemolessOutboundLogic(version semver.Version, toi *TxOutItem, enableMe
 		toi.Memo = toi.OriginalMemo
 	}
 }
+
+// countActiveValidatorsForChain counts the number of active validators that are members
+// of vaults supporting the given chain
+func countActiveValidatorsForChain(ctx cosmos.Context, mgr Manager, chain common.Chain) (int, error) {
+	// Get active validators first
+	activeNodes, err := mgr.Keeper().ListActiveValidators(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("fail to get active validators: %w", err)
+	}
+
+	// Get active and retiring vaults
+	activeVaults, err := mgr.Keeper().GetAsgardVaultsByStatus(ctx, ActiveVault)
+	if err != nil {
+		return 0, fmt.Errorf("fail to get active vaults: %w", err)
+	}
+	retiringVaults, err := mgr.Keeper().GetAsgardVaultsByStatus(ctx, RetiringVault)
+	if err != nil {
+		return 0, fmt.Errorf("fail to get retiring vaults: %w", err)
+	}
+
+	// Combine vaults
+	allVaults := make(Vaults, 0, len(activeVaults)+len(retiringVaults))
+	allVaults = append(allVaults, activeVaults...)
+	allVaults = append(allVaults, retiringVaults...)
+
+	// Track unique active validators who are members of vaults supporting this chain
+	validatorSet := make(map[string]bool)
+	for _, vault := range allVaults {
+		// Check if this vault supports the chain
+		if !vault.HasChain(chain) {
+			continue
+		}
+
+		// Add all vault members who are active validators
+		for _, memberPubKey := range vault.GetMembership() {
+			thorAddr, err := memberPubKey.GetThorAddress()
+			if err != nil {
+				continue
+			}
+
+			// Check if this member is an active validator
+			for _, activeNode := range activeNodes {
+				if activeNode.NodeAddress.Equals(thorAddr) {
+					validatorSet[thorAddr.String()] = true
+					break
+				}
+			}
+		}
+	}
+
+	return len(validatorSet), nil
+}
+
+// validateChainLiquidityCap validates that adding liquidity to a chain does not exceed
+// the chain's RUNE limit when the chain lacks super majority validator support.
+// This applies to all asset types: regular pools, secured assets, and trade assets.
+func validateChainLiquidityCap(ctx cosmos.Context, mgr Manager, chain common.Chain, additionalRune, assetAmount cosmos.Uint, pool Pool) error {
+	// Skip for empty chains or THORChain
+	if chain.IsEmpty() || chain.IsTHORChain() {
+		return nil
+	}
+
+	// Get total active validators
+	totalActive, err := mgr.Keeper().TotalActiveValidators(ctx)
+	if err != nil {
+		return ErrInternal(err, "fail to get total active validators")
+	}
+
+	// Count validators supporting this chain
+	validatorsForChain, err := countActiveValidatorsForChain(ctx, mgr, chain)
+	if err != nil {
+		return ErrInternal(err, fmt.Sprintf("fail to count validators for chain %s", chain))
+	}
+
+	// Check if chain has super majority support - if yes, no cap applies
+	if HasSuperMajority(validatorsForChain, totalActive) {
+		return nil
+	}
+
+	// Chain does not have super majority, apply RUNE limit per validator across all assets on the chain
+	runePerValidator := mgr.Keeper().GetConfigInt64(ctx, constants.ChainLiquidityRunePerValidator)
+	// Only apply the limit if:
+	// 1. runePerValidator is configured (> 0)
+	// 2. There are validators supporting the chain (validatorsForChain > 0)
+	// If there are no active validators supporting the chain yet, skip the limit to allow bootstrapping
+	if runePerValidator <= 0 || validatorsForChain <= 0 {
+		return nil
+	}
+
+	maxChainRune := cosmos.NewUint(uint64(runePerValidator) * uint64(validatorsForChain))
+
+	// Get all active and retiring vaults to calculate total assets on this chain
+	activeVaults, err := mgr.Keeper().GetAsgardVaultsByStatus(ctx, ActiveVault)
+	if err != nil {
+		return ErrInternal(err, "fail to get active vaults")
+	}
+	retiringVaults, err := mgr.Keeper().GetAsgardVaultsByStatus(ctx, RetiringVault)
+	if err != nil {
+		return ErrInternal(err, "fail to get retiring vaults")
+	}
+	// Combine vaults (create new slice to avoid modifying activeVaults)
+	allVaults := make(Vaults, 0, len(activeVaults)+len(retiringVaults))
+	allVaults = append(allVaults, activeVaults...)
+	allVaults = append(allVaults, retiringVaults...)
+
+	// Sum total RUNE value of all assets on this chain held in vaults
+	totalChainRune := cosmos.ZeroUint()
+	for _, vault := range allVaults {
+		for _, coin := range vault.Coins {
+			// Only count coins on the target chain
+			if coin.Asset.GetChain().Equals(chain) {
+				// Find the pool for this asset to get pricing
+				assetPool, err := mgr.Keeper().GetPool(ctx, coin.Asset.GetLayer1Asset())
+				if err != nil {
+					ctx.Logger().Error("fail to get pool for asset", "asset", coin.Asset.String(), "error", err)
+					continue
+				}
+				if assetPool.IsEmpty() {
+					ctx.Logger().Debug("no pool for asset", "asset", coin.Asset.String())
+					continue
+				}
+				// Convert asset amount to RUNE value
+				runeValue := assetPool.AssetValueInRune(coin.Amount)
+				totalChainRune = totalChainRune.Add(runeValue)
+			}
+		}
+	}
+
+	// Add the RUNE being added in this transaction
+	totalChainRuneAfter := totalChainRune.Add(additionalRune)
+	totalChainRuneAfter = totalChainRuneAfter.Add(pool.AssetValueInRune(assetAmount))
+
+	if totalChainRuneAfter.GT(maxChainRune) {
+		ctx.Logger().Info("chain RUNE limit exceeded for chain without super majority",
+			"chain", chain,
+			"validators_for_chain", validatorsForChain,
+			"total_active", totalActive,
+			"max_chain_rune", maxChainRune,
+			"total_chain_rune_before", totalChainRune,
+			"total_chain_rune_after", totalChainRuneAfter)
+		return fmt.Errorf("chain %s exceeds total RUNE limit (validators: %d/%d, limit: %s RUNE, current: %s RUNE, attempting to add: %s RUNE)",
+			chain, validatorsForChain, totalActive, maxChainRune.String(), totalChainRune.String(), totalChainRuneAfter.Sub(totalChainRune).String())
+	}
+
+	return nil
+}

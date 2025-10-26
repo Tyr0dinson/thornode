@@ -1909,30 +1909,28 @@ func (s *HandlerAddLiquiditySuite) TestCountActiveValidatorsForChain(c *C) {
 	}
 	c.Assert(mgr.Keeper().SetVault(ctx, multiVault), IsNil)
 
-	addHandler := NewAddLiquidityHandler(mgr)
-
 	// Test 1: Count BTC validators (should be 4: validators 0, 2, 4, 5)
-	btcCount, err := addHandler.countActiveValidatorsForChain(ctx, common.BTCChain)
+	btcCount, err := countActiveValidatorsForChain(ctx, mgr, common.BTCChain)
 	c.Assert(err, IsNil)
 	c.Check(btcCount, Equals, 4, Commentf("Expected 4 BTC validators, got %d", btcCount))
 
 	// Test 2: Count ETH validators (should be 4: validators 1, 2, 4, 5)
-	ethCount, err := addHandler.countActiveValidatorsForChain(ctx, common.ETHChain)
+	ethCount, err := countActiveValidatorsForChain(ctx, mgr, common.ETHChain)
 	c.Assert(err, IsNil)
 	c.Check(ethCount, Equals, 4, Commentf("Expected 4 ETH validators, got %d", ethCount))
 
 	// Test 3: Count GAIA validators (should be 2: validators 3, 5)
-	gaiaCount, err := addHandler.countActiveValidatorsForChain(ctx, common.GAIAChain)
+	gaiaCount, err := countActiveValidatorsForChain(ctx, mgr, common.GAIAChain)
 	c.Assert(err, IsNil)
 	c.Check(gaiaCount, Equals, 2, Commentf("Expected 2 GAIA validators, got %d", gaiaCount))
 
 	// Test 4: Count LTC validators (should be 0: no vaults support it)
-	ltcCount, err := addHandler.countActiveValidatorsForChain(ctx, common.LTCChain)
+	ltcCount, err := countActiveValidatorsForChain(ctx, mgr, common.LTCChain)
 	c.Assert(err, IsNil)
 	c.Check(ltcCount, Equals, 0, Commentf("Expected 0 LTC validators, got %d", ltcCount))
 
 	// Test 5: Verify case insensitivity
-	btcCount2, err := addHandler.countActiveValidatorsForChain(ctx, common.BTCChain)
+	btcCount2, err := countActiveValidatorsForChain(ctx, mgr, common.BTCChain)
 	c.Assert(err, IsNil)
 	c.Check(btcCount2, Equals, btcCount, Commentf("Case sensitivity check failed"))
 
@@ -1942,7 +1940,7 @@ func (s *HandlerAddLiquiditySuite) TestCountActiveValidatorsForChain(c *C) {
 		c.Assert(mgr.Keeper().SetNodeAccount(ctx, validators[i]), IsNil)
 	}
 
-	btcCountStandby, err := addHandler.countActiveValidatorsForChain(ctx, common.BTCChain)
+	btcCountStandby, err := countActiveValidatorsForChain(ctx, mgr, common.BTCChain)
 	c.Assert(err, IsNil)
 	c.Check(btcCountStandby, Equals, 0, Commentf("Expected 0 active BTC validators when all are standby"))
 
@@ -1952,7 +1950,7 @@ func (s *HandlerAddLiquiditySuite) TestCountActiveValidatorsForChain(c *C) {
 		c.Assert(mgr.Keeper().SetNodeAccount(ctx, validators[i]), IsNil)
 	}
 
-	btcCountRestored, err := addHandler.countActiveValidatorsForChain(ctx, common.BTCChain)
+	btcCountRestored, err := countActiveValidatorsForChain(ctx, mgr, common.BTCChain)
 	c.Assert(err, IsNil)
 	c.Check(btcCountRestored, Equals, 4, Commentf("Expected 4 BTC validators after restoring active status"))
 
@@ -1966,7 +1964,7 @@ func (s *HandlerAddLiquiditySuite) TestCountActiveValidatorsForChain(c *C) {
 	}
 	c.Assert(mgr.Keeper().SetVault(ctx, retiringVault), IsNil)
 
-	ltcCountWithRetiring, err := addHandler.countActiveValidatorsForChain(ctx, common.LTCChain)
+	ltcCountWithRetiring, err := countActiveValidatorsForChain(ctx, mgr, common.LTCChain)
 	c.Assert(err, IsNil)
 	c.Check(ltcCountWithRetiring, Equals, 2, Commentf("Expected 2 LTC validators from retiring vault"))
 }

@@ -46,6 +46,17 @@ func (h TradeAccountDepositHandler) validate(ctx cosmos.Context, msg MsgTradeAcc
 	if err := h.checkHalt(ctx, msg.Asset.Chain.String()); err != nil {
 		return err
 	}
+
+	// Check chain liquidity cap for trade assets
+	chain := msg.Asset.GetLayer1Asset().GetChain()
+	pool, err := h.mgr.Keeper().GetPool(ctx, msg.Asset.GetLayer1Asset())
+	if err != nil {
+		return ErrInternal(err, "fail to get pool")
+	}
+	if err = validateChainLiquidityCap(ctx, h.mgr, chain, cosmos.ZeroUint(), msg.Amount, pool); err != nil {
+		return err
+	}
+
 	return msg.ValidateBasic()
 }
 
