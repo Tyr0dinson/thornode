@@ -223,6 +223,11 @@ func (c *CosmosClient) Stop() {
 	c.wg.Wait()
 }
 
+// SetShouldObserveCallback sets the callback to determine if this chain should be observed
+func (c *CosmosClient) SetShouldObserveCallback(callback func() bool) {
+	c.blockScanner.SetShouldObserveCallback(callback)
+}
+
 // GetConfig return the configuration used by Cosmos chain client
 func (c *CosmosClient) GetConfig() config.BifrostChainConfiguration {
 	return c.cfg

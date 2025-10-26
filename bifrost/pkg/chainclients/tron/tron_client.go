@@ -335,6 +335,11 @@ func (c *TronClient) Stop() {
 	c.wg.Wait()
 }
 
+// SetShouldObserveCallback sets the callback to determine if this chain should be observed
+func (c *TronClient) SetShouldObserveCallback(callback func() bool) {
+	c.blockScanner.SetShouldObserveCallback(callback)
+}
+
 func (c *TronClient) IsBlockScannerHealthy() bool {
 	return c.blockScanner.IsHealthy()
 }

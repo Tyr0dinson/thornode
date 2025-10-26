@@ -130,6 +130,9 @@ type Observer struct {
 	lastNodeStatus   stypes.NodeStatus
 	lastNodeStatusMu sync.RWMutex
 
+	observedChains map[common.Chain]bool
+	chainsMutex    sync.RWMutex
+
 	deckDumpFile string
 
 	// beforeObservedTxDeckLock is a deterministic race-test hook. Production
@@ -218,6 +221,7 @@ func NewObserver(pubkeyMgr *pubkeymanager.PubKeyManager,
 		signedTxOutCache:      signedTxOutCache,
 		attestationGossip:     attestationGossip,
 		observerWorkers:       observerWorkers,
+		observedChains:        make(map[common.Chain]bool),
 		deckDumpFile:          deckDumpFile,
 	}
 	if attestationGossip != nil {
@@ -416,14 +420,104 @@ func (o *Observer) maintainXMRErrataOnce(ctx context.Context) {
 	}
 }
 
+// IsChainObserved returns whether the given chain should be actively observed
+func (o *Observer) IsChainObserved(chain common.Chain) bool {
+	o.chainsMutex.RLock()
+	defer o.chainsMutex.RUnlock()
+
+	// If observedChains is empty, it means node is not in any active/retiring vaults
+	// In this case, observe all configured chains
+	if len(o.observedChains) == 0 {
+		return true
+	}
+
+	return o.observedChains[chain]
+}
+
+// updateObservedChains updates which chains should be observed based on vault membership
+func (o *Observer) updateObservedChains() {
+	supportedChains := o.pubkeyMgr.GetSupportedChains()
+
+	o.chainsMutex.Lock()
+	defer o.chainsMutex.Unlock()
+
+	// Track what changed for logging
+	added := make([]common.Chain, 0)
+	removed := make([]common.Chain, 0)
+
+	// If supported chains is empty, node is not in any active/retiring vaults
+	// Set observedChains to empty (signals observe all)
+	if len(supportedChains) == 0 {
+		if len(o.observedChains) > 0 {
+			for chain := range o.observedChains {
+				removed = append(removed, chain)
+			}
+			o.observedChains = make(map[common.Chain]bool)
+			o.logger.Info().Msg("node not in any active/retiring vaults, observing all chains")
+		}
+		return
+	}
+
+	// Track what was removed
+	for chain := range o.observedChains {
+		if !supportedChains[chain] {
+			removed = append(removed, chain)
+		}
+	}
+
+	// Track what was added
+	for chain := range supportedChains {
+		if !o.observedChains[chain] {
+			added = append(added, chain)
+		}
+	}
+
+	// Update the observed chains
+	o.observedChains = supportedChains
+
+	// Log changes
+	if len(added) > 0 || len(removed) > 0 {
+		o.logger.Info().
+			Strs("added", common.Chains(added).Strings()).
+			Strs("removed", common.Chains(removed).Strings()).
+			Msg("observed chains updated")
+	}
+}
+
 func (o *Observer) Start(ctx context.Context) error {
 	if err := o.restoreDeck(); err != nil {
 		return fmt.Errorf("restore observer deck: %w", err)
 	}
+	// Initial update of observed chains based on vault membership
+	o.updateObservedChains()
+
+	// Set callback for each chain to check if it should be observed
+	for chainID, chain := range o.chains {
+		chainIDCopy := chainID // Capture for closure
+		chain.SetShouldObserveCallback(func() bool {
+			return o.IsChainObserved(chainIDCopy)
+		})
+	}
+
 	deferXMR, err := o.startRestoredChainClients()
 	if err != nil {
 		return err
 	}
+
+	// Launch goroutine to periodically update observed chains
+	go func() {
+		ticker := time.NewTicker(constants.ThorchainBlockTime)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-o.stopChan:
+				return
+			case <-ticker.C:
+				o.updateObservedChains()
+			}
+		}
+	}()
+
 	o.oracle.Start()
 	go o.processOracle()
 	go o.processTxIns()

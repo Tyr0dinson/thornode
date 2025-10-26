@@ -70,18 +70,21 @@ type PubKeyManager struct {
 	m                *metrics.Metrics
 	stopChan         chan struct{}
 	callback         []OnNewPubKey
+	supportedChains  map[common.Chain]bool
+	chainsMutex      sync.RWMutex
 }
 
 // NewPubKeyManager create a new instance of PubKeyManager
 func NewPubKeyManager(bridge thorclient.ThorchainBridge, m *metrics.Metrics) (*PubKeyManager, error) {
 	return &PubKeyManager{
-		logger:     log.With().Str("module", "public_key_mgr").Logger(),
-		bridge:     bridge,
-		errCounter: m.GetCounterVec(metrics.PubKeyManagerError),
-		m:          m,
-		stopChan:   make(chan struct{}),
-		rwMutex:    &sync.RWMutex{},
-		callback:   []OnNewPubKey{},
+		logger:          log.With().Str("module", "public_key_mgr").Logger(),
+		bridge:          bridge,
+		errCounter:      m.GetCounterVec(metrics.PubKeyManagerError),
+		m:               m,
+		stopChan:        make(chan struct{}),
+		rwMutex:         &sync.RWMutex{},
+		callback:        []OnNewPubKey{},
+		supportedChains: make(map[common.Chain]bool),
 	}, nil
 }
 
@@ -162,6 +165,20 @@ func (pkm *PubKeyManager) GetNodePubKey(algo common.SigningAlgo) common.PubKey {
 		}
 	}
 	return common.EmptyPubKey
+}
+
+// GetSupportedChains returns the chains supported by active/retiring vaults that this node is a member of
+// Returns empty map if node is not a member of any active/retiring vaults (signals observe all chains)
+func (pkm *PubKeyManager) GetSupportedChains() map[common.Chain]bool {
+	pkm.chainsMutex.RLock()
+	defer pkm.chainsMutex.RUnlock()
+
+	// Return a copy of the map to avoid external modifications
+	chains := make(map[common.Chain]bool, len(pkm.supportedChains))
+	for chain, supported := range pkm.supportedChains {
+		chains[chain] = supported
+	}
+	return chains
 }
 
 // HasPubKey return true if the given public key exist
@@ -275,6 +292,8 @@ func (pkm *PubKeyManager) fetchPubKeys(prune bool) {
 	}
 	nodePubKey := pkm.GetNodePubKey(common.SigningAlgoSecp256k1)
 	var pubkeys common.PubKeys
+	chainsSet := make(map[common.Chain]bool)
+
 	for _, pk := range addressPairs {
 		signer := false
 		for _, member := range pk.Membership {
@@ -283,9 +302,34 @@ func (pkm *PubKeyManager) fetchPubKeys(prune bool) {
 				break
 			}
 		}
+
+		// If node is a signer for this vault, query vault details to get chains
+		if signer {
+			vault, err := pkm.bridge.GetVault(pk.PubKey.String())
+			if err != nil {
+				pkm.logger.Warn().Err(err).Str("vault_pubkey", pk.PubKey.String()).Msg("fail to get vault details")
+			} else if vault.IsActive() || vault.IsRetiring() {
+				// Only include chains from Active or Retiring vaults
+				for _, chainStr := range vault.Chains {
+					chain, err := common.NewChain(chainStr)
+					if err != nil {
+						pkm.logger.Warn().Err(err).Str("chain", chainStr).Msg("fail to parse chain")
+						continue
+					}
+					chainsSet[chain] = true
+				}
+			}
+		}
+
 		pkm.addPubKeyInternal(pk.PubKey, signer, pk.Algo, pk.Inactive)
 		pubkeys = append(pubkeys, pk.PubKey)
 	}
+
+	// Update supported chains
+	pkm.chainsMutex.Lock()
+	pkm.supportedChains = chainsSet
+	pkm.chainsMutex.Unlock()
+
 	pkm.updateContractAddresses(addressPairs)
 
 	if prune {

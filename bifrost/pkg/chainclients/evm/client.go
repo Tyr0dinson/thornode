@@ -537,6 +537,11 @@ func (c *EVMClient) Stop() {
 	c.wg.Wait()
 }
 
+// SetShouldObserveCallback sets the callback to determine if this chain should be observed
+func (c *EVMClient) SetShouldObserveCallback(callback func() bool) {
+	c.blockScanner.SetShouldObserveCallback(callback)
+}
+
 // IsBlockScannerHealthy returns true if the block scanner is healthy.
 func (c *EVMClient) IsBlockScannerHealthy() bool {
 	return c.blockScanner.IsHealthy()

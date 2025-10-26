@@ -275,6 +275,14 @@ func (c *SOLClient) Stop() {
 	c.wg.Wait()
 }
 
+// SetShouldObserveCallback sets the callback to determine if this chain should be observed
+// TODO: Solana uses a custom scanner - implement observation filtering in SOLScanner
+func (c *SOLClient) SetShouldObserveCallback(callback func() bool) {
+	// Solana scanner is custom and doesn't use common BlockScanner
+	// For now, Solana will always be observed
+	c.logger.Warn().Msg("observation callback not yet implemented for Solana custom scanner")
+}
+
 // IsBlockScannerHealthy returns true if the block scanner is healthy.
 func (c *SOLClient) IsBlockScannerHealthy() bool {
 	return c.solScanner.IsHealthy()

@@ -66,6 +66,9 @@ type ChainClient interface {
 
 	// RollbackBlockScanner rolls back the block scanner to re-observe recent blocks.
 	RollbackBlockScanner() error
+
+	// SetShouldObserveCallback sets a callback to determine if this chain should be observed
+	SetShouldObserveCallback(callback func() bool)
 }
 
 // PermanentErrataQuarantiner is an optional chain-client safety hook used

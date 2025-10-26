@@ -467,6 +467,8 @@ func (m *mockChainClient) Start(chan types.TxIn, chan types.ErrataBlock, chan ty
 
 func (m *mockChainClient) Stop() {}
 
+func (m *mockChainClient) SetShouldObserveCallback(callback func() bool) {}
+
 func (m *mockChainClient) GetChain() common.Chain {
 	return common.BTCChain
 }

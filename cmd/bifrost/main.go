@@ -218,13 +218,6 @@ func main() {
 		log.Fatal().Msg("fail to load any chains")
 	}
 	tssKeysignMetricMgr := metrics.NewTssKeysignMetricMgr()
-	healthServer := NewHealthServer(cfg.TSS.InfoAddress, tssIns, chains)
-	go func() {
-		defer log.Info().Msg("health server exit")
-		if err = healthServer.Start(); err != nil {
-			log.Error().Err(err).Msg("fail to start health server")
-		}
-	}()
 
 	ctx := context.Background()
 
@@ -247,6 +240,15 @@ func main() {
 	if err = obs.Start(ctx); err != nil {
 		log.Fatal().Err(err).Msg("fail to start observer")
 	}
+
+	// start health server (after observer is created)
+	healthServer := NewHealthServer(cfg.TSS.InfoAddress, tssIns, chains, obs)
+	go func() {
+		defer log.Info().Msg("health server exit")
+		if err = healthServer.Start(); err != nil {
+			log.Error().Err(err).Msg("fail to start health server")
+		}
+	}()
 
 	// start signer
 	sign, err := signer.NewSigner(cfg, thorchainBridge, k, pubkeyMgr, tssIns, chains, m, tssKeysignMetricMgr, obs)

@@ -446,6 +446,11 @@ func (c *Client) Stop() {
 	c.wg.Wait()
 }
 
+// SetShouldObserveCallback sets the callback to determine if this chain should be observed
+func (c *Client) SetShouldObserveCallback(callback func() bool) {
+	c.blockScanner.SetShouldObserveCallback(callback)
+}
+
 func (c *Client) IsBlockScannerHealthy() bool {
 	return c.blockScanner.IsHealthy()
 }

@@ -65,6 +65,7 @@ type ScannerResponse struct {
 	BlockScannerHeight int64  `json:"block_scanner_height"`
 	ScannerHeightDiff  int64  `json:"scanner_height_diff"`
 	Healthy            *bool  `json:"healthy,omitempty"`
+	IsObserved         bool   `json:"is_observed"`
 }
 
 type signingChain struct {
@@ -91,10 +92,16 @@ type HealthServer struct {
 	tssServer       tss.Server
 	chains          map[common.Chain]chainclients.ChainClient
 	providerPayload []byte
+	observer        ObserverAPI
+}
+
+// ObserverAPI defines the methods needed from Observer for health checks
+type ObserverAPI interface {
+	IsChainObserved(chain common.Chain) bool
 }
 
 // NewHealthServer create a new instance of health server
-func NewHealthServer(addr string, tssServer tss.Server, chains map[common.Chain]chainclients.ChainClient) *HealthServer {
+func NewHealthServer(addr string, tssServer tss.Server, chains map[common.Chain]chainclients.ChainClient, observer ObserverAPI) *HealthServer {
 	res := make(ProviderResponse)
 	for chain, client := range chains {
 		cfg := client.GetConfig()
@@ -115,6 +122,7 @@ func NewHealthServer(addr string, tssServer tss.Server, chains map[common.Chain]
 		tssServer:       tssServer,
 		chains:          chains,
 		providerPayload: providerPayload,
+		observer:        observer,
 	}
 	s := &http.Server{
 		Addr:              addr,
@@ -353,6 +361,12 @@ func (s *HealthServer) chainScanner(w http.ResponseWriter, _ *http.Request) {
 				scannerHeightDiff = height - blockScannerHeight
 			}
 
+			// Check if chain is currently being observed
+			isObserved := true
+			if s.observer != nil {
+				isObserved = s.observer.IsChainObserved(chain)
+			}
+
 			healthy := client.IsBlockScannerHealthy()
 			mu.Lock()
 			res[chain.String()] = ScannerResponse{
@@ -361,6 +375,7 @@ func (s *HealthServer) chainScanner(w http.ResponseWriter, _ *http.Request) {
 				BlockScannerHeight: blockScannerHeight,
 				ScannerHeightDiff:  scannerHeightDiff,
 				Healthy:            &healthy,
+				IsObserved:         isObserved,
 			}
 			mu.Unlock()
 		}()

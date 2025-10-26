@@ -44,6 +44,9 @@ type Block struct {
 	Txs    []string
 }
 
+// ShouldObserveCallback is a callback function to determine if the chain should be observed
+type ShouldObserveCallback func() bool
+
 // BlockScanner is used to discover block height
 type BlockScanner struct {
 	cfg                   config.BifrostBlockScannerConfiguration
@@ -65,6 +68,8 @@ type BlockScanner struct {
 	// stall tracking, only touched from the scanBlocks goroutine
 	stallHeight int64
 	stallSince  time.Time
+
+	shouldObserve         ShouldObserveCallback
 }
 
 // NewBlockScanner create a new instance of BlockScanner
@@ -108,6 +113,11 @@ func (b *BlockScanner) IsHealthy() bool {
 
 func (b *BlockScanner) PreviousHeight() int64 {
 	return atomic.LoadInt64(&b.previousBlock)
+}
+
+// SetShouldObserveCallback sets the callback function to determine if chain should be observed
+func (b *BlockScanner) SetShouldObserveCallback(callback ShouldObserveCallback) {
+	b.shouldObserve = callback
 }
 
 // RollbackToLastObserved rollback the block scanner to last observed height minus flex period
@@ -391,6 +401,18 @@ func (b *BlockScanner) scanMempool() {
 		case <-b.stopChan:
 			return
 		default:
+			// Check if we should observe this chain
+			shouldObserve := true
+			if b.shouldObserve != nil {
+				shouldObserve = b.shouldObserve()
+			}
+
+			// Chain is not being observed, skip mempool scanning
+			if !shouldObserve {
+				time.Sleep(constants.ThorchainBlockTime)
+				continue
+			}
+
 			// mempool scan will continue even the chain get halted , thus the network can still aware of outbound transaction
 			// during chain halt
 			preBlockHeight := atomic.LoadInt64(&b.previousBlock)
@@ -574,6 +596,19 @@ func (b *BlockScanner) scanBlocks() {
 
 			// Chain is paused, mark as unhealthy
 			if isChainPaused {
+				b.healthy.Store(false)
+				time.Sleep(constants.ThorchainBlockTime)
+				continue
+			}
+
+			// Check if we should observe this chain
+			shouldObserve := true
+			if b.shouldObserve != nil {
+				shouldObserve = b.shouldObserve()
+			}
+
+			// Chain is not being observed, skip scanning
+			if !shouldObserve {
 				b.healthy.Store(false)
 				time.Sleep(constants.ThorchainBlockTime)
 				continue
