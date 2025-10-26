@@ -1354,15 +1354,15 @@ func (s *QuerierSuite) TestQueryInboundAddressesChainAwareMode(c *C) {
 }
 
 func (s *QuerierSuite) TestQueryInboundAddressesMinimumNodesForBFT(c *C) {
-	// Test MinimumNodesForBFT filtering in chain-aware mode
-	// Default MinimumNodesForBFT is 4
+	// Test that chain-aware mode returns all chains from active vaults
+	// regardless of member count
 	ctx, mgr := setupManagerForTest(c)
 	ctx = ctx.WithBlockHeight(100)
 
 	// Enable chain-aware consensus
 	mgr.Keeper().SetMimir(ctx, constants.EnableNodeChainConsensus.String(), 1)
 
-	// Create vault with ETH chain (4 members - exactly meets threshold)
+	// Create vault with ETH chain (4 members)
 	pubKeyETH := GetRandomPubKey()
 	vaultETH := NewVault(ctx.BlockHeight()-1, ActiveVault, AsgardVault, pubKeyETH, common.Chains{common.ETHChain}.Strings(), nil)
 	vaultETH.Membership = []string{
@@ -1373,7 +1373,7 @@ func (s *QuerierSuite) TestQueryInboundAddressesMinimumNodesForBFT(c *C) {
 	}
 	c.Assert(mgr.Keeper().SetVault(ctx, vaultETH), IsNil)
 
-	// Create vault with BTC chain (3 members - below threshold of 4)
+	// Create vault with BTC chain (3 members)
 	pubKeyBTC := GetRandomPubKey()
 	vaultBTC := NewVault(ctx.BlockHeight()-1, ActiveVault, AsgardVault, pubKeyBTC, common.Chains{common.BTCChain}.Strings(), nil)
 	vaultBTC.Membership = []string{
@@ -1391,11 +1391,15 @@ func (s *QuerierSuite) TestQueryInboundAddressesMinimumNodesForBFT(c *C) {
 	resp, err := queryServer.InboundAddresses(ctx, &types.QueryInboundAddressesRequest{})
 	c.Assert(err, IsNil)
 	c.Assert(resp, NotNil)
-	c.Assert(len(resp.InboundAddresses), Equals, 1, Commentf("Should return 1 chain (ETH), BTC should be filtered out"))
+	c.Assert(len(resp.InboundAddresses), Equals, 2, Commentf("Should return both chains"))
 
-	// Verify only ETH is present (BTC should be filtered out)
-	c.Check(resp.InboundAddresses[0].Chain, Equals, "ETH", Commentf("ETH should be present (4 members meets threshold)"))
-	c.Check(resp.InboundAddresses[0].PubKey, Equals, pubKeyETH.String())
+	// Verify both chains are present
+	chainMap := make(map[string]string)
+	for _, addr := range resp.InboundAddresses {
+		chainMap[addr.Chain] = addr.PubKey
+	}
+	c.Check(chainMap["ETH"], Equals, pubKeyETH.String(), Commentf("ETH should be present"))
+	c.Check(chainMap["BTC"], Equals, pubKeyBTC.String(), Commentf("BTC should be present"))
 }
 
 func (s *QuerierSuite) TestQueryInboundAddressesMultipleVaultsPerChain(c *C) {
