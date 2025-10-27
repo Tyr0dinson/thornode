@@ -291,7 +291,8 @@
             "BASE",
             "TRON",
             "XRP",
-            "SOL"
+            "SOL",
+            "TON"
           ],
           "coins": null,
           "membership": [
