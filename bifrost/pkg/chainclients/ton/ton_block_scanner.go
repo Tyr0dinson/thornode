@@ -33,7 +33,6 @@ type TonBlockScanner struct {
 
 	feeRateCache [][]uint64
 	lastFeeRate  uint64
-	netFeeInit   bool
 
 	globalNetworkFeeQueue chan common.NetworkFee
 	testnet               bool
