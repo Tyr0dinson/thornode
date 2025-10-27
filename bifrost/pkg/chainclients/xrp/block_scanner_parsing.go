@@ -31,8 +31,9 @@ func (c *XrpBlockScanner) processPayment(flatTx map[string]any) (*transaction.Pa
 
 	var memoData []byte
 	if flatTx["Memos"] != nil {
-		memos, memoOk := flatTx["Memos"].([]any)
-		if !memoOk {
+		var memos []any
+		memos, ok = flatTx["Memos"].([]any)
+		if !ok {
 			return nil, fmt.Errorf("cannot cast memos to []any")
 		}
 		// optional: add filter for vault addresses
@@ -40,15 +41,18 @@ func (c *XrpBlockScanner) processPayment(flatTx map[string]any) (*transaction.Pa
 		if len(memos) < 1 {
 			return nil, fmt.Errorf("memos is empty")
 		}
-		memoObj, ok := memos[0].(map[string]any)
+		var memoObj map[string]any
+		memoObj, ok = memos[0].(map[string]any)
 		if !ok {
 			return nil, fmt.Errorf("cannot cast memos[0] to map[string]any")
 		}
-		memo, ok := memoObj["Memo"].(map[string]any)
+		var memo map[string]any
+		memo, ok = memoObj["Memo"].(map[string]any)
 		if !ok {
 			return nil, fmt.Errorf("cannot cast memo to map[string]any")
 		}
-		memoDataHex, ok := memo["MemoData"].(string)
+		var memoDataHex string
+		memoDataHex, ok = memo["MemoData"].(string)
 		if !ok {
 			return nil, fmt.Errorf("cannot cast MemoData to string")
 		}

@@ -14,6 +14,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 
 	cosmoscryptoed25519 "github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
+	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	tonaddress "github.com/xssnick/tonutils-go/address"
@@ -33,7 +34,6 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	tcconfig "gitlab.com/thorchain/thornode/v3/config"
 	"gitlab.com/thorchain/thornode/v3/constants"
-
 	tcmemo "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
 )
 
@@ -98,7 +98,8 @@ func NewTonClient(
 
 		logger.Info().Str("url", url).Msg("get global config")
 
-		cfg, err := liteclient.GetConfigFromUrl(ctx, url)
+		var cfg *liteclient.GlobalConfig
+		cfg, err = liteclient.GetConfigFromUrl(ctx, url)
 		if err != nil {
 			logger.Err(err).Msg("fail to get network config")
 			return nil, err
@@ -116,7 +117,7 @@ func NewTonClient(
 			client.logger.Err(err).Msg("")
 			return nil, err
 		}
-		err := pool.AddConnection(ctx, config.RPCHost, config.Password)
+		err = pool.AddConnection(ctx, config.RPCHost, config.Password)
 		if err != nil {
 			logger.Err(err).Msg("fail to add client connection")
 			return nil, err
@@ -170,7 +171,8 @@ func NewTonClient(
 
 	// only relevant for mocknet, test image starts with height < 0
 	for i := 0; i < 30; i++ {
-		info, err := client.api.GetMasterchainInfo(ctx)
+		var info *ton.BlockIDExt
+		info, err = client.api.GetMasterchainInfo(ctx)
 		if err == nil && info.SeqNo > 0 {
 			break
 		}
@@ -529,7 +531,8 @@ func (c *TonClient) BroadcastTx(
 	}
 
 	if !initialized {
-		pubKey, err := cosmos.GetPubKeyFromBech32(
+		var pubKey cryptotypes.PubKey
+		pubKey, err = cosmos.GetPubKeyFromBech32(
 			cosmos.Bech32PubKeyTypeAccPub,
 			txOut.VaultPubKeyEddsa.String(),
 		)
