@@ -2,7 +2,7 @@
 
 echo "started post-genesis.sh"
 cp /usr/local/bin/fift /usr/bin/
-cd /usr/share/ton/smartcont
+cd /usr/share/ton/smartcont || exit 1
 
 NODE_KEY="E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY="
 
