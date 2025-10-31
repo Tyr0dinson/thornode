@@ -543,9 +543,43 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 							ctx.Logger().Error("fail to emit slash point event")
 						}
 					} else {
-						// go to jail
-						jailTime := h.mgr.GetConstants().GetInt64Value(constants.JailTimeKeygen)
-						releaseHeight := ctx.BlockHeight() + jailTime
+						// Track the keygen blame and calculate penalty multiplier - use bond address as operator identifier
+						// Default to 1x multiplier if anything fails
+						mult := int64(1)
+						operatorAddr, err := cosmos.AccAddressFromBech32(na.BondAddress.String())
+						if err != nil {
+							ctx.Logger().Error("fail to parse bond address for blame tracking", "error", err, "bond_address", na.BondAddress)
+						} else {
+							if err = h.mgr.Keeper().IncrementKeygenBlame(ctx, operatorAddr); err != nil {
+								ctx.Logger().Error("fail to increment keygen blame", "error", err)
+							}
+
+							// Calculate escalated penalties based on blame history
+							mult, err = h.mgr.Keeper().CalculateKeygenPenaltyMultiplier(ctx, operatorAddr)
+							if err != nil {
+								ctx.Logger().Error("fail to calculate keygen penalty multiplier", "error", err)
+								mult = 1 // Fallback to base penalty
+							}
+						}
+
+						// Apply escalated penalties
+						baseSlashPoints := h.mgr.GetConstants().GetInt64Value(constants.FailKeygenSlashPoints)
+						baseJailTime := h.mgr.GetConstants().GetInt64Value(constants.JailTimeKeygen)
+
+						escalatedSlashPoints := baseSlashPoints * mult
+						escalatedJailTime := baseJailTime * mult
+						releaseHeight := ctx.BlockHeight() + escalatedJailTime
+
+						if mult > 1 {
+							ctx.Logger().Info("keygen blame penalty escalation",
+								"operator", operatorAddr.String(),
+								"multiplier", mult,
+								"slash_points", escalatedSlashPoints,
+								"jail_blocks", escalatedJailTime,
+							)
+						}
+
+						// Go to jail
 						reason := "failed to perform keygen"
 						if err := h.mgr.Keeper().SetNodeAccountJail(ctx, na.NodeAddress, releaseHeight, reason); err != nil {
 							ctx.Logger().Error("fail to set node account jail", "node address", na.NodeAddress, "reason", reason, "error", err)
@@ -556,7 +590,7 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 							return fmt.Errorf("fail to get network: %w", err)
 						}
 
-						slashBond := network.CalcNodeRewards(cosmos.NewUint(uint64(slashPoints)))
+						slashBond := network.CalcNodeRewards(cosmos.NewUint(uint64(escalatedSlashPoints)))
 						if slashBond.GT(na.Bond) {
 							slashBond = na.Bond
 						}
@@ -592,6 +626,36 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 
 				if err := h.mgr.EventMgr().EmitEvent(ctx, NewEventTssKeygenFailure(b.FailReason, b.Round, b.IsUnicast, msg.Height, blames)); err != nil {
 					ctx.Logger().Error("fail to emit keygen failure event")
+				}
+			}
+
+			// Emit blame summary event showing all operators with keygen blames since churn
+			var blameSummary []OperatorBlameDetail
+			iter := h.mgr.Keeper().GetOperatorBlameIterator(ctx)
+			for ; iter.Valid(); iter.Next() {
+				var record OperatorBlameRecord
+				if err := h.mgr.Keeper().Cdc().Unmarshal(iter.Value(), &record); err != nil {
+					continue
+				}
+
+				// Include if has KEYGEN blames since churn
+				if record.KeygenBlameCountSinceChurn > 0 {
+					blameSummary = append(blameSummary, OperatorBlameDetail{
+						OperatorAddress:            record.OperatorAddress,
+						KeygenBlameCountSinceChurn: record.KeygenBlameCountSinceChurn,
+					})
+				}
+			}
+			iter.Close()
+
+			// Sort by keygen blame count (highest to lowest)
+			sort.Slice(blameSummary, func(i, j int) bool {
+				return blameSummary[i].KeygenBlameCountSinceChurn > blameSummary[j].KeygenBlameCountSinceChurn
+			})
+
+			if len(blameSummary) > 0 {
+				if err := h.mgr.EventMgr().EmitEvent(ctx, NewEventKeygenBlameSummary(ctx.BlockHeight(), blameSummary)); err != nil {
+					ctx.Logger().Error("fail to emit keygen blame summary event")
 				}
 			}
 		}
@@ -715,6 +779,12 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 				if err = h.mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
 					ctx.Logger().Error("fail to emit tss metric event", "error", err)
 				}
+			}
+
+			// Reset all since_churn counters upon successful keygen
+			ctx.Logger().Info("successful keygen, resetting all blame since_churn counters")
+			if err = h.mgr.Keeper().ResetAllSinceChurnCounters(ctx); err != nil {
+				ctx.Logger().Error("fail to reset blame since_churn counters", "error", err)
 			}
 
 			if rotateErr := h.rotateReadyKeygenVaultFamilies(ctx, keygenBlock); rotateErr != nil {

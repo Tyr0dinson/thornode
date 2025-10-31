@@ -50,8 +50,9 @@ func NewConstantValue() *ConstantVals {
 			DoubleBlockSignSlashPoints:          1000,               // slash points for double block sign (3-4 days (over 43200 blocks) rewards lost from 5 minutes (50 blocks))
 			MissBlockSignSlashPoints:            1,                  // slash points for not signing a block
 			ObservationDelayFlexibility:         10,                 // number of blocks of flexibility for a validator to get their slash points taken off for making an observation
-			JailTimeKeygen:                      720 * 6,            // blocks a node account is jailed for failing to keygen. DO NOT drop below tss timeout
+			JailTimeKeygen:                      720,                // blocks a node account is jailed for failing to keygen. DO NOT drop below tss timeout
 			JailTimeKeysign:                     60,                 // blocks a node account is jailed for failing to keysign. DO NOT drop below tss timeout
+			MaxKeygenBlameMultiplier:            0,                  // maximum penalty multiplier for repeated keygen failures, 0 = no cap
 			NodePauseChainBlocks:                720,                // number of blocks that a node can pause/resume a global chain halt
 			NodeOperatorFee:                     500,                // Node operator fee
 			EnableDerivedAssets:                 0,                  // enable/disable swapping of derived assets

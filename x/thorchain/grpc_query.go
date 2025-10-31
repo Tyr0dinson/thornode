@@ -822,3 +822,19 @@ func (s *queryServer) DynamicL1FeesCurrent(c context.Context, req *types.QueryDy
 	ctx := s.unwrapSdkContext(c)
 	return s.queryDynamicL1FeesCurrent(ctx, req)
 }
+
+func (s *queryServer) OperatorBlame(c context.Context, req *types.QueryOperatorBlameRequest) (*types.QueryOperatorBlameResponse, error) {
+	if err := checkHeightParam(req.Height); err != nil {
+		return nil, err
+	}
+	ctx := s.unwrapSdkContext(c)
+	return s.queryOperatorBlame(ctx, req)
+}
+
+func (s *queryServer) OperatorBlames(c context.Context, req *types.QueryOperatorBlamesRequest) (*types.QueryOperatorBlamesResponse, error) {
+	if err := checkHeightParam(req.Height); err != nil {
+		return nil, err
+	}
+	ctx := s.unwrapSdkContext(c)
+	return s.queryOperatorBlames(ctx, req)
+}

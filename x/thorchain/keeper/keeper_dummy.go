@@ -404,6 +404,34 @@ func (k KVStoreDummy) DeductNativeTxFeeFromBond(ctx cosmos.Context, nodeAddr cos
 	return kaboom
 }
 
+func (k KVStoreDummy) GetOperatorBlameRecord(ctx cosmos.Context, addr cosmos.AccAddress) (types.OperatorBlameRecord, error) {
+	return types.OperatorBlameRecord{}, kaboom
+}
+
+func (k KVStoreDummy) SetOperatorBlameRecord(ctx cosmos.Context, record types.OperatorBlameRecord) error {
+	return kaboom
+}
+
+func (k KVStoreDummy) IncrementKeygenBlame(ctx cosmos.Context, addr cosmos.AccAddress) error {
+	return kaboom
+}
+
+func (k KVStoreDummy) IncrementKeysignBlame(ctx cosmos.Context, addr cosmos.AccAddress) error {
+	return kaboom
+}
+
+func (k KVStoreDummy) CalculateKeygenPenaltyMultiplier(ctx cosmos.Context, addr cosmos.AccAddress) (int64, error) {
+	return 1, kaboom
+}
+
+func (k KVStoreDummy) GetOperatorBlameIterator(ctx cosmos.Context) cosmos.Iterator {
+	return nil
+}
+
+func (k KVStoreDummy) ResetAllSinceChurnCounters(ctx cosmos.Context) error {
+	return kaboom
+}
+
 func (k KVStoreDummy) GetObservingAddresses(_ cosmos.Context) ([]cosmos.AccAddress, error) {
 	return nil, kaboom
 }

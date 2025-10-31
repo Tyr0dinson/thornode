@@ -57,6 +57,7 @@ const (
 	ObservationDelayFlexibility
 	JailTimeKeygen
 	JailTimeKeysign
+	MaxKeygenBlameMultiplier
 	NodePauseChainBlocks
 	EnableDerivedAssets
 	MinSwapsPerBlock

@@ -1378,6 +1378,56 @@ func (qs queryServer) queryNodes(ctx cosmos.Context, _ *types.QueryNodesRequest)
 	return &types.QueryNodesResponse{Nodes: result}, nil
 }
 
+// queryOperatorBlame returns blame record for a specific operator
+func (qs queryServer) queryOperatorBlame(ctx cosmos.Context, req *types.QueryOperatorBlameRequest) (*types.QueryOperatorBlameResponse, error) {
+	if len(req.Address) == 0 {
+		return nil, errors.New("operator address not provided")
+	}
+
+	addr, err := cosmos.AccAddressFromBech32(req.Address)
+	if err != nil {
+		return nil, fmt.Errorf("invalid address: %w", err)
+	}
+
+	record, err := qs.mgr.Keeper().GetOperatorBlameRecord(ctx, addr)
+	if err != nil {
+		return nil, err
+	}
+
+	return &types.QueryOperatorBlameResponse{
+		OperatorAddress:             record.OperatorAddress,
+		KeygenBlameCountTotal:       record.KeygenBlameCountTotal,
+		KeysignBlameCountTotal:      record.KeysignBlameCountTotal,
+		KeygenBlameCountSinceChurn:  record.KeygenBlameCountSinceChurn,
+		KeysignBlameCountSinceChurn: record.KeysignBlameCountSinceChurn,
+	}, nil
+}
+
+// queryOperatorBlames returns blame records for all operators
+func (qs queryServer) queryOperatorBlames(ctx cosmos.Context, _ *types.QueryOperatorBlamesRequest) (*types.QueryOperatorBlamesResponse, error) {
+	var result []*types.QueryOperatorBlameResponse
+
+	iter := qs.mgr.Keeper().GetOperatorBlameIterator(ctx)
+	defer iter.Close()
+
+	for ; iter.Valid(); iter.Next() {
+		var record OperatorBlameRecord
+		if err := qs.mgr.Keeper().Cdc().Unmarshal(iter.Value(), &record); err != nil {
+			continue
+		}
+
+		result = append(result, &types.QueryOperatorBlameResponse{
+			OperatorAddress:             record.OperatorAddress,
+			KeygenBlameCountTotal:       record.KeygenBlameCountTotal,
+			KeysignBlameCountTotal:      record.KeysignBlameCountTotal,
+			KeygenBlameCountSinceChurn:  record.KeygenBlameCountSinceChurn,
+			KeysignBlameCountSinceChurn: record.KeysignBlameCountSinceChurn,
+		})
+	}
+
+	return &types.QueryOperatorBlamesResponse{Blames: result}, nil
+}
+
 func newSaver(lp LiquidityProvider, pool Pool) *types.QuerySaverResponse {
 	assetRedeemableValue := lp.GetSaversAssetRedeemValue(pool)
 

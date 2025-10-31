@@ -261,6 +261,8 @@ var (
 	NewMsgTCYClaim                 = types.NewMsgTCYClaim
 	NewMsgTCYStake                 = types.NewMsgTCYStake
 	NewMsgTCYUnstake               = types.NewMsgTCYUnstake
+	NewOperatorBlameRecord         = types.NewOperatorBlameRecord
+	NewEventKeygenBlameSummary     = types.NewEventKeygenBlameSummary
 
 	// Memo
 	ParseMemo                    = mem.ParseMemo
@@ -412,6 +414,8 @@ type (
 	TCYStaker                = types.TCYStaker
 	VolumeBucket             = types.VolumeBucket
 	ContractInfo             = types.ContractInfo
+	OperatorBlameRecord      = types.OperatorBlameRecord
+	OperatorBlameDetail      = types.OperatorBlameDetail
 
 	// Memo
 	SwapMemo                   = mem.SwapMemo
