@@ -147,8 +147,9 @@ func (h ManageTHORNameHandler) handleV3_0_0(ctx cosmos.Context, msg MsgManageTHO
 		if err != nil {
 			return nil, err
 		}
-	} else {
+	} else if !msg.Chain.Equals(common.THORChain) {
 		// For new registrations, set the owner as the default alias for THORChain
+		// if the message is not already setting a THORChain alias
 		var ownerAddr common.Address
 		ownerAddr, err = common.NewAddress(msg.Signer.String())
 		if err != nil {
