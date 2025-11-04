@@ -186,6 +186,17 @@ This means:
 - The corresponding `bps` values remain correctly aligned with their respective `affiliate` values from the query.
 - Example: `affiliate=t1/t2&affiliate_bps=100/200` will create memo `...::t1/t2:100/200`, where t1 gets 100 bps and t2 gets 200 bps.
 
+**Parameter Format:** Multiple affiliates must be provided as slash-separated values in a **single parameter**. Indexed parameters (e.g., `affiliate1`, `affiliate2`) or repeated parameters with the same name are NOT supported.
+
+Supported:
+
+- `?affiliate=t1/t2/t3&affiliate_bps=100/200/300` ✅
+
+NOT Supported:
+
+- `?affiliate1=t1&affiliate2=t2` ❌ (indexed parameters)
+- `?affiliate=t1&affiliate=t2` ❌ (repeated parameters)
+
 **URL Encoding:** When manually constructing URLs (e.g., in curl or browsers), the forward slashes in query parameters should be URL-encoded as `%2F`. Most HTTP clients (including the OpenAPI generated clients) handle this automatically.
 
 Example:
