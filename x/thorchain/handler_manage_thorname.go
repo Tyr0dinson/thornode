@@ -11,7 +11,6 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
-	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 var IsValidTHORName = regexp.MustCompile(`^[a-zA-Z0-9+_-]+$`).MatchString
@@ -148,6 +147,14 @@ func (h ManageTHORNameHandler) handleV3_0_0(ctx cosmos.Context, msg MsgManageTHO
 		if err != nil {
 			return nil, err
 		}
+	} else {
+		// For new registrations, set the owner as the default alias for THORChain
+		var ownerAddr common.Address
+		ownerAddr, err = common.NewAddress(msg.Signer.String())
+		if err != nil {
+			return nil, fmt.Errorf("fail to parse owner address: %w", err)
+		}
+		tn.SetAlias(common.THORChain, ownerAddr)
 	}
 
 	registrationFeePaid := cosmos.ZeroUint()
@@ -189,12 +196,9 @@ func (h ManageTHORNameHandler) handleV3_0_0(ctx cosmos.Context, msg MsgManageTHO
 	}
 
 	tn.SetAlias(msg.Chain, msg.Address) // update address
-	// Update owner if it has changed
-	// Also, if owner has changed, null out the PreferredAsset/Aliases so the new owner is forced to reset it.
+	// Update owner if it has changed, preserving all THORName metadata
 	if !msg.Owner.Empty() && !bytes.Equal(msg.Owner, tn.Owner) {
 		tn.Owner = msg.Owner
-		tn.PreferredAsset = common.EmptyAsset
-		tn.Aliases = []types.THORNameAlias{}
 	}
 	h.mgr.Keeper().SetTHORName(ctx, tn)
 

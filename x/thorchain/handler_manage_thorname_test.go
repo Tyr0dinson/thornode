@@ -123,17 +123,18 @@ func (s *HandlerManageTHORNameSuite) TestHandler(c *C) {
 	c.Assert(err, IsNil)
 	c.Check(name.PreferredAsset, Equals, common.ETHAsset)
 
-	// transfer thorname to new owner, should reset preferred asset/external aliases
+	// transfer thorname to new owner, should preserve preferred asset/aliases
 	addr2 := GetRandomTHORAddress()
 	acc2, _ := addr2.AccAddress()
-	msg = NewMsgManageTHORName(tnName, common.THORChain, addr, coin, 0, common.RuneAsset(), acc2, acc)
+	msg = NewMsgManageTHORName(tnName, common.THORChain, addr, coin, 0, common.EmptyAsset, acc2, acc)
 	_, err = handler.handle(ctx, *msg)
 	c.Assert(err, IsNil)
 	name, err = mgr.Keeper().GetTHORName(ctx, tnName)
 	c.Assert(err, IsNil)
-	c.Check(len(name.GetAliases()), Equals, 0)
-	c.Check(name.PreferredAsset.IsEmpty(), Equals, true)
-	c.Check(name.GetOwner().Equals(acc2), Equals, true)
+	// Verify metadata is preserved on transfer
+	c.Check(name.GetAlias(common.ETHChain).Equals(ethAddr), Equals, true, Commentf("ETH alias should be preserved on transfer"))
+	c.Check(name.PreferredAsset.Equals(common.ETHAsset), Equals, true, Commentf("Preferred asset should be preserved on transfer"))
+	c.Check(name.GetOwner().Equals(acc2), Equals, true, Commentf("Owner should be updated"))
 
 	// happy path, release thorname back into the wild
 	msg = NewMsgManageTHORName(tnName, common.THORChain, addr, common.NewCoin(common.RuneAsset(), cosmos.ZeroUint()), 1, common.RuneAsset(), acc, acc)
@@ -143,4 +144,28 @@ func (s *HandlerManageTHORNameSuite) TestHandler(c *C) {
 	c.Assert(err, IsNil)
 	c.Check(name.Owner.Empty(), Equals, true)
 	c.Check(name.ExpireBlockHeight, Equals, int64(0))
+}
+
+func (s *HandlerManageTHORNameSuite) TestNewRegistrationSetsTHORAlias(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	handler := NewManageTHORNameHandler(mgr)
+	coin := common.NewCoin(common.RuneAsset(), cosmos.NewUint(100*common.One))
+	addr := GetRandomTHORAddress()
+	acc, _ := addr.AccAddress()
+	tnName := "newthorname"
+
+	// add rune to addr for gas
+	FundAccount(c, ctx, mgr.Keeper(), acc, 10*common.One)
+
+	// register new name
+	msg := NewMsgManageTHORName(tnName, common.THORChain, addr, coin, 0, common.EmptyAsset, acc, acc)
+	_, err := handler.handle(ctx, *msg)
+	c.Assert(err, IsNil)
+
+	// verify the owner is set as the default THOR alias
+	name, err := mgr.Keeper().GetTHORName(ctx, tnName)
+	c.Assert(err, IsNil)
+	c.Check(name.Owner.Equals(acc), Equals, true, Commentf("Owner should be set"))
+	c.Check(name.GetAlias(common.THORChain).Equals(addr), Equals, true, Commentf("Owner should be set as default THOR alias on registration"))
 }
