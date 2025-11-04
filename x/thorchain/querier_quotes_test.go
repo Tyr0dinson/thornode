@@ -124,4 +124,15 @@ func (s *QuotesSuite) TestParseMultipleAffiliateParams(c *C) {
 	_, _, _, err = parseMultipleAffiliateParams(ctx, mgr, "a1/a2/a3", "")
 	c.Assert(err, NotNil)
 	c.Assert(err.Error(), Equals, "mismatch between number of affiliates (3) and BPS values (0)")
+
+	// Test non-alphabetical order is preserved (regression test for ordering bug)
+	affiliates, bps, _, err = parseMultipleAffiliateParams(ctx, mgr, "t2/t1/t3", "200/100/300")
+	c.Assert(err, IsNil)
+	c.Assert(len(affiliates), Equals, 3)
+	c.Assert(affiliates[0], Equals, "t2", Commentf("Order should be preserved: t2 should be first"))
+	c.Assert(affiliates[1], Equals, "t1", Commentf("Order should be preserved: t1 should be second"))
+	c.Assert(affiliates[2], Equals, "t3", Commentf("Order should be preserved: t3 should be third"))
+	c.Assert(bps[0].Uint64(), Equals, uint64(200), Commentf("t2 should get 200 bps"))
+	c.Assert(bps[1].Uint64(), Equals, uint64(100), Commentf("t1 should get 100 bps"))
+	c.Assert(bps[2].Uint64(), Equals, uint64(300), Commentf("t3 should get 300 bps"))
 }

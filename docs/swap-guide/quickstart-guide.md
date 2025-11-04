@@ -178,14 +178,13 @@ For more information on affiliate fees: [Affiliate Fee Guide](../affiliate-guide
 
 Interfaces can define up to 5 valid affiliate and affiliate basis points pairs in a swap memo and the network will attempt to skim an affiliate fee for each. Alternatively, up to 5 valid affiliates and exactly one valid basis points can be defined, and the network will attempt to skim the same basis points fee for each affiliate.
 
-**Note:** When using the `/quote/swap` endpoint with multiple affiliates, **the order of `affiliate` and `affiliate_bps` fields in the query string does not determine their order in the final memo**. The API will **automatically sort affiliate names alphabetically** when constructing the memo.
+**Note:** When using the `/quote/swap` endpoint with multiple affiliates, **the order of `affiliate` and `affiliate_bps` fields in the query string determines their order in the final memo**. The API preserves the order of affiliates as provided.
 
 This means:
 
-- The affiliate names in the memo will appear in alphabetical order.
-- The corresponding `bps` values are still correctly aligned with their respective `affiliate` values from the query.
-
-⚠️ If your interface logic assumes that the memo preserves the order of affiliates as supplied in the query, you **must account for this sorting behavior** to avoid mismatches.
+- The affiliate names in the memo will appear in the same order as provided in the query.
+- The corresponding `bps` values remain correctly aligned with their respective `affiliate` values from the query.
+- Example: `affiliate=t1/t2&affiliate_bps=100/200` will create memo `...::t1/t2:100/200`, where t1 gets 100 bps and t2 gets 200 bps.
 
 Valid memo examples:
 
