@@ -523,16 +523,64 @@ func (qs queryServer) queryInboundAddresses(ctx cosmos.Context, _ *types.QueryIn
 		chains = common.Chains{common.RuneAsset().Chain}
 	}
 
+	// Always include THORChain in the list if not already present
+	hasTHORChain := false
+	for _, chain := range chains {
+		if chain == common.THORChain {
+			hasTHORChain = true
+			break
+		}
+	}
+	if !hasTHORChain {
+		chains = append(chains, common.THORChain)
+	}
+
 	isGlobalTradingPaused := k.IsGlobalTradingHalted(ctx)
 
 	for _, chain := range chains {
-		// tx send to thorchain doesn't need an address , thus here skip it
+		var isChainTradingPaused bool
+		var isChainLpPaused bool
+
+		// Handle THORChain native chain separately
 		if chain == common.THORChain {
+			isChainTradingPaused = k.IsChainTradingHalted(ctx, chain)
+			// THORChain doesn't have LP actions, so always false
+			isChainLpPaused = false
+
+			// Get thorchain module address
+			modAddr, err := k.GetModuleAddress(ModuleName)
+			if err != nil {
+				ctx.Logger().Error("fail to get thorchain module address", "error", err)
+				return nil, fmt.Errorf("fail to get thorchain module address: %w", err)
+			}
+
+			// Get OutboundTransactionFee constant
+			outboundTxFee := constAccessor.GetInt64Value(constants.OutboundTransactionFee)
+			outboundTxSize := int64(100_000_000) // 1e8
+
+			addr := types.QueryInboundAddressResponse{
+				Chain:                chain.String(),
+				PubKey:               "", // No pubkey for native chain
+				Address:              modAddr.String(),
+				Router:               "", // No router for native chain
+				Halted:               k.IsChainHalted(ctx, chain) || isGlobalTradingPaused,
+				GlobalTradingPaused:  isGlobalTradingPaused,
+				ChainTradingPaused:   isChainTradingPaused,
+				ChainLpActionsPaused: isChainLpPaused,
+				ObservedFeeRate:      "1",
+				GasRate:              cosmos.NewUint(uint64(outboundTxFee)).String(),
+				GasRateUnits:         "RUNE",
+				OutboundTxSize:       cosmos.NewUint(uint64(outboundTxSize)).String(),
+				OutboundFee:          cosmos.NewUint(uint64(outboundTxFee)).String(),
+				DustThreshold:        "0",
+			}
+
+			resp = append(resp, &addr)
 			continue
 		}
 
-		isChainTradingPaused := k.IsChainTradingHalted(ctx, chain)
-		isChainLpPaused := k.IsLPPaused(ctx, chain)
+		isChainTradingPaused = k.IsChainTradingHalted(ctx, chain)
+		isChainLpPaused = k.IsLPPaused(ctx, chain)
 
 		vaultAddress, err := vault.GetAddress(chain)
 		if err != nil {

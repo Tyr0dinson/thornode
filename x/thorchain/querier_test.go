@@ -986,9 +986,33 @@ func (s *QuerierSuite) TestQueryPoolAddresses(c *C) {
 	}{}
 
 	c.Assert(json.Unmarshal(result, &resp), IsNil)
-	c.Assert(len(resp), Equals, 1)
-	c.Assert(resp[0].Chain, Equals, common.ETHChain)
-	c.Assert(resp[0].PubKey, Equals, pubKey)
+	c.Assert(len(resp), Equals, 2)
+	
+	// Find ETH and THOR chains in response
+	var ethResp, thorResp *struct {
+		Chain   common.Chain   `json:"chain"`
+		PubKey  common.PubKey  `json:"pub_key"`
+		Address common.Address `json:"address"`
+		Halted  bool           `json:"halted"`
+	}
+	for i := range resp {
+		if resp[i].Chain == common.ETHChain {
+			ethResp = &resp[i]
+		} else if resp[i].Chain == common.THORChain {
+			thorResp = &resp[i]
+		}
+	}
+	
+	// Verify ETH chain
+	c.Assert(ethResp, NotNil)
+	c.Assert(ethResp.Chain, Equals, common.ETHChain)
+	c.Assert(ethResp.PubKey, Equals, pubKey)
+	
+	// Verify THOR chain
+	c.Assert(thorResp, NotNil)
+	c.Assert(thorResp.Chain, Equals, common.THORChain)
+	c.Assert(thorResp.PubKey.IsEmpty(), Equals, true) // No pubkey for native chain
+	c.Assert(thorResp.Address.IsEmpty(), Equals, false) // Should have thorchain module address
 }
 
 func (s *QuerierSuite) TestQueryKeysignArrayPubKey(c *C) {
