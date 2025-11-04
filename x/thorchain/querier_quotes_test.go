@@ -126,6 +126,7 @@ func (s *QuotesSuite) TestParseMultipleAffiliateParams(c *C) {
 	c.Assert(err.Error(), Equals, "mismatch between number of affiliates (3) and BPS values (0)")
 
 	// Test non-alphabetical order is preserved (regression test for ordering bug)
+	// This verifies that the order t2/t1/t3 with fees 200/100/300 keeps the correct pairing
 	affiliates, bps, _, err = parseMultipleAffiliateParams(ctx, mgr, "t2/t1/t3", "200/100/300")
 	c.Assert(err, IsNil)
 	c.Assert(len(affiliates), Equals, 3)
@@ -135,4 +136,15 @@ func (s *QuotesSuite) TestParseMultipleAffiliateParams(c *C) {
 	c.Assert(bps[0].Uint64(), Equals, uint64(200), Commentf("t2 should get 200 bps"))
 	c.Assert(bps[1].Uint64(), Equals, uint64(100), Commentf("t1 should get 100 bps"))
 	c.Assert(bps[2].Uint64(), Equals, uint64(300), Commentf("t3 should get 300 bps"))
+
+	// Test reverse alphabetical order to further confirm no sorting
+	affiliates, bps, _, err = parseMultipleAffiliateParams(ctx, mgr, "zulu/yankee/xray", "10/20/30")
+	c.Assert(err, IsNil)
+	c.Assert(len(affiliates), Equals, 3)
+	c.Assert(affiliates[0], Equals, "zulu", Commentf("Reverse alphabetical order should be preserved"))
+	c.Assert(affiliates[1], Equals, "yankee")
+	c.Assert(affiliates[2], Equals, "xray")
+	c.Assert(bps[0].Uint64(), Equals, uint64(10))
+	c.Assert(bps[1].Uint64(), Equals, uint64(20))
+	c.Assert(bps[2].Uint64(), Equals, uint64(30))
 }

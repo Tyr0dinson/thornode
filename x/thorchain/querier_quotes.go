@@ -88,7 +88,9 @@ func quoteParseAddress(ctx cosmos.Context, mgr *Mgrs, addrString string, chain c
 }
 
 // parseMultipleAffiliateParams - attempts to parse one or more affiliates + affiliate
-// bps from slash-separated strings. skips any that are invalid
+// bps from slash-separated strings. skips any that are invalid.
+// IMPORTANT: Order is preserved - affiliates and bps are paired by their position in the slash-separated lists.
+// Example: "t1/t2:100/200" will pair t1 with 100 bps and t2 with 200 bps, regardless of alphabetical order.
 func parseMultipleAffiliateParams(ctx cosmos.Context, mgr *Mgrs, affiliateParam, bpParam string) ([]string, []sdkmath.Uint, sdkmath.Uint, error) {
 	affParams := make([]string, 0)
 	affiliateBps := make([]sdkmath.Uint, 0)
