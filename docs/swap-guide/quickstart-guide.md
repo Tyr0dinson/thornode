@@ -186,6 +186,13 @@ This means:
 - The corresponding `bps` values remain correctly aligned with their respective `affiliate` values from the query.
 - Example: `affiliate=t1/t2&affiliate_bps=100/200` will create memo `...::t1/t2:100/200`, where t1 gets 100 bps and t2 gets 200 bps.
 
+**URL Encoding:** When manually constructing URLs (e.g., in curl or browsers), the forward slashes in query parameters should be URL-encoded as `%2F`. Most HTTP clients (including the OpenAPI generated clients) handle this automatically.
+
+Example:
+
+- Programmatic: `affiliate=t1/t2&affiliate_bps=100/200` (client auto-encodes)
+- Manual URL: `?affiliate=t1%2Ft2&affiliate_bps=100%2F200` (manually encoded)
+
 Valid memo examples:
 
 - `=:ETH.ETH:0x3021c479f7f8c9f1d5c7d8523ba5e22c0bcb5430::t1/t2/t3/t4/t5:10` (Will skim 10 basis points for each of the affiliates)
