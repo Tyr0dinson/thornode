@@ -141,6 +141,10 @@ func Init() {
 		"BTC_START_BLOCK_HEIGHT",
 	))
 	assert(viper.BindEnv(
+		"bifrost.chains.ZEC.rpc_host",
+		"ZEC_HOST",
+	))
+	assert(viper.BindEnv(
 		"bifrost.chains.ETH.rpc_host",
 		"ETH_HOST",
 	))

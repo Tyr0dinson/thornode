@@ -2,6 +2,7 @@ package utxo
 
 import (
 	"bytes"
+	"encoding/hex"
 	"fmt"
 	"sort"
 	"sync"
@@ -12,12 +13,15 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/btcsuite/btcd/btcec"
+	btcecv2 "github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/ecdsa"
 	"github.com/btcsuite/btcd/btcjson"
 	btcchaincfg "github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	btcwire "github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
+	"github.com/btcsuite/btcutil/base58"
 	btctxscript "gitlab.com/thorchain/thornode/v3/bifrost/txscript/txscript"
 
 	dogeec "github.com/eager7/dogd/btcec"
@@ -40,6 +44,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/rpc"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
+	"gitlab.com/thorchain/thornode/v3/chain/zec/go/zec"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 
@@ -61,6 +66,10 @@ type Client struct {
 	privKey *btcec.PrivateKey
 	pubKey  common.PubKey
 	address common.Address
+
+	// UTXO tracking for ZEC only (to prevent mempool conflicts)
+	muSpentUtxos sync.Mutex              // Mutex for thread-safe access to spentUtxos
+	spentUtxos   map[string]struct{}     // Track spent UTXOs (ZEC only)
 }
 
 var _ LiteChainClient = &Client{}
@@ -113,14 +122,22 @@ func NewClient(chain common.Chain, host string, keys *thorclient.Keys) (LiteChai
 		}
 	}
 
-	return &Client{
+	client := &Client{
 		chain:   chain,
 		rpc:     rpc,
 		keys:    keys,
 		privKey: privKey,
 		pubKey:  pubkey,
 		address: address,
-	}, nil
+	}
+
+	// Initialize UTXO tracking only for ZEC
+	// (ZEC uses getaddressutxos which lacks mempool awareness)
+	if chain.Equals(common.ZECChain) {
+		client.spentUtxos = make(map[string]struct{})
+	}
+
+	return client, nil
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -187,6 +204,11 @@ func (c *Client) SignContractTx(SimContractTx) ([]byte, error) {
 }
 
 func (c *Client) SignTx(tx SimTx) ([]byte, error) {
+	// Special handling for ZEC using the Rust library
+	if c.chain.Equals(common.ZECChain) {
+		return c.signZECTx(tx)
+	}
+
 	sourceScript, err := c.getSourceScript(tx)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get source pay to address script: %w", err)
@@ -219,8 +241,6 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 		stx = wireToLTC(redeemTx)
 	case common.BTCChain:
 		stx = wireToBTC(redeemTx)
-	case common.ZECChain:
-		stx = wireToZEC(redeemTx)
 	default:
 		log.Fatal().Msg("unsupported chain")
 	}
@@ -244,8 +264,6 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 				err = c.signUTXOLTC(stx.(*ltcwire.MsgTx), amount, sourceScript, i)
 			case common.BTCChain:
 				err = c.signUTXOBTC(stx.(*btcwire.MsgTx), amount, sourceScript, i)
-			case common.ZECChain:
-				err = c.signUTXOZEC(stx.(*btcwire.MsgTx), amount, sourceScript, i)
 			default:
 				log.Fatal().Msg("unsupported chain")
 			}
@@ -259,7 +277,7 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 	}
 	wg.Wait()
 	if utxoErr != nil {
-		return nil, fmt.Errorf("fail to sign the message: %w", err)
+		return nil, fmt.Errorf("fail to sign the message: %w", utxoErr)
 	}
 
 	// convert back to wire tx
@@ -272,8 +290,6 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 		redeemTx = ltcToWire(stx.(*ltcwire.MsgTx))
 	case common.BTCChain:
 		redeemTx = btcToWire(stx.(*btcwire.MsgTx))
-	case common.ZECChain:
-		redeemTx = zecToWire(stx.(*btcwire.MsgTx))
 	default:
 		log.Fatal().Msg("unsupported chain")
 	}
@@ -292,6 +308,15 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 ////////////////////////////////////////////////////////////////////////////////////////
 
 func (c *Client) BroadcastTx(payload []byte) (string, error) {
+	// For ZEC, the payload is already a properly formatted transaction from ApplySignatures
+	if c.chain.Equals(common.ZECChain) {
+		// ZEC transactions are already in the proper format from the ZEC Rust library
+		hexTx := hex.EncodeToString(payload)
+		var txid string
+		err := c.rpc.Call(&txid, "sendrawtransaction", hexTx, true)
+		return txid, err
+	}
+
 	redeemTx := btcwire.NewMsgTx(btcwire.TxVersion)
 	buf := bytes.NewBuffer(payload)
 	if err := redeemTx.Deserialize(buf); err != nil {
@@ -301,14 +326,15 @@ func (c *Client) BroadcastTx(payload []byte) (string, error) {
 	var maxFee any
 	switch c.chain {
 	case common.DOGEChain, common.BCHChain:
-		maxFee = true // "allowHighFees"
-	case common.LTCChain, common.BTCChain, common.ZECChain:
-		maxFee = 10_000_000
+		maxFee = true // "allowHighFees" - boolean for these chains
+	case common.LTCChain, common.BTCChain:
+		maxFee = 10_000_000 // numeric maxfeerate for Bitcoin/Litecoin
 	}
 
 	// broadcast tx
 	return c.rpc.SendRawTransaction(redeemTx, maxFee)
 }
+
 
 ////////////////////////////////////////////////////////////////////////////////////////
 // Internal
@@ -345,12 +371,24 @@ func (c *Client) getSourceScript(tx SimTx) ([]byte, error) {
 		}
 		return btctxscript.PayToAddrScript(addr)
 	case common.ZECChain:
-		var addr btcutil.Address
-		addr, err := btcutil.DecodeAddress(c.address.String(), c.getChainCfgZEC())
-		if err != nil {
-			return nil, fmt.Errorf("fail to decode source address(%s): %w", c.address, err)
+		// ZEC uses Base58Check with different version bytes, decode manually
+		decoded := base58.Decode(c.address.String())
+		if len(decoded) < 26 {
+			return nil, fmt.Errorf("invalid ZEC address length: %d", len(decoded))
 		}
-		return btctxscript.PayToAddrScript(addr)
+
+		// Extract the public key hash (20 bytes) after version bytes (2 bytes)
+		// Last 4 bytes are checksum
+		pubKeyHash := decoded[2:22]
+
+		// Create P2PKH script manually: OP_DUP OP_HASH160 <pubKeyHash> OP_EQUALVERIFY OP_CHECKSIG
+		builder := btctxscript.NewScriptBuilder()
+		builder.AddOp(btctxscript.OP_DUP)
+		builder.AddOp(btctxscript.OP_HASH160)
+		builder.AddData(pubKeyHash)
+		builder.AddOp(btctxscript.OP_EQUALVERIFY)
+		builder.AddOp(btctxscript.OP_CHECKSIG)
+		return builder.Script()
 	default:
 		log.Fatal().Msg("unsupported chain")
 		return nil, nil
@@ -368,15 +406,27 @@ func (c *Client) getUtxoToSpend(total float64) ([]btcjson.ListUnspentResult, err
 			return nil, fmt.Errorf("fail to get ZEC UTXOs: %w", err)
 		}
 
+		// Filter out already-spent UTXOs (ZEC only needs this because getaddressutxos lacks mempool awareness)
+		var filteredUtxos []rpc.Utxo
+		c.muSpentUtxos.Lock()
+		for _, item := range zecUtxos {
+			utxoKey := fmt.Sprintf("%s:%d", item.Txid, item.Vout)
+			if _, alreadySpent := c.spentUtxos[utxoKey]; alreadySpent {
+				continue // Skip spent UTXO
+			}
+			filteredUtxos = append(filteredUtxos, item)
+		}
+		c.muSpentUtxos.Unlock()
+
 		// get current height to calculate confirmations
 		currentHeight, err := c.rpc.GetBlockCount()
 		if err != nil {
 			return nil, fmt.Errorf("fail to get current block height: %w", err)
 		}
 
-		// convert ZEC UTXOs to ListUnspentResult format
-		utxos = make([]btcjson.ListUnspentResult, 0, len(zecUtxos))
-		for _, zecUtxo := range zecUtxos {
+		// convert filtered ZEC UTXOs to ListUnspentResult format
+		utxos = make([]btcjson.ListUnspentResult, 0, len(filteredUtxos))
+		for _, zecUtxo := range filteredUtxos {
 			// convert satoshis to BTC
 			amountBTC := btcutil.Amount(zecUtxo.Value).ToBTC()
 
@@ -459,6 +509,8 @@ func (c *Client) buildTx(tx SimTx, sourceScript []byte) (
 	if err != nil {
 		return nil, nil, fmt.Errorf("fail to get unspent UTXO: %w", err)
 	}
+
+	// Use standard version for now, ZEC version will be handled during serialization
 	redeemTx := wire.NewMsgTx(wire.TxVersion)
 	totalAmt := int64(0)
 	individualAmounts := make(map[string]int64, len(txes))
@@ -524,14 +576,26 @@ func (c *Client) buildTx(tx SimTx, sourceScript []byte) (
 			return nil, nil, fmt.Errorf("fail to get pay to address script: %w", err)
 		}
 	case common.ZECChain:
-		var outputAddr btcutil.Address
-		outputAddr, err = btcutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgZEC())
-		if err != nil {
-			return nil, nil, fmt.Errorf("fail to decode next address: %w", err)
+		// ZEC uses Base58Check with different version bytes, decode manually
+		decoded := base58.Decode(tx.ToAddress.String())
+		if len(decoded) < 26 {
+			return nil, nil, fmt.Errorf("invalid ZEC destination address length: %d", len(decoded))
 		}
-		buf, err = btctxscript.PayToAddrScript(outputAddr)
+
+		// Extract the public key hash (20 bytes) after version bytes (2 bytes)
+		// Last 4 bytes are checksum
+		pubKeyHash := decoded[2:22]
+
+		// Create P2PKH script manually: OP_DUP OP_HASH160 <pubKeyHash> OP_EQUALVERIFY OP_CHECKSIG
+		builder := btctxscript.NewScriptBuilder()
+		builder.AddOp(btctxscript.OP_DUP)
+		builder.AddOp(btctxscript.OP_HASH160)
+		builder.AddData(pubKeyHash)
+		builder.AddOp(btctxscript.OP_EQUALVERIFY)
+		builder.AddOp(btctxscript.OP_CHECKSIG)
+		buf, err = builder.Script()
 		if err != nil {
-			return nil, nil, fmt.Errorf("fail to get pay to address script: %w", err)
+			return nil, nil, fmt.Errorf("fail to build pay to address script: %w", err)
 		}
 	default:
 		log.Fatal().Msg("unsupported chain")
@@ -730,22 +794,170 @@ func (c *Client) signUTXOBTC(redeemTx *btcwire.MsgTx, amount int64, sourceScript
 	return nil
 }
 
-func (c *Client) signUTXOZEC(redeemTx *btcwire.MsgTx, amount int64, sourceScript []byte, idx int) error {
-	sigHashes := btctxscript.NewTxSigHashes(redeemTx)
-	signable := btctxscript.NewPrivateKeySignable(c.privKey)
-	witness, err := btctxscript.WitnessSignature(redeemTx, sigHashes, idx, amount, sourceScript, btctxscript.SigHashAll, signable, true)
+// signZECTx handles ZEC transaction building and signing using the Rust library
+func (c *Client) signZECTx(tx SimTx) ([]byte, error) {
+	// Get the current block height
+	blockCount, err := c.rpc.GetBlockCount()
 	if err != nil {
-		return fmt.Errorf("fail to get witness: %w", err)
+		return nil, fmt.Errorf("fail to get block count: %w", err)
+	}
+	currentHeight := uint32(blockCount)
+
+	// First, estimate the fee with a minimal transaction (1 input, 2 outputs)
+	paymentAmountBTC := c.getPaymentAmount(tx)
+	paymentAmountSats := int64(paymentAmountBTC * 100000000)
+	estimatedFee := zec.CalculateFeeWithMemo(1, 2, tx.Memo)
+
+	// Get UTXOs to spend - include estimated fee in the target amount (in BTC)
+	targetAmountBTC := paymentAmountBTC + float64(estimatedFee)/100000000
+	utxos, err := c.getUtxoToSpend(targetAmountBTC)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get UTXOs to spend: %w", err)
 	}
 
-	redeemTx.TxIn[idx].Witness = witness
-	flag := btctxscript.StandardVerifyFlags
-	engine, err := btctxscript.NewEngine(sourceScript, redeemTx, idx, flag, nil, nil, amount)
+	// Convert UTXOs to ZEC format and calculate total input
+	zecInputs := make([]zec.Utxo, len(utxos))
+	totalInput := uint64(0)
+	for i, utxo := range utxos {
+		// Use the script directly from the UTXO
+		scriptHex := utxo.ScriptPubKey
+
+		// Calculate the block height from confirmations
+		var height uint32
+		if utxo.Confirmations > 0 {
+			// For confirmed transactions, calculate the height
+			blockCount, _ := c.rpc.GetBlockCount()
+			height = uint32(blockCount - utxo.Confirmations + 1)
+		}
+
+		zecInputs[i] = zec.Utxo{
+			Txid:   utxo.TxID,
+			Vout:   utxo.Vout,
+			Script: scriptHex,
+			Value:  uint64(utxo.Amount * 100000000), // Convert BTC to zatoshis
+			Height: height,
+		}
+		totalInput += uint64(utxo.Amount * 100000000)
+	}
+
+	// Now calculate the actual fee based on the real number of inputs
+	fee := zec.CalculateFeeWithMemo(uint64(len(utxos)), 2, tx.Memo)
+
+	// Check if we have enough inputs for payment + fee
+	requiredAmount := uint64(paymentAmountSats) + fee
+	if totalInput < requiredAmount {
+		// Try to get more UTXOs
+		targetAmountBTC = paymentAmountBTC + float64(fee)/100000000
+		utxos, err = c.getUtxoToSpend(targetAmountBTC)
+		if err != nil {
+			return nil, fmt.Errorf("fail to get sufficient UTXOs: %w", err)
+		}
+
+		// Re-convert UTXOs to ZEC format
+		zecInputs = make([]zec.Utxo, len(utxos))
+		totalInput = 0
+		for i, utxo := range utxos {
+			scriptHex := utxo.ScriptPubKey
+			var height uint32
+			if utxo.Confirmations > 0 {
+				blockCount, _ := c.rpc.GetBlockCount()
+				height = uint32(blockCount - utxo.Confirmations + 1)
+			}
+			zecInputs[i] = zec.Utxo{
+				Txid:   utxo.TxID,
+				Vout:   utxo.Vout,
+				Script: scriptHex,
+				Value:  uint64(utxo.Amount * 100000000),
+				Height: height,
+			}
+			totalInput += uint64(utxo.Amount * 100000000)
+		}
+
+		// Recalculate fee with actual number of inputs
+		fee = zec.CalculateFeeWithMemo(uint64(len(utxos)), 2, tx.Memo)
+		requiredAmount = uint64(paymentAmountSats) + fee
+
+		if totalInput < requiredAmount {
+			return nil, fmt.Errorf("insufficient funds: have %d zatoshis, need %d zatoshis", totalInput, requiredAmount)
+		}
+	}
+
+	// Calculate change amount
+	changeAmount := totalInput - uint64(paymentAmountSats) - fee
+
+	// Build outputs - send to destination and change back to source
+	outputs := []zec.Output{
+		{
+			Address: tx.ToAddress.String(),
+			Amount:  uint64(paymentAmountSats),
+			Memo:    tx.Memo,
+		},
+	}
+
+	// Add change output if needed
+	if changeAmount > 0 {
+		outputs = append(outputs, zec.Output{
+			Address: c.address.String(),
+			Amount:  changeAmount,
+			Memo:    "",
+		})
+	}
+
+	// Get the vault public key (using the compressed public key)
+	vaultPubKey := c.privKey.PubKey().SerializeCompressed()
+
+	// Determine network
+	var network zec.Network
+	switch common.CurrentChainNetwork {
+	case common.MockNet:
+		network = zec.NetworkRegtest
+	case common.MainNet:
+		network = zec.NetworkMain
+	case common.StageNet:
+		network = zec.NetworkTest
+	default:
+		return nil, fmt.Errorf("unsupported network: %s", common.CurrentChainNetwork)
+	}
+
+	// Build the partial transaction
+	ptx := zec.PartialTx{
+		Height:       currentHeight,
+		Inputs:       zecInputs,
+		Outputs:      outputs,
+		Fee:          fee,
+		ExpiryHeight: 0, // No expiry
+	}
+
+	// Build the transaction
+	bptx, err := zec.BuildPtx(vaultPubKey, ptx, network)
 	if err != nil {
-		return fmt.Errorf("fail to create engine: %w", err)
+		return nil, fmt.Errorf("fail to build ZEC transaction: %w", err)
 	}
-	if err = engine.Execute(); err != nil {
-		return fmt.Errorf("fail to execute the script: %w", err)
+
+	// Sign the sighashes - need to create a v2 private key from the same bytes
+	privateKeyBytes := c.privKey.Serialize()
+	privKeyV2, _ := btcecv2.PrivKeyFromBytes(privateKeyBytes)
+
+	signatures := make([][]byte, len(bptx.Sighashes))
+	for i, sighash := range bptx.Sighashes {
+		sig := ecdsa.Sign(privKeyV2, sighash).Serialize()
+		signatures[i] = sig
 	}
-	return nil
+
+	// Apply signatures to get the final transaction
+	rawTx, err := zec.ApplySignatures(vaultPubKey, bptx, signatures, network)
+	if err != nil {
+		return nil, fmt.Errorf("fail to apply signatures: %w", err)
+	}
+
+	// Mark all used UTXOs as spent (ZEC only needs this because getaddressutxos lacks mempool awareness)
+	c.muSpentUtxos.Lock()
+	for _, utxo := range zecInputs {
+		utxoKey := fmt.Sprintf("%s:%d", utxo.Txid, utxo.Vout)
+		c.spentUtxos[utxoKey] = struct{}{}
+	}
+	c.muSpentUtxos.Unlock()
+
+	return rawTx, nil
 }
+

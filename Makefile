@@ -193,15 +193,15 @@ lint-ci:
 
 # ------------------------------ Unit Tests ------------------------------
 
-test-coverage: test-network-specific
-	@go test ${TEST_BUILD_FLAGS} -v -coverprofile=coverage.txt -covermode count ${TEST_DIR}
+test-coverage: test-network-specific zec-ensure-lib
+	@$(CGO_VARS) go test ${TEST_BUILD_FLAGS} -v -coverprofile=coverage.txt -covermode count ${TEST_DIR}
 	sed -i '/\.pb\.go:/d' coverage.txt
 
 coverage-report: test-coverage
 	@go tool cover -html=coverage.txt
 
-test-coverage-sum: test-network-specific
-	@go run gotest.tools/gotestsum --junitfile report.xml --format testname -- ${TEST_BUILD_FLAGS} -v -coverprofile=coverage.txt -covermode count ${TEST_DIR}
+test-coverage-sum: test-network-specific zec-ensure-lib
+	@$(CGO_VARS) go run gotest.tools/gotestsum --junitfile report.xml --format testname -- ${TEST_BUILD_FLAGS} -v -coverprofile=coverage.txt -covermode count ${TEST_DIR}
 	sed -i '/\.pb\.go:/d' coverage.txt
 	@GOFLAGS='${TEST_BUILD_FLAGS}' go run github.com/boumenot/gocover-cobertura < coverage.txt > coverage.xml
 	@go tool cover -func=coverage.txt
@@ -251,10 +251,10 @@ test-regression-coverage:
 
 # internal target used in docker build - version pinned for consistent app hashes
 _build-test-regression:
-	@go install -ldflags '$(ldflags)' -tags=mocknet,regtest ./cmd/thornode
-	@go build -ldflags '$(ldflags) -X gitlab.com/thorchain/thornode/v3/constants.Version=9.999.0' \
+	@$(CGO_VARS) go install -ldflags '$(ldflags)' -tags=mocknet,regtest ./cmd/thornode
+	@$(CGO_VARS) go build -ldflags '$(ldflags) -X gitlab.com/thorchain/thornode/v3/constants.Version=9.999.0' \
 		-cover -tags=mocknet,regtest -o /regtest/cover-thornode ./cmd/thornode
-	@go build -ldflags '$(ldflags) -X gitlab.com/thorchain/thornode/v3/constants.Version=9.999.0' \
+	@$(CGO_VARS) go build -ldflags '$(ldflags) -X gitlab.com/thorchain/thornode/v3/constants.Version=9.999.0' \
 		-tags mocknet -o /regtest/regtest ./test/regression/cmd
 
 # internal target used in test run
@@ -294,7 +294,7 @@ test-simulation-events:
 # internal target used in docker build
 _build-test-simulation:
 	@cd test/simulation && \
-		go build -ldflags '$(ldflags)' -tags mocknet -o /simtest/simtest ./cmd
+		$(CGO_VARS) go build -ldflags '$(ldflags)' -tags mocknet -o /simtest/simtest ./cmd
 
 # internal target used in test run
 _test-simulation:

@@ -12,6 +12,9 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 
+# Copy ZEC library for build stage
+COPY ./lib/libzec.so /app/lib/
+
 COPY . .
 
 ARG TAG=mainnet

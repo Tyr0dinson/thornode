@@ -114,6 +114,7 @@ func NewClient(
 		common.BCHChain:  true,
 		common.LTCChain:  true,
 		common.BTCChain:  true,
+		common.ZECChain:  true,
 	}
 	if !supported[cfg.ChainID] {
 		return nil, fmt.Errorf("unsupported utxo chain: %s", cfg.ChainID)
