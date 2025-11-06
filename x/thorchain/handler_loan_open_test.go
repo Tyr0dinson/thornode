@@ -30,6 +30,61 @@ func (tos *MockTxOutDummy) GetOutboundItems(ctx cosmos.Context) ([]TxOutItem, er
 	return tos.blockOut.TxArray, nil
 }
 
+func (s *HandlerLoanSuite) TestLoanOpenNetworkValidation(c *C) {
+	txid, _ := common.NewTxID("000000000")
+	ctx, mgr := setupManagerForTest(c)
+
+	// Setup pools
+	pool := NewPool()
+	pool.Asset = common.ETHAsset
+	pool.BalanceAsset = cosmos.NewUint(1483635061994)
+	pool.BalanceRune = cosmos.NewUint(271672185683320)
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	pool = NewPool()
+	pool.Asset = common.BTCAsset
+	pool.BalanceAsset = cosmos.NewUint(91654142078)
+	pool.BalanceRune = cosmos.NewUint(1290645477848949)
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	// Setup mimir settings
+	bal := mgr.Keeper().GetRuneBalanceOfModule(ctx, ModuleName)
+	c.Assert(mgr.Keeper().BurnFromModule(ctx, ModuleName, common.NewCoin(common.RuneAsset(), bal)), IsNil)
+	supply := mgr.Keeper().GetTotalSupply(ctx, common.RuneAsset())
+	max := supply.Add(cosmos.NewUint(15_000_000_00000000))
+	mgr.Keeper().SetMimir(ctx, "MaxRuneSupply", int64(max.Uint64()))
+	mgr.Keeper().SetMimir(ctx, "LENDING-THOR-ETH", 1)
+	mgr.Keeper().SetMimir(ctx, constants.PauseLoans.String(), 0)
+
+	owner := GetRandomETHAddress()
+	handler := NewLoanOpenHandler(mgr)
+
+	// Test that addresses from a different network are rejected
+	// MainNet and StageNet both use bc1 (mainnet format), MockNet uses tb1 (testnet format)
+	var wrongNetworkAddr common.Address
+	var err error
+	if common.CurrentChainNetwork == common.MockNet {
+		// On mocknet, mainnet address is wrong
+		wrongNetworkAddr, err = common.NewAddress("bc1pywlmh5y7rml8qley0pgjrczqdtfxh09d99kgykk4cqcvg6rudjws3cfspm")
+	} else {
+		// On mainnet/stagenet, testnet address is wrong
+		wrongNetworkAddr, err = common.NewAddress("tb1pywlmh5y7rml8qley0pgjrczqdtfxh09d99kgykk4cqcvg6rudjwsxsllm5")
+	}
+	c.Assert(err, IsNil)
+
+	// Attempt loan open with wrong network target address should be rejected
+	msg := NewMsgLoanOpen(owner, common.ETHAsset, cosmos.NewUint(100), wrongNetworkAddr, common.BTCAsset, cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", cosmos.ZeroUint(), GetRandomBech32Addr(), txid)
+	err = handler.validate(ctx, *msg)
+	c.Assert(err, NotNil)
+	c.Check(err.Error(), Matches, ".*not same network.*")
+
+	// Verify that correct network address passes validation
+	correctAddr := GetRandomBTCAddress()
+	msg = NewMsgLoanOpen(owner, common.ETHAsset, cosmos.NewUint(100), correctAddr, common.BTCAsset, cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", cosmos.ZeroUint(), GetRandomBech32Addr(), txid)
+	err = handler.validate(ctx, *msg)
+	c.Assert(err, IsNil)
+}
+
 func (s *HandlerLoanSuite) TestLoanValidate(c *C) {
 	txid, _ := common.NewTxID("000000000")
 	ctx, mgr := setupManagerForTest(c)

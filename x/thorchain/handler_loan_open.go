@@ -68,6 +68,11 @@ func (h LoanOpenHandler) validateV3_0_0(ctx cosmos.Context, msg MsgLoanOpen) err
 		return err
 	}
 
+	// Validate that the address network matches the current chain network
+	if msg.TargetAddress.GetNetwork(msg.TargetAddress.GetChain()) != common.CurrentChainNetwork {
+		return fmt.Errorf("target address(%s) is not same network", msg.TargetAddress)
+	}
+
 	pauseLoans := h.mgr.Keeper().GetConfigInt64(ctx, constants.PauseLoans)
 	if pauseLoans > 0 {
 		return fmt.Errorf("loans are currently paused")
@@ -119,7 +124,7 @@ func (h LoanOpenHandler) validateV3_0_0(ctx cosmos.Context, msg MsgLoanOpen) err
 		return err
 	}
 	if val <= 0 {
-		return fmt.Errorf("Lending is not available for this collateral asset")
+		return fmt.Errorf("lending is not available for this collateral asset")
 	}
 
 	// convert collateral asset back to layer1 asset
