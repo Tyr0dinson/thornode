@@ -16,7 +16,6 @@ import (
 
 	"github.com/btcsuite/btcd/mempool"
 	btcwire "github.com/btcsuite/btcd/wire"
-	btcchaincfg "github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcutil"
 	dogewire "github.com/eager7/dogd/wire"
 	"github.com/eager7/dogutil"
@@ -48,6 +47,12 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 			c.log.Error().Msgf("to address: %s is legacy not allowed ", tx.ToAddress)
 			return nil, nil, nil, nil
 		}
+	}
+
+	// ZEC uses Rust-based signing (BuildPtx → sign → ApplySignatures)
+	// Delegate to ZEC-specific SignTx to avoid Bitcoin signing path
+	if c.cfg.ChainID.Equals(common.ZECChain) {
+		return c.SignTxZEC(tx, thorchainHeight)
 	}
 
 	// skip outbounds that have been signed
@@ -83,14 +88,8 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 			return nil, nil, nil, fmt.Errorf("fail to decode next address: %w", err)
 		}
 		outputAddrStr = outputAddr.(ltcutil.Address).String() // trunk-ignore(golangci-lint/forcetypeassert)
-	case common.BTCChain, common.ZECChain:
-		var cfg *btcchaincfg.Params
-		if c.cfg.ChainID.Equals(common.ZECChain) {
-			cfg = c.getChainCfgZEC()
-		} else {
-			cfg = c.getChainCfgBTC()
-		}
-		outputAddr, err = btcutil.DecodeAddress(tx.ToAddress.String(), cfg)
+	case common.BTCChain:
+		outputAddr, err = btcutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgBTC())
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("fail to decode next address: %w", err)
 		}
@@ -175,8 +174,6 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 		stx = wireToLTC(redeemTx)
 	case common.BTCChain:
 		stx = wireToBTC(redeemTx)
-	case common.ZECChain:
-		stx = wireToZEC(redeemTx)
 	default:
 		c.log.Fatal().Msg("unsupported chain")
 	}
@@ -203,8 +200,6 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 				err = c.signUTXOLTC(stx.(*ltcwire.MsgTx), tx, amount, sourceScript, i)
 			case common.BTCChain:
 				err = c.signUTXOBTC(stx.(*btcwire.MsgTx), tx, amount, sourceScript, i)
-			case common.ZECChain:
-				err = c.signUTXOZEC(stx.(*btcwire.MsgTx), tx, amount, sourceScript, i)
 			default:
 				c.log.Fatal().Msg("unsupported chain")
 			}
@@ -232,8 +227,6 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) ([]byte, []b
 		redeemTx = ltcToWire(stx.(*ltcwire.MsgTx))
 	case common.BTCChain:
 		redeemTx = btcToWire(stx.(*btcwire.MsgTx))
-	case common.ZECChain:
-		redeemTx = zecToWire(stx.(*btcwire.MsgTx))
 	default:
 		c.log.Fatal().Msg("unsupported chain")
 	}

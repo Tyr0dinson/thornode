@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/btcsuite/btcd/btcjson"
-	btcchaincfg "github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 
@@ -199,15 +198,9 @@ func (c *Client) getSourceScript(tx stypes.TxOutItem) ([]byte, error) {
 			return nil, fmt.Errorf("fail to decode source address(%s): %w", sourceAddr.String(), err)
 		}
 		return ltctxscript.PayToAddrScript(addr)
-	case common.BTCChain, common.ZECChain:
+	case common.BTCChain:
 		var addr btcutil.Address
-		var cfg *btcchaincfg.Params
-		if c.cfg.ChainID.Equals(common.ZECChain) {
-			cfg = c.getChainCfgZEC()
-		} else {
-			cfg = c.getChainCfgBTC()
-		}
-		addr, err = btcutil.DecodeAddress(sourceAddr.String(), cfg)
+		addr, err = btcutil.DecodeAddress(sourceAddr.String(), c.getChainCfgBTC())
 		if err != nil {
 			return nil, fmt.Errorf("fail to decode source address(%s): %w", sourceAddr.String(), err)
 		}
@@ -399,15 +392,9 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte) (*wire.MsgTx,
 		if err != nil {
 			return nil, nil, fmt.Errorf("fail to generate null data script: %w", err)
 		}
-	case common.BTCChain, common.ZECChain:
+	case common.BTCChain:
 		var outputAddr btcutil.Address
-		var cfg *btcchaincfg.Params
-		if c.cfg.ChainID.Equals(common.ZECChain) {
-			cfg = c.getChainCfgZEC()
-		} else {
-			cfg = c.getChainCfgBTC()
-		}
-		outputAddr, err = btcutil.DecodeAddress(tx.ToAddress.String(), cfg)
+		outputAddr, err = btcutil.DecodeAddress(tx.ToAddress.String(), c.getChainCfgBTC())
 		if err != nil {
 			return nil, nil, fmt.Errorf("fail to decode next address: %w", err)
 		}
