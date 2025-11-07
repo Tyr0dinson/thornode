@@ -342,8 +342,8 @@ func (c *Client) sendNetworkFeeZEC(height int64) error {
 		c.globalNetworkFeeQueue <- common.NetworkFee{
 			Chain:           common.ZECChain,
 			Height:          height,
-			TransactionSize: 1,        // Mayanode convention: size=1
-			TransactionRate: feeRate,  // Total ZIP-317 fee amount
+			TransactionSize: 1,       // Mayanode convention: size=1
+			TransactionRate: feeRate, // Total ZIP-317 fee amount
 		}
 
 		c.log.Debug().

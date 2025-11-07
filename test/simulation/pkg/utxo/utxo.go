@@ -68,8 +68,8 @@ type Client struct {
 	address common.Address
 
 	// UTXO tracking for ZEC only (to prevent mempool conflicts)
-	muSpentUtxos sync.Mutex              // Mutex for thread-safe access to spentUtxos
-	spentUtxos   map[string]struct{}     // Track spent UTXOs (ZEC only)
+	muSpentUtxos sync.Mutex          // Mutex for thread-safe access to spentUtxos
+	spentUtxos   map[string]struct{} // Track spent UTXOs (ZEC only)
 }
 
 var _ LiteChainClient = &Client{}
@@ -334,7 +334,6 @@ func (c *Client) BroadcastTx(payload []byte) (string, error) {
 	// broadcast tx
 	return c.rpc.SendRawTransaction(redeemTx, maxFee)
 }
-
 
 ////////////////////////////////////////////////////////////////////////////////////////
 // Internal
@@ -960,4 +959,3 @@ func (c *Client) signZECTx(tx SimTx) ([]byte, error) {
 
 	return rawTx, nil
 }
-

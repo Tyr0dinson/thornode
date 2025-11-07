@@ -327,7 +327,6 @@ func readFloat64(reader io.Reader) float64 {
 }
 
 func init() {
-
 	uniffiCheckChecksums()
 }
 
@@ -1199,6 +1198,7 @@ func (c FfiConverterTypeBranchId) Lift(rb RustBufferI) BranchId {
 func (c FfiConverterTypeBranchId) Lower(value BranchId) RustBuffer {
 	return LowerIntoRustBuffer[BranchId](c, value)
 }
+
 func (FfiConverterTypeBranchId) Read(reader io.Reader) BranchId {
 	id := readInt32(reader)
 	return BranchId(id)
@@ -1232,6 +1232,7 @@ func (c FfiConverterTypeNetwork) Lift(rb RustBufferI) Network {
 func (c FfiConverterTypeNetwork) Lower(value Network) RustBuffer {
 	return LowerIntoRustBuffer[Network](c, value)
 }
+
 func (FfiConverterTypeNetwork) Read(reader io.Reader) Network {
 	id := readInt32(reader)
 	return Network(id)
@@ -1259,15 +1260,17 @@ func (err ZecError) Unwrap() error {
 }
 
 // Err* are used for checking error type with `errors.Is`
-var ErrZecErrorGenericError = fmt.Errorf("ZecErrorGenericError")
-var ErrZecErrorInvalidVaultPubkey = fmt.Errorf("ZecErrorInvalidVaultPubkey")
-var ErrZecErrorInvalidAddress = fmt.Errorf("ZecErrorInvalidAddress")
-var ErrZecErrorInitError = fmt.Errorf("ZecErrorInitError")
-var ErrZecErrorInvalidMemo = fmt.Errorf("ZecErrorInvalidMemo")
-var ErrZecErrorInvalidAmount = fmt.Errorf("ZecErrorInvalidAmount")
-var ErrZecErrorInvalidOvk = fmt.Errorf("ZecErrorInvalidOvk")
-var ErrZecErrorScanError = fmt.Errorf("ZecErrorScanError")
-var ErrZecErrorNonTransparentRefundAddress = fmt.Errorf("ZecErrorNonTransparentRefundAddress")
+var (
+	ErrZecErrorGenericError                = fmt.Errorf("ZecErrorGenericError")
+	ErrZecErrorInvalidVaultPubkey          = fmt.Errorf("ZecErrorInvalidVaultPubkey")
+	ErrZecErrorInvalidAddress              = fmt.Errorf("ZecErrorInvalidAddress")
+	ErrZecErrorInitError                   = fmt.Errorf("ZecErrorInitError")
+	ErrZecErrorInvalidMemo                 = fmt.Errorf("ZecErrorInvalidMemo")
+	ErrZecErrorInvalidAmount               = fmt.Errorf("ZecErrorInvalidAmount")
+	ErrZecErrorInvalidOvk                  = fmt.Errorf("ZecErrorInvalidOvk")
+	ErrZecErrorScanError                   = fmt.Errorf("ZecErrorScanError")
+	ErrZecErrorNonTransparentRefundAddress = fmt.Errorf("ZecErrorNonTransparentRefundAddress")
+)
 
 // Variant structs
 type ZecErrorGenericError struct {
@@ -1470,7 +1473,6 @@ func (c FfiConverterTypeZecError) Read(reader io.Reader) error {
 	default:
 		panic(fmt.Sprintf("Unknown error code %d in FfiConverterTypeZecError.Read()", errorID))
 	}
-
 }
 
 func (c FfiConverterTypeZecError) Write(writer io.Writer, value *ZecError) {

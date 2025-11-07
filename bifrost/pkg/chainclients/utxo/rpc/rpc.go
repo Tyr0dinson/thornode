@@ -82,24 +82,24 @@ type Utxo struct {
 // ZecGetBlockVerboseTxResult is a Zcash-specific version of GetBlockVerboseTxResult.
 // Unlike Bitcoin, Zcash returns 'nonce' as a hex string instead of uint32.
 type ZecGetBlockVerboseTxResult struct {
-	Hash              string                      `json:"hash"`
-	Confirmations     int64                       `json:"confirmations"`
-	StrippedSize      int32                       `json:"strippedsize"`
-	Size              int32                       `json:"size"`
-	Weight            int32                       `json:"weight"`
-	Height            int64                       `json:"height"`
-	Version           int32                       `json:"version"`
-	VersionHex        string                      `json:"versionhex"`
-	MerkleRoot        string                      `json:"merkleroot"`
-	Tx                []btcjson.TxRawResult       `json:"tx,omitempty"`
-	Time              int64                       `json:"time"`
-	MedianTime        int64                       `json:"mediantime"`
-	Nonce             string                      `json:"nonce"` // ZEC uses string (hex), not uint32
-	Bits              string                      `json:"bits"`
-	Difficulty        float64                     `json:"difficulty"`
-	ChainWork         string                      `json:"chainwork,omitempty"`
-	PreviousHash      string                      `json:"previousblockhash"`
-	NextHash          string                      `json:"nextblockhash,omitempty"`
+	Hash          string                `json:"hash"`
+	Confirmations int64                 `json:"confirmations"`
+	StrippedSize  int32                 `json:"strippedsize"`
+	Size          int32                 `json:"size"`
+	Weight        int32                 `json:"weight"`
+	Height        int64                 `json:"height"`
+	Version       int32                 `json:"version"`
+	VersionHex    string                `json:"versionhex"`
+	MerkleRoot    string                `json:"merkleroot"`
+	Tx            []btcjson.TxRawResult `json:"tx,omitempty"`
+	Time          int64                 `json:"time"`
+	MedianTime    int64                 `json:"mediantime"`
+	Nonce         string                `json:"nonce"` // ZEC uses string (hex), not uint32
+	Bits          string                `json:"bits"`
+	Difficulty    float64               `json:"difficulty"`
+	ChainWork     string                `json:"chainwork,omitempty"`
+	PreviousHash  string                `json:"previousblockhash"`
+	NextHash      string                `json:"nextblockhash,omitempty"`
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////

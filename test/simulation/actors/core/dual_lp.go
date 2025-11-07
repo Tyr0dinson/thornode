@@ -237,8 +237,8 @@ func (a *DualLPActor) verifyLP(config *OpConfig) OpResult {
 			}
 
 			// Calculate 25% tolerance for both amounts (to account for slippage and fees)
-			runeTolerance := a.runeAmount.Quo(cosmos.NewUint(4))  // 25% of expected
-			assetTolerance := a.l1Amount.Quo(cosmos.NewUint(4))   // 25% of expected
+			runeTolerance := a.runeAmount.Quo(cosmos.NewUint(4)) // 25% of expected
+			assetTolerance := a.l1Amount.Quo(cosmos.NewUint(4))  // 25% of expected
 
 			// Check if the actual amounts are within tolerance
 			// Calculate absolute difference
