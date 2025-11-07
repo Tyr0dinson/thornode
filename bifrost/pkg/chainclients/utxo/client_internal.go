@@ -14,11 +14,13 @@ import (
 	dogetxscript "gitlab.com/thorchain/thornode/v3/bifrost/txscript/dogd-txscript"
 	ltctxscript "gitlab.com/thorchain/thornode/v3/bifrost/txscript/ltcd-txscript"
 	btctxscript "gitlab.com/thorchain/thornode/v3/bifrost/txscript/txscript"
+	zectxscript "gitlab.com/thorchain/thornode/v3/bifrost/txscript/zec-txscript"
 
 	btypes "gitlab.com/thorchain/thornode/v3/bifrost/blockscanner/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/utxo"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
+	"gitlab.com/thorchain/thornode/v3/chain/zec/go/zec"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
@@ -320,6 +322,52 @@ func (c *Client) sendNetworkFee(height int64) error {
 	return nil
 }
 
+// sendNetworkFeeZEC sends Zcash network fees using ZIP-317 deterministic fee calculation.
+// Unlike BTC/LTC which use dynamic getblockstats, ZEC fees are fixed by protocol.
+// This matches mayanode's approach of reporting fixed ZIP-317 fees.
+func (c *Client) sendNetworkFeeZEC(height int64) error {
+	// Calculate fee using ZIP-317 with max UTXOs
+	feeRate := c.getMaxGasZEC()
+
+	// Set metric
+	c.m.GetGauge(metrics.GasPrice(c.cfg.ChainID)).Set(float64(feeRate))
+
+	// Only report every 100 blocks or when fee changes (like mayanode)
+	if c.lastFeeRate != feeRate || height%100 == 0 {
+		c.lastFeeRate = feeRate
+		c.m.GetCounter(metrics.GasPriceChange(c.cfg.ChainID)).Inc()
+
+		// Report fee to thornode
+		// TransactionSize=1 and TransactionRate=total_fee follows mayanode's convention
+		c.globalNetworkFeeQueue <- common.NetworkFee{
+			Chain:           common.ZECChain,
+			Height:          height,
+			TransactionSize: 1,        // Mayanode convention: size=1
+			TransactionRate: feeRate,  // Total ZIP-317 fee amount
+		}
+
+		c.log.Debug().
+			Uint64("fee_rate", feeRate).
+			Int64("height", height).
+			Msg("send ZEC network fee to THORNode successfully")
+	}
+
+	return nil
+}
+
+// getMaxGasZEC calculates the maximum gas fee for Zcash using ZIP-317.
+// Returns the total fee amount in zatoshis for a transaction with max inputs and standard outputs.
+func (c *Client) getMaxGasZEC() uint64 {
+	usualOutCountInBlock := uint64(2)
+	usualMemoOutputSlots := uint64(3) // Standard OUT:xxx memo (68 chars) needs 3 slots
+
+	// Calculate fee based on max UTXOs and standard output count
+	return zec.CalculateFee(
+		uint64(c.getMaximumUtxosToSpend()),
+		usualOutCountInBlock+usualMemoOutputSlots,
+	)
+}
+
 // sendNetworkFeeFromBlock will send network fee to Thornode based on the block result,
 // for chains like Dogecoin which do not support the getblockstats RPC.
 func (c *Client) sendNetworkFeeFromBlock(blockResult *btcjson.GetBlockVerboseTxResult) error {
@@ -385,6 +433,34 @@ func (c *Client) getBlock(height int64) (*btcjson.GetBlockVerboseTxResult, error
 	if err != nil {
 		return &btcjson.GetBlockVerboseTxResult{}, err
 	}
+
+	// ZEC returns nonce as string, use ZEC-specific method
+	if c.cfg.ChainID.Equals(common.ZECChain) {
+		zecBlock, err := c.rpc.GetBlockVerboseTxsZEC(hash)
+		if err != nil {
+			return &btcjson.GetBlockVerboseTxResult{}, err
+		}
+		// Convert ZEC block to standard format (nonce field will be zero)
+		return &btcjson.GetBlockVerboseTxResult{
+			Hash:          zecBlock.Hash,
+			Confirmations: zecBlock.Confirmations,
+			StrippedSize:  zecBlock.StrippedSize,
+			Size:          zecBlock.Size,
+			Weight:        zecBlock.Weight,
+			Height:        zecBlock.Height,
+			Version:       zecBlock.Version,
+			VersionHex:    zecBlock.VersionHex,
+			MerkleRoot:    zecBlock.MerkleRoot,
+			Tx:            zecBlock.Tx,
+			Time:          zecBlock.Time,
+			Nonce:         0, // ZEC nonce is string, set to 0 (not used by bifrost)
+			Bits:          zecBlock.Bits,
+			Difficulty:    zecBlock.Difficulty,
+			PreviousHash:  zecBlock.PreviousHash,
+			NextHash:      zecBlock.NextHash,
+		}, nil
+	}
+
 	return c.rpc.GetBlockVerboseTxs(hash)
 }
 
@@ -447,6 +523,15 @@ func (c *Client) isValidUTXO(hexPubKey string) bool {
 		default:
 			return len(addresses) == 1 && requireSigs == 1
 		}
+
+	case common.ZECChain:
+		_, addresses, requireSigs, err := zectxscript.ExtractPkScriptAddrs(buf, c.getChainCfgZEC())
+		if err != nil {
+			c.log.Err(err).Msg("fail to extract Zcash pub key script")
+			return false
+		}
+		// Valid transparent UTXOs should have exactly one address and one required signature
+		return len(addresses) == 1 && requireSigs == 1
 
 	default:
 		c.log.Fatal().Msg("unsupported chain")

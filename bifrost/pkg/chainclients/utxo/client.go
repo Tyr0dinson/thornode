@@ -489,6 +489,8 @@ func (c *Client) FetchTxs(height, chainHeight int64) (types.TxIn, error) {
 			err = c.sendNetworkFeeFromBlock(block)
 		case common.BCHChain, common.LTCChain, common.BTCChain:
 			err = c.sendNetworkFee(height)
+		case common.ZECChain:
+			err = c.sendNetworkFeeZEC(height)
 		default:
 			c.log.Fatal().Msg("unsupported chain")
 		}
@@ -693,7 +695,7 @@ func (c *Client) ShouldReportSolvency(height int64) bool {
 	switch c.cfg.ChainID {
 	case common.DOGEChain:
 		return height%10 == 0
-	case common.BCHChain, common.BTCChain:
+	case common.BCHChain, common.BTCChain, common.ZECChain:
 		return true
 	case common.LTCChain:
 		return height-c.lastSolvencyCheckHeight > 5 && height%5 == 0
