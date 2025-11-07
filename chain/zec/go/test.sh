@@ -10,12 +10,5 @@ else
   LIB_DIR="${ROOT_LIB}"
 fi
 
-if [ "$(uname)" = "Darwin" ]; then
-  DYLD_LIBRARY_PATH="${LIB_DIR}:${ROOT_LIB}" \
-    CGO_LDFLAGS="-L${LIB_DIR} -L${ROOT_LIB} -Wl,-rpath,${LIB_DIR} -Wl,-rpath,${ROOT_LIB} -lradix_engine_toolkit_uniffi -lzec" \
-    go test -v -tags mocknet -count=1 ./zec/...
-else
-  LD_LIBRARY_PATH="${LIB_DIR}:${ROOT_LIB}" \
-    CGO_LDFLAGS="-L${LIB_DIR} -L${ROOT_LIB} -Wl,-rpath,${LIB_DIR}:${ROOT_LIB} -lradix_engine_toolkit_uniffi -lzec" \
-    go test -v -tags mocknet -count=1 ./zec/...
-fi
+# Use static library for both macOS and Linux
+CGO_LDFLAGS="${LIB_DIR}/libzec.a -lm" CGO_ENABLED=1 go test -v -tags mocknet -count=1 ./zec/...

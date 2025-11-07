@@ -45,13 +45,8 @@ ldflags = -X gitlab.com/thorchain/thornode/v3/constants.Version=$(VERSION) \
 
 # ZEC library configuration
 ZEC_DIR?=${PWD}/lib
-ifeq ($(shell uname -s),Darwin)
-	LIB_EXT=dylib
-	CGO_VARS=CGO_LDFLAGS="-L$(ZEC_DIR) -Wl,-rpath,$(ZEC_DIR) -lzec" DYLD_LIBRARY_PATH="$(ZEC_DIR)" CGO_ENABLED=1
-else
-	LIB_EXT=so
-	CGO_VARS=CGO_LDFLAGS="-L$(ZEC_DIR) -Wl,-rpath,$(ZEC_DIR) -lzec" LD_LIBRARY_PATH="$(ZEC_DIR)" CGO_ENABLED=1
-endif
+LIB_EXT=a
+CGO_VARS=CGO_LDFLAGS="$(ZEC_DIR)/libzec.a -lm" CGO_ENABLED=1
 
 # golang settings
 TEST_PATHS=$(shell go list ./... | grep -v bifrost/tss/go-tss) # Skip compute-intensive tests by default
@@ -100,7 +95,7 @@ HTTPS_GIT := gitlab.com/thorchain/thornode.git
 
 .PHONY: zec-ensure-lib
 zec-ensure-lib:
-	@test -f $(ZEC_DIR)/libzec.$(LIB_EXT) || { echo "Missing $(ZEC_DIR)/libzec.$(LIB_EXT). Run: cd chain/zec && ZEC_FEATURES='uniffi' ./build.sh -t go"; exit 1; }
+	@test -f $(ZEC_DIR)/libzec.$(LIB_EXT) || { echo "Missing $(ZEC_DIR)/libzec.$(LIB_EXT). Run: cd chain/zec && make go"; exit 1; }
 
 generate: go-generate openapi proto-gen
 	@./scripts/generate.py
@@ -211,21 +206,21 @@ test:
 ifeq ($(TEST_DIR),$(TEST_PATHS))
 	@$(MAKE) test-network-specific zec-ensure-lib
 endif
-	@go test ${TEST_BUILD_FLAGS} ${RUN_FLAG} ${TEST_DIR}
+	@$(CGO_VARS) go test ${TEST_BUILD_FLAGS} ${RUN_FLAG} ${TEST_DIR}
 
 test-all: test-network-specific zec-ensure-lib
-	@go test ${TEST_BUILD_FLAGS} ${RUN_FLAG} "./..."
+	@$(CGO_VARS) go test ${TEST_BUILD_FLAGS} ${RUN_FLAG} "./..."
 
 test-go-tss: zec-ensure-lib
-	@go test ${TEST_BUILD_FLAGS} ${RUN_FLAG} --race "./bifrost/tss/go-tss/..."
+	@$(CGO_VARS) go test ${TEST_BUILD_FLAGS} ${RUN_FLAG} --race "./bifrost/tss/go-tss/..."
 
 test-network-specific: zec-ensure-lib
-	@go test -tags stagenet ${RUN_FLAG} ./common
-	@go test -tags mainnet ${RUN_FLAG} ./common ./bifrost/pkg/chainclients/utxo/...
-	@go test -tags mocknet ${RUN_FLAG} ./common ./bifrost/pkg/chainclients/utxo/...
+	@$(CGO_VARS) go test -tags stagenet ${RUN_FLAG} ./common
+	@$(CGO_VARS) go test -tags mainnet ${RUN_FLAG} ./common ./bifrost/pkg/chainclients/utxo/...
+	@$(CGO_VARS) go test -tags mocknet ${RUN_FLAG} ./common ./bifrost/pkg/chainclients/utxo/...
 
 test-race: zec-ensure-lib
-	@go test -race ${TEST_BUILD_FLAGS} ${RUN_FLAG} ${TEST_DIR}
+	@$(CGO_VARS) go test -race ${TEST_BUILD_FLAGS} ${RUN_FLAG} ${TEST_DIR}
 
 # ------------------------------ Regression Tests ------------------------------
 

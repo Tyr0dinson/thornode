@@ -61,10 +61,12 @@ done
 # --- Detect Platform ---
 KERNEL_NAME=$(uname)
 if [ "$KERNEL_NAME" = "Linux" ]; then
-  LIBZEC_FILE="libzec.so"
+  LIBZEC_FILE="libzec.a"
+  LIBZEC_DYNAMIC="libzec.so"
   NODE_MODULE_EXT="linux-x64-gnu.node"
 elif [ "$KERNEL_NAME" = "Darwin" ]; then
-  LIBZEC_FILE="libzec.dylib"
+  LIBZEC_FILE="libzec.a"
+  LIBZEC_DYNAMIC="libzec.dylib"
   NODE_MODULE_EXT="darwin-x64.node"
 else
   echo "ERROR: Unsupported kernel: $KERNEL_NAME"
@@ -187,15 +189,8 @@ build_go_variant() {
   sim) TEST_LIBDIR="${ROOT_LIB}/sim" ;;
   *) TEST_LIBDIR="$(pwd)/target/release" ;;
   esac
-  # Also include root lib (RET) alongside variant dir
-  local RET_LIBDIR="${ROOT_LIB}"
-  if [ "$KERNEL_NAME" = "Darwin" ]; then
-    export DYLD_LIBRARY_PATH="${TEST_LIBDIR}:${RET_LIBDIR}:${DYLD_LIBRARY_PATH-}"
-  else
-    export LD_LIBRARY_PATH="${TEST_LIBDIR}:${RET_LIBDIR}:${LD_LIBRARY_PATH-}"
-  fi
-  # Embed rpath to ensure the built test binary prefers both dirs
-  CGO_LDFLAGS="-L${TEST_LIBDIR} -L${RET_LIBDIR} -Wl,-rpath,${TEST_LIBDIR}:${RET_LIBDIR} -lradix_engine_toolkit_uniffi -lzec" go test -v -tags mocknet -count=1 ./go/zec/...
+  # Use static library for tests
+  CGO_LDFLAGS="${TEST_LIBDIR}/libzec.a -lm" CGO_ENABLED=1 go test -v -tags mocknet -count=1 ./go/zec/...
 
   # Optional E2E integration tests: run only if 'e2e' feature is selected and not skipped
   if echo " ${ZEC_FEATURES} " | grep -qw e2e; then
@@ -257,8 +252,8 @@ build_node() {
     exit 1
   fi
 
-  if [ ! -f "target/release/${LIBZEC_FILE}" ]; then
-    echo "ERROR: Compiled NAPI library 'target/release/${LIBZEC_FILE}' not found." >&2
+  if [ ! -f "target/release/${LIBZEC_DYNAMIC}" ]; then
+    echo "ERROR: Compiled NAPI library 'target/release/${LIBZEC_DYNAMIC}' not found." >&2
     exit 1
   fi
   echo "INFO: NAPI library built successfully."
@@ -267,7 +262,7 @@ build_node() {
   echo "INFO: Copying NAPI module to ts/zec.${NODE_MODULE_EXT}"
   mkdir -p ts
   rm -f "ts/zec.${NODE_MODULE_EXT}"
-  cp "target/release/${LIBZEC_FILE}" "ts/zec.${NODE_MODULE_EXT}" || {
+  cp "target/release/${LIBZEC_DYNAMIC}" "ts/zec.${NODE_MODULE_EXT}" || {
     echo "ERROR: Failed to copy NAPI module." >&2
     exit 1
   }

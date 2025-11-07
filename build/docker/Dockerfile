@@ -12,8 +12,8 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy ZEC library for build stage
-COPY ./lib/libzec.so /app/lib/
+# Copy ZEC static library for build stage
+COPY ./lib/libzec.a /app/lib/
 
 COPY . .
 
@@ -45,7 +45,7 @@ RUN apt-get update && \
 # Copy the compiled binaries over.
 COPY --from=build /go/bin/thornode /go/bin/bifrost /go/bin/recover-keyshare-backup /usr/bin/
 COPY --from=build /go/pkg/mod/github.com/!cosm!wasm/wasmvm/v2@v2.1.2/internal/api/libwasmvm.*.so /usr/lib
-COPY --from=build /app/lib/libzec.so /usr/lib
+# Note: libzec is statically linked, no need to copy to runtime image
 
 COPY build/scripts /scripts
 

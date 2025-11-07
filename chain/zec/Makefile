@@ -28,8 +28,8 @@ all: go node
 go: check-deps
 	@echo "Building Go bindings..."
 	$(CARGO) build --no-default-features --features uniffi --release --target $(TARGET)
-	@echo "Copying library for Go..."
-	cp $(BUILD_DIR)/libzec.$(LIB_EXT) ../../lib/libzec.$(LIB_EXT)
+	@echo "Copying static library for Go..."
+	cp $(BUILD_DIR)/libzec.a ../../lib/libzec.a
 	@echo "Go bindings built successfully!"
 
 # Build for Node.js (NAPI)
@@ -107,7 +107,7 @@ node-napi: check-cargo-napi
 clean:
 	@echo "Cleaning build artifacts..."
 	$(CARGO) clean
-	rm -f ../../lib/libzec.$(LIB_EXT)
+	rm -f ../../lib/libzec.a
 	rm -f ts/$(NODE_MODULE_NAME).$(NODE_EXT)
 	rm -rf ts/target
 	@echo "Clean complete!"
@@ -164,7 +164,7 @@ test-node-full: node
 dev-go: check-deps
 	@echo "Building Go bindings (debug)..."
 	$(CARGO) build --features uniffi --target $(TARGET)
-	cp target/$(TARGET)/debug/libzec.$(LIB_EXT) ../../lib/libzec.$(LIB_EXT)
+	cp target/$(TARGET)/debug/libzec.a ../../lib/libzec.a
 
 .PHONY: dev-node
 dev-node: check-node-deps

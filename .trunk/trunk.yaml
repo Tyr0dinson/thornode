@@ -49,6 +49,7 @@ lint:
         - test/regression/mnt/blocks/**
         - test/regression/suites/**
         - test/regression/templates/**
+        - chain/zec/go/README.md
     - linters:
         - hadolint
         - terrascan

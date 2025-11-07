@@ -16,8 +16,8 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy ZEC library
-COPY ./lib/libzec.so /usr/lib/
+# Copy ZEC static library for build
+COPY ./lib/libzec.a /app/lib/
 
 COPY . .
 

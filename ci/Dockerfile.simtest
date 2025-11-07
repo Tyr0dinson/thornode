@@ -14,8 +14,8 @@ WORKDIR /app/test/simulation
 RUN go mod download
 WORKDIR /app
 
-# Copy ZEC library
-COPY ./lib/libzec.so /usr/lib/
+# Copy ZEC static library for build
+COPY ./lib/libzec.a /app/lib/
 
 COPY . .
 
