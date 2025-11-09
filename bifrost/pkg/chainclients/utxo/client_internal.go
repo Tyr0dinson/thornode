@@ -820,6 +820,7 @@ func (c *Client) getOutputs(sender string, tx *btcjson.TxRawResult) ([]transfer,
 				Sender:   sender,
 				Receiver: receiver,
 				Amount:   amt,
+				Memo:     "",
 			})
 		}
 	}
