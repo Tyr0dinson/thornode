@@ -16,7 +16,9 @@ endif
 # mocknet docker compose files and overrides for macOS
 DOCKER_COMPOSE_FILES ?= -f build/docker/docker-compose.yml
 ifeq ($(shell uname -s),Darwin)
+ifeq ($(SOLANA),)
 DOCKER_COMPOSE_FILES += -f build/docker/docker-compose.darwin.yml
+endif
 endif
 
 # pull branch name from CI if unset and available

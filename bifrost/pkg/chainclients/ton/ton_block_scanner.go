@@ -33,7 +33,6 @@ type TonBlockScanner struct {
 	lastFeeRate  uint64
 
 	globalNetworkFeeQueue chan common.NetworkFee
-	testnet               bool
 }
 
 func NewTonBlockScanner(
@@ -291,7 +290,7 @@ func (s *TonBlockScanner) processShard(
 	for _, txInfo := range txInfos {
 		addr := address.NewAddress(0x17, 0x00, txInfo.Account)
 		addr.SetBounce(false)
-		addr.SetTestnetOnly(s.testnet)
+		addr.SetTestnetOnly(common.IsMocknet)
 
 		tx, err := s.api.GetTransaction(
 			context.TODO(),
@@ -415,8 +414,8 @@ func (s *TonBlockScanner) processMessage(
 
 	sender.SetBounce(false)
 	dest.SetBounce(false)
-	sender.SetTestnetOnly(s.testnet)
-	dest.SetTestnetOnly(s.testnet)
+	sender.SetTestnetOnly(common.IsMocknet)
+	dest.SetTestnetOnly(common.IsMocknet)
 
 	amount := message.Amount.Nano()
 
