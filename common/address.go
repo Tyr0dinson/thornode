@@ -81,10 +81,7 @@ func NewAddress(address string) (Address, error) {
 
 func IsValidTonAddress(address string) bool {
 	_, err := tonaddress.ParseAddr(address)
-	if err != nil {
-		return false
-	}
-	return true
+	return err == nil
 }
 
 func IsValidXRPAddress(address string) bool {
