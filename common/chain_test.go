@@ -38,6 +38,7 @@ func (s ChainSuite) TestChain(c *C) {
 	c.Assert(GAIAChain.GetGasAsset(), Equals, ATOMAsset)
 	c.Assert(NOBLEChain.GetGasAsset(), Equals, USDCAsset)
 	c.Assert(TRONChain.GetGasAsset(), Equals, TRXAsset)
+	c.Assert(TONChain.GetGasAsset(), Equals, TONAsset)
 	c.Assert(EmptyChain.GetGasAsset(), Equals, EmptyAsset)
 
 	c.Assert(BTCChain.AddressPrefix(MockNet), Equals, chaincfg.RegressionNetParams.Bech32HRPSegwit)
@@ -80,4 +81,11 @@ func (s ChainSuite) TestChain(c *C) {
 	c.Assert(tronGasUnits, Equals, "sun")
 	c.Assert(TRONChain.GetGasAssetDecimal(), Equals, int64(6))
 	c.Assert(TRONChain.ApproximateBlockMilliseconds(), Equals, int64(3000))
+
+	// TON chain tests
+	tonGasUnits, _ := TONChain.GetGasUnits()
+	c.Assert(tonGasUnits, Equals, "nanoton")
+	c.Assert(TONChain.GetGasAssetDecimal(), Equals, int64(9))
+	c.Assert(TONChain.ApproximateBlockMilliseconds(), Equals, int64(2500))
+	c.Assert(TONChain.GetSigningAlgo(), Equals, SigningAlgoEd25519)
 }

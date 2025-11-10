@@ -41,8 +41,7 @@ func NewAddress(address string) (Address, error) {
 		return NoAddress, nil
 	}
 
-	_, err := tonaddress.ParseAddr(address)
-	if err == nil {
+	if IsValidTonAddress(address) {
 		return Address(address), nil
 	}
 
@@ -61,7 +60,7 @@ func NewAddress(address string) (Address, error) {
 	}
 
 	// Check bech32 addresses, would succeed any string bech32 encoded (e.g. GAIA)
-	_, _, err = bech32.Decode(address)
+	_, _, err := bech32.Decode(address)
 	if err == nil {
 		return Address(address), nil
 	}
@@ -78,6 +77,14 @@ func NewAddress(address string) (Address, error) {
 
 	// Network-specific (with build tags) address checking.
 	return newAddress(address)
+}
+
+func IsValidTonAddress(address string) bool {
+	_, err := tonaddress.ParseAddr(address)
+	if err != nil {
+		return false
+	}
+	return true
 }
 
 func IsValidXRPAddress(address string) bool {
@@ -280,6 +287,8 @@ func (addr Address) IsChain(chain Chain) bool {
 			return len(addrStr) >= 26 && len(addrStr) <= 95
 		}
 		return false
+	case TONChain:
+		return IsValidTonAddress(addr.String())
 	default:
 		return true // if THORNode don't specifically check a chain yet, assume its ok.
 	}

@@ -2,6 +2,7 @@ package common
 
 import (
 	"errors"
+	"fmt"
 	"math/big"
 
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -127,5 +128,47 @@ func (s *MathSuite) TestMedianAverageDeviation(c *C) {
 		c.Assert(err, IsNil)
 		c.Assert(deviation.Text('f', 2), Equals, tc.Deviation)
 		c.Assert(median.Text('f', 2), Equals, tc.Median)
+	}
+}
+
+func (s *MathSuite) TestMedian(c *C) {
+	testCases := []struct {
+		Values []int64
+		Result int64
+	}{
+		{
+			Values: nil,
+			Result: 0,
+		},
+		{
+			Values: []int64{434698},
+			Result: 434698,
+		},
+		{
+			Values: []int64{113074, 708951},
+			Result: 411012, // actually 411012.5 -> floored
+		},
+		{
+			Values: []int64{853183, 656346, 529971},
+			Result: 656346,
+		},
+	}
+
+	for _, tc := range testCases {
+		var tcUint64 []uint64
+		var tcUint []cosmos.Uint
+
+		for _, v := range tc.Values {
+			tcUint64 = append(tcUint64, uint64(v))
+			tcUint = append(tcUint, cosmos.NewUint(uint64(v)))
+		}
+
+		medianInt64 := GetMedianInt64(tc.Values)
+		medianUint64 := GetMedianUint64(tcUint64)
+		medianUint := GetMedianUint(tcUint)
+
+		c.Assert(medianInt64, Equals, tc.Result)
+		c.Assert(medianUint64, Equals, uint64(tc.Result))
+		c.Assert(medianUint.String(), Equals, fmt.Sprintf("%d", tc.Result))
 	}
 }
