@@ -9,6 +9,7 @@ const (
 	MimirKeyWasmPermissionless     = "WasmPermissionless"
 	MimirKeyWasmHaltGlobal         = "HaltWasmGlobal"
 	MimirKeyWasmMinGasPrice        = "WasmMinGasPrice"
+	MimirKeyScheduledMigration     = "ScheduledMigration"
 
 	MimirTemplateConfMultiplierBasisPoints = "ConfMultiplierBasisPoints-%s" // Use with Chain
 	MimirTemplateMaxConfirmations          = "MaxConfirmations-%s"          // Use with Chain
@@ -20,6 +21,9 @@ const (
 	MimirTemplateWasmHaltDeployer          = "HaltWasmDeployer-%s"          // Use deployer address (last 6) to prevent a deployer from instantiating new contracts
 	MimirTemplateSwitch                    = "EnableSwitch-%s-%s"           // Use with Chain, Symbol
 	MimirTemplatePauseLPDeposit            = "PauseLPDeposit-%s"            // Use with Asset MimirString
+	MimirTemplateHaltSigning               = "HaltSigning%s"                // Use with Chain (mixed case, e.g., HaltSigningETH)
+	MimirTemplateHaltTrading               = "Halt%sTrading"                // Use with Chain (mixed case, e.g., HaltETHTrading)
+	MimirKeyHaltTradingGlobal              = "HaltTrading"                  // Global trading halt
 
 	MimirRefL1           = "L1"           // Use with SwapSlipBasisPoints
 	MimirRefSynth        = "Synth"        // Use with SwapSlipBasisPoints
