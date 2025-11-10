@@ -41,7 +41,7 @@ func NewAddress(address string) (Address, error) {
 		return NoAddress, nil
 	}
 
-	if IsValidTonAddress(address) {
+	if IsValidTONAddress(address) {
 		return Address(address), nil
 	}
 
@@ -79,7 +79,7 @@ func NewAddress(address string) (Address, error) {
 	return newAddress(address)
 }
 
-func IsValidTonAddress(address string) bool {
+func IsValidTONAddress(address string) bool {
 	_, err := tonaddress.ParseAddr(address)
 	return err == nil
 }
@@ -285,7 +285,7 @@ func (addr Address) IsChain(chain Chain) bool {
 		}
 		return false
 	case TONChain:
-		return IsValidTonAddress(addr.String())
+		return IsValidTONAddress(addr.String())
 	default:
 		return true // if THORNode don't specifically check a chain yet, assume its ok.
 	}
