@@ -57,7 +57,7 @@ func LoadChains(thorKeys *thorclient.Keys,
 		case common.SOLChain:
 			return solana.NewSOLClient(thorKeys, chain, server, thorchainBridge, m, pubKeyValidator, poolMgr)
 		case common.TONChain:
-			return ton.NewTonClient(thorKeys, chain, server, thorchainBridge, m, common.IsMocknet)
+			return ton.NewTonClient(thorKeys, chain, server, thorchainBridge, m)
 		default:
 			log.Fatal().Msgf("chain %s is not supported", chain.ChainID)
 			return nil, nil

@@ -176,6 +176,12 @@ func GetRandomBCHAddress() common.Address {
 	return addr
 }
 
+func GetRandomTONAddress() common.Address {
+	pubKey := GetRandomPubKey()
+	addr, _ := pubKey.GetAddress(common.TONChain)
+	return addr
+}
+
 // GetRandomTxHash create a random txHash used for test purpose
 func GetRandomTxHash() common.TxID {
 	txHash, _ := common.NewTxID(common.RandHexString(64))

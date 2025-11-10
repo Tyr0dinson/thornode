@@ -22,8 +22,6 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-const minimumFeeRate uint64 = 3_500_000 // 0.0035 TON
-
 type TonBlockScanner struct {
 	config     config.BifrostBlockScannerConfiguration
 	logger     zerolog.Logger
@@ -42,10 +40,13 @@ func NewTonBlockScanner(
 	cfg config.BifrostBlockScannerConfiguration,
 	bridge thorclient.ThorchainBridge,
 	api ton.APIClientWrapped,
-	testnet bool,
 ) (*TonBlockScanner, error) {
 	if cfg.GasCacheBlocks <= 0 {
 		cfg.GasCacheBlocks = 10
+	}
+
+	if cfg.GasPriceResolution <= 0 {
+		cfg.GasPriceResolution = 1_000_000
 	}
 
 	return &TonBlockScanner{
@@ -56,7 +57,6 @@ func NewTonBlockScanner(
 			Logger(),
 		bridge:       bridge,
 		api:          api,
-		testnet:      testnet,
 		lastFeeRate:  0,
 		feeRateCache: make([][]uint64, 0),
 		lastShards:   make(map[string]uint32),
@@ -137,7 +137,7 @@ func (s *TonBlockScanner) sendNetworkFeeIfNecessary(height int64) {
 		allRates = append(allRates, rates...)
 	}
 
-	if len(allRates) < 10 {
+	if len(allRates) < s.config.GasCacheBlocks {
 		s.logger.Info().
 			Int64("height", height).
 			Int("rates", len(allRates)).
@@ -150,10 +150,8 @@ func (s *TonBlockScanner) sendNetworkFeeIfNecessary(height int64) {
 
 	// round medianFeeRate to the nearest resolution
 	resolution := uint64(s.config.GasPriceResolution)
-	roundedFeeRate := max(
-		minimumFeeRate,
-		((medianFeeRate+(resolution/2))/resolution)*resolution,
-	)
+
+	roundedFeeRate := ((medianFeeRate + (resolution / 2)) / resolution) * resolution
 
 	// truncate gas prices older than our max cached transactions
 	if len(s.feeRateCache) > s.config.GasCacheBlocks {

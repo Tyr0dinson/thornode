@@ -1,6 +1,7 @@
 package ton
 
 import (
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -10,27 +11,28 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
-
-	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
+	"github.com/xssnick/tonutils-go/address"
+	"github.com/xssnick/tonutils-go/tlb"
+	"github.com/xssnick/tonutils-go/tvm/cell"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
-	"gitlab.com/thorchain/thornode/v3/cmd"
+	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/common/crypto/ed25519"
 	"gitlab.com/thorchain/thornode/v3/config"
-
+	types2 "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 	. "gopkg.in/check.v1"
 )
 
 func TestPackage(t *testing.T) { TestingT(t) }
 
 type TonTestSuite struct {
+	client  *TonClient
 	thordir string
-	keys    *thorclient.Keys
-	bridge  thorclient.ThorchainBridge
-	metrics *metrics.Metrics
-	// client  ton.APIClientWrapped
+	server  *httptest.Server
+	pubkey  common.PubKey
 }
 
 var _ = Suite(&TonTestSuite{})
@@ -54,16 +56,15 @@ func GetMetricForTest(c *C) *metrics.Metrics {
 }
 
 func (s *TonTestSuite) SetUpSuite(c *C) {
-	cosmosSDKConfg := cosmos.GetConfig()
-	cosmosSDKConfg.SetBech32PrefixForAccount("sthor", "sthorpub")
+	ccfg := cosmos.GetConfig()
+	ccfg.SetBech32PrefixForAccount("sthor", "sthorpub")
 
-	s.metrics = GetMetricForTest(c)
-	c.Assert(s.metrics, NotNil)
+	metrics := GetMetricForTest(c)
+	c.Assert(metrics, NotNil)
+
 	ns := strconv.Itoa(time.Now().Nanosecond())
-	c.Assert(os.Setenv("NET", "stagenet"), IsNil)
-
 	s.thordir = filepath.Join(os.TempDir(), ns, ".thorcli")
-	cfg := config.BifrostClientConfiguration{
+	clientConfig := config.BifrostClientConfiguration{
 		ChainID:         "thorchain",
 		ChainHost:       "localhost",
 		SignerName:      "bob",
@@ -71,31 +72,55 @@ func (s *TonTestSuite) SetUpSuite(c *C) {
 		ChainHomeFolder: s.thordir,
 	}
 
+	chainConfig := config.BifrostChainConfiguration{
+		ChainID: common.TONChain,
+		RPCHost: "mock",
+		BlockScanner: config.BifrostBlockScannerConfiguration{
+			StartBlockHeight: 1,
+		},
+	}
+
 	registry := codectypes.NewInterfaceRegistry()
 	cryptocodec.RegisterInterfaces(registry)
-	kb := keyring.NewInMemory(codec.NewProtoCodec(registry))
-	_, _, err := kb.NewMnemonic(cfg.SignerName, keyring.English, cmd.THORChainHDPath, cfg.SignerPasswd, hd.Secp256k1)
+
+	kb := keyring.NewInMemory(codec.NewProtoCodec(registry), func(options *keyring.Options) {
+		options.SupportedAlgos = append(options.SupportedAlgos, ed25519.Ed25519)
+	})
+	_, _, err := kb.NewMnemonic(
+		"ed-"+clientConfig.SignerName,
+		keyring.English,
+		"m/44'/118'/0'/0'/0'",
+		clientConfig.SignerPasswd,
+		ed25519.Ed25519,
+	)
 	c.Assert(err, IsNil)
 
-	s.keys = thorclient.NewKeysWithKeybase(kb, cfg.SignerName, cfg.SignerPasswd)
+	keys := thorclient.NewKeysWithKeybase(
+		kb, clientConfig.SignerName, clientConfig.SignerPasswd,
+	)
 	c.Assert(err, IsNil)
 
-	s.bridge, err = thorclient.NewThorchainBridge(cfg, s.metrics, s.keys)
+	priv, err := keys.GetPrivateKeyEDDSA()
 	c.Assert(err, IsNil)
 
-	// // Set up ton api client
-	// pool := liteclient.NewConnectionPool()
+	pub, _ := cryptocodec.ToCmtPubKeyInterface(priv.PubKey())
 
-	// liteClientConfig, err := liteclient.GetConfigFromUrl(context.Background(), "https://ton.org/testnet-global.config.json")
-	// c.Assert(err, IsNil)
+	s.pubkey, err = common.NewPubKeyFromCrypto(pub)
+	c.Assert(err, IsNil)
 
-	// // connect to mainnet lite servers
-	// err = pool.AddConnectionsFromConfig(context.Background(), liteClientConfig)
-	// c.Assert(err, IsNil)
+	bridge, err := thorclient.NewThorchainBridge(
+		clientConfig, metrics, keys,
+	)
+	c.Assert(err, IsNil)
 
-	// // api client with full proof checks
-	// s.client = ton.NewAPIClient(pool, ton.ProofCheckPolicyFast).WithRetry()
-	// s.client.SetTrustedBlockFromConfig(liteClientConfig)
+	s.client, err = NewTonClient(
+		keys,
+		chainConfig,
+		nil,
+		bridge,
+		metrics,
+	)
+	c.Assert(err, IsNil)
 }
 
 func (s *TonTestSuite) TearDownSuite(c *C) {
@@ -107,11 +132,132 @@ func (s *TonTestSuite) TearDownSuite(c *C) {
 
 func (s *TonTestSuite) TestGetAddress(c *C) {
 	pubKey := common.PubKey("sthorpub1addwnpepqf72ur2e8zk8r5augtrly40cuy94f7e663zh798tyms6pu2k8qdswf4es66")
-	address, err := pubKey.GetAddress(common.TONChain)
-	c.Assert(err, IsNil)
+	address := s.client.GetAddress(pubKey)
+
 	if common.IsMocknet {
-		c.Assert(address.String(), Equals, "0QC0PbKWouvBPwTD9vaQ8LOQrMATFgHssiLzgNjxz-nBYsOj")
+		c.Assert(address, Equals, "0QC0PbKWouvBPwTD9vaQ8LOQrMATFgHssiLzgNjxz-nBYsOj")
 	} else {
-		c.Assert(address.String(), Equals, "UQC0PbKWouvBPwTD9vaQ8LOQrMATFgHssiLzgNjxz-nBYngp")
+		c.Assert(address, Equals, "UQC0PbKWouvBPwTD9vaQ8LOQrMATFgHssiLzgNjxz-nBYngp")
+	}
+
+	address = s.client.GetAddress("nonsense")
+	c.Assert(address, Equals, "")
+}
+
+func (s *TonTestSuite) TestGetAccountByAddress(c *C) {
+	address := "UQC0PbKWouvBPwTD9vaQ8LOQrMATFgHssiLzgNjxz-nBYngp"
+
+	account, err := s.client.GetAccountByAddress(address, nil)
+	c.Assert(err, IsNil)
+	c.Assert(len(account.Coins), Equals, 1)
+	c.Assert(account.Coins[0].Amount.String(), Equals, "1231978")
+}
+
+func (s *TonTestSuite) TestGetChain(c *C) {
+	chain := s.client.GetChain()
+	c.Assert(chain.Equals(common.TONChain), Equals, true)
+}
+
+func (s *TonTestSuite) TestGetConfirmationCountAndBlocks(c *C) {
+	c.Assert(s.client.GetConfirmationCount(types.TxIn{}), Equals, int64(0))
+	c.Assert(ConfirmationBlocks, Equals, int64(1))
+}
+
+func (s *TonTestSuite) TestShouldReportSolvency(c *C) {
+	c.Assert(s.client.ShouldReportSolvency(99), Equals, true)
+	c.Assert(s.client.ShouldReportSolvency(100), Equals, false)
+}
+
+func (s *TonTestSuite) TestGetHeight(c *C) {
+	height, err := s.client.GetHeight()
+	c.Assert(err, IsNil)
+	c.Assert(height, Equals, int64(256673)) // mock client height (256674 - 1)
+}
+
+func (s *TonTestSuite) TestGetConfig(c *C) {
+	cfg := s.client.GetConfig()
+	c.Assert(cfg, NotNil)
+	c.Assert(cfg.RPCHost, Equals, "mock")
+}
+
+func (s *TonTestSuite) TestAccountByAddress(c *C) {
+	account, err := s.client.GetAccountByAddress("UQC0PbKWouvBPwTD9vaQ8LOQrMATFgHssiLzgNjxz-nBYngp", nil)
+	c.Assert(err, IsNil)
+	c.Assert(account, NotNil)
+	c.Assert(account.Coins, HasLen, 1)
+	c.Assert(account.Coins[0].Asset.Equals(common.TONAsset), Equals, true)
+	c.Assert(account.Coins[0].Amount.String(), Equals, "1231978")
+}
+
+func (s *TonTestSuite) TestCreateTx(c *C) {
+	testCases := []struct {
+		Amount uint64
+		To     common.Address
+		Memo   string
+		Fail   bool
+	}{
+		{
+			To:     types2.GetRandomTONAddress(),
+			Amount: 54981861,
+			Memo:   "TEST1",
+		},
+		{
+			To:     types2.GetRandomTONAddress(),
+			Amount: 0,
+			Memo:   "TEST2",
+			Fail:   true,
+		},
+		{
+			To:     "bogus",
+			Amount: 61186468,
+			Memo:   "TEST3",
+			Fail:   true,
+		},
+	}
+
+	for _, tc := range testCases {
+
+		coins := []common.Coin{{
+			Asset:    common.TONAsset,
+			Amount:   cosmos.NewUint(tc.Amount),
+			Decimals: 6,
+		}}
+
+		txOutItem := types.TxOutItem{
+			Chain:            common.TONChain,
+			ToAddress:        tc.To,
+			VaultPubKeyEddsa: s.pubkey,
+			Coins:            coins,
+			Memo:             tc.Memo,
+		}
+
+		signed, _, txIn, err := s.client.SignTx(txOutItem, 123)
+		if tc.Fail {
+			c.Assert(err, NotNil)
+			continue
+		}
+		c.Assert(err, IsNil)
+		c.Assert(signed, NotNil)
+		c.Assert(txIn, NotNil)
+
+		root, err := cell.FromBOC(signed)
+		c.Assert(err, IsNil)
+		c.Assert(root.RefsNum(), Equals, uint(1))
+
+		payload, err := root.PeekRef(0)
+		c.Assert(err, IsNil)
+
+		slice := payload.BeginParse()
+
+		var msg tlb.InternalMessage
+		err = tlb.LoadFromCell(&msg, slice)
+		c.Assert(err, IsNil)
+
+		c.Assert(msg.Bounce, Equals, false)
+		c.Assert(msg.Amount.Nano().Uint64(), Equals, tc.Amount*10) // 1e8 -> 1e9
+		c.Assert(msg.DstAddr.IsTestnetOnly(), Equals, common.IsMocknet)
+
+		to := address.MustParseAddr(tc.To.String())
+		c.Assert(msg.DstAddr.Equals(to), Equals, true)
 	}
 }

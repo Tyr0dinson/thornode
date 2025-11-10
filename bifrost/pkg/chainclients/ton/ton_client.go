@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"cosmossdk.io/math"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/ton/mock"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 
 	cosmoscryptoed25519 "github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
@@ -39,7 +40,7 @@ import (
 
 const (
 	V3R2CodeHex              = "B5EE9C724101010100710000DEFF0020DD2082014C97BA218201339CBAB19F71B0ED44D0D31FD31F31D70BFFE304E0A4F2608308D71820D31FD31FD31FF82313BBF263ED44D0D31FD31FD3FFD15132BAF2A15144BAF2A204F901541055F910F2A3F8009320D74A96D307D402FB00E8D101A4C8CB1FCB1FCBFFC9ED5410BD6DAD"
-	ConfirmationBlocks int64 = 3
+	ConfirmationBlocks int64 = 1
 	TimestampAccuracy        = 10 * time.Second
 	TimestampValidity        = 5 * time.Minute
 )
@@ -69,7 +70,6 @@ func NewTonClient(
 	server *tctss.TssServer,
 	bridge thorclient.ThorchainBridge,
 	metrics *tcmetrics.Metrics,
-	testnet bool,
 ) (*TonClient, error) {
 	var err error
 
@@ -89,6 +89,8 @@ func NewTonClient(
 	switch config.RPCHost {
 	case "":
 		return nil, fmt.Errorf("no client config set")
+	case "mock":
+		client.api = mock.NewMockApiClient()
 	case "mainnet", "testnet":
 		url := "https://ton.org/testnet-global.config.json"
 
@@ -140,12 +142,13 @@ func NewTonClient(
 	if !ok {
 		return nil, fmt.Errorf("failed to cast pubkey to ed25519")
 	}
-	tonWallet, err := wallet.AddressFromPubKey(ed25519.PublicKey(pub.Bytes()), wallet.V3R2, wallet.DefaultSubwallet)
+	tonWallet, err := wallet.AddressFromPubKey(pub.Bytes(), wallet.V3R2, wallet.DefaultSubwallet)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get wallet address: %w", err)
 	}
+
 	tonWallet.SetBounce(false)
-	tonWallet.SetTestnetOnly(testnet)
+	tonWallet.SetTestnetOnly(common.IsMocknet)
 	client.localPubKey = tonWallet.String()
 
 	var path string // if not set later, will in memory storage
@@ -164,10 +167,12 @@ func NewTonClient(
 		return nil, err
 	}
 
-	// api client with full proof checks
-	policy := ton.ProofCheckPolicyFast
-	client.api = ton.NewAPIClient(pool, policy).WithRetry()
-	// client.api.SetTrustedBlockFromConfig(liteClientConfig)
+	if config.RPCHost != "mock" {
+		// api client with full proof checks
+		policy := ton.ProofCheckPolicyFast
+		client.api = ton.NewAPIClient(pool, policy).WithRetry()
+		// client.api.SetTrustedBlockFromConfig(liteClientConfig)
+	}
 
 	// only relevant for mocknet, test image starts with height < 0
 	for i := 0; i < 30; i++ {
@@ -183,7 +188,6 @@ func NewTonClient(
 		config.BlockScanner,
 		client.bridge,
 		client.api,
-		testnet,
 	)
 	if err != nil {
 		return nil, err
@@ -398,7 +402,7 @@ func (c *TonClient) ConfirmationCountReady(_ types.TxIn) bool {
 }
 
 // OnObservedTxIn is called when a new observed tx is received.
-func (c *TonClient) OnObservedTxIn(txIn types.TxInItem, height int64) {
+func (c *TonClient) OnObservedTxIn(txIn types.TxInItem, _ int64) {
 	m, err := tcmemo.ParseMemo(common.LatestVersion, txIn.Memo)
 	if err != nil {
 		// Debug log only as ParseMemo error is expected for THORName inbounds.

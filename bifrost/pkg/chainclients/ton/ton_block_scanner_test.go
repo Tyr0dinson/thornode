@@ -1,22 +1,14 @@
 package ton
 
 import (
-	"context"
+	"fmt"
+	"math/rand"
+	"time"
 
-	"github.com/cosmos/cosmos-sdk/codec"
-	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
-	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
-
-	"github.com/cosmos/cosmos-sdk/crypto/hd"
-	"github.com/cosmos/cosmos-sdk/crypto/keyring"
-	"github.com/xssnick/tonutils-go/liteclient"
-	"github.com/xssnick/tonutils-go/ton"
-	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/ton/mock"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
-	"gitlab.com/thorchain/thornode/v3/cmd"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
-
 	. "gopkg.in/check.v1"
 )
 
@@ -25,62 +17,131 @@ import (
 // -------------------------------------------------------------------------------------
 
 type BlockScannerTestSuite struct {
-	metrics *metrics.Metrics
-	bridge  thorclient.ThorchainBridge
-	keys    *thorclient.Keys
-	client  ton.APIClientWrapped
+	scanner *TonBlockScanner
 }
 
 var _ = Suite(&BlockScannerTestSuite{})
 
 func (s *BlockScannerTestSuite) SetUpSuite(c *C) {
-	s.metrics = GetMetricForTest(c)
-	c.Assert(s.metrics, NotNil)
-	cfg := config.BifrostClientConfiguration{
-		ChainID:         "thorchain",
-		ChainHost:       "localhost",
-		SignerName:      "bob",
-		SignerPasswd:    "password",
-		ChainHomeFolder: "",
+	clientConfig := config.BifrostClientConfiguration{
+		ChainID:      "thorchain",
+		ChainHost:    "localhost",
+		SignerName:   "bob",
+		SignerPasswd: "password",
 	}
 
-	registry := codectypes.NewInterfaceRegistry()
-	cryptocodec.RegisterInterfaces(registry)
-	kb := keyring.NewInMemory(codec.NewProtoCodec(registry))
-	_, _, err := kb.NewMnemonic(cfg.SignerName, keyring.English, cmd.THORChainHDPath, cfg.SignerPasswd, hd.Secp256k1)
+	scannerConfig := config.BifrostBlockScannerConfiguration{
+		ChainID:            common.TONChain,
+		HTTPRequestTimeout: time.Second * 2,
+		GasCacheBlocks:     1,
+	}
+
+	bridge, err := thorclient.NewThorchainBridge(
+		clientConfig, nil, nil,
+	)
 	c.Assert(err, IsNil)
 
-	thorKeys := thorclient.NewKeysWithKeybase(kb, cfg.SignerName, cfg.SignerPasswd)
+	api := mock.NewMockApiClient()
+
+	s.scanner, err = NewTonBlockScanner(
+		scannerConfig,
+		bridge,
+		api,
+	)
+
+	s.scanner.globalNetworkFeeQueue = make(chan common.NetworkFee)
+
+	go func() {
+		for {
+			select {
+			case <-s.scanner.globalNetworkFeeQueue:
+			}
+		}
+	}()
+
 	c.Assert(err, IsNil)
-
-	s.bridge, err = thorclient.NewThorchainBridge(cfg, s.metrics, thorKeys)
-	c.Assert(err, IsNil)
-	s.keys = thorKeys
-
-	// Set up ton api client
-	pool := liteclient.NewConnectionPool()
-
-	liteClientConfig, err := liteclient.GetConfigFromUrl(context.Background(), "https://ton.org/testnet-global.config.json")
-	c.Assert(err, IsNil)
-
-	// connect to mainnet lite servers
-	err = pool.AddConnectionsFromConfig(context.Background(), liteClientConfig)
-	c.Assert(err, IsNil)
-
-	// api client with full proof checks
-	s.client = ton.NewAPIClient(pool, ton.ProofCheckPolicyFast).WithRetry()
-	s.client.SetTrustedBlockFromConfig(liteClientConfig)
 }
 
 func (s *BlockScannerTestSuite) TestGetHeight(c *C) {
-	cfg := config.BifrostBlockScannerConfiguration{ChainID: common.TONChain}
-	blockScanner := TonBlockScanner{
-		config: cfg,
-		api:    s.client,
+	block, err := s.scanner.GetHeight()
+	c.Assert(err, IsNil)
+	c.Assert(block, Equals, int64(256673))
+}
+
+func (s *BlockScannerTestSuite) TestFetchMemPool(c *C) {
+	txIn, err := s.scanner.FetchMemPool(rand.Int63n(time.Now().Unix()))
+	c.Assert(err, IsNil)
+	c.Assert(txIn.Chain.IsEmpty(), Equals, true)
+	c.Assert(txIn.TxArray, HasLen, 0)
+}
+
+func (s *BlockScannerTestSuite) TestFetchTxs(c *C) {
+	txs, err := mock.GetTxs()
+	c.Assert(err, IsNil)
+	c.Assert(txs, HasLen, len(mock.RawTxs))
+
+	items := 0
+	for _, tx := range mock.RawTxs {
+		if !tx.Skip {
+			items++
+		}
 	}
 
-	block, err := blockScanner.GetHeight()
+	testCases := []struct {
+		Height int64
+		Items  int
+		Error  bool
+	}{
+		{
+			Height: 0,
+			Items:  0,
+		},
+		{
+			Height: 99,
+			Error:  true,
+		},
+		{
+			Height: 100000,
+			Items:  items,
+		},
+	}
+	for _, tc := range testCases {
+		txIn, err := s.scanner.FetchTxs(tc.Height, tc.Height)
+		if tc.Error {
+			c.Assert(err, NotNil)
+		} else {
+			c.Assert(err, IsNil)
+			c.Assert(txIn.TxArray, HasLen, tc.Items)
+		}
+	}
+}
 
-	c.Assert(err, IsNil)
-	c.Assert(block, Not(Equals), int64(0))
+func (s *BlockScannerTestSuite) TestGetNetworkFee(c *C) {
+	// amount blocks
+	c.Assert(s.scanner.feeRateCache, HasLen, 1)
+	// amount txs
+	// bounceable msg fees are considered too
+	c.Assert(s.scanner.feeRateCache[0], HasLen, 4)
+
+	// 1. 3031086 -> 3000000
+	// 2. 2551847 -> 3000000
+	// 3. 1988534 -> 2000000
+	// 4. 2495998 -> 3000000
+	median := uint64(3000000)
+
+	fmt.Println(s.scanner.config.GasCacheBlocks)
+	fmt.Println(s.scanner.feeRateCache)
+	fmt.Println(s.scanner.GetNetworkFee())
+	// txs, err := mock.GetTxs()
+	// c.Assert(err, IsNil)
+	//
+	// total := uint64(0)
+	// for _, tx := range txs {
+	// 	fmt.Println(tx.TotalFees)
+	// 	total += tx.TotalFees.Coins.Nano().Uint64()
+	// }
+
+	size, rate := s.scanner.GetNetworkFee()
+	c.Assert(size, Equals, uint64(1))
+	c.Assert(rate, Equals, median)
 }
