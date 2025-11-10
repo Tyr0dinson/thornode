@@ -1,7 +1,6 @@
 package ton
 
 import (
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -31,7 +30,6 @@ func TestPackage(t *testing.T) { TestingT(t) }
 type TonTestSuite struct {
 	client  *TonClient
 	thordir string
-	server  *httptest.Server
 	pubkey  common.PubKey
 }
 

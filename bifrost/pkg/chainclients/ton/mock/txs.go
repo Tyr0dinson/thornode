@@ -68,7 +68,7 @@ func GetTxs() ([]tlb.Transaction, error) {
 			return nil, err
 		}
 
-		tx.Hash = c.Hash()[:]
+		tx.Hash = c.Hash()
 		tx.TotalFees = tlb.CurrencyCollection{
 			Coins: tlb.FromNanoTONU(raw.Fee),
 		}

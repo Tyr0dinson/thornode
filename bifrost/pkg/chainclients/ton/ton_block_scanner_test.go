@@ -2,7 +2,6 @@ package ton
 
 import (
 	"fmt"
-	"math/rand"
 	"time"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/ton/mock"
@@ -52,10 +51,9 @@ func (s *BlockScannerTestSuite) SetUpSuite(c *C) {
 	s.scanner.globalNetworkFeeQueue = make(chan common.NetworkFee)
 
 	go func() {
-		for {
-			select {
-			case <-s.scanner.globalNetworkFeeQueue:
-			}
+		for range s.scanner.globalNetworkFeeQueue {
+			time.Sleep(time.Millisecond * 200)
+			continue
 		}
 	}()
 
@@ -69,7 +67,7 @@ func (s *BlockScannerTestSuite) TestGetHeight(c *C) {
 }
 
 func (s *BlockScannerTestSuite) TestFetchMemPool(c *C) {
-	txIn, err := s.scanner.FetchMemPool(rand.Int63n(time.Now().Unix()))
+	txIn, err := s.scanner.FetchMemPool(time.Now().Unix())
 	c.Assert(err, IsNil)
 	c.Assert(txIn.Chain.IsEmpty(), Equals, true)
 	c.Assert(txIn.TxArray, HasLen, 0)

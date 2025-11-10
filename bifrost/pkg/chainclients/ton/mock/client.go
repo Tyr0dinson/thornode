@@ -80,13 +80,20 @@ func (c MockClient) GetBlockData(ctx context.Context, block *ton.BlockIDExt) (*t
 func (c MockClient) GetBlockTransactionsV2(ctx context.Context, block *ton.BlockIDExt, count uint32, after ...*ton.TransactionID3) ([]ton.TransactionShortInfo, bool, error) {
 	var txs []tlb.Transaction
 
-	switch block.Shard {
-	case shard0:
-		// first half of txs
-		txs = c.txs[:len(c.txs)-1/2]
-	case shard1:
-		// second half of txs
-		txs = c.txs[len(c.txs)-1/2:]
+	if len(c.txs) > 0 {
+		index := len(c.txs) - 1
+		if index > 1 {
+			index /= 2
+		}
+
+		switch block.Shard {
+		case shard0:
+			// first half of txs
+			txs = c.txs[:index]
+		case shard1:
+			// second half of txs
+			txs = c.txs[index:]
+		}
 	}
 
 	var infos []ton.TransactionShortInfo
