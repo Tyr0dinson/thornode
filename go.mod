@@ -136,6 +136,7 @@ require (
 	github.com/coder/websocket v1.8.13
 	github.com/decred/dcrd/dcrec/secp256k1 v1.0.4
 	github.com/xssnick/tonutils-go v1.15.5
+	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2
 )
 
 require github.com/decred/dcrd/dcrec/secp256k1/v2 v2.0.0 // indirect
