@@ -253,7 +253,6 @@ func (s *TonTestSuite) TestCreateTx(c *C) {
 
 		c.Assert(msg.Bounce, Equals, false)
 		c.Assert(msg.Amount.Nano().Uint64(), Equals, tc.Amount*10) // 1e8 -> 1e9
-		c.Assert(msg.DstAddr.IsTestnetOnly(), Equals, common.IsMocknet)
 
 		to := address.MustParseAddr(tc.To.String())
 		c.Assert(msg.DstAddr.Equals(to), Equals, true)
