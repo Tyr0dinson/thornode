@@ -177,7 +177,7 @@ func GetRandomBCHAddress() common.Address {
 }
 
 func GetRandomTONAddress() common.Address {
-	pubKey := GetRandomPubKey()
+	pubKey := GetRandomEd25519PubKey()
 	addr, _ := pubKey.GetAddress(common.TONChain)
 	return addr
 }

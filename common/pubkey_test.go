@@ -26,6 +26,7 @@ type KeyData struct {
 	addrETH  KeyDataAddr
 	addrDOGE KeyDataAddr
 	addrSOL  KeyDataAddr
+	addrTON  KeyDataAddr
 }
 
 type PubKeyTestSuite struct {
@@ -63,6 +64,10 @@ func (s *PubKeyTestSuite) SetUpSuite(_ *C) {
 				mainnet: "DhMcGoLSWsKLqoM12GhR1ZxgcRFzZo2wZ8D2A3BvX9op",
 				mocknet: "DhMcGoLSWsKLqoM12GhR1ZxgcRFzZo2wZ8D2A3BvX9op",
 			},
+			addrTON: KeyDataAddr{
+				mainnet: "UQC5XpU5-dxZ6G3Q989xuF4FFLWgM8XrnKYfF60u5fVljIr5",
+				mocknet: "0QC5XpU5-dxZ6G3Q989xuF4FFLWgM8XrnKYfF60u5fVljDFz",
+			},
 		},
 		{
 			priv: "289c2857d4598e37fb9647507e47a309d6133539bf21a8b9cb6df88fd5232032",
@@ -90,6 +95,10 @@ func (s *PubKeyTestSuite) SetUpSuite(_ *C) {
 			addrSOL: KeyDataAddr{
 				mainnet: "G8n9W2tGpcazbyrdQzniSKV6p4uFJArWCENhapDmHTx9",
 				mocknet: "G8n9W2tGpcazbyrdQzniSKV6p4uFJArWCENhapDmHTx9",
+			},
+			addrTON: KeyDataAddr{
+				mainnet: "UQDZC6eJ8LnG0UO2gGmQJYz-ocR9Ywb6vG3RhJlOgLgaH6XV",
+				mocknet: "0QDZC6eJ8LnG0UO2gGmQJYz-ocR9Ywb6vG3RhJlOgLgaHx5f",
 			},
 		},
 		{
@@ -119,6 +128,10 @@ func (s *PubKeyTestSuite) SetUpSuite(_ *C) {
 				mainnet: "49gTXamRza4famcZDvFve6omcFqpiooaWBTX2KK3kp4h",
 				mocknet: "49gTXamRza4famcZDvFve6omcFqpiooaWBTX2KK3kp4h",
 			},
+			addrTON: KeyDataAddr{
+				mainnet: "UQCq_MV4m6IoRricyt9vUp-0J4eJKdBsS3_k2T5IgwDMnKbg",
+				mocknet: "0QCq_MV4m6IoRricyt9vUp-0J4eJKdBsS3_k2T5IgwDMnB1q",
+			},
 		},
 		{
 			priv: "a96e62ed3955e65be32703f12d87b6b5cf26039ecfa948dc5107a495418e5330",
@@ -147,6 +160,10 @@ func (s *PubKeyTestSuite) SetUpSuite(_ *C) {
 				mainnet: "C7nGYnw9qTT4XjYKiynAF3Qz9iPrZfXg338sdvBGdBhS",
 				mocknet: "C7nGYnw9qTT4XjYKiynAF3Qz9iPrZfXg338sdvBGdBhS",
 			},
+			addrTON: KeyDataAddr{
+				mainnet: "UQDoGcv8VbpYki8jcMPC0b9jwcZmL0PAyCwLsjDvpq0hSjPh",
+				mocknet: "0QDoGcv8VbpYki8jcMPC0b9jwcZmL0PAyCwLsjDvpq0hSohr",
+			},
 		},
 		{
 			priv: "9294f4d108465fd293f7fe299e6923ef71a77f2cb1eb6d4394839c64ec25d5c0",
@@ -174,6 +191,10 @@ func (s *PubKeyTestSuite) SetUpSuite(_ *C) {
 			addrSOL: KeyDataAddr{
 				mainnet: "GYnVuwPsSAE6QwWh6TebBqNbFFqsU2563eShGcPbAvL2",
 				mocknet: "GYnVuwPsSAE6QwWh6TebBqNbFFqsU2563eShGcPbAvL2",
+			},
+			addrTON: KeyDataAddr{
+				mainnet: "UQBiRYb5FDPTE4uNSUgqtcxMD0oP9-SfngHTJ6X8Xgq_otbm",
+				mocknet: "0QBiRYb5FDPTE4uNSUgqtcxMD0oP9-SfngHTJ6X8Xgq_om1s",
 			},
 		},
 	}
@@ -273,7 +294,7 @@ func KeyTestPubAddrED25519() (cryptotypes.PrivKey, cryptotypes.PubKey, sdk.AccAd
 	return key, pub, addr
 }
 
-func (s *PubKeyTestSuite) TestSOLPubKey(c *C) {
+func (s *PubKeyTestSuite) TestEd25519PubKey(c *C) {
 	/** TODO: Replace with testdata.KeyTestPubAddrED25519() when cosmos v0.52 lands **/
 	_, pubKey1, _ := KeyTestPubAddrED25519()
 	spk, err := cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeAccPub, pubKey1)

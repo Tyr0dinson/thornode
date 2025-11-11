@@ -10,6 +10,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
+	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"github.com/xssnick/tonutils-go/address"
 	"github.com/xssnick/tonutils-go/tlb"
@@ -17,6 +18,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
+	"gitlab.com/thorchain/thornode/v3/cmd"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/common/crypto/ed25519"
@@ -55,7 +57,7 @@ func GetMetricForTest(c *C) *metrics.Metrics {
 
 func (s *TonTestSuite) SetUpSuite(c *C) {
 	ccfg := cosmos.GetConfig()
-	ccfg.SetBech32PrefixForAccount("sthor", "sthorpub")
+	ccfg.SetBech32PrefixForAccount("tthor", "tthorpub")
 
 	metrics := GetMetricForTest(c)
 	c.Assert(metrics, NotNil)
@@ -79,31 +81,36 @@ func (s *TonTestSuite) SetUpSuite(c *C) {
 	}
 
 	registry := codectypes.NewInterfaceRegistry()
-	cryptocodec.RegisterInterfaces(registry)
+	cdc := codec.NewProtoCodec(registry)
+	cryptocodec.RegisterInterfaces(cdc.InterfaceRegistry())
 
-	kb := keyring.NewInMemory(codec.NewProtoCodec(registry), func(options *keyring.Options) {
-		options.SupportedAlgos = append(options.SupportedAlgos, ed25519.Ed25519)
-	})
-	_, _, err := kb.NewMnemonic(
+	kb := keyring.NewInMemory(
+		codec.NewProtoCodec(registry),
+		func(opts *keyring.Options) {
+			opts.SupportedAlgos = append(opts.SupportedAlgos, ed25519.Ed25519)
+		},
+	)
+
+	_, mnemonic, err := kb.NewMnemonic(
 		"ed-"+clientConfig.SignerName,
 		keyring.English,
-		"m/44'/118'/0'/0'/0'",
-		clientConfig.SignerPasswd,
+		"", clientConfig.SignerPasswd,
 		ed25519.Ed25519,
+	)
+	c.Assert(err, IsNil)
+
+	_, err = kb.NewAccount(
+		clientConfig.SignerName,
+		mnemonic,
+		clientConfig.SignerPasswd,
+		cmd.THORChainHDPath,
+		hd.Secp256k1,
 	)
 	c.Assert(err, IsNil)
 
 	keys := thorclient.NewKeysWithKeybase(
 		kb, clientConfig.SignerName, clientConfig.SignerPasswd,
 	)
-	c.Assert(err, IsNil)
-
-	priv, err := keys.GetPrivateKeyEDDSA()
-	c.Assert(err, IsNil)
-
-	pub, _ := cryptocodec.ToCmtPubKeyInterface(priv.PubKey())
-
-	s.pubkey, err = common.NewPubKeyFromCrypto(pub)
 	c.Assert(err, IsNil)
 
 	bridge, err := thorclient.NewThorchainBridge(
@@ -119,6 +126,22 @@ func (s *TonTestSuite) SetUpSuite(c *C) {
 		metrics,
 	)
 	c.Assert(err, IsNil)
+
+	priv, err := keys.GetPrivateKeyEDDSA()
+	c.Assert(err, IsNil)
+
+	bech, err := cosmos.Bech32ifyPubKey(
+		cosmos.Bech32PubKeyTypeAccPub,
+		priv.PubKey(),
+	)
+	c.Assert(err, IsNil)
+
+	s.pubkey, err = common.NewPubKey(bech)
+	c.Assert(err, IsNil)
+
+	addr, err := s.pubkey.GetAddress(common.TONChain)
+	c.Assert(err, IsNil)
+	c.Assert(addr.String(), Equals, s.client.localPubKey)
 }
 
 func (s *TonTestSuite) TearDownSuite(c *C) {
@@ -129,13 +152,13 @@ func (s *TonTestSuite) TearDownSuite(c *C) {
 }
 
 func (s *TonTestSuite) TestGetAddress(c *C) {
-	pubKey := common.PubKey("sthorpub1addwnpepqf72ur2e8zk8r5augtrly40cuy94f7e663zh798tyms6pu2k8qdswf4es66")
+	pubKey := common.PubKey("tthorpub1zcjduepq829qzzhllcktltnfdudyupw5qjtyyjzcmv9wx2jvpah4d6nxtl2s7vwca8")
 	address := s.client.GetAddress(pubKey)
 
 	if common.IsMocknet {
-		c.Assert(address, Equals, "0QC0PbKWouvBPwTD9vaQ8LOQrMATFgHssiLzgNjxz-nBYsOj")
+		c.Assert(address, Equals, "0QBqz4M8K8GJL6YSO8goZq0MwyovZt80nktHzCOCm2GDF5T4")
 	} else {
-		c.Assert(address, Equals, "UQC0PbKWouvBPwTD9vaQ8LOQrMATFgHssiLzgNjxz-nBYngp")
+		c.Assert(address, Equals, "UQBqz4M8K8GJL6YSO8goZq0MwyovZt80nktHzCOCm2GDFy9y")
 	}
 
 	address = s.client.GetAddress("nonsense")

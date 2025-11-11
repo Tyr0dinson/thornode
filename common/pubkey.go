@@ -289,6 +289,10 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 			return NoAddress, err
 		}
 
+		if len(pk.Bytes()) != 32 {
+			return NoAddress, fmt.Errorf("invalid pubkey length %d", len(pk.Bytes()))
+		}
+
 		addr, err := wallet.AddressFromPubKey(pk.Bytes(), wallet.V3R2, wallet.DefaultSubwallet)
 		if err != nil {
 			log.Err(err).Msg("")
