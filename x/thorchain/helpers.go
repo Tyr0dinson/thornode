@@ -66,11 +66,21 @@ func refundTx(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32,
 				}
 			}
 
+			// Only use the observed vault for refunds if it's Active or Retiring.
+			// For InactiveVault, leave VaultPubKey empty so vault selection logic
+			// can choose an appropriate vault that can actually sign the refund.
+			var vaultPubKey common.PubKey
+			var vaultPubKeyEddsa common.PubKey
+			if vault.Status == ActiveVault || vault.Status == RetiringVault {
+				vaultPubKey = vault.PubKey
+				vaultPubKeyEddsa = vault.PubKeyEddsa
+			}
+
 			toi := TxOutItem{
 				Chain:                 coin.Asset.GetChain(),
 				ToAddress:             toAddr,
-				VaultPubKey:           vault.PubKey,
-				VaultPubKeyEddsa:      vault.PubKeyEddsa,
+				VaultPubKey:           vaultPubKey,
+				VaultPubKeyEddsa:      vaultPubKeyEddsa,
 				Coin:                  coin,
 				Memo:                  NewRefundMemo(tx.Tx.ID).String(),
 				MaxGas:                []common.Coin{},
