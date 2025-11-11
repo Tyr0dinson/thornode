@@ -3,7 +3,6 @@ package mock
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"time"
 
 	tonaddress "github.com/xssnick/tonutils-go/address"
@@ -33,22 +32,18 @@ func NewMockApiClient() ton.APIClientWrapped {
 }
 
 func (c MockClient) Client() ton.LiteClient {
-	// TODO implement me
-	panic("implement me")
+	return nil
 }
 
 func (c MockClient) GetTime(ctx context.Context) (uint32, error) {
-	// TODO implement me
-	panic("implement me")
+	return 0, nil
 }
 
 func (c MockClient) GetLibraries(ctx context.Context, list ...[]byte) ([]*cell.Cell, error) {
-	// TODO implement me
-	panic("implement me")
+	return nil, nil
 }
 
 func (c MockClient) LookupBlock(ctx context.Context, workchain int32, shard int64, seqno uint32) (*ton.BlockIDExt, error) {
-	fmt.Println(workchain, shard, seqno)
 	if workchain == -1 {
 		if seqno != 100000 {
 			return nil, xerrors.New("seqno != 100000")
@@ -129,8 +124,7 @@ func (c MockClient) GetBlockShardsInfo(ctx context.Context, master *ton.BlockIDE
 }
 
 func (c MockClient) GetBlockchainConfig(ctx context.Context, block *ton.BlockIDExt, onlyParams ...int32) (*ton.BlockchainConfig, error) {
-	// TODO implement me
-	panic("implement me")
+	return nil, nil
 }
 
 func (c MockClient) GetMasterchainInfo(ctx context.Context) (*ton.BlockIDExt, error) {
@@ -155,13 +149,11 @@ func (c MockClient) GetAccount(ctx context.Context, block *ton.BlockIDExt, addr 
 }
 
 func (c MockClient) SendExternalMessage(ctx context.Context, msg *tlb.ExternalMessage) error {
-	// TODO implement me
-	panic("implement me")
+	return nil
 }
 
 func (c MockClient) SendExternalMessageWaitTransaction(ctx context.Context, msg *tlb.ExternalMessage) (*tlb.Transaction, *ton.BlockIDExt, []byte, error) {
-	// TODO implement me
-	panic("implement me")
+	return nil, nil, nil, nil
 }
 
 func (c MockClient) RunGetMethod(ctx context.Context, blockInfo *ton.BlockIDExt, addr *tonaddress.Address, method string, params ...interface{}) (*ton.ExecutionResult, error) {
@@ -170,12 +162,10 @@ func (c MockClient) RunGetMethod(ctx context.Context, blockInfo *ton.BlockIDExt,
 }
 
 func (c MockClient) ListTransactions(ctx context.Context, addr *tonaddress.Address, num uint32, lt uint64, txHash []byte) ([]*tlb.Transaction, error) {
-	// TODO implement me
-	panic("implement me")
+	return nil, nil
 }
 
 func (c MockClient) GetTransaction(ctx context.Context, block *ton.BlockIDExt, addr *tonaddress.Address, lt uint64) (*tlb.Transaction, error) {
-	fmt.Println(block)
 	for _, tx := range c.txs {
 		if bytes.Equal(tx.AccountAddr, addr.Data()) {
 			return &tx, nil
@@ -185,8 +175,7 @@ func (c MockClient) GetTransaction(ctx context.Context, block *ton.BlockIDExt, a
 }
 
 func (c MockClient) GetBlockProof(ctx context.Context, known, target *ton.BlockIDExt) (*ton.PartialBlockProof, error) {
-	// TODO implement me
-	panic("implement me")
+	return nil, nil
 }
 
 func (c MockClient) CurrentMasterchainInfo(ctx context.Context) (_ *ton.BlockIDExt, err error) {
@@ -194,13 +183,10 @@ func (c MockClient) CurrentMasterchainInfo(ctx context.Context) (_ *ton.BlockIDE
 }
 
 func (c MockClient) SubscribeOnTransactions(workerCtx context.Context, addr *tonaddress.Address, lastProcessedLT uint64, channel chan<- *tlb.Transaction) {
-	// TODO implement me
-	panic("implement me")
 }
 
 func (c MockClient) VerifyProofChain(ctx context.Context, from, to *ton.BlockIDExt) error {
-	// TODO implement me
-	panic("implement me")
+	return nil
 }
 
 func (c MockClient) WaitForBlock(seqno uint32) ton.APIClientWrapped {
@@ -208,8 +194,7 @@ func (c MockClient) WaitForBlock(seqno uint32) ton.APIClientWrapped {
 }
 
 func (c MockClient) WithRetry(maxRetries ...int) ton.APIClientWrapped {
-	// TODO implement me
-	panic("implement me")
+	return c
 }
 
 func (c MockClient) WithTimeout(timeout time.Duration) ton.APIClientWrapped {
@@ -217,22 +202,14 @@ func (c MockClient) WithTimeout(timeout time.Duration) ton.APIClientWrapped {
 	panic("implement me")
 }
 
-func (c MockClient) SetTrustedBlock(block *ton.BlockIDExt) {
-	// TODO implement me
-	panic("implement me")
-}
+func (c MockClient) SetTrustedBlock(block *ton.BlockIDExt) {}
 
-func (c MockClient) SetTrustedBlockFromConfig(cfg *liteclient.GlobalConfig) {
-	// TODO implement me
-	panic("implement me")
-}
+func (c MockClient) SetTrustedBlockFromConfig(cfg *liteclient.GlobalConfig) {}
 
 func (c MockClient) FindLastTransactionByInMsgHash(ctx context.Context, addr *tonaddress.Address, msgHash []byte, maxTxNumToScan ...int) (*tlb.Transaction, error) {
-	// TODO implement me
-	panic("implement me")
+	return nil, nil
 }
 
 func (c MockClient) FindLastTransactionByOutMsgHash(ctx context.Context, addr *tonaddress.Address, msgHash []byte, maxTxNumToScan ...int) (*tlb.Transaction, error) {
-	// TODO implement me
-	panic("implement me")
+	return nil, nil
 }
