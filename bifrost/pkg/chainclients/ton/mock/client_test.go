@@ -2,7 +2,6 @@ package mock
 
 import (
 	"context"
-
 	"testing"
 
 	tonaddress "github.com/xssnick/tonutils-go/address"
