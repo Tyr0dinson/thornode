@@ -6,6 +6,7 @@ import (
 
 	"github.com/cosmos/cosmos-sdk/runtime"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
 )
 
 // GetMimir get a mimir value from key value store
@@ -118,6 +119,8 @@ func (k KVStore) IsOperationalMimir(key string) bool {
 		"MaxOutboundAttempts",
 		"AdvSwapQueueRapidSwapMax",
 		"EnableADVSwapQueue",
+		"StreamingLimitSwapMaxAge",
+		constants.MimirKeyScheduledMigration,
 	}
 	for i := range exactMatches {
 		if strings.EqualFold(key, exactMatches[i]) {
