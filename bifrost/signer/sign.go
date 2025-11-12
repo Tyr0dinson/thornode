@@ -171,6 +171,10 @@ func (s *Signer) Start() error {
 }
 
 func (s *Signer) shouldSign(tx types.TxOutItem) bool {
+	// Don't sign outbounds from mempool transactions until the inbound finalizes
+	if !tx.InboundFinalized {
+		return false
+	}
 	return s.pubkeyMgr.HasPubKey(tx.VaultPubKey) || s.pubkeyMgr.HasPubKey(tx.VaultPubKeyEddsa)
 }
 

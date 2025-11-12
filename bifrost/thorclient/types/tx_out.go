@@ -27,6 +27,7 @@ type TxOutItem struct {
 	Checkpoint            []byte         `json:"-"`
 	Height                int64          `json:"height"`
 	VaultPubKeyEddsa      common.PubKey  `json:"vault_pub_key_eddsa,omitempty"`
+	InboundFinalized      bool           `json:"inbound_finalized,omitempty"`
 }
 
 // Hash return a sha256 hash that can uniquely represent the TxOutItem

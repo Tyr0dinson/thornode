@@ -2,6 +2,8 @@ package thorchain
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"math"
 	"sort"
@@ -204,11 +206,19 @@ func handleObservedTxInQuorum(
 
 	hasFinalised := voter.HasFinalised(activeNodeAccounts)
 
+	// Allow swap execution at consensus (before finalization) for mempool swap optimization.
+	// Regular swaps and streaming swaps can be executed from mempool, but outbounds won't
+	// be signed until the inbound finalizes.
+	// Check if mempool swaps are enabled via mimir
+	enableMempoolSwaps := k.GetConfigInt64(ctx, constants.EnableMempoolSwaps) > 0
+	canProcessMempoolSwap := enableMempoolSwaps && memo.IsType(TxSwap)
+
 	// Update vault balances from inbounds with Migrate memos immediately,
 	// to minimise any gap between outbound and inbound observations.
 	// TODO: In future somehow update both balances in a single action,
 	// so the ActiveVault balance increase is guaranteed to never be early nor late?
-	if hasFinalised || memo.IsType(TxMigrate) {
+	// For mempool swaps, skip vault balance updates until finalization.
+	if (hasFinalised || memo.IsType(TxMigrate)) && !(!hasFinalised && canProcessMempoolSwap) {
 		if vault.IsAsgard() && !voter.UpdatedVault {
 			if !tx.Tx.FromAddress.Equals(tx.Tx.ToAddress) {
 				// Don't add to or subtract from vault balances when the sender and recipient are the same
@@ -245,9 +255,20 @@ func handleObservedTxInQuorum(
 
 	mgr.ObMgr().AppendObserver(tx.Tx.Chain, voter.Tx.GetSigners())
 
-	if !hasFinalised {
+	if !hasFinalised && !canProcessMempoolSwap {
 		ctx.Logger().Info("transaction pending confirmation counting", "hash", voter.TxID)
 		return nil
+	}
+
+	if !hasFinalised && canProcessMempoolSwap {
+		ctx.Logger().Info("processing mempool swap before finalization", "hash", voter.TxID, "memo", tx.Tx.Memo)
+	}
+
+	// When a mempool swap finalizes, update all associated outbound TxOutItems to Finalized=true
+	if hasFinalised && canProcessMempoolSwap && len(voter.Actions) > 0 {
+		if err := finalizeOutbounds(ctx, k, voter); err != nil {
+			ctx.Logger().Error("fail to finalize outbounds", "error", err, "hash", voter.TxID)
+		}
 	}
 
 	ctx.Logger().Debug("tx in finalized and has consensus",
@@ -1097,4 +1118,234 @@ func ExtractReferenceFromAmount(ctx cosmos.Context, mgr Manager, asset common.As
 	}
 
 	return leadingZeros(txnRefLength, fmt.Sprintf("%d", refNum)), nil
+}
+
+// finalizeOutbounds updates the Finalized flag on all outbound TxOutItems associated with an inbound
+// transaction when that inbound transaction finalizes. This allows bifrost signers to proceed with
+// signing outbounds that were created from mempool swaps.
+func finalizeOutbounds(ctx cosmos.Context, keeper keeper.Keeper, voter ObservedTxVoter) error {
+	ctx.Logger().Info("finalizing outbounds for inbound", "hash", voter.TxID, "actions_count", len(voter.Actions))
+
+	// Get the maximum outbound delay to determine search range
+	txOutDelayMax := keeper.GetConfigInt64(ctx, constants.TxOutDelayMax)
+
+	// Iterate through all actions (TxOutItems) for this inbound
+	for i := range voter.Actions {
+		action := &voter.Actions[i]
+
+		// Skip if already finalized
+		if action.InboundFinalized {
+			continue
+		}
+
+		// Update the action's InboundFinalized flag
+		action.InboundFinalized = true
+		ctx.Logger().Info("marked action as finalized",
+			"inhash", action.InHash,
+			"chain", action.Chain,
+			"to", action.ToAddress,
+			"amount", action.Coin.Amount)
+
+		// Now we need to find and update the queued TxOut in keeper storage
+		// TxOuts are scheduled based on outbound delay, so we check from current height onwards.
+		outboundHeight := voter.FinalisedHeight
+		if outboundHeight == 0 {
+			outboundHeight = ctx.BlockHeight()
+		}
+
+		// Search through a reasonable range of future blocks (up to TxOutDelayMax)
+		// to find the TxOut containing this action
+		found := false
+		maxSearchHeight := outboundHeight + txOutDelayMax
+		for h := outboundHeight; h <= maxSearchHeight && !found; h++ {
+			txOut, err := keeper.GetTxOut(ctx, h)
+			if err != nil {
+				ctx.Logger().Error("fail to get txout", "error", err, "height", h)
+				continue
+			}
+
+			// Search through all TxOutItems in this block's TxOut
+			for j := range txOut.TxArray {
+				item := &txOut.TxArray[j]
+				// Match by InHash - that's the unique link to the inbound
+				if item.InHash.Equals(action.InHash) {
+					item.InboundFinalized = true
+					ctx.Logger().Info("updated queued txout item to finalized",
+						"height", h,
+						"inhash", item.InHash,
+						"chain", item.Chain)
+
+					// Save the updated TxOut back to storage
+					if err := keeper.SetTxOut(ctx, txOut); err != nil {
+						return fmt.Errorf("fail to save txout at height %d: %w", h, err)
+					}
+					found = true
+					break
+				}
+			}
+		}
+
+		if !found {
+			ctx.Logger().Warn("could not find queued txout item to finalize",
+				"inhash", action.InHash,
+				"chain", action.Chain,
+				"search_range", fmt.Sprintf("%d-%d", outboundHeight, maxSearchHeight))
+		}
+	}
+
+	// Save the updated voter with finalized actions
+	keeper.SetObservedTxInVoter(ctx, voter)
+
+	return nil
+}
+
+// revertMempoolSwap reverts a mempool swap by creating a reverse swap back to the original asset,
+// then donating the result to the original source pool using a chained memo.
+// This is called when a mempool transaction is dropped or replaced before finalization.
+func revertMempoolSwap(ctx cosmos.Context, keeper keeper.Keeper, mgr Manager, voter ObservedTxVoter) error {
+	ctx.Logger().Info("reverting mempool swap", "hash", voter.TxID, "actions_count", len(voter.Actions))
+
+	// Get the maximum outbound delay to determine search range
+	txOutDelayMax := keeper.GetConfigInt64(ctx, constants.TxOutDelayMax)
+
+	// Determine the original source asset from the inbound transaction
+	if voter.Tx.Tx.Coins.IsEmpty() {
+		return fmt.Errorf("no coins in inbound tx")
+	}
+	sourceAsset := voter.Tx.Tx.Coins[0].Asset
+
+	// Get an active vault to use as the destination
+	activeVaults, err := keeper.GetAsgardVaultsByStatus(ctx, ActiveVault)
+	if err != nil || len(activeVaults) == 0 {
+		return fmt.Errorf("fail to get active vaults: %w", err)
+	}
+	vault := activeVaults[0]
+	vaultAddress, err := vault.PubKey.GetAddress(common.THORChain)
+	if err != nil {
+		return fmt.Errorf("fail to get vault address: %w", err)
+	}
+
+	// Iterate through all actions (TxOutItems) for this inbound
+	for i := range voter.Actions {
+		action := &voter.Actions[i]
+
+		// Skip if already signed (OutHash is set)
+		if !action.OutHash.IsEmpty() {
+			ctx.Logger().Warn("action already signed, cannot revert",
+				"inhash", action.InHash,
+				"outhash", action.OutHash)
+			continue
+		}
+
+		ctx.Logger().Info("reverting action",
+			"inhash", action.InHash,
+			"from_asset", action.Coin.Asset,
+			"from_amount", action.Coin.Amount,
+			"to_asset", sourceAsset)
+
+		// Step 1: Remove the TxOutItem from the queued TxOut FIRST
+		outboundHeight := voter.UnfinalizedHeight
+		if outboundHeight == 0 {
+			outboundHeight = ctx.BlockHeight()
+		}
+
+		removed := false
+		maxSearchHeight := outboundHeight + txOutDelayMax
+		for h := outboundHeight; h <= maxSearchHeight && !removed; h++ {
+			txOut, err := keeper.GetTxOut(ctx, h)
+			if err != nil {
+				continue
+			}
+
+			// Search for the TxOutItem to remove
+			for j := 0; j < len(txOut.TxArray); j++ {
+				item := &txOut.TxArray[j]
+				if item.InHash.Equals(action.InHash) {
+					// Remove this item from the array
+					txOut.TxArray = append(txOut.TxArray[:j], txOut.TxArray[j+1:]...)
+					ctx.Logger().Info("removed queued txout item",
+						"height", h,
+						"inhash", item.InHash,
+						"chain", item.Chain)
+
+					// Save the updated TxOut
+					if err := keeper.SetTxOut(ctx, txOut); err != nil {
+						ctx.Logger().Error("fail to save txout after removal", "error", err, "height", h)
+						return fmt.Errorf("fail to save txout after removal at height %d: %w", h, err)
+					}
+					removed = true
+					break
+				}
+			}
+		}
+
+		if !removed {
+			ctx.Logger().Error("could not find and remove queued txout item",
+				"inhash", action.InHash,
+				"chain", action.Chain,
+				"search_range", fmt.Sprintf("%d-%d", outboundHeight, maxSearchHeight))
+			return fmt.Errorf("could not find queued txout item to remove: %s", action.InHash)
+		}
+
+		// Step 2: Now that we've successfully removed the outbound, create the reverse swap
+		// Generate a unique transaction ID for this reversal
+		hashInput := fmt.Sprintf("MEMPOOL-REVERT-%s-%d", voter.TxID, ctx.BlockHeight())
+		hash := sha256.Sum256([]byte(hashInput))
+		txID := common.TxID(hex.EncodeToString(hash[:]))
+
+		// Get max gas coin for the chain
+		maxGasCoin, _, err := mgr.GasMgr().GetGasDetails(ctx, action.Chain)
+		if err != nil {
+			ctx.Logger().Error("failed to get gas details for mempool revert swap", "chain", action.Chain, "error", err)
+		}
+		if err != nil || maxGasCoin.IsEmpty() {
+			maxGasCoin = common.NewCoin(action.Chain.GetGasAsset(), cosmos.OneUint())
+		}
+
+		// Create a reverse swap with chained memo: swap back to source asset, then donate to pool
+		// The "|" separator tells the system to process a second memo after the swap completes
+		memo := fmt.Sprintf("=:%s:%s|DONATE:%s", sourceAsset, vaultAddress, sourceAsset.GetLayer1Asset())
+
+		msg := MsgSwap{
+			Tx: common.Tx{
+				ID:          txID,
+				Chain:       common.THORChain,
+				FromAddress: vaultAddress,
+				ToAddress:   vaultAddress,
+				Coins:       common.Coins{action.Coin},
+				Gas:         common.Gas{maxGasCoin},
+				Memo:        memo,
+			},
+			TargetAsset:             sourceAsset,
+			Destination:             vaultAddress,
+			TradeTarget:             cosmos.ZeroUint(),
+			AggregatorTargetAddress: "",
+			AggregatorTargetLimit:   nil,
+			Signer:                  mgr.Keeper().GetModuleAccAddress(AsgardName),
+		}
+
+		// Add the reverse swap to the swap queue
+		if err := mgr.Keeper().SetSwapQueueItem(ctx, msg, 0); err != nil {
+			return fmt.Errorf("fail to queue reverse swap: %w", err)
+		}
+
+		ctx.Logger().Info("queued reverse swap for mempool revert",
+			"txid", txID,
+			"from_asset", action.Coin.Asset,
+			"from_amount", action.Coin.Amount,
+			"to_asset", sourceAsset,
+			"memo", memo)
+	}
+
+	// Mark the voter as reverted
+	voter.Reverted = true
+	keeper.SetObservedTxInVoter(ctx, voter)
+
+	// Emit event for monitoring
+	mempoolRevertEvent := NewEventMempoolSwapReverted(voter.TxID, ctx.BlockHeight())
+	if err := mgr.EventMgr().EmitEvent(ctx, mempoolRevertEvent); err != nil {
+		ctx.Logger().Error("fail to emit mempool revert event", "error", err)
+	}
+
+	return nil
 }

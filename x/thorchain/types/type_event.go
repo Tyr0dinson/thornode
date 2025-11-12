@@ -61,6 +61,7 @@ const (
 	TCYUnstakeType                  = "tcy_unstake"
 	OraclePriceEvent                = "oracle_price"
 	FailedOutboundRecoveryEventType = "failed_outbound_recovery"
+	MempoolSwapRevertedEventType    = "mempool_swap_reverted"
 	VaultOverSolvencyEventType      = "vault_over_solvency"
 )
 
@@ -1470,6 +1471,28 @@ func (m *EventFailedOutboundRecovery) Events() (cosmos.Events, error) {
 		cosmos.NewAttribute("recovery_type", m.RecoveryType),
 		cosmos.NewAttribute("destination", m.Destination.String()),
 		cosmos.NewAttribute("memo", m.Memo),
+	)
+	return cosmos.Events{evt}, nil
+}
+
+// NewEventMempoolSwapReverted create a new EventMempoolSwapReverted
+func NewEventMempoolSwapReverted(txID common.TxID, blockHeight int64) *EventMempoolSwapReverted {
+	return &EventMempoolSwapReverted{
+		TxID:        txID,
+		BlockHeight: blockHeight,
+	}
+}
+
+// Type return mempool swap reverted event type
+func (m *EventMempoolSwapReverted) Type() string {
+	return MempoolSwapRevertedEventType
+}
+
+// Events return events
+func (m *EventMempoolSwapReverted) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(m.Type(),
+		cosmos.NewAttribute("tx_id", m.TxID.String()),
+		cosmos.NewAttribute("block_height", fmt.Sprintf("%d", m.BlockHeight)),
 	)
 	return cosmos.Events{evt}, nil
 }

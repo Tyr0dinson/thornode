@@ -185,6 +185,7 @@ var (
 	NewEventOperatorRotate         = types.NewEventOperatorRotate
 	NewEventOraclePrice            = types.NewEventOraclePrice
 	NewEventFailedOutboundRecovery = types.NewEventFailedOutboundRecovery
+	NewEventMempoolSwapReverted    = types.NewEventMempoolSwapReverted
 	NewPoolMod                     = types.NewPoolMod
 	NewMsgRefundTx                 = types.NewMsgRefundTx
 	NewMsgOutboundTx               = types.NewMsgOutboundTx

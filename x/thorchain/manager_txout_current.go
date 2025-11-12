@@ -899,6 +899,15 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]
 				return nil, cosmos.ZeroUint(), fmt.Errorf("fail to get observed tx voter: %w", err)
 			}
 			voter.FinalisedHeight = ctx.BlockHeight()
+
+			// Set InboundFinalized flag based on whether the inbound has finalized.
+			// For mempool swaps, this will be false until the inbound transaction finalizes.
+			activeNodeAccounts, err := tos.keeper.ListActiveValidators(ctx)
+			if err != nil {
+				return nil, cosmos.ZeroUint(), fmt.Errorf("fail to get active node accounts: %w", err)
+			}
+			outputs[i].InboundFinalized = voter.HasFinalised(activeNodeAccounts)
+
 			voter.Actions = append(voter.Actions, outputs[i])
 			tos.keeper.SetObservedTxInVoter(ctx, voter)
 		}
