@@ -271,6 +271,7 @@
               },
               "gas_rate": "10",
               "in_hash": "413FF66BECE6CC21959B033177F140219A08BE83B2247716BA6B8EDC4DC5C507",
+              "inbound_finalized": true,
               "max_gas": [
                 {
                   "amount": "10000",
@@ -389,6 +390,7 @@
               },
               "gas_rate": "10",
               "in_hash": "413FF66BECE6CC21959B033177F140219A08BE83B2247716BA6B8EDC4DC5C507",
+              "inbound_finalized": true,
               "max_gas": [
                 {
                   "amount": "10000",
