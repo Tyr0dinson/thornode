@@ -1,0 +1,130 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Test Mempool Swap Optimization Feature
+########################################################################################
+# Enable the mempool swaps feature
+type: tx-mimir
+key: EnableMempoolSwaps
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Verify mimir is enabled
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - .ENABLEMEMPOOLSWAPS == 1
+---
+########################################################################################
+# Scenario: Mempool Swap Execution
+########################################################################################
+# Send a swap transaction that will finalize 3 blocks later
+# Current block: 3, Transaction block: 3, Finalize at: 6
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "100000000"  # 1.0 BTC
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+          decimals: 8
+      memo: "=:ETH.ETH:{{ addr_eth_fox }}"
+    block_height: 3
+    finalise_height: 6  # Will finalize 3 blocks later
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Verify swap executed immediately from mempool (before finalization)
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0].chain == "ETH"
+  - .[0].to_address == "{{ addr_eth_fox }}"
+  - .[0].memo == "OUT:{{ observe_txid 1 }}"
+  - .[0].coin.amount|tonumber > 0
+  - .[0].inbound_finalized == false  # Not finalized yet
+---
+########################################################################################
+# Scenario: Finalization Updates Outbound
+########################################################################################
+# Create blocks to reach finalization height
+type: create-blocks
+count: 2  # Move from block 4 to block 6
+---
+# Re-observe the same transaction as finalized
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "100000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+          decimals: 8
+      memo: "=:ETH.ETH:{{ addr_eth_fox }}"
+    block_height: 6
+    finalise_height: 6  # NOW finalized (block_height == finalise_height)
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Verify outbound still exists and is now finalized
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0].chain == "ETH"
+  - .[0].in_hash == "{{ observe_txid 1 }}"
+  - .[0].inbound_finalized == true  # Now finalized!
+---
+# Clean up - observe the outbound
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 2 }}"
+      chain: ETH
+      from_address: {{ addr_eth_dog }}
+      to_address: {{ addr_eth_fox }}
+      coins:
+        - amount: "159360000"  # Actual swap output
+          asset: "ETH.ETH"
+          decimals: 18
+      gas:
+        - amount: "960000"
+          asset: "ETH.ETH"
+          decimals: 18
+      memo: "OUT:{{ observe_txid 1 }}"
+    block_height: 7
+    finalise_height: 7
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1

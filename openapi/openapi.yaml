@@ -2950,6 +2950,10 @@ components:
           type: string
           description: clout spent in RUNE for the outbound
           example: "1234"
+        inbound_finalized:
+          type: boolean
+          description: whether the inbound transaction has been finalized (for mempool swap optimization)
+          example: false
 
     TssMetric:
       type: object

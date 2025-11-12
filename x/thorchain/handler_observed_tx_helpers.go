@@ -153,6 +153,52 @@ func handleObservedTxInQuorum(
 	isQuorum bool,
 ) error {
 	if !isQuorum {
+		// Even if this observation doesn't bring the voter to quorum (because consensus was already reached),
+		// we still need to finalize outbounds if this is a mempool swap that has finalized but has unfinalized actions.
+		if voter.FinalisedHeight > 0 && len(voter.Actions) > 0 {
+			// Check if any actions are not yet finalized
+			hasUnfinalizedActions := false
+			for _, action := range voter.Actions {
+				if !action.InboundFinalized {
+					hasUnfinalizedActions = true
+					break
+				}
+			}
+
+			if hasUnfinalizedActions {
+				k := mgr.Keeper()
+				memo, _ := ParseMemoWithTHORNames(ctx, k, tx.Tx.Memo)
+				enableMempoolSwaps := k.GetConfigInt64(ctx, constants.EnableMempoolSwaps) > 0
+				canProcessMempoolSwap := enableMempoolSwaps && memo.IsType(TxSwap)
+
+				if canProcessMempoolSwap {
+					ctx.Logger().Info("finalizing outbounds and updating vault for finalized mempool swap", "hash", voter.TxID)
+
+					// Update vault balance if not already done
+					if !voter.UpdatedVault {
+						vault, err := k.GetVault(ctx, tx.ObservedPubKey)
+						if err == nil && vault.IsAsgard() {
+							if !tx.Tx.FromAddress.Equals(tx.Tx.ToAddress) {
+								vault.AddFunds(tx.Tx.Coins)
+								vault.InboundTxCount++
+								voter.UpdatedVault = true
+								if err := k.SetVault(ctx, vault); err != nil {
+									ctx.Logger().Error("fail to set vault", "error", err)
+								}
+								k.SetObservedTxInVoter(ctx, voter)
+								ctx.Logger().Info("updated vault for finalized mempool swap", "hash", voter.TxID, "coins", tx.Tx.Coins.String())
+							}
+						}
+					}
+
+					// Finalize outbounds
+					if err := finalizeOutbounds(ctx, k, voter); err != nil {
+						ctx.Logger().Error("fail to finalize outbounds", "error", err, "hash", voter.TxID)
+					}
+				}
+			}
+		}
+
 		if voter.Height == ctx.BlockHeight() || voter.FinalisedHeight == ctx.BlockHeight() {
 			// we've already process the transaction, but we should still
 			// update the observing addresses
@@ -1147,8 +1193,12 @@ func finalizeOutbounds(ctx cosmos.Context, keeper keeper.Keeper, voter ObservedT
 			"amount", action.Coin.Amount)
 
 		// Now we need to find and update the queued TxOut in keeper storage
-		// TxOuts are scheduled based on outbound delay, so we check from current height onwards.
-		outboundHeight := voter.FinalisedHeight
+		// For mempool swaps, outbounds are created at consensus height (before finalization),
+		// so we need to search from the earlier unfinalized height, not the finalized height.
+		outboundHeight := voter.UnfinalizedHeight
+		if outboundHeight == 0 {
+			outboundHeight = voter.Height
+		}
 		if outboundHeight == 0 {
 			outboundHeight = ctx.BlockHeight()
 		}
