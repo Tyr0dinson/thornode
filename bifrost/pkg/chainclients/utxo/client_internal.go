@@ -25,7 +25,74 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	mem "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
+
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/rpc"
 )
+
+////////////////////////////////////////////////////////////////////////////////////////
+// ZEC Type Conversion
+////////////////////////////////////////////////////////////////////////////////////////
+
+// convertZecTxToStandard converts a ZEC-specific TxVerbose to standard btcjson.TxRawResult.
+// ZEC-specific fields (expiryheight, shielded components, etc.) are dropped as they're not
+// used by the downstream bifrost logic.
+func convertZecTxToStandard(zecTx rpc.TxVerbose) btcjson.TxRawResult {
+	// Convert Vin
+	stdVin := make([]btcjson.Vin, len(zecTx.Vin))
+	for i, vin := range zecTx.Vin {
+		var scriptSig *btcjson.ScriptSig
+		if vin.ScriptSig != nil {
+			scriptSig = &btcjson.ScriptSig{
+				Asm: vin.ScriptSig.Asm,
+				Hex: vin.ScriptSig.Hex,
+			}
+		}
+		stdVin[i] = btcjson.Vin{
+			Coinbase:  vin.Coinbase,
+			Txid:      vin.Txid,
+			Vout:      vin.Vout,
+			ScriptSig: scriptSig,
+			Sequence:  vin.Sequence,
+		}
+	}
+
+	// Convert Vout
+	stdVout := make([]btcjson.Vout, len(zecTx.Vout))
+	for i, vout := range zecTx.Vout {
+		var reqSigs int32
+		if vout.ScriptPubKey.ReqSigs != nil {
+			reqSigs = *vout.ScriptPubKey.ReqSigs
+		}
+		stdVout[i] = btcjson.Vout{
+			Value: vout.Value,
+			N:     vout.N,
+			ScriptPubKey: btcjson.ScriptPubKeyResult{
+				Asm:       vout.ScriptPubKey.Asm,
+				Hex:       vout.ScriptPubKey.Hex,
+				ReqSigs:   reqSigs,
+				Type:      vout.ScriptPubKey.Type,
+				Addresses: vout.ScriptPubKey.Addresses,
+			},
+		}
+	}
+
+	return btcjson.TxRawResult{
+		Hex:           zecTx.Hex,
+		Txid:          zecTx.Txid,
+		Hash:          zecTx.Hash,
+		Size:          zecTx.Size,
+		Vsize:         zecTx.Vsize,
+		Weight:        zecTx.Weight,
+		Version:       uint32(zecTx.Version),
+		LockTime:      zecTx.LockTime,
+		Vin:           stdVin,
+		Vout:          stdVout,
+		BlockHash:     zecTx.BlockHash,
+		Confirmations: uint64(zecTx.Confirmations),
+		Time:          zecTx.Time,
+		Blocktime:     zecTx.BlockTime,
+	}
+}
 
 ////////////////////////////////////////////////////////////////////////////////////////
 // Address Checks
@@ -440,6 +507,11 @@ func (c *Client) getBlock(height int64) (*btcjson.GetBlockVerboseTxResult, error
 		if err != nil {
 			return &btcjson.GetBlockVerboseTxResult{}, err
 		}
+		// Convert ZEC transactions to standard format
+		stdTxs := make([]btcjson.TxRawResult, len(zecBlock.Tx))
+		for i, zecTx := range zecBlock.Tx {
+			stdTxs[i] = convertZecTxToStandard(zecTx)
+		}
 		// Convert ZEC block to standard format (nonce field will be zero)
 		return &btcjson.GetBlockVerboseTxResult{
 			Hash:          zecBlock.Hash,
@@ -451,7 +523,7 @@ func (c *Client) getBlock(height int64) (*btcjson.GetBlockVerboseTxResult, error
 			Version:       zecBlock.Version,
 			VersionHex:    zecBlock.VersionHex,
 			MerkleRoot:    zecBlock.MerkleRoot,
-			Tx:            zecBlock.Tx,
+			Tx:            stdTxs,
 			Time:          zecBlock.Time,
 			Nonce:         0, // ZEC nonce is string, set to 0 (not used by bifrost)
 			Bits:          zecBlock.Bits,
@@ -683,7 +755,28 @@ func (c *Client) getVinZeroTxs(block *btcjson.GetBlockVerboseTxResult) (map[stri
 	// get the vin zero txs one batch at a time
 	retries := 0
 	for i := 0; i < len(batches); i++ {
-		results, errs, err := c.rpc.BatchGetRawTransactionVerbose(batches[i])
+		// Use ZEC-specific batch method for ZEC chain
+		var stdResults []*btcjson.TxRawResult
+		var errs []error
+		var err error
+
+		if c.cfg.ChainID.Equals(common.ZECChain) {
+			zecResults, zecErrs, zecErr := c.rpc.BatchGetRawTransactionVerboseZEC(batches[i])
+			if zecErr == nil && zecResults != nil {
+				// Convert ZEC transactions to standard format
+				stdResults = make([]*btcjson.TxRawResult, len(zecResults))
+				for j, zecTx := range zecResults {
+					if zecTx != nil {
+						converted := convertZecTxToStandard(*zecTx)
+						stdResults[j] = &converted
+					}
+				}
+			}
+			errs = zecErrs
+			err = zecErr
+		} else {
+			stdResults, errs, err = c.rpc.BatchGetRawTransactionVerbose(batches[i])
+		}
 
 		// if there was no rpc error, check for any tx errors
 		txErrCount := 0
@@ -710,8 +803,10 @@ func (c *Client) getVinZeroTxs(block *btcjson.GetBlockVerboseTxResult) (map[stri
 		}
 
 		// add transactions to block result
-		for _, tx := range results {
-			vinZeroTxs[tx.Txid] = tx
+		for _, tx := range stdResults {
+			if tx != nil {
+				vinZeroTxs[tx.Txid] = tx
+			}
 		}
 	}
 

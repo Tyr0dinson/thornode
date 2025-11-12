@@ -80,26 +80,27 @@ type Utxo struct {
 }
 
 // ZecGetBlockVerboseTxResult is a Zcash-specific version of GetBlockVerboseTxResult.
-// Unlike Bitcoin, Zcash returns 'nonce' as a hex string instead of uint32.
+// Unlike Bitcoin, Zcash returns 'nonce' as a hex string instead of uint32,
+// and transactions include ZEC-specific fields like expiryheight and shielded components.
 type ZecGetBlockVerboseTxResult struct {
-	Hash          string                `json:"hash"`
-	Confirmations int64                 `json:"confirmations"`
-	StrippedSize  int32                 `json:"strippedsize"`
-	Size          int32                 `json:"size"`
-	Weight        int32                 `json:"weight"`
-	Height        int64                 `json:"height"`
-	Version       int32                 `json:"version"`
-	VersionHex    string                `json:"versionhex"`
-	MerkleRoot    string                `json:"merkleroot"`
-	Tx            []btcjson.TxRawResult `json:"tx,omitempty"`
-	Time          int64                 `json:"time"`
-	MedianTime    int64                 `json:"mediantime"`
-	Nonce         string                `json:"nonce"` // ZEC uses string (hex), not uint32
-	Bits          string                `json:"bits"`
-	Difficulty    float64               `json:"difficulty"`
-	ChainWork     string                `json:"chainwork,omitempty"`
-	PreviousHash  string                `json:"previousblockhash"`
-	NextHash      string                `json:"nextblockhash,omitempty"`
+	Hash          string      `json:"hash"`
+	Confirmations int64       `json:"confirmations"`
+	StrippedSize  int32       `json:"strippedsize"`
+	Size          int32       `json:"size"`
+	Weight        int32       `json:"weight"`
+	Height        int64       `json:"height"`
+	Version       int32       `json:"version"`
+	VersionHex    string      `json:"versionhex"`
+	MerkleRoot    string      `json:"merkleroot"`
+	Tx            []TxVerbose `json:"tx,omitempty"` // Use ZEC-specific TxVerbose instead of btcjson.TxRawResult
+	Time          int64       `json:"time"`
+	MedianTime    int64       `json:"mediantime"`
+	Nonce         string      `json:"nonce"` // ZEC uses string (hex), not uint32
+	Bits          string      `json:"bits"`
+	Difficulty    float64     `json:"difficulty"`
+	ChainWork     string      `json:"chainwork,omitempty"`
+	PreviousHash  string      `json:"previousblockhash"`
+	NextHash      string      `json:"nextblockhash,omitempty"`
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -254,6 +255,41 @@ func (c *Client) BatchGetRawTransactionVerbose(txids []string) ([]*btcjson.TxRaw
 	var ok bool
 	for i, b := range batch {
 		results[i], ok = b.Result.(*btcjson.TxRawResult)
+		if !ok {
+			return nil, nil, fmt.Errorf("unexpected type returned from batch call: %T", b.Result)
+		}
+		errs[i] = extractBTCError(b.Error)
+	}
+
+	return results, errs, nil
+}
+
+// BatchGetRawTransactionVerboseZEC returns ZEC transactions for given transaction ids.
+// Uses TxVerbose to handle ZEC-specific fields like expiryheight and shielded components.
+func (c *Client) BatchGetRawTransactionVerboseZEC(txids []string) ([]*TxVerbose, []error, error) {
+	// create batch request
+	batch := make([]rpc.BatchElem, 0, len(txids))
+	for _, txid := range txids {
+		args := []interface{}{txid, true}
+		batch = append(batch, rpc.BatchElem{
+			Method: "getrawtransaction",
+			Args:   args,
+			Result: &TxVerbose{}, // Use ZEC-specific TxVerbose
+		})
+	}
+
+	// call batch request
+	err := c.c.BatchCall(batch)
+	if err != nil {
+		return nil, nil, extractBTCError(err)
+	}
+
+	// collect results
+	errs := make([]error, len(txids))
+	results := make([]*TxVerbose, len(txids))
+	var ok bool
+	for i, b := range batch {
+		results[i], ok = b.Result.(*TxVerbose)
 		if !ok {
 			return nil, nil, fmt.Errorf("unexpected type returned from batch call: %T", b.Result)
 		}

@@ -576,7 +576,26 @@ func (c *Client) FetchMemPool(height int64) (types.TxIn, error) {
 		// fetch the batch of results
 		var results []*btcjson.TxRawResult
 		var errs []error
-		results, errs, err = c.rpc.BatchGetRawTransactionVerbose(batch)
+
+		// Use ZEC-specific batch method for ZEC chain
+		if c.cfg.ChainID.Equals(common.ZECChain) {
+			zecResults, zecErrs, zecErr := c.rpc.BatchGetRawTransactionVerboseZEC(batch)
+			if zecErr == nil && zecResults != nil {
+				// Convert ZEC transactions to standard format
+				results = make([]*btcjson.TxRawResult, len(zecResults))
+				for j, zecTx := range zecResults {
+					if zecTx != nil {
+						converted := convertZecTxToStandard(*zecTx)
+						results[j] = &converted
+					}
+				}
+			}
+			errs = zecErrs
+			err = zecErr
+		} else {
+			results, errs, err = c.rpc.BatchGetRawTransactionVerbose(batch)
+		}
+
 		if err != nil { // clear mempool cache for unprocessed batches and return error
 			clearMemPoolCache(i)
 			returnErr = fmt.Errorf("fail to get raw transactions from mempool: %w", err)
