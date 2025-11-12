@@ -582,7 +582,7 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 						// For mempool swaps that never finalized, revert the swap and donate to pool
 						if voter.FinalisedHeight == 0 && voter.UnfinalizedHeight > 0 {
 							ctx.Logger().Info("reverting mempool swap due to MaxOutboundAttempts", "hash", toi.InHash, "attempts", attempts)
-							if err := revertMempoolSwap(ctx, s.keeper, mgr, voter); err != nil {
+							if err = revertMempoolSwap(ctx, s.keeper, mgr, voter); err != nil {
 								ctx.Logger().Error("failed to revert mempool swap", "error", err, "hash", toi.InHash)
 							} else {
 								txs.TxArray[i].OutHash = common.BlankTxID
