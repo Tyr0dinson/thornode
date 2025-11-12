@@ -1411,13 +1411,12 @@ var (
 	fd_QueryTxOutItem_max_gas                 protoreflect.FieldDescriptor
 	fd_QueryTxOutItem_gas_rate                protoreflect.FieldDescriptor
 	fd_QueryTxOutItem_memo                    protoreflect.FieldDescriptor
-	fd_QueryTxOutItem_original_memo           protoreflect.FieldDescriptor
 	fd_QueryTxOutItem_aggregator              protoreflect.FieldDescriptor
 	fd_QueryTxOutItem_aggregator_target_asset protoreflect.FieldDescriptor
 	fd_QueryTxOutItem_aggregator_target_limit protoreflect.FieldDescriptor
 	fd_QueryTxOutItem_clout_spent             protoreflect.FieldDescriptor
 	fd_QueryTxOutItem_vault_pub_key_eddsa     protoreflect.FieldDescriptor
-	fd_QueryTxOutItem_vault_pub_key_frost     protoreflect.FieldDescriptor
+	fd_QueryTxOutItem_inbound_finalized       protoreflect.FieldDescriptor
 )
 
 func init() {
@@ -1433,13 +1432,12 @@ func init() {
 	fd_QueryTxOutItem_max_gas = md_QueryTxOutItem.Fields().ByName("max_gas")
 	fd_QueryTxOutItem_gas_rate = md_QueryTxOutItem.Fields().ByName("gas_rate")
 	fd_QueryTxOutItem_memo = md_QueryTxOutItem.Fields().ByName("memo")
-	fd_QueryTxOutItem_original_memo = md_QueryTxOutItem.Fields().ByName("original_memo")
 	fd_QueryTxOutItem_aggregator = md_QueryTxOutItem.Fields().ByName("aggregator")
 	fd_QueryTxOutItem_aggregator_target_asset = md_QueryTxOutItem.Fields().ByName("aggregator_target_asset")
 	fd_QueryTxOutItem_aggregator_target_limit = md_QueryTxOutItem.Fields().ByName("aggregator_target_limit")
 	fd_QueryTxOutItem_clout_spent = md_QueryTxOutItem.Fields().ByName("clout_spent")
 	fd_QueryTxOutItem_vault_pub_key_eddsa = md_QueryTxOutItem.Fields().ByName("vault_pub_key_eddsa")
-	fd_QueryTxOutItem_vault_pub_key_frost = md_QueryTxOutItem.Fields().ByName("vault_pub_key_frost")
+	fd_QueryTxOutItem_inbound_finalized = md_QueryTxOutItem.Fields().ByName("inbound_finalized")
 }
 
 var _ protoreflect.Message = (*fastReflection_QueryTxOutItem)(nil)
@@ -1567,12 +1565,6 @@ func (x *fastReflection_QueryTxOutItem) Range(f func(protoreflect.FieldDescripto
 			return
 		}
 	}
-	if x.OriginalMemo != "" {
-		value := protoreflect.ValueOfString(x.OriginalMemo)
-		if !f(fd_QueryTxOutItem_original_memo, value) {
-			return
-		}
-	}
 	if x.Aggregator != "" {
 		value := protoreflect.ValueOfString(x.Aggregator)
 		if !f(fd_QueryTxOutItem_aggregator, value) {
@@ -1603,9 +1595,9 @@ func (x *fastReflection_QueryTxOutItem) Range(f func(protoreflect.FieldDescripto
 			return
 		}
 	}
-	if x.VaultPubKeyFrost != "" {
-		value := protoreflect.ValueOfString(x.VaultPubKeyFrost)
-		if !f(fd_QueryTxOutItem_vault_pub_key_frost, value) {
+	if x.InboundFinalized != false {
+		value := protoreflect.ValueOfBool(x.InboundFinalized)
+		if !f(fd_QueryTxOutItem_inbound_finalized, value) {
 			return
 		}
 	}
@@ -1644,8 +1636,6 @@ func (x *fastReflection_QueryTxOutItem) Has(fd protoreflect.FieldDescriptor) boo
 		return x.GasRate != int64(0)
 	case "types.QueryTxOutItem.memo":
 		return x.Memo != ""
-	case "types.QueryTxOutItem.original_memo":
-		return x.OriginalMemo != ""
 	case "types.QueryTxOutItem.aggregator":
 		return x.Aggregator != ""
 	case "types.QueryTxOutItem.aggregator_target_asset":
@@ -1656,8 +1646,8 @@ func (x *fastReflection_QueryTxOutItem) Has(fd protoreflect.FieldDescriptor) boo
 		return x.CloutSpent != ""
 	case "types.QueryTxOutItem.vault_pub_key_eddsa":
 		return x.VaultPubKeyEddsa != ""
-	case "types.QueryTxOutItem.vault_pub_key_frost":
-		return x.VaultPubKeyFrost != ""
+	case "types.QueryTxOutItem.inbound_finalized":
+		return x.InboundFinalized != false
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryTxOutItem"))
@@ -1694,8 +1684,6 @@ func (x *fastReflection_QueryTxOutItem) Clear(fd protoreflect.FieldDescriptor) {
 		x.GasRate = int64(0)
 	case "types.QueryTxOutItem.memo":
 		x.Memo = ""
-	case "types.QueryTxOutItem.original_memo":
-		x.OriginalMemo = ""
 	case "types.QueryTxOutItem.aggregator":
 		x.Aggregator = ""
 	case "types.QueryTxOutItem.aggregator_target_asset":
@@ -1706,8 +1694,8 @@ func (x *fastReflection_QueryTxOutItem) Clear(fd protoreflect.FieldDescriptor) {
 		x.CloutSpent = ""
 	case "types.QueryTxOutItem.vault_pub_key_eddsa":
 		x.VaultPubKeyEddsa = ""
-	case "types.QueryTxOutItem.vault_pub_key_frost":
-		x.VaultPubKeyFrost = ""
+	case "types.QueryTxOutItem.inbound_finalized":
+		x.InboundFinalized = false
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryTxOutItem"))
@@ -1757,9 +1745,6 @@ func (x *fastReflection_QueryTxOutItem) Get(descriptor protoreflect.FieldDescrip
 	case "types.QueryTxOutItem.memo":
 		value := x.Memo
 		return protoreflect.ValueOfString(value)
-	case "types.QueryTxOutItem.original_memo":
-		value := x.OriginalMemo
-		return protoreflect.ValueOfString(value)
 	case "types.QueryTxOutItem.aggregator":
 		value := x.Aggregator
 		return protoreflect.ValueOfString(value)
@@ -1775,9 +1760,9 @@ func (x *fastReflection_QueryTxOutItem) Get(descriptor protoreflect.FieldDescrip
 	case "types.QueryTxOutItem.vault_pub_key_eddsa":
 		value := x.VaultPubKeyEddsa
 		return protoreflect.ValueOfString(value)
-	case "types.QueryTxOutItem.vault_pub_key_frost":
-		value := x.VaultPubKeyFrost
-		return protoreflect.ValueOfString(value)
+	case "types.QueryTxOutItem.inbound_finalized":
+		value := x.InboundFinalized
+		return protoreflect.ValueOfBool(value)
 	default:
 		if descriptor.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryTxOutItem"))
@@ -1820,8 +1805,6 @@ func (x *fastReflection_QueryTxOutItem) Set(fd protoreflect.FieldDescriptor, val
 		x.GasRate = value.Int()
 	case "types.QueryTxOutItem.memo":
 		x.Memo = value.Interface().(string)
-	case "types.QueryTxOutItem.original_memo":
-		x.OriginalMemo = value.Interface().(string)
 	case "types.QueryTxOutItem.aggregator":
 		x.Aggregator = value.Interface().(string)
 	case "types.QueryTxOutItem.aggregator_target_asset":
@@ -1832,8 +1815,8 @@ func (x *fastReflection_QueryTxOutItem) Set(fd protoreflect.FieldDescriptor, val
 		x.CloutSpent = value.Interface().(string)
 	case "types.QueryTxOutItem.vault_pub_key_eddsa":
 		x.VaultPubKeyEddsa = value.Interface().(string)
-	case "types.QueryTxOutItem.vault_pub_key_frost":
-		x.VaultPubKeyFrost = value.Interface().(string)
+	case "types.QueryTxOutItem.inbound_finalized":
+		x.InboundFinalized = value.Bool()
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryTxOutItem"))
@@ -1881,8 +1864,6 @@ func (x *fastReflection_QueryTxOutItem) Mutable(fd protoreflect.FieldDescriptor)
 		panic(fmt.Errorf("field gas_rate of message types.QueryTxOutItem is not mutable"))
 	case "types.QueryTxOutItem.memo":
 		panic(fmt.Errorf("field memo of message types.QueryTxOutItem is not mutable"))
-	case "types.QueryTxOutItem.original_memo":
-		panic(fmt.Errorf("field original_memo of message types.QueryTxOutItem is not mutable"))
 	case "types.QueryTxOutItem.aggregator":
 		panic(fmt.Errorf("field aggregator of message types.QueryTxOutItem is not mutable"))
 	case "types.QueryTxOutItem.aggregator_target_asset":
@@ -1893,8 +1874,8 @@ func (x *fastReflection_QueryTxOutItem) Mutable(fd protoreflect.FieldDescriptor)
 		panic(fmt.Errorf("field clout_spent of message types.QueryTxOutItem is not mutable"))
 	case "types.QueryTxOutItem.vault_pub_key_eddsa":
 		panic(fmt.Errorf("field vault_pub_key_eddsa of message types.QueryTxOutItem is not mutable"))
-	case "types.QueryTxOutItem.vault_pub_key_frost":
-		panic(fmt.Errorf("field vault_pub_key_frost of message types.QueryTxOutItem is not mutable"))
+	case "types.QueryTxOutItem.inbound_finalized":
+		panic(fmt.Errorf("field inbound_finalized of message types.QueryTxOutItem is not mutable"))
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryTxOutItem"))
@@ -1930,8 +1911,6 @@ func (x *fastReflection_QueryTxOutItem) NewField(fd protoreflect.FieldDescriptor
 		return protoreflect.ValueOfInt64(int64(0))
 	case "types.QueryTxOutItem.memo":
 		return protoreflect.ValueOfString("")
-	case "types.QueryTxOutItem.original_memo":
-		return protoreflect.ValueOfString("")
 	case "types.QueryTxOutItem.aggregator":
 		return protoreflect.ValueOfString("")
 	case "types.QueryTxOutItem.aggregator_target_asset":
@@ -1942,8 +1921,8 @@ func (x *fastReflection_QueryTxOutItem) NewField(fd protoreflect.FieldDescriptor
 		return protoreflect.ValueOfString("")
 	case "types.QueryTxOutItem.vault_pub_key_eddsa":
 		return protoreflect.ValueOfString("")
-	case "types.QueryTxOutItem.vault_pub_key_frost":
-		return protoreflect.ValueOfString("")
+	case "types.QueryTxOutItem.inbound_finalized":
+		return protoreflect.ValueOfBool(false)
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryTxOutItem"))
@@ -2053,10 +2032,6 @@ func (x *fastReflection_QueryTxOutItem) ProtoMethods() *protoiface.Methods {
 		if l > 0 {
 			n += 1 + l + runtime.Sov(uint64(l))
 		}
-		l = len(x.OriginalMemo)
-		if l > 0 {
-			n += 2 + l + runtime.Sov(uint64(l))
-		}
 		l = len(x.Aggregator)
 		if l > 0 {
 			n += 1 + l + runtime.Sov(uint64(l))
@@ -2077,9 +2052,8 @@ func (x *fastReflection_QueryTxOutItem) ProtoMethods() *protoiface.Methods {
 		if l > 0 {
 			n += 1 + l + runtime.Sov(uint64(l))
 		}
-		l = len(x.VaultPubKeyFrost)
-		if l > 0 {
-			n += 2 + l + runtime.Sov(uint64(l))
+		if x.InboundFinalized {
+			n += 3
 		}
 		if x.unknownFields != nil {
 			n += len(x.unknownFields)
@@ -2110,23 +2084,17 @@ func (x *fastReflection_QueryTxOutItem) ProtoMethods() *protoiface.Methods {
 			i -= len(x.unknownFields)
 			copy(dAtA[i:], x.unknownFields)
 		}
-		if len(x.VaultPubKeyFrost) > 0 {
-			i -= len(x.VaultPubKeyFrost)
-			copy(dAtA[i:], x.VaultPubKeyFrost)
-			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.VaultPubKeyFrost)))
+		if x.InboundFinalized {
+			i--
+			if x.InboundFinalized {
+				dAtA[i] = 1
+			} else {
+				dAtA[i] = 0
+			}
 			i--
 			dAtA[i] = 0x1
 			i--
-			dAtA[i] = 0x8a
-		}
-		if len(x.OriginalMemo) > 0 {
-			i -= len(x.OriginalMemo)
-			copy(dAtA[i:], x.OriginalMemo)
-			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.OriginalMemo)))
-			i--
-			dAtA[i] = 0x1
-			i--
-			dAtA[i] = 0x82
+			dAtA[i] = 0x80
 		}
 		if len(x.VaultPubKeyEddsa) > 0 {
 			i -= len(x.VaultPubKeyEddsa)
@@ -2594,38 +2562,6 @@ func (x *fastReflection_QueryTxOutItem) ProtoMethods() *protoiface.Methods {
 				}
 				x.Memo = string(dAtA[iNdEx:postIndex])
 				iNdEx = postIndex
-			case 16:
-				if wireType != 2 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field OriginalMemo", wireType)
-				}
-				var stringLen uint64
-				for shift := uint(0); ; shift += 7 {
-					if shift >= 64 {
-						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
-					}
-					if iNdEx >= l {
-						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
-					}
-					b := dAtA[iNdEx]
-					iNdEx++
-					stringLen |= uint64(b&0x7F) << shift
-					if b < 0x80 {
-						break
-					}
-				}
-				intStringLen := int(stringLen)
-				if intStringLen < 0 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
-				}
-				postIndex := iNdEx + intStringLen
-				if postIndex < 0 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
-				}
-				if postIndex > l {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
-				}
-				x.OriginalMemo = string(dAtA[iNdEx:postIndex])
-				iNdEx = postIndex
 			case 12:
 				if wireType != 2 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Aggregator", wireType)
@@ -2786,11 +2722,11 @@ func (x *fastReflection_QueryTxOutItem) ProtoMethods() *protoiface.Methods {
 				}
 				x.VaultPubKeyEddsa = string(dAtA[iNdEx:postIndex])
 				iNdEx = postIndex
-			case 17:
-				if wireType != 2 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field VaultPubKeyFrost", wireType)
+			case 16:
+				if wireType != 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field InboundFinalized", wireType)
 				}
-				var stringLen uint64
+				var v int
 				for shift := uint(0); ; shift += 7 {
 					if shift >= 64 {
 						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
@@ -2800,24 +2736,12 @@ func (x *fastReflection_QueryTxOutItem) ProtoMethods() *protoiface.Methods {
 					}
 					b := dAtA[iNdEx]
 					iNdEx++
-					stringLen |= uint64(b&0x7F) << shift
+					v |= int(b&0x7F) << shift
 					if b < 0x80 {
 						break
 					}
 				}
-				intStringLen := int(stringLen)
-				if intStringLen < 0 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
-				}
-				postIndex := iNdEx + intStringLen
-				if postIndex < 0 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
-				}
-				if postIndex > l {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
-				}
-				x.VaultPubKeyFrost = string(dAtA[iNdEx:postIndex])
-				iNdEx = postIndex
+				x.InboundFinalized = bool(v != 0)
 			default:
 				iNdEx = preIndex
 				skippy, err := runtime.Skip(dAtA[iNdEx:])
@@ -2988,14 +2912,14 @@ type QueryTxOutItem struct {
 	MaxGas                []*common.Coin `protobuf:"bytes,6,rep,name=max_gas,json=maxGas,proto3" json:"max_gas,omitempty"`
 	GasRate               int64          `protobuf:"varint,7,opt,name=gas_rate,json=gasRate,proto3" json:"gas_rate,omitempty"`
 	Memo                  string         `protobuf:"bytes,5,opt,name=memo,proto3" json:"memo,omitempty"`
-	OriginalMemo          string         `protobuf:"bytes,16,opt,name=original_memo,json=originalMemo,proto3" json:"original_memo,omitempty"`
 	Aggregator            string         `protobuf:"bytes,12,opt,name=aggregator,proto3" json:"aggregator,omitempty"`
 	AggregatorTargetAsset string         `protobuf:"bytes,13,opt,name=aggregator_target_asset,json=aggregatorTargetAsset,proto3" json:"aggregator_target_asset,omitempty"`
 	AggregatorTargetLimit string         `protobuf:"bytes,14,opt,name=aggregator_target_limit,json=aggregatorTargetLimit,proto3" json:"aggregator_target_limit,omitempty"`
 	// clout spent in RUNE for the outbound
 	CloutSpent       string `protobuf:"bytes,11,opt,name=clout_spent,json=cloutSpent,proto3" json:"clout_spent,omitempty"`
 	VaultPubKeyEddsa string `protobuf:"bytes,15,opt,name=vault_pub_key_eddsa,json=vaultPubKeyEddsa,proto3" json:"vault_pub_key_eddsa,omitempty"`
-	VaultPubKeyFrost string `protobuf:"bytes,17,opt,name=vault_pub_key_frost,json=vaultPubKeyFrost,proto3" json:"vault_pub_key_frost,omitempty"`
+	// whether the inbound transaction has been finalized (for mempool swap optimization)
+	InboundFinalized bool `protobuf:"varint,16,opt,name=inbound_finalized,json=inboundFinalized,proto3" json:"inbound_finalized,omitempty"`
 }
 
 func (x *QueryTxOutItem) Reset() {
@@ -3088,13 +3012,6 @@ func (x *QueryTxOutItem) GetMemo() string {
 	return ""
 }
 
-func (x *QueryTxOutItem) GetOriginalMemo() string {
-	if x != nil {
-		return x.OriginalMemo
-	}
-	return ""
-}
-
 func (x *QueryTxOutItem) GetAggregator() string {
 	if x != nil {
 		return x.Aggregator
@@ -3130,11 +3047,11 @@ func (x *QueryTxOutItem) GetVaultPubKeyEddsa() string {
 	return ""
 }
 
-func (x *QueryTxOutItem) GetVaultPubKeyFrost() string {
+func (x *QueryTxOutItem) GetInboundFinalized() bool {
 	if x != nil {
-		return x.VaultPubKeyFrost
+		return x.InboundFinalized
 	}
-	return ""
+	return false
 }
 
 var File_types_query_outbound_proto protoreflect.FileDescriptor
@@ -3157,7 +3074,7 @@ var file_types_query_outbound_proto_rawDesc = []byte{
 	0x74, 0x5f, 0x69, 0x74, 0x65, 0x6d, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x15, 0x2e,
 	0x74, 0x79, 0x70, 0x65, 0x73, 0x2e, 0x51, 0x75, 0x65, 0x72, 0x79, 0x54, 0x78, 0x4f, 0x75, 0x74,
 	0x49, 0x74, 0x65, 0x6d, 0x52, 0x0a, 0x74, 0x78, 0x4f, 0x75, 0x74, 0x49, 0x74, 0x65, 0x6d, 0x73,
-	0x22, 0xc6, 0x05, 0x0a, 0x0e, 0x51, 0x75, 0x65, 0x72, 0x79, 0x54, 0x78, 0x4f, 0x75, 0x74, 0x49,
+	0x22, 0xb6, 0x05, 0x0a, 0x0e, 0x51, 0x75, 0x65, 0x72, 0x79, 0x54, 0x78, 0x4f, 0x75, 0x74, 0x49,
 	0x74, 0x65, 0x6d, 0x12, 0x16, 0x0a, 0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x18, 0x0a, 0x20,
 	0x01, 0x28, 0x03, 0x52, 0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x12, 0x22, 0x0a, 0x0d, 0x76,
 	0x61, 0x75, 0x6c, 0x74, 0x5f, 0x70, 0x75, 0x62, 0x5f, 0x6b, 0x65, 0x79, 0x18, 0x03, 0x20, 0x01,
@@ -3182,26 +3099,25 @@ var file_types_query_outbound_proto_rawDesc = []byte{
 	0x6d, 0x61, 0x78, 0x47, 0x61, 0x73, 0x12, 0x19, 0x0a, 0x08, 0x67, 0x61, 0x73, 0x5f, 0x72, 0x61,
 	0x74, 0x65, 0x18, 0x07, 0x20, 0x01, 0x28, 0x03, 0x52, 0x07, 0x67, 0x61, 0x73, 0x52, 0x61, 0x74,
 	0x65, 0x12, 0x12, 0x0a, 0x04, 0x6d, 0x65, 0x6d, 0x6f, 0x18, 0x05, 0x20, 0x01, 0x28, 0x09, 0x52,
-	0x04, 0x6d, 0x65, 0x6d, 0x6f, 0x12, 0x23, 0x0a, 0x0d, 0x6f, 0x72, 0x69, 0x67, 0x69, 0x6e, 0x61,
-	0x6c, 0x5f, 0x6d, 0x65, 0x6d, 0x6f, 0x18, 0x10, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0c, 0x6f, 0x72,
-	0x69, 0x67, 0x69, 0x6e, 0x61, 0x6c, 0x4d, 0x65, 0x6d, 0x6f, 0x12, 0x1e, 0x0a, 0x0a, 0x61, 0x67,
-	0x67, 0x72, 0x65, 0x67, 0x61, 0x74, 0x6f, 0x72, 0x18, 0x0c, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0a,
-	0x61, 0x67, 0x67, 0x72, 0x65, 0x67, 0x61, 0x74, 0x6f, 0x72, 0x12, 0x36, 0x0a, 0x17, 0x61, 0x67,
-	0x67, 0x72, 0x65, 0x67, 0x61, 0x74, 0x6f, 0x72, 0x5f, 0x74, 0x61, 0x72, 0x67, 0x65, 0x74, 0x5f,
-	0x61, 0x73, 0x73, 0x65, 0x74, 0x18, 0x0d, 0x20, 0x01, 0x28, 0x09, 0x52, 0x15, 0x61, 0x67, 0x67,
-	0x72, 0x65, 0x67, 0x61, 0x74, 0x6f, 0x72, 0x54, 0x61, 0x72, 0x67, 0x65, 0x74, 0x41, 0x73, 0x73,
-	0x65, 0x74, 0x12, 0x36, 0x0a, 0x17, 0x61, 0x67, 0x67, 0x72, 0x65, 0x67, 0x61, 0x74, 0x6f, 0x72,
-	0x5f, 0x74, 0x61, 0x72, 0x67, 0x65, 0x74, 0x5f, 0x6c, 0x69, 0x6d, 0x69, 0x74, 0x18, 0x0e, 0x20,
-	0x01, 0x28, 0x09, 0x52, 0x15, 0x61, 0x67, 0x67, 0x72, 0x65, 0x67, 0x61, 0x74, 0x6f, 0x72, 0x54,
-	0x61, 0x72, 0x67, 0x65, 0x74, 0x4c, 0x69, 0x6d, 0x69, 0x74, 0x12, 0x1f, 0x0a, 0x0b, 0x63, 0x6c,
-	0x6f, 0x75, 0x74, 0x5f, 0x73, 0x70, 0x65, 0x6e, 0x74, 0x18, 0x0b, 0x20, 0x01, 0x28, 0x09, 0x52,
-	0x0a, 0x63, 0x6c, 0x6f, 0x75, 0x74, 0x53, 0x70, 0x65, 0x6e, 0x74, 0x12, 0x2d, 0x0a, 0x13, 0x76,
-	0x61, 0x75, 0x6c, 0x74, 0x5f, 0x70, 0x75, 0x62, 0x5f, 0x6b, 0x65, 0x79, 0x5f, 0x65, 0x64, 0x64,
-	0x73, 0x61, 0x18, 0x0f, 0x20, 0x01, 0x28, 0x09, 0x52, 0x10, 0x76, 0x61, 0x75, 0x6c, 0x74, 0x50,
-	0x75, 0x62, 0x4b, 0x65, 0x79, 0x45, 0x64, 0x64, 0x73, 0x61, 0x12, 0x2d, 0x0a, 0x13, 0x76, 0x61,
-	0x75, 0x6c, 0x74, 0x5f, 0x70, 0x75, 0x62, 0x5f, 0x6b, 0x65, 0x79, 0x5f, 0x66, 0x72, 0x6f, 0x73,
-	0x74, 0x18, 0x11, 0x20, 0x01, 0x28, 0x09, 0x52, 0x10, 0x76, 0x61, 0x75, 0x6c, 0x74, 0x50, 0x75,
-	0x62, 0x4b, 0x65, 0x79, 0x46, 0x72, 0x6f, 0x73, 0x74, 0x42, 0x83, 0x01, 0x0a, 0x09, 0x63, 0x6f,
+	0x04, 0x6d, 0x65, 0x6d, 0x6f, 0x12, 0x1e, 0x0a, 0x0a, 0x61, 0x67, 0x67, 0x72, 0x65, 0x67, 0x61,
+	0x74, 0x6f, 0x72, 0x18, 0x0c, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0a, 0x61, 0x67, 0x67, 0x72, 0x65,
+	0x67, 0x61, 0x74, 0x6f, 0x72, 0x12, 0x36, 0x0a, 0x17, 0x61, 0x67, 0x67, 0x72, 0x65, 0x67, 0x61,
+	0x74, 0x6f, 0x72, 0x5f, 0x74, 0x61, 0x72, 0x67, 0x65, 0x74, 0x5f, 0x61, 0x73, 0x73, 0x65, 0x74,
+	0x18, 0x0d, 0x20, 0x01, 0x28, 0x09, 0x52, 0x15, 0x61, 0x67, 0x67, 0x72, 0x65, 0x67, 0x61, 0x74,
+	0x6f, 0x72, 0x54, 0x61, 0x72, 0x67, 0x65, 0x74, 0x41, 0x73, 0x73, 0x65, 0x74, 0x12, 0x36, 0x0a,
+	0x17, 0x61, 0x67, 0x67, 0x72, 0x65, 0x67, 0x61, 0x74, 0x6f, 0x72, 0x5f, 0x74, 0x61, 0x72, 0x67,
+	0x65, 0x74, 0x5f, 0x6c, 0x69, 0x6d, 0x69, 0x74, 0x18, 0x0e, 0x20, 0x01, 0x28, 0x09, 0x52, 0x15,
+	0x61, 0x67, 0x67, 0x72, 0x65, 0x67, 0x61, 0x74, 0x6f, 0x72, 0x54, 0x61, 0x72, 0x67, 0x65, 0x74,
+	0x4c, 0x69, 0x6d, 0x69, 0x74, 0x12, 0x1f, 0x0a, 0x0b, 0x63, 0x6c, 0x6f, 0x75, 0x74, 0x5f, 0x73,
+	0x70, 0x65, 0x6e, 0x74, 0x18, 0x0b, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0a, 0x63, 0x6c, 0x6f, 0x75,
+	0x74, 0x53, 0x70, 0x65, 0x6e, 0x74, 0x12, 0x2d, 0x0a, 0x13, 0x76, 0x61, 0x75, 0x6c, 0x74, 0x5f,
+	0x70, 0x75, 0x62, 0x5f, 0x6b, 0x65, 0x79, 0x5f, 0x65, 0x64, 0x64, 0x73, 0x61, 0x18, 0x0f, 0x20,
+	0x01, 0x28, 0x09, 0x52, 0x10, 0x76, 0x61, 0x75, 0x6c, 0x74, 0x50, 0x75, 0x62, 0x4b, 0x65, 0x79,
+	0x45, 0x64, 0x64, 0x73, 0x61, 0x12, 0x42, 0x0a, 0x11, 0x69, 0x6e, 0x62, 0x6f, 0x75, 0x6e, 0x64,
+	0x5f, 0x66, 0x69, 0x6e, 0x61, 0x6c, 0x69, 0x7a, 0x65, 0x64, 0x18, 0x10, 0x20, 0x01, 0x28, 0x08,
+	0x42, 0x15, 0xea, 0xde, 0x1f, 0x11, 0x69, 0x6e, 0x62, 0x6f, 0x75, 0x6e, 0x64, 0x5f, 0x66, 0x69,
+	0x6e, 0x61, 0x6c, 0x69, 0x7a, 0x65, 0x64, 0x52, 0x10, 0x69, 0x6e, 0x62, 0x6f, 0x75, 0x6e, 0x64,
+	0x46, 0x69, 0x6e, 0x61, 0x6c, 0x69, 0x7a, 0x65, 0x64, 0x42, 0x83, 0x01, 0x0a, 0x09, 0x63, 0x6f,
 	0x6d, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x42, 0x12, 0x51, 0x75, 0x65, 0x72, 0x79, 0x4f, 0x75,
 	0x74, 0x62, 0x6f, 0x75, 0x6e, 0x64, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x2a, 0x67,
 	0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68,

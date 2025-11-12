@@ -259,6 +259,28 @@ func checkExportInvariants(out io.Writer, genesis map[string]any) error {
 		}
 	}
 
+	// adjust vault depths to account for pending mempool swaps
+	// For mempool swaps, the inbound has been processed and added to the pool,
+	// but the vault update is deferred until finalization. We need to add the pending
+	// inbound amount to vault accounting to match the pool balance.
+	for _, txout := range genesisState.TxOuts {
+		for _, toi := range txout.TxArray {
+			if !toi.InboundFinalized {
+				// Find the corresponding inbound tx in observers
+				for _, voter := range genesisState.ObservedTxInVoters {
+					if voter.TxID.Equals(toi.InHash) {
+						// Add the inbound coins to vault accounting since they're in the pool
+						// but not yet credited to the vault
+						for _, coin := range voter.Tx.Tx.Coins {
+							sumVaultAsset = sumVaultAsset.Add(coin)
+						}
+						break
+					}
+				}
+			}
+		}
+	}
+
 	// print any discrepancies
 	for _, coin := range sumPoolAsset {
 		for _, vaultCoin := range sumVaultAsset {

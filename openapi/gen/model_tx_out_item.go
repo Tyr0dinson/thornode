@@ -37,6 +37,8 @@ type TxOutItem struct {
 	AggregatorTargetLimit *string `json:"aggregator_target_limit,omitempty"`
 	// clout spent in RUNE for the outbound
 	CloutSpent *string `json:"clout_spent,omitempty"`
+	// whether the inbound transaction has been finalized (for mempool swap optimization)
+	InboundFinalized *bool `json:"inbound_finalized,omitempty"`
 }
 
 // NewTxOutItem instantiates a new TxOutItem object
@@ -572,6 +574,38 @@ func (o *TxOutItem) SetCloutSpent(v string) {
 	o.CloutSpent = &v
 }
 
+// GetInboundFinalized returns the InboundFinalized field value if set, zero value otherwise.
+func (o *TxOutItem) GetInboundFinalized() bool {
+	if o == nil || o.InboundFinalized == nil {
+		var ret bool
+		return ret
+	}
+	return *o.InboundFinalized
+}
+
+// GetInboundFinalizedOk returns a tuple with the InboundFinalized field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *TxOutItem) GetInboundFinalizedOk() (*bool, bool) {
+	if o == nil || o.InboundFinalized == nil {
+		return nil, false
+	}
+	return o.InboundFinalized, true
+}
+
+// HasInboundFinalized returns a boolean if a field has been set.
+func (o *TxOutItem) HasInboundFinalized() bool {
+	if o != nil && o.InboundFinalized != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetInboundFinalized gets a reference to the given bool and assigns it to the InboundFinalized field.
+func (o *TxOutItem) SetInboundFinalized(v bool) {
+	o.InboundFinalized = &v
+}
+
 func (o TxOutItem) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if o.Height != nil {
@@ -624,6 +658,9 @@ func (o TxOutItem) MarshalJSON_deprecated() ([]byte, error) {
 	}
 	if o.CloutSpent != nil {
 		toSerialize["clout_spent"] = o.CloutSpent
+	}
+	if o.InboundFinalized != nil {
+		toSerialize["inbound_finalized"] = o.InboundFinalized
 	}
 	return json.Marshal(toSerialize)
 }
