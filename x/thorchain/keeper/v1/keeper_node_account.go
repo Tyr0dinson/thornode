@@ -377,6 +377,11 @@ func (k KVStore) IncNodeAccountSlashPoints(ctx cosmos.Context, addr cosmos.AccAd
 		slashTelemetry(ctx, pts, addr, "IncSlashPoints")
 	}
 
+	ctx.Logger().Warn("incremented slash points",
+		"address", addr.String(),
+		"points", pts,
+	)
+
 	return nil
 }
 
@@ -407,6 +412,11 @@ func (k KVStore) DecNodeAccountSlashPoints(ctx cosmos.Context, addr cosmos.AccAd
 	if config.GetThornode().Telemetry.SlashPoints {
 		slashTelemetry(ctx, -pts, addr, "DecSlashPoints")
 	}
+
+	ctx.Logger().Warn("decremented slash points",
+		"address", addr.String(),
+		"points", pts,
+	)
 
 	return nil
 }
