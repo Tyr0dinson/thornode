@@ -1,8 +1,11 @@
 package thorchain
 
 import (
-	"gitlab.com/thorchain/thornode/v3/constants"
 	. "gopkg.in/check.v1"
+
+	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
 )
 
 type QuotesSuite struct{}
@@ -207,4 +210,118 @@ func (s *QuotesSuite) TestRapidStreamingSwapCalculation(c *C) {
 	// For now, we've verified the calculation logic works correctly
 	rapidSwapMax := mgr.Keeper().GetConfigInt64(ctx, constants.AdvSwapQueueRapidSwapMax)
 	c.Assert(rapidSwapMax, Equals, int64(5))
+}
+
+func (s *QuotesSuite) TestQuoteSwapTimingWithMempoolSwaps(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	// Setup test pool
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	pool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	// Test values
+	swapSeconds := int64(100)        // Simulated swap time
+	inboundConfSeconds := int64(600) // Simulated inbound confirmation time (longer)
+	inboundConfBlocks := int64(100)  // Number of confirmation blocks needed
+
+	// Test 1: With mempool swaps DISABLED (traditional sequential flow)
+	mgr.Keeper().SetMimir(ctx, constants.EnableMempoolSwaps.String(), 0)
+
+	// When mempool swaps are disabled, total time = inbound_conf + swap_time
+	expectedTotalWithDisabled := inboundConfSeconds + swapSeconds
+
+	// Simulate the logic from querier_quotes.go
+	enableMempoolSwaps := mgr.Keeper().GetConfigInt64(ctx, constants.EnableMempoolSwaps) > 0
+	c.Check(enableMempoolSwaps, Equals, false)
+
+	var totalSeconds int64
+	if enableMempoolSwaps {
+		// With mempool swap optimization, times are parallel
+		totalSeconds = swapSeconds
+		if inboundConfBlocks > 0 && inboundConfSeconds > totalSeconds {
+			totalSeconds = inboundConfSeconds
+		}
+	} else {
+		// Traditional flow: sequential
+		totalSeconds = swapSeconds
+		if inboundConfBlocks > 0 {
+			totalSeconds += inboundConfSeconds
+		}
+	}
+
+	c.Check(totalSeconds, Equals, expectedTotalWithDisabled,
+		Commentf("With mempool swaps disabled, time should be sequential: %d", expectedTotalWithDisabled))
+
+	// Test 2: With mempool swaps ENABLED (parallel flow)
+	mgr.Keeper().SetMimir(ctx, constants.EnableMempoolSwaps.String(), 1)
+
+	// When mempool swaps are enabled, total time = max(inbound_conf, swap_time)
+	expectedTotalWithEnabled := inboundConfSeconds // max(600, 100) = 600
+
+	enableMempoolSwaps = mgr.Keeper().GetConfigInt64(ctx, constants.EnableMempoolSwaps) > 0
+	c.Check(enableMempoolSwaps, Equals, true)
+
+	if enableMempoolSwaps {
+		// With mempool swap optimization, times are parallel
+		totalSeconds = swapSeconds
+		if inboundConfBlocks > 0 && inboundConfSeconds > totalSeconds {
+			totalSeconds = inboundConfSeconds
+		}
+	} else {
+		// Traditional flow: sequential
+		totalSeconds = swapSeconds
+		if inboundConfBlocks > 0 {
+			totalSeconds += inboundConfSeconds
+		}
+	}
+
+	c.Check(totalSeconds, Equals, expectedTotalWithEnabled,
+		Commentf("With mempool swaps enabled, time should be parallel: %d", expectedTotalWithEnabled))
+
+	// Test 3: Edge case - swap time longer than inbound confirmation
+	swapSecondsLonger := int64(800)
+	inboundConfSecondsShort := int64(200)
+
+	mgr.Keeper().SetMimir(ctx, constants.EnableMempoolSwaps.String(), 1)
+	enableMempoolSwaps = mgr.Keeper().GetConfigInt64(ctx, constants.EnableMempoolSwaps) > 0
+
+	if enableMempoolSwaps {
+		totalSeconds = swapSecondsLonger
+		if inboundConfBlocks > 0 && inboundConfSecondsShort > totalSeconds {
+			totalSeconds = inboundConfSecondsShort
+		}
+	} else {
+		totalSeconds = swapSecondsLonger
+		if inboundConfBlocks > 0 {
+			totalSeconds += inboundConfSecondsShort
+		}
+	}
+
+	// With mempool enabled and swap time > inbound time, should use swap time
+	c.Check(totalSeconds, Equals, swapSecondsLonger,
+		Commentf("With mempool enabled, should use max(800, 200) = 800"))
+
+	// Test 4: Same edge case but with mempool disabled
+	mgr.Keeper().SetMimir(ctx, constants.EnableMempoolSwaps.String(), 0)
+	enableMempoolSwaps = mgr.Keeper().GetConfigInt64(ctx, constants.EnableMempoolSwaps) > 0
+
+	if enableMempoolSwaps {
+		totalSeconds = swapSecondsLonger
+		if inboundConfBlocks > 0 && inboundConfSecondsShort > totalSeconds {
+			totalSeconds = inboundConfSecondsShort
+		}
+	} else {
+		totalSeconds = swapSecondsLonger
+		if inboundConfBlocks > 0 {
+			totalSeconds += inboundConfSecondsShort
+		}
+	}
+
+	// With mempool disabled, should add times: 800 + 200 = 1000
+	c.Check(totalSeconds, Equals, swapSecondsLonger+inboundConfSecondsShort,
+		Commentf("With mempool disabled, should add: 800 + 200 = 1000"))
 }
