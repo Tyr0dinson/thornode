@@ -1894,3 +1894,99 @@ func (s TxOutStoreSuite) TestDiscoverOutboundsRagnarokSOLLeavesRentReserve(c *C)
 	c.Assert(remaining.IsZero(), Equals, true)
 	c.Assert(eventMgr.securityEvents(), HasLen, 0)
 }
+
+func (s *TxOutStoreVCURSuite) TestTxOutItemInboundFinalizedFlag(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
+	vault := GetRandomVault()
+	vault.Coins = common.Coins{
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(1000*common.One)),
+	}
+	c.Assert(w.keeper.SetVault(w.ctx, vault), IsNil)
+
+	// Setup pool
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	pool.Status = PoolAvailable
+	c.Assert(w.keeper.SetPool(w.ctx, pool), IsNil)
+
+	acc1 := GetRandomValidatorNode(NodeActive)
+	acc2 := GetRandomValidatorNode(NodeActive)
+	acc3 := GetRandomValidatorNode(NodeActive)
+	c.Assert(w.keeper.SetNodeAccount(w.ctx, acc1), IsNil)
+	c.Assert(w.keeper.SetNodeAccount(w.ctx, acc2), IsNil)
+	c.Assert(w.keeper.SetNodeAccount(w.ctx, acc3), IsNil)
+
+	// Test 1: Finalized inbound transaction should have InboundFinalized=true
+	finalizedTxID := GetRandomTxHash()
+	finalizedVoter := NewObservedTxVoter(finalizedTxID, common.ObservedTxs{
+		common.ObservedTx{
+			Tx: common.Tx{
+				ID:    finalizedTxID,
+				Chain: common.BTCChain,
+				Coins: common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One))},
+			},
+			Status:         common.Status_done,
+			BlockHeight:    w.ctx.BlockHeight(),
+			Signers:        []string{w.activeNodeAccount.NodeAddress.String(), acc1.NodeAddress.String(), acc2.NodeAddress.String()},
+			FinaliseHeight: w.ctx.BlockHeight(),
+		},
+	})
+	finalizedVoter.FinalisedHeight = w.ctx.BlockHeight()
+	w.keeper.SetObservedTxInVoter(w.ctx, finalizedVoter)
+
+	finalizedItem := TxOutItem{
+		Chain:     common.BTCChain,
+		ToAddress: GetRandomBTCAddress(),
+		InHash:    finalizedTxID,
+		Coin:      common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One)),
+	}
+
+	txOutStore := newTxOutStorageVCUR(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), w.mgr.GasMgr())
+	ok, err := txOutStore.TryAddTxOutItem(w.ctx, w.mgr, finalizedItem, cosmos.ZeroUint())
+	c.Assert(err, IsNil)
+	c.Assert(ok, Equals, true)
+
+	msgs, err := txOutStore.GetOutboundItems(w.ctx)
+	c.Assert(err, IsNil)
+	c.Assert(msgs, HasLen, 1)
+	c.Check(msgs[0].InboundFinalized, Equals, true, Commentf("Finalized inbound should have InboundFinalized=true"))
+
+	// Test 2: Unfinalized (mempool) inbound transaction should have InboundFinalized=false
+	txOutStore.ClearOutboundItems(w.ctx)
+
+	unfinalizedTxID := GetRandomTxHash()
+	unfinalizedVoter := NewObservedTxVoter(unfinalizedTxID, common.ObservedTxs{
+		common.ObservedTx{
+			Tx: common.Tx{
+				ID:    unfinalizedTxID,
+				Chain: common.BTCChain,
+				Coins: common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One))},
+			},
+			Status:         common.Status_done,
+			BlockHeight:    w.ctx.BlockHeight(),
+			Signers:        []string{w.activeNodeAccount.NodeAddress.String(), acc1.NodeAddress.String(), acc2.NodeAddress.String()},
+			FinaliseHeight: 0, // Not finalized yet
+		},
+	})
+	unfinalizedVoter.UnfinalizedHeight = w.ctx.BlockHeight()
+	unfinalizedVoter.FinalisedHeight = 0
+	w.keeper.SetObservedTxInVoter(w.ctx, unfinalizedVoter)
+
+	unfinalizedItem := TxOutItem{
+		Chain:     common.BTCChain,
+		ToAddress: GetRandomBTCAddress(),
+		InHash:    unfinalizedTxID,
+		Coin:      common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One)),
+	}
+
+	ok, err = txOutStore.TryAddTxOutItem(w.ctx, w.mgr, unfinalizedItem, cosmos.ZeroUint())
+	c.Assert(err, IsNil)
+	c.Assert(ok, Equals, true)
+
+	msgs, err = txOutStore.GetOutboundItems(w.ctx)
+	c.Assert(err, IsNil)
+	c.Assert(msgs, HasLen, 1)
+	c.Check(msgs[0].InboundFinalized, Equals, false, Commentf("Unfinalized inbound should have InboundFinalized=false"))
+}

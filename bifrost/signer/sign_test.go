@@ -1680,3 +1680,56 @@ func (s *SignSuite) TestXMRMonovaultKeygenEnableHaltAndFailures(c *C) {
 		c.Check(bridge.mimirCalls[constants.MimirKeyHaltMonovaultKeygen], Equals, test.haltCalls, Commentf("case %q", test.name))
 	}
 }
+
+func (s *SignSuite) TestShouldSignWithInboundFinalized(c *C) {
+	vaultPubKey, err := common.NewPubKey(pubkeymanager.MockPubkey)
+	c.Assert(err, IsNil)
+
+	// Create a Signer with mock pubkey manager
+	mockPubkeyMgr := pubkeymanager.NewMockPoolAddressValidator()
+	mockPubkeyMgr.SetNodePubKey(vaultPubKey)
+
+	sign := &Signer{
+		logger:    log.With().Str("module", "signer").Logger(),
+		pubkeyMgr: mockPubkeyMgr,
+	}
+
+	// Test 1: TxOutItem with InboundFinalized=false should NOT be signed
+	unfinalizedItem := types.TxOutItem{
+		Chain:            common.BTCChain,
+		ToAddress:        common.Address("bc1qwqdg6squsna38e46795at95yu9atm8azzmyvckulcc7kytlcckxswvvzej"),
+		VaultPubKey:      vaultPubKey,
+		Coin:             common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One)),
+		InboundFinalized: false,
+	}
+
+	shouldSign := sign.shouldSign(unfinalizedItem)
+	c.Check(shouldSign, Equals, false, Commentf("Should NOT sign unfinalized inbound"))
+
+	// Test 2: TxOutItem with InboundFinalized=true should be signed (if vault matches)
+	finalizedItem := types.TxOutItem{
+		Chain:            common.BTCChain,
+		ToAddress:        common.Address("bc1qwqdg6squsna38e46795at95yu9atm8azzmyvckulcc7kytlcckxswvvzej"),
+		VaultPubKey:      vaultPubKey,
+		Coin:             common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One)),
+		InboundFinalized: true,
+	}
+
+	shouldSign = sign.shouldSign(finalizedItem)
+	c.Check(shouldSign, Equals, true, Commentf("Should sign finalized inbound with matching vault"))
+
+	// Test 3: TxOutItem with InboundFinalized=true but wrong vault should NOT be signed
+	wrongVaultPubKey, err := common.NewPubKey("thorpub1addwnpepq2dct2lx9knv3zz4et60gpr0l4jcre93wvz2wrhw4tg0f5x3dyjz4hkckxj")
+	c.Assert(err, IsNil)
+
+	wrongVaultItem := types.TxOutItem{
+		Chain:            common.BTCChain,
+		ToAddress:        common.Address("bc1qwqdg6squsna38e46795at95yu9atm8azzmyvckulcc7kytlcckxswvvzej"),
+		VaultPubKey:      wrongVaultPubKey,
+		Coin:             common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One)),
+		InboundFinalized: true,
+	}
+
+	shouldSign = sign.shouldSign(wrongVaultItem)
+	c.Check(shouldSign, Equals, false, Commentf("Should NOT sign with wrong vault even if finalized"))
+}
