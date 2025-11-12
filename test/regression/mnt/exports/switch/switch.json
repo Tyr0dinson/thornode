@@ -123,6 +123,9 @@
         "tx_size_cost_per_byte": "10"
       }
     },
+    "authz": {
+      "authorization": []
+    },
     "bank": {
       "balances": [
         {
@@ -298,6 +301,7 @@
               },
               "gas_rate": "15",
               "in_hash": "0000000000000000000000000000000000000000000000000000000000000002",
+              "inbound_finalized": true,
               "max_gas": [
                 {
                   "amount": "1500000",
@@ -431,6 +435,7 @@
               },
               "gas_rate": "15",
               "in_hash": "0000000000000000000000000000000000000000000000000000000000000002",
+              "inbound_finalized": true,
               "max_gas": [
                 {
                   "amount": "1500000",
