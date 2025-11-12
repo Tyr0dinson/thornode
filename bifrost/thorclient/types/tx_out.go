@@ -126,6 +126,7 @@ type TxArrayItem struct {
 	AggregatorTargetLimit *cosmos.Uint   `json:"aggregator_target_limit,omitempty"`
 	CloutSpent            string         `json:"clout_spent,omitempty"`
 	VaultPubKeyEddsa      common.PubKey  `json:"vault_pub_key_eddsa,omitempty"`
+	InboundFinalized      bool           `json:"inbound_finalized,omitempty"`
 }
 
 // TxOutItem convert the information to TxOutItem
@@ -146,6 +147,7 @@ func (tx TxArrayItem) TxOutItem(height int64) TxOutItem {
 		AggregatorTargetLimit: tx.AggregatorTargetLimit,
 		Height:                height,
 		VaultPubKeyEddsa:      tx.VaultPubKeyEddsa,
+		InboundFinalized:      tx.InboundFinalized,
 	}
 }
 
