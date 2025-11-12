@@ -266,7 +266,7 @@ func handleObservedTxInQuorum(
 
 	// When a mempool swap finalizes, update all associated outbound TxOutItems to Finalized=true
 	if hasFinalised && canProcessMempoolSwap && len(voter.Actions) > 0 {
-		if err := finalizeOutbounds(ctx, k, voter); err != nil {
+		if err = finalizeOutbounds(ctx, k, voter); err != nil {
 			ctx.Logger().Error("fail to finalize outbounds", "error", err, "hash", voter.TxID)
 		}
 	}
