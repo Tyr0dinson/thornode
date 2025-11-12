@@ -132,7 +132,7 @@ func (s *PipelineSuite) TestPipelineSequential(c *C) {
 	c.Assert(err, IsNil)
 
 	// mocks
-	bridge := fakeBridge{nil}
+	bridge := &fakeBridge{}
 	mockSigner := &mockPipelineSigner{
 		storageListItems: append([]TxOutStoreItem{}, tosis...),
 	}
@@ -181,7 +181,7 @@ func (s *PipelineSuite) TestPipelineSequentialStop(c *C) {
 	c.Assert(err, IsNil)
 
 	// mocks
-	bridge := fakeBridge{nil}
+	bridge := &fakeBridge{}
 	mockSigner := &mockPipelineSigner{
 		storageListItems: append([]TxOutStoreItem{}, tosis...),
 	}
@@ -214,7 +214,7 @@ func (s *PipelineSuite) TestPipelineConcurrent(c *C) {
 	c.Assert(err, IsNil)
 
 	// mocks
-	bridge := fakeBridge{nil}
+	bridge := &fakeBridge{}
 	mockSigner := &mockPipelineSigner{
 		storageListItems: append([]TxOutStoreItem{}, tosis...),
 	}
@@ -250,7 +250,7 @@ func (s *PipelineSuite) TestPipelineConcurrentStop(c *C) {
 	c.Assert(err, IsNil)
 
 	// mocks
-	bridge := fakeBridge{nil}
+	bridge := &fakeBridge{}
 	mockSigner := &mockPipelineSigner{
 		storageListItems: append([]TxOutStoreItem{}, tosis...),
 	}
@@ -289,7 +289,7 @@ func (s *PipelineSuite) TestPipelineConcurrentLimited(c *C) {
 	c.Assert(err, IsNil)
 
 	// mocks
-	bridge := fakeBridge{nil}
+	bridge := &fakeBridge{}
 	mockSigner := &mockPipelineSigner{
 		storageListItems: append([]TxOutStoreItem{}, tosis...),
 	}
@@ -337,7 +337,7 @@ func (s *PipelineSuite) TestPipelineConcurrentLimitedStop(c *C) {
 	c.Assert(err, IsNil)
 
 	// mocks
-	bridge := fakeBridge{nil}
+	bridge := &fakeBridge{}
 	mockSigner := &mockPipelineSigner{
 		storageListItems: append([]TxOutStoreItem{}, tosis...),
 	}
@@ -399,7 +399,7 @@ func (s *PipelineSuite) testPipelineRetry(c *C, round7, broadcast bool) {
 	}
 
 	// mocks
-	bridge := fakeBridge{nil}
+	bridge := &fakeBridge{}
 	mockSigner := &mockPipelineSigner{
 		storageListItems: append([]TxOutStoreItem{}, retryTosis...),
 	}

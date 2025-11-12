@@ -33,6 +33,7 @@ const (
 	prefixPool                    types.DbPrefix = "pool/"
 	prefixPoolLUVI                types.DbPrefix = "luvi/"
 	prefixTxOut                   types.DbPrefix = "txout/"
+	prefixTxOutFail               types.DbPrefix = "txout_fail/"
 	prefixTotalLiquidityFee       types.DbPrefix = "total_liquidity_fee/"
 	prefixPoolLiquidityFee        types.DbPrefix = "pool_liquidity_fee/"
 	prefixPoolSwapSlip            types.DbPrefix = "pool_swap_slip/"

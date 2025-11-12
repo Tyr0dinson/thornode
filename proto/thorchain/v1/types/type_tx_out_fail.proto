@@ -1,0 +1,24 @@
+syntax = "proto3";
+package types;
+
+option go_package = "gitlab.com/thorchain/thornode/v3/x/thorchain/types";
+option (gogoproto.goproto_stringer_all) = false;
+option (gogoproto.stringer_all) = false;
+option (gogoproto.goproto_getters_all) = false;
+
+import "common/common.proto";
+import "gogoproto/gogo.proto";
+
+message TxOutFailVoter {
+  string id = 1 [ (gogoproto.customname) = "ID" ];
+  int64 height = 2;
+  uint64 index = 3;
+  string in_hash = 4 [
+    (gogoproto.casttype) = "gitlab.com/thorchain/thornode/v3/common.TxID",
+    (gogoproto.customname) = "InHash"
+  ];
+  repeated string signers = 5;
+  bool fatal = 6;
+  string fail_reason = 7;
+}
+

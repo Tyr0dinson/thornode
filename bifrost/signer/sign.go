@@ -25,6 +25,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/observer"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients"
+	chainclientscommon "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/common"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
@@ -691,11 +692,42 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 	if err != nil {
 		s.logger.Error().Err(err).Str("memo", tx.Memo).Msg("fail to broadcast tx to chain")
 
-		// store the signed tx for the next retry
-		item.SignedTx = signedTx
-		item.Observation = observation
-		if storeErr := s.storage.Set(item); storeErr != nil {
-			s.logger.Error().Err(storeErr).Msg("fail to update tx out store item with signed tx")
+		if chainclientscommon.IsFatal(err) {
+			if reason := chainclientscommon.FatalReason(err); reason != "" {
+				// Only mark as fatal if we have a known, specific reason
+				item.TxOutItem.FailReason = reason
+				item.TxOutItem.FatalFailure = true
+				item.SignedTx = nil
+				item.Observation = observation
+				if storeErr := s.storage.Set(item); storeErr != nil {
+					s.logger.Error().Err(storeErr).Msg("fail to persist fatal outbound failure")
+				} else {
+					if txID, postErr := s.thorchainBridge.PostTxOutFailure(item.Height, item.Index, item.TxOutItem.InHash, reason); postErr != nil {
+						s.logger.Error().Err(postErr).Msg("fail to post tx out failure to THORChain")
+					} else {
+						s.logger.Info().
+							Str("tx_id", txID.String()).
+							Int64("height", item.Height).
+							Int64("index", item.Index).
+							Str("reason", reason).
+							Msg("posted tx out failure to THORChain")
+					}
+				}
+			} else {
+				// Fatal error but no known reason - treat as non-fatal retry
+				item.SignedTx = signedTx
+				item.Observation = observation
+				if storeErr := s.storage.Set(item); storeErr != nil {
+					s.logger.Error().Err(storeErr).Msg("fail to update tx out store item with signed tx")
+				}
+			}
+		} else {
+			// store the signed tx for the next retry
+			item.SignedTx = signedTx
+			item.Observation = observation
+			if storeErr := s.storage.Set(item); storeErr != nil {
+				s.logger.Error().Err(storeErr).Msg("fail to update tx out store item with signed tx")
+			}
 		}
 
 		return nil, observation, err
@@ -754,6 +786,17 @@ func (s *Signer) processTransaction(item TxOutStoreItem) {
 		Int("status", int(item.Status)).
 		Interface("tx", item.TxOutItem).
 		Msg("Signing transaction")
+
+	if item.TxOutItem.FatalFailure {
+		s.logger.Warn().
+			Str("chain", item.TxOutItem.Chain.String()).
+			Str("fail_reason", item.TxOutItem.FailReason).
+			Msg("tx marked as fatal failure, skipping broadcast and removing from store")
+		if err := s.storage.Remove(item); err != nil {
+			s.logger.Error().Err(err).Msg("fail to remove fatal tx out store item")
+		}
+		return
+	}
 
 	// a single keysign should not take longer than 5 minutes , regardless TSS or local
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)

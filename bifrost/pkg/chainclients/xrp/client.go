@@ -20,6 +20,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
+	chainclientscommon "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/common"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/runners"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/xrp/keymanager"
@@ -575,7 +576,11 @@ func (c *Client) broadcastTx(txBlob string) error {
 	// If we get tefPAST_SEQ, tx is already in current ledger, most likely by another validator.
 	if response.EngineResult != "tesSUCCESS" && response.EngineResult != "tefPAST_SEQ" {
 		c.logger.Info().Interface("broadcastRes", response).Msg("XRP BroadcastTx failed")
-		return fmt.Errorf("transaction failed to submit with engine result: %s", response.EngineResult)
+		err = fmt.Errorf("transaction failed to submit with engine result: %s", response.EngineResult)
+		if response.EngineResult == "tecDST_TAG_NEEDED" {
+			return chainclientscommon.NewFatalError(chainclientscommon.FailReasonXRPDestinationTagNeeded, err)
+		}
+		return err
 	}
 	c.logger.Info().Interface("broadcastRes", response).Msg("XRP BroadcastTx success")
 	return nil

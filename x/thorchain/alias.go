@@ -129,6 +129,7 @@ var (
 	NewMsgTssKeysignFail           = types.NewMsgTssKeysignFail
 	NewMsgObservedTxIn             = types.NewMsgObservedTxIn
 	NewMsgObservedTxOut            = types.NewMsgObservedTxOut
+	NewMsgTxOutFail                = types.NewMsgTxOutFail
 	NewMsgNoOp                     = types.NewMsgNoOp
 	NewMsgConsolidate              = types.NewMsgConsolidate
 	NewMsgDonate                   = types.NewMsgDonate
@@ -191,6 +192,7 @@ var (
 	NewEventOperatorRotate         = types.NewEventOperatorRotate
 	NewEventOraclePrice            = types.NewEventOraclePrice
 	NewEventFailedOutboundRecovery = types.NewEventFailedOutboundRecovery
+	NewTxOutFailVoter              = types.NewTxOutFailVoter
 	NewPoolMod                     = types.NewPoolMod
 	NewMsgRefundTx                 = types.NewMsgRefundTx
 	NewMsgOutboundTx               = types.NewMsgOutboundTx
@@ -230,6 +232,7 @@ var (
 	GetRandomObservedTx            = types.GetRandomObservedTx
 	GetRandomTxOutItem             = types.GetRandomTxOutItem
 	GetRandomObservedTxVoter       = types.GetRandomObservedTxVoter
+	TxOutFailVoterID               = types.TxOutFailVoterID
 	GetRandomValidatorNode         = types.GetRandomValidatorNode
 	GetRandomVaultNode             = types.GetRandomVaultNode
 	GetRandomTHORAddress           = types.GetRandomTHORAddress
@@ -309,6 +312,7 @@ type (
 	MsgReserveContributor     = types.MsgReserveContributor
 	MsgObservedTxIn           = types.MsgObservedTxIn
 	MsgObservedTxOut          = types.MsgObservedTxOut
+	MsgTxOutFail              = types.MsgTxOutFail
 	MsgTssPool                = types.MsgTssPool
 	MsgTssKeysignFail         = types.MsgTssKeysignFail
 	MsgNetworkFee             = types.MsgNetworkFee
@@ -346,6 +350,7 @@ type (
 	TssKeysignFailVoter      = types.TssKeysignFailVoter
 	TxOutItem                = types.TxOutItem
 	TxOut                    = types.TxOut
+	TxOutFailVoter           = types.TxOutFailVoter
 	Keygen                   = types.Keygen
 	KeygenBlock              = types.KeygenBlock
 	EventSwap                = types.EventSwap

@@ -280,6 +280,13 @@ func (s *ThorchainSuite) TestPostNetworkFee(c *C) {
 	c.Assert(txid.IsEmpty(), Equals, false)
 }
 
+func (s *ThorchainSuite) TestPostTxOutFailure(c *C) {
+	s.authAccountFixture = "../../test/fixtures/endpoints/auth/accounts/template.json"
+	txid, err := s.bridge.PostTxOutFailure(1024, 0, common.TxID("A1A2A3"), "xrp_destination_tag_required")
+	c.Assert(err, IsNil)
+	c.Assert(txid.IsEmpty(), Equals, false)
+}
+
 func (s *ThorchainSuite) TestGetConstants(c *C) {
 	result, err := s.bridge.GetConstants()
 	c.Assert(err, IsNil)

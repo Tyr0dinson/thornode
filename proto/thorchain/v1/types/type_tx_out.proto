@@ -49,6 +49,8 @@ message TxOutItem {
     (gogoproto.casttype) = "gitlab.com/thorchain/thornode/v3/common.PubKey",
     (gogoproto.nullable) = true
   ];
+  string fail_reason = 16;
+  bool fatal_failure = 17;
 }
 
 message TxOut {

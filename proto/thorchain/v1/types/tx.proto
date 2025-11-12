@@ -17,6 +17,7 @@ import "types/msg_set_ip_address.proto";
 import "types/msg_set_node_keys.proto";
 import "types/msg_solvency.proto";
 import "types/msg_tss_keysign_fail.proto";
+import "types/msg_tx_out_fail.proto";
 import "types/msg_tss_pool.proto";
 import "types/msg_version.proto";
 import "types/msg_upgrade.proto";
@@ -42,6 +43,7 @@ service Msg {
   rpc ObservedTxIn(MsgObservedTxIn) returns (MsgEmpty);
   rpc ObservedTxOut(MsgObservedTxOut) returns (MsgEmpty);
   rpc ObservedTxQuorum(MsgObservedTxQuorum) returns (MsgEmpty);
+  rpc TxOutFail(MsgTxOutFail) returns (MsgEmpty);
   rpc ThorSend(MsgSend) returns (MsgEmpty);
   rpc SetIPAddress(MsgSetIPAddress) returns (MsgEmpty);
   rpc SetNodeKeys(MsgSetNodeKeys) returns (MsgEmpty);

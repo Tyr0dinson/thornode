@@ -102,6 +102,7 @@ type ThorchainBridge interface {
 	HasNetworkFee(chain common.Chain) (bool, error)
 	GetNetworkFee(chain common.Chain) (transactionSize, transactionFeeRate uint64, err error)
 	PostKeysignFailure(blame stypes.Blame, height int64, memo string, coins common.Coins, pubkey common.PubKey) (common.TxID, error)
+	PostTxOutFailure(height int64, index int64, inHash common.TxID, reason string) (common.TxID, error)
 	PostNetworkFee(height int64, chain common.Chain, transactionSize, transactionRate uint64) (common.TxID, error)
 	RagnarokInProgress() (bool, error)
 	WaitToCatchUp() error
@@ -311,6 +312,28 @@ func (b *thorchainBridge) PostKeysignFailure(blame stypes.Blame, height int64, m
 	if err != nil {
 		return common.BlankTxID, fmt.Errorf("fail to create keysign fail message: %w", err)
 	}
+	return b.Broadcast(msg)
+}
+
+// PostTxOutFailure notifies THORChain that a TxOut item failed fatally and should
+// be marked without further retries.
+func (b *thorchainBridge) PostTxOutFailure(height int64, index int64, inHash common.TxID, reason string) (common.TxID, error) {
+	if index < 0 {
+		return common.BlankTxID, fmt.Errorf("invalid tx out index: %d", index)
+	}
+	if inHash.IsEmpty() {
+		return common.BlankTxID, fmt.Errorf("in hash cannot be empty")
+	}
+	start := time.Now()
+	defer func() {
+		b.m.GetHistograms(metrics.SignToThorchainDuration).Observe(time.Since(start).Seconds())
+	}()
+
+	signerAddr, err := b.keys.GetSignerInfo().GetAddress()
+	if err != nil {
+		return common.BlankTxID, fmt.Errorf("failed to get signer address: %w", err)
+	}
+	msg := stypes.NewMsgTxOutFail(height, uint64(index), inHash, true, reason, signerAddr)
 	return b.Broadcast(msg)
 }
 

@@ -227,6 +227,9 @@ type KeeperTxOut interface {
 	GetTxOut(ctx cosmos.Context, height int64) (*TxOut, error)
 	GetTxOutValue(ctx cosmos.Context, height int64) (cosmos.Uint, cosmos.Uint, error)
 	GetTOIsValue(ctx cosmos.Context, tois ...TxOutItem) (cosmos.Uint, cosmos.Uint)
+	SetTxOutFailVoter(ctx cosmos.Context, voter types.TxOutFailVoter)
+	GetTxOutFailVoterIterator(ctx cosmos.Context) cosmos.Iterator
+	GetTxOutFailVoter(ctx cosmos.Context, id string) (types.TxOutFailVoter, error)
 }
 
 type KeeperLiquidityFees interface {

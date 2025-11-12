@@ -31,6 +31,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients"
+	chainclientscommon "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/common"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
@@ -52,25 +53,33 @@ func TestPackage(t *testing.T) { TestingT(t) }
 
 // -------------------------------- bridge ---------------------------------
 
-type fakeBridge struct {
-	thorclient.ThorchainBridge
+type txOutFailCall struct {
+	height int64
+	index  int64
+	inHash common.TxID
+	reason string
 }
 
-func (b fakeBridge) GetBlockHeight() (int64, error) {
+type fakeBridge struct {
+	thorclient.ThorchainBridge
+	txOutFailures []txOutFailCall
+}
+
+func (b *fakeBridge) GetBlockHeight() (int64, error) {
 	return 100, nil
 }
 
-func (b fakeBridge) GetThorchainVersion() (semver.Version, error) {
+func (b *fakeBridge) GetThorchainVersion() (semver.Version, error) {
 	return semver.MustParse("1.0.0"), nil
 }
 
-func (b fakeBridge) GetConstants() (map[string]int64, error) {
+func (b *fakeBridge) GetConstants() (map[string]int64, error) {
 	return map[string]int64{
 		constants.SigningTransactionPeriod.String(): 300,
 	}, nil
 }
 
-func (b fakeBridge) GetMimir(key string) (int64, error) {
+func (b *fakeBridge) GetMimir(key string) (int64, error) {
 	upperKey := strings.ToUpper(key) // Case-insensitive for halt prefix
 	if strings.HasPrefix(upperKey, "HALT") {
 		return 0, nil
@@ -84,12 +93,12 @@ func (b fakeBridge) GetMimir(key string) (int64, error) {
 	panic("not implemented")
 }
 
-func (b fakeBridge) GetMimirWithRef(template, ref string) (int64, error) {
+func (b *fakeBridge) GetMimirWithRef(template, ref string) (int64, error) {
 	key := fmt.Sprintf(template, ref)
 	return b.GetMimir(key)
 }
 
-func (b fakeBridge) GetVault(pubkey string) (types2.Vault, error) {
+func (b *fakeBridge) GetVault(pubkey string) (types2.Vault, error) {
 	pk, err := common.NewPubKey(pubkey)
 	if err != nil {
 		return types2.Vault{}, err
@@ -98,6 +107,16 @@ func (b fakeBridge) GetVault(pubkey string) (types2.Vault, error) {
 		PubKey: pk,
 		Status: types2.VaultStatus_ActiveVault,
 	}, nil
+}
+
+func (b *fakeBridge) PostTxOutFailure(height int64, index int64, inHash common.TxID, reason string) (common.TxID, error) {
+	b.txOutFailures = append(b.txOutFailures, txOutFailCall{
+		height: height,
+		index:  index,
+		inHash: inHash,
+		reason: reason,
+	})
+	return common.TxID("FAKE-TXOUT-FAILURE"), nil
 }
 
 // -------------------------------- tss ---------------------------------
@@ -197,6 +216,8 @@ type MockChainClient struct {
 	ks                 *tss.KeySign
 	assertCheckpoint   bool
 	broadcastFailCount int
+	fatalReason        string
+	fatalTriggered     bool
 }
 
 func (b *MockChainClient) IsBlockScannerHealthy() bool {
@@ -266,6 +287,10 @@ func (b *MockChainClient) Churn(pubKey common.PubKey, height int64) error {
 
 func (b *MockChainClient) BroadcastTx(_ types.TxOutItem, tx []byte) (string, error) {
 	b.broadcastCount += 1
+	if b.fatalReason != "" && !b.fatalTriggered {
+		b.fatalTriggered = true
+		return "", chainclientscommon.NewFatalError(b.fatalReason, fmt.Errorf("fatal broadcast failure"))
+	}
 	if b.broadcastCount > b.broadcastFailCount {
 		return "", nil
 	}
@@ -449,7 +474,7 @@ func (s *SignSuite) TestBroadcastRetry(c *C) {
 	// start a mock keysign
 	msg := "foobar"
 	tssServer := newFakeTss(msg, true)
-	bridge := fakeBridge{s.bridge}
+	bridge := &fakeBridge{ThorchainBridge: s.bridge}
 	ks, err := tss.NewKeySign(tssServer, bridge)
 	c.Assert(err, IsNil)
 	ks.Start()
@@ -525,6 +550,78 @@ func (s *SignSuite) TestBroadcastRetry(c *C) {
 	ks.Stop()
 }
 
+func (s *SignSuite) TestBroadcastFatalMarksTxOut(c *C) {
+	vaultPubKey, err := common.NewPubKey(pubkeymanager.MockPubkey)
+	c.Assert(err, IsNil)
+
+	msg := "fatal"
+	tssServer := newFakeTss(msg, true)
+	bridge := &fakeBridge{ThorchainBridge: s.bridge}
+	ks, err := tss.NewKeySign(tssServer, bridge)
+	c.Assert(err, IsNil)
+	ks.Start()
+
+	cc := &MockChainClient{
+		ks:          ks,
+		fatalReason: chainclientscommon.FailReasonXRPDestinationTagNeeded,
+	}
+	sign := &Signer{
+		chains: map[common.Chain]chainclients.ChainClient{
+			common.ETHChain: cc,
+		},
+		pubkeyMgr:           pubkeymanager.NewMockPoolAddressValidator(),
+		stopChan:            make(chan struct{}),
+		wg:                  &sync.WaitGroup{},
+		thorchainBridge:     bridge,
+		constantsProvider:   NewConstantsProvider(bridge),
+		tssKeysignMetricMgr: metrics.NewTssKeysignMetricMgr(),
+		logger:              log.With().Str("module", "signer").Logger(),
+	}
+
+	sign.storage, err = NewSignerStore("", config.LevelDBOptions{}, "")
+	c.Assert(err, IsNil)
+	err = sign.storage.Set(TxOutStoreItem{
+		Height: 555,
+		Index:  3,
+		TxOutItem: types.TxOutItem{
+			Chain:       common.ETHChain,
+			ToAddress:   "0x90f2b1ae50e6018230e90a33f98c7844a0ab635a",
+			Memo:        msg,
+			VaultPubKey: vaultPubKey,
+			InHash:      common.TxID("INHASH"),
+			Coins: common.Coins{
+				common.NewCoin(common.ETHAsset, cosmos.NewUint(1000000)),
+			},
+		},
+	})
+	c.Assert(err, IsNil)
+
+	sign.processTransactions()
+	sign.pipeline.Wait()
+
+	items := sign.storage.List()
+	c.Assert(items, HasLen, 1)
+	c.Assert(items[0].TxOutItem.FatalFailure, Equals, true)
+	c.Assert(items[0].TxOutItem.FailReason, Equals, chainclientscommon.FailReasonXRPDestinationTagNeeded)
+	c.Assert(len(bridge.txOutFailures), Equals, 1)
+	c.Assert(bridge.txOutFailures[0].height, Equals, int64(555))
+	c.Assert(bridge.txOutFailures[0].index, Equals, int64(3))
+	c.Assert(bridge.txOutFailures[0].inHash, Equals, common.TxID("INHASH"))
+	c.Assert(bridge.txOutFailures[0].reason, Equals, chainclientscommon.FailReasonXRPDestinationTagNeeded)
+
+	sign.processTransactions()
+	sign.pipeline.Wait()
+
+	items = sign.storage.List()
+	c.Assert(items, HasLen, 0)
+	c.Assert(len(bridge.txOutFailures), Equals, 1)
+	c.Assert(cc.broadcastCount, Equals, 1)
+
+	close(sign.stopChan)
+	sign.wg.Wait()
+	ks.Stop()
+}
+
 func (s *SignSuite) TestRound7Retry(c *C) {
 	vaultPubKey, err := common.NewPubKey(pubkeymanager.MockPubkey)
 	c.Assert(err, IsNil)
@@ -532,7 +629,7 @@ func (s *SignSuite) TestRound7Retry(c *C) {
 	// start a mock keysign, succeeds on 5th try
 	msg := "foobar"
 	tssServer := newFakeTss(msg, false)
-	bridge := fakeBridge{s.bridge}
+	bridge := &fakeBridge{ThorchainBridge: s.bridge}
 	ks, err := tss.NewKeySign(tssServer, bridge)
 	c.Assert(err, IsNil)
 	ks.Start()
@@ -609,7 +706,7 @@ func (s *SignSuite) TestRound7Retry(c *C) {
 	// create the same on different chain, should move independently
 	msg2 := "foobar2"
 	tssServer2 := newFakeTss(msg2, true) // this one succeeds on first try
-	bridge2 := fakeBridge{s.bridge}
+	bridge2 := &fakeBridge{ThorchainBridge: s.bridge}
 	ks2, err := tss.NewKeySign(tssServer2, bridge2)
 	c.Assert(err, IsNil)
 	ks2.Start()

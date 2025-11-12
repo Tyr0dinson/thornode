@@ -132,6 +132,8 @@ func (ad AnteDecorator) anteHandleMessage(ctx sdk.Context, version semver.Versio
 		return ObservedTxInAnteHandler(ctx, version, ad.keeper, *m)
 	case *types.MsgObservedTxOut:
 		return ObservedTxOutAnteHandler(ctx, version, ad.keeper, *m)
+	case *types.MsgTxOutFail:
+		return TxOutFailAnteHandler(ctx, version, ad.keeper, *m)
 	case *types.MsgSolvency:
 		return SolvencyAnteHandler(ctx, version, ad.keeper, *m)
 	case *types.MsgTssPool:

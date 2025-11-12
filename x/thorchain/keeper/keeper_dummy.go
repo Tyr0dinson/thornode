@@ -413,10 +413,17 @@ func (k KVStoreDummy) GetTxOutValue(_ cosmos.Context, _ int64) (cosmos.Uint, cos
 func (k KVStoreDummy) GetTOIsValue(_ cosmos.Context, _ ...TxOutItem) (cosmos.Uint, cosmos.Uint) {
 	return cosmos.ZeroUint(), cosmos.ZeroUint()
 }
-func (k KVStoreDummy) SetTxOut(_ cosmos.Context, _ *TxOut) error                { return kaboom }
-func (k KVStoreDummy) AppendTxOut(_ cosmos.Context, _ int64, _ TxOutItem) error { return kaboom }
-func (k KVStoreDummy) ClearTxOut(_ cosmos.Context, _ int64) error               { return kaboom }
-func (k KVStoreDummy) GetTxOutIterator(_ cosmos.Context) cosmos.Iterator        { return nil }
+func (k KVStoreDummy) SetTxOut(_ cosmos.Context, _ *TxOut) error                  { return kaboom }
+func (k KVStoreDummy) AppendTxOut(_ cosmos.Context, _ int64, _ TxOutItem) error   { return kaboom }
+func (k KVStoreDummy) ClearTxOut(_ cosmos.Context, _ int64) error                 { return kaboom }
+func (k KVStoreDummy) GetTxOutIterator(_ cosmos.Context) cosmos.Iterator          { return nil }
+func (k KVStoreDummy) SetTxOutFailVoter(_ cosmos.Context, _ types.TxOutFailVoter) {}
+func (k KVStoreDummy) GetTxOutFailVoterIterator(_ cosmos.Context) cosmos.Iterator {
+	return nil
+}
+func (k KVStoreDummy) GetTxOutFailVoter(_ cosmos.Context, _ string) (types.TxOutFailVoter, error) {
+	return types.TxOutFailVoter{}, kaboom
+}
 func (k KVStoreDummy) AddToLiquidityFees(_ cosmos.Context, _ common.Asset, _ cosmos.Uint) error {
 	return kaboom
 }

@@ -224,6 +224,10 @@ func (s *SlasherVCUR) LackSigning(ctx cosmos.Context, mgr Manager) error {
 		if !common.CurrentChainNetwork.SoftEquals(toi.ToAddress.GetNetwork(toi.Chain)) {
 			continue // skip this transaction
 		}
+		if toi.FatalFailure {
+			ctx.Logger().Info("skipping reschedule for fatal outbound", "hash", toi.InHash, "reason", toi.FailReason)
+			continue
+		}
 		if toi.OutHash.IsEmpty() {
 			// Slash node account for not sending funds
 			vault, err := s.keeper.GetVault(ctx, toi.VaultPubKey)

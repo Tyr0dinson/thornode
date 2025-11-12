@@ -32,6 +32,7 @@ const (
 	Msg_ObservedTxIn_FullMethodName         = "/types.Msg/ObservedTxIn"
 	Msg_ObservedTxOut_FullMethodName        = "/types.Msg/ObservedTxOut"
 	Msg_ObservedTxQuorum_FullMethodName     = "/types.Msg/ObservedTxQuorum"
+	Msg_TxOutFail_FullMethodName            = "/types.Msg/TxOutFail"
 	Msg_ThorSend_FullMethodName             = "/types.Msg/ThorSend"
 	Msg_SetIPAddress_FullMethodName         = "/types.Msg/SetIPAddress"
 	Msg_SetNodeKeys_FullMethodName          = "/types.Msg/SetNodeKeys"
@@ -70,6 +71,7 @@ type MsgClient interface {
 	ObservedTxIn(ctx context.Context, in *MsgObservedTxIn, opts ...grpc.CallOption) (*MsgEmpty, error)
 	ObservedTxOut(ctx context.Context, in *MsgObservedTxOut, opts ...grpc.CallOption) (*MsgEmpty, error)
 	ObservedTxQuorum(ctx context.Context, in *MsgObservedTxQuorum, opts ...grpc.CallOption) (*MsgEmpty, error)
+	TxOutFail(ctx context.Context, in *MsgTxOutFail, opts ...grpc.CallOption) (*MsgEmpty, error)
 	ThorSend(ctx context.Context, in *MsgSend, opts ...grpc.CallOption) (*MsgEmpty, error)
 	SetIPAddress(ctx context.Context, in *MsgSetIPAddress, opts ...grpc.CallOption) (*MsgEmpty, error)
 	SetNodeKeys(ctx context.Context, in *MsgSetNodeKeys, opts ...grpc.CallOption) (*MsgEmpty, error)
@@ -205,6 +207,15 @@ func (c *msgClient) ObservedTxOut(ctx context.Context, in *MsgObservedTxOut, opt
 func (c *msgClient) ObservedTxQuorum(ctx context.Context, in *MsgObservedTxQuorum, opts ...grpc.CallOption) (*MsgEmpty, error) {
 	out := new(MsgEmpty)
 	err := c.cc.Invoke(ctx, Msg_ObservedTxQuorum_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *msgClient) TxOutFail(ctx context.Context, in *MsgTxOutFail, opts ...grpc.CallOption) (*MsgEmpty, error) {
+	out := new(MsgEmpty)
+	err := c.cc.Invoke(ctx, Msg_TxOutFail_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -407,6 +418,7 @@ type MsgServer interface {
 	ObservedTxIn(context.Context, *MsgObservedTxIn) (*MsgEmpty, error)
 	ObservedTxOut(context.Context, *MsgObservedTxOut) (*MsgEmpty, error)
 	ObservedTxQuorum(context.Context, *MsgObservedTxQuorum) (*MsgEmpty, error)
+	TxOutFail(context.Context, *MsgTxOutFail) (*MsgEmpty, error)
 	ThorSend(context.Context, *MsgSend) (*MsgEmpty, error)
 	SetIPAddress(context.Context, *MsgSetIPAddress) (*MsgEmpty, error)
 	SetNodeKeys(context.Context, *MsgSetNodeKeys) (*MsgEmpty, error)
@@ -472,6 +484,9 @@ func (UnimplementedMsgServer) ObservedTxOut(context.Context, *MsgObservedTxOut) 
 }
 func (UnimplementedMsgServer) ObservedTxQuorum(context.Context, *MsgObservedTxQuorum) (*MsgEmpty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ObservedTxQuorum not implemented")
+}
+func (UnimplementedMsgServer) TxOutFail(context.Context, *MsgTxOutFail) (*MsgEmpty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method TxOutFail not implemented")
 }
 func (UnimplementedMsgServer) ThorSend(context.Context, *MsgSend) (*MsgEmpty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ThorSend not implemented")
@@ -758,6 +773,24 @@ func _Msg_ObservedTxQuorum_Handler(srv interface{}, ctx context.Context, dec fun
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(MsgServer).ObservedTxQuorum(ctx, req.(*MsgObservedTxQuorum))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Msg_TxOutFail_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MsgTxOutFail)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).TxOutFail(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Msg_TxOutFail_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).TxOutFail(ctx, req.(*MsgTxOutFail))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1176,6 +1209,10 @@ var Msg_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ObservedTxQuorum",
 			Handler:    _Msg_ObservedTxQuorum_Handler,
+		},
+		{
+			MethodName: "TxOutFail",
+			Handler:    _Msg_TxOutFail_Handler,
 		},
 		{
 			MethodName: "ThorSend",

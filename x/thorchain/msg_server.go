@@ -77,6 +77,11 @@ func (ms msgServer) ObservedTxOut(goCtx context.Context, msg *types.MsgObservedT
 	return externalHandler(goCtx, handler, msg)
 }
 
+func (ms msgServer) TxOutFail(goCtx context.Context, msg *types.MsgTxOutFail) (*types.MsgEmpty, error) {
+	handler := NewTxOutFailHandler(ms.mgr)
+	return externalHandler(goCtx, handler, msg)
+}
+
 func (ms msgServer) ObservedTxQuorum(goCtx context.Context, msg *types.MsgObservedTxQuorum) (*types.MsgEmpty, error) {
 	handler := NewObservedTxQuorumHandler(ms.mgr)
 	return externalHandler(goCtx, handler, msg)
