@@ -60,7 +60,8 @@ asserts:
       "aggregator": "0x69800327b38A4CeF30367Dec3f64c2f2386f3848",
       "aggregator_target_asset": "0x6f67873ebc41ed88B08A9265Bd16480f819e4348",
       "aggregator_target_limit": "0",
-      "clout_spent": "0"
+      "clout_spent": "0",
+      "inbound_finalized": true
     }
 
 ---
@@ -90,6 +91,8 @@ asserts:
         "aggregator": "0x69800327b38A4CeF30367Dec3f64c2f2386f3848",
         "aggregator_target_asset": "0x6f67873ebc41ed88B08A9265Bd16480f819e4348",
         "aggregator_target_limit": "0",
-        "clout_spent": "0"
+        "clout_spent": "0",
+        "inbound_finalized": true
       }
-  - .signature == "N1nQajpYIF04JuAx3VhrVQDtwTdqMgl/FHBfTn8MVJBl/20oM5in2KaxQLMLoCAWg0xjKykx57cuS34zabP6DA=="
+
+  - .signature == "llk4nV7hfYpdbN999DAEUa106hu/B+fmFpP69RK5c2MXyL5uTkC0sIffLEVRaFbnW07hxzd8ieRMxU4v9hw30w=="
