@@ -752,6 +752,14 @@ message EventFailedOutboundRecovery {
   string memo = 5;
 }
 
+message EventMempoolSwapReverted {
+  string tx_id = 1 [
+    (gogoproto.casttype) = "gitlab.com/thorchain/thornode/v3/common.TxID",
+    (gogoproto.customname) = "TxID"
+  ];
+  int64 block_height = 2;
+}
+
 message AssetOverSolvency {
   common.Asset asset = 1 [
     (gogoproto.nullable) = false,

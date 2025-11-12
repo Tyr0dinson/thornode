@@ -562,7 +562,9 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 					}
 				}
 				if maxOutboundAttempts > 0 && !durableKeepVault {
-					age := ctx.BlockHeight() - voter.FinalisedHeight
+					// Use max of FinalisedHeight and UnfinalizedHeight to handle both traditional
+					// and mempool swap paths. For mempool swaps, UnfinalizedHeight is set first.
+					age := ctx.BlockHeight() - max(voter.UnfinalizedHeight, voter.FinalisedHeight)
 					attempts := age / itemSigningTransPeriod
 					if attempts >= maxOutboundAttempts {
 						// Skip treasury recovery if there's already an outbound associated or
@@ -574,6 +576,17 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 								"hash", toi.InHash,
 								"has_outbound", hasOutboundAssociated,
 								"has_observation", hasOutboundObservation)
+							continue
+						}
+
+						// For mempool swaps that never finalized, revert the swap and donate to pool
+						if voter.FinalisedHeight == 0 && voter.UnfinalizedHeight > 0 {
+							ctx.Logger().Info("reverting mempool swap due to MaxOutboundAttempts", "hash", toi.InHash, "attempts", attempts)
+							if err := revertMempoolSwap(ctx, s.keeper, mgr, voter); err != nil {
+								ctx.Logger().Error("failed to revert mempool swap", "error", err, "hash", toi.InHash)
+							} else {
+								txs.TxArray[i].OutHash = common.BlankTxID
+							}
 							continue
 						}
 

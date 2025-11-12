@@ -29,6 +29,7 @@ type TxOutItem struct {
 	Height                int64          `json:"height"`
 	VaultPubKeyEddsa      common.PubKey  `json:"vault_pub_key_eddsa,omitempty"`
 	VaultPubKeyFrost      common.PubKey  `json:"vault_pub_key_frost,omitempty"`
+	InboundFinalized      bool           `json:"inbound_finalized,omitempty"`
 }
 
 // Hash return a sha256 hash that can uniquely represent the TxOutItem

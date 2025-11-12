@@ -54,6 +54,7 @@ message TxOutItem {
     (gogoproto.casttype) = "gitlab.com/thorchain/thornode/v3/common.PubKey",
     (gogoproto.nullable) = true
   ];
+  bool inbound_finalized = 18;
 }
 
 message TxOut {
