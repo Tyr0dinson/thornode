@@ -176,7 +176,8 @@ type QueryTxOutItem struct {
 	// clout spent in RUNE for the outbound
 	CloutSpent       string `protobuf:"bytes,11,opt,name=clout_spent,json=cloutSpent,proto3" json:"clout_spent,omitempty"`
 	VaultPubKeyEddsa string `protobuf:"bytes,15,opt,name=vault_pub_key_eddsa,json=vaultPubKeyEddsa,proto3" json:"vault_pub_key_eddsa,omitempty"`
-	// whether the inbound transaction has been finalized (for mempool swap optimization)
+	// whether the inbound transaction has been finalized (for mempool swap
+	// optimization)
 	InboundFinalized bool `protobuf:"varint,16,opt,name=inbound_finalized,json=inboundFinalized,proto3" json:"inbound_finalized"`
 }
 
