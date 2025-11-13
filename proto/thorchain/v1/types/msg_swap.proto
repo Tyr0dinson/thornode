@@ -80,4 +80,5 @@ message MsgSwap {
   SwapState state = 15;
   SwapVersion version = 16;
   uint32 index = 17;
+  string post_swap_memo = 18;
 }

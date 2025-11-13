@@ -4193,6 +4193,7 @@ components:
           ttl: 2
           last_height: 9
           out: out
+        post_swap_memo: post_swap_memo
         signer: signer
       properties:
         tx:
@@ -4256,6 +4257,10 @@ components:
           description: the index of the swap in the batch
           format: int32
           type: integer
+        post_swap_memo:
+          description: "a memo to execute after the swap completes, using the swap\
+            \ output as input"
+          type: string
       required:
       - affiliate_basis_points
       - target_asset
@@ -6194,6 +6199,7 @@ components:
             ttl: 2
             last_height: 9
             out: out
+          post_swap_memo: post_swap_memo
           signer: signer
         status: queued
       properties:
@@ -6261,6 +6267,7 @@ components:
             ttl: 2
             last_height: 9
             out: out
+          post_swap_memo: post_swap_memo
           signer: signer
         blocks_since_created: 150
         time_to_expiry_blocks: 14850
@@ -6381,6 +6388,7 @@ components:
               ttl: 2
               last_height: 9
               out: out
+            post_swap_memo: post_swap_memo
             signer: signer
           blocks_since_created: 150
           time_to_expiry_blocks: 14850
@@ -6437,6 +6445,7 @@ components:
               ttl: 2
               last_height: 9
               out: out
+            post_swap_memo: post_swap_memo
             signer: signer
           blocks_since_created: 150
           time_to_expiry_blocks: 14850

@@ -1,6 +1,7 @@
 package thorchain
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"sort"
 	"strings"
@@ -1241,8 +1242,11 @@ func settleSwapCached(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason
 			memo = nil
 		}
 
-		// Only schedule outbound if not a savers add and not in simulation mode
-		if (memo == nil || !memo.IsType(TxAdd)) && !isSimulationMode(ctx) {
+		// Check if we should process a post-swap memo instead of scheduling normal outbound
+		shouldProcessPostSwapMemo := len(msg.PostSwapMemo) > 0 && !isSimulationMode(ctx)
+
+		// Only schedule outbound if not a savers add, not a post-swap memo, and not in simulation mode
+		if (memo == nil || !memo.IsType(TxAdd)) && !shouldProcessPostSwapMemo && !isSimulationMode(ctx) {
 			// Handle aggregator if present
 			dexAgg := ""
 			if len(msg.Aggregator) > 0 {
@@ -1282,6 +1286,48 @@ func settleSwapCached(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason
 				eventRefund := NewEventRefund(CodeFailAddOutboundTx, refundReasonFull, refundTx, common.Fee{})
 				if err := mgr.EventMgr().EmitEvent(ctx, eventRefund); err != nil {
 					ctx.Logger().Error("fail to emit refund event", "error", err)
+				}
+			}
+		} else if shouldProcessPostSwapMemo {
+			// Process post-swap memo: create internal transaction with swap output
+			ctx.Logger().Info("processing post-swap memo", "memo", msg.PostSwapMemo, "output", msg.State.Out.String())
+
+			// Generate a deterministic transaction hash from original tx ID + block height + memo
+			hashInput := fmt.Sprintf("%s|%d|%s", msg.Tx.ID, ctx.BlockHeight(), msg.PostSwapMemo)
+			internalTxID, err := common.NewTxID(fmt.Sprintf("%X", sha256.Sum256([]byte(hashInput))))
+			if err != nil {
+				ctx.Logger().Error("fail to generate internal tx ID for post-swap memo", "error", err)
+			} else {
+				// Create an ObservedTx with the swap output as input
+				swapOutputCoin := common.NewCoin(msg.TargetAsset, msg.State.Out)
+				internalTx := common.NewTx(
+					internalTxID,
+					msg.Destination, // From the original destination
+					common.NoAddress,
+					common.NewCoins(swapOutputCoin),
+					common.Gas{},
+					msg.PostSwapMemo,
+				)
+
+				observedTx := ObservedTx{
+					Tx: internalTx,
+				}
+
+				// Process the transaction to create the appropriate message
+				internalMsg, err := processOneTxIn(ctx, mgr.Keeper(), observedTx, mgr.Keeper().GetModuleAccAddress(AsgardName))
+				if err != nil {
+					ctx.Logger().Error("fail to process post-swap memo", "error", err, "memo", msg.PostSwapMemo)
+					// Continue with swap completion even if post-swap memo fails
+				} else {
+					// Execute the message through the internal handler
+					handler := NewInternalHandler(mgr)
+					_, err = handler(ctx, internalMsg)
+					if err != nil {
+						ctx.Logger().Error("fail to execute post-swap memo transaction", "error", err, "memo", msg.PostSwapMemo)
+						// Continue with swap completion even if execution fails
+					} else {
+						ctx.Logger().Info("successfully executed post-swap memo", "memo", msg.PostSwapMemo)
+					}
 				}
 			}
 		}

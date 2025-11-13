@@ -21,6 +21,7 @@ Name | Type | Description | Notes
 **State** | Pointer to [**SwapState**](SwapState.md) |  | [optional] 
 **Version** | Pointer to **string** | the version of the swap (v1 or v2) | [optional] 
 **Index** | Pointer to **int32** | the index of the swap in the batch | [optional] 
+**PostSwapMemo** | Pointer to **string** | a memo to execute after the swap completes, using the swap output as input | [optional] 
 
 ## Methods
 
@@ -445,6 +446,31 @@ SetIndex sets Index field to given value.
 `func (o *MsgSwap) HasIndex() bool`
 
 HasIndex returns a boolean if a field has been set.
+
+### GetPostSwapMemo
+
+`func (o *MsgSwap) GetPostSwapMemo() string`
+
+GetPostSwapMemo returns the PostSwapMemo field if non-nil, zero value otherwise.
+
+### GetPostSwapMemoOk
+
+`func (o *MsgSwap) GetPostSwapMemoOk() (*string, bool)`
+
+GetPostSwapMemoOk returns a tuple with the PostSwapMemo field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetPostSwapMemo
+
+`func (o *MsgSwap) SetPostSwapMemo(v string)`
+
+SetPostSwapMemo sets PostSwapMemo field to given value.
+
+### HasPostSwapMemo
+
+`func (o *MsgSwap) HasPostSwapMemo() bool`
+
+HasPostSwapMemo returns a boolean if a field has been set.
 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)

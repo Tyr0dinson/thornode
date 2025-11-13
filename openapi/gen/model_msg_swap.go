@@ -48,6 +48,8 @@ type MsgSwap struct {
 	Version *string `json:"version,omitempty"`
 	// the index of the swap in the batch
 	Index *int32 `json:"index,omitempty"`
+	// a memo to execute after the swap completes, using the swap output as input
+	PostSwapMemo *string `json:"post_swap_memo,omitempty"`
 }
 
 // NewMsgSwap instantiates a new MsgSwap object
@@ -583,6 +585,38 @@ func (o *MsgSwap) SetIndex(v int32) {
 	o.Index = &v
 }
 
+// GetPostSwapMemo returns the PostSwapMemo field value if set, zero value otherwise.
+func (o *MsgSwap) GetPostSwapMemo() string {
+	if o == nil || o.PostSwapMemo == nil {
+		var ret string
+		return ret
+	}
+	return *o.PostSwapMemo
+}
+
+// GetPostSwapMemoOk returns a tuple with the PostSwapMemo field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *MsgSwap) GetPostSwapMemoOk() (*string, bool) {
+	if o == nil || o.PostSwapMemo == nil {
+		return nil, false
+	}
+	return o.PostSwapMemo, true
+}
+
+// HasPostSwapMemo returns a boolean if a field has been set.
+func (o *MsgSwap) HasPostSwapMemo() bool {
+	if o != nil && o.PostSwapMemo != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetPostSwapMemo gets a reference to the given string and assigns it to the PostSwapMemo field.
+func (o *MsgSwap) SetPostSwapMemo(v string) {
+	o.PostSwapMemo = &v
+}
+
 func (o MsgSwap) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
@@ -635,6 +669,9 @@ func (o MsgSwap) MarshalJSON_deprecated() ([]byte, error) {
 	}
 	if o.Index != nil {
 		toSerialize["index"] = o.Index
+	}
+	if o.PostSwapMemo != nil {
+		toSerialize["post_swap_memo"] = o.PostSwapMemo
 	}
 	return json.Marshal(toSerialize)
 }
