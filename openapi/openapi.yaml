@@ -3296,6 +3296,9 @@ components:
           type: integer
           format: int32
           description: the index of the swap in the batch
+        post_swap_memo:
+          type: string
+          description: a memo to execute after the swap completes, using the swap output as input
 
     SwapState:
       type: object

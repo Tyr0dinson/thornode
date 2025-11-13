@@ -75,6 +75,18 @@ func (h SwapHandler) validate(ctx cosmos.Context, msg MsgSwap) error {
 		}
 	}
 
+	// Validate post_swap_memo if present
+	if len(msg.PostSwapMemo) > 0 {
+		postSwapMemo, err := ParseMemoWithTHORNames(ctx, h.mgr.Keeper(), msg.PostSwapMemo)
+		if err != nil {
+			return fmt.Errorf("invalid post_swap_memo: %w", err)
+		}
+		// Check that the parsed memo is not empty
+		if postSwapMemo.IsEmpty() {
+			return fmt.Errorf("post_swap_memo is empty")
+		}
+	}
+
 	// For external-origin (here valid) memos, do not allow a network module as the final destination.
 	// If unable to parse the memo, here assume it to be internal.
 	memo, _ := ParseMemoWithTHORNamesCached(ctx, h.mgr.Keeper(), msg.Tx.Memo)
