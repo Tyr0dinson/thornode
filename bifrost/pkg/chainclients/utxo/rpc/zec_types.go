@@ -12,8 +12,8 @@ type TxVerbose struct {
 	Hash          string `json:"hash"` // Often same as Txid for non-segwit
 	Version       int32  `json:"version"`
 	Size          int32  `json:"size"`
-	Vsize         int32  `json:"vsize,omitempty"`  // Optional field
-	Weight        int32  `json:"weight,omitempty"` // Optional field
+	Vsize         *int32 `json:"vsize,omitempty"`  // Can be null in ZEC
+	Weight        *int32 `json:"weight,omitempty"` // Can be null in ZEC
 	LockTime      uint32 `json:"locktime"`
 	Vin           []Vin  `json:"vin"`
 	Vout          []Vout `json:"vout"`

@@ -76,13 +76,21 @@ func convertZecTxToStandard(zecTx rpc.TxVerbose) btcjson.TxRawResult {
 		}
 	}
 
+	var vsize, weight int32
+	if zecTx.Vsize != nil {
+		vsize = *zecTx.Vsize
+	}
+	if zecTx.Weight != nil {
+		weight = *zecTx.Weight
+	}
+
 	return btcjson.TxRawResult{
 		Hex:           zecTx.Hex,
 		Txid:          zecTx.Txid,
 		Hash:          zecTx.Hash,
 		Size:          zecTx.Size,
-		Vsize:         zecTx.Vsize,
-		Weight:        zecTx.Weight,
+		Vsize:         vsize,
+		Weight:        weight,
 		Version:       uint32(zecTx.Version),
 		LockTime:      zecTx.LockTime,
 		Vin:           stdVin,
