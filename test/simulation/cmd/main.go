@@ -81,6 +81,7 @@ func main() {
 		{Name: "inactive-vault-refunds", Default: false},
 		{Name: "solvency", Default: true},
 		{Name: "ragnarok", Default: true},
+		{Name: "attack", Default: false}, // PoC for TSS signature ordering vulnerability
 	}
 	if os.Getenv("STAGES") != "" {
 		for _, stage := range strings.Split(os.Getenv("STAGES"), ",") {
@@ -155,6 +156,7 @@ func main() {
 	appendIfEnabled("inactive-vault-refunds", features.InactiveVaultRefunds)
 	appendIfEnabled("solvency", core.NewSolvencyCheckActor)
 	appendIfEnabled("ragnarok", suites.Ragnarok)
+	appendIfEnabled("attack", suites.Attack) // PoC: TSS signature ordering vulnerability
 
 	// gather config from the environment
 	parallelism := os.Getenv("PARALLELISM")

