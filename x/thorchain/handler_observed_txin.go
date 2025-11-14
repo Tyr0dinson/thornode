@@ -78,6 +78,12 @@ func (h ObservedTxInHandler) handle(ctx cosmos.Context, msg MsgObservedTxIn) (*c
 func addSwap(ctx cosmos.Context, mgr Manager, msg MsgSwap) error {
 	// Route swap based on message version instead of configuration
 	if msg.IsV2() {
+		// Check if swap already exists to prevent duplicates (e.g., from mempool swap finalization)
+		if mgr.Keeper().HasAdvSwapQueueItem(ctx, msg.Tx.ID, int(msg.Index)) {
+			ctx.Logger().Debug("swap already exists in adv queue, skipping duplicate", "txid", msg.Tx.ID, "index", msg.Index)
+			return nil
+		}
+
 		// TODO: swap to synth if layer1 asset (follow on PR)
 		// TODO: create handler to modify/cancel a limit swap (follow on PR)
 		if err := mgr.AdvSwapQueueMgr().AddSwapQueueItem(ctx, mgr, &msg); err != nil {
@@ -104,6 +110,18 @@ func addSwap(ctx cosmos.Context, mgr Manager, msg MsgSwap) error {
 func addSwapDirect(ctx cosmos.Context, k keeper.Keeper, msg MsgSwap) error {
 	if msg.Tx.Coins.IsEmpty() {
 		return nil
+	}
+	// Check if swap already exists in queue to prevent duplicates
+	if k.HasSwapQueueItem(ctx, msg.Tx.ID, 0) {
+		ctx.Logger().Debug("swap already exists in queue, skipping duplicate", "txid", msg.Tx.ID)
+		return
+	}
+	// Check if swap already has actions (outbounds) to prevent duplicates from mempool swap finalization.
+	// When a mempool swap is re-observed as finalized, it already has actions and shouldn't be queued again.
+	voter, err := k.GetObservedTxInVoter(ctx, msg.Tx.ID)
+	if err == nil && len(voter.Actions) > 0 {
+		ctx.Logger().Debug("swap already processed (has actions), skipping duplicate", "txid", msg.Tx.ID, "actions", len(voter.Actions))
+		return
 	}
 	// Queue the main swap
 	if err := k.SetSwapQueueItem(ctx, msg, 0); err != nil {
