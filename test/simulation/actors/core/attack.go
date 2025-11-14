@@ -7,6 +7,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/thornode"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 
 	. "gitlab.com/thorchain/thornode/v3/test/simulation/actors/common"
 	. "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
@@ -242,11 +243,22 @@ func (a *AttackActor) triggerSwap(config *OpConfig) OpResult {
 		Str("memo", memo).
 		Msg("triggering RUNE->BTC swap to create multi-UTXO outbound")
 
-	txid, err := a.swapperAccount.Thorchain.Deposit(
-		common.RuneAsset(),
-		runeAmount,
+	// Get the user's Thor address for signing
+	thorAddress, err := a.swapperAccount.PubKey(common.THORChain).GetThorAddress()
+	if err != nil {
+		a.Log().Error().Err(err).Msg("failed to get thor address")
+		return OpResult{Continue: false, Error: err}
+	}
+
+	// Create deposit message
+	deposit := types.NewMsgDeposit(
+		common.NewCoins(common.NewCoin(common.RuneAsset(), runeAmount)),
 		memo,
+		thorAddress,
 	)
+
+	// Broadcast the swap transaction
+	txid, err := a.swapperAccount.Thorchain.Broadcast(deposit)
 	if err != nil {
 		a.Log().Error().Err(err).Msg("swap failed")
 		return OpResult{Continue: false, Error: err}
