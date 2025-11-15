@@ -34,7 +34,7 @@ func Attack() *Actor {
 	suite := NewActor("Attack-Suite")
 
 	// Stage 1: Bootstrap BTC pool only (minimal setup for attack)
-	suite.Append(BootstrapBTCOnly())
+	// suite.Append(BootstrapBTCOnly())
 
 	// Stage 2: Execute attack PoC
 	suite.Append(core.NewAttackActor())
