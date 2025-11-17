@@ -716,7 +716,6 @@ func (s *SignSuite) TestShouldSignWithInboundFinalized(c *C) {
 
 	// Create a Signer with mock pubkey manager
 	mockPubkeyMgr := pubkeymanager.NewMockPoolAddressValidator()
-	mockPubkeyMgr.SetNodePubKey(vaultPubKey)
 
 	sign := &Signer{
 		logger:    log.With().Str("module", "signer").Logger(),
@@ -728,7 +727,7 @@ func (s *SignSuite) TestShouldSignWithInboundFinalized(c *C) {
 		Chain:            common.BTCChain,
 		ToAddress:        common.Address("bc1qwqdg6squsna38e46795at95yu9atm8azzmyvckulcc7kytlcckxswvvzej"),
 		VaultPubKey:      vaultPubKey,
-		Coin:             common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One)),
+		Coins:            common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One))),
 		InboundFinalized: false,
 	}
 
@@ -740,7 +739,7 @@ func (s *SignSuite) TestShouldSignWithInboundFinalized(c *C) {
 		Chain:            common.BTCChain,
 		ToAddress:        common.Address("bc1qwqdg6squsna38e46795at95yu9atm8azzmyvckulcc7kytlcckxswvvzej"),
 		VaultPubKey:      vaultPubKey,
-		Coin:             common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One)),
+		Coins:            common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One))),
 		InboundFinalized: true,
 	}
 
@@ -748,14 +747,14 @@ func (s *SignSuite) TestShouldSignWithInboundFinalized(c *C) {
 	c.Check(shouldSign, Equals, true, Commentf("Should sign finalized inbound with matching vault"))
 
 	// Test 3: TxOutItem with InboundFinalized=true but wrong vault should NOT be signed
-	wrongVaultPubKey, err := common.NewPubKey("thorpub1addwnpepq2dct2lx9knv3zz4et60gpr0l4jcre93wvz2wrhw4tg0f5x3dyjz4hkckxj")
+	wrongVaultPubKey, err := common.NewPubKey("tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4")
 	c.Assert(err, IsNil)
 
 	wrongVaultItem := types.TxOutItem{
 		Chain:            common.BTCChain,
 		ToAddress:        common.Address("bc1qwqdg6squsna38e46795at95yu9atm8azzmyvckulcc7kytlcckxswvvzej"),
 		VaultPubKey:      wrongVaultPubKey,
-		Coin:             common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One)),
+		Coins:            common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One))),
 		InboundFinalized: true,
 	}
 
