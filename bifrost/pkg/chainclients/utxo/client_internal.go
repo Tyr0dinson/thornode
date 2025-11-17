@@ -773,9 +773,13 @@ func (c *Client) getOutputs(sender string, tx *btcjson.TxRawResult) ([]transfer,
 				transfers[len(transfers)-1].Memo = memo
 				if m.GetType() == mem.TxConsolidate && transfers[len(transfers)-1].Receiver != sender {
 					transfers = transfers[:len(transfers)-1]
+					// FIXME: remove
+					c.log.Error().Msgf("Removed consolidate transfer from tx `%+v`", tx)
 				}
 				if m.GetType() != mem.TxConsolidate && transfers[len(transfers)-1].Receiver == sender {
 					transfers = transfers[:len(transfers)-1]
+					// FIXME: remove
+					c.log.Error().Msgf("Removed non-consolidate transfer from tx `%+v`", tx)
 				}
 			}
 		} else {
