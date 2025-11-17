@@ -155,7 +155,8 @@ func handleObservedTxInQuorum(
 	if !isQuorum {
 		// Even if this observation doesn't bring the voter to quorum (because consensus was already reached),
 		// we still need to finalize outbounds if this is a mempool swap that has finalized but has unfinalized actions.
-		if voter.FinalisedHeight > 0 && len(voter.Actions) > 0 {
+		// Check if the current observation indicates the transaction has finalized on-chain (not just reached consensus).
+		if tx.FinaliseHeight > 0 && len(voter.Actions) > 0 {
 			// Check if any actions are not yet finalized
 			hasUnfinalizedActions := false
 			for _, action := range voter.Actions {
@@ -1339,7 +1340,8 @@ func revertMempoolSwap(ctx cosmos.Context, keeper keeper.Keeper, mgr Manager, vo
 
 		// Step 2: Now that we've successfully removed the outbound, create the reverse swap
 		// Generate a unique transaction ID for this reversal
-		hashInput := fmt.Sprintf("MEMPOOL-REVERT-%s-%d", voter.TxID, ctx.BlockHeight())
+		// Include the action index to ensure uniqueness when a single inbound has multiple actions
+		hashInput := fmt.Sprintf("MEMPOOL-REVERT-%s-%d-%d", voter.TxID, ctx.BlockHeight(), i)
 		hash := sha256.Sum256([]byte(hashInput))
 		txID := common.TxID(hex.EncodeToString(hash[:]))
 
