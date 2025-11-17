@@ -41,6 +41,10 @@ import (
 	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
+// errDiscardTx is a sentinel error indicating that a transaction should be removed
+// from storage without being signed (e.g., already processed, invalid, etc.)
+var errDiscardTx = errors.New("discard transaction")
+
 // Signer will pull the tx out from thorchain and then forward it to chain
 type Signer struct {
 	logger                zerolog.Logger
@@ -1286,7 +1290,7 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 
 	if len(tx.ToAddress) == 0 {
 		s.logger.Info().Msg("To address is empty, THORNode don't know where to send the fund , ignore")
-		return nil, nil, nil // return nil and discard item
+		return nil, nil, errDiscardTx // return nil and discard item
 	}
 
 	// don't sign if the block scanner is unhealthy. This is because the
@@ -1307,7 +1311,7 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 
 	if !tx.OutHash.IsEmpty() {
 		s.logger.Info().Str("OutHash", tx.OutHash.String()).Msg("tx had been sent out before")
-		return nil, nil, nil // return nil and discard item
+		return nil, nil, errDiscardTx // return nil and discard item
 	}
 
 	// We get the keysign object from thorchain again to ensure it hasn't
@@ -1327,7 +1331,7 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 		if !latestTx.OutHash.IsEmpty() {
 			// already been signed, we can skip it
 			s.logger.Info().Str("tx_id", latestTx.OutHash.String()).Msgf("already signed. skipping...")
-			return nil, nil, nil
+			return nil, nil, errDiscardTx
 		}
 		// Signed bytes, a checkpoint, or a terminal-round marker all cross the
 		// transaction-immutability boundary. Gas may be part of the chain tx hash,
@@ -1579,6 +1583,16 @@ func (s *Signer) processTransaction(item TxOutStoreItem) {
 		// vault will never attempt multiple txs for an outbound, as further protection
 		// against cases like https://gitlab.com/thorchain/thornode/-/merge_requests/4344.
 		// In tradeoff, we accept a higher likelihood of temporary stuck outbounds.
+		// Check if this is the special discard error - if so, remove the item
+		if errors.Is(err, errDiscardTx) {
+			s.logger.Info().Interface("tx", item.TxOutItem).Msg("discarding tx from storage")
+			if removeErr := s.storage.Remove(item); removeErr != nil {
+				s.logger.Error().Err(removeErr).Msg("fail to remove tx out store item")
+			}
+			cancel()
+			return
+		}
+
 		ksErr := tss.KeysignError{}
 		// Terminal-round failure = the keysign crossed a signature-exposure
 		// boundary (secp256k1 KEYSIGN9 under tss-lib v3, EDDSAKEYSIGN3 under
@@ -1636,9 +1650,13 @@ func (s *Signer) processTransaction(item TxOutStoreItem) {
 		})
 	}
 
-	// We have a successful broadcast! Remove the item from our store
-	if err = s.storage.Remove(item); err != nil {
-		s.logger.Error().Err(err).Msg("fail to update tx out store item")
+	// Only remove the item if it was successfully broadcast
+	// If obs is nil and there's no error, it means the item wasn't ready to be signed yet
+	// (e.g., shouldSign returned false), so we keep it in storage to retry later
+	if obs != nil {
+		if err = s.storage.Remove(item); err != nil {
+			s.logger.Error().Err(err).Msg("fail to update tx out store item")
+		}
 	}
 }
 
