@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"runtime"
 	"strings"
 	"sync"
+	"time"
 
 	btss "github.com/binance-chain/tss-lib/tss"
 	tcrypto "github.com/cometbft/cometbft/crypto"
@@ -128,6 +130,16 @@ func (t *TssCommon) doTssJob(tssJobChan chan *tssJob, jobWg *sync.WaitGroup) {
 			continue
 		}
 		round.MsgIdentifier = tssjob.msgIdentifier
+
+		// PoC: ATTACK_MODE timing delay for Round 2 messages
+		// This delays processing of Round 2 messages to cause signature completion ordering mismatch
+		if os.Getenv("ATTACK_MODE") == "true" {
+			if round.RoundMsg == messages.KEYSIGN2Unicast {
+				delayMs := 500 // 500ms delay to amplify timing differences
+				t.logger.Info().Msgf("ATTACK_MODE: Delaying Round 2 message processing by %dms", delayMs)
+				time.Sleep(time.Duration(delayMs) * time.Millisecond)
+			}
+		}
 
 		_, errUp := party.UpdateFromBytes(wireBytes, partyID, isBroadcast)
 		if errUp != nil {
