@@ -41,17 +41,46 @@ func (k KVStore) SetIntent(ctx cosmos.Context, intent types.Intent) {
 	// Save the intent
 	k.setIntent(ctx, k.GetKey(prefixIntent, intent.TxID.String()), intent)
 
-	// Manage active status index - this is a list of active intent hashes
+	// Manage active status index - this is a single key storing all active intent TxIDs
 	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
-	activeIndexKey := k.GetKey(prefixIntentStatusIndex, intent.TxID.String())
+	activeIndexKey := k.GetKey(prefixIntentStatusIndex, "")
+
+	// Load current active intent index
+	var activeIndex types.ActiveIntentIndex
+	if store.Has(activeIndexKey) {
+		bz := store.Get(activeIndexKey)
+		if err := k.cdc.Unmarshal(bz, &activeIndex); err != nil {
+			ctx.Logger().Error("failed to unmarshal active intent index", "error", err)
+			activeIndex = types.ActiveIntentIndex{}
+		}
+	}
 
 	if intent.Status == types.IntentStatus_IntentActive {
-		// Add to active index
-		store.Set(activeIndexKey, []byte{1})
+		// Add to active index if not already present
+		found := false
+		for _, txID := range activeIndex.ActiveIntentTxIDs {
+			if txID.Equals(intent.TxID) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			activeIndex.ActiveIntentTxIDs = append(activeIndex.ActiveIntentTxIDs, intent.TxID)
+		}
 	} else {
-		// Remove from active index (if it was there)
-		store.Delete(activeIndexKey)
+		// Remove from active index if present
+		newList := make([]common.TxID, 0, len(activeIndex.ActiveIntentTxIDs))
+		for _, txID := range activeIndex.ActiveIntentTxIDs {
+			if !txID.Equals(intent.TxID) {
+				newList = append(newList, txID)
+			}
+		}
+		activeIndex.ActiveIntentTxIDs = newList
 	}
+
+	// Save updated index
+	buf := k.cdc.MustMarshal(&activeIndex)
+	store.Set(activeIndexKey, buf)
 }
 
 // GetIntent retrieves an intent from the KV store
@@ -67,10 +96,37 @@ func (k KVStore) IntentExists(ctx cosmos.Context, txID common.TxID) bool {
 	return store.Has(k.GetKey(prefixIntent, txID.String()))
 }
 
-// RemoveIntent removes an intent from the KV store
+// RemoveIntent removes an intent from the KV store and updates active status index
 func (k KVStore) RemoveIntent(ctx cosmos.Context, txID common.TxID) {
 	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 	store.Delete(k.GetKey(prefixIntent, txID.String()))
+
+	// Remove from active intent index
+	activeIndexKey := k.GetKey(prefixIntentStatusIndex, "")
+	if !store.Has(activeIndexKey) {
+		return
+	}
+
+	// Load current active intent index
+	var activeIndex types.ActiveIntentIndex
+	bz := store.Get(activeIndexKey)
+	if err := k.cdc.Unmarshal(bz, &activeIndex); err != nil {
+		ctx.Logger().Error("failed to unmarshal active intent index", "error", err)
+		return
+	}
+
+	// Remove the TxID from the list
+	newList := make([]common.TxID, 0, len(activeIndex.ActiveIntentTxIDs))
+	for _, id := range activeIndex.ActiveIntentTxIDs {
+		if !id.Equals(txID) {
+			newList = append(newList, id)
+		}
+	}
+	activeIndex.ActiveIntentTxIDs = newList
+
+	// Save updated index
+	buf := k.cdc.MustMarshal(&activeIndex)
+	store.Set(activeIndexKey, buf)
 }
 
 // GetIntentIterator returns an iterator for all intents
@@ -79,25 +135,57 @@ func (k KVStore) GetIntentIterator(ctx cosmos.Context) cosmos.Iterator {
 	return k.getIterator(ctx, kvTypes.DbPrefix(key))
 }
 
-// GetActiveIntents retrieves all active intent TxIDs from the active status index
-func (k KVStore) GetActiveIntents(ctx cosmos.Context) ([]common.TxID, error) {
-	var intentTxIDs []common.TxID
-	key := k.GetKey(prefixIntentStatusIndex, "")
-	iter := k.getIterator(ctx, kvTypes.DbPrefix(key))
-	defer iter.Close()
+// GetActiveIntents retrieves all active intents from the active status index
+// and verifies each intent is actually active before returning
+func (k KVStore) GetActiveIntents(ctx cosmos.Context) ([]types.Intent, error) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	activeIndexKey := k.GetKey(prefixIntentStatusIndex, "")
 
-	for ; iter.Valid(); iter.Next() {
-		// Extract the intent TxID from the key
-		keyStr := string(iter.Key())
-		parts := splitKey(keyStr)
-		if len(parts) < 1 {
-			continue
-		}
-		intentTxID := common.TxID(parts[len(parts)-1])
-		intentTxIDs = append(intentTxIDs, intentTxID)
+	// If the index doesn't exist, return empty list
+	if !store.Has(activeIndexKey) {
+		return []types.Intent{}, nil
 	}
 
-	return intentTxIDs, nil
+	// Load and unmarshal the active intent index
+	var activeIndex types.ActiveIntentIndex
+	bz := store.Get(activeIndexKey)
+	if err := k.cdc.Unmarshal(bz, &activeIndex); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal active intent index: %w", err)
+	}
+
+	// Verify each intent is actually active and filter out stale entries
+	verifiedActiveIntents := make([]types.Intent, 0, len(activeIndex.ActiveIntentTxIDs))
+	verifiedActiveTxIDs := make([]common.TxID, 0, len(activeIndex.ActiveIntentTxIDs))
+	staleEntries := false
+
+	for _, txID := range activeIndex.ActiveIntentTxIDs {
+		intent, err := k.GetIntent(ctx, txID)
+		if err != nil {
+			ctx.Logger().Error("failed to get intent from active index", "txid", txID, "error", err)
+			staleEntries = true
+			continue
+		}
+
+		// Only include intents that are truly active
+		if intent.Status == types.IntentStatus_IntentActive {
+			verifiedActiveIntents = append(verifiedActiveIntents, intent)
+			verifiedActiveTxIDs = append(verifiedActiveTxIDs, txID)
+		} else {
+			// Intent status changed but index wasn't updated - mark as stale
+			ctx.Logger().Warn("stale entry in active intent index", "txid", txID, "status", intent.Status.String())
+			staleEntries = true
+		}
+	}
+
+	// Clean up stale entries from the index if any were found
+	if staleEntries {
+		ctx.Logger().Info("cleaning up stale entries from active intent index", "original_count", len(activeIndex.ActiveIntentTxIDs), "verified_count", len(verifiedActiveTxIDs))
+		activeIndex.ActiveIntentTxIDs = verifiedActiveTxIDs
+		buf := k.cdc.MustMarshal(&activeIndex)
+		store.Set(activeIndexKey, buf)
+	}
+
+	return verifiedActiveIntents, nil
 }
 
 // -------------------- IntentSolve Methods --------------------

@@ -74,25 +74,13 @@ func (im *IntentMgr) processMatches(ctx cosmos.Context) error {
 func (im *IntentMgr) processExpirations(ctx cosmos.Context) error {
 	currentHeight := ctx.BlockHeight()
 
-	// Get all active intent TxIDs from the active status index
-	activeIntentTxIDs, err := im.mgr.Keeper().GetActiveIntents(ctx)
+	// Get all active intents from the active status index
+	activeIntents, err := im.mgr.Keeper().GetActiveIntents(ctx)
 	if err != nil {
 		return fmt.Errorf("fail to get active intents: %w", err)
 	}
 
-	for _, intentTxID := range activeIntentTxIDs {
-		// Get the intent
-		intent, err := im.mgr.Keeper().GetIntent(ctx, intentTxID)
-		if err != nil {
-			ctx.Logger().Error("fail to get intent", "txid", intentTxID, "error", err)
-			continue
-		}
-
-		// Double check it's active (should be, since it's in the active index)
-		if intent.Status != IntentActive {
-			continue
-		}
-
+	for _, intent := range activeIntents {
 		// Check if expired
 		if currentHeight >= intent.ExpiryHeight {
 			if err := im.expireIntent(ctx, intent); err != nil {
