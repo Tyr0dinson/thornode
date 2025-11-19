@@ -2442,7 +2442,8 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// QueryIntentRequest is the request type for querying a specific intent by transaction ID
+// QueryIntentRequest is the request type for querying a specific intent by
+// transaction ID
 type QueryIntentRequest struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache

@@ -23,7 +23,8 @@ var _ = math.Inf
 // proto package needs to be updated.
 const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 
-// QueryIntentRequest is the request type for querying a specific intent by transaction ID
+// QueryIntentRequest is the request type for querying a specific intent by
+// transaction ID
 type QueryIntentRequest struct {
 	TxId string `protobuf:"bytes,1,opt,name=tx_id,json=txId,proto3" json:"tx_id,omitempty"`
 }
