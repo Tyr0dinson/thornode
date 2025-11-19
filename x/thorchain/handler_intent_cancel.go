@@ -97,12 +97,11 @@ func (h IntentCancelHandler) handle(ctx cosmos.Context, msg MsgIntentCancel) err
 
 		// Schedule the txout for refund
 		toi := TxOutItem{
-			Chain:       intent.Source.Asset.GetChain(),
-			ToAddress:   intent.SourceAddress,
-			VaultPubKey: intent.VaultPubKey,
-			Coin:        intent.Source,
-			Memo:        fmt.Sprintf("REFUND:%s", intent.TxID),
-			InHash:      intent.TxID,
+			Chain:     intent.Source.Asset.GetChain(),
+			ToAddress: intent.SourceAddress,
+			Coin:      intent.Source,
+			Memo:      fmt.Sprintf("REFUND:%s", intent.TxID),
+			InHash:    intent.TxID,
 		}
 
 		ok, err := h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, toi, cosmos.ZeroUint())
@@ -124,17 +123,42 @@ func (h IntentCancelHandler) handle(ctx cosmos.Context, msg MsgIntentCancel) err
 		refundCoin = common.NewCoin(intent.Source.Asset, cosmos.ZeroUint())
 		abandoned = true
 
-		// Get the vault and subtract the abandoned coins
-		vault, err := h.mgr.Keeper().GetVault(ctx, intent.VaultPubKey)
+		// Get active vaults and find the one with sufficient balance and closest amount
+		vaults, err := h.mgr.Keeper().GetAsgardVaultsByStatus(ctx, ActiveVault)
 		if err != nil {
-			return fmt.Errorf("fail to get vault: %w", err)
+			return fmt.Errorf("fail to get active vaults: %w", err)
+		}
+		if len(vaults) == 0 {
+			return fmt.Errorf("no active vaults available")
 		}
 
-		// Subtract the abandoned amount from the vault
-		vault.SubFunds(common.NewCoins(intent.Source))
+		// Find vault with sufficient balance and closest amount to the source coin
+		var selectedVault *Vault
+		var closestDiff cosmos.Uint
+		for i := range vaults {
+			vaultBalance := vaults[i].GetCoin(intent.Source.Asset).Amount
+
+			// Check if vault has sufficient balance
+			if vaultBalance.GTE(intent.Source.Amount) {
+				diff := common.SafeSub(vaultBalance, intent.Source.Amount)
+
+				// Select this vault if it's the first valid one or has a closer balance
+				if selectedVault == nil || diff.LT(closestDiff) {
+					selectedVault = &vaults[i]
+					closestDiff = diff
+				}
+			}
+		}
+
+		if selectedVault == nil {
+			return fmt.Errorf("no vault found with sufficient balance for asset %s (need %s)", intent.Source.Asset, intent.Source.Amount)
+		}
+
+		// Subtract the abandoned amount from the selected vault
+		selectedVault.SubFunds(common.NewCoins(intent.Source))
 
 		// Save the updated vault
-		if err := h.mgr.Keeper().SetVault(ctx, vault); err != nil {
+		if err := h.mgr.Keeper().SetVault(ctx, *selectedVault); err != nil {
 			return fmt.Errorf("fail to save vault: %w", err)
 		}
 
@@ -142,7 +166,7 @@ func (h IntentCancelHandler) handle(ctx cosmos.Context, msg MsgIntentCancel) err
 			"txid", intent.TxID,
 			"asset", intent.Source.Asset,
 			"amount", intent.Source.Amount,
-			"vault", intent.VaultPubKey,
+			"vault", selectedVault.PubKey,
 		)
 	}
 

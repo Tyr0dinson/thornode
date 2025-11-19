@@ -324,22 +324,13 @@ func (HandlerIntentOpenSuite) TestIntentOpen_KeeperErrors(c *C) {
 		w.activeNodeAccount.NodeAddress,
 	)
 
-	// Test vault iterator failure
-	testKeeper := NewHandlerIntentOpenTestHelper(w.keeper)
-	testKeeper.failToGetVault = true
-	handler := NewIntentOpenHandler(NewDummyMgrWithKeeper(testKeeper))
-	result, err := handler.Run(w.ctx, msg)
-	c.Check(err, NotNil)
-	c.Check(errors.Is(err, errInternal), Equals, true)
-	c.Check(result, IsNil)
-
 	// Test SetIntent failure
-	testKeeper2 := NewHandlerIntentOpenTestHelper(w.keeper)
-	testKeeper2.failToSetIntent = true
-	handler2 := NewIntentOpenHandler(NewDummyMgrWithKeeper(testKeeper2))
+	testKeeper := NewHandlerIntentOpenTestHelper(w.keeper)
+	testKeeper.failToSetIntent = true
+	handler := NewIntentOpenHandler(NewDummyMgrWithKeeper(testKeeper))
 	// Note: SetIntent doesn't return error, so this won't fail the handler
 	// but we test that the code path is covered
-	_, err = handler2.Run(w.ctx, msg)
+	_, err := handler.Run(w.ctx, msg)
 	c.Check(err, IsNil) // Should succeed even if SetIntent is noop
 }
 

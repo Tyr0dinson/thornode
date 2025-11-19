@@ -1,8 +1,6 @@
 package thorchain
 
 import (
-	"fmt"
-
 	se "github.com/cosmos/cosmos-sdk/types/errors"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -94,16 +92,6 @@ func (h IntentOpenHandler) handle(ctx cosmos.Context, msg MsgIntentOpen) error {
 	// Get the source coin
 	sourceCoin := msg.Tx.Coins[0]
 
-	// Determine which vault will hold the source asset
-	vaultPubKey, err := h.mgr.Keeper().GetAsgardVaultsByStatus(ctx, ActiveVault)
-	if err != nil {
-		return ErrInternal(err, "fail to get active vaults")
-	}
-	if len(vaultPubKey) == 0 {
-		return ErrInternal(fmt.Errorf("no active vaults"), "no active vaults available")
-	}
-	vault := vaultPubKey[0] // Use first active vault
-
 	// Get configuration values
 	ttlBlocks := h.mgr.Keeper().GetConfigInt64(ctx, constants.IntentTTLBlocks)
 	minFeeBps := h.mgr.Keeper().GetConfigInt64(ctx, constants.IntentMinFeeBasisPoints)
@@ -117,7 +105,6 @@ func (h IntentOpenHandler) handle(ctx cosmos.Context, msg MsgIntentOpen) error {
 		TargetAddress:        msg.TargetAddress,
 		HighTarget:           msg.HighTarget,
 		LowTarget:            msg.LowTarget,
-		VaultPubKey:          vault.PubKey,
 		CreateHeight:         ctx.BlockHeight(),
 		ExpiryHeight:         ctx.BlockHeight() + ttlBlocks,
 		Status:               IntentActive,
