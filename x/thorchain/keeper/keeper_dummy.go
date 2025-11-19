@@ -921,7 +921,7 @@ func (k KVStoreDummy) GetIntentIterator(_ cosmos.Context) cosmos.Iterator {
 	return nil
 }
 
-func (k KVStoreDummy) GetActiveIntents(_ cosmos.Context) ([]common.TxID, error) {
+func (k KVStoreDummy) GetActiveIntents(_ cosmos.Context) ([]types.Intent, error) {
 	return nil, kaboom
 }
 

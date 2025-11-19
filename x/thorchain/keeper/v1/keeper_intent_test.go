@@ -92,7 +92,95 @@ func (KeeperIntentSuite) TestIntent_ActiveIndex(c *C) {
 	activeIntents, err := k.GetActiveIntents(ctx)
 	c.Assert(err, IsNil)
 	c.Check(len(activeIntents), Equals, 1)
-	c.Check(activeIntents[0].Equals(txID1), Equals, true)
+	c.Check(activeIntents[0].TxID.Equals(txID1), Equals, true)
+	c.Check(activeIntents[0].Status, Equals, types.IntentStatus_IntentActive)
+
+	// Add another active intent
+	txID3 := common.TxID("CCCC1234567890ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234")
+	intent3 := types.Intent{
+		TxID:          txID3,
+		SourceAddress: common.Address("thor1sender3"),
+		Source:        common.NewCoin(common.DOGEAsset, cosmos.NewUint(100)),
+		TargetAsset:   common.BTCAsset,
+		Status:        types.IntentStatus_IntentActive,
+	}
+	k.SetIntent(ctx, intent3)
+
+	// Get active intents - should return both active ones
+	activeIntents, err = k.GetActiveIntents(ctx)
+	c.Assert(err, IsNil)
+	c.Check(len(activeIntents), Equals, 2)
+
+	// Update first intent to completed
+	intent1.Status = types.IntentStatus_IntentCompleted
+	k.SetIntent(ctx, intent1)
+
+	// Get active intents - should only return the third one now
+	activeIntents, err = k.GetActiveIntents(ctx)
+	c.Assert(err, IsNil)
+	c.Check(len(activeIntents), Equals, 1)
+	c.Check(activeIntents[0].TxID.Equals(txID3), Equals, true)
+	c.Check(activeIntents[0].Status, Equals, types.IntentStatus_IntentActive)
+
+	// Update third intent to expired
+	intent3.Status = types.IntentStatus_IntentExpired
+	k.SetIntent(ctx, intent3)
+
+	// Get active intents - should return empty list
+	activeIntents, err = k.GetActiveIntents(ctx)
+	c.Assert(err, IsNil)
+	c.Check(len(activeIntents), Equals, 0)
+}
+
+func (KeeperIntentSuite) TestIntent_RemoveIntent(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	// Create two active intents
+	txID1 := common.TxID("AAAA1234567890ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234")
+	intent1 := types.Intent{
+		TxID:          txID1,
+		SourceAddress: common.Address("thor1sender1"),
+		Source:        common.NewCoin(common.DOGEAsset, cosmos.NewUint(100)),
+		TargetAsset:   common.BTCAsset,
+		Status:        types.IntentStatus_IntentActive,
+	}
+	k.SetIntent(ctx, intent1)
+
+	txID2 := common.TxID("BBBB1234567890ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234")
+	intent2 := types.Intent{
+		TxID:          txID2,
+		SourceAddress: common.Address("thor1sender2"),
+		Source:        common.NewCoin(common.DOGEAsset, cosmos.NewUint(100)),
+		TargetAsset:   common.BTCAsset,
+		Status:        types.IntentStatus_IntentActive,
+	}
+	k.SetIntent(ctx, intent2)
+
+	// Verify both are in active index
+	activeIntents, err := k.GetActiveIntents(ctx)
+	c.Assert(err, IsNil)
+	c.Check(len(activeIntents), Equals, 2)
+
+	// Remove first intent
+	k.RemoveIntent(ctx, txID1)
+
+	// Verify it no longer exists
+	c.Check(k.IntentExists(ctx, txID1), Equals, false)
+
+	// Verify it's removed from active index
+	activeIntents, err = k.GetActiveIntents(ctx)
+	c.Assert(err, IsNil)
+	c.Check(len(activeIntents), Equals, 1)
+	c.Check(activeIntents[0].TxID.Equals(txID2), Equals, true)
+	c.Check(activeIntents[0].Status, Equals, types.IntentStatus_IntentActive)
+
+	// Remove second intent
+	k.RemoveIntent(ctx, txID2)
+
+	// Verify active index is now empty
+	activeIntents, err = k.GetActiveIntents(ctx)
+	c.Assert(err, IsNil)
+	c.Check(len(activeIntents), Equals, 0)
 }
 
 func (KeeperIntentSuite) TestIntentSolve_SetAndGet(c *C) {

@@ -509,7 +509,7 @@ type KeeperIntent interface {
 	IntentExists(ctx cosmos.Context, txID common.TxID) bool
 	RemoveIntent(ctx cosmos.Context, txID common.TxID)
 	GetIntentIterator(ctx cosmos.Context) cosmos.Iterator
-	GetActiveIntents(ctx cosmos.Context) ([]common.TxID, error)
+	GetActiveIntents(ctx cosmos.Context) ([]types.Intent, error)
 
 	// IntentSolve methods
 	SetIntentSolve(ctx cosmos.Context, solve types.IntentSolve)
