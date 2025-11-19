@@ -31,32 +31,20 @@ func (qs queryServer) queryIntent(ctx cosmos.Context, req *types.QueryIntentRequ
 }
 
 func (qs queryServer) queryActiveIntents(ctx cosmos.Context, _ *types.QueryActiveIntentsRequest) (*types.QueryActiveIntentsResponse, error) {
-	// Get all active intent TxIDs
-	intentTxIDs, err := qs.mgr.Keeper().GetActiveIntents(ctx)
+	// Get all active intents
+	activeIntents, err := qs.mgr.Keeper().GetActiveIntents(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get active intents: %w", err)
 	}
 
 	// Fetch each intent with its solves
 	var intentsWithSolves []types.IntentWithSolves
-	for _, txID := range intentTxIDs {
-		intent, err := qs.mgr.Keeper().GetIntent(ctx, txID)
-		if err != nil {
-			// Log error but continue with other intents
-			ctx.Logger().Error("failed to get intent", "txid", txID, "error", err)
-			continue
-		}
-
-		// Double-check it's still active
-		if intent.Status != IntentActive {
-			continue
-		}
-
+	for _, intent := range activeIntents {
 		// Get all solve bids for this intent
-		solves, err := qs.mgr.Keeper().GetIntentSolvesByIntentID(ctx, txID)
+		solves, err := qs.mgr.Keeper().GetIntentSolvesByIntentID(ctx, intent.TxID)
 		if err != nil {
 			// Log error but use empty solves list
-			ctx.Logger().Error("failed to get intent solves", "txid", txID, "error", err)
+			ctx.Logger().Error("failed to get intent solves", "txid", intent.TxID, "error", err)
 			solves = []types.IntentSolve{}
 		}
 
