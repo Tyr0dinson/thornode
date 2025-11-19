@@ -9,6 +9,7 @@ api_clout.go
 api_codes.go
 api_export.go
 api_health.go
+api_intents.go
 api_invariants.go
 api_limit_order.go
 api_liquidity_providers.go
@@ -71,6 +72,10 @@ docs/InboundAddress.md
 docs/InboundConfirmationCountedStage.md
 docs/InboundFinalisedStage.md
 docs/InboundObservedStage.md
+docs/Intent.md
+docs/IntentSolve.md
+docs/IntentWithSolves.md
+docs/IntentsApi.md
 docs/InvariantResponse.md
 docs/InvariantsApi.md
 docs/InvariantsResponse.md
@@ -120,6 +125,8 @@ docs/Pool.md
 docs/PoolSlipApi.md
 docs/PoolSlipResponseInner.md
 docs/PoolsApi.md
+docs/QueryActiveIntentsResponse.md
+docs/QueryIntentResponse.md
 docs/QueueApi.md
 docs/QueueResponse.md
 docs/QuoteApi.md
@@ -216,6 +223,9 @@ model_inbound_address.go
 model_inbound_confirmation_counted_stage.go
 model_inbound_finalised_stage.go
 model_inbound_observed_stage.go
+model_intent.go
+model_intent_solve.go
+model_intent_with_solves.go
 model_invariant_response.go
 model_invariants_response.go
 model_keygen.go
@@ -256,6 +266,8 @@ model_planned_out_tx.go
 model_pol.go
 model_pool.go
 model_pool_slip_response_inner.go
+model_query_active_intents_response.go
+model_query_intent_response.go
 model_queue_response.go
 model_quote_fees.go
 model_quote_limit_response.go

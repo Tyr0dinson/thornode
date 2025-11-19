@@ -61,6 +61,11 @@ const (
 	TCYUnstakeType                  = "tcy_unstake"
 	OraclePriceEvent                = "oracle_price"
 	FailedOutboundRecoveryEventType = "failed_outbound_recovery"
+	IntentOpenEventType             = "intent_open"
+	IntentCancelEventType           = "intent_cancel"
+	IntentSolveEventType            = "intent_solve"
+	IntentCompleteEventType         = "intent_complete"
+	IntentExpireEventType           = "intent_expire"
 	VaultOverSolvencyEventType      = "vault_over_solvency"
 )
 
@@ -1470,6 +1475,150 @@ func (m *EventFailedOutboundRecovery) Events() (cosmos.Events, error) {
 		cosmos.NewAttribute("recovery_type", m.RecoveryType),
 		cosmos.NewAttribute("destination", m.Destination.String()),
 		cosmos.NewAttribute("memo", m.Memo),
+	)
+	return cosmos.Events{evt}, nil
+}
+
+// NewEventIntentOpen creates a new intent open event
+func NewEventIntentOpen(txID common.TxID, source common.Coin, sourceAddr common.Address, targetAsset common.Asset, targetAddr common.Address, highTarget, lowTarget cosmos.Uint, expiryHeight, minFeeBps int64) *EventIntentOpen {
+	return &EventIntentOpen{
+		TxID:              txID,
+		Source:            source,
+		SourceAddress:     sourceAddr,
+		TargetAsset:       targetAsset,
+		TargetAddress:     targetAddr,
+		HighTarget:        highTarget,
+		LowTarget:         lowTarget,
+		ExpiryHeight:      expiryHeight,
+		MinFeeBasisPoints: minFeeBps,
+	}
+}
+
+// Type return the intent open event type
+func (m *EventIntentOpen) Type() string {
+	return IntentOpenEventType
+}
+
+// Events return the cosmos event
+func (m *EventIntentOpen) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(m.Type(),
+		cosmos.NewAttribute("tx_id", m.TxID.String()),
+		cosmos.NewAttribute("source", m.Source.String()),
+		cosmos.NewAttribute("source_address", m.SourceAddress.String()),
+		cosmos.NewAttribute("target_asset", m.TargetAsset.String()),
+		cosmos.NewAttribute("target_address", m.TargetAddress.String()),
+		cosmos.NewAttribute("high_target", m.HighTarget.String()),
+		cosmos.NewAttribute("low_target", m.LowTarget.String()),
+		cosmos.NewAttribute("expiry_height", strconv.FormatInt(m.ExpiryHeight, 10)),
+		cosmos.NewAttribute("min_fee_basis_points", strconv.FormatInt(m.MinFeeBasisPoints, 10)),
+	)
+	return cosmos.Events{evt}, nil
+}
+
+// NewEventIntentCancel creates a new intent cancel event
+func NewEventIntentCancel(txID common.TxID, refund common.Coin, refundAddr common.Address, abandoned bool) *EventIntentCancel {
+	return &EventIntentCancel{
+		TxID:          txID,
+		Refund:        refund,
+		RefundAddress: refundAddr,
+		Abandoned:     abandoned,
+	}
+}
+
+// Type return the intent cancel event type
+func (m *EventIntentCancel) Type() string {
+	return IntentCancelEventType
+}
+
+// Events return the cosmos event
+func (m *EventIntentCancel) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(m.Type(),
+		cosmos.NewAttribute("tx_id", m.TxID.String()),
+		cosmos.NewAttribute("refund", m.Refund.String()),
+		cosmos.NewAttribute("refund_address", m.RefundAddress.String()),
+		cosmos.NewAttribute("abandoned", strconv.FormatBool(m.Abandoned)),
+	)
+	return cosmos.Events{evt}, nil
+}
+
+// NewEventIntentSolve creates a new intent solve event
+func NewEventIntentSolve(solveTxID, intentTxID common.TxID, solverAddr common.Address, targetOffered cosmos.Uint, matchHeight int64) *EventIntentSolve {
+	return &EventIntentSolve{
+		SolveTxID:           solveTxID,
+		IntentTxID:          intentTxID,
+		SolverAddress:       solverAddr,
+		TargetAmountOffered: targetOffered,
+		MatchHeight:         matchHeight,
+	}
+}
+
+// Type return the intent solve event type
+func (m *EventIntentSolve) Type() string {
+	return IntentSolveEventType
+}
+
+// Events return the cosmos event
+func (m *EventIntentSolve) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(m.Type(),
+		cosmos.NewAttribute("solve_tx_id", m.SolveTxID.String()),
+		cosmos.NewAttribute("intent_tx_id", m.IntentTxID.String()),
+		cosmos.NewAttribute("solver_address", m.SolverAddress.String()),
+		cosmos.NewAttribute("target_amount_offered", m.TargetAmountOffered.String()),
+		cosmos.NewAttribute("match_height", strconv.FormatInt(m.MatchHeight, 10)),
+	)
+	return cosmos.Events{evt}, nil
+}
+
+// NewEventIntentComplete creates a new intent complete event
+func NewEventIntentComplete(intentTxID, solveTxID common.TxID, sourceSent, targetReceived, fee common.Coin) *EventIntentComplete {
+	return &EventIntentComplete{
+		IntentTxID:     intentTxID,
+		SolveTxID:      solveTxID,
+		SourceSent:     sourceSent,
+		TargetReceived: targetReceived,
+		Fee:            fee,
+	}
+}
+
+// Type return the intent complete event type
+func (m *EventIntentComplete) Type() string {
+	return IntentCompleteEventType
+}
+
+// Events return the cosmos event
+func (m *EventIntentComplete) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(m.Type(),
+		cosmos.NewAttribute("intent_tx_id", m.IntentTxID.String()),
+		cosmos.NewAttribute("solve_tx_id", m.SolveTxID.String()),
+		cosmos.NewAttribute("source_sent", m.SourceSent.String()),
+		cosmos.NewAttribute("target_received", m.TargetReceived.String()),
+		cosmos.NewAttribute("fee", m.Fee.String()),
+	)
+	return cosmos.Events{evt}, nil
+}
+
+// NewEventIntentExpire creates a new intent expire event
+func NewEventIntentExpire(txID common.TxID, refund common.Coin, refundAddr common.Address, abandoned bool) *EventIntentExpire {
+	return &EventIntentExpire{
+		TxID:          txID,
+		Refund:        refund,
+		RefundAddress: refundAddr,
+		Abandoned:     abandoned,
+	}
+}
+
+// Type return the intent expire event type
+func (m *EventIntentExpire) Type() string {
+	return IntentExpireEventType
+}
+
+// Events return the cosmos event
+func (m *EventIntentExpire) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(m.Type(),
+		cosmos.NewAttribute("tx_id", m.TxID.String()),
+		cosmos.NewAttribute("refund", m.Refund.String()),
+		cosmos.NewAttribute("refund_address", m.RefundAddress.String()),
+		cosmos.NewAttribute("abandoned", strconv.FormatBool(m.Abandoned)),
 	)
 	return cosmos.Events{evt}, nil
 }

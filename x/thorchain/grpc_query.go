@@ -709,3 +709,13 @@ func (s *queryServer) ReferenceMemoPreflight(c context.Context, req *types.Query
 	ctx := s.unwrapSdkContext(c)
 	return s.queryReferenceMemoPreflight(ctx, req)
 }
+
+func (s *queryServer) Intent(c context.Context, req *types.QueryIntentRequest) (*types.QueryIntentResponse, error) {
+	ctx := s.unwrapSdkContext(c)
+	return s.queryIntent(ctx, req)
+}
+
+func (s *queryServer) ActiveIntents(c context.Context, req *types.QueryActiveIntentsRequest) (*types.QueryActiveIntentsResponse, error) {
+	ctx := s.unwrapSdkContext(c)
+	return s.queryActiveIntents(ctx, req)
+}

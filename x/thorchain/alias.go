@@ -99,6 +99,15 @@ const (
 	TxTCYStake          = mem.TxTCYStake
 	TxTCYUnstake        = mem.TxTCYUnstake
 	TxOperatorRotate    = mem.TxOperatorRotate
+	TxIntentOpen        = mem.TxIntentOpen
+	TxIntentCancel      = mem.TxIntentCancel
+	TxIntentSolve       = mem.TxIntentSolve
+
+	// Intent status
+	IntentActive    = types.IntentStatus_IntentActive
+	IntentCancelled = types.IntentStatus_IntentCancelled
+	IntentCompleted = types.IntentStatus_IntentCompleted
+	IntentExpired   = types.IntentStatus_IntentExpired
 )
 
 var (
@@ -250,6 +259,14 @@ var (
 	NewMsgTCYClaim                 = types.NewMsgTCYClaim
 	NewMsgTCYStake                 = types.NewMsgTCYStake
 	NewMsgTCYUnstake               = types.NewMsgTCYUnstake
+	NewMsgIntentOpen               = types.NewMsgIntentOpen
+	NewMsgIntentCancel             = types.NewMsgIntentCancel
+	NewMsgIntentSolve              = types.NewMsgIntentSolve
+	NewEventIntentOpen             = types.NewEventIntentOpen
+	NewEventIntentCancel           = types.NewEventIntentCancel
+	NewEventIntentSolve            = types.NewEventIntentSolve
+	NewEventIntentComplete         = types.NewEventIntentComplete
+	NewEventIntentExpire           = types.NewEventIntentExpire
 
 	// Memo
 	ParseMemo              = mem.ParseMemo
@@ -260,6 +277,9 @@ var (
 	NewRagnarokMemo        = mem.NewRagnarokMemo
 	NewMigrateMemo         = mem.NewMigrateMemo
 	NewReferenceReadMemo   = mem.NewReferenceReadMemo
+	NewIntentOpenMemo      = mem.NewIntentOpenMemo
+	NewIntentCancelMemo    = mem.NewIntentCancelMemo
+	NewIntentSolveMemo     = mem.NewIntentSolveMemo
 
 	FetchDexAggregator         = aggregators.FetchDexAggregator
 	FetchDexAggregatorGasLimit = aggregators.FetchDexAggregatorGasLimit
@@ -316,6 +336,9 @@ type (
 	MsgTCYStake               = types.MsgTCYStake
 	MsgTCYUnstake             = types.MsgTCYUnstake
 	MsgOperatorRotate         = types.MsgOperatorRotate
+	MsgIntentOpen             = types.MsgIntentOpen
+	MsgIntentCancel           = types.MsgIntentCancel
+	MsgIntentSolve            = types.MsgIntentSolve
 
 	// Keeper structs
 	PoolStatus               = types.PoolStatus
@@ -325,6 +348,9 @@ type (
 	LiquidityProviders       = types.LiquidityProviders
 	StreamingSwap            = types.StreamingSwap
 	StreamingSwaps           = types.StreamingSwaps
+	Intent                   = types.Intent
+	IntentSolve              = types.IntentSolve
+	IntentStatus             = types.IntentStatus
 	ObservedTxs              = common.ObservedTxs
 	ObservedTx               = common.ObservedTx
 	ObservedTxVoter          = types.ObservedTxVoter
@@ -425,6 +451,9 @@ type (
 	TCYClaimMemo               = mem.TCYClaimMemo
 	TCYStakeMemo               = mem.TCYStakeMemo
 	TCYUnstakeMemo             = mem.TCYUnstakeMemo
+	IntentOpenMemo             = mem.IntentOpenMemo
+	IntentCancelMemo           = mem.IntentCancelMemo
+	IntentSolveMemo            = mem.IntentSolveMemo
 	OperatorRotateMemo         = mem.OperatorRotateMemo
 
 	// Proto

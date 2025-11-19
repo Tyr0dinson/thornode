@@ -127,6 +127,12 @@ func (p *parser) parse() (mem Memo, err error) {
 		return p.ParseMaintMemo()
 	case TxOperatorRotate:
 		return p.ParseOperatorRotate()
+	case TxIntentOpen:
+		return p.ParseIntentOpenMemo()
+	case TxIntentCancel:
+		return p.ParseIntentCancelMemo()
+	case TxIntentSolve:
+		return p.ParseIntentSolveMemo()
 
 	default:
 		return EmptyMemo, fmt.Errorf("TxType not supported: %s", p.getType().String())

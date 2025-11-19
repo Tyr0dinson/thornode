@@ -82,6 +82,9 @@ func getInternalHandlerMapping(mgr Manager) map[string]MsgHandler {
 	m[sdk.MsgTypeURL(&MsgTCYStake{})] = NewTCYStakeHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgTCYUnstake{})] = NewTCYUnstakeHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgOperatorRotate{})] = NewOperatorRotateHandler(mgr)
+	m[sdk.MsgTypeURL(&MsgIntentOpen{})] = NewIntentOpenHandler(mgr)
+	m[sdk.MsgTypeURL(&MsgIntentCancel{})] = NewIntentCancelHandler(mgr)
+	m[sdk.MsgTypeURL(&MsgIntentSolve{})] = NewIntentSolveHandler(mgr)
 	return m
 }
 
@@ -149,6 +152,18 @@ func getMsgModifyLimitSwap(memo ModifyLimitSwapMemo, tx ObservedTx, signer cosmo
 		depositAmount = tx.Tx.Coins[0].Amount
 	}
 	return NewMsgModifyLimitSwap(tx.Tx.FromAddress, memo.Source, memo.Target, memo.ModifiedTargetAmount, signer, depositAsset, depositAmount), nil
+}
+
+func getMsgIntentOpenFromMemo(memo IntentOpenMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
+	return NewMsgIntentOpen(tx.Tx, memo.GetTargetAsset(), memo.GetTargetAddress(), memo.GetHighTarget(), memo.GetLowTarget(), memo.GetAffiliateAddress(), memo.GetAffiliateBasisPoints(), signer), nil
+}
+
+func getMsgIntentCancelFromMemo(memo IntentCancelMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
+	return NewMsgIntentCancel(tx.Tx, memo.GetIntentTxID(), signer), nil
+}
+
+func getMsgIntentSolveFromMemo(memo IntentSolveMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
+	return NewMsgIntentSolve(tx.Tx, memo.GetIntentTxID(), signer), nil
 }
 
 func getMsgRefundFromMemo(memo RefundMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
@@ -223,6 +238,13 @@ func processOneTxIn(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, sig
 		newMsg, err = getMsgSwapFromMemo(ctx, keeper, m, tx, signer)
 	case ModifyLimitSwapMemo:
 		newMsg, err = getMsgModifyLimitSwap(m, tx, signer)
+	case IntentOpenMemo:
+		m.TargetAsset = fuzzyAssetMatch(ctx, keeper, m.TargetAsset)
+		newMsg, err = getMsgIntentOpenFromMemo(m, tx, signer)
+	case IntentCancelMemo:
+		newMsg, err = getMsgIntentCancelFromMemo(m, tx, signer)
+	case IntentSolveMemo:
+		newMsg, err = getMsgIntentSolveFromMemo(m, tx, signer)
 	case DonateMemo:
 		m.Asset = fuzzyAssetMatch(ctx, keeper, m.Asset)
 		newMsg, err = getMsgDonateFromMemo(m, tx, signer)

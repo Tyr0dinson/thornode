@@ -95,6 +95,7 @@ type Keeper interface {
 	KeeperTCYClaimer
 	KeeperTCYStaker
 	KeeperVolume
+	KeeperIntent
 }
 
 type KeeperConfig interface {
@@ -499,4 +500,24 @@ type KeeperTCYStaker interface {
 	ListTCYStakers(ctx cosmos.Context) ([]TCYStaker, error)
 	TCYStakerExists(ctx cosmos.Context, address common.Address) bool
 	UpdateTCYStaker(ctx cosmos.Context, address common.Address, amount math.Uint) error
+}
+
+type KeeperIntent interface {
+	// Intent methods
+	SetIntent(ctx cosmos.Context, intent types.Intent)
+	GetIntent(ctx cosmos.Context, txID common.TxID) (types.Intent, error)
+	IntentExists(ctx cosmos.Context, txID common.TxID) bool
+	RemoveIntent(ctx cosmos.Context, txID common.TxID)
+	GetIntentIterator(ctx cosmos.Context) cosmos.Iterator
+	GetActiveIntents(ctx cosmos.Context) ([]common.TxID, error)
+
+	// IntentSolve methods
+	SetIntentSolve(ctx cosmos.Context, solve types.IntentSolve)
+	GetIntentSolve(ctx cosmos.Context, solveTxID common.TxID) (types.IntentSolve, error)
+	IntentSolveExists(ctx cosmos.Context, solveTxID common.TxID) bool
+	RemoveIntentSolve(ctx cosmos.Context, solveTxID common.TxID)
+
+	// Index methods for efficient lookups
+	GetIntentSolvesByIntentID(ctx cosmos.Context, intentTxID common.TxID) ([]types.IntentSolve, error)
+	GetIntentSolvesByMatchHeight(ctx cosmos.Context, height int64) ([]types.IntentSolve, error)
 }
