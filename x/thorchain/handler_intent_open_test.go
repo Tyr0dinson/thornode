@@ -18,10 +18,10 @@ var _ = Suite(&HandlerIntentOpenSuite{})
 
 type HandlerIntentOpenTestHelper struct {
 	keeper.Keeper
-	failToGetVault     bool
-	failToSetIntent    bool
-	failToGetConstant  bool
-	failToEmitEvent    bool
+	failToGetVault    bool
+	failToSetIntent   bool
+	failToGetConstant bool
+	failToEmitEvent   bool
 }
 
 func NewHandlerIntentOpenTestHelper(k keeper.Keeper) *HandlerIntentOpenTestHelper {
@@ -76,12 +76,12 @@ func (HandlerIntentOpenSuite) TestIntentOpen_HappyPath(c *C) {
 	tx.Coins = common.Coins{common.NewCoin(common.DOGEAsset, cosmos.NewUint(100*common.One))}
 	msg := NewMsgIntentOpen(
 		tx,
-		common.BTCAsset,                     // target asset
-		cosmos.NewUint(15*common.One),       // high target (15 BTC)
-		cosmos.NewUint(10*common.One),       // low target (10 BTC)
-		GetRandomBTCAddress(),               // target address
-		common.NoAddress,                    // no affiliate
-		cosmos.ZeroUint(),                   // no affiliate fee
+		common.BTCAsset,               // target asset
+		cosmos.NewUint(15*common.One), // high target (15 BTC)
+		cosmos.NewUint(10*common.One), // low target (10 BTC)
+		GetRandomBTCAddress(),         // target address
+		common.NoAddress,              // no affiliate
+		cosmos.ZeroUint(),             // no affiliate fee
 		w.activeNodeAccount.NodeAddress,
 	)
 
@@ -119,8 +119,8 @@ func (HandlerIntentOpenSuite) TestIntentOpen_WithAffiliateFee(c *C) {
 		cosmos.NewUint(15*common.One),
 		cosmos.NewUint(10*common.One),
 		GetRandomBTCAddress(),
-		affAddr,                             // affiliate address
-		cosmos.NewUint(100),                 // 1% affiliate fee
+		affAddr,             // affiliate address
+		cosmos.NewUint(100), // 1% affiliate fee
 		w.activeNodeAccount.NodeAddress,
 	)
 
@@ -210,7 +210,7 @@ func (HandlerIntentOpenSuite) TestIntentOpen_ValidationErrors(c *C) {
 				return NewMsgIntentOpen(
 					tx,
 					common.BTCAsset,
-					cosmos.NewUint(5*common.One),  // high < low
+					cosmos.NewUint(5*common.One), // high < low
 					cosmos.NewUint(10*common.One),
 					GetRandomBTCAddress(),
 					common.NoAddress,
