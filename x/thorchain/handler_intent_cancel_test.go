@@ -8,7 +8,6 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
-	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 )
 
@@ -64,16 +63,16 @@ func (HandlerIntentCancelSuite) TestIntentCancel_RefundPoolAsset(c *C) {
 	intentTx := GetRandomTx()
 	userAddr := GetRandomTHORAddress()
 	intent := Intent{
-		TxID:         intentTx.ID,
-		SourceAddress:       userAddr,
-		Source: common.NewCoin(common.DOGEAsset, cosmos.NewUint(100*common.One)),
-		
-		TargetAsset:  common.BTCAsset,
-		TargetAddress:   GetRandomBTCAddress(),
-		HighTarget:   cosmos.NewUint(20*common.One),
-		LowTarget:    cosmos.NewUint(10*common.One),
-		ExpiryHeight: w.ctx.BlockHeight() + 1000,
-		Status:       IntentActive,
+		TxID:          intentTx.ID,
+		SourceAddress: userAddr,
+		Source:        common.NewCoin(common.DOGEAsset, cosmos.NewUint(100*common.One)),
+
+		TargetAsset:   common.BTCAsset,
+		TargetAddress: GetRandomBTCAddress(),
+		HighTarget:    cosmos.NewUint(20 * common.One),
+		LowTarget:     cosmos.NewUint(10 * common.One),
+		ExpiryHeight:  w.ctx.BlockHeight() + 1000,
+		Status:        IntentActive,
 	}
 	w.keeper.SetIntent(w.ctx, intent)
 
@@ -103,8 +102,8 @@ func (HandlerIntentCancelSuite) TestIntentCancel_RefundNativeAsset(c *C) {
 		Source:        common.NewCoin(common.RuneAsset(), cosmos.NewUint(100*common.One)),
 		TargetAsset:   common.BTCAsset,
 		TargetAddress: GetRandomBTCAddress(),
-		HighTarget:    cosmos.NewUint(20*common.One),
-		LowTarget:     cosmos.NewUint(10*common.One),
+		HighTarget:    cosmos.NewUint(20 * common.One),
+		LowTarget:     cosmos.NewUint(10 * common.One),
 		ExpiryHeight:  w.ctx.BlockHeight() + 1000,
 		Status:        IntentActive,
 	}
@@ -131,16 +130,16 @@ func (HandlerIntentCancelSuite) TestIntentCancel_ValidationErrors(c *C) {
 	intentTx := GetRandomTx()
 	userAddr := GetRandomTHORAddress()
 	intent := Intent{
-		TxID:         intentTx.ID,
-		SourceAddress:       userAddr,
-		Source: common.NewCoin(common.DOGEAsset, cosmos.NewUint(100*common.One)),
-		
-		TargetAsset:  common.BTCAsset,
-		TargetAddress:   GetRandomBTCAddress(),
-		HighTarget:   cosmos.NewUint(20*common.One),
-		LowTarget:    cosmos.NewUint(10*common.One),
-		ExpiryHeight: w.ctx.BlockHeight() + 1000,
-		Status:       IntentActive,
+		TxID:          intentTx.ID,
+		SourceAddress: userAddr,
+		Source:        common.NewCoin(common.DOGEAsset, cosmos.NewUint(100*common.One)),
+
+		TargetAsset:   common.BTCAsset,
+		TargetAddress: GetRandomBTCAddress(),
+		HighTarget:    cosmos.NewUint(20 * common.One),
+		LowTarget:     cosmos.NewUint(10 * common.One),
+		ExpiryHeight:  w.ctx.BlockHeight() + 1000,
+		Status:        IntentActive,
 	}
 	w.keeper.SetIntent(w.ctx, intent)
 
@@ -195,16 +194,16 @@ func (HandlerIntentCancelSuite) TestIntentCancel_KeeperErrors(c *C) {
 	intentTx := GetRandomTx()
 	userAddr := GetRandomTHORAddress()
 	intent := Intent{
-		TxID:         intentTx.ID,
-		SourceAddress:       userAddr,
-		Source: common.NewCoin(common.DOGEAsset, cosmos.NewUint(100*common.One)),
-		
-		TargetAsset:  common.BTCAsset,
-		TargetAddress:   GetRandomBTCAddress(),
-		HighTarget:   cosmos.NewUint(20*common.One),
-		LowTarget:    cosmos.NewUint(10*common.One),
-		ExpiryHeight: w.ctx.BlockHeight() + 1000,
-		Status:       IntentActive,
+		TxID:          intentTx.ID,
+		SourceAddress: userAddr,
+		Source:        common.NewCoin(common.DOGEAsset, cosmos.NewUint(100*common.One)),
+
+		TargetAsset:   common.BTCAsset,
+		TargetAddress: GetRandomBTCAddress(),
+		HighTarget:    cosmos.NewUint(20 * common.One),
+		LowTarget:     cosmos.NewUint(10 * common.One),
+		ExpiryHeight:  w.ctx.BlockHeight() + 1000,
+		Status:        IntentActive,
 	}
 	w.keeper.SetIntent(w.ctx, intent)
 

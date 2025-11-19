@@ -59,8 +59,8 @@ func (HandlerIntentSolveSuite) TestIntentSolve_HappyPath(c *C) {
 		SourceCoin:   common.NewCoin(common.DOGEAsset, cosmos.NewUint(100*common.One)),
 		TargetAsset:  common.BTCAsset,
 		TargetAddr:   GetRandomBTCAddress(),
-		HighTarget:   cosmos.NewUint(15*common.One),
-		LowTarget:    cosmos.NewUint(10*common.One),
+		HighTarget:   cosmos.NewUint(15 * common.One),
+		LowTarget:    cosmos.NewUint(10 * common.One),
 		ExpiryHeight: w.ctx.BlockHeight() + 2000,
 		Status:       IntentActive,
 	}
@@ -109,8 +109,8 @@ func (HandlerIntentSolveSuite) TestIntentSolve_MatchHeightCalculation(c *C) {
 		SourceCoin:   common.NewCoin(common.DOGEAsset, cosmos.NewUint(100*common.One)),
 		TargetAsset:  common.BTCAsset,
 		TargetAddr:   GetRandomBTCAddress(),
-		HighTarget:   cosmos.NewUint(20*common.One),
-		LowTarget:    cosmos.NewUint(10*common.One),
+		HighTarget:   cosmos.NewUint(20 * common.One),
+		LowTarget:    cosmos.NewUint(10 * common.One),
 		ExpiryHeight: currentHeight + 5000,
 		Status:       IntentActive,
 	}
@@ -178,8 +178,8 @@ func (HandlerIntentSolveSuite) TestIntentSolve_MatchHeightCappedAtExpiry(c *C) {
 		SourceCoin:   common.NewCoin(common.DOGEAsset, cosmos.NewUint(100*common.One)),
 		TargetAsset:  common.BTCAsset,
 		TargetAddr:   GetRandomBTCAddress(),
-		HighTarget:   cosmos.NewUint(20*common.One),
-		LowTarget:    cosmos.NewUint(10*common.One),
+		HighTarget:   cosmos.NewUint(20 * common.One),
+		LowTarget:    cosmos.NewUint(10 * common.One),
 		ExpiryHeight: currentHeight + 100, // Short expiry
 		Status:       IntentActive,
 	}
@@ -216,8 +216,8 @@ func (HandlerIntentSolveSuite) TestIntentSolve_ValidationErrors(c *C) {
 		SourceCoin:   common.NewCoin(common.DOGEAsset, cosmos.NewUint(100*common.One)),
 		TargetAsset:  common.BTCAsset,
 		TargetAddr:   GetRandomBTCAddress(),
-		HighTarget:   cosmos.NewUint(20*common.One),
-		LowTarget:    cosmos.NewUint(10*common.One),
+		HighTarget:   cosmos.NewUint(20 * common.One),
+		LowTarget:    cosmos.NewUint(10 * common.One),
 		ExpiryHeight: w.ctx.BlockHeight() + 1000,
 		Status:       IntentActive,
 	}
@@ -328,8 +328,8 @@ func (HandlerIntentSolveSuite) TestIntentSolve_KeeperErrors(c *C) {
 		SourceCoin:   common.NewCoin(common.DOGEAsset, cosmos.NewUint(100*common.One)),
 		TargetAsset:  common.BTCAsset,
 		TargetAddr:   GetRandomBTCAddress(),
-		HighTarget:   cosmos.NewUint(20*common.One),
-		LowTarget:    cosmos.NewUint(10*common.One),
+		HighTarget:   cosmos.NewUint(20 * common.One),
+		LowTarget:    cosmos.NewUint(10 * common.One),
 		ExpiryHeight: w.ctx.BlockHeight() + 1000,
 		Status:       IntentActive,
 	}
@@ -381,8 +381,8 @@ func (HandlerIntentSolveSuite) TestIntentSolve_EdgeCase_HighEqualsLow(c *C) {
 		SourceCoin:   common.NewCoin(common.DOGEAsset, cosmos.NewUint(100*common.One)),
 		TargetAsset:  common.BTCAsset,
 		TargetAddr:   GetRandomBTCAddress(),
-		HighTarget:   cosmos.NewUint(10*common.One),
-		LowTarget:    cosmos.NewUint(10*common.One), // Same as high
+		HighTarget:   cosmos.NewUint(10 * common.One),
+		LowTarget:    cosmos.NewUint(10 * common.One), // Same as high
 		ExpiryHeight: currentHeight + 5000,
 		Status:       IntentActive,
 	}
