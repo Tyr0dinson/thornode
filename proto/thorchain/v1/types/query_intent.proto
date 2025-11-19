@@ -8,10 +8,9 @@ import "types/type_intent.proto";
 
 option (gogoproto.marshaler_all) = true;
 
-// QueryIntentRequest is the request type for querying a specific intent by transaction ID
-message QueryIntentRequest {
-  string tx_id = 1;
-}
+// QueryIntentRequest is the request type for querying a specific intent by
+// transaction ID
+message QueryIntentRequest { string tx_id = 1; }
 
 // QueryIntentResponse is the response type for a specific intent query
 message QueryIntentResponse {
