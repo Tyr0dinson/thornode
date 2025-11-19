@@ -103,6 +103,8 @@ const (
 	Query_ReferenceMemo_FullMethodName          = "/types.Query/ReferenceMemo"
 	Query_ReferenceMemoByHash_FullMethodName    = "/types.Query/ReferenceMemoByHash"
 	Query_ReferenceMemoPreflight_FullMethodName = "/types.Query/ReferenceMemoPreflight"
+	Query_Intent_FullMethodName                 = "/types.Query/Intent"
+	Query_ActiveIntents_FullMethodName          = "/types.Query/ActiveIntents"
 )
 
 // QueryClient is the client API for Query service.
@@ -202,6 +204,8 @@ type QueryClient interface {
 	ReferenceMemo(ctx context.Context, in *QueryReferenceMemoRequest, opts ...grpc.CallOption) (*QueryReferenceMemoResponse, error)
 	ReferenceMemoByHash(ctx context.Context, in *QueryReferenceMemoByHashRequest, opts ...grpc.CallOption) (*QueryReferenceMemoByHashResponse, error)
 	ReferenceMemoPreflight(ctx context.Context, in *QueryReferenceMemoPreflightRequest, opts ...grpc.CallOption) (*QueryReferenceMemoPreflightResponse, error)
+	Intent(ctx context.Context, in *QueryIntentRequest, opts ...grpc.CallOption) (*QueryIntentResponse, error)
+	ActiveIntents(ctx context.Context, in *QueryActiveIntentsRequest, opts ...grpc.CallOption) (*QueryActiveIntentsResponse, error)
 }
 
 type queryClient struct {
@@ -968,6 +972,24 @@ func (c *queryClient) ReferenceMemoPreflight(ctx context.Context, in *QueryRefer
 	return out, nil
 }
 
+func (c *queryClient) Intent(ctx context.Context, in *QueryIntentRequest, opts ...grpc.CallOption) (*QueryIntentResponse, error) {
+	out := new(QueryIntentResponse)
+	err := c.cc.Invoke(ctx, Query_Intent_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *queryClient) ActiveIntents(ctx context.Context, in *QueryActiveIntentsRequest, opts ...grpc.CallOption) (*QueryActiveIntentsResponse, error) {
+	out := new(QueryActiveIntentsResponse)
+	err := c.cc.Invoke(ctx, Query_ActiveIntents_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // QueryServer is the server API for Query service.
 // All implementations must embed UnimplementedQueryServer
 // for forward compatibility
@@ -1065,6 +1087,8 @@ type QueryServer interface {
 	ReferenceMemo(context.Context, *QueryReferenceMemoRequest) (*QueryReferenceMemoResponse, error)
 	ReferenceMemoByHash(context.Context, *QueryReferenceMemoByHashRequest) (*QueryReferenceMemoByHashResponse, error)
 	ReferenceMemoPreflight(context.Context, *QueryReferenceMemoPreflightRequest) (*QueryReferenceMemoPreflightResponse, error)
+	Intent(context.Context, *QueryIntentRequest) (*QueryIntentResponse, error)
+	ActiveIntents(context.Context, *QueryActiveIntentsRequest) (*QueryActiveIntentsResponse, error)
 	mustEmbedUnimplementedQueryServer()
 }
 
@@ -1323,6 +1347,12 @@ func (UnimplementedQueryServer) ReferenceMemoByHash(context.Context, *QueryRefer
 }
 func (UnimplementedQueryServer) ReferenceMemoPreflight(context.Context, *QueryReferenceMemoPreflightRequest) (*QueryReferenceMemoPreflightResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReferenceMemoPreflight not implemented")
+}
+func (UnimplementedQueryServer) Intent(context.Context, *QueryIntentRequest) (*QueryIntentResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Intent not implemented")
+}
+func (UnimplementedQueryServer) ActiveIntents(context.Context, *QueryActiveIntentsRequest) (*QueryActiveIntentsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ActiveIntents not implemented")
 }
 func (UnimplementedQueryServer) mustEmbedUnimplementedQueryServer() {}
 
@@ -2849,6 +2879,42 @@ func _Query_ReferenceMemoPreflight_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Query_Intent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryIntentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).Intent(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Query_Intent_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).Intent(ctx, req.(*QueryIntentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Query_ActiveIntents_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryActiveIntentsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).ActiveIntents(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Query_ActiveIntents_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).ActiveIntents(ctx, req.(*QueryActiveIntentsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Query_ServiceDesc is the grpc.ServiceDesc for Query service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -3191,6 +3257,14 @@ var Query_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReferenceMemoPreflight",
 			Handler:    _Query_ReferenceMemoPreflight_Handler,
+		},
+		{
+			MethodName: "Intent",
+			Handler:    _Query_Intent_Handler,
+		},
+		{
+			MethodName: "ActiveIntents",
+			Handler:    _Query_ActiveIntents_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

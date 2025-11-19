@@ -1,0 +1,166 @@
+package thorchain
+
+import (
+	"fmt"
+
+	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
+)
+
+// IntentOpenHandler handles opening new intents
+type IntentOpenHandler struct {
+	mgr Manager
+}
+
+// NewIntentOpenHandler creates a new instance of IntentOpenHandler
+func NewIntentOpenHandler(mgr Manager) IntentOpenHandler {
+	return IntentOpenHandler{
+		mgr: mgr,
+	}
+}
+
+// Run executes the intent open handler
+func (h IntentOpenHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, error) {
+	msg, ok := m.(*MsgIntentOpen)
+	if !ok {
+		return nil, errInvalidMessage
+	}
+
+	if err := h.validate(ctx, *msg); err != nil {
+		ctx.Logger().Error("MsgIntentOpen failed validation", "error", err)
+		return nil, err
+	}
+
+	if err := h.handle(ctx, *msg); err != nil {
+		ctx.Logger().Error("fail to process MsgIntentOpen", "error", err)
+		return nil, err
+	}
+
+	return &cosmos.Result{}, nil
+}
+
+func (h IntentOpenHandler) validate(ctx cosmos.Context, msg MsgIntentOpen) error {
+	if err := msg.ValidateBasic(); err != nil {
+		return err
+	}
+
+	// Check if intents are enabled
+	if h.mgr.Keeper().GetConfigInt64(ctx, constants.IntentsEnabled) <= 0 {
+		return fmt.Errorf("intents feature is disabled")
+	}
+
+	// Validate high >= low
+	if msg.HighTarget.LT(msg.LowTarget) {
+		return fmt.Errorf("high target must be greater than or equal to low target")
+	}
+
+	// Validate source coin
+	if len(msg.Tx.Coins) == 0 {
+		return fmt.Errorf("no coins in transaction")
+	}
+	if len(msg.Tx.Coins) > 1 {
+		return fmt.Errorf("intent can only be created with one coin type")
+	}
+
+	sourceAsset := msg.Tx.Coins[0].Asset
+	targetAsset := msg.TargetAsset
+
+	// At least one asset must have an active pool or be native
+	sourcePool, err := h.mgr.Keeper().GetPool(ctx, sourceAsset.GetLayer1Asset())
+	if err != nil {
+		return fmt.Errorf("fail to get source pool: %w", err)
+	}
+	targetPool, err := h.mgr.Keeper().GetPool(ctx, targetAsset.GetLayer1Asset())
+	if err != nil {
+		return fmt.Errorf("fail to get target pool: %w", err)
+	}
+
+	hasActiveSourcePool := !sourcePool.IsEmpty() && sourcePool.Status == PoolAvailable
+	hasActiveTargetPool := !targetPool.IsEmpty() && targetPool.Status == PoolAvailable
+	isSourceNative := sourceAsset.IsRune() || sourceAsset.IsSecuredAsset()
+	isTargetNative := targetAsset.IsRune() || targetAsset.IsSecuredAsset()
+
+	if !hasActiveSourcePool && !hasActiveTargetPool && !isSourceNative && !isTargetNative {
+		return fmt.Errorf("at least one of source or target asset must have an active pool or be a native/secured asset")
+	}
+
+	return nil
+}
+
+func (h IntentOpenHandler) handle(ctx cosmos.Context, msg MsgIntentOpen) error {
+	// Get the source coin
+	sourceCoin := msg.Tx.Coins[0]
+
+	// Determine which vault will hold the source asset
+	vaultPubKey, err := h.mgr.Keeper().GetAsgardVaultsByStatus(ctx, ActiveVault)
+	if err != nil {
+		return fmt.Errorf("fail to get active vaults: %w", err)
+	}
+	if len(vaultPubKey) == 0 {
+		return fmt.Errorf("no active vaults available")
+	}
+	vault := vaultPubKey[0] // Use first active vault
+
+	// Get configuration values
+	ttlBlocks := h.mgr.Keeper().GetConfigInt64(ctx, constants.IntentTTLBlocks)
+	minFeeBps := h.mgr.Keeper().GetConfigInt64(ctx, constants.IntentMinFeeBasisPoints)
+
+	// Create the intent
+	intent := Intent{
+		TxID:                 msg.Tx.ID,
+		Source:               sourceCoin,
+		SourceAddress:        msg.Tx.FromAddress,
+		TargetAsset:          msg.TargetAsset,
+		TargetAddress:        msg.TargetAddress,
+		HighTarget:           msg.HighTarget,
+		LowTarget:            msg.LowTarget,
+		VaultPubKey:          vault.PubKey,
+		CreateHeight:         ctx.BlockHeight(),
+		ExpiryHeight:         ctx.BlockHeight() + ttlBlocks,
+		Status:               IntentActive,
+		MinFeeBasisPoints:    minFeeBps,
+		AffiliateAddress:     msg.AffiliateAddress,
+		AffiliateBasisPoints: msg.AffiliateBasisPoints.BigInt().Int64(),
+	}
+
+	// Save the intent
+	h.mgr.Keeper().SetIntent(ctx, intent)
+
+	// Handle affiliate fee if applicable
+	if !msg.AffiliateBasisPoints.IsZero() && !msg.AffiliateAddress.IsEmpty() {
+		// Determine which asset can pay the affiliate fee (must be pool or native asset)
+		feeAsset := sourceCoin.Asset
+		feeAmount := common.GetUncappedShare(msg.AffiliateBasisPoints, cosmos.NewUint(10000), sourceCoin.Amount)
+
+		sourcePool, _ := h.mgr.Keeper().GetPool(ctx, sourceCoin.Asset.GetLayer1Asset())
+		isSourcePoolAsset := !sourcePool.IsEmpty()
+		isSourceNative := sourceCoin.Asset.IsRune() || sourceCoin.Asset.IsSecuredAsset()
+
+		if isSourcePoolAsset || isSourceNative {
+			// Can charge affiliate fee on source asset
+			if !feeAmount.IsZero() {
+				// TODO: Implement affiliate fee handling similar to swap handler
+				ctx.Logger().Info("intent affiliate fee", "asset", feeAsset, "amount", feeAmount, "affiliate", msg.AffiliateAddress)
+			}
+		}
+	}
+
+	// Emit event
+	evt := NewEventIntentOpen(
+		msg.Tx.ID,
+		sourceCoin,
+		msg.Tx.FromAddress,
+		msg.TargetAsset,
+		msg.TargetAddress,
+		msg.HighTarget,
+		msg.LowTarget,
+		intent.ExpiryHeight,
+		intent.MinFeeBasisPoints,
+	)
+	if err := h.mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
+		ctx.Logger().Error("fail to emit intent open event", "error", err)
+	}
+
+	return nil
+}

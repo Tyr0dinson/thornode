@@ -84,6 +84,8 @@ Class | Method | HTTP request | Description
 *CodesApi* | [**Codes**](docs/CodesApi.md#codes) | **Get** /thorchain/codes | 
 *ExportApi* | [**Export**](docs/ExportApi.md#export) | **Get** /thorchain/export | 
 *HealthApi* | [**Ping**](docs/HealthApi.md#ping) | **Get** /thorchain/ping | 
+*IntentsApi* | [**ActiveIntents**](docs/IntentsApi.md#activeintents) | **Get** /thorchain/intents | 
+*IntentsApi* | [**Intent**](docs/IntentsApi.md#intent) | **Get** /thorchain/intent/{tx_id} | 
 *InvariantsApi* | [**Invariant**](docs/InvariantsApi.md#invariant) | **Get** /thorchain/invariant/{invariant} | 
 *InvariantsApi* | [**Invariants**](docs/InvariantsApi.md#invariants) | **Get** /thorchain/invariants | 
 *LimitOrderApi* | [**Quotelimit**](docs/LimitOrderApi.md#quotelimit) | **Get** /thorchain/quote/limit | 
@@ -190,6 +192,9 @@ Class | Method | HTTP request | Description
  - [InboundConfirmationCountedStage](docs/InboundConfirmationCountedStage.md)
  - [InboundFinalisedStage](docs/InboundFinalisedStage.md)
  - [InboundObservedStage](docs/InboundObservedStage.md)
+ - [Intent](docs/Intent.md)
+ - [IntentSolve](docs/IntentSolve.md)
+ - [IntentWithSolves](docs/IntentWithSolves.md)
  - [InvariantResponse](docs/InvariantResponse.md)
  - [InvariantsResponse](docs/InvariantsResponse.md)
  - [Keygen](docs/Keygen.md)
@@ -230,6 +235,8 @@ Class | Method | HTTP request | Description
  - [PlannedOutTx](docs/PlannedOutTx.md)
  - [Pool](docs/Pool.md)
  - [PoolSlipResponseInner](docs/PoolSlipResponseInner.md)
+ - [QueryActiveIntentsResponse](docs/QueryActiveIntentsResponse.md)
+ - [QueryIntentResponse](docs/QueryIntentResponse.md)
  - [QueueResponse](docs/QueueResponse.md)
  - [QuoteFees](docs/QuoteFees.md)
  - [QuoteLimitResponse](docs/QuoteLimitResponse.md)

@@ -25,6 +25,7 @@ type DummyMgr struct {
 	wasmMgr                   WasmManager
 	switchMgr                 SwitchManager
 	scheduledMigrationManager ScheduledMigrationManager
+	intentMgr                 IntentManager
 }
 
 func NewDummyMgrWithKeeper(k keeper.Keeper) *DummyMgr {
@@ -44,6 +45,7 @@ func NewDummyMgrWithKeeper(k keeper.Keeper) *DummyMgr {
 		switchMgr:                 NewDummySwitchManager(),
 		advSwapQueue:              NewDummyAdvSwapQueue(),
 		scheduledMigrationManager: NewDummyScheduledMigrationManager(),
+		intentMgr:                 NewDummyIntentManager(),
 	}
 }
 
@@ -64,6 +66,7 @@ func NewDummyMgr() *DummyMgr {
 		switchMgr:                 NewDummySwitchManager(),
 		advSwapQueue:              NewDummyAdvSwapQueue(),
 		scheduledMigrationManager: NewDummyScheduledMigrationManager(),
+		intentMgr:                 NewDummyIntentManager(),
 	}
 }
 
@@ -87,6 +90,7 @@ func (m DummyMgr) SwitchManager() SwitchManager             { return m.switchMgr
 func (m DummyMgr) ScheduledMigrationManager() ScheduledMigrationManager {
 	return m.scheduledMigrationManager
 }
+func (m DummyMgr) IntentMgr() IntentManager { return m.intentMgr }
 
 // DummyAdvSwapQueue is for test purpose
 type DummyAdvSwapQueue struct{}
@@ -113,5 +117,17 @@ func NewDummyScheduledMigrationManager() *DummyScheduledMigrationManager {
 }
 
 func (d *DummyScheduledMigrationManager) EndBlock(ctx cosmos.Context, mgr Manager) error {
+	return nil
+}
+
+// DummyIntentManager is for test purpose
+type DummyIntentManager struct{}
+
+// NewDummyIntentManager create a new instance of DummyIntentManager for test purpose
+func NewDummyIntentManager() *DummyIntentManager {
+	return &DummyIntentManager{}
+}
+
+func (d *DummyIntentManager) EndBlock(ctx cosmos.Context) error {
 	return nil
 }

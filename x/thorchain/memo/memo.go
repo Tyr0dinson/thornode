@@ -52,6 +52,9 @@ const (
 	TxMaint
 	TxRebond
 	TxOperatorRotate
+	TxIntentOpen
+	TxIntentCancel
+	TxIntentSolve
 )
 
 var stringToTxTypeMap = map[string]TxType{
@@ -97,6 +100,9 @@ var stringToTxTypeMap = map[string]TxType{
 	"tcy-":        TxTCYUnstake,
 	"maint":       TxMaint,
 	"operator":    TxOperatorRotate,
+	"io":          TxIntentOpen,
+	"ic":          TxIntentCancel,
+	"is":          TxIntentSolve,
 }
 
 var txToStringMap = map[TxType]string{
@@ -130,6 +136,9 @@ var txToStringMap = map[TxType]string{
 	TxTCYStake:               "tcy+",
 	TxTCYUnstake:             "tcy-",
 	TxMaint:                  "maint",
+	TxIntentOpen:             "io",
+	TxIntentCancel:           "ic",
+	TxIntentSolve:            "is",
 }
 
 // converts a string into a txType

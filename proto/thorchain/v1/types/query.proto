@@ -55,6 +55,7 @@ import "types/query_codes.proto";
 import "types/query_oracle_price.proto";
 import "types/query_eip712.proto";
 import "types/query_reference_memo.proto";
+import "types/query_intent.proto";
 
 option (gogoproto.marshaler_all) = true;
 
@@ -441,5 +442,14 @@ service Query {
   rpc ReferenceMemoPreflight(QueryReferenceMemoPreflightRequest)
       returns (QueryReferenceMemoPreflightResponse) {
     option (google.api.http).get = "/thorchain/memo/check/{asset}/{amount}";
+  }
+
+  rpc Intent(QueryIntentRequest) returns (QueryIntentResponse) {
+    option (google.api.http).get = "/thorchain/intent/{tx_id}";
+  }
+
+  rpc ActiveIntents(QueryActiveIntentsRequest)
+      returns (QueryActiveIntentsResponse) {
+    option (google.api.http).get = "/thorchain/intents";
   }
 }
