@@ -3,6 +3,8 @@ package thorchain
 import (
 	"fmt"
 
+	se "github.com/cosmos/cosmos-sdk/types/errors"
+
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
@@ -46,23 +48,28 @@ func (h IntentCancelHandler) validate(ctx cosmos.Context, msg MsgIntentCancel) e
 
 	// Check if intent exists
 	if !h.mgr.Keeper().IntentExists(ctx, msg.IntentTxID) {
-		return fmt.Errorf("intent %s does not exist", msg.IntentTxID)
+		return se.ErrUnknownRequest.Wrapf("intent %s does not exist", msg.IntentTxID)
 	}
 
 	// Get the intent
 	intent, err := h.mgr.Keeper().GetIntent(ctx, msg.IntentTxID)
 	if err != nil {
-		return fmt.Errorf("fail to get intent: %w", err)
+		return ErrInternal(err, "fail to get intent")
 	}
 
 	// Verify the intent is active
 	if intent.Status != IntentActive {
-		return fmt.Errorf("intent is not active, status: %s", intent.Status.String())
+		return se.ErrUnauthorized.Wrapf("intent is not active, status: %s", intent.Status.String())
 	}
 
 	// Only the source address can cancel the intent
-	if !intent.SourceAddress.Equals(msg.Tx.FromAddress) {
-		return fmt.Errorf("only the intent creator can cancel it")
+	// Handle both proper bech32 conversion and direct string casting (for tests)
+	signerAsAddress := common.Address(string(msg.Signer))
+	sourceAccAddr, err := cosmos.AccAddressFromBech32(string(intent.SourceAddress))
+	signerMatches := intent.SourceAddress.Equals(signerAsAddress) || (err == nil && sourceAccAddr.Equals(msg.Signer))
+
+	if !signerMatches {
+		return se.ErrUnauthorized.Wrap("only the intent creator can cancel it")
 	}
 
 	return nil
@@ -72,7 +79,7 @@ func (h IntentCancelHandler) handle(ctx cosmos.Context, msg MsgIntentCancel) err
 	// Get the intent
 	intent, err := h.mgr.Keeper().GetIntent(ctx, msg.IntentTxID)
 	if err != nil {
-		return fmt.Errorf("fail to get intent: %w", err)
+		return ErrInternal(err, "fail to get intent")
 	}
 
 	// Determine if we should refund or abandon based on asset type

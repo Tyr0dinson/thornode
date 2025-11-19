@@ -20,7 +20,6 @@ type HandlerIntentCancelTestHelper struct {
 	failToGetIntent bool
 	failToGetPool   bool
 	failToGetVault  bool
-	failToAddTxOut  bool
 }
 
 func NewHandlerIntentCancelTestHelper(k keeper.Keeper) *HandlerIntentCancelTestHelper {
@@ -45,7 +44,7 @@ func (h *HandlerIntentCancelTestHelper) GetPool(ctx cosmos.Context, asset common
 
 func (h *HandlerIntentCancelTestHelper) GetVaultIterator(ctx cosmos.Context) cosmos.Iterator {
 	if h.failToGetVault {
-		return keeper.EmptyIterator()
+		return nil
 	}
 	return h.Keeper.GetVaultIterator(ctx)
 }
@@ -152,7 +151,7 @@ func (HandlerIntentCancelSuite) TestIntentCancel_ValidationErrors(c *C) {
 			name: "non-existent intent should fail",
 			setupMsg: func() *MsgIntentCancel {
 				fakeTxID := GetRandomTxHash()
-				return NewMsgIntentCancel(GetRandomTx(), fakeTxID, userAddr)
+				return NewMsgIntentCancel(GetRandomTx(), fakeTxID, cosmos.AccAddress(userAddr))
 			},
 			expectedErr: se.ErrUnknownRequest,
 		},
@@ -162,7 +161,7 @@ func (HandlerIntentCancelSuite) TestIntentCancel_ValidationErrors(c *C) {
 				inactiveIntent := intent
 				inactiveIntent.Status = IntentCompleted
 				w.keeper.SetIntent(w.ctx, inactiveIntent)
-				return NewMsgIntentCancel(GetRandomTx(), intentTx.ID, userAddr)
+				return NewMsgIntentCancel(GetRandomTx(), intentTx.ID, cosmos.AccAddress(userAddr))
 			},
 			expectedErr: se.ErrUnauthorized,
 		},
@@ -174,7 +173,7 @@ func (HandlerIntentCancelSuite) TestIntentCancel_ValidationErrors(c *C) {
 				w.keeper.SetIntent(w.ctx, intent)
 
 				wrongAddr := GetRandomTHORAddress()
-				return NewMsgIntentCancel(GetRandomTx(), intentTx.ID, wrongAddr)
+				return NewMsgIntentCancel(GetRandomTx(), intentTx.ID, cosmos.AccAddress(wrongAddr))
 			},
 			expectedErr: se.ErrUnauthorized,
 		},

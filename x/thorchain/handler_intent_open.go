@@ -3,6 +3,8 @@ package thorchain
 import (
 	"fmt"
 
+	se "github.com/cosmos/cosmos-sdk/types/errors"
+
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
@@ -47,20 +49,20 @@ func (h IntentOpenHandler) validate(ctx cosmos.Context, msg MsgIntentOpen) error
 
 	// Check if intents are enabled
 	if h.mgr.Keeper().GetConfigInt64(ctx, constants.IntentsEnabled) <= 0 {
-		return fmt.Errorf("intents feature is disabled")
+		return se.ErrUnauthorized.Wrap("intents feature is disabled")
 	}
 
 	// Validate high >= low
 	if msg.HighTarget.LT(msg.LowTarget) {
-		return fmt.Errorf("high target must be greater than or equal to low target")
+		return se.ErrInvalidRequest.Wrap("high target must be greater than or equal to low target")
 	}
 
 	// Validate source coin
 	if len(msg.Tx.Coins) == 0 {
-		return fmt.Errorf("no coins in transaction")
+		return se.ErrInvalidRequest.Wrap("no coins in transaction")
 	}
 	if len(msg.Tx.Coins) > 1 {
-		return fmt.Errorf("intent can only be created with one coin type")
+		return se.ErrInvalidRequest.Wrap("intent can only be created with one coin type")
 	}
 
 	sourceAsset := msg.Tx.Coins[0].Asset
@@ -69,11 +71,11 @@ func (h IntentOpenHandler) validate(ctx cosmos.Context, msg MsgIntentOpen) error
 	// At least one asset must have an active pool or be native
 	sourcePool, err := h.mgr.Keeper().GetPool(ctx, sourceAsset.GetLayer1Asset())
 	if err != nil {
-		return fmt.Errorf("fail to get source pool: %w", err)
+		return ErrInternal(err, "fail to get source pool")
 	}
 	targetPool, err := h.mgr.Keeper().GetPool(ctx, targetAsset.GetLayer1Asset())
 	if err != nil {
-		return fmt.Errorf("fail to get target pool: %w", err)
+		return ErrInternal(err, "fail to get target pool")
 	}
 
 	hasActiveSourcePool := !sourcePool.IsEmpty() && sourcePool.Status == PoolAvailable
@@ -82,7 +84,7 @@ func (h IntentOpenHandler) validate(ctx cosmos.Context, msg MsgIntentOpen) error
 	isTargetNative := targetAsset.IsRune() || targetAsset.IsSecuredAsset()
 
 	if !hasActiveSourcePool && !hasActiveTargetPool && !isSourceNative && !isTargetNative {
-		return fmt.Errorf("at least one of source or target asset must have an active pool or be a native/secured asset")
+		return se.ErrInvalidRequest.Wrap("at least one of source or target asset must have an active pool or be a native/secured asset")
 	}
 
 	return nil
@@ -95,10 +97,10 @@ func (h IntentOpenHandler) handle(ctx cosmos.Context, msg MsgIntentOpen) error {
 	// Determine which vault will hold the source asset
 	vaultPubKey, err := h.mgr.Keeper().GetAsgardVaultsByStatus(ctx, ActiveVault)
 	if err != nil {
-		return fmt.Errorf("fail to get active vaults: %w", err)
+		return ErrInternal(err, "fail to get active vaults")
 	}
 	if len(vaultPubKey) == 0 {
-		return fmt.Errorf("no active vaults available")
+		return ErrInternal(fmt.Errorf("no active vaults"), "no active vaults available")
 	}
 	vault := vaultPubKey[0] // Use first active vault
 
