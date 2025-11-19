@@ -103,9 +103,8 @@ const (
 	Query_ReferenceMemo_FullMethodName          = "/types.Query/ReferenceMemo"
 	Query_ReferenceMemoByHash_FullMethodName    = "/types.Query/ReferenceMemoByHash"
 	Query_ReferenceMemoPreflight_FullMethodName = "/types.Query/ReferenceMemoPreflight"
-	Query_Supply_FullMethodName                 = "/types.Query/Supply"
-	Query_ContractInfos_FullMethodName          = "/types.Query/ContractInfos"
-	Query_ContractInfo_FullMethodName           = "/types.Query/ContractInfo"
+	Query_Intent_FullMethodName                 = "/types.Query/Intent"
+	Query_ActiveIntents_FullMethodName          = "/types.Query/ActiveIntents"
 )
 
 // QueryClient is the client API for Query service.
@@ -205,9 +204,8 @@ type QueryClient interface {
 	ReferenceMemo(ctx context.Context, in *QueryReferenceMemoRequest, opts ...grpc.CallOption) (*QueryReferenceMemoResponse, error)
 	ReferenceMemoByHash(ctx context.Context, in *QueryReferenceMemoByHashRequest, opts ...grpc.CallOption) (*QueryReferenceMemoByHashResponse, error)
 	ReferenceMemoPreflight(ctx context.Context, in *QueryReferenceMemoPreflightRequest, opts ...grpc.CallOption) (*QueryReferenceMemoPreflightResponse, error)
-	Supply(ctx context.Context, in *QuerySupplyRequest, opts ...grpc.CallOption) (*QuerySupplyResponse, error)
-	ContractInfos(ctx context.Context, in *QueryContractInfosRequest, opts ...grpc.CallOption) (*QueryContractInfosResponse, error)
-	ContractInfo(ctx context.Context, in *QueryContractInfoRequest, opts ...grpc.CallOption) (*QueryContractInfoResponse, error)
+	Intent(ctx context.Context, in *QueryIntentRequest, opts ...grpc.CallOption) (*QueryIntentResponse, error)
+	ActiveIntents(ctx context.Context, in *QueryActiveIntentsRequest, opts ...grpc.CallOption) (*QueryActiveIntentsResponse, error)
 }
 
 type queryClient struct {
@@ -974,27 +972,18 @@ func (c *queryClient) ReferenceMemoPreflight(ctx context.Context, in *QueryRefer
 	return out, nil
 }
 
-func (c *queryClient) Supply(ctx context.Context, in *QuerySupplyRequest, opts ...grpc.CallOption) (*QuerySupplyResponse, error) {
-	out := new(QuerySupplyResponse)
-	err := c.cc.Invoke(ctx, Query_Supply_FullMethodName, in, out, opts...)
+func (c *queryClient) Intent(ctx context.Context, in *QueryIntentRequest, opts ...grpc.CallOption) (*QueryIntentResponse, error) {
+	out := new(QueryIntentResponse)
+	err := c.cc.Invoke(ctx, Query_Intent_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *queryClient) ContractInfos(ctx context.Context, in *QueryContractInfosRequest, opts ...grpc.CallOption) (*QueryContractInfosResponse, error) {
-	out := new(QueryContractInfosResponse)
-	err := c.cc.Invoke(ctx, Query_ContractInfos_FullMethodName, in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *queryClient) ContractInfo(ctx context.Context, in *QueryContractInfoRequest, opts ...grpc.CallOption) (*QueryContractInfoResponse, error) {
-	out := new(QueryContractInfoResponse)
-	err := c.cc.Invoke(ctx, Query_ContractInfo_FullMethodName, in, out, opts...)
+func (c *queryClient) ActiveIntents(ctx context.Context, in *QueryActiveIntentsRequest, opts ...grpc.CallOption) (*QueryActiveIntentsResponse, error) {
+	out := new(QueryActiveIntentsResponse)
+	err := c.cc.Invoke(ctx, Query_ActiveIntents_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1098,9 +1087,8 @@ type QueryServer interface {
 	ReferenceMemo(context.Context, *QueryReferenceMemoRequest) (*QueryReferenceMemoResponse, error)
 	ReferenceMemoByHash(context.Context, *QueryReferenceMemoByHashRequest) (*QueryReferenceMemoByHashResponse, error)
 	ReferenceMemoPreflight(context.Context, *QueryReferenceMemoPreflightRequest) (*QueryReferenceMemoPreflightResponse, error)
-	Supply(context.Context, *QuerySupplyRequest) (*QuerySupplyResponse, error)
-	ContractInfos(context.Context, *QueryContractInfosRequest) (*QueryContractInfosResponse, error)
-	ContractInfo(context.Context, *QueryContractInfoRequest) (*QueryContractInfoResponse, error)
+	Intent(context.Context, *QueryIntentRequest) (*QueryIntentResponse, error)
+	ActiveIntents(context.Context, *QueryActiveIntentsRequest) (*QueryActiveIntentsResponse, error)
 	mustEmbedUnimplementedQueryServer()
 }
 
@@ -1360,14 +1348,11 @@ func (UnimplementedQueryServer) ReferenceMemoByHash(context.Context, *QueryRefer
 func (UnimplementedQueryServer) ReferenceMemoPreflight(context.Context, *QueryReferenceMemoPreflightRequest) (*QueryReferenceMemoPreflightResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReferenceMemoPreflight not implemented")
 }
-func (UnimplementedQueryServer) Supply(context.Context, *QuerySupplyRequest) (*QuerySupplyResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Supply not implemented")
+func (UnimplementedQueryServer) Intent(context.Context, *QueryIntentRequest) (*QueryIntentResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Intent not implemented")
 }
-func (UnimplementedQueryServer) ContractInfos(context.Context, *QueryContractInfosRequest) (*QueryContractInfosResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method ContractInfos not implemented")
-}
-func (UnimplementedQueryServer) ContractInfo(context.Context, *QueryContractInfoRequest) (*QueryContractInfoResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method ContractInfo not implemented")
+func (UnimplementedQueryServer) ActiveIntents(context.Context, *QueryActiveIntentsRequest) (*QueryActiveIntentsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ActiveIntents not implemented")
 }
 func (UnimplementedQueryServer) mustEmbedUnimplementedQueryServer() {}
 
@@ -2894,56 +2879,38 @@ func _Query_ReferenceMemoPreflight_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Query_Supply_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(QuerySupplyRequest)
+func _Query_Intent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryIntentRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(QueryServer).Supply(ctx, in)
+		return srv.(QueryServer).Intent(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: Query_Supply_FullMethodName,
+		FullMethod: Query_Intent_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(QueryServer).Supply(ctx, req.(*QuerySupplyRequest))
+		return srv.(QueryServer).Intent(ctx, req.(*QueryIntentRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Query_ContractInfos_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(QueryContractInfosRequest)
+func _Query_ActiveIntents_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryActiveIntentsRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(QueryServer).ContractInfos(ctx, in)
+		return srv.(QueryServer).ActiveIntents(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: Query_ContractInfos_FullMethodName,
+		FullMethod: Query_ActiveIntents_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(QueryServer).ContractInfos(ctx, req.(*QueryContractInfosRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _Query_ContractInfo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(QueryContractInfoRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(QueryServer).ContractInfo(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: Query_ContractInfo_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(QueryServer).ContractInfo(ctx, req.(*QueryContractInfoRequest))
+		return srv.(QueryServer).ActiveIntents(ctx, req.(*QueryActiveIntentsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -3292,16 +3259,12 @@ var Query_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Query_ReferenceMemoPreflight_Handler,
 		},
 		{
-			MethodName: "Supply",
-			Handler:    _Query_Supply_Handler,
+			MethodName: "Intent",
+			Handler:    _Query_Intent_Handler,
 		},
 		{
-			MethodName: "ContractInfos",
-			Handler:    _Query_ContractInfos_Handler,
-		},
-		{
-			MethodName: "ContractInfo",
-			Handler:    _Query_ContractInfo_Handler,
+			MethodName: "ActiveIntents",
+			Handler:    _Query_ActiveIntents_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

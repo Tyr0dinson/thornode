@@ -909,6 +909,38 @@ func (k KVStoreDummy) SetVolume(_ cosmos.Context, _ Volume) error {
 	return nil
 }
 
+// Intent keeper methods
+func (k KVStoreDummy) SetIntent(_ cosmos.Context, _ types.Intent) {}
+
+func (k KVStoreDummy) GetIntent(_ cosmos.Context, _ common.TxID) (types.Intent, error) {
+	return types.Intent{}, kaboom
+}
+func (k KVStoreDummy) IntentExists(_ cosmos.Context, _ common.TxID) bool { return false }
+func (k KVStoreDummy) RemoveIntent(_ cosmos.Context, _ common.TxID)      {}
+func (k KVStoreDummy) GetIntentIterator(_ cosmos.Context) cosmos.Iterator {
+	return nil
+}
+
+func (k KVStoreDummy) GetActiveIntents(_ cosmos.Context) ([]common.TxID, error) {
+	return nil, kaboom
+}
+
+// IntentSolve keeper methods
+func (k KVStoreDummy) SetIntentSolve(_ cosmos.Context, _ types.IntentSolve) {}
+
+func (k KVStoreDummy) GetIntentSolve(_ cosmos.Context, _ common.TxID) (types.IntentSolve, error) {
+	return types.IntentSolve{}, kaboom
+}
+func (k KVStoreDummy) IntentSolveExists(_ cosmos.Context, _ common.TxID) bool { return false }
+func (k KVStoreDummy) RemoveIntentSolve(_ cosmos.Context, _ common.TxID)      {}
+func (k KVStoreDummy) GetIntentSolvesByIntentID(_ cosmos.Context, _ common.TxID) ([]types.IntentSolve, error) {
+	return nil, kaboom
+}
+
+func (k KVStoreDummy) GetIntentSolvesByMatchHeight(_ cosmos.Context, _ int64) ([]types.IntentSolve, error) {
+	return nil, kaboom
+}
+
 // a mock cosmos.Iterator implementation for testing purposes
 type DummyIterator struct {
 	cosmos.Iterator

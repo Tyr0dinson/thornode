@@ -2664,10 +2664,11 @@ paths:
           description: OK
       tags:
       - Export
-  /thorchain/supply:
+  /thorchain/intent/{tx_id}:
     get:
-      description: Returns the RUNE supply breakdown.
-      operationId: supply
+      description: "Returns the intent information for the provided transaction ID,\
+        \ including all solve bids."
+      operationId: intent
       parameters:
       - description: "optional block height, defaults to current tip"
         explode: true
@@ -2679,117 +2680,13 @@ paths:
           minimum: 0
           type: integer
         style: form
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SupplyResponse'
-          description: OK
-      tags:
-      - Supply
-  /thorchain/supply/cmc:
-    get:
-      description: Returns a single supply value as plain text for CoinMarketCap integration.
-      operationId: supply_cmc
-      parameters:
-      - description: The asset to query supply for (default rune).
-        explode: true
-        in: query
-        name: asset
-        required: false
-        schema:
-          enum:
-          - rune
-          - tcy
-          type: string
-        style: form
-      - description: The type of supply value to return.
-        explode: true
-        in: query
-        name: type
-        required: true
-        schema:
-          enum:
-          - circulating
-          - total
-          - locked
-          - staked
-          type: string
-        style: form
-      responses:
-        "200":
-          content:
-            text/plain:
-              schema:
-                example: 30000000000
-                type: integer
-          description: OK
-      tags:
-      - Supply
-  /thorchain/contracts:
-    get:
-      description: Returns type and version for all contracts with stored `contract_info`
-      operationId: contractInfos
-      parameters:
-      - description: "optional block height, defaults to current tip"
-        explode: true
-        in: query
-        name: height
-        required: false
-        schema:
-          format: int64
-          minimum: 0
-          type: integer
-        style: form
-      - description: optional contract type prefix to filter results
-        explode: true
-        in: query
-        name: contract
-        required: false
-        schema:
-          example: rujira-fin
-          type: string
-        style: form
-      - description: optional contract version prefix to filter results
-        explode: true
-        in: query
-        name: version
-        required: false
-        schema:
-          example: 2.0.0
-          type: string
-        style: form
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ContractInfosResponse'
-          description: OK
-      tags:
-      - Smart Contracts
-  /thorchain/contract/{address}:
-    get:
-      description: Returns type and version from `contract_info` for requested address
-      operationId: contractInfo
-      parameters:
-      - description: "optional block height, defaults to current tip"
-        explode: true
-        in: query
-        name: height
-        required: false
-        schema:
-          format: int64
-          minimum: 0
-          type: integer
-        style: form
-      - explode: false
+      - description: The transaction ID of the intent
+        explode: false
         in: path
-        name: address
+        name: tx_id
         required: true
         schema:
-          example: thor1zupk5lmc84r2dh738a9g3zscavannjy3nzplwt
+          example: 1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF
           type: string
         style: simple
       responses:
@@ -2797,10 +2694,34 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ContractInfoResponse'
+                $ref: '#/components/schemas/QueryIntentResponse'
           description: OK
       tags:
-      - Smart Contracts
+      - Intents
+  /thorchain/intents:
+    get:
+      description: Returns all active intents with their associated solve bids.
+      operationId: activeIntents
+      parameters:
+      - description: "optional block height, defaults to current tip"
+        explode: true
+        in: query
+        name: height
+        required: false
+        schema:
+          format: int64
+          minimum: 0
+          type: integer
+        style: form
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueryActiveIntentsResponse'
+          description: OK
+      tags:
+      - Intents
 components:
   parameters:
     queryHeight:
@@ -2896,26 +2817,6 @@ components:
         example: BTC
         type: string
       style: simple
-    contract:
-      description: optional contract type prefix to filter results
-      explode: true
-      in: query
-      name: contract
-      required: false
-      schema:
-        example: rujira-fin
-        type: string
-      style: form
-    version:
-      description: optional contract version prefix to filter results
-      explode: true
-      in: query
-      name: version
-      required: false
-      schema:
-        example: 2.0.0
-        type: string
-      style: form
   schemas:
     Pool:
       example:
@@ -4875,26 +4776,6 @@ components:
       required:
       - amount
       - denom
-      type: object
-    ContractInfo:
-      example:
-        address: thor17cawwg2lsnvcne69fek6nsqkf8snma6gc5ccceshul86rl0u3q4s5l5d0a
-        contract: rujira-fin
-        version: 2.0.0
-      properties:
-        address:
-          example: thor17cawwg2lsnvcne69fek6nsqkf8snma6gc5ccceshul86rl0u3q4s5l5d0a
-          type: string
-        contract:
-          example: rujira-fin
-          type: string
-        version:
-          example: 2.0.0
-          type: string
-      required:
-      - address
-      - contract
-      - version
       type: object
     AccountResponse:
       example:
@@ -7533,67 +7414,345 @@ components:
       - reference
       - usage_count
       type: object
-    LockedSupply:
+    Intent:
       example:
-        reserve: 10000000000
+        target_address: bc1qxxx
+        min_fee_basis_points: 30
+        expiry_height: 12350000
+        affiliate_basis_points: 0
+        vault_pub_key: thorpub1addwnpepqt7qug8vk9r3saw8n4r803ydj2g3dqwx0mvq5akhnze86fc536xcy
+        source:
+          amount: "100000"
+          decimals: 6
+          asset: BTC.BTC
+        tx_id: 1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF
+        target_asset: BTC.BTC
+        source_address: thor1zupk5lmc84r2dh738a9g3zscavannjy3nzplwt
+        high_target: "100000000"
+        affiliate_address: ""
+        create_height: 12345678
+        low_target: "90000000"
+        status: IntentActive
       properties:
-        reserve:
-          description: RUNE locked in the reserve module
-          example: 10000000000
+        tx_id:
+          description: the transaction ID of the intent
+          example: 1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF
+          type: string
+        source:
+          $ref: '#/components/schemas/Coin'
+        source_address:
+          description: the source address
+          example: thor1zupk5lmc84r2dh738a9g3zscavannjy3nzplwt
+          type: string
+        target_asset:
+          description: the target asset
+          example: BTC.BTC
+          type: string
+        target_address:
+          description: the target address
+          example: bc1qxxx
+          type: string
+        high_target:
+          description: the high target amount
+          example: "100000000"
+          type: string
+        low_target:
+          description: the low target amount
+          example: "90000000"
+          type: string
+        vault_pub_key:
+          description: the vault public key
+          example: thorpub1addwnpepqt7qug8vk9r3saw8n4r803ydj2g3dqwx0mvq5akhnze86fc536xcy
+          type: string
+        create_height:
+          description: the block height when the intent was created
+          example: 12345678
           format: int64
           type: integer
-      type: object
-    SupplyResponse:
-      example:
-        circulating: 30000000000
-        total: 50000000000
-        locked:
-          reserve: 10000000000
-      properties:
-        circulating:
-          description: circulating RUNE supply
-          example: 30000000000
+        expiry_height:
+          description: the block height when the intent expires
+          example: 12350000
           format: int64
           type: integer
-        locked:
-          $ref: '#/components/schemas/LockedSupply'
-        total:
-          description: total RUNE supply
-          example: 50000000000
+        status:
+          description: the status of the intent
+          enum:
+          - IntentActive
+          - IntentCancelled
+          - IntentCompleted
+          - IntentExpired
+          example: IntentActive
+          type: string
+        min_fee_basis_points:
+          description: minimum fee basis points
+          example: 30
+          format: int64
+          type: integer
+        affiliate_address:
+          description: affiliate address
+          example: ""
+          type: string
+        affiliate_basis_points:
+          description: affiliate fee basis points
+          example: 0
           format: int64
           type: integer
       required:
-      - circulating
-      - total
+      - create_height
+      - expiry_height
+      - high_target
+      - low_target
+      - min_fee_basis_points
+      - source
+      - source_address
+      - status
+      - target_address
+      - target_asset
+      - tx_id
+      - vault_pub_key
       type: object
-    ContractInfoResponse:
+    IntentSolve:
       example:
-        info:
-          address: thor17cawwg2lsnvcne69fek6nsqkf8snma6gc5ccceshul86rl0u3q4s5l5d0a
-          contract: rujira-fin
-          version: 2.0.0
+        intent_tx_id: 1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF
+        target_coin:
+          amount: "100000"
+          decimals: 6
+          asset: BTC.BTC
+        vault_pub_key: thorpub1addwnpepqt7qug8vk9r3saw8n4r803ydj2g3dqwx0mvq5akhnze86fc536xcy
+        solve_tx_id: ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890
+        create_height: 12345678
+        match_height: 12345700
+        solver_address: bc1qyyy
       properties:
-        info:
-          $ref: '#/components/schemas/ContractInfo'
+        solve_tx_id:
+          description: the transaction ID of the solve bid
+          example: ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890
+          type: string
+        intent_tx_id:
+          description: the transaction ID of the intent being solved
+          example: 1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF
+          type: string
+        solver_address:
+          description: the solver address
+          example: bc1qyyy
+          type: string
+        target_coin:
+          $ref: '#/components/schemas/Coin'
+        vault_pub_key:
+          description: the vault public key
+          example: thorpub1addwnpepqt7qug8vk9r3saw8n4r803ydj2g3dqwx0mvq5akhnze86fc536xcy
+          type: string
+        create_height:
+          description: the block height when the solve was created
+          example: 12345678
+          format: int64
+          type: integer
+        match_height:
+          description: the block height when the solve should be matched
+          example: 12345700
+          format: int64
+          type: integer
       required:
-      - info
+      - create_height
+      - intent_tx_id
+      - match_height
+      - solve_tx_id
+      - solver_address
+      - target_coin
+      - vault_pub_key
       type: object
-    ContractInfosResponse:
+    IntentWithSolves:
       example:
-        infos:
-        - address: thor17cawwg2lsnvcne69fek6nsqkf8snma6gc5ccceshul86rl0u3q4s5l5d0a
-          contract: rujira-fin
-          version: 2.0.0
-        - address: thor17cawwg2lsnvcne69fek6nsqkf8snma6gc5ccceshul86rl0u3q4s5l5d0a
-          contract: rujira-fin
-          version: 2.0.0
+        solves:
+        - intent_tx_id: 1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF
+          target_coin:
+            amount: "100000"
+            decimals: 6
+            asset: BTC.BTC
+          vault_pub_key: thorpub1addwnpepqt7qug8vk9r3saw8n4r803ydj2g3dqwx0mvq5akhnze86fc536xcy
+          solve_tx_id: ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890
+          create_height: 12345678
+          match_height: 12345700
+          solver_address: bc1qyyy
+        - intent_tx_id: 1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF
+          target_coin:
+            amount: "100000"
+            decimals: 6
+            asset: BTC.BTC
+          vault_pub_key: thorpub1addwnpepqt7qug8vk9r3saw8n4r803ydj2g3dqwx0mvq5akhnze86fc536xcy
+          solve_tx_id: ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890
+          create_height: 12345678
+          match_height: 12345700
+          solver_address: bc1qyyy
+        intent:
+          target_address: bc1qxxx
+          min_fee_basis_points: 30
+          expiry_height: 12350000
+          affiliate_basis_points: 0
+          vault_pub_key: thorpub1addwnpepqt7qug8vk9r3saw8n4r803ydj2g3dqwx0mvq5akhnze86fc536xcy
+          source:
+            amount: "100000"
+            decimals: 6
+            asset: BTC.BTC
+          tx_id: 1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF
+          target_asset: BTC.BTC
+          source_address: thor1zupk5lmc84r2dh738a9g3zscavannjy3nzplwt
+          high_target: "100000000"
+          affiliate_address: ""
+          create_height: 12345678
+          low_target: "90000000"
+          status: IntentActive
       properties:
-        infos:
+        intent:
+          $ref: '#/components/schemas/Intent'
+        solves:
           items:
-            $ref: '#/components/schemas/ContractInfo'
+            $ref: '#/components/schemas/IntentSolve'
           type: array
       required:
-      - infos
+      - intent
+      - solves
+      type: object
+    QueryIntentResponse:
+      example:
+        solves:
+        - intent_tx_id: 1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF
+          target_coin:
+            amount: "100000"
+            decimals: 6
+            asset: BTC.BTC
+          vault_pub_key: thorpub1addwnpepqt7qug8vk9r3saw8n4r803ydj2g3dqwx0mvq5akhnze86fc536xcy
+          solve_tx_id: ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890
+          create_height: 12345678
+          match_height: 12345700
+          solver_address: bc1qyyy
+        - intent_tx_id: 1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF
+          target_coin:
+            amount: "100000"
+            decimals: 6
+            asset: BTC.BTC
+          vault_pub_key: thorpub1addwnpepqt7qug8vk9r3saw8n4r803ydj2g3dqwx0mvq5akhnze86fc536xcy
+          solve_tx_id: ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890
+          create_height: 12345678
+          match_height: 12345700
+          solver_address: bc1qyyy
+        intent:
+          target_address: bc1qxxx
+          min_fee_basis_points: 30
+          expiry_height: 12350000
+          affiliate_basis_points: 0
+          vault_pub_key: thorpub1addwnpepqt7qug8vk9r3saw8n4r803ydj2g3dqwx0mvq5akhnze86fc536xcy
+          source:
+            amount: "100000"
+            decimals: 6
+            asset: BTC.BTC
+          tx_id: 1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF
+          target_asset: BTC.BTC
+          source_address: thor1zupk5lmc84r2dh738a9g3zscavannjy3nzplwt
+          high_target: "100000000"
+          affiliate_address: ""
+          create_height: 12345678
+          low_target: "90000000"
+          status: IntentActive
+      properties:
+        intent:
+          $ref: '#/components/schemas/Intent'
+        solves:
+          items:
+            $ref: '#/components/schemas/IntentSolve'
+          type: array
+      required:
+      - intent
+      - solves
+      type: object
+    QueryActiveIntentsResponse:
+      example:
+        intents:
+        - solves:
+          - intent_tx_id: 1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF
+            target_coin:
+              amount: "100000"
+              decimals: 6
+              asset: BTC.BTC
+            vault_pub_key: thorpub1addwnpepqt7qug8vk9r3saw8n4r803ydj2g3dqwx0mvq5akhnze86fc536xcy
+            solve_tx_id: ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890
+            create_height: 12345678
+            match_height: 12345700
+            solver_address: bc1qyyy
+          - intent_tx_id: 1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF
+            target_coin:
+              amount: "100000"
+              decimals: 6
+              asset: BTC.BTC
+            vault_pub_key: thorpub1addwnpepqt7qug8vk9r3saw8n4r803ydj2g3dqwx0mvq5akhnze86fc536xcy
+            solve_tx_id: ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890
+            create_height: 12345678
+            match_height: 12345700
+            solver_address: bc1qyyy
+          intent:
+            target_address: bc1qxxx
+            min_fee_basis_points: 30
+            expiry_height: 12350000
+            affiliate_basis_points: 0
+            vault_pub_key: thorpub1addwnpepqt7qug8vk9r3saw8n4r803ydj2g3dqwx0mvq5akhnze86fc536xcy
+            source:
+              amount: "100000"
+              decimals: 6
+              asset: BTC.BTC
+            tx_id: 1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF
+            target_asset: BTC.BTC
+            source_address: thor1zupk5lmc84r2dh738a9g3zscavannjy3nzplwt
+            high_target: "100000000"
+            affiliate_address: ""
+            create_height: 12345678
+            low_target: "90000000"
+            status: IntentActive
+        - solves:
+          - intent_tx_id: 1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF
+            target_coin:
+              amount: "100000"
+              decimals: 6
+              asset: BTC.BTC
+            vault_pub_key: thorpub1addwnpepqt7qug8vk9r3saw8n4r803ydj2g3dqwx0mvq5akhnze86fc536xcy
+            solve_tx_id: ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890
+            create_height: 12345678
+            match_height: 12345700
+            solver_address: bc1qyyy
+          - intent_tx_id: 1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF
+            target_coin:
+              amount: "100000"
+              decimals: 6
+              asset: BTC.BTC
+            vault_pub_key: thorpub1addwnpepqt7qug8vk9r3saw8n4r803ydj2g3dqwx0mvq5akhnze86fc536xcy
+            solve_tx_id: ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890
+            create_height: 12345678
+            match_height: 12345700
+            solver_address: bc1qyyy
+          intent:
+            target_address: bc1qxxx
+            min_fee_basis_points: 30
+            expiry_height: 12350000
+            affiliate_basis_points: 0
+            vault_pub_key: thorpub1addwnpepqt7qug8vk9r3saw8n4r803ydj2g3dqwx0mvq5akhnze86fc536xcy
+            source:
+              amount: "100000"
+              decimals: 6
+              asset: BTC.BTC
+            tx_id: 1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF
+            target_asset: BTC.BTC
+            source_address: thor1zupk5lmc84r2dh738a9g3zscavannjy3nzplwt
+            high_target: "100000000"
+            affiliate_address: ""
+            create_height: 12345678
+            low_target: "90000000"
+            status: IntentActive
+      properties:
+        intents:
+          items:
+            $ref: '#/components/schemas/IntentWithSolves'
+          type: array
+      required:
+      - intents
       type: object
     Ping:
       example:

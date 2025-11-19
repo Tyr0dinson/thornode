@@ -169,6 +169,10 @@ const (
 	MaxDepositTxIDRetries
 	MaxRetiredVaultRecoveryAttempts
 	ModifyLimitSwapMaxIterations
+	IntentsEnabled
+	IntentPriceSlideBlocks
+	IntentTTLBlocks
+	IntentMinFeeBasisPoints
 
 	// These are the implicitly-0 Constants undisplayed in the API endpoint (no explicit value set).
 	ArtificialRagnarokBlockHeight

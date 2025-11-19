@@ -57,6 +57,7 @@ import "types/query_eip712.proto";
 import "types/query_reference_memo.proto";
 import "types/query_supply.proto";
 import "types/query_contract_info.proto";
+import "types/query_intent.proto";
 
 option (gogoproto.marshaler_all) = true;
 
@@ -457,5 +458,14 @@ service Query {
   rpc ContractInfo(QueryContractInfoRequest)
       returns (QueryContractInfoResponse) {
     option (google.api.http).get = "/thorchain/contract/{address}";
+  }
+
+  rpc Intent(QueryIntentRequest) returns (QueryIntentResponse) {
+    option (google.api.http).get = "/thorchain/intent/{tx_id}";
+  }
+
+  rpc ActiveIntents(QueryActiveIntentsRequest)
+      returns (QueryActiveIntentsResponse) {
+    option (google.api.http).get = "/thorchain/intents";
   }
 }

@@ -1761,6 +1761,47 @@ paths:
               schema:
                 $ref: "#/components/schemas/ContractInfoResponse"
 
+
+  # ------------------------------ intents ------------------------------
+  /thorchain/intent/{tx_id}:
+    parameters:
+      - $ref: "#/components/parameters/queryHeight"
+      - name: tx_id
+        in: path
+        required: true
+        description: The transaction ID of the intent
+        schema:
+          type: string
+          example: "1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF"
+    get:
+      description: Returns the intent information for the provided transaction ID, including all solve bids.
+      operationId: intent
+      tags:
+        - Intents
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueryIntentResponse"
+
+  /thorchain/intents:
+    parameters:
+      - $ref: "#/components/parameters/queryHeight"
+    get:
+      description: Returns all active intents with their associated solve bids.
+      operationId: activeIntents
+      tags:
+        - Intents
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueryActiveIntentsResponse"
+
 ########################################################################################
 # Components
 ########################################################################################
@@ -5010,3 +5051,159 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ContractInfo"
+
+    Intent:
+      type: object
+      required:
+        - tx_id
+        - source
+        - source_address
+        - target_asset
+        - target_address
+        - high_target
+        - low_target
+        - vault_pub_key
+        - create_height
+        - expiry_height
+        - status
+        - min_fee_basis_points
+      properties:
+        tx_id:
+          type: string
+          description: the transaction ID of the intent
+          example: "1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF"
+        source:
+          $ref: "#/components/schemas/Coin"
+        source_address:
+          type: string
+          description: the source address
+          example: "thor1zupk5lmc84r2dh738a9g3zscavannjy3nzplwt"
+        target_asset:
+          type: string
+          description: the target asset
+          example: "BTC.BTC"
+        target_address:
+          type: string
+          description: the target address
+          example: "bc1qxxx"
+        high_target:
+          type: string
+          description: the high target amount
+          example: "100000000"
+        low_target:
+          type: string
+          description: the low target amount
+          example: "90000000"
+        vault_pub_key:
+          type: string
+          description: the vault public key
+          example: "thorpub1addwnpepqt7qug8vk9r3saw8n4r803ydj2g3dqwx0mvq5akhnze86fc536xcy"
+        create_height:
+          type: integer
+          format: int64
+          description: the block height when the intent was created
+          example: 12345678
+        expiry_height:
+          type: integer
+          format: int64
+          description: the block height when the intent expires
+          example: 12350000
+        status:
+          type: string
+          description: the status of the intent
+          example: "IntentActive"
+          enum:
+            - IntentActive
+            - IntentCancelled
+            - IntentCompleted
+            - IntentExpired
+        min_fee_basis_points:
+          type: integer
+          format: int64
+          description: minimum fee basis points
+          example: 30
+        affiliate_address:
+          type: string
+          description: affiliate address
+          example: ""
+        affiliate_basis_points:
+          type: integer
+          format: int64
+          description: affiliate fee basis points
+          example: 0
+
+    IntentSolve:
+      type: object
+      required:
+        - solve_tx_id
+        - intent_tx_id
+        - solver_address
+        - target_coin
+        - vault_pub_key
+        - create_height
+        - match_height
+      properties:
+        solve_tx_id:
+          type: string
+          description: the transaction ID of the solve bid
+          example: "ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890"
+        intent_tx_id:
+          type: string
+          description: the transaction ID of the intent being solved
+          example: "1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF"
+        solver_address:
+          type: string
+          description: the solver address
+          example: "bc1qyyy"
+        target_coin:
+          $ref: "#/components/schemas/Coin"
+        vault_pub_key:
+          type: string
+          description: the vault public key
+          example: "thorpub1addwnpepqt7qug8vk9r3saw8n4r803ydj2g3dqwx0mvq5akhnze86fc536xcy"
+        create_height:
+          type: integer
+          format: int64
+          description: the block height when the solve was created
+          example: 12345678
+        match_height:
+          type: integer
+          format: int64
+          description: the block height when the solve should be matched
+          example: 12345700
+
+    IntentWithSolves:
+      type: object
+      required:
+        - intent
+        - solves
+      properties:
+        intent:
+          $ref: "#/components/schemas/Intent"
+        solves:
+          type: array
+          items:
+            $ref: "#/components/schemas/IntentSolve"
+
+    QueryIntentResponse:
+      type: object
+      required:
+        - intent
+        - solves
+      properties:
+        intent:
+          $ref: "#/components/schemas/Intent"
+        solves:
+          type: array
+          items:
+            $ref: "#/components/schemas/IntentSolve"
+
+    QueryActiveIntentsResponse:
+      type: object
+      required:
+        - intents
+      properties:
+        intents:
+          type: array
+          items:
+            $ref: "#/components/schemas/IntentWithSolves"

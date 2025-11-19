@@ -50,6 +50,7 @@ type Manager interface {
 	WasmManager() WasmManager
 	SwitchManager() SwitchManager
 	ScheduledMigrationManager() ScheduledMigrationManager
+	IntentMgr() IntentManager
 }
 
 type TradeAccountManager interface {
@@ -250,6 +251,10 @@ type VolumeManager interface {
 	EndBlock(ctx cosmos.Context) error
 }
 
+type IntentManager interface {
+	EndBlock(ctx cosmos.Context) error
+}
+
 // Mgrs is an implementation of Manager interface
 type Mgrs struct {
 	currentVersion            semver.Version
@@ -271,6 +276,7 @@ type Mgrs struct {
 	scheduledMigrationManager ScheduledMigrationManager
 	oracleManager             OracleManager
 	volumeManager             VolumeManager
+	intentMgr                 IntentManager
 
 	K             keeper.Keeper
 	cdc           codec.Codec
@@ -429,6 +435,11 @@ func (mgr *Mgrs) recreateManagers(ctx cosmos.Context, v semver.Version) error {
 		return fmt.Errorf("fail to create volume manager: %w", err)
 	}
 
+	mgr.intentMgr, err = GetIntentManager(v, mgr)
+	if err != nil {
+		return fmt.Errorf("fail to create intent manager: %w", err)
+	}
+
 	mgr.scheduledMigrationManager, err = GetScheduledMigrationManager(v, mgr)
 	if err != nil {
 		return fmt.Errorf("fail to create scheduled migration manager: %w", err)
@@ -485,6 +496,8 @@ func (mgr *Mgrs) ScheduledMigrationManager() ScheduledMigrationManager {
 func (mgr *Mgrs) OracleManager() OracleManager { return mgr.oracleManager }
 
 func (mgr *Mgrs) VolumeManager() VolumeManager { return mgr.volumeManager }
+
+func (mgr *Mgrs) IntentMgr() IntentManager { return mgr.intentMgr }
 
 // GetKeeper return Keeper
 func GetKeeper(
@@ -584,4 +597,8 @@ func GetOracleManager(_ semver.Version, keeper keeper.Keeper, eventMgr EventMana
 
 func GetVolumeManager(_ semver.Version, keeper keeper.Keeper) (VolumeManager, error) {
 	return newVolumeMgr(keeper), nil
+}
+
+func GetIntentManager(_ semver.Version, mgr Manager) (IntentManager, error) {
+	return NewIntentManager(mgr), nil
 }
