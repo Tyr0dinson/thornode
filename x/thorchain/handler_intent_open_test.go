@@ -21,7 +21,6 @@ type HandlerIntentOpenTestHelper struct {
 	failToGetVault    bool
 	failToSetIntent   bool
 	failToGetConstant bool
-	failToEmitEvent   bool
 }
 
 func NewHandlerIntentOpenTestHelper(k keeper.Keeper) *HandlerIntentOpenTestHelper {
@@ -32,7 +31,7 @@ func NewHandlerIntentOpenTestHelper(k keeper.Keeper) *HandlerIntentOpenTestHelpe
 
 func (h *HandlerIntentOpenTestHelper) GetVaultIterator(ctx cosmos.Context) cosmos.Iterator {
 	if h.failToGetVault {
-		return keeper.NilIterator()
+		return nil
 	}
 	return h.Keeper.GetVaultIterator(ctx)
 }
@@ -51,14 +50,21 @@ func (h *HandlerIntentOpenTestHelper) GetMimir(ctx cosmos.Context, key string) (
 	return h.Keeper.GetMimir(ctx, key)
 }
 
+func (h *HandlerIntentOpenTestHelper) GetAsgardVaultsByStatus(ctx cosmos.Context, status VaultStatus) (Vaults, error) {
+	if h.failToGetVault {
+		return nil, errKaboom
+	}
+	return h.Keeper.GetAsgardVaultsByStatus(ctx, status)
+}
+
 func (HandlerIntentOpenSuite) TestIntentOpen_HappyPath(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
 
 	// Enable intents feature
-	c.Assert(w.keeper.SetMimir(w.ctx, constants.IntentsEnabled.String(), 1), IsNil)
-	c.Assert(w.keeper.SetMimir(w.ctx, constants.IntentTTLBlocks.String(), 1000), IsNil)
-	c.Assert(w.keeper.SetMimir(w.ctx, constants.IntentPriceSlideBlocks.String(), 500), IsNil)
-	c.Assert(w.keeper.SetMimir(w.ctx, constants.IntentMinFeeBasisPoints.String(), 10), IsNil)
+	w.keeper.SetMimir(w.ctx, constants.IntentsEnabled.String(), 1)
+	w.keeper.SetMimir(w.ctx, constants.IntentTTLBlocks.String(), 1000)
+	w.keeper.SetMimir(w.ctx, constants.IntentPriceSlideBlocks.String(), 500)
+	w.keeper.SetMimir(w.ctx, constants.IntentMinFeeBasisPoints.String(), 10)
 
 	// Create a pool for BTC
 	pool := NewPool()
@@ -77,9 +83,9 @@ func (HandlerIntentOpenSuite) TestIntentOpen_HappyPath(c *C) {
 	msg := NewMsgIntentOpen(
 		tx,
 		common.BTCAsset,               // target asset
+		GetRandomBTCAddress(),         // target address
 		cosmos.NewUint(15*common.One), // high target (15 BTC)
 		cosmos.NewUint(10*common.One), // low target (10 BTC)
-		GetRandomBTCAddress(),         // target address
 		common.NoAddress,              // no affiliate
 		cosmos.ZeroUint(),             // no affiliate fee
 		w.activeNodeAccount.NodeAddress,
@@ -93,7 +99,7 @@ func (HandlerIntentOpenSuite) TestIntentOpen_HappyPath(c *C) {
 	c.Assert(err, IsNil)
 	c.Check(intent.TxID, Equals, tx.ID)
 	c.Check(intent.Status, Equals, IntentActive)
-	c.Check(intent.SourceAsset.Equals(common.DOGEAsset), Equals, true)
+	c.Check(intent.Source.Asset.Equals(common.DOGEAsset), Equals, true)
 	c.Check(intent.TargetAsset.Equals(common.BTCAsset), Equals, true)
 	c.Check(intent.HighTarget.Equal(cosmos.NewUint(15*common.One)), Equals, true)
 	c.Check(intent.LowTarget.Equal(cosmos.NewUint(10*common.One)), Equals, true)
@@ -103,8 +109,8 @@ func (HandlerIntentOpenSuite) TestIntentOpen_WithAffiliateFee(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
 
 	// Enable intents feature
-	c.Assert(w.keeper.SetMimir(w.ctx, constants.IntentsEnabled.String(), 1), IsNil)
-	c.Assert(w.keeper.SetMimir(w.ctx, constants.IntentTTLBlocks.String(), 1000), IsNil)
+	w.keeper.SetMimir(w.ctx, constants.IntentsEnabled.String(), 1)
+	w.keeper.SetMimir(w.ctx, constants.IntentTTLBlocks.String(), 1000)
 
 	mgr := NewDummyMgrWithKeeper(w.keeper)
 	handler := NewIntentOpenHandler(mgr)
@@ -116,9 +122,9 @@ func (HandlerIntentOpenSuite) TestIntentOpen_WithAffiliateFee(c *C) {
 	msg := NewMsgIntentOpen(
 		tx,
 		common.BTCAsset,
+		GetRandomBTCAddress(),
 		cosmos.NewUint(15*common.One),
 		cosmos.NewUint(10*common.One),
-		GetRandomBTCAddress(),
 		affAddr,             // affiliate address
 		cosmos.NewUint(100), // 1% affiliate fee
 		w.activeNodeAccount.NodeAddress,
@@ -131,14 +137,14 @@ func (HandlerIntentOpenSuite) TestIntentOpen_WithAffiliateFee(c *C) {
 	intent, err := w.keeper.GetIntent(w.ctx, tx.ID)
 	c.Assert(err, IsNil)
 	c.Check(intent.AffiliateAddress.Equals(affAddr), Equals, true)
-	c.Check(intent.AffiliateBasisPoints.Equal(cosmos.NewUint(100)), Equals, true)
+	c.Check(intent.AffiliateBasisPoints, Equals, int64(100))
 }
 
 func (HandlerIntentOpenSuite) TestIntentOpen_NativeAsset(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
 
 	// Enable intents feature
-	c.Assert(w.keeper.SetMimir(w.ctx, constants.IntentsEnabled.String(), 1), IsNil)
+	w.keeper.SetMimir(w.ctx, constants.IntentsEnabled.String(), 1)
 
 	mgr := NewDummyMgrWithKeeper(w.keeper)
 	handler := NewIntentOpenHandler(mgr)
@@ -149,9 +155,9 @@ func (HandlerIntentOpenSuite) TestIntentOpen_NativeAsset(c *C) {
 	msg := NewMsgIntentOpen(
 		tx,
 		common.BTCAsset,
+		GetRandomBTCAddress(),
 		cosmos.NewUint(15*common.One),
 		cosmos.NewUint(10*common.One),
-		GetRandomBTCAddress(),
 		common.NoAddress,
 		cosmos.ZeroUint(),
 		w.activeNodeAccount.NodeAddress,
@@ -163,14 +169,14 @@ func (HandlerIntentOpenSuite) TestIntentOpen_NativeAsset(c *C) {
 	// Verify intent was created
 	intent, err := w.keeper.GetIntent(w.ctx, tx.ID)
 	c.Assert(err, IsNil)
-	c.Check(intent.SourceAsset.IsRune(), Equals, true)
+	c.Check(intent.Source.Asset.IsRune(), Equals, true)
 }
 
 func (HandlerIntentOpenSuite) TestIntentOpen_ValidationErrors(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
 
 	// Enable intents feature
-	c.Assert(w.keeper.SetMimir(w.ctx, constants.IntentsEnabled.String(), 1), IsNil)
+	w.keeper.SetMimir(w.ctx, constants.IntentsEnabled.String(), 1)
 
 	// Create a pool for BTC
 	pool := NewPool()
@@ -189,13 +195,13 @@ func (HandlerIntentOpenSuite) TestIntentOpen_ValidationErrors(c *C) {
 		{
 			name: "feature disabled should fail",
 			setupMsg: func() *MsgIntentOpen {
-				w.keeper.DeleteMimir(w.ctx, constants.IntentsEnabled.String())
+				w.keeper.SetMimir(w.ctx, constants.IntentsEnabled.String(), 0)
 				return NewMsgIntentOpen(
 					tx,
 					common.BTCAsset,
+					GetRandomBTCAddress(),
 					cosmos.NewUint(15*common.One),
 					cosmos.NewUint(10*common.One),
-					GetRandomBTCAddress(),
 					common.NoAddress,
 					cosmos.ZeroUint(),
 					w.activeNodeAccount.NodeAddress,
@@ -210,9 +216,9 @@ func (HandlerIntentOpenSuite) TestIntentOpen_ValidationErrors(c *C) {
 				return NewMsgIntentOpen(
 					tx,
 					common.BTCAsset,
+					GetRandomBTCAddress(),
 					cosmos.NewUint(5*common.One), // high < low
 					cosmos.NewUint(10*common.One),
-					GetRandomBTCAddress(),
 					common.NoAddress,
 					cosmos.ZeroUint(),
 					w.activeNodeAccount.NodeAddress,
@@ -231,9 +237,9 @@ func (HandlerIntentOpenSuite) TestIntentOpen_ValidationErrors(c *C) {
 				return NewMsgIntentOpen(
 					multiTx,
 					common.BTCAsset,
+					GetRandomBTCAddress(),
 					cosmos.NewUint(15*common.One),
 					cosmos.NewUint(10*common.One),
-					GetRandomBTCAddress(),
 					common.NoAddress,
 					cosmos.ZeroUint(),
 					w.activeNodeAccount.NodeAddress,
@@ -247,9 +253,9 @@ func (HandlerIntentOpenSuite) TestIntentOpen_ValidationErrors(c *C) {
 				return NewMsgIntentOpen(
 					tx,
 					common.BTCAsset,
+					GetRandomBTCAddress(),
 					cosmos.ZeroUint(), // zero high
 					cosmos.NewUint(10*common.One),
-					GetRandomBTCAddress(),
 					common.NoAddress,
 					cosmos.ZeroUint(),
 					w.activeNodeAccount.NodeAddress,
@@ -263,9 +269,9 @@ func (HandlerIntentOpenSuite) TestIntentOpen_ValidationErrors(c *C) {
 				return NewMsgIntentOpen(
 					tx,
 					common.BTCAsset,
+					GetRandomBTCAddress(),
 					cosmos.NewUint(15*common.One),
 					cosmos.ZeroUint(), // zero low
-					GetRandomBTCAddress(),
 					common.NoAddress,
 					cosmos.ZeroUint(),
 					w.activeNodeAccount.NodeAddress,
@@ -279,9 +285,9 @@ func (HandlerIntentOpenSuite) TestIntentOpen_ValidationErrors(c *C) {
 				return NewMsgIntentOpen(
 					tx,
 					common.BTCAsset,
+					common.NoAddress, // empty address
 					cosmos.NewUint(15*common.One),
 					cosmos.NewUint(10*common.One),
-					common.NoAddress, // empty address
 					common.NoAddress,
 					cosmos.ZeroUint(),
 					w.activeNodeAccount.NodeAddress,
@@ -303,16 +309,16 @@ func (HandlerIntentOpenSuite) TestIntentOpen_KeeperErrors(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
 
 	// Enable intents feature
-	c.Assert(w.keeper.SetMimir(w.ctx, constants.IntentsEnabled.String(), 1), IsNil)
+	w.keeper.SetMimir(w.ctx, constants.IntentsEnabled.String(), 1)
 
 	tx := GetRandomTx()
 	tx.Coins = common.Coins{common.NewCoin(common.DOGEAsset, cosmos.NewUint(100*common.One))}
 	msg := NewMsgIntentOpen(
 		tx,
 		common.BTCAsset,
+		GetRandomBTCAddress(),
 		cosmos.NewUint(15*common.One),
 		cosmos.NewUint(10*common.One),
-		GetRandomBTCAddress(),
 		common.NoAddress,
 		cosmos.ZeroUint(),
 		w.activeNodeAccount.NodeAddress,
@@ -341,8 +347,8 @@ func (HandlerIntentOpenSuite) TestIntentOpen_ExpiryCalculation(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
 
 	// Enable intents feature with specific TTL
-	c.Assert(w.keeper.SetMimir(w.ctx, constants.IntentsEnabled.String(), 1), IsNil)
-	c.Assert(w.keeper.SetMimir(w.ctx, constants.IntentTTLBlocks.String(), 500), IsNil)
+	w.keeper.SetMimir(w.ctx, constants.IntentsEnabled.String(), 1)
+	w.keeper.SetMimir(w.ctx, constants.IntentTTLBlocks.String(), 500)
 
 	mgr := NewDummyMgrWithKeeper(w.keeper)
 	handler := NewIntentOpenHandler(mgr)
@@ -352,9 +358,9 @@ func (HandlerIntentOpenSuite) TestIntentOpen_ExpiryCalculation(c *C) {
 	msg := NewMsgIntentOpen(
 		tx,
 		common.BTCAsset,
+		GetRandomBTCAddress(),
 		cosmos.NewUint(15*common.One),
 		cosmos.NewUint(10*common.One),
-		GetRandomBTCAddress(),
 		common.NoAddress,
 		cosmos.ZeroUint(),
 		w.activeNodeAccount.NodeAddress,

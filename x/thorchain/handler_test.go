@@ -313,6 +313,9 @@ func getHandlerTestWrapper(c *C, height int64, withActiveNode, withActieDOGEPool
 	acc1.Version = mgr.GetVersion().String()
 	if withActiveNode {
 		c.Assert(mgr.Keeper().SetNodeAccount(ctx, acc1), IsNil)
+		// Create an active vault for tests that need one
+		vault := NewVault(ctx.BlockHeight(), ActiveVault, AsgardVault, acc1.PubKeySet.Secp256k1, common.Chains{common.BTCChain, common.ETHChain}.Strings(), []ChainContract{})
+		c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
 	}
 	if withActieDOGEPool {
 		p, err := mgr.Keeper().GetPool(ctx, common.DOGEAsset)

@@ -1,7 +1,7 @@
 package thorchain
 
 import (
-	"fmt"
+	se "github.com/cosmos/cosmos-sdk/types/errors"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -47,47 +47,47 @@ func (h IntentSolveHandler) validate(ctx cosmos.Context, msg MsgIntentSolve) err
 
 	// Check if intents are enabled
 	if h.mgr.Keeper().GetConfigInt64(ctx, constants.IntentsEnabled) <= 0 {
-		return fmt.Errorf("intents feature is disabled")
+		return se.ErrUnauthorized.Wrap("intents feature is disabled")
 	}
 
 	// Check if intent exists
 	if !h.mgr.Keeper().IntentExists(ctx, msg.IntentTxID) {
-		return fmt.Errorf("intent %s does not exist", msg.IntentTxID)
+		return se.ErrUnknownRequest.Wrapf("intent %s does not exist", msg.IntentTxID)
 	}
 
 	// Get the intent
 	intent, err := h.mgr.Keeper().GetIntent(ctx, msg.IntentTxID)
 	if err != nil {
-		return fmt.Errorf("fail to get intent: %w", err)
+		return ErrInternal(err, "fail to get intent")
 	}
 
 	// Verify the intent is active
 	if intent.Status != IntentActive {
-		return fmt.Errorf("intent is not active, status: %s", intent.Status.String())
+		return se.ErrUnauthorized.Wrapf("intent is not active, status: %s", intent.Status.String())
 	}
 
 	// Check if intent has expired
 	if ctx.BlockHeight() >= intent.ExpiryHeight {
-		return fmt.Errorf("intent has expired at height %d", intent.ExpiryHeight)
+		return se.ErrUnauthorized.Wrapf("intent has expired at height %d", intent.ExpiryHeight)
 	}
 
 	// Validate solve transaction has exactly one coin (the target asset)
 	if len(msg.Tx.Coins) == 0 {
-		return fmt.Errorf("no coins in solve transaction")
+		return se.ErrInvalidRequest.Wrap("no coins in solve transaction")
 	}
 	if len(msg.Tx.Coins) > 1 {
-		return fmt.Errorf("solve can only provide one coin type")
+		return se.ErrInvalidRequest.Wrap("solve can only provide one coin type")
 	}
 
 	// Verify the coin is the target asset
 	if !msg.Tx.Coins[0].Asset.Equals(intent.TargetAsset) {
-		return fmt.Errorf("solve asset %s does not match intent target asset %s", msg.Tx.Coins[0].Asset, intent.TargetAsset)
+		return se.ErrInvalidRequest.Wrapf("solve asset %s does not match intent target asset %s", msg.Tx.Coins[0].Asset, intent.TargetAsset)
 	}
 
 	// Verify the offered amount meets minimum (at least low target)
 	offeredAmount := msg.Tx.Coins[0].Amount
 	if offeredAmount.LT(intent.LowTarget) {
-		return fmt.Errorf("offered amount %s is less than low target %s", offeredAmount, intent.LowTarget)
+		return se.ErrInvalidRequest.Wrapf("offered amount %s is less than low target %s", offeredAmount, intent.LowTarget)
 	}
 
 	return nil
@@ -97,7 +97,7 @@ func (h IntentSolveHandler) handle(ctx cosmos.Context, msg MsgIntentSolve) error
 	// Get the intent
 	intent, err := h.mgr.Keeper().GetIntent(ctx, msg.IntentTxID)
 	if err != nil {
-		return fmt.Errorf("fail to get intent: %w", err)
+		return ErrInternal(err, "fail to get intent")
 	}
 
 	// Get the offered amount
