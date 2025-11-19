@@ -140,7 +140,6 @@ func (h IntentSolveHandler) handle(ctx cosmos.Context, msg MsgIntentSolve) error
 		IntentTxID:    msg.IntentTxID,
 		SolverAddress: msg.Tx.FromAddress,
 		TargetCoin:    msg.Tx.Coins[0],
-		VaultPubKey:   intent.VaultPubKey,
 		SubmitHeight:  ctx.BlockHeight(),
 		MatchHeight:   matchHeight,
 	}

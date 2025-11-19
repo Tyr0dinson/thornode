@@ -37,9 +37,6 @@ message Intent {
     (gogoproto.customtype) = "cosmossdk.io/math.Uint",
     (gogoproto.nullable) = false
   ];
-  string vault_pub_key = 8
-      [ (gogoproto.casttype) =
-            "gitlab.com/thorchain/thornode/v3/common.PubKey" ];
   int64 create_height = 9;
   int64 expiry_height = 10;
   IntentStatus status = 11;
@@ -63,9 +60,6 @@ message IntentSolve {
       [ (gogoproto.casttype) =
             "gitlab.com/thorchain/thornode/v3/common.Address" ];
   common.Coin target_coin = 4 [ (gogoproto.nullable) = false ];
-  string vault_pub_key = 5
-      [ (gogoproto.casttype) =
-            "gitlab.com/thorchain/thornode/v3/common.PubKey" ];
   int64 submit_height = 6;
   int64 match_height = 7;
 }
