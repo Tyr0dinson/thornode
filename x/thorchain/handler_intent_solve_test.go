@@ -46,23 +46,22 @@ func (HandlerIntentSolveSuite) TestIntentSolve_HappyPath(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
 
 	// Enable intents feature
-	c.Assert(w.keeper.SetMimir(w.ctx, constants.IntentsEnabled.String(), 1), IsNil)
-	c.Assert(w.keeper.SetMimir(w.ctx, constants.IntentPriceSlideBlocks.String(), 1000), IsNil)
+	w.keeper.SetMimir(w.ctx, constants.IntentsEnabled.String(), 1)
+	w.keeper.SetMimir(w.ctx, constants.IntentPriceSlideBlocks.String(), 1000)
 
 	// Create and save an intent
 	intentTx := GetRandomTx()
 	intentTx.Coins = common.Coins{common.NewCoin(common.DOGEAsset, cosmos.NewUint(100*common.One))}
 	intent := Intent{
-		TxID:         intentTx.ID,
-		Sender:       GetRandomTHORAddress(),
-		SourceAsset:  common.DOGEAsset,
-		SourceCoin:   common.NewCoin(common.DOGEAsset, cosmos.NewUint(100*common.One)),
-		TargetAsset:  common.BTCAsset,
-		TargetAddr:   GetRandomBTCAddress(),
-		HighTarget:   cosmos.NewUint(15 * common.One),
-		LowTarget:    cosmos.NewUint(10 * common.One),
-		ExpiryHeight: w.ctx.BlockHeight() + 2000,
-		Status:       IntentActive,
+		TxID:          intentTx.ID,
+		SourceAddress: GetRandomTHORAddress(),
+		Source:        common.NewCoin(common.DOGEAsset, cosmos.NewUint(100*common.One)),
+		TargetAsset:   common.BTCAsset,
+		TargetAddress: GetRandomBTCAddress(),
+		HighTarget:    cosmos.NewUint(15 * common.One),
+		LowTarget:     cosmos.NewUint(10 * common.One),
+		ExpiryHeight:  w.ctx.BlockHeight() + 2000,
+		Status:        IntentActive,
 	}
 	w.keeper.SetIntent(w.ctx, intent)
 
@@ -94,8 +93,8 @@ func (HandlerIntentSolveSuite) TestIntentSolve_MatchHeightCalculation(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
 
 	// Enable intents feature
-	c.Assert(w.keeper.SetMimir(w.ctx, constants.IntentsEnabled.String(), 1), IsNil)
-	c.Assert(w.keeper.SetMimir(w.ctx, constants.IntentPriceSlideBlocks.String(), 1000), IsNil)
+	w.keeper.SetMimir(w.ctx, constants.IntentsEnabled.String(), 1)
+	w.keeper.SetMimir(w.ctx, constants.IntentPriceSlideBlocks.String(), 1000)
 
 	currentHeight := w.ctx.BlockHeight()
 
@@ -103,16 +102,15 @@ func (HandlerIntentSolveSuite) TestIntentSolve_MatchHeightCalculation(c *C) {
 	intentTx := GetRandomTx()
 	intentTx.Coins = common.Coins{common.NewCoin(common.DOGEAsset, cosmos.NewUint(100*common.One))}
 	intent := Intent{
-		TxID:         intentTx.ID,
-		Sender:       GetRandomTHORAddress(),
-		SourceAsset:  common.DOGEAsset,
-		SourceCoin:   common.NewCoin(common.DOGEAsset, cosmos.NewUint(100*common.One)),
-		TargetAsset:  common.BTCAsset,
-		TargetAddr:   GetRandomBTCAddress(),
-		HighTarget:   cosmos.NewUint(20 * common.One),
-		LowTarget:    cosmos.NewUint(10 * common.One),
-		ExpiryHeight: currentHeight + 5000,
-		Status:       IntentActive,
+		TxID:          intentTx.ID,
+		SourceAddress: GetRandomTHORAddress(),
+		Source:        common.NewCoin(common.DOGEAsset, cosmos.NewUint(100*common.One)),
+		TargetAsset:   common.BTCAsset,
+		TargetAddress: GetRandomBTCAddress(),
+		HighTarget:    cosmos.NewUint(20 * common.One),
+		LowTarget:     cosmos.NewUint(10 * common.One),
+		ExpiryHeight:  currentHeight + 5000,
+		Status:        IntentActive,
 	}
 	w.keeper.SetIntent(w.ctx, intent)
 
@@ -164,24 +162,23 @@ func (HandlerIntentSolveSuite) TestIntentSolve_MatchHeightCappedAtExpiry(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
 
 	// Enable intents feature with short slide period
-	c.Assert(w.keeper.SetMimir(w.ctx, constants.IntentsEnabled.String(), 1), IsNil)
-	c.Assert(w.keeper.SetMimir(w.ctx, constants.IntentPriceSlideBlocks.String(), 10000), IsNil)
+	w.keeper.SetMimir(w.ctx, constants.IntentsEnabled.String(), 1)
+	w.keeper.SetMimir(w.ctx, constants.IntentPriceSlideBlocks.String(), 10000)
 
 	currentHeight := w.ctx.BlockHeight()
 
 	// Create intent with short expiry
 	intentTx := GetRandomTx()
 	intent := Intent{
-		TxID:         intentTx.ID,
-		Sender:       GetRandomTHORAddress(),
-		SourceAsset:  common.DOGEAsset,
-		SourceCoin:   common.NewCoin(common.DOGEAsset, cosmos.NewUint(100*common.One)),
-		TargetAsset:  common.BTCAsset,
-		TargetAddr:   GetRandomBTCAddress(),
-		HighTarget:   cosmos.NewUint(20 * common.One),
-		LowTarget:    cosmos.NewUint(10 * common.One),
-		ExpiryHeight: currentHeight + 100, // Short expiry
-		Status:       IntentActive,
+		TxID:          intentTx.ID,
+		SourceAddress: GetRandomTHORAddress(),
+		Source:        common.NewCoin(common.DOGEAsset, cosmos.NewUint(100*common.One)),
+		TargetAsset:   common.BTCAsset,
+		TargetAddress: GetRandomBTCAddress(),
+		HighTarget:    cosmos.NewUint(20 * common.One),
+		LowTarget:     cosmos.NewUint(10 * common.One),
+		ExpiryHeight:  currentHeight + 100, // Short expiry
+		Status:        IntentActive,
 	}
 	w.keeper.SetIntent(w.ctx, intent)
 
@@ -205,21 +202,20 @@ func (HandlerIntentSolveSuite) TestIntentSolve_ValidationErrors(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
 
 	// Enable intents feature
-	c.Assert(w.keeper.SetMimir(w.ctx, constants.IntentsEnabled.String(), 1), IsNil)
+	w.keeper.SetMimir(w.ctx, constants.IntentsEnabled.String(), 1)
 
 	// Create intent
 	intentTx := GetRandomTx()
 	intent := Intent{
-		TxID:         intentTx.ID,
-		Sender:       GetRandomTHORAddress(),
-		SourceAsset:  common.DOGEAsset,
-		SourceCoin:   common.NewCoin(common.DOGEAsset, cosmos.NewUint(100*common.One)),
-		TargetAsset:  common.BTCAsset,
-		TargetAddr:   GetRandomBTCAddress(),
-		HighTarget:   cosmos.NewUint(20 * common.One),
-		LowTarget:    cosmos.NewUint(10 * common.One),
-		ExpiryHeight: w.ctx.BlockHeight() + 1000,
-		Status:       IntentActive,
+		TxID:          intentTx.ID,
+		SourceAddress: GetRandomTHORAddress(),
+		Source:        common.NewCoin(common.DOGEAsset, cosmos.NewUint(100*common.One)),
+		TargetAsset:   common.BTCAsset,
+		TargetAddress: GetRandomBTCAddress(),
+		HighTarget:    cosmos.NewUint(20 * common.One),
+		LowTarget:     cosmos.NewUint(10 * common.One),
+		ExpiryHeight:  w.ctx.BlockHeight() + 1000,
+		Status:        IntentActive,
 	}
 	w.keeper.SetIntent(w.ctx, intent)
 
@@ -234,7 +230,7 @@ func (HandlerIntentSolveSuite) TestIntentSolve_ValidationErrors(c *C) {
 		{
 			name: "feature disabled should fail",
 			setupMsg: func() *MsgIntentSolve {
-				w.keeper.DeleteMimir(w.ctx, constants.IntentsEnabled.String())
+				w.keeper.SetMimir(w.ctx, constants.IntentsEnabled.String(), 0)
 				return NewMsgIntentSolve(solveTx, intentTx.ID, w.activeNodeAccount.NodeAddress)
 			},
 			expectedErr: se.ErrUnauthorized,
@@ -317,21 +313,20 @@ func (HandlerIntentSolveSuite) TestIntentSolve_KeeperErrors(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
 
 	// Enable intents feature
-	c.Assert(w.keeper.SetMimir(w.ctx, constants.IntentsEnabled.String(), 1), IsNil)
+	w.keeper.SetMimir(w.ctx, constants.IntentsEnabled.String(), 1)
 
 	// Create intent
 	intentTx := GetRandomTx()
 	intent := Intent{
-		TxID:         intentTx.ID,
-		Sender:       GetRandomTHORAddress(),
-		SourceAsset:  common.DOGEAsset,
-		SourceCoin:   common.NewCoin(common.DOGEAsset, cosmos.NewUint(100*common.One)),
-		TargetAsset:  common.BTCAsset,
-		TargetAddr:   GetRandomBTCAddress(),
-		HighTarget:   cosmos.NewUint(20 * common.One),
-		LowTarget:    cosmos.NewUint(10 * common.One),
-		ExpiryHeight: w.ctx.BlockHeight() + 1000,
-		Status:       IntentActive,
+		TxID:          intentTx.ID,
+		SourceAddress: GetRandomTHORAddress(),
+		Source:        common.NewCoin(common.DOGEAsset, cosmos.NewUint(100*common.One)),
+		TargetAsset:   common.BTCAsset,
+		TargetAddress: GetRandomBTCAddress(),
+		HighTarget:    cosmos.NewUint(20 * common.One),
+		LowTarget:     cosmos.NewUint(10 * common.One),
+		ExpiryHeight:  w.ctx.BlockHeight() + 1000,
+		Status:        IntentActive,
 	}
 	w.keeper.SetIntent(w.ctx, intent)
 
@@ -367,24 +362,23 @@ func (HandlerIntentSolveSuite) TestIntentSolve_EdgeCase_HighEqualsLow(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
 
 	// Enable intents feature
-	c.Assert(w.keeper.SetMimir(w.ctx, constants.IntentsEnabled.String(), 1), IsNil)
-	c.Assert(w.keeper.SetMimir(w.ctx, constants.IntentPriceSlideBlocks.String(), 1000), IsNil)
+	w.keeper.SetMimir(w.ctx, constants.IntentsEnabled.String(), 1)
+	w.keeper.SetMimir(w.ctx, constants.IntentPriceSlideBlocks.String(), 1000)
 
 	currentHeight := w.ctx.BlockHeight()
 
 	// Create intent with high == low (degenerate case)
 	intentTx := GetRandomTx()
 	intent := Intent{
-		TxID:         intentTx.ID,
-		Sender:       GetRandomTHORAddress(),
-		SourceAsset:  common.DOGEAsset,
-		SourceCoin:   common.NewCoin(common.DOGEAsset, cosmos.NewUint(100*common.One)),
-		TargetAsset:  common.BTCAsset,
-		TargetAddr:   GetRandomBTCAddress(),
-		HighTarget:   cosmos.NewUint(10 * common.One),
-		LowTarget:    cosmos.NewUint(10 * common.One), // Same as high
-		ExpiryHeight: currentHeight + 5000,
-		Status:       IntentActive,
+		TxID:          intentTx.ID,
+		SourceAddress: GetRandomTHORAddress(),
+		Source:        common.NewCoin(common.DOGEAsset, cosmos.NewUint(100*common.One)),
+		TargetAsset:   common.BTCAsset,
+		TargetAddress: GetRandomBTCAddress(),
+		HighTarget:    cosmos.NewUint(10 * common.One),
+		LowTarget:     cosmos.NewUint(10 * common.One), // Same as high
+		ExpiryHeight:  currentHeight + 5000,
+		Status:        IntentActive,
 	}
 	w.keeper.SetIntent(w.ctx, intent)
 

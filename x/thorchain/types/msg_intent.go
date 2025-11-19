@@ -2,6 +2,7 @@ package types
 
 import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	se "github.com/cosmos/cosmos-sdk/types/errors"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -46,22 +47,22 @@ func (m *MsgIntentOpen) ValidateBasic() error {
 		return cosmos.ErrInvalidAddress(m.Signer.String())
 	}
 	if m.TargetAsset.IsEmpty() {
-		return cosmos.ErrUnknownRequest("target asset cannot be empty")
+		return se.ErrInvalidRequest.Wrap("target asset cannot be empty")
 	}
 	if err := m.Tx.Valid(); err != nil {
-		return cosmos.ErrUnknownRequest(err.Error())
+		return se.ErrInvalidRequest.Wrap(err.Error())
 	}
 	if m.HighTarget.IsZero() {
-		return cosmos.ErrUnknownRequest("high target cannot be zero")
+		return se.ErrInvalidRequest.Wrap("high target cannot be zero")
 	}
 	if m.LowTarget.IsZero() {
-		return cosmos.ErrUnknownRequest("low target cannot be zero")
+		return se.ErrInvalidRequest.Wrap("low target cannot be zero")
 	}
 	if m.HighTarget.LT(m.LowTarget) {
-		return cosmos.ErrUnknownRequest("high target must be greater than or equal to low target")
+		return se.ErrInvalidRequest.Wrap("high target must be greater than or equal to low target")
 	}
 	if m.TargetAddress.IsEmpty() {
-		return cosmos.ErrUnknownRequest("target address cannot be empty")
+		return se.ErrInvalidRequest.Wrap("target address cannot be empty")
 	}
 	return nil
 }
@@ -86,10 +87,10 @@ func (m *MsgIntentCancel) ValidateBasic() error {
 		return cosmos.ErrInvalidAddress(m.Signer.String())
 	}
 	if err := m.Tx.Valid(); err != nil {
-		return cosmos.ErrUnknownRequest(err.Error())
+		return se.ErrInvalidRequest.Wrap(err.Error())
 	}
 	if m.IntentTxID.IsEmpty() {
-		return cosmos.ErrUnknownRequest("intent tx id cannot be empty")
+		return se.ErrInvalidRequest.Wrap("intent tx id cannot be empty")
 	}
 	return nil
 }
@@ -114,10 +115,10 @@ func (m *MsgIntentSolve) ValidateBasic() error {
 		return cosmos.ErrInvalidAddress(m.Signer.String())
 	}
 	if err := m.Tx.Valid(); err != nil {
-		return cosmos.ErrUnknownRequest(err.Error())
+		return se.ErrInvalidRequest.Wrap(err.Error())
 	}
 	if m.IntentTxID.IsEmpty() {
-		return cosmos.ErrUnknownRequest("intent tx id cannot be empty")
+		return se.ErrInvalidRequest.Wrap("intent tx id cannot be empty")
 	}
 	return nil
 }
