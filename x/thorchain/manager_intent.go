@@ -126,21 +126,19 @@ func (im *IntentMgr) executeIntent(ctx cosmos.Context, intent Intent, solve Inte
 
 	// Prepare outbound items
 	solverToi := TxOutItem{
-		Chain:       intent.Source.Asset.GetChain(),
-		ToAddress:   solve.SolverAddress,
-		VaultPubKey: intent.VaultPubKey,
-		Coin:        intent.Source,
-		Memo:        fmt.Sprintf("OUT:%s", solve.SolveTxID),
-		InHash:      solve.SolveTxID,
+		Chain:     intent.Source.Asset.GetChain(),
+		ToAddress: solve.SolverAddress,
+		Coin:      intent.Source,
+		Memo:      fmt.Sprintf("OUT:%s", solve.SolveTxID),
+		InHash:    solve.SolveTxID,
 	}
 
 	userToi := TxOutItem{
-		Chain:       solve.TargetCoin.Asset.GetChain(),
-		ToAddress:   intent.TargetAddress,
-		VaultPubKey: solve.VaultPubKey,
-		Coin:        solve.TargetCoin,
-		Memo:        fmt.Sprintf("OUT:%s", intent.TxID),
-		InHash:      intent.TxID,
+		Chain:     solve.TargetCoin.Asset.GetChain(),
+		ToAddress: intent.TargetAddress,
+		Coin:      solve.TargetCoin,
+		Memo:      fmt.Sprintf("OUT:%s", intent.TxID),
+		InHash:    intent.TxID,
 	}
 
 	// Determine which asset to charge fee on (prefer source, then target)
@@ -267,12 +265,11 @@ func (im *IntentMgr) expireIntent(ctx cosmos.Context, intent Intent) error {
 	if shouldRefund {
 		// Schedule the txout for refund
 		toi := TxOutItem{
-			Chain:       intent.Source.Asset.GetChain(),
-			ToAddress:   intent.SourceAddress,
-			VaultPubKey: intent.VaultPubKey,
-			Coin:        intent.Source,
-			Memo:        fmt.Sprintf("REFUND:%s", intent.TxID),
-			InHash:      intent.TxID,
+			Chain:     intent.Source.Asset.GetChain(),
+			ToAddress: intent.SourceAddress,
+			Coin:      intent.Source,
+			Memo:      fmt.Sprintf("REFUND:%s", intent.TxID),
+			InHash:    intent.TxID,
 		}
 
 		ok, err := im.mgr.TxOutStore().TryAddTxOutItem(ctx, im.mgr, toi, cosmos.ZeroUint())
@@ -293,17 +290,42 @@ func (im *IntentMgr) expireIntent(ctx cosmos.Context, intent Intent) error {
 		// Abandon (burn) the source asset by updating the vault
 		abandoned = true
 
-		// Get the vault and subtract the abandoned coins
-		vault, err := im.mgr.Keeper().GetVault(ctx, intent.VaultPubKey)
+		// Get active vaults and find the one with sufficient balance and closest amount
+		vaults, err := im.mgr.Keeper().GetAsgardVaultsByStatus(ctx, ActiveVault)
 		if err != nil {
-			return fmt.Errorf("fail to get vault: %w", err)
+			return fmt.Errorf("fail to get active vaults: %w", err)
+		}
+		if len(vaults) == 0 {
+			return fmt.Errorf("no active vaults available")
 		}
 
-		// Subtract the abandoned amount from the vault
-		vault.SubFunds(common.NewCoins(intent.Source))
+		// Find vault with sufficient balance and closest amount to the source coin
+		var selectedVault *Vault
+		var closestDiff cosmos.Uint
+		for i := range vaults {
+			vaultBalance := vaults[i].GetCoin(intent.Source.Asset).Amount
+
+			// Check if vault has sufficient balance
+			if vaultBalance.GTE(intent.Source.Amount) {
+				diff := common.SafeSub(vaultBalance, intent.Source.Amount)
+
+				// Select this vault if it's the first valid one or has a closer balance
+				if selectedVault == nil || diff.LT(closestDiff) {
+					selectedVault = &vaults[i]
+					closestDiff = diff
+				}
+			}
+		}
+
+		if selectedVault == nil {
+			return fmt.Errorf("no vault found with sufficient balance for asset %s (need %s)", intent.Source.Asset, intent.Source.Amount)
+		}
+
+		// Subtract the abandoned amount from the selected vault
+		selectedVault.SubFunds(common.NewCoins(intent.Source))
 
 		// Save the updated vault
-		if err := im.mgr.Keeper().SetVault(ctx, vault); err != nil {
+		if err := im.mgr.Keeper().SetVault(ctx, *selectedVault); err != nil {
 			return fmt.Errorf("fail to save vault: %w", err)
 		}
 
@@ -311,7 +333,7 @@ func (im *IntentMgr) expireIntent(ctx cosmos.Context, intent Intent) error {
 			"txid", intent.TxID,
 			"asset", intent.Source.Asset,
 			"amount", intent.Source.Amount,
-			"vault", intent.VaultPubKey,
+			"vault", selectedVault.PubKey,
 		)
 	}
 
