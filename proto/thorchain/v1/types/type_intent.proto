@@ -64,6 +64,13 @@ message IntentSolve {
   int64 match_height = 7;
 }
 
+message IntentSolveIndex {
+  repeated string solve_tx_ids = 1 [
+    (gogoproto.casttype) = "gitlab.com/thorchain/thornode/v3/common.TxID",
+    (gogoproto.customname) = "SolveTxIDs"
+  ];
+}
+
 message ActiveIntentIndex {
   repeated string active_intent_tx_ids = 1 [
     (gogoproto.casttype) = "gitlab.com/thorchain/thornode/v3/common.TxID",
