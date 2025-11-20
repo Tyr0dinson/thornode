@@ -220,9 +220,30 @@ func (k KVStore) SetIntentSolve(ctx cosmos.Context, solve types.IntentSolve) {
 
 	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 
-	// Index by intent ID
-	intentIndexKey := k.GetKey(prefixIntentSolveByIntent, solve.IntentTxID.String(), solve.SolveTxID.String())
-	store.Set(intentIndexKey, []byte{1})
+	// Index by intent ID - use IntentSolveIndex with list of solve TxIDs
+	intentIndexKey := k.GetKey(prefixIntentSolveByIntent, solve.IntentTxID.String())
+	var index types.IntentSolveIndex
+	if store.Has(intentIndexKey) {
+		bz := store.Get(intentIndexKey)
+		if err := k.cdc.Unmarshal(bz, &index); err != nil {
+			ctx.Logger().Error("failed to unmarshal intent solve index", "error", err)
+			index = types.IntentSolveIndex{}
+		}
+	}
+
+	// Add solve TxID if not already in the index
+	found := false
+	for _, txID := range index.SolveTxIDs {
+		if txID.Equals(solve.SolveTxID) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		index.SolveTxIDs = append(index.SolveTxIDs, solve.SolveTxID)
+		buf := k.cdc.MustMarshal(&index)
+		store.Set(intentIndexKey, buf)
+	}
 
 	// Index by match height
 	heightStr := strconv.FormatInt(solve.MatchHeight, 10)
@@ -256,9 +277,32 @@ func (k KVStore) RemoveIntentSolve(ctx cosmos.Context, solveTxID common.TxID) {
 	// Remove main record
 	store.Delete(k.GetKey(prefixIntentSolve, solveTxID.String()))
 
-	// Remove intent index
-	intentIndexKey := k.GetKey(prefixIntentSolveByIntent, solve.IntentTxID.String(), solve.SolveTxID.String())
-	store.Delete(intentIndexKey)
+	// Update intent index - remove solve TxID from the list
+	intentIndexKey := k.GetKey(prefixIntentSolveByIntent, solve.IntentTxID.String())
+	if store.Has(intentIndexKey) {
+		var index types.IntentSolveIndex
+		bz := store.Get(intentIndexKey)
+		if err := k.cdc.Unmarshal(bz, &index); err != nil {
+			ctx.Logger().Error("failed to unmarshal intent solve index", "error", err)
+		} else {
+			// Remove solve TxID from the list
+			newList := make([]common.TxID, 0, len(index.SolveTxIDs))
+			for _, txID := range index.SolveTxIDs {
+				if !txID.Equals(solveTxID) {
+					newList = append(newList, txID)
+				}
+			}
+			index.SolveTxIDs = newList
+
+			// If list is empty, delete the index; otherwise update it
+			if len(index.SolveTxIDs) == 0 {
+				store.Delete(intentIndexKey)
+			} else {
+				buf := k.cdc.MustMarshal(&index)
+				store.Set(intentIndexKey, buf)
+			}
+		}
+	}
 
 	// Remove match height index
 	heightStr := strconv.FormatInt(solve.MatchHeight, 10)
@@ -268,20 +312,24 @@ func (k KVStore) RemoveIntentSolve(ctx cosmos.Context, solveTxID common.TxID) {
 
 // GetIntentSolvesByIntentID retrieves all solve bids for a specific intent
 func (k KVStore) GetIntentSolvesByIntentID(ctx cosmos.Context, intentTxID common.TxID) ([]types.IntentSolve, error) {
-	var solves []types.IntentSolve
-	key := k.GetKey(prefixIntentSolveByIntent, intentTxID.String(), "")
-	iter := k.getIterator(ctx, kvTypes.DbPrefix(key))
-	defer iter.Close()
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	intentIndexKey := k.GetKey(prefixIntentSolveByIntent, intentTxID.String())
 
-	for ; iter.Valid(); iter.Next() {
-		// Extract the solve TxID from the key
-		keyStr := string(iter.Key())
-		parts := splitKey(keyStr)
-		if len(parts) < 2 {
-			continue
-		}
-		solveTxID := common.TxID(parts[len(parts)-1])
+	// If the index doesn't exist, return empty list
+	if !store.Has(intentIndexKey) {
+		return []types.IntentSolve{}, nil
+	}
 
+	// Load and unmarshal the intent solve index
+	var index types.IntentSolveIndex
+	bz := store.Get(intentIndexKey)
+	if err := k.cdc.Unmarshal(bz, &index); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal intent solve index: %w", err)
+	}
+
+	// Fetch all solve records
+	solves := make([]types.IntentSolve, 0, len(index.SolveTxIDs))
+	for _, solveTxID := range index.SolveTxIDs {
 		solve, err := k.GetIntentSolve(ctx, solveTxID)
 		if err != nil {
 			ctx.Logger().Error("failed to get intent solve", "txid", solveTxID, "error", err)
