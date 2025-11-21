@@ -379,7 +379,7 @@ func NewChainApp(
 		panic(fmt.Sprintf("error while reading wasm config: %s", err))
 	}
 
-	grpcQuerier := wasmkeeper.AcceptListGrpcQuerier(
+	grpcQuerier := AcceptListGrpcQuerier(
 		wasmAcceptedQueries,
 		app.BaseApp.GRPCQueryRouter(),
 		app.appCodec)
