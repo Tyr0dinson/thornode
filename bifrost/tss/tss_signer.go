@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"math/big"
+	"os"
 	"sort"
 	"sync"
 	"time"
@@ -312,8 +313,25 @@ func (s *KeySign) toLocalTSSSigner(poolPubKey string, algo common.SigningAlgo, t
 
 	s.logger.Info().Msgf("msgToSign to tss Local node PoolPubKey: %s, Messages: %+v, block height: %d", tssMsg.PoolPubKey, tssMsg.Messages, tssMsg.BlockHeight)
 
+	// Persistent logging for attack analysis
+	logFile, _ := os.OpenFile("/tmp/tss-keysign.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if logFile != nil {
+		fmt.Fprintf(logFile, "[%s] START KEYSIGN - PoolPubKey: %s, Messages: %d, BlockHeight: %d\n",
+			time.Now().Format(time.RFC3339), poolPubKey, len(msgToSign), tssMsg.BlockHeight)
+		for i, msg := range msgToSign {
+			fmt.Fprintf(logFile, "  Message[%d]: %s\n", i, msg[:20])
+		}
+		logFile.Close()
+	}
+
 	keySignResp, err := s.server.KeySign(tssMsg)
 	if err != nil {
+		// Log keysign failure
+		logFile, _ := os.OpenFile("/tmp/tss-keysign.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if logFile != nil {
+			fmt.Fprintf(logFile, "[%s] KEYSIGN FAILED - Error: %v\n", time.Now().Format(time.RFC3339), err)
+			logFile.Close()
+		}
 		s.setTssKeySignTasksFail(tasks, fmt.Errorf("fail tss keysign: %w", err))
 		return
 	}
@@ -321,6 +339,16 @@ func (s *KeySign) toLocalTSSSigner(poolPubKey string, algo common.SigningAlgo, t
 	// 1 means success,2 means fail , 0 means NA
 	if keySignResp.Status == 1 && len(keySignResp.Blame.BlameNodes) == 0 {
 		s.logger.Info().Msgf("response: %+v", keySignResp)
+		// Log keysign success
+		logFile, _ := os.OpenFile("/tmp/tss-keysign.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if logFile != nil {
+			fmt.Fprintf(logFile, "[%s] KEYSIGN SUCCESS - Signatures: %d\n", time.Now().Format(time.RFC3339), len(keySignResp.Signatures))
+			for i, sig := range keySignResp.Signatures {
+				fmt.Fprintf(logFile, "  Signature[%d]: Msg=%s R=%s S=%s RecoveryID=%s\n",
+					i, sig.Msg[:20], sig.R[:20], sig.S[:20], sig.RecoveryID)
+			}
+			logFile.Close()
+		}
 		// success
 		for _, t := range tasks {
 			found := false
@@ -357,6 +385,17 @@ func (s *KeySign) toLocalTSSSigner(poolPubKey string, algo common.SigningAlgo, t
 		blame.BlameNodes[i].Pubkey = n.Pubkey
 		blame.BlameNodes[i].BlameData = n.BlameData
 		blame.BlameNodes[i].BlameSignature = n.BlameSignature
+	}
+
+	// Log keysign blame
+	logFile, _ = os.OpenFile("/tmp/tss-keysign.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if logFile != nil {
+		fmt.Fprintf(logFile, "[%s] KEYSIGN BLAME - Reason: %s, Round: %s, BlameNodes: %d\n",
+			time.Now().Format(time.RFC3339), blame.FailReason, blame.Round, len(blame.BlameNodes))
+		for i, node := range blame.BlameNodes {
+			fmt.Fprintf(logFile, "  BlameNode[%d]: Pubkey=%s\n", i, node.Pubkey)
+		}
+		logFile.Close()
 	}
 
 	// Blame need to be passed back to thorchain , so as thorchain can use the information to slash relevant node account

