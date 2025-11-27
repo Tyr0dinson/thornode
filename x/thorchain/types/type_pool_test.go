@@ -130,14 +130,28 @@ func (PoolTestSuite) TestCalcUnits(c *C) {
 	c.Assert(units.Uint64(), Equals, uint64(100),
 		Commentf("pool without asset balance should return LPUnits"))
 
-	// asset balance <= synthSupply / 2
+	// edge case: synthSupply just below 2*BalanceAsset (valid state)
 	pool.BalanceAsset = cosmos.NewUint(100)
 	pool.BalanceRune = cosmos.NewUint(100)
 	pool.LPUnits = cosmos.NewUint(100)
-	synthSupply = cosmos.NewUint(200)
+	synthSupply = cosmos.NewUint(199) // Just below 2*BalanceAsset
 	units = pool.CalcUnits(synthSupply)
-	c.Assert(pool.SynthUnits.Uint64(), Equals, uint64(20_000))
-	c.Assert(units.Uint64(), Equals, uint64(20_100))
+	// (100 * 199) / (2*100 - 199) = 19900 / 1 = 19900
+	c.Assert(pool.SynthUnits.Uint64(), Equals, uint64(19_900))
+	c.Assert(units.Uint64(), Equals, uint64(20_000))
+
+	// invalid state: synthSupply >= 2*BalanceAsset
+	// In this case, denominator becomes zero (via SafeSub), which indicates an invalid/unstable state.
+	// We return zero synth units to prevent calculation explosion that could occur with large values.
+	pool.BalanceAsset = cosmos.NewUint(100)
+	pool.BalanceRune = cosmos.NewUint(100)
+	pool.LPUnits = cosmos.NewUint(100)
+	synthSupply = cosmos.NewUint(200) // Equal to 2*BalanceAsset (invalid state)
+	units = pool.CalcUnits(synthSupply)
+	c.Assert(pool.SynthUnits.Uint64(), Equals, uint64(0),
+		Commentf("when synthSupply >= 2*BalanceAsset (invalid state), synth units should be zero"))
+	c.Assert(units.Uint64(), Equals, uint64(100),
+		Commentf("pool units should equal LP units when synth units are zero"))
 
 	// normal case
 	pool.BalanceAsset = cosmos.NewUint(1_000)

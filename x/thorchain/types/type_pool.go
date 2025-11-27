@@ -80,10 +80,16 @@ func (m *Pool) CalcUnits(s cosmos.Uint) cosmos.Uint {
 	} else {
 		numerator := m.LPUnits.Mul(s)
 		denominator := common.SafeSub(m.BalanceAsset.MulUint64(2), s)
+		// When synthSupply >= 2 * BalanceAsset, SafeSub returns 0 (invalid state)
+		// Returning zero synth units prevents calculation explosion while maintaining
+		// mathematical correctness - the pool is in an invalid/unstable state.
+		// This should not happen in practice as synth minting should be capped,
+		// but if it does occur, zero synth units is the safe fallback.
 		if denominator.IsZero() {
-			denominator = cosmos.OneUint()
+			m.SynthUnits = cosmos.ZeroUint()
+		} else {
+			m.SynthUnits = numerator.Quo(denominator)
 		}
-		m.SynthUnits = numerator.Quo(denominator)
 	}
 	return m.GetPoolUnits()
 }
