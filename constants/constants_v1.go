@@ -151,6 +151,8 @@ func NewConstantValue() *ConstantVals {
 			ReserveMaxCap:                       0,                  // maximum reserve balance before EmissionCurve is overridden, 0 = disabled
 			MaxDepositTxIDRetries:               100,                // maximum retries for deposit txid auto-increment to avoid collisions
 			MaxRetiredVaultRecoveryAttempts:     100,                // maximum retries for retired vault recovery refunds
+			ManualTransferQuorum:                4,                  // number of yes votes required for manual transfer
+			ManualTransferDelayBlocks:           43200,              // blocks to delay manual transfer execution (~3 days)
 		},
 		boolValues: map[ConstantName]bool{
 			StrictBondLiquidityRatio: true,

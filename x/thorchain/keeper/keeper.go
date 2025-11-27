@@ -95,6 +95,7 @@ type Keeper interface {
 	KeeperTCYClaimer
 	KeeperTCYStaker
 	KeeperVolume
+	KeeperManualTransfer
 }
 
 type KeeperConfig interface {
@@ -499,4 +500,10 @@ type KeeperTCYStaker interface {
 	ListTCYStakers(ctx cosmos.Context) ([]TCYStaker, error)
 	TCYStakerExists(ctx cosmos.Context, address common.Address) bool
 	UpdateTCYStaker(ctx cosmos.Context, address common.Address, amount math.Uint) error
+}
+
+type KeeperManualTransfer interface {
+	SetManualTransferVoter(_ cosmos.Context, _ ManualTransferVoter)
+	GetManualTransferVoter(_ cosmos.Context, _ string) (ManualTransferVoter, error)
+	GetManualTransferVoterIterator(_ cosmos.Context) cosmos.Iterator
 }

@@ -909,6 +909,12 @@ func (k KVStoreDummy) SetVolume(_ cosmos.Context, _ Volume) error {
 	return nil
 }
 
+func (k KVStoreDummy) SetManualTransferVoter(_ cosmos.Context, _ ManualTransferVoter) {}
+func (k KVStoreDummy) GetManualTransferVoter(_ cosmos.Context, _ string) (ManualTransferVoter, error) {
+	return ManualTransferVoter{}, kaboom
+}
+func (k KVStoreDummy) GetManualTransferVoterIterator(_ cosmos.Context) cosmos.Iterator { return nil }
+
 // a mock cosmos.Iterator implementation for testing purposes
 type DummyIterator struct {
 	cosmos.Iterator

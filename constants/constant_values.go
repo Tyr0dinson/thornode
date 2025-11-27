@@ -163,6 +163,8 @@ const (
 	MarketingFundAddress
 	MaxDepositTxIDRetries
 	MaxRetiredVaultRecoveryAttempts
+	ManualTransferQuorum
+	ManualTransferDelayBlocks
 
 	// These are the implicitly-0 Constants undisplayed in the API endpoint (no explicit value set).
 	ArtificialRagnarokBlockHeight
