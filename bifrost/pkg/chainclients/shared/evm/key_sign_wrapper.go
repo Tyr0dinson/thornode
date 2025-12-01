@@ -101,11 +101,13 @@ func (w *KeySignWrapper) signTSS(tx *etypes.Transaction, poolPubKey string) ([]b
 	if err != nil {
 		return nil, err
 	}
-	if ecrypto.VerifySignature(secpPubKey.Bytes(), hash[:], sig) {
-		w.logger.Info().Msg("we can successfully verify the bytes")
-	} else {
-		w.logger.Error().Msg("Oops! we cannot verify the bytes")
+
+	// Ensure the signature is valid
+	if !ecrypto.VerifySignature(secpPubKey.Bytes(), hash[:], sig) {
+		w.logger.Error().Msg("TSS signature verification failed - signature does not match message")
+		return nil, fmt.Errorf("signature verification failed: TSS produced invalid signature for message")
 	}
+	w.logger.Info().Msg("signature verified successfully")
 	// add the recovery id at the end
 	result := make([]byte, 65)
 	copy(result, sig)
