@@ -917,8 +917,8 @@ func (c *Client) ConfirmationCountReady(txIn stypes.TxIn) bool {
 	return (c.ethScanner.currentBlockHeight - blockHeight) >= confirm
 }
 
-func (c *Client) getBlockReward(height int64) (*big.Int, error) {
-	return big.NewInt(ethBlockRewardAndFee), nil
+func (c *Client) getBlockReward(height int64) *big.Int {
+	return big.NewInt(ethBlockRewardAndFee)
 }
 
 func (c *Client) getTotalTransactionValue(txIn stypes.TxIn, excludeFrom []common.Address) cosmos.Uint {
@@ -971,11 +971,8 @@ func (c *Client) getBlockRequiredConfirmation(txIn stypes.TxIn, height int64) (i
 	if err != nil {
 		c.logger.Err(err).Msgf("failed to get conf multiplier mimir value for %s", c.GetChain().String())
 	}
-	totalFeeAndSubsidy, err := c.getBlockReward(height)
+	totalFeeAndSubsidy := c.getBlockReward(height)
 	confValue := common.GetUncappedShare(confMul, cosmos.NewUint(constants.MaxBasisPts), cosmos.NewUintFromBigInt(totalFeeAndSubsidy))
-	if err != nil {
-		return 0, fmt.Errorf("fail to get coinbase value: %w", err)
-	}
 	confirm := cosmos.NewUintFromBigInt(totalTxValueInWei).MulUint64(2).Quo(confValue).Uint64()
 	confirm, err = utxo.MaxConfAdjustment(confirm, c.GetChain().String(), c.bridge)
 	if err != nil {
