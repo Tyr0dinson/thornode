@@ -5,6 +5,8 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 // IntentMgr handles intent matching and expiration in EndBlock
@@ -30,6 +32,12 @@ func (im *IntentMgr) EndBlock(ctx cosmos.Context) error {
 	// Process expired intents
 	if err := im.processExpirations(ctx); err != nil {
 		ctx.Logger().Error("fail to process intent expirations", "error", err)
+		return err
+	}
+
+	// Process active auctions (check for completion)
+	if err := im.processAuctions(ctx); err != nil {
+		ctx.Logger().Error("fail to process intent auctions", "error", err)
 		return err
 	}
 
@@ -240,107 +248,408 @@ func (im *IntentMgr) executeIntent(ctx cosmos.Context, intent Intent, solve Inte
 	return nil
 }
 
-// expireIntent handles an expired intent by refunding or abandoning
+// expireIntent handles an expired intent by starting an auction
 func (im *IntentMgr) expireIntent(ctx cosmos.Context, intent Intent) error {
-	// Determine if we should refund or abandon based on asset type
-	sourcePool, _ := im.mgr.Keeper().GetPool(ctx, intent.Source.Asset.GetLayer1Asset())
-	isPoolAsset := !sourcePool.IsEmpty()
-	isNativeAsset := intent.Source.Asset.IsRune() || intent.Source.Asset.IsSecuredAsset()
-	shouldRefund := isPoolAsset || isNativeAsset
+	// Get auction parameters
+	auctionBps := im.mgr.Keeper().GetConfigInt64(ctx, constants.IntentAuctionBasisPoints)
+	if auctionBps <= 0 {
+		auctionBps = 1000 // Default 10%
+	}
 
-	abandoned := false
+	auctionDuration := im.mgr.Keeper().GetConfigInt64(ctx, constants.IntentAuctionDurationBlocks)
+	if auctionDuration <= 0 {
+		auctionDuration = 14400 // Default ~1 day
+	}
 
-	if shouldRefund {
-		// Schedule the txout for refund
+	// Calculate auction amount (1k bps = 10% of source)
+	maxBps := cosmos.NewUint(constants.MaxBasisPts)
+	auctionAmount := common.GetSafeShare(cosmos.NewUint(uint64(auctionBps)), maxBps, intent.Source.Amount)
+	remainingAmount := common.SafeSub(intent.Source.Amount, auctionAmount)
+
+	// Determine bid asset (gas asset of source chain)
+	sourceChain := intent.Source.Asset.GetChain()
+	bidAsset := sourceChain.GetGasAsset()
+
+	// Calculate minimum bid (3x network fee)
+	minBid := calculateMinBid(ctx, im.mgr, sourceChain)
+
+	// Create the auction
+	auction := IntentAuction{
+		IntentTxID:      intent.TxID,
+		AuctionAmount:   common.NewCoin(intent.Source.Asset, auctionAmount),
+		RemainingAmount: common.NewCoin(intent.Source.Asset, remainingAmount),
+		BidAsset:        bidAsset,
+		MinBid:          minBid,
+		StartHeight:     ctx.BlockHeight(),
+		ExpiryHeight:    ctx.BlockHeight() + auctionDuration,
+		Status:          IntentAuctionStatus_AuctionActive,
+		OwnerAddress:    intent.SourceAddress,
+	}
+
+	// Save the auction
+	im.mgr.Keeper().SetIntentAuction(ctx, auction)
+
+	// Refund any existing solves for this intent
+	if err := im.refundIntentSolves(ctx, intent); err != nil {
+		ctx.Logger().Error("fail to refund intent solves", "txid", intent.TxID, "error", err)
+	}
+
+	// Update intent status to auctioning
+	intent.Status = IntentAuctioning
+	im.mgr.Keeper().SetIntent(ctx, intent)
+
+	// Emit auction start event
+	evt := NewEventIntentAuctionStart(
+		intent.TxID,
+		auction.AuctionAmount,
+		auction.RemainingAmount,
+		bidAsset,
+		minBid,
+		auction.ExpiryHeight,
+	)
+	if err := im.mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
+		ctx.Logger().Error("fail to emit intent auction start event", "error", err)
+	}
+
+	ctx.Logger().Info("started intent auction",
+		"intent_txid", intent.TxID,
+		"auction_amount", auctionAmount,
+		"remaining_amount", remainingAmount,
+		"bid_asset", bidAsset,
+		"min_bid", minBid,
+		"expiry_height", auction.ExpiryHeight,
+	)
+
+	return nil
+}
+
+// refundIntentSolves refunds all solve bids for an intent when auction starts
+func (im *IntentMgr) refundIntentSolves(ctx cosmos.Context, intent Intent) error {
+	solves, err := im.mgr.Keeper().GetIntentSolvesByIntentID(ctx, intent.TxID)
+	if err != nil {
+		return fmt.Errorf("fail to get intent solves: %w", err)
+	}
+
+	for _, solve := range solves {
+		// Schedule refund for the solve
 		toi := TxOutItem{
-			Chain:     intent.Source.Asset.GetChain(),
-			ToAddress: intent.SourceAddress,
-			Coin:      intent.Source,
-			Memo:      fmt.Sprintf("REFUND:%s", intent.TxID),
-			InHash:    intent.TxID,
+			Chain:     solve.TargetCoin.Asset.GetChain(),
+			ToAddress: solve.SolverAddress,
+			Coin:      solve.TargetCoin,
+			Memo:      NewRefundMemo(solve.SolveTxID).String(),
+			InHash:    solve.SolveTxID,
 		}
 
 		ok, err := im.mgr.TxOutStore().TryAddTxOutItem(ctx, im.mgr, toi, cosmos.ZeroUint())
 		if err != nil {
-			return fmt.Errorf("fail to add outbound tx: %w", err)
+			ctx.Logger().Error("fail to refund solve", "solve_txid", solve.SolveTxID, "error", err)
+			continue
 		}
 		if !ok {
-			return fmt.Errorf("fail to schedule refund txout")
+			ctx.Logger().Error("fail to schedule solve refund", "solve_txid", solve.SolveTxID)
+			continue
 		}
 
-		ctx.Logger().Info("scheduled expired intent refund",
-			"txid", intent.TxID,
-			"asset", intent.Source.Asset,
-			"amount", intent.Source.Amount,
-			"to", intent.SourceAddress,
-		)
-	} else {
-		// Abandon (burn) the source asset by updating the vault
-		abandoned = true
-
-		// Get active vaults and find the one with sufficient balance and closest amount
-		vaults, err := im.mgr.Keeper().GetAsgardVaultsByStatus(ctx, ActiveVault)
-		if err != nil {
-			return fmt.Errorf("fail to get active vaults: %w", err)
-		}
-		if len(vaults) == 0 {
-			return fmt.Errorf("no active vaults available")
-		}
-
-		// Find vault with sufficient balance and closest amount to the source coin
-		var selectedVault *Vault
-		var closestDiff cosmos.Uint
-		for i := range vaults {
-			vaultBalance := vaults[i].GetCoin(intent.Source.Asset).Amount
-
-			// Check if vault has sufficient balance
-			if vaultBalance.GTE(intent.Source.Amount) {
-				diff := common.SafeSub(vaultBalance, intent.Source.Amount)
-
-				// Select this vault if it's the first valid one or has a closer balance
-				if selectedVault == nil || diff.LT(closestDiff) {
-					selectedVault = &vaults[i]
-					closestDiff = diff
-				}
-			}
-		}
-
-		if selectedVault == nil {
-			return fmt.Errorf("no vault found with sufficient balance for asset %s (need %s)", intent.Source.Asset, intent.Source.Amount)
-		}
-
-		// Subtract the abandoned amount from the selected vault
-		selectedVault.SubFunds(common.NewCoins(intent.Source))
-
-		// Save the updated vault
-		if err := im.mgr.Keeper().SetVault(ctx, *selectedVault); err != nil {
-			return fmt.Errorf("fail to save vault: %w", err)
-		}
-
-		ctx.Logger().Info("abandoned expired intent source asset (non-pool, non-native)",
-			"txid", intent.TxID,
-			"asset", intent.Source.Asset,
-			"amount", intent.Source.Amount,
-			"vault", selectedVault.PubKey,
+		ctx.Logger().Info("refunded intent solve due to auction start",
+			"intent_txid", intent.TxID,
+			"solve_txid", solve.SolveTxID,
+			"amount", solve.TargetCoin.Amount,
 		)
 	}
 
-	refundCoin := intent.Source
+	return nil
+}
 
-	// Update intent status to expired
+// processAuctions processes active auctions at the end of each block
+func (im *IntentMgr) processAuctions(ctx cosmos.Context) error {
+	currentHeight := ctx.BlockHeight()
+
+	// Get all active auctions
+	activeAuctions, err := im.mgr.Keeper().GetActiveAuctions(ctx)
+	if err != nil {
+		return fmt.Errorf("fail to get active auctions: %w", err)
+	}
+
+	for _, auction := range activeAuctions {
+		// Check if auction has expired
+		if currentHeight >= auction.ExpiryHeight {
+			if err := im.completeAuction(ctx, auction); err != nil {
+				ctx.Logger().Error("fail to complete auction", "intent_txid", auction.IntentTxID, "error", err)
+				continue
+			}
+		}
+	}
+
+	return nil
+}
+
+// completeAuction finalizes an expired auction
+func (im *IntentMgr) completeAuction(ctx cosmos.Context, auction IntentAuction) error {
+	// Get bids for this auction
+	bids, err := im.mgr.Keeper().GetIntentAuctionBidsByIntentID(ctx, auction.IntentTxID)
+	if err != nil {
+		return fmt.Errorf("fail to get auction bids: %w", err)
+	}
+
+	// Get the intent
+	intent, err := im.mgr.Keeper().GetIntent(ctx, auction.IntentTxID)
+	if err != nil {
+		return fmt.Errorf("fail to get intent: %w", err)
+	}
+
+	// If no bids, cancel the auction and abandon funds
+	if len(bids) == 0 {
+		return im.cancelAuction(ctx, auction, intent)
+	}
+
+	// Find the highest bid
+	auctionBids := IntentAuctionBids(bids)
+	highestBidAmount := auctionBids.HighestBid()
+
+	var winningBid *IntentAuctionBid
+	for i := range bids {
+		if bids[i].BidAmount.Amount.Equal(highestBidAmount) {
+			winningBid = &bids[i]
+			break
+		}
+	}
+
+	if winningBid == nil {
+		return fmt.Errorf("no winning bid found")
+	}
+
+	// Process losing bids - refund them
+	for i := range bids {
+		if bids[i].BidTxID.Equals(winningBid.BidTxID) {
+			continue // Skip winner
+		}
+
+		// Refund the losing bid
+		toi := TxOutItem{
+			Chain:     bids[i].BidAmount.Asset.GetChain(),
+			ToAddress: bids[i].BidderAddress,
+			Coin:      bids[i].BidAmount,
+			Memo:      NewRefundMemo(bids[i].BidTxID).String(),
+			InHash:    bids[i].BidTxID,
+		}
+
+		ok, refundErr := im.mgr.TxOutStore().TryAddTxOutItem(ctx, im.mgr, toi, cosmos.ZeroUint())
+		if refundErr != nil {
+			ctx.Logger().Error("fail to refund losing bid", "bid_txid", bids[i].BidTxID, "error", refundErr)
+			continue
+		}
+		if !ok {
+			ctx.Logger().Error("fail to schedule losing bid refund", "bid_txid", bids[i].BidTxID)
+			continue
+		}
+
+		ctx.Logger().Info("refunded losing auction bid",
+			"intent_txid", auction.IntentTxID,
+			"bid_txid", bids[i].BidTxID,
+			"amount", bids[i].BidAmount.Amount,
+		)
+	}
+
+	// Send auction amount to winner
+	winnerToi := TxOutItem{
+		Chain:     auction.AuctionAmount.Asset.GetChain(),
+		ToAddress: winningBid.BidderAddress,
+		Coin:      auction.AuctionAmount,
+		Memo:      NewOutboundMemo(winningBid.BidTxID).String(),
+		InHash:    winningBid.BidTxID,
+	}
+
+	ok, err := im.mgr.TxOutStore().TryAddTxOutItem(ctx, im.mgr, winnerToi, cosmos.ZeroUint())
+	if err != nil {
+		return fmt.Errorf("fail to send auction amount to winner: %w", err)
+	}
+	if !ok {
+		return fmt.Errorf("fail to schedule winner txout")
+	}
+
+	// Send remaining amount to owner
+	ownerToi := TxOutItem{
+		Chain:     auction.RemainingAmount.Asset.GetChain(),
+		ToAddress: auction.OwnerAddress,
+		Coin:      auction.RemainingAmount,
+		Memo:      NewRefundMemo(auction.IntentTxID).String(),
+		InHash:    auction.IntentTxID,
+	}
+
+	ok, err = im.mgr.TxOutStore().TryAddTxOutItem(ctx, im.mgr, ownerToi, cosmos.ZeroUint())
+	if err != nil {
+		return fmt.Errorf("fail to send remaining amount to owner: %w", err)
+	}
+	if !ok {
+		return fmt.Errorf("fail to schedule owner refund txout")
+	}
+
+	// Process winning bid: swap to RUNE and add to reserve
+	if err := im.processWinningBid(ctx, *winningBid); err != nil {
+		ctx.Logger().Error("fail to process winning bid", "error", err)
+	}
+
+	// Update auction status
+	auction.Status = IntentAuctionStatus_AuctionCompleted
+	im.mgr.Keeper().SetIntentAuction(ctx, auction)
+
+	// Update intent status to expired (auction completed)
 	intent.Status = IntentExpired
 	im.mgr.Keeper().SetIntent(ctx, intent)
 
-	// Emit expire event
-	evt := NewEventIntentExpire(
-		intent.TxID,
-		refundCoin,
-		intent.SourceAddress,
-		abandoned,
+	// Emit auction complete event
+	evt := NewEventIntentAuctionComplete(
+		auction.IntentTxID,
+		winningBid.BidTxID,
+		winningBid.BidderAddress,
+		winningBid.BidAmount,
+		auction.AuctionAmount,
+		auction.RemainingAmount,
 	)
 	if err := im.mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
-		ctx.Logger().Error("fail to emit intent expire event", "error", err)
+		ctx.Logger().Error("fail to emit auction complete event", "error", err)
 	}
+
+	ctx.Logger().Info("auction completed",
+		"intent_txid", auction.IntentTxID,
+		"winner", winningBid.BidderAddress,
+		"winning_bid", winningBid.BidAmount.Amount,
+		"auction_amount", auction.AuctionAmount.Amount,
+		"owner_refund", auction.RemainingAmount.Amount,
+	)
+
+	return nil
+}
+
+// processWinningBid handles the winning bid - swap to RUNE and add to reserve
+func (im *IntentMgr) processWinningBid(ctx cosmos.Context, bid IntentAuctionBid) error {
+	// If the bid is already in RUNE, add directly to reserve
+	if bid.BidAmount.Asset.IsRune() {
+		if err := im.mgr.Keeper().AddPoolFeeToReserve(ctx, bid.BidAmount.Amount); err != nil {
+			return fmt.Errorf("fail to add winning bid to reserve: %w", err)
+		}
+		ctx.Logger().Info("added winning bid to reserve", "amount", bid.BidAmount.Amount)
+		return nil
+	}
+
+	// For non-RUNE assets, create a swap to RUNE destined for the reserve
+	reserveAddr, err := im.mgr.Keeper().GetModuleAddress(ReserveName)
+	if err != nil {
+		return fmt.Errorf("fail to get reserve module address: %w", err)
+	}
+
+	// Create a synthetic transaction for the swap
+	swapTx := common.Tx{
+		ID:          bid.BidTxID,
+		Chain:       bid.BidAmount.Asset.GetChain(),
+		FromAddress: bid.BidderAddress,
+		ToAddress:   reserveAddr,
+		Coins:       common.NewCoins(bid.BidAmount),
+		Gas:         common.Gas{common.NewCoin(bid.BidAmount.Asset, cosmos.OneUint())},
+		Memo:        fmt.Sprintf("=:THOR.RUNE:%s", reserveAddr),
+	}
+
+	// Determine swap version based on configuration
+	version := types.SwapVersion_v1
+	if im.mgr.Keeper().AdvSwapQueueEnabled(ctx) {
+		version = types.SwapVersion_v2
+	}
+
+	// Get Asgard module address for signer
+	asgardAddr := im.mgr.Keeper().GetModuleAccAddress(AsgardName)
+
+	// Create the swap message
+	swapMsg := NewMsgSwap(
+		swapTx,
+		common.RuneAsset(),
+		reserveAddr,
+		cosmos.ZeroUint(), // No slip limit
+		common.NoAddress,  // No affiliate
+		cosmos.ZeroUint(), // No affiliate fee
+		"",                // No aggregator
+		"", nil,           // No dex target
+		MarketSwap,
+		1, 0, // No streaming
+		version,
+		asgardAddr,
+	)
+
+	// Add swap to the advanced swap queue - this ensures proper outbound handling
+	if err := im.mgr.AdvSwapQueueMgr().AddSwapQueueItem(ctx, im.mgr, swapMsg); err != nil {
+		return fmt.Errorf("fail to add winning bid swap to queue: %w", err)
+	}
+
+	ctx.Logger().Info("queued winning bid swap to RUNE for reserve",
+		"bid_asset", bid.BidAmount.Asset,
+		"bid_amount", bid.BidAmount.Amount,
+	)
+
+	return nil
+}
+
+// cancelAuction cancels an auction with no bids and abandons funds
+func (im *IntentMgr) cancelAuction(ctx cosmos.Context, auction IntentAuction, intent Intent) error {
+	// No bids - abandon the funds from vault
+	sourceAsset := auction.AuctionAmount.Asset
+	totalAmount := auction.AuctionAmount.Amount.Add(auction.RemainingAmount.Amount)
+
+	// Get active vaults and find the one with sufficient balance
+	vaults, err := im.mgr.Keeper().GetAsgardVaultsByStatus(ctx, ActiveVault)
+	if err != nil {
+		return fmt.Errorf("fail to get active vaults: %w", err)
+	}
+	if len(vaults) == 0 {
+		return fmt.Errorf("no active vaults available")
+	}
+
+	// Find vault with sufficient balance
+	var selectedVault *Vault
+	var closestDiff cosmos.Uint
+	for i := range vaults {
+		vaultBalance := vaults[i].GetCoin(sourceAsset).Amount
+
+		if vaultBalance.GTE(totalAmount) {
+			diff := common.SafeSub(vaultBalance, totalAmount)
+
+			if selectedVault == nil || diff.LT(closestDiff) {
+				selectedVault = &vaults[i]
+				closestDiff = diff
+			}
+		}
+	}
+
+	if selectedVault == nil {
+		return fmt.Errorf("no vault found with sufficient balance for asset %s (need %s)", sourceAsset, totalAmount)
+	}
+
+	// Subtract the abandoned amount from the vault
+	abandonCoin := common.NewCoin(sourceAsset, totalAmount)
+	selectedVault.SubFunds(common.NewCoins(abandonCoin))
+
+	// Save the updated vault
+	if err := im.mgr.Keeper().SetVault(ctx, *selectedVault); err != nil {
+		return fmt.Errorf("fail to save vault: %w", err)
+	}
+
+	// Update auction status
+	auction.Status = IntentAuctionStatus_AuctionCancelled
+	im.mgr.Keeper().SetIntentAuction(ctx, auction)
+
+	// Update intent status
+	intent.Status = IntentExpired
+	im.mgr.Keeper().SetIntent(ctx, intent)
+
+	// Emit cancel event
+	evt := NewEventIntentAuctionCancel(auction.IntentTxID, true)
+	if err := im.mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
+		ctx.Logger().Error("fail to emit auction cancel event", "error", err)
+	}
+
+	ctx.Logger().Info("cancelled auction with no bids, funds abandoned",
+		"intent_txid", auction.IntentTxID,
+		"amount", totalAmount,
+		"vault", selectedVault.PubKey,
+	)
 
 	return nil
 }
