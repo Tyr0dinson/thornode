@@ -58,3 +58,62 @@ func (qs queryServer) queryActiveIntents(ctx cosmos.Context, _ *types.QueryActiv
 		Intents: intentsWithSolves,
 	}, nil
 }
+
+func (qs queryServer) queryIntentAuction(ctx cosmos.Context, req *types.QueryIntentAuctionRequest) (*types.QueryIntentAuctionResponse, error) {
+	// Convert string to TxID
+	txID := common.TxID(req.TxId)
+
+	// Get the auction
+	auction, err := qs.mgr.Keeper().GetIntentAuction(ctx, txID)
+	if err != nil {
+		return nil, fmt.Errorf("auction not found: %w", err)
+	}
+
+	// Get all bids for this auction
+	bids, err := qs.mgr.Keeper().GetIntentAuctionBidsByIntentID(ctx, txID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get auction bids: %w", err)
+	}
+
+	// Sort bids from highest to lowest
+	sortedBids := types.IntentAuctionBids(bids)
+	sortedBids.SortByBidAmountDescending()
+
+	return &types.QueryIntentAuctionResponse{
+		Auction: auction,
+		Bids:    sortedBids,
+	}, nil
+}
+
+func (qs queryServer) queryActiveAuctions(ctx cosmos.Context, _ *types.QueryActiveAuctionsRequest) (*types.QueryActiveAuctionsResponse, error) {
+	// Get all active auctions
+	activeAuctions, err := qs.mgr.Keeper().GetActiveAuctions(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get active auctions: %w", err)
+	}
+
+	// Fetch each auction with its bids
+	var auctionsWithBids []types.IntentAuctionWithBids
+	for _, auction := range activeAuctions {
+		// Get all bids for this auction
+		bids, err := qs.mgr.Keeper().GetIntentAuctionBidsByIntentID(ctx, auction.IntentTxID)
+		if err != nil {
+			// Log error but use empty bids list
+			ctx.Logger().Error("failed to get auction bids", "txid", auction.IntentTxID, "error", err)
+			bids = []types.IntentAuctionBid{}
+		}
+
+		// Sort bids from highest to lowest
+		sortedBids := types.IntentAuctionBids(bids)
+		sortedBids.SortByBidAmountDescending()
+
+		auctionsWithBids = append(auctionsWithBids, types.IntentAuctionWithBids{
+			Auction: auction,
+			Bids:    sortedBids,
+		})
+	}
+
+	return &types.QueryActiveAuctionsResponse{
+		Auctions: auctionsWithBids,
+	}, nil
+}

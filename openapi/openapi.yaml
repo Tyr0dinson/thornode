@@ -1710,6 +1710,45 @@ paths:
               schema:
                 $ref: "#/components/schemas/QueryActiveIntentsResponse"
 
+  /thorchain/intent/auction/{tx_id}:
+    parameters:
+      - $ref: "#/components/parameters/queryHeight"
+      - name: tx_id
+        in: path
+        required: true
+        description: The transaction ID of the intent
+        schema:
+          type: string
+          example: "1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF"
+    get:
+      description: Returns the auction information for the provided intent transaction ID, including all bids.
+      operationId: intentAuction
+      tags:
+        - Intents
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueryIntentAuctionResponse"
+
+  /thorchain/intent/auctions:
+    parameters:
+      - $ref: "#/components/parameters/queryHeight"
+    get:
+      description: Returns all active intent auctions with their bids.
+      operationId: activeIntentAuctions
+      tags:
+        - Intents
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueryActiveIntentAuctionsResponse"
+
 ########################################################################################
 # Components
 ########################################################################################
@@ -4944,6 +4983,7 @@ components:
             - IntentCancelled
             - IntentCompleted
             - IntentExpired
+            - IntentAuctioning
         min_fee_basis_points:
           type: integer
           format: int64
@@ -5034,3 +5074,115 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/IntentWithSolves"
+
+    IntentAuction:
+      type: object
+      required:
+        - intent_tx_id
+        - auction_amount
+        - remaining_amount
+        - bid_asset
+        - min_bid
+        - create_height
+        - expiry_height
+        - status
+      properties:
+        intent_tx_id:
+          type: string
+          description: the transaction ID of the intent
+          example: "1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF"
+        auction_amount:
+          $ref: "#/components/schemas/Coin"
+        remaining_amount:
+          $ref: "#/components/schemas/Coin"
+        bid_asset:
+          type: string
+          description: the asset used for bidding (gas asset of source chain)
+          example: "BTC.BTC"
+        min_bid:
+          type: string
+          description: the minimum bid amount
+          example: "10000"
+        create_height:
+          type: integer
+          format: int64
+          description: the block height when the auction was created
+          example: 12345678
+        expiry_height:
+          type: integer
+          format: int64
+          description: the block height when the auction expires
+          example: 12350000
+        status:
+          type: string
+          description: the status of the auction
+          example: "AuctionActive"
+          enum:
+            - AuctionActive
+            - AuctionCompleted
+            - AuctionCancelled
+
+    IntentAuctionBid:
+      type: object
+      required:
+        - bid_tx_id
+        - intent_tx_id
+        - bidder_address
+        - bid_amount
+        - submit_height
+      properties:
+        bid_tx_id:
+          type: string
+          description: the transaction ID of the bid
+          example: "ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890"
+        intent_tx_id:
+          type: string
+          description: the transaction ID of the intent
+          example: "1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF"
+        bidder_address:
+          type: string
+          description: the bidder address
+          example: "bc1qxxx"
+        bid_amount:
+          $ref: "#/components/schemas/Coin"
+        submit_height:
+          type: integer
+          format: int64
+          description: the block height when the bid was submitted
+          example: 12345678
+
+    IntentAuctionWithBids:
+      type: object
+      required:
+        - auction
+        - bids
+      properties:
+        auction:
+          $ref: "#/components/schemas/IntentAuction"
+        bids:
+          type: array
+          items:
+            $ref: "#/components/schemas/IntentAuctionBid"
+
+    QueryIntentAuctionResponse:
+      type: object
+      required:
+        - auction
+        - bids
+      properties:
+        auction:
+          $ref: "#/components/schemas/IntentAuction"
+        bids:
+          type: array
+          items:
+            $ref: "#/components/schemas/IntentAuctionBid"
+
+    QueryActiveIntentAuctionsResponse:
+      type: object
+      required:
+        - auctions
+      properties:
+        auctions:
+          type: array
+          items:
+            $ref: "#/components/schemas/IntentAuctionWithBids"

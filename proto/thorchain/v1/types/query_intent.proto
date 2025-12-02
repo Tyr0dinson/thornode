@@ -31,3 +31,30 @@ message IntentWithSolves {
 message QueryActiveIntentsResponse {
   repeated IntentWithSolves intents = 1 [ (gogoproto.nullable) = false ];
 }
+
+// QueryIntentAuctionRequest is the request type for querying a specific intent
+// auction
+message QueryIntentAuctionRequest { string tx_id = 1; }
+
+// QueryIntentAuctionResponse is the response type for a specific intent auction
+// query
+message QueryIntentAuctionResponse {
+  IntentAuction auction = 1 [ (gogoproto.nullable) = false ];
+  repeated IntentAuctionBid bids = 2 [ (gogoproto.nullable) = false ];
+}
+
+// QueryActiveAuctionsRequest is the request type for querying all active intent
+// auctions
+message QueryActiveAuctionsRequest {}
+
+// IntentAuctionWithBids wraps an IntentAuction with its associated bids
+message IntentAuctionWithBids {
+  IntentAuction auction = 1 [ (gogoproto.nullable) = false ];
+  repeated IntentAuctionBid bids = 2 [ (gogoproto.nullable) = false ];
+}
+
+// QueryActiveAuctionsResponse is the response type for active intent auctions
+// query
+message QueryActiveAuctionsResponse {
+  repeated IntentAuctionWithBids auctions = 1 [ (gogoproto.nullable) = false ];
+}

@@ -84,8 +84,10 @@ Class | Method | HTTP request | Description
 *CodesApi* | [**Codes**](docs/CodesApi.md#codes) | **Get** /thorchain/codes | 
 *ExportApi* | [**Export**](docs/ExportApi.md#export) | **Get** /thorchain/export | 
 *HealthApi* | [**Ping**](docs/HealthApi.md#ping) | **Get** /thorchain/ping | 
+*IntentsApi* | [**ActiveIntentAuctions**](docs/IntentsApi.md#activeintentauctions) | **Get** /thorchain/intent/auctions | 
 *IntentsApi* | [**ActiveIntents**](docs/IntentsApi.md#activeintents) | **Get** /thorchain/intents | 
 *IntentsApi* | [**Intent**](docs/IntentsApi.md#intent) | **Get** /thorchain/intent/{tx_id} | 
+*IntentsApi* | [**IntentAuction**](docs/IntentsApi.md#intentauction) | **Get** /thorchain/intent/auction/{tx_id} | 
 *InvariantsApi* | [**Invariant**](docs/InvariantsApi.md#invariant) | **Get** /thorchain/invariant/{invariant} | 
 *InvariantsApi* | [**Invariants**](docs/InvariantsApi.md#invariants) | **Get** /thorchain/invariants | 
 *LimitOrderApi* | [**Quotelimit**](docs/LimitOrderApi.md#quotelimit) | **Get** /thorchain/quote/limit | 
@@ -193,6 +195,9 @@ Class | Method | HTTP request | Description
  - [InboundFinalisedStage](docs/InboundFinalisedStage.md)
  - [InboundObservedStage](docs/InboundObservedStage.md)
  - [Intent](docs/Intent.md)
+ - [IntentAuction](docs/IntentAuction.md)
+ - [IntentAuctionBid](docs/IntentAuctionBid.md)
+ - [IntentAuctionWithBids](docs/IntentAuctionWithBids.md)
  - [IntentSolve](docs/IntentSolve.md)
  - [IntentWithSolves](docs/IntentWithSolves.md)
  - [InvariantResponse](docs/InvariantResponse.md)
@@ -235,7 +240,9 @@ Class | Method | HTTP request | Description
  - [PlannedOutTx](docs/PlannedOutTx.md)
  - [Pool](docs/Pool.md)
  - [PoolSlipResponseInner](docs/PoolSlipResponseInner.md)
+ - [QueryActiveIntentAuctionsResponse](docs/QueryActiveIntentAuctionsResponse.md)
  - [QueryActiveIntentsResponse](docs/QueryActiveIntentsResponse.md)
+ - [QueryIntentAuctionResponse](docs/QueryIntentAuctionResponse.md)
  - [QueryIntentResponse](docs/QueryIntentResponse.md)
  - [QueueResponse](docs/QueueResponse.md)
  - [QuoteFees](docs/QuoteFees.md)

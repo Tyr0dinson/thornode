@@ -394,63 +394,359 @@ func (m *EventIntentExpire) GetAbandoned() bool {
 	return false
 }
 
+type EventIntentAuctionStart struct {
+	IntentTxID      gitlab_com_thorchain_thornode_v3_common.TxID  `protobuf:"bytes,1,opt,name=intent_tx_id,json=intentTxId,proto3,casttype=gitlab.com/thorchain/thornode/v3/common.TxID" json:"intent_tx_id,omitempty"`
+	AuctionAmount   common.Coin                                   `protobuf:"bytes,2,opt,name=auction_amount,json=auctionAmount,proto3" json:"auction_amount"`
+	RemainingAmount common.Coin                                   `protobuf:"bytes,3,opt,name=remaining_amount,json=remainingAmount,proto3" json:"remaining_amount"`
+	BidAsset        gitlab_com_thorchain_thornode_v3_common.Asset `protobuf:"bytes,4,opt,name=bid_asset,json=bidAsset,proto3,customtype=gitlab.com/thorchain/thornode/v3/common.Asset" json:"bid_asset"`
+	MinBid          cosmossdk_io_math.Uint                        `protobuf:"bytes,5,opt,name=min_bid,json=minBid,proto3,customtype=cosmossdk.io/math.Uint" json:"min_bid"`
+	ExpiryHeight    int64                                         `protobuf:"varint,6,opt,name=expiry_height,json=expiryHeight,proto3" json:"expiry_height,omitempty"`
+}
+
+func (m *EventIntentAuctionStart) Reset()         { *m = EventIntentAuctionStart{} }
+func (m *EventIntentAuctionStart) String() string { return proto.CompactTextString(m) }
+func (*EventIntentAuctionStart) ProtoMessage()    {}
+func (*EventIntentAuctionStart) Descriptor() ([]byte, []int) {
+	return fileDescriptor_46eac6e7ef616591, []int{5}
+}
+func (m *EventIntentAuctionStart) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *EventIntentAuctionStart) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_EventIntentAuctionStart.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *EventIntentAuctionStart) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_EventIntentAuctionStart.Merge(m, src)
+}
+func (m *EventIntentAuctionStart) XXX_Size() int {
+	return m.Size()
+}
+func (m *EventIntentAuctionStart) XXX_DiscardUnknown() {
+	xxx_messageInfo_EventIntentAuctionStart.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_EventIntentAuctionStart proto.InternalMessageInfo
+
+func (m *EventIntentAuctionStart) GetIntentTxID() gitlab_com_thorchain_thornode_v3_common.TxID {
+	if m != nil {
+		return m.IntentTxID
+	}
+	return ""
+}
+
+func (m *EventIntentAuctionStart) GetAuctionAmount() common.Coin {
+	if m != nil {
+		return m.AuctionAmount
+	}
+	return common.Coin{}
+}
+
+func (m *EventIntentAuctionStart) GetRemainingAmount() common.Coin {
+	if m != nil {
+		return m.RemainingAmount
+	}
+	return common.Coin{}
+}
+
+func (m *EventIntentAuctionStart) GetExpiryHeight() int64 {
+	if m != nil {
+		return m.ExpiryHeight
+	}
+	return 0
+}
+
+type EventIntentAuctionBid struct {
+	BidTxID       gitlab_com_thorchain_thornode_v3_common.TxID    `protobuf:"bytes,1,opt,name=bid_tx_id,json=bidTxId,proto3,casttype=gitlab.com/thorchain/thornode/v3/common.TxID" json:"bid_tx_id,omitempty"`
+	IntentTxID    gitlab_com_thorchain_thornode_v3_common.TxID    `protobuf:"bytes,2,opt,name=intent_tx_id,json=intentTxId,proto3,casttype=gitlab.com/thorchain/thornode/v3/common.TxID" json:"intent_tx_id,omitempty"`
+	BidderAddress gitlab_com_thorchain_thornode_v3_common.Address `protobuf:"bytes,3,opt,name=bidder_address,json=bidderAddress,proto3,casttype=gitlab.com/thorchain/thornode/v3/common.Address" json:"bidder_address,omitempty"`
+	BidAmount     cosmossdk_io_math.Uint                          `protobuf:"bytes,4,opt,name=bid_amount,json=bidAmount,proto3,customtype=cosmossdk.io/math.Uint" json:"bid_amount"`
+	IsTopUp       bool                                            `protobuf:"varint,5,opt,name=is_top_up,json=isTopUp,proto3" json:"is_top_up,omitempty"`
+}
+
+func (m *EventIntentAuctionBid) Reset()         { *m = EventIntentAuctionBid{} }
+func (m *EventIntentAuctionBid) String() string { return proto.CompactTextString(m) }
+func (*EventIntentAuctionBid) ProtoMessage()    {}
+func (*EventIntentAuctionBid) Descriptor() ([]byte, []int) {
+	return fileDescriptor_46eac6e7ef616591, []int{6}
+}
+func (m *EventIntentAuctionBid) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *EventIntentAuctionBid) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_EventIntentAuctionBid.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *EventIntentAuctionBid) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_EventIntentAuctionBid.Merge(m, src)
+}
+func (m *EventIntentAuctionBid) XXX_Size() int {
+	return m.Size()
+}
+func (m *EventIntentAuctionBid) XXX_DiscardUnknown() {
+	xxx_messageInfo_EventIntentAuctionBid.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_EventIntentAuctionBid proto.InternalMessageInfo
+
+func (m *EventIntentAuctionBid) GetBidTxID() gitlab_com_thorchain_thornode_v3_common.TxID {
+	if m != nil {
+		return m.BidTxID
+	}
+	return ""
+}
+
+func (m *EventIntentAuctionBid) GetIntentTxID() gitlab_com_thorchain_thornode_v3_common.TxID {
+	if m != nil {
+		return m.IntentTxID
+	}
+	return ""
+}
+
+func (m *EventIntentAuctionBid) GetBidderAddress() gitlab_com_thorchain_thornode_v3_common.Address {
+	if m != nil {
+		return m.BidderAddress
+	}
+	return ""
+}
+
+func (m *EventIntentAuctionBid) GetIsTopUp() bool {
+	if m != nil {
+		return m.IsTopUp
+	}
+	return false
+}
+
+type EventIntentAuctionComplete struct {
+	IntentTxID    gitlab_com_thorchain_thornode_v3_common.TxID    `protobuf:"bytes,1,opt,name=intent_tx_id,json=intentTxId,proto3,casttype=gitlab.com/thorchain/thornode/v3/common.TxID" json:"intent_tx_id,omitempty"`
+	WinnerBidTxID gitlab_com_thorchain_thornode_v3_common.TxID    `protobuf:"bytes,2,opt,name=winner_bid_tx_id,json=winnerBidTxId,proto3,casttype=gitlab.com/thorchain/thornode/v3/common.TxID" json:"winner_bid_tx_id,omitempty"`
+	WinnerAddress gitlab_com_thorchain_thornode_v3_common.Address `protobuf:"bytes,3,opt,name=winner_address,json=winnerAddress,proto3,casttype=gitlab.com/thorchain/thornode/v3/common.Address" json:"winner_address,omitempty"`
+	WinningBid    common.Coin                                     `protobuf:"bytes,4,opt,name=winning_bid,json=winningBid,proto3" json:"winning_bid"`
+	AuctionAmount common.Coin                                     `protobuf:"bytes,5,opt,name=auction_amount,json=auctionAmount,proto3" json:"auction_amount"`
+	OwnerRefund   common.Coin                                     `protobuf:"bytes,6,opt,name=owner_refund,json=ownerRefund,proto3" json:"owner_refund"`
+}
+
+func (m *EventIntentAuctionComplete) Reset()         { *m = EventIntentAuctionComplete{} }
+func (m *EventIntentAuctionComplete) String() string { return proto.CompactTextString(m) }
+func (*EventIntentAuctionComplete) ProtoMessage()    {}
+func (*EventIntentAuctionComplete) Descriptor() ([]byte, []int) {
+	return fileDescriptor_46eac6e7ef616591, []int{7}
+}
+func (m *EventIntentAuctionComplete) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *EventIntentAuctionComplete) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_EventIntentAuctionComplete.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *EventIntentAuctionComplete) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_EventIntentAuctionComplete.Merge(m, src)
+}
+func (m *EventIntentAuctionComplete) XXX_Size() int {
+	return m.Size()
+}
+func (m *EventIntentAuctionComplete) XXX_DiscardUnknown() {
+	xxx_messageInfo_EventIntentAuctionComplete.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_EventIntentAuctionComplete proto.InternalMessageInfo
+
+func (m *EventIntentAuctionComplete) GetIntentTxID() gitlab_com_thorchain_thornode_v3_common.TxID {
+	if m != nil {
+		return m.IntentTxID
+	}
+	return ""
+}
+
+func (m *EventIntentAuctionComplete) GetWinnerBidTxID() gitlab_com_thorchain_thornode_v3_common.TxID {
+	if m != nil {
+		return m.WinnerBidTxID
+	}
+	return ""
+}
+
+func (m *EventIntentAuctionComplete) GetWinnerAddress() gitlab_com_thorchain_thornode_v3_common.Address {
+	if m != nil {
+		return m.WinnerAddress
+	}
+	return ""
+}
+
+func (m *EventIntentAuctionComplete) GetWinningBid() common.Coin {
+	if m != nil {
+		return m.WinningBid
+	}
+	return common.Coin{}
+}
+
+func (m *EventIntentAuctionComplete) GetAuctionAmount() common.Coin {
+	if m != nil {
+		return m.AuctionAmount
+	}
+	return common.Coin{}
+}
+
+func (m *EventIntentAuctionComplete) GetOwnerRefund() common.Coin {
+	if m != nil {
+		return m.OwnerRefund
+	}
+	return common.Coin{}
+}
+
+type EventIntentAuctionCancel struct {
+	IntentTxID gitlab_com_thorchain_thornode_v3_common.TxID `protobuf:"bytes,1,opt,name=intent_tx_id,json=intentTxId,proto3,casttype=gitlab.com/thorchain/thornode/v3/common.TxID" json:"intent_tx_id,omitempty"`
+	Abandoned  bool                                         `protobuf:"varint,2,opt,name=abandoned,proto3" json:"abandoned,omitempty"`
+}
+
+func (m *EventIntentAuctionCancel) Reset()         { *m = EventIntentAuctionCancel{} }
+func (m *EventIntentAuctionCancel) String() string { return proto.CompactTextString(m) }
+func (*EventIntentAuctionCancel) ProtoMessage()    {}
+func (*EventIntentAuctionCancel) Descriptor() ([]byte, []int) {
+	return fileDescriptor_46eac6e7ef616591, []int{8}
+}
+func (m *EventIntentAuctionCancel) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *EventIntentAuctionCancel) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_EventIntentAuctionCancel.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *EventIntentAuctionCancel) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_EventIntentAuctionCancel.Merge(m, src)
+}
+func (m *EventIntentAuctionCancel) XXX_Size() int {
+	return m.Size()
+}
+func (m *EventIntentAuctionCancel) XXX_DiscardUnknown() {
+	xxx_messageInfo_EventIntentAuctionCancel.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_EventIntentAuctionCancel proto.InternalMessageInfo
+
+func (m *EventIntentAuctionCancel) GetIntentTxID() gitlab_com_thorchain_thornode_v3_common.TxID {
+	if m != nil {
+		return m.IntentTxID
+	}
+	return ""
+}
+
+func (m *EventIntentAuctionCancel) GetAbandoned() bool {
+	if m != nil {
+		return m.Abandoned
+	}
+	return false
+}
+
 func init() {
 	proto.RegisterType((*EventIntentOpen)(nil), "types.EventIntentOpen")
 	proto.RegisterType((*EventIntentCancel)(nil), "types.EventIntentCancel")
 	proto.RegisterType((*EventIntentSolve)(nil), "types.EventIntentSolve")
 	proto.RegisterType((*EventIntentComplete)(nil), "types.EventIntentComplete")
 	proto.RegisterType((*EventIntentExpire)(nil), "types.EventIntentExpire")
+	proto.RegisterType((*EventIntentAuctionStart)(nil), "types.EventIntentAuctionStart")
+	proto.RegisterType((*EventIntentAuctionBid)(nil), "types.EventIntentAuctionBid")
+	proto.RegisterType((*EventIntentAuctionComplete)(nil), "types.EventIntentAuctionComplete")
+	proto.RegisterType((*EventIntentAuctionCancel)(nil), "types.EventIntentAuctionCancel")
 }
 
 func init() { proto.RegisterFile("types/type_event_intent.proto", fileDescriptor_46eac6e7ef616591) }
 
 var fileDescriptor_46eac6e7ef616591 = []byte{
-	// 709 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xe4, 0x56, 0x4f, 0x6f, 0xd3, 0x4a,
-	0x10, 0x8f, 0xf3, 0xa7, 0xaf, 0xd9, 0xa4, 0xaf, 0xaf, 0x6e, 0xdf, 0x53, 0x54, 0x3d, 0xe2, 0x12,
-	0x38, 0x54, 0x08, 0x62, 0xa9, 0x11, 0x12, 0x12, 0x2a, 0xa8, 0x29, 0x45, 0x54, 0x02, 0x15, 0xb9,
-	0xe5, 0x52, 0x09, 0x19, 0xc7, 0x9e, 0xd8, 0x2b, 0xec, 0xdd, 0xc8, 0xbb, 0x4d, 0xd3, 0x33, 0x17,
-	0x8e, 0x7c, 0x0a, 0x3e, 0x4b, 0x8f, 0x3d, 0x22, 0x0e, 0x16, 0x4a, 0xef, 0x7c, 0x80, 0x9e, 0xd0,
-	0xfe, 0xb1, 0x88, 0x4a, 0x45, 0xab, 0x12, 0x4e, 0x5c, 0xda, 0xc9, 0xcc, 0xfc, 0x7e, 0x33, 0x3b,
-	0xfb, 0xdb, 0x91, 0xd1, 0x0d, 0x7e, 0x34, 0x00, 0x66, 0x8b, 0xbf, 0x2e, 0x0c, 0x81, 0x70, 0x17,
-	0x13, 0x0e, 0x84, 0xb7, 0x07, 0x29, 0xe5, 0xd4, 0xac, 0xc8, 0xf0, 0xf2, 0xa2, 0x4f, 0x93, 0x84,
-	0x12, 0x5b, 0xfd, 0x53, 0xb1, 0xe5, 0xa5, 0x90, 0x86, 0x54, 0x9a, 0xb6, 0xb0, 0x94, 0xb7, 0xf5,
-	0xae, 0x82, 0xe6, 0xb7, 0x04, 0xd1, 0xb6, 0xe4, 0xd9, 0x19, 0x00, 0x31, 0x5f, 0xa0, 0x0a, 0x1f,
-	0xb9, 0x38, 0x68, 0x18, 0x2b, 0xc6, 0x6a, 0xb5, 0xfb, 0x60, 0x9c, 0x59, 0xe5, 0xbd, 0xd1, 0xf6,
-	0x93, 0xb3, 0xcc, 0xba, 0x1b, 0x62, 0x1e, 0x7b, 0xbd, 0xb6, 0x4f, 0x13, 0x9b, 0x47, 0x34, 0xf5,
-	0x23, 0x0f, 0x13, 0x69, 0x11, 0x1a, 0x80, 0x3d, 0xec, 0xe4, 0x35, 0x45, 0xbe, 0x53, 0xe6, 0xa3,
-	0xed, 0xc0, 0xbc, 0x83, 0x66, 0x18, 0x3d, 0x48, 0x7d, 0x68, 0x14, 0x57, 0x8c, 0xd5, 0xda, 0x5a,
-	0xbd, 0xad, 0x73, 0x36, 0x29, 0x26, 0xdd, 0xf2, 0x71, 0x66, 0x15, 0x1c, 0x9d, 0x61, 0xee, 0xa3,
-	0xbf, 0x95, 0xe5, 0x7a, 0x41, 0x90, 0x02, 0x63, 0x8d, 0x92, 0xec, 0xa1, 0x73, 0x96, 0x59, 0xf6,
-	0x55, 0x6b, 0x6f, 0x28, 0xa8, 0x33, 0xa7, 0xa8, 0xf4, 0x4f, 0x33, 0x44, 0x75, 0xee, 0xa5, 0x21,
-	0x70, 0xd7, 0x63, 0x0c, 0x78, 0xa3, 0x2c, 0xbb, 0x99, 0xcb, 0xbb, 0xd9, 0x10, 0xce, 0xee, 0x7d,
-	0xd1, 0xce, 0xe7, 0xcc, 0xba, 0x77, 0xe5, 0x62, 0x02, 0xe6, 0xd4, 0x14, 0xb3, 0xfc, 0x21, 0x0e,
-	0x91, 0x17, 0xd2, 0x87, 0xa8, 0xfc, 0xc2, 0x21, 0x34, 0xb3, 0x3e, 0xc4, 0x63, 0x54, 0x8b, 0x70,
-	0x18, 0xb9, 0xca, 0xdb, 0x98, 0x91, 0xc4, 0x4d, 0xdd, 0xf4, 0x7f, 0x3e, 0x65, 0x09, 0x65, 0x2c,
-	0x78, 0xdb, 0xc6, 0xd4, 0x4e, 0x3c, 0x1e, 0xb5, 0x5f, 0x61, 0xc2, 0x1d, 0x24, 0x20, 0x7b, 0x12,
-	0x61, 0xae, 0x23, 0x14, 0xd3, 0xc3, 0x1c, 0xff, 0xd7, 0x95, 0xf0, 0xd5, 0x98, 0x1e, 0x6a, 0xf8,
-	0x2d, 0x34, 0x07, 0xa3, 0x01, 0x4e, 0x8f, 0xdc, 0x08, 0x70, 0x18, 0xf1, 0xc6, 0xec, 0x8a, 0xb1,
-	0x5a, 0x72, 0xea, 0xca, 0xf9, 0x4c, 0xfa, 0x4c, 0x1b, 0x2d, 0x25, 0x98, 0xb8, 0x7d, 0x00, 0xb7,
-	0xe7, 0x31, 0xcc, 0xdc, 0x01, 0xc5, 0x84, 0xb3, 0x46, 0x55, 0xe6, 0x2e, 0x24, 0x98, 0x3c, 0x05,
-	0xe8, 0x8a, 0xc8, 0x4b, 0x19, 0x68, 0xbd, 0x2f, 0xa2, 0x85, 0x09, 0x15, 0x6e, 0x7a, 0xc4, 0x87,
-	0xf8, 0x37, 0xe8, 0x30, 0x85, 0xfe, 0x01, 0x09, 0x7e, 0xa6, 0x43, 0x95, 0x21, 0xae, 0x50, 0x59,
-	0x53, 0xd1, 0xa1, 0xa2, 0xca, 0xaf, 0xf0, 0x7f, 0x54, 0xf5, 0x7a, 0x1e, 0x09, 0x28, 0x81, 0x40,
-	0x8a, 0x70, 0xd6, 0xf9, 0xee, 0x68, 0x7d, 0x2c, 0xa1, 0x7f, 0x26, 0x46, 0xb1, 0x4b, 0xe3, 0x21,
-	0x98, 0xaf, 0x51, 0x8d, 0x09, 0xc3, 0x9d, 0x9c, 0xc7, 0xfa, 0x38, 0xb3, 0xaa, 0x32, 0x7e, 0xad,
-	0xa1, 0x54, 0x99, 0x86, 0x06, 0xe6, 0x1b, 0x54, 0x57, 0x6b, 0x44, 0xf3, 0x17, 0x25, 0xff, 0xa3,
-	0x71, 0x66, 0x21, 0xd5, 0xc5, 0xb5, 0x0a, 0x20, 0x9c, 0x63, 0x03, 0xf5, 0xae, 0xe3, 0x21, 0xa4,
-	0x53, 0x7a, 0xd7, 0x82, 0x2a, 0x9f, 0xa7, 0x83, 0xfe, 0xcd, 0x9f, 0x5b, 0x42, 0x0f, 0x08, 0x77,
-	0x69, 0xbf, 0x0f, 0xa9, 0x9e, 0xed, 0xe5, 0xe2, 0x5e, 0xd4, 0x0f, 0x4c, 0x62, 0x77, 0x14, 0xd4,
-	0xbc, 0x89, 0xea, 0x89, 0xc7, 0xfd, 0x28, 0x57, 0x79, 0x45, 0x2a, 0xb7, 0x26, 0x7d, 0x4a, 0xe4,
-	0xad, 0xaf, 0x45, 0xb4, 0x38, 0xa9, 0x59, 0x9a, 0x0c, 0x62, 0xe0, 0xf0, 0xc3, 0x30, 0x8d, 0xa9,
-	0x0f, 0xf3, 0x9c, 0x1a, 0x8a, 0x53, 0x56, 0x43, 0x47, 0xd0, 0xcb, 0x1d, 0xcc, 0x80, 0x70, 0x79,
-	0x51, 0x17, 0x3f, 0x16, 0xa4, 0xd2, 0x76, 0x81, 0x70, 0xf3, 0x21, 0x9a, 0xd7, 0x97, 0x90, 0x82,
-	0x0f, 0x78, 0xa8, 0xc7, 0x7f, 0x31, 0x50, 0xaf, 0x47, 0x47, 0x67, 0x9a, 0xb7, 0x51, 0xa9, 0x0f,
-	0x20, 0x87, 0x7c, 0x31, 0x40, 0x84, 0xcf, 0x2f, 0x89, 0x2d, 0xb1, 0x71, 0xe0, 0x8f, 0x5c, 0x12,
-	0xdd, 0xe7, 0xc7, 0xe3, 0xa6, 0x71, 0x32, 0x6e, 0x1a, 0x5f, 0xc6, 0x4d, 0xe3, 0xc3, 0x69, 0xb3,
-	0x70, 0x72, 0xda, 0x2c, 0x7c, 0x3a, 0x6d, 0x16, 0xf6, 0xd7, 0x2e, 0xad, 0x3b, 0x9a, 0xf4, 0x8b,
-	0xcf, 0x85, 0xde, 0x8c, 0xfc, 0x14, 0xe8, 0x7c, 0x0b, 0x00, 0x00, 0xff, 0xff, 0x92, 0x02, 0x15,
-	0x0e, 0x5d, 0x08, 0x00, 0x00,
+	// 983 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xe4, 0x57, 0x4d, 0x6f, 0x1b, 0x45,
+	0x18, 0xce, 0xda, 0xb1, 0x1d, 0xbf, 0xb6, 0x9b, 0x74, 0xd3, 0x82, 0x15, 0x81, 0x37, 0x18, 0x0e,
+	0x11, 0x02, 0x5b, 0xaa, 0x55, 0x01, 0xaa, 0x02, 0x8a, 0x4b, 0x11, 0x91, 0x40, 0x45, 0x9b, 0x54,
+	0x95, 0x2a, 0xa1, 0x65, 0x77, 0x67, 0x6c, 0x0f, 0x78, 0x67, 0x56, 0x3b, 0xe3, 0x8f, 0x9e, 0xb9,
+	0xc0, 0x8d, 0x33, 0x3f, 0x80, 0x9f, 0xc0, 0x6f, 0xe8, 0xb1, 0x47, 0xc4, 0x61, 0x85, 0x9c, 0x33,
+	0xfc, 0x80, 0x9e, 0xd0, 0x7c, 0x2c, 0x35, 0x71, 0xd2, 0x58, 0xc1, 0xc9, 0x85, 0x4b, 0x32, 0x9e,
+	0x79, 0x9f, 0x77, 0x66, 0xde, 0xe7, 0x79, 0x9f, 0xb1, 0xe1, 0x4d, 0xf1, 0x34, 0xc6, 0xbc, 0x2d,
+	0xff, 0x7a, 0x78, 0x8c, 0xa9, 0xf0, 0x08, 0x15, 0x98, 0x8a, 0x56, 0x9c, 0x30, 0xc1, 0xec, 0x82,
+	0x5a, 0xde, 0xd9, 0x0e, 0x59, 0x14, 0x31, 0xda, 0xd6, 0xff, 0xf4, 0xda, 0xce, 0xad, 0x3e, 0xeb,
+	0x33, 0x35, 0x6c, 0xcb, 0x91, 0x9e, 0x6d, 0x7e, 0x5f, 0x80, 0xcd, 0x07, 0x32, 0xd1, 0xa1, 0xca,
+	0xf3, 0x30, 0xc6, 0xd4, 0xfe, 0x12, 0x0a, 0x62, 0xea, 0x11, 0x54, 0xb7, 0x76, 0xad, 0xbd, 0x72,
+	0xf7, 0xc3, 0x59, 0xea, 0xac, 0x1f, 0x4f, 0x0f, 0x3f, 0x7d, 0x91, 0x3a, 0xef, 0xf5, 0x89, 0x18,
+	0xfa, 0x41, 0x2b, 0x64, 0x51, 0x5b, 0x0c, 0x58, 0x12, 0x0e, 0x7c, 0x42, 0xd5, 0x88, 0x32, 0x84,
+	0xdb, 0xe3, 0x4e, 0xb6, 0xa7, 0x8c, 0x77, 0xd7, 0xc5, 0xf4, 0x10, 0xd9, 0xef, 0x42, 0x91, 0xb3,
+	0x51, 0x12, 0xe2, 0x7a, 0x6e, 0xd7, 0xda, 0xab, 0xdc, 0xa9, 0xb6, 0x4c, 0xcc, 0x7d, 0x46, 0x68,
+	0x77, 0xfd, 0x59, 0xea, 0xac, 0xb9, 0x26, 0xc2, 0x7e, 0x02, 0x37, 0xf4, 0xc8, 0xf3, 0x11, 0x4a,
+	0x30, 0xe7, 0xf5, 0xbc, 0x3a, 0x43, 0xe7, 0x45, 0xea, 0xb4, 0x97, 0xdd, 0xfb, 0x40, 0x43, 0xdd,
+	0x9a, 0x4e, 0x65, 0x3e, 0xda, 0x7d, 0xa8, 0x0a, 0x3f, 0xe9, 0x63, 0xe1, 0xf9, 0x9c, 0x63, 0x51,
+	0x5f, 0x57, 0xa7, 0xa9, 0x65, 0xa7, 0x39, 0x90, 0x93, 0xdd, 0xbb, 0xf2, 0x38, 0xbf, 0xa7, 0xce,
+	0xfb, 0x4b, 0x6f, 0x26, 0x61, 0x6e, 0x45, 0x67, 0x56, 0x1f, 0xe4, 0x25, 0xb2, 0x8d, 0xcc, 0x25,
+	0x0a, 0xff, 0xe1, 0x12, 0x26, 0xb3, 0xb9, 0xc4, 0x27, 0x50, 0x19, 0x90, 0xfe, 0xc0, 0xd3, 0xb3,
+	0xf5, 0xa2, 0x4a, 0xdc, 0x30, 0x87, 0x7e, 0x2d, 0x64, 0x3c, 0x62, 0x9c, 0xa3, 0xef, 0x5a, 0x84,
+	0xb5, 0x23, 0x5f, 0x0c, 0x5a, 0x8f, 0x08, 0x15, 0x2e, 0x48, 0xc8, 0xb1, 0x42, 0xd8, 0xfb, 0x00,
+	0x43, 0x36, 0xc9, 0xf0, 0xa5, 0xa5, 0xf0, 0xe5, 0x21, 0x9b, 0x18, 0xf8, 0xdb, 0x50, 0xc3, 0xd3,
+	0x98, 0x24, 0x4f, 0xbd, 0x01, 0x26, 0xfd, 0x81, 0xa8, 0x6f, 0xec, 0x5a, 0x7b, 0x79, 0xb7, 0xaa,
+	0x27, 0x3f, 0x57, 0x73, 0x76, 0x1b, 0x6e, 0x45, 0x84, 0x7a, 0x3d, 0x8c, 0xbd, 0xc0, 0xe7, 0x84,
+	0x7b, 0x31, 0x23, 0x54, 0xf0, 0x7a, 0x59, 0xc5, 0xde, 0x8c, 0x08, 0xfd, 0x0c, 0xe3, 0xae, 0x5c,
+	0xf9, 0x4a, 0x2d, 0x34, 0x7f, 0xc8, 0xc1, 0xcd, 0x39, 0x15, 0xde, 0xf7, 0x69, 0x88, 0x87, 0x57,
+	0xa0, 0xc3, 0x04, 0xf7, 0x46, 0x14, 0xbd, 0x4a, 0x87, 0x3a, 0x42, 0x52, 0xa8, 0x47, 0x2b, 0xd1,
+	0xa1, 0x4e, 0x95, 0x51, 0xf8, 0x06, 0x94, 0xfd, 0xc0, 0xa7, 0x88, 0x51, 0x8c, 0x94, 0x08, 0x37,
+	0xdc, 0x97, 0x13, 0xcd, 0x5f, 0xf2, 0xb0, 0x35, 0x57, 0x8a, 0x23, 0x36, 0x1c, 0x63, 0xfb, 0x6b,
+	0xa8, 0x70, 0x39, 0xf0, 0xe6, 0xeb, 0xb1, 0x3f, 0x4b, 0x9d, 0xb2, 0x5a, 0xbf, 0x54, 0x51, 0xca,
+	0xdc, 0x40, 0x91, 0xfd, 0x0d, 0x54, 0xb5, 0x8d, 0x98, 0xfc, 0x39, 0x95, 0xff, 0xe3, 0x59, 0xea,
+	0x80, 0x3e, 0xc5, 0xa5, 0x36, 0x00, 0x92, 0x61, 0x91, 0xee, 0xeb, 0xe1, 0x18, 0x27, 0x2b, 0xea,
+	0x6b, 0x99, 0x2a, 0xab, 0xa7, 0x0b, 0xb7, 0xb3, 0x76, 0x8b, 0xd8, 0x88, 0x0a, 0x8f, 0xf5, 0x7a,
+	0x38, 0x31, 0xb5, 0xbd, 0x58, 0xdc, 0xdb, 0xa6, 0xc1, 0x14, 0xf6, 0xa1, 0x86, 0xda, 0x6f, 0x41,
+	0x35, 0xf2, 0x45, 0x38, 0xc8, 0x54, 0x5e, 0x50, 0xca, 0xad, 0xa8, 0x39, 0x2d, 0xf2, 0xe6, 0x5f,
+	0x39, 0xd8, 0x9e, 0xd7, 0x2c, 0x8b, 0xe2, 0x21, 0x16, 0x78, 0xa1, 0x98, 0xd6, 0xca, 0x8b, 0x79,
+	0x4a, 0x0d, 0xb9, 0x15, 0xab, 0xa1, 0x23, 0xd3, 0x2b, 0x0f, 0xe6, 0x98, 0x0a, 0x45, 0xd4, 0xd9,
+	0xcd, 0x02, 0x3a, 0xec, 0x08, 0x53, 0x61, 0xdf, 0x83, 0x4d, 0x43, 0x42, 0x82, 0x43, 0x4c, 0xc6,
+	0xa6, 0xfc, 0x67, 0x03, 0x8d, 0x3d, 0xba, 0x26, 0xd2, 0x7e, 0x07, 0xf2, 0x3d, 0x8c, 0x55, 0x91,
+	0xcf, 0x06, 0xc8, 0xe5, 0xd3, 0x26, 0xf1, 0x40, 0x3a, 0x0e, 0xfe, 0x7f, 0x9a, 0xc4, 0xaf, 0x79,
+	0x78, 0x7d, 0xae, 0x14, 0x07, 0xa3, 0x50, 0x10, 0x46, 0x8f, 0x84, 0x9f, 0x88, 0x6b, 0xd0, 0xdf,
+	0x47, 0x70, 0xc3, 0xd7, 0x3b, 0x9a, 0x8e, 0x7b, 0x45, 0xad, 0x6a, 0x26, 0x52, 0xb7, 0x97, 0xbd,
+	0x0f, 0x5b, 0x09, 0x8e, 0x7c, 0x42, 0x09, 0xed, 0x67, 0xe0, 0xf3, 0x05, 0xb6, 0xf9, 0x4f, 0xac,
+	0x81, 0xfb, 0x50, 0x0e, 0x08, 0xba, 0x82, 0xf7, 0x7b, 0x23, 0x20, 0x48, 0x3f, 0xde, 0x1f, 0x40,
+	0x49, 0xbe, 0x5d, 0x01, 0x41, 0xe6, 0xd5, 0xbe, 0xc8, 0x3f, 0x8a, 0x11, 0xa1, 0x5d, 0x82, 0x16,
+	0x5f, 0xc6, 0xe2, 0xe2, 0xcb, 0xd8, 0xfc, 0x31, 0x0f, 0xb7, 0x17, 0x89, 0x93, 0xf0, 0xc7, 0xfa,
+	0x6a, 0xf3, 0x9c, 0xdd, 0x9b, 0xa5, 0x4e, 0xa9, 0x4b, 0xd0, 0xa5, 0x08, 0x2b, 0x05, 0x0a, 0x78,
+	0x4d, 0xe6, 0x1e, 0x10, 0x84, 0x56, 0x64, 0xee, 0x3a, 0x55, 0xd6, 0x07, 0xfb, 0x00, 0x8a, 0x71,
+	0x2d, 0x95, 0xe5, 0x1c, 0x5d, 0x16, 0xd2, 0x08, 0x66, 0x07, 0xca, 0x84, 0x7b, 0x82, 0xc5, 0xde,
+	0x28, 0x56, 0x7c, 0x6e, 0xb8, 0x25, 0xc2, 0x8f, 0x59, 0xfc, 0x28, 0x6e, 0xfe, 0x99, 0x87, 0x9d,
+	0x45, 0x2e, 0xae, 0xd1, 0xc7, 0xbf, 0x85, 0xad, 0x09, 0xa1, 0x14, 0x27, 0xde, 0x4b, 0xe6, 0x35,
+	0x3b, 0x07, 0xb3, 0xd4, 0xa9, 0x3d, 0x56, 0x6b, 0x97, 0xe5, 0xbf, 0x36, 0x99, 0x83, 0x2b, 0x8e,
+	0xcc, 0x5e, 0xab, 0xe0, 0x48, 0xa7, 0xca, 0x38, 0xea, 0x40, 0x45, 0x4e, 0xc8, 0x96, 0x96, 0x6d,
+	0x73, 0xbe, 0xef, 0x83, 0x09, 0x93, 0x7a, 0x5f, 0x34, 0x91, 0xc2, 0xb2, 0x26, 0x72, 0x17, 0xaa,
+	0x6c, 0x22, 0xaf, 0x62, 0x9c, 0xba, 0x78, 0x2e, 0xb0, 0xa2, 0xe2, 0x5c, 0x15, 0xd6, 0xfc, 0xd9,
+	0x82, 0xfa, 0x19, 0x7c, 0xeb, 0xef, 0x9a, 0x57, 0xcf, 0xf6, 0xbf, 0x1c, 0x3d, 0x77, 0xca, 0xd1,
+	0xbb, 0x5f, 0x3c, 0x9b, 0x35, 0xac, 0xe7, 0xb3, 0x86, 0xf5, 0xc7, 0xac, 0x61, 0xfd, 0x74, 0xd2,
+	0x58, 0x7b, 0x7e, 0xd2, 0x58, 0xfb, 0xed, 0xa4, 0xb1, 0xf6, 0xe4, 0xce, 0x85, 0x3b, 0x4e, 0xe7,
+	0xe7, 0xe5, 0x0f, 0xc0, 0xa0, 0xa8, 0x7e, 0xdc, 0x75, 0xfe, 0x0e, 0x00, 0x00, 0xff, 0xff, 0xe0,
+	0x39, 0x6a, 0x10, 0x2f, 0x0e, 0x00, 0x00,
 }
 
 func (m *EventIntentOpen) Marshal() (dAtA []byte, err error) {
@@ -787,6 +1083,259 @@ func (m *EventIntentExpire) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
+func (m *EventIntentAuctionStart) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *EventIntentAuctionStart) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *EventIntentAuctionStart) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.ExpiryHeight != 0 {
+		i = encodeVarintTypeEventIntent(dAtA, i, uint64(m.ExpiryHeight))
+		i--
+		dAtA[i] = 0x30
+	}
+	{
+		size := m.MinBid.Size()
+		i -= size
+		if _, err := m.MinBid.MarshalTo(dAtA[i:]); err != nil {
+			return 0, err
+		}
+		i = encodeVarintTypeEventIntent(dAtA, i, uint64(size))
+	}
+	i--
+	dAtA[i] = 0x2a
+	{
+		size := m.BidAsset.Size()
+		i -= size
+		if _, err := m.BidAsset.MarshalTo(dAtA[i:]); err != nil {
+			return 0, err
+		}
+		i = encodeVarintTypeEventIntent(dAtA, i, uint64(size))
+	}
+	i--
+	dAtA[i] = 0x22
+	{
+		size, err := m.RemainingAmount.MarshalToSizedBuffer(dAtA[:i])
+		if err != nil {
+			return 0, err
+		}
+		i -= size
+		i = encodeVarintTypeEventIntent(dAtA, i, uint64(size))
+	}
+	i--
+	dAtA[i] = 0x1a
+	{
+		size, err := m.AuctionAmount.MarshalToSizedBuffer(dAtA[:i])
+		if err != nil {
+			return 0, err
+		}
+		i -= size
+		i = encodeVarintTypeEventIntent(dAtA, i, uint64(size))
+	}
+	i--
+	dAtA[i] = 0x12
+	if len(m.IntentTxID) > 0 {
+		i -= len(m.IntentTxID)
+		copy(dAtA[i:], m.IntentTxID)
+		i = encodeVarintTypeEventIntent(dAtA, i, uint64(len(m.IntentTxID)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *EventIntentAuctionBid) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *EventIntentAuctionBid) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *EventIntentAuctionBid) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.IsTopUp {
+		i--
+		if m.IsTopUp {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x28
+	}
+	{
+		size := m.BidAmount.Size()
+		i -= size
+		if _, err := m.BidAmount.MarshalTo(dAtA[i:]); err != nil {
+			return 0, err
+		}
+		i = encodeVarintTypeEventIntent(dAtA, i, uint64(size))
+	}
+	i--
+	dAtA[i] = 0x22
+	if len(m.BidderAddress) > 0 {
+		i -= len(m.BidderAddress)
+		copy(dAtA[i:], m.BidderAddress)
+		i = encodeVarintTypeEventIntent(dAtA, i, uint64(len(m.BidderAddress)))
+		i--
+		dAtA[i] = 0x1a
+	}
+	if len(m.IntentTxID) > 0 {
+		i -= len(m.IntentTxID)
+		copy(dAtA[i:], m.IntentTxID)
+		i = encodeVarintTypeEventIntent(dAtA, i, uint64(len(m.IntentTxID)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if len(m.BidTxID) > 0 {
+		i -= len(m.BidTxID)
+		copy(dAtA[i:], m.BidTxID)
+		i = encodeVarintTypeEventIntent(dAtA, i, uint64(len(m.BidTxID)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *EventIntentAuctionComplete) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *EventIntentAuctionComplete) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *EventIntentAuctionComplete) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	{
+		size, err := m.OwnerRefund.MarshalToSizedBuffer(dAtA[:i])
+		if err != nil {
+			return 0, err
+		}
+		i -= size
+		i = encodeVarintTypeEventIntent(dAtA, i, uint64(size))
+	}
+	i--
+	dAtA[i] = 0x32
+	{
+		size, err := m.AuctionAmount.MarshalToSizedBuffer(dAtA[:i])
+		if err != nil {
+			return 0, err
+		}
+		i -= size
+		i = encodeVarintTypeEventIntent(dAtA, i, uint64(size))
+	}
+	i--
+	dAtA[i] = 0x2a
+	{
+		size, err := m.WinningBid.MarshalToSizedBuffer(dAtA[:i])
+		if err != nil {
+			return 0, err
+		}
+		i -= size
+		i = encodeVarintTypeEventIntent(dAtA, i, uint64(size))
+	}
+	i--
+	dAtA[i] = 0x22
+	if len(m.WinnerAddress) > 0 {
+		i -= len(m.WinnerAddress)
+		copy(dAtA[i:], m.WinnerAddress)
+		i = encodeVarintTypeEventIntent(dAtA, i, uint64(len(m.WinnerAddress)))
+		i--
+		dAtA[i] = 0x1a
+	}
+	if len(m.WinnerBidTxID) > 0 {
+		i -= len(m.WinnerBidTxID)
+		copy(dAtA[i:], m.WinnerBidTxID)
+		i = encodeVarintTypeEventIntent(dAtA, i, uint64(len(m.WinnerBidTxID)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if len(m.IntentTxID) > 0 {
+		i -= len(m.IntentTxID)
+		copy(dAtA[i:], m.IntentTxID)
+		i = encodeVarintTypeEventIntent(dAtA, i, uint64(len(m.IntentTxID)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *EventIntentAuctionCancel) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *EventIntentAuctionCancel) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *EventIntentAuctionCancel) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Abandoned {
+		i--
+		if m.Abandoned {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x10
+	}
+	if len(m.IntentTxID) > 0 {
+		i -= len(m.IntentTxID)
+		copy(dAtA[i:], m.IntentTxID)
+		i = encodeVarintTypeEventIntent(dAtA, i, uint64(len(m.IntentTxID)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
 func encodeVarintTypeEventIntent(dAtA []byte, offset int, v uint64) int {
 	offset -= sovTypeEventIntent(v)
 	base := offset
@@ -917,6 +1466,99 @@ func (m *EventIntentExpire) Size() (n int) {
 	l = m.Refund.Size()
 	n += 1 + l + sovTypeEventIntent(uint64(l))
 	l = len(m.RefundAddress)
+	if l > 0 {
+		n += 1 + l + sovTypeEventIntent(uint64(l))
+	}
+	if m.Abandoned {
+		n += 2
+	}
+	return n
+}
+
+func (m *EventIntentAuctionStart) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.IntentTxID)
+	if l > 0 {
+		n += 1 + l + sovTypeEventIntent(uint64(l))
+	}
+	l = m.AuctionAmount.Size()
+	n += 1 + l + sovTypeEventIntent(uint64(l))
+	l = m.RemainingAmount.Size()
+	n += 1 + l + sovTypeEventIntent(uint64(l))
+	l = m.BidAsset.Size()
+	n += 1 + l + sovTypeEventIntent(uint64(l))
+	l = m.MinBid.Size()
+	n += 1 + l + sovTypeEventIntent(uint64(l))
+	if m.ExpiryHeight != 0 {
+		n += 1 + sovTypeEventIntent(uint64(m.ExpiryHeight))
+	}
+	return n
+}
+
+func (m *EventIntentAuctionBid) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.BidTxID)
+	if l > 0 {
+		n += 1 + l + sovTypeEventIntent(uint64(l))
+	}
+	l = len(m.IntentTxID)
+	if l > 0 {
+		n += 1 + l + sovTypeEventIntent(uint64(l))
+	}
+	l = len(m.BidderAddress)
+	if l > 0 {
+		n += 1 + l + sovTypeEventIntent(uint64(l))
+	}
+	l = m.BidAmount.Size()
+	n += 1 + l + sovTypeEventIntent(uint64(l))
+	if m.IsTopUp {
+		n += 2
+	}
+	return n
+}
+
+func (m *EventIntentAuctionComplete) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.IntentTxID)
+	if l > 0 {
+		n += 1 + l + sovTypeEventIntent(uint64(l))
+	}
+	l = len(m.WinnerBidTxID)
+	if l > 0 {
+		n += 1 + l + sovTypeEventIntent(uint64(l))
+	}
+	l = len(m.WinnerAddress)
+	if l > 0 {
+		n += 1 + l + sovTypeEventIntent(uint64(l))
+	}
+	l = m.WinningBid.Size()
+	n += 1 + l + sovTypeEventIntent(uint64(l))
+	l = m.AuctionAmount.Size()
+	n += 1 + l + sovTypeEventIntent(uint64(l))
+	l = m.OwnerRefund.Size()
+	n += 1 + l + sovTypeEventIntent(uint64(l))
+	return n
+}
+
+func (m *EventIntentAuctionCancel) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.IntentTxID)
 	if l > 0 {
 		n += 1 + l + sovTypeEventIntent(uint64(l))
 	}
@@ -1956,6 +2598,787 @@ func (m *EventIntentExpire) Unmarshal(dAtA []byte) error {
 			m.RefundAddress = gitlab_com_thorchain_thornode_v3_common.Address(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
 		case 4:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Abandoned", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTypeEventIntent
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.Abandoned = bool(v != 0)
+		default:
+			iNdEx = preIndex
+			skippy, err := skipTypeEventIntent(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthTypeEventIntent
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *EventIntentAuctionStart) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowTypeEventIntent
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: EventIntentAuctionStart: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: EventIntentAuctionStart: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field IntentTxID", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTypeEventIntent
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthTypeEventIntent
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthTypeEventIntent
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.IntentTxID = gitlab_com_thorchain_thornode_v3_common.TxID(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field AuctionAmount", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTypeEventIntent
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthTypeEventIntent
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthTypeEventIntent
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if err := m.AuctionAmount.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field RemainingAmount", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTypeEventIntent
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthTypeEventIntent
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthTypeEventIntent
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if err := m.RemainingAmount.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 4:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field BidAsset", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTypeEventIntent
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthTypeEventIntent
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthTypeEventIntent
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if err := m.BidAsset.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 5:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field MinBid", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTypeEventIntent
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthTypeEventIntent
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthTypeEventIntent
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if err := m.MinBid.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 6:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ExpiryHeight", wireType)
+			}
+			m.ExpiryHeight = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTypeEventIntent
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.ExpiryHeight |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		default:
+			iNdEx = preIndex
+			skippy, err := skipTypeEventIntent(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthTypeEventIntent
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *EventIntentAuctionBid) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowTypeEventIntent
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: EventIntentAuctionBid: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: EventIntentAuctionBid: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field BidTxID", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTypeEventIntent
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthTypeEventIntent
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthTypeEventIntent
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.BidTxID = gitlab_com_thorchain_thornode_v3_common.TxID(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field IntentTxID", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTypeEventIntent
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthTypeEventIntent
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthTypeEventIntent
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.IntentTxID = gitlab_com_thorchain_thornode_v3_common.TxID(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field BidderAddress", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTypeEventIntent
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthTypeEventIntent
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthTypeEventIntent
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.BidderAddress = gitlab_com_thorchain_thornode_v3_common.Address(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 4:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field BidAmount", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTypeEventIntent
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthTypeEventIntent
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthTypeEventIntent
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if err := m.BidAmount.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 5:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field IsTopUp", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTypeEventIntent
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.IsTopUp = bool(v != 0)
+		default:
+			iNdEx = preIndex
+			skippy, err := skipTypeEventIntent(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthTypeEventIntent
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *EventIntentAuctionComplete) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowTypeEventIntent
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: EventIntentAuctionComplete: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: EventIntentAuctionComplete: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field IntentTxID", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTypeEventIntent
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthTypeEventIntent
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthTypeEventIntent
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.IntentTxID = gitlab_com_thorchain_thornode_v3_common.TxID(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field WinnerBidTxID", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTypeEventIntent
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthTypeEventIntent
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthTypeEventIntent
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.WinnerBidTxID = gitlab_com_thorchain_thornode_v3_common.TxID(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field WinnerAddress", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTypeEventIntent
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthTypeEventIntent
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthTypeEventIntent
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.WinnerAddress = gitlab_com_thorchain_thornode_v3_common.Address(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 4:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field WinningBid", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTypeEventIntent
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthTypeEventIntent
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthTypeEventIntent
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if err := m.WinningBid.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 5:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field AuctionAmount", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTypeEventIntent
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthTypeEventIntent
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthTypeEventIntent
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if err := m.AuctionAmount.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 6:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field OwnerRefund", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTypeEventIntent
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthTypeEventIntent
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthTypeEventIntent
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if err := m.OwnerRefund.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipTypeEventIntent(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthTypeEventIntent
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *EventIntentAuctionCancel) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowTypeEventIntent
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: EventIntentAuctionCancel: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: EventIntentAuctionCancel: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field IntentTxID", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTypeEventIntent
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthTypeEventIntent
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthTypeEventIntent
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.IntentTxID = gitlab_com_thorchain_thornode_v3_common.TxID(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
 			if wireType != 0 {
 				return fmt.Errorf("proto: wrong wireType = %d for field Abandoned", wireType)
 			}
