@@ -135,3 +135,29 @@ func (p *parser) ParseIntentSolveMemo() (IntentSolveMemo, error) {
 	txID := p.getTxID(1, true, common.TxID(""))
 	return NewIntentSolveMemo(txID), p.Error()
 }
+
+// IntentAuctionBidMemo represents a memo for bidding on an intent auction
+// Format: IAB:INTENT_TX_HASH
+type IntentAuctionBidMemo struct {
+	MemoBase
+	IntentTxID common.TxID
+}
+
+func (m IntentAuctionBidMemo) GetIntentTxID() common.TxID { return m.IntentTxID }
+
+func (m IntentAuctionBidMemo) String() string {
+	return fmt.Sprintf("%s:%s", m.TxType.String(), m.IntentTxID.String())
+}
+
+func NewIntentAuctionBidMemo(txID common.TxID) IntentAuctionBidMemo {
+	return IntentAuctionBidMemo{
+		MemoBase:   MemoBase{TxType: TxIntentAuctionBid},
+		IntentTxID: txID,
+	}
+}
+
+func (p *parser) ParseIntentAuctionBidMemo() (IntentAuctionBidMemo, error) {
+	// Format: IAB:INTENT_TX_HASH
+	txID := p.getTxID(1, true, common.TxID(""))
+	return NewIntentAuctionBidMemo(txID), p.Error()
+}

@@ -55,6 +55,7 @@ const (
 	TxIntentOpen
 	TxIntentCancel
 	TxIntentSolve
+	TxIntentAuctionBid
 )
 
 var stringToTxTypeMap = map[string]TxType{
@@ -103,6 +104,7 @@ var stringToTxTypeMap = map[string]TxType{
 	"io":          TxIntentOpen,
 	"ic":          TxIntentCancel,
 	"is":          TxIntentSolve,
+	"iab":         TxIntentAuctionBid,
 }
 
 var txToStringMap = map[TxType]string{
@@ -139,6 +141,7 @@ var txToStringMap = map[TxType]string{
 	TxIntentOpen:             "io",
 	TxIntentCancel:           "ic",
 	TxIntentSolve:            "is",
+	TxIntentAuctionBid:       "iab",
 }
 
 // converts a string into a txType
@@ -181,7 +184,8 @@ func (tx TxType) IsInbound() bool {
 		TxTCYClaim,
 		TxTCYStake,
 		TxTCYUnstake,
-		TxOperatorRotate:
+		TxOperatorRotate,
+		TxIntentAuctionBid:
 		return true
 	default:
 		return false

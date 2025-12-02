@@ -67,6 +67,10 @@ const (
 	IntentCompleteEventType         = "intent_complete"
 	IntentExpireEventType           = "intent_expire"
 	VaultOverSolvencyEventType      = "vault_over_solvency"
+	IntentAuctionStartEventType     = "intent_auction_start"
+	IntentAuctionBidEventType       = "intent_auction_bid"
+	IntentAuctionCompleteEventType  = "intent_auction_complete"
+	IntentAuctionCancelEventType    = "intent_auction_cancel"
 )
 
 // PoolMods a list of pool modifications
@@ -1618,6 +1622,116 @@ func (m *EventIntentExpire) Events() (cosmos.Events, error) {
 		cosmos.NewAttribute("tx_id", m.TxID.String()),
 		cosmos.NewAttribute("refund", m.Refund.String()),
 		cosmos.NewAttribute("refund_address", m.RefundAddress.String()),
+		cosmos.NewAttribute("abandoned", strconv.FormatBool(m.Abandoned)),
+	)
+	return cosmos.Events{evt}, nil
+}
+
+// NewEventIntentAuctionStart creates a new intent auction start event
+func NewEventIntentAuctionStart(intentTxID common.TxID, auctionAmount, remainingAmount common.Coin, bidAsset common.Asset, minBid cosmos.Uint, expiryHeight int64) *EventIntentAuctionStart {
+	return &EventIntentAuctionStart{
+		IntentTxID:      intentTxID,
+		AuctionAmount:   auctionAmount,
+		RemainingAmount: remainingAmount,
+		BidAsset:        bidAsset,
+		MinBid:          minBid,
+		ExpiryHeight:    expiryHeight,
+	}
+}
+
+// Type return the intent auction start event type
+func (m *EventIntentAuctionStart) Type() string {
+	return IntentAuctionStartEventType
+}
+
+// Events return the cosmos event
+func (m *EventIntentAuctionStart) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(m.Type(),
+		cosmos.NewAttribute("intent_tx_id", m.IntentTxID.String()),
+		cosmos.NewAttribute("auction_amount", m.AuctionAmount.String()),
+		cosmos.NewAttribute("remaining_amount", m.RemainingAmount.String()),
+		cosmos.NewAttribute("bid_asset", m.BidAsset.String()),
+		cosmos.NewAttribute("min_bid", m.MinBid.String()),
+		cosmos.NewAttribute("expiry_height", strconv.FormatInt(m.ExpiryHeight, 10)),
+	)
+	return cosmos.Events{evt}, nil
+}
+
+// NewEventIntentAuctionBid creates a new intent auction bid event
+func NewEventIntentAuctionBid(bidTxID, intentTxID common.TxID, bidderAddr common.Address, bidAmount cosmos.Uint, isTopUp bool) *EventIntentAuctionBid {
+	return &EventIntentAuctionBid{
+		BidTxID:       bidTxID,
+		IntentTxID:    intentTxID,
+		BidderAddress: bidderAddr,
+		BidAmount:     bidAmount,
+		IsTopUp:       isTopUp,
+	}
+}
+
+// Type return the intent auction bid event type
+func (m *EventIntentAuctionBid) Type() string {
+	return IntentAuctionBidEventType
+}
+
+// Events return the cosmos event
+func (m *EventIntentAuctionBid) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(m.Type(),
+		cosmos.NewAttribute("bid_tx_id", m.BidTxID.String()),
+		cosmos.NewAttribute("intent_tx_id", m.IntentTxID.String()),
+		cosmos.NewAttribute("bidder_address", m.BidderAddress.String()),
+		cosmos.NewAttribute("bid_amount", m.BidAmount.String()),
+		cosmos.NewAttribute("is_top_up", strconv.FormatBool(m.IsTopUp)),
+	)
+	return cosmos.Events{evt}, nil
+}
+
+// NewEventIntentAuctionComplete creates a new intent auction complete event
+func NewEventIntentAuctionComplete(intentTxID, winnerBidTxID common.TxID, winnerAddr common.Address, winningBid, auctionAmount, ownerRefund common.Coin) *EventIntentAuctionComplete {
+	return &EventIntentAuctionComplete{
+		IntentTxID:    intentTxID,
+		WinnerBidTxID: winnerBidTxID,
+		WinnerAddress: winnerAddr,
+		WinningBid:    winningBid,
+		AuctionAmount: auctionAmount,
+		OwnerRefund:   ownerRefund,
+	}
+}
+
+// Type return the intent auction complete event type
+func (m *EventIntentAuctionComplete) Type() string {
+	return IntentAuctionCompleteEventType
+}
+
+// Events return the cosmos event
+func (m *EventIntentAuctionComplete) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(m.Type(),
+		cosmos.NewAttribute("intent_tx_id", m.IntentTxID.String()),
+		cosmos.NewAttribute("winner_bid_tx_id", m.WinnerBidTxID.String()),
+		cosmos.NewAttribute("winner_address", m.WinnerAddress.String()),
+		cosmos.NewAttribute("winning_bid", m.WinningBid.String()),
+		cosmos.NewAttribute("auction_amount", m.AuctionAmount.String()),
+		cosmos.NewAttribute("owner_refund", m.OwnerRefund.String()),
+	)
+	return cosmos.Events{evt}, nil
+}
+
+// NewEventIntentAuctionCancel creates a new intent auction cancel event
+func NewEventIntentAuctionCancel(intentTxID common.TxID, abandoned bool) *EventIntentAuctionCancel {
+	return &EventIntentAuctionCancel{
+		IntentTxID: intentTxID,
+		Abandoned:  abandoned,
+	}
+}
+
+// Type return the intent auction cancel event type
+func (m *EventIntentAuctionCancel) Type() string {
+	return IntentAuctionCancelEventType
+}
+
+// Events return the cosmos event
+func (m *EventIntentAuctionCancel) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(m.Type(),
+		cosmos.NewAttribute("intent_tx_id", m.IntentTxID.String()),
 		cosmos.NewAttribute("abandoned", strconv.FormatBool(m.Abandoned)),
 	)
 	return cosmos.Events{evt}, nil

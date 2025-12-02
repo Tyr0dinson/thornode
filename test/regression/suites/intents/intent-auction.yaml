@@ -1,0 +1,410 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 2
+---
+########################################################################################
+# Enable intents
+########################################################################################
+type: tx-mimir
+key: IntentsEnabled
+value: 1
+signer: {{ addr_thor_dog }}
+sequence: 0
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Create an intent - swap ETH for BTC
+# Format: IO:TARGET_ASSET:HIGH_TARGET:LOW_TARGET:TARGET_ADDR
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 1 }}'
+    chain: ETH
+    from_address: {{ addr_eth_fox }}
+    to_address: {{ addr_eth_dog }}
+    coins:
+      - amount: "100000000"
+        asset: "ETH.ETH"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "ETH.ETH"
+    memo: "IO:BTC.BTC:5000000:4000000:{{ addr_btc_fox }}"
+  block_height: 2
+  finalise_height: 2
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/intent/{{ observe_txid 1 }}
+asserts:
+  - .intent.tx_id == "{{ observe_txid 1 }}"
+  - .intent.status == "IntentActive"
+  - .intent.source.asset == "ETH.ETH"
+  - .intent.source.amount == "100000000"
+  - .intent.target_asset == "BTC.BTC"
+---
+type: check
+endpoint: http://localhost:1317/thorchain/intents
+asserts:
+  - .intents | length == 1
+  - .intents[0].intent.tx_id == "{{ observe_txid 1 }}"
+---
+########################################################################################
+# Let the intent expire - advance blocks past expiry
+# IntentTTLBlocks is 5 in mocknet
+########################################################################################
+type: create-blocks
+count: 5
+---
+########################################################################################
+# Check that intent status changed to IntentAuctioning
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intent/{{ observe_txid 1 }}
+asserts:
+  - .intent.status == "IntentAuctioning"
+---
+########################################################################################
+# Check that auction was created
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intent/auction/{{ observe_txid 1 }}
+asserts:
+  - .auction.intent_tx_id == "{{ observe_txid 1 }}"
+  - .auction.status == "AuctionActive"
+  - .auction.bid_asset == "ETH.ETH"
+  - .bids | length == 0
+---
+type: check
+endpoint: http://localhost:1317/thorchain/intent/auctions
+asserts:
+  - .auctions | length == 1
+  - .auctions[0].auction.intent_tx_id == "{{ observe_txid 1 }}"
+---
+########################################################################################
+# Place a bid on the auction
+# Format: IAB:INTENT_TX_HASH
+# Min bid is 3x network gas (6400000 * 3 = 19200000)
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 2 }}'
+    chain: ETH
+    from_address: {{ addr_eth_cat }}
+    to_address: {{ addr_eth_dog }}
+    coins:
+      - amount: "20000000"
+        asset: "ETH.ETH"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "ETH.ETH"
+    memo: "IAB:{{ observe_txid 1 }}"
+  block_height: 7
+  finalise_height: 7
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Check first bid was placed (cat is highest bidder with 20000000)
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intent/auction/{{ observe_txid 1 }}
+asserts:
+  - .auction.status == "AuctionActive"
+  - .bids | length == 1
+  - .bids[0].bidder_address == "{{ addr_eth_cat }}"
+  - .bids[0].bid_amount.amount == "20000000"
+---
+########################################################################################
+# Place a higher bid from fox (25000000 > 20000000)
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 3 }}'
+    chain: ETH
+    from_address: {{ addr_eth_fox }}
+    to_address: {{ addr_eth_dog }}
+    coins:
+      - amount: "25000000"
+        asset: "ETH.ETH"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "ETH.ETH"
+    memo: "IAB:{{ observe_txid 1 }}"
+  block_height: 8
+  finalise_height: 8
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Check fox is now highest bidder
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intent/auction/{{ observe_txid 1 }}
+asserts:
+  - .auction.status == "AuctionActive"
+  - .bids | length == 2
+---
+########################################################################################
+# Cat tops up their bid to become highest bidder again
+# Since we're in overtime window (block 11, expiry 13, overtime 2 blocks),
+# cat's total bid must be >= fox's bid (25000000) + 1x gas (6400000) = 31400000
+# Cat already has 20000000, so needs to add at least 11400000
+# We add 12000000 to be safe: 20000000 + 12000000 = 32000000 >= 31400000
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 4 }}'
+    chain: ETH
+    from_address: {{ addr_eth_cat }}
+    to_address: {{ addr_eth_dog }}
+    coins:
+      - amount: "12000000"
+        asset: "ETH.ETH"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "ETH.ETH"
+    memo: "IAB:{{ observe_txid 1 }}"
+  block_height: 9
+  finalise_height: 9
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Check cat is now highest bidder with topped-up amount (32000000 > 25000000)
+# Also, since this was a qualifying overtime bid, the expiry should have been extended
+# New expiry = current block (11) + overtime blocks (2) = 13 (no change since original was 13)
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intent/auction/{{ observe_txid 1 }}
+asserts:
+  - .auction.status == "AuctionActive"
+  - .bids | length == 2
+  - .bids | map(select(.bidder_address == "{{ addr_eth_cat }}")) | .[0].bid_amount.amount == "32000000"
+  - .bids | map(select(.bidder_address == "{{ addr_eth_fox }}")) | .[0].bid_amount.amount == "25000000"
+  # Expiry should be extended to block 13 (current block 11 + 2 overtime blocks)
+  - .auction.expiry_height == "13"
+---
+########################################################################################
+# Test overtime extension with pig's bid:
+# We're currently at block 12 (after cat's top-up processed at block 11), expiry is 13
+# We need to place pig's bid BEFORE block 13 when the auction is processed
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intent/auction/{{ observe_txid 1 }}
+asserts:
+  - .auction.status == "AuctionActive"
+  - .auction.expiry_height == "13"
+---
+########################################################################################
+# Place a qualifying overtime bid from pig at block 12 (before expiry at 13)
+# Must be >= current highest (32000000) + 1x gas fee (6400000) = 38400000
+# We bid 40000000 to ensure it qualifies
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 5 }}'
+    chain: ETH
+    from_address: {{ addr_eth_pig }}
+    to_address: {{ addr_eth_dog }}
+    coins:
+      - amount: "40000000"
+        asset: "ETH.ETH"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "ETH.ETH"
+    memo: "IAB:{{ observe_txid 1 }}"
+  block_height: 11
+  finalise_height: 11
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Check that:
+# 1. Pig is now the highest bidder
+# 2. The auction expiry was extended (new expiry = current block + overtime blocks)
+# Bid was processed at block 12, so new expiry should be 12 + 2 = 14
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intent/auction/{{ observe_txid 1 }}
+asserts:
+  - .auction.status == "AuctionActive"
+  - .bids | length == 3
+  - .bids | map(select(.bidder_address == "{{ addr_eth_pig }}")) | .[0].bid_amount.amount == "40000000"
+  # Expiry should have been extended from 13 to 14 (current block 12 + 2 overtime blocks)
+  - .auction.expiry_height == "14"
+---
+########################################################################################
+# Let auction expire - advance blocks past the extended auction expiry (14)
+# We're at block 13, need to get to block 15 to process the expired auction
+########################################################################################
+type: create-blocks
+count: 2
+---
+########################################################################################
+# Check auction completed
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intent/auction/{{ observe_txid 1 }}
+asserts:
+  - .auction.status == "AuctionCompleted"
+---
+########################################################################################
+# Check outbound queue has refunds scheduled
+# Expected outbounds after auction completion:
+# 1. Fox refund (losing bid: 25000000)
+# 2. Cat refund (losing bid: 32000000) - wait, cat won in original, now pig wins
+# 3. Pig wins auction amount (10000000)
+# 4. Owner gets remaining amount (90000000)
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - length >= 1
+---
+########################################################################################
+# Observe cat's refund (losing bid: 31360000)
+########################################################################################
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 6 }}'
+    chain: ETH
+    from_address: {{ addr_eth_dog }}
+    to_address: {{ addr_eth_cat }}
+    coins:
+      - amount: "31360000"
+        asset: "ETH.ETH"
+        decimals: 8
+    gas:
+      - amount: "960000"
+        asset: "ETH.ETH"
+    memo: "REFUND:{{ observe_txid 2 }}"
+  block_height: 15
+  finalise_height: 15
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Observe fox's refund (losing bid: 24360128)
+########################################################################################
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 7 }}'
+    chain: ETH
+    from_address: {{ addr_eth_dog }}
+    to_address: {{ addr_eth_fox }}
+    coins:
+      - amount: "24360128"
+        asset: "ETH.ETH"
+        decimals: 8
+    gas:
+      - amount: "960000"
+        asset: "ETH.ETH"
+    memo: "REFUND:{{ observe_txid 3 }}"
+  block_height: 16
+  finalise_height: 16
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Observe pig's winning (auction amount: 9360256)
+########################################################################################
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 8 }}'
+    chain: ETH
+    from_address: {{ addr_eth_dog }}
+    to_address: {{ addr_eth_pig }}
+    coins:
+      - amount: "9360256"
+        asset: "ETH.ETH"
+        decimals: 8
+    gas:
+      - amount: "960000"
+        asset: "ETH.ETH"
+    memo: "OUT:{{ observe_txid 5 }}"
+  block_height: 17
+  finalise_height: 17
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Observe owner's remaining amount refund (89360384)
+########################################################################################
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 9 }}'
+    chain: ETH
+    from_address: {{ addr_eth_dog }}
+    to_address: {{ addr_eth_fox }}
+    coins:
+      - amount: "89360384"
+        asset: "ETH.ETH"
+        decimals: 8
+    gas:
+      - amount: "960000"
+        asset: "ETH.ETH"
+    memo: "REFUND:{{ observe_txid 1 }}"
+  block_height: 18
+  finalise_height: 18
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Verify outbound queue is now empty
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0

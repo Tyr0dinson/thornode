@@ -444,12 +444,23 @@ service Query {
     option (google.api.http).get = "/thorchain/memo/check/{asset}/{amount}";
   }
 
-  rpc Intent(QueryIntentRequest) returns (QueryIntentResponse) {
-    option (google.api.http).get = "/thorchain/intent/{tx_id}";
-  }
-
   rpc ActiveIntents(QueryActiveIntentsRequest)
       returns (QueryActiveIntentsResponse) {
     option (google.api.http).get = "/thorchain/intents";
+  }
+
+  rpc IntentAuction(QueryIntentAuctionRequest)
+      returns (QueryIntentAuctionResponse) {
+    option (google.api.http).get = "/thorchain/intent/auction/{tx_id}";
+  }
+
+  rpc ActiveIntentAuctions(QueryActiveAuctionsRequest)
+      returns (QueryActiveAuctionsResponse) {
+    option (google.api.http).get = "/thorchain/intent/auctions";
+  }
+
+  // Intent must be last because /thorchain/intent/{tx_id} matches any path under /thorchain/intent/
+  rpc Intent(QueryIntentRequest) returns (QueryIntentResponse) {
+    option (google.api.http).get = "/thorchain/intent/{tx_id}";
   }
 }

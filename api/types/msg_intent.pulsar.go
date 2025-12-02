@@ -2046,6 +2046,571 @@ func (x *fastReflection_MsgIntentSolve) ProtoMethods() *protoiface.Methods {
 	}
 }
 
+var (
+	md_MsgIntentAuctionBid              protoreflect.MessageDescriptor
+	fd_MsgIntentAuctionBid_tx           protoreflect.FieldDescriptor
+	fd_MsgIntentAuctionBid_intent_tx_id protoreflect.FieldDescriptor
+	fd_MsgIntentAuctionBid_signer       protoreflect.FieldDescriptor
+)
+
+func init() {
+	file_types_msg_intent_proto_init()
+	md_MsgIntentAuctionBid = File_types_msg_intent_proto.Messages().ByName("MsgIntentAuctionBid")
+	fd_MsgIntentAuctionBid_tx = md_MsgIntentAuctionBid.Fields().ByName("tx")
+	fd_MsgIntentAuctionBid_intent_tx_id = md_MsgIntentAuctionBid.Fields().ByName("intent_tx_id")
+	fd_MsgIntentAuctionBid_signer = md_MsgIntentAuctionBid.Fields().ByName("signer")
+}
+
+var _ protoreflect.Message = (*fastReflection_MsgIntentAuctionBid)(nil)
+
+type fastReflection_MsgIntentAuctionBid MsgIntentAuctionBid
+
+func (x *MsgIntentAuctionBid) ProtoReflect() protoreflect.Message {
+	return (*fastReflection_MsgIntentAuctionBid)(x)
+}
+
+func (x *MsgIntentAuctionBid) slowProtoReflect() protoreflect.Message {
+	mi := &file_types_msg_intent_proto_msgTypes[3]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+var _fastReflection_MsgIntentAuctionBid_messageType fastReflection_MsgIntentAuctionBid_messageType
+var _ protoreflect.MessageType = fastReflection_MsgIntentAuctionBid_messageType{}
+
+type fastReflection_MsgIntentAuctionBid_messageType struct{}
+
+func (x fastReflection_MsgIntentAuctionBid_messageType) Zero() protoreflect.Message {
+	return (*fastReflection_MsgIntentAuctionBid)(nil)
+}
+func (x fastReflection_MsgIntentAuctionBid_messageType) New() protoreflect.Message {
+	return new(fastReflection_MsgIntentAuctionBid)
+}
+func (x fastReflection_MsgIntentAuctionBid_messageType) Descriptor() protoreflect.MessageDescriptor {
+	return md_MsgIntentAuctionBid
+}
+
+// Descriptor returns message descriptor, which contains only the protobuf
+// type information for the message.
+func (x *fastReflection_MsgIntentAuctionBid) Descriptor() protoreflect.MessageDescriptor {
+	return md_MsgIntentAuctionBid
+}
+
+// Type returns the message type, which encapsulates both Go and protobuf
+// type information. If the Go type information is not needed,
+// it is recommended that the message descriptor be used instead.
+func (x *fastReflection_MsgIntentAuctionBid) Type() protoreflect.MessageType {
+	return _fastReflection_MsgIntentAuctionBid_messageType
+}
+
+// New returns a newly allocated and mutable empty message.
+func (x *fastReflection_MsgIntentAuctionBid) New() protoreflect.Message {
+	return new(fastReflection_MsgIntentAuctionBid)
+}
+
+// Interface unwraps the message reflection interface and
+// returns the underlying ProtoMessage interface.
+func (x *fastReflection_MsgIntentAuctionBid) Interface() protoreflect.ProtoMessage {
+	return (*MsgIntentAuctionBid)(x)
+}
+
+// Range iterates over every populated field in an undefined order,
+// calling f for each field descriptor and value encountered.
+// Range returns immediately if f returns false.
+// While iterating, mutating operations may only be performed
+// on the current field descriptor.
+func (x *fastReflection_MsgIntentAuctionBid) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
+	if x.Tx != nil {
+		value := protoreflect.ValueOfMessage(x.Tx.ProtoReflect())
+		if !f(fd_MsgIntentAuctionBid_tx, value) {
+			return
+		}
+	}
+	if x.IntentTxId != "" {
+		value := protoreflect.ValueOfString(x.IntentTxId)
+		if !f(fd_MsgIntentAuctionBid_intent_tx_id, value) {
+			return
+		}
+	}
+	if len(x.Signer) != 0 {
+		value := protoreflect.ValueOfBytes(x.Signer)
+		if !f(fd_MsgIntentAuctionBid_signer, value) {
+			return
+		}
+	}
+}
+
+// Has reports whether a field is populated.
+//
+// Some fields have the property of nullability where it is possible to
+// distinguish between the default value of a field and whether the field
+// was explicitly populated with the default value. Singular message fields,
+// member fields of a oneof, and proto2 scalar fields are nullable. Such
+// fields are populated only if explicitly set.
+//
+// In other cases (aside from the nullable cases above),
+// a proto3 scalar field is populated if it contains a non-zero value, and
+// a repeated field is populated if it is non-empty.
+func (x *fastReflection_MsgIntentAuctionBid) Has(fd protoreflect.FieldDescriptor) bool {
+	switch fd.FullName() {
+	case "types.MsgIntentAuctionBid.tx":
+		return x.Tx != nil
+	case "types.MsgIntentAuctionBid.intent_tx_id":
+		return x.IntentTxId != ""
+	case "types.MsgIntentAuctionBid.signer":
+		return len(x.Signer) != 0
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.MsgIntentAuctionBid"))
+		}
+		panic(fmt.Errorf("message types.MsgIntentAuctionBid does not contain field %s", fd.FullName()))
+	}
+}
+
+// Clear clears the field such that a subsequent Has call reports false.
+//
+// Clearing an extension field clears both the extension type and value
+// associated with the given field number.
+//
+// Clear is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_MsgIntentAuctionBid) Clear(fd protoreflect.FieldDescriptor) {
+	switch fd.FullName() {
+	case "types.MsgIntentAuctionBid.tx":
+		x.Tx = nil
+	case "types.MsgIntentAuctionBid.intent_tx_id":
+		x.IntentTxId = ""
+	case "types.MsgIntentAuctionBid.signer":
+		x.Signer = nil
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.MsgIntentAuctionBid"))
+		}
+		panic(fmt.Errorf("message types.MsgIntentAuctionBid does not contain field %s", fd.FullName()))
+	}
+}
+
+// Get retrieves the value for a field.
+//
+// For unpopulated scalars, it returns the default value, where
+// the default value of a bytes scalar is guaranteed to be a copy.
+// For unpopulated composite types, it returns an empty, read-only view
+// of the value; to obtain a mutable reference, use Mutable.
+func (x *fastReflection_MsgIntentAuctionBid) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
+	switch descriptor.FullName() {
+	case "types.MsgIntentAuctionBid.tx":
+		value := x.Tx
+		return protoreflect.ValueOfMessage(value.ProtoReflect())
+	case "types.MsgIntentAuctionBid.intent_tx_id":
+		value := x.IntentTxId
+		return protoreflect.ValueOfString(value)
+	case "types.MsgIntentAuctionBid.signer":
+		value := x.Signer
+		return protoreflect.ValueOfBytes(value)
+	default:
+		if descriptor.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.MsgIntentAuctionBid"))
+		}
+		panic(fmt.Errorf("message types.MsgIntentAuctionBid does not contain field %s", descriptor.FullName()))
+	}
+}
+
+// Set stores the value for a field.
+//
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType.
+// When setting a composite type, it is unspecified whether the stored value
+// aliases the source's memory in any way. If the composite value is an
+// empty, read-only value, then it panics.
+//
+// Set is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_MsgIntentAuctionBid) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
+	switch fd.FullName() {
+	case "types.MsgIntentAuctionBid.tx":
+		x.Tx = value.Message().Interface().(*common.Tx)
+	case "types.MsgIntentAuctionBid.intent_tx_id":
+		x.IntentTxId = value.Interface().(string)
+	case "types.MsgIntentAuctionBid.signer":
+		x.Signer = value.Bytes()
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.MsgIntentAuctionBid"))
+		}
+		panic(fmt.Errorf("message types.MsgIntentAuctionBid does not contain field %s", fd.FullName()))
+	}
+}
+
+// Mutable returns a mutable reference to a composite type.
+//
+// If the field is unpopulated, it may allocate a composite value.
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType
+// if not already stored.
+// It panics if the field does not contain a composite type.
+//
+// Mutable is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_MsgIntentAuctionBid) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "types.MsgIntentAuctionBid.tx":
+		if x.Tx == nil {
+			x.Tx = new(common.Tx)
+		}
+		return protoreflect.ValueOfMessage(x.Tx.ProtoReflect())
+	case "types.MsgIntentAuctionBid.intent_tx_id":
+		panic(fmt.Errorf("field intent_tx_id of message types.MsgIntentAuctionBid is not mutable"))
+	case "types.MsgIntentAuctionBid.signer":
+		panic(fmt.Errorf("field signer of message types.MsgIntentAuctionBid is not mutable"))
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.MsgIntentAuctionBid"))
+		}
+		panic(fmt.Errorf("message types.MsgIntentAuctionBid does not contain field %s", fd.FullName()))
+	}
+}
+
+// NewField returns a new value that is assignable to the field
+// for the given descriptor. For scalars, this returns the default value.
+// For lists, maps, and messages, this returns a new, empty, mutable value.
+func (x *fastReflection_MsgIntentAuctionBid) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "types.MsgIntentAuctionBid.tx":
+		m := new(common.Tx)
+		return protoreflect.ValueOfMessage(m.ProtoReflect())
+	case "types.MsgIntentAuctionBid.intent_tx_id":
+		return protoreflect.ValueOfString("")
+	case "types.MsgIntentAuctionBid.signer":
+		return protoreflect.ValueOfBytes(nil)
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.MsgIntentAuctionBid"))
+		}
+		panic(fmt.Errorf("message types.MsgIntentAuctionBid does not contain field %s", fd.FullName()))
+	}
+}
+
+// WhichOneof reports which field within the oneof is populated,
+// returning nil if none are populated.
+// It panics if the oneof descriptor does not belong to this message.
+func (x *fastReflection_MsgIntentAuctionBid) WhichOneof(d protoreflect.OneofDescriptor) protoreflect.FieldDescriptor {
+	switch d.FullName() {
+	default:
+		panic(fmt.Errorf("%s is not a oneof field in types.MsgIntentAuctionBid", d.FullName()))
+	}
+	panic("unreachable")
+}
+
+// GetUnknown retrieves the entire list of unknown fields.
+// The caller may only mutate the contents of the RawFields
+// if the mutated bytes are stored back into the message with SetUnknown.
+func (x *fastReflection_MsgIntentAuctionBid) GetUnknown() protoreflect.RawFields {
+	return x.unknownFields
+}
+
+// SetUnknown stores an entire list of unknown fields.
+// The raw fields must be syntactically valid according to the wire format.
+// An implementation may panic if this is not the case.
+// Once stored, the caller must not mutate the content of the RawFields.
+// An empty RawFields may be passed to clear the fields.
+//
+// SetUnknown is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_MsgIntentAuctionBid) SetUnknown(fields protoreflect.RawFields) {
+	x.unknownFields = fields
+}
+
+// IsValid reports whether the message is valid.
+//
+// An invalid message is an empty, read-only value.
+//
+// An invalid message often corresponds to a nil pointer of the concrete
+// message type, but the details are implementation dependent.
+// Validity is not part of the protobuf data model, and may not
+// be preserved in marshaling or other operations.
+func (x *fastReflection_MsgIntentAuctionBid) IsValid() bool {
+	return x != nil
+}
+
+// ProtoMethods returns optional fastReflectionFeature-path implementations of various operations.
+// This method may return nil.
+//
+// The returned methods type is identical to
+// "google.golang.org/protobuf/runtime/protoiface".Methods.
+// Consult the protoiface package documentation for details.
+func (x *fastReflection_MsgIntentAuctionBid) ProtoMethods() *protoiface.Methods {
+	size := func(input protoiface.SizeInput) protoiface.SizeOutput {
+		x := input.Message.Interface().(*MsgIntentAuctionBid)
+		if x == nil {
+			return protoiface.SizeOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Size:              0,
+			}
+		}
+		options := runtime.SizeInputToOptions(input)
+		_ = options
+		var n int
+		var l int
+		_ = l
+		if x.Tx != nil {
+			l = options.Size(x.Tx)
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		l = len(x.IntentTxId)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		l = len(x.Signer)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		if x.unknownFields != nil {
+			n += len(x.unknownFields)
+		}
+		return protoiface.SizeOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Size:              n,
+		}
+	}
+
+	marshal := func(input protoiface.MarshalInput) (protoiface.MarshalOutput, error) {
+		x := input.Message.Interface().(*MsgIntentAuctionBid)
+		if x == nil {
+			return protoiface.MarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Buf:               input.Buf,
+			}, nil
+		}
+		options := runtime.MarshalInputToOptions(input)
+		_ = options
+		size := options.Size(x)
+		dAtA := make([]byte, size)
+		i := len(dAtA)
+		_ = i
+		var l int
+		_ = l
+		if x.unknownFields != nil {
+			i -= len(x.unknownFields)
+			copy(dAtA[i:], x.unknownFields)
+		}
+		if len(x.Signer) > 0 {
+			i -= len(x.Signer)
+			copy(dAtA[i:], x.Signer)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.Signer)))
+			i--
+			dAtA[i] = 0x1a
+		}
+		if len(x.IntentTxId) > 0 {
+			i -= len(x.IntentTxId)
+			copy(dAtA[i:], x.IntentTxId)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.IntentTxId)))
+			i--
+			dAtA[i] = 0x12
+		}
+		if x.Tx != nil {
+			encoded, err := options.Marshal(x.Tx)
+			if err != nil {
+				return protoiface.MarshalOutput{
+					NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+					Buf:               input.Buf,
+				}, err
+			}
+			i -= len(encoded)
+			copy(dAtA[i:], encoded)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(encoded)))
+			i--
+			dAtA[i] = 0xa
+		}
+		if input.Buf != nil {
+			input.Buf = append(input.Buf, dAtA...)
+		} else {
+			input.Buf = dAtA
+		}
+		return protoiface.MarshalOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Buf:               input.Buf,
+		}, nil
+	}
+	unmarshal := func(input protoiface.UnmarshalInput) (protoiface.UnmarshalOutput, error) {
+		x := input.Message.Interface().(*MsgIntentAuctionBid)
+		if x == nil {
+			return protoiface.UnmarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Flags:             input.Flags,
+			}, nil
+		}
+		options := runtime.UnmarshalInputToOptions(input)
+		_ = options
+		dAtA := input.Buf
+		l := len(dAtA)
+		iNdEx := 0
+		for iNdEx < l {
+			preIndex := iNdEx
+			var wire uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				wire |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			fieldNum := int32(wire >> 3)
+			wireType := int(wire & 0x7)
+			if wireType == 4 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: MsgIntentAuctionBid: wiretype end group for non-group")
+			}
+			if fieldNum <= 0 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: MsgIntentAuctionBid: illegal tag %d (wire type %d)", fieldNum, wire)
+			}
+			switch fieldNum {
+			case 1:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Tx", wireType)
+				}
+				var msglen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					msglen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if msglen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + msglen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				if x.Tx == nil {
+					x.Tx = &common.Tx{}
+				}
+				if err := options.Unmarshal(dAtA[iNdEx:postIndex], x.Tx); err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				iNdEx = postIndex
+			case 2:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field IntentTxId", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.IntentTxId = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 3:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Signer", wireType)
+				}
+				var byteLen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					byteLen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if byteLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + byteLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.Signer = append(x.Signer[:0], dAtA[iNdEx:postIndex]...)
+				if x.Signer == nil {
+					x.Signer = []byte{}
+				}
+				iNdEx = postIndex
+			default:
+				iNdEx = preIndex
+				skippy, err := runtime.Skip(dAtA[iNdEx:])
+				if err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				if (skippy < 0) || (iNdEx+skippy) < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if (iNdEx + skippy) > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				if !options.DiscardUnknown {
+					x.unknownFields = append(x.unknownFields, dAtA[iNdEx:iNdEx+skippy]...)
+				}
+				iNdEx += skippy
+			}
+		}
+
+		if iNdEx > l {
+			return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+		}
+		return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, nil
+	}
+	return &protoiface.Methods{
+		NoUnkeyedLiterals: struct{}{},
+		Flags:             protoiface.SupportMarshalDeterministic | protoiface.SupportUnmarshalDiscardUnknown,
+		Size:              size,
+		Marshal:           marshal,
+		Unmarshal:         unmarshal,
+		Merge:             nil,
+		CheckInitialized:  nil,
+	}
+}
+
 // Code generated by protoc-gen-go. DO NOT EDIT.
 // versions:
 // 	protoc-gen-go v1.27.0
@@ -2252,6 +2817,57 @@ func (x *MsgIntentSolve) GetSigner() []byte {
 	return nil
 }
 
+type MsgIntentAuctionBid struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Tx         *common.Tx `protobuf:"bytes,1,opt,name=tx,proto3" json:"tx,omitempty"`
+	IntentTxId string     `protobuf:"bytes,2,opt,name=intent_tx_id,json=intentTxId,proto3" json:"intent_tx_id,omitempty"`
+	Signer     []byte     `protobuf:"bytes,3,opt,name=signer,proto3" json:"signer,omitempty"`
+}
+
+func (x *MsgIntentAuctionBid) Reset() {
+	*x = MsgIntentAuctionBid{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_types_msg_intent_proto_msgTypes[3]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *MsgIntentAuctionBid) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MsgIntentAuctionBid) ProtoMessage() {}
+
+// Deprecated: Use MsgIntentAuctionBid.ProtoReflect.Descriptor instead.
+func (*MsgIntentAuctionBid) Descriptor() ([]byte, []int) {
+	return file_types_msg_intent_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *MsgIntentAuctionBid) GetTx() *common.Tx {
+	if x != nil {
+		return x.Tx
+	}
+	return nil
+}
+
+func (x *MsgIntentAuctionBid) GetIntentTxId() string {
+	if x != nil {
+		return x.IntentTxId
+	}
+	return ""
+}
+
+func (x *MsgIntentAuctionBid) GetSigner() []byte {
+	if x != nil {
+		return x.Signer
+	}
+	return nil
+}
+
 var File_types_msg_intent_proto protoreflect.FileDescriptor
 
 var file_types_msg_intent_proto_rawDesc = []byte{
@@ -2340,15 +2956,33 @@ var file_types_msg_intent_proto_rawDesc = []byte{
 	0x63, 0x68, 0x33, 0x32, 0x52, 0x06, 0x73, 0x69, 0x67, 0x6e, 0x65, 0x72, 0x3a, 0x28, 0x82, 0xe7,
 	0xb0, 0x2a, 0x06, 0x73, 0x69, 0x67, 0x6e, 0x65, 0x72, 0x8a, 0xe7, 0xb0, 0x2a, 0x18, 0x74, 0x68,
 	0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x4d, 0x73, 0x67, 0x49, 0x6e, 0x74, 0x65, 0x6e,
-	0x74, 0x53, 0x6f, 0x6c, 0x76, 0x65, 0x42, 0x7b, 0x0a, 0x09, 0x63, 0x6f, 0x6d, 0x2e, 0x74, 0x79,
-	0x70, 0x65, 0x73, 0x42, 0x0e, 0x4d, 0x73, 0x67, 0x49, 0x6e, 0x74, 0x65, 0x6e, 0x74, 0x50, 0x72,
-	0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x2a, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63, 0x6f,
-	0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74, 0x68, 0x6f, 0x72,
-	0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x74, 0x79, 0x70, 0x65,
-	0x73, 0xa2, 0x02, 0x03, 0x54, 0x58, 0x58, 0xaa, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xca,
-	0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xe2, 0x02, 0x11, 0x54, 0x79, 0x70, 0x65, 0x73, 0x5c,
-	0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x05, 0x54, 0x79,
-	0x70, 0x65, 0x73, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x74, 0x53, 0x6f, 0x6c, 0x76, 0x65, 0x22, 0x9e, 0x02, 0x0a, 0x13, 0x4d, 0x73, 0x67, 0x49, 0x6e,
+	0x74, 0x65, 0x6e, 0x74, 0x41, 0x75, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x42, 0x69, 0x64, 0x12, 0x20,
+	0x0a, 0x02, 0x74, 0x78, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x0a, 0x2e, 0x63, 0x6f, 0x6d,
+	0x6d, 0x6f, 0x6e, 0x2e, 0x54, 0x78, 0x42, 0x04, 0xc8, 0xde, 0x1f, 0x00, 0x52, 0x02, 0x74, 0x78,
+	0x12, 0x60, 0x0a, 0x0c, 0x69, 0x6e, 0x74, 0x65, 0x6e, 0x74, 0x5f, 0x74, 0x78, 0x5f, 0x69, 0x64,
+	0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x42, 0x3e, 0xe2, 0xde, 0x1f, 0x0a, 0x49, 0x6e, 0x74, 0x65,
+	0x6e, 0x74, 0x54, 0x78, 0x49, 0x44, 0xfa, 0xde, 0x1f, 0x2c, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62,
+	0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74,
+	0x68, 0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x63, 0x6f, 0x6d, 0x6d, 0x6f,
+	0x6e, 0x2e, 0x54, 0x78, 0x49, 0x44, 0x52, 0x0a, 0x69, 0x6e, 0x74, 0x65, 0x6e, 0x74, 0x54, 0x78,
+	0x49, 0x64, 0x12, 0x54, 0x0a, 0x06, 0x73, 0x69, 0x67, 0x6e, 0x65, 0x72, 0x18, 0x03, 0x20, 0x01,
+	0x28, 0x0c, 0x42, 0x3c, 0xfa, 0xde, 0x1f, 0x2d, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63,
+	0x6f, 0x6d, 0x2f, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x2f, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73,
+	0x2d, 0x73, 0x64, 0x6b, 0x2f, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2e, 0x41, 0x63, 0x63, 0x41, 0x64,
+	0x64, 0x72, 0x65, 0x73, 0x73, 0x9a, 0xe7, 0xb0, 0x2a, 0x06, 0x62, 0x65, 0x63, 0x68, 0x33, 0x32,
+	0x52, 0x06, 0x73, 0x69, 0x67, 0x6e, 0x65, 0x72, 0x3a, 0x2d, 0x82, 0xe7, 0xb0, 0x2a, 0x06, 0x73,
+	0x69, 0x67, 0x6e, 0x65, 0x72, 0x8a, 0xe7, 0xb0, 0x2a, 0x1d, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68,
+	0x61, 0x69, 0x6e, 0x2f, 0x4d, 0x73, 0x67, 0x49, 0x6e, 0x74, 0x65, 0x6e, 0x74, 0x41, 0x75, 0x63,
+	0x74, 0x69, 0x6f, 0x6e, 0x42, 0x69, 0x64, 0x42, 0x7b, 0x0a, 0x09, 0x63, 0x6f, 0x6d, 0x2e, 0x74,
+	0x79, 0x70, 0x65, 0x73, 0x42, 0x0e, 0x4d, 0x73, 0x67, 0x49, 0x6e, 0x74, 0x65, 0x6e, 0x74, 0x50,
+	0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x2a, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63,
+	0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74, 0x68, 0x6f,
+	0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x74, 0x79, 0x70,
+	0x65, 0x73, 0xa2, 0x02, 0x03, 0x54, 0x58, 0x58, 0xaa, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73,
+	0xca, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xe2, 0x02, 0x11, 0x54, 0x79, 0x70, 0x65, 0x73,
+	0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x05, 0x54,
+	0x79, 0x70, 0x65, 0x73, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -2363,24 +2997,26 @@ func file_types_msg_intent_proto_rawDescGZIP() []byte {
 	return file_types_msg_intent_proto_rawDescData
 }
 
-var file_types_msg_intent_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_types_msg_intent_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_types_msg_intent_proto_goTypes = []interface{}{
-	(*MsgIntentOpen)(nil),   // 0: types.MsgIntentOpen
-	(*MsgIntentCancel)(nil), // 1: types.MsgIntentCancel
-	(*MsgIntentSolve)(nil),  // 2: types.MsgIntentSolve
-	(*common.Tx)(nil),       // 3: common.Tx
-	(*common.Asset)(nil),    // 4: common.Asset
+	(*MsgIntentOpen)(nil),       // 0: types.MsgIntentOpen
+	(*MsgIntentCancel)(nil),     // 1: types.MsgIntentCancel
+	(*MsgIntentSolve)(nil),      // 2: types.MsgIntentSolve
+	(*MsgIntentAuctionBid)(nil), // 3: types.MsgIntentAuctionBid
+	(*common.Tx)(nil),           // 4: common.Tx
+	(*common.Asset)(nil),        // 5: common.Asset
 }
 var file_types_msg_intent_proto_depIdxs = []int32{
-	3, // 0: types.MsgIntentOpen.tx:type_name -> common.Tx
-	4, // 1: types.MsgIntentOpen.target_asset:type_name -> common.Asset
-	3, // 2: types.MsgIntentCancel.tx:type_name -> common.Tx
-	3, // 3: types.MsgIntentSolve.tx:type_name -> common.Tx
-	4, // [4:4] is the sub-list for method output_type
-	4, // [4:4] is the sub-list for method input_type
-	4, // [4:4] is the sub-list for extension type_name
-	4, // [4:4] is the sub-list for extension extendee
-	0, // [0:4] is the sub-list for field type_name
+	4, // 0: types.MsgIntentOpen.tx:type_name -> common.Tx
+	5, // 1: types.MsgIntentOpen.target_asset:type_name -> common.Asset
+	4, // 2: types.MsgIntentCancel.tx:type_name -> common.Tx
+	4, // 3: types.MsgIntentSolve.tx:type_name -> common.Tx
+	4, // 4: types.MsgIntentAuctionBid.tx:type_name -> common.Tx
+	5, // [5:5] is the sub-list for method output_type
+	5, // [5:5] is the sub-list for method input_type
+	5, // [5:5] is the sub-list for extension type_name
+	5, // [5:5] is the sub-list for extension extendee
+	0, // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_types_msg_intent_proto_init() }
@@ -2425,6 +3061,18 @@ func file_types_msg_intent_proto_init() {
 				return nil
 			}
 		}
+		file_types_msg_intent_proto_msgTypes[3].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*MsgIntentAuctionBid); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -2432,7 +3080,7 @@ func file_types_msg_intent_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_types_msg_intent_proto_rawDesc,
 			NumEnums:      0,
-			NumMessages:   3,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -23,6 +23,115 @@ import (
 // IntentsApiService IntentsApi service
 type IntentsApiService service
 
+type ApiActiveIntentAuctionsRequest struct {
+	ctx context.Context
+	ApiService *IntentsApiService
+	height *int64
+}
+
+// optional block height, defaults to current tip
+func (r ApiActiveIntentAuctionsRequest) Height(height int64) ApiActiveIntentAuctionsRequest {
+	r.height = &height
+	return r
+}
+
+func (r ApiActiveIntentAuctionsRequest) Execute() (*QueryActiveIntentAuctionsResponse, *http.Response, error) {
+	return r.ApiService.ActiveIntentAuctionsExecute(r)
+}
+
+/*
+ActiveIntentAuctions Method for ActiveIntentAuctions
+
+Returns all active intent auctions with their bids.
+
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @return ApiActiveIntentAuctionsRequest
+*/
+func (a *IntentsApiService) ActiveIntentAuctions(ctx context.Context) ApiActiveIntentAuctionsRequest {
+	return ApiActiveIntentAuctionsRequest{
+		ApiService: a,
+		ctx: ctx,
+	}
+}
+
+// Execute executes the request
+//  @return QueryActiveIntentAuctionsResponse
+func (a *IntentsApiService) ActiveIntentAuctionsExecute(r ApiActiveIntentAuctionsRequest) (*QueryActiveIntentAuctionsResponse, *http.Response, error) {
+	var (
+		localVarHTTPMethod   = http.MethodGet
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  *QueryActiveIntentAuctionsResponse
+	)
+
+	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "IntentsApiService.ActiveIntentAuctions")
+	if err != nil {
+		return localVarReturnValue, nil, &GenericOpenAPIError{error: err.Error()}
+	}
+
+	localVarPath := localBasePath + "/thorchain/intent/auctions"
+
+	localVarHeaderParams := make(map[string]string)
+	localVarQueryParams := url.Values{}
+	localVarFormParams := url.Values{}
+
+	if r.height != nil {
+		localVarQueryParams.Add("height", parameterToString(*r.height, ""))
+	}
+	// to determine the Content-Type header
+	localVarHTTPContentTypes := []string{}
+
+	// set Content-Type header
+	localVarHTTPContentType := selectHeaderContentType(localVarHTTPContentTypes)
+	if localVarHTTPContentType != "" {
+		localVarHeaderParams["Content-Type"] = localVarHTTPContentType
+	}
+
+	// to determine the Accept header
+	localVarHTTPHeaderAccepts := []string{"application/json"}
+
+	// set Accept header
+	localVarHTTPHeaderAccept := selectHeaderAccept(localVarHTTPHeaderAccepts)
+	if localVarHTTPHeaderAccept != "" {
+		localVarHeaderParams["Accept"] = localVarHTTPHeaderAccept
+	}
+	req, err := a.client.prepareRequest(r.ctx, localVarPath, localVarHTTPMethod, localVarPostBody, localVarHeaderParams, localVarQueryParams, localVarFormParams, formFiles)
+	if err != nil {
+		return localVarReturnValue, nil, err
+	}
+
+	localVarHTTPResponse, err := a.client.callAPI(req)
+	if err != nil || localVarHTTPResponse == nil {
+		return localVarReturnValue, localVarHTTPResponse, err
+	}
+
+	localVarBody, err := ioutil.ReadAll(localVarHTTPResponse.Body)
+	localVarHTTPResponse.Body.Close()
+	localVarHTTPResponse.Body = ioutil.NopCloser(bytes.NewBuffer(localVarBody))
+	if err != nil {
+		return localVarReturnValue, localVarHTTPResponse, err
+	}
+
+	if localVarHTTPResponse.StatusCode >= 300 {
+		newErr := &GenericOpenAPIError{
+			body:  localVarBody,
+			error: localVarHTTPResponse.Status,
+		}
+		return localVarReturnValue, localVarHTTPResponse, newErr
+	}
+
+	err = a.client.decode(&localVarReturnValue, localVarBody, localVarHTTPResponse.Header.Get("Content-Type"))
+	if err != nil {
+		newErr := &GenericOpenAPIError{
+			body:  localVarBody,
+			error: err.Error(),
+		}
+		return localVarReturnValue, localVarHTTPResponse, newErr
+	}
+
+	return localVarReturnValue, localVarHTTPResponse, nil
+}
+
 type ApiActiveIntentsRequest struct {
 	ctx context.Context
 	ApiService *IntentsApiService
@@ -182,6 +291,119 @@ func (a *IntentsApiService) IntentExecute(r ApiIntentRequest) (*QueryIntentRespo
 	}
 
 	localVarPath := localBasePath + "/thorchain/intent/{tx_id}"
+	localVarPath = strings.Replace(localVarPath, "{"+"tx_id"+"}", url.PathEscape(parameterToString(r.txId, "")), -1)
+
+	localVarHeaderParams := make(map[string]string)
+	localVarQueryParams := url.Values{}
+	localVarFormParams := url.Values{}
+
+	if r.height != nil {
+		localVarQueryParams.Add("height", parameterToString(*r.height, ""))
+	}
+	// to determine the Content-Type header
+	localVarHTTPContentTypes := []string{}
+
+	// set Content-Type header
+	localVarHTTPContentType := selectHeaderContentType(localVarHTTPContentTypes)
+	if localVarHTTPContentType != "" {
+		localVarHeaderParams["Content-Type"] = localVarHTTPContentType
+	}
+
+	// to determine the Accept header
+	localVarHTTPHeaderAccepts := []string{"application/json"}
+
+	// set Accept header
+	localVarHTTPHeaderAccept := selectHeaderAccept(localVarHTTPHeaderAccepts)
+	if localVarHTTPHeaderAccept != "" {
+		localVarHeaderParams["Accept"] = localVarHTTPHeaderAccept
+	}
+	req, err := a.client.prepareRequest(r.ctx, localVarPath, localVarHTTPMethod, localVarPostBody, localVarHeaderParams, localVarQueryParams, localVarFormParams, formFiles)
+	if err != nil {
+		return localVarReturnValue, nil, err
+	}
+
+	localVarHTTPResponse, err := a.client.callAPI(req)
+	if err != nil || localVarHTTPResponse == nil {
+		return localVarReturnValue, localVarHTTPResponse, err
+	}
+
+	localVarBody, err := ioutil.ReadAll(localVarHTTPResponse.Body)
+	localVarHTTPResponse.Body.Close()
+	localVarHTTPResponse.Body = ioutil.NopCloser(bytes.NewBuffer(localVarBody))
+	if err != nil {
+		return localVarReturnValue, localVarHTTPResponse, err
+	}
+
+	if localVarHTTPResponse.StatusCode >= 300 {
+		newErr := &GenericOpenAPIError{
+			body:  localVarBody,
+			error: localVarHTTPResponse.Status,
+		}
+		return localVarReturnValue, localVarHTTPResponse, newErr
+	}
+
+	err = a.client.decode(&localVarReturnValue, localVarBody, localVarHTTPResponse.Header.Get("Content-Type"))
+	if err != nil {
+		newErr := &GenericOpenAPIError{
+			body:  localVarBody,
+			error: err.Error(),
+		}
+		return localVarReturnValue, localVarHTTPResponse, newErr
+	}
+
+	return localVarReturnValue, localVarHTTPResponse, nil
+}
+
+type ApiIntentAuctionRequest struct {
+	ctx context.Context
+	ApiService *IntentsApiService
+	txId string
+	height *int64
+}
+
+// optional block height, defaults to current tip
+func (r ApiIntentAuctionRequest) Height(height int64) ApiIntentAuctionRequest {
+	r.height = &height
+	return r
+}
+
+func (r ApiIntentAuctionRequest) Execute() (*QueryIntentAuctionResponse, *http.Response, error) {
+	return r.ApiService.IntentAuctionExecute(r)
+}
+
+/*
+IntentAuction Method for IntentAuction
+
+Returns the auction information for the provided intent transaction ID, including all bids.
+
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @param txId The transaction ID of the intent
+ @return ApiIntentAuctionRequest
+*/
+func (a *IntentsApiService) IntentAuction(ctx context.Context, txId string) ApiIntentAuctionRequest {
+	return ApiIntentAuctionRequest{
+		ApiService: a,
+		ctx: ctx,
+		txId: txId,
+	}
+}
+
+// Execute executes the request
+//  @return QueryIntentAuctionResponse
+func (a *IntentsApiService) IntentAuctionExecute(r ApiIntentAuctionRequest) (*QueryIntentAuctionResponse, *http.Response, error) {
+	var (
+		localVarHTTPMethod   = http.MethodGet
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  *QueryIntentAuctionResponse
+	)
+
+	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "IntentsApiService.IntentAuction")
+	if err != nil {
+		return localVarReturnValue, nil, &GenericOpenAPIError{error: err.Error()}
+	}
+
+	localVarPath := localBasePath + "/thorchain/intent/auction/{tx_id}"
 	localVarPath = strings.Replace(localVarPath, "{"+"tx_id"+"}", url.PathEscape(parameterToString(r.txId, "")), -1)
 
 	localVarHeaderParams := make(map[string]string)

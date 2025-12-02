@@ -11,6 +11,13 @@ enum IntentStatus {
   IntentCancelled = 1;
   IntentCompleted = 2;
   IntentExpired = 3;
+  IntentAuctioning = 4;
+}
+
+enum IntentAuctionStatus {
+  AuctionActive = 0;
+  AuctionCompleted = 1;
+  AuctionCancelled = 2;
 }
 
 message Intent {
@@ -75,5 +82,62 @@ message ActiveIntentIndex {
   repeated string active_intent_tx_ids = 1 [
     (gogoproto.casttype) = "gitlab.com/thorchain/thornode/v3/common.TxID",
     (gogoproto.customname) = "ActiveIntentTxIDs"
+  ];
+}
+
+// IntentAuction represents an auction for an expired intent
+message IntentAuction {
+  string intent_tx_id = 1 [
+    (gogoproto.casttype) = "gitlab.com/thorchain/thornode/v3/common.TxID",
+    (gogoproto.customname) = "IntentTxID"
+  ];
+  common.Coin auction_amount = 2 [ (gogoproto.nullable) = false ];
+  common.Coin remaining_amount = 3 [ (gogoproto.nullable) = false ];
+  common.Asset bid_asset = 4 [
+    (gogoproto.nullable) = false,
+    (gogoproto.customtype) = "gitlab.com/thorchain/thornode/v3/common.Asset"
+  ];
+  string min_bid = 5 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+    (gogoproto.nullable) = false
+  ];
+  int64 start_height = 6;
+  int64 expiry_height = 7;
+  IntentAuctionStatus status = 8;
+  string owner_address = 9
+      [ (gogoproto.casttype) =
+            "gitlab.com/thorchain/thornode/v3/common.Address" ];
+}
+
+// IntentAuctionBid represents a bid on an intent auction
+message IntentAuctionBid {
+  string bid_tx_id = 1 [
+    (gogoproto.casttype) = "gitlab.com/thorchain/thornode/v3/common.TxID",
+    (gogoproto.customname) = "BidTxID"
+  ];
+  string intent_tx_id = 2 [
+    (gogoproto.casttype) = "gitlab.com/thorchain/thornode/v3/common.TxID",
+    (gogoproto.customname) = "IntentTxID"
+  ];
+  string bidder_address = 3
+      [ (gogoproto.casttype) =
+            "gitlab.com/thorchain/thornode/v3/common.Address" ];
+  common.Coin bid_amount = 4 [ (gogoproto.nullable) = false ];
+  int64 submit_height = 5;
+}
+
+// IntentAuctionBidIndex stores list of bid TxIDs for an auction
+message IntentAuctionBidIndex {
+  repeated string bid_tx_ids = 1 [
+    (gogoproto.casttype) = "gitlab.com/thorchain/thornode/v3/common.TxID",
+    (gogoproto.customname) = "BidTxIDs"
+  ];
+}
+
+// ActiveAuctionIndex stores all active auction intent TxIDs
+message ActiveAuctionIndex {
+  repeated string active_auction_tx_ids = 1 [
+    (gogoproto.casttype) = "gitlab.com/thorchain/thornode/v3/common.TxID",
+    (gogoproto.customname) = "ActiveAuctionTxIDs"
   ];
 }

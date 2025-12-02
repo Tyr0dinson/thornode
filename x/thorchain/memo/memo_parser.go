@@ -133,6 +133,8 @@ func (p *parser) parse() (mem Memo, err error) {
 		return p.ParseIntentCancelMemo()
 	case TxIntentSolve:
 		return p.ParseIntentSolveMemo()
+	case TxIntentAuctionBid:
+		return p.ParseIntentAuctionBidMemo()
 
 	default:
 		return EmptyMemo, fmt.Errorf("TxType not supported: %s", p.getType().String())

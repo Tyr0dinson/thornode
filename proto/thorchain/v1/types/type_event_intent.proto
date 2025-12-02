@@ -90,3 +90,65 @@ message EventIntentExpire {
             "gitlab.com/thorchain/thornode/v3/common.Address" ];
   bool abandoned = 4;
 }
+
+message EventIntentAuctionStart {
+  string intent_tx_id = 1 [
+    (gogoproto.casttype) = "gitlab.com/thorchain/thornode/v3/common.TxID",
+    (gogoproto.customname) = "IntentTxID"
+  ];
+  common.Coin auction_amount = 2 [ (gogoproto.nullable) = false ];
+  common.Coin remaining_amount = 3 [ (gogoproto.nullable) = false ];
+  common.Asset bid_asset = 4 [
+    (gogoproto.nullable) = false,
+    (gogoproto.customtype) = "gitlab.com/thorchain/thornode/v3/common.Asset"
+  ];
+  string min_bid = 5 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+    (gogoproto.nullable) = false
+  ];
+  int64 expiry_height = 6;
+}
+
+message EventIntentAuctionBid {
+  string bid_tx_id = 1 [
+    (gogoproto.casttype) = "gitlab.com/thorchain/thornode/v3/common.TxID",
+    (gogoproto.customname) = "BidTxID"
+  ];
+  string intent_tx_id = 2 [
+    (gogoproto.casttype) = "gitlab.com/thorchain/thornode/v3/common.TxID",
+    (gogoproto.customname) = "IntentTxID"
+  ];
+  string bidder_address = 3
+      [ (gogoproto.casttype) =
+            "gitlab.com/thorchain/thornode/v3/common.Address" ];
+  string bid_amount = 4 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+    (gogoproto.nullable) = false
+  ];
+  bool is_top_up = 5;
+}
+
+message EventIntentAuctionComplete {
+  string intent_tx_id = 1 [
+    (gogoproto.casttype) = "gitlab.com/thorchain/thornode/v3/common.TxID",
+    (gogoproto.customname) = "IntentTxID"
+  ];
+  string winner_bid_tx_id = 2 [
+    (gogoproto.casttype) = "gitlab.com/thorchain/thornode/v3/common.TxID",
+    (gogoproto.customname) = "WinnerBidTxID"
+  ];
+  string winner_address = 3
+      [ (gogoproto.casttype) =
+            "gitlab.com/thorchain/thornode/v3/common.Address" ];
+  common.Coin winning_bid = 4 [ (gogoproto.nullable) = false ];
+  common.Coin auction_amount = 5 [ (gogoproto.nullable) = false ];
+  common.Coin owner_refund = 6 [ (gogoproto.nullable) = false ];
+}
+
+message EventIntentAuctionCancel {
+  string intent_tx_id = 1 [
+    (gogoproto.casttype) = "gitlab.com/thorchain/thornode/v3/common.TxID",
+    (gogoproto.customname) = "IntentTxID"
+  ];
+  bool abandoned = 2;
+}

@@ -941,6 +941,34 @@ func (k KVStoreDummy) GetIntentSolvesByMatchHeight(_ cosmos.Context, _ int64) ([
 	return nil, kaboom
 }
 
+// IntentAuction keeper methods
+func (k KVStoreDummy) SetIntentAuction(_ cosmos.Context, _ types.IntentAuction) {}
+
+func (k KVStoreDummy) GetIntentAuction(_ cosmos.Context, _ common.TxID) (types.IntentAuction, error) {
+	return types.IntentAuction{}, kaboom
+}
+func (k KVStoreDummy) IntentAuctionExists(_ cosmos.Context, _ common.TxID) bool { return false }
+func (k KVStoreDummy) RemoveIntentAuction(_ cosmos.Context, _ common.TxID)      {}
+func (k KVStoreDummy) GetActiveAuctions(_ cosmos.Context) ([]types.IntentAuction, error) {
+	return nil, kaboom
+}
+
+// IntentAuctionBid keeper methods
+func (k KVStoreDummy) SetIntentAuctionBid(_ cosmos.Context, _ types.IntentAuctionBid) {}
+
+func (k KVStoreDummy) GetIntentAuctionBid(_ cosmos.Context, _ common.TxID) (types.IntentAuctionBid, error) {
+	return types.IntentAuctionBid{}, kaboom
+}
+func (k KVStoreDummy) IntentAuctionBidExists(_ cosmos.Context, _ common.TxID) bool { return false }
+func (k KVStoreDummy) RemoveIntentAuctionBid(_ cosmos.Context, _ common.TxID)      {}
+func (k KVStoreDummy) GetIntentAuctionBidsByIntentID(_ cosmos.Context, _ common.TxID) ([]types.IntentAuctionBid, error) {
+	return nil, kaboom
+}
+
+func (k KVStoreDummy) GetBidderBidForAuction(_ cosmos.Context, _ common.TxID, _ common.Address) (types.IntentAuctionBid, error) {
+	return types.IntentAuctionBid{}, kaboom
+}
+
 // a mock cosmos.Iterator implementation for testing purposes
 type DummyIterator struct {
 	cosmos.Iterator
