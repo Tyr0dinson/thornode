@@ -85,6 +85,7 @@ func getInternalHandlerMapping(mgr Manager) map[string]MsgHandler {
 	m[sdk.MsgTypeURL(&MsgIntentOpen{})] = NewIntentOpenHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgIntentCancel{})] = NewIntentCancelHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgIntentSolve{})] = NewIntentSolveHandler(mgr)
+	m[sdk.MsgTypeURL(&MsgIntentAuctionBid{})] = NewIntentAuctionBidHandler(mgr)
 	return m
 }
 
@@ -166,6 +167,10 @@ func getMsgIntentSolveFromMemo(memo IntentSolveMemo, tx ObservedTx, signer cosmo
 	return NewMsgIntentSolve(tx.Tx, memo.GetIntentTxID(), signer), nil
 }
 
+func getMsgIntentAuctionBidFromMemo(memo IntentAuctionBidMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
+	return NewMsgIntentAuctionBid(tx.Tx, memo.GetIntentTxID(), signer), nil
+}
+
 func getMsgRefundFromMemo(memo RefundMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
 	return NewMsgRefundTx(tx, memo.GetTxID(), signer), nil
 }
@@ -245,6 +250,8 @@ func processOneTxIn(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, sig
 		newMsg, err = getMsgIntentCancelFromMemo(m, tx, signer)
 	case IntentSolveMemo:
 		newMsg, err = getMsgIntentSolveFromMemo(m, tx, signer)
+	case IntentAuctionBidMemo:
+		newMsg, err = getMsgIntentAuctionBidFromMemo(m, tx, signer)
 	case DonateMemo:
 		m.Asset = fuzzyAssetMatch(ctx, keeper, m.Asset)
 		newMsg, err = getMsgDonateFromMemo(m, tx, signer)

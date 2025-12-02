@@ -520,4 +520,19 @@ type KeeperIntent interface {
 	// Index methods for efficient lookups
 	GetIntentSolvesByIntentID(ctx cosmos.Context, intentTxID common.TxID) ([]types.IntentSolve, error)
 	GetIntentSolvesByMatchHeight(ctx cosmos.Context, height int64) ([]types.IntentSolve, error)
+
+	// IntentAuction methods
+	SetIntentAuction(ctx cosmos.Context, auction types.IntentAuction)
+	GetIntentAuction(ctx cosmos.Context, intentTxID common.TxID) (types.IntentAuction, error)
+	IntentAuctionExists(ctx cosmos.Context, intentTxID common.TxID) bool
+	RemoveIntentAuction(ctx cosmos.Context, intentTxID common.TxID)
+	GetActiveAuctions(ctx cosmos.Context) ([]types.IntentAuction, error)
+
+	// IntentAuctionBid methods
+	SetIntentAuctionBid(ctx cosmos.Context, bid types.IntentAuctionBid)
+	GetIntentAuctionBid(ctx cosmos.Context, bidTxID common.TxID) (types.IntentAuctionBid, error)
+	IntentAuctionBidExists(ctx cosmos.Context, bidTxID common.TxID) bool
+	RemoveIntentAuctionBid(ctx cosmos.Context, bidTxID common.TxID)
+	GetIntentAuctionBidsByIntentID(ctx cosmos.Context, intentTxID common.TxID) ([]types.IntentAuctionBid, error)
+	GetBidderBidForAuction(ctx cosmos.Context, intentTxID common.TxID, bidder common.Address) (types.IntentAuctionBid, error)
 }

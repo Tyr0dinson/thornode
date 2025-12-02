@@ -3559,6 +3559,2700 @@ func (x *fastReflection_EventIntentExpire) ProtoMethods() *protoiface.Methods {
 	}
 }
 
+var (
+	md_EventIntentAuctionStart                  protoreflect.MessageDescriptor
+	fd_EventIntentAuctionStart_intent_tx_id     protoreflect.FieldDescriptor
+	fd_EventIntentAuctionStart_auction_amount   protoreflect.FieldDescriptor
+	fd_EventIntentAuctionStart_remaining_amount protoreflect.FieldDescriptor
+	fd_EventIntentAuctionStart_bid_asset        protoreflect.FieldDescriptor
+	fd_EventIntentAuctionStart_min_bid          protoreflect.FieldDescriptor
+	fd_EventIntentAuctionStart_expiry_height    protoreflect.FieldDescriptor
+)
+
+func init() {
+	file_types_type_event_intent_proto_init()
+	md_EventIntentAuctionStart = File_types_type_event_intent_proto.Messages().ByName("EventIntentAuctionStart")
+	fd_EventIntentAuctionStart_intent_tx_id = md_EventIntentAuctionStart.Fields().ByName("intent_tx_id")
+	fd_EventIntentAuctionStart_auction_amount = md_EventIntentAuctionStart.Fields().ByName("auction_amount")
+	fd_EventIntentAuctionStart_remaining_amount = md_EventIntentAuctionStart.Fields().ByName("remaining_amount")
+	fd_EventIntentAuctionStart_bid_asset = md_EventIntentAuctionStart.Fields().ByName("bid_asset")
+	fd_EventIntentAuctionStart_min_bid = md_EventIntentAuctionStart.Fields().ByName("min_bid")
+	fd_EventIntentAuctionStart_expiry_height = md_EventIntentAuctionStart.Fields().ByName("expiry_height")
+}
+
+var _ protoreflect.Message = (*fastReflection_EventIntentAuctionStart)(nil)
+
+type fastReflection_EventIntentAuctionStart EventIntentAuctionStart
+
+func (x *EventIntentAuctionStart) ProtoReflect() protoreflect.Message {
+	return (*fastReflection_EventIntentAuctionStart)(x)
+}
+
+func (x *EventIntentAuctionStart) slowProtoReflect() protoreflect.Message {
+	mi := &file_types_type_event_intent_proto_msgTypes[5]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+var _fastReflection_EventIntentAuctionStart_messageType fastReflection_EventIntentAuctionStart_messageType
+var _ protoreflect.MessageType = fastReflection_EventIntentAuctionStart_messageType{}
+
+type fastReflection_EventIntentAuctionStart_messageType struct{}
+
+func (x fastReflection_EventIntentAuctionStart_messageType) Zero() protoreflect.Message {
+	return (*fastReflection_EventIntentAuctionStart)(nil)
+}
+func (x fastReflection_EventIntentAuctionStart_messageType) New() protoreflect.Message {
+	return new(fastReflection_EventIntentAuctionStart)
+}
+func (x fastReflection_EventIntentAuctionStart_messageType) Descriptor() protoreflect.MessageDescriptor {
+	return md_EventIntentAuctionStart
+}
+
+// Descriptor returns message descriptor, which contains only the protobuf
+// type information for the message.
+func (x *fastReflection_EventIntentAuctionStart) Descriptor() protoreflect.MessageDescriptor {
+	return md_EventIntentAuctionStart
+}
+
+// Type returns the message type, which encapsulates both Go and protobuf
+// type information. If the Go type information is not needed,
+// it is recommended that the message descriptor be used instead.
+func (x *fastReflection_EventIntentAuctionStart) Type() protoreflect.MessageType {
+	return _fastReflection_EventIntentAuctionStart_messageType
+}
+
+// New returns a newly allocated and mutable empty message.
+func (x *fastReflection_EventIntentAuctionStart) New() protoreflect.Message {
+	return new(fastReflection_EventIntentAuctionStart)
+}
+
+// Interface unwraps the message reflection interface and
+// returns the underlying ProtoMessage interface.
+func (x *fastReflection_EventIntentAuctionStart) Interface() protoreflect.ProtoMessage {
+	return (*EventIntentAuctionStart)(x)
+}
+
+// Range iterates over every populated field in an undefined order,
+// calling f for each field descriptor and value encountered.
+// Range returns immediately if f returns false.
+// While iterating, mutating operations may only be performed
+// on the current field descriptor.
+func (x *fastReflection_EventIntentAuctionStart) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
+	if x.IntentTxId != "" {
+		value := protoreflect.ValueOfString(x.IntentTxId)
+		if !f(fd_EventIntentAuctionStart_intent_tx_id, value) {
+			return
+		}
+	}
+	if x.AuctionAmount != nil {
+		value := protoreflect.ValueOfMessage(x.AuctionAmount.ProtoReflect())
+		if !f(fd_EventIntentAuctionStart_auction_amount, value) {
+			return
+		}
+	}
+	if x.RemainingAmount != nil {
+		value := protoreflect.ValueOfMessage(x.RemainingAmount.ProtoReflect())
+		if !f(fd_EventIntentAuctionStart_remaining_amount, value) {
+			return
+		}
+	}
+	if x.BidAsset != nil {
+		value := protoreflect.ValueOfMessage(x.BidAsset.ProtoReflect())
+		if !f(fd_EventIntentAuctionStart_bid_asset, value) {
+			return
+		}
+	}
+	if x.MinBid != "" {
+		value := protoreflect.ValueOfString(x.MinBid)
+		if !f(fd_EventIntentAuctionStart_min_bid, value) {
+			return
+		}
+	}
+	if x.ExpiryHeight != int64(0) {
+		value := protoreflect.ValueOfInt64(x.ExpiryHeight)
+		if !f(fd_EventIntentAuctionStart_expiry_height, value) {
+			return
+		}
+	}
+}
+
+// Has reports whether a field is populated.
+//
+// Some fields have the property of nullability where it is possible to
+// distinguish between the default value of a field and whether the field
+// was explicitly populated with the default value. Singular message fields,
+// member fields of a oneof, and proto2 scalar fields are nullable. Such
+// fields are populated only if explicitly set.
+//
+// In other cases (aside from the nullable cases above),
+// a proto3 scalar field is populated if it contains a non-zero value, and
+// a repeated field is populated if it is non-empty.
+func (x *fastReflection_EventIntentAuctionStart) Has(fd protoreflect.FieldDescriptor) bool {
+	switch fd.FullName() {
+	case "types.EventIntentAuctionStart.intent_tx_id":
+		return x.IntentTxId != ""
+	case "types.EventIntentAuctionStart.auction_amount":
+		return x.AuctionAmount != nil
+	case "types.EventIntentAuctionStart.remaining_amount":
+		return x.RemainingAmount != nil
+	case "types.EventIntentAuctionStart.bid_asset":
+		return x.BidAsset != nil
+	case "types.EventIntentAuctionStart.min_bid":
+		return x.MinBid != ""
+	case "types.EventIntentAuctionStart.expiry_height":
+		return x.ExpiryHeight != int64(0)
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.EventIntentAuctionStart"))
+		}
+		panic(fmt.Errorf("message types.EventIntentAuctionStart does not contain field %s", fd.FullName()))
+	}
+}
+
+// Clear clears the field such that a subsequent Has call reports false.
+//
+// Clearing an extension field clears both the extension type and value
+// associated with the given field number.
+//
+// Clear is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_EventIntentAuctionStart) Clear(fd protoreflect.FieldDescriptor) {
+	switch fd.FullName() {
+	case "types.EventIntentAuctionStart.intent_tx_id":
+		x.IntentTxId = ""
+	case "types.EventIntentAuctionStart.auction_amount":
+		x.AuctionAmount = nil
+	case "types.EventIntentAuctionStart.remaining_amount":
+		x.RemainingAmount = nil
+	case "types.EventIntentAuctionStart.bid_asset":
+		x.BidAsset = nil
+	case "types.EventIntentAuctionStart.min_bid":
+		x.MinBid = ""
+	case "types.EventIntentAuctionStart.expiry_height":
+		x.ExpiryHeight = int64(0)
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.EventIntentAuctionStart"))
+		}
+		panic(fmt.Errorf("message types.EventIntentAuctionStart does not contain field %s", fd.FullName()))
+	}
+}
+
+// Get retrieves the value for a field.
+//
+// For unpopulated scalars, it returns the default value, where
+// the default value of a bytes scalar is guaranteed to be a copy.
+// For unpopulated composite types, it returns an empty, read-only view
+// of the value; to obtain a mutable reference, use Mutable.
+func (x *fastReflection_EventIntentAuctionStart) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
+	switch descriptor.FullName() {
+	case "types.EventIntentAuctionStart.intent_tx_id":
+		value := x.IntentTxId
+		return protoreflect.ValueOfString(value)
+	case "types.EventIntentAuctionStart.auction_amount":
+		value := x.AuctionAmount
+		return protoreflect.ValueOfMessage(value.ProtoReflect())
+	case "types.EventIntentAuctionStart.remaining_amount":
+		value := x.RemainingAmount
+		return protoreflect.ValueOfMessage(value.ProtoReflect())
+	case "types.EventIntentAuctionStart.bid_asset":
+		value := x.BidAsset
+		return protoreflect.ValueOfMessage(value.ProtoReflect())
+	case "types.EventIntentAuctionStart.min_bid":
+		value := x.MinBid
+		return protoreflect.ValueOfString(value)
+	case "types.EventIntentAuctionStart.expiry_height":
+		value := x.ExpiryHeight
+		return protoreflect.ValueOfInt64(value)
+	default:
+		if descriptor.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.EventIntentAuctionStart"))
+		}
+		panic(fmt.Errorf("message types.EventIntentAuctionStart does not contain field %s", descriptor.FullName()))
+	}
+}
+
+// Set stores the value for a field.
+//
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType.
+// When setting a composite type, it is unspecified whether the stored value
+// aliases the source's memory in any way. If the composite value is an
+// empty, read-only value, then it panics.
+//
+// Set is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_EventIntentAuctionStart) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
+	switch fd.FullName() {
+	case "types.EventIntentAuctionStart.intent_tx_id":
+		x.IntentTxId = value.Interface().(string)
+	case "types.EventIntentAuctionStart.auction_amount":
+		x.AuctionAmount = value.Message().Interface().(*common.Coin)
+	case "types.EventIntentAuctionStart.remaining_amount":
+		x.RemainingAmount = value.Message().Interface().(*common.Coin)
+	case "types.EventIntentAuctionStart.bid_asset":
+		x.BidAsset = value.Message().Interface().(*common.Asset)
+	case "types.EventIntentAuctionStart.min_bid":
+		x.MinBid = value.Interface().(string)
+	case "types.EventIntentAuctionStart.expiry_height":
+		x.ExpiryHeight = value.Int()
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.EventIntentAuctionStart"))
+		}
+		panic(fmt.Errorf("message types.EventIntentAuctionStart does not contain field %s", fd.FullName()))
+	}
+}
+
+// Mutable returns a mutable reference to a composite type.
+//
+// If the field is unpopulated, it may allocate a composite value.
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType
+// if not already stored.
+// It panics if the field does not contain a composite type.
+//
+// Mutable is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_EventIntentAuctionStart) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "types.EventIntentAuctionStart.auction_amount":
+		if x.AuctionAmount == nil {
+			x.AuctionAmount = new(common.Coin)
+		}
+		return protoreflect.ValueOfMessage(x.AuctionAmount.ProtoReflect())
+	case "types.EventIntentAuctionStart.remaining_amount":
+		if x.RemainingAmount == nil {
+			x.RemainingAmount = new(common.Coin)
+		}
+		return protoreflect.ValueOfMessage(x.RemainingAmount.ProtoReflect())
+	case "types.EventIntentAuctionStart.bid_asset":
+		if x.BidAsset == nil {
+			x.BidAsset = new(common.Asset)
+		}
+		return protoreflect.ValueOfMessage(x.BidAsset.ProtoReflect())
+	case "types.EventIntentAuctionStart.intent_tx_id":
+		panic(fmt.Errorf("field intent_tx_id of message types.EventIntentAuctionStart is not mutable"))
+	case "types.EventIntentAuctionStart.min_bid":
+		panic(fmt.Errorf("field min_bid of message types.EventIntentAuctionStart is not mutable"))
+	case "types.EventIntentAuctionStart.expiry_height":
+		panic(fmt.Errorf("field expiry_height of message types.EventIntentAuctionStart is not mutable"))
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.EventIntentAuctionStart"))
+		}
+		panic(fmt.Errorf("message types.EventIntentAuctionStart does not contain field %s", fd.FullName()))
+	}
+}
+
+// NewField returns a new value that is assignable to the field
+// for the given descriptor. For scalars, this returns the default value.
+// For lists, maps, and messages, this returns a new, empty, mutable value.
+func (x *fastReflection_EventIntentAuctionStart) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "types.EventIntentAuctionStart.intent_tx_id":
+		return protoreflect.ValueOfString("")
+	case "types.EventIntentAuctionStart.auction_amount":
+		m := new(common.Coin)
+		return protoreflect.ValueOfMessage(m.ProtoReflect())
+	case "types.EventIntentAuctionStart.remaining_amount":
+		m := new(common.Coin)
+		return protoreflect.ValueOfMessage(m.ProtoReflect())
+	case "types.EventIntentAuctionStart.bid_asset":
+		m := new(common.Asset)
+		return protoreflect.ValueOfMessage(m.ProtoReflect())
+	case "types.EventIntentAuctionStart.min_bid":
+		return protoreflect.ValueOfString("")
+	case "types.EventIntentAuctionStart.expiry_height":
+		return protoreflect.ValueOfInt64(int64(0))
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.EventIntentAuctionStart"))
+		}
+		panic(fmt.Errorf("message types.EventIntentAuctionStart does not contain field %s", fd.FullName()))
+	}
+}
+
+// WhichOneof reports which field within the oneof is populated,
+// returning nil if none are populated.
+// It panics if the oneof descriptor does not belong to this message.
+func (x *fastReflection_EventIntentAuctionStart) WhichOneof(d protoreflect.OneofDescriptor) protoreflect.FieldDescriptor {
+	switch d.FullName() {
+	default:
+		panic(fmt.Errorf("%s is not a oneof field in types.EventIntentAuctionStart", d.FullName()))
+	}
+	panic("unreachable")
+}
+
+// GetUnknown retrieves the entire list of unknown fields.
+// The caller may only mutate the contents of the RawFields
+// if the mutated bytes are stored back into the message with SetUnknown.
+func (x *fastReflection_EventIntentAuctionStart) GetUnknown() protoreflect.RawFields {
+	return x.unknownFields
+}
+
+// SetUnknown stores an entire list of unknown fields.
+// The raw fields must be syntactically valid according to the wire format.
+// An implementation may panic if this is not the case.
+// Once stored, the caller must not mutate the content of the RawFields.
+// An empty RawFields may be passed to clear the fields.
+//
+// SetUnknown is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_EventIntentAuctionStart) SetUnknown(fields protoreflect.RawFields) {
+	x.unknownFields = fields
+}
+
+// IsValid reports whether the message is valid.
+//
+// An invalid message is an empty, read-only value.
+//
+// An invalid message often corresponds to a nil pointer of the concrete
+// message type, but the details are implementation dependent.
+// Validity is not part of the protobuf data model, and may not
+// be preserved in marshaling or other operations.
+func (x *fastReflection_EventIntentAuctionStart) IsValid() bool {
+	return x != nil
+}
+
+// ProtoMethods returns optional fastReflectionFeature-path implementations of various operations.
+// This method may return nil.
+//
+// The returned methods type is identical to
+// "google.golang.org/protobuf/runtime/protoiface".Methods.
+// Consult the protoiface package documentation for details.
+func (x *fastReflection_EventIntentAuctionStart) ProtoMethods() *protoiface.Methods {
+	size := func(input protoiface.SizeInput) protoiface.SizeOutput {
+		x := input.Message.Interface().(*EventIntentAuctionStart)
+		if x == nil {
+			return protoiface.SizeOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Size:              0,
+			}
+		}
+		options := runtime.SizeInputToOptions(input)
+		_ = options
+		var n int
+		var l int
+		_ = l
+		l = len(x.IntentTxId)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		if x.AuctionAmount != nil {
+			l = options.Size(x.AuctionAmount)
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		if x.RemainingAmount != nil {
+			l = options.Size(x.RemainingAmount)
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		if x.BidAsset != nil {
+			l = options.Size(x.BidAsset)
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		l = len(x.MinBid)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		if x.ExpiryHeight != 0 {
+			n += 1 + runtime.Sov(uint64(x.ExpiryHeight))
+		}
+		if x.unknownFields != nil {
+			n += len(x.unknownFields)
+		}
+		return protoiface.SizeOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Size:              n,
+		}
+	}
+
+	marshal := func(input protoiface.MarshalInput) (protoiface.MarshalOutput, error) {
+		x := input.Message.Interface().(*EventIntentAuctionStart)
+		if x == nil {
+			return protoiface.MarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Buf:               input.Buf,
+			}, nil
+		}
+		options := runtime.MarshalInputToOptions(input)
+		_ = options
+		size := options.Size(x)
+		dAtA := make([]byte, size)
+		i := len(dAtA)
+		_ = i
+		var l int
+		_ = l
+		if x.unknownFields != nil {
+			i -= len(x.unknownFields)
+			copy(dAtA[i:], x.unknownFields)
+		}
+		if x.ExpiryHeight != 0 {
+			i = runtime.EncodeVarint(dAtA, i, uint64(x.ExpiryHeight))
+			i--
+			dAtA[i] = 0x30
+		}
+		if len(x.MinBid) > 0 {
+			i -= len(x.MinBid)
+			copy(dAtA[i:], x.MinBid)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.MinBid)))
+			i--
+			dAtA[i] = 0x2a
+		}
+		if x.BidAsset != nil {
+			encoded, err := options.Marshal(x.BidAsset)
+			if err != nil {
+				return protoiface.MarshalOutput{
+					NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+					Buf:               input.Buf,
+				}, err
+			}
+			i -= len(encoded)
+			copy(dAtA[i:], encoded)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(encoded)))
+			i--
+			dAtA[i] = 0x22
+		}
+		if x.RemainingAmount != nil {
+			encoded, err := options.Marshal(x.RemainingAmount)
+			if err != nil {
+				return protoiface.MarshalOutput{
+					NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+					Buf:               input.Buf,
+				}, err
+			}
+			i -= len(encoded)
+			copy(dAtA[i:], encoded)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(encoded)))
+			i--
+			dAtA[i] = 0x1a
+		}
+		if x.AuctionAmount != nil {
+			encoded, err := options.Marshal(x.AuctionAmount)
+			if err != nil {
+				return protoiface.MarshalOutput{
+					NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+					Buf:               input.Buf,
+				}, err
+			}
+			i -= len(encoded)
+			copy(dAtA[i:], encoded)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(encoded)))
+			i--
+			dAtA[i] = 0x12
+		}
+		if len(x.IntentTxId) > 0 {
+			i -= len(x.IntentTxId)
+			copy(dAtA[i:], x.IntentTxId)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.IntentTxId)))
+			i--
+			dAtA[i] = 0xa
+		}
+		if input.Buf != nil {
+			input.Buf = append(input.Buf, dAtA...)
+		} else {
+			input.Buf = dAtA
+		}
+		return protoiface.MarshalOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Buf:               input.Buf,
+		}, nil
+	}
+	unmarshal := func(input protoiface.UnmarshalInput) (protoiface.UnmarshalOutput, error) {
+		x := input.Message.Interface().(*EventIntentAuctionStart)
+		if x == nil {
+			return protoiface.UnmarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Flags:             input.Flags,
+			}, nil
+		}
+		options := runtime.UnmarshalInputToOptions(input)
+		_ = options
+		dAtA := input.Buf
+		l := len(dAtA)
+		iNdEx := 0
+		for iNdEx < l {
+			preIndex := iNdEx
+			var wire uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				wire |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			fieldNum := int32(wire >> 3)
+			wireType := int(wire & 0x7)
+			if wireType == 4 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: EventIntentAuctionStart: wiretype end group for non-group")
+			}
+			if fieldNum <= 0 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: EventIntentAuctionStart: illegal tag %d (wire type %d)", fieldNum, wire)
+			}
+			switch fieldNum {
+			case 1:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field IntentTxId", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.IntentTxId = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 2:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field AuctionAmount", wireType)
+				}
+				var msglen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					msglen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if msglen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + msglen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				if x.AuctionAmount == nil {
+					x.AuctionAmount = &common.Coin{}
+				}
+				if err := options.Unmarshal(dAtA[iNdEx:postIndex], x.AuctionAmount); err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				iNdEx = postIndex
+			case 3:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field RemainingAmount", wireType)
+				}
+				var msglen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					msglen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if msglen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + msglen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				if x.RemainingAmount == nil {
+					x.RemainingAmount = &common.Coin{}
+				}
+				if err := options.Unmarshal(dAtA[iNdEx:postIndex], x.RemainingAmount); err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				iNdEx = postIndex
+			case 4:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field BidAsset", wireType)
+				}
+				var msglen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					msglen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if msglen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + msglen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				if x.BidAsset == nil {
+					x.BidAsset = &common.Asset{}
+				}
+				if err := options.Unmarshal(dAtA[iNdEx:postIndex], x.BidAsset); err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				iNdEx = postIndex
+			case 5:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field MinBid", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.MinBid = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 6:
+				if wireType != 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field ExpiryHeight", wireType)
+				}
+				x.ExpiryHeight = 0
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					x.ExpiryHeight |= int64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+			default:
+				iNdEx = preIndex
+				skippy, err := runtime.Skip(dAtA[iNdEx:])
+				if err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				if (skippy < 0) || (iNdEx+skippy) < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if (iNdEx + skippy) > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				if !options.DiscardUnknown {
+					x.unknownFields = append(x.unknownFields, dAtA[iNdEx:iNdEx+skippy]...)
+				}
+				iNdEx += skippy
+			}
+		}
+
+		if iNdEx > l {
+			return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+		}
+		return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, nil
+	}
+	return &protoiface.Methods{
+		NoUnkeyedLiterals: struct{}{},
+		Flags:             protoiface.SupportMarshalDeterministic | protoiface.SupportUnmarshalDiscardUnknown,
+		Size:              size,
+		Marshal:           marshal,
+		Unmarshal:         unmarshal,
+		Merge:             nil,
+		CheckInitialized:  nil,
+	}
+}
+
+var (
+	md_EventIntentAuctionBid                protoreflect.MessageDescriptor
+	fd_EventIntentAuctionBid_bid_tx_id      protoreflect.FieldDescriptor
+	fd_EventIntentAuctionBid_intent_tx_id   protoreflect.FieldDescriptor
+	fd_EventIntentAuctionBid_bidder_address protoreflect.FieldDescriptor
+	fd_EventIntentAuctionBid_bid_amount     protoreflect.FieldDescriptor
+	fd_EventIntentAuctionBid_is_top_up      protoreflect.FieldDescriptor
+)
+
+func init() {
+	file_types_type_event_intent_proto_init()
+	md_EventIntentAuctionBid = File_types_type_event_intent_proto.Messages().ByName("EventIntentAuctionBid")
+	fd_EventIntentAuctionBid_bid_tx_id = md_EventIntentAuctionBid.Fields().ByName("bid_tx_id")
+	fd_EventIntentAuctionBid_intent_tx_id = md_EventIntentAuctionBid.Fields().ByName("intent_tx_id")
+	fd_EventIntentAuctionBid_bidder_address = md_EventIntentAuctionBid.Fields().ByName("bidder_address")
+	fd_EventIntentAuctionBid_bid_amount = md_EventIntentAuctionBid.Fields().ByName("bid_amount")
+	fd_EventIntentAuctionBid_is_top_up = md_EventIntentAuctionBid.Fields().ByName("is_top_up")
+}
+
+var _ protoreflect.Message = (*fastReflection_EventIntentAuctionBid)(nil)
+
+type fastReflection_EventIntentAuctionBid EventIntentAuctionBid
+
+func (x *EventIntentAuctionBid) ProtoReflect() protoreflect.Message {
+	return (*fastReflection_EventIntentAuctionBid)(x)
+}
+
+func (x *EventIntentAuctionBid) slowProtoReflect() protoreflect.Message {
+	mi := &file_types_type_event_intent_proto_msgTypes[6]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+var _fastReflection_EventIntentAuctionBid_messageType fastReflection_EventIntentAuctionBid_messageType
+var _ protoreflect.MessageType = fastReflection_EventIntentAuctionBid_messageType{}
+
+type fastReflection_EventIntentAuctionBid_messageType struct{}
+
+func (x fastReflection_EventIntentAuctionBid_messageType) Zero() protoreflect.Message {
+	return (*fastReflection_EventIntentAuctionBid)(nil)
+}
+func (x fastReflection_EventIntentAuctionBid_messageType) New() protoreflect.Message {
+	return new(fastReflection_EventIntentAuctionBid)
+}
+func (x fastReflection_EventIntentAuctionBid_messageType) Descriptor() protoreflect.MessageDescriptor {
+	return md_EventIntentAuctionBid
+}
+
+// Descriptor returns message descriptor, which contains only the protobuf
+// type information for the message.
+func (x *fastReflection_EventIntentAuctionBid) Descriptor() protoreflect.MessageDescriptor {
+	return md_EventIntentAuctionBid
+}
+
+// Type returns the message type, which encapsulates both Go and protobuf
+// type information. If the Go type information is not needed,
+// it is recommended that the message descriptor be used instead.
+func (x *fastReflection_EventIntentAuctionBid) Type() protoreflect.MessageType {
+	return _fastReflection_EventIntentAuctionBid_messageType
+}
+
+// New returns a newly allocated and mutable empty message.
+func (x *fastReflection_EventIntentAuctionBid) New() protoreflect.Message {
+	return new(fastReflection_EventIntentAuctionBid)
+}
+
+// Interface unwraps the message reflection interface and
+// returns the underlying ProtoMessage interface.
+func (x *fastReflection_EventIntentAuctionBid) Interface() protoreflect.ProtoMessage {
+	return (*EventIntentAuctionBid)(x)
+}
+
+// Range iterates over every populated field in an undefined order,
+// calling f for each field descriptor and value encountered.
+// Range returns immediately if f returns false.
+// While iterating, mutating operations may only be performed
+// on the current field descriptor.
+func (x *fastReflection_EventIntentAuctionBid) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
+	if x.BidTxId != "" {
+		value := protoreflect.ValueOfString(x.BidTxId)
+		if !f(fd_EventIntentAuctionBid_bid_tx_id, value) {
+			return
+		}
+	}
+	if x.IntentTxId != "" {
+		value := protoreflect.ValueOfString(x.IntentTxId)
+		if !f(fd_EventIntentAuctionBid_intent_tx_id, value) {
+			return
+		}
+	}
+	if x.BidderAddress != "" {
+		value := protoreflect.ValueOfString(x.BidderAddress)
+		if !f(fd_EventIntentAuctionBid_bidder_address, value) {
+			return
+		}
+	}
+	if x.BidAmount != "" {
+		value := protoreflect.ValueOfString(x.BidAmount)
+		if !f(fd_EventIntentAuctionBid_bid_amount, value) {
+			return
+		}
+	}
+	if x.IsTopUp != false {
+		value := protoreflect.ValueOfBool(x.IsTopUp)
+		if !f(fd_EventIntentAuctionBid_is_top_up, value) {
+			return
+		}
+	}
+}
+
+// Has reports whether a field is populated.
+//
+// Some fields have the property of nullability where it is possible to
+// distinguish between the default value of a field and whether the field
+// was explicitly populated with the default value. Singular message fields,
+// member fields of a oneof, and proto2 scalar fields are nullable. Such
+// fields are populated only if explicitly set.
+//
+// In other cases (aside from the nullable cases above),
+// a proto3 scalar field is populated if it contains a non-zero value, and
+// a repeated field is populated if it is non-empty.
+func (x *fastReflection_EventIntentAuctionBid) Has(fd protoreflect.FieldDescriptor) bool {
+	switch fd.FullName() {
+	case "types.EventIntentAuctionBid.bid_tx_id":
+		return x.BidTxId != ""
+	case "types.EventIntentAuctionBid.intent_tx_id":
+		return x.IntentTxId != ""
+	case "types.EventIntentAuctionBid.bidder_address":
+		return x.BidderAddress != ""
+	case "types.EventIntentAuctionBid.bid_amount":
+		return x.BidAmount != ""
+	case "types.EventIntentAuctionBid.is_top_up":
+		return x.IsTopUp != false
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.EventIntentAuctionBid"))
+		}
+		panic(fmt.Errorf("message types.EventIntentAuctionBid does not contain field %s", fd.FullName()))
+	}
+}
+
+// Clear clears the field such that a subsequent Has call reports false.
+//
+// Clearing an extension field clears both the extension type and value
+// associated with the given field number.
+//
+// Clear is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_EventIntentAuctionBid) Clear(fd protoreflect.FieldDescriptor) {
+	switch fd.FullName() {
+	case "types.EventIntentAuctionBid.bid_tx_id":
+		x.BidTxId = ""
+	case "types.EventIntentAuctionBid.intent_tx_id":
+		x.IntentTxId = ""
+	case "types.EventIntentAuctionBid.bidder_address":
+		x.BidderAddress = ""
+	case "types.EventIntentAuctionBid.bid_amount":
+		x.BidAmount = ""
+	case "types.EventIntentAuctionBid.is_top_up":
+		x.IsTopUp = false
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.EventIntentAuctionBid"))
+		}
+		panic(fmt.Errorf("message types.EventIntentAuctionBid does not contain field %s", fd.FullName()))
+	}
+}
+
+// Get retrieves the value for a field.
+//
+// For unpopulated scalars, it returns the default value, where
+// the default value of a bytes scalar is guaranteed to be a copy.
+// For unpopulated composite types, it returns an empty, read-only view
+// of the value; to obtain a mutable reference, use Mutable.
+func (x *fastReflection_EventIntentAuctionBid) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
+	switch descriptor.FullName() {
+	case "types.EventIntentAuctionBid.bid_tx_id":
+		value := x.BidTxId
+		return protoreflect.ValueOfString(value)
+	case "types.EventIntentAuctionBid.intent_tx_id":
+		value := x.IntentTxId
+		return protoreflect.ValueOfString(value)
+	case "types.EventIntentAuctionBid.bidder_address":
+		value := x.BidderAddress
+		return protoreflect.ValueOfString(value)
+	case "types.EventIntentAuctionBid.bid_amount":
+		value := x.BidAmount
+		return protoreflect.ValueOfString(value)
+	case "types.EventIntentAuctionBid.is_top_up":
+		value := x.IsTopUp
+		return protoreflect.ValueOfBool(value)
+	default:
+		if descriptor.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.EventIntentAuctionBid"))
+		}
+		panic(fmt.Errorf("message types.EventIntentAuctionBid does not contain field %s", descriptor.FullName()))
+	}
+}
+
+// Set stores the value for a field.
+//
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType.
+// When setting a composite type, it is unspecified whether the stored value
+// aliases the source's memory in any way. If the composite value is an
+// empty, read-only value, then it panics.
+//
+// Set is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_EventIntentAuctionBid) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
+	switch fd.FullName() {
+	case "types.EventIntentAuctionBid.bid_tx_id":
+		x.BidTxId = value.Interface().(string)
+	case "types.EventIntentAuctionBid.intent_tx_id":
+		x.IntentTxId = value.Interface().(string)
+	case "types.EventIntentAuctionBid.bidder_address":
+		x.BidderAddress = value.Interface().(string)
+	case "types.EventIntentAuctionBid.bid_amount":
+		x.BidAmount = value.Interface().(string)
+	case "types.EventIntentAuctionBid.is_top_up":
+		x.IsTopUp = value.Bool()
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.EventIntentAuctionBid"))
+		}
+		panic(fmt.Errorf("message types.EventIntentAuctionBid does not contain field %s", fd.FullName()))
+	}
+}
+
+// Mutable returns a mutable reference to a composite type.
+//
+// If the field is unpopulated, it may allocate a composite value.
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType
+// if not already stored.
+// It panics if the field does not contain a composite type.
+//
+// Mutable is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_EventIntentAuctionBid) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "types.EventIntentAuctionBid.bid_tx_id":
+		panic(fmt.Errorf("field bid_tx_id of message types.EventIntentAuctionBid is not mutable"))
+	case "types.EventIntentAuctionBid.intent_tx_id":
+		panic(fmt.Errorf("field intent_tx_id of message types.EventIntentAuctionBid is not mutable"))
+	case "types.EventIntentAuctionBid.bidder_address":
+		panic(fmt.Errorf("field bidder_address of message types.EventIntentAuctionBid is not mutable"))
+	case "types.EventIntentAuctionBid.bid_amount":
+		panic(fmt.Errorf("field bid_amount of message types.EventIntentAuctionBid is not mutable"))
+	case "types.EventIntentAuctionBid.is_top_up":
+		panic(fmt.Errorf("field is_top_up of message types.EventIntentAuctionBid is not mutable"))
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.EventIntentAuctionBid"))
+		}
+		panic(fmt.Errorf("message types.EventIntentAuctionBid does not contain field %s", fd.FullName()))
+	}
+}
+
+// NewField returns a new value that is assignable to the field
+// for the given descriptor. For scalars, this returns the default value.
+// For lists, maps, and messages, this returns a new, empty, mutable value.
+func (x *fastReflection_EventIntentAuctionBid) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "types.EventIntentAuctionBid.bid_tx_id":
+		return protoreflect.ValueOfString("")
+	case "types.EventIntentAuctionBid.intent_tx_id":
+		return protoreflect.ValueOfString("")
+	case "types.EventIntentAuctionBid.bidder_address":
+		return protoreflect.ValueOfString("")
+	case "types.EventIntentAuctionBid.bid_amount":
+		return protoreflect.ValueOfString("")
+	case "types.EventIntentAuctionBid.is_top_up":
+		return protoreflect.ValueOfBool(false)
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.EventIntentAuctionBid"))
+		}
+		panic(fmt.Errorf("message types.EventIntentAuctionBid does not contain field %s", fd.FullName()))
+	}
+}
+
+// WhichOneof reports which field within the oneof is populated,
+// returning nil if none are populated.
+// It panics if the oneof descriptor does not belong to this message.
+func (x *fastReflection_EventIntentAuctionBid) WhichOneof(d protoreflect.OneofDescriptor) protoreflect.FieldDescriptor {
+	switch d.FullName() {
+	default:
+		panic(fmt.Errorf("%s is not a oneof field in types.EventIntentAuctionBid", d.FullName()))
+	}
+	panic("unreachable")
+}
+
+// GetUnknown retrieves the entire list of unknown fields.
+// The caller may only mutate the contents of the RawFields
+// if the mutated bytes are stored back into the message with SetUnknown.
+func (x *fastReflection_EventIntentAuctionBid) GetUnknown() protoreflect.RawFields {
+	return x.unknownFields
+}
+
+// SetUnknown stores an entire list of unknown fields.
+// The raw fields must be syntactically valid according to the wire format.
+// An implementation may panic if this is not the case.
+// Once stored, the caller must not mutate the content of the RawFields.
+// An empty RawFields may be passed to clear the fields.
+//
+// SetUnknown is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_EventIntentAuctionBid) SetUnknown(fields protoreflect.RawFields) {
+	x.unknownFields = fields
+}
+
+// IsValid reports whether the message is valid.
+//
+// An invalid message is an empty, read-only value.
+//
+// An invalid message often corresponds to a nil pointer of the concrete
+// message type, but the details are implementation dependent.
+// Validity is not part of the protobuf data model, and may not
+// be preserved in marshaling or other operations.
+func (x *fastReflection_EventIntentAuctionBid) IsValid() bool {
+	return x != nil
+}
+
+// ProtoMethods returns optional fastReflectionFeature-path implementations of various operations.
+// This method may return nil.
+//
+// The returned methods type is identical to
+// "google.golang.org/protobuf/runtime/protoiface".Methods.
+// Consult the protoiface package documentation for details.
+func (x *fastReflection_EventIntentAuctionBid) ProtoMethods() *protoiface.Methods {
+	size := func(input protoiface.SizeInput) protoiface.SizeOutput {
+		x := input.Message.Interface().(*EventIntentAuctionBid)
+		if x == nil {
+			return protoiface.SizeOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Size:              0,
+			}
+		}
+		options := runtime.SizeInputToOptions(input)
+		_ = options
+		var n int
+		var l int
+		_ = l
+		l = len(x.BidTxId)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		l = len(x.IntentTxId)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		l = len(x.BidderAddress)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		l = len(x.BidAmount)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		if x.IsTopUp {
+			n += 2
+		}
+		if x.unknownFields != nil {
+			n += len(x.unknownFields)
+		}
+		return protoiface.SizeOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Size:              n,
+		}
+	}
+
+	marshal := func(input protoiface.MarshalInput) (protoiface.MarshalOutput, error) {
+		x := input.Message.Interface().(*EventIntentAuctionBid)
+		if x == nil {
+			return protoiface.MarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Buf:               input.Buf,
+			}, nil
+		}
+		options := runtime.MarshalInputToOptions(input)
+		_ = options
+		size := options.Size(x)
+		dAtA := make([]byte, size)
+		i := len(dAtA)
+		_ = i
+		var l int
+		_ = l
+		if x.unknownFields != nil {
+			i -= len(x.unknownFields)
+			copy(dAtA[i:], x.unknownFields)
+		}
+		if x.IsTopUp {
+			i--
+			if x.IsTopUp {
+				dAtA[i] = 1
+			} else {
+				dAtA[i] = 0
+			}
+			i--
+			dAtA[i] = 0x28
+		}
+		if len(x.BidAmount) > 0 {
+			i -= len(x.BidAmount)
+			copy(dAtA[i:], x.BidAmount)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.BidAmount)))
+			i--
+			dAtA[i] = 0x22
+		}
+		if len(x.BidderAddress) > 0 {
+			i -= len(x.BidderAddress)
+			copy(dAtA[i:], x.BidderAddress)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.BidderAddress)))
+			i--
+			dAtA[i] = 0x1a
+		}
+		if len(x.IntentTxId) > 0 {
+			i -= len(x.IntentTxId)
+			copy(dAtA[i:], x.IntentTxId)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.IntentTxId)))
+			i--
+			dAtA[i] = 0x12
+		}
+		if len(x.BidTxId) > 0 {
+			i -= len(x.BidTxId)
+			copy(dAtA[i:], x.BidTxId)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.BidTxId)))
+			i--
+			dAtA[i] = 0xa
+		}
+		if input.Buf != nil {
+			input.Buf = append(input.Buf, dAtA...)
+		} else {
+			input.Buf = dAtA
+		}
+		return protoiface.MarshalOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Buf:               input.Buf,
+		}, nil
+	}
+	unmarshal := func(input protoiface.UnmarshalInput) (protoiface.UnmarshalOutput, error) {
+		x := input.Message.Interface().(*EventIntentAuctionBid)
+		if x == nil {
+			return protoiface.UnmarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Flags:             input.Flags,
+			}, nil
+		}
+		options := runtime.UnmarshalInputToOptions(input)
+		_ = options
+		dAtA := input.Buf
+		l := len(dAtA)
+		iNdEx := 0
+		for iNdEx < l {
+			preIndex := iNdEx
+			var wire uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				wire |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			fieldNum := int32(wire >> 3)
+			wireType := int(wire & 0x7)
+			if wireType == 4 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: EventIntentAuctionBid: wiretype end group for non-group")
+			}
+			if fieldNum <= 0 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: EventIntentAuctionBid: illegal tag %d (wire type %d)", fieldNum, wire)
+			}
+			switch fieldNum {
+			case 1:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field BidTxId", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.BidTxId = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 2:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field IntentTxId", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.IntentTxId = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 3:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field BidderAddress", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.BidderAddress = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 4:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field BidAmount", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.BidAmount = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 5:
+				if wireType != 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field IsTopUp", wireType)
+				}
+				var v int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					v |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				x.IsTopUp = bool(v != 0)
+			default:
+				iNdEx = preIndex
+				skippy, err := runtime.Skip(dAtA[iNdEx:])
+				if err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				if (skippy < 0) || (iNdEx+skippy) < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if (iNdEx + skippy) > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				if !options.DiscardUnknown {
+					x.unknownFields = append(x.unknownFields, dAtA[iNdEx:iNdEx+skippy]...)
+				}
+				iNdEx += skippy
+			}
+		}
+
+		if iNdEx > l {
+			return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+		}
+		return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, nil
+	}
+	return &protoiface.Methods{
+		NoUnkeyedLiterals: struct{}{},
+		Flags:             protoiface.SupportMarshalDeterministic | protoiface.SupportUnmarshalDiscardUnknown,
+		Size:              size,
+		Marshal:           marshal,
+		Unmarshal:         unmarshal,
+		Merge:             nil,
+		CheckInitialized:  nil,
+	}
+}
+
+var (
+	md_EventIntentAuctionComplete                  protoreflect.MessageDescriptor
+	fd_EventIntentAuctionComplete_intent_tx_id     protoreflect.FieldDescriptor
+	fd_EventIntentAuctionComplete_winner_bid_tx_id protoreflect.FieldDescriptor
+	fd_EventIntentAuctionComplete_winner_address   protoreflect.FieldDescriptor
+	fd_EventIntentAuctionComplete_winning_bid      protoreflect.FieldDescriptor
+	fd_EventIntentAuctionComplete_auction_amount   protoreflect.FieldDescriptor
+	fd_EventIntentAuctionComplete_owner_refund     protoreflect.FieldDescriptor
+)
+
+func init() {
+	file_types_type_event_intent_proto_init()
+	md_EventIntentAuctionComplete = File_types_type_event_intent_proto.Messages().ByName("EventIntentAuctionComplete")
+	fd_EventIntentAuctionComplete_intent_tx_id = md_EventIntentAuctionComplete.Fields().ByName("intent_tx_id")
+	fd_EventIntentAuctionComplete_winner_bid_tx_id = md_EventIntentAuctionComplete.Fields().ByName("winner_bid_tx_id")
+	fd_EventIntentAuctionComplete_winner_address = md_EventIntentAuctionComplete.Fields().ByName("winner_address")
+	fd_EventIntentAuctionComplete_winning_bid = md_EventIntentAuctionComplete.Fields().ByName("winning_bid")
+	fd_EventIntentAuctionComplete_auction_amount = md_EventIntentAuctionComplete.Fields().ByName("auction_amount")
+	fd_EventIntentAuctionComplete_owner_refund = md_EventIntentAuctionComplete.Fields().ByName("owner_refund")
+}
+
+var _ protoreflect.Message = (*fastReflection_EventIntentAuctionComplete)(nil)
+
+type fastReflection_EventIntentAuctionComplete EventIntentAuctionComplete
+
+func (x *EventIntentAuctionComplete) ProtoReflect() protoreflect.Message {
+	return (*fastReflection_EventIntentAuctionComplete)(x)
+}
+
+func (x *EventIntentAuctionComplete) slowProtoReflect() protoreflect.Message {
+	mi := &file_types_type_event_intent_proto_msgTypes[7]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+var _fastReflection_EventIntentAuctionComplete_messageType fastReflection_EventIntentAuctionComplete_messageType
+var _ protoreflect.MessageType = fastReflection_EventIntentAuctionComplete_messageType{}
+
+type fastReflection_EventIntentAuctionComplete_messageType struct{}
+
+func (x fastReflection_EventIntentAuctionComplete_messageType) Zero() protoreflect.Message {
+	return (*fastReflection_EventIntentAuctionComplete)(nil)
+}
+func (x fastReflection_EventIntentAuctionComplete_messageType) New() protoreflect.Message {
+	return new(fastReflection_EventIntentAuctionComplete)
+}
+func (x fastReflection_EventIntentAuctionComplete_messageType) Descriptor() protoreflect.MessageDescriptor {
+	return md_EventIntentAuctionComplete
+}
+
+// Descriptor returns message descriptor, which contains only the protobuf
+// type information for the message.
+func (x *fastReflection_EventIntentAuctionComplete) Descriptor() protoreflect.MessageDescriptor {
+	return md_EventIntentAuctionComplete
+}
+
+// Type returns the message type, which encapsulates both Go and protobuf
+// type information. If the Go type information is not needed,
+// it is recommended that the message descriptor be used instead.
+func (x *fastReflection_EventIntentAuctionComplete) Type() protoreflect.MessageType {
+	return _fastReflection_EventIntentAuctionComplete_messageType
+}
+
+// New returns a newly allocated and mutable empty message.
+func (x *fastReflection_EventIntentAuctionComplete) New() protoreflect.Message {
+	return new(fastReflection_EventIntentAuctionComplete)
+}
+
+// Interface unwraps the message reflection interface and
+// returns the underlying ProtoMessage interface.
+func (x *fastReflection_EventIntentAuctionComplete) Interface() protoreflect.ProtoMessage {
+	return (*EventIntentAuctionComplete)(x)
+}
+
+// Range iterates over every populated field in an undefined order,
+// calling f for each field descriptor and value encountered.
+// Range returns immediately if f returns false.
+// While iterating, mutating operations may only be performed
+// on the current field descriptor.
+func (x *fastReflection_EventIntentAuctionComplete) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
+	if x.IntentTxId != "" {
+		value := protoreflect.ValueOfString(x.IntentTxId)
+		if !f(fd_EventIntentAuctionComplete_intent_tx_id, value) {
+			return
+		}
+	}
+	if x.WinnerBidTxId != "" {
+		value := protoreflect.ValueOfString(x.WinnerBidTxId)
+		if !f(fd_EventIntentAuctionComplete_winner_bid_tx_id, value) {
+			return
+		}
+	}
+	if x.WinnerAddress != "" {
+		value := protoreflect.ValueOfString(x.WinnerAddress)
+		if !f(fd_EventIntentAuctionComplete_winner_address, value) {
+			return
+		}
+	}
+	if x.WinningBid != nil {
+		value := protoreflect.ValueOfMessage(x.WinningBid.ProtoReflect())
+		if !f(fd_EventIntentAuctionComplete_winning_bid, value) {
+			return
+		}
+	}
+	if x.AuctionAmount != nil {
+		value := protoreflect.ValueOfMessage(x.AuctionAmount.ProtoReflect())
+		if !f(fd_EventIntentAuctionComplete_auction_amount, value) {
+			return
+		}
+	}
+	if x.OwnerRefund != nil {
+		value := protoreflect.ValueOfMessage(x.OwnerRefund.ProtoReflect())
+		if !f(fd_EventIntentAuctionComplete_owner_refund, value) {
+			return
+		}
+	}
+}
+
+// Has reports whether a field is populated.
+//
+// Some fields have the property of nullability where it is possible to
+// distinguish between the default value of a field and whether the field
+// was explicitly populated with the default value. Singular message fields,
+// member fields of a oneof, and proto2 scalar fields are nullable. Such
+// fields are populated only if explicitly set.
+//
+// In other cases (aside from the nullable cases above),
+// a proto3 scalar field is populated if it contains a non-zero value, and
+// a repeated field is populated if it is non-empty.
+func (x *fastReflection_EventIntentAuctionComplete) Has(fd protoreflect.FieldDescriptor) bool {
+	switch fd.FullName() {
+	case "types.EventIntentAuctionComplete.intent_tx_id":
+		return x.IntentTxId != ""
+	case "types.EventIntentAuctionComplete.winner_bid_tx_id":
+		return x.WinnerBidTxId != ""
+	case "types.EventIntentAuctionComplete.winner_address":
+		return x.WinnerAddress != ""
+	case "types.EventIntentAuctionComplete.winning_bid":
+		return x.WinningBid != nil
+	case "types.EventIntentAuctionComplete.auction_amount":
+		return x.AuctionAmount != nil
+	case "types.EventIntentAuctionComplete.owner_refund":
+		return x.OwnerRefund != nil
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.EventIntentAuctionComplete"))
+		}
+		panic(fmt.Errorf("message types.EventIntentAuctionComplete does not contain field %s", fd.FullName()))
+	}
+}
+
+// Clear clears the field such that a subsequent Has call reports false.
+//
+// Clearing an extension field clears both the extension type and value
+// associated with the given field number.
+//
+// Clear is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_EventIntentAuctionComplete) Clear(fd protoreflect.FieldDescriptor) {
+	switch fd.FullName() {
+	case "types.EventIntentAuctionComplete.intent_tx_id":
+		x.IntentTxId = ""
+	case "types.EventIntentAuctionComplete.winner_bid_tx_id":
+		x.WinnerBidTxId = ""
+	case "types.EventIntentAuctionComplete.winner_address":
+		x.WinnerAddress = ""
+	case "types.EventIntentAuctionComplete.winning_bid":
+		x.WinningBid = nil
+	case "types.EventIntentAuctionComplete.auction_amount":
+		x.AuctionAmount = nil
+	case "types.EventIntentAuctionComplete.owner_refund":
+		x.OwnerRefund = nil
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.EventIntentAuctionComplete"))
+		}
+		panic(fmt.Errorf("message types.EventIntentAuctionComplete does not contain field %s", fd.FullName()))
+	}
+}
+
+// Get retrieves the value for a field.
+//
+// For unpopulated scalars, it returns the default value, where
+// the default value of a bytes scalar is guaranteed to be a copy.
+// For unpopulated composite types, it returns an empty, read-only view
+// of the value; to obtain a mutable reference, use Mutable.
+func (x *fastReflection_EventIntentAuctionComplete) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
+	switch descriptor.FullName() {
+	case "types.EventIntentAuctionComplete.intent_tx_id":
+		value := x.IntentTxId
+		return protoreflect.ValueOfString(value)
+	case "types.EventIntentAuctionComplete.winner_bid_tx_id":
+		value := x.WinnerBidTxId
+		return protoreflect.ValueOfString(value)
+	case "types.EventIntentAuctionComplete.winner_address":
+		value := x.WinnerAddress
+		return protoreflect.ValueOfString(value)
+	case "types.EventIntentAuctionComplete.winning_bid":
+		value := x.WinningBid
+		return protoreflect.ValueOfMessage(value.ProtoReflect())
+	case "types.EventIntentAuctionComplete.auction_amount":
+		value := x.AuctionAmount
+		return protoreflect.ValueOfMessage(value.ProtoReflect())
+	case "types.EventIntentAuctionComplete.owner_refund":
+		value := x.OwnerRefund
+		return protoreflect.ValueOfMessage(value.ProtoReflect())
+	default:
+		if descriptor.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.EventIntentAuctionComplete"))
+		}
+		panic(fmt.Errorf("message types.EventIntentAuctionComplete does not contain field %s", descriptor.FullName()))
+	}
+}
+
+// Set stores the value for a field.
+//
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType.
+// When setting a composite type, it is unspecified whether the stored value
+// aliases the source's memory in any way. If the composite value is an
+// empty, read-only value, then it panics.
+//
+// Set is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_EventIntentAuctionComplete) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
+	switch fd.FullName() {
+	case "types.EventIntentAuctionComplete.intent_tx_id":
+		x.IntentTxId = value.Interface().(string)
+	case "types.EventIntentAuctionComplete.winner_bid_tx_id":
+		x.WinnerBidTxId = value.Interface().(string)
+	case "types.EventIntentAuctionComplete.winner_address":
+		x.WinnerAddress = value.Interface().(string)
+	case "types.EventIntentAuctionComplete.winning_bid":
+		x.WinningBid = value.Message().Interface().(*common.Coin)
+	case "types.EventIntentAuctionComplete.auction_amount":
+		x.AuctionAmount = value.Message().Interface().(*common.Coin)
+	case "types.EventIntentAuctionComplete.owner_refund":
+		x.OwnerRefund = value.Message().Interface().(*common.Coin)
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.EventIntentAuctionComplete"))
+		}
+		panic(fmt.Errorf("message types.EventIntentAuctionComplete does not contain field %s", fd.FullName()))
+	}
+}
+
+// Mutable returns a mutable reference to a composite type.
+//
+// If the field is unpopulated, it may allocate a composite value.
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType
+// if not already stored.
+// It panics if the field does not contain a composite type.
+//
+// Mutable is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_EventIntentAuctionComplete) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "types.EventIntentAuctionComplete.winning_bid":
+		if x.WinningBid == nil {
+			x.WinningBid = new(common.Coin)
+		}
+		return protoreflect.ValueOfMessage(x.WinningBid.ProtoReflect())
+	case "types.EventIntentAuctionComplete.auction_amount":
+		if x.AuctionAmount == nil {
+			x.AuctionAmount = new(common.Coin)
+		}
+		return protoreflect.ValueOfMessage(x.AuctionAmount.ProtoReflect())
+	case "types.EventIntentAuctionComplete.owner_refund":
+		if x.OwnerRefund == nil {
+			x.OwnerRefund = new(common.Coin)
+		}
+		return protoreflect.ValueOfMessage(x.OwnerRefund.ProtoReflect())
+	case "types.EventIntentAuctionComplete.intent_tx_id":
+		panic(fmt.Errorf("field intent_tx_id of message types.EventIntentAuctionComplete is not mutable"))
+	case "types.EventIntentAuctionComplete.winner_bid_tx_id":
+		panic(fmt.Errorf("field winner_bid_tx_id of message types.EventIntentAuctionComplete is not mutable"))
+	case "types.EventIntentAuctionComplete.winner_address":
+		panic(fmt.Errorf("field winner_address of message types.EventIntentAuctionComplete is not mutable"))
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.EventIntentAuctionComplete"))
+		}
+		panic(fmt.Errorf("message types.EventIntentAuctionComplete does not contain field %s", fd.FullName()))
+	}
+}
+
+// NewField returns a new value that is assignable to the field
+// for the given descriptor. For scalars, this returns the default value.
+// For lists, maps, and messages, this returns a new, empty, mutable value.
+func (x *fastReflection_EventIntentAuctionComplete) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "types.EventIntentAuctionComplete.intent_tx_id":
+		return protoreflect.ValueOfString("")
+	case "types.EventIntentAuctionComplete.winner_bid_tx_id":
+		return protoreflect.ValueOfString("")
+	case "types.EventIntentAuctionComplete.winner_address":
+		return protoreflect.ValueOfString("")
+	case "types.EventIntentAuctionComplete.winning_bid":
+		m := new(common.Coin)
+		return protoreflect.ValueOfMessage(m.ProtoReflect())
+	case "types.EventIntentAuctionComplete.auction_amount":
+		m := new(common.Coin)
+		return protoreflect.ValueOfMessage(m.ProtoReflect())
+	case "types.EventIntentAuctionComplete.owner_refund":
+		m := new(common.Coin)
+		return protoreflect.ValueOfMessage(m.ProtoReflect())
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.EventIntentAuctionComplete"))
+		}
+		panic(fmt.Errorf("message types.EventIntentAuctionComplete does not contain field %s", fd.FullName()))
+	}
+}
+
+// WhichOneof reports which field within the oneof is populated,
+// returning nil if none are populated.
+// It panics if the oneof descriptor does not belong to this message.
+func (x *fastReflection_EventIntentAuctionComplete) WhichOneof(d protoreflect.OneofDescriptor) protoreflect.FieldDescriptor {
+	switch d.FullName() {
+	default:
+		panic(fmt.Errorf("%s is not a oneof field in types.EventIntentAuctionComplete", d.FullName()))
+	}
+	panic("unreachable")
+}
+
+// GetUnknown retrieves the entire list of unknown fields.
+// The caller may only mutate the contents of the RawFields
+// if the mutated bytes are stored back into the message with SetUnknown.
+func (x *fastReflection_EventIntentAuctionComplete) GetUnknown() protoreflect.RawFields {
+	return x.unknownFields
+}
+
+// SetUnknown stores an entire list of unknown fields.
+// The raw fields must be syntactically valid according to the wire format.
+// An implementation may panic if this is not the case.
+// Once stored, the caller must not mutate the content of the RawFields.
+// An empty RawFields may be passed to clear the fields.
+//
+// SetUnknown is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_EventIntentAuctionComplete) SetUnknown(fields protoreflect.RawFields) {
+	x.unknownFields = fields
+}
+
+// IsValid reports whether the message is valid.
+//
+// An invalid message is an empty, read-only value.
+//
+// An invalid message often corresponds to a nil pointer of the concrete
+// message type, but the details are implementation dependent.
+// Validity is not part of the protobuf data model, and may not
+// be preserved in marshaling or other operations.
+func (x *fastReflection_EventIntentAuctionComplete) IsValid() bool {
+	return x != nil
+}
+
+// ProtoMethods returns optional fastReflectionFeature-path implementations of various operations.
+// This method may return nil.
+//
+// The returned methods type is identical to
+// "google.golang.org/protobuf/runtime/protoiface".Methods.
+// Consult the protoiface package documentation for details.
+func (x *fastReflection_EventIntentAuctionComplete) ProtoMethods() *protoiface.Methods {
+	size := func(input protoiface.SizeInput) protoiface.SizeOutput {
+		x := input.Message.Interface().(*EventIntentAuctionComplete)
+		if x == nil {
+			return protoiface.SizeOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Size:              0,
+			}
+		}
+		options := runtime.SizeInputToOptions(input)
+		_ = options
+		var n int
+		var l int
+		_ = l
+		l = len(x.IntentTxId)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		l = len(x.WinnerBidTxId)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		l = len(x.WinnerAddress)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		if x.WinningBid != nil {
+			l = options.Size(x.WinningBid)
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		if x.AuctionAmount != nil {
+			l = options.Size(x.AuctionAmount)
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		if x.OwnerRefund != nil {
+			l = options.Size(x.OwnerRefund)
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		if x.unknownFields != nil {
+			n += len(x.unknownFields)
+		}
+		return protoiface.SizeOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Size:              n,
+		}
+	}
+
+	marshal := func(input protoiface.MarshalInput) (protoiface.MarshalOutput, error) {
+		x := input.Message.Interface().(*EventIntentAuctionComplete)
+		if x == nil {
+			return protoiface.MarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Buf:               input.Buf,
+			}, nil
+		}
+		options := runtime.MarshalInputToOptions(input)
+		_ = options
+		size := options.Size(x)
+		dAtA := make([]byte, size)
+		i := len(dAtA)
+		_ = i
+		var l int
+		_ = l
+		if x.unknownFields != nil {
+			i -= len(x.unknownFields)
+			copy(dAtA[i:], x.unknownFields)
+		}
+		if x.OwnerRefund != nil {
+			encoded, err := options.Marshal(x.OwnerRefund)
+			if err != nil {
+				return protoiface.MarshalOutput{
+					NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+					Buf:               input.Buf,
+				}, err
+			}
+			i -= len(encoded)
+			copy(dAtA[i:], encoded)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(encoded)))
+			i--
+			dAtA[i] = 0x32
+		}
+		if x.AuctionAmount != nil {
+			encoded, err := options.Marshal(x.AuctionAmount)
+			if err != nil {
+				return protoiface.MarshalOutput{
+					NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+					Buf:               input.Buf,
+				}, err
+			}
+			i -= len(encoded)
+			copy(dAtA[i:], encoded)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(encoded)))
+			i--
+			dAtA[i] = 0x2a
+		}
+		if x.WinningBid != nil {
+			encoded, err := options.Marshal(x.WinningBid)
+			if err != nil {
+				return protoiface.MarshalOutput{
+					NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+					Buf:               input.Buf,
+				}, err
+			}
+			i -= len(encoded)
+			copy(dAtA[i:], encoded)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(encoded)))
+			i--
+			dAtA[i] = 0x22
+		}
+		if len(x.WinnerAddress) > 0 {
+			i -= len(x.WinnerAddress)
+			copy(dAtA[i:], x.WinnerAddress)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.WinnerAddress)))
+			i--
+			dAtA[i] = 0x1a
+		}
+		if len(x.WinnerBidTxId) > 0 {
+			i -= len(x.WinnerBidTxId)
+			copy(dAtA[i:], x.WinnerBidTxId)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.WinnerBidTxId)))
+			i--
+			dAtA[i] = 0x12
+		}
+		if len(x.IntentTxId) > 0 {
+			i -= len(x.IntentTxId)
+			copy(dAtA[i:], x.IntentTxId)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.IntentTxId)))
+			i--
+			dAtA[i] = 0xa
+		}
+		if input.Buf != nil {
+			input.Buf = append(input.Buf, dAtA...)
+		} else {
+			input.Buf = dAtA
+		}
+		return protoiface.MarshalOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Buf:               input.Buf,
+		}, nil
+	}
+	unmarshal := func(input protoiface.UnmarshalInput) (protoiface.UnmarshalOutput, error) {
+		x := input.Message.Interface().(*EventIntentAuctionComplete)
+		if x == nil {
+			return protoiface.UnmarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Flags:             input.Flags,
+			}, nil
+		}
+		options := runtime.UnmarshalInputToOptions(input)
+		_ = options
+		dAtA := input.Buf
+		l := len(dAtA)
+		iNdEx := 0
+		for iNdEx < l {
+			preIndex := iNdEx
+			var wire uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				wire |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			fieldNum := int32(wire >> 3)
+			wireType := int(wire & 0x7)
+			if wireType == 4 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: EventIntentAuctionComplete: wiretype end group for non-group")
+			}
+			if fieldNum <= 0 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: EventIntentAuctionComplete: illegal tag %d (wire type %d)", fieldNum, wire)
+			}
+			switch fieldNum {
+			case 1:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field IntentTxId", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.IntentTxId = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 2:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field WinnerBidTxId", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.WinnerBidTxId = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 3:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field WinnerAddress", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.WinnerAddress = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 4:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field WinningBid", wireType)
+				}
+				var msglen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					msglen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if msglen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + msglen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				if x.WinningBid == nil {
+					x.WinningBid = &common.Coin{}
+				}
+				if err := options.Unmarshal(dAtA[iNdEx:postIndex], x.WinningBid); err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				iNdEx = postIndex
+			case 5:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field AuctionAmount", wireType)
+				}
+				var msglen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					msglen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if msglen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + msglen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				if x.AuctionAmount == nil {
+					x.AuctionAmount = &common.Coin{}
+				}
+				if err := options.Unmarshal(dAtA[iNdEx:postIndex], x.AuctionAmount); err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				iNdEx = postIndex
+			case 6:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field OwnerRefund", wireType)
+				}
+				var msglen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					msglen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if msglen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + msglen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				if x.OwnerRefund == nil {
+					x.OwnerRefund = &common.Coin{}
+				}
+				if err := options.Unmarshal(dAtA[iNdEx:postIndex], x.OwnerRefund); err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				iNdEx = postIndex
+			default:
+				iNdEx = preIndex
+				skippy, err := runtime.Skip(dAtA[iNdEx:])
+				if err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				if (skippy < 0) || (iNdEx+skippy) < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if (iNdEx + skippy) > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				if !options.DiscardUnknown {
+					x.unknownFields = append(x.unknownFields, dAtA[iNdEx:iNdEx+skippy]...)
+				}
+				iNdEx += skippy
+			}
+		}
+
+		if iNdEx > l {
+			return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+		}
+		return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, nil
+	}
+	return &protoiface.Methods{
+		NoUnkeyedLiterals: struct{}{},
+		Flags:             protoiface.SupportMarshalDeterministic | protoiface.SupportUnmarshalDiscardUnknown,
+		Size:              size,
+		Marshal:           marshal,
+		Unmarshal:         unmarshal,
+		Merge:             nil,
+		CheckInitialized:  nil,
+	}
+}
+
+var (
+	md_EventIntentAuctionCancel              protoreflect.MessageDescriptor
+	fd_EventIntentAuctionCancel_intent_tx_id protoreflect.FieldDescriptor
+	fd_EventIntentAuctionCancel_abandoned    protoreflect.FieldDescriptor
+)
+
+func init() {
+	file_types_type_event_intent_proto_init()
+	md_EventIntentAuctionCancel = File_types_type_event_intent_proto.Messages().ByName("EventIntentAuctionCancel")
+	fd_EventIntentAuctionCancel_intent_tx_id = md_EventIntentAuctionCancel.Fields().ByName("intent_tx_id")
+	fd_EventIntentAuctionCancel_abandoned = md_EventIntentAuctionCancel.Fields().ByName("abandoned")
+}
+
+var _ protoreflect.Message = (*fastReflection_EventIntentAuctionCancel)(nil)
+
+type fastReflection_EventIntentAuctionCancel EventIntentAuctionCancel
+
+func (x *EventIntentAuctionCancel) ProtoReflect() protoreflect.Message {
+	return (*fastReflection_EventIntentAuctionCancel)(x)
+}
+
+func (x *EventIntentAuctionCancel) slowProtoReflect() protoreflect.Message {
+	mi := &file_types_type_event_intent_proto_msgTypes[8]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+var _fastReflection_EventIntentAuctionCancel_messageType fastReflection_EventIntentAuctionCancel_messageType
+var _ protoreflect.MessageType = fastReflection_EventIntentAuctionCancel_messageType{}
+
+type fastReflection_EventIntentAuctionCancel_messageType struct{}
+
+func (x fastReflection_EventIntentAuctionCancel_messageType) Zero() protoreflect.Message {
+	return (*fastReflection_EventIntentAuctionCancel)(nil)
+}
+func (x fastReflection_EventIntentAuctionCancel_messageType) New() protoreflect.Message {
+	return new(fastReflection_EventIntentAuctionCancel)
+}
+func (x fastReflection_EventIntentAuctionCancel_messageType) Descriptor() protoreflect.MessageDescriptor {
+	return md_EventIntentAuctionCancel
+}
+
+// Descriptor returns message descriptor, which contains only the protobuf
+// type information for the message.
+func (x *fastReflection_EventIntentAuctionCancel) Descriptor() protoreflect.MessageDescriptor {
+	return md_EventIntentAuctionCancel
+}
+
+// Type returns the message type, which encapsulates both Go and protobuf
+// type information. If the Go type information is not needed,
+// it is recommended that the message descriptor be used instead.
+func (x *fastReflection_EventIntentAuctionCancel) Type() protoreflect.MessageType {
+	return _fastReflection_EventIntentAuctionCancel_messageType
+}
+
+// New returns a newly allocated and mutable empty message.
+func (x *fastReflection_EventIntentAuctionCancel) New() protoreflect.Message {
+	return new(fastReflection_EventIntentAuctionCancel)
+}
+
+// Interface unwraps the message reflection interface and
+// returns the underlying ProtoMessage interface.
+func (x *fastReflection_EventIntentAuctionCancel) Interface() protoreflect.ProtoMessage {
+	return (*EventIntentAuctionCancel)(x)
+}
+
+// Range iterates over every populated field in an undefined order,
+// calling f for each field descriptor and value encountered.
+// Range returns immediately if f returns false.
+// While iterating, mutating operations may only be performed
+// on the current field descriptor.
+func (x *fastReflection_EventIntentAuctionCancel) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
+	if x.IntentTxId != "" {
+		value := protoreflect.ValueOfString(x.IntentTxId)
+		if !f(fd_EventIntentAuctionCancel_intent_tx_id, value) {
+			return
+		}
+	}
+	if x.Abandoned != false {
+		value := protoreflect.ValueOfBool(x.Abandoned)
+		if !f(fd_EventIntentAuctionCancel_abandoned, value) {
+			return
+		}
+	}
+}
+
+// Has reports whether a field is populated.
+//
+// Some fields have the property of nullability where it is possible to
+// distinguish between the default value of a field and whether the field
+// was explicitly populated with the default value. Singular message fields,
+// member fields of a oneof, and proto2 scalar fields are nullable. Such
+// fields are populated only if explicitly set.
+//
+// In other cases (aside from the nullable cases above),
+// a proto3 scalar field is populated if it contains a non-zero value, and
+// a repeated field is populated if it is non-empty.
+func (x *fastReflection_EventIntentAuctionCancel) Has(fd protoreflect.FieldDescriptor) bool {
+	switch fd.FullName() {
+	case "types.EventIntentAuctionCancel.intent_tx_id":
+		return x.IntentTxId != ""
+	case "types.EventIntentAuctionCancel.abandoned":
+		return x.Abandoned != false
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.EventIntentAuctionCancel"))
+		}
+		panic(fmt.Errorf("message types.EventIntentAuctionCancel does not contain field %s", fd.FullName()))
+	}
+}
+
+// Clear clears the field such that a subsequent Has call reports false.
+//
+// Clearing an extension field clears both the extension type and value
+// associated with the given field number.
+//
+// Clear is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_EventIntentAuctionCancel) Clear(fd protoreflect.FieldDescriptor) {
+	switch fd.FullName() {
+	case "types.EventIntentAuctionCancel.intent_tx_id":
+		x.IntentTxId = ""
+	case "types.EventIntentAuctionCancel.abandoned":
+		x.Abandoned = false
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.EventIntentAuctionCancel"))
+		}
+		panic(fmt.Errorf("message types.EventIntentAuctionCancel does not contain field %s", fd.FullName()))
+	}
+}
+
+// Get retrieves the value for a field.
+//
+// For unpopulated scalars, it returns the default value, where
+// the default value of a bytes scalar is guaranteed to be a copy.
+// For unpopulated composite types, it returns an empty, read-only view
+// of the value; to obtain a mutable reference, use Mutable.
+func (x *fastReflection_EventIntentAuctionCancel) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
+	switch descriptor.FullName() {
+	case "types.EventIntentAuctionCancel.intent_tx_id":
+		value := x.IntentTxId
+		return protoreflect.ValueOfString(value)
+	case "types.EventIntentAuctionCancel.abandoned":
+		value := x.Abandoned
+		return protoreflect.ValueOfBool(value)
+	default:
+		if descriptor.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.EventIntentAuctionCancel"))
+		}
+		panic(fmt.Errorf("message types.EventIntentAuctionCancel does not contain field %s", descriptor.FullName()))
+	}
+}
+
+// Set stores the value for a field.
+//
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType.
+// When setting a composite type, it is unspecified whether the stored value
+// aliases the source's memory in any way. If the composite value is an
+// empty, read-only value, then it panics.
+//
+// Set is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_EventIntentAuctionCancel) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
+	switch fd.FullName() {
+	case "types.EventIntentAuctionCancel.intent_tx_id":
+		x.IntentTxId = value.Interface().(string)
+	case "types.EventIntentAuctionCancel.abandoned":
+		x.Abandoned = value.Bool()
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.EventIntentAuctionCancel"))
+		}
+		panic(fmt.Errorf("message types.EventIntentAuctionCancel does not contain field %s", fd.FullName()))
+	}
+}
+
+// Mutable returns a mutable reference to a composite type.
+//
+// If the field is unpopulated, it may allocate a composite value.
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType
+// if not already stored.
+// It panics if the field does not contain a composite type.
+//
+// Mutable is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_EventIntentAuctionCancel) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "types.EventIntentAuctionCancel.intent_tx_id":
+		panic(fmt.Errorf("field intent_tx_id of message types.EventIntentAuctionCancel is not mutable"))
+	case "types.EventIntentAuctionCancel.abandoned":
+		panic(fmt.Errorf("field abandoned of message types.EventIntentAuctionCancel is not mutable"))
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.EventIntentAuctionCancel"))
+		}
+		panic(fmt.Errorf("message types.EventIntentAuctionCancel does not contain field %s", fd.FullName()))
+	}
+}
+
+// NewField returns a new value that is assignable to the field
+// for the given descriptor. For scalars, this returns the default value.
+// For lists, maps, and messages, this returns a new, empty, mutable value.
+func (x *fastReflection_EventIntentAuctionCancel) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "types.EventIntentAuctionCancel.intent_tx_id":
+		return protoreflect.ValueOfString("")
+	case "types.EventIntentAuctionCancel.abandoned":
+		return protoreflect.ValueOfBool(false)
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.EventIntentAuctionCancel"))
+		}
+		panic(fmt.Errorf("message types.EventIntentAuctionCancel does not contain field %s", fd.FullName()))
+	}
+}
+
+// WhichOneof reports which field within the oneof is populated,
+// returning nil if none are populated.
+// It panics if the oneof descriptor does not belong to this message.
+func (x *fastReflection_EventIntentAuctionCancel) WhichOneof(d protoreflect.OneofDescriptor) protoreflect.FieldDescriptor {
+	switch d.FullName() {
+	default:
+		panic(fmt.Errorf("%s is not a oneof field in types.EventIntentAuctionCancel", d.FullName()))
+	}
+	panic("unreachable")
+}
+
+// GetUnknown retrieves the entire list of unknown fields.
+// The caller may only mutate the contents of the RawFields
+// if the mutated bytes are stored back into the message with SetUnknown.
+func (x *fastReflection_EventIntentAuctionCancel) GetUnknown() protoreflect.RawFields {
+	return x.unknownFields
+}
+
+// SetUnknown stores an entire list of unknown fields.
+// The raw fields must be syntactically valid according to the wire format.
+// An implementation may panic if this is not the case.
+// Once stored, the caller must not mutate the content of the RawFields.
+// An empty RawFields may be passed to clear the fields.
+//
+// SetUnknown is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_EventIntentAuctionCancel) SetUnknown(fields protoreflect.RawFields) {
+	x.unknownFields = fields
+}
+
+// IsValid reports whether the message is valid.
+//
+// An invalid message is an empty, read-only value.
+//
+// An invalid message often corresponds to a nil pointer of the concrete
+// message type, but the details are implementation dependent.
+// Validity is not part of the protobuf data model, and may not
+// be preserved in marshaling or other operations.
+func (x *fastReflection_EventIntentAuctionCancel) IsValid() bool {
+	return x != nil
+}
+
+// ProtoMethods returns optional fastReflectionFeature-path implementations of various operations.
+// This method may return nil.
+//
+// The returned methods type is identical to
+// "google.golang.org/protobuf/runtime/protoiface".Methods.
+// Consult the protoiface package documentation for details.
+func (x *fastReflection_EventIntentAuctionCancel) ProtoMethods() *protoiface.Methods {
+	size := func(input protoiface.SizeInput) protoiface.SizeOutput {
+		x := input.Message.Interface().(*EventIntentAuctionCancel)
+		if x == nil {
+			return protoiface.SizeOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Size:              0,
+			}
+		}
+		options := runtime.SizeInputToOptions(input)
+		_ = options
+		var n int
+		var l int
+		_ = l
+		l = len(x.IntentTxId)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		if x.Abandoned {
+			n += 2
+		}
+		if x.unknownFields != nil {
+			n += len(x.unknownFields)
+		}
+		return protoiface.SizeOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Size:              n,
+		}
+	}
+
+	marshal := func(input protoiface.MarshalInput) (protoiface.MarshalOutput, error) {
+		x := input.Message.Interface().(*EventIntentAuctionCancel)
+		if x == nil {
+			return protoiface.MarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Buf:               input.Buf,
+			}, nil
+		}
+		options := runtime.MarshalInputToOptions(input)
+		_ = options
+		size := options.Size(x)
+		dAtA := make([]byte, size)
+		i := len(dAtA)
+		_ = i
+		var l int
+		_ = l
+		if x.unknownFields != nil {
+			i -= len(x.unknownFields)
+			copy(dAtA[i:], x.unknownFields)
+		}
+		if x.Abandoned {
+			i--
+			if x.Abandoned {
+				dAtA[i] = 1
+			} else {
+				dAtA[i] = 0
+			}
+			i--
+			dAtA[i] = 0x10
+		}
+		if len(x.IntentTxId) > 0 {
+			i -= len(x.IntentTxId)
+			copy(dAtA[i:], x.IntentTxId)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.IntentTxId)))
+			i--
+			dAtA[i] = 0xa
+		}
+		if input.Buf != nil {
+			input.Buf = append(input.Buf, dAtA...)
+		} else {
+			input.Buf = dAtA
+		}
+		return protoiface.MarshalOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Buf:               input.Buf,
+		}, nil
+	}
+	unmarshal := func(input protoiface.UnmarshalInput) (protoiface.UnmarshalOutput, error) {
+		x := input.Message.Interface().(*EventIntentAuctionCancel)
+		if x == nil {
+			return protoiface.UnmarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Flags:             input.Flags,
+			}, nil
+		}
+		options := runtime.UnmarshalInputToOptions(input)
+		_ = options
+		dAtA := input.Buf
+		l := len(dAtA)
+		iNdEx := 0
+		for iNdEx < l {
+			preIndex := iNdEx
+			var wire uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				wire |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			fieldNum := int32(wire >> 3)
+			wireType := int(wire & 0x7)
+			if wireType == 4 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: EventIntentAuctionCancel: wiretype end group for non-group")
+			}
+			if fieldNum <= 0 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: EventIntentAuctionCancel: illegal tag %d (wire type %d)", fieldNum, wire)
+			}
+			switch fieldNum {
+			case 1:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field IntentTxId", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.IntentTxId = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 2:
+				if wireType != 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Abandoned", wireType)
+				}
+				var v int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					v |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				x.Abandoned = bool(v != 0)
+			default:
+				iNdEx = preIndex
+				skippy, err := runtime.Skip(dAtA[iNdEx:])
+				if err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				if (skippy < 0) || (iNdEx+skippy) < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if (iNdEx + skippy) > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				if !options.DiscardUnknown {
+					x.unknownFields = append(x.unknownFields, dAtA[iNdEx:iNdEx+skippy]...)
+				}
+				iNdEx += skippy
+			}
+		}
+
+		if iNdEx > l {
+			return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+		}
+		return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, nil
+	}
+	return &protoiface.Methods{
+		NoUnkeyedLiterals: struct{}{},
+		Flags:             protoiface.SupportMarshalDeterministic | protoiface.SupportUnmarshalDiscardUnknown,
+		Size:              size,
+		Marshal:           marshal,
+		Unmarshal:         unmarshal,
+		Merge:             nil,
+		CheckInitialized:  nil,
+	}
+}
+
 // Code generated by protoc-gen-go. DO NOT EDIT.
 // versions:
 // 	protoc-gen-go v1.27.0
@@ -3923,6 +6617,266 @@ func (x *EventIntentExpire) GetAbandoned() bool {
 	return false
 }
 
+type EventIntentAuctionStart struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	IntentTxId      string        `protobuf:"bytes,1,opt,name=intent_tx_id,json=intentTxId,proto3" json:"intent_tx_id,omitempty"`
+	AuctionAmount   *common.Coin  `protobuf:"bytes,2,opt,name=auction_amount,json=auctionAmount,proto3" json:"auction_amount,omitempty"`
+	RemainingAmount *common.Coin  `protobuf:"bytes,3,opt,name=remaining_amount,json=remainingAmount,proto3" json:"remaining_amount,omitempty"`
+	BidAsset        *common.Asset `protobuf:"bytes,4,opt,name=bid_asset,json=bidAsset,proto3" json:"bid_asset,omitempty"`
+	MinBid          string        `protobuf:"bytes,5,opt,name=min_bid,json=minBid,proto3" json:"min_bid,omitempty"`
+	ExpiryHeight    int64         `protobuf:"varint,6,opt,name=expiry_height,json=expiryHeight,proto3" json:"expiry_height,omitempty"`
+}
+
+func (x *EventIntentAuctionStart) Reset() {
+	*x = EventIntentAuctionStart{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_types_type_event_intent_proto_msgTypes[5]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *EventIntentAuctionStart) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EventIntentAuctionStart) ProtoMessage() {}
+
+// Deprecated: Use EventIntentAuctionStart.ProtoReflect.Descriptor instead.
+func (*EventIntentAuctionStart) Descriptor() ([]byte, []int) {
+	return file_types_type_event_intent_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *EventIntentAuctionStart) GetIntentTxId() string {
+	if x != nil {
+		return x.IntentTxId
+	}
+	return ""
+}
+
+func (x *EventIntentAuctionStart) GetAuctionAmount() *common.Coin {
+	if x != nil {
+		return x.AuctionAmount
+	}
+	return nil
+}
+
+func (x *EventIntentAuctionStart) GetRemainingAmount() *common.Coin {
+	if x != nil {
+		return x.RemainingAmount
+	}
+	return nil
+}
+
+func (x *EventIntentAuctionStart) GetBidAsset() *common.Asset {
+	if x != nil {
+		return x.BidAsset
+	}
+	return nil
+}
+
+func (x *EventIntentAuctionStart) GetMinBid() string {
+	if x != nil {
+		return x.MinBid
+	}
+	return ""
+}
+
+func (x *EventIntentAuctionStart) GetExpiryHeight() int64 {
+	if x != nil {
+		return x.ExpiryHeight
+	}
+	return 0
+}
+
+type EventIntentAuctionBid struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	BidTxId       string `protobuf:"bytes,1,opt,name=bid_tx_id,json=bidTxId,proto3" json:"bid_tx_id,omitempty"`
+	IntentTxId    string `protobuf:"bytes,2,opt,name=intent_tx_id,json=intentTxId,proto3" json:"intent_tx_id,omitempty"`
+	BidderAddress string `protobuf:"bytes,3,opt,name=bidder_address,json=bidderAddress,proto3" json:"bidder_address,omitempty"`
+	BidAmount     string `protobuf:"bytes,4,opt,name=bid_amount,json=bidAmount,proto3" json:"bid_amount,omitempty"`
+	IsTopUp       bool   `protobuf:"varint,5,opt,name=is_top_up,json=isTopUp,proto3" json:"is_top_up,omitempty"`
+}
+
+func (x *EventIntentAuctionBid) Reset() {
+	*x = EventIntentAuctionBid{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_types_type_event_intent_proto_msgTypes[6]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *EventIntentAuctionBid) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EventIntentAuctionBid) ProtoMessage() {}
+
+// Deprecated: Use EventIntentAuctionBid.ProtoReflect.Descriptor instead.
+func (*EventIntentAuctionBid) Descriptor() ([]byte, []int) {
+	return file_types_type_event_intent_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *EventIntentAuctionBid) GetBidTxId() string {
+	if x != nil {
+		return x.BidTxId
+	}
+	return ""
+}
+
+func (x *EventIntentAuctionBid) GetIntentTxId() string {
+	if x != nil {
+		return x.IntentTxId
+	}
+	return ""
+}
+
+func (x *EventIntentAuctionBid) GetBidderAddress() string {
+	if x != nil {
+		return x.BidderAddress
+	}
+	return ""
+}
+
+func (x *EventIntentAuctionBid) GetBidAmount() string {
+	if x != nil {
+		return x.BidAmount
+	}
+	return ""
+}
+
+func (x *EventIntentAuctionBid) GetIsTopUp() bool {
+	if x != nil {
+		return x.IsTopUp
+	}
+	return false
+}
+
+type EventIntentAuctionComplete struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	IntentTxId    string       `protobuf:"bytes,1,opt,name=intent_tx_id,json=intentTxId,proto3" json:"intent_tx_id,omitempty"`
+	WinnerBidTxId string       `protobuf:"bytes,2,opt,name=winner_bid_tx_id,json=winnerBidTxId,proto3" json:"winner_bid_tx_id,omitempty"`
+	WinnerAddress string       `protobuf:"bytes,3,opt,name=winner_address,json=winnerAddress,proto3" json:"winner_address,omitempty"`
+	WinningBid    *common.Coin `protobuf:"bytes,4,opt,name=winning_bid,json=winningBid,proto3" json:"winning_bid,omitempty"`
+	AuctionAmount *common.Coin `protobuf:"bytes,5,opt,name=auction_amount,json=auctionAmount,proto3" json:"auction_amount,omitempty"`
+	OwnerRefund   *common.Coin `protobuf:"bytes,6,opt,name=owner_refund,json=ownerRefund,proto3" json:"owner_refund,omitempty"`
+}
+
+func (x *EventIntentAuctionComplete) Reset() {
+	*x = EventIntentAuctionComplete{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_types_type_event_intent_proto_msgTypes[7]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *EventIntentAuctionComplete) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EventIntentAuctionComplete) ProtoMessage() {}
+
+// Deprecated: Use EventIntentAuctionComplete.ProtoReflect.Descriptor instead.
+func (*EventIntentAuctionComplete) Descriptor() ([]byte, []int) {
+	return file_types_type_event_intent_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *EventIntentAuctionComplete) GetIntentTxId() string {
+	if x != nil {
+		return x.IntentTxId
+	}
+	return ""
+}
+
+func (x *EventIntentAuctionComplete) GetWinnerBidTxId() string {
+	if x != nil {
+		return x.WinnerBidTxId
+	}
+	return ""
+}
+
+func (x *EventIntentAuctionComplete) GetWinnerAddress() string {
+	if x != nil {
+		return x.WinnerAddress
+	}
+	return ""
+}
+
+func (x *EventIntentAuctionComplete) GetWinningBid() *common.Coin {
+	if x != nil {
+		return x.WinningBid
+	}
+	return nil
+}
+
+func (x *EventIntentAuctionComplete) GetAuctionAmount() *common.Coin {
+	if x != nil {
+		return x.AuctionAmount
+	}
+	return nil
+}
+
+func (x *EventIntentAuctionComplete) GetOwnerRefund() *common.Coin {
+	if x != nil {
+		return x.OwnerRefund
+	}
+	return nil
+}
+
+type EventIntentAuctionCancel struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	IntentTxId string `protobuf:"bytes,1,opt,name=intent_tx_id,json=intentTxId,proto3" json:"intent_tx_id,omitempty"`
+	Abandoned  bool   `protobuf:"varint,2,opt,name=abandoned,proto3" json:"abandoned,omitempty"`
+}
+
+func (x *EventIntentAuctionCancel) Reset() {
+	*x = EventIntentAuctionCancel{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_types_type_event_intent_proto_msgTypes[8]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *EventIntentAuctionCancel) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EventIntentAuctionCancel) ProtoMessage() {}
+
+// Deprecated: Use EventIntentAuctionCancel.ProtoReflect.Descriptor instead.
+func (*EventIntentAuctionCancel) Descriptor() ([]byte, []int) {
+	return file_types_type_event_intent_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *EventIntentAuctionCancel) GetIntentTxId() string {
+	if x != nil {
+		return x.IntentTxId
+	}
+	return ""
+}
+
+func (x *EventIntentAuctionCancel) GetAbandoned() bool {
+	if x != nil {
+		return x.Abandoned
+	}
+	return false
+}
+
 var File_types_type_event_intent_proto protoreflect.FileDescriptor
 
 var file_types_type_event_intent_proto_rawDesc = []byte{
@@ -4054,16 +7008,109 @@ var file_types_type_event_intent_proto_rawDesc = []byte{
 	0x6f, 0x6e, 0x2e, 0x41, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x52, 0x0d, 0x72, 0x65, 0x66, 0x75,
 	0x6e, 0x64, 0x41, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x12, 0x1c, 0x0a, 0x09, 0x61, 0x62, 0x61,
 	0x6e, 0x64, 0x6f, 0x6e, 0x65, 0x64, 0x18, 0x04, 0x20, 0x01, 0x28, 0x08, 0x52, 0x09, 0x61, 0x62,
-	0x61, 0x6e, 0x64, 0x6f, 0x6e, 0x65, 0x64, 0x42, 0x81, 0x01, 0x0a, 0x09, 0x63, 0x6f, 0x6d, 0x2e,
-	0x74, 0x79, 0x70, 0x65, 0x73, 0x42, 0x14, 0x54, 0x79, 0x70, 0x65, 0x45, 0x76, 0x65, 0x6e, 0x74,
-	0x49, 0x6e, 0x74, 0x65, 0x6e, 0x74, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x2a, 0x67,
-	0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68,
-	0x61, 0x69, 0x6e, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f,
-	0x61, 0x70, 0x69, 0x2f, 0x74, 0x79, 0x70, 0x65, 0x73, 0xa2, 0x02, 0x03, 0x54, 0x58, 0x58, 0xaa,
-	0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xca, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xe2,
-	0x02, 0x11, 0x54, 0x79, 0x70, 0x65, 0x73, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64,
-	0x61, 0x74, 0x61, 0xea, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0x62, 0x06, 0x70, 0x72, 0x6f,
-	0x74, 0x6f, 0x33,
+	0x61, 0x6e, 0x64, 0x6f, 0x6e, 0x65, 0x64, 0x22, 0xb6, 0x03, 0x0a, 0x17, 0x45, 0x76, 0x65, 0x6e,
+	0x74, 0x49, 0x6e, 0x74, 0x65, 0x6e, 0x74, 0x41, 0x75, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x53, 0x74,
+	0x61, 0x72, 0x74, 0x12, 0x60, 0x0a, 0x0c, 0x69, 0x6e, 0x74, 0x65, 0x6e, 0x74, 0x5f, 0x74, 0x78,
+	0x5f, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x42, 0x3e, 0xe2, 0xde, 0x1f, 0x0a, 0x49,
+	0x6e, 0x74, 0x65, 0x6e, 0x74, 0x54, 0x78, 0x49, 0x44, 0xfa, 0xde, 0x1f, 0x2c, 0x67, 0x69, 0x74,
+	0x6c, 0x61, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69,
+	0x6e, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x63, 0x6f,
+	0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x54, 0x78, 0x49, 0x44, 0x52, 0x0a, 0x69, 0x6e, 0x74, 0x65, 0x6e,
+	0x74, 0x54, 0x78, 0x49, 0x64, 0x12, 0x39, 0x0a, 0x0e, 0x61, 0x75, 0x63, 0x74, 0x69, 0x6f, 0x6e,
+	0x5f, 0x61, 0x6d, 0x6f, 0x75, 0x6e, 0x74, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x0c, 0x2e,
+	0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x43, 0x6f, 0x69, 0x6e, 0x42, 0x04, 0xc8, 0xde, 0x1f,
+	0x00, 0x52, 0x0d, 0x61, 0x75, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x41, 0x6d, 0x6f, 0x75, 0x6e, 0x74,
+	0x12, 0x3d, 0x0a, 0x10, 0x72, 0x65, 0x6d, 0x61, 0x69, 0x6e, 0x69, 0x6e, 0x67, 0x5f, 0x61, 0x6d,
+	0x6f, 0x75, 0x6e, 0x74, 0x18, 0x03, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x0c, 0x2e, 0x63, 0x6f, 0x6d,
+	0x6d, 0x6f, 0x6e, 0x2e, 0x43, 0x6f, 0x69, 0x6e, 0x42, 0x04, 0xc8, 0xde, 0x1f, 0x00, 0x52, 0x0f,
+	0x72, 0x65, 0x6d, 0x61, 0x69, 0x6e, 0x69, 0x6e, 0x67, 0x41, 0x6d, 0x6f, 0x75, 0x6e, 0x74, 0x12,
+	0x61, 0x0a, 0x09, 0x62, 0x69, 0x64, 0x5f, 0x61, 0x73, 0x73, 0x65, 0x74, 0x18, 0x04, 0x20, 0x01,
+	0x28, 0x0b, 0x32, 0x0d, 0x2e, 0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x41, 0x73, 0x73, 0x65,
+	0x74, 0x42, 0x35, 0xc8, 0xde, 0x1f, 0x00, 0xda, 0xde, 0x1f, 0x2d, 0x67, 0x69, 0x74, 0x6c, 0x61,
+	0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f,
+	0x74, 0x68, 0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x63, 0x6f, 0x6d, 0x6d,
+	0x6f, 0x6e, 0x2e, 0x41, 0x73, 0x73, 0x65, 0x74, 0x52, 0x08, 0x62, 0x69, 0x64, 0x41, 0x73, 0x73,
+	0x65, 0x74, 0x12, 0x37, 0x0a, 0x07, 0x6d, 0x69, 0x6e, 0x5f, 0x62, 0x69, 0x64, 0x18, 0x05, 0x20,
+	0x01, 0x28, 0x09, 0x42, 0x1e, 0xc8, 0xde, 0x1f, 0x00, 0xda, 0xde, 0x1f, 0x16, 0x63, 0x6f, 0x73,
+	0x6d, 0x6f, 0x73, 0x73, 0x64, 0x6b, 0x2e, 0x69, 0x6f, 0x2f, 0x6d, 0x61, 0x74, 0x68, 0x2e, 0x55,
+	0x69, 0x6e, 0x74, 0x52, 0x06, 0x6d, 0x69, 0x6e, 0x42, 0x69, 0x64, 0x12, 0x23, 0x0a, 0x0d, 0x65,
+	0x78, 0x70, 0x69, 0x72, 0x79, 0x5f, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x18, 0x06, 0x20, 0x01,
+	0x28, 0x03, 0x52, 0x0c, 0x65, 0x78, 0x70, 0x69, 0x72, 0x79, 0x48, 0x65, 0x69, 0x67, 0x68, 0x74,
+	0x22, 0x89, 0x03, 0x0a, 0x15, 0x45, 0x76, 0x65, 0x6e, 0x74, 0x49, 0x6e, 0x74, 0x65, 0x6e, 0x74,
+	0x41, 0x75, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x42, 0x69, 0x64, 0x12, 0x57, 0x0a, 0x09, 0x62, 0x69,
+	0x64, 0x5f, 0x74, 0x78, 0x5f, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x42, 0x3b, 0xe2,
+	0xde, 0x1f, 0x07, 0x42, 0x69, 0x64, 0x54, 0x78, 0x49, 0x44, 0xfa, 0xde, 0x1f, 0x2c, 0x67, 0x69,
+	0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61,
+	0x69, 0x6e, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x63,
+	0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x54, 0x78, 0x49, 0x44, 0x52, 0x07, 0x62, 0x69, 0x64, 0x54,
+	0x78, 0x49, 0x64, 0x12, 0x60, 0x0a, 0x0c, 0x69, 0x6e, 0x74, 0x65, 0x6e, 0x74, 0x5f, 0x74, 0x78,
+	0x5f, 0x69, 0x64, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x42, 0x3e, 0xe2, 0xde, 0x1f, 0x0a, 0x49,
+	0x6e, 0x74, 0x65, 0x6e, 0x74, 0x54, 0x78, 0x49, 0x44, 0xfa, 0xde, 0x1f, 0x2c, 0x67, 0x69, 0x74,
+	0x6c, 0x61, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69,
+	0x6e, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x63, 0x6f,
+	0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x54, 0x78, 0x49, 0x44, 0x52, 0x0a, 0x69, 0x6e, 0x74, 0x65, 0x6e,
+	0x74, 0x54, 0x78, 0x49, 0x64, 0x12, 0x5a, 0x0a, 0x0e, 0x62, 0x69, 0x64, 0x64, 0x65, 0x72, 0x5f,
+	0x61, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x18, 0x03, 0x20, 0x01, 0x28, 0x09, 0x42, 0x33, 0xfa,
+	0xde, 0x1f, 0x2f, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68,
+	0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65,
+	0x2f, 0x76, 0x33, 0x2f, 0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x41, 0x64, 0x64, 0x72, 0x65,
+	0x73, 0x73, 0x52, 0x0d, 0x62, 0x69, 0x64, 0x64, 0x65, 0x72, 0x41, 0x64, 0x64, 0x72, 0x65, 0x73,
+	0x73, 0x12, 0x3d, 0x0a, 0x0a, 0x62, 0x69, 0x64, 0x5f, 0x61, 0x6d, 0x6f, 0x75, 0x6e, 0x74, 0x18,
+	0x04, 0x20, 0x01, 0x28, 0x09, 0x42, 0x1e, 0xc8, 0xde, 0x1f, 0x00, 0xda, 0xde, 0x1f, 0x16, 0x63,
+	0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x73, 0x64, 0x6b, 0x2e, 0x69, 0x6f, 0x2f, 0x6d, 0x61, 0x74, 0x68,
+	0x2e, 0x55, 0x69, 0x6e, 0x74, 0x52, 0x09, 0x62, 0x69, 0x64, 0x41, 0x6d, 0x6f, 0x75, 0x6e, 0x74,
+	0x12, 0x1a, 0x0a, 0x09, 0x69, 0x73, 0x5f, 0x74, 0x6f, 0x70, 0x5f, 0x75, 0x70, 0x18, 0x05, 0x20,
+	0x01, 0x28, 0x08, 0x52, 0x07, 0x69, 0x73, 0x54, 0x6f, 0x70, 0x55, 0x70, 0x22, 0xed, 0x03, 0x0a,
+	0x1a, 0x45, 0x76, 0x65, 0x6e, 0x74, 0x49, 0x6e, 0x74, 0x65, 0x6e, 0x74, 0x41, 0x75, 0x63, 0x74,
+	0x69, 0x6f, 0x6e, 0x43, 0x6f, 0x6d, 0x70, 0x6c, 0x65, 0x74, 0x65, 0x12, 0x60, 0x0a, 0x0c, 0x69,
+	0x6e, 0x74, 0x65, 0x6e, 0x74, 0x5f, 0x74, 0x78, 0x5f, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28,
+	0x09, 0x42, 0x3e, 0xe2, 0xde, 0x1f, 0x0a, 0x49, 0x6e, 0x74, 0x65, 0x6e, 0x74, 0x54, 0x78, 0x49,
+	0x44, 0xfa, 0xde, 0x1f, 0x2c, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f,
+	0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x6e, 0x6f,
+	0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x54, 0x78, 0x49,
+	0x44, 0x52, 0x0a, 0x69, 0x6e, 0x74, 0x65, 0x6e, 0x74, 0x54, 0x78, 0x49, 0x64, 0x12, 0x6a, 0x0a,
+	0x10, 0x77, 0x69, 0x6e, 0x6e, 0x65, 0x72, 0x5f, 0x62, 0x69, 0x64, 0x5f, 0x74, 0x78, 0x5f, 0x69,
+	0x64, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x42, 0x41, 0xe2, 0xde, 0x1f, 0x0d, 0x57, 0x69, 0x6e,
+	0x6e, 0x65, 0x72, 0x42, 0x69, 0x64, 0x54, 0x78, 0x49, 0x44, 0xfa, 0xde, 0x1f, 0x2c, 0x67, 0x69,
+	0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61,
+	0x69, 0x6e, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x63,
+	0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x54, 0x78, 0x49, 0x44, 0x52, 0x0d, 0x77, 0x69, 0x6e, 0x6e,
+	0x65, 0x72, 0x42, 0x69, 0x64, 0x54, 0x78, 0x49, 0x64, 0x12, 0x5a, 0x0a, 0x0e, 0x77, 0x69, 0x6e,
+	0x6e, 0x65, 0x72, 0x5f, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x18, 0x03, 0x20, 0x01, 0x28,
+	0x09, 0x42, 0x33, 0xfa, 0xde, 0x1f, 0x2f, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63, 0x6f,
+	0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74, 0x68, 0x6f, 0x72,
+	0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x41,
+	0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x52, 0x0d, 0x77, 0x69, 0x6e, 0x6e, 0x65, 0x72, 0x41, 0x64,
+	0x64, 0x72, 0x65, 0x73, 0x73, 0x12, 0x33, 0x0a, 0x0b, 0x77, 0x69, 0x6e, 0x6e, 0x69, 0x6e, 0x67,
+	0x5f, 0x62, 0x69, 0x64, 0x18, 0x04, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x0c, 0x2e, 0x63, 0x6f, 0x6d,
+	0x6d, 0x6f, 0x6e, 0x2e, 0x43, 0x6f, 0x69, 0x6e, 0x42, 0x04, 0xc8, 0xde, 0x1f, 0x00, 0x52, 0x0a,
+	0x77, 0x69, 0x6e, 0x6e, 0x69, 0x6e, 0x67, 0x42, 0x69, 0x64, 0x12, 0x39, 0x0a, 0x0e, 0x61, 0x75,
+	0x63, 0x74, 0x69, 0x6f, 0x6e, 0x5f, 0x61, 0x6d, 0x6f, 0x75, 0x6e, 0x74, 0x18, 0x05, 0x20, 0x01,
+	0x28, 0x0b, 0x32, 0x0c, 0x2e, 0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x43, 0x6f, 0x69, 0x6e,
+	0x42, 0x04, 0xc8, 0xde, 0x1f, 0x00, 0x52, 0x0d, 0x61, 0x75, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x41,
+	0x6d, 0x6f, 0x75, 0x6e, 0x74, 0x12, 0x35, 0x0a, 0x0c, 0x6f, 0x77, 0x6e, 0x65, 0x72, 0x5f, 0x72,
+	0x65, 0x66, 0x75, 0x6e, 0x64, 0x18, 0x06, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x0c, 0x2e, 0x63, 0x6f,
+	0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x43, 0x6f, 0x69, 0x6e, 0x42, 0x04, 0xc8, 0xde, 0x1f, 0x00, 0x52,
+	0x0b, 0x6f, 0x77, 0x6e, 0x65, 0x72, 0x52, 0x65, 0x66, 0x75, 0x6e, 0x64, 0x22, 0x9a, 0x01, 0x0a,
+	0x18, 0x45, 0x76, 0x65, 0x6e, 0x74, 0x49, 0x6e, 0x74, 0x65, 0x6e, 0x74, 0x41, 0x75, 0x63, 0x74,
+	0x69, 0x6f, 0x6e, 0x43, 0x61, 0x6e, 0x63, 0x65, 0x6c, 0x12, 0x60, 0x0a, 0x0c, 0x69, 0x6e, 0x74,
+	0x65, 0x6e, 0x74, 0x5f, 0x74, 0x78, 0x5f, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x42,
+	0x3e, 0xe2, 0xde, 0x1f, 0x0a, 0x49, 0x6e, 0x74, 0x65, 0x6e, 0x74, 0x54, 0x78, 0x49, 0x44, 0xfa,
+	0xde, 0x1f, 0x2c, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68,
+	0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65,
+	0x2f, 0x76, 0x33, 0x2f, 0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x54, 0x78, 0x49, 0x44, 0x52,
+	0x0a, 0x69, 0x6e, 0x74, 0x65, 0x6e, 0x74, 0x54, 0x78, 0x49, 0x64, 0x12, 0x1c, 0x0a, 0x09, 0x61,
+	0x62, 0x61, 0x6e, 0x64, 0x6f, 0x6e, 0x65, 0x64, 0x18, 0x02, 0x20, 0x01, 0x28, 0x08, 0x52, 0x09,
+	0x61, 0x62, 0x61, 0x6e, 0x64, 0x6f, 0x6e, 0x65, 0x64, 0x42, 0x81, 0x01, 0x0a, 0x09, 0x63, 0x6f,
+	0x6d, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x42, 0x14, 0x54, 0x79, 0x70, 0x65, 0x45, 0x76, 0x65,
+	0x6e, 0x74, 0x49, 0x6e, 0x74, 0x65, 0x6e, 0x74, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a,
+	0x2a, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72,
+	0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76,
+	0x33, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x74, 0x79, 0x70, 0x65, 0x73, 0xa2, 0x02, 0x03, 0x54, 0x58,
+	0x58, 0xaa, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xca, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65,
+	0x73, 0xe2, 0x02, 0x11, 0x54, 0x79, 0x70, 0x65, 0x73, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74,
+	0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0x62, 0x06, 0x70,
+	0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -4078,29 +7125,39 @@ func file_types_type_event_intent_proto_rawDescGZIP() []byte {
 	return file_types_type_event_intent_proto_rawDescData
 }
 
-var file_types_type_event_intent_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_types_type_event_intent_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_types_type_event_intent_proto_goTypes = []interface{}{
-	(*EventIntentOpen)(nil),     // 0: types.EventIntentOpen
-	(*EventIntentCancel)(nil),   // 1: types.EventIntentCancel
-	(*EventIntentSolve)(nil),    // 2: types.EventIntentSolve
-	(*EventIntentComplete)(nil), // 3: types.EventIntentComplete
-	(*EventIntentExpire)(nil),   // 4: types.EventIntentExpire
-	(*common.Coin)(nil),         // 5: common.Coin
-	(*common.Asset)(nil),        // 6: common.Asset
+	(*EventIntentOpen)(nil),            // 0: types.EventIntentOpen
+	(*EventIntentCancel)(nil),          // 1: types.EventIntentCancel
+	(*EventIntentSolve)(nil),           // 2: types.EventIntentSolve
+	(*EventIntentComplete)(nil),        // 3: types.EventIntentComplete
+	(*EventIntentExpire)(nil),          // 4: types.EventIntentExpire
+	(*EventIntentAuctionStart)(nil),    // 5: types.EventIntentAuctionStart
+	(*EventIntentAuctionBid)(nil),      // 6: types.EventIntentAuctionBid
+	(*EventIntentAuctionComplete)(nil), // 7: types.EventIntentAuctionComplete
+	(*EventIntentAuctionCancel)(nil),   // 8: types.EventIntentAuctionCancel
+	(*common.Coin)(nil),                // 9: common.Coin
+	(*common.Asset)(nil),               // 10: common.Asset
 }
 var file_types_type_event_intent_proto_depIdxs = []int32{
-	5, // 0: types.EventIntentOpen.source:type_name -> common.Coin
-	6, // 1: types.EventIntentOpen.target_asset:type_name -> common.Asset
-	5, // 2: types.EventIntentCancel.refund:type_name -> common.Coin
-	5, // 3: types.EventIntentComplete.source_sent:type_name -> common.Coin
-	5, // 4: types.EventIntentComplete.target_received:type_name -> common.Coin
-	5, // 5: types.EventIntentComplete.fee:type_name -> common.Coin
-	5, // 6: types.EventIntentExpire.refund:type_name -> common.Coin
-	7, // [7:7] is the sub-list for method output_type
-	7, // [7:7] is the sub-list for method input_type
-	7, // [7:7] is the sub-list for extension type_name
-	7, // [7:7] is the sub-list for extension extendee
-	0, // [0:7] is the sub-list for field type_name
+	9,  // 0: types.EventIntentOpen.source:type_name -> common.Coin
+	10, // 1: types.EventIntentOpen.target_asset:type_name -> common.Asset
+	9,  // 2: types.EventIntentCancel.refund:type_name -> common.Coin
+	9,  // 3: types.EventIntentComplete.source_sent:type_name -> common.Coin
+	9,  // 4: types.EventIntentComplete.target_received:type_name -> common.Coin
+	9,  // 5: types.EventIntentComplete.fee:type_name -> common.Coin
+	9,  // 6: types.EventIntentExpire.refund:type_name -> common.Coin
+	9,  // 7: types.EventIntentAuctionStart.auction_amount:type_name -> common.Coin
+	9,  // 8: types.EventIntentAuctionStart.remaining_amount:type_name -> common.Coin
+	10, // 9: types.EventIntentAuctionStart.bid_asset:type_name -> common.Asset
+	9,  // 10: types.EventIntentAuctionComplete.winning_bid:type_name -> common.Coin
+	9,  // 11: types.EventIntentAuctionComplete.auction_amount:type_name -> common.Coin
+	9,  // 12: types.EventIntentAuctionComplete.owner_refund:type_name -> common.Coin
+	13, // [13:13] is the sub-list for method output_type
+	13, // [13:13] is the sub-list for method input_type
+	13, // [13:13] is the sub-list for extension type_name
+	13, // [13:13] is the sub-list for extension extendee
+	0,  // [0:13] is the sub-list for field type_name
 }
 
 func init() { file_types_type_event_intent_proto_init() }
@@ -4169,6 +7226,54 @@ func file_types_type_event_intent_proto_init() {
 				return nil
 			}
 		}
+		file_types_type_event_intent_proto_msgTypes[5].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*EventIntentAuctionStart); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_types_type_event_intent_proto_msgTypes[6].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*EventIntentAuctionBid); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_types_type_event_intent_proto_msgTypes[7].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*EventIntentAuctionComplete); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_types_type_event_intent_proto_msgTypes[8].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*EventIntentAuctionCancel); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -4176,7 +7281,7 @@ func file_types_type_event_intent_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_types_type_event_intent_proto_rawDesc,
 			NumEnums:      0,
-			NumMessages:   5,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

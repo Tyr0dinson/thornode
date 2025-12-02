@@ -102,12 +102,19 @@ const (
 	TxIntentOpen        = mem.TxIntentOpen
 	TxIntentCancel      = mem.TxIntentCancel
 	TxIntentSolve       = mem.TxIntentSolve
+	TxIntentAuctionBid  = mem.TxIntentAuctionBid
 
 	// Intent status
-	IntentActive    = types.IntentStatus_IntentActive
-	IntentCancelled = types.IntentStatus_IntentCancelled
-	IntentCompleted = types.IntentStatus_IntentCompleted
-	IntentExpired   = types.IntentStatus_IntentExpired
+	IntentActive     = types.IntentStatus_IntentActive
+	IntentCancelled  = types.IntentStatus_IntentCancelled
+	IntentCompleted  = types.IntentStatus_IntentCompleted
+	IntentExpired    = types.IntentStatus_IntentExpired
+	IntentAuctioning = types.IntentStatus_IntentAuctioning
+
+	// Intent auction status
+	IntentAuctionStatus_AuctionActive    = types.IntentAuctionStatus_AuctionActive
+	IntentAuctionStatus_AuctionCompleted = types.IntentAuctionStatus_AuctionCompleted
+	IntentAuctionStatus_AuctionCancelled = types.IntentAuctionStatus_AuctionCancelled
 )
 
 var (
@@ -267,6 +274,12 @@ var (
 	NewEventIntentSolve            = types.NewEventIntentSolve
 	NewEventIntentComplete         = types.NewEventIntentComplete
 	NewEventIntentExpire           = types.NewEventIntentExpire
+	NewEventIntentAuctionStart     = types.NewEventIntentAuctionStart
+	NewEventIntentAuctionBid       = types.NewEventIntentAuctionBid
+	NewEventIntentAuctionComplete  = types.NewEventIntentAuctionComplete
+	NewEventIntentAuctionCancel    = types.NewEventIntentAuctionCancel
+	NewMsgIntentAuctionBid         = types.NewMsgIntentAuctionBid
+	NewIntentAuctionBidMemo        = mem.NewIntentAuctionBidMemo
 
 	// Memo
 	ParseMemo              = mem.ParseMemo
@@ -339,6 +352,7 @@ type (
 	MsgIntentOpen             = types.MsgIntentOpen
 	MsgIntentCancel           = types.MsgIntentCancel
 	MsgIntentSolve            = types.MsgIntentSolve
+	MsgIntentAuctionBid       = types.MsgIntentAuctionBid
 
 	// Keeper structs
 	PoolStatus               = types.PoolStatus
@@ -351,6 +365,10 @@ type (
 	Intent                   = types.Intent
 	IntentSolve              = types.IntentSolve
 	IntentStatus             = types.IntentStatus
+	IntentAuction            = types.IntentAuction
+	IntentAuctionBid         = types.IntentAuctionBid
+	IntentAuctionBids        = types.IntentAuctionBids
+	IntentAuctionStatus      = types.IntentAuctionStatus
 	ObservedTxs              = common.ObservedTxs
 	ObservedTx               = common.ObservedTx
 	ObservedTxVoter          = types.ObservedTxVoter
@@ -455,6 +473,7 @@ type (
 	IntentOpenMemo             = mem.IntentOpenMemo
 	IntentCancelMemo           = mem.IntentCancelMemo
 	IntentSolveMemo            = mem.IntentSolveMemo
+	IntentAuctionBidMemo       = mem.IntentAuctionBidMemo
 	OperatorRotateMemo         = mem.OperatorRotateMemo
 
 	// Proto

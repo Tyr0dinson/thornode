@@ -727,3 +727,13 @@ func (s *queryServer) ActiveIntents(c context.Context, req *types.QueryActiveInt
 	ctx := s.unwrapSdkContext(c)
 	return s.queryActiveIntents(ctx, req)
 }
+
+func (s *queryServer) IntentAuction(c context.Context, req *types.QueryIntentAuctionRequest) (*types.QueryIntentAuctionResponse, error) {
+	ctx := s.unwrapSdkContext(c)
+	return s.queryIntentAuction(ctx, req)
+}
+
+func (s *queryServer) ActiveIntentAuctions(c context.Context, req *types.QueryActiveAuctionsRequest) (*types.QueryActiveAuctionsResponse, error) {
+	ctx := s.unwrapSdkContext(c)
+	return s.queryActiveAuctions(ctx, req)
+}

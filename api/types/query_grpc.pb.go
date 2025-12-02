@@ -103,8 +103,10 @@ const (
 	Query_ReferenceMemo_FullMethodName          = "/types.Query/ReferenceMemo"
 	Query_ReferenceMemoByHash_FullMethodName    = "/types.Query/ReferenceMemoByHash"
 	Query_ReferenceMemoPreflight_FullMethodName = "/types.Query/ReferenceMemoPreflight"
-	Query_Intent_FullMethodName                 = "/types.Query/Intent"
 	Query_ActiveIntents_FullMethodName          = "/types.Query/ActiveIntents"
+	Query_IntentAuction_FullMethodName          = "/types.Query/IntentAuction"
+	Query_ActiveIntentAuctions_FullMethodName   = "/types.Query/ActiveIntentAuctions"
+	Query_Intent_FullMethodName                 = "/types.Query/Intent"
 )
 
 // QueryClient is the client API for Query service.
@@ -204,8 +206,11 @@ type QueryClient interface {
 	ReferenceMemo(ctx context.Context, in *QueryReferenceMemoRequest, opts ...grpc.CallOption) (*QueryReferenceMemoResponse, error)
 	ReferenceMemoByHash(ctx context.Context, in *QueryReferenceMemoByHashRequest, opts ...grpc.CallOption) (*QueryReferenceMemoByHashResponse, error)
 	ReferenceMemoPreflight(ctx context.Context, in *QueryReferenceMemoPreflightRequest, opts ...grpc.CallOption) (*QueryReferenceMemoPreflightResponse, error)
-	Intent(ctx context.Context, in *QueryIntentRequest, opts ...grpc.CallOption) (*QueryIntentResponse, error)
 	ActiveIntents(ctx context.Context, in *QueryActiveIntentsRequest, opts ...grpc.CallOption) (*QueryActiveIntentsResponse, error)
+	IntentAuction(ctx context.Context, in *QueryIntentAuctionRequest, opts ...grpc.CallOption) (*QueryIntentAuctionResponse, error)
+	ActiveIntentAuctions(ctx context.Context, in *QueryActiveAuctionsRequest, opts ...grpc.CallOption) (*QueryActiveAuctionsResponse, error)
+	// Intent must be last because /thorchain/intent/{tx_id} matches any path under /thorchain/intent/
+	Intent(ctx context.Context, in *QueryIntentRequest, opts ...grpc.CallOption) (*QueryIntentResponse, error)
 }
 
 type queryClient struct {
@@ -972,18 +977,36 @@ func (c *queryClient) ReferenceMemoPreflight(ctx context.Context, in *QueryRefer
 	return out, nil
 }
 
-func (c *queryClient) Intent(ctx context.Context, in *QueryIntentRequest, opts ...grpc.CallOption) (*QueryIntentResponse, error) {
-	out := new(QueryIntentResponse)
-	err := c.cc.Invoke(ctx, Query_Intent_FullMethodName, in, out, opts...)
+func (c *queryClient) ActiveIntents(ctx context.Context, in *QueryActiveIntentsRequest, opts ...grpc.CallOption) (*QueryActiveIntentsResponse, error) {
+	out := new(QueryActiveIntentsResponse)
+	err := c.cc.Invoke(ctx, Query_ActiveIntents_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *queryClient) ActiveIntents(ctx context.Context, in *QueryActiveIntentsRequest, opts ...grpc.CallOption) (*QueryActiveIntentsResponse, error) {
-	out := new(QueryActiveIntentsResponse)
-	err := c.cc.Invoke(ctx, Query_ActiveIntents_FullMethodName, in, out, opts...)
+func (c *queryClient) IntentAuction(ctx context.Context, in *QueryIntentAuctionRequest, opts ...grpc.CallOption) (*QueryIntentAuctionResponse, error) {
+	out := new(QueryIntentAuctionResponse)
+	err := c.cc.Invoke(ctx, Query_IntentAuction_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *queryClient) ActiveIntentAuctions(ctx context.Context, in *QueryActiveAuctionsRequest, opts ...grpc.CallOption) (*QueryActiveAuctionsResponse, error) {
+	out := new(QueryActiveAuctionsResponse)
+	err := c.cc.Invoke(ctx, Query_ActiveIntentAuctions_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *queryClient) Intent(ctx context.Context, in *QueryIntentRequest, opts ...grpc.CallOption) (*QueryIntentResponse, error) {
+	out := new(QueryIntentResponse)
+	err := c.cc.Invoke(ctx, Query_Intent_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1087,8 +1110,11 @@ type QueryServer interface {
 	ReferenceMemo(context.Context, *QueryReferenceMemoRequest) (*QueryReferenceMemoResponse, error)
 	ReferenceMemoByHash(context.Context, *QueryReferenceMemoByHashRequest) (*QueryReferenceMemoByHashResponse, error)
 	ReferenceMemoPreflight(context.Context, *QueryReferenceMemoPreflightRequest) (*QueryReferenceMemoPreflightResponse, error)
-	Intent(context.Context, *QueryIntentRequest) (*QueryIntentResponse, error)
 	ActiveIntents(context.Context, *QueryActiveIntentsRequest) (*QueryActiveIntentsResponse, error)
+	IntentAuction(context.Context, *QueryIntentAuctionRequest) (*QueryIntentAuctionResponse, error)
+	ActiveIntentAuctions(context.Context, *QueryActiveAuctionsRequest) (*QueryActiveAuctionsResponse, error)
+	// Intent must be last because /thorchain/intent/{tx_id} matches any path under /thorchain/intent/
+	Intent(context.Context, *QueryIntentRequest) (*QueryIntentResponse, error)
 	mustEmbedUnimplementedQueryServer()
 }
 
@@ -1348,11 +1374,17 @@ func (UnimplementedQueryServer) ReferenceMemoByHash(context.Context, *QueryRefer
 func (UnimplementedQueryServer) ReferenceMemoPreflight(context.Context, *QueryReferenceMemoPreflightRequest) (*QueryReferenceMemoPreflightResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReferenceMemoPreflight not implemented")
 }
-func (UnimplementedQueryServer) Intent(context.Context, *QueryIntentRequest) (*QueryIntentResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Intent not implemented")
-}
 func (UnimplementedQueryServer) ActiveIntents(context.Context, *QueryActiveIntentsRequest) (*QueryActiveIntentsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ActiveIntents not implemented")
+}
+func (UnimplementedQueryServer) IntentAuction(context.Context, *QueryIntentAuctionRequest) (*QueryIntentAuctionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method IntentAuction not implemented")
+}
+func (UnimplementedQueryServer) ActiveIntentAuctions(context.Context, *QueryActiveAuctionsRequest) (*QueryActiveAuctionsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ActiveIntentAuctions not implemented")
+}
+func (UnimplementedQueryServer) Intent(context.Context, *QueryIntentRequest) (*QueryIntentResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Intent not implemented")
 }
 func (UnimplementedQueryServer) mustEmbedUnimplementedQueryServer() {}
 
@@ -2879,24 +2911,6 @@ func _Query_ReferenceMemoPreflight_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Query_Intent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(QueryIntentRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(QueryServer).Intent(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: Query_Intent_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(QueryServer).Intent(ctx, req.(*QueryIntentRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _Query_ActiveIntents_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(QueryActiveIntentsRequest)
 	if err := dec(in); err != nil {
@@ -2911,6 +2925,60 @@ func _Query_ActiveIntents_Handler(srv interface{}, ctx context.Context, dec func
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(QueryServer).ActiveIntents(ctx, req.(*QueryActiveIntentsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Query_IntentAuction_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryIntentAuctionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).IntentAuction(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Query_IntentAuction_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).IntentAuction(ctx, req.(*QueryIntentAuctionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Query_ActiveIntentAuctions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryActiveAuctionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).ActiveIntentAuctions(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Query_ActiveIntentAuctions_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).ActiveIntentAuctions(ctx, req.(*QueryActiveAuctionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Query_Intent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryIntentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).Intent(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Query_Intent_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).Intent(ctx, req.(*QueryIntentRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -3259,12 +3327,20 @@ var Query_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Query_ReferenceMemoPreflight_Handler,
 		},
 		{
-			MethodName: "Intent",
-			Handler:    _Query_Intent_Handler,
-		},
-		{
 			MethodName: "ActiveIntents",
 			Handler:    _Query_ActiveIntents_Handler,
+		},
+		{
+			MethodName: "IntentAuction",
+			Handler:    _Query_IntentAuction_Handler,
+		},
+		{
+			MethodName: "ActiveIntentAuctions",
+			Handler:    _Query_ActiveIntentAuctions_Handler,
+		},
+		{
+			MethodName: "Intent",
+			Handler:    _Query_Intent_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

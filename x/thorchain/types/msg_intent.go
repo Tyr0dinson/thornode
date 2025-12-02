@@ -20,6 +20,10 @@ var (
 	_ sdk.Msg              = &MsgIntentSolve{}
 	_ sdk.HasValidateBasic = &MsgIntentSolve{}
 	_ sdk.LegacyMsg        = &MsgIntentSolve{}
+
+	_ sdk.Msg              = &MsgIntentAuctionBid{}
+	_ sdk.HasValidateBasic = &MsgIntentAuctionBid{}
+	_ sdk.LegacyMsg        = &MsgIntentAuctionBid{}
 )
 
 // NewMsgIntentOpen is a constructor function for MsgIntentOpen
@@ -111,6 +115,34 @@ func (m *MsgIntentSolve) GetSigners() []cosmos.AccAddress {
 
 // ValidateBasic runs stateless checks on the message
 func (m *MsgIntentSolve) ValidateBasic() error {
+	if m.Signer.Empty() {
+		return cosmos.ErrInvalidAddress(m.Signer.String())
+	}
+	if err := m.Tx.Valid(); err != nil {
+		return se.ErrInvalidRequest.Wrap(err.Error())
+	}
+	if m.IntentTxID.IsEmpty() {
+		return se.ErrInvalidRequest.Wrap("intent tx id cannot be empty")
+	}
+	return nil
+}
+
+// NewMsgIntentAuctionBid is a constructor function for MsgIntentAuctionBid
+func NewMsgIntentAuctionBid(tx common.Tx, intentTxID common.TxID, signer cosmos.AccAddress) *MsgIntentAuctionBid {
+	return &MsgIntentAuctionBid{
+		Tx:         tx,
+		IntentTxID: intentTxID,
+		Signer:     signer,
+	}
+}
+
+// GetSigners returns the signers for the message
+func (m *MsgIntentAuctionBid) GetSigners() []cosmos.AccAddress {
+	return []cosmos.AccAddress{m.Signer}
+}
+
+// ValidateBasic runs stateless checks on the message
+func (m *MsgIntentAuctionBid) ValidateBasic() error {
 	if m.Signer.Empty() {
 		return cosmos.ErrInvalidAddress(m.Signer.String())
 	}

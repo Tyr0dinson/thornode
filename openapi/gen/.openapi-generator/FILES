@@ -78,6 +78,9 @@ docs/InboundConfirmationCountedStage.md
 docs/InboundFinalisedStage.md
 docs/InboundObservedStage.md
 docs/Intent.md
+docs/IntentAuction.md
+docs/IntentAuctionBid.md
+docs/IntentAuctionWithBids.md
 docs/IntentSolve.md
 docs/IntentWithSolves.md
 docs/IntentsApi.md
@@ -131,7 +134,9 @@ docs/Pool.md
 docs/PoolSlipApi.md
 docs/PoolSlipResponseInner.md
 docs/PoolsApi.md
+docs/QueryActiveIntentAuctionsResponse.md
 docs/QueryActiveIntentsResponse.md
+docs/QueryIntentAuctionResponse.md
 docs/QueryIntentResponse.md
 docs/QueueApi.md
 docs/QueueResponse.md
@@ -236,6 +241,9 @@ model_inbound_confirmation_counted_stage.go
 model_inbound_finalised_stage.go
 model_inbound_observed_stage.go
 model_intent.go
+model_intent_auction.go
+model_intent_auction_bid.go
+model_intent_auction_with_bids.go
 model_intent_solve.go
 model_intent_with_solves.go
 model_invariant_response.go
@@ -279,7 +287,9 @@ model_planned_out_tx.go
 model_pol.go
 model_pool.go
 model_pool_slip_response_inner.go
+model_query_active_intent_auctions_response.go
 model_query_active_intents_response.go
+model_query_intent_auction_response.go
 model_query_intent_response.go
 model_queue_response.go
 model_quote_fees.go
