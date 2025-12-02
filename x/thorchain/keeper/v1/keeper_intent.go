@@ -247,7 +247,7 @@ func (k KVStore) SetIntentSolve(ctx cosmos.Context, solve types.IntentSolve) {
 
 	// Index by match height
 	heightStr := strconv.FormatInt(solve.MatchHeight, 10)
-	matchHeightIndexKey := k.GetKey(prefixIntentSolveByMatchHeight, heightStr, solve.SolveTxID.String())
+	matchHeightIndexKey := k.GetKey(prefixIntentSolveByMatchHeight, heightStr, "/"+solve.SolveTxID.String())
 	store.Set(matchHeightIndexKey, []byte{1})
 }
 
@@ -306,7 +306,7 @@ func (k KVStore) RemoveIntentSolve(ctx cosmos.Context, solveTxID common.TxID) {
 
 	// Remove match height index
 	heightStr := strconv.FormatInt(solve.MatchHeight, 10)
-	matchHeightIndexKey := k.GetKey(prefixIntentSolveByMatchHeight, heightStr, solve.SolveTxID.String())
+	matchHeightIndexKey := k.GetKey(prefixIntentSolveByMatchHeight, heightStr, "/"+solve.SolveTxID.String())
 	store.Delete(matchHeightIndexKey)
 }
 

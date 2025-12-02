@@ -819,6 +819,18 @@ type OpTxObservedIn struct {
 }
 
 func (op *OpTxObservedIn) Execute(out io.Writer, _ string, _, routine int, _ *os.Process, logs chan string) error {
+	// render the memos (used for native_txid)
+	for i, tx := range op.Txs {
+		tmpl := template.Must(template.Must(templates.Clone()).Funcs(opFuncMap(routine)).Parse(tx.Tx.Memo))
+		memo := bytes.NewBuffer(nil)
+		err := tmpl.Execute(memo, nil)
+		if err != nil {
+			log.Fatal().Err(err).Msg("failed to render memo")
+		}
+		tx.Tx.Memo = memo.String()
+		op.Txs[i] = tx
+	}
+
 	msg := types.NewMsgObservedTxIn(op.Txs, op.Signer)
 	return sendMsg(out, routine, msg, op.Signer, "", op.Sequence, op.Gas, op, "", logs)
 }
@@ -954,6 +966,15 @@ type OpTxDeposit struct {
 }
 
 func (op *OpTxDeposit) Execute(out io.Writer, _ string, _, routine int, _ *os.Process, logs chan string) error {
+	// render the memo (used for native_txid)
+	tmpl := template.Must(template.Must(templates.Clone()).Funcs(opFuncMap(routine)).Parse(op.Memo))
+	memo := bytes.NewBuffer(nil)
+	err := tmpl.Execute(memo, nil)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to render memo")
+	}
+	op.Memo = memo.String()
+
 	return sendMsg(out, routine, &op.MsgDeposit, op.Signer, "", op.Sequence, op.Gas, op, "", logs)
 }
 

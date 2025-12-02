@@ -75,7 +75,13 @@ func (p *parser) ParseIntentOpenMemo() (IntentOpenMemo, error) {
 	targetAsset := p.getAsset(1, true, common.EmptyAsset)
 	highTarget := p.getUintWithScientificNotation(2, true, 0)
 	lowTarget := p.getUintWithScientificNotation(3, true, 0)
-	targetAddr := p.getAddressWithKeeper(4, true, common.NoAddress, targetAsset.Chain)
+
+	// For secured and trade assets, the target address must be on THORChain
+	targetAddrChain := targetAsset.Chain
+	if targetAsset.IsSecuredAsset() || targetAsset.IsTradeAsset() {
+		targetAddrChain = common.THORChain
+	}
+	targetAddr := p.getAddressWithKeeper(4, true, common.NoAddress, targetAddrChain)
 
 	// Affiliate is optional
 	affAddr := p.getAddressWithKeeper(5, false, common.NoAddress, common.THORChain)

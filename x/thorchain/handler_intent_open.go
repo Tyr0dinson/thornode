@@ -1,6 +1,8 @@
 package thorchain
 
 import (
+	"fmt"
+
 	se "github.com/cosmos/cosmos-sdk/types/errors"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -91,6 +93,23 @@ func (h IntentOpenHandler) validate(ctx cosmos.Context, msg MsgIntentOpen) error
 func (h IntentOpenHandler) handle(ctx cosmos.Context, msg MsgIntentOpen) error {
 	// Get the source coin
 	sourceCoin := msg.Tx.Coins[0]
+
+	// Escrow secured/trade assets by withdrawing them from the user
+	// This burns the coins/reduces units and decreases pool depth
+	// When refunding, the txout system will call Deposit() to restore them
+	if sourceCoin.Asset.IsSecuredAsset() {
+		_, err := h.mgr.SecuredAssetManager().Withdraw(ctx, sourceCoin.Asset, sourceCoin.Amount, msg.Signer, common.NoAddress, msg.Tx.ID)
+		if err != nil {
+			return fmt.Errorf("fail to escrow secured asset for intent: %w", err)
+		}
+		ctx.Logger().Info("escrowed secured asset for intent", "asset", sourceCoin.Asset, "amount", sourceCoin.Amount)
+	} else if sourceCoin.Asset.IsTradeAsset() {
+		_, err := h.mgr.TradeAccountManager().Withdrawal(ctx, sourceCoin.Asset, sourceCoin.Amount, msg.Signer, common.NoAddress, msg.Tx.ID)
+		if err != nil {
+			return fmt.Errorf("fail to escrow trade asset for intent: %w", err)
+		}
+		ctx.Logger().Info("escrowed trade asset for intent", "asset", sourceCoin.Asset, "amount", sourceCoin.Amount)
+	}
 
 	// Get configuration values
 	ttlBlocks := h.mgr.Keeper().GetConfigInt64(ctx, constants.IntentTTLBlocks)
