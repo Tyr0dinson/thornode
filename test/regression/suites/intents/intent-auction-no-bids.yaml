@@ -1,0 +1,125 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 2
+---
+########################################################################################
+# Enable intents
+########################################################################################
+type: tx-mimir
+key: IntentsEnabled
+value: 1
+signer: {{ addr_thor_dog }}
+sequence: 0
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Create an intent - swap ETH for BTC
+# Format: IO:TARGET_ASSET:HIGH_TARGET:LOW_TARGET:TARGET_ADDR
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 1 }}'
+    chain: ETH
+    from_address: {{ addr_eth_fox }}
+    to_address: {{ addr_eth_dog }}
+    coins:
+      - amount: "100000000"
+        asset: "ETH.ETH"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "ETH.ETH"
+    memo: "IO:BTC.BTC:5000000:4000000:{{ addr_btc_fox }}"
+  block_height: 2
+  finalise_height: 2
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Check intent was created
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intent/{{ observe_txid 1 }}
+asserts:
+  - .intent.tx_id == "{{ observe_txid 1 }}"
+  - .intent.status == "IntentActive"
+  - .intent.source.asset == "ETH.ETH"
+  - .intent.source.amount == "100000000"
+---
+########################################################################################
+# Let the intent expire - advance blocks past expiry
+# IntentTTLBlocks is 5 in mocknet
+########################################################################################
+type: create-blocks
+count: 5
+---
+########################################################################################
+# Check that intent status changed to IntentAuctioning
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intent/{{ observe_txid 1 }}
+asserts:
+  - .intent.status == "IntentAuctioning"
+---
+########################################################################################
+# Check that auction was created
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intent/auction/{{ observe_txid 1 }}
+asserts:
+  - .auction.intent_tx_id == "{{ observe_txid 1 }}"
+  - .auction.status == "AuctionActive"
+  - .bids | length == 0
+---
+########################################################################################
+# Let auction expire with NO bids
+# IntentAuctionDurationBlocks is 5 in mocknet
+########################################################################################
+type: create-blocks
+count: 6
+---
+########################################################################################
+# Check auction was cancelled (no bids)
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intent/auction/{{ observe_txid 1 }}
+asserts:
+  - .auction.status == "AuctionCancelled"
+---
+########################################################################################
+# Check intent status is now expired
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intent/{{ observe_txid 1 }}
+asserts:
+  - .intent.status == "IntentExpired"
+---
+########################################################################################
+# Verify no outbounds were scheduled (funds abandoned)
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+########################################################################################
+# Verify intents list is empty
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intents
+asserts:
+  - .intents | length == 0
