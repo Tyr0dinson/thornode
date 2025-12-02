@@ -1,0 +1,146 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 2
+---
+########################################################################################
+# Enable intents
+########################################################################################
+type: tx-mimir
+key: IntentsEnabled
+value: 1
+signer: {{ addr_thor_dog }}
+sequence: 0
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Create an intent using RUNE as source
+# User (fox) wants to swap RUNE for ETH
+# Format: IO:TARGET_ASSET:HIGH_TARGET:LOW_TARGET:TARGET_ADDR
+# native_txid 2 will be the intent tx (after mimir tx which is native_txid 1)
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "1000000000"
+    asset: "rune"
+memo: "IO:ETH.ETH:100000000:80000000:{{ addr_eth_fox }}"
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Check the intent was created
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intent/{{ native_txid 2 }}
+asserts:
+  - .intent.tx_id == "{{ native_txid 2 }}"
+  - .intent.source.asset == "THOR.RUNE"
+  - .intent.source.amount == "1000000000"
+  - .intent.target_asset == "ETH.ETH"
+  - .intent.status == "IntentActive"
+---
+########################################################################################
+# Let the intent expire to trigger auction
+# IntentTTLBlocks is 5 in mocknet
+########################################################################################
+type: create-blocks
+count: 5
+---
+########################################################################################
+# Check that intent status changed to IntentAuctioning
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intent/{{ native_txid 2 }}
+asserts:
+  - .intent.status == "IntentAuctioning"
+---
+########################################################################################
+# Check that auction was created
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intent/auction/{{ native_txid 2 }}
+asserts:
+  - .auction.intent_tx_id == "{{ native_txid 2 }}"
+  - .auction.status == "AuctionActive"
+---
+########################################################################################
+# Bidder (cat) places a bid with RUNE
+# For RUNE source intents, bids must be in RUNE
+# Format: IAB:INTENT_TX_HASH
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "100000000"
+    asset: "rune"
+memo: "IAB:{{ native_txid 2 }}"
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Check bid was registered
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intent/auction/{{ native_txid 2 }}
+asserts:
+  - .auction.status == "AuctionActive"
+  - .bids | length >= 1
+---
+########################################################################################
+# Wait for auction to complete
+########################################################################################
+type: create-blocks
+count: 5
+---
+########################################################################################
+# Check that auction completed successfully
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intent/auction/{{ native_txid 2 }}
+asserts:
+  - .auction.status == "AuctionCompleted"
+---
+########################################################################################
+# Check that intent status changed to expired (auction fallback completed)
+# Note: IntentExpired is the correct status when auction completes (not IntentCompleted)
+# IntentCompleted is only set when a solver fulfills the intent before expiry
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intent/{{ native_txid 2 }}
+asserts:
+  - .intent.status == "IntentExpired"
+---
+########################################################################################
+# For RUNE source intents, when auction completes:
+# - Winner (cat) receives auction amount (100M RUNE) via native transfer
+# - Owner (fox) receives remaining amount (900M RUNE) via native transfer
+# These are native transfers, not external chain outbounds, so we verify
+# by checking that the outbound queue has no pending external outbounds
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - (. == null) or (. | length == 0)
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Verify intents list is empty (intent has been processed)
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intents
+asserts:
+  - (.intents == null) or (.intents | length == 0)
