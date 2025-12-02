@@ -63,12 +63,8 @@ func (h IntentCancelHandler) validate(ctx cosmos.Context, msg MsgIntentCancel) e
 	}
 
 	// Only the source address can cancel the intent
-	// Handle both proper bech32 conversion and direct string casting (for tests)
-	signerAsAddress := common.Address(string(msg.Signer))
-	sourceAccAddr, err := cosmos.AccAddressFromBech32(string(intent.SourceAddress))
-	signerMatches := intent.SourceAddress.Equals(signerAsAddress) || (err == nil && sourceAccAddr.Equals(msg.Signer))
-
-	if !signerMatches {
+	// Use the FromAddress from the observed tx (the actual user), not msg.Signer (the observer node)
+	if !intent.SourceAddress.Equals(msg.Tx.FromAddress) {
 		return se.ErrUnauthorized.Wrap("only the intent creator can cancel it")
 	}
 
@@ -85,7 +81,7 @@ func (h IntentCancelHandler) handle(ctx cosmos.Context, msg MsgIntentCancel) err
 	// Determine if we should refund or abandon based on asset type
 	sourcePool, _ := h.mgr.Keeper().GetPool(ctx, intent.Source.Asset.GetLayer1Asset())
 	isPoolAsset := !sourcePool.IsEmpty()
-	isNativeAsset := intent.Source.Asset.IsRune() || intent.Source.Asset.IsSecuredAsset()
+	isNativeAsset := intent.Source.Asset.IsRune() || intent.Source.Asset.IsSecuredAsset() || intent.Source.Asset.IsTradeAsset()
 	shouldRefund := isPoolAsset || isNativeAsset
 
 	var refundCoin common.Coin
@@ -93,15 +89,29 @@ func (h IntentCancelHandler) handle(ctx cosmos.Context, msg MsgIntentCancel) err
 
 	if shouldRefund {
 		// Refund the source asset back to the source address
+		// Include any coins sent with the cancel tx (same asset) in the refund
 		refundCoin = intent.Source
+		for _, coin := range msg.Tx.Coins {
+			if coin.Asset.Equals(intent.Source.Asset) && !coin.Amount.IsZero() {
+				refundCoin.Amount = refundCoin.Amount.Add(coin.Amount)
+			}
+		}
+
+		// For RUNE, use Reserve module (where intent RUNE is escrowed)
+		// For other assets, default to Asgard
+		moduleName := ""
+		if intent.Source.Asset.IsRune() {
+			moduleName = ReserveName
+		}
 
 		// Schedule the txout for refund
 		toi := TxOutItem{
-			Chain:     intent.Source.Asset.GetChain(),
-			ToAddress: intent.SourceAddress,
-			Coin:      intent.Source,
-			Memo:      fmt.Sprintf("REFUND:%s", intent.TxID),
-			InHash:    intent.TxID,
+			Chain:      intent.Source.Asset.GetChain(),
+			ToAddress:  intent.SourceAddress,
+			Coin:       refundCoin,
+			Memo:       fmt.Sprintf("REFUND:%s", intent.TxID),
+			InHash:     intent.TxID,
+			ModuleName: moduleName,
 		}
 
 		ok, err := h.mgr.TxOutStore().TryAddTxOutItem(ctx, h.mgr, toi, cosmos.ZeroUint())

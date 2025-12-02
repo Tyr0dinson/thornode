@@ -424,13 +424,20 @@ func (im *IntentMgr) completeAuction(ctx cosmos.Context, auction IntentAuction) 
 			continue // Skip winner
 		}
 
+		// Determine module name for RUNE bids (bid RUNE is escrowed in Reserve)
+		bidModuleName := ""
+		if bids[i].BidAmount.Asset.IsRune() {
+			bidModuleName = ReserveName
+		}
+
 		// Refund the losing bid
 		toi := TxOutItem{
-			Chain:     bids[i].BidAmount.Asset.GetChain(),
-			ToAddress: bids[i].BidderAddress,
-			Coin:      bids[i].BidAmount,
-			Memo:      NewRefundMemo(bids[i].BidTxID).String(),
-			InHash:    bids[i].BidTxID,
+			Chain:      bids[i].BidAmount.Asset.GetChain(),
+			ToAddress:  bids[i].BidderAddress,
+			Coin:       bids[i].BidAmount,
+			Memo:       NewRefundMemo(bids[i].BidTxID).String(),
+			InHash:     bids[i].BidTxID,
+			ModuleName: bidModuleName,
 		}
 
 		ok, refundErr := im.mgr.TxOutStore().TryAddTxOutItem(ctx, im.mgr, toi, cosmos.ZeroUint())
@@ -450,13 +457,20 @@ func (im *IntentMgr) completeAuction(ctx cosmos.Context, auction IntentAuction) 
 		)
 	}
 
+	// Determine module name for RUNE outbounds (RUNE is escrowed in Reserve)
+	moduleName := ""
+	if auction.AuctionAmount.Asset.IsRune() {
+		moduleName = ReserveName
+	}
+
 	// Send auction amount to winner
 	winnerToi := TxOutItem{
-		Chain:     auction.AuctionAmount.Asset.GetChain(),
-		ToAddress: winningBid.BidderAddress,
-		Coin:      auction.AuctionAmount,
-		Memo:      NewOutboundMemo(winningBid.BidTxID).String(),
-		InHash:    winningBid.BidTxID,
+		Chain:      auction.AuctionAmount.Asset.GetChain(),
+		ToAddress:  winningBid.BidderAddress,
+		Coin:       auction.AuctionAmount,
+		Memo:       NewOutboundMemo(winningBid.BidTxID).String(),
+		InHash:     winningBid.BidTxID,
+		ModuleName: moduleName,
 	}
 
 	ok, err := im.mgr.TxOutStore().TryAddTxOutItem(ctx, im.mgr, winnerToi, cosmos.ZeroUint())
@@ -469,11 +483,12 @@ func (im *IntentMgr) completeAuction(ctx cosmos.Context, auction IntentAuction) 
 
 	// Send remaining amount to owner
 	ownerToi := TxOutItem{
-		Chain:     auction.RemainingAmount.Asset.GetChain(),
-		ToAddress: auction.OwnerAddress,
-		Coin:      auction.RemainingAmount,
-		Memo:      NewRefundMemo(auction.IntentTxID).String(),
-		InHash:    auction.IntentTxID,
+		Chain:      auction.RemainingAmount.Asset.GetChain(),
+		ToAddress:  auction.OwnerAddress,
+		Coin:       auction.RemainingAmount,
+		Memo:       NewRefundMemo(auction.IntentTxID).String(),
+		InHash:     auction.IntentTxID,
+		ModuleName: moduleName,
 	}
 
 	ok, err = im.mgr.TxOutStore().TryAddTxOutItem(ctx, im.mgr, ownerToi, cosmos.ZeroUint())
@@ -523,12 +538,10 @@ func (im *IntentMgr) completeAuction(ctx cosmos.Context, auction IntentAuction) 
 
 // processWinningBid handles the winning bid - swap to RUNE and add to reserve
 func (im *IntentMgr) processWinningBid(ctx cosmos.Context, bid IntentAuctionBid) error {
-	// If the bid is already in RUNE, add directly to reserve
+	// If the bid is already in RUNE, it's already in Reserve (sent there when bid was placed)
+	// No additional action needed - just log it
 	if bid.BidAmount.Asset.IsRune() {
-		if err := im.mgr.Keeper().AddPoolFeeToReserve(ctx, bid.BidAmount.Amount); err != nil {
-			return fmt.Errorf("fail to add winning bid to reserve: %w", err)
-		}
-		ctx.Logger().Info("added winning bid to reserve", "amount", bid.BidAmount.Amount)
+		ctx.Logger().Info("winning bid RUNE already in reserve", "amount", bid.BidAmount.Amount)
 		return nil
 	}
 
@@ -587,48 +600,96 @@ func (im *IntentMgr) processWinningBid(ctx cosmos.Context, bid IntentAuctionBid)
 	return nil
 }
 
-// cancelAuction cancels an auction with no bids and abandons funds
+// cancelAuction cancels an auction with no bids
+// For native assets (secured, trade, RUNE), refund to owner
+// For external chain assets, abandon funds from vault
 func (im *IntentMgr) cancelAuction(ctx cosmos.Context, auction IntentAuction, intent Intent) error {
-	// No bids - abandon the funds from vault
 	sourceAsset := auction.AuctionAmount.Asset
 	totalAmount := auction.AuctionAmount.Amount.Add(auction.RemainingAmount.Amount)
+	totalCoin := common.NewCoin(sourceAsset, totalAmount)
 
-	// Get active vaults and find the one with sufficient balance
-	vaults, err := im.mgr.Keeper().GetAsgardVaultsByStatus(ctx, ActiveVault)
-	if err != nil {
-		return fmt.Errorf("fail to get active vaults: %w", err)
-	}
-	if len(vaults) == 0 {
-		return fmt.Errorf("no active vaults available")
-	}
+	// Check if this is a native asset (RUNE, secured, or trade asset)
+	// These don't live in vaults - they're in user bank accounts as cosmos coins
+	isNativeAsset := sourceAsset.IsRune() || sourceAsset.IsSecuredAsset() || sourceAsset.IsTradeAsset()
 
-	// Find vault with sufficient balance
-	var selectedVault *Vault
-	var closestDiff cosmos.Uint
-	for i := range vaults {
-		vaultBalance := vaults[i].GetCoin(sourceAsset).Amount
+	abandoned := false
 
-		if vaultBalance.GTE(totalAmount) {
-			diff := common.SafeSub(vaultBalance, totalAmount)
+	if isNativeAsset {
+		// Refund native assets to the owner via txout
+		// For RUNE, use Reserve module (where intent RUNE is escrowed)
+		// For secured/trade assets, default to Asgard (they don't actually use module)
+		moduleName := ""
+		if sourceAsset.IsRune() {
+			moduleName = ReserveName
+		}
 
-			if selectedVault == nil || diff.LT(closestDiff) {
-				selectedVault = &vaults[i]
-				closestDiff = diff
+		toi := TxOutItem{
+			Chain:      sourceAsset.GetChain(),
+			ToAddress:  auction.OwnerAddress,
+			Coin:       totalCoin,
+			Memo:       fmt.Sprintf("REFUND:%s", auction.IntentTxID),
+			InHash:     auction.IntentTxID,
+			ModuleName: moduleName,
+		}
+
+		ok, err := im.mgr.TxOutStore().TryAddTxOutItem(ctx, im.mgr, toi, cosmos.ZeroUint())
+		if err != nil {
+			return fmt.Errorf("fail to schedule refund for cancelled auction: %w", err)
+		}
+		if !ok {
+			return fmt.Errorf("fail to add refund txout for cancelled auction")
+		}
+
+		ctx.Logger().Info("scheduled refund for cancelled auction",
+			"intent_txid", auction.IntentTxID,
+			"amount", totalAmount,
+			"to", auction.OwnerAddress,
+		)
+	} else {
+		// Abandon external chain assets from vault
+		vaults, err := im.mgr.Keeper().GetAsgardVaultsByStatus(ctx, ActiveVault)
+		if err != nil {
+			return fmt.Errorf("fail to get active vaults: %w", err)
+		}
+		if len(vaults) == 0 {
+			return fmt.Errorf("no active vaults available")
+		}
+
+		// Find vault with sufficient balance
+		var selectedVault *Vault
+		var closestDiff cosmos.Uint
+		for i := range vaults {
+			vaultBalance := vaults[i].GetCoin(sourceAsset).Amount
+
+			if vaultBalance.GTE(totalAmount) {
+				diff := common.SafeSub(vaultBalance, totalAmount)
+
+				if selectedVault == nil || diff.LT(closestDiff) {
+					selectedVault = &vaults[i]
+					closestDiff = diff
+				}
 			}
 		}
-	}
 
-	if selectedVault == nil {
-		return fmt.Errorf("no vault found with sufficient balance for asset %s (need %s)", sourceAsset, totalAmount)
-	}
+		if selectedVault == nil {
+			return fmt.Errorf("no vault found with sufficient balance for asset %s (need %s)", sourceAsset, totalAmount)
+		}
 
-	// Subtract the abandoned amount from the vault
-	abandonCoin := common.NewCoin(sourceAsset, totalAmount)
-	selectedVault.SubFunds(common.NewCoins(abandonCoin))
+		// Subtract the abandoned amount from the vault
+		selectedVault.SubFunds(common.NewCoins(totalCoin))
 
-	// Save the updated vault
-	if err := im.mgr.Keeper().SetVault(ctx, *selectedVault); err != nil {
-		return fmt.Errorf("fail to save vault: %w", err)
+		// Save the updated vault
+		if err := im.mgr.Keeper().SetVault(ctx, *selectedVault); err != nil {
+			return fmt.Errorf("fail to save vault: %w", err)
+		}
+
+		abandoned = true
+
+		ctx.Logger().Info("cancelled auction with no bids, funds abandoned",
+			"intent_txid", auction.IntentTxID,
+			"amount", totalAmount,
+			"vault", selectedVault.PubKey,
+		)
 	}
 
 	// Update auction status
@@ -640,16 +701,10 @@ func (im *IntentMgr) cancelAuction(ctx cosmos.Context, auction IntentAuction, in
 	im.mgr.Keeper().SetIntent(ctx, intent)
 
 	// Emit cancel event
-	evt := NewEventIntentAuctionCancel(auction.IntentTxID, true)
+	evt := NewEventIntentAuctionCancel(auction.IntentTxID, abandoned)
 	if err := im.mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
 		ctx.Logger().Error("fail to emit auction cancel event", "error", err)
 	}
-
-	ctx.Logger().Info("cancelled auction with no bids, funds abandoned",
-		"intent_txid", auction.IntentTxID,
-		"amount", totalAmount,
-		"vault", selectedVault.PubKey,
-	)
 
 	return nil
 }
