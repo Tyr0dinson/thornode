@@ -78,8 +78,10 @@ func (HandlerIntentCancelSuite) TestIntentCancel_RefundPoolAsset(c *C) {
 	mgr := NewDummyMgrWithKeeper(w.keeper)
 	handler := NewIntentCancelHandler(mgr)
 
-	// Cancel the intent
-	msg := NewMsgIntentCancel(GetRandomTx(), intentTx.ID, cosmos.AccAddress(userAddr))
+	// Cancel the intent - tx FromAddress must match intent's SourceAddress
+	cancelTx := GetRandomTx()
+	cancelTx.FromAddress = userAddr
+	msg := NewMsgIntentCancel(cancelTx, intentTx.ID, cosmos.AccAddress(userAddr))
 	_, err := handler.Run(w.ctx, msg)
 	c.Assert(err, IsNil)
 
@@ -111,8 +113,10 @@ func (HandlerIntentCancelSuite) TestIntentCancel_RefundNativeAsset(c *C) {
 	mgr := NewDummyMgrWithKeeper(w.keeper)
 	handler := NewIntentCancelHandler(mgr)
 
-	// Cancel the intent
-	msg := NewMsgIntentCancel(GetRandomTx(), intentTx.ID, cosmos.AccAddress(userAddr))
+	// Cancel the intent - tx FromAddress must match intent's SourceAddress
+	cancelTx := GetRandomTx()
+	cancelTx.FromAddress = userAddr
+	msg := NewMsgIntentCancel(cancelTx, intentTx.ID, cosmos.AccAddress(userAddr))
 	_, err := handler.Run(w.ctx, msg)
 	c.Assert(err, IsNil)
 
