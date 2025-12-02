@@ -1,0 +1,153 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 2
+---
+########################################################################################
+# Enable intents
+########################################################################################
+type: tx-mimir
+key: IntentsEnabled
+value: 1
+signer: {{ addr_thor_dog }}
+sequence: 0
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Deposit BTC to get BTC-BTC secured asset for fox
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 1 }}'
+    chain: BTC
+    from_address: {{ addr_btc_fox }}
+    to_address: {{ addr_btc_dog }}
+    coins:
+      - amount: "10000000"
+        asset: "BTC.BTC"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "BTC.BTC"
+    memo: "secure+:{{ addr_thor_fox }}"
+  block_height: 2
+  finalise_height: 2
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Check fox has BTC-BTC secured asset
+########################################################################################
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances|length >= 1
+  - '[.balances[]|select(.denom == "btc-btc")]|length == 1'
+---
+########################################################################################
+# Create an intent using secured assets
+# Fox wants to swap BTC-BTC secured for ETH-ETH secured
+# Format: IO:TARGET_ASSET:HIGH_TARGET:LOW_TARGET:TARGET_ADDR
+# native_txid counts: 1=IntentsEnabled, 2=observed-in BTC, 3=tx-deposit intent
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "5000000"
+    asset: "BTC-BTC"
+memo: "IO:ETH-ETH:50000000:40000000:{{ addr_thor_fox }}"
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Check the intent was created
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intent/{{ native_txid 3 }}
+asserts:
+  - .intent.tx_id == "{{ native_txid 3 }}"
+  - .intent.source.asset == "BTC-BTC"
+  - .intent.source.amount == "5000000"
+  - .intent.target_asset == "ETH-ETH"
+  - .intent.status == "IntentActive"
+---
+########################################################################################
+# Let the intent expire to trigger auction
+# IntentTTLBlocks is 5 in mocknet
+########################################################################################
+type: create-blocks
+count: 5
+---
+########################################################################################
+# Check that intent status changed to IntentAuctioning
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intent/{{ native_txid 3 }}
+asserts:
+  - .intent.status == "IntentAuctioning"
+---
+########################################################################################
+# Check that auction was created with correct bid asset (RUNE for native assets)
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intent/auction/{{ native_txid 3 }}
+asserts:
+  - .auction.intent_tx_id == "{{ native_txid 3 }}"
+  - .auction.status == "AuctionActive"
+  - .auction.auction_amount.asset == "BTC-BTC"
+  - .auction.bid_asset == "THOR.RUNE"
+---
+########################################################################################
+# Let auction expire with NO bids (verifying secured asset auction flow)
+# IntentAuctionDurationBlocks is 5 in mocknet
+########################################################################################
+type: create-blocks
+count: 6
+---
+########################################################################################
+# Check auction was cancelled (no bids)
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intent/auction/{{ native_txid 3 }}
+asserts:
+  - .auction.status == "AuctionCancelled"
+---
+########################################################################################
+# Check intent status is now expired
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intent/{{ native_txid 3 }}
+asserts:
+  - .intent.status == "IntentExpired"
+---
+########################################################################################
+# Verify fox's BTC-BTC secured asset was returned after intent expired
+# (funds should be returned when intent expires without completion)
+########################################################################################
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances|length >= 1
+  - '[.balances[]|select(.denom == "btc-btc")]|length == 1'
+---
+########################################################################################
+# Verify intents list is empty
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intents
+asserts:
+  - .intents | length == 0
