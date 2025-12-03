@@ -2,6 +2,7 @@ package thorchain
 
 import (
 	"fmt"
+	"sort"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -421,17 +422,26 @@ func (im *IntentMgr) completeAuction(ctx cosmos.Context, auction IntentAuction) 
 	auctionBids := IntentAuctionBids(bids)
 	highestBidAmount := auctionBids.HighestBid()
 
-	var winningBid *IntentAuctionBid
+	// Collect all bids with the highest amount (for deterministic tiebreaker)
+	var candidates []IntentAuctionBid
 	for i := range bids {
 		if bids[i].BidAmount.Amount.Equal(highestBidAmount) {
-			winningBid = &bids[i]
-			break
+			candidates = append(candidates, bids[i])
 		}
 	}
 
-	if winningBid == nil {
+	if len(candidates) == 0 {
 		return fmt.Errorf("no winning bid found")
 	}
+
+	// Deterministic tiebreaker: earliest SubmitHeight wins, then lowest BidTxID
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].SubmitHeight != candidates[j].SubmitHeight {
+			return candidates[i].SubmitHeight < candidates[j].SubmitHeight
+		}
+		return candidates[i].BidTxID.String() < candidates[j].BidTxID.String()
+	})
+	winningBid := &candidates[0]
 
 	// Process losing bids - refund them
 	for i := range bids {
