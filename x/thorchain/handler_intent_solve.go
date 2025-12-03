@@ -122,15 +122,20 @@ func (h IntentSolveHandler) handle(ctx cosmos.Context, msg MsgIntentSolve) error
 		highMinusOffered := common.SafeSub(intent.HighTarget, offeredAmount)
 		highMinusLow := common.SafeSub(intent.HighTarget, intent.LowTarget)
 
-		// Calculate the delay: (high - offered) * slide_blocks / (high - low)
-		delay := highMinusOffered.Mul(cosmos.NewUint(uint64(slideBlocks)))
-		delay = delay.Quo(highMinusLow)
+		// Guard against division by zero (SafeSub could produce zero in edge cases)
+		if highMinusLow.IsZero() {
+			matchHeight = currentHeight
+		} else {
+			// Calculate the delay: (high - offered) * slide_blocks / (high - low)
+			delay := highMinusOffered.Mul(cosmos.NewUint(uint64(slideBlocks)))
+			delay = delay.Quo(highMinusLow)
 
-		matchHeight = currentHeight + int64(delay.Uint64())
+			matchHeight = currentHeight + int64(delay.Uint64())
 
-		// Cap match height at expiry height
-		if matchHeight > intent.ExpiryHeight {
-			matchHeight = intent.ExpiryHeight
+			// Cap match height at expiry height
+			if matchHeight > intent.ExpiryHeight {
+				matchHeight = intent.ExpiryHeight
+			}
 		}
 	}
 
