@@ -639,7 +639,7 @@ func (c *Client) extractTxs(block *btcjson.GetBlockVerboseTxResult) (types.TxIn,
 
 	var txItems []*types.TxInItem
 	for idx, tx := range block.Tx {
-		// mempool transaction get committed to block , thus remove it from mempool cache
+		// mempool transaction get committed to block, thus remove it from mempool cache
 		c.removeFromMemPoolCache(tx.Hash)
 		txInItems, err := c.getTxIns(&block.Tx[idx], block.Height, false, vinZeroTxs)
 		if err != nil {
@@ -647,30 +647,27 @@ func (c *Client) extractTxs(block *btcjson.GetBlockVerboseTxResult) (types.TxIn,
 			c.log.Debug().Str("txid", tx.Txid).Err(err).Msg("fail to get TxInItems")
 			continue
 		}
-		for _, txInItem := range txInItems {
-			if txInItem.IsEmpty() {
-				continue
-			}
-			if txInItem.Coins.IsEmpty() {
-				continue
-			}
-			if txInItem.Coins[0].Amount.LT(c.cfg.ChainID.DustThreshold()) {
-				continue
-			}
-			added, err := c.temporalStorage.TrackObservedTx(txInItem.Tx)
-			if err != nil {
-				c.log.Err(err).Msgf("fail to determine whether hash(%s) had been observed before", txInItem.Tx)
-			}
-			if !added {
-				c.log.Info().Msgf("tx: %s had been report before, ignore", txInItem.Tx)
-				if err := c.temporalStorage.UntrackObservedTx(txInItem.Tx); err != nil {
-					c.log.Err(err).Msgf("fail to remove observed tx from cache: %s", txInItem.Tx)
-				}
-				continue
-			}
+
+		if len(txInItems) == 0 {
+			continue
 		}
-		for idx := range txInItems {
-			txItems = append(txItems, &txInItems[idx])
+
+		// Track once per transaction (not per item) - all items share the same txid
+		added, err := c.temporalStorage.TrackObservedTx(txInItems[0].Tx)
+		if err != nil {
+			c.log.Err(err).Msgf("fail to determine whether hash(%s) had been observed before", txInItems[0].Tx)
+		}
+		if !added {
+			c.log.Info().Msgf("tx: %s had been reported before, ignore", txInItems[0].Tx)
+			if err := c.temporalStorage.UntrackObservedTx(txInItems[0].Tx); err != nil {
+				c.log.Err(err).Msgf("fail to remove observed tx from cache: %s", txInItems[0].Tx)
+			}
+			continue // Skip ALL items for this tx
+		}
+
+		// Add all items for this tx
+		for i := range txInItems {
+			txItems = append(txItems, &txInItems[i])
 		}
 	}
 	txIn.TxArray = txItems
@@ -718,115 +715,88 @@ type transfer struct {
 }
 
 func (c *Client) getOutputs(sender string, tx *btcjson.TxRawResult) ([]transfer, error) {
-	transfers := make([]transfer, 0)
+	// Extract memo first (before processing outputs)
+	memo, err := c.getMemo(tx)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get memo from tx: %w", err)
+	}
+	if len([]byte(memo)) > constants.MaxMemoSize {
+		return nil, fmt.Errorf("memo (%s) longer than max allow length (%d)", memo, constants.MaxMemoSize)
+	}
+
+	// Parse memo to determine tx type
+	m, err := mem.ParseMemo(common.LatestVersion, memo)
+	if err != nil {
+		c.log.Debug().Err(err).Str("memo", memo).Msg("fail to parse memo")
+		// Continue - memoless transactions are valid
+	}
+	isConsolidate := m != nil && m.IsType(mem.TxConsolidate)
+
 	isSenderAsgard := c.isAsgardAddress(sender)
+	transfers := make([]transfer, 0)
+
+	// Process value outputs (skip OP_RETURN)
 	for _, vout := range tx.Vout {
-		isOpReturn := strings.EqualFold(vout.ScriptPubKey.Type, "nulldata")
+		if strings.EqualFold(vout.ScriptPubKey.Type, "nulldata") {
+			continue // OP_RETURN already processed via getMemo
+		}
+		// analyze-ignore(float-comparison)
+		if vout.Value <= 0 {
+			continue
+		}
 
-		if isOpReturn {
-			buf, err := hex.DecodeString(vout.ScriptPubKey.Hex)
-			if err != nil {
-				c.log.Err(err).Msg("fail to hex decode scriptPubKey")
+		addresses := c.getAddressesFromScriptPubKey(vout.ScriptPubKey)
+		if len(addresses) != 1 {
+			// If more than one address, ignore this Vout.
+			continue
+		}
+
+		receiver := addresses[0]
+		if c.cfg.ChainID.Equals(common.BCHChain) {
+			receiver = c.stripBCHAddress(receiver)
+		}
+
+		// Must involve an asgard address
+		if !isSenderAsgard && !c.isAsgardAddress(receiver) {
+			continue
+		}
+
+		// Validate inbound UTXOs against multisig
+		if c.isAsgardAddress(receiver) {
+			if !c.isValidUTXO(vout.ScriptPubKey.Hex) {
+				return nil, fmt.Errorf("invalid utxo")
+			}
+		}
+
+		amount, err := btcutil.NewAmount(vout.Value)
+		if err != nil {
+			return nil, fmt.Errorf("fail to parse float64: %w", err)
+		}
+		amt := uint64(amount.ToUnit(btcutil.AmountSatoshi))
+		if cosmos.NewUint(amt).LT(c.cfg.ChainID.DustThreshold()) {
+			continue
+		}
+
+		// Filter based on consolidate flag (matches original getOutput logic)
+		if isConsolidate {
+			// Consolidate tx: only keep vault->vault (receiver == sender)
+			if receiver != sender {
 				continue
-			}
-			var asm string
-			switch c.cfg.ChainID {
-			case common.DOGEChain:
-				asm, err = dogetxscript.DisasmString(buf)
-			case common.BCHChain:
-				asm, err = bchtxscript.DisasmString(buf)
-			case common.LTCChain:
-				asm, err = ltctxscript.DisasmString(buf)
-			case common.BTCChain:
-				asm, err = btctxscript.DisasmString(buf)
-			default:
-				c.log.Fatal().Msg("unsupported chain")
-			}
-
-			if err != nil {
-				c.log.Err(err).Msg("fail to disasm script pubkey")
-				continue
-			}
-			opReturnFields := strings.Fields(asm)
-			var memo string
-			if len(opReturnFields) == 2 {
-				var decoded []byte
-				decoded, err = hex.DecodeString(opReturnFields[1])
-				if err != nil {
-					c.log.Err(err).Msgf("fail to decode OP_RETURN string: %s", opReturnFields[1])
-					continue
-				}
-				memo += string(decoded)
-			}
-			if len([]byte(memo)) > constants.MaxMemoSize {
-				return nil, fmt.Errorf("memo (%s) longer than max allow length(%d)", memo, constants.MaxMemoSize)
-			}
-
-			m, err := mem.ParseMemo(common.LatestVersion, memo)
-			if err != nil {
-				c.log.Debug().Msgf("fail to parse memo: %s,err : %s", memo, err)
-				continue
-			}
-
-			// add memo
-			if len(transfers) > 0 {
-				transfers[len(transfers)-1].Memo = memo
-				if m.GetType() == mem.TxConsolidate && transfers[len(transfers)-1].Receiver != sender {
-					transfers = transfers[:len(transfers)-1]
-					// FIXME: remove
-					c.log.Error().Msgf("Removed consolidate transfer from tx `%+v`", tx)
-				}
-				if m.GetType() != mem.TxConsolidate && transfers[len(transfers)-1].Receiver == sender {
-					transfers = transfers[:len(transfers)-1]
-					// FIXME: remove
-					c.log.Error().Msgf("Removed non-consolidate transfer from tx `%+v`", tx)
-				}
 			}
 		} else {
-			if vout.Value <= 0 {
+			// Non-consolidate: filter out change outputs (receiver == sender)
+			if receiver == sender {
 				continue
 			}
-			addresses := c.getAddressesFromScriptPubKey(vout.ScriptPubKey)
-			if len(addresses) != 1 {
-				// If more than one address, ignore this Vout.
-				// TODO check what we do if get multiple addresses
-				continue
-			}
-			receiver := addresses[0]
-			if c.cfg.ChainID.Equals(common.BCHChain) {
-				receiver = c.stripBCHAddress(receiver)
-			}
-			// To be observed, either the sender or receiver must be an observed THORChain vault;
-			// if the sender is a vault then assume the first Vout is the output (and a later Vout could be change).
-			// If the sender isn't a vault, then do do not for instance
-			// return a change address Vout as the output if before the vault-inbound Vout.
-			if !isSenderAsgard && !c.isAsgardAddress(receiver) {
-				continue
-			}
-
-			// If a UTXO is outbound , there is no need to validate the UTXO against mutisig
-			if c.isAsgardAddress(receiver) {
-				if !c.isValidUTXO(vout.ScriptPubKey.Hex) {
-					return nil, fmt.Errorf("invalid utxo")
-				}
-			}
-
-			amount, err := btcutil.NewAmount(vout.Value)
-			if err != nil {
-				return nil, fmt.Errorf("fail to parse float64: %w", err)
-			}
-			amt := uint64(amount.ToUnit(btcutil.AmountSatoshi))
-			if cosmos.NewUint(amt).LT(c.cfg.ChainID.DustThreshold()) {
-				continue
-			}
-
-			transfers = append(transfers, transfer{
-				Sender:   sender,
-				Receiver: receiver,
-				Amount:   amt,
-				Memo:     "",
-			})
 		}
+
+		// Add transfer with memo applied
+		transfers = append(transfers, transfer{
+			Sender:   sender,
+			Receiver: receiver,
+			Amount:   amt,
+			Memo:     memo,
+		})
 	}
 
 	return transfers, nil
