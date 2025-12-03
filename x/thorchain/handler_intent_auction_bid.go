@@ -89,7 +89,7 @@ func (h IntentAuctionBidHandler) validate(ctx cosmos.Context, msg MsgIntentAucti
 	bidAmount := bidCoin.Amount
 	existingBid, err := h.mgr.Keeper().GetBidderBidForAuction(ctx, msg.IntentTxID, msg.Tx.FromAddress)
 	if err != nil {
-		ctx.Logger().Error("fail to get existing bid", "error", err)
+		return ErrInternal(err, "fail to get existing bid")
 	}
 	if !existingBid.BidTxID.IsEmpty() {
 		// Top-up: add new amount to existing bid
@@ -149,7 +149,7 @@ func (h IntentAuctionBidHandler) handle(ctx cosmos.Context, msg MsgIntentAuction
 	// Check if this is a top-up of an existing bid
 	existingBid, err := h.mgr.Keeper().GetBidderBidForAuction(ctx, msg.IntentTxID, msg.Tx.FromAddress)
 	if err != nil {
-		ctx.Logger().Error("fail to get existing bid", "error", err)
+		return ErrInternal(err, "fail to get existing bid")
 	}
 
 	var bid IntentAuctionBid
