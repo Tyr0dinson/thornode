@@ -322,7 +322,8 @@ type QueryClient interface {
 	ActiveIntents(ctx context.Context, in *QueryActiveIntentsRequest, opts ...grpc.CallOption) (*QueryActiveIntentsResponse, error)
 	IntentAuction(ctx context.Context, in *QueryIntentAuctionRequest, opts ...grpc.CallOption) (*QueryIntentAuctionResponse, error)
 	ActiveIntentAuctions(ctx context.Context, in *QueryActiveAuctionsRequest, opts ...grpc.CallOption) (*QueryActiveAuctionsResponse, error)
-	// Intent must be last because /thorchain/intent/{tx_id} matches any path under /thorchain/intent/
+	// Intent must be last because /thorchain/intent/{tx_id} matches any path
+	// under /thorchain/intent/
 	Intent(ctx context.Context, in *QueryIntentRequest, opts ...grpc.CallOption) (*QueryIntentResponse, error)
 }
 
@@ -1224,7 +1225,8 @@ type QueryServer interface {
 	ActiveIntents(context.Context, *QueryActiveIntentsRequest) (*QueryActiveIntentsResponse, error)
 	IntentAuction(context.Context, *QueryIntentAuctionRequest) (*QueryIntentAuctionResponse, error)
 	ActiveIntentAuctions(context.Context, *QueryActiveAuctionsRequest) (*QueryActiveAuctionsResponse, error)
-	// Intent must be last because /thorchain/intent/{tx_id} matches any path under /thorchain/intent/
+	// Intent must be last because /thorchain/intent/{tx_id} matches any path
+	// under /thorchain/intent/
 	Intent(context.Context, *QueryIntentRequest) (*QueryIntentResponse, error)
 }
 
