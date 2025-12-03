@@ -80,11 +80,11 @@ func (h IntentOpenHandler) validate(ctx cosmos.Context, msg MsgIntentOpen) error
 
 	hasActiveSourcePool := !sourcePool.IsEmpty() && sourcePool.Status == PoolAvailable
 	hasActiveTargetPool := !targetPool.IsEmpty() && targetPool.Status == PoolAvailable
-	isSourceNative := sourceAsset.IsRune() || sourceAsset.IsSecuredAsset()
-	isTargetNative := targetAsset.IsRune() || targetAsset.IsSecuredAsset()
+	isSourceNative := sourceAsset.IsRune() || sourceAsset.IsSecuredAsset() || sourceAsset.IsTradeAsset()
+	isTargetNative := targetAsset.IsRune() || targetAsset.IsSecuredAsset() || targetAsset.IsTradeAsset()
 
 	if !hasActiveSourcePool && !hasActiveTargetPool && !isSourceNative && !isTargetNative {
-		return se.ErrInvalidRequest.Wrap("at least one of source or target asset must have an active pool or be a native/secured asset")
+		return se.ErrInvalidRequest.Wrap("at least one of source or target asset must have an active pool or be a native/secured/trade asset")
 	}
 
 	return nil
@@ -137,20 +137,43 @@ func (h IntentOpenHandler) handle(ctx cosmos.Context, msg MsgIntentOpen) error {
 
 	// Handle affiliate fee if applicable
 	if !msg.AffiliateBasisPoints.IsZero() && !msg.AffiliateAddress.IsEmpty() {
-		// Determine which asset can pay the affiliate fee (must be pool or native asset)
-		feeAsset := sourceCoin.Asset
-		feeAmount := common.GetUncappedShare(msg.AffiliateBasisPoints, cosmos.NewUint(10000), sourceCoin.Amount)
+		sourceAsset := sourceCoin.Asset
+		targetAsset := msg.TargetAsset
 
-		sourcePool, _ := h.mgr.Keeper().GetPool(ctx, sourceCoin.Asset.GetLayer1Asset())
-		isSourcePoolAsset := !sourcePool.IsEmpty()
-		isSourceNative := sourceCoin.Asset.IsRune() || sourceCoin.Asset.IsSecuredAsset()
+		// Check which asset can pay affiliate fee (must have L1 pool or be RUNE)
+		sourcePool, _ := h.mgr.Keeper().GetPool(ctx, sourceAsset.GetLayer1Asset())
+		targetPool, _ := h.mgr.Keeper().GetPool(ctx, targetAsset.GetLayer1Asset())
 
-		if isSourcePoolAsset || isSourceNative {
-			// Can charge affiliate fee on source asset
-			if !feeAmount.IsZero() {
-				// TODO: Implement affiliate fee handling similar to swap handler
-				ctx.Logger().Info("intent affiliate fee", "asset", feeAsset, "amount", feeAmount, "affiliate", msg.AffiliateAddress)
+		canChargeSource := sourceAsset.IsRune() || (!sourcePool.IsEmpty() && sourcePool.Status == PoolAvailable)
+		canChargeTarget := targetAsset.IsRune() || (!targetPool.IsEmpty() && targetPool.Status == PoolAvailable)
+
+		switch {
+		case canChargeSource:
+			// Charge affiliate fee on source asset using skimAffiliateFees
+			feeAmount := common.GetSafeShare(msg.AffiliateBasisPoints, cosmos.NewUint(10000), sourceCoin.Amount)
+			feeCoin := common.NewCoin(sourceAsset, feeAmount)
+
+			if !feeCoin.IsEmpty() && feeCoin.Amount.GT(cosmos.ZeroUint()) {
+				affFee, err := skimAffiliateFees(ctx, h.mgr, msg.Tx, msg.Signer, feeCoin, msg.Tx.Memo)
+				if err != nil {
+					ctx.Logger().Error("fail to process intent affiliate fee", "error", err)
+				} else if !affFee.IsZero() {
+					// Deduct affiliate fee from escrowed source amount
+					intent.Source.Amount = common.SafeSub(intent.Source.Amount, affFee)
+					h.mgr.Keeper().SetIntent(ctx, intent)
+					ctx.Logger().Info("processed intent affiliate fee on source",
+						"asset", sourceAsset, "amount", affFee, "affiliate", msg.AffiliateAddress)
+				}
 			}
+		case canChargeTarget:
+			// Target asset can pay affiliate fee - will be handled at solve time
+			// The affiliate info is already stored in the intent for use when solving
+			ctx.Logger().Info("intent affiliate fee will be charged on target at solve time",
+				"target_asset", targetAsset, "affiliate", msg.AffiliateAddress, "bps", msg.AffiliateBasisPoints)
+		default:
+			// Neither asset qualifies - skip affiliate fee
+			ctx.Logger().Info("skipping intent affiliate fee - no eligible asset",
+				"source", sourceAsset, "target", targetAsset)
 		}
 	}
 

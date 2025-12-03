@@ -152,8 +152,10 @@ func (h IntentCancelHandler) handle(ctx cosmos.Context, msg MsgIntentCancel) err
 			if vaultBalance.GTE(intent.Source.Amount) {
 				diff := common.SafeSub(vaultBalance, intent.Source.Amount)
 
-				// Select this vault if it's the first valid one or has a closer balance
-				if selectedVault == nil || diff.LT(closestDiff) {
+				// Select this vault if it's the first valid one, has a closer balance,
+				// or has the same balance but lower PubKey (deterministic tiebreaker)
+				if selectedVault == nil || diff.LT(closestDiff) ||
+					(diff.Equal(closestDiff) && vaults[i].PubKey.String() < selectedVault.PubKey.String()) {
 					selectedVault = &vaults[i]
 					closestDiff = diff
 				}

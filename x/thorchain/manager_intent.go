@@ -176,22 +176,38 @@ func (im *IntentMgr) executeIntent(ctx cosmos.Context, intent Intent, solve Inte
 				ctx.Logger().Error("fail to emit fee event", "error", err)
 			}
 		} else if !feePool.IsEmpty() {
-			// TODO: Implement donate (if possible), or swap and donate for non-RUNE pool assets
-			// For now, add to pool balance and liquidity fees
-			feePool.BalanceAsset = feePool.BalanceAsset.Add(protocolFee.Amount)
-
-			// Get the RUNE value of the fee for liquidity fees tracking
-			runeValue := feePool.AssetValueInRune(protocolFee.Amount)
-			feePool.LPUnits = feePool.LPUnits.Add(runeValue)
-
-			if err := im.mgr.Keeper().SetPool(ctx, feePool); err != nil {
-				ctx.Logger().Error("fail to update pool with fee", "error", err)
+			// Swap non-RUNE fee to RUNE and add to reserve
+			reserveAddr, err := im.mgr.Keeper().GetModuleAddress(ReserveName)
+			if err != nil {
+				ctx.Logger().Error("fail to get reserve address for fee swap", "error", err)
 			} else {
-				ctx.Logger().Info("added intent protocol fee to pool",
-					"pool", feePool.Asset,
-					"amount", protocolFee.Amount,
-					"rune_value", runeValue,
-				)
+				feeTx := common.Tx{
+					ID:          solve.SolveTxID,
+					Chain:       protocolFee.Asset.GetChain(),
+					FromAddress: common.NoAddress,
+					ToAddress:   reserveAddr,
+					Coins:       common.NewCoins(protocolFee),
+					Memo:        fmt.Sprintf("=:THOR.RUNE:%s", reserveAddr),
+				}
+
+				version := types.SwapVersion_v1
+				if im.mgr.Keeper().AdvSwapQueueEnabled(ctx) {
+					version = types.SwapVersion_v2
+				}
+
+				asgardAddr := im.mgr.Keeper().GetModuleAccAddress(AsgardName)
+				swapMsg := NewMsgSwap(feeTx, common.RuneAsset(), reserveAddr,
+					cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(),
+					"", "", nil, MarketSwap, 1, 0, version, asgardAddr)
+
+				if err := im.mgr.AdvSwapQueueMgr().AddSwapQueueItem(ctx, im.mgr, swapMsg); err != nil {
+					ctx.Logger().Error("fail to queue intent fee swap to RUNE", "error", err)
+				} else {
+					ctx.Logger().Info("queued intent protocol fee swap to RUNE",
+						"fee_asset", protocolFee.Asset,
+						"fee_amount", protocolFee.Amount,
+					)
+				}
 			}
 
 			// Emit fee event
@@ -203,21 +219,20 @@ func (im *IntentMgr) executeIntent(ctx cosmos.Context, intent Intent, solve Inte
 	}
 
 	// Schedule outbound for source asset to solver
-	ok, err := im.mgr.TxOutStore().TryAddTxOutItem(ctx, im.mgr, solverToi, cosmos.ZeroUint())
+	solverOk, err := im.mgr.TxOutStore().TryAddTxOutItem(ctx, im.mgr, solverToi, cosmos.ZeroUint())
 	if err != nil {
 		return fmt.Errorf("fail to add solver outbound tx: %w", err)
 	}
-	if !ok {
-		return fmt.Errorf("fail to schedule solver txout")
-	}
 
 	// Schedule outbound for target asset to user
-	ok, err = im.mgr.TxOutStore().TryAddTxOutItem(ctx, im.mgr, userToi, cosmos.ZeroUint())
+	userOk, err := im.mgr.TxOutStore().TryAddTxOutItem(ctx, im.mgr, userToi, cosmos.ZeroUint())
 	if err != nil {
 		return fmt.Errorf("fail to add user outbound tx: %w", err)
 	}
-	if !ok {
-		return fmt.Errorf("fail to schedule user txout")
+
+	// Only mark completed if both TxOuts succeeded
+	if !solverOk || !userOk {
+		return fmt.Errorf("fail to schedule txouts: solver=%v, user=%v", solverOk, userOk)
 	}
 
 	// Update intent status to completed
@@ -664,7 +679,10 @@ func (im *IntentMgr) cancelAuction(ctx cosmos.Context, auction IntentAuction, in
 			if vaultBalance.GTE(totalAmount) {
 				diff := common.SafeSub(vaultBalance, totalAmount)
 
-				if selectedVault == nil || diff.LT(closestDiff) {
+				// Select this vault if it's the first valid one, has a closer balance,
+				// or has the same balance but lower PubKey (deterministic tiebreaker)
+				if selectedVault == nil || diff.LT(closestDiff) ||
+					(diff.Equal(closestDiff) && vaults[i].PubKey.String() < selectedVault.PubKey.String()) {
 					selectedVault = &vaults[i]
 					closestDiff = diff
 				}
