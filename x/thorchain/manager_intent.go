@@ -266,6 +266,16 @@ func (im *IntentMgr) executeIntent(ctx cosmos.Context, intent Intent, solve Inte
 
 // expireIntent handles an expired intent by starting an auction
 func (im *IntentMgr) expireIntent(ctx cosmos.Context, intent Intent) error {
+	// Check if we should refund directly instead of auctioning
+	// Refund if: source asset is native OR has an L1 pool
+	sourcePool, _ := im.mgr.Keeper().GetPool(ctx, intent.Source.Asset.GetLayer1Asset())
+	isPoolAsset := !sourcePool.IsEmpty()
+
+	if isPoolAsset || intent.Source.Asset.IsNative() {
+		// Direct refund - no auction needed
+		return im.refundExpiredIntent(ctx, intent)
+	}
+
 	// Get auction parameters
 	auctionBps := im.mgr.Keeper().GetConfigInt64(ctx, constants.IntentAuctionBasisPoints)
 	if auctionBps <= 0 {
@@ -334,6 +344,59 @@ func (im *IntentMgr) expireIntent(ctx cosmos.Context, intent Intent) error {
 		"bid_asset", bidAsset,
 		"min_bid", minBid,
 		"expiry_height", auction.ExpiryHeight,
+	)
+
+	return nil
+}
+
+// refundExpiredIntent refunds an expired intent directly without auction
+// This is used when the source asset is native or has an L1 pool
+func (im *IntentMgr) refundExpiredIntent(ctx cosmos.Context, intent Intent) error {
+	sourceAsset := intent.Source.Asset
+
+	// Determine module name for RUNE
+	moduleName := ""
+	if sourceAsset.IsRune() {
+		moduleName = ReserveName
+	}
+
+	// Create refund txout
+	toi := TxOutItem{
+		Chain:      sourceAsset.GetChain(),
+		ToAddress:  intent.SourceAddress,
+		Coin:       intent.Source,
+		Memo:       NewRefundMemo(intent.TxID).String(),
+		InHash:     intent.TxID,
+		ModuleName: moduleName,
+	}
+
+	ok, err := im.mgr.TxOutStore().TryAddTxOutItem(ctx, im.mgr, toi, cosmos.ZeroUint())
+	if err != nil {
+		return fmt.Errorf("fail to schedule refund for expired intent: %w", err)
+	}
+	if !ok {
+		return fmt.Errorf("fail to add refund txout for expired intent")
+	}
+
+	// Refund any existing solves for this intent
+	if err := im.refundIntentSolves(ctx, intent); err != nil {
+		ctx.Logger().Error("fail to refund intent solves", "txid", intent.TxID, "error", err)
+	}
+
+	// Update intent status
+	intent.Status = IntentExpired
+	im.mgr.Keeper().SetIntent(ctx, intent)
+
+	// Emit expiry event (abandoned=false since we are refunding)
+	evt := NewEventIntentExpire(intent.TxID, intent.Source, intent.SourceAddress, false)
+	if err := im.mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
+		ctx.Logger().Error("fail to emit intent expire event", "error", err)
+	}
+
+	ctx.Logger().Info("refunded expired intent",
+		"txid", intent.TxID,
+		"amount", intent.Source.Amount,
+		"to", intent.SourceAddress,
 	)
 
 	return nil
