@@ -79,7 +79,8 @@ func (s *IntentMgrTestSuite) TestExpireIntent_RefundWithL1Pool(c *C) {
 	w.keeper.SetIntent(w.ctx, intent)
 
 	mgr := NewDummyMgrWithKeeper(w.keeper)
-	intentMgr := NewIntentManager(mgr).(*IntentMgr)
+	intentMgr, ok := NewIntentManager(mgr).(*IntentMgr)
+	c.Assert(ok, Equals, true)
 
 	// Call expireIntent
 	err := intentMgr.expireIntent(w.ctx, intent)
@@ -112,7 +113,8 @@ func (s *IntentMgrTestSuite) TestExpireIntent_RefundNativeAsset(c *C) {
 	w.keeper.SetIntent(w.ctx, intent)
 
 	mgr := NewDummyMgrWithKeeper(w.keeper)
-	intentMgr := NewIntentManager(mgr).(*IntentMgr)
+	intentMgr, ok := NewIntentManager(mgr).(*IntentMgr)
+	c.Assert(ok, Equals, true)
 
 	// Call expireIntent
 	err := intentMgr.expireIntent(w.ctx, intent)
@@ -149,7 +151,8 @@ func (s *IntentMgrTestSuite) TestExpireIntent_AuctionNoPoolAsset(c *C) {
 	w.keeper.SetIntent(w.ctx, intent)
 
 	mgr := NewDummyMgrWithKeeper(w.keeper)
-	intentMgr := NewIntentManager(mgr).(*IntentMgr)
+	intentMgr, ok := NewIntentManager(mgr).(*IntentMgr)
+	c.Assert(ok, Equals, true)
 
 	// Call expireIntent
 	err = intentMgr.expireIntent(w.ctx, intent)
@@ -189,7 +192,8 @@ func (s *IntentMgrTestSuite) TestExpireIntent_RefundTradeAsset(c *C) {
 	w.keeper.SetIntent(w.ctx, intent)
 
 	mgr := NewDummyMgrWithKeeper(w.keeper)
-	intentMgr := NewIntentManager(mgr).(*IntentMgr)
+	intentMgr, ok := NewIntentManager(mgr).(*IntentMgr)
+	c.Assert(ok, Equals, true)
 
 	// Call expireIntent
 	err := intentMgr.expireIntent(w.ctx, intent)
