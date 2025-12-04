@@ -51,71 +51,16 @@ asserts:
   - .intent.status == "IntentActive"
 ---
 ########################################################################################
-# Let the intent expire to trigger auction
+# Let the intent expire
 # IntentTTLBlocks is 5 in mocknet
+# Since RUNE is a native asset, it should be refunded directly (no auction)
 ########################################################################################
 type: create-blocks
 count: 5
 ---
 ########################################################################################
-# Check that intent status changed to IntentAuctioning
-########################################################################################
-type: check
-endpoint: http://localhost:1317/thorchain/intent/{{ native_txid 2 }}
-asserts:
-  - .intent.status == "IntentAuctioning"
----
-########################################################################################
-# Check that auction was created
-########################################################################################
-type: check
-endpoint: http://localhost:1317/thorchain/intent/auction/{{ native_txid 2 }}
-asserts:
-  - .auction.intent_tx_id == "{{ native_txid 2 }}"
-  - .auction.status == "AuctionActive"
----
-########################################################################################
-# Bidder (cat) places a bid with RUNE
-# For RUNE source intents, bids must be in RUNE
-# Format: IAB:INTENT_TX_HASH
-########################################################################################
-type: tx-deposit
-signer: {{ addr_thor_cat }}
-coins:
-  - amount: "100000000"
-    asset: "rune"
-memo: "IAB:{{ native_txid 2 }}"
----
-type: create-blocks
-count: 1
----
-########################################################################################
-# Check bid was registered
-########################################################################################
-type: check
-endpoint: http://localhost:1317/thorchain/intent/auction/{{ native_txid 2 }}
-asserts:
-  - .auction.status == "AuctionActive"
-  - .bids | length >= 1
----
-########################################################################################
-# Wait for auction to complete
-########################################################################################
-type: create-blocks
-count: 5
----
-########################################################################################
-# Check that auction completed successfully
-########################################################################################
-type: check
-endpoint: http://localhost:1317/thorchain/intent/auction/{{ native_txid 2 }}
-asserts:
-  - .auction.status == "AuctionCompleted"
----
-########################################################################################
-# Check that intent status changed to expired (auction fallback completed)
-# Note: IntentExpired is the correct status when auction completes (not IntentCompleted)
-# IntentCompleted is only set when a solver fulfills the intent before expiry
+# Check that intent status changed to IntentExpired (refunded directly)
+# Native assets (RUNE) are refunded immediately instead of going to auction
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/intent/{{ native_txid 2 }}
@@ -123,9 +68,16 @@ asserts:
   - .intent.status == "IntentExpired"
 ---
 ########################################################################################
-# For RUNE source intents, when auction completes:
-# - Winner (cat) receives auction amount (100M RUNE) via native transfer
-# - Owner (fox) receives remaining amount (900M RUNE) via native transfer
+# Verify no auction was created (native assets skip auction)
+# The endpoint returns an empty auction object when no auction exists
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intent/auction/{{ native_txid 2 }}
+asserts:
+  - .auction.intent_tx_id == ""
+---
+########################################################################################
+# For RUNE source intents that expire, the full amount is refunded to owner
 # These are native transfers, not external chain outbounds, so we verify
 # by checking that the outbound queue has no pending external outbounds
 ########################################################################################
