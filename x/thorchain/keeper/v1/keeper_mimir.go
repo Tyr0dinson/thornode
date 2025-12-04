@@ -120,7 +120,9 @@ func (k KVStore) IsOperationalMimir(key string) bool {
 		"AdvSwapQueueRapidSwapMax",
 		"EnableADVSwapQueue",
 		"StreamingLimitSwapMaxAge",
+		constants.OverSolvencyCheckInterval.String(),
 		constants.MimirKeyScheduledMigration,
+		constants.MaxRetiredVaultRecoveryAttempts.String(),
 	}
 	for i := range exactMatches {
 		if strings.EqualFold(key, exactMatches[i]) {
@@ -130,7 +132,6 @@ func (k KVStore) IsOperationalMimir(key string) bool {
 
 	exactUnmatches := []string{
 		"NodePauseChainBlocks",
-		"PauseLoans",
 		"PauseOnSlashThreshold",
 	}
 	for i := range exactUnmatches {

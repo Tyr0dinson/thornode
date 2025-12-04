@@ -77,7 +77,7 @@ func LargeUnconfirmedInbounds(block *thorscan.BlockResponse) {
 			}
 
 			// skip consolidate inbounds and trade/secured asset deposits
-			if tx.Tx.Memo != "" { // saver deposits have empty memo
+			if tx.Tx.Memo != "" { // skip memoless
 				memoParts := strings.Split(tx.Tx.Memo, ":")
 				memoType, err := memo.StringToTxType(memoParts[0])
 				if err != nil {
@@ -133,12 +133,66 @@ func LargeUnconfirmedInbounds(block *thorscan.BlockResponse) {
 				log.Panic().Err(err).Msg("unable to store seen large unconfirmed inbound")
 			}
 
+			// denormalize memoless reference
+			formattedMemo := fmt.Sprintf("`%s`", tx.Tx.Memo)
+			if tx.Tx.Memo == "" {
+				// get decimals to determine if we need to normalize
+				decimals := int64(common.THORChainDecimals)
+				if tx.Tx.Coins[0].Asset.IsGasAsset() {
+					decimals = tx.Tx.Coins[0].Asset.Chain.GetGasAssetDecimal()
+				} else {
+					pool := openapi.Pool{}
+					err = util.ThornodeCachedRetryGet(fmt.Sprintf("thorchain/pool/%s", tx.Tx.Coins[0].Asset), block.Header.Height, &pool)
+					if err != nil {
+						log.Panic().Err(err).Msg("failed to get pool")
+					}
+					if pool.Decimals != nil {
+						decimals = *pool.Decimals
+					}
+				}
+
+				// normalize the amount to extract the reference
+				amount := tx.Tx.Coins[0].Amount.Uint64()
+				if decimals < int64(common.THORChainDecimals) {
+					divisor := int64(1)
+					for i := decimals; i < int64(common.THORChainDecimals); i++ {
+						divisor *= 10
+					}
+					amount /= uint64(divisor)
+				}
+
+				refCount := util.GetConfigInt64(block.Header.Height, constants.MemolessTxnRefCount)
+				txnRefLength := len(fmt.Sprintf("%d", refCount))
+				modulus := uint64(1)
+				for i := 0; i < txnRefLength; i++ {
+					modulus *= 10
+				}
+
+				// extract reference from amount
+				refNum := amount % modulus
+
+				if refNum > 0 && refCount > 0 {
+					registration := openapi.ReferenceMemoResponse{}
+					err = util.ThornodeCachedRetryGet(
+						fmt.Sprintf("thorchain/memo/%s/%d", tx.Tx.Coins[0].Asset, refNum),
+						block.Header.Height,
+						&registration,
+					)
+					if err != nil {
+						log.Warn().Err(err).Msg("failed to get memo reference")
+					}
+					if registration.Memo != "" {
+						formattedMemo = fmt.Sprintf("`%s` (memoless: %d)", registration.Memo, refNum)
+					}
+				}
+			}
+
 			// build notification
 			title := "Large Unconfirmed Inbound"
 			fields := util.NewOrderedMap()
 			fields.Set("Chain", tx.Tx.Chain.String())
 			fields.Set("Hash", tx.Tx.ID.String())
-			fields.Set("Memo", fmt.Sprintf("`%s`", tx.Tx.Memo))
+			fields.Set("Memo", formattedMemo)
 			fields.Set("Confirmation Time", util.FormatDuration(confirmDuration))
 			fields.Set("Amount", fmt.Sprintf(
 				"%f %s (%s)",
@@ -157,7 +211,7 @@ func LargeUnconfirmedInbounds(block *thorscan.BlockResponse) {
 
 			// notify
 			level := notify.Warning
-			if usdValue > float64(config.Get().Thresholds.Security.USDValue) {
+			if uint64(usdValue) > config.Get().Thresholds.Security.USDValue {
 				level = notify.Danger
 			}
 			notify.Notify(config.Get().Notifications.Activity, title, block.Header.Height, nil, level, fields)
@@ -524,7 +578,7 @@ func scheduledOutbound(height int64, events []map[string]string) {
 
 	// determine if the outbound value is a security alert
 	level := notify.Warning
-	if usdValue > float64(config.Get().Thresholds.Security.USDValue) {
+	if uint64(usdValue) > config.Get().Thresholds.Security.USDValue {
 		level = notify.Danger
 	}
 
@@ -611,20 +665,20 @@ func scheduledOutbound(height int64, events []map[string]string) {
 
 		// add the delta
 		delta := usdValue - inboundUSDValue
-		deltaBasisPoints := float64(delta) / inboundUSDValue * 10000
-		deltaStr := fmt.Sprintf("%s (%.02f%%)", util.FormatUSD(delta), deltaBasisPoints/100)
-		if delta > 0 {
+		deltaBasisPoints := uint64(float64(delta) / inboundUSDValue * 10000)
+		deltaStr := fmt.Sprintf("%s (%.02f%%)", util.FormatUSD(delta), float64(delta)/inboundUSDValue*100)
+		if int(delta) > 0 {
 			// red triangle if perceived value increased
 			deltaStr = config.EmojiSmallRedTriangle + " " + deltaStr
 		}
 
 		// skip if delta below threshold and below the broader usd value threshold
-		if deltaBasisPoints < float64(config.Get().Thresholds.SwapDelta.BasisPoints) &&
+		if deltaBasisPoints < config.Get().Thresholds.SwapDelta.BasisPoints &&
 			uint64(inboundUSDValue) < config.Get().Thresholds.USDValue+totalCloutUSD {
 			return
 		}
 
-		if deltaBasisPoints > float64(config.Get().Thresholds.SwapDelta.BasisPoints) {
+		if deltaBasisPoints > config.Get().Thresholds.SwapDelta.BasisPoints {
 			// rotating light and tag @here if delta
 			deltaStr = config.EmojiRotatingLight + " " + deltaStr + " " + config.EmojiRotatingLight
 			level = notify.Danger
@@ -887,9 +941,11 @@ func InactiveVaultInbounds(block *thorscan.BlockResponse) {
 		for _, vault := range vaultsRes {
 			if vault.Status == types.VaultStatus_ActiveVault.String() {
 				vaults.Active[*vault.PubKey] = true
+				vaults.Active[*vault.PubKeyEddsa] = true
 			}
 			if vault.Status == types.VaultStatus_RetiringVault.String() {
 				vaults.Retiring[*vault.PubKey] = true
+				vaults.Retiring[*vault.PubKeyEddsa] = true
 			}
 		}
 		err = util.Store("vaults", vaults)
@@ -1215,6 +1271,7 @@ func FailedRefunds(block *thorscan.BlockResponse) {
 
 		// skip refunds for less than the native transaction fee (failed affiliate swaps)
 		txFee := float64(constants.NewConstantValue().GetInt64Value(constants.NativeTransactionFee)) / common.One
+		// analyze-ignore(float-comparison)
 		if util.RuneValue(block.Header.Height, coin) < txFee {
 			continue
 		}

@@ -80,8 +80,6 @@ Class | Method | HTTP request | Description
 *AuthApi* | [**Account**](docs/AuthApi.md#account) | **Get** /auth/accounts/{address} | 
 *BankApi* | [**Balances**](docs/BankApi.md#balances) | **Get** /bank/balances/{address} | 
 *BlockApi* | [**Block**](docs/BlockApi.md#block) | **Get** /thorchain/block | 
-*BorrowersApi* | [**Borrower**](docs/BorrowersApi.md#borrower) | **Get** /thorchain/pool/{asset}/borrower/{address} | 
-*BorrowersApi* | [**Borrowers**](docs/BorrowersApi.md#borrowers) | **Get** /thorchain/pool/{asset}/borrowers | 
 *CloutApi* | [**SwapperClout**](docs/CloutApi.md#swapperclout) | **Get** /thorchain/clout/swap/{address} | 
 *CodesApi* | [**Codes**](docs/CodesApi.md#codes) | **Get** /thorchain/codes | 
 *ExportApi* | [**Export**](docs/ExportApi.md#export) | **Get** /thorchain/export | 
@@ -161,6 +159,7 @@ Class | Method | HTTP request | Description
 *VaultsApi* | [**Asgard**](docs/VaultsApi.md#asgard) | **Get** /thorchain/vaults/asgard | 
 *VaultsApi* | [**Vault**](docs/VaultsApi.md#vault) | **Get** /thorchain/vault/{pubkey} | 
 *VaultsApi* | [**VaultPubkeys**](docs/VaultsApi.md#vaultpubkeys) | **Get** /thorchain/vaults/pubkeys | 
+*VaultsApi* | [**VaultSolvency**](docs/VaultsApi.md#vaultsolvency) | **Get** /thorchain/vaults/solvency | 
 *VaultsApi* | [**Yggdrasil**](docs/VaultsApi.md#yggdrasil) | **Get** /thorchain/vaults/yggdrasil | 
 
 
@@ -181,7 +180,6 @@ Class | Method | HTTP request | Description
  - [BlockResponseIdParts](docs/BlockResponseIdParts.md)
  - [BlockTx](docs/BlockTx.md)
  - [BlockTxResult](docs/BlockTxResult.md)
- - [Borrower](docs/Borrower.md)
  - [ChainHeight](docs/ChainHeight.md)
  - [Code](docs/Code.md)
  - [CodesResponse](docs/CodesResponse.md)
@@ -235,8 +233,6 @@ Class | Method | HTTP request | Description
  - [QueueResponse](docs/QueueResponse.md)
  - [QuoteFees](docs/QuoteFees.md)
  - [QuoteLimitResponse](docs/QuoteLimitResponse.md)
- - [QuoteLoanCloseResponse](docs/QuoteLoanCloseResponse.md)
- - [QuoteLoanOpenResponse](docs/QuoteLoanOpenResponse.md)
  - [QuoteSaverDepositResponse](docs/QuoteSaverDepositResponse.md)
  - [QuoteSaverWithdrawResponse](docs/QuoteSaverWithdrawResponse.md)
  - [QuoteSwapResponse](docs/QuoteSwapResponse.md)
@@ -279,6 +275,8 @@ Class | Method | HTTP request | Description
  - [VaultInfo](docs/VaultInfo.md)
  - [VaultPubkeysResponse](docs/VaultPubkeysResponse.md)
  - [VaultRouter](docs/VaultRouter.md)
+ - [VaultSolvencyAsset](docs/VaultSolvencyAsset.md)
+ - [VaultSolvencyResponse](docs/VaultSolvencyResponse.md)
  - [VersionResponse](docs/VersionResponse.md)
  - [YggdrasilVault](docs/YggdrasilVault.md)
 

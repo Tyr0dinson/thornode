@@ -1000,6 +1000,12 @@ func passiveBackfill(ctx cosmos.Context, mgr Manager, nodeAccount NodeAccount, b
 // atTVLCap - returns bool on if we've hit the TVL hard cap. Coins passed in
 // are included in the calculation
 func atTVLCap(ctx cosmos.Context, coins common.Coins, mgr Manager) bool {
+	// Check if StrictBondLiquidityRatio is enabled
+	strictBondLiquidityRatio := mgr.GetConstants().GetBoolValue(constants.StrictBondLiquidityRatio)
+	if !strictBondLiquidityRatio {
+		return false
+	}
+
 	vaults, err := mgr.Keeper().GetAsgardVaults(ctx)
 	if err != nil {
 		ctx.Logger().Error("fail to get vaults for atTVLCap", "error", err)
@@ -1487,7 +1493,6 @@ func leadingZeros(length int, str string) string {
 // should not trigger slashing as it's a legitimate observation of a failed transaction.
 // Checks are:
 // - must only have one coin in outbound
-// - chain of coin must be an EVM chain
 // - coin asset must be the gas asset
 // - coin amount must be 1
 // - memo must start with "OUT:" (bifrost sets memo to OUT:txhash for failed tx observations)
@@ -1497,10 +1502,6 @@ func isOutboundFakeGasTx(tx ObservedTx) bool {
 		return false
 	}
 	asset := tx.Tx.Coins[0].Asset
-	isChainEVM := asset.Chain.IsEVM()
-	if !isChainEVM {
-		return false
-	}
 	gasAsset := asset.Chain.GetGasAsset()
 	isAssetGasAsset := asset.Equals(gasAsset)
 	if !isAssetGasAsset {

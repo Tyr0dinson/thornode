@@ -48,7 +48,7 @@ func (c *Client) getMaximumUtxosToSpend() int64 {
 
 // getAllUtxos will iterate unspend utxos for the given address and return the oldest
 // set of utxos that can cover the amount.
-func (c *Client) getUtxoToSpend(pubkey common.PubKey, total float64) ([]btcjson.ListUnspentResult, error) {
+func (c *Client) getUtxoToSpend(pubkey common.PubKey, total btcutil.Amount) ([]btcjson.ListUnspentResult, error) {
 	// get all unspent utxos
 	addr, err := pubkey.GetAddress(c.cfg.ChainID)
 	if err != nil {
@@ -70,7 +70,7 @@ func (c *Client) getUtxoToSpend(pubkey common.PubKey, total float64) ([]btcjson.
 	})
 
 	var result []btcjson.ListUnspentResult
-	var toSpend float64
+	var toSpend btcutil.Amount
 	minUTXOAmt := btcutil.Amount(c.cfg.ChainID.DustThreshold().Uint64()).ToBTC()
 	utxosToSpend := c.getMaximumUtxosToSpend() // can be set by mimir
 
@@ -80,6 +80,7 @@ func (c *Client) getUtxoToSpend(pubkey common.PubKey, total float64) ([]btcjson.
 			continue
 		}
 
+		// analyze-ignore(float-comparison)
 		if item.Confirmations < c.cfg.UTXO.MinUTXOConfirmations || item.Amount < minUTXOAmt {
 			// use all UTXOs sent from asgard, regardless of confirmations or dust threshold
 			isSelfTx := c.isSelfTransaction(item.TxID)
@@ -95,17 +96,16 @@ func (c *Client) getUtxoToSpend(pubkey common.PubKey, total float64) ([]btcjson.
 			// For unconfirmed UTXOs (even self-transactions), check ancestor count
 			// to avoid exceeding the chain's mempool ancestor limit. Set to 0 to disable.
 			if item.Confirmations == 0 && c.cfg.UTXO.MaxMempoolAncestors > 0 {
-				entry, err := c.rpc.GetMempoolEntry(item.TxID)
+				var entry *btcjson.GetMempoolEntryResult
+				entry, err = c.rpc.GetMempoolEntry(item.TxID)
 				if err != nil {
-					// If we can't get mempool entry, the tx might have been confirmed
-					// or removed. Log and skip this UTXO to be safe.
-					c.log.Debug().Err(err).Str("txid", item.TxID).Msg("failed to get mempool entry, skipping UTXO")
-					continue
+					// If we cannot get the mempool entry, the tx is likely confirmed.
+					c.log.Debug().Err(err).Str("txid", item.TxID).Msg("failed to get mempool entry")
 				}
 
 				// GetMempoolEntry's ancestorcount already includes the transaction itself.
 				// So if the limit is 25 and ancestorcount is 25, we've hit the limit.
-				if entry.AncestorCount >= c.cfg.UTXO.MaxMempoolAncestors {
+				if err == nil && entry.AncestorCount >= c.cfg.UTXO.MaxMempoolAncestors {
 					c.log.Warn().
 						Str("txid", item.TxID).
 						Int64("ancestor_count", entry.AncestorCount).
@@ -117,7 +117,11 @@ func (c *Client) getUtxoToSpend(pubkey common.PubKey, total float64) ([]btcjson.
 		}
 
 		result = append(result, item)
-		toSpend += item.Amount
+		amt, err := btcutil.NewAmount(item.Amount)
+		if err != nil {
+			return nil, fmt.Errorf("fail to convert to btcutil amount: %w", err)
+		}
+		toSpend += amt
 
 		// in the scenario that there are too many unspent utxos available, make sure it
 		// doesn't spend too much as too much UTXO will cause huge pressure on TSS, also
@@ -131,7 +135,7 @@ func (c *Client) getUtxoToSpend(pubkey common.PubKey, total float64) ([]btcjson.
 	// If we couldn't collect enough UTXOs to cover the required amount, return an error
 	// to avoid confusing downstream errors about negative balance
 	if toSpend < total {
-		return nil, fmt.Errorf("insufficient available UTXOs: need %f, only have %f available from %d UTXOs", total, toSpend, len(result))
+		return nil, fmt.Errorf("insufficient available UTXOs: need %d, only have %d available from %d UTXOs", total, toSpend, len(result))
 	}
 
 	return result, nil
@@ -189,14 +193,13 @@ func (c *Client) isSelfTransaction(txID string) bool {
 	return false
 }
 
-func (c *Client) getPaymentAmount(tx stypes.TxOutItem) float64 {
-	amtToPay1e8 := tx.Coins.GetCoin(c.cfg.ChainID.GetGasAsset()).Amount.Uint64()
-	amtToPay := btcutil.Amount(int64(amtToPay1e8)).ToBTC()
+func (c *Client) getPaymentAmount(tx stypes.TxOutItem) btcutil.Amount {
+	amtToPay := tx.Coins.GetCoin(c.cfg.ChainID.GetGasAsset()).Amount.Uint64()
 	if !tx.MaxGas.IsEmpty() {
 		gasAmt := tx.MaxGas.ToCoins().GetCoin(c.cfg.ChainID.GetGasAsset()).Amount
-		amtToPay += btcutil.Amount(int64(gasAmt.Uint64())).ToBTC()
+		amtToPay += gasAmt.Uint64()
 	}
-	return amtToPay
+	return btcutil.Amount(amtToPay)
 }
 
 // getSourceScript retrieve pay to addr script from tx source
@@ -331,6 +334,7 @@ func (c *Client) getGasCoin(tx stypes.TxOutItem, vSize int64) common.Coin {
 			c.log.Error().Err(err).Msg("fail to get previous transaction fee from local storage")
 			return common.NewCoin(c.cfg.ChainID.GetGasAsset(), cosmos.NewUint(uint64(vSize*gasRate)))
 		}
+		// analyze-ignore(float-comparison)
 		if fee != 0.0 && vSize != 0 {
 			var amt btcutil.Amount
 			amt, err = btcutil.NewAmount(fee)
@@ -353,7 +357,7 @@ func (c *Client) getGasCoin(tx stypes.TxOutItem, vSize int64) common.Coin {
 func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte) (*wire.MsgTx, map[string]int64, error) {
 	txes, err := c.getUtxoToSpend(tx.VaultPubKey, c.getPaymentAmount(tx))
 	if err != nil {
-		return nil, nil, fmt.Errorf("fail to get unspent UTXO")
+		return nil, nil, fmt.Errorf("fail to get unspent UTXO: %w", err)
 	}
 	redeemTx := wire.NewMsgTx(wire.TxVersion)
 	totalAmt := int64(0)
@@ -629,7 +633,7 @@ func (c *Client) consolidateUTXOs() {
 		}
 		// the amount used here doesn't matter , just to see whether there are more than 15 UTXO available or not
 		var utxos []btcjson.ListUnspentResult
-		utxos, err = c.getUtxoToSpend(vault.PubKey, 0.01)
+		utxos, err = c.getUtxoToSpend(vault.PubKey, 100000)
 		if err != nil {
 			c.log.Err(err).Msg("fail to get utxos to spend")
 			continue

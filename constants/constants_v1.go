@@ -72,9 +72,6 @@ func NewConstantValue() *ConstantVals {
 			StreamingLimitSwapMaxAge:            43200,              // max number of blocks a streaming limit swap can exist before completing (3 days)
 			MinCR:                               10_000,             // Minimum collateralization ratio (basis pts)
 			MaxCR:                               60_000,             // Maximum collateralization ratio (basis pts)
-			LoanStreamingSwapsInterval:          0,                  // block interval between each streaming swap of opening or closing a loan
-			PauseLoans:                          1,                  // pause opening new loans and repaying loans
-			LoanRepaymentMaturity:               0,                  // number of blocks before loan has reached maturity and can be repaid
 			LendingLever:                        3333,               // This controls (in basis points) how much lending is allowed relative to rune supply
 			MinTxOutVolumeThreshold:             1000_00000000,      // total txout volume (in rune) a block needs to have to slow outbound transactions
 			TxOutDelayRate:                      25_00000000,        // outbound rune per block rate for scheduled transactions (excluding native assets)
@@ -153,6 +150,9 @@ func NewConstantValue() *ConstantVals {
 			TCYClaimingHalt:                     1,                  // enable/disable tcy claiming
 			ReserveMaxCap:                       0,                  // maximum reserve balance before EmissionCurve is overridden, 0 = disabled
 			MaxDepositTxIDRetries:               100,                // maximum retries for deposit txid auto-increment to avoid collisions
+			OverSolvencyToReserveBps:            0,                  // basis points (0-10000) of over-solvent liquidity to swap to RUNE and transfer to reserve
+			OverSolvencyCheckInterval:           600,                // interval in blocks for over-solvency checks (approximately 30 days)
+			MaxRetiredVaultRecoveryAttempts:     100,                // maximum retries for retired vault recovery refunds
 		},
 		boolValues: map[ConstantName]bool{
 			StrictBondLiquidityRatio: true,

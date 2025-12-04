@@ -109,22 +109,6 @@ func (s *queryServer) Savers(c context.Context, req *types.QuerySaversRequest) (
 	return s.querySavers(ctx, req)
 }
 
-func (s *queryServer) Borrower(c context.Context, req *types.QueryBorrowerRequest) (*types.QueryBorrowerResponse, error) {
-	if err := checkHeightParam(req.Height); err != nil {
-		return nil, err
-	}
-	ctx := s.unwrapSdkContext(c)
-	return s.queryBorrower(ctx, req)
-}
-
-func (s *queryServer) Borrowers(c context.Context, req *types.QueryBorrowersRequest) (*types.QueryBorrowersResponse, error) {
-	if err := checkHeightParam(req.Height); err != nil {
-		return nil, err
-	}
-	ctx := s.unwrapSdkContext(c)
-	return s.queryBorrowers(ctx, req)
-}
-
 func (s *queryServer) TradeUnit(c context.Context, req *types.QueryTradeUnitRequest) (*types.QueryTradeUnitResponse, error) {
 	if err := checkHeightParam(req.Height); err != nil {
 		return nil, err
@@ -472,6 +456,14 @@ func (s *queryServer) VaultsPubkeys(c context.Context, req *types.QueryVaultsPub
 	}
 	ctx := s.unwrapSdkContext(c)
 	return s.queryVaultsPubkeys(ctx, req)
+}
+
+func (s *queryServer) VaultSolvency(c context.Context, req *types.QueryVaultSolvencyRequest) (*types.QueryVaultSolvencyResponse, error) {
+	if err := checkHeightParam(req.Height); err != nil {
+		return nil, err
+	}
+	ctx := s.unwrapSdkContext(c)
+	return s.queryVaultSolvency(ctx, req)
 }
 
 func (s *queryServer) TxStages(c context.Context, req *types.QueryTxStagesRequest) (*types.QueryTxStagesResponse, error) {

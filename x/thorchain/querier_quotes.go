@@ -381,6 +381,7 @@ func quoteInboundInfo(ctx cosmos.Context, mgr *Mgrs, amount sdkmath.Uint, chain 
 	if confMul < 0 || err != nil {
 		confMul = int64(constants.MaxBasisPts)
 	}
+	// analyze-ignore(float-comparison)
 	if chain.DefaultCoinbase() > 0 {
 		confValue := common.GetUncappedShare(cosmos.NewUint(uint64(confMul)), cosmos.NewUint(constants.MaxBasisPts), cosmos.NewUint(uint64(chain.DefaultCoinbase())*common.One))
 		confirmations = amount.Quo(confValue).BigInt().Int64()
@@ -487,8 +488,11 @@ func calculateMinSwapAmount(ctx cosmos.Context, mgr *Mgrs, fromAsset, toAsset co
 		minSwapAmount = destInSrcAsset
 	}
 
-	// Apply multiplier to the final result
-	minSwapAmount = minSwapAmount.Mul(cosmos.NewUint(getQuoteRecommendedMinAmountFeeMultiplier()))
+	// Bypass non determinism for wasm queries
+	isWasm, _ := ctx.Value(constants.CtxWASMQuery).(bool)
+	if !isWasm {
+		minSwapAmount = minSwapAmount.Mul(cosmos.NewUint(getQuoteRecommendedMinAmountFeeMultiplier()))
+	}
 
 	// Apply affiliate fee multiplier: multiply by (100% + affiliate_bps)
 	// This accounts for the fact that affiliate fees are taken out before processing
@@ -1083,7 +1087,15 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 	res.MaxStreamingQuantity = maxQ
 	var streamSwapBlocks int64
 	if streamingQuantity > 0 {
-		streamSwapBlocks = int64(streamingInterval) * int64(streamingQuantity-1)
+		if streamingInterval == 0 {
+			// Rapid streaming: multiple swaps per block limited by AdvSwapQueueRapidSwapMax
+			rapidSwapMax := max(qs.mgr.Keeper().GetConfigInt64(ctx, constants.AdvSwapQueueRapidSwapMax), 1)
+			// Calculate blocks needed: ceil(quantity / rapidSwapMax)
+			streamSwapBlocks = (int64(streamingQuantity) + rapidSwapMax - 1) / rapidSwapMax
+		} else {
+			// Traditional streaming: one swap per interval
+			streamSwapBlocks = int64(streamingInterval) * int64(streamingQuantity-1)
+		}
 	}
 	res.StreamingSwapBlocks = streamSwapBlocks
 	res.StreamingSwapSeconds = streamSwapBlocks * common.THORChain.ApproximateBlockMilliseconds() / 1000
@@ -1139,7 +1151,7 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 		res.Notes += " " + outboundNotes
 	}
 	res.Warning = quoteWarning
-	res.Expiry = time.Now().Add(quoteExpiration).Unix()
+	res.Expiry = ctx.BlockTime().Add(quoteExpiration).Unix()
 	res.RecommendedMinAmountIn = minSwapAmount.String()
 
 	// set inbound recommended gas for non-native swaps

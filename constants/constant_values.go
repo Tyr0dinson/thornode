@@ -84,9 +84,6 @@ const (
 	StreamingLimitSwapMaxAge
 	MinCR
 	MaxCR
-	LoanStreamingSwapsInterval
-	PauseLoans
-	LoanRepaymentMaturity
 	LendingLever
 	PermittedSolvencyGap
 	NodeOperatorFee
@@ -164,7 +161,10 @@ const (
 	ReserveMaxCap
 	MarketingFundSystemIncomeBps
 	MarketingFundAddress
+	OverSolvencyToReserveBps
+	OverSolvencyCheckInterval
 	MaxDepositTxIDRetries
+	MaxRetiredVaultRecoveryAttempts
 
 	// These are the implicitly-0 Constants undisplayed in the API endpoint (no explicit value set).
 	ArtificialRagnarokBlockHeight

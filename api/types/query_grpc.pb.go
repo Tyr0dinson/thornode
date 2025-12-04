@@ -30,8 +30,6 @@ const (
 	Query_LiquidityProviders_FullMethodName     = "/types.Query/LiquidityProviders"
 	Query_Saver_FullMethodName                  = "/types.Query/Saver"
 	Query_Savers_FullMethodName                 = "/types.Query/Savers"
-	Query_Borrower_FullMethodName               = "/types.Query/Borrower"
-	Query_Borrowers_FullMethodName              = "/types.Query/Borrowers"
 	Query_TradeUnit_FullMethodName              = "/types.Query/TradeUnit"
 	Query_TradeUnits_FullMethodName             = "/types.Query/TradeUnits"
 	Query_TradeAccount_FullMethodName           = "/types.Query/TradeAccount"
@@ -76,6 +74,7 @@ const (
 	Query_Vault_FullMethodName                  = "/types.Query/Vault"
 	Query_AsgardVaults_FullMethodName           = "/types.Query/AsgardVaults"
 	Query_VaultsPubkeys_FullMethodName          = "/types.Query/VaultsPubkeys"
+	Query_VaultSolvency_FullMethodName          = "/types.Query/VaultSolvency"
 	Query_TxStages_FullMethodName               = "/types.Query/TxStages"
 	Query_TxStatus_FullMethodName               = "/types.Query/TxStatus"
 	Query_Tx_FullMethodName                     = "/types.Query/Tx"
@@ -130,8 +129,6 @@ type QueryClient interface {
 	LiquidityProviders(ctx context.Context, in *QueryLiquidityProvidersRequest, opts ...grpc.CallOption) (*QueryLiquidityProvidersResponse, error)
 	Saver(ctx context.Context, in *QuerySaverRequest, opts ...grpc.CallOption) (*QuerySaverResponse, error)
 	Savers(ctx context.Context, in *QuerySaversRequest, opts ...grpc.CallOption) (*QuerySaversResponse, error)
-	Borrower(ctx context.Context, in *QueryBorrowerRequest, opts ...grpc.CallOption) (*QueryBorrowerResponse, error)
-	Borrowers(ctx context.Context, in *QueryBorrowersRequest, opts ...grpc.CallOption) (*QueryBorrowersResponse, error)
 	TradeUnit(ctx context.Context, in *QueryTradeUnitRequest, opts ...grpc.CallOption) (*QueryTradeUnitResponse, error)
 	TradeUnits(ctx context.Context, in *QueryTradeUnitsRequest, opts ...grpc.CallOption) (*QueryTradeUnitsResponse, error)
 	TradeAccount(ctx context.Context, in *QueryTradeAccountRequest, opts ...grpc.CallOption) (*QueryTradeAccountsResponse, error)
@@ -176,6 +173,7 @@ type QueryClient interface {
 	Vault(ctx context.Context, in *QueryVaultRequest, opts ...grpc.CallOption) (*QueryVaultResponse, error)
 	AsgardVaults(ctx context.Context, in *QueryAsgardVaultsRequest, opts ...grpc.CallOption) (*QueryAsgardVaultsResponse, error)
 	VaultsPubkeys(ctx context.Context, in *QueryVaultsPubkeysRequest, opts ...grpc.CallOption) (*QueryVaultsPubkeysResponse, error)
+	VaultSolvency(ctx context.Context, in *QueryVaultSolvencyRequest, opts ...grpc.CallOption) (*QueryVaultSolvencyResponse, error)
 	TxStages(ctx context.Context, in *QueryTxStagesRequest, opts ...grpc.CallOption) (*QueryTxStagesResponse, error)
 	TxStatus(ctx context.Context, in *QueryTxStatusRequest, opts ...grpc.CallOption) (*QueryTxStatusResponse, error)
 	Tx(ctx context.Context, in *QueryTxRequest, opts ...grpc.CallOption) (*QueryTxResponse, error)
@@ -307,24 +305,6 @@ func (c *queryClient) Saver(ctx context.Context, in *QuerySaverRequest, opts ...
 func (c *queryClient) Savers(ctx context.Context, in *QuerySaversRequest, opts ...grpc.CallOption) (*QuerySaversResponse, error) {
 	out := new(QuerySaversResponse)
 	err := c.cc.Invoke(ctx, Query_Savers_FullMethodName, in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *queryClient) Borrower(ctx context.Context, in *QueryBorrowerRequest, opts ...grpc.CallOption) (*QueryBorrowerResponse, error) {
-	out := new(QueryBorrowerResponse)
-	err := c.cc.Invoke(ctx, Query_Borrower_FullMethodName, in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *queryClient) Borrowers(ctx context.Context, in *QueryBorrowersRequest, opts ...grpc.CallOption) (*QueryBorrowersResponse, error) {
-	out := new(QueryBorrowersResponse)
-	err := c.cc.Invoke(ctx, Query_Borrowers_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -727,6 +707,15 @@ func (c *queryClient) VaultsPubkeys(ctx context.Context, in *QueryVaultsPubkeysR
 	return out, nil
 }
 
+func (c *queryClient) VaultSolvency(ctx context.Context, in *QueryVaultSolvencyRequest, opts ...grpc.CallOption) (*QueryVaultSolvencyResponse, error) {
+	out := new(QueryVaultSolvencyResponse)
+	err := c.cc.Invoke(ctx, Query_VaultSolvency_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *queryClient) TxStages(ctx context.Context, in *QueryTxStagesRequest, opts ...grpc.CallOption) (*QueryTxStagesResponse, error) {
 	out := new(QueryTxStagesResponse)
 	err := c.cc.Invoke(ctx, Query_TxStages_FullMethodName, in, out, opts...)
@@ -1003,8 +992,6 @@ type QueryServer interface {
 	LiquidityProviders(context.Context, *QueryLiquidityProvidersRequest) (*QueryLiquidityProvidersResponse, error)
 	Saver(context.Context, *QuerySaverRequest) (*QuerySaverResponse, error)
 	Savers(context.Context, *QuerySaversRequest) (*QuerySaversResponse, error)
-	Borrower(context.Context, *QueryBorrowerRequest) (*QueryBorrowerResponse, error)
-	Borrowers(context.Context, *QueryBorrowersRequest) (*QueryBorrowersResponse, error)
 	TradeUnit(context.Context, *QueryTradeUnitRequest) (*QueryTradeUnitResponse, error)
 	TradeUnits(context.Context, *QueryTradeUnitsRequest) (*QueryTradeUnitsResponse, error)
 	TradeAccount(context.Context, *QueryTradeAccountRequest) (*QueryTradeAccountsResponse, error)
@@ -1049,6 +1036,7 @@ type QueryServer interface {
 	Vault(context.Context, *QueryVaultRequest) (*QueryVaultResponse, error)
 	AsgardVaults(context.Context, *QueryAsgardVaultsRequest) (*QueryAsgardVaultsResponse, error)
 	VaultsPubkeys(context.Context, *QueryVaultsPubkeysRequest) (*QueryVaultsPubkeysResponse, error)
+	VaultSolvency(context.Context, *QueryVaultSolvencyRequest) (*QueryVaultSolvencyResponse, error)
 	TxStages(context.Context, *QueryTxStagesRequest) (*QueryTxStagesResponse, error)
 	TxStatus(context.Context, *QueryTxStatusRequest) (*QueryTxStatusResponse, error)
 	Tx(context.Context, *QueryTxRequest) (*QueryTxResponse, error)
@@ -1116,12 +1104,6 @@ func (UnimplementedQueryServer) Saver(context.Context, *QuerySaverRequest) (*Que
 }
 func (UnimplementedQueryServer) Savers(context.Context, *QuerySaversRequest) (*QuerySaversResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Savers not implemented")
-}
-func (UnimplementedQueryServer) Borrower(context.Context, *QueryBorrowerRequest) (*QueryBorrowerResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Borrower not implemented")
-}
-func (UnimplementedQueryServer) Borrowers(context.Context, *QueryBorrowersRequest) (*QueryBorrowersResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Borrowers not implemented")
 }
 func (UnimplementedQueryServer) TradeUnit(context.Context, *QueryTradeUnitRequest) (*QueryTradeUnitResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method TradeUnit not implemented")
@@ -1254,6 +1236,9 @@ func (UnimplementedQueryServer) AsgardVaults(context.Context, *QueryAsgardVaults
 }
 func (UnimplementedQueryServer) VaultsPubkeys(context.Context, *QueryVaultsPubkeysRequest) (*QueryVaultsPubkeysResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method VaultsPubkeys not implemented")
+}
+func (UnimplementedQueryServer) VaultSolvency(context.Context, *QueryVaultSolvencyRequest) (*QueryVaultSolvencyResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method VaultSolvency not implemented")
 }
 func (UnimplementedQueryServer) TxStages(context.Context, *QueryTxStagesRequest) (*QueryTxStagesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method TxStages not implemented")
@@ -1546,42 +1531,6 @@ func _Query_Savers_Handler(srv interface{}, ctx context.Context, dec func(interf
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(QueryServer).Savers(ctx, req.(*QuerySaversRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _Query_Borrower_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(QueryBorrowerRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(QueryServer).Borrower(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: Query_Borrower_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(QueryServer).Borrower(ctx, req.(*QueryBorrowerRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _Query_Borrowers_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(QueryBorrowersRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(QueryServer).Borrowers(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: Query_Borrowers_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(QueryServer).Borrowers(ctx, req.(*QueryBorrowersRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2378,6 +2327,24 @@ func _Query_VaultsPubkeys_Handler(srv interface{}, ctx context.Context, dec func
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Query_VaultSolvency_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryVaultSolvencyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).VaultSolvency(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Query_VaultSolvency_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).VaultSolvency(ctx, req.(*QueryVaultSolvencyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Query_TxStages_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(QueryTxStagesRequest)
 	if err := dec(in); err != nil {
@@ -2934,14 +2901,6 @@ var Query_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Query_Savers_Handler,
 		},
 		{
-			MethodName: "Borrower",
-			Handler:    _Query_Borrower_Handler,
-		},
-		{
-			MethodName: "Borrowers",
-			Handler:    _Query_Borrowers_Handler,
-		},
-		{
 			MethodName: "TradeUnit",
 			Handler:    _Query_TradeUnit_Handler,
 		},
@@ -3116,6 +3075,10 @@ var Query_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "VaultsPubkeys",
 			Handler:    _Query_VaultsPubkeys_Handler,
+		},
+		{
+			MethodName: "VaultSolvency",
+			Handler:    _Query_VaultSolvency_Handler,
 		},
 		{
 			MethodName: "TxStages",
