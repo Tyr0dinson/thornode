@@ -388,7 +388,7 @@
         }
       },
       "last_commit_hash": "",
-      "data_hash": "AC8B11DC641C44FC3F665253097A24268A1049621519208D5C6F52F6BEE381E9",
+      "data_hash": "CCC6D8D972AAEDD3531F740A017C52B0CD0CAC62D58B8739FF6587AD1D8012D1",
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
@@ -486,7 +486,7 @@
     ],
     "txs": [
       {
-        "hash": "6B7379A590BA17489CF0708F9AB70FC1E2B7C438713298DD7FFA1EC01B66773F",
+        "hash": "DF5587FBF8C3908CE593D8712B098F17E78C54043C2BA2B84F3465622B062142",
         "tx": {
           "auth_info": {
             "fee": {
@@ -535,7 +535,7 @@
                       "coins": [
                         {
                           "amount": "100000000",
-                          "asset": "ETH.ETH",
+                          "asset": "ETH.TKN-0X0000000000000000000000000000000000001234",
                           "decimals": "8"
                         }
                       ],
@@ -561,7 +561,7 @@
             "unordered": false
           },
           "signatures": [
-            "shUORoXTrNEPC/xcwImaw6xWwJ/g6DCHQoUz71tCevkyOmpVMSxg8w8ZjE5bh31U0178FWUW03d+mvq63B0TGw=="
+            "nNHH/z2s7ovxJ4K7SwKinx2OhsyIphig8StK4DMI5BV5ubO7BpMBqG5Rj4uTfALMKnnk2ZnDOjK1kum6MJTI0Q=="
           ]
         },
         "result": {
@@ -574,7 +574,7 @@
               "type": "tx"
             },
             {
-              "signature": "shUORoXTrNEPC/xcwImaw6xWwJ/g6DCHQoUz71tCevkyOmpVMSxg8w8ZjE5bh31U0178FWUW03d+mvq63B0TGw==",
+              "signature": "nNHH/z2s7ovxJ4K7SwKinx2OhsyIphig8StK4DMI5BV5ubO7BpMBqG5Rj4uTfALMKnnk2ZnDOjK1kum6MJTI0Q==",
               "type": "tx"
             },
             {
@@ -590,7 +590,7 @@
               "low_target": "4000000",
               "min_fee_basis_points": "0",
               "msg_index": "0",
-              "source": "100000000 ETH.ETH",
+              "source": "100000000 ETH.TKN-0X0000000000000000000000000000000000001234",
               "source_address": "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
               "target_address": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw",
               "target_asset": "BTC.BTC",
@@ -1210,13 +1210,13 @@
         "type": "rewards"
       },
       {
-        "auction_amount": "10000000 ETH.ETH",
+        "auction_amount": "10000000 ETH.TKN-0X0000000000000000000000000000000000001234",
         "bid_asset": "ETH.ETH",
         "expiry_height": "13",
         "intent_tx_id": "0000000000000000000000000000000000000000000000000000000000000001",
         "min_bid": "19200000",
         "mode": "EndBlock",
-        "remaining_amount": "90000000 ETH.ETH",
+        "remaining_amount": "90000000 ETH.TKN-0X0000000000000000000000000000000000001234",
         "type": "intent_auction_start"
       }
     ],

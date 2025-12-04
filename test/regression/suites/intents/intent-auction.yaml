@@ -2,6 +2,42 @@
 ---
 {{ template "btc-eth-pool-state.yaml" }}
 ---
+########################################################################################
+# Add custom ERC20 token to vault for auction testing
+# This token has no pool so intents using it will go to auction
+########################################################################################
+type: state
+genesis:
+  app_state:
+    thorchain:
+      vaults:
+        - block_height: "0"
+          chains:
+            - THOR
+            - BTC
+            - LTC
+            - BCH
+            - ETH
+            - DOGE
+            - AVAX
+            - GAIA
+          coins:
+            - amount: "100000000"
+              asset: BTC.BTC
+              decimals: "8"
+            - amount: "1000000000"
+              asset: ETH.ETH
+              decimals: "8"
+            - amount: "200000000"
+              asset: "ETH.TKN-0X0000000000000000000000000000000000001234"
+              decimals: "8"
+          inbound_tx_count: "2"
+          membership:
+            - tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4
+          pub_key: tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4
+          status: ActiveVault
+          type: AsgardVault
+---
 type: create-blocks
 count: 1
 ---
@@ -23,7 +59,9 @@ type: create-blocks
 count: 1
 ---
 ########################################################################################
-# Create an intent - swap ETH for BTC
+# Create an intent - swap an ERC20 token (without pool) for BTC
+# Using ETH.TKN-0X0000000000000000000000000000000000001234 which has no pool
+# This ensures the auction path is taken (no L1 pool exists for this token)
 # Format: IO:TARGET_ASSET:HIGH_TARGET:LOW_TARGET:TARGET_ADDR
 ########################################################################################
 type: tx-observed-in
@@ -36,7 +74,7 @@ txs:
     to_address: {{ addr_eth_dog }}
     coins:
       - amount: "100000000"
-        asset: "ETH.ETH"
+        asset: "ETH.TKN-0X0000000000000000000000000000000000001234"
         decimals: 8
     gas:
       - amount: "10000"
@@ -54,7 +92,7 @@ endpoint: http://localhost:1317/thorchain/intent/{{ observe_txid 1 }}
 asserts:
   - .intent.tx_id == "{{ observe_txid 1 }}"
   - .intent.status == "IntentActive"
-  - .intent.source.asset == "ETH.ETH"
+  - .intent.source.asset == "ETH.TKN-0X0000000000000000000000000000000000001234"
   - .intent.source.amount == "100000000"
   - .intent.target_asset == "BTC.BTC"
 ---
@@ -87,6 +125,7 @@ endpoint: http://localhost:1317/thorchain/intent/auction/{{ observe_txid 1 }}
 asserts:
   - .auction.intent_tx_id == "{{ observe_txid 1 }}"
   - .auction.status == "AuctionActive"
+  # bid_asset is the chain's gas asset (ETH.ETH), not the source token
   - .auction.bid_asset == "ETH.ETH"
   - .bids | length == 0
 ---
@@ -100,6 +139,7 @@ asserts:
 # Place a bid on the auction
 # Format: IAB:INTENT_TX_HASH
 # Min bid is 3x network gas (6400000 * 3 = 19200000)
+# Bids are made in the chain's gas asset (ETH.ETH), not the source token
 ########################################################################################
 type: tx-observed-in
 signer: {{ addr_thor_dog }}
@@ -299,6 +339,7 @@ asserts:
 ---
 ########################################################################################
 # Observe cat's refund (losing bid: 31360000)
+# Bid refunds are in ETH.ETH (the bid asset)
 ########################################################################################
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -325,6 +366,7 @@ count: 1
 ---
 ########################################################################################
 # Observe fox's refund (losing bid: 24360128)
+# Bid refunds are in ETH.ETH (the bid asset)
 ########################################################################################
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -350,7 +392,8 @@ type: create-blocks
 count: 1
 ---
 ########################################################################################
-# Observe pig's winning (auction amount: 9360256)
+# Observe pig's winning (auction amount: 10000000)
+# No outbound fee deducted since token has no pool for fee calculation
 ########################################################################################
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -361,8 +404,8 @@ txs:
     from_address: {{ addr_eth_dog }}
     to_address: {{ addr_eth_pig }}
     coins:
-      - amount: "9360256"
-        asset: "ETH.ETH"
+      - amount: "10000000"
+        asset: "ETH.TKN-0X0000000000000000000000000000000000001234"
         decimals: 8
     gas:
       - amount: "960000"
@@ -376,7 +419,8 @@ type: create-blocks
 count: 1
 ---
 ########################################################################################
-# Observe owner's remaining amount refund (89360384)
+# Observe owner's remaining amount refund (90000000)
+# No outbound fee deducted since token has no pool for fee calculation
 ########################################################################################
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -387,8 +431,8 @@ txs:
     from_address: {{ addr_eth_dog }}
     to_address: {{ addr_eth_fox }}
     coins:
-      - amount: "89360384"
-        asset: "ETH.ETH"
+      - amount: "90000000"
+        asset: "ETH.TKN-0X0000000000000000000000000000000000001234"
         decimals: 8
     gas:
       - amount: "960000"

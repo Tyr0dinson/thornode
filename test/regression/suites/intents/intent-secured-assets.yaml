@@ -86,53 +86,30 @@ asserts:
   - .intent.status == "IntentActive"
 ---
 ########################################################################################
-# Let the intent expire to trigger auction
+# Let the intent expire
 # IntentTTLBlocks is 5 in mocknet
+# Since BTC-BTC is a native secured asset, it should be refunded directly (no auction)
 ########################################################################################
 type: create-blocks
 count: 5
 ---
 ########################################################################################
-# Check that intent status changed to IntentAuctioning
-########################################################################################
-type: check
-endpoint: http://localhost:1317/thorchain/intent/{{ native_txid 3 }}
-asserts:
-  - .intent.status == "IntentAuctioning"
----
-########################################################################################
-# Check that auction was created with correct bid asset (RUNE for native assets)
-########################################################################################
-type: check
-endpoint: http://localhost:1317/thorchain/intent/auction/{{ native_txid 3 }}
-asserts:
-  - .auction.intent_tx_id == "{{ native_txid 3 }}"
-  - .auction.status == "AuctionActive"
-  - .auction.auction_amount.asset == "BTC-BTC"
-  - .auction.bid_asset == "THOR.RUNE"
----
-########################################################################################
-# Let auction expire with NO bids (verifying secured asset auction flow)
-# IntentAuctionDurationBlocks is 5 in mocknet
-########################################################################################
-type: create-blocks
-count: 6
----
-########################################################################################
-# Check auction was cancelled (no bids)
-########################################################################################
-type: check
-endpoint: http://localhost:1317/thorchain/intent/auction/{{ native_txid 3 }}
-asserts:
-  - .auction.status == "AuctionCancelled"
----
-########################################################################################
-# Check intent status is now expired
+# Check that intent status changed to IntentExpired (refunded directly)
+# Native secured assets are refunded immediately instead of going to auction
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/intent/{{ native_txid 3 }}
 asserts:
   - .intent.status == "IntentExpired"
+---
+########################################################################################
+# Verify no auction was created (native secured assets skip auction)
+# The endpoint returns an empty auction object when no auction exists
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intent/auction/{{ native_txid 3 }}
+asserts:
+  - .auction.intent_tx_id == ""
 ---
 ########################################################################################
 # Verify fox's BTC-BTC secured asset was returned after intent expired
