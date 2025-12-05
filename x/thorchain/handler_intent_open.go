@@ -135,48 +135,6 @@ func (h IntentOpenHandler) handle(ctx cosmos.Context, msg MsgIntentOpen) error {
 	// Save the intent
 	h.mgr.Keeper().SetIntent(ctx, intent)
 
-	// Handle affiliate fee if applicable
-	if !msg.AffiliateBasisPoints.IsZero() && !msg.AffiliateAddress.IsEmpty() {
-		sourceAsset := sourceCoin.Asset
-		targetAsset := msg.TargetAsset
-
-		// Check which asset can pay affiliate fee (must have L1 pool or be RUNE)
-		sourcePool, _ := h.mgr.Keeper().GetPool(ctx, sourceAsset.GetLayer1Asset())
-		targetPool, _ := h.mgr.Keeper().GetPool(ctx, targetAsset.GetLayer1Asset())
-
-		canChargeSource := sourceAsset.IsRune() || (!sourcePool.IsEmpty() && sourcePool.Status == PoolAvailable)
-		canChargeTarget := targetAsset.IsRune() || (!targetPool.IsEmpty() && targetPool.Status == PoolAvailable)
-
-		switch {
-		case canChargeSource:
-			// Charge affiliate fee on source asset using skimAffiliateFees
-			feeAmount := common.GetSafeShare(msg.AffiliateBasisPoints, cosmos.NewUint(10000), sourceCoin.Amount)
-			feeCoin := common.NewCoin(sourceAsset, feeAmount)
-
-			if !feeCoin.IsEmpty() && feeCoin.Amount.GT(cosmos.ZeroUint()) {
-				affFee, err := skimAffiliateFees(ctx, h.mgr, msg.Tx, msg.Signer, feeCoin, msg.Tx.Memo)
-				if err != nil {
-					ctx.Logger().Error("fail to process intent affiliate fee", "error", err)
-				} else if !affFee.IsZero() {
-					// Deduct affiliate fee from escrowed source amount
-					intent.Source.Amount = common.SafeSub(intent.Source.Amount, affFee)
-					h.mgr.Keeper().SetIntent(ctx, intent)
-					ctx.Logger().Info("processed intent affiliate fee on source",
-						"asset", sourceAsset, "amount", affFee, "affiliate", msg.AffiliateAddress)
-				}
-			}
-		case canChargeTarget:
-			// Target asset can pay affiliate fee - will be handled at solve time
-			// The affiliate info is already stored in the intent for use when solving
-			ctx.Logger().Info("intent affiliate fee will be charged on target at solve time",
-				"target_asset", targetAsset, "affiliate", msg.AffiliateAddress, "bps", msg.AffiliateBasisPoints)
-		default:
-			// Neither asset qualifies - skip affiliate fee
-			ctx.Logger().Info("skipping intent affiliate fee - no eligible asset",
-				"source", sourceAsset, "target", targetAsset)
-		}
-	}
-
 	// Emit event
 	evt := NewEventIntentOpen(
 		msg.Tx.ID,
