@@ -204,3 +204,146 @@ func (s *IntentMgrTestSuite) TestExpireIntent_RefundTradeAsset(c *C) {
 	c.Assert(err, IsNil)
 	c.Check(updatedIntent.Status, Equals, IntentExpired)
 }
+
+// TestExecuteIntent_WithAffiliateFee tests that affiliate fee is charged at intent completion
+func (s *IntentMgrTestSuite) TestExecuteIntent_WithAffiliateFee(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
+
+	// Create a pool for BTC (needed for fee processing)
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.Status = PoolAvailable
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	c.Assert(w.keeper.SetPool(w.ctx, pool), IsNil)
+
+	// Create an intent with affiliate fee info
+	intentTx := GetRandomTx()
+	userAddr := GetRandomBTCAddress()
+	affiliateAddr := GetRandomTHORAddress()
+	sourceAmount := cosmos.NewUint(100 * common.One)
+	intent := Intent{
+		TxID:                 intentTx.ID,
+		SourceAddress:        userAddr,
+		Source:               common.NewCoin(common.BTCAsset, sourceAmount),
+		TargetAsset:          common.RuneAsset(),
+		TargetAddress:        GetRandomTHORAddress(),
+		HighTarget:           cosmos.NewUint(200 * common.One),
+		LowTarget:            cosmos.NewUint(100 * common.One),
+		ExpiryHeight:         w.ctx.BlockHeight() + 100,
+		Status:               IntentActive,
+		MinFeeBasisPoints:    10, // 0.1% protocol fee
+		AffiliateAddress:     affiliateAddr,
+		AffiliateBasisPoints: 100, // 1% affiliate fee
+	}
+	w.keeper.SetIntent(w.ctx, intent)
+
+	// Create a solve
+	solveTx := GetRandomTx()
+	solverAddr := GetRandomTHORAddress()
+	solve := IntentSolve{
+		SolveTxID:     solveTx.ID,
+		IntentTxID:    intentTx.ID,
+		SolverAddress: solverAddr,
+		TargetCoin:    common.NewCoin(common.RuneAsset(), cosmos.NewUint(150*common.One)),
+		SubmitHeight:  w.ctx.BlockHeight(),
+		MatchHeight:   w.ctx.BlockHeight(),
+	}
+	w.keeper.SetIntentSolve(w.ctx, solve)
+
+	mgr := NewDummyMgrWithKeeper(w.keeper)
+	intentMgr, ok := NewIntentManager(mgr).(*IntentMgr)
+	c.Assert(ok, Equals, true)
+
+	// Execute the intent
+	err := intentMgr.executeIntent(w.ctx, intent, solve)
+	c.Assert(err, IsNil)
+
+	// Verify intent status is completed
+	updatedIntent, err := w.keeper.GetIntent(w.ctx, intentTx.ID)
+	c.Assert(err, IsNil)
+	c.Check(updatedIntent.Status, Equals, IntentCompleted)
+
+	// Verify affiliate info was stored in intent and fee would be calculated correctly
+	c.Check(updatedIntent.AffiliateAddress.Equals(affiliateAddr), Equals, true)
+	c.Check(updatedIntent.AffiliateBasisPoints, Equals, int64(100))
+
+	// Verify fee calculation logic is correct
+	// sourceAmount = 100 * common.One = 10,000,000,000
+	// 10 bps = 10/10000 = 0.1% -> 10,000,000
+	// 100 bps = 100/10000 = 1% -> 100,000,000
+	expectedProtocolFee := common.GetSafeShare(cosmos.NewUint(10), cosmos.NewUint(10000), sourceAmount)
+	expectedAffiliateFee := common.GetSafeShare(cosmos.NewUint(100), cosmos.NewUint(10000), sourceAmount)
+	c.Check(expectedProtocolFee.Equal(cosmos.NewUint(10000000)), Equals, true)   // 0.1% of 10B = 10M
+	c.Check(expectedAffiliateFee.Equal(cosmos.NewUint(100000000)), Equals, true) // 1% of 10B = 100M
+}
+
+// TestExecuteIntent_AffiliateFeeOnTargetAsset tests affiliate fee charged on target when source has no pool
+func (s *IntentMgrTestSuite) TestExecuteIntent_AffiliateFeeOnTargetAsset(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
+
+	// No pool for source asset - fee will be charged on target (RUNE)
+
+	// Create an intent with affiliate fee info using non-pool source asset
+	noPoolAsset, err := common.NewAsset("UNKNOWN.NOPOOL")
+	c.Assert(err, IsNil)
+
+	intentTx := GetRandomTx()
+	userAddr := GetRandomBTCAddress()
+	affiliateAddr := GetRandomTHORAddress()
+	targetAmount := cosmos.NewUint(100 * common.One)
+	intent := Intent{
+		TxID:                 intentTx.ID,
+		SourceAddress:        userAddr,
+		Source:               common.NewCoin(noPoolAsset, cosmos.NewUint(50*common.One)),
+		TargetAsset:          common.RuneAsset(),
+		TargetAddress:        GetRandomTHORAddress(),
+		HighTarget:           cosmos.NewUint(100 * common.One),
+		LowTarget:            cosmos.NewUint(80 * common.One),
+		ExpiryHeight:         w.ctx.BlockHeight() + 100,
+		Status:               IntentActive,
+		MinFeeBasisPoints:    10, // 0.1% protocol fee
+		AffiliateAddress:     affiliateAddr,
+		AffiliateBasisPoints: 100, // 1% affiliate fee
+	}
+	w.keeper.SetIntent(w.ctx, intent)
+
+	// Create a solve with RUNE as target
+	solveTx := GetRandomTx()
+	solverAddr := GetRandomTHORAddress()
+	solve := IntentSolve{
+		SolveTxID:     solveTx.ID,
+		IntentTxID:    intentTx.ID,
+		SolverAddress: solverAddr,
+		TargetCoin:    common.NewCoin(common.RuneAsset(), targetAmount),
+		SubmitHeight:  w.ctx.BlockHeight(),
+		MatchHeight:   w.ctx.BlockHeight(),
+	}
+	w.keeper.SetIntentSolve(w.ctx, solve)
+
+	mgr := NewDummyMgrWithKeeper(w.keeper)
+	intentMgr, ok := NewIntentManager(mgr).(*IntentMgr)
+	c.Assert(ok, Equals, true)
+
+	// Execute the intent
+	err = intentMgr.executeIntent(w.ctx, intent, solve)
+	c.Assert(err, IsNil)
+
+	// Verify intent status is completed
+	updatedIntent, err := w.keeper.GetIntent(w.ctx, intentTx.ID)
+	c.Assert(err, IsNil)
+	c.Check(updatedIntent.Status, Equals, IntentCompleted)
+
+	// Verify affiliate info was stored in intent
+	c.Check(updatedIntent.AffiliateAddress.Equals(affiliateAddr), Equals, true)
+	c.Check(updatedIntent.AffiliateBasisPoints, Equals, int64(100))
+
+	// Verify fee calculation logic on target asset is correct
+	// targetAmount = 100 * common.One = 10,000,000,000
+	// 10 bps = 10/10000 = 0.1% -> 10,000,000
+	// 100 bps = 100/10000 = 1% -> 100,000,000
+	expectedProtocolFee := common.GetSafeShare(cosmos.NewUint(10), cosmos.NewUint(10000), targetAmount)
+	expectedAffiliateFee := common.GetSafeShare(cosmos.NewUint(100), cosmos.NewUint(10000), targetAmount)
+	c.Check(expectedProtocolFee.Equal(cosmos.NewUint(10000000)), Equals, true)   // 0.1% of 10B = 10M
+	c.Check(expectedAffiliateFee.Equal(cosmos.NewUint(100000000)), Equals, true) // 1% of 10B = 100M
+}

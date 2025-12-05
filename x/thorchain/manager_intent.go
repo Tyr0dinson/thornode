@@ -104,7 +104,7 @@ func (im *IntentMgr) processExpirations(ctx cosmos.Context) error {
 
 // executeIntent performs the actual swap and completes the intent
 func (im *IntentMgr) executeIntent(ctx cosmos.Context, intent Intent, solve IntentSolve) error {
-	// Determine which asset to charge the fee on (must be pool or native asset)
+	// Determine which asset to charge fees on (must be pool or native asset)
 	sourcePool, _ := im.mgr.Keeper().GetPool(ctx, intent.Source.Asset.GetLayer1Asset())
 	targetPool, _ := im.mgr.Keeper().GetPool(ctx, solve.TargetCoin.Asset.GetLayer1Asset())
 
@@ -117,8 +117,9 @@ func (im *IntentMgr) executeIntent(ctx cosmos.Context, intent Intent, solve Inte
 	canChargeTarget := isTargetPoolAsset || isTargetNative
 
 	// Calculate protocol fee
-	minFeeBps := intent.MinFeeBasisPoints
+	protocolFeeBps := intent.MinFeeBasisPoints
 	protocolFee := common.NoCoin
+	affiliateFee := common.NoCoin
 	var feePool Pool
 
 	// Prepare outbound items
@@ -138,84 +139,58 @@ func (im *IntentMgr) executeIntent(ctx cosmos.Context, intent Intent, solve Inte
 		InHash:    intent.TxID,
 	}
 
-	// Determine which asset to charge fee on (prefer source, then target)
+	// Determine which asset to charge fees on (prefer source, then target)
 	if canChargeSource {
-		// Charge fee on source asset
-		feeAmount := common.GetSafeShare(cosmos.NewUint(uint64(minFeeBps)), cosmos.NewUint(10000), intent.Source.Amount)
-		protocolFee = common.NewCoin(intent.Source.Asset, feeAmount)
+		// Charge fees on source asset
+		protocolFeeAmount := common.GetSafeShare(cosmos.NewUint(uint64(protocolFeeBps)), cosmos.NewUint(10000), intent.Source.Amount)
+		protocolFee = common.NewCoin(intent.Source.Asset, protocolFeeAmount)
 		feePool = sourcePool
 
-		// Subtract fee from source amount going to solver
-		if feeAmount.GT(cosmos.ZeroUint()) {
-			solverToi.Coin.Amount = common.SafeSub(solverToi.Coin.Amount, feeAmount)
+		// Subtract protocol fee from source amount going to solver
+		if protocolFeeAmount.GT(cosmos.ZeroUint()) {
+			solverToi.Coin.Amount = common.SafeSub(solverToi.Coin.Amount, protocolFeeAmount)
+		}
+
+		// Calculate and subtract affiliate fee from source
+		if intent.AffiliateBasisPoints > 0 && !intent.AffiliateAddress.IsEmpty() {
+			affiliateFeeAmount := common.GetSafeShare(cosmos.NewUint(uint64(intent.AffiliateBasisPoints)), cosmos.NewUint(10000), intent.Source.Amount)
+			affiliateFee = common.NewCoin(intent.Source.Asset, affiliateFeeAmount)
+			if affiliateFeeAmount.GT(cosmos.ZeroUint()) {
+				solverToi.Coin.Amount = common.SafeSub(solverToi.Coin.Amount, affiliateFeeAmount)
+			}
 		}
 	} else if canChargeTarget {
-		// Charge fee on target asset
-		feeAmount := common.GetSafeShare(cosmos.NewUint(uint64(minFeeBps)), cosmos.NewUint(10000), solve.TargetCoin.Amount)
-		protocolFee = common.NewCoin(solve.TargetCoin.Asset, feeAmount)
+		// Charge fees on target asset
+		protocolFeeAmount := common.GetSafeShare(cosmos.NewUint(uint64(protocolFeeBps)), cosmos.NewUint(10000), solve.TargetCoin.Amount)
+		protocolFee = common.NewCoin(solve.TargetCoin.Asset, protocolFeeAmount)
 		feePool = targetPool
 
-		// Subtract fee from target amount going to user
-		if feeAmount.GT(cosmos.ZeroUint()) {
-			userToi.Coin.Amount = common.SafeSub(userToi.Coin.Amount, feeAmount)
+		// Subtract protocol fee from target amount going to user
+		if protocolFeeAmount.GT(cosmos.ZeroUint()) {
+			userToi.Coin.Amount = common.SafeSub(userToi.Coin.Amount, protocolFeeAmount)
+		}
+
+		// Calculate and subtract affiliate fee from target
+		if intent.AffiliateBasisPoints > 0 && !intent.AffiliateAddress.IsEmpty() {
+			affiliateFeeAmount := common.GetSafeShare(cosmos.NewUint(uint64(intent.AffiliateBasisPoints)), cosmos.NewUint(10000), solve.TargetCoin.Amount)
+			affiliateFee = common.NewCoin(solve.TargetCoin.Asset, affiliateFeeAmount)
+			if affiliateFeeAmount.GT(cosmos.ZeroUint()) {
+				userToi.Coin.Amount = common.SafeSub(userToi.Coin.Amount, affiliateFeeAmount)
+			}
 		}
 	}
 
-	// Deposit fee into pool or reserve
+	// Process protocol fee - deposit into reserve
 	if !protocolFee.IsEmpty() && protocolFee.Amount.GT(cosmos.ZeroUint()) {
-		if protocolFee.Asset.IsRune() {
-			// Add to reserve
-			if err := im.mgr.Keeper().AddPoolFeeToReserve(ctx, protocolFee.Amount); err != nil {
-				ctx.Logger().Error("fail to add fee to reserve", "error", err)
-			} else {
-				ctx.Logger().Info("added intent protocol fee to reserve", "amount", protocolFee.Amount)
-			}
+		if err := im.processProtocolFee(ctx, solve.SolveTxID, protocolFee, feePool); err != nil {
+			ctx.Logger().Error("fail to process protocol fee", "error", err)
+		}
+	}
 
-			// Emit fee event
-			feeEvent := NewEventFee(solve.SolveTxID, common.NewFee(common.NewCoins(protocolFee), cosmos.ZeroUint()), cosmos.ZeroUint())
-			if err := im.mgr.EventMgr().EmitEvent(ctx, feeEvent); err != nil {
-				ctx.Logger().Error("fail to emit fee event", "error", err)
-			}
-		} else if !feePool.IsEmpty() {
-			// Swap non-RUNE fee to RUNE and add to reserve
-			reserveAddr, err := im.mgr.Keeper().GetModuleAddress(ReserveName)
-			if err != nil {
-				ctx.Logger().Error("fail to get reserve address for fee swap", "error", err)
-			} else {
-				feeTx := common.Tx{
-					ID:          solve.SolveTxID,
-					Chain:       protocolFee.Asset.GetChain(),
-					FromAddress: common.NoAddress,
-					ToAddress:   reserveAddr,
-					Coins:       common.NewCoins(protocolFee),
-					Memo:        fmt.Sprintf("=:THOR.RUNE:%s", reserveAddr),
-				}
-
-				version := types.SwapVersion_v1
-				if im.mgr.Keeper().AdvSwapQueueEnabled(ctx) {
-					version = types.SwapVersion_v2
-				}
-
-				asgardAddr := im.mgr.Keeper().GetModuleAccAddress(AsgardName)
-				swapMsg := NewMsgSwap(feeTx, common.RuneAsset(), reserveAddr,
-					cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(),
-					"", "", nil, MarketSwap, 1, 0, version, asgardAddr)
-
-				if err := im.mgr.AdvSwapQueueMgr().AddSwapQueueItem(ctx, im.mgr, swapMsg); err != nil {
-					ctx.Logger().Error("fail to queue intent fee swap to RUNE", "error", err)
-				} else {
-					ctx.Logger().Info("queued intent protocol fee swap to RUNE",
-						"fee_asset", protocolFee.Asset,
-						"fee_amount", protocolFee.Amount,
-					)
-				}
-			}
-
-			// Emit fee event
-			feeEvent := NewEventFee(solve.SolveTxID, common.NewFee(common.NewCoins(protocolFee), cosmos.ZeroUint()), cosmos.ZeroUint())
-			if err := im.mgr.EventMgr().EmitEvent(ctx, feeEvent); err != nil {
-				ctx.Logger().Error("fail to emit fee event", "error", err)
-			}
+	// Process affiliate fee - send to affiliate
+	if !affiliateFee.IsEmpty() && affiliateFee.Amount.GT(cosmos.ZeroUint()) {
+		if err := im.processAffiliateFee(ctx, intent, solve, affiliateFee, feePool); err != nil {
+			ctx.Logger().Error("fail to process affiliate fee", "error", err)
 		}
 	}
 
@@ -258,8 +233,129 @@ func (im *IntentMgr) executeIntent(ctx cosmos.Context, intent Intent, solve Inte
 		"source_amount", intent.Source.Amount,
 		"target_amount", solve.TargetCoin.Amount,
 		"protocol_fee", protocolFee.Amount,
+		"affiliate_fee", affiliateFee.Amount,
 		"fee_asset", protocolFee.Asset,
 	)
+
+	return nil
+}
+
+// processProtocolFee handles the protocol fee - swaps to RUNE if needed and adds to reserve
+func (im *IntentMgr) processProtocolFee(ctx cosmos.Context, solveTxID common.TxID, protocolFee common.Coin, feePool Pool) error {
+	if protocolFee.Asset.IsRune() {
+		// Add RUNE directly to reserve
+		if err := im.mgr.Keeper().AddPoolFeeToReserve(ctx, protocolFee.Amount); err != nil {
+			return fmt.Errorf("fail to add fee to reserve: %w", err)
+		}
+		ctx.Logger().Info("added intent protocol fee to reserve", "amount", protocolFee.Amount)
+	} else if !feePool.IsEmpty() {
+		// Swap non-RUNE fee to RUNE and add to reserve
+		reserveAddr, err := im.mgr.Keeper().GetModuleAddress(ReserveName)
+		if err != nil {
+			return fmt.Errorf("fail to get reserve address for fee swap: %w", err)
+		}
+
+		feeTx := common.Tx{
+			ID:          solveTxID,
+			Chain:       protocolFee.Asset.GetChain(),
+			FromAddress: common.NoAddress,
+			ToAddress:   reserveAddr,
+			Coins:       common.NewCoins(protocolFee),
+			Memo:        fmt.Sprintf("=:THOR.RUNE:%s", reserveAddr),
+		}
+
+		version := types.SwapVersion_v1
+		if im.mgr.Keeper().AdvSwapQueueEnabled(ctx) {
+			version = types.SwapVersion_v2
+		}
+
+		asgardAddr := im.mgr.Keeper().GetModuleAccAddress(AsgardName)
+		swapMsg := NewMsgSwap(feeTx, common.RuneAsset(), reserveAddr,
+			cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(),
+			"", "", nil, MarketSwap, 1, 0, version, asgardAddr)
+
+		if err := im.mgr.AdvSwapQueueMgr().AddSwapQueueItem(ctx, im.mgr, swapMsg); err != nil {
+			return fmt.Errorf("fail to queue intent fee swap to RUNE: %w", err)
+		}
+		ctx.Logger().Info("queued intent protocol fee swap to RUNE",
+			"fee_asset", protocolFee.Asset,
+			"fee_amount", protocolFee.Amount,
+		)
+	}
+
+	// Emit fee event
+	feeEvent := NewEventFee(solveTxID, common.NewFee(common.NewCoins(protocolFee), cosmos.ZeroUint()), cosmos.ZeroUint())
+	if err := im.mgr.EventMgr().EmitEvent(ctx, feeEvent); err != nil {
+		ctx.Logger().Error("fail to emit fee event", "error", err)
+	}
+
+	return nil
+}
+
+// processAffiliateFee handles the affiliate fee - sends RUNE directly or swaps to RUNE first
+func (im *IntentMgr) processAffiliateFee(ctx cosmos.Context, intent Intent, solve IntentSolve, affiliateFee common.Coin, feePool Pool) error {
+	affiliateAddr := intent.AffiliateAddress
+
+	// Convert affiliate address to AccAddress for RUNE transfers
+	affiliateAccAddr, err := affiliateAddr.AccAddress()
+	if err != nil {
+		return fmt.Errorf("fail to convert affiliate address: %w", err)
+	}
+
+	if affiliateFee.Asset.IsRune() {
+		// Send RUNE directly to affiliate from Asgard
+		if err := im.mgr.Keeper().SendFromModuleToAccount(ctx, AsgardName, affiliateAccAddr, common.NewCoins(affiliateFee)); err != nil {
+			return fmt.Errorf("fail to send RUNE to affiliate: %w", err)
+		}
+		ctx.Logger().Info("sent intent affiliate fee",
+			"affiliate", affiliateAddr,
+			"amount", affiliateFee.Amount,
+		)
+	} else if !feePool.IsEmpty() {
+		// Swap non-RUNE fee to RUNE and send to affiliate
+		feeTx := common.Tx{
+			ID:          solve.SolveTxID,
+			Chain:       affiliateFee.Asset.GetChain(),
+			FromAddress: common.NoAddress,
+			ToAddress:   affiliateAddr,
+			Coins:       common.NewCoins(affiliateFee),
+			Memo:        fmt.Sprintf("=:THOR.RUNE:%s", affiliateAddr),
+		}
+
+		version := types.SwapVersion_v1
+		if im.mgr.Keeper().AdvSwapQueueEnabled(ctx) {
+			version = types.SwapVersion_v2
+		}
+
+		asgardAddr := im.mgr.Keeper().GetModuleAccAddress(AsgardName)
+		swapMsg := NewMsgSwap(feeTx, common.RuneAsset(), affiliateAddr,
+			cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(),
+			"", "", nil, MarketSwap, 1, 0, version, asgardAddr)
+
+		if err := im.mgr.AdvSwapQueueMgr().AddSwapQueueItem(ctx, im.mgr, swapMsg); err != nil {
+			return fmt.Errorf("fail to queue affiliate fee swap to RUNE: %w", err)
+		}
+		ctx.Logger().Info("queued intent affiliate fee swap to RUNE",
+			"affiliate", affiliateAddr,
+			"fee_asset", affiliateFee.Asset,
+			"fee_amount", affiliateFee.Amount,
+		)
+	}
+
+	// Emit affiliate fee event
+	affFeeEvent := NewEventAffiliateFee(
+		intent.TxID,
+		"", // memo not needed for intents
+		"", // thorname not tracked for intents
+		affiliateAddr,
+		affiliateFee.Asset,
+		uint64(intent.AffiliateBasisPoints),
+		intent.Source.Amount, // original amount fees were calculated from
+		affiliateFee.Amount,
+	)
+	if err := im.mgr.EventMgr().EmitEvent(ctx, affFeeEvent); err != nil {
+		ctx.Logger().Error("fail to emit affiliate fee event", "error", err)
+	}
 
 	return nil
 }
