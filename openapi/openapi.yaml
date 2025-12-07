@@ -1603,6 +1603,78 @@ paths:
               schema:
                 $ref: "#/components/schemas/QuoteLimitResponse"
 
+  /thorchain/quote/intent:
+    parameters:
+      - $ref: "#/components/parameters/queryHeight"
+      - name: from_asset
+        in: query
+        required: true
+        description: the source asset
+        schema:
+          type: string
+          example: "NEAR.NEAR"
+      - name: to_asset
+        in: query
+        required: true
+        description: the target asset
+        schema:
+          type: string
+          example: "ETH.ETH"
+      - name: amount
+        in: query
+        required: true
+        description: the source asset amount in 1e8 decimals
+        schema:
+          type: integer
+          format: int64
+          example: 1000000000
+      - name: destination
+        in: query
+        required: true
+        description: the destination address for receiving target asset
+        schema:
+          type: string
+          example: "0x1c7b17362c84287bd1184447e6dfeaf920c31bbe"
+      - name: high_target
+        in: query
+        required: true
+        description: high target amount - immediate execution if solver offers >= this
+        schema:
+          type: integer
+          format: int64
+          example: 50000000
+      - name: low_target
+        in: query
+        required: true
+        description: low target amount - minimum acceptable, no execution below this
+        schema:
+          type: integer
+          format: int64
+          example: 48000000
+      - name: affiliate
+        in: query
+        description: the affiliate (address or thorname)
+        schema:
+          type: string
+      - name: affiliate_bps
+        in: query
+        description: the affiliate fee in basis points
+        schema:
+          type: integer
+          format: int64
+    get:
+      description: Provide a quote for an intent swap, validating parameters and generating the memo.
+      operationId: quoteintent
+      tags:
+        - Quote
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QuoteIntentResponse"
+
   # ------------------------------ invariants ------------------------------
 
   /thorchain/invariant/{invariant}:
@@ -4900,6 +4972,174 @@ components:
           type: string
           description: the inbound address for the transaction on the source chain
           example: "bc1qjk3xzu5slu7mtmc8jc9yed3zqvkhkttm700g9a"
+
+    QuoteIntentResponse:
+      type: object
+      required:
+        - valid
+      properties:
+        valid:
+          type: boolean
+          description: whether the intent parameters are valid
+          example: true
+        validation_error:
+          type: string
+          description: error message if not valid
+          example: ""
+        memo:
+          type: string
+          description: generated intent open memo
+          example: "IO:ETH.ETH:50000000:48000000:0x1c7b17362c84287bd1184447e6dfeaf920c31bbe"
+        inbound_address:
+          type: string
+          description: the inbound address for the transaction on the source chain
+          example: "near1vault..."
+        inbound_confirmation_blocks:
+          type: integer
+          format: int64
+          description: approximate blocks for inbound confirmation
+          example: 3
+        inbound_confirmation_seconds:
+          type: integer
+          format: int64
+          description: approximate seconds for inbound confirmation
+          example: 4
+        router:
+          type: string
+          description: EVM router contract address (if applicable)
+          example: "0x3624525075b88B24ecc29CE226b0CEc1fFcB6976"
+        intent_ttl_blocks:
+          type: integer
+          format: int64
+          description: intent TTL in blocks
+          example: 14400
+        intent_ttl_seconds:
+          type: integer
+          format: int64
+          description: intent TTL in seconds
+          example: 86400
+        price_slide_blocks:
+          type: integer
+          format: int64
+          description: price slide blocks (time for price to slide from high to low)
+          example: 100
+        expiry_height:
+          type: integer
+          format: int64
+          description: block height when intent would expire
+          example: 12345678
+        fees:
+          $ref: "#/components/schemas/QuoteIntentFees"
+        auction_info:
+          $ref: "#/components/schemas/QuoteIntentAuctionInfo"
+        price_context:
+          $ref: "#/components/schemas/QuoteIntentPriceContext"
+        expiry:
+          type: integer
+          format: int64
+          description: quote expiration timestamp (unix)
+          example: 1701900000
+        warning:
+          type: string
+          description: warning message
+          example: "Do not cache this response. Do not send funds after the expiry."
+        notes:
+          type: string
+          description: chain-specific notes
+          example: ""
+        dust_threshold:
+          type: string
+          description: dust threshold for source chain
+          example: "1000000"
+        recommended_min_amount_in:
+          type: string
+          description: recommended minimum amount in
+          example: "1000000"
+        recommended_gas_rate:
+          type: string
+          description: recommended gas rate for inbound
+          example: ""
+        gas_rate_units:
+          type: string
+          description: gas rate units
+          example: ""
+
+    QuoteIntentFees:
+      type: object
+      properties:
+        protocol_fee_bps:
+          type: integer
+          format: int64
+          description: protocol fee in basis points
+          example: 50
+        fee_asset:
+          type: string
+          description: asset the fee is charged on
+          example: "ETH.ETH"
+        estimated_protocol_fee:
+          type: string
+          description: estimated protocol fee amount
+          example: "240000"
+        affiliate_fee_bps:
+          type: integer
+          format: int64
+          description: affiliate fee in basis points
+          example: 0
+        affiliate_fee_asset:
+          type: string
+          description: asset affiliate fee is charged on
+          example: ""
+        estimated_affiliate_fee:
+          type: string
+          description: estimated affiliate fee amount
+          example: ""
+
+    QuoteIntentAuctionInfo:
+      type: object
+      properties:
+        will_auction:
+          type: boolean
+          description: whether this intent would trigger auction on expiry
+          example: true
+        auction_percentage_bps:
+          type: integer
+          format: int64
+          description: percentage of source auctioned (basis points)
+          example: 1000
+        remaining_to_owner_bps:
+          type: integer
+          format: int64
+          description: percentage returned to owner (basis points)
+          example: 9000
+        bid_asset:
+          type: string
+          description: asset used for auction bidding
+          example: "NEAR.NEAR"
+        auction_duration_blocks:
+          type: integer
+          format: int64
+          description: auction duration in blocks
+          example: 14400
+
+    QuoteIntentPriceContext:
+      type: object
+      properties:
+        pooled_side:
+          type: string
+          description: which asset has a pool (source, target, or both)
+          example: "target"
+        pooled_asset:
+          type: string
+          description: the pooled asset
+          example: "ETH.ETH"
+        pooled_amount:
+          type: string
+          description: the amount in pooled asset terms
+          example: "48000000"
+        rune_equivalent:
+          type: string
+          description: RUNE equivalent of the pooled amount
+          example: "15000000000"
 
     QuoteSaverDepositResponse:
       type: object

@@ -24,6 +24,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/common/tokenlist"
 	"gitlab.com/thorchain/thornode/v3/config"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	mem "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
@@ -1291,4 +1292,304 @@ func splitMemo(memo string) []string {
 	}
 
 	return chunks
+}
+
+// -------------------------------------------------------------------------------------
+// Intent Quote
+// -------------------------------------------------------------------------------------
+
+// isIntentCompatibleAsset checks if an asset can be used in intents.
+// An asset is compatible if it:
+// - Is RUNE, a secured asset, or a trade asset
+// - Has an active L1 pool
+// - Is a gas asset for a supported chain
+// - Is a whitelisted EVM token
+func isIntentCompatibleAsset(ctx cosmos.Context, mgr *Mgrs, asset common.Asset) (bool, string) {
+	// Native THORChain assets
+	if asset.IsRune() {
+		return true, "native RUNE"
+	}
+	if asset.IsSecuredAsset() {
+		return true, "secured asset"
+	}
+	if asset.IsTradeAsset() {
+		return true, "trade asset"
+	}
+
+	// Has active pool
+	pool, _ := mgr.Keeper().GetPool(ctx, asset.GetLayer1Asset())
+	if !pool.IsEmpty() && pool.Status == PoolAvailable {
+		return true, "has active pool"
+	}
+
+	// Gas asset for supported chain
+	chain := asset.GetChain()
+	if asset.Equals(chain.GetGasAsset()) {
+		// Check chain is in supported list
+		supportedChains := []common.Chain{
+			common.BTCChain, common.ETHChain, common.LTCChain, common.BCHChain,
+			common.DOGEChain, common.AVAXChain, common.GAIAChain, common.BSCChain,
+			common.BASEChain, common.TRONChain, common.SOLChain, common.XRPChain,
+			common.ZECChain,
+		}
+		for _, c := range supportedChains {
+			if chain.Equals(c) {
+				return true, "gas asset for supported chain"
+			}
+		}
+	}
+
+	// Whitelisted EVM token
+	if chain.IsEVM() {
+		// Extract contract address from symbol (format: TICKER-0x...)
+		symbolStr := string(asset.Symbol)
+		parts := strings.SplitN(symbolStr, "-", 2)
+		if len(parts) == 2 {
+			contractAddr := parts[1]
+			tokenList := tokenlist.GetEVMTokenList(chain)
+			for _, token := range tokenList.Tokens {
+				if strings.EqualFold(token.Address, contractAddr) {
+					return true, fmt.Sprintf("whitelisted %s token: %s", chain, token.Symbol)
+				}
+			}
+		}
+	}
+
+	return false, "asset not recognized by protocol"
+}
+
+func (qs queryServer) queryQuoteIntent(ctx cosmos.Context, req *types.QueryQuoteIntentRequest) (*types.QueryQuoteIntentResponse, error) {
+	// Check if intents are enabled
+	if qs.mgr.Keeper().GetConfigInt64(ctx, constants.IntentsEnabled) <= 0 {
+		return &types.QueryQuoteIntentResponse{
+			Valid:           false,
+			ValidationError: "intents feature is disabled",
+		}, nil
+	}
+
+	// Validate required parameters
+	if len(req.FromAsset) == 0 {
+		return nil, fmt.Errorf("missing from_asset parameter")
+	}
+	if len(req.ToAsset) == 0 {
+		return nil, fmt.Errorf("missing to_asset parameter")
+	}
+	if len(req.Amount) == 0 {
+		return nil, fmt.Errorf("missing amount parameter")
+	}
+	if len(req.Destination) == 0 {
+		return nil, fmt.Errorf("missing destination parameter")
+	}
+	if len(req.HighTarget) == 0 {
+		return nil, fmt.Errorf("missing high_target parameter")
+	}
+	if len(req.LowTarget) == 0 {
+		return nil, fmt.Errorf("missing low_target parameter")
+	}
+
+	// Parse assets
+	fromAsset, err := common.NewAsset(req.FromAsset)
+	if err != nil {
+		return nil, fmt.Errorf("bad from_asset: %w", err)
+	}
+	toAsset, err := common.NewAsset(req.ToAsset)
+	if err != nil {
+		return nil, fmt.Errorf("bad to_asset: %w", err)
+	}
+
+	// Parse amounts
+	amount, err := cosmos.ParseUint(req.Amount)
+	if err != nil {
+		return nil, fmt.Errorf("bad amount: %w", err)
+	}
+	highTarget, err := cosmos.ParseUint(req.HighTarget)
+	if err != nil {
+		return nil, fmt.Errorf("bad high_target: %w", err)
+	}
+	lowTarget, err := cosmos.ParseUint(req.LowTarget)
+	if err != nil {
+		return nil, fmt.Errorf("bad low_target: %w", err)
+	}
+
+	// Validate high >= low
+	if highTarget.LT(lowTarget) {
+		return &types.QueryQuoteIntentResponse{
+			Valid:           false,
+			ValidationError: "high_target must be >= low_target",
+		}, nil
+	}
+
+	// Validate asset compatibility
+	sourceCompatible, sourceReason := isIntentCompatibleAsset(ctx, qs.mgr, fromAsset)
+	targetCompatible, targetReason := isIntentCompatibleAsset(ctx, qs.mgr, toAsset)
+
+	if !sourceCompatible && !targetCompatible {
+		return &types.QueryQuoteIntentResponse{
+			Valid:           false,
+			ValidationError: fmt.Sprintf("neither asset is compatible: source (%s), target (%s)", sourceReason, targetReason),
+		}, nil
+	}
+
+	// Check pool/native requirements (at least one must have pool or be native)
+	sourcePool, _ := qs.mgr.Keeper().GetPool(ctx, fromAsset.GetLayer1Asset())
+	targetPool, _ := qs.mgr.Keeper().GetPool(ctx, toAsset.GetLayer1Asset())
+
+	hasSourcePool := !sourcePool.IsEmpty() && sourcePool.Status == PoolAvailable
+	hasTargetPool := !targetPool.IsEmpty() && targetPool.Status == PoolAvailable
+	isSourceNative := fromAsset.IsRune() || fromAsset.IsSecuredAsset() || fromAsset.IsTradeAsset()
+	isTargetNative := toAsset.IsRune() || toAsset.IsSecuredAsset() || toAsset.IsTradeAsset()
+
+	if !hasSourcePool && !hasTargetPool && !isSourceNative && !isTargetNative {
+		return &types.QueryQuoteIntentResponse{
+			Valid:           false,
+			ValidationError: "at least one asset must have an active pool or be native/secured/trade",
+		}, nil
+	}
+
+	// Parse destination address
+	destAddr, err := quoteParseAddress(ctx, qs.mgr, req.Destination, toAsset.GetChain())
+	if err != nil {
+		return &types.QueryQuoteIntentResponse{
+			Valid:           false,
+			ValidationError: fmt.Sprintf("bad destination: %s", err),
+		}, nil
+	}
+
+	// Parse affiliate params
+	var affiliateAddr common.Address
+	affiliateBps := cosmos.ZeroUint()
+	if len(req.Affiliate) > 0 {
+		affiliateAddr, err = quoteParseAddress(ctx, qs.mgr, req.Affiliate, common.THORChain)
+		if err != nil {
+			return nil, fmt.Errorf("bad affiliate: %w", err)
+		}
+		if len(req.AffiliateBps) > 0 {
+			affiliateBps, err = cosmos.ParseUint(req.AffiliateBps)
+			if err != nil {
+				return nil, fmt.Errorf("bad affiliate_bps: %w", err)
+			}
+		}
+	}
+
+	// Get protocol config
+	ttlBlocks := qs.mgr.Keeper().GetConfigInt64(ctx, constants.IntentTTLBlocks)
+	slideBlocks := qs.mgr.Keeper().GetConfigInt64(ctx, constants.IntentPriceSlideBlocks)
+	minFeeBps := qs.mgr.Keeper().GetConfigInt64(ctx, constants.IntentMinFeeBasisPoints)
+	auctionBps := qs.mgr.Keeper().GetConfigInt64(ctx, constants.IntentAuctionBasisPoints)
+	auctionDuration := qs.mgr.Keeper().GetConfigInt64(ctx, constants.IntentAuctionDurationBlocks)
+
+	// Determine fee asset (prefer source if pooled/native)
+	canChargeSource := hasSourcePool || isSourceNative
+	canChargeTarget := hasTargetPool || isTargetNative
+
+	var feeAsset common.Asset
+	estimatedFee := cosmos.ZeroUint()
+	if canChargeSource {
+		feeAsset = fromAsset
+		estimatedFee = common.GetSafeShare(cosmos.NewUint(uint64(minFeeBps)), cosmos.NewUint(10000), amount)
+	} else if canChargeTarget {
+		feeAsset = toAsset
+		estimatedFee = common.GetSafeShare(cosmos.NewUint(uint64(minFeeBps)), cosmos.NewUint(10000), lowTarget)
+	}
+
+	// Determine affiliate fee asset
+	var affFeeAsset common.Asset
+	estimatedAffFee := cosmos.ZeroUint()
+	if !affiliateBps.IsZero() {
+		if canChargeSource {
+			affFeeAsset = fromAsset
+			estimatedAffFee = common.GetSafeShare(affiliateBps, cosmos.NewUint(10000), amount)
+		} else if canChargeTarget {
+			affFeeAsset = toAsset
+			estimatedAffFee = common.GetSafeShare(affiliateBps, cosmos.NewUint(10000), lowTarget)
+		}
+	}
+
+	// Determine auction behavior
+	willAuction := !hasSourcePool && !isSourceNative
+
+	// Get inbound info
+	fromChain := fromAsset.GetLayer1Asset().GetChain()
+	inboundAddr, routerAddr, confBlocks, err := quoteInboundInfo(ctx, qs.mgr, amount, fromChain, fromAsset)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get inbound info: %w", err)
+	}
+
+	// Generate memo
+	intentMemo := mem.NewIntentOpenMemo(toAsset, destAddr, highTarget, lowTarget, affiliateAddr, affiliateBps)
+	memoString := intentMemo.String()
+
+	// Build price context
+	var priceContext *types.QuoteIntentPriceContext
+	if hasSourcePool {
+		runeValue := sourcePool.AssetValueInRune(amount)
+		priceContext = &types.QuoteIntentPriceContext{
+			PooledSide:     "source",
+			PooledAsset:    fromAsset.String(),
+			PooledAmount:   amount.String(),
+			RuneEquivalent: runeValue.String(),
+		}
+	} else if hasTargetPool {
+		runeValue := targetPool.AssetValueInRune(lowTarget)
+		priceContext = &types.QuoteIntentPriceContext{
+			PooledSide:     "target",
+			PooledAsset:    toAsset.String(),
+			PooledAmount:   lowTarget.String(),
+			RuneEquivalent: runeValue.String(),
+		}
+	}
+
+	// Calculate timing
+	blockTimeMs := common.THORChain.ApproximateBlockMilliseconds()
+	ttlSeconds := ttlBlocks * blockTimeMs / 1000
+	confSeconds := confBlocks * fromChain.ApproximateBlockMilliseconds() / 1000
+	expiryHeight := ctx.BlockHeight() + ttlBlocks
+
+	// Build response
+	response := &types.QueryQuoteIntentResponse{
+		Valid:                      true,
+		Memo:                       memoString,
+		InboundAddress:             inboundAddr.String(),
+		InboundConfirmationBlocks:  confBlocks,
+		InboundConfirmationSeconds: confSeconds,
+		IntentTtlBlocks:            ttlBlocks,
+		IntentTtlSeconds:           ttlSeconds,
+		PriceSlideBlocks:           slideBlocks,
+		ExpiryHeight:               expiryHeight,
+		Fees: &types.QuoteIntentFees{
+			ProtocolFeeBps:        minFeeBps,
+			FeeAsset:              feeAsset.String(),
+			EstimatedProtocolFee:  estimatedFee.String(),
+			AffiliateFeeBps:       int64(affiliateBps.Uint64()),
+			AffiliateFeeAsset:     affFeeAsset.String(),
+			EstimatedAffiliateFee: estimatedAffFee.String(),
+		},
+		AuctionInfo: &types.QuoteIntentAuctionInfo{
+			WillAuction:           willAuction,
+			AuctionPercentageBps:  auctionBps,
+			RemainingToOwnerBps:   10000 - auctionBps,
+			BidAsset:              fromAsset.GetChain().GetGasAsset().String(),
+			AuctionDurationBlocks: auctionDuration,
+		},
+		PriceContext:           priceContext,
+		Expiry:                 ctx.BlockTime().Add(quoteExpiration).Unix(),
+		Warning:                quoteWarning,
+		RecommendedMinAmountIn: fromAsset.Chain.DustThreshold().String(),
+	}
+
+	// Set optional fields
+	if fromAsset.Chain.IsEVM() {
+		response.Router = routerAddr.String()
+	}
+	if !fromAsset.Chain.DustThreshold().IsZero() {
+		response.DustThreshold = fromAsset.Chain.DustThreshold().String()
+	}
+	response.Notes = fromAsset.GetChain().InboundNotes()
+	if !fromAsset.Chain.IsTHORChain() {
+		inboundGas := qs.mgr.GasMgr().GetGasRate(ctx, fromAsset.Chain)
+		response.RecommendedGasRate = inboundGas.String()
+		response.GasRateUnits, _ = fromAsset.Chain.GetGasUnits()
+	}
+
+	return response, nil
 }

@@ -1,7 +1,9 @@
 package thorchain
 
 import (
+	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/constants"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 	. "gopkg.in/check.v1"
 )
 
@@ -207,4 +209,92 @@ func (s *QuotesSuite) TestRapidStreamingSwapCalculation(c *C) {
 	// For now, we've verified the calculation logic works correctly
 	rapidSwapMax := mgr.Keeper().GetConfigInt64(ctx, constants.AdvSwapQueueRapidSwapMax)
 	c.Assert(rapidSwapMax, Equals, int64(5))
+}
+
+func (s *QuotesSuite) TestIsIntentCompatibleAsset(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	// Test RUNE is compatible
+	compatible, reason := isIntentCompatibleAsset(ctx, mgr, common.RuneNative)
+	c.Assert(compatible, Equals, true)
+	c.Assert(reason, Equals, "native RUNE")
+
+	// Test secured asset is compatible
+	securedBTC, _ := common.NewAsset("THOR-BTC")
+	compatible, reason = isIntentCompatibleAsset(ctx, mgr, securedBTC)
+	c.Assert(compatible, Equals, true)
+	c.Assert(reason, Equals, "secured asset")
+
+	// Test trade asset is compatible
+	tradeETH, _ := common.NewAsset("ETH~ETH")
+	compatible, reason = isIntentCompatibleAsset(ctx, mgr, tradeETH)
+	c.Assert(compatible, Equals, true)
+	c.Assert(reason, Equals, "trade asset")
+
+	// Test gas asset for supported chain is compatible
+	compatible, reason = isIntentCompatibleAsset(ctx, mgr, common.BTCAsset)
+	c.Assert(compatible, Equals, true)
+	c.Assert(reason, Equals, "gas asset for supported chain")
+
+	// Test ETH gas asset is compatible
+	compatible, reason = isIntentCompatibleAsset(ctx, mgr, common.ETHAsset)
+	c.Assert(compatible, Equals, true)
+	c.Assert(reason, Equals, "gas asset for supported chain")
+
+	// Test unknown asset is not compatible
+	unknownAsset, _ := common.NewAsset("UNKNOWN.UNKNOWN")
+	compatible, reason = isIntentCompatibleAsset(ctx, mgr, unknownAsset)
+	c.Assert(compatible, Equals, false)
+	c.Assert(reason, Equals, "asset not recognized by protocol")
+}
+
+func (s *QuotesSuite) TestQueryQuoteIntent(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	// Enable intents
+	mgr.Keeper().SetMimir(ctx, constants.IntentsEnabled.String(), 1)
+	mgr.Keeper().SetMimir(ctx, constants.IntentTTLBlocks.String(), 100)
+	mgr.Keeper().SetMimir(ctx, constants.IntentPriceSlideBlocks.String(), 10)
+	mgr.Keeper().SetMimir(ctx, constants.IntentMinFeeBasisPoints.String(), 50)
+	mgr.Keeper().SetMimir(ctx, constants.IntentAuctionBasisPoints.String(), 1000)
+	mgr.Keeper().SetMimir(ctx, constants.IntentAuctionDurationBlocks.String(), 14400)
+
+	qs := queryServer{mgr: mgr}
+
+	// Test: intents disabled
+	mgr.Keeper().SetMimir(ctx, constants.IntentsEnabled.String(), 0)
+	req := &types.QueryQuoteIntentRequest{
+		FromAsset:   "ETH.ETH",
+		ToAsset:     "BTC.BTC",
+		Amount:      "1000000000",
+		Destination: "bc1qtest",
+		HighTarget:  "5000000",
+		LowTarget:   "4800000",
+	}
+	resp, err := qs.queryQuoteIntent(ctx, req)
+	c.Assert(err, IsNil)
+	c.Assert(resp.Valid, Equals, false)
+	c.Assert(resp.ValidationError, Equals, "intents feature is disabled")
+
+	// Re-enable intents
+	mgr.Keeper().SetMimir(ctx, constants.IntentsEnabled.String(), 1)
+
+	// Test: missing required parameters
+	_, err = qs.queryQuoteIntent(ctx, &types.QueryQuoteIntentRequest{})
+	c.Assert(err, NotNil)
+	c.Assert(err.Error(), Equals, "missing from_asset parameter")
+
+	// Test: high < low validation
+	req = &types.QueryQuoteIntentRequest{
+		FromAsset:   "ETH.ETH",
+		ToAsset:     "BTC.BTC",
+		Amount:      "1000000000",
+		Destination: "bc1qtest",
+		HighTarget:  "4000000",
+		LowTarget:   "5000000",
+	}
+	resp, err = qs.queryQuoteIntent(ctx, req)
+	c.Assert(err, IsNil)
+	c.Assert(resp.Valid, Equals, false)
+	c.Assert(resp.ValidationError, Equals, "high_target must be >= low_target")
 }

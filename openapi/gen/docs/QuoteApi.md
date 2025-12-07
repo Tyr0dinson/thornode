@@ -4,8 +4,91 @@ All URIs are relative to *http://localhost*
 
 Method | HTTP request | Description
 ------------- | ------------- | -------------
+[**Quoteintent**](QuoteApi.md#Quoteintent) | **Get** /thorchain/quote/intent | 
 [**Quoteswap**](QuoteApi.md#Quoteswap) | **Get** /thorchain/quote/swap | 
 
+
+
+## Quoteintent
+
+> QuoteIntentResponse Quoteintent(ctx).FromAsset(fromAsset).ToAsset(toAsset).Amount(amount).Destination(destination).HighTarget(highTarget).LowTarget(lowTarget).Height(height).Affiliate(affiliate).AffiliateBps(affiliateBps).Execute()
+
+
+
+
+
+### Example
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "os"
+    openapiclient "./openapi"
+)
+
+func main() {
+    fromAsset := "NEAR.NEAR" // string | the source asset
+    toAsset := "ETH.ETH" // string | the target asset
+    amount := int64(1000000000) // int64 | the source asset amount in 1e8 decimals
+    destination := "0x1c7b17362c84287bd1184447e6dfeaf920c31bbe" // string | the destination address for receiving target asset
+    highTarget := int64(50000000) // int64 | high target amount - immediate execution if solver offers >= this
+    lowTarget := int64(48000000) // int64 | low target amount - minimum acceptable, no execution below this
+    height := int64(789) // int64 | optional block height, defaults to current tip (optional)
+    affiliate := "affiliate_example" // string | the affiliate (address or thorname) (optional)
+    affiliateBps := int64(789) // int64 | the affiliate fee in basis points (optional)
+
+    configuration := openapiclient.NewConfiguration()
+    apiClient := openapiclient.NewAPIClient(configuration)
+    resp, r, err := apiClient.QuoteApi.Quoteintent(context.Background()).FromAsset(fromAsset).ToAsset(toAsset).Amount(amount).Destination(destination).HighTarget(highTarget).LowTarget(lowTarget).Height(height).Affiliate(affiliate).AffiliateBps(affiliateBps).Execute()
+    if err != nil {
+        fmt.Fprintf(os.Stderr, "Error when calling `QuoteApi.Quoteintent``: %v\n", err)
+        fmt.Fprintf(os.Stderr, "Full HTTP response: %v\n", r)
+    }
+    // response from `Quoteintent`: QuoteIntentResponse
+    fmt.Fprintf(os.Stdout, "Response from `QuoteApi.Quoteintent`: %v\n", resp)
+}
+```
+
+### Path Parameters
+
+
+
+### Other Parameters
+
+Other parameters are passed through a pointer to a apiQuoteintentRequest struct via the builder pattern
+
+
+Name | Type | Description  | Notes
+------------- | ------------- | ------------- | -------------
+ **fromAsset** | **string** | the source asset | 
+ **toAsset** | **string** | the target asset | 
+ **amount** | **int64** | the source asset amount in 1e8 decimals | 
+ **destination** | **string** | the destination address for receiving target asset | 
+ **highTarget** | **int64** | high target amount - immediate execution if solver offers &gt;&#x3D; this | 
+ **lowTarget** | **int64** | low target amount - minimum acceptable, no execution below this | 
+ **height** | **int64** | optional block height, defaults to current tip | 
+ **affiliate** | **string** | the affiliate (address or thorname) | 
+ **affiliateBps** | **int64** | the affiliate fee in basis points | 
+
+### Return type
+
+[**QuoteIntentResponse**](QuoteIntentResponse.md)
+
+### Authorization
+
+No authorization required
+
+### HTTP request headers
+
+- **Content-Type**: Not defined
+- **Accept**: application/json
+
+[[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints)
+[[Back to Model list]](../README.md#documentation-for-models)
+[[Back to README]](../README.md)
 
 
 ## Quoteswap
