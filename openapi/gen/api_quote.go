@@ -22,6 +22,201 @@ import (
 // QuoteApiService QuoteApi service
 type QuoteApiService service
 
+type ApiQuoteintentRequest struct {
+	ctx context.Context
+	ApiService *QuoteApiService
+	fromAsset *string
+	toAsset *string
+	amount *int64
+	destination *string
+	highTarget *int64
+	lowTarget *int64
+	height *int64
+	affiliate *string
+	affiliateBps *int64
+}
+
+// the source asset
+func (r ApiQuoteintentRequest) FromAsset(fromAsset string) ApiQuoteintentRequest {
+	r.fromAsset = &fromAsset
+	return r
+}
+
+// the target asset
+func (r ApiQuoteintentRequest) ToAsset(toAsset string) ApiQuoteintentRequest {
+	r.toAsset = &toAsset
+	return r
+}
+
+// the source asset amount in 1e8 decimals
+func (r ApiQuoteintentRequest) Amount(amount int64) ApiQuoteintentRequest {
+	r.amount = &amount
+	return r
+}
+
+// the destination address for receiving target asset
+func (r ApiQuoteintentRequest) Destination(destination string) ApiQuoteintentRequest {
+	r.destination = &destination
+	return r
+}
+
+// high target amount - immediate execution if solver offers &gt;&#x3D; this
+func (r ApiQuoteintentRequest) HighTarget(highTarget int64) ApiQuoteintentRequest {
+	r.highTarget = &highTarget
+	return r
+}
+
+// low target amount - minimum acceptable, no execution below this
+func (r ApiQuoteintentRequest) LowTarget(lowTarget int64) ApiQuoteintentRequest {
+	r.lowTarget = &lowTarget
+	return r
+}
+
+// optional block height, defaults to current tip
+func (r ApiQuoteintentRequest) Height(height int64) ApiQuoteintentRequest {
+	r.height = &height
+	return r
+}
+
+// the affiliate (address or thorname)
+func (r ApiQuoteintentRequest) Affiliate(affiliate string) ApiQuoteintentRequest {
+	r.affiliate = &affiliate
+	return r
+}
+
+// the affiliate fee in basis points
+func (r ApiQuoteintentRequest) AffiliateBps(affiliateBps int64) ApiQuoteintentRequest {
+	r.affiliateBps = &affiliateBps
+	return r
+}
+
+func (r ApiQuoteintentRequest) Execute() (*QuoteIntentResponse, *http.Response, error) {
+	return r.ApiService.QuoteintentExecute(r)
+}
+
+/*
+Quoteintent Method for Quoteintent
+
+Provide a quote for an intent swap, validating parameters and generating the memo.
+
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @return ApiQuoteintentRequest
+*/
+func (a *QuoteApiService) Quoteintent(ctx context.Context) ApiQuoteintentRequest {
+	return ApiQuoteintentRequest{
+		ApiService: a,
+		ctx: ctx,
+	}
+}
+
+// Execute executes the request
+//  @return QuoteIntentResponse
+func (a *QuoteApiService) QuoteintentExecute(r ApiQuoteintentRequest) (*QuoteIntentResponse, *http.Response, error) {
+	var (
+		localVarHTTPMethod   = http.MethodGet
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  *QuoteIntentResponse
+	)
+
+	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "QuoteApiService.Quoteintent")
+	if err != nil {
+		return localVarReturnValue, nil, &GenericOpenAPIError{error: err.Error()}
+	}
+
+	localVarPath := localBasePath + "/thorchain/quote/intent"
+
+	localVarHeaderParams := make(map[string]string)
+	localVarQueryParams := url.Values{}
+	localVarFormParams := url.Values{}
+	if r.fromAsset == nil {
+		return localVarReturnValue, nil, reportError("fromAsset is required and must be specified")
+	}
+	if r.toAsset == nil {
+		return localVarReturnValue, nil, reportError("toAsset is required and must be specified")
+	}
+	if r.amount == nil {
+		return localVarReturnValue, nil, reportError("amount is required and must be specified")
+	}
+	if r.destination == nil {
+		return localVarReturnValue, nil, reportError("destination is required and must be specified")
+	}
+	if r.highTarget == nil {
+		return localVarReturnValue, nil, reportError("highTarget is required and must be specified")
+	}
+	if r.lowTarget == nil {
+		return localVarReturnValue, nil, reportError("lowTarget is required and must be specified")
+	}
+
+	if r.height != nil {
+		localVarQueryParams.Add("height", parameterToString(*r.height, ""))
+	}
+	localVarQueryParams.Add("from_asset", parameterToString(*r.fromAsset, ""))
+	localVarQueryParams.Add("to_asset", parameterToString(*r.toAsset, ""))
+	localVarQueryParams.Add("amount", parameterToString(*r.amount, ""))
+	localVarQueryParams.Add("destination", parameterToString(*r.destination, ""))
+	localVarQueryParams.Add("high_target", parameterToString(*r.highTarget, ""))
+	localVarQueryParams.Add("low_target", parameterToString(*r.lowTarget, ""))
+	if r.affiliate != nil {
+		localVarQueryParams.Add("affiliate", parameterToString(*r.affiliate, ""))
+	}
+	if r.affiliateBps != nil {
+		localVarQueryParams.Add("affiliate_bps", parameterToString(*r.affiliateBps, ""))
+	}
+	// to determine the Content-Type header
+	localVarHTTPContentTypes := []string{}
+
+	// set Content-Type header
+	localVarHTTPContentType := selectHeaderContentType(localVarHTTPContentTypes)
+	if localVarHTTPContentType != "" {
+		localVarHeaderParams["Content-Type"] = localVarHTTPContentType
+	}
+
+	// to determine the Accept header
+	localVarHTTPHeaderAccepts := []string{"application/json"}
+
+	// set Accept header
+	localVarHTTPHeaderAccept := selectHeaderAccept(localVarHTTPHeaderAccepts)
+	if localVarHTTPHeaderAccept != "" {
+		localVarHeaderParams["Accept"] = localVarHTTPHeaderAccept
+	}
+	req, err := a.client.prepareRequest(r.ctx, localVarPath, localVarHTTPMethod, localVarPostBody, localVarHeaderParams, localVarQueryParams, localVarFormParams, formFiles)
+	if err != nil {
+		return localVarReturnValue, nil, err
+	}
+
+	localVarHTTPResponse, err := a.client.callAPI(req)
+	if err != nil || localVarHTTPResponse == nil {
+		return localVarReturnValue, localVarHTTPResponse, err
+	}
+
+	localVarBody, err := ioutil.ReadAll(localVarHTTPResponse.Body)
+	localVarHTTPResponse.Body.Close()
+	localVarHTTPResponse.Body = ioutil.NopCloser(bytes.NewBuffer(localVarBody))
+	if err != nil {
+		return localVarReturnValue, localVarHTTPResponse, err
+	}
+
+	if localVarHTTPResponse.StatusCode >= 300 {
+		newErr := &GenericOpenAPIError{
+			body:  localVarBody,
+			error: localVarHTTPResponse.Status,
+		}
+		return localVarReturnValue, localVarHTTPResponse, newErr
+	}
+
+	err = a.client.decode(&localVarReturnValue, localVarBody, localVarHTTPResponse.Header.Get("Content-Type"))
+	if err != nil {
+		newErr := &GenericOpenAPIError{
+			body:  localVarBody,
+			error: err.Error(),
+		}
+		return localVarReturnValue, localVarHTTPResponse, newErr
+	}
+
+	return localVarReturnValue, localVarHTTPResponse, nil
+}
+
 type ApiQuoteswapRequest struct {
 	ctx context.Context
 	ApiService *QuoteApiService

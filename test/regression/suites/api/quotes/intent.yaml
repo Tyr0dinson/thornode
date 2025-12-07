@@ -1,0 +1,213 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 2
+---
+########################################################################################
+# Enable intents
+########################################################################################
+type: tx-mimir
+key: IntentsEnabled
+value: 1
+signer: {{ addr_thor_dog }}
+sequence: 0
+---
+type: tx-mimir
+key: IntentTTLBlocks
+value: 14400
+signer: {{ addr_thor_dog }}
+sequence: 1
+---
+type: tx-mimir
+key: IntentPriceSlideBlocks
+value: 100
+signer: {{ addr_thor_dog }}
+sequence: 2
+---
+type: tx-mimir
+key: IntentMinFeeBasisPoints
+value: 50
+signer: {{ addr_thor_dog }}
+sequence: 3
+---
+type: tx-mimir
+key: IntentAuctionBasisPoints
+value: 1000
+signer: {{ addr_thor_dog }}
+sequence: 4
+---
+type: tx-mimir
+key: IntentAuctionDurationBlocks
+value: 14400
+signer: {{ addr_thor_dog }}
+sequence: 5
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Test 1: Basic valid quote - BTC to ETH
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/quote/intent
+params:
+  from_asset: BTC.BTC
+  to_asset: ETH.ETH
+  amount: "100000000"
+  destination: "{{ addr_eth_fox }}"
+  high_target: "10000000000"
+  low_target: "9000000000"
+asserts:
+  - .valid == true
+  - .memo != null
+  - .memo | contains("io:ETH.ETH")
+  - .memo | contains("{{ addr_eth_fox }}")
+  - .inbound_address != null
+  - (.intent_ttl_blocks | tonumber) == 14400
+  - (.price_slide_blocks | tonumber) == 100
+  - (.fees.protocol_fee_bps | tonumber) == 50
+  - .auction_info.will_auction == false
+---
+########################################################################################
+# Test 2: Quote with affiliate
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/quote/intent
+params:
+  from_asset: BTC.BTC
+  to_asset: ETH.ETH
+  amount: "100000000"
+  destination: "{{ addr_eth_fox }}"
+  high_target: "10000000000"
+  low_target: "9000000000"
+  affiliate: "{{ addr_thor_cat }}"
+  affiliate_bps: "500"
+asserts:
+  - .valid == true
+  - .memo != null
+  - .memo | contains("{{ addr_thor_cat }}")
+  - .memo | contains(":500")
+  - (.fees.affiliate_fee_bps | tonumber) == 500
+---
+########################################################################################
+# Test 3: Invalid - missing high_target
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/quote/intent
+params:
+  from_asset: BTC.BTC
+  to_asset: ETH.ETH
+  amount: "100000000"
+  destination: "{{ addr_eth_fox }}"
+  low_target: "9000000000"
+status: 400
+---
+########################################################################################
+# Test 4: Invalid - high_target less than low_target
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/quote/intent
+params:
+  from_asset: BTC.BTC
+  to_asset: ETH.ETH
+  amount: "100000000"
+  destination: "{{ addr_eth_fox }}"
+  high_target: "5000000000"
+  low_target: "9000000000"
+asserts:
+  - .valid == false
+  - .validation_error | contains("high_target must be >= low_target")
+---
+########################################################################################
+# Test 5: Disable intents and verify quote fails
+########################################################################################
+type: tx-mimir
+key: IntentsEnabled
+value: 0
+signer: {{ addr_thor_dog }}
+sequence: 6
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/quote/intent
+params:
+  from_asset: BTC.BTC
+  to_asset: ETH.ETH
+  amount: "100000000"
+  destination: "{{ addr_eth_fox }}"
+  high_target: "10000000000"
+  low_target: "9000000000"
+asserts:
+  - .valid == false
+  - .validation_error | contains("disabled")
+---
+########################################################################################
+# Re-enable intents for remaining tests
+########################################################################################
+type: tx-mimir
+key: IntentsEnabled
+value: 1
+signer: {{ addr_thor_dog }}
+sequence: 7
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Test 6: Invalid - both assets incompatible (neither has pool nor is native)
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/quote/intent
+params:
+  from_asset: UNKNOWN.UNKNOWN
+  to_asset: FAKE.FAKE
+  amount: "100000000"
+  destination: "fakeaddress123"
+  high_target: "10000000000"
+  low_target: "9000000000"
+asserts:
+  - .valid == false
+  - .validation_error | contains("neither")
+---
+########################################################################################
+# Test 7: ETH to BTC (reverse direction)
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/quote/intent
+params:
+  from_asset: ETH.ETH
+  to_asset: BTC.BTC
+  amount: "1000000000"
+  destination: "{{ addr_btc_fox }}"
+  high_target: "10000000"
+  low_target: "9000000"
+asserts:
+  - .valid == true
+  - .memo | contains("io:BTC.BTC")
+  - .memo | contains("{{ addr_btc_fox }}")
+  - .auction_info.will_auction == false
+---
+########################################################################################
+# Test 8: Same asset swap (ETH to ETH - valid for intent)
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/quote/intent
+params:
+  from_asset: ETH.ETH
+  to_asset: ETH.ETH
+  amount: "1000000000"
+  destination: "{{ addr_eth_fox }}"
+  high_target: "1100000000"
+  low_target: "1000000000"
+asserts:
+  - .valid == true
+  - .memo | contains("io:ETH.ETH")

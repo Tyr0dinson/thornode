@@ -379,6 +379,11 @@ func (s *queryServer) QuoteLimit(c context.Context, req *types.QueryQuoteLimitRe
 	return s.queryQuoteLimit(ctx, req)
 }
 
+func (s *queryServer) QuoteIntent(c context.Context, req *types.QueryQuoteIntentRequest) (*types.QueryQuoteIntentResponse, error) {
+	ctx := s.unwrapSdkContext(c)
+	return s.queryQuoteIntent(ctx, req)
+}
+
 func (s *queryServer) ConstantValues(c context.Context, req *types.QueryConstantValuesRequest) (*types.QueryConstantValuesResponse, error) {
 	if err := checkHeightParam(req.Height); err != nil {
 		return nil, err
