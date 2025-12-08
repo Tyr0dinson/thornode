@@ -325,7 +325,7 @@ _test-regression:
 
 # ------------------------------ Simulation Tests ------------------------------
 
-test-simulation: stop-mocknet build-mocknet run-mocknet test-simulation-no-reset
+test-simulation: build-mocknet reset-mocknet test-simulation-no-reset
 
 STAGES ?= all
 CHAINS ?= ""
@@ -363,12 +363,8 @@ cli-mocknet:
 	@docker compose $(DOCKER_COMPOSE_FILES) run --rm cli
 
 run-mocknet:
-	@if [ -n "$(CHAINS)" ]; then \
-  		export COMPOSE_PROFILES="thornode,bifrost,$(CHAINS)"; \
-	else \
-	  	export COMPOSE_PROFILES="mocknet,midgard"; \
-	fi; \
-	docker compose $(DOCKER_COMPOSE_FILES) up -d
+	@docker compose $(DOCKER_COMPOSE_FILES) \
+    	--profile mocknet --profile midgard up -d
 
 stop-mocknet:
 	@docker compose $(DOCKER_COMPOSE_FILES) --profile mocknet --profile midgard down -v

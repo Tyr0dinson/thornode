@@ -87,9 +87,9 @@ services:
   _thornode: &thornode
     <<: *thorchain-defaults
     hostname: thornode # required for genesis.sh
-    #    depends_on:
-    #      - ethereum
-    #      - avalanche
+    depends_on:
+      - ethereum
+      - avalanche
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment: &thornode-environment
@@ -154,14 +154,14 @@ services:
       - bifrost
       - validator
     depends_on:
-      #      - bitcoin
-      #      - bitcoin-cash
-      #      - dogecoin
-      #      - gaia
-      #      - litecoin
-      #      - tron-supernode
-      #      - tron-fullnode
-      #      - ton
+      - bitcoin
+      - bitcoin-cash
+      - dogecoin
+      - gaia
+      - litecoin
+      - tron-supernode
+      - tron-fullnode
+      - ton
       - thornode
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -445,7 +445,6 @@ services:
     profiles:
       - mocknet
       - mocknet-cluster
-      - gaia
     image: registry.gitlab.com/thorchain/devops/node-launcher:gaia-daemon-25.1.1
     volumes:
       - "./mocknet:/mocknet"
@@ -463,7 +462,6 @@ services:
     profiles:
       - mocknet
       - mocknet-cluster
-      - noble
     image: registry.gitlab.com/thorchain/devops/node-launcher:noble-daemon-9.0.4
     volumes:
       - "./mocknet:/mocknet"
@@ -482,7 +480,6 @@ services:
     profiles:
       - mocknet
       - mocknet-cluster
-      - btc
     image: registry.gitlab.com/thorchain/devops/node-launcher:bitcoin-daemon-26.2
     restart: unless-stopped
     environment:
@@ -500,7 +497,6 @@ services:
     profiles:
       - mocknet
       - mocknet-cluster
-      - bch
     image: registry.gitlab.com/thorchain/devops/node-launcher:bitcoin-cash-daemon-28.0.1
     restart: unless-stopped
     environment:
@@ -518,7 +514,6 @@ services:
     profiles:
       - mocknet
       - mocknet-cluster
-      - doge
     image: registry.gitlab.com/thorchain/devops/node-launcher:dogecoin-daemon-1.14.9
     restart: unless-stopped
     environment:
@@ -534,7 +529,6 @@ services:
     profiles:
       - mocknet
       - mocknet-cluster
-      - ltc
     image: registry.gitlab.com/thorchain/devops/node-launcher:litecoin-daemon-0.21.4
     restart: unless-stopped
     environment:
@@ -552,7 +546,6 @@ services:
     profiles:
       - mocknet
       - mocknet-cluster
-      - eth
     image: ethereum/client-go:v1.16.7
     restart: unless-stopped
     environment:
@@ -571,7 +564,6 @@ services:
     profiles:
       - mocknet
       - mocknet-cluster
-      - base
     image: us-docker.pkg.dev/oplabs-tools-artifacts/images/op-geth:v1.101603.2
     restart: unless-stopped
     environment:
@@ -589,7 +581,6 @@ services:
     profiles:
       - mocknet
       - mocknet-cluster
-      - xrp
     image: xrpllabsofficial/xrpld:2.6.1
     restart: unless-stopped
     environment:
@@ -606,7 +597,6 @@ services:
     profiles:
       - mocknet
       - mocknet-cluster
-      - bnb
     image: registry.gitlab.com/thorchain/devops/node-launcher:binance-smart-daemon-1.4.18
     restart: unless-stopped
     environment:
@@ -623,7 +613,6 @@ services:
     profiles:
       - mocknet
       - mocknet-cluster
-      - avax
     restart: unless-stopped
     image: registry.gitlab.com/thorchain/devops/node-launcher:avalanche-daemon-1.13.5
     volumes:
@@ -646,7 +635,6 @@ services:
     profiles:
       - mocknet
       - mocknet-cluster
-      - tron
     image: registry.gitlab.com/thorchain/devops/node-launcher:tron-daemon-4.8.0-1
     volumes:
       - "./mocknet:/mocknet"
@@ -657,7 +645,6 @@ services:
     profiles:
       - mocknet
       - mocknet-cluster
-      - tron
     image: registry.gitlab.com/thorchain/devops/node-launcher:tron-daemon-4.8.0-1
     links:
       - tron-supernode:supernode
@@ -676,7 +663,6 @@ services:
     profiles:
       - mocknet
       - mocknet-cluster
-      - sol
     restart: unless-stopped
     image: anzaxyz/agave:v2.3.8
     volumes:
@@ -697,7 +683,6 @@ services:
     profiles:
       - mocknet
       - mocknet-cluster
-      - ton
     image: ghcr.io/neodix42/mylocalton-docker:latest
     restart: unless-stopped
     ports:
