@@ -1152,6 +1152,24 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]
 func (tos *TxOutStorage) addToBlockOut(ctx cosmos.Context, mgr Manager, item TxOutItem, outboundHeight int64) error {
 	// if we're sending native assets, transfer them now and return
 	if item.Chain.IsTHORChain() {
+		// For mempool swaps (not finalized), queue native outbounds for later execution
+		if !item.InboundFinalized {
+			enableMempoolSwaps := tos.keeper.GetConfigInt64(ctx, constants.EnableMempoolSwaps) > 0
+			if enableMempoolSwaps {
+				ctx.Logger().Info("queueing native outbound for mempool swap",
+					"inhash", item.InHash, "asset", item.Coin.Asset, "amount", item.Coin.Amount)
+				// Initialize nil pointer fields (same as external outbounds)
+				if item.AggregatorTargetLimit == nil {
+					aggregatorTargetLimit := cosmos.ZeroUint()
+					item.AggregatorTargetLimit = &aggregatorTargetLimit
+				}
+				if item.CloutSpent == nil {
+					cloutSpent := cosmos.ZeroUint()
+					item.CloutSpent = &cloutSpent
+				}
+				return tos.keeper.AppendTxOut(ctx, outboundHeight, item)
+			}
+		}
 		return tos.nativeTxOut(ctx, mgr, item)
 	}
 

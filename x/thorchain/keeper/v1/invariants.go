@@ -83,6 +83,26 @@ func AsgardInvariant(k KVStore) common.Invariant {
 			}
 		}
 
+		// sum native coins in queued TxOut items that are pending execution
+		// (mempool swaps where inbound has not yet finalized)
+		var txOutCoins common.Coins
+		txOutIter := k.GetTxOutIterator(ctx)
+		defer txOutIter.Close()
+		for ; txOutIter.Valid(); txOutIter.Next() {
+			var txOut TxOut
+			k.Cdc().MustUnmarshal(txOutIter.Value(), &txOut)
+			for _, item := range txOut.TxArray {
+				// Only count native outbounds that haven't been executed yet
+				// (InboundFinalized == false means the native transfer is pending)
+				if item.Chain.IsTHORChain() && !item.InboundFinalized && item.OutHash.IsEmpty() {
+					// Trade Assets and Secured Assets do not correspond to Module balance coins
+					if !item.Coin.Asset.IsTradeAsset() && !item.Coin.Asset.IsSecuredAsset() {
+						txOutCoins = txOutCoins.Add(item.Coin)
+					}
+				}
+			}
+		}
+
 		processSwaps := func(ctx cosmos.Context, k KVStore, swapIter cosmos.Iterator) common.Coins { // Replace IteratorType with the actual iterator type
 			var swapCoins common.Coins
 			defer swapIter.Close()
@@ -155,8 +175,9 @@ func AsgardInvariant(k KVStore) common.Invariant {
 		asgardAddr := k.GetModuleAccAddress(AsgardName)
 		asgardCoins := k.GetBalance(ctx, asgardAddr)
 
-		// asgard balance is expected to equal sum of pool and swap coins
-		expNative, _ := poolCoins.Add(append(swapCoins, advSwapCoins...)...).Native()
+		// asgard balance is expected to equal sum of pool, swap, and queued native outbound coins
+		allCoins := poolCoins.Add(append(append(swapCoins, advSwapCoins...), txOutCoins...)...)
+		expNative, _ := allCoins.Native()
 
 		// note: coins must be sorted for SafeSub
 		diffCoins, _ := asgardCoins.SafeSub(expNative.Sort()...)
