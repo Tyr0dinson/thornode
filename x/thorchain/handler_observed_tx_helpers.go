@@ -193,7 +193,7 @@ func handleObservedTxInQuorum(
 					}
 
 					// Finalize outbounds
-					if err := finalizeOutbounds(ctx, k, voter); err != nil {
+					if err := finalizeOutbounds(ctx, mgr, voter); err != nil {
 						ctx.Logger().Error("fail to finalize outbounds", "error", err, "hash", voter.TxID)
 					}
 				}
@@ -313,7 +313,7 @@ func handleObservedTxInQuorum(
 
 	// When a mempool swap finalizes, update all associated outbound TxOutItems to Finalized=true
 	if hasFinalised && canProcessMempoolSwap && len(voter.Actions) > 0 {
-		if err = finalizeOutbounds(ctx, k, voter); err != nil {
+		if err = finalizeOutbounds(ctx, mgr, voter); err != nil {
 			ctx.Logger().Error("fail to finalize outbounds", "error", err, "hash", voter.TxID)
 		}
 	}
@@ -1169,12 +1169,13 @@ func ExtractReferenceFromAmount(ctx cosmos.Context, mgr Manager, asset common.As
 
 // finalizeOutbounds updates the Finalized flag on all outbound TxOutItems associated with an inbound
 // transaction when that inbound transaction finalizes. This allows bifrost signers to proceed with
-// signing outbounds that were created from mempool swaps.
-func finalizeOutbounds(ctx cosmos.Context, keeper keeper.Keeper, voter ObservedTxVoter) error {
+// signing outbounds that were created from mempool swaps. For native (THORChain) outbounds, this
+// function also executes them since they were queued waiting for finalization.
+func finalizeOutbounds(ctx cosmos.Context, mgr Manager, voter ObservedTxVoter) error {
 	ctx.Logger().Info("finalizing outbounds for inbound", "hash", voter.TxID, "actions_count", len(voter.Actions))
 
 	// Get the maximum outbound delay to determine search range
-	txOutDelayMax := keeper.GetConfigInt64(ctx, constants.TxOutDelayMax)
+	txOutDelayMax := mgr.Keeper().GetConfigInt64(ctx, constants.TxOutDelayMax)
 
 	// Iterate through all actions (TxOutItems) for this inbound
 	for i := range voter.Actions {
@@ -1209,7 +1210,7 @@ func finalizeOutbounds(ctx cosmos.Context, keeper keeper.Keeper, voter ObservedT
 		found := false
 		maxSearchHeight := outboundHeight + txOutDelayMax
 		for h := outboundHeight; h <= maxSearchHeight && !found; h++ {
-			txOut, err := keeper.GetTxOut(ctx, h)
+			txOut, err := mgr.Keeper().GetTxOut(ctx, h)
 			if err != nil {
 				ctx.Logger().Error("fail to get txout", "error", err, "height", h)
 				continue
@@ -1220,14 +1221,35 @@ func finalizeOutbounds(ctx cosmos.Context, keeper keeper.Keeper, voter ObservedT
 				item := &txOut.TxArray[j]
 				// Match by InHash - that's the unique link to the inbound
 				if item.InHash.Equals(action.InHash) {
-					item.InboundFinalized = true
-					ctx.Logger().Info("updated queued txout item to finalized",
-						"height", h,
-						"inhash", item.InHash,
-						"chain", item.Chain)
+					// Check if this is a native (THORChain) outbound that was queued
+					if item.Chain.IsTHORChain() {
+						// Execute the native outbound now that inbound is finalized
+						tos, ok := mgr.TxOutStore().(*TxOutStorageVCUR)
+						if !ok {
+							return fmt.Errorf("fail to cast TxOutStore to TxOutStorageVCUR")
+						}
+						if err := tos.nativeTxOut(ctx, mgr, *item); err != nil {
+							ctx.Logger().Error("fail to execute native outbound", "error", err, "inhash", item.InHash)
+							return fmt.Errorf("fail to execute native outbound: %w", err)
+						}
+						// Mark as processed by setting OutHash
+						item.OutHash = common.BlankTxID
+						ctx.Logger().Info("executed queued native outbound",
+							"height", h,
+							"inhash", item.InHash,
+							"asset", item.Coin.Asset,
+							"amount", item.Coin.Amount)
+					} else {
+						// External outbound - just mark as finalized (existing behavior)
+						item.InboundFinalized = true
+						ctx.Logger().Info("updated queued txout item to finalized",
+							"height", h,
+							"inhash", item.InHash,
+							"chain", item.Chain)
+					}
 
 					// Save the updated TxOut back to storage
-					if err := keeper.SetTxOut(ctx, txOut); err != nil {
+					if err := mgr.Keeper().SetTxOut(ctx, txOut); err != nil {
 						return fmt.Errorf("fail to save txout at height %d: %w", h, err)
 					}
 					found = true
@@ -1245,7 +1267,7 @@ func finalizeOutbounds(ctx cosmos.Context, keeper keeper.Keeper, voter ObservedT
 	}
 
 	// Save the updated voter with finalized actions
-	keeper.SetObservedTxInVoter(ctx, voter)
+	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
 
 	return nil
 }
@@ -1338,7 +1360,44 @@ func revertMempoolSwap(ctx cosmos.Context, keeper keeper.Keeper, mgr Manager, vo
 			return fmt.Errorf("could not find queued txout item to remove: %s", action.InHash)
 		}
 
-		// Step 2: Now that we've successfully removed the outbound, create the reverse swap
+		// Step 2: Handle pool accounting for the reverted swap
+		// For native outputs (RUNE, synths, trade assets), directly adjust pool balances
+		// For external chain outputs, create a reverse swap then donate
+		if action.Chain.IsTHORChain() {
+			// Native output - directly adjust pool balances to reverse the swap
+			// The swap was: sourceAsset -> native (RUNE)
+			// We need to:
+			// 1. Add the RUNE back to the pool (reverse the RUNE that was emitted)
+			// 2. Subtract the source asset from the pool (reverse the asset that was added)
+			// This is because the inbound never finalized, so the source asset never arrived in the vault
+			pool, err := keeper.GetPool(ctx, sourceAsset.GetLayer1Asset())
+			if err != nil {
+				ctx.Logger().Error("fail to get pool for native revert", "error", err, "asset", sourceAsset)
+				continue
+			}
+
+			// Get the source amount from the voter's inbound transaction
+			sourceAmount := voter.Tx.Tx.Coins[0].Amount
+
+			// Add the RUNE back to the pool (restore RUNE that was emitted)
+			pool.BalanceRune = pool.BalanceRune.Add(action.Coin.Amount)
+
+			// Subtract the source asset from the pool (remove asset that was never received)
+			// Use SafeSub to avoid underflow in case of any edge cases
+			pool.BalanceAsset = common.SafeSub(pool.BalanceAsset, sourceAmount)
+
+			if err := keeper.SetPool(ctx, pool); err != nil {
+				return fmt.Errorf("fail to set pool after native revert: %w", err)
+			}
+
+			ctx.Logger().Info("reverted native mempool swap pool balances",
+				"pool", sourceAsset.GetLayer1Asset(),
+				"rune_added", action.Coin.Amount,
+				"asset_removed", sourceAmount)
+			continue
+		}
+
+		// External chain output - create reverse swap with chained donate memo
 		// Generate a unique transaction ID for this reversal
 		// Include the action index to ensure uniqueness when a single inbound has multiple actions
 		hashInput := fmt.Sprintf("MEMPOOL-REVERT-%s-%d-%d", voter.TxID, ctx.BlockHeight(), i)

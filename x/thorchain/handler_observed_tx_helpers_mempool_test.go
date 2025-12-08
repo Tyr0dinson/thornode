@@ -76,7 +76,7 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutbounds(c *C) {
 	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
 
 	// Test 1: Successfully finalize outbounds
-	err := finalizeOutbounds(ctx, mgr.Keeper(), voter)
+	err := finalizeOutbounds(ctx, mgr, voter)
 	c.Assert(err, IsNil, Commentf("finalizeOutbounds failed: %v", err))
 
 	// Verify action was updated
@@ -101,7 +101,7 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutbounds(c *C) {
 	txOut2.TxArray = append(txOut2.TxArray, voter2.Actions...)
 	c.Assert(mgr.Keeper().SetTxOut(ctx, txOut2), IsNil)
 
-	err = finalizeOutbounds(ctx, mgr.Keeper(), voter2)
+	err = finalizeOutbounds(ctx, mgr, voter2)
 	c.Assert(err, IsNil)
 
 	// Verify both actions finalized
@@ -114,7 +114,7 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutbounds(c *C) {
 		{Chain: common.BTCChain, InHash: voter3.TxID, Coin: common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One)), InboundFinalized: true},
 	}
 
-	err = finalizeOutbounds(ctx, mgr.Keeper(), voter3)
+	err = finalizeOutbounds(ctx, mgr, voter3)
 	c.Assert(err, IsNil, Commentf("Should succeed even with already finalized actions"))
 }
 

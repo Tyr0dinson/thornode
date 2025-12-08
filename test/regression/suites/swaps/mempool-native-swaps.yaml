@@ -1,0 +1,252 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+# Pre-fund the vault with 1 BTC extra to account for the swap in Scenario 1.
+# In a real scenario, the vault would receive this BTC from the finalized inbound.
+# In regression tests, tx-observed-in doesn't actually transfer coins to the vault,
+# so we need to pre-fund to pass the export invariant check.
+type: state
+genesis:
+  app_state:
+    thorchain:
+      vaults:
+        - block_height: "0"
+          chains:
+            - THOR
+            - BTC
+            - LTC
+            - BCH
+            - ETH
+            - DOGE
+            - AVAX
+            - GAIA
+          coins:
+            - amount: "200000000"  # 2 BTC (1 from template + 1 for Scenario 1 swap)
+              asset: BTC.BTC
+              decimals: "8"
+            - amount: "1000000000"
+              asset: ETH.ETH
+              decimals: "8"
+          inbound_tx_count: "2"
+          membership:
+            - tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4
+          pub_key: tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4
+          status: ActiveVault
+          type: AsgardVault
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Test Mempool Swap to Native Assets (RUNE)
+# This tests that native asset outputs are delayed until the inbound finalizes
+########################################################################################
+# Enable the mempool swaps feature
+type: tx-mimir
+key: EnableMempoolSwaps
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Verify mimir is enabled
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - .ENABLEMEMPOOLSWAPS == 1
+---
+########################################################################################
+# Scenario 1: Mempool Swap to RUNE - Delayed Execution
+########################################################################################
+# Record initial balance of recipient (fox has 2500000000000 from genesis)
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances[]|select(.denom == "rune")|.amount == "${INITIAL_BALANCE=2500000000000}"
+---
+# Send a swap to RUNE that will finalize 3 blocks later
+# Current block: 3, Transaction block: 3, Finalize at: 6
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "100000000"  # 1.0 BTC
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+          decimals: 8
+      memo: "=:THOR.RUNE:{{ addr_thor_fox }}"
+    block_height: 3
+    finalise_height: 6  # Will finalize 3 blocks later
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Verify native outbound is queued (NOT executed immediately)
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0].chain == "THOR"
+  - .[0].to_address == "{{ addr_thor_fox }}"
+  - .[0].in_hash == "{{ observe_txid 1 }}"
+  - .[0].inbound_finalized == false
+  - (.[0].out_hash // "") == ""
+  - .[0].coin.asset == "THOR.RUNE"
+  - .[0].coin.amount|tonumber > 0
+---
+# Verify RUNE has NOT been transferred yet (balance unchanged from initial)
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances[]|select(.denom == "rune")|.amount == "${INITIAL_BALANCE}"
+---
+########################################################################################
+# Scenario 1 Continued: Finalization Triggers Native Transfer
+########################################################################################
+# Create blocks to reach finalization height
+type: create-blocks
+count: 2  # Move from block 4 to block 6
+---
+# Re-observe the same transaction as finalized
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 1 }}"
+      chain: BTC
+      from_address: {{ addr_btc_fox }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "100000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+          decimals: 8
+      memo: "=:THOR.RUNE:{{ addr_thor_fox }}"
+    block_height: 6
+    finalise_height: 6  # NOW finalized (block_height == finalise_height)
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Verify outbound has been processed (removed from queue after native transfer)
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+# Verify RUNE has NOW been transferred to recipient (balance increased)
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances[]|select(.denom == "rune")|.amount|tonumber > 2500000000000
+---
+########################################################################################
+# Scenario 2: Native Outbound Removal on Timeout (No Reverse Swap)
+########################################################################################
+# Configure faster testing parameters for timeout
+type: tx-mimir
+key: SigningTransactionPeriod
+value: 3
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: MaxOutboundAttempts
+value: 2
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Record cat's initial balance
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_cat }}
+asserts:
+  - .balances[]|select(.denom == "rune")|.amount == "${CAT_INITIAL_BALANCE=2500000000000}"
+---
+# Send a mempool swap to RUNE that will NEVER finalize
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 10 }}"
+      chain: BTC
+      from_address: {{ addr_btc_cat }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "50000000"  # 0.5 BTC
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+          decimals: 8
+      memo: "=:THOR.RUNE:{{ addr_thor_cat }}"
+    block_height: 10
+    finalise_height: 100  # Set far in future - transaction will never finalize
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Verify mempool swap created native outbound (queued, not executed)
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0].chain == "THOR"
+  - .[0].in_hash == "{{ observe_txid 10 }}"
+  - .[0].to_address == "{{ addr_thor_cat }}"
+  - .[0].inbound_finalized == false
+  - (.[0].out_hash // "") == ""
+---
+# Verify recipient balance unchanged (native not transferred)
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_cat }}
+asserts:
+  - .balances[]|select(.denom == "rune")|.amount == "${CAT_INITIAL_BALANCE}"
+---
+# Wait for MaxOutboundAttempts to be exceeded
+# LackSigning processes TxOuts that are signingTransPeriod blocks old
+# With SigningTransactionPeriod=3 and MaxOutboundAttempts=2:
+# - Block 11: TxOut at height 8 processed, age=3, attempts=1, reschedule to height 14
+# - Block 17: TxOut at height 14 processed, age=9, attempts=3 >= 2, REMOVED
+# Need to wait until block 17 (9 blocks after block 8)
+type: create-blocks
+count: 10
+---
+# Verify native outbound was removed from queue (no reverse swap for native)
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - (. // [])|map(select(.in_hash == "{{ observe_txid 10 }}")) | length == 0
+---
+# Verify recipient still has same balance (funds were never transferred)
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_cat }}
+asserts:
+  - .balances[]|select(.denom == "rune")|.amount == "${CAT_INITIAL_BALANCE}"
+---
+# Verify NO reverse swap was created (unlike external chain outbounds)
+# The swap queue should be empty since native outbounds don't need reversal
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap
+asserts:
+  - (. // [])|length == 0
