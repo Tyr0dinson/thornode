@@ -120,6 +120,9 @@
         "tx_size_cost_per_byte": "10"
       }
     },
+    "authz": {
+      "authorization": []
+    },
     "bank": {
       "balances": [
         {
@@ -223,7 +226,7 @@
           "height": "11"
         }
       ],
-      "last_signed_height": "57",
+      "last_signed_height": "53",
       "liquidity_providers": [
         {
           "asset": "BTC.BTC",
