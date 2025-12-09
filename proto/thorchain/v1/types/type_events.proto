@@ -722,5 +722,3 @@ message EventVaultOverSolvency {
   repeated AssetOverSolvency assets = 1 [ (gogoproto.nullable) = false ];
   int64 over_solvency_basis_points = 2;
 }
-
-
