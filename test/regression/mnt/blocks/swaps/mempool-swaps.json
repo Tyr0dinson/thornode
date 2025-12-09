@@ -1224,7 +1224,7 @@
         }
       },
       "last_commit_hash": "",
-      "data_hash": "CD5AD035D61FBD175B075768A973553DA8BC8AC60EA63CFDE7454482CDEFDED1",
+      "data_hash": "15E96D4D5E3D36C0400C382EA5E6E7214D1A272EC1CDBDF0D408FFC686A46C35",
       "validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "next_validators_hash": "9A0FC1918CDCB81267B61959D511436CC2B19E3A48538EC664B2E46E3D6E61C6",
       "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
@@ -1354,7 +1354,7 @@
     ],
     "txs": [
       {
-        "hash": "3AAFADA30D6132FA38BA4536B09A04030AA38E629B3AAF8746D1A2D62E9E5739",
+        "hash": "87508E985B84728662BC58422DC42062F929FB0BEF7F3777A5C852CC73FCB823",
         "tx": {
           "auth_info": {
             "fee": {
@@ -1404,7 +1404,7 @@
                         {
                           "amount": "159360000",
                           "asset": "ETH.ETH",
-                          "decimals": "18"
+                          "decimals": "8"
                         }
                       ],
                       "from_address": "0xd58610f89265a2fb637ac40edf59141ff873b266",
@@ -1412,7 +1412,7 @@
                         {
                           "amount": "960000",
                           "asset": "ETH.ETH",
-                          "decimals": "18"
+                          "decimals": "8"
                         }
                       ],
                       "id": "0000000000000000000000000000000000000000000000000000000000000002",
@@ -1429,7 +1429,7 @@
             "unordered": false
           },
           "signatures": [
-            "fncoCof1cZ/ReRitRZsLe7sPW6G416U5dgpalFqaOIU45vryMoIQ7mPtQb/7KsfooS+Z2eTBCCpqOvLXFHM9gg=="
+            "LoU3X8BE0e+/jbqXs5MjhEW70YtL4ysWpGW3HybbjtckNFRPwr5scbZrQ2vDkYeqmQvbn/e0jS1uPUCt6f7MQA=="
           ]
         },
         "result": {
@@ -1442,7 +1442,7 @@
               "type": "tx"
             },
             {
-              "signature": "fncoCof1cZ/ReRitRZsLe7sPW6G416U5dgpalFqaOIU45vryMoIQ7mPtQb/7KsfooS+Z2eTBCCpqOvLXFHM9gg==",
+              "signature": "LoU3X8BE0e+/jbqXs5MjhEW70YtL4ysWpGW3HybbjtckNFRPwr5scbZrQ2vDkYeqmQvbn/e0jS1uPUCt6f7MQA==",
               "type": "tx"
             },
             {

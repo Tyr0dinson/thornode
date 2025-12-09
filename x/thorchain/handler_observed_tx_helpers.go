@@ -507,10 +507,13 @@ func handleObservedTxInQuorum(
 	}
 
 	// When a mempool swap finalizes, update all associated outbound TxOutItems to Finalized=true
+	// and return early - the swap was already executed from mempool, don't process it again
 	if hasFinalised && canProcessMempoolSwap && len(voter.Actions) > 0 {
 		if err = finalizeOutbounds(ctx, mgr, voter); err != nil {
 			ctx.Logger().Error("fail to finalize outbounds", "error", err, "hash", voter.TxID)
 		}
+		ctx.Logger().Info("mempool swap already processed, finalizing only", "hash", voter.TxID)
+		return nil
 	}
 
 	// Resolve reference memo before any finalized refund path. In particular,
@@ -2596,9 +2599,18 @@ func revertMempoolSwap(ctx cosmos.Context, keeper keeper.Keeper, mgr Manager, vo
 			maxGasCoin = common.NewCoin(action.Chain.GetGasAsset(), cosmos.OneUint())
 		}
 
+		// For the reverse swap, we need to get a vault address on the source asset's chain
+		// because the output destination must match the target asset's chain
+		sourceChain := sourceAsset.GetChain()
+		destAddress, err := vault.PubKey.GetAddress(sourceChain)
+		if err != nil {
+			ctx.Logger().Error("fail to get vault address for source chain", "error", err, "chain", sourceChain)
+			continue
+		}
+
 		// Create a reverse swap with chained memo: swap back to source asset, then donate to pool
 		// The "|" separator tells the system to process a second memo after the swap completes
-		memo := fmt.Sprintf("=:%s:%s|DONATE:%s", sourceAsset, vaultAddress, sourceAsset.GetLayer1Asset())
+		memo := fmt.Sprintf("=:%s:%s|DONATE:%s", sourceAsset, destAddress, sourceAsset.GetLayer1Asset())
 
 		msg := MsgSwap{
 			Tx: common.Tx{
@@ -2611,7 +2623,7 @@ func revertMempoolSwap(ctx cosmos.Context, keeper keeper.Keeper, mgr Manager, vo
 				Memo:        memo,
 			},
 			TargetAsset:             sourceAsset,
-			Destination:             vaultAddress,
+			Destination:             destAddress,
 			TradeTarget:             cosmos.ZeroUint(),
 			AggregatorTargetAddress: "",
 			AggregatorTargetLimit:   nil,
