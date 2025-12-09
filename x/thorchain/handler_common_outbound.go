@@ -91,8 +91,14 @@ func (h CommonOutboundTxHandler) handle(ctx cosmos.Context, tx ObservedTx, inTxI
 	// to the current height starting from inbound consensus height
 	// or one signingTransPeriod ago, whichever is later.
 	earliestHeight := ctx.BlockHeight() - signingTransPeriod
-	if voter.Height > earliestHeight {
-		earliestHeight = voter.Height
+	// For mempool swaps, use UnfinalizedHeight as the TxOutItem was created at mempool consensus,
+	// not at the finalization height (voter.Height gets updated when finalization happens).
+	voterSearchHeight := voter.Height
+	if voter.UnfinalizedHeight > 0 && voter.UnfinalizedHeight < voter.Height {
+		voterSearchHeight = voter.UnfinalizedHeight
+	}
+	if voterSearchHeight > earliestHeight {
+		earliestHeight = voterSearchHeight
 	}
 
 	// A TxOutItem might be rescheduled (by LackSigning) rounded up to nearest multiple of RescheduleCoalesceBlocks,

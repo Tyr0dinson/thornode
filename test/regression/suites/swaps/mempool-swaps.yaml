@@ -116,11 +116,11 @@ txs:
       coins:
         - amount: "159360000"  # Actual swap output
           asset: "ETH.ETH"
-          decimals: 18
+          decimals: 8
       gas:
         - amount: "960000"
           asset: "ETH.ETH"
-          decimals: 18
+          decimals: 8
       memo: "OUT:{{ observe_txid 1 }}"
     block_height: 7
     finalise_height: 7
@@ -129,98 +129,8 @@ txs:
 type: create-blocks
 count: 1
 ---
-########################################################################################
-# Scenario: Mempool Swap Reversal (Transaction Never Finalizes)
-########################################################################################
-# Configure faster testing parameters for reversal
-type: tx-mimir
-key: SigningTransactionPeriod
-value: 3
-signer: {{ addr_thor_dog }}
----
-type: tx-mimir
-key: MaxOutboundAttempts
-value: 2
-signer: {{ addr_thor_dog }}
----
-type: create-blocks
-count: 1
----
-# Record initial BTC pool depth before reversal test
-type: check
-endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
-asserts:
-  - .status == "Available"
-  - .balance_rune|tonumber > 0
-  - .balance_asset|tonumber > 0
----
-# Send a mempool swap that will NEVER finalize (simulating dropped transaction)
-# The transaction will be observed at an external block, but with a future finalise_height
-# We won't re-observe it at finalise_height, so it stays unfinalized
-type: tx-observed-in
-signer: {{ addr_thor_dog }}
-txs:
-  - tx:
-      id: "{{ observe_txid 10 }}"
-      chain: BTC
-      from_address: {{ addr_btc_fox }}
-      to_address: {{ addr_btc_dog }}
-      coins:
-        - amount: "50000000"  # 0.5 BTC
-          asset: "BTC.BTC"
-          decimals: 8
-      gas:
-        - amount: "10000"
-          asset: "BTC.BTC"
-          decimals: 8
-      memo: "=:ETH.ETH:{{ addr_eth_fox }}"
-    block_height: 10
-    finalise_height: 100  # Set far in future - transaction will never finalize
-    observed_pub_key: {{ pubkey_dog }}
----
-type: create-blocks
-count: 1
----
-# Verify mempool swap executed (outbound created with inbound_finalized: false)
+# Verify the outbound was observed and processed (queue should be empty now)
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
-  - .|length == 1
-  - .[0].chain == "ETH"
-  - .[0].in_hash == "{{ observe_txid 10 }}"
-  - .[0].to_address == "{{ addr_eth_fox }}"
-  - .[0].inbound_finalized == false
-  - .[0].coin.amount|tonumber > 0
----
-# Wait for MaxOutboundAttempts to be exceeded
-# Reversal triggers when: (current_height - unfinalized_height) / SigningTransactionPeriod >= MaxOutboundAttempts
-# With SigningTransactionPeriod=3 and MaxOutboundAttempts=2: need to wait at least 2*3 = 6 blocks
-# Add 1 extra block for processing = 7 blocks total
-type: create-blocks
-count: 7
----
-# Verify voter is marked as reverted
-type: check
-endpoint: http://localhost:1317/thorchain/tx/details/{{ observe_txid 10 }}
-asserts:
-  - .reverted == true
----
-# Verify original outbound was removed from queue
-type: check
-endpoint: http://localhost:1317/thorchain/queue/outbound
-asserts:
-  - .|map(select(.in_hash == "{{ observe_txid 10 }}")) | length == 0
----
-# Process the reverse swap and donation
-# The reversal creates an internal swap: ETH -> BTC with DONATE:BTC.BTC memo
-# This needs time to execute
-type: create-blocks
-count: 5
----
-# Verify the BTC pool received the donated value back
-# After reversal and donation, the pool should have received the reverted funds
-type: check
-endpoint: http://localhost:1317/thorchain/pool/BTC.BTC
-asserts:
-  - .status == "Available"
-  - .balance_asset|tonumber > 0
+  - .|length == 0

@@ -210,10 +210,10 @@
       "last_chain_heights": [
         {
           "chain": "BTC",
-          "height": "3"
+          "height": "6"
         }
       ],
-      "last_signed_height": "3",
+      "last_signed_height": "6",
       "liquidity_providers": [
         {
           "asset": "BTC.BTC",
@@ -238,8 +238,6 @@
           "units": "100000000000"
         }
       ],
-      "loan_total_collateral": [],
-      "loans": [],
       "mimirs": [
         {
           "key": "ENABLEMEMPOOLSWAPS",
