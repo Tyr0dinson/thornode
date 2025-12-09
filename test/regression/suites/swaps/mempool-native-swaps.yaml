@@ -2,39 +2,6 @@
 ---
 {{ template "btc-eth-pool-state.yaml" }}
 ---
-# Pre-fund the vault with 1 BTC extra to account for the swap in Scenario 1.
-# In a real scenario, the vault would receive this BTC from the finalized inbound.
-# In regression tests, tx-observed-in doesn't actually transfer coins to the vault,
-# so we need to pre-fund to pass the export invariant check.
-type: state
-genesis:
-  app_state:
-    thorchain:
-      vaults:
-        - block_height: "0"
-          chains:
-            - THOR
-            - BTC
-            - LTC
-            - BCH
-            - ETH
-            - DOGE
-            - AVAX
-            - GAIA
-          coins:
-            - amount: "200000000"  # 2 BTC (1 from template + 1 for Scenario 1 swap)
-              asset: BTC.BTC
-              decimals: "8"
-            - amount: "1000000000"
-              asset: ETH.ETH
-              decimals: "8"
-          inbound_tx_count: "2"
-          membership:
-            - tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4
-          pub_key: tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4
-          status: ActiveVault
-          type: AsgardVault
----
 type: create-blocks
 count: 1
 ---
