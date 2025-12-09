@@ -331,7 +331,7 @@ STAGES ?= all
 CHAINS ?= ""
 test-simulation-cluster: build-test-simulation build-mocknet-cluster reset-mocknet-cluster
 	@STAGES=$(STAGES) docker run --rm ${DOCKER_TTY_ARGS} \
-		-e PARALLELISM -e STAGES --network host -w /app \
+		-e PARALLELISM -e STAGES -e CHAINS --network host -w /app \
 		thornode-simtest sh -c 'make _test-simulation'
 
 test-simulation-no-reset: build-test-simulation

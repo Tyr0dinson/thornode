@@ -170,18 +170,15 @@ func NewTonClient(
 	if config.RPCHost != "mock" {
 		// api client with full proof checks
 		policy := ton.ProofCheckPolicyFast
-		client.api = ton.NewAPIClient(pool, policy).WithRetry()
+		client.api = ton.NewAPIClient(pool, policy)
 		// client.api.SetTrustedBlockFromConfig(liteClientConfig)
 	}
 
 	// only relevant for mocknet, test image starts with height < 0
-	for i := 0; i < 30; i++ {
-		var info *ton.BlockIDExt
-		info, err = client.api.GetMasterchainInfo(ctx)
-		if err == nil && info.SeqNo > 0 {
-			break
-		}
-		time.Sleep(time.Second)
+	var info *ton.BlockIDExt
+	info, err = client.api.GetMasterchainInfo(ctx)
+	if err != nil || info.SeqNo < 1 {
+		return nil, fmt.Errorf("failed to get master chain info: %w", err)
 	}
 
 	client.tonScanner, err = NewTonBlockScanner(
