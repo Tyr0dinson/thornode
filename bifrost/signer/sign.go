@@ -282,12 +282,7 @@ func (s *Signer) Start() error {
 
 func (s *Signer) shouldSign(tx types.TxOutItem) bool {
 	// Don't sign outbounds from mempool transactions until the inbound finalizes
-	if !tx.InboundFinalized {
-		return false
-	}
-	return s.pubkeyMgr.HasPubKey(tx.VaultPubKey) ||
-		s.pubkeyMgr.HasPubKey(tx.VaultPubKeyEddsa) ||
-		s.pubkeyMgr.HasPubKey(tx.VaultPubKeyFrost)
+	return tx.InboundFinalized
 }
 
 func (s *Signer) shouldAutoObserve(tx types.TxOutItem) bool {
@@ -1283,8 +1278,21 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 		}
 		return nil, nil, nil
 	}
+
+	// Check if we have the vault pubkey to sign this transaction
+	canSign := s.pubkeyMgr.HasPubKey(tx.VaultPubKey) ||
+		s.pubkeyMgr.HasPubKey(tx.VaultPubKeyEddsa) ||
+		s.pubkeyMgr.HasPubKey(tx.VaultPubKeyFrost)
+	if !canSign {
+		// We can't sign this transaction - discard it from storage
+		s.logger.Info().Str("signer_address", chain.GetAddress(tx.VaultPubKey)).Msg("different pool address, discarding")
+		return nil, nil, errDiscardTx
+	}
+
+	// Check if we should sign now (inbound must be finalized for mempool swaps)
 	if !s.shouldSign(tx) {
-		s.logger.Info().Str("signer_address", chain.GetAddress(tx.VaultPubKey)).Msg("different pool address, ignore")
+		// Inbound not finalized yet - keep in storage for retry later
+		s.logger.Debug().Msg("inbound not finalized, skipping for now")
 		return nil, nil, nil
 	}
 
