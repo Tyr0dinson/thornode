@@ -19,6 +19,7 @@ import (
 	cKeys "github.com/cosmos/cosmos-sdk/crypto/keyring"
 	"github.com/ethereum/go-ethereum/common"
 	etypes "github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	. "gopkg.in/check.v1"
 
@@ -32,6 +33,7 @@ import (
 	thorcommon "gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
+	openapi "gitlab.com/thorchain/thornode/v3/openapi/gen"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain"
 	types2 "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
@@ -784,4 +786,147 @@ func (s *BlockScannerTestSuite) TestGasPrice(c *C) {
 	}
 	c.Assert(len(bs.gasCache), Equals, 40)
 	c.Assert(bs.gasPrice.Uint64(), Equals, big.NewInt(12*resolution).Uint64())
+}
+
+// -------------------------------------------------------------------------------------
+// Optimization Tests
+// -------------------------------------------------------------------------------------
+
+func (s *BlockScannerTestSuite) TestPreFilterOptimization(c *C) {
+	// 1. Generate a valid public key
+	tmpKey := types2.GetRandomPubKey()
+	pubKeyStr := tmpKey.String()
+
+	// 2. Create a dynamic fixture with this key
+	strPtr := func(s string) *string { return &s }
+	fixture := struct {
+		Asgard []openapi.VaultInfo `json:"asgard"`
+	}{
+		Asgard: []openapi.VaultInfo{
+			{
+				PubKey: pubKeyStr,
+				Routers: []openapi.VaultRouter{
+					{
+						Chain:  strPtr("ETH"),
+						Router: strPtr("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44"),
+					},
+				},
+			},
+		},
+	}
+	fixtureBytes, err := json.Marshal(fixture)
+	c.Assert(err, IsNil)
+
+	// 3. Setup Mock RPC Server (Minimal)
+	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		if strings.Contains(req.RequestURI, "EVMDisableContractWhitelist") {
+			// Default to 0 (Whitelist Active)
+			fmt.Fprintf(rw, "0")
+			return
+		}
+		if strings.Contains(req.RequestURI, thorclient.AsgardVault) {
+			rw.Write(fixtureBytes) // Reuse fixture for simplicity or return valid vault list
+			return
+		}
+		if strings.Contains(req.RequestURI, thorclient.PubKeysEndpoint) {
+			rw.Write(fixtureBytes)
+			return
+		}
+		// Minimal RPC Mock to prevent scanner crash during startup dial
+		if req.Method == "POST" {
+			rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0x1"}`))
+		}
+	}))
+	defer server.Close()
+
+	// 4. Setup Scanner
+	ethClient, err := ethclient.Dial(server.URL)
+	c.Assert(err, IsNil)
+	storage, err := blockscanner.NewBlockScannerStorage("", config.LevelDBOptions{})
+	c.Assert(err, IsNil)
+
+	u, _ := url.Parse(server.URL)
+	bridge, err := thorclient.NewThorchainBridge(config.BifrostClientConfiguration{
+		ChainHost: u.Host,
+		ChainID:   thorcommon.ETHChain,
+	}, s.m, s.keys)
+	c.Assert(err, IsNil)
+	pkeyMgr, err := pubkeymanager.NewPubKeyManager(bridge, s.m)
+	c.Assert(err, IsNil)
+	pkeyMgr.Start()
+	defer pkeyMgr.Stop()
+
+	bs, err := NewETHScanner(getConfigForTest(), storage, big.NewInt(int64(Mainnet)), ethClient, bridge, s.m, pkeyMgr, func(h int64) error { return nil }, nil)
+	c.Assert(err, IsNil)
+
+	// Wait for pkeyMgr to sync
+	time.Sleep(2 * time.Second)
+
+	// 5. Derive valid vault address
+	pk, err := thorcommon.NewPubKey(pubKeyStr)
+	c.Assert(err, IsNil)
+	validVaultAddrCommon, err := pk.GetAddress(thorcommon.ETHChain)
+	c.Assert(err, IsNil)
+	validVaultAddr := strings.ToLower(validVaultAddrCommon.String())
+	randomAddr := common.HexToAddress("0x1234567890123456789012345678901234567890")
+
+	signerKey, err := crypto.GenerateKey()
+	c.Assert(err, IsNil)
+	signer := etypes.NewCancunSigner(big.NewInt(1))
+
+	// --- Unit Test checks ---
+
+	// A. Check shouldScanTx() logic directly
+
+	// 1. To Vault -> Should Scan
+	txToVault := etypes.NewTransaction(0, common.HexToAddress(validVaultAddr), big.NewInt(0), 21000, big.NewInt(1), nil)
+	signedTxToVault, err := etypes.SignTx(txToVault, signer, signerKey)
+	c.Assert(err, IsNil)
+	shouldScan := bs.shouldScanTx(signedTxToVault)
+	c.Assert(shouldScan, Equals, true, Commentf("shouldScanTx should return true for valid vault"))
+
+	// 2. To Random (No Value) -> Should Skip
+	// we use 0 value to simulate a contract call or irrelevant tx
+	txToRandom := etypes.NewTransaction(1, randomAddr, big.NewInt(0), 21000, big.NewInt(1), nil)
+	signedTxToRandom, err := etypes.SignTx(txToRandom, signer, signerKey)
+	c.Assert(err, IsNil)
+	shouldScan = bs.shouldScanTx(signedTxToRandom)
+	c.Assert(shouldScan, Equals, false, Commentf("shouldScanTx should return false for irrelevant tx (0 value)"))
+
+	// B. Check fromTxToTxIn() logic
+
+	// 1. Irrelevant Tx -> Should return nil, nil (Skipped)
+	// We rely on the fact that if it *wasn't* skipped, it would likely error (fail to get receipt)
+	// or return a TxInItem (if we mocked receipt).
+	// Since we didn't mock a receipt for *this* hash, an attempt to fetch would fail.
+	// But `fromTxToTxIn` catches "NotFound" error and returns nil, nil?
+	// No, the code says:
+	// if errors.Is(err, ethereum.NotFound) { return nil, nil }
+	// So we need to ensure our mock server returns something that IS NOT "NotFound" but also causes an error?
+	// OR, we just trust that `shouldScanTx` returning false leads to the early exit.
+
+	// Actually, the new logic is:
+	// if disableWhitelist == 0 { if !shouldScanTx(tx) { return nil, nil } }
+	// If we are here, we expect nil, nil.
+	txIn, err := bs.fromTxToTxIn(signedTxToRandom)
+	c.Assert(err, IsNil)
+	c.Assert(txIn, IsNil, Commentf("fromTxToTxIn should return nil for skipped irrelevant tx"))
+
+	// 2. Relevant Tx -> Should try to fetch receipt
+	// Since our minimal mock returns "0x1" for everything including GetTransactionReceipt if we aren't careful,
+	// checking specifically for "tried to fetch" is hard without the counter.
+	// However, the user asked to check if it "returns correct values".
+	// For a relevant tx (ToVault), we expect it NOT to be nil (or error if receipt fails).
+	// If we use the minimal mock `rw.Write([]byte({"jsonrpc":"2.0","id":1,"result":"0x1"}))`,
+	// `getReceipt` might fail to unmarshal "0x1" as a Receipt struct, causing an error.
+	// Presence of error means it PASSED the pre-filter and attempted receipt fetch.
+
+	txIn, err = bs.fromTxToTxIn(signedTxToVault)
+
+	// If it was skipped, err would be nil and txIn would be nil.
+	// If it proceeded, err is likely NotNil (json unmarshal error) OR txIn is NotNil (bad data).
+	// Let's assert that it is NOT (nil, nil).
+
+	skipped := (txIn == nil && err == nil)
+	c.Assert(skipped, Equals, false, Commentf("fromTxToTxIn should NOT skip relevant tx"))
 }

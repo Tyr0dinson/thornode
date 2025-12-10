@@ -88,6 +88,28 @@ func (s *UnstuckTestSuite) SetUpTest(c *C) {
 			c.Assert(err, IsNil)
 			var pubKeysVault openapi.VaultPubkeysResponse
 			c.Assert(json.Unmarshal(content, &pubKeysVault), IsNil)
+
+			// inject dynamic test key so it is recognized as a valid vault
+			pkey, err := s.thorKeys.GetPrivateKey()
+			c.Assert(err, IsNil)
+			tmPk, err := cryptocodec.ToCmtPubKeyInterface(pkey.PubKey())
+			c.Assert(err, IsNil)
+			pubKeyStr, err := common.NewPubKeyFromCrypto(tmPk)
+			c.Assert(err, IsNil)
+
+			// We need a pointer to string for the struct
+			strPtr := func(s string) *string { return &s }
+			// Add as new Asgard vault
+			pubKeysVault.Asgard = append(pubKeysVault.Asgard, openapi.VaultInfo{
+				PubKey: pubKeyStr.String(),
+				Routers: []openapi.VaultRouter{
+					{
+						Chain:  strPtr("ETH"),
+						Router: strPtr("0xE65e9d372F8cAcc7b6dfcd4af6507851Ed31bb44"),
+					},
+				},
+			})
+
 			var buf []byte
 			buf, err = json.MarshalIndent(pubKeysVault, "", "	")
 			c.Assert(err, IsNil)
@@ -101,6 +123,10 @@ func (s *UnstuckTestSuite) SetUpTest(c *C) {
 			httpTestHandler(c, rw, "../../../../test/fixtures/endpoints/vaults/asgard.json")
 		case thorclient.NodeAccountEndpoint:
 			httpTestHandler(c, rw, "../../../../test/fixtures/endpoints/nodeaccount/template.json")
+		case thorclient.MimirEndpoint:
+			// Default to 0 (Whitelist Active) to test pre-production logic
+			_, err = rw.Write([]byte(`0`))
+			c.Assert(err, IsNil)
 		default:
 			var body []byte
 			body, err = io.ReadAll(req.Body)
@@ -278,6 +304,7 @@ func (s *UnstuckTestSuite) TestUnstuckProcess(c *C) {
 	e, err := NewClient(s.thorKeys, config.BifrostChainConfiguration{
 		RPCHost: "http://" + s.server.Listener.Addr().String(),
 		BlockScanner: config.BifrostBlockScannerConfiguration{
+			ChainID:            common.ETHChain,
 			StartBlockHeight:   1, // avoids querying thorchain for block height
 			HTTPRequestTimeout: time.Second * 10,
 			GasCacheBlocks:     40,
@@ -292,6 +319,11 @@ func (s *UnstuckTestSuite) TestUnstuckProcess(c *C) {
 	c.Assert(pubkeyMgr.Start(), IsNil)
 	defer func() { c.Assert(pubkeyMgr.Stop(), IsNil) }()
 	pubkey := e.kw.GetPubKey().String()
+
+	// Verify that pubkeyMgr has picked up our injected key
+	addr := e.GetAddress(e.kw.GetPubKey())
+	valid, _ := pubkeyMgr.IsValidPoolAddress(addr, common.ETHChain)
+	c.Assert(valid, Equals, true, Commentf("pubkeyMgr must recognize local vault address %s", addr))
 
 	txID1 := types2.GetRandomTxHash().String()
 	txID2 := types2.GetRandomTxHash().String()

@@ -880,6 +880,20 @@ func (e *ETHScanner) fromTxToTxIn(tx *etypes.Transaction) (*stypes.TxInItem, err
 	if tx == nil || tx.To() == nil {
 		return nil, nil
 	}
+
+	disableWhitelist, err := e.bridge.GetMimir(constants.EVMDisableContractWhitelist.String())
+	if err != nil {
+		e.logger.Err(err).Msgf("fail to get %s", constants.EVMDisableContractWhitelist.String())
+		disableWhitelist = 0
+	}
+
+	// optimization: in production mode (whitelist enabled), skip likely irrelevant transactions
+	if disableWhitelist == 0 {
+		if !e.shouldScanTx(tx) {
+			return nil, nil
+		}
+	}
+
 	receipt, err := e.getReceipt(tx.Hash().Hex())
 	if err != nil {
 		if errors.Is(err, ethereum.NotFound) {
@@ -895,12 +909,6 @@ func (e *ETHScanner) fromTxToTxIn(tx *etypes.Transaction) (*stypes.TxInItem, err
 		}
 		e.logger.Debug().Msgf("tx(%s) state: %d means failed , ignore", tx.Hash().String(), receipt.Status)
 		return e.getTxInFromFailedTransaction(tx, receipt), nil
-	}
-
-	disableWhitelist, err := e.bridge.GetMimir(constants.EVMDisableContractWhitelist.String())
-	if err != nil {
-		e.logger.Err(err).Msgf("fail to get %s", constants.EVMDisableContractWhitelist.String())
-		disableWhitelist = 0
 	}
 
 	if disableWhitelist == 1 {
@@ -929,6 +937,38 @@ func (e *ETHScanner) fromTxToTxIn(tx *etypes.Transaction) (*stypes.TxInItem, err
 		}
 		return e.getTxInFromTransaction(tx, receipt)
 	}
+}
+
+// shouldScanTx checks if a transaction is relevant to Thorchain before fetching the receipt.
+// This is an optimization for Production Mode.
+func (e *ETHScanner) shouldScanTx(tx *etypes.Transaction) bool {
+	to := tx.To()
+	if to == nil {
+		return false
+	}
+	// check if the transaction is sent to a vault or a whitelisted contract (e.g. router)
+	isToVault, _ := e.pubkeyMgr.IsValidPoolAddress(to.String(), e.cfg.ChainID)
+	if isToVault {
+		return true
+	}
+	if e.isToValidContractAddress(to, true) {
+		return true
+	}
+
+	sender, err := e.eipSigner.Sender(tx)
+	if err != nil {
+		e.logger.Err(err).Str("hash", tx.Hash().Hex()).Msg("fail to extract sender for pre-filter")
+		return true
+	}
+
+	// scan transactions originating from a vault to detect failed outbounds or self-cancels
+	isFromVault, _ := e.pubkeyMgr.IsValidPoolAddress(strings.ToLower(sender.String()), e.cfg.ChainID)
+	if isFromVault {
+		return true
+	}
+
+	e.logger.Debug().Str("hash", tx.Hash().Hex()).Msg("skipping receipt fetch for irrelevant tx")
+	return false
 }
 
 // getTxInFromFailedTransaction when a transaction failed due to out of gas, this method will check whether the transaction is an outbound
