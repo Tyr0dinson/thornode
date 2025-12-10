@@ -2484,10 +2484,6 @@ func revertMempoolSwap(ctx cosmos.Context, keeper keeper.Keeper, mgr Manager, vo
 		return fmt.Errorf("fail to get active vaults: %w", err)
 	}
 	vault := activeVaults[0]
-	vaultAddress, err := vault.PubKey.GetAddress(common.THORChain)
-	if err != nil {
-		return fmt.Errorf("fail to get vault address: %w", err)
-	}
 
 	// Iterate through all actions (TxOutItems) for this inbound
 	for i := range voter.Actions {
@@ -2610,6 +2606,13 @@ func revertMempoolSwap(ctx cosmos.Context, keeper keeper.Keeper, mgr Manager, vo
 		destAddress, err := vault.PubKey.GetAddress(sourceChain)
 		if err != nil {
 			ctx.Logger().Error("fail to get vault address for source chain", "error", err, "chain", sourceChain)
+			continue
+		}
+
+		// Get THORChain vault address for the swap message
+		vaultAddress, err := vault.PubKey.GetAddress(common.THORChain)
+		if err != nil {
+			ctx.Logger().Error("fail to get vault address for THORChain", "error", err)
 			continue
 		}
 
