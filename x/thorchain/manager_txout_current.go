@@ -915,6 +915,10 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]
 
 			voter.Actions = append(voter.Actions, outputs[i])
 			tos.keeper.SetObservedTxInVoter(ctx, voter)
+		} else {
+			// Internal transactions (migrations, ragnarok, consolidate, etc.) have BlankTxID as InHash
+			// and have no external inbound to finalize, so they should be signed immediately by Bifrost.
+			outputs[i].InboundFinalized = true
 		}
 
 		finalOutput = append(finalOutput, outputs[i])
