@@ -962,7 +962,6 @@ func (s *HandlerObservedTxInSuite) testHandleWithConfirmation(c *C) {
 
 	// third not confirmed message
 	msg2 := NewMsgObservedTxIn(txs, keeper.nas[2].NodeAddress)
-	msg2.FinalisedHeight
 	_, err = handler.handle(ctx, *msg2)
 	c.Assert(err, IsNil)
 	voter, err = keeper.GetObservedTxInVoter(ctx, tx.ID)
