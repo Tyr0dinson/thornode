@@ -330,6 +330,7 @@ func (s *HandlerObservedTxInSuite) testHandleWithConfirmation(c *C) {
 
 	// third not confirmed message
 	msg2 := NewMsgObservedTxIn(txs, keeper.nas[2].NodeAddress)
+	msg2.FinalisedHeight
 	_, err = handler.handle(ctx, *msg2)
 	c.Assert(err, IsNil)
 	voter, err = keeper.GetObservedTxInVoter(ctx, tx.ID)
@@ -337,7 +338,9 @@ func (s *HandlerObservedTxInSuite) testHandleWithConfirmation(c *C) {
 	c.Assert(voter.Txs, HasLen, 1)
 	c.Assert(voter.UpdatedVault, Equals, false)
 	c.Assert(voter.FinalisedHeight, Equals, int64(0))
-	c.Check(keeper.height, Equals, int64(12))
+	// Chain height is only set when transaction is finalized, not at consensus.
+	// This prevents out-of-order chain heights when mempool swaps are enabled.
+	c.Check(keeper.height, Equals, int64(0))
 	ethCoin := keeper.vault.Coins.GetCoin(common.ETHAsset)
 	c.Assert(ethCoin.Amount.Equal(cosmos.ZeroUint()), Equals, true)
 	// make sure the logic has not been processed , as tx has not been finalised , still waiting for confirmation
@@ -352,7 +355,8 @@ func (s *HandlerObservedTxInSuite) testHandleWithConfirmation(c *C) {
 	c.Assert(voter.Txs, HasLen, 1)
 	c.Assert(voter.UpdatedVault, Equals, false)
 	c.Assert(voter.FinalisedHeight, Equals, int64(0))
-	c.Check(keeper.height, Equals, int64(12))
+	// Chain height is only set when transaction is finalized
+	c.Check(keeper.height, Equals, int64(0))
 	ethCoin = keeper.vault.Coins.GetCoin(common.ETHAsset)
 	c.Assert(ethCoin.Amount.Equal(cosmos.ZeroUint()), Equals, true)
 	c.Check(keeper.msg.Tx.ID.Equals(tx.ID), Equals, false)
