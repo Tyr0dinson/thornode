@@ -1966,7 +1966,14 @@ func settleSwapCached(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason
 		}
 
 		// Check if we should process a post-swap memo instead of scheduling normal outbound
-		shouldProcessPostSwapMemo := len(msg.PostSwapMemo) > 0 && !isSimulationMode(ctx)
+		// Only process if the post-swap memo is non-empty, parses successfully, and not in simulation mode
+		shouldProcessPostSwapMemo := false
+		if len(msg.PostSwapMemo) > 0 && !isSimulationMode(ctx) {
+			postSwapMemo, parseErr := ParseMemoWithTHORNames(ctx, mgr.Keeper(), msg.PostSwapMemo)
+			if parseErr == nil && !postSwapMemo.IsEmpty() {
+				shouldProcessPostSwapMemo = true
+			}
+		}
 
 		// Only schedule outbound if not a savers add, not a post-swap memo, and not in simulation mode
 		if (memo == nil || !memo.IsType(TxAdd)) && !shouldProcessPostSwapMemo && !isSimulationMode(ctx) {
