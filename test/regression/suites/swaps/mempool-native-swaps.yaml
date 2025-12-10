@@ -320,3 +320,131 @@ type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_pig }}
 asserts:
   - .balances[]|select(.denom == "btc-btc")|.amount|tonumber > 0
+---
+########################################################################################
+# Scenario 4: Mempool Swap RUNE to Trade Asset (BTC~BTC) - Delayed Execution
+# Note: Direct L1 to trade asset swaps are not allowed (must use trade+), so we test
+# RUNE -> trade asset swap which goes through the mempool swap logic
+########################################################################################
+# Enable trade accounts
+type: tx-mimir
+key: TradeAccountsEnabled
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Set TradeAccountsSlipMinBps to 0 so the swap completes in 1 iteration
+type: tx-mimir
+key: TradeAccountsSlipMinBps
+value: 0
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Verify goat has no trade asset balance initially
+type: check
+endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_goat }}
+asserts:
+  - (. // [])|length == 0
+---
+# First swap L1 BTC to RUNE (this goes through normal mempool swap to RUNE)
+# The RUNE output will be delayed until finalization
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 30 }}"
+      chain: BTC
+      from_address: {{ addr_btc_goat }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "100000000"  # 1.0 BTC
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+          decimals: 8
+      memo: "=:THOR.RUNE:{{ addr_thor_goat }}"
+    block_height: 30
+    finalise_height: 33  # Will finalize 3 blocks later
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Verify RUNE outbound is queued (NOT executed immediately)
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0].chain == "THOR"
+  - .[0].in_hash == "{{ observe_txid 30 }}"
+  - .[0].inbound_finalized == false
+  - .[0].coin.asset == "THOR.RUNE"
+---
+# Create blocks to reach finalization height
+type: create-blocks
+count: 2
+---
+# Re-observe the same transaction as finalized
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 30 }}"
+      chain: BTC
+      from_address: {{ addr_btc_goat }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "100000000"
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+          decimals: 8
+      memo: "=:THOR.RUNE:{{ addr_thor_goat }}"
+    block_height: 33
+    finalise_height: 33  # NOW finalized
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Verify RUNE outbound has been processed
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+# Now goat has RUNE from the swap, verify they received it
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_goat }}
+asserts:
+  - .balances[]|select(.denom == "rune")|.amount|tonumber > 0
+---
+# Swap RUNE to trade asset - since this is a native tx, it executes immediately
+# (no mempool delay needed for internal transactions)
+# Use a portion of the received RUNE
+type: tx-deposit
+signer: {{ addr_thor_goat }}
+coins:
+  - amount: "1000000000"
+    asset: "rune"
+memo: "=:BTC~BTC:{{ addr_thor_goat }}"
+---
+type: create-blocks
+count: 1
+---
+# Verify trade asset has been deposited to recipient
+type: check
+endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_goat }}
+asserts:
+  - .|length == 1
+  - .[0].asset == "BTC~BTC"
+  - .[0].units|tonumber > 0
+  - .[0].owner == "{{ addr_thor_goat }}"
