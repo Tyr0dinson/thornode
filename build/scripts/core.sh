@@ -166,6 +166,11 @@ set_bond_module() {
   mv /tmp/genesis.json ~/.thornode/config/genesis.json
 }
 
+set_mimir() {
+  jq --arg KEY "$1" --arg VALUE "$2" '.app_state.thorchain.mimirs += [{"key": $KEY, "value": $VALUE}]' ~/.thornode/config/genesis.json >/tmp/genesis.json
+  mv /tmp/genesis.json ~/.thornode/config/genesis.json
+}
+
 set_eth_contract() {
   jq --arg CONTRACT "$1" '.app_state.thorchain.chain_contracts += [{"chain": "ETH", "router": $CONTRACT}]' ~/.thornode/config/genesis.json >/tmp/genesis.json
   mv /tmp/genesis.json ~/.thornode/config/genesis.json

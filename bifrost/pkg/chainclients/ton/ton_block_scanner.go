@@ -326,10 +326,8 @@ func (s *TonBlockScanner) processShard(
 			Str("account", addr.String()).
 			Msg("processing transaction")
 
-		isInternalOnly := true
-
 		var msgs []tlb.Message
-		// process out messages only, as they are the result after tx execution.
+
 		if tx.IO.Out != nil {
 			outMsgs, err := tx.IO.Out.ToSlice()
 			if err != nil {
@@ -339,39 +337,38 @@ func (s *TonBlockScanner) processShard(
 			}
 		}
 
+		if tx.IO.In != nil {
+			msgs = append(msgs, *tx.IO.In)
+		}
+
 		for _, m := range msgs {
-			// we are interested in internal messages only
-			if m.MsgType != tlb.MsgTypeInternal {
-				isInternalOnly = false
+			var items []*types.TxInItem
+
+			switch m.MsgType {
+			case tlb.MsgTypeInternal:
+				items, err = s.processMsgInternal(int64(masterSeqno), shard, tx, m.AsInternal())
+			case tlb.MsgTypeExternalIn:
+				items, err = s.processMsgExternalIn(int64(masterSeqno), shard, tx, m.AsExternalIn())
+			default:
 				continue
 			}
 
-			message := m.AsInternal()
-
-			// we do not support bounce (returnable) messages.
-			if message.Bounce {
-				s.logger.Debug().
-					Msg("skipping bounce message")
-				continue
-			}
-			if message.Bounced {
-				s.logger.Debug().
-					Msg("skipping bounced message")
-				continue
-			}
-
-			items, err := s.processMessage(int64(masterSeqno), shard, tx, message)
 			if err != nil {
 				s.logger.Err(err).Msg("failed to process message")
 				continue
 			}
 
-			txInItems = append(txInItems, items...)
-		}
+			s.logger.Info().
+				Interface("tx_in", items).
+				Str("shard", shardId(shard)).
+				Msg("processing message")
 
-		if isInternalOnly && !txDescription.Aborted {
-			index := len(s.feeRateCache) - 1
-			s.feeRateCache[index] = append(s.feeRateCache[index], tx.TotalFees.Coins.Nano().Uint64())
+			txInItems = append(txInItems, items...)
+
+			if !txDescription.Aborted {
+				index := len(s.feeRateCache) - 1
+				s.feeRateCache[index] = append(s.feeRateCache[index], tx.TotalFees.Coins.Nano().Uint64())
+			}
 		}
 	}
 
@@ -400,24 +397,34 @@ func (s *TonBlockScanner) processShard(
 	return txInItems, nil
 }
 
-func (s *TonBlockScanner) processMessage(
-	masterSeqno int64,
+func (s *TonBlockScanner) processMsgInternal(
+	seqno int64,
 	shard *ton.BlockIDExt,
 	tx *tlb.Transaction,
-	message *tlb.InternalMessage,
+	msg *tlb.InternalMessage,
 ) ([]*types.TxInItem, error) {
-	var txInItems []*types.TxInItem
+	if msg.Bounce {
+		s.logger.Debug().
+			Msg("skipping bounce message")
+		return nil, nil
+	}
+	if msg.Bounced {
+		s.logger.Debug().
+			Msg("skipping bounced message")
+		return nil, nil
+	}
 
 	hash := base64.StdEncoding.EncodeToString(tx.Hash)
-	sender := message.SrcAddr
-	dest := message.DstAddr
 
-	sender.SetBounce(false)
-	dest.SetBounce(false)
-	sender.SetTestnetOnly(common.IsMocknet)
-	dest.SetTestnetOnly(common.IsMocknet)
+	src := msg.SrcAddr
+	src.SetBounce(false)
+	src.SetTestnetOnly(common.IsMocknet)
 
-	amount := message.Amount.Nano()
+	dst := msg.DstAddr
+	dst.SetBounce(false)
+	dst.SetTestnetOnly(common.IsMocknet)
+
+	amount := msg.Amount.Nano()
 
 	if amount.Cmp(tlb.ZeroCoins.Nano()) <= 0 {
 		err := fmt.Errorf("amount less than or equal to zero")
@@ -460,25 +467,62 @@ func (s *TonBlockScanner) processMessage(
 		Decimals: decimals,
 	}}
 
-	s.logger.Debug().
-		Str("hash", hash).
-		Str("sender", sender.String()).
-		Str("dest", dest.String()).
-		Uint64("amount", amount.Uint64()).
-		Uint64("gas", tx.TotalFees.Coins.Nano().Uint64()).
-		Str("memo", message.Comment()).
-		Str("shard", shardId(shard)).
-		Msg("processing message")
-
-	txInItems = append(txInItems, &types.TxInItem{
-		BlockHeight: masterSeqno,
+	txInItems := []*types.TxInItem{{
+		BlockHeight: seqno,
 		Tx:          hash,
-		Memo:        message.Comment(),
-		Sender:      sender.String(),
-		To:          dest.String(),
+		Memo:        msg.Comment(),
+		Sender:      src.String(),
+		To:          dst.String(),
 		Coins:       coins,
 		Gas:         gas,
-	})
+	}}
+
+	return txInItems, nil
+}
+
+func (s *TonBlockScanner) processMsgExternalIn(
+	seqno int64,
+	shard *ton.BlockIDExt,
+	tx *tlb.Transaction,
+	msgExt *tlb.ExternalMessageIn,
+) ([]*types.TxInItem, error) {
+	payload := msgExt.Payload().BeginParse()
+
+	if payload.RefsNum() != 1 {
+		// none of our txOuts
+		return nil, nil
+	}
+
+	slice, err := payload.LoadRef()
+	if err != nil {
+		s.logger.Err(err).Msg("failed to load ref")
+		return nil, err
+	}
+
+	var msgInt tlb.InternalMessage
+	err = tlb.LoadFromCell(&msgInt, slice)
+	if err != nil {
+		s.logger.Err(err).Msg("unmarshal internal message")
+		return nil, err
+	}
+
+	txInItems, err := s.processMsgInternal(seqno, shard, tx, &msgInt)
+	if err != nil {
+		s.logger.Err(err).Msg("failed to process internal message")
+		return nil, err
+	}
+
+	if len(txInItems) != 1 {
+		return nil, nil
+	}
+
+	// external message is sent from <offchain> to the wallet, that transfers
+	// the funds to the destination
+	src := msgExt.DstAddr
+	src.SetBounce(false)
+	src.SetTestnetOnly(common.IsMocknet)
+
+	txInItems[0].Sender = src.String()
 
 	return txInItems, nil
 }

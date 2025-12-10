@@ -54,6 +54,8 @@ genesis_init() {
 
     set_bond_module # set bond module balance for invariant
 
+    set_mimir HALTCHURNING 1
+
     # deploy evm contracts
     deploy_evm_contracts
   fi
