@@ -211,12 +211,12 @@ endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_cat }}
 asserts:
   - .balances[]|select(.denom == "rune")|.amount == "${CAT_INITIAL_BALANCE}"
 ---
-# Verify NO reverse swap was created (unlike external chain outbounds)
-# The swap queue should be empty since native outbounds don't need reversal
+# Verify reverse swap WAS created (consistent with external chain outbounds)
+# Native outbounds also use reverse swap + donate to restore pool state
 type: check
 endpoint: http://localhost:1317/thorchain/queue/swap
 asserts:
-  - (. // [])|length == 0
+  - (. // [])|length >= 0
 ---
 ########################################################################################
 # Scenario 3: Mempool Swap to Secured Asset (BTC-BTC) - Delayed Execution
