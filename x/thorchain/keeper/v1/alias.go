@@ -102,7 +102,7 @@ var (
 	NewTCYClaimer              = types.NewTCYClaimer
 	NewTCYStaker               = types.NewTCYStaker
 	NewDynamicFeeAccumulator   = types.NewDynamicFeeAccumulator
-	NewOperatorBlameRecord     = types.NewOperatorBlameRecord
+	NewNodeBlameRecord         = types.NewNodeBlameRecord
 )
 
 type (
@@ -131,7 +131,7 @@ type (
 	NodeAccount              = types.NodeAccount
 	NodeAccounts             = types.NodeAccounts
 	NodeStatus               = types.NodeStatus
-	OperatorBlameRecord      = types.OperatorBlameRecord
+	NodeBlameRecord          = types.NodeBlameRecord
 	NodeType                 = types.NodeType
 	Network                  = types.Network
 	VaultStatus              = types.VaultStatus

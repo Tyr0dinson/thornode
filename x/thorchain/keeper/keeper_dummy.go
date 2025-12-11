@@ -404,11 +404,11 @@ func (k KVStoreDummy) DeductNativeTxFeeFromBond(ctx cosmos.Context, nodeAddr cos
 	return kaboom
 }
 
-func (k KVStoreDummy) GetOperatorBlameRecord(ctx cosmos.Context, addr cosmos.AccAddress) (types.OperatorBlameRecord, error) {
-	return types.OperatorBlameRecord{}, kaboom
+func (k KVStoreDummy) GetNodeBlameRecord(ctx cosmos.Context, addr cosmos.AccAddress) (types.NodeBlameRecord, error) {
+	return types.NodeBlameRecord{}, kaboom
 }
 
-func (k KVStoreDummy) SetOperatorBlameRecord(ctx cosmos.Context, record types.OperatorBlameRecord) error {
+func (k KVStoreDummy) SetNodeBlameRecord(ctx cosmos.Context, record types.NodeBlameRecord) error {
 	return kaboom
 }
 
@@ -424,7 +424,7 @@ func (k KVStoreDummy) CalculateKeygenPenaltyMultiplier(ctx cosmos.Context, addr 
 	return 1, kaboom
 }
 
-func (k KVStoreDummy) GetOperatorBlameIterator(ctx cosmos.Context) cosmos.Iterator {
+func (k KVStoreDummy) GetNodeBlameIterator(ctx cosmos.Context) cosmos.Iterator {
 	return nil
 }
 

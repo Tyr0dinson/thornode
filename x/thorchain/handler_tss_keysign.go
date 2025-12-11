@@ -282,14 +282,9 @@ func (h TssKeysignHandler) handle(ctx cosmos.Context, msg MsgTssKeysignFail) (*c
 		if nodeErr != nil {
 			return nil, ErrInternal(nodeErr, fmt.Sprintf("fail to get node account,pub key: %s", nodePubKey.String()))
 		}
-		// Track the keysign blame (tracking only, no penalty escalation) - use bond address as operator identifier
-		operatorAddr, err := cosmos.AccAddressFromBech32(na.BondAddress.String())
-		if err != nil {
-			ctx.Logger().Error("fail to parse bond address", "error", err, "bond_address", na.BondAddress)
-		} else {
-			if err := h.mgr.Keeper().IncrementKeysignBlame(ctx, operatorAddr); err != nil {
-				ctx.Logger().Error("fail to increment keysign blame", "error", err)
-			}
+		// Track the keysign blame per node (tracking only, no penalty escalation)
+		if err := h.mgr.Keeper().IncrementKeysignBlame(ctx, na.NodeAddress); err != nil {
+			ctx.Logger().Error("fail to increment keysign blame", "error", err)
 		}
 
 		err = h.mgr.Keeper().IncNodeAccountSlashPoints(slashCtx, na.NodeAddress, slashPoints)

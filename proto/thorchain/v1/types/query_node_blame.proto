@@ -4,19 +4,19 @@ package types;
 option go_package = "gitlab.com/thorchain/thornode/v3/x/thorchain/types";
 
 import "gogoproto/gogo.proto";
-import "types/type_operator_blame.proto";
+import "types/type_node_blame.proto";
 
 option (gogoproto.marshaler_all) = true;
 
-message QueryOperatorBlameRequest {
+message QueryNodeBlameRequest {
   string address = 1;
   string height = 2;
 }
 
-message QueryOperatorBlameResponse {
-  bytes operator_address = 1 [
+message QueryNodeBlameResponse {
+  bytes node_address = 1 [
     (gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress",
-    (gogoproto.jsontag) = "operator_address"
+    (gogoproto.jsontag) = "node_address"
   ];
   int64 keygen_blame_count_total = 2 [ (gogoproto.jsontag) = "keygen_blame_count_total" ];
   int64 keysign_blame_count_total = 3 [ (gogoproto.jsontag) = "keysign_blame_count_total" ];
@@ -24,10 +24,10 @@ message QueryOperatorBlameResponse {
   int64 keysign_blame_count_since_churn = 5 [ (gogoproto.jsontag) = "keysign_blame_count_since_churn" ];
 }
 
-message QueryOperatorBlamesRequest {
+message QueryNodeBlamesRequest {
   string height = 1;
 }
 
-message QueryOperatorBlamesResponse {
-  repeated QueryOperatorBlameResponse blames = 1;
+message QueryNodeBlamesResponse {
+  repeated QueryNodeBlameResponse blames = 1;
 }

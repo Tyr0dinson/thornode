@@ -874,7 +874,7 @@ func (m *EventTssKeygenFailure) Events() (cosmos.Events, error) {
 }
 
 // NewEventKeygenBlameSummary create a new EventKeygenBlameSummary
-func NewEventKeygenBlameSummary(height int64, details []OperatorBlameDetail) *EventKeygenBlameSummary {
+func NewEventKeygenBlameSummary(height int64, details []NodeBlameDetail) *EventKeygenBlameSummary {
 	return &EventKeygenBlameSummary{
 		Height:      height,
 		BlamedNodes: details,
@@ -893,11 +893,11 @@ func (m *EventKeygenBlameSummary) Events() (cosmos.Events, error) {
 		cosmos.NewAttribute("blame_count", strconv.Itoa(len(m.BlamedNodes))),
 	}
 
-	// Add each blamed operator
+	// Add each blamed node
 	for i, detail := range m.BlamedNodes {
 		prefix := fmt.Sprintf("blamed_%d_", i)
 		attributes = append(attributes,
-			cosmos.NewAttribute(prefix+"address", detail.OperatorAddress.String()),
+			cosmos.NewAttribute(prefix+"address", detail.NodeAddress.String()),
 			cosmos.NewAttribute(prefix+"keygen_count", strconv.FormatInt(detail.KeygenBlameCountSinceChurn, 10)),
 		)
 	}

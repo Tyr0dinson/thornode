@@ -1378,10 +1378,10 @@ func (qs queryServer) queryNodes(ctx cosmos.Context, _ *types.QueryNodesRequest)
 	return &types.QueryNodesResponse{Nodes: result}, nil
 }
 
-// queryOperatorBlame returns blame record for a specific operator
-func (qs queryServer) queryOperatorBlame(ctx cosmos.Context, req *types.QueryOperatorBlameRequest) (*types.QueryOperatorBlameResponse, error) {
+// queryNodeBlame returns blame record for a specific node
+func (qs queryServer) queryNodeBlame(ctx cosmos.Context, req *types.QueryNodeBlameRequest) (*types.QueryNodeBlameResponse, error) {
 	if len(req.Address) == 0 {
-		return nil, errors.New("operator address not provided")
+		return nil, errors.New("node address not provided")
 	}
 
 	addr, err := cosmos.AccAddressFromBech32(req.Address)
@@ -1389,13 +1389,13 @@ func (qs queryServer) queryOperatorBlame(ctx cosmos.Context, req *types.QueryOpe
 		return nil, fmt.Errorf("invalid address: %w", err)
 	}
 
-	record, err := qs.mgr.Keeper().GetOperatorBlameRecord(ctx, addr)
+	record, err := qs.mgr.Keeper().GetNodeBlameRecord(ctx, addr)
 	if err != nil {
 		return nil, err
 	}
 
-	return &types.QueryOperatorBlameResponse{
-		OperatorAddress:             record.OperatorAddress,
+	return &types.QueryNodeBlameResponse{
+		NodeAddress:                 record.NodeAddress,
 		KeygenBlameCountTotal:       record.KeygenBlameCountTotal,
 		KeysignBlameCountTotal:      record.KeysignBlameCountTotal,
 		KeygenBlameCountSinceChurn:  record.KeygenBlameCountSinceChurn,
@@ -1403,21 +1403,21 @@ func (qs queryServer) queryOperatorBlame(ctx cosmos.Context, req *types.QueryOpe
 	}, nil
 }
 
-// queryOperatorBlames returns blame records for all operators
-func (qs queryServer) queryOperatorBlames(ctx cosmos.Context, _ *types.QueryOperatorBlamesRequest) (*types.QueryOperatorBlamesResponse, error) {
-	var result []*types.QueryOperatorBlameResponse
+// queryNodeBlames returns blame records for all nodes
+func (qs queryServer) queryNodeBlames(ctx cosmos.Context, _ *types.QueryNodeBlamesRequest) (*types.QueryNodeBlamesResponse, error) {
+	var result []*types.QueryNodeBlameResponse
 
-	iter := qs.mgr.Keeper().GetOperatorBlameIterator(ctx)
+	iter := qs.mgr.Keeper().GetNodeBlameIterator(ctx)
 	defer iter.Close()
 
 	for ; iter.Valid(); iter.Next() {
-		var record OperatorBlameRecord
+		var record NodeBlameRecord
 		if err := qs.mgr.Keeper().Cdc().Unmarshal(iter.Value(), &record); err != nil {
 			continue
 		}
 
-		result = append(result, &types.QueryOperatorBlameResponse{
-			OperatorAddress:             record.OperatorAddress,
+		result = append(result, &types.QueryNodeBlameResponse{
+			NodeAddress:                 record.NodeAddress,
 			KeygenBlameCountTotal:       record.KeygenBlameCountTotal,
 			KeysignBlameCountTotal:      record.KeysignBlameCountTotal,
 			KeygenBlameCountSinceChurn:  record.KeygenBlameCountSinceChurn,
@@ -1425,7 +1425,7 @@ func (qs queryServer) queryOperatorBlames(ctx cosmos.Context, _ *types.QueryOper
 		})
 	}
 
-	return &types.QueryOperatorBlamesResponse{Blames: result}, nil
+	return &types.QueryNodeBlamesResponse{Blames: result}, nil
 }
 
 func newSaver(lp LiquidityProvider, pool Pool) *types.QuerySaverResponse {

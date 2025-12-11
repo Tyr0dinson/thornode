@@ -61,7 +61,7 @@ type Keeper interface {
 	KeeperLastHeight
 	KeeperLiquidityProvider
 	KeeperNodeAccount
-	KeeperOperatorBlame
+	KeeperNodeBlame
 	KeeperUpgrade
 	KeeperObserver
 	KeeperObservedTx
@@ -204,13 +204,13 @@ type KeeperNodeAccount interface {
 	RemoveLowBondValidatorAccounts(ctx cosmos.Context) error
 }
 
-type KeeperOperatorBlame interface {
-	GetOperatorBlameRecord(ctx cosmos.Context, addr cosmos.AccAddress) (types.OperatorBlameRecord, error)
-	SetOperatorBlameRecord(ctx cosmos.Context, record types.OperatorBlameRecord) error
+type KeeperNodeBlame interface {
+	GetNodeBlameRecord(ctx cosmos.Context, addr cosmos.AccAddress) (types.NodeBlameRecord, error)
+	SetNodeBlameRecord(ctx cosmos.Context, record types.NodeBlameRecord) error
 	IncrementKeygenBlame(ctx cosmos.Context, addr cosmos.AccAddress) error
 	IncrementKeysignBlame(ctx cosmos.Context, addr cosmos.AccAddress) error
 	CalculateKeygenPenaltyMultiplier(ctx cosmos.Context, addr cosmos.AccAddress) (int64, error)
-	GetOperatorBlameIterator(ctx cosmos.Context) cosmos.Iterator
+	GetNodeBlameIterator(ctx cosmos.Context) cosmos.Iterator
 	ResetAllSinceChurnCounters(ctx cosmos.Context) error
 }
 

@@ -543,23 +543,16 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 							ctx.Logger().Error("fail to emit slash point event")
 						}
 					} else {
-						// Track the keygen blame and calculate penalty multiplier - use bond address as operator identifier
-						// Default to 1x multiplier if anything fails
-						mult := int64(1)
-						operatorAddr, err := cosmos.AccAddressFromBech32(na.BondAddress.String())
-						if err != nil {
-							ctx.Logger().Error("fail to parse bond address for blame tracking", "error", err, "bond_address", na.BondAddress)
-						} else {
-							if err = h.mgr.Keeper().IncrementKeygenBlame(ctx, operatorAddr); err != nil {
-								ctx.Logger().Error("fail to increment keygen blame", "error", err)
-							}
+						// Track the keygen blame per node
+						if err = h.mgr.Keeper().IncrementKeygenBlame(ctx, na.NodeAddress); err != nil {
+							ctx.Logger().Error("fail to increment keygen blame", "error", err)
+						}
 
-							// Calculate escalated penalties based on blame history
-							mult, err = h.mgr.Keeper().CalculateKeygenPenaltyMultiplier(ctx, operatorAddr)
-							if err != nil {
-								ctx.Logger().Error("fail to calculate keygen penalty multiplier", "error", err)
-								mult = 1 // Fallback to base penalty
-							}
+						// Calculate escalated penalties based on blame history
+						mult, err := h.mgr.Keeper().CalculateKeygenPenaltyMultiplier(ctx, na.NodeAddress)
+						if err != nil {
+							ctx.Logger().Error("fail to calculate keygen penalty multiplier", "error", err)
+							mult = 1 // Fallback to base penalty
 						}
 
 						// Apply escalated penalties
@@ -572,7 +565,7 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 
 						if mult > 1 {
 							ctx.Logger().Info("keygen blame penalty escalation",
-								"operator", operatorAddr.String(),
+								"node", na.NodeAddress.String(),
 								"multiplier", mult,
 								"slash_points", escalatedSlashPoints,
 								"jail_blocks", escalatedJailTime,
@@ -629,19 +622,19 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 				}
 			}
 
-			// Emit blame summary event showing all operators with keygen blames since churn
-			var blameSummary []OperatorBlameDetail
-			iter := h.mgr.Keeper().GetOperatorBlameIterator(ctx)
+			// Emit blame summary event showing all nodes with keygen blames since churn
+			var blameSummary []NodeBlameDetail
+			iter := h.mgr.Keeper().GetNodeBlameIterator(ctx)
 			for ; iter.Valid(); iter.Next() {
-				var record OperatorBlameRecord
+				var record NodeBlameRecord
 				if err := h.mgr.Keeper().Cdc().Unmarshal(iter.Value(), &record); err != nil {
 					continue
 				}
 
 				// Include if has KEYGEN blames since churn
 				if record.KeygenBlameCountSinceChurn > 0 {
-					blameSummary = append(blameSummary, OperatorBlameDetail{
-						OperatorAddress:            record.OperatorAddress,
+					blameSummary = append(blameSummary, NodeBlameDetail{
+						NodeAddress:                record.NodeAddress,
 						KeygenBlameCountSinceChurn: record.KeygenBlameCountSinceChurn,
 					})
 				}

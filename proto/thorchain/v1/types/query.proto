@@ -60,7 +60,7 @@ import "types/query_reference_memo.proto";
 import "types/query_supply.proto";
 import "types/query_contract_info.proto";
 import "types/query_dynamic_fee.proto";
-import "types/query_operator_blame.proto";
+import "types/query_node_blame.proto";
 
 option (gogoproto.marshaler_all) = true;
 
@@ -171,12 +171,12 @@ service Query {
     option (google.api.http).get = "/thorchain/nodes";
   }
 
-  rpc OperatorBlame(QueryOperatorBlameRequest) returns (QueryOperatorBlameResponse) {
-    option (google.api.http).get = "/thorchain/blame/operator/{address}";
+  rpc NodeBlame(QueryNodeBlameRequest) returns (QueryNodeBlameResponse) {
+    option (google.api.http).get = "/thorchain/blame/node/{address}";
   }
 
-  rpc OperatorBlames(QueryOperatorBlamesRequest) returns (QueryOperatorBlamesResponse) {
-    option (google.api.http).get = "/thorchain/blame/operators";
+  rpc NodeBlames(QueryNodeBlamesRequest) returns (QueryNodeBlamesResponse) {
+    option (google.api.http).get = "/thorchain/blame/nodes";
   }
 
   rpc PoolSlip(QueryPoolSlipRequest) returns (QueryPoolSlipsResponse) {

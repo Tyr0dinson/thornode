@@ -5,9 +5,9 @@ option go_package = "gitlab.com/thorchain/thornode/v3/x/thorchain/types";
 
 import "gogoproto/gogo.proto";
 
-// OperatorBlameRecord tracks blame statistics for a node operator
-message OperatorBlameRecord {
-  bytes operator_address = 1 [
+// NodeBlameRecord tracks blame statistics for a node
+message NodeBlameRecord {
+  bytes node_address = 1 [
     (gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.AccAddress"
   ];
   int64 keygen_blame_count_total = 2;         // Total keygen blames (lifetime)

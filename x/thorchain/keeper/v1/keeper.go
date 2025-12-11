@@ -91,7 +91,7 @@ const (
 	prefixBanVoter                  types.DbPrefix = "ban/"
 	prefixNodeSlashPoints           types.DbPrefix = "slash/"
 	prefixNodeJail                  types.DbPrefix = "jail/"
-	prefixOperatorBlameRecord       types.DbPrefix = "operator_blame/"
+	prefixNodeBlameRecord           types.DbPrefix = "node_blame/"
 	prefixSwapQueueItem             types.DbPrefix = "swapitem/"
 	prefixAdvSwapQueueItem          types.DbPrefix = "aq/"
 	prefixAdvSwapQueueLimitIndex    types.DbPrefix = "aqlim/"

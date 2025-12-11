@@ -40,8 +40,8 @@ const (
 	Query_StableReserveContributor_FullMethodName = "/types.Query/StableReserveContributor"
 	Query_Node_FullMethodName                     = "/types.Query/Node"
 	Query_Nodes_FullMethodName                    = "/types.Query/Nodes"
-	Query_OperatorBlame_FullMethodName            = "/types.Query/OperatorBlame"
-	Query_OperatorBlames_FullMethodName           = "/types.Query/OperatorBlames"
+	Query_NodeBlame_FullMethodName                = "/types.Query/NodeBlame"
+	Query_NodeBlames_FullMethodName               = "/types.Query/NodeBlames"
 	Query_PoolSlip_FullMethodName                 = "/types.Query/PoolSlip"
 	Query_PoolSlips_FullMethodName                = "/types.Query/PoolSlips"
 	Query_OutboundFee_FullMethodName              = "/types.Query/OutboundFee"
@@ -154,8 +154,8 @@ type QueryClient interface {
 	StableReserveContributor(ctx context.Context, in *QueryStableReserveContributorRequest, opts ...grpc.CallOption) (*QueryStableReserveContributorResponse, error)
 	Node(ctx context.Context, in *QueryNodeRequest, opts ...grpc.CallOption) (*QueryNodeResponse, error)
 	Nodes(ctx context.Context, in *QueryNodesRequest, opts ...grpc.CallOption) (*QueryNodesResponse, error)
-	OperatorBlame(ctx context.Context, in *QueryOperatorBlameRequest, opts ...grpc.CallOption) (*QueryOperatorBlameResponse, error)
-	OperatorBlames(ctx context.Context, in *QueryOperatorBlamesRequest, opts ...grpc.CallOption) (*QueryOperatorBlamesResponse, error)
+	NodeBlame(ctx context.Context, in *QueryNodeBlameRequest, opts ...grpc.CallOption) (*QueryNodeBlameResponse, error)
+	NodeBlames(ctx context.Context, in *QueryNodeBlamesRequest, opts ...grpc.CallOption) (*QueryNodeBlamesResponse, error)
 	PoolSlip(ctx context.Context, in *QueryPoolSlipRequest, opts ...grpc.CallOption) (*QueryPoolSlipsResponse, error)
 	PoolSlips(ctx context.Context, in *QueryPoolSlipsRequest, opts ...grpc.CallOption) (*QueryPoolSlipsResponse, error)
 	OutboundFee(ctx context.Context, in *QueryOutboundFeeRequest, opts ...grpc.CallOption) (*QueryOutboundFeesResponse, error)
@@ -431,18 +431,18 @@ func (c *queryClient) Nodes(ctx context.Context, in *QueryNodesRequest, opts ...
 	return out, nil
 }
 
-func (c *queryClient) OperatorBlame(ctx context.Context, in *QueryOperatorBlameRequest, opts ...grpc.CallOption) (*QueryOperatorBlameResponse, error) {
-	out := new(QueryOperatorBlameResponse)
-	err := c.cc.Invoke(ctx, Query_OperatorBlame_FullMethodName, in, out, opts...)
+func (c *queryClient) NodeBlame(ctx context.Context, in *QueryNodeBlameRequest, opts ...grpc.CallOption) (*QueryNodeBlameResponse, error) {
+	out := new(QueryNodeBlameResponse)
+	err := c.cc.Invoke(ctx, Query_NodeBlame_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *queryClient) OperatorBlames(ctx context.Context, in *QueryOperatorBlamesRequest, opts ...grpc.CallOption) (*QueryOperatorBlamesResponse, error) {
-	out := new(QueryOperatorBlamesResponse)
-	err := c.cc.Invoke(ctx, Query_OperatorBlames_FullMethodName, in, out, opts...)
+func (c *queryClient) NodeBlames(ctx context.Context, in *QueryNodeBlamesRequest, opts ...grpc.CallOption) (*QueryNodeBlamesResponse, error) {
+	out := new(QueryNodeBlamesResponse)
+	err := c.cc.Invoke(ctx, Query_NodeBlames_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1167,8 +1167,8 @@ type QueryServer interface {
 	StableReserveContributor(context.Context, *QueryStableReserveContributorRequest) (*QueryStableReserveContributorResponse, error)
 	Node(context.Context, *QueryNodeRequest) (*QueryNodeResponse, error)
 	Nodes(context.Context, *QueryNodesRequest) (*QueryNodesResponse, error)
-	OperatorBlame(context.Context, *QueryOperatorBlameRequest) (*QueryOperatorBlameResponse, error)
-	OperatorBlames(context.Context, *QueryOperatorBlamesRequest) (*QueryOperatorBlamesResponse, error)
+	NodeBlame(context.Context, *QueryNodeBlameRequest) (*QueryNodeBlameResponse, error)
+	NodeBlames(context.Context, *QueryNodeBlamesRequest) (*QueryNodeBlamesResponse, error)
 	PoolSlip(context.Context, *QueryPoolSlipRequest) (*QueryPoolSlipsResponse, error)
 	PoolSlips(context.Context, *QueryPoolSlipsRequest) (*QueryPoolSlipsResponse, error)
 	OutboundFee(context.Context, *QueryOutboundFeeRequest) (*QueryOutboundFeesResponse, error)
@@ -1315,11 +1315,11 @@ func (UnimplementedQueryServer) Node(context.Context, *QueryNodeRequest) (*Query
 func (UnimplementedQueryServer) Nodes(context.Context, *QueryNodesRequest) (*QueryNodesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Nodes not implemented")
 }
-func (UnimplementedQueryServer) OperatorBlame(context.Context, *QueryOperatorBlameRequest) (*QueryOperatorBlameResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method OperatorBlame not implemented")
+func (UnimplementedQueryServer) NodeBlame(context.Context, *QueryNodeBlameRequest) (*QueryNodeBlameResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method NodeBlame not implemented")
 }
-func (UnimplementedQueryServer) OperatorBlames(context.Context, *QueryOperatorBlamesRequest) (*QueryOperatorBlamesResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method OperatorBlames not implemented")
+func (UnimplementedQueryServer) NodeBlames(context.Context, *QueryNodeBlamesRequest) (*QueryNodeBlamesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method NodeBlames not implemented")
 }
 func (UnimplementedQueryServer) PoolSlip(context.Context, *QueryPoolSlipRequest) (*QueryPoolSlipsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PoolSlip not implemented")
@@ -1940,38 +1940,38 @@ func _Query_Nodes_Handler(srv interface{}, ctx context.Context, dec func(interfa
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Query_OperatorBlame_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(QueryOperatorBlameRequest)
+func _Query_NodeBlame_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryNodeBlameRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(QueryServer).OperatorBlame(ctx, in)
+		return srv.(QueryServer).NodeBlame(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: Query_OperatorBlame_FullMethodName,
+		FullMethod: Query_NodeBlame_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(QueryServer).OperatorBlame(ctx, req.(*QueryOperatorBlameRequest))
+		return srv.(QueryServer).NodeBlame(ctx, req.(*QueryNodeBlameRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Query_OperatorBlames_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(QueryOperatorBlamesRequest)
+func _Query_NodeBlames_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryNodeBlamesRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(QueryServer).OperatorBlames(ctx, in)
+		return srv.(QueryServer).NodeBlames(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: Query_OperatorBlames_FullMethodName,
+		FullMethod: Query_NodeBlames_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(QueryServer).OperatorBlames(ctx, req.(*QueryOperatorBlamesRequest))
+		return srv.(QueryServer).NodeBlames(ctx, req.(*QueryNodeBlamesRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -3436,12 +3436,12 @@ var Query_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Query_Nodes_Handler,
 		},
 		{
-			MethodName: "OperatorBlame",
-			Handler:    _Query_OperatorBlame_Handler,
+			MethodName: "NodeBlame",
+			Handler:    _Query_NodeBlame_Handler,
 		},
 		{
-			MethodName: "OperatorBlames",
-			Handler:    _Query_OperatorBlames_Handler,
+			MethodName: "NodeBlames",
+			Handler:    _Query_NodeBlames_Handler,
 		},
 		{
 			MethodName: "PoolSlip",
