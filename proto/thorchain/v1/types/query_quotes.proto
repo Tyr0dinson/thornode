@@ -186,15 +186,18 @@ message QueryQuoteIntentResponse {
   // whether the intent parameters are valid
   bool valid = 1 [ (gogoproto.jsontag) = "valid" ];
   // validation error message if not valid
-  string validation_error = 2 [ (gogoproto.jsontag) = "validation_error,omitempty" ];
+  string validation_error = 2
+      [ (gogoproto.jsontag) = "validation_error,omitempty" ];
   // generated intent open memo
   string memo = 3 [ (gogoproto.jsontag) = "memo" ];
   // inbound address to send funds to
   string inbound_address = 4 [ (gogoproto.jsontag) = "inbound_address" ];
   // approximate blocks for inbound confirmation
-  int64 inbound_confirmation_blocks = 5 [ (gogoproto.jsontag) = "inbound_confirmation_blocks" ];
+  int64 inbound_confirmation_blocks = 5
+      [ (gogoproto.jsontag) = "inbound_confirmation_blocks" ];
   // approximate seconds for inbound confirmation
-  int64 inbound_confirmation_seconds = 6 [ (gogoproto.jsontag) = "inbound_confirmation_seconds" ];
+  int64 inbound_confirmation_seconds = 6
+      [ (gogoproto.jsontag) = "inbound_confirmation_seconds" ];
   // EVM router contract address (if applicable)
   string router = 7 [ (gogoproto.jsontag) = "router,omitempty" ];
   // intent TTL in blocks
@@ -208,9 +211,11 @@ message QueryQuoteIntentResponse {
   // fee information
   QuoteIntentFees fees = 12 [ (gogoproto.jsontag) = "fees" ];
   // auction fallback information
-  QuoteIntentAuctionInfo auction_info = 13 [ (gogoproto.jsontag) = "auction_info" ];
+  QuoteIntentAuctionInfo auction_info = 13
+      [ (gogoproto.jsontag) = "auction_info" ];
   // partial price context (for pooled assets)
-  QuoteIntentPriceContext price_context = 14 [ (gogoproto.jsontag) = "price_context,omitempty" ];
+  QuoteIntentPriceContext price_context = 14
+      [ (gogoproto.jsontag) = "price_context,omitempty" ];
   // quote expiration timestamp (unix)
   int64 expiry = 15 [ (gogoproto.jsontag) = "expiry" ];
   // warning message
@@ -218,13 +223,17 @@ message QueryQuoteIntentResponse {
   // chain-specific notes
   string notes = 17 [ (gogoproto.jsontag) = "notes,omitempty" ];
   // dust threshold for source chain
-  string dust_threshold = 18 [ (gogoproto.jsontag) = "dust_threshold,omitempty" ];
+  string dust_threshold = 18
+      [ (gogoproto.jsontag) = "dust_threshold,omitempty" ];
   // recommended minimum amount in
-  string recommended_min_amount_in = 19 [ (gogoproto.jsontag) = "recommended_min_amount_in" ];
+  string recommended_min_amount_in = 19
+      [ (gogoproto.jsontag) = "recommended_min_amount_in" ];
   // recommended gas rate for inbound
-  string recommended_gas_rate = 20 [ (gogoproto.jsontag) = "recommended_gas_rate,omitempty" ];
+  string recommended_gas_rate = 20
+      [ (gogoproto.jsontag) = "recommended_gas_rate,omitempty" ];
   // gas rate units
-  string gas_rate_units = 21 [ (gogoproto.jsontag) = "gas_rate_units,omitempty" ];
+  string gas_rate_units = 21
+      [ (gogoproto.jsontag) = "gas_rate_units,omitempty" ];
 }
 
 // Fee information for intent quote
@@ -234,13 +243,16 @@ message QuoteIntentFees {
   // asset the fee is charged on
   string fee_asset = 2 [ (gogoproto.jsontag) = "fee_asset" ];
   // estimated protocol fee amount
-  string estimated_protocol_fee = 3 [ (gogoproto.jsontag) = "estimated_protocol_fee" ];
+  string estimated_protocol_fee = 3
+      [ (gogoproto.jsontag) = "estimated_protocol_fee" ];
   // affiliate fee in basis points
   int64 affiliate_fee_bps = 4 [ (gogoproto.jsontag) = "affiliate_fee_bps" ];
   // asset affiliate fee is charged on
-  string affiliate_fee_asset = 5 [ (gogoproto.jsontag) = "affiliate_fee_asset,omitempty" ];
+  string affiliate_fee_asset = 5
+      [ (gogoproto.jsontag) = "affiliate_fee_asset,omitempty" ];
   // estimated affiliate fee amount
-  string estimated_affiliate_fee = 6 [ (gogoproto.jsontag) = "estimated_affiliate_fee,omitempty" ];
+  string estimated_affiliate_fee = 6
+      [ (gogoproto.jsontag) = "estimated_affiliate_fee,omitempty" ];
 }
 
 // Auction fallback information
@@ -248,13 +260,16 @@ message QuoteIntentAuctionInfo {
   // whether this intent would trigger auction on expiry
   bool will_auction = 1 [ (gogoproto.jsontag) = "will_auction" ];
   // percentage of source auctioned (basis points)
-  int64 auction_percentage_bps = 2 [ (gogoproto.jsontag) = "auction_percentage_bps" ];
+  int64 auction_percentage_bps = 2
+      [ (gogoproto.jsontag) = "auction_percentage_bps" ];
   // percentage returned to owner (basis points)
-  int64 remaining_to_owner_bps = 3 [ (gogoproto.jsontag) = "remaining_to_owner_bps" ];
+  int64 remaining_to_owner_bps = 3
+      [ (gogoproto.jsontag) = "remaining_to_owner_bps" ];
   // asset used for auction bidding
   string bid_asset = 4 [ (gogoproto.jsontag) = "bid_asset" ];
   // auction duration in blocks
-  int64 auction_duration_blocks = 5 [ (gogoproto.jsontag) = "auction_duration_blocks" ];
+  int64 auction_duration_blocks = 5
+      [ (gogoproto.jsontag) = "auction_duration_blocks" ];
 }
 
 // Price context for pooled assets
