@@ -1413,6 +1413,7 @@ func (qs queryServer) queryNodeBlames(ctx cosmos.Context, _ *types.QueryNodeBlam
 	for ; iter.Valid(); iter.Next() {
 		var record NodeBlameRecord
 		if err := qs.mgr.Keeper().Cdc().Unmarshal(iter.Value(), &record); err != nil {
+			ctx.Logger().Error("fail to unmarshal node blame record", "error", err)
 			continue
 		}
 
