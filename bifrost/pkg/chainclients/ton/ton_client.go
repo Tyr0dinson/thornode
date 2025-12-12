@@ -542,12 +542,22 @@ func (c *TonClient) BroadcastTx(
 			return "", err
 		}
 
+		data := cell.BeginCell()
+		// seqno
+		if err = data.StoreUInt(0, 32); err != nil {
+			return "", fmt.Errorf("failed to store seqno: %w", err)
+		}
+		// sub wallet
+		if err = data.StoreUInt(uint64(wallet.DefaultSubwallet), 32); err != nil {
+			return "", fmt.Errorf("failed to store sub wallet: %w", err)
+		}
+		// pubkey
+		if err = data.StoreSlice(pubKey.Bytes(), 256); err != nil {
+			return "", fmt.Errorf("failed to store pubkey: %w", err)
+		}
+
 		stateInit = &tlb.StateInit{
-			Data: cell.BeginCell().
-				MustStoreUInt(0, 32).                               // seqno
-				MustStoreUInt(uint64(wallet.DefaultSubwallet), 32). // sub wallet
-				MustStoreSlice(pubKey.Bytes(), 256).
-				EndCell(),
+			Data: data.EndCell(),
 			Code: c.walletCode,
 		}
 	}
@@ -563,13 +573,13 @@ func (c *TonClient) BroadcastTx(
 		return "", fmt.Errorf("failed to broadcast transaction: %w", err)
 	}
 
-	txHash := hex.EncodeToString(tx.Hash)
+	hash := hex.EncodeToString(tx.Hash)
 
-	if err = c.signerCacheManager.SetSigned(txOut.CacheHash(), txOut.CacheVault(c.GetChain()), txHash); err != nil {
+	if err = c.signerCacheManager.SetSigned(txOut.CacheHash(), txOut.CacheVault(c.GetChain()), hash); err != nil {
 		c.logger.Err(err).Msg("fail to set signer cache")
 	}
 
-	return txHash, nil
+	return hash, nil
 }
 
 func (c *TonClient) ShouldReportSolvency(height int64) bool {

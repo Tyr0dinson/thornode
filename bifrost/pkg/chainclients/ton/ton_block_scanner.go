@@ -26,6 +26,7 @@ type TonBlockScanner struct {
 	config     config.BifrostBlockScannerConfiguration
 	logger     zerolog.Logger
 	bridge     thorclient.ThorchainBridge
+	ctx        context.Context
 	api        ton.APIClientWrapped
 	lastShards map[string]uint32
 
@@ -55,6 +56,7 @@ func NewTonBlockScanner(
 			Str("chain", cfg.ChainID.String()).
 			Logger(),
 		bridge:       bridge,
+		ctx:          context.Background(),
 		api:          api,
 		lastFeeRate:  0,
 		feeRateCache: make([][]uint64, 0),
@@ -64,7 +66,7 @@ func NewTonBlockScanner(
 
 // Return the latest block height from master chain
 func (s *TonBlockScanner) GetHeight() (int64, error) {
-	info, err := s.api.GetMasterchainInfo(context.Background())
+	info, err := s.api.GetMasterchainInfo(s.ctx)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get masterchain info: %w", err)
 	}
@@ -185,7 +187,7 @@ func (s *TonBlockScanner) sendNetworkFeeIfNecessary(height int64) {
 
 func (s *TonBlockScanner) processMaster(masterSeqno uint32) ([]*types.TxInItem, error) {
 	master, err := s.api.LookupBlock(
-		context.Background(),
+		s.ctx,
 		-1,
 		-9223372036854775808,
 		masterSeqno,
@@ -194,7 +196,7 @@ func (s *TonBlockScanner) processMaster(masterSeqno uint32) ([]*types.TxInItem, 
 		return nil, fmt.Errorf("failed to lookup master block seq %d: %w", masterSeqno, err)
 	}
 
-	shards, err := s.api.GetBlockShardsInfo(context.Background(), master)
+	shards, err := s.api.GetBlockShardsInfo(s.ctx, master)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get shards for master block %d: %w", masterSeqno, err)
 	}
@@ -218,20 +220,26 @@ func (s *TonBlockScanner) processMaster(masterSeqno uint32) ([]*types.TxInItem, 
 			shardSeqno = shard.SeqNo
 		}
 
+		// process intermediate shards
 		for ; shardSeqno <= shard.SeqNo; shardSeqno++ {
 			sh := shard.Copy()
 			sh.SeqNo = shardSeqno
 			eg.Go(func() error {
-				items, err := s.processShard(masterSeqno, sh)
+				newTxInItems, err := s.processShard(sh)
 				if err != nil {
 					return fmt.Errorf("failed to process shard %d: %w", sh.SeqNo, err)
 				}
-				if len(items) == 0 {
+				if len(newTxInItems) == 0 {
 					return nil
 				}
 				mu.Lock()
 				defer mu.Unlock()
-				txInItems = append(txInItems, items...)
+				// set block height to master seqno
+				for i := range newTxInItems {
+					newTxInItems[i].BlockHeight = int64(masterSeqno)
+					txInItems = append(txInItems, &newTxInItems[i])
+				}
+
 				return nil
 			})
 		}
@@ -256,19 +264,18 @@ func (s *TonBlockScanner) processMaster(masterSeqno uint32) ([]*types.TxInItem, 
 }
 
 func (s *TonBlockScanner) processShard(
-	masterSeqno uint32,
 	shard *ton.BlockIDExt,
-) ([]*types.TxInItem, error) {
+) ([]types.TxInItem, error) {
 	if shard.SeqNo == 0 {
 		return nil, nil
 	}
 
-	block, err := s.api.LookupBlock(context.Background(), shard.Workchain, shard.Shard, shard.SeqNo)
+	block, err := s.api.LookupBlock(s.ctx, shard.Workchain, shard.Shard, shard.SeqNo)
 	if err != nil {
 		return nil, fmt.Errorf("failed to lookup shard block %d: %w", shard.SeqNo, err)
 	}
 
-	data, err := s.api.GetBlockData(context.Background(), block)
+	data, err := s.api.GetBlockData(s.ctx, block)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get shard block data %d: %w", shard.SeqNo, err)
 	}
@@ -285,19 +292,14 @@ func (s *TonBlockScanner) processShard(
 		return nil, fmt.Errorf("failed to get transactions %d: %w", shard.SeqNo, err)
 	}
 
-	var txInItems []*types.TxInItem
-
+	var txInItems []types.TxInItem
 	for _, txInfo := range txInfos {
 		addr := address.NewAddress(0x17, 0x00, txInfo.Account)
 		addr.SetBounce(false)
 		addr.SetTestnetOnly(common.IsMocknet)
 
-		tx, err := s.api.GetTransaction(
-			context.TODO(),
-			block,
-			addr,
-			txInfo.LT,
-		)
+		var tx *tlb.Transaction
+		tx, err = s.api.GetTransaction(s.ctx, block, addr, txInfo.LT)
 		if err != nil {
 			s.logger.Err(err).Msg("failed getting tx info")
 		}
@@ -326,49 +328,50 @@ func (s *TonBlockScanner) processShard(
 			Str("account", addr.String()).
 			Msg("processing transaction")
 
+		if tx.IO.Out == nil {
+			continue
+		}
+
 		var msgs []tlb.Message
-
-		if tx.IO.Out != nil {
-			outMsgs, err := tx.IO.Out.ToSlice()
-			if err != nil {
-				s.logger.Err(err).Msg("failed to get out msgs")
-			} else {
-				msgs = outMsgs
-			}
+		msgs, err = tx.IO.Out.ToSlice()
+		if err != nil {
+			s.logger.Err(err).Msg("failed to get out msgs")
 		}
 
-		if tx.IO.In != nil {
-			msgs = append(msgs, *tx.IO.In)
+		var ext *tlb.ExternalMessage
+		if tx.IO.In != nil && tx.IO.In.MsgType == tlb.MsgTypeExternalIn {
+			ext = tx.IO.In.AsExternalIn()
 		}
 
-		for _, m := range msgs {
-			var items []*types.TxInItem
-
-			switch m.MsgType {
-			case tlb.MsgTypeInternal:
-				items, err = s.processMsgInternal(int64(masterSeqno), shard, tx, m.AsInternal())
-			case tlb.MsgTypeExternalIn:
-				items, err = s.processMsgExternalIn(int64(masterSeqno), shard, tx, m.AsExternalIn())
-			default:
+		for _, msg := range msgs {
+			if msg.MsgType != tlb.MsgTypeInternal {
 				continue
 			}
 
+			var txInItem types.TxInItem
+			txInItem, err = s.processMessage(tx, msg.AsInternal())
 			if err != nil {
 				s.logger.Err(err).Msg("failed to process message")
 				continue
 			}
 
-			s.logger.Info().
-				Interface("tx_in", items).
-				Str("shard", shardId(shard)).
-				Msg("processing message")
-
-			txInItems = append(txInItems, items...)
-
-			if !txDescription.Aborted {
-				index := len(s.feeRateCache) - 1
-				s.feeRateCache[index] = append(s.feeRateCache[index], tx.TotalFees.Coins.Nano().Uint64())
+			// get the tx id from ext in hash, which is the one bifrost returns
+			// when broadcasting and different from the tx actually delivering
+			// the funds to the destination
+			if ext != nil {
+				var hash string
+				hash, err = s.getExtInHash(block, tx.LT, msg.AsInternal())
+				if err == nil && hash != "" {
+					txInItem.Tx = hash
+				}
 			}
+
+			txInItems = append(txInItems, txInItem)
+		}
+
+		if !txDescription.Aborted {
+			index := len(s.feeRateCache) - 1
+			s.feeRateCache[index] = append(s.feeRateCache[index], tx.TotalFees.Coins.Nano().Uint64())
 		}
 	}
 
@@ -397,21 +400,21 @@ func (s *TonBlockScanner) processShard(
 	return txInItems, nil
 }
 
-func (s *TonBlockScanner) processMsgInternal(
-	seqno int64,
-	shard *ton.BlockIDExt,
+func (s *TonBlockScanner) processMessage(
 	tx *tlb.Transaction,
 	msg *tlb.InternalMessage,
-) ([]*types.TxInItem, error) {
+) (txInItem types.TxInItem, err error) {
 	if msg.Bounce {
-		s.logger.Debug().
-			Msg("skipping bounce message")
-		return nil, nil
+		err = fmt.Errorf("bounce flag set")
 	}
+
 	if msg.Bounced {
-		s.logger.Debug().
-			Msg("skipping bounced message")
-		return nil, nil
+		err = fmt.Errorf("message bounced")
+	}
+
+	if err != nil {
+		s.logger.Debug().Err(err).Msg("")
+		return txInItem, err
 	}
 
 	hash := base64.StdEncoding.EncodeToString(tx.Hash)
@@ -427,12 +430,12 @@ func (s *TonBlockScanner) processMsgInternal(
 	amount := msg.Amount.Nano()
 
 	if amount.Cmp(tlb.ZeroCoins.Nano()) <= 0 {
-		err := fmt.Errorf("amount less than or equal to zero")
+		err = fmt.Errorf("amount less than or equal to zero")
 		s.logger.Err(err).
 			Str("hash", hash).
 			Uint64("amount", amount.Uint64()).
 			Msg("")
-		return nil, err
+		return txInItem, err
 	}
 
 	decimals := common.TONChain.GetGasAssetDecimal()
@@ -442,7 +445,7 @@ func (s *TonBlockScanner) processMsgInternal(
 	)
 	if err != nil {
 		s.logger.Err(err).Msg("failed to convert amount to decimals")
-		return nil, err
+		return txInItem, err
 	}
 
 	coins := common.Coins{{
@@ -458,7 +461,7 @@ func (s *TonBlockScanner) processMsgInternal(
 	)
 	if err != nil {
 		s.logger.Err(err).Msg("failed to convert gas amount to decimals")
-		return nil, err
+		return txInItem, err
 	}
 
 	gas := common.Gas{{
@@ -467,64 +470,63 @@ func (s *TonBlockScanner) processMsgInternal(
 		Decimals: decimals,
 	}}
 
-	txInItems := []*types.TxInItem{{
-		BlockHeight: seqno,
-		Tx:          hash,
-		Memo:        msg.Comment(),
-		Sender:      src.String(),
-		To:          dst.String(),
-		Coins:       coins,
-		Gas:         gas,
-	}}
+	txInItem = types.TxInItem{
+		Tx:     hash,
+		Memo:   msg.Comment(),
+		Sender: src.String(),
+		To:     dst.String(),
+		Coins:  coins,
+		Gas:    gas,
+	}
 
-	return txInItems, nil
+	return txInItem, nil
 }
 
-func (s *TonBlockScanner) processMsgExternalIn(
-	seqno int64,
-	shard *ton.BlockIDExt,
-	tx *tlb.Transaction,
-	msgExt *tlb.ExternalMessageIn,
-) ([]*types.TxInItem, error) {
-	payload := msgExt.Payload().BeginParse()
-
-	if payload.RefsNum() != 1 {
-		// none of our txOuts
-		return nil, nil
-	}
-
-	slice, err := payload.LoadRef()
+func (s *TonBlockScanner) getExtInHash(
+	block *ton.BlockIDExt,
+	lt uint64,
+	out *tlb.InternalMessage,
+) (string, error) {
+	tx, err := s.api.GetTransaction(s.ctx, block, out.SrcAddr, lt)
 	if err != nil {
-		s.logger.Err(err).Msg("failed to load ref")
-		return nil, err
+		return "", err
 	}
 
-	var msgInt tlb.InternalMessage
-	err = tlb.LoadFromCell(&msgInt, slice)
+	if tx.IO.In == nil || tx.IO.In.MsgType != tlb.MsgTypeExternalIn {
+		return "", fmt.Errorf("returned tx has no external in message")
+	}
+	ext := tx.IO.In.AsExternalIn()
+
+	// get internal message from externalIn
+	slice, err := ext.Payload().BeginParse().LoadRef()
 	if err != nil {
-		s.logger.Err(err).Msg("unmarshal internal message")
-		return nil, err
+		return "", err
 	}
 
-	txInItems, err := s.processMsgInternal(seqno, shard, tx, &msgInt)
+	var in tlb.InternalMessage
+	err = tlb.LoadFromCell(&in, slice)
 	if err != nil {
-		s.logger.Err(err).Msg("failed to process internal message")
-		return nil, err
+		return "", err
 	}
 
-	if len(txInItems) != 1 {
-		return nil, nil
+	// compare in and out
+	if !in.SrcAddr.Equals(out.SrcAddr) {
+		return "", fmt.Errorf("source address mismatch")
 	}
 
-	// external message is sent from <offchain> to the wallet, that transfers
-	// the funds to the destination
-	src := msgExt.DstAddr
-	src.SetBounce(false)
-	src.SetTestnetOnly(common.IsMocknet)
+	if !in.DstAddr.Equals(out.DstAddr) {
+		return "", fmt.Errorf("destination address mismatch")
+	}
 
-	txInItems[0].Sender = src.String()
+	if !in.Amount.Equals(out.Amount) {
+		return "", fmt.Errorf("funds amount mismatch")
+	}
 
-	return txInItems, nil
+	if in.Comment() != out.Comment() {
+		return "", fmt.Errorf("comment mismatch")
+	}
+
+	return hex.EncodeToString(tx.Hash), nil
 }
 
 func shardId(block *ton.BlockIDExt) string {
