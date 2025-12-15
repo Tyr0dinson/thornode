@@ -3,6 +3,7 @@ package mock
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"time"
 
 	tonaddress "github.com/xssnick/tonutils-go/address"
@@ -10,7 +11,6 @@ import (
 	"github.com/xssnick/tonutils-go/tlb"
 	"github.com/xssnick/tonutils-go/ton"
 	"github.com/xssnick/tonutils-go/tvm/cell"
-	"golang.org/x/xerrors"
 )
 
 // MockClient returns valid info for block 100000, error otherwise
@@ -46,11 +46,11 @@ func (c MockClient) GetLibraries(ctx context.Context, list ...[]byte) ([]*cell.C
 func (c MockClient) LookupBlock(ctx context.Context, workchain int32, shard int64, seqno uint32) (*ton.BlockIDExt, error) {
 	if workchain == -1 {
 		if seqno != 100000 {
-			return nil, xerrors.New("seqno != 100000")
+			return nil, fmt.Errorf("seqno != 100000")
 		}
 	} else {
 		if seqno != 100 && seqno != 101 {
-			return nil, xerrors.New("seqno != 100000")
+			return nil, fmt.Errorf("seqno != 100000")
 		}
 	}
 
@@ -68,7 +68,7 @@ func (c MockClient) GetBlockData(ctx context.Context, block *ton.BlockIDExt) (*t
 	case shard0, shard1:
 		return &tlb.Block{}, nil
 	default:
-		return nil, xerrors.New("block shard not exist")
+		return nil, fmt.Errorf("block shard not exist")
 	}
 }
 
@@ -106,7 +106,7 @@ func (c MockClient) GetBlockTransactionsV2(ctx context.Context, block *ton.Block
 
 func (c MockClient) GetBlockShardsInfo(ctx context.Context, master *ton.BlockIDExt) ([]*ton.BlockIDExt, error) {
 	if master.SeqNo != 100000 {
-		return nil, xerrors.New("seqno != 100000")
+		return nil, fmt.Errorf("seqno != 100000")
 	}
 
 	return []*ton.BlockIDExt{

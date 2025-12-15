@@ -1,7 +1,6 @@
 package ton
 
 import (
-	"fmt"
 	"time"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/ton/mock"
@@ -121,23 +120,12 @@ func (s *BlockScannerTestSuite) TestGetNetworkFee(c *C) {
 	// bounceable msg fees are considered too
 	c.Assert(s.scanner.feeRateCache[0], HasLen, 4)
 
-	// 1. 3031086 -> 3000000
-	// 2. 2551847 -> 3000000
-	// 3. 1988534 -> 2000000
-	// 4. 2495998 -> 3000000
-	median := uint64(3000000)
-
-	fmt.Println(s.scanner.config.GasCacheBlocks)
-	fmt.Println(s.scanner.feeRateCache)
-	fmt.Println(s.scanner.GetNetworkFee())
-	// txs, err := mock.GetTxs()
-	// c.Assert(err, IsNil)
-	//
-	// total := uint64(0)
-	// for _, tx := range txs {
-	// 	fmt.Println(tx.TotalFees)
-	// 	total += tx.TotalFees.Coins.Nano().Uint64()
-	// }
+	// 1. 3031086
+	// 2. 1988534
+	// 4. 2104574
+	// 4. 2495998
+	// == 2300286 -> 2000000
+	median := uint64(2000000)
 
 	size, rate := s.scanner.GetNetworkFee()
 	c.Assert(size, Equals, uint64(1))

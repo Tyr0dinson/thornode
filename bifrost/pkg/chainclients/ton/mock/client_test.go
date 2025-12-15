@@ -45,7 +45,7 @@ func (s *MockTestSuite) TestClient(c *C) {
 
 	infos, _, err := client.GetBlockTransactionsV2(ctx, block, 100)
 	c.Assert(err, IsNil)
-	c.Assert(infos, HasLen, 2)
+	c.Assert(infos, HasLen, 3)
 
 	shards, err := client.GetBlockShardsInfo(ctx, block)
 	c.Assert(err, IsNil)
