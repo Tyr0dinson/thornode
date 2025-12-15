@@ -21,6 +21,8 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+const minNetworkFee 5_000_000
+
 type TonBlockScanner struct {
 	config     config.BifrostBlockScannerConfiguration
 	logger     zerolog.Logger
@@ -157,6 +159,8 @@ func (s *TonBlockScanner) sendNetworkFeeIfNecessary(height int64) {
 	if len(s.feeRateCache) > s.config.GasCacheBlocks {
 		s.feeRateCache = s.feeRateCache[(len(s.feeRateCache) - s.config.GasCacheBlocks):]
 	}
+
+	roundedFeeRate = max(roundedFeeRate, minNetworkFee)
 
 	if roundedFeeRate == 0 {
 		s.logger.Debug().Msg("network fee is 0")
