@@ -21,7 +21,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-const minNetworkFee 5_000_000
+const minNetworkFee = 5_000_000
 
 type TonBlockScanner struct {
 	config     config.BifrostBlockScannerConfiguration

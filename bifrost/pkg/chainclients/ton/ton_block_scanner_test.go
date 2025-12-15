@@ -124,8 +124,8 @@ func (s *BlockScannerTestSuite) TestGetNetworkFee(c *C) {
 	// 2. 1988534
 	// 4. 2104574
 	// 4. 2495998
-	// == 2300286 -> 2000000
-	median := uint64(2000000)
+	// == 2300286 -> max(2000000, 5000000)
+	median := uint64(5000000)
 
 	size, rate := s.scanner.GetNetworkFee()
 	c.Assert(size, Equals, uint64(1))
