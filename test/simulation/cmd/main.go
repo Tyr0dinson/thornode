@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"os"
@@ -12,7 +13,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	acommon "gitlab.com/thorchain/thornode/v3/test/simulation/actors/common"
-	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/ton"
+	pkgton "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/ton"
 	"golang.org/x/term"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -52,7 +53,7 @@ var liteClientConstructors = map[common.Chain]LiteChainClientConstructor{
 	common.XRPChain:   xrp.NewConstructor(chainRPCs[common.XRPChain]),
 	common.NOBLEChain: pkgcosmos.NewConstructor(chainRPCs[common.NOBLEChain]),
 	common.SOLChain:   solana.NewConstructor(chainRPCs[common.SOLChain]),
-	common.TONChain:   ton.NewConstructor(chainRPCs[common.TONChain]),
+	common.TONChain:   pkgton.NewConstructor(chainRPCs[common.TONChain]),
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -114,31 +115,148 @@ func main() {
 		time.Sleep(time.Second)
 	}
 
-	// wait for tron chain to produce its first block
-	for _, chain := range acommon.SimChains() {
-		if chain != common.TRONChain {
+	// wait for chains to be ready
+	var err error
+	// ctx := context.Background()
+	duration := time.Second * 3
+	// retries := 60
+	// current := 0
+
+	// for _, chain := range acommon.SimChains() {
+	// 	switch chain {
+	// 	case common.TONChain:
+	// 		sleep := func() {
+	// 			log.Info().Msg("waiting for TON to be ready")
+	// 			time.Sleep(duration)
+	// 		}
+	//
+	// 		for ; current < retries; current++ {
+	// 			// TON chain takes a LONG time to start up.
+	// 			// TODO see if MyLocalTON can start up with funded master account faster.
+	//
+	// 			pool := liteclient.NewConnectionPool()
+	//
+	// 			// Setup connection based on host parameter
+	// 			err = pool.AddConnection(ctx, "localhost:40004", pkgton.MyLocalTonLiteKey)
+	// 			if err != nil {
+	// 				sleep()
+	// 				continue
+	// 			}
+	//
+	// 			// Create API client with fast proof checks
+	// 			api := ton.NewAPIClient(pool, ton.ProofCheckPolicyFast)
+	//
+	// 			var info *ton.BlockIDExt
+	// 			info, err = api.GetMasterchainInfo(ctx)
+	// 			if err != nil || info.SeqNo < 1 {
+	// 				sleep()
+	// 				continue
+	// 			}
+	//
+	// 			// Parse TON address
+	// 			var address *tonaddress.Address
+	// 			address, err = tonaddress.ParseAddr("0QCKEjA92VGukpl4J8tfrFbcBormvtcF8W696LeHekKYZlRD")
+	// 			if err != nil {
+	// 				log.Fatal().Err(err).Msg("failed to parse address")
+	// 			}
+	//
+	// 			// Get account information
+	// 			var account *tlb.Account
+	// 			account, err = api.GetAccount(ctx, info, address)
+	// 			if err != nil {
+	// 				sleep()
+	// 				continue
+	// 			}
+	//
+	// 			if account.State != nil && !account.State.Balance.IsZero() {
+	// 				sleep()
+	// 				continue
+	// 			}
+	//
+	// 			// all good
+	// 			break
+	// 		}
+	//
+	// 	case common.TRONChain:
+	// 		for ; current < retries; current++ {
+	// 			var res *http.Response
+	// 			res, err = http.Post(
+	// 				"http://localhost:8090/wallet/getblockbynum",
+	// 				"application/json",
+	// 				strings.NewReader(`{"num":1}`),
+	// 			)
+	//
+	// 			if err == nil && res.StatusCode == 200 {
+	// 				defer res.Body.Close()
+	//
+	// 				var data []byte
+	// 				data, err = io.ReadAll(res.Body)
+	// 				if err == nil && len(data) > 3 {
+	// 					break
+	// 				}
+	// 			}
+	//
+	// 			log.Info().Msg("waiting for TRON to be ready")
+	// 			time.Sleep(duration)
+	// 		}
+	// 	}
+	//
+	// 	if err != nil || current == retries {
+	// 		log.Fatal().Err(err).
+	// 			Int("retries", current).
+	// 			Msgf("timeout waiting for %s", chain)
+	// 	}
+	// }
+
+	// wait for block scanner (bifrost restarts every minute, if it couldn't
+	// load a certain chain client
+
+	for i := 0; i < 60; i++ {
+		var res *http.Response
+		res, err = http.Get("http://localhost:6040/status/scanner")
+
+		if err != nil || res.StatusCode != 200 {
+			time.Sleep(duration)
 			continue
 		}
 
-		for {
-			res, err := http.Post(
-				"http://localhost:8090/wallet/getblockbynum",
-				"application/json",
-				strings.NewReader(`{"num":1}`),
-			)
+		defer res.Body.Close()
 
-			if err == nil && res.StatusCode == 200 {
-				defer res.Body.Close()
-
-				data, err := io.ReadAll(res.Body)
-				if err == nil && len(data) > 3 {
-					break
-				}
-			}
-
-			log.Info().Msg("waiting for tron to be ready")
-			time.Sleep(time.Second)
+		var data []byte
+		data, err = io.ReadAll(res.Body)
+		if err != nil {
+			log.Error().Err(err).Msg("failed to read response body")
+			time.Sleep(duration)
+			continue
 		}
+
+		var status map[string]struct {
+			Height int `json:"chain_height"`
+		}
+		err = json.Unmarshal(data, &status)
+		if err != nil {
+			log.Error().Err(err).Msg("failed to unmarshal response body")
+			time.Sleep(duration)
+			continue
+		}
+
+		var missing []string
+		for _, chain := range acommon.SimChains() {
+			state, found := status[chain.String()]
+			if !found || state.Height < 10 {
+				missing = append(missing, chain.String())
+			}
+		}
+
+		if len(missing) > 0 {
+			log.Info().
+				Str("missing", strings.Join(missing, ", ")).
+				Msg("Waiting for block scanners")
+			time.Sleep(duration)
+			continue
+		}
+
+		break
 	}
 
 	// combine all actor dags for the complete test run

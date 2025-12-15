@@ -7,7 +7,6 @@ import (
 	"time"
 
 	cosmoscryptoed25519 "github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
-	"github.com/rs/zerolog/log"
 	tonaddress "github.com/xssnick/tonutils-go/address"
 	"github.com/xssnick/tonutils-go/liteclient"
 	"github.com/xssnick/tonutils-go/tlb"
@@ -27,7 +26,7 @@ import (
 
 const (
 	V3R2CodeHex       = "B5EE9C724101010100710000DEFF0020DD2082014C97BA218201339CBAB19F71B0ED44D0D31FD31F31D70BFFE304E0A4F2608308D71820D31FD31FD31FF82313BBF263ED44D0D31FD31FD3FFD15132BAF2A15144BAF2A204F901541055F910F2A3F8009320D74A96D307D402FB00E8D101A4C8CB1FCB1FCBFFC9ED5410BD6DAD"
-	myLocalTonLiteKey = "E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY="
+	MyLocalTonLiteKey = "E7XwFSQzNkcRepUC23J2nRpASXpnsEKmyyHYV4u/FZY="
 )
 
 type Client struct {
@@ -74,7 +73,7 @@ func NewClient(chain common.Chain, host string, keys *thorclient.Keys) (types.Li
 	}
 
 	// Setup connection based on host parameter
-	if err := pool.AddConnection(ctx, host, myLocalTonLiteKey); err != nil {
+	if err := pool.AddConnection(ctx, host, MyLocalTonLiteKey); err != nil {
 		return nil, fmt.Errorf("fail to add client connection: %w", err)
 	}
 
@@ -93,15 +92,6 @@ func NewClient(chain common.Chain, host string, keys *thorclient.Keys) (types.Li
 	}
 
 	accountID := tonWallet.Bounce(false).Testnet(true).String()
-
-	for i := 0; i < 10; i++ {
-		info, err := api.GetMasterchainInfo(ctx)
-		if err == nil && info.SeqNo > 10 {
-			break
-		}
-		log.Info().Msg("Waiting for TON chain to be ready")
-		time.Sleep(time.Second * 3)
-	}
 
 	return &Client{
 		chain:      chain,

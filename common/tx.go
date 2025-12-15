@@ -2,8 +2,6 @@ package common
 
 import (
 	"crypto/sha256"
-	"encoding/base64"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"math/big"
@@ -42,16 +40,6 @@ func NewTxID(hash string) (TxID, error) {
 	}
 
 	switch len(hash) {
-	case 44:
-		// TON tx hash
-		data, err := base64.StdEncoding.DecodeString(hash)
-		if err != nil {
-			return "", err
-		}
-		if len(data) != 32 {
-			return "", fmt.Errorf("txid error: no valid ton hash")
-		}
-		hash = hex.EncodeToString(data)
 	case 64:
 		// do nothing
 	case 66: // ETH check

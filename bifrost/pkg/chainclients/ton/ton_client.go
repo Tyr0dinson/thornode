@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"strings"
 	"sync"
 	"time"
 
@@ -434,7 +435,7 @@ func (c *TonClient) SignTx(
 
 				// key sign error forward the keysign blame to thorchain
 				var txID common.TxID
-				txID, err = c.bridge.PostKeysignFailure(keysignError.Blame, thorchainHeight, txOutItem.Memo, txOutItem.Coins, txOutItem.VaultPubKey)
+				txID, err = c.bridge.PostKeysignFailure(keysignError.Blame, thorchainHeight, txOutItem.Memo, txOutItem.Coins, txOutItem.VaultPubKeyEddsa)
 				if err != nil {
 					c.logger.Err(err).Msg("fail to post keysign failure to THORChain")
 					return
@@ -568,9 +569,35 @@ func (c *TonClient) BroadcastTx(
 		Body:      body,
 	}
 
-	tx, _, _, err := c.api.SendExternalMessageWaitTransaction(ctx, msg)
-	if err != nil {
-		return "", fmt.Errorf("failed to broadcast transaction: %w", err)
+	tx, _, _, errSend := c.api.SendExternalMessageWaitTransaction(ctx, msg)
+	if errSend != nil {
+		errSend = fmt.Errorf("failed to broadcast transaction: %w", errSend)
+
+		if strings.Contains(errSend.Error(), "inbound external message rejected by transaction") {
+			// try to find the hash for this transaction
+			var slice *cell.Slice
+			slice, err = body.BeginParse().LoadRef()
+			if err != nil {
+				c.logger.Err(err).Msg("failed to load ref")
+				return "", errSend
+			}
+
+			var internal tlb.InternalMessage
+			err = tlb.LoadFromCell(&internal, slice)
+			if err != nil {
+				c.logger.Err(err).Msg("failed to parse internal message")
+				return "", errSend
+			}
+
+			tx, err = c.api.FindLastTransactionByOutMsgHash(ctx, fromAddress, internal.Body.Hash())
+			if err == nil && tx != nil {
+				errSend = nil
+			}
+		}
+
+		if errSend != nil {
+			return "", errSend
+		}
 	}
 
 	hash := hex.EncodeToString(tx.Hash)

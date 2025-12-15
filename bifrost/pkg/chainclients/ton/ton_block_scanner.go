@@ -2,7 +2,6 @@ package ton
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"math/big"
@@ -304,20 +303,15 @@ func (s *TonBlockScanner) processShard(
 			s.logger.Err(err).Msg("failed getting tx info")
 		}
 
-		// we are interested in "ordinary" transactions only
-		// https://docs.ton.org/v3/documentation/data-formats/tlb/transaction-layout
-		txDescription, ok := tx.Description.(tlb.TransactionDescriptionOrdinary)
-		if !ok {
-			continue
-		}
-
-		if txDescription.Aborted {
+		skip, reason := skipTx(tx)
+		if skip {
 			s.logger.Debug().
 				Str("hash", hex.EncodeToString(tx.Hash)).
 				Uint32("block_height", block.SeqNo).
 				Str("lt", fmt.Sprintf("%d", tx.LT)).
 				Str("account", addr.String()).
-				Msg("skipping aborted transaction")
+				Str("reason", reason).
+				Msg("skipping transaction")
 			continue
 		}
 
@@ -328,51 +322,28 @@ func (s *TonBlockScanner) processShard(
 			Str("account", addr.String()).
 			Msg("processing transaction")
 
-		if tx.IO.Out == nil {
+		msg := tx.IO.In
+
+		// we are just interested in fees of external in msgs, because this is
+		// the kind of tx that is needed for sending founds out of a vault
+		if msg.MsgType == tlb.MsgTypeExternalIn {
+			index := len(s.feeRateCache) - 1
+			s.feeRateCache[index] = append(s.feeRateCache[index], tx.TotalFees.Coins.Nano().Uint64())
 			continue
 		}
 
-		var msgs []tlb.Message
-		msgs, err = tx.IO.Out.ToSlice()
+		if msg.MsgType != tlb.MsgTypeInternal {
+			continue
+		}
+
+		var txInItem types.TxInItem
+		txInItem, err = s.processMessage(tx, msg.AsInternal())
 		if err != nil {
-			s.logger.Err(err).Msg("failed to get out msgs")
+			s.logger.Err(err).Msg("failed to process message")
+			continue
 		}
 
-		var ext *tlb.ExternalMessage
-		if tx.IO.In != nil && tx.IO.In.MsgType == tlb.MsgTypeExternalIn {
-			ext = tx.IO.In.AsExternalIn()
-		}
-
-		for _, msg := range msgs {
-			if msg.MsgType != tlb.MsgTypeInternal {
-				continue
-			}
-
-			var txInItem types.TxInItem
-			txInItem, err = s.processMessage(tx, msg.AsInternal())
-			if err != nil {
-				s.logger.Err(err).Msg("failed to process message")
-				continue
-			}
-
-			// get the tx id from ext in hash, which is the one bifrost returns
-			// when broadcasting and different from the tx actually delivering
-			// the funds to the destination
-			if ext != nil {
-				var hash string
-				hash, err = s.getExtInHash(block, tx.LT, msg.AsInternal())
-				if err == nil && hash != "" {
-					txInItem.Tx = hash
-				}
-			}
-
-			txInItems = append(txInItems, txInItem)
-		}
-
-		if !txDescription.Aborted {
-			index := len(s.feeRateCache) - 1
-			s.feeRateCache[index] = append(s.feeRateCache[index], tx.TotalFees.Coins.Nano().Uint64())
-		}
+		txInItems = append(txInItems, txInItem)
 	}
 
 	if info.AfterSplit || info.AfterMerge {
@@ -417,8 +388,6 @@ func (s *TonBlockScanner) processMessage(
 		return txInItem, err
 	}
 
-	hash := base64.StdEncoding.EncodeToString(tx.Hash)
-
 	src := msg.SrcAddr
 	src.SetBounce(false)
 	src.SetTestnetOnly(common.IsMocknet)
@@ -427,9 +396,35 @@ func (s *TonBlockScanner) processMessage(
 	dst.SetBounce(false)
 	dst.SetTestnetOnly(common.IsMocknet)
 
+	// Try to find the external in message, that triggered the spending
+	// wallet to transfer the funds. In case the message wasn't triggered
+	// externally, use the "deposit" hash
+	var in *tlb.Transaction
+	in, err = s.api.FindLastTransactionByOutMsgHash(s.ctx, src, msg.Body.Hash())
+	if err != nil {
+		s.logger.Err(err).Msg("failed to find previous transaction")
+		return txInItem, err
+	}
+
+	var hash string
+	var fees *big.Int
+
+	if in != nil && in.IO.In != nil && in.IO.In.MsgType == tlb.MsgTypeExternalIn {
+		hash = hex.EncodeToString(in.Hash)
+		fees = in.TotalFees.Coins.Nano()
+	} else {
+		hash = hex.EncodeToString(tx.Hash)
+		fees = tx.TotalFees.Coins.Nano()
+	}
+
+	if fees.Cmp(big.NewInt(0)) == 0 {
+		fees = big.NewInt(1)
+		s.logger.Warn().Str("hash", hash).Msg("gas is 0")
+	}
+
 	amount := msg.Amount.Nano()
 
-	if amount.Cmp(tlb.ZeroCoins.Nano()) <= 0 {
+	if amount.Cmp(big.NewInt(0)) <= 0 {
 		err = fmt.Errorf("amount less than or equal to zero")
 		s.logger.Err(err).
 			Str("hash", hash).
@@ -448,14 +443,8 @@ func (s *TonBlockScanner) processMessage(
 		return txInItem, err
 	}
 
-	coins := common.Coins{{
-		Asset:    common.TONAsset,
-		Amount:   math.NewUintFromBigInt(amountCoins),
-		Decimals: decimals,
-	}}
-
 	amountGas, err := common.ConvertDecimals(
-		big.NewInt(tx.TotalFees.Coins.Nano().Int64()),
+		big.NewInt(fees.Int64()),
 		int(decimals),
 		common.THORChainDecimals,
 	)
@@ -464,69 +453,58 @@ func (s *TonBlockScanner) processMessage(
 		return txInItem, err
 	}
 
-	gas := common.Gas{{
-		Asset:    common.TONAsset,
-		Amount:   math.NewUintFromBigInt(amountGas),
-		Decimals: decimals,
-	}}
-
 	txInItem = types.TxInItem{
 		Tx:     hash,
 		Memo:   msg.Comment(),
 		Sender: src.String(),
 		To:     dst.String(),
-		Coins:  coins,
-		Gas:    gas,
+		Coins: common.Coins{{
+			Asset:    common.TONAsset,
+			Amount:   math.NewUintFromBigInt(amountCoins),
+			Decimals: decimals,
+		}},
+		Gas: common.Gas{{
+			Asset:    common.TONAsset,
+			Amount:   math.NewUintFromBigInt(amountGas),
+			Decimals: decimals,
+		}},
 	}
 
 	return txInItem, nil
 }
 
-func (s *TonBlockScanner) getExtInHash(
-	block *ton.BlockIDExt,
-	lt uint64,
-	out *tlb.InternalMessage,
-) (string, error) {
-	tx, err := s.api.GetTransaction(s.ctx, block, out.SrcAddr, lt)
-	if err != nil {
-		return "", err
+func skipTx(tx *tlb.Transaction) (bool, string) {
+	// no ordinary tx => skip
+	desc, ok := tx.Description.(tlb.TransactionDescriptionOrdinary)
+	if !ok {
+		return true, "no ordinary transaction"
 	}
 
-	if tx.IO.In == nil || tx.IO.In.MsgType != tlb.MsgTypeExternalIn {
-		return "", fmt.Errorf("returned tx has no external in message")
-	}
-	ext := tx.IO.In.AsExternalIn()
-
-	// get internal message from externalIn
-	slice, err := ext.Payload().BeginParse().LoadRef()
-	if err != nil {
-		return "", err
+	// if tx is not aborted => dont skip
+	if !desc.Aborted {
+		return false, ""
 	}
 
-	var in tlb.InternalMessage
-	err = tlb.LoadFromCell(&in, slice)
-	if err != nil {
-		return "", err
+	// no credit phase, no funds credited => skip
+	if desc.CreditPhase == nil {
+		return true, "no credit phase found"
 	}
 
-	// compare in and out
-	if !in.SrcAddr.Equals(out.SrcAddr) {
-		return "", fmt.Errorf("source address mismatch")
+	// zero funds credited => skip
+	if desc.CreditPhase.Credit.Coins.IsZero() {
+		return true, "zero funds credited"
 	}
 
-	if !in.DstAddr.Equals(out.DstAddr) {
-		return "", fmt.Errorf("destination address mismatch")
+	// no in msg => skip
+	if tx.IO.In == nil {
+		return true, "no incoming tx found"
 	}
 
-	if !in.Amount.Equals(out.Amount) {
-		return "", fmt.Errorf("funds amount mismatch")
+	if desc.Aborted && tx.EndStatus == tlb.AccountStatusUninit {
+		return false, ""
 	}
 
-	if in.Comment() != out.Comment() {
-		return "", fmt.Errorf("comment mismatch")
-	}
-
-	return hex.EncodeToString(tx.Hash), nil
+	return true, "default skip"
 }
 
 func shardId(block *ton.BlockIDExt) string {

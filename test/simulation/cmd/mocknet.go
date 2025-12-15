@@ -157,7 +157,7 @@ func InitConfig(parallelism int, seed bool) *OpConfig {
 				{common.LTCChain, 250, 103},
 				{common.BCHChain, 1500, 7},
 				{common.DOGEChain, 1000, 1500000},
-				{common.TONChain, 1, 5_000_000},
+				{common.TONChain, 1, 10_000_000},
 			}
 			for _, fee := range defaultFees {
 				log.Info().Msgf("posting %s network fee", fee.chain)
@@ -198,23 +198,6 @@ func InitConfig(parallelism int, seed bool) *OpConfig {
 		account, err := master.ChainClients[chain].GetAccount(nil)
 		if err != nil {
 			log.Fatal().Stringer("chain", chain).Err(err).Msg("failed to get master account")
-		}
-
-		if chain == common.TONChain {
-			// TON chain takes a LONG time to start up.
-			// TODO see if MyLocalTON can start up with funded master account faster.
-			for i := 0; account.Coins[0].Amount.IsZero() && i < 30; i++ {
-				log.Info().Msg("TON chain is not ready yet, waiting...")
-				<-time.After(5 * time.Second)
-				account, err = master.ChainClients[chain].GetAccount(nil)
-				if err != nil {
-					log.Fatal().Stringer("chain", chain).Err(err).Msg("failed to get master account")
-				}
-				continue
-			}
-			if account.Coins[0].Amount.IsZero() {
-				log.Fatal().Msg("TON chain is still not ready")
-			}
 		}
 
 		for _, coin := range account.Coins {
