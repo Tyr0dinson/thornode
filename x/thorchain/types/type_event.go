@@ -13,55 +13,56 @@ import (
 
 // all event types support by THORChain
 const (
-	AddLiquidityEventType           = "add_liquidity"
-	BondEventType                   = "bond"
-	ReBondEventType                 = "rebond"
-	DonateEventType                 = "donate"
-	ErrataEventType                 = "errata"
-	FeeEventType                    = "fee"
-	GasEventType                    = "gas"
-	OutboundEventType               = "outbound"
-	PendingLiquidity                = "pending_liquidity"
-	PoolBalanceChangeEventType      = "pool_balance_change"
-	PoolEventType                   = "pool"
-	RefundEventType                 = "refund"
-	ReserveEventType                = "reserve"
-	RewardEventType                 = "rewards"
-	ScheduledOutboundEventType      = "scheduled_outbound"
-	SecurityEventType               = "security"
-	SetMimirEventType               = "set_mimir"
-	SetNodeMimirEventType           = "set_node_mimir"
-	SlashEventType                  = "slash"
-	SlashPointEventType             = "slash_points"
-	StreamingSwapEventType          = "streaming_swap"
-	SwapEventType                   = "swap"
-	AffiliateFeeEventType           = "affiliate_fee"
-	LimitSwapEventType              = "limit_swap"
-	ModifyLimitSwapEventType        = "limit_swap_mod"
-	LimitSwapCloseEventType         = "limit_swap_close"
-	MintBurnType                    = "mint_burn"
-	THORNameEventType               = "thorname"
-	TradeAccountDepositEventType    = "trade_account_deposit"
-	TradeAccountWithdrawEventType   = "trade_account_withdraw"
-	SecuredAssetDepositEventType    = "secured_asset_deposit"
-	SecuredAssetWithdrawEventType   = "secured_asset_withdraw"
-	SwitchEventType                 = "switch"
-	OperatorRotateEventType         = "operator_rotate"
-	RUNEPoolDepositEventType        = "rune_pool_deposit"
-	RUNEPoolWithdrawEventType       = "rune_pool_withdraw"
-	TSSKeygenSuccess                = "tss_keygen_success"
-	TSSKeygenFailure                = "tss_keygen_failure"
-	TSSKeygenMetricEventType        = "tss_keygen"
-	TSSKeysignMetricEventType       = "tss_keysign"
-	VersionEventType                = "version"
-	WithdrawEventType               = "withdraw"
-	TCYDistributionType             = "tcy_distribution"
-	TCYClaimType                    = "tcy_claim"
-	TCYStakeType                    = "tcy_stake"
-	TCYUnstakeType                  = "tcy_unstake"
-	OraclePriceEvent                = "oracle_price"
-	FailedOutboundRecoveryEventType = "failed_outbound_recovery"
-	VaultOverSolvencyEventType      = "vault_over_solvency"
+	AddLiquidityEventType               = "add_liquidity"
+	BondEventType                       = "bond"
+	ReBondEventType                     = "rebond"
+	DonateEventType                     = "donate"
+	ErrataEventType                     = "errata"
+	FeeEventType                        = "fee"
+	GasEventType                        = "gas"
+	OutboundEventType                   = "outbound"
+	PendingLiquidity                    = "pending_liquidity"
+	PoolBalanceChangeEventType          = "pool_balance_change"
+	PoolEventType                       = "pool"
+	RefundEventType                     = "refund"
+	ReserveEventType                    = "reserve"
+	RewardEventType                     = "rewards"
+	ScheduledOutboundEventType          = "scheduled_outbound"
+	SecurityEventType                   = "security"
+	SetMimirEventType                   = "set_mimir"
+	SetNodeMimirEventType               = "set_node_mimir"
+	SlashEventType                      = "slash"
+	SlashPointEventType                 = "slash_points"
+	StreamingSwapEventType              = "streaming_swap"
+	SwapEventType                       = "swap"
+	AffiliateFeeEventType               = "affiliate_fee"
+	LimitSwapEventType                  = "limit_swap"
+	ModifyLimitSwapEventType            = "limit_swap_mod"
+	LimitSwapCloseEventType             = "limit_swap_close"
+	MintBurnType                        = "mint_burn"
+	THORNameEventType                   = "thorname"
+	TradeAccountDepositEventType        = "trade_account_deposit"
+	TradeAccountWithdrawEventType       = "trade_account_withdraw"
+	SecuredAssetDepositEventType        = "secured_asset_deposit"
+	SecuredAssetWithdrawEventType       = "secured_asset_withdraw"
+	SwitchEventType                     = "switch"
+	OperatorRotateEventType             = "operator_rotate"
+	RUNEPoolDepositEventType            = "rune_pool_deposit"
+	RUNEPoolWithdrawEventType           = "rune_pool_withdraw"
+	TSSKeygenSuccess                    = "tss_keygen_success"
+	TSSKeygenFailure                    = "tss_keygen_failure"
+	TSSKeygenMetricEventType            = "tss_keygen"
+	TSSKeysignMetricEventType           = "tss_keysign"
+	VersionEventType                    = "version"
+	WithdrawEventType                   = "withdraw"
+	TCYDistributionType                 = "tcy_distribution"
+	TCYClaimType                        = "tcy_claim"
+	TCYStakeType                        = "tcy_stake"
+	TCYUnstakeType                      = "tcy_unstake"
+	OraclePriceEvent                    = "oracle_price"
+	FailedOutboundRecoveryEventType     = "failed_outbound_recovery"
+	VaultOverSolvencyEventType          = "vault_over_solvency"
+	InactiveVaultStuckOutboundEventType = "inactive_vault_stuck_outbound"
 )
 
 // PoolMods a list of pool modifications
@@ -1470,6 +1471,47 @@ func (m *EventFailedOutboundRecovery) Events() (cosmos.Events, error) {
 		cosmos.NewAttribute("recovery_type", m.RecoveryType),
 		cosmos.NewAttribute("destination", m.Destination.String()),
 		cosmos.NewAttribute("memo", m.Memo),
+	)
+	return cosmos.Events{evt}, nil
+}
+
+// EventInactiveVaultStuckOutbound is emitted when an InactiveVault outbound
+// appears stuck after repeated retry attempts
+type EventInactiveVaultStuckOutbound struct {
+	InHash      common.TxID
+	Chain       common.Chain
+	ToAddress   common.Address
+	Coin        common.Coin
+	VaultPubKey common.PubKey
+	Attempts    int64
+}
+
+// NewEventInactiveVaultStuckOutbound creates a new EventInactiveVaultStuckOutbound
+func NewEventInactiveVaultStuckOutbound(toi TxOutItem, vaultPubKey common.PubKey, attempts int64) *EventInactiveVaultStuckOutbound {
+	return &EventInactiveVaultStuckOutbound{
+		InHash:      toi.InHash,
+		Chain:       toi.Chain,
+		ToAddress:   toi.ToAddress,
+		Coin:        toi.Coin,
+		VaultPubKey: vaultPubKey,
+		Attempts:    attempts,
+	}
+}
+
+// Type returns the event type
+func (m *EventInactiveVaultStuckOutbound) Type() string {
+	return InactiveVaultStuckOutboundEventType
+}
+
+// Events returns the cosmos events
+func (m *EventInactiveVaultStuckOutbound) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(m.Type(),
+		cosmos.NewAttribute("in_hash", m.InHash.String()),
+		cosmos.NewAttribute("chain", m.Chain.String()),
+		cosmos.NewAttribute("to_address", m.ToAddress.String()),
+		cosmos.NewAttribute("coin", m.Coin.String()),
+		cosmos.NewAttribute("vault_pub_key", m.VaultPubKey.String()),
+		cosmos.NewAttribute("attempts", strconv.FormatInt(m.Attempts, 10)),
 	)
 	return cosmos.Events{evt}, nil
 }

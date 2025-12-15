@@ -287,6 +287,7 @@ func (s *SlasherVCUR) LackSigning(ctx cosmos.Context, mgr Manager) error {
 			// be done before treasury recovery to avoid making active vaults insolvent.
 			if vault.Status == InactiveVault {
 				maxRetiredVaultRecoveryAttempts := mgr.Keeper().GetConfigInt64(ctx, constants.MaxRetiredVaultRecoveryAttempts)
+				inactiveVaultRetryInterval := mgr.GetConstants().GetInt64Value(constants.InactiveVaultRetryInterval)
 				age := ctx.BlockHeight() - voter.FinalisedHeight
 				attempts := age / signingTransPeriod
 				if attempts >= maxRetiredVaultRecoveryAttempts {
@@ -295,6 +296,18 @@ func (s *SlasherVCUR) LackSigning(ctx cosmos.Context, mgr Manager) error {
 						"attempts", attempts,
 						"max", maxRetiredVaultRecoveryAttempts)
 					continue
+				}
+
+				// After N attempts, reduce retry frequency to every Nth period and emit event
+				if inactiveVaultRetryInterval > 0 && attempts >= inactiveVaultRetryInterval {
+					if attempts%inactiveVaultRetryInterval != 0 {
+						continue // Skip this iteration
+					}
+					// Emit event on each reduced-frequency retry (for alerting)
+					evt := NewEventInactiveVaultStuckOutbound(toi, vault.PubKey, attempts)
+					if emitErr := mgr.EventMgr().EmitEvent(ctx, evt); emitErr != nil {
+						ctx.Logger().Error("fail to emit inactive vault stuck outbound event", "error", emitErr)
+					}
 				}
 
 				err = mgr.TxOutStore().UnSafeAddTxOutItem(ctx, mgr, toi, rescheduleHeight)

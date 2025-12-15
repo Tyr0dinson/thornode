@@ -1302,3 +1302,112 @@ func (s *SlashingVCURSuite) TestReverseSwapFallbackToTreasury(c *C) {
 	c.Assert(queuedSwap.Destination.Equals(common.TreasuryAddress), Equals, true,
 		Commentf("Treasury recovery should send to treasury address"))
 }
+
+// TestInactiveVaultStuckOutboundRetryInterval tests that InactiveVault outbounds
+// are only retried at specific intervals after the threshold is reached
+func (s *SlashingVCURSuite) TestInactiveVaultStuckOutboundRetryInterval(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	ver := GetCurrentVersion()
+	constAccessor := constants.GetConstantValues(ver)
+	signingTransactionPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
+	inactiveVaultRetryInterval := constAccessor.GetInt64Value(constants.InactiveVaultRetryInterval)
+
+	// Create an InactiveVault
+	vault := GetRandomVault()
+	vault.Type = AsgardVault
+	vault.Status = InactiveVault
+	vault.PubKey = GetRandomPubKey()
+	vault.Coins = common.NewCoins(
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(5000000*common.One)),
+	)
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	inTx := common.NewTx(
+		GetRandomTxHash(),
+		GetRandomETHAddress(),
+		GetRandomETHAddress(),
+		common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(320000000))},
+		nil,
+		"OUT:sometxhash",
+	)
+
+	txOutItem := TxOutItem{
+		Chain:       common.ETHChain,
+		InHash:      inTx.ID,
+		VaultPubKey: vault.PubKey,
+		ToAddress:   GetRandomETHAddress(),
+		Coin:        common.NewCoin(common.ETHAsset, cosmos.NewUint(1000000)),
+		Memo:        "OUT:sometxhash",
+	}
+
+	slasher := newSlasherVCUR(mgr.Keeper(), mgr.EventMgr())
+
+	// Test case 1: Attempt at interval=3 threshold should retry and emit event
+	// Set FinalisedHeight such that at current block height, attempts = 3
+	// attempts = (blockHeight - FinalisedHeight) / signingTransPeriod = 3
+	// So FinalisedHeight = blockHeight - (3 * signingTransPeriod)
+	blockHeight := int64(1000)
+	finalisedHeight := blockHeight - (inactiveVaultRetryInterval * signingTransactionPeriod)
+
+	// LackSigning looks for txouts at (blockHeight - signingTransPeriod)
+	txOutHeight := blockHeight - signingTransactionPeriod
+
+	// Create voter with finalized height
+	voter := NewObservedTxVoter(inTx.ID, []common.ObservedTx{})
+	voter.FinalisedHeight = finalisedHeight
+	voter.Actions = []TxOutItem{txOutItem}
+	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+
+	// Create txout at the height LackSigning will look for
+	txOut := NewTxOut(txOutHeight)
+	txOut.TxArray = append(txOut.TxArray, txOutItem)
+	c.Assert(mgr.Keeper().SetTxOut(ctx, txOut), IsNil)
+
+	ctx = ctx.WithBlockHeight(blockHeight)
+	c.Assert(slasher.LackSigning(ctx, mgr), IsNil)
+
+	// Should have rescheduled (outHash marked as BlankTxID)
+	txOutAfter, err := mgr.Keeper().GetTxOut(ctx, txOutHeight)
+	c.Assert(err, IsNil)
+	c.Assert(txOutAfter.TxArray[0].OutHash.Equals(common.BlankTxID), Equals, true,
+		Commentf("Outbound should be rescheduled at attempt %d", inactiveVaultRetryInterval))
+
+	// Test case 2: Attempt at 4 (between intervals) should be skipped
+	// Reset for next test - new txout at new height
+	blockHeight2 := blockHeight + signingTransactionPeriod // attempts = 4
+	txOutHeight2 := blockHeight2 - signingTransactionPeriod
+
+	txOutItem2 := txOutItem
+	txOutItem2.OutHash = common.TxID("") // Clear OutHash
+	txOut2 := NewTxOut(txOutHeight2)
+	txOut2.TxArray = append(txOut2.TxArray, txOutItem2)
+	c.Assert(mgr.Keeper().SetTxOut(ctx, txOut2), IsNil)
+
+	ctx = ctx.WithBlockHeight(blockHeight2)
+	c.Assert(slasher.LackSigning(ctx, mgr), IsNil)
+
+	// OutHash should NOT be marked (skipped, not rescheduled)
+	txOutAfter2, err := mgr.Keeper().GetTxOut(ctx, txOutHeight2)
+	c.Assert(err, IsNil)
+	c.Assert(txOutAfter2.TxArray[0].OutHash.IsEmpty(), Equals, true,
+		Commentf("Outbound should be skipped at attempt 4 (not a multiple of %d)", inactiveVaultRetryInterval))
+
+	// Test case 3: Attempt at 6 (multiple of interval) should retry
+	blockHeight3 := finalisedHeight + (6 * signingTransactionPeriod) // attempts = 6
+	txOutHeight3 := blockHeight3 - signingTransactionPeriod
+
+	txOutItem3 := txOutItem
+	txOutItem3.OutHash = common.TxID("")
+	txOut3 := NewTxOut(txOutHeight3)
+	txOut3.TxArray = append(txOut3.TxArray, txOutItem3)
+	c.Assert(mgr.Keeper().SetTxOut(ctx, txOut3), IsNil)
+
+	ctx = ctx.WithBlockHeight(blockHeight3)
+	c.Assert(slasher.LackSigning(ctx, mgr), IsNil)
+
+	txOutAfter3, err := mgr.Keeper().GetTxOut(ctx, txOutHeight3)
+	c.Assert(err, IsNil)
+	c.Assert(txOutAfter3.TxArray[0].OutHash.Equals(common.BlankTxID), Equals, true,
+		Commentf("Outbound should be rescheduled at attempt 6 (multiple of %d)", inactiveVaultRetryInterval))
+}
