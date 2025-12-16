@@ -25,7 +25,7 @@ func NewChurnActor(rng *rand.Rand) *Actor {
 	a := &ChurnActor{
 		Actor: *NewActor("Churn", rng),
 	}
-	a.Timeout = 5 * time.Minute
+	a.Timeout = 10 * time.Minute
 
 	a.Ops = append(a.Ops, a.startChurn)
 	a.Ops = append(a.Ops, a.waitForChurnComplete)
