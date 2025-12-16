@@ -9,6 +9,7 @@ import (
 	"math/rand/v2"
 	"net/http"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -119,11 +120,13 @@ func main() {
 		time.Sleep(time.Second)
 	}
 
-	// wait for block scanner (bifrost restarts every minute, if it couldn't
-	// load a certain chain client
+	// Bifrost restarts every minute, if it couldn't load a certain chain, so
+	// wait for all block scanners to report chain height >= 10 (TON needs a few
+	// blocks to fund the master account)
 
 	var err error
 	duration := time.Second * 3
+	target := 10
 
 	for i := 0; i < 60; i++ {
 		var res *http.Response
@@ -157,17 +160,21 @@ func main() {
 		var missing []string
 		for _, chain := range acommon.SimChains() {
 			state, found := status[chain.String()]
-			if !found || state.Height < 10 {
+			if !found || state.Height < target {
 				missing = append(missing, chain.String())
 			}
 		}
 
 		if len(missing) > 0 {
+			sort.Strings(missing)
 			log.Info().
-				Str("missing", strings.Join(missing, ", ")).
+				Str("missing", strings.Join(missing, ",")).
 				Msg("Waiting for block scanners")
 			time.Sleep(duration)
 			continue
+		} else {
+			log.Info().
+				Msgf("All block scanners reporting height >= %d\n", target)
 		}
 
 		break
