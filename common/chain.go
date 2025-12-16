@@ -334,6 +334,8 @@ func (c Chain) DustThreshold() cosmos.Uint {
 		return cosmos.NewUint(One) // 1 XRP
 	case SOLChain:
 		return cosmos.NewUint(100_000) // 0.001 SOL
+	case TONChain:
+		return cosmos.NewUint(500_000) // 0.005 TON
 	default:
 		return cosmos.ZeroUint()
 	}
