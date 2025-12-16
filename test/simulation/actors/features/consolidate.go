@@ -23,7 +23,7 @@ func Consolidate(rng *rand.Rand) *Actor {
 		asset := chain.GetGasAsset()
 		switch asset {
 		case common.BTCAsset, common.BCHAsset, common.DOGEAsset, common.LTCAsset:
-			a.Children[NewConsolidateActor(asset, 10), rng] = true
+			a.Children[NewConsolidateActor(asset, 10, rng)] = true
 		}
 	}
 

@@ -28,9 +28,9 @@ func MemolessSwaps(rng *rand.Rand) *Actor {
 	for _, t := range []core.MemolessType{core.MemolessTypeRef, core.MemolessTypeAmount} {
 		for _, chain := range simChains1e8 {
 			// choose a random (other) pool to swap to
-			j := rand.Intn(len(acommon.SimChains()))
+			j := rng.Intn(len(acommon.SimChains()))
 			for chain.Equals(acommon.SimChains()[j]) {
-				j = rand.Intn(len(acommon.SimChains()))
+				j = rng.Intn(len(acommon.SimChains()))
 			}
 			a.Children[core.NewSwapMemolessActor(chain.GetGasAsset(), acommon.SimChains()[j].GetGasAsset(), t, rng)] = true
 		}
