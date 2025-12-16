@@ -2,6 +2,7 @@ package features
 
 import (
 	"fmt"
+	rand "math/rand/v2"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -15,14 +16,14 @@ import (
 // Consolidate
 ////////////////////////////////////////////////////////////////////////////////////////
 
-func Consolidate() *Actor {
-	a := NewActor("Consolidate")
+func Consolidate(rng *rand.Rand) *Actor {
+	a := NewActor("Consolidate", rng)
 
 	for _, chain := range SimChains() {
 		asset := chain.GetGasAsset()
 		switch asset {
 		case common.BTCAsset, common.BCHAsset, common.DOGEAsset, common.LTCAsset:
-			a.Children[NewConsolidateActor(asset, 10)] = true
+			a.Children[NewConsolidateActor(asset, 10), rng] = true
 		}
 	}
 
@@ -43,9 +44,9 @@ type ConsolidateActor struct {
 	scanHeight       int64
 }
 
-func NewConsolidateActor(asset common.Asset, consolidateCount int64) *Actor {
+func NewConsolidateActor(asset common.Asset, consolidateCount int64, rng *rand.Rand) *Actor {
 	a := &ConsolidateActor{
-		Actor:            *NewActor(fmt.Sprintf("Feature-Consolidate-%s", asset)),
+		Actor:            *NewActor(fmt.Sprintf("Feature-Consolidate-%s", asset), rng),
 		asset:            asset,
 		consolidateCount: consolidateCount,
 	}
@@ -128,7 +129,7 @@ func (a *ConsolidateActor) acquireUser(config *OpConfig) OpResult {
 	}
 }
 
-func (a *ConsolidateActor) getHeight(_ *OpConfig) OpResult {
+func (a *ConsolidateActor) getHeight(config *OpConfig) OpResult {
 	// get the current block height
 	block, err := thornode.GetBlock(0)
 	if err != nil {
@@ -146,7 +147,7 @@ func (a *ConsolidateActor) getHeight(_ *OpConfig) OpResult {
 	}
 }
 
-func (a *ConsolidateActor) donate(_ *OpConfig) OpResult {
+func (a *ConsolidateActor) donate(config *OpConfig) OpResult {
 	memo := fmt.Sprintf("DONATE:%s", a.asset)
 	client := a.account.ChainClients[a.asset.Chain]
 	txid, err := DepositL1(a.Log(), client, a.asset, memo, a.donateAmount)
@@ -163,7 +164,7 @@ func (a *ConsolidateActor) donate(_ *OpConfig) OpResult {
 	}
 }
 
-func (a *ConsolidateActor) verifyConsolidate(_ *OpConfig) OpResult {
+func (a *ConsolidateActor) verifyConsolidate(config *OpConfig) OpResult {
 	type FilterBlockResponse struct {
 		Txs []struct {
 			Tx struct {
