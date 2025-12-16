@@ -254,11 +254,14 @@ func handleObservedTxInQuorum(
 	hasFinalised := voter.HasFinalised(activeNodeAccounts)
 
 	// Allow swap execution at consensus (before finalization) for mempool swap optimization.
-	// Regular swaps and streaming swaps can be executed from mempool, but outbounds won't
-	// be signed until the inbound finalizes.
-	// Check if mempool swaps are enabled via mimir
+	// Only streaming swaps (StreamQuantity == 0) can be executed from mempool.
+	// Outbounds won't be signed until the inbound finalizes.
 	enableMempoolSwaps := k.GetConfigInt64(ctx, constants.EnableMempoolSwaps) > 0
-	canProcessMempoolSwap := enableMempoolSwaps && memo.IsType(TxSwap)
+	isStreamingSwap := false
+	if swapMemo, ok := memo.(SwapMemo); ok {
+		isStreamingSwap = swapMemo.GetStreamQuantity() == 0
+	}
+	canProcessMempoolSwap := enableMempoolSwaps && memo.IsType(TxSwap) && isStreamingSwap
 
 	// Update vault balances from inbounds with Migrate memos immediately,
 	// to minimise any gap between outbound and inbound observations.
