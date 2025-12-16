@@ -1253,8 +1253,10 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 		res.OutboundDelaySeconds = outboundDelay * common.THORChain.ApproximateBlockMilliseconds() / 1000
 	}
 
-	// Calculate total swap time based on whether mempool swaps are enabled
+	// Calculate total swap time based on whether mempool swaps are enabled.
+	// Mempool swaps only apply to non-streaming swaps (streamingQuantity == 0).
 	enableMempoolSwaps := qs.mgr.Keeper().GetConfigInt64(ctx, constants.EnableMempoolSwaps) > 0
+	canUseMempoolSwap := enableMempoolSwaps && streamingQuantity == 0
 
 	swapSeconds := res.OutboundDelaySeconds
 	// TODO: can outbound delay seconds be negative?
@@ -1263,7 +1265,7 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 	}
 
 	var totalSeconds int64
-	if enableMempoolSwaps {
+	if canUseMempoolSwap {
 		// With mempool swap optimization, inbound confirmation happens in parallel with swap execution.
 		// Total time is the maximum of either path, not the sum.
 		totalSeconds = swapSeconds
