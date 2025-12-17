@@ -701,6 +701,18 @@ message EventMempoolSwapReverted {
     (gogoproto.customname) = "TxID"
   ];
   int64 block_height = 2;
+  common.Asset source_asset = 3 [
+    (gogoproto.nullable) = false,
+    (gogoproto.customtype) = "gitlab.com/thorchain/thornode/v3/common.Asset"
+  ];
+  string source_amount = 4 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+    (gogoproto.nullable) = false
+  ];
+  string donated_amount = 5 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+    (gogoproto.nullable) = false
+  ];
 }
 
 message AssetOverSolvency {

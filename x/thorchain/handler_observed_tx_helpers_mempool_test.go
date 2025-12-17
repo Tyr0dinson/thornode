@@ -190,18 +190,27 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwap(c *C) {
 	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
 
 	// Test 1: Successfully revert mempool swap
-	// TODO: Debug why this test is failing - the function returns nil but TxOut is not removed
-	// For now, just verify the function doesn't return an error
 	err := revertMempoolSwap(ctx, mgr.Keeper(), mgr, voter)
 	c.Assert(err, IsNil, Commentf("revertMempoolSwap failed: %v", err))
 
-	// TODO: Re-enable these checks once the issue is resolved
+	// TODO: Debug why TxOut removal isn't working in tests - the function returns nil but TxOut is not removed
+	// For now, just verify the function doesn't return an error
 	// updatedTxOut, err := mgr.Keeper().GetTxOut(ctx, outboundHeight)
 	// c.Assert(err, IsNil)
 	// c.Check(updatedTxOut.TxArray, HasLen, 0, Commentf("TxOut should be removed"))
-	// updatedVoter, err := mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
-	// c.Assert(err, IsNil)
-	// c.Check(updatedVoter.Reverted, Equals, true, Commentf("Voter should be marked as reverted"))
+
+	// Verify voter is marked as reverted
+	updatedVoter, err := mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Check(updatedVoter.Reverted, Equals, true, Commentf("Voter should be marked as reverted"))
+
+	// Note: Pool deduction now happens in settleSwap when the donate executes (atomic with donate)
+	// The mapping from reverseTxID -> originalTxID is stored and will be used in settleSwap
+
+	// Verify a reverse swap was queued
+	swapIter := mgr.Keeper().GetSwapQueueIterator(ctx)
+	defer swapIter.Close()
+	c.Check(swapIter.Valid(), Equals, true, Commentf("Reverse swap should be queued"))
 
 	// Test 2: Skip already signed outbounds
 	voter2TxID := GetRandomTxHash()

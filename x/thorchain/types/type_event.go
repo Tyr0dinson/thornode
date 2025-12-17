@@ -1476,10 +1476,13 @@ func (m *EventFailedOutboundRecovery) Events() (cosmos.Events, error) {
 }
 
 // NewEventMempoolSwapReverted create a new EventMempoolSwapReverted
-func NewEventMempoolSwapReverted(txID common.TxID, blockHeight int64) *EventMempoolSwapReverted {
+func NewEventMempoolSwapReverted(txID common.TxID, blockHeight int64, sourceAsset common.Asset, sourceAmount, donatedAmount cosmos.Uint) *EventMempoolSwapReverted {
 	return &EventMempoolSwapReverted{
-		TxID:        txID,
-		BlockHeight: blockHeight,
+		TxID:          txID,
+		BlockHeight:   blockHeight,
+		SourceAsset:   sourceAsset,
+		SourceAmount:  sourceAmount,
+		DonatedAmount: donatedAmount,
 	}
 }
 
@@ -1493,6 +1496,9 @@ func (m *EventMempoolSwapReverted) Events() (cosmos.Events, error) {
 	evt := cosmos.NewEvent(m.Type(),
 		cosmos.NewAttribute("tx_id", m.TxID.String()),
 		cosmos.NewAttribute("block_height", fmt.Sprintf("%d", m.BlockHeight)),
+		cosmos.NewAttribute("source_asset", m.SourceAsset.String()),
+		cosmos.NewAttribute("source_amount", m.SourceAmount.String()),
+		cosmos.NewAttribute("donated_amount", m.DonatedAmount.String()),
 	)
 	return cosmos.Events{evt}, nil
 }

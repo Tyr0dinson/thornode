@@ -2867,12 +2867,6 @@
     "begin_block_events": [],
     "end_block_events": [
       {
-        "block_height": "18",
-        "mode": "EndBlock",
-        "tx_id": "000000000000000000000000000000000000000000000000000000000000000a",
-        "type": "mempool_swap_reverted"
-      },
-      {
         "amount": "456114rune",
         "mode": "EndBlock",
         "spender": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",

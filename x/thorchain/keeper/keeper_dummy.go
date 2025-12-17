@@ -380,8 +380,16 @@ func (k KVStoreDummy) SetObservedLink(ctx cosmos.Context, _, _ common.TxID) {}
 func (k KVStoreDummy) GetObservedLink(ctx cosmos.Context, inhash common.TxID) []common.TxID {
 	return nil
 }
-func (k KVStoreDummy) SetTssVoter(_ cosmos.Context, _ TssVoter)             {}
-func (k KVStoreDummy) GetTssVoterIterator(_ cosmos.Context) cosmos.Iterator { return nil }
+
+func (k KVStoreDummy) SetMempoolRevertTxID(ctx cosmos.Context, reverseTxID, originalTxID common.TxID) {
+}
+
+func (k KVStoreDummy) GetMempoolRevertTxID(ctx cosmos.Context, reverseTxID common.TxID) (common.TxID, bool) {
+	return common.TxID(""), false
+}
+func (k KVStoreDummy) DeleteMempoolRevertTxID(ctx cosmos.Context, reverseTxID common.TxID) {}
+func (k KVStoreDummy) SetTssVoter(_ cosmos.Context, _ TssVoter)                            {}
+func (k KVStoreDummy) GetTssVoterIterator(_ cosmos.Context) cosmos.Iterator                { return nil }
 func (k KVStoreDummy) GetTssVoter(_ cosmos.Context, _ string) (TssVoter, error) {
 	return TssVoter{}, kaboom
 }

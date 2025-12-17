@@ -207,6 +207,9 @@ type KeeperObservedTx interface {
 	GetObservedTxOutVoter(ctx cosmos.Context, hash common.TxID) (ObservedTxVoter, error)
 	SetObservedLink(ctx cosmos.Context, _, _ common.TxID)
 	GetObservedLink(ctx cosmos.Context, inhash common.TxID) []common.TxID
+	SetMempoolRevertTxID(ctx cosmos.Context, reverseTxID, originalTxID common.TxID)
+	GetMempoolRevertTxID(ctx cosmos.Context, reverseTxID common.TxID) (common.TxID, bool)
+	DeleteMempoolRevertTxID(ctx cosmos.Context, reverseTxID common.TxID)
 }
 
 type KeeperTxOut interface {
