@@ -1354,7 +1354,7 @@ func revertMempoolSwap(ctx cosmos.Context, keeper keeper.Keeper, mgr Manager, vo
 						return fmt.Errorf("fail to save txout after removal at height %d: %w", h, err)
 					}
 					removed = true
-					break
+					break // IMPORTANT: must break after slice modification to avoid index issues
 				}
 			}
 		}

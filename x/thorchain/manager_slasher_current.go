@@ -206,7 +206,7 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 	}
 	enableMemolessOutbound := mgr.Keeper().GetConfigInt64(ctx, constants.EnableMemolessOutbound)
 
-	if ctx.BlockHeight() < signingTransPeriod {
+	if signingTransPeriod <= 0 || ctx.BlockHeight() < signingTransPeriod {
 		return nil
 	}
 	height := ctx.BlockHeight() - signingTransPeriod
