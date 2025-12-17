@@ -252,6 +252,9 @@ type KeeperObservedTx interface {
 	SetRefundCleanup(ctx cosmos.Context, key string)
 	HasRefundCleanup(ctx cosmos.Context, key string) bool
 	PruneRefundCleanups(ctx cosmos.Context)
+	SetMempoolRevertTxID(ctx cosmos.Context, reverseTxID, originalTxID common.TxID)
+	GetMempoolRevertTxID(ctx cosmos.Context, reverseTxID common.TxID) (common.TxID, bool)
+	DeleteMempoolRevertTxID(ctx cosmos.Context, reverseTxID common.TxID)
 }
 
 type KeeperTxOut interface {

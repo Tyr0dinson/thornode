@@ -2588,11 +2588,16 @@ func revertMempoolSwap(ctx cosmos.Context, keeper keeper.Keeper, mgr Manager, vo
 		}
 
 		// External chain output - create reverse swap with chained donate memo
+		// The pool deduction will happen atomically when the donate executes in settleSwap
 		// Generate a unique transaction ID for this reversal
 		// Include the action index to ensure uniqueness when a single inbound has multiple actions
 		hashInput := fmt.Sprintf("MEMPOOL-REVERT-%s-%d-%d", voter.TxID, ctx.BlockHeight(), i)
 		hash := sha256.Sum256([]byte(hashInput))
 		txID := common.TxID(hex.EncodeToString(hash[:]))
+
+		// Store mapping from reverse swap txID to original inbound txID
+		// This allows settleSwap to look up the original voter and deduct the source amount
+		keeper.SetMempoolRevertTxID(ctx, txID, voter.TxID)
 
 		// Get max gas coin for the chain
 		maxGasCoin, _, err := mgr.GasMgr().GetGasDetails(ctx, action.Chain)
@@ -2658,11 +2663,8 @@ func revertMempoolSwap(ctx cosmos.Context, keeper keeper.Keeper, mgr Manager, vo
 	voter.Reverted = true
 	keeper.SetObservedTxInVoter(ctx, voter)
 
-	// Emit event for monitoring
-	mempoolRevertEvent := NewEventMempoolSwapReverted(voter.TxID, ctx.BlockHeight())
-	if err := mgr.EventMgr().EmitEvent(ctx, mempoolRevertEvent); err != nil {
-		ctx.Logger().Error("fail to emit mempool revert event", "error", err)
-	}
+	// Note: The MempoolSwapReverted event is emitted from settleSwap when the donate executes,
+	// as that's when we know the donated amount
 
 	return nil
 }

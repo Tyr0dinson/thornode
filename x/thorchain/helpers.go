@@ -2019,6 +2019,55 @@ func settleSwapCached(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason
 				}
 			}
 		} else if shouldProcessPostSwapMemo {
+			// Check if this is a mempool revert swap - if so, deduct source amount from pool atomically with donate
+			if originalTxID, found := mgr.Keeper().GetMempoolRevertTxID(ctx, msg.Tx.ID); found {
+				voter, voterErr := mgr.Keeper().GetObservedTxInVoter(ctx, originalTxID)
+				if voterErr == nil && !voter.Tx.Tx.Coins.IsEmpty() {
+					sourceAsset := voter.Tx.Tx.Coins[0].Asset
+					sourceAmount := voter.Tx.Tx.Coins[0].Amount
+
+					// Deduct phantom source amount from pool (asset that was never received)
+					pool, poolErr := mgr.Keeper().GetPool(ctx, sourceAsset.GetLayer1Asset())
+					if poolErr == nil {
+						pool.BalanceAsset = common.SafeSub(pool.BalanceAsset, sourceAmount)
+						if setErr := mgr.Keeper().SetPool(ctx, pool); setErr != nil {
+							ctx.Logger().Error("fail to set pool after mempool revert deduction", "error", setErr)
+						} else {
+							// Emit PoolBalanceChanged event for the deduction
+							emitPoolBalanceChangedEvent(ctx,
+								NewPoolMod(sourceAsset.GetLayer1Asset(), cosmos.ZeroUint(), false, sourceAmount, false),
+								"mempool swap revert",
+								mgr)
+
+							// Emit MempoolSwapReverted event with full details
+							// msg.State.Out is the donated amount (output of reverse swap)
+							mempoolRevertEvent := NewEventMempoolSwapReverted(
+								originalTxID,
+								ctx.BlockHeight(),
+								sourceAsset,
+								sourceAmount,
+								msg.State.Out,
+							)
+							if err := mgr.EventMgr().EmitEvent(ctx, mempoolRevertEvent); err != nil {
+								ctx.Logger().Error("fail to emit mempool revert event", "error", err)
+							}
+
+							ctx.Logger().Info("deducted phantom source asset from pool for mempool revert",
+								"pool", sourceAsset.GetLayer1Asset(),
+								"asset_removed", sourceAmount,
+								"donated_amount", msg.State.Out,
+								"original_txid", originalTxID)
+						}
+					} else {
+						ctx.Logger().Error("fail to get pool for mempool revert deduction", "error", poolErr, "asset", sourceAsset)
+					}
+				} else {
+					ctx.Logger().Error("fail to get original voter for mempool revert", "error", voterErr, "original_txid", originalTxID)
+				}
+				// Clean up the mapping
+				mgr.Keeper().DeleteMempoolRevertTxID(ctx, msg.Tx.ID)
+			}
+
 			// Process post-swap memo: create internal transaction with swap output
 			ctx.Logger().Info("processing post-swap memo", "memo", msg.PostSwapMemo, "output", msg.State.Out.String())
 
