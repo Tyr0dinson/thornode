@@ -174,7 +174,7 @@ func (h IntentAuctionBidHandler) handle(ctx cosmos.Context, msg MsgIntentAuction
 	// Get current bids to determine the previous highest bid (before this bid)
 	currentBids, err := h.mgr.Keeper().GetIntentAuctionBidsByIntentID(ctx, msg.IntentTxID)
 	if err != nil {
-		ctx.Logger().Error("fail to get current bids", "error", err)
+		return ErrInternal(err, "fail to get current bids for overtime calculation")
 	}
 	previousHighest := IntentAuctionBids(currentBids).HighestBid()
 
