@@ -13,6 +13,8 @@ const (
 	MockNet
 	// Stagenet network for stagenet
 	StageNet
+	// ChainNet network for chainnet
+	ChainNet
 )
 
 // Soft Equals check is mainnet == mainet, or mocknet == mocknet

@@ -1,5 +1,5 @@
-//go:build !mainnet && !stagenet
-// +build !mainnet,!stagenet
+//go:build !mainnet && !stagenet && !chainnet
+// +build !mainnet,!stagenet,!chainnet
 
 package thorchain
 

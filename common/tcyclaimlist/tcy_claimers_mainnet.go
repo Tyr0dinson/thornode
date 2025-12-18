@@ -1,5 +1,5 @@
-//go:build !mocknet && !stagenet
-// +build !mocknet,!stagenet
+//go:build !mocknet && !stagenet && !chainnet
+// +build !mocknet,!stagenet,!chainnet
 
 package tcyclaimlist
 

@@ -147,6 +147,8 @@ func ConvertToNewBCHAddressFormat(addr Address) (Address, error) {
 		param = &bchchaincfg.MainNetParams
 	case StageNet:
 		param = &bchchaincfg.MainNetParams
+	case ChainNet:
+		param = &bchchaincfg.MainNetParams
 	}
 	bchAddr, err := bchutil.DecodeAddress(addr.String(), param)
 	if err != nil {
@@ -192,7 +194,7 @@ func (addr Address) IsChain(chain Chain) bool {
 		return prefix == "noble"
 	case THORChain:
 		prefix, _, _ := bech32.Decode(addr.String())
-		return prefix == "thor" || prefix == "tthor" || prefix == "sthor"
+		return prefix == "thor" || prefix == "tthor" || prefix == "sthor" || prefix == "cthor"
 	case BTCChain:
 		prefix, _, err := bech32.Decode(addr.String())
 		if err == nil && (prefix == "bc" || prefix == "tb") {
@@ -296,6 +298,9 @@ func (addr Address) GetNetwork(chain Chain) ChainNetwork {
 		if currentNetwork == StageNet {
 			return StageNet
 		}
+		if currentNetwork == ChainNet {
+			return ChainNet
+		}
 		return MainNet
 	}
 	// EVM addresses don't have different prefixes per network
@@ -313,6 +318,9 @@ func (addr Address) GetNetwork(chain Chain) ChainNetwork {
 		}
 		if strings.EqualFold(prefix, "sthor") {
 			return StageNet
+		}
+		if strings.EqualFold(prefix, "cthor") {
+			return ChainNet
 		}
 	case BTCChain:
 		prefix, _, _ := bech32.Decode(addr.String())
