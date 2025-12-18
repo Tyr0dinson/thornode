@@ -234,6 +234,12 @@ message QueryQuoteIntentResponse {
   // gas rate units
   string gas_rate_units = 21
       [ (gogoproto.jsontag) = "gas_rate_units,omitempty" ];
+  // minimum amount a solve must exceed current best by to be considered "better" (1x gas fee)
+  string solve_min_increment = 22
+      [ (gogoproto.jsontag) = "solve_min_increment" ];
+  // asset the solve_min_increment is denominated in
+  string solve_min_increment_asset = 23
+      [ (gogoproto.jsontag) = "solve_min_increment_asset" ];
 }
 
 // Fee information for intent quote

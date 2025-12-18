@@ -45,6 +45,109 @@ func (im *IntentMgr) EndBlock(ctx cosmos.Context) error {
 	return nil
 }
 
+// selectBestSolve selects the best solve from competing bids using deterministic rules:
+// 1. A solve must exceed others by at least 1x gas fee to be considered "better"
+// 2. Solves within 1x gas of each other are grouped as equals
+// 3. Among equals: earliest SubmitHeight wins
+// 4. Final tie-breaker: lowest SolveTxID lexicographically
+func (im *IntentMgr) selectBestSolve(ctx cosmos.Context, intent types.Intent, solves []types.IntentSolve) types.IntentSolve {
+	if len(solves) == 0 {
+		return types.IntentSolve{}
+	}
+	if len(solves) == 1 {
+		return solves[0]
+	}
+
+	// Determine which chain's gas fee to use:
+	// - If source has no pool and is not native → source chain gas
+	// - Else if target has no pool and is not native → target chain gas
+	// - Else (both have pools/native) → source chain gas
+	sourceAsset := intent.Source.Asset
+	targetAsset := intent.TargetAsset
+
+	sourcePool, _ := im.mgr.Keeper().GetPool(ctx, sourceAsset.GetLayer1Asset())
+	targetPool, _ := im.mgr.Keeper().GetPool(ctx, targetAsset.GetLayer1Asset())
+
+	hasSourcePool := !sourcePool.IsEmpty() && sourcePool.Status == PoolAvailable
+	hasTargetPool := !targetPool.IsEmpty() && targetPool.Status == PoolAvailable
+	isSourceNative := sourceAsset.IsRune() || sourceAsset.IsSecuredAsset() || sourceAsset.IsTradeAsset()
+	isTargetNative := targetAsset.IsRune() || targetAsset.IsSecuredAsset() || targetAsset.IsTradeAsset()
+
+	var gasFeeChain common.Chain
+	if !hasSourcePool && !isSourceNative {
+		gasFeeChain = sourceAsset.GetChain()
+	} else if !hasTargetPool && !isTargetNative {
+		gasFeeChain = targetAsset.GetChain()
+	} else {
+		gasFeeChain = sourceAsset.GetChain()
+	}
+	gasFee := calculateGasFee(ctx, im.mgr, gasFeeChain)
+
+	// Sort by amount descending to process highest first
+	sorted := make([]types.IntentSolve, len(solves))
+	copy(sorted, solves)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].TargetCoin.Amount.GT(sorted[j].TargetCoin.Amount)
+	})
+
+	// Find the highest amount
+	highestAmount := sorted[0].TargetCoin.Amount
+
+	// Collect all solves within 1x gas of the highest (they're considered equal)
+	var candidates []types.IntentSolve
+	for _, solve := range sorted {
+		// If this solve is within 1x gas of highest, it's a candidate
+		// i.e., highest - solve.Amount < gasFee
+		diff := highestAmount.Sub(solve.TargetCoin.Amount)
+		if diff.LT(gasFee) {
+			candidates = append(candidates, solve)
+		}
+	}
+
+	// Deterministic tiebreaker among equals: earliest SubmitHeight, then lowest SolveTxID
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].SubmitHeight != candidates[j].SubmitHeight {
+			return candidates[i].SubmitHeight < candidates[j].SubmitHeight
+		}
+		return candidates[i].SolveTxID.String() < candidates[j].SolveTxID.String()
+	})
+
+	return candidates[0]
+}
+
+// refundLosingSolves refunds all solve bids except the winning one
+func (im *IntentMgr) refundLosingSolves(ctx cosmos.Context, intent types.Intent, winningSolveTxID common.TxID, solves []types.IntentSolve) {
+	for _, solve := range solves {
+		if solve.SolveTxID.Equals(winningSolveTxID) {
+			continue // Skip winner
+		}
+
+		toi := TxOutItem{
+			Chain:     solve.TargetCoin.Asset.GetChain(),
+			ToAddress: solve.SolverAddress,
+			Coin:      solve.TargetCoin,
+			Memo:      NewRefundMemo(solve.SolveTxID).String(),
+			InHash:    solve.SolveTxID,
+		}
+
+		ok, err := im.mgr.TxOutStore().TryAddTxOutItem(ctx, im.mgr, toi, cosmos.ZeroUint())
+		if err != nil {
+			ctx.Logger().Error("fail to refund losing solve", "solve_txid", solve.SolveTxID, "error", err)
+			continue
+		}
+		if !ok {
+			ctx.Logger().Error("fail to schedule losing solve refund", "solve_txid", solve.SolveTxID)
+			continue
+		}
+
+		ctx.Logger().Info("refunded losing intent solve",
+			"intent_txid", intent.TxID,
+			"solve_txid", solve.SolveTxID,
+			"amount", solve.TargetCoin.Amount,
+		)
+	}
+}
+
 // processMatches executes intents that have solve bids matching at the current height
 func (im *IntentMgr) processMatches(ctx cosmos.Context) error {
 	currentHeight := ctx.BlockHeight()
@@ -55,25 +158,45 @@ func (im *IntentMgr) processMatches(ctx cosmos.Context) error {
 		return fmt.Errorf("fail to get intent solves by match height: %w", err)
 	}
 
+	// Group solves by intent ID
+	solvesByIntent := make(map[string][]types.IntentSolve)
 	for _, solve := range solves {
+		intentID := solve.IntentTxID.String()
+		solvesByIntent[intentID] = append(solvesByIntent[intentID], solve)
+	}
+
+	// Process each intent's competing solves
+	for _, intentSolves := range solvesByIntent {
+		if len(intentSolves) == 0 {
+			continue
+		}
+
+		intentTxID := intentSolves[0].IntentTxID
+
 		// Get the intent
-		intent, err := im.mgr.Keeper().GetIntent(ctx, solve.IntentTxID)
+		intent, err := im.mgr.Keeper().GetIntent(ctx, intentTxID)
 		if err != nil {
-			ctx.Logger().Error("fail to get intent", "txid", solve.IntentTxID, "error", err)
+			ctx.Logger().Error("fail to get intent", "txid", intentTxID, "error", err)
 			continue
 		}
 
 		// Skip if intent is not active
 		if intent.Status != IntentActive {
-			ctx.Logger().Info("intent is not active, skipping", "txid", solve.IntentTxID, "status", intent.Status.String())
+			ctx.Logger().Info("intent is not active, skipping", "txid", intentTxID, "status", intent.Status.String())
 			continue
 		}
 
-		// Execute the intent
-		if err := im.executeIntent(ctx, intent, solve); err != nil {
-			ctx.Logger().Error("fail to execute intent", "intent_txid", solve.IntentTxID, "solve_txid", solve.SolveTxID, "error", err)
+		// Select best solve deterministically (must exceed by 1x gas to be "better", then earliest submit, then lowest txid)
+		winningSolve := im.selectBestSolve(ctx, intent, intentSolves)
+
+		// Execute the intent with winning solve
+		if err := im.executeIntent(ctx, intent, winningSolve); err != nil {
+			ctx.Logger().Error("fail to execute intent", "intent_txid", intentTxID, "solve_txid", winningSolve.SolveTxID, "error", err)
 			continue
 		}
+
+		// Refund losing solves
+		im.refundLosingSolves(ctx, intent, winningSolve.SolveTxID, intentSolves)
 	}
 
 	return nil
