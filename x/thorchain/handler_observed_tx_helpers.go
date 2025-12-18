@@ -514,19 +514,22 @@ func handleObservedTxInQuorum(
 		// Check if there's capacity for this mempool swap
 		sourceAsset := voter.Tx.Tx.Coins[0].Asset
 		sourceAmount := voter.Tx.Tx.Coins[0].Amount
-		torValue, hasCapacity, err := checkMempoolSwapCapacity(ctx, k, sourceAsset, sourceAmount)
-		if err != nil {
+		var torValue cosmos.Uint
+		var hasCapacity bool
+		torValue, hasCapacity, err = checkMempoolSwapCapacity(ctx, k, sourceAsset, sourceAmount)
+		switch {
+		case err != nil:
 			ctx.Logger().Info("fail to check mempool swap capacity, waiting for finalization",
 				"error", err, "hash", voter.TxID)
 			canProcessMempoolSwap = false
-		} else if !hasCapacity {
+		case !hasCapacity:
 			ctx.Logger().Info("mempool swap cap exceeded, waiting for finalization",
 				"current_usage", k.GetMempoolSwapUsageTOR(ctx),
 				"swap_tor", torValue,
 				"cap", mempoolSwapCap,
 				"hash", voter.TxID)
 			canProcessMempoolSwap = false
-		} else {
+		default:
 			// Reserve capacity: add to usage and store TOR value on voter
 			newUsage := k.AddMempoolSwapUsageTOR(ctx, torValue)
 			voter.MempoolSwapTOR = torValue

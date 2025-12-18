@@ -5,6 +5,7 @@ Run all CI checks and automatically fix any issues found.
 ## Workflow Overview
 
 Execute CI checks in logical order, fixing issues as they're discovered:
+
 1. **Generate** - Regenerate code (proto, openapi, go generate)
 2. **Format** - Fix formatting issues
 3. **Unit Tests** - Run and fix failing tests
@@ -44,6 +45,7 @@ Run unit tests and fix failures:
 ### Running Specific Tests
 
 To run a specific test:
+
 ```bash
 go test -tags=mocknet -parallel=1 -run TestName ./...
 ```
@@ -63,6 +65,7 @@ Run regression tests and fix failures:
 ### Updating Regression Test Expectations
 
 If test output changed due to intentional behavior changes:
+
 ```bash
 make test-regression RUN=test-name AUTO_UPDATE=1
 ```
@@ -100,6 +103,7 @@ When fixing errors:
 ## Reporting
 
 After each phase, report:
+
 - ✅ Checks that passed
 - 🔧 Issues that were fixed (with file:line references)
 - ❌ Issues that couldn't be automatically fixed (need human review)
@@ -107,6 +111,7 @@ After each phase, report:
 ## Final Summary
 
 At the end, provide:
+
 1. Total issues found and fixed
 2. Any remaining issues requiring manual intervention
 3. Files modified during the process
