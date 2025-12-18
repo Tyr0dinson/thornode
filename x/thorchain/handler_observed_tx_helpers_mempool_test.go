@@ -14,7 +14,7 @@ var _ = Suite(&HandlerObservedTxHelpersMempoolSuite{})
 
 func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutbounds(c *C) {
 	ctx, mgr := setupManagerForTest(c)
-	mgr.Keeper().SetMimir(ctx, constants.EnableMempoolSwaps.String(), 1)
+	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
 
 	// Setup vault
 	vault := GetRandomVault()
@@ -120,7 +120,7 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutbounds(c *C) {
 
 func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwap(c *C) {
 	ctx, mgr := setupManagerForTest(c)
-	mgr.Keeper().SetMimir(ctx, constants.EnableMempoolSwaps.String(), 1)
+	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
 	mgr.Keeper().SetMimir(ctx, constants.TxOutDelayMax.String(), 17280) // Set max delay for searching
 
 	// Setup source pool (BTC)
@@ -273,7 +273,7 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestMempoolSwapWithMimirEnabled(c
 	ctx, mgr := setupManagerForTest(c)
 
 	// Enable mempool swaps
-	mgr.Keeper().SetMimir(ctx, constants.EnableMempoolSwaps.String(), 1)
+	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
 
 	// Create pool
 	pool := NewPool()
@@ -283,28 +283,28 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestMempoolSwapWithMimirEnabled(c
 	pool.Status = PoolAvailable
 	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
 
-	// Check that canProcessMempoolSwap is enabled
-	enableMempoolSwaps := mgr.Keeper().GetConfigInt64(ctx, constants.EnableMempoolSwaps) > 0
-	c.Check(enableMempoolSwaps, Equals, true, Commentf("Mempool swaps should be enabled"))
+	// Check that mempool swap cap is enabled
+	mempoolSwapCap := cosmos.NewUint(uint64(mgr.Keeper().GetConfigInt64(ctx, constants.MempoolSwapCapTOR)))
+	c.Check(mempoolSwapCap.IsZero(), Equals, false, Commentf("Mempool swaps should be enabled with non-zero cap"))
 
 	// Verify swap memo is recognized as processable before finalization
 	memo, _ := ParseMemo(common.LatestVersion, "=:ETH.ETH:"+GetRandomETHAddress().String())
-	canProcessMempoolSwap := enableMempoolSwaps && memo.IsType(TxSwap)
+	canProcessMempoolSwap := !mempoolSwapCap.IsZero() && memo.IsType(TxSwap)
 	c.Check(canProcessMempoolSwap, Equals, true, Commentf("Should be able to process mempool swap"))
 }
 
 func (s *HandlerObservedTxHelpersMempoolSuite) TestMempoolSwapWithMimirDisabled(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 
-	// Disable mempool swaps (default)
-	mgr.Keeper().SetMimir(ctx, constants.EnableMempoolSwaps.String(), 0)
+	// Disable mempool swaps (cap = 0)
+	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 0)
 
-	// Check that canProcessMempoolSwap is disabled
-	enableMempoolSwaps := mgr.Keeper().GetConfigInt64(ctx, constants.EnableMempoolSwaps) > 0
-	c.Check(enableMempoolSwaps, Equals, false, Commentf("Mempool swaps should be disabled"))
+	// Check that mempool swap cap is disabled
+	mempoolSwapCap := cosmos.NewUint(uint64(mgr.Keeper().GetConfigInt64(ctx, constants.MempoolSwapCapTOR)))
+	c.Check(mempoolSwapCap.IsZero(), Equals, true, Commentf("Mempool swaps should be disabled with zero cap"))
 
 	// Verify swap memo is NOT processable before finalization
 	memo, _ := ParseMemo(common.LatestVersion, "=:ETH.ETH:"+GetRandomETHAddress().String())
-	canProcessMempoolSwap := enableMempoolSwaps && memo.IsType(TxSwap)
+	canProcessMempoolSwap := !mempoolSwapCap.IsZero() && memo.IsType(TxSwap)
 	c.Check(canProcessMempoolSwap, Equals, false, Commentf("Should NOT be able to process mempool swap when disabled"))
 }

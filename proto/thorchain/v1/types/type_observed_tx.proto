@@ -32,6 +32,12 @@ message ObservedTxVoter {
   bool reverted = 9;
   int64 outbound_height = 10;
   int64 unfinalized_height = 11;
+  // TOR value tracked for mempool swap cap enforcement
+  string mempool_swap_tor = 12 [
+    (gogoproto.customtype) = "cosmossdk.io/math.Uint",
+    (gogoproto.customname) = "MempoolSwapTOR",
+    (gogoproto.nullable) = false
+  ];
   // Nodes spared LackOfObservationPenalty at non-final consensus, or refunded
   // it within its flex window, because they observed the tx in the final tier.
   // Cleared at final consensus.

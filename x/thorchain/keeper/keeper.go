@@ -105,6 +105,7 @@ type Keeper interface {
 	KeeperSolVaultNonce
 	KeeperDynamicFee
 	KeeperObservationTally
+	KeeperMempoolSwapUsage
 }
 
 type KeeperConfig interface {
@@ -628,4 +629,11 @@ type KeeperTCYStaker interface {
 	ListTCYStakers(ctx cosmos.Context) ([]TCYStaker, error)
 	TCYStakerExists(ctx cosmos.Context, address common.Address) bool
 	UpdateTCYStaker(ctx cosmos.Context, address common.Address, amount math.Uint) error
+}
+
+type KeeperMempoolSwapUsage interface {
+	GetMempoolSwapUsageTOR(ctx cosmos.Context) cosmos.Uint
+	SetMempoolSwapUsageTOR(ctx cosmos.Context, tor cosmos.Uint)
+	AddMempoolSwapUsageTOR(ctx cosmos.Context, tor cosmos.Uint) cosmos.Uint
+	SubMempoolSwapUsageTOR(ctx cosmos.Context, tor cosmos.Uint) cosmos.Uint
 }

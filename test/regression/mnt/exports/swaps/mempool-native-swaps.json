@@ -19,7 +19,7 @@
             "@type": "/cosmos.crypto.secp256k1.PubKey",
             "key": "AmF4AUTWZEUSBtgqiR5n2Lgic/Yrr1mWupMo5TAubNRO"
           },
-          "sequence": "13"
+          "sequence": "14"
         },
         {
           "@type": "/cosmos.auth.v1beta1.ModuleAccount",
@@ -153,7 +153,7 @@
           "address": "tthor1xkz88t875m7ms7wa6220estwwdlc86pqsccrvm",
           "coins": [
             {
-              "amount": "14209213720",
+              "amount": "14209293244",
               "denom": "rune"
             }
           ]
@@ -162,7 +162,7 @@
           "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
           "coins": [
             {
-              "amount": "159358145467",
+              "amount": "159358982103",
               "denom": "rune"
             }
           ]
@@ -171,7 +171,7 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "34999979593381",
+              "amount": "34999980483538",
               "denom": "rune"
             }
           ]
@@ -180,7 +180,7 @@
           "address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
           "coins": [
             {
-              "amount": "2525000266362",
+              "amount": "2525000399543",
               "denom": "rune"
             }
           ]
@@ -198,7 +198,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "5001452781070",
+              "amount": "5001450841572",
               "denom": "rune"
             }
           ]
@@ -278,12 +278,16 @@
       ],
       "mimirs": [
         {
-          "key": "ENABLEMEMPOOLSWAPS",
-          "value": "1"
+          "key": "DOLLARSPERRUNE",
+          "value": "100000000"
         },
         {
           "key": "MAXOUTBOUNDATTEMPTS",
           "value": "2"
+        },
+        {
+          "key": "MEMPOOLSWAPCAPTOR",
+          "value": "100000000000000"
         },
         {
           "key": "SECUREDASSETSLIPMINBPS"
@@ -303,8 +307,8 @@
       "network": {
         "LPIncomeSplit": "9681",
         "NodeIncomeSplit": "319",
-        "bond_reward_rune": "1464781070",
-        "total_bond_units": "31"
+        "bond_reward_rune": "1464841572",
+        "total_bond_units": "32"
       },
       "network_fees": [
         {
@@ -320,14 +324,19 @@
       ],
       "nodeMimirs": [
         {
-          "key": "ENABLEMEMPOOLSWAPS",
+          "key": "DOLLARSPERRUNE",
           "signer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
-          "value": "1"
+          "value": "100000000"
         },
         {
           "key": "MAXOUTBOUNDATTEMPTS",
           "signer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
           "value": "2"
+        },
+        {
+          "key": "MEMPOOLSWAPCAPTOR",
+          "signer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
+          "value": "100000000000000"
         },
         {
           "key": "SECUREDASSETSLIPMINBPS",
@@ -351,7 +360,7 @@
       "node_accounts": [
         {
           "active_block_height": "1",
-          "bond": "4999988000000",
+          "bond": "4999986000000",
           "bond_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
           "ip_address": "1.1.1.1",
           "node_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
@@ -371,8 +380,8 @@
         {
           "LP_units": "100000000000",
           "asset": "BTC.BTC",
-          "balance_asset": "338054850",
-          "balance_rune": "59341747999",
+          "balance_asset": "338054879",
+          "balance_rune": "59342051911",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -383,7 +392,7 @@
           "LP_units": "100000000000",
           "asset": "ETH.ETH",
           "balance_asset": "1000000000",
-          "balance_rune": "100016397468",
+          "balance_rune": "100016930192",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -412,49 +421,49 @@
         {
           "address": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw",
           "reclaimed": "0",
-          "score": "12500133181",
+          "score": "12500199771",
           "spent": "0"
         },
         {
           "address": "bcrt1qqk8c8sfrmfm0tkncs0zxeutc8v5mx3pjw22g33",
           "reclaimed": "0",
-          "score": "6655850112",
+          "score": "6655885131",
           "spent": "0"
         },
         {
           "address": "bcrt1quuds8pd92qnnq0udw0rpg0szpgcslc9pm6tzal",
           "reclaimed": "0",
-          "score": "1485082846",
+          "score": "1485090671",
           "spent": "0"
         },
         {
           "address": "bcrt1qxkz88t875m7ms7wa6220estwwdlc86pqvavagk",
           "reclaimed": "0",
-          "score": "3120248955",
+          "score": "3120265268",
           "spent": "0"
         },
         {
           "address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
           "reclaimed": "0",
-          "score": "12500133181",
+          "score": "12500199772",
           "spent": "0"
         },
         {
           "address": "tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u",
           "reclaimed": "0",
-          "score": "6655850113",
+          "score": "6655885131",
           "spent": "0"
         },
         {
           "address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
           "reclaimed": "0",
-          "score": "1485082846",
+          "score": "1485090671",
           "spent": "0"
         },
         {
           "address": "tthor1xkz88t875m7ms7wa6220estwwdlc86pqsccrvm",
           "reclaimed": "0",
-          "score": "3137384376",
+          "score": "3137400599",
           "spent": "0"
         }
       ],
@@ -463,16 +472,16 @@
       "trade_accounts": [
         {
           "asset": "BTC~BTC",
-          "last_add_height": "31",
+          "last_add_height": "32",
           "owner": "tthor1xkz88t875m7ms7wa6220estwwdlc86pqsccrvm",
-          "units": "5695151"
+          "units": "5695122"
         }
       ],
       "trade_units": [
         {
           "asset": "BTC~BTC",
-          "depth": "5695151",
-          "units": "5695151"
+          "depth": "5695122",
+          "units": "5695122"
         }
       ],
       "tx_outs": null,
@@ -560,5 +569,5 @@
       }
     }
   },
-  "initial_height": 32
+  "initial_height": 33
 }

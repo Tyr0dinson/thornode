@@ -452,7 +452,7 @@ var (
 	fd_QueryNetworkResponse_rune_price_in_tor        protoreflect.FieldDescriptor
 	fd_QueryNetworkResponse_tor_price_in_rune        protoreflect.FieldDescriptor
 	fd_QueryNetworkResponse_tor_price_halted         protoreflect.FieldDescriptor
-	fd_QueryNetworkResponse_xmr_active_vault_ready   protoreflect.FieldDescriptor
+	fd_QueryNetworkResponse_mempool_swap_usage_tor   protoreflect.FieldDescriptor
 )
 
 func init() {
@@ -475,7 +475,7 @@ func init() {
 	fd_QueryNetworkResponse_rune_price_in_tor = md_QueryNetworkResponse.Fields().ByName("rune_price_in_tor")
 	fd_QueryNetworkResponse_tor_price_in_rune = md_QueryNetworkResponse.Fields().ByName("tor_price_in_rune")
 	fd_QueryNetworkResponse_tor_price_halted = md_QueryNetworkResponse.Fields().ByName("tor_price_halted")
-	fd_QueryNetworkResponse_xmr_active_vault_ready = md_QueryNetworkResponse.Fields().ByName("xmr_active_vault_ready")
+	fd_QueryNetworkResponse_mempool_swap_usage_tor = md_QueryNetworkResponse.Fields().ByName("mempool_swap_usage_tor")
 }
 
 var _ protoreflect.Message = (*fastReflection_QueryNetworkResponse)(nil)
@@ -645,9 +645,9 @@ func (x *fastReflection_QueryNetworkResponse) Range(f func(protoreflect.FieldDes
 			return
 		}
 	}
-	if x.XmrActiveVaultReady != false {
-		value := protoreflect.ValueOfBool(x.XmrActiveVaultReady)
-		if !f(fd_QueryNetworkResponse_xmr_active_vault_ready, value) {
+	if x.MempoolSwapUsageTor != "" {
+		value := protoreflect.ValueOfString(x.MempoolSwapUsageTor)
+		if !f(fd_QueryNetworkResponse_mempool_swap_usage_tor, value) {
 			return
 		}
 	}
@@ -700,8 +700,8 @@ func (x *fastReflection_QueryNetworkResponse) Has(fd protoreflect.FieldDescripto
 		return x.TorPriceInRune != ""
 	case "types.QueryNetworkResponse.tor_price_halted":
 		return x.TorPriceHalted != false
-	case "types.QueryNetworkResponse.xmr_active_vault_ready":
-		return x.XmrActiveVaultReady != false
+	case "types.QueryNetworkResponse.mempool_swap_usage_tor":
+		return x.MempoolSwapUsageTor != ""
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryNetworkResponse"))
@@ -752,8 +752,8 @@ func (x *fastReflection_QueryNetworkResponse) Clear(fd protoreflect.FieldDescrip
 		x.TorPriceInRune = ""
 	case "types.QueryNetworkResponse.tor_price_halted":
 		x.TorPriceHalted = false
-	case "types.QueryNetworkResponse.xmr_active_vault_ready":
-		x.XmrActiveVaultReady = false
+	case "types.QueryNetworkResponse.mempool_swap_usage_tor":
+		x.MempoolSwapUsageTor = ""
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryNetworkResponse"))
@@ -821,9 +821,9 @@ func (x *fastReflection_QueryNetworkResponse) Get(descriptor protoreflect.FieldD
 	case "types.QueryNetworkResponse.tor_price_halted":
 		value := x.TorPriceHalted
 		return protoreflect.ValueOfBool(value)
-	case "types.QueryNetworkResponse.xmr_active_vault_ready":
-		value := x.XmrActiveVaultReady
-		return protoreflect.ValueOfBool(value)
+	case "types.QueryNetworkResponse.mempool_swap_usage_tor":
+		value := x.MempoolSwapUsageTor
+		return protoreflect.ValueOfString(value)
 	default:
 		if descriptor.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryNetworkResponse"))
@@ -878,8 +878,8 @@ func (x *fastReflection_QueryNetworkResponse) Set(fd protoreflect.FieldDescripto
 		x.TorPriceInRune = value.Interface().(string)
 	case "types.QueryNetworkResponse.tor_price_halted":
 		x.TorPriceHalted = value.Bool()
-	case "types.QueryNetworkResponse.xmr_active_vault_ready":
-		x.XmrActiveVaultReady = value.Bool()
+	case "types.QueryNetworkResponse.mempool_swap_usage_tor":
+		x.MempoolSwapUsageTor = value.Interface().(string)
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryNetworkResponse"))
@@ -934,8 +934,8 @@ func (x *fastReflection_QueryNetworkResponse) Mutable(fd protoreflect.FieldDescr
 		panic(fmt.Errorf("field tor_price_in_rune of message types.QueryNetworkResponse is not mutable"))
 	case "types.QueryNetworkResponse.tor_price_halted":
 		panic(fmt.Errorf("field tor_price_halted of message types.QueryNetworkResponse is not mutable"))
-	case "types.QueryNetworkResponse.xmr_active_vault_ready":
-		panic(fmt.Errorf("field xmr_active_vault_ready of message types.QueryNetworkResponse is not mutable"))
+	case "types.QueryNetworkResponse.mempool_swap_usage_tor":
+		panic(fmt.Errorf("field mempool_swap_usage_tor of message types.QueryNetworkResponse is not mutable"))
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryNetworkResponse"))
@@ -983,8 +983,8 @@ func (x *fastReflection_QueryNetworkResponse) NewField(fd protoreflect.FieldDesc
 		return protoreflect.ValueOfString("")
 	case "types.QueryNetworkResponse.tor_price_halted":
 		return protoreflect.ValueOfBool(false)
-	case "types.QueryNetworkResponse.xmr_active_vault_ready":
-		return protoreflect.ValueOfBool(false)
+	case "types.QueryNetworkResponse.mempool_swap_usage_tor":
+		return protoreflect.ValueOfString("")
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryNetworkResponse"))
@@ -1120,8 +1120,9 @@ func (x *fastReflection_QueryNetworkResponse) ProtoMethods() *protoiface.Methods
 		if x.TorPriceHalted {
 			n += 3
 		}
-		if x.XmrActiveVaultReady {
-			n += 3
+		l = len(x.MempoolSwapUsageTor)
+		if l > 0 {
+			n += 2 + l + runtime.Sov(uint64(l))
 		}
 		if x.unknownFields != nil {
 			n += len(x.unknownFields)
@@ -1152,17 +1153,14 @@ func (x *fastReflection_QueryNetworkResponse) ProtoMethods() *protoiface.Methods
 			i -= len(x.unknownFields)
 			copy(dAtA[i:], x.unknownFields)
 		}
-		if x.XmrActiveVaultReady {
-			i--
-			if x.XmrActiveVaultReady {
-				dAtA[i] = 1
-			} else {
-				dAtA[i] = 0
-			}
+		if len(x.MempoolSwapUsageTor) > 0 {
+			i -= len(x.MempoolSwapUsageTor)
+			copy(dAtA[i:], x.MempoolSwapUsageTor)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.MempoolSwapUsageTor)))
 			i--
 			dAtA[i] = 0x1
 			i--
-			dAtA[i] = 0x90
+			dAtA[i] = 0x92
 		}
 		if x.TorPriceHalted {
 			i--
@@ -1863,10 +1861,10 @@ func (x *fastReflection_QueryNetworkResponse) ProtoMethods() *protoiface.Methods
 				}
 				x.TorPriceHalted = bool(v != 0)
 			case 18:
-				if wireType != 0 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field XmrActiveVaultReady", wireType)
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field MempoolSwapUsageTor", wireType)
 				}
-				var v int
+				var stringLen uint64
 				for shift := uint(0); ; shift += 7 {
 					if shift >= 64 {
 						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
@@ -1876,12 +1874,24 @@ func (x *fastReflection_QueryNetworkResponse) ProtoMethods() *protoiface.Methods
 					}
 					b := dAtA[iNdEx]
 					iNdEx++
-					v |= int(b&0x7F) << shift
+					stringLen |= uint64(b&0x7F) << shift
 					if b < 0x80 {
 						break
 					}
 				}
-				x.XmrActiveVaultReady = bool(v != 0)
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.MempoolSwapUsageTor = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
 			default:
 				iNdEx = preIndex
 				skippy, err := runtime.Skip(dAtA[iNdEx:])
@@ -2009,8 +2019,8 @@ type QueryNetworkResponse struct {
 	TorPriceInRune string `protobuf:"bytes,14,opt,name=tor_price_in_rune,json=torPriceInRune,proto3" json:"tor_price_in_rune,omitempty"`
 	// indicator if all anchor chains are halted
 	TorPriceHalted bool `protobuf:"varint,17,opt,name=tor_price_halted,json=torPriceHalted,proto3" json:"tor_price_halted,omitempty"`
-	// indicates whether an active Asgard vault currently has spendable XMR funds
-	XmrActiveVaultReady bool `protobuf:"varint,18,opt,name=xmr_active_vault_ready,json=xmrActiveVaultReady,proto3" json:"xmr_active_vault_ready,omitempty"`
+	// current mempool swap usage in TOR
+	MempoolSwapUsageTor string `protobuf:"bytes,18,opt,name=mempool_swap_usage_tor,json=mempoolSwapUsageTor,proto3" json:"mempool_swap_usage_tor,omitempty"`
 }
 
 func (x *QueryNetworkResponse) Reset() {
@@ -2152,11 +2162,11 @@ func (x *QueryNetworkResponse) GetTorPriceHalted() bool {
 	return false
 }
 
-func (x *QueryNetworkResponse) GetXmrActiveVaultReady() bool {
+func (x *QueryNetworkResponse) GetMempoolSwapUsageTor() string {
 	if x != nil {
-		return x.XmrActiveVaultReady
+		return x.MempoolSwapUsageTor
 	}
-	return false
+	return ""
 }
 
 var File_types_query_network_proto protoreflect.FileDescriptor
@@ -2244,11 +2254,11 @@ var file_types_query_network_proto_rawDesc = []byte{
 	0x18, 0x11, 0x20, 0x01, 0x28, 0x08, 0x42, 0x14, 0xea, 0xde, 0x1f, 0x10, 0x74, 0x6f, 0x72, 0x5f,
 	0x70, 0x72, 0x69, 0x63, 0x65, 0x5f, 0x68, 0x61, 0x6c, 0x74, 0x65, 0x64, 0x52, 0x0e, 0x74, 0x6f,
 	0x72, 0x50, 0x72, 0x69, 0x63, 0x65, 0x48, 0x61, 0x6c, 0x74, 0x65, 0x64, 0x12, 0x4f, 0x0a, 0x16,
-	0x78, 0x6d, 0x72, 0x5f, 0x61, 0x63, 0x74, 0x69, 0x76, 0x65, 0x5f, 0x76, 0x61, 0x75, 0x6c, 0x74,
-	0x5f, 0x72, 0x65, 0x61, 0x64, 0x79, 0x18, 0x12, 0x20, 0x01, 0x28, 0x08, 0x42, 0x1a, 0xea, 0xde,
-	0x1f, 0x16, 0x78, 0x6d, 0x72, 0x5f, 0x61, 0x63, 0x74, 0x69, 0x76, 0x65, 0x5f, 0x76, 0x61, 0x75,
-	0x6c, 0x74, 0x5f, 0x72, 0x65, 0x61, 0x64, 0x79, 0x52, 0x13, 0x78, 0x6d, 0x72, 0x41, 0x63, 0x74,
-	0x69, 0x76, 0x65, 0x56, 0x61, 0x75, 0x6c, 0x74, 0x52, 0x65, 0x61, 0x64, 0x79, 0x42, 0x82, 0x01,
+	0x6d, 0x65, 0x6d, 0x70, 0x6f, 0x6f, 0x6c, 0x5f, 0x73, 0x77, 0x61, 0x70, 0x5f, 0x75, 0x73, 0x61,
+	0x67, 0x65, 0x5f, 0x74, 0x6f, 0x72, 0x18, 0x12, 0x20, 0x01, 0x28, 0x09, 0x42, 0x1a, 0xea, 0xde,
+	0x1f, 0x16, 0x6d, 0x65, 0x6d, 0x70, 0x6f, 0x6f, 0x6c, 0x5f, 0x73, 0x77, 0x61, 0x70, 0x5f, 0x75,
+	0x73, 0x61, 0x67, 0x65, 0x5f, 0x74, 0x6f, 0x72, 0x52, 0x13, 0x6d, 0x65, 0x6d, 0x70, 0x6f, 0x6f,
+	0x6c, 0x53, 0x77, 0x61, 0x70, 0x55, 0x73, 0x61, 0x67, 0x65, 0x54, 0x6f, 0x72, 0x42, 0x82, 0x01,
 	0x0a, 0x09, 0x63, 0x6f, 0x6d, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x42, 0x11, 0x51, 0x75, 0x65,
 	0x72, 0x79, 0x4e, 0x65, 0x74, 0x77, 0x6f, 0x72, 0x6b, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01,
 	0x5a, 0x2a, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f,

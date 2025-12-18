@@ -160,7 +160,7 @@ func IsOperationalMimir(key string) bool {
 		POLReserveSystemIncomeBps.String(),
 		StableReserveOraclePricing.String(),
 		MimirKeyPreflightChainSetDisabled,
-		EnableMempoolSwaps.String(),
+		MempoolSwapCapTOR.String(),
 	}
 	for i := range exactMatches {
 		if strings.EqualFold(key, exactMatches[i]) {

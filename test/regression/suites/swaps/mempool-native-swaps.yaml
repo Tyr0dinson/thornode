@@ -9,20 +9,30 @@ count: 1
 # Test Mempool Swap to Native Assets (RUNE, Secured Assets, Trade Assets)
 # This tests that native asset outputs are delayed until the inbound finalizes
 ########################################################################################
-# Enable the mempool swaps feature
+# Set DollarsPerRune so TOR calculation works (1 RUNE = $1 for simplicity)
 type: tx-mimir
-key: EnableMempoolSwaps
-value: 1
+key: DollarsPerRune
+value: 100000000
 signer: {{ addr_thor_dog }}
 ---
 type: create-blocks
 count: 1
 ---
-# Verify mimir is enabled
+# Enable the mempool swaps feature with a large cap
+type: tx-mimir
+key: MempoolSwapCapTOR
+value: 100000000000000
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Verify mimirs are enabled
 type: check
 endpoint: http://localhost:1317/thorchain/mimir
 asserts:
-  - .ENABLEMEMPOOLSWAPS == 1
+  - .MEMPOOLSWAPCAPTOR == 100000000000000
+  - .DOLLARSPERRUNE == 100000000
 ---
 ########################################################################################
 # Scenario 1: Mempool Swap to RUNE - Delayed Execution

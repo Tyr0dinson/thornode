@@ -58,4 +58,7 @@ message QueryNetworkResponse {
   // indicates whether an active Asgard vault currently has spendable XMR funds
   bool xmr_active_vault_ready = 18
       [ (gogoproto.jsontag) = "xmr_active_vault_ready" ];
+  // current mempool swap usage in TOR
+  string mempool_swap_usage_tor = 19
+      [ (gogoproto.jsontag) = "mempool_swap_usage_tor" ];
 }

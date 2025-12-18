@@ -118,9 +118,9 @@ func (s *SlashingSuite) TestNodeSignSlashErrors(c *C) {
 		slasher := newSlasher(keeper, NewDummyEventMgr())
 		item.condition(keeper)
 		if item.shouldError {
-			c.Assert(slasher.LackSigning(ctx, NewDummyMgr()), NotNil)
+			c.Assert(slasher.LackSigning(ctx, NewDummyMgrWithKeeper(keeper)), NotNil)
 		} else {
-			c.Assert(slasher.LackSigning(ctx, NewDummyMgr()), IsNil)
+			c.Assert(slasher.LackSigning(ctx, NewDummyMgrWithKeeper(keeper)), IsNil)
 		}
 	}
 }
@@ -2927,7 +2927,7 @@ func (s *SlashingSuite) TestLackSigningRetriesRecoveryAfterIDExhaustion(c *C) {
 
 func (s *SlashingVCURSuite) TestLackSigningWithMempoolSwaps(c *C) {
 	ctx, mgr := setupManagerForTest(c)
-	mgr.Keeper().SetMimir(ctx, constants.EnableMempoolSwaps.String(), 1)
+	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
 
 	// Setup constants
 	signingTransPeriod := int64(300)

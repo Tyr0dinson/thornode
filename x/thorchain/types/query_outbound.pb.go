@@ -170,7 +170,7 @@ type QueryTxOutItem struct {
 	MaxGas                gitlab_com_thorchain_thornode_v3_common.Gas `protobuf:"bytes,6,rep,name=max_gas,json=maxGas,proto3,castrepeated=gitlab.com/thorchain/thornode/v3/common.Gas" json:"max_gas"`
 	GasRate               int64                                       `protobuf:"varint,7,opt,name=gas_rate,json=gasRate,proto3" json:"gas_rate,omitempty"`
 	Memo                  string                                      `protobuf:"bytes,5,opt,name=memo,proto3" json:"memo,omitempty"`
-	OriginalMemo          string                                      `protobuf:"bytes,16,opt,name=original_memo,json=originalMemo,proto3" json:"original_memo,omitempty"`
+	OriginalMemo          string                                      `protobuf:"bytes,17,opt,name=original_memo,json=originalMemo,proto3" json:"original_memo,omitempty"`
 	Aggregator            string                                      `protobuf:"bytes,12,opt,name=aggregator,proto3" json:"aggregator,omitempty"`
 	AggregatorTargetAsset string                                      `protobuf:"bytes,13,opt,name=aggregator_target_asset,json=aggregatorTargetAsset,proto3" json:"aggregator_target_asset,omitempty"`
 	AggregatorTargetLimit string                                      `protobuf:"bytes,14,opt,name=aggregator_target_limit,json=aggregatorTargetLimit,proto3" json:"aggregator_target_limit,omitempty"`
@@ -179,7 +179,7 @@ type QueryTxOutItem struct {
 	VaultPubKeyEddsa string `protobuf:"bytes,15,opt,name=vault_pub_key_eddsa,json=vaultPubKeyEddsa,proto3" json:"vault_pub_key_eddsa,omitempty"`
 	// whether the inbound transaction has been finalized (for mempool swap
 	// optimization)
-	InboundFinalized bool `protobuf:"varint,17,opt,name=inbound_finalized,json=inboundFinalized,proto3" json:"inbound_finalized"`
+	InboundFinalized bool `protobuf:"varint,16,opt,name=inbound_finalized,json=inboundFinalized,proto3" json:"inbound_finalized"`
 }
 
 func (m *QueryTxOutItem) Reset()         { *m = QueryTxOutItem{} }
@@ -373,17 +373,17 @@ var fileDescriptor_d1b4ec75ddefb0b2 = []byte{
 	0x39, 0xdf, 0x9d, 0x4f, 0xc8, 0x01, 0x33, 0x41, 0x21, 0x66, 0xa3, 0x03, 0x66, 0x5c, 0xf7, 0x82,
 	0x19, 0x9a, 0x30, 0xcb, 0x49, 0x11, 0x36, 0xb5, 0x28, 0x98, 0x09, 0x98, 0xe5, 0x18, 0xa3, 0xe5,
 	0x98, 0xc7, 0x9a, 0xe4, 0x61, 0x53, 0x20, 0xc6, 0x8f, 0xd1, 0x8a, 0x4e, 0xa4, 0x90, 0x8a, 0x0d,
-	0x28, 0xc0, 0x35, 0x80, 0xd5, 0xb9, 0xf8, 0xde, 0x99, 0xea, 0x08, 0x31, 0x21, 0x12, 0x2e, 0x98,
+	0x28, 0xc0, 0x75, 0x80, 0xd5, 0xb9, 0xf8, 0xde, 0x99, 0xea, 0x08, 0x31, 0x21, 0x12, 0x2e, 0x98,
 	0xd5, 0x09, 0xa9, 0x82, 0x63, 0x41, 0xc1, 0xcf, 0xd1, 0xe6, 0xcd, 0x17, 0xb5, 0x2c, 0x11, 0xdc,
 	0x52, 0x66, 0x0c, 0xb7, 0x64, 0x05, 0xcc, 0xb5, 0x1b, 0x7c, 0x0a, 0x74, 0xdf, 0xc1, 0xbb, 0xf3,
 	0x06, 0x32, 0x96, 0x96, 0xac, 0xde, 0x9d, 0x77, 0xe8, 0x20, 0xf6, 0x51, 0xa5, 0x3f, 0x70, 0x67,
 	0x6c, 0x86, 0x5c, 0x59, 0x52, 0xc9, 0x0a, 0x02, 0xe9, 0xc4, 0x29, 0x78, 0x1b, 0x6d, 0xdc, 0x9a,
 	0x1f, 0xca, 0xc3, 0xd0, 0x30, 0xf2, 0x3f, 0x18, 0xd7, 0x16, 0xa6, 0xe8, 0x95, 0xd3, 0x71, 0x17,
-	0xad, 0x4b, 0x05, 0x53, 0x4e, 0x3f, 0xb9, 0xa6, 0xe5, 0x17, 0x1e, 0x92, 0xf5, 0x86, 0xd7, 0x2a,
+	0xad, 0x4b, 0x05, 0x53, 0x4e, 0x3f, 0xb9, 0xa6, 0xe5, 0x17, 0x1e, 0x92, 0xb5, 0x86, 0xd7, 0x2a,
 	0x75, 0x6b, 0xd3, 0x89, 0xff, 0x27, 0x0c, 0xd6, 0x66, 0xd2, 0xeb, 0xb9, 0xd2, 0x3d, 0xbc, 0xb8,
 	0xaa, 0x7b, 0x97, 0x57, 0x75, 0xef, 0xd7, 0x55, 0xdd, 0xfb, 0x7a, 0x5d, 0xcf, 0x5d, 0x5e, 0xd7,
 	0x73, 0xdf, 0xaf, 0xeb, 0xb9, 0x8f, 0x3b, 0x7f, 0x3d, 0xc6, 0xd1, 0xa2, 0xee, 0xae, 0x51, 0xaf,
-	0x00, 0x97, 0x7e, 0xf7, 0x77, 0x00, 0x00, 0x00, 0xff, 0xff, 0xe4, 0xd4, 0xc0, 0x25, 0x44, 0x04,
+	0x00, 0x97, 0x7e, 0xf7, 0x77, 0x00, 0x00, 0x00, 0xff, 0xff, 0x91, 0x14, 0x8f, 0x32, 0x44, 0x04,
 	0x00, 0x00,
 }
 
@@ -504,6 +504,15 @@ func (m *QueryTxOutItem) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if len(m.OriginalMemo) > 0 {
+		i -= len(m.OriginalMemo)
+		copy(dAtA[i:], m.OriginalMemo)
+		i = encodeVarintQueryOutbound(dAtA, i, uint64(len(m.OriginalMemo)))
+		i--
+		dAtA[i] = 0x1
+		i--
+		dAtA[i] = 0x8a
+	}
 	if m.InboundFinalized {
 		i--
 		if m.InboundFinalized {
@@ -514,16 +523,7 @@ func (m *QueryTxOutItem) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		i--
 		dAtA[i] = 0x1
 		i--
-		dAtA[i] = 0x88
-	}
-	if len(m.OriginalMemo) > 0 {
-		i -= len(m.OriginalMemo)
-		copy(dAtA[i:], m.OriginalMemo)
-		i = encodeVarintQueryOutbound(dAtA, i, uint64(len(m.OriginalMemo)))
-		i--
-		dAtA[i] = 0x1
-		i--
-		dAtA[i] = 0x82
+		dAtA[i] = 0x80
 	}
 	if len(m.VaultPubKeyEddsa) > 0 {
 		i -= len(m.VaultPubKeyEddsa)
@@ -759,12 +759,12 @@ func (m *QueryTxOutItem) Size() (n int) {
 	if l > 0 {
 		n += 1 + l + sovQueryOutbound(uint64(l))
 	}
+	if m.InboundFinalized {
+		n += 3
+	}
 	l = len(m.OriginalMemo)
 	if l > 0 {
 		n += 2 + l + sovQueryOutbound(uint64(l))
-	}
-	if m.InboundFinalized {
-		n += 3
 	}
 	return n
 }
@@ -1513,6 +1513,26 @@ func (m *QueryTxOutItem) Unmarshal(dAtA []byte) error {
 			m.VaultPubKeyEddsa = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
 		case 16:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field InboundFinalized", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryOutbound
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.InboundFinalized = bool(v != 0)
+		case 17:
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field OriginalMemo", wireType)
 			}
@@ -1544,26 +1564,6 @@ func (m *QueryTxOutItem) Unmarshal(dAtA []byte) error {
 			}
 			m.OriginalMemo = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
-		case 17:
-			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field InboundFinalized", wireType)
-			}
-			var v int
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowQueryOutbound
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				v |= int(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			m.InboundFinalized = bool(v != 0)
 		default:
 			iNdEx = preIndex
 			skippy, err := skipQueryOutbound(dAtA[iNdEx:])
