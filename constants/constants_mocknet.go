@@ -67,9 +67,11 @@ func init() {
 		MultipleAffiliatesMaxCount:          5,
 		BankSendEnabled:                     1,
 		IntentsEnabled:                      1,
-		IntentTTLBlocks:                     5, // very short for testing
-		IntentAuctionDurationBlocks:         5, // very short for testing
-		IntentAuctionOvertimeBlocks:         2, // very short for testing
+		IntentTTLBlocks:                     5,  // very short for testing
+		IntentPriceSlideBlocks:              10, // shorter for testing
+		IntentMinFeeBasisPoints:             10, // lower for testing
+		IntentAuctionDurationBlocks:         5,  // very short for testing
+		IntentAuctionOvertimeBlocks:         2,  // very short for testing
 	}
 	boolOverrides = map[ConstantName]bool{
 		StrictBondLiquidityRatio: false,

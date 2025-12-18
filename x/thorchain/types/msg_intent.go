@@ -1,11 +1,14 @@
 package types
 
 import (
+	"fmt"
+
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	se "github.com/cosmos/cosmos-sdk/types/errors"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
 )
 
 var (
@@ -67,6 +70,13 @@ func (m *MsgIntentOpen) ValidateBasic() error {
 	}
 	if m.TargetAddress.IsEmpty() {
 		return se.ErrInvalidRequest.Wrap("target address cannot be empty")
+	}
+	// Validate affiliate parameters
+	if m.AffiliateAddress.IsEmpty() && !m.AffiliateBasisPoints.IsZero() {
+		return se.ErrInvalidRequest.Wrap("affiliate address cannot be empty while affiliate basis points is non-zero")
+	}
+	if !m.AffiliateBasisPoints.IsZero() && m.AffiliateBasisPoints.GT(cosmos.NewUint(constants.MaxBasisPts)) {
+		return se.ErrInvalidRequest.Wrap(fmt.Sprintf("affiliate basis points cannot exceed %d", constants.MaxBasisPts))
 	}
 	return nil
 }
