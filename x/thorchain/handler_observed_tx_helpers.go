@@ -169,8 +169,8 @@ func handleObservedTxInQuorum(
 			if hasUnfinalizedActions {
 				k := mgr.Keeper()
 				memo, _ := ParseMemoWithTHORNames(ctx, k, tx.Tx.Memo)
-				enableMempoolSwaps := k.GetConfigInt64(ctx, constants.EnableMempoolSwaps) > 0
-				canProcessMempoolSwap := enableMempoolSwaps && memo.IsType(TxSwap)
+				mempoolSwapCap := cosmos.NewUint(uint64(k.GetConfigInt64(ctx, constants.MempoolSwapCapTOR)))
+				canProcessMempoolSwap := !mempoolSwapCap.IsZero() && memo.IsType(TxSwap)
 
 				if canProcessMempoolSwap {
 					ctx.Logger().Info("finalizing outbounds and updating vault for finalized mempool swap", "hash", voter.TxID)
@@ -256,12 +256,12 @@ func handleObservedTxInQuorum(
 	// Allow swap execution at consensus (before finalization) for mempool swap optimization.
 	// Only streaming swaps (StreamQuantity == 0) can be executed from mempool.
 	// Outbounds won't be signed until the inbound finalizes.
-	enableMempoolSwaps := k.GetConfigInt64(ctx, constants.EnableMempoolSwaps) > 0
+	mempoolSwapCap := cosmos.NewUint(uint64(k.GetConfigInt64(ctx, constants.MempoolSwapCapTOR)))
 	isStreamingSwap := false
 	if swapMemo, ok := memo.(SwapMemo); ok {
 		isStreamingSwap = swapMemo.GetStreamQuantity() == 0
 	}
-	canProcessMempoolSwap := enableMempoolSwaps && memo.IsType(TxSwap) && isStreamingSwap
+	canProcessMempoolSwap := !mempoolSwapCap.IsZero() && memo.IsType(TxSwap) && isStreamingSwap
 
 	// Update vault balances from inbounds with Migrate memos immediately,
 	// to minimise any gap between outbound and inbound observations.
@@ -316,7 +316,38 @@ func handleObservedTxInQuorum(
 	}
 
 	if !hasFinalised && canProcessMempoolSwap {
-		ctx.Logger().Info("processing mempool swap before finalization", "hash", voter.TxID, "memo", tx.Tx.Memo)
+		// Check if there's capacity for this mempool swap
+		sourceAsset := voter.Tx.Tx.Coins[0].Asset
+		sourceAmount := voter.Tx.Tx.Coins[0].Amount
+		torValue, hasCapacity, err := checkMempoolSwapCapacity(ctx, k, sourceAsset, sourceAmount)
+		if err != nil {
+			ctx.Logger().Info("fail to check mempool swap capacity, waiting for finalization",
+				"error", err, "hash", voter.TxID)
+			canProcessMempoolSwap = false
+		} else if !hasCapacity {
+			ctx.Logger().Info("mempool swap cap exceeded, waiting for finalization",
+				"current_usage", k.GetMempoolSwapUsageTOR(ctx),
+				"swap_tor", torValue,
+				"cap", mempoolSwapCap,
+				"hash", voter.TxID)
+			canProcessMempoolSwap = false
+		} else {
+			// Reserve capacity: add to usage and store TOR value on voter
+			newUsage := k.AddMempoolSwapUsageTOR(ctx, torValue)
+			voter.MempoolSwapTOR = torValue
+			k.SetObservedTxInVoter(ctx, voter)
+			ctx.Logger().Info("processing mempool swap before finalization",
+				"hash", voter.TxID,
+				"tor_value", torValue,
+				"new_usage", newUsage,
+				"cap", mempoolSwapCap,
+				"memo", tx.Tx.Memo)
+		}
+
+		// If we can't process as mempool swap, return and wait for finalization
+		if !canProcessMempoolSwap {
+			return nil
+		}
 	}
 
 	// When a mempool swap finalizes, update all associated outbound TxOutItems to Finalized=true
@@ -1185,6 +1216,15 @@ func ExtractReferenceFromAmount(ctx cosmos.Context, mgr Manager, asset common.As
 func finalizeOutbounds(ctx cosmos.Context, mgr Manager, voter ObservedTxVoter) error {
 	ctx.Logger().Info("finalizing outbounds for inbound", "hash", voter.TxID, "actions_count", len(voter.Actions))
 
+	// Release mempool swap capacity if this was a mempool swap
+	if !voter.MempoolSwapTOR.IsNil() && !voter.MempoolSwapTOR.IsZero() {
+		newUsage := mgr.Keeper().SubMempoolSwapUsageTOR(ctx, voter.MempoolSwapTOR)
+		ctx.Logger().Info("released mempool swap capacity",
+			"hash", voter.TxID,
+			"tor_value", voter.MempoolSwapTOR,
+			"new_usage", newUsage)
+	}
+
 	// Get the maximum outbound delay to determine search range
 	txOutDelayMax := mgr.Keeper().GetConfigInt64(ctx, constants.TxOutDelayMax)
 
@@ -1288,6 +1328,15 @@ func finalizeOutbounds(ctx cosmos.Context, mgr Manager, voter ObservedTxVoter) e
 // This is called when a mempool transaction is dropped or replaced before finalization.
 func revertMempoolSwap(ctx cosmos.Context, keeper keeper.Keeper, mgr Manager, voter ObservedTxVoter) error {
 	ctx.Logger().Info("reverting mempool swap", "hash", voter.TxID, "actions_count", len(voter.Actions))
+
+	// Release mempool swap capacity if this was a mempool swap
+	if !voter.MempoolSwapTOR.IsNil() && !voter.MempoolSwapTOR.IsZero() {
+		newUsage := keeper.SubMempoolSwapUsageTOR(ctx, voter.MempoolSwapTOR)
+		ctx.Logger().Info("released mempool swap capacity on revert",
+			"hash", voter.TxID,
+			"tor_value", voter.MempoolSwapTOR,
+			"new_usage", newUsage)
+	}
 
 	// Get the maximum outbound delay to determine search range
 	txOutDelayMax := keeper.GetConfigInt64(ctx, constants.TxOutDelayMax)

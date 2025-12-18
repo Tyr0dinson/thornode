@@ -979,8 +979,8 @@ func (tos *TxOutStorage) addToBlockOut(ctx cosmos.Context, mgr Manager, item TxO
 	if item.Chain.IsTHORChain() {
 		// For mempool swaps (not finalized), queue native outbounds for later execution
 		if !item.InboundFinalized {
-			enableMempoolSwaps := tos.keeper.GetConfigInt64(ctx, constants.EnableMempoolSwaps) > 0
-			if enableMempoolSwaps {
+			mempoolSwapCap := cosmos.NewUint(uint64(tos.keeper.GetConfigInt64(ctx, constants.MempoolSwapCapTOR)))
+			if !mempoolSwapCap.IsZero() {
 				ctx.Logger().Info("queueing native outbound for mempool swap",
 					"inhash", item.InHash, "asset", item.Coin.Asset, "amount", item.Coin.Amount)
 				// Initialize nil pointer fields (same as external outbounds)

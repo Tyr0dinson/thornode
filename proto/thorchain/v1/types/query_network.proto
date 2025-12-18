@@ -55,4 +55,7 @@ message QueryNetworkResponse {
   string tor_price_in_rune = 14 [ (gogoproto.jsontag) = "tor_price_in_rune" ];
   // indicator if all anchor chains are halted
   bool tor_price_halted = 17 [ (gogoproto.jsontag) = "tor_price_halted" ];
+  // current mempool swap usage in TOR
+  string mempool_swap_usage_tor = 18
+      [ (gogoproto.jsontag) = "mempool_swap_usage_tor" ];
 }

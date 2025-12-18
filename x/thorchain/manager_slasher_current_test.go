@@ -118,9 +118,9 @@ func (s *SlashingSuite) TestNodeSignSlashErrors(c *C) {
 		slasher := newSlasher(keeper, NewDummyEventMgr())
 		item.condition(keeper)
 		if item.shouldError {
-			c.Assert(slasher.LackSigning(ctx, NewDummyMgr()), NotNil)
+			c.Assert(slasher.LackSigning(ctx, NewDummyMgrWithKeeper(keeper)), NotNil)
 		} else {
-			c.Assert(slasher.LackSigning(ctx, NewDummyMgr()), IsNil)
+			c.Assert(slasher.LackSigning(ctx, NewDummyMgrWithKeeper(keeper)), IsNil)
 		}
 	}
 }
@@ -172,7 +172,7 @@ func (s *SlashingSuite) TestNotSigningSlash(c *C) {
 	}
 	signingTransactionPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
 	ctx = ctx.WithBlockHeight(3 + signingTransactionPeriod)
-	mgr := NewDummyMgr()
+	mgr := NewDummyMgrWithKeeper(keeper)
 	mgr.txOutStore = txOutStore
 	slasher := newSlasher(keeper, NewDummyEventMgr())
 	c.Assert(slasher.LackSigning(ctx, mgr), IsNil)
@@ -1356,7 +1356,7 @@ func (s *SlashingSuite) TestReverseSwapFallbackToTreasury(c *C) {
 
 func (s *SlashingVCURSuite) TestLackSigningWithMempoolSwaps(c *C) {
 	ctx, mgr := setupManagerForTest(c)
-	mgr.Keeper().SetMimir(ctx, constants.EnableMempoolSwaps.String(), 1)
+	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
 
 	// Setup constants
 	signingTransPeriod := int64(300)

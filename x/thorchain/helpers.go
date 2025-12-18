@@ -1739,3 +1739,51 @@ func applyMemolessOutboundLogic(version semver.Version, toi *TxOutItem, enableMe
 		toi.Memo = toi.OriginalMemo
 	}
 }
+
+// getAssetValueInTOR converts an asset amount to its TOR (dollar) value.
+// Returns the TOR value and an error if the conversion fails.
+func getAssetValueInTOR(ctx cosmos.Context, k keeper.Keeper, asset common.Asset, amount cosmos.Uint) (cosmos.Uint, error) {
+	var runeValue cosmos.Uint
+
+	if asset.IsRune() {
+		runeValue = amount
+	} else {
+		pool, err := k.GetPool(ctx, asset.GetLayer1Asset())
+		if err != nil {
+			return cosmos.ZeroUint(), fmt.Errorf("fail to get pool for asset %s: %w", asset, err)
+		}
+		if pool.IsEmpty() {
+			return cosmos.ZeroUint(), fmt.Errorf("pool is empty for asset %s", asset)
+		}
+		runeValue = pool.AssetValueInRune(amount)
+	}
+
+	// Convert RUNE to TOR (dollars)
+	dollarsPerRune := k.DollarsPerRune(ctx)
+	if dollarsPerRune.IsZero() {
+		return cosmos.ZeroUint(), fmt.Errorf("dollars per rune is zero")
+	}
+	torValue := common.GetUncappedShare(runeValue, cosmos.NewUint(common.One), dollarsPerRune)
+	return torValue, nil
+}
+
+// checkMempoolSwapCapacity checks if there is available capacity for a mempool swap.
+// Returns the TOR value of the swap, whether there is capacity, and any error.
+func checkMempoolSwapCapacity(ctx cosmos.Context, k keeper.Keeper, asset common.Asset, amount cosmos.Uint) (torValue cosmos.Uint, hasCapacity bool, err error) {
+	mempoolSwapCap := cosmos.NewUint(uint64(k.GetConfigInt64(ctx, constants.MempoolSwapCapTOR)))
+	if mempoolSwapCap.IsZero() {
+		return cosmos.ZeroUint(), false, nil
+	}
+
+	torValue, err = getAssetValueInTOR(ctx, k, asset, amount)
+	if err != nil {
+		return cosmos.ZeroUint(), false, err
+	}
+	if torValue.IsZero() {
+		return cosmos.ZeroUint(), false, nil
+	}
+
+	currentUsage := k.GetMempoolSwapUsageTOR(ctx)
+	hasCapacity = currentUsage.Add(torValue).LTE(mempoolSwapCap)
+	return torValue, hasCapacity, nil
+}

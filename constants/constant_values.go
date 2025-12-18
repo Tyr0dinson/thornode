@@ -82,7 +82,7 @@ const (
 	StreamingSwapMaxLength
 	StreamingSwapMaxLengthNative
 	StreamingLimitSwapMaxAge
-	EnableMempoolSwaps
+	MempoolSwapCapTOR
 	MinCR
 	MaxCR
 	LendingLever

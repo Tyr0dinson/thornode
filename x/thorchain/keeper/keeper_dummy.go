@@ -917,6 +917,17 @@ func (k KVStoreDummy) SetVolume(_ cosmos.Context, _ Volume) error {
 	return nil
 }
 
+func (k KVStoreDummy) GetMempoolSwapUsageTOR(_ cosmos.Context) cosmos.Uint {
+	return cosmos.ZeroUint()
+}
+func (k KVStoreDummy) SetMempoolSwapUsageTOR(_ cosmos.Context, _ cosmos.Uint) {}
+func (k KVStoreDummy) AddMempoolSwapUsageTOR(_ cosmos.Context, tor cosmos.Uint) cosmos.Uint {
+	return tor
+}
+func (k KVStoreDummy) SubMempoolSwapUsageTOR(_ cosmos.Context, _ cosmos.Uint) cosmos.Uint {
+	return cosmos.ZeroUint()
+}
+
 // a mock cosmos.Iterator implementation for testing purposes
 type DummyIterator struct {
 	cosmos.Iterator

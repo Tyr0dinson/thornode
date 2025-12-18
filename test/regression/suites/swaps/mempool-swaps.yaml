@@ -6,28 +6,45 @@ type: create-blocks
 count: 1
 ---
 ########################################################################################
-# Test Mempool Swap Optimization Feature
+# Test Mempool Swap Optimization Feature with TOR Cap
 ########################################################################################
-# Enable the mempool swaps feature
+# Set DollarsPerRune so TOR calculation works (1 RUNE = $1 for simplicity)
 type: tx-mimir
-key: EnableMempoolSwaps
-value: 1
+key: DollarsPerRune
+value: 100000000
 signer: {{ addr_thor_dog }}
 ---
 type: create-blocks
 count: 1
 ---
-# Verify mimir is enabled
+# Enable the mempool swaps feature with a 2000 TOR cap (enough for ~2 BTC worth of swaps)
+# With 1 BTC ~ 1000 RUNE and DollarsPerRune = 1, 1 BTC = 1000 TOR
+type: tx-mimir
+key: MempoolSwapCapTOR
+value: 200000000000
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Verify mimirs are enabled
 type: check
 endpoint: http://localhost:1317/thorchain/mimir
 asserts:
-  - .ENABLEMEMPOOLSWAPS == 1
+  - .MEMPOOLSWAPCAPTOR == 200000000000
+  - .DOLLARSPERRUNE == 100000000
+---
+# Verify initial mempool swap usage is 0
+type: check
+endpoint: http://localhost:1317/thorchain/network
+asserts:
+  - .mempool_swap_usage_tor == "0"
 ---
 ########################################################################################
-# Scenario: Mempool Swap Execution
+# Scenario 1: Mempool Swap Execution with Usage Tracking
 ########################################################################################
 # Send a swap transaction that will finalize 3 blocks later
-# Current block: 3, Transaction block: 3, Finalize at: 6
+# Current block: 4, Transaction block: 4, Finalize at: 7
 type: tx-observed-in
 signer: {{ addr_thor_dog }}
 txs:
@@ -45,8 +62,8 @@ txs:
           asset: "BTC.BTC"
           decimals: 8
       memo: "=:ETH.ETH:{{ addr_eth_fox }}"
-    block_height: 3
-    finalise_height: 6  # Will finalize 3 blocks later
+    block_height: 4
+    finalise_height: 7  # Will finalize 3 blocks later
     observed_pub_key: {{ pubkey_dog }}
 ---
 type: create-blocks
@@ -63,14 +80,76 @@ asserts:
   - .[0].coin.amount|tonumber > 0
   - .[0].inbound_finalized == false  # Not finalized yet
 ---
-########################################################################################
-# Scenario: Finalization Updates Outbound
-########################################################################################
-# Create blocks to reach finalization height
-type: create-blocks
-count: 2  # Move from block 4 to block 6
+# Verify mempool swap usage increased (1 BTC ~ 1000 TOR with current pool ratios)
+type: check
+endpoint: http://localhost:1317/thorchain/network
+asserts:
+  - .mempool_swap_usage_tor|tonumber > 0
 ---
-# Re-observe the same transaction as finalized
+########################################################################################
+# Scenario 2: Cap Enforcement - Second Swap Should Wait When Cap Exceeded
+########################################################################################
+# Set a very small cap to test enforcement (100 TOR - less than current usage)
+type: tx-mimir
+key: MempoolSwapCapTOR
+value: 10000000000
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Verify cap was lowered
+type: check
+endpoint: http://localhost:1317/thorchain/mimir
+asserts:
+  - .MEMPOOLSWAPCAPTOR == 10000000000
+---
+# Send another swap that should NOT be processed via mempool (cap exceeded)
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 10 }}"
+      chain: BTC
+      from_address: {{ addr_btc_cat }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "100000000"  # 1.0 BTC
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+          decimals: 8
+      memo: "=:ETH.ETH:{{ addr_eth_cat }}"
+    block_height: 6
+    finalise_height: 10  # Will finalize later
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Verify second swap did NOT create an outbound (waiting for finalization due to cap)
+# Only the first outbound should be in the queue
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0].in_hash == "{{ observe_txid 1 }}"
+---
+########################################################################################
+# Scenario 3: Finalization Releases Capacity
+########################################################################################
+# Restore a larger cap so we can test capacity release
+type: tx-mimir
+key: MempoolSwapCapTOR
+value: 200000000000
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Re-observe the first transaction as finalized
 type: tx-observed-in
 signer: {{ addr_thor_dog }}
 txs:
@@ -88,23 +167,28 @@ txs:
           asset: "BTC.BTC"
           decimals: 8
       memo: "=:ETH.ETH:{{ addr_eth_fox }}"
-    block_height: 6
-    finalise_height: 6  # NOW finalized (block_height == finalise_height)
+    block_height: 8
+    finalise_height: 8  # NOW finalized (block_height == finalise_height)
     observed_pub_key: {{ pubkey_dog }}
 ---
 type: create-blocks
 count: 1
 ---
-# Verify outbound still exists and is now finalized
+# Verify first outbound is now finalized
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .|length == 1
-  - .[0].chain == "ETH"
   - .[0].in_hash == "{{ observe_txid 1 }}"
   - .[0].inbound_finalized == true  # Now finalized!
 ---
-# Clean up - observe the outbound
+# Verify mempool swap usage was released (should be back to 0 or lower)
+type: check
+endpoint: http://localhost:1317/thorchain/network
+asserts:
+  - .mempool_swap_usage_tor == "0"
+---
+# Clean up - observe the first outbound
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
 txs:
@@ -122,14 +206,83 @@ txs:
           asset: "ETH.ETH"
           decimals: 8
       memo: "OUT:{{ observe_txid 1 }}"
-    block_height: 7
-    finalise_height: 7
+    block_height: 9
+    finalise_height: 9
     observed_pub_key: {{ pubkey_dog }}
 ---
 type: create-blocks
 count: 1
 ---
 # Verify the outbound was observed and processed (queue should be empty now)
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+########################################################################################
+# Scenario 4: Second Swap Now Processes After Capacity Available
+########################################################################################
+# Re-observe the second swap as finalized (it was waiting for finalization)
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 10 }}"
+      chain: BTC
+      from_address: {{ addr_btc_cat }}
+      to_address: {{ addr_btc_dog }}
+      coins:
+        - amount: "100000000"  # 1.0 BTC
+          asset: "BTC.BTC"
+          decimals: 8
+      gas:
+        - amount: "10000"
+          asset: "BTC.BTC"
+          decimals: 8
+      memo: "=:ETH.ETH:{{ addr_eth_cat }}"
+    block_height: 10
+    finalise_height: 10  # NOW finalized
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Verify second swap now created an outbound (finalized)
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 1
+  - .[0].chain == "ETH"
+  - .[0].to_address == "{{ addr_eth_cat }}"
+  - .[0].in_hash == "{{ observe_txid 10 }}"
+  - .[0].inbound_finalized == true  # Processed on finalization
+---
+# Clean up - observe the second outbound
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+  - tx:
+      id: "{{ observe_txid 11 }}"
+      chain: ETH
+      from_address: {{ addr_eth_dog }}
+      to_address: {{ addr_eth_cat }}
+      coins:
+        - amount: "85850874"  # Actual swap output
+          asset: "ETH.ETH"
+          decimals: 8
+      gas:
+        - amount: "960000"
+          asset: "ETH.ETH"
+          decimals: 8
+      memo: "OUT:{{ observe_txid 10 }}"
+    block_height: 11
+    finalise_height: 11
+    observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+# Verify queue is empty after cleanup
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:

@@ -541,6 +541,7 @@ func (qs queryServer) queryNetwork(ctx cosmos.Context, _ *types.QueryNetworkRequ
 		RunePriceInTor:        dollarsPerRuneIgnoreHalt(ctx, qs.mgr.Keeper()).String(),
 		TorPriceInRune:        runePerDollarIgnoreHalt(ctx, qs.mgr.Keeper()).String(),
 		TorPriceHalted:        median.IsZero(),
+		MempoolSwapUsageTor:   qs.mgr.Keeper().GetMempoolSwapUsageTOR(ctx).String(),
 	}
 
 	return &result, nil

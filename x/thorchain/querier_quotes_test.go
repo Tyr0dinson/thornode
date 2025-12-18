@@ -229,17 +229,18 @@ func (s *QuotesSuite) TestQuoteSwapTimingWithMempoolSwaps(c *C) {
 	inboundConfBlocks := int64(100)  // Number of confirmation blocks needed
 
 	// Test 1: With mempool swaps DISABLED (traditional sequential flow)
-	mgr.Keeper().SetMimir(ctx, constants.EnableMempoolSwaps.String(), 0)
+	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 0)
 
 	// When mempool swaps are disabled, total time = inbound_conf + swap_time
 	expectedTotalWithDisabled := inboundConfSeconds + swapSeconds
 
 	// Simulate the logic from querier_quotes.go
-	enableMempoolSwaps := mgr.Keeper().GetConfigInt64(ctx, constants.EnableMempoolSwaps) > 0
-	c.Check(enableMempoolSwaps, Equals, false)
+	mempoolSwapCap := cosmos.NewUint(uint64(mgr.Keeper().GetConfigInt64(ctx, constants.MempoolSwapCapTOR)))
+	canUseMempoolSwap := !mempoolSwapCap.IsZero()
+	c.Check(canUseMempoolSwap, Equals, false)
 
 	var totalSeconds int64
-	if enableMempoolSwaps {
+	if canUseMempoolSwap {
 		// With mempool swap optimization, times are parallel
 		totalSeconds = swapSeconds
 		if inboundConfBlocks > 0 && inboundConfSeconds > totalSeconds {
@@ -257,15 +258,16 @@ func (s *QuotesSuite) TestQuoteSwapTimingWithMempoolSwaps(c *C) {
 		Commentf("With mempool swaps disabled, time should be sequential: %d", expectedTotalWithDisabled))
 
 	// Test 2: With mempool swaps ENABLED (parallel flow)
-	mgr.Keeper().SetMimir(ctx, constants.EnableMempoolSwaps.String(), 1)
+	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
 
 	// When mempool swaps are enabled, total time = max(inbound_conf, swap_time)
 	expectedTotalWithEnabled := inboundConfSeconds // max(600, 100) = 600
 
-	enableMempoolSwaps = mgr.Keeper().GetConfigInt64(ctx, constants.EnableMempoolSwaps) > 0
-	c.Check(enableMempoolSwaps, Equals, true)
+	mempoolSwapCap = cosmos.NewUint(uint64(mgr.Keeper().GetConfigInt64(ctx, constants.MempoolSwapCapTOR)))
+	canUseMempoolSwap = !mempoolSwapCap.IsZero()
+	c.Check(canUseMempoolSwap, Equals, true)
 
-	if enableMempoolSwaps {
+	if canUseMempoolSwap {
 		// With mempool swap optimization, times are parallel
 		totalSeconds = swapSeconds
 		if inboundConfBlocks > 0 && inboundConfSeconds > totalSeconds {
@@ -286,10 +288,11 @@ func (s *QuotesSuite) TestQuoteSwapTimingWithMempoolSwaps(c *C) {
 	swapSecondsLonger := int64(800)
 	inboundConfSecondsShort := int64(200)
 
-	mgr.Keeper().SetMimir(ctx, constants.EnableMempoolSwaps.String(), 1)
-	enableMempoolSwaps = mgr.Keeper().GetConfigInt64(ctx, constants.EnableMempoolSwaps) > 0
+	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
+	mempoolSwapCap = cosmos.NewUint(uint64(mgr.Keeper().GetConfigInt64(ctx, constants.MempoolSwapCapTOR)))
+	canUseMempoolSwap = !mempoolSwapCap.IsZero()
 
-	if enableMempoolSwaps {
+	if canUseMempoolSwap {
 		totalSeconds = swapSecondsLonger
 		if inboundConfBlocks > 0 && inboundConfSecondsShort > totalSeconds {
 			totalSeconds = inboundConfSecondsShort
@@ -306,10 +309,11 @@ func (s *QuotesSuite) TestQuoteSwapTimingWithMempoolSwaps(c *C) {
 		Commentf("With mempool enabled, should use max(800, 200) = 800"))
 
 	// Test 4: Same edge case but with mempool disabled
-	mgr.Keeper().SetMimir(ctx, constants.EnableMempoolSwaps.String(), 0)
-	enableMempoolSwaps = mgr.Keeper().GetConfigInt64(ctx, constants.EnableMempoolSwaps) > 0
+	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 0)
+	mempoolSwapCap = cosmos.NewUint(uint64(mgr.Keeper().GetConfigInt64(ctx, constants.MempoolSwapCapTOR)))
+	canUseMempoolSwap = !mempoolSwapCap.IsZero()
 
-	if enableMempoolSwaps {
+	if canUseMempoolSwap {
 		totalSeconds = swapSecondsLonger
 		if inboundConfBlocks > 0 && inboundConfSecondsShort > totalSeconds {
 			totalSeconds = inboundConfSecondsShort
