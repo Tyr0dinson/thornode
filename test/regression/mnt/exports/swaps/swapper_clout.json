@@ -326,6 +326,7 @@
           ],
           "finalised_height": "20",
           "height": "20",
+          "mempool_swap_tor": "0",
           "out_txs": null,
           "outbound_height": "20",
           "tx": {

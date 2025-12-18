@@ -326,6 +326,7 @@
           ],
           "finalised_height": "5",
           "height": "5",
+          "mempool_swap_tor": "0",
           "out_txs": null,
           "outbound_height": "5",
           "tx": {
@@ -416,6 +417,7 @@
           ],
           "finalised_height": "5",
           "height": "5",
+          "mempool_swap_tor": "0",
           "out_txs": null,
           "outbound_height": "5",
           "tx": {
@@ -506,6 +508,7 @@
           ],
           "finalised_height": "5",
           "height": "5",
+          "mempool_swap_tor": "0",
           "out_txs": null,
           "outbound_height": "5",
           "tx": {
@@ -570,6 +573,7 @@
           ],
           "finalised_height": "9",
           "height": "9",
+          "mempool_swap_tor": "0",
           "out_txs": null,
           "outbound_height": "9",
           "tx": {

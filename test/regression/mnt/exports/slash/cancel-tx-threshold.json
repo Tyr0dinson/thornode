@@ -349,6 +349,7 @@
           ],
           "finalised_height": "3",
           "height": "3",
+          "mempool_swap_tor": "0",
           "out_txs": null,
           "outbound_height": "3",
           "tx": {
