@@ -7285,6 +7285,7 @@ components:
       type: object
     QuoteIntentResponse:
       example:
+        solve_min_increment: "2000000"
         fees:
           estimated_affiliate_fee: ""
           estimated_protocol_fee: "240000"
@@ -7314,6 +7315,7 @@ components:
           pooled_asset: ETH.ETH
         intent_ttl_seconds: 86400
         router: 0x3624525075b88B24ecc29CE226b0CEc1fFcB6976
+        solve_min_increment_asset: ETH.ETH
         intent_ttl_blocks: 14400
         gas_rate_units: ""
         warning: Do not cache this response. Do not send funds after the expiry.
@@ -7406,6 +7408,15 @@ components:
         gas_rate_units:
           description: gas rate units
           example: ""
+          type: string
+        solve_min_increment:
+          description: minimum amount a solve must exceed current best by to be considered
+            "better" (1x gas fee)
+          example: "2000000"
+          type: string
+        solve_min_increment_asset:
+          description: asset the solve_min_increment is denominated in
+          example: ETH.ETH
           type: string
       required:
       - valid

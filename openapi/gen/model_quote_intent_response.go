@@ -55,6 +55,10 @@ type QuoteIntentResponse struct {
 	RecommendedGasRate *string `json:"recommended_gas_rate,omitempty"`
 	// gas rate units
 	GasRateUnits *string `json:"gas_rate_units,omitempty"`
+	// minimum amount a solve must exceed current best by to be considered \"better\" (1x gas fee)
+	SolveMinIncrement *string `json:"solve_min_increment,omitempty"`
+	// asset the solve_min_increment is denominated in
+	SolveMinIncrementAsset *string `json:"solve_min_increment_asset,omitempty"`
 }
 
 // NewQuoteIntentResponse instantiates a new QuoteIntentResponse object
@@ -739,6 +743,70 @@ func (o *QuoteIntentResponse) SetGasRateUnits(v string) {
 	o.GasRateUnits = &v
 }
 
+// GetSolveMinIncrement returns the SolveMinIncrement field value if set, zero value otherwise.
+func (o *QuoteIntentResponse) GetSolveMinIncrement() string {
+	if o == nil || o.SolveMinIncrement == nil {
+		var ret string
+		return ret
+	}
+	return *o.SolveMinIncrement
+}
+
+// GetSolveMinIncrementOk returns a tuple with the SolveMinIncrement field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *QuoteIntentResponse) GetSolveMinIncrementOk() (*string, bool) {
+	if o == nil || o.SolveMinIncrement == nil {
+		return nil, false
+	}
+	return o.SolveMinIncrement, true
+}
+
+// HasSolveMinIncrement returns a boolean if a field has been set.
+func (o *QuoteIntentResponse) HasSolveMinIncrement() bool {
+	if o != nil && o.SolveMinIncrement != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetSolveMinIncrement gets a reference to the given string and assigns it to the SolveMinIncrement field.
+func (o *QuoteIntentResponse) SetSolveMinIncrement(v string) {
+	o.SolveMinIncrement = &v
+}
+
+// GetSolveMinIncrementAsset returns the SolveMinIncrementAsset field value if set, zero value otherwise.
+func (o *QuoteIntentResponse) GetSolveMinIncrementAsset() string {
+	if o == nil || o.SolveMinIncrementAsset == nil {
+		var ret string
+		return ret
+	}
+	return *o.SolveMinIncrementAsset
+}
+
+// GetSolveMinIncrementAssetOk returns a tuple with the SolveMinIncrementAsset field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *QuoteIntentResponse) GetSolveMinIncrementAssetOk() (*string, bool) {
+	if o == nil || o.SolveMinIncrementAsset == nil {
+		return nil, false
+	}
+	return o.SolveMinIncrementAsset, true
+}
+
+// HasSolveMinIncrementAsset returns a boolean if a field has been set.
+func (o *QuoteIntentResponse) HasSolveMinIncrementAsset() bool {
+	if o != nil && o.SolveMinIncrementAsset != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetSolveMinIncrementAsset gets a reference to the given string and assigns it to the SolveMinIncrementAsset field.
+func (o *QuoteIntentResponse) SetSolveMinIncrementAsset(v string) {
+	o.SolveMinIncrementAsset = &v
+}
+
 func (o QuoteIntentResponse) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
@@ -803,6 +871,12 @@ func (o QuoteIntentResponse) MarshalJSON_deprecated() ([]byte, error) {
 	}
 	if o.GasRateUnits != nil {
 		toSerialize["gas_rate_units"] = o.GasRateUnits
+	}
+	if o.SolveMinIncrement != nil {
+		toSerialize["solve_min_increment"] = o.SolveMinIncrement
+	}
+	if o.SolveMinIncrementAsset != nil {
+		toSerialize["solve_min_increment_asset"] = o.SolveMinIncrementAsset
 	}
 	return json.Marshal(toSerialize)
 }

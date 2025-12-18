@@ -1555,6 +1555,23 @@ func (qs queryServer) queryQuoteIntent(ctx cosmos.Context, req *types.QueryQuote
 	confSeconds := confBlocks * fromChain.ApproximateBlockMilliseconds() / 1000
 	expiryHeight := ctx.BlockHeight() + ttlBlocks
 
+	// Calculate solve min increment (1x gas fee)
+	// A solve must exceed other bids by this amount to be considered "better"
+	// The chain used depends on which asset lacks a pool:
+	// - If source has no pool and is not native → source chain gas
+	// - Else if target has no pool and is not native → target chain gas
+	// - Else (both have pools/native) → source chain gas
+	var solveMinIncrementChain common.Chain
+	if !hasSourcePool && !isSourceNative {
+		solveMinIncrementChain = fromAsset.GetChain()
+	} else if !hasTargetPool && !isTargetNative {
+		solveMinIncrementChain = toAsset.GetChain()
+	} else {
+		solveMinIncrementChain = fromAsset.GetChain()
+	}
+	solveMinIncrement := calculateGasFee(ctx, qs.mgr, solveMinIncrementChain)
+	solveMinIncrementAsset := solveMinIncrementChain.GetGasAsset()
+
 	// Build response
 	response := &types.QueryQuoteIntentResponse{
 		Valid:                      true,
@@ -1585,6 +1602,8 @@ func (qs queryServer) queryQuoteIntent(ctx cosmos.Context, req *types.QueryQuote
 		Expiry:                 ctx.BlockTime().Add(quoteExpiration).Unix(),
 		Warning:                quoteWarning,
 		RecommendedMinAmountIn: fromAsset.Chain.DustThreshold().String(),
+		SolveMinIncrement:      solveMinIncrement.String(),
+		SolveMinIncrementAsset: solveMinIncrementAsset.String(),
 	}
 
 	// Set optional fields
