@@ -129,7 +129,7 @@ func (h IntentOpenHandler) handle(ctx cosmos.Context, msg MsgIntentOpen) error {
 		Status:               IntentActive,
 		MinFeeBasisPoints:    minFeeBps,
 		AffiliateAddress:     msg.AffiliateAddress,
-		AffiliateBasisPoints: msg.AffiliateBasisPoints.BigInt().Int64(),
+		AffiliateBasisPoints: msg.AffiliateBasisPoints.BigInt().Int64(), // Safe: validated in ValidateBasic to be <= MaxBasisPts
 	}
 
 	// Save the intent

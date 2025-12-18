@@ -109,9 +109,9 @@ func (im *IntentMgr) executeIntent(ctx cosmos.Context, intent Intent, solve Inte
 	targetPool, _ := im.mgr.Keeper().GetPool(ctx, solve.TargetCoin.Asset.GetLayer1Asset())
 
 	isSourcePoolAsset := !sourcePool.IsEmpty()
-	isSourceNative := intent.Source.Asset.IsRune() || intent.Source.Asset.IsSecuredAsset()
+	isSourceNative := intent.Source.Asset.IsRune() || intent.Source.Asset.IsSecuredAsset() || intent.Source.Asset.IsTradeAsset()
 	isTargetPoolAsset := !targetPool.IsEmpty()
-	isTargetNative := solve.TargetCoin.Asset.IsRune() || solve.TargetCoin.Asset.IsSecuredAsset()
+	isTargetNative := solve.TargetCoin.Asset.IsRune() || solve.TargetCoin.Asset.IsSecuredAsset() || solve.TargetCoin.Asset.IsTradeAsset()
 
 	canChargeSource := isSourcePoolAsset || isSourceNative
 	canChargeTarget := isTargetPoolAsset || isTargetNative
@@ -686,6 +686,7 @@ func (im *IntentMgr) completeAuction(ctx cosmos.Context, auction IntentAuction) 
 	// Process winning bid: swap to RUNE and add to reserve
 	if err := im.processWinningBid(ctx, *winningBid); err != nil {
 		ctx.Logger().Error("fail to process winning bid", "error", err)
+		return fmt.Errorf("fail to process winning bid revenue: %w", err)
 	}
 
 	// Update auction status
