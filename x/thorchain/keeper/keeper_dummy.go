@@ -924,6 +924,7 @@ func (k KVStoreDummy) SetMempoolSwapUsageTOR(_ cosmos.Context, _ cosmos.Uint) {}
 func (k KVStoreDummy) AddMempoolSwapUsageTOR(_ cosmos.Context, tor cosmos.Uint) cosmos.Uint {
 	return tor
 }
+
 func (k KVStoreDummy) SubMempoolSwapUsageTOR(_ cosmos.Context, _ cosmos.Uint) cosmos.Uint {
 	return cosmos.ZeroUint()
 }
