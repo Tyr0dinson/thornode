@@ -25,6 +25,8 @@ Name | Type | Description | Notes
 **RecommendedMinAmountIn** | Pointer to **string** | recommended minimum amount in | [optional] 
 **RecommendedGasRate** | Pointer to **string** | recommended gas rate for inbound | [optional] 
 **GasRateUnits** | Pointer to **string** | gas rate units | [optional] 
+**SolveMinIncrement** | Pointer to **string** | minimum amount a solve must exceed current best by to be considered \&quot;better\&quot; (1x gas fee) | [optional] 
+**SolveMinIncrementAsset** | Pointer to **string** | asset the solve_min_increment is denominated in | [optional] 
 
 ## Methods
 
@@ -564,6 +566,56 @@ SetGasRateUnits sets GasRateUnits field to given value.
 `func (o *QuoteIntentResponse) HasGasRateUnits() bool`
 
 HasGasRateUnits returns a boolean if a field has been set.
+
+### GetSolveMinIncrement
+
+`func (o *QuoteIntentResponse) GetSolveMinIncrement() string`
+
+GetSolveMinIncrement returns the SolveMinIncrement field if non-nil, zero value otherwise.
+
+### GetSolveMinIncrementOk
+
+`func (o *QuoteIntentResponse) GetSolveMinIncrementOk() (*string, bool)`
+
+GetSolveMinIncrementOk returns a tuple with the SolveMinIncrement field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetSolveMinIncrement
+
+`func (o *QuoteIntentResponse) SetSolveMinIncrement(v string)`
+
+SetSolveMinIncrement sets SolveMinIncrement field to given value.
+
+### HasSolveMinIncrement
+
+`func (o *QuoteIntentResponse) HasSolveMinIncrement() bool`
+
+HasSolveMinIncrement returns a boolean if a field has been set.
+
+### GetSolveMinIncrementAsset
+
+`func (o *QuoteIntentResponse) GetSolveMinIncrementAsset() string`
+
+GetSolveMinIncrementAsset returns the SolveMinIncrementAsset field if non-nil, zero value otherwise.
+
+### GetSolveMinIncrementAssetOk
+
+`func (o *QuoteIntentResponse) GetSolveMinIncrementAssetOk() (*string, bool)`
+
+GetSolveMinIncrementAssetOk returns a tuple with the SolveMinIncrementAsset field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetSolveMinIncrementAsset
+
+`func (o *QuoteIntentResponse) SetSolveMinIncrementAsset(v string)`
+
+SetSolveMinIncrementAsset sets SolveMinIncrementAsset field to given value.
+
+### HasSolveMinIncrementAsset
+
+`func (o *QuoteIntentResponse) HasSolveMinIncrementAsset() bool`
+
+HasSolveMinIncrementAsset returns a boolean if a field has been set.
 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)

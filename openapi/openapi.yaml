@@ -5063,6 +5063,14 @@ components:
           type: string
           description: gas rate units
           example: ""
+        solve_min_increment:
+          type: string
+          description: minimum amount a solve must exceed current best by to be considered "better" (1x gas fee)
+          example: "2000000"
+        solve_min_increment_asset:
+          type: string
+          description: asset the solve_min_increment is denominated in
+          example: "ETH.ETH"
 
     QuoteIntentFees:
       type: object
