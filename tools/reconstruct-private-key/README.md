@@ -6,6 +6,10 @@ This tool reconstructs a private key from multiple TSS (Threshold Signature Sche
 
 In emergency situations where you need to recover assets controlled by a TSS vault, this tool allows you to combine multiple key shares to reconstruct the full private key. This should only be used when absolutely necessary, as it defeats the security model of threshold cryptography.
 
+**Supports both ECDSA and EDDSA keys:**
+- **ECDSA (secp256k1)**: Used for BTC, ETH, and most other chains
+- **EDDSA (Ed25519)**: Used for Solana (SOL) addresses
+
 ## Requirements
 
 - Multiple keyshare files (`localstate-*.json`) from different nodes
@@ -84,6 +88,10 @@ The tool expects keyshare files in the format:
 - Format: JSON containing `KeygenLocalState` structure
 
 You can obtain these files using the `recover-keyshare-backup` tool or by copying them from node storage.
+
+The tool automatically detects whether keyshares are **ECDSA** or **EDDSA** by examining the share data structure. Both types are supported:
+- **ECDSA keyshares**: Contain `ECDSAPub` field
+- **EDDSA keyshares**: Contain `EDDSAPub` field (used for Solana)
 
 ## Troubleshooting
 
