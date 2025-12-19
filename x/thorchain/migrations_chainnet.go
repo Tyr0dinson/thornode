@@ -44,7 +44,7 @@ func (m Migrator) Migrate2to3(ctx sdk.Context) error {
 // active vault.
 func (m Migrator) Migrate3to4(ctx sdk.Context) error {
 	// active vault missing base
-	vaultPubkey, err := common.NewPubKey("cthorpub1addwnpepqw354sg3dj8xffqjyznnmqh7rzfv528vr5wdsh3644485hzll6a2zf203v6")
+	vaultPubkey, err := common.NewPubKey("cthorpub1addwnpepqw354sg3dj8xffqjyznnmqh7rzfv528vr5wdsh3644485hzll6a2zhp3yf8")
 	if err != nil {
 		return fmt.Errorf("fail to parse vault pubkey: %w", err)
 	}
@@ -101,7 +101,7 @@ func (m Migrator) Migrate4to5(ctx sdk.Context) error {
 
 	// 210M minus claims: 1_800_000_00000000
 	treasuryCoin := common.NewCoin(common.TCY, totalTCYCoin.Amount.Sub(claimingModuleCoin.Amount))
-	treasuryAddress, err := common.NewAddress("cthor1hjpct8pd9d48vyqltaqunltwx9twm57l9e8tjr")
+	treasuryAddress, err := common.NewAddress("cthor1hjpct8pd9d48vyqltaqunltwx9twm57lascwwp")
 	if err != nil {
 		return err
 	}

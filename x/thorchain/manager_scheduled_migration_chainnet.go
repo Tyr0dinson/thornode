@@ -23,7 +23,7 @@ func (m *ScheduledMigrationMgr) processMigration(ctx cosmos.Context, mgr Manager
 
 	// balance has been placed in retired chainnet vault for this test
 	txid := common.TxID("00048A12C1815688FCD3551967288DD1795C5107CFD4CC45D8FA09AE9CDB4849")
-	vaultPubKey := common.PubKey("cthorpub1addwnpepqwncnmuawsa3klxm3g632etgpz7wknx2yyvfnjh6ypwu4367y57puxzecq3")
+	vaultPubKey := common.PubKey("cthorpub1addwnpepqwncnmuawsa3klxm3g632etgpz7wknx2yyvfnjh6ypwu4367y57pucf8d9v")
 	refundCoin := common.NewCoin(common.ETHAsset, cosmos.NewUint(535844))
 	refundCoin.Amount = refundCoin.Amount.Sub(maxGasCoinETH.Amount)
 	out := TxOutItem{

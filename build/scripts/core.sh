@@ -137,7 +137,7 @@ set_bond_module() {
   elif [ "$NET" = "stagenet" ]; then
     BOND_MODULE_ADDR="sthor17gw75axcnr8747pkanye45pnrwk7p9c3ve0wxj"
   elif [ "$NET" = "chainnet" ]; then
-    BOND_MODULE_ADDR="cthor17gw75axcnr8747pkanye45pnrwk7p9c3ve0wxj"
+    BOND_MODULE_ADDR="cthor17gw75axcnr8747pkanye45pnrwk7p9c35sst6s"
   else
     echo "Unsupported NET: $NET"
     exit 1
