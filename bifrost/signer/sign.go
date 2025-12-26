@@ -1285,7 +1285,7 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 		s.pubkeyMgr.HasPubKey(tx.VaultPubKeyFrost)
 	if !canSign {
 		// We can't sign this transaction - discard it from storage
-		s.logger.Info().Str("signer_address", chain.GetAddress(tx.VaultPubKey)).Msg("different pool address, discarding")
+		s.logger.Error().Str("signer_address", chain.GetAddress(tx.VaultPubKey)).Msg("different pool address, discarding")
 		return nil, nil, errDiscardTx
 	}
 

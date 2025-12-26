@@ -2020,7 +2020,7 @@ func settleSwapCached(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason
 			}
 		} else if shouldProcessPostSwapMemo {
 			// Check if this is a mempool revert swap - if so, deduct source amount from pool atomically with donate
-			if originalTxID, found := mgr.Keeper().GetMempoolRevertTxID(ctx, msg.Tx.ID); found {
+			if originalTxID, found := GetOriginalFromMempoolRevertTxID(ctx, mgr.Keeper(), msg.Tx.ID); found {
 				voter, voterErr := mgr.Keeper().GetObservedTxInVoter(ctx, originalTxID)
 				if voterErr == nil && !voter.Tx.Tx.Coins.IsEmpty() {
 					sourceAsset := voter.Tx.Tx.Coins[0].Asset
@@ -2064,8 +2064,6 @@ func settleSwapCached(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason
 				} else {
 					ctx.Logger().Error("fail to get original voter for mempool revert", "error", voterErr, "original_txid", originalTxID)
 				}
-				// Clean up the mapping
-				mgr.Keeper().DeleteMempoolRevertTxID(ctx, msg.Tx.ID)
 			}
 
 			// Process post-swap memo: create internal transaction with swap output
@@ -2103,7 +2101,9 @@ func settleSwapCached(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason
 					_, err = handler(ctx, internalMsg)
 					if err != nil {
 						ctx.Logger().Error("fail to execute post-swap memo transaction", "error", err, "memo", msg.PostSwapMemo)
-						// Continue with swap completion even if execution fails
+						// Continue with swap completion even if execution fails.
+						// NOTE: Currently post-swap memos are only used for DONATE operations (treasury recovery).
+						// If this feature is expanded to other memo types, additional error handling may be required.
 					} else {
 						ctx.Logger().Info("successfully executed post-swap memo", "memo", msg.PostSwapMemo)
 					}

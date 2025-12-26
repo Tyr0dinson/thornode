@@ -131,7 +131,6 @@ const (
 	prefixDynamicFee                types.DbPrefix = "dynfee/"
 	prefixDynamicFeeAcc             types.DbPrefix = "dynfeeacc/"
 	prefixDynamicFeeEpochBlocks     types.DbPrefix = "dynfeeebo/"
-	prefixMempoolRevert             types.DbPrefix = "mempool_revert/"
 	prefixMempoolSwapUsage          types.DbPrefix = "mempool_swap_usage/"
 )
 

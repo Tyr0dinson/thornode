@@ -2,8 +2,6 @@ package thorchain
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"math"
 	"slices"
@@ -21,6 +19,57 @@ import (
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 	mem "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
 )
+
+// CreateMempoolRevertTxID creates a deterministic reverse TxID from original TxID + action index.
+// The reverse TxID is created by reversing the hex string and XORing the last byte with the action index.
+// This allows the original TxID to be recovered without needing persistent storage.
+func CreateMempoolRevertTxID(originalTxID common.TxID, actionIndex int) common.TxID {
+	s := originalTxID.String()
+	if len(s) != 64 {
+		return originalTxID // fallback for invalid TxID
+	}
+	// Reverse the string
+	runes := []rune(s)
+	for i, j := 0, len(runes)-1; i < j; i, j = i+1, j-1 {
+		runes[i], runes[j] = runes[j], runes[i]
+	}
+	// XOR last byte with action index to ensure uniqueness per action
+	lastByte, _ := strconv.ParseUint(string(runes[62:64]), 16, 8)
+	lastByte ^= uint64(actionIndex)
+	return common.TxID(string(runes[:62]) + fmt.Sprintf("%02X", lastByte))
+}
+
+// GetOriginalFromMempoolRevertTxID recovers the original TxID from a mempool revert TxID.
+// It tries action indices 0-15 and returns the first match found in the keeper.
+func GetOriginalFromMempoolRevertTxID(ctx cosmos.Context, k keeper.Keeper, reverseTxID common.TxID) (common.TxID, bool) {
+	s := reverseTxID.String()
+	if len(s) != 64 {
+		return common.TxID(""), false
+	}
+	lastByte, err := strconv.ParseUint(s[62:64], 16, 8)
+	if err != nil {
+		return common.TxID(""), false
+	}
+
+	for actionIndex := 0; actionIndex < 16; actionIndex++ {
+		// XOR to undo the action index encoding
+		originalLastByte := lastByte ^ uint64(actionIndex)
+		candidate := s[:62] + fmt.Sprintf("%02X", originalLastByte)
+
+		// Reverse the string
+		runes := []rune(candidate)
+		for i, j := 0, len(runes)-1; i < j; i, j = i+1, j-1 {
+			runes[i], runes[j] = runes[j], runes[i]
+		}
+		originalTxID := common.TxID(string(runes))
+
+		// Check if voter exists
+		if _, err := k.GetObservedTxInVoter(ctx, originalTxID); err == nil {
+			return originalTxID, true
+		}
+	}
+	return common.TxID(""), false
+}
 
 // processTxInAttestation applies a single attestation for an observed tx and saves
 // the voter. MsgObservedTxIn (single attester) uses it; MsgObservedTxQuorum applies
@@ -308,53 +357,6 @@ func handleObservedTxInQuorum(
 	isQuorum bool,
 ) error {
 	if !isQuorum {
-		// Even if this observation doesn't bring the voter to quorum (because consensus was already reached),
-		// we still need to finalize outbounds if this is a mempool swap that has finalized but has unfinalized actions.
-		// Check if the current observation indicates the transaction has finalized on-chain (not just reached consensus).
-		if tx.FinaliseHeight > 0 && len(voter.Actions) > 0 {
-			// Check if any actions are not yet finalized
-			hasUnfinalizedActions := false
-			for _, action := range voter.Actions {
-				if !action.InboundFinalized {
-					hasUnfinalizedActions = true
-					break
-				}
-			}
-
-			if hasUnfinalizedActions {
-				k := mgr.Keeper()
-				memo, _ := ParseMemoWithTHORNames(ctx, k, tx.Tx.Memo)
-				mempoolSwapCap := cosmos.NewUint(uint64(k.GetConfigInt64(ctx, constants.MempoolSwapCapTOR)))
-				canProcessMempoolSwap := !mempoolSwapCap.IsZero() && memo.IsType(TxSwap)
-
-				if canProcessMempoolSwap {
-					ctx.Logger().Info("finalizing outbounds and updating vault for finalized mempool swap", "hash", voter.TxID)
-
-					// Update vault balance if not already done
-					if !voter.UpdatedVault {
-						vault, err := k.GetVault(ctx, tx.ObservedPubKey)
-						if err == nil && vault.IsAsgard() {
-							if !tx.Tx.FromAddress.Equals(tx.Tx.ToAddress) {
-								vault.AddFunds(tx.Tx.Coins)
-								vault.InboundTxCount++
-								voter.UpdatedVault = true
-								if err := k.SetVault(ctx, vault); err != nil {
-									ctx.Logger().Error("fail to set vault", "error", err)
-								}
-								k.SetObservedTxInVoter(ctx, voter)
-								ctx.Logger().Info("updated vault for finalized mempool swap", "hash", voter.TxID, "coins", tx.Tx.Coins.String())
-							}
-						}
-					}
-
-					// Finalize outbounds
-					if err := finalizeOutbounds(ctx, mgr, voter); err != nil {
-						ctx.Logger().Error("fail to finalize outbounds", "error", err, "hash", voter.TxID)
-					}
-				}
-			}
-		}
-
 		if voter.Height == ctx.BlockHeight() || voter.FinalisedHeight == ctx.BlockHeight() {
 			// we've already process the transaction, but we should still
 			// update the observing addresses
@@ -461,7 +463,7 @@ func handleObservedTxInQuorum(
 	// TODO: In future somehow update both balances in a single action,
 	// so the ActiveVault balance increase is guaranteed to never be early nor late?
 	// For mempool swaps, skip vault balance updates until finalization.
-	if (hasFinalised || memo.IsType(TxMigrate)) && !(!hasFinalised && canProcessMempoolSwap) {
+	if hasFinalised || (memo.IsType(TxMigrate) && !canProcessMempoolSwap) {
 		if vault.IsAsgard() && !voter.UpdatedVault {
 			if tx.Tx.FromAddress.Equals(tx.Tx.ToAddress) {
 				// Don't add to or subtract from vault balances when the sender and recipient are the same
@@ -550,7 +552,7 @@ func handleObservedTxInQuorum(
 
 	// When a mempool swap finalizes, update all associated outbound TxOutItems to Finalized=true
 	// and return early - the swap was already executed from mempool, don't process it again
-	if hasFinalised && canProcessMempoolSwap && len(voter.Actions) > 0 {
+	if hasFinalised && len(voter.Actions) > 0 {
 		if err = finalizeOutbounds(ctx, mgr, voter); err != nil {
 			ctx.Logger().Error("fail to finalize outbounds", "error", err, "hash", voter.TxID)
 		}
@@ -2641,15 +2643,9 @@ func revertMempoolSwap(ctx cosmos.Context, keeper keeper.Keeper, mgr Manager, vo
 
 		// External chain output - create reverse swap with chained donate memo
 		// The pool deduction will happen atomically when the donate executes in settleSwap
-		// Generate a unique transaction ID for this reversal
-		// Include the action index to ensure uniqueness when a single inbound has multiple actions
-		hashInput := fmt.Sprintf("MEMPOOL-REVERT-%s-%d-%d", voter.TxID, ctx.BlockHeight(), i)
-		hash := sha256.Sum256([]byte(hashInput))
-		txID := common.TxID(hex.EncodeToString(hash[:]))
-
-		// Store mapping from reverse swap txID to original inbound txID
-		// This allows settleSwap to look up the original voter and deduct the source amount
-		keeper.SetMempoolRevertTxID(ctx, txID, voter.TxID)
+		// Generate a unique transaction ID for this reversal using deterministic reversal
+		// The original TxID can be recovered by reversing the process without needing storage
+		txID := CreateMempoolRevertTxID(voter.TxID, i)
 
 		// Get max gas coin for the chain
 		maxGasCoin, _, err := mgr.GasMgr().GetGasDetails(ctx, action.Chain)
