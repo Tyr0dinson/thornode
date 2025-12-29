@@ -1036,7 +1036,8 @@ func (s *SignSuite) TestRound7Retry(c *C) {
 	})
 	c.Assert(err, IsNil)
 
-	// this will be ignored entirely since the vault pubkey is different
+	// this will be skipped (but not removed) since the vault pubkey is different
+	// to avoid double-spend risk from race conditions
 	err = sign.storage.Set(TxOutStoreItem{
 		Height: txOutHeight,
 		TxOutItem: types.TxOutItem{
@@ -1089,13 +1090,18 @@ func (s *SignSuite) TestRound7Retry(c *C) {
 	c.Assert(cc2.broadcastCount, Equals, 1)
 	c.Assert(tssServer2.counter, Equals, 1)
 
-	// all eth txs should be remaining, first marked round 7
+	// all eth txs should be remaining (including skipped wrong vault item), one marked round 7
 	tois := sign.storage.List()
-	c.Assert(len(tois), Equals, 3)
-	c.Assert(tois[0].Round7Retry, Equals, true)
-	c.Assert(bytes.Equal(tois[0].Checkpoint, []byte(msg)), Equals, true)
-	c.Assert(tois[1].Round7Retry, Equals, false)
-	c.Assert(tois[2].Round7Retry, Equals, false)
+	c.Assert(len(tois), Equals, 4)
+	// count items with Round7Retry=true (should be exactly 1)
+	round7Count := 0
+	for _, toi := range tois {
+		if toi.Round7Retry {
+			round7Count++
+			c.Assert(bytes.Equal(toi.Checkpoint, []byte(msg)), Equals, true)
+		}
+	}
+	c.Assert(round7Count, Equals, 1)
 
 	// process transactions 3 more times
 	cc.assertCheckpoint = true // the following signs should pass checkpoint
@@ -1116,9 +1122,11 @@ func (s *SignSuite) TestRound7Retry(c *C) {
 	c.Assert(cc.broadcastCount, Equals, 1)
 	c.Assert(tssServer.counter, Equals, 5)
 	tois = sign.storage.List()
-	c.Assert(len(tois), Equals, 2)
-	c.Assert(tois[0].Round7Retry, Equals, false)
-	c.Assert(tois[1].Round7Retry, Equals, false)
+	c.Assert(len(tois), Equals, 3) // 2 remaining + 1 skipped wrong vault
+	// all remaining items should have Round7Retry=false
+	for _, toi := range tois {
+		c.Assert(toi.Round7Retry, Equals, false)
+	}
 
 	// the next 2 rounds should sign and broadcast the remaining
 
@@ -1130,15 +1138,15 @@ func (s *SignSuite) TestRound7Retry(c *C) {
 	c.Assert(cc.signCount, Equals, 6)
 	c.Assert(cc.broadcastCount, Equals, 2)
 	c.Assert(tssServer.counter, Equals, 6)
-	c.Assert(len(sign.storage.List()), Equals, 1)
+	c.Assert(len(sign.storage.List()), Equals, 2) // 1 remaining + 1 skipped wrong vault
 
-	// last one
+	// last one (wrong vault item will remain skipped in storage)
 	sign.processTransactions()
 	sign.pipeline.Wait()
 	c.Assert(cc.signCount, Equals, 7)
 	c.Assert(cc.broadcastCount, Equals, 3)
 	c.Assert(tssServer.counter, Equals, 7)
-	c.Assert(len(sign.storage.List()), Equals, 0)
+	c.Assert(len(sign.storage.List()), Equals, 1) // skipped wrong vault item remains
 
 	// nothing more should have happened on btc
 	for i := 0; i < 3; i++ {
@@ -1151,7 +1159,7 @@ func (s *SignSuite) TestRound7Retry(c *C) {
 	c.Assert(cc2.signCount, Equals, 1)
 	c.Assert(cc2.broadcastCount, Equals, 1)
 	c.Assert(tssServer2.counter, Equals, 1)
-	c.Assert(len(sign.storage.List()), Equals, 0)
+	c.Assert(len(sign.storage.List()), Equals, 1) // skipped wrong vault item remains
 
 	// stop signer
 	close(sign.stopChan)
@@ -1735,7 +1743,7 @@ func (s *SignSuite) TestShouldSignWithInboundFinalized(c *C) {
 
 	// Test 3: TxOutItem with InboundFinalized=true but wrong vault
 	// shouldSign returns true because it only checks InboundFinalized
-	// The vault pubkey check happens in signAndBroadcast which returns errDiscardTx for wrong vault
+	// The vault pubkey check happens in signAndBroadcast which skips items for wrong vault
 	wrongVaultPubKey, err := common.NewPubKey("tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4")
 	c.Assert(err, IsNil)
 
@@ -1748,7 +1756,7 @@ func (s *SignSuite) TestShouldSignWithInboundFinalized(c *C) {
 	}
 
 	// shouldSign only checks InboundFinalized, so this returns true
-	// Vault pubkey mismatch is handled by signAndBroadcast returning errDiscardTx
+	// Vault pubkey mismatch is handled by signAndBroadcast skipping the item
 	shouldSign = sign.shouldSign(wrongVaultItem)
 	c.Check(shouldSign, Equals, true, Commentf("shouldSign only checks InboundFinalized, vault check is in signAndBroadcast"))
 }
