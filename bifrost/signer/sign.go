@@ -35,10 +35,6 @@ import (
 	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
-// errDiscardTx is a sentinel error indicating that a transaction should be removed
-// from storage without being signed (e.g., already processed, invalid, etc.)
-var errDiscardTx = errors.New("discard transaction")
-
 // Signer will pull the tx out from thorchain and then forward it to chain
 type Signer struct {
 	logger                zerolog.Logger
@@ -616,9 +612,9 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 	// Check if we have the vault pubkey to sign this transaction
 	canSign := s.pubkeyMgr.HasPubKey(tx.VaultPubKey) || s.pubkeyMgr.HasPubKey(tx.VaultPubKeyEddsa)
 	if !canSign {
-		// We can't sign this transaction - discard it from storage
-		s.logger.Error().Str("signer_address", chain.GetAddress(tx.VaultPubKey)).Msg("different pool address, discarding")
-		return nil, nil, errDiscardTx
+		// We can't sign this transaction - skip it (leave in storage to avoid double-spend risk)
+		s.logger.Info().Str("signer_address", chain.GetAddress(tx.VaultPubKey)).Msg("different pool address, skipping")
+		return nil, nil, nil
 	}
 
 	// Check if we should sign now (inbound must be finalized for mempool swaps)
@@ -630,7 +626,7 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 
 	if len(tx.ToAddress) == 0 {
 		s.logger.Info().Msg("To address is empty, THORNode don't know where to send the fund , ignore")
-		return nil, nil, errDiscardTx // return nil and discard item
+		return nil, nil, nil
 	}
 
 	// don't sign if the block scanner is unhealthy. This is because the
@@ -649,7 +645,7 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 
 	if !tx.OutHash.IsEmpty() {
 		s.logger.Info().Str("OutHash", tx.OutHash.String()).Msg("tx had been sent out before")
-		return nil, nil, errDiscardTx // return nil and discard item
+		return nil, nil, nil
 	}
 
 	// We get the keysign object from thorchain again to ensure it hasn't
@@ -665,7 +661,7 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 		if txArray.TxOutItem(item.TxOutItem.Height).Equals(tx) && !txArray.OutHash.IsEmpty() {
 			// already been signed, we can skip it
 			s.logger.Info().Str("tx_id", tx.OutHash.String()).Msgf("already signed. skipping...")
-			return nil, nil, errDiscardTx
+			return nil, nil, nil
 		}
 	}
 
@@ -787,16 +783,6 @@ func (s *Signer) processTransaction(item TxOutStoreItem) {
 		// against cases like https://gitlab.com/thorchain/thornode/-/merge_requests/4344.
 		// In tradeoff, we accept a higher likelihood of temporary stuck outbounds.
 		item.Checkpoint = checkpoint
-
-		// Check if this is the special discard error - if so, remove the item
-		if errors.Is(err, errDiscardTx) {
-			s.logger.Info().Interface("tx", item.TxOutItem).Msg("discarding tx from storage")
-			if removeErr := s.storage.Remove(item); removeErr != nil {
-				s.logger.Error().Err(removeErr).Msg("fail to remove tx out store item")
-			}
-			cancel()
-			return
-		}
 
 		// mark the txout on round 7 failure to block other txs for the chain / pubkey
 		ksErr := tss.KeysignError{}
