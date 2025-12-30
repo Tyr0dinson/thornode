@@ -1,0 +1,229 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 2
+---
+########################################################################################
+# Enable intents with specific configuration for testing competing solves
+########################################################################################
+type: tx-mimir
+key: IntentsEnabled
+value: 1
+signer: {{ addr_thor_dog }}
+sequence: 0
+---
+type: tx-mimir
+key: IntentPriceSlideBlocks
+value: 100
+signer: {{ addr_thor_dog }}
+sequence: 1
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Create an intent - swap ETH for ETH (same-chain for testing)
+# high=100000000 (1 ETH), low=100000000 (1 ETH) for immediate execution
+# This allows testing competing solves without cross-chain address issues
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 1 }}'
+    chain: ETH
+    from_address: {{ addr_eth_fox }}
+    to_address: {{ addr_eth_dog }}
+    coins:
+      - amount: "100000000"
+        asset: "ETH.ETH"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "ETH.ETH"
+    memo: "IO:ETH.ETH:100000000:100000000:{{ addr_eth_fox }}"
+  block_height: 2
+  finalise_height: 2
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Check intent was created with high=low for immediate execution
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intent/{{ observe_txid 1 }}
+asserts:
+  - .intent.tx_id == "{{ observe_txid 1 }}"
+  - .intent.status == "IntentActive"
+  - .intent.high_target == "100000000"
+  - .intent.low_target == "100000000"
+---
+########################################################################################
+# Submit BOTH solves in the SAME block to ensure they both arrive before execution
+# Cat offers 100000000, Pig offers 101000000 (higher)
+# Since both solves arrive in the same block and high=low, they compete immediately
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 2 }}'
+    chain: ETH
+    from_address: {{ addr_eth_cat }}
+    to_address: {{ addr_eth_dog }}
+    coins:
+      - amount: "100000000"
+        asset: "ETH.ETH"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "ETH.ETH"
+    memo: "IS:{{ observe_txid 1 }}"
+  block_height: 3
+  finalise_height: 3
+  observed_pub_key: {{ pubkey_dog }}
+- tx:
+    id: '{{ observe_txid 3 }}'
+    chain: ETH
+    from_address: {{ addr_eth_pig }}
+    to_address: {{ addr_eth_dog }}
+    coins:
+      - amount: "101000000"
+        asset: "ETH.ETH"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "ETH.ETH"
+    memo: "IS:{{ observe_txid 1 }}"
+  block_height: 3
+  finalise_height: 3
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Check intent was completed - cat wins by deterministic tiebreaker (lower txid)
+# When amounts meet the target equally, the selection uses: lowest match_height,
+# then highest amount, then earliest submit, then lowest txid.
+# Here cat (txid 02) beats pig (txid 03) at the txid tiebreaker.
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intent/{{ observe_txid 1 }}
+asserts:
+  - .intent.status == "IntentCompleted"
+---
+########################################################################################
+# Check outbound queue has scheduled transactions:
+# 1. Winner (cat) gets source asset (ETH) - OUT
+# 2. User (fox) gets target asset (ETH from cat) - OUT
+# 3. Loser (pig) gets refunded their ETH - REFUND
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length >= 2
+---
+########################################################################################
+# Observe cat's outbound (winner gets source asset - ETH)
+# Amount: 100M source - 100K protocol fee - 960K outbound gas + pool rewards
+########################################################################################
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 4 }}'
+    chain: ETH
+    from_address: {{ addr_eth_dog }}
+    to_address: {{ addr_eth_cat }}
+    coins:
+      - amount: "99260000"
+        asset: "ETH.ETH"
+        decimals: 8
+    gas:
+      - amount: "960000"
+        asset: "ETH.ETH"
+    memo: "OUT:{{ observe_txid 2 }}"
+  block_height: 4
+  finalise_height: 4
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Observe user's outbound (fox gets target asset - ETH from cat's winning solve)
+########################################################################################
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 5 }}'
+    chain: ETH
+    from_address: {{ addr_eth_dog }}
+    to_address: {{ addr_eth_fox }}
+    coins:
+      - amount: "99360128"
+        asset: "ETH.ETH"
+        decimals: 8
+    gas:
+      - amount: "960000"
+        asset: "ETH.ETH"
+    memo: "OUT:{{ observe_txid 1 }}"
+  block_height: 5
+  finalise_height: 5
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Observe pig's refund (losing solve gets refunded)
+########################################################################################
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 6 }}'
+    chain: ETH
+    from_address: {{ addr_eth_dog }}
+    to_address: {{ addr_eth_pig }}
+    coins:
+      - amount: "100360256"
+        asset: "ETH.ETH"
+        decimals: 8
+    gas:
+      - amount: "960000"
+        asset: "ETH.ETH"
+    memo: "REFUND:{{ observe_txid 3 }}"
+  block_height: 6
+  finalise_height: 6
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Verify outbound queue is now empty
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+########################################################################################
+# Verify intents list is empty (completed intent should not be in active list)
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intents
+asserts:
+  - .intents | length == 0
