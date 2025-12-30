@@ -321,6 +321,11 @@ func (im *IntentMgr) executeIntent(ctx cosmos.Context, intent Intent, solve Inte
 		if err := im.processProtocolFee(ctx, solve.SolveTxID, protocolFee, feePool); err != nil {
 			ctx.Logger().Error("fail to process protocol fee", "error", err)
 		}
+		// Re-fetch pool after protocol fee swap to get updated balances
+		// (processProtocolFee modifies and saves the pool, but feePool is passed by value)
+		if !feePool.IsEmpty() && !protocolFee.Asset.IsRune() && !protocolFee.Asset.IsSecuredAsset() && !protocolFee.Asset.IsTradeAsset() {
+			feePool, _ = im.mgr.Keeper().GetPool(ctx, feePool.Asset)
+		}
 	}
 
 	// Process affiliate fee - send to affiliate
