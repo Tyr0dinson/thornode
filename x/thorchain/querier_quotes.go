@@ -1562,11 +1562,12 @@ func (qs queryServer) queryQuoteIntent(ctx cosmos.Context, req *types.QueryQuote
 	// - Else if target has no pool and is not native → target chain gas
 	// - Else (both have pools/native) → source chain gas
 	var solveMinIncrementChain common.Chain
-	if !hasSourcePool && !isSourceNative {
+	switch {
+	case !hasSourcePool && !isSourceNative:
 		solveMinIncrementChain = fromAsset.GetChain()
-	} else if !hasTargetPool && !isTargetNative {
+	case !hasTargetPool && !isTargetNative:
 		solveMinIncrementChain = toAsset.GetChain()
-	} else {
+	default:
 		solveMinIncrementChain = fromAsset.GetChain()
 	}
 	solveMinIncrement := calculateGasFee(ctx, qs.mgr, solveMinIncrementChain)
