@@ -1,0 +1,173 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 2
+---
+########################################################################################
+# Enable intents
+########################################################################################
+type: tx-mimir
+key: IntentsEnabled
+value: 1
+signer: {{ addr_thor_dog }}
+sequence: 0
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Deposit BTC to get BTC-BTC secured asset for fox (intent creator)
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 1 }}'
+    chain: BTC
+    from_address: {{ addr_btc_fox }}
+    to_address: {{ addr_btc_dog }}
+    coins:
+      - amount: "10000000"
+        asset: "BTC.BTC"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "BTC.BTC"
+    memo: "secure+:{{ addr_thor_fox }}"
+  block_height: 2
+  finalise_height: 2
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Deposit ETH to get ETH-ETH secured asset for cat (solver)
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 2 }}'
+    chain: ETH
+    from_address: {{ addr_eth_cat }}
+    to_address: {{ addr_eth_dog }}
+    coins:
+      - amount: "100000000"
+        asset: "ETH.ETH"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "ETH.ETH"
+    memo: "secure+:{{ addr_thor_cat }}"
+  block_height: 3
+  finalise_height: 3
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Check fox has BTC-BTC secured asset
+########################################################################################
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances|length >= 1
+  - '[.balances[]|select(.denom == "btc-btc")]|length == 1'
+---
+########################################################################################
+# Check cat has ETH-ETH secured asset
+########################################################################################
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_cat }}
+asserts:
+  - .balances|length >= 1
+  - '[.balances[]|select(.denom == "eth-eth")]|length == 1'
+  - '[.balances[]|select(.denom == "eth-eth")]|.[0].amount == "100000000"'
+---
+########################################################################################
+# Create an intent using secured assets
+# Fox wants to swap BTC-BTC secured for ETH-ETH secured
+# Format: IO:TARGET_ASSET:HIGH_TARGET:LOW_TARGET:TARGET_ADDR
+# native_txid counts: 1=IntentsEnabled, 2=observed-in BTC, 3=observed-in ETH, 4=tx-deposit intent
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "5000000"
+    asset: "BTC-BTC"
+memo: "IO:ETH-ETH:60000000:60000000:{{ addr_thor_fox }}"
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Check the intent was created
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intent/{{ native_txid 4 }}
+asserts:
+  - .intent.tx_id == "{{ native_txid 4 }}"
+  - .intent.source.asset == "BTC-BTC"
+  - .intent.source.amount == "5000000"
+  - .intent.target_asset == "ETH-ETH"
+  - .intent.status == "IntentActive"
+---
+########################################################################################
+# Solver (cat) sends ETH-ETH secured to solve the intent
+# Format: IS:INTENT_TX_HASH
+# Sending 60000000 ETH-ETH which meets the high target for immediate execution
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "60000000"
+    asset: "ETH-ETH"
+memo: "IS:{{ native_txid 4 }}"
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Check intent was completed (match_height = current_height for immediate execution)
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intent/{{ native_txid 4 }}
+asserts:
+  - .intent.status == "IntentCompleted"
+---
+########################################################################################
+# Verify fox received ETH-ETH secured (target asset)
+# Fox should have received 60000000 ETH-ETH (minus any fees)
+########################################################################################
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - '[.balances[]|select(.denom == "eth-eth")]|length == 1'
+  - '[.balances[]|select(.denom == "eth-eth")]|.[0].amount|tonumber >= 59000000'
+---
+########################################################################################
+# Verify cat received BTC-BTC secured (source asset)
+# Cat should have received 5000000 BTC-BTC (minus any fees)
+########################################################################################
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_cat }}
+asserts:
+  - '[.balances[]|select(.denom == "btc-btc")]|length == 1'
+  - '[.balances[]|select(.denom == "btc-btc")]|.[0].amount|tonumber >= 4900000'
+---
+########################################################################################
+# Verify intents list is empty (completed intent should not be in active list)
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intents
+asserts:
+  - .intents | length == 0

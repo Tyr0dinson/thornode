@@ -124,7 +124,7 @@ txs:
     from_address: {{ addr_eth_dog }}
     to_address: {{ addr_eth_cat }}
     coins:
-      - amount: "99360000"
+      - amount: "99260000"
         asset: "ETH.ETH"
         decimals: 8
     gas:
