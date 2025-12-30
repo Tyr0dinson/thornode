@@ -982,7 +982,8 @@ type QueryQuoteIntentResponse struct {
 	RecommendedGasRate string `protobuf:"bytes,20,opt,name=recommended_gas_rate,json=recommendedGasRate,proto3" json:"recommended_gas_rate,omitempty"`
 	// gas rate units
 	GasRateUnits string `protobuf:"bytes,21,opt,name=gas_rate_units,json=gasRateUnits,proto3" json:"gas_rate_units,omitempty"`
-	// minimum amount a solve must exceed current best by to be considered "better" (1x gas fee)
+	// minimum amount a solve must exceed current best by to be considered
+	// "better" (1x gas fee)
 	SolveMinIncrement string `protobuf:"bytes,22,opt,name=solve_min_increment,json=solveMinIncrement,proto3" json:"solve_min_increment"`
 	// asset the solve_min_increment is denominated in
 	SolveMinIncrementAsset string `protobuf:"bytes,23,opt,name=solve_min_increment_asset,json=solveMinIncrementAsset,proto3" json:"solve_min_increment_asset"`
