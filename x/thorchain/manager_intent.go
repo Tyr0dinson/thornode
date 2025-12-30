@@ -378,13 +378,14 @@ func (im *IntentMgr) executeIntent(ctx cosmos.Context, intent Intent, solve Inte
 
 // processProtocolFee handles the protocol fee - swaps to RUNE if needed and adds to reserve
 func (im *IntentMgr) processProtocolFee(ctx cosmos.Context, solveTxID common.TxID, protocolFee common.Coin, feePool Pool) error {
-	if protocolFee.Asset.IsRune() {
+	switch {
+	case protocolFee.Asset.IsRune():
 		// Add RUNE directly to reserve
 		if err := im.mgr.Keeper().AddPoolFeeToReserve(ctx, protocolFee.Amount); err != nil {
 			return fmt.Errorf("fail to add fee to reserve: %w", err)
 		}
 		ctx.Logger().Info("added intent protocol fee to reserve", "amount", protocolFee.Amount)
-	} else if protocolFee.Asset.IsSecuredAsset() || protocolFee.Asset.IsTradeAsset() {
+	case protocolFee.Asset.IsSecuredAsset() || protocolFee.Asset.IsTradeAsset():
 		// For secured/trade assets, the fee is already deducted from what the solver receives.
 		// The fee portion was escrowed (burned) and won't be given to anyone.
 		// We don't add anything to reserve since no RUNE is actually being generated -
@@ -393,7 +394,7 @@ func (im *IntentMgr) processProtocolFee(ctx cosmos.Context, solveTxID common.TxI
 			"fee_asset", protocolFee.Asset,
 			"fee_amount", protocolFee.Amount,
 		)
-	} else if !feePool.IsEmpty() {
+	case !feePool.IsEmpty():
 		// Perform a direct swap of L1 fee to RUNE and add to reserve.
 		// We do this directly instead of queuing a swap to avoid timing issues
 		// with invariant checks. The swap queue approach can cause the pool to
@@ -482,7 +483,8 @@ func (im *IntentMgr) processAffiliateFee(ctx cosmos.Context, intent Intent, solv
 		return fmt.Errorf("fail to convert affiliate address: %w", err)
 	}
 
-	if affiliateFee.Asset.IsRune() {
+	switch {
+	case affiliateFee.Asset.IsRune():
 		// Send RUNE directly to affiliate from Reserve (where intent RUNE is held)
 		if err := im.mgr.Keeper().SendFromModuleToAccount(ctx, ReserveName, affiliateAccAddr, common.NewCoins(affiliateFee)); err != nil {
 			return fmt.Errorf("fail to send RUNE to affiliate: %w", err)
@@ -491,7 +493,7 @@ func (im *IntentMgr) processAffiliateFee(ctx cosmos.Context, intent Intent, solv
 			"affiliate", affiliateAddr,
 			"amount", affiliateFee.Amount,
 		)
-	} else if affiliateFee.Asset.IsSecuredAsset() || affiliateFee.Asset.IsTradeAsset() {
+	case affiliateFee.Asset.IsSecuredAsset() || affiliateFee.Asset.IsTradeAsset():
 		// For secured/trade assets, we cannot pay the affiliate since the fee is in
 		// secured/trade asset form which was already escrowed (burned).
 		// The affiliate fee is effectively not collected for these asset types.
@@ -501,7 +503,7 @@ func (im *IntentMgr) processAffiliateFee(ctx cosmos.Context, intent Intent, solv
 			"fee_asset", affiliateFee.Asset,
 			"fee_amount", affiliateFee.Amount,
 		)
-	} else if !feePool.IsEmpty() {
+	case !feePool.IsEmpty():
 		// Perform a direct swap of L1 fee to RUNE and send to affiliate.
 		// We do this directly instead of queuing a swap to avoid timing issues
 		// with invariant checks.
