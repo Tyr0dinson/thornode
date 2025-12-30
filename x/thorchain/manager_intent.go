@@ -237,17 +237,20 @@ func (im *IntentMgr) processExpirations(ctx cosmos.Context) error {
 
 // executeIntent performs the actual swap and completes the intent
 func (im *IntentMgr) executeIntent(ctx cosmos.Context, intent Intent, solve IntentSolve) error {
-	// Determine which asset to charge fees on (must be pool or native asset)
+	// Determine which asset to charge fees on (must be L1 pool or RUNE)
+	// Note: Secured/trade assets cannot be charged fees because:
+	// 1. They can't be swapped to RUNE for reserve
+	// 2. Deducting from them causes pool/vault accounting imbalance
 	sourcePool, _ := im.mgr.Keeper().GetPool(ctx, intent.Source.Asset.GetLayer1Asset())
 	targetPool, _ := im.mgr.Keeper().GetPool(ctx, solve.TargetCoin.Asset.GetLayer1Asset())
 
-	isSourcePoolAsset := !sourcePool.IsEmpty()
-	isSourceNative := intent.Source.Asset.IsRune() || intent.Source.Asset.IsSecuredAsset() || intent.Source.Asset.IsTradeAsset()
-	isTargetPoolAsset := !targetPool.IsEmpty()
-	isTargetNative := solve.TargetCoin.Asset.IsRune() || solve.TargetCoin.Asset.IsSecuredAsset() || solve.TargetCoin.Asset.IsTradeAsset()
+	isSourcePoolAsset := !sourcePool.IsEmpty() && !intent.Source.Asset.IsSecuredAsset() && !intent.Source.Asset.IsTradeAsset()
+	isSourceRune := intent.Source.Asset.IsRune()
+	isTargetPoolAsset := !targetPool.IsEmpty() && !solve.TargetCoin.Asset.IsSecuredAsset() && !solve.TargetCoin.Asset.IsTradeAsset()
+	isTargetRune := solve.TargetCoin.Asset.IsRune()
 
-	canChargeSource := isSourcePoolAsset || isSourceNative
-	canChargeTarget := isTargetPoolAsset || isTargetNative
+	canChargeSource := isSourcePoolAsset || isSourceRune
+	canChargeTarget := isTargetPoolAsset || isTargetRune
 
 	// Calculate protocol fee
 	protocolFeeBps := intent.MinFeeBasisPoints
@@ -381,19 +384,34 @@ func (im *IntentMgr) processProtocolFee(ctx cosmos.Context, solveTxID common.TxI
 			return fmt.Errorf("fail to add fee to reserve: %w", err)
 		}
 		ctx.Logger().Info("added intent protocol fee to reserve", "amount", protocolFee.Amount)
+	} else if protocolFee.Asset.IsSecuredAsset() || protocolFee.Asset.IsTradeAsset() {
+		// For secured/trade assets, the fee is already deducted from what the solver receives.
+		// The fee portion was escrowed (burned) and won't be given to anyone.
+		// We don't add anything to reserve since no RUNE is actually being generated -
+		// the fee represents reduced payout to the solver, not a transfer to reserve.
+		ctx.Logger().Info("intent protocol fee deducted from secured/trade asset (no reserve addition)",
+			"fee_asset", protocolFee.Asset,
+			"fee_amount", protocolFee.Amount,
+		)
 	} else if !feePool.IsEmpty() {
-		// Swap non-RUNE fee to RUNE and add to reserve
+		// Swap non-RUNE L1 fee to RUNE and add to reserve
+		// This is an internal protocol-initiated swap, similar to recovery swaps
 		reserveAddr, err := im.mgr.Keeper().GetModuleAddress(ReserveName)
 		if err != nil {
 			return fmt.Errorf("fail to get reserve address for fee swap: %w", err)
 		}
 
+		asgardAddr := im.mgr.Keeper().GetModuleAccAddress(AsgardName)
+
+		// Use THORChain as the chain for internal swaps
+		// Empty Gas since this is not an external chain transaction
 		feeTx := common.Tx{
 			ID:          solveTxID,
-			Chain:       protocolFee.Asset.GetChain(),
-			FromAddress: common.NoAddress,
+			Chain:       common.THORChain,
+			FromAddress: reserveAddr, // Funds are conceptually from Asgard's accounting
 			ToAddress:   reserveAddr,
 			Coins:       common.NewCoins(protocolFee),
+			Gas:         common.Gas{},
 			Memo:        fmt.Sprintf("=:THOR.RUNE:%s", reserveAddr),
 		}
 
@@ -402,10 +420,9 @@ func (im *IntentMgr) processProtocolFee(ctx cosmos.Context, solveTxID common.TxI
 			version = types.SwapVersion_v2
 		}
 
-		asgardAddr := im.mgr.Keeper().GetModuleAccAddress(AsgardName)
 		swapMsg := NewMsgSwap(feeTx, common.RuneAsset(), reserveAddr,
 			cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(),
-			"", "", nil, MarketSwap, 1, 0, version, asgardAddr)
+			"", "", nil, MarketSwap, 0, 1, version, asgardAddr)
 
 		if err := im.mgr.AdvSwapQueueMgr().AddSwapQueueItem(ctx, im.mgr, swapMsg); err != nil {
 			return fmt.Errorf("fail to queue intent fee swap to RUNE: %w", err)
@@ -436,22 +453,42 @@ func (im *IntentMgr) processAffiliateFee(ctx cosmos.Context, intent Intent, solv
 	}
 
 	if affiliateFee.Asset.IsRune() {
-		// Send RUNE directly to affiliate from Asgard
-		if err := im.mgr.Keeper().SendFromModuleToAccount(ctx, AsgardName, affiliateAccAddr, common.NewCoins(affiliateFee)); err != nil {
+		// Send RUNE directly to affiliate from Reserve (where intent RUNE is held)
+		if err := im.mgr.Keeper().SendFromModuleToAccount(ctx, ReserveName, affiliateAccAddr, common.NewCoins(affiliateFee)); err != nil {
 			return fmt.Errorf("fail to send RUNE to affiliate: %w", err)
 		}
 		ctx.Logger().Info("sent intent affiliate fee",
 			"affiliate", affiliateAddr,
 			"amount", affiliateFee.Amount,
 		)
+	} else if affiliateFee.Asset.IsSecuredAsset() || affiliateFee.Asset.IsTradeAsset() {
+		// For secured/trade assets, we cannot pay the affiliate since the fee is in
+		// secured/trade asset form which was already escrowed (burned).
+		// The affiliate fee is effectively not collected for these asset types.
+		// Future improvement: could send the secured/trade asset directly to affiliate's THORChain address
+		ctx.Logger().Info("affiliate fee not paid for secured/trade asset intent",
+			"affiliate", affiliateAddr,
+			"fee_asset", affiliateFee.Asset,
+			"fee_amount", affiliateFee.Amount,
+		)
 	} else if !feePool.IsEmpty() {
-		// Swap non-RUNE fee to RUNE and send to affiliate
+		// Swap non-RUNE L1 fee to RUNE and send to affiliate
+		// This is an internal protocol-initiated swap
+		asgardAddr := im.mgr.Keeper().GetModuleAccAddress(AsgardName)
+		reserveAddr, err := im.mgr.Keeper().GetModuleAddress(ReserveName)
+		if err != nil {
+			return fmt.Errorf("fail to get reserve address: %w", err)
+		}
+
+		// Use THORChain as the chain for internal swaps
+		// Empty Gas since this is not an external chain transaction
 		feeTx := common.Tx{
 			ID:          solve.SolveTxID,
-			Chain:       affiliateFee.Asset.GetChain(),
-			FromAddress: common.NoAddress,
+			Chain:       common.THORChain,
+			FromAddress: reserveAddr, // Funds are conceptually from Asgard's accounting
 			ToAddress:   affiliateAddr,
 			Coins:       common.NewCoins(affiliateFee),
+			Gas:         common.Gas{},
 			Memo:        fmt.Sprintf("=:THOR.RUNE:%s", affiliateAddr),
 		}
 
@@ -460,10 +497,9 @@ func (im *IntentMgr) processAffiliateFee(ctx cosmos.Context, intent Intent, solv
 			version = types.SwapVersion_v2
 		}
 
-		asgardAddr := im.mgr.Keeper().GetModuleAccAddress(AsgardName)
 		swapMsg := NewMsgSwap(feeTx, common.RuneAsset(), affiliateAddr,
 			cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(),
-			"", "", nil, MarketSwap, 1, 0, version, asgardAddr)
+			"", "", nil, MarketSwap, 0, 1, version, asgardAddr)
 
 		if err := im.mgr.AdvSwapQueueMgr().AddSwapQueueItem(ctx, im.mgr, swapMsg); err != nil {
 			return fmt.Errorf("fail to queue affiliate fee swap to RUNE: %w", err)

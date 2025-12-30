@@ -605,7 +605,7 @@
               "expiry_height": "8",
               "high_target": "100000000",
               "low_target": "80000000",
-              "min_fee_basis_points": "0",
+              "min_fee_basis_points": "10",
               "msg_index": "0",
               "source": "1000000000 THOR.RUNE",
               "source_address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",

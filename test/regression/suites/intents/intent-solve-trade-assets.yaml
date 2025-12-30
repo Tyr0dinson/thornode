@@ -1,0 +1,188 @@
+type: env
+key: TRADE_ACCOUNTS_SLIP_MIN_BPS
+value: "50"
+---
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 2
+---
+########################################################################################
+# Enable intents and trade accounts
+########################################################################################
+type: tx-mimir
+key: IntentsEnabled
+value: 1
+signer: {{ addr_thor_dog }}
+sequence: 0
+---
+type: tx-mimir
+key: TradeAccountsEnabled
+value: 1
+signer: {{ addr_thor_dog }}
+sequence: 1
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Deposit BTC to get BTC~BTC trade asset for fox (intent creator)
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 1 }}'
+    chain: BTC
+    from_address: {{ addr_btc_fox }}
+    to_address: {{ addr_btc_dog }}
+    coins:
+      - amount: "10000000"
+        asset: "BTC.BTC"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "BTC.BTC"
+    memo: "trade+:{{ addr_thor_fox }}"
+  block_height: 2
+  finalise_height: 2
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Deposit ETH to get ETH~ETH trade asset for cat (solver)
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 2 }}'
+    chain: ETH
+    from_address: {{ addr_eth_cat }}
+    to_address: {{ addr_eth_dog }}
+    coins:
+      - amount: "100000000"
+        asset: "ETH.ETH"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "ETH.ETH"
+    memo: "trade+:{{ addr_thor_cat }}"
+  block_height: 3
+  finalise_height: 3
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Check fox has BTC~BTC trade asset
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_fox }}
+asserts:
+  - .|length == 1
+  - .[0].asset == "BTC~BTC"
+  - .[0].units|tonumber == 10000000
+---
+########################################################################################
+# Check cat has ETH~ETH trade asset
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_cat }}
+asserts:
+  - .|length == 1
+  - .[0].asset == "ETH~ETH"
+  - .[0].units|tonumber == 100000000
+---
+########################################################################################
+# Create an intent using trade assets
+# Fox wants to swap BTC~BTC trade for ETH~ETH trade
+# Format: IO:TARGET_ASSET:HIGH_TARGET:LOW_TARGET:TARGET_ADDR
+# native_txid counts: 1=IntentsEnabled, 2=TradeAccountsEnabled, 3=observed-in BTC, 4=observed-in ETH, 5=tx-deposit intent
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "5000000"
+    asset: "BTC~BTC"
+memo: "IO:ETH~ETH:60000000:60000000:{{ addr_thor_fox }}"
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Check the intent was created
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intent/{{ native_txid 5 }}
+asserts:
+  - .intent.tx_id == "{{ native_txid 5 }}"
+  - .intent.source.asset == "BTC~BTC"
+  - .intent.source.amount == "5000000"
+  - .intent.target_asset == "ETH~ETH"
+  - .intent.status == "IntentActive"
+---
+########################################################################################
+# Solver (cat) sends ETH~ETH trade to solve the intent
+# Format: IS:INTENT_TX_HASH
+# Sending 60000000 ETH~ETH which meets the high target for immediate execution
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_cat }}
+coins:
+  - amount: "60000000"
+    asset: "ETH~ETH"
+memo: "IS:{{ native_txid 5 }}"
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Check intent was completed (match_height = current_height for immediate execution)
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intent/{{ native_txid 5 }}
+asserts:
+  - .intent.status == "IntentCompleted"
+---
+########################################################################################
+# Verify fox received ETH~ETH trade (target asset)
+# Fox should have received 60000000 ETH~ETH (minus any fees)
+# Fox may also still have some BTC~BTC remaining
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_fox }}
+asserts:
+  - .|length >= 1
+  - '[.[]|select(.asset == "ETH~ETH")]|length == 1'
+  - '[.[]|select(.asset == "ETH~ETH")]|.[0].units|tonumber >= 59000000'
+---
+########################################################################################
+# Verify cat received BTC~BTC trade (source asset)
+# Cat should have received 5000000 BTC~BTC (minus any fees)
+# Cat may also still have some ETH~ETH remaining
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/trade/account/{{ addr_thor_cat }}
+asserts:
+  - .|length >= 1
+  - '[.[]|select(.asset == "BTC~BTC")]|length == 1'
+  - '[.[]|select(.asset == "BTC~BTC")]|.[0].units|tonumber >= 4900000'
+---
+########################################################################################
+# Verify intents list is empty (completed intent should not be in active list)
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intents
+asserts:
+  - .intents | length == 0

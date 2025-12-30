@@ -1,6 +1,8 @@
 package thorchain
 
 import (
+	"fmt"
+
 	se "github.com/cosmos/cosmos-sdk/types/errors"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -100,8 +102,37 @@ func (h IntentSolveHandler) handle(ctx cosmos.Context, msg MsgIntentSolve) error
 		return ErrInternal(err, "fail to get intent")
 	}
 
+	// Get the solver's target coin
+	targetCoin := msg.Tx.Coins[0]
+
+	// Escrow secured/trade assets by withdrawing them from the solver
+	// This burns the coins/reduces units and decreases pool depth
+	// When the intent executes, the txout system will call Deposit() to send to user
+	// When refunding, the txout system will call Deposit() to restore to solver
+	if targetCoin.Asset.IsSecuredAsset() {
+		solverAddr, err := msg.Tx.FromAddress.AccAddress()
+		if err != nil {
+			return fmt.Errorf("fail to get solver acc address: %w", err)
+		}
+		_, err = h.mgr.SecuredAssetManager().Withdraw(ctx, targetCoin.Asset, targetCoin.Amount, solverAddr, common.NoAddress, msg.Tx.ID)
+		if err != nil {
+			return fmt.Errorf("fail to escrow secured asset for intent solve: %w", err)
+		}
+		ctx.Logger().Info("escrowed secured asset for intent solve", "asset", targetCoin.Asset, "amount", targetCoin.Amount)
+	} else if targetCoin.Asset.IsTradeAsset() {
+		solverAddr, err := msg.Tx.FromAddress.AccAddress()
+		if err != nil {
+			return fmt.Errorf("fail to get solver acc address: %w", err)
+		}
+		_, err = h.mgr.TradeAccountManager().Withdrawal(ctx, targetCoin.Asset, targetCoin.Amount, solverAddr, common.NoAddress, msg.Tx.ID)
+		if err != nil {
+			return fmt.Errorf("fail to escrow trade asset for intent solve: %w", err)
+		}
+		ctx.Logger().Info("escrowed trade asset for intent solve", "asset", targetCoin.Asset, "amount", targetCoin.Amount)
+	}
+
 	// Get the offered amount
-	offeredAmount := msg.Tx.Coins[0].Amount
+	offeredAmount := targetCoin.Amount
 
 	// Calculate match height using linear interpolation
 	// match_height = current_height + ((high - offered) * slide_blocks / (high - low))
@@ -144,7 +175,7 @@ func (h IntentSolveHandler) handle(ctx cosmos.Context, msg MsgIntentSolve) error
 		SolveTxID:     msg.Tx.ID,
 		IntentTxID:    msg.IntentTxID,
 		SolverAddress: msg.Tx.FromAddress,
-		TargetCoin:    msg.Tx.Coins[0],
+		TargetCoin:    targetCoin,
 		SubmitHeight:  ctx.BlockHeight(),
 		MatchHeight:   matchHeight,
 	}
@@ -162,7 +193,7 @@ func (h IntentSolveHandler) handle(ctx cosmos.Context, msg MsgIntentSolve) error
 		msg.Tx.ID,
 		msg.IntentTxID,
 		msg.Tx.FromAddress,
-		msg.Tx.Coins[0].Amount,
+		targetCoin.Amount,
 		matchHeight,
 	)
 	if err := h.mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
