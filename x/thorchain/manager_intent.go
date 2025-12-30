@@ -74,11 +74,12 @@ func (im *IntentMgr) selectBestSolve(ctx cosmos.Context, intent types.Intent, so
 	isTargetNative := targetAsset.IsRune() || targetAsset.IsSecuredAsset() || targetAsset.IsTradeAsset()
 
 	var gasFeeChain common.Chain
-	if !hasSourcePool && !isSourceNative {
+	switch {
+	case !hasSourcePool && !isSourceNative:
 		gasFeeChain = sourceAsset.GetChain()
-	} else if !hasTargetPool && !isTargetNative {
+	case !hasTargetPool && !isTargetNative:
 		gasFeeChain = targetAsset.GetChain()
-	} else {
+	default:
 		gasFeeChain = sourceAsset.GetChain()
 	}
 	gasFee := calculateGasFee(ctx, im.mgr, gasFeeChain)
@@ -165,8 +166,17 @@ func (im *IntentMgr) processMatches(ctx cosmos.Context) error {
 		solvesByIntent[intentID] = append(solvesByIntent[intentID], solve)
 	}
 
+	// Get sorted intent IDs for deterministic processing
+	intentIDs := make([]string, 0, len(solvesByIntent))
+	// analyze-ignore(map-iteration)
+	for intentID := range solvesByIntent {
+		intentIDs = append(intentIDs, intentID)
+	}
+	sort.Strings(intentIDs)
+
 	// Process each intent's competing solves
-	for _, intentSolves := range solvesByIntent {
+	for _, intentID := range intentIDs {
+		intentSolves := solvesByIntent[intentID]
 		if len(intentSolves) == 0 {
 			continue
 		}
