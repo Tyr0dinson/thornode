@@ -1,0 +1,173 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+########################################################################################
+# Add custom ERC20 token to vault for testing fund abandonment
+# This token has no pool so cancelling an intent with it will abandon funds
+########################################################################################
+type: state
+genesis:
+  app_state:
+    thorchain:
+      vaults:
+        - block_height: "0"
+          chains:
+            - THOR
+            - BTC
+            - LTC
+            - BCH
+            - ETH
+            - DOGE
+            - AVAX
+            - GAIA
+          coins:
+            - amount: "100000000"
+              asset: BTC.BTC
+              decimals: "8"
+            - amount: "1000000000"
+              asset: ETH.ETH
+              decimals: "8"
+            - amount: "200000000"
+              asset: "ETH.TKN-0X0000000000000000000000000000000000001234"
+              decimals: "8"
+          inbound_tx_count: "2"
+          membership:
+            - tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4
+          pub_key: tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4
+          status: ActiveVault
+          type: AsgardVault
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 2
+---
+########################################################################################
+# Check initial vault balance for the ERC20 token
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/vaults/asgard
+asserts:
+  - .|length >= 1
+  - .[0].coins | map(select(.asset == "ETH.TKN-0X0000000000000000000000000000000000001234")) | .[0].amount == "200000000"
+---
+########################################################################################
+# Enable intents
+########################################################################################
+type: tx-mimir
+key: IntentsEnabled
+value: 1
+signer: {{ addr_thor_dog }}
+sequence: 0
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Create an intent with non-pool ERC20 token
+# Using ETH.TKN-0X... which has no pool
+# This ensures that cancellation will abandon the funds (not refund)
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 1 }}'
+    chain: ETH
+    from_address: {{ addr_eth_fox }}
+    to_address: {{ addr_eth_dog }}
+    coins:
+      - amount: "50000000"
+        asset: "ETH.TKN-0X0000000000000000000000000000000000001234"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "ETH.ETH"
+    memo: "IO:BTC.BTC:5000000:4000000:{{ addr_btc_fox }}"
+  block_height: 2
+  finalise_height: 2
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Check intent was created
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intent/{{ observe_txid 1 }}
+asserts:
+  - .intent.tx_id == "{{ observe_txid 1 }}"
+  - .intent.status == "IntentActive"
+  - .intent.source.asset == "ETH.TKN-0X0000000000000000000000000000000000001234"
+  - .intent.source.amount == "50000000"
+---
+########################################################################################
+# Cancel the intent (owner sends IC memo)
+# Format: IC:INTENT_TX_HASH
+# The cancel must come from the same source address that created the intent
+# Since the token has no pool, funds will be abandoned (not refunded)
+# Note: We send the same asset type to be included in the abandonment
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 2 }}'
+    chain: ETH
+    from_address: {{ addr_eth_fox }}
+    to_address: {{ addr_eth_dog }}
+    coins:
+      - amount: "1000000"
+        asset: "ETH.TKN-0X0000000000000000000000000000000000001234"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "ETH.ETH"
+    memo: "IC:{{ observe_txid 1 }}"
+  block_height: 3
+  finalise_height: 3
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Check intent status is now cancelled
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intent/{{ observe_txid 1 }}
+asserts:
+  - .intent.status == "IntentCancelled"
+---
+########################################################################################
+# Check vault balance (funds abandoned from vault)
+# Flow: Original 200M -> Intent adds 50M = 250M -> Cancel adds 1M = 251M -> Abandon 50M = 201M
+# Note: The extra 1M sent with cancel is NOT included in the abandonment (only intent.Source is)
+# This is current behavior - the extra coins sent with cancel remain in vault
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/vaults/asgard
+asserts:
+  - .|length >= 1
+  - .[0].coins | map(select(.asset == "ETH.TKN-0X0000000000000000000000000000000000001234")) | .[0].amount == "201000000"
+---
+########################################################################################
+# Verify NO refund outbound was scheduled (funds were abandoned, not refunded)
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+########################################################################################
+# Verify intents list is empty
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intents
+asserts:
+  - .intents | length == 0

@@ -1,0 +1,243 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+########################################################################################
+# Add custom ERC20 token to vault for testing
+# This token has no pool so intents using it will go to auction when expired
+########################################################################################
+type: state
+genesis:
+  app_state:
+    thorchain:
+      vaults:
+        - block_height: "0"
+          chains:
+            - THOR
+            - BTC
+            - LTC
+            - BCH
+            - ETH
+            - DOGE
+            - AVAX
+            - GAIA
+          coins:
+            - amount: "100000000"
+              asset: BTC.BTC
+              decimals: "8"
+            - amount: "1000000000"
+              asset: ETH.ETH
+              decimals: "8"
+            - amount: "200000000"
+              asset: "ETH.TKN-0X0000000000000000000000000000000000001234"
+              decimals: "8"
+          inbound_tx_count: "2"
+          membership:
+            - tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4
+          pub_key: tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4
+          status: ActiveVault
+          type: AsgardVault
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 2
+---
+########################################################################################
+# Enable intents with short TTL and slide blocks for testing
+# Setting protocol fee to 0 to avoid invariant issues
+########################################################################################
+type: tx-mimir
+key: IntentsEnabled
+value: 1
+signer: {{ addr_thor_dog }}
+sequence: 0
+---
+type: tx-mimir
+key: IntentTTLBlocks
+value: 5
+signer: {{ addr_thor_dog }}
+sequence: 1
+---
+type: tx-mimir
+key: IntentPriceSlideBlocks
+value: 20
+signer: {{ addr_thor_dog }}
+sequence: 2
+---
+type: tx-mimir
+key: IntentMinFeeBasisPoints
+value: 0
+signer: {{ addr_thor_dog }}
+sequence: 3
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Create an intent with non-pool ERC20 token
+# Using ETH.TKN-0X... which has no pool
+# This ensures the auction path is taken when intent expires
+# Format: IO:TARGET_ASSET:HIGH_TARGET:LOW_TARGET:TARGET_ADDR
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 1 }}'
+    chain: ETH
+    from_address: {{ addr_eth_fox }}
+    to_address: {{ addr_eth_dog }}
+    coins:
+      - amount: "100000000"
+        asset: "ETH.TKN-0X0000000000000000000000000000000000001234"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "ETH.ETH"
+    memo: "IO:BTC.BTC:10000000:5000000:{{ addr_btc_fox }}"
+  block_height: 2
+  finalise_height: 2
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Check intent was created
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intent/{{ observe_txid 1 }}
+asserts:
+  - .intent.tx_id == "{{ observe_txid 1 }}"
+  - .intent.status == "IntentActive"
+  - .intent.source.asset == "ETH.TKN-0X0000000000000000000000000000000000001234"
+  - .intent.high_target == "10000000"
+  - .intent.low_target == "5000000"
+---
+########################################################################################
+# Submit a solve at low target (5000000) which will have delayed match height
+# delay = (high - offered) * slide / (high - low)
+# delay = (10000000 - 5000000) * 20 / (10000000 - 5000000) = 20 blocks
+# This solve will NOT execute before intent expires (TTL = 5 blocks)
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 2 }}'
+    chain: BTC
+    from_address: {{ addr_btc_cat }}
+    to_address: {{ addr_btc_dog }}
+    coins:
+      - amount: "5000000"
+        asset: "BTC.BTC"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "BTC.BTC"
+    memo: "IS:{{ observe_txid 1 }}"
+  block_height: 3
+  finalise_height: 3
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Check solve was created with delayed match height
+# The solve should have a match_height beyond the intent expiry
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intent/{{ observe_txid 1 }}
+asserts:
+  - .intent.status == "IntentActive"
+  - .solves | length == 1
+---
+########################################################################################
+# Advance blocks past intent expiry (TTL=5, created at block 3)
+# Intent should expire at block 8 (3+5)
+# Currently at block 5, advance 4 blocks to get to block 9
+########################################################################################
+type: create-blocks
+count: 4
+---
+########################################################################################
+# Check that intent status changed to IntentAuctioning
+# The pending solve should be refunded when auction starts
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intent/{{ observe_txid 1 }}
+asserts:
+  - .intent.status == "IntentAuctioning"
+---
+########################################################################################
+# Check that auction was created
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intent/auction/{{ observe_txid 1 }}
+asserts:
+  - .auction.intent_tx_id == "{{ observe_txid 1 }}"
+  - .auction.status == "AuctionActive"
+---
+########################################################################################
+# Check outbound queue has solve refund scheduled
+# The solver (cat) should get their BTC back since intent went to auction
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length >= 1
+---
+########################################################################################
+# Observe solver's refund (cat gets BTC back)
+########################################################################################
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 3 }}'
+    chain: BTC
+    from_address: {{ addr_btc_dog }}
+    to_address: {{ addr_btc_cat }}
+    coins:
+      - amount: "4993000"
+        asset: "BTC.BTC"
+        decimals: 8
+    gas:
+      - amount: "7000"
+        asset: "BTC.BTC"
+    memo: "REFUND:{{ observe_txid 2 }}"
+  block_height: 9
+  finalise_height: 9
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Verify outbound queue is empty after solve refund
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+########################################################################################
+# Create additional blocks to allow protocol fee swap to complete
+# This ensures the invariant check passes
+########################################################################################
+type: create-blocks
+count: 5
+---
+########################################################################################
+# Verify auction status (cancelled after expiry with no bids)
+# The extra blocks pushed past auction expiry, so auction is now cancelled
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intent/auction/{{ observe_txid 1 }}
+asserts:
+  - .auction.status == "AuctionCancelled"

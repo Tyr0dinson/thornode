@@ -394,42 +394,72 @@ func (im *IntentMgr) processProtocolFee(ctx cosmos.Context, solveTxID common.TxI
 			"fee_amount", protocolFee.Amount,
 		)
 	} else if !feePool.IsEmpty() {
-		// Swap non-RUNE L1 fee to RUNE and add to reserve
-		// This is an internal protocol-initiated swap, similar to recovery swaps
-		reserveAddr, err := im.mgr.Keeper().GetModuleAddress(ReserveName)
+		// Perform a direct swap of L1 fee to RUNE and add to reserve.
+		// We do this directly instead of queuing a swap to avoid timing issues
+		// with invariant checks. The swap queue approach can cause the pool to
+		// have more coins than the vault during the window between solve completion
+		// and swap execution.
+
+		// Get the swapper for swap calculations
+		swapper, err := GetSwapper(im.mgr.Keeper().GetVersion())
 		if err != nil {
-			return fmt.Errorf("fail to get reserve address for fee swap: %w", err)
+			return fmt.Errorf("fail to get swapper: %w", err)
 		}
 
-		asgardAddr := im.mgr.Keeper().GetModuleAccAddress(AsgardName)
+		// Calculate swap parameters: L1 asset -> RUNE
+		// X = pool.BalanceAsset (source depth), Y = pool.BalanceRune (target depth)
+		X := feePool.BalanceAsset
+		x := protocolFee.Amount
+		Y := feePool.BalanceRune
 
-		// Use THORChain as the chain for internal swaps
-		// Empty Gas since this is not an external chain transaction
-		feeTx := common.Tx{
-			ID:          solveTxID,
-			Chain:       common.THORChain,
-			FromAddress: reserveAddr, // Funds are conceptually from Asgard's accounting
-			ToAddress:   reserveAddr,
-			Coins:       common.NewCoins(protocolFee),
-			Gas:         common.Gas{},
-			Memo:        fmt.Sprintf("=:THOR.RUNE:%s", reserveAddr),
+		// Calculate slip and emit amount
+		slipBps := swapper.CalcSwapSlip(X, x)
+		minSlipBps := cosmos.ZeroUint() // No min slip for internal swaps
+		emitRune, liquidityFee, _ := swapper.GetSwapCalc(X, x, Y, slipBps, minSlipBps)
+
+		// Ensure we have enough RUNE in the pool
+		if emitRune.GTE(Y) {
+			return fmt.Errorf("not enough RUNE in pool for protocol fee swap")
 		}
 
-		version := types.SwapVersion_v1
-		if im.mgr.Keeper().AdvSwapQueueEnabled(ctx) {
-			version = types.SwapVersion_v2
+		// Update pool balances directly
+		feePool.BalanceAsset = feePool.BalanceAsset.Add(x)
+		feePool.BalanceRune = common.SafeSub(feePool.BalanceRune, emitRune)
+
+		// Save the updated pool
+		if err := im.mgr.Keeper().SetPool(ctx, feePool); err != nil {
+			return fmt.Errorf("fail to save pool after protocol fee swap: %w", err)
 		}
 
-		swapMsg := NewMsgSwap(feeTx, common.RuneAsset(), reserveAddr,
-			cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(),
-			"", "", nil, MarketSwap, 0, 1, version, asgardAddr)
-
-		if err := im.mgr.AdvSwapQueueMgr().AddSwapQueueItem(ctx, im.mgr, swapMsg); err != nil {
-			return fmt.Errorf("fail to queue intent fee swap to RUNE: %w", err)
+		// Transfer emitted RUNE from Asgard to Reserve
+		if err := im.mgr.Keeper().AddPoolFeeToReserve(ctx, emitRune); err != nil {
+			return fmt.Errorf("fail to add swapped fee to reserve: %w", err)
 		}
-		ctx.Logger().Info("queued intent protocol fee swap to RUNE",
+
+		// Emit swap event for the direct swap
+		swapEvt := NewEventSwap(
+			feePool.Asset,
+			cosmos.ZeroUint(), // no trade target
+			slipBps,
+			liquidityFee,
+			cosmos.ZeroUint(), // liquidity fee in RUNE (same as liquidity fee for L1->RUNE)
+			common.Tx{
+				ID:    solveTxID,
+				Chain: common.THORChain,
+				Coins: common.NewCoins(protocolFee),
+			},
+			common.NewCoin(common.RuneAsset(), emitRune),
+			cosmos.ZeroUint(), // synth units
+		)
+		if err := im.mgr.EventMgr().EmitEvent(ctx, swapEvt); err != nil {
+			ctx.Logger().Error("fail to emit protocol fee swap event", "error", err)
+		}
+
+		ctx.Logger().Info("executed direct intent protocol fee swap to RUNE",
 			"fee_asset", protocolFee.Asset,
 			"fee_amount", protocolFee.Amount,
+			"emit_rune", emitRune,
+			"liquidity_fee", liquidityFee,
 		)
 	}
 
@@ -472,42 +502,71 @@ func (im *IntentMgr) processAffiliateFee(ctx cosmos.Context, intent Intent, solv
 			"fee_amount", affiliateFee.Amount,
 		)
 	} else if !feePool.IsEmpty() {
-		// Swap non-RUNE L1 fee to RUNE and send to affiliate
-		// This is an internal protocol-initiated swap
-		asgardAddr := im.mgr.Keeper().GetModuleAccAddress(AsgardName)
-		reserveAddr, err := im.mgr.Keeper().GetModuleAddress(ReserveName)
+		// Perform a direct swap of L1 fee to RUNE and send to affiliate.
+		// We do this directly instead of queuing a swap to avoid timing issues
+		// with invariant checks.
+
+		// Get the swapper for swap calculations
+		swapper, err := GetSwapper(im.mgr.Keeper().GetVersion())
 		if err != nil {
-			return fmt.Errorf("fail to get reserve address: %w", err)
+			return fmt.Errorf("fail to get swapper: %w", err)
 		}
 
-		// Use THORChain as the chain for internal swaps
-		// Empty Gas since this is not an external chain transaction
-		feeTx := common.Tx{
-			ID:          solve.SolveTxID,
-			Chain:       common.THORChain,
-			FromAddress: reserveAddr, // Funds are conceptually from Asgard's accounting
-			ToAddress:   affiliateAddr,
-			Coins:       common.NewCoins(affiliateFee),
-			Gas:         common.Gas{},
-			Memo:        fmt.Sprintf("=:THOR.RUNE:%s", affiliateAddr),
+		// Calculate swap parameters: L1 asset -> RUNE
+		// X = pool.BalanceAsset (source depth), Y = pool.BalanceRune (target depth)
+		X := feePool.BalanceAsset
+		x := affiliateFee.Amount
+		Y := feePool.BalanceRune
+
+		// Calculate slip and emit amount
+		slipBps := swapper.CalcSwapSlip(X, x)
+		minSlipBps := cosmos.ZeroUint() // No min slip for internal swaps
+		emitRune, liquidityFee, _ := swapper.GetSwapCalc(X, x, Y, slipBps, minSlipBps)
+
+		// Ensure we have enough RUNE in the pool
+		if emitRune.GTE(Y) {
+			return fmt.Errorf("not enough RUNE in pool for affiliate fee swap")
 		}
 
-		version := types.SwapVersion_v1
-		if im.mgr.Keeper().AdvSwapQueueEnabled(ctx) {
-			version = types.SwapVersion_v2
+		// Update pool balances directly
+		feePool.BalanceAsset = feePool.BalanceAsset.Add(x)
+		feePool.BalanceRune = common.SafeSub(feePool.BalanceRune, emitRune)
+
+		// Save the updated pool
+		if err := im.mgr.Keeper().SetPool(ctx, feePool); err != nil {
+			return fmt.Errorf("fail to save pool after affiliate fee swap: %w", err)
 		}
 
-		swapMsg := NewMsgSwap(feeTx, common.RuneAsset(), affiliateAddr,
-			cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(),
-			"", "", nil, MarketSwap, 0, 1, version, asgardAddr)
-
-		if err := im.mgr.AdvSwapQueueMgr().AddSwapQueueItem(ctx, im.mgr, swapMsg); err != nil {
-			return fmt.Errorf("fail to queue affiliate fee swap to RUNE: %w", err)
+		// Send emitted RUNE to affiliate from Asgard
+		runeCoin := common.NewCoin(common.RuneNative, emitRune)
+		if err := im.mgr.Keeper().SendFromModuleToAccount(ctx, AsgardName, affiliateAccAddr, common.NewCoins(runeCoin)); err != nil {
+			return fmt.Errorf("fail to send swapped RUNE to affiliate: %w", err)
 		}
-		ctx.Logger().Info("queued intent affiliate fee swap to RUNE",
+
+		// Emit swap event for the direct swap
+		swapEvt := NewEventSwap(
+			feePool.Asset,
+			cosmos.ZeroUint(), // no trade target
+			slipBps,
+			liquidityFee,
+			cosmos.ZeroUint(), // liquidity fee in RUNE
+			common.Tx{
+				ID:    solve.SolveTxID,
+				Chain: common.THORChain,
+				Coins: common.NewCoins(affiliateFee),
+			},
+			common.NewCoin(common.RuneAsset(), emitRune),
+			cosmos.ZeroUint(), // synth units
+		)
+		if err := im.mgr.EventMgr().EmitEvent(ctx, swapEvt); err != nil {
+			ctx.Logger().Error("fail to emit affiliate fee swap event", "error", err)
+		}
+
+		ctx.Logger().Info("executed direct intent affiliate fee swap to RUNE",
 			"affiliate", affiliateAddr,
 			"fee_asset", affiliateFee.Asset,
 			"fee_amount", affiliateFee.Amount,
+			"emit_rune", emitRune,
 		)
 	}
 

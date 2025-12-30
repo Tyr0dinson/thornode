@@ -127,7 +127,7 @@
           "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
           "coins": [
             {
-              "amount": "200060255296",
+              "amount": "200060254316",
               "denom": "rune"
             }
           ]
@@ -136,7 +136,7 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "34999941478338",
+              "amount": "34999941479358",
               "denom": "rune"
             }
           ]
@@ -163,7 +163,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "4999998266366",
+              "amount": "4999998266326",
               "denom": "rune"
             }
           ]
@@ -247,7 +247,7 @@
       "network": {
         "LPIncomeSplit": "9600",
         "NodeIncomeSplit": "400",
-        "bond_reward_rune": "266366",
+        "bond_reward_rune": "266326",
         "total_bond_units": "6"
       },
       "network_fees": [
@@ -288,13 +288,13 @@
       "observed_tx_out_voters": null,
       "outbound_fee_spent_rune": [
         {
-          "amount": "191661601",
+          "amount": "191660578",
           "asset": "ETH.ETH"
         }
       ],
       "outbound_fee_withheld_rune": [
         {
-          "amount": "689782998740",
+          "amount": "689782973196",
           "asset": "ETH.ETH"
         }
       ],
@@ -303,7 +303,7 @@
           "LP_units": "100000000000",
           "asset": "BTC.BTC",
           "balance_asset": "100000000",
-          "balance_rune": "100002663734",
+          "balance_rune": "100003196846",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -314,7 +314,7 @@
           "LP_units": "100000000000",
           "asset": "ETH.ETH",
           "balance_asset": "999459872",
-          "balance_rune": "100057591562",
+          "balance_rune": "100057057470",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -334,14 +334,7 @@
       "secured_assets": [],
       "streaming_swaps": [],
       "swap_queue_items": [],
-      "swapper_clout": [
-        {
-          "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
-          "reclaimed": "0",
-          "score": "995",
-          "spent": "0"
-        }
-      ],
+      "swapper_clout": [],
       "tcy_claimers": [],
       "tcy_stakers": [],
       "trade_accounts": [],

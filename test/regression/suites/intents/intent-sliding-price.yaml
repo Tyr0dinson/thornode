@@ -1,0 +1,225 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 2
+---
+########################################################################################
+# Enable intents with specific slide configuration
+# IntentPriceSlideBlocks = 10 for easier testing
+# IntentTTLBlocks = 100 to ensure match height isn't capped
+########################################################################################
+type: tx-mimir
+key: IntentsEnabled
+value: 1
+signer: {{ addr_thor_dog }}
+sequence: 0
+---
+type: tx-mimir
+key: IntentPriceSlideBlocks
+value: 10
+signer: {{ addr_thor_dog }}
+sequence: 1
+---
+type: tx-mimir
+key: IntentTTLBlocks
+value: 100
+signer: {{ addr_thor_dog }}
+sequence: 2
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Create an intent with a price range using same-chain assets (ETH -> ETH)
+# This tests the sliding price mechanism without cross-chain address issues
+# high = 200000000 (2 ETH), low = 100000000 (1 ETH)
+# This gives a range of 100000000 for testing price sliding
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 1 }}'
+    chain: ETH
+    from_address: {{ addr_eth_fox }}
+    to_address: {{ addr_eth_dog }}
+    coins:
+      - amount: "100000000"
+        asset: "ETH.ETH"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "ETH.ETH"
+    memo: "IO:ETH.ETH:200000000:100000000:{{ addr_eth_fox }}"
+  block_height: 2
+  finalise_height: 2
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Check intent was created with price range
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intent/{{ observe_txid 1 }}
+asserts:
+  - .intent.tx_id == "{{ observe_txid 1 }}"
+  - .intent.status == "IntentActive"
+  - .intent.high_target == "200000000"
+  - .intent.low_target == "100000000"
+---
+########################################################################################
+# Submit solve at midpoint: 150000000 (halfway between 100000000 and 200000000)
+# Expected delay calculation:
+# delay = (high - offered) * slide_blocks / (high - low)
+# delay = (200000000 - 150000000) * 10 / (200000000 - 100000000)
+# delay = 50000000 * 10 / 100000000 = 5 blocks
+# match_height = current_height + 5
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 2 }}'
+    chain: ETH
+    from_address: {{ addr_eth_cat }}
+    to_address: {{ addr_eth_dog }}
+    coins:
+      - amount: "150000000"
+        asset: "ETH.ETH"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "ETH.ETH"
+    memo: "IS:{{ observe_txid 1 }}"
+  block_height: 3
+  finalise_height: 3
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Check solve was created with delayed match height
+# Current block is 4, solve submitted at block 4, expected match at block 4 + 5 = 9
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intent/{{ observe_txid 1 }}
+asserts:
+  - .intent.status == "IntentActive"
+  - .solves | length == 1
+  - .solves[0].match_height == "9"
+---
+########################################################################################
+# Advance 4 blocks - should still be waiting (block 8)
+########################################################################################
+type: create-blocks
+count: 4
+---
+########################################################################################
+# Check intent is still active (not yet at match height 9)
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intent/{{ observe_txid 1 }}
+asserts:
+  - .intent.status == "IntentActive"
+---
+########################################################################################
+# Advance 1 more block to reach match height (block 9)
+########################################################################################
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Check intent was completed at match height
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intent/{{ observe_txid 1 }}
+asserts:
+  - .intent.status == "IntentCompleted"
+---
+########################################################################################
+# Check outbound queue has the swaps scheduled
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length >= 1
+---
+########################################################################################
+# Observe solver's outbound (cat gets ETH source)
+# Amount: source (100M) - protocol fee - outbound gas
+########################################################################################
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 3 }}'
+    chain: ETH
+    from_address: {{ addr_eth_dog }}
+    to_address: {{ addr_eth_cat }}
+    coins:
+      - amount: "99260000"
+        asset: "ETH.ETH"
+        decimals: 8
+    gas:
+      - amount: "960000"
+        asset: "ETH.ETH"
+    memo: "OUT:{{ observe_txid 2 }}"
+  block_height: 10
+  finalise_height: 10
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Observe user's outbound (fox gets ETH target)
+# Amount: solve amount (150M) - outbound gas + pool rewards
+########################################################################################
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 4 }}'
+    chain: ETH
+    from_address: {{ addr_eth_dog }}
+    to_address: {{ addr_eth_fox }}
+    coins:
+      - amount: "149360128"
+        asset: "ETH.ETH"
+        decimals: 8
+    gas:
+      - amount: "960000"
+        asset: "ETH.ETH"
+    memo: "OUT:{{ observe_txid 1 }}"
+  block_height: 11
+  finalise_height: 11
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Verify outbound queue is now empty
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+########################################################################################
+# Verify intents list is empty
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intents
+asserts:
+  - .intents | length == 0

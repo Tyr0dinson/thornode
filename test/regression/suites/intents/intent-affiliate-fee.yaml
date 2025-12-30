@@ -1,0 +1,199 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 2
+---
+########################################################################################
+# Enable intents with specific fee configuration
+# Setting protocol fee to 0 to focus on testing affiliate fee
+########################################################################################
+type: tx-mimir
+key: IntentsEnabled
+value: 1
+signer: {{ addr_thor_dog }}
+sequence: 0
+---
+type: tx-mimir
+key: IntentMinFeeBasisPoints
+value: 0
+signer: {{ addr_thor_dog }}
+sequence: 1
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Create an intent with affiliate fee using same-chain assets (ETH -> ETH)
+# User (fox) wants to swap ETH for ETH with affiliate (pig) getting 1% (100 bps)
+# Format: IO:TARGET_ASSET:HIGH:LOW:TARGET_ADDR:AFFILIATE:AFFILIATE_BPS
+# Protocol fee: 50 bps = 0.5%
+# Affiliate fee: 100 bps = 1%
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 1 }}'
+    chain: ETH
+    from_address: {{ addr_eth_fox }}
+    to_address: {{ addr_eth_dog }}
+    coins:
+      - amount: "100000000"
+        asset: "ETH.ETH"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "ETH.ETH"
+    memo: "IO:ETH.ETH:100000000:100000000:{{ addr_eth_fox }}:{{ addr_thor_pig }}:100"
+  block_height: 2
+  finalise_height: 2
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Check intent was created with affiliate info
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intent/{{ observe_txid 1 }}
+asserts:
+  - .intent.tx_id == "{{ observe_txid 1 }}"
+  - .intent.status == "IntentActive"
+  - .intent.source.asset == "ETH.ETH"
+  - .intent.source.amount == "100000000"
+  - .intent.affiliate_address == "{{ addr_thor_pig }}"
+  - .intent.affiliate_basis_points == "100"
+  - .intent.min_fee_basis_points == "0"
+---
+########################################################################################
+# Solver (cat) sends ETH to solve the intent at high target
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 2 }}'
+    chain: ETH
+    from_address: {{ addr_eth_cat }}
+    to_address: {{ addr_eth_dog }}
+    coins:
+      - amount: "100000000"
+        asset: "ETH.ETH"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "ETH.ETH"
+    memo: "IS:{{ observe_txid 1 }}"
+  block_height: 3
+  finalise_height: 3
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Check intent was completed
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intent/{{ observe_txid 1 }}
+asserts:
+  - .intent.status == "IntentCompleted"
+---
+########################################################################################
+# Check outbound queue has the transactions scheduled
+# Expected amounts calculation:
+# Source: 100000000 ETH
+# Protocol fee: 50 bps = 0.5% of 100000000 = 500000 ETH
+# Affiliate fee: 100 bps = 1% of 100000000 = 1000000 ETH
+# Solver receives: 100000000 - 500000 - 1000000 - outbound_fee = ~97540000 ETH
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length >= 1
+---
+########################################################################################
+# Observe solver's outbound (cat gets ETH source minus affiliate fee and outbound gas)
+# 100000000 - 1000000 (affiliate) - 640000 (reserved outbound gas) = 98360000
+########################################################################################
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 3 }}'
+    chain: ETH
+    from_address: {{ addr_eth_dog }}
+    to_address: {{ addr_eth_cat }}
+    coins:
+      - amount: "98360000"
+        asset: "ETH.ETH"
+        decimals: 8
+    gas:
+      - amount: "960000"
+        asset: "ETH.ETH"
+    memo: "OUT:{{ observe_txid 2 }}"
+  block_height: 4
+  finalise_height: 4
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Observe user's outbound (fox gets ETH target)
+# Amount: solve (100M) - outbound gas (960K) + pool rewards
+########################################################################################
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 4 }}'
+    chain: ETH
+    from_address: {{ addr_eth_dog }}
+    to_address: {{ addr_eth_fox }}
+    coins:
+      - amount: "99360128"
+        asset: "ETH.ETH"
+        decimals: 8
+    gas:
+      - amount: "960000"
+        asset: "ETH.ETH"
+    memo: "OUT:{{ observe_txid 1 }}"
+  block_height: 5
+  finalise_height: 5
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Create additional blocks to allow protocol and affiliate fee swaps to complete
+# This ensures the invariant check passes (fees swapped from vault to pool)
+# The protocol fee swap is queued and needs several blocks to process
+########################################################################################
+type: create-blocks
+count: 5
+---
+########################################################################################
+# Verify outbound queue is now empty
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+########################################################################################
+# Verify intents list is empty
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intents
+asserts:
+  - .intents | length == 0
