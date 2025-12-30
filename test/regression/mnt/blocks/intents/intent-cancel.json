@@ -588,7 +588,7 @@
               "expiry_height": "8",
               "high_target": "5000000",
               "low_target": "4000000",
-              "min_fee_basis_points": "0",
+              "min_fee_basis_points": "10",
               "msg_index": "0",
               "source": "100000000 ETH.ETH",
               "source_address": "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
