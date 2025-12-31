@@ -25,8 +25,8 @@ type QuoteLoanOpenResponse struct {
 	// the number of thorchain blocks the outbound will be delayed
 	OutboundDelayBlocks int64 `json:"outbound_delay_blocks"`
 	// the approximate seconds for the outbound delay before it will be sent
-	OutboundDelaySeconds int64 `json:"outbound_delay_seconds"`
-	Fees QuoteFees `json:"fees"`
+	OutboundDelaySeconds int64     `json:"outbound_delay_seconds"`
+	Fees                 QuoteFees `json:"fees"`
 	// the EVM chain router contract address
 	Router *string `json:"router,omitempty"`
 	// expiration timestamp in unix seconds
@@ -783,5 +783,3 @@ func (v *NullableQuoteLoanOpenResponse) UnmarshalJSON(src []byte) error {
 	v.isSet = true
 	return json.Unmarshal(src, &v.value)
 }
-
-
