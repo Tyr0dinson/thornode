@@ -69,8 +69,16 @@ func (im *IntentMgr) selectBestSolve(ctx cosmos.Context, intent types.Intent, so
 	sourceAsset := intent.Source.Asset
 	targetAsset := intent.TargetAsset
 
-	sourcePool, _ := im.mgr.Keeper().GetPool(ctx, sourceAsset.GetLayer1Asset())
-	targetPool, _ := im.mgr.Keeper().GetPool(ctx, targetAsset.GetLayer1Asset())
+	sourcePool, err := im.mgr.Keeper().GetPool(ctx, sourceAsset.GetLayer1Asset())
+	if err != nil {
+		ctx.Logger().Error("fail to get source pool for solve selection", "asset", sourceAsset, "error", err)
+		return solves[0] // Return first solve as fallback
+	}
+	targetPool, err := im.mgr.Keeper().GetPool(ctx, targetAsset.GetLayer1Asset())
+	if err != nil {
+		ctx.Logger().Error("fail to get target pool for solve selection", "asset", targetAsset, "error", err)
+		return solves[0] // Return first solve as fallback
+	}
 
 	hasSourcePool := !sourcePool.IsEmpty() && sourcePool.Status == PoolAvailable
 	hasTargetPool := !targetPool.IsEmpty() && targetPool.Status == PoolAvailable
@@ -88,8 +96,8 @@ func (im *IntentMgr) selectBestSolve(ctx cosmos.Context, intent types.Intent, so
 	}
 	gasFee, err := calculateGasFee(ctx, im.mgr, gasFeeChain)
 	if err != nil {
-		ctx.Logger().Error("fail to calculate gas fee for solve selection, using zero", "error", err)
-		gasFee = cosmos.ZeroUint()
+		ctx.Logger().Error("fail to calculate gas fee for solve selection, using first solve", "chain", gasFeeChain, "error", err)
+		return solves[0] // Return first solve as deterministic fallback
 	}
 
 	// Sort by amount descending to process highest first
@@ -106,9 +114,9 @@ func (im *IntentMgr) selectBestSolve(ctx cosmos.Context, intent types.Intent, so
 	var candidates []types.IntentSolve
 	for _, solve := range sorted {
 		// If this solve is within 1x gas of highest, it's a candidate
-		// i.e., highest - solve.Amount < gasFee
-		diff := highestAmount.Sub(solve.TargetCoin.Amount)
-		if diff.LT(gasFee) {
+		// i.e., highest - solve.Amount <= gasFee
+		diff := common.SafeSub(highestAmount, solve.TargetCoin.Amount)
+		if diff.LTE(gasFee) {
 			candidates = append(candidates, solve)
 		}
 	}
@@ -210,10 +218,12 @@ func (im *IntentMgr) processMatches(ctx cosmos.Context) error {
 		// Execute the intent with winning solve
 		if err := im.executeIntent(ctx, intent, winningSolve); err != nil {
 			ctx.Logger().Error("fail to execute intent", "intent_txid", intentTxID, "solve_txid", winningSolve.SolveTxID, "error", err)
+			// Refund ALL solvers (including winner) since execution failed
+			im.refundLosingSolves(ctx, intent, common.BlankTxID, intentSolves)
 			continue
 		}
 
-		// Refund losing solves
+		// Refund losing solves (winner excluded since execution succeeded)
 		im.refundLosingSolves(ctx, intent, winningSolve.SolveTxID, intentSolves)
 	}
 
@@ -249,12 +259,18 @@ func (im *IntentMgr) executeIntent(ctx cosmos.Context, intent Intent, solve Inte
 	// Note: Secured/trade assets cannot be charged fees because:
 	// 1. They can't be swapped to RUNE for reserve
 	// 2. Deducting from them causes pool/vault accounting imbalance
-	sourcePool, _ := im.mgr.Keeper().GetPool(ctx, intent.Source.Asset.GetLayer1Asset())
-	targetPool, _ := im.mgr.Keeper().GetPool(ctx, solve.TargetCoin.Asset.GetLayer1Asset())
+	sourcePool, err := im.mgr.Keeper().GetPool(ctx, intent.Source.Asset.GetLayer1Asset())
+	if err != nil {
+		return fmt.Errorf("fail to get source pool: %w", err)
+	}
+	targetPool, err := im.mgr.Keeper().GetPool(ctx, solve.TargetCoin.Asset.GetLayer1Asset())
+	if err != nil {
+		return fmt.Errorf("fail to get target pool: %w", err)
+	}
 
-	isSourcePoolAsset := !sourcePool.IsEmpty() && !intent.Source.Asset.IsSecuredAsset() && !intent.Source.Asset.IsTradeAsset()
+	isSourcePoolAsset := !sourcePool.IsEmpty() && sourcePool.Status == PoolAvailable && !intent.Source.Asset.IsSecuredAsset() && !intent.Source.Asset.IsTradeAsset()
 	isSourceRune := intent.Source.Asset.IsRune()
-	isTargetPoolAsset := !targetPool.IsEmpty() && !solve.TargetCoin.Asset.IsSecuredAsset() && !solve.TargetCoin.Asset.IsTradeAsset()
+	isTargetPoolAsset := !targetPool.IsEmpty() && targetPool.Status == PoolAvailable && !solve.TargetCoin.Asset.IsSecuredAsset() && !solve.TargetCoin.Asset.IsTradeAsset()
 	isTargetRune := solve.TargetCoin.Asset.IsRune()
 
 	canChargeSource := isSourcePoolAsset || isSourceRune
@@ -327,19 +343,23 @@ func (im *IntentMgr) executeIntent(ctx cosmos.Context, intent Intent, solve Inte
 	// Process protocol fee - deposit into reserve
 	if !protocolFee.IsEmpty() && protocolFee.Amount.GT(cosmos.ZeroUint()) {
 		if err := im.processProtocolFee(ctx, solve.SolveTxID, protocolFee, feePool); err != nil {
-			ctx.Logger().Error("fail to process protocol fee", "error", err)
+			return fmt.Errorf("fail to process protocol fee: %w", err)
 		}
 		// Re-fetch pool after protocol fee swap to get updated balances
 		// (processProtocolFee modifies and saves the pool, but feePool is passed by value)
 		if !feePool.IsEmpty() && !protocolFee.Asset.IsRune() && !protocolFee.Asset.IsSecuredAsset() && !protocolFee.Asset.IsTradeAsset() {
-			feePool, _ = im.mgr.Keeper().GetPool(ctx, feePool.Asset)
+			var err error
+			feePool, err = im.mgr.Keeper().GetPool(ctx, feePool.Asset)
+			if err != nil {
+				return fmt.Errorf("fail to re-fetch pool after protocol fee: %w", err)
+			}
 		}
 	}
 
 	// Process affiliate fee - send to affiliate
 	if !affiliateFee.IsEmpty() && affiliateFee.Amount.GT(cosmos.ZeroUint()) {
 		if err := im.processAffiliateFee(ctx, intent, solve, affiliateFee, feePool); err != nil {
-			ctx.Logger().Error("fail to process affiliate fee", "error", err)
+			return fmt.Errorf("fail to process affiliate fee: %w", err)
 		}
 	}
 
@@ -606,9 +626,12 @@ func (im *IntentMgr) processAffiliateFee(ctx cosmos.Context, intent Intent, solv
 // expireIntent handles an expired intent by starting an auction
 func (im *IntentMgr) expireIntent(ctx cosmos.Context, intent Intent) error {
 	// Check if we should refund directly instead of auctioning
-	// Refund if: source asset is native OR has an L1 pool
-	sourcePool, _ := im.mgr.Keeper().GetPool(ctx, intent.Source.Asset.GetLayer1Asset())
-	isPoolAsset := !sourcePool.IsEmpty()
+	// Refund if: source asset is native OR has an available L1 pool
+	sourcePool, err := im.mgr.Keeper().GetPool(ctx, intent.Source.Asset.GetLayer1Asset())
+	if err != nil {
+		return fmt.Errorf("fail to get source pool for intent expiry: %w", err)
+	}
+	isPoolAsset := !sourcePool.IsEmpty() && sourcePool.Status == PoolAvailable
 
 	if isPoolAsset || intent.Source.Asset.IsNative() {
 		// Direct refund - no auction needed
@@ -751,6 +774,7 @@ func (im *IntentMgr) refundIntentSolves(ctx cosmos.Context, intent Intent) error
 		return fmt.Errorf("fail to get intent solves: %w", err)
 	}
 
+	var failedRefunds []string
 	for _, solve := range solves {
 		// Schedule refund for the solve
 		toi := TxOutItem{
@@ -763,11 +787,13 @@ func (im *IntentMgr) refundIntentSolves(ctx cosmos.Context, intent Intent) error
 
 		ok, err := im.mgr.TxOutStore().TryAddTxOutItem(ctx, im.mgr, toi, cosmos.ZeroUint())
 		if err != nil {
-			ctx.Logger().Error("fail to refund solve", "solve_txid", solve.SolveTxID, "error", err)
+			ctx.Logger().Error("fail to refund solve", "solve_txid", solve.SolveTxID, "solver_address", solve.SolverAddress, "amount", solve.TargetCoin.Amount, "error", err)
+			failedRefunds = append(failedRefunds, solve.SolveTxID.String())
 			continue
 		}
 		if !ok {
-			ctx.Logger().Error("fail to schedule solve refund", "solve_txid", solve.SolveTxID)
+			ctx.Logger().Error("fail to schedule solve refund", "solve_txid", solve.SolveTxID, "solver_address", solve.SolverAddress, "amount", solve.TargetCoin.Amount)
+			failedRefunds = append(failedRefunds, solve.SolveTxID.String())
 			continue
 		}
 
@@ -778,6 +804,9 @@ func (im *IntentMgr) refundIntentSolves(ctx cosmos.Context, intent Intent) error
 		)
 	}
 
+	if len(failedRefunds) > 0 {
+		return fmt.Errorf("failed to refund %d solves: %v", len(failedRefunds), failedRefunds)
+	}
 	return nil
 }
 
