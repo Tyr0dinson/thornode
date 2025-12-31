@@ -43,6 +43,16 @@ const (
 	AsgardKeygen = types.KeygenType_AsgardKeygen
 	BondCost     = types.BondType_bond_cost
 	BondReturned = types.BondType_bond_returned
+
+	// Intent status
+	IntentStatus_IntentActive            = types.IntentStatus_IntentActive
+	IntentStatus_IntentAuctioning        = types.IntentStatus_IntentAuctioning
+	IntentStatus_IntentCompleted         = types.IntentStatus_IntentCompleted
+	IntentStatus_IntentCancelled         = types.IntentStatus_IntentCancelled
+	IntentStatus_IntentExpired           = types.IntentStatus_IntentExpired
+	IntentAuctionStatus_AuctionActive    = types.IntentAuctionStatus_AuctionActive
+	IntentAuctionStatus_AuctionCompleted = types.IntentAuctionStatus_AuctionCompleted
+	IntentAuctionStatus_AuctionCancelled = types.IntentAuctionStatus_AuctionCancelled
 )
 
 var (
@@ -158,6 +168,11 @@ type (
 	PriceFeed                = types.PriceFeed
 	Volume                   = types.Volume
 	VolumeBucket             = types.VolumeBucket
+	Intent                   = types.Intent
+	IntentAuction            = types.IntentAuction
+	IntentAuctionBid         = types.IntentAuctionBid
+	IntentStatus             = types.IntentStatus
+	IntentAuctionStatus      = types.IntentAuctionStatus
 
 	ProtoInt64        = types.ProtoInt64
 	ProtoUint64       = types.ProtoUint64
