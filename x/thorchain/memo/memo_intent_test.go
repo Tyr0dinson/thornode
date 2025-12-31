@@ -148,3 +148,33 @@ func (s *MemoIntentSuite) TestIntentOpenMemo_InvalidFormats(c *C) {
 	c.Assert(ok, Equals, true)
 	c.Check(intentMemo.GetHighTarget().GT(cosmos.ZeroUint()), Equals, true)
 }
+
+func (s *MemoIntentSuite) TestIntentAuctionBidMemo_Parse(c *C) {
+	memoStr := "IAB:ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234"
+	m, err := ParseMemoWithTHORNames(s.ctx, s.k, memoStr)
+	c.Assert(err, IsNil)
+	c.Check(m.GetType(), Equals, TxIntentAuctionBid)
+
+	bidMemo, ok := m.(IntentAuctionBidMemo)
+	c.Assert(ok, Equals, true)
+	c.Check(bidMemo.GetIntentTxID().IsEmpty(), Equals, false)
+	c.Check(bidMemo.GetIntentTxID().String(), Equals, "ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234")
+}
+
+func (s *MemoIntentSuite) TestIntentAuctionBidMemo_String(c *C) {
+	txID := common.TxID("ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234")
+	memo := NewIntentAuctionBidMemo(txID)
+
+	str := memo.String()
+	c.Check(str, Equals, "iab:ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234")
+}
+
+func (s *MemoIntentSuite) TestIntentAuctionBidMemo_InvalidFormat(c *C) {
+	// Missing required tx hash
+	_, err := ParseMemoWithTHORNames(s.ctx, s.k, "IAB:")
+	c.Check(err, NotNil)
+
+	// Invalid tx hash format
+	_, err = ParseMemoWithTHORNames(s.ctx, s.k, "IAB:invalid")
+	c.Check(err, NotNil)
+}
