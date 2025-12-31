@@ -57,6 +57,12 @@ func (m *MsgIntentOpen) ValidateBasic() error {
 	if err := m.Tx.Valid(); err != nil {
 		return cosmos.ErrUnknownRequest(err.Error())
 	}
+	if len(m.Tx.Coins) == 0 {
+		return cosmos.ErrUnknownRequest("no coins in transaction")
+	}
+	if len(m.Tx.Coins) > 1 {
+		return cosmos.ErrUnknownRequest("intent can only be created with one coin type")
+	}
 	if m.HighTarget.IsZero() {
 		return cosmos.ErrUnknownRequest("high target cannot be zero")
 	}
