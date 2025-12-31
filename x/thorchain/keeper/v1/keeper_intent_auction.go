@@ -182,6 +182,13 @@ func (k KVStore) CleanupStaleActiveAuctions(ctx cosmos.Context) {
 	staleEntries := false
 
 	for _, txID := range activeIndex.ActiveAuctionTxIDs {
+		// Check existence first - non-existent auctions have zero-value status (AuctionActive=0)
+		if !k.IntentAuctionExists(ctx, txID) {
+			ctx.Logger().Warn("removing non-existent entry from active auction index", "txid", txID)
+			staleEntries = true
+			continue
+		}
+
 		auction, err := k.GetIntentAuction(ctx, txID)
 		if err != nil {
 			ctx.Logger().Error("failed to get auction from active index", "txid", txID, "error", err)
@@ -284,7 +291,12 @@ func (k KVStore) IntentAuctionBidExists(ctx cosmos.Context, bidTxID common.TxID)
 
 // RemoveIntentAuctionBid removes an intent auction bid and its indices
 func (k KVStore) RemoveIntentAuctionBid(ctx cosmos.Context, bidTxID common.TxID) {
-	// Get the bid record first to access its indices
+	// Check if the bid record exists before proceeding
+	if !k.IntentAuctionBidExists(ctx, bidTxID) {
+		return
+	}
+
+	// Get the bid record to access its indices
 	bid, err := k.GetIntentAuctionBid(ctx, bidTxID)
 	if err != nil {
 		return

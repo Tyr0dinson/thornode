@@ -190,6 +190,13 @@ func (k KVStore) CleanupStaleActiveIntents(ctx cosmos.Context) {
 	staleEntries := false
 
 	for _, txID := range activeIndex.ActiveIntentTxIDs {
+		// Check existence first - non-existent intents have zero-value status (IntentActive=0)
+		if !k.IntentExists(ctx, txID) {
+			ctx.Logger().Warn("removing non-existent entry from active intent index", "txid", txID)
+			staleEntries = true
+			continue
+		}
+
 		intent, err := k.GetIntent(ctx, txID)
 		if err != nil {
 			ctx.Logger().Error("failed to get intent from active index", "txid", txID, "error", err)
