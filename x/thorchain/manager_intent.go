@@ -24,6 +24,10 @@ func NewIntentManager(mgr Manager) IntentManager {
 
 // EndBlock processes intents at the end of each block
 func (im *IntentMgr) EndBlock(ctx cosmos.Context) error {
+	// Clean up stale entries from the active intent and auction indices
+	im.mgr.Keeper().CleanupStaleActiveIntents(ctx)
+	im.mgr.Keeper().CleanupStaleActiveAuctions(ctx)
+
 	// Process solve bids that match at this height
 	if err := im.processMatches(ctx); err != nil {
 		ctx.Logger().Error("fail to process intent matches", "error", err)
