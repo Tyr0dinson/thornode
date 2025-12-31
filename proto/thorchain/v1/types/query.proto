@@ -275,6 +275,11 @@ service Query {
     option (google.api.http).get = "/thorchain/quote/intent";
   }
 
+  rpc QuoteIntentSolve(QueryQuoteIntentSolveRequest)
+      returns (QueryQuoteIntentSolveResponse) {
+    option (google.api.http).get = "/thorchain/quote/intent/solve";
+  }
+
   rpc ConstantValues(QueryConstantValuesRequest)
       returns (QueryConstantValuesResponse) {
     option (google.api.http).get = "/thorchain/constants";

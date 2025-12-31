@@ -11,7 +11,6 @@ Name | Type | Description | Notes
 **TargetAddress** | **string** | the target address | 
 **HighTarget** | **string** | the high target amount | 
 **LowTarget** | **string** | the low target amount | 
-**VaultPubKey** | **string** | the vault public key | 
 **CreateHeight** | **int64** | the block height when the intent was created | 
 **ExpiryHeight** | **int64** | the block height when the intent expires | 
 **Status** | **string** | the status of the intent | 
@@ -23,7 +22,7 @@ Name | Type | Description | Notes
 
 ### NewIntent
 
-`func NewIntent(txId string, source Coin, sourceAddress string, targetAsset string, targetAddress string, highTarget string, lowTarget string, vaultPubKey string, createHeight int64, expiryHeight int64, status string, minFeeBasisPoints int64, ) *Intent`
+`func NewIntent(txId string, source Coin, sourceAddress string, targetAsset string, targetAddress string, highTarget string, lowTarget string, createHeight int64, expiryHeight int64, status string, minFeeBasisPoints int64, ) *Intent`
 
 NewIntent instantiates a new Intent object
 This constructor will assign default values to properties that have it defined,
@@ -176,26 +175,6 @@ and a boolean to check if the value has been set.
 `func (o *Intent) SetLowTarget(v string)`
 
 SetLowTarget sets LowTarget field to given value.
-
-
-### GetVaultPubKey
-
-`func (o *Intent) GetVaultPubKey() string`
-
-GetVaultPubKey returns the VaultPubKey field if non-nil, zero value otherwise.
-
-### GetVaultPubKeyOk
-
-`func (o *Intent) GetVaultPubKeyOk() (*string, bool)`
-
-GetVaultPubKeyOk returns a tuple with the VaultPubKey field if it's non-nil, zero value otherwise
-and a boolean to check if the value has been set.
-
-### SetVaultPubKey
-
-`func (o *Intent) SetVaultPubKey(v string)`
-
-SetVaultPubKey sets VaultPubKey field to given value.
 
 
 ### GetCreateHeight

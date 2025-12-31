@@ -23,10 +23,8 @@ type IntentSolve struct {
 	// the solver address
 	SolverAddress string `json:"solver_address"`
 	TargetCoin Coin `json:"target_coin"`
-	// the vault public key
-	VaultPubKey string `json:"vault_pub_key"`
-	// the block height when the solve was created
-	CreateHeight int64 `json:"create_height"`
+	// the block height when the solve was submitted
+	SubmitHeight int64 `json:"submit_height"`
 	// the block height when the solve should be matched
 	MatchHeight int64 `json:"match_height"`
 }
@@ -35,14 +33,13 @@ type IntentSolve struct {
 // This constructor will assign default values to properties that have it defined,
 // and makes sure properties required by API are set, but the set of arguments
 // will change when the set of required properties is changed
-func NewIntentSolve(solveTxId string, intentTxId string, solverAddress string, targetCoin Coin, vaultPubKey string, createHeight int64, matchHeight int64) *IntentSolve {
+func NewIntentSolve(solveTxId string, intentTxId string, solverAddress string, targetCoin Coin, submitHeight int64, matchHeight int64) *IntentSolve {
 	this := IntentSolve{}
 	this.SolveTxId = solveTxId
 	this.IntentTxId = intentTxId
 	this.SolverAddress = solverAddress
 	this.TargetCoin = targetCoin
-	this.VaultPubKey = vaultPubKey
-	this.CreateHeight = createHeight
+	this.SubmitHeight = submitHeight
 	this.MatchHeight = matchHeight
 	return &this
 }
@@ -151,52 +148,28 @@ func (o *IntentSolve) SetTargetCoin(v Coin) {
 	o.TargetCoin = v
 }
 
-// GetVaultPubKey returns the VaultPubKey field value
-func (o *IntentSolve) GetVaultPubKey() string {
-	if o == nil {
-		var ret string
-		return ret
-	}
-
-	return o.VaultPubKey
-}
-
-// GetVaultPubKeyOk returns a tuple with the VaultPubKey field value
-// and a boolean to check if the value has been set.
-func (o *IntentSolve) GetVaultPubKeyOk() (*string, bool) {
-	if o == nil {
-		return nil, false
-	}
-	return &o.VaultPubKey, true
-}
-
-// SetVaultPubKey sets field value
-func (o *IntentSolve) SetVaultPubKey(v string) {
-	o.VaultPubKey = v
-}
-
-// GetCreateHeight returns the CreateHeight field value
-func (o *IntentSolve) GetCreateHeight() int64 {
+// GetSubmitHeight returns the SubmitHeight field value
+func (o *IntentSolve) GetSubmitHeight() int64 {
 	if o == nil {
 		var ret int64
 		return ret
 	}
 
-	return o.CreateHeight
+	return o.SubmitHeight
 }
 
-// GetCreateHeightOk returns a tuple with the CreateHeight field value
+// GetSubmitHeightOk returns a tuple with the SubmitHeight field value
 // and a boolean to check if the value has been set.
-func (o *IntentSolve) GetCreateHeightOk() (*int64, bool) {
+func (o *IntentSolve) GetSubmitHeightOk() (*int64, bool) {
 	if o == nil {
 		return nil, false
 	}
-	return &o.CreateHeight, true
+	return &o.SubmitHeight, true
 }
 
-// SetCreateHeight sets field value
-func (o *IntentSolve) SetCreateHeight(v int64) {
-	o.CreateHeight = v
+// SetSubmitHeight sets field value
+func (o *IntentSolve) SetSubmitHeight(v int64) {
+	o.SubmitHeight = v
 }
 
 // GetMatchHeight returns the MatchHeight field value
@@ -238,10 +211,7 @@ func (o IntentSolve) MarshalJSON_deprecated() ([]byte, error) {
 		toSerialize["target_coin"] = o.TargetCoin
 	}
 	if true {
-		toSerialize["vault_pub_key"] = o.VaultPubKey
-	}
-	if true {
-		toSerialize["create_height"] = o.CreateHeight
+		toSerialize["submit_height"] = o.SubmitHeight
 	}
 	if true {
 		toSerialize["match_height"] = o.MatchHeight

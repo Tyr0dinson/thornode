@@ -24,26 +24,28 @@ type IntentAuction struct {
 	BidAsset string `json:"bid_asset"`
 	// the minimum bid amount
 	MinBid string `json:"min_bid"`
-	// the block height when the auction was created
-	CreateHeight int64 `json:"create_height"`
+	// the block height when the auction started
+	StartHeight int64 `json:"start_height"`
 	// the block height when the auction expires
 	ExpiryHeight int64 `json:"expiry_height"`
 	// the status of the auction
 	Status string `json:"status"`
+	// the owner address (original intent creator)
+	OwnerAddress *string `json:"owner_address,omitempty"`
 }
 
 // NewIntentAuction instantiates a new IntentAuction object
 // This constructor will assign default values to properties that have it defined,
 // and makes sure properties required by API are set, but the set of arguments
 // will change when the set of required properties is changed
-func NewIntentAuction(intentTxId string, auctionAmount Coin, remainingAmount Coin, bidAsset string, minBid string, createHeight int64, expiryHeight int64, status string) *IntentAuction {
+func NewIntentAuction(intentTxId string, auctionAmount Coin, remainingAmount Coin, bidAsset string, minBid string, startHeight int64, expiryHeight int64, status string) *IntentAuction {
 	this := IntentAuction{}
 	this.IntentTxId = intentTxId
 	this.AuctionAmount = auctionAmount
 	this.RemainingAmount = remainingAmount
 	this.BidAsset = bidAsset
 	this.MinBid = minBid
-	this.CreateHeight = createHeight
+	this.StartHeight = startHeight
 	this.ExpiryHeight = expiryHeight
 	this.Status = status
 	return &this
@@ -177,28 +179,28 @@ func (o *IntentAuction) SetMinBid(v string) {
 	o.MinBid = v
 }
 
-// GetCreateHeight returns the CreateHeight field value
-func (o *IntentAuction) GetCreateHeight() int64 {
+// GetStartHeight returns the StartHeight field value
+func (o *IntentAuction) GetStartHeight() int64 {
 	if o == nil {
 		var ret int64
 		return ret
 	}
 
-	return o.CreateHeight
+	return o.StartHeight
 }
 
-// GetCreateHeightOk returns a tuple with the CreateHeight field value
+// GetStartHeightOk returns a tuple with the StartHeight field value
 // and a boolean to check if the value has been set.
-func (o *IntentAuction) GetCreateHeightOk() (*int64, bool) {
+func (o *IntentAuction) GetStartHeightOk() (*int64, bool) {
 	if o == nil {
 		return nil, false
 	}
-	return &o.CreateHeight, true
+	return &o.StartHeight, true
 }
 
-// SetCreateHeight sets field value
-func (o *IntentAuction) SetCreateHeight(v int64) {
-	o.CreateHeight = v
+// SetStartHeight sets field value
+func (o *IntentAuction) SetStartHeight(v int64) {
+	o.StartHeight = v
 }
 
 // GetExpiryHeight returns the ExpiryHeight field value
@@ -249,6 +251,38 @@ func (o *IntentAuction) SetStatus(v string) {
 	o.Status = v
 }
 
+// GetOwnerAddress returns the OwnerAddress field value if set, zero value otherwise.
+func (o *IntentAuction) GetOwnerAddress() string {
+	if o == nil || o.OwnerAddress == nil {
+		var ret string
+		return ret
+	}
+	return *o.OwnerAddress
+}
+
+// GetOwnerAddressOk returns a tuple with the OwnerAddress field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *IntentAuction) GetOwnerAddressOk() (*string, bool) {
+	if o == nil || o.OwnerAddress == nil {
+		return nil, false
+	}
+	return o.OwnerAddress, true
+}
+
+// HasOwnerAddress returns a boolean if a field has been set.
+func (o *IntentAuction) HasOwnerAddress() bool {
+	if o != nil && o.OwnerAddress != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetOwnerAddress gets a reference to the given string and assigns it to the OwnerAddress field.
+func (o *IntentAuction) SetOwnerAddress(v string) {
+	o.OwnerAddress = &v
+}
+
 func (o IntentAuction) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
@@ -267,13 +301,16 @@ func (o IntentAuction) MarshalJSON_deprecated() ([]byte, error) {
 		toSerialize["min_bid"] = o.MinBid
 	}
 	if true {
-		toSerialize["create_height"] = o.CreateHeight
+		toSerialize["start_height"] = o.StartHeight
 	}
 	if true {
 		toSerialize["expiry_height"] = o.ExpiryHeight
 	}
 	if true {
 		toSerialize["status"] = o.Status
+	}
+	if o.OwnerAddress != nil {
+		toSerialize["owner_address"] = o.OwnerAddress
 	}
 	return json.Marshal(toSerialize)
 }

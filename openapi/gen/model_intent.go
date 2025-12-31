@@ -29,8 +29,6 @@ type Intent struct {
 	HighTarget string `json:"high_target"`
 	// the low target amount
 	LowTarget string `json:"low_target"`
-	// the vault public key
-	VaultPubKey string `json:"vault_pub_key"`
 	// the block height when the intent was created
 	CreateHeight int64 `json:"create_height"`
 	// the block height when the intent expires
@@ -49,7 +47,7 @@ type Intent struct {
 // This constructor will assign default values to properties that have it defined,
 // and makes sure properties required by API are set, but the set of arguments
 // will change when the set of required properties is changed
-func NewIntent(txId string, source Coin, sourceAddress string, targetAsset string, targetAddress string, highTarget string, lowTarget string, vaultPubKey string, createHeight int64, expiryHeight int64, status string, minFeeBasisPoints int64) *Intent {
+func NewIntent(txId string, source Coin, sourceAddress string, targetAsset string, targetAddress string, highTarget string, lowTarget string, createHeight int64, expiryHeight int64, status string, minFeeBasisPoints int64) *Intent {
 	this := Intent{}
 	this.TxId = txId
 	this.Source = source
@@ -58,7 +56,6 @@ func NewIntent(txId string, source Coin, sourceAddress string, targetAsset strin
 	this.TargetAddress = targetAddress
 	this.HighTarget = highTarget
 	this.LowTarget = lowTarget
-	this.VaultPubKey = vaultPubKey
 	this.CreateHeight = createHeight
 	this.ExpiryHeight = expiryHeight
 	this.Status = status
@@ -240,30 +237,6 @@ func (o *Intent) GetLowTargetOk() (*string, bool) {
 // SetLowTarget sets field value
 func (o *Intent) SetLowTarget(v string) {
 	o.LowTarget = v
-}
-
-// GetVaultPubKey returns the VaultPubKey field value
-func (o *Intent) GetVaultPubKey() string {
-	if o == nil {
-		var ret string
-		return ret
-	}
-
-	return o.VaultPubKey
-}
-
-// GetVaultPubKeyOk returns a tuple with the VaultPubKey field value
-// and a boolean to check if the value has been set.
-func (o *Intent) GetVaultPubKeyOk() (*string, bool) {
-	if o == nil {
-		return nil, false
-	}
-	return &o.VaultPubKey, true
-}
-
-// SetVaultPubKey sets field value
-func (o *Intent) SetVaultPubKey(v string) {
-	o.VaultPubKey = v
 }
 
 // GetCreateHeight returns the CreateHeight field value
@@ -448,9 +421,6 @@ func (o Intent) MarshalJSON_deprecated() ([]byte, error) {
 	}
 	if true {
 		toSerialize["low_target"] = o.LowTarget
-	}
-	if true {
-		toSerialize["vault_pub_key"] = o.VaultPubKey
 	}
 	if true {
 		toSerialize["create_height"] = o.CreateHeight

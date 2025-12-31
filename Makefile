@@ -293,12 +293,16 @@ test-performance-clean:
 
 # ------------------------------ Regression Tests ------------------------------
 
+# Configurable host ports for regression tests (allows parallel runs with simulation tests)
+HOST_PORT_API ?= 1317
+HOST_PORT_RPC ?= 26657
+
 test-regression: build-test-regression
 	@docker run --rm ${DOCKER_TTY_ARGS} \
 		-e DEBUG -e RUN -e EXPORT -e TIME_FACTOR -e PARALLELISM -e FAIL_FAST \
 		-e AUTO_UPDATE -e IGNORE_FAILURES -e CI -e UNFILTER_EXPORT \
 		-e UID=$(shell id -u) -e GID=$(shell id -g) \
-		-p 1317:1317 -p 26657:26657 \
+		-p $(HOST_PORT_API):1317 -p $(HOST_PORT_RPC):26657 \
 		-v $(shell pwd)/test/regression/mnt:/mnt \
 		-v $(shell pwd)/test/regression/suites:/app/test/regression/suites \
 		-v $(shell pwd)/test/regression/templates:/app/test/regression/templates \
