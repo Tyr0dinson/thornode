@@ -65,6 +65,7 @@ const (
 	Query_QuoteSwap_FullMethodName              = "/types.Query/QuoteSwap"
 	Query_QuoteLimit_FullMethodName             = "/types.Query/QuoteLimit"
 	Query_QuoteIntent_FullMethodName            = "/types.Query/QuoteIntent"
+	Query_QuoteIntentSolve_FullMethodName       = "/types.Query/QuoteIntentSolve"
 	Query_ConstantValues_FullMethodName         = "/types.Query/ConstantValues"
 	Query_SwapQueue_FullMethodName              = "/types.Query/SwapQueue"
 	Query_SwapDetails_FullMethodName            = "/types.Query/SwapDetails"
@@ -169,6 +170,7 @@ type QueryClient interface {
 	QuoteSwap(ctx context.Context, in *QueryQuoteSwapRequest, opts ...grpc.CallOption) (*QueryQuoteSwapResponse, error)
 	QuoteLimit(ctx context.Context, in *QueryQuoteLimitRequest, opts ...grpc.CallOption) (*QueryQuoteLimitResponse, error)
 	QuoteIntent(ctx context.Context, in *QueryQuoteIntentRequest, opts ...grpc.CallOption) (*QueryQuoteIntentResponse, error)
+	QuoteIntentSolve(ctx context.Context, in *QueryQuoteIntentSolveRequest, opts ...grpc.CallOption) (*QueryQuoteIntentSolveResponse, error)
 	ConstantValues(ctx context.Context, in *QueryConstantValuesRequest, opts ...grpc.CallOption) (*QueryConstantValuesResponse, error)
 	SwapQueue(ctx context.Context, in *QuerySwapQueueRequest, opts ...grpc.CallOption) (*QuerySwapQueueResponse, error)
 	SwapDetails(ctx context.Context, in *QuerySwapDetailsRequest, opts ...grpc.CallOption) (*QuerySwapDetailsResponse, error)
@@ -638,6 +640,15 @@ func (c *queryClient) QuoteIntent(ctx context.Context, in *QueryQuoteIntentReque
 	return out, nil
 }
 
+func (c *queryClient) QuoteIntentSolve(ctx context.Context, in *QueryQuoteIntentSolveRequest, opts ...grpc.CallOption) (*QueryQuoteIntentSolveResponse, error) {
+	out := new(QueryQuoteIntentSolveResponse)
+	err := c.cc.Invoke(ctx, Query_QuoteIntentSolve_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *queryClient) ConstantValues(ctx context.Context, in *QueryConstantValuesRequest, opts ...grpc.CallOption) (*QueryConstantValuesResponse, error) {
 	out := new(QueryConstantValuesResponse)
 	err := c.cc.Invoke(ctx, Query_ConstantValues_FullMethodName, in, out, opts...)
@@ -1084,6 +1095,7 @@ type QueryServer interface {
 	QuoteSwap(context.Context, *QueryQuoteSwapRequest) (*QueryQuoteSwapResponse, error)
 	QuoteLimit(context.Context, *QueryQuoteLimitRequest) (*QueryQuoteLimitResponse, error)
 	QuoteIntent(context.Context, *QueryQuoteIntentRequest) (*QueryQuoteIntentResponse, error)
+	QuoteIntentSolve(context.Context, *QueryQuoteIntentSolveRequest) (*QueryQuoteIntentSolveResponse, error)
 	ConstantValues(context.Context, *QueryConstantValuesRequest) (*QueryConstantValuesResponse, error)
 	SwapQueue(context.Context, *QuerySwapQueueRequest) (*QuerySwapQueueResponse, error)
 	SwapDetails(context.Context, *QuerySwapDetailsRequest) (*QuerySwapDetailsResponse, error)
@@ -1273,6 +1285,9 @@ func (UnimplementedQueryServer) QuoteLimit(context.Context, *QueryQuoteLimitRequ
 }
 func (UnimplementedQueryServer) QuoteIntent(context.Context, *QueryQuoteIntentRequest) (*QueryQuoteIntentResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method QuoteIntent not implemented")
+}
+func (UnimplementedQueryServer) QuoteIntentSolve(context.Context, *QueryQuoteIntentSolveRequest) (*QueryQuoteIntentSolveResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method QuoteIntentSolve not implemented")
 }
 func (UnimplementedQueryServer) ConstantValues(context.Context, *QueryConstantValuesRequest) (*QueryConstantValuesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ConstantValues not implemented")
@@ -2244,6 +2259,24 @@ func _Query_QuoteIntent_Handler(srv interface{}, ctx context.Context, dec func(i
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Query_QuoteIntentSolve_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryQuoteIntentSolveRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).QuoteIntentSolve(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Query_QuoteIntentSolve_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).QuoteIntentSolve(ctx, req.(*QueryQuoteIntentSolveRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Query_ConstantValues_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(QueryConstantValuesRequest)
 	if err := dec(in); err != nil {
@@ -3208,6 +3241,10 @@ var Query_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "QuoteIntent",
 			Handler:    _Query_QuoteIntent_Handler,
+		},
+		{
+			MethodName: "QuoteIntentSolve",
+			Handler:    _Query_QuoteIntentSolve_Handler,
 		},
 		{
 			MethodName: "ConstantValues",

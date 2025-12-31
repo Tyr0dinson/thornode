@@ -3,6 +3,7 @@ package types;
 
 option go_package = "gitlab.com/thorchain/thornode/v3/x/thorchain/types";
 
+import "common/common.proto";
 import "gogoproto/gogo.proto";
 
 option (gogoproto.marshaler_all) = true;
@@ -289,4 +290,69 @@ message QuoteIntentPriceContext {
   string pooled_asset = 3 [ (gogoproto.jsontag) = "pooled_asset" ];
   // the amount in pooled asset terms
   string pooled_amount = 4 [ (gogoproto.jsontag) = "pooled_amount" ];
+}
+
+// Request for quote/intent/solve endpoint
+message QueryQuoteIntentSolveRequest {
+  // the transaction ID of the intent to solve
+  string intent_tx_id = 1 [ (gogoproto.jsontag) = "intent_tx_id" ];
+  // the amount to offer (in target asset)
+  string amount = 2 [ (gogoproto.jsontag) = "amount" ];
+}
+
+// Response for quote/intent/solve endpoint
+message QueryQuoteIntentSolveResponse {
+  // whether the solve parameters are valid
+  bool valid = 1 [ (gogoproto.jsontag) = "valid" ];
+  // error message if not valid
+  string validation_error = 2
+      [ (gogoproto.jsontag) = "validation_error,omitempty" ];
+  // the target asset expected for solving
+  string target_asset = 3 [ (gogoproto.jsontag) = "target_asset,omitempty" ];
+  // minimum amount required (at least low_target)
+  string min_amount = 4 [ (gogoproto.jsontag) = "min_amount,omitempty" ];
+  // amount needed to win immediately (high_target)
+  string instant_win_amount = 5
+      [ (gogoproto.jsontag) = "instant_win_amount,omitempty" ];
+  // current best solve amount (if any)
+  string current_best_amount = 6
+      [ (gogoproto.jsontag) = "current_best_amount,omitempty" ];
+  // amount needed to beat current best (current_best + min_increment)
+  string amount_to_beat_best = 7
+      [ (gogoproto.jsontag) = "amount_to_beat_best,omitempty" ];
+  // minimum increment required to beat current best (1x gas fee)
+  string min_increment = 8 [ (gogoproto.jsontag) = "min_increment,omitempty" ];
+  // asset the min_increment is denominated in
+  string min_increment_asset = 9
+      [ (gogoproto.jsontag) = "min_increment_asset,omitempty" ];
+  // estimated match height if this solve were submitted
+  int64 estimated_match_height = 10
+      [ (gogoproto.jsontag) = "estimated_match_height,omitempty" ];
+  // whether this solve would win immediately
+  bool would_win_immediately = 11
+      [ (gogoproto.jsontag) = "would_win_immediately,omitempty" ];
+  // whether this solve would beat the current best
+  bool would_beat_current_best = 12
+      [ (gogoproto.jsontag) = "would_beat_current_best,omitempty" ];
+  // number of blocks until match (0 if immediate)
+  int64 blocks_until_match = 13
+      [ (gogoproto.jsontag) = "blocks_until_match,omitempty" ];
+  // intent expiry height
+  int64 intent_expiry_height = 14
+      [ (gogoproto.jsontag) = "intent_expiry_height,omitempty" ];
+  // current block height
+  int64 current_height = 15
+      [ (gogoproto.jsontag) = "current_height,omitempty" ];
+  // number of existing solves on this intent
+  int64 existing_solve_count = 16
+      [ (gogoproto.jsontag) = "existing_solve_count,omitempty" ];
+  // source coin being swapped (what solver receives)
+  common.Coin source_coin = 17
+      [ (gogoproto.jsontag) = "source_coin,omitempty" ];
+  // expiry timestamp (unix)
+  int64 expiry = 18 [ (gogoproto.jsontag) = "expiry,omitempty" ];
+  // warning message
+  string warning = 19 [ (gogoproto.jsontag) = "warning,omitempty" ];
+  // notes
+  string notes = 20 [ (gogoproto.jsontag) = "notes,omitempty" ];
 }

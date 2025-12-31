@@ -156,6 +156,10 @@ func NewConstantValue() *ConstantVals {
 			OverSolvencyCheckInterval:           600,                // interval in blocks for over-solvency checks (approximately 30 days)
 			MaxRetiredVaultRecoveryAttempts:     100,                // maximum retries for retired vault recovery refunds
 			ModifyLimitSwapMaxIterations:        100,                // maximum iterations when searching for a user's swap in a ratio-grouped index
+			IntentsEnabled:                      0,                  // enable/disable intents feature (off by default)
+			IntentTTLBlocks:                     14400,              // intent expiration in blocks (~1 day at 6 second blocks)
+			IntentPriceSlideBlocks:              600,                // blocks for price slide calculation (~1 hour at 6 second blocks)
+			IntentMinFeeBasisPoints:             15,                 // minimum fee for intents (15 = 0.15%)
 			IntentAuctionBasisPoints:            1000,               // percentage of intent up for auction (1000 = 10%)
 			IntentAuctionDurationBlocks:         14400,              // auction duration in blocks (~1 day at 6 second blocks)
 			IntentAuctionMinBidMultiplier:       3,                  // minimum bid must be >= 3x network gas fee

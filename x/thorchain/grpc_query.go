@@ -384,6 +384,11 @@ func (s *queryServer) QuoteIntent(c context.Context, req *types.QueryQuoteIntent
 	return s.queryQuoteIntent(ctx, req)
 }
 
+func (s *queryServer) QuoteIntentSolve(c context.Context, req *types.QueryQuoteIntentSolveRequest) (*types.QueryQuoteIntentSolveResponse, error) {
+	ctx := s.unwrapSdkContext(c)
+	return s.queryQuoteIntentSolve(ctx, req)
+}
+
 func (s *queryServer) ConstantValues(c context.Context, req *types.QueryConstantValuesRequest) (*types.QueryConstantValuesResponse, error) {
 	if err := checkHeightParam(req.Height); err != nil {
 		return nil, err

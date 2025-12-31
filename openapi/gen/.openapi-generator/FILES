@@ -21,6 +21,7 @@ api_pool_slip.go
 api_pools.go
 api_queue.go
 api_quote.go
+api_quotes.go
 api_reference_memos.go
 api_rune_pool.go
 api_savers.go
@@ -146,10 +147,12 @@ docs/QuoteIntentAuctionInfo.md
 docs/QuoteIntentFees.md
 docs/QuoteIntentPriceContext.md
 docs/QuoteIntentResponse.md
+docs/QuoteIntentSolveResponse.md
 docs/QuoteLimitResponse.md
 docs/QuoteSaverDepositResponse.md
 docs/QuoteSaverWithdrawResponse.md
 docs/QuoteSwapResponse.md
+docs/QuotesApi.md
 docs/RUNEPoolApi.md
 docs/RUNEPoolResponse.md
 docs/RUNEPoolResponseProviders.md
@@ -301,6 +304,7 @@ model_quote_intent_auction_info.go
 model_quote_intent_fees.go
 model_quote_intent_price_context.go
 model_quote_intent_response.go
+model_quote_intent_solve_response.go
 model_quote_limit_response.go
 model_quote_saver_deposit_response.go
 model_quote_saver_withdraw_response.go

@@ -1613,3 +1613,183 @@ func (qs queryServer) queryQuoteIntent(ctx cosmos.Context, req *types.QueryQuote
 
 	return response, nil
 }
+
+func (qs queryServer) queryQuoteIntentSolve(ctx cosmos.Context, req *types.QueryQuoteIntentSolveRequest) (*types.QueryQuoteIntentSolveResponse, error) {
+	// Validate required parameters
+	if req.IntentTxId == "" {
+		return &types.QueryQuoteIntentSolveResponse{
+			Valid:           false,
+			ValidationError: "intent_tx_id is required",
+		}, nil
+	}
+
+	// Parse intent TxID
+	intentTxID := common.TxID(req.IntentTxId)
+	if intentTxID.IsEmpty() {
+		return &types.QueryQuoteIntentSolveResponse{
+			Valid:           false,
+			ValidationError: "invalid intent_tx_id",
+		}, nil
+	}
+
+	// Check if intent exists
+	if !qs.mgr.Keeper().IntentExists(ctx, intentTxID) {
+		return &types.QueryQuoteIntentSolveResponse{
+			Valid:           false,
+			ValidationError: fmt.Sprintf("intent %s does not exist", intentTxID),
+		}, nil
+	}
+
+	// Get the intent
+	intent, err := qs.mgr.Keeper().GetIntent(ctx, intentTxID)
+	if err != nil {
+		return &types.QueryQuoteIntentSolveResponse{
+			Valid:           false,
+			ValidationError: fmt.Sprintf("failed to get intent: %s", err),
+		}, nil
+	}
+
+	// Check if intent is active
+	if intent.Status != types.IntentStatus_IntentActive {
+		return &types.QueryQuoteIntentSolveResponse{
+			Valid:           false,
+			ValidationError: fmt.Sprintf("intent is not active, status: %s", intent.Status.String()),
+		}, nil
+	}
+
+	// Check if intent has expired
+	currentHeight := ctx.BlockHeight()
+	if currentHeight >= intent.ExpiryHeight {
+		return &types.QueryQuoteIntentSolveResponse{
+			Valid:           false,
+			ValidationError: fmt.Sprintf("intent has expired at height %d", intent.ExpiryHeight),
+		}, nil
+	}
+
+	// Get existing solves
+	solves, err := qs.mgr.Keeper().GetIntentSolvesByIntentID(ctx, intentTxID)
+	if err != nil {
+		return &types.QueryQuoteIntentSolveResponse{
+			Valid:           false,
+			ValidationError: fmt.Sprintf("failed to get intent solves: %s", err),
+		}, nil
+	}
+
+	// Calculate gas fee for minimum increment (1x gas determines what's "better")
+	sourceAsset := intent.Source.Asset
+	targetAsset := intent.TargetAsset
+
+	sourcePool, _ := qs.mgr.Keeper().GetPool(ctx, sourceAsset.GetLayer1Asset())
+	targetPool, _ := qs.mgr.Keeper().GetPool(ctx, targetAsset.GetLayer1Asset())
+
+	hasSourcePool := !sourcePool.IsEmpty() && sourcePool.Status == types.PoolStatus_Available
+	hasTargetPool := !targetPool.IsEmpty() && targetPool.Status == types.PoolStatus_Available
+	isSourceNative := sourceAsset.IsRune() || sourceAsset.IsSecuredAsset() || sourceAsset.IsTradeAsset()
+	isTargetNative := targetAsset.IsRune() || targetAsset.IsSecuredAsset() || targetAsset.IsTradeAsset()
+
+	var gasFeeChain common.Chain
+	switch {
+	case !hasSourcePool && !isSourceNative:
+		gasFeeChain = sourceAsset.GetChain()
+	case !hasTargetPool && !isTargetNative:
+		gasFeeChain = targetAsset.GetChain()
+	default:
+		gasFeeChain = sourceAsset.GetChain()
+	}
+	minIncrement := calculateGasFee(ctx, qs.mgr, gasFeeChain)
+	minIncrementAsset := gasFeeChain.GetGasAsset()
+
+	// Find current best solve (highest amount)
+	var currentBestAmount cosmos.Uint
+	for _, solve := range solves {
+		if solve.TargetCoin.Amount.GT(currentBestAmount) {
+			currentBestAmount = solve.TargetCoin.Amount
+		}
+	}
+
+	// Calculate amount needed to beat current best
+	var amountToBeatBest cosmos.Uint
+	if currentBestAmount.IsZero() {
+		amountToBeatBest = intent.LowTarget
+	} else {
+		amountToBeatBest = currentBestAmount.Add(minIncrement)
+	}
+
+	// Base response (valid without amount)
+	response := &types.QueryQuoteIntentSolveResponse{
+		Valid:              true,
+		TargetAsset:        intent.TargetAsset.String(),
+		MinAmount:          intent.LowTarget.String(),
+		InstantWinAmount:   intent.HighTarget.String(),
+		MinIncrement:       minIncrement.String(),
+		MinIncrementAsset:  minIncrementAsset.String(),
+		IntentExpiryHeight: intent.ExpiryHeight,
+		CurrentHeight:      currentHeight,
+		ExistingSolveCount: int64(len(solves)),
+		SourceCoin:         &intent.Source,
+		Expiry:             ctx.BlockTime().Add(quoteExpiration).Unix(),
+		Warning:            quoteWarning,
+	}
+
+	if !currentBestAmount.IsZero() {
+		response.CurrentBestAmount = currentBestAmount.String()
+	}
+	response.AmountToBeatBest = amountToBeatBest.String()
+
+	// If amount is provided, validate and calculate match height
+	if req.Amount != "" {
+		offeredAmount, err := cosmos.ParseUint(req.Amount)
+		if err != nil {
+			response.Valid = false
+			response.ValidationError = fmt.Sprintf("invalid amount: %s", err)
+			return response, nil
+		}
+
+		// Check if offered amount meets minimum
+		if offeredAmount.LT(intent.LowTarget) {
+			response.Valid = false
+			response.ValidationError = fmt.Sprintf("offered amount %s is less than low target %s", offeredAmount, intent.LowTarget)
+			return response, nil
+		}
+
+		// Calculate match height using linear interpolation
+		slideBlocks := qs.mgr.Keeper().GetConfigInt64(ctx, constants.IntentPriceSlideBlocks)
+
+		var matchHeight int64
+		switch {
+		case offeredAmount.GTE(intent.HighTarget):
+			matchHeight = currentHeight
+		case intent.HighTarget.Equal(intent.LowTarget):
+			matchHeight = currentHeight
+		default:
+			highMinusOffered := common.SafeSub(intent.HighTarget, offeredAmount)
+			highMinusLow := common.SafeSub(intent.HighTarget, intent.LowTarget)
+
+			if highMinusLow.IsZero() {
+				matchHeight = currentHeight
+			} else {
+				delay := highMinusOffered.Mul(cosmos.NewUint(uint64(slideBlocks)))
+				delay = delay.Quo(highMinusLow)
+				matchHeight = currentHeight + int64(delay.Uint64())
+
+				if matchHeight > intent.ExpiryHeight {
+					matchHeight = intent.ExpiryHeight
+				}
+			}
+		}
+
+		response.EstimatedMatchHeight = matchHeight
+		response.WouldWinImmediately = matchHeight == currentHeight
+		response.BlocksUntilMatch = matchHeight - currentHeight
+
+		// Check if this would beat current best
+		if !currentBestAmount.IsZero() {
+			diff := common.SafeSub(offeredAmount, currentBestAmount)
+			response.WouldBeatCurrentBest = diff.GTE(minIncrement)
+		} else {
+			response.WouldBeatCurrentBest = true
+		}
+	}
+
+	return response, nil
+}

@@ -129,6 +129,7 @@ Class | Method | HTTP request | Description
 *QueueApi* | [**QueueSwap**](docs/QueueApi.md#queueswap) | **Get** /thorchain/queue/swap | 
 *QuoteApi* | [**Quoteintent**](docs/QuoteApi.md#quoteintent) | **Get** /thorchain/quote/intent | 
 *QuoteApi* | [**Quoteswap**](docs/QuoteApi.md#quoteswap) | **Get** /thorchain/quote/swap | 
+*QuotesApi* | [**QuoteIntentSolve**](docs/QuotesApi.md#quoteintentsolve) | **Get** /thorchain/quote/intent/solve | 
 *RUNEPoolApi* | [**RunePool**](docs/RUNEPoolApi.md#runepool) | **Get** /thorchain/runepool | 
 *RUNEPoolApi* | [**RuneProvider**](docs/RUNEPoolApi.md#runeprovider) | **Get** /thorchain/rune_provider/{address} | 
 *RUNEPoolApi* | [**RuneProviders**](docs/RUNEPoolApi.md#runeproviders) | **Get** /thorchain/rune_providers | 
@@ -259,6 +260,7 @@ Class | Method | HTTP request | Description
  - [QuoteIntentFees](docs/QuoteIntentFees.md)
  - [QuoteIntentPriceContext](docs/QuoteIntentPriceContext.md)
  - [QuoteIntentResponse](docs/QuoteIntentResponse.md)
+ - [QuoteIntentSolveResponse](docs/QuoteIntentSolveResponse.md)
  - [QuoteLimitResponse](docs/QuoteLimitResponse.md)
  - [QuoteSaverDepositResponse](docs/QuoteSaverDepositResponse.md)
  - [QuoteSaverWithdrawResponse](docs/QuoteSaverWithdrawResponse.md)
