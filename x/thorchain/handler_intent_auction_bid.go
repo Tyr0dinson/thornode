@@ -1,6 +1,8 @@
 package thorchain
 
 import (
+	"fmt"
+
 	se "github.com/cosmos/cosmos-sdk/types/errors"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -215,7 +217,7 @@ func (h IntentAuctionBidHandler) handle(ctx cosmos.Context, msg MsgIntentAuction
 		isTopUp,
 	)
 	if err := h.mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
-		ctx.Logger().Error("fail to emit intent auction bid event", "error", err)
+		return fmt.Errorf("fail to emit intent auction bid event: %w", err)
 	}
 
 	return nil

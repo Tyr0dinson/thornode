@@ -196,7 +196,7 @@ func (h IntentCancelHandler) handle(ctx cosmos.Context, msg MsgIntentCancel) err
 		abandoned,
 	)
 	if err := h.mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
-		ctx.Logger().Error("fail to emit intent cancel event", "error", err)
+		return fmt.Errorf("fail to emit intent cancel event: %w", err)
 	}
 
 	return nil
