@@ -71,14 +71,6 @@ func (h IntentAuctionBidHandler) validate(ctx cosmos.Context, msg MsgIntentAucti
 		return se.ErrUnauthorized.Wrapf("auction has expired at height %d", auction.ExpiryHeight)
 	}
 
-	// Validate bid transaction has exactly one coin
-	if len(msg.Tx.Coins) == 0 {
-		return se.ErrInvalidRequest.Wrap("no coins in bid transaction")
-	}
-	if len(msg.Tx.Coins) > 1 {
-		return se.ErrInvalidRequest.Wrap("bid can only provide one coin type")
-	}
-
 	// Verify the coin is the expected bid asset (gas asset of source chain)
 	if !msg.Tx.Coins[0].Asset.Equals(auction.BidAsset) {
 		return se.ErrInvalidRequest.Wrapf("bid asset %s does not match expected asset %s", msg.Tx.Coins[0].Asset, auction.BidAsset)
@@ -123,7 +115,10 @@ func (h IntentAuctionBidHandler) validate(ctx cosmos.Context, msg MsgIntentAucti
 
 		// During overtime window, bid must be >= highestBid + 1x gas to be valid
 		if inOvertimeWindow {
-			gasFee := calculateGasFee(ctx, h.mgr, auction.BidAsset.GetChain())
+			gasFee, err := calculateGasFee(ctx, h.mgr, auction.BidAsset.GetChain())
+			if err != nil {
+				return ErrInternal(err, "fail to calculate gas fee for overtime validation")
+			}
 			minOvertimeBid := highestBid.Add(gasFee)
 			if bidAmount.LT(minOvertimeBid) {
 				return se.ErrInvalidRequest.Wrapf(
@@ -186,7 +181,10 @@ func (h IntentAuctionBidHandler) handle(ctx cosmos.Context, msg MsgIntentAuction
 	inOvertimeWindow := ctx.BlockHeight() >= auction.ExpiryHeight-overtimeBlocks
 
 	if inOvertimeWindow && overtimeBlocks > 0 {
-		gasFee := calculateGasFee(ctx, h.mgr, auction.BidAsset.GetChain())
+		gasFee, err := calculateGasFee(ctx, h.mgr, auction.BidAsset.GetChain())
+		if err != nil {
+			return ErrInternal(err, "fail to calculate gas fee for overtime extension")
+		}
 		minOvertimeBid := previousHighest.Add(gasFee)
 
 		// If this bid qualifies for overtime extension (new highest >= previous + 1x gas)
@@ -225,16 +223,15 @@ func (h IntentAuctionBidHandler) handle(ctx cosmos.Context, msg MsgIntentAuction
 
 // calculateMinBid calculates the minimum bid for an auction
 // It is 3x the network fee for the source chain
-func calculateMinBid(ctx cosmos.Context, mgr Manager, chain common.Chain) cosmos.Uint {
+func calculateMinBid(ctx cosmos.Context, mgr Manager, chain common.Chain) (cosmos.Uint, error) {
 	// Get the network fee for the chain
 	networkFee, err := mgr.Keeper().GetNetworkFee(ctx, chain)
 	if err != nil {
-		ctx.Logger().Error("fail to get network fee", "chain", chain, "error", err)
-		return cosmos.ZeroUint()
+		return cosmos.ZeroUint(), err
 	}
 
 	// Calculate network fee: TransactionSize * TransactionFeeRate
-	fee := cosmos.NewUint(networkFee.TransactionSize * networkFee.TransactionFeeRate)
+	fee := cosmos.NewUint(networkFee.TransactionSize).MulUint64(networkFee.TransactionFeeRate)
 
 	// Multiply by the configured multiplier (default 3x)
 	multiplier := mgr.Keeper().GetConfigInt64(ctx, constants.IntentAuctionMinBidMultiplier)
@@ -242,15 +239,14 @@ func calculateMinBid(ctx cosmos.Context, mgr Manager, chain common.Chain) cosmos
 		multiplier = 3 // Default to 3x if not set
 	}
 
-	return fee.MulUint64(uint64(multiplier))
+	return fee.MulUint64(uint64(multiplier)), nil
 }
 
 // calculateGasFee returns 1x network gas fee for the chain
-func calculateGasFee(ctx cosmos.Context, mgr Manager, chain common.Chain) cosmos.Uint {
+func calculateGasFee(ctx cosmos.Context, mgr Manager, chain common.Chain) (cosmos.Uint, error) {
 	networkFee, err := mgr.Keeper().GetNetworkFee(ctx, chain)
 	if err != nil {
-		ctx.Logger().Error("fail to get network fee", "chain", chain, "error", err)
-		return cosmos.ZeroUint()
+		return cosmos.ZeroUint(), err
 	}
-	return cosmos.NewUint(networkFee.TransactionSize * networkFee.TransactionFeeRate)
+	return cosmos.NewUint(networkFee.TransactionSize).MulUint64(networkFee.TransactionFeeRate), nil
 }
