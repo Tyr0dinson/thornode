@@ -86,7 +86,11 @@ func (im *IntentMgr) selectBestSolve(ctx cosmos.Context, intent types.Intent, so
 	default:
 		gasFeeChain = sourceAsset.GetChain()
 	}
-	gasFee := calculateGasFee(ctx, im.mgr, gasFeeChain)
+	gasFee, err := calculateGasFee(ctx, im.mgr, gasFeeChain)
+	if err != nil {
+		ctx.Logger().Error("fail to calculate gas fee for solve selection, using zero", "error", err)
+		gasFee = cosmos.ZeroUint()
+	}
 
 	// Sort by amount descending to process highest first
 	sorted := make([]types.IntentSolve, len(solves))
@@ -632,7 +636,10 @@ func (im *IntentMgr) expireIntent(ctx cosmos.Context, intent Intent) error {
 	bidAsset := sourceChain.GetGasAsset()
 
 	// Calculate minimum bid (3x network fee)
-	minBid := calculateMinBid(ctx, im.mgr, sourceChain)
+	minBid, err := calculateMinBid(ctx, im.mgr, sourceChain)
+	if err != nil {
+		return fmt.Errorf("fail to calculate minimum bid for auction: %w", err)
+	}
 
 	// Create the auction
 	auction := IntentAuction{

@@ -1570,7 +1570,10 @@ func (qs queryServer) queryQuoteIntent(ctx cosmos.Context, req *types.QueryQuote
 	default:
 		solveMinIncrementChain = fromAsset.GetChain()
 	}
-	solveMinIncrement := calculateGasFee(ctx, qs.mgr, solveMinIncrementChain)
+	solveMinIncrement, err := calculateGasFee(ctx, qs.mgr, solveMinIncrementChain)
+	if err != nil {
+		return nil, fmt.Errorf("fail to calculate solve minimum increment: %w", err)
+	}
 	solveMinIncrementAsset := solveMinIncrementChain.GetGasAsset()
 
 	// Build response
@@ -1706,7 +1709,10 @@ func (qs queryServer) queryQuoteIntentSolve(ctx cosmos.Context, req *types.Query
 	default:
 		gasFeeChain = sourceAsset.GetChain()
 	}
-	minIncrement := calculateGasFee(ctx, qs.mgr, gasFeeChain)
+	minIncrement, err := calculateGasFee(ctx, qs.mgr, gasFeeChain)
+	if err != nil {
+		return nil, fmt.Errorf("fail to calculate minimum increment: %w", err)
+	}
 	minIncrementAsset := gasFeeChain.GetGasAsset()
 
 	// Find current best solve (highest amount)
