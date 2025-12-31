@@ -342,13 +342,13 @@ func (im *IntentMgr) executeIntent(ctx cosmos.Context, intent Intent, solve Inte
 
 	// Process protocol fee - deposit into reserve
 	if !protocolFee.IsEmpty() && protocolFee.Amount.GT(cosmos.ZeroUint()) {
-		if err := im.processProtocolFee(ctx, solve.SolveTxID, protocolFee, feePool); err != nil {
+		err = im.processProtocolFee(ctx, solve.SolveTxID, protocolFee, feePool)
+		if err != nil {
 			return fmt.Errorf("fail to process protocol fee: %w", err)
 		}
 		// Re-fetch pool after protocol fee swap to get updated balances
 		// (processProtocolFee modifies and saves the pool, but feePool is passed by value)
 		if !feePool.IsEmpty() && !protocolFee.Asset.IsRune() && !protocolFee.Asset.IsSecuredAsset() && !protocolFee.Asset.IsTradeAsset() {
-			var err error
 			feePool, err = im.mgr.Keeper().GetPool(ctx, feePool.Asset)
 			if err != nil {
 				return fmt.Errorf("fail to re-fetch pool after protocol fee: %w", err)
@@ -358,7 +358,8 @@ func (im *IntentMgr) executeIntent(ctx cosmos.Context, intent Intent, solve Inte
 
 	// Process affiliate fee - send to affiliate
 	if !affiliateFee.IsEmpty() && affiliateFee.Amount.GT(cosmos.ZeroUint()) {
-		if err := im.processAffiliateFee(ctx, intent, solve, affiliateFee, feePool); err != nil {
+		err = im.processAffiliateFee(ctx, intent, solve, affiliateFee, feePool)
+		if err != nil {
 			return fmt.Errorf("fail to process affiliate fee: %w", err)
 		}
 	}
