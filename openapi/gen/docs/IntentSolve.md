@@ -8,15 +8,14 @@ Name | Type | Description | Notes
 **IntentTxId** | **string** | the transaction ID of the intent being solved | 
 **SolverAddress** | **string** | the solver address | 
 **TargetCoin** | [**Coin**](Coin.md) |  | 
-**VaultPubKey** | **string** | the vault public key | 
-**CreateHeight** | **int64** | the block height when the solve was created | 
+**SubmitHeight** | **int64** | the block height when the solve was submitted | 
 **MatchHeight** | **int64** | the block height when the solve should be matched | 
 
 ## Methods
 
 ### NewIntentSolve
 
-`func NewIntentSolve(solveTxId string, intentTxId string, solverAddress string, targetCoin Coin, vaultPubKey string, createHeight int64, matchHeight int64, ) *IntentSolve`
+`func NewIntentSolve(solveTxId string, intentTxId string, solverAddress string, targetCoin Coin, submitHeight int64, matchHeight int64, ) *IntentSolve`
 
 NewIntentSolve instantiates a new IntentSolve object
 This constructor will assign default values to properties that have it defined,
@@ -111,44 +110,24 @@ and a boolean to check if the value has been set.
 SetTargetCoin sets TargetCoin field to given value.
 
 
-### GetVaultPubKey
+### GetSubmitHeight
 
-`func (o *IntentSolve) GetVaultPubKey() string`
+`func (o *IntentSolve) GetSubmitHeight() int64`
 
-GetVaultPubKey returns the VaultPubKey field if non-nil, zero value otherwise.
+GetSubmitHeight returns the SubmitHeight field if non-nil, zero value otherwise.
 
-### GetVaultPubKeyOk
+### GetSubmitHeightOk
 
-`func (o *IntentSolve) GetVaultPubKeyOk() (*string, bool)`
+`func (o *IntentSolve) GetSubmitHeightOk() (*int64, bool)`
 
-GetVaultPubKeyOk returns a tuple with the VaultPubKey field if it's non-nil, zero value otherwise
+GetSubmitHeightOk returns a tuple with the SubmitHeight field if it's non-nil, zero value otherwise
 and a boolean to check if the value has been set.
 
-### SetVaultPubKey
+### SetSubmitHeight
 
-`func (o *IntentSolve) SetVaultPubKey(v string)`
+`func (o *IntentSolve) SetSubmitHeight(v int64)`
 
-SetVaultPubKey sets VaultPubKey field to given value.
-
-
-### GetCreateHeight
-
-`func (o *IntentSolve) GetCreateHeight() int64`
-
-GetCreateHeight returns the CreateHeight field if non-nil, zero value otherwise.
-
-### GetCreateHeightOk
-
-`func (o *IntentSolve) GetCreateHeightOk() (*int64, bool)`
-
-GetCreateHeightOk returns a tuple with the CreateHeight field if it's non-nil, zero value otherwise
-and a boolean to check if the value has been set.
-
-### SetCreateHeight
-
-`func (o *IntentSolve) SetCreateHeight(v int64)`
-
-SetCreateHeight sets CreateHeight field to given value.
+SetSubmitHeight sets SubmitHeight field to given value.
 
 
 ### GetMatchHeight

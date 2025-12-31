@@ -1675,6 +1675,36 @@ paths:
               schema:
                 $ref: "#/components/schemas/QuoteIntentResponse"
 
+  /thorchain/quote/intent/solve:
+    get:
+      operationId: quoteIntentSolve
+      description: >-
+        Returns quote information for solving an intent. Provides information
+        about minimum amounts, current best solve, and whether a solve would
+        be successful.
+      tags:
+        - Quotes
+      parameters:
+        - name: intent_tx_id
+          in: query
+          required: true
+          description: the transaction ID of the intent to solve
+          schema:
+            type: string
+        - name: amount
+          in: query
+          required: false
+          description: the amount to offer (in target asset) - optional for checking requirements
+          schema:
+            type: string
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QuoteIntentSolveResponse"
+
   # ------------------------------ invariants ------------------------------
 
   /thorchain/invariant/{invariant}:
@@ -5022,6 +5052,96 @@ components:
           description: RUNE equivalent of the pooled amount
           example: "15000000000"
 
+    QuoteIntentSolveResponse:
+      type: object
+      required:
+        - valid
+      properties:
+        valid:
+          type: boolean
+          description: whether the solve parameters are valid
+          example: true
+        validation_error:
+          type: string
+          description: error message if not valid
+          example: ""
+        target_asset:
+          type: string
+          description: the target asset expected for solving
+          example: "ETH.ETH"
+        min_amount:
+          type: string
+          description: minimum amount required (at least low_target)
+          example: "90000000"
+        instant_win_amount:
+          type: string
+          description: amount needed to win immediately (high_target)
+          example: "100000000"
+        current_best_amount:
+          type: string
+          description: current best solve amount (if any)
+          example: "95000000"
+        amount_to_beat_best:
+          type: string
+          description: amount needed to beat current best (current_best + min_increment)
+          example: "95100000"
+        min_increment:
+          type: string
+          description: minimum increment required to beat current best (1x gas fee)
+          example: "100000"
+        min_increment_asset:
+          type: string
+          description: asset the min_increment is denominated in
+          example: "ETH.ETH"
+        estimated_match_height:
+          type: integer
+          format: int64
+          description: estimated match height if this solve were submitted
+          example: 12345678
+        would_win_immediately:
+          type: boolean
+          description: whether this solve would win immediately
+          example: false
+        would_beat_current_best:
+          type: boolean
+          description: whether this solve would beat the current best
+          example: true
+        blocks_until_match:
+          type: integer
+          format: int64
+          description: number of blocks until match (0 if immediate)
+          example: 100
+        intent_expiry_height:
+          type: integer
+          format: int64
+          description: intent expiry height
+          example: 12350000
+        current_height:
+          type: integer
+          format: int64
+          description: current block height
+          example: 12345578
+        existing_solve_count:
+          type: integer
+          format: int64
+          description: number of existing solves on this intent
+          example: 3
+        source_coin:
+          $ref: "#/components/schemas/Coin"
+        expiry:
+          type: integer
+          format: int64
+          description: quote expiration timestamp (unix)
+          example: 1701900000
+        warning:
+          type: string
+          description: warning message
+          example: "Do not cache this response. Do not send funds after the expiry."
+        notes:
+          type: string
+          description: additional notes
+          example: ""
+
     QuoteSaverDepositResponse:
       type: object
       required:
@@ -5176,7 +5296,6 @@ components:
         - target_address
         - high_target
         - low_target
-        - vault_pub_key
         - create_height
         - expiry_height
         - status
@@ -5208,10 +5327,6 @@ components:
           type: string
           description: the low target amount
           example: "90000000"
-        vault_pub_key:
-          type: string
-          description: the vault public key
-          example: "thorpub1addwnpepqt7qug8vk9r3saw8n4r803ydj2g3dqwx0mvq5akhnze86fc536xcy"
         create_height:
           type: integer
           format: int64
@@ -5254,8 +5369,7 @@ components:
         - intent_tx_id
         - solver_address
         - target_coin
-        - vault_pub_key
-        - create_height
+        - submit_height
         - match_height
       properties:
         solve_tx_id:
@@ -5272,14 +5386,10 @@ components:
           example: "bc1qyyy"
         target_coin:
           $ref: "#/components/schemas/Coin"
-        vault_pub_key:
-          type: string
-          description: the vault public key
-          example: "thorpub1addwnpepqt7qug8vk9r3saw8n4r803ydj2g3dqwx0mvq5akhnze86fc536xcy"
-        create_height:
+        submit_height:
           type: integer
           format: int64
-          description: the block height when the solve was created
+          description: the block height when the solve was submitted
           example: 12345678
         match_height:
           type: integer
@@ -5331,7 +5441,7 @@ components:
         - remaining_amount
         - bid_asset
         - min_bid
-        - create_height
+        - start_height
         - expiry_height
         - status
       properties:
@@ -5351,10 +5461,10 @@ components:
           type: string
           description: the minimum bid amount
           example: "10000"
-        create_height:
+        start_height:
           type: integer
           format: int64
-          description: the block height when the auction was created
+          description: the block height when the auction started
           example: 12345678
         expiry_height:
           type: integer
@@ -5369,6 +5479,10 @@ components:
             - AuctionActive
             - AuctionCompleted
             - AuctionCancelled
+        owner_address:
+          type: string
+          description: the owner address (original intent creator)
+          example: "thor1zupk5lmc84r2dh738a9g3zscavannjy3nzplwt"
 
     IntentAuctionBid:
       type: object

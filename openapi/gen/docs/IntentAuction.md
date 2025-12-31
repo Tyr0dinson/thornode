@@ -9,15 +9,16 @@ Name | Type | Description | Notes
 **RemainingAmount** | [**Coin**](Coin.md) |  | 
 **BidAsset** | **string** | the asset used for bidding (gas asset of source chain) | 
 **MinBid** | **string** | the minimum bid amount | 
-**CreateHeight** | **int64** | the block height when the auction was created | 
+**StartHeight** | **int64** | the block height when the auction started | 
 **ExpiryHeight** | **int64** | the block height when the auction expires | 
 **Status** | **string** | the status of the auction | 
+**OwnerAddress** | Pointer to **string** | the owner address (original intent creator) | [optional] 
 
 ## Methods
 
 ### NewIntentAuction
 
-`func NewIntentAuction(intentTxId string, auctionAmount Coin, remainingAmount Coin, bidAsset string, minBid string, createHeight int64, expiryHeight int64, status string, ) *IntentAuction`
+`func NewIntentAuction(intentTxId string, auctionAmount Coin, remainingAmount Coin, bidAsset string, minBid string, startHeight int64, expiryHeight int64, status string, ) *IntentAuction`
 
 NewIntentAuction instantiates a new IntentAuction object
 This constructor will assign default values to properties that have it defined,
@@ -132,24 +133,24 @@ and a boolean to check if the value has been set.
 SetMinBid sets MinBid field to given value.
 
 
-### GetCreateHeight
+### GetStartHeight
 
-`func (o *IntentAuction) GetCreateHeight() int64`
+`func (o *IntentAuction) GetStartHeight() int64`
 
-GetCreateHeight returns the CreateHeight field if non-nil, zero value otherwise.
+GetStartHeight returns the StartHeight field if non-nil, zero value otherwise.
 
-### GetCreateHeightOk
+### GetStartHeightOk
 
-`func (o *IntentAuction) GetCreateHeightOk() (*int64, bool)`
+`func (o *IntentAuction) GetStartHeightOk() (*int64, bool)`
 
-GetCreateHeightOk returns a tuple with the CreateHeight field if it's non-nil, zero value otherwise
+GetStartHeightOk returns a tuple with the StartHeight field if it's non-nil, zero value otherwise
 and a boolean to check if the value has been set.
 
-### SetCreateHeight
+### SetStartHeight
 
-`func (o *IntentAuction) SetCreateHeight(v int64)`
+`func (o *IntentAuction) SetStartHeight(v int64)`
 
-SetCreateHeight sets CreateHeight field to given value.
+SetStartHeight sets StartHeight field to given value.
 
 
 ### GetExpiryHeight
@@ -191,6 +192,31 @@ and a boolean to check if the value has been set.
 
 SetStatus sets Status field to given value.
 
+
+### GetOwnerAddress
+
+`func (o *IntentAuction) GetOwnerAddress() string`
+
+GetOwnerAddress returns the OwnerAddress field if non-nil, zero value otherwise.
+
+### GetOwnerAddressOk
+
+`func (o *IntentAuction) GetOwnerAddressOk() (*string, bool)`
+
+GetOwnerAddressOk returns a tuple with the OwnerAddress field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetOwnerAddress
+
+`func (o *IntentAuction) SetOwnerAddress(v string)`
+
+SetOwnerAddress sets OwnerAddress field to given value.
+
+### HasOwnerAddress
+
+`func (o *IntentAuction) HasOwnerAddress() bool`
+
+HasOwnerAddress returns a boolean if a field has been set.
 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)

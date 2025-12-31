@@ -2671,6 +2671,39 @@ paths:
           description: OK
       tags:
       - Quote
+  /thorchain/quote/intent/solve:
+    get:
+      description: "Returns quote information for solving an intent. Provides information\
+        \ about minimum amounts, current best solve, and whether a solve would be\
+        \ successful."
+      operationId: quoteIntentSolve
+      parameters:
+      - description: the transaction ID of the intent to solve
+        explode: true
+        in: query
+        name: intent_tx_id
+        required: true
+        schema:
+          type: string
+        style: form
+      - description: the amount to offer (in target asset) - optional for checking
+          requirements
+        explode: true
+        in: query
+        name: amount
+        required: false
+        schema:
+          type: string
+        style: form
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuoteIntentSolveResponse'
+          description: OK
+      tags:
+      - Quotes
   /thorchain/invariant/{invariant}:
     get:
       description: Returns result of running the given invariant.
@@ -7513,6 +7546,119 @@ components:
           example: "15000000000"
           type: string
       type: object
+    QuoteIntentSolveResponse:
+      example:
+        would_win_immediately: false
+        current_height: 12345578
+        existing_solve_count: 3
+        intent_expiry_height: 12350000
+        instant_win_amount: "100000000"
+        notes: ""
+        current_best_amount: "95000000"
+        validation_error: ""
+        estimated_match_height: 12345678
+        min_amount: "90000000"
+        would_beat_current_best: true
+        valid: true
+        min_increment: "100000"
+        target_asset: ETH.ETH
+        source_coin:
+          amount: "100000"
+          decimals: 6
+          asset: BTC.BTC
+        warning: Do not cache this response. Do not send funds after the expiry.
+        expiry: 1701900000
+        min_increment_asset: ETH.ETH
+        amount_to_beat_best: "95100000"
+        blocks_until_match: 100
+      properties:
+        valid:
+          description: whether the solve parameters are valid
+          example: true
+          type: boolean
+        validation_error:
+          description: error message if not valid
+          example: ""
+          type: string
+        target_asset:
+          description: the target asset expected for solving
+          example: ETH.ETH
+          type: string
+        min_amount:
+          description: minimum amount required (at least low_target)
+          example: "90000000"
+          type: string
+        instant_win_amount:
+          description: amount needed to win immediately (high_target)
+          example: "100000000"
+          type: string
+        current_best_amount:
+          description: current best solve amount (if any)
+          example: "95000000"
+          type: string
+        amount_to_beat_best:
+          description: amount needed to beat current best (current_best + min_increment)
+          example: "95100000"
+          type: string
+        min_increment:
+          description: minimum increment required to beat current best (1x gas fee)
+          example: "100000"
+          type: string
+        min_increment_asset:
+          description: asset the min_increment is denominated in
+          example: ETH.ETH
+          type: string
+        estimated_match_height:
+          description: estimated match height if this solve were submitted
+          example: 12345678
+          format: int64
+          type: integer
+        would_win_immediately:
+          description: whether this solve would win immediately
+          example: false
+          type: boolean
+        would_beat_current_best:
+          description: whether this solve would beat the current best
+          example: true
+          type: boolean
+        blocks_until_match:
+          description: number of blocks until match (0 if immediate)
+          example: 100
+          format: int64
+          type: integer
+        intent_expiry_height:
+          description: intent expiry height
+          example: 12350000
+          format: int64
+          type: integer
+        current_height:
+          description: current block height
+          example: 12345578
+          format: int64
+          type: integer
+        existing_solve_count:
+          description: number of existing solves on this intent
+          example: 3
+          format: int64
+          type: integer
+        source_coin:
+          $ref: '#/components/schemas/Coin'
+        expiry:
+          description: quote expiration timestamp (unix)
+          example: 1701900000
+          format: int64
+          type: integer
+        warning:
+          description: warning message
+          example: Do not cache this response. Do not send funds after the expiry.
+          type: string
+        notes:
+          description: additional notes
+          example: ""
+          type: string
+      required:
+      - valid
+      type: object
     QuoteSaverDepositResponse:
       properties:
         inbound_address:
@@ -7808,7 +7954,6 @@ components:
         min_fee_basis_points: 30
         expiry_height: 12350000
         affiliate_basis_points: 0
-        vault_pub_key: thorpub1addwnpepqt7qug8vk9r3saw8n4r803ydj2g3dqwx0mvq5akhnze86fc536xcy
         source:
           amount: "100000"
           decimals: 6
@@ -7847,10 +7992,6 @@ components:
         low_target:
           description: the low target amount
           example: "90000000"
-          type: string
-        vault_pub_key:
-          description: the vault public key
-          example: thorpub1addwnpepqt7qug8vk9r3saw8n4r803ydj2g3dqwx0mvq5akhnze86fc536xcy
           type: string
         create_height:
           description: the block height when the intent was created
@@ -7898,7 +8039,6 @@ components:
       - target_address
       - target_asset
       - tx_id
-      - vault_pub_key
       type: object
     IntentSolve:
       example:
@@ -7907,10 +8047,9 @@ components:
           amount: "100000"
           decimals: 6
           asset: BTC.BTC
-        vault_pub_key: thorpub1addwnpepqt7qug8vk9r3saw8n4r803ydj2g3dqwx0mvq5akhnze86fc536xcy
         solve_tx_id: ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890
-        create_height: 12345678
         match_height: 12345700
+        submit_height: 12345678
         solver_address: bc1qyyy
       properties:
         solve_tx_id:
@@ -7927,12 +8066,8 @@ components:
           type: string
         target_coin:
           $ref: '#/components/schemas/Coin'
-        vault_pub_key:
-          description: the vault public key
-          example: thorpub1addwnpepqt7qug8vk9r3saw8n4r803ydj2g3dqwx0mvq5akhnze86fc536xcy
-          type: string
-        create_height:
-          description: the block height when the solve was created
+        submit_height:
+          description: the block height when the solve was submitted
           example: 12345678
           format: int64
           type: integer
@@ -7942,13 +8077,12 @@ components:
           format: int64
           type: integer
       required:
-      - create_height
       - intent_tx_id
       - match_height
       - solve_tx_id
       - solver_address
+      - submit_height
       - target_coin
-      - vault_pub_key
       type: object
     IntentWithSolves:
       example:
@@ -7958,27 +8092,24 @@ components:
             amount: "100000"
             decimals: 6
             asset: BTC.BTC
-          vault_pub_key: thorpub1addwnpepqt7qug8vk9r3saw8n4r803ydj2g3dqwx0mvq5akhnze86fc536xcy
           solve_tx_id: ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890
-          create_height: 12345678
           match_height: 12345700
+          submit_height: 12345678
           solver_address: bc1qyyy
         - intent_tx_id: 1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF
           target_coin:
             amount: "100000"
             decimals: 6
             asset: BTC.BTC
-          vault_pub_key: thorpub1addwnpepqt7qug8vk9r3saw8n4r803ydj2g3dqwx0mvq5akhnze86fc536xcy
           solve_tx_id: ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890
-          create_height: 12345678
           match_height: 12345700
+          submit_height: 12345678
           solver_address: bc1qyyy
         intent:
           target_address: bc1qxxx
           min_fee_basis_points: 30
           expiry_height: 12350000
           affiliate_basis_points: 0
-          vault_pub_key: thorpub1addwnpepqt7qug8vk9r3saw8n4r803ydj2g3dqwx0mvq5akhnze86fc536xcy
           source:
             amount: "100000"
             decimals: 6
@@ -8010,27 +8141,24 @@ components:
             amount: "100000"
             decimals: 6
             asset: BTC.BTC
-          vault_pub_key: thorpub1addwnpepqt7qug8vk9r3saw8n4r803ydj2g3dqwx0mvq5akhnze86fc536xcy
           solve_tx_id: ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890
-          create_height: 12345678
           match_height: 12345700
+          submit_height: 12345678
           solver_address: bc1qyyy
         - intent_tx_id: 1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF
           target_coin:
             amount: "100000"
             decimals: 6
             asset: BTC.BTC
-          vault_pub_key: thorpub1addwnpepqt7qug8vk9r3saw8n4r803ydj2g3dqwx0mvq5akhnze86fc536xcy
           solve_tx_id: ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890
-          create_height: 12345678
           match_height: 12345700
+          submit_height: 12345678
           solver_address: bc1qyyy
         intent:
           target_address: bc1qxxx
           min_fee_basis_points: 30
           expiry_height: 12350000
           affiliate_basis_points: 0
-          vault_pub_key: thorpub1addwnpepqt7qug8vk9r3saw8n4r803ydj2g3dqwx0mvq5akhnze86fc536xcy
           source:
             amount: "100000"
             decimals: 6
@@ -8063,27 +8191,24 @@ components:
               amount: "100000"
               decimals: 6
               asset: BTC.BTC
-            vault_pub_key: thorpub1addwnpepqt7qug8vk9r3saw8n4r803ydj2g3dqwx0mvq5akhnze86fc536xcy
             solve_tx_id: ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890
-            create_height: 12345678
             match_height: 12345700
+            submit_height: 12345678
             solver_address: bc1qyyy
           - intent_tx_id: 1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF
             target_coin:
               amount: "100000"
               decimals: 6
               asset: BTC.BTC
-            vault_pub_key: thorpub1addwnpepqt7qug8vk9r3saw8n4r803ydj2g3dqwx0mvq5akhnze86fc536xcy
             solve_tx_id: ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890
-            create_height: 12345678
             match_height: 12345700
+            submit_height: 12345678
             solver_address: bc1qyyy
           intent:
             target_address: bc1qxxx
             min_fee_basis_points: 30
             expiry_height: 12350000
             affiliate_basis_points: 0
-            vault_pub_key: thorpub1addwnpepqt7qug8vk9r3saw8n4r803ydj2g3dqwx0mvq5akhnze86fc536xcy
             source:
               amount: "100000"
               decimals: 6
@@ -8102,27 +8227,24 @@ components:
               amount: "100000"
               decimals: 6
               asset: BTC.BTC
-            vault_pub_key: thorpub1addwnpepqt7qug8vk9r3saw8n4r803ydj2g3dqwx0mvq5akhnze86fc536xcy
             solve_tx_id: ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890
-            create_height: 12345678
             match_height: 12345700
+            submit_height: 12345678
             solver_address: bc1qyyy
           - intent_tx_id: 1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF
             target_coin:
               amount: "100000"
               decimals: 6
               asset: BTC.BTC
-            vault_pub_key: thorpub1addwnpepqt7qug8vk9r3saw8n4r803ydj2g3dqwx0mvq5akhnze86fc536xcy
             solve_tx_id: ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890
-            create_height: 12345678
             match_height: 12345700
+            submit_height: 12345678
             solver_address: bc1qyyy
           intent:
             target_address: bc1qxxx
             min_fee_basis_points: 30
             expiry_height: 12350000
             affiliate_basis_points: 0
-            vault_pub_key: thorpub1addwnpepqt7qug8vk9r3saw8n4r803ydj2g3dqwx0mvq5akhnze86fc536xcy
             source:
               amount: "100000"
               decimals: 6
@@ -8156,7 +8278,8 @@ components:
           asset: BTC.BTC
         expiry_height: 12350000
         bid_asset: BTC.BTC
-        create_height: 12345678
+        start_height: 12345678
+        owner_address: thor1zupk5lmc84r2dh738a9g3zscavannjy3nzplwt
         min_bid: "10000"
         status: AuctionActive
       properties:
@@ -8176,8 +8299,8 @@ components:
           description: the minimum bid amount
           example: "10000"
           type: string
-        create_height:
-          description: the block height when the auction was created
+        start_height:
+          description: the block height when the auction started
           example: 12345678
           format: int64
           type: integer
@@ -8194,14 +8317,18 @@ components:
           - AuctionCancelled
           example: AuctionActive
           type: string
+        owner_address:
+          description: the owner address (original intent creator)
+          example: thor1zupk5lmc84r2dh738a9g3zscavannjy3nzplwt
+          type: string
       required:
       - auction_amount
       - bid_asset
-      - create_height
       - expiry_height
       - intent_tx_id
       - min_bid
       - remaining_amount
+      - start_height
       - status
       type: object
     IntentAuctionBid:
@@ -8272,7 +8399,8 @@ components:
             asset: BTC.BTC
           expiry_height: 12350000
           bid_asset: BTC.BTC
-          create_height: 12345678
+          start_height: 12345678
+          owner_address: thor1zupk5lmc84r2dh738a9g3zscavannjy3nzplwt
           min_bid: "10000"
           status: AuctionActive
       properties:
@@ -8317,7 +8445,8 @@ components:
             asset: BTC.BTC
           expiry_height: 12350000
           bid_asset: BTC.BTC
-          create_height: 12345678
+          start_height: 12345678
+          owner_address: thor1zupk5lmc84r2dh738a9g3zscavannjy3nzplwt
           min_bid: "10000"
           status: AuctionActive
       properties:
@@ -8363,7 +8492,8 @@ components:
               asset: BTC.BTC
             expiry_height: 12350000
             bid_asset: BTC.BTC
-            create_height: 12345678
+            start_height: 12345678
+            owner_address: thor1zupk5lmc84r2dh738a9g3zscavannjy3nzplwt
             min_bid: "10000"
             status: AuctionActive
         - bids:
@@ -8395,7 +8525,8 @@ components:
               asset: BTC.BTC
             expiry_height: 12350000
             bid_asset: BTC.BTC
-            create_height: 12345678
+            start_height: 12345678
+            owner_address: thor1zupk5lmc84r2dh738a9g3zscavannjy3nzplwt
             min_bid: "10000"
             status: AuctionActive
       properties:
