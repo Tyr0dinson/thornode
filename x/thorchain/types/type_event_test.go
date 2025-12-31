@@ -413,3 +413,258 @@ func (EventSuite) TestEventLimitSwapCloseEventType(c *C) {
 	c.Assert(len(events), Equals, 1)
 	c.Check(events[0].Type, Equals, LimitSwapCloseEventType)
 }
+
+func (EventSuite) TestEventIntentOpen(c *C) {
+	txID := GetRandomTxHash()
+	source := common.NewCoin(common.ETHAsset, cosmos.NewUint(1000))
+	sourceAddr := GetRandomETHAddress()
+	targetAsset := common.BTCAsset
+	targetAddr := GetRandomBTCAddress()
+	highTarget := cosmos.NewUint(500)
+	lowTarget := cosmos.NewUint(400)
+	expiryHeight := int64(12345)
+	minFeeBps := int64(30)
+
+	e := NewEventIntentOpen(txID, source, sourceAddr, targetAsset, targetAddr, highTarget, lowTarget, expiryHeight, minFeeBps)
+
+	c.Check(e.Type(), Equals, IntentOpenEventType)
+	c.Check(e.Type(), Equals, "intent_open")
+
+	c.Check(e.TxID.Equals(txID), Equals, true)
+	c.Check(e.Source.Equals(source), Equals, true)
+	c.Check(e.SourceAddress.Equals(sourceAddr), Equals, true)
+	c.Check(e.TargetAsset.Equals(targetAsset), Equals, true)
+	c.Check(e.TargetAddress.Equals(targetAddr), Equals, true)
+	c.Check(e.HighTarget.Equal(highTarget), Equals, true)
+	c.Check(e.LowTarget.Equal(lowTarget), Equals, true)
+	c.Check(e.ExpiryHeight, Equals, expiryHeight)
+	c.Check(e.MinFeeBasisPoints, Equals, minFeeBps)
+
+	events, err := e.Events()
+	c.Check(err, IsNil)
+	c.Check(events, NotNil)
+	c.Assert(len(events), Equals, 1)
+	c.Check(events[0].Type, Equals, "intent_open")
+}
+
+func (EventSuite) TestEventIntentCancel(c *C) {
+	txID := GetRandomTxHash()
+	refund := common.NewCoin(common.ETHAsset, cosmos.NewUint(900))
+	refundAddr := GetRandomETHAddress()
+
+	// Test with abandoned = true
+	e := NewEventIntentCancel(txID, refund, refundAddr, true)
+
+	c.Check(e.Type(), Equals, IntentCancelEventType)
+	c.Check(e.Type(), Equals, "intent_cancel")
+
+	c.Check(e.TxID.Equals(txID), Equals, true)
+	c.Check(e.Refund.Equals(refund), Equals, true)
+	c.Check(e.RefundAddress.Equals(refundAddr), Equals, true)
+	c.Check(e.Abandoned, Equals, true)
+
+	events, err := e.Events()
+	c.Check(err, IsNil)
+	c.Check(events, NotNil)
+	c.Assert(len(events), Equals, 1)
+	c.Check(events[0].Type, Equals, "intent_cancel")
+
+	// Test with abandoned = false
+	e2 := NewEventIntentCancel(txID, refund, refundAddr, false)
+	c.Check(e2.Abandoned, Equals, false)
+	events2, err := e2.Events()
+	c.Check(err, IsNil)
+	c.Assert(len(events2), Equals, 1)
+}
+
+func (EventSuite) TestEventIntentSolve(c *C) {
+	solveTxID := GetRandomTxHash()
+	intentTxID := GetRandomTxHash()
+	solverAddr := GetRandomRUNEAddress()
+	targetOffered := cosmos.NewUint(450)
+	matchHeight := int64(54321)
+
+	e := NewEventIntentSolve(solveTxID, intentTxID, solverAddr, targetOffered, matchHeight)
+
+	c.Check(e.Type(), Equals, IntentSolveEventType)
+	c.Check(e.Type(), Equals, "intent_solve")
+
+	c.Check(e.SolveTxID.Equals(solveTxID), Equals, true)
+	c.Check(e.IntentTxID.Equals(intentTxID), Equals, true)
+	c.Check(e.SolverAddress.Equals(solverAddr), Equals, true)
+	c.Check(e.TargetAmountOffered.Equal(targetOffered), Equals, true)
+	c.Check(e.MatchHeight, Equals, matchHeight)
+
+	events, err := e.Events()
+	c.Check(err, IsNil)
+	c.Check(events, NotNil)
+	c.Assert(len(events), Equals, 1)
+	c.Check(events[0].Type, Equals, "intent_solve")
+}
+
+func (EventSuite) TestEventIntentComplete(c *C) {
+	intentTxID := GetRandomTxHash()
+	solveTxID := GetRandomTxHash()
+	sourceSent := common.NewCoin(common.ETHAsset, cosmos.NewUint(1000))
+	targetReceived := common.NewCoin(common.BTCAsset, cosmos.NewUint(450))
+	fee := common.NewCoin(common.RuneAsset(), cosmos.NewUint(50))
+
+	e := NewEventIntentComplete(intentTxID, solveTxID, sourceSent, targetReceived, fee)
+
+	c.Check(e.Type(), Equals, IntentCompleteEventType)
+	c.Check(e.Type(), Equals, "intent_complete")
+
+	c.Check(e.IntentTxID.Equals(intentTxID), Equals, true)
+	c.Check(e.SolveTxID.Equals(solveTxID), Equals, true)
+	c.Check(e.SourceSent.Equals(sourceSent), Equals, true)
+	c.Check(e.TargetReceived.Equals(targetReceived), Equals, true)
+	c.Check(e.Fee.Equals(fee), Equals, true)
+
+	events, err := e.Events()
+	c.Check(err, IsNil)
+	c.Check(events, NotNil)
+	c.Assert(len(events), Equals, 1)
+	c.Check(events[0].Type, Equals, "intent_complete")
+}
+
+func (EventSuite) TestEventIntentExpire(c *C) {
+	txID := GetRandomTxHash()
+	refund := common.NewCoin(common.ETHAsset, cosmos.NewUint(950))
+	refundAddr := GetRandomETHAddress()
+
+	// Test with abandoned = false
+	e := NewEventIntentExpire(txID, refund, refundAddr, false)
+
+	c.Check(e.Type(), Equals, IntentExpireEventType)
+	c.Check(e.Type(), Equals, "intent_expire")
+
+	c.Check(e.TxID.Equals(txID), Equals, true)
+	c.Check(e.Refund.Equals(refund), Equals, true)
+	c.Check(e.RefundAddress.Equals(refundAddr), Equals, true)
+	c.Check(e.Abandoned, Equals, false)
+
+	events, err := e.Events()
+	c.Check(err, IsNil)
+	c.Check(events, NotNil)
+	c.Assert(len(events), Equals, 1)
+	c.Check(events[0].Type, Equals, "intent_expire")
+
+	// Test with abandoned = true
+	e2 := NewEventIntentExpire(txID, refund, refundAddr, true)
+	c.Check(e2.Abandoned, Equals, true)
+	events2, err := e2.Events()
+	c.Check(err, IsNil)
+	c.Assert(len(events2), Equals, 1)
+}
+
+func (EventSuite) TestEventIntentAuctionStart(c *C) {
+	intentTxID := GetRandomTxHash()
+	auctionAmount := common.NewCoin(common.ETHAsset, cosmos.NewUint(1000))
+	remainingAmount := common.NewCoin(common.ETHAsset, cosmos.NewUint(800))
+	bidAsset := common.RuneAsset()
+	minBid := cosmos.NewUint(100)
+	expiryHeight := int64(99999)
+
+	e := NewEventIntentAuctionStart(intentTxID, auctionAmount, remainingAmount, bidAsset, minBid, expiryHeight)
+
+	c.Check(e.Type(), Equals, IntentAuctionStartEventType)
+	c.Check(e.Type(), Equals, "intent_auction_start")
+
+	c.Check(e.IntentTxID.Equals(intentTxID), Equals, true)
+	c.Check(e.AuctionAmount.Equals(auctionAmount), Equals, true)
+	c.Check(e.RemainingAmount.Equals(remainingAmount), Equals, true)
+	c.Check(e.BidAsset.Equals(bidAsset), Equals, true)
+	c.Check(e.MinBid.Equal(minBid), Equals, true)
+	c.Check(e.ExpiryHeight, Equals, expiryHeight)
+
+	events, err := e.Events()
+	c.Check(err, IsNil)
+	c.Check(events, NotNil)
+	c.Assert(len(events), Equals, 1)
+	c.Check(events[0].Type, Equals, "intent_auction_start")
+}
+
+func (EventSuite) TestEventIntentAuctionBid(c *C) {
+	bidTxID := GetRandomTxHash()
+	intentTxID := GetRandomTxHash()
+	bidderAddr := GetRandomRUNEAddress()
+	bidAmount := cosmos.NewUint(150)
+
+	// Test with isTopUp = false
+	e := NewEventIntentAuctionBid(bidTxID, intentTxID, bidderAddr, bidAmount, false)
+
+	c.Check(e.Type(), Equals, IntentAuctionBidEventType)
+	c.Check(e.Type(), Equals, "intent_auction_bid")
+
+	c.Check(e.BidTxID.Equals(bidTxID), Equals, true)
+	c.Check(e.IntentTxID.Equals(intentTxID), Equals, true)
+	c.Check(e.BidderAddress.Equals(bidderAddr), Equals, true)
+	c.Check(e.BidAmount.Equal(bidAmount), Equals, true)
+	c.Check(e.IsTopUp, Equals, false)
+
+	events, err := e.Events()
+	c.Check(err, IsNil)
+	c.Check(events, NotNil)
+	c.Assert(len(events), Equals, 1)
+	c.Check(events[0].Type, Equals, "intent_auction_bid")
+
+	// Test with isTopUp = true
+	e2 := NewEventIntentAuctionBid(bidTxID, intentTxID, bidderAddr, bidAmount, true)
+	c.Check(e2.IsTopUp, Equals, true)
+	events2, err := e2.Events()
+	c.Check(err, IsNil)
+	c.Assert(len(events2), Equals, 1)
+}
+
+func (EventSuite) TestEventIntentAuctionComplete(c *C) {
+	intentTxID := GetRandomTxHash()
+	winnerBidTxID := GetRandomTxHash()
+	winnerAddr := GetRandomRUNEAddress()
+	winningBid := common.NewCoin(common.RuneAsset(), cosmos.NewUint(200))
+	auctionAmount := common.NewCoin(common.ETHAsset, cosmos.NewUint(1000))
+	ownerRefund := common.NewCoin(common.ETHAsset, cosmos.NewUint(50))
+
+	e := NewEventIntentAuctionComplete(intentTxID, winnerBidTxID, winnerAddr, winningBid, auctionAmount, ownerRefund)
+
+	c.Check(e.Type(), Equals, IntentAuctionCompleteEventType)
+	c.Check(e.Type(), Equals, "intent_auction_complete")
+
+	c.Check(e.IntentTxID.Equals(intentTxID), Equals, true)
+	c.Check(e.WinnerBidTxID.Equals(winnerBidTxID), Equals, true)
+	c.Check(e.WinnerAddress.Equals(winnerAddr), Equals, true)
+	c.Check(e.WinningBid.Equals(winningBid), Equals, true)
+	c.Check(e.AuctionAmount.Equals(auctionAmount), Equals, true)
+	c.Check(e.OwnerRefund.Equals(ownerRefund), Equals, true)
+
+	events, err := e.Events()
+	c.Check(err, IsNil)
+	c.Check(events, NotNil)
+	c.Assert(len(events), Equals, 1)
+	c.Check(events[0].Type, Equals, "intent_auction_complete")
+}
+
+func (EventSuite) TestEventIntentAuctionCancel(c *C) {
+	intentTxID := GetRandomTxHash()
+
+	// Test with abandoned = false
+	e := NewEventIntentAuctionCancel(intentTxID, false)
+
+	c.Check(e.Type(), Equals, IntentAuctionCancelEventType)
+	c.Check(e.Type(), Equals, "intent_auction_cancel")
+
+	c.Check(e.IntentTxID.Equals(intentTxID), Equals, true)
+	c.Check(e.Abandoned, Equals, false)
+
+	events, err := e.Events()
+	c.Check(err, IsNil)
+	c.Check(events, NotNil)
+	c.Assert(len(events), Equals, 1)
+	c.Check(events[0].Type, Equals, "intent_auction_cancel")
+
+	// Test with abandoned = true
+	e2 := NewEventIntentAuctionCancel(intentTxID, true)
+	c.Check(e2.Abandoned, Equals, true)
+	events2, err := e2.Events()
+	c.Check(err, IsNil)
+	c.Assert(len(events2), Equals, 1)
+}
