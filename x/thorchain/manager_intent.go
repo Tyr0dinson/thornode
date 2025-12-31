@@ -498,8 +498,8 @@ func (im *IntentMgr) processAffiliateFee(ctx cosmos.Context, intent Intent, solv
 
 	switch {
 	case affiliateFee.Asset.IsRune():
-		// Send RUNE directly to affiliate from Reserve (where intent RUNE is held)
-		if err := im.mgr.Keeper().SendFromModuleToAccount(ctx, ReserveName, affiliateAccAddr, common.NewCoins(affiliateFee)); err != nil {
+		// Send RUNE directly to affiliate from Asgard (where intent RUNE is held)
+		if err := im.mgr.Keeper().SendFromModuleToAccount(ctx, AsgardName, affiliateAccAddr, common.NewCoins(affiliateFee)); err != nil {
 			return fmt.Errorf("fail to send RUNE to affiliate: %w", err)
 		}
 		ctx.Logger().Info("sent intent affiliate fee",
@@ -699,7 +699,7 @@ func (im *IntentMgr) refundExpiredIntent(ctx cosmos.Context, intent Intent) erro
 	// Determine module name for RUNE
 	moduleName := ""
 	if sourceAsset.IsRune() {
-		moduleName = ReserveName
+		moduleName = AsgardName
 	}
 
 	// Create refund txout
@@ -854,10 +854,10 @@ func (im *IntentMgr) completeAuction(ctx cosmos.Context, auction IntentAuction) 
 			continue // Skip winner
 		}
 
-		// Determine module name for RUNE bids (bid RUNE is escrowed in Reserve)
+		// Determine module name for RUNE bids (bid RUNE is escrowed in Asgard)
 		bidModuleName := ""
 		if bids[i].BidAmount.Asset.IsRune() {
-			bidModuleName = ReserveName
+			bidModuleName = AsgardName
 		}
 
 		// Refund the losing bid
@@ -887,10 +887,10 @@ func (im *IntentMgr) completeAuction(ctx cosmos.Context, auction IntentAuction) 
 		)
 	}
 
-	// Determine module name for RUNE outbounds (RUNE is escrowed in Reserve)
+	// Determine module name for RUNE outbounds (RUNE is escrowed in Asgard)
 	moduleName := ""
 	if auction.AuctionAmount.Asset.IsRune() {
-		moduleName = ReserveName
+		moduleName = AsgardName
 	}
 
 	// Send auction amount to winner
@@ -1047,11 +1047,11 @@ func (im *IntentMgr) cancelAuction(ctx cosmos.Context, auction IntentAuction, in
 
 	if isNativeAsset {
 		// Refund native assets to the owner via txout
-		// For RUNE, use Reserve module (where intent RUNE is escrowed)
+		// For RUNE, use Asgard module (where intent RUNE is escrowed)
 		// For secured/trade assets, default to Asgard (they don't actually use module)
 		moduleName := ""
 		if sourceAsset.IsRune() {
-			moduleName = ReserveName
+			moduleName = AsgardName
 		}
 
 		toi := TxOutItem{

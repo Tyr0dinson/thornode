@@ -99,11 +99,11 @@ func (h IntentCancelHandler) handle(ctx cosmos.Context, msg MsgIntentCancel) err
 			}
 		}
 
-		// For RUNE, use Reserve module (where intent RUNE is escrowed)
+		// For RUNE, use Asgard module (where intent RUNE is escrowed)
 		// For other assets, default to Asgard
 		moduleName := ""
 		if intent.Source.Asset.IsRune() {
-			moduleName = ReserveName
+			moduleName = AsgardName
 		}
 
 		// Schedule the txout for refund
