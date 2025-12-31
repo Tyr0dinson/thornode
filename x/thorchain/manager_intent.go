@@ -212,6 +212,13 @@ func (im *IntentMgr) processMatches(ctx cosmos.Context) error {
 			continue
 		}
 
+		// Skip if intent has expired - let processExpirations handle it
+		// This prevents double-refunding of solves when execution fails and expiry happens on the same block
+		if currentHeight >= intent.ExpiryHeight {
+			ctx.Logger().Info("intent has expired, skipping execution", "txid", intentTxID, "expiry_height", intent.ExpiryHeight)
+			continue
+		}
+
 		// Select best solve deterministically (must exceed by 1x gas to be "better", then earliest submit, then lowest txid)
 		winningSolve := im.selectBestSolve(ctx, intent, intentSolves)
 

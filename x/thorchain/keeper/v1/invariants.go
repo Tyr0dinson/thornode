@@ -136,12 +136,17 @@ func AsgardInvariant(k KVStore) common.Invariant {
 		processIntents := func(ctx cosmos.Context, k KVStore) common.Coins {
 			var intentCoins common.Coins
 
-			// Sum native coins from all intents
+			// Sum native coins from all active intents
 			intentIter := k.GetIntentIterator(ctx)
 			defer intentIter.Close()
 			for ; intentIter.Valid(); intentIter.Next() {
 				var intent Intent
 				k.Cdc().MustUnmarshal(intentIter.Value(), &intent)
+
+				// Only count active intents - expired/completed intents have been refunded
+				if intent.Status != IntentStatus_IntentActive {
+					continue
+				}
 
 				// Only count native coins (RUNE, TCY, whitelisted)
 				// Skip secured/trade assets - they're bank coins, not held in Asgard
