@@ -136,7 +136,6 @@ func (k KVStore) GetIntentIterator(ctx cosmos.Context) cosmos.Iterator {
 }
 
 // GetActiveIntents retrieves all active intents from the active status index
-// and verifies each intent is actually active before returning
 func (k KVStore) GetActiveIntents(ctx cosmos.Context) ([]types.Intent, error) {
 	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 	activeIndexKey := k.GetKey(prefixIntentStatusIndex, "")
@@ -153,8 +152,40 @@ func (k KVStore) GetActiveIntents(ctx cosmos.Context) ([]types.Intent, error) {
 		return nil, fmt.Errorf("failed to unmarshal active intent index: %w", err)
 	}
 
+	// Fetch all intents from the index
+	intents := make([]types.Intent, 0, len(activeIndex.ActiveIntentTxIDs))
+	for _, txID := range activeIndex.ActiveIntentTxIDs {
+		intent, err := k.GetIntent(ctx, txID)
+		if err != nil {
+			ctx.Logger().Error("failed to get intent from active index", "txid", txID, "error", err)
+			continue
+		}
+		intents = append(intents, intent)
+	}
+
+	return intents, nil
+}
+
+// CleanupStaleActiveIntents removes stale entries from the active intent index.
+// This should be called from EndBlock to ensure deterministic cleanup.
+func (k KVStore) CleanupStaleActiveIntents(ctx cosmos.Context) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	activeIndexKey := k.GetKey(prefixIntentStatusIndex, "")
+
+	// If the index doesn't exist, nothing to clean up
+	if !store.Has(activeIndexKey) {
+		return
+	}
+
+	// Load and unmarshal the active intent index
+	var activeIndex types.ActiveIntentIndex
+	bz := store.Get(activeIndexKey)
+	if err := k.cdc.Unmarshal(bz, &activeIndex); err != nil {
+		ctx.Logger().Error("failed to unmarshal active intent index for cleanup", "error", err)
+		return
+	}
+
 	// Verify each intent is actually active and filter out stale entries
-	verifiedActiveIntents := make([]types.Intent, 0, len(activeIndex.ActiveIntentTxIDs))
 	verifiedActiveTxIDs := make([]common.TxID, 0, len(activeIndex.ActiveIntentTxIDs))
 	staleEntries := false
 
@@ -166,26 +197,22 @@ func (k KVStore) GetActiveIntents(ctx cosmos.Context) ([]types.Intent, error) {
 			continue
 		}
 
-		// Only include intents that are truly active
+		// Only keep intents that are truly active
 		if intent.Status == types.IntentStatus_IntentActive {
-			verifiedActiveIntents = append(verifiedActiveIntents, intent)
 			verifiedActiveTxIDs = append(verifiedActiveTxIDs, txID)
 		} else {
-			// Intent status changed but index wasn't updated - mark as stale
-			ctx.Logger().Warn("stale entry in active intent index", "txid", txID, "status", intent.Status.String())
+			ctx.Logger().Warn("removing stale entry from active intent index", "txid", txID, "status", intent.Status.String())
 			staleEntries = true
 		}
 	}
 
-	// Clean up stale entries from the index if any were found
+	// Update the index if any stale entries were found
 	if staleEntries {
-		ctx.Logger().Info("cleaning up stale entries from active intent index", "original_count", len(activeIndex.ActiveIntentTxIDs), "verified_count", len(verifiedActiveTxIDs))
+		ctx.Logger().Info("cleaned up stale entries from active intent index", "original_count", len(activeIndex.ActiveIntentTxIDs), "verified_count", len(verifiedActiveTxIDs))
 		activeIndex.ActiveIntentTxIDs = verifiedActiveTxIDs
 		buf := k.cdc.MustMarshal(&activeIndex)
 		store.Set(activeIndexKey, buf)
 	}
-
-	return verifiedActiveIntents, nil
 }
 
 // -------------------- IntentSolve Methods --------------------
@@ -266,7 +293,12 @@ func (k KVStore) IntentSolveExists(ctx cosmos.Context, solveTxID common.TxID) bo
 
 // RemoveIntentSolve removes an intent solve bid and its indices
 func (k KVStore) RemoveIntentSolve(ctx cosmos.Context, solveTxID common.TxID) {
-	// Get the solve record first to access its indices
+	// Check if the solve record exists before proceeding
+	if !k.IntentSolveExists(ctx, solveTxID) {
+		return
+	}
+
+	// Get the solve record to access its indices
 	solve, err := k.GetIntentSolve(ctx, solveTxID)
 	if err != nil {
 		return

@@ -144,8 +144,40 @@ func (k KVStore) GetActiveAuctions(ctx cosmos.Context) ([]types.IntentAuction, e
 		return nil, fmt.Errorf("failed to unmarshal active auction index: %w", err)
 	}
 
+	// Fetch all auctions from the index
+	auctions := make([]types.IntentAuction, 0, len(activeIndex.ActiveAuctionTxIDs))
+	for _, txID := range activeIndex.ActiveAuctionTxIDs {
+		auction, err := k.GetIntentAuction(ctx, txID)
+		if err != nil {
+			ctx.Logger().Error("failed to get auction from active index", "txid", txID, "error", err)
+			continue
+		}
+		auctions = append(auctions, auction)
+	}
+
+	return auctions, nil
+}
+
+// CleanupStaleActiveAuctions removes stale entries from the active auction index.
+// This should be called from EndBlock to ensure deterministic cleanup.
+func (k KVStore) CleanupStaleActiveAuctions(ctx cosmos.Context) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	activeIndexKey := k.GetKey(prefixActiveAuctionIndex, "")
+
+	// If the index doesn't exist, nothing to clean up
+	if !store.Has(activeIndexKey) {
+		return
+	}
+
+	// Load and unmarshal the active auction index
+	var activeIndex types.ActiveAuctionIndex
+	bz := store.Get(activeIndexKey)
+	if err := k.cdc.Unmarshal(bz, &activeIndex); err != nil {
+		ctx.Logger().Error("failed to unmarshal active auction index for cleanup", "error", err)
+		return
+	}
+
 	// Verify each auction is actually active and filter out stale entries
-	verifiedActiveAuctions := make([]types.IntentAuction, 0, len(activeIndex.ActiveAuctionTxIDs))
 	verifiedActiveTxIDs := make([]common.TxID, 0, len(activeIndex.ActiveAuctionTxIDs))
 	staleEntries := false
 
@@ -157,26 +189,22 @@ func (k KVStore) GetActiveAuctions(ctx cosmos.Context) ([]types.IntentAuction, e
 			continue
 		}
 
-		// Only include auctions that are truly active
+		// Only keep auctions that are truly active
 		if auction.Status == types.IntentAuctionStatus_AuctionActive {
-			verifiedActiveAuctions = append(verifiedActiveAuctions, auction)
 			verifiedActiveTxIDs = append(verifiedActiveTxIDs, txID)
 		} else {
-			// Auction status changed but index wasn't updated - mark as stale
-			ctx.Logger().Warn("stale entry in active auction index", "txid", txID, "status", auction.Status.String())
+			ctx.Logger().Warn("removing stale entry from active auction index", "txid", txID, "status", auction.Status.String())
 			staleEntries = true
 		}
 	}
 
-	// Clean up stale entries from the index if any were found
+	// Update the index if any stale entries were found
 	if staleEntries {
-		ctx.Logger().Info("cleaning up stale entries from active auction index", "original_count", len(activeIndex.ActiveAuctionTxIDs), "verified_count", len(verifiedActiveTxIDs))
+		ctx.Logger().Info("cleaned up stale entries from active auction index", "original_count", len(activeIndex.ActiveAuctionTxIDs), "verified_count", len(verifiedActiveTxIDs))
 		activeIndex.ActiveAuctionTxIDs = verifiedActiveTxIDs
 		buf := k.cdc.MustMarshal(&activeIndex)
 		store.Set(activeIndexKey, buf)
 	}
-
-	return verifiedActiveAuctions, nil
 }
 
 // -------------------- IntentAuctionBid Methods --------------------
