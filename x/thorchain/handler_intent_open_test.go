@@ -3,7 +3,6 @@ package thorchain
 import (
 	"errors"
 
-	se "github.com/cosmos/cosmos-sdk/types/errors"
 	. "gopkg.in/check.v1"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -188,9 +187,9 @@ func (HandlerIntentOpenSuite) TestIntentOpen_ValidationErrors(c *C) {
 	tx.Coins = common.Coins{common.NewCoin(common.DOGEAsset, cosmos.NewUint(100*common.One))}
 
 	testCases := []struct {
-		name        string
-		setupMsg    func() *MsgIntentOpen
-		expectedErr error
+		name           string
+		setupMsg       func() *MsgIntentOpen
+		expectedErrMsg string
 	}{
 		{
 			name: "feature disabled should fail",
@@ -207,7 +206,7 @@ func (HandlerIntentOpenSuite) TestIntentOpen_ValidationErrors(c *C) {
 					w.activeNodeAccount.NodeAddress,
 				)
 			},
-			expectedErr: se.ErrUnauthorized,
+			expectedErrMsg: ".*intents feature is disabled.*",
 		},
 		{
 			name: "high target < low target should fail",
@@ -224,7 +223,7 @@ func (HandlerIntentOpenSuite) TestIntentOpen_ValidationErrors(c *C) {
 					w.activeNodeAccount.NodeAddress,
 				)
 			},
-			expectedErr: se.ErrInvalidRequest,
+			expectedErrMsg: ".*high target must be greater than or equal to low target.*",
 		},
 		{
 			name: "multiple coins should fail",
@@ -245,7 +244,7 @@ func (HandlerIntentOpenSuite) TestIntentOpen_ValidationErrors(c *C) {
 					w.activeNodeAccount.NodeAddress,
 				)
 			},
-			expectedErr: se.ErrInvalidRequest,
+			expectedErrMsg: ".*intent can only be created with one coin type.*",
 		},
 		{
 			name: "zero high target should fail",
@@ -261,7 +260,7 @@ func (HandlerIntentOpenSuite) TestIntentOpen_ValidationErrors(c *C) {
 					w.activeNodeAccount.NodeAddress,
 				)
 			},
-			expectedErr: se.ErrInvalidRequest,
+			expectedErrMsg: ".*high target cannot be zero.*",
 		},
 		{
 			name: "zero low target should fail",
@@ -277,7 +276,7 @@ func (HandlerIntentOpenSuite) TestIntentOpen_ValidationErrors(c *C) {
 					w.activeNodeAccount.NodeAddress,
 				)
 			},
-			expectedErr: se.ErrInvalidRequest,
+			expectedErrMsg: ".*low target cannot be zero.*",
 		},
 		{
 			name: "empty target address should fail",
@@ -293,7 +292,7 @@ func (HandlerIntentOpenSuite) TestIntentOpen_ValidationErrors(c *C) {
 					w.activeNodeAccount.NodeAddress,
 				)
 			},
-			expectedErr: se.ErrInvalidRequest,
+			expectedErrMsg: ".*target address cannot be empty.*",
 		},
 	}
 
@@ -301,7 +300,8 @@ func (HandlerIntentOpenSuite) TestIntentOpen_ValidationErrors(c *C) {
 	for _, tc := range testCases {
 		msg := tc.setupMsg()
 		_, err := handler.Run(w.ctx, msg)
-		c.Check(errors.Is(err, tc.expectedErr), Equals, true, Commentf("name:%s, got err: %v", tc.name, err))
+		c.Assert(err, NotNil, Commentf("name:%s should have failed", tc.name))
+		c.Check(err.Error(), Matches, tc.expectedErrMsg, Commentf("name:%s, got err: %v", tc.name, err))
 	}
 }
 
@@ -380,4 +380,218 @@ func (HandlerIntentOpenSuite) TestIntentOpen_InvalidMessage(c *C) {
 	c.Check(err, NotNil)
 	c.Check(errors.Is(err, errInvalidMessage), Equals, true)
 	c.Check(result, IsNil)
+}
+
+// FailingTradeAccountManager returns errors for testing
+type FailingTradeAccountManager struct {
+	DummyTradeAccountManager
+}
+
+func (f FailingTradeAccountManager) Withdrawal(ctx cosmos.Context, asset common.Asset, amount cosmos.Uint, owner cosmos.AccAddress, assetAddr common.Address, txID common.TxID) (cosmos.Uint, error) {
+	return cosmos.ZeroUint(), errors.New("fail to withdraw trade asset")
+}
+
+// FailingSecuredAssetManager returns errors for testing
+type FailingSecuredAssetManager struct {
+	DummySecuredAssetManager
+}
+
+func (f FailingSecuredAssetManager) Withdraw(_ cosmos.Context, _ common.Asset, amount cosmos.Uint, owner cosmos.AccAddress, assetAddr common.Address, _ common.TxID) (common.Coin, error) {
+	return common.NoCoin, errors.New("fail to withdraw secured asset")
+}
+
+func (HandlerIntentOpenSuite) TestIntentOpen_SecuredAssetEscrow(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
+
+	// Enable intents feature
+	w.keeper.SetMimir(w.ctx, constants.IntentsEnabled.String(), 1)
+	w.keeper.SetMimir(w.ctx, constants.IntentTTLBlocks.String(), 1000)
+
+	// Create a BTC pool
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.Status = PoolAvailable
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(10 * common.One)
+	c.Assert(w.keeper.SetPool(w.ctx, pool), IsNil)
+
+	mgr := NewDummyMgrWithKeeper(w.keeper)
+	handler := NewIntentOpenHandler(mgr)
+
+	// Create an intent with secured asset as source
+	securedAsset := common.BTCAsset.GetSecuredAsset()
+	tx := GetRandomTx()
+	tx.Coins = common.Coins{common.NewCoin(securedAsset, cosmos.NewUint(100*common.One))}
+	msg := NewMsgIntentOpen(
+		tx,
+		common.RuneAsset(),
+		GetRandomTHORAddress(),
+		cosmos.NewUint(1000*common.One),
+		cosmos.NewUint(900*common.One),
+		common.NoAddress,
+		cosmos.ZeroUint(),
+		w.activeNodeAccount.NodeAddress,
+	)
+
+	_, err := handler.Run(w.ctx, msg)
+	c.Assert(err, IsNil)
+
+	// Verify intent was created with secured asset
+	intent, err := w.keeper.GetIntent(w.ctx, tx.ID)
+	c.Assert(err, IsNil)
+	c.Check(intent.Source.Asset.IsSecuredAsset(), Equals, true)
+	c.Check(intent.Status, Equals, IntentActive)
+}
+
+func (HandlerIntentOpenSuite) TestIntentOpen_SecuredAssetEscrowError(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
+
+	// Enable intents feature
+	w.keeper.SetMimir(w.ctx, constants.IntentsEnabled.String(), 1)
+
+	// Create a BTC pool
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.Status = PoolAvailable
+	c.Assert(w.keeper.SetPool(w.ctx, pool), IsNil)
+
+	mgr := NewDummyMgrWithKeeper(w.keeper)
+	// Use the failing secured asset manager
+	mgr.securedMgr = FailingSecuredAssetManager{}
+	handler := NewIntentOpenHandler(mgr)
+
+	// Create an intent with secured asset as source
+	securedAsset := common.BTCAsset.GetSecuredAsset()
+	tx := GetRandomTx()
+	tx.Coins = common.Coins{common.NewCoin(securedAsset, cosmos.NewUint(100*common.One))}
+	msg := NewMsgIntentOpen(
+		tx,
+		common.RuneAsset(),
+		GetRandomTHORAddress(),
+		cosmos.NewUint(1000*common.One),
+		cosmos.NewUint(900*common.One),
+		common.NoAddress,
+		cosmos.ZeroUint(),
+		w.activeNodeAccount.NodeAddress,
+	)
+
+	_, err := handler.Run(w.ctx, msg)
+	c.Assert(err, NotNil)
+	c.Check(err.Error(), Matches, ".*fail to escrow secured asset.*")
+
+	// Verify intent was NOT created
+	c.Check(w.keeper.IntentExists(w.ctx, tx.ID), Equals, false)
+}
+
+func (HandlerIntentOpenSuite) TestIntentOpen_TradeAssetEscrow(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
+
+	// Enable intents feature
+	w.keeper.SetMimir(w.ctx, constants.IntentsEnabled.String(), 1)
+	w.keeper.SetMimir(w.ctx, constants.IntentTTLBlocks.String(), 1000)
+
+	// Create a BTC pool
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.Status = PoolAvailable
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(10 * common.One)
+	c.Assert(w.keeper.SetPool(w.ctx, pool), IsNil)
+
+	mgr := NewDummyMgrWithKeeper(w.keeper)
+	handler := NewIntentOpenHandler(mgr)
+
+	// Create an intent with trade asset as source
+	tradeAsset := common.BTCAsset.GetTradeAsset()
+	tx := GetRandomTx()
+	tx.Coins = common.Coins{common.NewCoin(tradeAsset, cosmos.NewUint(100*common.One))}
+	msg := NewMsgIntentOpen(
+		tx,
+		common.RuneAsset(),
+		GetRandomTHORAddress(),
+		cosmos.NewUint(1000*common.One),
+		cosmos.NewUint(900*common.One),
+		common.NoAddress,
+		cosmos.ZeroUint(),
+		w.activeNodeAccount.NodeAddress,
+	)
+
+	_, err := handler.Run(w.ctx, msg)
+	c.Assert(err, IsNil)
+
+	// Verify intent was created with trade asset
+	intent, err := w.keeper.GetIntent(w.ctx, tx.ID)
+	c.Assert(err, IsNil)
+	c.Check(intent.Source.Asset.IsTradeAsset(), Equals, true)
+	c.Check(intent.Status, Equals, IntentActive)
+}
+
+func (HandlerIntentOpenSuite) TestIntentOpen_TradeAssetEscrowError(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
+
+	// Enable intents feature
+	w.keeper.SetMimir(w.ctx, constants.IntentsEnabled.String(), 1)
+
+	// Create a BTC pool
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.Status = PoolAvailable
+	c.Assert(w.keeper.SetPool(w.ctx, pool), IsNil)
+
+	mgr := NewDummyMgrWithKeeper(w.keeper)
+	// Use the failing trade account manager
+	mgr.tradeMgr = FailingTradeAccountManager{}
+	handler := NewIntentOpenHandler(mgr)
+
+	// Create an intent with trade asset as source
+	tradeAsset := common.BTCAsset.GetTradeAsset()
+	tx := GetRandomTx()
+	tx.Coins = common.Coins{common.NewCoin(tradeAsset, cosmos.NewUint(100*common.One))}
+	msg := NewMsgIntentOpen(
+		tx,
+		common.RuneAsset(),
+		GetRandomTHORAddress(),
+		cosmos.NewUint(1000*common.One),
+		cosmos.NewUint(900*common.One),
+		common.NoAddress,
+		cosmos.ZeroUint(),
+		w.activeNodeAccount.NodeAddress,
+	)
+
+	_, err := handler.Run(w.ctx, msg)
+	c.Assert(err, NotNil)
+	c.Check(err.Error(), Matches, ".*fail to escrow trade asset.*")
+
+	// Verify intent was NOT created
+	c.Check(w.keeper.IntentExists(w.ctx, tx.ID), Equals, false)
+}
+
+func (HandlerIntentOpenSuite) TestIntentOpen_EmptyCoins(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
+
+	// Enable intents feature
+	w.keeper.SetMimir(w.ctx, constants.IntentsEnabled.String(), 1)
+
+	mgr := NewDummyMgrWithKeeper(w.keeper)
+	handler := NewIntentOpenHandler(mgr)
+
+	// Create a tx with empty coins
+	tx := GetRandomTx()
+	tx.Coins = common.Coins{} // empty
+
+	msg := NewMsgIntentOpen(
+		tx,
+		common.BTCAsset,
+		GetRandomBTCAddress(),
+		cosmos.NewUint(15*common.One),
+		cosmos.NewUint(10*common.One),
+		common.NoAddress,
+		cosmos.ZeroUint(),
+		w.activeNodeAccount.NodeAddress,
+	)
+
+	_, err := handler.Run(w.ctx, msg)
+	c.Assert(err, NotNil)
+	// Error comes from ValidateBasic: "must have at least 1 coin"
+	c.Check(err.Error(), Matches, ".*must have at least 1 coin.*")
 }

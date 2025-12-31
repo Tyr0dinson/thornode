@@ -57,14 +57,6 @@ func (h IntentOpenHandler) validate(ctx cosmos.Context, msg MsgIntentOpen) error
 		return se.ErrInvalidRequest.Wrap("high target must be greater than or equal to low target")
 	}
 
-	// Validate source coin
-	if len(msg.Tx.Coins) == 0 {
-		return se.ErrInvalidRequest.Wrap("no coins in transaction")
-	}
-	if len(msg.Tx.Coins) > 1 {
-		return se.ErrInvalidRequest.Wrap("intent can only be created with one coin type")
-	}
-
 	sourceAsset := msg.Tx.Coins[0].Asset
 	targetAsset := msg.TargetAsset
 
@@ -148,7 +140,7 @@ func (h IntentOpenHandler) handle(ctx cosmos.Context, msg MsgIntentOpen) error {
 		intent.MinFeeBasisPoints,
 	)
 	if err := h.mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
-		ctx.Logger().Error("fail to emit intent open event", "error", err)
+		return fmt.Errorf("fail to emit intent open event: %w", err)
 	}
 
 	return nil
