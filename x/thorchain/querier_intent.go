@@ -9,6 +9,11 @@ import (
 )
 
 func (qs queryServer) queryIntent(ctx cosmos.Context, req *types.QueryIntentRequest) (*types.QueryIntentResponse, error) {
+	// Validate required parameter
+	if req.TxId == "" {
+		return nil, fmt.Errorf("tx_id is required")
+	}
+
 	// Convert string to TxID
 	txID := common.TxID(req.TxId)
 
@@ -60,6 +65,11 @@ func (qs queryServer) queryActiveIntents(ctx cosmos.Context, _ *types.QueryActiv
 }
 
 func (qs queryServer) queryIntentAuction(ctx cosmos.Context, req *types.QueryIntentAuctionRequest) (*types.QueryIntentAuctionResponse, error) {
+	// Validate required parameter
+	if req.TxId == "" {
+		return nil, fmt.Errorf("tx_id is required")
+	}
+
 	// Convert string to TxID
 	txID := common.TxID(req.TxId)
 
