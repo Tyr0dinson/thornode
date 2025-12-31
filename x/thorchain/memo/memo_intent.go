@@ -6,6 +6,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
 )
 
 // IntentOpenMemo represents a memo for opening an intent
@@ -85,7 +86,7 @@ func (p *parser) ParseIntentOpenMemo() (IntentOpenMemo, error) {
 
 	// Affiliate is optional
 	affAddr := p.getAddressWithKeeper(5, false, common.NoAddress, common.THORChain)
-	affBps := p.getUint(6, false, 0)
+	affBps := p.getUintWithMaxValue(6, false, 0, constants.MaxBasisPts)
 
 	return NewIntentOpenMemo(targetAsset, targetAddr, highTarget, lowTarget, affAddr, affBps), p.Error()
 }
