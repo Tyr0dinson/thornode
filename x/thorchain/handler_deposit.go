@@ -175,15 +175,8 @@ func (h DepositHandler) handle(ctx cosmos.Context, msg MsgDeposit, idx uint16) (
 	case TxTCYStake, TxTCYUnstake:
 		targetModule = TCYStakeName
 	case TxIntentOpen, TxIntentAuctionBid:
-		// Send intent RUNE to Reserve module to avoid Asgard invariant issues
-		// (Asgard invariant expects balance = pools + pending_swaps)
-		// For non-RUNE assets (secured/trade assets), they stay in Asgard
-		// (but secured/trade assets are actually bank coins, not held in Asgard)
-		if !msg.Coins.IsEmpty() && msg.Coins[0].Asset.IsRune() {
-			targetModule = ReserveName
-		} else {
-			targetModule = AsgardName
-		}
+		// Intent funds go to Asgard and are tracked in the Asgard invariant
+		targetModule = AsgardName
 	default:
 		targetModule = AsgardName
 	}

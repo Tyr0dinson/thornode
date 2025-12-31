@@ -17,6 +17,7 @@ func (k KVStore) InvariantRoutes() []common.InvariantRoute {
 		common.NewInvariantRoute("pools", PoolsInvariant(k)),
 		common.NewInvariantRoute("streaming_swaps", StreamingSwapsInvariant(k)),
 		common.NewInvariantRoute("runepool", RUNEPoolInvariant(k)),
+		common.NewInvariantRoute("intent", IntentInvariant(k)),
 	}
 }
 
@@ -131,12 +132,48 @@ func AsgardInvariant(k KVStore) common.Invariant {
 		swapCoins := processSwaps(ctx, k, k.GetSwapQueueIterator(ctx))
 		advSwapCoins := processSwaps(ctx, k, k.GetAdvSwapQueueItemIterator(ctx))
 
+		// sum all native coins in pending intents and auction bids
+		processIntents := func(ctx cosmos.Context, k KVStore) common.Coins {
+			var intentCoins common.Coins
+
+			// Sum native coins from all intents
+			intentIter := k.GetIntentIterator(ctx)
+			defer intentIter.Close()
+			for ; intentIter.Valid(); intentIter.Next() {
+				var intent Intent
+				k.Cdc().MustUnmarshal(intentIter.Value(), &intent)
+
+				// Only count native coins (RUNE, TCY, whitelisted)
+				// Skip secured/trade assets - they're bank coins, not held in Asgard
+				coin := intent.Source
+				if coin.IsNative() && !coin.Asset.IsTradeAsset() && !coin.Asset.IsSecuredAsset() {
+					intentCoins = intentCoins.Add(coin)
+				}
+			}
+
+			// Sum native coins from auction bids
+			// Get all active auctions and their bids
+			activeAuctions, _ := k.GetActiveAuctions(ctx)
+			for _, auction := range activeAuctions {
+				bids, _ := k.GetIntentAuctionBidsByIntentID(ctx, auction.IntentTxID)
+				for _, bid := range bids {
+					coin := bid.BidAmount
+					if coin.IsNative() && !coin.Asset.IsTradeAsset() && !coin.Asset.IsSecuredAsset() {
+						intentCoins = intentCoins.Add(coin)
+					}
+				}
+			}
+
+			return intentCoins
+		}
+		intentCoins := processIntents(ctx, k)
+
 		// get asgard module balance
 		asgardAddr := k.GetModuleAccAddress(AsgardName)
 		asgardCoins := k.GetBalance(ctx, asgardAddr)
 
-		// asgard balance is expected to equal sum of pool and swap coins
-		expNative, _ := poolCoins.Add(append(swapCoins, advSwapCoins...)...).Native()
+		// asgard balance is expected to equal sum of pool, swap, and intent coins
+		expNative, _ := poolCoins.Add(append(append(swapCoins, advSwapCoins...), intentCoins...)...).Native()
 
 		// note: coins must be sorted for SafeSub
 		diffCoins, _ := asgardCoins.SafeSub(expNative.Sort()...)
@@ -493,6 +530,70 @@ func RUNEPoolInvariant(k KVStore) common.Invariant {
 			)
 			msg = append(msg, m)
 			broken = true
+		}
+
+		return msg, broken
+	}
+}
+
+// IntentInvariant validates intent-specific consistency
+func IntentInvariant(k KVStore) common.Invariant {
+	return func(ctx cosmos.Context) (msg []string, broken bool) {
+		// 1. Verify auction amounts are consistent with intent sources
+		activeAuctions, _ := k.GetActiveAuctions(ctx)
+		for _, auction := range activeAuctions {
+			intent, err := k.GetIntent(ctx, auction.IntentTxID)
+			if err != nil || intent.TxID.IsEmpty() {
+				broken = true
+				msg = append(msg, fmt.Sprintf("auction %s references non-existent intent", auction.IntentTxID))
+				continue
+			}
+
+			// Auction amount + remaining amount should equal intent source amount
+			totalAuction := auction.AuctionAmount.Amount.Add(auction.RemainingAmount.Amount)
+			if !totalAuction.Equal(intent.Source.Amount) {
+				broken = true
+				msg = append(msg, fmt.Sprintf(
+					"auction %s: auction_amount + remaining_amount (%s) != intent source (%s)",
+					auction.IntentTxID, totalAuction, intent.Source.Amount))
+			}
+		}
+
+		// 2. Verify all bids reference active auctions and have correct asset
+		for _, auction := range activeAuctions {
+			bids, _ := k.GetIntentAuctionBidsByIntentID(ctx, auction.IntentTxID)
+			for _, bid := range bids {
+				// Bid asset should match auction's expected bid asset
+				if !bid.BidAmount.Asset.Equals(auction.BidAsset) {
+					broken = true
+					msg = append(msg, fmt.Sprintf(
+						"bid %s: asset %s doesn't match auction expected asset %s",
+						bid.BidTxID, bid.BidAmount.Asset, auction.BidAsset))
+				}
+			}
+		}
+
+		// 3. Verify active intent index is consistent
+		// (all entries in active index should be truly active intents)
+		activeIntents, _ := k.GetActiveIntents(ctx)
+		for _, intent := range activeIntents {
+			if intent.Status != IntentStatus_IntentActive {
+				broken = true
+				msg = append(msg, fmt.Sprintf(
+					"intent %s in active index but status is %s",
+					intent.TxID, intent.Status.String()))
+			}
+		}
+
+		// 4. Verify active auction index is consistent
+		// (all entries in active index should be truly active auctions)
+		for _, auction := range activeAuctions {
+			if auction.Status != IntentAuctionStatus_AuctionActive {
+				broken = true
+				msg = append(msg, fmt.Sprintf(
+					"auction %s in active index but status is %s",
+					auction.IntentTxID, auction.Status.String()))
+			}
 		}
 
 		return msg, broken

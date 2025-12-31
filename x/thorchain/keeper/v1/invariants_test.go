@@ -258,3 +258,201 @@ func (s *InvariantsSuite) TestStreamingSwapsInvariant(c *C) {
 	c.Assert(len(msg), Equals, 1)
 	c.Assert(msg[0], Equals, fmt.Sprintf("%s: state.success_count 3 > state.quantity 2", limitTx.ID))
 }
+
+func (s *InvariantsSuite) TestAsgardInvariantWithIntents(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	// empty the starting balance of asgard
+	runeBal := k.GetRuneBalanceOfModule(ctx, AsgardName)
+	coins := common.NewCoins(common.NewCoin(common.RuneAsset(), runeBal))
+	c.Assert(k.SendFromModuleToModule(ctx, AsgardName, ReserveName, coins), IsNil)
+
+	// Create an intent with RUNE source
+	intentTxID := GetRandomTxHash()
+	intent := Intent{
+		TxID:          intentTxID,
+		Source:        common.NewCoin(common.RuneAsset(), cosmos.NewUint(5000)),
+		SourceAddress: GetRandomTHORAddress(),
+		TargetAsset:   common.BTCAsset,
+		TargetAddress: GetRandomBTCAddress(),
+		HighTarget:    cosmos.NewUint(1000000),
+		LowTarget:     cosmos.NewUint(900000),
+		CreateHeight:  ctx.BlockHeight(),
+		ExpiryHeight:  ctx.BlockHeight() + 100,
+		Status:        IntentStatus_IntentActive,
+	}
+	k.SetIntent(ctx, intent)
+
+	invariant := AsgardInvariant(k)
+
+	// Should be insolvent - intent has 5000 RUNE but Asgard is empty
+	msg, broken := invariant(ctx)
+	c.Assert(broken, Equals, true)
+	c.Assert(len(msg), Equals, 1)
+	c.Assert(msg[0], Equals, "insolvent: 5000rune")
+
+	// Send the expected amount to asgard
+	expCoins := common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(5000)))
+	c.Assert(k.MintToModule(ctx, ModuleName, expCoins[0]), IsNil)
+	c.Assert(k.SendFromModuleToModule(ctx, ModuleName, AsgardName, expCoins), IsNil)
+
+	msg, broken = invariant(ctx)
+	c.Assert(broken, Equals, false)
+	c.Assert(msg, IsNil)
+}
+
+func (s *InvariantsSuite) TestAsgardInvariantWithAuctionBids(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	// empty the starting balance of asgard
+	runeBal := k.GetRuneBalanceOfModule(ctx, AsgardName)
+	coins := common.NewCoins(common.NewCoin(common.RuneAsset(), runeBal))
+	c.Assert(k.SendFromModuleToModule(ctx, AsgardName, ReserveName, coins), IsNil)
+
+	intentTxID := GetRandomTxHash()
+
+	// Create an intent in auctioning status
+	intent := Intent{
+		TxID:          intentTxID,
+		Source:        common.NewCoin(common.RuneAsset(), cosmos.NewUint(10000)),
+		SourceAddress: GetRandomTHORAddress(),
+		TargetAsset:   common.BTCAsset,
+		TargetAddress: GetRandomBTCAddress(),
+		HighTarget:    cosmos.NewUint(1000000),
+		LowTarget:     cosmos.NewUint(900000),
+		CreateHeight:  ctx.BlockHeight(),
+		ExpiryHeight:  ctx.BlockHeight() + 100,
+		Status:        IntentStatus_IntentAuctioning,
+	}
+	k.SetIntent(ctx, intent)
+
+	// Create an active auction
+	auction := IntentAuction{
+		IntentTxID:      intentTxID,
+		AuctionAmount:   common.NewCoin(common.RuneAsset(), cosmos.NewUint(1000)),
+		RemainingAmount: common.NewCoin(common.RuneAsset(), cosmos.NewUint(9000)),
+		BidAsset:        common.RuneAsset(),
+		MinBid:          cosmos.NewUint(100),
+		StartHeight:     ctx.BlockHeight(),
+		ExpiryHeight:    ctx.BlockHeight() + 50,
+		Status:          IntentAuctionStatus_AuctionActive,
+		OwnerAddress:    GetRandomTHORAddress(),
+	}
+	k.SetIntentAuction(ctx, auction)
+
+	// Create auction bids
+	bid1 := IntentAuctionBid{
+		BidTxID:       GetRandomTxHash(),
+		IntentTxID:    intentTxID,
+		BidderAddress: GetRandomTHORAddress(),
+		BidAmount:     common.NewCoin(common.RuneAsset(), cosmos.NewUint(200)),
+		SubmitHeight:  ctx.BlockHeight(),
+	}
+	k.SetIntentAuctionBid(ctx, bid1)
+
+	bid2 := IntentAuctionBid{
+		BidTxID:       GetRandomTxHash(),
+		IntentTxID:    intentTxID,
+		BidderAddress: GetRandomTHORAddress(),
+		BidAmount:     common.NewCoin(common.RuneAsset(), cosmos.NewUint(300)),
+		SubmitHeight:  ctx.BlockHeight(),
+	}
+	k.SetIntentAuctionBid(ctx, bid2)
+
+	invariant := AsgardInvariant(k)
+
+	// Expected: 10000 (intent source) + 200 (bid1) + 300 (bid2) = 10500 RUNE
+	msg, broken := invariant(ctx)
+	c.Assert(broken, Equals, true)
+	c.Assert(len(msg), Equals, 1)
+	c.Assert(msg[0], Equals, "insolvent: 10500rune")
+
+	// Send the expected amount to asgard
+	expCoins := common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(10500)))
+	c.Assert(k.MintToModule(ctx, ModuleName, expCoins[0]), IsNil)
+	c.Assert(k.SendFromModuleToModule(ctx, ModuleName, AsgardName, expCoins), IsNil)
+
+	msg, broken = invariant(ctx)
+	c.Assert(broken, Equals, false)
+	c.Assert(msg, IsNil)
+}
+
+func (s *InvariantsSuite) TestIntentInvariant(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	invariant := IntentInvariant(k)
+
+	// Empty state should pass
+	msg, broken := invariant(ctx)
+	c.Assert(broken, Equals, false)
+	c.Assert(msg, IsNil)
+
+	// Create an active intent
+	intentTxID := GetRandomTxHash()
+	intent := Intent{
+		TxID:          intentTxID,
+		Source:        common.NewCoin(common.RuneAsset(), cosmos.NewUint(10000)),
+		SourceAddress: GetRandomTHORAddress(),
+		TargetAsset:   common.BTCAsset,
+		TargetAddress: GetRandomBTCAddress(),
+		HighTarget:    cosmos.NewUint(1000000),
+		LowTarget:     cosmos.NewUint(900000),
+		CreateHeight:  ctx.BlockHeight(),
+		ExpiryHeight:  ctx.BlockHeight() + 100,
+		Status:        IntentStatus_IntentActive,
+	}
+	k.SetIntent(ctx, intent)
+
+	// Should pass - active intent is correctly in the active index
+	msg, broken = invariant(ctx)
+	c.Assert(broken, Equals, false)
+	c.Assert(msg, IsNil)
+}
+
+func (s *InvariantsSuite) TestIntentInvariantAuctionConsistency(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	invariant := IntentInvariant(k)
+
+	intentTxID := GetRandomTxHash()
+
+	// Create an intent in auctioning status
+	intent := Intent{
+		TxID:          intentTxID,
+		Source:        common.NewCoin(common.RuneAsset(), cosmos.NewUint(10000)),
+		SourceAddress: GetRandomTHORAddress(),
+		TargetAsset:   common.BTCAsset,
+		TargetAddress: GetRandomBTCAddress(),
+		Status:        IntentStatus_IntentAuctioning,
+	}
+	k.SetIntent(ctx, intent)
+
+	// Create an auction with amounts that match the intent source
+	auction := IntentAuction{
+		IntentTxID:      intentTxID,
+		AuctionAmount:   common.NewCoin(common.RuneAsset(), cosmos.NewUint(1000)),
+		RemainingAmount: common.NewCoin(common.RuneAsset(), cosmos.NewUint(9000)),
+		BidAsset:        common.RuneAsset(),
+		MinBid:          cosmos.NewUint(100),
+		StartHeight:     ctx.BlockHeight(),
+		ExpiryHeight:    ctx.BlockHeight() + 50,
+		Status:          IntentAuctionStatus_AuctionActive,
+		OwnerAddress:    GetRandomTHORAddress(),
+	}
+	k.SetIntentAuction(ctx, auction)
+
+	// Should pass - auction amounts (1000 + 9000) match intent source (10000)
+	msg, broken := invariant(ctx)
+	c.Assert(broken, Equals, false)
+	c.Assert(msg, IsNil)
+
+	// Now create an inconsistent auction
+	auction.AuctionAmount = common.NewCoin(common.RuneAsset(), cosmos.NewUint(2000))
+	// Now 2000 + 9000 = 11000 != 10000
+	k.SetIntentAuction(ctx, auction)
+
+	msg, broken = invariant(ctx)
+	c.Assert(broken, Equals, true)
+	c.Assert(len(msg), Equals, 1)
+	c.Assert(msg[0], Matches, "auction.*auction_amount.*remaining_amount.*11000.*intent source.*10000.*")
+}
