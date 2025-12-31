@@ -109,7 +109,8 @@ func (h IntentSolveHandler) handle(ctx cosmos.Context, msg MsgIntentSolve) error
 	// This burns the coins/reduces units and decreases pool depth
 	// When the intent executes, the txout system will call Deposit() to send to user
 	// When refunding, the txout system will call Deposit() to restore to solver
-	if targetCoin.Asset.IsSecuredAsset() {
+	switch {
+	case targetCoin.Asset.IsSecuredAsset():
 		solverAddr, err := msg.Tx.FromAddress.AccAddress()
 		if err != nil {
 			return fmt.Errorf("fail to get solver acc address: %w", err)
@@ -119,7 +120,7 @@ func (h IntentSolveHandler) handle(ctx cosmos.Context, msg MsgIntentSolve) error
 			return fmt.Errorf("fail to escrow secured asset for intent solve: %w", err)
 		}
 		ctx.Logger().Info("escrowed secured asset for intent solve", "asset", targetCoin.Asset, "amount", targetCoin.Amount)
-	} else if targetCoin.Asset.IsTradeAsset() {
+	case targetCoin.Asset.IsTradeAsset():
 		solverAddr, err := msg.Tx.FromAddress.AccAddress()
 		if err != nil {
 			return fmt.Errorf("fail to get solver acc address: %w", err)
@@ -129,7 +130,7 @@ func (h IntentSolveHandler) handle(ctx cosmos.Context, msg MsgIntentSolve) error
 			return fmt.Errorf("fail to escrow trade asset for intent solve: %w", err)
 		}
 		ctx.Logger().Info("escrowed trade asset for intent solve", "asset", targetCoin.Asset, "amount", targetCoin.Amount)
-	} else if targetCoin.Asset.IsRune() {
+	case targetCoin.Asset.IsRune():
 		// Transfer RUNE to Asgard module for escrow
 		solverAddr, err := msg.Tx.FromAddress.AccAddress()
 		if err != nil {

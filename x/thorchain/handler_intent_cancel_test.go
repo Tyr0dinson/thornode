@@ -23,7 +23,6 @@ type HandlerIntentCancelTestHelper struct {
 	failToGetIntentInHandle  bool
 	forceEmptyVaults         bool
 	insufficientVaultBalance bool
-	intentSourceAmount       cosmos.Uint
 }
 
 func NewHandlerIntentCancelTestHelper(k keeper.Keeper) *HandlerIntentCancelTestHelper {
