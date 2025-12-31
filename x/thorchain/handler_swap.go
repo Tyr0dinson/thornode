@@ -53,20 +53,20 @@ func (h SwapHandler) validate(ctx cosmos.Context, msg MsgSwap) error {
 
 	// For external-origin (here valid) memos, do not allow a network module as the final destination.
 	// If unable to parse the memo, here assume it to be internal.
-	// Exception: Reserve module is allowed as destination for internal protocol operations (e.g., intent auction winning bids, over-solvency clearing).
 	memo, _ := ParseMemoWithTHORNames(ctx, h.mgr.Keeper(), msg.Tx.Memo)
 	mem, isSwapMemo := memo.(SwapMemo)
 	target := msg.TargetAsset
 	if isSwapMemo {
 		// Prevent swaps to module addresses to protect system invariants,
-		// except for swaps destined for the reserve (for over-solvency clearing and intent auctions).
+		// except for swaps to RUNE destined for the reserve (for over-solvency clearing).
 		destAccAddr, err := mem.Destination.AccAddress()
-		// A network module address would be resolvable,
-		// so if not resolvable it should not be a network module address.
-		// Allow swaps to the reserve module for internal protocol operations.
-		reserveAddr := h.mgr.Keeper().GetModuleAccAddress(ReserveName)
-		if err == nil && IsModuleAccAddress(h.mgr.Keeper(), destAccAddr) && !destAccAddr.Equals(reserveAddr) {
-			return fmt.Errorf("a network module cannot be the final destination of a swap memo")
+		if err == nil && IsModuleAccAddress(h.mgr.Keeper(), destAccAddr) {
+			// Allow swaps to RUNE (any asset -> RUNE) destined for reserve module (for over-solvency clearing)
+			isSwapToRuneForReserve := target.IsRune() &&
+				destAccAddr.Equals(h.mgr.Keeper().GetModuleAccAddress(ReserveName))
+			if !isSwapToRuneForReserve {
+				return fmt.Errorf("a network module cannot be the final destination of a swap memo")
+			}
 		}
 
 		if target.IsSyntheticAsset() && h.mgr.Keeper().GetConfigInt64(ctx, constants.ManualSwapsToSynthDisabled) > 0 {
