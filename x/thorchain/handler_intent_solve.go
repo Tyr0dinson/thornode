@@ -105,7 +105,7 @@ func (h IntentSolveHandler) handle(ctx cosmos.Context, msg MsgIntentSolve) error
 	// Get the solver's target coin
 	targetCoin := msg.Tx.Coins[0]
 
-	// Escrow secured/trade assets by withdrawing them from the solver
+	// Escrow assets by withdrawing them from the solver
 	// This burns the coins/reduces units and decreases pool depth
 	// When the intent executes, the txout system will call Deposit() to send to user
 	// When refunding, the txout system will call Deposit() to restore to solver
@@ -129,7 +129,20 @@ func (h IntentSolveHandler) handle(ctx cosmos.Context, msg MsgIntentSolve) error
 			return fmt.Errorf("fail to escrow trade asset for intent solve: %w", err)
 		}
 		ctx.Logger().Info("escrowed trade asset for intent solve", "asset", targetCoin.Asset, "amount", targetCoin.Amount)
+	} else if targetCoin.Asset.IsRune() {
+		// Transfer RUNE to Asgard module for escrow
+		solverAddr, err := msg.Tx.FromAddress.AccAddress()
+		if err != nil {
+			return fmt.Errorf("fail to get solver acc address: %w", err)
+		}
+		coins := common.NewCoins(common.NewCoin(common.RuneAsset(), targetCoin.Amount))
+		if err := h.mgr.Keeper().SendFromAccountToModule(ctx, solverAddr, AsgardName, coins); err != nil {
+			return fmt.Errorf("fail to escrow RUNE for intent solve: %w", err)
+		}
+		ctx.Logger().Info("escrowed RUNE for intent solve", "amount", targetCoin.Amount)
 	}
+	// Note: L1 assets don't require explicit escrow - they are observed on-chain
+	// and will be handled by the bifrost when the intent is executed or refunded
 
 	// Get the offered amount
 	offeredAmount := targetCoin.Amount
@@ -197,7 +210,7 @@ func (h IntentSolveHandler) handle(ctx cosmos.Context, msg MsgIntentSolve) error
 		matchHeight,
 	)
 	if err := h.mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
-		ctx.Logger().Error("fail to emit intent solve event", "error", err)
+		return fmt.Errorf("fail to emit intent solve event: %w", err)
 	}
 
 	return nil
