@@ -143,8 +143,8 @@ func AsgardInvariant(k KVStore) common.Invariant {
 				var intent Intent
 				k.Cdc().MustUnmarshal(intentIter.Value(), &intent)
 
-				// Only count active intents - expired/completed intents have been refunded
-				if intent.Status != IntentStatus_IntentActive {
+				// Only count active/auctioning intents - expired/completed/cancelled intents have been refunded
+				if intent.Status != IntentStatus_IntentActive && intent.Status != IntentStatus_IntentAuctioning {
 					continue
 				}
 
