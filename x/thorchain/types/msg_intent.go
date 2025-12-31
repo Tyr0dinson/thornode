@@ -4,11 +4,9 @@ import (
 	"fmt"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	se "github.com/cosmos/cosmos-sdk/types/errors"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
-	"gitlab.com/thorchain/thornode/v3/constants"
 )
 
 var (
@@ -54,29 +52,35 @@ func (m *MsgIntentOpen) ValidateBasic() error {
 		return cosmos.ErrInvalidAddress(m.Signer.String())
 	}
 	if m.TargetAsset.IsEmpty() {
-		return se.ErrInvalidRequest.Wrap("target asset cannot be empty")
+		return cosmos.ErrUnknownRequest("target asset cannot be empty")
 	}
 	if err := m.Tx.Valid(); err != nil {
-		return se.ErrInvalidRequest.Wrap(err.Error())
+		return cosmos.ErrUnknownRequest(err.Error())
 	}
 	if m.HighTarget.IsZero() {
-		return se.ErrInvalidRequest.Wrap("high target cannot be zero")
+		return cosmos.ErrUnknownRequest("high target cannot be zero")
 	}
 	if m.LowTarget.IsZero() {
-		return se.ErrInvalidRequest.Wrap("low target cannot be zero")
+		return cosmos.ErrUnknownRequest("low target cannot be zero")
 	}
 	if m.HighTarget.LT(m.LowTarget) {
-		return se.ErrInvalidRequest.Wrap("high target must be greater than or equal to low target")
+		return cosmos.ErrUnknownRequest("high target must be greater than or equal to low target")
 	}
 	if m.TargetAddress.IsEmpty() {
-		return se.ErrInvalidRequest.Wrap("target address cannot be empty")
+		return cosmos.ErrUnknownRequest("target address cannot be empty")
+	}
+	if !m.TargetAddress.IsChain(m.TargetAsset.GetChain()) {
+		return cosmos.ErrUnknownRequest("target address is not the same chain as the target asset")
 	}
 	// Validate affiliate parameters
-	if m.AffiliateAddress.IsEmpty() && !m.AffiliateBasisPoints.IsZero() {
-		return se.ErrInvalidRequest.Wrap("affiliate address cannot be empty while affiliate basis points is non-zero")
+	if !m.AffiliateAddress.IsEmpty() && !m.AffiliateAddress.IsChain(common.THORChain) {
+		return cosmos.ErrUnknownRequest("affiliate address must be a THOR address")
 	}
-	if !m.AffiliateBasisPoints.IsZero() && m.AffiliateBasisPoints.GT(cosmos.NewUint(constants.MaxBasisPts)) {
-		return se.ErrInvalidRequest.Wrap(fmt.Sprintf("affiliate basis points cannot exceed %d", constants.MaxBasisPts))
+	if m.AffiliateAddress.IsEmpty() && !m.AffiliateBasisPoints.IsZero() {
+		return cosmos.ErrUnknownRequest("affiliate address cannot be empty while affiliate basis points is non-zero")
+	}
+	if !m.AffiliateBasisPoints.IsZero() && m.AffiliateBasisPoints.GT(cosmos.NewUint(MaxAffiliateFeeBasisPoints)) {
+		return cosmos.ErrUnknownRequest(fmt.Sprintf("affiliate fee basis points can't be more than %d", MaxAffiliateFeeBasisPoints))
 	}
 	return nil
 }
@@ -101,10 +105,10 @@ func (m *MsgIntentCancel) ValidateBasic() error {
 		return cosmos.ErrInvalidAddress(m.Signer.String())
 	}
 	if err := m.Tx.Valid(); err != nil {
-		return se.ErrInvalidRequest.Wrap(err.Error())
+		return cosmos.ErrUnknownRequest(err.Error())
 	}
 	if m.IntentTxID.IsEmpty() {
-		return se.ErrInvalidRequest.Wrap("intent tx id cannot be empty")
+		return cosmos.ErrUnknownRequest("intent tx id cannot be empty")
 	}
 	return nil
 }
@@ -129,10 +133,10 @@ func (m *MsgIntentSolve) ValidateBasic() error {
 		return cosmos.ErrInvalidAddress(m.Signer.String())
 	}
 	if err := m.Tx.Valid(); err != nil {
-		return se.ErrInvalidRequest.Wrap(err.Error())
+		return cosmos.ErrUnknownRequest(err.Error())
 	}
 	if m.IntentTxID.IsEmpty() {
-		return se.ErrInvalidRequest.Wrap("intent tx id cannot be empty")
+		return cosmos.ErrUnknownRequest("intent tx id cannot be empty")
 	}
 	return nil
 }
@@ -157,10 +161,10 @@ func (m *MsgIntentAuctionBid) ValidateBasic() error {
 		return cosmos.ErrInvalidAddress(m.Signer.String())
 	}
 	if err := m.Tx.Valid(); err != nil {
-		return se.ErrInvalidRequest.Wrap(err.Error())
+		return cosmos.ErrUnknownRequest(err.Error())
 	}
 	if m.IntentTxID.IsEmpty() {
-		return se.ErrInvalidRequest.Wrap("intent tx id cannot be empty")
+		return cosmos.ErrUnknownRequest("intent tx id cannot be empty")
 	}
 	return nil
 }
