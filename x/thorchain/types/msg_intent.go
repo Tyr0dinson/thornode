@@ -166,5 +166,11 @@ func (m *MsgIntentAuctionBid) ValidateBasic() error {
 	if m.IntentTxID.IsEmpty() {
 		return cosmos.ErrUnknownRequest("intent tx id cannot be empty")
 	}
+	if len(m.Tx.Coins) == 0 {
+		return cosmos.ErrUnknownRequest("no coins in bid transaction")
+	}
+	if len(m.Tx.Coins) > 1 {
+		return cosmos.ErrUnknownRequest("bid can only provide one coin type")
+	}
 	return nil
 }

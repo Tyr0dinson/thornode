@@ -18,8 +18,10 @@ var _ = Suite(&HandlerIntentAuctionBidSuite{})
 
 type HandlerIntentAuctionBidTestHelper struct {
 	keeper.Keeper
-	failToGetAuction bool
-	failToGetBids    bool
+	failToGetAuction    bool
+	failToGetBids       bool
+	failToGetBidderBid  bool
+	failToGetNetworkFee bool
 }
 
 func NewHandlerIntentAuctionBidTestHelper(k keeper.Keeper) *HandlerIntentAuctionBidTestHelper {
@@ -40,6 +42,20 @@ func (h *HandlerIntentAuctionBidTestHelper) GetIntentAuctionBidsByIntentID(ctx c
 		return nil, errKaboom
 	}
 	return h.Keeper.GetIntentAuctionBidsByIntentID(ctx, txID)
+}
+
+func (h *HandlerIntentAuctionBidTestHelper) GetBidderBidForAuction(ctx cosmos.Context, intentTxID common.TxID, bidderAddr common.Address) (IntentAuctionBid, error) {
+	if h.failToGetBidderBid {
+		return IntentAuctionBid{}, errKaboom
+	}
+	return h.Keeper.GetBidderBidForAuction(ctx, intentTxID, bidderAddr)
+}
+
+func (h *HandlerIntentAuctionBidTestHelper) GetNetworkFee(ctx cosmos.Context, chain common.Chain) (NetworkFee, error) {
+	if h.failToGetNetworkFee {
+		return NetworkFee{}, errKaboom
+	}
+	return h.Keeper.GetNetworkFee(ctx, chain)
 }
 
 func (HandlerIntentAuctionBidSuite) TestIntentAuctionBid_HappyPath(c *C) {
@@ -323,7 +339,7 @@ func (HandlerIntentAuctionBidSuite) TestIntentAuctionBid_ValidationErrors(c *C) 
 				noCoinsTx.Coins = common.Coins{}
 				return NewMsgIntentAuctionBid(noCoinsTx, intentTx.ID, w.activeNodeAccount.NodeAddress)
 			},
-			expectedErr: se.ErrInvalidRequest,
+			expectedErr: se.ErrUnknownRequest, // ValidateBasic returns ErrUnknownRequest for coin validation
 		},
 		{
 			name: "multiple coins should fail",
@@ -335,7 +351,7 @@ func (HandlerIntentAuctionBidSuite) TestIntentAuctionBid_ValidationErrors(c *C) 
 				}
 				return NewMsgIntentAuctionBid(multiTx, intentTx.ID, w.activeNodeAccount.NodeAddress)
 			},
-			expectedErr: se.ErrInvalidRequest,
+			expectedErr: se.ErrUnknownRequest, // ValidateBasic returns ErrUnknownRequest for coin validation
 		},
 		{
 			name: "wrong asset should fail",
@@ -495,4 +511,235 @@ func (HandlerIntentAuctionBidSuite) TestIntentAuctionBid_BidMustExceedHighest(c 
 	msg3 := NewMsgIntentAuctionBid(bidTx3, intentTx.ID, w.activeNodeAccount.NodeAddress)
 	_, err = handler.Run(w.ctx, msg3)
 	c.Assert(err, IsNil)
+}
+
+func (HandlerIntentAuctionBidSuite) TestIntentAuctionBid_GetBidderBidFailure(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
+
+	// Enable intents feature
+	w.keeper.SetMimir(w.ctx, constants.IntentsEnabled.String(), 1)
+
+	// Create an intent
+	intentTx := GetRandomTx()
+	intent := Intent{
+		TxID:          intentTx.ID,
+		SourceAddress: GetRandomTHORAddress(),
+		Source:        common.NewCoin(common.DOGEAsset, cosmos.NewUint(100*common.One)),
+		TargetAsset:   common.BTCAsset,
+		TargetAddress: GetRandomBTCAddress(),
+		HighTarget:    cosmos.NewUint(15 * common.One),
+		LowTarget:     cosmos.NewUint(10 * common.One),
+		ExpiryHeight:  w.ctx.BlockHeight() + 2000,
+		Status:        IntentAuctioning,
+	}
+	w.keeper.SetIntent(w.ctx, intent)
+
+	// Create an auction
+	auction := IntentAuction{
+		IntentTxID:      intentTx.ID,
+		AuctionAmount:   common.NewCoin(common.DOGEAsset, cosmos.NewUint(10*common.One)),
+		RemainingAmount: common.NewCoin(common.DOGEAsset, cosmos.NewUint(90*common.One)),
+		BidAsset:        common.DOGEAsset.GetChain().GetGasAsset(),
+		MinBid:          cosmos.NewUint(1000),
+		StartHeight:     w.ctx.BlockHeight(),
+		ExpiryHeight:    w.ctx.BlockHeight() + 1000,
+		Status:          IntentAuctionStatus_AuctionActive,
+	}
+	w.keeper.SetIntentAuction(w.ctx, auction)
+
+	bidTx := GetRandomTx()
+	bidTx.Coins = common.Coins{common.NewCoin(auction.BidAsset, cosmos.NewUint(5000))}
+	msg := NewMsgIntentAuctionBid(bidTx, intentTx.ID, w.activeNodeAccount.NodeAddress)
+
+	// Test GetBidderBidForAuction failure in validate()
+	testKeeper := NewHandlerIntentAuctionBidTestHelper(w.keeper)
+	testKeeper.failToGetBidderBid = true
+	handler := NewIntentAuctionBidHandler(NewDummyMgrWithKeeper(testKeeper))
+	result, err := handler.Run(w.ctx, msg)
+	c.Check(err, NotNil)
+	c.Check(errors.Is(err, errInternal), Equals, true, Commentf("GetBidderBidForAuction failure should return internal error"))
+	c.Check(result, IsNil)
+}
+
+func (HandlerIntentAuctionBidSuite) TestIntentAuctionBid_OvertimeBidRejection(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
+
+	// Enable intents feature
+	w.keeper.SetMimir(w.ctx, constants.IntentsEnabled.String(), 1)
+	w.keeper.SetMimir(w.ctx, constants.IntentAuctionMinBidMultiplier.String(), 3)
+	w.keeper.SetMimir(w.ctx, constants.IntentAuctionOvertimeBlocks.String(), 100)
+
+	currentHeight := w.ctx.BlockHeight()
+
+	// Create an intent
+	intentTx := GetRandomTx()
+	intent := Intent{
+		TxID:          intentTx.ID,
+		SourceAddress: GetRandomTHORAddress(),
+		Source:        common.NewCoin(common.DOGEAsset, cosmos.NewUint(100*common.One)),
+		TargetAsset:   common.BTCAsset,
+		TargetAddress: GetRandomBTCAddress(),
+		HighTarget:    cosmos.NewUint(15 * common.One),
+		LowTarget:     cosmos.NewUint(10 * common.One),
+		ExpiryHeight:  currentHeight + 2000,
+		Status:        IntentAuctioning,
+	}
+	w.keeper.SetIntent(w.ctx, intent)
+
+	// Create an auction that's in overtime window (expiry within 100 blocks)
+	auctionExpiry := currentHeight + 50
+	auction := IntentAuction{
+		IntentTxID:      intentTx.ID,
+		AuctionAmount:   common.NewCoin(common.DOGEAsset, cosmos.NewUint(10*common.One)),
+		RemainingAmount: common.NewCoin(common.DOGEAsset, cosmos.NewUint(90*common.One)),
+		BidAsset:        common.DOGEAsset.GetChain().GetGasAsset(),
+		MinBid:          cosmos.NewUint(1000),
+		StartHeight:     currentHeight - 100,
+		ExpiryHeight:    auctionExpiry,
+		Status:          IntentAuctionStatus_AuctionActive,
+	}
+	w.keeper.SetIntentAuction(w.ctx, auction)
+
+	mgr := NewDummyMgrWithKeeper(w.keeper)
+	handler := NewIntentAuctionBidHandler(mgr)
+
+	// Place first bid (establishes baseline of 5000)
+	bidTx1 := GetRandomTx()
+	bidTx1.Coins = common.Coins{common.NewCoin(auction.BidAsset, cosmos.NewUint(5000))}
+	msg1 := NewMsgIntentAuctionBid(bidTx1, intentTx.ID, w.activeNodeAccount.NodeAddress)
+	_, err := handler.Run(w.ctx, msg1)
+	c.Assert(err, IsNil)
+
+	// Try to place a bid that exceeds highest but is less than highest + gas fee
+	// Gas fee for DOGE is 37500 (150 * 250), so minimum overtime bid should be 5000 + 37500 = 42500
+	// A bid of 6000 exceeds 5000 but is less than 42500
+	bidTx2 := GetRandomTx()
+	bidTx2.Coins = common.Coins{common.NewCoin(auction.BidAsset, cosmos.NewUint(6000))}
+	msg2 := NewMsgIntentAuctionBid(bidTx2, intentTx.ID, w.activeNodeAccount.NodeAddress)
+	_, err = handler.Run(w.ctx, msg2)
+	c.Check(errors.Is(err, se.ErrInvalidRequest), Equals, true, Commentf("Bid exceeding highest but below overtime minimum should fail"))
+}
+
+func (HandlerIntentAuctionBidSuite) TestIntentAuctionBid_BoundaryConditions(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
+
+	// Enable intents feature
+	w.keeper.SetMimir(w.ctx, constants.IntentsEnabled.String(), 1)
+	w.keeper.SetMimir(w.ctx, constants.IntentAuctionMinBidMultiplier.String(), 3)
+	w.keeper.SetMimir(w.ctx, constants.IntentAuctionOvertimeBlocks.String(), 100)
+
+	// Create an intent
+	intentTx := GetRandomTx()
+	intent := Intent{
+		TxID:          intentTx.ID,
+		SourceAddress: GetRandomTHORAddress(),
+		Source:        common.NewCoin(common.DOGEAsset, cosmos.NewUint(100*common.One)),
+		TargetAsset:   common.BTCAsset,
+		TargetAddress: GetRandomBTCAddress(),
+		HighTarget:    cosmos.NewUint(15 * common.One),
+		LowTarget:     cosmos.NewUint(10 * common.One),
+		ExpiryHeight:  w.ctx.BlockHeight() + 2000,
+		Status:        IntentAuctioning,
+	}
+	w.keeper.SetIntent(w.ctx, intent)
+
+	// Create an auction with MinBid of 1000
+	auction := IntentAuction{
+		IntentTxID:      intentTx.ID,
+		AuctionAmount:   common.NewCoin(common.DOGEAsset, cosmos.NewUint(10*common.One)),
+		RemainingAmount: common.NewCoin(common.DOGEAsset, cosmos.NewUint(90*common.One)),
+		BidAsset:        common.DOGEAsset.GetChain().GetGasAsset(),
+		MinBid:          cosmos.NewUint(1000),
+		StartHeight:     w.ctx.BlockHeight(),
+		ExpiryHeight:    w.ctx.BlockHeight() + 1000,
+		Status:          IntentAuctionStatus_AuctionActive,
+	}
+	w.keeper.SetIntentAuction(w.ctx, auction)
+
+	mgr := NewDummyMgrWithKeeper(w.keeper)
+	handler := NewIntentAuctionBidHandler(mgr)
+
+	// Test 1: First bid exactly at minimum should succeed
+	bidTx1 := GetRandomTx()
+	bidTx1.Coins = common.Coins{common.NewCoin(auction.BidAsset, cosmos.NewUint(1000))} // Exactly MinBid
+	msg1 := NewMsgIntentAuctionBid(bidTx1, intentTx.ID, w.activeNodeAccount.NodeAddress)
+	_, err := handler.Run(w.ctx, msg1)
+	c.Assert(err, IsNil, Commentf("First bid exactly at minimum should succeed"))
+
+	// Test 2: Bid exactly equal to highest should fail
+	bidTx2 := GetRandomTx()
+	bidTx2.Coins = common.Coins{common.NewCoin(auction.BidAsset, cosmos.NewUint(1000))} // Equal to current highest
+	msg2 := NewMsgIntentAuctionBid(bidTx2, intentTx.ID, w.activeNodeAccount.NodeAddress)
+	_, err = handler.Run(w.ctx, msg2)
+	c.Check(errors.Is(err, se.ErrInvalidRequest), Equals, true, Commentf("Bid equal to highest should fail"))
+
+	// Test 3: Bid one unit above highest should succeed
+	bidTx3 := GetRandomTx()
+	bidTx3.Coins = common.Coins{common.NewCoin(auction.BidAsset, cosmos.NewUint(1001))} // One above current highest
+	msg3 := NewMsgIntentAuctionBid(bidTx3, intentTx.ID, w.activeNodeAccount.NodeAddress)
+	_, err = handler.Run(w.ctx, msg3)
+	c.Assert(err, IsNil, Commentf("Bid one unit above highest should succeed"))
+}
+
+func (HandlerIntentAuctionBidSuite) TestIntentAuctionBid_NetworkFeeFailure(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
+
+	// Enable intents feature
+	w.keeper.SetMimir(w.ctx, constants.IntentsEnabled.String(), 1)
+	w.keeper.SetMimir(w.ctx, constants.IntentAuctionMinBidMultiplier.String(), 3)
+	w.keeper.SetMimir(w.ctx, constants.IntentAuctionOvertimeBlocks.String(), 100)
+
+	currentHeight := w.ctx.BlockHeight()
+
+	// Create an intent
+	intentTx := GetRandomTx()
+	intent := Intent{
+		TxID:          intentTx.ID,
+		SourceAddress: GetRandomTHORAddress(),
+		Source:        common.NewCoin(common.DOGEAsset, cosmos.NewUint(100*common.One)),
+		TargetAsset:   common.BTCAsset,
+		TargetAddress: GetRandomBTCAddress(),
+		HighTarget:    cosmos.NewUint(15 * common.One),
+		LowTarget:     cosmos.NewUint(10 * common.One),
+		ExpiryHeight:  currentHeight + 2000,
+		Status:        IntentAuctioning,
+	}
+	w.keeper.SetIntent(w.ctx, intent)
+
+	// Create an auction in overtime window
+	auctionExpiry := currentHeight + 50
+	auction := IntentAuction{
+		IntentTxID:      intentTx.ID,
+		AuctionAmount:   common.NewCoin(common.DOGEAsset, cosmos.NewUint(10*common.One)),
+		RemainingAmount: common.NewCoin(common.DOGEAsset, cosmos.NewUint(90*common.One)),
+		BidAsset:        common.DOGEAsset.GetChain().GetGasAsset(),
+		MinBid:          cosmos.NewUint(1000),
+		StartHeight:     currentHeight - 100,
+		ExpiryHeight:    auctionExpiry,
+		Status:          IntentAuctionStatus_AuctionActive,
+	}
+	w.keeper.SetIntentAuction(w.ctx, auction)
+
+	// Place first bid to establish a highest bid
+	mgr := NewDummyMgrWithKeeper(w.keeper)
+	handler := NewIntentAuctionBidHandler(mgr)
+	bidTx1 := GetRandomTx()
+	bidTx1.Coins = common.Coins{common.NewCoin(auction.BidAsset, cosmos.NewUint(5000))}
+	msg1 := NewMsgIntentAuctionBid(bidTx1, intentTx.ID, w.activeNodeAccount.NodeAddress)
+	_, err := handler.Run(w.ctx, msg1)
+	c.Assert(err, IsNil)
+
+	// Now try to place a second bid with network fee lookup failing
+	// This tests that calculateGasFee errors are properly propagated
+	testKeeper := NewHandlerIntentAuctionBidTestHelper(w.keeper)
+	testKeeper.failToGetNetworkFee = true
+	handler2 := NewIntentAuctionBidHandler(NewDummyMgrWithKeeper(testKeeper))
+
+	bidTx2 := GetRandomTx()
+	bidTx2.Coins = common.Coins{common.NewCoin(auction.BidAsset, cosmos.NewUint(100000))}
+	msg2 := NewMsgIntentAuctionBid(bidTx2, intentTx.ID, w.activeNodeAccount.NodeAddress)
+	result, err := handler2.Run(w.ctx, msg2)
+	c.Check(err, NotNil)
+	c.Check(errors.Is(err, errInternal), Equals, true, Commentf("Network fee failure should return internal error"))
+	c.Check(result, IsNil)
 }
