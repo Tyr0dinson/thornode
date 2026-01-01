@@ -73,6 +73,11 @@ func (h IntentAuctionBidHandler) validate(ctx cosmos.Context, msg MsgIntentAucti
 		return se.ErrUnauthorized.Wrapf("auction has expired at height %d", auction.ExpiryHeight)
 	}
 
+	// Validate coins array before accessing
+	if len(msg.Tx.Coins) == 0 {
+		return se.ErrInvalidRequest.Wrap("no coins in bid transaction")
+	}
+
 	// Verify the coin is the expected bid asset (gas asset of source chain)
 	if !msg.Tx.Coins[0].Asset.Equals(auction.BidAsset) {
 		return se.ErrInvalidRequest.Wrapf("bid asset %s does not match expected asset %s", msg.Tx.Coins[0].Asset, auction.BidAsset)
@@ -138,6 +143,19 @@ func (h IntentAuctionBidHandler) handle(ctx cosmos.Context, msg MsgIntentAuction
 	auction, err := h.mgr.Keeper().GetIntentAuction(ctx, msg.IntentTxID)
 	if err != nil {
 		return ErrInternal(err, "fail to get auction")
+	}
+
+	// Re-validate auction state to guard against state changes between validate and handle
+	if auction.Status != IntentAuctionStatus_AuctionActive {
+		return se.ErrUnauthorized.Wrapf("auction is no longer active, status: %s", auction.Status.String())
+	}
+	if ctx.BlockHeight() >= auction.ExpiryHeight {
+		return se.ErrUnauthorized.Wrapf("auction has expired at height %d", auction.ExpiryHeight)
+	}
+
+	// Validate coins array before accessing
+	if len(msg.Tx.Coins) == 0 {
+		return se.ErrInvalidRequest.Wrap("no coins in bid transaction")
 	}
 
 	// Get the bid coin

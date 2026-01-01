@@ -52,9 +52,19 @@ func (h IntentOpenHandler) validate(ctx cosmos.Context, msg MsgIntentOpen) error
 		return se.ErrUnauthorized.Wrap("intents feature is disabled")
 	}
 
+	// Check if intent already exists (prevent duplicate intents)
+	if h.mgr.Keeper().IntentExists(ctx, msg.Tx.ID) {
+		return se.ErrInvalidRequest.Wrapf("intent with txid %s already exists", msg.Tx.ID)
+	}
+
 	// Validate high >= low
 	if msg.HighTarget.LT(msg.LowTarget) {
 		return se.ErrInvalidRequest.Wrap("high target must be greater than or equal to low target")
+	}
+
+	// Validate coins array before accessing
+	if len(msg.Tx.Coins) == 0 {
+		return se.ErrInvalidRequest.Wrap("no coins in transaction")
 	}
 
 	sourceAsset := msg.Tx.Coins[0].Asset
@@ -83,6 +93,11 @@ func (h IntentOpenHandler) validate(ctx cosmos.Context, msg MsgIntentOpen) error
 }
 
 func (h IntentOpenHandler) handle(ctx cosmos.Context, msg MsgIntentOpen) error {
+	// Validate coins array before accessing
+	if len(msg.Tx.Coins) == 0 {
+		return se.ErrInvalidRequest.Wrap("no coins in transaction")
+	}
+
 	// Get the source coin
 	sourceCoin := msg.Tx.Coins[0]
 
