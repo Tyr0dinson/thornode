@@ -227,6 +227,9 @@ func (im *IntentMgr) processMatches(ctx cosmos.Context) error {
 			ctx.Logger().Error("fail to execute intent", "intent_txid", intentTxID, "solve_txid", winningSolve.SolveTxID, "error", err)
 			// Refund ALL solvers (including winner) since execution failed
 			im.refundLosingSolves(ctx, intent, common.BlankTxID, intentSolves)
+			// Mark intent as expired to prevent double-refund in processExpirations
+			intent.Status = IntentExpired
+			im.mgr.Keeper().SetIntent(ctx, intent)
 			continue
 		}
 

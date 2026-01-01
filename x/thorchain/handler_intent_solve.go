@@ -2,6 +2,7 @@ package thorchain
 
 import (
 	"fmt"
+	"math"
 
 	se "github.com/cosmos/cosmos-sdk/types/errors"
 
@@ -63,7 +64,7 @@ func (h IntentSolveHandler) validate(ctx cosmos.Context, msg MsgIntentSolve) err
 		return ErrInternal(err, "fail to get intent")
 	}
 
-	// Verify the intent is active
+	// Verify the intent is active (rejects auctioning, completed, or expired intents)
 	if intent.Status != IntentActive {
 		return se.ErrUnauthorized.Wrapf("intent is not active, status: %s", intent.Status.String())
 	}
@@ -175,7 +176,12 @@ func (h IntentSolveHandler) handle(ctx cosmos.Context, msg MsgIntentSolve) error
 			delay := highMinusOffered.Mul(cosmos.NewUint(uint64(slideBlocks)))
 			delay = delay.Quo(highMinusLow)
 
-			matchHeight = currentHeight + int64(delay.Uint64())
+			// Guard against int64 overflow when converting delay
+			if delay.GT(cosmos.NewUint(uint64(math.MaxInt64))) {
+				matchHeight = intent.ExpiryHeight
+			} else {
+				matchHeight = currentHeight + int64(delay.Uint64())
+			}
 
 			// Cap match height at expiry height
 			if matchHeight > intent.ExpiryHeight {

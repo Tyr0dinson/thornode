@@ -14,11 +14,7 @@ import (
 func (k KVStore) setIntentAuction(ctx cosmos.Context, key []byte, record types.IntentAuction) {
 	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 	buf := k.cdc.MustMarshal(&record)
-	if buf == nil {
-		store.Delete(key)
-	} else {
-		store.Set(key, buf)
-	}
+	store.Set(key, buf)
 }
 
 func (k KVStore) getIntentAuction(ctx cosmos.Context, key []byte, record *types.IntentAuction) (bool, error) {
@@ -219,11 +215,7 @@ func (k KVStore) CleanupStaleActiveAuctions(ctx cosmos.Context) {
 func (k KVStore) setIntentAuctionBid(ctx cosmos.Context, key []byte, record types.IntentAuctionBid) {
 	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 	buf := k.cdc.MustMarshal(&record)
-	if buf == nil {
-		store.Delete(key)
-	} else {
-		store.Set(key, buf)
-	}
+	store.Set(key, buf)
 }
 
 func (k KVStore) getIntentAuctionBid(ctx cosmos.Context, key []byte, record *types.IntentAuctionBid) (bool, error) {
