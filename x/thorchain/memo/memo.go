@@ -185,6 +185,9 @@ func (tx TxType) IsInbound() bool {
 		TxTCYStake,
 		TxTCYUnstake,
 		TxOperatorRotate,
+		TxIntentOpen,
+		TxIntentCancel,
+		TxIntentSolve,
 		TxIntentAuctionBid:
 		return true
 	default:

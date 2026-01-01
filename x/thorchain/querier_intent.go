@@ -9,6 +9,11 @@ import (
 )
 
 func (qs queryServer) queryIntent(ctx cosmos.Context, req *types.QueryIntentRequest) (*types.QueryIntentResponse, error) {
+	// Validate request is not nil
+	if req == nil {
+		return nil, fmt.Errorf("request cannot be nil")
+	}
+
 	// Validate required parameter
 	if req.TxId == "" {
 		return nil, fmt.Errorf("tx_id is required")
@@ -65,6 +70,11 @@ func (qs queryServer) queryActiveIntents(ctx cosmos.Context, _ *types.QueryActiv
 }
 
 func (qs queryServer) queryIntentAuction(ctx cosmos.Context, req *types.QueryIntentAuctionRequest) (*types.QueryIntentAuctionResponse, error) {
+	// Validate request is not nil
+	if req == nil {
+		return nil, fmt.Errorf("request cannot be nil")
+	}
+
 	// Validate required parameter
 	if req.TxId == "" {
 		return nil, fmt.Errorf("tx_id is required")

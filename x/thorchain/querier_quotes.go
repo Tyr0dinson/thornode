@@ -1327,8 +1327,11 @@ func isIntentCompatibleAsset(ctx cosmos.Context, mgr *Mgrs, asset common.Asset) 
 	}
 
 	// Has active pool
-	pool, _ := mgr.Keeper().GetPool(ctx, asset.GetLayer1Asset())
-	if !pool.IsEmpty() && pool.Status == PoolAvailable {
+	pool, err := mgr.Keeper().GetPool(ctx, asset.GetLayer1Asset())
+	if err != nil {
+		ctx.Logger().Error("fail to get pool for intent compatibility check", "asset", asset, "error", err)
+		// Continue to check other criteria - don't fail entirely
+	} else if !pool.IsEmpty() && pool.Status == PoolAvailable {
 		return true, "has active pool"
 	}
 
@@ -1441,8 +1444,14 @@ func (qs queryServer) queryQuoteIntent(ctx cosmos.Context, req *types.QueryQuote
 	}
 
 	// Check pool/native requirements (at least one must have pool or be native)
-	sourcePool, _ := qs.mgr.Keeper().GetPool(ctx, fromAsset.GetLayer1Asset())
-	targetPool, _ := qs.mgr.Keeper().GetPool(ctx, toAsset.GetLayer1Asset())
+	sourcePool, err := qs.mgr.Keeper().GetPool(ctx, fromAsset.GetLayer1Asset())
+	if err != nil {
+		ctx.Logger().Error("fail to get source pool for intent quote", "asset", fromAsset, "error", err)
+	}
+	targetPool, err := qs.mgr.Keeper().GetPool(ctx, toAsset.GetLayer1Asset())
+	if err != nil {
+		ctx.Logger().Error("fail to get target pool for intent quote", "asset", toAsset, "error", err)
+	}
 
 	hasSourcePool := !sourcePool.IsEmpty() && sourcePool.Status == PoolAvailable
 	hasTargetPool := !targetPool.IsEmpty() && targetPool.Status == PoolAvailable
@@ -1692,8 +1701,14 @@ func (qs queryServer) queryQuoteIntentSolve(ctx cosmos.Context, req *types.Query
 	sourceAsset := intent.Source.Asset
 	targetAsset := intent.TargetAsset
 
-	sourcePool, _ := qs.mgr.Keeper().GetPool(ctx, sourceAsset.GetLayer1Asset())
-	targetPool, _ := qs.mgr.Keeper().GetPool(ctx, targetAsset.GetLayer1Asset())
+	sourcePool, err := qs.mgr.Keeper().GetPool(ctx, sourceAsset.GetLayer1Asset())
+	if err != nil {
+		ctx.Logger().Error("fail to get source pool for intent solve quote", "asset", sourceAsset, "error", err)
+	}
+	targetPool, err := qs.mgr.Keeper().GetPool(ctx, targetAsset.GetLayer1Asset())
+	if err != nil {
+		ctx.Logger().Error("fail to get target pool for intent solve quote", "asset", targetAsset, "error", err)
+	}
 
 	hasSourcePool := !sourcePool.IsEmpty() && sourcePool.Status == types.PoolStatus_Available
 	hasTargetPool := !targetPool.IsEmpty() && targetPool.Status == types.PoolStatus_Available
