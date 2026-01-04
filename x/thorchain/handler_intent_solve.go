@@ -93,6 +93,27 @@ func (h IntentSolveHandler) validate(ctx cosmos.Context, msg MsgIntentSolve) err
 		return se.ErrInvalidRequest.Wrapf("offered amount %s is less than low target %s", offeredAmount, intent.LowTarget)
 	}
 
+	// Determine the destination address for the solver
+	// For native assets (RUNE, secured, trade), use THORChain
+	// For L1 assets, use the source asset's chain
+	sourceChain := intent.Source.Asset.GetChain()
+	if intent.Source.Asset.IsSecuredAsset() || intent.Source.Asset.IsTradeAsset() {
+		sourceChain = common.THORChain
+	}
+
+	// Validate destination address if provided
+	if !msg.DestinationAddress.IsEmpty() {
+		if !msg.DestinationAddress.IsChain(sourceChain) {
+			return se.ErrInvalidRequest.Wrapf("destination address %s is not valid for chain %s", msg.DestinationAddress, sourceChain)
+		}
+	} else {
+		// Destination address is required for cross-chain solves
+		solverChain := msg.Tx.FromAddress.GetChain()
+		if !solverChain.Equals(sourceChain) {
+			return se.ErrInvalidRequest.Wrapf("destination address is required when solving cross-chain (solver chain %s != source chain %s)", solverChain, sourceChain)
+		}
+	}
+
 	return nil
 }
 
@@ -190,14 +211,21 @@ func (h IntentSolveHandler) handle(ctx cosmos.Context, msg MsgIntentSolve) error
 		}
 	}
 
+	// Determine destination address - use provided address or fall back to solver's from address
+	destAddr := msg.DestinationAddress
+	if destAddr.IsEmpty() {
+		destAddr = msg.Tx.FromAddress
+	}
+
 	// Save the solve bid for matching in EndBlock
 	solve := IntentSolve{
-		SolveTxID:     msg.Tx.ID,
-		IntentTxID:    msg.IntentTxID,
-		SolverAddress: msg.Tx.FromAddress,
-		TargetCoin:    targetCoin,
-		SubmitHeight:  ctx.BlockHeight(),
-		MatchHeight:   matchHeight,
+		SolveTxID:          msg.Tx.ID,
+		IntentTxID:         msg.IntentTxID,
+		SolverAddress:      msg.Tx.FromAddress,
+		TargetCoin:         targetCoin,
+		SubmitHeight:       ctx.BlockHeight(),
+		MatchHeight:        matchHeight,
+		DestinationAddress: destAddr,
 	}
 	h.mgr.Keeper().SetIntentSolve(ctx, solve)
 

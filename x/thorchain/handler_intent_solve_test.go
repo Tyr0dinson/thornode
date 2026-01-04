@@ -95,11 +95,15 @@ func (HandlerIntentSolveSuite) TestIntentSolve_HappyPath(c *C) {
 	handler := NewIntentSolveHandler(mgr)
 
 	// Solve the intent with mid-range offer
+	// Use DOGE address for solver since they need to receive DOGE (the source asset)
 	solveTx := GetRandomTx()
+	solveTx.FromAddress = GetRandomDOGEAddress()
 	solveTx.Coins = common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(12*common.One))}
+	// Provide destination address on DOGE chain (same as FromAddress in this case)
 	msg := NewMsgIntentSolve(
 		solveTx,
 		intentTx.ID,
+		solveTx.FromAddress, // Destination address on source asset chain
 		w.activeNodeAccount.NodeAddress,
 	)
 
@@ -145,8 +149,9 @@ func (HandlerIntentSolveSuite) TestIntentSolve_MatchHeightCalculation(c *C) {
 
 	// Test Case 1: Offer at high target (immediate match)
 	solveTx1 := GetRandomTx()
+	solveTx1.FromAddress = GetRandomDOGEAddress()
 	solveTx1.Coins = common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(20*common.One))}
-	msg1 := NewMsgIntentSolve(solveTx1, intentTx.ID, w.activeNodeAccount.NodeAddress)
+	msg1 := NewMsgIntentSolve(solveTx1, intentTx.ID, solveTx1.FromAddress, w.activeNodeAccount.NodeAddress)
 	_, err := handler.Run(w.ctx, msg1)
 	c.Assert(err, IsNil)
 
@@ -156,8 +161,9 @@ func (HandlerIntentSolveSuite) TestIntentSolve_MatchHeightCalculation(c *C) {
 
 	// Test Case 2: Offer at low target (delayed match at slide blocks)
 	solveTx2 := GetRandomTx()
+	solveTx2.FromAddress = GetRandomDOGEAddress()
 	solveTx2.Coins = common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(10*common.One))}
-	msg2 := NewMsgIntentSolve(solveTx2, intentTx.ID, w.activeNodeAccount.NodeAddress)
+	msg2 := NewMsgIntentSolve(solveTx2, intentTx.ID, solveTx2.FromAddress, w.activeNodeAccount.NodeAddress)
 	_, err = handler.Run(w.ctx, msg2)
 	c.Assert(err, IsNil)
 
@@ -169,8 +175,9 @@ func (HandlerIntentSolveSuite) TestIntentSolve_MatchHeightCalculation(c *C) {
 	// Test Case 3: Offer in middle (proportional delay)
 	// Offer 15 BTC (halfway between 10 and 20)
 	solveTx3 := GetRandomTx()
+	solveTx3.FromAddress = GetRandomDOGEAddress()
 	solveTx3.Coins = common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(15*common.One))}
-	msg3 := NewMsgIntentSolve(solveTx3, intentTx.ID, w.activeNodeAccount.NodeAddress)
+	msg3 := NewMsgIntentSolve(solveTx3, intentTx.ID, solveTx3.FromAddress, w.activeNodeAccount.NodeAddress)
 	_, err = handler.Run(w.ctx, msg3)
 	c.Assert(err, IsNil)
 
@@ -213,8 +220,9 @@ func (HandlerIntentSolveSuite) TestIntentSolve_MatchHeightCappedAtExpiry(c *C) {
 
 	// Solve at low target (would normally delay by 10000 blocks)
 	solveTx := GetRandomTx()
+	solveTx.FromAddress = GetRandomDOGEAddress()
 	solveTx.Coins = common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(10*common.One))}
-	msg := NewMsgIntentSolve(solveTx, intentTx.ID, w.activeNodeAccount.NodeAddress)
+	msg := NewMsgIntentSolve(solveTx, intentTx.ID, solveTx.FromAddress, w.activeNodeAccount.NodeAddress)
 	_, err := handler.Run(w.ctx, msg)
 	c.Assert(err, IsNil)
 
@@ -246,6 +254,7 @@ func (HandlerIntentSolveSuite) TestIntentSolve_ValidationErrors(c *C) {
 	w.keeper.SetIntent(w.ctx, intent)
 
 	solveTx := GetRandomTx()
+	solveTx.FromAddress = GetRandomDOGEAddress() // Source asset is DOGE, so solver needs DOGE address
 	solveTx.Coins = common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(15*common.One))}
 
 	testCases := []struct {
@@ -257,7 +266,7 @@ func (HandlerIntentSolveSuite) TestIntentSolve_ValidationErrors(c *C) {
 			name: "feature disabled should fail",
 			setupMsg: func() *MsgIntentSolve {
 				w.keeper.SetMimir(w.ctx, constants.IntentsEnabled.String(), 0)
-				return NewMsgIntentSolve(solveTx, intentTx.ID, w.activeNodeAccount.NodeAddress)
+				return NewMsgIntentSolve(solveTx, intentTx.ID, solveTx.FromAddress, w.activeNodeAccount.NodeAddress)
 			},
 			expectedErr: se.ErrUnauthorized,
 		},
@@ -266,7 +275,7 @@ func (HandlerIntentSolveSuite) TestIntentSolve_ValidationErrors(c *C) {
 			setupMsg: func() *MsgIntentSolve {
 				w.keeper.SetMimir(w.ctx, constants.IntentsEnabled.String(), 1)
 				fakeTxID := GetRandomTxHash()
-				return NewMsgIntentSolve(solveTx, fakeTxID, w.activeNodeAccount.NodeAddress)
+				return NewMsgIntentSolve(solveTx, fakeTxID, solveTx.FromAddress, w.activeNodeAccount.NodeAddress)
 			},
 			expectedErr: se.ErrUnknownRequest,
 		},
@@ -276,7 +285,7 @@ func (HandlerIntentSolveSuite) TestIntentSolve_ValidationErrors(c *C) {
 				inactiveIntent := intent
 				inactiveIntent.Status = IntentCompleted
 				w.keeper.SetIntent(w.ctx, inactiveIntent)
-				return NewMsgIntentSolve(solveTx, intentTx.ID, w.activeNodeAccount.NodeAddress)
+				return NewMsgIntentSolve(solveTx, intentTx.ID, solveTx.FromAddress, w.activeNodeAccount.NodeAddress)
 			},
 			expectedErr: se.ErrUnauthorized,
 		},
@@ -287,7 +296,7 @@ func (HandlerIntentSolveSuite) TestIntentSolve_ValidationErrors(c *C) {
 				activeIntent.Status = IntentActive
 				activeIntent.ExpiryHeight = w.ctx.BlockHeight() - 1 // Expired
 				w.keeper.SetIntent(w.ctx, activeIntent)
-				return NewMsgIntentSolve(solveTx, intentTx.ID, w.activeNodeAccount.NodeAddress)
+				return NewMsgIntentSolve(solveTx, intentTx.ID, solveTx.FromAddress, w.activeNodeAccount.NodeAddress)
 			},
 			expectedErr: se.ErrUnauthorized,
 		},
@@ -299,11 +308,12 @@ func (HandlerIntentSolveSuite) TestIntentSolve_ValidationErrors(c *C) {
 				w.keeper.SetIntent(w.ctx, intent)
 
 				multiTx := GetRandomTx()
+				multiTx.FromAddress = GetRandomDOGEAddress()
 				multiTx.Coins = common.Coins{
 					common.NewCoin(common.BTCAsset, cosmos.NewUint(15*common.One)),
 					common.NewCoin(common.DOGEAsset, cosmos.NewUint(10*common.One)),
 				}
-				return NewMsgIntentSolve(multiTx, intentTx.ID, w.activeNodeAccount.NodeAddress)
+				return NewMsgIntentSolve(multiTx, intentTx.ID, multiTx.FromAddress, w.activeNodeAccount.NodeAddress)
 			},
 			expectedErr: se.ErrInvalidRequest,
 		},
@@ -311,8 +321,9 @@ func (HandlerIntentSolveSuite) TestIntentSolve_ValidationErrors(c *C) {
 			name: "wrong asset should fail",
 			setupMsg: func() *MsgIntentSolve {
 				wrongAssetTx := GetRandomTx()
+				wrongAssetTx.FromAddress = GetRandomDOGEAddress()
 				wrongAssetTx.Coins = common.Coins{common.NewCoin(common.DOGEAsset, cosmos.NewUint(15*common.One))}
-				return NewMsgIntentSolve(wrongAssetTx, intentTx.ID, w.activeNodeAccount.NodeAddress)
+				return NewMsgIntentSolve(wrongAssetTx, intentTx.ID, wrongAssetTx.FromAddress, w.activeNodeAccount.NodeAddress)
 			},
 			expectedErr: se.ErrInvalidRequest,
 		},
@@ -320,8 +331,9 @@ func (HandlerIntentSolveSuite) TestIntentSolve_ValidationErrors(c *C) {
 			name: "amount below low target should fail",
 			setupMsg: func() *MsgIntentSolve {
 				lowTx := GetRandomTx()
+				lowTx.FromAddress = GetRandomDOGEAddress()
 				lowTx.Coins = common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(5*common.One))} // Below low target of 10
-				return NewMsgIntentSolve(lowTx, intentTx.ID, w.activeNodeAccount.NodeAddress)
+				return NewMsgIntentSolve(lowTx, intentTx.ID, lowTx.FromAddress, w.activeNodeAccount.NodeAddress)
 			},
 			expectedErr: se.ErrInvalidRequest,
 		},
@@ -357,8 +369,9 @@ func (HandlerIntentSolveSuite) TestIntentSolve_KeeperErrors(c *C) {
 	w.keeper.SetIntent(w.ctx, intent)
 
 	solveTx := GetRandomTx()
+	solveTx.FromAddress = GetRandomDOGEAddress()
 	solveTx.Coins = common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(15*common.One))}
-	msg := NewMsgIntentSolve(solveTx, intentTx.ID, w.activeNodeAccount.NodeAddress)
+	msg := NewMsgIntentSolve(solveTx, intentTx.ID, solveTx.FromAddress, w.activeNodeAccount.NodeAddress)
 
 	// Test GetIntent failure
 	testKeeper := NewHandlerIntentSolveTestHelper(w.keeper)
@@ -413,8 +426,9 @@ func (HandlerIntentSolveSuite) TestIntentSolve_EdgeCase_HighEqualsLow(c *C) {
 
 	// Solve at the exact price
 	solveTx := GetRandomTx()
+	solveTx.FromAddress = GetRandomDOGEAddress()
 	solveTx.Coins = common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(10*common.One))}
-	msg := NewMsgIntentSolve(solveTx, intentTx.ID, w.activeNodeAccount.NodeAddress)
+	msg := NewMsgIntentSolve(solveTx, intentTx.ID, solveTx.FromAddress, w.activeNodeAccount.NodeAddress)
 	_, err := handler.Run(w.ctx, msg)
 	c.Assert(err, IsNil)
 
@@ -459,10 +473,11 @@ func (HandlerIntentSolveSuite) TestIntentSolve_SecuredAssetEscrow(c *C) {
 	handler := NewIntentSolveHandler(mgr)
 
 	// Solve with secured asset - use THOR address for FromAddress
+	// Source asset is RUNE (on THOR chain), so destination needs to be THOR address
 	solveTx := GetRandomTx()
 	solveTx.FromAddress = GetRandomTHORAddress()
 	solveTx.Coins = common.Coins{common.NewCoin(securedBTC, cosmos.NewUint(7*common.One))}
-	msg := NewMsgIntentSolve(solveTx, intentTx.ID, w.activeNodeAccount.NodeAddress)
+	msg := NewMsgIntentSolve(solveTx, intentTx.ID, solveTx.FromAddress, w.activeNodeAccount.NodeAddress)
 
 	_, err := handler.Run(w.ctx, msg)
 	c.Assert(err, IsNil)
@@ -501,10 +516,11 @@ func (HandlerIntentSolveSuite) TestIntentSolve_SecuredAssetEscrowError(c *C) {
 	handler := NewIntentSolveHandler(mgr)
 
 	// Solve with secured asset - use THOR address for FromAddress
+	// Source asset is RUNE (on THOR chain), so destination needs to be THOR address
 	solveTx := GetRandomTx()
 	solveTx.FromAddress = GetRandomTHORAddress()
 	solveTx.Coins = common.Coins{common.NewCoin(securedBTC, cosmos.NewUint(7*common.One))}
-	msg := NewMsgIntentSolve(solveTx, intentTx.ID, w.activeNodeAccount.NodeAddress)
+	msg := NewMsgIntentSolve(solveTx, intentTx.ID, solveTx.FromAddress, w.activeNodeAccount.NodeAddress)
 
 	_, err := handler.Run(w.ctx, msg)
 	c.Assert(err, NotNil)
@@ -546,10 +562,11 @@ func (HandlerIntentSolveSuite) TestIntentSolve_TradeAssetEscrow(c *C) {
 	handler := NewIntentSolveHandler(mgr)
 
 	// Solve with trade asset - use THOR address for FromAddress
+	// Source asset is RUNE (on THOR chain), so destination needs to be THOR address
 	solveTx := GetRandomTx()
 	solveTx.FromAddress = GetRandomTHORAddress()
 	solveTx.Coins = common.Coins{common.NewCoin(tradeBTC, cosmos.NewUint(7*common.One))}
-	msg := NewMsgIntentSolve(solveTx, intentTx.ID, w.activeNodeAccount.NodeAddress)
+	msg := NewMsgIntentSolve(solveTx, intentTx.ID, solveTx.FromAddress, w.activeNodeAccount.NodeAddress)
 
 	_, err := handler.Run(w.ctx, msg)
 	c.Assert(err, IsNil)
@@ -588,10 +605,11 @@ func (HandlerIntentSolveSuite) TestIntentSolve_TradeAssetEscrowError(c *C) {
 	handler := NewIntentSolveHandler(mgr)
 
 	// Solve with trade asset - use THOR address for FromAddress
+	// Source asset is RUNE (on THOR chain), so destination needs to be THOR address
 	solveTx := GetRandomTx()
 	solveTx.FromAddress = GetRandomTHORAddress()
 	solveTx.Coins = common.Coins{common.NewCoin(tradeBTC, cosmos.NewUint(7*common.One))}
-	msg := NewMsgIntentSolve(solveTx, intentTx.ID, w.activeNodeAccount.NodeAddress)
+	msg := NewMsgIntentSolve(solveTx, intentTx.ID, solveTx.FromAddress, w.activeNodeAccount.NodeAddress)
 
 	_, err := handler.Run(w.ctx, msg)
 	c.Assert(err, NotNil)
@@ -624,10 +642,12 @@ func (HandlerIntentSolveSuite) TestIntentSolve_RUNEEscrow(c *C) {
 	handler := NewIntentSolveHandler(mgr)
 
 	// Use a funded node account address as the FromAddress (has RUNE balance)
+	// Source asset is BTC, so destination needs to be BTC address
 	solveTx := GetRandomTx()
 	solveTx.FromAddress, _ = common.NewAddress(w.activeNodeAccount.NodeAddress.String())
 	solveTx.Coins = common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(150*common.One))}
-	msg := NewMsgIntentSolve(solveTx, intentTx.ID, w.activeNodeAccount.NodeAddress)
+	destAddr := GetRandomBTCAddress()
+	msg := NewMsgIntentSolve(solveTx, intentTx.ID, destAddr, w.activeNodeAccount.NodeAddress)
 
 	// Note: This test may fail with insufficient funds if the node account
 	// doesn't have enough RUNE. The RUNEEscrowError test validates the escrow
@@ -673,10 +693,12 @@ func (HandlerIntentSolveSuite) TestIntentSolve_RUNEEscrowError(c *C) {
 	handler := NewIntentSolveHandler(mgr)
 
 	// Solve with RUNE - use THOR address for FromAddress
+	// Source asset is BTC, so destination needs to be BTC address
 	solveTx := GetRandomTx()
 	solveTx.FromAddress = GetRandomTHORAddress()
 	solveTx.Coins = common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(700*common.One))}
-	msg := NewMsgIntentSolve(solveTx, intentTx.ID, w.activeNodeAccount.NodeAddress)
+	destAddr := GetRandomBTCAddress()
+	msg := NewMsgIntentSolve(solveTx, intentTx.ID, destAddr, w.activeNodeAccount.NodeAddress)
 
 	_, err := handler.Run(w.ctx, msg)
 	c.Assert(err, NotNil)
@@ -709,8 +731,9 @@ func (HandlerIntentSolveSuite) TestIntentSolve_EmptyCoins(c *C) {
 
 	// Create solve with empty coins
 	solveTx := GetRandomTx()
+	solveTx.FromAddress = GetRandomDOGEAddress()
 	solveTx.Coins = common.Coins{} // empty
-	msg := NewMsgIntentSolve(solveTx, intentTx.ID, w.activeNodeAccount.NodeAddress)
+	msg := NewMsgIntentSolve(solveTx, intentTx.ID, solveTx.FromAddress, w.activeNodeAccount.NodeAddress)
 
 	_, err := handler.Run(w.ctx, msg)
 	c.Assert(err, NotNil)
@@ -747,8 +770,9 @@ func (HandlerIntentSolveSuite) TestIntentSolve_OfferExceedsHighTarget(c *C) {
 
 	// Solve with offer EXCEEDING high target (25 > 20)
 	solveTx := GetRandomTx()
+	solveTx.FromAddress = GetRandomDOGEAddress()
 	solveTx.Coins = common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(25*common.One))}
-	msg := NewMsgIntentSolve(solveTx, intentTx.ID, w.activeNodeAccount.NodeAddress)
+	msg := NewMsgIntentSolve(solveTx, intentTx.ID, solveTx.FromAddress, w.activeNodeAccount.NodeAddress)
 	_, err := handler.Run(w.ctx, msg)
 	c.Assert(err, IsNil)
 
@@ -786,10 +810,74 @@ func (HandlerIntentSolveSuite) TestIntentSolve_IntentExpiresAtCurrentBlock(c *C)
 
 	// Try to solve - should fail because intent has expired
 	solveTx := GetRandomTx()
+	solveTx.FromAddress = GetRandomDOGEAddress()
 	solveTx.Coins = common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(15*common.One))}
-	msg := NewMsgIntentSolve(solveTx, intentTx.ID, w.activeNodeAccount.NodeAddress)
+	msg := NewMsgIntentSolve(solveTx, intentTx.ID, solveTx.FromAddress, w.activeNodeAccount.NodeAddress)
 
 	_, err := handler.Run(w.ctx, msg)
 	c.Assert(err, NotNil)
 	c.Check(err.Error(), Matches, ".*intent has expired.*")
+}
+
+func (HandlerIntentSolveSuite) TestIntentSolve_CrossChainRequiresDestinationAddress(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
+
+	// Enable intents feature
+	w.keeper.SetMimir(w.ctx, constants.IntentsEnabled.String(), 1)
+	w.keeper.SetMimir(w.ctx, constants.IntentPriceSlideBlocks.String(), 1000)
+
+	// Create intent: user wants to swap ETH for BTC
+	// Using ETH as source because ETH addresses (0x prefix) are easily distinguishable from BTC
+	intentTx := GetRandomTx()
+	intentTx.Coins = common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One))}
+	intent := Intent{
+		TxID:          intentTx.ID,
+		SourceAddress: GetRandomETHAddress(),
+		Source:        common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One)),
+		TargetAsset:   common.BTCAsset,
+		TargetAddress: GetRandomBTCAddress(),
+		HighTarget:    cosmos.NewUint(15 * common.One),
+		LowTarget:     cosmos.NewUint(10 * common.One),
+		ExpiryHeight:  w.ctx.BlockHeight() + 2000,
+		Status:        IntentActive,
+	}
+	w.keeper.SetIntent(w.ctx, intent)
+
+	mgr := NewDummyMgrWithKeeper(w.keeper)
+	handler := NewIntentSolveHandler(mgr)
+
+	// Test 1: Cross-chain solve WITHOUT destination address should FAIL
+	// Solver sends from BTC chain, but intent source is ETH
+	solveTx1 := GetRandomTx()
+	solveTx1.FromAddress = GetRandomBTCAddress() // Sending from BTC
+	solveTx1.Coins = common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(12*common.One))}
+	msg1 := NewMsgIntentSolve(solveTx1, intentTx.ID, common.NoAddress, w.activeNodeAccount.NodeAddress)
+	_, err := handler.Run(w.ctx, msg1)
+	c.Assert(err, NotNil)
+	c.Check(err.Error(), Matches, ".*destination address is required when solving cross-chain.*")
+
+	// Test 2: Cross-chain solve WITH wrong chain destination address should FAIL
+	// BTC address is not valid for ETH chain (ETH needs 0x prefix)
+	solveTx2 := GetRandomTx()
+	solveTx2.FromAddress = GetRandomBTCAddress() // Sending from BTC
+	solveTx2.Coins = common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(12*common.One))}
+	wrongDestAddr := GetRandomBTCAddress() // BTC address, but source is ETH
+	msg2 := NewMsgIntentSolve(solveTx2, intentTx.ID, wrongDestAddr, w.activeNodeAccount.NodeAddress)
+	_, err = handler.Run(w.ctx, msg2)
+	c.Assert(err, NotNil)
+	c.Check(err.Error(), Matches, ".*destination address .* is not valid for chain.*")
+
+	// Test 3: Cross-chain solve WITH correct chain destination address should SUCCEED
+	solveTx3 := GetRandomTx()
+	solveTx3.FromAddress = GetRandomBTCAddress() // Sending from BTC
+	correctDestAddr := GetRandomETHAddress()     // ETH address for receiving ETH (source asset)
+	solveTx3.Coins = common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(12*common.One))}
+	msg3 := NewMsgIntentSolve(solveTx3, intentTx.ID, correctDestAddr, w.activeNodeAccount.NodeAddress)
+	_, err = handler.Run(w.ctx, msg3)
+	c.Assert(err, IsNil)
+
+	// Verify solve was created with correct destination address
+	solve, err := w.keeper.GetIntentSolve(w.ctx, solveTx3.ID)
+	c.Assert(err, IsNil)
+	c.Check(solve.DestinationAddress.Equals(correctDestAddr), Equals, true)
 }

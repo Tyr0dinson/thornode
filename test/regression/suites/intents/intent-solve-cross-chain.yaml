@@ -1,0 +1,182 @@
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: check
+endpoint: http://localhost:1317/thorchain/pools
+asserts:
+  - .|length == 2
+---
+########################################################################################
+# Enable intents
+########################################################################################
+type: tx-mimir
+key: IntentsEnabled
+value: 1
+signer: {{ addr_thor_dog }}
+sequence: 0
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Create an intent - cross-chain swap: ETH for BTC
+# User (fox) wants to swap 1 ETH for at least 0.01 BTC (1000000 sats)
+# This tests cross-chain solving where the solver sends BTC and receives ETH
+# Format: IO:TARGET_ASSET:HIGH_TARGET:LOW_TARGET:TARGET_ADDR
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 1 }}'
+    chain: ETH
+    from_address: {{ addr_eth_fox }}
+    to_address: {{ addr_eth_dog }}
+    coins:
+      - amount: "100000000"
+        asset: "ETH.ETH"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "ETH.ETH"
+    memo: "IO:BTC.BTC:1200000:1200000:{{ addr_btc_fox }}"
+  block_height: 2
+  finalise_height: 2
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Check intent was created
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intent/{{ observe_txid 1 }}
+asserts:
+  - .intent.tx_id == "{{ observe_txid 1 }}"
+  - .intent.status == "IntentActive"
+  - .intent.source.asset == "ETH.ETH"
+  - .intent.source.amount == "100000000"
+  - .intent.target_asset == "BTC.BTC"
+  - .intent.high_target == "1200000"
+  - .intent.low_target == "1200000"
+---
+########################################################################################
+# Solver (cat) sends BTC to solve the intent
+# Format: IS:INTENT_TX_HASH:DESTINATION_ADDR
+# Solver sends from BTC chain but needs to receive ETH (the source asset)
+# So they must specify their ETH address as the destination
+########################################################################################
+type: tx-observed-in
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 2 }}'
+    chain: BTC
+    from_address: {{ addr_btc_cat }}
+    to_address: {{ addr_btc_dog }}
+    coins:
+      - amount: "1200000"
+        asset: "BTC.BTC"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "BTC.BTC"
+    memo: "IS:{{ observe_txid 1 }}:{{ addr_eth_cat }}"
+  block_height: 3
+  finalise_height: 3
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Check intent was completed (match_height = current_height for immediate execution)
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intent/{{ observe_txid 1 }}
+asserts:
+  - .intent.status == "IntentCompleted"
+---
+########################################################################################
+# Check outbound queue has the swaps scheduled:
+# 1. Solver (cat) gets the source asset (ETH) at their ETH destination address
+# 2. User (fox) gets the target asset (BTC) at their BTC target address
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length >= 1
+---
+########################################################################################
+# Observe solver's outbound (cat gets ETH at their ETH address)
+# The solver sent from BTC but specified their ETH address for receiving ETH
+########################################################################################
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 3 }}'
+    chain: ETH
+    from_address: {{ addr_eth_dog }}
+    to_address: {{ addr_eth_cat }}
+    coins:
+      - amount: "99260000"
+        asset: "ETH.ETH"
+        decimals: 8
+    gas:
+      - amount: "960000"
+        asset: "ETH.ETH"
+    memo: "OUT:{{ observe_txid 2 }}"
+  block_height: 4
+  finalise_height: 4
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Observe user's outbound (fox gets BTC at their BTC target address)
+########################################################################################
+type: tx-observed-out
+signer: {{ addr_thor_dog }}
+txs:
+- tx:
+    id: '{{ observe_txid 4 }}'
+    chain: BTC
+    from_address: {{ addr_btc_dog }}
+    to_address: {{ addr_btc_fox }}
+    coins:
+      - amount: "1193000"
+        asset: "BTC.BTC"
+        decimals: 8
+    gas:
+      - amount: "10000"
+        asset: "BTC.BTC"
+    memo: "OUT:{{ observe_txid 1 }}"
+  block_height: 6
+  finalise_height: 6
+  observed_pub_key: {{ pubkey_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Verify outbound queue is now empty
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/queue/outbound
+asserts:
+  - .|length == 0
+---
+########################################################################################
+# Verify intents list is empty (completed intent should not be in active list)
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/intents
+asserts:
+  - .intents | length == 0
