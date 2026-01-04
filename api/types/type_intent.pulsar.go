@@ -5722,8 +5722,9 @@ type IntentSolve struct {
 	TargetCoin    *common.Coin `protobuf:"bytes,4,opt,name=target_coin,json=targetCoin,proto3" json:"target_coin,omitempty"`
 	SubmitHeight  int64        `protobuf:"varint,6,opt,name=submit_height,json=submitHeight,proto3" json:"submit_height,omitempty"`
 	MatchHeight   int64        `protobuf:"varint,7,opt,name=match_height,json=matchHeight,proto3" json:"match_height,omitempty"`
-	// destination_address is where the solver wants to receive the intent's source asset
-	// This allows cross-chain solving where the solver sends from one chain and receives on another
+	// destination_address is where the solver wants to receive the intent's
+	// source asset This allows cross-chain solving where the solver sends from
+	// one chain and receives on another
 	DestinationAddress string `protobuf:"bytes,8,opt,name=destination_address,json=destinationAddress,proto3" json:"destination_address,omitempty"`
 }
 
