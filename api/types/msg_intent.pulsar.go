@@ -2838,8 +2838,9 @@ type MsgIntentSolve struct {
 	Tx         *common.Tx `protobuf:"bytes,1,opt,name=tx,proto3" json:"tx,omitempty"`
 	IntentTxId string     `protobuf:"bytes,2,opt,name=intent_tx_id,json=intentTxId,proto3" json:"intent_tx_id,omitempty"`
 	Signer     []byte     `protobuf:"bytes,3,opt,name=signer,proto3" json:"signer,omitempty"`
-	// destination_address is where the solver wants to receive the intent's source asset
-	// This allows cross-chain solving where the solver sends from one chain and receives on another
+	// destination_address is where the solver wants to receive the intent's
+	// source asset This allows cross-chain solving where the solver sends from
+	// one chain and receives on another
 	DestinationAddress string `protobuf:"bytes,4,opt,name=destination_address,json=destinationAddress,proto3" json:"destination_address,omitempty"`
 }
 

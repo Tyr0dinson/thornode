@@ -165,8 +165,9 @@ type MsgIntentSolve struct {
 	Tx         common.Tx                                     `protobuf:"bytes,1,opt,name=tx,proto3" json:"tx"`
 	IntentTxID gitlab_com_thorchain_thornode_v3_common.TxID  `protobuf:"bytes,2,opt,name=intent_tx_id,json=intentTxId,proto3,casttype=gitlab.com/thorchain/thornode/v3/common.TxID" json:"intent_tx_id,omitempty"`
 	Signer     github_com_cosmos_cosmos_sdk_types.AccAddress `protobuf:"bytes,3,opt,name=signer,proto3,casttype=github.com/cosmos/cosmos-sdk/types.AccAddress" json:"signer,omitempty"`
-	// destination_address is where the solver wants to receive the intent's source asset
-	// This allows cross-chain solving where the solver sends from one chain and receives on another
+	// destination_address is where the solver wants to receive the intent's
+	// source asset This allows cross-chain solving where the solver sends from
+	// one chain and receives on another
 	DestinationAddress gitlab_com_thorchain_thornode_v3_common.Address `protobuf:"bytes,4,opt,name=destination_address,json=destinationAddress,proto3,casttype=gitlab.com/thorchain/thornode/v3/common.Address" json:"destination_address,omitempty"`
 }
 
