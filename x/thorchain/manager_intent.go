@@ -293,9 +293,11 @@ func (im *IntentMgr) executeIntent(ctx cosmos.Context, intent Intent, solve Inte
 	var feePool Pool
 
 	// Prepare outbound items
+	// Use DestinationAddress for the solver's outbound - this allows cross-chain solving
+	// where the solver sends from one chain and receives on another
 	solverToi := TxOutItem{
 		Chain:     intent.Source.Asset.GetChain(),
-		ToAddress: solve.SolverAddress,
+		ToAddress: solve.DestinationAddress,
 		Coin:      intent.Source,
 		Memo:      fmt.Sprintf("OUT:%s", solve.SolveTxID),
 		InHash:    solve.SolveTxID,

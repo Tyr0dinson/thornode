@@ -369,7 +369,8 @@ func (MsgIntentSuite) TestMsgIntentSolve(c *C) {
 	)
 
 	// Test valid message - happy path
-	m := NewMsgIntentSolve(tx, intentTxID, addr)
+	destAddr := GetRandomETHAddress()
+	m := NewMsgIntentSolve(tx, intentTxID, destAddr, addr)
 	EnsureMsgBasicCorrect(m, c)
 
 	// Test invalid cases
@@ -377,31 +378,35 @@ func (MsgIntentSuite) TestMsgIntentSolve(c *C) {
 		name       string
 		tx         common.Tx
 		intentTxID common.TxID
+		destAddr   common.Address
 		signer     cosmos.AccAddress
 	}{
 		{
 			name:       "empty signer",
 			tx:         tx,
 			intentTxID: intentTxID,
+			destAddr:   destAddr,
 			signer:     cosmos.AccAddress{},
 		},
 		{
 			name:       "invalid tx - empty tx id",
 			tx:         common.NewTx(common.TxID(""), GetRandomETHAddress(), GetRandomETHAddress(), common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(common.One))}, common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(common.One))}, "+:intenttxid"),
 			intentTxID: intentTxID,
+			destAddr:   destAddr,
 			signer:     addr,
 		},
 		{
 			name:       "empty intent tx id",
 			tx:         tx,
 			intentTxID: common.TxID(""),
+			destAddr:   destAddr,
 			signer:     addr,
 		},
 	}
 
 	for _, item := range inputs {
 		c.Logf("Test case: %s", item.name)
-		m = NewMsgIntentSolve(item.tx, item.intentTxID, item.signer)
+		m = NewMsgIntentSolve(item.tx, item.intentTxID, item.destAddr, item.signer)
 		c.Assert(m.ValidateBasic(), NotNil, Commentf("Expected error for: %s", item.name))
 	}
 }
@@ -410,6 +415,7 @@ func (MsgIntentSuite) TestNewMsgIntentSolve(c *C) {
 	addr := GetRandomBech32Addr()
 	txID := GetRandomTxHash()
 	intentTxID := GetRandomTxHash()
+	destAddr := GetRandomETHAddress()
 
 	tx := common.NewTx(
 		txID,
@@ -422,11 +428,12 @@ func (MsgIntentSuite) TestNewMsgIntentSolve(c *C) {
 		"+:intenttxid",
 	)
 
-	msg := NewMsgIntentSolve(tx, intentTxID, addr)
+	msg := NewMsgIntentSolve(tx, intentTxID, destAddr, addr)
 
 	// Verify all fields are correctly set
 	c.Assert(msg.Tx.ID.Equals(txID), Equals, true)
 	c.Assert(msg.IntentTxID.Equals(intentTxID), Equals, true)
+	c.Assert(msg.DestinationAddress.Equals(destAddr), Equals, true)
 	c.Assert(msg.Signer.Equals(addr), Equals, true)
 
 	// Verify GetSigners

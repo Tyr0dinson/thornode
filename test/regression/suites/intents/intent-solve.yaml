@@ -23,8 +23,9 @@ type: create-blocks
 count: 1
 ---
 ########################################################################################
-# Create an intent - swap ETH for more ETH (same chain to avoid cross-chain address issue)
+# Create an intent - swap ETH for more ETH (same chain)
 # This tests the intent solve mechanics on a single chain
+# For cross-chain intent solves, see intent-solve-cross-chain.yaml
 # Format: IO:TARGET_ASSET:HIGH_TARGET:LOW_TARGET:TARGET_ADDR
 # Setting high=low so any valid offer executes immediately
 ########################################################################################
