@@ -139,7 +139,7 @@ txs:
     gas:
       - amount: "10000"
         asset: "BTC.BTC"
-    memo: "IS:{{ observe_txid 1 }}"
+    memo: "IS:{{ observe_txid 1 }}:{{ addr_eth_cat }}"
   block_height: 3
   finalise_height: 3
   observed_pub_key: {{ pubkey_dog }}
