@@ -164,7 +164,7 @@ func getMsgIntentCancelFromMemo(memo IntentCancelMemo, tx ObservedTx, signer cos
 }
 
 func getMsgIntentSolveFromMemo(memo IntentSolveMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
-	return NewMsgIntentSolve(tx.Tx, memo.GetIntentTxID(), signer), nil
+	return NewMsgIntentSolve(tx.Tx, memo.GetIntentTxID(), memo.GetDestinationAddress(), signer), nil
 }
 
 func getMsgIntentAuctionBidFromMemo(memo IntentAuctionBidMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {

@@ -120,11 +120,12 @@ func (m *MsgIntentCancel) ValidateBasic() error {
 }
 
 // NewMsgIntentSolve is a constructor function for MsgIntentSolve
-func NewMsgIntentSolve(tx common.Tx, intentTxID common.TxID, signer cosmos.AccAddress) *MsgIntentSolve {
+func NewMsgIntentSolve(tx common.Tx, intentTxID common.TxID, destAddr common.Address, signer cosmos.AccAddress) *MsgIntentSolve {
 	return &MsgIntentSolve{
-		Tx:         tx,
-		IntentTxID: intentTxID,
-		Signer:     signer,
+		Tx:                 tx,
+		IntentTxID:         intentTxID,
+		DestinationAddress: destAddr,
+		Signer:             signer,
 	}
 }
 

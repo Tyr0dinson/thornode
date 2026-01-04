@@ -118,29 +118,42 @@ func (p *parser) ParseIntentCancelMemo() (IntentCancelMemo, error) {
 }
 
 // IntentSolveMemo represents a memo for solving an intent
-// Format: IS:INTENT_TX_HASH
+// Format: IS:INTENT_TX_HASH:DESTINATION_ADDR
+// DESTINATION_ADDR is where the solver wants to receive the intent's source asset
+// This allows cross-chain solving where the solver sends from one chain and receives on another
 type IntentSolveMemo struct {
 	MemoBase
-	IntentTxID common.TxID
+	IntentTxID         common.TxID
+	DestinationAddress common.Address
 }
 
-func (m IntentSolveMemo) GetIntentTxID() common.TxID { return m.IntentTxID }
+func (m IntentSolveMemo) GetIntentTxID() common.TxID            { return m.IntentTxID }
+func (m IntentSolveMemo) GetDestinationAddress() common.Address { return m.DestinationAddress }
 
 func (m IntentSolveMemo) String() string {
-	return fmt.Sprintf("%s:%s", m.TxType.String(), m.IntentTxID.String())
+	if m.DestinationAddress.IsEmpty() {
+		return fmt.Sprintf("%s:%s", m.TxType.String(), m.IntentTxID.String())
+	}
+	return fmt.Sprintf("%s:%s:%s", m.TxType.String(), m.IntentTxID.String(), m.DestinationAddress.String())
 }
 
-func NewIntentSolveMemo(txID common.TxID) IntentSolveMemo {
+func NewIntentSolveMemo(txID common.TxID, destAddr common.Address) IntentSolveMemo {
 	return IntentSolveMemo{
-		MemoBase:   MemoBase{TxType: TxIntentSolve},
-		IntentTxID: txID,
+		MemoBase:           MemoBase{TxType: TxIntentSolve},
+		IntentTxID:         txID,
+		DestinationAddress: destAddr,
 	}
 }
 
 func (p *parser) ParseIntentSolveMemo() (IntentSolveMemo, error) {
-	// Format: IS:INTENT_TX_HASH
+	// Format: IS:INTENT_TX_HASH:DESTINATION_ADDR
+	// DESTINATION_ADDR is optional in memo parsing - validation happens in handler
+	// when the intent is looked up and we know which chain to validate against
 	txID := p.getTxID(1, true, common.TxID(""))
-	return NewIntentSolveMemo(txID), p.Error()
+	// Destination address parsing - we can't validate the chain here since we don't
+	// know the intent's source asset yet. Handler will validate it matches the source chain.
+	destAddr := p.getAddress(2, false, common.NoAddress)
+	return NewIntentSolveMemo(txID, destAddr), p.Error()
 }
 
 // IntentAuctionBidMemo represents a memo for bidding on an intent auction

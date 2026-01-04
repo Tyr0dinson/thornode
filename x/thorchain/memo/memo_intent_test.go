@@ -115,6 +115,7 @@ func (s *MemoIntentSuite) TestIntentCancelMemo_String(c *C) {
 }
 
 func (s *MemoIntentSuite) TestIntentSolveMemo_Parse(c *C) {
+	// Test without destination address
 	memoStr := "IS:ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234"
 	m, err := ParseMemoWithTHORNames(s.ctx, s.k, memoStr)
 	c.Assert(err, IsNil)
@@ -123,14 +124,40 @@ func (s *MemoIntentSuite) TestIntentSolveMemo_Parse(c *C) {
 	solveMemo, ok := m.(IntentSolveMemo)
 	c.Assert(ok, Equals, true)
 	c.Check(solveMemo.GetIntentTxID().IsEmpty(), Equals, false)
+	c.Check(solveMemo.GetDestinationAddress().IsEmpty(), Equals, true)
+}
+
+func (s *MemoIntentSuite) TestIntentSolveMemo_Parse_WithDestination(c *C) {
+	// Test with destination address
+	btcAddr := types.GetRandomBTCAddress()
+	memoStr := fmt.Sprintf("IS:ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234:%s", btcAddr)
+	m, err := ParseMemoWithTHORNames(s.ctx, s.k, memoStr)
+	c.Assert(err, IsNil)
+	c.Check(m.GetType(), Equals, TxIntentSolve)
+
+	solveMemo, ok := m.(IntentSolveMemo)
+	c.Assert(ok, Equals, true)
+	c.Check(solveMemo.GetIntentTxID().IsEmpty(), Equals, false)
+	c.Check(solveMemo.GetDestinationAddress().IsEmpty(), Equals, false)
+	c.Check(solveMemo.GetDestinationAddress().Equals(btcAddr), Equals, true)
 }
 
 func (s *MemoIntentSuite) TestIntentSolveMemo_String(c *C) {
 	txID := common.TxID("ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234")
-	memo := NewIntentSolveMemo(txID)
+	memo := NewIntentSolveMemo(txID, common.NoAddress)
 
 	str := memo.String()
 	c.Check(str, Equals, "is:ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234")
+}
+
+func (s *MemoIntentSuite) TestIntentSolveMemo_String_WithDestination(c *C) {
+	txID := common.TxID("ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234")
+	btcAddr := types.GetRandomBTCAddress()
+	memo := NewIntentSolveMemo(txID, btcAddr)
+
+	str := memo.String()
+	expectedStr := fmt.Sprintf("is:ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234567890ABCD1234:%s", btcAddr)
+	c.Check(str, Equals, expectedStr)
 }
 
 func (s *MemoIntentSuite) TestIntentOpenMemo_InvalidFormats(c *C) {
