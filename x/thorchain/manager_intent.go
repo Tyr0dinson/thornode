@@ -162,6 +162,8 @@ func (im *IntentMgr) refundLosingSolves(ctx cosmos.Context, intent types.Intent,
 			"solve_txid", solve.SolveTxID,
 			"amount", solve.TargetCoin.Amount,
 		)
+                // Clean up the solve record
+		im.mgr.Keeper().RemoveIntentSolve(ctx, solve.SolveTxID)
 	}
 }
 
