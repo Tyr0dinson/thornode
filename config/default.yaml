@@ -160,6 +160,13 @@ bifrost:
       opt_to_retire: false
       solvency_blocks: 0
 
+      # fallback RPC endpoint configuration
+      fallback_rpc_host: ""
+      fallback_api_host: ""
+      fallback_cosmos_grpc_host: ""
+      fallback_authorization_bearer: ""
+      fallback_health_check_interval: 30s
+
     eth:
       <<: *default-chain
       chain_id: ETH

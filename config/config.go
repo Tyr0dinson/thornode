@@ -209,6 +209,38 @@ func Init() {
 	assert(viper.BindEnv("bifrost.chains.LTC.disabled", "LTC_DISABLED"))
 	assert(viper.BindEnv("bifrost.chains.AVAX.disabled", "AVAX_DISABLED"))
 	assert(viper.BindEnv("bifrost.chains.AVAX.block_scanner.gas_cache_size", "AVAX_GAS_CACHE_SIZE"))
+
+	// Fallback RPC endpoint bindings
+	assert(viper.BindEnv("bifrost.chains.BTC.fallback_rpc_host", "BTC_FALLBACK_HOST"))
+	assert(viper.BindEnv("bifrost.chains.BTC.fallback_authorization_bearer", "BTC_FALLBACK_API_KEY"))
+	assert(viper.BindEnv("bifrost.chains.ETH.fallback_rpc_host", "ETH_FALLBACK_HOST"))
+	assert(viper.BindEnv("bifrost.chains.ETH.fallback_authorization_bearer", "ETH_FALLBACK_API_KEY"))
+	assert(viper.BindEnv("bifrost.chains.AVAX.fallback_rpc_host", "AVAX_FALLBACK_HOST"))
+	assert(viper.BindEnv("bifrost.chains.AVAX.fallback_authorization_bearer", "AVAX_FALLBACK_API_KEY"))
+	assert(viper.BindEnv("bifrost.chains.BSC.fallback_rpc_host", "BSC_FALLBACK_HOST"))
+	assert(viper.BindEnv("bifrost.chains.BSC.fallback_authorization_bearer", "BSC_FALLBACK_API_KEY"))
+	assert(viper.BindEnv("bifrost.chains.BASE.fallback_rpc_host", "BASE_FALLBACK_HOST"))
+	assert(viper.BindEnv("bifrost.chains.BASE.fallback_authorization_bearer", "BASE_FALLBACK_API_KEY"))
+	assert(viper.BindEnv("bifrost.chains.DOGE.fallback_rpc_host", "DOGE_FALLBACK_HOST"))
+	assert(viper.BindEnv("bifrost.chains.DOGE.fallback_authorization_bearer", "DOGE_FALLBACK_API_KEY"))
+	assert(viper.BindEnv("bifrost.chains.LTC.fallback_rpc_host", "LTC_FALLBACK_HOST"))
+	assert(viper.BindEnv("bifrost.chains.LTC.fallback_authorization_bearer", "LTC_FALLBACK_API_KEY"))
+	assert(viper.BindEnv("bifrost.chains.BCH.fallback_rpc_host", "BCH_FALLBACK_HOST"))
+	assert(viper.BindEnv("bifrost.chains.BCH.fallback_authorization_bearer", "BCH_FALLBACK_API_KEY"))
+	assert(viper.BindEnv("bifrost.chains.GAIA.fallback_rpc_host", "GAIA_FALLBACK_HOST"))
+	assert(viper.BindEnv("bifrost.chains.GAIA.fallback_cosmos_grpc_host", "GAIA_FALLBACK_GRPC_HOST"))
+	assert(viper.BindEnv("bifrost.chains.GAIA.fallback_authorization_bearer", "GAIA_FALLBACK_API_KEY"))
+	assert(viper.BindEnv("bifrost.chains.NOBLE.fallback_rpc_host", "NOBLE_FALLBACK_HOST"))
+	assert(viper.BindEnv("bifrost.chains.NOBLE.fallback_cosmos_grpc_host", "NOBLE_FALLBACK_GRPC_HOST"))
+	assert(viper.BindEnv("bifrost.chains.NOBLE.fallback_authorization_bearer", "NOBLE_FALLBACK_API_KEY"))
+	assert(viper.BindEnv("bifrost.chains.SOL.fallback_rpc_host", "SOL_FALLBACK_HOST"))
+	assert(viper.BindEnv("bifrost.chains.SOL.fallback_authorization_bearer", "SOL_FALLBACK_API_KEY"))
+	assert(viper.BindEnv("bifrost.chains.TRON.fallback_rpc_host", "TRON_FALLBACK_HOST"))
+	assert(viper.BindEnv("bifrost.chains.TRON.fallback_api_host", "TRON_FALLBACK_API_HOST"))
+	assert(viper.BindEnv("bifrost.chains.TRON.fallback_authorization_bearer", "TRON_FALLBACK_API_KEY"))
+	assert(viper.BindEnv("bifrost.chains.XRP.fallback_rpc_host", "XRP_FALLBACK_HOST"))
+	assert(viper.BindEnv("bifrost.chains.XRP.fallback_authorization_bearer", "XRP_FALLBACK_API_KEY"))
+
 	assert(viper.BindEnv("thor.cosmos.halt_height", "HARDFORK_BLOCK_HEIGHT"))
 
 	// always override from environment
@@ -743,6 +775,21 @@ type BifrostChainConfiguration struct {
 	// AuthorizationBearer can be set to configure the RPC client with an API token that
 	// will be provided to the backend in an Authorization header.
 	AuthorizationBearer string `mapstructure:"authorization_bearer"`
+
+	// FallbackRPCHost is the fallback RPC endpoint to use when primary fails.
+	FallbackRPCHost string `mapstructure:"fallback_rpc_host"`
+
+	// FallbackAPIHost is the fallback API endpoint (for chains like Tron that use separate API).
+	FallbackAPIHost string `mapstructure:"fallback_api_host"`
+
+	// FallbackCosmosGRPCHost is the fallback gRPC endpoint for Cosmos chains.
+	FallbackCosmosGRPCHost string `mapstructure:"fallback_cosmos_grpc_host"`
+
+	// FallbackAuthorizationBearer is the API key/token for the fallback endpoint.
+	FallbackAuthorizationBearer string `mapstructure:"fallback_authorization_bearer"`
+
+	// FallbackHealthCheckInterval is how often to check if primary endpoint has recovered.
+	FallbackHealthCheckInterval time.Duration `mapstructure:"fallback_health_check_interval"`
 
 	// EVM contains EVM chain specific configuration.
 	EVM struct {

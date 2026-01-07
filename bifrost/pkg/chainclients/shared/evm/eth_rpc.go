@@ -14,21 +14,82 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	btypes "gitlab.com/thorchain/thornode/v3/bifrost/blockscanner/types"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/fallback"
 )
 
 // EthRPC is a struct that interacts with an ETH RPC compatible blockchain
 type EthRPC struct {
-	client  *ethclient.Client
-	timeout time.Duration
-	logger  zerolog.Logger
+	client     *ethclient.Client
+	fallback   *ethclient.Client
+	fbMgr      *fallback.Manager
+	timeout    time.Duration
+	logger     zerolog.Logger
+	chain      string
+	hasFallbck bool
 }
 
 func NewEthRPC(client *ethclient.Client, timeout time.Duration, chain string) (*EthRPC, error) {
 	return &EthRPC{
 		client:  client,
 		timeout: timeout,
+		chain:   chain,
 		logger:  log.Logger.With().Str("module", "eth_rpc").Str("chain", chain).Logger(),
 	}, nil
+}
+
+// SetFallback configures a fallback RPC client with health check interval
+func (e *EthRPC) SetFallback(fallbackClient *ethclient.Client, healthCheckInterval time.Duration) {
+	if fallbackClient == nil {
+		return
+	}
+	e.fallback = fallbackClient
+	e.hasFallbck = true
+	e.fbMgr = fallback.NewManager(
+		e.chain,
+		e.primaryHealthCheck,
+		healthCheckInterval,
+		e.logger,
+	)
+	e.fbMgr.Start()
+	e.logger.Info().Msg("fallback RPC endpoint configured")
+}
+
+// Stop stops the fallback manager if running
+func (e *EthRPC) Stop() {
+	if e.fbMgr != nil {
+		e.fbMgr.Stop()
+	}
+}
+
+// primaryHealthCheck checks if the primary endpoint is healthy
+func (e *EthRPC) primaryHealthCheck(ctx context.Context) error {
+	_, err := e.client.BlockNumber(ctx)
+	return err
+}
+
+// getActiveClient returns the currently active client based on fallback state
+func (e *EthRPC) getActiveClient() *ethclient.Client {
+	if e.hasFallbck && e.fbMgr != nil && e.fbMgr.IsFallback() {
+		return e.fallback
+	}
+	return e.client
+}
+
+// handleFallback switches to fallback if the error warrants it and retries with fallback
+func (e *EthRPC) tryFallback(err error) bool {
+	if !e.hasFallbck || e.fbMgr == nil {
+		return false
+	}
+	if fallback.ShouldSwitchToFallback(err) {
+		e.fbMgr.SetFallback()
+		return true
+	}
+	return false
+}
+
+// IsFallbackActive returns true if currently using fallback endpoint
+func (e *EthRPC) IsFallbackActive() bool {
+	return e.hasFallbck && e.fbMgr != nil && e.fbMgr.IsFallback()
 }
 
 func (e *EthRPC) getContext() (context.Context, context.CancelFunc) {
@@ -38,33 +99,61 @@ func (e *EthRPC) getContext() (context.Context, context.CancelFunc) {
 func (e *EthRPC) EstimateGas(from string, tx *etypes.Transaction) (uint64, error) {
 	ctx, cancel := e.getContext()
 	defer cancel()
-	return e.client.EstimateGas(ctx, ethereum.CallMsg{
+	msg := ethereum.CallMsg{
 		From:     ecommon.HexToAddress(from),
 		To:       tx.To(),
 		GasPrice: tx.GasPrice(),
-		// Gas:      tx.Gas(),
-		Value: tx.Value(),
-		Data:  tx.Data(),
-	})
+		Value:    tx.Value(),
+		Data:     tx.Data(),
+	}
+	gas, err := e.getActiveClient().EstimateGas(ctx, msg)
+	if err != nil && e.tryFallback(err) {
+		ctx2, cancel2 := e.getContext()
+		defer cancel2()
+		return e.fallback.EstimateGas(ctx2, msg)
+	}
+	return gas, err
 }
 
 func (e *EthRPC) GetReceipt(hash string) (*etypes.Receipt, error) {
 	ctx, cancel := e.getContext()
 	defer cancel()
-	return e.client.TransactionReceipt(ctx, ecommon.HexToHash(hash))
+	h := ecommon.HexToHash(hash)
+	receipt, err := e.getActiveClient().TransactionReceipt(ctx, h)
+	if err != nil && e.tryFallback(err) {
+		ctx2, cancel2 := e.getContext()
+		defer cancel2()
+		return e.fallback.TransactionReceipt(ctx2, h)
+	}
+	return receipt, err
 }
 
 func (e *EthRPC) GetHeader(height int64) (*etypes.Header, error) {
 	ctx, cancel := e.getContext()
 	defer cancel()
-	return e.client.HeaderByNumber(ctx, big.NewInt(height))
+	h := big.NewInt(height)
+	header, err := e.getActiveClient().HeaderByNumber(ctx, h)
+	if err != nil && e.tryFallback(err) {
+		ctx2, cancel2 := e.getContext()
+		defer cancel2()
+		return e.fallback.HeaderByNumber(ctx2, h)
+	}
+	return header, err
 }
 
 func (e *EthRPC) GetBlockHeight() (int64, error) {
 	ctx, cancel := e.getContext()
 	defer cancel()
-	height, err := e.client.BlockNumber(ctx)
+	height, err := e.getActiveClient().BlockNumber(ctx)
 	if err != nil {
+		if e.tryFallback(err) {
+			ctx2, cancel2 := e.getContext()
+			defer cancel2()
+			height, err = e.fallback.BlockNumber(ctx2)
+			if err == nil {
+				return int64(height), nil
+			}
+		}
 		e.logger.Info().Err(err).Msg("failed to get block height")
 		return -1, fmt.Errorf("fail to get block height: %w", err)
 	}
@@ -74,8 +163,17 @@ func (e *EthRPC) GetBlockHeight() (int64, error) {
 func (e *EthRPC) GetBlockHeightSafe() (int64, error) {
 	ctx, cancel := e.getContext()
 	defer cancel()
-	block, err := e.client.BlockByNumber(ctx, big.NewInt(rpc.SafeBlockNumber.Int64()))
+	safeNum := big.NewInt(rpc.SafeBlockNumber.Int64())
+	block, err := e.getActiveClient().BlockByNumber(ctx, safeNum)
 	if err != nil {
+		if e.tryFallback(err) {
+			ctx2, cancel2 := e.getContext()
+			defer cancel2()
+			block, err = e.fallback.BlockByNumber(ctx2, safeNum)
+			if err == nil {
+				return block.Number().Int64(), nil
+			}
+		}
 		e.logger.Info().Err(err).Msg("failed to get block")
 		return -1, fmt.Errorf("fail to get block: %w", err)
 	}
@@ -85,7 +183,14 @@ func (e *EthRPC) GetBlockHeightSafe() (int64, error) {
 func (e *EthRPC) GetBlock(height int64) (*etypes.Block, error) {
 	ctx, cancel := e.getContext()
 	defer cancel()
-	return e.client.BlockByNumber(ctx, big.NewInt(height))
+	h := big.NewInt(height)
+	block, err := e.getActiveClient().BlockByNumber(ctx, h)
+	if err != nil && e.tryFallback(err) {
+		ctx2, cancel2 := e.getContext()
+		defer cancel2()
+		return e.fallback.BlockByNumber(ctx2, h)
+	}
+	return block, err
 }
 
 func (e *EthRPC) GetRPCBlock(height int64) (*etypes.Block, error) {
@@ -103,8 +208,17 @@ func (e *EthRPC) GetRPCBlock(height int64) (*etypes.Block, error) {
 func (e *EthRPC) GetNonce(addr string) (uint64, error) {
 	ctx, cancel := e.getContext()
 	defer cancel()
-	nonce, err := e.client.PendingNonceAt(ctx, ecommon.HexToAddress(addr))
+	a := ecommon.HexToAddress(addr)
+	nonce, err := e.getActiveClient().PendingNonceAt(ctx, a)
 	if err != nil {
+		if e.tryFallback(err) {
+			ctx2, cancel2 := e.getContext()
+			defer cancel2()
+			nonce, err = e.fallback.PendingNonceAt(ctx2, a)
+			if err == nil {
+				return nonce, nil
+			}
+		}
 		return 0, fmt.Errorf("fail to get account nonce: %w", err)
 	}
 	return nonce, nil
@@ -114,8 +228,17 @@ func (e *EthRPC) GetNonce(addr string) (uint64, error) {
 func (e *EthRPC) GetNonceFinalized(addr string) (uint64, error) {
 	ctx, cancel := e.getContext()
 	defer cancel()
-	nonce, err := e.client.NonceAt(ctx, ecommon.HexToAddress(addr), nil)
+	a := ecommon.HexToAddress(addr)
+	nonce, err := e.getActiveClient().NonceAt(ctx, a, nil)
 	if err != nil {
+		if e.tryFallback(err) {
+			ctx2, cancel2 := e.getContext()
+			defer cancel2()
+			nonce, err = e.fallback.NonceAt(ctx2, a, nil)
+			if err == nil {
+				return nonce, nil
+			}
+		}
 		return 0, fmt.Errorf("fail to get account nonce: %w", err)
 	}
 	return nonce, nil
@@ -129,10 +252,18 @@ func (e *EthRPC) GetNonceFinalized(addr string) (uint64, error) {
 func (e *EthRPC) CheckTransaction(hash string) bool {
 	ctx, cancel := e.getContext()
 	defer cancel()
-	tx, pending, err := e.client.TransactionByHash(ctx, ecommon.HexToHash(hash))
+	h := ecommon.HexToHash(hash)
+	tx, pending, err := e.getActiveClient().TransactionByHash(ctx, h)
 	if err != nil || tx == nil {
-		e.logger.Info().Str("txid", hash).Err(err).Msg("tx not found")
-		return false
+		if e.tryFallback(err) {
+			ctx2, cancel2 := e.getContext()
+			defer cancel2()
+			tx, pending, err = e.fallback.TransactionByHash(ctx2, h)
+		}
+		if err != nil || tx == nil {
+			e.logger.Info().Str("txid", hash).Err(err).Msg("tx not found")
+			return false
+		}
 	}
 
 	// pending transactions may fail, but we should only errata when there is certainty

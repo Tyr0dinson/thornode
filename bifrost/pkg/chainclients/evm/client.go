@@ -52,6 +52,7 @@ type EVMClient struct {
 	localPubKey             common.PubKey
 	kw                      *evm.KeySignWrapper
 	ethClient               *ethclient.Client
+	ethRpc                  *evm.EthRPC
 	evmScanner              *EVMScanner
 	bridge                  thorclient.ThorchainBridge
 	blockScanner            *blockscanner.BlockScanner
@@ -170,6 +171,42 @@ func NewEVMClient(
 		return nil, fmt.Errorf("fail to create ETH rpc host(%s): %w", cfg.RPCHost, err)
 	}
 
+	// Create fallback RPC client if configured
+	if cfg.FallbackRPCHost != "" {
+		clog.Info().Str("fallback_host", cfg.FallbackRPCHost).Msg("configuring fallback RPC endpoint")
+		var fallbackEthClient *ethclient.Client
+		switch {
+		case cfg.FallbackAuthorizationBearer != "":
+			authFn := func(h http.Header) error {
+				h.Set("Authorization", fmt.Sprintf("Bearer %s", cfg.FallbackAuthorizationBearer))
+				return nil
+			}
+			fallbackRpcClient, dialErr := rpc.DialOptions(
+				context.Background(),
+				cfg.FallbackRPCHost,
+				rpc.WithHTTPAuth(authFn),
+			)
+			if dialErr != nil {
+				clog.Warn().Err(dialErr).Msg("failed to create fallback RPC client, continuing without fallback")
+			} else {
+				fallbackEthClient = ethclient.NewClient(fallbackRpcClient)
+			}
+		default:
+			var dialErr error
+			fallbackEthClient, dialErr = ethclient.Dial(cfg.FallbackRPCHost)
+			if dialErr != nil {
+				clog.Warn().Err(dialErr).Msg("failed to create fallback RPC client, continuing without fallback")
+			}
+		}
+		if fallbackEthClient != nil {
+			healthCheckInterval := cfg.FallbackHealthCheckInterval
+			if healthCheckInterval == 0 {
+				healthCheckInterval = 30 * time.Second
+			}
+			rpcClient.SetFallback(fallbackEthClient, healthCheckInterval)
+		}
+	}
+
 	// get chain id
 	chainID, err := getChainID(ethClient, cfg.BlockScanner.HTTPRequestTimeout)
 	if err != nil {
@@ -195,6 +232,7 @@ func NewEVMClient(
 		logger:       clog,
 		cfg:          cfg,
 		ethClient:    ethClient,
+		ethRpc:       rpcClient,
 		localPubKey:  pk,
 		kw:           keysignWrapper,
 		bridge:       bridge,
@@ -281,6 +319,9 @@ func (c *EVMClient) Start(
 func (c *EVMClient) Stop() {
 	c.tssKeySigner.Stop()
 	c.blockScanner.Stop()
+	if c.ethRpc != nil {
+		c.ethRpc.Stop()
+	}
 	close(c.stopchan)
 	c.wg.Wait()
 }
