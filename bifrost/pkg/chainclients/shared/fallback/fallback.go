@@ -58,6 +58,18 @@ func NewManager(
 		stopChan:            make(chan struct{}),
 	}
 	m.state.Store(int32(EndpointPrimary))
+
+	// Check if primary is healthy on startup - if not, start with fallback
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	err := primaryHealthCheck(ctx)
+	cancel()
+	if err != nil {
+		m.logger.Warn().Err(err).Msg("primary RPC not ready, starting with fallback")
+		m.state.Store(int32(EndpointFallback))
+	} else {
+		m.logger.Info().Msg("primary RPC healthy, using primary")
+	}
+
 	return m
 }
 
