@@ -54,6 +54,10 @@ func GasPriceSuggested(chain common.Chain) MetricName {
 	return MetricName(chain + "_gas_price_suggested")
 }
 
+func RPCFallbackActive(chain common.Chain) MetricName {
+	return MetricName(chain + "_rpc_fallback_active")
+}
+
 func AddChainMetrics(chain common.Chain, counters map[MetricName]prometheus.Counter, counterVecs map[MetricName]*prometheus.CounterVec, gauges map[MetricName]prometheus.Gauge, histograms map[MetricName]prometheus.Histogram) {
 	counters[BlockWithoutTx(chain)] = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace: "block_scanner",
@@ -131,5 +135,11 @@ func AddChainMetrics(chain common.Chain, counters map[MetricName]prometheus.Coun
 		Subsystem: chain.String(),
 		Name:      "gas_price_suggested",
 		Help:      "suggested gas price from client library or last block as heuristic",
+	})
+	gauges[RPCFallbackActive(chain)] = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: "bifrost",
+		Subsystem: chain.String(),
+		Name:      "rpc_fallback_active",
+		Help:      "1 if using fallback RPC, 0 if using primary RPC",
 	})
 }

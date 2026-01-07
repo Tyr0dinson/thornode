@@ -331,6 +331,25 @@ func (c *EVMClient) IsBlockScannerHealthy() bool {
 	return c.blockScanner.IsHealthy()
 }
 
+// IsUsingFallbackRPC returns true if currently using fallback RPC endpoint.
+func (c *EVMClient) IsUsingFallbackRPC() bool {
+	if c.ethRpc == nil {
+		return false
+	}
+	return c.ethRpc.IsFallbackActive()
+}
+
+// GetRPCStatus returns the current RPC endpoint status for monitoring.
+func (c *EVMClient) GetRPCStatus() string {
+	if c.ethRpc == nil {
+		return "primary"
+	}
+	if c.ethRpc.IsFallbackActive() {
+		return "fallback"
+	}
+	return "primary"
+}
+
 // --------------------------------- config ---------------------------------
 
 // GetConfig returns the chain configuration.
