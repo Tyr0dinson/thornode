@@ -154,6 +154,16 @@ func AsgardInvariant(k KVStore) common.Invariant {
 				if coin.IsNative() && !coin.Asset.IsTradeAsset() && !coin.Asset.IsSecuredAsset() {
 					intentCoins = intentCoins.Add(coin)
 				}
+
+				// Sum native coins from pending solves for this intent
+				// Solvers who solve with RUNE have their RUNE escrowed in Asgard
+				solves, _ := k.GetIntentSolvesByIntentID(ctx, intent.TxID)
+				for _, solve := range solves {
+					solveCoin := solve.TargetCoin
+					if solveCoin.IsNative() && !solveCoin.Asset.IsTradeAsset() && !solveCoin.Asset.IsSecuredAsset() {
+						intentCoins = intentCoins.Add(solveCoin)
+					}
+				}
 			}
 
 			// Sum native coins from auction bids
