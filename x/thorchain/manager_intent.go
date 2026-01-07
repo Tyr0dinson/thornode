@@ -162,7 +162,7 @@ func (im *IntentMgr) refundLosingSolves(ctx cosmos.Context, intent types.Intent,
 			"solve_txid", solve.SolveTxID,
 			"amount", solve.TargetCoin.Amount,
 		)
-                // Clean up the solve record
+		// Clean up the solve record
 		im.mgr.Keeper().RemoveIntentSolve(ctx, solve.SolveTxID)
 	}
 }
@@ -238,7 +238,7 @@ func (im *IntentMgr) processMatches(ctx cosmos.Context) error {
 		// Refund losing solves (winner excluded since execution succeeded)
 		im.refundLosingSolves(ctx, intent, winningSolve.SolveTxID, intentSolves)
 
-                // Clean up the winning solve record
+		// Clean up the winning solve record
 		im.mgr.Keeper().RemoveIntentSolve(ctx, winningSolve.SolveTxID)
 	}
 
