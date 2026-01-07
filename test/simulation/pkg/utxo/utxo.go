@@ -504,6 +504,8 @@ func (c *Client) getChainCfgBTC() *btcchaincfg.Params {
 		return &btcchaincfg.MainNetParams
 	case common.StageNet:
 		return &btcchaincfg.MainNetParams
+	case common.ChainNet:
+		return &btcchaincfg.MainNetParams
 	default:
 		log.Fatal().Msg("unsupported network")
 		return nil
@@ -519,6 +521,8 @@ func (c *Client) getChainCfgLTC() *ltcchaincfg.Params {
 		return &ltcchaincfg.MainNetParams
 	case common.StageNet:
 		return &ltcchaincfg.MainNetParams
+	case common.ChainNet:
+		return &ltcchaincfg.MainNetParams
 	}
 	return nil
 }
@@ -530,6 +534,8 @@ func (c *Client) getChainCfgBCH() *bchchaincfg.Params {
 	case common.MainNet:
 		return &bchchaincfg.MainNetParams
 	case common.StageNet:
+		return &bchchaincfg.MainNetParams
+	case common.ChainNet:
 		return &bchchaincfg.MainNetParams
 	default:
 		log.Fatal().Msg("unsupported network")
@@ -544,6 +550,8 @@ func (c *Client) getChainCfgDOGE() *dogechaincfg.Params {
 	case common.MainNet:
 		return &dogechaincfg.MainNetParams
 	case common.StageNet:
+		return &dogechaincfg.MainNetParams
+	case common.ChainNet:
 		return &dogechaincfg.MainNetParams
 	default:
 		log.Fatal().Msg("unsupported network")

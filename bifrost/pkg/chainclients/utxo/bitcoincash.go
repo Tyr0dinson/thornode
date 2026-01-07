@@ -20,6 +20,8 @@ func (c *Client) getChainCfgBCH() *bchchaincfg.Params {
 		return &bchchaincfg.MainNetParams
 	case common.StageNet:
 		return &bchchaincfg.MainNetParams
+	case common.ChainNet:
+		return &bchchaincfg.MainNetParams
 	default:
 		c.log.Fatal().Msg("unsupported network")
 		return nil

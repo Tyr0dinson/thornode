@@ -23,6 +23,8 @@ func (c *Client) getChainCfgBTC() *btcchaincfg.Params {
 		return &btcchaincfg.MainNetParams
 	case common.StageNet:
 		return &btcchaincfg.MainNetParams
+	case common.ChainNet:
+		return &btcchaincfg.MainNetParams
 	default:
 		c.log.Fatal().Msg("unsupported network")
 		return nil

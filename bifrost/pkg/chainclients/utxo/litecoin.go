@@ -21,6 +21,8 @@ func (c *Client) getChainCfgLTC() *ltcchaincfg.Params {
 		return &ltcchaincfg.MainNetParams
 	case common.StageNet:
 		return &ltcchaincfg.MainNetParams
+	case common.ChainNet:
+		return &ltcchaincfg.MainNetParams
 	}
 	return nil
 }
