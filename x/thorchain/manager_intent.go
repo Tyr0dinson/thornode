@@ -237,6 +237,9 @@ func (im *IntentMgr) processMatches(ctx cosmos.Context) error {
 
 		// Refund losing solves (winner excluded since execution succeeded)
 		im.refundLosingSolves(ctx, intent, winningSolve.SolveTxID, intentSolves)
+
+                // Clean up the winning solve record
+		im.mgr.Keeper().RemoveIntentSolve(ctx, winningSolve.SolveTxID)
 	}
 
 	return nil
@@ -817,6 +820,9 @@ func (im *IntentMgr) refundIntentSolves(ctx cosmos.Context, intent Intent) error
 			"solve_txid", solve.SolveTxID,
 			"amount", solve.TargetCoin.Amount,
 		)
+
+		// Clean up the solve record
+		im.mgr.Keeper().RemoveIntentSolve(ctx, solve.SolveTxID)
 	}
 
 	if len(failedRefunds) > 0 {
@@ -929,6 +935,9 @@ func (im *IntentMgr) completeAuction(ctx cosmos.Context, auction IntentAuction) 
 			"bid_txid", bids[i].BidTxID,
 			"amount", bids[i].BidAmount.Amount,
 		)
+
+		// Clean up the losing bid record
+		im.mgr.Keeper().RemoveIntentAuctionBid(ctx, bids[i].BidTxID)
 	}
 
 	// Determine module name for RUNE outbounds (RUNE is escrowed in Asgard)
@@ -978,6 +987,9 @@ func (im *IntentMgr) completeAuction(ctx cosmos.Context, auction IntentAuction) 
 		ctx.Logger().Error("fail to process winning bid", "error", err)
 		return fmt.Errorf("fail to process winning bid revenue: %w", err)
 	}
+
+	// Clean up the winning bid record
+	im.mgr.Keeper().RemoveIntentAuctionBid(ctx, winningBid.BidTxID)
 
 	// Update auction status
 	auction.Status = IntentAuctionStatus_AuctionCompleted
