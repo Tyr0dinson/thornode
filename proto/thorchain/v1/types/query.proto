@@ -360,6 +360,11 @@ service Query {
     option (google.api.http).get = "/thorchain/queue/outbound";
   }
 
+  rpc StagedOutbound(QueryStagedOutboundRequest)
+      returns (QueryStagedOutboundResponse) {
+    option (google.api.http).get = "/thorchain/queue/staged";
+  }
+
   rpc Block(QueryBlockRequest) returns (QueryBlockResponse) {
     option (google.api.http).get = "/thorchain/block";
   }

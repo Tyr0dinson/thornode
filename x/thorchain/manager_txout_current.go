@@ -975,29 +975,6 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]
 }
 
 func (tos *TxOutStorage) addToBlockOut(ctx cosmos.Context, mgr Manager, item TxOutItem, outboundHeight int64) error {
-	// if we're sending native assets, transfer them now and return
-	if item.Chain.IsTHORChain() {
-		// For mempool swaps (not finalized), queue native outbounds for later execution
-		if !item.InboundFinalized {
-			mempoolSwapCap := cosmos.NewUint(uint64(tos.keeper.GetConfigInt64(ctx, constants.MempoolSwapCapTOR)))
-			if !mempoolSwapCap.IsZero() {
-				ctx.Logger().Info("queueing native outbound for mempool swap",
-					"inhash", item.InHash, "asset", item.Coin.Asset, "amount", item.Coin.Amount)
-				// Initialize nil pointer fields (same as external outbounds)
-				if item.AggregatorTargetLimit == nil {
-					aggregatorTargetLimit := cosmos.ZeroUint()
-					item.AggregatorTargetLimit = &aggregatorTargetLimit
-				}
-				if item.CloutSpent == nil {
-					cloutSpent := cosmos.ZeroUint()
-					item.CloutSpent = &cloutSpent
-				}
-				return tos.keeper.AppendTxOut(ctx, outboundHeight, item)
-			}
-		}
-		return tos.nativeTxOut(ctx, mgr, item)
-	}
-
 	// The outbound queue should never receive an item with a nil pointer field.
 	if item.AggregatorTargetLimit == nil {
 		aggregatorTargetLimit := cosmos.ZeroUint()
@@ -1006,6 +983,22 @@ func (tos *TxOutStorage) addToBlockOut(ctx cosmos.Context, mgr Manager, item TxO
 	if item.CloutSpent == nil {
 		cloutSpent := cosmos.ZeroUint()
 		item.CloutSpent = &cloutSpent
+	}
+
+	// For mempool swaps (not finalized), stage the outbound instead of adding to real queue
+	if !item.InboundFinalized {
+		mempoolSwapCap := cosmos.NewUint(uint64(tos.keeper.GetConfigInt64(ctx, constants.MempoolSwapCapTOR)))
+		if !mempoolSwapCap.IsZero() {
+			ctx.Logger().Info("staging outbound for mempool swap",
+				"inhash", item.InHash, "chain", item.Chain, "asset", item.Coin.Asset,
+				"amount", item.Coin.Amount, "scheduled_height", outboundHeight)
+			return tos.keeper.SetStagedOutbound(ctx, item, outboundHeight)
+		}
+	}
+
+	// if we're sending native assets, transfer them now and return
+	if item.Chain.IsTHORChain() {
+		return tos.nativeTxOut(ctx, mgr, item)
 	}
 
 	vault, err := tos.keeper.GetVault(ctx, item.VaultPubKey)
@@ -1159,6 +1152,16 @@ func (tos *TxOutStorage) CalcTxOutHeight(ctx cosmos.Context, version semver.Vers
 	// sum value of scheduled txns (including this one)
 	sumValue := runeValue
 	cloutValue := cosmos.ZeroUint()
+
+	// Include staged outbounds in the calculation (mempool swaps waiting for finalization)
+	stagedValue, stagedClout, err := tos.keeper.GetStagedOutboundValue(ctx)
+	if err != nil {
+		ctx.Logger().Error("fail to get staged outbound value", "error", err)
+	} else {
+		sumValue = sumValue.Add(stagedValue)
+		cloutValue = cloutValue.Add(stagedClout)
+	}
+
 	for height := ctx.BlockHeight() + 1; height <= ctx.BlockHeight()+txOutDelayMax; height++ {
 		value, clout, err := tos.keeper.GetTxOutValue(ctx, height)
 		if err != nil {

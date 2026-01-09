@@ -1898,6 +1898,21 @@ paths:
           description: OK
       tags:
       - Queue
+  /thorchain/queue/staged:
+    get:
+      description: Returns staged outbounds for mempool swaps waiting for inbound
+        finalization. These are swap outputs that have been pre-computed but not yet
+        added to the real outbound queue.
+      operationId: queueStaged
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StagedOutboundResponse'
+          description: OK
+      tags:
+      - Queue
   /thorchain/keysign/{height}:
     get:
       description: Returns keysign information for the provided height - the height
@@ -6534,6 +6549,120 @@ components:
       items:
         $ref: '#/components/schemas/TxOutItem'
       type: array
+    StagedOutboundResponse:
+      example:
+        staged_outbound_items:
+        - tx_out_item:
+            vault_pub_key_eddsa: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
+            chain: ETH
+            gas_rate: 0
+            original_memo: =:BTC.BTC:bc1q0lwf0ycw4gkh8v6y8g9yqwxvqnvm24kvdezgpg
+            in_hash: 208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
+            out_hash: 0D0B2FDB6DAD6E5FD3C5E46D39128F9DA15E96F0B2CC054CE059EA3532B150FB
+            inbound_finalized: false
+            aggregator: 0xe4ddca21881bac219af7f217703db0475d2a9f02
+            memo: OUT:208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
+            to_address: 0x66fb1cd65b97fa40457b90b7d1ca6b92cb64b32b
+            vault_pub_key: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
+            aggregator_target_asset: 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
+            max_gas:
+            - amount: "100000"
+              decimals: 6
+              asset: BTC.BTC
+            - amount: "100000"
+              decimals: 6
+              asset: BTC.BTC
+            aggregator_target_limit: "100"
+            clout_spent: "1234"
+            height: 1234
+            coin:
+              amount: "100000"
+              decimals: 6
+              asset: BTC.BTC
+          scheduled_height: 12345
+          staged_height: 12340
+        - tx_out_item:
+            vault_pub_key_eddsa: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
+            chain: ETH
+            gas_rate: 0
+            original_memo: =:BTC.BTC:bc1q0lwf0ycw4gkh8v6y8g9yqwxvqnvm24kvdezgpg
+            in_hash: 208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
+            out_hash: 0D0B2FDB6DAD6E5FD3C5E46D39128F9DA15E96F0B2CC054CE059EA3532B150FB
+            inbound_finalized: false
+            aggregator: 0xe4ddca21881bac219af7f217703db0475d2a9f02
+            memo: OUT:208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
+            to_address: 0x66fb1cd65b97fa40457b90b7d1ca6b92cb64b32b
+            vault_pub_key: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
+            aggregator_target_asset: 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
+            max_gas:
+            - amount: "100000"
+              decimals: 6
+              asset: BTC.BTC
+            - amount: "100000"
+              decimals: 6
+              asset: BTC.BTC
+            aggregator_target_limit: "100"
+            clout_spent: "1234"
+            height: 1234
+            coin:
+              amount: "100000"
+              decimals: 6
+              asset: BTC.BTC
+          scheduled_height: 12345
+          staged_height: 12340
+      properties:
+        staged_outbound_items:
+          items:
+            $ref: '#/components/schemas/StagedOutboundItem'
+          type: array
+      type: object
+    StagedOutboundItem:
+      description: A staged outbound item for a mempool swap waiting for inbound finalization
+      example:
+        tx_out_item:
+          vault_pub_key_eddsa: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
+          chain: ETH
+          gas_rate: 0
+          original_memo: =:BTC.BTC:bc1q0lwf0ycw4gkh8v6y8g9yqwxvqnvm24kvdezgpg
+          in_hash: 208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
+          out_hash: 0D0B2FDB6DAD6E5FD3C5E46D39128F9DA15E96F0B2CC054CE059EA3532B150FB
+          inbound_finalized: false
+          aggregator: 0xe4ddca21881bac219af7f217703db0475d2a9f02
+          memo: OUT:208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
+          to_address: 0x66fb1cd65b97fa40457b90b7d1ca6b92cb64b32b
+          vault_pub_key: thorpub1addwnpepqt45wmsxj29xpgdrdsvg2h3dx68qeapgykw3hlyj6vuds2r0pnkwx5gt9m4
+          aggregator_target_asset: 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
+          max_gas:
+          - amount: "100000"
+            decimals: 6
+            asset: BTC.BTC
+          - amount: "100000"
+            decimals: 6
+            asset: BTC.BTC
+          aggregator_target_limit: "100"
+          clout_spent: "1234"
+          height: 1234
+          coin:
+            amount: "100000"
+            decimals: 6
+            asset: BTC.BTC
+        scheduled_height: 12345
+        staged_height: 12340
+      properties:
+        tx_out_item:
+          $ref: '#/components/schemas/TxOutItem'
+        scheduled_height:
+          description: Pre-computed target height (delay countdown starts at staging
+            time)
+          example: 12345
+          format: int64
+          type: integer
+        staged_height:
+          description: Block height when this outbound was staged
+          example: 12340
+          format: int64
+          type: integer
+      type: object
     KeysignResponse:
       example:
         signature: signature

@@ -83,6 +83,24 @@ func AsgardInvariant(k KVStore) common.Invariant {
 			}
 		}
 
+		// Also include staged outbounds (mempool swaps waiting for inbound finalization)
+		stagedIter := k.GetStagedOutboundIterator(ctx)
+		defer stagedIter.Close()
+		for ; stagedIter.Valid(); stagedIter.Next() {
+			var stagedList StagedOutboundList
+			k.Cdc().MustUnmarshal(stagedIter.Value(), &stagedList)
+			for _, staged := range stagedList.Items {
+				item := staged.TxOutItem
+				// Only count native outbounds that haven't been executed yet
+				if item.Chain.IsTHORChain() && item.OutHash.IsEmpty() {
+					// Trade Assets and Secured Assets do not correspond to Module balance coins
+					if !item.Coin.Asset.IsTradeAsset() && !item.Coin.Asset.IsSecuredAsset() {
+						txOutCoins = txOutCoins.Add(item.Coin)
+					}
+				}
+			}
+		}
+
 		processSwaps := func(ctx cosmos.Context, k KVStore, swapIter cosmos.Iterator) common.Coins { // Replace IteratorType with the actual iterator type
 			var swapCoins common.Coins
 			defer swapIter.Close()

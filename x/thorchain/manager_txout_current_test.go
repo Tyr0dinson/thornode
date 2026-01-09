@@ -1565,7 +1565,7 @@ func (s TxOutStoreSuite) TestDiscoverOutboundsRemainderAddedToSmallestOutput(c *
 	c.Assert(remaining.IsZero(), Equals, true, Commentf("Expected zero remaining, got %s", remaining.String()))
 }
 
-func (s *TxOutStoreVCURSuite) TestTxOutItemInboundFinalizedFlag(c *C) {
+func (s *TxOutStoreSuite) TestTxOutItemInboundFinalizedFlag(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
 	vault := GetRandomVault()
 	vault.Coins = common.Coins{
@@ -1613,7 +1613,7 @@ func (s *TxOutStoreVCURSuite) TestTxOutItemInboundFinalizedFlag(c *C) {
 		Coin:      common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One)),
 	}
 
-	txOutStore := newTxOutStorageVCUR(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), w.mgr.GasMgr())
+	txOutStore := newTxOutStorage(w.keeper, w.mgr.GetConstants(), w.mgr.EventMgr(), w.mgr.GasMgr())
 	ok, err := txOutStore.TryAddTxOutItem(w.ctx, w.mgr, finalizedItem, cosmos.ZeroUint())
 	c.Assert(err, IsNil)
 	c.Assert(ok, Equals, true)

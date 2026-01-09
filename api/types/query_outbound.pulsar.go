@@ -854,6 +854,362 @@ func (x *fastReflection_QueryPendingOutboundRequest) ProtoMethods() *protoiface.
 	}
 }
 
+var (
+	md_QueryStagedOutboundRequest protoreflect.MessageDescriptor
+)
+
+func init() {
+	file_types_query_outbound_proto_init()
+	md_QueryStagedOutboundRequest = File_types_query_outbound_proto.Messages().ByName("QueryStagedOutboundRequest")
+}
+
+var _ protoreflect.Message = (*fastReflection_QueryStagedOutboundRequest)(nil)
+
+type fastReflection_QueryStagedOutboundRequest QueryStagedOutboundRequest
+
+func (x *QueryStagedOutboundRequest) ProtoReflect() protoreflect.Message {
+	return (*fastReflection_QueryStagedOutboundRequest)(x)
+}
+
+func (x *QueryStagedOutboundRequest) slowProtoReflect() protoreflect.Message {
+	mi := &file_types_query_outbound_proto_msgTypes[2]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+var _fastReflection_QueryStagedOutboundRequest_messageType fastReflection_QueryStagedOutboundRequest_messageType
+var _ protoreflect.MessageType = fastReflection_QueryStagedOutboundRequest_messageType{}
+
+type fastReflection_QueryStagedOutboundRequest_messageType struct{}
+
+func (x fastReflection_QueryStagedOutboundRequest_messageType) Zero() protoreflect.Message {
+	return (*fastReflection_QueryStagedOutboundRequest)(nil)
+}
+func (x fastReflection_QueryStagedOutboundRequest_messageType) New() protoreflect.Message {
+	return new(fastReflection_QueryStagedOutboundRequest)
+}
+func (x fastReflection_QueryStagedOutboundRequest_messageType) Descriptor() protoreflect.MessageDescriptor {
+	return md_QueryStagedOutboundRequest
+}
+
+// Descriptor returns message descriptor, which contains only the protobuf
+// type information for the message.
+func (x *fastReflection_QueryStagedOutboundRequest) Descriptor() protoreflect.MessageDescriptor {
+	return md_QueryStagedOutboundRequest
+}
+
+// Type returns the message type, which encapsulates both Go and protobuf
+// type information. If the Go type information is not needed,
+// it is recommended that the message descriptor be used instead.
+func (x *fastReflection_QueryStagedOutboundRequest) Type() protoreflect.MessageType {
+	return _fastReflection_QueryStagedOutboundRequest_messageType
+}
+
+// New returns a newly allocated and mutable empty message.
+func (x *fastReflection_QueryStagedOutboundRequest) New() protoreflect.Message {
+	return new(fastReflection_QueryStagedOutboundRequest)
+}
+
+// Interface unwraps the message reflection interface and
+// returns the underlying ProtoMessage interface.
+func (x *fastReflection_QueryStagedOutboundRequest) Interface() protoreflect.ProtoMessage {
+	return (*QueryStagedOutboundRequest)(x)
+}
+
+// Range iterates over every populated field in an undefined order,
+// calling f for each field descriptor and value encountered.
+// Range returns immediately if f returns false.
+// While iterating, mutating operations may only be performed
+// on the current field descriptor.
+func (x *fastReflection_QueryStagedOutboundRequest) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
+}
+
+// Has reports whether a field is populated.
+//
+// Some fields have the property of nullability where it is possible to
+// distinguish between the default value of a field and whether the field
+// was explicitly populated with the default value. Singular message fields,
+// member fields of a oneof, and proto2 scalar fields are nullable. Such
+// fields are populated only if explicitly set.
+//
+// In other cases (aside from the nullable cases above),
+// a proto3 scalar field is populated if it contains a non-zero value, and
+// a repeated field is populated if it is non-empty.
+func (x *fastReflection_QueryStagedOutboundRequest) Has(fd protoreflect.FieldDescriptor) bool {
+	switch fd.FullName() {
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryStagedOutboundRequest"))
+		}
+		panic(fmt.Errorf("message types.QueryStagedOutboundRequest does not contain field %s", fd.FullName()))
+	}
+}
+
+// Clear clears the field such that a subsequent Has call reports false.
+//
+// Clearing an extension field clears both the extension type and value
+// associated with the given field number.
+//
+// Clear is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_QueryStagedOutboundRequest) Clear(fd protoreflect.FieldDescriptor) {
+	switch fd.FullName() {
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryStagedOutboundRequest"))
+		}
+		panic(fmt.Errorf("message types.QueryStagedOutboundRequest does not contain field %s", fd.FullName()))
+	}
+}
+
+// Get retrieves the value for a field.
+//
+// For unpopulated scalars, it returns the default value, where
+// the default value of a bytes scalar is guaranteed to be a copy.
+// For unpopulated composite types, it returns an empty, read-only view
+// of the value; to obtain a mutable reference, use Mutable.
+func (x *fastReflection_QueryStagedOutboundRequest) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
+	switch descriptor.FullName() {
+	default:
+		if descriptor.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryStagedOutboundRequest"))
+		}
+		panic(fmt.Errorf("message types.QueryStagedOutboundRequest does not contain field %s", descriptor.FullName()))
+	}
+}
+
+// Set stores the value for a field.
+//
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType.
+// When setting a composite type, it is unspecified whether the stored value
+// aliases the source's memory in any way. If the composite value is an
+// empty, read-only value, then it panics.
+//
+// Set is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_QueryStagedOutboundRequest) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
+	switch fd.FullName() {
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryStagedOutboundRequest"))
+		}
+		panic(fmt.Errorf("message types.QueryStagedOutboundRequest does not contain field %s", fd.FullName()))
+	}
+}
+
+// Mutable returns a mutable reference to a composite type.
+//
+// If the field is unpopulated, it may allocate a composite value.
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType
+// if not already stored.
+// It panics if the field does not contain a composite type.
+//
+// Mutable is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_QueryStagedOutboundRequest) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryStagedOutboundRequest"))
+		}
+		panic(fmt.Errorf("message types.QueryStagedOutboundRequest does not contain field %s", fd.FullName()))
+	}
+}
+
+// NewField returns a new value that is assignable to the field
+// for the given descriptor. For scalars, this returns the default value.
+// For lists, maps, and messages, this returns a new, empty, mutable value.
+func (x *fastReflection_QueryStagedOutboundRequest) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryStagedOutboundRequest"))
+		}
+		panic(fmt.Errorf("message types.QueryStagedOutboundRequest does not contain field %s", fd.FullName()))
+	}
+}
+
+// WhichOneof reports which field within the oneof is populated,
+// returning nil if none are populated.
+// It panics if the oneof descriptor does not belong to this message.
+func (x *fastReflection_QueryStagedOutboundRequest) WhichOneof(d protoreflect.OneofDescriptor) protoreflect.FieldDescriptor {
+	switch d.FullName() {
+	default:
+		panic(fmt.Errorf("%s is not a oneof field in types.QueryStagedOutboundRequest", d.FullName()))
+	}
+	panic("unreachable")
+}
+
+// GetUnknown retrieves the entire list of unknown fields.
+// The caller may only mutate the contents of the RawFields
+// if the mutated bytes are stored back into the message with SetUnknown.
+func (x *fastReflection_QueryStagedOutboundRequest) GetUnknown() protoreflect.RawFields {
+	return x.unknownFields
+}
+
+// SetUnknown stores an entire list of unknown fields.
+// The raw fields must be syntactically valid according to the wire format.
+// An implementation may panic if this is not the case.
+// Once stored, the caller must not mutate the content of the RawFields.
+// An empty RawFields may be passed to clear the fields.
+//
+// SetUnknown is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_QueryStagedOutboundRequest) SetUnknown(fields protoreflect.RawFields) {
+	x.unknownFields = fields
+}
+
+// IsValid reports whether the message is valid.
+//
+// An invalid message is an empty, read-only value.
+//
+// An invalid message often corresponds to a nil pointer of the concrete
+// message type, but the details are implementation dependent.
+// Validity is not part of the protobuf data model, and may not
+// be preserved in marshaling or other operations.
+func (x *fastReflection_QueryStagedOutboundRequest) IsValid() bool {
+	return x != nil
+}
+
+// ProtoMethods returns optional fastReflectionFeature-path implementations of various operations.
+// This method may return nil.
+//
+// The returned methods type is identical to
+// "google.golang.org/protobuf/runtime/protoiface".Methods.
+// Consult the protoiface package documentation for details.
+func (x *fastReflection_QueryStagedOutboundRequest) ProtoMethods() *protoiface.Methods {
+	size := func(input protoiface.SizeInput) protoiface.SizeOutput {
+		x := input.Message.Interface().(*QueryStagedOutboundRequest)
+		if x == nil {
+			return protoiface.SizeOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Size:              0,
+			}
+		}
+		options := runtime.SizeInputToOptions(input)
+		_ = options
+		var n int
+		var l int
+		_ = l
+		if x.unknownFields != nil {
+			n += len(x.unknownFields)
+		}
+		return protoiface.SizeOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Size:              n,
+		}
+	}
+
+	marshal := func(input protoiface.MarshalInput) (protoiface.MarshalOutput, error) {
+		x := input.Message.Interface().(*QueryStagedOutboundRequest)
+		if x == nil {
+			return protoiface.MarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Buf:               input.Buf,
+			}, nil
+		}
+		options := runtime.MarshalInputToOptions(input)
+		_ = options
+		size := options.Size(x)
+		dAtA := make([]byte, size)
+		i := len(dAtA)
+		_ = i
+		var l int
+		_ = l
+		if x.unknownFields != nil {
+			i -= len(x.unknownFields)
+			copy(dAtA[i:], x.unknownFields)
+		}
+		if input.Buf != nil {
+			input.Buf = append(input.Buf, dAtA...)
+		} else {
+			input.Buf = dAtA
+		}
+		return protoiface.MarshalOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Buf:               input.Buf,
+		}, nil
+	}
+	unmarshal := func(input protoiface.UnmarshalInput) (protoiface.UnmarshalOutput, error) {
+		x := input.Message.Interface().(*QueryStagedOutboundRequest)
+		if x == nil {
+			return protoiface.UnmarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Flags:             input.Flags,
+			}, nil
+		}
+		options := runtime.UnmarshalInputToOptions(input)
+		_ = options
+		dAtA := input.Buf
+		l := len(dAtA)
+		iNdEx := 0
+		for iNdEx < l {
+			preIndex := iNdEx
+			var wire uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				wire |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			fieldNum := int32(wire >> 3)
+			wireType := int(wire & 0x7)
+			if wireType == 4 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: QueryStagedOutboundRequest: wiretype end group for non-group")
+			}
+			if fieldNum <= 0 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: QueryStagedOutboundRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+			}
+			switch fieldNum {
+			default:
+				iNdEx = preIndex
+				skippy, err := runtime.Skip(dAtA[iNdEx:])
+				if err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				if (skippy < 0) || (iNdEx+skippy) < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if (iNdEx + skippy) > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				if !options.DiscardUnknown {
+					x.unknownFields = append(x.unknownFields, dAtA[iNdEx:iNdEx+skippy]...)
+				}
+				iNdEx += skippy
+			}
+		}
+
+		if iNdEx > l {
+			return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+		}
+		return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, nil
+	}
+	return &protoiface.Methods{
+		NoUnkeyedLiterals: struct{}{},
+		Flags:             protoiface.SupportMarshalDeterministic | protoiface.SupportUnmarshalDiscardUnknown,
+		Size:              size,
+		Marshal:           marshal,
+		Unmarshal:         unmarshal,
+		Merge:             nil,
+		CheckInitialized:  nil,
+	}
+}
+
 var _ protoreflect.List = (*_QueryOutboundResponse_1_list)(nil)
 
 type _QueryOutboundResponse_1_list struct {
@@ -925,7 +1281,7 @@ func (x *QueryOutboundResponse) ProtoReflect() protoreflect.Message {
 }
 
 func (x *QueryOutboundResponse) slowProtoReflect() protoreflect.Message {
-	mi := &file_types_query_outbound_proto_msgTypes[2]
+	mi := &file_types_query_outbound_proto_msgTypes[3]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1348,6 +1704,1031 @@ func (x *fastReflection_QueryOutboundResponse) ProtoMethods() *protoiface.Method
 	}
 }
 
+var _ protoreflect.List = (*_QueryStagedOutboundResponse_1_list)(nil)
+
+type _QueryStagedOutboundResponse_1_list struct {
+	list *[]*QueryStagedOutboundItem
+}
+
+func (x *_QueryStagedOutboundResponse_1_list) Len() int {
+	if x.list == nil {
+		return 0
+	}
+	return len(*x.list)
+}
+
+func (x *_QueryStagedOutboundResponse_1_list) Get(i int) protoreflect.Value {
+	return protoreflect.ValueOfMessage((*x.list)[i].ProtoReflect())
+}
+
+func (x *_QueryStagedOutboundResponse_1_list) Set(i int, value protoreflect.Value) {
+	valueUnwrapped := value.Message()
+	concreteValue := valueUnwrapped.Interface().(*QueryStagedOutboundItem)
+	(*x.list)[i] = concreteValue
+}
+
+func (x *_QueryStagedOutboundResponse_1_list) Append(value protoreflect.Value) {
+	valueUnwrapped := value.Message()
+	concreteValue := valueUnwrapped.Interface().(*QueryStagedOutboundItem)
+	*x.list = append(*x.list, concreteValue)
+}
+
+func (x *_QueryStagedOutboundResponse_1_list) AppendMutable() protoreflect.Value {
+	v := new(QueryStagedOutboundItem)
+	*x.list = append(*x.list, v)
+	return protoreflect.ValueOfMessage(v.ProtoReflect())
+}
+
+func (x *_QueryStagedOutboundResponse_1_list) Truncate(n int) {
+	for i := n; i < len(*x.list); i++ {
+		(*x.list)[i] = nil
+	}
+	*x.list = (*x.list)[:n]
+}
+
+func (x *_QueryStagedOutboundResponse_1_list) NewElement() protoreflect.Value {
+	v := new(QueryStagedOutboundItem)
+	return protoreflect.ValueOfMessage(v.ProtoReflect())
+}
+
+func (x *_QueryStagedOutboundResponse_1_list) IsValid() bool {
+	return x.list != nil
+}
+
+var (
+	md_QueryStagedOutboundResponse                       protoreflect.MessageDescriptor
+	fd_QueryStagedOutboundResponse_staged_outbound_items protoreflect.FieldDescriptor
+)
+
+func init() {
+	file_types_query_outbound_proto_init()
+	md_QueryStagedOutboundResponse = File_types_query_outbound_proto.Messages().ByName("QueryStagedOutboundResponse")
+	fd_QueryStagedOutboundResponse_staged_outbound_items = md_QueryStagedOutboundResponse.Fields().ByName("staged_outbound_items")
+}
+
+var _ protoreflect.Message = (*fastReflection_QueryStagedOutboundResponse)(nil)
+
+type fastReflection_QueryStagedOutboundResponse QueryStagedOutboundResponse
+
+func (x *QueryStagedOutboundResponse) ProtoReflect() protoreflect.Message {
+	return (*fastReflection_QueryStagedOutboundResponse)(x)
+}
+
+func (x *QueryStagedOutboundResponse) slowProtoReflect() protoreflect.Message {
+	mi := &file_types_query_outbound_proto_msgTypes[4]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+var _fastReflection_QueryStagedOutboundResponse_messageType fastReflection_QueryStagedOutboundResponse_messageType
+var _ protoreflect.MessageType = fastReflection_QueryStagedOutboundResponse_messageType{}
+
+type fastReflection_QueryStagedOutboundResponse_messageType struct{}
+
+func (x fastReflection_QueryStagedOutboundResponse_messageType) Zero() protoreflect.Message {
+	return (*fastReflection_QueryStagedOutboundResponse)(nil)
+}
+func (x fastReflection_QueryStagedOutboundResponse_messageType) New() protoreflect.Message {
+	return new(fastReflection_QueryStagedOutboundResponse)
+}
+func (x fastReflection_QueryStagedOutboundResponse_messageType) Descriptor() protoreflect.MessageDescriptor {
+	return md_QueryStagedOutboundResponse
+}
+
+// Descriptor returns message descriptor, which contains only the protobuf
+// type information for the message.
+func (x *fastReflection_QueryStagedOutboundResponse) Descriptor() protoreflect.MessageDescriptor {
+	return md_QueryStagedOutboundResponse
+}
+
+// Type returns the message type, which encapsulates both Go and protobuf
+// type information. If the Go type information is not needed,
+// it is recommended that the message descriptor be used instead.
+func (x *fastReflection_QueryStagedOutboundResponse) Type() protoreflect.MessageType {
+	return _fastReflection_QueryStagedOutboundResponse_messageType
+}
+
+// New returns a newly allocated and mutable empty message.
+func (x *fastReflection_QueryStagedOutboundResponse) New() protoreflect.Message {
+	return new(fastReflection_QueryStagedOutboundResponse)
+}
+
+// Interface unwraps the message reflection interface and
+// returns the underlying ProtoMessage interface.
+func (x *fastReflection_QueryStagedOutboundResponse) Interface() protoreflect.ProtoMessage {
+	return (*QueryStagedOutboundResponse)(x)
+}
+
+// Range iterates over every populated field in an undefined order,
+// calling f for each field descriptor and value encountered.
+// Range returns immediately if f returns false.
+// While iterating, mutating operations may only be performed
+// on the current field descriptor.
+func (x *fastReflection_QueryStagedOutboundResponse) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
+	if len(x.StagedOutboundItems) != 0 {
+		value := protoreflect.ValueOfList(&_QueryStagedOutboundResponse_1_list{list: &x.StagedOutboundItems})
+		if !f(fd_QueryStagedOutboundResponse_staged_outbound_items, value) {
+			return
+		}
+	}
+}
+
+// Has reports whether a field is populated.
+//
+// Some fields have the property of nullability where it is possible to
+// distinguish between the default value of a field and whether the field
+// was explicitly populated with the default value. Singular message fields,
+// member fields of a oneof, and proto2 scalar fields are nullable. Such
+// fields are populated only if explicitly set.
+//
+// In other cases (aside from the nullable cases above),
+// a proto3 scalar field is populated if it contains a non-zero value, and
+// a repeated field is populated if it is non-empty.
+func (x *fastReflection_QueryStagedOutboundResponse) Has(fd protoreflect.FieldDescriptor) bool {
+	switch fd.FullName() {
+	case "types.QueryStagedOutboundResponse.staged_outbound_items":
+		return len(x.StagedOutboundItems) != 0
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryStagedOutboundResponse"))
+		}
+		panic(fmt.Errorf("message types.QueryStagedOutboundResponse does not contain field %s", fd.FullName()))
+	}
+}
+
+// Clear clears the field such that a subsequent Has call reports false.
+//
+// Clearing an extension field clears both the extension type and value
+// associated with the given field number.
+//
+// Clear is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_QueryStagedOutboundResponse) Clear(fd protoreflect.FieldDescriptor) {
+	switch fd.FullName() {
+	case "types.QueryStagedOutboundResponse.staged_outbound_items":
+		x.StagedOutboundItems = nil
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryStagedOutboundResponse"))
+		}
+		panic(fmt.Errorf("message types.QueryStagedOutboundResponse does not contain field %s", fd.FullName()))
+	}
+}
+
+// Get retrieves the value for a field.
+//
+// For unpopulated scalars, it returns the default value, where
+// the default value of a bytes scalar is guaranteed to be a copy.
+// For unpopulated composite types, it returns an empty, read-only view
+// of the value; to obtain a mutable reference, use Mutable.
+func (x *fastReflection_QueryStagedOutboundResponse) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
+	switch descriptor.FullName() {
+	case "types.QueryStagedOutboundResponse.staged_outbound_items":
+		if len(x.StagedOutboundItems) == 0 {
+			return protoreflect.ValueOfList(&_QueryStagedOutboundResponse_1_list{})
+		}
+		listValue := &_QueryStagedOutboundResponse_1_list{list: &x.StagedOutboundItems}
+		return protoreflect.ValueOfList(listValue)
+	default:
+		if descriptor.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryStagedOutboundResponse"))
+		}
+		panic(fmt.Errorf("message types.QueryStagedOutboundResponse does not contain field %s", descriptor.FullName()))
+	}
+}
+
+// Set stores the value for a field.
+//
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType.
+// When setting a composite type, it is unspecified whether the stored value
+// aliases the source's memory in any way. If the composite value is an
+// empty, read-only value, then it panics.
+//
+// Set is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_QueryStagedOutboundResponse) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
+	switch fd.FullName() {
+	case "types.QueryStagedOutboundResponse.staged_outbound_items":
+		lv := value.List()
+		clv := lv.(*_QueryStagedOutboundResponse_1_list)
+		x.StagedOutboundItems = *clv.list
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryStagedOutboundResponse"))
+		}
+		panic(fmt.Errorf("message types.QueryStagedOutboundResponse does not contain field %s", fd.FullName()))
+	}
+}
+
+// Mutable returns a mutable reference to a composite type.
+//
+// If the field is unpopulated, it may allocate a composite value.
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType
+// if not already stored.
+// It panics if the field does not contain a composite type.
+//
+// Mutable is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_QueryStagedOutboundResponse) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "types.QueryStagedOutboundResponse.staged_outbound_items":
+		if x.StagedOutboundItems == nil {
+			x.StagedOutboundItems = []*QueryStagedOutboundItem{}
+		}
+		value := &_QueryStagedOutboundResponse_1_list{list: &x.StagedOutboundItems}
+		return protoreflect.ValueOfList(value)
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryStagedOutboundResponse"))
+		}
+		panic(fmt.Errorf("message types.QueryStagedOutboundResponse does not contain field %s", fd.FullName()))
+	}
+}
+
+// NewField returns a new value that is assignable to the field
+// for the given descriptor. For scalars, this returns the default value.
+// For lists, maps, and messages, this returns a new, empty, mutable value.
+func (x *fastReflection_QueryStagedOutboundResponse) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "types.QueryStagedOutboundResponse.staged_outbound_items":
+		list := []*QueryStagedOutboundItem{}
+		return protoreflect.ValueOfList(&_QueryStagedOutboundResponse_1_list{list: &list})
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryStagedOutboundResponse"))
+		}
+		panic(fmt.Errorf("message types.QueryStagedOutboundResponse does not contain field %s", fd.FullName()))
+	}
+}
+
+// WhichOneof reports which field within the oneof is populated,
+// returning nil if none are populated.
+// It panics if the oneof descriptor does not belong to this message.
+func (x *fastReflection_QueryStagedOutboundResponse) WhichOneof(d protoreflect.OneofDescriptor) protoreflect.FieldDescriptor {
+	switch d.FullName() {
+	default:
+		panic(fmt.Errorf("%s is not a oneof field in types.QueryStagedOutboundResponse", d.FullName()))
+	}
+	panic("unreachable")
+}
+
+// GetUnknown retrieves the entire list of unknown fields.
+// The caller may only mutate the contents of the RawFields
+// if the mutated bytes are stored back into the message with SetUnknown.
+func (x *fastReflection_QueryStagedOutboundResponse) GetUnknown() protoreflect.RawFields {
+	return x.unknownFields
+}
+
+// SetUnknown stores an entire list of unknown fields.
+// The raw fields must be syntactically valid according to the wire format.
+// An implementation may panic if this is not the case.
+// Once stored, the caller must not mutate the content of the RawFields.
+// An empty RawFields may be passed to clear the fields.
+//
+// SetUnknown is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_QueryStagedOutboundResponse) SetUnknown(fields protoreflect.RawFields) {
+	x.unknownFields = fields
+}
+
+// IsValid reports whether the message is valid.
+//
+// An invalid message is an empty, read-only value.
+//
+// An invalid message often corresponds to a nil pointer of the concrete
+// message type, but the details are implementation dependent.
+// Validity is not part of the protobuf data model, and may not
+// be preserved in marshaling or other operations.
+func (x *fastReflection_QueryStagedOutboundResponse) IsValid() bool {
+	return x != nil
+}
+
+// ProtoMethods returns optional fastReflectionFeature-path implementations of various operations.
+// This method may return nil.
+//
+// The returned methods type is identical to
+// "google.golang.org/protobuf/runtime/protoiface".Methods.
+// Consult the protoiface package documentation for details.
+func (x *fastReflection_QueryStagedOutboundResponse) ProtoMethods() *protoiface.Methods {
+	size := func(input protoiface.SizeInput) protoiface.SizeOutput {
+		x := input.Message.Interface().(*QueryStagedOutboundResponse)
+		if x == nil {
+			return protoiface.SizeOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Size:              0,
+			}
+		}
+		options := runtime.SizeInputToOptions(input)
+		_ = options
+		var n int
+		var l int
+		_ = l
+		if len(x.StagedOutboundItems) > 0 {
+			for _, e := range x.StagedOutboundItems {
+				l = options.Size(e)
+				n += 1 + l + runtime.Sov(uint64(l))
+			}
+		}
+		if x.unknownFields != nil {
+			n += len(x.unknownFields)
+		}
+		return protoiface.SizeOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Size:              n,
+		}
+	}
+
+	marshal := func(input protoiface.MarshalInput) (protoiface.MarshalOutput, error) {
+		x := input.Message.Interface().(*QueryStagedOutboundResponse)
+		if x == nil {
+			return protoiface.MarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Buf:               input.Buf,
+			}, nil
+		}
+		options := runtime.MarshalInputToOptions(input)
+		_ = options
+		size := options.Size(x)
+		dAtA := make([]byte, size)
+		i := len(dAtA)
+		_ = i
+		var l int
+		_ = l
+		if x.unknownFields != nil {
+			i -= len(x.unknownFields)
+			copy(dAtA[i:], x.unknownFields)
+		}
+		if len(x.StagedOutboundItems) > 0 {
+			for iNdEx := len(x.StagedOutboundItems) - 1; iNdEx >= 0; iNdEx-- {
+				encoded, err := options.Marshal(x.StagedOutboundItems[iNdEx])
+				if err != nil {
+					return protoiface.MarshalOutput{
+						NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+						Buf:               input.Buf,
+					}, err
+				}
+				i -= len(encoded)
+				copy(dAtA[i:], encoded)
+				i = runtime.EncodeVarint(dAtA, i, uint64(len(encoded)))
+				i--
+				dAtA[i] = 0xa
+			}
+		}
+		if input.Buf != nil {
+			input.Buf = append(input.Buf, dAtA...)
+		} else {
+			input.Buf = dAtA
+		}
+		return protoiface.MarshalOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Buf:               input.Buf,
+		}, nil
+	}
+	unmarshal := func(input protoiface.UnmarshalInput) (protoiface.UnmarshalOutput, error) {
+		x := input.Message.Interface().(*QueryStagedOutboundResponse)
+		if x == nil {
+			return protoiface.UnmarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Flags:             input.Flags,
+			}, nil
+		}
+		options := runtime.UnmarshalInputToOptions(input)
+		_ = options
+		dAtA := input.Buf
+		l := len(dAtA)
+		iNdEx := 0
+		for iNdEx < l {
+			preIndex := iNdEx
+			var wire uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				wire |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			fieldNum := int32(wire >> 3)
+			wireType := int(wire & 0x7)
+			if wireType == 4 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: QueryStagedOutboundResponse: wiretype end group for non-group")
+			}
+			if fieldNum <= 0 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: QueryStagedOutboundResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+			}
+			switch fieldNum {
+			case 1:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field StagedOutboundItems", wireType)
+				}
+				var msglen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					msglen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if msglen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + msglen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.StagedOutboundItems = append(x.StagedOutboundItems, &QueryStagedOutboundItem{})
+				if err := options.Unmarshal(dAtA[iNdEx:postIndex], x.StagedOutboundItems[len(x.StagedOutboundItems)-1]); err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				iNdEx = postIndex
+			default:
+				iNdEx = preIndex
+				skippy, err := runtime.Skip(dAtA[iNdEx:])
+				if err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				if (skippy < 0) || (iNdEx+skippy) < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if (iNdEx + skippy) > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				if !options.DiscardUnknown {
+					x.unknownFields = append(x.unknownFields, dAtA[iNdEx:iNdEx+skippy]...)
+				}
+				iNdEx += skippy
+			}
+		}
+
+		if iNdEx > l {
+			return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+		}
+		return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, nil
+	}
+	return &protoiface.Methods{
+		NoUnkeyedLiterals: struct{}{},
+		Flags:             protoiface.SupportMarshalDeterministic | protoiface.SupportUnmarshalDiscardUnknown,
+		Size:              size,
+		Marshal:           marshal,
+		Unmarshal:         unmarshal,
+		Merge:             nil,
+		CheckInitialized:  nil,
+	}
+}
+
+var (
+	md_QueryStagedOutboundItem                  protoreflect.MessageDescriptor
+	fd_QueryStagedOutboundItem_tx_out_item      protoreflect.FieldDescriptor
+	fd_QueryStagedOutboundItem_scheduled_height protoreflect.FieldDescriptor
+	fd_QueryStagedOutboundItem_staged_height    protoreflect.FieldDescriptor
+)
+
+func init() {
+	file_types_query_outbound_proto_init()
+	md_QueryStagedOutboundItem = File_types_query_outbound_proto.Messages().ByName("QueryStagedOutboundItem")
+	fd_QueryStagedOutboundItem_tx_out_item = md_QueryStagedOutboundItem.Fields().ByName("tx_out_item")
+	fd_QueryStagedOutboundItem_scheduled_height = md_QueryStagedOutboundItem.Fields().ByName("scheduled_height")
+	fd_QueryStagedOutboundItem_staged_height = md_QueryStagedOutboundItem.Fields().ByName("staged_height")
+}
+
+var _ protoreflect.Message = (*fastReflection_QueryStagedOutboundItem)(nil)
+
+type fastReflection_QueryStagedOutboundItem QueryStagedOutboundItem
+
+func (x *QueryStagedOutboundItem) ProtoReflect() protoreflect.Message {
+	return (*fastReflection_QueryStagedOutboundItem)(x)
+}
+
+func (x *QueryStagedOutboundItem) slowProtoReflect() protoreflect.Message {
+	mi := &file_types_query_outbound_proto_msgTypes[5]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+var _fastReflection_QueryStagedOutboundItem_messageType fastReflection_QueryStagedOutboundItem_messageType
+var _ protoreflect.MessageType = fastReflection_QueryStagedOutboundItem_messageType{}
+
+type fastReflection_QueryStagedOutboundItem_messageType struct{}
+
+func (x fastReflection_QueryStagedOutboundItem_messageType) Zero() protoreflect.Message {
+	return (*fastReflection_QueryStagedOutboundItem)(nil)
+}
+func (x fastReflection_QueryStagedOutboundItem_messageType) New() protoreflect.Message {
+	return new(fastReflection_QueryStagedOutboundItem)
+}
+func (x fastReflection_QueryStagedOutboundItem_messageType) Descriptor() protoreflect.MessageDescriptor {
+	return md_QueryStagedOutboundItem
+}
+
+// Descriptor returns message descriptor, which contains only the protobuf
+// type information for the message.
+func (x *fastReflection_QueryStagedOutboundItem) Descriptor() protoreflect.MessageDescriptor {
+	return md_QueryStagedOutboundItem
+}
+
+// Type returns the message type, which encapsulates both Go and protobuf
+// type information. If the Go type information is not needed,
+// it is recommended that the message descriptor be used instead.
+func (x *fastReflection_QueryStagedOutboundItem) Type() protoreflect.MessageType {
+	return _fastReflection_QueryStagedOutboundItem_messageType
+}
+
+// New returns a newly allocated and mutable empty message.
+func (x *fastReflection_QueryStagedOutboundItem) New() protoreflect.Message {
+	return new(fastReflection_QueryStagedOutboundItem)
+}
+
+// Interface unwraps the message reflection interface and
+// returns the underlying ProtoMessage interface.
+func (x *fastReflection_QueryStagedOutboundItem) Interface() protoreflect.ProtoMessage {
+	return (*QueryStagedOutboundItem)(x)
+}
+
+// Range iterates over every populated field in an undefined order,
+// calling f for each field descriptor and value encountered.
+// Range returns immediately if f returns false.
+// While iterating, mutating operations may only be performed
+// on the current field descriptor.
+func (x *fastReflection_QueryStagedOutboundItem) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
+	if x.TxOutItem != nil {
+		value := protoreflect.ValueOfMessage(x.TxOutItem.ProtoReflect())
+		if !f(fd_QueryStagedOutboundItem_tx_out_item, value) {
+			return
+		}
+	}
+	if x.ScheduledHeight != int64(0) {
+		value := protoreflect.ValueOfInt64(x.ScheduledHeight)
+		if !f(fd_QueryStagedOutboundItem_scheduled_height, value) {
+			return
+		}
+	}
+	if x.StagedHeight != int64(0) {
+		value := protoreflect.ValueOfInt64(x.StagedHeight)
+		if !f(fd_QueryStagedOutboundItem_staged_height, value) {
+			return
+		}
+	}
+}
+
+// Has reports whether a field is populated.
+//
+// Some fields have the property of nullability where it is possible to
+// distinguish between the default value of a field and whether the field
+// was explicitly populated with the default value. Singular message fields,
+// member fields of a oneof, and proto2 scalar fields are nullable. Such
+// fields are populated only if explicitly set.
+//
+// In other cases (aside from the nullable cases above),
+// a proto3 scalar field is populated if it contains a non-zero value, and
+// a repeated field is populated if it is non-empty.
+func (x *fastReflection_QueryStagedOutboundItem) Has(fd protoreflect.FieldDescriptor) bool {
+	switch fd.FullName() {
+	case "types.QueryStagedOutboundItem.tx_out_item":
+		return x.TxOutItem != nil
+	case "types.QueryStagedOutboundItem.scheduled_height":
+		return x.ScheduledHeight != int64(0)
+	case "types.QueryStagedOutboundItem.staged_height":
+		return x.StagedHeight != int64(0)
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryStagedOutboundItem"))
+		}
+		panic(fmt.Errorf("message types.QueryStagedOutboundItem does not contain field %s", fd.FullName()))
+	}
+}
+
+// Clear clears the field such that a subsequent Has call reports false.
+//
+// Clearing an extension field clears both the extension type and value
+// associated with the given field number.
+//
+// Clear is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_QueryStagedOutboundItem) Clear(fd protoreflect.FieldDescriptor) {
+	switch fd.FullName() {
+	case "types.QueryStagedOutboundItem.tx_out_item":
+		x.TxOutItem = nil
+	case "types.QueryStagedOutboundItem.scheduled_height":
+		x.ScheduledHeight = int64(0)
+	case "types.QueryStagedOutboundItem.staged_height":
+		x.StagedHeight = int64(0)
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryStagedOutboundItem"))
+		}
+		panic(fmt.Errorf("message types.QueryStagedOutboundItem does not contain field %s", fd.FullName()))
+	}
+}
+
+// Get retrieves the value for a field.
+//
+// For unpopulated scalars, it returns the default value, where
+// the default value of a bytes scalar is guaranteed to be a copy.
+// For unpopulated composite types, it returns an empty, read-only view
+// of the value; to obtain a mutable reference, use Mutable.
+func (x *fastReflection_QueryStagedOutboundItem) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
+	switch descriptor.FullName() {
+	case "types.QueryStagedOutboundItem.tx_out_item":
+		value := x.TxOutItem
+		return protoreflect.ValueOfMessage(value.ProtoReflect())
+	case "types.QueryStagedOutboundItem.scheduled_height":
+		value := x.ScheduledHeight
+		return protoreflect.ValueOfInt64(value)
+	case "types.QueryStagedOutboundItem.staged_height":
+		value := x.StagedHeight
+		return protoreflect.ValueOfInt64(value)
+	default:
+		if descriptor.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryStagedOutboundItem"))
+		}
+		panic(fmt.Errorf("message types.QueryStagedOutboundItem does not contain field %s", descriptor.FullName()))
+	}
+}
+
+// Set stores the value for a field.
+//
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType.
+// When setting a composite type, it is unspecified whether the stored value
+// aliases the source's memory in any way. If the composite value is an
+// empty, read-only value, then it panics.
+//
+// Set is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_QueryStagedOutboundItem) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
+	switch fd.FullName() {
+	case "types.QueryStagedOutboundItem.tx_out_item":
+		x.TxOutItem = value.Message().Interface().(*QueryTxOutItem)
+	case "types.QueryStagedOutboundItem.scheduled_height":
+		x.ScheduledHeight = value.Int()
+	case "types.QueryStagedOutboundItem.staged_height":
+		x.StagedHeight = value.Int()
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryStagedOutboundItem"))
+		}
+		panic(fmt.Errorf("message types.QueryStagedOutboundItem does not contain field %s", fd.FullName()))
+	}
+}
+
+// Mutable returns a mutable reference to a composite type.
+//
+// If the field is unpopulated, it may allocate a composite value.
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType
+// if not already stored.
+// It panics if the field does not contain a composite type.
+//
+// Mutable is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_QueryStagedOutboundItem) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "types.QueryStagedOutboundItem.tx_out_item":
+		if x.TxOutItem == nil {
+			x.TxOutItem = new(QueryTxOutItem)
+		}
+		return protoreflect.ValueOfMessage(x.TxOutItem.ProtoReflect())
+	case "types.QueryStagedOutboundItem.scheduled_height":
+		panic(fmt.Errorf("field scheduled_height of message types.QueryStagedOutboundItem is not mutable"))
+	case "types.QueryStagedOutboundItem.staged_height":
+		panic(fmt.Errorf("field staged_height of message types.QueryStagedOutboundItem is not mutable"))
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryStagedOutboundItem"))
+		}
+		panic(fmt.Errorf("message types.QueryStagedOutboundItem does not contain field %s", fd.FullName()))
+	}
+}
+
+// NewField returns a new value that is assignable to the field
+// for the given descriptor. For scalars, this returns the default value.
+// For lists, maps, and messages, this returns a new, empty, mutable value.
+func (x *fastReflection_QueryStagedOutboundItem) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "types.QueryStagedOutboundItem.tx_out_item":
+		m := new(QueryTxOutItem)
+		return protoreflect.ValueOfMessage(m.ProtoReflect())
+	case "types.QueryStagedOutboundItem.scheduled_height":
+		return protoreflect.ValueOfInt64(int64(0))
+	case "types.QueryStagedOutboundItem.staged_height":
+		return protoreflect.ValueOfInt64(int64(0))
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryStagedOutboundItem"))
+		}
+		panic(fmt.Errorf("message types.QueryStagedOutboundItem does not contain field %s", fd.FullName()))
+	}
+}
+
+// WhichOneof reports which field within the oneof is populated,
+// returning nil if none are populated.
+// It panics if the oneof descriptor does not belong to this message.
+func (x *fastReflection_QueryStagedOutboundItem) WhichOneof(d protoreflect.OneofDescriptor) protoreflect.FieldDescriptor {
+	switch d.FullName() {
+	default:
+		panic(fmt.Errorf("%s is not a oneof field in types.QueryStagedOutboundItem", d.FullName()))
+	}
+	panic("unreachable")
+}
+
+// GetUnknown retrieves the entire list of unknown fields.
+// The caller may only mutate the contents of the RawFields
+// if the mutated bytes are stored back into the message with SetUnknown.
+func (x *fastReflection_QueryStagedOutboundItem) GetUnknown() protoreflect.RawFields {
+	return x.unknownFields
+}
+
+// SetUnknown stores an entire list of unknown fields.
+// The raw fields must be syntactically valid according to the wire format.
+// An implementation may panic if this is not the case.
+// Once stored, the caller must not mutate the content of the RawFields.
+// An empty RawFields may be passed to clear the fields.
+//
+// SetUnknown is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_QueryStagedOutboundItem) SetUnknown(fields protoreflect.RawFields) {
+	x.unknownFields = fields
+}
+
+// IsValid reports whether the message is valid.
+//
+// An invalid message is an empty, read-only value.
+//
+// An invalid message often corresponds to a nil pointer of the concrete
+// message type, but the details are implementation dependent.
+// Validity is not part of the protobuf data model, and may not
+// be preserved in marshaling or other operations.
+func (x *fastReflection_QueryStagedOutboundItem) IsValid() bool {
+	return x != nil
+}
+
+// ProtoMethods returns optional fastReflectionFeature-path implementations of various operations.
+// This method may return nil.
+//
+// The returned methods type is identical to
+// "google.golang.org/protobuf/runtime/protoiface".Methods.
+// Consult the protoiface package documentation for details.
+func (x *fastReflection_QueryStagedOutboundItem) ProtoMethods() *protoiface.Methods {
+	size := func(input protoiface.SizeInput) protoiface.SizeOutput {
+		x := input.Message.Interface().(*QueryStagedOutboundItem)
+		if x == nil {
+			return protoiface.SizeOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Size:              0,
+			}
+		}
+		options := runtime.SizeInputToOptions(input)
+		_ = options
+		var n int
+		var l int
+		_ = l
+		if x.TxOutItem != nil {
+			l = options.Size(x.TxOutItem)
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		if x.ScheduledHeight != 0 {
+			n += 1 + runtime.Sov(uint64(x.ScheduledHeight))
+		}
+		if x.StagedHeight != 0 {
+			n += 1 + runtime.Sov(uint64(x.StagedHeight))
+		}
+		if x.unknownFields != nil {
+			n += len(x.unknownFields)
+		}
+		return protoiface.SizeOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Size:              n,
+		}
+	}
+
+	marshal := func(input protoiface.MarshalInput) (protoiface.MarshalOutput, error) {
+		x := input.Message.Interface().(*QueryStagedOutboundItem)
+		if x == nil {
+			return protoiface.MarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Buf:               input.Buf,
+			}, nil
+		}
+		options := runtime.MarshalInputToOptions(input)
+		_ = options
+		size := options.Size(x)
+		dAtA := make([]byte, size)
+		i := len(dAtA)
+		_ = i
+		var l int
+		_ = l
+		if x.unknownFields != nil {
+			i -= len(x.unknownFields)
+			copy(dAtA[i:], x.unknownFields)
+		}
+		if x.StagedHeight != 0 {
+			i = runtime.EncodeVarint(dAtA, i, uint64(x.StagedHeight))
+			i--
+			dAtA[i] = 0x18
+		}
+		if x.ScheduledHeight != 0 {
+			i = runtime.EncodeVarint(dAtA, i, uint64(x.ScheduledHeight))
+			i--
+			dAtA[i] = 0x10
+		}
+		if x.TxOutItem != nil {
+			encoded, err := options.Marshal(x.TxOutItem)
+			if err != nil {
+				return protoiface.MarshalOutput{
+					NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+					Buf:               input.Buf,
+				}, err
+			}
+			i -= len(encoded)
+			copy(dAtA[i:], encoded)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(encoded)))
+			i--
+			dAtA[i] = 0xa
+		}
+		if input.Buf != nil {
+			input.Buf = append(input.Buf, dAtA...)
+		} else {
+			input.Buf = dAtA
+		}
+		return protoiface.MarshalOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Buf:               input.Buf,
+		}, nil
+	}
+	unmarshal := func(input protoiface.UnmarshalInput) (protoiface.UnmarshalOutput, error) {
+		x := input.Message.Interface().(*QueryStagedOutboundItem)
+		if x == nil {
+			return protoiface.UnmarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Flags:             input.Flags,
+			}, nil
+		}
+		options := runtime.UnmarshalInputToOptions(input)
+		_ = options
+		dAtA := input.Buf
+		l := len(dAtA)
+		iNdEx := 0
+		for iNdEx < l {
+			preIndex := iNdEx
+			var wire uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				wire |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			fieldNum := int32(wire >> 3)
+			wireType := int(wire & 0x7)
+			if wireType == 4 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: QueryStagedOutboundItem: wiretype end group for non-group")
+			}
+			if fieldNum <= 0 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: QueryStagedOutboundItem: illegal tag %d (wire type %d)", fieldNum, wire)
+			}
+			switch fieldNum {
+			case 1:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field TxOutItem", wireType)
+				}
+				var msglen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					msglen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if msglen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + msglen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				if x.TxOutItem == nil {
+					x.TxOutItem = &QueryTxOutItem{}
+				}
+				if err := options.Unmarshal(dAtA[iNdEx:postIndex], x.TxOutItem); err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				iNdEx = postIndex
+			case 2:
+				if wireType != 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field ScheduledHeight", wireType)
+				}
+				x.ScheduledHeight = 0
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					x.ScheduledHeight |= int64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+			case 3:
+				if wireType != 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field StagedHeight", wireType)
+				}
+				x.StagedHeight = 0
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					x.StagedHeight |= int64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+			default:
+				iNdEx = preIndex
+				skippy, err := runtime.Skip(dAtA[iNdEx:])
+				if err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				if (skippy < 0) || (iNdEx+skippy) < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if (iNdEx + skippy) > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				if !options.DiscardUnknown {
+					x.unknownFields = append(x.unknownFields, dAtA[iNdEx:iNdEx+skippy]...)
+				}
+				iNdEx += skippy
+			}
+		}
+
+		if iNdEx > l {
+			return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+		}
+		return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, nil
+	}
+	return &protoiface.Methods{
+		NoUnkeyedLiterals: struct{}{},
+		Flags:             protoiface.SupportMarshalDeterministic | protoiface.SupportUnmarshalDiscardUnknown,
+		Size:              size,
+		Marshal:           marshal,
+		Unmarshal:         unmarshal,
+		Merge:             nil,
+		CheckInitialized:  nil,
+	}
+}
+
 var _ protoreflect.List = (*_QueryTxOutItem_6_list)(nil)
 
 type _QueryTxOutItem_6_list struct {
@@ -1451,7 +2832,7 @@ func (x *QueryTxOutItem) ProtoReflect() protoreflect.Message {
 }
 
 func (x *QueryTxOutItem) slowProtoReflect() protoreflect.Message {
-	mi := &file_types_query_outbound_proto_msgTypes[3]
+	mi := &file_types_query_outbound_proto_msgTypes[6]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2926,6 +4307,32 @@ func (x *QueryPendingOutboundRequest) GetHeight() string {
 	return ""
 }
 
+type QueryStagedOutboundRequest struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+}
+
+func (x *QueryStagedOutboundRequest) Reset() {
+	*x = QueryStagedOutboundRequest{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_types_query_outbound_proto_msgTypes[2]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *QueryStagedOutboundRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*QueryStagedOutboundRequest) ProtoMessage() {}
+
+// Deprecated: Use QueryStagedOutboundRequest.ProtoReflect.Descriptor instead.
+func (*QueryStagedOutboundRequest) Descriptor() ([]byte, []int) {
+	return file_types_query_outbound_proto_rawDescGZIP(), []int{2}
+}
+
 type QueryOutboundResponse struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -2937,7 +4344,7 @@ type QueryOutboundResponse struct {
 func (x *QueryOutboundResponse) Reset() {
 	*x = QueryOutboundResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_types_query_outbound_proto_msgTypes[2]
+		mi := &file_types_query_outbound_proto_msgTypes[3]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -2951,7 +4358,7 @@ func (*QueryOutboundResponse) ProtoMessage() {}
 
 // Deprecated: Use QueryOutboundResponse.ProtoReflect.Descriptor instead.
 func (*QueryOutboundResponse) Descriptor() ([]byte, []int) {
-	return file_types_query_outbound_proto_rawDescGZIP(), []int{2}
+	return file_types_query_outbound_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *QueryOutboundResponse) GetTxOutItems() []*QueryTxOutItem {
@@ -2959,6 +4366,94 @@ func (x *QueryOutboundResponse) GetTxOutItems() []*QueryTxOutItem {
 		return x.TxOutItems
 	}
 	return nil
+}
+
+type QueryStagedOutboundResponse struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	StagedOutboundItems []*QueryStagedOutboundItem `protobuf:"bytes,1,rep,name=staged_outbound_items,json=stagedOutboundItems,proto3" json:"staged_outbound_items,omitempty"`
+}
+
+func (x *QueryStagedOutboundResponse) Reset() {
+	*x = QueryStagedOutboundResponse{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_types_query_outbound_proto_msgTypes[4]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *QueryStagedOutboundResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*QueryStagedOutboundResponse) ProtoMessage() {}
+
+// Deprecated: Use QueryStagedOutboundResponse.ProtoReflect.Descriptor instead.
+func (*QueryStagedOutboundResponse) Descriptor() ([]byte, []int) {
+	return file_types_query_outbound_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *QueryStagedOutboundResponse) GetStagedOutboundItems() []*QueryStagedOutboundItem {
+	if x != nil {
+		return x.StagedOutboundItems
+	}
+	return nil
+}
+
+// StagedOutboundItem contains a TxOutItem plus scheduling info for mempool swap
+// outputs
+type QueryStagedOutboundItem struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	TxOutItem       *QueryTxOutItem `protobuf:"bytes,1,opt,name=tx_out_item,json=txOutItem,proto3" json:"tx_out_item,omitempty"`
+	ScheduledHeight int64           `protobuf:"varint,2,opt,name=scheduled_height,json=scheduledHeight,proto3" json:"scheduled_height,omitempty"` // Pre-computed target height (delay countdown starts at staging)
+	StagedHeight    int64           `protobuf:"varint,3,opt,name=staged_height,json=stagedHeight,proto3" json:"staged_height,omitempty"`          // Block height when this outbound was staged
+}
+
+func (x *QueryStagedOutboundItem) Reset() {
+	*x = QueryStagedOutboundItem{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_types_query_outbound_proto_msgTypes[5]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *QueryStagedOutboundItem) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*QueryStagedOutboundItem) ProtoMessage() {}
+
+// Deprecated: Use QueryStagedOutboundItem.ProtoReflect.Descriptor instead.
+func (*QueryStagedOutboundItem) Descriptor() ([]byte, []int) {
+	return file_types_query_outbound_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *QueryStagedOutboundItem) GetTxOutItem() *QueryTxOutItem {
+	if x != nil {
+		return x.TxOutItem
+	}
+	return nil
+}
+
+func (x *QueryStagedOutboundItem) GetScheduledHeight() int64 {
+	if x != nil {
+		return x.ScheduledHeight
+	}
+	return 0
+}
+
+func (x *QueryStagedOutboundItem) GetStagedHeight() int64 {
+	if x != nil {
+		return x.StagedHeight
+	}
+	return 0
 }
 
 // Fields are rearranged for querier response readability while preserving their
@@ -2993,7 +4488,7 @@ type QueryTxOutItem struct {
 func (x *QueryTxOutItem) Reset() {
 	*x = QueryTxOutItem{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_types_query_outbound_proto_msgTypes[3]
+		mi := &file_types_query_outbound_proto_msgTypes[6]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -3007,7 +4502,7 @@ func (*QueryTxOutItem) ProtoMessage() {}
 
 // Deprecated: Use QueryTxOutItem.ProtoReflect.Descriptor instead.
 func (*QueryTxOutItem) Descriptor() ([]byte, []int) {
-	return file_types_query_outbound_proto_rawDescGZIP(), []int{3}
+	return file_types_query_outbound_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *QueryTxOutItem) GetHeight() int64 {
@@ -3143,67 +4638,86 @@ var file_types_query_outbound_proto_rawDesc = []byte{
 	0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x22, 0x35, 0x0a, 0x1b, 0x51, 0x75, 0x65, 0x72, 0x79,
 	0x50, 0x65, 0x6e, 0x64, 0x69, 0x6e, 0x67, 0x4f, 0x75, 0x74, 0x62, 0x6f, 0x75, 0x6e, 0x64, 0x52,
 	0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x12, 0x16, 0x0a, 0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74,
-	0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x22, 0x50,
-	0x0a, 0x15, 0x51, 0x75, 0x65, 0x72, 0x79, 0x4f, 0x75, 0x74, 0x62, 0x6f, 0x75, 0x6e, 0x64, 0x52,
-	0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x37, 0x0a, 0x0c, 0x74, 0x78, 0x5f, 0x6f, 0x75,
-	0x74, 0x5f, 0x69, 0x74, 0x65, 0x6d, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x15, 0x2e,
-	0x74, 0x79, 0x70, 0x65, 0x73, 0x2e, 0x51, 0x75, 0x65, 0x72, 0x79, 0x54, 0x78, 0x4f, 0x75, 0x74,
-	0x49, 0x74, 0x65, 0x6d, 0x52, 0x0a, 0x74, 0x78, 0x4f, 0x75, 0x74, 0x49, 0x74, 0x65, 0x6d, 0x73,
-	0x22, 0xdb, 0x05, 0x0a, 0x0e, 0x51, 0x75, 0x65, 0x72, 0x79, 0x54, 0x78, 0x4f, 0x75, 0x74, 0x49,
-	0x74, 0x65, 0x6d, 0x12, 0x16, 0x0a, 0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x18, 0x0a, 0x20,
-	0x01, 0x28, 0x03, 0x52, 0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x12, 0x22, 0x0a, 0x0d, 0x76,
-	0x61, 0x75, 0x6c, 0x74, 0x5f, 0x70, 0x75, 0x62, 0x5f, 0x6b, 0x65, 0x79, 0x18, 0x03, 0x20, 0x01,
-	0x28, 0x09, 0x52, 0x0b, 0x76, 0x61, 0x75, 0x6c, 0x74, 0x50, 0x75, 0x62, 0x4b, 0x65, 0x79, 0x12,
-	0x17, 0x0a, 0x07, 0x69, 0x6e, 0x5f, 0x68, 0x61, 0x73, 0x68, 0x18, 0x08, 0x20, 0x01, 0x28, 0x09,
-	0x52, 0x06, 0x69, 0x6e, 0x48, 0x61, 0x73, 0x68, 0x12, 0x19, 0x0a, 0x08, 0x6f, 0x75, 0x74, 0x5f,
-	0x68, 0x61, 0x73, 0x68, 0x18, 0x09, 0x20, 0x01, 0x28, 0x09, 0x52, 0x07, 0x6f, 0x75, 0x74, 0x48,
-	0x61, 0x73, 0x68, 0x12, 0x1f, 0x0a, 0x05, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x18, 0x01, 0x20, 0x01,
-	0x28, 0x09, 0x42, 0x09, 0xea, 0xde, 0x1f, 0x05, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x52, 0x05, 0x63,
-	0x68, 0x61, 0x69, 0x6e, 0x12, 0x2d, 0x0a, 0x0a, 0x74, 0x6f, 0x5f, 0x61, 0x64, 0x64, 0x72, 0x65,
-	0x73, 0x73, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x42, 0x0e, 0xea, 0xde, 0x1f, 0x0a, 0x74, 0x6f,
-	0x5f, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x52, 0x09, 0x74, 0x6f, 0x41, 0x64, 0x64, 0x72,
-	0x65, 0x73, 0x73, 0x12, 0x2a, 0x0a, 0x04, 0x63, 0x6f, 0x69, 0x6e, 0x18, 0x04, 0x20, 0x01, 0x28,
-	0x0b, 0x32, 0x0c, 0x2e, 0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x43, 0x6f, 0x69, 0x6e, 0x42,
-	0x08, 0xea, 0xde, 0x1f, 0x04, 0x63, 0x6f, 0x69, 0x6e, 0x52, 0x04, 0x63, 0x6f, 0x69, 0x6e, 0x12,
-	0x65, 0x0a, 0x07, 0x6d, 0x61, 0x78, 0x5f, 0x67, 0x61, 0x73, 0x18, 0x06, 0x20, 0x03, 0x28, 0x0b,
-	0x32, 0x0c, 0x2e, 0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x43, 0x6f, 0x69, 0x6e, 0x42, 0x3e,
-	0xc8, 0xde, 0x1f, 0x00, 0xea, 0xde, 0x1f, 0x07, 0x6d, 0x61, 0x78, 0x5f, 0x67, 0x61, 0x73, 0xaa,
-	0xdf, 0x1f, 0x2b, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68,
-	0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65,
-	0x2f, 0x76, 0x33, 0x2f, 0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x47, 0x61, 0x73, 0x52, 0x06,
-	0x6d, 0x61, 0x78, 0x47, 0x61, 0x73, 0x12, 0x19, 0x0a, 0x08, 0x67, 0x61, 0x73, 0x5f, 0x72, 0x61,
-	0x74, 0x65, 0x18, 0x07, 0x20, 0x01, 0x28, 0x03, 0x52, 0x07, 0x67, 0x61, 0x73, 0x52, 0x61, 0x74,
-	0x65, 0x12, 0x12, 0x0a, 0x04, 0x6d, 0x65, 0x6d, 0x6f, 0x18, 0x05, 0x20, 0x01, 0x28, 0x09, 0x52,
-	0x04, 0x6d, 0x65, 0x6d, 0x6f, 0x12, 0x23, 0x0a, 0x0d, 0x6f, 0x72, 0x69, 0x67, 0x69, 0x6e, 0x61,
-	0x6c, 0x5f, 0x6d, 0x65, 0x6d, 0x6f, 0x18, 0x11, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0c, 0x6f, 0x72,
-	0x69, 0x67, 0x69, 0x6e, 0x61, 0x6c, 0x4d, 0x65, 0x6d, 0x6f, 0x12, 0x1e, 0x0a, 0x0a, 0x61, 0x67,
-	0x67, 0x72, 0x65, 0x67, 0x61, 0x74, 0x6f, 0x72, 0x18, 0x0c, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0a,
-	0x61, 0x67, 0x67, 0x72, 0x65, 0x67, 0x61, 0x74, 0x6f, 0x72, 0x12, 0x36, 0x0a, 0x17, 0x61, 0x67,
-	0x67, 0x72, 0x65, 0x67, 0x61, 0x74, 0x6f, 0x72, 0x5f, 0x74, 0x61, 0x72, 0x67, 0x65, 0x74, 0x5f,
-	0x61, 0x73, 0x73, 0x65, 0x74, 0x18, 0x0d, 0x20, 0x01, 0x28, 0x09, 0x52, 0x15, 0x61, 0x67, 0x67,
-	0x72, 0x65, 0x67, 0x61, 0x74, 0x6f, 0x72, 0x54, 0x61, 0x72, 0x67, 0x65, 0x74, 0x41, 0x73, 0x73,
-	0x65, 0x74, 0x12, 0x36, 0x0a, 0x17, 0x61, 0x67, 0x67, 0x72, 0x65, 0x67, 0x61, 0x74, 0x6f, 0x72,
-	0x5f, 0x74, 0x61, 0x72, 0x67, 0x65, 0x74, 0x5f, 0x6c, 0x69, 0x6d, 0x69, 0x74, 0x18, 0x0e, 0x20,
-	0x01, 0x28, 0x09, 0x52, 0x15, 0x61, 0x67, 0x67, 0x72, 0x65, 0x67, 0x61, 0x74, 0x6f, 0x72, 0x54,
-	0x61, 0x72, 0x67, 0x65, 0x74, 0x4c, 0x69, 0x6d, 0x69, 0x74, 0x12, 0x1f, 0x0a, 0x0b, 0x63, 0x6c,
-	0x6f, 0x75, 0x74, 0x5f, 0x73, 0x70, 0x65, 0x6e, 0x74, 0x18, 0x0b, 0x20, 0x01, 0x28, 0x09, 0x52,
-	0x0a, 0x63, 0x6c, 0x6f, 0x75, 0x74, 0x53, 0x70, 0x65, 0x6e, 0x74, 0x12, 0x2d, 0x0a, 0x13, 0x76,
-	0x61, 0x75, 0x6c, 0x74, 0x5f, 0x70, 0x75, 0x62, 0x5f, 0x6b, 0x65, 0x79, 0x5f, 0x65, 0x64, 0x64,
-	0x73, 0x61, 0x18, 0x0f, 0x20, 0x01, 0x28, 0x09, 0x52, 0x10, 0x76, 0x61, 0x75, 0x6c, 0x74, 0x50,
-	0x75, 0x62, 0x4b, 0x65, 0x79, 0x45, 0x64, 0x64, 0x73, 0x61, 0x12, 0x42, 0x0a, 0x11, 0x69, 0x6e,
-	0x62, 0x6f, 0x75, 0x6e, 0x64, 0x5f, 0x66, 0x69, 0x6e, 0x61, 0x6c, 0x69, 0x7a, 0x65, 0x64, 0x18,
-	0x10, 0x20, 0x01, 0x28, 0x08, 0x42, 0x15, 0xea, 0xde, 0x1f, 0x11, 0x69, 0x6e, 0x62, 0x6f, 0x75,
-	0x6e, 0x64, 0x5f, 0x66, 0x69, 0x6e, 0x61, 0x6c, 0x69, 0x7a, 0x65, 0x64, 0x52, 0x10, 0x69, 0x6e,
-	0x62, 0x6f, 0x75, 0x6e, 0x64, 0x46, 0x69, 0x6e, 0x61, 0x6c, 0x69, 0x7a, 0x65, 0x64, 0x42, 0x83,
-	0x01, 0x0a, 0x09, 0x63, 0x6f, 0x6d, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x42, 0x12, 0x51, 0x75,
-	0x65, 0x72, 0x79, 0x4f, 0x75, 0x74, 0x62, 0x6f, 0x75, 0x6e, 0x64, 0x50, 0x72, 0x6f, 0x74, 0x6f,
-	0x50, 0x01, 0x5a, 0x2a, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74,
-	0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x6e, 0x6f, 0x64,
-	0x65, 0x2f, 0x76, 0x33, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x74, 0x79, 0x70, 0x65, 0x73, 0xa2, 0x02,
-	0x03, 0x54, 0x58, 0x58, 0xaa, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xca, 0x02, 0x05, 0x54,
-	0x79, 0x70, 0x65, 0x73, 0xe2, 0x02, 0x11, 0x54, 0x79, 0x70, 0x65, 0x73, 0x5c, 0x47, 0x50, 0x42,
-	0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73,
-	0xc8, 0xe2, 0x1e, 0x01, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x22, 0x1c,
+	0x0a, 0x1a, 0x51, 0x75, 0x65, 0x72, 0x79, 0x53, 0x74, 0x61, 0x67, 0x65, 0x64, 0x4f, 0x75, 0x74,
+	0x62, 0x6f, 0x75, 0x6e, 0x64, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x22, 0x50, 0x0a, 0x15,
+	0x51, 0x75, 0x65, 0x72, 0x79, 0x4f, 0x75, 0x74, 0x62, 0x6f, 0x75, 0x6e, 0x64, 0x52, 0x65, 0x73,
+	0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x37, 0x0a, 0x0c, 0x74, 0x78, 0x5f, 0x6f, 0x75, 0x74, 0x5f,
+	0x69, 0x74, 0x65, 0x6d, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x15, 0x2e, 0x74, 0x79,
+	0x70, 0x65, 0x73, 0x2e, 0x51, 0x75, 0x65, 0x72, 0x79, 0x54, 0x78, 0x4f, 0x75, 0x74, 0x49, 0x74,
+	0x65, 0x6d, 0x52, 0x0a, 0x74, 0x78, 0x4f, 0x75, 0x74, 0x49, 0x74, 0x65, 0x6d, 0x73, 0x22, 0x71,
+	0x0a, 0x1b, 0x51, 0x75, 0x65, 0x72, 0x79, 0x53, 0x74, 0x61, 0x67, 0x65, 0x64, 0x4f, 0x75, 0x74,
+	0x62, 0x6f, 0x75, 0x6e, 0x64, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x52, 0x0a,
+	0x15, 0x73, 0x74, 0x61, 0x67, 0x65, 0x64, 0x5f, 0x6f, 0x75, 0x74, 0x62, 0x6f, 0x75, 0x6e, 0x64,
+	0x5f, 0x69, 0x74, 0x65, 0x6d, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x1e, 0x2e, 0x74,
+	0x79, 0x70, 0x65, 0x73, 0x2e, 0x51, 0x75, 0x65, 0x72, 0x79, 0x53, 0x74, 0x61, 0x67, 0x65, 0x64,
+	0x4f, 0x75, 0x74, 0x62, 0x6f, 0x75, 0x6e, 0x64, 0x49, 0x74, 0x65, 0x6d, 0x52, 0x13, 0x73, 0x74,
+	0x61, 0x67, 0x65, 0x64, 0x4f, 0x75, 0x74, 0x62, 0x6f, 0x75, 0x6e, 0x64, 0x49, 0x74, 0x65, 0x6d,
+	0x73, 0x22, 0xa0, 0x01, 0x0a, 0x17, 0x51, 0x75, 0x65, 0x72, 0x79, 0x53, 0x74, 0x61, 0x67, 0x65,
+	0x64, 0x4f, 0x75, 0x74, 0x62, 0x6f, 0x75, 0x6e, 0x64, 0x49, 0x74, 0x65, 0x6d, 0x12, 0x35, 0x0a,
+	0x0b, 0x74, 0x78, 0x5f, 0x6f, 0x75, 0x74, 0x5f, 0x69, 0x74, 0x65, 0x6d, 0x18, 0x01, 0x20, 0x01,
+	0x28, 0x0b, 0x32, 0x15, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2e, 0x51, 0x75, 0x65, 0x72, 0x79,
+	0x54, 0x78, 0x4f, 0x75, 0x74, 0x49, 0x74, 0x65, 0x6d, 0x52, 0x09, 0x74, 0x78, 0x4f, 0x75, 0x74,
+	0x49, 0x74, 0x65, 0x6d, 0x12, 0x29, 0x0a, 0x10, 0x73, 0x63, 0x68, 0x65, 0x64, 0x75, 0x6c, 0x65,
+	0x64, 0x5f, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x18, 0x02, 0x20, 0x01, 0x28, 0x03, 0x52, 0x0f,
+	0x73, 0x63, 0x68, 0x65, 0x64, 0x75, 0x6c, 0x65, 0x64, 0x48, 0x65, 0x69, 0x67, 0x68, 0x74, 0x12,
+	0x23, 0x0a, 0x0d, 0x73, 0x74, 0x61, 0x67, 0x65, 0x64, 0x5f, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74,
+	0x18, 0x03, 0x20, 0x01, 0x28, 0x03, 0x52, 0x0c, 0x73, 0x74, 0x61, 0x67, 0x65, 0x64, 0x48, 0x65,
+	0x69, 0x67, 0x68, 0x74, 0x22, 0xdb, 0x05, 0x0a, 0x0e, 0x51, 0x75, 0x65, 0x72, 0x79, 0x54, 0x78,
+	0x4f, 0x75, 0x74, 0x49, 0x74, 0x65, 0x6d, 0x12, 0x16, 0x0a, 0x06, 0x68, 0x65, 0x69, 0x67, 0x68,
+	0x74, 0x18, 0x0a, 0x20, 0x01, 0x28, 0x03, 0x52, 0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x12,
+	0x22, 0x0a, 0x0d, 0x76, 0x61, 0x75, 0x6c, 0x74, 0x5f, 0x70, 0x75, 0x62, 0x5f, 0x6b, 0x65, 0x79,
+	0x18, 0x03, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0b, 0x76, 0x61, 0x75, 0x6c, 0x74, 0x50, 0x75, 0x62,
+	0x4b, 0x65, 0x79, 0x12, 0x17, 0x0a, 0x07, 0x69, 0x6e, 0x5f, 0x68, 0x61, 0x73, 0x68, 0x18, 0x08,
+	0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x69, 0x6e, 0x48, 0x61, 0x73, 0x68, 0x12, 0x19, 0x0a, 0x08,
+	0x6f, 0x75, 0x74, 0x5f, 0x68, 0x61, 0x73, 0x68, 0x18, 0x09, 0x20, 0x01, 0x28, 0x09, 0x52, 0x07,
+	0x6f, 0x75, 0x74, 0x48, 0x61, 0x73, 0x68, 0x12, 0x1f, 0x0a, 0x05, 0x63, 0x68, 0x61, 0x69, 0x6e,
+	0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x42, 0x09, 0xea, 0xde, 0x1f, 0x05, 0x63, 0x68, 0x61, 0x69,
+	0x6e, 0x52, 0x05, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x12, 0x2d, 0x0a, 0x0a, 0x74, 0x6f, 0x5f, 0x61,
+	0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x42, 0x0e, 0xea, 0xde,
+	0x1f, 0x0a, 0x74, 0x6f, 0x5f, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x52, 0x09, 0x74, 0x6f,
+	0x41, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x12, 0x2a, 0x0a, 0x04, 0x63, 0x6f, 0x69, 0x6e, 0x18,
+	0x04, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x0c, 0x2e, 0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x43,
+	0x6f, 0x69, 0x6e, 0x42, 0x08, 0xea, 0xde, 0x1f, 0x04, 0x63, 0x6f, 0x69, 0x6e, 0x52, 0x04, 0x63,
+	0x6f, 0x69, 0x6e, 0x12, 0x65, 0x0a, 0x07, 0x6d, 0x61, 0x78, 0x5f, 0x67, 0x61, 0x73, 0x18, 0x06,
+	0x20, 0x03, 0x28, 0x0b, 0x32, 0x0c, 0x2e, 0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x43, 0x6f,
+	0x69, 0x6e, 0x42, 0x3e, 0xc8, 0xde, 0x1f, 0x00, 0xea, 0xde, 0x1f, 0x07, 0x6d, 0x61, 0x78, 0x5f,
+	0x67, 0x61, 0x73, 0xaa, 0xdf, 0x1f, 0x2b, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63, 0x6f,
+	0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74, 0x68, 0x6f, 0x72,
+	0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x63, 0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x47,
+	0x61, 0x73, 0x52, 0x06, 0x6d, 0x61, 0x78, 0x47, 0x61, 0x73, 0x12, 0x19, 0x0a, 0x08, 0x67, 0x61,
+	0x73, 0x5f, 0x72, 0x61, 0x74, 0x65, 0x18, 0x07, 0x20, 0x01, 0x28, 0x03, 0x52, 0x07, 0x67, 0x61,
+	0x73, 0x52, 0x61, 0x74, 0x65, 0x12, 0x12, 0x0a, 0x04, 0x6d, 0x65, 0x6d, 0x6f, 0x18, 0x05, 0x20,
+	0x01, 0x28, 0x09, 0x52, 0x04, 0x6d, 0x65, 0x6d, 0x6f, 0x12, 0x23, 0x0a, 0x0d, 0x6f, 0x72, 0x69,
+	0x67, 0x69, 0x6e, 0x61, 0x6c, 0x5f, 0x6d, 0x65, 0x6d, 0x6f, 0x18, 0x11, 0x20, 0x01, 0x28, 0x09,
+	0x52, 0x0c, 0x6f, 0x72, 0x69, 0x67, 0x69, 0x6e, 0x61, 0x6c, 0x4d, 0x65, 0x6d, 0x6f, 0x12, 0x1e,
+	0x0a, 0x0a, 0x61, 0x67, 0x67, 0x72, 0x65, 0x67, 0x61, 0x74, 0x6f, 0x72, 0x18, 0x0c, 0x20, 0x01,
+	0x28, 0x09, 0x52, 0x0a, 0x61, 0x67, 0x67, 0x72, 0x65, 0x67, 0x61, 0x74, 0x6f, 0x72, 0x12, 0x36,
+	0x0a, 0x17, 0x61, 0x67, 0x67, 0x72, 0x65, 0x67, 0x61, 0x74, 0x6f, 0x72, 0x5f, 0x74, 0x61, 0x72,
+	0x67, 0x65, 0x74, 0x5f, 0x61, 0x73, 0x73, 0x65, 0x74, 0x18, 0x0d, 0x20, 0x01, 0x28, 0x09, 0x52,
+	0x15, 0x61, 0x67, 0x67, 0x72, 0x65, 0x67, 0x61, 0x74, 0x6f, 0x72, 0x54, 0x61, 0x72, 0x67, 0x65,
+	0x74, 0x41, 0x73, 0x73, 0x65, 0x74, 0x12, 0x36, 0x0a, 0x17, 0x61, 0x67, 0x67, 0x72, 0x65, 0x67,
+	0x61, 0x74, 0x6f, 0x72, 0x5f, 0x74, 0x61, 0x72, 0x67, 0x65, 0x74, 0x5f, 0x6c, 0x69, 0x6d, 0x69,
+	0x74, 0x18, 0x0e, 0x20, 0x01, 0x28, 0x09, 0x52, 0x15, 0x61, 0x67, 0x67, 0x72, 0x65, 0x67, 0x61,
+	0x74, 0x6f, 0x72, 0x54, 0x61, 0x72, 0x67, 0x65, 0x74, 0x4c, 0x69, 0x6d, 0x69, 0x74, 0x12, 0x1f,
+	0x0a, 0x0b, 0x63, 0x6c, 0x6f, 0x75, 0x74, 0x5f, 0x73, 0x70, 0x65, 0x6e, 0x74, 0x18, 0x0b, 0x20,
+	0x01, 0x28, 0x09, 0x52, 0x0a, 0x63, 0x6c, 0x6f, 0x75, 0x74, 0x53, 0x70, 0x65, 0x6e, 0x74, 0x12,
+	0x2d, 0x0a, 0x13, 0x76, 0x61, 0x75, 0x6c, 0x74, 0x5f, 0x70, 0x75, 0x62, 0x5f, 0x6b, 0x65, 0x79,
+	0x5f, 0x65, 0x64, 0x64, 0x73, 0x61, 0x18, 0x0f, 0x20, 0x01, 0x28, 0x09, 0x52, 0x10, 0x76, 0x61,
+	0x75, 0x6c, 0x74, 0x50, 0x75, 0x62, 0x4b, 0x65, 0x79, 0x45, 0x64, 0x64, 0x73, 0x61, 0x12, 0x42,
+	0x0a, 0x11, 0x69, 0x6e, 0x62, 0x6f, 0x75, 0x6e, 0x64, 0x5f, 0x66, 0x69, 0x6e, 0x61, 0x6c, 0x69,
+	0x7a, 0x65, 0x64, 0x18, 0x10, 0x20, 0x01, 0x28, 0x08, 0x42, 0x15, 0xea, 0xde, 0x1f, 0x11, 0x69,
+	0x6e, 0x62, 0x6f, 0x75, 0x6e, 0x64, 0x5f, 0x66, 0x69, 0x6e, 0x61, 0x6c, 0x69, 0x7a, 0x65, 0x64,
+	0x52, 0x10, 0x69, 0x6e, 0x62, 0x6f, 0x75, 0x6e, 0x64, 0x46, 0x69, 0x6e, 0x61, 0x6c, 0x69, 0x7a,
+	0x65, 0x64, 0x42, 0x83, 0x01, 0x0a, 0x09, 0x63, 0x6f, 0x6d, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73,
+	0x42, 0x12, 0x51, 0x75, 0x65, 0x72, 0x79, 0x4f, 0x75, 0x74, 0x62, 0x6f, 0x75, 0x6e, 0x64, 0x50,
+	0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x2a, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63,
+	0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74, 0x68, 0x6f,
+	0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x74, 0x79, 0x70,
+	0x65, 0x73, 0xa2, 0x02, 0x03, 0x54, 0x58, 0x58, 0xaa, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73,
+	0xca, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xe2, 0x02, 0x11, 0x54, 0x79, 0x70, 0x65, 0x73,
+	0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x05, 0x54,
+	0x79, 0x70, 0x65, 0x73, 0xc8, 0xe2, 0x1e, 0x01, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -3218,23 +4732,28 @@ func file_types_query_outbound_proto_rawDescGZIP() []byte {
 	return file_types_query_outbound_proto_rawDescData
 }
 
-var file_types_query_outbound_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_types_query_outbound_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_types_query_outbound_proto_goTypes = []interface{}{
 	(*QueryScheduledOutboundRequest)(nil), // 0: types.QueryScheduledOutboundRequest
 	(*QueryPendingOutboundRequest)(nil),   // 1: types.QueryPendingOutboundRequest
-	(*QueryOutboundResponse)(nil),         // 2: types.QueryOutboundResponse
-	(*QueryTxOutItem)(nil),                // 3: types.QueryTxOutItem
-	(*common.Coin)(nil),                   // 4: common.Coin
+	(*QueryStagedOutboundRequest)(nil),    // 2: types.QueryStagedOutboundRequest
+	(*QueryOutboundResponse)(nil),         // 3: types.QueryOutboundResponse
+	(*QueryStagedOutboundResponse)(nil),   // 4: types.QueryStagedOutboundResponse
+	(*QueryStagedOutboundItem)(nil),       // 5: types.QueryStagedOutboundItem
+	(*QueryTxOutItem)(nil),                // 6: types.QueryTxOutItem
+	(*common.Coin)(nil),                   // 7: common.Coin
 }
 var file_types_query_outbound_proto_depIdxs = []int32{
-	3, // 0: types.QueryOutboundResponse.tx_out_items:type_name -> types.QueryTxOutItem
-	4, // 1: types.QueryTxOutItem.coin:type_name -> common.Coin
-	4, // 2: types.QueryTxOutItem.max_gas:type_name -> common.Coin
-	3, // [3:3] is the sub-list for method output_type
-	3, // [3:3] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	6, // 0: types.QueryOutboundResponse.tx_out_items:type_name -> types.QueryTxOutItem
+	5, // 1: types.QueryStagedOutboundResponse.staged_outbound_items:type_name -> types.QueryStagedOutboundItem
+	6, // 2: types.QueryStagedOutboundItem.tx_out_item:type_name -> types.QueryTxOutItem
+	7, // 3: types.QueryTxOutItem.coin:type_name -> common.Coin
+	7, // 4: types.QueryTxOutItem.max_gas:type_name -> common.Coin
+	5, // [5:5] is the sub-list for method output_type
+	5, // [5:5] is the sub-list for method input_type
+	5, // [5:5] is the sub-list for extension type_name
+	5, // [5:5] is the sub-list for extension extendee
+	0, // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_types_query_outbound_proto_init() }
@@ -3268,7 +4787,7 @@ func file_types_query_outbound_proto_init() {
 			}
 		}
 		file_types_query_outbound_proto_msgTypes[2].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*QueryOutboundResponse); i {
+			switch v := v.(*QueryStagedOutboundRequest); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -3280,6 +4799,42 @@ func file_types_query_outbound_proto_init() {
 			}
 		}
 		file_types_query_outbound_proto_msgTypes[3].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*QueryOutboundResponse); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_types_query_outbound_proto_msgTypes[4].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*QueryStagedOutboundResponse); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_types_query_outbound_proto_msgTypes[5].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*QueryStagedOutboundItem); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_types_query_outbound_proto_msgTypes[6].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*QueryTxOutItem); i {
 			case 0:
 				return &v.state
@@ -3298,7 +4853,7 @@ func file_types_query_outbound_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_types_query_outbound_proto_rawDesc,
 			NumEnums:      0,
-			NumMessages:   4,
+			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

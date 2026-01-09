@@ -102,6 +102,7 @@ const (
 	prefixVolumeBucket            types.DbPrefix = "volume_bucket/"
 	prefixVolume                  types.DbPrefix = "volume/"
 	prefixMempoolSwapUsage        types.DbPrefix = "mempool_swap_usage/"
+	prefixStagedOutbound          types.DbPrefix = "staged_outbound/"
 )
 
 func dbError(ctx cosmos.Context, wrapper string, err error) error {

@@ -190,6 +190,53 @@ func (k KVStore) getSortedVaultSecurity(ctx cosmos.Context, vaults Vaults, signi
 			}
 		}
 
+		// Also include staged outbounds (mempool swaps waiting for inbound finalization)
+		// Use closure to properly scope defer for iterator cleanup within the loop
+		func() {
+			stagedIter := k.GetStagedOutboundIterator(ctx)
+			defer stagedIter.Close()
+			for ; stagedIter.Valid(); stagedIter.Next() {
+				var stagedList StagedOutboundList
+				if err := k.cdc.Unmarshal(stagedIter.Value(), &stagedList); err != nil {
+					ctx.Logger().Error("failed to unmarshal staged outbound list", "error", err)
+					continue
+				}
+				for _, staged := range stagedList.Items {
+					item := staged.TxOutItem
+					if item.OutHash.IsEmpty() {
+						toAddress, toAddrErr := vault.GetAddress(item.Coin.Asset.GetChain())
+						if toAddrErr != nil {
+							ctx.Logger().Error("failed to get address of chain", "error", toAddrErr)
+							continue
+						}
+						if item.VaultPubKey.Equals(vault.PubKey) {
+							if item.Coin.IsRune() {
+								totalValue = common.SafeSub(totalValue, item.Coin.Amount)
+							} else {
+								pool, poolErr := k.GetPool(ctx, item.Coin.Asset)
+								if poolErr != nil {
+									ctx.Logger().Error("failed to get pool", "error", poolErr)
+									continue
+								}
+								totalValue = common.SafeSub(totalValue, pool.AssetValueInRune(item.Coin.Amount))
+							}
+						} else if item.ToAddress.Equals(toAddress) {
+							if item.Coin.IsRune() {
+								totalValue = totalValue.Add(item.Coin.Amount)
+							} else {
+								pool, poolErr := k.GetPool(ctx, item.Coin.Asset)
+								if poolErr != nil {
+									ctx.Logger().Error("failed to get pool", "error", poolErr)
+									continue
+								}
+								totalValue = totalValue.Add(pool.AssetValueInRune(item.Coin.Amount))
+							}
+						}
+					}
+				}
+			}
+		}()
+
 		if totalValue.GT(totalBond) {
 			diff := totalValue.Sub(totalBond).BigInt()
 			vaultSecurity[i] = VaultSecurity{
@@ -250,6 +297,30 @@ func (k KVStore) GetPendingOutbounds(ctx cosmos.Context, asset common.Asset) []T
 			outbounds = append(outbounds, txOutItem)
 		}
 	}
+
+	// Also include staged outbounds (mempool swaps waiting for inbound finalization)
+	stagedIter := k.GetStagedOutboundIterator(ctx)
+	defer stagedIter.Close()
+	for ; stagedIter.Valid(); stagedIter.Next() {
+		var stagedList StagedOutboundList
+		if err := k.cdc.Unmarshal(stagedIter.Value(), &stagedList); err != nil {
+			ctx.Logger().Error("fail to unmarshal staged outbound list in GetPendingOutbounds", "error", err)
+			continue
+		}
+		for _, staged := range stagedList.Items {
+			item := staged.TxOutItem
+			// only need to look at outbounds for the same asset
+			if !item.Coin.Asset.Equals(asset) {
+				continue
+			}
+			// only still outstanding txout will be considered
+			if !item.OutHash.IsEmpty() {
+				continue
+			}
+			outbounds = append(outbounds, item)
+		}
+	}
+
 	return outbounds
 }
 

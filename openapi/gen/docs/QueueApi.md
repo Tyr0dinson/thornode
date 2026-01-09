@@ -9,6 +9,7 @@ Method | HTTP request | Description
 [**Queue**](QueueApi.md#Queue) | **Get** /thorchain/queue | 
 [**QueueOutbound**](QueueApi.md#QueueOutbound) | **Get** /thorchain/queue/outbound | 
 [**QueueScheduled**](QueueApi.md#QueueScheduled) | **Get** /thorchain/queue/scheduled | 
+[**QueueStaged**](QueueApi.md#QueueStaged) | **Get** /thorchain/queue/staged | 
 [**QueueSwap**](QueueApi.md#QueueSwap) | **Get** /thorchain/queue/swap | 
 
 
@@ -346,6 +347,67 @@ Name | Type | Description  | Notes
 ### Return type
 
 [**[]TxOutItem**](TxOutItem.md)
+
+### Authorization
+
+No authorization required
+
+### HTTP request headers
+
+- **Content-Type**: Not defined
+- **Accept**: application/json
+
+[[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints)
+[[Back to Model list]](../README.md#documentation-for-models)
+[[Back to README]](../README.md)
+
+
+## QueueStaged
+
+> StagedOutboundResponse QueueStaged(ctx).Execute()
+
+
+
+
+
+### Example
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "os"
+    openapiclient "./openapi"
+)
+
+func main() {
+
+    configuration := openapiclient.NewConfiguration()
+    apiClient := openapiclient.NewAPIClient(configuration)
+    resp, r, err := apiClient.QueueApi.QueueStaged(context.Background()).Execute()
+    if err != nil {
+        fmt.Fprintf(os.Stderr, "Error when calling `QueueApi.QueueStaged``: %v\n", err)
+        fmt.Fprintf(os.Stderr, "Full HTTP response: %v\n", r)
+    }
+    // response from `QueueStaged`: StagedOutboundResponse
+    fmt.Fprintf(os.Stdout, "Response from `QueueApi.QueueStaged`: %v\n", resp)
+}
+```
+
+### Path Parameters
+
+This endpoint does not need any parameter.
+
+### Other Parameters
+
+Other parameters are passed through a pointer to a apiQueueStagedRequest struct via the builder pattern
+
+
+### Return type
+
+[**StagedOutboundResponse**](StagedOutboundResponse.md)
 
 ### Authorization
 

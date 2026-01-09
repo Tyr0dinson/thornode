@@ -1354,7 +1354,7 @@ func (s *SlashingSuite) TestReverseSwapFallbackToTreasury(c *C) {
 		Commentf("Treasury recovery should send to treasury address"))
 }
 
-func (s *SlashingVCURSuite) TestLackSigningWithMempoolSwaps(c *C) {
+func (s *SlashingSuite) TestLackSigningWithMempoolSwaps(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	mgr.Keeper().SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
 
@@ -1433,7 +1433,7 @@ func (s *SlashingVCURSuite) TestLackSigningWithMempoolSwaps(c *C) {
 	ctx = ctx.WithBlockHeight(ctx.BlockHeight() + blocksToAdvance)
 
 	// Run LackSigning
-	slasher := newSlasherVCUR(mgr.Keeper(), mgr.EventMgr())
+	slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
 	err := slasher.LackSigning(ctx, mgr)
 	c.Assert(err, IsNil)
 
