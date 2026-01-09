@@ -92,6 +92,7 @@ const (
 	Query_Queue_FullMethodName                    = "/types.Query/Queue"
 	Query_ScheduledOutbound_FullMethodName        = "/types.Query/ScheduledOutbound"
 	Query_PendingOutbound_FullMethodName          = "/types.Query/PendingOutbound"
+	Query_StagedOutbound_FullMethodName           = "/types.Query/StagedOutbound"
 	Query_Block_FullMethodName                    = "/types.Query/Block"
 	Query_TssKeygenMetric_FullMethodName          = "/types.Query/TssKeygenMetric"
 	Query_TssMetric_FullMethodName                = "/types.Query/TssMetric"
@@ -206,6 +207,7 @@ type QueryClient interface {
 	Queue(ctx context.Context, in *QueryQueueRequest, opts ...grpc.CallOption) (*QueryQueueResponse, error)
 	ScheduledOutbound(ctx context.Context, in *QueryScheduledOutboundRequest, opts ...grpc.CallOption) (*QueryOutboundResponse, error)
 	PendingOutbound(ctx context.Context, in *QueryPendingOutboundRequest, opts ...grpc.CallOption) (*QueryOutboundResponse, error)
+	StagedOutbound(ctx context.Context, in *QueryStagedOutboundRequest, opts ...grpc.CallOption) (*QueryStagedOutboundResponse, error)
 	Block(ctx context.Context, in *QueryBlockRequest, opts ...grpc.CallOption) (*QueryBlockResponse, error)
 	TssKeygenMetric(ctx context.Context, in *QueryTssKeygenMetricRequest, opts ...grpc.CallOption) (*QueryTssKeygenMetricResponse, error)
 	TssMetric(ctx context.Context, in *QueryTssMetricRequest, opts ...grpc.CallOption) (*QueryTssMetricResponse, error)
@@ -899,6 +901,15 @@ func (c *queryClient) PendingOutbound(ctx context.Context, in *QueryPendingOutbo
 	return out, nil
 }
 
+func (c *queryClient) StagedOutbound(ctx context.Context, in *QueryStagedOutboundRequest, opts ...grpc.CallOption) (*QueryStagedOutboundResponse, error) {
+	out := new(QueryStagedOutboundResponse)
+	err := c.cc.Invoke(ctx, Query_StagedOutbound_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *queryClient) Block(ctx context.Context, in *QueryBlockRequest, opts ...grpc.CallOption) (*QueryBlockResponse, error) {
 	out := new(QueryBlockResponse)
 	err := c.cc.Invoke(ctx, Query_Block_FullMethodName, in, out, opts...)
@@ -1219,6 +1230,7 @@ type QueryServer interface {
 	Queue(context.Context, *QueryQueueRequest) (*QueryQueueResponse, error)
 	ScheduledOutbound(context.Context, *QueryScheduledOutboundRequest) (*QueryOutboundResponse, error)
 	PendingOutbound(context.Context, *QueryPendingOutboundRequest) (*QueryOutboundResponse, error)
+	StagedOutbound(context.Context, *QueryStagedOutboundRequest) (*QueryStagedOutboundResponse, error)
 	Block(context.Context, *QueryBlockRequest) (*QueryBlockResponse, error)
 	TssKeygenMetric(context.Context, *QueryTssKeygenMetricRequest) (*QueryTssKeygenMetricResponse, error)
 	TssMetric(context.Context, *QueryTssMetricRequest) (*QueryTssMetricResponse, error)
@@ -1470,6 +1482,9 @@ func (UnimplementedQueryServer) ScheduledOutbound(context.Context, *QuerySchedul
 }
 func (UnimplementedQueryServer) PendingOutbound(context.Context, *QueryPendingOutboundRequest) (*QueryOutboundResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PendingOutbound not implemented")
+}
+func (UnimplementedQueryServer) StagedOutbound(context.Context, *QueryStagedOutboundRequest) (*QueryStagedOutboundResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method StagedOutbound not implemented")
 }
 func (UnimplementedQueryServer) Block(context.Context, *QueryBlockRequest) (*QueryBlockResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Block not implemented")
@@ -2876,6 +2891,24 @@ func _Query_PendingOutbound_Handler(srv interface{}, ctx context.Context, dec fu
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Query_StagedOutbound_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryStagedOutboundRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).StagedOutbound(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Query_StagedOutbound_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).StagedOutbound(ctx, req.(*QueryStagedOutboundRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Query_Block_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(QueryBlockRequest)
 	if err := dec(in); err != nil {
@@ -3642,6 +3675,10 @@ var Query_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PendingOutbound",
 			Handler:    _Query_PendingOutbound_Handler,
+		},
+		{
+			MethodName: "StagedOutbound",
+			Handler:    _Query_StagedOutbound_Handler,
 		},
 		{
 			MethodName: "Block",

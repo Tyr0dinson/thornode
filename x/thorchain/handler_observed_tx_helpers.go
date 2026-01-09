@@ -2396,12 +2396,25 @@ func ExtractReferenceFromAmount(ctx cosmos.Context, mgr Manager, asset common.As
 	return leadingZeros(txnRefLength, fmt.Sprintf("%d", refNum)), nil
 }
 
-// finalizeOutbounds updates the Finalized flag on all outbound TxOutItems associated with an inbound
-// transaction when that inbound transaction finalizes. This allows bifrost signers to proceed with
-// signing outbounds that were created from mempool swaps. For native (THORChain) outbounds, this
-// function also executes them since they were queued waiting for finalization.
+// finalizeOutbounds moves staged outbounds to the real TxOut queue when the inbound transaction
+// finalizes. For native (THORChain) outbounds, this function executes them immediately.
+// This is part of the staged queue approach for mempool swaps.
 func finalizeOutbounds(ctx cosmos.Context, mgr Manager, voter ObservedTxVoter) error {
-	ctx.Logger().Info("finalizing outbounds for inbound", "hash", voter.TxID, "actions_count", len(voter.Actions))
+	ctx.Logger().Info("finalizing outbounds for inbound", "hash", voter.TxID)
+
+	// Idempotency check: if all actions are already finalized, skip processing
+	// This prevents double-execution if this function is called multiple times
+	allFinalized := len(voter.Actions) > 0
+	for _, action := range voter.Actions {
+		if !action.InboundFinalized {
+			allFinalized = false
+			break
+		}
+	}
+	if allFinalized {
+		ctx.Logger().Debug("all actions already finalized, skipping", "hash", voter.TxID)
+		return nil
+	}
 
 	// Release mempool swap capacity if this was a mempool swap
 	if !voter.MempoolSwapTOR.IsNil() && !voter.MempoolSwapTOR.IsZero() {
@@ -2412,99 +2425,72 @@ func finalizeOutbounds(ctx cosmos.Context, mgr Manager, voter ObservedTxVoter) e
 			"new_usage", newUsage)
 	}
 
-	// Get the maximum outbound delay to determine search range
-	txOutDelayMax := mgr.Keeper().GetConfigInt64(ctx, constants.TxOutDelayMax)
+	// Get staged outbounds for this inbound transaction
+	stagedItems, err := mgr.Keeper().GetStagedOutbounds(ctx, voter.TxID)
+	if err != nil {
+		return fmt.Errorf("fail to get staged outbounds: %w", err)
+	}
 
-	// Iterate through all actions (TxOutItems) for this inbound
-	for i := range voter.Actions {
-		action := &voter.Actions[i]
+	if len(stagedItems) == 0 {
+		ctx.Logger().Debug("no staged outbounds to finalize", "hash", voter.TxID)
+		// Still update voter actions in case they were set elsewhere
+		for i := range voter.Actions {
+			voter.Actions[i].InboundFinalized = true
+		}
+		mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+		return nil
+	}
 
-		// Skip if already finalized
-		if action.InboundFinalized {
-			continue
+	ctx.Logger().Info("found staged outbounds to finalize",
+		"hash", voter.TxID,
+		"count", len(stagedItems))
+
+	// Delete staged outbounds BEFORE processing to prevent double-processing on retry.
+	// If processing fails, Cosmos SDK will roll back both the deletion and any partial processing.
+	mgr.Keeper().DeleteStagedOutbounds(ctx, voter.TxID)
+
+	// Move each staged outbound to the real queue
+	for _, staged := range stagedItems {
+		// Floor the scheduled height at current block if the scheduled time has passed
+		targetHeight := staged.ScheduledHeight
+		if targetHeight < ctx.BlockHeight() {
+			targetHeight = ctx.BlockHeight()
 		}
 
-		// Update the action's InboundFinalized flag
-		action.InboundFinalized = true
-		ctx.Logger().Info("marked action as finalized",
-			"inhash", action.InHash,
-			"chain", action.Chain,
-			"to", action.ToAddress,
-			"amount", action.Coin.Amount)
+		// Mark as finalized
+		staged.TxOutItem.InboundFinalized = true
 
-		// Now we need to find and update the queued TxOut in keeper storage
-		// For mempool swaps, outbounds are created at consensus height (before finalization),
-		// so we need to search from the earlier unfinalized height, not the finalized height.
-		outboundHeight := voter.UnfinalizedHeight
-		if outboundHeight == 0 {
-			outboundHeight = voter.Height
-		}
-		if outboundHeight == 0 {
-			outboundHeight = ctx.BlockHeight()
-		}
-
-		// Search through a reasonable range of future blocks (up to TxOutDelayMax)
-		// to find the TxOut containing this action
-		found := false
-		maxSearchHeight := outboundHeight + txOutDelayMax
-		for h := outboundHeight; h <= maxSearchHeight && !found; h++ {
-			txOut, err := mgr.Keeper().GetTxOut(ctx, h)
-			if err != nil {
-				ctx.Logger().Error("fail to get txout", "error", err, "height", h)
-				continue
+		if staged.TxOutItem.Chain.IsTHORChain() {
+			// Execute native outbound immediately
+			tos, ok := mgr.TxOutStore().(*TxOutStorage)
+			if !ok {
+				return fmt.Errorf("fail to cast TxOutStore to TxOutStorage")
 			}
-
-			// Search through all TxOutItems in this block's TxOut
-			for j := range txOut.TxArray {
-				item := &txOut.TxArray[j]
-				// Match by InHash - that's the unique link to the inbound
-				if item.InHash.Equals(action.InHash) {
-					// Check if this is a native (THORChain) outbound that was queued
-					if item.Chain.IsTHORChain() {
-						// Execute the native outbound now that inbound is finalized
-						tos, ok := mgr.TxOutStore().(*TxOutStorageVCUR)
-						if !ok {
-							return fmt.Errorf("fail to cast TxOutStore to TxOutStorageVCUR")
-						}
-						if err := tos.nativeTxOut(ctx, mgr, *item); err != nil {
-							ctx.Logger().Error("fail to execute native outbound", "error", err, "inhash", item.InHash)
-							return fmt.Errorf("fail to execute native outbound: %w", err)
-						}
-						// Mark as processed by setting OutHash
-						item.OutHash = common.BlankTxID
-						ctx.Logger().Info("executed queued native outbound",
-							"height", h,
-							"inhash", item.InHash,
-							"asset", item.Coin.Asset,
-							"amount", item.Coin.Amount)
-					} else {
-						// External outbound - just mark as finalized (existing behavior)
-						item.InboundFinalized = true
-						ctx.Logger().Info("updated queued txout item to finalized",
-							"height", h,
-							"inhash", item.InHash,
-							"chain", item.Chain)
-					}
-
-					// Save the updated TxOut back to storage
-					if err := mgr.Keeper().SetTxOut(ctx, txOut); err != nil {
-						return fmt.Errorf("fail to save txout at height %d: %w", h, err)
-					}
-					found = true
-					break
-				}
+			if err := tos.nativeTxOut(ctx, mgr, staged.TxOutItem); err != nil {
+				ctx.Logger().Error("fail to execute native outbound", "error", err, "inhash", staged.TxOutItem.InHash)
+				return fmt.Errorf("fail to execute native outbound: %w", err)
 			}
-		}
-
-		if !found {
-			ctx.Logger().Warn("could not find queued txout item to finalize",
-				"inhash", action.InHash,
-				"chain", action.Chain,
-				"search_range", fmt.Sprintf("%d-%d", outboundHeight, maxSearchHeight))
+			ctx.Logger().Info("executed staged native outbound on finalization",
+				"inhash", staged.TxOutItem.InHash,
+				"asset", staged.TxOutItem.Coin.Asset,
+				"amount", staged.TxOutItem.Coin.Amount)
+		} else {
+			// Add external outbound to real TxOut queue at the target height
+			if err := mgr.Keeper().AppendTxOut(ctx, targetHeight, staged.TxOutItem); err != nil {
+				return fmt.Errorf("fail to move staged outbound to queue: %w", err)
+			}
+			ctx.Logger().Info("moved staged outbound to queue",
+				"inhash", staged.TxOutItem.InHash,
+				"chain", staged.TxOutItem.Chain,
+				"target_height", targetHeight,
+				"original_scheduled", staged.ScheduledHeight)
 		}
 	}
 
-	// Save the updated voter with finalized actions
+	// Update voter actions to mark as finalized
+	for i := range voter.Actions {
+		voter.Actions[i].InboundFinalized = true
+	}
 	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
 
 	return nil
@@ -2513,8 +2499,10 @@ func finalizeOutbounds(ctx cosmos.Context, mgr Manager, voter ObservedTxVoter) e
 // revertMempoolSwap reverts a mempool swap by creating a reverse swap back to the original asset,
 // then donating the result to the original source pool using a chained memo.
 // This is called when a mempool transaction is dropped or replaced before finalization.
+// With the staged queue approach, outbounds are in staging (not the real queue), so we just
+// delete from staging and handle pool accounting.
 func revertMempoolSwap(ctx cosmos.Context, keeper keeper.Keeper, mgr Manager, voter ObservedTxVoter) error {
-	ctx.Logger().Info("reverting mempool swap", "hash", voter.TxID, "actions_count", len(voter.Actions))
+	ctx.Logger().Info("reverting mempool swap", "hash", voter.TxID)
 
 	// Release mempool swap capacity if this was a mempool swap
 	if !voter.MempoolSwapTOR.IsNil() && !voter.MempoolSwapTOR.IsZero() {
@@ -2525,125 +2513,86 @@ func revertMempoolSwap(ctx cosmos.Context, keeper keeper.Keeper, mgr Manager, vo
 			"new_usage", newUsage)
 	}
 
-	// Get the maximum outbound delay to determine search range
-	txOutDelayMax := keeper.GetConfigInt64(ctx, constants.TxOutDelayMax)
-
 	// Determine the original source asset from the inbound transaction
 	if voter.Tx.Tx.Coins.IsEmpty() {
 		return fmt.Errorf("no coins in inbound tx")
 	}
 	sourceAsset := voter.Tx.Tx.Coins[0].Asset
 
-	// Get an active vault to use as the destination
+	// Get staged outbounds for this inbound transaction
+	stagedItems, err := keeper.GetStagedOutbounds(ctx, voter.TxID)
+	if err != nil {
+		return fmt.Errorf("fail to get staged outbounds: %w", err)
+	}
+
+	if len(stagedItems) == 0 {
+		ctx.Logger().Debug("no staged outbounds to revert", "hash", voter.TxID)
+		voter.Reverted = true
+		keeper.SetObservedTxInVoter(ctx, voter)
+		return nil
+	}
+
+	ctx.Logger().Info("found staged outbounds to revert",
+		"hash", voter.TxID,
+		"count", len(stagedItems))
+
+	// Get an active vault to use as the destination for reverse swaps
 	activeVaults, err := keeper.GetAsgardVaultsByStatus(ctx, ActiveVault)
 	if err != nil || len(activeVaults) == 0 {
 		return fmt.Errorf("fail to get active vaults: %w", err)
 	}
 	vault := activeVaults[0]
 
-	// Iterate through all actions (TxOutItems) for this inbound
-	for i := range voter.Actions {
-		action := &voter.Actions[i]
+	// Get the source amount from the voter's inbound transaction
+	// This is the asset that was credited to the pool on mempool observation
+	// but will never be received, so we need to remove it once (not per outbound)
+	sourceAmount := voter.Tx.Tx.Coins[0].Amount
+	assetRemovedFromPool := false
 
-		// Skip if already signed (OutHash is set)
-		if !action.OutHash.IsEmpty() {
-			ctx.Logger().Warn("action already signed, cannot revert",
-				"inhash", action.InHash,
-				"outhash", action.OutHash)
-			continue
-		}
+	// Handle pool accounting for each staged outbound
+	for i, staged := range stagedItems {
+		action := staged.TxOutItem
 
-		ctx.Logger().Info("reverting action",
+		ctx.Logger().Info("reverting staged action",
 			"inhash", action.InHash,
 			"from_asset", action.Coin.Asset,
 			"from_amount", action.Coin.Amount,
 			"to_asset", sourceAsset)
 
-		// Step 1: Remove the TxOutItem from the queued TxOut FIRST
-		outboundHeight := voter.UnfinalizedHeight
-		if outboundHeight == 0 {
-			outboundHeight = ctx.BlockHeight()
-		}
-
-		removed := false
-		maxSearchHeight := outboundHeight + txOutDelayMax
-		for h := outboundHeight; h <= maxSearchHeight && !removed; h++ {
-			txOut, err := keeper.GetTxOut(ctx, h)
-			if err != nil {
-				continue
-			}
-
-			// Search for the TxOutItem to remove
-			for j := 0; j < len(txOut.TxArray); j++ {
-				item := &txOut.TxArray[j]
-				if item.InHash.Equals(action.InHash) {
-					// Remove this item from the array
-					txOut.TxArray = append(txOut.TxArray[:j], txOut.TxArray[j+1:]...)
-					ctx.Logger().Info("removed queued txout item",
-						"height", h,
-						"inhash", item.InHash,
-						"chain", item.Chain)
-
-					// Save the updated TxOut
-					if err := keeper.SetTxOut(ctx, txOut); err != nil {
-						ctx.Logger().Error("fail to save txout after removal", "error", err, "height", h)
-						return fmt.Errorf("fail to save txout after removal at height %d: %w", h, err)
-					}
-					removed = true
-					break // IMPORTANT: must break after slice modification to avoid index issues
-				}
-			}
-		}
-
-		if !removed {
-			ctx.Logger().Error("could not find and remove queued txout item",
-				"inhash", action.InHash,
-				"chain", action.Chain,
-				"search_range", fmt.Sprintf("%d-%d", outboundHeight, maxSearchHeight))
-			return fmt.Errorf("could not find queued txout item to remove: %s", action.InHash)
-		}
-
-		// Step 2: Handle pool accounting for the reverted swap
 		// For native outputs (RUNE, synths, trade assets), directly adjust pool balances
 		// For external chain outputs, create a reverse swap then donate
 		if action.Chain.IsTHORChain() {
 			// Native output - directly adjust pool balances to reverse the swap
-			// The swap was: sourceAsset -> native (RUNE)
-			// We need to:
-			// 1. Add the RUNE back to the pool (reverse the RUNE that was emitted)
-			// 2. Subtract the source asset from the pool (reverse the asset that was added)
-			// This is because the inbound never finalized, so the source asset never arrived in the vault
 			pool, err := keeper.GetPool(ctx, sourceAsset.GetLayer1Asset())
 			if err != nil {
-				ctx.Logger().Error("fail to get pool for native revert", "error", err, "asset", sourceAsset)
-				continue
+				return fmt.Errorf("fail to get pool for native revert: %w", err)
 			}
-
-			// Get the source amount from the voter's inbound transaction
-			sourceAmount := voter.Tx.Tx.Coins[0].Amount
 
 			// Add the RUNE back to the pool (restore RUNE that was emitted)
 			pool.BalanceRune = pool.BalanceRune.Add(action.Coin.Amount)
 
-			// Subtract the source asset from the pool (remove asset that was never received)
-			// Use SafeSub to avoid underflow in case of any edge cases
-			pool.BalanceAsset = common.SafeSub(pool.BalanceAsset, sourceAmount)
+			// Subtract the source asset from the pool ONLY ONCE
+			// (remove asset that was credited on mempool observation but never received)
+			if !assetRemovedFromPool {
+				pool.BalanceAsset = common.SafeSub(pool.BalanceAsset, sourceAmount)
+				assetRemovedFromPool = true
+				ctx.Logger().Info("reverted native mempool swap pool balances",
+					"pool", sourceAsset.GetLayer1Asset(),
+					"rune_added", action.Coin.Amount,
+					"asset_removed", sourceAmount)
+			} else {
+				ctx.Logger().Info("reverted native mempool swap (rune only)",
+					"pool", sourceAsset.GetLayer1Asset(),
+					"rune_added", action.Coin.Amount)
+			}
 
 			if err := keeper.SetPool(ctx, pool); err != nil {
 				return fmt.Errorf("fail to set pool after native revert: %w", err)
 			}
-
-			ctx.Logger().Info("reverted native mempool swap pool balances",
-				"pool", sourceAsset.GetLayer1Asset(),
-				"rune_added", action.Coin.Amount,
-				"asset_removed", sourceAmount)
 			continue
 		}
 
 		// External chain output - create reverse swap with chained donate memo
-		// The pool deduction will happen atomically when the donate executes in settleSwap
-		// Generate a unique transaction ID for this reversal using deterministic reversal
-		// The original TxID can be recovered by reversing the process without needing storage
 		txID := CreateMempoolRevertTxID(voter.TxID, i)
 
 		// Get max gas coin for the chain
@@ -2656,23 +2605,19 @@ func revertMempoolSwap(ctx cosmos.Context, keeper keeper.Keeper, mgr Manager, vo
 		}
 
 		// For the reverse swap, we need to get a vault address on the source asset's chain
-		// because the output destination must match the target asset's chain
 		sourceChain := sourceAsset.GetChain()
 		destAddress, err := vault.PubKey.GetAddress(sourceChain)
 		if err != nil {
-			ctx.Logger().Error("fail to get vault address for source chain", "error", err, "chain", sourceChain)
-			continue
+			return fmt.Errorf("fail to get vault address for source chain %s: %w", sourceChain, err)
 		}
 
 		// Get THORChain vault address for the swap message
 		vaultAddress, err := vault.PubKey.GetAddress(common.THORChain)
 		if err != nil {
-			ctx.Logger().Error("fail to get vault address for THORChain", "error", err)
-			continue
+			return fmt.Errorf("fail to get vault address for THORChain: %w", err)
 		}
 
 		// Create a reverse swap with chained memo: swap back to source asset, then donate to pool
-		// The "|" separator tells the system to process a second memo after the swap completes
 		memo := fmt.Sprintf("=:%s:%s|DONATE:%s", sourceAsset, destAddress, sourceAsset.GetLayer1Asset())
 
 		msg := MsgSwap{
@@ -2706,12 +2651,14 @@ func revertMempoolSwap(ctx cosmos.Context, keeper keeper.Keeper, mgr Manager, vo
 			"memo", memo)
 	}
 
+	// Delete all staged outbounds AFTER processing succeeds.
+	// If any operation above failed, we returned an error and Cosmos SDK rolls back all state changes,
+	// allowing retry. Only delete when all operations completed successfully.
+	keeper.DeleteStagedOutbounds(ctx, voter.TxID)
+
 	// Mark the voter as reverted
 	voter.Reverted = true
 	keeper.SetObservedTxInVoter(ctx, voter)
-
-	// Note: The MempoolSwapReverted event is emitted from settleSwap when the donate executes,
-	// as that's when we know the donated amount
 
 	return nil
 }

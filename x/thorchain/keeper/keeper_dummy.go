@@ -1190,6 +1190,21 @@ func (k KVStoreDummy) SubMempoolSwapUsageTOR(_ cosmos.Context, _ cosmos.Uint) co
 	return cosmos.ZeroUint()
 }
 
+func (k KVStoreDummy) SetStagedOutbound(_ cosmos.Context, _ TxOutItem, _ int64) error {
+	return kaboom
+}
+
+func (k KVStoreDummy) GetStagedOutbounds(_ cosmos.Context, _ common.TxID) ([]StagedOutbound, error) {
+	return nil, kaboom
+}
+func (k KVStoreDummy) DeleteStagedOutbounds(_ cosmos.Context, _ common.TxID) {}
+func (k KVStoreDummy) GetStagedOutboundIterator(_ cosmos.Context) cosmos.Iterator {
+	return nil
+}
+
+func (k KVStoreDummy) GetStagedOutboundValue(_ cosmos.Context) (cosmos.Uint, cosmos.Uint, error) {
+	return cosmos.ZeroUint(), cosmos.ZeroUint(), kaboom
+}
 
 // a mock cosmos.Iterator implementation for testing purposes
 type DummyIterator struct {

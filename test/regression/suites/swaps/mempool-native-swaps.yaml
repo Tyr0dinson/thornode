@@ -69,18 +69,23 @@ txs:
 type: create-blocks
 count: 1
 ---
-# Verify native outbound is queued (NOT executed immediately)
+# With staged queue approach, native outbounds are staged (NOT in queue until finalized)
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
-  - .|length == 1
-  - .[0].chain == "THOR"
-  - .[0].to_address == "{{ addr_thor_fox }}"
-  - .[0].in_hash == "{{ observe_txid 1 }}"
-  - .[0].inbound_finalized == false
-  - (.[0].out_hash // "") == ""
-  - .[0].coin.asset == "THOR.RUNE"
-  - .[0].coin.amount|tonumber > 0
+  - .|length == 0
+---
+# Verify outbound is in staged queue
+type: check
+endpoint: http://localhost:1317/thorchain/queue/staged
+asserts:
+  - .staged_outbound_items|length == 1
+  - .staged_outbound_items[0].tx_out_item.chain == "THOR"
+  - .staged_outbound_items[0].tx_out_item.to_address == "{{ addr_thor_fox }}"
+  - .staged_outbound_items[0].tx_out_item.in_hash == "{{ observe_txid 1 }}"
+  - .staged_outbound_items[0].tx_out_item.coin.asset == "THOR.RUNE"
+  - .staged_outbound_items[0].scheduled_height|tonumber > 0
+  - .staged_outbound_items[0].staged_height|tonumber > 0
 ---
 # Verify RUNE has NOT been transferred yet (balance unchanged from initial)
 type: check
@@ -125,6 +130,12 @@ type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .|length == 0
+---
+# Verify staged queue is also empty (item was processed)
+type: check
+endpoint: http://localhost:1317/thorchain/queue/staged
+asserts:
+  - (.staged_outbound_items // [])|length == 0
 ---
 # Verify RUNE has NOW been transferred to recipient (balance increased)
 type: check
@@ -183,16 +194,20 @@ txs:
 type: create-blocks
 count: 1
 ---
-# Verify mempool swap created native outbound (queued, not executed)
+# With staged queue approach, outbound is staged not in real queue
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
-  - .|length == 1
-  - .[0].chain == "THOR"
-  - .[0].in_hash == "{{ observe_txid 10 }}"
-  - .[0].to_address == "{{ addr_thor_cat }}"
-  - .[0].inbound_finalized == false
-  - (.[0].out_hash // "") == ""
+  - .|length == 0
+---
+# Verify outbound is in staged queue
+type: check
+endpoint: http://localhost:1317/thorchain/queue/staged
+asserts:
+  - .staged_outbound_items|length == 1
+  - .staged_outbound_items[0].tx_out_item.chain == "THOR"
+  - .staged_outbound_items[0].tx_out_item.in_hash == "{{ observe_txid 10 }}"
+  - .staged_outbound_items[0].tx_out_item.to_address == "{{ addr_thor_cat }}"
 ---
 # Verify recipient balance unchanged (native not transferred)
 type: check
@@ -200,16 +215,20 @@ endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_cat }}
 asserts:
   - .balances[]|select(.denom == "rune")|.amount == "${CAT_INITIAL_BALANCE}"
 ---
-# Wait for MaxOutboundAttempts to be exceeded
-# LackSigning processes TxOuts that are signingTransPeriod blocks old
-# With SigningTransactionPeriod=3 and MaxOutboundAttempts=2:
-# - Block 11: TxOut at height 8 processed, age=3, attempts=1, reschedule to height 14
-# - Block 17: TxOut at height 14 processed, age=9, attempts=3 >= 2, REMOVED
-# Need to wait until block 17 (9 blocks after block 8)
+# Wait for staged outbound timeout to be exceeded
+# With staged queue approach, LackSigning times out staged items when:
+# stagedAge >= signingTransPeriod * maxOutboundAttempts = 3 * 2 = 6 blocks
+# Staged at block ~11, so timeout at block ~17
 type: create-blocks
 count: 10
 ---
-# Verify native outbound was removed from queue (no reverse swap for native)
+# Verify staged outbound was removed (timed out and reverted)
+type: check
+endpoint: http://localhost:1317/thorchain/queue/staged
+asserts:
+  - (.staged_outbound_items // [])|length == 0
+---
+# Verify real queue is also empty
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
@@ -271,18 +290,21 @@ txs:
 type: create-blocks
 count: 1
 ---
-# Verify secured asset outbound is queued (NOT executed immediately)
+# With staged queue approach, secured asset outbound is staged not in real queue
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
-  - .|length == 1
-  - .[0].chain == "THOR"
-  - .[0].to_address == "{{ addr_thor_pig }}"
-  - .[0].in_hash == "{{ observe_txid 20 }}"
-  - .[0].inbound_finalized == false
-  - (.[0].out_hash // "") == ""
-  - .[0].coin.asset == "BTC-BTC"
-  - .[0].coin.amount|tonumber > 0
+  - .|length == 0
+---
+# Verify outbound is in staged queue
+type: check
+endpoint: http://localhost:1317/thorchain/queue/staged
+asserts:
+  - .staged_outbound_items|length == 1
+  - .staged_outbound_items[0].tx_out_item.chain == "THOR"
+  - .staged_outbound_items[0].tx_out_item.to_address == "{{ addr_thor_pig }}"
+  - .staged_outbound_items[0].tx_out_item.in_hash == "{{ observe_txid 20 }}"
+  - .staged_outbound_items[0].tx_out_item.coin.asset == "BTC-BTC"
 ---
 # Verify secured asset has NOT been deposited yet (no balance)
 type: check
@@ -324,6 +346,12 @@ type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .|length == 0
+---
+# Verify staged queue is empty (item was processed)
+type: check
+endpoint: http://localhost:1317/thorchain/queue/staged
+asserts:
+  - (.staged_outbound_items // [])|length == 0
 ---
 # Verify secured asset has NOW been deposited to recipient
 type: check
@@ -386,15 +414,20 @@ txs:
 type: create-blocks
 count: 1
 ---
-# Verify RUNE outbound is queued (NOT executed immediately)
+# With staged queue approach, RUNE outbound is staged not in real queue
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
-  - .|length == 1
-  - .[0].chain == "THOR"
-  - .[0].in_hash == "{{ observe_txid 30 }}"
-  - .[0].inbound_finalized == false
-  - .[0].coin.asset == "THOR.RUNE"
+  - .|length == 0
+---
+# Verify outbound is in staged queue
+type: check
+endpoint: http://localhost:1317/thorchain/queue/staged
+asserts:
+  - .staged_outbound_items|length == 1
+  - .staged_outbound_items[0].tx_out_item.chain == "THOR"
+  - .staged_outbound_items[0].tx_out_item.in_hash == "{{ observe_txid 30 }}"
+  - .staged_outbound_items[0].tx_out_item.coin.asset == "THOR.RUNE"
 ---
 # Create blocks to reach finalization height
 type: create-blocks
@@ -430,6 +463,12 @@ type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .|length == 0
+---
+# Verify staged queue is empty (item was processed)
+type: check
+endpoint: http://localhost:1317/thorchain/queue/staged
+asserts:
+  - (.staged_outbound_items // [])|length == 0
 ---
 # Now goat has RUNE from the swap, verify they received it
 type: check

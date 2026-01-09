@@ -888,6 +888,51 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 		}
 	}
 
+	// Handle timeout for staged outbounds (mempool swaps waiting for inbound finalization)
+	// Staged outbounds are not in the TxOut queue, so they need separate timeout handling
+	if maxOutboundAttempts > 0 {
+		// Collect timed-out inHashes first, then process after closing iterator
+		// to avoid iterator invalidation when revertMempoolSwap deletes from store
+		var timedOutHashes []common.TxID
+		stagedIter := s.keeper.GetStagedOutboundIterator(ctx)
+		for ; stagedIter.Valid(); stagedIter.Next() {
+			var stagedList keeper.StagedOutboundList
+			if err := s.keeper.Cdc().Unmarshal(stagedIter.Value(), &stagedList); err != nil {
+				ctx.Logger().Error("fail to unmarshal staged outbound list", "error", err)
+				continue
+			}
+			// Check timeout based on staged height
+			// Timeout if staged for longer than signingTransPeriod * maxOutboundAttempts
+			for _, staged := range stagedList.Items {
+				stagedAge := ctx.BlockHeight() - staged.StagedHeight
+				if stagedAge >= signingTransPeriod*maxOutboundAttempts {
+					ctx.Logger().Info("staged mempool swap timed out",
+						"hash", stagedList.InHash,
+						"staged_height", staged.StagedHeight,
+						"current_height", ctx.BlockHeight(),
+						"asset", staged.TxOutItem.Coin.Asset,
+						"amount", staged.TxOutItem.Coin.Amount)
+					timedOutHashes = append(timedOutHashes, stagedList.InHash)
+					break // Only need to check one item per list
+				}
+			}
+		}
+		stagedIter.Close()
+
+		// Now process timed-out staged outbounds
+		for _, inHash := range timedOutHashes {
+			voter, err := s.keeper.GetObservedTxInVoter(ctx, inHash)
+			if err != nil {
+				ctx.Logger().Error("fail to get observed tx voter for staged outbound", "error", err)
+				continue
+			}
+			ctx.Logger().Info("reverting staged mempool swap due to timeout", "hash", inHash)
+			if err := revertMempoolSwap(ctx, s.keeper, mgr, voter); err != nil {
+				ctx.Logger().Error("fail to revert staged mempool swap", "error", err, "hash", inHash)
+			}
+		}
+	}
+
 	return resultErr
 }
 

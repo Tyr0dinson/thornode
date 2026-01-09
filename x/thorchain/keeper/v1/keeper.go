@@ -132,6 +132,7 @@ const (
 	prefixDynamicFeeAcc             types.DbPrefix = "dynfeeacc/"
 	prefixDynamicFeeEpochBlocks     types.DbPrefix = "dynfeeebo/"
 	prefixMempoolSwapUsage          types.DbPrefix = "mempool_swap_usage/"
+	prefixStagedOutbound            types.DbPrefix = "staged_outbound/"
 )
 
 func dbError(ctx cosmos.Context, wrapper string, err error) error {

@@ -113,6 +113,42 @@ func (m *QueryPendingOutboundRequest) GetHeight() string {
 	return ""
 }
 
+type QueryStagedOutboundRequest struct {
+}
+
+func (m *QueryStagedOutboundRequest) Reset()         { *m = QueryStagedOutboundRequest{} }
+func (m *QueryStagedOutboundRequest) String() string { return proto.CompactTextString(m) }
+func (*QueryStagedOutboundRequest) ProtoMessage()    {}
+func (*QueryStagedOutboundRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_d1b4ec75ddefb0b2, []int{2}
+}
+func (m *QueryStagedOutboundRequest) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *QueryStagedOutboundRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_QueryStagedOutboundRequest.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *QueryStagedOutboundRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_QueryStagedOutboundRequest.Merge(m, src)
+}
+func (m *QueryStagedOutboundRequest) XXX_Size() int {
+	return m.Size()
+}
+func (m *QueryStagedOutboundRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_QueryStagedOutboundRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_QueryStagedOutboundRequest proto.InternalMessageInfo
+
 type QueryOutboundResponse struct {
 	TxOutItems []*QueryTxOutItem `protobuf:"bytes,1,rep,name=tx_out_items,json=txOutItems,proto3" json:"tx_out_items,omitempty"`
 }
@@ -121,7 +157,7 @@ func (m *QueryOutboundResponse) Reset()         { *m = QueryOutboundResponse{} }
 func (m *QueryOutboundResponse) String() string { return proto.CompactTextString(m) }
 func (*QueryOutboundResponse) ProtoMessage()    {}
 func (*QueryOutboundResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_d1b4ec75ddefb0b2, []int{2}
+	return fileDescriptor_d1b4ec75ddefb0b2, []int{3}
 }
 func (m *QueryOutboundResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -157,6 +193,112 @@ func (m *QueryOutboundResponse) GetTxOutItems() []*QueryTxOutItem {
 	return nil
 }
 
+type QueryStagedOutboundResponse struct {
+	StagedOutboundItems []*QueryStagedOutboundItem `protobuf:"bytes,1,rep,name=staged_outbound_items,json=stagedOutboundItems,proto3" json:"staged_outbound_items,omitempty"`
+}
+
+func (m *QueryStagedOutboundResponse) Reset()         { *m = QueryStagedOutboundResponse{} }
+func (m *QueryStagedOutboundResponse) String() string { return proto.CompactTextString(m) }
+func (*QueryStagedOutboundResponse) ProtoMessage()    {}
+func (*QueryStagedOutboundResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_d1b4ec75ddefb0b2, []int{4}
+}
+func (m *QueryStagedOutboundResponse) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *QueryStagedOutboundResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_QueryStagedOutboundResponse.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *QueryStagedOutboundResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_QueryStagedOutboundResponse.Merge(m, src)
+}
+func (m *QueryStagedOutboundResponse) XXX_Size() int {
+	return m.Size()
+}
+func (m *QueryStagedOutboundResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_QueryStagedOutboundResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_QueryStagedOutboundResponse proto.InternalMessageInfo
+
+func (m *QueryStagedOutboundResponse) GetStagedOutboundItems() []*QueryStagedOutboundItem {
+	if m != nil {
+		return m.StagedOutboundItems
+	}
+	return nil
+}
+
+// StagedOutboundItem contains a TxOutItem plus scheduling info for mempool swap
+// outputs
+type QueryStagedOutboundItem struct {
+	TxOutItem       *QueryTxOutItem `protobuf:"bytes,1,opt,name=tx_out_item,json=txOutItem,proto3" json:"tx_out_item,omitempty"`
+	ScheduledHeight int64           `protobuf:"varint,2,opt,name=scheduled_height,json=scheduledHeight,proto3" json:"scheduled_height,omitempty"`
+	StagedHeight    int64           `protobuf:"varint,3,opt,name=staged_height,json=stagedHeight,proto3" json:"staged_height,omitempty"`
+}
+
+func (m *QueryStagedOutboundItem) Reset()         { *m = QueryStagedOutboundItem{} }
+func (m *QueryStagedOutboundItem) String() string { return proto.CompactTextString(m) }
+func (*QueryStagedOutboundItem) ProtoMessage()    {}
+func (*QueryStagedOutboundItem) Descriptor() ([]byte, []int) {
+	return fileDescriptor_d1b4ec75ddefb0b2, []int{5}
+}
+func (m *QueryStagedOutboundItem) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *QueryStagedOutboundItem) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_QueryStagedOutboundItem.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *QueryStagedOutboundItem) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_QueryStagedOutboundItem.Merge(m, src)
+}
+func (m *QueryStagedOutboundItem) XXX_Size() int {
+	return m.Size()
+}
+func (m *QueryStagedOutboundItem) XXX_DiscardUnknown() {
+	xxx_messageInfo_QueryStagedOutboundItem.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_QueryStagedOutboundItem proto.InternalMessageInfo
+
+func (m *QueryStagedOutboundItem) GetTxOutItem() *QueryTxOutItem {
+	if m != nil {
+		return m.TxOutItem
+	}
+	return nil
+}
+
+func (m *QueryStagedOutboundItem) GetScheduledHeight() int64 {
+	if m != nil {
+		return m.ScheduledHeight
+	}
+	return 0
+}
+
+func (m *QueryStagedOutboundItem) GetStagedHeight() int64 {
+	if m != nil {
+		return m.StagedHeight
+	}
+	return 0
+}
+
 // Fields are rearranged for querier response readability while preserving their
 // field numbers.
 type QueryTxOutItem struct {
@@ -170,23 +312,24 @@ type QueryTxOutItem struct {
 	MaxGas                gitlab_com_thorchain_thornode_v3_common.Gas `protobuf:"bytes,6,rep,name=max_gas,json=maxGas,proto3,castrepeated=gitlab.com/thorchain/thornode/v3/common.Gas" json:"max_gas"`
 	GasRate               int64                                       `protobuf:"varint,7,opt,name=gas_rate,json=gasRate,proto3" json:"gas_rate,omitempty"`
 	Memo                  string                                      `protobuf:"bytes,5,opt,name=memo,proto3" json:"memo,omitempty"`
-	OriginalMemo          string                                      `protobuf:"bytes,17,opt,name=original_memo,json=originalMemo,proto3" json:"original_memo,omitempty"`
+	OriginalMemo          string                                      `protobuf:"bytes,16,opt,name=original_memo,json=originalMemo,proto3" json:"original_memo,omitempty"`
 	Aggregator            string                                      `protobuf:"bytes,12,opt,name=aggregator,proto3" json:"aggregator,omitempty"`
 	AggregatorTargetAsset string                                      `protobuf:"bytes,13,opt,name=aggregator_target_asset,json=aggregatorTargetAsset,proto3" json:"aggregator_target_asset,omitempty"`
 	AggregatorTargetLimit string                                      `protobuf:"bytes,14,opt,name=aggregator_target_limit,json=aggregatorTargetLimit,proto3" json:"aggregator_target_limit,omitempty"`
 	// clout spent in RUNE for the outbound
 	CloutSpent       string `protobuf:"bytes,11,opt,name=clout_spent,json=cloutSpent,proto3" json:"clout_spent,omitempty"`
 	VaultPubKeyEddsa string `protobuf:"bytes,15,opt,name=vault_pub_key_eddsa,json=vaultPubKeyEddsa,proto3" json:"vault_pub_key_eddsa,omitempty"`
+	VaultPubKeyFrost string `protobuf:"bytes,17,opt,name=vault_pub_key_frost,json=vaultPubKeyFrost,proto3" json:"vault_pub_key_frost,omitempty"`
 	// whether the inbound transaction has been finalized (for mempool swap
 	// optimization)
-	InboundFinalized bool `protobuf:"varint,16,opt,name=inbound_finalized,json=inboundFinalized,proto3" json:"inbound_finalized"`
+	InboundFinalized bool `protobuf:"varint,18,opt,name=inbound_finalized,json=inboundFinalized,proto3" json:"inbound_finalized"`
 }
 
 func (m *QueryTxOutItem) Reset()         { *m = QueryTxOutItem{} }
 func (m *QueryTxOutItem) String() string { return proto.CompactTextString(m) }
 func (*QueryTxOutItem) ProtoMessage()    {}
 func (*QueryTxOutItem) Descriptor() ([]byte, []int) {
-	return fileDescriptor_d1b4ec75ddefb0b2, []int{3}
+	return fileDescriptor_d1b4ec75ddefb0b2, []int{6}
 }
 func (m *QueryTxOutItem) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -327,6 +470,13 @@ func (m *QueryTxOutItem) GetVaultPubKeyEddsa() string {
 	return ""
 }
 
+func (m *QueryTxOutItem) GetVaultPubKeyFrost() string {
+	if m != nil {
+		return m.VaultPubKeyFrost
+	}
+	return ""
+}
+
 func (m *QueryTxOutItem) GetInboundFinalized() bool {
 	if m != nil {
 		return m.InboundFinalized
@@ -337,54 +487,63 @@ func (m *QueryTxOutItem) GetInboundFinalized() bool {
 func init() {
 	proto.RegisterType((*QueryScheduledOutboundRequest)(nil), "types.QueryScheduledOutboundRequest")
 	proto.RegisterType((*QueryPendingOutboundRequest)(nil), "types.QueryPendingOutboundRequest")
+	proto.RegisterType((*QueryStagedOutboundRequest)(nil), "types.QueryStagedOutboundRequest")
 	proto.RegisterType((*QueryOutboundResponse)(nil), "types.QueryOutboundResponse")
+	proto.RegisterType((*QueryStagedOutboundResponse)(nil), "types.QueryStagedOutboundResponse")
+	proto.RegisterType((*QueryStagedOutboundItem)(nil), "types.QueryStagedOutboundItem")
 	proto.RegisterType((*QueryTxOutItem)(nil), "types.QueryTxOutItem")
 }
 
 func init() { proto.RegisterFile("types/query_outbound.proto", fileDescriptor_d1b4ec75ddefb0b2) }
 
 var fileDescriptor_d1b4ec75ddefb0b2 = []byte{
-	// 626 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x8c, 0x93, 0xcf, 0x6e, 0x13, 0x3f,
-	0x10, 0xc7, 0xb3, 0xbf, 0x36, 0xff, 0x9c, 0xb4, 0xbf, 0xd6, 0x25, 0xd4, 0x14, 0x91, 0x8d, 0xc2,
-	0x25, 0x02, 0x35, 0x91, 0x5a, 0x41, 0x6f, 0x48, 0x0d, 0x82, 0x82, 0x28, 0x6a, 0xd9, 0xf6, 0xc4,
-	0xc5, 0x72, 0xb2, 0xc6, 0x6b, 0x91, 0xb5, 0xd3, 0xb5, 0xb7, 0x4a, 0x78, 0x0a, 0x9e, 0x83, 0x27,
-	0xe9, 0xb1, 0x47, 0x24, 0xa4, 0x80, 0xda, 0x5b, 0x9e, 0x02, 0x79, 0x36, 0x51, 0x53, 0x51, 0x09,
-	0x2e, 0xbb, 0xb3, 0xdf, 0xcf, 0x77, 0xd6, 0x33, 0xf6, 0x18, 0x6d, 0xd9, 0xf1, 0x90, 0x9b, 0xce,
-	0x59, 0xca, 0x93, 0x31, 0xd5, 0xa9, 0xed, 0xe9, 0x54, 0x85, 0xed, 0x61, 0xa2, 0xad, 0xc6, 0x79,
-	0x60, 0x5b, 0xf7, 0x84, 0x16, 0x1a, 0x94, 0x8e, 0x8b, 0x32, 0xb8, 0xb5, 0xd1, 0xd7, 0x71, 0xac,
-	0x55, 0x27, 0x7b, 0x65, 0x62, 0x73, 0x0f, 0x3d, 0xfa, 0xe0, 0xfe, 0x74, 0xd2, 0x8f, 0x78, 0x98,
-	0x0e, 0x78, 0x78, 0x34, 0xfb, 0x63, 0xc0, 0xcf, 0x52, 0x6e, 0x2c, 0xbe, 0x8f, 0x0a, 0x11, 0x97,
-	0x22, 0xb2, 0xc4, 0x6b, 0x78, 0xad, 0x72, 0x30, 0xfb, 0x6a, 0x3e, 0x43, 0x0f, 0x21, 0xf1, 0x98,
-	0xab, 0x50, 0x2a, 0xf1, 0xaf, 0x69, 0xc7, 0xa8, 0x06, 0x69, 0x37, 0x7e, 0x33, 0xd4, 0xca, 0x70,
-	0xbc, 0x87, 0xaa, 0x76, 0xe4, 0xfa, 0xa1, 0xd2, 0xf2, 0xd8, 0x10, 0xaf, 0xb1, 0xd4, 0xaa, 0xec,
-	0xd4, 0xda, 0xd0, 0x51, 0x1b, 0x72, 0x4e, 0x47, 0x47, 0xa9, 0x7d, 0x6b, 0x79, 0x1c, 0x20, 0x3b,
-	0x0f, 0x4d, 0xf3, 0x47, 0x1e, 0xad, 0xde, 0xc6, 0x0b, 0x8b, 0xa3, 0x86, 0xd7, 0x5a, 0x9a, 0x2f,
-	0x8e, 0x9b, 0x68, 0xe5, 0x9c, 0xa5, 0x03, 0x4b, 0x87, 0x69, 0x8f, 0x7e, 0xe6, 0x63, 0xb2, 0x04,
-	0xb5, 0x55, 0x40, 0x3c, 0x4e, 0x7b, 0xef, 0xf8, 0x18, 0x6f, 0xa2, 0xa2, 0x54, 0x34, 0x62, 0x26,
-	0x22, 0xa5, 0xac, 0x72, 0xa9, 0xde, 0x30, 0x13, 0xe1, 0x07, 0xa8, 0xe4, 0xaa, 0x03, 0x52, 0x06,
-	0x52, 0xd4, 0xa9, 0x05, 0xe4, 0xa3, 0x7c, 0x3f, 0x62, 0x52, 0x65, 0xbd, 0x76, 0xcb, 0xd3, 0x89,
-	0x9f, 0x09, 0x41, 0xf6, 0xc2, 0xdb, 0x08, 0x59, 0x4d, 0x59, 0x18, 0x26, 0xdc, 0x18, 0xf2, 0x1f,
-	0xb8, 0x56, 0xa7, 0x13, 0x7f, 0x41, 0x0d, 0xca, 0x56, 0xef, 0x67, 0x21, 0x7e, 0x82, 0x96, 0xfb,
-	0x5a, 0x2a, 0xb2, 0xdc, 0xf0, 0x5a, 0x95, 0x9d, 0x6a, 0x7b, 0x76, 0x62, 0x2f, 0xb5, 0x54, 0xdd,
-	0xd2, 0x74, 0xe2, 0x03, 0x0d, 0xe0, 0x89, 0x39, 0x2a, 0xc6, 0x6c, 0x44, 0x05, 0x33, 0xa4, 0x00,
-	0x5b, 0x76, 0xdb, 0xfe, 0xe2, 0x62, 0xe2, 0xe7, 0xa6, 0x13, 0x7f, 0x6e, 0xfa, 0xf6, 0xd3, 0x7f,
-	0x2a, 0xa4, 0x1d, 0xb0, 0x9e, 0xb3, 0x75, 0x6c, 0xa4, 0x13, 0x28, 0x11, 0x22, 0xa5, 0x43, 0xde,
-	0x39, 0xdf, 0x9d, 0x4f, 0xc8, 0x01, 0x33, 0x41, 0x21, 0x66, 0xa3, 0x03, 0x66, 0x5c, 0xf7, 0x82,
-	0x19, 0x9a, 0x30, 0xcb, 0x49, 0x11, 0x36, 0xb5, 0x28, 0x98, 0x09, 0x98, 0xe5, 0x18, 0xa3, 0xe5,
-	0x98, 0xc7, 0x9a, 0xe4, 0x61, 0x53, 0x20, 0xc6, 0x8f, 0xd1, 0x8a, 0x4e, 0xa4, 0x90, 0x8a, 0x0d,
-	0x28, 0xc0, 0x75, 0x80, 0xd5, 0xb9, 0xf8, 0xde, 0x99, 0xea, 0x08, 0x31, 0x21, 0x12, 0x2e, 0x98,
-	0xd5, 0x09, 0xa9, 0x82, 0x63, 0x41, 0xc1, 0xcf, 0xd1, 0xe6, 0xcd, 0x17, 0xb5, 0x2c, 0x11, 0xdc,
-	0x52, 0x66, 0x0c, 0xb7, 0x64, 0x05, 0xcc, 0xb5, 0x1b, 0x7c, 0x0a, 0x74, 0xdf, 0xc1, 0xbb, 0xf3,
-	0x06, 0x32, 0x96, 0x96, 0xac, 0xde, 0x9d, 0x77, 0xe8, 0x20, 0xf6, 0x51, 0xa5, 0x3f, 0x70, 0x67,
-	0x6c, 0x86, 0x5c, 0x59, 0x52, 0xc9, 0x0a, 0x02, 0xe9, 0xc4, 0x29, 0x78, 0x1b, 0x6d, 0xdc, 0x9a,
-	0x1f, 0xca, 0xc3, 0xd0, 0x30, 0xf2, 0x3f, 0x18, 0xd7, 0x16, 0xa6, 0xe8, 0x95, 0xd3, 0x71, 0x17,
-	0xad, 0x4b, 0x05, 0x53, 0x4e, 0x3f, 0xb9, 0xa6, 0xe5, 0x17, 0x1e, 0x92, 0xb5, 0x86, 0xd7, 0x2a,
-	0x75, 0x6b, 0xd3, 0x89, 0xff, 0x27, 0x0c, 0xd6, 0x66, 0xd2, 0xeb, 0xb9, 0xd2, 0x3d, 0xbc, 0xb8,
-	0xaa, 0x7b, 0x97, 0x57, 0x75, 0xef, 0xd7, 0x55, 0xdd, 0xfb, 0x7a, 0x5d, 0xcf, 0x5d, 0x5e, 0xd7,
-	0x73, 0xdf, 0xaf, 0xeb, 0xb9, 0x8f, 0x3b, 0x7f, 0x3d, 0xc6, 0xd1, 0xa2, 0xee, 0xae, 0x51, 0xaf,
-	0x00, 0x97, 0x7e, 0xf7, 0x77, 0x00, 0x00, 0x00, 0xff, 0xff, 0x91, 0x14, 0x8f, 0x32, 0x44, 0x04,
-	0x00, 0x00,
+	// 728 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x8c, 0x54, 0x4f, 0x4f, 0xdb, 0x48,
+	0x14, 0x8f, 0x17, 0xc8, 0x9f, 0x97, 0x00, 0x61, 0xd8, 0x2c, 0xde, 0xec, 0xae, 0x1d, 0x65, 0x2f,
+	0xd9, 0xad, 0x48, 0x24, 0x10, 0xe5, 0x56, 0x89, 0x54, 0x05, 0xaa, 0x52, 0x41, 0x0d, 0xa7, 0x5e,
+	0xac, 0x49, 0x3c, 0xd8, 0x56, 0x63, 0x4f, 0xf0, 0x8c, 0x51, 0xd2, 0x8f, 0xd0, 0x53, 0x3f, 0x42,
+	0xcf, 0xfd, 0x24, 0x1c, 0x39, 0xf6, 0x94, 0x56, 0x70, 0xcb, 0xa7, 0xa8, 0xe6, 0xd9, 0x81, 0xa4,
+	0x01, 0xb5, 0x97, 0x78, 0xe6, 0xf7, 0xfb, 0xbd, 0xf7, 0xe6, 0xf7, 0xde, 0x4c, 0xa0, 0x2a, 0x87,
+	0x7d, 0x26, 0x5a, 0x17, 0x31, 0x8b, 0x86, 0x36, 0x8f, 0x65, 0x87, 0xc7, 0xa1, 0xd3, 0xec, 0x47,
+	0x5c, 0x72, 0xb2, 0x84, 0x5c, 0xf5, 0x77, 0x97, 0xbb, 0x1c, 0x91, 0x96, 0x5a, 0x25, 0x64, 0x75,
+	0xbd, 0xcb, 0x83, 0x80, 0x87, 0xad, 0xe4, 0x93, 0x80, 0xf5, 0x5d, 0xf8, 0xe7, 0x8d, 0xca, 0x74,
+	0xda, 0xf5, 0x98, 0x13, 0xf7, 0x98, 0x73, 0x9c, 0x66, 0xb4, 0xd8, 0x45, 0xcc, 0x84, 0x24, 0x7f,
+	0x40, 0xd6, 0x63, 0xbe, 0xeb, 0x49, 0x5d, 0xab, 0x69, 0x8d, 0x82, 0x95, 0xee, 0xea, 0x3b, 0xf0,
+	0x17, 0x06, 0x9e, 0xb0, 0xd0, 0xf1, 0x43, 0xf7, 0x57, 0xc3, 0xfe, 0x86, 0x6a, 0x52, 0x4f, 0x52,
+	0x77, 0xae, 0x58, 0xfd, 0x04, 0x2a, 0xc8, 0xde, 0xe3, 0xa2, 0xcf, 0x43, 0xc1, 0xc8, 0x2e, 0x94,
+	0xe4, 0x40, 0xb9, 0xb5, 0x7d, 0xc9, 0x02, 0xa1, 0x6b, 0xb5, 0x85, 0x46, 0x71, 0xab, 0xd2, 0x44,
+	0xbf, 0x4d, 0x8c, 0x39, 0x1b, 0x1c, 0xc7, 0xf2, 0xa5, 0x64, 0x81, 0x05, 0x72, 0xb2, 0x14, 0xf5,
+	0x8b, 0xf4, 0x98, 0x3f, 0xd6, 0x4b, 0xf3, 0x5a, 0x50, 0x11, 0xc8, 0xdc, 0x75, 0x72, 0xa6, 0x80,
+	0x31, 0x5d, 0x60, 0x36, 0x05, 0x56, 0x5a, 0x17, 0x73, 0x98, 0xa8, 0x7f, 0xd2, 0x60, 0xe3, 0x91,
+	0x00, 0xb2, 0x03, 0xc5, 0x29, 0x1f, 0xd8, 0x9b, 0x47, 0x6d, 0x14, 0xee, 0x6c, 0x90, 0xff, 0xa0,
+	0x2c, 0x26, 0x03, 0xb2, 0xd3, 0xbe, 0xfe, 0x56, 0xd3, 0x1a, 0x0b, 0xd6, 0xea, 0x1d, 0x7e, 0x88,
+	0x30, 0xf9, 0x17, 0x96, 0x53, 0x47, 0xa9, 0x6e, 0x01, 0x75, 0xa5, 0x04, 0x4c, 0x44, 0xf5, 0x0f,
+	0x59, 0x58, 0x99, 0xad, 0x36, 0x35, 0x30, 0xc0, 0x80, 0x74, 0x47, 0xea, 0xb0, 0x7c, 0x49, 0xe3,
+	0x9e, 0xb4, 0xfb, 0x71, 0xc7, 0x7e, 0xc7, 0x86, 0x98, 0xaf, 0x60, 0x15, 0x11, 0x3c, 0x89, 0x3b,
+	0xaf, 0xd8, 0x90, 0x6c, 0x40, 0xce, 0x0f, 0x6d, 0x8f, 0x0a, 0x4f, 0xcf, 0x27, 0xd3, 0xf6, 0xc3,
+	0x43, 0x2a, 0x3c, 0xf2, 0x27, 0xe4, 0x95, 0x57, 0x64, 0x0a, 0xc8, 0xe4, 0x78, 0x2c, 0x91, 0x32,
+	0x61, 0xa9, 0xeb, 0x51, 0x3f, 0x4c, 0xee, 0x47, 0xbb, 0x30, 0x1e, 0x99, 0x09, 0x60, 0x25, 0x1f,
+	0xb2, 0x09, 0x20, 0xb9, 0x4d, 0x1d, 0x27, 0x62, 0x42, 0xa0, 0xdb, 0x42, 0x7b, 0x65, 0x3c, 0x32,
+	0xa7, 0x50, 0xab, 0x20, 0xf9, 0x5e, 0xb2, 0x24, 0xff, 0xc3, 0x62, 0x97, 0xfb, 0xa1, 0xbe, 0x88,
+	0x2d, 0x2d, 0x35, 0xd3, 0x5b, 0xfe, 0x9c, 0xfb, 0x61, 0x3b, 0x3f, 0x1e, 0x99, 0xc8, 0x5a, 0xf8,
+	0x4b, 0x18, 0xe4, 0x02, 0x3a, 0xb0, 0x5d, 0x2a, 0xf4, 0x2c, 0xce, 0x79, 0x56, 0xfe, 0xec, 0x6a,
+	0x64, 0x66, 0xc6, 0x23, 0x73, 0x22, 0xfa, 0xfc, 0xd5, 0x7c, 0xe2, 0xfa, 0xb2, 0x47, 0x3b, 0x4a,
+	0xd6, 0x92, 0x1e, 0x8f, 0xf0, 0x88, 0xb8, 0x0a, 0xb9, 0xc3, 0x5a, 0x97, 0xdb, 0x93, 0x57, 0x75,
+	0x40, 0x85, 0x95, 0x0d, 0xe8, 0xe0, 0x80, 0x0a, 0xe5, 0xde, 0xa5, 0xc2, 0x8e, 0xa8, 0x64, 0x7a,
+	0x0e, 0x9b, 0x9a, 0x73, 0xa9, 0xb0, 0xa8, 0x64, 0x84, 0xc0, 0x62, 0xc0, 0x02, 0xae, 0x2f, 0x61,
+	0x53, 0x70, 0xad, 0x26, 0xc7, 0x23, 0xdf, 0xf5, 0x43, 0xda, 0xb3, 0x91, 0x2c, 0x23, 0x59, 0x9a,
+	0x80, 0xaf, 0x95, 0xc8, 0x00, 0xa0, 0xae, 0x1b, 0x31, 0x97, 0x4a, 0x1e, 0xe9, 0x25, 0x54, 0x4c,
+	0x21, 0xe4, 0x29, 0x6c, 0xdc, 0xef, 0x6c, 0x49, 0x23, 0x97, 0x49, 0x9b, 0x0a, 0xc1, 0xa4, 0xbe,
+	0x8c, 0xe2, 0xca, 0x3d, 0x7d, 0x86, 0xec, 0x9e, 0x22, 0x1f, 0x8e, 0xeb, 0xf9, 0x81, 0x2f, 0xf5,
+	0x95, 0x87, 0xe3, 0x8e, 0x14, 0x49, 0x4c, 0x28, 0x76, 0x7b, 0x6a, 0xc6, 0xa2, 0xcf, 0x42, 0xa9,
+	0x17, 0x93, 0x03, 0x21, 0x74, 0xaa, 0x10, 0xb2, 0x09, 0xeb, 0x33, 0xf7, 0xc7, 0x66, 0x8e, 0x23,
+	0xa8, 0xbe, 0x8a, 0xc2, 0xf2, 0xd4, 0x2d, 0x7a, 0xa1, 0xf0, 0x79, 0xf9, 0x79, 0xc4, 0x85, 0xd4,
+	0xd7, 0xe6, 0xe4, 0xfb, 0x0a, 0x27, 0x6d, 0x58, 0xf3, 0xc3, 0xe4, 0xdd, 0x9e, 0xab, 0x1e, 0xf9,
+	0xef, 0x99, 0xa3, 0x93, 0x9a, 0xd6, 0xc8, 0xb7, 0x2b, 0xe3, 0x91, 0x39, 0x4f, 0x5a, 0xe5, 0x14,
+	0xda, 0x9f, 0x20, 0xed, 0xa3, 0xab, 0x1b, 0x43, 0xbb, 0xbe, 0x31, 0xb4, 0x6f, 0x37, 0x86, 0xf6,
+	0xf1, 0xd6, 0xc8, 0x5c, 0xdf, 0x1a, 0x99, 0x2f, 0xb7, 0x46, 0xe6, 0xed, 0xd6, 0x4f, 0xa7, 0x3e,
+	0x98, 0xc6, 0xd5, 0x23, 0xee, 0x64, 0xf1, 0x7f, 0x75, 0xfb, 0x7b, 0x00, 0x00, 0x00, 0xff, 0xff,
+	0xc9, 0x83, 0x6a, 0x67, 0xa7, 0x05, 0x00, 0x00,
 }
 
 func (m *QueryScheduledOutboundRequest) Marshal() (dAtA []byte, err error) {
@@ -447,6 +606,29 @@ func (m *QueryPendingOutboundRequest) MarshalToSizedBuffer(dAtA []byte) (int, er
 	return len(dAtA) - i, nil
 }
 
+func (m *QueryStagedOutboundRequest) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *QueryStagedOutboundRequest) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *QueryStagedOutboundRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	return len(dAtA) - i, nil
+}
+
 func (m *QueryOutboundResponse) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
@@ -484,6 +666,88 @@ func (m *QueryOutboundResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
+func (m *QueryStagedOutboundResponse) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *QueryStagedOutboundResponse) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *QueryStagedOutboundResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.StagedOutboundItems) > 0 {
+		for iNdEx := len(m.StagedOutboundItems) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.StagedOutboundItems[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintQueryOutbound(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *QueryStagedOutboundItem) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *QueryStagedOutboundItem) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *QueryStagedOutboundItem) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.StagedHeight != 0 {
+		i = encodeVarintQueryOutbound(dAtA, i, uint64(m.StagedHeight))
+		i--
+		dAtA[i] = 0x18
+	}
+	if m.ScheduledHeight != 0 {
+		i = encodeVarintQueryOutbound(dAtA, i, uint64(m.ScheduledHeight))
+		i--
+		dAtA[i] = 0x10
+	}
+	if m.TxOutItem != nil {
+		{
+			size, err := m.TxOutItem.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintQueryOutbound(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
 func (m *QueryTxOutItem) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
@@ -504,15 +768,6 @@ func (m *QueryTxOutItem) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
-	if len(m.OriginalMemo) > 0 {
-		i -= len(m.OriginalMemo)
-		copy(dAtA[i:], m.OriginalMemo)
-		i = encodeVarintQueryOutbound(dAtA, i, uint64(len(m.OriginalMemo)))
-		i--
-		dAtA[i] = 0x1
-		i--
-		dAtA[i] = 0x8a
-	}
 	if m.InboundFinalized {
 		i--
 		if m.InboundFinalized {
@@ -523,7 +778,25 @@ func (m *QueryTxOutItem) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		i--
 		dAtA[i] = 0x1
 		i--
-		dAtA[i] = 0x80
+		dAtA[i] = 0x90
+	}
+	if len(m.VaultPubKeyFrost) > 0 {
+		i -= len(m.VaultPubKeyFrost)
+		copy(dAtA[i:], m.VaultPubKeyFrost)
+		i = encodeVarintQueryOutbound(dAtA, i, uint64(len(m.VaultPubKeyFrost)))
+		i--
+		dAtA[i] = 0x1
+		i--
+		dAtA[i] = 0x8a
+	}
+	if len(m.OriginalMemo) > 0 {
+		i -= len(m.OriginalMemo)
+		copy(dAtA[i:], m.OriginalMemo)
+		i = encodeVarintQueryOutbound(dAtA, i, uint64(len(m.OriginalMemo)))
+		i--
+		dAtA[i] = 0x1
+		i--
+		dAtA[i] = 0x82
 	}
 	if len(m.VaultPubKeyEddsa) > 0 {
 		i -= len(m.VaultPubKeyEddsa)
@@ -678,6 +951,15 @@ func (m *QueryPendingOutboundRequest) Size() (n int) {
 	return n
 }
 
+func (m *QueryStagedOutboundRequest) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	return n
+}
+
 func (m *QueryOutboundResponse) Size() (n int) {
 	if m == nil {
 		return 0
@@ -689,6 +971,40 @@ func (m *QueryOutboundResponse) Size() (n int) {
 			l = e.Size()
 			n += 1 + l + sovQueryOutbound(uint64(l))
 		}
+	}
+	return n
+}
+
+func (m *QueryStagedOutboundResponse) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if len(m.StagedOutboundItems) > 0 {
+		for _, e := range m.StagedOutboundItems {
+			l = e.Size()
+			n += 1 + l + sovQueryOutbound(uint64(l))
+		}
+	}
+	return n
+}
+
+func (m *QueryStagedOutboundItem) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.TxOutItem != nil {
+		l = m.TxOutItem.Size()
+		n += 1 + l + sovQueryOutbound(uint64(l))
+	}
+	if m.ScheduledHeight != 0 {
+		n += 1 + sovQueryOutbound(uint64(m.ScheduledHeight))
+	}
+	if m.StagedHeight != 0 {
+		n += 1 + sovQueryOutbound(uint64(m.StagedHeight))
 	}
 	return n
 }
@@ -759,12 +1075,16 @@ func (m *QueryTxOutItem) Size() (n int) {
 	if l > 0 {
 		n += 1 + l + sovQueryOutbound(uint64(l))
 	}
-	if m.InboundFinalized {
-		n += 3
-	}
 	l = len(m.OriginalMemo)
 	if l > 0 {
 		n += 2 + l + sovQueryOutbound(uint64(l))
+	}
+	l = len(m.VaultPubKeyFrost)
+	if l > 0 {
+		n += 2 + l + sovQueryOutbound(uint64(l))
+	}
+	if m.InboundFinalized {
+		n += 3
 	}
 	return n
 }
@@ -939,6 +1259,56 @@ func (m *QueryPendingOutboundRequest) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
+func (m *QueryStagedOutboundRequest) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowQueryOutbound
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: QueryStagedOutboundRequest: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: QueryStagedOutboundRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		default:
+			iNdEx = preIndex
+			skippy, err := skipQueryOutbound(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthQueryOutbound
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
 func (m *QueryOutboundResponse) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
@@ -1002,6 +1372,214 @@ func (m *QueryOutboundResponse) Unmarshal(dAtA []byte) error {
 				return err
 			}
 			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipQueryOutbound(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthQueryOutbound
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *QueryStagedOutboundResponse) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowQueryOutbound
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: QueryStagedOutboundResponse: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: QueryStagedOutboundResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field StagedOutboundItems", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryOutbound
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthQueryOutbound
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthQueryOutbound
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.StagedOutboundItems = append(m.StagedOutboundItems, &QueryStagedOutboundItem{})
+			if err := m.StagedOutboundItems[len(m.StagedOutboundItems)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipQueryOutbound(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthQueryOutbound
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *QueryStagedOutboundItem) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowQueryOutbound
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: QueryStagedOutboundItem: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: QueryStagedOutboundItem: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field TxOutItem", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryOutbound
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthQueryOutbound
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthQueryOutbound
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.TxOutItem == nil {
+				m.TxOutItem = &QueryTxOutItem{}
+			}
+			if err := m.TxOutItem.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 2:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ScheduledHeight", wireType)
+			}
+			m.ScheduledHeight = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryOutbound
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.ScheduledHeight |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 3:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field StagedHeight", wireType)
+			}
+			m.StagedHeight = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryOutbound
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.StagedHeight |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
 		default:
 			iNdEx = preIndex
 			skippy, err := skipQueryOutbound(dAtA[iNdEx:])
@@ -1513,26 +2091,6 @@ func (m *QueryTxOutItem) Unmarshal(dAtA []byte) error {
 			m.VaultPubKeyEddsa = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
 		case 16:
-			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field InboundFinalized", wireType)
-			}
-			var v int
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowQueryOutbound
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				v |= int(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			m.InboundFinalized = bool(v != 0)
-		case 17:
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field OriginalMemo", wireType)
 			}
@@ -1564,6 +2122,58 @@ func (m *QueryTxOutItem) Unmarshal(dAtA []byte) error {
 			}
 			m.OriginalMemo = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
+		case 17:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field VaultPubKeyFrost", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryOutbound
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthQueryOutbound
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthQueryOutbound
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.VaultPubKeyFrost = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 18:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field InboundFinalized", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQueryOutbound
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.InboundFinalized = bool(v != 0)
 		default:
 			iNdEx = preIndex
 			skippy, err := skipQueryOutbound(dAtA[iNdEx:])

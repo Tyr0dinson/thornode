@@ -3876,6 +3876,30 @@ func (qs queryServer) queryPendingOutbound(ctx cosmos.Context, _ *types.QueryPen
 	return &types.QueryOutboundResponse{TxOutItems: result}, nil
 }
 
+func (qs queryServer) queryStagedOutbound(ctx cosmos.Context, _ *types.QueryStagedOutboundRequest) (*types.QueryStagedOutboundResponse, error) {
+	result := make([]*types.QueryStagedOutboundItem, 0)
+
+	iterator := qs.mgr.Keeper().GetStagedOutboundIterator(ctx)
+	defer iterator.Close()
+	for ; iterator.Valid(); iterator.Next() {
+		var stagedList keeper.StagedOutboundList
+		if err := qs.mgr.Keeper().Cdc().Unmarshal(iterator.Value(), &stagedList); err != nil {
+			ctx.Logger().Error("fail to unmarshal staged outbound list", "error", err)
+			continue
+		}
+		for _, staged := range stagedList.Items {
+			item := castTxOutItem(staged.TxOutItem, staged.ScheduledHeight)
+			result = append(result, &types.QueryStagedOutboundItem{
+				TxOutItem:       item,
+				ScheduledHeight: staged.ScheduledHeight,
+				StagedHeight:    staged.StagedHeight,
+			})
+		}
+	}
+
+	return &types.QueryStagedOutboundResponse{StagedOutboundItems: result}, nil
+}
+
 func (qs queryServer) querySwapQueue(ctx cosmos.Context, _ *types.QuerySwapQueueRequest) (*types.QuerySwapQueueResponse, error) {
 	result := make([]*MsgSwap, 0)
 	qs.iterSwapQueue(ctx, func(msg *MsgSwap) { result = append(result, msg) })

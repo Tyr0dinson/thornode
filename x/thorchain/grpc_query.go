@@ -596,6 +596,11 @@ func (s *queryServer) PendingOutbound(c context.Context, req *types.QueryPending
 	return s.queryPendingOutbound(ctx, req)
 }
 
+func (s *queryServer) StagedOutbound(c context.Context, req *types.QueryStagedOutboundRequest) (*types.QueryStagedOutboundResponse, error) {
+	ctx := s.unwrapSdkContext(c)
+	return s.queryStagedOutbound(ctx, req)
+}
+
 func (s *queryServer) Block(c context.Context, req *types.QueryBlockRequest) (*types.QueryBlockResponse, error) {
 	if err := checkHeightParam(req.Height); err != nil {
 		return nil, err

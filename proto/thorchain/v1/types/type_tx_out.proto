@@ -62,3 +62,23 @@ message TxOut {
   int64 height = 1;
   repeated TxOutItem tx_array = 2 [ (gogoproto.nullable) = false ];
 }
+
+// StagedOutbound represents a mempool swap outbound waiting for inbound
+// finalization. Staged outbounds are stored separately from the real TxOut
+// queue until the inbound transaction is finalized.
+message StagedOutbound {
+  option (gogoproto.stringer) = true;
+  TxOutItem tx_out_item = 1 [ (gogoproto.nullable) = false ];
+  int64 scheduled_height =
+      2; // Pre-computed target height (delay countdown starts at staging)
+  int64 staged_height = 3; // Block height when this outbound was staged
+}
+
+// StagedOutboundList holds all staged outbounds for a single inbound
+// transaction.
+message StagedOutboundList {
+  option (gogoproto.stringer) = true;
+  string in_hash = 1
+      [ (gogoproto.casttype) = "gitlab.com/thorchain/thornode/v3/common.TxID" ];
+  repeated StagedOutbound items = 2 [ (gogoproto.nullable) = false ];
+}

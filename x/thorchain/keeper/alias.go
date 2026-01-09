@@ -49,6 +49,8 @@ type (
 	TssKeysignMetric         = types.TssKeysignMetric
 	TxOutItem                = types.TxOutItem
 	TxOut                    = types.TxOut
+	StagedOutbound           = types.StagedOutbound
+	StagedOutboundList       = types.StagedOutboundList
 	KeygenBlock              = types.KeygenBlock
 	ReserveContributors      = types.ReserveContributors
 	Vault                    = types.Vault

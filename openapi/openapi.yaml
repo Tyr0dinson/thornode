@@ -1393,6 +1393,20 @@ paths:
               schema:
                 $ref: "#/components/schemas/OutboundResponse"
 
+  /thorchain/queue/staged:
+    get:
+      description: Returns staged outbounds for mempool swaps waiting for inbound finalization. These are swap outputs that have been pre-computed but not yet added to the real outbound queue.
+      operationId: queueStaged
+      tags:
+        - Queue
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StagedOutboundResponse"
+
   # ------------------------------ tss ------------------------------
 
   /thorchain/keysign/{height}:
@@ -4858,6 +4872,31 @@ components:
       type: array
       items:
         $ref: "#/components/schemas/TxOutItem"
+
+    StagedOutboundResponse:
+      type: object
+      properties:
+        staged_outbound_items:
+          type: array
+          items:
+            $ref: "#/components/schemas/StagedOutboundItem"
+
+    StagedOutboundItem:
+      type: object
+      description: A staged outbound item for a mempool swap waiting for inbound finalization
+      properties:
+        tx_out_item:
+          $ref: "#/components/schemas/TxOutItem"
+        scheduled_height:
+          type: integer
+          format: int64
+          description: Pre-computed target height (delay countdown starts at staging time)
+          example: 12345
+        staged_height:
+          type: integer
+          format: int64
+          description: Block height when this outbound was staged
+          example: 12340
 
     KeysignResponse:
       type: object

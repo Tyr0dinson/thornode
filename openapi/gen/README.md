@@ -128,6 +128,7 @@ Class | Method | HTTP request | Description
 *QueueApi* | [**Queue**](docs/QueueApi.md#queue) | **Get** /thorchain/queue | 
 *QueueApi* | [**QueueOutbound**](docs/QueueApi.md#queueoutbound) | **Get** /thorchain/queue/outbound | 
 *QueueApi* | [**QueueScheduled**](docs/QueueApi.md#queuescheduled) | **Get** /thorchain/queue/scheduled | 
+*QueueApi* | [**QueueStaged**](docs/QueueApi.md#queuestaged) | **Get** /thorchain/queue/staged | 
 *QueueApi* | [**QueueSwap**](docs/QueueApi.md#queueswap) | **Get** /thorchain/queue/swap | 
 *QueueApi* | [**QueueSwapPaginated**](docs/QueueApi.md#queueswappaginated) | **Get** /thorchain/queue/swap/paginated | 
 *QuoteApi* | [**Quoteswap**](docs/QuoteApi.md#quoteswap) | **Get** /thorchain/quote/swap | 
@@ -278,6 +279,8 @@ Class | Method | HTTP request | Description
  - [StableReserveInventory](docs/StableReserveInventory.md)
  - [StableReserveResponse](docs/StableReserveResponse.md)
  - [StableReserveStreamingSwap](docs/StableReserveStreamingSwap.md)
+ - [StagedOutboundItem](docs/StagedOutboundItem.md)
+ - [StagedOutboundResponse](docs/StagedOutboundResponse.md)
  - [StreamingStatus](docs/StreamingStatus.md)
  - [StreamingSwap](docs/StreamingSwap.md)
  - [SupplyResponse](docs/SupplyResponse.md)

@@ -66,11 +66,9 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutbounds(c *C) {
 	// Add to voter actions
 	voter.Actions = []TxOutItem{txOutItem}
 
-	// Queue the TxOutItem at a future height
+	// Stage the TxOutItem (instead of adding directly to TxOut)
 	outboundHeight := ctx.BlockHeight() + 10
-	txOut := NewTxOut(outboundHeight)
-	txOut.TxArray = append(txOut.TxArray, txOutItem)
-	c.Assert(mgr.Keeper().SetTxOut(ctx, txOut), IsNil)
+	c.Assert(mgr.Keeper().SetStagedOutbound(ctx, txOutItem, outboundHeight), IsNil)
 
 	// Save voter
 	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
@@ -82,24 +80,28 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutbounds(c *C) {
 	// Verify action was updated
 	c.Check(voter.Actions[0].InboundFinalized, Equals, true, Commentf("Action should be finalized"))
 
-	// Verify queued TxOut was updated
+	// Verify staged outbound was moved to real TxOut
 	updatedTxOut, err := mgr.Keeper().GetTxOut(ctx, outboundHeight)
 	c.Assert(err, IsNil)
 	c.Assert(updatedTxOut.TxArray, HasLen, 1)
 	c.Check(updatedTxOut.TxArray[0].InboundFinalized, Equals, true, Commentf("Queued TxOut should be finalized"))
 
+	// Verify staged outbounds are deleted
+	stagedItems, err := mgr.Keeper().GetStagedOutbounds(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Check(len(stagedItems), Equals, 0, Commentf("Staged outbounds should be deleted after finalization"))
+
 	// Test 2: Multiple actions for single inbound
 	voter2 := NewObservedTxVoter(GetRandomTxHash(), ObservedTxs{})
 	voter2.UnfinalizedHeight = ctx.BlockHeight()
 	voter2.Actions = []TxOutItem{
-		{Chain: common.BTCChain, InHash: voter2.TxID, Coin: common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One)), InboundFinalized: false},
-		{Chain: common.BTCChain, InHash: voter2.TxID, Coin: common.NewCoin(common.BTCAsset, cosmos.NewUint(2*common.One)), InboundFinalized: false},
+		{Chain: common.BTCChain, InHash: voter2.TxID, ToAddress: GetRandomBTCAddress(), VaultPubKey: vault.PubKey, Coin: common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One)), InboundFinalized: false},
+		{Chain: common.BTCChain, InHash: voter2.TxID, ToAddress: GetRandomBTCAddress(), VaultPubKey: vault.PubKey, Coin: common.NewCoin(common.BTCAsset, cosmos.NewUint(2*common.One)), InboundFinalized: false},
 	}
 
-	// Queue both items
-	txOut2 := NewTxOut(ctx.BlockHeight() + 20)
-	txOut2.TxArray = append(txOut2.TxArray, voter2.Actions...)
-	c.Assert(mgr.Keeper().SetTxOut(ctx, txOut2), IsNil)
+	// Stage both items
+	c.Assert(mgr.Keeper().SetStagedOutbound(ctx, voter2.Actions[0], ctx.BlockHeight()+20), IsNil)
+	c.Assert(mgr.Keeper().SetStagedOutbound(ctx, voter2.Actions[1], ctx.BlockHeight()+20), IsNil)
 
 	err = finalizeOutbounds(ctx, mgr, voter2)
 	c.Assert(err, IsNil)
@@ -181,11 +183,9 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwap(c *C) {
 
 	voter.Actions = []TxOutItem{txOutItem}
 
-	// Queue the TxOutItem at current block height to make it easier to find
-	outboundHeight := ctx.BlockHeight()
-	txOut := NewTxOut(outboundHeight)
-	txOut.TxArray = append(txOut.TxArray, txOutItem)
-	c.Assert(mgr.Keeper().SetTxOut(ctx, txOut), IsNil)
+	// Stage the TxOutItem (instead of adding directly to TxOut)
+	outboundHeight := ctx.BlockHeight() + 10
+	c.Assert(mgr.Keeper().SetStagedOutbound(ctx, txOutItem, outboundHeight), IsNil)
 
 	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
 
@@ -193,26 +193,22 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwap(c *C) {
 	err := revertMempoolSwap(ctx, mgr.Keeper(), mgr, voter)
 	c.Assert(err, IsNil, Commentf("revertMempoolSwap failed: %v", err))
 
-	// TODO: Debug why TxOut removal isn't working in tests - the function returns nil but TxOut is not removed
-	// For now, just verify the function doesn't return an error
-	// updatedTxOut, err := mgr.Keeper().GetTxOut(ctx, outboundHeight)
-	// c.Assert(err, IsNil)
-	// c.Check(updatedTxOut.TxArray, HasLen, 0, Commentf("TxOut should be removed"))
-
 	// Verify voter is marked as reverted
 	updatedVoter, err := mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
 	c.Assert(err, IsNil)
 	c.Check(updatedVoter.Reverted, Equals, true, Commentf("Voter should be marked as reverted"))
 
-	// Note: Pool deduction now happens in settleSwap when the donate executes (atomic with donate)
-	// The mapping from reverseTxID -> originalTxID is stored and will be used in settleSwap
+	// Verify staged outbounds are deleted
+	stagedItems, err := mgr.Keeper().GetStagedOutbounds(ctx, inTxID)
+	c.Assert(err, IsNil)
+	c.Check(len(stagedItems), Equals, 0, Commentf("Staged outbounds should be deleted after revert"))
 
 	// Verify a reverse swap was queued
 	swapIter := mgr.Keeper().GetSwapQueueIterator(ctx)
-	defer swapIter.Close()
+	defer func() { _ = swapIter.Close() }()
 	c.Check(swapIter.Valid(), Equals, true, Commentf("Reverse swap should be queued"))
 
-	// Test 2: Skip already signed outbounds
+	// Test 2: Skip already signed outbounds (voter with no staged outbounds should still succeed)
 	voter2TxID := GetRandomTxHash()
 	voter2ObservedTx := ObservedTx{
 		Tx: common.Tx{
@@ -235,38 +231,46 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwap(c *C) {
 	}
 
 	err = revertMempoolSwap(ctx, mgr.Keeper(), mgr, voter2)
-	c.Assert(err, IsNil, Commentf("Should skip already signed outbounds"))
+	c.Assert(err, IsNil, Commentf("Should succeed with no staged outbounds"))
 
-	// Test 3: Handle RUNE source asset
+	// Verify voter2 is marked as reverted
+	updatedVoter2, err := mgr.Keeper().GetObservedTxInVoter(ctx, voter2TxID)
+	c.Assert(err, IsNil)
+	c.Check(updatedVoter2.Reverted, Equals, true, Commentf("Voter2 should be marked as reverted"))
+
+	// Test 3: Handle RUNE source asset (native output)
 	runeTxID := GetRandomTxHash()
 	runeObservedTx := ObservedTx{
 		Tx: common.Tx{
 			ID:    runeTxID,
-			Chain: common.THORChain,
-			Coins: common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(10*common.One))},
+			Chain: common.BTCChain,
+			Coins: common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One))},
 		},
 	}
 	runeVoter := NewObservedTxVoter(runeTxID, ObservedTxs{runeObservedTx})
 	runeVoter.Tx = runeObservedTx // Set the main Tx field as well
 	runeVoter.UnfinalizedHeight = ctx.BlockHeight()
-	runeVoter.Actions = []TxOutItem{
-		{
-			Chain:            common.ETHChain,
-			InHash:           runeVoter.TxID,
-			Coin:             common.NewCoin(common.ETHAsset, cosmos.NewUint(5*common.One)),
-			InboundFinalized: false,
-			OutHash:          common.BlankTxID,
-		},
-	}
 
-	// Queue it
-	runeOutHeight := ctx.BlockHeight() + 15
-	runeTxOut := NewTxOut(runeOutHeight)
-	runeTxOut.TxArray = append(runeTxOut.TxArray, runeVoter.Actions[0])
-	c.Assert(mgr.Keeper().SetTxOut(ctx, runeTxOut), IsNil)
+	// Create a native outbound (RUNE)
+	nativeTxOutItem := TxOutItem{
+		Chain:            common.THORChain,
+		InHash:           runeTxID,
+		ToAddress:        GetRandomRUNEAddress(),
+		Coin:             common.NewCoin(common.RuneAsset(), cosmos.NewUint(5*common.One)),
+		InboundFinalized: false,
+	}
+	runeVoter.Actions = []TxOutItem{nativeTxOutItem}
+
+	// Stage the native outbound
+	c.Assert(mgr.Keeper().SetStagedOutbound(ctx, nativeTxOutItem, ctx.BlockHeight()+15), IsNil)
 
 	err = revertMempoolSwap(ctx, mgr.Keeper(), mgr, runeVoter)
-	c.Assert(err, IsNil, Commentf("Should handle RUNE source asset"))
+	c.Assert(err, IsNil, Commentf("Should handle native (RUNE) output"))
+
+	// Verify voter is marked as reverted
+	updatedRuneVoter, err := mgr.Keeper().GetObservedTxInVoter(ctx, runeTxID)
+	c.Assert(err, IsNil)
+	c.Check(updatedRuneVoter.Reverted, Equals, true, Commentf("RUNE voter should be marked as reverted"))
 }
 
 func (s *HandlerObservedTxHelpersMempoolSuite) TestMempoolSwapWithMimirEnabled(c *C) {

@@ -26,8 +26,6 @@ api_rune_pool.go
 api_savers.go
 api_secured_asset.go
 api_secured_assets.go
-api_smart_contracts.go
-api_stable_reserve.go
 api_streaming_swap.go
 api_supply.go
 api_swap.go
@@ -68,9 +66,6 @@ docs/CodesApi.md
 docs/CodesResponse.md
 docs/Coin.md
 docs/ConstantsResponse.md
-docs/ContractInfo.md
-docs/ContractInfoResponse.md
-docs/ContractInfosResponse.md
 docs/DerivedPool.md
 docs/DynamicL1FeeCurrentEntry.md
 docs/DynamicL1FeeEntry.md
@@ -161,12 +156,8 @@ docs/SaversApi.md
 docs/SecuredAssetApi.md
 docs/SecuredAssetResponse.md
 docs/SecuredAssetsApi.md
-docs/SmartContractsApi.md
-docs/StableReserveApi.md
-docs/StableReserveContributorResponse.md
-docs/StableReserveInventory.md
-docs/StableReserveResponse.md
-docs/StableReserveStreamingSwap.md
+docs/StagedOutboundItem.md
+docs/StagedOutboundResponse.md
 docs/StreamingStatus.md
 docs/StreamingSwap.md
 docs/StreamingSwapApi.md
@@ -241,9 +232,6 @@ model_code.go
 model_codes_response.go
 model_coin.go
 model_constants_response.go
-model_contract_info.go
-model_contract_info_response.go
-model_contract_infos_response.go
 model_derived_pool.go
 model_dynamic_l1_fee_current_entry.go
 model_dynamic_l1_fee_entry.go
@@ -319,6 +307,8 @@ model_stable_reserve_contributor_response.go
 model_stable_reserve_inventory.go
 model_stable_reserve_response.go
 model_stable_reserve_streaming_swap.go
+model_staged_outbound_item.go
+model_staged_outbound_response.go
 model_streaming_status.go
 model_streaming_swap.go
 model_supply_response.go
