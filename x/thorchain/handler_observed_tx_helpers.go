@@ -446,7 +446,7 @@ func handleObservedTxInQuorum(
 
 	// memo errors are ignored here and will be caught later in processing,
 	// after vault update, voter setup, etc and the coin will be refunded
-	memo, _ := ParseMemoWithTHORNames(ctx, k, tx.Tx.Memo)
+	memo, _ := ParseMemoWithTHORNames(ctx, k, voter.Tx.Tx.Memo)
 
 	// Allow swap execution at consensus (before finalization) for mempool swap optimization.
 	// Only streaming swaps (StreamQuantity == 0) can be executed from mempool.
@@ -462,8 +462,7 @@ func handleObservedTxInQuorum(
 	// to minimise any gap between outbound and inbound observations.
 	// TODO: In future somehow update both balances in a single action,
 	// so the ActiveVault balance increase is guaranteed to never be early nor late?
-	// For mempool swaps, skip vault balance updates until finalization.
-	if hasFinalised || (memo.IsType(TxMigrate) && !canProcessMempoolSwap) {
+	if hasFinalised || memo.IsType(TxMigrate) {
 		if vault.IsAsgard() && !voter.UpdatedVault {
 			if tx.Tx.FromAddress.Equals(tx.Tx.ToAddress) {
 				// Don't add to or subtract from vault balances when the sender and recipient are the same
