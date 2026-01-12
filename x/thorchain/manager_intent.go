@@ -803,25 +803,27 @@ func (im *IntentMgr) refundIntentSolves(ctx cosmos.Context, intent Intent) error
 			InHash:    solve.SolveTxID,
 		}
 
-		ok, err := im.mgr.TxOutStore().TryAddTxOutItem(ctx, im.mgr, toi, cosmos.ZeroUint())
+                ok, err := im.mgr.TxOutStore().TryAddTxOutItem(ctx, im.mgr, toi, cosmos.ZeroUint())
 		if err != nil {
 			ctx.Logger().Error("fail to refund solve", "solve_txid", solve.SolveTxID, "solver_address", solve.SolverAddress, "amount", solve.TargetCoin.Amount, "error", err)
 			failedRefunds = append(failedRefunds, solve.SolveTxID.String())
-			continue
+                        // Move funds to reserve
+                        unrefundableCoinCleanup(ctx, im.mgr, toi, "failed_refund")
 		}
-		if !ok {
+		else if !ok {
 			ctx.Logger().Error("fail to schedule solve refund", "solve_txid", solve.SolveTxID, "solver_address", solve.SolverAddress, "amount", solve.TargetCoin.Amount)
 			failedRefunds = append(failedRefunds, solve.SolveTxID.String())
-			continue
-		}
-
-		ctx.Logger().Info("refunded intent solve due to auction start",
-			"intent_txid", intent.TxID,
-			"solve_txid", solve.SolveTxID,
-			"amount", solve.TargetCoin.Amount,
-		)
-
-		// Clean up the solve record
+                        // Move funds to reserve
+                        unrefundableCoinCleanup(ctx, im.mgr, toi, "failed_refund")
+		} 
+                else {
+          		ctx.Logger().Info("refunded intent solve due to auction start",
+    	        		"intent_txid", intent.TxID,
+    		        	"solve_txid", solve.SolveTxID,
+    			        "amount", solve.TargetCoin.Amount,
+    		        )
+                }
+                // Clean up the solve record
 		im.mgr.Keeper().RemoveIntentSolve(ctx, solve.SolveTxID)
 	}
 
