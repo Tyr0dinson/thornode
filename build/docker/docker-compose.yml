@@ -217,6 +217,7 @@ services:
       BIFROST_CHAINS_XRP_CHAIN_NETWORK: "1234"
 
       # enable tron
+      BIFROST_CHAINS_TRON_DISABLED: "false"
       BIFROST_CHAINS_TRON_API_HOST: http://tron-fullnode:8090
       BIFROST_CHAINS_TRON_RPC_HOST: http://tron-fullnode:8091
 

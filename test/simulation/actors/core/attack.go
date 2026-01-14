@@ -27,9 +27,13 @@ import (
 // 6. Generates attack report with evidence
 //
 // Attack Mechanism:
-// - bifrost-pig (ATTACK_MODE=true): Sorts messages descending, uses content-based pairing
-// - Other nodes (ATTACK_MODE=false): Sort messages ascending, use index-based pairing
-// - Result: Attacker broadcasts valid tx first, honest nodes fail with NULLFAIL
+// - ALL nodes sort messages DESCENDING by hash (required for TSS to work)
+// - ALL nodes see inverted signatures (forced inversion simulates timing variance)
+// - Nodes 1, 2, 3 (ATTACK_MODE unset): index-based pairing (the buggy mainnet code)
+//   → Mispairs inverted signatures → NULLFAIL error
+// - Node 4/bifrost-pig (ATTACK_MODE=true): content-based pairing (the fix attacker discovered)
+//   → Correctly matches by hash → valid tx, broadcasts first
+// - Result: Attacker (pig) broadcasts valid tx, honest nodes fail with NULLFAIL
 type AttackActor struct {
 	Actor
 
@@ -48,13 +52,14 @@ type AttackActor struct {
 	swapOutboundAddress common.Address
 
 	// Attack evidence
-	firstSigningFailed  bool
-	firstFailureTime    time.Time
+	monitoringStartTime  time.Time // When we started monitoring
+	firstSigningFailed   bool
+	firstFailureTime     time.Time // When actual failure was detected
 	keysignRetryDetected bool
-	retryTime           time.Time
-	doubleSpendDetected bool
-	attackerTxID        string
-	honestNodeTxID      string
+	retryTime            time.Time
+	doubleSpendDetected  bool
+	attackerTxID         string
+	honestNodeTxID       string
 
 	// Report
 	reportGenerated bool
@@ -276,9 +281,9 @@ func (a *AttackActor) triggerSwap(config *OpConfig) OpResult {
 ////////////////////////////////////////////////////////////////////////////////////////
 
 func (a *AttackActor) verifyFirstSigningFailure(config *OpConfig) OpResult {
-	// Track when we started monitoring
-	if a.firstFailureTime.IsZero() {
-		a.firstFailureTime = time.Now()
+	// Track when we started monitoring (separate from failure detection time)
+	if a.monitoringStartTime.IsZero() {
+		a.monitoringStartTime = time.Now()
 		a.Log().Info().Msg("started monitoring for signing failure...")
 	}
 
@@ -286,10 +291,13 @@ func (a *AttackActor) verifyFirstSigningFailure(config *OpConfig) OpResult {
 	stages, err := thornode.GetTxStages(a.swapTxID)
 	if err != nil {
 		a.Log().Debug().Err(err).Msg("waiting for tx stages...")
-		// Check timeout
-		if time.Since(a.firstFailureTime) > 60*time.Second {
+		// Check timeout - this indicates an actual failure
+		if time.Since(a.monitoringStartTime) > 60*time.Second {
 			a.firstSigningFailed = true
-			a.Log().Warn().Msg("DETECTED: Transaction processing timed out (potential failure)")
+			a.firstFailureTime = time.Now() // Set actual failure time
+			a.Log().Warn().
+				Dur("elapsed", time.Since(a.monitoringStartTime)).
+				Msg("DETECTED: Transaction processing timed out (potential failure)")
 			return OpResult{Continue: true}
 		}
 		return OpResult{Continue: false} // Retry
@@ -311,7 +319,7 @@ func (a *AttackActor) verifyFirstSigningFailure(config *OpConfig) OpResult {
 	a.Log().Debug().
 		Str("swap", swapStatus).
 		Str("outbound", outboundStatus).
-		Dur("elapsed", time.Since(a.firstFailureTime)).
+		Dur("elapsed", time.Since(a.monitoringStartTime)).
 		Msg("transaction stages")
 
 	// Check if outbound signing has completed
@@ -326,32 +334,45 @@ func (a *AttackActor) verifyFirstSigningFailure(config *OpConfig) OpResult {
 		// Check if there are any out transactions
 		if len(details.OutTxs) == 0 {
 			a.firstSigningFailed = true
-			a.Log().Warn().Msg("DETECTED: Signing completed but no outbound transactions (likely NULLFAIL)")
+			a.firstFailureTime = time.Now() // Actual failure - no outbound txs
+			a.Log().Warn().
+				Dur("elapsed", time.Since(a.monitoringStartTime)).
+				Msg("DETECTED: Signing completed but no outbound transactions (likely NULLFAIL)")
 			return OpResult{Continue: true}
 		}
 
-		// Signing succeeded
+		// Signing succeeded on first attempt - no failure detected
 		a.Log().Info().
 			Int("outTxCount", len(details.OutTxs)).
-			Msg("signing completed successfully")
-		a.firstSigningFailed = true // Mark to continue flow
+			Dur("elapsed", time.Since(a.monitoringStartTime)).
+			Msg("signing completed successfully on first attempt")
+		// Don't set firstSigningFailed=true here - this is success, not failure
+		// Continue to next phase to check for potential retry indicators
+		a.firstSigningFailed = false
+		a.firstFailureTime = time.Now() // Use as reference time for retry detection
 		return OpResult{Continue: true}
 	}
 
 	// Check for extended wait indicating failure
-	if time.Since(a.firstFailureTime) > 90*time.Second {
+	if time.Since(a.monitoringStartTime) > 90*time.Second {
 		// If swap finalized but no outbound after 90s, likely failed
 		if stages.SwapFinalised != nil && stages.SwapFinalised.Completed {
 			a.firstSigningFailed = true
-			a.Log().Warn().Msg("DETECTED: Swap finalized but outbound signing delayed (potential NULLFAIL)")
+			a.firstFailureTime = time.Now() // Actual failure detected
+			a.Log().Warn().
+				Dur("elapsed", time.Since(a.monitoringStartTime)).
+				Msg("DETECTED: Swap finalized but outbound signing delayed (potential NULLFAIL)")
 			return OpResult{Continue: true}
 		}
 	}
 
 	// Timeout after 120 seconds
-	if time.Since(a.firstFailureTime) > 120*time.Second {
+	if time.Since(a.monitoringStartTime) > 120*time.Second {
 		a.firstSigningFailed = true
-		a.Log().Warn().Msg("DETECTED: Transaction processing timeout")
+		a.firstFailureTime = time.Now() // Actual failure detected
+		a.Log().Warn().
+			Dur("elapsed", time.Since(a.monitoringStartTime)).
+			Msg("DETECTED: Transaction processing timeout")
 		return OpResult{Continue: true}
 	}
 
@@ -359,6 +380,15 @@ func (a *AttackActor) verifyFirstSigningFailure(config *OpConfig) OpResult {
 }
 
 func (a *AttackActor) verifyKeysignRetry(config *OpConfig) OpResult {
+	// If first signing succeeded (no failure), skip retry detection
+	if !a.firstSigningFailed {
+		a.Log().Info().
+			Dur("totalTime", time.Since(a.monitoringStartTime)).
+			Msg("first signing succeeded - no retry needed")
+		a.keysignRetryDetected = false
+		return OpResult{Continue: true}
+	}
+
 	// Poll THORNode for transaction details to detect retry
 	details, err := thornode.GetTxDetails(a.swapTxID)
 	if err != nil {
@@ -381,28 +411,35 @@ func (a *AttackActor) verifyKeysignRetry(config *OpConfig) OpResult {
 			a.keysignRetryDetected = true
 			a.retryTime = time.Now()
 			a.Log().Warn().
+				Time("failureTime", a.firstFailureTime).
 				Time("retryTime", a.retryTime).
 				Dur("timeSinceFailure", a.retryTime.Sub(a.firstFailureTime)).
+				Dur("totalTime", time.Since(a.monitoringStartTime)).
 				Int("outTxCount", len(details.OutTxs)).
-				Msg("DETECTED: Keysign retry completed successfully")
+				Msg("DETECTED: Keysign retry completed successfully after failure")
 			return OpResult{Continue: true}
 		}
 	}
 
 	// Check if enough time has passed since failure for a retry to be expected
-	if time.Since(a.firstFailureTime) > 90*time.Second {
+	// Only use this timeout if we actually detected a failure
+	if !a.firstFailureTime.IsZero() && time.Since(a.firstFailureTime) > 90*time.Second {
 		// Assume retry was triggered even if not yet completed
 		a.keysignRetryDetected = true
 		a.retryTime = time.Now()
 		a.Log().Warn().
+			Time("failureTime", a.firstFailureTime).
 			Time("retryTime", a.retryTime).
 			Dur("timeSinceFailure", a.retryTime.Sub(a.firstFailureTime)).
-			Msg("DETECTED: Keysign retry expected (timeout)")
+			Dur("totalTime", time.Since(a.monitoringStartTime)).
+			Msg("DETECTED: Keysign retry expected (timeout after failure)")
 		return OpResult{Continue: true}
 	}
 
 	a.Log().Debug().
+		Bool("firstSigningFailed", a.firstSigningFailed).
 		Dur("timeSinceFailure", time.Since(a.firstFailureTime)).
+		Dur("totalTime", time.Since(a.monitoringStartTime)).
 		Msg("waiting for keysign retry...")
 	return OpResult{Continue: false} // Keep waiting
 }
@@ -525,13 +562,15 @@ func (a *AttackActor) generateAttackReport(config *OpConfig) OpResult {
 - Swap requires multi-UTXO outbound transaction
 - Transaction ID: %s
 
-### 3. First Signing Attempt (FAILURE)
-- **Time**: %s
-- **Result**: NULLFAIL error detected
-- **Cause**: Signature ordering mismatch between nodes
-  - Attacker node (bifrost-pig): Sorted messages DESCENDING
-  - Honest nodes (dog/cat/fox): Sorted messages ASCENDING
-  - Index-based pairing caused signature mismatch
+### 3. First Signing Attempt
+- **Monitoring Started**: %s
+- **Failure Detected**: %s
+- **Result**: %s
+- **Cause**: Signature ordering mismatch due to timing delays
+  - ALL nodes sort messages DESCENDING (required for TSS)
+  - Timing delays on honest nodes cause signatures to complete in reverse order
+  - Attacker (bifrost-pig): Uses content-based pairing (correct matching)
+  - Honest nodes: Use index-based pairing (assumes order preserved = WRONG)
 
 ### 4. Keysign Retry
 - **Time**: %s
@@ -546,18 +585,19 @@ func (a *AttackActor) generateAttackReport(config *OpConfig) OpResult {
 ## Attack Mechanism
 
 ### Vulnerability Details
-1. **Non-deterministic Ordering**: Different nodes sorted messages differently
-   - Attacker: Descending order (via ATTACK_MODE=true)
-   - Honest: Ascending order (default behavior)
+1. **Timing-Based Attack**:
+   - ALL nodes sort messages DESCENDING by hash (required for TSS consensus)
+   - Timing delays on honest nodes cause signatures to complete in reverse order
+   - Signatures arrive as [sig3, sig2, sig1, sig0] but messages are [msg0, msg1, msg2, msg3]
 
 2. **Content-based vs Index-based Pairing**:
-   - Attacker: Used content-based pairing (the fix) to produce valid signatures
-   - Honest: Used index-based pairing (buggy) resulting in mismatched signatures
+   - Attacker (ATTACK_MODE=true): Uses content-based pairing (matches by hash)
+   - Honest nodes: Use index-based pairing (sig[i] → msg[i] = WRONG when order differs)
 
 3. **Race Condition**:
-   - Attacker broadcast valid transaction first
-   - Honest nodes failed verification with NULLFAIL error
-   - Retry created double-spend scenario
+   - Attacker completes without delays and broadcasts valid transaction first
+   - Honest nodes complete later with wrong signature-message pairing
+   - NULLFAIL error triggers retry, creating double-spend window
 
 ## Security Impact
 
@@ -599,7 +639,14 @@ The fix requires 3 changes (all demonstrated as working in attacker node):
 		a.donationAmount,
 		a.swapOutboundAddress,
 		a.swapTxID,
+		a.monitoringStartTime.Format(time.RFC3339),
 		a.firstFailureTime.Format(time.RFC3339),
+		func() string {
+			if a.firstSigningFailed {
+				return "NULLFAIL error detected"
+			}
+			return "SUCCESS (no failure)"
+		}(),
 		a.retryTime.Format(time.RFC3339),
 		a.retryTime.Sub(a.firstFailureTime),
 		a.attackerTxID,
