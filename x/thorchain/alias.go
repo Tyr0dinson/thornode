@@ -132,6 +132,8 @@ var (
 	NewMsgWithdrawLiquidity        = types.NewMsgWithdrawLiquidity
 	NewMsgSwap                     = types.NewMsgSwap
 	NewMsgModifyLimitSwap          = types.NewMsgModifyLimitSwap
+	NewMsgBatchModifyLimitSwap     = types.NewMsgBatchModifyLimitSwap
+	NewModifyLimitSwapOperation    = types.NewModifyLimitSwapOperation
 	NewKeygen                      = types.NewKeygen
 	NewKeygenBlock                 = types.NewKeygenBlock
 	NewMsgSetNodeKeys              = types.NewMsgSetNodeKeys
@@ -291,6 +293,8 @@ type (
 	MsgBan                    = types.MsgBan
 	MsgSwap                   = types.MsgSwap
 	MsgModifyLimitSwap        = types.MsgModifyLimitSwap
+	MsgBatchModifyLimitSwap   = types.MsgBatchModifyLimitSwap
+	ModifyLimitSwapOperation  = types.ModifyLimitSwapOperation
 	MsgSetVersion             = types.MsgSetVersion
 	MsgProposeUpgrade         = types.MsgProposeUpgrade
 	MsgApproveUpgrade         = types.MsgApproveUpgrade

@@ -3,8 +3,11 @@ package thorchain
 import (
 	"fmt"
 
+	"github.com/blang/semver"
+
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 )
 
 // ModifyLimitSwapHandler is the handler to process MsgModifyLimitSwap.
@@ -222,4 +225,10 @@ func (h ModifyLimitSwapHandler) donateToPool(ctx cosmos.Context, asset common.As
 	}
 
 	return nil
+}
+
+// ModifyLimitSwapAnteHandler is the ante handler for MsgModifyLimitSwap
+// It deducts the appropriate fee (discounted for first modify in block, standard otherwise)
+func ModifyLimitSwapAnteHandler(ctx cosmos.Context, v semver.Version, k keeper.Keeper, msg MsgModifyLimitSwap) (cosmos.Context, error) {
+	return ctx, k.DeductModifyLimitSwapFee(ctx, msg.Signer, false)
 }

@@ -53,6 +53,13 @@ type Keeper interface {
 
 	DeductNativeTxFeeFromAccount(ctx cosmos.Context, acctAddr cosmos.AccAddress) error
 
+	// Modify Limit Swap Fee Methods
+	GetModifyLimitSwapFee(ctx cosmos.Context, addr cosmos.AccAddress, isBatch bool) cosmos.Uint
+	DeductModifyLimitSwapFee(ctx cosmos.Context, addr cosmos.AccAddress, isBatch bool) error
+	HasModifiedLimitSwapInBlock(ctx cosmos.Context, addr cosmos.AccAddress) bool
+	SetModifiedLimitSwapInBlock(ctx cosmos.Context, addr cosmos.AccAddress)
+	CleanupModifyLimitSwapTracking(ctx cosmos.Context)
+
 	// Keeper Interfaces
 	KeeperConfig
 	KeeperPool

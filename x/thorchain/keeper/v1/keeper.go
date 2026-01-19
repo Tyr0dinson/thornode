@@ -101,6 +101,7 @@ const (
 	prefixOraclePrice             types.DbPrefix = "oracle_price/"
 	prefixVolumeBucket            types.DbPrefix = "volume_bucket/"
 	prefixVolume                  types.DbPrefix = "volume/"
+	prefixModifyLimitSwapTracker  types.DbPrefix = "mlst/"
 )
 
 func dbError(ctx cosmos.Context, wrapper string, err error) error {
@@ -540,6 +541,42 @@ func (k KVStore) DeductNativeTxFeeFromAccount(ctx cosmos.Context, acctAddr cosmo
 	}
 	coins := common.NewCoins(common.NewCoin(common.RuneNative, fee))
 	return k.SendFromAccountToModule(ctx, acctAddr, ReserveName, coins)
+}
+
+// GetModifyLimitSwapFee returns the fee for a modify limit swap transaction.
+// Batch transactions always get the discounted fee.
+// Single transactions get the discounted fee only if it's the first modify in the block for that address.
+func (k KVStore) GetModifyLimitSwapFee(ctx cosmos.Context, addr cosmos.AccAddress, isBatch bool) cosmos.Uint {
+	// Batch always gets discount, single gets discount only if first in block
+	if isBatch || !k.HasModifiedLimitSwapInBlock(ctx, addr) {
+		if k.usdFeesEnabled(ctx) {
+			return k.DollarConfigInRune(ctx, constants.ModifyLimitSwapDiscountedFeeUSD)
+		}
+		fee := k.GetConfigInt64(ctx, constants.ModifyLimitSwapDiscountedFee)
+		return cosmos.NewUint(uint64(fee))
+	}
+	// Not first in block for single modify, use standard fee
+	return k.GetNativeTxFee(ctx)
+}
+
+// DeductModifyLimitSwapFee deducts the appropriate fee for a modify limit swap transaction.
+// For batch transactions, deducts the discounted fee once.
+// For single transactions, deducts the discounted fee if first in block, otherwise standard fee.
+// Also marks the address as having modified a limit swap in this block (for single transactions only).
+func (k KVStore) DeductModifyLimitSwapFee(ctx cosmos.Context, addr cosmos.AccAddress, isBatch bool) error {
+	fee := k.GetModifyLimitSwapFee(ctx, addr, isBatch)
+	if fee.IsZero() {
+		return nil // no fee
+	}
+
+	// Mark this address as having modified in this block (only for single modify)
+	// This must be done before deducting to ensure subsequent single modifies pay full fee
+	if !isBatch {
+		k.SetModifiedLimitSwapInBlock(ctx, addr)
+	}
+
+	coins := common.NewCoins(common.NewCoin(common.RuneNative, fee))
+	return k.SendFromAccountToModule(ctx, addr, ReserveName, coins)
 }
 
 // RagnarokAccount remove account and return all assets to the protocol

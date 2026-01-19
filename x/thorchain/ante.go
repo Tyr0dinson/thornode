@@ -178,6 +178,10 @@ func (ad AnteDecorator) anteHandleMessage(ctx sdk.Context, version semver.Versio
 		return ActiveValidatorAnteHandler(ctx, version, ad.keeper, legacyMsg.GetSigners()[0])
 
 	// native handlers (non-consensus)
+	case *types.MsgModifyLimitSwap:
+		return ModifyLimitSwapAnteHandler(ctx, version, ad.keeper, *m)
+	case *types.MsgBatchModifyLimitSwap:
+		return BatchModifyLimitSwapAnteHandler(ctx, version, ad.keeper, *m)
 	case *types.MsgDeposit:
 		return DepositAnteHandler(ctx, version, ad.keeper, *m)
 	case *types.MsgSend, *banktypes.MsgSend:

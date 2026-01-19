@@ -11,6 +11,8 @@ func NewConstantValue() *ConstantVals {
 			NativeOutboundFeeUSD:                2_000000, // $0.02 fee on all swaps and withdrawals
 			NativeTransactionFee:                2_000000,
 			NativeTransactionFeeUSD:             2_000000,           // $0.02 fee on all on chain txs
+			ModifyLimitSwapDiscountedFee:        100_000,            // 0.001 RUNE discounted fee for first modify limit swap per block
+			ModifyLimitSwapDiscountedFeeUSD:     100_000,            // $0.001 discounted fee for first modify limit swap per block
 			PoolCycle:                           43200,              // Make a pool available every 3 days
 			StagedPoolCost:                      10_00000000,        // amount of rune to take from a staged pool on every pool cycle
 			PendingLiquidityAgeLimit:            100800,             // age pending liquidity can be pending before its auto committed to the pool

@@ -70,6 +70,15 @@ func (items swapItems) Sort() swapItems {
 		}
 	}
 
+	// PRIORITY: Give limit swaps a significant negative offset to ensure they execute before market swaps
+	// This maintains the priority established in FetchQueue even after fee/slip scoring
+	limitBonus := len(items) * 2 // Large enough to put all limit swaps before market swaps
+	for i, s := range scores {
+		if s.msg.IsLimitSwap() {
+			scores[i].score -= limitBonus
+		}
+	}
+
 	// This sorted appears to sort twice, but actually the first sort informs
 	// the second. If we have multiple swaps with the same score, it will use
 	// the ID sort to deterministically sort within the same score
