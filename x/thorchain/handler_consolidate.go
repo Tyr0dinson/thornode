@@ -78,6 +78,8 @@ func (h ConsolidateHandler) handle(ctx cosmos.Context, msg MsgConsolidate) (*cos
 	}
 }
 
+// NOTE: MsgConsolidate is internal-only and created after validator consensus.
+// The vault is guaranteed to exist and be active by the time this handler runs.
 func (h ConsolidateHandler) handleV3_0_0(ctx cosmos.Context, msg MsgConsolidate) (*cosmos.Result, error) {
 	shouldSlash := false
 

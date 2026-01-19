@@ -61,6 +61,8 @@ func (h WasmExecHandler) handle(ctx cosmos.Context, msg MsgWasmExec) (*cosmos.Re
 		}
 	}
 
+	// NOTE: It is intended design that msg.Contract and msg.Msg are user-controlled.
+	// The WasmManager ensures execution safety.
 	_, err = h.mgr.WasmManager().ExecuteContract(ctx, msg.Contract, msg.Sender, msg.Msg, cosmos.NewCoins(execAmt))
 	if err != nil {
 		return nil, err

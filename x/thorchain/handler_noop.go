@@ -65,6 +65,8 @@ func (h NoOpHandler) handle(ctx cosmos.Context, msg MsgNoOp) error {
 	}
 }
 
+// NOTE: MsgNoOp is rejected by the AnteHandler for external transactions,
+// preventing arbitrary vault fund subtraction by unauthorized users.
 func (h NoOpHandler) handleV3_0_0(ctx cosmos.Context, msg MsgNoOp) error {
 	action := msg.GetAction()
 	if len(action) == 0 {

@@ -178,7 +178,8 @@ func insolvencyCheck(ctx cosmos.Context, mgr Manager, vault Vault, coins common.
 			if err != nil {
 				ctx.Logger().Error("fail to get max gas", "error", err)
 			} else if c.Amount.LTE(gas.Amount.MulUint64(10)) {
-				// if the amount left in asgard vault is not enough for 10 * max gas, then skip it from solvency check
+				// NOTE: if the amount left in asgard vault is not enough for 10 * max gas, then skip it from solvency check
+				// This is intended to avoid insolvency halts due to small gas fluctuations.
 				continue
 			}
 		}
