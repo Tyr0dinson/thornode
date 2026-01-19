@@ -11,6 +11,10 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
+// NOTE: UpdateAdmin requires the caller to already be the contract admin. Multi-msg attacks
+// (UpdateAdmin+MigrateContract in one tx) cannot escalate privileges since UpdateAdmin itself
+// requires admin rights via checkIsContractAdmin() in WasmManager.
+
 // WasmMigrateContractHandler processes incoming MsgMigrateContract messages from x/wasm
 type WasmMigrateContractHandler struct {
 	mgr Manager

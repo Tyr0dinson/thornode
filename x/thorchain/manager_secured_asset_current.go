@@ -124,6 +124,8 @@ func (s *SecuredAssetMgrVCUR) calcMintAmt(oldUnits, depth, add cosmos.Uint) cosm
 	return common.GetUncappedShare(add, depth, oldUnits)
 }
 
+// NOTE: This function only handles token accounting. The caller (handler_secured_asset_withdraw.go)
+// creates the outbound transaction via TryAddTxOutItem().
 func (s *SecuredAssetMgrVCUR) Withdraw(
 	ctx cosmos.Context,
 	asset common.Asset,

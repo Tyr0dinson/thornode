@@ -407,6 +407,7 @@ func (vm *SwapQueueVCUR) getLiquidityFeeAndSlip(ctx cosmos.Context, pool Pool, s
 	X = common.GetUncappedShare(cosmos.NewUint(uint64(virtualDepthMult)), cosmos.NewUint(10_000), X)
 	Y = common.GetUncappedShare(cosmos.NewUint(uint64(virtualDepthMult)), cosmos.NewUint(10_000), Y)
 
+	// NOTE: GetSwapper() always returns nil error (see managers.go), so this panic is unreachable.
 	swapper, err := GetSwapper(vm.k.GetVersion())
 	if err != nil {
 		panic(err)

@@ -46,6 +46,9 @@ func (h TssHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, error
 	return &cosmos.Result{}, nil
 }
 
+// NOTE: The signature is generated via TSS RemoteSign() (threshold signing), not locally.
+// The pk.String() message is a known value all TSS parties agree on for this sanity check.
+
 // verifySecp256K1Signature verifies the provided signature of the public key. This is
 // set as a variable so tests can override verification when using random public keys.
 var verifySecp256K1Signature = func(pk common.PubKey, sig []byte) error {

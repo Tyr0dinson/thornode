@@ -10,6 +10,9 @@ import (
 	"gitlab.com/thorchain/thornode/v3/constants"
 )
 
+// NOTE: This message is internal-only (not in ante.go or msg_server.go). Authorization comes
+// from L1 transaction origin: msg.BondAddress is the L1 sender set by processOneTxIn().
+
 // UnBondHandler a handler to process unbond request
 type UnBondHandler struct {
 	mgr Manager

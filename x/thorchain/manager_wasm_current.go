@@ -42,6 +42,9 @@ func newWasmMgrVCUR(
 	}, nil
 }
 
+// NOTE: Order of operations (Create before checks) is safe because handlers run in CacheContext
+// (see handler.go). If any check returns error, all state changes including Create are rolled back.
+
 // StoreCode stores a new wasm code on chain
 func (m WasmMgrVCUR) StoreCode(
 	ctx cosmos.Context,

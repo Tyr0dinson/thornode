@@ -9,6 +9,9 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
+// NOTE: signBz contains unique context: txID/hash, chain ID, and full message content via
+// protobuf marshaling. Each message type has distinct encoding, preventing replay across types.
+
 func verifyQuorumAttestation(activeNodeAccounts NodeAccounts, signBz []byte, att *common.Attestation) (cosmos.AccAddress, error) {
 	if att == nil {
 		return nil, fmt.Errorf("attestation is nil")

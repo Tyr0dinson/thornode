@@ -78,6 +78,8 @@ func (h SwitchHandler) checkEnabled(ctx cosmos.Context, asset common.Asset) erro
 	if err != nil {
 		return err
 	}
+	// NOTE: This is the standard Mimir activation pattern:
+	// m <= 0: disabled, m >= blockHeight: not yet active, m > 0 && m < blockHeight: enabled.
 	if m <= 0 || m >= ctx.BlockHeight() {
 		return fmt.Errorf("%s switching is not enabled", asset.String())
 	}

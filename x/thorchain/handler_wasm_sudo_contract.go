@@ -40,6 +40,8 @@ func (h WasmSudoContractHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*wasmtyp
 	return result, nil
 }
 
+// NOTE: This validate() is intentionally empty. Authorization is enforced
+// in WasmManager.SudoContract() via checkIsContractAdmin().
 func (h WasmSudoContractHandler) validate(ctx cosmos.Context, msg wasmtypes.MsgSudoContract) error {
 	return nil
 }

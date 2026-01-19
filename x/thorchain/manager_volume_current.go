@@ -29,6 +29,7 @@ func (vm *VolumeMgrVCUR) EndBlock(ctx cosmos.Context) error {
 	}
 
 	timestamp := ctx.BlockHeader().Time.Unix()
+	// NOTE: VolumeBucketSeconds is a compile-time constant (900), so division by zero is impossible.
 	numBuckets := 60 * 60 * 24 / constants.VolumeBucketSeconds
 	currentIndex := (timestamp / constants.VolumeBucketSeconds) % numBuckets
 

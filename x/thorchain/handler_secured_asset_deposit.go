@@ -10,6 +10,9 @@ import (
 	"gitlab.com/thorchain/thornode/v3/constants"
 )
 
+// NOTE: This message is internal-only (not in ante.go or msg_server.go). It is created by
+// processOneTxIn() after validators reach quorum on an L1 deposit observation.
+
 // SecuredAssetDepositHandler is handler to process MsgSecuredAssetDeposit
 type SecuredAssetDepositHandler struct {
 	mgr Manager
