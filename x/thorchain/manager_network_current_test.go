@@ -2265,3 +2265,182 @@ func (s *NetworkManagerTestSuite) TestSwapToOverSolvencyIncomeSecuredAsset(c *C)
 		c.Assert(foundSwap, Equals, true, Commentf("swap should have been created in queue"))
 	}
 }
+
+func (s *NetworkManagerVCURTestSuite) TestCalculateNetworkSolvencyWithIntents(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	nmgr := newNetworkMgrVCUR(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())
+
+	// Setup: Create ETH pool
+	ethPool := NewPool()
+	ethPool.Asset = common.ETHAsset
+	ethPool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	ethPool.BalanceRune = cosmos.NewUint(100 * common.One)
+	ethPool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, ethPool), IsNil)
+
+	// Setup: Create BTC pool
+	btcPool := NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	btcPool.BalanceRune = cosmos.NewUint(100 * common.One)
+	btcPool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, btcPool), IsNil)
+
+	// Setup: Create an active vault with ETH and BTC
+	vault := GetRandomVault()
+	vault.Type = AsgardVault
+	vault.Status = ActiveVault
+	vault.Coins = common.Coins{
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(150*common.One)),
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(150*common.One)),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	// Test 1: Without intents - should show over-solvency
+	// Vault has 150 ETH/BTC each, Pool needs 100 each, so 50 over-solvent each
+	solvency, err := nmgr.calculateNetworkSolvency(ctx, mgr)
+	c.Assert(err, IsNil)
+	c.Assert(len(solvency), Equals, 2)
+	for _, s := range solvency {
+		expectedOverSolvency := math.NewInt(50 * common.One)
+		c.Assert(s.Amount.Equal(expectedOverSolvency), Equals, true, Commentf("asset %s should be 50 over-solvent", s.Asset))
+	}
+
+	// Test 2: Create an active intent with ETH as source (30 ETH held for intent)
+	intentTx := GetRandomTx()
+	intent := Intent{
+		TxID:          intentTx.ID,
+		SourceAddress: GetRandomETHAddress(),
+		Source:        common.NewCoin(common.ETHAsset, cosmos.NewUint(30*common.One)),
+		TargetAsset:   common.BTCAsset,
+		TargetAddress: GetRandomBTCAddress(),
+		HighTarget:    cosmos.NewUint(2 * common.One),
+		LowTarget:     cosmos.NewUint(1 * common.One),
+		ExpiryHeight:  ctx.BlockHeight() + 100,
+		Status:        IntentActive,
+	}
+	mgr.Keeper().SetIntent(ctx, intent)
+
+	// Now solvency should subtract the intent source (30 ETH)
+	// ETH: 150 vault - 100 pool - 30 intent = 20 over-solvent
+	// BTC: 150 vault - 100 pool = 50 over-solvent
+	solvency, err = nmgr.calculateNetworkSolvency(ctx, mgr)
+	c.Assert(err, IsNil)
+	c.Assert(len(solvency), Equals, 2)
+	for _, s := range solvency {
+		if s.Asset.Equals(common.ETHAsset) {
+			expectedETH := math.NewInt(20 * common.One)
+			c.Assert(s.Amount.Equal(expectedETH), Equals, true, Commentf("ETH should be 20 over-solvent after intent, got %s", s.Amount))
+		} else if s.Asset.Equals(common.BTCAsset) {
+			expectedBTC := math.NewInt(50 * common.One)
+			c.Assert(s.Amount.Equal(expectedBTC), Equals, true, Commentf("BTC should be 50 over-solvent, got %s", s.Amount))
+		}
+	}
+
+	// Test 3: Add a pending solve with BTC as target (20 BTC held for solve)
+	solve := IntentSolve{
+		SolveTxID:     GetRandomTxHash(),
+		IntentTxID:    intentTx.ID,
+		SolverAddress: GetRandomBTCAddress(),
+		TargetCoin:    common.NewCoin(common.BTCAsset, cosmos.NewUint(20*common.One)),
+		SubmitHeight:  ctx.BlockHeight(),
+		MatchHeight:   ctx.BlockHeight() + 10,
+	}
+	mgr.Keeper().SetIntentSolve(ctx, solve)
+
+	// Now solvency should also subtract the solve target (20 BTC)
+	// ETH: 150 vault - 100 pool - 30 intent = 20 over-solvent
+	// BTC: 150 vault - 100 pool - 20 solve = 30 over-solvent
+	solvency, err = nmgr.calculateNetworkSolvency(ctx, mgr)
+	c.Assert(err, IsNil)
+	c.Assert(len(solvency), Equals, 2)
+	for _, s := range solvency {
+		if s.Asset.Equals(common.ETHAsset) {
+			expectedETH := math.NewInt(20 * common.One)
+			c.Assert(s.Amount.Equal(expectedETH), Equals, true, Commentf("ETH should be 20 over-solvent, got %s", s.Amount))
+		} else if s.Asset.Equals(common.BTCAsset) {
+			expectedBTC := math.NewInt(30 * common.One)
+			c.Assert(s.Amount.Equal(expectedBTC), Equals, true, Commentf("BTC should be 30 over-solvent after solve, got %s", s.Amount))
+		}
+	}
+
+	// Test 4: Verify expired intents are NOT subtracted
+	intent.Status = IntentExpired
+	mgr.Keeper().SetIntent(ctx, intent)
+
+	// ETH: 150 vault - 100 pool = 50 over-solvent (intent expired, not counted)
+	// BTC: 150 vault - 100 pool - 20 solve = 30 over-solvent (solve still counted as intent is fetched)
+	// Note: In reality, when intent expires, solves are also refunded. This test just verifies status filtering.
+	solvency, err = nmgr.calculateNetworkSolvency(ctx, mgr)
+	c.Assert(err, IsNil)
+	for _, s := range solvency {
+		if s.Asset.Equals(common.ETHAsset) {
+			expectedETH := math.NewInt(50 * common.One)
+			c.Assert(s.Amount.Equal(expectedETH), Equals, true, Commentf("ETH should be 50 over-solvent when intent expired, got %s", s.Amount))
+		}
+	}
+
+	// Test 5: Auctioning intent should still be counted
+	intent.Status = IntentAuctioning
+	mgr.Keeper().SetIntent(ctx, intent)
+
+	// ETH: 150 vault - 100 pool - 30 intent = 20 over-solvent
+	solvency, err = nmgr.calculateNetworkSolvency(ctx, mgr)
+	c.Assert(err, IsNil)
+	for _, s := range solvency {
+		if s.Asset.Equals(common.ETHAsset) {
+			expectedETH := math.NewInt(20 * common.One)
+			c.Assert(s.Amount.Equal(expectedETH), Equals, true, Commentf("ETH should be 20 over-solvent for auctioning intent, got %s", s.Amount))
+		}
+	}
+
+	// Test 6: Add auction with L1 asset bids
+	// First, create a different intent for the auction (to avoid conflict with existing intent)
+	auctionIntentTx := GetRandomTx()
+	auctionIntent := Intent{
+		TxID:          auctionIntentTx.ID,
+		SourceAddress: GetRandomETHAddress(),
+		Source:        common.NewCoin(common.ETHAsset, cosmos.NewUint(10*common.One)),
+		TargetAsset:   common.BTCAsset,
+		TargetAddress: GetRandomBTCAddress(),
+		ExpiryHeight:  ctx.BlockHeight() - 1, // expired
+		Status:        IntentAuctioning,
+	}
+	mgr.Keeper().SetIntent(ctx, auctionIntent)
+
+	// Create auction
+	auction := IntentAuction{
+		IntentTxID:    auctionIntentTx.ID,
+		AuctionAmount: common.NewCoin(common.ETHAsset, cosmos.NewUint(10*common.One)),
+		BidAsset:      common.BTCAsset,
+		MinBid:        cosmos.NewUint(1 * common.One),
+		StartHeight:   ctx.BlockHeight(),
+		ExpiryHeight:  ctx.BlockHeight() + 100,
+		Status:        types.IntentAuctionStatus_AuctionActive,
+	}
+	mgr.Keeper().SetIntentAuction(ctx, auction)
+
+	// Create auction bid with BTC (L1 asset)
+	bid := IntentAuctionBid{
+		IntentTxID:    auctionIntentTx.ID,
+		BidTxID:       GetRandomTxHash(),
+		BidAmount:     common.NewCoin(common.BTCAsset, cosmos.NewUint(5*common.One)),
+		BidderAddress: GetRandomBTCAddress(),
+		SubmitHeight:  ctx.BlockHeight(),
+	}
+	mgr.Keeper().SetIntentAuctionBid(ctx, bid)
+
+	// ETH: 150 vault - 100 pool - 30 first intent - 10 auction intent = 10 over-solvent
+	// BTC: 150 vault - 100 pool - 20 solve - 5 auction bid = 25 over-solvent
+	solvency, err = nmgr.calculateNetworkSolvency(ctx, mgr)
+	c.Assert(err, IsNil)
+	for _, s := range solvency {
+		if s.Asset.Equals(common.ETHAsset) {
+			expectedETH := math.NewInt(10 * common.One)
+			c.Assert(s.Amount.Equal(expectedETH), Equals, true, Commentf("ETH should be 10 over-solvent with auction intent, got %s", s.Amount))
+		} else if s.Asset.Equals(common.BTCAsset) {
+			expectedBTC := math.NewInt(25 * common.One)
+			c.Assert(s.Amount.Equal(expectedBTC), Equals, true, Commentf("BTC should be 25 over-solvent with auction bid, got %s", s.Amount))
+		}
+	}
+}
