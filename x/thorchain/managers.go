@@ -253,6 +253,7 @@ type VolumeManager interface {
 
 type IntentManager interface {
 	EndBlock(ctx cosmos.Context) error
+	RefundIntentSolves(ctx cosmos.Context, intent types.Intent) error
 }
 
 // Mgrs is an implementation of Manager interface

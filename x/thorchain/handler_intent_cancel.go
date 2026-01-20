@@ -184,6 +184,11 @@ func (h IntentCancelHandler) handle(ctx cosmos.Context, msg MsgIntentCancel) err
 		)
 	}
 
+	// Refund any pending solves for this intent
+	if err := h.mgr.IntentMgr().RefundIntentSolves(ctx, intent); err != nil {
+		ctx.Logger().Error("fail to refund intent solves on cancel", "txid", intent.TxID, "error", err)
+	}
+
 	// Update intent status to cancelled
 	intent.Status = IntentCancelled
 	h.mgr.Keeper().SetIntent(ctx, intent)
