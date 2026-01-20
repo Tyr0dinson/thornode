@@ -785,6 +785,11 @@ func (im *IntentMgr) refundExpiredIntent(ctx cosmos.Context, intent Intent) erro
 	return nil
 }
 
+// RefundIntentSolves refunds all solve bids for an intent (public interface method)
+func (im *IntentMgr) RefundIntentSolves(ctx cosmos.Context, intent types.Intent) error {
+	return im.refundIntentSolves(ctx, intent)
+}
+
 // refundIntentSolves refunds all solve bids for an intent when auction starts
 func (im *IntentMgr) refundIntentSolves(ctx cosmos.Context, intent Intent) error {
 	solves, err := im.mgr.Keeper().GetIntentSolvesByIntentID(ctx, intent.TxID)

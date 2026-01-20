@@ -5,6 +5,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 type DummyMgr struct {
@@ -131,5 +132,9 @@ func NewDummyIntentManager() *DummyIntentManager {
 }
 
 func (d *DummyIntentManager) EndBlock(ctx cosmos.Context) error {
+	return nil
+}
+
+func (d *DummyIntentManager) RefundIntentSolves(ctx cosmos.Context, intent types.Intent) error {
 	return nil
 }
