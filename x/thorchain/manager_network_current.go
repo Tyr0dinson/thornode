@@ -2398,6 +2398,70 @@ func (vm *NetworkMgr) calculateNetworkSolvency(ctx cosmos.Context, mgr Manager) 
 		}
 	}
 
+	// Step 7: Subtract L1 assets held for active intents, pending solves, and auction bids
+	// These assets are in vaults but allocated to intents (similar to swap queue items)
+	intentIter := vm.k.GetIntentIterator(ctx)
+	defer intentIter.Close()
+	for ; intentIter.Valid(); intentIter.Next() {
+		var intent types.Intent
+		if err := vm.k.Cdc().Unmarshal(intentIter.Value(), &intent); err != nil {
+			ctx.Logger().Error("fail to unmarshal intent", "error", err)
+			continue
+		}
+
+		// Only count active/auctioning intents - expired/completed/cancelled have been refunded
+		if intent.Status != types.IntentStatus_IntentActive && intent.Status != types.IntentStatus_IntentAuctioning {
+			continue
+		}
+
+		// Subtract source L1 asset (skip trade/secured - they're tracked via supply)
+		coin := intent.Source
+		if !coin.Asset.IsTradeAsset() && !coin.Asset.IsSecuredAsset() {
+			if _, ok := assetAmounts[coin.Asset]; ok {
+				coinAmount := math.NewIntFromBigInt(coin.Amount.BigInt())
+				assetAmounts[coin.Asset] = assetAmounts[coin.Asset].Sub(coinAmount)
+			}
+		}
+
+		// Subtract L1 assets from pending solves for this intent
+		solves, err := vm.k.GetIntentSolvesByIntentID(ctx, intent.TxID)
+		if err != nil {
+			ctx.Logger().Error("fail to get intent solves", "intent", intent.TxID, "error", err)
+			continue
+		}
+		for _, solve := range solves {
+			solveCoin := solve.TargetCoin
+			if !solveCoin.Asset.IsTradeAsset() && !solveCoin.Asset.IsSecuredAsset() {
+				if _, ok := assetAmounts[solveCoin.Asset]; ok {
+					solveAmount := math.NewIntFromBigInt(solveCoin.Amount.BigInt())
+					assetAmounts[solveCoin.Asset] = assetAmounts[solveCoin.Asset].Sub(solveAmount)
+				}
+			}
+		}
+	}
+
+	// Subtract L1 assets from active auction bids
+	activeAuctions, err := vm.k.GetActiveAuctions(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get active auctions: %w", err)
+	}
+	for _, auction := range activeAuctions {
+		bids, err := vm.k.GetIntentAuctionBidsByIntentID(ctx, auction.IntentTxID)
+		if err != nil {
+			ctx.Logger().Error("fail to get auction bids", "intent", auction.IntentTxID, "error", err)
+			continue
+		}
+		for _, bid := range bids {
+			bidCoin := bid.BidAmount
+			if !bidCoin.Asset.IsTradeAsset() && !bidCoin.Asset.IsSecuredAsset() {
+				if _, ok := assetAmounts[bidCoin.Asset]; ok {
+					bidAmount := math.NewIntFromBigInt(bidCoin.Amount.BigInt())
+					assetAmounts[bidCoin.Asset] = assetAmounts[bidCoin.Asset].Sub(bidAmount)
+				}
+			}
+		}
+	}
+
 	// Convert map to slice of assetAmount, returning ALL amounts (positive, negative, and zero)
 	// Use the already-sorted assets list for deterministic ordering
 	result := make([]assetAmount, 0, len(assetAmounts))
