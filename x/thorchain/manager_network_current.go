@@ -2255,7 +2255,7 @@ func (vm *NetworkMgr) calculateNetworkSolvency(ctx cosmos.Context, mgr Manager) 
 	defer poolIterator.Close()
 	for ; poolIterator.Valid(); poolIterator.Next() {
 		var pool Pool
-		if err := mgr.Keeper().Cdc().Unmarshal(poolIterator.Value(), &pool); err != nil {
+		if err = mgr.Keeper().Cdc().Unmarshal(poolIterator.Value(), &pool); err != nil {
 			ctx.Logger().Error("fail to unmarshal pool", "error", err)
 			continue
 		}
@@ -2283,7 +2283,7 @@ func (vm *NetworkMgr) calculateNetworkSolvency(ctx cosmos.Context, mgr Manager) 
 	defer poolIterator2.Close()
 	for ; poolIterator2.Valid(); poolIterator2.Next() {
 		var pool Pool
-		if err := mgr.Keeper().Cdc().Unmarshal(poolIterator2.Value(), &pool); err != nil {
+		if err = mgr.Keeper().Cdc().Unmarshal(poolIterator2.Value(), &pool); err != nil {
 			ctx.Logger().Error("fail to unmarshal pool", "error", err)
 			continue
 		}
@@ -2305,7 +2305,7 @@ func (vm *NetworkMgr) calculateNetworkSolvency(ctx cosmos.Context, mgr Manager) 
 	defer swapQueueIterator.Close()
 	for ; swapQueueIterator.Valid(); swapQueueIterator.Next() {
 		var msg types.MsgSwap
-		if err := vm.k.Cdc().Unmarshal(swapQueueIterator.Value(), &msg); err != nil {
+		if err = vm.k.Cdc().Unmarshal(swapQueueIterator.Value(), &msg); err != nil {
 			ctx.Logger().Error("fail to unmarshal swap queue item", "error", err)
 			continue
 		}
@@ -2357,7 +2357,7 @@ func (vm *NetworkMgr) calculateNetworkSolvency(ctx cosmos.Context, mgr Manager) 
 	defer advSwapQueueIterator.Close()
 	for ; advSwapQueueIterator.Valid(); advSwapQueueIterator.Next() {
 		var msg types.MsgSwap
-		if err := vm.k.Cdc().Unmarshal(advSwapQueueIterator.Value(), &msg); err != nil {
+		if err = vm.k.Cdc().Unmarshal(advSwapQueueIterator.Value(), &msg); err != nil {
 			ctx.Logger().Error("fail to unmarshal adv swap queue item", "error", err)
 			continue
 		}
@@ -2436,7 +2436,8 @@ func (vm *NetworkMgr) calculateNetworkSolvency(ctx cosmos.Context, mgr Manager) 
 		// Check total supply of trade asset (use Depth, not Units, as Depth represents
 		// the actual asset amount owed to trade account holders)
 		tradeAsset := asset.GetTradeAsset()
-		tu, err := mgr.Keeper().GetTradeUnit(ctx, tradeAsset)
+		var tu TradeUnit
+		tu, err = mgr.Keeper().GetTradeUnit(ctx, tradeAsset)
 		if err == nil && tu.Depth.GT(math.ZeroUint()) {
 			tradeAmount := math.NewIntFromBigInt(tu.Depth.BigInt())
 			assetAmounts[asset] = assetAmounts[asset].Sub(tradeAmount)
@@ -2509,16 +2510,18 @@ func (vm *NetworkMgr) calculateNetworkSolvency(ctx cosmos.Context, mgr Manager) 
 
 	// Step 6b: Scan forward for scheduled outbounds (current block + future)
 	maxOffset := vm.k.GetConfigInt64(ctx, constants.MaxTxOutOffset)
+	var txOut *TxOut
 	for i := int64(0); i <= maxOffset; i++ {
 		height := ctx.BlockHeight() + i
-		txOut, err := vm.k.GetTxOut(ctx, height)
+		txOut, err = vm.k.GetTxOut(ctx, height)
 		if err != nil {
 			return nil, fmt.Errorf("fail to get txout for height %d: %w", height, err)
 		}
 		for _, item := range txOut.TxArray {
 			// Skip outbounds from inactive vaults (e.g., pending refunds)
 			// We only subtract outbounds from active vaults since we only added active vault balances
-			vault, err := vm.k.GetVault(ctx, item.VaultPubKey)
+			var vault Vault
+			vault, err = vm.k.GetVault(ctx, item.VaultPubKey)
 			if err != nil {
 				ctx.Logger().Error("fail to get vault for scheduled txout", "pubkey", item.VaultPubKey, "error", err)
 				continue
@@ -2557,7 +2560,7 @@ func (vm *NetworkMgr) calculateNetworkSolvency(ctx cosmos.Context, mgr Manager) 
 	defer intentIter.Close()
 	for ; intentIter.Valid(); intentIter.Next() {
 		var intent types.Intent
-		if err := vm.k.Cdc().Unmarshal(intentIter.Value(), &intent); err != nil {
+		if err = vm.k.Cdc().Unmarshal(intentIter.Value(), &intent); err != nil {
 			ctx.Logger().Error("fail to unmarshal intent", "error", err)
 			continue
 		}
@@ -2577,7 +2580,8 @@ func (vm *NetworkMgr) calculateNetworkSolvency(ctx cosmos.Context, mgr Manager) 
 		}
 
 		// Subtract L1 assets from pending solves for this intent
-		solves, err := vm.k.GetIntentSolvesByIntentID(ctx, intent.TxID)
+		var solves []types.IntentSolve
+		solves, err = vm.k.GetIntentSolvesByIntentID(ctx, intent.TxID)
 		if err != nil {
 			ctx.Logger().Error("fail to get intent solves", "intent", intent.TxID, "error", err)
 			continue
@@ -2594,12 +2598,14 @@ func (vm *NetworkMgr) calculateNetworkSolvency(ctx cosmos.Context, mgr Manager) 
 	}
 
 	// Subtract L1 assets from active auction bids
-	activeAuctions, err := vm.k.GetActiveAuctions(ctx)
+	var activeAuctions []types.IntentAuction
+	activeAuctions, err = vm.k.GetActiveAuctions(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get active auctions: %w", err)
 	}
 	for _, auction := range activeAuctions {
-		bids, err := vm.k.GetIntentAuctionBidsByIntentID(ctx, auction.IntentTxID)
+		var bids []types.IntentAuctionBid
+		bids, err = vm.k.GetIntentAuctionBidsByIntentID(ctx, auction.IntentTxID)
 		if err != nil {
 			ctx.Logger().Error("fail to get auction bids", "intent", auction.IntentTxID, "error", err)
 			continue
