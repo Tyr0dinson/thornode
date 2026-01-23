@@ -277,8 +277,9 @@ func (s *Signer) Start() error {
 }
 
 func (s *Signer) shouldSign(tx types.TxOutItem) bool {
-	// Don't sign outbounds from mempool transactions until the inbound finalizes
-	return tx.InboundFinalized
+	return s.pubkeyMgr.HasPubKey(tx.VaultPubKey) ||
+		s.pubkeyMgr.HasPubKey(tx.VaultPubKeyEddsa) ||
+		s.pubkeyMgr.HasPubKey(tx.VaultPubKeyFrost)
 }
 
 func (s *Signer) shouldAutoObserve(tx types.TxOutItem) bool {
@@ -1275,20 +1276,8 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 		return nil, nil, nil
 	}
 
-	// Check if we have the vault pubkey to sign this transaction
-	canSign := s.pubkeyMgr.HasPubKey(tx.VaultPubKey) ||
-		s.pubkeyMgr.HasPubKey(tx.VaultPubKeyEddsa) ||
-		s.pubkeyMgr.HasPubKey(tx.VaultPubKeyFrost)
-	if !canSign {
-		// We can't sign this transaction - skip it (leave in storage to avoid double-spend risk)
-		s.logger.Info().Str("signer_address", chain.GetAddress(tx.VaultPubKey)).Msg("different pool address, skipping")
-		return nil, nil, nil
-	}
-
-	// Check if we should sign now (inbound must be finalized for mempool swaps)
 	if !s.shouldSign(tx) {
-		// Inbound not finalized yet - keep in storage for retry later
-		s.logger.Debug().Msg("inbound not finalized, skipping for now")
+		s.logger.Info().Str("signer_address", chain.GetAddress(tx.VaultPubKey)).Msg("different pool address, ignore")
 		return nil, nil, nil
 	}
 
@@ -1644,13 +1633,9 @@ func (s *Signer) processTransaction(item TxOutStoreItem) {
 		})
 	}
 
-	// Only remove the item if it was successfully broadcast
-	// If obs is nil and there's no error, it means the item wasn't ready to be signed yet
-	// (e.g., shouldSign returned false), so we keep it in storage to retry later
-	if obs != nil {
-		if err = s.storage.Remove(item); err != nil {
-			s.logger.Error().Err(err).Msg("fail to update tx out store item")
-		}
+	// We have a successful broadcast! Remove the item from our store
+	if err = s.storage.Remove(item); err != nil {
+		s.logger.Error().Err(err).Msg("fail to update tx out store item")
 	}
 }
 

@@ -29,7 +29,6 @@ type TxOutItem struct {
 	Height                int64          `json:"height"`
 	VaultPubKeyEddsa      common.PubKey  `json:"vault_pub_key_eddsa,omitempty"`
 	VaultPubKeyFrost      common.PubKey  `json:"vault_pub_key_frost,omitempty"`
-	InboundFinalized      bool           `json:"inbound_finalized,omitempty"`
 }
 
 // Hash return a sha256 hash that can uniquely represent the TxOutItem
@@ -142,7 +141,6 @@ type TxArrayItem struct {
 	CloutSpent            string         `json:"clout_spent,omitempty"`
 	VaultPubKeyEddsa      common.PubKey  `json:"vault_pub_key_eddsa,omitempty"`
 	VaultPubKeyFrost      common.PubKey  `json:"vault_pub_key_frost,omitempty"`
-	InboundFinalized      bool           `json:"inbound_finalized,omitempty"`
 }
 
 // TxOutItem convert the information to TxOutItem
@@ -164,7 +162,6 @@ func (tx TxArrayItem) TxOutItem(height int64) TxOutItem {
 		Height:                height,
 		VaultPubKeyEddsa:      tx.VaultPubKeyEddsa,
 		VaultPubKeyFrost:      tx.VaultPubKeyFrost,
-		InboundFinalized:      tx.InboundFinalized,
 	}
 }
 
