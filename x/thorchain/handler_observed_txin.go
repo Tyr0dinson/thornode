@@ -114,14 +114,14 @@ func addSwapDirect(ctx cosmos.Context, k keeper.Keeper, msg MsgSwap) error {
 	// Check if swap already exists in queue to prevent duplicates
 	if k.HasSwapQueueItem(ctx, msg.Tx.ID, 0) {
 		ctx.Logger().Debug("swap already exists in queue, skipping duplicate", "txid", msg.Tx.ID)
-		return
+		return nil
 	}
 	// Check if swap already has actions (outbounds) to prevent duplicates from mempool swap finalization.
 	// When a mempool swap is re-observed as finalized, it already has actions and shouldn't be queued again.
 	voter, err := k.GetObservedTxInVoter(ctx, msg.Tx.ID)
 	if err == nil && len(voter.Actions) > 0 {
 		ctx.Logger().Debug("swap already processed (has actions), skipping duplicate", "txid", msg.Tx.ID, "actions", len(voter.Actions))
-		return
+		return nil
 	}
 	// Queue the main swap
 	if err := k.SetSwapQueueItem(ctx, msg, 0); err != nil {

@@ -222,15 +222,7 @@ func (b *MockChainClient) SignTx(tai types.TxOutItem, height int64) ([]byte, []b
 	b.signCount += 1
 	sig, _, err := b.ks.RemoteSign([]byte(tai.Memo), common.SigningAlgoSecp256k1, tai.VaultPubKey.String())
 
-	// Return a non-nil observation when signing succeeds, so the signer can
-	// properly clean up the item from storage after successful broadcast
-	var obs *types.TxInItem
-	if err == nil && len(sig) > 0 {
-		obs = &types.TxInItem{
-			Memo: tai.Memo,
-		}
-	}
-	return sig, []byte(tai.Memo), obs, err
+	return sig, []byte(tai.Memo), nil, err
 }
 
 func (b *MockChainClient) GetConfig() config.BifrostChainConfiguration {
@@ -489,7 +481,6 @@ func (s *SignSuite) TestBroadcastRetry(c *C) {
 			Coins: common.Coins{ // must be set or signer overrides memo
 				common.NewCoin(common.ETHAsset, cosmos.NewUint(1000000)),
 			},
-			InboundFinalized: true,
 		},
 	})
 	c.Assert(err, IsNil)
@@ -573,7 +564,6 @@ func (s *SignSuite) TestRound7Retry(c *C) {
 			Coins: common.Coins{ // must be set or signer overrides memo
 				common.NewCoin(common.ETHAsset, cosmos.NewUint(1000000)),
 			},
-			InboundFinalized: true,
 		},
 	})
 	c.Assert(err, IsNil)
@@ -586,7 +576,6 @@ func (s *SignSuite) TestRound7Retry(c *C) {
 			Coins: common.Coins{ // must be set or signer overrides memo
 				common.NewCoin(common.ETHAsset, cosmos.NewUint(1000000)),
 			},
-			InboundFinalized: true,
 		},
 	})
 	c.Assert(err, IsNil)
@@ -599,13 +588,11 @@ func (s *SignSuite) TestRound7Retry(c *C) {
 			Coins: common.Coins{ // must be set or signer overrides memo
 				common.NewCoin(common.ETHAsset, cosmos.NewUint(1000000)),
 			},
-			InboundFinalized: true,
 		},
 	})
 	c.Assert(err, IsNil)
 
-	// this will be skipped (but not removed) since the vault pubkey is different
-	// to avoid double-spend risk from race conditions
+	// this will be ignored entirely since the vault pubkey is different
 	err = sign.storage.Set(TxOutStoreItem{
 		TxOutItem: types.TxOutItem{
 			Chain:       common.ETHChain,
@@ -615,7 +602,6 @@ func (s *SignSuite) TestRound7Retry(c *C) {
 			Coins: common.Coins{ // must be set or signer overrides memo
 				common.NewCoin(common.ETHAsset, cosmos.NewUint(1000000)),
 			},
-			InboundFinalized: true,
 		},
 	})
 	c.Assert(err, IsNil)
@@ -631,11 +617,10 @@ func (s *SignSuite) TestRound7Retry(c *C) {
 	sign.chains[common.BTCChain] = cc2
 	tois2 := TxOutStoreItem{
 		TxOutItem: types.TxOutItem{
-			Chain:            common.BTCChain,
-			ToAddress:        "tbtc1yycn4mh6ffwpjf584t8lpp7c27ghu03gpvqkfj",
-			VaultPubKey:      vaultPubKey,
-			Memo:             msg2,
-			InboundFinalized: true,
+			Chain:       common.BTCChain,
+			ToAddress:   "tbtc1yycn4mh6ffwpjf584t8lpp7c27ghu03gpvqkfj",
+			VaultPubKey: vaultPubKey,
+			Memo:        msg2,
 			Coins: common.Coins{
 				common.NewCoin(common.BTCAsset, cosmos.NewUint(1000000)),
 			},
@@ -654,18 +639,13 @@ func (s *SignSuite) TestRound7Retry(c *C) {
 	c.Assert(cc2.broadcastCount, Equals, 1)
 	c.Assert(tssServer2.counter, Equals, 1)
 
-	// all eth txs should be remaining (including skipped wrong vault item), one marked round 7
+	// all eth txs should be remaining, first marked round 7
 	tois := sign.storage.List()
-	c.Assert(len(tois), Equals, 4)
-	// count items with Round7Retry=true (should be exactly 1)
-	round7Count := 0
-	for _, toi := range tois {
-		if toi.Round7Retry {
-			round7Count++
-			c.Assert(bytes.Equal(toi.Checkpoint, []byte(msg)), Equals, true)
-		}
-	}
-	c.Assert(round7Count, Equals, 1)
+	c.Assert(len(tois), Equals, 3)
+	c.Assert(tois[0].Round7Retry, Equals, true)
+	c.Assert(bytes.Equal(tois[0].Checkpoint, []byte(msg)), Equals, true)
+	c.Assert(tois[1].Round7Retry, Equals, false)
+	c.Assert(tois[2].Round7Retry, Equals, false)
 
 	// process transactions 3 more times
 	cc.assertCheckpoint = true // the following signs should pass checkpoint
@@ -686,11 +666,9 @@ func (s *SignSuite) TestRound7Retry(c *C) {
 	c.Assert(cc.broadcastCount, Equals, 1)
 	c.Assert(tssServer.counter, Equals, 5)
 	tois = sign.storage.List()
-	c.Assert(len(tois), Equals, 3) // 2 remaining + 1 skipped wrong vault
-	// all remaining items should have Round7Retry=false
-	for _, toi := range tois {
-		c.Assert(toi.Round7Retry, Equals, false)
-	}
+	c.Assert(len(tois), Equals, 2)
+	c.Assert(tois[0].Round7Retry, Equals, false)
+	c.Assert(tois[1].Round7Retry, Equals, false)
 
 	// the next 2 rounds should sign and broadcast the remaining
 
@@ -702,15 +680,15 @@ func (s *SignSuite) TestRound7Retry(c *C) {
 	c.Assert(cc.signCount, Equals, 6)
 	c.Assert(cc.broadcastCount, Equals, 2)
 	c.Assert(tssServer.counter, Equals, 6)
-	c.Assert(len(sign.storage.List()), Equals, 2) // 1 remaining + 1 skipped wrong vault
+	c.Assert(len(sign.storage.List()), Equals, 1)
 
-	// last one (wrong vault item will remain skipped in storage)
+	// last one
 	sign.processTransactions()
 	sign.pipeline.Wait()
 	c.Assert(cc.signCount, Equals, 7)
 	c.Assert(cc.broadcastCount, Equals, 3)
 	c.Assert(tssServer.counter, Equals, 7)
-	c.Assert(len(sign.storage.List()), Equals, 1) // skipped wrong vault item remains
+	c.Assert(len(sign.storage.List()), Equals, 0)
 
 	// nothing more should have happened on btc
 	for i := 0; i < 3; i++ {
@@ -723,69 +701,11 @@ func (s *SignSuite) TestRound7Retry(c *C) {
 	c.Assert(cc2.signCount, Equals, 1)
 	c.Assert(cc2.broadcastCount, Equals, 1)
 	c.Assert(tssServer2.counter, Equals, 1)
-	c.Assert(len(sign.storage.List()), Equals, 1) // skipped wrong vault item remains
+	c.Assert(len(sign.storage.List()), Equals, 0)
 
 	// stop signer
 	close(sign.stopChan)
 	sign.wg.Wait()
 	ks.Stop()
 	ks2.Stop()
-}
-
-func (s *SignSuite) TestShouldSignWithInboundFinalized(c *C) {
-	vaultPubKey, err := common.NewPubKey(pubkeymanager.MockPubkey)
-	c.Assert(err, IsNil)
-
-	// Create a Signer with mock pubkey manager
-	mockPubkeyMgr := pubkeymanager.NewMockPoolAddressValidator()
-
-	sign := &Signer{
-		logger:    log.With().Str("module", "signer").Logger(),
-		pubkeyMgr: mockPubkeyMgr,
-	}
-
-	// Test 1: TxOutItem with InboundFinalized=false should NOT be signed
-	// shouldSign only checks InboundFinalized - vault pubkey is checked separately in signAndBroadcast
-	unfinalizedItem := types.TxOutItem{
-		Chain:            common.BTCChain,
-		ToAddress:        common.Address("bc1qwqdg6squsna38e46795at95yu9atm8azzmyvckulcc7kytlcckxswvvzej"),
-		VaultPubKey:      vaultPubKey,
-		Coins:            common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One))),
-		InboundFinalized: false,
-	}
-
-	shouldSign := sign.shouldSign(unfinalizedItem)
-	c.Check(shouldSign, Equals, false, Commentf("Should NOT sign unfinalized inbound"))
-
-	// Test 2: TxOutItem with InboundFinalized=true should be signed
-	// Note: Vault pubkey matching is now checked separately in signAndBroadcast, not in shouldSign
-	finalizedItem := types.TxOutItem{
-		Chain:            common.BTCChain,
-		ToAddress:        common.Address("bc1qwqdg6squsna38e46795at95yu9atm8azzmyvckulcc7kytlcckxswvvzej"),
-		VaultPubKey:      vaultPubKey,
-		Coins:            common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One))),
-		InboundFinalized: true,
-	}
-
-	shouldSign = sign.shouldSign(finalizedItem)
-	c.Check(shouldSign, Equals, true, Commentf("Should sign finalized inbound"))
-
-	// Test 3: TxOutItem with InboundFinalized=true but wrong vault
-	// shouldSign returns true because it only checks InboundFinalized
-	// The vault pubkey check happens in signAndBroadcast which skips items for wrong vault
-	wrongVaultPubKey, err := common.NewPubKey("tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4")
-	c.Assert(err, IsNil)
-
-	wrongVaultItem := types.TxOutItem{
-		Chain:            common.BTCChain,
-		ToAddress:        common.Address("bc1qwqdg6squsna38e46795at95yu9atm8azzmyvckulcc7kytlcckxswvvzej"),
-		VaultPubKey:      wrongVaultPubKey,
-		Coins:            common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One))),
-		InboundFinalized: true,
-	}
-
-	// shouldSign only checks InboundFinalized, so this returns true
-	// Vault pubkey mismatch is handled by signAndBroadcast skipping the item
-	shouldSign = sign.shouldSign(wrongVaultItem)
-	c.Check(shouldSign, Equals, true, Commentf("shouldSign only checks InboundFinalized, vault check is in signAndBroadcast"))
 }
