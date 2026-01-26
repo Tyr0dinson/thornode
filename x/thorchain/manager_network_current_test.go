@@ -2266,9 +2266,9 @@ func (s *NetworkManagerTestSuite) TestSwapToOverSolvencyIncomeSecuredAsset(c *C)
 	}
 }
 
-func (s *NetworkManagerVCURTestSuite) TestCalculateNetworkSolvencyWithIntents(c *C) {
+func (s *NetworkManagerTestSuite) TestCalculateNetworkSolvencyWithIntents(c *C) {
 	ctx, mgr := setupManagerForTest(c)
-	nmgr := newNetworkMgrVCUR(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())
+	nmgr := newNetworkMgr(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())
 
 	// Setup: Create ETH pool
 	ethPool := NewPool()
