@@ -1031,10 +1031,14 @@ func (im *IntentMgr) completeAuction(ctx cosmos.Context, auction IntentAuction) 
 
 // processWinningBid handles the winning bid - swap to RUNE and add to reserve
 func (im *IntentMgr) processWinningBid(ctx cosmos.Context, bid IntentAuctionBid) error {
-	// If the bid is already in RUNE, it's already in Reserve (sent there when bid was placed)
-	// No additional action needed - just log it
+	// If the bid is already in RUNE, transfer it from Asgard to Reserve
+	// (bids are deposited to Asgard via handler_deposit.go)
 	if bid.BidAmount.Asset.IsRune() {
-		ctx.Logger().Info("winning bid RUNE already in reserve", "amount", bid.BidAmount.Amount)
+		runeCoins := common.NewCoins(common.NewCoin(common.RuneAsset(), bid.BidAmount.Amount))
+		if err := im.mgr.Keeper().SendFromModuleToModule(ctx, AsgardName, ReserveName, runeCoins); err != nil {
+			return fmt.Errorf("fail to transfer winning RUNE bid from asgard to reserve: %w", err)
+		}
+		ctx.Logger().Info("transferred winning RUNE bid to reserve", "amount", bid.BidAmount.Amount)
 		return nil
 	}
 
