@@ -160,6 +160,7 @@ func InitConfig(parallelism int, seed bool, rng *rand.Rand) *OpConfig {
 				{common.BCHChain, 1500, 7},
 				{common.DOGEChain, 1000, 1500000},
 				{common.TONChain, 1, 10_000_000},
+				{common.TRONChain, 1, 1200000},
 			}
 			for _, fee := range defaultFees {
 				log.Info().Msgf("posting %s network fee", fee.chain)
