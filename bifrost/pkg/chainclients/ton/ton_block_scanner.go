@@ -21,7 +21,10 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-const minNetworkFee = 10_000_000
+const (
+	minNetworkFee = 10_000_000
+	extInLookback = 100
+)
 
 type TonBlockScanner struct {
 	config     config.BifrostBlockScannerConfiguration
@@ -311,6 +314,7 @@ func (s *TonBlockScanner) processShard(
 		if skip {
 			s.logger.Debug().
 				Str("hash", hex.EncodeToString(tx.Hash)).
+				Str("shard", shardId(shard)).
 				Uint32("block_height", block.SeqNo).
 				Str("lt", fmt.Sprintf("%d", tx.LT)).
 				Str("account", addr.String()).
@@ -321,6 +325,7 @@ func (s *TonBlockScanner) processShard(
 
 		s.logger.Debug().
 			Str("hash", hex.EncodeToString(tx.Hash)).
+			Str("shard", shardId(shard)).
 			Uint32("block_height", block.SeqNo).
 			Str("lt", fmt.Sprintf("%d", tx.LT)).
 			Str("account", addr.String()).
@@ -404,7 +409,7 @@ func (s *TonBlockScanner) processMessage(
 	// wallet to transfer the funds. In case the message wasn't triggered
 	// externally, use the "deposit" hash
 	var in *tlb.Transaction
-	in, err = s.api.FindLastTransactionByOutMsgHash(s.ctx, src, msg.Body.Hash())
+	in, err = s.findExternalInTx(msg)
 	if err != nil {
 		s.logger.Err(err).Msg("failed to find previous transaction")
 		return txInItem, err
@@ -414,6 +419,7 @@ func (s *TonBlockScanner) processMessage(
 	var fees *big.Int
 
 	if in != nil && in.IO.In != nil && in.IO.In.MsgType == tlb.MsgTypeExternalIn {
+		// if external in msg is found
 		hash = hex.EncodeToString(in.Hash)
 		fees = in.TotalFees.Coins.Nano()
 	} else {
@@ -475,6 +481,71 @@ func (s *TonBlockScanner) processMessage(
 	}
 
 	return txInItem, nil
+}
+
+func (s *TonBlockScanner) findExternalInTx(
+	in *tlb.InternalMessage,
+) (*tlb.Transaction, error) {
+	block, err := s.api.CurrentMasterchainInfo(s.ctx)
+	if err != nil {
+		s.logger.Err(err).Msg("")
+		return nil, err
+	}
+
+	src := in.SrcAddr
+
+	acc, err := s.api.WaitForBlock(block.SeqNo).GetAccount(s.ctx, block, src)
+	if err != nil {
+		s.logger.Err(err).Msg("")
+		return nil, err
+	}
+
+	lt := acc.LastTxLT
+	hash := acc.LastTxHash
+
+	txs, err := s.api.ListTransactions(s.ctx, src, extInLookback, lt, hash)
+	if err != nil {
+		s.logger.Err(err).Msg("no transactions found for " + src.String())
+		return nil, err
+	}
+
+	for i := len(txs) - 1; i >= 0; i-- {
+		tx := txs[i]
+
+		if tx.IO.In == nil || tx.IO.Out == nil {
+			continue
+		}
+
+		if tx.IO.In.MsgType != tlb.MsgTypeExternalIn {
+			continue
+		}
+
+		var msgs []tlb.Message
+		msgs, err = tx.IO.Out.ToSlice()
+		if err != nil {
+			continue
+		}
+
+		// search newest msgs first
+		for _, msg := range msgs {
+			if msg.MsgType != tlb.MsgTypeInternal {
+				continue
+			}
+
+			out := msg.AsInternal()
+
+			if out.CreatedLT == in.CreatedLT &&
+				out.Amount.Equals(in.Amount) &&
+				out.SrcAddr.Equals(in.SrcAddr) &&
+				out.DstAddr.Equals(in.DstAddr) &&
+				out.Comment() == in.Comment() {
+
+				return tx, nil
+			}
+		}
+	}
+
+	return nil, nil
 }
 
 func skipTx(tx *tlb.Transaction) (bool, string) {

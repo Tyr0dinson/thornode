@@ -327,7 +327,7 @@ _test-regression:
 
 # ------------------------------ Simulation Tests ------------------------------
 
-test-simulation: build-mocknet reset-mocknet test-simulation-no-reset
+test-simulation: stop-mocknet build-mocknet run-mocknet test-simulation-no-reset
 
 STAGES ?= all
 CHAINS ?= ""
