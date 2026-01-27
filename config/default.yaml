@@ -45,7 +45,7 @@ bifrost:
     late_observe_timeout: 5m
     non_quorum_timeout: 10h
     min_time_between_attestations: 30s
-    ask_peers: 3
+    ask_peers: 10
     ask_peers_delay: 5s
     max_batch_size: 100
     batch_interval: 2s
@@ -106,6 +106,7 @@ bifrost:
         token_max_gas_multiplier: 0
         aggregator_max_gas_multiplier: 0
         extra_l1_gas_fee: 0
+        reconstruct_liabilities_concurrency: 0
       utxo: &utxo
         block_cache_count: 144
         transaction_batch_size: 500
@@ -150,6 +151,11 @@ bifrost:
         max_healthy_lag: 30m
         transaction_batch_size: 500
         reference_address: ""
+        solana:
+          scan_interval: 15s
+          scan_inactive_vaults: false
+          fee_update_interval: 100
+          fee_sample_slots: 10
 
       # the following defaults must be defined to override with environment
       chain_host: ""
@@ -170,6 +176,7 @@ bifrost:
         token_max_gas_multiplier: 3
         aggregator_max_gas_multiplier: 10
         extra_l1_gas_fee: 0
+        reconstruct_liabilities_concurrency: 8
       block_scanner:
         <<: *default-block-scanner
         max_reorg_rescan_blocks: 96 # 3 epochs
@@ -194,6 +201,7 @@ bifrost:
         aggregator_max_gas_multiplier: 10
         # deteremined as 90th percentile of observed delta across 1 month on 9R nodes
         extra_l1_gas_fee: 700
+        reconstruct_liabilities_concurrency: 8
       block_scanner:
         <<: *default-block-scanner
         gas_cache_blocks: 40
@@ -247,6 +255,7 @@ bifrost:
         aggregator_max_gas_multiplier: 10
         max_gas_tip_percentage: 0
         extra_l1_gas_fee: 0
+        reconstruct_liabilities_concurrency: 8
       block_scanner:
         <<: *default-block-scanner
         max_reorg_rescan_blocks: 0 # avax has guaranteed finality
@@ -277,6 +286,7 @@ bifrost:
         aggregator_max_gas_multiplier: 10
         max_gas_tip_percentage: 0
         extra_l1_gas_fee: 0
+        reconstruct_liabilities_concurrency: 8
       block_scanner:
         <<: *default-block-scanner
         max_reorg_rescan_blocks: 600 # 30m

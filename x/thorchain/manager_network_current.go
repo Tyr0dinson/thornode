@@ -20,8 +20,8 @@ import (
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
-// NetworkMgrVCUR is going to manage the vaults
-type NetworkMgrVCUR struct {
+// NetworkMgr is going to manage the vaults
+type NetworkMgr struct {
 	k          keeper.Keeper
 	txOutStore TxOutStore
 	eventMgr   EventManager
@@ -33,16 +33,16 @@ type assetAmount struct {
 	Amount math.Int
 }
 
-// newNetworkMgrVCUR create a new vault manager
-func newNetworkMgrVCUR(k keeper.Keeper, txOutStore TxOutStore, eventMgr EventManager) *NetworkMgrVCUR {
-	return &NetworkMgrVCUR{
+// newNetworkMgr create a new vault manager
+func newNetworkMgr(k keeper.Keeper, txOutStore TxOutStore, eventMgr EventManager) *NetworkMgr {
+	return &NetworkMgr{
 		k:          k,
 		txOutStore: txOutStore,
 		eventMgr:   eventMgr,
 	}
 }
 
-func (vm *NetworkMgrVCUR) processGenesisSetup(ctx cosmos.Context) error {
+func (vm *NetworkMgr) processGenesisSetup(ctx cosmos.Context) error {
 	if ctx.BlockHeight() != genesisBlockHeight {
 		return nil
 	}
@@ -95,11 +95,11 @@ func (vm *NetworkMgrVCUR) processGenesisSetup(ctx cosmos.Context) error {
 	return nil
 }
 
-func (vm *NetworkMgrVCUR) BeginBlock(ctx cosmos.Context, mgr Manager) error {
+func (vm *NetworkMgr) BeginBlock(ctx cosmos.Context, mgr Manager) error {
 	return vm.spawnDerivedAssets(ctx, mgr)
 }
 
-func (vm *NetworkMgrVCUR) suspendVirtualPool(ctx cosmos.Context, mgr Manager, derivedAsset common.Asset, suspendReasonErr error) {
+func (vm *NetworkMgr) suspendVirtualPool(ctx cosmos.Context, mgr Manager, derivedAsset common.Asset, suspendReasonErr error) {
 	// Ensure that derivedAsset is indeed a derived asset.
 	derivedAsset = derivedAsset.GetDerivedAsset()
 
@@ -135,7 +135,7 @@ func (vm *NetworkMgrVCUR) suspendVirtualPool(ctx cosmos.Context, mgr Manager, de
 
 // GetAvailableAnchorsAndDepths returns anchor assets for available pools and a slice of
 // equivalent length with their pool depths in RUNE.
-func (vm *NetworkMgrVCUR) GetAvailableAnchorsAndDepths(
+func (vm *NetworkMgr) GetAvailableAnchorsAndDepths(
 	ctx cosmos.Context, mgr Manager, asset common.Asset,
 ) ([]common.Asset, []cosmos.Uint) {
 	// gather anchor assets with available pools and their rune depths
@@ -169,7 +169,7 @@ func (vm *NetworkMgrVCUR) GetAvailableAnchorsAndDepths(
 	return availableAnchors, runeDepths
 }
 
-func (vm *NetworkMgrVCUR) CalcAnchor(ctx cosmos.Context, mgr Manager, asset common.Asset) (cosmos.Uint, cosmos.Uint, cosmos.Uint) {
+func (vm *NetworkMgr) CalcAnchor(ctx cosmos.Context, mgr Manager, asset common.Asset) (cosmos.Uint, cosmos.Uint, cosmos.Uint) {
 	availableAnchors, depths := vm.GetAvailableAnchorsAndDepths(ctx, mgr, asset)
 
 	// track slips used and their corresponding depths for weighted mean
@@ -204,7 +204,7 @@ func (vm *NetworkMgrVCUR) CalcAnchor(ctx cosmos.Context, mgr Manager, asset comm
 	return totalRuneDepth, price, weightedMeanSlip
 }
 
-func (vm *NetworkMgrVCUR) spawnDerivedAssets(ctx cosmos.Context, mgr Manager) error {
+func (vm *NetworkMgr) spawnDerivedAssets(ctx cosmos.Context, mgr Manager) error {
 	active, err := mgr.Keeper().GetAsgardVaultsByStatus(ctx, ActiveVault)
 	if err != nil {
 		return err
@@ -256,7 +256,7 @@ func (vm *NetworkMgrVCUR) spawnDerivedAssets(ctx cosmos.Context, mgr Manager) er
 	return nil
 }
 
-func (vm *NetworkMgrVCUR) SpawnDerivedAsset(ctx cosmos.Context, asset common.Asset, mgr Manager) {
+func (vm *NetworkMgr) SpawnDerivedAsset(ctx cosmos.Context, asset common.Asset, mgr Manager) {
 	var err error
 	layer1Asset := asset
 	if layer1Asset.IsDerivedAsset() && !asset.Equals(common.TOR) {
@@ -386,7 +386,7 @@ func (vm *NetworkMgrVCUR) SpawnDerivedAsset(ctx cosmos.Context, asset common.Ass
 	}
 }
 
-func (vm *NetworkMgrVCUR) fetchWeightedMeanSlip(ctx cosmos.Context, asset common.Asset, mgr Manager) (slip int64) {
+func (vm *NetworkMgr) fetchWeightedMeanSlip(ctx cosmos.Context, asset common.Asset, mgr Manager) (slip int64) {
 	slip, err := mgr.Keeper().GetLongRollup(ctx, asset)
 	if err != nil {
 		ctx.Logger().Error("fail to get long rollup", "error", err)
@@ -401,7 +401,7 @@ func (vm *NetworkMgrVCUR) fetchWeightedMeanSlip(ctx cosmos.Context, asset common
 	return slip
 }
 
-func (vm *NetworkMgrVCUR) calculateWeightedMeanSlip(ctx cosmos.Context, asset common.Asset, mgr Manager) int64 {
+func (vm *NetworkMgr) calculateWeightedMeanSlip(ctx cosmos.Context, asset common.Asset, mgr Manager) int64 {
 	dynamicMaxAnchorSlipBlocks := mgr.Keeper().GetConfigInt64(ctx, constants.DynamicMaxAnchorSlipBlocks)
 	availableAnchors, depths := vm.GetAvailableAnchorsAndDepths(ctx, mgr, asset)
 
@@ -454,7 +454,7 @@ func (vm *NetworkMgrVCUR) calculateWeightedMeanSlip(ctx cosmos.Context, asset co
 }
 
 // EndBlock move funds from retiring asgard vaults
-func (vm *NetworkMgrVCUR) EndBlock(ctx cosmos.Context, mgr Manager) error {
+func (vm *NetworkMgr) EndBlock(ctx cosmos.Context, mgr Manager) error {
 	if ctx.BlockHeight() == genesisBlockHeight {
 		return vm.processGenesisSetup(ctx)
 	}
@@ -485,7 +485,7 @@ func (vm *NetworkMgrVCUR) EndBlock(ctx cosmos.Context, mgr Manager) error {
 	return nil
 }
 
-func (vm *NetworkMgrVCUR) migrateFunds(ctx cosmos.Context, mgr Manager) error {
+func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 	migrateInterval := vm.k.GetConfigInt64(ctx, constants.FundMigrationInterval)
 
 	retiring, err := vm.k.GetAsgardVaultsByStatus(ctx, RetiringVault)
@@ -800,7 +800,7 @@ func (vm *NetworkMgrVCUR) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 }
 
 // paySaverYield - takes a pool asset and total rune collected in yield to the pool, then pays out savers their proportion of yield based on its size (relative to dual side LPs) and the SynthYieldBasisPoints
-func (vm *NetworkMgrVCUR) paySaverYield(ctx cosmos.Context, asset common.Asset, runeAmt cosmos.Uint) error {
+func (vm *NetworkMgr) paySaverYield(ctx cosmos.Context, asset common.Asset, runeAmt cosmos.Uint) error {
 	pool, err := vm.k.GetPool(ctx, asset.GetLayer1Asset())
 	if err != nil {
 		return err
@@ -892,7 +892,7 @@ func (vm *NetworkMgrVCUR) paySaverYield(ctx cosmos.Context, asset common.Asset, 
 	return nil
 }
 
-func (vm *NetworkMgrVCUR) POLCycle(ctx cosmos.Context, mgr Manager) error {
+func (vm *NetworkMgr) POLCycle(ctx cosmos.Context, mgr Manager) error {
 	maxDeposit := mgr.Keeper().GetConfigInt64(ctx, constants.POLMaxNetworkDeposit)
 	movement := mgr.Keeper().GetConfigInt64(ctx, constants.POLMaxPoolMovement)
 	target := mgr.Keeper().GetConfigInt64(ctx, constants.POLTargetSynthPerPoolDepth)
@@ -971,7 +971,7 @@ func (vm *NetworkMgrVCUR) POLCycle(ctx cosmos.Context, mgr Manager) error {
 }
 
 // generated a filtered list of pools that the POL is active with
-func (mv *NetworkMgrVCUR) fetchPOLPools(ctx cosmos.Context, mgr Manager) (Pools, []int64) {
+func (mv *NetworkMgr) fetchPOLPools(ctx cosmos.Context, mgr Manager) (Pools, []int64) {
 	var pools Pools
 	mimirVals := make([]int64, 0)
 	iterator := mgr.Keeper().GetPoolIterator(ctx)
@@ -1025,7 +1025,7 @@ func (mv *NetworkMgrVCUR) fetchPOLPools(ctx cosmos.Context, mgr Manager) (Pools,
 	return pools, mimirVals
 }
 
-func (vm *NetworkMgrVCUR) addPOLLiquidity(
+func (vm *NetworkMgr) addPOLLiquidity(
 	ctx cosmos.Context,
 	pool Pool,
 	polAddress, asgardAddress common.Address,
@@ -1098,7 +1098,7 @@ func (vm *NetworkMgrVCUR) addPOLLiquidity(
 	return nil
 }
 
-func (vm *NetworkMgrVCUR) removePOLLiquidity(
+func (vm *NetworkMgr) removePOLLiquidity(
 	ctx cosmos.Context,
 	pool Pool,
 	polAddress, asgardAddress common.Address,
@@ -1192,7 +1192,7 @@ func (vm *NetworkMgrVCUR) removePOLLiquidity(
 }
 
 // TriggerKeygen generate a record to instruct signer kick off keygen process
-func (vm *NetworkMgrVCUR) TriggerKeygen(ctx cosmos.Context, nas NodeAccounts) error {
+func (vm *NetworkMgr) TriggerKeygen(ctx cosmos.Context, nas NodeAccounts) error {
 	halt, err := vm.k.GetMimir(ctx, "HaltChurning")
 	if halt > 0 && halt <= ctx.BlockHeight() && err == nil {
 		ctx.Logger().Info("churn event skipped due to mimir has halted churning")
@@ -1248,7 +1248,7 @@ func (vm *NetworkMgrVCUR) TriggerKeygen(ctx cosmos.Context, nas NodeAccounts) er
 }
 
 // RotateVault update vault to Retiring and new vault to active
-func (vm *NetworkMgrVCUR) RotateVault(ctx cosmos.Context, vault Vault) error {
+func (vm *NetworkMgr) RotateVault(ctx cosmos.Context, vault Vault) error {
 	active, err := vm.k.GetAsgardVaultsByStatus(ctx, ActiveVault)
 	if err != nil {
 		return err
@@ -1297,7 +1297,7 @@ func (vm *NetworkMgrVCUR) RotateVault(ctx cosmos.Context, vault Vault) error {
 	return nil
 }
 
-func (vm *NetworkMgrVCUR) cleanupAsgardIndex(ctx cosmos.Context) error {
+func (vm *NetworkMgr) cleanupAsgardIndex(ctx cosmos.Context) error {
 	asgards, err := vm.k.GetAsgardVaults(ctx)
 	if err != nil {
 		return fmt.Errorf("fail to get all asgards,err: %w", err)
@@ -1318,7 +1318,7 @@ func (vm *NetworkMgrVCUR) cleanupAsgardIndex(ctx cosmos.Context) error {
 	return nil
 }
 
-func (vm *NetworkMgrVCUR) withdrawSavers(ctx cosmos.Context, pool Pool, na NodeAccount, mgr Manager) (done bool, err error) {
+func (vm *NetworkMgr) withdrawSavers(ctx cosmos.Context, pool Pool, na NodeAccount, mgr Manager) (done bool, err error) {
 	handler := NewInternalHandler(mgr)
 	lpPerIteration := mgr.Keeper().GetConfigInt64(ctx, constants.RagnarokProcessNumOfLPPerIteration)
 	totalCount := int64(0)
@@ -1372,7 +1372,7 @@ func (vm *NetworkMgrVCUR) withdrawSavers(ctx cosmos.Context, pool Pool, na NodeA
 	return true, nil
 }
 
-func (vm *NetworkMgrVCUR) withdrawLPs(ctx cosmos.Context, pool Pool, na NodeAccount, mgr Manager) (done bool) {
+func (vm *NetworkMgr) withdrawLPs(ctx cosmos.Context, pool Pool, na NodeAccount, mgr Manager) (done bool) {
 	handler := NewInternalHandler(mgr)
 	lpPerIteration := mgr.Keeper().GetConfigInt64(ctx, constants.RagnarokProcessNumOfLPPerIteration)
 	totalCount := int64(0)
@@ -1435,7 +1435,7 @@ func (vm *NetworkMgrVCUR) withdrawLPs(ctx cosmos.Context, pool Pool, na NodeAcco
 
 // withdrawLiquidity will process a batch of LP per iteration, the batch size is defined by constants.RagnarokProcessNumOfLPPerIteration
 // once the all LP get processed, none-gas pool will be removed , gas pool will be set to Suspended
-func (vm *NetworkMgrVCUR) withdrawLiquidity(ctx cosmos.Context, pool Pool, na NodeAccount, mgr Manager) error {
+func (vm *NetworkMgr) withdrawLiquidity(ctx cosmos.Context, pool Pool, na NodeAccount, mgr Manager) error {
 	if pool.Status == PoolSuspended {
 		ctx.Logger().Info("cannot further withdraw liquidity from a suspended pool", "pool", pool.Asset)
 		return nil
@@ -1542,7 +1542,7 @@ func (vm *NetworkMgrVCUR) withdrawLiquidity(ctx cosmos.Context, pool Pool, na No
 }
 
 // UpdateNetwork Update the network data to reflect changing in this block
-func (vm *NetworkMgrVCUR) UpdateNetwork(ctx cosmos.Context, constAccessor constants.ConstantValues, gasManager GasManager, eventMgr EventManager) error {
+func (vm *NetworkMgr) UpdateNetwork(ctx cosmos.Context, constAccessor constants.ConstantValues, gasManager GasManager, eventMgr EventManager) error {
 	network, err := vm.k.GetNetwork(ctx)
 	if err != nil {
 		return fmt.Errorf("fail to get existing network data: %w", err)
@@ -1728,7 +1728,7 @@ func (vm *NetworkMgrVCUR) UpdateNetwork(ctx cosmos.Context, constAccessor consta
 }
 
 // Pays out Rewards
-func (vm *NetworkMgrVCUR) payPoolRewards(ctx cosmos.Context, poolRewards []cosmos.Uint, pools Pools) error {
+func (vm *NetworkMgr) payPoolRewards(ctx cosmos.Context, poolRewards []cosmos.Uint, pools Pools) error {
 	for i, reward := range poolRewards {
 		if reward.IsZero() {
 			continue
@@ -1746,12 +1746,12 @@ func (vm *NetworkMgrVCUR) payPoolRewards(ctx cosmos.Context, poolRewards []cosmo
 }
 
 // Calculate pool deficit based on the pool's accrued fees compared with total fees.
-func (vm *NetworkMgrVCUR) calcPoolDeficit(lpDeficit, totalFees, poolFees cosmos.Uint) cosmos.Uint {
+func (vm *NetworkMgr) calcPoolDeficit(lpDeficit, totalFees, poolFees cosmos.Uint) cosmos.Uint {
 	return common.GetSafeShare(poolFees, totalFees, lpDeficit)
 }
 
 // Calculate the block rewards that bonders and liquidity providers should receive
-func (vm *NetworkMgrVCUR) calcBlockRewards(
+func (vm *NetworkMgr) calcBlockRewards(
 	ctx cosmos.Context,
 	availablePoolsRune,
 	vaultsLiquidityRune,
@@ -1863,7 +1863,7 @@ func (vm *NetworkMgrVCUR) calcBlockRewards(
 // securityBond: RUNE value bonded by smallest 66% of nodes
 // effectiveBond: total RUNE value bonded, with max per-node at 66th percentile
 // totalRewards: total RUNE rewards to be distributed
-func (vm *NetworkMgrVCUR) getPoolShare(
+func (vm *NetworkMgr) getPoolShare(
 	pooledRune, vaultLiquidity, effectiveSecurityBond, totalEffectiveBond, totalRewards, assetsBps cosmos.Uint, useEffectiveSecurity, useVaultAssets bool,
 ) cosmos.Uint {
 	securing := effectiveSecurityBond
@@ -1911,7 +1911,7 @@ func (vm *NetworkMgrVCUR) getPoolShare(
 
 // checkPoolRagnarok iterate through all the pools to see whether there are pools need to be ragnarok
 // this function will only run in an interval , defined by constants.FundMigrationInterval
-func (vm *NetworkMgrVCUR) checkPoolRagnarok(ctx cosmos.Context, mgr Manager) error {
+func (vm *NetworkMgr) checkPoolRagnarok(ctx cosmos.Context, mgr Manager) error {
 	// check whether pool need to be ragnarok per constants.FundMigrationInterval
 	migrateInterval := vm.k.GetConfigInt64(ctx, constants.FundMigrationInterval)
 	if ctx.BlockHeight()%migrateInterval > 0 {
@@ -1945,7 +1945,7 @@ func (vm *NetworkMgrVCUR) checkPoolRagnarok(ctx cosmos.Context, mgr Manager) err
 
 // canRagnarokGasPool check whether a gas pool can be ragnarok
 // On blockchain that support multiple assets, make sure gas pool doesn't get ragnarok before none-gas asset pool
-func (vm *NetworkMgrVCUR) canRagnarokGasPool(ctx cosmos.Context, c common.Chain, allPools Pools) bool {
+func (vm *NetworkMgr) canRagnarokGasPool(ctx cosmos.Context, c common.Chain, allPools Pools) bool {
 	for _, pool := range allPools {
 		if pool.Status == PoolSuspended {
 			continue
@@ -1960,7 +1960,7 @@ func (vm *NetworkMgrVCUR) canRagnarokGasPool(ctx cosmos.Context, c common.Chain,
 	return true
 }
 
-func (vm *NetworkMgrVCUR) redeemSynthAssetToReserve(ctx cosmos.Context, p Pool) error {
+func (vm *NetworkMgr) redeemSynthAssetToReserve(ctx cosmos.Context, p Pool) error {
 	totalSupply := vm.k.GetTotalSupply(ctx, p.Asset.GetSyntheticAsset())
 	if totalSupply.IsZero() {
 		return nil
@@ -1990,7 +1990,7 @@ func (vm *NetworkMgrVCUR) redeemSynthAssetToReserve(ctx cosmos.Context, p Pool) 
 	return nil
 }
 
-func (vm *NetworkMgrVCUR) ragnarokPool(ctx cosmos.Context, mgr Manager, p Pool) error {
+func (vm *NetworkMgr) ragnarokPool(ctx cosmos.Context, mgr Manager, p Pool) error {
 	if p.Status == PoolSuspended {
 		ctx.Logger().Info("cannot further ragnarok a suspended pool", "pool", p.Asset)
 		return nil
@@ -2016,7 +2016,7 @@ type tcyDistribution struct {
 
 // Distribute the corresponding amount of RUNE on TCYStake based on the amount of $TCY
 // an account has
-func (vm *NetworkMgrVCUR) distributeTCYStake(ctx cosmos.Context, mgr Manager) {
+func (vm *NetworkMgr) distributeTCYStake(ctx cosmos.Context, mgr Manager) {
 	defer func() {
 		if err := vm.claimingSwapRuneToTCY(ctx, mgr); err != nil {
 			ctx.Logger().Error("fail to swap rune -> tcy", "error", err)
@@ -2067,7 +2067,7 @@ func (vm *NetworkMgrVCUR) distributeTCYStake(ctx cosmos.Context, mgr Manager) {
 	}
 }
 
-func (vm *NetworkMgrVCUR) getTCYDistributions(ctx cosmos.Context, mgr Manager, minTCYMultiple int64, claimAccount cosmos.AccAddress) ([]tcyDistribution, math.Uint) {
+func (vm *NetworkMgr) getTCYDistributions(ctx cosmos.Context, mgr Manager, minTCYMultiple int64, claimAccount cosmos.AccAddress) ([]tcyDistribution, math.Uint) {
 	var (
 		tcyDistributions         []tcyDistribution
 		distributableAmountOfTCY = cosmos.ZeroUint()
@@ -2136,7 +2136,7 @@ func (vm *NetworkMgrVCUR) getTCYDistributions(ctx cosmos.Context, mgr Manager, m
 // Get the amount to distribute based on the min rune multiplier, if we don't have funds or they're less than the multiplier
 // we should not distribute the funds until have enough.
 // We will only distribute in multiples, the rest should remain on fund
-func (vm *NetworkMgrVCUR) getTCYStakeAmountToDistribute(tcyStakeAmount cosmos.Uint, minRuneMultiple int64) cosmos.Uint {
+func (vm *NetworkMgr) getTCYStakeAmountToDistribute(tcyStakeAmount cosmos.Uint, minRuneMultiple int64) cosmos.Uint {
 	multiple := cosmos.NewUint(uint64(minRuneMultiple))
 	if multiple.IsZero() || tcyStakeAmount.LT(multiple) {
 		return cosmos.ZeroUint()
@@ -2146,7 +2146,7 @@ func (vm *NetworkMgrVCUR) getTCYStakeAmountToDistribute(tcyStakeAmount cosmos.Ui
 	return tcyStakeAmount.Sub(remainder) // Round down to the nearest multiple
 }
 
-func (vm *NetworkMgrVCUR) claimingSwapRuneToTCY(ctx cosmos.Context, mgr Manager) error {
+func (vm *NetworkMgr) claimingSwapRuneToTCY(ctx cosmos.Context, mgr Manager) error {
 	claimingSwapHalt := vm.k.GetConfigInt64(ctx, constants.TCYClaimingSwapHalt)
 	if claimingSwapHalt > 0 {
 		ctx.Logger().Info("claiming module tcy swap is halted")
@@ -2195,7 +2195,7 @@ func (vm *NetworkMgrVCUR) claimingSwapRuneToTCY(ctx cosmos.Context, mgr Manager)
 
 // calculateNetworkSolvency calculates the aggregate solvency across all active vaults
 // Returns a list of assets with their solvency amounts (positive = over-solvent, negative = under-solvent)
-func (vm *NetworkMgrVCUR) calculateNetworkSolvency(ctx cosmos.Context, mgr Manager) ([]assetAmount, error) {
+func (vm *NetworkMgr) calculateNetworkSolvency(ctx cosmos.Context, mgr Manager) ([]assetAmount, error) {
 	// Get all active vaults (error if any retiring vaults exist)
 	all, err := vm.k.GetAsgardVaults(ctx)
 	if err != nil {
@@ -2224,8 +2224,9 @@ func (vm *NetworkMgrVCUR) calculateNetworkSolvency(ctx cosmos.Context, mgr Manag
 			ctx.Logger().Error("fail to unmarshal pool", "error", err)
 			continue
 		}
-		// Skip non-L1 pools
-		if !pool.Asset.Equals(pool.Asset.GetLayer1Asset()) {
+		// Skip all THORChain native assets (synths, trade, secured, derived, whitelisted)
+		// Vaults only hold external chain assets (BTC, ETH, AVAX, etc.)
+		if pool.Asset.IsNative() {
 			continue
 		}
 		assetAmounts[pool.Asset] = math.ZeroInt()
@@ -2251,8 +2252,9 @@ func (vm *NetworkMgrVCUR) calculateNetworkSolvency(ctx cosmos.Context, mgr Manag
 			ctx.Logger().Error("fail to unmarshal pool", "error", err)
 			continue
 		}
-		// Skip non-L1 pools
-		if !pool.Asset.Equals(pool.Asset.GetLayer1Asset()) {
+		// Skip all THORChain native assets (synths, trade, secured, derived, whitelisted)
+		// Vaults only hold external chain assets (BTC, ETH, AVAX, etc.)
+		if pool.Asset.IsNative() {
 			continue
 		}
 		// Subtract balance asset
@@ -2385,7 +2387,7 @@ func (vm *NetworkMgrVCUR) calculateNetworkSolvency(ctx cosmos.Context, mgr Manag
 }
 
 // processOverSolvency checks for over-solvency periodically and processes it
-func (vm *NetworkMgrVCUR) processOverSolvency(ctx cosmos.Context, mgr Manager) error {
+func (vm *NetworkMgr) processOverSolvency(ctx cosmos.Context, mgr Manager) error {
 	// Check interval configuration first - skip if not configured or invalid
 	overSolvencyInterval := vm.k.GetConfigInt64(ctx, constants.OverSolvencyCheckInterval)
 	if overSolvencyInterval <= 0 {
@@ -2471,7 +2473,7 @@ func (vm *NetworkMgrVCUR) processOverSolvency(ctx cosmos.Context, mgr Manager) e
 }
 
 // createSwapToReserve creates a swap from the over-solvent asset to RUNE and sends to reserve
-func (vm *NetworkMgrVCUR) createSwapToReserve(ctx cosmos.Context, mgr Manager, asset common.Asset, amount math.Uint) error {
+func (vm *NetworkMgr) createSwapToReserve(ctx cosmos.Context, mgr Manager, asset common.Asset, amount math.Uint) error {
 	// Only create over-solvency swaps when advanced swap queue is enabled
 	if !mgr.Keeper().AdvSwapQueueEnabled(ctx) {
 		return nil
@@ -2586,7 +2588,7 @@ func (vm *NetworkMgrVCUR) createSwapToReserve(ctx cosmos.Context, mgr Manager, a
 // SwapToReserveIncome processes any coin as system income by:
 // - For RUNE: transferring directly to reserve
 // - For non-RUNE: creating swap to reserve (fee tracked during swap execution)
-func (vm *NetworkMgrVCUR) SwapToReserveIncome(ctx cosmos.Context, mgr Manager, coin common.Coin) error {
+func (vm *NetworkMgr) SwapToReserveIncome(ctx cosmos.Context, mgr Manager, coin common.Coin) error {
 	if coin.IsEmpty() || coin.Amount.IsZero() {
 		return nil
 	}

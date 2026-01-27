@@ -268,7 +268,7 @@ asserts:
   - .|length == 0
 ---
 ########################################################################################
-# streaming swap to ETH.ETH (2/5 conversion)
+# streaming swap to ETH.ETH (1/4 conversion)
 ########################################################################################
 type: create-blocks
 count: 1
@@ -288,7 +288,7 @@ txs:
       gas:
         - amount: "10000"
           asset: "BTC.BTC"
-      memo: "=:${OUTOUT_ASSET=ETH.ETH}:${DESTINATION={{ addr_eth_fox }}}:38666695/1/5"
+      memo: "=:${OUTOUT_ASSET=ETH.ETH}:${DESTINATION={{ addr_eth_fox }}}:37500000/1/5"
     block_height: 6
     finalise_height: 6
     observed_pub_key: {{ pubkey_dog }}
@@ -307,12 +307,12 @@ asserts:
   - .|length == 2
   - .[0]|.in_hash == "${INBOUND_TXID}"
   - .[0]|.coin.asset == "${OUTPUT_ASSET}"
-  - .[0]|.memo == "OUT:${INBOUND_TXID}"
+  - .[0]|.original_memo == "OUT:${INBOUND_TXID}"
   - .[0]|.coin.amount == "${OUTPUT_AMOUNT=7120218}"
   - .[1]|.in_hash == "${INBOUND_TXID}"
   - .[1]|.coin.asset == "${INPUT_ASSET}"
   - .[1]|.coin.amount == "${REFUND_AMOUNT=4793000}"
-  - .[1]|.memo == "REFUND:${INBOUND_TXID}"
+  - .[1]|.original_memo == "REFUND:${INBOUND_TXID}"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -402,7 +402,7 @@ asserts:
   - .[0]|.in_hash == "${INBOUND_TXID}"
   - .[0]|.coin.asset == "${OUTPUT_ASSET}"
   - .[0]|.coin.amount == "${OUTPUT_AMOUNT=31700047}"
-  - .[0]|.memo == "OUT:${INBOUND_TXID}"
+  - .[0]|.original_memo == "OUT:${INBOUND_TXID}"
 ---
 type: create-blocks
 count: 1
@@ -473,7 +473,7 @@ asserts:
   - .[0]|.in_hash == "${INBOUND_TXID}"
   - .[0]|.coin.asset == "${OUTPUT_ASSET}"
   - .[0]|.coin.amount == "${OUTPUT_AMOUNT=973312}"
-  - .[0]|.memo == "OUT:${INBOUND_TXID}"
+  - .[0]|.original_memo == "OUT:${INBOUND_TXID}"
 ---
 type: create-blocks
 count: 1

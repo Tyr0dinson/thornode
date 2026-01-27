@@ -23,6 +23,9 @@ func InactiveVaultRefunds(rng *rand.Rand) *Actor {
 	a := NewActor("Feature-InactiveVaultRefunds", rng)
 
 	for _, chain := range acommon.SimChains() {
+		if chain.Equals(common.SOLChain) { // skip SOL as inactive vaults default disabled
+			continue
+		}
 		a.Children[NewInactiveVaultRefundActor(chain.GetGasAsset(), rng)] = true
 	}
 

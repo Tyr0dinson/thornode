@@ -5,26 +5,29 @@ import (
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 )
 
-type OracleMgrVCUR struct {
+type OracleMgr struct {
 	keeper keeper.Keeper
 }
 
-// newOracleMgrVCUR creates a new instance of OracleMgrVCUR
-func newOracleMgrVCUR(
+// newOracleMgr creates a new instance of OracleMgr
+func newOracleMgr(
 	keeper keeper.Keeper,
-) *OracleMgrVCUR {
-	return &OracleMgrVCUR{
+) *OracleMgr {
+	return &OracleMgr{
 		keeper: keeper,
 	}
 }
 
-func (om *OracleMgrVCUR) BeginBlock(ctx cosmos.Context) error {
+func (om *OracleMgr) BeginBlock(ctx cosmos.Context) error {
 	iterator := om.keeper.GetPriceIterator(ctx)
 	defer iterator.Close()
 
 	for ; iterator.Valid(); iterator.Next() {
 		var price OraclePrice
-		om.keeper.Cdc().MustUnmarshal(iterator.Value(), &price)
+		if err := om.keeper.Cdc().Unmarshal(iterator.Value(), &price); err != nil {
+			ctx.Logger().Error("failed to unmarshal price", "error", err)
+			continue
+		}
 		om.keeper.DelPrice(ctx, price.Symbol)
 	}
 

@@ -37,7 +37,7 @@ txs:
       from_address: {{ addr_eth_dog }}
       to_address: {{ addr_eth_dog }} # vault-to-vault
       coins:
-        - amount: "1" # dust amount for validation, treated as zero for cancel
+        - amount: "1000" # dust amount for validation, treated as zero for cancel
           asset: "ETH.ETH"
           decimals: 8
       gas:
@@ -96,7 +96,7 @@ txs:
       gas:
         - amount: "21000"
           asset: "ETH.ETH"
-      memo: ""
+      memo: "=:BTC.BTC:bc1qxhmdufsvnuaaaer4ynz88fspdsxq2h9e9cetdj" # inbound swap memo on outbound - should trigger slashing
     block_height: 2
     finalise_height: 2
     observed_pub_key: {{ pubkey_dog }}

@@ -93,8 +93,8 @@ func (c *Client) getUtxoToSpend(pubkey common.PubKey, total btcutil.Amount) ([]b
 				continue
 			}
 
-			// For unconfirmed UTXOs (even self-transactions), check ancestor count
-			// to avoid exceeding the chain's mempool ancestor limit. Set to 0 to disable.
+			// For unconfirmed UTXOs (even self-transactions), check ancestor, descendant, and combined
+			// chain count to avoid exceeding the chain's mempool limits. Set to 0 to disable.
 			if item.Confirmations == 0 && c.cfg.UTXO.MaxMempoolAncestors > 0 {
 				var entry *btcjson.GetMempoolEntryResult
 				entry, err = c.rpc.GetMempoolEntry(item.TxID)
@@ -103,14 +103,15 @@ func (c *Client) getUtxoToSpend(pubkey common.PubKey, total btcutil.Amount) ([]b
 					c.log.Debug().Err(err).Str("txid", item.TxID).Msg("failed to get mempool entry")
 				}
 
-				// GetMempoolEntry's ancestorcount already includes the transaction itself.
-				// So if the limit is 25 and ancestorcount is 25, we've hit the limit.
-				if err == nil && entry.AncestorCount >= c.cfg.UTXO.MaxMempoolAncestors {
+				// Check the combined ancestor and descendant counts to avoid exceeding mempool
+				// limits and receiving "-26: too-long-mempool-chain" errors on broadcast.
+				if err == nil && entry.AncestorCount+entry.DescendantCount >= c.cfg.UTXO.MaxMempoolAncestors {
 					c.log.Warn().
 						Str("txid", item.TxID).
 						Int64("ancestor_count", entry.AncestorCount).
+						Int64("descendant_count", entry.DescendantCount).
 						Int64("max_allowed", c.cfg.UTXO.MaxMempoolAncestors).
-						Msg("skipping UTXO with too many ancestors to avoid mempool chain limit")
+						Msg("skipping UTXO with too many ancestors/descendants to avoid mempool chain limit")
 					continue
 				}
 			}
@@ -444,7 +445,8 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte) (*wire.MsgTx,
 		c.log.Fatal().Msg("unsupported chain")
 	}
 
-	if len(nullDataScripts) == 0 {
+	// For memoless outbounds, allow empty nullDataScripts
+	if len(nullDataScripts) == 0 && len(tx.Memo) != 0 {
 		return nil, nil, fmt.Errorf("no null data scripts generated, memo will not be included in the transaction")
 	}
 
@@ -469,9 +471,16 @@ func (c *Client) buildTx(tx stypes.TxOutItem, sourceScript []byte) (*wire.MsgTx,
 	}
 
 	// Parse the memo to be able to identify Migrate or Consolidate outbounds.
-	memo, err := mem.ParseMemo(common.LatestVersion, tx.Memo)
-	if err != nil {
-		return nil, nil, fmt.Errorf("fail to parse memo: %w", err)
+	// Use GetMemo() which returns OriginalMemo for memoless outbounds
+	memoForParsing := tx.GetMemo()
+	var memo mem.Memo
+	if memoForParsing == "" {
+		memo = mem.NewOutboundMemo(tx.InHash)
+	} else {
+		memo, err = mem.ParseMemo(common.LatestVersion, memoForParsing)
+		if err != nil {
+			return nil, nil, fmt.Errorf("fail to parse memo: %w", err)
+		}
 	}
 
 	// if the total gas spend is more than max gas , then we have to take away some from the amount pay to customer

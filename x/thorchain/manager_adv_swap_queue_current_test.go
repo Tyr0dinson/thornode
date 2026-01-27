@@ -11,12 +11,12 @@ import (
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
-type AdvSwapQueueVCURSuite struct{}
+type AdvSwapQueueSuite struct{}
 
-var _ = Suite(&AdvSwapQueueVCURSuite{})
+var _ = Suite(&AdvSwapQueueSuite{})
 
-func (s AdvSwapQueueVCURSuite) TestGetTodoNum(c *C) {
-	book := newSwapQueueAdvVCUR(keeper.KVStoreDummy{})
+func (s AdvSwapQueueSuite) TestGetTodoNum(c *C) {
+	book := newSwapQueueAdv(keeper.KVStoreDummy{})
 
 	c.Check(book.getTodoNum(50, 10, 100), Equals, int64(25))     // halves it
 	c.Check(book.getTodoNum(11, 10, 100), Equals, int64(10))     // enforces minimum
@@ -27,7 +27,7 @@ func (s AdvSwapQueueVCURSuite) TestGetTodoNum(c *C) {
 	c.Check(book.getTodoNum(200, 10, 100), Equals, int64(100))   // does max 100
 }
 
-func (s AdvSwapQueueVCURSuite) TestScoreMsgs(c *C) {
+func (s AdvSwapQueueSuite) TestScoreMsgs(c *C) {
 	ctx, k := setupKeeperForTest(c)
 
 	pool := NewPool()
@@ -41,7 +41,7 @@ func (s AdvSwapQueueVCURSuite) TestScoreMsgs(c *C) {
 	pool.BalanceAsset = cosmos.NewUint(1000 * common.One)
 	c.Assert(k.SetPool(ctx, pool), IsNil)
 
-	book := newSwapQueueAdvVCUR(k)
+	book := newSwapQueueAdv(k)
 
 	// check that we sort by liquidity ok
 	msgs := []*MsgSwap{
@@ -250,14 +250,14 @@ func (s AdvSwapQueueVCURSuite) TestScoreMsgs(c *C) {
 	c.Check(swaps[10].msg.Tx.Coins[0].Asset.Equals(common.ETHAsset), Equals, true)
 }
 
-func (s AdvSwapQueueVCURSuite) TestMarketOnlyModeRejectsLimitSwaps(c *C) {
+func (s AdvSwapQueueSuite) TestMarketOnlyModeRejectsLimitSwaps(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 
 	// Enable advanced swap queue in market-only mode
 	mgr.Keeper().SetMimir(ctx, "EnableAdvSwapQueue", 2)
 
 	// Create a swap queue manager
-	swapQueue := newSwapQueueAdvVCUR(mgr.Keeper())
+	swapQueue := newSwapQueueAdv(mgr.Keeper())
 
 	// Create a limit swap message
 	sourceAsset := common.BTCAsset
@@ -298,7 +298,7 @@ func (s AdvSwapQueueVCURSuite) TestMarketOnlyModeRejectsLimitSwaps(c *C) {
 	c.Assert(err.Error(), Equals, "limit swaps are not allowed in market-only mode")
 }
 
-func (s AdvSwapQueueVCURSuite) TestNormalModePreservesLimitSwaps(c *C) {
+func (s AdvSwapQueueSuite) TestNormalModePreservesLimitSwaps(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 
 	// Enable advanced swap queue in normal mode
@@ -320,7 +320,7 @@ func (s AdvSwapQueueVCURSuite) TestNormalModePreservesLimitSwaps(c *C) {
 	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
 
 	// Create a swap queue manager
-	swapQueue := newSwapQueueAdvVCUR(mgr.Keeper())
+	swapQueue := newSwapQueueAdv(mgr.Keeper())
 
 	// Create a limit swap message
 	sourceAsset := common.BTCAsset
@@ -369,9 +369,9 @@ func (s AdvSwapQueueVCURSuite) TestNormalModePreservesLimitSwaps(c *C) {
 	c.Check(msg.State.Deposit.Equal(amount), Equals, true)
 }
 
-func (s AdvSwapQueueVCURSuite) TestFetchQueue(c *C) {
+func (s AdvSwapQueueSuite) TestFetchQueue(c *C) {
 	ctx, mgr := setupManagerForTest(c)
-	book := newSwapQueueAdvVCUR(mgr.Keeper())
+	book := newSwapQueueAdv(mgr.Keeper())
 
 	// Enable advanced swap queue to allow limit swaps
 	mgr.Keeper().SetMimir(ctx, "EnableAdvSwapQueue", int64(AdvSwapQueueModeEnabled))
@@ -459,7 +459,7 @@ func (s AdvSwapQueueVCURSuite) TestFetchQueue(c *C) {
 
 	pairs, pools := book.getAssetPairs(ctx)
 
-	items, err := book.FetchQueue(ctx, mgr, pairs, pools, make(tradePairs, 0), 0)
+	items, err := book.FetchQueue(ctx, mgr, pairs, pools, make(tradePairs, 0))
 	c.Assert(err, IsNil)
 
 	// Debug output
@@ -491,10 +491,10 @@ func (s AdvSwapQueueVCURSuite) TestFetchQueue(c *C) {
 	c.Check(items, HasLen, 3, Commentf("%d", len(items))) // Market swap + 2 limit swaps expected (all pairs checked)
 }
 
-func (s AdvSwapQueueVCURSuite) TestgetAssetPairs(c *C) {
+func (s AdvSwapQueueSuite) TestgetAssetPairs(c *C) {
 	ctx, k := setupKeeperForTest(c)
 
-	book := newSwapQueueAdvVCUR(k)
+	book := newSwapQueueAdv(k)
 
 	pool := NewPool()
 	pool.Asset = common.BTCAsset
@@ -507,7 +507,7 @@ func (s AdvSwapQueueVCURSuite) TestgetAssetPairs(c *C) {
 	c.Check(pairs, HasLen, len(pools)*(len(pools)+1))
 }
 
-func (s AdvSwapQueueVCURSuite) TestTradePairsTodo(c *C) {
+func (s AdvSwapQueueSuite) TestTradePairsTodo(c *C) {
 	pairs := tradePairs{
 		{common.RuneAsset(), common.ETHAsset},
 		{common.ETHAsset, common.RuneAsset()},
@@ -544,10 +544,10 @@ func (s AdvSwapQueueVCURSuite) TestTradePairsTodo(c *C) {
 	c.Check(todo[2].Equals(genTradePair(common.ETHAsset, common.BTCAsset)), Equals, true, Commentf("%s", todo[2]))
 }
 
-func (s AdvSwapQueueVCURSuite) TestEndBlock(c *C) {
+func (s AdvSwapQueueSuite) TestEndBlock(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	mgr.txOutStore = NewTxStoreDummy()
-	book := newSwapQueueAdvVCUR(mgr.Keeper())
+	book := newSwapQueueAdv(mgr.Keeper())
 
 	// Set rapid swap max to 2 to enable the rapid swap behavior this test expects
 	mgr.Keeper().SetMimir(ctx, "AdvSwapQueueRapidSwapMax", 2)
@@ -621,7 +621,7 @@ func (s AdvSwapQueueVCURSuite) TestEndBlock(c *C) {
 
 	// Debug: Check what FetchQueue returns
 	pairs, pools := book.getAssetPairs(ctx)
-	queueItems, err := book.FetchQueue(ctx, mgr, pairs, pools, make(tradePairs, 0), 0)
+	queueItems, err := book.FetchQueue(ctx, mgr, pairs, pools, make(tradePairs, 0))
 	c.Assert(err, IsNil)
 	c.Logf("FetchQueue returned %d items", len(queueItems))
 	for i, item := range queueItems {
@@ -666,7 +666,7 @@ func (s AdvSwapQueueVCURSuite) TestEndBlock(c *C) {
 	// the actual implementation of findMatchingTrades logic
 }
 
-func (s AdvSwapQueueVCURSuite) TestGetMaxSwapQuantity(c *C) {
+func (s AdvSwapQueueSuite) TestGetMaxSwapQuantity(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	k := mgr.Keeper()
 
@@ -685,7 +685,7 @@ func (s AdvSwapQueueVCURSuite) TestGetMaxSwapQuantity(c *C) {
 	btcPool.Status = PoolAvailable
 	c.Assert(k.SetPool(ctx, btcPool), IsNil)
 
-	vm := newSwapQueueAdvVCUR(k)
+	vm := newSwapQueueAdv(k)
 
 	// Test 1: Basic swap with min slip configuration
 	k.SetMimir(ctx, "L1SlipMinBps", 100)             // 1% min slip
@@ -802,10 +802,10 @@ func (s AdvSwapQueueVCURSuite) TestGetMaxSwapQuantity(c *C) {
 	c.Assert(quantity, Equals, uint64(1)) // Should return 1 as minimum
 }
 
-func (s AdvSwapQueueVCURSuite) TestIsSwapReady(c *C) {
+func (s AdvSwapQueueSuite) TestIsSwapReady(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	k := mgr.Keeper()
-	vm := newSwapQueueAdvVCUR(k)
+	vm := newSwapQueueAdv(k)
 
 	// Test 1: Basic market swap - should be ready
 	msg := types.MsgSwap{
@@ -920,10 +920,10 @@ func (s AdvSwapQueueVCURSuite) TestIsSwapReady(c *C) {
 	c.Assert(vm.isSwapReady(ctx, msg), Equals, true)
 }
 
-func (s AdvSwapQueueVCURSuite) TestCheckFeelessSwap(c *C) {
+func (s AdvSwapQueueSuite) TestCheckFeelessSwap(c *C) {
 	_, mgr := setupManagerForTest(c)
 	k := mgr.Keeper()
-	vm := newSwapQueueAdvVCUR(k)
+	vm := newSwapQueueAdv(k)
 
 	// Setup test pools
 	ethPool := Pool{
@@ -984,10 +984,10 @@ func (s AdvSwapQueueVCURSuite) TestCheckFeelessSwap(c *C) {
 	c.Assert(result, Equals, false)
 }
 
-func (s AdvSwapQueueVCURSuite) TestCheckWithFeeSwap(c *C) {
+func (s AdvSwapQueueSuite) TestCheckWithFeeSwap(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	k := mgr.Keeper()
-	vm := newSwapQueueAdvVCUR(k)
+	vm := newSwapQueueAdv(k)
 
 	// Set minimal network fee for BTC to reduce outbound fee impact
 	err := k.SaveNetworkFee(ctx, common.BTCChain, NetworkFee{
@@ -1176,10 +1176,10 @@ func (s AdvSwapQueueVCURSuite) TestCheckWithFeeSwap(c *C) {
 	c.Assert(result, Equals, true)
 }
 
-func (s AdvSwapQueueVCURSuite) TestDiscoverLimitSwaps(c *C) {
+func (s AdvSwapQueueSuite) TestDiscoverLimitSwaps(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	k := mgr.Keeper()
-	vm := newSwapQueueAdvVCUR(k)
+	vm := newSwapQueueAdv(k)
 
 	// Setup pools
 	ethPool := NewPool()
@@ -1315,10 +1315,10 @@ func (s AdvSwapQueueVCURSuite) TestDiscoverLimitSwaps(c *C) {
 	c.Assert(len(items), Equals, 0) // Should be empty as fee check fails
 }
 
-func (s AdvSwapQueueVCURSuite) TestIsDone(c *C) {
+func (s AdvSwapQueueSuite) TestIsDone(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	k := mgr.Keeper()
-	vm := newSwapQueueAdvVCUR(k)
+	vm := newSwapQueueAdv(k)
 
 	// Test 1: Market swap - done when count >= quantity
 	msg := types.MsgSwap{
@@ -1371,9 +1371,9 @@ func (s AdvSwapQueueVCURSuite) TestIsDone(c *C) {
 	c.Assert(vm.IsDone(ctx, msg), Equals, true)
 }
 
-func (s AdvSwapQueueVCURSuite) TestRapidSwapMimirIntegration(c *C) {
+func (s AdvSwapQueueSuite) TestRapidSwapMimirIntegration(c *C) {
 	ctx, mgr := setupManagerForTest(c)
-	book := newSwapQueueAdvVCUR(mgr.Keeper())
+	book := newSwapQueueAdv(mgr.Keeper())
 
 	// Create 5 active validators for testing
 	activeNodes := NodeAccounts{
@@ -1393,7 +1393,7 @@ func (s AdvSwapQueueVCURSuite) TestRapidSwapMimirIntegration(c *C) {
 	// Test 1: No votes - should default to 1
 	// Don't set any node mimirs, should get default
 	pairs, pools := book.getAssetPairs(ctx)
-	swaps, err := book.FetchQueue(ctx, mgr, pairs, pools, make(tradePairs, 0), 0)
+	swaps, err := book.FetchQueue(ctx, mgr, pairs, pools, make(tradePairs, 0))
 	c.Assert(err, IsNil)
 	c.Assert(len(swaps), Equals, 0) // No swaps for this test
 
@@ -1445,9 +1445,9 @@ func (s AdvSwapQueueVCURSuite) TestRapidSwapMimirIntegration(c *C) {
 	c.Assert(value, Equals, int64(10)) // Should be 10 (single vote is enough)
 }
 
-func (s AdvSwapQueueVCURSuite) TestRapidSwapMultipleIterations(c *C) {
+func (s AdvSwapQueueSuite) TestRapidSwapMultipleIterations(c *C) {
 	ctx, mgr := setupManagerForTest(c)
-	book := newSwapQueueAdvVCUR(mgr.Keeper())
+	book := newSwapQueueAdv(mgr.Keeper())
 
 	// Setup pools for testing
 	ethPool := NewPool()
@@ -1547,7 +1547,7 @@ func (s AdvSwapQueueVCURSuite) TestRapidSwapMultipleIterations(c *C) {
 
 	// Count swaps before execution
 	pairs, pools := book.getAssetPairs(ctx)
-	swapsBefore, err := book.FetchQueue(ctx, mgr, pairs, pools, make(tradePairs, 0), 0)
+	swapsBefore, err := book.FetchQueue(ctx, mgr, pairs, pools, make(tradePairs, 0))
 	c.Assert(err, IsNil)
 	swapCountBefore := len(swapsBefore)
 
@@ -1555,7 +1555,7 @@ func (s AdvSwapQueueVCURSuite) TestRapidSwapMultipleIterations(c *C) {
 	c.Assert(book.EndBlock(ctx, mgr, false), IsNil)
 
 	// Verify swaps were processed (may be less than initial count due to processing)
-	swapsAfter, err := book.FetchQueue(ctx, mgr, pairs, pools, make(tradePairs, 0), 0)
+	swapsAfter, err := book.FetchQueue(ctx, mgr, pairs, pools, make(tradePairs, 0))
 	c.Assert(err, IsNil)
 	swapCountAfter := len(swapsAfter)
 
@@ -1573,9 +1573,9 @@ func (s AdvSwapQueueVCURSuite) TestRapidSwapMultipleIterations(c *C) {
 	// If test reaches here without panic/error, default behavior works
 }
 
-func (s AdvSwapQueueVCURSuite) TestRapidSwapEarlyExit(c *C) {
+func (s AdvSwapQueueSuite) TestRapidSwapEarlyExit(c *C) {
 	ctx, mgr := setupManagerForTest(c)
-	book := newSwapQueueAdvVCUR(mgr.Keeper())
+	book := newSwapQueueAdv(mgr.Keeper())
 
 	// Setup basic pool for testing
 	ethPool := NewPool()
@@ -1600,7 +1600,7 @@ func (s AdvSwapQueueVCURSuite) TestRapidSwapEarlyExit(c *C) {
 
 	// Test 1: No swaps available - should exit immediately
 	pairs, pools := book.getAssetPairs(ctx)
-	swaps, err := book.FetchQueue(ctx, mgr, pairs, pools, make(tradePairs, 0), 0)
+	swaps, err := book.FetchQueue(ctx, mgr, pairs, pools, make(tradePairs, 0))
 	c.Assert(err, IsNil)
 	c.Assert(len(swaps), Equals, 0) // Confirm no swaps available
 
@@ -1684,7 +1684,7 @@ func (s AdvSwapQueueVCURSuite) TestRapidSwapEarlyExit(c *C) {
 	}
 
 	// Count swaps before execution
-	swapsBefore, err := book.FetchQueue(ctx, mgr, pairs, pools, make(tradePairs, 0), 0)
+	swapsBefore, err := book.FetchQueue(ctx, mgr, pairs, pools, make(tradePairs, 0))
 	c.Assert(err, IsNil)
 	c.Assert(len(swapsBefore), Equals, 3) // Should have 3 swaps
 
@@ -1692,7 +1692,7 @@ func (s AdvSwapQueueVCURSuite) TestRapidSwapEarlyExit(c *C) {
 	c.Assert(book.EndBlock(ctx, mgr, false), IsNil)
 
 	// Verify all swaps were processed
-	swapsAfter, err := book.FetchQueue(ctx, mgr, pairs, pools, make(tradePairs, 0), 0)
+	swapsAfter, err := book.FetchQueue(ctx, mgr, pairs, pools, make(tradePairs, 0))
 	c.Assert(err, IsNil)
 	c.Assert(len(swapsAfter), Equals, 0) // All swaps should be completed/removed
 
@@ -1701,9 +1701,9 @@ func (s AdvSwapQueueVCURSuite) TestRapidSwapEarlyExit(c *C) {
 	// the system exits early rather than continuing unnecessary iterations
 }
 
-func (s AdvSwapQueueVCURSuite) TestRapidSwapTodoListPassing(c *C) {
+func (s AdvSwapQueueSuite) TestRapidSwapTodoListPassing(c *C) {
 	ctx, mgr := setupManagerForTest(c)
-	book := newSwapQueueAdvVCUR(mgr.Keeper())
+	book := newSwapQueueAdv(mgr.Keeper())
 
 	// Setup multiple pools for comprehensive testing
 	ethPool := NewPool()
@@ -1726,7 +1726,7 @@ func (s AdvSwapQueueVCURSuite) TestRapidSwapTodoListPassing(c *C) {
 
 	// Test 1: First iteration with empty todo - should check all pairs
 	emptyTodo := make(tradePairs, 0)
-	swaps1, err := book.FetchQueue(ctx, mgr, pairs, pools, emptyTodo, 0)
+	swaps1, err := book.FetchQueue(ctx, mgr, pairs, pools, emptyTodo)
 	c.Assert(err, IsNil)
 	c.Assert(len(swaps1), Equals, 0) // No swaps yet, but all pairs were checked
 
@@ -1736,7 +1736,7 @@ func (s AdvSwapQueueVCURSuite) TestRapidSwapTodoListPassing(c *C) {
 		genTradePair(common.ETHAsset, common.RuneAsset()),
 		genTradePair(common.RuneAsset(), common.ETHAsset),
 	}
-	swaps2, err := book.FetchQueue(ctx, mgr, pairs, pools, specificTodo, 0)
+	swaps2, err := book.FetchQueue(ctx, mgr, pairs, pools, specificTodo)
 	c.Assert(err, IsNil)
 	c.Assert(len(swaps2), Equals, 0) // Still no swaps, but only specific pairs checked
 
@@ -1794,11 +1794,11 @@ func (s AdvSwapQueueVCURSuite) TestRapidSwapTodoListPassing(c *C) {
 	// Test 5: Verify FetchQueue behavior with different todo configurations
 	// Test with all pairs (first iteration scenario)
 	allPairsTodo := pairs
-	swapsWithAllPairs, err := book.FetchQueue(ctx, mgr, pairs, pools, allPairsTodo, 0)
+	swapsWithAllPairs, err := book.FetchQueue(ctx, mgr, pairs, pools, allPairsTodo)
 	c.Assert(err, IsNil)
 
 	// Test with empty todo (should default to all pairs)
-	swapsWithEmptyTodo, err := book.FetchQueue(ctx, mgr, pairs, pools, emptyTodo, 0)
+	swapsWithEmptyTodo, err := book.FetchQueue(ctx, mgr, pairs, pools, emptyTodo)
 	c.Assert(err, IsNil)
 
 	// Both should return same results when no filtering is applied
@@ -1830,9 +1830,9 @@ func (s AdvSwapQueueVCURSuite) TestRapidSwapTodoListPassing(c *C) {
 	}
 }
 
-func (s AdvSwapQueueVCURSuite) TestRapidSwapIterationCountLogging(c *C) {
+func (s AdvSwapQueueSuite) TestRapidSwapIterationCountLogging(c *C) {
 	ctx, mgr := setupManagerForTest(c)
-	book := newSwapQueueAdvVCUR(mgr.Keeper())
+	book := newSwapQueueAdv(mgr.Keeper())
 
 	// Setup basic pool for testing
 	ethPool := NewPool()
@@ -1960,9 +1960,9 @@ func (s AdvSwapQueueVCURSuite) TestRapidSwapIterationCountLogging(c *C) {
 	// The log verification would require integration testing or log capture mechanisms
 }
 
-func (s AdvSwapQueueVCURSuite) TestRapidSwapWithPoolCycleInteraction(c *C) {
+func (s AdvSwapQueueSuite) TestRapidSwapWithPoolCycleInteraction(c *C) {
 	ctx, mgr := setupManagerForTest(c)
-	book := newSwapQueueAdvVCUR(mgr.Keeper())
+	book := newSwapQueueAdv(mgr.Keeper())
 
 	// Setup basic pool for testing
 	ethPool := NewPool()
@@ -2015,7 +2015,7 @@ func (s AdvSwapQueueVCURSuite) TestRapidSwapWithPoolCycleInteraction(c *C) {
 	ctx = ctx.WithBlockHeight(105)
 
 	pairs, pools := book.getAssetPairs(ctx)
-	swapsBeforeNormal, err := book.FetchQueue(ctx, mgr, pairs, pools, make(tradePairs, 0), 0)
+	swapsBeforeNormal, err := book.FetchQueue(ctx, mgr, pairs, pools, make(tradePairs, 0))
 	c.Assert(err, IsNil)
 	c.Assert(len(swapsBeforeNormal), Equals, 3) // Should find the 3 swaps
 
@@ -2046,7 +2046,7 @@ func (s AdvSwapQueueVCURSuite) TestRapidSwapWithPoolCycleInteraction(c *C) {
 	}
 
 	pairs, pools = book.getAssetPairs(ctx)
-	swapsPoolCycle, err := book.FetchQueue(ctx, mgr, pairs, pools, make(tradePairs, 0), 0)
+	swapsPoolCycle, err := book.FetchQueue(ctx, mgr, pairs, pools, make(tradePairs, 0))
 	c.Assert(err, IsNil)
 	c.Assert(len(swapsPoolCycle), Equals, 0) // Should return no swaps during pool cycle
 
@@ -2057,7 +2057,7 @@ func (s AdvSwapQueueVCURSuite) TestRapidSwapWithPoolCycleInteraction(c *C) {
 	// Move to next block (201, not divisible by 100)
 	ctx = ctx.WithBlockHeight(201)
 
-	swapsAfterPoolCycle, err := book.FetchQueue(ctx, mgr, pairs, pools, make(tradePairs, 0), 0)
+	swapsAfterPoolCycle, err := book.FetchQueue(ctx, mgr, pairs, pools, make(tradePairs, 0))
 	c.Assert(err, IsNil)
 	c.Assert(len(swapsAfterPoolCycle) > 0, Equals, true) // Should have swaps available after pool cycle
 
@@ -2067,13 +2067,13 @@ func (s AdvSwapQueueVCURSuite) TestRapidSwapWithPoolCycleInteraction(c *C) {
 
 	// Test non-pool-cycle block (e.g., 205)
 	ctx = ctx.WithBlockHeight(205)
-	swapsSmallCycle, err := book.FetchQueue(ctx, mgr, pairs, pools, make(tradePairs, 0), 0)
+	swapsSmallCycle, err := book.FetchQueue(ctx, mgr, pairs, pools, make(tradePairs, 0))
 	c.Assert(err, IsNil)
 	c.Assert(len(swapsSmallCycle) > 0, Equals, true) // Should have swaps available on non-pool-cycle block
 
 	// Test pool-cycle block (e.g., 210, divisible by 10)
 	ctx = ctx.WithBlockHeight(210)
-	swapsSmallPoolCycle, err := book.FetchQueue(ctx, mgr, pairs, pools, make(tradePairs, 0), 0)
+	swapsSmallPoolCycle, err := book.FetchQueue(ctx, mgr, pairs, pools, make(tradePairs, 0))
 	c.Assert(err, IsNil)
 	c.Assert(len(swapsSmallPoolCycle), Equals, 0) // Should be blocked
 
@@ -2098,7 +2098,7 @@ func (s AdvSwapQueueVCURSuite) TestRapidSwapWithPoolCycleInteraction(c *C) {
 	mgr.Keeper().SetMimir(ctx, "PoolCycle", 1)
 	ctx = ctx.WithBlockHeight(500) // Any block height
 
-	swapsEveryBlock, err := book.FetchQueue(ctx, mgr, pairs, pools, make(tradePairs, 0), 0)
+	swapsEveryBlock, err := book.FetchQueue(ctx, mgr, pairs, pools, make(tradePairs, 0))
 	c.Assert(err, IsNil)
 	c.Assert(len(swapsEveryBlock), Equals, 0) // Should always be blocked
 
@@ -2106,15 +2106,15 @@ func (s AdvSwapQueueVCURSuite) TestRapidSwapWithPoolCycleInteraction(c *C) {
 	mgr.Keeper().SetMimir(ctx, "PoolCycle", 50)
 	ctx = ctx.WithBlockHeight(501) // 501 % 50 = 1, not pool cycle
 
-	swapsRecovery, err := book.FetchQueue(ctx, mgr, pairs, pools, make(tradePairs, 0), 0)
+	swapsRecovery, err := book.FetchQueue(ctx, mgr, pairs, pools, make(tradePairs, 0))
 	c.Assert(err, IsNil)
 	// Verify system operates normally after pool cycle reset (swaps may or may not be available)
 	_ = swapsRecovery
 }
 
-func (s AdvSwapQueueVCURSuite) TestRapidSwapEndToEndScenarios(c *C) {
+func (s AdvSwapQueueSuite) TestRapidSwapEndToEndScenarios(c *C) {
 	ctx, mgr := setupManagerForTest(c)
-	book := newSwapQueueAdvVCUR(mgr.Keeper())
+	book := newSwapQueueAdv(mgr.Keeper())
 
 	// Setup multiple pools for comprehensive testing
 	ethPool := NewPool()
@@ -2259,7 +2259,7 @@ func (s AdvSwapQueueVCURSuite) TestRapidSwapEndToEndScenarios(c *C) {
 
 	// Count swaps before execution
 	pairs, pools := book.getAssetPairs(ctx)
-	swapsBefore, err := book.FetchQueue(ctx, mgr, pairs, pools, make(tradePairs, 0), 0)
+	swapsBefore, err := book.FetchQueue(ctx, mgr, pairs, pools, make(tradePairs, 0))
 	c.Assert(err, IsNil)
 	initialSwapCount := len(swapsBefore)
 
@@ -2267,7 +2267,7 @@ func (s AdvSwapQueueVCURSuite) TestRapidSwapEndToEndScenarios(c *C) {
 	c.Assert(book.EndBlock(ctx, mgr, false), IsNil)
 
 	// Verify swaps were processed
-	swapsAfter, err := book.FetchQueue(ctx, mgr, pairs, pools, make(tradePairs, 0), 0)
+	swapsAfter, err := book.FetchQueue(ctx, mgr, pairs, pools, make(tradePairs, 0))
 	c.Assert(err, IsNil)
 	finalSwapCount := len(swapsAfter)
 
@@ -2415,9 +2415,9 @@ func (s AdvSwapQueueVCURSuite) TestRapidSwapEndToEndScenarios(c *C) {
 	// This demonstrates end-to-end workflow stability
 }
 
-func (s AdvSwapQueueVCURSuite) TestRapidSwapErrorHandling(c *C) {
+func (s AdvSwapQueueSuite) TestRapidSwapErrorHandling(c *C) {
 	ctx, mgr := setupManagerForTest(c)
-	book := newSwapQueueAdvVCUR(mgr.Keeper())
+	book := newSwapQueueAdv(mgr.Keeper())
 
 	// Setup basic pool for testing
 	ethPool := NewPool()
@@ -2737,9 +2737,9 @@ func (s AdvSwapQueueVCURSuite) TestRapidSwapErrorHandling(c *C) {
 	// This demonstrates that the rapid swap system is resilient to various error conditions
 }
 
-func (s AdvSwapQueueVCURSuite) TestRapidSwapWithExistingSwapLimits(c *C) {
+func (s AdvSwapQueueSuite) TestRapidSwapWithExistingSwapLimits(c *C) {
 	ctx, mgr := setupManagerForTest(c)
-	book := newSwapQueueAdvVCUR(mgr.Keeper())
+	book := newSwapQueueAdv(mgr.Keeper())
 
 	// Setup multiple pools for comprehensive testing
 	ethPool := NewPool()
@@ -2799,7 +2799,7 @@ func (s AdvSwapQueueVCURSuite) TestRapidSwapWithExistingSwapLimits(c *C) {
 	}
 
 	pairs, pools := book.getAssetPairs(ctx)
-	swapsBefore, err := book.FetchQueue(ctx, mgr, pairs, pools, make(tradePairs, 0), 0)
+	swapsBefore, err := book.FetchQueue(ctx, mgr, pairs, pools, make(tradePairs, 0))
 	c.Assert(err, IsNil)
 	c.Assert(len(swapsBefore), Equals, 3) // Confirm we have 3 swaps
 
@@ -2830,14 +2830,14 @@ func (s AdvSwapQueueVCURSuite) TestRapidSwapWithExistingSwapLimits(c *C) {
 		c.Assert(mgr.Keeper().SetAdvSwapQueueItem(ctx, *swap), IsNil)
 	}
 
-	swapsBeforeMax, err := book.FetchQueue(ctx, mgr, pairs, pools, make(tradePairs, 0), 0)
+	swapsBeforeMax, err := book.FetchQueue(ctx, mgr, pairs, pools, make(tradePairs, 0))
 	c.Assert(err, IsNil)
 	initialCount := len(swapsBeforeMax)
 
 	// Execute rapid swaps - should respect MaxSwapsPerBlock per iteration
 	c.Assert(book.EndBlock(ctx, mgr, false), IsNil)
 
-	swapsAfterMax, err := book.FetchQueue(ctx, mgr, pairs, pools, make(tradePairs, 0), 0)
+	swapsAfterMax, err := book.FetchQueue(ctx, mgr, pairs, pools, make(tradePairs, 0))
 	c.Assert(err, IsNil)
 	finalCount := len(swapsAfterMax)
 
@@ -3043,7 +3043,7 @@ func (s AdvSwapQueueVCURSuite) TestRapidSwapWithExistingSwapLimits(c *C) {
 		c.Assert(mgr.Keeper().SetAdvSwapQueueItem(ctx, *swap), IsNil)
 	}
 
-	swapsBeforeIterations, err := book.FetchQueue(ctx, mgr, pairs, pools, make(tradePairs, 0), 0)
+	swapsBeforeIterations, err := book.FetchQueue(ctx, mgr, pairs, pools, make(tradePairs, 0))
 	c.Assert(err, IsNil)
 	beforeIterationsCount := len(swapsBeforeIterations)
 
@@ -3051,7 +3051,7 @@ func (s AdvSwapQueueVCURSuite) TestRapidSwapWithExistingSwapLimits(c *C) {
 	// With 4 iterations and MaxSwapsPerBlock=4, could process up to 16 swaps total
 	c.Assert(book.EndBlock(ctx, mgr, false), IsNil)
 
-	swapsAfterIterations, err := book.FetchQueue(ctx, mgr, pairs, pools, make(tradePairs, 0), 0)
+	swapsAfterIterations, err := book.FetchQueue(ctx, mgr, pairs, pools, make(tradePairs, 0))
 	c.Assert(err, IsNil)
 	afterIterationsCount := len(swapsAfterIterations)
 
@@ -3135,10 +3135,10 @@ func (s AdvSwapQueueVCURSuite) TestRapidSwapWithExistingSwapLimits(c *C) {
 	// All EndBlock calls should complete without errors, demonstrating proper integration
 }
 
-func (s AdvSwapQueueVCURSuite) TestProcessExpiredLimitSwaps(c *C) {
+func (s AdvSwapQueueSuite) TestProcessExpiredLimitSwaps(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	k := mgr.Keeper()
-	vm := newSwapQueueAdvVCUR(k)
+	vm := newSwapQueueAdv(k)
 
 	// Set TTL to 100 blocks
 	maxAge := int64(100)
@@ -3227,10 +3227,10 @@ func (s AdvSwapQueueVCURSuite) TestProcessExpiredLimitSwaps(c *C) {
 	c.Assert(activeTTL[0].Equals(txID2), Equals, true)
 }
 
-func (s AdvSwapQueueVCURSuite) TestProcessExpiredLimitSwapsNoExpired(c *C) {
+func (s AdvSwapQueueSuite) TestProcessExpiredLimitSwapsNoExpired(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	k := mgr.Keeper()
-	vm := newSwapQueueAdvVCUR(k)
+	vm := newSwapQueueAdv(k)
 
 	// Set TTL to 100 blocks
 	maxAge := int64(100)
@@ -3279,10 +3279,10 @@ func (s AdvSwapQueueVCURSuite) TestProcessExpiredLimitSwapsNoExpired(c *C) {
 	c.Assert(ttlEntries[0].Equals(txID), Equals, true)
 }
 
-func (s AdvSwapQueueVCURSuite) TestProcessExpiredLimitSwapsMultipleAtSameHeight(c *C) {
+func (s AdvSwapQueueSuite) TestProcessExpiredLimitSwapsMultipleAtSameHeight(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	k := mgr.Keeper()
-	vm := newSwapQueueAdvVCUR(k)
+	vm := newSwapQueueAdv(k)
 
 	// Set TTL to 50 blocks
 	maxAge := int64(50)
@@ -3349,10 +3349,10 @@ func (s AdvSwapQueueVCURSuite) TestProcessExpiredLimitSwapsMultipleAtSameHeight(
 	c.Assert(len(ttlEntries), Equals, 0)
 }
 
-func (s AdvSwapQueueVCURSuite) TestProcessExpiredLimitSwapsHandlesMissingSwap(c *C) {
+func (s AdvSwapQueueSuite) TestProcessExpiredLimitSwapsHandlesMissingSwap(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	k := mgr.Keeper()
-	vm := newSwapQueueAdvVCUR(k)
+	vm := newSwapQueueAdv(k)
 
 	currentBlockHeight := int64(200)
 	ctx = ctx.WithBlockHeight(currentBlockHeight)
@@ -3373,10 +3373,10 @@ func (s AdvSwapQueueVCURSuite) TestProcessExpiredLimitSwapsHandlesMissingSwap(c 
 	c.Assert(len(ttlEntries), Equals, 0)
 }
 
-func (s AdvSwapQueueVCURSuite) TestProcessExpiredLimitSwapsWithMixedSwapTypes(c *C) {
+func (s AdvSwapQueueSuite) TestProcessExpiredLimitSwapsWithMixedSwapTypes(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	k := mgr.Keeper()
-	vm := newSwapQueueAdvVCUR(k)
+	vm := newSwapQueueAdv(k)
 
 	// Set TTL to 50 blocks
 	maxAge := int64(50)
@@ -3441,7 +3441,7 @@ func (s AdvSwapQueueVCURSuite) TestProcessExpiredLimitSwapsWithMixedSwapTypes(c 
 	c.Assert(retrievedMarketSwap.Tx.ID.Equals(txID2), Equals, true)
 }
 
-func (s AdvSwapQueueVCURSuite) TestAddSwapQueueItemWithCustomTTL(c *C) {
+func (s AdvSwapQueueSuite) TestAddSwapQueueItemWithCustomTTL(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	k := mgr.Keeper()
 
@@ -3467,7 +3467,7 @@ func (s AdvSwapQueueVCURSuite) TestAddSwapQueueItemWithCustomTTL(c *C) {
 	pool.Status = PoolAvailable
 	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
 
-	swapQueue := newSwapQueueAdvVCUR(mgr.Keeper())
+	swapQueue := newSwapQueueAdv(mgr.Keeper())
 
 	// Test 1: Custom TTL within limits (500 blocks)
 	customTTL := uint64(500)
@@ -3604,8 +3604,8 @@ func (s AdvSwapQueueVCURSuite) TestAddSwapQueueItemWithCustomTTL(c *C) {
 }
 
 // TestTelemConversion tests the telem helper function for cosmos.Uint to float32 conversion
-func (s AdvSwapQueueVCURSuite) TestTelemConversion(c *C) {
-	swapQueue := newSwapQueueAdvVCUR(keeper.KVStoreDummy{})
+func (s AdvSwapQueueSuite) TestTelemConversion(c *C) {
+	swapQueue := newSwapQueueAdv(keeper.KVStoreDummy{})
 
 	// Test zero value
 	result := swapQueue.telem(cosmos.ZeroUint())
@@ -3638,7 +3638,7 @@ func (s AdvSwapQueueVCURSuite) TestTelemConversion(c *C) {
 }
 
 // TestSwapTypeCountingAccuracy tests that market vs limit swap classification is 100% accurate
-func (s AdvSwapQueueVCURSuite) TestSwapTypeCountingAccuracy(c *C) {
+func (s AdvSwapQueueSuite) TestSwapTypeCountingAccuracy(c *C) {
 	ctx, k := setupKeeperForTest(c)
 
 	// Set up pools for testing
@@ -3787,7 +3787,7 @@ func (s AdvSwapQueueVCURSuite) TestSwapTypeCountingAccuracy(c *C) {
 }
 
 // TestQueueDepthTelemetryAccuracy tests queue depth calculation and value computation
-func (s AdvSwapQueueVCURSuite) TestQueueDepthTelemetryAccuracy(c *C) {
+func (s AdvSwapQueueSuite) TestQueueDepthTelemetryAccuracy(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	mgr := NewDummyMgrWithKeeper(k)
 
@@ -3807,7 +3807,7 @@ func (s AdvSwapQueueVCURSuite) TestQueueDepthTelemetryAccuracy(c *C) {
 	// Mock RUNE price for USD conversion ($5 per RUNE)
 	k.SetMimir(ctx, "DollarsPerRune", 500000000) // $5.00 in base units
 
-	swapQueue := newSwapQueueAdvVCUR(k)
+	swapQueue := newSwapQueueAdv(k)
 
 	// Create limit swaps with known deposit amounts
 	limitSwap1 := NewMsgSwap(
@@ -3857,11 +3857,11 @@ func (s AdvSwapQueueVCURSuite) TestQueueDepthTelemetryAccuracy(c *C) {
 }
 
 // TestTelemetryEdgeCases tests edge cases and error handling
-func (s AdvSwapQueueVCURSuite) TestTelemetryEdgeCases(c *C) {
+func (s AdvSwapQueueSuite) TestTelemetryEdgeCases(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	mgr := NewDummyMgrWithKeeper(k)
 
-	swapQueue := newSwapQueueAdvVCUR(k)
+	swapQueue := newSwapQueueAdv(k)
 
 	// Test with empty queues (no swaps)
 	emptyTelemetryValues := []int64{0, 0, 0, 0, 0} // iterationCount, totalSwapsProcessed, marketSwapCount, limitSwapCount, completedSwapCount
@@ -3894,7 +3894,7 @@ func (s AdvSwapQueueVCURSuite) TestTelemetryEdgeCases(c *C) {
 }
 
 // TestEmitAdvSwapQueueTelemetryIntegration tests the integration between EndBlock and telemetry
-func (s AdvSwapQueueVCURSuite) TestEmitAdvSwapQueueTelemetryIntegration(c *C) {
+func (s AdvSwapQueueSuite) TestEmitAdvSwapQueueTelemetryIntegration(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	mgr := NewDummyMgrWithKeeper(k)
 
@@ -3918,7 +3918,7 @@ func (s AdvSwapQueueVCURSuite) TestEmitAdvSwapQueueTelemetryIntegration(c *C) {
 	k.SetMimir(ctx, "EnableAdvSwapQueue", 1)
 	k.SetMimir(ctx, "AdvSwapQueueRapidSwapMax", 2)
 
-	swapQueue := newSwapQueueAdvVCUR(k)
+	swapQueue := newSwapQueueAdv(k)
 
 	// Create and add test swaps
 	marketSwap := NewMsgSwap(
@@ -3988,7 +3988,7 @@ func (s AdvSwapQueueVCURSuite) TestEmitAdvSwapQueueTelemetryIntegration(c *C) {
 }
 
 // TestTradingPairLabelingAccuracy tests that trading pair labels are set correctly
-func (s AdvSwapQueueVCURSuite) TestTradingPairLabelingAccuracy(c *C) {
+func (s AdvSwapQueueSuite) TestTradingPairLabelingAccuracy(c *C) {
 	ctx, k := setupKeeperForTest(c)
 
 	// Set up pools for different asset types
@@ -4004,7 +4004,7 @@ func (s AdvSwapQueueVCURSuite) TestTradingPairLabelingAccuracy(c *C) {
 	ethPool.BalanceAsset = cosmos.NewUint(1000 * common.One)
 	c.Assert(k.SetPool(ctx, ethPool), IsNil)
 
-	swapQueue := newSwapQueueAdvVCUR(k)
+	swapQueue := newSwapQueueAdv(k)
 
 	// Test getAssetPairs functionality
 	pairs, pools := swapQueue.getAssetPairs(ctx)
@@ -4044,930 +4044,12 @@ func (s AdvSwapQueueVCURSuite) TestTradingPairLabelingAccuracy(c *C) {
 	c.Check(found_rune_btc, Equals, true, Commentf("Should find RUNE->BTC trading pair"))
 }
 
-// TestIsOppositeDirectionBasic tests the isOppositeDirection method with basic BTC<->ETH swaps
-func (s AdvSwapQueueVCURSuite) TestIsOppositeDirectionBasic(c *C) {
-	// Create swap queue manager
-	_, mgr := setupManagerForTest(c)
-	book := newSwapQueueAdvVCUR(mgr.Keeper())
-
-	// Create swap 1: BTC.BTC -> ETH.ETH
-	tx1 := GetRandomTx()
-	tx1.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One)))
-	swap1 := NewMsgSwap(
-		tx1,
-		common.ETHAsset, // target
-		GetRandomETHAddress(),
-		cosmos.ZeroUint(),
-		common.NoAddress,
-		cosmos.ZeroUint(),
-		"", "", nil,
-		types.SwapType_market,
-		0, 0,
-		types.SwapVersion_v1,
-		GetRandomBech32Addr(),
-	)
-
-	// Create swap 2: ETH.ETH -> BTC.BTC (opposite direction)
-	tx2 := GetRandomTx()
-	tx2.Coins = common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1*common.One)))
-	swap2 := NewMsgSwap(
-		tx2,
-		common.BTCAsset, // target
-		GetRandomBTCAddress(),
-		cosmos.ZeroUint(),
-		common.NoAddress,
-		cosmos.ZeroUint(),
-		"", "", nil,
-		types.SwapType_market,
-		0, 0,
-		types.SwapVersion_v1,
-		GetRandomBech32Addr(),
-	)
-
-	// Test that BTC->ETH and ETH->BTC are opposite directions
-	result := book.isOppositeDirection(*swap1, *swap2)
-	c.Assert(result, Equals, true)
-
-	// Test reverse order (should also be true)
-	resultReverse := book.isOppositeDirection(*swap2, *swap1)
-	c.Assert(resultReverse, Equals, true)
-}
-
-// TestIsOppositeDirectionLayer1VsSecured tests layer1 assets vs secured assets (with dashes)
-func (s AdvSwapQueueVCURSuite) TestIsOppositeDirectionLayer1VsSecured(c *C) {
-	_, mgr := setupManagerForTest(c)
-	book := newSwapQueueAdvVCUR(mgr.Keeper())
-
-	// Create secured assets using dashes (these should normalize to layer1)
-	ethSecured, err := common.NewAsset("ETH~ETH")
-	c.Assert(err, IsNil)
-	btcSecured, err := common.NewAsset("BTC~BTC")
-	c.Assert(err, IsNil)
-
-	// Create swap 1: BTC.BTC -> ETH.ETH (layer1 assets)
-	tx1 := GetRandomTx()
-	tx1.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One)))
-	swap1 := NewMsgSwap(
-		tx1,
-		common.ETHAsset,
-		GetRandomETHAddress(),
-		cosmos.ZeroUint(),
-		common.NoAddress,
-		cosmos.ZeroUint(),
-		"", "", nil,
-		types.SwapType_market,
-		0, 0,
-		types.SwapVersion_v1,
-		GetRandomBech32Addr(),
-	)
-
-	// Create swap 2: ETH~ETH -> BTC~BTC (secured assets)
-	tx2 := GetRandomTx()
-	tx2.Coins = common.NewCoins(common.NewCoin(ethSecured, cosmos.NewUint(1*common.One)))
-	swap2 := NewMsgSwap(
-		tx2,
-		btcSecured,
-		GetRandomBTCAddress(),
-		cosmos.ZeroUint(),
-		common.NoAddress,
-		cosmos.ZeroUint(),
-		"", "", nil,
-		types.SwapType_market,
-		0, 0,
-		types.SwapVersion_v1,
-		GetRandomBech32Addr(),
-	)
-
-	// Should be opposite directions (layer1 vs secured should normalize)
-	result := book.isOppositeDirection(*swap1, *swap2)
-	c.Assert(result, Equals, true)
-
-	// Test reverse order
-	resultReverse := book.isOppositeDirection(*swap2, *swap1)
-	c.Assert(resultReverse, Equals, true)
-}
-
-// TestIsOppositeDirectionLayer1VsTrade tests layer1 assets vs trade assets (with slashes)
-func (s AdvSwapQueueVCURSuite) TestIsOppositeDirectionLayer1VsTrade(c *C) {
-	_, mgr := setupManagerForTest(c)
-	book := newSwapQueueAdvVCUR(mgr.Keeper())
-
-	// Create trade assets using slashes (these should normalize to layer1)
-	ethTrade, err := common.NewAsset("ETH/ETH")
-	c.Assert(err, IsNil)
-	btcTrade, err := common.NewAsset("BTC/BTC")
-	c.Assert(err, IsNil)
-
-	// Create swap 1: BTC.BTC -> ETH.ETH (layer1 assets)
-	tx1 := GetRandomTx()
-	tx1.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One)))
-	swap1 := NewMsgSwap(
-		tx1,
-		common.ETHAsset,
-		GetRandomETHAddress(),
-		cosmos.ZeroUint(),
-		common.NoAddress,
-		cosmos.ZeroUint(),
-		"", "", nil,
-		types.SwapType_market,
-		0, 0,
-		types.SwapVersion_v1,
-		GetRandomBech32Addr(),
-	)
-
-	// Create swap 2: ETH/ETH -> BTC/BTC (trade assets)
-	tx2 := GetRandomTx()
-	tx2.Coins = common.NewCoins(common.NewCoin(ethTrade, cosmos.NewUint(1*common.One)))
-	swap2 := NewMsgSwap(
-		tx2,
-		btcTrade,
-		GetRandomBTCAddress(),
-		cosmos.ZeroUint(),
-		common.NoAddress,
-		cosmos.ZeroUint(),
-		"", "", nil,
-		types.SwapType_market,
-		0, 0,
-		types.SwapVersion_v1,
-		GetRandomBech32Addr(),
-	)
-
-	// Should be opposite directions (layer1 vs trade should normalize)
-	result := book.isOppositeDirection(*swap1, *swap2)
-	c.Assert(result, Equals, true)
-
-	// Test reverse order
-	resultReverse := book.isOppositeDirection(*swap2, *swap1)
-	c.Assert(resultReverse, Equals, true)
-}
-
-// TestIsOppositeDirectionSameDirection tests swaps in the same direction (should return false)
-func (s AdvSwapQueueVCURSuite) TestIsOppositeDirectionSameDirection(c *C) {
-	_, mgr := setupManagerForTest(c)
-	book := newSwapQueueAdvVCUR(mgr.Keeper())
-
-	// Create swap 1: BTC.BTC -> ETH.ETH
-	tx1 := GetRandomTx()
-	tx1.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One)))
-	swap1 := NewMsgSwap(
-		tx1,
-		common.ETHAsset,
-		GetRandomETHAddress(),
-		cosmos.ZeroUint(),
-		common.NoAddress,
-		cosmos.ZeroUint(),
-		"", "", nil,
-		types.SwapType_market,
-		0, 0,
-		types.SwapVersion_v1,
-		GetRandomBech32Addr(),
-	)
-
-	// Create swap 2: BTC.BTC -> ETH.ETH (same direction)
-	tx2 := GetRandomTx()
-	tx2.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One)))
-	swap2 := NewMsgSwap(
-		tx2,
-		common.ETHAsset,
-		GetRandomETHAddress(),
-		cosmos.ZeroUint(),
-		common.NoAddress,
-		cosmos.ZeroUint(),
-		"", "", nil,
-		types.SwapType_market,
-		0, 0,
-		types.SwapVersion_v1,
-		GetRandomBech32Addr(),
-	)
-
-	// Should NOT be opposite directions (same direction)
-	result := book.isOppositeDirection(*swap1, *swap2)
-	c.Assert(result, Equals, false)
-}
-
-// TestIsOppositeDirectionEmptyCoins tests edge case with empty coins
-func (s AdvSwapQueueVCURSuite) TestIsOppositeDirectionEmptyCoins(c *C) {
-	_, mgr := setupManagerForTest(c)
-	book := newSwapQueueAdvVCUR(mgr.Keeper())
-
-	// Create swap with empty coins by directly creating the MsgSwap struct
-	tx1 := GetRandomTx()
-	tx1.Coins = common.NewCoins() // Empty coins
-	swap1 := &MsgSwap{
-		Tx:                   tx1,
-		TargetAsset:          common.ETHAsset,
-		Destination:          GetRandomETHAddress(),
-		TradeTarget:          cosmos.ZeroUint(),
-		AffiliateAddress:     common.NoAddress,
-		AffiliateBasisPoints: cosmos.ZeroUint(),
-		SwapType:             types.SwapType_market,
-		Signer:               GetRandomBech32Addr(),
-	}
-
-	// Create normal swap
-	tx2 := GetRandomTx()
-	tx2.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One)))
-	swap2 := NewMsgSwap(
-		tx2,
-		common.ETHAsset,
-		GetRandomBTCAddress(),
-		cosmos.ZeroUint(),
-		common.NoAddress,
-		cosmos.ZeroUint(),
-		"", "", nil,
-		types.SwapType_market,
-		0, 0,
-		types.SwapVersion_v1,
-		GetRandomBech32Addr(),
-	)
-
-	// Should return false for empty coins
-	result := book.isOppositeDirection(*swap1, *swap2)
-	c.Assert(result, Equals, false)
-
-	result2 := book.isOppositeDirection(*swap2, *swap1)
-	c.Assert(result2, Equals, false)
-}
-
-// TestIsOppositeDirectionWithRune tests swaps involving RUNE
-func (s AdvSwapQueueVCURSuite) TestIsOppositeDirectionWithRune(c *C) {
-	_, mgr := setupManagerForTest(c)
-	book := newSwapQueueAdvVCUR(mgr.Keeper())
-
-	// Create swap 1: RUNE -> BTC.BTC
-	tx1 := GetRandomTx()
-	tx1.Coins = common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(1*common.One)))
-	swap1 := NewMsgSwap(
-		tx1,
-		common.BTCAsset,
-		GetRandomBTCAddress(),
-		cosmos.ZeroUint(),
-		common.NoAddress,
-		cosmos.ZeroUint(),
-		"", "", nil,
-		types.SwapType_market,
-		0, 0,
-		types.SwapVersion_v1,
-		GetRandomBech32Addr(),
-	)
-
-	// Create swap 2: BTC.BTC -> RUNE (opposite direction)
-	tx2 := GetRandomTx()
-	tx2.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One)))
-	swap2 := NewMsgSwap(
-		tx2,
-		common.RuneAsset(),
-		GetRandomTHORAddress(),
-		cosmos.ZeroUint(),
-		common.NoAddress,
-		cosmos.ZeroUint(),
-		"", "", nil,
-		types.SwapType_market,
-		0, 0,
-		types.SwapVersion_v1,
-		GetRandomBech32Addr(),
-	)
-
-	// Should be opposite directions
-	result := book.isOppositeDirection(*swap1, *swap2)
-	c.Assert(result, Equals, true)
-
-	// Test reverse order
-	resultReverse := book.isOppositeDirection(*swap2, *swap1)
-	c.Assert(resultReverse, Equals, true)
-}
-
-// TestGetPartnerFound tests finding a partner when one exists
-func (s AdvSwapQueueVCURSuite) TestGetPartnerFound(c *C) {
-	_, mgr := setupManagerForTest(c)
-	book := newSwapQueueAdvVCUR(mgr.Keeper())
-
-	// Create market swap: BTC.BTC -> ETH.ETH
-	marketTx := GetRandomTx()
-	marketTx.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One)))
-	marketSwap := *NewMsgSwap(
-		marketTx,
-		common.ETHAsset,
-		GetRandomETHAddress(),
-		cosmos.ZeroUint(),
-		common.NoAddress,
-		cosmos.ZeroUint(),
-		"", "", nil,
-		types.SwapType_market,
-		0, 0,
-		types.SwapVersion_v1,
-		GetRandomBech32Addr(),
-	)
-
-	// Create partner swap: ETH.ETH -> BTC.BTC (opposite direction)
-	partnerTx := GetRandomTx()
-	partnerTx.Coins = common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1*common.One)))
-	partnerMsg := *NewMsgSwap(
-		partnerTx,
-		common.BTCAsset,
-		GetRandomBTCAddress(),
-		cosmos.ZeroUint(),
-		common.NoAddress,
-		cosmos.ZeroUint(),
-		"", "", nil,
-		types.SwapType_market,
-		0, 0,
-		types.SwapVersion_v1,
-		GetRandomBech32Addr(),
-	)
-
-	// Create non-partner swap: RUNE -> BTC.BTC (not opposite)
-	nonPartnerTx := GetRandomTx()
-	nonPartnerTx.Coins = common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(1*common.One)))
-	nonPartnerMsg := *NewMsgSwap(
-		nonPartnerTx,
-		common.BTCAsset,
-		GetRandomBTCAddress(),
-		cosmos.ZeroUint(),
-		common.NoAddress,
-		cosmos.ZeroUint(),
-		"", "", nil,
-		types.SwapType_market,
-		0, 0,
-		types.SwapVersion_v1,
-		GetRandomBech32Addr(),
-	)
-
-	// Create remaining swaps slice
-	remainingSwaps := swapItems{
-		{msg: nonPartnerMsg, index: 0, fee: cosmos.ZeroUint(), slip: cosmos.ZeroUint()},
-		{msg: partnerMsg, index: 1, fee: cosmos.ZeroUint(), slip: cosmos.ZeroUint()},
-	}
-	originalLength := len(remainingSwaps)
-
-	// Test getPartner
-	partner := book.getPartner(marketSwap, &remainingSwaps)
-
-	// Verify partner was found
-	c.Assert(partner, NotNil)
-	c.Assert(partner.msg.Tx.ID.Equals(partnerMsg.Tx.ID), Equals, true)
-
-	// Verify partner was removed from remaining swaps
-	c.Assert(len(remainingSwaps), Equals, originalLength-1)
-	c.Assert(len(remainingSwaps), Equals, 1)
-
-	// Verify the non-partner swap remains
-	c.Assert(remainingSwaps[0].msg.Tx.ID.Equals(nonPartnerMsg.Tx.ID), Equals, true)
-}
-
-// TestGetPartnerFirstMatch tests that the first matching partner is returned
-func (s AdvSwapQueueVCURSuite) TestGetPartnerFirstMatch(c *C) {
-	_, mgr := setupManagerForTest(c)
-	book := newSwapQueueAdvVCUR(mgr.Keeper())
-
-	// Create market swap: BTC.BTC -> ETH.ETH
-	marketTx := GetRandomTx()
-	marketTx.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One)))
-	marketSwap := *NewMsgSwap(
-		marketTx,
-		common.ETHAsset,
-		GetRandomETHAddress(),
-		cosmos.ZeroUint(),
-		common.NoAddress,
-		cosmos.ZeroUint(),
-		"", "", nil,
-		types.SwapType_market,
-		0, 0,
-		types.SwapVersion_v1,
-		GetRandomBech32Addr(),
-	)
-
-	// Create first partner swap: ETH.ETH -> BTC.BTC
-	partner1Tx := GetRandomTx()
-	partner1Tx.Coins = common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1*common.One)))
-	partner1Msg := *NewMsgSwap(
-		partner1Tx,
-		common.BTCAsset,
-		GetRandomBTCAddress(),
-		cosmos.ZeroUint(),
-		common.NoAddress,
-		cosmos.ZeroUint(),
-		"", "", nil,
-		types.SwapType_market,
-		0, 0,
-		types.SwapVersion_v1,
-		GetRandomBech32Addr(),
-	)
-
-	// Create second partner swap: ETH.ETH -> BTC.BTC
-	partner2Tx := GetRandomTx()
-	partner2Tx.Coins = common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1*common.One)))
-	partner2Msg := *NewMsgSwap(
-		partner2Tx,
-		common.BTCAsset,
-		GetRandomBTCAddress(),
-		cosmos.ZeroUint(),
-		common.NoAddress,
-		cosmos.ZeroUint(),
-		"", "", nil,
-		types.SwapType_market,
-		0, 0,
-		types.SwapVersion_v1,
-		GetRandomBech32Addr(),
-	)
-
-	// Create remaining swaps slice with both partners
-	remainingSwaps := swapItems{
-		{msg: partner1Msg, index: 0, fee: cosmos.ZeroUint(), slip: cosmos.ZeroUint()},
-		{msg: partner2Msg, index: 1, fee: cosmos.ZeroUint(), slip: cosmos.ZeroUint()},
-	}
-
-	// Test getPartner
-	partner := book.getPartner(marketSwap, &remainingSwaps)
-
-	// Verify the FIRST partner was returned
-	c.Assert(partner, NotNil)
-	c.Assert(partner.msg.Tx.ID.Equals(partner1Msg.Tx.ID), Equals, true)
-
-	// Verify only the first partner was removed (second should remain)
-	c.Assert(len(remainingSwaps), Equals, 1)
-	c.Assert(remainingSwaps[0].msg.Tx.ID.Equals(partner2Msg.Tx.ID), Equals, true)
-}
-
-// TestGetPartnerNotFound tests when no partner exists
-func (s AdvSwapQueueVCURSuite) TestGetPartnerNotFound(c *C) {
-	_, mgr := setupManagerForTest(c)
-	book := newSwapQueueAdvVCUR(mgr.Keeper())
-
-	// Create market swap: BTC.BTC -> ETH.ETH
-	marketTx := GetRandomTx()
-	marketTx.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One)))
-	marketSwap := *NewMsgSwap(
-		marketTx,
-		common.ETHAsset,
-		GetRandomETHAddress(),
-		cosmos.ZeroUint(),
-		common.NoAddress,
-		cosmos.ZeroUint(),
-		"", "", nil,
-		types.SwapType_market,
-		0, 0,
-		types.SwapVersion_v1,
-		GetRandomBech32Addr(),
-	)
-
-	// Create non-partner swaps (same direction)
-	nonPartner1Tx := GetRandomTx()
-	nonPartner1Tx.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One)))
-	nonPartner1Msg := *NewMsgSwap(
-		nonPartner1Tx,
-		common.ETHAsset,
-		GetRandomETHAddress(),
-		cosmos.ZeroUint(),
-		common.NoAddress,
-		cosmos.ZeroUint(),
-		"", "", nil,
-		types.SwapType_market,
-		0, 0,
-		types.SwapVersion_v1,
-		GetRandomBech32Addr(),
-	)
-
-	nonPartner2Tx := GetRandomTx()
-	nonPartner2Tx.Coins = common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(1*common.One)))
-	nonPartner2Msg := *NewMsgSwap(
-		nonPartner2Tx,
-		common.BTCAsset,
-		GetRandomBTCAddress(),
-		cosmos.ZeroUint(),
-		common.NoAddress,
-		cosmos.ZeroUint(),
-		"", "", nil,
-		types.SwapType_market,
-		0, 0,
-		types.SwapVersion_v1,
-		GetRandomBech32Addr(),
-	)
-
-	// Create remaining swaps slice with no partners
-	remainingSwaps := swapItems{
-		{msg: nonPartner1Msg, index: 0, fee: cosmos.ZeroUint(), slip: cosmos.ZeroUint()},
-		{msg: nonPartner2Msg, index: 1, fee: cosmos.ZeroUint(), slip: cosmos.ZeroUint()},
-	}
-	originalLength := len(remainingSwaps)
-
-	// Test getPartner
-	partner := book.getPartner(marketSwap, &remainingSwaps)
-
-	// Verify no partner was found
-	c.Assert(partner, IsNil)
-
-	// Verify remaining swaps unchanged
-	c.Assert(len(remainingSwaps), Equals, originalLength)
-	c.Assert(remainingSwaps[0].msg.Tx.ID.Equals(nonPartner1Msg.Tx.ID), Equals, true)
-	c.Assert(remainingSwaps[1].msg.Tx.ID.Equals(nonPartner2Msg.Tx.ID), Equals, true)
-}
-
-// TestGetPartnerEmptyRemaining tests with empty remaining swaps
-func (s AdvSwapQueueVCURSuite) TestGetPartnerEmptyRemaining(c *C) {
-	_, mgr := setupManagerForTest(c)
-	book := newSwapQueueAdvVCUR(mgr.Keeper())
-
-	// Create market swap
-	marketTx := GetRandomTx()
-	marketTx.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One)))
-	marketSwap := *NewMsgSwap(
-		marketTx,
-		common.ETHAsset,
-		GetRandomETHAddress(),
-		cosmos.ZeroUint(),
-		common.NoAddress,
-		cosmos.ZeroUint(),
-		"", "", nil,
-		types.SwapType_market,
-		0, 0,
-		types.SwapVersion_v1,
-		GetRandomBech32Addr(),
-	)
-
-	// Create empty remaining swaps slice
-	remainingSwaps := swapItems{}
-
-	// Test getPartner
-	partner := book.getPartner(marketSwap, &remainingSwaps)
-
-	// Verify no partner found
-	c.Assert(partner, IsNil)
-
-	// Verify slice remains empty
-	c.Assert(len(remainingSwaps), Equals, 0)
-}
-
-// TestGetPartnerRemovedCorrectly tests correct removal and order preservation
-func (s AdvSwapQueueVCURSuite) TestGetPartnerRemovedCorrectly(c *C) {
-	_, mgr := setupManagerForTest(c)
-	book := newSwapQueueAdvVCUR(mgr.Keeper())
-
-	// Create market swap: BTC.BTC -> ETH.ETH
-	marketTx := GetRandomTx()
-	marketTx.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One)))
-	marketSwap := *NewMsgSwap(
-		marketTx,
-		common.ETHAsset,
-		GetRandomETHAddress(),
-		cosmos.ZeroUint(),
-		common.NoAddress,
-		cosmos.ZeroUint(),
-		"", "", nil,
-		types.SwapType_market,
-		0, 0,
-		types.SwapVersion_v1,
-		GetRandomBech32Addr(),
-	)
-
-	// Create multiple swaps in specific order
-	swap1Tx := GetRandomTx()
-	swap1Tx.Coins = common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(1*common.One)))
-	swap1Msg := *NewMsgSwap(swap1Tx, common.BTCAsset, GetRandomBTCAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, types.SwapType_market, 0, 0, types.SwapVersion_v1, GetRandomBech32Addr())
-
-	// This will be the partner (ETH -> BTC, opposite to market swap BTC -> ETH)
-	partnerTx := GetRandomTx()
-	partnerTx.Coins = common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1*common.One)))
-	partnerMsg := *NewMsgSwap(partnerTx, common.BTCAsset, GetRandomBTCAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, types.SwapType_market, 0, 0, types.SwapVersion_v1, GetRandomBech32Addr())
-
-	swap3Tx := GetRandomTx()
-	swap3Tx.Coins = common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(2*common.One)))
-	swap3Msg := *NewMsgSwap(swap3Tx, common.ETHAsset, GetRandomETHAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, types.SwapType_market, 0, 0, types.SwapVersion_v1, GetRandomBech32Addr())
-
-	// Create remaining swaps slice: [swap1, partner, swap3]
-	remainingSwaps := swapItems{
-		{msg: swap1Msg, index: 0, fee: cosmos.ZeroUint(), slip: cosmos.ZeroUint()},
-		{msg: partnerMsg, index: 1, fee: cosmos.ZeroUint(), slip: cosmos.ZeroUint()},
-		{msg: swap3Msg, index: 2, fee: cosmos.ZeroUint(), slip: cosmos.ZeroUint()},
-	}
-
-	// Test getPartner
-	partner := book.getPartner(marketSwap, &remainingSwaps)
-
-	// Verify correct partner was found and returned
-	c.Assert(partner, NotNil)
-	c.Assert(partner.msg.Tx.ID.Equals(partnerMsg.Tx.ID), Equals, true)
-
-	// Verify remaining swaps: should be [swap1, swap3] (partner removed)
-	c.Assert(len(remainingSwaps), Equals, 2)
-	c.Assert(remainingSwaps[0].msg.Tx.ID.Equals(swap1Msg.Tx.ID), Equals, true)
-	c.Assert(remainingSwaps[1].msg.Tx.ID.Equals(swap3Msg.Tx.ID), Equals, true)
-}
-
-// TestApplyPartnerMatchingBasicPairing tests basic market swap pairing with limit swaps
-func (s AdvSwapQueueVCURSuite) TestApplyPartnerMatchingBasicPairing(c *C) {
-	_, mgr := setupManagerForTest(c)
-	book := newSwapQueueAdvVCUR(mgr.Keeper())
-
-	// Create market swap: BTC.BTC -> ETH.ETH
-	marketTx1 := GetRandomTx()
-	marketTx1.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One)))
-	marketMsg1 := *NewMsgSwap(marketTx1, common.ETHAsset, GetRandomETHAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, types.SwapType_market, 0, 0, types.SwapVersion_v1, GetRandomBech32Addr())
-
-	// Create partner market swap: ETH.ETH -> BTC.BTC (opposite direction)
-	marketTx2 := GetRandomTx()
-	marketTx2.Coins = common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1*common.One)))
-	marketMsg2 := *NewMsgSwap(marketTx2, common.BTCAsset, GetRandomBTCAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, types.SwapType_market, 0, 0, types.SwapVersion_v1, GetRandomBech32Addr())
-
-	// Create limit swap
-	limitTx := GetRandomTx()
-	limitTx.Coins = common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(1*common.One)))
-	limitMsg := *NewMsgSwap(limitTx, common.BTCAsset, GetRandomBTCAddress(), cosmos.NewUint(100), common.NoAddress, cosmos.ZeroUint(), "", "", nil, types.SwapType_limit, 0, 0, types.SwapVersion_v2, GetRandomBech32Addr())
-
-	// Create input swaps (market first, limit second as assumed by method)
-	allSwaps := swapItems{
-		{msg: marketMsg1, index: 0, fee: cosmos.ZeroUint(), slip: cosmos.ZeroUint()},
-		{msg: marketMsg2, index: 1, fee: cosmos.ZeroUint(), slip: cosmos.ZeroUint()},
-		{msg: limitMsg, index: 2, fee: cosmos.ZeroUint(), slip: cosmos.ZeroUint()},
-	}
-
-	// Test applyPartnerMatching
-	result := book.applyPartnerMatching(allSwaps)
-
-	// Should include both market swaps (as partners) and the limit swap
-	c.Assert(len(result), Equals, 3)
-
-	// Verify all expected swaps are in result
-	foundMarket1 := false
-	foundMarket2 := false
-	foundLimit := false
-	for _, item := range result {
-		switch {
-		case item.msg.Tx.ID.Equals(marketMsg1.Tx.ID):
-			foundMarket1 = true
-		case item.msg.Tx.ID.Equals(marketMsg2.Tx.ID):
-			foundMarket2 = true
-		case item.msg.Tx.ID.Equals(limitMsg.Tx.ID):
-			foundLimit = true
-		}
-	}
-	c.Assert(foundMarket1, Equals, true)
-	c.Assert(foundMarket2, Equals, true)
-	c.Assert(foundLimit, Equals, true)
-}
-
-// TestApplyPartnerMatchingMarketWithoutPartners tests market swaps without partners are excluded
-func (s AdvSwapQueueVCURSuite) TestApplyPartnerMatchingMarketWithoutPartners(c *C) {
-	_, mgr := setupManagerForTest(c)
-	book := newSwapQueueAdvVCUR(mgr.Keeper())
-
-	// Create market swap: BTC.BTC -> ETH.ETH (no partner)
-	marketTx1 := GetRandomTx()
-	marketTx1.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One)))
-	marketMsg1 := *NewMsgSwap(marketTx1, common.ETHAsset, GetRandomETHAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, types.SwapType_market, 0, 0, types.SwapVersion_v1, GetRandomBech32Addr())
-
-	// Create another market swap: RUNE -> BTC.BTC (not opposite to first)
-	marketTx2 := GetRandomTx()
-	marketTx2.Coins = common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(1*common.One)))
-	marketMsg2 := *NewMsgSwap(marketTx2, common.BTCAsset, GetRandomBTCAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, types.SwapType_market, 0, 0, types.SwapVersion_v1, GetRandomBech32Addr())
-
-	// Create limit swap (should always be included)
-	limitTx := GetRandomTx()
-	limitTx.Coins = common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(2*common.One)))
-	limitMsg := *NewMsgSwap(limitTx, common.ETHAsset, GetRandomETHAddress(), cosmos.NewUint(100), common.NoAddress, cosmos.ZeroUint(), "", "", nil, types.SwapType_limit, 0, 0, types.SwapVersion_v2, GetRandomBech32Addr())
-
-	// Create input swaps
-	allSwaps := swapItems{
-		{msg: marketMsg1, index: 0, fee: cosmos.ZeroUint(), slip: cosmos.ZeroUint()},
-		{msg: marketMsg2, index: 1, fee: cosmos.ZeroUint(), slip: cosmos.ZeroUint()},
-		{msg: limitMsg, index: 2, fee: cosmos.ZeroUint(), slip: cosmos.ZeroUint()},
-	}
-
-	// Test applyPartnerMatching
-	result := book.applyPartnerMatching(allSwaps)
-
-	// Should only include the limit swap (market swaps have no partners)
-	c.Assert(len(result), Equals, 1)
-	c.Assert(result[0].msg.Tx.ID.Equals(limitMsg.Tx.ID), Equals, true)
-	c.Assert(result[0].msg.IsLimitSwap(), Equals, true)
-}
-
-// TestApplyPartnerMatchingOnlyLimitSwaps tests with only limit swaps
-func (s AdvSwapQueueVCURSuite) TestApplyPartnerMatchingOnlyLimitSwaps(c *C) {
-	_, mgr := setupManagerForTest(c)
-	book := newSwapQueueAdvVCUR(mgr.Keeper())
-
-	// Create multiple limit swaps
-	limitTx1 := GetRandomTx()
-	limitTx1.Coins = common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(1*common.One)))
-	limitMsg1 := *NewMsgSwap(limitTx1, common.BTCAsset, GetRandomBTCAddress(), cosmos.NewUint(100), common.NoAddress, cosmos.ZeroUint(), "", "", nil, types.SwapType_limit, 0, 0, types.SwapVersion_v2, GetRandomBech32Addr())
-
-	limitTx2 := GetRandomTx()
-	limitTx2.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One)))
-	limitMsg2 := *NewMsgSwap(limitTx2, common.ETHAsset, GetRandomETHAddress(), cosmos.NewUint(50), common.NoAddress, cosmos.ZeroUint(), "", "", nil, types.SwapType_limit, 0, 0, types.SwapVersion_v2, GetRandomBech32Addr())
-
-	// Create input swaps (only limit swaps)
-	allSwaps := swapItems{
-		{msg: limitMsg1, index: 0, fee: cosmos.ZeroUint(), slip: cosmos.ZeroUint()},
-		{msg: limitMsg2, index: 1, fee: cosmos.ZeroUint(), slip: cosmos.ZeroUint()},
-	}
-
-	// Test applyPartnerMatching
-	result := book.applyPartnerMatching(allSwaps)
-
-	// Should include all limit swaps
-	c.Assert(len(result), Equals, 2)
-	c.Assert(result[0].msg.Tx.ID.Equals(limitMsg1.Tx.ID), Equals, true)
-	c.Assert(result[1].msg.Tx.ID.Equals(limitMsg2.Tx.ID), Equals, true)
-}
-
-// TestApplyPartnerMatchingOnlyMarketSwaps tests with only market swaps
-func (s AdvSwapQueueVCURSuite) TestApplyPartnerMatchingOnlyMarketSwaps(c *C) {
-	_, mgr := setupManagerForTest(c)
-	book := newSwapQueueAdvVCUR(mgr.Keeper())
-
-	// Create market swap: BTC.BTC -> ETH.ETH
-	marketTx1 := GetRandomTx()
-	marketTx1.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One)))
-	marketMsg1 := *NewMsgSwap(marketTx1, common.ETHAsset, GetRandomETHAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, types.SwapType_market, 0, 0, types.SwapVersion_v1, GetRandomBech32Addr())
-
-	// Create partner: ETH.ETH -> BTC.BTC (opposite direction)
-	marketTx2 := GetRandomTx()
-	marketTx2.Coins = common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1*common.One)))
-	marketMsg2 := *NewMsgSwap(marketTx2, common.BTCAsset, GetRandomBTCAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, types.SwapType_market, 0, 0, types.SwapVersion_v1, GetRandomBech32Addr())
-
-	// Create market swap without partner: RUNE -> ATOM
-	marketTx3 := GetRandomTx()
-	marketTx3.Coins = common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(1*common.One)))
-	marketMsg3 := *NewMsgSwap(marketTx3, common.ATOMAsset, common.Address(GetRandomBech32Addr().String()), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, types.SwapType_market, 0, 0, types.SwapVersion_v1, GetRandomBech32Addr())
-
-	// Create input swaps (only market swaps)
-	allSwaps := swapItems{
-		{msg: marketMsg1, index: 0, fee: cosmos.ZeroUint(), slip: cosmos.ZeroUint()},
-		{msg: marketMsg2, index: 1, fee: cosmos.ZeroUint(), slip: cosmos.ZeroUint()},
-		{msg: marketMsg3, index: 2, fee: cosmos.ZeroUint(), slip: cosmos.ZeroUint()},
-	}
-
-	// Test applyPartnerMatching
-	result := book.applyPartnerMatching(allSwaps)
-
-	// Should only include the partnered market swaps (marketMsg1 and marketMsg2)
-	c.Assert(len(result), Equals, 2)
-
-	// Verify correct swaps are included
-	foundMarket1 := false
-	foundMarket2 := false
-	foundMarket3 := false
-	for _, item := range result {
-		switch {
-		case item.msg.Tx.ID.Equals(marketMsg1.Tx.ID):
-			foundMarket1 = true
-		case item.msg.Tx.ID.Equals(marketMsg2.Tx.ID):
-			foundMarket2 = true
-		case item.msg.Tx.ID.Equals(marketMsg3.Tx.ID):
-			foundMarket3 = true
-		}
-	}
-	c.Assert(foundMarket1, Equals, true)
-	c.Assert(foundMarket2, Equals, true)
-	c.Assert(foundMarket3, Equals, false) // Should be excluded (no partner)
-}
-
-// TestApplyPartnerMatchingEmptyInput tests with empty input
-func (s AdvSwapQueueVCURSuite) TestApplyPartnerMatchingEmptyInput(c *C) {
-	_, mgr := setupManagerForTest(c)
-	book := newSwapQueueAdvVCUR(mgr.Keeper())
-
-	// Create empty input
-	allSwaps := swapItems{}
-
-	// Test applyPartnerMatching
-	result := book.applyPartnerMatching(allSwaps)
-
-	// Should return empty result
-	c.Assert(len(result), Equals, 0)
-}
-
-// TestApplyPartnerMatchingMultiplePartners tests first partner selection
-func (s AdvSwapQueueVCURSuite) TestApplyPartnerMatchingMultiplePartners(c *C) {
-	_, mgr := setupManagerForTest(c)
-	book := newSwapQueueAdvVCUR(mgr.Keeper())
-
-	// Create market swap: BTC.BTC -> ETH.ETH
-	marketTx := GetRandomTx()
-	marketTx.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One)))
-	marketMsg := *NewMsgSwap(marketTx, common.ETHAsset, GetRandomETHAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, types.SwapType_market, 0, 0, types.SwapVersion_v1, GetRandomBech32Addr())
-
-	// Create first potential partner: ETH.ETH -> BTC.BTC
-	partner1Tx := GetRandomTx()
-	partner1Tx.Coins = common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1*common.One)))
-	partner1Msg := *NewMsgSwap(partner1Tx, common.BTCAsset, GetRandomBTCAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, types.SwapType_market, 0, 0, types.SwapVersion_v1, GetRandomBech32Addr())
-
-	// Create second potential partner: ETH.ETH -> BTC.BTC
-	partner2Tx := GetRandomTx()
-	partner2Tx.Coins = common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(2*common.One)))
-	partner2Msg := *NewMsgSwap(partner2Tx, common.BTCAsset, GetRandomBTCAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, types.SwapType_market, 0, 0, types.SwapVersion_v1, GetRandomBech32Addr())
-
-	// Create input swaps - market first, then potential partners
-	allSwaps := swapItems{
-		{msg: marketMsg, index: 0, fee: cosmos.ZeroUint(), slip: cosmos.ZeroUint()},
-		{msg: partner1Msg, index: 1, fee: cosmos.ZeroUint(), slip: cosmos.ZeroUint()},
-		{msg: partner2Msg, index: 2, fee: cosmos.ZeroUint(), slip: cosmos.ZeroUint()},
-	}
-
-	// Test applyPartnerMatching
-	result := book.applyPartnerMatching(allSwaps)
-
-	// Should include market swap + first partner only (2 total)
-	c.Assert(len(result), Equals, 2)
-
-	// Verify correct swaps are included
-	foundMarket := false
-	foundPartner1 := false
-	foundPartner2 := false
-	for _, item := range result {
-		switch {
-		case item.msg.Tx.ID.Equals(marketMsg.Tx.ID):
-			foundMarket = true
-		case item.msg.Tx.ID.Equals(partner1Msg.Tx.ID):
-			foundPartner1 = true
-		case item.msg.Tx.ID.Equals(partner2Msg.Tx.ID):
-			foundPartner2 = true
-		}
-	}
-	c.Assert(foundMarket, Equals, true)
-	c.Assert(foundPartner1, Equals, true)
-	c.Assert(foundPartner2, Equals, false) // Second partner should not be included
-}
-
-// TestApplyPartnerMatchingComplexScenario tests a complex mixed scenario
-func (s AdvSwapQueueVCURSuite) TestApplyPartnerMatchingComplexScenario(c *C) {
-	_, mgr := setupManagerForTest(c)
-	book := newSwapQueueAdvVCUR(mgr.Keeper())
-
-	// Create paired market swaps: BTC -> ETH and ETH -> BTC
-	marketTx1 := GetRandomTx()
-	marketTx1.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One)))
-	marketMsg1 := *NewMsgSwap(marketTx1, common.ETHAsset, GetRandomETHAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, types.SwapType_market, 0, 0, types.SwapVersion_v1, GetRandomBech32Addr())
-
-	marketTx2 := GetRandomTx()
-	marketTx2.Coins = common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1*common.One)))
-	marketMsg2 := *NewMsgSwap(marketTx2, common.BTCAsset, GetRandomBTCAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, types.SwapType_market, 0, 0, types.SwapVersion_v1, GetRandomBech32Addr())
-
-	// Create unpaired market swap: RUNE -> ATOM (no partner)
-	marketTx3 := GetRandomTx()
-	marketTx3.Coins = common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(1*common.One)))
-	marketMsg3 := *NewMsgSwap(marketTx3, common.ATOMAsset, common.Address(GetRandomBech32Addr().String()), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, types.SwapType_market, 0, 0, types.SwapVersion_v1, GetRandomBech32Addr())
-
-	// Create limit swaps (should always be included)
-	limitTx1 := GetRandomTx()
-	limitTx1.Coins = common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(2*common.One)))
-	limitMsg1 := *NewMsgSwap(limitTx1, common.BTCAsset, GetRandomBTCAddress(), cosmos.NewUint(100), common.NoAddress, cosmos.ZeroUint(), "", "", nil, types.SwapType_limit, 0, 0, types.SwapVersion_v2, GetRandomBech32Addr())
-
-	limitTx2 := GetRandomTx()
-	limitTx2.Coins = common.NewCoins(common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One)))
-	limitMsg2 := *NewMsgSwap(limitTx2, common.RuneAsset(), GetRandomTHORAddress(), cosmos.NewUint(200), common.NoAddress, cosmos.ZeroUint(), "", "", nil, types.SwapType_limit, 0, 0, types.SwapVersion_v2, GetRandomBech32Addr())
-
-	// Create input swaps (market first, limit second)
-	allSwaps := swapItems{
-		{msg: marketMsg1, index: 0, fee: cosmos.ZeroUint(), slip: cosmos.ZeroUint()},
-		{msg: marketMsg2, index: 1, fee: cosmos.ZeroUint(), slip: cosmos.ZeroUint()},
-		{msg: marketMsg3, index: 2, fee: cosmos.ZeroUint(), slip: cosmos.ZeroUint()},
-		{msg: limitMsg1, index: 3, fee: cosmos.ZeroUint(), slip: cosmos.ZeroUint()},
-		{msg: limitMsg2, index: 4, fee: cosmos.ZeroUint(), slip: cosmos.ZeroUint()},
-	}
-
-	// Test applyPartnerMatching
-	result := book.applyPartnerMatching(allSwaps)
-
-	// Should include: paired market swaps (2) + all limit swaps (2) = 4 total
-	c.Assert(len(result), Equals, 4)
-
-	// Verify correct swaps are included
-	foundMarket1 := false
-	foundMarket2 := false
-	foundMarket3 := false
-	foundLimit1 := false
-	foundLimit2 := false
-	for _, item := range result {
-		switch {
-		case item.msg.Tx.ID.Equals(marketMsg1.Tx.ID):
-			foundMarket1 = true
-		case item.msg.Tx.ID.Equals(marketMsg2.Tx.ID):
-			foundMarket2 = true
-		case item.msg.Tx.ID.Equals(marketMsg3.Tx.ID):
-			foundMarket3 = true
-		case item.msg.Tx.ID.Equals(limitMsg1.Tx.ID):
-			foundLimit1 = true
-		case item.msg.Tx.ID.Equals(limitMsg2.Tx.ID):
-			foundLimit2 = true
-		}
-	}
-
-	// Verify results
-	c.Assert(foundMarket1, Equals, true)  // Paired market swap
-	c.Assert(foundMarket2, Equals, true)  // Paired market swap
-	c.Assert(foundMarket3, Equals, false) // Unpaired market swap (excluded)
-	c.Assert(foundLimit1, Equals, true)   // Limit swap (always included)
-	c.Assert(foundLimit2, Equals, true)   // Limit swap (always included)
-}
-
 // TestGetMaxSwapQuantityTradeAsset verifies that trade assets (BTC~BTC) do NOT trigger
 // the derived asset quantity reduction logic, which was causing incorrect swap quantities.
-func (s AdvSwapQueueVCURSuite) TestGetMaxSwapQuantityTradeAsset(c *C) {
+func (s AdvSwapQueueSuite) TestGetMaxSwapQuantityTradeAsset(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	mgr := NewDummyMgrWithKeeper(k)
-	book := newSwapQueueAdvVCUR(k)
+	book := newSwapQueueAdv(k)
 
 	// Setup BTC pool with 29M RUNE depth (matching real scenario)
 	btcPool := NewPool()
@@ -5011,10 +4093,10 @@ func (s AdvSwapQueueVCURSuite) TestGetMaxSwapQuantityTradeAsset(c *C) {
 
 // TestGetMaxSwapQuantitySecuredAsset verifies that secured assets (BTC-BTC) also do NOT
 // trigger the derived asset quantity reduction logic.
-func (s AdvSwapQueueVCURSuite) TestGetMaxSwapQuantitySecuredAsset(c *C) {
+func (s AdvSwapQueueSuite) TestGetMaxSwapQuantitySecuredAsset(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	mgr := NewDummyMgrWithKeeper(k)
-	book := newSwapQueueAdvVCUR(k)
+	book := newSwapQueueAdv(k)
 
 	// Setup BTC pool
 	btcPool := NewPool()
@@ -5055,10 +4137,10 @@ func (s AdvSwapQueueVCURSuite) TestGetMaxSwapQuantitySecuredAsset(c *C) {
 
 // TestGetMaxSwapQuantityDerivedAsset verifies that actual derived assets (THOR.BTC)
 // DO trigger the derived asset quantity reduction logic as intended.
-func (s AdvSwapQueueVCURSuite) TestGetMaxSwapQuantityDerivedAsset(c *C) {
+func (s AdvSwapQueueSuite) TestGetMaxSwapQuantityDerivedAsset(c *C) {
 	ctx, k := setupKeeperForTest(c)
 	mgr := NewDummyMgrWithKeeper(k)
-	book := newSwapQueueAdvVCUR(k)
+	book := newSwapQueueAdv(k)
 
 	// Setup BTC pool as anchor pool
 	btcPool := NewPool()
@@ -5107,4 +4189,100 @@ func (s AdvSwapQueueVCURSuite) TestGetMaxSwapQuantityDerivedAsset(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(quantity >= 1, Equals, true, Commentf("Quantity should be at least 1"))
 	c.Assert(quantity < 15000, Equals, true, Commentf("Quantity should be reasonable"))
+}
+
+// TestRapidSwapFailedMarketSwapSkip verifies that failed market swaps on rapid swap
+// iteration 1+ do not count as attempts. This prevents rapid swaps from burning through
+// all subswaps of a streaming swap in a single block when swaps fail.
+func (s AdvSwapQueueSuite) TestRapidSwapFailedMarketSwapSkip(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	book := newSwapQueueAdv(mgr.Keeper())
+
+	// Setup pools for testing with limited liquidity
+	ethPool := NewPool()
+	ethPool.Asset = common.ETHAsset
+	ethPool.BalanceAsset = cosmos.NewUint(100 * common.One) // Limited ETH
+	ethPool.BalanceRune = cosmos.NewUint(1000 * common.One) // Limited RUNE
+	ethPool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, ethPool), IsNil)
+
+	btcPool := NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.BalanceAsset = cosmos.NewUint(10 * common.One)
+	btcPool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	btcPool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, btcPool), IsNil)
+
+	// Create active validators for mimir voting
+	activeNodes := NodeAccounts{
+		NodeAccount{NodeAddress: GetRandomBech32Addr(), Status: NodeActive},
+		NodeAccount{NodeAddress: GetRandomBech32Addr(), Status: NodeActive},
+	}
+	for _, node := range activeNodes {
+		c.Assert(mgr.Keeper().SetNodeAccount(ctx, node), IsNil)
+	}
+	mgr.Keeper().SetMimir(ctx, "OperationalVotesMin", 2)
+
+	// Set rapid swap max to 3 (iterations 0, 1, 2)
+	for _, node := range activeNodes {
+		c.Assert(mgr.Keeper().SetNodeMimir(ctx, "AdvSwapQueueRapidSwapMax", 3, node.NodeAddress), IsNil)
+	}
+
+	ethAddr := GetRandomETHAddress()
+
+	// Create a streaming market swap that will fail due to impossible trade target
+	// Using interval=0 so it can be processed multiple times in the same block
+	failingTx := GetRandomTx()
+	failingTx.Coins = common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(10*common.One)))
+	failingSwap := NewMsgSwap(
+		failingTx, common.ETHAsset, ethAddr,
+		cosmos.NewUint(999999*common.One), // Impossibly high trade target - will always fail
+		"", cosmos.ZeroUint(),
+		"", "", nil,
+		types.SwapType_market,
+		0, 0, types.SwapVersion_v2, GetRandomBech32Addr())
+	failingSwap.State = &types.SwapState{
+		Quantity:   5, // Streaming swap with 5 subswaps
+		Count:      0,
+		Interval:   0, // interval=0 allows multiple executions per block
+		Deposit:    cosmos.NewUint(10 * common.One),
+		In:         cosmos.ZeroUint(),
+		Out:        cosmos.ZeroUint(),
+		LastHeight: ctx.BlockHeight() - 1,
+	}
+	c.Assert(mgr.Keeper().SetAdvSwapQueueItem(ctx, *failingSwap), IsNil)
+
+	// Create a partner swap (opposite direction: ETH -> RUNE) to ensure the failing swap
+	// is included in iteration 1+ due to partner matching
+	partnerTx := GetRandomTx()
+	partnerTx.Coins = common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1*common.One)))
+	partnerSwap := NewMsgSwap(
+		partnerTx, common.RuneAsset(), GetRandomTHORAddress(), cosmos.ZeroUint(),
+		"", cosmos.ZeroUint(),
+		"", "", nil,
+		types.SwapType_market,
+		0, 0, types.SwapVersion_v2, GetRandomBech32Addr())
+	partnerSwap.State = &types.SwapState{
+		Quantity:   1,
+		Count:      0,
+		Interval:   0,
+		Deposit:    cosmos.NewUint(1 * common.One),
+		In:         cosmos.ZeroUint(),
+		Out:        cosmos.ZeroUint(),
+		LastHeight: ctx.BlockHeight() - 1,
+	}
+	partnerSwap.Index = 1
+	c.Assert(mgr.Keeper().SetAdvSwapQueueItem(ctx, *partnerSwap), IsNil)
+
+	// Execute rapid swaps with 3 iterations
+	c.Assert(book.EndBlock(ctx, mgr, false), IsNil)
+
+	// Verify that the failing swap only counted ONE attempt (from iteration 0)
+	// even though it was processed in multiple iterations
+	updatedSwap, err := mgr.Keeper().GetAdvSwapQueueItem(ctx, failingSwap.Tx.ID, 0)
+	c.Assert(err, IsNil)
+	c.Assert(updatedSwap.State.Count, Equals, uint64(1),
+		Commentf("Count should be 1 (only iteration 0 should count failed attempts), got %d", updatedSwap.State.Count))
+	c.Assert(len(updatedSwap.State.FailedSwaps), Equals, 1,
+		Commentf("FailedSwaps should have 1 entry (only iteration 0), got %d", len(updatedSwap.State.FailedSwaps)))
 }

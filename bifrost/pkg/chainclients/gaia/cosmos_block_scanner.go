@@ -49,6 +49,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
+	"gitlab.com/thorchain/thornode/v3/constants"
 )
 
 // SolvencyReporter is to report solvency info to THORNode
@@ -373,6 +374,16 @@ func (c *CosmosBlockScanner) processTxs(height int64, rawTxs []tmtypes.Tx) ([]*t
 		mem, _ := tx.(ctypes.TxWithMemo)
 		memo := mem.GetMemo()
 
+		// Filter out transactions with memos that exceed MaxMemoSize
+		// This prevents spam from reaching the observer and matches behavior of other chains
+		if len([]byte(memo)) > constants.MaxMemoSize {
+			c.logger.Debug().
+				Str("txhash", hash).
+				Int64("height", height).
+				Msg("memo too long, skipping transaction")
+			continue
+		}
+
 		c.updateGasCache(feeTx)
 
 		// collect all txIns in a temp list, in case we need to append ids
@@ -491,6 +502,14 @@ func (c *CosmosBlockScanner) processTxs(height int64, rawTxs []tmtypes.Tx) ([]*t
 			// Ignore the tx when no coins exist
 			if coins.IsEmpty() {
 				continue
+			}
+
+			// filter gas asset transactions below dust threshold
+			if len(coins) == 1 && coins[0].Asset.Equals(c.cfg.ChainID.GetGasAsset()) {
+				if coins[0].Amount.LT(c.cfg.ChainID.DustThreshold()) {
+					c.logger.Debug().Str("tx_hash", hash).Msg("dropping tx below dust threshold")
+					continue
+				}
 			}
 
 			// Convert cosmos gas to thorchain coins (taking into account gas asset decimal precision)

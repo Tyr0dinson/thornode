@@ -28,7 +28,7 @@ FROM debian:bullseye-20241111-slim@sha256:60a596681410bd31a48e5975806a24cd78328f
 RUN apt-get update && \
   apt-get install -y --no-install-recommends \
   ca-certificates=20210119 \
-  curl=7.74.0-1.3+deb11u15 \
+  curl=7.74.0-1.3+deb11u16 \
   jq=1.6-2.1+deb11u1 \
   libffi-dev=3.3-6 \
   libssl-dev=1.1.1w-0+deb11u4 \
@@ -41,7 +41,7 @@ RUN apt-get update && \
 
 # Copy the compiled binaries over.
 COPY --from=build /go/bin/thornode /go/bin/bifrost /go/bin/recover-keyshare-backup /usr/bin/
-COPY --from=build /go/pkg/mod/github.com/!cosm!wasm/wasmvm/v2@v2.1.2/internal/api/libwasmvm.*.so /usr/lib
+COPY --from=build /go/pkg/mod/github.com/!cosm!wasm/wasmvm/v2@v2.2.1/internal/api/libwasmvm.*.so /usr/lib
 
 COPY build/scripts /scripts
 
