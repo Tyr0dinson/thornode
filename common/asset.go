@@ -41,6 +41,8 @@ var (
 	SOLAsset = Asset{Chain: SOLChain, Symbol: "SOL", Ticker: "SOL", Synth: false}
 	// ZECAsset ZEC
 	ZECAsset = Asset{Chain: ZECChain, Symbol: "ZEC", Ticker: "ZEC", Synth: false}
+	// ADAAsset ADA
+	ADAAsset = Asset{Chain: ADAChain, Symbol: "ADA", Ticker: "ADA", Synth: false}
 	// RuneNative RUNE on thorchain
 	RuneNative = Asset{Chain: THORChain, Symbol: "RUNE", Ticker: "RUNE", Synth: false}
 	TCY        = Asset{Chain: THORChain, Symbol: "TCY", Ticker: "TCY", Synth: false}

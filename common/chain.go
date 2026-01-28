@@ -30,6 +30,7 @@ const (
 	XRPChain   = Chain("XRP")
 	SOLChain   = Chain("SOL")
 	ZECChain   = Chain("ZEC")
+	ADAChain   = Chain("ADA")
 
 	SigningAlgoSecp256k1 = SigningAlgo("secp256k1")
 	SigningAlgoEd25519   = SigningAlgo("ed25519")
@@ -149,7 +150,7 @@ func (c Chain) String() string {
 // GetSigningAlgo get the signing algorithm for the given chain
 func (c Chain) GetSigningAlgo() SigningAlgo {
 	switch c {
-	case SOLChain:
+	case SOLChain, ADAChain:
 		return SigningAlgoEd25519
 	default:
 		return SigningAlgoSecp256k1
@@ -190,6 +191,8 @@ func (c Chain) GetGasAsset() Asset {
 		return SOLAsset
 	case ZECChain:
 		return ZECAsset
+	case ADAChain:
+		return ADAAsset
 	default:
 		return EmptyAsset
 	}
@@ -220,6 +223,8 @@ func (c Chain) GetGasUnits() (gasRateUnits string, gasRateUnitsPerOne cosmos.Uin
 		return "mwei", cosmos.NewUint(1e12)
 	case SOLChain:
 		return "lamport", cosmos.NewUint(1e9)
+	case ADAChain:
+		return "lovelace", cosmos.NewUint(1e6)
 	default:
 		return "", cosmos.OneUint() // Avoid any divide-by-zero.
 	}
@@ -242,7 +247,7 @@ func (c Chain) ThorchainToNativeGas(thorchain cosmos.Uint) cosmos.Uint {
 // 1e8, just return cosmos.DefaultCoinDecimals.
 func (c Chain) GetGasAssetDecimal() int64 {
 	switch c {
-	case GAIAChain, NOBLEChain, TRONChain:
+	case GAIAChain, NOBLEChain, TRONChain, ADAChain:
 		return 6
 	case XRPChain:
 		return 6
@@ -340,6 +345,8 @@ func (c Chain) DustThreshold() cosmos.Uint {
 		return cosmos.NewUint(100_000) // 0.001 SOL
 	case TRONChain:
 		return cosmos.NewUint(10_000_000)
+	case ADAChain:
+		return cosmos.NewUint(10_000_000)
 	default:
 		return cosmos.ZeroUint()
 	}
@@ -431,6 +438,8 @@ func (c Chain) ApproximateBlockMilliseconds() int64 {
 		return 400
 	case ZECChain:
 		return 75_000
+	case ADAChain:
+		return 20_000
 	default:
 		return 0
 	}

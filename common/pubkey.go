@@ -24,6 +24,7 @@ import (
 	"github.com/ltcsuite/ltcutil"
 	"github.com/mr-tron/base58"
 
+	adacommon "github.com/blinklabs-io/gouroboros/ledger/common"
 	xrpkm "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/xrp/keymanager"
 
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -280,6 +281,31 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 
 		// Encode with base58
 		addressString = base58.Encode(fullPayload)
+	case ADAChain:
+		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, p.String())
+		if err != nil {
+			return NoAddress, err
+		}
+
+		var network uint8
+		switch chainNetwork {
+		case MainNet, StageNet:
+			network = adacommon.AddressNetworkMainnet
+		default:
+			network = adacommon.AddressNetworkTestnet
+		}
+
+		addr, err := adacommon.NewAddressFromParts(
+			adacommon.AddressTypeKeyNone,
+			network,
+			pk.Address().Bytes(),
+			nil,
+		)
+		if err != nil {
+			return NoAddress, err
+		}
+
+		addressString = addr.String()
 	default:
 		// Only EVM chains remain.
 		if !chain.IsEVM() {
