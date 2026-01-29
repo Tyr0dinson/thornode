@@ -2289,8 +2289,8 @@ func (vm *NetworkMgr) calculateNetworkSolvency(ctx cosmos.Context, mgr Manager) 
 			// For streaming swaps, only deduct the remaining (unprocessed) amount
 			// to avoid double-counting with pool balance which already includes processed amounts
 			if msg.IsLegacyStreaming() {
-				swp, err := vm.k.GetStreamingSwap(ctx, msg.Tx.ID)
-				if err == nil && swp.TxID.Equals(msg.Tx.ID) {
+				swp, swpErr := vm.k.GetStreamingSwap(ctx, msg.Tx.ID)
+				if swpErr == nil && swp.TxID.Equals(msg.Tx.ID) {
 					// Remaining = Deposit - In (what hasn't been swapped yet)
 					remaining := common.SafeSub(swp.Deposit, swp.In)
 					coinAmount = math.NewIntFromBigInt(remaining.BigInt())
@@ -2323,8 +2323,8 @@ func (vm *NetworkMgr) calculateNetworkSolvency(ctx cosmos.Context, mgr Manager) 
 			// For streaming swaps, only deduct the remaining (unprocessed) amount
 			// to avoid double-counting with pool balance which already includes processed amounts
 			if msg.IsStreaming() {
-				swp, err := vm.k.GetStreamingSwap(ctx, msg.Tx.ID)
-				if err == nil && swp.TxID.Equals(msg.Tx.ID) {
+				swp, swpErr := vm.k.GetStreamingSwap(ctx, msg.Tx.ID)
+				if swpErr == nil && swp.TxID.Equals(msg.Tx.ID) {
 					// Remaining = Deposit - In (what hasn't been swapped yet)
 					remaining := common.SafeSub(swp.Deposit, swp.In)
 					coinAmount = math.NewIntFromBigInt(remaining.BigInt())
