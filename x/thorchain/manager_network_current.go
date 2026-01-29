@@ -2551,6 +2551,42 @@ func (vm *NetworkMgr) calculateNetworkSolvency(ctx cosmos.Context, mgr Manager) 
 		}
 	}
 
+	// Step 7: Subtract staged outbounds (mempool swaps awaiting inbound finalization)
+	// These are outbounds that have been calculated but not yet added to TxOut
+	stagedIter := vm.k.GetStagedOutboundIterator(ctx)
+	defer stagedIter.Close()
+	for ; stagedIter.Valid(); stagedIter.Next() {
+		var stagedList types.StagedOutboundList
+		if err := vm.k.Cdc().Unmarshal(stagedIter.Value(), &stagedList); err != nil {
+			ctx.Logger().Error("fail to unmarshal staged outbound list", "error", err)
+			continue
+		}
+		for _, staged := range stagedList.Items {
+			item := staged.TxOutItem
+			// Skip native (THORChain) outbounds - they don't affect external vault solvency
+			if item.Chain.IsTHORChain() {
+				continue
+			}
+			// Skip outbounds from inactive vaults
+			vault, err := vm.k.GetVault(ctx, item.VaultPubKey)
+			if err != nil {
+				ctx.Logger().Error("fail to get vault for staged outbound", "pubkey", item.VaultPubKey, "error", err)
+				continue
+			}
+			if vault.Status == InactiveVault {
+				continue
+			}
+
+			if !item.Coin.IsEmpty() {
+				if _, ok := assetAmounts[item.Coin.Asset]; !ok {
+					return nil, fmt.Errorf("unexpected asset %s not found in tracking map (staged outbound)", item.Coin.Asset)
+				}
+				itemAmount := math.NewIntFromBigInt(item.Coin.Amount.BigInt())
+				assetAmounts[item.Coin.Asset] = assetAmounts[item.Coin.Asset].Sub(itemAmount)
+			}
+		}
+	}
+
 	// Convert map to slice of assetAmount, returning ALL amounts (positive, negative, and zero)
 	// Use the already-sorted assets list for deterministic ordering
 	result := make([]assetAmount, 0, len(assetAmounts))

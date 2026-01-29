@@ -2398,6 +2398,104 @@ func (s *NetworkManagerTestSuite) TestSolvencyWithPendingOutboundsAtPastHeight(c
 		Commentf("expected %s, got %s", expectedSolvency.String(), solvency2[0].Amount.String()))
 }
 
+func (s *NetworkManagerTestSuite) TestSolvencyWithStagedOutbounds(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	nmgr := newNetworkMgr(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())
+
+	// Setup: Create a pool
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.BalanceRune = cosmos.NewUint(100 * common.One)
+	pool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	// Create vault with funds
+	vault := GetRandomVault()
+	vault.Type = AsgardVault
+	vault.Status = ActiveVault
+	vault.Coins = common.Coins{
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(150*common.One)),
+	}
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	// Add staged outbound (mempool swap output waiting for inbound finalization)
+	inHash := GetRandomTxHash()
+	stagedItem := TxOutItem{
+		Chain:       common.BTCChain,
+		Coin:        common.NewCoin(common.BTCAsset, cosmos.NewUint(25*common.One)),
+		ToAddress:   GetRandomBTCAddress(),
+		VaultPubKey: vault.PubKey,
+		InHash:      inHash,
+	}
+	c.Assert(mgr.Keeper().SetStagedOutbound(ctx, stagedItem, ctx.BlockHeight()+10), IsNil)
+
+	// Calculate solvency - should account for staged outbound
+	solvency, err := nmgr.calculateNetworkSolvency(ctx, mgr)
+	c.Assert(err, IsNil)
+	c.Assert(len(solvency), Equals, 1)
+
+	// Vault has 150, pool needs 100, staged outbound 25
+	// Expected: 150 - 100 - 25 = 25 over-solvent
+	expectedSolvency := math.NewInt(25 * common.One)
+	c.Assert(solvency[0].Amount.Equal(expectedSolvency), Equals, true,
+		Commentf("expected %s, got %s", expectedSolvency, solvency[0].Amount))
+
+	// Test 2: Multiple staged outbounds for same inbound
+	stagedItem2 := TxOutItem{
+		Chain:       common.BTCChain,
+		Coin:        common.NewCoin(common.BTCAsset, cosmos.NewUint(10*common.One)),
+		ToAddress:   GetRandomBTCAddress(),
+		VaultPubKey: vault.PubKey,
+		InHash:      inHash, // Same inbound hash
+	}
+	c.Assert(mgr.Keeper().SetStagedOutbound(ctx, stagedItem2, ctx.BlockHeight()+10), IsNil)
+
+	solvency, err = nmgr.calculateNetworkSolvency(ctx, mgr)
+	c.Assert(err, IsNil)
+	// Vault 150 - Pool 100 - Staged 25 - Staged 10 = 15 over-solvent
+	expectedSolvency = math.NewInt(15 * common.One)
+	c.Assert(solvency[0].Amount.Equal(expectedSolvency), Equals, true,
+		Commentf("expected %s, got %s", expectedSolvency, solvency[0].Amount))
+
+	// Test 3: Staged outbound from inactive vault should be skipped
+	inactiveVault := GetRandomVault()
+	inactiveVault.Type = AsgardVault
+	inactiveVault.Status = InactiveVault
+	c.Assert(mgr.Keeper().SetVault(ctx, inactiveVault), IsNil)
+
+	stagedItemInactive := TxOutItem{
+		Chain:       common.BTCChain,
+		Coin:        common.NewCoin(common.BTCAsset, cosmos.NewUint(50*common.One)),
+		ToAddress:   GetRandomBTCAddress(),
+		VaultPubKey: inactiveVault.PubKey,
+		InHash:      GetRandomTxHash(),
+	}
+	c.Assert(mgr.Keeper().SetStagedOutbound(ctx, stagedItemInactive, ctx.BlockHeight()+10), IsNil)
+
+	solvency, err = nmgr.calculateNetworkSolvency(ctx, mgr)
+	c.Assert(err, IsNil)
+	// Should still be 15 - inactive vault staged outbound is skipped
+	c.Assert(solvency[0].Amount.Equal(expectedSolvency), Equals, true,
+		Commentf("inactive vault staged outbound should be skipped: expected %s, got %s", expectedSolvency, solvency[0].Amount))
+
+	// Test 4: Native (THORChain) staged outbounds should be skipped
+	nativeStagedItem := TxOutItem{
+		Chain:       common.THORChain,
+		Coin:        common.NewCoin(common.RuneNative, cosmos.NewUint(100*common.One)),
+		ToAddress:   GetRandomTHORAddress(),
+		VaultPubKey: vault.PubKey,
+		InHash:      GetRandomTxHash(),
+	}
+	c.Assert(mgr.Keeper().SetStagedOutbound(ctx, nativeStagedItem, ctx.BlockHeight()+10), IsNil)
+
+	solvency, err = nmgr.calculateNetworkSolvency(ctx, mgr)
+	c.Assert(err, IsNil)
+	// Should still be 15 - native outbounds don't affect external vault solvency
+	c.Assert(solvency[0].Amount.Equal(expectedSolvency), Equals, true,
+		Commentf("native staged outbound should be skipped: expected %s, got %s", expectedSolvency, solvency[0].Amount))
+}
+
 func (s *NetworkManagerTestSuite) TestSolvencyWithTradeAndSecuredAssets(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	nmgr := newNetworkMgr(mgr.Keeper(), NewTxStoreDummy(), NewDummyEventMgr())
