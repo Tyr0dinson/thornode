@@ -2782,3 +2782,210 @@ func (s *HelperSuite) TestIsStableToStableMatchesGetAnchors(c *C) {
 	}
 	c.Check(isStableToStable(ctx, k, usdc, usdt), Equals, true)
 }
+
+func (s *HelperSuite) TestGetAssetValueInTOR(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	// Setup TOR anchor pool (BUSD)
+	k.SetMimir(ctx, "TorAnchor-ETH-BUSD-BD1", 1)
+	busd, err := common.NewAsset("ETH.BUSD-BD1")
+	c.Assert(err, IsNil)
+	busdPool := NewPool()
+	busdPool.Asset = busd
+	busdPool.Status = PoolAvailable
+	busdPool.BalanceRune = cosmos.NewUint(100 * common.One)   // 100 RUNE
+	busdPool.BalanceAsset = cosmos.NewUint(1000 * common.One) // 1000 BUSD
+	busdPool.Decimals = 8
+	c.Assert(k.SetPool(ctx, busdPool), IsNil)
+
+	// Setup BTC pool
+	btcPool := NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.Status = PoolAvailable
+	btcPool.BalanceRune = cosmos.NewUint(1000 * common.One) // 1000 RUNE
+	btcPool.BalanceAsset = cosmos.NewUint(10 * common.One)  // 10 BTC
+	btcPool.Decimals = 8
+	c.Assert(k.SetPool(ctx, btcPool), IsNil)
+
+	// Test 1: RUNE asset - should return TOR value directly
+	runeAmount := cosmos.NewUint(10 * common.One) // 10 RUNE
+	torValue, err := getAssetValueInTOR(ctx, k, common.RuneAsset(), runeAmount)
+	c.Assert(err, IsNil)
+	// 10 RUNE with $10/RUNE = $100 in TOR
+	// DollarsPerRune = 1000 * 1e8 / 100 = 10e8 (1000 BUSD / 100 RUNE = 10 BUSD per RUNE)
+	c.Check(torValue.GT(cosmos.ZeroUint()), Equals, true, Commentf("TOR value should be > 0 for RUNE"))
+
+	// Test 2: Non-RUNE asset (BTC) - should convert via pool
+	btcAmount := cosmos.NewUint(1 * common.One) // 1 BTC
+	torValue, err = getAssetValueInTOR(ctx, k, common.BTCAsset, btcAmount)
+	c.Assert(err, IsNil)
+	// 1 BTC = 100 RUNE (from 10 BTC : 1000 RUNE ratio)
+	// 100 RUNE @ $10/RUNE = $1000 in TOR
+	c.Check(torValue.GT(cosmos.ZeroUint()), Equals, true, Commentf("TOR value should be > 0 for BTC"))
+
+	// Test 3: Empty pool - should return error
+	_, err = getAssetValueInTOR(ctx, k, common.ETHAsset, cosmos.NewUint(1*common.One))
+	c.Assert(err, NotNil, Commentf("Should error for asset with no pool"))
+
+	// Test 4: Zero DollarsPerRune - should return error
+	k.DeleteMimir(ctx, "TorAnchor-ETH-BUSD-BD1")
+	_, err = getAssetValueInTOR(ctx, k, common.RuneAsset(), runeAmount)
+	c.Assert(err, NotNil, Commentf("Should error when dollars per rune is zero"))
+}
+
+func (s *HelperSuite) TestGetAssetValueInTORWithSynthAsset(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	// Setup TOR anchor pool (BUSD)
+	k.SetMimir(ctx, "TorAnchor-ETH-BUSD-BD1", 1)
+	busd, err := common.NewAsset("ETH.BUSD-BD1")
+	c.Assert(err, IsNil)
+	busdPool := NewPool()
+	busdPool.Asset = busd
+	busdPool.Status = PoolAvailable
+	busdPool.BalanceRune = cosmos.NewUint(100 * common.One)
+	busdPool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	busdPool.Decimals = 8
+	c.Assert(k.SetPool(ctx, busdPool), IsNil)
+
+	// Setup BTC pool
+	btcPool := NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.Status = PoolAvailable
+	btcPool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	btcPool.BalanceAsset = cosmos.NewUint(10 * common.One)
+	btcPool.Decimals = 8
+	c.Assert(k.SetPool(ctx, btcPool), IsNil)
+
+	// Test with synth BTC - should use Layer1 pool
+	synthBTC := common.BTCAsset.GetSyntheticAsset()
+	synthAmount := cosmos.NewUint(1 * common.One) // 1 synth BTC
+	torValue, err := getAssetValueInTOR(ctx, k, synthBTC, synthAmount)
+	c.Assert(err, IsNil)
+	c.Check(torValue.GT(cosmos.ZeroUint()), Equals, true, Commentf("TOR value should be > 0 for synth BTC"))
+}
+
+func (s *HelperSuite) TestCheckMempoolSwapCapacity(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	// Setup TOR anchor pool (BUSD) for price calculation
+	k.SetMimir(ctx, "TorAnchor-ETH-BUSD-BD1", 1)
+	busd, err := common.NewAsset("ETH.BUSD-BD1")
+	c.Assert(err, IsNil)
+	busdPool := NewPool()
+	busdPool.Asset = busd
+	busdPool.Status = PoolAvailable
+	busdPool.BalanceRune = cosmos.NewUint(100 * common.One)   // 100 RUNE
+	busdPool.BalanceAsset = cosmos.NewUint(1000 * common.One) // 1000 BUSD ($10 per RUNE)
+	busdPool.Decimals = 8
+	c.Assert(k.SetPool(ctx, busdPool), IsNil)
+
+	// Setup BTC pool
+	btcPool := NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.Status = PoolAvailable
+	btcPool.BalanceRune = cosmos.NewUint(1000 * common.One) // 1000 RUNE
+	btcPool.BalanceAsset = cosmos.NewUint(10 * common.One)  // 10 BTC (100 RUNE per BTC)
+	btcPool.Decimals = 8
+	c.Assert(k.SetPool(ctx, btcPool), IsNil)
+
+	// Test 1: Mempool swap cap is disabled (zero)
+	torValue, hasCapacity, err := checkMempoolSwapCapacity(ctx, k, common.BTCAsset, cosmos.NewUint(1*common.One))
+	c.Assert(err, IsNil)
+	c.Check(hasCapacity, Equals, false, Commentf("Should have no capacity when cap is disabled"))
+	c.Check(torValue.IsZero(), Equals, true, Commentf("TOR value should be zero when cap is disabled"))
+
+	// Test 2: Enable mempool swap cap and test capacity
+	k.SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000*common.One) // $100,000 cap
+	torValue, hasCapacity, err = checkMempoolSwapCapacity(ctx, k, common.BTCAsset, cosmos.NewUint(1*common.One))
+	c.Assert(err, IsNil)
+	c.Check(hasCapacity, Equals, true, Commentf("Should have capacity with large cap"))
+	c.Check(torValue.GT(cosmos.ZeroUint()), Equals, true, Commentf("TOR value should be > 0"))
+
+	// Test 3: Test with cap exceeded
+	k.SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 1*common.One) // $1 cap
+	_, hasCapacity, err = checkMempoolSwapCapacity(ctx, k, common.BTCAsset, cosmos.NewUint(1*common.One))
+	c.Assert(err, IsNil)
+	c.Check(hasCapacity, Equals, false, Commentf("Should NOT have capacity with small cap"))
+
+	// Test 4: Test with current usage
+	k.SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 2000*common.One) // $2000 cap
+	k.SetMempoolSwapUsageTOR(ctx, cosmos.NewUint(1500*common.One))         // Already used $1500
+	// 1 BTC = 100 RUNE @ $10/RUNE = $1000 in TOR
+	// Current usage $1500 + swap $1000 = $2500 > $2000 cap
+	_, hasCapacity, err = checkMempoolSwapCapacity(ctx, k, common.BTCAsset, cosmos.NewUint(1*common.One))
+	c.Assert(err, IsNil)
+	c.Check(hasCapacity, Equals, false, Commentf("Should NOT have capacity when usage + swap > cap"))
+
+	// Test 5: Test with room under cap
+	k.SetMempoolSwapUsageTOR(ctx, cosmos.NewUint(500*common.One)) // Already used $500
+	// Current usage $500 + swap $1000 = $1500 < $2000 cap
+	_, hasCapacity, err = checkMempoolSwapCapacity(ctx, k, common.BTCAsset, cosmos.NewUint(1*common.One))
+	c.Assert(err, IsNil)
+	c.Check(hasCapacity, Equals, true, Commentf("Should have capacity when usage + swap <= cap"))
+}
+
+func (s *HelperSuite) TestCheckMempoolSwapCapacityWithRUNE(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	// Setup TOR anchor pool (BUSD) for price calculation
+	k.SetMimir(ctx, "TorAnchor-ETH-BUSD-BD1", 1)
+	busd, err := common.NewAsset("ETH.BUSD-BD1")
+	c.Assert(err, IsNil)
+	busdPool := NewPool()
+	busdPool.Asset = busd
+	busdPool.Status = PoolAvailable
+	busdPool.BalanceRune = cosmos.NewUint(100 * common.One)   // 100 RUNE
+	busdPool.BalanceAsset = cosmos.NewUint(1000 * common.One) // 1000 BUSD ($10 per RUNE)
+	busdPool.Decimals = 8
+	c.Assert(k.SetPool(ctx, busdPool), IsNil)
+
+	// Enable mempool swap cap
+	k.SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000*common.One) // $100,000 cap
+
+	// Test with RUNE directly (no pool lookup needed)
+	runeAmount := cosmos.NewUint(10 * common.One) // 10 RUNE = $100
+	torValue, hasCapacity, err := checkMempoolSwapCapacity(ctx, k, common.RuneAsset(), runeAmount)
+	c.Assert(err, IsNil)
+	c.Check(hasCapacity, Equals, true, Commentf("Should have capacity for RUNE swap"))
+	c.Check(torValue.GT(cosmos.ZeroUint()), Equals, true, Commentf("TOR value should be > 0"))
+}
+
+func (s *HelperSuite) TestCheckMempoolSwapCapacityErrorCases(c *C) {
+	ctx, k := setupKeeperForTest(c)
+
+	// Setup TOR anchor pool (BUSD) for price calculation
+	k.SetMimir(ctx, "TorAnchor-ETH-BUSD-BD1", 1)
+	busd, err := common.NewAsset("ETH.BUSD-BD1")
+	c.Assert(err, IsNil)
+	busdPool := NewPool()
+	busdPool.Asset = busd
+	busdPool.Status = PoolAvailable
+	busdPool.BalanceRune = cosmos.NewUint(100 * common.One)
+	busdPool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	busdPool.Decimals = 8
+	c.Assert(k.SetPool(ctx, busdPool), IsNil)
+
+	// Enable mempool swap cap
+	k.SetMimir(ctx, constants.MempoolSwapCapTOR.String(), 100000*common.One)
+
+	// Test with asset that has no pool
+	_, hasCapacity, err := checkMempoolSwapCapacity(ctx, k, common.ETHAsset, cosmos.NewUint(1*common.One))
+	c.Assert(err, NotNil, Commentf("Should error for asset with no pool"))
+	c.Check(hasCapacity, Equals, false)
+
+	// Test with zero amount - no pool needed
+	// Setup ETH pool first
+	ethPool := NewPool()
+	ethPool.Asset = common.ETHAsset
+	ethPool.Status = PoolAvailable
+	ethPool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	ethPool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	ethPool.Decimals = 18
+	c.Assert(k.SetPool(ctx, ethPool), IsNil)
+
+	torValue, hasCapacity, err := checkMempoolSwapCapacity(ctx, k, common.ETHAsset, cosmos.ZeroUint())
+	c.Assert(err, IsNil)
+	c.Check(hasCapacity, Equals, false, Commentf("Should return false for zero amount"))
+	c.Check(torValue.IsZero(), Equals, true)
+}
