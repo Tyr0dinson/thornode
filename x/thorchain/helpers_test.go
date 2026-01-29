@@ -2828,7 +2828,8 @@ func (s *HelperSuite) TestGetAssetValueInTOR(c *C) {
 	c.Assert(err, NotNil, Commentf("Should error for asset with no pool"))
 
 	// Test 4: Zero DollarsPerRune - should return error
-	k.DeleteMimir(ctx, "TorAnchor-ETH-BUSD-BD1")
+	err = k.DeleteMimir(ctx, "TorAnchor-ETH-BUSD-BD1")
+	c.Assert(err, IsNil)
 	_, err = getAssetValueInTOR(ctx, k, common.RuneAsset(), runeAmount)
 	c.Assert(err, NotNil, Commentf("Should error when dollars per rune is zero"))
 }
