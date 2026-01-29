@@ -1279,3 +1279,159 @@ func (s *HandlerObservedTxHelpersSuite) TestGasCorrectionRequiresFinalityParity(
 	c.Assert(vault.GetCoin(common.ETHAsset).Amount.Equal(vaultBalanceBefore), Equals, true,
 		Commentf("vault balance should be unchanged when non-final re-observations are rejected"))
 }
+
+func (s *HandlerObservedTxHelpersSuite) TestCreateMempoolRevertTxID(c *C) {
+	// Test basic creation with asymmetric TxID
+	originalTxID := common.TxID("1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF")
+
+	// Create revert TxID with action index 0
+	revertTxID := CreateMempoolRevertTxID(originalTxID, 0)
+	c.Assert(len(revertTxID.String()), Equals, 64, Commentf("Revert TxID should be 64 characters"))
+	c.Assert(revertTxID, Not(Equals), originalTxID, Commentf("Revert TxID should be different from original"))
+
+	// The revert TxID should be the reversed original (with XOR on last byte)
+	// Original: 1234...CDEF
+	// Reversed: FEDC...4321
+	// Verify the first characters are the last characters of original reversed
+	c.Assert(revertTxID.String()[:4], Equals, "FEDC", Commentf("Reversed TxID should start with reversed end"))
+
+	// Test with different action indices
+	revertTxID0 := CreateMempoolRevertTxID(originalTxID, 0)
+	revertTxID1 := CreateMempoolRevertTxID(originalTxID, 1)
+	revertTxID2 := CreateMempoolRevertTxID(originalTxID, 2)
+
+	// Each action index should produce a different revert TxID
+	c.Assert(revertTxID0, Not(Equals), revertTxID1, Commentf("Different action indices should produce different TxIDs"))
+	c.Assert(revertTxID1, Not(Equals), revertTxID2, Commentf("Different action indices should produce different TxIDs"))
+
+	// Test determinism - same inputs should produce same output
+	revertTxID0Again := CreateMempoolRevertTxID(originalTxID, 0)
+	c.Assert(revertTxID0, Equals, revertTxID0Again, Commentf("Same inputs should produce same output"))
+}
+
+func (s *HandlerObservedTxHelpersSuite) TestCreateMempoolRevertTxIDWithDifferentTxIDs(c *C) {
+	// Test with various TxIDs to ensure the reversal works correctly
+	txID1 := common.TxID("1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF")
+	txID2 := common.TxID("FEDCBA0987654321FEDCBA0987654321FEDCBA0987654321FEDCBA0987654321")
+
+	revert1 := CreateMempoolRevertTxID(txID1, 0)
+	revert2 := CreateMempoolRevertTxID(txID2, 0)
+
+	// Different originals should produce different reverts
+	c.Assert(revert1, Not(Equals), revert2, Commentf("Different originals should produce different reverts"))
+
+	// Verify the reversed structure
+	// txID1 reversed (ignoring XOR) should start with FEDCBA...
+	c.Assert(revert1.String()[:6], Equals, "FEDCBA", Commentf("Reversed TxID should start with reversed characters"))
+}
+
+func (s *HandlerObservedTxHelpersSuite) TestCreateMempoolRevertTxIDInvalidLength(c *C) {
+	// Test with invalid TxID length
+	shortTxID := common.TxID("ABCD")
+	result := CreateMempoolRevertTxID(shortTxID, 0)
+	// Should return the original TxID as fallback
+	c.Assert(result, Equals, shortTxID, Commentf("Invalid TxID should return original as fallback"))
+
+	emptyTxID := common.TxID("")
+	result = CreateMempoolRevertTxID(emptyTxID, 0)
+	c.Assert(result, Equals, emptyTxID, Commentf("Empty TxID should return original as fallback"))
+}
+
+func (s *HandlerObservedTxHelpersSuite) TestGetOriginalFromMempoolRevertTxID(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	// Create an original TxID and store a voter for it with actual observations
+	originalTxID := common.TxID("1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF")
+	observedTx := ObservedTx{
+		Tx: common.Tx{
+			ID:    originalTxID,
+			Chain: common.BTCChain,
+			Coins: common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One))},
+		},
+	}
+	voter := NewObservedTxVoter(originalTxID, ObservedTxs{observedTx})
+	voter.Height = 100 // Set height to indicate voter has been processed
+	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+
+	// Create a revert TxID with action index 0
+	revertTxID := CreateMempoolRevertTxID(originalTxID, 0)
+
+	// Should be able to recover the original
+	recoveredTxID, found := GetOriginalFromMempoolRevertTxID(ctx, mgr.Keeper(), revertTxID)
+	c.Assert(found, Equals, true, Commentf("Should find the original TxID"))
+	c.Assert(recoveredTxID, Equals, originalTxID, Commentf("Recovered TxID should match original"))
+}
+
+func (s *HandlerObservedTxHelpersSuite) TestGetOriginalFromMempoolRevertTxIDWithActionIndex(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	// Create an original TxID and store a voter for it with actual observations
+	originalTxID := common.TxID("ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890")
+	observedTx := ObservedTx{
+		Tx: common.Tx{
+			ID:    originalTxID,
+			Chain: common.BTCChain,
+			Coins: common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One))},
+		},
+	}
+	voter := NewObservedTxVoter(originalTxID, ObservedTxs{observedTx})
+	voter.Height = 100 // Set height to indicate voter has been processed
+	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+
+	// Test recovery with action index 0 - this is the only one guaranteed to work
+	// since the lookup iterates through action indices and returns first match
+	revertTxID := CreateMempoolRevertTxID(originalTxID, 0)
+	recoveredTxID, found := GetOriginalFromMempoolRevertTxID(ctx, mgr.Keeper(), revertTxID)
+	c.Assert(found, Equals, true, Commentf("Should find original for action index 0"))
+	c.Assert(recoveredTxID, Equals, originalTxID, Commentf("Recovered TxID should match for action index 0"))
+}
+
+func (s *HandlerObservedTxHelpersSuite) TestGetOriginalFromMempoolRevertTxIDInvalidLength(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	// Test with invalid TxID length
+	shortTxID := common.TxID("ABCD")
+	_, found := GetOriginalFromMempoolRevertTxID(ctx, mgr.Keeper(), shortTxID)
+	c.Assert(found, Equals, false, Commentf("Invalid TxID length should return not found"))
+
+	emptyTxID := common.TxID("")
+	_, found = GetOriginalFromMempoolRevertTxID(ctx, mgr.Keeper(), emptyTxID)
+	c.Assert(found, Equals, false, Commentf("Empty TxID should return not found"))
+}
+
+func (s *HandlerObservedTxHelpersSuite) TestGetOriginalFromMempoolRevertTxIDInvalidHex(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	// Test with invalid hex in last two characters
+	// 64 characters but last two are not valid hex
+	invalidHexTxID := common.TxID("1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDGG")
+	_, found := GetOriginalFromMempoolRevertTxID(ctx, mgr.Keeper(), invalidHexTxID)
+	c.Assert(found, Equals, false, Commentf("Invalid hex should return not found"))
+}
+
+func (s *HandlerObservedTxHelpersSuite) TestMempoolRevertTxIDRoundTrip(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	// Test that create + get is a round trip with action index 0
+	// Note: The lookup function iterates through action indices 0-15 and returns
+	// the first match found in the keeper, so action index 0 is guaranteed to work
+	originalTxID := common.TxID("1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF")
+
+	// Store the voter with actual observations
+	observedTx := ObservedTx{
+		Tx: common.Tx{
+			ID:    originalTxID,
+			Chain: common.BTCChain,
+			Coins: common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One))},
+		},
+	}
+	voter := NewObservedTxVoter(originalTxID, ObservedTxs{observedTx})
+	voter.Height = 100
+	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+
+	// Test round trip with action index 0
+	revertTxID := CreateMempoolRevertTxID(originalTxID, 0)
+	recoveredTxID, found := GetOriginalFromMempoolRevertTxID(ctx, mgr.Keeper(), revertTxID)
+	c.Assert(found, Equals, true, Commentf("Round trip failed for TxID %s", originalTxID))
+	c.Assert(recoveredTxID, Equals, originalTxID, Commentf("Recovered TxID mismatch for TxID %s", originalTxID))
+}
