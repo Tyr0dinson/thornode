@@ -128,6 +128,7 @@ func NewAssetWithShortCodesV3_1_0(input string) (Asset, error) {
 	shorts[BaseETHAsset.ShortCode()] = BaseETHAsset.String()
 	shorts[TRXAsset.ShortCode()] = TRXAsset.String()
 	shorts[XRPAsset.ShortCode()] = XRPAsset.String()
+	shorts[ADAAsset.ShortCode()] = ADAAsset.String()
 
 	long, ok := shorts[input]
 	if ok {
@@ -330,6 +331,9 @@ func (a Asset) ShortCode() string {
 		return "o"
 	case "ZEC.ZEC":
 		return "z"
+	case "ADA.ADA":
+		return "ad"
+
 	default:
 		return ""
 	}
