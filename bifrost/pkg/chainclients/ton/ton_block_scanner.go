@@ -18,12 +18,13 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	"golang.org/x/sync/errgroup"
 )
 
 const (
 	minNetworkFee = 10_000_000
-	extInLookback = 100
+	extInLookback = 1000
 )
 
 type TonBlockScanner struct {
@@ -307,7 +308,11 @@ func (s *TonBlockScanner) processShard(
 		var tx *tlb.Transaction
 		tx, err = s.api.GetTransaction(s.ctx, block, addr, txInfo.LT)
 		if err != nil {
-			s.logger.Err(err).Msg("failed getting tx info")
+			s.logger.Err(err).
+				Str("shard", shardId(shard)).
+				Str("account", addr.String()).
+				Msg("failed getting tx info")
+			return nil, fmt.Errorf("failed to get tx: %w", err)
 		}
 
 		skip, reason := skipTx(tx)
@@ -395,6 +400,21 @@ func (s *TonBlockScanner) processMessage(
 	if err != nil {
 		s.logger.Debug().Err(err).Msg("")
 		return txInItem, err
+	}
+
+	memo := msg.Comment()
+	if len(memo) == 0 {
+		return txInItem, fmt.Errorf("memo is empty")
+	}
+
+	if len(memo) > constants.MaxMemoSize {
+		return txInItem, fmt.Errorf("memo exceeds %d bytes: %d", constants.MaxMemoSize, len(memo))
+	}
+
+	for _, c := range memo {
+		if c > 127 {
+			return txInItem, fmt.Errorf("memo contains invalid characters")
+		}
 	}
 
 	src := msg.SrcAddr
@@ -496,8 +516,9 @@ func (s *TonBlockScanner) findExternalInTx(
 
 	acc, err := s.api.WaitForBlock(block.SeqNo).GetAccount(s.ctx, block, src)
 	if err != nil {
-		s.logger.Err(err).Msg("")
-		return nil, err
+		// possible by sending all funds from wallet
+		s.logger.Err(err).Msg("source account not found")
+		return nil, nil
 	}
 
 	lt := acc.LastTxLT
