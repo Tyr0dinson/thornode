@@ -169,6 +169,43 @@ func (s *ThorchainSuite) TestSign(c *C) {
 	c.Assert(err, IsNil)
 }
 
+// TestGetInboundOutbound_DuplicateCancelTx tests that duplicate cancel transactions
+// (vault-to-vault with empty memo) are handled correctly without returning an error.
+// This test covers the scenario where filterObservations adds vault-to-vault transactions
+// twice for inbound+outbound processing - the second occurrence should be silently dropped.
+func (s *ThorchainSuite) TestGetInboundOutbound_DuplicateCancelTx(c *C) {
+	pk := stypes.GetRandomPubKey()
+	vaultAddr, err := pk.GetAddress(common.ETHChain)
+	c.Assert(err, IsNil)
+
+	// Create a cancel transaction: vault-to-vault with empty memo
+	cancelTx := common.NewObservedTx(
+		common.Tx{
+			ID: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+			Coins: common.Coins{
+				common.NewCoin(common.ETHAsset, cosmos.NewUint(123400000)),
+			},
+			Memo:        "", // Empty memo indicates a cancel transaction
+			FromAddress: vaultAddr,
+			ToAddress:   vaultAddr, // Same address as FromAddress
+		},
+		1,
+		pk,
+		1,
+	)
+
+	// Submit the same transaction twice, simulating filterObservations behavior
+	// that adds vault-to-vault transactions twice for inbound+outbound processing
+	in, out, err := s.bridge.GetInboundOutbound(common.ObservedTxs{cancelTx, cancelTx})
+
+	// Should not return an error - the duplicate should be silently dropped
+	c.Assert(err, IsNil)
+	// Cancel tx should only be in outbound array (not inbound due to !isCancelTransaction check)
+	c.Assert(in, HasLen, 0)
+	// Should only have one copy in outbound (duplicate dropped)
+	c.Assert(out, HasLen, 1)
+}
+
 func (ThorchainSuite) TestNewThorchainBridge(c *C) {
 	testFunc := func(cfg config.BifrostClientConfiguration, errChecker, sbChecker Checker) {
 		registry := codectypes.NewInterfaceRegistry()

@@ -402,6 +402,11 @@ func (b *thorchainBridge) GetInboundOutbound(txIns common.ObservedTxs) (common.O
 		case !vaultToAddress && inOutboundArray:
 			// It's already in its only (outbound) array, so drop it.
 			b.logger.Error().Msgf("observed tx out for chain (%s) tx (%s) is already in the outbound array", tx.Tx.Chain, tx.Tx.ID)
+		case isCancelTransaction && inOutboundArray:
+			// Cancel transaction already processed as outbound, drop the duplicate.
+			// This handles the second occurrence from filterObservations which adds
+			// vault-to-vault transactions twice for inbound+outbound processing.
+			b.logger.Debug().Msgf("cancel tx for chain (%s) tx (%s) already in outbound array, dropping duplicate", tx.Tx.Chain, tx.Tx.ID)
 		default:
 			// This should never happen; rather than dropping it, return an error.
 			return nil, nil, fmt.Errorf("could not determine if chain (%s) tx (%s) was inbound or outbound", tx.Tx.Chain, tx.Tx.ID)
