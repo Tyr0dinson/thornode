@@ -549,9 +549,6 @@ func (k KVStore) DeductNativeTxFeeFromAccount(ctx cosmos.Context, acctAddr cosmo
 func (k KVStore) GetModifyLimitSwapFee(ctx cosmos.Context, addr cosmos.AccAddress, isBatch bool) cosmos.Uint {
 	// Batch always gets discount, single gets discount only if first in block
 	if isBatch || !k.HasModifiedLimitSwapInBlock(ctx, addr) {
-		if k.usdFeesEnabled(ctx) {
-			return k.DollarConfigInRune(ctx, constants.ModifyLimitSwapDiscountedFeeUSD)
-		}
 		fee := k.GetConfigInt64(ctx, constants.ModifyLimitSwapDiscountedFee)
 		return cosmos.NewUint(uint64(fee))
 	}

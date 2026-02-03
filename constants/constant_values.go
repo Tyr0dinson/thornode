@@ -109,7 +109,6 @@ const (
 	NativeOutboundFeeUSD
 	NativeTransactionFeeUSD
 	ModifyLimitSwapDiscountedFee
-	ModifyLimitSwapDiscountedFeeUSD
 	TNSRegisterFeeUSD
 	TNSFeePerBlockUSD
 	EnableUSDFees
