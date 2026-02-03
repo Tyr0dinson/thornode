@@ -230,5 +230,5 @@ func (h ModifyLimitSwapHandler) donateToPool(ctx cosmos.Context, asset common.As
 // ModifyLimitSwapAnteHandler is the ante handler for MsgModifyLimitSwap
 // It deducts the appropriate fee (discounted for first modify in block, standard otherwise)
 func ModifyLimitSwapAnteHandler(ctx cosmos.Context, v semver.Version, k keeper.Keeper, msg MsgModifyLimitSwap) (cosmos.Context, error) {
-	return ctx, k.DeductModifyLimitSwapFee(ctx, msg.Signer, false)
+	return ctx, k.DeductModifyLimitSwapFee(ctx, msg.Signer)
 }

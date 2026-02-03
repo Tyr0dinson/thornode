@@ -846,11 +846,11 @@ func (k KVStoreDummy) DeductNativeTxFeeFromAccount(ctx cosmos.Context, acctAddr 
 	return kaboom
 }
 
-func (k KVStoreDummy) GetModifyLimitSwapFee(ctx cosmos.Context, addr cosmos.AccAddress, isBatch bool) cosmos.Uint {
+func (k KVStoreDummy) GetModifyLimitSwapFee(ctx cosmos.Context, addr cosmos.AccAddress) cosmos.Uint {
 	return cosmos.ZeroUint()
 }
 
-func (k KVStoreDummy) DeductModifyLimitSwapFee(ctx cosmos.Context, addr cosmos.AccAddress, isBatch bool) error {
+func (k KVStoreDummy) DeductModifyLimitSwapFee(ctx cosmos.Context, addr cosmos.AccAddress) error {
 	return kaboom
 }
 
@@ -859,9 +859,6 @@ func (k KVStoreDummy) HasModifiedLimitSwapInBlock(ctx cosmos.Context, addr cosmo
 }
 
 func (k KVStoreDummy) SetModifiedLimitSwapInBlock(ctx cosmos.Context, addr cosmos.AccAddress) {
-}
-
-func (k KVStoreDummy) CleanupModifyLimitSwapTracking(ctx cosmos.Context) {
 }
 
 func (k KVStoreDummy) ReferenceMemoExists(ctx cosmos.Context, _ common.Asset, _ string) bool {

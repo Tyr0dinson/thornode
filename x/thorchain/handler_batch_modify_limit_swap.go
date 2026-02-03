@@ -67,12 +67,6 @@ func (h BatchModifyLimitSwapHandler) handle(ctx cosmos.Context, msg MsgBatchModi
 		if err := singleHandler.handle(ctx, *singleMsg); err != nil {
 			return fmt.Errorf("operation %d failed: %w", i, err)
 		}
-
-		// Emit event for each operation
-		modEvent := NewEventModifyLimitSwap(op.From, op.Source, op.Target, op.ModifiedTargetAmount)
-		if err := h.mgr.EventMgr().EmitEvent(ctx, modEvent); err != nil {
-			ctx.Logger().Error("fail to emit modEvent event", "error", err)
-		}
 	}
 
 	return nil
@@ -80,5 +74,5 @@ func (h BatchModifyLimitSwapHandler) handle(ctx cosmos.Context, msg MsgBatchModi
 
 // BatchModifyLimitSwapAnteHandler is the ante handler for MsgBatchModifyLimitSwap
 func BatchModifyLimitSwapAnteHandler(ctx cosmos.Context, v semver.Version, k keeper.Keeper, msg MsgBatchModifyLimitSwap) (cosmos.Context, error) {
-	return ctx, k.DeductModifyLimitSwapFee(ctx, msg.Signer, true)
+	return ctx, k.DeductModifyLimitSwapFee(ctx, msg.Signer)
 }

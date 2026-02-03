@@ -544,33 +544,29 @@ func (k KVStore) DeductNativeTxFeeFromAccount(ctx cosmos.Context, acctAddr cosmo
 }
 
 // GetModifyLimitSwapFee returns the fee for a modify limit swap transaction.
-// Batch transactions always get the discounted fee.
-// Single transactions get the discounted fee only if it's the first modify in the block for that address.
-func (k KVStore) GetModifyLimitSwapFee(ctx cosmos.Context, addr cosmos.AccAddress, isBatch bool) cosmos.Uint {
-	// Batch always gets discount, single gets discount only if first in block
-	if isBatch || !k.HasModifiedLimitSwapInBlock(ctx, addr) {
+// Only one modify swap per address per block gets the discounted fee (single or batch).
+func (k KVStore) GetModifyLimitSwapFee(ctx cosmos.Context, addr cosmos.AccAddress) cosmos.Uint {
+	// Only the first modify in a block (single or batch) gets the discounted fee
+	if !k.HasModifiedLimitSwapInBlock(ctx, addr) {
 		fee := k.GetConfigInt64(ctx, constants.ModifyLimitSwapDiscountedFee)
 		return cosmos.NewUint(uint64(fee))
 	}
-	// Not first in block for single modify, use standard fee
+	// Not first in block, use standard fee
 	return k.GetNativeTxFee(ctx)
 }
 
 // DeductModifyLimitSwapFee deducts the appropriate fee for a modify limit swap transaction.
-// For batch transactions, deducts the discounted fee once.
-// For single transactions, deducts the discounted fee if first in block, otherwise standard fee.
-// Also marks the address as having modified a limit swap in this block (for single transactions only).
-func (k KVStore) DeductModifyLimitSwapFee(ctx cosmos.Context, addr cosmos.AccAddress, isBatch bool) error {
-	fee := k.GetModifyLimitSwapFee(ctx, addr, isBatch)
+// Only the first modify in a block (single or batch) gets the discounted fee, subsequent modifies pay standard fee.
+// Marks the address as having modified a limit swap in this block.
+func (k KVStore) DeductModifyLimitSwapFee(ctx cosmos.Context, addr cosmos.AccAddress) error {
+	fee := k.GetModifyLimitSwapFee(ctx, addr)
 	if fee.IsZero() {
 		return nil // no fee
 	}
 
-	// Mark this address as having modified in this block (only for single modify)
-	// This must be done before deducting to ensure subsequent single modifies pay full fee
-	if !isBatch {
-		k.SetModifiedLimitSwapInBlock(ctx, addr)
-	}
+	// Mark this address as having modified in this block
+	// This must be done before deducting to ensure subsequent modifies pay full fee
+	k.SetModifiedLimitSwapInBlock(ctx, addr)
 
 	coins := common.NewCoins(common.NewCoin(common.RuneNative, fee))
 	return k.SendFromAccountToModule(ctx, addr, ReserveName, coins)
