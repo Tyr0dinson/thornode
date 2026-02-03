@@ -3,11 +3,8 @@ package thorchain
 import (
 	"fmt"
 
-	"github.com/blang/semver"
-
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
-	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 )
 
 // BatchModifyLimitSwapHandler is the handler to process MsgBatchModifyLimitSwap.
@@ -70,9 +67,4 @@ func (h BatchModifyLimitSwapHandler) handle(ctx cosmos.Context, msg MsgBatchModi
 	}
 
 	return nil
-}
-
-// BatchModifyLimitSwapAnteHandler is the ante handler for MsgBatchModifyLimitSwap
-func BatchModifyLimitSwapAnteHandler(ctx cosmos.Context, v semver.Version, k keeper.Keeper, msg MsgBatchModifyLimitSwap) (cosmos.Context, error) {
-	return ctx, k.DeductModifyLimitSwapFee(ctx, msg.Signer)
 }
