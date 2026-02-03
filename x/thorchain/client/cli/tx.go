@@ -43,10 +43,71 @@ func GetTxCmd() *cobra.Command {
 	cmd.AddCommand(GetCmdSend())
 	cmd.AddCommand(GetCmdObserveTxIns())
 	cmd.AddCommand(GetCmdObserveTxOuts())
+	cmd.AddCommand(GetCmdBatchModifyLimitSwap())
 	for _, subCmd := range cmd.Commands() {
 		flags.AddTxFlagsToCmd(subCmd)
 	}
 	return cmd
+}
+
+// batchModifyLimitSwapInput represents a single operation in a batch modify limit swap
+type batchModifyLimitSwapInput struct {
+	SourceAsset          string `json:"source_asset"`
+	SourceAmount         string `json:"source_amount"`
+	TargetAsset          string `json:"target_asset"`
+	TargetAmount         string `json:"target_amount"`
+	ModifiedTargetAmount string `json:"modified_target_amount"`
+}
+
+// GetCmdBatchModifyLimitSwap command to batch modify multiple limit swaps
+func GetCmdBatchModifyLimitSwap() *cobra.Command {
+	return &cobra.Command{
+		Use:   "batch-modify-limit-swap [operations-json]",
+		Short: "batch modify multiple limit swaps",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			clientCtx, err := client.GetClientTxContext(cmd)
+			if err != nil {
+				return err
+			}
+
+			var inputs []batchModifyLimitSwapInput
+			if err = json.Unmarshal([]byte(args[0]), &inputs); err != nil {
+				return fmt.Errorf("invalid operations json: %w", err)
+			}
+
+			// Derive "from" address from signer
+			from, err := common.NewAddress(clientCtx.GetFromAddress().String())
+			if err != nil {
+				return fmt.Errorf("invalid signer address: %w", err)
+			}
+
+			operations := make([]types.ModifyLimitSwapOperation, len(inputs))
+			for i, input := range inputs {
+				sourceAsset, err := common.NewAsset(input.SourceAsset)
+				if err != nil {
+					return fmt.Errorf("operation %d: invalid source asset: %w", i, err)
+				}
+				targetAsset, err := common.NewAsset(input.TargetAsset)
+				if err != nil {
+					return fmt.Errorf("operation %d: invalid target asset: %w", i, err)
+				}
+				sourceAmount := cosmos.NewUintFromString(input.SourceAmount)
+				targetAmount := cosmos.NewUintFromString(input.TargetAmount)
+				modifiedAmount := cosmos.NewUintFromString(input.ModifiedTargetAmount)
+
+				source := common.NewCoin(sourceAsset, sourceAmount)
+				target := common.NewCoin(targetAsset, targetAmount)
+				operations[i] = types.NewModifyLimitSwapOperation(from, source, target, modifiedAmount)
+			}
+
+			msg := types.NewMsgBatchModifyLimitSwap(operations, clientCtx.GetFromAddress())
+			if err := msg.ValidateBasic(); err != nil {
+				return err
+			}
+			return tx.GenerateOrBroadcastTxCLI(clientCtx, cmd.Flags(), msg)
+		},
+	}
 }
 
 // GetCmdDeposit command to send a native transaction

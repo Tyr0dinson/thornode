@@ -1,0 +1,178 @@
+########################################################################################
+## Batch Modify Limit Swap Testing
+## Tests:
+## 1. Batch modify correctly updates multiple limit swaps
+## 2. First batch modify in a block gets discounted fee (100,000)
+## 3. Second batch modify in same block pays full fee (2,000,000)
+########################################################################################
+{{ template "default-state.yaml" }}
+---
+{{ template "btc-eth-pool-state.yaml" }}
+---
+type: create-blocks
+count: 1
+---
+type: tx-mimir
+key: EnableAdvSwapQueue
+value: 1
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
+########################################################################################
+# Setup: Create initial limit swaps for batch modification testing
+# fox starts with 2,500,000,000,000 RUNE
+# native_txid 1 = mimir tx
+# native_txid 2 = first deposit (BTC limit swap)
+# native_txid 3 = second deposit (ETH limit swap)
+########################################################################################
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "5000000000"
+    asset: "rune"
+memo: "=<:BTC.BTC:{{ addr_btc_fox }}:5000000"
+---
+type: tx-deposit
+signer: {{ addr_thor_fox }}
+coins:
+  - amount: "3000000000"
+    asset: "rune"
+memo: "=<:ETH.ETH:{{ addr_eth_fox }}:1000000000000000000"
+sequence: 1
+---
+type: create-blocks
+count: 1
+---
+# Verify both swaps are queued
+type: check
+endpoint: http://localhost:1317/thorchain/queue
+asserts:
+  - .swap == 2
+---
+# Check balance before first batch modify
+# Starting: 2,500,000,000,000
+# After 2 deposits (5B + 3B = 8B): 2,500B - 8B = 2,492B
+# After 2 tx fees (2M each): 2,492B - 4M = 2,491,996,000,000
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2491996000000
+---
+########################################################################################
+# Test 1: First batch modify in block (discounted fee: 100,000)
+# Modifies both swaps in a single transaction
+########################################################################################
+type: tx-batch-modify-limit-swap
+signer: {{ addr_thor_fox }}
+operations:
+  - source:
+      asset: "THOR.RUNE"
+      amount: "5000000000"
+    target:
+      asset: "BTC.BTC"
+      amount: "5000000"
+    modified_target_amount: "6000000"
+  - source:
+      asset: "THOR.RUNE"
+      amount: "3000000000"
+    target:
+      asset: "ETH.ETH"
+      amount: "1000000000000000000"
+    modified_target_amount: "1200000000000000000"
+---
+type: create-blocks
+count: 1
+---
+# Verify first swap was modified to new target (native_txid 2 = first deposit)
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ native_txid 2 }}
+asserts:
+  - .swap.trade_target == "6000000"
+  - .queue_type == "advanced"
+---
+# Verify second swap was modified (native_txid 3 = second deposit)
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ native_txid 3 }}
+asserts:
+  - .swap.trade_target == "1200000000000000000"
+  - .queue_type == "advanced"
+---
+# Check balance after first batch modify (discounted fee: 100,000)
+# Previous: 2,491,996,000,000
+# After discounted fee: 2,491,996,000,000 - 100,000 = 2,491,995,900,000
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2491995900000
+---
+########################################################################################
+# Test 2: Second batch modify in SAME block pays full fee (2,000,000)
+# First modify the first swap again (this will be discounted)
+# Then in the same block, modify again (this pays full fee)
+########################################################################################
+type: tx-batch-modify-limit-swap
+signer: {{ addr_thor_fox }}
+operations:
+  - source:
+      asset: "THOR.RUNE"
+      amount: "5000000000"
+    target:
+      asset: "BTC.BTC"
+      amount: "6000000"
+    modified_target_amount: "6500000"
+---
+# Second batch modify in SAME block should pay full fee
+type: tx-batch-modify-limit-swap
+signer: {{ addr_thor_fox }}
+operations:
+  - source:
+      asset: "THOR.RUNE"
+      amount: "3000000000"
+    target:
+      asset: "ETH.ETH"
+      amount: "1200000000000000000"
+    modified_target_amount: "1500000000000000000"
+sequence: 4
+---
+type: create-blocks
+count: 1
+---
+# Verify first swap was modified again
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ native_txid 2 }}
+asserts:
+  - .swap.trade_target == "6500000"
+---
+# Verify second swap was modified
+type: check
+endpoint: http://localhost:1317/thorchain/queue/swap/details/{{ native_txid 3 }}
+asserts:
+  - .swap.trade_target == "1500000000000000000"
+---
+# Check balance after both batch modifies in same block
+# Previous: 2,491,995,900,000
+# First batch modify (discounted): -100,000
+# Second batch modify (full fee): -2,000,000
+# Total: 2,491,995,900,000 - 100,000 - 2,000,000 = 2,491,993,800,000
+type: check
+endpoint: http://localhost:1317/cosmos/bank/v1beta1/balances/{{ addr_thor_fox }}
+asserts:
+  - .balances[]|select(.denom == "rune")|.amount|tonumber == 2491993800000
+---
+########################################################################################
+# Test 3: Verify limit_swap_mod events are generated for batch modifications
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/block
+asserts:
+  - .txs[].result.events[]|select(.type == "limit_swap_mod")|length > 0
+---
+########################################################################################
+# Final verification: Queue integrity
+########################################################################################
+type: check
+endpoint: http://localhost:1317/thorchain/queue
+asserts:
+  - .swap == 2
