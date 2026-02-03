@@ -22,6 +22,7 @@ var Upgrades = []upgrades.Upgrade{
 	// non-consensus breaking patch release 3.12.1, then add the 3.12.0 upgrade here in
 	// the following format:
 	// standard.NewUpgrade("3.12.0"),
+	standard.NewUpgrade("3.15.0"),
 
 	// If the upgrade requires store modifications, create a new upgrade package at
 	// app/upgrades/<semver> with the upgrade and reference it here in the format:
