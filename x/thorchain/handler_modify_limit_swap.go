@@ -64,8 +64,9 @@ func (h ModifyLimitSwapHandler) handle(ctx cosmos.Context, msg MsgModifyLimitSwa
 		return err
 	}
 
-	// convert the list of txn hashes to real msg swaps
-	msgSwaps := make([]MsgSwap, 0)
+	// Find the first matching swap from the user
+	// Use early break to avoid loading all swaps (gas griefing protection)
+	var matchingSwap *MsgSwap
 	for _, item := range items {
 		msgSwap, err := h.mgr.Keeper().GetAdvSwapQueueItem(ctx, item.TxID, item.Index)
 		if err != nil {
@@ -78,15 +79,17 @@ func (h ModifyLimitSwapHandler) handle(ctx cosmos.Context, msg MsgModifyLimitSwa
 			continue
 		}
 
-		msgSwaps = append(msgSwaps, msgSwap)
+		// Found a matching swap - break early to avoid loading unnecessary items
+		matchingSwap = &msgSwap
+		break
 	}
 
-	if len(msgSwaps) == 0 {
+	if matchingSwap == nil {
 		return fmt.Errorf("could not find matching limit swap")
 	}
 
-	// Only modify the first matching swap, not all of them
-	msgSwap := msgSwaps[0]
+	// Only modify the first matching swap
+	msgSwap := *matchingSwap
 	if msg.ModifiedTargetAmount.IsZero() {
 		// the target is being modified to zero, which is interpreted as a cancel
 		if err := h.cancelLimitSwap(ctx, msgSwap); err != nil {
@@ -100,10 +103,11 @@ func (h ModifyLimitSwapHandler) handle(ctx cosmos.Context, msg MsgModifyLimitSwa
 	}
 
 	// Donate any incoming funds from the modification transaction to the pool
+	// If donation fails, the entire transaction fails to ensure atomicity and prevent fund loss.
+	// The handler is wrapped in CacheContext (handler.go:40-41), so all state changes are rolled back on error.
 	if !msg.DepositAmount.IsZero() && !msg.DepositAsset.IsEmpty() {
 		if err := h.donateToPool(ctx, msg.DepositAsset, msg.DepositAmount, msg.From); err != nil {
-			ctx.Logger().Error("fail to donate modification tx funds to pool", "error", err, "asset", msg.DepositAsset, "amount", msg.DepositAmount)
-			// Don't fail the modification if donation fails
+			return fmt.Errorf("fail to donate modification tx funds to pool: %w", err)
 		}
 	}
 
@@ -142,6 +146,12 @@ func (h ModifyLimitSwapHandler) modifyLimitSwap(ctx cosmos.Context, msgSwap MsgS
 
 // donateToPool adds the given amount to the specified pool's balance
 func (h ModifyLimitSwapHandler) donateToPool(ctx cosmos.Context, asset common.Asset, amount cosmos.Uint, from common.Address) error {
+	// RUNE cannot be donated to a pool directly - it stays in Reserve.
+	// The funds were already sent to Reserve by handler_deposit.go, so we just skip the donation.
+	if asset.IsRune() {
+		return nil
+	}
+
 	// Get the pool for the asset
 	pool, err := h.mgr.Keeper().GetPool(ctx, asset.GetLayer1Asset())
 	if err != nil {
@@ -149,6 +159,17 @@ func (h ModifyLimitSwapHandler) donateToPool(ctx cosmos.Context, asset common.As
 	}
 	if pool.IsEmpty() {
 		return fmt.Errorf("pool does not exist for asset %s", asset)
+	}
+
+	// For native THORChain assets (RUNE, synths, etc.), transfer funds from Reserve to Asgard.
+	// The funds were deposited to Reserve by handler_deposit.go when processing the native deposit.
+	// Pool balances must be backed by actual funds in the Asgard module account.
+	// External chain assets (BTC, ETH, etc.) are observed via Bifrost and don't go through bank module.
+	if asset.IsNative() {
+		coin := common.NewCoin(asset, amount)
+		if err := h.mgr.Keeper().SendFromModuleToModule(ctx, ReserveName, AsgardName, common.NewCoins(coin)); err != nil {
+			return fmt.Errorf("fail to transfer funds from reserve to asgard: %w", err)
+		}
 	}
 
 	// Add the amount to the appropriate balance
