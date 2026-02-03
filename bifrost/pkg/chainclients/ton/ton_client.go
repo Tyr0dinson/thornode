@@ -344,7 +344,7 @@ func (c *TonClient) GetAccountByAddress(
 	decimals := common.TONChain.GetGasAssetDecimal()
 
 	amount, err := common.ConvertDecimals(
-		big.NewInt(account.State.Balance.Nano().Int64()),
+		account.State.Balance.Nano(),
 		int(decimals),
 		common.THORChainDecimals,
 	)

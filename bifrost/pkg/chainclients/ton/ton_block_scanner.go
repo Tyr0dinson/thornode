@@ -28,14 +28,16 @@ const (
 )
 
 type TonBlockScanner struct {
-	config     config.BifrostBlockScannerConfiguration
-	logger     zerolog.Logger
-	bridge     thorclient.ThorchainBridge
-	ctx        context.Context
-	api        ton.APIClientWrapped
-	lastShards map[string]uint32
+	config        config.BifrostBlockScannerConfiguration
+	logger        zerolog.Logger
+	bridge        thorclient.ThorchainBridge
+	ctx           context.Context
+	api           ton.APIClientWrapped
+	lastShards    map[string]uint32
+	lastShardsMtx sync.Mutex
 
 	feeRateCache [][]uint64
+	feeRateMtx   sync.Mutex
 	lastFeeRate  uint64
 
 	globalNetworkFeeQueue chan common.NetworkFee
@@ -60,12 +62,14 @@ func NewTonBlockScanner(
 			Str("module", "blockscanner").
 			Str("chain", cfg.ChainID.String()).
 			Logger(),
-		bridge:       bridge,
-		ctx:          context.Background(),
-		api:          api,
-		lastFeeRate:  0,
-		feeRateCache: make([][]uint64, 0),
-		lastShards:   make(map[string]uint32),
+		bridge:        bridge,
+		ctx:           context.Background(),
+		api:           api,
+		lastFeeRate:   0,
+		feeRateCache:  make([][]uint64, 0),
+		feeRateMtx:    sync.Mutex{},
+		lastShards:    make(map[string]uint32),
+		lastShardsMtx: sync.Mutex{},
 	}, nil
 }
 
@@ -126,6 +130,8 @@ func (s *TonBlockScanner) GetNetworkFee() (transactionSize, transactionFeeRate u
 }
 
 func (s *TonBlockScanner) sendNetworkFeeIfNecessary(height int64) {
+	s.feeRateMtx.Lock()
+	defer s.feeRateMtx.Unlock()
 	if len(s.feeRateCache) == 0 {
 		// Not enough txs yet
 		return
@@ -213,7 +219,9 @@ func (s *TonBlockScanner) processMaster(masterSeqno uint32) ([]*types.TxInItem, 
 	})
 
 	// add rates slice for the current master block
+	s.feeRateMtx.Lock()
 	s.feeRateCache = append(s.feeRateCache, []uint64{})
+	s.feeRateMtx.Unlock()
 
 	var txInItems []*types.TxInItem
 	var mu sync.Mutex
@@ -341,8 +349,10 @@ func (s *TonBlockScanner) processShard(
 		// we are just interested in fees of external in msgs, because this is
 		// the kind of tx that is needed for sending founds out of a vault
 		if msg.MsgType == tlb.MsgTypeExternalIn {
+			s.feeRateMtx.Lock()
 			index := len(s.feeRateCache) - 1
 			s.feeRateCache[index] = append(s.feeRateCache[index], tx.TotalFees.Coins.Nano().Uint64())
+			s.feeRateMtx.Unlock()
 			continue
 		}
 
@@ -369,7 +379,9 @@ func (s *TonBlockScanner) processShard(
 			return nil, err
 		}
 		for _, parent := range parents {
+			s.lastShardsMtx.Lock()
 			delete(s.lastShards, shardId(parent))
+			s.lastShardsMtx.Unlock()
 		}
 	}
 
@@ -403,10 +415,6 @@ func (s *TonBlockScanner) processMessage(
 	}
 
 	memo := msg.Comment()
-	if len(memo) == 0 {
-		return txInItem, fmt.Errorf("memo is empty")
-	}
-
 	if len(memo) > constants.MaxMemoSize {
 		return txInItem, fmt.Errorf("memo exceeds %d bytes: %d", constants.MaxMemoSize, len(memo))
 	}
