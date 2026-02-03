@@ -390,16 +390,13 @@ func (s *TonBlockScanner) processMessage(
 	msg *tlb.InternalMessage,
 ) (txInItem types.TxInItem, err error) {
 	if msg.Bounce {
-		err = fmt.Errorf("bounce flag set")
+		s.logger.Debug().Err(err).Msg("")
+		return txInItem, fmt.Errorf("bounce flag set")
 	}
 
 	if msg.Bounced {
-		err = fmt.Errorf("message bounced")
-	}
-
-	if err != nil {
 		s.logger.Debug().Err(err).Msg("")
-		return txInItem, err
+		return txInItem, fmt.Errorf("message bounced")
 	}
 
 	memo := msg.Comment()
