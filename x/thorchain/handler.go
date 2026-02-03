@@ -76,6 +76,7 @@ func getInternalHandlerMapping(mgr Manager) map[string]MsgHandler {
 	m[sdk.MsgTypeURL(&MsgRunePoolDeposit{})] = NewRunePoolDepositHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgRunePoolWithdraw{})] = NewRunePoolWithdrawHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgModifyLimitSwap{})] = NewModifyLimitSwapHandler(mgr)
+	m[sdk.MsgTypeURL(&MsgBatchModifyLimitSwap{})] = NewBatchModifyLimitSwapHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgWasmExec{})] = NewWasmExecHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgSwitch{})] = NewSwitchHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgTCYClaim{})] = NewTCYClaimHandler(mgr)

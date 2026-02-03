@@ -82,6 +82,11 @@ func (ms msgServer) PriceFeedQuorumBatch(goCtx context.Context, msg *types.MsgPr
 	return externalHandler(goCtx, handler, msg)
 }
 
+func (ms msgServer) BatchModifyLimitSwap(goCtx context.Context, msg *types.MsgBatchModifyLimitSwap) (*types.MsgEmpty, error) {
+	handler := NewBatchModifyLimitSwapHandler(ms.mgr)
+	return externalHandler(goCtx, handler, msg)
+}
+
 func (ms msgServer) ThorSend(goCtx context.Context, msg *types.MsgSend) (*types.MsgEmpty, error) {
 	handler := NewSendHandler(ms.mgr)
 	return externalHandler(goCtx, handler, msg)

@@ -43,6 +43,7 @@ const (
 	Msg_ApproveUpgrade_FullMethodName       = "/types.Msg/ApproveUpgrade"
 	Msg_RejectUpgrade_FullMethodName        = "/types.Msg/RejectUpgrade"
 	Msg_PriceFeedQuorumBatch_FullMethodName = "/types.Msg/PriceFeedQuorumBatch"
+	Msg_BatchModifyLimitSwap_FullMethodName = "/types.Msg/BatchModifyLimitSwap"
 	Msg_StoreCode_FullMethodName            = "/types.Msg/StoreCode"
 	Msg_InstantiateContract_FullMethodName  = "/types.Msg/InstantiateContract"
 	Msg_InstantiateContract2_FullMethodName = "/types.Msg/InstantiateContract2"
@@ -80,6 +81,7 @@ type MsgClient interface {
 	ApproveUpgrade(ctx context.Context, in *MsgApproveUpgrade, opts ...grpc.CallOption) (*MsgEmpty, error)
 	RejectUpgrade(ctx context.Context, in *MsgRejectUpgrade, opts ...grpc.CallOption) (*MsgEmpty, error)
 	PriceFeedQuorumBatch(ctx context.Context, in *MsgPriceFeedQuorumBatch, opts ...grpc.CallOption) (*MsgEmpty, error)
+	BatchModifyLimitSwap(ctx context.Context, in *MsgBatchModifyLimitSwap, opts ...grpc.CallOption) (*MsgEmpty, error)
 	// CosmWasm interface cloned in order so that we can register the x/thorchain
 	// message server as the server for x/wasm messages, and route through version
 	// control
@@ -308,6 +310,15 @@ func (c *msgClient) PriceFeedQuorumBatch(ctx context.Context, in *MsgPriceFeedQu
 	return out, nil
 }
 
+func (c *msgClient) BatchModifyLimitSwap(ctx context.Context, in *MsgBatchModifyLimitSwap, opts ...grpc.CallOption) (*MsgEmpty, error) {
+	out := new(MsgEmpty)
+	err := c.cc.Invoke(ctx, Msg_BatchModifyLimitSwap_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *msgClient) StoreCode(ctx context.Context, in *types.MsgStoreCode, opts ...grpc.CallOption) (*types.MsgStoreCodeResponse, error) {
 	out := new(types.MsgStoreCodeResponse)
 	err := c.cc.Invoke(ctx, Msg_StoreCode_FullMethodName, in, out, opts...)
@@ -407,6 +418,7 @@ type MsgServer interface {
 	ApproveUpgrade(context.Context, *MsgApproveUpgrade) (*MsgEmpty, error)
 	RejectUpgrade(context.Context, *MsgRejectUpgrade) (*MsgEmpty, error)
 	PriceFeedQuorumBatch(context.Context, *MsgPriceFeedQuorumBatch) (*MsgEmpty, error)
+	BatchModifyLimitSwap(context.Context, *MsgBatchModifyLimitSwap) (*MsgEmpty, error)
 	// CosmWasm interface cloned in order so that we can register the x/thorchain
 	// message server as the server for x/wasm messages, and route through version
 	// control
@@ -493,6 +505,9 @@ func (UnimplementedMsgServer) RejectUpgrade(context.Context, *MsgRejectUpgrade) 
 }
 func (UnimplementedMsgServer) PriceFeedQuorumBatch(context.Context, *MsgPriceFeedQuorumBatch) (*MsgEmpty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method PriceFeedQuorumBatch not implemented")
+}
+func (UnimplementedMsgServer) BatchModifyLimitSwap(context.Context, *MsgBatchModifyLimitSwap) (*MsgEmpty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method BatchModifyLimitSwap not implemented")
 }
 func (UnimplementedMsgServer) StoreCode(context.Context, *types.MsgStoreCode) (*types.MsgStoreCodeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method StoreCode not implemented")
@@ -945,6 +960,24 @@ func _Msg_PriceFeedQuorumBatch_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Msg_BatchModifyLimitSwap_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MsgBatchModifyLimitSwap)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).BatchModifyLimitSwap(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Msg_BatchModifyLimitSwap_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).BatchModifyLimitSwap(ctx, req.(*MsgBatchModifyLimitSwap))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Msg_StoreCode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(types.MsgStoreCode)
 	if err := dec(in); err != nil {
@@ -1187,6 +1220,10 @@ var Msg_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PriceFeedQuorumBatch",
 			Handler:    _Msg_PriceFeedQuorumBatch_Handler,
+		},
+		{
+			MethodName: "BatchModifyLimitSwap",
+			Handler:    _Msg_BatchModifyLimitSwap_Handler,
 		},
 		{
 			MethodName: "StoreCode",

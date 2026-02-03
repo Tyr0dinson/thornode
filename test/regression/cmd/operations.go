@@ -125,6 +125,8 @@ func NewOperation(opMap map[string]any) (Operation, error) {
 		op = &OpTxApproveUpgrade{}
 	case "tx-reject-upgrade":
 		op = &OpTxRejectUpgrade{}
+	case "tx-batch-modify-limit-swap":
+		op = &OpTxBatchModifyLimitSwap{}
 
 	// x/wasm
 	case "tx-execute-contract":
@@ -178,6 +180,7 @@ func NewOperation(opMap map[string]any) (Operation, error) {
 		*OpTxProposeUpgrade,
 		*OpTxApproveUpgrade,
 		*OpTxRejectUpgrade,
+		*OpTxBatchModifyLimitSwap,
 		*OpTxTssKeysign,
 		*OpTxTssPool,
 		*OpTxBankSend,
@@ -1034,6 +1037,27 @@ type OpTxRejectUpgrade struct {
 
 func (op *OpTxRejectUpgrade) Execute(out io.Writer, _ string, _, routine int, _ *os.Process, logs chan string) error {
 	return sendMsg(out, routine, &op.MsgRejectUpgrade, op.Signer, "", op.Sequence, op.Gas, op, "", logs)
+}
+
+// ------------------------------ OpTxBatchModifyLimitSwap ------------------------------
+
+type OpTxBatchModifyLimitSwap struct {
+	OpBase                        `yaml:",inline"`
+	types.MsgBatchModifyLimitSwap `yaml:",inline"`
+	Sequence                      *int64 `json:"sequence"`
+	Gas                           *int64 `json:"gas"`
+}
+
+func (op *OpTxBatchModifyLimitSwap) Execute(out io.Writer, _ string, _, routine int, _ *os.Process, logs chan string) error {
+	// Derive "from" address from signer for each operation
+	from, err := common.NewAddress(op.Signer.String())
+	if err != nil {
+		return fmt.Errorf("invalid signer address: %w", err)
+	}
+	for i := range op.Operations {
+		op.Operations[i].From = from
+	}
+	return sendMsg(out, routine, &op.MsgBatchModifyLimitSwap, op.Signer, "", op.Sequence, op.Gas, op, "", logs)
 }
 
 // ------------------------------ OpTxBankSend ------------------------------
