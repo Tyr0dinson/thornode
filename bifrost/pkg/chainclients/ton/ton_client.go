@@ -876,7 +876,7 @@ func (c *TonClient) sign(txOut types.TxOutItem, message []byte) ([]byte, error) 
 
 	ok := ed25519.Verify(cryptoPubKey.Bytes(), message, sig)
 	if !ok {
-		c.logger.Err(err).Msg("failed to verify signature")
+		return nil, fmt.Errorf("failed to verify signature: %w", err)
 	}
 
 	return sig, nil
