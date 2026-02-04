@@ -50,7 +50,8 @@ message TxOutItem {
     (gogoproto.casttype) = "gitlab.com/thorchain/thornode/v3/common.PubKey",
     (gogoproto.nullable) = true
   ];
-  bool inbound_finalized = 16;
+  reserved 16; // inbound_finalized removed - queue membership is source of
+               // truth
 }
 
 message TxOut {

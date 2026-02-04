@@ -121,4 +121,6 @@ message GenesisState {
   repeated types.TCYStaker tcy_stakers = 43 [ (gogoproto.nullable) = false ];
   repeated types.ReferenceMemo reference_memos = 44
       [ (gogoproto.nullable) = false ];
+  repeated types.StagedOutboundList staged_outbounds = 45
+      [ (gogoproto.nullable) = false ];
 }

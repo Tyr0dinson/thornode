@@ -141,6 +141,7 @@ func DefaultGenesisState() GenesisState {
 		RuneProviders:           make([]RUNEProvider, 0),
 		RunePool:                NewRUNEPool(),
 		AffiliateCollectors:     []AffiliateFeeCollector{},
+		StagedOutbounds:         make([]types.StagedOutboundList, 0),
 	}
 }
 
@@ -333,6 +334,15 @@ func initGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 	for _, item := range data.TcyStakers {
 		if err := keeper.SetTCYStaker(ctx, item); err != nil {
 			panic(err)
+		}
+	}
+
+	// Restore staged outbounds (mempool swaps waiting for inbound finalization)
+	for _, list := range data.StagedOutbounds {
+		for _, staged := range list.Items {
+			if err := keeper.SetStagedOutbound(ctx, staged.TxOutItem, staged.ScheduledHeight); err != nil {
+				panic(fmt.Errorf("fail to restore staged outbound: %w", err))
+			}
 		}
 	}
 
@@ -762,6 +772,19 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		panic(err)
 	}
 
+	// Export staged outbounds (mempool swaps waiting for inbound finalization)
+	stagedOutbounds := make([]types.StagedOutboundList, 0)
+	stagedIter := k.GetStagedOutboundIterator(ctx)
+	defer func() { _ = stagedIter.Close() }()
+	for ; stagedIter.Valid(); stagedIter.Next() {
+		var list types.StagedOutboundList
+		if err := k.Cdc().Unmarshal(stagedIter.Value(), &list); err != nil {
+			ctx.Logger().Error("fail to unmarshal staged outbound list", "error", err)
+			continue
+		}
+		stagedOutbounds = append(stagedOutbounds, list)
+	}
+
 	return GenesisState{
 		Pools:                   pools,
 		LiquidityProviders:      liquidityProviders,
@@ -794,5 +817,6 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		AffiliateCollectors:     affiliateCollectors,
 		TcyClaimers:             tcyClaimers,
 		TcyStakers:              tcyStakers,
+		StagedOutbounds:         stagedOutbounds,
 	}
 }

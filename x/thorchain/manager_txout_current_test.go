@@ -1565,8 +1565,12 @@ func (s TxOutStoreSuite) TestDiscoverOutboundsRemainderAddedToSmallestOutput(c *
 	c.Assert(remaining.IsZero(), Equals, true, Commentf("Expected zero remaining, got %s", remaining.String()))
 }
 
-func (s *TxOutStoreSuite) TestTxOutItemInboundFinalizedFlag(c *C) {
+func (s *TxOutStoreSuite) TestTxOutItemStagingBehavior(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
+
+	// Enable mempool swaps for this test
+	w.keeper.SetMimir(w.ctx, constants.MempoolSwapCapTOR.String(), 100000000000000)
+
 	vault := GetRandomVault()
 	vault.Coins = common.Coins{
 		common.NewCoin(common.BTCAsset, cosmos.NewUint(1000*common.One)),
@@ -1588,7 +1592,7 @@ func (s *TxOutStoreSuite) TestTxOutItemInboundFinalizedFlag(c *C) {
 	c.Assert(w.keeper.SetNodeAccount(w.ctx, acc2), IsNil)
 	c.Assert(w.keeper.SetNodeAccount(w.ctx, acc3), IsNil)
 
-	// Test 1: Finalized inbound transaction should have InboundFinalized=true
+	// Test 1: Finalized inbound transaction should go directly to TxOut queue
 	finalizedTxID := GetRandomTxHash()
 	finalizedVoter := NewObservedTxVoter(finalizedTxID, common.ObservedTxs{
 		common.ObservedTx{
@@ -1618,12 +1622,17 @@ func (s *TxOutStoreSuite) TestTxOutItemInboundFinalizedFlag(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(ok, Equals, true)
 
+	// Finalized inbound should go to TxOut queue (not staged)
 	msgs, err := txOutStore.GetOutboundItems(w.ctx)
 	c.Assert(err, IsNil)
-	c.Assert(msgs, HasLen, 1)
-	c.Check(msgs[0].InboundFinalized, Equals, true, Commentf("Finalized inbound should have InboundFinalized=true"))
+	c.Assert(msgs, HasLen, 1, Commentf("Finalized inbound should go to TxOut queue"))
 
-	// Test 2: Unfinalized (mempool) inbound transaction should have InboundFinalized=false
+	// Verify it's NOT in staged queue
+	stagedItems, err := w.keeper.GetStagedOutbounds(w.ctx, finalizedTxID)
+	c.Assert(err, IsNil)
+	c.Check(len(stagedItems), Equals, 0, Commentf("Finalized inbound should NOT be staged"))
+
+	// Test 2: Unfinalized (mempool) inbound transaction should be staged
 	txOutStore.ClearOutboundItems(w.ctx)
 
 	unfinalizedTxID := GetRandomTxHash()
@@ -1655,8 +1664,13 @@ func (s *TxOutStoreSuite) TestTxOutItemInboundFinalizedFlag(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(ok, Equals, true)
 
+	// Unfinalized inbound should NOT be in TxOut queue (should be staged)
 	msgs, err = txOutStore.GetOutboundItems(w.ctx)
 	c.Assert(err, IsNil)
-	c.Assert(msgs, HasLen, 1)
-	c.Check(msgs[0].InboundFinalized, Equals, false, Commentf("Unfinalized inbound should have InboundFinalized=false"))
+	c.Assert(msgs, HasLen, 0, Commentf("Unfinalized inbound should NOT be in TxOut queue"))
+
+	// Verify it IS in staged queue
+	stagedItems, err = w.keeper.GetStagedOutbounds(w.ctx, unfinalizedTxID)
+	c.Assert(err, IsNil)
+	c.Check(len(stagedItems), Equals, 1, Commentf("Unfinalized inbound should be staged"))
 }

@@ -4353,7 +4353,6 @@ components:
         original_memo: =:BTC.BTC:bc1q0lwf0ycw4gkh8v6y8g9yqwxvqnvm24kvdezgpg
         in_hash: 208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
         out_hash: 0D0B2FDB6DAD6E5FD3C5E46D39128F9DA15E96F0B2CC054CE059EA3532B150FB
-        inbound_finalized: false
         aggregator: 0xe4ddca21881bac219af7f217703db0475d2a9f02
         memo: OUT:208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
         to_address: 0x66fb1cd65b97fa40457b90b7d1ca6b92cb64b32b
@@ -4429,11 +4428,6 @@ components:
           description: clout spent in RUNE for the outbound
           example: "1234"
           type: string
-        inbound_finalized:
-          description: whether the inbound transaction has been finalized (for mempool
-            swap optimization)
-          example: false
-          type: boolean
       required:
       - chain
       - coin
@@ -5183,7 +5177,6 @@ components:
           original_memo: =:BTC.BTC:bc1q0lwf0ycw4gkh8v6y8g9yqwxvqnvm24kvdezgpg
           in_hash: 208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
           out_hash: 0D0B2FDB6DAD6E5FD3C5E46D39128F9DA15E96F0B2CC054CE059EA3532B150FB
-          inbound_finalized: false
           aggregator: 0xe4ddca21881bac219af7f217703db0475d2a9f02
           memo: OUT:208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
           to_address: 0x66fb1cd65b97fa40457b90b7d1ca6b92cb64b32b
@@ -5209,7 +5202,6 @@ components:
           original_memo: =:BTC.BTC:bc1q0lwf0ycw4gkh8v6y8g9yqwxvqnvm24kvdezgpg
           in_hash: 208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
           out_hash: 0D0B2FDB6DAD6E5FD3C5E46D39128F9DA15E96F0B2CC054CE059EA3532B150FB
-          inbound_finalized: false
           aggregator: 0xe4ddca21881bac219af7f217703db0475d2a9f02
           memo: OUT:208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
           to_address: 0x66fb1cd65b97fa40457b90b7d1ca6b92cb64b32b
@@ -5435,7 +5427,6 @@ components:
           original_memo: =:BTC.BTC:bc1q0lwf0ycw4gkh8v6y8g9yqwxvqnvm24kvdezgpg
           in_hash: 208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
           out_hash: 0D0B2FDB6DAD6E5FD3C5E46D39128F9DA15E96F0B2CC054CE059EA3532B150FB
-          inbound_finalized: false
           aggregator: 0xe4ddca21881bac219af7f217703db0475d2a9f02
           memo: OUT:208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
           to_address: 0x66fb1cd65b97fa40457b90b7d1ca6b92cb64b32b
@@ -5461,7 +5452,6 @@ components:
           original_memo: =:BTC.BTC:bc1q0lwf0ycw4gkh8v6y8g9yqwxvqnvm24kvdezgpg
           in_hash: 208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
           out_hash: 0D0B2FDB6DAD6E5FD3C5E46D39128F9DA15E96F0B2CC054CE059EA3532B150FB
-          inbound_finalized: false
           aggregator: 0xe4ddca21881bac219af7f217703db0475d2a9f02
           memo: OUT:208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
           to_address: 0x66fb1cd65b97fa40457b90b7d1ca6b92cb64b32b
@@ -6559,7 +6549,6 @@ components:
             original_memo: =:BTC.BTC:bc1q0lwf0ycw4gkh8v6y8g9yqwxvqnvm24kvdezgpg
             in_hash: 208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
             out_hash: 0D0B2FDB6DAD6E5FD3C5E46D39128F9DA15E96F0B2CC054CE059EA3532B150FB
-            inbound_finalized: false
             aggregator: 0xe4ddca21881bac219af7f217703db0475d2a9f02
             memo: OUT:208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
             to_address: 0x66fb1cd65b97fa40457b90b7d1ca6b92cb64b32b
@@ -6588,7 +6577,6 @@ components:
             original_memo: =:BTC.BTC:bc1q0lwf0ycw4gkh8v6y8g9yqwxvqnvm24kvdezgpg
             in_hash: 208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
             out_hash: 0D0B2FDB6DAD6E5FD3C5E46D39128F9DA15E96F0B2CC054CE059EA3532B150FB
-            inbound_finalized: false
             aggregator: 0xe4ddca21881bac219af7f217703db0475d2a9f02
             memo: OUT:208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
             to_address: 0x66fb1cd65b97fa40457b90b7d1ca6b92cb64b32b
@@ -6626,7 +6614,6 @@ components:
           original_memo: =:BTC.BTC:bc1q0lwf0ycw4gkh8v6y8g9yqwxvqnvm24kvdezgpg
           in_hash: 208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
           out_hash: 0D0B2FDB6DAD6E5FD3C5E46D39128F9DA15E96F0B2CC054CE059EA3532B150FB
-          inbound_finalized: false
           aggregator: 0xe4ddca21881bac219af7f217703db0475d2a9f02
           memo: OUT:208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
           to_address: 0x66fb1cd65b97fa40457b90b7d1ca6b92cb64b32b
@@ -6674,7 +6661,6 @@ components:
             original_memo: =:BTC.BTC:bc1q0lwf0ycw4gkh8v6y8g9yqwxvqnvm24kvdezgpg
             in_hash: 208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
             out_hash: 0D0B2FDB6DAD6E5FD3C5E46D39128F9DA15E96F0B2CC054CE059EA3532B150FB
-            inbound_finalized: false
             aggregator: 0xe4ddca21881bac219af7f217703db0475d2a9f02
             memo: OUT:208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
             to_address: 0x66fb1cd65b97fa40457b90b7d1ca6b92cb64b32b
@@ -6700,7 +6686,6 @@ components:
             original_memo: =:BTC.BTC:bc1q0lwf0ycw4gkh8v6y8g9yqwxvqnvm24kvdezgpg
             in_hash: 208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
             out_hash: 0D0B2FDB6DAD6E5FD3C5E46D39128F9DA15E96F0B2CC054CE059EA3532B150FB
-            inbound_finalized: false
             aggregator: 0xe4ddca21881bac219af7f217703db0475d2a9f02
             memo: OUT:208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
             to_address: 0x66fb1cd65b97fa40457b90b7d1ca6b92cb64b32b
@@ -8276,7 +8261,6 @@ components:
           original_memo: =:BTC.BTC:bc1q0lwf0ycw4gkh8v6y8g9yqwxvqnvm24kvdezgpg
           in_hash: 208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
           out_hash: 0D0B2FDB6DAD6E5FD3C5E46D39128F9DA15E96F0B2CC054CE059EA3532B150FB
-          inbound_finalized: false
           aggregator: 0xe4ddca21881bac219af7f217703db0475d2a9f02
           memo: OUT:208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
           to_address: 0x66fb1cd65b97fa40457b90b7d1ca6b92cb64b32b
@@ -8302,7 +8286,6 @@ components:
           original_memo: =:BTC.BTC:bc1q0lwf0ycw4gkh8v6y8g9yqwxvqnvm24kvdezgpg
           in_hash: 208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
           out_hash: 0D0B2FDB6DAD6E5FD3C5E46D39128F9DA15E96F0B2CC054CE059EA3532B150FB
-          inbound_finalized: false
           aggregator: 0xe4ddca21881bac219af7f217703db0475d2a9f02
           memo: OUT:208BF0ACD78C89A0534B0457BA0867B101961A2319C1E49DD28676526904BBEA
           to_address: 0x66fb1cd65b97fa40457b90b7d1ca6b92cb64b32b

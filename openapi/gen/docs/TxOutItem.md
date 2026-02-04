@@ -20,7 +20,6 @@ Name | Type | Description | Notes
 **AggregatorTargetAsset** | Pointer to **string** | target asset for the aggregator contract to attempt a swap to | [optional] 
 **AggregatorTargetLimit** | Pointer to **string** | the minimum number of tokens the swapper wants to receive of the output asset | [optional] 
 **CloutSpent** | Pointer to **string** | clout spent in RUNE for the outbound | [optional] 
-**InboundFinalized** | Pointer to **bool** | whether the inbound transaction has been finalized (for mempool swap optimization) | [optional] 
 
 ## Methods
 
@@ -420,31 +419,6 @@ SetCloutSpent sets CloutSpent field to given value.
 `func (o *TxOutItem) HasCloutSpent() bool`
 
 HasCloutSpent returns a boolean if a field has been set.
-
-### GetInboundFinalized
-
-`func (o *TxOutItem) GetInboundFinalized() bool`
-
-GetInboundFinalized returns the InboundFinalized field if non-nil, zero value otherwise.
-
-### GetInboundFinalizedOk
-
-`func (o *TxOutItem) GetInboundFinalizedOk() (*bool, bool)`
-
-GetInboundFinalizedOk returns a tuple with the InboundFinalized field if it's non-nil, zero value otherwise
-and a boolean to check if the value has been set.
-
-### SetInboundFinalized
-
-`func (o *TxOutItem) SetInboundFinalized(v bool)`
-
-SetInboundFinalized sets InboundFinalized field to given value.
-
-### HasInboundFinalized
-
-`func (o *TxOutItem) HasInboundFinalized() bool`
-
-HasInboundFinalized returns a boolean if a field has been set.
 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)

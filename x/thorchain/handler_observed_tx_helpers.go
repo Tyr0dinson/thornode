@@ -1220,17 +1220,15 @@ func ExtractReferenceFromAmount(ctx cosmos.Context, mgr Manager, asset common.As
 func finalizeOutbounds(ctx cosmos.Context, mgr Manager, voter ObservedTxVoter) error {
 	ctx.Logger().Info("finalizing outbounds for inbound", "hash", voter.TxID)
 
-	// Idempotency check: if all actions are already finalized, skip processing
-	// This prevents double-execution if this function is called multiple times
-	allFinalized := len(voter.Actions) > 0
-	for _, action := range voter.Actions {
-		if !action.InboundFinalized {
-			allFinalized = false
-			break
-		}
+	// Get staged outbounds for this inbound transaction
+	// Idempotency: if no staged outbounds exist, either they were never staged or already finalized
+	stagedItems, err := mgr.Keeper().GetStagedOutbounds(ctx, voter.TxID)
+	if err != nil {
+		return fmt.Errorf("fail to get staged outbounds: %w", err)
 	}
-	if allFinalized {
-		ctx.Logger().Debug("all actions already finalized, skipping", "hash", voter.TxID)
+
+	if len(stagedItems) == 0 {
+		ctx.Logger().Debug("no staged outbounds to finalize, skipping", "hash", voter.TxID)
 		return nil
 	}
 
@@ -1241,22 +1239,6 @@ func finalizeOutbounds(ctx cosmos.Context, mgr Manager, voter ObservedTxVoter) e
 			"hash", voter.TxID,
 			"tor_value", voter.MempoolSwapTOR,
 			"new_usage", newUsage)
-	}
-
-	// Get staged outbounds for this inbound transaction
-	stagedItems, err := mgr.Keeper().GetStagedOutbounds(ctx, voter.TxID)
-	if err != nil {
-		return fmt.Errorf("fail to get staged outbounds: %w", err)
-	}
-
-	if len(stagedItems) == 0 {
-		ctx.Logger().Debug("no staged outbounds to finalize", "hash", voter.TxID)
-		// Still update voter actions in case they were set elsewhere
-		for i := range voter.Actions {
-			voter.Actions[i].InboundFinalized = true
-		}
-		mgr.Keeper().SetObservedTxInVoter(ctx, voter)
-		return nil
 	}
 
 	ctx.Logger().Info("found staged outbounds to finalize",
@@ -1274,9 +1256,6 @@ func finalizeOutbounds(ctx cosmos.Context, mgr Manager, voter ObservedTxVoter) e
 		if targetHeight < ctx.BlockHeight() {
 			targetHeight = ctx.BlockHeight()
 		}
-
-		// Mark as finalized
-		staged.TxOutItem.InboundFinalized = true
 
 		if staged.TxOutItem.Chain.IsTHORChain() {
 			// Execute native outbound immediately
@@ -1304,12 +1283,6 @@ func finalizeOutbounds(ctx cosmos.Context, mgr Manager, voter ObservedTxVoter) e
 				"original_scheduled", staged.ScheduledHeight)
 		}
 	}
-
-	// Update voter actions to mark as finalized
-	for i := range voter.Actions {
-		voter.Actions[i].InboundFinalized = true
-	}
-	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
 
 	return nil
 }

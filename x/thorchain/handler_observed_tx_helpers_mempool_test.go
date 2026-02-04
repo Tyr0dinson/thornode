@@ -52,15 +52,14 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutbounds(c *C) {
 	voter.UnfinalizedHeight = ctx.BlockHeight()
 	voter.FinalisedHeight = 0
 
-	// Create unfinalized TxOutItem
+	// Create TxOutItem (staged for mempool swap)
 	txOutItem := TxOutItem{
-		Chain:            common.BTCChain,
-		InHash:           inTxID,
-		VaultPubKey:      vault.PubKey,
-		ToAddress:        GetRandomBTCAddress(),
-		Coin:             common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One)),
-		Memo:             "OUT:" + inTxID.String(),
-		InboundFinalized: false,
+		Chain:       common.BTCChain,
+		InHash:      inTxID,
+		VaultPubKey: vault.PubKey,
+		ToAddress:   GetRandomBTCAddress(),
+		Coin:        common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One)),
+		Memo:        "OUT:" + inTxID.String(),
 	}
 
 	// Add to voter actions
@@ -77,14 +76,10 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutbounds(c *C) {
 	err := finalizeOutbounds(ctx, mgr, voter)
 	c.Assert(err, IsNil, Commentf("finalizeOutbounds failed: %v", err))
 
-	// Verify action was updated
-	c.Check(voter.Actions[0].InboundFinalized, Equals, true, Commentf("Action should be finalized"))
-
 	// Verify staged outbound was moved to real TxOut
 	updatedTxOut, err := mgr.Keeper().GetTxOut(ctx, outboundHeight)
 	c.Assert(err, IsNil)
-	c.Assert(updatedTxOut.TxArray, HasLen, 1)
-	c.Check(updatedTxOut.TxArray[0].InboundFinalized, Equals, true, Commentf("Queued TxOut should be finalized"))
+	c.Assert(updatedTxOut.TxArray, HasLen, 1, Commentf("Staged outbound should be moved to TxOut"))
 
 	// Verify staged outbounds are deleted
 	stagedItems, err := mgr.Keeper().GetStagedOutbounds(ctx, inTxID)
@@ -95,8 +90,8 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutbounds(c *C) {
 	voter2 := NewObservedTxVoter(GetRandomTxHash(), ObservedTxs{})
 	voter2.UnfinalizedHeight = ctx.BlockHeight()
 	voter2.Actions = []TxOutItem{
-		{Chain: common.BTCChain, InHash: voter2.TxID, ToAddress: GetRandomBTCAddress(), VaultPubKey: vault.PubKey, Coin: common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One)), InboundFinalized: false},
-		{Chain: common.BTCChain, InHash: voter2.TxID, ToAddress: GetRandomBTCAddress(), VaultPubKey: vault.PubKey, Coin: common.NewCoin(common.BTCAsset, cosmos.NewUint(2*common.One)), InboundFinalized: false},
+		{Chain: common.BTCChain, InHash: voter2.TxID, ToAddress: GetRandomBTCAddress(), VaultPubKey: vault.PubKey, Coin: common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One))},
+		{Chain: common.BTCChain, InHash: voter2.TxID, ToAddress: GetRandomBTCAddress(), VaultPubKey: vault.PubKey, Coin: common.NewCoin(common.BTCAsset, cosmos.NewUint(2*common.One))},
 	}
 
 	// Stage both items
@@ -106,18 +101,20 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestFinalizeOutbounds(c *C) {
 	err = finalizeOutbounds(ctx, mgr, voter2)
 	c.Assert(err, IsNil)
 
-	// Verify both actions finalized
-	c.Check(voter2.Actions[0].InboundFinalized, Equals, true)
-	c.Check(voter2.Actions[1].InboundFinalized, Equals, true)
+	// Verify both staged outbounds were moved to TxOut
+	updatedTxOut2, err := mgr.Keeper().GetTxOut(ctx, ctx.BlockHeight()+20)
+	c.Assert(err, IsNil)
+	c.Assert(updatedTxOut2.TxArray, HasLen, 2, Commentf("Both staged outbounds should be moved to TxOut"))
 
-	// Test 3: Skip already finalized actions
+	// Test 3: Skip when no staged outbounds (idempotency)
 	voter3 := NewObservedTxVoter(GetRandomTxHash(), ObservedTxs{})
 	voter3.Actions = []TxOutItem{
-		{Chain: common.BTCChain, InHash: voter3.TxID, Coin: common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One)), InboundFinalized: true},
+		{Chain: common.BTCChain, InHash: voter3.TxID, Coin: common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One))},
 	}
+	// Don't stage anything - simulates already finalized
 
 	err = finalizeOutbounds(ctx, mgr, voter3)
-	c.Assert(err, IsNil, Commentf("Should succeed even with already finalized actions"))
+	c.Assert(err, IsNil, Commentf("Should succeed when no staged outbounds exist"))
 }
 
 func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwap(c *C) {
@@ -171,13 +168,12 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwap(c *C) {
 
 	// Create outbound TxOutItem (swapped to ETH)
 	txOutItem := TxOutItem{
-		Chain:            common.ETHChain,
-		InHash:           inTxID,
-		VaultPubKey:      vault.PubKey,
-		ToAddress:        GetRandomETHAddress(),
-		Coin:             common.NewCoin(common.ETHAsset, cosmos.NewUint(5*common.One)),
-		Memo:             "OUT:" + inTxID.String(),
-		InboundFinalized: false,
+		Chain:       common.ETHChain,
+		InHash:      inTxID,
+		VaultPubKey: vault.PubKey,
+		ToAddress:   GetRandomETHAddress(),
+		Coin:        common.NewCoin(common.ETHAsset, cosmos.NewUint(5*common.One)),
+		Memo:        "OUT:" + inTxID.String(),
 		// OutHash defaults to zero value (empty)
 	}
 
@@ -222,11 +218,10 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwap(c *C) {
 	voter2.UnfinalizedHeight = ctx.BlockHeight()
 	voter2.Actions = []TxOutItem{
 		{
-			Chain:            common.ETHChain,
-			InHash:           voter2.TxID,
-			Coin:             common.NewCoin(common.ETHAsset, cosmos.NewUint(1*common.One)),
-			InboundFinalized: false,
-			OutHash:          GetRandomTxHash(), // Already signed
+			Chain:   common.ETHChain,
+			InHash:  voter2.TxID,
+			Coin:    common.NewCoin(common.ETHAsset, cosmos.NewUint(1*common.One)),
+			OutHash: GetRandomTxHash(), // Already signed
 		},
 	}
 
@@ -253,11 +248,10 @@ func (s *HandlerObservedTxHelpersMempoolSuite) TestRevertMempoolSwap(c *C) {
 
 	// Create a native outbound (RUNE)
 	nativeTxOutItem := TxOutItem{
-		Chain:            common.THORChain,
-		InHash:           runeTxID,
-		ToAddress:        GetRandomRUNEAddress(),
-		Coin:             common.NewCoin(common.RuneAsset(), cosmos.NewUint(5*common.One)),
-		InboundFinalized: false,
+		Chain:     common.THORChain,
+		InHash:    runeTxID,
+		ToAddress: GetRandomRUNEAddress(),
+		Coin:      common.NewCoin(common.RuneAsset(), cosmos.NewUint(5*common.One)),
 	}
 	runeVoter.Actions = []TxOutItem{nativeTxOutItem}
 
