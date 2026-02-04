@@ -28,14 +28,14 @@ FROM debian:bullseye-20241111-slim@sha256:60a596681410bd31a48e5975806a24cd78328f
 RUN apt-get update && \
   apt-get install -y --no-install-recommends \
   ca-certificates=20210119 \
-  curl=7.74.0-1.3+deb11u14 \
-  jq=1.6-2.1 \
+  curl=7.74.0-1.3+deb11u16 \
+  jq=1.6-2.1+deb11u1 \
   libffi-dev=3.3-6 \
-  libssl-dev=1.1.1w-0+deb11u2 \
-  openssl=1.1.1w-0+deb11u2 \
+  libssl-dev=1.1.1w-0+deb11u4 \
+  openssl=1.1.1w-0+deb11u4 \
   procps=2:3.3.17-5 \
   python3=3.9.2-3 \
-  python3-pip=20.3.4-4+deb11u1 && \
+  python3-pip=20.3.4-4+deb11u2 && \
   rm -rf /var/lib/apt/lists/* && \
   pip3 install --no-cache-dir requests==2.32.3 web3==7.5.0 retry==0.9.2
 
