@@ -3233,6 +3233,57 @@ func (x *_GenesisState_50_list) IsValid() bool {
 	return x.list != nil
 }
 
+var _ protoreflect.List = (*_GenesisState_51_list)(nil)
+
+type _GenesisState_51_list struct {
+	list *[]*types.StagedOutboundList
+}
+
+func (x *_GenesisState_51_list) Len() int {
+	if x.list == nil {
+		return 0
+	}
+	return len(*x.list)
+}
+
+func (x *_GenesisState_51_list) Get(i int) protoreflect.Value {
+	return protoreflect.ValueOfMessage((*x.list)[i].ProtoReflect())
+}
+
+func (x *_GenesisState_51_list) Set(i int, value protoreflect.Value) {
+	valueUnwrapped := value.Message()
+	concreteValue := valueUnwrapped.Interface().(*types.StagedOutboundList)
+	(*x.list)[i] = concreteValue
+}
+
+func (x *_GenesisState_51_list) Append(value protoreflect.Value) {
+	valueUnwrapped := value.Message()
+	concreteValue := valueUnwrapped.Interface().(*types.StagedOutboundList)
+	*x.list = append(*x.list, concreteValue)
+}
+
+func (x *_GenesisState_51_list) AppendMutable() protoreflect.Value {
+	v := new(types.StagedOutboundList)
+	*x.list = append(*x.list, v)
+	return protoreflect.ValueOfMessage(v.ProtoReflect())
+}
+
+func (x *_GenesisState_51_list) Truncate(n int) {
+	for i := n; i < len(*x.list); i++ {
+		(*x.list)[i] = nil
+	}
+	*x.list = (*x.list)[:n]
+}
+
+func (x *_GenesisState_51_list) NewElement() protoreflect.Value {
+	v := new(types.StagedOutboundList)
+	return protoreflect.ValueOfMessage(v.ProtoReflect())
+}
+
+func (x *_GenesisState_51_list) IsValid() bool {
+	return x.list != nil
+}
+
 var (
 	md_GenesisState                                        protoreflect.MessageDescriptor
 	fd_GenesisState_pools                                  protoreflect.FieldDescriptor
@@ -3276,6 +3327,7 @@ var (
 	fd_GenesisState_last_observed_dynamic_fee_epoch_blocks protoreflect.FieldDescriptor
 	fd_GenesisState_stable_reserve_credits                 protoreflect.FieldDescriptor
 	fd_GenesisState_sol_vault_nonces                       protoreflect.FieldDescriptor
+	fd_GenesisState_staged_outbounds                       protoreflect.FieldDescriptor
 )
 
 func init() {
@@ -3322,6 +3374,7 @@ func init() {
 	fd_GenesisState_last_observed_dynamic_fee_epoch_blocks = md_GenesisState.Fields().ByName("last_observed_dynamic_fee_epoch_blocks")
 	fd_GenesisState_stable_reserve_credits = md_GenesisState.Fields().ByName("stable_reserve_credits")
 	fd_GenesisState_sol_vault_nonces = md_GenesisState.Fields().ByName("sol_vault_nonces")
+	fd_GenesisState_staged_outbounds = md_GenesisState.Fields().ByName("staged_outbounds")
 }
 
 var _ protoreflect.Message = (*fastReflection_GenesisState)(nil)
@@ -3635,6 +3688,12 @@ func (x *fastReflection_GenesisState) Range(f func(protoreflect.FieldDescriptor,
 			return
 		}
 	}
+	if len(x.StagedOutbounds) != 0 {
+		value := protoreflect.ValueOfList(&_GenesisState_51_list{list: &x.StagedOutbounds})
+		if !f(fd_GenesisState_staged_outbounds, value) {
+			return
+		}
+	}
 }
 
 // Has reports whether a field is populated.
@@ -3732,6 +3791,8 @@ func (x *fastReflection_GenesisState) Has(fd protoreflect.FieldDescriptor) bool 
 		return len(x.StableReserveCredits) != 0
 	case "thorchain.GenesisState.sol_vault_nonces":
 		return len(x.SolVaultNonces) != 0
+	case "thorchain.GenesisState.staged_outbounds":
+		return len(x.StagedOutbounds) != 0
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: thorchain.GenesisState"))
@@ -3830,6 +3891,8 @@ func (x *fastReflection_GenesisState) Clear(fd protoreflect.FieldDescriptor) {
 		x.StableReserveCredits = nil
 	case "thorchain.GenesisState.sol_vault_nonces":
 		x.SolVaultNonces = nil
+	case "thorchain.GenesisState.staged_outbounds":
+		x.StagedOutbounds = nil
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: thorchain.GenesisState"))
@@ -4071,6 +4134,12 @@ func (x *fastReflection_GenesisState) Get(descriptor protoreflect.FieldDescripto
 		}
 		listValue := &_GenesisState_50_list{list: &x.SolVaultNonces}
 		return protoreflect.ValueOfList(listValue)
+	case "thorchain.GenesisState.staged_outbounds":
+		if len(x.StagedOutbounds) == 0 {
+			return protoreflect.ValueOfList(&_GenesisState_51_list{})
+		}
+		listValue := &_GenesisState_51_list{list: &x.StagedOutbounds}
+		return protoreflect.ValueOfList(listValue)
 	default:
 		if descriptor.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: thorchain.GenesisState"))
@@ -4241,6 +4310,10 @@ func (x *fastReflection_GenesisState) Set(fd protoreflect.FieldDescriptor, value
 		lv := value.List()
 		clv := lv.(*_GenesisState_50_list)
 		x.SolVaultNonces = *clv.list
+	case "thorchain.GenesisState.staged_outbounds":
+		lv := value.List()
+		clv := lv.(*_GenesisState_51_list)
+		x.StagedOutbounds = *clv.list
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: thorchain.GenesisState"))
@@ -4480,6 +4553,12 @@ func (x *fastReflection_GenesisState) Mutable(fd protoreflect.FieldDescriptor) p
 		}
 		value := &_GenesisState_50_list{list: &x.SolVaultNonces}
 		return protoreflect.ValueOfList(value)
+	case "thorchain.GenesisState.staged_outbounds":
+		if x.StagedOutbounds == nil {
+			x.StagedOutbounds = []*types.StagedOutboundList{}
+		}
+		value := &_GenesisState_51_list{list: &x.StagedOutbounds}
+		return protoreflect.ValueOfList(value)
 	case "thorchain.GenesisState.reserve":
 		panic(fmt.Errorf("field reserve of message thorchain.GenesisState is not mutable"))
 	case "thorchain.GenesisState.last_signed_height":
@@ -4620,6 +4699,9 @@ func (x *fastReflection_GenesisState) NewField(fd protoreflect.FieldDescriptor) 
 	case "thorchain.GenesisState.sol_vault_nonces":
 		list := []*types.SolVaultNonce{}
 		return protoreflect.ValueOfList(&_GenesisState_50_list{list: &list})
+	case "thorchain.GenesisState.staged_outbounds":
+		list := []*types.StagedOutboundList{}
+		return protoreflect.ValueOfList(&_GenesisState_51_list{list: &list})
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: thorchain.GenesisState"))
@@ -4917,6 +4999,12 @@ func (x *fastReflection_GenesisState) ProtoMethods() *protoiface.Methods {
 				n += 2 + l + runtime.Sov(uint64(l))
 			}
 		}
+		if len(x.StagedOutbounds) > 0 {
+			for _, e := range x.StagedOutbounds {
+				l = options.Size(e)
+				n += 2 + l + runtime.Sov(uint64(l))
+			}
+		}
 		if x.unknownFields != nil {
 			n += len(x.unknownFields)
 		}
@@ -4945,6 +5033,24 @@ func (x *fastReflection_GenesisState) ProtoMethods() *protoiface.Methods {
 		if x.unknownFields != nil {
 			i -= len(x.unknownFields)
 			copy(dAtA[i:], x.unknownFields)
+		}
+		if len(x.StagedOutbounds) > 0 {
+			for iNdEx := len(x.StagedOutbounds) - 1; iNdEx >= 0; iNdEx-- {
+				encoded, err := options.Marshal(x.StagedOutbounds[iNdEx])
+				if err != nil {
+					return protoiface.MarshalOutput{
+						NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+						Buf:               input.Buf,
+					}, err
+				}
+				i -= len(encoded)
+				copy(dAtA[i:], encoded)
+				i = runtime.EncodeVarint(dAtA, i, uint64(len(encoded)))
+				i--
+				dAtA[i] = 0x3
+				i--
+				dAtA[i] = 0x9a
+			}
 		}
 		if len(x.SolVaultNonces) > 0 {
 			for iNdEx := len(x.SolVaultNonces) - 1; iNdEx >= 0; iNdEx-- {
@@ -6999,6 +7105,40 @@ func (x *fastReflection_GenesisState) ProtoMethods() *protoiface.Methods {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
 				}
 				iNdEx = postIndex
+			case 51:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field StagedOutbounds", wireType)
+				}
+				var msglen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					msglen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if msglen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + msglen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.StagedOutbounds = append(x.StagedOutbounds, &types.StagedOutboundList{})
+				if err := options.Unmarshal(dAtA[iNdEx:postIndex], x.StagedOutbounds[len(x.StagedOutbounds)-1]); err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				iNdEx = postIndex
 			default:
 				iNdEx = preIndex
 				skippy, err := runtime.Skip(dAtA[iNdEx:])
@@ -7233,6 +7373,7 @@ type GenesisState struct {
 	LastObservedDynamicFeeEpochBlocks int64                          `protobuf:"varint,48,opt,name=last_observed_dynamic_fee_epoch_blocks,json=lastObservedDynamicFeeEpochBlocks,proto3" json:"last_observed_dynamic_fee_epoch_blocks,omitempty"`
 	StableReserveCredits              []*StableReserveCredit         `protobuf:"bytes,49,rep,name=stable_reserve_credits,json=stableReserveCredits,proto3" json:"stable_reserve_credits,omitempty"`
 	SolVaultNonces                    []*types.SolVaultNonce         `protobuf:"bytes,50,rep,name=sol_vault_nonces,json=solVaultNonces,proto3" json:"sol_vault_nonces,omitempty"`
+	StagedOutbounds                   []*types.StagedOutboundList    `protobuf:"bytes,51,rep,name=staged_outbounds,json=stagedOutbounds,proto3" json:"staged_outbounds,omitempty"`
 }
 
 func (x *GenesisState) Reset() {
@@ -7543,6 +7684,13 @@ func (x *GenesisState) GetSolVaultNonces() []*types.SolVaultNonce {
 	return nil
 }
 
+func (x *GenesisState) GetStagedOutbounds() []*types.StagedOutboundList {
+	if x != nil {
+		return x.StagedOutbounds
+	}
+	return nil
+}
+
 var File_thorchain_genesis_proto protoreflect.FileDescriptor
 
 var file_thorchain_genesis_proto_rawDesc = []byte{
@@ -7614,7 +7762,7 @@ var file_thorchain_genesis_proto_rawDesc = []byte{
 	0x18, 0x0a, 0x07, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09,
 	0x52, 0x07, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73, 0x12, 0x16, 0x0a, 0x06, 0x61, 0x6d, 0x6f,
 	0x75, 0x6e, 0x74, 0x18, 0x03, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x61, 0x6d, 0x6f, 0x75, 0x6e,
-	0x74, 0x22, 0xb4, 0x19, 0x0a, 0x0c, 0x47, 0x65, 0x6e, 0x65, 0x73, 0x69, 0x73, 0x53, 0x74, 0x61,
+	0x74, 0x22, 0x80, 0x1a, 0x0a, 0x0c, 0x47, 0x65, 0x6e, 0x65, 0x73, 0x69, 0x73, 0x53, 0x74, 0x61,
 	0x74, 0x65, 0x12, 0x27, 0x0a, 0x05, 0x70, 0x6f, 0x6f, 0x6c, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28,
 	0x0b, 0x32, 0x0b, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2e, 0x50, 0x6f, 0x6f, 0x6c, 0x42, 0x04,
 	0xc8, 0xde, 0x1f, 0x00, 0x52, 0x05, 0x70, 0x6f, 0x6f, 0x6c, 0x73, 0x12, 0x98, 0x01, 0x0a, 0x13,
@@ -7814,20 +7962,24 @@ var file_thorchain_genesis_proto_rawDesc = []byte{
 	0x76, 0x61, 0x75, 0x6c, 0x74, 0x5f, 0x6e, 0x6f, 0x6e, 0x63, 0x65, 0x73, 0x18, 0x32, 0x20, 0x03,
 	0x28, 0x0b, 0x32, 0x14, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2e, 0x53, 0x6f, 0x6c, 0x56, 0x61,
 	0x75, 0x6c, 0x74, 0x4e, 0x6f, 0x6e, 0x63, 0x65, 0x42, 0x04, 0xc8, 0xde, 0x1f, 0x00, 0x52, 0x0e,
-	0x73, 0x6f, 0x6c, 0x56, 0x61, 0x75, 0x6c, 0x74, 0x4e, 0x6f, 0x6e, 0x63, 0x65, 0x73, 0x4a, 0x04,
-	0x08, 0x09, 0x10, 0x0a, 0x4a, 0x04, 0x08, 0x0e, 0x10, 0x0f, 0x4a, 0x04, 0x08, 0x0f, 0x10, 0x10,
-	0x4a, 0x04, 0x08, 0x10, 0x10, 0x11, 0x4a, 0x04, 0x08, 0x11, 0x10, 0x12, 0x4a, 0x04, 0x08, 0x12,
-	0x10, 0x13, 0x4a, 0x04, 0x08, 0x15, 0x10, 0x16, 0x42, 0x91, 0x01, 0x0a, 0x0d, 0x63, 0x6f, 0x6d,
-	0x2e, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x42, 0x0c, 0x47, 0x65, 0x6e, 0x65,
-	0x73, 0x69, 0x73, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x2e, 0x67, 0x69, 0x74, 0x6c,
-	0x61, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e,
-	0x2f, 0x74, 0x68, 0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x61, 0x70, 0x69,
-	0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0xa2, 0x02, 0x03, 0x54, 0x58, 0x58,
-	0xaa, 0x02, 0x09, 0x54, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0xca, 0x02, 0x09, 0x54,
-	0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0xe2, 0x02, 0x15, 0x54, 0x68, 0x6f, 0x72, 0x63,
-	0x68, 0x61, 0x69, 0x6e, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61,
-	0xea, 0x02, 0x09, 0x54, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x62, 0x06, 0x70, 0x72,
-	0x6f, 0x74, 0x6f, 0x33,
+	0x73, 0x6f, 0x6c, 0x56, 0x61, 0x75, 0x6c, 0x74, 0x4e, 0x6f, 0x6e, 0x63, 0x65, 0x73, 0x12, 0x4a,
+	0x0a, 0x10, 0x73, 0x74, 0x61, 0x67, 0x65, 0x64, 0x5f, 0x6f, 0x75, 0x74, 0x62, 0x6f, 0x75, 0x6e,
+	0x64, 0x73, 0x18, 0x33, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x19, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73,
+	0x2e, 0x53, 0x74, 0x61, 0x67, 0x65, 0x64, 0x4f, 0x75, 0x74, 0x62, 0x6f, 0x75, 0x6e, 0x64, 0x4c,
+	0x69, 0x73, 0x74, 0x42, 0x04, 0xc8, 0xde, 0x1f, 0x00, 0x52, 0x0f, 0x73, 0x74, 0x61, 0x67, 0x65,
+	0x64, 0x4f, 0x75, 0x74, 0x62, 0x6f, 0x75, 0x6e, 0x64, 0x73, 0x4a, 0x04, 0x08, 0x09, 0x10, 0x0a,
+	0x4a, 0x04, 0x08, 0x0e, 0x10, 0x0f, 0x4a, 0x04, 0x08, 0x0f, 0x10, 0x10, 0x4a, 0x04, 0x08, 0x10,
+	0x10, 0x11, 0x4a, 0x04, 0x08, 0x11, 0x10, 0x12, 0x4a, 0x04, 0x08, 0x12, 0x10, 0x13, 0x4a, 0x04,
+	0x08, 0x15, 0x10, 0x16, 0x42, 0x91, 0x01, 0x0a, 0x0d, 0x63, 0x6f, 0x6d, 0x2e, 0x74, 0x68, 0x6f,
+	0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x42, 0x0c, 0x47, 0x65, 0x6e, 0x65, 0x73, 0x69, 0x73, 0x50,
+	0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x2e, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63,
+	0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74, 0x68, 0x6f,
+	0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x74, 0x68, 0x6f,
+	0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0xa2, 0x02, 0x03, 0x54, 0x58, 0x58, 0xaa, 0x02, 0x09, 0x54,
+	0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0xca, 0x02, 0x09, 0x54, 0x68, 0x6f, 0x72, 0x63,
+	0x68, 0x61, 0x69, 0x6e, 0xe2, 0x02, 0x15, 0x54, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e,
+	0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x09, 0x54,
+	0x68, 0x6f, 0x72, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -7879,6 +8031,7 @@ var file_thorchain_genesis_proto_goTypes = []interface{}{
 	(*types.DynamicFeeRecord)(nil),       // 32: types.DynamicFeeRecord
 	(*types.DynamicFeeAccumulator)(nil),  // 33: types.DynamicFeeAccumulator
 	(*types.SolVaultNonce)(nil),          // 34: types.SolVaultNonce
+	(*types.StagedOutboundList)(nil),     // 35: types.StagedOutboundList
 }
 var file_thorchain_genesis_proto_depIdxs = []int32{
 	4,  // 0: thorchain.GenesisState.pools:type_name -> types.Pool
@@ -7918,11 +8071,12 @@ var file_thorchain_genesis_proto_depIdxs = []int32{
 	33, // 34: thorchain.GenesisState.dynamic_fee_accumulators:type_name -> types.DynamicFeeAccumulator
 	2,  // 35: thorchain.GenesisState.stable_reserve_credits:type_name -> thorchain.StableReserveCredit
 	34, // 36: thorchain.GenesisState.sol_vault_nonces:type_name -> types.SolVaultNonce
-	37, // [37:37] is the sub-list for method output_type
-	37, // [37:37] is the sub-list for method input_type
-	37, // [37:37] is the sub-list for extension type_name
-	37, // [37:37] is the sub-list for extension extendee
-	0,  // [0:37] is the sub-list for field type_name
+	35, // 37: thorchain.GenesisState.staged_outbounds:type_name -> types.StagedOutboundList
+	38, // [38:38] is the sub-list for method output_type
+	38, // [38:38] is the sub-list for method input_type
+	38, // [38:38] is the sub-list for extension type_name
+	38, // [38:38] is the sub-list for extension extendee
+	0,  // [0:38] is the sub-list for field type_name
 }
 
 func init() { file_thorchain_genesis_proto_init() }

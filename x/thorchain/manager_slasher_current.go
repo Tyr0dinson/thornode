@@ -372,45 +372,10 @@ func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 				continue // skip this transaction
 			}
 			if toi.OutHash.IsEmpty() {
-				// Native (THORChain) outbounds don't need external signing - they execute on inbound finalization
-				// However, we still need to remove stale mempool swap outbounds when max attempts reached
+				// Native (THORChain) outbounds execute immediately on finalization.
+				// With the staged queue design, unfinalized native outbounds are in the staged queue,
+				// not in TxOut. Any native outbound in TxOut should already be executed.
 				if toi.Chain.IsTHORChain() {
-					// Only process native outbounds that haven't been finalized yet
-					if !toi.InboundFinalized && maxOutboundAttempts > 0 {
-						voter, err := s.keeper.GetObservedTxInVoter(ctx, toi.InHash)
-						if err != nil {
-							ctx.Logger().Error("fail to get observed tx voter for native outbound", "error", err)
-							continue
-						}
-
-						// Use the voter's UnfinalizedHeight to calculate total age since swap was observed
-						// This allows us to track attempts across reschedules
-						if voter.UnfinalizedHeight > 0 {
-							age := ctx.BlockHeight() - voter.UnfinalizedHeight
-							attempts := age / signingTransPeriod
-							if attempts >= maxOutboundAttempts {
-								ctx.Logger().Info("removing stale native mempool swap outbound",
-									"hash", toi.InHash,
-									"unfinalized_height", voter.UnfinalizedHeight,
-									"attempts", attempts,
-									"asset", toi.Coin.Asset,
-									"amount", toi.Coin.Amount)
-								// Mark as processed and trigger reverse swap to restore pool accounting
-								txs.TxArray[i].OutHash = common.BlankTxID
-								// Revert the mempool swap - this will create a reverse swap to restore pool state
-								if err := revertMempoolSwap(ctx, s.keeper, mgr, voter); err != nil {
-									ctx.Logger().Error("fail to revert mempool swap for native outbound", "error", err, "hash", toi.InHash)
-								}
-							} else {
-								// Reschedule to next signingTransPeriod so it gets checked again
-								if err := s.keeper.AppendTxOut(ctx, ctx.BlockHeight()+signingTransPeriod, toi); err != nil {
-									ctx.Logger().Error("fail to reschedule native outbound", "error", err)
-								} else {
-									txs.TxArray[i].OutHash = common.BlankTxID // Mark original as done
-								}
-							}
-						}
-					}
 					continue // Skip signing-related logic for native outbounds
 				}
 

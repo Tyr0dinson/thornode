@@ -166,6 +166,7 @@ func DefaultGenesisState() GenesisState {
 		DynamicFeeAccumulators:  make([]types.DynamicFeeAccumulator, 0),
 		StableReserveCredits:    make([]StableReserveCredit, 0),
 		SolVaultNonces:          make([]types.SolVaultNonce, 0),
+		StagedOutbounds:         make([]types.StagedOutboundList, 0),
 	}
 }
 
@@ -430,6 +431,15 @@ func initGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 	// still land (double pay).
 	for _, record := range data.SolVaultNonces {
 		keeper.SetSolVaultNonce(ctx, record)
+	}
+
+	// Restore staged outbounds (mempool swaps waiting for inbound finalization)
+	for _, list := range data.StagedOutbounds {
+		for _, staged := range list.Items {
+			if err := keeper.SetStagedOutbound(ctx, staged.TxOutItem, staged.ScheduledHeight); err != nil {
+				panic(fmt.Errorf("fail to restore staged outbound: %w", err))
+			}
+		}
 	}
 
 	reserveAddr, _ := keeper.GetModuleAddress(ReserveName)
@@ -933,6 +943,19 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		solVaultNonces = append(solVaultNonces, record)
 	}
 
+	// Export staged outbounds (mempool swaps waiting for inbound finalization)
+	stagedOutbounds := make([]types.StagedOutboundList, 0)
+	stagedIter := k.GetStagedOutboundIterator(ctx)
+	defer func() { _ = stagedIter.Close() }()
+	for ; stagedIter.Valid(); stagedIter.Next() {
+		var list types.StagedOutboundList
+		if err := k.Cdc().Unmarshal(stagedIter.Value(), &list); err != nil {
+			ctx.Logger().Error("fail to unmarshal staged outbound list", "error", err)
+			continue
+		}
+		stagedOutbounds = append(stagedOutbounds, list)
+	}
+
 	return GenesisState{
 		Pools:                             pools,
 		LiquidityProviders:                liquidityProviders,
@@ -971,5 +994,6 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		LastObservedDynamicFeeEpochBlocks: lastObservedDynamicFeeEpochBlocks,
 		StableReserveCredits:              stableReserveCredits,
 		SolVaultNonces:                    solVaultNonces,
+		StagedOutbounds:                   stagedOutbounds,
 	}
 }

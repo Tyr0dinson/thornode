@@ -83,27 +83,10 @@ func AsgardInvariant(k KVStore) common.Invariant {
 			}
 		}
 
-		// sum native coins in queued TxOut items that are pending execution
-		// (mempool swaps where inbound has not yet finalized)
+		// Sum native coins in staged outbounds (mempool swaps waiting for inbound finalization)
+		// With the staged queue design, unfinalized native outbounds are in the staged queue,
+		// not in TxOut. Native outbounds in TxOut are finalized and execute immediately.
 		var txOutCoins common.Coins
-		txOutIter := k.GetTxOutIterator(ctx)
-		defer txOutIter.Close()
-		for ; txOutIter.Valid(); txOutIter.Next() {
-			var txOut TxOut
-			k.Cdc().MustUnmarshal(txOutIter.Value(), &txOut)
-			for _, item := range txOut.TxArray {
-				// Only count native outbounds that haven't been executed yet
-				// (InboundFinalized == false means the native transfer is pending)
-				if item.Chain.IsTHORChain() && !item.InboundFinalized && item.OutHash.IsEmpty() {
-					// Trade Assets and Secured Assets do not correspond to Module balance coins
-					if !item.Coin.Asset.IsTradeAsset() && !item.Coin.Asset.IsSecuredAsset() {
-						txOutCoins = txOutCoins.Add(item.Coin)
-					}
-				}
-			}
-		}
-
-		// Also include staged outbounds (mempool swaps waiting for inbound finalization)
 		stagedIter := k.GetStagedOutboundIterator(ctx)
 		defer stagedIter.Close()
 		for ; stagedIter.Valid(); stagedIter.Next() {

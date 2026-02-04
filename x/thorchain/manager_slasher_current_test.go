@@ -2569,15 +2569,16 @@ func (s *SlashingSuite) TestLackSigningWithMempoolSwaps(c *C) {
 	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
 
 	// Create unsigned outbound (mempool swap output)
+	// With the staged queue design, mempool swap outbounds are in the staged queue,
+	// not the TxOut queue. This test verifies the slasher handles finalized outbounds.
 	txOutItem := TxOutItem{
-		Chain:            common.ETHChain,
-		InHash:           inTxID,
-		VaultPubKey:      vault.PubKey,
-		ToAddress:        GetRandomETHAddress(),
-		Coin:             common.NewCoin(common.ETHAsset, cosmos.NewUint(5*common.One)),
-		Memo:             "OUT:" + inTxID.String(),
-		InboundFinalized: false, // Not finalized
-		OutHash:          common.BlankTxID,
+		Chain:       common.ETHChain,
+		InHash:      inTxID,
+		VaultPubKey: vault.PubKey,
+		ToAddress:   GetRandomETHAddress(),
+		Coin:        common.NewCoin(common.ETHAsset, cosmos.NewUint(5*common.One)),
+		Memo:        "OUT:" + inTxID.String(),
+		OutHash:     common.BlankTxID,
 	}
 
 	// Queue the outbound at future height
@@ -2624,14 +2625,13 @@ func (s *SlashingSuite) TestLackSigningWithMempoolSwaps(c *C) {
 	mgr.Keeper().SetObservedTxInVoter(ctx, finalizedVoter)
 
 	finalizedTxOutItem := TxOutItem{
-		Chain:            common.ETHChain,
-		InHash:           finalizedTxID,
-		VaultPubKey:      vault.PubKey,
-		ToAddress:        GetRandomETHAddress(),
-		Coin:             common.NewCoin(common.ETHAsset, cosmos.NewUint(5*common.One)),
-		Memo:             "OUT:" + finalizedTxID.String(),
-		InboundFinalized: true,
-		OutHash:          common.BlankTxID,
+		Chain:       common.ETHChain,
+		InHash:      finalizedTxID,
+		VaultPubKey: vault.PubKey,
+		ToAddress:   GetRandomETHAddress(),
+		Coin:        common.NewCoin(common.ETHAsset, cosmos.NewUint(5*common.One)),
+		Memo:        "OUT:" + finalizedTxID.String(),
+		OutHash:     common.BlankTxID,
 	}
 
 	finalizedOutHeight := ctx.BlockHeight() + 20

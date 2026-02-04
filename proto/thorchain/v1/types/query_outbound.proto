@@ -54,7 +54,6 @@ message QueryTxOutItem {
   string clout_spent = 11;
   string vault_pub_key_eddsa = 15;
   string vault_pub_key_frost = 17;
-  // whether the inbound transaction has been finalized (for mempool swap
-  // optimization)
-  bool inbound_finalized = 18 [ (gogoproto.jsontag) = "inbound_finalized" ];
+  reserved 18; // inbound_finalized removed - queue membership is source of
+               // truth
 }

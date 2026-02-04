@@ -141,4 +141,6 @@ message GenesisState {
       [ (gogoproto.nullable) = false ];
   repeated types.SolVaultNonce sol_vault_nonces = 50
       [ (gogoproto.nullable) = false ];
+  repeated types.StagedOutboundList staged_outbounds = 51
+      [ (gogoproto.nullable) = false ];
 }

@@ -1078,13 +1078,10 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]
 				return nil, cosmos.ZeroUint(), fmt.Errorf("fail to get observed tx voter: %w", err)
 			}
 
-			// Set InboundFinalized flag based on whether the inbound has finalized.
-			// For mempool swaps, this will be false until the inbound transaction finalizes.
 			activeNodeAccounts, err := tos.keeper.ListActiveValidators(ctx)
 			if err != nil {
 				return nil, cosmos.ZeroUint(), fmt.Errorf("fail to get active node accounts: %w", err)
 			}
-			outputs[i].InboundFinalized = voter.HasFinalised(activeNodeAccounts)
 
 			// Set voter.FinalisedHeight only when the inbound has actually finalized.
 			// For mempool swaps, this should remain 0 until finalization to enable reversal.
@@ -1094,10 +1091,6 @@ func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]
 
 			voter.Actions = append(voter.Actions, outputs[i])
 			tos.keeper.SetObservedTxInVoter(ctx, voter)
-		} else {
-			// Internal transactions (migrations, ragnarok, consolidate, etc.) have BlankTxID as InHash
-			// and have no external inbound to finalize, so they should be signed immediately by Bifrost.
-			outputs[i].InboundFinalized = true
 		}
 
 		finalOutput = append(finalOutput, outputs[i])
@@ -1164,14 +1157,21 @@ func (tos *TxOutStorage) addToBlockOut(ctx cosmos.Context, mgr Manager, item TxO
 		item.CloutSpent = &cloutSpent
 	}
 
-	// For mempool swaps (not finalized), stage the outbound instead of adding to real queue
-	if !item.InboundFinalized {
-		mempoolSwapCap := cosmos.NewUint(uint64(tos.keeper.GetConfigInt64(ctx, constants.MempoolSwapCapTOR)))
-		if !mempoolSwapCap.IsZero() {
-			ctx.Logger().Info("staging outbound for mempool swap",
-				"inhash", item.InHash, "chain", item.Chain, "asset", item.Coin.Asset,
-				"amount", item.Coin.Amount, "scheduled_height", outboundHeight)
-			return tos.keeper.SetStagedOutbound(ctx, item, outboundHeight)
+	// For mempool swaps (inbound not finalized), stage the outbound instead of adding to real queue
+	// Check voter finalization status directly - queue membership is the source of truth
+	if !item.InHash.IsEmpty() && !item.InHash.Equals(common.BlankTxID) {
+		voter, err := tos.keeper.GetObservedTxInVoter(ctx, item.InHash)
+		if err == nil {
+			activeNodeAccounts, err := tos.keeper.ListActiveValidators(ctx)
+			if err == nil && !voter.HasFinalised(activeNodeAccounts) {
+				mempoolSwapCap := cosmos.NewUint(uint64(tos.keeper.GetConfigInt64(ctx, constants.MempoolSwapCapTOR)))
+				if !mempoolSwapCap.IsZero() {
+					ctx.Logger().Info("staging outbound for mempool swap",
+						"inhash", item.InHash, "chain", item.Chain, "asset", item.Coin.Asset,
+						"amount", item.Coin.Amount, "scheduled_height", outboundHeight)
+					return tos.keeper.SetStagedOutbound(ctx, item, outboundHeight)
+				}
+			}
 		}
 	}
 

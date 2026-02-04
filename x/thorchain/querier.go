@@ -4233,7 +4233,6 @@ func castTxOutItem(toi TxOutItem, height int64) *types.QueryTxOutItem {
 		AggregatorTargetAsset: toi.AggregatorTargetAsset,
 		AggregatorTargetLimit: toi.AggregatorTargetLimit.String(),
 		CloutSpent:            toi.CloutSpent.String(),
-		InboundFinalized:      toi.InboundFinalized,
 	}
 }
 
