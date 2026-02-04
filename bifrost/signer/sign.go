@@ -35,6 +35,11 @@ import (
 	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
+// errRetryLater is a sentinel error indicating the tx should be kept in storage and
+// retried later. This is used for temporary conditions (e.g., signing halted) that
+// will resolve, as opposed to permanent conditions where the tx should be discarded.
+var errRetryLater = errors.New("retry later")
+
 // Signer will pull the tx out from thorchain and then forward it to chain
 type Signer struct {
 	logger                zerolog.Logger
@@ -595,7 +600,7 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 	}
 	if haltSigningGlobalMimir > 0 && haltSigningGlobalMimir <= blockHeight {
 		s.logger.Info().Msg("signing has been halted globally")
-		return nil, nil, nil
+		return nil, nil, errRetryLater
 	}
 	mimirKey = fmt.Sprintf(constants.MimirTemplateHaltSigning, tx.Chain)
 	haltSigningMimir, err := s.thorchainBridge.GetMimir(mimirKey)
@@ -605,7 +610,7 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 	}
 	if haltSigningMimir > 0 && haltSigningMimir <= blockHeight {
 		s.logger.Info().Msgf("signing for %s is halted", tx.Chain)
-		return nil, nil, nil
+		return nil, nil, errRetryLater
 	}
 
 	if !s.shouldSign(tx) {
@@ -767,6 +772,13 @@ func (s *Signer) processTransaction(item TxOutStoreItem) {
 		return s.signAndBroadcast(item)
 	})
 	if err != nil {
+		// errRetryLater is a temporary condition (e.g., signing halted), not a real error.
+		// Skip error logging and checkpoint storage, just keep item in storage for later retry.
+		if errors.Is(err, errRetryLater) {
+			cancel()
+			return
+		}
+
 		// Always store the checkpoint of the built tx if we have one. This ensures the same
 		// vault will never attempt multiple txs for an outbound, as further protection
 		// against cases like https://gitlab.com/thorchain/thornode/-/merge_requests/4344.
