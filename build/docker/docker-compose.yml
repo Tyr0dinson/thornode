@@ -236,6 +236,9 @@ services:
       BIFROST_CHAINS_SOL_DISABLED: "false"
       BIFROST_CHAINS_SOL_RPC_HOST: ${SOL_HOST:-http://solana:8899}
 
+      # disable cardano
+      BIFROST_CHAINS_ADA_DISABLED: "true"
+
       # set fixed gas rate for evm chains
       BIFROST_CHAINS_ETH_BLOCK_SCANNER_FIXED_GAS_RATE: 20_000_000_000 # 20 gwei
       BIFROST_CHAINS_AVAX_BLOCK_SCANNER_FIXED_GAS_RATE: 100_000_000_000 # 100 navax
