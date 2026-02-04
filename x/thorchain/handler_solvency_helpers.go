@@ -255,39 +255,6 @@ func excludePendingOutboundFromVault(ctx cosmos.Context, mgr Manager, vault Vaul
 		vault = deductVaultBlockPendingOutbound(vault, blockOut)
 	}
 
-	// Also deduct staged outbounds (mempool swaps waiting for inbound finalization)
-	stagedIter := mgr.Keeper().GetStagedOutboundIterator(ctx)
-	defer stagedIter.Close()
-	for ; stagedIter.Valid(); stagedIter.Next() {
-		var stagedList keeper.StagedOutboundList
-		if err := mgr.Keeper().Cdc().Unmarshal(stagedIter.Value(), &stagedList); err != nil {
-			ctx.Logger().Error("fail to unmarshal staged outbound list", "error", err)
-			continue
-		}
-		for _, staged := range stagedList.Items {
-			item := staged.TxOutItem
-			if !item.VaultPubKey.Equals(vault.PubKey) {
-				continue
-			}
-			if !item.OutHash.IsEmpty() {
-				continue
-			}
-			// deduct the gas asset from the vault as well
-			var gasCoin common.Coin
-			if !item.MaxGas.IsEmpty() {
-				gasCoin = item.MaxGas.ToCoins().GetCoin(item.Chain.GetGasAsset())
-			}
-			for i, vaultCoin := range vault.Coins {
-				if vaultCoin.Asset.Equals(item.Coin.Asset) {
-					vault.Coins[i].Amount = common.SafeSub(vault.Coins[i].Amount, item.Coin.Amount)
-				}
-				if vaultCoin.Asset.Equals(gasCoin.Asset) {
-					vault.Coins[i].Amount = common.SafeSub(vault.Coins[i].Amount, gasCoin.Amount)
-				}
-			}
-		}
-	}
-
 	return vault, nil
 }
 
