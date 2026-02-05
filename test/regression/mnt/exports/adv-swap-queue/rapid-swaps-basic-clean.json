@@ -324,7 +324,6 @@
               },
               "gas_rate": "120",
               "in_hash": "0000000000000000000000000000000000000000000000000000000000000003",
-              "inbound_finalized": true,
               "max_gas": [
                 {
                   "amount": "960000",
@@ -415,7 +414,6 @@
               },
               "gas_rate": "10",
               "in_hash": "0000000000000000000000000000000000000000000000000000000000000004",
-              "inbound_finalized": true,
               "max_gas": [
                 {
                   "amount": "10000",
@@ -506,7 +504,6 @@
               },
               "gas_rate": "10",
               "in_hash": "EF9AD85C2A35079CBDC85E1230F9CC3F9894938997888D133001521A3C40E26F",
-              "inbound_finalized": true,
               "max_gas": [
                 {
                   "amount": "10000",
@@ -571,7 +568,6 @@
               },
               "gas_rate": "120",
               "in_hash": "0000000000000000000000000000000000000000000000000000000000000007",
-              "inbound_finalized": true,
               "max_gas": [
                 {
                   "amount": "960000",
@@ -698,7 +694,7 @@
       },
       "rune_providers": [],
       "secured_assets": [],
-      "sol_vault_nonces": [],
+      "staged_outbounds": [],
       "streaming_swaps": [],
       "swap_queue_items": [],
       "swapper_clout": [
@@ -739,7 +735,6 @@
               },
               "gas_rate": "120",
               "in_hash": "0000000000000000000000000000000000000000000000000000000000000003",
-              "inbound_finalized": true,
               "max_gas": [
                 {
                   "amount": "960000",
@@ -761,7 +756,6 @@
               },
               "gas_rate": "10",
               "in_hash": "0000000000000000000000000000000000000000000000000000000000000004",
-              "inbound_finalized": true,
               "max_gas": [
                 {
                   "amount": "10000",
@@ -783,7 +777,6 @@
               },
               "gas_rate": "10",
               "in_hash": "EF9AD85C2A35079CBDC85E1230F9CC3F9894938997888D133001521A3C40E26F",
-              "inbound_finalized": true,
               "max_gas": [
                 {
                   "amount": "10000",
@@ -810,7 +803,6 @@
               },
               "gas_rate": "120",
               "in_hash": "0000000000000000000000000000000000000000000000000000000000000007",
-              "inbound_finalized": true,
               "max_gas": [
                 {
                   "amount": "960000",
