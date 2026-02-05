@@ -270,7 +270,6 @@
               },
               "gas_rate": "10",
               "in_hash": "54C4A5A79277EEDE490CE21923364B0833A5126C00E193E7F0E41AC90C6E394A",
-              "inbound_finalized": true,
               "max_gas": [
                 {
                   "amount": "10000",
@@ -290,7 +289,6 @@
               },
               "gas_rate": "2000000",
               "in_hash": "54C4A5A79277EEDE490CE21923364B0833A5126C00E193E7F0E41AC90C6E394A",
-              "inbound_finalized": true,
               "max_gas": [
                 {
                   "amount": "200000000000000",
@@ -401,6 +399,7 @@
       },
       "rune_providers": [],
       "secured_assets": [],
+      "staged_outbounds": [],
       "streaming_swaps": [],
       "swap_queue_items": [],
       "swapper_clout": [
@@ -435,7 +434,6 @@
               },
               "gas_rate": "10",
               "in_hash": "54C4A5A79277EEDE490CE21923364B0833A5126C00E193E7F0E41AC90C6E394A",
-              "inbound_finalized": true,
               "max_gas": [
                 {
                   "amount": "10000",

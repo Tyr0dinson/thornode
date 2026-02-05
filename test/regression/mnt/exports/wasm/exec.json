@@ -372,6 +372,7 @@
           "depth": "10000000"
         }
       ],
+      "staged_outbounds": [],
       "streaming_swaps": [],
       "swap_queue_items": [],
       "swapper_clout": [],

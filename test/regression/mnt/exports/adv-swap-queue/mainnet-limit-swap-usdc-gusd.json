@@ -344,6 +344,7 @@
           "depth": "0"
         }
       ],
+      "staged_outbounds": [],
       "streaming_swaps": [],
       "swap_queue_items": [],
       "swapper_clout": [

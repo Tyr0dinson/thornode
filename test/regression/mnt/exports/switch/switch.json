@@ -288,7 +288,6 @@
               },
               "gas_rate": "15",
               "in_hash": "0000000000000000000000000000000000000000000000000000000000000002",
-              "inbound_finalized": true,
               "max_gas": [
                 {
                   "amount": "1500000",
@@ -401,6 +400,7 @@
       },
       "rune_providers": [],
       "secured_assets": [],
+      "staged_outbounds": [],
       "streaming_swaps": [],
       "swap_queue_items": [],
       "swapper_clout": [],
@@ -422,7 +422,6 @@
               },
               "gas_rate": "15",
               "in_hash": "0000000000000000000000000000000000000000000000000000000000000002",
-              "inbound_finalized": true,
               "max_gas": [
                 {
                   "amount": "1500000",
