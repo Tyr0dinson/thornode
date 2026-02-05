@@ -85,8 +85,9 @@ func (tKeyGen *EDDSAKeyGen) GenerateNewKey(keygenReq keygen.Request) (*bcrypto.E
 	}
 	ctx := btss.NewPeerContext(partiesID)
 	params := btss.NewParameters(tss.Edwards(), ctx, localPartyID, len(partiesID), threshold)
-	outCh := make(chan btss.Message, len(partiesID))
-	endCh := make(chan eddsakg.LocalPartySaveData, len(partiesID))
+	bufferSize := len(partiesID) * 10 // buffer size for outCh and endCh
+	outCh := make(chan btss.Message, bufferSize)
+	endCh := make(chan eddsakg.LocalPartySaveData, bufferSize)
 	errChan := make(chan struct{})
 
 	blameMgr := tKeyGen.tssCommonStruct.GetBlameMgr()

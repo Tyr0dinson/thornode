@@ -1,6 +1,7 @@
 package ebifrost
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	fmt "fmt"
@@ -13,6 +14,7 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/bech32"
 
+	cmttypes "github.com/cometbft/cometbft/types"
 	common "gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 	"google.golang.org/grpc"
@@ -21,14 +23,24 @@ import (
 const (
 	// This is a dummy address used for injected transactions.
 	// It is not used otherwise, as quorum msg attestations are verified within the handlers.
-	ebifrostSigner        = "thor1zxhfu0qmmq6gmgq4sgz0xgq69h0nhqx5yrseu5"
-	cachedBlocks          = 10
-	EventQuorumTxCommited = "quorum_tx_committed"
+	ebifrostSigner                     = "thor1zxhfu0qmmq6gmgq4sgz0xgq69h0nhqx5yrseu5"
+	cachedBlocks                       = 10
+	EventQuorumTxCommitted             = "quorum_tx_committed"
+	EventQuorumNetworkFeeCommitted     = "quorum_network_fee_committed"
+	EventQuorumSolvencyCommitted       = "quorum_solvency_committed"
+	EventQuorumErrataTxCommitted       = "quorum_errata_tx_committed"
+	EventQuorumPriceFeedBatchCommitted = "quorum_price_feed_batch:committed"
 )
 
 var ErrAlreadyStarted = errors.New("ebifrost already started")
 
-var notifyEvents = []string{EventQuorumTxCommited}
+var notifyEvents = []string{
+	EventQuorumTxCommitted,
+	EventQuorumNetworkFeeCommitted,
+	EventQuorumSolvencyCommitted,
+	EventQuorumErrataTxCommitted,
+	EventQuorumPriceFeedBatchCommitted,
+}
 
 var _, ebifrostSignerAcc, _ = bech32.DecodeAndConvert(ebifrostSigner)
 
@@ -45,12 +57,15 @@ type EnshrinedBifrost struct {
 	networkFeeCache *InjectCache[*common.QuorumNetworkFee]
 	solvencyCache   *InjectCache[*common.QuorumSolvency]
 	errataCache     *InjectCache[*common.QuorumErrataTx]
+	priceFeedCache  *InjectCache[*common.QuorumPriceFeedBatch]
 
 	subscribers   map[string][]chan *EventNotification
 	subscribersMu sync.Mutex
 
 	started bool
 	mu      sync.Mutex
+
+	stopChan chan struct{}
 }
 
 func NewEnshrinedBifrost(cdc codec.Codec, logger log.Logger, config EBifrostConfig) *EnshrinedBifrost {
@@ -67,8 +82,10 @@ func NewEnshrinedBifrost(cdc codec.Codec, logger log.Logger, config EBifrostConf
 		networkFeeCache: NewInjectCache[*common.QuorumNetworkFee](),
 		solvencyCache:   NewInjectCache[*common.QuorumSolvency](),
 		errataCache:     NewInjectCache[*common.QuorumErrataTx](),
+		priceFeedCache:  NewInjectCache[*common.QuorumPriceFeedBatch](),
 		subscribers:     make(map[string][]chan *EventNotification),
 		cfg:             config,
+		stopChan:        make(chan struct{}),
 	}
 
 	RegisterLocalhostBifrostServer(s, ebs)
@@ -97,6 +114,11 @@ func (b *EnshrinedBifrost) Start() error {
 		}
 	}()
 
+	// Start the prune timer if TTL is enabled
+	if b.cfg.CacheItemTTL > 0 {
+		b.startPruneTimer()
+	}
+
 	return nil
 }
 
@@ -111,7 +133,80 @@ func (b *EnshrinedBifrost) Stop() {
 	}
 	b.started = false
 
+	close(b.stopChan)
+
 	b.s.Stop()
+}
+
+// startPruneTimer starts a timer to periodically prune expired items from the caches
+func (b *EnshrinedBifrost) startPruneTimer() {
+	interval := b.cfg.CacheItemTTL / 10 // Check every 1/10th of the TTL
+	if interval < time.Second {
+		interval = time.Second // Minimum interval of 1 second
+	}
+
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				b.logger.Debug("Pruning expired cache items", "ttl", b.cfg.CacheItemTTL.String())
+				prunedTxs := b.quorumTxCache.PruneExpiredItems(b.cfg.CacheItemTTL)
+				prunedNfs := b.networkFeeCache.PruneExpiredItems(b.cfg.CacheItemTTL)
+				prunedSlvs := b.solvencyCache.PruneExpiredItems(b.cfg.CacheItemTTL)
+				prunedEtxs := b.errataCache.PruneExpiredItems(b.cfg.CacheItemTTL)
+
+				for _, tx := range prunedTxs {
+					b.logger.Warn(
+						"EBifrost pruned quorum tx",
+						"attestations", len(tx.Attestations),
+						"chain", tx.ObsTx.Tx.Chain,
+						"hash", tx.ObsTx.Tx.ID,
+						"block_height", tx.ObsTx.BlockHeight,
+						"finalise_height", tx.ObsTx.FinaliseHeight,
+						"from", tx.ObsTx.Tx.FromAddress,
+						"to", tx.ObsTx.Tx.ToAddress,
+						"memo", tx.ObsTx.Tx.Memo,
+						"coins", tx.ObsTx.Tx.Coins.String(),
+						"gas", tx.ObsTx.Tx.Gas.ToCoins().String(),
+						"inbound", tx.Inbound,
+					)
+				}
+				for _, nf := range prunedNfs {
+					b.logger.Warn(
+						"EBifrost pruned quorum network fee",
+						"attestations", len(nf.Attestations),
+						"chain", nf.NetworkFee.Chain,
+						"height", nf.NetworkFee.Height,
+						"tx_size", nf.NetworkFee.TransactionSize,
+						"tx_rate", nf.NetworkFee.TransactionRate,
+					)
+				}
+				for _, slv := range prunedSlvs {
+					b.logger.Warn(
+						"Ebifrost pruned quorum solvency",
+						"attestations", len(slv.Attestations),
+						"chain", slv.Solvency.Chain,
+						"height", slv.Solvency.Height,
+						"pubkey", slv.Solvency.PubKey,
+						"coins", slv.Solvency.Coins.String(),
+					)
+				}
+				for _, etx := range prunedEtxs {
+					b.logger.Warn(
+						"Ebifrost pruned quorum errata tx",
+						"attestations", len(etx.Attestations),
+						"chain", etx.ErrataTx.Chain,
+						"id", etx.ErrataTx.Id,
+					)
+				}
+			case <-b.stopChan:
+				return
+			}
+		}
+	}()
 }
 
 func (b *EnshrinedBifrost) SendQuorumTx(ctx context.Context, tx *common.QuorumTx) (*SendQuorumTxResult, error) {
@@ -155,7 +250,8 @@ func (b *EnshrinedBifrost) SendQuorumSolvency(ctx context.Context, s *common.Quo
 
 func (b *EnshrinedBifrost) SendQuorumErrataTx(ctx context.Context, e *common.QuorumErrataTx) (*SendQuorumErrataTxResult, error) {
 	b.quorumTxCache.Lock()
-	for i, tx := range b.quorumTxCache.items {
+	for i, item := range b.quorumTxCache.items {
+		tx := item.Item
 		if tx.ObsTx.Tx.Chain == e.ErrataTx.Chain && tx.ObsTx.Tx.ID == e.ErrataTx.Id {
 			// remove the tx from the cache because we observed an error for it
 			b.quorumTxCache.items = append(b.quorumTxCache.items[:i], b.quorumTxCache.items[i+1:]...)
@@ -174,6 +270,45 @@ func (b *EnshrinedBifrost) SendQuorumErrataTx(ctx context.Context, e *common.Quo
 	}
 
 	return &SendQuorumErrataTxResult{}, nil
+}
+
+func (b *EnshrinedBifrost) SendQuorumPriceFeedBatch(ctx context.Context, qpfb *common.QuorumPriceFeedBatch) (*SendQuorumPriceFeedBatchResult, error) {
+	// no need to check for existing attestations or merging, update the
+	// cache immediately
+	b.priceFeedCache.Lock()
+	if len(b.priceFeedCache.items) == 0 {
+		b.priceFeedCache.items = []TimestampedItem[*common.QuorumPriceFeedBatch]{{
+			Item:      qpfb,
+			Timestamp: time.Now(),
+		}}
+	} else {
+		qpfs := b.priceFeedCache.items[0].Item.QuorumPriceFeeds
+		for _, newQpf := range qpfb.QuorumPriceFeeds {
+			found := false
+
+			newPk := newQpf.Attestations[0].PubKey
+
+			for i, oldQpf := range qpfs {
+				oldPk := oldQpf.Attestations[0].PubKey
+
+				if !bytes.Equal(oldPk, newPk) {
+					continue
+				}
+
+				qpfs[i] = newQpf
+				found = true
+				break
+			}
+			if !found {
+				qpfs = append(qpfs, newQpf)
+			}
+		}
+		b.priceFeedCache.items[0].Item.QuorumPriceFeeds = qpfs
+		b.priceFeedCache.items[0].Timestamp = time.Now()
+	}
+	b.priceFeedCache.Unlock()
+
+	return &SendQuorumPriceFeedBatchResult{}, nil
 }
 
 func (b *EnshrinedBifrost) SubscribeToEvents(req *SubscribeRequest, stream LocalhostBifrost_SubscribeToEventsServer) error {
@@ -276,7 +411,7 @@ func (b *EnshrinedBifrost) broadcastQuorumTxEvent(tx *common.QuorumTx) {
 			return item.Marshal()
 		},
 		b.broadcastEvent,
-		EventQuorumTxCommited,
+		EventQuorumTxCommitted,
 		b.logger,
 	)
 }
@@ -290,8 +425,15 @@ func (b *EnshrinedBifrost) MarkQuorumTxAttestationsConfirmed(ctx context.Context
 
 	go b.broadcastQuorumTxEvent(qtx)
 
-	found := b.quorumTxCache.MarkAttestationsConfirmed(
+	sdkCtx := sdk.UnwrapSDKContext(ctx)
+	height := sdkCtx.BlockHeight()
+
+	// Use atomic method to prevent race condition between MarkAttestationsConfirmed and AddToBlock.
+	// This ensures AddItem cannot check recentBlockItems between these two operations.
+	found := b.quorumTxCache.MarkAttestationsConfirmedAndAddToBlock(
 		qtx,
+		height,
+		cachedBlocks,
 		b.logger,
 		(*common.QuorumTx).Equals,
 		(*common.QuorumTx).GetAttestations,
@@ -312,12 +454,18 @@ func (b *EnshrinedBifrost) MarkQuorumTxAttestationsConfirmed(ctx context.Context
 			"hash", cmpObsTx.Tx.ID,
 		)
 	}
+}
 
-	sdkCtx := sdk.UnwrapSDKContext(ctx)
-	height := sdkCtx.BlockHeight()
-
-	b.quorumTxCache.AddToBlock(height, qtx)
-	b.quorumTxCache.CleanOldBlocks(height, cachedBlocks)
+func (b *EnshrinedBifrost) broadcastQuorumNetworkFeeEvent(nf *common.QuorumNetworkFee) {
+	b.networkFeeCache.BroadcastEvent(
+		nf,
+		func(item *common.QuorumNetworkFee) ([]byte, error) {
+			return item.Marshal()
+		},
+		b.broadcastEvent,
+		EventQuorumNetworkFeeCommitted,
+		b.logger,
+	)
 }
 
 // MarkQuorumNetworkFeeAttestationsConfirmed is intended to be called by the bifrost post handler after a tx has been processed.
@@ -327,8 +475,16 @@ func (b *EnshrinedBifrost) MarkQuorumNetworkFeeAttestationsConfirmed(ctx context
 		return
 	}
 
-	found := b.networkFeeCache.MarkAttestationsConfirmed(
+	go b.broadcastQuorumNetworkFeeEvent(qnf)
+
+	sdkCtx := sdk.UnwrapSDKContext(ctx)
+	height := sdkCtx.BlockHeight()
+
+	// Use atomic method to prevent race condition between MarkAttestationsConfirmed and AddToBlock.
+	found := b.networkFeeCache.MarkAttestationsConfirmedAndAddToBlock(
 		qnf,
+		height,
+		cachedBlocks,
 		b.logger,
 		(*common.QuorumNetworkFee).Equals,
 		(*common.QuorumNetworkFee).GetAttestations,
@@ -353,12 +509,18 @@ func (b *EnshrinedBifrost) MarkQuorumNetworkFeeAttestationsConfirmed(ctx context
 			"tx_rate", cmpNf.TransactionRate,
 		)
 	}
+}
 
-	sdkCtx := sdk.UnwrapSDKContext(ctx)
-	height := sdkCtx.BlockHeight()
-
-	b.networkFeeCache.AddToBlock(height, qnf)
-	b.networkFeeCache.CleanOldBlocks(height, cachedBlocks)
+func (b *EnshrinedBifrost) broadcastQuorumSolvencyEvent(s *common.QuorumSolvency) {
+	b.solvencyCache.BroadcastEvent(
+		s,
+		func(item *common.QuorumSolvency) ([]byte, error) {
+			return item.Marshal()
+		},
+		b.broadcastEvent,
+		EventQuorumSolvencyCommitted,
+		b.logger,
+	)
 }
 
 // MarkQuorumSolvencyAttestationsConfirmed is intended to be called by the bifrost post handler after a tx has been processed.
@@ -368,8 +530,16 @@ func (b *EnshrinedBifrost) MarkQuorumSolvencyAttestationsConfirmed(ctx context.C
 		return
 	}
 
-	found := b.solvencyCache.MarkAttestationsConfirmed(
+	go b.broadcastQuorumSolvencyEvent(qs)
+
+	sdkCtx := sdk.UnwrapSDKContext(ctx)
+	height := sdkCtx.BlockHeight()
+
+	// Use atomic method to prevent race condition between MarkAttestationsConfirmed and AddToBlock.
+	found := b.solvencyCache.MarkAttestationsConfirmedAndAddToBlock(
 		qs,
+		height,
+		cachedBlocks,
 		b.logger,
 		(*common.QuorumSolvency).Equals,
 		(*common.QuorumSolvency).GetAttestations,
@@ -394,12 +564,18 @@ func (b *EnshrinedBifrost) MarkQuorumSolvencyAttestationsConfirmed(ctx context.C
 			"pub_key", cmpS.PubKey,
 		)
 	}
+}
 
-	sdkCtx := sdk.UnwrapSDKContext(ctx)
-	height := sdkCtx.BlockHeight()
-
-	b.solvencyCache.AddToBlock(height, qs)
-	b.solvencyCache.CleanOldBlocks(height, cachedBlocks)
+func (b *EnshrinedBifrost) broadcastQuorumErrataTxEvent(qe *common.QuorumErrataTx) {
+	b.errataCache.BroadcastEvent(
+		qe,
+		func(item *common.QuorumErrataTx) ([]byte, error) {
+			return item.Marshal()
+		},
+		b.broadcastEvent,
+		EventQuorumErrataTxCommitted,
+		b.logger,
+	)
 }
 
 // MarkQuorumErrataTxAttestationsConfirmed is intended to be called by the bifrost post handler after a tx has been processed.
@@ -409,8 +585,16 @@ func (b *EnshrinedBifrost) MarkQuorumErrataTxAttestationsConfirmed(ctx context.C
 		return
 	}
 
-	found := b.errataCache.MarkAttestationsConfirmed(
+	go b.broadcastQuorumErrataTxEvent(qe)
+
+	sdkCtx := sdk.UnwrapSDKContext(ctx)
+	height := sdkCtx.BlockHeight()
+
+	// Use atomic method to prevent race condition between MarkAttestationsConfirmed and AddToBlock.
+	found := b.errataCache.MarkAttestationsConfirmedAndAddToBlock(
 		qe,
+		height,
+		cachedBlocks,
 		b.logger,
 		(*common.QuorumErrataTx).Equals,
 		(*common.QuorumErrataTx).GetAttestations,
@@ -431,12 +615,30 @@ func (b *EnshrinedBifrost) MarkQuorumErrataTxAttestationsConfirmed(ctx context.C
 			"id", cmpEr.Id,
 		)
 	}
+}
 
-	sdkCtx := sdk.UnwrapSDKContext(ctx)
-	height := sdkCtx.BlockHeight()
+func (b *EnshrinedBifrost) broadcastQuorumPriceFeedBatchEvent(qpfb *common.QuorumPriceFeedBatch) {
+	b.priceFeedCache.BroadcastEvent(
+		qpfb,
+		func(item *common.QuorumPriceFeedBatch) ([]byte, error) {
+			return item.Marshal()
+		},
+		b.broadcastEvent,
+		EventQuorumPriceFeedBatchCommitted,
+		b.logger,
+	)
+}
 
-	b.errataCache.AddToBlock(height, qe)
-	b.errataCache.CleanOldBlocks(height, cachedBlocks)
+// MarkQuorumPriceFeedBatchAttestationsConfirmed is intended to be called by the bifrost post handler after a tx has been processed.
+// It will broadcast the commit event.
+func (b *EnshrinedBifrost) MarkQuorumPriceFeedBatchAttestationsConfirmed(ctx context.Context, qpf *common.QuorumPriceFeedBatch) {
+	if b == nil {
+		return
+	}
+
+	// Remove all cached price feeds, so we don't keep feeds from churned nodes
+	b.priceFeedCache.PruneExpiredItems(0)
+	go b.broadcastQuorumPriceFeedBatchEvent(qpf)
 }
 
 func (b *EnshrinedBifrost) MarshalTx(msg sdk.Msg) ([]byte, error) {
@@ -445,13 +647,14 @@ func (b *EnshrinedBifrost) MarshalTx(msg sdk.Msg) ([]byte, error) {
 }
 
 // ProposalInjectTxs is intended to be called by the current proposing validator during PrepareProposal
-// and will return a list of in-quorum transactions to be included in the next block.
-func (b *EnshrinedBifrost) ProposalInjectTxs(ctx sdk.Context) [][]byte {
+// and will return a list of in-quorum transactions to be included in the next block along with the total byte length of the transactions.
+func (b *EnshrinedBifrost) ProposalInjectTxs(ctx sdk.Context, maxTxBytes int64) ([][]byte, int64) {
 	if b == nil {
-		return nil
+		return nil, 0
 	}
 
 	var injectTxs [][]byte
+	var txBzLen int64
 
 	// Process observed txs
 	txBzs := b.quorumTxCache.ProcessForProposal(
@@ -466,11 +669,20 @@ func (b *EnshrinedBifrost) ProposalInjectTxs(ctx sdk.Context) [][]byte {
 				"hash", obsTx.Tx.ID,
 				"finalized", obsTx.IsFinal(),
 				"inbound", tx.Inbound,
-				"attestations", len(tx.Attestations))
+				"attestations", len(tx.Attestations),
+				"memo", obsTx.Tx.Memo,
+				"coins", obsTx.Tx.Coins)
 		},
 		b.logger,
 	)
-	injectTxs = append(injectTxs, txBzs...)
+	for _, bz := range txBzs {
+		addLen := cmttypes.ComputeProtoSizeForTxs([]cmttypes.Tx{bz})
+		if txBzLen+addLen > maxTxBytes {
+			continue
+		}
+		txBzLen += addLen
+		injectTxs = append(injectTxs, bz)
+	}
 
 	// Process network fees
 	nfBzs := b.networkFeeCache.ProcessForProposal(
@@ -487,7 +699,14 @@ func (b *EnshrinedBifrost) ProposalInjectTxs(ctx sdk.Context) [][]byte {
 		},
 		b.logger,
 	)
-	injectTxs = append(injectTxs, nfBzs...)
+	for _, bz := range nfBzs {
+		addLen := cmttypes.ComputeProtoSizeForTxs([]cmttypes.Tx{bz})
+		if txBzLen+addLen > maxTxBytes {
+			continue
+		}
+		txBzLen += addLen
+		injectTxs = append(injectTxs, bz)
+	}
 
 	// Process solvency
 	sBzs := b.solvencyCache.ProcessForProposal(
@@ -506,7 +725,14 @@ func (b *EnshrinedBifrost) ProposalInjectTxs(ctx sdk.Context) [][]byte {
 		},
 		b.logger,
 	)
-	injectTxs = append(injectTxs, sBzs...)
+	for _, bz := range sBzs {
+		addLen := cmttypes.ComputeProtoSizeForTxs([]cmttypes.Tx{bz})
+		if txBzLen+addLen > maxTxBytes {
+			continue
+		}
+		txBzLen += addLen
+		injectTxs = append(injectTxs, bz)
+	}
 
 	// Process errata
 	eBzs := b.errataCache.ProcessForProposal(
@@ -523,9 +749,37 @@ func (b *EnshrinedBifrost) ProposalInjectTxs(ctx sdk.Context) [][]byte {
 		},
 		b.logger,
 	)
-	injectTxs = append(injectTxs, eBzs...)
+	for _, bz := range eBzs {
+		addLen := cmttypes.ComputeProtoSizeForTxs([]cmttypes.Tx{bz})
+		if txBzLen+addLen > maxTxBytes {
+			continue
+		}
+		txBzLen += addLen
+		injectTxs = append(injectTxs, bz)
+	}
 
-	return injectTxs
+	// Process price feeds
+	pfBzs := b.priceFeedCache.ProcessForProposal(
+		func(qpfb *common.QuorumPriceFeedBatch) (sdk.Msg, error) {
+			return types.NewMsgPriceFeedQuorumBatch(qpfb.QuorumPriceFeeds, ebifrostSignerAcc), nil
+		},
+		b.MarshalTx,
+		func(qpfb *common.QuorumPriceFeedBatch, logger log.Logger) {
+			logger.Info("Injecting quorum price feed batch",
+				"price_feeds", len(qpfb.QuorumPriceFeeds))
+		},
+		b.logger,
+	)
+	for _, bz := range pfBzs {
+		addLen := cmttypes.ComputeProtoSizeForTxs([]cmttypes.Tx{bz})
+		if txBzLen+addLen > maxTxBytes {
+			continue
+		}
+		txBzLen += addLen
+		injectTxs = append(injectTxs, bz)
+	}
+
+	return injectTxs, txBzLen
 }
 
 // Test use only

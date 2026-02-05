@@ -16,9 +16,9 @@ import (
 
 // Node struct for Node
 type Node struct {
-	NodeAddress string `json:"node_address"`
-	Status string `json:"status"`
-	PubKeySet NodePubKeySet `json:"pub_key_set"`
+	NodeAddress string        `json:"node_address"`
+	Status      string        `json:"status"`
+	PubKeySet   NodePubKeySet `json:"pub_key_set"`
 	// the consensus pub key for the node
 	ValidatorConsPubKey string `json:"validator_cons_pub_key"`
 	// the P2PID (:6040/p2pid endpoint) of the node
@@ -26,26 +26,30 @@ type Node struct {
 	// the block height at which the node became active
 	ActiveBlockHeight int64 `json:"active_block_height"`
 	// the block height of the current provided information for the node
-	StatusSince int64 `json:"status_since"`
+	StatusSince         int64  `json:"status_since"`
 	NodeOperatorAddress string `json:"node_operator_address"`
 	// current node bond
-	TotalBond string `json:"total_bond"`
+	TotalBond     string            `json:"total_bond"`
 	BondProviders NodeBondProviders `json:"bond_providers"`
 	// the set of vault public keys of which the node is a member
 	SignerMembership []string `json:"signer_membership"`
-	RequestedToLeave bool `json:"requested_to_leave"`
+	RequestedToLeave bool     `json:"requested_to_leave"`
 	// indicates whether the node has been forced to leave by the network, typically via ban
-	ForcedToLeave bool `json:"forced_to_leave"`
-	LeaveHeight int64 `json:"leave_height"`
-	IpAddress string `json:"ip_address"`
+	ForcedToLeave bool   `json:"forced_to_leave"`
+	LeaveHeight   int64  `json:"leave_height"`
+	IpAddress     string `json:"ip_address"`
 	// the currently set version of the node
 	Version string `json:"version"`
 	// the accumulated slash points, reset at churn but excessive slash points may carry over
-	SlashPoints int64 `json:"slash_points"`
-	Jail NodeJail `json:"jail"`
-	CurrentAward string `json:"current_award"`
+	SlashPoints  int64    `json:"slash_points"`
+	Jail         NodeJail `json:"jail"`
+	CurrentAward string   `json:"current_award"`
 	// the last observed heights for all chain by the node
 	ObserveChains []ChainHeight `json:"observe_chains"`
+	// indicates whether the node is in maintenance mode
+	Maintenance bool `json:"maintenance"`
+	// the number of recent blocks the node has missed signing
+	MissingBlocks   int64               `json:"missing_blocks"`
 	PreflightStatus NodePreflightStatus `json:"preflight_status"`
 }
 
@@ -53,7 +57,7 @@ type Node struct {
 // This constructor will assign default values to properties that have it defined,
 // and makes sure properties required by API are set, but the set of arguments
 // will change when the set of required properties is changed
-func NewNode(nodeAddress string, status string, pubKeySet NodePubKeySet, validatorConsPubKey string, peerId string, activeBlockHeight int64, statusSince int64, nodeOperatorAddress string, totalBond string, bondProviders NodeBondProviders, signerMembership []string, requestedToLeave bool, forcedToLeave bool, leaveHeight int64, ipAddress string, version string, slashPoints int64, jail NodeJail, currentAward string, observeChains []ChainHeight, preflightStatus NodePreflightStatus) *Node {
+func NewNode(nodeAddress string, status string, pubKeySet NodePubKeySet, validatorConsPubKey string, peerId string, activeBlockHeight int64, statusSince int64, nodeOperatorAddress string, totalBond string, bondProviders NodeBondProviders, signerMembership []string, requestedToLeave bool, forcedToLeave bool, leaveHeight int64, ipAddress string, version string, slashPoints int64, jail NodeJail, currentAward string, observeChains []ChainHeight, maintenance bool, missingBlocks int64, preflightStatus NodePreflightStatus) *Node {
 	this := Node{}
 	this.NodeAddress = nodeAddress
 	this.Status = status
@@ -75,6 +79,8 @@ func NewNode(nodeAddress string, status string, pubKeySet NodePubKeySet, validat
 	this.Jail = jail
 	this.CurrentAward = currentAward
 	this.ObserveChains = observeChains
+	this.Maintenance = maintenance
+	this.MissingBlocks = missingBlocks
 	this.PreflightStatus = preflightStatus
 	return &this
 }
@@ -567,6 +573,54 @@ func (o *Node) SetObserveChains(v []ChainHeight) {
 	o.ObserveChains = v
 }
 
+// GetMaintenance returns the Maintenance field value
+func (o *Node) GetMaintenance() bool {
+	if o == nil {
+		var ret bool
+		return ret
+	}
+
+	return o.Maintenance
+}
+
+// GetMaintenanceOk returns a tuple with the Maintenance field value
+// and a boolean to check if the value has been set.
+func (o *Node) GetMaintenanceOk() (*bool, bool) {
+	if o == nil {
+		return nil, false
+	}
+	return &o.Maintenance, true
+}
+
+// SetMaintenance sets field value
+func (o *Node) SetMaintenance(v bool) {
+	o.Maintenance = v
+}
+
+// GetMissingBlocks returns the MissingBlocks field value
+func (o *Node) GetMissingBlocks() int64 {
+	if o == nil {
+		var ret int64
+		return ret
+	}
+
+	return o.MissingBlocks
+}
+
+// GetMissingBlocksOk returns a tuple with the MissingBlocks field value
+// and a boolean to check if the value has been set.
+func (o *Node) GetMissingBlocksOk() (*int64, bool) {
+	if o == nil {
+		return nil, false
+	}
+	return &o.MissingBlocks, true
+}
+
+// SetMissingBlocks sets field value
+func (o *Node) SetMissingBlocks(v int64) {
+	o.MissingBlocks = v
+}
+
 // GetPreflightStatus returns the PreflightStatus field value
 func (o *Node) GetPreflightStatus() NodePreflightStatus {
 	if o == nil {
@@ -654,6 +708,12 @@ func (o Node) MarshalJSON_deprecated() ([]byte, error) {
 		toSerialize["observe_chains"] = o.ObserveChains
 	}
 	if true {
+		toSerialize["maintenance"] = o.Maintenance
+	}
+	if true {
+		toSerialize["missing_blocks"] = o.MissingBlocks
+	}
+	if true {
 		toSerialize["preflight_status"] = o.PreflightStatus
 	}
 	return json.Marshal(toSerialize)
@@ -694,5 +754,3 @@ func (v *NullableNode) UnmarshalJSON(src []byte) error {
 	v.isSet = true
 	return json.Unmarshal(src, &v.value)
 }
-
-

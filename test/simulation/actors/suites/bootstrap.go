@@ -2,35 +2,23 @@ package suites
 
 import (
 	"fmt"
+	rand "math/rand/v2"
 
 	"github.com/rs/zerolog/log"
 	"gitlab.com/thorchain/thornode/v3/common"
+	acommon "gitlab.com/thorchain/thornode/v3/test/simulation/actors/common"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/actors/core"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/evm"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/thornode"
 	. "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
 )
 
-var SimChains = []common.Chain{
-	common.AVAXChain,
-	common.BASEChain,
-	common.BCHChain,
-	common.BTCChain,
-	common.DOGEChain,
-	common.ETHChain,
-	common.GAIAChain,
-	common.LTCChain,
-	// common.XRPChain,
-	// common.SOLChain,
-	common.ADAChain,
-}
-
 ////////////////////////////////////////////////////////////////////////////////////////
 // Bootstrap
 ////////////////////////////////////////////////////////////////////////////////////////
 
-func Bootstrap() *Actor {
-	a := NewActor("Bootstrap")
+func Bootstrap(rng *rand.Rand) *Actor {
+	a := NewActor("Bootstrap", rng)
 
 	pools, err := thornode.GetPools()
 	if err != nil {
@@ -39,13 +27,13 @@ func Bootstrap() *Actor {
 
 	// bootstrap pools for all chains
 	count := 0
-	for _, chain := range SimChains {
+	for _, chain := range acommon.SimChains {
 		count++
-		a.Children[core.NewDualLPActor(chain.GetGasAsset())] = true
+		a.Children[core.NewDualLPActor(chain.GetGasAsset(), rng)] = true
 	}
 
 	// create token pools
-	tokenPools := NewActor("Bootstrap-TokenPools")
+	tokenPools := NewActor("Bootstrap-TokenPools", rng)
 	for _, chain := range common.AllChains {
 		if !chain.IsEVM() {
 			continue
@@ -57,13 +45,13 @@ func Bootstrap() *Actor {
 		count++
 
 		for asset := range evm.Tokens(chain) {
-			tokenPools.Children[core.NewDualLPActor(asset)] = true
+			tokenPools.Children[core.NewDualLPActor(asset, rng)] = true
 		}
 	}
 	a.Append(tokenPools)
 
 	// verify pools
-	verify := NewActor("Bootstrap-Verify")
+	verify := NewActor("Bootstrap-Verify", rng)
 	verify.Ops = append(verify.Ops, func(config *OpConfig) OpResult {
 		pools, err = thornode.GetPools()
 		if err != nil {

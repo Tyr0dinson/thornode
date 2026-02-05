@@ -79,17 +79,6 @@ func (m *Message) Serialize() ([]byte, error) {
 		b = append(b, instruction.Data...)
 	}
 
-	// if len(m.Version) > 0 && m.Version != MessageVersionLegacy {
-	// 	versionNum, err := strconv.Atoi(string(m.Version[1:]))
-	// 	if err != nil || versionNum > 255 {
-	// 		return nil, fmt.Errorf("failed to parse message version")
-	// 	}
-	// 	if versionNum > 128 {
-	// 		return nil, fmt.Errorf("unexpected message version")
-	// 	}
-	// 	b = append([]byte{byte(versionNum + 128)}, b...)
-	// }
-
 	return b, nil
 }
 
@@ -97,17 +86,7 @@ func UintToVarLenBytes(l uint64) []byte {
 	if l == 0 {
 		return []byte{0x0}
 	}
-	b := make([]byte, binary.MaxVarintLen64)
-	binary.PutUvarint(b, l)
-	trimTrailingZeroByte(&b)
-	return b
-}
-
-func trimTrailingZeroByte(b *[]byte) {
-	for len(*b) > 0 {
-		if (*b)[len(*b)-1] != 0 {
-			break
-		}
-		*b = (*b)[:len(*b)-1]
-	}
+	buf := make([]byte, binary.MaxVarintLen64)
+	n := binary.PutUvarint(buf, l)
+	return buf[:n]
 }

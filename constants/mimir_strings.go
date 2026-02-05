@@ -9,6 +9,7 @@ const (
 	MimirKeyWasmPermissionless     = "WasmPermissionless"
 	MimirKeyWasmHaltGlobal         = "HaltWasmGlobal"
 	MimirKeyWasmMinGasPrice        = "WasmMinGasPrice"
+	MimirKeyScheduledMigration     = "ScheduledMigration"
 
 	MimirTemplateConfMultiplierBasisPoints = "ConfMultiplierBasisPoints-%s" // Use with Chain
 	MimirTemplateMaxConfirmations          = "MaxConfirmations-%s"          // Use with Chain
@@ -17,10 +18,18 @@ const (
 	MimirTemplateSecuredAssetHaltWithdraw  = "HaltSecuredWithdraw-%s"       // Use with Chain
 	MimirTemplateWasmHaltChecksum          = "HaltWasmCs-%s"                // Encode the checksum to base32 to fit within mimir's 64 char limit and case insenstivity. Truncate trailing `=` for brevity
 	MimirTemplateWasmHaltContract          = "HaltWasmContract-%s"          // Use contract address checksum (last 6) for brevity and to fit inside mimir's 64 char length
+	MimirTemplateWasmHaltDeployer          = "HaltWasmDeployer-%s"          // Use deployer address (last 6) to prevent a deployer from instantiating new contracts
 	MimirTemplateSwitch                    = "EnableSwitch-%s-%s"           // Use with Chain, Symbol
 	MimirTemplatePauseLPDeposit            = "PauseLPDeposit-%s"            // Use with Asset MimirString
+	MimirTemplateHaltSigning               = "HaltSigning%s"                // Use with Chain (mixed case, e.g., HaltSigningETH)
+	MimirTemplateHaltTrading               = "Halt%sTrading"                // Use with Chain (mixed case, e.g., HaltETHTrading)
+	MimirKeyHaltTradingGlobal              = "HaltTrading"                  // Global trading halt
 
 	MimirRefL1           = "L1"           // Use with SwapSlipBasisPoints
 	MimirRefSynth        = "Synth"        // Use with SwapSlipBasisPoints
 	MimirRefTradeAccount = "TradeAccount" // Use with SwapSlipBasisPoints
+
+	MimirMaxBatchSize           = "AttestationMaxBatchSize"
+	MimirPeerConcurrentSends    = "AttestationPeerConcurrentSends"
+	MimirPeerConcurrentReceives = "AttestationPeerConcurrentReceives"
 )

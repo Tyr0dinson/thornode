@@ -79,9 +79,9 @@ func (h TssHandler) validate(ctx cosmos.Context, msg *MsgTssPool) error {
 	if msg.KeygenType != AsgardKeygen {
 		return fmt.Errorf("only asgard vaults allowed for tss")
 	}
-	// add additional check after v1.134.0 for EdDSA pubkey
+
 	if !msg.PoolPubKeyEddsa.IsEmpty() {
-		if _, err := common.NewPubKey(msg.PoolPubKey.String()); err != nil {
+		if _, err := common.NewPubKey(msg.PoolPubKeyEddsa.String()); err != nil {
 			return cosmos.ErrUnknownRequest(err.Error())
 		}
 	}
@@ -450,7 +450,8 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 				return fmt.Errorf("fail to get init vaults: %w", err)
 			}
 
-			metric, err := h.mgr.Keeper().GetTssKeygenMetric(ctx, msg.PoolPubKey)
+			var metric *keeper.TssKeygenMetric
+			metric, err = h.mgr.Keeper().GetTssKeygenMetric(ctx, msg.PoolPubKey)
 			if err != nil {
 				ctx.Logger().Error("fail to get keygen metric", "error", err)
 			} else {
@@ -459,7 +460,7 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 					total += item.TssTime
 				}
 				evt := NewEventTssKeygenMetric(metric.PubKey, metric.GetMedianTime())
-				if err := h.mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
+				if err = h.mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
 					ctx.Logger().Error("fail to emit tss metric event", "error", err)
 				}
 			}
@@ -467,7 +468,7 @@ func (h TssHandler) handle(ctx cosmos.Context, msg *MsgTssPool) error {
 			if len(initVaults) == len(keygenBlock.Keygens) {
 				ctx.Logger().Info("tss keygen results churn", "asgards", len(initVaults))
 				for _, v := range initVaults {
-					if err := h.mgr.NetworkMgr().RotateVault(ctx, v); err != nil {
+					if err = h.mgr.NetworkMgr().RotateVault(ctx, v); err != nil {
 						return fmt.Errorf("fail to rotate vault: %w", err)
 					}
 				}

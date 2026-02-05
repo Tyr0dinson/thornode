@@ -13,50 +13,55 @@ import (
 
 // all event types support by THORChain
 const (
-	AddLiquidityEventType         = "add_liquidity"
-	BondEventType                 = "bond"
-	DonateEventType               = "donate"
-	ErrataEventType               = "errata"
-	FeeEventType                  = "fee"
-	GasEventType                  = "gas"
-	OutboundEventType             = "outbound"
-	PendingLiquidity              = "pending_liquidity"
-	PoolBalanceChangeEventType    = "pool_balance_change"
-	PoolEventType                 = "pool"
-	RefundEventType               = "refund"
-	ReserveEventType              = "reserve"
-	RewardEventType               = "rewards"
-	ScheduledOutboundEventType    = "scheduled_outbound"
-	SecurityEventType             = "security"
-	SetMimirEventType             = "set_mimir"
-	SetNodeMimirEventType         = "set_node_mimir"
-	SlashEventType                = "slash"
-	SlashPointEventType           = "slash_points"
-	StreamingSwapEventType        = "streaming_swap"
-	SwapEventType                 = "swap"
-	AffiliateFeeEventType         = "affiliate_fee"
-	LimitOrderEventType           = "limit_order"
-	MintBurnType                  = "mint_burn"
-	THORNameEventType             = "thorname"
-	LoanOpenEventType             = "loan_open"
-	LoanRepaymentEventType        = "loan_repayment"
-	TradeAccountDepositEventType  = "trade_account_deposit"
-	TradeAccountWithdrawEventType = "trade_account_withdraw"
-	SecuredAssetDepositEventType  = "secured_asset_deposit"
-	SecuredAssetWithdrawEventType = "secured_asset_withdraw"
-	SwitchEventType               = "switch"
-	RUNEPoolDepositEventType      = "rune_pool_deposit"
-	RUNEPoolWithdrawEventType     = "rune_pool_withdraw"
-	TSSKeygenSuccess              = "tss_keygen_success"
-	TSSKeygenFailure              = "tss_keygen_failure"
-	TSSKeygenMetricEventType      = "tss_keygen"
-	TSSKeysignMetricEventType     = "tss_keysign"
-	VersionEventType              = "version"
-	WithdrawEventType             = "withdraw"
-	TCYDistributionType           = "tcy_distribution"
-	TCYClaimType                  = "tcy_claim"
-	TCYStakeType                  = "tcy_stake"
-	TCYUnstakeType                = "tcy_unstake"
+	AddLiquidityEventType           = "add_liquidity"
+	BondEventType                   = "bond"
+	ReBondEventType                 = "rebond"
+	DonateEventType                 = "donate"
+	ErrataEventType                 = "errata"
+	FeeEventType                    = "fee"
+	GasEventType                    = "gas"
+	OutboundEventType               = "outbound"
+	PendingLiquidity                = "pending_liquidity"
+	PoolBalanceChangeEventType      = "pool_balance_change"
+	PoolEventType                   = "pool"
+	RefundEventType                 = "refund"
+	ReserveEventType                = "reserve"
+	RewardEventType                 = "rewards"
+	ScheduledOutboundEventType      = "scheduled_outbound"
+	SecurityEventType               = "security"
+	SetMimirEventType               = "set_mimir"
+	SetNodeMimirEventType           = "set_node_mimir"
+	SlashEventType                  = "slash"
+	SlashPointEventType             = "slash_points"
+	StreamingSwapEventType          = "streaming_swap"
+	SwapEventType                   = "swap"
+	AffiliateFeeEventType           = "affiliate_fee"
+	LimitSwapEventType              = "limit_swap"
+	ModifyLimitSwapEventType        = "limit_swap_mod"
+	LimitSwapCloseEventType         = "limit_swap_close"
+	MintBurnType                    = "mint_burn"
+	THORNameEventType               = "thorname"
+	TradeAccountDepositEventType    = "trade_account_deposit"
+	TradeAccountWithdrawEventType   = "trade_account_withdraw"
+	SecuredAssetDepositEventType    = "secured_asset_deposit"
+	SecuredAssetWithdrawEventType   = "secured_asset_withdraw"
+	SwitchEventType                 = "switch"
+	OperatorRotateEventType         = "operator_rotate"
+	RUNEPoolDepositEventType        = "rune_pool_deposit"
+	RUNEPoolWithdrawEventType       = "rune_pool_withdraw"
+	TSSKeygenSuccess                = "tss_keygen_success"
+	TSSKeygenFailure                = "tss_keygen_failure"
+	TSSKeygenMetricEventType        = "tss_keygen"
+	TSSKeysignMetricEventType       = "tss_keysign"
+	VersionEventType                = "version"
+	WithdrawEventType               = "withdraw"
+	TCYDistributionType             = "tcy_distribution"
+	TCYClaimType                    = "tcy_claim"
+	TCYStakeType                    = "tcy_stake"
+	TCYUnstakeType                  = "tcy_unstake"
+	OraclePriceEvent                = "oracle_price"
+	FailedOutboundRecoveryEventType = "failed_outbound_recovery"
+	VaultOverSolvencyEventType      = "vault_over_solvency"
 )
 
 // PoolMods a list of pool modifications
@@ -73,9 +78,9 @@ func NewPoolMod(asset common.Asset, runeAmt cosmos.Uint, runeAdd bool, assetAmt 
 	}
 }
 
-// NewEventLimitOrder create a new swap event
-func NewEventLimitOrder(source, target common.Coin, txid common.TxID) *EventLimitOrder {
-	return &EventLimitOrder{
+// NewEventLimitSwap create a new swap event
+func NewEventLimitSwap(source, target common.Coin, txid common.TxID) *EventLimitSwap {
+	return &EventLimitSwap{
 		Source: source,
 		Target: target,
 		TxID:   txid,
@@ -83,16 +88,66 @@ func NewEventLimitOrder(source, target common.Coin, txid common.TxID) *EventLimi
 }
 
 // Type return a string that represent the type, it should not duplicated with other event
-func (m *EventLimitOrder) Type() string {
-	return LimitOrderEventType
+func (m *EventLimitSwap) Type() string {
+	return LimitSwapEventType
 }
 
-// Events convert EventLimitOrder to key value pairs used in cosmos
-func (m *EventLimitOrder) Events() (cosmos.Events, error) {
+// Events convert EventLimitSwap to key value pairs used in cosmos
+func (m *EventLimitSwap) Events() (cosmos.Events, error) {
 	evt := cosmos.NewEvent(m.Type(),
 		cosmos.NewAttribute("source", m.Source.String()),
 		cosmos.NewAttribute("target", m.Target.String()),
 		cosmos.NewAttribute("txid", m.TxID.String()),
+	)
+	return cosmos.Events{evt}, nil
+}
+
+// NewEventModifyLimitSwap create a new modify limit swap event
+func NewEventModifyLimitSwap(from common.Address, source, target common.Coin, mod cosmos.Uint) *EventModifyLimitSwap {
+	return &EventModifyLimitSwap{
+		From:                 from,
+		Source:               source,
+		Target:               target,
+		ModifiedTargetAmount: mod,
+	}
+}
+
+// Type return a string that represent the type, it should not duplicated with other event
+func (m *EventModifyLimitSwap) Type() string {
+	return ModifyLimitSwapEventType
+}
+
+// Events convert EventModifyLimitSwap to key value pairs used in cosmos
+func (m *EventModifyLimitSwap) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(m.Type(),
+		cosmos.NewAttribute("from", m.From.String()),
+		cosmos.NewAttribute("source", m.Source.String()),
+		cosmos.NewAttribute("target", m.Target.String()),
+		cosmos.NewAttribute("modified_target_amount", m.ModifiedTargetAmount.String()),
+	)
+	return cosmos.Events{evt}, nil
+}
+
+// NewEventLimitSwapClose create a new limit swap close event
+func NewEventLimitSwapClose(txid common.TxID, reason string, blockHeight int64) *EventLimitSwapClose {
+	return &EventLimitSwapClose{
+		TxID:        txid,
+		Reason:      reason,
+		BlockHeight: blockHeight,
+	}
+}
+
+// Type return a string that represent the type, it should not duplicated with other event
+func (m *EventLimitSwapClose) Type() string {
+	return LimitSwapCloseEventType
+}
+
+// Events convert EventLimitSwapClose to key value pairs used in cosmos
+func (m *EventLimitSwapClose) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(m.Type(),
+		cosmos.NewAttribute("txid", m.TxID.String()),
+		cosmos.NewAttribute("reason", m.Reason),
+		cosmos.NewAttribute("block_height", fmt.Sprintf("%d", m.BlockHeight)),
 	)
 	return cosmos.Events{evt}, nil
 }
@@ -338,13 +393,14 @@ func (m *EventPool) Events() (cosmos.Events, error) {
 }
 
 // NewEventRewards create a new reward event
-func NewEventRewards(bondReward cosmos.Uint, poolRewards []PoolAmt, devFundReward, incomeBurn, tcyStakeReward cosmos.Uint) *EventRewards {
+func NewEventRewards(bondReward cosmos.Uint, poolRewards []PoolAmt, devFundReward, incomeBurn, tcyStakeReward, marketingFundReward cosmos.Uint) *EventRewards {
 	return &EventRewards{
-		BondReward:     bondReward,
-		PoolRewards:    poolRewards,
-		DevFundReward:  devFundReward,
-		IncomeBurn:     incomeBurn,
-		TcyStakeReward: tcyStakeReward,
+		BondReward:          bondReward,
+		PoolRewards:         poolRewards,
+		DevFundReward:       devFundReward,
+		IncomeBurn:          incomeBurn,
+		TcyStakeReward:      tcyStakeReward,
+		MarketingFundReward: marketingFundReward,
 	}
 }
 
@@ -360,6 +416,7 @@ func (m *EventRewards) Events() (cosmos.Events, error) {
 		cosmos.NewAttribute("dev_fund_reward", m.DevFundReward.String()),
 		cosmos.NewAttribute("income_burn", m.IncomeBurn.String()),
 		cosmos.NewAttribute("tcy_stake_reward", m.TcyStakeReward.String()),
+		cosmos.NewAttribute("marketing_fund_reward", m.MarketingFundReward.String()),
 	)
 	for _, item := range m.PoolRewards {
 		evt = evt.AppendAttributes(cosmos.NewAttribute(item.Asset.String(), strconv.FormatInt(item.Amount, 10)))
@@ -415,6 +472,37 @@ func (m *EventBond) Events() (cosmos.Events, error) {
 		cosmos.NewAttribute("bond_type", m.BondType.String()),
 		cosmos.NewAttribute("node_address", m.NodeAddress.String()),
 		cosmos.NewAttribute("bond_address", m.BondAddress.String()))
+	evt = evt.AppendAttributes(m.TxIn.ToAttributes()...)
+	return cosmos.Events{evt}, nil
+}
+
+// NewEventReBond create a new ReBond Event
+func NewEventReBond(
+	amount cosmos.Uint, txIn common.Tx,
+	nodeAccount *NodeAccount,
+	oldProvider, newProvider cosmos.AccAddress,
+) *EventReBond {
+	return &EventReBond{
+		Amount:         amount,
+		TxIn:           txIn,
+		NodeAddress:    nodeAccount.NodeAddress,
+		OldBondAddress: oldProvider,
+		NewBondAddress: newProvider,
+	}
+}
+
+// Type return bond event Type
+func (m *EventReBond) Type() string {
+	return ReBondEventType
+}
+
+// Events return all the event attributes
+func (m *EventReBond) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(m.Type(),
+		cosmos.NewAttribute("amount", m.Amount.String()),
+		cosmos.NewAttribute("node_address", m.NodeAddress.String()),
+		cosmos.NewAttribute("old_bond_address", m.OldBondAddress.String()),
+		cosmos.NewAttribute("new_bond_address", m.NewBondAddress.String()))
 	evt = evt.AppendAttributes(m.TxIn.ToAttributes()...)
 	return cosmos.Events{evt}, nil
 }
@@ -863,65 +951,6 @@ func (m *EventTHORName) Events() (cosmos.Events, error) {
 	return cosmos.Events{evt}, nil
 }
 
-// NewEventLoanOpen create a new instance of EventLoanOpen
-func NewEventLoanOpen(amt, cr, debt cosmos.Uint, ca, ta common.Asset, owner common.Address, tx common.TxID) *EventLoanOpen {
-	return &EventLoanOpen{
-		CollateralDeposited:    amt,
-		DebtIssued:             debt,
-		CollateralizationRatio: cr,
-		CollateralAsset:        ca,
-		TargetAsset:            ta,
-		Owner:                  owner,
-		TxID:                   tx,
-	}
-}
-
-// Type return a string which represent the type of this event
-func (m *EventLoanOpen) Type() string {
-	return LoanOpenEventType
-}
-
-// Events return cosmos sdk events
-func (m *EventLoanOpen) Events() (cosmos.Events, error) {
-	evt := cosmos.NewEvent(m.Type(),
-		cosmos.NewAttribute("collateral_deposited", m.CollateralDeposited.String()),
-		cosmos.NewAttribute("debt_issued", m.DebtIssued.String()),
-		cosmos.NewAttribute("collateralization_ratio", m.CollateralizationRatio.String()),
-		cosmos.NewAttribute("collateral_asset", m.CollateralAsset.String()),
-		cosmos.NewAttribute("target_asset", m.TargetAsset.String()),
-		cosmos.NewAttribute("owner", m.Owner.String()),
-		cosmos.NewAttribute("tx_id", m.TxID.String()))
-
-	return cosmos.Events{evt}, nil
-}
-
-// NewEventLoanRepayment create a new instance of NewEventLoanRepayment
-func NewEventLoanRepayment(amt, debt cosmos.Uint, ca common.Asset, owner common.Address, tx common.TxID) *EventLoanRepayment {
-	return &EventLoanRepayment{
-		CollateralWithdrawn: amt,
-		DebtRepaid:          debt,
-		CollateralAsset:     ca,
-		Owner:               owner,
-		TxID:                tx,
-	}
-}
-
-// Type return a string which represent the type of this event
-func (m *EventLoanRepayment) Type() string {
-	return LoanRepaymentEventType
-}
-
-// Events return cosmos sdk events
-func (m *EventLoanRepayment) Events() (cosmos.Events, error) {
-	evt := cosmos.NewEvent(m.Type(),
-		cosmos.NewAttribute("collateral_withdrawn", m.CollateralWithdrawn.String()),
-		cosmos.NewAttribute("debt_repaid", m.DebtRepaid.String()),
-		cosmos.NewAttribute("collateral_asset", m.CollateralAsset.String()),
-		cosmos.NewAttribute("owner", m.Owner.String()),
-		cosmos.NewAttribute("tx_id", m.TxID.String()))
-	return cosmos.Events{evt}, nil
-}
-
 // NewEventTradeAccountDeposit creates a new trade account deposit event.
 func NewEventTradeAccountDeposit(
 	amt cosmos.Uint,
@@ -1337,6 +1366,110 @@ func (m *EventTCYUnstake) Events() (cosmos.Events, error) {
 	evt := cosmos.NewEvent(m.Type(),
 		cosmos.NewAttribute("address", m.Address.String()),
 		cosmos.NewAttribute("amount", m.Amount.String()),
+	)
+	return cosmos.Events{evt}, nil
+}
+
+// NewEventOperatorRotate creates a new rotate event.
+func NewEventOperatorRotate(
+	signer, nodeAddress, operatorAddress cosmos.AccAddress,
+) *EventOperatorRotate {
+	return &EventOperatorRotate{
+		Signer:          signer,
+		NodeAddress:     nodeAddress,
+		OperatorAddress: operatorAddress,
+	}
+}
+
+// Type return the rotate event type.
+func (m *EventOperatorRotate) Type() string {
+	return OperatorRotateEventType
+}
+
+// Events return the cosmos event.
+func (m *EventOperatorRotate) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(m.Type(),
+		cosmos.NewAttribute("signer", m.Signer.String()),
+		cosmos.NewAttribute("node_address", m.NodeAddress.String()),
+		cosmos.NewAttribute("operator_address", m.OperatorAddress.String()),
+	)
+	return cosmos.Events{evt}, nil
+}
+
+// NewEventOraclePrice create a new EventOraclePrice
+func NewEventOraclePrice(symbol, price string) *EventOraclePrice {
+	return &EventOraclePrice{
+		Symbol: symbol,
+		Price:  price,
+	}
+}
+
+// Type return oracle price event type
+func (m *EventOraclePrice) Type() string { return OraclePriceEvent }
+
+// Events return events
+func (m EventOraclePrice) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(m.Type(),
+		cosmos.NewAttribute("symbol", m.Symbol),
+		cosmos.NewAttribute("price", m.Price),
+	)
+	return cosmos.Events{evt}, nil
+}
+
+// NewEventVaultOverSolvency create a new vault over-solvency event
+func NewEventVaultOverSolvency(assets []AssetOverSolvency, bps int64) *EventVaultOverSolvency {
+	return &EventVaultOverSolvency{
+		Assets:                  assets,
+		OverSolvencyBasisPoints: bps,
+	}
+}
+
+// Type return a string that represent the type, it should not be duplicated with other events
+func (m *EventVaultOverSolvency) Type() string {
+	return VaultOverSolvencyEventType
+}
+
+// Events convert EventVaultOverSolvency to key value pairs used in cosmos
+func (m *EventVaultOverSolvency) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(m.Type(),
+		cosmos.NewAttribute("over_solvency_basis_points", strconv.FormatInt(m.OverSolvencyBasisPoints, 10)),
+	)
+	// Add individual asset details as attributes
+	for i, assetOverSolvency := range m.Assets {
+		prefix := fmt.Sprintf("asset_%d_", i)
+		evt = evt.AppendAttributes(
+			cosmos.NewAttribute(prefix+"asset", assetOverSolvency.Asset.String()),
+			cosmos.NewAttribute(prefix+"over_solvent_amount", assetOverSolvency.OverSolventAmount.String()),
+			cosmos.NewAttribute(prefix+"swap_to_reserve_amount", assetOverSolvency.SwapToReserveAmount.String()),
+		)
+	}
+	return cosmos.Events{evt}, nil
+}
+
+// NewEventFailedOutboundRecovery create a new EventFailedOutboundRecovery
+func NewEventFailedOutboundRecovery(inTxID common.TxID, coin common.Coin, recoveryType string, destination common.Address, memo string) *EventFailedOutboundRecovery {
+	return &EventFailedOutboundRecovery{
+		InTxID:       inTxID,
+		Coin:         coin,
+		RecoveryType: recoveryType,
+		Destination:  destination,
+		Memo:         memo,
+	}
+}
+
+// Type return failed outbound recovery event type
+func (m *EventFailedOutboundRecovery) Type() string {
+	return FailedOutboundRecoveryEventType
+}
+
+// Events return events
+func (m *EventFailedOutboundRecovery) Events() (cosmos.Events, error) {
+	evt := cosmos.NewEvent(m.Type(),
+		cosmos.NewAttribute("in_tx_id", m.InTxID.String()),
+		cosmos.NewAttribute("coin", m.Coin.String()),
+		cosmos.NewAttribute("recovery_type", m.RecoveryType),
+		cosmos.NewAttribute("destination", m.Destination.String()),
+		cosmos.NewAttribute("memo", m.Memo),
 	)
 	return cosmos.Events{evt}, nil
 }

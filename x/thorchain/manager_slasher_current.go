@@ -16,22 +16,23 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
+	mem "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
-// SlasherVCUR is VCUR implementation of slasher
-type SlasherVCUR struct {
+// Slasher is current implementation of slasher
+type SlasherImpl struct {
 	keeper   keeper.Keeper
 	eventMgr EventManager
 }
 
-// newSlasherVCUR create a new instance of Slasher
-func newSlasherVCUR(keeper keeper.Keeper, eventMgr EventManager) *SlasherVCUR {
-	return &SlasherVCUR{keeper: keeper, eventMgr: eventMgr}
+// newSlasher create a new instance of Slasher
+func newSlasher(keeper keeper.Keeper, eventMgr EventManager) *SlasherImpl {
+	return &SlasherImpl{keeper: keeper, eventMgr: eventMgr}
 }
 
 // BeginBlock called when a new block get proposed to detect whether there are duplicate vote
-func (s *SlasherVCUR) BeginBlock(ctx cosmos.Context, constAccessor constants.ConstantValues) {
+func (s *SlasherImpl) BeginBlock(ctx cosmos.Context, constAccessor constants.ConstantValues) {
 	var doubleSignEvidence []comet.Evidence
 	// Iterate through any newly discovered evidence of infraction
 	// Slash any validators (and since-unbonded liquidity within the unbonding period)
@@ -48,17 +49,14 @@ func (s *SlasherVCUR) BeginBlock(ctx cosmos.Context, constAccessor constants.Con
 
 	// Identify validators which didn't sign the previous block
 	var missingSignAddresses []crypto.Address
+	var successfulSignAddresses []crypto.Address
 	for i := range ctx.CometInfo().GetLastCommit().Votes().Len() {
 		voteInfo := ctx.CometInfo().GetLastCommit().Votes().Get(i)
 		if voteInfo.GetBlockIDFlag() != comet.BlockIDFlagAbsent {
-			continue
+			successfulSignAddresses = append(successfulSignAddresses, voteInfo.Validator().Address())
+		} else {
+			missingSignAddresses = append(missingSignAddresses, voteInfo.Validator().Address())
 		}
-		missingSignAddresses = append(missingSignAddresses, voteInfo.Validator().Address())
-	}
-
-	// Do not continue if there is no action to take.
-	if len(doubleSignEvidence)+len(missingSignAddresses) == 0 {
-		return
 	}
 
 	// Derive Active node validator addresses once.
@@ -93,12 +91,19 @@ func (s *SlasherVCUR) BeginBlock(ctx cosmos.Context, constAccessor constants.Con
 			ctx.Logger().Error("fail to slash for missing signing a block", "error", err)
 		}
 	}
+
+	// Act on successful signs.
+	for _, successfulSignAddress := range successfulSignAddresses {
+		if err := s.HandleSuccessfulSign(ctx, successfulSignAddress, constAccessor, validatorAddresses); err != nil {
+			ctx.Logger().Error("fail to mark for successfully signing a block", "error", err)
+		}
+	}
 }
 
 // HandleDoubleSign - slashes a validator for signing two blocks at the same
 // block height
 // https://blog.cosmos.network/consensus-compare-casper-vs-tendermint-6df154ad56ae
-func (s *SlasherVCUR) HandleDoubleSign(ctx cosmos.Context, addr crypto.Address, infractionHeight int64, constAccessor constants.ConstantValues, validatorAddresses []nodeAddressValidatorAddressPair) error {
+func (s *SlasherImpl) HandleDoubleSign(ctx cosmos.Context, addr crypto.Address, infractionHeight int64, constAccessor constants.ConstantValues, validatorAddresses []nodeAddressValidatorAddressPair) error {
 	// check if we're recent enough to slash for this behavior
 	maxAge := constAccessor.GetInt64Value(constants.DoubleSignMaxAge)
 	if (ctx.BlockHeight() - infractionHeight) > maxAge {
@@ -131,9 +136,35 @@ func (s *SlasherVCUR) HandleDoubleSign(ctx cosmos.Context, addr crypto.Address, 
 	return fmt.Errorf("could not find active node account with validator address: %s", addr)
 }
 
+// HandleSuccessfulSign - decrement missing blocks from a validator for signing a block
+func (s *SlasherImpl) HandleSuccessfulSign(ctx cosmos.Context, addr crypto.Address, constAccessor constants.ConstantValues, validatorAddresses []nodeAddressValidatorAddressPair) error {
+	for _, pair := range validatorAddresses {
+		if addr.String() != pair.validatorAddress.String() {
+			continue
+		}
+
+		na, err := s.keeper.GetNodeAccount(ctx, pair.nodeAddress)
+		if err != nil {
+			return err
+		}
+
+		if na.MissingBlocks == 0 {
+			return nil
+		}
+
+		// decrement the number of blocks that weren't signed
+		na.MissingBlocks -= 1
+
+		return s.keeper.SetNodeAccount(ctx, na)
+	}
+
+	return fmt.Errorf("could not find active node account with validator address: %s", addr)
+}
+
 // HandleMissingSign - slashes a validator for not signing a block
-func (s *SlasherVCUR) HandleMissingSign(ctx cosmos.Context, addr crypto.Address, constAccessor constants.ConstantValues, validatorAddresses []nodeAddressValidatorAddressPair) error {
+func (s *SlasherImpl) HandleMissingSign(ctx cosmos.Context, addr crypto.Address, constAccessor constants.ConstantValues, validatorAddresses []nodeAddressValidatorAddressPair) error {
 	missBlockSignSlashPoints := s.keeper.GetConfigInt64(ctx, constants.MissBlockSignSlashPoints)
+	maxTrack := s.keeper.GetConfigInt64(ctx, constants.MaxTrackMissingBlock)
 
 	for _, pair := range validatorAddresses {
 		if addr.String() != pair.validatorAddress.String() {
@@ -153,6 +184,12 @@ func (s *SlasherVCUR) HandleMissingSign(ctx cosmos.Context, addr crypto.Address,
 			ctx.Logger().Error("fail to increase node account slash points", "error", err, "address", na.NodeAddress.String())
 		}
 
+		// increment the number of blocks that weren't signed
+		na.MissingBlocks += 1
+		if na.MissingBlocks > uint64(maxTrack) {
+			na.MissingBlocks = uint64(maxTrack)
+		}
+
 		return s.keeper.SetNodeAccount(ctx, na)
 	}
 
@@ -160,10 +197,12 @@ func (s *SlasherVCUR) HandleMissingSign(ctx cosmos.Context, addr crypto.Address,
 }
 
 // LackSigning slash account that fail to sign tx
-func (s *SlasherVCUR) LackSigning(ctx cosmos.Context, mgr Manager) error {
+func (s *SlasherImpl) LackSigning(ctx cosmos.Context, mgr Manager) error {
 	var resultErr error
 	maxOutboundAttempts := mgr.Keeper().GetConfigInt64(ctx, constants.MaxOutboundAttempts)
-	signingTransPeriod := mgr.GetConstants().GetInt64Value(constants.SigningTransactionPeriod)
+	signingTransPeriod := mgr.Keeper().GetConfigInt64(ctx, constants.SigningTransactionPeriod)
+	enableMemolessOutbound := mgr.Keeper().GetConfigInt64(ctx, constants.EnableMemolessOutbound)
+
 	if ctx.BlockHeight() < signingTransPeriod {
 		return nil
 	}
@@ -199,7 +238,8 @@ func (s *SlasherVCUR) LackSigning(ctx cosmos.Context, mgr Manager) error {
 			// if the vault is frozen, reschedule to same vault with no changes
 			frozen := false
 			if len(vault.Frozen) > 0 {
-				chains, err := common.NewChains(vault.Frozen)
+				var chains common.Chains
+				chains, err = common.NewChains(vault.Frozen)
 				if err != nil {
 					ctx.Logger().Error("failed to convert chains", "error", err)
 				}
@@ -213,14 +253,14 @@ func (s *SlasherVCUR) LackSigning(ctx cosmos.Context, mgr Manager) error {
 						Memo:      toi.Memo,
 					}
 					eve := NewEventSecurity(etx, "frozen vault reschedule")
-					if err := mgr.EventMgr().EmitEvent(ctx, eve); err != nil {
+					if err = mgr.EventMgr().EmitEvent(ctx, eve); err != nil {
 						ctx.Logger().Error("fail to emit security event", "error", err)
 					}
 					frozen = true
 				}
 			}
 
-			memo, _ := ParseMemoWithTHORNames(ctx, s.keeper, toi.Memo) // ignore err
+			memo, _ := ParseMemoWithTHORNames(ctx, s.keeper, toi.GetMemo()) // ignore err
 			if memo.IsInternal() {
 				// there is a different mechanism for rescheduling outbound
 				// transactions for migration transactions
@@ -245,24 +285,66 @@ func (s *SlasherVCUR) LackSigning(ctx cosmos.Context, mgr Manager) error {
 				}
 			}
 
+			// If vault is inactive, do not reassign the outbound to another vault. This must
+			// be done before treasury recovery to avoid making active vaults insolvent.
+			if vault.Status == InactiveVault {
+				maxRetiredVaultRecoveryAttempts := mgr.Keeper().GetConfigInt64(ctx, constants.MaxRetiredVaultRecoveryAttempts)
+				age := ctx.BlockHeight() - voter.FinalisedHeight
+				attempts := age / signingTransPeriod
+				if attempts >= maxRetiredVaultRecoveryAttempts {
+					ctx.Logger().Info("too many attempts for retired vault recovery",
+						"hash", toi.InHash,
+						"attempts", attempts,
+						"max", maxRetiredVaultRecoveryAttempts)
+					continue
+				}
+
+				err = mgr.TxOutStore().UnSafeAddTxOutItem(ctx, mgr, toi, rescheduleHeight)
+				if err != nil {
+					ctx.Logger().Error("fail to add outbound to queue for retired vault recovery", "error", err)
+					resultErr = fmt.Errorf("failed to add outbound to queue for retired vault recovery: %w", err)
+				} else {
+					txs.TxArray[i].OutHash = common.BlankTxID
+				}
+				continue
+			}
+
 			if maxOutboundAttempts > 0 {
 				age := ctx.BlockHeight() - voter.FinalisedHeight
 				attempts := age / signingTransPeriod
 				if attempts >= maxOutboundAttempts {
-					ctx.Logger().Info("txn dropped, too many attempts", "hash", toi.InHash)
+					// Skip treasury recovery if there's already an outbound associated or
+					// at least one observation of the outbound (outbound is in progress)
+					hasOutboundAssociated := len(voter.OutTxs) > 0
+					outboundObservations := mgr.Keeper().GetObservedLink(ctx, toi.InHash)
+					hasOutboundObservation := len(outboundObservations) > 0
+					if hasOutboundAssociated || hasOutboundObservation {
+						ctx.Logger().Info("skipping treasury recovery, outbound in progress",
+							"hash", toi.InHash,
+							"has_outbound", hasOutboundAssociated,
+							"has_observation", hasOutboundObservation)
+						continue
+					}
+
+					// For user-facing outbounds (refund, outbound, ragnarok), send to treasury recovery
+					if memo.IsOutbound() {
+						treasuryErr := s.sendFailedOutboundToTreasury(ctx, mgr, toi, vault, memo)
+						if treasuryErr != nil {
+							ctx.Logger().Error("failed to send outbound to treasury recovery", "error", treasuryErr, "hash", toi.InHash)
+						} else {
+							txs.TxArray[i].OutHash = common.BlankTxID
+						}
+					} else {
+						// For non-outbound transactions (shouldn't happen often), just log and drop
+						ctx.Logger().Info("txn dropped, too many attempts (non-outbound)", "hash", toi.InHash)
+					}
 					continue
 				}
 			}
 
-			// if vault is inactive, do not reassign the outbound txn to
-			// another vault
-			if vault.Status == InactiveVault {
-				ctx.Logger().Info("cannot reassign outbound from inactive vault", "hash", toi.InHash)
-				continue
-			}
-
 			if !frozen && s.needsNewVault(ctx, mgr, vault, signingTransPeriod, voter.FinalisedHeight, toi) {
-				active, err := s.keeper.GetAsgardVaultsByStatus(ctx, ActiveVault)
+				var active types.Vaults
+				active, err = s.keeper.GetAsgardVaultsByStatus(ctx, ActiveVault)
 				if err != nil {
 					return fmt.Errorf("fail to get active asgard vaults: %w", err)
 				}
@@ -284,7 +366,8 @@ func (s *SlasherVCUR) LackSigning(ctx cosmos.Context, mgr Manager) error {
 
 				available := active
 				mainCoin := toi.Coin
-				maxGasCoin, err := mgr.GasMgr().GetMaxGas(ctx, toi.Chain)
+				var maxGasCoin common.Coin
+				maxGasCoin, err = mgr.GasMgr().GetMaxGas(ctx, toi.Chain)
 				if err != nil {
 					ctx.Logger().Error("fail to get max gas", "error", err)
 				}
@@ -315,7 +398,11 @@ func (s *SlasherVCUR) LackSigning(ctx cosmos.Context, mgr Manager) error {
 						vault = active.SortBy(mainCoin.Asset)[0]
 					}
 				} else {
-					rep := int(toi.InHash.Int64() + ctx.BlockHeight()/signingTransPeriod)
+					// Use InHash for vault selection if available, otherwise use block height.
+					// For internal protocol transactions (ragnarok, migrations, etc.), InHash
+					// is set to BlankTxID since there is no associated inbound transaction.
+					inHashValue := toi.InHash.Int64()
+					rep := int(inHashValue + ctx.BlockHeight()/signingTransPeriod)
 					if vault.PubKey.Equals(available[rep%len(available)].PubKey) {
 						// looks like the new vault is going to be the same as the
 						// old vault, increment rep to ensure a differ asgard is
@@ -364,14 +451,14 @@ func (s *SlasherVCUR) LackSigning(ctx cosmos.Context, mgr Manager) error {
 				if !maxGasCoin.IsEmpty() {
 					toi.MaxGas = common.Gas{maxGasCoin}
 					// Update MaxGas in ObservedTxVoter action as well
-					if err := updateTxOutGas(ctx, s.keeper, toi, common.Gas{maxGasCoin}); err != nil {
+					if err = updateTxOutGas(ctx, s.keeper, toi, common.Gas{maxGasCoin}); err != nil {
 						ctx.Logger().Error("Failed to update MaxGas of action in ObservedTxVoter", "hash", toi.InHash, "error", err)
 					}
 				}
 				// Equals checks GasRate so update actions GasRate too (before updating in the queue item)
 				// for future updates of MaxGas, which must match for matchActionItem in AddOutTx.
 				gasRate := int64(mgr.GasMgr().GetGasRate(ctx, toi.Chain).Uint64())
-				if err := updateTxOutGasRate(ctx, s.keeper, toi, gasRate); err != nil {
+				if err = updateTxOutGasRate(ctx, s.keeper, toi, gasRate); err != nil {
 					ctx.Logger().Error("Failed to update GasRate of action in ObservedTxVoter", "hash", toi.InHash, "error", err)
 				}
 				toi.GasRate = gasRate
@@ -382,6 +469,9 @@ func (s *SlasherVCUR) LackSigning(ctx cosmos.Context, mgr Manager) error {
 				ctx.Logger().Error("fail to add outbound to queue", "error", "coin is not rune and does not have an associated pool")
 				continue
 			}
+
+			// Apply memoless outbound logic before rescheduling
+			applyMemolessOutboundLogic(mgr.GetVersion(), &toi, enableMemolessOutbound)
 
 			err = mgr.TxOutStore().UnSafeAddTxOutItem(ctx, mgr, toi, rescheduleHeight)
 			if err != nil {
@@ -403,6 +493,239 @@ func (s *SlasherVCUR) LackSigning(ctx cosmos.Context, mgr Manager) error {
 	return resultErr
 }
 
+// getOriginalSwapDetails retrieves the original swap transaction details for a failed outbound
+// Returns the original transaction, swap memo, and any error encountered
+func (s *SlasherImpl) getOriginalSwapDetails(ctx cosmos.Context, mgr Manager, inboundHash common.TxID) (ObservedTx, SwapMemo, error) {
+	voter, err := mgr.Keeper().GetObservedTxInVoter(ctx, inboundHash)
+	if err != nil {
+		return ObservedTx{}, SwapMemo{}, fmt.Errorf("could not get observed tx voter: %w", err)
+	}
+
+	if voter.Tx.Tx.ID.IsEmpty() {
+		return ObservedTx{}, SwapMemo{}, fmt.Errorf("voter tx ID is empty")
+	}
+
+	originalMemo, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), voter.Tx.Tx.Memo)
+	if err != nil {
+		return ObservedTx{}, SwapMemo{}, fmt.Errorf("could not parse original memo: %w", err)
+	}
+
+	if !originalMemo.IsType(TxSwap) {
+		return ObservedTx{}, SwapMemo{}, fmt.Errorf("original tx is not a swap (type: %s)", originalMemo.GetType())
+	}
+
+	swapMemo, ok := originalMemo.(SwapMemo)
+	if !ok {
+		return ObservedTx{}, SwapMemo{}, fmt.Errorf("could not cast to SwapMemo")
+	}
+
+	return voter.Tx, swapMemo, nil
+}
+
+// generateRecoveryTxID creates a unique transaction ID for a recovery swap by hashing
+// the original transaction ID with the recovery type suffix and block height. This prevents
+// collisions with the original swap in the swap queue, especially important for streaming swaps
+// that may still be in progress when the recovery is triggered.
+func (s *SlasherImpl) generateRecoveryTxID(ctx cosmos.Context, originalTxID common.TxID, recoveryType string) common.TxID {
+	// Create a unique hash by combining original txID + recovery type + block height
+	// This ensures no collision with the original swap queue entry
+	hashInput := fmt.Sprintf("%s:%s:%d", originalTxID.String(), recoveryType, ctx.BlockHeight())
+	hash := crypto.Sha256([]byte(hashInput))
+	return common.TxID(fmt.Sprintf("%X", hash))
+}
+
+// queueRecoverySwap is a helper function that queues a swap for failed outbound recovery.
+// It handles the common logic of creating a swap transaction, determining the queue version,
+// and emitting the appropriate events.
+func (s *SlasherImpl) queueRecoverySwap(
+	ctx cosmos.Context,
+	mgr Manager,
+	toi TxOutItem,
+	vault Vault,
+	txID common.TxID,
+	targetAsset common.Asset,
+	destination common.Address,
+	memo string,
+	recoveryType string,
+) error {
+	// Generate a unique transaction ID for the recovery swap to prevent collisions
+	// with the original swap in the queue (especially important for streaming swaps)
+	recoveryTxID := s.generateRecoveryTxID(ctx, txID, recoveryType)
+
+	// Get vault's address for the chain of this coin for tracking purposes.
+	vaultAddr, err := vault.PubKey.GetAddress(toi.Coin.Asset.GetChain())
+	if err != nil {
+		return fmt.Errorf("failed to get vault address for chain %s: %w", toi.Coin.Asset.GetChain(), err)
+	}
+
+	// Create Tx for the swap.
+	// Design notes:
+	// - ID uses a uniquely generated hash to prevent swap queue collisions with the original transaction.
+	// - Chain is set to THORChain because this is an internal protocol-initiated swap,
+	//   not an observed transaction from an external chain. The swap handler doesn't
+	//   validate or use the Chain field, so this is safe.
+	// - FromAddress uses the external chain address (e.g., BTC address) for tracking
+	//   purposes. The swap handler only uses FromAddress for validation checks (e.g.,
+	//   NoopAddress comparisons) and doesn't enforce chain-address consistency.
+	// - Gas is empty because this is an internal operation. The swap handler doesn't
+	//   use the Gas field - gas is only relevant for external chain transactions.
+	// - Coins contains the external chain asset (e.g., BTC) because the vault holds
+	//   these funds in THORChain's accounting, and we're swapping from that asset.
+	recoveryTx := common.Tx{
+		ID:          recoveryTxID,
+		Chain:       common.THORChain,
+		FromAddress: vaultAddr,
+		ToAddress:   vaultAddr,
+		Coins:       common.Coins{toi.Coin},
+		Memo:        memo,
+		Gas:         common.Gas{},
+	}
+
+	// Get Asgard module address for signer
+	asgardAddr := mgr.Keeper().GetModuleAccAddress(AsgardName)
+
+	// Determine which swap queue to use and set appropriate version
+	enableAdvQueue := mgr.Keeper().GetConfigInt64(ctx, constants.EnableAdvSwapQueue)
+	swapVersion := types.SwapVersion_v1
+	if enableAdvQueue > 0 {
+		swapVersion = types.SwapVersion_v2
+	}
+
+	// Create swap message
+	swapMsg := NewMsgSwap(
+		recoveryTx,
+		targetAsset,       // target asset
+		destination,       // destination
+		cosmos.ZeroUint(), // tradeTarget (market order)
+		common.NoAddress,  // no affiliate
+		cosmos.ZeroUint(), // no affiliate fee
+		"",                // no aggregator
+		"",                // no agg target
+		nil,               // no agg limit
+		MarketSwap,        // swap type
+		0,                 // quantity (let handler decide)
+		1,                 // interval
+		swapVersion,       // v1 for legacy queue, v2 for advanced queue
+		asgardAddr,        // Asgard module account as signer
+	)
+
+	// Add to swap queue
+	if enableAdvQueue > 0 {
+		if err := mgr.AdvSwapQueueMgr().AddSwapQueueItem(ctx, mgr, swapMsg); err != nil {
+			return fmt.Errorf("failed to add %s recovery swap to adv queue: %w", recoveryType, err)
+		}
+	} else {
+		if err := mgr.Keeper().SetSwapQueueItem(ctx, *swapMsg, 0); err != nil {
+			return fmt.Errorf("failed to add %s recovery swap to queue: %w", recoveryType, err)
+		}
+	}
+
+	ctx.Logger().Info("recovery swap queued",
+		"original_hash", txID,
+		"recovery_hash", recoveryTxID,
+		"recovery_type", recoveryType,
+		"from_asset", toi.Coin.Asset,
+		"to_asset", targetAsset,
+		"destination", destination)
+
+	// Emit failed outbound recovery event
+	recoveryEvent := NewEventFailedOutboundRecovery(
+		txID,
+		toi.Coin,
+		recoveryType,
+		destination,
+		memo,
+	)
+	if err := mgr.EventMgr().EmitEvent(ctx, recoveryEvent); err != nil {
+		ctx.Logger().Error("failed to emit recovery event", "error", err)
+	}
+
+	return nil
+}
+
+// sendFailedSwapReverseSwap creates a reverse swap to refund the original sender when a swap outbound fails
+func (s *SlasherImpl) sendFailedSwapReverseSwap(ctx cosmos.Context, mgr Manager, toi TxOutItem, vault Vault, originalTx ObservedTx, swapMemo SwapMemo) error {
+	ctx.Logger().Info("attempting reverse swap for failed swap outbound", "hash", toi.InHash, "coin", toi.Coin)
+
+	// Determine destination address: use custom refund address if specified, otherwise original sender
+	destination := originalTx.Tx.FromAddress
+	if !swapMemo.GetRefundAddress().IsEmpty() {
+		// Validate that refund address is on the correct chain
+		if swapMemo.GetRefundAddress().IsChain(originalTx.Tx.Coins[0].Asset.GetChain()) {
+			destination = swapMemo.GetRefundAddress()
+			ctx.Logger().Info("using custom refund address for reverse swap", "address", destination)
+		} else {
+			ctx.Logger().Info("custom refund address chain mismatch, using original sender",
+				"refund_address", swapMemo.GetRefundAddress(),
+				"expected_chain", originalTx.Tx.Coins[0].Asset.GetChain())
+		}
+	}
+
+	// Queue reverse swap to original asset
+	targetAsset := originalTx.Tx.Coins[0].Asset
+	memo := fmt.Sprintf("=:%s:%s", targetAsset, destination)
+	return s.queueRecoverySwap(ctx, mgr, toi, vault, toi.InHash, targetAsset, destination, memo, "reverse_swap")
+}
+
+// sendFailedOutboundToTreasury creates a swap to convert failed outbound assets to RUNE
+// and send them to the treasury address when MaxOutboundAttempts is reached.
+// For swap outbounds, attempts to perform a reverse swap instead.
+func (s *SlasherImpl) sendFailedOutboundToTreasury(ctx cosmos.Context, mgr Manager, toi TxOutItem, vault Vault, memo mem.Memo) error {
+	ctx.Logger().Info("max attempts reached for outbound", "hash", toi.InHash, "coin", toi.Coin)
+
+	// Extract the inbound hash from the memo (format: "OUT:<hash>" or "REFUND:<hash>")
+	inboundHash := toi.InHash
+	if memo.IsType(TxOutbound) {
+		if outboundMemo, ok := memo.(OutboundMemo); ok {
+			if !outboundMemo.GetTxID().IsEmpty() {
+				inboundHash = outboundMemo.GetTxID()
+			}
+		}
+	} else if memo.IsType(TxRefund) {
+		if refundMemo, ok := memo.(RefundMemo); ok {
+			if !refundMemo.GetTxID().IsEmpty() {
+				inboundHash = refundMemo.GetTxID()
+			}
+		}
+		// As an additional safety measure, explicitly parse REFUND:<hash> format
+		// from the memo string in case the typed memo didn't extract it
+		if inboundHash.Equals(toi.InHash) && strings.HasPrefix(toi.Memo, "REFUND:") {
+			parts := strings.SplitN(toi.Memo, ":", 2)
+			if len(parts) == 2 && len(parts[1]) > 0 {
+				if txID, err := common.NewTxID(parts[1]); err == nil && !txID.IsEmpty() {
+					inboundHash = txID
+				}
+			}
+		}
+	}
+
+	// Try to get the original transaction to check if this was a swap
+	originalTx, swapMemo, err := s.getOriginalSwapDetails(ctx, mgr, inboundHash)
+	if err == nil {
+		// This is a failed swap outbound - attempt reverse swap
+		ctx.Logger().Info("detected failed swap outbound, attempting reverse swap",
+			"hash", inboundHash,
+			"original_asset", originalTx.Tx.Coins[0].Asset,
+			"failed_asset", toi.Coin.Asset)
+
+		reverseErr := s.sendFailedSwapReverseSwap(ctx, mgr, toi, vault, originalTx, swapMemo)
+		if reverseErr == nil {
+			// Reverse swap succeeded
+			return nil
+		}
+		// Reverse swap failed, log error and fall back to treasury recovery
+		ctx.Logger().Error("reverse swap failed, falling back to treasury recovery",
+			"error", reverseErr,
+			"hash", inboundHash)
+	}
+
+	// Either not a swap, or reverse swap failed - proceed with treasury recovery
+	ctx.Logger().Info("sending to treasury recovery", "hash", inboundHash, "coin", toi.Coin)
+
+	// Queue swap to treasury
+	return s.queueRecoverySwap(ctx, mgr, toi, vault, inboundHash, common.RuneAsset(), common.TreasuryAddress, fmt.Sprintf("=:RUNE:%s", common.TreasuryAddress), "treasury")
+}
+
 // SlashVault thorchain keep monitoring the outbound tx from asgard pool
 // usually the txout is triggered by thorchain itself by
 // adding an item into the txout array, refer to TxOutItem for the detail, the
@@ -410,7 +733,7 @@ func (s *SlasherVCUR) LackSigning(ctx cosmos.Context, mgr Manager) error {
 // discover signer send out fund more than the amount specified in TxOutItem,
 // it will slash the node account who does that by taking 1.5 * extra fund from
 // node account's bond and subsidise the pool that actually lost it.
-func (s *SlasherVCUR) SlashVault(ctx cosmos.Context, vaultPK common.PubKey, coins common.Coins, mgr Manager) error {
+func (s *SlasherImpl) SlashVault(ctx cosmos.Context, vaultPK common.PubKey, coins common.Coins, mgr Manager) error {
 	if coins.IsEmpty() {
 		return nil
 	}
@@ -469,11 +792,18 @@ func (s *SlasherVCUR) SlashVault(ctx cosmos.Context, vaultPK common.PubKey, coin
 		totalRuneSlashed := cosmos.ZeroUint()
 		pauseOnSlashThreshold := mgr.Keeper().GetConfigInt64(ctx, constants.PauseOnSlashThreshold)
 		if pauseOnSlashThreshold > 0 && totalRuneToSlash.GTE(cosmos.NewUint(uint64(pauseOnSlashThreshold))) {
-			// set mimirs to pause the chain
-			key := fmt.Sprintf("Halt%sChain", coin.Asset.Chain)
-			s.keeper.SetMimir(ctx, key, ctx.BlockHeight())
-			mimirEvent := NewEventSetMimir(strings.ToUpper(key), strconv.FormatInt(ctx.BlockHeight(), 10))
-			if err := mgr.EventMgr().EmitEvent(ctx, mimirEvent); err != nil {
+			// set mimirs to pause signing
+			haltsignKey := fmt.Sprintf(constants.MimirTemplateHaltSigning, coin.Asset.Chain)
+			s.keeper.SetMimir(ctx, haltsignKey, ctx.BlockHeight())
+			mimirEvent1 := NewEventSetMimir(haltsignKey, strconv.FormatInt(ctx.BlockHeight(), 10))
+			if err := mgr.EventMgr().EmitEvent(ctx, mimirEvent1); err != nil {
+				ctx.Logger().Error("fail to emit set_mimir event", "error", err)
+			}
+			// set mimirs to pause trading
+			halttradeKey := fmt.Sprintf(constants.MimirTemplateHaltTrading, coin.Asset.Chain)
+			s.keeper.SetMimir(ctx, halttradeKey, ctx.BlockHeight())
+			mimirEvent2 := NewEventSetMimir(halttradeKey, strconv.FormatInt(ctx.BlockHeight(), 10))
+			if err := mgr.EventMgr().EmitEvent(ctx, mimirEvent2); err != nil {
 				ctx.Logger().Error("fail to emit set_mimir event", "error", err)
 			}
 		}
@@ -522,7 +852,7 @@ func (s *SlasherVCUR) SlashVault(ctx cosmos.Context, vaultPK common.PubKey, coin
 
 // slashAndUpdateNodeAccount slashes a NodeAccount a portion of the value of coin based on their
 // portion of the total bond of the offending Vault's membership. Return the amount of RUNE slashed
-func (s SlasherVCUR) slashAndUpdateNodeAccount(ctx cosmos.Context, na types.NodeAccount, coin common.Coin, vault types.Vault, totalBond, totalSlashAmountInRune cosmos.Uint) cosmos.Uint {
+func (s *SlasherImpl) slashAndUpdateNodeAccount(ctx cosmos.Context, na types.NodeAccount, coin common.Coin, vault types.Vault, totalBond, totalSlashAmountInRune cosmos.Uint) cosmos.Uint {
 	slashAmountRune := common.GetSafeShare(na.Bond, totalBond, totalSlashAmountInRune)
 	if slashAmountRune.GT(na.Bond) {
 		ctx.Logger().Info("slash amount is larger than bond", "slash amount", slashAmountRune, "bond", na.Bond)
@@ -560,7 +890,7 @@ func (s SlasherVCUR) slashAndUpdateNodeAccount(ctx cosmos.Context, na types.Node
 }
 
 // IncSlashPoints will increase the given account's slash points
-func (s *SlasherVCUR) IncSlashPoints(ctx cosmos.Context, point int64, addresses ...cosmos.AccAddress) {
+func (s *SlasherImpl) IncSlashPoints(ctx cosmos.Context, point int64, addresses ...cosmos.AccAddress) {
 	for _, addr := range addresses {
 		if err := s.keeper.IncNodeAccountSlashPoints(ctx, addr, point); err != nil {
 			ctx.Logger().Error("fail to increase node account slash point", "error", err, "address", addr.String())
@@ -569,7 +899,7 @@ func (s *SlasherVCUR) IncSlashPoints(ctx cosmos.Context, point int64, addresses 
 }
 
 // DecSlashPoints will decrease the given account's slash points
-func (s *SlasherVCUR) DecSlashPoints(ctx cosmos.Context, point int64, addresses ...cosmos.AccAddress) {
+func (s *SlasherImpl) DecSlashPoints(ctx cosmos.Context, point int64, addresses ...cosmos.AccAddress) {
 	for _, addr := range addresses {
 		if err := s.keeper.DecNodeAccountSlashPoints(ctx, addr, point); err != nil {
 			ctx.Logger().Error("fail to decrease node account slash point", "error", err, "address", addr.String())
@@ -578,7 +908,7 @@ func (s *SlasherVCUR) DecSlashPoints(ctx cosmos.Context, point int64, addresses 
 }
 
 // updatePoolFromSlash updates a pool's depths and emits appropriate events after a slash
-func (s *SlasherVCUR) updatePoolFromSlash(ctx cosmos.Context, pool types.Pool, stolenAsset common.Coin, runeCreditAmt cosmos.Uint, mgr Manager) {
+func (s *SlasherImpl) updatePoolFromSlash(ctx cosmos.Context, pool types.Pool, stolenAsset common.Coin, runeCreditAmt cosmos.Uint, mgr Manager) {
 	pool.BalanceAsset = common.SafeSub(pool.BalanceAsset, stolenAsset.Amount)
 	pool.BalanceRune = pool.BalanceRune.Add(runeCreditAmt)
 	if err := s.keeper.SetPool(ctx, pool); err != nil {
@@ -600,7 +930,7 @@ func (s *SlasherVCUR) updatePoolFromSlash(ctx cosmos.Context, pool types.Pool, s
 	}
 }
 
-func (s *SlasherVCUR) needsNewVault(ctx cosmos.Context, mgr Manager, vault Vault, signingTransPeriod, startHeight int64, toi TxOutItem) bool {
+func (s *SlasherImpl) needsNewVault(ctx cosmos.Context, mgr Manager, vault Vault, signingTransPeriod, startHeight int64, toi TxOutItem) bool {
 	outhashes := mgr.Keeper().GetObservedLink(ctx, toi.InHash)
 	if len(outhashes) == 0 {
 		return true

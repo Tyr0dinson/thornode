@@ -9,16 +9,20 @@ import (
 
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	"github.com/libp2p/go-libp2p-core/host"
+	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-core/protocol"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
+	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/conversion"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/ebifrost"
 )
 
@@ -39,12 +43,19 @@ const (
 	defaultObserveReconcileInterval = 15 * time.Second
 
 	// defaultAskPeers is the number of random peers to ask for their attestation state on startup.
-	defaultAskPeers = 3
+	defaultAskPeers = 10
 
 	// defaultAskPeersDelay is the delay before asking peers for their attestation state on startup.
 	defaultAskPeersDelay = 5 * time.Second
 
 	cachedKeysignPartyTTL = 1 * time.Minute
+
+	defaultPeerTimeout = 20 * time.Second
+
+	defaultPeerConcurrentSends    = 4
+	defaultPeerConcurrentReceives = 5
+	defaultMaxBatchSize           = 100
+	defaultBatchInterval          = 2 * time.Second
 
 	streamAckBegin  = "ack_begin"
 	streamAckHeader = "ack_header"
@@ -52,11 +63,8 @@ const (
 )
 
 var (
-	observeTxProtocol        protocol.ID = "/p2p/observed-tx"
-	networkFeeProtocol       protocol.ID = "/p2p/network-fee"
-	solvencyProtocol         protocol.ID = "/p2p/solvency"
-	errataTxProtocol         protocol.ID = "/p2p/errata-tx"
-	attestationStateProtocol protocol.ID = "/p2p/attestation-state"
+	attestationStateProtocol   protocol.ID = "/p2p/attestation-state/v2"
+	batchedAttestationProtocol protocol.ID = "/p2p/batched-attestations"
 
 	// AttestationState protocol prefixes
 	prefixSendState = []byte{0x01} // request
@@ -92,14 +100,15 @@ type EventClientInterface interface {
 
 // AttestationGossip handles observed tx attestations to/from other nodes
 type AttestationGossip struct {
-	logger      zerolog.Logger
-	host        host.Host
-	keys        KeysInterface
+	logger zerolog.Logger
+	host   host.Host
+
 	grpcClient  ebifrost.LocalhostBifrostClient
 	eventClient EventClientInterface
 	bridge      thorclient.ThorchainBridge
 
-	pubKey []byte // our public key, cached for performance
+	privKey cryptotypes.PrivKey // our private key, cached for performance
+	pubKey  []byte              // our public key, cached for performance
 
 	config config.BifrostAttestationGossipConfig
 
@@ -108,15 +117,32 @@ type AttestationGossip struct {
 	networkFees map[common.NetworkFee]*AttestationState[*common.NetworkFee]
 	solvencies  map[common.TxID]*AttestationState[*common.Solvency]
 	errataTxs   map[common.ErrataTx]*AttestationState[*common.ErrataTx]
+	priceFeeds  map[string]*AttestationState[*common.PriceFeed]
 	mu          sync.Mutex
 
-	activeVals common.PubKeys
+	observedTxsPool *AttestationStatePool[*common.ObservedTx]
+	networkFeesPool *AttestationStatePool[*common.NetworkFee]
+	solvenciesPool  *AttestationStatePool[*common.Solvency]
+	errataTxsPool   *AttestationStatePool[*common.ErrataTx]
+	priceFeedsPool  *AttestationStatePool[*common.PriceFeed]
+
+	priceFeedsDelay *Delay
+
+	activeVals map[peer.ID]bool // active val peer IDs
 	avMu       sync.Mutex
 
 	observerHandleObservedTxCommitted func(tx common.ObservedTx)
 
 	cachedKeySignParties map[common.PubKey]cachedKeySignParty
 	cachedKeySignMu      sync.Mutex
+
+	batcher *AttestationBatcher
+
+	// peerManager is used to limit the number of concurrent receives from a peer
+	peerMgr *peerManager
+
+	stateInitPeers map[peer.ID]bool // peers that we have asked for their attestation state
+	stateInitMu    sync.Mutex
 }
 
 type cachedKeySignParty struct {
@@ -130,6 +156,7 @@ func NewAttestationGossip(
 	keys *thorclient.Keys,
 	thornodeBifrostGRPCAddress string,
 	bridge thorclient.ThorchainBridge,
+	m *metrics.Metrics,
 	config config.BifrostAttestationGossipConfig,
 ) (*AttestationGossip, error) {
 	cc, err := grpc.NewClient(thornodeBifrostGRPCAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -147,10 +174,22 @@ func NewAttestationGossip(
 		return nil, fmt.Errorf("fail to get private key: %w", err)
 	}
 
+	batcher := NewAttestationBatcher(
+		host,
+		log.With().Str("module", "attestation_batcher").Logger(),
+		m,
+		config.BatchInterval,
+		config.MaxBatchSize,
+		config.PeerTimeout,
+		config.PeerConcurrentSends,
+	)
+
+	logger := log.With().Str("module", "attestation_gossip").Logger()
+
 	s := &AttestationGossip{
-		logger:      log.With().Str("module", "attestation_gossip").Logger(),
+		logger:      logger,
 		host:        host,
-		keys:        keys,
+		privKey:     pk,
 		pubKey:      pk.PubKey().Bytes(),
 		grpcClient:  grpcClient,
 		config:      config,
@@ -158,21 +197,36 @@ func NewAttestationGossip(
 		eventClient: eventClient,
 
 		// Initialize generic maps
-		observedTxs:          make(map[txKey]*AttestationState[*common.ObservedTx]),
-		networkFees:          make(map[common.NetworkFee]*AttestationState[*common.NetworkFee]),
-		solvencies:           make(map[common.TxID]*AttestationState[*common.Solvency]),
-		errataTxs:            make(map[common.ErrataTx]*AttestationState[*common.ErrataTx]),
+		observedTxs: make(map[txKey]*AttestationState[*common.ObservedTx]),
+		networkFees: make(map[common.NetworkFee]*AttestationState[*common.NetworkFee]),
+		solvencies:  make(map[common.TxID]*AttestationState[*common.Solvency]),
+		errataTxs:   make(map[common.ErrataTx]*AttestationState[*common.ErrataTx]),
+		priceFeeds:  make(map[string]*AttestationState[*common.PriceFeed]),
+
+		peerMgr: newPeerManager(logger, config.PeerConcurrentReceives),
+
+		observedTxsPool: NewAttestationStatePool[*common.ObservedTx](),
+		networkFeesPool: NewAttestationStatePool[*common.NetworkFee](),
+		solvenciesPool:  NewAttestationStatePool[*common.Solvency](),
+		errataTxsPool:   NewAttestationStatePool[*common.ErrataTx](),
+		priceFeedsPool:  NewAttestationStatePool[*common.PriceFeed](),
+
+		priceFeedsDelay: NewDelay(),
+
 		cachedKeySignParties: make(map[common.PubKey]cachedKeySignParty),
+
+		batcher: batcher,
 	}
+	batcher.setActiveValGetter(s.getActiveValidators)
 	// Register event handlers
-	eventClient.RegisterHandler(ebifrost.EventQuorumTxCommited, s.handleQuorumTxCommited)
+	eventClient.RegisterHandler(ebifrost.EventQuorumTxCommitted, s.handleQuorumTxCommitted)
+	eventClient.RegisterHandler(ebifrost.EventQuorumNetworkFeeCommitted, s.handleQuorumNetworkFeeCommitted)
+	eventClient.RegisterHandler(ebifrost.EventQuorumSolvencyCommitted, s.handleQuorumSolvencyCommitted)
+	eventClient.RegisterHandler(ebifrost.EventQuorumErrataTxCommitted, s.handleQuorumErrataTxCommitted)
 
 	// Register stream handlers
-	host.SetStreamHandler(observeTxProtocol, s.handleStreamObservedTx)
 	host.SetStreamHandler(attestationStateProtocol, s.handleStreamAttestationState)
-	host.SetStreamHandler(networkFeeProtocol, s.handleStreamNetworkFee)
-	host.SetStreamHandler(solvencyProtocol, s.handleStreamSolvency)
-	host.SetStreamHandler(errataTxProtocol, s.handleStreamErrataTx)
+	host.SetStreamHandler(batchedAttestationProtocol, s.handleStreamBatchedAttestations)
 
 	return s, nil
 }
@@ -197,13 +251,47 @@ func normalizeConfig(config *config.BifrostAttestationGossipConfig) {
 	if config.AskPeersDelay == 0 {
 		config.AskPeersDelay = defaultAskPeersDelay
 	}
+	if config.PeerTimeout == 0 {
+		config.PeerTimeout = defaultPeerTimeout
+	}
+	if config.MaxBatchSize == 0 {
+		config.MaxBatchSize = defaultMaxBatchSize
+	}
+	if config.PeerConcurrentSends == 0 {
+		config.PeerConcurrentSends = defaultPeerConcurrentSends
+	}
+	if config.PeerConcurrentReceives == 0 {
+		config.PeerConcurrentReceives = defaultPeerConcurrentReceives
+	}
+	if config.PeerConcurrentReceives < config.PeerConcurrentSends {
+		// ensure that the number of concurrent receives is at least as large as the number of concurrent sends
+		config.PeerConcurrentReceives = config.PeerConcurrentSends
+	}
+	if config.BatchInterval == 0 {
+		config.BatchInterval = defaultBatchInterval
+	}
 }
 
 // Set the active validators list
 func (s *AttestationGossip) setActiveValidators(activeVals common.PubKeys) {
 	s.avMu.Lock()
 	defer s.avMu.Unlock()
-	s.activeVals = activeVals
+	activePeers := make(map[peer.ID]bool, len(activeVals))
+	for _, pub := range activeVals {
+		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, pub.String())
+		if err != nil {
+			s.logger.Error().Err(err).Msg("fail to convert bech32 pubkey to raw secp256k1 pubkey")
+			continue
+		}
+		peerID, err := conversion.GetPeerIDFromSecp256PubKey(pk.Bytes())
+		if err != nil {
+			s.logger.Error().Err(err).Msg("fail to convert secp256k1 pubkey to peer ID")
+			continue
+		}
+		activePeers[peerID] = true
+	}
+
+	s.activeVals = activePeers
 }
 
 // Get the number of active validators
@@ -214,20 +302,17 @@ func (s *AttestationGossip) activeValidatorCount() int {
 }
 
 // Check if a public key belongs to an active validator
-func (s *AttestationGossip) isActiveValidator(secp256k1PubKey []byte) error {
-	bech32Pub, err := cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeAccPub, &secp256k1.PubKey{Key: secp256k1PubKey})
-	if err != nil {
-		return fmt.Errorf("fail to convert pubkey to bech32: %w", err)
-	}
-
+func (s *AttestationGossip) isActiveValidator(p peer.ID) bool {
 	s.avMu.Lock()
 	defer s.avMu.Unlock()
-	for _, val := range s.activeVals {
-		if val.Equals(common.PubKey(bech32Pub)) {
-			return nil
-		}
-	}
-	return fmt.Errorf("not an active validator: %s", bech32Pub)
+	_, ok := s.activeVals[p]
+	return ok
+}
+
+func (s *AttestationGossip) getActiveValidators() map[peer.ID]bool {
+	s.avMu.Lock()
+	defer s.avMu.Unlock()
+	return s.activeVals
 }
 
 // Get the keysign party for a specific public key
@@ -257,39 +342,147 @@ func (s *AttestationGossip) SetObserverHandleObservedTxCommitted(o *Observer) {
 }
 
 // Handle a committed quorum transaction event
-func (s *AttestationGossip) handleQuorumTxCommited(en *ebifrost.EventNotification) {
+func (s *AttestationGossip) handleQuorumTxCommitted(en *ebifrost.EventNotification) {
 	s.logger.Debug().Msg("handling quorum tx committed event")
 
-	if s.observerHandleObservedTxCommitted == nil {
-		// nothing to do
-		return
-	}
-
-	var tx common.QuorumTx
-	if err := tx.Unmarshal(en.Payload); err != nil {
+	var qtx common.QuorumTx
+	if err := qtx.Unmarshal(en.Payload); err != nil {
 		s.logger.Error().Err(err).Msg("fail to unmarshal quorum tx")
 		return
 	}
 
-	// if our attestation is in the quorum tx, we can remove it from our observer deck.
-	for _, att := range tx.Attestations {
-		if bytes.Equal(att.PubKey, s.pubKey) {
-			// we have attested to this tx, and it has been committed to the chain.
-			s.logger.Debug().Msg("our attestation is in the quorum tx, passing to observer to remove from ondeck")
-			s.observerHandleObservedTxCommitted(tx.ObsTx)
-			return
+	if s.observerHandleObservedTxCommitted != nil {
+		// if our attestation is in the quorum tx, we can remove it from our observer deck.
+		for _, att := range qtx.Attestations {
+			if bytes.Equal(att.PubKey, s.pubKey) {
+				// we have attested to this tx, and it has been committed to the chain.
+				s.logger.Debug().Msg("our attestation is in the quorum tx, passing to observer to remove from ondeck")
+				s.observerHandleObservedTxCommitted(qtx.ObsTx)
+				break
+			}
 		}
 	}
+
+	k := txKey{
+		Chain:                  qtx.ObsTx.Tx.Chain,
+		ID:                     qtx.ObsTx.Tx.ID,
+		UniqueHash:             qtx.ObsTx.Tx.Hash(qtx.ObsTx.BlockHeight),
+		AllowFutureObservation: qtx.AllowFutureObservation,
+		Inbound:                qtx.Inbound,
+		Finalized:              qtx.ObsTx.IsFinal(),
+	}
+
+	s.mu.Lock()
+	as, ok := s.observedTxs[k]
+	if ok {
+		// note, purposefully locking the single state mutex prior to releasing the global mutex to avoid race in between.
+		// This order must be maintained everywhere to avoid deadlock.
+		as.mu.Lock()
+	}
+	s.mu.Unlock()
+	if !ok {
+		return
+	}
+
+	defer as.mu.Unlock()
+	as.MarkAttestationsCommitted(qtx.Attestations)
 }
 
-// / Start the attestation gossip service
+// Handle a committed quorum network fee event
+func (s *AttestationGossip) handleQuorumNetworkFeeCommitted(en *ebifrost.EventNotification) {
+	s.logger.Debug().Msg("handling quorum network fee committed event")
+
+	var qnf common.QuorumNetworkFee
+	if err := qnf.Unmarshal(en.Payload); err != nil {
+		s.logger.Error().Err(err).Msg("fail to unmarshal quorum network fee")
+		return
+	}
+
+	s.mu.Lock()
+	as, ok := s.networkFees[*qnf.NetworkFee]
+	if ok {
+		// note, purposefully locking the single state mutex prior to releasing the global mutex to avoid race in between.
+		// This order must be maintained everywhere to avoid deadlock.
+		as.mu.Lock()
+	}
+	s.mu.Unlock()
+	if !ok {
+		return
+	}
+
+	defer as.mu.Unlock()
+	as.MarkAttestationsCommitted(qnf.Attestations)
+}
+
+// Handle a committed quorum solvency event
+func (s *AttestationGossip) handleQuorumSolvencyCommitted(en *ebifrost.EventNotification) {
+	s.logger.Debug().Msg("handling quorum solvency committed event")
+
+	var qs common.QuorumSolvency
+	if err := qs.Unmarshal(en.Payload); err != nil {
+		s.logger.Error().Err(err).Msg("fail to unmarshal quorum solvency")
+		return
+	}
+
+	s.mu.Lock()
+	as, ok := s.solvencies[qs.Solvency.Id]
+	if ok {
+		// note, purposefully locking the single state mutex prior to releasing the global mutex to avoid race in between.
+		// This order must be maintained everywhere to avoid deadlock.
+		as.mu.Lock()
+	}
+	s.mu.Unlock()
+	if !ok {
+		return
+	}
+
+	defer as.mu.Unlock()
+	as.MarkAttestationsCommitted(qs.Attestations)
+}
+
+// Handle a committed quorum errata tx event
+func (s *AttestationGossip) handleQuorumErrataTxCommitted(en *ebifrost.EventNotification) {
+	s.logger.Debug().Msg("handling quorum errata tx committed event")
+
+	var qe common.QuorumErrataTx
+	if err := qe.Unmarshal(en.Payload); err != nil {
+		s.logger.Error().Err(err).Msg("fail to unmarshal quorum errata")
+		return
+	}
+
+	s.mu.Lock()
+	as, ok := s.errataTxs[*qe.ErrataTx]
+	if ok {
+		// note, purposefully locking the single state mutex prior to releasing the global mutex to avoid race in between.
+		// This order must be maintained everywhere to avoid deadlock.
+		as.mu.Lock()
+	}
+	s.mu.Unlock()
+	if !ok {
+		return
+	}
+
+	defer as.mu.Unlock()
+	as.MarkAttestationsCommitted(qe.Attestations)
+}
+
+// Start the attestation gossip service
 func (s *AttestationGossip) Start(ctx context.Context) {
 	ticker := time.NewTicker(s.config.ObserveReconcileInterval)
-	defer ticker.Stop()
 
 	startupDelay := s.config.AskPeersDelay
 	delayTimer := time.NewTimer(startupDelay)
-	defer delayTimer.Stop()
+	semPruneTicker := time.NewTicker(semaphorePruneInterval)
+
+	defer func() {
+		ticker.Stop()
+		delayTimer.Stop()
+		semPruneTicker.Stop()
+	}()
+
+	s.reconcileMimirConfigs()
+
+	go s.batcher.Start(ctx)
 
 	for {
 		select {
@@ -302,6 +495,7 @@ func (s *AttestationGossip) Start(ctx context.Context) {
 				state.mu.Lock()
 				if state.ExpiredAfterQuorum(s.config.LateObserveTimeout, s.config.NonQuorumTimeout) {
 					delete(s.observedTxs, k)
+					s.observedTxsPool.PutAttestationState(state)
 				} else if state.ShouldSendLate(s.config.MinTimeBetweenAttestations) {
 					s.logger.Debug().Msg("sending late observed tx attestations")
 
@@ -316,6 +510,7 @@ func (s *AttestationGossip) Start(ctx context.Context) {
 				state.mu.Lock()
 				if state.ExpiredAfterQuorum(s.config.LateObserveTimeout, s.config.NonQuorumTimeout) {
 					delete(s.networkFees, k)
+					s.networkFeesPool.PutAttestationState(state)
 				} else if state.ShouldSendLate(s.config.MinTimeBetweenAttestations) {
 					s.logger.Debug().Msg("sending late network fee attestations")
 					s.sendNetworkFeeAttestationsToThornode(ctx, *state.Item, state, false)
@@ -328,6 +523,7 @@ func (s *AttestationGossip) Start(ctx context.Context) {
 				state.mu.Lock()
 				if state.ExpiredAfterQuorum(s.config.LateObserveTimeout, s.config.NonQuorumTimeout) {
 					delete(s.solvencies, k)
+					s.solvenciesPool.PutAttestationState(state)
 				} else if state.ShouldSendLate(s.config.MinTimeBetweenAttestations) {
 					s.logger.Debug().Msg("sending late solvency attestations")
 					s.sendSolvencyAttestationsToThornode(ctx, *state.Item, state, false)
@@ -340,12 +536,17 @@ func (s *AttestationGossip) Start(ctx context.Context) {
 				state.mu.Lock()
 				if state.ExpiredAfterQuorum(s.config.LateObserveTimeout, s.config.NonQuorumTimeout) {
 					delete(s.errataTxs, k)
+					s.errataTxsPool.PutAttestationState(state)
 				} else if state.ShouldSendLate(s.config.MinTimeBetweenAttestations) {
 					s.logger.Debug().Msg("sending late errata attestations")
 					s.sendErrataAttestationsToThornode(ctx, *state.Item, state, false)
 				}
 				state.mu.Unlock()
 			}
+
+			// Prune price feeds
+			s.priceFeeds = make(map[string]*AttestationState[*common.PriceFeed])
+
 			s.mu.Unlock()
 
 			// Prune cached keysign parties
@@ -357,11 +558,15 @@ func (s *AttestationGossip) Start(ctx context.Context) {
 			}
 			s.cachedKeySignMu.Unlock()
 
+			s.reconcileMimirConfigs()
+
 		case <-delayTimer.C:
 			s.eventClient.Start()
-			s.logger.Debug().Msg("asking for attestation state")
-			s.askForAttestationState(ctx)
 
+		case <-semPruneTicker.C:
+			// Periodically prune semaphores that have been idle for a while
+			s.peerMgr.prune()
+			s.batcher.peerMgr.prune()
 		case <-ctx.Done():
 			s.eventClient.Stop()
 			return
@@ -369,18 +574,31 @@ func (s *AttestationGossip) Start(ctx context.Context) {
 	}
 }
 
-func (s *AttestationGossip) ensureAttesterIsActiveNode(att *common.Attestation) error {
-	if att == nil {
-		return fmt.Errorf("attestation is nil")
+func (s *AttestationGossip) reconcileMimirConfigs() {
+	maxBatchSize, err := s.bridge.GetMimir(constants.MimirMaxBatchSize)
+	if err != nil {
+		s.logger.Error().Str("mimir", constants.MimirMaxBatchSize).Err(err).Msg("fail to get mimir value")
+	} else if maxBatchSize > 0 {
+		if maxBatchSize != s.batcher.getMaxBatchSize() {
+			s.batcher.updateMaxBatchSize(maxBatchSize)
+		}
 	}
 
-	if att.PubKey == nil {
-		return fmt.Errorf("attestation pubkey is nil")
+	peerConcurrentSends, err := s.bridge.GetMimir(constants.MimirPeerConcurrentSends)
+	if err != nil {
+		s.logger.Error().Str("mimir", constants.MimirPeerConcurrentSends).Err(err).Msg("fail to get mimir value")
+	} else if peerConcurrentSends > 0 {
+		if peerConcurrentSends != int64(s.batcher.peerMgr.getLimit()) {
+			s.batcher.peerMgr.updateLimit(int(peerConcurrentSends)) //nolint:staticcheck
+		}
 	}
 
-	if err := s.isActiveValidator(att.PubKey); err != nil {
-		return fmt.Errorf("ignoring attestation: %w", err)
+	peerConcurrentReceives, err := s.bridge.GetMimir(constants.MimirPeerConcurrentReceives)
+	if err != nil {
+		s.logger.Error().Str("mimir", constants.MimirPeerConcurrentReceives).Err(err).Msg("fail to get mimir value")
+	} else if peerConcurrentReceives > 0 {
+		if peerConcurrentReceives != int64(s.peerMgr.getLimit()) {
+			s.peerMgr.updateLimit(int(peerConcurrentReceives)) //nolint:staticcheck
+		}
 	}
-
-	return nil
 }

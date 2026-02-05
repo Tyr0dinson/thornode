@@ -5,6 +5,17 @@
 type: create-blocks
 count: 1
 ---
+########################################################################################
+# disable advanced swap queue to ensure consistent test behavior
+########################################################################################
+type: tx-mimir
+key: EnableAdvSwapQueue
+value: 0
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
+---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/ETH.USDC-0X9999999999999999999999999999999999999999
 asserts:
@@ -49,8 +60,8 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
-  - .[0].memo == "REFUND:{{ observe_txid 1 }}"
-  - .[0].coin.amount == "872000000"
+  - .[0].original_memo == "REFUND:{{ observe_txid 1 }}"
+  - .[0].coin.amount == "${OUT_AMOUNT=936000000}"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -61,7 +72,7 @@ txs:
       from_address: {{ addr_eth_dog }}
       to_address: {{ addr_eth_pig }}
       coins:
-        - amount: "872000000"
+        - amount: "${OUT_AMOUNT}"
           asset: "ETH.USDC-0X9999999999999999999999999999999999999999"
       gas:
         - amount: "10000"
@@ -120,7 +131,7 @@ count: 1
 type: check
 endpoint: http://localhost:1317/cosmos/bank/v1beta1/supply
 asserts:
-  - .supply[]|select(.denom == "eth/usdc-0x9999999999999999999999999999999999999999")|.amount|tonumber == 990254682
+  - .supply[]|select(.denom == "eth/usdc-0x9999999999999999999999999999999999999999")|.amount|tonumber == 990250275
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/pool/ETH.USDC-0X9999999999999999999999999999999999999999/savers
@@ -162,8 +173,8 @@ type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - length == 1
-  - .[0].memo == "OUT:{{ observe_txid 4 }}"
-  - .[0].coin.amount == "${OUT_AMOUNT=842786700}"
+  - .[0].original_memo == "OUT:{{ observe_txid 4 }}"
+  - .[0].coin.amount == "${OUT_AMOUNT=907051900}"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}

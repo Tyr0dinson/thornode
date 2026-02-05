@@ -2,6 +2,7 @@ package thorchain
 
 import (
 	"fmt"
+	"math"
 
 	errorsmod "cosmossdk.io/errors"
 	sdkmath "cosmossdk.io/math"
@@ -11,6 +12,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/x/auth/ante"
 	authante "github.com/cosmos/cosmos-sdk/x/auth/ante"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
+	"github.com/cosmos/cosmos-sdk/x/authz"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
@@ -30,7 +32,7 @@ func NewWasmExecuteContractHandler(mgr Manager) WasmExecuteContractHandler {
 }
 
 // Run is the main entry of WasmExecuteContractHandler
-func (h WasmExecuteContractHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, error) {
+func (h WasmExecuteContractHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*wasmtypes.MsgExecuteContractResponse, error) {
 	msg, ok := m.(*wasmtypes.MsgExecuteContract)
 	if !ok {
 		return nil, errInvalidMessage
@@ -51,7 +53,7 @@ func (h WasmExecuteContractHandler) validate(ctx cosmos.Context, msg wasmtypes.M
 	return nil
 }
 
-func (h WasmExecuteContractHandler) handle(ctx cosmos.Context, msg wasmtypes.MsgExecuteContract) (*cosmos.Result, error) {
+func (h WasmExecuteContractHandler) handle(ctx cosmos.Context, msg wasmtypes.MsgExecuteContract) (*wasmtypes.MsgExecuteContractResponse, error) {
 	ctx.Logger().Info("receive MsgExecuteContract", "from", msg.Sender)
 	if h.mgr.Keeper().IsChainHalted(ctx, common.THORChain) {
 		return nil, fmt.Errorf("unable to use MsgExecuteContract while THORChain is halted")
@@ -66,12 +68,14 @@ func (h WasmExecuteContractHandler) handle(ctx cosmos.Context, msg wasmtypes.Msg
 		return nil, errorsmod.Wrap(err, "contract")
 	}
 
-	_, err = h.mgr.WasmManager().ExecuteContract(ctx, contractAddr, senderAddr, msg.Msg, msg.Funds)
+	data, err := h.mgr.WasmManager().ExecuteContract(ctx, contractAddr, senderAddr, msg.Msg, msg.Funds)
 	if err != nil {
-		return &cosmos.Result{}, err
+		return nil, err
 	}
 
-	return &cosmos.Result{}, nil
+	return &wasmtypes.MsgExecuteContractResponse{
+		Data: data,
+	}, nil
 }
 
 type WasmExecuteAnteDecorator struct {
@@ -108,7 +112,10 @@ func (ad WasmExecuteAnteDecorator) AnteHandle(
 			*wasmtypes.MsgInstantiateContract2,
 			*wasmtypes.MsgExecuteContract,
 			*wasmtypes.MsgMigrateContract,
-			*wasmtypes.MsgSudoContract:
+			*wasmtypes.MsgSudoContract,
+			*authz.MsgGrant,
+			*authz.MsgRevoke,
+			*authz.MsgExec:
 			tfc := newTxFeeChcker(ad.keeper)
 			handler := ante.NewDeductFeeDecorator(ad.ak, ad.bk, nil, tfc)
 			return handler.AnteHandle(ctx, tx, simulate, next)
@@ -151,6 +158,13 @@ func checkTxFeeWithValidatorMinGasPrices(ctx sdk.Context, k keeper.Keeper, tx sd
 
 		if !minGasPrices.IsZero() {
 			requiredFees := make(sdk.Coins, len(minGasPrices))
+
+			// Validate gas before conversion to int64 to prevent integer overflow.
+			// If gas > MaxInt64, conversion would silently overflow to negative value,
+			// causing incorrect fee calculation that could bypass payment requirements.
+			if gas > math.MaxInt64 {
+				return nil, 0, errorsmod.Wrapf(sdkerrors.ErrInvalidRequest, "gas value %d exceeds maximum allowed value", gas)
+			}
 
 			// Determine the required fees by multiplying each required minimum gas
 			// price by the gas limit, where fee = ceil(minGasPrice * gasLimit).

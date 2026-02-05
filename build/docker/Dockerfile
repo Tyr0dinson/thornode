@@ -2,7 +2,7 @@
 # Build
 ########################################################################################
 
-FROM golang:1.23.6-bullseye AS build
+FROM golang:1.24.6-bullseye AS build
 
 ENV GOBIN=/go/bin
 ENV GOPATH=/go
@@ -41,7 +41,7 @@ RUN apt-get update && \
 
 # Copy the compiled binaries over.
 COPY --from=build /go/bin/thornode /go/bin/bifrost /go/bin/recover-keyshare-backup /usr/bin/
-COPY --from=build /go/pkg/mod/github.com/!cosm!wasm/wasmvm/v2@v2.1.2/internal/api/libwasmvm.*.so /usr/lib
+COPY --from=build /go/pkg/mod/github.com/!cosm!wasm/wasmvm/v2@v2.2.1/internal/api/libwasmvm.*.so /usr/lib
 
 COPY build/scripts /scripts
 

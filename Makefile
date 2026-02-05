@@ -11,7 +11,13 @@ endif
 # Config
 ########################################################################################
 
-.PHONY: build test tools export healthcheck run-mocknet build-mocknet stop-mocknet halt-mocknet ps-mocknet reset-mocknet logs-mocknet openapi
+.PHONY: build test tools export healthcheck run-mocknet build-mocknet stop-mocknet halt-mocknet ps-mocknet reset-mocknet logs-mocknet openapi test-performance test-performance-quick test-performance-all test-performance-analyze test-performance-profile-cpu test-performance-profile-mem test-performance-trace test-performance-clean
+
+# mocknet docker compose files and overrides for macOS
+DOCKER_COMPOSE_FILES ?= -f build/docker/docker-compose.yml
+ifeq ($(shell uname -s),Darwin)
+DOCKER_COMPOSE_FILES += -f build/docker/docker-compose.darwin.yml
+endif
 
 # pull branch name from CI if unset and available
 ifdef CI_COMMIT_BRANCH
@@ -39,9 +45,33 @@ ldflags = -X gitlab.com/thorchain/thornode/v3/constants.Version=$(VERSION) \
 
 # golang settings
 TEST_PATHS=$(shell go list ./... | grep -v bifrost/tss/go-tss) # Skip compute-intensive tests by default
+
+# Parse test path argument from command line (e.g., "make test ./path")
+ifeq (test,$(firstword $(MAKECMDGOALS)))
+  TEST_PATH_ARG := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
+  ifneq ($(TEST_PATH_ARG),)
+    # Check if the argument looks like a path (contains /)
+    ifneq ($(findstring /,$(TEST_PATH_ARG)),)
+      # Ensure path starts with ./
+      ifeq ($(filter ./%,$(TEST_PATH_ARG)),)
+        TEST_DIR := ./$(TEST_PATH_ARG)
+      else
+        TEST_DIR := $(TEST_PATH_ARG)
+      endif
+      # Prevent make from treating the path as a target
+      .PHONY: $(TEST_PATH_ARG)
+      $(eval $(TEST_PATH_ARG):;@:)
+    endif
+  endif
+endif
+
 TEST_DIR?=${TEST_PATHS}
 BUILD_FLAGS := -ldflags '$(ldflags)' -tags ${TAG} -trimpath
-TEST_BUILD_FLAGS := -parallel=1 -tags=mocknet
+PARALLELISM ?= 1
+TEST_BUILD_FLAGS := -parallel=$(PARALLELISM) -tags=mocknet
+ifdef RUN
+RUN_FLAG := -run=$(RUN)
+endif
 BINARIES?=./cmd/thornode ./cmd/bifrost ./tools/recover-keyshare-backup
 GOVERSION=$(shell awk '($$1 == "go") { print $$2 }' go.mod)
 
@@ -90,6 +120,10 @@ proto-format:
 	@echo "Formatting Protobuf files"
 	@$(protoImage) find ./ -name "*.proto" -exec clang-format -i {} \;
 
+proto-format-check:
+	@echo "Checking Protobuf formatting"
+	@find ./ -name "*.proto" -print0 | xargs -0L1 $(protoImage) clang-format --dry-run -Werror
+
 proto-lint:
 	@$(protoImage) buf lint --error-format=json
 
@@ -99,11 +133,13 @@ proto-check-breaking:
 # ------------------------------ Docs ------------------------------
 
 docs-init:
-	@cargo install mdbook --version 0.4.44
+	@cargo install mdbook --version 0.4.52
 	@cargo install mdbook-admonish --version 1.18.0
-	@cargo install mdbook-katex --version 0.9.2
+	@cargo install mdbook-katex --version 0.9.4
 	@cargo install mdbook-embed --version 0.2.0
+	@cargo install mdbook-mermaid --version 0.14.0
 	@cd docs && mdbook-admonish install --css-dir theme
+	@cd docs && mdbook-mermaid install
 
 docs-generate: docs-init
 	@cd docs && mdbook build -d ../public
@@ -137,7 +173,7 @@ format:
 
 lint:
 	@./scripts/lint.sh
-	@./scripts/trunk check --no-fix --upstream origin/develop
+	@./scripts/trunk check --no-fix --show-existing --upstream origin/develop
 
 lint-ci:
 	@./scripts/lint.sh
@@ -159,29 +195,100 @@ test-coverage-sum: test-network-specific
 	@go tool cover -func=coverage.txt
 	@go tool cover -html=coverage.txt -o coverage.html
 
-test: test-network-specific
-	@go test ${TEST_BUILD_FLAGS} ${TEST_DIR}
+test:
+ifeq ($(TEST_DIR),$(TEST_PATHS))
+	@$(MAKE) test-network-specific
+endif
+	@go test ${TEST_BUILD_FLAGS} ${RUN_FLAG} ${TEST_DIR}
+	@TAG=stagenet $(MAKE) build
 
 test-all: test-network-specific
-	@go test ${TEST_BUILD_FLAGS} "./..."
+	@go test ${TEST_BUILD_FLAGS} ${RUN_FLAG} "./..."
 
 test-go-tss:
-	@go test ${TEST_BUILD_FLAGS} --race "./bifrost/tss/go-tss/..."
+	@go test ${TEST_BUILD_FLAGS} ${RUN_FLAG} --race "./bifrost/tss/go-tss/..."
 
 test-network-specific:
-	@go test -tags stagenet ./common
-	@go test -tags mainnet ./common ./bifrost/pkg/chainclients/utxo/...
-	@go test -tags mocknet ./common ./bifrost/pkg/chainclients/utxo/...
+	@go test -tags stagenet ${RUN_FLAG} ./common
+	@go test -tags mainnet ${RUN_FLAG} ./common ./bifrost/pkg/chainclients/utxo/...
+	@go test -tags mocknet ${RUN_FLAG} ./common ./bifrost/pkg/chainclients/utxo/...
 
 test-race:
-	@go test -race ${TEST_BUILD_FLAGS} ${TEST_DIR}
+	@go test -race ${TEST_BUILD_FLAGS} ${RUN_FLAG} ${TEST_DIR}
+
+# ------------------------------ Performance Tests ------------------------------
+
+# Run comprehensive benchmarks with profiling (recommended)
+test-performance:
+	@echo "Running comprehensive performance benchmarks with profiling..."
+	@./test/performance/run_quote_benchmarks.sh
+
+# Quick benchmark comparison (Queue Disabled vs Enabled)
+test-performance-quick:
+	@echo "Running quick performance comparison..."
+	@cd x/thorchain && go test -run='^$$' -bench='^BenchmarkQuoteSwapComparison$$' -benchtime=10x -benchmem
+
+# Run all benchmarks without profiling
+test-performance-all:
+	@echo "Running all benchmark tests..."
+	@cd x/thorchain && go test -run='^$$' -bench=. -benchtime=5x -benchmem
+
+# Analyze latest performance results
+test-performance-analyze:
+	@echo "Analyzing latest performance results..."
+	@LATEST=$$(ls -td test/performance/results/*/ 2>/dev/null | head -1); \
+	if [ -n "$$LATEST" ]; then \
+		./test/performance/analyze_profiles.sh "$$LATEST"; \
+	else \
+		echo "No performance results found. Run 'make test-performance' first."; \
+		exit 1; \
+	fi
+
+# Open interactive CPU profile viewer
+test-performance-profile-cpu:
+	@LATEST=$$(ls -td test/performance/results/*/ 2>/dev/null | head -1); \
+	if [ -n "$$LATEST" ] && [ -f "$$LATEST/cpu.prof" ]; then \
+		echo "Opening CPU profile at http://localhost:8080..."; \
+		go tool pprof -http=:8080 "$$LATEST/cpu.prof"; \
+	else \
+		echo "No CPU profile found. Run 'make test-performance' first."; \
+		exit 1; \
+	fi
+
+# Open interactive memory profile viewer
+test-performance-profile-mem:
+	@LATEST=$$(ls -td test/performance/results/*/ 2>/dev/null | head -1); \
+	if [ -n "$$LATEST" ] && [ -f "$$LATEST/mem.prof" ]; then \
+		echo "Opening memory profile at http://localhost:8080..."; \
+		go tool pprof -http=:8080 "$$LATEST/mem.prof"; \
+	else \
+		echo "No memory profile found. Run 'make test-performance' first."; \
+		exit 1; \
+	fi
+
+# View execution trace
+test-performance-trace:
+	@LATEST=$$(ls -td test/performance/results/*/ 2>/dev/null | head -1); \
+	if [ -n "$$LATEST" ] && [ -f "$$LATEST/trace.out" ]; then \
+		echo "Opening execution trace viewer..."; \
+		go tool trace "$$LATEST/trace.out"; \
+	else \
+		echo "No trace found. Run 'make test-performance' first."; \
+		exit 1; \
+	fi
+
+# Clean performance test results
+test-performance-clean:
+	@echo "Cleaning performance test results..."
+	@rm -rf test/performance/results/*
+	@echo "Performance results cleaned."
 
 # ------------------------------ Regression Tests ------------------------------
 
 test-regression: build-test-regression
 	@docker run --rm ${DOCKER_TTY_ARGS} \
 		-e DEBUG -e RUN -e EXPORT -e TIME_FACTOR -e PARALLELISM -e FAIL_FAST \
-		-e AUTO_UPDATE -e IGNORE_FAILURES -e CI \
+		-e AUTO_UPDATE -e IGNORE_FAILURES -e CI -e UNFILTER_EXPORT \
 		-e UID=$(shell id -u) -e GID=$(shell id -g) \
 		-p 1317:1317 -p 26657:26657 \
 		-v $(shell pwd)/test/regression/mnt:/mnt \
@@ -220,6 +327,12 @@ _test-regression:
 
 test-simulation: build-mocknet reset-mocknet test-simulation-no-reset
 
+STAGES ?= all
+test-simulation-cluster: build-test-simulation build-mocknet-cluster reset-mocknet-cluster
+	@STAGES=$(STAGES) docker run --rm ${DOCKER_TTY_ARGS} \
+		-e PARALLELISM -e STAGES --network host -w /app \
+		thornode-simtest sh -c 'make _test-simulation'
+
 test-simulation-no-reset: build-test-simulation
 	@docker run --rm ${DOCKER_TTY_ARGS} \
 		-e PARALLELISM -e STAGES --network host -w /app \
@@ -232,7 +345,7 @@ build-test-simulation:
 		--build-arg COMMIT=$(COMMIT) \
 
 test-simulation-events:
-	@docker compose -f build/docker/docker-compose.yml run --rm events
+	@docker compose $(DOCKER_COMPOSE_FILES) run --rm events
 
 # internal target used in docker build
 _build-test-simulation:
@@ -246,21 +359,21 @@ _test-simulation:
 # ------------------------------ Single Node Mocknet ------------------------------
 
 cli-mocknet:
-	@docker compose -f build/docker/docker-compose.yml run --rm cli
+	@docker compose $(DOCKER_COMPOSE_FILES) run --rm cli
 
 run-mocknet:
-	@docker compose -f build/docker/docker-compose.yml \
+	@docker compose $(DOCKER_COMPOSE_FILES) \
 		--profile mocknet --profile midgard up -d
 
 stop-mocknet:
-	@docker compose -f build/docker/docker-compose.yml --profile mocknet --profile midgard down -v
+	@docker compose $(DOCKER_COMPOSE_FILES) --profile mocknet --profile midgard down -v
 
 # Halt the Mocknet without erasing the blockchain history, so it can be resumed later.
 halt-mocknet:
-	@docker compose -f build/docker/docker-compose.yml --profile mocknet --profile midgard down
+	@docker compose $(DOCKER_COMPOSE_FILES) --profile mocknet --profile midgard down
 
 build-mocknet:
-	@docker compose -f build/docker/docker-compose.yml --profile mocknet --profile midgard build \
+	@docker compose $(DOCKER_COMPOSE_FILES) --profile mocknet build \
 		--build-arg COMMIT=$(COMMIT)
 
 bootstrap-mocknet:
@@ -269,11 +382,11 @@ bootstrap-mocknet:
 		thornode-simtest sh -c 'make _test-simulation'
 
 ps-mocknet:
-	@docker compose -f build/docker/docker-compose.yml --profile mocknet --profile midgard images
-	@docker compose -f build/docker/docker-compose.yml --profile mocknet --profile midgard ps
+	@docker compose $(DOCKER_COMPOSE_FILES) --profile mocknet --profile midgard images
+	@docker compose $(DOCKER_COMPOSE_FILES) --profile mocknet --profile midgard ps
 
 logs-mocknet:
-	@docker compose -f build/docker/docker-compose.yml --profile mocknet logs -f thornode bifrost
+	@docker compose $(DOCKER_COMPOSE_FILES) --profile mocknet logs -f thornode bifrost
 
 reset-mocknet: stop-mocknet run-mocknet
 
@@ -285,28 +398,31 @@ reset-mocknet-fork-%: stop-mocknet
 # ------------------------------ Multi Node Mocknet ------------------------------
 
 run-mocknet-cluster:
-	@docker compose -f build/docker/docker-compose.yml --profile mocknet-cluster \
+	@docker compose $(DOCKER_COMPOSE_FILES) --profile mocknet-cluster \
 		--profile midgard up -d
 
 stop-mocknet-cluster:
-	@docker compose -f build/docker/docker-compose.yml --profile mocknet-cluster --profile midgard down -v
+	@docker compose $(DOCKER_COMPOSE_FILES) --profile mocknet-cluster --profile midgard down -v
 
 halt-mocknet-cluster:
-	@docker compose -f build/docker/docker-compose.yml --profile mocknet-cluster --profile midgard down
+	@docker compose $(DOCKER_COMPOSE_FILES) --profile mocknet-cluster --profile midgard down
 
 build-mocknet-cluster:
-	@docker compose -f build/docker/docker-compose.yml --profile mocknet-cluster --profile midgard build
+	@docker compose $(DOCKER_COMPOSE_FILES) --profile mocknet-cluster build
 
 ps-mocknet-cluster:
-	@docker compose -f build/docker/docker-compose.yml --profile mocknet-cluster --profile midgard images
-	@docker compose -f build/docker/docker-compose.yml --profile mocknet-cluster --profile midgard ps
+	@docker compose $(DOCKER_COMPOSE_FILES) --profile mocknet-cluster --profile midgard images
+	@docker compose $(DOCKER_COMPOSE_FILES) --profile mocknet-cluster --profile midgard ps
 
 reset-mocknet-cluster: stop-mocknet-cluster build-mocknet-cluster run-mocknet-cluster
 
 # ------------------------------ Test Sync ------------------------------
 
 test-sync-mainnet:
-	@./scripts/test-sync.sh
+	@./scripts/test-sync.sh mainnet
+
+test-sync-stagenet:
+	@./scripts/test-sync.sh stagenet
 
 # ------------------------------ Docker Build ------------------------------
 
@@ -340,7 +456,8 @@ thorscan-gitlab-push: docker-gitlab-login
 
 events-build:
 	@docker build . -f tools/events/Dockerfile \
-		$(shell sh ./build/docker/semver_tags.sh registry.gitlab.com/thorchain/thornode events-${BRANCH} $(shell cat version))
+		$(shell sh ./build/docker/semver_tags.sh registry.gitlab.com/thorchain/thornode events-${BRANCH} $(shell cat version)) \
+		--build-arg TAG=$(BUILDTAG)
 
 events-gitlab-push: docker-gitlab-login
 	@./build/docker/semver_tags.sh registry.gitlab.com/thorchain/thornode events-${BRANCH} $(shell cat version) \

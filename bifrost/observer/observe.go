@@ -2,12 +2,17 @@ package observer
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"runtime"
+	"slices"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
+
+	"gitlab.com/thorchain/thornode/v3/bifrost/oracle"
 
 	lru "github.com/hashicorp/golang-lru"
 	"github.com/prometheus/client_golang/prometheus"
@@ -20,7 +25,6 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
-	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	stypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
@@ -34,18 +38,37 @@ const signedTxOutCacheSize = 10_000
 // deckRefreshTime is the time to wait before reconciling txIn status.
 const deckRefreshTime = 1 * time.Second
 
+// defaultOracleUpdateInterval is the interval in which new oracle prices
+// are computed and gossiped via p2p
+const defaultOracleUpdateInterval = 1 * time.Second
+
+type txInKey struct {
+	chain  common.Chain
+	height int64
+}
+
+func TxInKey(txIn *types.TxIn) txInKey {
+	return txInKey{
+		chain:  txIn.Chain,
+		height: txIn.TxArray[0].BlockHeight + txIn.ConfirmationRequired,
+	}
+}
+
 // Observer observer service
 type Observer struct {
 	logger                zerolog.Logger
 	chains                map[common.Chain]chainclients.ChainClient
+	oracle                *oracle.Oracle
 	stopChan              chan struct{}
 	pubkeyMgr             *pubkeymanager.PubKeyManager
-	onDeck                []*types.TxIn
+	onDeck                map[txInKey]*types.TxIn
 	lock                  *sync.Mutex
+	wg                    *sync.WaitGroup
 	globalTxsQueue        chan types.TxIn
 	globalErrataQueue     chan types.ErrataBlock
 	globalSolvencyQueue   chan types.Solvency
 	globalNetworkFeeQueue chan common.NetworkFee
+	globalPriceFeedQueue  chan common.PriceFeed
 	m                     *metrics.Metrics
 	errCounter            *prometheus.CounterVec
 	thorchainBridge       thorclient.ThorchainBridge
@@ -55,8 +78,16 @@ type Observer struct {
 	// signedTxOutCache is a cache to keep track of observations for outbounds which were
 	// manually observed after completion of signing and should be filtered from future
 	// mempool and block observations.
-	signedTxOutCache  *lru.Cache
-	attestationGossip *AttestationGossip
+	signedTxOutCache   *lru.Cache
+	signedTxOutCacheMu sync.Mutex
+	attestationGossip  *AttestationGossip
+
+	observerWorkers int
+
+	lastNodeStatus   stypes.NodeStatus
+	lastNodeStatusMu sync.RWMutex
+
+	deckDumpFile string
 }
 
 // NewObserver create a new instance of Observer for chain
@@ -66,15 +97,25 @@ func NewObserver(pubkeyMgr *pubkeymanager.PubKeyManager,
 	m *metrics.Metrics, dataPath string,
 	tssKeysignMetricMgr *metrics.TssKeysignMetricMgr,
 	attestationGossip *AttestationGossip,
+	deckDumpFile string,
 ) (*Observer, error) {
 	logger := log.Logger.With().Str("module", "observer").Logger()
 
 	cfg := config.GetBifrost()
 
+	observerWorkers := cfg.ObserverWorkers
+	if observerWorkers == 0 {
+		observerWorkers = runtime.NumCPU() / 2
+		if observerWorkers == 0 {
+			observerWorkers = 1
+		}
+	}
+
 	storage, err := NewObserverStorage(dataPath, cfg.ObserverLevelDB)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create observer storage: %w", err)
 	}
+
 	if tssKeysignMetricMgr == nil {
 		return nil, fmt.Errorf("tss keysign manager is nil")
 	}
@@ -84,23 +125,34 @@ func NewObserver(pubkeyMgr *pubkeymanager.PubKeyManager,
 		return nil, fmt.Errorf("failed to create signed tx out cache: %w", err)
 	}
 
+	priceOracle, err := oracle.NewOracle(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("fail to create oracle instance: %w", err)
+	}
+
 	return &Observer{
 		logger:                logger,
 		chains:                chains,
+		oracle:                priceOracle,
 		stopChan:              make(chan struct{}),
 		m:                     m,
 		pubkeyMgr:             pubkeyMgr,
 		lock:                  &sync.Mutex{},
+		wg:                    &sync.WaitGroup{},
+		onDeck:                make(map[txInKey]*types.TxIn),
 		globalTxsQueue:        make(chan types.TxIn),
 		globalErrataQueue:     make(chan types.ErrataBlock),
 		globalSolvencyQueue:   make(chan types.Solvency),
 		globalNetworkFeeQueue: make(chan common.NetworkFee),
+		globalPriceFeedQueue:  make(chan common.PriceFeed),
 		errCounter:            m.GetCounterVec(metrics.ObserverError),
 		thorchainBridge:       thorchainBridge,
 		storage:               storage,
 		tssKeysignMetricMgr:   tssKeysignMetricMgr,
 		signedTxOutCache:      signedTxOutCache,
 		attestationGossip:     attestationGossip,
+		observerWorkers:       observerWorkers,
+		deckDumpFile:          deckDumpFile,
 	}, nil
 }
 
@@ -118,12 +170,15 @@ func (o *Observer) Start(ctx context.Context) error {
 	for _, chain := range o.chains {
 		chain.Start(o.globalTxsQueue, o.globalErrataQueue, o.globalSolvencyQueue, o.globalNetworkFeeQueue)
 	}
+	o.oracle.Start()
+	go o.processOracle()
 	go o.processTxIns()
 	go o.processErrataTx(ctx)
 	go o.processSolvencyQueue(ctx)
 	go o.processNetworkFeeQueue(ctx)
-	go o.deck()
+	go o.deck(ctx)
 	go o.attestationGossip.Start(ctx)
+	go o.processPriceFeedQueue(ctx)
 	return nil
 }
 
@@ -132,32 +187,52 @@ func (o *Observer) Start(ctx context.Context) error {
 func (o *Observer) ObserveSigned(txIn types.TxIn) {
 	if !txIn.AllowFutureObservation {
 		// add all transaction ids to the signed tx out cache
+		o.signedTxOutCacheMu.Lock()
 		for _, tx := range txIn.TxArray {
 			o.signedTxOutCache.Add(tx.Tx, nil)
 		}
+		o.signedTxOutCacheMu.Unlock()
 	}
 
 	o.globalTxsQueue <- txIn
 }
 
+// restoreDeck initializes the memory cache with the ondeck txs from the storage
 func (o *Observer) restoreDeck() {
 	onDeckTxs, err := o.storage.GetOnDeckTxs()
 	if err != nil {
 		o.logger.Error().Err(err).Msg("fail to restore ondeck txs")
 	}
+
+	if o.deckDumpFile != "" {
+		// dump the ondeck txs to a file for debugging
+		o.logger.Info().Msgf("dumping ondeck txs to %s", o.deckDumpFile)
+		dumpTxs, err := json.Marshal(onDeckTxs)
+		if err != nil {
+			o.logger.Error().Err(err).Msg("fail to marshal ondeck txs")
+		} else {
+			if err := os.WriteFile(o.deckDumpFile, dumpTxs, 0o600); err != nil {
+				o.logger.Error().Err(err).Msg("fail to write ondeck txs to file")
+			}
+			o.logger.Info().Msgf("ondeck txs dumped to %s", o.deckDumpFile)
+		}
+	}
+
 	o.lock.Lock()
 	defer o.lock.Unlock()
-	o.onDeck = onDeckTxs
+	for _, txIn := range onDeckTxs {
+		o.onDeck[TxInKey(txIn)] = txIn
+	}
 }
 
-func (o *Observer) deck() {
+func (o *Observer) deck(ctx context.Context) {
 	for {
 		select {
 		case <-o.stopChan:
-			o.sendDeck()
+			o.sendDeck(ctx)
 			return
 		case <-time.After(deckRefreshTime):
-			o.sendDeck()
+			o.sendDeck(ctx)
 		}
 	}
 }
@@ -171,47 +246,63 @@ func (o *Observer) handleObservedTxCommitted(tx common.ObservedTx) {
 
 	o.lock.Lock()
 	defer o.lock.Unlock()
-DeckLoop:
-	for i, deck := range o.onDeck {
-		if deck.Chain != tx.Tx.Chain {
-			// if the chain of the observed tx in the deck is not the same as the chain of the committed observed tx, skip it.
+
+	k := txInKey{
+		chain:  tx.Tx.Chain,
+		height: tx.FinaliseHeight,
+	}
+
+	deck, ok := o.onDeck[k]
+	if !ok {
+		return
+	}
+
+	for j, txInItem := range deck.TxArray {
+		if !txInItem.EqualsObservedTx(tx) {
 			continue
 		}
-		for j, txInItem := range deck.TxArray {
-			if !txInItem.EqualsObservedTx(tx) {
-				continue
-			}
-			if isFinal {
-				o.logger.Debug().Msgf("tx final %s - %s removing from tx array", tx.Tx.Chain, tx.Tx.ID)
-				// if the tx is in the tx array, and it is final, remove it from the tx array.
-				deck.TxArray = append(deck.TxArray[:j], deck.TxArray[j+1:]...)
-				if len(deck.TxArray) == 0 {
-					o.logger.Debug().Msgf("deck is empty, removing from ondeck")
+		if isFinal {
+			o.logger.Debug().Msgf("tx final %s - %s removing from tx array", tx.Tx.Chain, tx.Tx.ID)
+			// if the tx is in the tx array, and it is final, remove it from the tx array.
+			deck.TxArray = slices.Delete(deck.TxArray, j, j+1)
+			if len(deck.TxArray) == 0 {
+				o.logger.Debug().Msgf("deck is empty, removing from ondeck")
 
-					// if the deck is empty after removing, remove it from ondeck.
-					o.onDeck = append(o.onDeck[:i], o.onDeck[i+1:]...)
+				// if the deck is empty after removing, remove it from ondeck.
+				delete(o.onDeck, k)
+				if err := o.storage.RemoveTx(deck, tx.FinaliseHeight); err != nil {
+					o.logger.Error().Err(err).Msg("fail to remove tx from storage")
 				}
 			} else {
-				// if the tx is not final, set tx.CommittedUnFinalised to true to indicate that it has been committed to thorchain but not finalised yet.
-				txInItem.CommittedUnFinalised = true
+				if j == 0 {
+					// update block confirmation count
+					deck.ConfirmationRequired = k.height - deck.TxArray[0].BlockHeight
+				}
+				if err := o.storage.AddOrUpdateTx(deck); err != nil {
+					o.logger.Error().Err(err).Msg("fail to update tx in storage")
+				}
 			}
-
-			chain, err := o.getChain(deck.Chain)
-			if err != nil {
-				o.logger.Error().Err(err).Msg("chain not found")
-			} else {
-				chain.OnObservedTxIn(*txInItem, txInItem.BlockHeight)
+		} else {
+			// if the tx is not final, set tx.CommittedUnFinalised to true to indicate that it has been committed to thorchain but not finalised yet.
+			txInItem.CommittedUnFinalised = true
+			if err := o.storage.AddOrUpdateTx(deck); err != nil {
+				o.logger.Error().Err(err).Msg("fail to update tx in storage")
 			}
-
-			madeChanges = true
-			break DeckLoop
 		}
+
+		chain, err := o.getChain(deck.Chain)
+		if err != nil {
+			o.logger.Error().Err(err).Msg("chain not found")
+		} else {
+			chain.OnObservedTxIn(*txInItem, txInItem.BlockHeight)
+		}
+
+		madeChanges = true
+		break
 	}
 
 	if !madeChanges {
 		o.logger.Debug().Msgf("no changes made to ondeck, size: %d", len(o.onDeck))
-
-		// do not save the onDeck to storage if no changes were made.
 		return
 	}
 
@@ -227,25 +318,9 @@ DeckLoop:
 		Str("gas", common.Coins(tx.Tx.Gas).String()).
 		Str("observed_vault_pubkey", tx.ObservedPubKey.String()).
 		Msg("observed tx committed to thorchain")
-
-	// if the deck is not empty, save it back to key value store
-	if err := o.storage.SetOnDeckTxs(o.onDeck); err != nil {
-		o.logger.Error().Err(err).Msg("fail to save ondeck tx to key value store")
-	}
 }
 
-func (o *Observer) sendDeck() {
-	// check if node is active
-	nodeStatus, err := o.thorchainBridge.FetchNodeStatus()
-	if err != nil {
-		o.logger.Error().Err(err).Msg("failed to get node status")
-		return
-	}
-	if nodeStatus != stypes.NodeStatus_Active {
-		o.logger.Warn().Msg("node is not active, will not handle tx in")
-		return
-	}
-
+func (o *Observer) sendDeck(ctx context.Context) {
 	// fetch and update active validator count on attestation gossip so it can calculate quorum
 	activeVals, err := o.thorchainBridge.FetchActiveNodes()
 	if err != nil {
@@ -254,37 +329,116 @@ func (o *Observer) sendDeck() {
 	}
 	o.attestationGossip.setActiveValidators(activeVals)
 
+	// check if node is active
+	nodeStatus, err := o.thorchainBridge.FetchNodeStatus()
+	if err != nil {
+		o.logger.Error().Err(err).Msg("failed to get node status")
+		return
+	}
+	o.lastNodeStatusMu.RLock()
+	lastNodeStatus := o.lastNodeStatus
+	o.lastNodeStatusMu.RUnlock()
+	if nodeStatus != lastNodeStatus {
+		o.lastNodeStatusMu.Lock()
+		o.lastNodeStatus = nodeStatus
+		o.lastNodeStatusMu.Unlock()
+
+		if nodeStatus == stypes.NodeStatus_Active {
+			o.logger.Info().Msg("node is now active, will begin observation and gossip")
+			o.attestationGossip.askForAttestationState(ctx)
+			if lastNodeStatus != stypes.NodeStatus_Unknown {
+				// if this is not the first startup, we just churned in. rollback block scanners to re-observe recent blocks
+				for _, chain := range o.chains {
+					if err := chain.RollbackBlockScanner(); err != nil {
+						o.logger.Error().Err(err).Msg("fail to rollback chain")
+					}
+				}
+			}
+		} else {
+			o.lock.Lock()
+			o.onDeck = make(map[txInKey]*types.TxIn)
+			o.lock.Unlock()
+			if err := o.storage.RemoveAllTxs(); err != nil {
+				o.logger.Error().Err(err).Msg("fail to remove all tx from storage")
+			}
+		}
+	}
+	if nodeStatus != stypes.NodeStatus_Active {
+		o.logger.Debug().Msg("node is not active, will not handle tx in")
+		return
+	}
+
 	o.lock.Lock()
 	defer o.lock.Unlock()
 
-	for _, deck := range o.onDeck {
+	for k, deck := range o.onDeck {
 		chainClient, err := o.getChain(deck.Chain)
 		if err != nil {
 			o.logger.Error().Err(err).Msg("fail to retrieve chain client")
 			continue
 		}
 
-		final := chainClient.ConfirmationCountReady(*deck)
-		o.sendToQuorumChecker(deck, final)
+		final := chainClient.ConfirmationCountReady(*deck) && !deck.MemPool
+		invalidIndices := o.sendToQuorumChecker(deck, final, k.height)
+
+		// Remove invalid transactions from deck
+		if len(invalidIndices) > 0 {
+			// Sort indices in descending order to remove from highest to lowest
+			// This preserves indices during removal
+			for i := 0; i < len(invalidIndices); i++ {
+				for j := i + 1; j < len(invalidIndices); j++ {
+					if invalidIndices[i] < invalidIndices[j] {
+						invalidIndices[i], invalidIndices[j] = invalidIndices[j], invalidIndices[i]
+					}
+				}
+			}
+
+			firstItemRemoved := false
+			for _, idx := range invalidIndices {
+				if idx >= 0 && idx < len(deck.TxArray) {
+					if idx == 0 {
+						firstItemRemoved = true
+					}
+					o.logger.Info().Msgf("removing invalid tx (%s) from ondeck", deck.TxArray[idx].Tx)
+					deck.TxArray = slices.Delete(deck.TxArray, idx, idx+1)
+				}
+			}
+
+			if len(deck.TxArray) == 0 {
+				o.logger.Debug().Msgf("deck is empty after removing invalid txs, removing from ondeck")
+				delete(o.onDeck, k)
+				if err := o.storage.RemoveTx(deck, k.height); err != nil {
+					o.logger.Error().Err(err).Msg("fail to remove tx from storage")
+				}
+			} else {
+				// Update confirmation required if first item was removed
+				if firstItemRemoved && len(deck.TxArray) > 0 {
+					deck.ConfirmationRequired = k.height - deck.TxArray[0].BlockHeight
+				}
+				if err := o.storage.AddOrUpdateTx(deck); err != nil {
+					o.logger.Error().Err(err).Msg("fail to update tx in storage")
+				}
+			}
+		}
 	}
 }
 
-func (o *Observer) sendToQuorumChecker(deck *types.TxIn, finalised bool) {
-	txs, err := o.getThorchainTxIns(deck, finalised)
+func (o *Observer) sendToQuorumChecker(deck *types.TxIn, finalised bool, finaliseHeight int64) []int {
+	txs, invalidIndices, err := o.getThorchainTxIns(deck, finalised, finaliseHeight)
 	if err != nil {
 		o.logger.Error().Err(err).Msg("fail to convert txin to thorchain txins")
-		return
+		return nil
 	}
 
 	if len(txs) == 0 {
-		// no tx to send
-		return
+		// no tx to send, but return invalid indices so they can be cleaned up
+		return invalidIndices
 	}
 
 	inbound, outbound, err := o.thorchainBridge.GetInboundOutbound(txs)
 	if err != nil {
 		o.logger.Error().Err(err).Msg("fail to get inbound and outbound txs")
-		return
+		return invalidIndices
 	}
 
 	for _, tx := range inbound {
@@ -298,15 +452,54 @@ func (o *Observer) sendToQuorumChecker(deck *types.TxIn, finalised bool) {
 			o.logger.Err(err).Msg("fail to send outbound tx to thorchain")
 		}
 	}
+
+	return invalidIndices
 }
 
 func (o *Observer) processTxIns() {
+	// Create a worker pool with a reasonable number of workers
+	// We can use runtime.NumCPU() to get the number of available CPUs
+	// but let's limit the workers to avoid overwhelming the system
+
+	// Create a semaphore to limit concurrency
+	sem := make(chan struct{}, o.observerWorkers)
+
 	for {
 		select {
 		case <-o.stopChan:
+			// Wait for any running goroutines to complete
+			for range o.observerWorkers {
+				sem <- struct{}{}
+			}
 			return
 		case txIn := <-o.globalTxsQueue:
-			o.processObservedTx(txIn)
+			o.lastNodeStatusMu.RLock()
+			lastNodeStatus := o.lastNodeStatus
+			o.lastNodeStatusMu.RUnlock()
+
+			if lastNodeStatus != stypes.NodeStatus_Active {
+				continue
+			}
+
+			// Check if there are any items to process
+			if len(txIn.TxArray) == 0 {
+				continue
+			}
+
+			// Acquire a token from semaphore
+			sem <- struct{}{}
+
+			// Process observed tx in a goroutine
+			go func(tx types.TxIn) {
+				defer func() {
+					// Release the token back to semaphore when done
+					<-sem
+				}()
+
+				start := time.Now()
+				o.processObservedTx(tx)
+				o.logger.Debug().Msgf("processObservedTx took %s", time.Since(start))
+			}(txIn)
 		}
 	}
 }
@@ -317,30 +510,45 @@ func (o *Observer) processObservedTx(txIn types.TxIn) {
 	if len(txIn.TxArray) == 0 {
 		return
 	}
+
+	// Create a new slice for filtered transactions
+	var filteredTxArray []*types.TxInItem
+
+	// Check if we need to filter the incoming transactions
+	if !txIn.Filtered {
+		filterStart := time.Now()
+		// First, get a read lock to check existing transactions
+		// Filter without modifying shared state
+		filteredTxArray = o.filterObservations(txIn.Chain, txIn.TxArray, txIn.MemPool)
+		if len(filteredTxArray) == 0 {
+			o.logger.Debug().Msgf("txin is empty after filtering, ignore it")
+			return
+		}
+
+		// Set the filtered flag and update TxArray
+		txIn.TxArray = filteredTxArray
+		txIn.Filtered = true
+
+		// If we're creating a new deck entry, set the confirmation required
+		chainClient, err := o.getChain(txIn.Chain)
+		if err == nil {
+			txIn.ConfirmationRequired = chainClient.GetConfirmationCount(txIn)
+		} else {
+			o.logger.Error().Err(err).Msg("fail to get chain client for confirmation count")
+		}
+		o.logger.Debug().Msgf("filterObservations took %s", time.Since(filterStart))
+	}
+
+	k := TxInKey(&txIn)
+
+	// Now acquire a write lock for modifying the onDeck slice
 	o.lock.Lock()
 	defer o.lock.Unlock()
-	found := false
-	for _, in := range o.onDeck {
-		if in.Chain != txIn.Chain {
-			continue
-		}
-		if in.MemPool != txIn.MemPool {
-			continue
-		}
-		if len(in.TxArray) > 0 && len(txIn.TxArray) > 0 {
-			if in.TxArray[0].BlockHeight != txIn.TxArray[0].BlockHeight {
-				continue
-			}
-		}
-		if !txIn.Filtered {
-			// onDeck txs are already filtered, so we can safely assume we are merging non-filtered txs into filtered txs
-			txIn.TxArray = o.filterObservations(txIn.Chain, txIn.TxArray, txIn.MemPool)
-			if len(txIn.TxArray) == 0 {
-				o.logger.Debug().Msgf("txin is empty after filtering for existing, ignore it")
-				return
-			}
-		}
-		// dedupe incoming txs
+
+	in, ok := o.onDeck[k]
+	if ok {
+		// tx is already in the onDeck, dedupe incoming txs
+		dedupeStart := time.Now()
 		var newTxs []*types.TxInItem
 		for _, txInItem := range txIn.TxArray {
 			foundTx := false
@@ -365,29 +573,25 @@ func (o *Observer) processObservedTx(txIn types.TxIn) {
 				newTxs = append(newTxs, txInItem)
 			}
 		}
+		o.logger.Debug().Msgf("Dedupe took %s", time.Since(dedupeStart))
 		if len(newTxs) > 0 {
 			in.TxArray = append(in.TxArray, newTxs...)
+			setDeckStart := time.Now()
+			if err := o.storage.AddOrUpdateTx(in); err != nil {
+				o.logger.Error().Err(err).Msg("fail to add tx to storage")
+			}
+			o.logger.Debug().Msgf("AddOrUpdateTx existing took %s", time.Since(setDeckStart))
 		}
 
-		found = true
-		break
+		return
 	}
-	if !found {
-		if !txIn.Filtered {
-			txIn.TxArray = o.filterObservations(txIn.Chain, txIn.TxArray, txIn.MemPool)
-			if len(txIn.TxArray) == 0 {
-				o.logger.Debug().Msgf("txin is empty after filtering for new, ignore it")
-				return
-			}
-			txIn.ConfirmationRequired = o.chains[txIn.Chain].GetConfirmationCount(txIn)
-			txIn.Filtered = true
-		}
-		// only append filtered txs
-		o.onDeck = append(o.onDeck, &txIn)
+	o.onDeck[k] = &txIn
+
+	setDeckStart := time.Now()
+	if err := o.storage.AddOrUpdateTx(&txIn); err != nil {
+		o.logger.Error().Err(err).Msg("fail to add tx to storage")
 	}
-	if err := o.storage.SetOnDeckTxs(o.onDeck); err != nil {
-		o.logger.Err(err).Msg("fail to save ondeck tx")
-	}
+	o.logger.Debug().Msgf("AddOrUpdateTx new took %s", time.Since(setDeckStart))
 }
 
 func (o *Observer) filterObservations(chain common.Chain, items []*types.TxInItem, memPool bool) []*types.TxInItem {
@@ -405,7 +609,10 @@ func (o *Observer) filterObservations(chain common.Chain, items []*types.TxInIte
 			isInternal = true
 
 			// skip the outbound observation if we signed and manually observed
-			if !o.signedTxOutCache.Contains(tx.Tx) {
+			o.signedTxOutCacheMu.Lock()
+			hasSigned := o.signedTxOutCache.Contains(tx.Tx)
+			o.signedTxOutCacheMu.Unlock()
+			if !hasSigned {
 				txs = append(txs, tx)
 			}
 		}
@@ -453,94 +660,63 @@ func (o *Observer) processErrataTx(ctx context.Context) {
 func (o *Observer) filterErrataTx(block types.ErrataBlock) {
 	o.lock.Lock()
 	defer o.lock.Unlock()
+BlockLoop:
 	for _, tx := range block.Txs {
-		for deckIdx, txIn := range o.onDeck {
-			idx := -1
+		for k, txIn := range o.onDeck {
 			for i, item := range txIn.TxArray {
 				if item.Tx == tx.TxID.String() {
-					idx = i
-					break
-				}
-			}
-			if idx != -1 {
-				o.logger.Info().Msgf("drop tx (%s) from ondeck memory due to errata", tx.TxID)
-				o.onDeck[deckIdx].TxArray = append(txIn.TxArray[:idx], txIn.TxArray[idx+1:]...) // nolint
-				if len(o.onDeck[deckIdx].TxArray) == 0 {
-					o.logger.Info().Msgf("ondeck tx is empty, remove it from ondeck")
-					o.onDeck = append(o.onDeck[:deckIdx], o.onDeck[deckIdx+1:]...)
+					o.logger.Info().Msgf("drop tx (%s) from ondeck memory due to errata", tx.TxID)
+					txIn.TxArray = append(txIn.TxArray[:i], txIn.TxArray[i+1:]...) // nolint
+					if len(txIn.TxArray) == 0 {
+						o.logger.Info().Msgf("ondeck tx is empty, remove it from ondeck")
+						delete(o.onDeck, k)
+						if err := o.storage.RemoveTx(txIn, block.Height); err != nil {
+							o.logger.Error().Err(err).Msg("fail to remove tx from storage")
+						}
+					} else {
+						if i == 0 {
+							// update block confirmation count
+							txIn.ConfirmationRequired = k.height - txIn.TxArray[0].BlockHeight
+						}
+						if err := o.storage.AddOrUpdateTx(txIn); err != nil {
+							o.logger.Error().Err(err).Msg("fail to update tx in storage")
+						}
+					}
+					break BlockLoop
 				}
 			}
 		}
-	}
-}
-
-// getSaversMemo returns an add or withdraw memo for a Savers Vault
-// If the tx is not a valid savers tx, an empty string will be returned
-// Savers tx criteria:
-// - Inbound amount must be gas asset
-// - Inbound amount must be greater than the Dust Threshold of the tx chain (see chain.DustThreshold())
-func (o *Observer) getSaversMemo(chain common.Chain, tx *types.TxInItem) string {
-	// Savers txs should have one Coin input
-	if len(tx.Coins) != 1 {
-		return ""
-	}
-
-	txAmt := tx.Coins[0].Amount
-	dustThreshold := chain.DustThreshold()
-
-	// Below dust threshold, ignore
-	if txAmt.LT(dustThreshold) {
-		return ""
-	}
-
-	asset := tx.Coins[0].Asset
-	synthAsset := asset.GetSyntheticAsset()
-	bps := txAmt.Sub(dustThreshold)
-
-	switch {
-	case bps.IsZero():
-		// Amount is too low, ignore
-		return ""
-	case bps.LTE(cosmos.NewUint(10_000)):
-		// Amount is within or includes dustThreshold + 10_000, generate withdraw memo
-		return fmt.Sprintf("-:%s:%s", synthAsset.String(), bps.String())
-	default:
-		// Amount is above dustThreshold + 10_000, generate add memo
-		return fmt.Sprintf("+:%s", synthAsset.String())
 	}
 }
 
 // getThorchainTxIns convert to the type thorchain expected
 // maybe in later THORNode can just refactor this to use the type in thorchain
-func (o *Observer) getThorchainTxIns(txIn *types.TxIn, finalized bool) (common.ObservedTxs, error) {
+func (o *Observer) getThorchainTxIns(txIn *types.TxIn, finalized bool, finaliseHeight int64) (common.ObservedTxs, []int, error) {
 	obsTxs := make(common.ObservedTxs, 0, len(txIn.TxArray))
+	invalidIndices := make([]int, 0)
 	o.logger.Debug().Msgf("len %d", len(txIn.TxArray))
-	for _, item := range txIn.TxArray {
+	for i, item := range txIn.TxArray {
 		if item.CommittedUnFinalised && !finalized {
 			// we have already committed this tx in the un-finalized state,
 			// and the tx is not yet final, so we should not send it again.
 			continue
 		}
+		isInvalid := false
 		if item.Coins.IsEmpty() {
 			o.logger.Info().Msgf("item(%+v) , coins are empty , so ignore", item)
-			continue
+			isInvalid = true
 		}
 		if len([]byte(item.Memo)) > constants.MaxMemoSize {
 			o.logger.Info().Msgf("tx (%s) memo (%s) too long", item.Tx, item.Memo)
-			continue
-		}
-
-		// If memo is empty, see if it is a memo-less savers add or withdraw
-		if strings.EqualFold(item.Memo, "") {
-			memo := o.getSaversMemo(txIn.Chain, item)
-			if !strings.EqualFold(memo, "") {
-				o.logger.Info().Str("memo", memo).Str("txId", item.Tx).Msg("created savers memo")
-				item.Memo = memo
-			}
+			isInvalid = true
 		}
 
 		if len(item.To) == 0 {
 			o.logger.Info().Msgf("tx (%s) to address is empty,ignore it", item.Tx)
+			isInvalid = true
+		}
+		if isInvalid {
+			invalidIndices = append(invalidIndices, i)
 			continue
 		}
 		o.logger.Debug().Str("tx-hash", item.Tx).Msg("txInItem")
@@ -549,6 +725,7 @@ func (o *Observer) getThorchainTxIns(txIn *types.TxIn, finalized bool) (common.O
 		if err != nil {
 			o.errCounter.WithLabelValues("fail_to_parse_tx_hash", blockHeight).Inc()
 			o.logger.Err(err).Msgf("fail to parse tx hash, %s is invalid", item.Tx)
+			invalidIndices = append(invalidIndices, i)
 			continue
 		}
 		sender, err := common.NewAddress(item.Sender)
@@ -556,6 +733,7 @@ func (o *Observer) getThorchainTxIns(txIn *types.TxIn, finalized bool) (common.O
 			o.errCounter.WithLabelValues("fail_to_parse_sender", item.Sender).Inc()
 			// log the error , and ignore the transaction, since the address is not valid
 			o.logger.Err(err).Msgf("fail to parse sender, %s is invalid sender address", item.Sender)
+			invalidIndices = append(invalidIndices, i)
 			continue
 		}
 
@@ -563,6 +741,7 @@ func (o *Observer) getThorchainTxIns(txIn *types.TxIn, finalized bool) (common.O
 		if err != nil {
 			o.errCounter.WithLabelValues("fail_to_parse_to", item.To).Inc()
 			o.logger.Err(err).Msgf("fail to parse to, %s is invalid to address", item.To)
+			invalidIndices = append(invalidIndices, i)
 			continue
 		}
 
@@ -572,22 +751,23 @@ func (o *Observer) getThorchainTxIns(txIn *types.TxIn, finalized bool) (common.O
 		if err != nil {
 			o.errCounter.WithLabelValues("fail to parse observed pool address", item.ObservedVaultPubKey.String()).Inc()
 			o.logger.Err(err).Msgf("fail to parse observed pool address: %s", item.ObservedVaultPubKey.String())
+			invalidIndices = append(invalidIndices, i)
 			continue
 		}
 		height := item.BlockHeight
 		if finalized {
-			height += txIn.ConfirmationRequired
+			height = finaliseHeight
 		}
 		// Strip out any empty Coin from Coins and Gas, as even one empty Coin will make a MsgObservedTxIn for instance fail validation.
 		tx := common.NewTx(txID, sender, to, item.Coins.NoneEmpty(), item.Gas.NoneEmpty(), item.Memo)
-		obsTx := common.NewObservedTx(tx, height, item.ObservedVaultPubKey, item.BlockHeight+txIn.ConfirmationRequired)
+		obsTx := common.NewObservedTx(tx, height, item.ObservedVaultPubKey, finaliseHeight)
 		obsTx.KeysignMs = o.tssKeysignMetricMgr.GetTssKeysignMetric(item.Tx)
 		obsTx.Aggregator = item.Aggregator
 		obsTx.AggregatorTarget = item.AggregatorTarget
 		obsTx.AggregatorTargetLimit = item.AggregatorTargetLimit
 		obsTxs = append(obsTxs, obsTx)
 	}
-	return obsTxs, nil
+	return obsTxs, invalidIndices, nil
 }
 
 func (o *Observer) processSolvencyQueue(ctx context.Context) {
@@ -633,10 +813,31 @@ func (o *Observer) processNetworkFeeQueue(ctx context.Context) {
 	}
 }
 
+func (o *Observer) processPriceFeedQueue(ctx context.Context) {
+	for {
+		select {
+		case <-o.stopChan:
+			return
+		case priceFeed := <-o.globalPriceFeedQueue:
+			if err := priceFeed.Valid(); err != nil {
+				o.logger.Warn().Err(err).Msg("invalid price feed")
+				continue
+			}
+			if err := o.attestationGossip.AttestPriceFeed(ctx, priceFeed); err != nil {
+				if err.Error() != "skipping attest price feed: not active" {
+					o.logger.Err(err).Msg("fail to send price feed")
+				}
+			}
+		}
+	}
+}
+
 // Stop the observer
 func (o *Observer) Stop() error {
 	o.logger.Debug().Msg("request to stop observer")
 	defer o.logger.Debug().Msg("observer stopped")
+
+	o.oracle.Stop()
 
 	for _, chain := range o.chains {
 		chain.Stop()
@@ -649,5 +850,80 @@ func (o *Observer) Stop() error {
 	if err := o.storage.Close(); err != nil {
 		o.logger.Err(err).Msg("fail to close observer storage")
 	}
+
 	return o.m.Stop()
+}
+
+func (o *Observer) processOracle() {
+	updateInterval, haltOracle := o.getOracleMimirs()
+
+	go func() {
+		ticker := time.NewTicker(updateInterval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-o.stopChan:
+				return
+			case <-ticker.C:
+				if !haltOracle {
+					prices, version := o.oracle.GetPrices()
+					if len(prices) == 0 {
+						continue
+					}
+
+					pf := common.PriceFeed{
+						Version: version,
+						Time:    time.Now().UnixMilli(),
+						Rates:   prices,
+					}
+
+					o.globalPriceFeedQueue <- pf
+				}
+
+				var newInterval time.Duration
+				newInterval, haltOracle = o.getOracleMimirs()
+				if newInterval != updateInterval {
+					updateInterval = newInterval
+					ticker.Stop()
+					ticker = time.NewTicker(updateInterval)
+				}
+			}
+		}
+	}()
+}
+
+func (o *Observer) getOracleMimirs() (time.Duration, bool) {
+	interval := defaultOracleUpdateInterval
+	halt := false
+
+	mimirs := []constants.ConstantName{
+		constants.HaltOracle,
+		constants.OracleUpdateInterval,
+	}
+
+	for _, mimir := range mimirs {
+		value, err := o.thorchainBridge.GetMimir(mimir.String())
+		if err != nil {
+			o.logger.
+				Warn().
+				Err(err).
+				Msgf("fail to get mimir: %s", mimir.String())
+			continue
+		}
+
+		if value <= 0 {
+			continue
+		}
+
+		switch mimir {
+		case constants.HaltOracle:
+			halt = true
+		case constants.OracleUpdateInterval:
+			interval = time.Duration(value) * time.Millisecond
+		default:
+		}
+	}
+
+	return interval, halt
 }

@@ -2,75 +2,83 @@
 
 - [Introduction](README.md)
 
-  - [FAQs](./technical-faq.md)
-  - [Swap Guide](swap-guide/quickstart-guide.md)
-  - [Quickstart Guide](swap-guide/quickstart-guide.md)
+  - [FAQs](technical-faq.md)
+
+- [Swap Guide](swap-guide/quickstart-guide.md)
+
+  - [Memoless Swaps](swap-guide/memoless-swaps.md)
+  - [Advanced Swap Queue](swap-guide/advanced-swap-queue.md)
   - [Fees and Wait Times](swap-guide/fees-and-wait-times.md)
-  - [Streaming Swaps](swap-guide/streaming-swaps.md)
-
-- [Lending](lending/quick-start-guide.md)
-
-  - [Quick Start Guide](lending/quick-start-guide.md)
-
-- [Saving Guide](saving-guide/quickstart-guide.md)
-
-  - [Quickstart Guide](saving-guide/quickstart-guide.md)
-  - [Fees and Wait Times](saving-guide/fees-and-wait-times.md)
 
 - [Affiliate Guide](affiliate-guide/thorname-guide.md)
 
-  - [THORName Guide](affiliate-guide/thorname-guide.md)
   - [Affiliate Guide](affiliate-guide/affiliate-fee-guide.md)
 
-- [Examples](examples/tutorials.md)
+- [Using THORChain](concepts/connecting-to-thorchain.md)
 
-  - [TypeScript (Web)](examples/typescript-web/README.md)
-    - [Overview](examples/typescript-web/overview.md)
-    - [Query Package](examples/typescript-web/query-package.md)
-    - [AMM Package](examples/typescript-web/amm-package.md)
-    - [Client Packages](examples/typescript-web/client-packages.md)
-    - [Packages Breakdown](examples/typescript-web/packages-breakdown.md)
-    - [Coding Guide](examples/typescript-web/coding-guide.md)
-
-- [Concepts](concepts/connecting-to-thorchain.md)
-
-  - [Connecting to THORChain](concepts/connecting-to-thorchain.md)
   - [Querying THORChain](concepts/querying-thorchain.md)
+  - [Sending Transactions](concepts/sending-transactions.md)
   - [Transaction Memos](concepts/memos.md)
+  - [Swap Queue Monitoring](concepts/swap-queue-monitoring.md)
+  - [Quote Examples](examples/tutorials.md)
   - [Asset Notation](concepts/asset-notation.md)
   - [Memo Length Reduction](concepts/memo-length-reduction.md)
-  - [Swapper Clout](./concepts/swapper-clout.md)
-  - [Trade Accounts](./concepts/trade-accounts.md)
-  - [Secured Assets](./concepts/secured-assets.md)
-  - [RUNE Pool](./concepts/rune-pool.md)
-  - [Incentive Pendulum](./concepts/incentive-pendulum.md)
+
+- [Feature Guide](concepts/feature-guide.md)
+
+  - [TCY Guide](concepts/tcy.md)
+  - [Streaming Swaps](swap-guide/streaming-swaps.md)
+  - [Trade Accounts](concepts/trade-accounts.md)
+  - [Secured Assets](concepts/secured-assets.md)
+  - [RUNE Pool](concepts/rune-pool.md)
+  - [Swapper Clout](concepts/swapper-clout.md)
+
+- [Bifrost](bifrost/how-bifrost-works.md)
+
+  - [Vault Behaviors](bifrost/vault-behaviors.md)
+  - [Oracles](bifrost/oracle.md)
+  - [TSS](bifrost/tss.md)
+
+- [Chain Clients](chain-clients/README.md)
+
+  - [UTXO](chain-clients/utxo.md)
+  - [EVM Chains](chain-clients/evm.md)
+  - [BFT Chains](chain-clients/bft.md)
+  - [ERC20 Tokens](chain-clients/token-lists.md)
+
+- [Adding New Chains](new-chains/readme.md)
+
+  - [Evaluating New Chains](new-chains/evaluating-new-chains.md)
+  - [New Process Chains](new-chains/new-chain-process.md)
+  - [Chain Client Implementation Guide](new-chains/implementation-guide.md)
+
+- [Protocol Mechanics](concepts/protocol-mechanics.md)
+
+  - [Economic Model](concepts/economic-model.md)
+  - [Incentive Pendulum](concepts/incentive-pendulum.md)
   - [Network Halts](concepts/network-halts.md)
+  - [Constants and Mimirs](mimir.md)
   - [Fees](concepts/fees.md)
   - [Delays](concepts/delays.md)
-  - [Sending Transactions](concepts/sending-transactions.md)
-  - [Code Libraries](concepts/code-libraries.md)
+
+- [Internals & Math](concepts/code-libraries.md)
+
   - [Math](concepts/math.md)
 
 - [Aggregators](aggregators/aggregator-overview.md)
 
-  - [Aggregator Overview](aggregators/aggregator-overview.md)
   - [Memos](aggregators/memos.md)
   - [EVM Implementation](aggregators/evm-implementation.md)
 
 - [CLI](cli/overview.md)
 
-  - [Overview](cli/overview.md)
   - [Multisig](cli/multisig.md)
   - [Offline Ledger Support](cli/offline-ledger-support.md)
 
 - [THORNode](release.md)
 
-  - [Release Process](release.md)
   - [EVM Whitelist Procedure](evm_whitelist_procedure.md)
   - [Upgrade Router](upgrade_router.md)
-  - [Mimir Abilities](mimir.md)
-  - [How to add a new chain](newchain.md)
-  - [New Chain Integrations](chains/README.md)
   - [Architecture Decision Records (ADR)](architecture/README.md)
     - [ADR Creation Process](architecture/PROCESS.md)
     - [ADR {ADR-NUMBER}: {TITLE}](architecture/TEMPLATE.md)
@@ -93,11 +101,19 @@
     - [ADR 017: Burn System Income Lever](architecture/adr-017-burn-system-income-lever.md)
     - [ADR 018: Core Protocol Sustainability](architecture/adr-018-core-protocol-sustainability.md)
     - [ADR 019: AutoBond](architecture/adr-019-auto-bond.md)
+    - [ADR 021: Marketing Fund Allocation](architecture/ADR-021-marketing-fund-allocation.md)
 
-- [Protocol Development](protocol-development/adding-new-chains.md)
-  - [Adding New Chains](protocol-development/adding-new-chains.md)
-  - [Chain Clients](protocol-development/chain-clients/README.md)
-    - [UTXO](protocol-development/chain-clients/utxo.md)
-    - [EVM Chains](protocol-development/chain-clients/evm-chains.md)
-    - [BFT Chains](protocol-development/chain-clients/bft-chains.md)
-  - [ERC20 Tokens](protocol-development/erc20-tokens.md)
+- [Archived](archived/archived.md)
+
+  - [TypeScript (Web)](examples/typescript-web/README.md)
+
+    - [Overview](examples/typescript-web/overview.md)
+    - [Query Package](examples/typescript-web/query-package.md)
+    - [AMM Package](examples/typescript-web/amm-package.md)
+    - [Client Packages](examples/typescript-web/client-packages.md)
+    - [Packages Breakdown](examples/typescript-web/packages-breakdown.md)
+    - [Coding Guide](examples/typescript-web/coding-guide.md)
+
+  - [Saving Guide](archived/saving-guide/quickstart-guide.md)
+    - [Fees and Wait Times](archived/saving-guide/fees-and-wait-times.md)
+  - [Lending](archived/lending/quick-start-guide.md)

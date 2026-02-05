@@ -105,6 +105,16 @@ func (tKeySign *EDDSAKeySign) SignMessage(msgsToSign [][]byte, localStateItem st
 	endCh := make(chan tsslibcommon.SignatureData, len(partiesID)*len(msgsToSign))
 	errCh := make(chan struct{})
 
+	// Compute invariants once before the loop
+	ctx := tss.NewPeerContext(partiesID)
+
+	// Unmarshal localData once - it's the same for all messages
+	var localData eddsakeygen.LocalPartySaveData
+	err = json.Unmarshal(localStateItem.LocalData, &localData)
+	if err != nil {
+		return nil, fmt.Errorf("fail to unmarshal the local saved data %w", err)
+	}
+
 	keySignPartyMap := new(sync.Map)
 
 	for i, val := range msgsToSign {
@@ -113,18 +123,13 @@ func (tKeySign *EDDSAKeySign) SignMessage(msgsToSign [][]byte, localStateItem st
 			return nil, fmt.Errorf("fail to convert msg to hash int: %w", err)
 		}
 		moniker := m.String() + ":" + strconv.Itoa(i)
-		partiesID, eachLocalPartyID, err := conversion.GetParties(parties, localStateItem.LocalPartyKey)
-		ctx := tss.NewPeerContext(partiesID)
-		if err != nil {
-			return nil, fmt.Errorf("error to create parties in batch signging %w", err)
-		}
-		eachLocalPartyID.Moniker = moniker
+
+		// Create a copy of localPartyID for this iteration
+		// needed because we modify the Moniker field for each message
+		eachLocalPartyID := tss.NewPartyID(localPartyID.Id, moniker, localPartyID.KeyInt())
+		eachLocalPartyID.Index = localPartyID.Index // Set the index from the local party ID
+
 		params := tss.NewParameters(tss.Edwards(), ctx, eachLocalPartyID, len(partiesID), threshold)
-		var localData eddsakeygen.LocalPartySaveData
-		err = json.Unmarshal(localStateItem.LocalData, &localData)
-		if err != nil {
-			return nil, fmt.Errorf("fail to unmarshal the local saved data %w", err)
-		}
 		keySignParty := signing.NewLocalParty(m, params, localData, outCh, endCh)
 		keySignPartyMap.Store(moniker, keySignParty)
 	}
@@ -265,7 +270,7 @@ func (tKeySign *EDDSAKeySign) processKeySign(reqNum int, errChan chan struct{}, 
 				return nil, err
 			}
 
-		//nolint
+		// nolint
 		case msg := <-endCh:
 			signatures = append(signatures, &msg)
 			if len(signatures) == reqNum {

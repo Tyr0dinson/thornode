@@ -120,8 +120,8 @@ func (s *SolTestSuite) SetUpSuite(c *C) {
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		switch req.RequestURI {
 		case thorclient.ChainVersionEndpoint:
-			_, err := rw.Write([]byte(`{"current":"` + types2.GetCurrentVersion().String() + `"}`))
-			c.Assert(err, IsNil)
+			_, writeErr := rw.Write([]byte(`{"current":"` + types2.GetCurrentVersion().String() + `"}`))
+			c.Assert(writeErr, IsNil)
 		case thorclient.PubKeysEndpoint:
 			content := fmt.Sprintf(`{
   "asgard": [
@@ -136,8 +136,8 @@ func (s *SolTestSuite) SetUpSuite(c *C) {
 			}
 			// httpTestHandler(c, rw, "../../../../test/fixtures/endpoints/vaults/pubKeys.json")
 		default:
-			body, err := io.ReadAll(req.Body)
-			c.Assert(err, IsNil)
+			body, readErr := io.ReadAll(req.Body)
+			c.Assert(readErr, IsNil)
 			type RPCRequest struct {
 				JSONRPC string          `json:"jsonrpc"`
 				ID      interface{}     `json:"id"`
@@ -191,7 +191,7 @@ func (s *SolTestSuite) TestCreateAndSerializeTx(c *C) {
 	e.solScanner.recentBlockHash = "asdfasdf"
 
 	// Create TX
-	tx, err := e.CreateTx(stypes.TxOutItem{
+	txOutItem := stypes.TxOutItem{
 		Chain:            common.SOLChain,
 		ToAddress:        "D9A6eE2pZ6oSiGb8BPkag4gvAeEhHvc3eEYPBoLSMshG",
 		VaultPubKey:      "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
@@ -204,7 +204,8 @@ func (s *SolTestSuite) TestCreateAndSerializeTx(c *C) {
 		},
 		GasRate: 1,
 		Memo:    "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
-	})
+	}
+	tx, err := e.CreateTx(txOutItem, txOutItem.GetMemo())
 	c.Assert(err, IsNil)
 	c.Assert(tx, NotNil)
 

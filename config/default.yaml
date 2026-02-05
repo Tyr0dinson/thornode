@@ -9,7 +9,8 @@ bifrost:
     compaction_table_size_multiplier: 1
     write_buffer: 4194304
     block_cache_capacity: 8388608
-    compact_on_init: true
+    compact_on_init: false
+  observer_workers: 0
 
   metrics:
     enabled: true
@@ -27,7 +28,9 @@ bifrost:
       - LTC
       - BSC
       - BASE
+      - TRON
       - XRP
+      - NOBLE
       - SOL
   thorchain:
     chain_id: thorchain
@@ -41,8 +44,13 @@ bifrost:
     late_observe_timeout: 5m
     non_quorum_timeout: 10h
     min_time_between_attestations: 30s
-    ask_peers: 3
+    ask_peers: 10
     ask_peers_delay: 5s
+    max_batch_size: 100
+    batch_interval: 2s
+    peer_timeout: 20s
+    peer_concurrent_sends: 4
+    peer_concurrent_receives: 5
   signer:
     backup_keyshares: true
     signer_db_path: /var/data/bifrost/signer_db
@@ -76,6 +84,7 @@ bifrost:
     btc: &default-chain
       disabled: false
       chain_id: BTC
+      cosmos_chain_id: ""
       username: thorchain
       password: password
       http_post_mode: 1
@@ -91,9 +100,12 @@ bifrost:
       max_rpc_retries: 9 # about 1 min
       max_pending_nonces: 0
       authorization_bearer: ""
-      max_gas_tip_percentage: 0
-      token_max_gas_multiplier: 0
-      aggregator_max_gas_multiplier: 0
+      evm:
+        max_gas_tip_percentage: 0
+        token_max_gas_multiplier: 0
+        aggregator_max_gas_multiplier: 0
+        extra_l1_gas_fee: 0
+        reconstruct_liabilities_concurrency: 0
       utxo: &utxo
         block_cache_count: 144
         transaction_batch_size: 500
@@ -105,6 +117,7 @@ bifrost:
         min_sats_per_vbyte: 2
         min_utxo_confirmations: 1
         max_utxos_to_spend: 10
+        max_mempool_ancestors: 25 # BTC/LTC/DOGE limit is 25 (GetMempoolEntry ancestorcount includes the tx itself)
       block_scanner: &default-block-scanner
         max_reorg_rescan_blocks: 72 # 12h
         chain_id: BTC
@@ -129,17 +142,25 @@ bifrost:
         whitelist_tokens: []
         whitelist_cosmos_assets: []
         concurrency: 0
+        prefetch_blocks: 0
         max_gas_limit: 0
         fixed_gas_rate: 0
-        gas_price_resolution: 10_000_000_000 # 10 gwei
-        max_resume_block_lag: 24h
+        gas_price_resolution: 1 # 1 sats/vbyte
+        max_resume_block_lag: 1h
         max_healthy_lag: 30m
         transaction_batch_size: 500
+        reference_address: ""
+        solana:
+          scan_interval: 15s
+          scan_inactive_vaults: false
+          fee_update_interval: 100
+          fee_sample_slots: 10
 
       # the following defaults must be defined to override with environment
       chain_host: ""
       chain_network: ""
       rpc_host: ""
+      api_host: ""
       cosmos_grpc_host: ""
       cosmos_grpc_tls: false
       opt_to_retire: false
@@ -149,9 +170,12 @@ bifrost:
       <<: *default-chain
       chain_id: ETH
       max_pending_nonces: 3
-      max_gas_tip_percentage: 20
-      token_max_gas_multiplier: 3
-      aggregator_max_gas_multiplier: 10
+      evm:
+        max_gas_tip_percentage: 20
+        token_max_gas_multiplier: 3
+        aggregator_max_gas_multiplier: 10
+        extra_l1_gas_fee: 0
+        reconstruct_liabilities_concurrency: 8
       block_scanner:
         <<: *default-block-scanner
         max_reorg_rescan_blocks: 96 # 3 epochs
@@ -160,7 +184,8 @@ bifrost:
         chain_id: ETH
         observation_flexibility_blocks: 20
         max_gas_limit: 100000
-        max_contract_tx_logs: 50
+        max_contract_tx_logs: 200
+        gas_price_resolution: 10 # 10 gwei
       mempool_tx_id_cache_size: 0
       scanner_leveldb: *default-leveldb
 
@@ -169,17 +194,23 @@ bifrost:
       chain_id: BASE
       solvency_blocks: 100
       max_pending_nonces: 3
-      max_gas_tip_percentage: 20
-      token_max_gas_multiplier: 3
-      aggregator_max_gas_multiplier: 10
+      evm:
+        max_gas_tip_percentage: 20
+        token_max_gas_multiplier: 3
+        aggregator_max_gas_multiplier: 10
+        # deteremined as 90th percentile of observed delta across 1 month on 9R nodes
+        extra_l1_gas_fee: 700
+        reconstruct_liabilities_concurrency: 8
       block_scanner:
         <<: *default-block-scanner
         gas_cache_blocks: 40
-        concurrency: 1
+        concurrency: 4
+        prefetch_blocks: 4
         chain_id: BASE
         observation_flexibility_blocks: 20
         max_gas_limit: 100000
-        max_contract_tx_logs: 50
+        max_contract_tx_logs: 200
+        gas_price_resolution: 100 # mwei
         whitelist_tokens:
           - 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913 # USDC
           - 0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf # cbBTC
@@ -189,6 +220,27 @@ bifrost:
           # - 0x0578d8A44db98B23BF096A382e016e29a5Ce0ffe # Higher
           # - 0x1bc0c42215582d5A085795f4baDbaC3ff36d1Bcb # Clanker
           - 0x60a3E35Cc302bFA44Cb288Bc5a4F316Fdb1adb42 # EURC
+          - 0xcbada732173e39521cdbe8bf59a6dc85a9fc7b8c # cbADA
+          - 0xcbd06e5a2b0c65597161de254aa074e489deb510 # cbDOGE
+          - 0xcb17c9db87b595717c857a08468793f5bab6445f # cbLTC
+          - 0xcb585250f852c6c6bf90434ab21a00f02833a4af # cbXRP
+      mempool_tx_id_cache_size: 0
+      scanner_leveldb: *default-leveldb
+
+    tron:
+      <<: *default-chain
+      chain_id: TRON
+      block_scanner:
+        <<: *default-block-scanner
+        chain_id: TRON
+        gas_price_resolution: 100_000
+        observation_flexibility_blocks: 40
+        scan_mempool: false
+        # TCpyVx6RVmrQsE3Xo3epB7y1CdJdCdAwAx is a generated address,
+        # funded with 1 TRX & 1 USDT initially
+        reference_address: "TCpyVx6RVmrQsE3Xo3epB7y1CdJdCdAwAx"
+        whitelist_tokens:
+          - TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t # USDT
       mempool_tx_id_cache_size: 0
       scanner_leveldb: *default-leveldb
 
@@ -197,18 +249,22 @@ bifrost:
       chain_id: AVAX
       solvency_blocks: 100
       max_pending_nonces: 3
-      token_max_gas_multiplier: 3
-      aggregator_max_gas_multiplier: 10
+      evm:
+        token_max_gas_multiplier: 3
+        aggregator_max_gas_multiplier: 10
+        max_gas_tip_percentage: 0
+        extra_l1_gas_fee: 0
+        reconstruct_liabilities_concurrency: 8
       block_scanner:
         <<: *default-block-scanner
         max_reorg_rescan_blocks: 0 # avax has guaranteed finality
         concurrency: 1
         chain_id: AVAX
         gas_cache_blocks: 40
-        gas_price_resolution: 50_000_000_000 # 50 navax
+        gas_price_resolution: 10 # nAvax
         observation_flexibility_blocks: 80
         max_gas_limit: 100000
-        max_contract_tx_logs: 50
+        max_contract_tx_logs: 200
         whitelist_tokens:
           - 0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7 # USDT
           - 0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E # USDC
@@ -224,18 +280,23 @@ bifrost:
       chain_id: BSC
       solvency_blocks: 100
       max_pending_nonces: 3
-      token_max_gas_multiplier: 3
-      aggregator_max_gas_multiplier: 10
+      evm:
+        token_max_gas_multiplier: 3
+        aggregator_max_gas_multiplier: 10
+        max_gas_tip_percentage: 0
+        extra_l1_gas_fee: 0
+        reconstruct_liabilities_concurrency: 8
       block_scanner:
         <<: *default-block-scanner
         max_reorg_rescan_blocks: 600 # 30m
-        concurrency: 1
+        concurrency: 4
+        prefetch_blocks: 4
         chain_id: BSC
         gas_cache_blocks: 40
-        gas_price_resolution: 10_000_000_000 # 10 gwei
+        gas_price_resolution: 1 # gwei
         observation_flexibility_blocks: 80
         max_gas_limit: 100000
-        max_contract_tx_logs: 50
+        max_contract_tx_logs: 200
         whitelist_tokens:
           - 0x55d398326f99059fF775485246999027B3197955 # Binance Pegged USDT
           - 0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d # Binance Pegged USDC
@@ -248,6 +309,8 @@ bifrost:
           - 0x3EE2200Efb3400fAbB9AacF31297cBdD1d435D47 # Binance Pegged Cardano
           - 0x4B0F1812e5Df2A09796481Ff14017e6005508003 # Trust Wallet Token (TWT)
           - 0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82 # PancakeSwap (CAKE)
+          - 0x53312F85Bba24C8cb99CFFc13BF82420157230d3 # Moca (Moca)
+          - 0x8d0d000ee44948fc98c9b98a4fa4921476f08b0d # World Liberty Financial USD (USD1)
       mempool_tx_id_cache_size: 0
       scanner_leveldb: *default-leveldb
 
@@ -274,10 +337,11 @@ bifrost:
     gaia:
       <<: *default-chain
       chain_id: GAIA
+      cosmos_chain_id: "cosmoshub-4"
       block_scanner:
         <<: *default-block-scanner
         chain_id: GAIA
-        gas_price_resolution: 100_000 # uatom
+        gas_price_resolution: 1_000 # 1,000 uatom
         observation_flexibility_blocks: 40
         whitelist_cosmos_assets:
           - symbol: ATOM
@@ -314,6 +378,28 @@ bifrost:
       mempool_tx_id_cache_size: 0
       scanner_leveldb: *default-leveldb
 
+    noble:
+      <<: *default-chain
+      chain_id: NOBLE
+      cosmos_chain_id: "noble-1"
+      block_scanner:
+        <<: *default-block-scanner
+        chain_id: NOBLE
+        gas_price_resolution: 100_000
+        observation_flexibility_blocks: 40
+        whitelist_cosmos_assets:
+          - symbol: USDC
+            decimals: 6
+            denom: uusdc
+          - symbol: USDY
+            decimals: 18
+            denom: ausdy
+          - symbol: EURE
+            decimals: 6
+            denom: ueure
+      mempool_tx_id_cache_size: 0
+      scanner_leveldb: *default-leveldb
+
     xrp:
       <<: *default-chain
       chain_id: XRP
@@ -321,7 +407,7 @@ bifrost:
       block_scanner:
         <<: *default-block-scanner
         chain_id: XRP
-        gas_price_resolution: 10 # drop
+        gas_price_resolution: 100 # drops
         observation_flexibility_blocks: 40
       mempool_tx_id_cache_size: 0
       scanner_leveldb: *default-leveldb
@@ -335,6 +421,7 @@ bifrost:
         chain_id: LTC
         observation_flexibility_blocks: 3
         gas_cache_blocks: 10
+        gas_price_resolution: 10 # sats/vbyte
         scan_mempool: false
       mempool_tx_id_cache_size: 1_000_000
       scanner_leveldb: *default-leveldb
@@ -361,16 +448,7 @@ bifrost:
         max_sats_per_vbyte: 9765 # backwards compatible with 1e8/10/1024
         min_sats_per_vbyte: 2
         estimated_average_tx_size: 1500
-
-    ada:
-      <<: *default-chain
-      chain_id: ADA
-      block_scanner:
-        <<: *default-block-scanner
-        chain_id: ADA
-      scanner_leveldb: *default-leveldb
-      utxo: *utxo
-      chain_network: 42
+        max_mempool_ancestors: 0 # BCH removed ancestor limits in May 2021
 
     sol:
       <<: *default-chain
@@ -387,8 +465,402 @@ bifrost:
         max_contract_tx_logs: 0
       mempool_tx_id_cache_size: 0
       scanner_leveldb: *default-leveldb
-      solvency_blocks: 100
+      solvency_blocks: 50
 
+    ada:
+      <<: *default-chain
+      disabled: true
+      chain_id: ADA
+      block_scanner:
+        <<: *default-block-scanner
+        block_height_discover_back_off: 1s
+        max_reorg_rescan_blocks: 2500
+        chain_id: ADA
+        observation_flexibility_blocks: 0
+        gas_cache_blocks: 100
+        gas_price_resolution: 1000 # 1000 lovelace
+        max_gas_limit: 0
+        max_contract_tx_logs: 0
+      mempool_tx_id_cache_size: 0
+      scanner_leveldb: *default-leveldb
+      solvency_blocks: 3
+
+  oracle:
+    log_level: info
+    enabled: false
+    detailed_metrics: false
+  providers:
+    binance:
+      name: binance
+      disabled: false
+      polling_interval: 3s
+      api_endpoints:
+        - https://data-api.binance.vision
+      ws_endpoints:
+        - wss://stream.binance.com:9443/ws
+      pairs:
+        - ATOM/USDT
+        - AVAX/USDT
+        - BCH/USDT
+        - BNB/USDT
+        - BTC/USDT
+        - DOGE/USDT
+        - ETH/USDT
+        - LTC/USDT
+        - RUNE/USDT
+        - SOL/USDT
+        - TRX/USDT
+        - USDC/USDT
+        - XRP/USDT
+      symbol_mapping: []
+
+    bitfinex:
+      name: bitfinex
+      disabled: true
+      polling_interval: 3s
+      api_endpoints:
+        - https://api-pub.bitfinex.com
+      ws_endpoints:
+        - wss://api-pub.bitfinex.com/ws/2
+      pairs:
+        - BTC/USD
+        - ETH/USD
+        - USDT/USD
+        - XRP/USDT
+        - DOGE/USD
+      symbol_mapping:
+        - USDT/USD=tUSTUSD
+        - XRP/USDT=tXRPUST
+
+    bitget:
+      name: bitget
+      disabled: false
+      polling_interval: 2s
+      api_endpoints:
+        - https://api.bitget.com
+      ws_endpoints:
+        - wss://ws.bitget.com/v2/ws/public
+      pairs:
+        - AVAX/USDT
+        - BCH/USDT
+        - BNB/USDT
+        - BTC/USDC
+        - BTC/USDT
+        - DOGE/USDT
+        - ETH/USDT
+        - LTC/USDT
+        - RUNE/USDT
+        - SOL/USDT
+        - XRP/USDT
+      symbol_mapping: []
+
+    bitmart:
+      name: bitmart
+      disabled: false
+      polling_interval: 3s
+      api_endpoints:
+        - https://api-cloud.bitmart.com
+      ws_endpoints:
+        - wss://ws-manager-compress.bitmart.com/api?protocol=1.1
+      pairs:
+        - AVAX/USDT
+        - BTC/USDT
+        - ETH/USDT
+        - RUNE/USDT
+      symbol_mapping: []
+
+    bitstamp:
+      name: bitstamp
+      disabled: false
+      polling_interval: 2s
+      api_endpoints:
+        - https://www.bitstamp.net
+      ws_endpoints: []
+      pairs:
+        - BTC/USD
+        - USDC/USD
+        - USDT/USD
+      symbol_mapping: []
+
+    bybit:
+      name: bybit
+      disabled: false
+      polling_interval: 5s
+      api_endpoints:
+        # check https://bybit-exchange.github.io/docs/v5/guide
+        - https://api.bybit.com
+        - https://api.bytick.com
+      ws_endpoints:
+        - wss://stream.bybit.com/v5/public/spot
+      pairs:
+        - ATOM/USDT
+        - AVAX/USDT
+        - BCH/USDT
+        - BNB/USDT
+        - BTC/USDT
+        - DOGE/USDT
+        - ETH/USDT
+        - LTC/USDT
+        - RUNE/USDT
+        - SOL/USDT
+        - TRX/USDT
+        - USDC/USDT
+        - XRP/USDT
+      symbol_mapping: []
+
+    coinbase:
+      name: coinbase
+      disabled: false
+      polling_interval: 10s
+      api_endpoints:
+        - https://api.exchange.coinbase.com
+      ws_endpoints:
+        - wss://ws-feed.exchange.coinbase.com
+      pairs:
+        - ATOM/USD
+        - AVAX/USD
+        - BCH/USD
+        - BTC/USD
+        - DOGE/USD
+        - ETH/USD
+        - LTC/USD
+        - SOL/USD
+        - USDT/USD
+        - XRP/USD
+      symbol_mapping: []
+
+    coinw:
+      name: coinw
+      disabled: false
+      polling_interval: 3s
+      api_endpoints:
+        - https://api.coinw.com
+      ws_endpoints:
+        - wss://ws.futurescw.com
+      pairs:
+        - ATOM/USDT
+        - AVAX/USDT
+        - BCH/USDT
+        - BNB/USDT
+        - BTC/USDT
+        - DOGE/USDT
+        - ETH/USDT
+        - LTC/USDT
+        - SOL/USDT
+        - TRX/USDT
+        - XRP/USDT
+      symbol_mapping: []
+
+    digifinex:
+      name: digifinex
+      disabled: false
+      polling_interval: 3s
+      api_endpoints:
+        - https://openapi.digifinex.com
+      ws_endpoints:
+        - wss://openapi.digifinex.com/ws/v1/
+      pairs:
+        - ATOM/USDT
+        - AVAX/USDT
+        - BNB/USDT
+        - BTC/USDT
+        - DOGE/USDT
+        - ETH/USDT
+        - LTC/USDT
+        - SOL/USDT
+        - TRX/USDT
+      symbol_mapping: []
+
+    crypto:
+      name: crypto
+      disabled: false
+      polling_interval: 3s
+      api_endpoints:
+        - https://api.crypto.com
+      ws_endpoints:
+        - wss://stream.crypto.com/exchange/v1/market
+      pairs:
+        - BTC/USD
+        - ETH/USD
+        - USDT/USD
+        - XRP/USD
+      symbol_mapping: []
+
+    gate:
+      name: gate
+      disabled: false
+      polling_interval: 3s
+      api_endpoints:
+        - https://api.gateio.ws
+      ws_endpoints:
+        - wss://api.gateio.ws/ws/v4/ # slash matters
+      pairs:
+        - ATOM/USDC
+        - BCH/USDT
+        - BNB/USDT
+        - BTC/USDT
+        - DOGE/USDT
+        - ETH/USDT
+        - LTC/USDT
+        - RUNE/USDT
+        - SOL/USDT
+        - TRX/USDT
+        - USDC/USDT
+      symbol_mapping: []
+
+    gemini:
+      name: gemini
+      disabled: false
+      polling_interval: 2s
+      api_endpoints:
+        - https://api.gemini.com
+      ws_endpoints: []
+      pairs:
+        - BTC/USD
+        - ETH/USD
+        - USDC/USD
+        - USDT/USD
+      symbol_mapping: []
+
+    htx:
+      name: htx
+      disabled: false
+      polling_interval: 3s
+      api_endpoints:
+        - https://api.huobi.pro
+        # - https://api-aws.huobi.pro
+      ws_endpoints:
+        - wss://api.huobi.pro/ws
+        # - wss://api-aws.huobi.pro/ws
+      pairs:
+        - ATOM/USDT
+        - AVAX/USDT
+        - BCH/USDT
+        - BNB/USDT
+        - BTC/USDT
+        - ETH/USDT
+        - LTC/USDT
+        - SOL/USDT
+        - TRX/USDT
+        - XRP/USDT
+      symbol_mapping: []
+
+    kraken:
+      name: kraken
+      disabled: false
+      polling_interval: 3s
+      api_endpoints:
+        - https://api.kraken.com
+      ws_endpoints:
+        - wss://ws.kraken.com/v2
+      pairs:
+        - BTC/USD
+        - DOGE/USD
+        - USDC/USDT
+        - USDT/USD
+        - XRP/USD
+      symbol_mapping:
+        - USDT/USD=USDTZUSD
+        - BTC/USD=XXBTZUSD
+        - XRP/USD=XRPZUSD
+        - DOGE/USD=XDGUSD
+
+    kucoin:
+      name: kucoin
+      disabled: false
+      polling_interval: 3s
+      api_endpoints:
+        - https://api.kucoin.com
+      ws_endpoints:
+        - wss://ws-api-spot.kucoin.com
+      pairs:
+        - BCH/USDT
+        - BNB/USDT
+        - DOGE/USDT
+        - LTC/USDT
+        - RUNE/USDT
+        - SOL/USDT
+        - TRX/USDT
+        - XRP/USDT
+      symbol_mapping: []
+
+    lbank:
+      name: lbank
+      disabled: false
+      polling_interval: 3s
+      api_endpoints:
+        - https://api.lbkex.com
+      ws_endpoints:
+        - wss://www.lbkex.net/ws/V2/
+      pairs:
+        - ATOM/USDT
+        - AVAX/USDT
+        - BCH/USDT
+        - BNB/USDT
+        - DOGE/USDT
+        - LTC/USDT
+        - USDC/USDT
+        - SOL/USDT
+        - TRX/USDT
+        - XRP/USDT
+      symbol_mapping: []
+
+    mexc:
+      name: mexc
+      disabled: false
+      polling_interval: 3s
+      api_endpoints:
+        - https://api.mexc.com
+      ws_endpoints: []
+      pairs:
+        - ATOM/USDT
+        - AVAX/USDT
+        - BCH/USDT
+        - BNB/USDT
+        - BTC/USDT
+        - DOGE/USDT
+        - ETH/USDT
+        - LTC/USDT
+        - RUNE/USDT
+        - SOL/USDT
+        - TRX/USDT
+        - USDC/USDT
+        - XRP/USDT
+      symbol_mapping: []
+
+    okx:
+      name: okx
+      disabled: false
+      polling_interval: 3s
+      api_endpoints:
+        - https://www.okx.com
+      ws_endpoints:
+        - wss://ws.okx.com:8443/ws/v5/public
+      pairs:
+        - ATOM/USDT
+        - AVAX/USDT
+        - BCH/USDT
+        - BTC/USDT
+        - DOGE/USDT
+        - ETH/USDT
+        - LTC/USDT
+        - SOL/USDT
+        - TRX/USDT
+        - USDC/USDT
+        - USDT/USD
+        - XRP/USDT
+      symbol_mapping: []
+
+    thorchain:
+      name: thorchain
+      disabled: false
+      polling_interval: 3s
+      api_endpoints:
+        - http://thornode:1317
+      ws_endpoints: []
+      pairs:
+        - RUNE/USD
+      symbol_mapping: []
 
 ########################################################################################
 # Thor
@@ -399,8 +871,16 @@ thor:
   vault_pubkeys_cutoff_blocks: 1_000_000
   seed_nodes_endpoint: https://thornode.ninerealms.com/thorchain/nodes
   stagenet_admin_addresses: "sthor1gdq9qejfy33jctztqdrg5v4hvxnytmvjhduacc" # 9R official stagenet
+  api:
+    quote:
+      recommended_min_amount_fee_multiplier: 3 # the multiplier for calculateMinSwapAmount
+      max_lag: 3m
+    pagination:
+      default_page_size: 100
+      max_page_size: 1000
   telemetry:
     slash_points: false
+    price_per_node: false
 
   log_filter:
     modules:
@@ -443,9 +923,13 @@ thor:
     ebifrost:
       enable: true
       address: 127.0.0.1:50051
+      cache_item_ttl: 30m
     state_sync:
       snapshot_interval: 0
       snapshot_keep_recent: 2
+    wasm:
+      query_gas_limit: 3000000
+      memory_cache_size: 100
   tendermint:
     log:
       level: info

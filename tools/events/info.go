@@ -260,6 +260,19 @@ func Churn(block *thorscan.BlockResponse) {
 				updated = true
 				info.KeyshareBackups[pk][msgTssPool.Signer.String()] = true
 			}
+
+			// track eddsa keyshare backups
+			if len(msgTssPool.KeysharesBackupEddsa) > 1 {
+				pk := string(msgTssPool.PoolPubKeyEddsa)
+				if info.KeyshareBackups == nil {
+					info.KeyshareBackups = make(map[string]map[string]bool)
+				}
+				if info.KeyshareBackups[pk] == nil {
+					info.KeyshareBackups[pk] = make(map[string]bool)
+				}
+				updated = true
+				info.KeyshareBackups[pk][msgTssPool.Signer.String()] = true
+			}
 		}
 	}
 	if updated {
@@ -283,13 +296,26 @@ func Churn(block *thorscan.BlockResponse) {
 					notify.Notify(config.Get().Notifications.Info, title, block.Header.Height, nil, notify.Info, nil)
 				}
 			case thorchain.EventTypeActiveVault: // check for active vault (keygens complete)
+				// extract the keygen height from the TssPool message
+				var msgTssPool *thorchain.MsgTssPool
+				found := false
+				for _, msg := range tx.Tx.GetMsgs() {
+					if m, ok := msg.(*thorchain.MsgTssPool); ok {
+						msgTssPool = m
+						found = true
+					}
+				}
+				if !found {
+					log.Panic().Msg("failed to find tsspool message")
+				}
+
 				if info.State == ChurnStateKeygen {
 					info.State = ChurnStateMigrating
 					err = util.Store("churn", info)
 					if err != nil {
 						log.Panic().Err(err).Msg("failed to save churn state")
 					}
-					notifyChurnStarted(block.Header.Height, info.KeyshareBackups)
+					notifyChurnStarted(block.Header.Height, msgTssPool.Height, info.KeyshareBackups)
 				}
 			default:
 				continue
@@ -321,11 +347,11 @@ func vaultsMigrating(height int64) bool {
 	return network.VaultsMigrating
 }
 
-func notifyChurnStarted(height int64, keyshareBackups map[string]map[string]bool) {
+func notifyChurnStarted(height, keygenHeight int64, keyshareBackups map[string]map[string]bool) {
 	// get nodes at current and previous height
 	oldNodes := []openapi.Node{}
 	newNodes := []openapi.Node{}
-	err := util.ThornodeCachedRetryGet("thorchain/nodes", height-1, &oldNodes)
+	err := util.ThornodeCachedRetryGet("thorchain/nodes", keygenHeight, &oldNodes)
 	if err != nil {
 		log.Panic().Err(err).Int64("height", height-1).Msg("failed to get old nodes")
 	}
@@ -416,6 +442,38 @@ func notifyChurnStarted(height int64, keyshareBackups map[string]map[string]bool
 		standbyNodes = append(standbyNodes, fmt.Sprintf("`%s` (oldest)", oldest.NodeAddress[len(oldest.NodeAddress)-4:]))
 	}
 
+	// find leaving nodes
+	if len(removed) > 0 {
+		newRemoved := []openapi.Node{}
+		for i, node := range removed {
+			if node.RequestedToLeave {
+				standbyNodes = append(standbyNodes, fmt.Sprintf("`%s` (leave)", node.NodeAddress[len(node.NodeAddress)-4:]))
+			} else {
+				newRemoved = append(newRemoved, removed[i])
+			}
+		}
+		removed = newRemoved
+	}
+
+	// find missing nodes
+	if len(removed) > 0 {
+		mimir := map[string]int64{}
+		err = util.ThornodeCachedRetryGet("thorchain/mimir", keygenHeight, &mimir)
+		if err != nil {
+			log.Panic().Err(err).Msg("failed to get mimirs")
+		}
+		maxMissing := mimir["MISSINGBLOCKCHURNOUT"]
+		newRemoved := []openapi.Node{}
+		for i, node := range removed {
+			if node.MissingBlocks > maxMissing {
+				standbyNodes = append(standbyNodes, fmt.Sprintf("`%s` (missing)", node.NodeAddress[len(node.NodeAddress)-4:]))
+			} else {
+				newRemoved = append(newRemoved, removed[i])
+			}
+		}
+		removed = newRemoved
+	}
+
 	title := "Churn Started"
 
 	// compute the keyshare backups counts for new vault members
@@ -429,12 +487,23 @@ func notifyChurnStarted(height int64, keyshareBackups map[string]map[string]bool
 		if vault.Status != types.VaultStatus_ActiveVault.String() {
 			continue
 		}
+		if vault.PubKey == nil || vault.PubKeyEddsa == nil {
+			continue
+		}
 		pk := *vault.PubKey
+		eddsaPk := *vault.PubKeyEddsa
 		keyshareBackupLines = append(keyshareBackupLines,
 			fmt.Sprintf(
-				"`%s`: %d/%d (%.2f%%)",
+				"`%s` (ECDSA): %d/%d (%.2f%%)",
 				pk[len(pk)-4:], len(keyshareBackups[pk]), len(vault.Membership),
 				100*float64(len(keyshareBackups[pk]))/float64(len(vault.Membership)),
+			),
+		)
+		keyshareBackupLines = append(keyshareBackupLines,
+			fmt.Sprintf(
+				"`%s` (EDDSA): %d/%d (%.2f%%)",
+				eddsaPk[len(eddsaPk)-4:], len(keyshareBackups[eddsaPk]), len(vault.Membership),
+				100*float64(len(keyshareBackups[eddsaPk]))/float64(len(vault.Membership)),
 			),
 		)
 	}
@@ -535,6 +604,11 @@ func formatNodeMimirMessage(height int64, node, key, value string) (string, *uti
 	var previous *int64
 	votes := make(map[int64]int64)
 	for _, mimir := range mimirs.Mimirs {
+		// skip if key or signer is nil
+		if mimir.Key == nil || mimir.Signer == nil {
+			continue
+		}
+
 		// skip votes that are not this key
 		if *mimir.Key != key {
 			continue
@@ -703,8 +777,13 @@ func UpgradeProposalAndApproval(block *thorscan.BlockResponse) {
 				}
 				lines = []string{fmt.Sprintf("```yaml\n%s\n```", yamlInfo)}
 
-			case "approve_upgrade":
-				title = fmt.Sprintf("Upgrade Approved: `%s`", event["name"])
+			case "approve_upgrade", "reject_upgrade":
+				action := "Approved"
+				if event["type"] == "reject_upgrade" {
+					action = "Rejected"
+					level = notify.Warning
+				}
+				title = fmt.Sprintf("Upgrade %s: `%s`", action, event["name"])
 
 				// fetch proposal stats
 				proposal := openapi.UpgradeProposal{}
@@ -727,6 +806,7 @@ func UpgradeProposalAndApproval(block *thorscan.BlockResponse) {
 				}
 				fields.Set("Approval Percent", fmt.Sprintf("%.1f%%", percent))
 				fields.Set("Approvals Required", fmt.Sprintf("%d", *proposal.ValidatorsToQuorum))
+
 			default:
 				continue
 			}

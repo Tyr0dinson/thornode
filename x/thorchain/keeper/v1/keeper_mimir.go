@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/cosmos/cosmos-sdk/runtime"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
 )
 
 // GetMimir get a mimir value from key value store
@@ -31,11 +33,11 @@ func (k KVStore) SetMimir(ctx cosmos.Context, key string, value int64) {
 func (k KVStore) GetNodeMimirs(ctx cosmos.Context, key string) (NodeMimirs, error) {
 	key = strings.ToUpper(key)
 	record := NodeMimirs{}
-	store := ctx.KVStore(k.storeKey)
-	if !store.Has([]byte(k.GetKey(prefixNodeMimir, key))) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	if !store.Has(k.GetKey(prefixNodeMimir, key)) {
 		return record, nil
 	}
-	bz := store.Get([]byte(k.GetKey(prefixNodeMimir, key)))
+	bz := store.Get(k.GetKey(prefixNodeMimir, key))
 	if err := k.cdc.Unmarshal(bz, &record); err != nil {
 		return NodeMimirs{}, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
 	}
@@ -51,12 +53,18 @@ func (k KVStore) SetNodeMimir(ctx cosmos.Context, key string, value int64, acc c
 		return err
 	}
 	record.Set(key, value, acc)
-	store := ctx.KVStore(k.storeKey)
+
+	// delete the node mimir if value is negative
+	if value < 0 {
+		record.Delete(key, acc)
+	}
+
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 	buf := k.cdc.MustMarshal(&record)
 	if buf == nil || len(record.Mimirs) == 0 {
-		store.Delete([]byte(kvkey))
+		store.Delete(kvkey)
 	} else {
-		store.Set([]byte(kvkey), buf)
+		store.Set(kvkey, buf)
 	}
 	return err
 }
@@ -109,6 +117,12 @@ func (k KVStore) IsOperationalMimir(key string) bool {
 		"RUNEPoolEnabled",
 		"EVMDisableContractWhitelist",
 		"MaxOutboundAttempts",
+		"AdvSwapQueueRapidSwapMax",
+		"EnableADVSwapQueue",
+		"StreamingLimitSwapMaxAge",
+		constants.OverSolvencyCheckInterval.String(),
+		constants.MimirKeyScheduledMigration,
+		constants.MaxRetiredVaultRecoveryAttempts.String(),
 	}
 	for i := range exactMatches {
 		if strings.EqualFold(key, exactMatches[i]) {
@@ -118,7 +132,6 @@ func (k KVStore) IsOperationalMimir(key string) bool {
 
 	exactUnmatches := []string{
 		"NodePauseChainBlocks",
-		"PauseLoans",
 		"PauseOnSlashThreshold",
 	}
 	for i := range exactUnmatches {
@@ -141,5 +154,6 @@ func (k KVStore) IsOperationalMimir(key string) bool {
 		}
 	}
 
-	return false
+	// all min slip mimirs are operational, but not SlipMinBpsMax
+	return strings.HasSuffix(key, "SLIPMINBPS")
 }

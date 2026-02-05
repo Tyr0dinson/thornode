@@ -22,7 +22,8 @@ const (
 	TxAdd
 	TxWithdraw
 	TxSwap
-	TxLimitOrder
+	TxLimitSwap
+	TxModifyLimitSwap
 	TxOutbound
 	TxDonate
 	TxBond
@@ -35,8 +36,6 @@ const (
 	TxNoOp
 	TxConsolidate
 	TxTHORName
-	TxLoanOpen
-	TxLoanRepayment
 	TxTradeAccountDeposit
 	TxTradeAccountWithdrawal
 	TxSecuredAssetDeposit
@@ -45,9 +44,14 @@ const (
 	TxRunePoolWithdraw
 	TxExec
 	TxSwitch
+	TxReferenceWriteMemo
+	TxReferenceReadMemo
 	TxTCYClaim
 	TxTCYStake
 	TxTCYUnstake
+	TxMaint
+	TxRebond
+	TxOperatorRotate
 )
 
 var stringToTxTypeMap = map[string]TxType{
@@ -59,13 +63,14 @@ var stringToTxTypeMap = map[string]TxType{
 	"swap":        TxSwap,
 	"s":           TxSwap,
 	"=":           TxSwap,
-	"limito":      TxLimitOrder,
-	"lo":          TxLimitOrder,
+	"=<":          TxLimitSwap,
+	"m=<":         TxModifyLimitSwap,
 	"out":         TxOutbound,
 	"donate":      TxDonate,
 	"d":           TxDonate,
 	"bond":        TxBond,
 	"unbond":      TxUnbond,
+	"rebond":      TxRebond,
 	"leave":       TxLeave,
 	"reserve":     TxReserve,
 	"refund":      TxRefund,
@@ -76,10 +81,8 @@ var stringToTxTypeMap = map[string]TxType{
 	"name":        TxTHORName,
 	"n":           TxTHORName,
 	"~":           TxTHORName,
-	"$+":          TxLoanOpen,
-	"loan+":       TxLoanOpen,
-	"$-":          TxLoanRepayment,
-	"loan-":       TxLoanRepayment,
+	"reference":   TxReferenceWriteMemo, // etup reference memo
+	"r":           TxReferenceReadMemo,  // use reference memo
 	"trade+":      TxTradeAccountDeposit,
 	"trade-":      TxTradeAccountWithdrawal,
 	"secure+":     TxSecuredAssetDeposit,
@@ -92,18 +95,22 @@ var stringToTxTypeMap = map[string]TxType{
 	"tcy":         TxTCYClaim,
 	"tcy+":        TxTCYStake,
 	"tcy-":        TxTCYUnstake,
+	"maint":       TxMaint,
+	"operator":    TxOperatorRotate,
 }
 
 var txToStringMap = map[TxType]string{
 	TxAdd:                    "add",
 	TxWithdraw:               "withdraw",
 	TxSwap:                   "swap",
-	TxLimitOrder:             "limito",
+	TxLimitSwap:              "=<",
+	TxModifyLimitSwap:        "m=<",
 	TxOutbound:               "out",
 	TxRefund:                 "refund",
 	TxDonate:                 "donate",
 	TxBond:                   "bond",
 	TxUnbond:                 "unbond",
+	TxRebond:                 "rebond",
 	TxLeave:                  "leave",
 	TxReserve:                "reserve",
 	TxMigrate:                "migrate",
@@ -111,8 +118,8 @@ var txToStringMap = map[TxType]string{
 	TxNoOp:                   "noop",
 	TxConsolidate:            "consolidate",
 	TxTHORName:               "thorname",
-	TxLoanOpen:               "$+",
-	TxLoanRepayment:          "$-",
+	TxReferenceWriteMemo:     "reference",
+	TxReferenceReadMemo:      "r",
 	TxTradeAccountDeposit:    "trade+",
 	TxTradeAccountWithdrawal: "trade-",
 	TxSecuredAssetDeposit:    "secure+",
@@ -122,6 +129,7 @@ var txToStringMap = map[TxType]string{
 	TxTCYClaim:               "tcy",
 	TxTCYStake:               "tcy+",
 	TxTCYUnstake:             "tcy-",
+	TxMaint:                  "maint",
 }
 
 // converts a string into a txType
@@ -145,22 +153,26 @@ func (tx TxType) IsInbound() bool {
 		TxRunePoolWithdraw,
 		TxSecuredAssetDeposit,
 		TxSecuredAssetWithdraw,
+		TxReferenceWriteMemo,
+		TxReferenceReadMemo,
 		TxSwap,
-		TxLimitOrder,
+		TxLimitSwap,
+		TxModifyLimitSwap,
 		TxDonate,
 		TxBond,
 		TxUnbond,
+		TxRebond,
 		TxLeave,
+		TxMaint,
 		TxReserve,
 		TxNoOp,
 		TxTHORName,
-		TxLoanOpen,
-		TxLoanRepayment,
 		TxExec,
 		TxSwitch,
 		TxTCYClaim,
 		TxTCYStake,
-		TxTCYUnstake:
+		TxTCYUnstake,
+		TxOperatorRotate:
 		return true
 	default:
 		return false
@@ -170,6 +182,15 @@ func (tx TxType) IsInbound() bool {
 func (tx TxType) IsOutbound() bool {
 	switch tx {
 	case TxOutbound, TxRefund, TxRagnarok:
+		return true
+	default:
+		return false
+	}
+}
+
+func (tx TxType) IsOutboundMemoless() bool {
+	switch tx {
+	case TxOutbound, TxRefund:
 		return true
 	default:
 		return false
@@ -196,6 +217,7 @@ func (tx TxType) HasOutbound() bool {
 		TxDonate,
 		TxReserve,
 		TxMigrate,
+		TxMaint,
 		TxRagnarok:
 		return false
 	default:

@@ -11,22 +11,22 @@ import (
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 )
 
-// SwapQueueVCUR is going to manage the swaps queue
-type SwapQueueVCUR struct {
+// SwapQueue is going to manage the swaps queue
+type SwapQueueImpl struct {
 	k       keeper.Keeper
 	handler func(mgr Manager) cosmos.Handler
 }
 
-// newSwapQueueVCUR create a new vault manager
-func newSwapQueueVCUR(k keeper.Keeper) *SwapQueueVCUR {
-	return &SwapQueueVCUR{
+// newSwapQueue create a new vault manager
+func newSwapQueue(k keeper.Keeper) *SwapQueueImpl {
+	return &SwapQueueImpl{
 		k:       k,
 		handler: NewInternalHandler,
 	}
 }
 
 // FetchQueue - grabs all swap queue items from the kvstore and returns them
-func (vm *SwapQueueVCUR) FetchQueue(ctx cosmos.Context) (swapItems, error) { // nolint
+func (vm *SwapQueueImpl) FetchQueue(ctx cosmos.Context) (swapItems, error) { // nolint
 	items := make(swapItems, 0)
 	iterator := vm.k.GetSwapQueueIterator(ctx)
 	defer iterator.Close()
@@ -46,7 +46,7 @@ func (vm *SwapQueueVCUR) FetchQueue(ctx cosmos.Context) (swapItems, error) { // 
 
 		// exclude streaming swaps when its not "their time". Always want to
 		// allow the first sub-swap immediately (ie no LastHeight yet)
-		if msg.IsStreaming() {
+		if msg.IsLegacyStreaming() {
 			pausedStreaming := vm.k.GetConfigInt64(ctx, constants.StreamingSwapPause)
 			if pausedStreaming > 0 {
 				continue
@@ -65,7 +65,11 @@ func (vm *SwapQueueVCUR) FetchQueue(ctx cosmos.Context) (swapItems, error) { // 
 					// last swap must be in the past
 					continue // skip
 				}
-				if (ctx.BlockHeight()-swp.LastHeight)%int64(swp.Interval) != 0 {
+				interval := swp.Interval
+				if interval == 0 {
+					interval = 1
+				}
+				if (ctx.BlockHeight()-swp.LastHeight)%int64(interval) != 0 {
 					continue // skip
 				}
 				if vm.k.IsTradingHalt(ctx, &msg) {
@@ -87,7 +91,7 @@ func (vm *SwapQueueVCUR) FetchQueue(ctx cosmos.Context) (swapItems, error) { // 
 }
 
 // EndBlock trigger the real swap to be processed
-func (vm *SwapQueueVCUR) EndBlock(ctx cosmos.Context, mgr Manager) error {
+func (vm *SwapQueueImpl) EndBlock(ctx cosmos.Context, mgr Manager) error {
 	handler := vm.handler(mgr)
 
 	minSwapsPerBlock, err := vm.k.GetMimir(ctx, constants.MinSwapsPerBlock.String())
@@ -127,9 +131,9 @@ func (vm *SwapQueueVCUR) EndBlock(ctx cosmos.Context, mgr Manager) error {
 			ctx.Logger().Error("fail to swap", "msg", pick.msg.Tx.String(), "error", handleErr)
 
 			var refundErr error
-			triggerRefund = !pick.msg.IsStreaming()
+			triggerRefund = !pick.msg.IsLegacyStreaming()
 
-			if pick.msg.IsStreaming() {
+			if pick.msg.IsLegacyStreaming() {
 				if vm.k.StreamingSwapExists(ctx, pick.msg.Tx.ID) {
 					var getErr error
 					swp, getErr = vm.k.GetStreamingSwap(ctx, pick.msg.Tx.ID)
@@ -150,7 +154,8 @@ func (vm *SwapQueueVCUR) EndBlock(ctx cosmos.Context, mgr Manager) error {
 				}
 			} else {
 				// Should not refund a failed preferred asset swap, the RUNE is still in the AffiliateCollector module
-				affColAddress, err := mgr.Keeper().GetModuleAddress(AffiliateCollectorName)
+				var affColAddress common.Address
+				affColAddress, err = mgr.Keeper().GetModuleAddress(AffiliateCollectorName)
 				if err != nil {
 					ctx.Logger().Error("failed to retrieve AffiliateCollector module address", "error", err)
 				}
@@ -160,7 +165,7 @@ func (vm *SwapQueueVCUR) EndBlock(ctx cosmos.Context, mgr Manager) error {
 					// clean up failed preferred asset swap
 					runeAmt := pick.msg.Tx.Coins[0].Amount
 					memo := pick.msg.Tx.Memo
-					if err := vm.cleanupFailedPreferredAssetSwap(ctx, mgr, memo, runeAmt); err != nil {
+					if err = vm.cleanupFailedPreferredAssetSwap(ctx, mgr, memo, runeAmt); err != nil {
 						ctx.Logger().Error("failed to cleanup failed preferred asset swap", "error", err)
 					}
 				}
@@ -183,7 +188,10 @@ func (vm *SwapQueueVCUR) EndBlock(ctx cosmos.Context, mgr Manager) error {
 			}
 		}
 
-		if pick.msg.IsStreaming() {
+		// Only track streaming swap state for actual streaming swaps (not limit swaps)
+		// Limit swaps with streaming parameters should execute once and complete,
+		// not persist state across blocks which causes the hollowed-out record bug.
+		if pick.msg.IsLegacyStreaming() && !pick.msg.IsLimitSwap() {
 			swp, err = vm.k.GetStreamingSwap(ctx, pick.msg.Tx.ID)
 			if err != nil {
 				ctx.Logger().Error("fail to fetch streaming swap", "error", err)
@@ -271,7 +279,7 @@ func (vm *SwapQueueVCUR) EndBlock(ctx cosmos.Context, mgr Manager) error {
 	return nil
 }
 
-func (vm *SwapQueueVCUR) cleanupFailedPreferredAssetSwap(ctx cosmos.Context, mgr Manager, memo string, runeAmt cosmos.Uint) error {
+func (vm *SwapQueueImpl) cleanupFailedPreferredAssetSwap(ctx cosmos.Context, mgr Manager, memo string, runeAmt cosmos.Uint) error {
 	ctx.Logger().Info("preferred asset swap failed, send rune back to affiliate collector", "runeAmt", runeAmt.String(), "memo", memo)
 	// get the preferred asset swap's thorname
 	name, ok := strings.CutPrefix(memo, fmt.Sprintf("%s-", PreferredAssetSwapMemoPrefix))
@@ -279,7 +287,8 @@ func (vm *SwapQueueVCUR) cleanupFailedPreferredAssetSwap(ctx cosmos.Context, mgr
 		return fmt.Errorf("failed to get thorname from memo: %s", memo)
 	}
 	if tn, err := vm.k.GetTHORName(ctx, name); err == nil {
-		affCol, err := mgr.Keeper().GetAffiliateCollector(ctx, tn.Owner)
+		var affCol AffiliateFeeCollector
+		affCol, err = mgr.Keeper().GetAffiliateCollector(ctx, tn.Owner)
 		if err != nil {
 			return fmt.Errorf("failed to get affiliate collector record: %w", err)
 		} else {
@@ -299,13 +308,17 @@ func (vm *SwapQueueVCUR) cleanupFailedPreferredAssetSwap(ctx cosmos.Context, mgr
 }
 
 // getTodoNum - determine how many swaps to do.
-func (vm *SwapQueueVCUR) getTodoNum(queueLen, minSwapsPerBlock, maxSwapsPerBlock int64) int64 {
+func (vm *SwapQueueImpl) getTodoNum(queueLen, minSwapsPerBlock, maxSwapsPerBlock int64) int64 {
 	// Do half the length of the queue. Unless...
-	//	1. The queue length is greater than maxSwapsPerBlock
-	//  2. The queue length is less than minSwapsPerBlock
+	//  1. Half the queue length is greater than maxSwapsPerBlock
+	//  2. Half the queue length is less than minSwapsPerBlock
 	todo := queueLen / 2
-	if minSwapsPerBlock >= queueLen {
-		todo = queueLen
+	if minSwapsPerBlock > todo {
+		if queueLen < minSwapsPerBlock {
+			todo = queueLen
+		} else {
+			todo = minSwapsPerBlock
+		}
 	}
 	if maxSwapsPerBlock < todo {
 		todo = maxSwapsPerBlock
@@ -315,7 +328,7 @@ func (vm *SwapQueueVCUR) getTodoNum(queueLen, minSwapsPerBlock, maxSwapsPerBlock
 
 // scoreMsgs - this takes a list of MsgSwap, and converts them to a scored
 // swapItem list
-func (vm *SwapQueueVCUR) scoreMsgs(ctx cosmos.Context, items swapItems, synthVirtualDepthMult int64) (swapItems, error) {
+func (vm *SwapQueueImpl) scoreMsgs(ctx cosmos.Context, items swapItems, synthVirtualDepthMult int64) (swapItems, error) {
 	pools := make(map[common.Asset]Pool)
 
 	for i, item := range items {
@@ -379,7 +392,7 @@ func (vm *SwapQueueVCUR) scoreMsgs(ctx cosmos.Context, items swapItems, synthVir
 }
 
 // getLiquidityFeeAndSlip calculate liquidity fee and slip, fee is in RUNE
-func (vm *SwapQueueVCUR) getLiquidityFeeAndSlip(ctx cosmos.Context, pool Pool, sourceCoin common.Coin, item *swapItem, virtualDepthMult int64) {
+func (vm *SwapQueueImpl) getLiquidityFeeAndSlip(ctx cosmos.Context, pool Pool, sourceCoin common.Coin, item *swapItem, virtualDepthMult int64) {
 	// Get our X, x, Y values
 	var X, x, Y cosmos.Uint
 	x = sourceCoin.Amount

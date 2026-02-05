@@ -4,11 +4,10 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"sync"
+	"time"
 
 	"github.com/libp2p/go-libp2p-core/network"
-	"github.com/libp2p/go-libp2p-core/peer"
-	"github.com/libp2p/go-libp2p-core/protocol"
+	"github.com/rs/zerolog"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -16,15 +15,8 @@ import (
 
 // AttestObservedTx creates and broadcasts an attestation for an observed transaction
 func (s *AttestationGossip) AttestObservedTx(ctx context.Context, obsTx *common.ObservedTx, inbound bool) error {
-	pk, err := s.keys.GetPrivateKey()
-	if err != nil {
-		return fmt.Errorf("fail to get private key: %w", err)
-	}
-
-	pubBz := pk.PubKey().Bytes()
-
-	if err := s.isActiveValidator(pubBz); err != nil {
-		return fmt.Errorf("skipping attest observed tx: %w", err)
+	if !s.isActiveValidator(s.host.ID()) {
+		return fmt.Errorf("skipping attest observed tx: not active")
 	}
 
 	signBz, err := obsTx.GetSignablePayload()
@@ -32,7 +24,7 @@ func (s *AttestationGossip) AttestObservedTx(ctx context.Context, obsTx *common.
 		return fmt.Errorf("fail to marshal tx sign payload: %w", err)
 	}
 
-	signature, err := pk.Sign(signBz)
+	signature, err := s.privKey.Sign(signBz)
 	if err != nil {
 		return fmt.Errorf("fail to sign tx sign payload: %w", err)
 	}
@@ -41,7 +33,7 @@ func (s *AttestationGossip) AttestObservedTx(ctx context.Context, obsTx *common.
 		ObsTx:   *obsTx,
 		Inbound: inbound,
 		Attestation: &common.Attestation{
-			PubKey:    pubBz,
+			PubKey:    s.pubKey,
 			Signature: signature,
 		},
 	}
@@ -50,39 +42,31 @@ func (s *AttestationGossip) AttestObservedTx(ctx context.Context, obsTx *common.
 	s.logger.Debug().Msg("handling attestation locally")
 	s.handleObservedTxAttestation(ctx, msg)
 
-	// Then broadcast to peers
-	payload, err := msg.Marshal()
-	if err != nil {
-		return fmt.Errorf("fail to marshal tx attestation: %w", err)
-	}
-
-	// Send to all connected peers
-	peers := s.host.Peerstore().Peers()
-	var wg sync.WaitGroup
-	for _, peer := range peers {
-		if peer == s.host.ID() {
-			// Skip ourselves
-			continue
-		}
-		wg.Add(1)
-		go s.sendPayloadToPeer(ctx, peer, observeTxProtocol, payload, &wg)
-	}
-	wg.Wait()
+	s.batcher.AddObservedTx(msg)
 
 	return nil
 }
 
+func closeStream(logger zerolog.Logger, stream network.Stream) {
+	if err := stream.Close(); err != nil {
+		logger.Error().Err(err).Msg("fail to close stream")
+	}
+	go func() {
+		// Give some time for the remote side to process
+		// NOTE: remove this after upgrading to libp2p v0.12.0+, because
+		// then Close() will close both write and read sides of the stream.
+		// In v0.11.0, it only closes the write side.
+		time.Sleep(10 * time.Second)
+		if err := stream.Reset(); err != nil {
+			logger.Error().Err(err).Msg("fail to reset stream after delay")
+		}
+	}()
+}
+
 // AttestNetworkFee creates and broadcasts an attestation for a network fee
 func (s *AttestationGossip) AttestNetworkFee(ctx context.Context, networkFee common.NetworkFee) error {
-	pk, err := s.keys.GetPrivateKey()
-	if err != nil {
-		return fmt.Errorf("fail to get private key: %w", err)
-	}
-
-	pubBz := pk.PubKey().Bytes()
-
-	if err := s.isActiveValidator(pubBz); err != nil {
-		return fmt.Errorf("skipping attest network fee: %w", err)
+	if !s.isActiveValidator(s.host.ID()) {
+		return fmt.Errorf("skipping attest network fee: not active")
 	}
 
 	signBz, err := networkFee.GetSignablePayload()
@@ -90,7 +74,7 @@ func (s *AttestationGossip) AttestNetworkFee(ctx context.Context, networkFee com
 		return fmt.Errorf("fail to marshal network fee sign payload: %w", err)
 	}
 
-	signature, err := pk.Sign(signBz)
+	signature, err := s.privKey.Sign(signBz)
 	if err != nil {
 		return fmt.Errorf("fail to sign network fee sign payload: %w", err)
 	}
@@ -98,7 +82,7 @@ func (s *AttestationGossip) AttestNetworkFee(ctx context.Context, networkFee com
 	msg := common.AttestNetworkFee{
 		NetworkFee: &networkFee,
 		Attestation: &common.Attestation{
-			PubKey:    pubBz,
+			PubKey:    s.pubKey,
 			Signature: signature,
 		},
 	}
@@ -107,39 +91,15 @@ func (s *AttestationGossip) AttestNetworkFee(ctx context.Context, networkFee com
 	s.logger.Debug().Msg("handling attestation locally")
 	s.handleNetworkFeeAttestation(ctx, msg)
 
-	// Then broadcast to peers
-	payload, err := msg.Marshal()
-	if err != nil {
-		return fmt.Errorf("fail to marshal network fee attestation: %w", err)
-	}
-
-	// Send to all connected peers
-	peers := s.host.Peerstore().Peers()
-	var wg sync.WaitGroup
-	for _, peer := range peers {
-		if peer == s.host.ID() {
-			// Skip ourselves
-			continue
-		}
-		wg.Add(1)
-		go s.sendPayloadToPeer(ctx, peer, networkFeeProtocol, payload, &wg)
-	}
-	wg.Wait()
+	s.batcher.AddNetworkFee(msg)
 
 	return nil
 }
 
 // AttestSolvency creates and broadcasts an attestation for a solvency proof
 func (s *AttestationGossip) AttestSolvency(ctx context.Context, solvency common.Solvency) error {
-	pk, err := s.keys.GetPrivateKey()
-	if err != nil {
-		return fmt.Errorf("fail to get private key: %w", err)
-	}
-
-	pubBz := pk.PubKey().Bytes()
-
-	if err := s.isActiveValidator(pubBz); err != nil {
-		return fmt.Errorf("skipping attest solvency: %w", err)
+	if !s.isActiveValidator(s.host.ID()) {
+		return fmt.Errorf("skipping attest solvency: not active")
 	}
 
 	signBz, err := solvency.GetSignablePayload()
@@ -147,7 +107,7 @@ func (s *AttestationGossip) AttestSolvency(ctx context.Context, solvency common.
 		return fmt.Errorf("fail to marshal solvency sign payload: %w", err)
 	}
 
-	signature, err := pk.Sign(signBz)
+	signature, err := s.privKey.Sign(signBz)
 	if err != nil {
 		return fmt.Errorf("fail to sign solvency sign payload: %w", err)
 	}
@@ -155,7 +115,7 @@ func (s *AttestationGossip) AttestSolvency(ctx context.Context, solvency common.
 	msg := common.AttestSolvency{
 		Solvency: &solvency,
 		Attestation: &common.Attestation{
-			PubKey:    pubBz,
+			PubKey:    s.pubKey,
 			Signature: signature,
 		},
 	}
@@ -164,24 +124,7 @@ func (s *AttestationGossip) AttestSolvency(ctx context.Context, solvency common.
 	s.logger.Debug().Msg("handling attestation locally")
 	s.handleSolvencyAttestation(ctx, msg)
 
-	// Then broadcast to peers
-	payload, err := msg.Marshal()
-	if err != nil {
-		return fmt.Errorf("fail to marshal solvency attestation: %w", err)
-	}
-
-	// Send to all connected peers
-	peers := s.host.Peerstore().Peers()
-	var wg sync.WaitGroup
-	for _, peer := range peers {
-		if peer == s.host.ID() {
-			// Skip ourselves
-			continue
-		}
-		wg.Add(1)
-		go s.sendPayloadToPeer(ctx, peer, solvencyProtocol, payload, &wg)
-	}
-	wg.Wait()
+	s.batcher.AddSolvency(msg)
 
 	return nil
 }
@@ -198,15 +141,8 @@ func (s *AttestationGossip) AttestErrata(ctx context.Context, errata common.Erra
 	}
 	s.mu.Unlock()
 
-	pk, err := s.keys.GetPrivateKey()
-	if err != nil {
-		return fmt.Errorf("fail to get private key: %w", err)
-	}
-
-	pubBz := pk.PubKey().Bytes()
-
-	if err := s.isActiveValidator(pubBz); err != nil {
-		return fmt.Errorf("skipping attest errata tx: %w", err)
+	if !s.isActiveValidator(s.host.ID()) {
+		return fmt.Errorf("skipping attest errata tx: not active")
 	}
 
 	signBz, err := errata.GetSignablePayload()
@@ -214,7 +150,7 @@ func (s *AttestationGossip) AttestErrata(ctx context.Context, errata common.Erra
 		return fmt.Errorf("fail to marshal errata sign payload: %w", err)
 	}
 
-	signature, err := pk.Sign(signBz)
+	signature, err := s.privKey.Sign(signBz)
 	if err != nil {
 		return fmt.Errorf("fail to sign errata sign payload: %w", err)
 	}
@@ -222,7 +158,7 @@ func (s *AttestationGossip) AttestErrata(ctx context.Context, errata common.Erra
 	msg := common.AttestErrataTx{
 		ErrataTx: &errata,
 		Attestation: &common.Attestation{
-			PubKey:    pubBz,
+			PubKey:    s.pubKey,
 			Signature: signature,
 		},
 	}
@@ -231,75 +167,53 @@ func (s *AttestationGossip) AttestErrata(ctx context.Context, errata common.Erra
 	s.logger.Debug().Msg("handling attestation locally")
 	s.handleErrataAttestation(ctx, msg)
 
-	// Then broadcast to peers
-	payload, err := msg.Marshal()
-	if err != nil {
-		return fmt.Errorf("fail to marshal errata attestation: %w", err)
-	}
-
-	// Send to all connected peers
-	peers := s.host.Peerstore().Peers()
-	var wg sync.WaitGroup
-	for _, peer := range peers {
-		if peer == s.host.ID() {
-			// Skip ourselves
-			continue
-		}
-		wg.Add(1)
-		go s.sendPayloadToPeer(ctx, peer, errataTxProtocol, payload, &wg)
-	}
-	wg.Wait()
+	s.batcher.AddErrataTx(msg)
 
 	return nil
 }
 
-// Send an attestation to a peer
-func (s *AttestationGossip) sendPayloadToPeer(ctx context.Context, peer peer.ID, protocol protocol.ID, payload []byte, wg *sync.WaitGroup) {
-	defer wg.Done()
+// AttestPriceFeed creates and broadcasts an attestation for a price feed
+func (s *AttestationGossip) AttestPriceFeed(ctx context.Context, priceFeed common.PriceFeed) error {
+	if !s.isActiveValidator(s.host.ID()) {
+		return fmt.Errorf("skipping attest price feed: not active")
+	}
 
-	stream, err := s.host.NewStream(ctx, peer, protocol)
+	signBz, err := priceFeed.GetSignablePayload()
 	if err != nil {
-		s.logger.Error().Err(err).Msgf("fail to create stream to peer: %s", peer)
-		return
+		return fmt.Errorf("fail to marshal price feed sign payload: %w", err)
 	}
 
-	s.sendPayloadToStream(stream, payload)
-}
-
-func (s *AttestationGossip) sendPayloadToStream(stream network.Stream, payload []byte) {
-	peer := stream.Conn().RemotePeer()
-
-	defer func() {
-		if err := stream.Close(); err != nil {
-			s.logger.Error().Err(err).Msgf("fail to close stream to peer: %s", peer)
-		}
-	}()
-
-	if err := p2p.WriteStreamWithBuffer(payload, stream); err != nil {
-		s.logger.Error().Err(err).Msgf("fail to write payload to peer: %s", peer)
-		return
-	}
-
-	// Wait for acknowledgment
-	reply, err := p2p.ReadStreamWithBuffer(stream)
+	signature, err := s.privKey.Sign(signBz)
 	if err != nil {
-		s.logger.Error().Err(err).Msgf("fail to read reply from peer: %s", peer)
-		return
+		return fmt.Errorf("fail to sign price feed sign payload: %w", err)
 	}
 
-	if string(reply) != p2p.StreamMsgDone {
-		s.logger.Error().Msgf("unexpected reply from peer: %s", peer)
-		return
+	msg := common.AttestPriceFeed{
+		PriceFeed: &priceFeed,
+		Attestation: &common.Attestation{
+			PubKey:    s.pubKey,
+			Signature: signature,
+		},
 	}
 
-	s.logger.Debug().Msgf("attestation sent to peer: %s", peer)
+	// Handle the attestation locally first
+	s.logger.Debug().Msg("handling attestation locally")
+	s.handlePriceFeedAttestation(ctx, msg)
+
+	s.batcher.AddPriceFeed(msg)
+	s.batcher.sendBatches(ctx, true)
+
+	return nil
 }
 
 // handleStreamAttestationState handles incoming observed transaction streams
 func (s *AttestationGossip) handleStreamAttestationState(stream network.Stream) {
 	remotePeer := stream.Conn().RemotePeer()
-	logger := s.logger.With().Str("remote peer", remotePeer.String()).Logger()
-	logger.Debug().Msg("reading attestation gossip message")
+
+	logger := s.logger.With().Str("remote_peer", remotePeer.String()).Logger()
+	logger.Debug().Msg("reading attestation state message")
+
+	defer closeStream(logger, stream)
 
 	// Read and process the message
 	data, err := p2p.ReadStreamWithBuffer(stream)
@@ -328,6 +242,30 @@ func (s *AttestationGossip) handleStreamAttestationState(stream network.Stream) 
 		s.sendAttestationState(stream)
 
 	case data[0] == prefixBatchBegin[0]:
+
+		s.stateInitMu.Lock()
+		if s.stateInitPeers == nil {
+			// we are not asking for attestation state
+			s.stateInitMu.Unlock()
+			s.logger.Warn().Msg("skipping attestation state stream, not asking for it")
+			err := p2p.WriteStreamWithBuffer([]byte("error: not asking for attestation state"), stream)
+			if err != nil {
+				logger.Error().Err(err).Msgf("fail to write error reply to peer: %s", remotePeer)
+			}
+			return
+		}
+		_, ok := s.stateInitPeers[remotePeer]
+		s.stateInitMu.Unlock()
+		if !ok {
+			// unauthorized peer
+			s.logger.Warn().Msg("skipping attestation state stream from unexpected peer")
+			err := p2p.WriteStreamWithBuffer([]byte("error: unauthorized peer for attestation state"), stream)
+			if err != nil {
+				logger.Error().Err(err).Msgf("fail to write error reply to peer: %s", remotePeer)
+			}
+			return
+		}
+
 		// Batched state transmission
 		logger.Debug().Msg("handling batched attestation state")
 		err := s.receiveBatchedAttestationState(stream, data[1:])
@@ -344,13 +282,33 @@ func (s *AttestationGossip) handleStreamAttestationState(stream network.Stream) 
 	}
 }
 
-// handleStreamObservedTx handles incoming observed transaction streams
-func (s *AttestationGossip) handleStreamObservedTx(stream network.Stream) {
+func (s *AttestationGossip) handleStreamBatchedAttestations(stream network.Stream) {
 	remotePeer := stream.Conn().RemotePeer()
-	logger := s.logger.With().Str("remote peer", remotePeer.String()).Logger()
-	logger.Debug().Msg("reading attestation gossip message")
+	logger := s.logger.With().Str("remote_peer", remotePeer.String()).Logger()
 
-	// Read and process the message
+	defer closeStream(logger, stream)
+
+	if !s.isActiveValidator(remotePeer) {
+		logger.Debug().Msg("skipping batched attestation from non-active validator")
+		if err := p2p.WriteStreamWithBuffer([]byte(p2p.StreamMsgDone), stream); err != nil {
+			logger.Error().Err(err).Msgf("fail to write reply to peer: %s", remotePeer)
+		}
+		return
+	}
+
+	sem, err := s.peerMgr.acquire(remotePeer)
+	if err != nil {
+		logger.Error().Err(err).Msgf("fail to acquire semaphore for peer: %s", remotePeer)
+		if err = p2p.WriteStreamWithBuffer([]byte(p2p.StreamMsgDone), stream); err != nil {
+			logger.Error().Err(err).Msgf("fail to write reply to peer: %s", remotePeer)
+		}
+		return
+	}
+	defer s.peerMgr.release(sem)
+
+	logger.Debug().Msg("reading batched attestations message")
+
+	// Read batch data
 	data, err := p2p.ReadStreamWithBuffer(stream)
 	if err != nil {
 		if err != io.EOF {
@@ -359,132 +317,85 @@ func (s *AttestationGossip) handleStreamObservedTx(stream network.Stream) {
 		return
 	}
 
-	// Check message type and handle accordingly
+	// Send acknowledgment
+	if err := p2p.WriteStreamWithBuffer([]byte(p2p.StreamMsgDone), stream); err != nil {
+		logger.Error().Err(err).Msg("fail to write acknowledgment")
+		return
+	}
+
 	if len(data) == 0 {
 		logger.Error().Msg("empty payload")
 		return
 	}
 
-	// Send acknowledgment
-	if err := p2p.WriteStreamWithBuffer([]byte(p2p.StreamMsgDone), stream); err != nil {
-		logger.Error().Err(err).Msgf("fail to write reply to peer: %s", remotePeer)
+	// Unmarshal batch
+	var batch common.AttestationBatch
+	if err := batch.Unmarshal(data); err != nil {
+		logger.Error().Err(err).Msg("fail to unmarshal attestation batch")
 		return
 	}
 
-	// Handle attestation
-	var msg common.AttestTx
-	if err := msg.Unmarshal(data); err != nil {
-		logger.Error().Err(err).Msg("fail to unmarshal attestation")
-		return
-	}
-	logger.Debug().Msg("handling incoming attestation from peer")
-	s.handleObservedTxAttestation(context.Background(), msg)
-}
+	// slight tolerance above max
+	max := s.batcher.getMaxBatchSize()
 
-// handleStreamNetworkFee handles incoming network fee streams
-func (s *AttestationGossip) handleStreamNetworkFee(stream network.Stream) {
-	remotePeer := stream.Conn().RemotePeer()
-	logger := s.logger.With().Str("remote peer", remotePeer.String()).Logger()
-	logger.Debug().Msg("reading network fee attestation message")
-
-	payload, err := p2p.ReadStreamWithBuffer(stream)
-	if err != nil {
-		if err != io.EOF {
-			logger.Error().Err(err).Msg("fail to read payload from stream")
+	// Process each attestation in the batch
+	for i, tx := range batch.AttestTxs {
+		if int64(i) >= max {
+			logger.Error().Msgf("tx batch size %d exceeds max size %d", len(batch.AttestTxs), max)
+			break
 		}
-		return
-	}
-
-	// Send acknowledgment
-	err = p2p.WriteStreamWithBuffer([]byte(p2p.StreamMsgDone), stream)
-	if err != nil {
-		logger.Error().Err(err).Msgf("fail to write reply to peer: %s", remotePeer)
-		return
-	}
-
-	if len(payload) == 0 {
-		logger.Error().Msg("empty payload")
-		return
-	}
-
-	var msg common.AttestNetworkFee
-	if err := msg.Unmarshal(payload); err != nil {
-		logger.Error().Err(err).Msg("fail to unmarshal network fee attestation")
-		return
-	}
-
-	logger.Debug().Msg("handling incoming network fee attestation from peer")
-	s.handleNetworkFeeAttestation(context.Background(), msg)
-}
-
-// handleStreamSolvency handles incoming solvency streams
-func (s *AttestationGossip) handleStreamSolvency(stream network.Stream) {
-	remotePeer := stream.Conn().RemotePeer()
-	logger := s.logger.With().Str("remote peer", remotePeer.String()).Logger()
-	logger.Debug().Msg("reading solvency attestation message")
-
-	payload, err := p2p.ReadStreamWithBuffer(stream)
-	if err != nil {
-		if err != io.EOF {
-			logger.Error().Err(err).Msg("fail to read payload from stream")
+		if tx == nil {
+			logger.Error().Msgf("tx is nil at index %d", i)
+			continue
 		}
-		return
+		s.handleObservedTxAttestation(context.Background(), *tx)
 	}
 
-	// Send acknowledgment
-	err = p2p.WriteStreamWithBuffer([]byte(p2p.StreamMsgDone), stream)
-	if err != nil {
-		logger.Error().Err(err).Msgf("fail to write reply to peer: %s", remotePeer)
-		return
-	}
-
-	if len(payload) == 0 {
-		logger.Error().Msg("empty payload")
-		return
-	}
-
-	var msg common.AttestSolvency
-	if err := msg.Unmarshal(payload); err != nil {
-		logger.Error().Err(err).Msg("fail to unmarshal solvency attestation")
-		return
-	}
-
-	logger.Debug().Msg("handling incoming solvency attestation from peer")
-	s.handleSolvencyAttestation(context.Background(), msg)
-}
-
-// handleStreamErrataTx handles incoming errata transaction streams
-func (s *AttestationGossip) handleStreamErrataTx(stream network.Stream) {
-	remotePeer := stream.Conn().RemotePeer()
-	logger := s.logger.With().Str("remote peer", remotePeer.String()).Logger()
-	logger.Debug().Msg("reading errata tx attestation message")
-
-	payload, err := p2p.ReadStreamWithBuffer(stream)
-	if err != nil {
-		if err != io.EOF {
-			logger.Error().Err(err).Msg("fail to read payload from stream")
+	for i, nf := range batch.AttestNetworkFees {
+		if int64(i) >= max {
+			logger.Error().Msgf("net fee batch size %d exceeds max size %d", len(batch.AttestNetworkFees), max)
+			break
 		}
-		return
+		if nf == nil {
+			logger.Error().Msgf("network fee is nil at index %d", i)
+			continue
+		}
+		s.handleNetworkFeeAttestation(context.Background(), *nf)
 	}
 
-	// Send acknowledgment
-	err = p2p.WriteStreamWithBuffer([]byte(p2p.StreamMsgDone), stream)
-	if err != nil {
-		logger.Error().Err(err).Msgf("fail to write reply to peer: %s", remotePeer)
-		return
+	for i, solvency := range batch.AttestSolvencies {
+		if int64(i) >= max {
+			logger.Error().Msgf("solvency batch size %d exceeds max size %d", len(batch.AttestSolvencies), max)
+			break
+		}
+		if solvency == nil {
+			logger.Error().Msgf("solvency is nil at index %d", i)
+			continue
+		}
+		s.handleSolvencyAttestation(context.Background(), *solvency)
 	}
 
-	if len(payload) == 0 {
-		logger.Error().Msg("empty payload")
-		return
+	for i, errata := range batch.AttestErrataTxs {
+		if int64(i) >= max {
+			logger.Error().Msgf("errata batch size %d exceeds max size %d", len(batch.AttestErrataTxs), max)
+			break
+		}
+		if errata == nil {
+			logger.Error().Msgf("errata is nil at index %d", i)
+			continue
+		}
+		s.handleErrataAttestation(context.Background(), *errata)
 	}
 
-	var msg common.AttestErrataTx
-	if err := msg.Unmarshal(payload); err != nil {
-		logger.Error().Err(err).Msg("fail to unmarshal errata attestation")
-		return
+	for i, priceFeed := range batch.AttestPriceFeeds {
+		if int64(i) >= max {
+			logger.Error().Msgf("price feed size %d exceeds max size %d", len(batch.AttestPriceFeeds), max)
+			break
+		}
+		if priceFeed == nil {
+			logger.Error().Msgf("price feed is nil at index %d", i)
+			continue
+		}
+		s.handlePriceFeedAttestation(context.Background(), *priceFeed)
 	}
-
-	logger.Debug().Msg("handling incoming errata attestation from peer")
-	s.handleErrataAttestation(context.Background(), msg)
 }

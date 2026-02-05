@@ -77,7 +77,16 @@ func NewClient(chain common.Chain, host string, keys *thorclient.Keys) (LiteChai
 }
 
 func (c *Client) GetAccount(pk *common.PubKey) (*common.Account, error) {
-	lamportsBalance, err := c.rpc.GetBalance(c.address.String(), "finalized", 0)
+	address := c.address
+	if pk != nil {
+		var err error
+		address, err = pk.GetAddress(c.chain)
+		if err != nil {
+			return nil, fmt.Errorf("fail to get address from pubkey(%s): %w", pk, err)
+		}
+	}
+
+	lamportsBalance, err := c.rpc.GetBalance(address.String(), "finalized", 0)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get balance: %w", err)
 	}

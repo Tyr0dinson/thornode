@@ -8,6 +8,7 @@ import (
 	"cosmossdk.io/log"
 	"cosmossdk.io/math"
 	upgradetypes "cosmossdk.io/x/upgrade/types"
+
 	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/types/module/testutil"
@@ -26,7 +27,7 @@ var kaboom = errors.New("Kaboom!!!")
 type KVStoreDummy struct{}
 
 func (k KVStoreDummy) Cdc() codec.BinaryCodec                  { return testutil.MakeTestEncodingConfig().Codec }
-func (k KVStoreDummy) DeleteKey(_ cosmos.Context, _ string)    {}
+func (k KVStoreDummy) DeleteKey(_ cosmos.Context, _ []byte)    {}
 func (k KVStoreDummy) CoinKeeper() bankkeeper.Keeper           { return bankkeeper.BaseKeeper{} }
 func (k KVStoreDummy) AccountKeeper() authkeeper.AccountKeeper { return authkeeper.AccountKeeper{} }
 func (k KVStoreDummy) Logger(ctx cosmos.Context) log.Logger {
@@ -85,8 +86,12 @@ func (k KVStoreDummy) RemoveExpiredUpgradeProposals(_ cosmos.Context) error {
 
 func (k KVStoreDummy) ClearUpgradePlan(ctx cosmos.Context) {}
 
-func (k KVStoreDummy) GetKey(prefix kvTypes.DbPrefix, key string) string {
-	return fmt.Sprintf("%s/1/%s", prefix, key)
+func (k KVStoreDummy) GetKey(prefix kvTypes.DbPrefix, key string, other ...string) []byte {
+	s := fmt.Sprintf("%s/1/%s", prefix, key)
+	for _, o := range other {
+		s += o
+	}
+	return []byte(s)
 }
 
 func (k KVStoreDummy) GetRuneBalanceOfModule(ctx cosmos.Context, moduleName string) cosmos.Uint {
@@ -271,20 +276,6 @@ func (k KVStoreDummy) GetStreamingSwap(ctx cosmos.Context, _ common.TxID) (Strea
 }
 func (k KVStoreDummy) StreamingSwapExists(ctx cosmos.Context, _ common.TxID) bool { return false }
 func (k KVStoreDummy) RemoveStreamingSwap(ctx cosmos.Context, _ common.TxID)      {}
-
-func (k KVStoreDummy) GetLoanIterator(ctx cosmos.Context, _ common.Asset) cosmos.Iterator {
-	return nil
-}
-
-func (k KVStoreDummy) GetLoan(ctx cosmos.Context, asset common.Asset, addr common.Address) (Loan, error) {
-	return Loan{}, kaboom
-}
-func (k KVStoreDummy) SetLoan(ctx cosmos.Context, _ Loan)                                 {}
-func (k KVStoreDummy) RemoveLoan(ctx cosmos.Context, _ Loan)                              {}
-func (k KVStoreDummy) SetTotalCollateral(_ cosmos.Context, _ common.Asset, _ cosmos.Uint) {}
-func (k KVStoreDummy) GetTotalCollateral(_ cosmos.Context, _ common.Asset) (cosmos.Uint, error) {
-	return cosmos.ZeroUint(), kaboom
-}
 
 func (k KVStoreDummy) GetLiquidityProviderIterator(_ cosmos.Context, _ common.Asset) cosmos.Iterator {
 	return nil
@@ -554,48 +545,57 @@ func (k KVStoreDummy) HasSwapQueueItem(ctx cosmos.Context, txID common.TxID, _ i
 	return false
 }
 
-func (k KVStoreDummy) OrderBooksEnabled(ctx cosmos.Context) bool {
+func (k KVStoreDummy) AdvSwapQueueEnabled(ctx cosmos.Context) bool {
 	return false
 }
 
-func (k KVStoreDummy) SetOrderBookItem(ctx cosmos.Context, msg MsgSwap) error      { return kaboom }
-func (k KVStoreDummy) GetOrderBookItemIterator(ctx cosmos.Context) cosmos.Iterator { return nil }
-func (k KVStoreDummy) RemoveOrderBookItem(ctx cosmos.Context, _ common.TxID) error {
+func (k KVStoreDummy) SetAdvSwapQueueItem(ctx cosmos.Context, msg MsgSwap) error      { return kaboom }
+func (k KVStoreDummy) GetAdvSwapQueueItemIterator(ctx cosmos.Context) cosmos.Iterator { return nil }
+func (k KVStoreDummy) RemoveAdvSwapQueueItem(ctx cosmos.Context, _ common.TxID, _ int) error {
 	return kaboom
 }
 
-func (k KVStoreDummy) GetOrderBookItem(ctx cosmos.Context, txID common.TxID) (MsgSwap, error) {
+func (k KVStoreDummy) GetAdvSwapQueueItem(ctx cosmos.Context, txID common.TxID, index int) (MsgSwap, error) {
 	return MsgSwap{}, kaboom
 }
 
-func (k KVStoreDummy) HasOrderBookItem(ctx cosmos.Context, txID common.TxID) bool { return false }
-func (k KVStoreDummy) GetOrderBookIndexIterator(_ cosmos.Context, _ types.OrderType, _, _ common.Asset) cosmos.Iterator {
+func (k KVStoreDummy) HasAdvSwapQueueItem(ctx cosmos.Context, txID common.TxID, index int) bool {
+	return false
+}
+
+func (k KVStoreDummy) GetAdvSwapQueueIndexIterator(_ cosmos.Context, _ types.SwapType, _, _ common.Asset) cosmos.Iterator {
 	return nil
 }
 
-func (k KVStoreDummy) SetOrderBookIndex(_ cosmos.Context, _ MsgSwap) error {
+func (k KVStoreDummy) SetAdvSwapQueueIndex(_ cosmos.Context, _ MsgSwap) error {
 	return kaboom
 }
 
-func (k KVStoreDummy) GetOrderBookIndex(_ cosmos.Context, _ MsgSwap) (common.TxIDs, error) {
+func (k KVStoreDummy) GetAdvSwapQueueIndex(_ cosmos.Context, _ MsgSwap) ([]types.AdvSwapQueueIndexItem, error) {
 	return nil, kaboom
 }
 
-func (k KVStoreDummy) HasOrderBookIndex(_ cosmos.Context, _ MsgSwap) (bool, error) {
+func (k KVStoreDummy) HasAdvSwapQueueIndex(_ cosmos.Context, _ MsgSwap) (bool, error) {
 	return false, kaboom
 }
 
-func (k KVStoreDummy) RemoveOrderBookIndex(_ cosmos.Context, _ MsgSwap) error {
+func (k KVStoreDummy) RemoveAdvSwapQueueIndex(_ cosmos.Context, _ MsgSwap) error {
 	return kaboom
 }
 
-func (k KVStoreDummy) SetOrderBookProcessor(ctx cosmos.Context, record []bool) error {
+func (k KVStoreDummy) SetLimitSwapTTL(ctx cosmos.Context, blockHeight int64, txHashes []common.TxID) error {
 	return kaboom
 }
 
-// GetOrderBookProcessor - get a list of asset pairs to process
-func (k KVStoreDummy) GetOrderBookProcessor(ctx cosmos.Context) ([]bool, error) {
-	return nil, kaboom
+func (k KVStoreDummy) GetLimitSwapTTL(ctx cosmos.Context, blockHeight int64) ([]common.TxID, error) {
+	return []common.TxID{}, kaboom
+}
+
+func (k KVStoreDummy) RemoveLimitSwapTTL(ctx cosmos.Context, blockHeight int64) {
+}
+
+func (k KVStoreDummy) AddToLimitSwapTTL(ctx cosmos.Context, blockHeight int64, txHash common.TxID) error {
+	return kaboom
 }
 
 func (k KVStoreDummy) GetTCYClaimer(ctx cosmos.Context, l1Address common.Address, asset common.Asset) (TCYClaimer, error) {
@@ -826,6 +826,10 @@ func (k KVStoreDummy) GetOutboundFeeSpentRuneIterator(ctx cosmos.Context) cosmos
 	return nil
 }
 
+func (k KVStoreDummy) GetSurplusForTargetMultiplier(ctx cosmos.Context, targetMultiplierBps cosmos.Uint) cosmos.Uint {
+	return cosmos.ZeroUint()
+}
+
 func (k KVStoreDummy) GetOutboundTxFee(ctx cosmos.Context) cosmos.Uint {
 	return cosmos.ZeroUint()
 }
@@ -842,6 +846,30 @@ func (k KVStoreDummy) DeductNativeTxFeeFromAccount(ctx cosmos.Context, acctAddr 
 	return kaboom
 }
 
+func (k KVStoreDummy) ReferenceMemoExists(ctx cosmos.Context, _ common.Asset, _ string) bool {
+	return false
+}
+
+func (k KVStoreDummy) GetReferenceMemo(ctx cosmos.Context, _ common.Asset, _ string) (ReferenceMemo, error) {
+	return ReferenceMemo{}, kaboom
+}
+
+func (k KVStoreDummy) GetReferenceMemoByTxnHash(ctx cosmos.Context, _ common.TxID) (ReferenceMemo, error) {
+	return ReferenceMemo{}, kaboom
+}
+
+func (k KVStoreDummy) SetReferenceMemo(ctx cosmos.Context, name ReferenceMemo)     {}
+func (k KVStoreDummy) GetReferenceMemoIterator(ctx cosmos.Context) cosmos.Iterator { return nil }
+func (k KVStoreDummy) DeleteReferenceMemo(ctx cosmos.Context, _ common.Asset, _ string) error {
+	return kaboom
+}
+
+func (k KVStoreDummy) GetLastReferenceNumber(ctx cosmos.Context, asset common.Asset) string {
+	return ""
+}
+
+func (k KVStoreDummy) SetLastReferenceNumber(ctx cosmos.Context, asset common.Asset, ref string) {}
+
 func (k KVStoreDummy) GetSwapperCloutIterator(ctx cosmos.Context) cosmos.Iterator    { return nil }
 func (k KVStoreDummy) SetSwapperClout(ctx cosmos.Context, record SwapperClout) error { return kaboom }
 func (k KVStoreDummy) GetSwapperClout(ctx cosmos.Context, addr common.Address) (SwapperClout, error) {
@@ -850,6 +878,35 @@ func (k KVStoreDummy) GetSwapperClout(ctx cosmos.Context, addr common.Address) (
 
 func (k KVStoreDummy) RemoveLowBondValidatorAccounts(ctx cosmos.Context) error {
 	return kaboom
+}
+
+func (k KVStoreDummy) SetPrice(_ cosmos.Context, _ OraclePrice) error {
+	return nil
+}
+
+func (k KVStoreDummy) GetPrice(_ cosmos.Context, _ string) (OraclePrice, error) {
+	return OraclePrice{}, nil
+}
+func (k KVStoreDummy) DelPrice(_ cosmos.Context, _ string) {}
+func (k KVStoreDummy) GetPriceIterator(_ cosmos.Context) cosmos.Iterator {
+	return nil
+}
+
+func (k KVStoreDummy) GetVolumeBucket(_ cosmos.Context, _ common.Asset, _ int64) (VolumeBucket, error) {
+	return VolumeBucket{}, nil
+}
+
+func (k KVStoreDummy) GetVolumeBucketIterator(_ cosmos.Context, _ common.Asset) cosmos.Iterator {
+	return nil
+}
+
+func (k KVStoreDummy) SetVolumeBucket(_ cosmos.Context, _ VolumeBucket) error { return nil }
+func (k KVStoreDummy) GetVolume(_ cosmos.Context, _ common.Asset) (Volume, error) {
+	return Volume{}, kaboom
+}
+
+func (k KVStoreDummy) SetVolume(_ cosmos.Context, _ Volume) error {
+	return nil
 }
 
 // a mock cosmos.Iterator implementation for testing purposes

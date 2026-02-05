@@ -6,17 +6,19 @@ Transactions to THORChain pass user intent with the `MEMO` field on their respec
 
 THORChain uses specific [asset notation](asset-notation.md) for all assets. Assets and functions can be abbreviated, and affiliate addresses and asset amounts can be shortened to [reduce memo length](memo-length-reduction.md), including through use of [scientific notation](memo-length-reduction.md#scientific-notation). Some parameters can also refer to a [THORName](../affiliate-guide/thorname-guide.md) instead of an address.
 
-Guides have been created for [Swap](../swap-guide/quickstart-guide.md), [Savers](../saving-guide/quickstart-guide.md) and [Lending](../lending/quick-start-guide.md) to enable quoting and the automatic construction of memos for simplicity.
+A guide has been created for [Swap](../swap-guide/quickstart-guide.md) to enable quoting and the automatic construction of memos for simplicity.
 
 All memos are listed in the [relevant THORChain source code](https://gitlab.com/thorchain/thornode/-/blob/develop/x/thorchain/memo/memo.go) variable `stringToTxTypeMap`.
 
 ### Memo Size Limits
 
-THORChain has a [memo size limit of 250 bytes](https://gitlab.com/thorchain/thornode/-/blob/develop/constants/constants.go?ref_type=heads#L32). Any inbound tx sent with a larger memo will be ignored. Additionally, memos on UTXO chains are further constrained by the `OP_RETURN` size limit, which is [80 bytes](https://developer.bitcoin.org/devguide/transactions.html#null-data).
+THORChain has a [memo size limit of 250 bytes](https://gitlab.com/thorchain/thornode/-/blob/develop/constants/constants.go?ref_type=heads#L32). Any inbound tx sent with a larger memo will be ignored. Additionally, memos on UTXO chains are further constrained by the `OP_RETURN` size limit, which is [80 bytes](https://developer.bitcoin.org/devguide/transactions.html#null-data), which can be extended by using the approach described [here](sending-transactions.md#memo-greater-than-80-characters).
 
 ### Dust Thresholds
 
-THORChain has various dust thresholds (dust limits), defined on a per-chain basis. Refer to the [THORNode inbound addresses endpoint](https://dev.thorchain.org/saving-guide/quickstart-guide.html#basic-mechanics) for details, specifically the `dust_threshold` field.
+THORChain has various dust thresholds (dust limits), defined on a per-chain basis. These are minimum amounts required for transactions to be processed by THORChain. Transactions below these thresholds will be ignored to prevent spam and ensure economic viability.
+
+For example, sending 1 satoshi of BTC or 1 wei of ETH would be below the dust threshold and ignored. Each chain has different thresholds based on their native transaction costs and economic considerations. Refer to the [Dust Thresholds](../bifrost/vault-behaviors.md#dust-thresholds) for current threshold values for each supported chain.
 
 ## Format
 
@@ -31,28 +33,35 @@ Some parameters are optional. Simply leave them blank but retain the `:` separat
 The following functions can be put into a memo:
 
 1. [**SWAP**](memos.md#swap)
-1. [**DEPOSIT** **Savers**](memos.md#deposit-savers)
-1. [**WITHDRAW Savers**](memos.md#withdraw-savers)
-1. [**OPEN** **Loan**](memos.md#open-loan)
-1. [**REPAY Loan**](memos.md#repay-loan)
-1. [**DEPOSIT RUNEPool**](memos.md#deposit-runepool)
-1. [**WITHDRAW RUNEPool**](memos.md#withdraw-runepool)
 1. [**ADD Liquidity**](memos.md#add-liquidity)
 1. [**WITHDRAW Liquidity**](memos.md#withdraw-liquidity)
+1. [**CLAIM TCY**](memos.md#claim-tcy)
+1. [**STAKE TCY**](memos.md#stake-tcy)
+1. [**UNSTAKE TCY**](memos.md#unstake-tcy)
 1. [**ADD Trade Account**](memos.md#add-trade-account)
-1. [**WITHDRAW Trade Account**](memos.md#withdraw-liquidity)
+1. [**WITHDRAW Trade Account**](memos.md#withdraw-trade-account)
 1. [**ADD Secured Asset**](memos.md#add-secured-asset)
 1. [**WITHDRAW Secured Asset**](memos.md#withdraw-secured-asset)
-1. [**EXECUTE Smart Contract**](memos.md#execute)
-1. [**SWITCH Asset**](memos.md#switch)
-1. [**BOND**, **UNBOND** & **LEAVE**](memos.md#bond-unbond-and-leave)
-1. [**DONATE** & **RESERVE**](memos.md#donate-and-reserve)
+1. [**EXECUTE Smart Contract**](memos.md#execute-smart-contract)
+1. [**SWITCH Asset**](memos.md#switch-asset)
+1. [**DEPOSIT** **Savers**](memos.md#deposit-savers)
+1. [**WITHDRAW Savers**](memos.md#withdraw-savers)
+1. [**DEPOSIT RUNEPool**](memos.md#deposit-runepool)
+1. [**WITHDRAW RUNEPool**](memos.md#withdraw-runepool)
+1. [**BOND**, **UNBOND**, **REBOND** & **LEAVE**](memos.md#bond-unbond-rebond-and-leave)
+1. [**OPERATOR Rotate**](memos.md#operator-rotate)
+1. [**DONATE** & **RESERVE**](memos.md#donate--reserve)
+1. [**REFERENCE MEMO** - Memoless Transactions](memos.md#reference-memo---memoless-transactions)
 1. [**MIGRATE**](memos.md#migrate)
 1. [**NOOP**](memos.md#noop)
+1. [**Other Internal Memos**](memos.md#other-internal-memos)
 
 ### Swap
 
-Perform an asset swap.
+Perform an asset swap. THORChain supports different swap types using specific prefixes:
+
+- **Market Swaps**: Use `=` prefix for immediate execution
+- **Limit Swaps**: Use `=<` prefix for conditional execution based on price limits
 
 **`SWAP:ASSET:DESTADDR:LIM/INTERVAL/QUANTITY:AFFILIATE:FEE`**
 
@@ -60,30 +69,32 @@ Perform an asset swap.
 For the DEX aggregator-oriented variation of the `SWAP` memo, see [Aggregators Memos](../aggregators/memos.md).
 ```
 
-| Parameter     | Notes                                                                                 | Conditions                                                                                                                                      |
-| ------------- | ------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| Payload       | Send the asset to swap.                                                               | Must be an active pool on THORChain.                                                                                                            |
-| `SWAP`        | The swap handler.                                                                     | Also `s` or `=`                                                                                                                                 |
-| `:ASSET`      | The [asset identifier](asset-notation.md).                                            | Can be shortened.                                                                                                                               |
-| `:DESTADDR`   | The destination address to send to.                                                   | Can use THORName.                                                                                                                               |
-| `/REFUNDADDR` | The destination address for a refund to be sent to.                                   | Optional. If provided, the refund will be sent to this address; otherwise, it will be sent to the originator’s address.                         |
-| `:LIM`        | The trade limit, i.e., set 100000000 to get a minimum of 1 full asset, else a refund. | Optional. 1e8 or scientific notation.                                                                                                           |
-| `/INTERVAL`   | Swap interval in blocks.                                                              | Optional. If 0, do not stream.                                                                                                                  |
-| `/QUANTITY`   | Swap quantity. The interval value determines the frequency of swaps in blocks.        | Optional. If 0, network will determine the number of swaps.                                                                                     |
-| `:AFFILIATE`  | The affiliate addresses.                                                              | Optional. Define up to [MultipleAffiliatesMaxCount](../mimir.md#swapping) (currently 5) THORNames or THOR Addresses, separated by `/`           |
-| `:FEE`        | The [affiliate fees](fees.md#affiliate-fee). RUNE is sent to affiliate.               | Optional. Ranges from 0 to 1000 Basis Points. Specify one fee for all affiliates, or individual fees matching the number of affiliates defined. |
+| Parameter     | Notes                                                                                 | Conditions                                                                                                                                                                                               |
+| ------------- | ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Payload       | Send the asset to swap.                                                               | Must be an active pool on THORChain.                                                                                                                                                                     |
+| `SWAP`        | The swap handler.                                                                     | Also `s` (legacy), `=` (market swap), or `=<` (limit swap)                                                                                                                                               |
+| `:ASSET`      | The [asset identifier](asset-notation.md).                                            | Can be shortened.                                                                                                                                                                                        |
+| `:DESTADDR`   | The destination address to send to.                                                   | Can use THORName.                                                                                                                                                                                        |
+| `/REFUNDADDR` | The destination address for a refund to be sent to.                                   | Optional. If provided, the refund will be sent to this address; otherwise, it will be sent to the originator's address.                                                                                  |
+| `:LIM`        | The trade limit, i.e., set 100000000 to get a minimum of 1 full asset, else a refund. | Optional. 1e8 or scientific notation. For limit swaps (`=<`), this determines execution price.                                                                                                           |
+| `/INTERVAL`   | Swap interval in blocks.                                                              | Optional. With advanced queue: 0 = rapid streaming (multiple sub-swaps per block), ≥1 = traditional streaming (one sub-swap per X blocks). For limit swaps, can also specify custom TTL (≤43200 blocks). |
+| `/QUANTITY`   | Swap quantity. The interval value determines the frequency of swaps in blocks.        | Optional. If 0 or omitted with advanced queue, network determines optimal streaming parameters. Legacy queue: 0 = single swap.                                                                           |
+| `:AFFILIATE`  | The affiliate addresses.                                                              | Optional. Define up to [MultipleAffiliatesMaxCount](../mimir.md#swapping) (currently 5) THORNames or THOR Addresses, separated by `/`                                                                    |
+| `:FEE`        | The [affiliate fees](fees.md#affiliate-fee). RUNE is sent to affiliate.               | Optional. Ranges from 0 to 1000 Basis Points. Specify one fee for all affiliates, or individual fees matching the number of affiliates defined.                                                          |
 
 **Syntactic Examples:**
 
-- `SWAP:ASSET:DESTADDR` &mdash; simple swap
+- `=:ASSET:DESTADDR` &mdash; market swap (with advanced queue: auto-streaming for optimal execution)
+- `=:ASSET:DESTADDR:/1/1` &mdash; market swap (force single swap, disable streaming)
+- `=<:ASSET:DESTADDR:LIM` &mdash; limit swap (executes only when price target is met)
 - `SWAP:ASSET:DESTADDR/REFUNDADDR:LIM/1/0:AFFILIATE:FEE` &mdash; swap with refund address specified
-- `SWAP:ASSET:DESTADDR:LIM` &mdash; swap with trade limit
-- `SWAP:ASSET:DESTADDR:LIM/0/1` &mdash; swap with limit, do not stream swap
-- `SWAP:ASSET:DESTADDR:LIM/3/0` &mdash; swap with limit, optimise swap amount, every 3 blocks
-- `SWAP:ASSET:DESTADDR:LIM/1/0:AFFILIATE:FEE` &mdash; swap with limit, optimised and affiliate fee
-- `SWAP:ASSET:DESTADDR:LIM/1/0:AFFILIATE:FEE` &mdash; swap with limit, optimised and affiliate fee
-- `SWAP:ASSET:DESTADDR:LIM/1/0:AFFILIATE1/AFFILIATE2/AFFILIATE3:FEE` &mdash; swap with limit, optimised and affiliate fee where each affiliate is paid the fee.
-- `SWAP:ASSET:DESTADDR:LIM/1/0:AFFILIATE1/AFFILIATE2/AFFILIATE3:FEE1/FEE2/FEE3` &mdash; swap with limit, optimised and affiliate fee where each affiliate is paid the specified fee.
+- `=:ASSET:DESTADDR:LIM/0/5` &mdash; rapid streaming: 5 sub-swaps as fast as possible (multiple per block)
+- `=:ASSET:DESTADDR:LIM/3/5` &mdash; traditional streaming: 5 sub-swaps, one every 3 blocks
+- `=<:ASSET:DESTADDR:LIM/0/0` &mdash; limit swap, rapid execution when conditions met
+- `=<:ASSET:DESTADDR:LIM/43200/0` &mdash; limit swap with custom 43200 block TTL (max allowed)
+- `=:ASSET:DESTADDR:LIM/1/0:AFFILIATE:FEE` &mdash; market swap with affiliate fee
+- `=<:ASSET:DESTADDR:LIM/1/0:AFFILIATE1/AFFILIATE2/AFFILIATE3:FEE` &mdash; limit swap with multiple affiliates
+- `=:ASSET:DESTADDR:LIM/1/0:AFFILIATE1/AFFILIATE2/AFFILIATE3:FEE1/FEE2/FEE3` &mdash; market swap with individual affiliate fees
 
 **Real-world Examples:**
 
@@ -95,125 +106,43 @@ For the DEX aggregator-oriented variation of the `SWAP` memo, see [Aggregators M
 - `SWAP:ETH.ETH:0xe6a30f4f3bad978910e2cbb4d97581f5b5a0ade0:10000000/3/0:t:10` &mdash; same as above except sends 10 basis points from the input to affiliate `t` (THORSwap)
 - `s:ETH.ETH:0xe6a30f4f3bad978910e2cbb4d97581f5b5a0ade0:1e6/3/0:t:10` &mdash; same as above except with a reduced memo and scientific notation trade limit
 - `=:r:thor1el4ufmhll3yw7zxzszvfakrk66j7fx0tvcslym:19779138111` &mdash; swap to at least 197.79 RUNE
-- `=:ETH/USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48:thor15s4apx9ap7lazpsct42nmvf0t6am4r3w0r64f2:628197586176` &mdash; swap to at least 6281.9 Synthetic USDC (Synths are deprecated)
 - `=:BSC.BNB:0xe6a30f4f3bad978910e2cbb4d97581f5b5a0ade0:544e6/2/6` &mdash; swap to at least 5.4 BNB, using streaming swaps, 6 swaps, every 2 blocks
 - `=:BTC~BTC:thor1g6pnmnyeg48yc3lg796plt0uw50qpp7humfggz:1e6/1/0:dx:10` &mdash; Swap to Bitcoin Trade Asset, using a Limit, Streaming Swaps and a 10 basis point fee to the affiliate `dx` (Asgardex)
 - `=:BTC-BTC:thor1g6pnmnyeg48yc3lg796plt0uw50qpp7humfggz:1e6/1/0:dx:10` &mdash; Swap to Bitcoin Secured Asset, using a Limit, Streaming Swaps and a 10 basis point fee to the affiliate `dx` (Asgardex)
 - `=:ETH.ETH:0x3021c479f7f8c9f1d5c7d8523ba5e22c0bcb5430::t1/t2/t3/t4/t5:10` &mdash; Swap to Ether, will skim 10 basis points for each of the affiliates
 - `=:ETH.ETH:0x3021c479f7f8c9f1d5c7d8523ba5e22c0bcb5430::t1/dx/ss:10/20/30` &mdash; Swap to Ether, Will skim 10 basis points for `t1`, 20 basis points for `dx`, and 30 basis points for `ss`
 
-### **Deposit Savers**
+#### Advanced Swap Queue
 
-Deposit an asset into THORChain Savers.
+THORChain uses an advanced swap queue system with different operational modes controlled by the `EnableAdvSwapQueue` mimir setting:
 
-**`ADD:POOL::AFFILIATE:FEE`**
+- **Disabled (0)**: Uses legacy swap queue
+- **Enabled (1)**: Full advanced queue with both market and limit swaps
+- **Market-only (2)**: Advanced queue for market swaps only, limit swaps are skipped
 
-| Parameter    | Notes                                                                  | Conditions                                      |
-| ------------ | ---------------------------------------------------------------------- | ----------------------------------------------- |
-| Payload      | The asset to add liquidity with.                                       | Must be supported by THORChain.                 |
-| `ADD`        | The deposit handler.                                                   | Also `+`                                        |
-| `:POOL`      | The pool to add liquidity to.                                          | Gas and stablecoin pools only.                  |
-| `:`          | Must be empty.                                                         | Optional. Required if adding affiliate and fee. |
-| `:AFFILIATE` | The affiliate address.                                                 | Optional. Must be a THORName or THOR Address.   |
-| `:FEE`       | The [affiliate fee](fees.md#affiliate-fee). RUNE is sent to affiliate. | Optional. Ranges from 0 to 1000 Basis Points.   |
+#### Swap Boundaries and Limits
 
-**Examples:**
+**Limit Swap Expiration:**
 
-- `ADD:ETH/ETH` &mdash; deposit into the ETH Savings Vault
-- `+:BTC/BTC::t:10` &mdash; deposit into the BTC Savings Vault, with 10 basis points being sent to affiliate `t` (THORSwap)
-- `a:DOGE/DOGE` &mdash; deposit into the DOGE Savings Vault
+- **Default TTL**: 43,200 blocks (~3 days)
+- **Custom TTL**: Specify via `/INTERVAL` parameter (must be ≤ 43,200 blocks)
+- **Automatic Cleanup**: Expired limit swaps are automatically removed and remaining funds refunded
 
-```admonish info
-Depositing into Savers can also work without a memo, however memos are recommended to be explicit about the transaction intent.
-```
+**Rapid Swap Processing:**
 
-### Withdraw Savers
+- The advanced queue can process multiple swap iterations per block
+- Controlled by `AdvSwapQueueRapidSwapMax` mimir setting (default: 1)
+- Enables higher throughput during peak activity
 
-Withdraw an asset from THORChain Savers.
+**Price Discovery:**
 
-**`WITHDRAW:POOL:BASISPOINTS`**
-
-| Parameter      | Notes                                                                                       | Extra                                            |
-| -------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------ |
-| Payload        | Send the dust threshold of the asset to cause the transaction to be picked up by THORChain. | [Dust thresholds](#dust-thresholds) must be met. |
-| `WITHDRAW`     | The withdraw handler.                                                                       | Also `-` or `wd`                                 |
-| `:POOL`        | The pool to withdraw liquidity from.                                                        | Gas and stablecoin pools only.                   |
-| `:BASISPOINTS` | Basis points.                                                                               | Optional. Range 0-10000, where 10000 = 100%.     |
-
-**Examples:**
-
-- `WITHDRAW:BTC/BTC:10000` &mdash; withdraw 100% from BTC Savers
-- `-:ETH/ETH:5000` &mdash; withdraw 50% from ETH Savers
-- `wd:BTC/BTC:1000` &mdash; withdraw 10% from BTC Savers
+- Market swaps execute immediately at current pool prices
+- Limit swaps only execute when the fee-less swap ratio meets the specified limit
+- Advanced indexing system for efficient limit order matching
 
 ```admonish info
-Withdrawing from Savers can be also be done [without a memo](../saving-guide/quickstart-guide.md#basic-mechanics).
+For detailed information about the advanced swap queue, see [Advanced Swap Queue Guide](../swap-guide/advanced-swap-queue.md).
 ```
-
-### **Open Loan**
-
-Open a loan on THORChain.
-
-**`LOAN+:ASSET:DESTADDR:MINOUT:AFFILIATE:FEE`**
-
-| Parameter    | Notes                                                                  | Conditions                                    |
-| ------------ | ---------------------------------------------------------------------- | --------------------------------------------- |
-| Payload      | The collateral to open the loan with.                                  | Must be L1 supported by THORChain.            |
-| `LOAN+`      | The loan open handler.                                                 | Also `$+`                                     |
-| `:ASSET`     | Target debt [asset identifier](asset-notation.md).                     | Can be shortened.                             |
-| `:DESTADDR`  | The destination address to send the debt to.                           | Can use THORName.                             |
-| `:MINOUT`    | Minimum debt amount, else a refund. Similar to `:LIM`.                 | Optional. 1e8 format.                         |
-| `:AFFILIATE` | The affiliate address.                                                 | Optional. Must be a THORName or THOR Address. |
-| `:FEE`       | The [affiliate fee](fees.md#affiliate-fee). RUNE is sent to affiliate. | Optional. Ranges from 0 to 1000 Basis Points. |
-
-**Examples:**
-
-- `LOAN+:BSC.BUSD:0xe6a30f4f3bad978910e2cbb4d97581f5b5a0ade0` &mdash; open a loan with BUSD as the debt asset
-- `$+:ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48:0x1c7b17362c84287bd1184447e6dfeaf920c31bbe:10400000000` &mdash; open a loan where the debt is at least 104 USDT
-
-### **Repay Loan**
-
-Repay a loan on THORChain.
-
-**`LOAN-:ASSET:DESTADDR:MINOUT`**
-
-| Parameter   | Notes                                                            | Conditions                                                    |
-| ----------- | ---------------------------------------------------------------- | ------------------------------------------------------------- |
-| Payload     | The repayment for the loan.                                      | Must be L1 supported on THORChain.                            |
-| `LOAN-`     | The loan repayment handler.                                      | Also `$-`                                                     |
-| `:ASSET`    | Target collateral [asset identifier](asset-notation.md).         | Can be shortened.                                             |
-| `:DESTADDR` | The destination address to send the collateral to.               | Can use a THORName.                                           |
-| `:MINOUT`   | Minimum collateral to receive, else a refund. Similar to `:LIM`. | Optional. 1e8 format, loan needs to be fully repaid to close. |
-
-**Examples:**
-
-- `LOAN-:BTC.BTC:bc1qp2t4hl4jr6wjfzv28tsdyjysw7p5armf7px55w` &mdash; repay BTC loan owned by owner bc1qp2t4hl4jr6wjfzv28tsdyjysw7p5armf7px55w
-- `$-:ETH.ETH:0xe9973cb51ee04446a54ffca73446d33f133d2f49:404204059` &mdash; repay ETH loan owned by `0xe9973cb51ee04446a54ffca73446d33f133d2f49` and receive at least 4.04 ETH collateral back, else refund
-
-### Deposit RUNEPool
-
-Deposit RUNE to the RUNEPool
-
-**`POOL+`**
-
-| Parameter | Notes                 | Extra                                                                    |
-| --------- | --------------------- | ------------------------------------------------------------------------ |
-| Payload   | THOR.RUNE             | Use `MsgDeposit`. The amount of RUNE in the tx will be added to RunePool |
-| `POOL+`   | The RUNEPool handler. |                                                                          |
-
-### Withdraw RUNEPool
-
-**`POOL-:BASISPOINTS:AFFILIATE:FEE`**
-
-| Parameter      | Notes                                       | Extra                                         |
-| -------------- | ------------------------------------------- | --------------------------------------------- |
-| Payload        | None required.                              | Use `MsgDeposit`.                             |
-| `POOL-`        | The The RUNEPool handler.                   |                                               |
-| `:BASISPOINTS` | Basis points.                               | Required. Range 0-10000, where 10000 = 100%.  |
-| `:AFFILIATE`   | The affiliate address.                      | Optional. Must be a THORName or THOR Address. |
-| `:FEE`         | The [affiliate fee](fees.md#affiliate-fee). | Optional. Ranges from 0 to 1000 Basis Points. |
-
-Example: `POOL-:10000:dx:10` - 100% Withdraw from RUNEPool with a 10 basis point affiliate fee. Affiliates receive the corresponding basis points of positive PnL. If user is withdrawing with a loss, the affiliate will receive no fee.
 
 ### Add Liquidity
 
@@ -230,7 +159,7 @@ There are rules for adding liquidity, see [the rules here](https://docs.thorchai
 | `:POOL`       | The pool to add liquidity to.                                                                                                                                                                                                          | Can be shortened.                                                           |
 | `:PAIREDADDR` | The other address to link with. If on external chain, link to THOR address. If on THORChain, link to external address. If a paired address is found, the LP is matched and added. If none is found, the liquidity is put into pending. | Optional. If not specified, a single-sided add-liquidity action is created. |
 | `:AFFILIATE`  | The affiliate address. The affiliate is added to the pool as an LP.                                                                                                                                                                    | Optional. Must be a THORName or THOR Address.                               |
-| `:FEE`        | The [affiliate fee](fees.md#affiliate-fee).                                                                                                                                                                                            | Optional. Ranges from 0 to 1000 Basis Points.                               |
+| `:FEE`        | The [affiliate fee](../affiliate-guide/affiliate-fee-guide.md#how-it-works).                                                                                                                                                           | Optional. Ranges from 0 to 1000 Basis Points.                               |
 
 **Examples:**
 
@@ -247,7 +176,7 @@ Withdraw liquidity from a pool.
 
 A withdrawal can be either dual-sided (withdrawn based on pool's price) or entirely single-sided (converted to one side and sent out).
 
-| Parameter      | Notes                                                                                       | Extra                                                         |
+| Parameter      | Notes                                                                                       | Conditions                                                    |
 | -------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
 | Payload        | Send the dust threshold of the asset to cause the transaction to be picked up by THORChain. | [Dust thresholds](#dust-thresholds) must be met.              |
 | `WITHDRAW`     | The withdraw liquidity handler.                                                             | Also `-` or `wd`                                              |
@@ -261,13 +190,56 @@ A withdrawal can be either dual-sided (withdrawn based on pool's price) or entir
 - `-:POOL:1000` &mdash; dual-sided 10% withdraw liquidity
 - `wd:POOL:5000:ASSET` &mdash; withdraw 50% liquidity as the asset specified while the rest stays in the pool, e.g., `w:BTC.BTC:5000:BTC.BTC`
 
+### Claim TCY
+
+Claim TCY tokens for THORFi debt. Claims must be sent form an address within [`tcy_claimers_mainnet`](https://gitlab.com/thorchain/thornode/-/raw/develop/common/tcyclaimlist/tcy_claimers_mainnet.json). Claimed TCY is assigned to the specified thor address and automatically staked.
+
+**`TCY:ADDR`**
+
+| Parameter | Notes                  | Conditions                                       |
+| --------- | ---------------------- | ------------------------------------------------ |
+| Payload   | From a claim address   | [Dust thresholds](#dust-thresholds) must be met. |
+| `TCY`     | The TCY Claim handler. |                                                  |
+| `ADDR`    | Must be a thor address | Becomes the owner of the TCY                     |
+
+Example:
+
+- `tcy:thor1tj237x6zdpk3l7x8g4qhutqnnjq5v6syglprz7` &mdash; claim TCY, sent to the originator's address.
+
+### Stake TCY
+
+**`TCY+`**
+
+| Parameter | Notes                  | Conditions        |
+| --------- | ---------------------- | ----------------- |
+| Payload   | TCY to be staked       | Use `MsgDeposit`. |
+| `TCY+`    | The TCY Stake handler. |                   |
+
+Example:
+
+- `TCY+` &mdash; Stakes TCY included in the payload.
+
+### Unstake TCY
+
+**`TCY-:BASISPOINTS`**
+
+| Parameter      | Notes                    | Conditions                         |
+| -------------- | ------------------------ | ---------------------------------- |
+| Payload        | Unstake TCY              | Use `MsgDeposit`.                  |
+| `TCY-`         | The TCY Unstake handler. |                                    |
+| `:BASISPOINTS` | Basis points.            | Range 0-10000, where 10000 = 100%. |
+
+Example:
+
+- `TCY-:5000` &mdash; remove 50% of the staked TCY.
+
 ### Add Trade Account
 
 **`TRADE+:ADDR`**
 
 Adds an L1 asset to the [Trade Account](../concepts/trade-accounts.md).
 
-| Parameter | Notes                                 | Extra                                          |
+| Parameter | Notes                                 | Conditions                                     |
 | --------- | ------------------------------------- | ---------------------------------------------- |
 | Payload   | The asset to add to the Trade Account | Must be a L1 asset and supported by THORChain. |
 | `TRADE+`  | The trade account handler.            |                                                |
@@ -281,7 +253,7 @@ Withdraws an L1 asset from the Trade Account.
 
 **`TRADE-:ADDR`**
 
-| Parameter | Notes                                                                          | Extra                    |
+| Parameter | Notes                                                                          | Conditions               |
 | --------- | ------------------------------------------------------------------------------ | ------------------------ |
 | Payload   | The [Trade Asset](./asset-notation.md#trade-assets) to be withdrawn and amount | Use `MsgDeposit`.        |
 | `TRADE-`  | The trade account handler.                                                     |                          |
@@ -303,11 +275,11 @@ Note: Trade Asset and Amount are determined by the `coins` within the `MsgDeposi
 
 Converts a L1 asset to a [Secured Asset](../concepts/secured-assets.md).
 
-| Parameter | Notes                               | Extra                                          |
+| Parameter | Notes                               | Conditions                                     |
 | --------- | ----------------------------------- | ---------------------------------------------- |
 | Payload   | The asset to become a Secured Asset | Must be a L1 asset and supported by THORChain. |
 | `SECURE+` | The Secured Asset handler.          |                                                |
-| `ADDR`    | Must be a thor address              | Specifies the owner and desitnation            |
+| `ADDR`    | Must be a thor address              | Specifies the owner and destination            |
 
 **Example:** `SECURE+:thor1x2whgc2nt665y0kc44uywhynazvp0l8tp0vtu6` - Converts the sent asset and amount to a Secured Asset.
 
@@ -317,7 +289,7 @@ Converts a Secured Asset to a L1 Asset.
 
 **`SECURE-:ADDR`**
 
-| Parameter | Notes                                                                             | Extra                    |
+| Parameter | Notes                                                                             | Conditions               |
 | --------- | --------------------------------------------------------------------------------- | ------------------------ |
 | Payload   | The [Secured Asset](./asset-notation.md#secured-assets) to be redeemed and amount | Use `MsgDeposit`.        |
 | `SECURE-` | The Secured Asset handler.                                                        |                          |
@@ -327,13 +299,13 @@ Note: Secured Assets and amount are determined by the `coins` within the `MsgDep
 
 **Example:** `SECURE-:bc1qp8278yutn09r2wu3jrc8xg2a7hgdgwv2gvsdyw` - Convert 0.1 BTC from a Secured Asset to a L1 and send to `bc1qp8278yutn09r2wu3jrc8xg2a7hgdgwv2gvsdyw`
 
-### Execute
+### Execute Smart Contract
 
 Execute a Smart Contract from a base layer transaction.
 
 **`X:ADDR:PAYLOAD`**
 
-| Parameter | Notes                                                                                                                          | Extra                                            |
+| Parameter | Notes                                                                                                                          | Conditions                                       |
 | --------- | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------ |
 | Payload   | The asset to sent to the smart contract. L1 asset will be converted into a [Secured Asset](./asset-notation.md#secured-assets) | [Dust thresholds](#dust-thresholds) must be met. |
 | `x`       | The Wasm Execute handler. Also `exec`.                                                                                         | Must be a THORChain address                      |
@@ -350,15 +322,103 @@ The above example creates a `MsgWasmExec` object for a smart contract execution 
 4. Funds: The Layer 1 asset (e.g., BTC amount sent in) is converted into a Secured Asset and included in the smart contract call.
 5. The smart contract will be executed via the following Cosmos SDK function: `ExecuteContract(ctx, contractAddr, senderAddr, msg.Msg, msg.Funds)`
 
-### Switch
+### Switch Asset
 
 One way switch for external tokens to be a native THORChain asset. Supported Assets are listed in a switchMap within the `SwitchManager`.
 
-| Parameter | Notes                              | Extra                                |
+| Parameter | Notes                              | Conditions                           |
 | --------- | ---------------------------------- | ------------------------------------ |
 | Payload   | The asset to become a Native Asset | Must be a L1 supported on THORChain. |
 | `switch`  | The Secured Asset handler.         |                                      |
 | `ADDR`    | The thor address for native asset  | Must be a thor address               |
+
+### Limit Swap Modification
+
+**`m=<:SOURCE:TARGET:MODIFIEDTARGETAMOUNT`**
+
+A trader can modify a limit swap by changing the target amount. Setting this
+value to 0 will cancel the limit swap.
+
+| Parameter               | Description                               | Notes            |
+| ----------------------- | ----------------------------------------- | ---------------- |
+| `Payload`               | None required                             | Use `MsgDeposit` |
+| `m=<`                   | The limit swap modifier handler           |                  |
+| `:SOURCE`               | The source coin (e.g., `1234BTC.BTC`)     |                  |
+| `:TARGET`               | The target coin (e.g., `1234ETH.ETH`)     |                  |
+| `:MODIFIEDTARGETAMOUNT` | The modified target amount (e.g., `1235`) |                  |
+
+### **Deposit Savers**
+
+Deposit an asset into THORChain Savers.
+
+**`ADD:POOL::AFFILIATE:FEE`**
+
+| Parameter    | Notes                                                                                                   | Conditions                                      |
+| ------------ | ------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| Payload      | The asset to add liquidity with.                                                                        | Must be supported by THORChain.                 |
+| `ADD`        | The deposit handler.                                                                                    | Also `+`                                        |
+| `:POOL`      | The pool to add liquidity to.                                                                           | Gas and stablecoin pools only.                  |
+| `:`          | Must be empty.                                                                                          | Optional. Required if adding affiliate and fee. |
+| `:AFFILIATE` | The affiliate address.                                                                                  | Optional. Must be a THORName or THOR Address.   |
+| `:FEE`       | The [affiliate fee](../affiliate-guide/affiliate-fee-guide.md#how-it-works). RUNE is sent to affiliate. | Optional. Ranges from 0 to 1000 Basis Points.   |
+
+**Examples:**
+
+- `ADD:ETH/ETH` &mdash; deposit into the ETH Savings Vault
+- `+:BTC/BTC::t:10` &mdash; deposit into the BTC Savings Vault, with 10 basis points being sent to affiliate `t` (THORSwap)
+- `a:DOGE/DOGE` &mdash; deposit into the DOGE Savings Vault
+
+```admonish info
+Depositing into Savers can also work without a memo, however memos are recommended to be explicit about the transaction intent.
+```
+
+### Withdraw Savers
+
+Withdraw an asset from THORChain Savers.
+
+**`WITHDRAW:POOL:BASISPOINTS`**
+
+| Parameter      | Notes                                                                                       | Conditions                                       |
+| -------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| Payload        | Send the dust threshold of the asset to cause the transaction to be picked up by THORChain. | [Dust thresholds](#dust-thresholds) must be met. |
+| `WITHDRAW`     | The withdraw handler.                                                                       | Also `-` or `wd`                                 |
+| `:POOL`        | The pool to withdraw liquidity from.                                                        | Gas and stablecoin pools only.                   |
+| `:BASISPOINTS` | Basis points.                                                                               | Optional. Range 0-10000, where 10000 = 100%.     |
+
+**Examples:**
+
+- `WITHDRAW:BTC/BTC:10000` &mdash; withdraw 100% from BTC Savers
+- `-:ETH/ETH:5000` &mdash; withdraw 50% from ETH Savers
+- `wd:BTC/BTC:1000` &mdash; withdraw 10% from BTC Savers
+
+```admonish info
+Withdrawing from Savers can be also be done [without a memo](../archived/saving-guide/quickstart-guide.md#basic-mechanics).
+```
+
+### Deposit RUNEPool
+
+Deposit RUNE to the RUNEPool
+
+**`POOL+`**
+
+| Parameter | Notes                 | Conditions                                                               |
+| --------- | --------------------- | ------------------------------------------------------------------------ |
+| Payload   | THOR.RUNE             | Use `MsgDeposit`. The amount of RUNE in the tx will be added to RunePool |
+| `POOL+`   | The RUNEPool handler. |                                                                          |
+
+### Withdraw RUNEPool
+
+**`POOL-:BASISPOINTS:AFFILIATE:FEE`**
+
+| Parameter      | Notes                                                                        | Conditions                                    |
+| -------------- | ---------------------------------------------------------------------------- | --------------------------------------------- |
+| Payload        | None required.                                                               | Use `MsgDeposit`.                             |
+| `POOL-`        | The The RUNEPool handler.                                                    |                                               |
+| `:BASISPOINTS` | Basis points.                                                                | Required. Range 0-10000, where 10000 = 100%.  |
+| `:AFFILIATE`   | The affiliate address.                                                       | Optional. Must be a THORName or THOR Address. |
+| `:FEE`         | The [affiliate fee](../affiliate-guide/affiliate-fee-guide.md#how-it-works). | Optional. Ranges from 0 to 1000 Basis Points. |
+
+Example: `POOL-:10000:dx:10` - 100% Withdraw from RUNEPool with a 10 basis point affiliate fee. Affiliates receive the corresponding basis points of positive PnL. If user is withdrawing with a loss, the affiliate will receive no fee.
 
 ### DONATE & RESERVE
 
@@ -366,7 +426,7 @@ Donate to a pool.
 
 **`DONATE:POOL`**
 
-| Parameter | Notes                                    | Extra                                                 |
+| Parameter | Notes                                    | Conditions                                            |
 | --------- | ---------------------------------------- | ----------------------------------------------------- |
 | Payload   | The asset to donate to a THORChain pool. | Must be supported by THORChain. Can be RUNE or ASSET. |
 | `DONATE`  | The donate handler.                      | Also `d`                                              |
@@ -380,18 +440,145 @@ Donate to a pool.
 
 Donate to the THORChain Reserve.
 
-| Parameter | Notes                | Extra                                        |
+| Parameter | Notes                | Conditions                                   |
 | --------- | -------------------- | -------------------------------------------- |
 | Payload   | THOR.RUNE            | The RUNE to credit to the THORChain Reserve. |
 | `RESERVE` | The reserve handler. |                                              |
 
-### BOND, UNBOND and LEAVE
+### REFERENCE MEMO - Memoless Transactions
+
+Memoless transactions allow users to register a memo on THORChain and then reference it in future transactions using a short reference number encoded in the transaction amount. This enables transactions on chains with limited memo space (like Bitcoin's 80-byte OP_RETURN limit) by eliminating the need to include lengthy memos.
+
+For detailed information, see [Memoless Transactions](../swap-guide/memoless-swaps.md).
+
+#### Registering a Reference Memo
+
+Register a memo for future memoless transactions.
+
+**`REFERENCE:ASSET:MEMO`**
+
+| Parameter   | Notes                                                   | Conditions                                           |
+| ----------- | ------------------------------------------------------- | ---------------------------------------------------- |
+| Payload     | THOR.RUNE                                               | Use `MsgDeposit`.                                    |
+| `REFERENCE` | The reference memo registration handler.                | Also `reference`                                     |
+| `:ASSET`    | The [asset identifier](asset-notation.md) for the memo. | Must be an active asset on THORChain.                |
+| `:MEMO`     | The memo to register for memoless transactions.         | Any valid THORChain memo (swap, add liquidity, etc.) |
+
+#### Use Reference Memo
+
+Use a previously registered reference memo explicitly in a transaction.
+
+**`R:REFERENCE`**
+
+| Parameter    | Notes                                              | Conditions                                                                                    |
+| ------------ | -------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Payload      | The asset for the memoless transaction.            | Must match the asset registered in the memo. [Dust thresholds](#dust-thresholds) must be met. |
+| `R`          | The reference memo usage handler.                  | Also `r`                                                                                      |
+| `:REFERENCE` | The reference number assigned during registration. | Must be a valid, non-expired reference number.                                                |
+
+**Important**: Before broadcasting, **always** call `GET /thorchain/memo/check/{asset}/{amount}` to validate:
+
+- Reference exists and is not expired
+- Usage limit not exceeded
+- Memoless functionality not halted
+
+**Transaction Flow:**
+
+1. User sends RUNE with `REFERENCE:BTC.BTC:=:ETH.ETH:0xADDRESS` memo
+2. THORChain assigns a reference number (e.g., 20002)
+3. User can now use this reference for future BTC transactions. Reference expires post [`MemolessTxnTTL`](../mimir.md#memoless-transactions), approx. 6 hours
+
+See [Memoless Swaps](../swap-guide/memoless-swaps.md) for detailed information.
+
+#### Encoding Examples
+
+**Bitcoin Example (8 decimals):**
+
+- Reference: 20002
+- Want to send: 0.05 BTC = 5000000
+- Amount: 5000000 + 20002 = 5020002 satoshis
+- Verification: 5020002 % 100000 = 20002 ✓
+
+**Lower Decimal Asset Example - USDC (6 decimals):**
+
+- Reference: 20002
+- Want to send: 1500 units = 1500000000
+- Amount: 1,500,000,000 + 20002 = 1,500,020,002 native units
+- Verification: 1,500,020,002 % 100000 = 20002 ✓
+
+**Configuration:**
+
+- **TTL (Time To Live)**: `MemolessTxnTTL` - Reference memos expire after a configurable number of blocks (default: 3600 blocks ≈ 6 hours)
+- **Reference Range**: `MemolessTxnRefCount` - Reference numbers range from 1 to this value (default: 99999)
+- **Cost**: `MemolessTxnCost` - Additional protocol-level fee, currently set to 0
+- **Max Usage**: `MemolessTxnMaxUse` - Maximum number of times a reference can be used (default: 1)
+- **HaltMemoless**: Operational mimir to emergency halt all memoless functionality
+
+**Examples:**
+
+Registration:
+
+- `REFERENCE:BTC.BTC:=:ETH.ETH:0x1c7b17362c84287bd1184447e6dfeaf920c31bbe`
+  - Registers a swap from BTC to ETH memo for the specified address
+  - Returns reference number (e.g., 20002)
+  - Cost is only deducted if registration succeeds
+
+Usage (Explicit):
+
+- `R:20002` - Uses the registered memo with reference number 20002
+- The actual swap will be executed using the originally registered memo
+
+Usage (Amount-Encoded):
+
+- Send `0.00020002 BTC` with empty memo
+- THORChain extracts reference `20002` and resolves the registered swap memo
+- Swap executes to ETH address `0x1c7b17362c84287bd1184447e6dfeaf920c31bbe`
+
+**API Endpoints:**
+
+- `GET /thorchain/memo/{asset}/{reference}` - Retrieve memo by asset and reference number
+- `GET /thorchain/memo/{registration_hash}` - Retrieve memo by registration transaction hash
+- `GET /thorchain/memo/check/{asset}/{amount}` - Pre-flight check: preview reference from amount and check availability
+
+#### Reference Memo Lifecycle
+
+Reference memos progress through distinct states from creation to expiration:
+
+| **State**     | **Condition**                                    | **API Response**           | **User Action**  |
+| ------------- | ------------------------------------------------ | -------------------------- | ---------------- |
+| **CREATED**   | `Height > 0`                                     | Returns reference details  | Can start using  |
+| **ACTIVE**    | `Height + TTL > current`<br>AND<br>`usage < max` | Returns valid memo         | Normal usage     |
+| **USED**      | `UsedByTxs` contains TxIDs                       | Returns memo + usage count | Monitor limits   |
+| **EXHAUSTED** | `usage >= MemolessTxnMaxUse`                     | Returns empty → refund     | Must re-register |
+| **EXPIRED**   | `Height + TTL < current`                         | Returns 404/empty → refund | Must re-register |
+| **HALTED**    | `HaltMemoless` mimir > 0                         | Returns empty → refund     | Wait for unhalt  |
+
+#### Emergency Halt System
+
+**HaltMemoless Mimir**:
+
+- **Purpose**: Emergency brake for security issues or bugs
+- **Effect**: ALL memoless transactions rejected instantly
+- **Monitoring**: Check [mimir endpoint](https://thornode.ninerealms.com/thorchain/mimir)
+- **Procedures**: See [Emergency Procedures](https://docs.thorchain.org/thornodes/emergency-procedures) for network halt operations
+
+**Pre-Flight Checking:**
+
+Before sending a memoless transaction, wallets should use the pre-flight API to verify:
+
+- What reference will be extracted from the transaction amount
+- Whether the reference is available or already registered
+- When an existing registration expires
+- Usage count vs. max usage limit
+- Whether a new registration would succeed
+
+### BOND, UNBOND, REBOND and LEAVE
 
 Perform node maintenance features. Also see [Pooled Nodes](https://docs.thorchain.org/thornodes/pooled-thornodes).
 
 **`BOND:NODEADDR:PROVIDER:FEE`**
 
-| Parameter   | Notes                                    | Extra                                                                                  |
+| Parameter   | Notes                                    | Conditions                                                                             |
 | ----------- | ---------------------------------------- | -------------------------------------------------------------------------------------- |
 | Payload     | THOR.RUNE                                | The asset to bond to a Node.                                                           |
 | `BOND`      | The bond handler.                        |                                                                                        |
@@ -401,7 +588,7 @@ Perform node maintenance features. Also see [Pooled Nodes](https://docs.thorchai
 
 **`UNBOND:NODEADDR:AMOUNT:PROVIDER`**
 
-| Parameter   | Notes                    | Extra                                                                 |
+| Parameter   | Notes                    | Conditions                                                            |
 | ----------- | ------------------------ | --------------------------------------------------------------------- |
 | Payload     | None required.           | Use `MsgDeposit`.                                                     |
 | `UNBOND`    | The unbond handler.      |                                                                       |
@@ -409,9 +596,21 @@ Perform node maintenance features. Also see [Pooled Nodes](https://docs.thorchai
 | `:AMOUNT`   | The amount to unbond.    | In 1e8 format. If setting more than actual bond, then capped at bond. |
 | `:PROVIDER` | Unwhitelist a provider.  | Optional. Remove a provider.                                          |
 
+**`REBOND:NODEADDR:NEWADDR:AMOUNT`**
+
+Migrate bonded RUNE to a different whitelisted address on the same node
+
+| Parameter   | Notes                                   | Conditions                                                                                            |
+| ----------- | --------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Payload     | None required                           | Use `MsgDeposit`                                                                                      |
+| `REBOND`    | The rebond handler.                     |                                                                                                       |
+| `:NODEADDR` | The node to unbond from.                | Can be in any state.                                                                                  |
+| `:NEWADDR`  | The address to receive the bonded RUNE. | Must be whitelisted and on the same node.                                                             |
+| `:AMOUNT`   | The amount to migrate.                  | Optional. Default is 0. In 1e8 format. If setting is 0 or more than actual bond, then capped at bond. |
+
 **`LEAVE:NODEADDR`**
 
-| Parameter   | Notes                       | Extra                                                                                                    |
+| Parameter   | Notes                       | Conditions                                                                                               |
 | ----------- | --------------------------- | -------------------------------------------------------------------------------------------------------- |
 | Payload     | None required.              | Use `MsgDeposit`.                                                                                        |
 | `LEAVE`     | The leave handler.          |                                                                                                          |
@@ -423,13 +622,25 @@ Perform node maintenance features. Also see [Pooled Nodes](https://docs.thorchai
 - `UNBOND:thor1x2whgc2nt665y0kc44uywhynazvp0l8tp0vtu6:750000000000`
 - `LEAVE:thor1hlhdm0ngr2j4lt8tt8wuvqxz6aus58j57nxnps`
 
+### Operator Rotate
+
+**`OPERATOR:NEWOPADDR`**
+
+The operator address can send a `OPERATOR` memo to change the operator address for all their nodes. No nodes for the old or new operator can be active at the time of operator rotation. Operator rotation can only occur in the first half of churn cycle.
+
+| Parameter    | Notes                        | Extra             |
+| ------------ | ---------------------------- | ----------------- |
+| Payload      | None required.               | Use `MsgDeposit`. |
+| `OPERATOR`   | The operator rotate handler. |                   |
+| `:NEWOPADDR` | The new operator address.    |                   |
+
 ### MIGRATE
 
 Internal memo type used to mark migration transactions between a retiring vault and a new Asgard vault during churn. Special THORChain triggered outbound tx without a related inbound tx.
 
 **`MIGRATE:BLOCKHEIGHT`**
 
-| Parameter      | Notes                              | Extra                         |
+| Parameter      | Notes                              | Conditions                    |
 | -------------- | ---------------------------------- | ----------------------------- |
 | Payload        | Assets migrating.                  |                               |
 | `MIGRATE`      | The migrate handler.               |                               |
@@ -449,7 +660,7 @@ May cause loss of funds if not performed correctly and at the right time.
 
 **`NOOP:NOVAULT`**
 
-| Parameter  | Notes                           | Extra                                                    |
+| Parameter  | Notes                           | Conditions                                               |
 | ---------- | ------------------------------- | -------------------------------------------------------- |
 | Payload    | The asset to credit to a vault. | Must be ASSET or RUNE.                                   |
 | `NOOP`     | The no-op handler.              | Adds to the vault balance, but does not add to the pool. |
@@ -459,7 +670,7 @@ May cause loss of funds if not performed correctly and at the right time.
 
 The following are the conditions for refunds:
 
-| Condition                | Notes                                                                                                        |
+| Condition                | Conditions                                                                                                   |
 | ------------------------ | ------------------------------------------------------------------------------------------------------------ |
 | Invalid `MEMO`           | If the `MEMO` is incorrect the user will be refunded.                                                        |
 | Invalid Assets           | If the asset for the transaction is incorrect (adding an asset into a wrong pool) the user will be refunded. |
@@ -471,7 +682,6 @@ Refunds cost fees to prevent DoS (denial-of-service) attacks. The user will pay 
 ## **Other Internal Memos**
 
 - `consolidate` &mdash; consolidate UTXO transactions
-- `limito` or `lo` &mdash; limit order functions (to be implemented)
 - `name` or `n` or `~` &mdash; THORName operations; see [THORName Guide](../affiliate-guide/thorname-guide.md)
 - `out` &mdash; for outbound transaction, set within a outbound transaction
 - `ragnarok` &mdash; used to delist pools, set within a outbound transaction

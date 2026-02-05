@@ -17,17 +17,17 @@ import (
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 )
 
-// TxOutStorageVCUR is going to manage all the outgoing tx
-type TxOutStorageVCUR struct {
+// TxOutStorage is going to manage all the outgoing tx
+type TxOutStorage struct {
 	keeper        keeper.Keeper
 	constAccessor constants.ConstantValues
 	eventMgr      EventManager
 	gasManager    GasManager
 }
 
-// newTxOutStorageVCUR will create a new instance of TxOutStore.
-func newTxOutStorageVCUR(keeper keeper.Keeper, constAccessor constants.ConstantValues, eventMgr EventManager, gasManager GasManager) *TxOutStorageVCUR {
-	return &TxOutStorageVCUR{
+// newTxOutStorage will create a new instance of TxOutStore.
+func newTxOutStorage(keeper keeper.Keeper, constAccessor constants.ConstantValues, eventMgr EventManager, gasManager GasManager) *TxOutStorage {
+	return &TxOutStorage{
 		keeper:        keeper,
 		eventMgr:      eventMgr,
 		constAccessor: constAccessor,
@@ -35,7 +35,7 @@ func newTxOutStorageVCUR(keeper keeper.Keeper, constAccessor constants.ConstantV
 	}
 }
 
-func (tos *TxOutStorageVCUR) EndBlock(ctx cosmos.Context, mgr Manager) error {
+func (tos *TxOutStorage) EndBlock(ctx cosmos.Context, mgr Manager) error {
 	// update the max gas for all outbounds in this block. This can be useful
 	// if an outbound transaction was scheduled into the future, and the gas
 	// for that blockchain changes in that time span. This avoids the need to
@@ -62,20 +62,19 @@ func (tos *TxOutStorageVCUR) EndBlock(ctx cosmos.Context, mgr Manager) error {
 
 		// update max gas, take the larger of the current gas, or the last gas used
 
+		maxGasCoin, okMaxGas := maxGasCache[tx.Chain]
+		gasRate, okGasRate := gasRateCache[tx.Chain]
 		// update cache if needed
-		if _, ok := maxGasCache[tx.Chain]; !ok {
-			maxGasCache[tx.Chain], _ = mgr.GasMgr().GetMaxGas(ctx, tx.Chain)
-		}
-		if _, ok := gasRateCache[tx.Chain]; !ok {
-			gasRateCache[tx.Chain] = int64(mgr.GasMgr().GetGasRate(ctx, tx.Chain).Uint64())
+		if !okMaxGas || !okGasRate {
+			maxGasCoin, gasRate, _ = mgr.GasMgr().GetGasDetails(ctx, tx.Chain)
+			maxGasCache[tx.Chain] = maxGasCoin
+			gasRateCache[tx.Chain] = gasRate
 		}
 
-		maxGas := maxGasCache[tx.Chain]
-		gasRate := gasRateCache[tx.Chain]
-		if len(tx.MaxGas) == 0 || (!maxGas.IsEmpty() && !maxGas.Amount.Equal(tx.MaxGas[0].Amount)) {
-			txOut.TxArray[i].MaxGas = common.Gas{maxGas}
+		if len(tx.MaxGas) == 0 || (!maxGasCoin.IsEmpty() && !maxGasCoin.Amount.Equal(tx.MaxGas[0].Amount)) {
+			txOut.TxArray[i].MaxGas = common.Gas{maxGasCoin}
 			// Update MaxGas in ObservedTxVoter action as well
-			err := updateTxOutGas(ctx, tos.keeper, tx, common.Gas{maxGas})
+			err := updateTxOutGas(ctx, tos.keeper, tx, common.Gas{maxGasCoin})
 			if err != nil {
 				ctx.Logger().Error("Failed to update MaxGas of action in ObservedTxVoter", "hash", tx.InHash, "error", err)
 			}
@@ -97,12 +96,12 @@ func (tos *TxOutStorageVCUR) EndBlock(ctx cosmos.Context, mgr Manager) error {
 }
 
 // GetBlockOut read the TxOut from kv store
-func (tos *TxOutStorageVCUR) GetBlockOut(ctx cosmos.Context) (*TxOut, error) {
+func (tos *TxOutStorage) GetBlockOut(ctx cosmos.Context) (*TxOut, error) {
 	return tos.keeper.GetTxOut(ctx, ctx.BlockHeight())
 }
 
 // GetOutboundItems read all the outbound item from kv store
-func (tos *TxOutStorageVCUR) GetOutboundItems(ctx cosmos.Context) ([]TxOutItem, error) {
+func (tos *TxOutStorage) GetOutboundItems(ctx cosmos.Context) ([]TxOutItem, error) {
 	block, err := tos.keeper.GetTxOut(ctx, ctx.BlockHeight())
 	if block == nil {
 		return nil, nil
@@ -111,7 +110,7 @@ func (tos *TxOutStorageVCUR) GetOutboundItems(ctx cosmos.Context) ([]TxOutItem, 
 }
 
 // GetOutboundItemByToAddress read all the outbound items filter by the given to address
-func (tos *TxOutStorageVCUR) GetOutboundItemByToAddress(ctx cosmos.Context, to common.Address) []TxOutItem {
+func (tos *TxOutStorage) GetOutboundItemByToAddress(ctx cosmos.Context, to common.Address) []TxOutItem {
 	filterItems := make([]TxOutItem, 0)
 	items, _ := tos.GetOutboundItems(ctx)
 	for _, item := range items {
@@ -123,14 +122,14 @@ func (tos *TxOutStorageVCUR) GetOutboundItemByToAddress(ctx cosmos.Context, to c
 }
 
 // ClearOutboundItems remove all the tx out items , mostly used for test
-func (tos *TxOutStorageVCUR) ClearOutboundItems(ctx cosmos.Context) {
+func (tos *TxOutStorage) ClearOutboundItems(ctx cosmos.Context) {
 	_ = tos.keeper.ClearTxOut(ctx, ctx.BlockHeight())
 }
 
 // When TryAddTxOutItem returns an error, there should be no state changes from it,
 // including funds movements or fee events from prepareTxOutItem.
 // So, use CacheContext to only commit state changes when cachedTryAddTxOutItem doesn't return an error.
-func (tos *TxOutStorageVCUR) TryAddTxOutItem(ctx cosmos.Context, mgr Manager, toi TxOutItem, minOut cosmos.Uint) (bool, error) {
+func (tos *TxOutStorage) TryAddTxOutItem(ctx cosmos.Context, mgr Manager, toi TxOutItem, minOut cosmos.Uint) (bool, error) {
 	if toi.ToAddress.IsNoop() {
 		return true, nil
 	}
@@ -157,10 +156,14 @@ func (tos *TxOutStorageVCUR) TryAddTxOutItem(ctx cosmos.Context, mgr Manager, to
 
 	// Deduct affiliate fee from outbound amount
 	amount, err := tos.takeAffiliateFee(cacheCtx, mgr, toi)
-	if err == nil {
-		toi.Coin.Amount = amount
-	} else {
+	if err != nil {
 		ctx.Logger().Error("fail to take affiliate fee", "error", err)
+	} else if !toi.Coin.Asset.IsTradeAsset() && !toi.Coin.Asset.IsSecuredAsset() {
+		// For Trade and Secured Assets do not decrement the affiliate fee here,
+		// as the affiliate fee swap will take it from the user's balance after the outbound.
+		// (Since Trade/Secured Withdraw is done in the MsgSwap internal handler,
+		//  not the MsgDeposit external handler.)
+		toi.Coin.Amount = amount
 	}
 
 	success, err := tos.cachedTryAddTxOutItem(cacheCtx, mgr, toi, minOut)
@@ -170,19 +173,35 @@ func (tos *TxOutStorageVCUR) TryAddTxOutItem(ctx cosmos.Context, mgr Manager, to
 	return success, err
 }
 
+// isAffiliateFeeExemptOutbound returns true if the outbound memo indicates a
+// transaction type that is exempt from affiliate fees.
+func (tos *TxOutStorage) isAffiliateFeeExemptOutbound(memo string) bool {
+	return strings.HasPrefix(memo, constants.MemoPrefixRefund) ||
+		strings.HasPrefix(memo, constants.MemoPrefixMigrate)
+}
+
+// isAffiliateFeeExemptInbound returns true if the inbound memo indicates a transaction
+// type that is exempt from affiliate fees.
+func (tos *TxOutStorage) isAffiliateFeeExemptInbound(memo string) bool {
+	return memo == "" || strings.HasPrefix(memo, constants.MemoPrefixPreferredAssetSwap)
+}
+
 // takeAffiliateFee - take affiliate fee from outbound amount using the inbound memo.
 // should not skim fees for refunds. returns the outbound amount less the affiliate
 // fee(s)
-func (tos *TxOutStorageVCUR) takeAffiliateFee(ctx cosmos.Context, mgr Manager, toi TxOutItem) (cosmos.Uint, error) {
-	// no affiliate fee for refunds or migrate txs
-	if strings.Split(toi.Memo, ":")[0] == constants.MemoPrefixRefund || strings.Split(toi.Memo, ":")[0] == constants.MemoPrefixMigrate {
+func (tos *TxOutStorage) takeAffiliateFee(ctx cosmos.Context, mgr Manager, toi TxOutItem) (cosmos.Uint, error) {
+	if tos.isAffiliateFeeExemptOutbound(toi.Memo) {
 		return toi.Coin.Amount, nil
 	}
 
 	// Get inbound tx
+	// Skip affiliate fee for protocol-generated swaps that have no observed transaction
 	inboundVoter, err := tos.keeper.GetObservedTxInVoter(ctx, toi.InHash)
-	if err != nil || inboundVoter.Tx.Tx.Memo == "" {
-		return toi.Coin.Amount, fmt.Errorf("fail to get observe tx in voter: %w", err)
+	if err != nil {
+		return toi.Coin.Amount, nil
+	}
+	if tos.isAffiliateFeeExemptInbound(inboundVoter.Tx.Tx.Memo) {
+		return toi.Coin.Amount, nil
 	}
 
 	memo, err := ParseMemoWithTHORNames(ctx, tos.keeper, inboundVoter.Tx.Tx.Memo)
@@ -233,17 +252,7 @@ func (tos *TxOutStorageVCUR) takeAffiliateFee(ctx cosmos.Context, mgr Manager, t
 // (cached)TryAddTxOutItem add an outbound tx to block
 // return bool indicate whether the transaction had been added successful or not
 // return error indicate error
-func (tos *TxOutStorageVCUR) cachedTryAddTxOutItem(ctx cosmos.Context, mgr Manager, toi TxOutItem, minOut cosmos.Uint) (bool, error) {
-	if toi.Coin.Asset.IsTradeAsset() {
-		// no outbound needed for trade assets
-		return true, nil
-	}
-
-	if toi.Coin.Asset.IsSecuredAsset() {
-		// no outbound needed for secured assets
-		return true, nil
-	}
-
+func (tos *TxOutStorage) cachedTryAddTxOutItem(ctx cosmos.Context, mgr Manager, toi TxOutItem, minOut cosmos.Uint) (bool, error) {
 	outputs, totalOutboundFeeRune, err := tos.prepareTxOutItem(ctx, toi)
 	if err != nil {
 		return false, fmt.Errorf("failed to prepare tx out item: %w", err)
@@ -257,9 +266,9 @@ func (tos *TxOutStorageVCUR) cachedTryAddTxOutItem(ctx cosmos.Context, mgr Manag
 		sumOut = sumOut.Add(o.Coin.Amount)
 	}
 	if sumOut.LT(minOut) {
-		// **NOTE** this error string is utilized by the order book manager to
+		// **NOTE** this error string is utilized by the adv swap queue manager to
 		// catch the error. DO NOT change this error string without updating
-		// the order book manager as well
+		// the adv swap queue manager as well
 		return false, fmt.Errorf("outbound amount does not meet requirements (%d/%d)", sumOut.Uint64(), minOut.Uint64())
 	}
 
@@ -268,7 +277,6 @@ func (tos *TxOutStorageVCUR) cachedTryAddTxOutItem(ctx cosmos.Context, mgr Manag
 	outboundHeight := ctx.BlockHeight()
 	cloutApplied := cosmos.ZeroUint()
 	if !toi.Chain.IsTHORChain() && !toi.InHash.IsEmpty() && !toi.InHash.Equals(common.BlankTxID) {
-		toi.Memo = outputs[0].Memo
 		voter, err := tos.keeper.GetObservedTxInVoter(ctx, toi.InHash)
 		if err != nil {
 			ctx.Logger().Error("fail to get observe tx in voter", "error", err)
@@ -276,7 +284,7 @@ func (tos *TxOutStorageVCUR) cachedTryAddTxOutItem(ctx cosmos.Context, mgr Manag
 		}
 
 		var targetHeight int64
-		targetHeight, cloutApplied, err = tos.CalcTxOutHeight(ctx, mgr.GetVersion(), toi)
+		targetHeight, cloutApplied, err = tos.CalcTxOutHeight(ctx, mgr.GetVersion(), outputs[0])
 		if err != nil {
 			ctx.Logger().Error("failed to calc target block height for txout item", "error", err)
 		}
@@ -334,7 +342,7 @@ func (tos *TxOutStorageVCUR) cachedTryAddTxOutItem(ctx cosmos.Context, mgr Manag
 
 // UnSafeAddTxOutItem - blindly adds a tx out, skipping vault selection, transaction
 // fee deduction, etc
-func (tos *TxOutStorageVCUR) UnSafeAddTxOutItem(ctx cosmos.Context, mgr Manager, toi TxOutItem, height int64) error {
+func (tos *TxOutStorage) UnSafeAddTxOutItem(ctx cosmos.Context, mgr Manager, toi TxOutItem, height int64) error {
 	if toi.ToAddress.IsNoop() {
 		return nil
 	}
@@ -353,8 +361,66 @@ func (tos *TxOutStorageVCUR) UnSafeAddTxOutItem(ctx cosmos.Context, mgr Manager,
 	return tos.addToBlockOut(ctx, mgr, toi, height)
 }
 
-func (tos *TxOutStorageVCUR) DiscoverOutbounds(ctx cosmos.Context, transactionFeeAsset cosmos.Uint, maxGasAsset common.Coin, toi TxOutItem, vaults Vaults) ([]TxOutItem, cosmos.Uint) {
+// selectFallbackVault selects a vault to assign an outbound to when no vault has sufficient
+// available balance. This allows the outbound to enter the recovery flow (slasher will
+// reschedule or trigger reverse swap) rather than silently dropping the funds.
+// The vault with the highest balance of the required asset is selected, as long as it has
+// minimum gas to attempt signing.
+// Note: vaults passed here may have had pending outbounds deducted, so we fetch original
+// balances from the keeper to make selection decisions based on actual vault holdings.
+func (tos *TxOutStorage) selectFallbackVault(ctx cosmos.Context, toi TxOutItem, maxGasCoin common.Coin, vaults Vaults) Vault {
+	var bestVault Vault
+	bestAmount := cosmos.ZeroUint()
+
+	for _, vault := range vaults {
+		// Skip if vault is frozen for this chain
+		if len(vault.Frozen) > 0 {
+			chains, err := common.NewChains(vault.Frozen)
+			if err != nil {
+				ctx.Logger().Error("failed to convert chains", "error", err)
+				continue
+			}
+			if chains.Has(toi.Chain) {
+				continue
+			}
+		}
+
+		// Get the original vault from keeper to check actual balances
+		// (not the pending-outbound-deducted balances)
+		originalVault, err := tos.keeper.GetVault(ctx, vault.PubKey)
+		if err != nil {
+			ctx.Logger().Error("failed to get vault from keeper", "error", err)
+			continue
+		}
+
+		// Must have minimum gas asset to attempt signing (use original balance)
+		gasAsset := originalVault.GetCoin(toi.Chain.GetGasAsset())
+		if gasAsset.IsEmpty() || gasAsset.Amount.LT(maxGasCoin.Amount) {
+			continue
+		}
+
+		// Must have some amount of the required asset (use original balance)
+		vaultCoinAmount := originalVault.GetCoin(toi.Coin.Asset).Amount
+		if vaultCoinAmount.IsZero() {
+			continue
+		}
+
+		// Select the vault with the highest balance of the required asset
+		if vaultCoinAmount.GT(bestAmount) {
+			bestAmount = vaultCoinAmount
+			bestVault = originalVault
+		}
+	}
+
+	return bestVault
+}
+
+func (tos *TxOutStorage) DiscoverOutbounds(ctx cosmos.Context, transactionFeeAmount cosmos.Uint, maxGasCoin common.Coin, toi TxOutItem, vaults Vaults) ([]TxOutItem, cosmos.Uint) {
 	var outputs []TxOutItem
+
+	// Save original vaults before any filtering for potential fallback selection.
+	// We need this because the sort logic below may filter out vaults with zero available balance.
+	originalVaults := vaults
 
 	// When there is more than one vault, sort the vaults by
 	// (as an integer) how many vaults of that size
@@ -387,7 +453,7 @@ func (tos *TxOutStorageVCUR) DiscoverOutbounds(ctx cosmos.Context, transactionFe
 				if err != nil {
 					ctx.Logger().Error("failed to convert chains", "error", err)
 				}
-				if chains.Has(maxGasAsset.Asset.GetChain()) {
+				if chains.Has(maxGasCoin.Asset.GetChain()) {
 					continue
 				}
 			}
@@ -421,29 +487,31 @@ func (tos *TxOutStorageVCUR) DiscoverOutbounds(ctx cosmos.Context, transactionFe
 
 		vaultCoinAmount := vault.GetCoin(toi.Coin.Asset).Amount
 		// if the asset in the vault is not enough to pay for the fee , then skip it
-		if vaultCoinAmount.LTE(transactionFeeAsset) {
+		if vaultCoinAmount.LTE(transactionFeeAmount) {
 			continue
 		}
 		// if the vault doesn't have gas asset in it , or it doesn't have enough to pay for gas
 		gasAsset := vault.GetCoin(toi.Chain.GetGasAsset())
-		if gasAsset.IsEmpty() || gasAsset.Amount.LT(maxGasAsset.Amount) {
+		if gasAsset.IsEmpty() || gasAsset.Amount.LT(maxGasCoin.Amount) {
 			continue
 		}
 
 		// If the outbound Asset is the gas Asset, assigning to the limit would go over the limit,
 		// so reduce the available vaultCoinAmount by that MaxGas Amount.
-		if toi.Coin.Asset.Equals(maxGasAsset.Asset) {
-			vaultCoinAmount = common.SafeSub(vaultCoinAmount, maxGasAsset.Amount)
+		if toi.Coin.Asset.Equals(maxGasCoin.Asset) {
+			vaultCoinAmount = common.SafeSub(vaultCoinAmount, maxGasCoin.Amount)
 			if vaultCoinAmount.IsZero() {
 				continue
 			}
 		}
 
-		if toi.Chain.GetSigningAlgo() == common.SigningAlgoEd25519 {
-			toi.VaultPubKey = vault.PubKeyEddsa
-		} else {
-			toi.VaultPubKey = vault.PubKey
+		// XRP wallets must keep 1 XRP (the dust threshold) in the wallet
+		if toi.Coin.Asset.Equals(common.XRPAsset) {
+			vaultCoinAmount = common.SafeSub(vaultCoinAmount, common.XRPChain.DustThreshold())
 		}
+
+		toi.VaultPubKey = vault.PubKey
+		toi.VaultPubKeyEddsa = vault.PubKeyEddsa
 
 		if toi.Coin.Amount.LTE(vaultCoinAmount) {
 			outputs = append(outputs, toi)
@@ -456,6 +524,48 @@ func (tos *TxOutStorageVCUR) DiscoverOutbounds(ctx cosmos.Context, transactionFe
 			toi.Coin.Amount = remainingAmount
 		}
 	}
+
+	// If we still have remaining amount, handle it based on whether we have partial outputs.
+	// This allows the outbound to enter the recovery flow (slasher will reschedule or trigger reverse swap)
+	// rather than silently dropping the funds.
+	if !toi.Coin.Amount.IsZero() {
+		if len(outputs) == 0 {
+			// No outputs were created - select a fallback vault.
+			// Use originalVaults (not filtered by available balance) to find a vault that has the asset.
+			fallbackVault := tos.selectFallbackVault(ctx, toi, maxGasCoin, originalVaults)
+			if !fallbackVault.PubKey.IsEmpty() {
+				ctx.Logger().Info("selecting fallback vault for outbound with insufficient available balance",
+					"vault", fallbackVault.PubKey.String(),
+					"asset", toi.Coin.Asset.String(),
+					"amount", toi.Coin.Amount.String())
+				toi.VaultPubKey = fallbackVault.PubKey
+				toi.VaultPubKeyEddsa = fallbackVault.PubKeyEddsa
+				outputs = append(outputs, toi)
+				toi.Coin.Amount = cosmos.ZeroUint()
+			}
+		} else {
+			// Partial outputs exist but there's a remainder that couldn't be allocated.
+			// Add the remainder to the smallest output - this will cause that outbound to fail
+			// during signing (insufficient vault balance) and be rescheduled through the normal
+			// recovery flow until a vault has sufficient balance.
+			smallestIdx := 0
+			smallestAmount := outputs[0].Coin.Amount
+			for i := 1; i < len(outputs); i++ {
+				if outputs[i].Coin.Amount.LT(smallestAmount) {
+					smallestIdx = i
+					smallestAmount = outputs[i].Coin.Amount
+				}
+			}
+			ctx.Logger().Info("adding remainder to smallest output for recovery flow",
+				"vault", outputs[smallestIdx].VaultPubKey.String(),
+				"asset", toi.Coin.Asset.String(),
+				"original_amount", outputs[smallestIdx].Coin.Amount.String(),
+				"remainder", toi.Coin.Amount.String())
+			outputs[smallestIdx].Coin.Amount = outputs[smallestIdx].Coin.Amount.Add(toi.Coin.Amount)
+			toi.Coin.Amount = cosmos.ZeroUint()
+		}
+	}
+
 	return outputs, toi.Coin.Amount
 }
 
@@ -464,7 +574,7 @@ func (tos *TxOutStorageVCUR) DiscoverOutbounds(ctx cosmos.Context, transactionFe
 // 2. choose an appropriate vault(s) to send from (active asgard, then retiring asgard)
 // 3. deduct transaction fee, keep in mind, only take transaction fee when active nodes are  more then minimumBFT
 // return list of outbound transactions
-func (tos *TxOutStorageVCUR) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]TxOutItem, sdkmath.Uint, error) {
+func (tos *TxOutStorage) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem) ([]TxOutItem, sdkmath.Uint, error) {
 	var outputs []TxOutItem
 	var remaining cosmos.Uint
 
@@ -490,6 +600,11 @@ func (tos *TxOutStorageVCUR) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 			}
 		}
 	}
+
+	// Apply memoless outbound logic if enabled
+	enableMemolessOutbound := tos.keeper.GetConfigInt64(ctx, constants.EnableMemolessOutbound)
+	applyMemolessOutboundLogic(tos.keeper.GetVersion(), &toi, enableMemolessOutbound)
+
 	if toi.ToAddress.IsEmpty() {
 		return outputs, cosmos.ZeroUint(), fmt.Errorf("empty to address, can't send out")
 	}
@@ -499,8 +614,10 @@ func (tos *TxOutStorageVCUR) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 
 	// BCH chain will convert legacy address to new format automatically , thus when observe it back can't be associated with the original inbound
 	// so here convert the legacy address to new format
+	var newBCHAddress common.Address
+	var err error
 	if toi.Chain.Equals(common.BCHChain) {
-		newBCHAddress, err := common.ConvertToNewBCHAddressFormat(toi.ToAddress)
+		newBCHAddress, err = common.ConvertToNewBCHAddressFormat(toi.ToAddress)
 		if err != nil {
 			return outputs, cosmos.ZeroUint(), fmt.Errorf("fail to convert BCH address to new format: %w", err)
 		}
@@ -511,20 +628,20 @@ func (tos *TxOutStorageVCUR) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 	}
 
 	// ensure amount is rounded to appropriate decimals
-	toiPool, err := tos.keeper.GetPool(ctx, toi.Coin.Asset.GetLayer1Asset())
+	pool, err := tos.keeper.GetPool(ctx, toi.Coin.Asset.GetLayer1Asset())
 	if err != nil {
 		return nil, cosmos.ZeroUint(), fmt.Errorf("fail to get pool for txout manager: %w", err)
 	}
-
-	signingTransactionPeriod := tos.constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
-	transactionFee, err := tos.gasManager.GetAssetOutboundFee(ctx, toi.Coin.Asset, false)
+	transactionFeeAmount, err := tos.gasManager.GetAssetOutboundFee(ctx, toi.Coin.Asset, false)
 	if err != nil {
 		return nil, cosmos.ZeroUint(), fmt.Errorf("fail to get outbound fee: %w", err)
 	}
-	maxGasAsset, err := tos.gasManager.GetMaxGas(ctx, toi.Chain)
+	maxGasCoin, gasRate, err := tos.gasManager.GetGasDetails(ctx, toi.Chain)
 	if err != nil {
-		ctx.Logger().Error("fail to get max gas asset", "error", err)
+		return nil, cosmos.ZeroUint(), fmt.Errorf("fail to get max gas details: %w", err)
 	}
+
+	// Here is the VaultPubKey selection, if not a THORChain-native outbound.
 	if toi.Chain.IsTHORChain() {
 		outputs = append(outputs, toi)
 	} else {
@@ -537,8 +654,11 @@ func (tos *TxOutStorageVCUR) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 			// to deduct balances of vaults that have outstanding txs assigned
 			pendingOutbounds := tos.keeper.GetPendingOutbounds(ctx, toi.Coin.Asset)
 
+			signingTransactionPeriod := tos.constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
+
 			// ///////////// COLLECT ACTIVE ASGARD VAULTS ///////////////////
-			activeAsgards, err := tos.keeper.GetAsgardVaultsByStatus(ctx, ActiveVault)
+			var activeAsgards Vaults
+			activeAsgards, err = tos.keeper.GetAsgardVaultsByStatus(ctx, ActiveVault)
 			if err != nil {
 				ctx.Logger().Error("fail to get active vaults", "error", err)
 			}
@@ -553,7 +673,8 @@ func (tos *TxOutStorageVCUR) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 			// //////////////////////////////////////////////////////////////
 
 			// ///////////// COLLECT RETIRING ASGARD VAULTS /////////////////
-			retiringAsgards, err := tos.keeper.GetAsgardVaultsByStatus(ctx, RetiringVault)
+			var retiringAsgards Vaults
+			retiringAsgards, err = tos.keeper.GetAsgardVaultsByStatus(ctx, RetiringVault)
 			if err != nil {
 				ctx.Logger().Error("fail to get retiring vaults", "error", err)
 			}
@@ -570,7 +691,7 @@ func (tos *TxOutStorageVCUR) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 			// iterate over discovered vaults and find vaults to send funds from
 
 			// All else being equal, choose active Asgards over retiring Asgards.
-			outputs, remaining = tos.DiscoverOutbounds(ctx, transactionFee, maxGasAsset, toi, append(activeAsgards, retiringAsgards...))
+			outputs, remaining = tos.DiscoverOutbounds(ctx, transactionFeeAmount, maxGasCoin, toi, append(activeAsgards, retiringAsgards...))
 
 			// Check we found enough funds to satisfy the request, error if we didn't
 			if !remaining.IsZero() {
@@ -579,16 +700,17 @@ func (tos *TxOutStorageVCUR) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 		}
 	}
 
+	// get the lending address to avoid deducting the outbound fee
+	lendAddr, err := tos.keeper.GetModuleAddress(LendingName)
+	if err != nil {
+		return nil, cosmos.ZeroUint(), fmt.Errorf("fail to get lending address: %w", err)
+	}
+	// Here is the deduction from each output of either the MaxGas cost or the full outbound fee, but not both.
 	var finalOutput []TxOutItem
-	var pool Pool
 	var feeEvents []*EventFee
 	finalRuneFee := cosmos.ZeroUint()
 	for i := range outputs {
 		if outputs[i].MaxGas.IsEmpty() {
-			maxGasCoin, err := tos.gasManager.GetMaxGas(ctx, outputs[i].Chain)
-			if err != nil {
-				return nil, cosmos.ZeroUint(), fmt.Errorf("fail to get max gas coin: %w", err)
-			}
 			outputs[i].MaxGas = common.Gas{
 				maxGasCoin,
 			}
@@ -597,109 +719,136 @@ func (tos *TxOutStorageVCUR) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 				return nil, cosmos.ZeroUint(), fmt.Errorf("max gas cannot be empty: %s", outputs[i].MaxGas)
 			}
 
-			outputs[i].GasRate = int64(tos.gasManager.GetGasRate(ctx, outputs[i].Chain).Uint64())
+			outputs[i].GasRate = gasRate
 		}
 
-		runeFee := transactionFee // Fee is the prescribed fee
+		// If the memo is unparsable, or Ragnarok, don't deduct an outbound fee.
+		memo, err := ParseMemoWithTHORNames(ctx, tos.keeper, outputs[i].GetMemo())
+		feeDeduction := (err == nil && !memo.IsType(TxRagnarok))
 
-		// get the lending address to avoid deducting the outbound fee
-		lendAddr, err := tos.keeper.GetModuleAddress(LendingName)
-		if err != nil {
-			return nil, cosmos.ZeroUint(), fmt.Errorf("fail to get lending address: %w", err)
+		// THORChain txouts by nature allow fee deduction, but InactiveVault outbounds
+		// require either no deduction or gas cost deduction instead.
+		if !outputs[i].Chain.IsTHORChain() {
+			vault, err := tos.keeper.GetVault(ctx, outputs[i].VaultPubKey)
+			if err != nil {
+				// An error is assumed for an empty VaultPubKey (THORChain outbound),
+				// but here avoided by the earlier conditional.
+				ctx.Logger().Error("fail to get vault", "error", err)
+			}
+
+			// Whether the vault is truly an InactiveVault or the GetVault could not succeed
+			// (InactiveVault is the default VaultStatus, 0),
+			// do not try to deduct an outbound fee and instead only try to deduct gas asset MaxGas.
+			if vault.Status == InactiveVault {
+				feeDeduction = false
+			}
+
+			// Keep gas cost (instead of outbound fee) deduction within the not-THORChain conditional
+			// to never deduct for THORChain-outbound Ragnarok memos,
+			// as these are set by the withdraw handler for BlankTxID actions like POL withdrawals.
+			if !feeDeduction && outputs[i].Coin.Asset.IsGasAsset() {
+				gasAmt := outputs[i].MaxGas.ToCoins().GetCoin(outputs[i].Coin.Asset).Amount
+				outputs[i].Coin.Amount = common.SafeSub(outputs[i].Coin.Amount, gasAmt)
+			}
 		}
 
-		// Deduct OutboundTransactionFee from TOI and add to Reserve
-		memo, err := ParseMemoWithTHORNames(ctx, tos.keeper, outputs[i].Memo)
-		if err == nil && !memo.IsType(TxMigrate) && !memo.IsType(TxRagnarok) && !toi.ToAddress.Equals(lendAddr) {
-			if outputs[i].Coin.IsRune() {
-				if outputs[i].Coin.Amount.LTE(transactionFee) {
+		// Deduct OutboundTransactionFee from TOI and add to Reserve.
+		// Migrate transaction coins remain in their pools and their gas costs are covered by the Reserve.
+		if feeDeduction && !memo.IsType(TxMigrate) && !toi.ToAddress.Equals(lendAddr) {
+			if outputs[i].Coin.Asset.IsRune() {
+				runeFee := transactionFeeAmount // Fee is the prescribed RUNE fee
+				if runeFee.GT(outputs[i].Coin.Amount) {
 					runeFee = outputs[i].Coin.Amount // Fee is the full amount
 				}
 				finalRuneFee = finalRuneFee.Add(runeFee)
 				outputs[i].Coin.Amount = common.SafeSub(outputs[i].Coin.Amount, runeFee)
 				fee := common.NewFee(common.Coins{common.NewCoin(outputs[i].Coin.Asset, runeFee)}, cosmos.ZeroUint())
 				feeEvents = append(feeEvents, NewEventFee(outputs[i].InHash, fee, cosmos.ZeroUint()))
-			} else {
-				if pool.IsEmpty() {
-					var err error
-					pool, err = tos.keeper.GetPool(ctx, toi.Coin.Asset.GetLayer1Asset()) // Get pool
-					if err != nil {
-						// the error is already logged within kvstore
-						return nil, cosmos.ZeroUint(), fmt.Errorf("fail to get pool: %w", err)
-					}
+			} else if !pool.GetPoolUnits().IsZero() { // if pool units is zero, no asset fee is taken
+				assetFee := transactionFeeAmount
+				if outputs[i].Coin.Amount.LTE(assetFee) {
+					assetFee = outputs[i].Coin.Amount // Fee is the full amount
 				}
 
-				// if pool units is zero, no asset fee is taken
-				if !pool.GetPoolUnits().IsZero() {
-					assetFee := transactionFee
-					if outputs[i].Coin.Amount.LTE(assetFee) {
-						assetFee = outputs[i].Coin.Amount // Fee is the full amount
-					}
+				coinAmountAfterFee := common.SafeSub(outputs[i].Coin.Amount, assetFee) // Calculate amount after fee deduction
 
-					outputs[i].Coin.Amount = common.SafeSub(outputs[i].Coin.Amount, assetFee) // Deduct Asset fee
-					if outputs[i].Coin.Asset.IsSyntheticAsset() || outputs[i].Coin.Asset.IsDerivedAsset() {
-						// burn the native asset which used to pay for fee, that's only required when sending from asgard
-						if outputs[i].GetModuleName() == AsgardName {
-							if err := tos.keeper.SendFromModuleToModule(ctx,
-								AsgardName,
-								ModuleName,
-								common.NewCoins(common.NewCoin(outputs[i].Coin.Asset, assetFee))); err != nil {
-								ctx.Logger().Error("fail to move native asset fee from asgard to Module", "error", err)
-							} else {
-								if err := tos.keeper.BurnFromModule(ctx, ModuleName, common.NewCoin(outputs[i].Coin.Asset, assetFee)); err != nil {
-									ctx.Logger().Error("fail to burn native asset", "error", err)
-								} else {
-									burnEvt := NewEventMintBurn(BurnSupplyType, outputs[i].Coin.Asset.Native(), assetFee, "burn_native_fee")
-									if err := tos.eventMgr.EmitEvent(ctx, burnEvt); err != nil {
-										ctx.Logger().Error("fail to emit burn event", "error", err)
-									}
-								}
-							}
+				// Check dust threshold BEFORE making any state changes (Finding 1)
+				// This prevents pool balance corruption when outputs are dropped
+				if toi.Coin.Asset.IsGasAsset() && coinAmountAfterFee.LT(toi.Chain.DustThreshold()) {
+					ctx.Logger().
+						With("inbound", toi.InHash).
+						With("amount", coinAmountAfterFee).
+						With("fee", transactionFeeAmount).
+						Error("dropping gas asset output below dust threshold")
+					continue
+				}
+
+				// Check for zero coin BEFORE making any state changes (Finding 2)
+				// This prevents pool balance corruption and fee event inconsistency
+				if coinAmountAfterFee.IsZero() {
+					ctx.Logger().Info("tx out item would have zero coin after fee, checking if withdrawal", "tx_out", outputs[i].String())
+					// Need to determine whether the outbound is triggered by a withdrawal request
+					if !outputs[i].InHash.IsEmpty() && !outputs[i].InHash.Equals(common.BlankTxID) {
+						inboundVoter, err := tos.keeper.GetObservedTxInVoter(ctx, outputs[i].InHash)
+						if err != nil {
+							ctx.Logger().Error("fail to get observed txin voter", "error", err)
+							continue
+						}
+						if inboundVoter.Tx.IsEmpty() {
+							continue
+						}
+						inboundMemo, err := ParseMemoWithTHORNames(ctx, tos.keeper, inboundVoter.Tx.Tx.Memo)
+						if err != nil {
+							ctx.Logger().Error("fail to parse inbound transaction memo", "error", err)
+							continue
+						}
+						if inboundMemo.IsType(TxWithdraw) {
+							return nil, cosmos.ZeroUint(), errors.New("tx out item has zero coin")
 						}
 					}
-
-					// drop any gas asset outputs below the dust threshold
-					if toi.Coin.Asset.IsGasAsset() && outputs[i].Coin.Amount.LT(toi.Chain.DustThreshold()) {
-						ctx.Logger().
-							With("inbound", toi.InHash).
-							With("amount", outputs[i].Coin.Amount).
-							With("fee", transactionFee).
-							Error("dropping gas asset output below dust threshold")
-						continue
-					}
-
-					var poolDeduct cosmos.Uint
-					runeFee = pool.RuneDisbursementForAssetAdd(assetFee)
-					if runeFee.GT(pool.BalanceRune) {
-						poolDeduct = pool.BalanceRune
-					} else {
-						poolDeduct = runeFee
-					}
-					finalRuneFee = finalRuneFee.Add(poolDeduct)
-					if !outputs[i].Coin.Asset.IsSyntheticAsset() {
-						pool.BalanceAsset = pool.BalanceAsset.Add(assetFee) // Add Asset fee to Pool
-					}
-					pool.BalanceRune = common.SafeSub(pool.BalanceRune, poolDeduct) // Deduct Rune from Pool
-					fee := common.NewFee(common.Coins{common.NewCoin(outputs[i].Coin.Asset, assetFee)}, poolDeduct)
-					feeEvents = append(feeEvents, NewEventFee(outputs[i].InHash, fee, cosmos.ZeroUint()))
+					continue
 				}
+
+				// Now safe to deduct fee since we've confirmed the output won't be dropped
+				outputs[i].Coin.Amount = coinAmountAfterFee
+
+				if outputs[i].Coin.Asset.IsSyntheticAsset() || outputs[i].Coin.Asset.IsDerivedAsset() {
+					// burn the native asset which used to pay for fee, that's only required when sending Synthetic/Derived assets from asgard
+					// (not for instance applicable for Trade/Secured Assets which are not (1-to-1) Cosmos-SDK coins transferred from the Pool Module)
+					// Only burn if assetFee > 0 (synths have zero fee, so skip for them)
+					if outputs[i].GetModuleName() == AsgardName && !assetFee.IsZero() {
+						// Finding 4: Return errors from synth/derived fee burning to prevent supply accounting errors
+						if err := tos.keeper.SendFromModuleToModule(ctx,
+							AsgardName,
+							ModuleName,
+							common.NewCoins(common.NewCoin(outputs[i].Coin.Asset, assetFee))); err != nil {
+							return nil, cosmos.ZeroUint(), fmt.Errorf("fail to move native asset fee from asgard to Module: %w", err)
+						}
+						if err := tos.keeper.BurnFromModule(ctx, ModuleName, common.NewCoin(outputs[i].Coin.Asset, assetFee)); err != nil {
+							return nil, cosmos.ZeroUint(), fmt.Errorf("fail to burn native asset: %w", err)
+						}
+						burnEvt := NewEventMintBurn(BurnSupplyType, outputs[i].Coin.Asset.Native(), assetFee, "burn_native_fee")
+						if err := tos.eventMgr.EmitEvent(ctx, burnEvt); err != nil {
+							ctx.Logger().Error("fail to emit burn event", "error", err)
+						}
+					}
+				}
+
+				poolDeduct := pool.RuneDisbursementForAssetAdd(assetFee)
+				if poolDeduct.GT(pool.BalanceRune) {
+					poolDeduct = pool.BalanceRune
+				}
+				finalRuneFee = finalRuneFee.Add(poolDeduct)
+				if !outputs[i].Coin.Asset.IsSyntheticAsset() {
+					pool.BalanceAsset = pool.BalanceAsset.Add(assetFee) // Add Asset fee to Pool
+				}
+				pool.BalanceRune = common.SafeSub(pool.BalanceRune, poolDeduct) // Deduct Rune from Pool
+				fee := common.NewFee(common.Coins{common.NewCoin(outputs[i].Coin.Asset, assetFee)}, poolDeduct)
+				feeEvents = append(feeEvents, NewEventFee(outputs[i].InHash, fee, cosmos.ZeroUint()))
 			}
 		}
-		vault, err := tos.keeper.GetVault(ctx, outputs[i].VaultPubKey)
-		if err != nil && !outputs[i].Chain.IsTHORChain() {
-			// For THORChain outputs (since having an empty VaultPubKey)
-			// GetVault is expected to fail, so do not log the error.
-			ctx.Logger().Error("fail to get vault", "error", err)
-		}
-		// when it is ragnarok , the network doesn't charge fee , however if the output asset is gas asset,
-		// then the amount of max gas need to be taken away from the customer , otherwise the vault will be insolvent and doesn't
-		// have enough to fulfill outbound
-		// Also the MaxGas has not put back to pool ,so there is no need to subside pool when ragnarok is in progress
-		// OR, if the vault is inactive, subtract maxgas from amount so we have gas to spend to refund the txn
-		if (memo.IsType(TxRagnarok) || vault.Status == InactiveVault) && outputs[i].Coin.Asset.IsGasAsset() {
-			gasAmt := outputs[i].MaxGas.ToCoins().GetCoin(outputs[i].Coin.Asset).Amount
-			outputs[i].Coin.Amount = common.SafeSub(outputs[i].Coin.Amount, gasAmt)
-		}
+		// After applying all fees, check if the coin is still empty
+		// (this can happen for RUNE outputs where the fee equals the amount)
 		if outputs[i].Coin.IsEmpty() {
 			ctx.Logger().Info("tx out item has zero coin", "tx_out", outputs[i].String())
 
@@ -732,7 +881,7 @@ func (tos *TxOutStorageVCUR) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 		// and leaves unburnt synths in the Pool Module
 		if !outputs[i].Coin.Asset.IsSyntheticAsset() {
 			// sanity check: ensure outbound amount respect asset decimals
-			outputs[i].Coin.Amount = cosmos.RoundToDecimal(outputs[i].Coin.Amount, toiPool.Decimals)
+			outputs[i].Coin.Amount = cosmos.RoundToDecimal(outputs[i].Coin.Amount, pool.Decimals)
 		}
 
 		if !outputs[i].InHash.Equals(common.BlankTxID) {
@@ -765,9 +914,10 @@ func (tos *TxOutStorageVCUR) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 			if toi.ModuleName != ReserveName {
 				sourceModule := toi.GetModuleName() // Ensure that non-"".
 				coin := common.NewCoin(common.RuneAsset(), finalRuneFee)
-				err := tos.keeper.SendFromModuleToModule(ctx, sourceModule, ReserveName, common.NewCoins(coin))
-				if err != nil {
-					ctx.Logger().Error("fail to send fee to reserve", "error", err, "module", sourceModule)
+				// Finding 3: Return error instead of just logging to prevent fund accounting mismatch
+				// If this transfer fails, the fee has been deducted from the outbound but Reserve never receives it
+				if err := tos.keeper.SendFromModuleToModule(ctx, sourceModule, ReserveName, common.NewCoins(coin)); err != nil {
+					return nil, cosmos.ZeroUint(), fmt.Errorf("fail to send fee to reserve: %w", err)
 				}
 			}
 		} else {
@@ -786,19 +936,19 @@ func (tos *TxOutStorageVCUR) prepareTxOutItem(ctx cosmos.Context, toi TxOutItem)
 			// If the source module is the Reserve, leave the fee in the Reserve without a transfer.
 			if !toi.Coin.Asset.IsDerivedAsset() && sourceModule != ReserveName {
 				coin := common.NewCoin(common.RuneAsset(), finalRuneFee)
-				err := tos.keeper.SendFromModuleToModule(ctx, sourceModule, ReserveName, common.NewCoins(coin))
-				if err != nil {
-					ctx.Logger().Error("fail to send fee to reserve", "error", err, "module", sourceModule)
+				// Finding 3: Return error instead of just logging to prevent fund accounting mismatch
+				// If this transfer fails, the fee has been deducted from pool balances but Reserve never receives it
+				if err := tos.keeper.SendFromModuleToModule(ctx, sourceModule, ReserveName, common.NewCoins(coin)); err != nil {
+					return nil, cosmos.ZeroUint(), fmt.Errorf("fail to send fee to reserve: %w", err)
 				}
 			}
-
 		}
 	}
 
 	return finalOutput, finalRuneFee, nil
 }
 
-func (tos *TxOutStorageVCUR) addToBlockOut(ctx cosmos.Context, mgr Manager, item TxOutItem, outboundHeight int64) error {
+func (tos *TxOutStorage) addToBlockOut(ctx cosmos.Context, mgr Manager, item TxOutItem, outboundHeight int64) error {
 	// if we're sending native assets, transfer them now and return
 	if item.Chain.IsTHORChain() {
 		return tos.nativeTxOut(ctx, mgr, item)
@@ -818,7 +968,7 @@ func (tos *TxOutStorageVCUR) addToBlockOut(ctx cosmos.Context, mgr Manager, item
 	if err != nil {
 		ctx.Logger().Error("fail to get vault", "error", err)
 	}
-	memo, _ := ParseMemo(mgr.GetVersion(), item.Memo) // ignore err
+	memo, _ := ParseMemo(mgr.GetVersion(), item.GetMemo()) // ignore err
 	labels := []metrics.Label{
 		telemetry.NewLabel("vault_type", vault.Type.String()),
 		telemetry.NewLabel("pubkey", item.VaultPubKey.String()),
@@ -833,7 +983,7 @@ func (tos *TxOutStorageVCUR) addToBlockOut(ctx cosmos.Context, mgr Manager, item
 	return tos.keeper.AppendTxOut(ctx, outboundHeight, item)
 }
 
-func (tos *TxOutStorageVCUR) calcClout(ctx cosmos.Context, runeValue cosmos.Uint, toi TxOutItem) (cosmos.Uint, cosmos.Uint) {
+func (tos *TxOutStorage) calcClout(ctx cosmos.Context, runeValue cosmos.Uint, toi TxOutItem) (cosmos.Uint, cosmos.Uint) {
 	// disable swapper clout for dex agg txs
 	if toi.Aggregator != "" || toi.AggregatorTargetAsset != "" || toi.AggregatorTargetLimit != nil {
 		return runeValue, cosmos.ZeroUint()
@@ -897,7 +1047,7 @@ func (tos *TxOutStorageVCUR) calcClout(ctx cosmos.Context, runeValue cosmos.Uint
 }
 
 // splitClout tries to split runeValue into two Uints, ensuring that it doesn't exceed the given clout1 and clout2.
-func (tos *TxOutStorageVCUR) splitClout(ctx cosmos.Context, swapperCloutLimit, clout1, clout2, runeValue cosmos.Uint) (cosmos.Uint, cosmos.Uint, cosmos.Uint) {
+func (tos *TxOutStorage) splitClout(ctx cosmos.Context, swapperCloutLimit, clout1, clout2, runeValue cosmos.Uint) (cosmos.Uint, cosmos.Uint, cosmos.Uint) {
 	if clout1.Add(clout2).GT(swapperCloutLimit) {
 		halfLimit := swapperCloutLimit.QuoUint64(2)
 		switch {
@@ -929,10 +1079,10 @@ func (tos *TxOutStorageVCUR) splitClout(ctx cosmos.Context, swapperCloutLimit, c
 	return amountFromClout1, amountFromClout2, common.SafeSub(runeValue, amountFromClout1.Add(amountFromClout2))
 }
 
-func (tos *TxOutStorageVCUR) CalcTxOutHeight(ctx cosmos.Context, version semver.Version, toi TxOutItem) (int64, cosmos.Uint, error) {
+func (tos *TxOutStorage) CalcTxOutHeight(ctx cosmos.Context, version semver.Version, toi TxOutItem) (int64, cosmos.Uint, error) {
 	// non-outbound transactions are skipped. This is so this code does not
 	// affect internal transactions (ie consolidation and migrate txs)
-	memo, _ := ParseMemo(version, toi.Memo) // ignore err
+	memo, _ := ParseMemo(version, toi.GetMemo()) // ignore err
 	if !memo.IsType(TxRefund) && !memo.IsType(TxOutbound) {
 		return ctx.BlockHeight(), cosmos.ZeroUint(), nil
 	}
@@ -1026,8 +1176,8 @@ func (tos *TxOutStorageVCUR) CalcTxOutHeight(ctx cosmos.Context, version semver.
 	return targetBlock, cloutApplied, nil
 }
 
-func (tos *TxOutStorageVCUR) nativeTxOut(ctx cosmos.Context, mgr Manager, toi TxOutItem) error {
-	addr, err := cosmos.AccAddressFromBech32(toi.ToAddress.String())
+func (tos *TxOutStorage) nativeTxOut(ctx cosmos.Context, mgr Manager, toi TxOutItem) error {
+	addr, err := toi.ToAddress.AccAddress()
 	if err != nil {
 		return err
 	}
@@ -1036,11 +1186,11 @@ func (tos *TxOutStorageVCUR) nativeTxOut(ctx cosmos.Context, mgr Manager, toi Tx
 
 	// mint if we're sending from THORChain module
 	if toi.ModuleName == ModuleName {
-		if err := tos.keeper.MintToModule(ctx, toi.ModuleName, toi.Coin); err != nil {
+		if err = tos.keeper.MintToModule(ctx, toi.ModuleName, toi.Coin); err != nil {
 			return fmt.Errorf("fail to mint coins during txout: %w", err)
 		}
 		mintEvt := NewEventMintBurn(MintSupplyType, toi.Coin.Asset.Native(), toi.Coin.Amount, "native_tx_out")
-		if err := tos.eventMgr.EmitEvent(ctx, mintEvt); err != nil {
+		if err = tos.eventMgr.EmitEvent(ctx, mintEvt); err != nil {
 			ctx.Logger().Error("fail to emit mint event", "error", err)
 		}
 	}
@@ -1065,7 +1215,20 @@ func (tos *TxOutStorageVCUR) nativeTxOut(ctx cosmos.Context, mgr Manager, toi Tx
 
 	// send funds to/from modules
 	var sdkErr error
+
 	switch {
+	case toi.Coin.Asset.IsTradeAsset():
+		// Even if trade accounts are not enabled, outbounds (as for streaming swap refunds) should complete.
+		_, err = mgr.TradeAccountManager().Deposit(ctx, toi.Coin.Asset, toi.Coin.Amount, addr, common.NoAddress, toi.InHash)
+		if err != nil {
+			return ErrInternal(err, "fail to deposit to trade account")
+		}
+	case toi.Coin.Asset.IsSecuredAsset():
+		// Even if secured assets are halted, outbounds (as for streaming swap refunds) should complete.
+		_, err = mgr.SecuredAssetManager().Deposit(ctx, toi.Coin.Asset.GetLayer1Asset(), toi.Coin.Amount, addr, common.NoAddress, toi.InHash)
+		if err != nil {
+			return ErrInternal(err, "fail to deposit secured asset")
+		}
 	case polAddress.Equals(toi.ToAddress):
 		sdkErr = tos.keeper.SendFromModuleToModule(ctx, toi.ModuleName, ReserveName, common.NewCoins(toi.Coin))
 	case affColAddress.Equals(toi.ToAddress):
@@ -1093,7 +1256,7 @@ func (tos *TxOutStorageVCUR) nativeTxOut(ctx cosmos.Context, mgr Manager, toi Tx
 		toi.ToAddress,
 		common.Coins{toi.Coin},
 		common.Gas{common.NewCoin(common.RuneAsset(), outboundTxFee)},
-		toi.Memo,
+		toi.GetMemo(),
 	)
 
 	active, err := tos.keeper.GetAsgardVaultsByStatus(ctx, ActiveVault)

@@ -17,24 +17,24 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/wasmpermissions"
 )
 
-var _ WasmManager = &WasmMgrVCUR{}
+var _ WasmManager = &WasmMgr{}
 
-// WasmMgrVCUR is VCUR implementation of slasher
-type WasmMgrVCUR struct {
+// WasmMgr is current implementation of slasher
+type WasmMgr struct {
 	keeper      keeper.Keeper
 	wasmKeeper  wasmkeeper.Keeper
 	eventMgr    EventManager
 	permissions wasmpermissions.WasmPermissions
 }
 
-// newWasmMgrVCUR create a new instance of Slasher
-func newWasmMgrVCUR(
+// newWasmMgr create a new instance of Slasher
+func newWasmMgr(
 	keeper keeper.Keeper,
 	wasmKeeper wasmkeeper.Keeper,
 	permissions wasmpermissions.WasmPermissions,
 	eventMgr EventManager,
-) (*WasmMgrVCUR, error) {
-	return &WasmMgrVCUR{
+) (*WasmMgr, error) {
+	return &WasmMgr{
 		keeper:      keeper,
 		wasmKeeper:  wasmKeeper,
 		permissions: permissions,
@@ -43,12 +43,12 @@ func newWasmMgrVCUR(
 }
 
 // StoreCode stores a new wasm code on chain
-func (m WasmMgrVCUR) StoreCode(
+func (m WasmMgr) StoreCode(
 	ctx cosmos.Context,
 	creator sdk.AccAddress,
 	wasmCode []byte,
 ) (codeID uint64, checksum []byte, err error) {
-	if err := m.checkHalt(ctx); err != nil {
+	if err = m.checkGlobalHalt(ctx); err != nil {
 		return 0, nil, err
 	}
 
@@ -66,11 +66,7 @@ func (m WasmMgrVCUR) StoreCode(
 		return 0, nil, err
 	}
 
-	if err := m.checkAuthorization(ctx, creator, checksum); err != nil {
-		return 0, nil, err
-	}
-
-	if err := m.permissionedKeeper().PinCode(ctx, codeID); err != nil {
+	if err := m.checkCanStore(ctx, creator); err != nil {
 		return 0, nil, err
 	}
 
@@ -78,7 +74,7 @@ func (m WasmMgrVCUR) StoreCode(
 }
 
 // InstantiateContract instantiate a new contract with classic sequence based address generation
-func (m WasmMgrVCUR) InstantiateContract(
+func (m WasmMgr) InstantiateContract(
 	ctx cosmos.Context,
 	codeID uint64,
 	creator, admin sdk.AccAddress,
@@ -86,16 +82,16 @@ func (m WasmMgrVCUR) InstantiateContract(
 	label string,
 	deposit sdk.Coins,
 ) (sdk.AccAddress, []byte, error) {
-	if err := m.checkHalt(ctx); err != nil {
+	if err := m.checkGlobalHalt(ctx); err != nil {
 		return nil, nil, err
 	}
 
-	codeInfo, err := m.getCodeInfo(ctx, codeID)
+	err := m.checkInstantiateAuthorization(ctx, creator)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	err = m.checkAuthorization(ctx, creator, codeInfo.CodeHash)
+	err = m.maybePin(ctx, codeID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -112,7 +108,7 @@ func (m WasmMgrVCUR) InstantiateContract(
 }
 
 // InstantiateContract2 instantiate a new contract with predicatable address generated
-func (m WasmMgrVCUR) InstantiateContract2(
+func (m WasmMgr) InstantiateContract2(
 	ctx cosmos.Context,
 	codeID uint64,
 	creator, admin sdk.AccAddress,
@@ -122,16 +118,16 @@ func (m WasmMgrVCUR) InstantiateContract2(
 	salt []byte,
 	fixMsg bool,
 ) (sdk.AccAddress, []byte, error) {
-	if err := m.checkHalt(ctx); err != nil {
+	if err := m.checkGlobalHalt(ctx); err != nil {
 		return nil, nil, err
 	}
 
-	codeInfo, err := m.getCodeInfo(ctx, codeID)
+	err := m.checkInstantiateAuthorization(ctx, creator)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	err = m.checkAuthorization(ctx, creator, codeInfo.CodeHash)
+	err = m.maybePin(ctx, codeID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -149,13 +145,13 @@ func (m WasmMgrVCUR) InstantiateContract2(
 	)
 }
 
-func (m WasmMgrVCUR) ExecuteContract(
+func (m WasmMgr) ExecuteContract(
 	ctx cosmos.Context,
 	contractAddress, caller sdk.AccAddress,
 	msg []byte,
 	coins sdk.Coins,
 ) ([]byte, error) {
-	if err := m.checkHalt(ctx); err != nil {
+	if err := m.checkGlobalHalt(ctx); err != nil {
 		return nil, err
 	}
 
@@ -188,18 +184,13 @@ func (m WasmMgrVCUR) ExecuteContract(
 	)
 }
 
-func (m WasmMgrVCUR) MigrateContract(
+func (m WasmMgr) MigrateContract(
 	ctx cosmos.Context,
 	contractAddress, caller sdk.AccAddress,
 	newCodeID uint64,
 	msg []byte,
 ) ([]byte, error) {
-	if err := m.checkHalt(ctx); err != nil {
-		return nil, err
-	}
-
-	codeInfo, err := m.getCodeInfo(ctx, newCodeID)
-	if err != nil {
+	if err := m.checkGlobalHalt(ctx); err != nil {
 		return nil, err
 	}
 
@@ -208,13 +199,19 @@ func (m WasmMgrVCUR) MigrateContract(
 		return nil, err
 	}
 
-	err = m.checkContractAuthorization(ctx, contractInfo, caller, codeInfo.CodeHash)
+	err = m.checkIsContractAdmin(contractInfo, caller)
 	if err != nil {
 		return nil, err
 	}
 
-	if contractInfo.Admin == "" || contractInfo.Admin != caller.String() {
-		return nil, errNotAuthorized
+	err = m.checkInstantiateAuthorization(ctx, caller)
+	if err != nil {
+		return nil, err
+	}
+
+	err = m.maybePin(ctx, newCodeID)
+	if err != nil {
+		return nil, err
 	}
 
 	data, err := m.permissionedKeeper().Migrate(
@@ -237,12 +234,12 @@ func (m WasmMgrVCUR) MigrateContract(
 }
 
 // SudoContract calls sudo on a contract.
-func (m WasmMgrVCUR) SudoContract(
+func (m WasmMgr) SudoContract(
 	ctx cosmos.Context,
 	contractAddress, caller sdk.AccAddress,
 	msg []byte,
 ) ([]byte, error) {
-	if err := m.checkHalt(ctx); err != nil {
+	if err := m.checkGlobalHalt(ctx); err != nil {
 		return nil, err
 	}
 
@@ -251,12 +248,7 @@ func (m WasmMgrVCUR) SudoContract(
 		return nil, err
 	}
 
-	codeInfo, err := m.getCodeInfo(ctx, contractInfo.CodeID)
-	if err != nil {
-		return nil, err
-	}
-
-	err = m.checkContractAuthorization(ctx, contractInfo, caller, codeInfo.CodeHash)
+	err = m.checkIsContractAdmin(contractInfo, caller)
 	if err != nil {
 		return nil, err
 	}
@@ -264,7 +256,49 @@ func (m WasmMgrVCUR) SudoContract(
 	return m.permissionedKeeper().Sudo(ctx, contractAddress, msg)
 }
 
-func (m WasmMgrVCUR) checkHalt(ctx cosmos.Context) error {
+func (m WasmMgr) UpdateAdmin(
+	ctx cosmos.Context,
+	contractAddress, sender, newAdmin sdk.AccAddress,
+) ([]byte, error) {
+	if err := m.checkGlobalHalt(ctx); err != nil {
+		return nil, err
+	}
+
+	contractInfo, err := m.getContractInfo(ctx, contractAddress)
+	if err != nil {
+		return nil, err
+	}
+
+	err = m.checkIsContractAdmin(contractInfo, sender)
+	if err != nil {
+		return nil, err
+	}
+
+	return nil, m.permissionedKeeper().UpdateContractAdmin(ctx, contractAddress, sender, newAdmin)
+}
+
+func (m WasmMgr) ClearAdmin(
+	ctx cosmos.Context,
+	contractAddress, sender sdk.AccAddress,
+) ([]byte, error) {
+	if err := m.checkGlobalHalt(ctx); err != nil {
+		return nil, err
+	}
+
+	contractInfo, err := m.getContractInfo(ctx, contractAddress)
+	if err != nil {
+		return nil, err
+	}
+
+	err = m.checkIsContractAdmin(contractInfo, sender)
+	if err != nil {
+		return nil, err
+	}
+
+	return nil, m.permissionedKeeper().ClearContractAdmin(ctx, contractAddress, sender)
+}
+
+func (m WasmMgr) checkGlobalHalt(ctx cosmos.Context) error {
 	v, err := m.keeper.GetMimir(ctx, constants.MimirKeyWasmHaltGlobal)
 	if err != nil {
 		return err
@@ -275,7 +309,7 @@ func (m WasmMgrVCUR) checkHalt(ctx cosmos.Context) error {
 	return nil
 }
 
-func (m WasmMgrVCUR) checkContractHalt(ctx cosmos.Context, address sdk.AccAddress) error {
+func (m WasmMgr) checkContractHalt(ctx cosmos.Context, address sdk.AccAddress) error {
 	// Use checksum for brevity and to fit inside mimir's 64 char length
 	addrStr := address.String()
 	contractKey := addrStr[len(addrStr)-6:]
@@ -289,7 +323,7 @@ func (m WasmMgrVCUR) checkContractHalt(ctx cosmos.Context, address sdk.AccAddres
 	return nil
 }
 
-func (m WasmMgrVCUR) checkChecksumHalt(ctx cosmos.Context, checksum []byte) error {
+func (m WasmMgr) checkChecksumHalt(ctx cosmos.Context, checksum []byte) error {
 	encoder := base32.StdEncoding
 	encoded := encoder.EncodeToString(checksum)
 	key := strings.TrimRight(encoded, "=")
@@ -303,11 +337,16 @@ func (m WasmMgrVCUR) checkChecksumHalt(ctx cosmos.Context, checksum []byte) erro
 	return nil
 }
 
-func (m WasmMgrVCUR) permissionedKeeper() *wasmkeeper.PermissionedKeeper {
+func (m WasmMgr) permissionedKeeper() *wasmkeeper.PermissionedKeeper {
 	return wasmkeeper.NewGovPermissionKeeper(m.wasmKeeper)
 }
 
-func (m WasmMgrVCUR) checkAuthorization(ctx cosmos.Context, actor cosmos.AccAddress, checksum []byte) error {
+func (m WasmMgr) checkCanStore(ctx cosmos.Context, actor cosmos.AccAddress) error {
+	err := m.checkActor(ctx, actor)
+	if err != nil {
+		return err
+	}
+
 	v, err := m.keeper.GetMimir(ctx, constants.MimirKeyWasmPermissionless)
 	if err != nil {
 		return err
@@ -316,32 +355,63 @@ func (m WasmMgrVCUR) checkAuthorization(ctx cosmos.Context, actor cosmos.AccAddr
 		return nil
 	}
 
-	return m.permissions.Permit(actor, checksum)
+	return m.permissions.CanStore(actor)
 }
 
-func (m WasmMgrVCUR) checkContractAuthorization(ctx cosmos.Context, contractInfo *wasmtypes.ContractInfo, actor cosmos.AccAddress, checksum []byte) error {
+func (m WasmMgr) checkCanInstantiate(ctx cosmos.Context, actor cosmos.AccAddress) error {
+	err := m.checkActor(ctx, actor)
+	if err != nil {
+		return err
+	}
+
 	v, err := m.keeper.GetMimir(ctx, constants.MimirKeyWasmPermissionless)
 	if err != nil {
 		return err
 	}
+	if v > 0 && ctx.BlockHeight() > v {
+		return nil
+	}
+
+	return m.permissions.CanInstantiate(actor)
+}
+
+func (m WasmMgr) checkActor(ctx cosmos.Context, actor cosmos.AccAddress) error {
+	actorStr := actor.String()
+	actorKey := actorStr[len(actorStr)-6:]
+	v, err := m.keeper.GetMimirWithRef(ctx, constants.MimirTemplateWasmHaltDeployer, actorKey)
+	if err != nil {
+		return err
+	}
+	if v > 0 && ctx.BlockHeight() > v {
+		return errors.ErrUnauthorized
+	}
+	return nil
+}
+
+func (m WasmMgr) checkInstantiateAuthorization(ctx cosmos.Context, actor cosmos.AccAddress) error {
+	// If the actor is a contract, it can instantiate new contracts without explicit permission
+	// wasmKeeper.QueryContractInfo panics if the contract does not exist, so query for non zero length history instead
+	result := m.wasmKeeper.GetContractHistory(ctx, actor)
+	if len(result) > 0 {
+		return nil
+	}
+
+	return m.checkCanInstantiate(ctx, actor)
+}
+
+func (m WasmMgr) checkIsContractAdmin(contractInfo *wasmtypes.ContractInfo, actor cosmos.AccAddress) error {
 	// If MimirKeyWasmPermissionless is enabled, we still need to restrict who can call Sudo on and Migrate contracts
 	// Check this against the admin value that is stored on instantiation, as is default x/wasm behaviour
 	// Current limitations of x/wasm mean we can't access the storage for ContractInfo to support updating of this value
 	policy := wasmkeeper.DefaultAuthorizationPolicy{}
-	if v > 0 && ctx.BlockHeight() > v {
-		if policy.CanModifyContract(
-			contractInfo.AdminAddr(),
-			actor,
-		) {
-			return nil
-		}
+	if !policy.CanModifyContract(contractInfo.AdminAddr(), actor) {
 		return errors.ErrUnauthorized
 	}
 
-	return m.permissions.Permit(actor, checksum)
+	return nil
 }
 
-func (m WasmMgrVCUR) getCodeInfo(ctx cosmos.Context, id uint64) (*wasmtypes.CodeInfo, error) {
+func (m WasmMgr) getCodeInfo(ctx cosmos.Context, id uint64) (*wasmtypes.CodeInfo, error) {
 	codeInfo := m.wasmKeeper.GetCodeInfo(ctx, id)
 	if codeInfo == nil {
 		return nil, wasmtypes.ErrNotFound
@@ -349,7 +419,7 @@ func (m WasmMgrVCUR) getCodeInfo(ctx cosmos.Context, id uint64) (*wasmtypes.Code
 	return codeInfo, nil
 }
 
-func (m WasmMgrVCUR) getContractInfo(ctx cosmos.Context, contractAddress sdk.AccAddress) (*wasmtypes.ContractInfo, error) {
+func (m WasmMgr) getContractInfo(ctx cosmos.Context, contractAddress sdk.AccAddress) (*wasmtypes.ContractInfo, error) {
 	contractInfo := m.wasmKeeper.GetContractInfo(ctx, contractAddress)
 	if contractInfo == nil {
 		return nil, wasmtypes.ErrNotFound
@@ -357,7 +427,24 @@ func (m WasmMgrVCUR) getContractInfo(ctx cosmos.Context, contractAddress sdk.Acc
 	return contractInfo, nil
 }
 
-func (m WasmMgrVCUR) maybeUnpin(ctx cosmos.Context, codeId uint64) error {
+func (m WasmMgr) maybePin(ctx cosmos.Context, codeId uint64) error {
+	var instanceCount int
+
+	m.wasmKeeper.IterateContractsByCode(ctx, codeId, func(address sdk.AccAddress) bool {
+		instanceCount++
+		return true
+	})
+	// This is called before the instantiation is executed
+	if instanceCount == 0 {
+		err := m.permissionedKeeper().PinCode(ctx, codeId)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (m WasmMgr) maybeUnpin(ctx cosmos.Context, codeId uint64) error {
 	var instanceCount int
 
 	m.wasmKeeper.IterateContractsByCode(ctx, codeId, func(address sdk.AccAddress) bool {

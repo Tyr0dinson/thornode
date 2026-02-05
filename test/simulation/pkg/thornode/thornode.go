@@ -125,6 +125,34 @@ func GetPools() ([]openapi.Pool, error) {
 	return pools, err
 }
 
+func GetVault(pubkey string) (openapi.Vault, error) {
+	url := fmt.Sprintf("%s/thorchain/vault/%s", thornodeURL, pubkey)
+	var vault openapi.Vault
+	err := Get(url, &vault)
+	return vault, err
+}
+
+func GetVaults() ([]openapi.Vault, error) {
+	url := fmt.Sprintf("%s/thorchain/vaults/asgard", thornodeURL)
+	var vaults []openapi.Vault
+	err := Get(url, &vaults)
+	return vaults, err
+}
+
+func GetNetwork() (openapi.NetworkResponse, error) {
+	url := fmt.Sprintf("%s/thorchain/network", thornodeURL)
+	var network openapi.NetworkResponse
+	err := Get(url, &network)
+	return network, err
+}
+
+func GetNodes() ([]openapi.Node, error) {
+	url := fmt.Sprintf("%s/thorchain/nodes", thornodeURL)
+	var nodes []openapi.Node
+	err := Get(url, &nodes)
+	return nodes, err
+}
+
 func GetPool(asset common.Asset) (openapi.Pool, error) {
 	url := fmt.Sprintf("%s/thorchain/pool/%s", thornodeURL, asset.String())
 	var pool openapi.Pool
@@ -181,6 +209,13 @@ func GetBlock(height int64) (openapi.BlockResponse, error) {
 	return block, err
 }
 
+func GetMemoHash(txid string) (openapi.ReferenceMemoResponse, error) {
+	url := fmt.Sprintf("%s/thorchain/memo/%s", thornodeURL, txid)
+	var memoHash openapi.ReferenceMemoResponse
+	err := Get(url, &memoHash)
+	return memoHash, err
+}
+
 func Get(url string, target interface{}) error {
 	resp, err := httpClient.Get(url)
 	if err != nil {
@@ -194,8 +229,7 @@ func Get(url string, target interface{}) error {
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("(%s) HTTP: %d => %s", url, resp.StatusCode, body)
+		return fmt.Errorf("(%s) HTTP: %d => %s", url, resp.StatusCode, buf)
 	}
 
 	// extract error if the request failed
@@ -208,6 +242,12 @@ func Get(url string, target interface{}) error {
 	err = json.Unmarshal(buf, &errResp)
 	if err == nil && errResp.Code != 0 && errResp.Message != "" {
 		return fmt.Errorf("code: %d, message: %s", errResp.Code, errResp.Message)
+	}
+
+	// if target is a *[]byte, return the raw response
+	if byteTarget, ok := target.(*[]byte); ok {
+		*byteTarget = buf
+		return nil
 	}
 
 	// decode response

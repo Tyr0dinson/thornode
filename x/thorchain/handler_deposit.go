@@ -2,6 +2,7 @@ package thorchain
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/blang/semver"
 	tmtypes "github.com/cometbft/cometbft/types"
@@ -35,7 +36,7 @@ func (h DepositHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, e
 		ctx.Logger().Error("MsgDeposit failed validation", "error", err)
 		return nil, err
 	}
-	result, err := h.handle(ctx, *msg)
+	result, err := h.handle(ctx, *msg, 0)
 	if err != nil {
 		ctx.Logger().Error("fail to process MsgDeposit", "error", err)
 		return nil, err
@@ -44,16 +45,6 @@ func (h DepositHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, e
 }
 
 func (h DepositHandler) validate(ctx cosmos.Context, msg MsgDeposit) error {
-	version := h.mgr.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("3.0.0")):
-		return h.validateV3_0_0(ctx, msg)
-	default:
-		return errInvalidVersion
-	}
-}
-
-func (h DepositHandler) validateV3_0_0(ctx cosmos.Context, msg MsgDeposit) error {
 	// ValidateBasic is also executed in message service router's handler and isn't versioned there
 	if err := msg.ValidateBasic(); err != nil {
 		return err
@@ -62,7 +53,7 @@ func (h DepositHandler) validateV3_0_0(ctx cosmos.Context, msg MsgDeposit) error
 	return nil
 }
 
-func (h DepositHandler) handle(ctx cosmos.Context, msg MsgDeposit) (*cosmos.Result, error) {
+func (h DepositHandler) handle(ctx cosmos.Context, msg MsgDeposit, idx uint16) (*cosmos.Result, error) {
 	if h.mgr.Keeper().IsChainHalted(ctx, common.THORChain) {
 		return nil, fmt.Errorf("unable to use MsgDeposit while THORChain is halted")
 	}
@@ -86,22 +77,38 @@ func (h DepositHandler) handle(ctx cosmos.Context, msg MsgDeposit) (*cosmos.Resu
 			return nil, ErrInternal(err, "coins are native to THORChain")
 		}
 
-		if !h.mgr.Keeper().HasCoins(ctx, msg.GetSigners()[0], coins) {
+		// HasCoins always returns false if the address has no balances
+		// (such as if having had just enough for the network fee),
+		// so check first whether there is any non-zero Amount necessary.
+		if !msg.Coins.IsEmpty() && !h.mgr.Keeper().HasCoins(ctx, msg.GetSigners()[0], coins) {
 			return nil, se.ErrInsufficientFunds
 		}
 	}
 
 	hash := tmtypes.Tx(ctx.TxBytes()).Hash()
 	txID, err := common.NewTxID(fmt.Sprintf("%X", hash))
+	if idx > 0 {
+		ctx.Logger().Info("auto-increment txid", "idx", idx, "hash", fmt.Sprintf("%X", hash))
+		txID, err = common.NewTxID(fmt.Sprintf("%X-%d", hash, idx))
+		if err != nil {
+			return nil, fmt.Errorf("fail to get tx hash: %w", err)
+		}
+	}
 	if err != nil {
 		return nil, fmt.Errorf("fail to get tx hash: %w", err)
 	}
 	existingVoter, err := h.mgr.Keeper().GetObservedTxInVoter(ctx, txID)
 	if err != nil {
-		return nil, fmt.Errorf("fail to get existing voter")
+		ctx.Logger().Error("GetObservedTxInVoter error", "idx", idx, "txID", txID.String(), "error", err)
+		return nil, fmt.Errorf("fail to get existing voter: %w", err)
 	}
 	if len(existingVoter.Txs) > 0 {
-		return nil, fmt.Errorf("txid: %s already exist", txID.String())
+		ctx.Logger().Info("txid collision detected, retrying with auto-incremented idx", "txID", txID.String(), "existingTxs", len(existingVoter.Txs), "idx", idx)
+		maxRetries := uint16(h.mgr.Keeper().GetConfigInt64(ctx, constants.MaxDepositTxIDRetries))
+		if idx >= maxRetries {
+			return nil, fmt.Errorf("txid: %s already exist after max retries (%d)", txID.String(), maxRetries)
+		}
+		return h.handle(ctx, msg, idx+1)
 	}
 	from, err := common.NewAddress(msg.GetSigners()[0].String())
 	if err != nil {
@@ -109,6 +116,19 @@ func (h DepositHandler) handle(ctx cosmos.Context, msg MsgDeposit) (*cosmos.Resu
 	}
 
 	handler := NewInternalHandler(h.mgr)
+
+	// Add memo for memoless transactions (generate reference from amount)
+	if len(msg.Coins) > 0 && strings.TrimSpace(msg.Memo) == "" {
+		refAsset := msg.Coins[0].Asset
+		var referenceID string
+		referenceID, err = h.extractReferenceFromNativeAmount(ctx, msg.Coins[0].Amount.Uint64())
+		if err != nil {
+			return nil, fmt.Errorf("memoless native deposit failed: %w", err)
+		}
+		refMemo := NewReferenceReadMemo(referenceID)
+		msg.Memo = refMemo.CreateMemo() // Sets "r:XXXXX"
+		ctx.Logger().Info("generated reference memo for memoless native deposit", "reference", referenceID, "asset", refAsset)
+	}
 
 	memo, err := ParseMemoWithTHORNames(ctx, h.mgr.Keeper(), msg.Memo)
 	if err != nil {
@@ -121,10 +141,10 @@ func (h DepositHandler) handle(ctx cosmos.Context, msg MsgDeposit) (*cosmos.Resu
 
 	var targetModule string
 	switch memo.GetType() {
-	case TxBond, TxUnBond, TxLeave:
+	case TxBond, TxUnBond, TxLeave, TxOperatorRotate:
 		targetModule = BondName
 	// For TxTCYClaim, send to Reserve so retrievable if done accidentally
-	case TxReserve, TxTHORName, TxTCYClaim:
+	case TxReserve, TxTHORName, TxTCYClaim, TxMaint, TxModifyLimitSwap:
 		targetModule = ReserveName
 	case TxTCYStake, TxTCYUnstake:
 		targetModule = TCYStakeName
@@ -136,14 +156,14 @@ func (h DepositHandler) handle(ctx cosmos.Context, msg MsgDeposit) (*cosmos.Resu
 	// (When the Amount is zero, the Asset type is irrelevant.)
 	// Coins having exactly one Coin is ensured by the validate function,
 	// but IsEmpty covers a hypothetical no-Coin scenario too.
-	if !msg.Coins.IsEmpty() && (!msg.Coins[0].Asset.IsRune() && !msg.Coins[0].Asset.IsTCY()) && targetModule != AsgardName {
+	if !msg.Coins.IsEmpty() && (!msg.Coins[0].Asset.IsRune() && !msg.Coins[0].Asset.IsTCY() && !msg.Coins[0].Asset.IsWhitelisted()) && targetModule != AsgardName {
 		return nil, fmt.Errorf("(%s) memos are for the (%s) module, for which messages must only contain RUNE or TCY", memo.GetType().String(), targetModule)
 	}
 
 	coinsInMsg := msg.Coins
 	if !coinsInMsg.IsEmpty() && !coinsInMsg[0].Asset.IsTradeAsset() && !coinsInMsg[0].Asset.IsSecuredAsset() {
 		// send funds to target module
-		err := h.mgr.Keeper().SendFromAccountToModule(ctx, msg.GetSigners()[0], targetModule, msg.Coins)
+		err = h.mgr.Keeper().SendFromAccountToModule(ctx, msg.GetSigners()[0], targetModule, msg.Coins)
 		if err != nil {
 			return nil, err
 		}
@@ -152,6 +172,24 @@ func (h DepositHandler) handle(ctx cosmos.Context, msg MsgDeposit) (*cosmos.Resu
 	to, err := h.mgr.Keeper().GetModuleAddress(targetModule)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get to address: %w", err)
+	}
+
+	// Resolve reference memo if needed before processing
+	if len(msg.Coins) > 0 && memo.GetType() == TxReferenceReadMemo {
+		asset := msg.Coins[0].Asset
+		// Create a temporary tx for resolution context
+		tempTx := common.NewTx(txID, from, to, msg.Coins, common.Gas{}, msg.Memo)
+		// Use current block height as observation height for native deposits (instant finality)
+		resolvedMemo := fetchMemoFromReference(ctx, h.mgr, asset, tempTx, ctx.BlockHeight())
+		preMemo := msg.Memo
+		msg.Memo = resolvedMemo
+		ctx.Logger().Info("reference memo conversion for native deposit", "pre", preMemo, "post", msg.Memo, "asset", asset)
+
+		// Re-parse the resolved memo
+		memo, err = ParseMemoWithTHORNames(ctx, h.mgr.Keeper(), msg.Memo)
+		if err != nil {
+			return nil, ErrInternal(err, "invalid resolved memo")
+		}
 	}
 
 	tx := common.NewTx(txID, from, to, coinsInMsg, common.Gas{}, msg.Memo)
@@ -182,22 +220,19 @@ func (h DepositHandler) handle(ctx cosmos.Context, msg MsgDeposit) (*cosmos.Resu
 
 	// if its a swap, send it to our queue for processing later
 	if isSwap {
-		msg, ok := m.(*MsgSwap)
+		swapMsg, ok := m.(*MsgSwap)
 		if ok {
-			h.addSwap(ctx, *msg)
+			if err = addSwap(ctx, h.mgr, *swapMsg); err != nil {
+				if refundErr := refundTx(ctx, txIn, h.mgr, CodeSwapFail, err.Error(), ""); refundErr != nil {
+					ctx.Logger().Error("fail to refund swap", "error", refundErr)
+					return nil, fmt.Errorf("swap failed and refund also failed: %w, refund error: %v", err, refundErr)
+				}
+			}
 		}
 		return &cosmos.Result{}, nil
 	}
 
-	// if it is a loan, inject the TxID and ToAddress into the context
-	_, isLoanOpen := m.(*MsgLoanOpen)
-	_, isLoanRepayment := m.(*MsgLoanRepayment)
 	mCtx := ctx
-	if isLoanOpen || isLoanRepayment {
-		mCtx = ctx.WithValue(constants.CtxLoanTxID, txIn.Tx.ID)
-		mCtx = mCtx.WithValue(constants.CtxLoanToAddress, txIn.Tx.ToAddress)
-	}
-
 	result, err := handler(mCtx, m)
 	if err != nil {
 		return nil, err
@@ -216,43 +251,43 @@ func (h DepositHandler) handle(ctx cosmos.Context, msg MsgDeposit) (*cosmos.Resu
 	return result, nil
 }
 
-func (h DepositHandler) addSwap(ctx cosmos.Context, msg MsgSwap) {
-	if h.mgr.Keeper().OrderBooksEnabled(ctx) {
-		source := msg.Tx.Coins[0]
-		target := common.NewCoin(msg.TargetAsset, msg.TradeTarget)
-		evt := NewEventLimitOrder(source, target, msg.Tx.ID)
-		if err := h.mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
-			ctx.Logger().Error("fail to emit limit order event", "error", err)
-		}
-		if err := h.mgr.Keeper().SetOrderBookItem(ctx, msg); err != nil {
-			ctx.Logger().Error("fail to add swap to queue", "error", err)
-		}
-	} else {
-		h.addSwapDirect(ctx, msg)
+// extractReferenceFromNativeAmount extracts the reference ID from a native asset transaction amount.
+// All native assets use common.THORChainDecimals (8 decimals), so no pool lookup is needed.
+func (h DepositHandler) extractReferenceFromNativeAmount(ctx cosmos.Context, amount uint64) (string, error) {
+	if amount == 0 {
+		return "", fmt.Errorf("zero amount in transaction for reference generation")
 	}
-}
 
-// addSwapDirect adds the swap directly to the swap queue (no order book) - segmented
-// out into its own function to allow easier maintenance of original behavior vs order
-// book behavior.
-func (h DepositHandler) addSwapDirect(ctx cosmos.Context, msg MsgSwap) {
-	version := h.mgr.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("3.0.0")):
-		h.addSwapDirectV3_0_0(ctx, msg)
-	default:
-		ctx.Logger().Error(errInvalidVersion.Error())
-	}
-}
+	baseEnd := h.mgr.Keeper().GetConfigInt64(ctx, constants.MemolessTxnRefCount)
+	txnRefLength := len(fmt.Sprintf("%d", baseEnd))
 
-func (h DepositHandler) addSwapDirectV3_0_0(ctx cosmos.Context, msg MsgSwap) {
-	if msg.Tx.Coins.IsEmpty() {
-		return
+	// Prevent overflow: uint64 max is ~1.8e19, so max safe length is 19 digits
+	const maxRefLength = 19
+	if txnRefLength > maxRefLength {
+		return "", fmt.Errorf("reference length %d exceeds maximum %d to prevent overflow", txnRefLength, maxRefLength)
 	}
-	// Queue the main swap
-	if err := h.mgr.Keeper().SetSwapQueueItem(ctx, msg, 0); err != nil {
-		ctx.Logger().Error("fail to add swap to queue", "error", err)
+
+	// Calculate modulus based on reference length (10^txnRefLength)
+	var modulus uint64 = 1
+	if baseEnd > 0 {
+		for i := 0; i < txnRefLength; i++ {
+			modulus *= 10
+		}
 	}
+
+	// Native assets already use THORChain decimals (8), so no normalization needed
+	// Extract reference from the amount directly
+	refNum := amount % modulus
+
+	// Zero references are not allowed as they would create ambiguous reference IDs.
+	// This occurs when the amount is exactly divisible by the modulus
+	// (e.g., 50000000 with modulus 100 → ref 0).
+	// Users should adjust their amount slightly to avoid this edge case.
+	if refNum == 0 {
+		return "", fmt.Errorf("zero reference from amount is invalid: amount %d is divisible by modulus %d", amount, modulus)
+	}
+
+	return leadingZeros(txnRefLength, fmt.Sprintf("%d", refNum)), nil
 }
 
 // DepositAnteHandler called by the ante handler to gate mempool entry

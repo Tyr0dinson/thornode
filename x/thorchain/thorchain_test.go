@@ -143,7 +143,7 @@ func (s *ThorchainSuite) TestChurn(c *C) {
 	// trigger marking bad actors as well as a keygen
 	rotateHeight := consts.GetInt64Value(constants.ChurnInterval) + vault.BlockHeight
 	ctx = ctx.WithBlockHeight(rotateHeight)
-	valMgr := newValidatorMgrVCUR(mgr.Keeper(), mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
+	valMgr := newValidatorMgr(mgr.Keeper(), mgr.NetworkMgr(), mgr.TxOutStore(), mgr.EventMgr())
 	c.Assert(valMgr.BeginBlock(ctx, mgr, existingValidators), IsNil)
 
 	// check we've created a keygen, with the correct members
@@ -177,9 +177,9 @@ func (s *ThorchainSuite) TestChurn(c *C) {
 		if i == 0 {
 			continue
 		}
-		var err error
-		sig, err := common.PubKey(pk).GetThorAddress()
-		c.Assert(err, IsNil)
+		var sigErr error
+		sig, sigErr := common.PubKey(pk).GetThorAddress()
+		c.Assert(sigErr, IsNil)
 		signers[i-1] = sig.String()
 		signatures[i-1] = "fakeSignature"
 	}
@@ -224,7 +224,7 @@ func (s *ThorchainSuite) TestChurn(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(items, HasLen, 1)
 	item := items[0]
-	c.Check(item.Coin.Amount.Uint64(), Equals, uint64(1579962500), Commentf("%d", item.Coin.Amount.Uint64()))
+	c.Check(item.Coin.Amount.Uint64(), Equals, uint64(1579996250), Commentf("%d", item.Coin.Amount.Uint64()))
 
 	// check we empty the rest at the last migration event
 	// Ensure that the height is past the SigningTransactionPeriod,
@@ -240,7 +240,7 @@ func (s *ThorchainSuite) TestChurn(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(items, HasLen, 1, Commentf("%d", len(items)))
 	item = items[0]
-	c.Check(item.Coin.Amount.Uint64(), Equals, uint64(7899962500), Commentf("%d", item.Coin.Amount.Uint64()))
+	c.Check(item.Coin.Amount.Uint64(), Equals, uint64(7899996250), Commentf("%d", item.Coin.Amount.Uint64()))
 }
 
 func (s *ThorchainSuite) TestRagnarok(c *C) {
@@ -429,9 +429,9 @@ func (s *ThorchainSuite) TestRagnarokNoOneLeave(c *C) {
 			common.NewCoin(common.RuneAsset(), res.Amount),
 		})
 		msg := NewMsgReserveContributor(GetRandomTx(), res, bonders[0].NodeAddress)
-		err := resHandler.handle(ctx, *msg)
-		_ = err
-		// c.Assert(err, IsNil)
+		handleErr := resHandler.handle(ctx, *msg)
+		_ = handleErr
+		// c.Assert(handleErr, IsNil)
 	}
 	c.Assert(mgr.Keeper().SetVault(ctx, asgard), IsNil)
 	asgard.Membership = asgard.Membership[:len(asgard.Membership)-1]

@@ -102,7 +102,7 @@ func TestProcessAttestation(t *testing.T) {
 	// Override verifySignature for testing
 	origVerifySignature := verifySignature
 	defer func() { verifySignature = origVerifySignature }()
-	verifySignature = func(signBz []byte, signature []byte, attester []byte) error {
+	verifySignature = func(signBz, signature, attester []byte) error {
 		return nil // Always succeed in tests
 	}
 
@@ -225,7 +225,7 @@ func TestSendAttestationsToThornode(t *testing.T) {
 	}
 
 	// Create a new attestation state
-	state := NewAttestationState(obsTx)
+	state := ag.observedTxsPool.NewAttestationState(obsTx)
 
 	// Add two attestations
 	state.attestations = []attestationSentState{
@@ -271,75 +271,6 @@ func TestSendAttestationsToThornode(t *testing.T) {
 	assert.False(t, state.initialAttestationsSent.IsZero())
 	assert.False(t, state.quorumAttestationsSent.IsZero())
 	assert.False(t, state.lastAttestationsSent.IsZero())
-}
-
-// TestEnsureAttesterIsActiveNode tests validating that an attester is an active node
-func TestEnsureAttesterIsActiveNode(t *testing.T) {
-	ag, _, _, _, _, _ := setupTestGossip(t)
-
-	t.Run("accepts attestation from active validator", func(t *testing.T) {
-		// Create a key pair
-		privKey := secp256k1.GenPrivKey()
-		pubKey := privKey.PubKey()
-
-		// Convert to bech32
-		bech32Pub, err := cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeAccPub, pubKey)
-		require.NoError(t, err)
-
-		// Set as active validator
-		ag.setActiveValidators([]common.PubKey{common.PubKey(bech32Pub)})
-
-		// Create attestation
-		attestation := &common.Attestation{
-			PubKey:    pubKey.Bytes(),
-			Signature: []byte("sig"),
-		}
-
-		// Verify attestation is accepted
-		err = ag.ensureAttesterIsActiveNode(attestation)
-		assert.NoError(t, err)
-	})
-
-	t.Run("rejects attestation from inactive validator", func(t *testing.T) {
-		// Create a key pair that's not in the active validators
-		privKey := secp256k1.GenPrivKey()
-		pubKey := privKey.PubKey()
-
-		// Set a different validator as active
-		activePrivKey := secp256k1.GenPrivKey()
-		activePubKey := activePrivKey.PubKey()
-		bech32Pub, err := cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeAccPub, activePubKey)
-		require.NoError(t, err)
-		ag.setActiveValidators([]common.PubKey{common.PubKey(bech32Pub)})
-
-		// Create attestation
-		attestation := &common.Attestation{
-			PubKey:    pubKey.Bytes(),
-			Signature: []byte("sig"),
-		}
-
-		// Verify attestation is rejected
-		err = ag.ensureAttesterIsActiveNode(attestation)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "not an active validator")
-	})
-
-	t.Run("handles nil attestation", func(t *testing.T) {
-		err := ag.ensureAttesterIsActiveNode(nil)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "attestation is nil")
-	})
-
-	t.Run("handles nil pubkey", func(t *testing.T) {
-		attestation := &common.Attestation{
-			PubKey:    nil,
-			Signature: []byte("sig"),
-		}
-
-		err := ag.ensureAttesterIsActiveNode(attestation)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "attestation pubkey is nil")
-	})
 }
 
 // TestAttestableItemImplementation tests the AttestableItem interface implementation for all types
@@ -400,7 +331,7 @@ func TestRefactoredHandlersIntegration(t *testing.T) {
 	// Override verifySignature for testing
 	origVerifySignature := verifySignature
 	defer func() { verifySignature = origVerifySignature }()
-	verifySignature = func(signBz []byte, signature []byte, attester []byte) error {
+	verifySignature = func(signBz, signature, attester []byte) error {
 		return nil // Always succeed in tests
 	}
 

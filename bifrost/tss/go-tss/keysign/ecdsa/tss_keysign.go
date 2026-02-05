@@ -110,6 +110,20 @@ func (tKeySign *TssKeySign) SignMessage(msgsToSign [][]byte, localStateItem stor
 	endCh := make(chan *tsslibcommon.SignatureData, len(partiesID)*len(msgsToSign))
 	errCh := make(chan struct{})
 
+	// Compute invariants once before the loop
+	ctx := tss.NewPeerContext(partiesID)
+
+	// Unmarshal localData once - it's the same for all messages
+	var localData keygen.LocalPartySaveData
+	err = json.Unmarshal(localStateItem.LocalData, &localData)
+	if err != nil {
+		return nil, fmt.Errorf("fail to unmarshal the local saved data")
+	}
+	ret := localData.ValidateWithProof()
+	if !ret {
+		return nil, errors.New("fail to valid the keygen saved data")
+	}
+
 	keySignPartyMap := new(sync.Map)
 	for i, val := range msgsToSign {
 		m, err := common.MsgToHashInt(val, tcommon.SigningAlgoSecp256k1)
@@ -117,24 +131,14 @@ func (tKeySign *TssKeySign) SignMessage(msgsToSign [][]byte, localStateItem stor
 			return nil, fmt.Errorf("fail to convert msg to hash int: %w", err)
 		}
 		moniker := m.String() + ":" + strconv.Itoa(i)
-		partiesID, eachLocalPartyID, err := conversion.GetParties(parties, localStateItem.LocalPartyKey)
-		ctx := tss.NewPeerContext(partiesID)
-		if err != nil {
-			return nil, fmt.Errorf("error to create parties in batch signging %w\n", err)
-		}
+
+		eachLocalPartyID := tss.NewPartyID(localPartyID.Id, moniker, localPartyID.KeyInt())
+		eachLocalPartyID.Index = localPartyID.Index // Set the index from the local party ID
+
 		tKeySign.logger.Info().Msgf("message: (%s) keysign parties: %+v", m.String(), parties)
-		eachLocalPartyID.Moniker = moniker
 		tKeySign.localParties = nil
 		params := tss.NewParameters(tss.S256(), ctx, eachLocalPartyID, len(partiesID), threshold)
-		var localData keygen.LocalPartySaveData
-		err = json.Unmarshal(localStateItem.LocalData, &localData)
-		if err != nil {
-			return nil, fmt.Errorf("fail to unmarshal the local saved data")
-		}
-		ret := localData.ValidateWithProof()
-		if !ret {
-			return nil, errors.New("fail to valid the keygen saved data")
-		}
+
 		keySignParty := signing.NewLocalParty(m, params, localData, outCh, endCh)
 		keySignPartyMap.Store(moniker, keySignParty)
 	}
@@ -274,7 +278,7 @@ func (tKeySign *TssKeySign) processKeySign(reqNum int, errChan chan struct{}, ou
 				return nil, err
 			}
 
-		//nolint
+		// nolint
 		case msg := <-endCh:
 			cMsg := new(tsslibcommon.SignatureData)
 			cMsg.Signature = msg.GetSignature()

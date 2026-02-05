@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	sdkmath "cosmossdk.io/math"
+	abcitypes "github.com/cometbft/cometbft/abci/types"
 	"github.com/cosmos/cosmos-sdk/telemetry"
 	"github.com/hashicorp/go-metrics"
 
@@ -43,6 +44,22 @@ func (h CommonOutboundTxHandler) slash(ctx cosmos.Context, tx ObservedTx) error 
 }
 
 func (h CommonOutboundTxHandler) handle(ctx cosmos.Context, tx ObservedTx, inTxID common.TxID) (*cosmos.Result, error) {
+	// Validate that the observed pubkey corresponds to an existing vault.
+	// This prevents fake outbound transactions from arbitrary public keys.
+	// Note: Vault existence is also checked upstream in ensureVaultAndGetTxOutVoter,
+	// but we add this check here as defense-in-depth since this handler can be
+	// called from multiple paths (refund, outbound).
+	vault, err := h.mgr.Keeper().GetVault(ctx, tx.ObservedPubKey)
+	if err != nil {
+		ctx.Logger().Error("fail to get vault for outbound validation", "error", err, "pubkey", tx.ObservedPubKey)
+		return nil, ErrInternal(err, "fail to get vault for observed pubkey")
+	}
+	// A completely empty vault (no pubkey) indicates it doesn't exist
+	if vault.PubKey.IsEmpty() {
+		ctx.Logger().Error("vault not found for observed outbound", "pubkey", tx.ObservedPubKey)
+		return nil, ErrInternal(nil, fmt.Sprintf("vault not found for observed pubkey: %s", tx.ObservedPubKey))
+	}
+
 	// note: Outbound tx usually it is related to an inbound tx except migration
 	// thus here try to get the ObservedTxInVoter,  and set the tx out hash accordingly
 	voter, err := h.mgr.Keeper().GetObservedTxInVoter(ctx, inTxID)
@@ -50,8 +67,7 @@ func (h CommonOutboundTxHandler) handle(ctx cosmos.Context, tx ObservedTx, inTxI
 		return nil, ErrInternal(err, "fail to get observed tx voter")
 	}
 	if voter.AddOutTx(tx.Tx) {
-		// trunk-ignore(golangci-lint/govet): shadow
-		if err := h.mgr.EventMgr().EmitEvent(ctx, NewEventOutbound(inTxID, tx.Tx)); err != nil {
+		if err = h.mgr.EventMgr().EmitEvent(ctx, NewEventOutbound(inTxID, tx.Tx)); err != nil {
 			return nil, ErrInternal(err, "fail to emit outbound event")
 		}
 	}
@@ -77,10 +93,27 @@ func (h CommonOutboundTxHandler) handle(ctx cosmos.Context, tx ObservedTx, inTxI
 	if voter.Height > earliestHeight {
 		earliestHeight = voter.Height
 	}
-	for height := ctx.BlockHeight(); height >= earliestHeight; height-- {
+
+	// A TxOutItem might be rescheduled (by LackSigning) rounded up to nearest multiple of RescheduleCoalesceBlocks,
+	// so check backwards from that future nearest multiple.
+	latestHeight := ctx.BlockHeight()
+	rescheduleCoalesceBlocks := h.mgr.Keeper().GetConfigInt64(ctx, constants.RescheduleCoalesceBlocks)
+	if rescheduleCoalesceBlocks > 1 {
+		overBlocks := latestHeight % rescheduleCoalesceBlocks
+		if overBlocks != 0 {
+			latestHeight += rescheduleCoalesceBlocks - overBlocks
+		}
+	}
+
+	// Pool cache to reduce repeated store reads during the nested loop.
+	// The loop may check multiple TxOutItems with the same asset, so caching
+	// prevents redundant GetPool calls.
+	poolCache := make(map[common.Asset]Pool)
+
+	for height := latestHeight; height >= earliestHeight; height-- {
 		// update txOut record with our TxID that sent funds out of the pool
-		// trunk-ignore(golangci-lint/govet): shadow
-		txOut, err := h.mgr.Keeper().GetTxOut(ctx, height)
+		var txOut *TxOut
+		txOut, err = h.mgr.Keeper().GetTxOut(ctx, height)
 		if err != nil {
 			ctx.Logger().Error("unable to get txOut record", "error", err)
 			return nil, cosmos.ErrUnknownRequest(err.Error())
@@ -96,21 +129,31 @@ func (h CommonOutboundTxHandler) handle(ctx cosmos.Context, tx ObservedTx, inTxI
 			// one coin in it , THORNode could use that to identify which tx it
 			// is
 
+			// Use deterministic case-insensitive comparison for aggregator fields.
+			// strings.EqualFold uses Unicode case folding which can have locale-specific
+			// behavior. Using strings.ToLower on both sides ensures deterministic comparison
+			// across all validators in the consensus path.
+			// nolint:staticcheck // SA6005: ToLower is intentionally used instead of EqualFold for determinism
 			if txOutItem.InHash.Equals(inTxID) &&
 				txOutItem.OutHash.IsEmpty() &&
 				tx.Tx.Chain.Equals(txOutItem.Chain) &&
 				tx.Tx.ToAddress.Equals(txOutItem.ToAddress) &&
-				strings.EqualFold(tx.Aggregator, txOutItem.Aggregator) &&
-				strings.EqualFold(tx.AggregatorTarget, txOutItem.AggregatorTargetAsset) &&
-				tx.ObservedPubKey.Equals(txOutItem.VaultPubKey) {
+				strings.ToLower(tx.Aggregator) == strings.ToLower(txOutItem.Aggregator) &&
+				strings.ToLower(tx.AggregatorTarget) == strings.ToLower(txOutItem.AggregatorTargetAsset) &&
+				(tx.ObservedPubKey.Equals(txOutItem.VaultPubKey) ||
+					tx.ObservedPubKey.Equals(txOutItem.VaultPubKeyEddsa)) {
 
 				matchCoin := tx.Tx.Coins.EqualsEx(common.Coins{txOutItem.Coin})
 				if !matchCoin {
-					// In case the mismatch is caused by decimals , round the tx out item's amount , and compare it again
-					// trunk-ignore(golangci-lint/govet): shadow
-					p, err := h.mgr.Keeper().GetPool(ctx, txOutItem.Coin.Asset)
-					if err != nil {
-						ctx.Logger().Error("fail to get pool", "error", err)
+					// In case the mismatch is caused by decimals, round the tx out item's amount and compare it again.
+					// Use pool cache to avoid repeated store reads for the same asset.
+					p, ok := poolCache[txOutItem.Coin.Asset]
+					if !ok {
+						p, err = h.mgr.Keeper().GetPool(ctx, txOutItem.Coin.Asset)
+						if err != nil {
+							ctx.Logger().Error("fail to get pool", "error", err)
+						}
+						poolCache[txOutItem.Coin.Asset] = p
 					}
 					if !p.IsEmpty() {
 						matchCoin = tx.Tx.Coins.EqualsEx(common.Coins{
@@ -130,11 +173,7 @@ func (h CommonOutboundTxHandler) handle(ctx cosmos.Context, tx ObservedTx, inTxI
 						ctx.Logger().Info("override match coin", "intend to spend", intendToSpend, "actual spend", actualSpend, "max_gas", maxGasAmt, "actual gas", realGasAmt)
 						if maxGasAmt.GT(realGasAmt) {
 							// Don't reimburse gas difference if the outbound is from an InactiveVault.
-							// trunk-ignore(golangci-lint/govet): shadow
-							vault, err := h.mgr.Keeper().GetVault(ctx, tx.ObservedPubKey)
-							if err != nil {
-								ctx.Logger().Error("fail to get vault", "error", err)
-							}
+							// Reuse the vault variable from initial validation to avoid repeated store reads.
 							if vault.Status != InactiveVault {
 								// the outbound spend less than MaxGas
 								diffGas := maxGasAmt.Sub(realGasAmt)
@@ -164,8 +203,7 @@ func (h CommonOutboundTxHandler) handle(ctx cosmos.Context, tx ObservedTx, inTxI
 				}
 				txOut.TxArray[i].OutHash = tx.Tx.ID
 				shouldSlash = false
-				// trunk-ignore(golangci-lint/govet): shadow
-				if err := h.mgr.Keeper().SetTxOut(ctx, txOut); err != nil {
+				if err = h.mgr.Keeper().SetTxOut(ctx, txOut); err != nil {
 					ctx.Logger().Error("fail to save tx out", "error", err)
 				}
 
@@ -173,16 +211,18 @@ func (h CommonOutboundTxHandler) handle(ctx cosmos.Context, tx ObservedTx, inTxI
 				outTxn := txOut.TxArray[i]
 				spent := outTxn.CloutSpent
 				if spent != nil && !spent.IsZero() {
-					cloutOut, err := h.mgr.Keeper().GetSwapperClout(ctx, outTxn.ToAddress)
+					var cloutOut SwapperClout
+					cloutOut, err = h.mgr.Keeper().GetSwapperClout(ctx, outTxn.ToAddress)
 					if err != nil {
 						ctx.Logger().Error("fail to get swapper clout destination address", "error", err)
 					}
-					// trunk-ignore(golangci-lint/govet): shadow
-					voter, err := h.mgr.Keeper().GetObservedTxInVoter(ctx, outTxn.InHash)
+					var inVoter ObservedTxVoter
+					inVoter, err = h.mgr.Keeper().GetObservedTxInVoter(ctx, outTxn.InHash)
 					if err != nil {
 						ctx.Logger().Error("fail to get txin for clout calculation", "error", err)
 					}
-					cloutIn, err := h.mgr.Keeper().GetSwapperClout(ctx, voter.Tx.Tx.FromAddress)
+					var cloutIn SwapperClout
+					cloutIn, err = h.mgr.Keeper().GetSwapperClout(ctx, inVoter.Tx.Tx.FromAddress)
 					if err != nil {
 						ctx.Logger().Error("fail to get swapper clout destination address", "error", err)
 					}
@@ -191,8 +231,7 @@ func (h CommonOutboundTxHandler) handle(ctx cosmos.Context, tx ObservedTx, inTxI
 
 					cloutIn.Reclaim(clout1)
 					cloutIn.LastReclaimHeight = ctx.BlockHeight()
-					// trunk-ignore(golangci-lint/govet): shadow
-					if err := h.mgr.Keeper().SetSwapperClout(ctx, cloutIn); err != nil {
+					if err = h.mgr.Keeper().SetSwapperClout(ctx, cloutIn); err != nil {
 						ctx.Logger().Error("fail to save swapper clout in", "error", err)
 					}
 
@@ -202,8 +241,7 @@ func (h CommonOutboundTxHandler) handle(ctx cosmos.Context, tx ObservedTx, inTxI
 					}
 					cloutOut.Reclaim(clout2)
 					cloutOut.LastReclaimHeight = ctx.BlockHeight()
-					// trunk-ignore(golangci-lint/govet): shadow
-					if err := h.mgr.Keeper().SetSwapperClout(ctx, cloutOut); err != nil {
+					if err = h.mgr.Keeper().SetSwapperClout(ctx, cloutOut); err != nil {
 						ctx.Logger().Error("fail to save swapper clout out", "error", err)
 					}
 				}
@@ -219,28 +257,41 @@ func (h CommonOutboundTxHandler) handle(ctx cosmos.Context, tx ObservedTx, inTxI
 		}
 	}
 
-	if shouldSlash {
+	slashed := false
+	// Slash the vault if no matching TxOutItem was found, unless this is an
+	// authorized operational transaction (fake gas tx or cancel tx).
+	// - isOutboundFakeGasTx: Fake gas transactions used for EVM chain operations
+	//   (amount=1, gas asset, self-referential OUT: memo)
+	// - isCancelTx: Cancel transactions sent by bifrost to unstuck pending transactions
+	//   on EVM chains (vault-to-vault, dust threshold amount, empty memo)
+	if shouldSlash && !isOutboundFakeGasTx(tx) && !isCancelTx(tx) {
 		ctx.Logger().Info("slash node account, no matched tx out item", "inbound txid", inTxID, "outbound tx", tx.Tx)
 
-		// send security alert for events that are not evm burn
-		if !isOutboundFakeGasTX(tx) {
-			msg := fmt.Sprintf("missing tx out in=%s", inTxID)
-			// trunk-ignore(golangci-lint/govet): shadow
-			if err := h.mgr.EventMgr().EmitEvent(ctx, NewEventSecurity(tx.Tx, msg)); err != nil {
-				ctx.Logger().Error("fail to emit security event", "error", err)
-			}
+		// Send security alert for unmatched outbounds.
+		// Note: Security event emission errors are logged but don't halt processing,
+		// as the slashing penalty is the primary security mechanism.
+		msg := fmt.Sprintf("missing tx out in=%s", inTxID)
+		if err = h.mgr.EventMgr().EmitEvent(ctx, NewEventSecurity(tx.Tx, msg)); err != nil {
+			ctx.Logger().Error("fail to emit security event", "error", err)
 		}
 
-		if err := h.slash(ctx, tx); err != nil {
+		if err = h.slash(ctx, tx); err != nil {
 			return nil, ErrInternal(err, "fail to slash account")
 		}
+		slashed = true
 	}
 
 	if err := h.mgr.Keeper().SetLastSignedHeight(ctx, voter.FinalisedHeight); err != nil {
 		ctx.Logger().Info("fail to update last signed height", "error", err)
 	}
 
-	return &cosmos.Result{}, nil
+	// the slash event is not exposed, but detected upstream in the handler
+	var events []abcitypes.Event
+	if slashed {
+		events = append(events, abcitypes.Event{Type: "vault-slash"})
+	}
+
+	return &cosmos.Result{Events: events}, nil
 }
 
 // calcReclaim attempts to split spent clout between two reclaimable clouts as equally as possible.
@@ -263,35 +314,4 @@ func calcReclaim(reclaimable1, reclaimable2, spent cosmos.Uint) (reclaim1, recla
 
 	// Otherwise, split the spent clout equally
 	return halfSpent, spent.Sub(halfSpent)
-}
-
-// isOutboundFakeGasTX returns true if the observed outbound which is missing an inbound is a "fake" tx sent purposely by bifrost
-// this occurs on EVM chains where an outbound cannot be sent generally due to out of gas failures. In these cases, bifrost
-// signs an outbound with the gas spent on the failure so that it can be accounted for.
-// Checks are:
-// - must only have one coin in outbound
-// - chain of coin must be an EVM chain
-// - coin asset must be the gas asset
-// - coin amount must be 1
-func isOutboundFakeGasTX(tx ObservedTx) bool {
-	isLenCoins1 := len(tx.Tx.Coins) == 1
-	if !isLenCoins1 {
-		return false
-	}
-	asset := tx.Tx.Coins[0].Asset
-	isChainEVM := asset.Chain.IsEVM()
-	if !isChainEVM {
-		return false
-	}
-	gasAsset := asset.Chain.GetGasAsset()
-	isAssetGasAsset := asset.Equals(gasAsset)
-	if !isAssetGasAsset {
-		return false
-	}
-
-	if !tx.Tx.Coins[0].Amount.Equal(sdkmath.NewUint(1)) {
-		return false
-	}
-
-	return true
 }

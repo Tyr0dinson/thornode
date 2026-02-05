@@ -42,7 +42,7 @@ func NewMockHost(peers []peer.ID) *MockHost {
 }
 
 func (m *MockHost) ID() peer.ID {
-	return "peer1"
+	return m.peers[0]
 }
 
 func (m *MockHost) NewStream(ctx context.Context, p peer.ID, pids ...protocol.ID) (network.Stream, error) {
@@ -164,7 +164,7 @@ func (m *MockPeerstore) SupportsProtocols(peer.ID, ...string) ([]string, error) 
 	return nil, nil
 }
 
-func (m *MockPeerstore) UpdateAddrs(p peer.ID, oldTTL time.Duration, newTTL time.Duration) {
+func (m *MockPeerstore) UpdateAddrs(p peer.ID, oldTTL, newTTL time.Duration) {
 	// Mock implementation, do nothing
 }
 
@@ -220,6 +220,10 @@ type MockThorchainBridge struct {
 
 func (m *MockThorchainBridge) GetKeysignParty(pubKey common.PubKey) (common.PubKeys, error) {
 	return m.getKeysignPartyFunc(pubKey)
+}
+
+func (m *MockThorchainBridge) GetMimir(key string) (int64, error) {
+	return 0, nil
 }
 
 type MockStream struct {
@@ -281,6 +285,10 @@ func (m *MockStream) SetWriteDeadline(t time.Time) error {
 }
 
 func (m *MockStream) SetReadDeadline(t time.Time) error {
+	return nil
+}
+
+func (m *MockStream) Reset() error {
 	return nil
 }
 

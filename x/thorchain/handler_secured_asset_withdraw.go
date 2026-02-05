@@ -3,9 +3,9 @@ package thorchain
 import (
 	"fmt"
 
-	"github.com/blang/semver"
 	"github.com/hashicorp/go-multierror"
 
+	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 )
@@ -40,16 +40,6 @@ func (h SecuredAssetWithdrawHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cos
 }
 
 func (h SecuredAssetWithdrawHandler) validate(ctx cosmos.Context, msg MsgSecuredAssetWithdraw) error {
-	version := h.mgr.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("3.0.0")):
-		return h.validateV3_0_0(ctx, msg)
-	default:
-		return errBadVersion
-	}
-}
-
-func (h SecuredAssetWithdrawHandler) validateV3_0_0(ctx cosmos.Context, msg MsgSecuredAssetWithdraw) error {
 	m, err := h.mgr.Keeper().GetMimirWithRef(ctx, constants.MimirTemplateSecuredAssetHaltWithdraw, msg.Asset.Chain.String())
 	if err != nil {
 		return err
@@ -58,21 +48,16 @@ func (h SecuredAssetWithdrawHandler) validateV3_0_0(ctx cosmos.Context, msg MsgS
 		return fmt.Errorf("%s secured asset withdrawals are disabled", msg.Asset.Chain)
 	}
 
+	// Validate that the address network matches the current chain network
+	if msg.AssetAddress.GetNetwork(msg.AssetAddress.GetChain()) != common.CurrentChainNetwork {
+		return fmt.Errorf("address(%s) is not same network", msg.AssetAddress)
+	}
+
 	return msg.ValidateBasic()
 }
 
-func (h SecuredAssetWithdrawHandler) handle(ctx cosmos.Context, msg MsgSecuredAssetWithdraw) error {
-	version := h.mgr.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("3.0.0")):
-		return h.handleV3_0_0(ctx, msg)
-	default:
-		return errBadVersion
-	}
-}
-
 // handle process MsgSecuredAssetWithdraw
-func (h SecuredAssetWithdrawHandler) handleV3_0_0(ctx cosmos.Context, msg MsgSecuredAssetWithdraw) error {
+func (h SecuredAssetWithdrawHandler) handle(ctx cosmos.Context, msg MsgSecuredAssetWithdraw) error {
 	withdrawAmount, err := h.mgr.SecuredAssetManager().Withdraw(ctx, msg.Asset, msg.Amount, msg.Signer, msg.AssetAddress, msg.Tx.ID)
 	if err != nil {
 		return err

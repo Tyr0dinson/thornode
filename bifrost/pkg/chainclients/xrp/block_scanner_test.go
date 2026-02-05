@@ -65,31 +65,31 @@ func (s *BlockScannerTestSuite) TestCalculateAverageFees(c *C) {
 	cfg := config.BifrostBlockScannerConfiguration{ChainID: common.XRPChain}
 	blockScanner := XrpBlockScanner{cfg: cfg}
 
-	blockScanner.updateFeeCache(common.NewCoin(common.XRPAsset, sdkmath.NewUint(10)))
+	blockScanner.updateFeeCache(common.NewCoin(common.XRPAsset, sdkmath.NewUint(1_000))) // 10 drops
 	c.Check(len(blockScanner.feeCache), Equals, 1)
-	c.Check(blockScanner.averageFee().String(), Equals, fmt.Sprintf("%d", uint64(10)))
+	c.Check(blockScanner.averageFee().String(), Equals, fmt.Sprintf("%d", uint64(10))) // 10 drops
 
-	blockScanner.updateFeeCache(common.NewCoin(common.XRPAsset, sdkmath.NewUint(10)))
+	blockScanner.updateFeeCache(common.NewCoin(common.XRPAsset, sdkmath.NewUint(1_000))) // 10 drops
 	c.Check(len(blockScanner.feeCache), Equals, 2)
-	c.Check(blockScanner.averageFee().String(), Equals, fmt.Sprintf("%d", uint64(10)))
+	c.Check(blockScanner.averageFee().String(), Equals, fmt.Sprintf("%d", uint64(10))) // 10 drops
 
 	// two txs at double fee should average to 75% of last
-	blockScanner.updateFeeCache(common.NewCoin(common.XRPAsset, sdkmath.NewUint(20)))
-	blockScanner.updateFeeCache(common.NewCoin(common.XRPAsset, sdkmath.NewUint(20)))
+	blockScanner.updateFeeCache(common.NewCoin(common.XRPAsset, sdkmath.NewUint(2_000))) // 20 drops
+	blockScanner.updateFeeCache(common.NewCoin(common.XRPAsset, sdkmath.NewUint(2_000))) // 20 drops
 	c.Check(len(blockScanner.feeCache), Equals, 4)
-	c.Check(blockScanner.averageFee().String(), Equals, fmt.Sprintf("%d", uint64(15)))
+	c.Check(blockScanner.averageFee().String(), Equals, fmt.Sprintf("%d", uint64(15))) // 15 drops
 
 	// skip transactions with zero fee
 	blockScanner.updateFeeCache(common.NewCoin(common.XRPAsset, sdkmath.NewUint(0)))
 	c.Check(len(blockScanner.feeCache), Equals, 4)
-	c.Check(blockScanner.averageFee().String(), Equals, fmt.Sprintf("%d", uint64(15)))
+	c.Check(blockScanner.averageFee().String(), Equals, fmt.Sprintf("%d", uint64(15))) // 15 drops
 
 	// ensure we only cache the transaction limit number of blocks
 	for i := 0; i < FeeCacheTransactions; i++ {
-		blockScanner.updateFeeCache(common.NewCoin(common.XRPAsset, sdkmath.NewUint(12)))
+		blockScanner.updateFeeCache(common.NewCoin(common.XRPAsset, sdkmath.NewUint(1_200))) // 12 drops
 	}
 	c.Check(len(blockScanner.feeCache), Equals, FeeCacheTransactions)
-	c.Check(blockScanner.averageFee().String(), Equals, fmt.Sprintf("%d", uint64(12)))
+	c.Check(blockScanner.averageFee().String(), Equals, fmt.Sprintf("%d", uint64(12))) // 12 drops
 }
 
 func (s *BlockScannerTestSuite) TestProcessTxs(c *C) {
@@ -100,7 +100,42 @@ func (s *BlockScannerTestSuite) TestProcessTxs(c *C) {
 		logger: log.Logger.With().Str("module", "blockscanner").Str("chain", common.XRPChain.String()).Logger(),
 	}
 
-	tx := map[string]any{
+	// 1. Decisively below threshold: 0.5 XRP (500,000 drops)
+	txBelow := map[string]any{
+		"tx_json": map[string]any{
+			"Account":         "rs3xN42EFLE23gUDG2Rw4rwxhR9MnjwZKQ",
+			"Destination":     "rELnd6Ae5ZYDhHkaqjSVg2vgtBnzjeDshm",
+			"Fee":             "20",
+			"SigningPubKey":   "03dd7eb4b0479d2898cabdd4ccfd30f2277e57cb9c13ccabb8ec5170ed13dd149a",
+			"TransactionType": "Payment",
+		},
+		"hash": "HASH_BELOW",
+		"meta": map[string]any{
+			"TransactionResult": "tesSUCCESS",
+			"delivered_amount":  "500000", // 0.5 XRP
+		},
+		"validated": true,
+	}
+
+	// 2. One drop below threshold: 0.999999 XRP (999,999 drops)
+	txOneDropBelow := map[string]any{
+		"tx_json": map[string]any{
+			"Account":         "rs3xN42EFLE23gUDG2Rw4rwxhR9MnjwZKQ",
+			"Destination":     "rELnd6Ae5ZYDhHkaqjSVg2vgtBnzjeDshm",
+			"Fee":             "20",
+			"SigningPubKey":   "03dd7eb4b0479d2898cabdd4ccfd30f2277e57cb9c13ccabb8ec5170ed13dd149a",
+			"TransactionType": "Payment",
+		},
+		"hash": "HASH_ONE_DROP_BELOW",
+		"meta": map[string]any{
+			"TransactionResult": "tesSUCCESS",
+			"delivered_amount":  "999999", // 0.999999 XRP
+		},
+		"validated": true,
+	}
+
+	// 3. Exact threshold: 1.0 XRP (1,000,000 drops)
+	txExact := map[string]any{
 		"tx_json": map[string]any{
 			"Account":     "rs3xN42EFLE23gUDG2Rw4rwxhR9MnjwZKQ",
 			"Destination": "rELnd6Ae5ZYDhHkaqjSVg2vgtBnzjeDshm",
@@ -115,19 +150,21 @@ func (s *BlockScannerTestSuite) TestProcessTxs(c *C) {
 			"SigningPubKey":   "03dd7eb4b0479d2898cabdd4ccfd30f2277e57cb9c13ccabb8ec5170ed13dd149a",
 			"TransactionType": "Payment",
 		},
-		"hash": "0123456789ABCDEF",
+		"hash": "HASH_EXACT",
 		"meta": map[string]any{
 			"TransactionResult": "tesSUCCESS",
-			"delivered_amount":  "1000000",
+			"delivered_amount":  "1000000", // 1.0 XRP
 		},
 		"validated": true,
 	}
 
-	txInItems, err := blockScanner.processTxs(1, []transaction.FlatTransaction{tx})
+	txInItems, err := blockScanner.processTxs(1, []transaction.FlatTransaction{txBelow, txOneDropBelow, txExact})
 	c.Assert(err, IsNil)
 
-	// proccessTxs should filter out everything besides the valid Payments
+	// processTxs should filter out the first two transactions (below threshold)
+	// and only return the third one (exact threshold)
 	c.Assert(len(txInItems), Equals, 1)
+	c.Assert(txInItems[0].Tx, Equals, "HASH_EXACT")
 	c.Assert(txInItems[0].Memo, Equals, "hello")
 }
 

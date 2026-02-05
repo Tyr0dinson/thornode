@@ -112,6 +112,9 @@
         "tx_size_cost_per_byte": "10"
       }
     },
+    "authz": {
+      "authorization": []
+    },
     "bank": {
       "balances": [
         {
@@ -127,7 +130,7 @@
           "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
           "coins": [
             {
-              "amount": "100001812745",
+              "amount": "100005438228",
               "denom": "rune"
             }
           ]
@@ -136,7 +139,7 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "35000006150260",
+              "amount": "35000002450785",
               "denom": "rune"
             }
           ]
@@ -149,7 +152,7 @@
               "denom": "rune"
             },
             {
-              "amount": "976324",
+              "amount": "980264",
               "denom": "thor.btc"
             }
           ]
@@ -167,7 +170,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "4999996036995",
+              "amount": "4999996110987",
               "denom": "rune"
             }
           ]
@@ -185,7 +188,7 @@
           "denom": "rune"
         },
         {
-          "amount": "976324",
+          "amount": "980264",
           "denom": "thor.btc"
         }
       ]
@@ -196,12 +199,16 @@
     "genutil": {
       "gen_txs": []
     },
+    "scheduler": {
+      "schedules": []
+    },
     "thorchain": {
       "POL": {
         "rune_deposited": "0",
         "rune_withdrawn": "0"
       },
       "THORNames": [],
+      "adv_swap_queue_items": [],
       "affiliate_collectors": null,
       "bond_providers": [
         {
@@ -225,8 +232,6 @@
           "units": "100000000000"
         }
       ],
-      "loan_total_collateral": [],
-      "loans": [],
       "mimirs": [
         {
           "key": "DERIVEDDEPTHBASISPTS",
@@ -240,7 +245,7 @@
       "network": {
         "LPIncomeSplit": "9800",
         "NodeIncomeSplit": "200",
-        "bond_reward_rune": "36995",
+        "bond_reward_rune": "110987",
         "total_bond_units": "5"
       },
       "network_fees": [
@@ -270,7 +275,7 @@
           "ip_address": "1.1.1.1",
           "node_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
           "pub_key_set": {
-            "ed25519": "tthorpub1zcjduepqfan43w2emjhfv45gspf98squqlnl2rcchc3e4dx7z2nxr27edflsy2e8ql",
+            "ed25519": "tthorpub1zcjduepqzupdpx7334mjeuuggnvxv3ctkghu0qcz2eml30tgu9ukw58z6uusmmxmys",
             "secp256k1": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
           },
           "status": "Active",
@@ -279,7 +284,6 @@
       ],
       "observed_tx_in_voters": null,
       "observed_tx_out_voters": null,
-      "orderbook_items": [],
       "outbound_fee_spent_rune": [],
       "outbound_fee_withheld_rune": [],
       "pools": [
@@ -287,7 +291,7 @@
           "LP_units": "100000000000",
           "asset": "BTC.BTC",
           "balance_asset": "100000000",
-          "balance_rune": "100001812745",
+          "balance_rune": "100005438228",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -297,8 +301,8 @@
         {
           "LP_units": "100000000000",
           "asset": "THOR.BTC",
-          "balance_asset": "100001999",
-          "balance_rune": "99999450207",
+          "balance_asset": "99999999",
+          "balance_rune": "100004350583",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
           "status": "Available",
@@ -306,6 +310,7 @@
           "synth_units": "0"
         }
       ],
+      "reference_memos": [],
       "reserve_contributors": null,
       "rune_pool": {
         "pool_units": "0",
@@ -321,7 +326,7 @@
         {
           "address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
           "reclaimed": "0",
-          "score": "9998137",
+          "score": "9998350",
           "spent": "0"
         }
       ],

@@ -16,21 +16,23 @@ import (
 
 // BlockResponse struct for BlockResponse
 type BlockResponse struct {
-	Id BlockResponseId `json:"id"`
-	Header BlockResponseHeader `json:"header"`
-	BeginBlockEvents []map[string]string `json:"begin_block_events"`
-	EndBlockEvents []map[string]string `json:"end_block_events"`
-	Txs []BlockTx `json:"txs"`
+	Id                  BlockResponseId     `json:"id"`
+	Header              BlockResponseHeader `json:"header"`
+	FinalizeBlockEvents []map[string]string `json:"finalize_block_events"`
+	BeginBlockEvents    []map[string]string `json:"begin_block_events"`
+	EndBlockEvents      []map[string]string `json:"end_block_events"`
+	Txs                 []BlockTx           `json:"txs"`
 }
 
 // NewBlockResponse instantiates a new BlockResponse object
 // This constructor will assign default values to properties that have it defined,
 // and makes sure properties required by API are set, but the set of arguments
 // will change when the set of required properties is changed
-func NewBlockResponse(id BlockResponseId, header BlockResponseHeader, beginBlockEvents []map[string]string, endBlockEvents []map[string]string, txs []BlockTx) *BlockResponse {
+func NewBlockResponse(id BlockResponseId, header BlockResponseHeader, finalizeBlockEvents []map[string]string, beginBlockEvents []map[string]string, endBlockEvents []map[string]string, txs []BlockTx) *BlockResponse {
 	this := BlockResponse{}
 	this.Id = id
 	this.Header = header
+	this.FinalizeBlockEvents = finalizeBlockEvents
 	this.BeginBlockEvents = beginBlockEvents
 	this.EndBlockEvents = endBlockEvents
 	this.Txs = txs
@@ -91,6 +93,30 @@ func (o *BlockResponse) GetHeaderOk() (*BlockResponseHeader, bool) {
 // SetHeader sets field value
 func (o *BlockResponse) SetHeader(v BlockResponseHeader) {
 	o.Header = v
+}
+
+// GetFinalizeBlockEvents returns the FinalizeBlockEvents field value
+func (o *BlockResponse) GetFinalizeBlockEvents() []map[string]string {
+	if o == nil {
+		var ret []map[string]string
+		return ret
+	}
+
+	return o.FinalizeBlockEvents
+}
+
+// GetFinalizeBlockEventsOk returns a tuple with the FinalizeBlockEvents field value
+// and a boolean to check if the value has been set.
+func (o *BlockResponse) GetFinalizeBlockEventsOk() ([]map[string]string, bool) {
+	if o == nil {
+		return nil, false
+	}
+	return o.FinalizeBlockEvents, true
+}
+
+// SetFinalizeBlockEvents sets field value
+func (o *BlockResponse) SetFinalizeBlockEvents(v []map[string]string) {
+	o.FinalizeBlockEvents = v
 }
 
 // GetBeginBlockEvents returns the BeginBlockEvents field value
@@ -176,6 +202,9 @@ func (o BlockResponse) MarshalJSON_deprecated() ([]byte, error) {
 		toSerialize["header"] = o.Header
 	}
 	if true {
+		toSerialize["finalize_block_events"] = o.FinalizeBlockEvents
+	}
+	if true {
 		toSerialize["begin_block_events"] = o.BeginBlockEvents
 	}
 	if true {
@@ -222,5 +251,3 @@ func (v *NullableBlockResponse) UnmarshalJSON(src []byte) error {
 	v.isSet = true
 	return json.Unmarshal(src, &v.value)
 }
-
-

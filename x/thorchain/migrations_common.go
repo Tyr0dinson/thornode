@@ -1,9 +1,14 @@
 package thorchain
 
 import (
+	"fmt"
 	"strings"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 // Migrate4to5 migrates from version 4 to 5.
@@ -65,59 +70,189 @@ func (m Migrator) ClearObsoleteMimirs(ctx sdk.Context) error {
 	return nil
 }
 
-func (m Migrator) UpdateMimirsFor2sBlockTime(ctx sdk.Context) {
-	k := m.mgr.Keeper()
-	// Block time changed from ~6s to ~2s (3x faster)
-	// Update all time-based constants
+// Migrate7to8 migrates from version 7 to 8.
+func (m Migrator) Migrate7to8(ctx sdk.Context) error {
+	// Loads the manager for this migration (we are in the x/upgrade's preblock)
+	// Note, we do not require the manager loaded for this migration, but it is okay
+	// to load it earlier and this is the pattern for migrations to follow.
+	if err := m.mgr.LoadManagerIfNecessary(ctx); err != nil {
+		return err
+	}
 
-	// Main block timing constant
-	k.SetMimir(ctx, "BlocksPerYear", 15768000)
+	// Update all KVStore network fees from (Mainnet-only) legacy 1e8 TransactionFeeRate
+	// to gas rate units TransactionFeeRate.
+	for _, chain := range common.AllChains {
+		_, gasRateUnitsPerOne := chain.GetGasUnits()
 
-	// Pool and liquidity timing
-	k.SetMimir(ctx, "PoolCycle", 129600)
-	k.SetMimir(ctx, "PendingLiquidityAgeLimit", 302400)
+		if gasRateUnitsPerOne.Equal(cosmos.NewUint(common.One)) {
+			// This is already in the right units.
+			continue
+		}
 
-	// Anchor and dynamic calculations
-	k.SetMimir(ctx, "MaxAnchorBlocks", 900)
-	k.SetMimir(ctx, "DynamicMaxAnchorSlipBlocks", 604800)
-	k.SetMimir(ctx, "DynamicMaxAnchorCalcInterval", 43200)
+		if chain.IsTHORChain() {
+			// GetGasUnits doesn't have a THORChain entry,
+			// so in case of unintended effects skip this.
+			continue
+		}
 
-	// Fund and vault migration
-	k.SetMimir(ctx, "FundMigrationInterval", 1080)
+		networkFee, err := m.mgr.Keeper().GetNetworkFee(ctx, chain)
+		if err != nil {
+			ctx.Logger().Error("Error getting NetworkFee for chain", "chain", chain.String(), "error", err)
+			return err
+		}
+		ctx.Logger().Info("NetworkFee details", "chain", chain.String(), "transactionSize", networkFee.TransactionSize, "transactionFeeRate", networkFee.TransactionFeeRate)
 
-	// Churn-related intervals
-	k.SetMimir(ctx, "ChurnInterval", 129600)
-	k.SetMimir(ctx, "ChurnRetryInterval", 2160)
-	k.SetMimir(ctx, "ChurnOutForLowVersionBlocks", 64800)
+		// Skip if TransactionSize is 0 to avoid validation error
+		if networkFee.TransactionSize == 0 {
+			ctx.Logger().Info("Skipping chain due to zero TransactionSize", "chain", chain.String())
+			continue
+		}
 
-	// Transaction signing and validation
-	k.SetMimir(ctx, "SigningTransactionPeriod", 900)
-	k.SetMimir(ctx, "DoubleSignMaxAge", 72)
+		networkFee.TransactionFeeRate = cosmos.NewUint(networkFee.TransactionFeeRate).Mul(gasRateUnitsPerOne).QuoUint64(common.One).Uint64()
+		if err := m.mgr.Keeper().SaveNetworkFee(ctx, chain, networkFee); err != nil {
+			return err
+		}
+	}
 
-	// Slashing and penalties
-	k.SetMimir(ctx, "FailKeygenSlashPoints", 2160)
-	k.SetMimir(ctx, "ObservationDelayFlexibility", 30)
+	return nil
+}
 
-	// Jailing durations
-	k.SetMimir(ctx, "JailTimeKeygen", 12960)
-	k.SetMimir(ctx, "JailTimeKeysign", 180)
+func (m Migrator) CommonMigrate8to9(ctx sdk.Context) error {
+	// reduce the minimum L1 outbound fee to $0.25
+	m.mgr.Keeper().SetMimir(ctx, constants.MinimumL1OutboundFeeUSD.String(), 25000000)
 
-	// Node operations
-	k.SetMimir(ctx, "NodePauseChainBlocks", 2160)
-	k.SetMimir(ctx, "CloutReset", 2160)
+	// ------------------------------ Asset Gas Multiplier Adjustments ------------------------------
+	//
+	// We are going to adjust the target surplus and multipliers for all assets. The steps are:
+	// 1. Adjust the target surplus to 10k RUNE
+	// 2. Compute the new multiplier for each asset
+	// 3. If the multiplier is less than or equal to 100%, do nothing
+	// 4. If the multiplier is greater than 100%, increase the withheld amount so that the multiplier is equal to 100%
 
-	// Streaming swap timings
-	k.SetMimir(ctx, "StreamingSwapMaxLength", 43200)
-	k.SetMimir(ctx, "StreamingSwapMaxLengthNative", 15768000)
+	// Adjust the target surplus to 10k RUNE
+	m.mgr.Keeper().SetMimir(ctx, constants.TargetOutboundFeeSurplusRune.String(), 10000_00000000) // 10k x 10^8
 
-	// Transaction output timings
-	k.SetMimir(ctx, "TxOutDelayMax", 51840)
-	k.SetMimir(ctx, "MaxTxOutOffset", 2160)
+	// Adjust minimum DOFM multiplier to 1%
+	// https://gitlab.com/thorchain/thornode/-/issues/2239#note_2690577110
+	m.mgr.Keeper().SetMimir(ctx, constants.MinOutboundFeeMultiplierBasisPoints.String(), 100)
 
-	// TNS fees - divided by 3 (rounded up)
-	k.SetMimir(ctx, "TNSFeePerBlock", 7)
-	k.SetMimir(ctx, "TNSFeePerBlockUSD", 7)
+	// Gather all the parameters for the multiplier calculation
+	targetSurplus := cosmos.NewUint(uint64(m.mgr.Keeper().GetConfigInt64(ctx, constants.TargetOutboundFeeSurplusRune)))
+	maxMultiplier := cosmos.NewUint(uint64(m.mgr.Keeper().GetConfigInt64(ctx, constants.MaxOutboundFeeMultiplierBasisPoints)))
+	minMultiplier := cosmos.NewUint(uint64(m.mgr.Keeper().GetConfigInt64(ctx, constants.MinOutboundFeeMultiplierBasisPoints)))
 
-	// RUNE Pool maturity blocks
-	k.SetMimir(ctx, "RUNEPoolDepositMaturityBlocks", 3888000)
+	// Collect all the assets via pool iterator (copied from querier.go outbound fees endpoint)
+	var assets []common.Asset
+	iterator := m.mgr.Keeper().GetPoolIterator(ctx)
+	defer iterator.Close()
+	for ; iterator.Valid(); iterator.Next() {
+		var pool Pool
+		if err := m.mgr.Keeper().Cdc().Unmarshal(iterator.Value(), &pool); err != nil {
+			return fmt.Errorf("fail to unmarshal pool: %w", err)
+		}
+
+		if pool.Asset.IsNative() {
+			// To avoid clutter do not by default display the outbound fees
+			// of THORChain Assets other than RUNE.
+			continue
+		}
+		if pool.BalanceAsset.IsZero() || pool.BalanceRune.IsZero() {
+			// A Layer 1 Asset's pool must have both depths be non-zero
+			// for any outbound fee withholding or gas reimbursement to take place.
+			// (This can take place even if the PoolUnits are zero and all liquidity is synths.)
+			continue
+		}
+		if pool.Status != types.PoolStatus_Available {
+			// A Layer 1 Asset's pool must be available
+			// for any outbound fee withholding or gas reimbursement to take place.
+			continue
+		}
+
+		assets = append(assets, pool.Asset)
+	}
+
+	type feesAndMultiplier struct {
+		withheld   cosmos.Uint
+		spent      cosmos.Uint
+		surplus    cosmos.Uint
+		multiplier cosmos.Uint
+	}
+
+	getFeesAndMultiplier := func(ctx cosmos.Context, asset common.Asset) (feesAndMultiplier, error) {
+		var err error
+		var fem feesAndMultiplier
+		fem.withheld, err = m.mgr.Keeper().GetOutboundFeeWithheldRune(ctx, asset)
+		if err != nil {
+			return fem, err
+		}
+		fem.spent, err = m.mgr.Keeper().GetOutboundFeeSpentRune(ctx, asset)
+		if err != nil {
+			return fem, err
+		}
+		fem.surplus = common.SafeSub(fem.withheld, fem.spent)
+		fem.multiplier = m.mgr.GasMgr().CalcOutboundFeeMultiplier(ctx, targetSurplus,
+			fem.spent, fem.withheld, maxMultiplier, minMultiplier)
+		return fem, nil
+	}
+
+	processAsset := func(asset common.Asset, targetMultiplier cosmos.Uint) error {
+		before, err := getFeesAndMultiplier(ctx, asset)
+		if err != nil {
+			ctx.Logger().Error("failed to get fees and multiplier before adjustment", "asset", asset, "error", err)
+			return err
+		}
+
+		equilibriumSurplus := m.mgr.Keeper().GetSurplusForTargetMultiplier(ctx, targetMultiplier)
+		if before.multiplier.LTE(targetMultiplier) {
+			ctx.Logger().Info("multiplier is less than 100%; no adjustment needed",
+				"asset", asset,
+				"multiplier", before.multiplier,
+				"surplus", before.surplus,
+				"target_multiplier", targetMultiplier,
+				"equilibrium_surplus", equilibriumSurplus,
+				"withheld_adjustment", "none",
+			)
+			return nil
+		}
+
+		// Increase withheld so that the multiplier is equal to 100%
+		withheldAdjustment := common.SafeSub(equilibriumSurplus, before.surplus)
+		err = m.mgr.Keeper().AddToOutboundFeeWithheldRune(ctx, asset, withheldAdjustment)
+		if err != nil {
+			ctx.Logger().Error("failed to adjust withheld amount", "asset", asset, "adjustment", withheldAdjustment, "error", err)
+			return err
+		}
+
+		after, err := getFeesAndMultiplier(ctx, asset)
+		if err != nil {
+			ctx.Logger().Error("failed to get fees and multiplier after adjustment", "asset", asset, "error", err)
+			return err
+		}
+
+		ctx.Logger().Info("multiplier was greater than target; adjusted",
+			"asset", asset,
+			"before_withheld", before.withheld,
+			"before_surplus", before.surplus,
+			"before_multiplier", before.multiplier,
+			"target_multiplier", targetMultiplier,
+			"equilibrium_surplus", equilibriumSurplus,
+			"adjustment", withheldAdjustment,
+			"after_withheld", after.withheld,
+			"after_surplus", after.surplus,
+			"after_multiplier", after.multiplier,
+		)
+
+		return nil
+	}
+
+	for _, asset := range assets {
+		err := processAsset(asset, cosmos.NewUint(10_000)) // target 100% multiplier
+		if err != nil {
+			return err
+		}
+	}
+
+	// Special case TRON.TRX to target 10% multiplier
+	// https://gitlab.com/thorchain/thornode/-/issues/2239#note_2690577110
+	return processAsset(common.TRXAsset, cosmos.NewUint(1_000))
 }

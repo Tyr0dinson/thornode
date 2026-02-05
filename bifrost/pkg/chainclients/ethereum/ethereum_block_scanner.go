@@ -134,7 +134,7 @@ func NewETHScanner(cfg config.BifrostBlockScannerConfiguration,
 		bridge:               bridge,
 		vaultABI:             vaultABI,
 		erc20ABI:             erc20ABI,
-		eipSigner:            etypes.NewLondonSigner(chainID),
+		eipSigner:            etypes.NewPragueSigner(chainID),
 		pubkeyMgr:            pubkeyMgr,
 		gasCache:             make([]*big.Int, 0),
 		solvencyReporter:     solvencyReporter,
@@ -203,8 +203,8 @@ func (e *ETHScanner) FetchTxs(height, chainHeight int64) (stypes.TxIn, error) {
 	pruneHeight := height - e.cfg.MaxReorgRescanBlocks
 	if pruneHeight > 0 {
 		defer func() {
-			if err := e.blockMetaAccessor.PruneBlockMeta(pruneHeight); err != nil {
-				e.logger.Err(err).Msgf("fail to prune block meta, height(%d)", pruneHeight)
+			if pruneErr := e.blockMetaAccessor.PruneBlockMeta(pruneHeight); pruneErr != nil {
+				e.logger.Err(pruneErr).Msgf("fail to prune block meta, height(%d)", pruneHeight)
 			}
 		}()
 	}
@@ -214,23 +214,23 @@ func (e *ETHScanner) FetchTxs(height, chainHeight int64) (stypes.TxIn, error) {
 		return txIn, nil
 	}
 
-	// gas price to 1e8 from 1e18
+	// gas rate from wei to gas rate units
 	gasPrice := e.GetGasPrice()
-	tcGasPrice := new(big.Int).Div(gasPrice, big.NewInt(1e10)).Uint64()
-	if tcGasPrice == 0 {
-		tcGasPrice = 1
+	_, gasRateUnitsPerOne := e.cfg.ChainID.GetGasUnits()
+	gasRate := cosmos.NewUintFromBigInt(gasPrice).Mul(gasRateUnitsPerOne).QuoUint64(common.WeiPerOne).Uint64()
+	if gasRate == 0 {
+		gasRate = 1
 	}
 
 	// post to thorchain if there is a fee and it has changed
-	if gasPrice.Cmp(big.NewInt(0)) != 0 && tcGasPrice != e.lastReportedGasPrice {
+	if gasPrice.Cmp(big.NewInt(0)) != 0 && gasRate != e.lastReportedGasPrice {
 		e.globalNetworkFeeQueue <- common.NetworkFee{
 			Chain:           common.ETHChain,
 			Height:          height,
 			TransactionSize: e.cfg.MaxGasLimit,
-			TransactionRate: tcGasPrice,
+			TransactionRate: gasRate,
 		}
-
-		e.lastReportedGasPrice = tcGasPrice
+		e.lastReportedGasPrice = gasRate
 	}
 
 	if e.solvencyReporter != nil {
@@ -255,8 +255,9 @@ func (e *ETHScanner) updateGasPrice(baseFee *big.Int, priorityFees []*big.Int) {
 	// consider gas price as base fee + 25th percentile priority fee
 	gasPriceWei := new(big.Int).Add(baseFee, priorityFee)
 
-	// round the price up to nearest configured resolution
-	resolution := big.NewInt(e.cfg.GasPriceResolution)
+	// round the price up to nearest configured resolution, converting gas rate units to wei
+	_, gasRateUnitsPerOne := e.cfg.ChainID.GetGasUnits()
+	resolution := cosmos.NewUint(uint64(e.cfg.GasPriceResolution)).MulUint64(common.WeiPerOne).Quo(gasRateUnitsPerOne).BigInt()
 	gasPriceWei.Add(gasPriceWei, new(big.Int).Sub(resolution, big.NewInt(1)))
 	gasPriceWei = gasPriceWei.Div(gasPriceWei, resolution)
 	gasPriceWei = gasPriceWei.Mul(gasPriceWei, resolution)
@@ -642,9 +643,9 @@ func (e *ETHScanner) getDecimals(token string) (uint64, error) {
 	return defaultDecimals, fmt.Errorf("%s is %T fail to parse it", output[0], output[0])
 }
 
-// replace the . in symbol to *, and replace the - in symbol to #
-// because . and - had been reserved to use in THORChain symbol
-var symbolReplacer = strings.NewReplacer(".", "*", "-", "#", `\u0000`, "", "\u0000", "")
+// . and - had been reserved to use in THORChain symbol
+// and + similarly is not accepted by common package NewSymbol's isAlphaNumeric
+var symbolReplacer = strings.NewReplacer(".", "", "-", "", `\u0000`, "", "\u0000", "", "+", "")
 
 func sanitiseSymbol(symbol string) string {
 	return symbolReplacer.Replace(symbol)
@@ -684,7 +685,7 @@ func (e *ETHScanner) getSymbol(token string) (string, error) {
 func (e *ETHScanner) isToValidContractAddress(addr *ecommon.Address, includeWhiteList bool) bool {
 	// get the smart contract used by thornode
 	contractAddresses := e.pubkeyMgr.GetContracts(common.ETHChain)
-	if includeWhiteList {
+	if includeWhiteList || useWhitelistSmartContract {
 		contractAddresses = append(contractAddresses, whitelistSmartContractAddress...)
 	}
 	// combine the whitelist smart contract address
@@ -855,8 +856,20 @@ func (e *ETHScanner) getTxInFromTransaction(tx *etypes.Transaction, receipt *ety
 	txGasPrice := receipt.EffectiveGasPrice
 
 	txInItem.Gas = common.MakeEVMGas(common.ETHChain, txGasPrice, receipt.GasUsed, nil)
+
+	// drop non-cancel transactions below dust threshold
+	isCancel := txInItem.Sender == txInItem.To
+	if !isCancel &&
+		len(txInItem.Coins) == 1 &&
+		txInItem.Coins[0].Asset.Equals(e.cfg.ChainID.GetGasAsset()) &&
+		txInItem.Coins[0].Amount.LT(e.cfg.ChainID.DustThreshold()) {
+
+		e.logger.Debug().Str("hash", tx.Hash().Hex()).Msg("dropping tx below dust threshold")
+		return nil, nil
+	}
+
 	if txInItem.Coins.IsEmpty() {
-		if txInItem.Sender == txInItem.To {
+		if isCancel {
 			// When the Sender and To is the same then there's no balance chance whatever the Coins,
 			// and for Tx-received Valid() a non-zero Amount is needed to observe
 			// the transaction fees (THORChain gas cost) of unstuck.go's cancel transactions.
@@ -864,7 +877,9 @@ func (e *ETHScanner) getTxInFromTransaction(tx *etypes.Transaction, receipt *ety
 			txInItem.Coins = common.NewCoins(common.NewCoin(common.ETHAsset, observableAmount))
 
 			// remove the outbound from signer cache so it can be re-attempted
-			e.signerCacheManager.RemoveSigned(tx.Hash().Hex())
+			if e.signerCacheManager != nil {
+				e.signerCacheManager.RemoveSigned(tx.Hash().Hex())
+			}
 		} else {
 			e.logger.Debug().Msgf("there is no coin in this tx, ignore, %+v", txInItem)
 			return nil, nil

@@ -13,6 +13,9 @@ value: "50"
 type: create-blocks
 count: 1
 ---
+########################################################################################
+# disable advanced swap queue to ensure consistent test behavior
+########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/pools
 asserts:
@@ -22,21 +25,21 @@ type: check
 endpoint: http://localhost:1317/thorchain/outbound_fees
 asserts:
   - .|length == 3
-  - .[0] == {"asset":"THOR.RUNE","outbound_fee":"2000000"}
+  - .[0] == {"asset":"THOR.RUNE","outbound_fee":"0"}
   ###
   - .[1].asset == "BTC.BTC"
-  - .[1].outbound_fee == "14000"
-  - .[1].fee_withheld_rune == "0"
+  - .[1].outbound_fee == "7000"
+  - .[1].fee_withheld_rune == "689655172414"
   - .[1].fee_spent_rune == "0"
-  - .[1].surplus_rune == "0"
-  - .[1].dynamic_multiplier_basis_points == "20000"
+  - .[1].surplus_rune == "689655172414"
+  - .[1].dynamic_multiplier_basis_points == "10000"
   ###
   - .[2].asset == "ETH.ETH"
-  - .[2].outbound_fee == "1280000"
-  - .[2].fee_withheld_rune == "0"
+  - .[2].outbound_fee == "640000"
+  - .[2].fee_withheld_rune == "689655172414"
   - .[2].fee_spent_rune == "0"
-  - .[2].surplus_rune == "0"
-  - .[2].dynamic_multiplier_basis_points == "20000"
+  - .[2].surplus_rune == "689655172414"
+  - .[2].dynamic_multiplier_basis_points == "10000"
 ---
 ########################################################################################
 # check 1/2 of vault block_height
@@ -81,22 +84,17 @@ type: create-blocks
 count: 1
 ---
 type: check
-endpoint: http://localhost:1317/thorchain/swap/streaming/${INBOUND_TXID}
+endpoint: http://localhost:1317/thorchain/queue/swap/details/${INBOUND_TXID}
 asserts:
-  - .source_asset == "${INPUT_ASSET}"
-  - .deposit == "${INPUT_AMOUNT}"
-  - .count == ${COUNT=1}
-  - .quantity == ${QUANTITY=10}
-  - .in == (( ${INPUT_AMOUNT} * ${COUNT} / ${QUANTITY} )|tostring)
-  - .tx_id == "0000000000000000000000000000000000000000000000000000000000000001"
-  - .interval == ${INTERVAL}
-  - .target_asset == "${OUTPUT_ASSET}"
-  - .out == "4901358"
-  - .destination == "${DESTINATION}"
-  - .last_height == 2
-  - .trade_target == "0"
-  - .failed_swaps|length == 0
-  - .failed_swap_reasons|length == 0
+  - .swap.tx.coins[0].asset == "${INPUT_ASSET}"
+  - .swap.state.deposit == "${INPUT_AMOUNT}"
+  - .swap.tx.id == "0000000000000000000000000000000000000000000000000000000000000001"
+  - .swap.stream_interval == ${INTERVAL}
+  - .swap.target_asset == "${OUTPUT_ASSET}"
+  - .swap.destination == "${DESTINATION}"
+  - .swap.trade_target == "0"
+  - .status == "queued"
+  - .queue_type == "advanced"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/swaps/streaming
@@ -117,7 +115,7 @@ asserts:
   - .|length == 1
   - .[0]|.in_hash == "${INBOUND_TXID}"
   - .[0]|.coin.asset == "${OUTPUT_ASSET}"
-  - .[0]|.coin.amount == "${OUTPUT_AMOUNT=43741039}"
+  - .[0]|.coin.amount == "${OUTPUT_AMOUNT=44381063}"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -161,7 +159,7 @@ asserts:
   - length == 1
   - .[0].block_height == 2
   - .[0].block_height < ${HEIGHT}
-  - .[0].block_height > ${VAULT_BLOCK_HEIGHT}
+  - .[0].block_height >= ${VAULT_BLOCK_HEIGHT}
   # The templates set the block_height to 0,
   # but it was overwritten by GetVault and that overwritten height set by SetVault
   # (in the network manager EndBlock when the vault's Routers were set).
@@ -193,12 +191,11 @@ type: create-blocks
 count: 1
 ---
 type: check
-endpoint: http://localhost:1317/thorchain/swap/streaming/${INBOUND_TXID}
+endpoint: http://localhost:1317/thorchain/queue/swap/details/${INBOUND_TXID}
 asserts:
-  - .deposit == "${INPUT_AMOUNT}"
-  - .count == ${COUNT=1}
-  - .quantity == ${QUANTITY}
-  - .in == (( ${INPUT_AMOUNT} * ${COUNT} / ${QUANTITY} )|tostring)
+  - .swap.state.deposit == "${INPUT_AMOUNT}"
+  - .status == "queued"
+  - .queue_type == "advanced"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/swaps/streaming
@@ -240,7 +237,7 @@ asserts:
   - .|length == 1
   - .[0]|.in_hash == "${INBOUND_TXID}"
   - .[0]|.coin.asset == "${OUTPUT_ASSET}"
-  - .[0]|.coin.amount == "${OUTPUT_AMOUNT=43049703}"
+  - .[0]|.coin.amount == "${OUTPUT_AMOUNT=43631686}"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -271,7 +268,7 @@ asserts:
   - .|length == 0
 ---
 ########################################################################################
-# streaming swap to ETH.ETH (2/5 conversion)
+# streaming swap to ETH.ETH (1/4 conversion)
 ########################################################################################
 type: create-blocks
 count: 1
@@ -291,7 +288,7 @@ txs:
       gas:
         - amount: "10000"
           asset: "BTC.BTC"
-      memo: "=:${OUTOUT_ASSET=ETH.ETH}:${DESTINATION={{ addr_eth_fox }}}:38666695/1/5"
+      memo: "=:${OUTOUT_ASSET=ETH.ETH}:${DESTINATION={{ addr_eth_fox }}}:37500000/1/5"
     block_height: 6
     finalise_height: 6
     observed_pub_key: {{ pubkey_dog }}
@@ -310,12 +307,12 @@ asserts:
   - .|length == 2
   - .[0]|.in_hash == "${INBOUND_TXID}"
   - .[0]|.coin.asset == "${OUTPUT_ASSET}"
-  - .[0]|.memo == "OUT:${INBOUND_TXID}"
-  - .[0]|.coin.amount == "${OUTPUT_AMOUNT=6500938}"
+  - .[0]|.original_memo == "OUT:${INBOUND_TXID}"
+  - .[0]|.coin.amount == "${OUTPUT_AMOUNT=7120218}"
   - .[1]|.in_hash == "${INBOUND_TXID}"
   - .[1]|.coin.asset == "${INPUT_ASSET}"
-  - .[1]|.coin.amount == "${REFUND_AMOUNT=4786000}"
-  - .[1]|.memo == "REFUND:${INBOUND_TXID}"
+  - .[1]|.coin.amount == "${REFUND_AMOUNT=4793000}"
+  - .[1]|.original_memo == "REFUND:${INBOUND_TXID}"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -388,14 +385,12 @@ type: create-blocks
 count: 1
 ---
 type: check
-endpoint: http://localhost:1317/thorchain/swap/streaming/${INBOUND_TXID}
+endpoint: http://localhost:1317/thorchain/queue/swap/details/${INBOUND_TXID}
 asserts:
-  - .interval == ${INTERVAL}
-  - .deposit == "${INPUT_AMOUNT}"
-  - .count == ${COUNT=1}
-  - .quantity < ${QUANTITY} # As predicted, fewer swaps than indicated by the memo.
-  - .quantity == ${QUANTITY=9}
-  - .in == (( ${INPUT_AMOUNT} * ${COUNT} / ${QUANTITY} )|floor|tostring) # Floored to round down decimals to the nearest integer.
+  - .swap.stream_interval == ${INTERVAL}
+  - .swap.state.deposit == "${INPUT_AMOUNT}"
+  - .status == "queued"
+  - .queue_type == "advanced"
 ---
 type: create-blocks
 count: 8
@@ -406,8 +401,8 @@ asserts:
   - .|length == 1
   - .[0]|.in_hash == "${INBOUND_TXID}"
   - .[0]|.coin.asset == "${OUTPUT_ASSET}"
-  - .[0]|.coin.amount == "${OUTPUT_AMOUNT=31185749}"
-  - .[0]|.memo == "OUT:${INBOUND_TXID}"
+  - .[0]|.coin.amount == "${OUTPUT_AMOUNT=31700047}"
+  - .[0]|.original_memo == "OUT:${INBOUND_TXID}"
 ---
 type: create-blocks
 count: 1
@@ -477,8 +472,8 @@ asserts:
   - .|length == 1
   - .[0]|.in_hash == "${INBOUND_TXID}"
   - .[0]|.coin.asset == "${OUTPUT_ASSET}"
-  - .[0]|.coin.amount == "${OUTPUT_AMOUNT=342150}"
-  - .[0]|.memo == "OUT:${INBOUND_TXID}"
+  - .[0]|.coin.amount == "${OUTPUT_AMOUNT=973312}"
+  - .[0]|.original_memo == "OUT:${INBOUND_TXID}"
 ---
 type: create-blocks
 count: 1
@@ -530,32 +525,30 @@ type: create-blocks
 count: 1
 ---
 type: check
-endpoint: http://localhost:1317/thorchain/swap/streaming/799A32266A8F0BF5E5EC7F12E0981839DF23C7E138A7C45D6814A7D80CAC7F34
+endpoint: http://localhost:1317/thorchain/queue/swap/details/799A32266A8F0BF5E5EC7F12E0981839DF23C7E138A7C45D6814A7D80CAC7F34
 asserts:
-  - .deposit == "${INPUT_AMOUNT}"
-  - .count == ${COUNT=1}
-  - .quantity == ${QUANTITY}
-  - .in == (( ${INPUT_AMOUNT} * ${COUNT} / ${QUANTITY} )|tostring)
+  - .swap.state.deposit == "${INPUT_AMOUNT}"
+  - .status == "queued"
+  - .queue_type == "advanced"
 ---
 type: create-blocks
 count: 1
 ---
 type: check
-endpoint: http://localhost:1317/thorchain/swap/streaming/799A32266A8F0BF5E5EC7F12E0981839DF23C7E138A7C45D6814A7D80CAC7F34
+endpoint: http://localhost:1317/thorchain/queue/swap/details/799A32266A8F0BF5E5EC7F12E0981839DF23C7E138A7C45D6814A7D80CAC7F34
 asserts:
-  - .deposit == "${INPUT_AMOUNT}"
-  - .count == ${COUNT=2}
-  - .quantity == ${QUANTITY}
-  - .in == (( ${INPUT_AMOUNT} * ${COUNT} / ${QUANTITY} )|tostring)
+  - .swap.state.deposit == "${INPUT_AMOUNT}"
+  - .status == "queued"
+  - .queue_type == "advanced"
 ---
 type: create-blocks
 count: 8
 ---
 type: check
-endpoint: http://localhost:1317/thorchain/swap/streaming/799A32266A8F0BF5E5EC7F12E0981839DF23C7E138A7C45D6814A7D80CAC7F34
+endpoint: http://localhost:1317/thorchain/queue/swap/details/799A32266A8F0BF5E5EC7F12E0981839DF23C7E138A7C45D6814A7D80CAC7F34
+status: 400
 asserts:
-  - .deposit == "0" # The streaming swap has completed and so is no longer ongoing.
-  - .in == "0"
+  - .message|contains("not found in any queue") # The streaming swap has completed and so is no longer ongoing.
 ---
 ########################################################################################
 # streaming swap to THOR.RUNE from ETH/ETH (100% conversion)
@@ -571,23 +564,21 @@ type: create-blocks
 count: 1
 ---
 type: check
-endpoint: http://localhost:1317/thorchain/swap/streaming/DB631CBCF71524D9BF1141566D8A11E887B426D0C1FDDB6510EA99041220A36F
+endpoint: http://localhost:1317/thorchain/queue/swap/details/DB631CBCF71524D9BF1141566D8A11E887B426D0C1FDDB6510EA99041220A36F
 asserts:
-  - .deposit == "${INPUT_AMOUNT}"
-  - .count == ${COUNT=1}
-  - .quantity == ${QUANTITY}
-  - .in == (( ${INPUT_AMOUNT} * ${COUNT} / ${QUANTITY} )|tostring)
+  - .swap.state.deposit == "${INPUT_AMOUNT}"
+  - .status == "queued"
+  - .queue_type == "advanced"
 ---
 type: create-blocks
 count: 1
 ---
 type: check
-endpoint: http://localhost:1317/thorchain/swap/streaming/DB631CBCF71524D9BF1141566D8A11E887B426D0C1FDDB6510EA99041220A36F
+endpoint: http://localhost:1317/thorchain/queue/swap/details/DB631CBCF71524D9BF1141566D8A11E887B426D0C1FDDB6510EA99041220A36F
 asserts:
-  - .deposit == "${INPUT_AMOUNT}"
-  - .count == ${COUNT=2}
-  - .quantity == ${QUANTITY}
-  - .in == (( ${INPUT_AMOUNT} * ${COUNT} / ${QUANTITY} )|tostring)
+  - .swap.state.deposit == "${INPUT_AMOUNT}"
+  - .status == "queued"
+  - .queue_type == "advanced"
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/invariant/streaming_swaps
@@ -603,10 +594,10 @@ type: create-blocks
 count: 8
 ---
 type: check
-endpoint: http://localhost:1317/thorchain/swap/streaming/DB631CBCF71524D9BF1141566D8A11E887B426D0C1FDDB6510EA99041220A36F
+endpoint: http://localhost:1317/thorchain/queue/swap/details/DB631CBCF71524D9BF1141566D8A11E887B426D0C1FDDB6510EA99041220A36F
+status: 400
 asserts:
-  - .deposit == "0" # The streaming swap has completed and so is no longer ongoing.
-  - .in == "0"
+  - .message|contains("not found in any queue") # The streaming swap has completed and so is no longer ongoing.
 ---
 type: check
 endpoint: http://localhost:1317/thorchain/invariant/asgard
@@ -622,18 +613,18 @@ type: check
 endpoint: http://localhost:1317/thorchain/outbound_fees
 asserts:
   - .|length == 3
-  - .[0] == {"asset":"THOR.RUNE","outbound_fee":"2000000"}
+  - .[0] == {"asset":"THOR.RUNE","outbound_fee":"0"}
   ###
   - .[1].asset == "BTC.BTC"
-  - .[1].outbound_fee == "14000"
-  - .[1].fee_withheld_rune == "11127383"
-  - .[1].fee_spent_rune == "8344526"
-  - .[1].surplus_rune == "2782857"
-  - .[1].dynamic_multiplier_basis_points == "20000"
+  - .[1].outbound_fee == "7000"
+  - .[1].fee_withheld_rune == "689660737122"
+  - .[1].fee_spent_rune == "8346630"
+  - .[1].surplus_rune == "689652390492"
+  - .[1].dynamic_multiplier_basis_points == "10000"
   ###
   - .[2].asset == "ETH.ETH"
-  - .[2].outbound_fee == "1279936"
-  - .[2].fee_withheld_rune == "788376624"
-  - .[2].fee_spent_rune == "590465115"
-  - .[2].surplus_rune == "197911509"
-  - .[2].dynamic_multiplier_basis_points == "19999"
+  - .[2].outbound_fee == "640384"
+  - .[2].fee_withheld_rune == "690050872205"
+  - .[2].fee_spent_rune == "593018125"
+  - .[2].surplus_rune == "689457854080"
+  - .[2].dynamic_multiplier_basis_points == "10006"

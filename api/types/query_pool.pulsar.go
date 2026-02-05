@@ -518,10 +518,10 @@ var (
 	fd_QueryPoolResponse_savers_capacity_remaining protoreflect.FieldDescriptor
 	fd_QueryPoolResponse_synth_mint_paused         protoreflect.FieldDescriptor
 	fd_QueryPoolResponse_synth_supply_remaining    protoreflect.FieldDescriptor
-	fd_QueryPoolResponse_loan_collateral           protoreflect.FieldDescriptor
-	fd_QueryPoolResponse_loan_collateral_remaining protoreflect.FieldDescriptor
-	fd_QueryPoolResponse_loan_cr                   protoreflect.FieldDescriptor
 	fd_QueryPoolResponse_derived_depth_bps         protoreflect.FieldDescriptor
+	fd_QueryPoolResponse_trading_halted            protoreflect.FieldDescriptor
+	fd_QueryPoolResponse_volume_rune               protoreflect.FieldDescriptor
+	fd_QueryPoolResponse_volume_asset              protoreflect.FieldDescriptor
 )
 
 func init() {
@@ -546,10 +546,10 @@ func init() {
 	fd_QueryPoolResponse_savers_capacity_remaining = md_QueryPoolResponse.Fields().ByName("savers_capacity_remaining")
 	fd_QueryPoolResponse_synth_mint_paused = md_QueryPoolResponse.Fields().ByName("synth_mint_paused")
 	fd_QueryPoolResponse_synth_supply_remaining = md_QueryPoolResponse.Fields().ByName("synth_supply_remaining")
-	fd_QueryPoolResponse_loan_collateral = md_QueryPoolResponse.Fields().ByName("loan_collateral")
-	fd_QueryPoolResponse_loan_collateral_remaining = md_QueryPoolResponse.Fields().ByName("loan_collateral_remaining")
-	fd_QueryPoolResponse_loan_cr = md_QueryPoolResponse.Fields().ByName("loan_cr")
 	fd_QueryPoolResponse_derived_depth_bps = md_QueryPoolResponse.Fields().ByName("derived_depth_bps")
+	fd_QueryPoolResponse_trading_halted = md_QueryPoolResponse.Fields().ByName("trading_halted")
+	fd_QueryPoolResponse_volume_rune = md_QueryPoolResponse.Fields().ByName("volume_rune")
+	fd_QueryPoolResponse_volume_asset = md_QueryPoolResponse.Fields().ByName("volume_asset")
 }
 
 var _ protoreflect.Message = (*fastReflection_QueryPoolResponse)(nil)
@@ -731,27 +731,27 @@ func (x *fastReflection_QueryPoolResponse) Range(f func(protoreflect.FieldDescri
 			return
 		}
 	}
-	if x.LoanCollateral != "" {
-		value := protoreflect.ValueOfString(x.LoanCollateral)
-		if !f(fd_QueryPoolResponse_loan_collateral, value) {
-			return
-		}
-	}
-	if x.LoanCollateralRemaining != "" {
-		value := protoreflect.ValueOfString(x.LoanCollateralRemaining)
-		if !f(fd_QueryPoolResponse_loan_collateral_remaining, value) {
-			return
-		}
-	}
-	if x.LoanCr != "" {
-		value := protoreflect.ValueOfString(x.LoanCr)
-		if !f(fd_QueryPoolResponse_loan_cr, value) {
-			return
-		}
-	}
 	if x.DerivedDepthBps != "" {
 		value := protoreflect.ValueOfString(x.DerivedDepthBps)
 		if !f(fd_QueryPoolResponse_derived_depth_bps, value) {
+			return
+		}
+	}
+	if x.TradingHalted != false {
+		value := protoreflect.ValueOfBool(x.TradingHalted)
+		if !f(fd_QueryPoolResponse_trading_halted, value) {
+			return
+		}
+	}
+	if x.VolumeRune != "" {
+		value := protoreflect.ValueOfString(x.VolumeRune)
+		if !f(fd_QueryPoolResponse_volume_rune, value) {
+			return
+		}
+	}
+	if x.VolumeAsset != "" {
+		value := protoreflect.ValueOfString(x.VolumeAsset)
+		if !f(fd_QueryPoolResponse_volume_asset, value) {
 			return
 		}
 	}
@@ -808,14 +808,14 @@ func (x *fastReflection_QueryPoolResponse) Has(fd protoreflect.FieldDescriptor) 
 		return x.SynthMintPaused != false
 	case "types.QueryPoolResponse.synth_supply_remaining":
 		return x.SynthSupplyRemaining != ""
-	case "types.QueryPoolResponse.loan_collateral":
-		return x.LoanCollateral != ""
-	case "types.QueryPoolResponse.loan_collateral_remaining":
-		return x.LoanCollateralRemaining != ""
-	case "types.QueryPoolResponse.loan_cr":
-		return x.LoanCr != ""
 	case "types.QueryPoolResponse.derived_depth_bps":
 		return x.DerivedDepthBps != ""
+	case "types.QueryPoolResponse.trading_halted":
+		return x.TradingHalted != false
+	case "types.QueryPoolResponse.volume_rune":
+		return x.VolumeRune != ""
+	case "types.QueryPoolResponse.volume_asset":
+		return x.VolumeAsset != ""
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryPoolResponse"))
@@ -870,14 +870,14 @@ func (x *fastReflection_QueryPoolResponse) Clear(fd protoreflect.FieldDescriptor
 		x.SynthMintPaused = false
 	case "types.QueryPoolResponse.synth_supply_remaining":
 		x.SynthSupplyRemaining = ""
-	case "types.QueryPoolResponse.loan_collateral":
-		x.LoanCollateral = ""
-	case "types.QueryPoolResponse.loan_collateral_remaining":
-		x.LoanCollateralRemaining = ""
-	case "types.QueryPoolResponse.loan_cr":
-		x.LoanCr = ""
 	case "types.QueryPoolResponse.derived_depth_bps":
 		x.DerivedDepthBps = ""
+	case "types.QueryPoolResponse.trading_halted":
+		x.TradingHalted = false
+	case "types.QueryPoolResponse.volume_rune":
+		x.VolumeRune = ""
+	case "types.QueryPoolResponse.volume_asset":
+		x.VolumeAsset = ""
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryPoolResponse"))
@@ -951,17 +951,17 @@ func (x *fastReflection_QueryPoolResponse) Get(descriptor protoreflect.FieldDesc
 	case "types.QueryPoolResponse.synth_supply_remaining":
 		value := x.SynthSupplyRemaining
 		return protoreflect.ValueOfString(value)
-	case "types.QueryPoolResponse.loan_collateral":
-		value := x.LoanCollateral
-		return protoreflect.ValueOfString(value)
-	case "types.QueryPoolResponse.loan_collateral_remaining":
-		value := x.LoanCollateralRemaining
-		return protoreflect.ValueOfString(value)
-	case "types.QueryPoolResponse.loan_cr":
-		value := x.LoanCr
-		return protoreflect.ValueOfString(value)
 	case "types.QueryPoolResponse.derived_depth_bps":
 		value := x.DerivedDepthBps
+		return protoreflect.ValueOfString(value)
+	case "types.QueryPoolResponse.trading_halted":
+		value := x.TradingHalted
+		return protoreflect.ValueOfBool(value)
+	case "types.QueryPoolResponse.volume_rune":
+		value := x.VolumeRune
+		return protoreflect.ValueOfString(value)
+	case "types.QueryPoolResponse.volume_asset":
+		value := x.VolumeAsset
 		return protoreflect.ValueOfString(value)
 	default:
 		if descriptor.IsExtension() {
@@ -1021,14 +1021,14 @@ func (x *fastReflection_QueryPoolResponse) Set(fd protoreflect.FieldDescriptor, 
 		x.SynthMintPaused = value.Bool()
 	case "types.QueryPoolResponse.synth_supply_remaining":
 		x.SynthSupplyRemaining = value.Interface().(string)
-	case "types.QueryPoolResponse.loan_collateral":
-		x.LoanCollateral = value.Interface().(string)
-	case "types.QueryPoolResponse.loan_collateral_remaining":
-		x.LoanCollateralRemaining = value.Interface().(string)
-	case "types.QueryPoolResponse.loan_cr":
-		x.LoanCr = value.Interface().(string)
 	case "types.QueryPoolResponse.derived_depth_bps":
 		x.DerivedDepthBps = value.Interface().(string)
+	case "types.QueryPoolResponse.trading_halted":
+		x.TradingHalted = value.Bool()
+	case "types.QueryPoolResponse.volume_rune":
+		x.VolumeRune = value.Interface().(string)
+	case "types.QueryPoolResponse.volume_asset":
+		x.VolumeAsset = value.Interface().(string)
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryPoolResponse"))
@@ -1087,14 +1087,14 @@ func (x *fastReflection_QueryPoolResponse) Mutable(fd protoreflect.FieldDescript
 		panic(fmt.Errorf("field synth_mint_paused of message types.QueryPoolResponse is not mutable"))
 	case "types.QueryPoolResponse.synth_supply_remaining":
 		panic(fmt.Errorf("field synth_supply_remaining of message types.QueryPoolResponse is not mutable"))
-	case "types.QueryPoolResponse.loan_collateral":
-		panic(fmt.Errorf("field loan_collateral of message types.QueryPoolResponse is not mutable"))
-	case "types.QueryPoolResponse.loan_collateral_remaining":
-		panic(fmt.Errorf("field loan_collateral_remaining of message types.QueryPoolResponse is not mutable"))
-	case "types.QueryPoolResponse.loan_cr":
-		panic(fmt.Errorf("field loan_cr of message types.QueryPoolResponse is not mutable"))
 	case "types.QueryPoolResponse.derived_depth_bps":
 		panic(fmt.Errorf("field derived_depth_bps of message types.QueryPoolResponse is not mutable"))
+	case "types.QueryPoolResponse.trading_halted":
+		panic(fmt.Errorf("field trading_halted of message types.QueryPoolResponse is not mutable"))
+	case "types.QueryPoolResponse.volume_rune":
+		panic(fmt.Errorf("field volume_rune of message types.QueryPoolResponse is not mutable"))
+	case "types.QueryPoolResponse.volume_asset":
+		panic(fmt.Errorf("field volume_asset of message types.QueryPoolResponse is not mutable"))
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.QueryPoolResponse"))
@@ -1146,13 +1146,13 @@ func (x *fastReflection_QueryPoolResponse) NewField(fd protoreflect.FieldDescrip
 		return protoreflect.ValueOfBool(false)
 	case "types.QueryPoolResponse.synth_supply_remaining":
 		return protoreflect.ValueOfString("")
-	case "types.QueryPoolResponse.loan_collateral":
-		return protoreflect.ValueOfString("")
-	case "types.QueryPoolResponse.loan_collateral_remaining":
-		return protoreflect.ValueOfString("")
-	case "types.QueryPoolResponse.loan_cr":
-		return protoreflect.ValueOfString("")
 	case "types.QueryPoolResponse.derived_depth_bps":
+		return protoreflect.ValueOfString("")
+	case "types.QueryPoolResponse.trading_halted":
+		return protoreflect.ValueOfBool(false)
+	case "types.QueryPoolResponse.volume_rune":
+		return protoreflect.ValueOfString("")
+	case "types.QueryPoolResponse.volume_asset":
 		return protoreflect.ValueOfString("")
 	default:
 		if fd.IsExtension() {
@@ -1297,19 +1297,18 @@ func (x *fastReflection_QueryPoolResponse) ProtoMethods() *protoiface.Methods {
 		if l > 0 {
 			n += 2 + l + runtime.Sov(uint64(l))
 		}
-		l = len(x.LoanCollateral)
-		if l > 0 {
-			n += 2 + l + runtime.Sov(uint64(l))
-		}
-		l = len(x.LoanCollateralRemaining)
-		if l > 0 {
-			n += 2 + l + runtime.Sov(uint64(l))
-		}
-		l = len(x.LoanCr)
-		if l > 0 {
-			n += 2 + l + runtime.Sov(uint64(l))
-		}
 		l = len(x.DerivedDepthBps)
+		if l > 0 {
+			n += 2 + l + runtime.Sov(uint64(l))
+		}
+		if x.TradingHalted {
+			n += 3
+		}
+		l = len(x.VolumeRune)
+		if l > 0 {
+			n += 2 + l + runtime.Sov(uint64(l))
+		}
+		l = len(x.VolumeAsset)
 		if l > 0 {
 			n += 2 + l + runtime.Sov(uint64(l))
 		}
@@ -1342,6 +1341,36 @@ func (x *fastReflection_QueryPoolResponse) ProtoMethods() *protoiface.Methods {
 			i -= len(x.unknownFields)
 			copy(dAtA[i:], x.unknownFields)
 		}
+		if len(x.VolumeAsset) > 0 {
+			i -= len(x.VolumeAsset)
+			copy(dAtA[i:], x.VolumeAsset)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.VolumeAsset)))
+			i--
+			dAtA[i] = 0x1
+			i--
+			dAtA[i] = 0xd2
+		}
+		if len(x.VolumeRune) > 0 {
+			i -= len(x.VolumeRune)
+			copy(dAtA[i:], x.VolumeRune)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.VolumeRune)))
+			i--
+			dAtA[i] = 0x1
+			i--
+			dAtA[i] = 0xca
+		}
+		if x.TradingHalted {
+			i--
+			if x.TradingHalted {
+				dAtA[i] = 1
+			} else {
+				dAtA[i] = 0
+			}
+			i--
+			dAtA[i] = 0x1
+			i--
+			dAtA[i] = 0xc0
+		}
 		if len(x.DerivedDepthBps) > 0 {
 			i -= len(x.DerivedDepthBps)
 			copy(dAtA[i:], x.DerivedDepthBps)
@@ -1350,33 +1379,6 @@ func (x *fastReflection_QueryPoolResponse) ProtoMethods() *protoiface.Methods {
 			dAtA[i] = 0x1
 			i--
 			dAtA[i] = 0xba
-		}
-		if len(x.LoanCr) > 0 {
-			i -= len(x.LoanCr)
-			copy(dAtA[i:], x.LoanCr)
-			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.LoanCr)))
-			i--
-			dAtA[i] = 0x1
-			i--
-			dAtA[i] = 0xb2
-		}
-		if len(x.LoanCollateralRemaining) > 0 {
-			i -= len(x.LoanCollateralRemaining)
-			copy(dAtA[i:], x.LoanCollateralRemaining)
-			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.LoanCollateralRemaining)))
-			i--
-			dAtA[i] = 0x1
-			i--
-			dAtA[i] = 0xaa
-		}
-		if len(x.LoanCollateral) > 0 {
-			i -= len(x.LoanCollateral)
-			copy(dAtA[i:], x.LoanCollateral)
-			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.LoanCollateral)))
-			i--
-			dAtA[i] = 0x1
-			i--
-			dAtA[i] = 0xa2
 		}
 		if len(x.SynthSupplyRemaining) > 0 {
 			i -= len(x.SynthSupplyRemaining)
@@ -2152,102 +2154,6 @@ func (x *fastReflection_QueryPoolResponse) ProtoMethods() *protoiface.Methods {
 				}
 				x.SynthSupplyRemaining = string(dAtA[iNdEx:postIndex])
 				iNdEx = postIndex
-			case 20:
-				if wireType != 2 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field LoanCollateral", wireType)
-				}
-				var stringLen uint64
-				for shift := uint(0); ; shift += 7 {
-					if shift >= 64 {
-						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
-					}
-					if iNdEx >= l {
-						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
-					}
-					b := dAtA[iNdEx]
-					iNdEx++
-					stringLen |= uint64(b&0x7F) << shift
-					if b < 0x80 {
-						break
-					}
-				}
-				intStringLen := int(stringLen)
-				if intStringLen < 0 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
-				}
-				postIndex := iNdEx + intStringLen
-				if postIndex < 0 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
-				}
-				if postIndex > l {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
-				}
-				x.LoanCollateral = string(dAtA[iNdEx:postIndex])
-				iNdEx = postIndex
-			case 21:
-				if wireType != 2 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field LoanCollateralRemaining", wireType)
-				}
-				var stringLen uint64
-				for shift := uint(0); ; shift += 7 {
-					if shift >= 64 {
-						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
-					}
-					if iNdEx >= l {
-						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
-					}
-					b := dAtA[iNdEx]
-					iNdEx++
-					stringLen |= uint64(b&0x7F) << shift
-					if b < 0x80 {
-						break
-					}
-				}
-				intStringLen := int(stringLen)
-				if intStringLen < 0 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
-				}
-				postIndex := iNdEx + intStringLen
-				if postIndex < 0 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
-				}
-				if postIndex > l {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
-				}
-				x.LoanCollateralRemaining = string(dAtA[iNdEx:postIndex])
-				iNdEx = postIndex
-			case 22:
-				if wireType != 2 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field LoanCr", wireType)
-				}
-				var stringLen uint64
-				for shift := uint(0); ; shift += 7 {
-					if shift >= 64 {
-						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
-					}
-					if iNdEx >= l {
-						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
-					}
-					b := dAtA[iNdEx]
-					iNdEx++
-					stringLen |= uint64(b&0x7F) << shift
-					if b < 0x80 {
-						break
-					}
-				}
-				intStringLen := int(stringLen)
-				if intStringLen < 0 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
-				}
-				postIndex := iNdEx + intStringLen
-				if postIndex < 0 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
-				}
-				if postIndex > l {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
-				}
-				x.LoanCr = string(dAtA[iNdEx:postIndex])
-				iNdEx = postIndex
 			case 23:
 				if wireType != 2 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field DerivedDepthBps", wireType)
@@ -2279,6 +2185,90 @@ func (x *fastReflection_QueryPoolResponse) ProtoMethods() *protoiface.Methods {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
 				}
 				x.DerivedDepthBps = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 24:
+				if wireType != 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field TradingHalted", wireType)
+				}
+				var v int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					v |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				x.TradingHalted = bool(v != 0)
+			case 25:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field VolumeRune", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.VolumeRune = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 26:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field VolumeAsset", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.VolumeAsset = string(dAtA[iNdEx:postIndex])
 				iNdEx = postIndex
 			default:
 				iNdEx = preIndex
@@ -3318,16 +3308,17 @@ type QueryPoolResponse struct {
 	SaversCapacityRemaining string `protobuf:"bytes,17,opt,name=savers_capacity_remaining,json=saversCapacityRemaining,proto3" json:"savers_capacity_remaining,omitempty"`
 	// whether additional synths cannot be minted
 	SynthMintPaused bool `protobuf:"varint,18,opt,name=synth_mint_paused,json=synthMintPaused,proto3" json:"synth_mint_paused,omitempty"`
-	// the amount of synth supply remaining before the current max supply is reached
+	// the amount of synth supply remaining before the current max supply is
+	// reached
 	SynthSupplyRemaining string `protobuf:"bytes,19,opt,name=synth_supply_remaining,json=synthSupplyRemaining,proto3" json:"synth_supply_remaining,omitempty"`
-	// the amount of collateral collects for loans
-	LoanCollateral string `protobuf:"bytes,20,opt,name=loan_collateral,json=loanCollateral,proto3" json:"loan_collateral,omitempty"`
-	// the amount of remaining collateral collects for loans
-	LoanCollateralRemaining string `protobuf:"bytes,21,opt,name=loan_collateral_remaining,json=loanCollateralRemaining,proto3" json:"loan_collateral_remaining,omitempty"`
-	// the current loan collateralization ratio
-	LoanCr string `protobuf:"bytes,22,opt,name=loan_cr,json=loanCr,proto3" json:"loan_cr,omitempty"`
 	// the depth of the derived virtual pool relative to L1 pool (in basis points)
 	DerivedDepthBps string `protobuf:"bytes,23,opt,name=derived_depth_bps,json=derivedDepthBps,proto3" json:"derived_depth_bps,omitempty"`
+	// whether trading is halted
+	TradingHalted bool `protobuf:"varint,24,opt,name=trading_halted,json=tradingHalted,proto3" json:"trading_halted,omitempty"`
+	// 24h trading volume rune
+	VolumeRune string `protobuf:"bytes,25,opt,name=volume_rune,json=volumeRune,proto3" json:"volume_rune,omitempty"`
+	// 24h trading volume asset
+	VolumeAsset string `protobuf:"bytes,26,opt,name=volume_asset,json=volumeAsset,proto3" json:"volume_asset,omitempty"`
 }
 
 func (x *QueryPoolResponse) Reset() {
@@ -3483,30 +3474,30 @@ func (x *QueryPoolResponse) GetSynthSupplyRemaining() string {
 	return ""
 }
 
-func (x *QueryPoolResponse) GetLoanCollateral() string {
-	if x != nil {
-		return x.LoanCollateral
-	}
-	return ""
-}
-
-func (x *QueryPoolResponse) GetLoanCollateralRemaining() string {
-	if x != nil {
-		return x.LoanCollateralRemaining
-	}
-	return ""
-}
-
-func (x *QueryPoolResponse) GetLoanCr() string {
-	if x != nil {
-		return x.LoanCr
-	}
-	return ""
-}
-
 func (x *QueryPoolResponse) GetDerivedDepthBps() string {
 	if x != nil {
 		return x.DerivedDepthBps
+	}
+	return ""
+}
+
+func (x *QueryPoolResponse) GetTradingHalted() bool {
+	if x != nil {
+		return x.TradingHalted
+	}
+	return false
+}
+
+func (x *QueryPoolResponse) GetVolumeRune() string {
+	if x != nil {
+		return x.VolumeRune
+	}
+	return ""
+}
+
+func (x *QueryPoolResponse) GetVolumeAsset() string {
+	if x != nil {
+		return x.VolumeAsset
 	}
 	return ""
 }
@@ -3591,7 +3582,7 @@ var file_types_query_pool_proto_rawDesc = []byte{
 	0x6f, 0x6c, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x12, 0x14, 0x0a, 0x05, 0x61, 0x73, 0x73,
 	0x65, 0x74, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x05, 0x61, 0x73, 0x73, 0x65, 0x74, 0x12,
 	0x16, 0x0a, 0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52,
-	0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x22, 0xb0, 0x0a, 0x0a, 0x11, 0x51, 0x75, 0x65, 0x72,
+	0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x22, 0x93, 0x0a, 0x0a, 0x11, 0x51, 0x75, 0x65, 0x72,
 	0x79, 0x50, 0x6f, 0x6f, 0x6c, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x1f, 0x0a,
 	0x05, 0x61, 0x73, 0x73, 0x65, 0x74, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x42, 0x09, 0xea, 0xde,
 	0x1f, 0x05, 0x61, 0x73, 0x73, 0x65, 0x74, 0x52, 0x05, 0x61, 0x73, 0x73, 0x65, 0x74, 0x12, 0x1d,
@@ -3658,39 +3649,37 @@ var file_types_query_pool_proto_rawDesc = []byte{
 	0x18, 0x13, 0x20, 0x01, 0x28, 0x09, 0x42, 0x1a, 0xea, 0xde, 0x1f, 0x16, 0x73, 0x79, 0x6e, 0x74,
 	0x68, 0x5f, 0x73, 0x75, 0x70, 0x70, 0x6c, 0x79, 0x5f, 0x72, 0x65, 0x6d, 0x61, 0x69, 0x6e, 0x69,
 	0x6e, 0x67, 0x52, 0x14, 0x73, 0x79, 0x6e, 0x74, 0x68, 0x53, 0x75, 0x70, 0x70, 0x6c, 0x79, 0x52,
-	0x65, 0x6d, 0x61, 0x69, 0x6e, 0x69, 0x6e, 0x67, 0x12, 0x3c, 0x0a, 0x0f, 0x6c, 0x6f, 0x61, 0x6e,
-	0x5f, 0x63, 0x6f, 0x6c, 0x6c, 0x61, 0x74, 0x65, 0x72, 0x61, 0x6c, 0x18, 0x14, 0x20, 0x01, 0x28,
-	0x09, 0x42, 0x13, 0xea, 0xde, 0x1f, 0x0f, 0x6c, 0x6f, 0x61, 0x6e, 0x5f, 0x63, 0x6f, 0x6c, 0x6c,
-	0x61, 0x74, 0x65, 0x72, 0x61, 0x6c, 0x52, 0x0e, 0x6c, 0x6f, 0x61, 0x6e, 0x43, 0x6f, 0x6c, 0x6c,
-	0x61, 0x74, 0x65, 0x72, 0x61, 0x6c, 0x12, 0x59, 0x0a, 0x19, 0x6c, 0x6f, 0x61, 0x6e, 0x5f, 0x63,
-	0x6f, 0x6c, 0x6c, 0x61, 0x74, 0x65, 0x72, 0x61, 0x6c, 0x5f, 0x72, 0x65, 0x6d, 0x61, 0x69, 0x6e,
-	0x69, 0x6e, 0x67, 0x18, 0x15, 0x20, 0x01, 0x28, 0x09, 0x42, 0x1d, 0xea, 0xde, 0x1f, 0x19, 0x6c,
-	0x6f, 0x61, 0x6e, 0x5f, 0x63, 0x6f, 0x6c, 0x6c, 0x61, 0x74, 0x65, 0x72, 0x61, 0x6c, 0x5f, 0x72,
-	0x65, 0x6d, 0x61, 0x69, 0x6e, 0x69, 0x6e, 0x67, 0x52, 0x17, 0x6c, 0x6f, 0x61, 0x6e, 0x43, 0x6f,
-	0x6c, 0x6c, 0x61, 0x74, 0x65, 0x72, 0x61, 0x6c, 0x52, 0x65, 0x6d, 0x61, 0x69, 0x6e, 0x69, 0x6e,
-	0x67, 0x12, 0x24, 0x0a, 0x07, 0x6c, 0x6f, 0x61, 0x6e, 0x5f, 0x63, 0x72, 0x18, 0x16, 0x20, 0x01,
-	0x28, 0x09, 0x42, 0x0b, 0xea, 0xde, 0x1f, 0x07, 0x6c, 0x6f, 0x61, 0x6e, 0x5f, 0x63, 0x72, 0x52,
-	0x06, 0x6c, 0x6f, 0x61, 0x6e, 0x43, 0x72, 0x12, 0x41, 0x0a, 0x11, 0x64, 0x65, 0x72, 0x69, 0x76,
-	0x65, 0x64, 0x5f, 0x64, 0x65, 0x70, 0x74, 0x68, 0x5f, 0x62, 0x70, 0x73, 0x18, 0x17, 0x20, 0x01,
-	0x28, 0x09, 0x42, 0x15, 0xea, 0xde, 0x1f, 0x11, 0x64, 0x65, 0x72, 0x69, 0x76, 0x65, 0x64, 0x5f,
-	0x64, 0x65, 0x70, 0x74, 0x68, 0x5f, 0x62, 0x70, 0x73, 0x52, 0x0f, 0x64, 0x65, 0x72, 0x69, 0x76,
-	0x65, 0x64, 0x44, 0x65, 0x70, 0x74, 0x68, 0x42, 0x70, 0x73, 0x22, 0x2b, 0x0a, 0x11, 0x51, 0x75,
-	0x65, 0x72, 0x79, 0x50, 0x6f, 0x6f, 0x6c, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x12,
-	0x16, 0x0a, 0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52,
-	0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x22, 0x44, 0x0a, 0x12, 0x51, 0x75, 0x65, 0x72, 0x79,
-	0x50, 0x6f, 0x6f, 0x6c, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x2e, 0x0a,
-	0x05, 0x70, 0x6f, 0x6f, 0x6c, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x18, 0x2e, 0x74,
-	0x79, 0x70, 0x65, 0x73, 0x2e, 0x51, 0x75, 0x65, 0x72, 0x79, 0x50, 0x6f, 0x6f, 0x6c, 0x52, 0x65,
-	0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x52, 0x05, 0x70, 0x6f, 0x6f, 0x6c, 0x73, 0x42, 0x7f, 0x0a,
-	0x09, 0x63, 0x6f, 0x6d, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x42, 0x0e, 0x51, 0x75, 0x65, 0x72,
-	0x79, 0x50, 0x6f, 0x6f, 0x6c, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x2a, 0x67, 0x69,
-	0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x63, 0x68, 0x61,
-	0x69, 0x6e, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76, 0x33, 0x2f, 0x61,
-	0x70, 0x69, 0x2f, 0x74, 0x79, 0x70, 0x65, 0x73, 0xa2, 0x02, 0x03, 0x54, 0x58, 0x58, 0xaa, 0x02,
-	0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xca, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xe2, 0x02,
-	0x11, 0x54, 0x79, 0x70, 0x65, 0x73, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61,
-	0x74, 0x61, 0xea, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xc8, 0xe2, 0x1e, 0x01, 0x62, 0x06,
-	0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x65, 0x6d, 0x61, 0x69, 0x6e, 0x69, 0x6e, 0x67, 0x12, 0x41, 0x0a, 0x11, 0x64, 0x65, 0x72, 0x69,
+	0x76, 0x65, 0x64, 0x5f, 0x64, 0x65, 0x70, 0x74, 0x68, 0x5f, 0x62, 0x70, 0x73, 0x18, 0x17, 0x20,
+	0x01, 0x28, 0x09, 0x42, 0x15, 0xea, 0xde, 0x1f, 0x11, 0x64, 0x65, 0x72, 0x69, 0x76, 0x65, 0x64,
+	0x5f, 0x64, 0x65, 0x70, 0x74, 0x68, 0x5f, 0x62, 0x70, 0x73, 0x52, 0x0f, 0x64, 0x65, 0x72, 0x69,
+	0x76, 0x65, 0x64, 0x44, 0x65, 0x70, 0x74, 0x68, 0x42, 0x70, 0x73, 0x12, 0x39, 0x0a, 0x0e, 0x74,
+	0x72, 0x61, 0x64, 0x69, 0x6e, 0x67, 0x5f, 0x68, 0x61, 0x6c, 0x74, 0x65, 0x64, 0x18, 0x18, 0x20,
+	0x01, 0x28, 0x08, 0x42, 0x12, 0xea, 0xde, 0x1f, 0x0e, 0x74, 0x72, 0x61, 0x64, 0x69, 0x6e, 0x67,
+	0x5f, 0x68, 0x61, 0x6c, 0x74, 0x65, 0x64, 0x52, 0x0d, 0x74, 0x72, 0x61, 0x64, 0x69, 0x6e, 0x67,
+	0x48, 0x61, 0x6c, 0x74, 0x65, 0x64, 0x12, 0x30, 0x0a, 0x0b, 0x76, 0x6f, 0x6c, 0x75, 0x6d, 0x65,
+	0x5f, 0x72, 0x75, 0x6e, 0x65, 0x18, 0x19, 0x20, 0x01, 0x28, 0x09, 0x42, 0x0f, 0xea, 0xde, 0x1f,
+	0x0b, 0x76, 0x6f, 0x6c, 0x75, 0x6d, 0x65, 0x5f, 0x72, 0x75, 0x6e, 0x65, 0x52, 0x0a, 0x76, 0x6f,
+	0x6c, 0x75, 0x6d, 0x65, 0x52, 0x75, 0x6e, 0x65, 0x12, 0x33, 0x0a, 0x0c, 0x76, 0x6f, 0x6c, 0x75,
+	0x6d, 0x65, 0x5f, 0x61, 0x73, 0x73, 0x65, 0x74, 0x18, 0x1a, 0x20, 0x01, 0x28, 0x09, 0x42, 0x10,
+	0xea, 0xde, 0x1f, 0x0c, 0x76, 0x6f, 0x6c, 0x75, 0x6d, 0x65, 0x5f, 0x61, 0x73, 0x73, 0x65, 0x74,
+	0x52, 0x0b, 0x76, 0x6f, 0x6c, 0x75, 0x6d, 0x65, 0x41, 0x73, 0x73, 0x65, 0x74, 0x22, 0x2b, 0x0a,
+	0x11, 0x51, 0x75, 0x65, 0x72, 0x79, 0x50, 0x6f, 0x6f, 0x6c, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65,
+	0x73, 0x74, 0x12, 0x16, 0x0a, 0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x18, 0x01, 0x20, 0x01,
+	0x28, 0x09, 0x52, 0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x22, 0x44, 0x0a, 0x12, 0x51, 0x75,
+	0x65, 0x72, 0x79, 0x50, 0x6f, 0x6f, 0x6c, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65,
+	0x12, 0x2e, 0x0a, 0x05, 0x70, 0x6f, 0x6f, 0x6c, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x0b, 0x32,
+	0x18, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x2e, 0x51, 0x75, 0x65, 0x72, 0x79, 0x50, 0x6f, 0x6f,
+	0x6c, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x52, 0x05, 0x70, 0x6f, 0x6f, 0x6c, 0x73,
+	0x42, 0x7f, 0x0a, 0x09, 0x63, 0x6f, 0x6d, 0x2e, 0x74, 0x79, 0x70, 0x65, 0x73, 0x42, 0x0e, 0x51,
+	0x75, 0x65, 0x72, 0x79, 0x50, 0x6f, 0x6f, 0x6c, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a,
+	0x2a, 0x67, 0x69, 0x74, 0x6c, 0x61, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x68, 0x6f, 0x72,
+	0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x74, 0x68, 0x6f, 0x72, 0x6e, 0x6f, 0x64, 0x65, 0x2f, 0x76,
+	0x33, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x74, 0x79, 0x70, 0x65, 0x73, 0xa2, 0x02, 0x03, 0x54, 0x58,
+	0x58, 0xaa, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xca, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65,
+	0x73, 0xe2, 0x02, 0x11, 0x54, 0x79, 0x70, 0x65, 0x73, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74,
+	0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x05, 0x54, 0x79, 0x70, 0x65, 0x73, 0xc8, 0xe2, 0x1e,
+	0x01, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (

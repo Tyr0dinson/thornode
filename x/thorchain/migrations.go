@@ -27,7 +27,7 @@ func (m Migrator) Migrate1to2(ctx sdk.Context) error {
 	if err := m.mgr.LoadManagerIfNecessary(ctx); err != nil {
 		return err
 	}
-	return v2.MigrateStore(ctx, m.mgr.storeKey)
+	return v2.MigrateStore(ctx, m.mgr.storeService)
 }
 
 // Migrate2to3 migrates from version 2 to 3.
@@ -40,13 +40,37 @@ func (m Migrator) Migrate3to4(ctx sdk.Context) error {
 	return nil
 }
 
-// Migrate3to4 migrates from version 4 to 5.
+// Migrate4to5 migrates from version 4 to 5.
 func (m Migrator) Migrate4to5(ctx sdk.Context) error {
 	return m.ClearObsoleteMimirs(ctx)
 }
 
 // Migrate5to6 migrates from version 5 to 6.
 func (m Migrator) Migrate5to6(ctx sdk.Context) error {
-	m.UpdateMimirsFor2sBlockTime(ctx)
+	return nil
+}
+
+// Migrate6to7 migrates from version 6 to 7.
+func (m Migrator) Migrate6to7(ctx sdk.Context) error {
+	return nil
+}
+
+// Migrate8to9 migrates from version 8 to 9.
+func (m Migrator) Migrate8to9(ctx sdk.Context) error {
+	return nil
+}
+
+// Migrate9to10 migrates from version 9 to 10.
+func (m Migrator) Migrate9to10(ctx sdk.Context) error {
+	return nil
+}
+
+// Migrate10to11 migrates from version 10 to 11.
+func (m Migrator) Migrate10to11(ctx sdk.Context) error {
+	return nil
+}
+
+// Migrate11to12 migrates from version 11 to 12.
+func (m Migrator) Migrate11to12(ctx sdk.Context) error {
 	return nil
 }

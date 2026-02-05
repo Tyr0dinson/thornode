@@ -55,7 +55,7 @@ func NewTransaction(message Message) Transaction {
 }
 
 func (tx *Transaction) Serialize() ([]byte, error) {
-	if len(tx.Signatures) == 0 || len(tx.Signatures) != int(tx.Message.Header.NumRequireSignatures) {
+	if len(tx.Signatures) != int(tx.Message.Header.NumRequireSignatures) {
 		return nil, fmt.Errorf("invalid number of signatures")
 	}
 

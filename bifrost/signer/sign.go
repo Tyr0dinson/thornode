@@ -339,15 +339,14 @@ func (s *Signer) scheduleKeygenRetry(keygenBlock ttypes.KeygenBlock) bool {
 		// every block, try to start processing again
 		for {
 			time.Sleep(constants.ThorchainBlockTime)
-			// trunk-ignore(golangci-lint/govet): shadow
-			height, err := s.thorchainBridge.GetBlockHeight()
+			currentHeight, err := s.thorchainBridge.GetBlockHeight()
 			if err != nil {
 				s.logger.Error().Err(err).Msg("fail to get last chain height")
 			}
-			if height >= targetRetryHeight {
+			if currentHeight >= targetRetryHeight {
 				s.logger.Info().
 					Interface("keygenBlock", keygenBlock).
-					Int64("currentHeight", height).
+					Int64("currentHeight", currentHeight).
 					Msg("retrying keygen")
 				s.processKeygenBlock(keygenBlock)
 				return
@@ -504,7 +503,7 @@ func (s *Signer) sendKeygenToThorchain(height int64, poolPk common.PubKey, secp2
 	strHeight := strconv.FormatInt(height, 10)
 
 	bf := backoff.NewExponentialBackOff()
-	bf.MaxElapsedTime = constants.ThorchainBlockTime
+	bf.MaxElapsedTime = time.Minute
 	return backoff.Retry(func() error {
 		txID, err := s.thorchainBridge.Broadcast(keygenMsg)
 		if err != nil {
@@ -595,17 +594,17 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 		s.logger.Err(err).Msgf("fail to get %s", mimirKey)
 		return nil, nil, err
 	}
-	if haltSigningGlobalMimir > 0 && haltSigningGlobalMimir < blockHeight {
+	if haltSigningGlobalMimir > 0 && haltSigningGlobalMimir <= blockHeight {
 		s.logger.Info().Msg("signing has been halted globally")
 		return nil, nil, nil
 	}
-	mimirKey = fmt.Sprintf("HALTSIGNING%s", tx.Chain)
+	mimirKey = fmt.Sprintf(constants.MimirTemplateHaltSigning, tx.Chain)
 	haltSigningMimir, err := s.thorchainBridge.GetMimir(mimirKey)
 	if err != nil {
 		s.logger.Err(err).Msgf("fail to get %s", mimirKey)
 		return nil, nil, err
 	}
-	if haltSigningMimir > 0 && haltSigningMimir < blockHeight {
+	if haltSigningMimir > 0 && haltSigningMimir <= blockHeight {
 		s.logger.Info().Msgf("signing for %s is halted", tx.Chain)
 		return nil, nil, nil
 	}
@@ -772,12 +771,17 @@ func (s *Signer) processTransaction(item TxOutStoreItem) {
 		return s.signAndBroadcast(item)
 	})
 	if err != nil {
+		// Always store the checkpoint of the built tx if we have one. This ensures the same
+		// vault will never attempt multiple txs for an outbound, as further protection
+		// against cases like https://gitlab.com/thorchain/thornode/-/merge_requests/4344.
+		// In tradeoff, we accept a higher likelihood of temporary stuck outbounds.
+		item.Checkpoint = checkpoint
+
 		// mark the txout on round 7 failure to block other txs for the chain / pubkey
 		ksErr := tss.KeysignError{}
 		if errors.As(err, &ksErr) && ksErr.IsRound7() {
 			s.logger.Error().Err(err).Interface("tx", item.TxOutItem).Msg("round 7 signing error")
 			item.Round7Retry = true
-			item.Checkpoint = checkpoint
 			if storeErr := s.storage.Set(item); storeErr != nil {
 				s.logger.Error().Err(storeErr).Msg("fail to update tx out store item with round 7 retry")
 			}
@@ -798,14 +802,12 @@ func (s *Signer) processTransaction(item TxOutStoreItem) {
 	// if enabled and the observation is non-nil, instant observe the outbound
 	if s.cfg.Signer.AutoObserve && obs != nil {
 		s.observer.ObserveSigned(types.TxIn{
-			Chain:                item.TxOutItem.Chain,
-			TxArray:              []*types.TxInItem{obs},
-			MemPool:              true,
-			Filtered:             true,
-			ConfirmationRequired: 0,
-
-			// Instant EVM observations have wrong gas and need future correct observations
-			AllowFutureObservation: item.TxOutItem.Chain.IsEVM(),
+			Chain:                  item.TxOutItem.Chain,
+			TxArray:                []*types.TxInItem{obs},
+			MemPool:                true,
+			Filtered:               true,
+			ConfirmationRequired:   0,
+			AllowFutureObservation: true,
 		})
 	}
 

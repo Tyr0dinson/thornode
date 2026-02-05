@@ -109,6 +109,9 @@
         "tx_size_cost_per_byte": "10"
       }
     },
+    "authz": {
+      "authorization": []
+    },
     "bank": {
       "balances": [
         {
@@ -124,7 +127,7 @@
           "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
           "coins": [
             {
-              "amount": "200098702334",
+              "amount": "200102076777",
               "denom": "rune"
             }
           ]
@@ -133,7 +136,7 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "35000003264065",
+              "amount": "34999999830415",
               "denom": "rune"
             }
           ]
@@ -160,7 +163,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "5000000033601",
+              "amount": "5000000092808",
               "denom": "rune"
             }
           ]
@@ -185,12 +188,16 @@
     "genutil": {
       "gen_txs": []
     },
+    "scheduler": {
+      "schedules": []
+    },
     "thorchain": {
       "POL": {
         "rune_deposited": "0",
         "rune_withdrawn": "0"
       },
       "THORNames": [],
+      "adv_swap_queue_items": [],
       "affiliate_collectors": null,
       "bond_providers": [
         {
@@ -215,7 +222,7 @@
         },
         {
           "asset": "SOL.SOL",
-          "asset_address": "BCdjxfE2VDrXeyLBpdAqL85umwYvNubx3nGEkTKnUdb3",
+          "asset_address": "9V9sN1SyQgHCq9c3tbTRNEwaVRhTJPPZ3KZDtZqepUGK",
           "asset_deposit_value": "1000000000",
           "last_add_height": "1",
           "pending_asset": "0",
@@ -225,13 +232,11 @@
           "units": "100000000000"
         }
       ],
-      "loan_total_collateral": [],
-      "loans": [],
       "mimirs": [],
       "network": {
         "LPIncomeSplit": "9600",
         "NodeIncomeSplit": "400",
-        "bond_reward_rune": "33601",
+        "bond_reward_rune": "92808",
         "total_bond_units": "2"
       },
       "network_fees": [
@@ -243,7 +248,7 @@
         {
           "chain": "SOL",
           "transaction_fee_rate": "1",
-          "transaction_size": "10000"
+          "transaction_size": "5000"
         }
       ],
       "nodeMimirs": [],
@@ -255,7 +260,7 @@
           "ip_address": "1.1.1.1",
           "node_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
           "pub_key_set": {
-            "ed25519": "tthorpub1zcjduepqfan43w2emjhfv45gspf98squqlnl2rcchc3e4dx7z2nxr27edflsy2e8ql",
+            "ed25519": "tthorpub1zcjduepqzupdpx7334mjeuuggnvxv3ctkghu0qcz2eml30tgu9ukw58z6uusmmxmys",
             "secp256k1": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
           },
           "status": "Active",
@@ -267,22 +272,24 @@
           "actions": [
             {
               "chain": "SOL",
+              "clout_spent": "0",
               "coin": {
-                "amount": "978001",
+                "amount": "997497",
                 "asset": "SOL.SOL"
               },
               "gas_rate": "1",
-              "in_hash": "C6B0A8BF27BF95CD0FE9743582E7CC3C733EC13C25ACA21C23DD11E62FB3B62D",
+              "in_hash": "30021ACB49B6B5692D7F55B01E9FF90215D17E16E924D2878951156E8E3847E6",
               "max_gas": [
                 {
-                  "amount": "15000",
+                  "amount": "500",
                   "asset": "SOL.SOL",
                   "decimals": "9"
                 }
               ],
-              "memo": "OUT:C6B0A8BF27BF95CD0FE9743582E7CC3C733EC13C25ACA21C23DD11E62FB3B62D",
-              "to_address": "BCdjxfE2VDrXeyLBpdAqL85umwYvNubx3nGEkTKnUdb3",
-              "vault_pub_key": "tthorpub1zcjduepqytyuhhzn286vccztkdns982ad0snfa68k3zjlcm2j2ae6rffhxssu9zuek"
+              "original_memo": "OUT:30021ACB49B6B5692D7F55B01E9FF90215D17E16E924D2878951156E8E3847E6",
+              "to_address": "9V9sN1SyQgHCq9c3tbTRNEwaVRhTJPPZ3KZDtZqepUGK",
+              "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
+              "vault_pub_key_eddsa": "tthorpub1zcjduepqytyuhhzn286vccztkdns982ad0snfa68k3zjlcm2j2ae6rffhxssu9zuek"
             }
           ],
           "finalised_height": "2",
@@ -300,12 +307,12 @@
               ],
               "from_address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
               "gas": null,
-              "id": "C6B0A8BF27BF95CD0FE9743582E7CC3C733EC13C25ACA21C23DD11E62FB3B62D",
-              "memo": "=:SOL.SOL:BCdjxfE2VDrXeyLBpdAqL85umwYvNubx3nGEkTKnUdb3",
+              "id": "30021ACB49B6B5692D7F55B01E9FF90215D17E16E924D2878951156E8E3847E6",
+              "memo": "=:SOL.SOL:9V9sN1SyQgHCq9c3tbTRNEwaVRhTJPPZ3KZDtZqepUGK",
               "to_address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2"
             }
           },
-          "tx_id": "C6B0A8BF27BF95CD0FE9743582E7CC3C733EC13C25ACA21C23DD11E62FB3B62D",
+          "tx_id": "30021ACB49B6B5692D7F55B01E9FF90215D17E16E924D2878951156E8E3847E6",
           "txs": [
             {
               "tx": {
@@ -318,8 +325,8 @@
                 ],
                 "from_address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
                 "gas": null,
-                "id": "C6B0A8BF27BF95CD0FE9743582E7CC3C733EC13C25ACA21C23DD11E62FB3B62D",
-                "memo": "=:SOL.SOL:BCdjxfE2VDrXeyLBpdAqL85umwYvNubx3nGEkTKnUdb3",
+                "id": "30021ACB49B6B5692D7F55B01E9FF90215D17E16E924D2878951156E8E3847E6",
+                "memo": "=:SOL.SOL:9V9sN1SyQgHCq9c3tbTRNEwaVRhTJPPZ3KZDtZqepUGK",
                 "to_address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2"
               }
             }
@@ -327,11 +334,10 @@
         }
       ],
       "observed_tx_out_voters": null,
-      "orderbook_items": [],
       "outbound_fee_spent_rune": [],
       "outbound_fee_withheld_rune": [
         {
-          "amount": "2003961",
+          "amount": "689655222514",
           "asset": "SOL.SOL"
         }
       ],
@@ -340,7 +346,7 @@
           "LP_units": "100000000000",
           "asset": "BTC.BTC",
           "balance_asset": "100000000",
-          "balance_rune": "100000177575",
+          "balance_rune": "100000532724",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -350,8 +356,8 @@
         {
           "LP_units": "100000000000",
           "asset": "SOL.SOL",
-          "balance_asset": "999021999",
-          "balance_rune": "100098524759",
+          "balance_asset": "999002503",
+          "balance_rune": "100101544053",
           "decimals": "9",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -359,6 +365,7 @@
           "synth_units": "0"
         }
       ],
+      "reference_memos": [],
       "reserve_contributors": null,
       "rune_pool": {
         "pool_units": "0",
@@ -372,7 +379,7 @@
       "swap_queue_items": [],
       "swapper_clout": [
         {
-          "address": "BCdjxfE2VDrXeyLBpdAqL85umwYvNubx3nGEkTKnUdb3",
+          "address": "9V9sN1SyQgHCq9c3tbTRNEwaVRhTJPPZ3KZDtZqepUGK",
           "reclaimed": "0",
           "score": "49950",
           "spent": "0"
@@ -397,21 +404,22 @@
               "chain": "SOL",
               "clout_spent": "0",
               "coin": {
-                "amount": "978001",
+                "amount": "997497",
                 "asset": "SOL.SOL"
               },
               "gas_rate": "1",
-              "in_hash": "C6B0A8BF27BF95CD0FE9743582E7CC3C733EC13C25ACA21C23DD11E62FB3B62D",
+              "in_hash": "30021ACB49B6B5692D7F55B01E9FF90215D17E16E924D2878951156E8E3847E6",
               "max_gas": [
                 {
-                  "amount": "15000",
+                  "amount": "500",
                   "asset": "SOL.SOL",
                   "decimals": "9"
                 }
               ],
-              "memo": "OUT:C6B0A8BF27BF95CD0FE9743582E7CC3C733EC13C25ACA21C23DD11E62FB3B62D",
-              "to_address": "BCdjxfE2VDrXeyLBpdAqL85umwYvNubx3nGEkTKnUdb3",
-              "vault_pub_key": "tthorpub1zcjduepqytyuhhzn286vccztkdns982ad0snfa68k3zjlcm2j2ae6rffhxssu9zuek"
+              "original_memo": "OUT:30021ACB49B6B5692D7F55B01E9FF90215D17E16E924D2878951156E8E3847E6",
+              "to_address": "9V9sN1SyQgHCq9c3tbTRNEwaVRhTJPPZ3KZDtZqepUGK",
+              "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
+              "vault_pub_key_eddsa": "tthorpub1zcjduepqytyuhhzn286vccztkdns982ad0snfa68k3zjlcm2j2ae6rffhxssu9zuek"
             }
           ]
         }

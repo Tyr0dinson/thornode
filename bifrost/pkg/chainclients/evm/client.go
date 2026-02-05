@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/cosmos/cosmos-sdk/crypto/codec"
@@ -64,6 +65,15 @@ type EVMClient struct {
 	globalSolvencyQueue     chan stypes.Solvency
 	signerCacheManager      *signercache.CacheManager
 	lastSolvencyCheckHeight int64
+
+	// pendingLiabilities tracks signed but unconfirmed transaction amounts (value + maxGas)
+	// keyed by vault address -> nonce -> amount in Wei.
+	pendingLiabilities map[string]map[uint64]*big.Int
+	liabilityMu        sync.Mutex
+
+	// signingReady is set to true once pending liabilities have been reconstructed.
+	// SignTx will reject requests until this is true to prevent overspending.
+	signingReady atomic.Bool
 }
 
 // NewEVMClient creates a new EVMClient.
@@ -192,18 +202,19 @@ func NewEVMClient(
 	}
 
 	c := &EVMClient{
-		logger:       clog,
-		cfg:          cfg,
-		ethClient:    ethClient,
-		localPubKey:  pk,
-		kw:           keysignWrapper,
-		bridge:       bridge,
-		vaultABI:     vaultABI,
-		pubkeyMgr:    pubkeyMgr,
-		poolMgr:      poolMgr,
-		tssKeySigner: tssKm,
-		wg:           &sync.WaitGroup{},
-		stopchan:     make(chan struct{}),
+		logger:             clog,
+		cfg:                cfg,
+		ethClient:          ethClient,
+		localPubKey:        pk,
+		kw:                 keysignWrapper,
+		bridge:             bridge,
+		vaultABI:           vaultABI,
+		pubkeyMgr:          pubkeyMgr,
+		poolMgr:            poolMgr,
+		tssKeySigner:       tssKm,
+		wg:                 &sync.WaitGroup{},
+		stopchan:           make(chan struct{}),
+		pendingLiabilities: make(map[string]map[uint64]*big.Int),
 	}
 
 	// initialize storage
@@ -259,6 +270,211 @@ func NewEVMClient(
 	return c, nil
 }
 
+// getPendingLiability returns the sum of all pending (signed but unconfirmed) liabilities
+// for the given vault address, and prunes entries for nonces that have already been confirmed.
+func (c *EVMClient) getPendingLiability(vaultAddr string, confirmedNonce uint64) *big.Int {
+	c.liabilityMu.Lock()
+	defer c.liabilityMu.Unlock()
+
+	total := big.NewInt(0)
+	vaultLiabilities, exists := c.pendingLiabilities[vaultAddr]
+	if !exists {
+		return total
+	}
+
+	// Prune confirmed nonces and sum pending liabilities
+	for nonce, amount := range vaultLiabilities {
+		if nonce < confirmedNonce {
+			delete(vaultLiabilities, nonce)
+			continue
+		}
+		total.Add(total, amount)
+	}
+	return total
+}
+
+// recordLiability records the liability (value + estimated fee) for a signed transaction.
+func (c *EVMClient) recordLiability(vaultAddr string, nonce uint64, amount *big.Int) {
+	c.liabilityMu.Lock()
+	defer c.liabilityMu.Unlock()
+
+	if c.pendingLiabilities[vaultAddr] == nil {
+		c.pendingLiabilities[vaultAddr] = make(map[uint64]*big.Int)
+	}
+	c.pendingLiabilities[vaultAddr][nonce] = amount
+}
+
+// reconstructLiabilities scans the pending block on startup to reconstruct
+// in-memory liability tracking for transactions that were signed before a restart.
+// It sets signingReady to true once complete, allowing SignTx to proceed.
+func (c *EVMClient) reconstructLiabilities() {
+	defer c.wg.Done()
+
+	// Get all vault addresses this node is a signer for
+	vaultAddresses := make([]string, 0)
+	for _, pk := range c.pubkeyMgr.GetAlgoPubKeys(c.cfg.ChainID.GetSigningAlgo(), true) {
+		addr, err := pk.GetAddress(c.cfg.ChainID)
+		if err != nil {
+			c.logger.Warn().Err(err).Str("pubkey", pk.String()).Msg("failed to get vault address")
+			continue
+		}
+		vaultAddresses = append(vaultAddresses, addr.String())
+	}
+
+	if len(vaultAddresses) == 0 {
+		c.logger.Info().Msg("no vault addresses found, skipping liability reconstruction")
+		c.signingReady.Store(true)
+		return
+	}
+
+	// WaitGroup for local reconstruction routine
+	var reconWg sync.WaitGroup
+	sem := make(chan struct{}, c.cfg.EVM.ReconstructLiabilitiesConcurrency)
+	c.logger.Info().
+		Int("vault_count", len(vaultAddresses)).
+		Int("concurrency", c.cfg.EVM.ReconstructLiabilitiesConcurrency).
+		Msg("starting liability reconstruction for vaults")
+
+	for _, vaultAddr := range vaultAddresses {
+		sem <- struct{}{}
+		reconWg.Add(1)
+		go func(vAddr string) {
+			c.logger.Info().Str("vault", vAddr).Msg("starting liability reconstruction for vault")
+			defer func() { <-sem }()
+			defer reconWg.Done()
+			const maxRetries = 12 // ~60 seconds total (12 * 5s)
+			retryCount := 0
+			for {
+				select {
+				case <-c.stopchan:
+					return
+				default:
+				}
+
+				ready, err := c.reconstructVaultLiability(vAddr)
+				if err != nil {
+					c.logger.Warn().Err(err).Str("vault", vAddr).Msg("failed to reconstruct liability, retrying")
+				} else if ready {
+					return
+				}
+
+				retryCount++
+				if retryCount >= maxRetries {
+					c.logger.Warn().
+						Str("vault", vAddr).
+						Int("retries", retryCount).
+						Msg("could not fully reconstruct liabilities, proceeding anyway")
+					return
+				}
+
+				// Wait before retrying
+				select {
+				case <-c.stopchan:
+					return
+				case <-time.After(5 * time.Second):
+				}
+			}
+		}(vaultAddr)
+	}
+
+	// Wait for all vaults to be ready
+	reconWg.Wait()
+
+	select {
+	case <-c.stopchan:
+		return
+	default:
+		c.logger.Info().Msg("liability reconstruction complete, client ready for signing")
+		c.signingReady.Store(true)
+	}
+}
+
+// reconstructVaultLiability checks a single vault's pending transactions and reconstructs liabilities.
+// Returns (ready, error) - ready is true if the vault is safe to sign, false if we need to wait.
+func (c *EVMClient) reconstructVaultLiability(vaultAddr string) (bool, error) {
+	ctx, cancel := c.getTimeoutContext()
+	defer cancel()
+
+	addr := ecommon.HexToAddress(vaultAddr)
+
+	// Get confirmed and pending nonces
+	confirmedNonce, err := c.ethClient.NonceAt(ctx, addr, nil)
+	if err != nil {
+		return false, fmt.Errorf("failed to get confirmed nonce: %w", err)
+	}
+
+	ctx2, cancel2 := c.getTimeoutContext()
+	defer cancel2()
+	pendingNonce, err := c.ethClient.PendingNonceAt(ctx2, addr)
+	if err != nil {
+		return false, fmt.Errorf("failed to get pending nonce: %w", err)
+	}
+
+	pendingCount := pendingNonce - confirmedNonce
+	if pendingCount == 0 {
+		// No pending transactions, vault is ready
+		return true, nil
+	}
+
+	c.logger.Info().
+		Str("vault", vaultAddr).
+		Uint64("confirmedNonce", confirmedNonce).
+		Uint64("pendingNonce", pendingNonce).
+		Uint64("pendingCount", pendingCount).
+		Msg("detected pending transactions on startup")
+
+	// Fetch pending block to find our transactions
+	// BlockByNumber with nil returns the pending block
+	ctx3, cancel3 := c.getTimeoutContext()
+	defer cancel3()
+	pendingBlock, err := c.ethClient.BlockByNumber(ctx3, nil)
+	if err != nil {
+		return false, fmt.Errorf("failed to get pending block: %w", err)
+	}
+
+	foundCount := uint64(0)
+	for _, tx := range pendingBlock.Transactions() {
+		// Get sender address using the scanner's signer
+		sender, err := etypes.Sender(c.evmScanner.eipSigner, tx)
+		if err != nil {
+			continue
+		}
+
+		if !strings.EqualFold(sender.Hex(), vaultAddr) {
+			continue
+		}
+
+		// This is our transaction - record the liability
+		nonce := tx.Nonce()
+		if nonce >= confirmedNonce && nonce < pendingNonce {
+			// Calculate liability: value + max gas cost
+			liability := new(big.Int).Set(tx.Value())
+			maxGasCost := new(big.Int).Mul(tx.GasFeeCap(), big.NewInt(int64(tx.Gas())))
+			liability.Add(liability, maxGasCost)
+
+			c.recordLiability(vaultAddr, nonce, liability)
+			foundCount++
+
+			c.logger.Info().
+				Str("vault", vaultAddr).
+				Uint64("nonce", nonce).
+				Str("liability", liability.String()).
+				Msg("reconstructed liability from pending transaction")
+		}
+	}
+
+	if foundCount < pendingCount {
+		c.logger.Warn().
+			Str("vault", vaultAddr).
+			Uint64("expected", pendingCount).
+			Uint64("found", foundCount).
+			Msg("cannot see all pending transactions, waiting for confirmation")
+		return false, nil
+	}
+
+	return true, nil
+}
+
 // Start starts the chain client with the given queues.
 func (c *EVMClient) Start(
 	globalTxsQueue chan stypes.TxIn,
@@ -275,6 +491,8 @@ func (c *EVMClient) Start(
 	go c.unstuck()
 	c.wg.Add(1)
 	go runners.SolvencyCheckRunner(c.GetChain(), c, c.bridge, c.stopchan, c.wg, constants.ThorchainBlockTime)
+	c.wg.Add(1)
+	go c.reconstructLiabilities()
 }
 
 // Stop stops the chain client.
@@ -312,6 +530,11 @@ func (c *EVMClient) GetHeight() (int64, error) {
 // GetBlockScannerHeight returns blockscanner height
 func (c *EVMClient) GetBlockScannerHeight() (int64, error) {
 	return c.blockScanner.PreviousHeight(), nil
+}
+
+// RollbackBlockScanner rolls back the block scanner to the last observed block
+func (c *EVMClient) RollbackBlockScanner() error {
+	return c.blockScanner.RollbackToLastObserved()
 }
 
 func (c *EVMClient) GetLatestTxForVault(vault string) (string, string, error) {
@@ -369,7 +592,7 @@ func (c *EVMClient) getSmartContractAddr(pubkey common.PubKey) common.Address {
 }
 
 func (c *EVMClient) getSmartContractByAddress(addr common.Address) common.Address {
-	for _, pk := range c.pubkeyMgr.GetAlgoPubKeys(c.cfg.ChainID.GetSigningAlgo()) {
+	for _, pk := range c.pubkeyMgr.GetAlgoPubKeys(c.cfg.ChainID.GetSigningAlgo(), true) {
 		evmAddr, err := pk.GetAddress(c.cfg.ChainID)
 		if err != nil {
 			c.logger.Warn().
@@ -559,28 +782,33 @@ func (c *EVMClient) buildOutboundTx(txOutItem stypes.TxOutItem, memo mem.Memo, n
 		evmValue = cosmos.ZeroUint().BigInt()
 	}
 
+	// Convert TxOutItem gas rate units to Wei.
+	_, gasRateUnitsPerOne := c.cfg.ChainID.GetGasUnits()
+	toiGasRateWei := cosmos.NewUint(uint64(txOutItem.GasRate)).MulUint64(common.WeiPerOne).Quo(gasRateUnitsPerOne).BigInt()
+
 	gasRate := c.GetGasPrice()
 	if c.cfg.BlockScanner.FixedGasRate > 0 || gasRate.Cmp(big.NewInt(0)) == 0 {
 		// if chain gas is zero we are still filling our gas price buffer, use outbound rate
-		gasRate = convertThorchainAmountToWei(big.NewInt(txOutItem.GasRate))
+		c.logger.Info().
+			Stringer("toiGasRateWei", toiGasRateWei).
+			Stringer("gasRate", gasRate).
+			Msg("using gas rate from tx out item")
+		gasRate = toiGasRateWei
 	} else {
 		// Thornode uses a gas rate 1.5x the reported network fee for the rate and computed
 		// max gas to ensure the rate is sufficient when it is signed later. Since we now know
 		// the more recent rate, we will use our current rate with a lower bound on 2/3 the
 		// outbound rate (the original rate we reported to Thornode in the network fee).
-		lowerBound := convertThorchainAmountToWei(big.NewInt(txOutItem.GasRate))
+		lowerBound := toiGasRateWei
 		lowerBound.Mul(lowerBound, big.NewInt(2))
 		lowerBound.Div(lowerBound, big.NewInt(3))
 
-		// round current rate to avoid consensus trouble, same rounding implied in outbound
-		gasRate.Div(gasRate, big.NewInt(common.One*100))
-		if gasRate.Cmp(big.NewInt(0)) == 0 { // floor at 1 like in network fee reporting
-			gasRate = big.NewInt(1)
-		}
-		gasRate.Mul(gasRate, big.NewInt(common.One*100))
-
 		// if the gas rate is less than the lower bound, use the lower bound
 		if gasRate.Cmp(lowerBound) < 0 {
+			c.logger.Info().
+				Stringer("gasRate", gasRate).
+				Stringer("lowerBound", lowerBound).
+				Msg("gas rate is below lower bound, using lower bound")
 			gasRate = lowerBound
 		}
 	}
@@ -643,9 +871,15 @@ func (c *EVMClient) buildOutboundTx(txOutItem stypes.TxOutItem, memo mem.Memo, n
 		// set limit to aggregator gas limit
 		estimatedGas = gasLimitForAggregator
 
-		scheduledMaxFee = scheduledMaxFee.Mul(scheduledMaxFee, big.NewInt(c.cfg.AggregatorMaxGasMultiplier))
-	} else if !txOutItem.Coins[0].Asset.IsGasAsset() {
-		scheduledMaxFee = scheduledMaxFee.Mul(scheduledMaxFee, big.NewInt(c.cfg.TokenMaxGasMultiplier))
+		scheduledMaxFee = scheduledMaxFee.Mul(scheduledMaxFee, big.NewInt(c.cfg.EVM.AggregatorMaxGasMultiplier))
+	} else if len(txOutItem.Coins) > 0 && !txOutItem.Coins[0].Asset.IsGasAsset() {
+		scheduledMaxFee = scheduledMaxFee.Mul(scheduledMaxFee, big.NewInt(c.cfg.EVM.TokenMaxGasMultiplier))
+	}
+
+	// L2 chains require a small amount of gas asset left for the L1 fee
+	if c.cfg.EVM.ExtraL1GasFee > 0 {
+		l1Fee := big.NewInt(c.cfg.EVM.ExtraL1GasFee)
+		scheduledMaxFee = scheduledMaxFee.Sub(scheduledMaxFee, convertThorchainAmountToWei(l1Fee))
 	}
 
 	// determine max gas units based on scheduled max gas (fee) and current rate
@@ -663,17 +897,6 @@ func (c *EVMClient) buildOutboundTx(txOutItem stypes.TxOutItem, memo mem.Memo, n
 		return nil, nil
 	}
 
-	// before signing, confirm the vault has enough gas asset
-	estimatedFee := big.NewInt(int64(estimatedGas))
-	estimatedFee.Mul(estimatedFee, gasRate)
-	gasBalance, err := c.GetBalance(fromAddr.String(), evm.NativeTokenAddr, nil)
-	if err != nil {
-		return nil, fmt.Errorf("fail to get gas asset balance: %w", err)
-	}
-	if gasBalance.Cmp(big.NewInt(0).Add(evmValue, estimatedFee)) < 0 {
-		return nil, fmt.Errorf("insufficient gas asset balance: %s < %s + %s", gasBalance.String(), evmValue.String(), estimatedFee.String())
-	}
-
 	createdTx = etypes.NewTransaction(
 		nonce, ecommon.HexToAddress(contractAddr.String()), evmValue, maxGasUnits, gasRate, txData,
 	)
@@ -685,6 +908,11 @@ func (c *EVMClient) buildOutboundTx(txOutItem stypes.TxOutItem, memo mem.Memo, n
 
 // SignTx returns the signed transaction.
 func (c *EVMClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *stypes.TxInItem, error) {
+	// Wait for liability reconstruction to complete before signing
+	if !c.signingReady.Load() {
+		return nil, nil, nil, fmt.Errorf("client still initializing, cannot sign yet")
+	}
+
 	if !tx.Chain.Equals(c.cfg.ChainID) {
 		return nil, nil, nil, fmt.Errorf("chain %s is not support by evm chain client", tx.Chain)
 	}
@@ -700,24 +928,32 @@ func (c *EVMClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 	if tx.VaultPubKey.IsEmpty() {
 		return nil, nil, nil, fmt.Errorf("vault public key is empty")
 	}
-
-	memo, err := mem.ParseMemo(common.LatestVersion, tx.Memo)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("fail to parse memo(%s):%w", tx.Memo, err)
+	if len(tx.Coins) == 0 {
+		return nil, nil, nil, fmt.Errorf("coins is empty")
 	}
 
-	if memo.IsInbound() {
-		return nil, nil, nil, fmt.Errorf("inbound memo should not be used for outbound tx")
-	}
-
-	if len(tx.Memo) == 0 {
-		return nil, nil, nil, fmt.Errorf("can't sign tx when it doesn't have memo")
+	// GetMemo returns OriginalMemo for memoless outbounds
+	// For truly memoless transactions (no Memo or OriginalMemo), default to TxOutbound
+	memoForParsing := tx.GetMemo()
+	var memo mem.Memo
+	if memoForParsing == "" {
+		memo = mem.NewOutboundMemo(tx.InHash)
+	} else {
+		var err error
+		memo, err = mem.ParseMemo(common.LatestVersion, memoForParsing)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("fail to parse memo(%s):%w", memoForParsing, err)
+		}
+		if memo.IsInbound() {
+			return nil, nil, nil, fmt.Errorf("inbound memo should not be used for outbound tx")
+		}
 	}
 
 	// the nonce is stored as the transaction checkpoint, if it is set deserialize it
 	// so we only retry with the same nonce to avoid double spend
 	var nonce uint64
 	var fromAddr common.Address
+	var err error
 	fromAddr, err = tx.VaultPubKey.GetAddress(c.cfg.ChainID)
 	if tx.Checkpoint != nil {
 		if err = json.Unmarshal(tx.Checkpoint, &nonce); err != nil {
@@ -765,10 +1001,34 @@ func (c *EVMClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 		return nil, nil, nil, nil
 	}
 
+	// before signing, confirm the vault has enough gas asset
+	gasBalance, err := c.GetBalance(fromAddr.String(), evm.NativeTokenAddr, nil)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("fail to get gas asset balance: %w", err)
+	}
+
+	// Subtract pending liabilities (signed but unconfirmed transactions) from the balance
+	confirmedNonce, _ := c.evmScanner.GetNonceFinalized(fromAddr.String())
+	pendingLiability := c.getPendingLiability(fromAddr.String(), confirmedNonce)
+	effectiveBalance := new(big.Int).Sub(gasBalance, pendingLiability)
+
+	// Calculate required balance (value + estimated fee)
+	evmValue := outboundTx.Value()
+	estimatedFee := new(big.Int).Mul(big.NewInt(int64(outboundTx.Gas())), outboundTx.GasPrice())
+	requiredBalance := new(big.Int).Add(evmValue, estimatedFee)
+
+	if effectiveBalance.Cmp(requiredBalance) < 0 {
+		return nil, nil, nil, fmt.Errorf("insufficient gas asset balance: effective %s (latest %s - liability %s) < required %s",
+			effectiveBalance.String(), gasBalance.String(), pendingLiability.String(), requiredBalance.String())
+	}
+
 	rawTx, err := c.sign(outboundTx, tx.VaultPubKey, height, tx)
 	if err != nil || len(rawTx) == 0 {
 		return nil, nonceBytes, nil, fmt.Errorf("fail to sign message: %w", err)
 	}
+
+	// Record the liability for this signed transaction (value + estimated fee)
+	c.recordLiability(fromAddr.String(), nonce, requiredBalance)
 
 	// create the observation to be sent by the signer before broadcast
 	chainHeight, err := c.GetHeight()
@@ -780,12 +1040,6 @@ func (c *EVMClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 	gas := common.MakeEVMGas(c.GetChain(), outboundTx.GasPrice(), outboundTx.Gas(), nil)
 	// This is the maximum gas, using the gas limit for instant-observation
 	// rather than the GasUsed which can only be gotten from the receipt when scanning.
-
-	// TODO:  For BASEChain MaxGas, what to do about the L1Fee not reflected in the GasPrice(),
-	// but which THORChain needs to allow enough for?
-	// (Not urgent as long as L1Fee is observed and the Dynamic Outbound Fee Multiplier
-	//  keeps total outbound fees inflow equal to total gas reimbursements outflow?
-	//  However, careful regarding any bond slashing for higher-gas-cost-than-permitted observed txouts.)
 
 	signedTx := &etypes.Transaction{}
 	if err = signedTx.UnmarshalJSON(rawTx); err != nil {
@@ -950,7 +1204,9 @@ func (c *EVMClient) ReportSolvency(height int64) error {
 		return fmt.Errorf("fail to get asgards, err: %w", err)
 	}
 
-	currentGasFee := cosmos.NewUint(3 * c.cfg.BlockScanner.MaxGasLimit * c.evmScanner.lastReportedGasPrice)
+	// 3x MaxGas breathing room, from gas rate units gas price to THORChain (1e8) format
+	_, gasRateUnitsPerOne := c.cfg.ChainID.GetGasUnits()
+	currentGasFee := cosmos.NewUint(c.cfg.BlockScanner.MaxGasLimit).MulUint64(3).MulUint64(c.evmScanner.lastReportedGasPrice).MulUint64(common.One).Quo(gasRateUnitsPerOne)
 
 	// report insolvent asgard vaults,
 	// or else all if the chain is halted and all are solvent
@@ -1010,9 +1266,6 @@ func (c *EVMClient) ReportSolvency(height int64) error {
 
 // ShouldReportSolvency returns true if the given height is a solvency report height.
 func (c *EVMClient) ShouldReportSolvency(height int64) bool {
-	if c.cfg.SolvencyBlocks == 0 {
-		return false
-	}
 	return height%c.cfg.SolvencyBlocks == 0
 }
 

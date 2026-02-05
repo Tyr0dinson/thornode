@@ -23,16 +23,16 @@ Name | Type | Description | Notes
 **SaversCapacityRemaining** | **string** | amount of remaining capacity in asset | 
 **SynthMintPaused** | **bool** | whether additional synths cannot be minted | 
 **SynthSupplyRemaining** | **string** | the amount of synth supply remaining before the current max supply is reached | 
-**LoanCollateral** | **string** | the amount of collateral collects for loans | 
-**LoanCollateralRemaining** | **string** | the amount of remaining collateral collects for loans | 
-**LoanCr** | **string** | the current loan collateralization ratio | 
 **DerivedDepthBps** | **string** | the depth of the derived virtual pool relative to L1 pool (in basis points) | 
+**TradingHalted** | Pointer to **bool** | indicates if the pool can be used for swaps | [optional] 
+**VolumeAsset** | Pointer to **string** | 24h volume in asset | [optional] 
+**VolumeRune** | Pointer to **string** | 24h volume in rune | [optional] 
 
 ## Methods
 
 ### NewPool
 
-`func NewPool(asset string, status string, pendingInboundAsset string, pendingInboundRune string, balanceAsset string, balanceRune string, assetTorPrice string, poolUnits string, lPUnits string, synthUnits string, synthSupply string, saversDepth string, saversUnits string, saversFillBps string, saversCapacityRemaining string, synthMintPaused bool, synthSupplyRemaining string, loanCollateral string, loanCollateralRemaining string, loanCr string, derivedDepthBps string, ) *Pool`
+`func NewPool(asset string, status string, pendingInboundAsset string, pendingInboundRune string, balanceAsset string, balanceRune string, assetTorPrice string, poolUnits string, lPUnits string, synthUnits string, synthSupply string, saversDepth string, saversUnits string, saversFillBps string, saversCapacityRemaining string, synthMintPaused bool, synthSupplyRemaining string, derivedDepthBps string, ) *Pool`
 
 NewPool instantiates a new Pool object
 This constructor will assign default values to properties that have it defined,
@@ -437,66 +437,6 @@ and a boolean to check if the value has been set.
 SetSynthSupplyRemaining sets SynthSupplyRemaining field to given value.
 
 
-### GetLoanCollateral
-
-`func (o *Pool) GetLoanCollateral() string`
-
-GetLoanCollateral returns the LoanCollateral field if non-nil, zero value otherwise.
-
-### GetLoanCollateralOk
-
-`func (o *Pool) GetLoanCollateralOk() (*string, bool)`
-
-GetLoanCollateralOk returns a tuple with the LoanCollateral field if it's non-nil, zero value otherwise
-and a boolean to check if the value has been set.
-
-### SetLoanCollateral
-
-`func (o *Pool) SetLoanCollateral(v string)`
-
-SetLoanCollateral sets LoanCollateral field to given value.
-
-
-### GetLoanCollateralRemaining
-
-`func (o *Pool) GetLoanCollateralRemaining() string`
-
-GetLoanCollateralRemaining returns the LoanCollateralRemaining field if non-nil, zero value otherwise.
-
-### GetLoanCollateralRemainingOk
-
-`func (o *Pool) GetLoanCollateralRemainingOk() (*string, bool)`
-
-GetLoanCollateralRemainingOk returns a tuple with the LoanCollateralRemaining field if it's non-nil, zero value otherwise
-and a boolean to check if the value has been set.
-
-### SetLoanCollateralRemaining
-
-`func (o *Pool) SetLoanCollateralRemaining(v string)`
-
-SetLoanCollateralRemaining sets LoanCollateralRemaining field to given value.
-
-
-### GetLoanCr
-
-`func (o *Pool) GetLoanCr() string`
-
-GetLoanCr returns the LoanCr field if non-nil, zero value otherwise.
-
-### GetLoanCrOk
-
-`func (o *Pool) GetLoanCrOk() (*string, bool)`
-
-GetLoanCrOk returns a tuple with the LoanCr field if it's non-nil, zero value otherwise
-and a boolean to check if the value has been set.
-
-### SetLoanCr
-
-`func (o *Pool) SetLoanCr(v string)`
-
-SetLoanCr sets LoanCr field to given value.
-
-
 ### GetDerivedDepthBps
 
 `func (o *Pool) GetDerivedDepthBps() string`
@@ -516,6 +456,81 @@ and a boolean to check if the value has been set.
 
 SetDerivedDepthBps sets DerivedDepthBps field to given value.
 
+
+### GetTradingHalted
+
+`func (o *Pool) GetTradingHalted() bool`
+
+GetTradingHalted returns the TradingHalted field if non-nil, zero value otherwise.
+
+### GetTradingHaltedOk
+
+`func (o *Pool) GetTradingHaltedOk() (*bool, bool)`
+
+GetTradingHaltedOk returns a tuple with the TradingHalted field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetTradingHalted
+
+`func (o *Pool) SetTradingHalted(v bool)`
+
+SetTradingHalted sets TradingHalted field to given value.
+
+### HasTradingHalted
+
+`func (o *Pool) HasTradingHalted() bool`
+
+HasTradingHalted returns a boolean if a field has been set.
+
+### GetVolumeAsset
+
+`func (o *Pool) GetVolumeAsset() string`
+
+GetVolumeAsset returns the VolumeAsset field if non-nil, zero value otherwise.
+
+### GetVolumeAssetOk
+
+`func (o *Pool) GetVolumeAssetOk() (*string, bool)`
+
+GetVolumeAssetOk returns a tuple with the VolumeAsset field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetVolumeAsset
+
+`func (o *Pool) SetVolumeAsset(v string)`
+
+SetVolumeAsset sets VolumeAsset field to given value.
+
+### HasVolumeAsset
+
+`func (o *Pool) HasVolumeAsset() bool`
+
+HasVolumeAsset returns a boolean if a field has been set.
+
+### GetVolumeRune
+
+`func (o *Pool) GetVolumeRune() string`
+
+GetVolumeRune returns the VolumeRune field if non-nil, zero value otherwise.
+
+### GetVolumeRuneOk
+
+`func (o *Pool) GetVolumeRuneOk() (*string, bool)`
+
+GetVolumeRuneOk returns a tuple with the VolumeRune field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetVolumeRune
+
+`func (o *Pool) SetVolumeRune(v string)`
+
+SetVolumeRune sets VolumeRune field to given value.
+
+### HasVolumeRune
+
+`func (o *Pool) HasVolumeRune() bool`
+
+HasVolumeRune returns a boolean if a field has been set.
 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)

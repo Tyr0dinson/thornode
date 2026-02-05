@@ -12,6 +12,7 @@
 *.exe
 /.cache
 /.go
+/app/data
 /docs/book
 /docs/theme
 /public
@@ -32,3 +33,10 @@ test/regression/mnt/coverage
 
 # Test
 test/regression/mnt/blocks/**/[0-9]*.json
+*.prof
+test/performance/results
+thorchain.test
+
+CLAUDE.local.md
+.claude/*.local.*
+**/.claude/*.local.*

@@ -2,11 +2,12 @@ package gaia
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
-	"os"
 	"sync"
 	"time"
 
@@ -123,18 +124,8 @@ func NewCosmosClient(
 	marshaler := codec.NewProtoCodec(interfaceRegistry)
 	txConfig := authtx.NewTxConfig(marshaler, []signingtypes.SignMode{signingtypes.SignMode_SIGN_MODE_DIRECT})
 
-	// CHANGEME: each THORNode network (e.g. mainnet, mocknet, etc.) may connect to a Cosmos chain with a different chain ID
-	// Implement the logic here for determinine which chain ID to use.
-	chainID := ""
-	switch os.Getenv("NET") {
-	case "mainnet", "stagenet":
-		chainID = "cosmoshub-4"
-	case "mocknet":
-		chainID = "localgaia"
-	}
-
 	c := &CosmosClient{
-		chainID:         chainID,
+		chainID:         cfg.CosmosChainID,
 		logger:          logger,
 		cfg:             cfg,
 		txConfig:        txConfig,
@@ -227,6 +218,11 @@ func (c *CosmosClient) GetHeight() (int64, error) {
 // GetBlockScannerHeight returns blockscanner height
 func (c *CosmosClient) GetBlockScannerHeight() (int64, error) {
 	return c.blockScanner.PreviousHeight(), nil
+}
+
+// RollbackBlockScanner rolls back the block scanner to the last observed block
+func (c *CosmosClient) RollbackBlockScanner() error {
+	return c.blockScanner.RollbackToLastObserved()
 }
 
 func (c *CosmosClient) GetLatestTxForVault(vault string) (string, string, error) {
@@ -463,7 +459,23 @@ func (c *CosmosClient) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signe
 		return nil, checkpointBytes, nil, fmt.Errorf("failed to sign message: %w", err)
 	}
 
-	return txBytes, nil, nil, nil
+	hash := sha256.Sum256(txBytes)
+
+	txIn := stypes.NewTxInItem(
+		currentHeight,
+		hex.EncodeToString(hash[:]),
+		tx.Memo,
+		c.GetAddress(tx.VaultPubKey),
+		tx.ToAddress.String(),
+		tx.Coins,
+		append(common.Gas{}, gasCoins...),
+		tx.VaultPubKey,
+		"",
+		"",
+		nil,
+	)
+
+	return txBytes, nil, txIn, nil
 }
 
 // signMsg takes an unsigned msg in a txBuilder and signs it using either private key or TSS.
@@ -594,7 +606,8 @@ func (c *CosmosClient) ReportSolvency(blockHeight int64) error {
 		return fmt.Errorf("fail to get asgards,err: %w", err)
 	}
 
-	currentGasFee := c.cosmosScanner.lastFee
+	// 1x estimated gas cost breathing room (transaction size 1), from gas rate units gas price to THORChain (1e8) format
+	currentGasFee := c.cfg.ChainID.NativeGasToThorchain(c.cosmosScanner.lastFee)
 
 	// report insolvent asgard vaults,
 	// or else all if the chain is halted and all are solvent

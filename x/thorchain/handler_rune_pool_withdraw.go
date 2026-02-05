@@ -3,7 +3,6 @@ package thorchain
 import (
 	"fmt"
 
-	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/telemetry"
 	"github.com/hashicorp/go-metrics"
 
@@ -53,16 +52,6 @@ func (h RunePoolWithdrawHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.
 }
 
 func (h RunePoolWithdrawHandler) validate(ctx cosmos.Context, msg MsgRunePoolWithdraw) error {
-	version := h.mgr.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("3.0.0")):
-		return h.validateV3_0_0(ctx, msg)
-	default:
-		return errBadVersion
-	}
-}
-
-func (h RunePoolWithdrawHandler) validateV3_0_0(ctx cosmos.Context, msg MsgRunePoolWithdraw) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}
@@ -82,16 +71,6 @@ func (h RunePoolWithdrawHandler) validateV3_0_0(ctx cosmos.Context, msg MsgRuneP
 }
 
 func (h RunePoolWithdrawHandler) handle(ctx cosmos.Context, msg MsgRunePoolWithdraw) error {
-	version := h.mgr.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("3.0.0")):
-		return h.handleV3_0_0(ctx, msg)
-	default:
-		return errBadVersion
-	}
-}
-
-func (h RunePoolWithdrawHandler) handleV3_0_0(ctx cosmos.Context, msg MsgRunePoolWithdraw) error {
 	accAddr, err := cosmos.AccAddressFromBech32(msg.Signer.String())
 	if err != nil {
 		return fmt.Errorf("unable to AccAddressFromBech32: %s", err)
@@ -152,7 +131,8 @@ func (h RunePoolWithdrawHandler) handleV3_0_0(ctx cosmos.Context, msg MsgRunePoo
 		maxReserveBackstop := h.mgr.Keeper().GetConfigInt64(ctx, constants.RUNEPoolMaxReserveBackstop)
 		polMaxNetworkDeposit := h.mgr.Keeper().GetConfigInt64(ctx, constants.POLMaxNetworkDeposit)
 		maxReserveUsage := cosmos.NewInt(maxReserveBackstop + polMaxNetworkDeposit)
-		pol, err := h.mgr.Keeper().GetPOL(ctx)
+		var pol ProtocolOwnedLiquidity
+		pol, err = h.mgr.Keeper().GetPOL(ctx)
 		if err != nil {
 			return fmt.Errorf("fail to get POL: %w", err)
 		}
@@ -189,7 +169,8 @@ func (h RunePoolWithdrawHandler) handleV3_0_0(ctx cosmos.Context, msg MsgRunePoo
 	userAmount := common.SafeSub(withdrawAmount, affiliateAmount)
 	if !affiliateAmount.IsZero() {
 		affiliateCoins := common.NewCoins(common.NewCoin(common.RuneNative, affiliateAmount))
-		affiliateAddress, err := msg.AffiliateAddress.AccAddress()
+		var affiliateAddress cosmos.AccAddress
+		affiliateAddress, err = msg.AffiliateAddress.AccAddress()
 		if err != nil {
 			return fmt.Errorf("fail to get affiliate address: %w", err)
 		}

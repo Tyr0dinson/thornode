@@ -52,7 +52,7 @@ genesis:
           transaction_size: "1000"
         - chain: SOL
           transaction_fee_rate: "1"
-          transaction_size: "10000"
+          transaction_size: "5000"
       vaults:
         - block_height: "0"
           chains:

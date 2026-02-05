@@ -4,24 +4,14 @@ import (
 	"crypto/sha256"
 	"fmt"
 
-	"github.com/blang/semver"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	thorchain "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 func triggerPreferredAssetSwap(ctx cosmos.Context, mgr Manager, affiliateAddress common.Address, txID common.TxID, tn THORName, affcol AffiliateFeeCollector, queueIndex int) error {
-	version := mgr.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("3.0.0")):
-		return triggerPreferredAssetSwapV3_0_0(ctx, mgr, tn, affcol, queueIndex)
-	default:
-		return errBadVersion
-	}
-}
-
-func triggerPreferredAssetSwapV3_0_0(ctx cosmos.Context, mgr Manager, tn THORName, affcol AffiliateFeeCollector, queueIndex int) error {
 	// Check that the THORName has an address alias for the PreferredAsset, if not skip
 	// the swap
 	alias := tn.GetAlias(tn.PreferredAsset.GetChain())
@@ -87,6 +77,12 @@ func triggerPreferredAssetSwapV3_0_0(ctx cosmos.Context, mgr Manager, tn THORNam
 		networkMemo,
 	)
 
+	// Determine version based on configuration
+	version := types.SwapVersion_v1
+	if mgr.Keeper().AdvSwapQueueEnabled(ctx) {
+		version = types.SwapVersion_v2
+	}
+
 	preferredAssetSwap := NewMsgSwap(
 		tx,
 		tn.PreferredAsset,
@@ -96,8 +92,9 @@ func triggerPreferredAssetSwapV3_0_0(ctx cosmos.Context, mgr Manager, tn THORNam
 		cosmos.ZeroUint(),
 		"",
 		"", nil,
-		MarketOrder,
-		0, 0,
+		MarketSwap,
+		1, 0,
+		version,
 		tn.Owner,
 	)
 
@@ -110,9 +107,17 @@ func triggerPreferredAssetSwapV3_0_0(ctx cosmos.Context, mgr Manager, tn THORNam
 	mgr.Keeper().SetObservedTxInVoter(ctx, txInVoter)
 
 	// Queue the preferred asset swap
-	if err = mgr.Keeper().SetSwapQueueItem(ctx, *preferredAssetSwap, queueIndex); err != nil {
-		ctx.Logger().Error("fail to add preferred asset swap to queue", "error", err)
-		return err
+	// Use advanced swap queue if enabled
+	if mgr.Keeper().AdvSwapQueueEnabled(ctx) {
+		if err = mgr.AdvSwapQueueMgr().AddSwapQueueItem(ctx, mgr, preferredAssetSwap); err != nil {
+			ctx.Logger().Error("fail to add preferred asset swap to advanced queue", "error", err)
+			return err
+		}
+	} else {
+		if err = mgr.Keeper().SetSwapQueueItem(ctx, *preferredAssetSwap, queueIndex); err != nil {
+			ctx.Logger().Error("fail to add preferred asset swap to queue", "error", err)
+			return err
+		}
 	}
 
 	// Send RUNE from AffiliateCollector to Asgard and update AffiliateCollector
@@ -135,16 +140,6 @@ func triggerPreferredAssetSwapV3_0_0(ctx cosmos.Context, mgr Manager, tn THORNam
 //     - If coin is not RUNE, swap the coin to RUNE and transfer to the affiliate
 //     - If affiliate is a thorname and has a preferred asset, send RUNE to the affiliate collector
 func skimAffiliateFees(ctx cosmos.Context, mgr Manager, mainTx common.Tx, signer cosmos.AccAddress, coin common.Coin, memoStr string) (cosmos.Uint, error) {
-	version := mgr.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("3.0.0")):
-		return skimAffiliateFeesV3_0_0(ctx, mgr, mainTx, signer, coin, memoStr)
-	default:
-		return cosmos.ZeroUint(), errBadVersion
-	}
-}
-
-func skimAffiliateFeesV3_0_0(ctx cosmos.Context, mgr Manager, mainTx common.Tx, signer cosmos.AccAddress, coin common.Coin, memoStr string) (cosmos.Uint, error) {
 	// sanity checks
 	if mainTx.IsEmpty() {
 		return cosmos.ZeroUint(), fmt.Errorf("main tx is empty")
@@ -171,7 +166,7 @@ func skimAffiliateFeesV3_0_0(ctx cosmos.Context, mgr Manager, mainTx common.Tx, 
 
 	// Iterate through each affiliate and attempt to distribute the fee
 	for i, affiliate := range affiliates {
-		ctx.Logger().Info("distributing affiliate fee", "txid", mainTx.ID.String(), "affiliate", affiliate, "fee", affiliatesBps[i].String(), "asset", coin.Asset, "amount", coin.Amount)
+		ctx.Logger().Info("distributing affiliate fee", "txid", mainTx.ID.String(), "index", i, "affiliate", affiliate, "fee", affiliatesBps[i].String(), "asset", coin.Asset, "amount", coin.Amount)
 		// Determine if affiliate is address or thorname. If it's an address it must be a RUNE address.
 		var runeAddr cosmos.AccAddress
 		var thorname *THORName
@@ -286,16 +281,6 @@ func skimAffiliateFeesV3_0_0(ctx cosmos.Context, mgr Manager, mainTx common.Tx, 
 }
 
 func affiliateSwapToRune(ctx cosmos.Context, mgr Manager, mainTx common.Tx, signer cosmos.AccAddress, affAmt cosmos.Uint, affAcc cosmos.AccAddress, memo thorchain.Memo, tn *THORName, swapIndex *int) error {
-	version := mgr.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("3.0.0")):
-		return affiliateSwapToRuneV3_0_0(ctx, mgr, mainTx, signer, affAmt, affAcc, memo, tn, swapIndex)
-	default:
-		return errBadVersion
-	}
-}
-
-func affiliateSwapToRuneV3_0_0(ctx cosmos.Context, mgr Manager, mainTx common.Tx, signer cosmos.AccAddress, affAmt cosmos.Uint, affAcc cosmos.AccAddress, memo thorchain.Memo, tn *THORName, swapIndex *int) error {
 	affAddr, err := common.NewAddress(affAcc.String())
 	if err != nil {
 		return fmt.Errorf("fail to parse affiliate address: %w", err)
@@ -304,6 +289,14 @@ func affiliateSwapToRuneV3_0_0(ctx cosmos.Context, mgr Manager, mainTx common.Tx
 	// Copy mainTx coins so as not to modify the original
 	mainTx.Coins = mainTx.Coins.Copy()
 
+	if mainTx.Coins[0].Amount.GTE(affAmt) {
+		mainTx.Coins[0].Amount = affAmt
+	}
+
+	if err = ensureAffiliateFromAddress(ctx, mgr, &mainTx); err != nil {
+		return err
+	}
+
 	// Update memo to include only this affiliate
 	tnMemo := affAddr.String()
 	if tn != nil {
@@ -311,6 +304,12 @@ func affiliateSwapToRuneV3_0_0(ctx cosmos.Context, mgr Manager, mainTx common.Tx
 	}
 	memoStr := NewSwapMemo(ctx, mgr, common.RuneAsset(), affAddr, cosmos.ZeroUint(), tnMemo, cosmos.ZeroUint())
 	mainTx.Memo = memoStr
+
+	// Determine version based on configuration
+	version := types.SwapVersion_v1
+	if mgr.Keeper().AdvSwapQueueEnabled(ctx) {
+		version = types.SwapVersion_v2
+	}
 
 	affiliateSwap := NewMsgSwap(
 		mainTx,
@@ -321,8 +320,9 @@ func affiliateSwapToRuneV3_0_0(ctx cosmos.Context, mgr Manager, mainTx common.Tx
 		cosmos.ZeroUint(),
 		"",
 		"", nil,
-		MarketOrder,
-		0, 0,
+		MarketSwap,
+		1, 0,
+		version,
 		signer,
 	)
 
@@ -355,7 +355,8 @@ func affiliateSwapToRuneV3_0_0(ctx cosmos.Context, mgr Manager, mainTx common.Tx
 
 		// Check if accrued RUNE is 100x current outbound fee of preferred asset chain, if
 		// so trigger the preferred asset swap
-		ofRune, err := mgr.GasMgr().GetAssetOutboundFee(ctx, tn.PreferredAsset, true)
+		var ofRune cosmos.Uint
+		ofRune, err = mgr.GasMgr().GetAssetOutboundFee(ctx, tn.PreferredAsset, true)
 		if err != nil {
 			ctx.Logger().Error("failed to get outbound fee for preferred asset, skipping preferred asset swap", "name", tn.Name, "asset", tn.PreferredAsset, "error", err)
 		}
@@ -372,33 +373,41 @@ func affiliateSwapToRuneV3_0_0(ctx cosmos.Context, mgr Manager, mainTx common.Tx
 		}
 	}
 
-	if affiliateSwap.Tx.Coins[0].Amount.GTE(affAmt) {
-		affiliateSwap.Tx.Coins[0].Amount = affAmt
-	}
-
 	*swapIndex++
-	if err = mgr.Keeper().SetSwapQueueItem(ctx, *affiliateSwap, *swapIndex); err != nil {
-		return fmt.Errorf("fail to add swap to queue: %w", err)
+	// Use advanced swap queue if enabled
+	if mgr.Keeper().AdvSwapQueueEnabled(ctx) {
+		affiliateSwap.Index = uint32(*swapIndex)
+		if err = mgr.AdvSwapQueueMgr().AddSwapQueueItem(ctx, mgr, affiliateSwap); err != nil {
+			return fmt.Errorf("fail to add swap to advanced queue: %w", err)
+		}
+	} else {
+		if err = mgr.Keeper().SetSwapQueueItem(ctx, *affiliateSwap, *swapIndex); err != nil {
+			return fmt.Errorf("fail to add swap to queue: %w", err)
+		}
 	}
 
+	return nil
+}
+
+// ensureAffiliateFromAddress normalizes the transaction's FromAddress so that
+// swaps sourced from secured or trade assets originate from a THORChain address.
+func ensureAffiliateFromAddress(ctx cosmos.Context, mgr Manager, tx *common.Tx) error {
+	source := tx.Coins[0].Asset
+	if source.IsSecuredAsset() || source.IsTradeAsset() {
+		if !tx.FromAddress.GetChain().IsTHORChain() {
+			asgardAddress, err := mgr.Keeper().GetModuleAddress(AsgardName)
+			if err != nil {
+				return fmt.Errorf("failed to retrieve the asgard module address: %w", err)
+			}
+			tx.FromAddress = asgardAddress
+		}
+	}
 	return nil
 }
 
 // addRuneToAffiliateCollector - accrue RUNE in the AffiliateCollector module and check if
 // a PreferredAsset swap should be triggered. Returns an error if the fee distribution fails.
 func addRuneToAffiliateCollector(ctx cosmos.Context, mgr Manager, coin common.Coin, thorname *THORName, swapIndex *int) error {
-	version := mgr.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("3.0.0")):
-		return updateAffiliateCollectorV3_0_0(ctx, mgr, coin, thorname, swapIndex)
-	default:
-		return fmt.Errorf("unsupported version: %s", version)
-	}
-}
-
-// updateAffiliateCollector - accrue RUNE in the AffiliateCollector module and check if
-// a PreferredAsset swap should be triggered. Returns an error if the fee distribution fails.
-func updateAffiliateCollectorV3_0_0(ctx cosmos.Context, mgr Manager, coin common.Coin, thorname *THORName, swapIndex *int) error {
 	affcol, err := mgr.Keeper().GetAffiliateCollector(ctx, thorname.Owner)
 	if err != nil {
 		return fmt.Errorf("failed to get affiliate collector: %w", err)

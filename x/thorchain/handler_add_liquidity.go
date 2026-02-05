@@ -12,6 +12,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 // AddLiquidityHandler is to handle add liquidity
@@ -60,10 +61,6 @@ func (h AddLiquidityHandler) validate(ctx cosmos.Context, msg MsgAddLiquidity) e
 		return fmt.Errorf("asset cannot be a trade asset")
 	}
 
-	if msg.Asset.IsSecuredAsset() {
-		return fmt.Errorf("asset cannot be a secured asset")
-	}
-
 	// TODO on hard fork move network check to ValidateBasic
 	if !msg.AssetAddress.IsEmpty() {
 		if !common.CurrentChainNetwork.SoftEquals(msg.AssetAddress.GetNetwork(msg.AssetAddress.GetChain())) {
@@ -79,7 +76,7 @@ func (h AddLiquidityHandler) validate(ctx cosmos.Context, msg MsgAddLiquidity) e
 	gasAsset := msg.Asset.GetLayer1Asset().GetChain().GetGasAsset()
 	// Even if a destination gas asset pool is empty, the first add liquidity has to be symmetrical,
 	// and so there is no need to check at this stage for whether the addition is of RUNE or Asset or with needsSwap.
-	if !msg.Asset.Equals(gasAsset) && !msg.Asset.IsTCY() {
+	if !msg.Asset.Equals(gasAsset) && !msg.Asset.IsTCY() && !msg.Asset.IsWhitelisted() {
 		gasPool, err := h.mgr.Keeper().GetPool(ctx, gasAsset)
 		// Note that for a synthetic asset msg.Asset.Chain (unlike msg.Asset.GetChain())
 		// is intentionally used to be the external chain rather than THOR.
@@ -131,11 +128,28 @@ func (h AddLiquidityHandler) validate(ctx cosmos.Context, msg MsgAddLiquidity) e
 		return errAddLiquidityFailValidation
 	}
 
+	// For secured assets, verify signer is authorized to withdraw from runeAddr
+	// This prevents attackers from specifying a victim's address and draining their secured assets
+	if msg.Asset.IsSecuredAsset() && !msg.AssetAmount.IsZero() {
+		runeAccAddr, err := msg.RuneAddress.AccAddress()
+		if err != nil {
+			return fmt.Errorf("invalid rune address for secured asset: %w", err)
+		}
+		if !runeAccAddr.Equals(msg.Signer) {
+			return fmt.Errorf("signer %s not authorized to withdraw secured assets from %s", msg.Signer, msg.RuneAddress)
+		}
+	}
+
 	if !msg.AssetAddress.IsEmpty() {
 		// If the needsSwap check disallows a cross-chain AssetAddress,
 		// a position with pending RUNE cannot be completed with Asset,
 		// so fail validation here if the AssetAddress chain is different from the Asset's.
-		if !msg.AssetAddress.IsChain(msg.Asset.GetLayer1Asset().GetChain()) {
+		if msg.Asset.IsSecuredAsset() {
+			// set thor1... address as lp for secured assets
+			if !msg.AssetAddress.IsChain(common.THORChain) {
+				return errAddLiquidityMismatchAddr
+			}
+		} else if !msg.AssetAddress.IsChain(msg.Asset.GetLayer1Asset().GetChain()) {
 			return errAddLiquidityMismatchAddr
 		}
 
@@ -213,7 +227,13 @@ func (h AddLiquidityHandler) handle(ctx cosmos.Context, msg MsgAddLiquidity) err
 		return h.swap(ctx, msg)
 	}
 
-	pool, err := h.mgr.Keeper().GetPool(ctx, msg.Asset)
+	// Use L1 pool for secured assets only, don't change behaviour for synths
+	asset := msg.Asset
+	if asset.IsSecuredAsset() {
+		asset = asset.GetLayer1Asset()
+	}
+
+	pool, err := h.mgr.Keeper().GetPool(ctx, asset)
 	if err != nil {
 		return ErrInternal(err, "fail to get pool")
 	}
@@ -324,9 +344,7 @@ func (h AddLiquidityHandler) handle(ctx cosmos.Context, msg MsgAddLiquidity) err
 }
 
 func (h AddLiquidityHandler) swap(ctx cosmos.Context, msg MsgAddLiquidity) error {
-	// ensure TxID does NOT have a collision with another swap, this could
-	// happen if the user submits two identical loan requests in the same
-	// block
+	// ensure TxID does NOT have a collision with another swap
 	if ok := h.mgr.Keeper().HasSwapQueueItem(ctx, msg.Tx.ID, 0); ok {
 		return fmt.Errorf("txn hash conflict")
 	}
@@ -344,7 +362,13 @@ func (h AddLiquidityHandler) swap(ctx cosmos.Context, msg MsgAddLiquidity) error
 		ssInterval = 0
 	}
 
-	swapMsg := NewMsgSwap(msg.Tx, msg.Asset, common.NoopAddress, cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, MarketOrder, 0, uint64(ssInterval), msg.Signer)
+	// Determine version based on configuration
+	version := types.SwapVersion_v1
+	if h.mgr.Keeper().AdvSwapQueueEnabled(ctx) {
+		version = types.SwapVersion_v2
+	}
+
+	swapMsg := NewMsgSwap(msg.Tx, msg.Asset, common.NoopAddress, cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, MarketSwap, 0, uint64(ssInterval), version, msg.Signer)
 
 	// sanity check swap msg
 	handler := NewSwapHandler(h.mgr)
@@ -456,11 +480,52 @@ func (h AddLiquidityHandler) addLiquidity(ctx cosmos.Context,
 	stage bool,
 	constAccessor constants.ConstantValues,
 ) (err error) {
+	if asset.IsSecuredAsset() {
+		if !addAssetAmount.IsZero() {
+			var accAddr cosmos.AccAddress
+			accAddr, err = runeAddr.AccAddress()
+			if err != nil {
+				return err
+			}
+
+			requestedAmount := addAssetAmount
+			var coins common.Coin
+			coins, err = h.mgr.SecuredAssetManager().Withdraw(
+				ctx, asset, addAssetAmount, accAddr, common.NoAddress, requestTxHash)
+			if err != nil {
+				return err
+			}
+
+			if !coins.Asset.Equals(asset.GetLayer1Asset()) {
+				return fmt.Errorf("secured asset manager withdraw return unexpected asset: %s", coins.Asset.String())
+			}
+
+			// Verify withdrawn amount is not zero when requested amount was non-zero
+			if coins.Amount.IsZero() {
+				return fmt.Errorf("secured asset withdrawal returned zero amount for request of %s", requestedAmount)
+			}
+
+			// Log if withdrawn amount differs from requested (due to share-based calculation rounding)
+			if !coins.Amount.Equal(requestedAmount) {
+				ctx.Logger().Info("secured asset withdrawal amount differs from requested",
+					"asset", asset, "requested", requestedAmount, "withdrawn", coins.Amount)
+			}
+
+			addAssetAmount = coins.Amount
+		}
+
+		asset = asset.GetLayer1Asset()
+	}
+
 	ctx.Logger().Info("liquidity provision", "asset", asset, "rune amount", addRuneAmount, "asset amount", addAssetAmount)
 	if err = h.validateAddLiquidityMessage(ctx, h.mgr.Keeper(), asset, requestTxHash, runeAddr, assetAddr); err != nil {
 		return fmt.Errorf("add liquidity message fail validation: %w", err)
 	}
 
+	// NOTE: When multiple MsgAddLiquidity messages for the same pool exist in a single transaction,
+	// each subsequent message will read the modified pool state from previous messages.
+	// This is standard Cosmos SDK behavior - all messages in a tx share the same state context.
+	// Pool unit calculations remain mathematically sound as they use current pool balances.
 	pool, err := h.mgr.Keeper().GetPool(ctx, asset)
 	if err != nil {
 		return ErrInternal(err, fmt.Sprintf("fail to get pool(%s)", asset))
@@ -533,7 +598,7 @@ func (h AddLiquidityHandler) addLiquidity(ctx cosmos.Context,
 		su.PendingTxID = requestTxHash
 		h.mgr.Keeper().SetLiquidityProvider(ctx, su)
 		if err = h.mgr.Keeper().SetPool(ctx, pool); err != nil {
-			ctx.Logger().Error("fail to save pool pending inbound rune", "error", err)
+			return ErrInternal(err, "fail to save pool pending inbound rune")
 		}
 
 		// add pending liquidity event
@@ -551,8 +616,9 @@ func (h AddLiquidityHandler) addLiquidity(ctx cosmos.Context,
 		su.PendingTxID = requestTxHash
 		h.mgr.Keeper().SetLiquidityProvider(ctx, su)
 		if err = h.mgr.Keeper().SetPool(ctx, pool); err != nil {
-			ctx.Logger().Error("fail to save pool pending inbound asset", "error", err)
+			return ErrInternal(err, "fail to save pool pending inbound asset")
 		}
+
 		evt := NewEventPendingLiquidity(pool.Asset, AddPendingLiquidity, su.RuneAddress, cosmos.ZeroUint(), su.AssetAddress, addAssetAmount, common.TxID(""), requestTxHash)
 		if err = h.mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
 			return ErrInternal(err, "fail to emit partial add liquidity event")
@@ -560,8 +626,15 @@ func (h AddLiquidityHandler) addLiquidity(ctx cosmos.Context,
 		return nil
 	}
 
-	pool.PendingInboundRune = common.SafeSub(pool.PendingInboundRune, su.PendingRune)
-	pool.PendingInboundAsset = common.SafeSub(pool.PendingInboundAsset, su.PendingAsset)
+	// Validate pending amounts before subtraction to detect accounting inconsistencies
+	if su.PendingRune.GT(pool.PendingInboundRune) {
+		return ErrInternal(nil, fmt.Sprintf("pending rune accounting error: LP pending %s > pool pending %s", su.PendingRune, pool.PendingInboundRune))
+	}
+	if su.PendingAsset.GT(pool.PendingInboundAsset) {
+		return ErrInternal(nil, fmt.Sprintf("pending asset accounting error: LP pending %s > pool pending %s", su.PendingAsset, pool.PendingInboundAsset))
+	}
+	pool.PendingInboundRune = pool.PendingInboundRune.Sub(su.PendingRune)
+	pool.PendingInboundAsset = pool.PendingInboundAsset.Sub(su.PendingAsset)
 	su.PendingAsset = cosmos.ZeroUint()
 	su.PendingRune = cosmos.ZeroUint()
 	su.PendingTxID = ""
@@ -585,6 +658,11 @@ func (h AddLiquidityHandler) addLiquidity(ctx cosmos.Context,
 	}
 
 	ctx.Logger().Info("current pool status", "pool units", newPoolUnits, "liquidity units", liquidityUnits)
+	// NOTE: pendingRuneAmt and pendingAssetAmt are derived from amounts verified by:
+	// - External chains: Bifrost observers verify actual on-chain transactions before reporting
+	// - Native chain: Cosmos SDK bank module ante handler validates transfers
+	// - Secured assets: SecuredAssetManager.Withdraw validates and burns share tokens
+	// Therefore, explicit balance verification here is unnecessary as it would be redundant.
 	poolRune := balanceRune.Add(pendingRuneAmt)
 	poolAsset := balanceAsset.Add(pendingAssetAmt)
 	pool.LPUnits = pool.LPUnits.Add(liquidityUnits)
@@ -601,6 +679,7 @@ func (h AddLiquidityHandler) addLiquidity(ctx cosmos.Context,
 	if err = h.mgr.Keeper().SetPool(ctx, pool); err != nil {
 		return ErrInternal(err, "fail to save pool")
 	}
+
 	if originalUnits.IsZero() && !pool.GetPoolUnits().IsZero() {
 		poolEvent := NewEventPool(pool.Asset, pool.Status)
 		if err = h.mgr.EventMgr().EmitEvent(ctx, poolEvent); err != nil {

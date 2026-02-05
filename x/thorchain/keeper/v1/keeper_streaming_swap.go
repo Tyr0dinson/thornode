@@ -3,28 +3,29 @@ package keeperv1
 import (
 	"fmt"
 
+	"github.com/cosmos/cosmos-sdk/runtime"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/types"
 )
 
-func (k KVStore) setStreamingSwap(ctx cosmos.Context, key string, record StreamingSwap) {
-	store := ctx.KVStore(k.storeKey)
+func (k KVStore) setStreamingSwap(ctx cosmos.Context, key []byte, record StreamingSwap) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 	buf := k.cdc.MustMarshal(&record)
 	if buf == nil {
-		store.Delete([]byte(key))
+		store.Delete(key)
 	} else {
-		store.Set([]byte(key), buf)
+		store.Set(key, buf)
 	}
 }
 
-func (k KVStore) getStreamingSwap(ctx cosmos.Context, key string, record *StreamingSwap) (bool, error) {
-	store := ctx.KVStore(k.storeKey)
-	if !store.Has([]byte(key)) {
+func (k KVStore) getStreamingSwap(ctx cosmos.Context, key []byte, record *StreamingSwap) (bool, error) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	if !store.Has(key) {
 		return false, nil
 	}
 
-	bz := store.Get([]byte(key))
+	bz := store.Get(key)
 	if err := k.cdc.Unmarshal(bz, record); err != nil {
 		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
 	}
@@ -51,10 +52,16 @@ func (k KVStore) StreamingSwapExists(ctx cosmos.Context, hash common.TxID) bool 
 
 // SetStreamingSwap save the streaming swap to kv store
 func (k KVStore) SetStreamingSwap(ctx cosmos.Context, swp StreamingSwap) {
+	// Defensive validation: reject streaming swaps with invalid intervals
+	// to prevent hollowed-out records that cause division by zero panics
+	if err := swp.Valid(); err != nil {
+		ctx.Logger().Error("attempt to save invalid streaming swap", "txid", swp.TxID, "error", err)
+		return
+	}
 	k.setStreamingSwap(ctx, k.GetKey(prefixStreamingSwap, swp.TxID.String()), swp)
 }
 
-// RemoveStreamingSwap remove the loan to kv store
+// RemoveStreamingSwap remove the streaming swap from kv store
 func (k KVStore) RemoveStreamingSwap(ctx cosmos.Context, hash common.TxID) {
 	k.del(ctx, k.GetKey(prefixStreamingSwap, hash.String()))
 }

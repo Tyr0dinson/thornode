@@ -1,6 +1,11 @@
 package main
 
 import (
+	crypto_rand "crypto/rand"
+	"encoding/hex"
+	"io"
+	"math/big"
+	"math/rand/v2"
 	"net/http"
 	"os"
 	"strconv"
@@ -12,19 +17,19 @@ import (
 	"github.com/rs/zerolog/log"
 	"golang.org/x/term"
 
-	prefix "gitlab.com/thorchain/thornode/v3/cmd"
 	"gitlab.com/thorchain/thornode/v3/common"
-	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/actors/core"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/actors/features"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/actors/suites"
-	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/ada"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/cli"
 	pkgcosmos "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/cosmos"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/dag"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/evm"
+	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/solana"
+	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/tron"
 	. "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/utxo"
+	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/xrp"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/watchers"
 )
 
@@ -37,17 +42,18 @@ const (
 )
 
 var liteClientConstructors = map[common.Chain]LiteChainClientConstructor{
-	common.BTCChain:  utxo.NewConstructor(chainRPCs[common.BTCChain]),
-	common.LTCChain:  utxo.NewConstructor(chainRPCs[common.LTCChain]),
-	common.BCHChain:  utxo.NewConstructor(chainRPCs[common.BCHChain]),
-	common.DOGEChain: utxo.NewConstructor(chainRPCs[common.DOGEChain]),
-	common.ETHChain:  evm.NewConstructor(chainRPCs[common.ETHChain]),
-	common.AVAXChain: evm.NewConstructor(chainRPCs[common.AVAXChain]),
-	common.GAIAChain: pkgcosmos.NewConstructor(chainRPCs[common.GAIAChain]),
-	common.BASEChain: evm.NewConstructor(chainRPCs[common.BASEChain]),
-	// common.XRPChain:  xrp.NewConstructor(chainRPCs[common.XRPChain]),
-	// common.SOLChain:  solana.NewConstructor(chainRPCs[common.SOLChain]),
-	common.ADAChain: ada.NewConstructor(chainRPCs[common.ADAChain]),
+	common.BTCChain:   utxo.NewConstructor(chainRPCs[common.BTCChain]),
+	common.LTCChain:   utxo.NewConstructor(chainRPCs[common.LTCChain]),
+	common.BCHChain:   utxo.NewConstructor(chainRPCs[common.BCHChain]),
+	common.DOGEChain:  utxo.NewConstructor(chainRPCs[common.DOGEChain]),
+	common.ETHChain:   evm.NewConstructor(chainRPCs[common.ETHChain]),
+	common.AVAXChain:  evm.NewConstructor(chainRPCs[common.AVAXChain]),
+	common.GAIAChain:  pkgcosmos.NewConstructor(chainRPCs[common.GAIAChain]),
+	common.BASEChain:  evm.NewConstructor(chainRPCs[common.BASEChain]),
+	common.TRONChain:  tron.NewConstructor(chainRPCs[common.TRONChain]),
+	common.XRPChain:   xrp.NewConstructor(chainRPCs[common.XRPChain]),
+	common.NOBLEChain: pkgcosmos.NewConstructor(chainRPCs[common.NOBLEChain]),
+	common.SOLChain:   solana.NewConstructor(chainRPCs[common.SOLChain]),
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -59,15 +65,6 @@ func init() {
 		Out:        os.Stdout,
 		TimeFormat: time.TimeOnly,
 	}).With().Caller().Logger()
-
-	// init prefixes
-	ccfg := cosmos.GetConfig()
-	ccfg.SetBech32PrefixForAccount(prefix.Bech32PrefixAccAddr, prefix.Bech32PrefixAccPub)
-	ccfg.SetBech32PrefixForValidator(prefix.Bech32PrefixValAddr, prefix.Bech32PrefixValPub)
-	ccfg.SetBech32PrefixForConsensusNode(prefix.Bech32PrefixConsAddr, prefix.Bech32PrefixConsPub)
-	ccfg.SetCoinType(prefix.THORChainCoinType)
-	ccfg.SetPurpose(prefix.THORChainCoinPurpose)
-	ccfg.Seal()
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -80,9 +77,13 @@ func main() {
 	stages := []cli.Option{
 		{Name: "seed", Default: true},
 		{Name: "bootstrap", Default: true},
-		{Name: "consolidate", Default: true},
 		{Name: "arb", Default: true},
 		{Name: "swaps", Default: true},
+		{Name: "memoless-swaps", Default: true},
+		{Name: "consolidate", Default: true},
+		{Name: "churn", Default: false},
+		{Name: "inactive-vault-refunds", Default: false},
+		{Name: "solvency", Default: true},
 		{Name: "ragnarok", Default: true},
 	}
 	if os.Getenv("STAGES") != "" {
@@ -114,18 +115,62 @@ func main() {
 		time.Sleep(time.Second)
 	}
 
-	// combine all actor dags for the complete test run
-	root := NewActor("Root")
+	// wait for tron chain to produce its first block
+	for {
+		res, err := http.Post(
+			"http://localhost:8090/wallet/getblockbynum",
+			"application/json",
+			strings.NewReader(`{"num":1}`),
+		)
 
-	appendIfEnabled := func(key string, constructor func() *Actor) {
-		if enabledStages[key] {
-			root.Append(constructor())
+		if err == nil && res.StatusCode == 200 {
+			defer res.Body.Close()
+
+			data, err := io.ReadAll(res.Body)
+			if err == nil && len(data) > 3 {
+				break
+			}
+		}
+
+		log.Info().Msg("waiting for tron to be ready")
+		time.Sleep(time.Second)
+	}
+
+	var randSeed [32]byte
+	randSeedHex := os.Getenv("RANDOM_SEED_HEX")
+	if randSeedHex == "" {
+		_, err := io.ReadFull(crypto_rand.Reader, randSeed[:])
+		if err != nil {
+			log.Fatal().Err(err).Msg("failed to generate random seed")
+		}
+	} else {
+		randSeedBytes, err := hex.DecodeString(randSeedHex)
+		if err != nil || len(randSeedBytes) > 32 {
+			log.Fatal().Err(err).Msg("failed to parse RANDOM_SEED_HEX")
+		}
+		for byte_idx, byte_value := range randSeedBytes {
+			randSeed[32-len(randSeedBytes)+byte_idx] = byte_value
+		}
+	}
+	log.Info().Msgf("Random seed set to `%s`", new(big.Int).SetBytes(randSeed[:]).Text(16))
+	rng := rand.New(rand.NewChaCha8(randSeed))
+
+	// combine all actor dags for the complete test run
+	root := NewActor("Root", rng)
+
+	appendIfEnabled := func(key string, constructor func(rng *rand.Rand) *Actor) {
+		if enabledStages[key] || enabledStages["all"] {
+			root.Append(constructor(rng))
 		}
 	}
 	appendIfEnabled("bootstrap", suites.Bootstrap)
-	appendIfEnabled("consolidate", features.Consolidate)
 	appendIfEnabled("arb", core.NewArbActor)
 	appendIfEnabled("swaps", suites.Swaps)
+	appendIfEnabled("memoless-swaps", suites.MemolessSwaps)
+	appendIfEnabled("consolidate", features.Consolidate)
+	appendIfEnabled("churn", core.NewChurnActor)
+	appendIfEnabled("inactive-vault-refunds", features.InactiveVaultRefunds)
+	appendIfEnabled("solvency", core.NewSolvencyCheckActor)
 	appendIfEnabled("ragnarok", suites.Ragnarok)
 
 	// gather config from the environment
@@ -138,10 +183,15 @@ func main() {
 		log.Fatal().Err(err).Msg("failed to parse PARALLELISM")
 	}
 
-	cfg := InitConfig(parallelismInt, enabledStages["seed"])
+	cfg := InitConfig(parallelismInt, enabledStages["seed"] || enabledStages["all"], rng)
 
 	// start watchers
-	for _, w := range []*Watcher{watchers.NewInvariants()} {
+	enabledWatchers := []*Watcher{
+		watchers.NewInvariants(),
+		watchers.NewSolvencyHalt(),
+		watchers.NewSecurityEvents(),
+	}
+	for _, w := range enabledWatchers {
 		log.Info().Str("watcher", w.Name).Msg("starting watcher")
 		go func(w *Watcher) {
 			err = w.Execute(cfg, log.Output(os.Stderr))
@@ -152,5 +202,5 @@ func main() {
 	}
 
 	// run the simulation
-	dag.Execute(cfg, root, parallelismInt)
+	dag.Execute(cfg, root, parallelismInt, rng)
 }

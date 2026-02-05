@@ -48,6 +48,10 @@ func (m *mockThorchainBridge) FetchActiveNodes() ([]common.PubKey, error) {
 	return m.activeNodes, nil
 }
 
+func (m *mockThorchainBridge) GetMimir(key string) (int64, error) {
+	return 0, nil
+}
+
 // Create a local gRPC server
 func createLocalGrpcServer(c *C, eb *ebifrost.EnshrinedBifrost, port int) (*grpc.Server, string) {
 	addr := fmt.Sprintf("localhost:%d", port)
@@ -143,23 +147,24 @@ func (s *ObserverSuite) TestAttestedTxWorkflow(c *C) {
 		c.Assert(err, IsNil)
 
 		defer func() {
-			err := comm.Stop()
-			c.Assert(err, IsNil)
+			stopErr := comm.Stop()
+			c.Assert(stopErr, IsNil)
 		}()
 
 		// Create attestation gossip manually with the bifrost client
-		ag, err := NewAttestationGossip(comm.GetHost(), keys, grpcAddresses[i], mockBridge, config.BifrostAttestationGossipConfig{
+		ag, err := NewAttestationGossip(comm.GetHost(), keys, grpcAddresses[i], mockBridge, s.metrics, config.BifrostAttestationGossipConfig{
 			ObserveReconcileInterval:   time.Second * 1,
 			MinTimeBetweenAttestations: time.Second * 2,
 			LateObserveTimeout:         time.Second * 4,
 			AskPeers:                   3,
-			AskPeersDelay:              time.Second * 1,
+			AskPeersDelay:              time.Hour * 1, // don't ask peers during this test
+			PeerTimeout:                time.Second * 20,
+			MaxBatchSize:               100,
+			BatchInterval:              time.Millisecond * 200,
+			PeerConcurrentSends:        4,
+			PeerConcurrentReceives:     5,
 		})
 		c.Assert(err, IsNil)
-
-		ag.setActiveValidators(validatorPubs)
-
-		go ag.Start(ctx)
 
 		// Create pubkey manager
 		pubkeyMgr, err := pubkeymanager.NewPubKeyManager(mockBridge, s.metrics)
@@ -175,6 +180,7 @@ func (s *ObserverSuite) TestAttestedTxWorkflow(c *C) {
 			"",
 			metrics.NewTssKeysignMetricMgr(),
 			ag,
+			"",
 		)
 		c.Assert(err, IsNil)
 
@@ -225,6 +231,23 @@ func (s *ObserverSuite) TestAttestedTxWorkflow(c *C) {
 
 	logger.Info().Msg("All validators connected")
 
+	// Set active validators for all attestation gossips using actual host peer IDs
+	hostPeerIDs := make([]peer.ID, len(hosts))
+	for i, host := range hosts {
+		hostPeerIDs[i] = host.GetHost().ID()
+	}
+
+	// Set active validators for each attestation gossip instance
+	for _, ag := range attestationGossips {
+		ag.avMu.Lock()
+		activePeers := make(map[peer.ID]bool)
+		for _, peerID := range hostPeerIDs {
+			activePeers[peerID] = true
+		}
+		ag.activeVals = activePeers
+		ag.avMu.Unlock()
+	}
+
 	// Start all observers
 	for _, obs := range observers {
 		go func() {
@@ -268,19 +291,35 @@ func (s *ObserverSuite) TestAttestedTxWorkflow(c *C) {
 
 	// Check that enshrined bifrost has the tx cached
 	for _, eb := range ebs {
-		c.Assert(len(eb.ProposalInjectTxs(sdk.Context{})), Equals, 0) // No txs yet, need quorum
+		txs, _ := eb.ProposalInjectTxs(sdk.Context{}, 10000000)
+		c.Assert(len(txs), Equals, 0) // No txs yet, need quorum
 	}
 
-	for _, atg := range attestationGossips {
-		atg.mu.Lock()
-		c.Assert(len(atg.observedTxs), Equals, 1)
-		ots, ok := atg.observedTxs[txKey{Chain: common.BTCChain, ID: testTx.Tx.ID, UniqueHash: testTx.Tx.Hash(1), Finalized: false, Inbound: true}]
-		c.Assert(ok, Equals, true)            // Should have the tx in the observed txs map
-		ots.mu.Lock()                         // Should have the tx in the observed txs map
-		c.Assert(ots.attestations, HasLen, 1) // Should have an attestation
-		ots.mu.Unlock()
-		atg.mu.Unlock()
-	}
+	// Wait for the first validator to have the transaction ready
+	pollForCondition(c, "all validators have the gossipped attestation of the first validator", func() bool {
+		for _, atg := range attestationGossips {
+			atg.mu.Lock()
+			if len(atg.observedTxs) != 1 {
+				atg.mu.Unlock()
+				return false
+			}
+			ots, ok := atg.observedTxs[txKey{Chain: common.BTCChain, ID: testTx.Tx.ID, UniqueHash: testTx.Tx.Hash(1), Finalized: false, Inbound: true}]
+			if !ok {
+				atg.mu.Unlock()
+				return false
+			}
+			ots.mu.Lock() // Should have the tx in the observed txs map
+			if len(ots.attestations) != 1 {
+				ots.mu.Unlock()
+				atg.mu.Unlock()
+				return false
+			}
+			ots.mu.Unlock()
+			atg.mu.Unlock()
+		}
+
+		return true
+	}, 10*time.Second, 100*time.Millisecond)
 
 	// Have the rest of the validators attest
 	for i := 1; i < len(validatorKeys); i++ {
@@ -290,8 +329,17 @@ func (s *ObserverSuite) TestAttestedTxWorkflow(c *C) {
 
 	logger.Info().Msg("Remaining validators attested")
 
-	// Wait for gossip to propagate
-	time.Sleep(time.Millisecond * 500)
+	// Wait for all enshrined bifrosts to have the transaction ready
+	pollForCondition(c, "all validators to have transaction ready", func() bool {
+		for i, eb := range ebs {
+			injectTxs, _ := eb.ProposalInjectTxs(sdk.Context{}, 10000000)
+			if len(injectTxs) != 1 {
+				logger.Info().Msgf("Validator %d: Has %d transactions ready (waiting for 1)", i, len(injectTxs))
+				return false
+			}
+		}
+		return true
+	}, 10*time.Second, 100*time.Millisecond)
 
 	// for _, atg := range attestationGossips {
 	// 	atg.mu.Lock()
@@ -311,8 +359,8 @@ func (s *ObserverSuite) TestAttestedTxWorkflow(c *C) {
 	// Each validator should have the transaction ready since they all participated in attestation
 	var injectedTxQuorum *stypes.MsgObservedTxQuorum
 	for i, eb := range ebs {
-		injectTxs := eb.ProposalInjectTxs(sdk.Context{})
-		c.Assert(len(injectTxs), Equals, 1, Commentf("Validator %d: Expected 1 tx to be ready for injection", i))
+		injectTxs, _ := eb.ProposalInjectTxs(sdk.Context{}, 10000000)
+		c.Assert(len(injectTxs), Equals, 1, Commentf("Validator %d: Expected 1 tx to be ready for injection", i)) // fails here
 		if i == 0 {
 			msgs, err := eb.GetInjectedMsgs(sdk.Context{}, injectTxs)
 			c.Assert(err, IsNil)
@@ -341,19 +389,19 @@ func (s *ObserverSuite) TestAttestedTxWorkflow(c *C) {
 	ebs[0].MarkQuorumTxAttestationsConfirmed(sdkCtx, injectedTxQuorum.QuoTx)
 
 	// Check that tx was removed from that validator's injection queue
-	injectTxsAfterMark := ebs[0].ProposalInjectTxs(sdk.Context{})
+	injectTxsAfterMark, _ := ebs[0].ProposalInjectTxs(sdk.Context{}, 10000000)
 	c.Assert(len(injectTxsAfterMark), Equals, 0, Commentf("Expected 0 txs after marking as confirmed"))
 
 	// Other validators should still have the tx in their queue
 	for i := 1; i < len(ebs); i++ {
-		injectTxs := ebs[i].ProposalInjectTxs(sdk.Context{})
+		injectTxs, _ := ebs[i].ProposalInjectTxs(sdk.Context{}, 10000000)
 		c.Assert(len(injectTxs), Equals, 1, Commentf("Validator %d: Should still have tx in queue", i))
 
 		// Now clear from the other validators too
 		ebs[i].MarkQuorumTxAttestationsConfirmed(sdkCtx, injectedTxQuorum.QuoTx)
 
 		// Verify it's cleared
-		injectTxsAfterMark = ebs[i].ProposalInjectTxs(sdk.Context{})
+		injectTxsAfterMark, _ = ebs[i].ProposalInjectTxs(sdk.Context{}, 10000000)
 		c.Assert(len(injectTxsAfterMark), Equals, 0, Commentf("Validator %d: Expected 0 txs after marking as confirmed", i))
 	}
 
@@ -365,6 +413,18 @@ func (s *ObserverSuite) TestAttestedTxWorkflow(c *C) {
 		c.Assert(len(atg.observedTxs), Equals, 0)
 		atg.mu.Unlock()
 	}
+}
+
+// Helper function to poll for a condition with timeout
+func pollForCondition(c *C, description string, condition func() bool, maxWait, pollInterval time.Duration) {
+	deadline := time.Now().Add(maxWait)
+	for time.Now().Before(deadline) {
+		if condition() {
+			return
+		}
+		time.Sleep(pollInterval)
+	}
+	c.Fatalf("Timed out waiting for %s after %v", description, maxWait)
 }
 
 // Mock chain client for testing
@@ -413,6 +473,10 @@ func (m *mockChainClient) GetAddress(common.PubKey) string {
 
 func (m *mockChainClient) GetBlockScannerHeight() (int64, error) {
 	return 0, nil
+}
+
+func (m *mockChainClient) RollbackBlockScanner() error {
+	return nil
 }
 
 func (m *mockChainClient) GetConfig() config.BifrostChainConfiguration {

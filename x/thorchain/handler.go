@@ -10,11 +10,17 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/common/tokenlist"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 // MsgHandler is an interface expect all handler to implement
 type MsgHandler interface {
 	Run(ctx cosmos.Context, msg cosmos.Msg) (*cosmos.Result, error)
+}
+
+// SwapHandlerWithEmit is a specialized interface for handlers that need to return emit values
+type SwapHandlerWithEmit interface {
+	RunWithEmit(ctx cosmos.Context, msg cosmos.Msg) (*cosmos.Result, cosmos.Uint, error)
 }
 
 // NewInternalHandler returns a handler for "thorchain" internal type messages.
@@ -50,7 +56,9 @@ func getInternalHandlerMapping(mgr Manager) map[string]MsgHandler {
 	m[sdk.MsgTypeURL(&MsgReserveContributor{})] = NewReserveContributorHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgBond{})] = NewBondHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgUnBond{})] = NewUnBondHandler(mgr)
+	m[sdk.MsgTypeURL(&MsgReBond{})] = NewReBondHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgLeave{})] = NewLeaveHandler(mgr)
+	m[sdk.MsgTypeURL(&MsgMaint{})] = NewMaintHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgDonate{})] = NewDonateHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgWithdrawLiquidity{})] = NewWithdrawLiquidityHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgAddLiquidity{})] = NewAddLiquidityHandler(mgr)
@@ -60,27 +68,39 @@ func getInternalHandlerMapping(mgr Manager) map[string]MsgHandler {
 	m[sdk.MsgTypeURL(&MsgNoOp{})] = NewNoOpHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgConsolidate{})] = NewConsolidateHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgManageTHORName{})] = NewManageTHORNameHandler(mgr)
-	m[sdk.MsgTypeURL(&MsgLoanOpen{})] = NewLoanOpenHandler(mgr)
-	m[sdk.MsgTypeURL(&MsgLoanRepayment{})] = NewLoanRepaymentHandler(mgr)
+	m[sdk.MsgTypeURL(&MsgReferenceMemo{})] = NewReferenceMemoHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgTradeAccountDeposit{})] = NewTradeAccountDepositHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgTradeAccountWithdrawal{})] = NewTradeAccountWithdrawalHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgSecuredAssetDeposit{})] = NewSecuredAssetDepositHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgSecuredAssetWithdraw{})] = NewSecuredAssetWithdrawHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgRunePoolDeposit{})] = NewRunePoolDepositHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgRunePoolWithdraw{})] = NewRunePoolWithdrawHandler(mgr)
+	m[sdk.MsgTypeURL(&MsgModifyLimitSwap{})] = NewModifyLimitSwapHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgWasmExec{})] = NewWasmExecHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgSwitch{})] = NewSwitchHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgTCYClaim{})] = NewTCYClaimHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgTCYStake{})] = NewTCYStakeHandler(mgr)
 	m[sdk.MsgTypeURL(&MsgTCYUnstake{})] = NewTCYUnstakeHandler(mgr)
+	m[sdk.MsgTypeURL(&MsgOperatorRotate{})] = NewOperatorRotateHandler(mgr)
 	return m
 }
 
-func getMsgSwapFromMemo(memo SwapMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
+func getMsgSwapFromMemo(ctx cosmos.Context, keeper keeper.Keeper, memo SwapMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
 	if memo.Destination.IsEmpty() {
 		memo.Destination = tx.Tx.FromAddress
 	}
-	return NewMsgSwap(tx.Tx, memo.GetAsset(), memo.Destination, memo.SlipLimit, memo.AffiliateAddress, memo.AffiliateBasisPoints, memo.GetDexAggregator(), memo.GetDexTargetAddress(), memo.GetDexTargetLimit(), memo.GetOrderType(), memo.GetStreamQuantity(), memo.GetStreamInterval(), signer), nil
+
+	// Determine version based on configuration
+	version := types.SwapVersion_v1
+	if keeper.AdvSwapQueueEnabled(ctx) {
+		version = types.SwapVersion_v2
+	}
+
+	return NewMsgSwap(tx.Tx, memo.GetAsset(), memo.Destination, memo.SlipLimit, memo.AffiliateAddress, memo.AffiliateBasisPoints, memo.GetDexAggregator(), memo.GetDexTargetAddress(), memo.GetDexTargetLimit(), memo.GetSwapType(), memo.GetStreamQuantity(), memo.GetStreamInterval(), version, signer), nil
+}
+
+func getMsgReferenceMemo(memo ReferenceWriteMemo, signer cosmos.AccAddress) (cosmos.Msg, error) {
+	return NewMsgReferenceMemo(memo.GetAsset(), memo.GetMemo(), signer), nil
 }
 
 func getMsgWithdrawFromMemo(memo WithdrawLiquidityMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
@@ -120,6 +140,17 @@ func getMsgDonateFromMemo(memo DonateMemo, tx ObservedTx, signer cosmos.AccAddre
 	return NewMsgDonate(tx.Tx, memo.GetAsset(), runeCoin.Amount, assetCoin.Amount, signer), nil
 }
 
+func getMsgModifyLimitSwap(memo ModifyLimitSwapMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
+	// Get the deposit asset and amount from the transaction
+	var depositAsset common.Asset
+	var depositAmount cosmos.Uint
+	if len(tx.Tx.Coins) > 0 {
+		depositAsset = tx.Tx.Coins[0].Asset
+		depositAmount = tx.Tx.Coins[0].Amount
+	}
+	return NewMsgModifyLimitSwap(tx.Tx.FromAddress, memo.Source, memo.Target, memo.ModifiedTargetAmount, signer, depositAsset, depositAmount), nil
+}
+
 func getMsgRefundFromMemo(memo RefundMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
 	return NewMsgRefundTx(tx, memo.GetTxID(), signer), nil
 }
@@ -140,15 +171,6 @@ func getMsgLeaveFromMemo(memo LeaveMemo, tx ObservedTx, signer cosmos.AccAddress
 	return NewMsgLeave(tx.Tx, memo.GetAccAddress(), signer), nil
 }
 
-func getMsgLoanOpenFromMemo(ctx cosmos.Context, keeper keeper.Keeper, memo LoanOpenMemo, tx ObservedTx, signer cosmos.AccAddress, txid common.TxID) (cosmos.Msg, error) {
-	memo.TargetAsset = fuzzyAssetMatch(ctx, keeper, memo.TargetAsset)
-	return NewMsgLoanOpen(tx.Tx.FromAddress, tx.Tx.Coins[0].Asset, tx.Tx.Coins[0].Amount, memo.TargetAddress, memo.TargetAsset, memo.GetMinOut(), memo.GetAffiliateAddress(), memo.GetAffiliateBasisPoints(), memo.GetDexAggregator(), memo.GetDexTargetAddress(), memo.DexTargetLimit, signer, txid), nil
-}
-
-func getMsgLoanRepaymentFromMemo(memo LoanRepaymentMemo, from common.Address, coin common.Coin, signer cosmos.AccAddress, txid common.TxID) (cosmos.Msg, error) {
-	return NewMsgLoanRepayment(memo.Owner, memo.Asset, memo.MinOut, from, coin, signer, txid), nil
-}
-
 func getMsgBondFromMemo(memo BondMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
 	coin := tx.Tx.Coins.GetCoin(common.RuneAsset())
 	return NewMsgBond(tx.Tx, memo.GetAccAddress(), coin.Amount, tx.Tx.FromAddress, memo.BondProviderAddress, signer, memo.NodeOperatorFee), nil
@@ -156,6 +178,14 @@ func getMsgBondFromMemo(memo BondMemo, tx ObservedTx, signer cosmos.AccAddress) 
 
 func getMsgUnbondFromMemo(memo UnbondMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
 	return NewMsgUnBond(tx.Tx, memo.GetAccAddress(), memo.GetAmount(), tx.Tx.FromAddress, memo.BondProviderAddress, signer), nil
+}
+
+func getMsgRebondFromMemo(memo RebondMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
+	return NewMsgReBond(tx.Tx, memo.GetNodeAddress(), memo.GetNewProviderAddress(), memo.GetAmount(), signer), nil
+}
+
+func getMsgMaintFromMemo(memo MaintMemo, signer cosmos.AccAddress) (cosmos.Msg, error) {
+	return types.NewMsgMaint(memo.GetAccAddress(), signer), nil
 }
 
 func getMsgManageTHORNameFromMemo(memo ManageTHORNameMemo, tx ObservedTx, signer cosmos.AccAddress) (cosmos.Msg, error) {
@@ -190,7 +220,9 @@ func processOneTxIn(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, sig
 	case SwapMemo:
 		m.Asset = fuzzyAssetMatch(ctx, keeper, m.Asset)
 		m.DexTargetAddress = externalAssetMatch(m.Asset.GetChain(), m.DexTargetAddress)
-		newMsg, err = getMsgSwapFromMemo(m, tx, signer)
+		newMsg, err = getMsgSwapFromMemo(ctx, keeper, m, tx, signer)
+	case ModifyLimitSwapMemo:
+		newMsg, err = getMsgModifyLimitSwap(m, tx, signer)
 	case DonateMemo:
 		m.Asset = fuzzyAssetMatch(ctx, keeper, m.Asset)
 		newMsg, err = getMsgDonateFromMemo(m, tx, signer)
@@ -204,6 +236,8 @@ func processOneTxIn(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, sig
 		newMsg, err = getMsgBondFromMemo(m, tx, signer)
 	case UnbondMemo:
 		newMsg, err = getMsgUnbondFromMemo(m, tx, signer)
+	case RebondMemo:
+		newMsg, err = getMsgRebondFromMemo(m, tx, signer)
 	case RagnarokMemo:
 		newMsg, err = getMsgRagnarokFromMemo(m, tx, signer)
 	case LeaveMemo:
@@ -215,14 +249,10 @@ func processOneTxIn(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, sig
 		newMsg = NewMsgNoOp(tx, signer, m.Action)
 	case ConsolidateMemo:
 		newMsg = NewMsgConsolidate(tx, signer)
+	case ReferenceWriteMemo:
+		newMsg, err = getMsgReferenceMemo(m, signer)
 	case ManageTHORNameMemo:
 		newMsg, err = getMsgManageTHORNameFromMemo(m, tx, signer)
-	case LoanOpenMemo:
-		newMsg, err = getMsgLoanOpenFromMemo(ctx, keeper, m, tx, signer, tx.Tx.ID)
-	case LoanRepaymentMemo:
-		m.Asset = fuzzyAssetMatch(ctx, keeper, m.Asset)
-		from := tx.Tx.FromAddress
-		newMsg, err = getMsgLoanRepaymentFromMemo(m, from, tx.Tx.Coins[0], signer, tx.Tx.ID)
 	case TradeAccountDepositMemo:
 		coin := tx.Tx.Coins[0]
 		newMsg = NewMsgTradeAccountDeposit(coin.Asset, coin.Amount, m.GetAccAddress(), signer, tx.Tx)
@@ -241,7 +271,8 @@ func processOneTxIn(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, sig
 		newMsg = NewMsgRunePoolWithdraw(signer, tx.Tx, m.GetBasisPts(), m.GetAffiliateAddress(), m.GetAffiliateBasisPoints())
 	case ExecMemo:
 		coin := tx.Tx.Coins[0]
-		sender, err := tx.Tx.FromAddress.MappedAccAddress()
+		var sender cosmos.AccAddress
+		sender, err = tx.Tx.FromAddress.MappedAccAddress()
 		if err != nil {
 			return nil, err
 		}
@@ -255,6 +286,10 @@ func processOneTxIn(ctx cosmos.Context, keeper keeper.Keeper, tx ObservedTx, sig
 		newMsg = NewMsgTCYStake(tx.Tx, signer)
 	case TCYUnstakeMemo:
 		newMsg = NewMsgTCYUnstake(tx.Tx, m.BasisPoints, signer)
+	case MaintMemo:
+		newMsg, err = getMsgMaintFromMemo(m, signer)
+	case OperatorRotateMemo:
+		newMsg = NewMsgOperatorRotate(signer, m.OperatorAddress, tx.Tx.Coins[0])
 	default:
 		return nil, errInvalidMemo
 	}

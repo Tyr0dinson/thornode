@@ -2,6 +2,7 @@ package util
 
 import (
 	"fmt"
+	"math/big"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -12,6 +13,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	"gitlab.com/thorchain/thornode/v3/constants"
 	openapi "gitlab.com/thorchain/thornode/v3/openapi/gen"
 	"gitlab.com/thorchain/thornode/v3/tools/events/pkg/config"
 )
@@ -112,6 +114,7 @@ func FormatLocale[T int | uint | int64 | uint64 | float64](n T) string {
 
 func FormatUSD(value float64) string {
 	negative := false
+	// analyze-ignore(float-comparison)
 	if value < 0 {
 		negative = true
 		value = -value
@@ -128,6 +131,78 @@ func FormatUSD(value float64) string {
 func Moneybags(usdValue uint64) string {
 	count := int(usdValue / config.Get().Styles.USDPerMoneyBag)
 	return strings.Repeat(config.EmojiMoneybag, count)
+}
+
+////////////////////////////////////////////////////////////////////////////////////////
+// Rune Value
+////////////////////////////////////////////////////////////////////////////////////////
+
+func RuneValue(height int64, coin common.Coin) float64 {
+	if coin.IsRune() {
+		amt, _ := new(big.Float).Quo(
+			new(big.Float).SetInt(coin.Amount.BigInt()),
+			big.NewFloat(common.One),
+		).Float64()
+		return amt
+
+	}
+
+	if coin.Asset.Equals(common.TOR) {
+		network := openapi.NetworkResponse{}
+		err := ThornodeCachedRetryGet("thorchain/network", height, &network)
+		if err != nil {
+			log.Panic().Err(err).Msg("failed to get network")
+		}
+
+		price, err := strconv.ParseFloat(network.TorPriceInRune, 64)
+		if err != nil {
+			log.Panic().Err(err).Msg("failed to parse network rune price")
+		}
+
+		amt, _ := new(big.Float).Quo(
+			new(big.Float).SetInt(coin.Amount.BigInt()),
+			big.NewFloat(common.One),
+		).Float64()
+		pr, _ := new(big.Float).Quo(
+			big.NewFloat(price),
+			big.NewFloat(common.One),
+		).Float64()
+		return amt * pr
+	}
+
+	// get pools response
+	pools := []openapi.Pool{}
+	err := ThornodeCachedRetryGet("thorchain/pools", height, &pools)
+	if err != nil {
+		log.Panic().Err(err).Msg("failed to get pools")
+	}
+
+	// find pool and convert value
+	asset := coin.Asset.GetLayer1Asset()
+	if asset.IsDerivedAsset() {
+		asset.Chain = common.Chain(asset.Symbol)
+	}
+	for _, pool := range pools {
+		if pool.Asset != asset.GetLayer1Asset().String() {
+			continue
+		}
+		runeBalance := cosmos.NewUintFromString(pool.BalanceRune)
+		assetBalance := cosmos.NewUintFromString(pool.BalanceAsset)
+
+		runePerAsset := new(big.Float).Quo(
+			new(big.Float).SetInt(runeBalance.BigInt()),
+			new(big.Float).SetInt(assetBalance.BigInt()),
+		)
+		amountFloat := new(big.Float).Mul(
+			new(big.Float).SetInt(coin.Amount.BigInt()),
+			runePerAsset,
+		)
+		amountRuneFloat, _ := amountFloat.Quo(amountFloat, big.NewFloat(common.One)).Float64()
+		return amountRuneFloat
+	}
+
+	log.Error().Str("asset", asset.String()).Msg("failed to find pool")
+	return 0
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -244,4 +319,23 @@ func IsThorchainModule(address string) bool {
 		"sthor1v8ppstuf6e3x0r4glqc68d5jqcs2tf38v3kkv6": true,
 	}
 	return thorchainModulesAddresses[address]
+}
+
+////////////////////////////////////////////////////////////////////////////////////////
+// Config
+////////////////////////////////////////////////////////////////////////////////////////
+
+// GetConfigInt64 mirrors the thornode GetConfigInt64 function to first lookup the
+// corresponding mimir value, and fallback to the constant value.
+func GetConfigInt64(height int64, key constants.ConstantName) int64 {
+	mimir := map[string]int64{}
+	err := ThornodeCachedRetryGet("thorchain/mimir", height, &mimir)
+	if err != nil {
+		log.Panic().Err(err).Msg("failed to get mimirs")
+	}
+	value, ok := mimir[strings.ToUpper(key.String())]
+	if ok {
+		return value
+	}
+	return constants.NewConstantValue().GetInt64Value(key)
 }

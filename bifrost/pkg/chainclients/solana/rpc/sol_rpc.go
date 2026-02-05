@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"math/big"
 	"net/http"
 	"time"
@@ -38,7 +37,7 @@ func (s *SolRPC) getContext() (context.Context, context.CancelFunc) {
 }
 
 // post - Make a POST request to the Solana RPC
-func (s *SolRPC) post(method string, params interface{}) ([]byte, error) {
+func (s *SolRPC) post(method string, params, response interface{}) error {
 	ctx, cancel := s.getContext()
 	defer cancel()
 
@@ -51,12 +50,12 @@ func (s *SolRPC) post(method string, params interface{}) ([]byte, error) {
 
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request payload: %w", err)
+		return fmt.Errorf("failed to marshal request payload: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", s.host, bytes.NewBuffer(payloadBytes))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return fmt.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -64,20 +63,19 @@ func (s *SolRPC) post(method string, params interface{}) ([]byte, error) {
 	client := &http.Client{Timeout: s.timeout}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to perform request: %w", err)
+		return fmt.Errorf("failed to perform request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("received non-200 response status: %d", resp.StatusCode)
+		return fmt.Errorf("received non-200 response status: %d", resp.StatusCode)
 	}
 
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+	// stream the response body to json unmarshal directly into the response struct
+	if err := json.NewDecoder(resp.Body).Decode(response); err != nil {
+		return fmt.Errorf("failed to decode response: %w", err)
 	}
-
-	return respBody, nil
+	return nil // return nil error if response is successfully decoded
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -86,10 +84,6 @@ func (s *SolRPC) post(method string, params interface{}) ([]byte, error) {
 
 func (s *SolRPC) GetLatestBlockhash() (string, error) {
 	params := []interface{}{}
-	respBody, err := s.post("getLatestBlockhash", params)
-	if err != nil {
-		return "", fmt.Errorf("failed to call getLatestBlockhash: %w", err)
-	}
 
 	var result struct {
 		Result struct {
@@ -98,8 +92,8 @@ func (s *SolRPC) GetLatestBlockhash() (string, error) {
 			} `json:"value"`
 		} `json:"result"`
 	}
-	if err := json.Unmarshal(respBody, &result); err != nil {
-		return "", fmt.Errorf("failed to unmarshal response: %w", err)
+	if err := s.post("getLatestBlockhash", params, &result); err != nil {
+		return "", fmt.Errorf("failed to call getLatestBlockhash: %w", err)
 	}
 
 	return result.Result.Value.Blockhash, nil
@@ -114,21 +108,14 @@ func (s *SolRPC) GetBalance(address, commitment string, minSlot uint64) (*big.In
 		address,
 		additionalParams,
 	}
-	respBody, err := s.post("getBalance", params)
-	if err != nil {
-		return nil, fmt.Errorf("failed to call getBalance: %w", err)
-	}
 
-	// First unmarshal to get the value as a string or number
 	var result struct {
 		Result struct {
-			Value json.Number `json:"value"`
+			Value json.Number `json:"value"` // Use json.Number to handle the numeric value without precision loss
 		} `json:"result"`
 	}
-
-	// Use json.Number to handle the numeric value without precision loss
-	if err := json.Unmarshal(respBody, &result); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	if err := s.post("getBalance", params, &result); err != nil {
+		return nil, fmt.Errorf("failed to call getBalance: %w", err)
 	}
 
 	// Convert the json.Number to *big.Int
@@ -142,10 +129,6 @@ func (s *SolRPC) GetBalance(address, commitment string, minSlot uint64) (*big.In
 
 func (s *SolRPC) BroadcastTx(rawTx string) (string, error) {
 	params := []interface{}{rawTx, map[string]interface{}{"encoding": "base64"}}
-	respBody, err := s.post("sendTransaction", params)
-	if err != nil {
-		return "", fmt.Errorf("failed to sendTransaction: %w", err)
-	}
 
 	var response struct {
 		Result string `json:"result"`
@@ -154,14 +137,13 @@ func (s *SolRPC) BroadcastTx(rawTx string) (string, error) {
 			Message string `json:"message"`
 		} `json:"error,omitempty"`
 	}
-	if err := json.Unmarshal(respBody, &response); err != nil {
-		return "", fmt.Errorf("failed to unmarshal sendTransaction response: %w", err)
+	if err := s.post("sendTransaction", params, &response); err != nil {
+		return "", fmt.Errorf("failed to sendTransaction: %w", err)
 	}
+
 	if response.Error.Message != "" {
 		return "", fmt.Errorf("sendTransaction error: %s (code: %d)", response.Error.Message, response.Error.Code)
 	}
-
-	fmt.Println("response", response)
 
 	return response.Result, nil
 }

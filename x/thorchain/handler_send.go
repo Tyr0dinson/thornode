@@ -3,6 +3,7 @@ package thorchain
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	math "cosmossdk.io/math"
 	"github.com/blang/semver"
@@ -66,9 +67,9 @@ func NewSendHandler(mgr Manager) BaseHandler[sdk.Msg] {
 		mgr:    mgr,
 		logger: MsgSendLogger,
 		validators: NewValidators[sdk.Msg]().
-			Register("3.0.0", MsgSendValidateV3_0_0),
+			Register("3.0.0", MsgSendValidate),
 		handlers: NewHandlers[sdk.Msg]().
-			Register("3.0.0", MsgSendHandleV3_0_0),
+			Register("3.0.0", MsgSendHandle),
 	}
 }
 
@@ -117,7 +118,11 @@ func getDeposit(ctx cosmos.Context, fromAddress sdk.AccAddress, sdkCoins sdk.Coi
 	}
 	coins := make(common.Coins, len(sdkCoins))
 	for i, coin := range sdkCoins {
-		asset, err := common.NewAsset(coin.Denom)
+		asset, err := common.NewAsset(
+			// Strip x/denom denom string prefix to force asset.NewAsset
+			// to interpret custom denom strings as native assets
+			strings.TrimPrefix(coin.Denom, "x/"),
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -141,7 +146,7 @@ func SendAnteHandler(ctx cosmos.Context, v semver.Version, k keeper.Keeper, m sd
 	return ctx, k.DeductNativeTxFeeFromAccount(ctx, msg.GetSigners()[0])
 }
 
-func MsgSendValidateV3_0_0(ctx cosmos.Context, mgr Manager, m sdk.Msg) error {
+func MsgSendValidate(ctx cosmos.Context, mgr Manager, m sdk.Msg) error {
 	msg, err := getThorSend(m)
 	if err != nil {
 		return err
@@ -174,7 +179,7 @@ func MsgSendValidateV3_0_0(ctx cosmos.Context, mgr Manager, m sdk.Msg) error {
 	return nil
 }
 
-func MsgSendHandleV3_0_0(ctx cosmos.Context, mgr Manager, m sdk.Msg) (*cosmos.Result, error) {
+func MsgSendHandle(ctx cosmos.Context, mgr Manager, m sdk.Msg) (*cosmos.Result, error) {
 	msg, err := getThorSend(m)
 	if err != nil {
 		return nil, err
@@ -194,7 +199,7 @@ func MsgSendHandleV3_0_0(ctx cosmos.Context, mgr Manager, m sdk.Msg) (*cosmos.Re
 			return nil, err
 		}
 
-		return NewDepositHandler(mgr).handle(ctx, *msgDeposit)
+		return NewDepositHandler(mgr).handle(ctx, *msgDeposit, 0)
 	} else if err := k.SendCoins(ctx, msg.FromAddress, msg.ToAddress, msg.Amount); err != nil {
 		return nil, err
 	}

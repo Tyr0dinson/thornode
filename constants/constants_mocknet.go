@@ -9,7 +9,10 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
+
+var ThorchainBlockTime = time.Second
 
 func camelToSnakeUpper(s string) string {
 	re := regexp.MustCompile(`([a-z0-9])([A-Z])|([A-Z]+)([A-Z][a-z])`)
@@ -21,27 +24,33 @@ func init() {
 	int64Overrides = map[ConstantName]int64{
 		// ArtificialRagnarokBlockHeight: 200,
 		DesiredValidatorSet:                 12,
-		ChurnInterval:                       180, // 5 min
-		ChurnRetryInterval:                  90,
+		ChurnInterval:                       60,
+		ChurnRetryInterval:                  30,
 		MinimumBondInRune:                   100_000_000, // 1 rune
+		MemolessTxnTTL:                      100,
+		MemolessTxnMaxUse:                   5, // higher limit for testing
+		EnableMemolessOutbound:              1, // Enable memoless outbound for mocknet testing
 		ValidatorMaxRewardRatio:             3,
-		FundMigrationInterval:               120,
+		FundMigrationInterval:               15,
 		LiquidityLockUpBlocks:               0,
 		MaxRuneSupply:                       500_000_000_00000000,
-		JailTimeKeygen:                      30,
-		JailTimeKeysign:                     30,
+		JailTimeKeygen:                      10,
+		JailTimeKeysign:                     10,
 		AsgardSize:                          6,
 		StreamingSwapMinBPFee:               100, // TODO: remove on hard fork
+		EnableAdvSwapQueue:                  1,
+		AdvSwapQueueRapidSwapMax:            1, // For testing rapid swaps
 		VirtualMultSynthsBasisPoints:        20_000,
 		MinTxOutVolumeThreshold:             2000000_00000000,
+		MissingBlockChurnOut:                100,
+		MaxMissingBlockChurnOut:             5,
 		TxOutDelayRate:                      2000000_00000000,
 		MaxSynthPerPoolDepth:                3_500,
 		MaxSynthsForSaversYield:             5000,
-		PauseLoans:                          0,
 		AllowWideBlame:                      1,
 		TargetOutboundFeeSurplusRune:        10_000_00000000,
-		MaxOutboundFeeMultiplierBasisPoints: 20_000,
-		MinOutboundFeeMultiplierBasisPoints: 15_000,
+		MaxOutboundFeeMultiplierBasisPoints: 30_000,
+		MinOutboundFeeMultiplierBasisPoints: 10_00,
 		OperationalVotesMin:                 1, // For regtest single-signer Mimir changes without Admin
 		PreferredAssetOutboundFeeMultiplier: 100,
 		TradeAccountsEnabled:                1,
@@ -51,6 +60,7 @@ func init() {
 		SaversEjectInterval:                 60,
 		SystemIncomeBurnRateBps:             0,
 		DevFundSystemIncomeBps:              0,
+		MarketingFundSystemIncomeBps:        0,
 		TCYStakeSystemIncomeBps:             0,
 		MultipleAffiliatesMaxCount:          5,
 		BankSendEnabled:                     1,
@@ -59,8 +69,9 @@ func init() {
 		StrictBondLiquidityRatio: false,
 	}
 	stringOverrides = map[ConstantName]string{
-		DefaultPoolStatus: "Available",
-		DevFundAddress:    "tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u", // addr_thor_pig in regtest
+		DefaultPoolStatus:    "Available",
+		DevFundAddress:       "tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u", // addr_thor_pig in regtest
+		MarketingFundAddress: "tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u", // same as dev fund in regtest
 	}
 
 	v1Values := NewConstantValue()

@@ -20,6 +20,8 @@ import (
 	"github.com/mr-tron/base58"
 
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+
+	adacommon "github.com/blinklabs-io/gouroboros/ledger/common"
 )
 
 type Address string
@@ -29,9 +31,10 @@ const (
 	NoopAddress     = Address("noop")
 	EVMNullAddress  = Address("0x0000000000000000000000000000000000000000")
 	GaiaZeroAddress = Address("cosmos100000000000000000000000000000000708mjz")
+	// TreasuryAddress is defined in address_treasury_*.go with build tags for network-specific addresses
 )
 
-var alphaNumRegex = regexp.MustCompile("^[:A-Za-z0-9_]*$")
+var alphaNumRegex = regexp.MustCompile("^[:_A-Za-z0-9]*$")
 
 // NewAddress create a new Address. Supports ETH/bech2/BTC/LTC/BCH/DOGE/XRP.
 func NewAddress(address string) (Address, error) {
@@ -41,6 +44,15 @@ func NewAddress(address string) (Address, error) {
 
 	if !alphaNumRegex.MatchString(address) {
 		return NoAddress, fmt.Errorf("address format not supported: %s", address)
+	}
+
+	// Check is tron address
+	if IsValidTRONAddress(address) {
+		return Address(address), nil
+	}
+
+	if IsValidADAAddress(address) {
+		return Address(address), nil
 	}
 
 	// Check is eth address
@@ -78,6 +90,16 @@ func IsValidXRPAddress(address string) bool {
 	return len(decoded) == 21 && decoded[0] == 0x00
 }
 
+func IsValidTRONAddress(address string) bool {
+	if len(address) != 34 || address[:1] != "T" {
+		return false
+	}
+
+	// prefix (1 byte, 0x41) + address (20 bytes) + checksum (4 bytes)
+	decoded, err := base58.Decode(address)
+	return err == nil && len(decoded) == 25 && decoded[0] == 0x41
+}
+
 func IsValidSOLAddress(address string) bool {
 	decoded, err := base58.Decode(address)
 	if err != nil {
@@ -85,6 +107,14 @@ func IsValidSOLAddress(address string) bool {
 	}
 
 	return len(decoded) == 32
+}
+
+func IsValidADAAddress(address string) bool {
+	if !strings.HasPrefix(address, "addr1") && !strings.HasPrefix(address, "addr_test1") {
+		return false
+	}
+	_, err := adacommon.NewAddress(address)
+	return err == nil
 }
 
 // IsValidBCHAddress determinate whether the address is a valid new BCH address format
@@ -240,6 +270,21 @@ func (addr Address) IsChain(chain Chain) bool {
 		return false
 	case SOLChain:
 		return IsValidSOLAddress(addr.String())
+	case ZECChain:
+		// Zcash transparent addresses start with specific prefixes
+		// Mainnet: t1 (P2PKH), t3 (P2SH)
+		// Testnet: tm (P2PKH), tn (P2SH)
+		// Shielded: z (Sapling), u (Unified)
+		addrStr := addr.String()
+		if strings.HasPrefix(addrStr, "t1") || strings.HasPrefix(addrStr, "t3") ||
+			strings.HasPrefix(addrStr, "tm") || strings.HasPrefix(addrStr, "tn") ||
+			strings.HasPrefix(addrStr, "z") || strings.HasPrefix(addrStr, "u") {
+			// Basic length check for addresses
+			return len(addrStr) >= 26 && len(addrStr) <= 95
+		}
+		return false
+	case ADAChain:
+		return IsValidADAAddress(addr.String())
 	default:
 		return true // if THORNode don't specifically check a chain yet, assume its ok.
 	}
@@ -356,6 +401,28 @@ func (addr Address) GetNetwork(chain Chain) ChainNetwork {
 		}
 	case SOLChain:
 		return currentNetwork
+	case ZECChain:
+		// Determine network based on address prefix
+		addrStr := addr.String()
+		if strings.HasPrefix(addrStr, "tm") || strings.HasPrefix(addrStr, "tn") ||
+			strings.HasPrefix(addrStr, "ztestsapling") || strings.HasPrefix(addrStr, "utest") ||
+			strings.HasPrefix(addrStr, "uregtest") {
+			// Testnet addresses
+			return MockNet
+		}
+		// Mainnet addresses: t1, t3, z (Sapling), u (Unified mainnet)
+		if addr.IsChain(ZECChain) {
+			return mainNetPredicate()
+		}
+	case ADAChain:
+		addrStr := addr.String()
+		if strings.HasPrefix(addrStr, "addr1") {
+			return mainNetPredicate()
+		}
+
+		if strings.HasPrefix(addrStr, "addr_test1") {
+			return MockNet
+		}
 	}
 	return currentNetwork
 }

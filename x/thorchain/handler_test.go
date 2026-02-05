@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	sdklog "cosmossdk.io/log"
 	"cosmossdk.io/store"
 	storemetrics "cosmossdk.io/store/metrics"
+	storetypes "cosmossdk.io/store/types"
 	upgradekeeper "cosmossdk.io/x/upgrade/keeper"
 	upgradetypes "cosmossdk.io/x/upgrade/types"
 	tmproto "github.com/cometbft/cometbft/proto/tendermint/types"
@@ -83,7 +85,10 @@ func FundAccount(c *C, ctx cosmos.Context, k keeper.Keeper, addr cosmos.AccAddre
 	c.Assert(err, IsNil)
 }
 
-var keyThorchain = cosmos.NewKVStoreKey(StoreKey)
+var (
+	keyThorchain     = storetypes.NewKVStoreKey(StoreKey)
+	serviceThorchain = runtime.NewKVStoreService(keyThorchain)
+)
 
 func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 	SetupConfigForTest()
@@ -104,6 +109,7 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 
 	ctx := cosmos.NewContext(ms, tmproto.Header{ChainID: "thorchain"}, false, logger())
 	ctx = ctx.WithBlockHeight(18)
+	ctx = ctx.WithBlockTime(time.Now())
 	encodingConfig := testutil.MakeTestEncodingConfig(
 		bank.AppModuleBasic{},
 		auth.AppModuleBasic{},
@@ -144,7 +150,7 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 		runtime.NewKVStoreService(keyWasm),
 		ak, bk,
 		nil, nil, nil, nil, nil, nil, nil, nil, nil, wasmDir,
-		wasmtypes.DefaultWasmConfig(), wasmkeeper.BuiltInCapabilities(),
+		wasmtypes.DefaultNodeConfig(), wasmtypes.VMConfig{}, wasmkeeper.BuiltInCapabilities(),
 		authtypes.NewModuleAddress(ModuleName).String(),
 	)
 
@@ -165,14 +171,14 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 		nil,
 		authtypes.NewModuleAddress(ModuleName).String(),
 	)
-	k := kv1.NewKeeper(encodingConfig.Codec, bk, ak, uk, keyThorchain)
+	k := kv1.NewKeeper(encodingConfig.Codec, serviceThorchain, bk, ak, uk)
 	FundModule(c, ctx, k, ModuleName, 10_000*common.One)
 	FundModule(c, ctx, k, AsgardName, 100_000_000*common.One)
 	FundModule(c, ctx, k, ReserveName, 100_000_000*common.One)
 	c.Assert(k.SaveNetworkFee(ctx, common.ETHChain, NetworkFee{
 		Chain:              common.ETHChain,
 		TransactionSize:    1,
-		TransactionFeeRate: 37500,
+		TransactionFeeRate: 375_000, // 375,000 gwei
 	}), IsNil)
 
 	c.Assert(k.SaveNetworkFee(ctx, common.BTCChain, NetworkFee{
@@ -188,7 +194,7 @@ func setupManagerForTest(c *C) (cosmos.Context, *Mgrs) {
 	}), IsNil)
 
 	os.Setenv("NET", "mocknet")
-	mgr := NewManagers(k, encodingConfig.Codec, bk, ak, uk, wk, keyThorchain)
+	mgr := NewManagers(k, encodingConfig.Codec, serviceThorchain, bk, ak, uk, wk)
 	constants.SWVersion = GetCurrentVersion()
 
 	_, hasVerStored := k.GetVersionWithCtx(ctx)
@@ -272,13 +278,14 @@ func setupKeeperForTest(c *C) (cosmos.Context, keeper.Keeper) {
 		nil,
 		authtypes.NewModuleAddress(ModuleName).String(),
 	)
-	k := kv1.NewKVStore(encodingConfig.Codec, bk, ak, uk, keyThorchain, GetCurrentVersion())
+	k := kv1.NewKVStore(encodingConfig.Codec, serviceThorchain, bk, ak, uk, GetCurrentVersion())
+	FundModule(c, ctx, k, ModuleName, 1000000*common.One)
 	FundModule(c, ctx, k, AsgardName, common.One)
 	FundModule(c, ctx, k, ReserveName, 10000*common.One)
 	err = k.SaveNetworkFee(ctx, common.ETHChain, NetworkFee{
 		Chain:              common.ETHChain,
 		TransactionSize:    1,
-		TransactionFeeRate: 37500,
+		TransactionFeeRate: 375_000, // 375,000 gwei
 	})
 	c.Assert(err, IsNil)
 	err = k.SaveNetworkFee(ctx, common.BTCChain, NetworkFee{
@@ -461,6 +468,7 @@ func (HandlerSuite) TestRefund(c *C) {
 }
 
 func (HandlerSuite) TestGetMsgSwapFromMemo(c *C) {
+	ctx, mgr := setupManagerForTest(c)
 	m, err := ParseMemo(GetCurrentVersion(), "swap:DOGE.DOGE")
 	swapMemo, ok := m.(SwapMemo)
 	c.Assert(ok, Equals, true)
@@ -487,7 +495,7 @@ func (HandlerSuite) TestGetMsgSwapFromMemo(c *C) {
 		common.EmptyPubKey, 1024,
 	)
 
-	resultMsg1, err := getMsgSwapFromMemo(swapMemo, txin, GetRandomBech32Addr())
+	resultMsg1, err := getMsgSwapFromMemo(ctx, mgr.Keeper(), swapMemo, txin, GetRandomBech32Addr())
 	c.Assert(resultMsg1, NotNil)
 	c.Assert(err, IsNil)
 }
@@ -547,6 +555,31 @@ func (HandlerSuite) TestGetMsgUnBondFromMemo(c *C) {
 	c.Assert(msg, NotNil)
 	_, isUnBond := msg.(*MsgUnBond)
 	c.Assert(isUnBond, Equals, true)
+}
+
+func (HandlerSuite) TestGetMsgReBondFromMemo(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, false)
+	tx := GetRandomTx()
+	tx.Coins = common.Coins{
+		common.NewCoin(common.RuneAsset(), cosmos.NewUint(100*common.One)),
+	}
+	for _, template := range []string{
+		"rebond:%s:%s:123456789",
+		"rebond:%s:%s:0",
+		"rebond:%s:%s",
+	} {
+		tx.Memo = fmt.Sprintf(
+			template,
+			GetRandomTHORAddress().String(),
+			GetRandomTHORAddress().String(),
+		)
+		obTx := NewObservedTx(tx, w.ctx.BlockHeight(), GetRandomPubKey(), w.ctx.BlockHeight())
+		msg, err := processOneTxIn(w.ctx, w.keeper, obTx, w.activeNodeAccount.NodeAddress)
+		c.Assert(err, IsNil)
+		c.Assert(msg, NotNil)
+		_, isReBond := msg.(*MsgReBond)
+		c.Assert(isReBond, Equals, true)
+	}
 }
 
 func (HandlerSuite) TestGetMsgLiquidityFromMemo(c *C) {

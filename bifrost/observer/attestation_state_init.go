@@ -24,30 +24,48 @@ func (s *AttestationGossip) askForAttestationState(ctx context.Context) {
 		return
 	}
 	peersWithoutMe := make([]peer.ID, 0, len(allPeers)-1)
-	for _, peer := range allPeers {
-		if peer != s.host.ID() {
-			peersWithoutMe = append(peersWithoutMe, peer)
+	// Skip self, send to 3 active vals that we are peered with
+	activeVals := s.getActiveValidators()
+	for _, peerID := range allPeers {
+		if peerID == s.host.ID() {
+			continue
+		}
+		if _, ok := activeVals[peerID]; ok {
+			peersWithoutMe = append(peersWithoutMe, peerID)
 		}
 	}
+
 	if len(peersWithoutMe) == 0 {
-		s.logger.Debug().Msg("no peers without me to ask for attestation state")
+		s.logger.Debug().Msg("no active val peers without me to ask for attestation state")
 		return
 	}
 	// ask 3 random peers for their attestation state
 	rand.Shuffle(len(peersWithoutMe), func(i, j int) {
 		peersWithoutMe[i], peersWithoutMe[j] = peersWithoutMe[j], peersWithoutMe[i]
 	})
-	numPeers := 3
+	numPeers := s.config.AskPeers
 	if len(peersWithoutMe) < numPeers {
 		numPeers = len(peersWithoutMe)
 	}
 	peers := peersWithoutMe[:numPeers]
+
+	s.stateInitMu.Lock()
+	s.stateInitPeers = make(map[peer.ID]bool, len(peers))
+	for _, peer := range peers {
+		s.stateInitPeers[peer] = true
+	}
+	s.stateInitMu.Unlock()
+
 	var wg sync.WaitGroup
 	wg.Add(len(peers))
 	for _, peer := range peers {
 		go s.askPeerForState(ctx, peer, &wg)
 	}
 	wg.Wait()
+	// Reset the state init peers
+	s.stateInitMu.Lock()
+	s.stateInitPeers = nil
+	s.stateInitMu.Unlock()
 }
 
 func (s *AttestationGossip) sendAttestationState(stream network.Stream) {
@@ -117,25 +135,53 @@ func (s *AttestationGossip) sendAttestationState(stream network.Stream) {
 		})
 		errataTx.mu.Unlock()
 	}
+
+	allPriceFeeds := make([]*common.QuorumPriceFeed, 0, len(s.priceFeeds))
+	for _, priceFeed := range s.priceFeeds {
+		priceFeed.mu.Lock()
+		pfCopy := &common.PriceFeed{
+			Time:  priceFeed.Item.Time,
+			Rates: priceFeed.Item.Rates,
+		}
+		allPriceFeeds = append(allPriceFeeds, &common.QuorumPriceFeed{
+			PriceFeed:    pfCopy,
+			Attestations: priceFeed.AttestationsCopy(),
+		})
+		priceFeed.mu.Unlock()
+	}
+
 	s.mu.Unlock()
 
 	// Calculate total number of batches
 	totalTxs := len(allQuorumTxs)
 	totalTxBatches := (totalTxs + maxQuorumTxsPerBatch - 1) / maxQuorumTxsPerBatch
+
 	totalNfs := len(allNetworkFees)
 	totalNfBatches := (totalNfs + maxQuorumTxsPerBatch - 1) / maxQuorumTxsPerBatch
+
 	totalSolvencies := len(allSolvencies)
 	totalSolvencyBatches := (totalSolvencies + maxQuorumTxsPerBatch - 1) / maxQuorumTxsPerBatch
+
 	totalErrataTxs := len(allErrataTxs)
 	totalErrataBatches := (totalErrataTxs + maxQuorumTxsPerBatch - 1) / maxQuorumTxsPerBatch
 
-	totalBatches := max(totalTxBatches, totalNfBatches, totalSolvencyBatches, totalErrataBatches)
+	totalPriceFeeds := len(allPriceFeeds)
+	totalPriceFeedBatches := (totalPriceFeeds + maxQuorumTxsPerBatch - 1) / maxQuorumTxsPerBatch
+
+	totalBatches := max(
+		totalTxBatches,
+		totalNfBatches,
+		totalSolvencyBatches,
+		totalErrataBatches,
+		totalPriceFeedBatches,
+	)
 
 	s.logger.Debug().
 		Int("total_txs", totalTxs).
 		Int("total_network_fees", totalNfs).
 		Int("total_solvencies", totalSolvencies).
 		Int("total_errata_txs", totalErrataTxs).
+		Int("total_price_feeds", totalPriceFeeds).
 		Int("total_batches", totalBatches).
 		Int("max_per_batch", maxQuorumTxsPerBatch).
 		Msg("sending attestation state in batches")
@@ -177,6 +223,8 @@ func (s *AttestationGossip) sendAttestationState(stream network.Stream) {
 		var batchNfs []*common.QuorumNetworkFee
 		var batchSolvencies []*common.QuorumSolvency
 		var batchErrataTxs []*common.QuorumErrataTx
+		var batchPriceFeeds []*common.QuorumPriceFeed
+
 		if totalTxs > 0 && startIdx < totalTxs {
 			if endIdx > totalTxs {
 				endIdx = totalTxs
@@ -205,17 +253,24 @@ func (s *AttestationGossip) sendAttestationState(stream network.Stream) {
 			batchErrataTxs = allErrataTxs[startIdx:endIdx]
 		}
 
+		if totalPriceFeeds > 0 && startIdx < totalPriceFeeds {
+			if endIdx > totalPriceFeeds {
+				endIdx = totalPriceFeeds
+			}
+			batchPriceFeeds = allPriceFeeds[startIdx:endIdx]
+		}
+
 		// Create batch with current set of QuorumTxs
 		batch := common.QuorumState{
 			QuoTxs:         batchTxs,
 			QuoNetworkFees: batchNfs,
 			QuoSolvencies:  batchSolvencies,
 			QuoErrataTxs:   batchErrataTxs,
+			QuoPriceFeeds:  batchPriceFeeds,
 		}
 
 		// Marshal the batch (handle empty batches specially)
 		var batchData []byte
-		var err error
 		if len(batch.QuoTxs) == 0 {
 			// For empty batches, use an empty buffer rather than marshaling an empty struct
 			batchData = []byte{}
@@ -233,13 +288,14 @@ func (s *AttestationGossip) sendAttestationState(stream network.Stream) {
 		binary.LittleEndian.PutUint32(batchInfo[4:8], uint32(len(batchData)))
 
 		// Send the batch data header
-		if err := p2p.WriteStreamWithBuffer(append(prefixBatchHeader, batchInfo...), stream); err != nil {
+		if err = p2p.WriteStreamWithBuffer(append(prefixBatchHeader, batchInfo...), stream); err != nil {
 			s.logger.Error().Err(err).Int("batch", batchNum+1).Msg("failed to send batch header")
 			return
 		}
 
 		// Wait for acknowledgment of batch header
-		headerAck, err := p2p.ReadStreamWithBuffer(stream)
+		var headerAck []byte
+		headerAck, err = p2p.ReadStreamWithBuffer(stream)
 		if err != nil {
 			s.logger.Error().Err(err).Int("batch", batchNum+1).Msg("failed to read ack after batch header")
 			return
@@ -250,13 +306,14 @@ func (s *AttestationGossip) sendAttestationState(stream network.Stream) {
 		}
 
 		// Send the actual batch data
-		if err := p2p.WriteStreamWithBuffer(append(prefixBatchData, batchData...), stream); err != nil {
+		if err = p2p.WriteStreamWithBuffer(append(prefixBatchData, batchData...), stream); err != nil {
 			s.logger.Error().Err(err).Int("batch", batchNum+1).Msg("failed to send batch data")
 			return
 		}
 
 		// Wait for acknowledgment of batch data
-		dataAck, err := p2p.ReadStreamWithBuffer(stream)
+		var dataAck []byte
+		dataAck, err = p2p.ReadStreamWithBuffer(stream)
 		if err != nil {
 			s.logger.Error().Err(err).Int("batch", batchNum+1).Msg("failed to read ack after batch data")
 			return
@@ -275,13 +332,14 @@ func (s *AttestationGossip) sendAttestationState(stream network.Stream) {
 	}
 
 	// Send batch end signal
-	if err := p2p.WriteStreamWithBuffer(prefixBatchEnd, stream); err != nil {
+	if err = p2p.WriteStreamWithBuffer(prefixBatchEnd, stream); err != nil {
 		s.logger.Error().Err(err).Msg("failed to send batch end signal")
 		return
 	}
 
 	// Wait for the final acknowledgment
-	endAck, err := p2p.ReadStreamWithBuffer(stream)
+	var endAck []byte
+	endAck, err = p2p.ReadStreamWithBuffer(stream)
 	if err != nil {
 		s.logger.Error().Err(err).Msg("failed to read final ack")
 		return
@@ -296,6 +354,7 @@ func (s *AttestationGossip) sendAttestationState(stream network.Stream) {
 		Int("total_network_fees", totalNfs).
 		Int("total_solvencies", totalSolvencies).
 		Int("total_errata_txs", totalErrataTxs).
+		Int("total_price_feeds", totalPriceFeeds).
 		Int("total_batches", totalBatches).
 		Msg("successfully sent attestation state in batches")
 }
@@ -338,7 +397,7 @@ func (s *AttestationGossip) receiveBatchedAttestationState(stream network.Stream
 		// Check if this is the end marker
 		if len(message) >= 1 && bytes.Equal(message[:1], prefixBatchEnd) {
 			// Send final acknowledgment
-			if err := p2p.WriteStreamWithBuffer([]byte(p2p.StreamMsgDone), stream); err != nil {
+			if err = p2p.WriteStreamWithBuffer([]byte(p2p.StreamMsgDone), stream); err != nil {
 				return fmt.Errorf("failed to send final ack: %w", err)
 			}
 			break
@@ -360,7 +419,7 @@ func (s *AttestationGossip) receiveBatchedAttestationState(stream network.Stream
 			Msg("receiving batch")
 
 		// Acknowledge the batch header
-		if err := p2p.WriteStreamWithBuffer([]byte(streamAckHeader), stream); err != nil {
+		if err = p2p.WriteStreamWithBuffer([]byte(streamAckHeader), stream); err != nil {
 			return fmt.Errorf("failed to acknowledge batch header: %w", err)
 		}
 
@@ -455,6 +514,15 @@ func (s *AttestationGossip) processAttestationStateBatch(logger zerolog.Logger, 
 			})
 		}
 	}
+	for _, priceFeed := range batch.QuoPriceFeeds {
+		for _, att := range priceFeed.Attestations {
+			logger.Debug().Msg("handling price feed from peer state dump")
+			s.handlePriceFeedAttestation(ctx, common.AttestPriceFeed{
+				PriceFeed:   priceFeed.PriceFeed,
+				Attestation: att,
+			})
+		}
+	}
 }
 
 // askPeerForState will ask a specific peer for its attestation state
@@ -473,11 +541,7 @@ func (s *AttestationGossip) askPeerForState(ctx context.Context, peer peer.ID, w
 func (s *AttestationGossip) askStreamForState(stream network.Stream) {
 	peer := stream.Conn().RemotePeer()
 
-	defer func() {
-		if err := stream.Close(); err != nil {
-			s.logger.Error().Err(err).Msgf("fail to close stream to peer: %s", peer)
-		}
-	}()
+	defer closeStream(s.logger, stream)
 
 	if err := p2p.WriteStreamWithBuffer(prefixSendState, stream); err != nil {
 		s.logger.Error().Err(err).Msgf("fail to write payload to peer: %s", peer)

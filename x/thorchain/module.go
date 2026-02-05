@@ -141,7 +141,7 @@ func (AppModule) IsAppModule() {}
 func (AppModule) IsOnePerModuleType() {}
 
 func (AppModule) ConsensusVersion() uint64 {
-	return 6
+	return 12
 }
 
 func (am AppModule) RegisterInvariants(_ sdk.InvariantRegistry) {}
@@ -157,14 +157,16 @@ func (am AppModule) RegisterServices(cfg module.Configurator) {
 	wasmtypes.RegisterQueryServer(cfg.QueryServer(), wasmkeeper.Querier(&am.mgr.wasmKeeper))
 
 	m := NewMigrator(am.mgr)
-	if err := cfg.RegisterMigration(types.ModuleName, 5, m.Migrate5to6); err != nil {
-		panic(fmt.Sprintf("failed to migrate x/thorchain from version 5 to 6: %v", err))
+	if err := cfg.RegisterMigration(types.ModuleName, 11, m.Migrate11to12); err != nil {
+		panic(fmt.Sprintf("failed to migrate x/thorchain from version 11 to 12: %v", err))
 	}
 }
 
 // BeginBlock called when a block get proposed
 func (am AppModule) BeginBlock(goCtx context.Context) error {
 	ctx := sdk.UnwrapSDKContext(goCtx)
+	ctx = ctx.WithLogger(ctx.Logger().With("height", ctx.BlockHeight()))
+
 	votes := ctx.CometInfo().GetLastCommit().Votes()
 	var existingValidators []string
 	for i := range votes.Len() {
@@ -173,7 +175,7 @@ func (am AppModule) BeginBlock(goCtx context.Context) error {
 		existingValidators = append(existingValidators, addr.String())
 	}
 
-	ctx.Logger().Debug("BeginBlock", "height", ctx.BlockHeight())
+	ctx.Logger().Debug("BeginBlock")
 	// Check/Update the network version before checking the local version
 	if err := am.mgr.LoadManagerIfNecessary(ctx); err != nil {
 		ctx.Logger().Error("fail to get managers", "error", err)
@@ -183,6 +185,11 @@ func (am AppModule) BeginBlock(goCtx context.Context) error {
 	localVer := semver.MustParse(constants.SWVersion.String())
 	if version.Major > localVer.Major || version.Minor > localVer.Minor {
 		panic(fmt.Sprintf("Unsupported Version: update your binary (your version: %s, network consensus version: %s)", constants.SWVersion.String(), version.String()))
+	}
+
+	// Clear all oracle prices
+	if err := am.mgr.OracleManager().BeginBlock(ctx); err != nil {
+		ctx.Logger().Error("fail to process oracle manager", "error", err)
 	}
 
 	am.mgr.Keeper().ClearObservingAddresses(ctx)
@@ -199,20 +206,23 @@ func (am AppModule) BeginBlock(goCtx context.Context) error {
 	if err := am.mgr.Keeper().RemoveExpiredUpgradeProposals(ctx); err != nil {
 		ctx.Logger().Error("Failed to remove expired upgrade proposals", "error", err)
 	}
+
 	return nil
 }
 
 // EndBlock called when a block get committed
 func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
-	ctx.Logger().Debug("End Block", "height", ctx.BlockHeight())
+	ctx = ctx.WithLogger(ctx.Logger().With("height", ctx.BlockHeight()))
+
+	ctx.Logger().Debug("End Block")
 
 	if err := am.mgr.SwapQ().EndBlock(ctx, am.mgr); err != nil {
 		ctx.Logger().Error("fail to process swap queue", "error", err)
 	}
 
-	if err := am.mgr.OrderBookMgr().EndBlock(ctx, am.mgr); err != nil {
-		ctx.Logger().Error("fail to process order books", "error", err)
+	if err := am.mgr.AdvSwapQueueMgr().EndBlock(ctx, am.mgr, am.telemetryEnabled); err != nil {
+		ctx.Logger().Error("fail to process adv swap queue", "error", err)
 	}
 
 	if err := am.mgr.Slasher().LackSigning(ctx, am.mgr); err != nil {
@@ -247,6 +257,15 @@ func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, err
 		if err := emitEndBlockTelemetry(ctx, am.mgr); err != nil {
 			ctx.Logger().Error("unable to emit end block telemetry", "error", err)
 		}
+	}
+
+	// update volumes
+	if err := am.mgr.VolumeManager().EndBlock(ctx); err != nil {
+		ctx.Logger().Error("fail update volumes", "error", err)
+	}
+
+	if err := am.mgr.ScheduledMigrationManager().EndBlock(ctx, am.mgr); err != nil {
+		ctx.Logger().Error("fail to process scheduled migration", "error", err)
 	}
 
 	return validators, nil

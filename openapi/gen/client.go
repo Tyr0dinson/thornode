@@ -54,15 +54,17 @@ type APIClient struct {
 
 	BlockApi *BlockApiService
 
-	BorrowersApi *BorrowersApiService
-
 	CloutApi *CloutApiService
+
+	CodesApi *CodesApiService
 
 	ExportApi *ExportApiService
 
 	HealthApi *HealthApiService
 
 	InvariantsApi *InvariantsApiService
+
+	LimitOrderApi *LimitOrderApiService
 
 	LiquidityProvidersApi *LiquidityProvidersApiService
 
@@ -71,6 +73,8 @@ type APIClient struct {
 	NetworkApi *NetworkApiService
 
 	NodesApi *NodesApiService
+
+	OracleApi *OracleApiService
 
 	PoolSlipApi *PoolSlipApiService
 
@@ -82,6 +86,8 @@ type APIClient struct {
 
 	RUNEPoolApi *RUNEPoolApiService
 
+	ReferenceMemosApi *ReferenceMemosApiService
+
 	SaversApi *SaversApiService
 
 	SecuredAssetApi *SecuredAssetApiService
@@ -89,6 +95,8 @@ type APIClient struct {
 	SecuredAssetsApi *SecuredAssetsApiService
 
 	StreamingSwapApi *StreamingSwapApiService
+
+	SwapApi *SwapApiService
 
 	TCYClaimersApi *TCYClaimersApiService
 
@@ -130,24 +138,28 @@ func NewAPIClient(cfg *Configuration) *APIClient {
 	c.AuthApi = (*AuthApiService)(&c.common)
 	c.BankApi = (*BankApiService)(&c.common)
 	c.BlockApi = (*BlockApiService)(&c.common)
-	c.BorrowersApi = (*BorrowersApiService)(&c.common)
 	c.CloutApi = (*CloutApiService)(&c.common)
+	c.CodesApi = (*CodesApiService)(&c.common)
 	c.ExportApi = (*ExportApiService)(&c.common)
 	c.HealthApi = (*HealthApiService)(&c.common)
 	c.InvariantsApi = (*InvariantsApiService)(&c.common)
+	c.LimitOrderApi = (*LimitOrderApiService)(&c.common)
 	c.LiquidityProvidersApi = (*LiquidityProvidersApiService)(&c.common)
 	c.MimirApi = (*MimirApiService)(&c.common)
 	c.NetworkApi = (*NetworkApiService)(&c.common)
 	c.NodesApi = (*NodesApiService)(&c.common)
+	c.OracleApi = (*OracleApiService)(&c.common)
 	c.PoolSlipApi = (*PoolSlipApiService)(&c.common)
 	c.PoolsApi = (*PoolsApiService)(&c.common)
 	c.QueueApi = (*QueueApiService)(&c.common)
 	c.QuoteApi = (*QuoteApiService)(&c.common)
 	c.RUNEPoolApi = (*RUNEPoolApiService)(&c.common)
+	c.ReferenceMemosApi = (*ReferenceMemosApiService)(&c.common)
 	c.SaversApi = (*SaversApiService)(&c.common)
 	c.SecuredAssetApi = (*SecuredAssetApiService)(&c.common)
 	c.SecuredAssetsApi = (*SecuredAssetsApiService)(&c.common)
 	c.StreamingSwapApi = (*StreamingSwapApiService)(&c.common)
+	c.SwapApi = (*SwapApiService)(&c.common)
 	c.TCYClaimersApi = (*TCYClaimersApiService)(&c.common)
 	c.TCYStakersApi = (*TCYStakersApiService)(&c.common)
 	c.TSSApi = (*TSSApiService)(&c.common)
@@ -279,9 +291,9 @@ func (c *APIClient) GetConfig() *Configuration {
 }
 
 type formFile struct {
-		fileBytes []byte
-		fileName string
-		formFileName string
+	fileBytes    []byte
+	fileName     string
+	formFileName string
 }
 
 // prepareRequest build the request
@@ -335,11 +347,11 @@ func (c *APIClient) prepareRequest(
 				w.Boundary()
 				part, err := w.CreateFormFile(formFile.formFileName, filepath.Base(formFile.fileName))
 				if err != nil {
-						return nil, err
+					return nil, err
 				}
 				_, err = part.Write(formFile.fileBytes)
 				if err != nil {
-						return nil, err
+					return nil, err
 				}
 			}
 		}

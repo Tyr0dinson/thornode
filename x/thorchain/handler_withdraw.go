@@ -3,7 +3,6 @@ package thorchain
 import (
 	"fmt"
 
-	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/telemetry"
 	"github.com/hashicorp/go-metrics"
 	"github.com/hashicorp/go-multierror"
@@ -11,6 +10,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
 // WithdrawLiquidityHandler to process withdraw requests
@@ -46,16 +46,6 @@ func (h WithdrawLiquidityHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos
 }
 
 func (h WithdrawLiquidityHandler) validate(ctx cosmos.Context, msg MsgWithdrawLiquidity) error {
-	version := h.mgr.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("3.0.0")):
-		return h.validateV3_0_0(ctx, msg)
-	default:
-		return errBadVersion
-	}
-}
-
-func (h WithdrawLiquidityHandler) validateV3_0_0(ctx cosmos.Context, msg MsgWithdrawLiquidity) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return errWithdrawFailValidation
 	}
@@ -94,23 +84,43 @@ func (h WithdrawLiquidityHandler) validateV3_0_0(ctx cosmos.Context, msg MsgWith
 }
 
 func (h WithdrawLiquidityHandler) handle(ctx cosmos.Context, msg MsgWithdrawLiquidity) (*cosmos.Result, error) {
-	version := h.mgr.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("3.0.0")):
-		return h.handleV3_0_0(ctx, msg)
-	default:
-		return nil, errBadVersion
-	}
-}
-
-func (h WithdrawLiquidityHandler) handleV3_0_0(ctx cosmos.Context, msg MsgWithdrawLiquidity) (*cosmos.Result, error) {
 	lp, err := h.mgr.Keeper().GetLiquidityProvider(ctx, msg.Asset, msg.WithdrawAddress)
 	if err != nil {
 		return nil, multierror.Append(errFailGetLiquidityProvider, err)
 	}
+
+	withdrawToSecuredAsset := !msg.Asset.IsNative() && lp.AssetAddress.IsChain(common.THORChain)
+
 	runeAmt, assetAmt, units, gasAsset, err := withdraw(ctx, msg, h.mgr)
 	if err != nil {
 		return nil, ErrInternal(err, "fail to process withdraw request")
+	}
+
+	// withdraw to secure asset
+	if withdrawToSecuredAsset {
+		if !msg.WithdrawalAsset.IsEmpty() {
+			return nil, fmt.Errorf("single sided withdrawal not supported for secured assets")
+		}
+
+		if !assetAmt.IsZero() {
+			// Withdraw to secure asset
+			accAddr, err := lp.AssetAddress.AccAddress()
+			if err != nil {
+				return nil, err
+			}
+
+			_, err = h.mgr.SecuredAssetManager().Deposit(
+				ctx,
+				msg.Asset,
+				assetAmt,
+				accAddr,
+				lp.AssetAddress,
+				msg.Tx.ID,
+			)
+			if err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	memo := ""
@@ -187,10 +197,11 @@ func (h WithdrawLiquidityHandler) handleV3_0_0(ctx cosmos.Context, msg MsgWithdr
 		return nil
 	}
 
-	if !assetAmt.IsZero() {
+	if !assetAmt.IsZero() && !withdrawToSecuredAsset {
 		coin := common.NewCoin(msg.Asset, assetAmt)
-		// TODO: this might be an issue for single sided/AVAX->ETH, ETH -> AVAX
+
 		if !msg.Asset.IsRune() && !lp.AssetAddress.IsChain(msg.Asset.GetChain()) {
+			// TODO: this might be an issue for single sided/AVAX->ETH, ETH -> AVAX
 			if err := h.swap(ctx, msg, coin, lp.AssetAddress); err != nil {
 				return nil, err
 			}
@@ -267,9 +278,7 @@ func (h WithdrawLiquidityHandler) handleV3_0_0(ctx cosmos.Context, msg MsgWithdr
 }
 
 func (h WithdrawLiquidityHandler) swap(ctx cosmos.Context, msg MsgWithdrawLiquidity, coin common.Coin, addr common.Address) error {
-	// ensure TxID does NOT have a collision with another swap, this could
-	// happen if the user submits two identical loan requests in the same
-	// block
+	// ensure TxID does NOT have a collision with another swap
 	if ok := h.mgr.Keeper().HasSwapQueueItem(ctx, msg.Tx.ID, 0); ok {
 		return fmt.Errorf("txn hash conflict")
 	}
@@ -293,7 +302,14 @@ func (h WithdrawLiquidityHandler) swap(ctx cosmos.Context, msg MsgWithdrawLiquid
 	memo := fmt.Sprintf("=:%s:%s", targetAsset, addr)
 	msg.Tx.Memo = memo
 	msg.Tx.Coins = common.NewCoins(coin)
-	swapMsg := NewMsgSwap(msg.Tx, targetAsset, addr, cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, MarketOrder, 0, uint64(ssInterval), msg.Signer)
+
+	// Determine version based on configuration
+	version := types.SwapVersion_v1
+	if h.mgr.Keeper().AdvSwapQueueEnabled(ctx) {
+		version = types.SwapVersion_v2
+	}
+
+	swapMsg := NewMsgSwap(msg.Tx, targetAsset, addr, cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, MarketSwap, 0, uint64(ssInterval), version, msg.Signer)
 
 	// sanity check swap msg
 	handler := NewSwapHandler(h.mgr)

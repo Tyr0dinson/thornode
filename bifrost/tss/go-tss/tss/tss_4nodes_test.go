@@ -351,7 +351,6 @@ func (s *FourNodeTestSuite) getTssServer(c *C, index int, conf common.TssConfig,
 	}
 	comm, stateManager, err := p2p.StartP2P(p2pConf, priKey, baseHome)
 	c.Assert(err, IsNil)
-	// TODO maybe use separate eddsa key
 	instance, err := NewTss(comm, stateManager, priKey, priKey, conf, s.preParams[index])
 	c.Assert(err, IsNil)
 	return instance

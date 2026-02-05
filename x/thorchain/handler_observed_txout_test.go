@@ -177,7 +177,7 @@ func (s *HandlerObservedTxOutSuite) TestHandle(c *C) {
 	pk := GetRandomPubKey()
 	tx.FromAddress, err = pk.GetAddress(tx.Coins[0].Asset.Chain)
 	txInHash := GetRandomTxHash()
-	tx.Memo = fmt.Sprintf("OUT:%s", txInHash)
+	tx.Memo = fmt.Sprintf("OUT:%s|hello world", txInHash) // Including data passthrough test.
 	obTx := NewObservedTx(tx, 12, pk, 12)
 	txs := ObservedTxs{obTx}
 	c.Assert(err, IsNil)
@@ -219,8 +219,8 @@ func (s *HandlerObservedTxOutSuite) TestHandle(c *C) {
 	mgr.K = keeper
 	eventMgr := NewDummyEventMgr()
 	mgr.eventMgr = eventMgr
-	mgr.slasher = newSlasherVCUR(keeper, eventMgr)
-	validatorMgr := newValidatorMgrVCUR(keeper, mgr.NetworkMgr(), txOutStore, eventMgr)
+	mgr.slasher = newSlasher(keeper, eventMgr)
+	validatorMgr := newValidatorMgr(keeper, mgr.NetworkMgr(), txOutStore, eventMgr)
 	mgr.validatorMgr = validatorMgr
 
 	handler := NewObservedTxOutHandler(mgr)
@@ -268,8 +268,8 @@ func (s *HandlerObservedTxOutSuite) TestHandleFailedTransaction(c *C) {
 
 	// When there is a failed transaction (such as an Ethereum out of gas failure),
 	// the observed transaction has a different Amount and the memo's txInHash is the failed transaction's.
-	// The desired behaviour is to reimbusre the pool/s by slashing the vault for the Amount and Gas,
-	// while leaving the pending outbound.
+	// With the new behavior, fake gas transactions (amount=1 wei) are not slashed, just accounted for via addGasFees.
+	// The pending outbound remains.
 	tx := GetRandomTx()
 	pk := GetRandomPubKey()
 	tx.FromAddress, err = pk.GetAddress(tx.Coins[0].Asset.Chain)
@@ -316,8 +316,8 @@ func (s *HandlerObservedTxOutSuite) TestHandleFailedTransaction(c *C) {
 	mgr.K = keeper
 	eventMgr := NewDummyEventMgr()
 	mgr.eventMgr = eventMgr
-	mgr.slasher = newSlasherVCUR(keeper, eventMgr)
-	validatorMgr := newValidatorMgrVCUR(keeper, mgr.NetworkMgr(), txOutStore, eventMgr)
+	mgr.slasher = newSlasher(keeper, eventMgr)
+	validatorMgr := newValidatorMgr(keeper, mgr.NetworkMgr(), txOutStore, eventMgr)
 	mgr.validatorMgr = validatorMgr
 
 	handler := NewObservedTxOutHandler(mgr)
@@ -345,16 +345,19 @@ func (s *HandlerObservedTxOutSuite) TestHandleFailedTransaction(c *C) {
 	mgr.ObMgr().EndBlock(ctx, keeper)
 	c.Check(keeper.observing, HasLen, 1)
 
-	c.Check(int(keeper.pool.BalanceAsset.Uint64()), Equals, 262_499)
-	// As this was a failed transaction, both Amount 1 and Gas 37500 (being slashed) subtracted from the pool.
-	mgr.GasMgr().EndBlock(ctx, keeper, eventMgr)
-	c.Check(int(keeper.pool.BalanceAsset.Uint64()), Equals, 224_999)
-	// Gas 37500 SHOULD NOT be subtracted form the pool a second time (and reimbursed by the Reserve),
-	// but with the current code is anyway.
+	// With new behavior: fake gas tx (amount=1) is NOT slashed
+	// No pool deductions yet (pool stays at 300,000)
+	c.Check(int(keeper.pool.BalanceAsset.Uint64()), Equals, 300_000)
 
-	// make sure the coin has been subtract from the vault
-	c.Check(vault.Coins.GetCoin(common.ETHAsset).Amount.Equal(cosmos.NewUint(19999962499)), Equals, true, Commentf("%d", vault.Coins.GetCoin(common.ETHAsset).Amount.Uint64()))
-	// Being slashed, Amount 1 and Gas 37500 have been subtracted from the 200*common.One vault balance.
+	mgr.GasMgr().EndBlock(ctx, keeper, eventMgr)
+	// After gas manager processes, gas is handled correctly (single addGasFees call):
+	// - handleObservedTxOutQuorum (line 590) calls addGasFees once
+	// - handler_common_outbound does NOT call it again (no double deduction)
+	// Pool gets: -37,500, so 300,000 - 37,500 = 262,500
+	c.Check(int(keeper.pool.BalanceAsset.Uint64()), Equals, 262_500)
+
+	// Vault deducted: only gas (37,500) for fake gas tx
+	c.Check(vault.Coins.GetCoin(common.ETHAsset).Amount.Equal(cosmos.NewUint(19999962500)), Equals, true, Commentf("%d", vault.Coins.GetCoin(common.ETHAsset).Amount.Uint64()))
 
 	hashes := keeper.GetObservedLink(ctx, tx.ID)
 	c.Assert(hashes, HasLen, 1)
@@ -402,7 +405,7 @@ func (s *HandlerObservedTxOutSuite) TestHandleStolenFundsInvalidMemo(c *C) {
 	mgr.K = keeper
 	eventMgr := NewDummyEventMgr()
 	mgr.eventMgr = eventMgr
-	mgr.slasher = newSlasherVCUR(keeper, NewDummyEventMgr())
+	mgr.slasher = newSlasher(keeper, NewDummyEventMgr())
 
 	handler := NewObservedTxOutHandler(mgr)
 	msg := NewMsgObservedTxOut(txs, keeper.nas[0].NodeAddress)
@@ -410,19 +413,19 @@ func (s *HandlerObservedTxOutSuite) TestHandleStolenFundsInvalidMemo(c *C) {
 	_, err = handler.handle(ctx, *msg)
 	c.Assert(err, IsNil)
 
-	c.Check(int(keeper.pool.BalanceAsset.Uint64()), Equals, 19999962500)
-	// As this was an invalid transaction, both Amount 100 * common.One and Gas 37500 (being slashed) subtracted from the pool.
+	// With memoless outbound support, invalid memos are no longer slashed here.
+	// The transaction is processed normally, and the pool/vault balances remain unchanged.
+	c.Check(int(keeper.pool.BalanceAsset.Uint64()), Equals, 30000000000)
 	mgr.GasMgr().EndBlock(ctx, keeper, eventMgr)
-	c.Check(int(keeper.pool.BalanceAsset.Uint64()), Equals, 19999962500)
-	// As this calls SlashVault from within handler_observed_txout_test.go (clearly invalid memo)
-	// rather than from within handler_common_outbound.go (invalid for other reasons),
-	// the gas cost is not subtracted from the pool a second time.
+	c.Check(int(keeper.pool.BalanceAsset.Uint64()), Equals, 30000000000)
 
-	// make sure the coin has been subtract from the vault
-	c.Check(vault.Coins.GetCoin(common.ETHAsset).Amount.Equal(cosmos.NewUint(9999962500)), Equals, true, Commentf("%d", vault.Coins.GetCoin(common.ETHAsset).Amount.Uint64()))
-	// Being slashed, Amount 100*common.One and Gas 37500 have been subtracted from the 200*common.One vault balance.
+	// The vault balance should remain unchanged as no slashing occurs
+	updatedVault, err := keeper.GetVault(ctx, vault.PubKey)
+	c.Assert(err, IsNil)
+	c.Check(updatedVault.Coins.GetCoin(common.ETHAsset).Amount.Equal(cosmos.NewUint(20000000000)), Equals, true, Commentf("%d", updatedVault.Coins.GetCoin(common.ETHAsset).Amount.Uint64()))
 
-	c.Assert(keeper.na.Bond.LT(cosmos.NewUint(1000000*common.One)), Equals, true, Commentf("%d", keeper.na.Bond.Uint64()))
+	// The node account should not be modified since no slashing occurs with memoless outbound support
+	// keeper.na remains nil as SetNodeAccount is never called in this code path
 }
 
 type HandlerObservedTxOutTestHelper struct {

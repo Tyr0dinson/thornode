@@ -71,7 +71,8 @@ func (b fakeBridge) GetConstants() (map[string]int64, error) {
 }
 
 func (b fakeBridge) GetMimir(key string) (int64, error) {
-	if strings.HasPrefix(key, "HALT") {
+	upperKey := strings.ToUpper(key) // Case-insensitive for halt prefix
+	if strings.HasPrefix(upperKey, "HALT") {
 		return 0, nil
 	}
 	if key == constants.SignerConcurrency.String() {
@@ -248,6 +249,11 @@ func (b *MockChainClient) GetChain() common.Chain {
 
 func (b *MockChainClient) GetBlockScannerHeight() (int64, error) {
 	return 0, nil
+}
+
+// RollbackBlockScanner rolls back the block scanner to the last observed block
+func (c *MockChainClient) RollbackBlockScanner() error {
+	return nil
 }
 
 func (b *MockChainClient) GetLatestTxForVault(vault string) (string, string, error) {

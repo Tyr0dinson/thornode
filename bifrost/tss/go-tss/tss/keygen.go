@@ -218,28 +218,52 @@ func (t *TssServer) KeygenAllAlgo(req keygen.Request) ([]keygen.Response, error)
 	keygenInstances[tcommon.SigningAlgoSecp256k1] = ecdsaKeygenInstance
 	keygenInstances[tcommon.SigningAlgoEd25519] = eddsaKeygenInstance
 
+	// Subscribe to the base msgID for joinParty phase - this is shared across all algorithms
+	// We'll use the ECDSA instance's channel for the shared join party phase
+	sharedKeygenMsgChannel := keygenInstances[tcommon.SigningAlgoSecp256k1].GetTssKeyGenChannels()
+	t.p2pCommunication.SetSubscribe(messages.TSSKeyGenMsg, msgID, sharedKeygenMsgChannel)
+	t.p2pCommunication.SetSubscribe(messages.TSSKeyGenVerMsg, msgID, sharedKeygenMsgChannel)
+	t.p2pCommunication.SetSubscribe(messages.TSSControlMsg, msgID, sharedKeygenMsgChannel)
+	t.p2pCommunication.SetSubscribe(messages.TSSTaskDone, msgID, sharedKeygenMsgChannel)
+
+	// Subscribe to algorithm-specific msgIDs for the actual key generation phase
 	for algo, instance := range keygenInstances {
-		msgID := msgID + string(algo)
+		algoMsgID := msgID + string(algo)
 		keygenMsgChannel := instance.GetTssKeyGenChannels()
-		t.p2pCommunication.SetSubscribe(messages.TSSKeyGenMsg, msgID, keygenMsgChannel)
-		t.p2pCommunication.SetSubscribe(messages.TSSKeyGenVerMsg, msgID, keygenMsgChannel)
-		t.p2pCommunication.SetSubscribe(messages.TSSControlMsg, msgID, keygenMsgChannel)
-		t.p2pCommunication.SetSubscribe(messages.TSSTaskDone, msgID, keygenMsgChannel)
-
-		defer func() {
-			t.p2pCommunication.CancelSubscribe(messages.TSSKeyGenMsg, msgID)
-			t.p2pCommunication.CancelSubscribe(messages.TSSKeyGenVerMsg, msgID)
-			t.p2pCommunication.CancelSubscribe(messages.TSSControlMsg, msgID)
-			t.p2pCommunication.CancelSubscribe(messages.TSSTaskDone, msgID)
-
-			t.p2pCommunication.ReleaseStream(msgID)
-			t.partyCoordinator.ReleaseStream(msgID)
-		}()
+		t.p2pCommunication.SetSubscribe(messages.TSSKeyGenMsg, algoMsgID, keygenMsgChannel)
+		t.p2pCommunication.SetSubscribe(messages.TSSKeyGenVerMsg, algoMsgID, keygenMsgChannel)
+		t.p2pCommunication.SetSubscribe(messages.TSSControlMsg, algoMsgID, keygenMsgChannel)
+		t.p2pCommunication.SetSubscribe(messages.TSSTaskDone, algoMsgID, keygenMsgChannel)
 	}
+
+	defer func() {
+		// Cancel shared subscriptions for join party phase
+		t.p2pCommunication.CancelSubscribe(messages.TSSKeyGenMsg, msgID)
+		t.p2pCommunication.CancelSubscribe(messages.TSSKeyGenVerMsg, msgID)
+		t.p2pCommunication.CancelSubscribe(messages.TSSControlMsg, msgID)
+		t.p2pCommunication.CancelSubscribe(messages.TSSTaskDone, msgID)
+
+		// Cancel algorithm-specific subscriptions
+		for algo := range keygenInstances {
+			algoMsgID := msgID + string(algo)
+			t.p2pCommunication.CancelSubscribe(messages.TSSKeyGenMsg, algoMsgID)
+			t.p2pCommunication.CancelSubscribe(messages.TSSKeyGenVerMsg, algoMsgID)
+			t.p2pCommunication.CancelSubscribe(messages.TSSControlMsg, algoMsgID)
+			t.p2pCommunication.CancelSubscribe(messages.TSSTaskDone, algoMsgID)
+
+			t.p2pCommunication.ReleaseStream(algoMsgID)
+			t.partyCoordinator.ReleaseStream(algoMsgID)
+		}
+
+		t.p2pCommunication.ReleaseStream(msgID)
+		t.partyCoordinator.ReleaseStream(msgID)
+	}()
+
 	sigChan := make(chan string)
 	// since all the keygen algorithms share the join party, so we need to use the ecdsa algo's blame manager
 	blameMgr := keygenInstances[tcommon.SigningAlgoSecp256k1].GetTssCommonStruct().GetBlameMgr()
 	joinPartyStartTime := time.Now()
+	// Now use the base msgID for joinParty so it matches our subscription
 	onlinePeers, leader, errJoinParty := t.joinParty(msgID, req.Version, req.BlockHeight, req.Keys, len(req.Keys)-1, sigChan)
 	joinPartyTime := time.Since(joinPartyStartTime)
 	if errJoinParty != nil {
@@ -303,7 +327,6 @@ func (t *TssServer) KeygenAllAlgo(req keygen.Request) ([]keygen.Response, error)
 	// the statistic of keygen only care about Tss it self, even if the
 	// following http response aborts, it still counted as a successful keygen
 	// as the Tss model runs successfully.
-	beforeKeygen := time.Now()
 
 	var responseKeys []keygen.Response
 	var blameNode blame.Blame
@@ -311,7 +334,10 @@ func (t *TssServer) KeygenAllAlgo(req keygen.Request) ([]keygen.Response, error)
 	for _, algo := range algos {
 		instance := keygenInstances[algo]
 		var k *crypto.ECPoint
-		k, keygenErr = instance.GenerateNewKey(req)
+		reqAlgo := req      // shallow copy
+		reqAlgo.Algo = algo // set correct algorithm for this iteration
+		beforeKeygen := time.Now()
+		k, keygenErr = instance.GenerateNewKey(reqAlgo)
 		keygenTime := time.Since(beforeKeygen)
 		if keygenErr != nil {
 			t.tssMetrics.UpdateKeyGen(keygenTime, false)

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 
+	"cosmossdk.io/core/store"
 	upgradekeeper "cosmossdk.io/x/upgrade/keeper"
 	wasmkeeper "github.com/CosmWasm/wasmd/x/wasm/keeper"
 	"github.com/blang/semver"
@@ -42,12 +43,13 @@ type Manager interface {
 	ObMgr() ObserverManager
 	PoolMgr() PoolManager
 	SwapQ() SwapQueue
-	OrderBookMgr() OrderBook
+	AdvSwapQueueMgr() AdvSwapQueue
 	Slasher() Slasher
 	TradeAccountManager() TradeAccountManager
 	SecuredAssetManager() SecuredAssetManager
 	WasmManager() WasmManager
 	SwitchManager() SwitchManager
+	ScheduledMigrationManager() ScheduledMigrationManager
 }
 
 type TradeAccountManager interface {
@@ -75,6 +77,7 @@ type GasManager interface {
 	ProcessGas(ctx cosmos.Context, keeper keeper.Keeper)
 	GetGas() common.Gas
 	GetAssetOutboundFee(ctx cosmos.Context, asset common.Asset, inRune bool) (cosmos.Uint, error)
+	GetGasDetails(ctx cosmos.Context, chain common.Chain) (common.Coin, int64, error)
 	GetMaxGas(ctx cosmos.Context, chain common.Chain) (common.Coin, error)
 	GetGasRate(ctx cosmos.Context, chain common.Chain) cosmos.Uint
 	GetNetworkFee(ctx cosmos.Context, chain common.Chain) (types.NetworkFee, error)
@@ -127,6 +130,7 @@ type NetworkManager interface {
 	UpdateNetwork(ctx cosmos.Context, constAccessor constants.ConstantValues, gasManager GasManager, eventMgr EventManager) error
 	SpawnDerivedAsset(ctx cosmos.Context, asset common.Asset, mgr Manager)
 	CalcAnchor(_ cosmos.Context, _ Manager, _ common.Asset) (cosmos.Uint, cosmos.Uint, cosmos.Uint)
+	SwapToReserveIncome(ctx cosmos.Context, mgr Manager, coin common.Coin) error
 }
 
 // PoolManager interface define the contract of PoolManager
@@ -180,6 +184,12 @@ type WasmManager interface {
 		contractAddress, caller sdk.AccAddress,
 		msg []byte,
 	) ([]byte, error)
+	UpdateAdmin(ctx cosmos.Context,
+		contractAddress, caller, newAdmin sdk.AccAddress,
+	) ([]byte, error)
+	ClearAdmin(ctx cosmos.Context,
+		contractAddress, caller sdk.AccAddress,
+	) ([]byte, error)
 }
 
 // SwapQueue interface define the contract of Swap Queue
@@ -187,9 +197,10 @@ type SwapQueue interface {
 	EndBlock(ctx cosmos.Context, mgr Manager) error
 }
 
-// OrderBook interface define the contract of Order Book
-type OrderBook interface {
-	EndBlock(ctx cosmos.Context, mgr Manager) error
+// AdvSwapQueue interface define the contract of Advanced Swap Queue
+type AdvSwapQueue interface {
+	AddSwapQueueItem(ctx cosmos.Context, mgr Manager, msg *MsgSwap) error
+	EndBlock(ctx cosmos.Context, mgr Manager, telemetryEnabled bool) error
 }
 
 // Slasher define all the method to perform slash
@@ -227,24 +238,39 @@ type SwitchManager interface {
 	IsSwitch(_ cosmos.Context, _ common.Asset) bool
 }
 
+type ScheduledMigrationManager interface {
+	EndBlock(ctx cosmos.Context, mgr Manager) error
+}
+
+type OracleManager interface {
+	BeginBlock(ctx cosmos.Context) error
+}
+
+type VolumeManager interface {
+	EndBlock(ctx cosmos.Context) error
+}
+
 // Mgrs is an implementation of Manager interface
 type Mgrs struct {
-	currentVersion semver.Version
-	constAccessor  constants.ConstantValues
-	gasMgr         GasManager
-	eventMgr       EventManager
-	txOutStore     TxOutStore
-	networkMgr     NetworkManager
-	validatorMgr   ValidatorManager
-	obMgr          ObserverManager
-	poolMgr        PoolManager
-	swapQ          SwapQueue
-	orderBook      OrderBook
-	slasher        Slasher
-	tradeManager   TradeAccountManager
-	securedManager SecuredAssetManager
-	wasmManager    WasmManager
-	switchManager  SwitchManager
+	currentVersion            semver.Version
+	constAccessor             constants.ConstantValues
+	gasMgr                    GasManager
+	eventMgr                  EventManager
+	txOutStore                TxOutStore
+	networkMgr                NetworkManager
+	validatorMgr              ValidatorManager
+	obMgr                     ObserverManager
+	poolMgr                   PoolManager
+	swapQ                     SwapQueue
+	advSwapQueue              AdvSwapQueue
+	slasher                   Slasher
+	tradeManager              TradeAccountManager
+	securedManager            SecuredAssetManager
+	wasmManager               WasmManager
+	switchManager             SwitchManager
+	scheduledMigrationManager ScheduledMigrationManager
+	oracleManager             OracleManager
+	volumeManager             VolumeManager
 
 	K             keeper.Keeper
 	cdc           codec.Codec
@@ -252,18 +278,18 @@ type Mgrs struct {
 	accountKeeper authkeeper.AccountKeeper
 	upgradeKeeper *upgradekeeper.Keeper
 	wasmKeeper    wasmkeeper.Keeper
-	storeKey      cosmos.StoreKey
+	storeService  store.KVStoreService
 }
 
 // NewManagers  create a new Manager
 func NewManagers(
 	keeper keeper.Keeper,
 	cdc codec.Codec,
+	storeService store.KVStoreService,
 	coinKeeper bankkeeper.Keeper,
 	accountKeeper authkeeper.AccountKeeper,
 	upgradeKeeper *upgradekeeper.Keeper,
 	wasmKeeper wasmkeeper.Keeper,
-	storeKey cosmos.StoreKey,
 ) *Mgrs {
 	return &Mgrs{
 		K:             keeper,
@@ -272,7 +298,7 @@ func NewManagers(
 		accountKeeper: accountKeeper,
 		upgradeKeeper: upgradeKeeper,
 		wasmKeeper:    wasmKeeper,
-		storeKey:      storeKey,
+		storeService:  storeService,
 	}
 }
 
@@ -287,29 +313,41 @@ func (mgr *Mgrs) GetConstants() constants.ConstantValues {
 // LoadManagerIfNecessary detect whether there are new version available, if it is available then create a new version of Mgr
 func (mgr *Mgrs) LoadManagerIfNecessary(ctx cosmos.Context) error {
 	v := mgr.K.GetLowestActiveVersion(ctx)
-	if v.Equals(mgr.GetVersion()) {
-		return nil
-	}
-	// version is different , thus all the manager need to re-create
-	mgr.currentVersion = v
-	mgr.constAccessor = constants.GetConstantValues(v)
-	var err error
 
-	mgr.K, err = GetKeeper(v, mgr.cdc, mgr.coinKeeper, mgr.accountKeeper, mgr.upgradeKeeper, mgr.storeKey)
-	if err != nil {
-		return fmt.Errorf("fail to create keeper: %w", err)
+	if !v.Equals(mgr.GetVersion()) {
+		// version is different , thus all the manager need to re-create
+		if err := mgr.recreateManagers(ctx, v); err != nil {
+			return err
+		}
 	}
 
-	shouldEmitVersion := false
 	storedVer, hasStoredVer := mgr.Keeper().GetVersionWithCtx(ctx)
 	if !hasStoredVer || v.GT(storedVer) {
 		// store the version for contextual lookups if it has been upgraded
 		mgr.Keeper().SetVersionWithCtx(ctx, v)
 	}
 
-	// Managers might be new from a fresh node,
-	// but the keeper should be consistent.
-	shouldEmitVersion = (hasStoredVer && v.GT(storedVer))
+	// Emit a version event as long as there was indeed a previously-recorded version changed from.
+	// (As indicated by the keeper rather than by the manager.)
+	if hasStoredVer && v.GT(storedVer) {
+		evt := NewEventVersion(v)
+		if err := mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
+			ctx.Logger().Error("fail to emit version event", "error", err)
+		}
+	}
+
+	return nil
+}
+
+func (mgr *Mgrs) recreateManagers(ctx cosmos.Context, v semver.Version) error {
+	mgr.currentVersion = v
+	mgr.constAccessor = constants.GetConstantValues(v)
+	var err error
+
+	mgr.K, err = GetKeeper(v, mgr.cdc, mgr.storeService, mgr.coinKeeper, mgr.accountKeeper, mgr.upgradeKeeper)
+	if err != nil {
+		return fmt.Errorf("fail to create keeper: %w", err)
+	}
 
 	mgr.gasMgr, err = GetGasManager(v, mgr.K)
 	if err != nil {
@@ -319,15 +357,6 @@ func (mgr *Mgrs) LoadManagerIfNecessary(ctx cosmos.Context) error {
 	mgr.eventMgr, err = GetEventManager(v)
 	if err != nil {
 		return fmt.Errorf("fail to get event manager: %w", err)
-	}
-	// Having created the event manager, emit a version event
-	// as long as there was indeed a previously-recorded version changed from.
-	// (As indicated by the keeper, rather than by managers created for the first time.)
-	if shouldEmitVersion {
-		evt := NewEventVersion(v)
-		if err := mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
-			ctx.Logger().Error("fail to emit version event", "error", err)
-		}
 	}
 
 	mgr.txOutStore, err = GetTxOutStore(v, mgr.K, mgr.eventMgr, mgr.gasMgr)
@@ -360,9 +389,9 @@ func (mgr *Mgrs) LoadManagerIfNecessary(ctx cosmos.Context) error {
 		return fmt.Errorf("fail to create swap queue: %w", err)
 	}
 
-	mgr.orderBook, err = GetOrderBook(v, mgr.K)
+	mgr.advSwapQueue, err = GetAdvSwapQueue(v, mgr.K)
 	if err != nil {
-		return fmt.Errorf("fail to create order book: %w", err)
+		return fmt.Errorf("fail to create adv swap queue: %w", err)
 	}
 
 	mgr.slasher, err = GetSlasher(v, mgr.K, mgr.eventMgr)
@@ -388,6 +417,21 @@ func (mgr *Mgrs) LoadManagerIfNecessary(ctx cosmos.Context) error {
 	mgr.switchManager, err = GetSwitchManager(v, mgr.K, mgr.eventMgr)
 	if err != nil {
 		return fmt.Errorf("fail to create switch manager: %w", err)
+	}
+
+	mgr.oracleManager, err = GetOracleManager(v, mgr.K, mgr.eventMgr)
+	if err != nil {
+		return fmt.Errorf("fail to create oracle manager: %w", err)
+	}
+
+	mgr.volumeManager, err = GetVolumeManager(v, mgr.K)
+	if err != nil {
+		return fmt.Errorf("fail to create volume manager: %w", err)
+	}
+
+	mgr.scheduledMigrationManager, err = GetScheduledMigrationManager(v, mgr)
+	if err != nil {
+		return fmt.Errorf("fail to create scheduled migration manager: %w", err)
 	}
 
 	return nil
@@ -420,8 +464,8 @@ func (mgr *Mgrs) ObMgr() ObserverManager { return mgr.obMgr }
 // SwapQ return an implementation of SwapQueue
 func (mgr *Mgrs) SwapQ() SwapQueue { return mgr.swapQ }
 
-// OrderBookMgr
-func (mgr *Mgrs) OrderBookMgr() OrderBook { return mgr.orderBook }
+// AdvSwapQueueMgr
+func (mgr *Mgrs) AdvSwapQueueMgr() AdvSwapQueue { return mgr.advSwapQueue }
 
 // Slasher return an implementation of Slasher
 func (mgr *Mgrs) Slasher() Slasher { return mgr.slasher }
@@ -434,148 +478,110 @@ func (mgr *Mgrs) WasmManager() WasmManager { return mgr.wasmManager }
 
 func (mgr *Mgrs) SwitchManager() SwitchManager { return mgr.switchManager }
 
+func (mgr *Mgrs) ScheduledMigrationManager() ScheduledMigrationManager {
+	return mgr.scheduledMigrationManager
+}
+
+func (mgr *Mgrs) OracleManager() OracleManager { return mgr.oracleManager }
+
+func (mgr *Mgrs) VolumeManager() VolumeManager { return mgr.volumeManager }
+
 // GetKeeper return Keeper
 func GetKeeper(
 	version semver.Version,
 	cdc codec.BinaryCodec,
+	storeService store.KVStoreService,
 	coinKeeper bankkeeper.Keeper,
 	accountKeeper authkeeper.AccountKeeper,
 	upgradeKeeper *upgradekeeper.Keeper,
-	storeKey cosmos.StoreKey,
 ) (keeper.Keeper, error) {
-	if version.GTE(semver.MustParse("3.0.0")) {
-		kvs := kv1.NewKVStore(cdc, coinKeeper, accountKeeper, upgradeKeeper, storeKey, version)
-		return &kvs, nil
-	}
-	return nil, errInvalidVersion
+	kvs := kv1.NewKVStore(cdc, storeService, coinKeeper, accountKeeper, upgradeKeeper, version)
+	return &kvs, nil
 }
 
 // GetGasManager return GasManager
 func GetGasManager(version semver.Version, keeper keeper.Keeper) (GasManager, error) {
 	constAccessor := constants.GetConstantValues(version)
-	switch {
-	case version.GTE(semver.MustParse("3.0.0")):
-		return newGasMgrVCUR(constAccessor, keeper), nil
-	default:
-		return nil, errInvalidVersion
-	}
+	return newGasMgr(constAccessor, keeper), nil
 }
 
 // GetEventManager will return an implementation of EventManager
 func GetEventManager(version semver.Version) (EventManager, error) {
-	switch {
-	case version.GTE(semver.MustParse("3.0.0")):
-		return newEventMgrVCUR(), nil
-	default:
-		return nil, errInvalidVersion
-	}
+	return newEventMgr(), nil
 }
 
 // GetTxOutStore will return an implementation of the txout store that
 func GetTxOutStore(version semver.Version, keeper keeper.Keeper, eventMgr EventManager, gasManager GasManager) (TxOutStore, error) {
 	constAccessor := constants.GetConstantValues(version)
-	return newTxOutStorageVCUR(keeper, constAccessor, eventMgr, gasManager), nil
+	return newTxOutStorage(keeper, constAccessor, eventMgr, gasManager), nil
 }
 
 // GetNetworkManager  retrieve a NetworkManager that is compatible with the given version
 func GetNetworkManager(version semver.Version, keeper keeper.Keeper, txOutStore TxOutStore, eventMgr EventManager) (NetworkManager, error) {
-	switch {
-	case version.GTE(semver.MustParse("3.0.0")):
-		return newNetworkMgrVCUR(keeper, txOutStore, eventMgr), nil
-	default:
-		return nil, errInvalidVersion
-	}
+	return newNetworkMgr(keeper, txOutStore, eventMgr), nil
 }
 
 // GetValidatorManager create a new instance of Validator Manager
 func GetValidatorManager(_ semver.Version, keeper keeper.Keeper, networkMgr NetworkManager, txOutStore TxOutStore, eventMgr EventManager) (ValidatorManager, error) {
-	return newValidatorMgrVCUR(keeper, networkMgr, txOutStore, eventMgr), nil
+	return newValidatorMgr(keeper, networkMgr, txOutStore, eventMgr), nil
 }
 
 // GetObserverManager return an instance that implements ObserverManager interface
 // when there is no version can match the given semver , it will return nil
 func GetObserverManager(version semver.Version) (ObserverManager, error) {
-	switch {
-	case version.GTE(semver.MustParse("3.0.0")):
-		return newObserverMgrVCUR(), nil
-	default:
-		return nil, errInvalidVersion
-	}
+	return newObserverMgr(), nil
 }
 
 // GetPoolManager return an implementation of PoolManager
 func GetPoolManager(version semver.Version) (PoolManager, error) {
-	switch {
-	case version.GTE(semver.MustParse("3.0.0")):
-		return newPoolMgrVCUR(), nil
-	default:
-		return nil, errInvalidVersion
-	}
+	return newPoolMgr(), nil
 }
 
 // GetSwapQueue retrieve a SwapQueue that is compatible with the given version
 func GetSwapQueue(version semver.Version, keeper keeper.Keeper) (SwapQueue, error) {
-	switch {
-	case version.GTE(semver.MustParse("3.0.0")):
-		return newSwapQueueVCUR(keeper), nil
-	default:
-		return nil, errInvalidVersion
-	}
+	return newSwapQueue(keeper), nil
 }
 
-// GetOrderBook retrieve a OrderBook that is compatible with the given version
-func GetOrderBook(version semver.Version, keeper keeper.Keeper) (OrderBook, error) {
-	switch {
-	case version.GTE(semver.MustParse("3.0.0")):
-		return newOrderBookVCUR(keeper), nil
-	default:
-		return nil, errInvalidVersion
-	}
+// GetAdvSwapQueue retrieve a AdvSwapQueue that is compatible with the given version
+func GetAdvSwapQueue(version semver.Version, keeper keeper.Keeper) (AdvSwapQueue, error) {
+	return newSwapQueueAdv(keeper), nil
 }
 
 // GetSlasher return an implementation of Slasher
 func GetSlasher(version semver.Version, keeper keeper.Keeper, eventMgr EventManager) (Slasher, error) {
-	switch {
-	case version.GTE(semver.MustParse("3.0.0")):
-		return newSlasherVCUR(keeper, eventMgr), nil
-	default:
-		return nil, errInvalidVersion
-	}
+	return newSlasher(keeper, eventMgr), nil
 }
 
 // Though Swapper is not a full manager, it is recorded here for versioning convenience.
 // GetSwapper return an implementation of Swapper
 func GetSwapper(version semver.Version) (Swapper, error) {
-	switch {
-	case version.GTE(semver.MustParse("3.0.0")):
-		return newSwapperVCUR(), nil
-	default:
-		return nil, errInvalidVersion
-	}
+	return newSwapper(), nil
 }
 
 func GetTradeAccountManager(version semver.Version, keeper keeper.Keeper, eventMgr EventManager) (TradeAccountManager, error) {
-	switch {
-	case version.GTE(semver.MustParse("3.0.0")):
-		return newTradeMgrVCUR(keeper, eventMgr), nil
-	default:
-		return nil, errInvalidVersion
-	}
+	return newTradeMgr(keeper, eventMgr), nil
 }
 
 func GetSecuredAssetManager(version semver.Version, keeper keeper.Keeper, eventMgr EventManager) (SecuredAssetManager, error) {
-	switch {
-	case version.GTE(semver.MustParse("3.0.0")):
-		return newSecuredAssetMgrVCUR(keeper, eventMgr), nil
-	default:
-		return nil, errInvalidVersion
-	}
+	return newSecuredAssetMgr(keeper, eventMgr), nil
 }
 
 func GetWasmManager(ctx cosmos.Context, keeper keeper.Keeper, wasmKeeper wasmkeeper.Keeper, eventMgr EventManager) (WasmManager, error) {
-	return newWasmMgrVCUR(keeper, wasmKeeper, wasmpermissions.GetWasmPermissions(), eventMgr)
+	return newWasmMgr(keeper, wasmKeeper, wasmpermissions.GetWasmPermissions(), eventMgr)
 }
 
 func GetSwitchManager(version semver.Version, keeper keeper.Keeper, eventMgr EventManager) (SwitchManager, error) {
-	return newSwitchMgrVCUR(keeper, eventMgr), nil
+	return newSwitchMgr(keeper, eventMgr), nil
+}
+
+func GetScheduledMigrationManager(_ semver.Version, mgr Manager) (ScheduledMigrationManager, error) {
+	return newScheduledMigrationMgr(mgr), nil
+}
+
+func GetOracleManager(_ semver.Version, keeper keeper.Keeper, eventMgr EventManager) (OracleManager, error) {
+	return newOracleMgr(keeper), nil
+}
+
+func GetVolumeManager(_ semver.Version, keeper keeper.Keeper) (VolumeManager, error) {
+	return newVolumeMgr(keeper), nil
 }

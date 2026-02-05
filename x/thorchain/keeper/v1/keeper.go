@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"strings"
 
+	storetypes "cosmossdk.io/core/store"
 	upgradekeeper "cosmossdk.io/x/upgrade/keeper"
 	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/codec"
+	"github.com/cosmos/cosmos-sdk/runtime"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
 	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
 
@@ -48,14 +50,12 @@ const (
 	prefixNetwork                 types.DbPrefix = "network/"
 	prefixSwapperClout            types.DbPrefix = "sclout/"
 	prefixPOL                     types.DbPrefix = "pol/"
-	prefixLoan                    types.DbPrefix = "loan/"
 	prefixTradeAccount            types.DbPrefix = "tr_acct/"
 	prefixSecuredAsset            types.DbPrefix = "sa/"
 	prefixRUNEProvider            types.DbPrefix = "rune_provider/"
 	prefixRUNEPool                types.DbPrefix = "rune_pool/"
 	prefixTradeUnit               types.DbPrefix = "tr_unit/"
 	prefixStreamingSwap           types.DbPrefix = "stream/"
-	prefixLoanTotalCollateral     types.DbPrefix = "loan_col_total/"
 	prefixObservingAddresses      types.DbPrefix = "observing_addresses/"
 	prefixTss                     types.DbPrefix = "tss/"
 	prefixTssKeysignFailure       types.DbPrefix = "tssKeysignFailure/"
@@ -70,10 +70,10 @@ const (
 	prefixNodeSlashPoints         types.DbPrefix = "slash/"
 	prefixNodeJail                types.DbPrefix = "jail/"
 	prefixSwapQueueItem           types.DbPrefix = "swapitem/"
-	prefixOrderBookItem           types.DbPrefix = "o/"
-	prefixOrderBookLimitIndex     types.DbPrefix = "olim/"
-	prefixOrderBookMarketIndex    types.DbPrefix = "omark/"
-	prefixOrderBookProcessor      types.DbPrefix = "oproc/"
+	prefixAdvSwapQueueItem        types.DbPrefix = "aq/"
+	prefixAdvSwapQueueLimitIndex  types.DbPrefix = "aqlim/"
+	prefixAdvSwapQueueMarketIndex types.DbPrefix = "aqmark/"
+	prefixAdvSwapQueueTTL         types.DbPrefix = "aqttl/"
 	prefixOutboundFeeWithheldRune types.DbPrefix = "outbound_fee_withheld_rune/"
 	prefixOutboundFeeSpentRune    types.DbPrefix = "outbound_fee_spent_rune/"
 	prefixMimir                   types.DbPrefix = "mimir/"
@@ -89,12 +89,18 @@ const (
 	prefixSolvencyVoter           types.DbPrefix = "solvency_voter/"
 	prefixTHORName                types.DbPrefix = "thorname/"
 	prefixAffiliateCollector      types.DbPrefix = "affcol/"
+	prefixReferenceMemo           types.DbPrefix = "refm/"
+	prefixReferenceMemoIndex      types.DbPrefix = "refmi/"
+	prefixReferenceMemoHash       types.DbPrefix = "refmh/"
 	prefixRollingPoolLiquidityFee types.DbPrefix = "rolling_pool_liquidity_fee/"
 	prefixVersion                 types.DbPrefix = "version/"
 	prefixUpgradeProposals        types.DbPrefix = "upgr_props/"
 	prefixUpgradeVotes            types.DbPrefix = "upgr_votes/"
 	prefixTCYClaimer              types.DbPrefix = "tcy_claimer/"
 	prefixTCYStaker               types.DbPrefix = "tcy_staker/"
+	prefixOraclePrice             types.DbPrefix = "oracle_price/"
+	prefixVolumeBucket            types.DbPrefix = "volume_bucket/"
+	prefixVolume                  types.DbPrefix = "volume/"
 )
 
 func dbError(ctx cosmos.Context, wrapper string, err error) error {
@@ -109,18 +115,18 @@ type KVStore struct {
 	coinKeeper    bankkeeper.Keeper
 	accountKeeper authkeeper.AccountKeeper
 	upgradeKeeper *upgradekeeper.Keeper
-	storeKey      cosmos.StoreKey // Unexposed key to access store from cosmos.Context
+	storeService  storetypes.KVStoreService
 	version       semver.Version
 	constAccessor constants.ConstantValues
 }
 
 // NewKVStore creates new instances of the thorchain Keeper
-func NewKVStore(cdc codec.BinaryCodec, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, upgradeKeeper *upgradekeeper.Keeper, storeKey cosmos.StoreKey, version semver.Version) KVStore {
+func NewKVStore(cdc codec.BinaryCodec, storeService storetypes.KVStoreService, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, upgradeKeeper *upgradekeeper.Keeper, version semver.Version) KVStore {
 	return KVStore{
 		coinKeeper:    coinKeeper,
 		accountKeeper: accountKeeper,
 		upgradeKeeper: upgradeKeeper,
-		storeKey:      storeKey,
+		storeService:  storeService,
 		cdc:           cdc,
 		version:       version,
 		constAccessor: constants.GetConstantValues(version),
@@ -128,9 +134,9 @@ func NewKVStore(cdc codec.BinaryCodec, coinKeeper bankkeeper.Keeper, accountKeep
 }
 
 // NewKeeper creates new instances of the thorchain Keeper
-func NewKeeper(cdc codec.BinaryCodec, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, upgradeKeeper *upgradekeeper.Keeper, storeKey cosmos.StoreKey) keeper.Keeper {
+func NewKeeper(cdc codec.BinaryCodec, storeService storetypes.KVStoreService, coinKeeper bankkeeper.Keeper, accountKeeper authkeeper.AccountKeeper, upgradeKeeper *upgradekeeper.Keeper) keeper.Keeper {
 	version := semver.MustParse("0.0.0")
-	return NewKVStore(cdc, coinKeeper, accountKeeper, upgradeKeeper, storeKey, version)
+	return NewKVStore(cdc, storeService, coinKeeper, accountKeeper, upgradeKeeper, version)
 }
 
 // Cdc return the amino codec
@@ -148,53 +154,61 @@ func (k *KVStore) SetVersion(ver semver.Version) {
 }
 
 // GetKey return a key that can be used to store into key value store
-func (k KVStore) GetKey(prefix types.DbPrefix, key string) string {
-	return fmt.Sprintf("%s/%s", prefix, strings.ToUpper(key))
+func (k KVStore) GetKey(prefix types.DbPrefix, key string, other ...string) []byte {
+	newKey := fmt.Sprintf("%s/%s", prefix, strings.ToUpper(key))
+
+	// TODO: should this handle the slashes automatically?
+	// ref: x/thorchain/keeper/v1/keeper_last_height.go#GetLastObserveHeight
+	for _, item := range other {
+		newKey += strings.ToUpper(item)
+	}
+
+	return []byte(newKey)
 }
 
 // getIterator - get an iterator for given prefix
 func (k KVStore) getIterator(ctx cosmos.Context, prefix types.DbPrefix) cosmos.Iterator {
-	store := ctx.KVStore(k.storeKey)
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 	return cosmos.KVStorePrefixIterator(store, []byte(prefix))
 }
 
-func (k KVStore) DeleteKey(ctx cosmos.Context, key string) {
+func (k KVStore) DeleteKey(ctx cosmos.Context, key []byte) {
 	k.del(ctx, key)
 }
 
 // del - delete data from the kvstore
-func (k KVStore) del(ctx cosmos.Context, key string) {
-	store := ctx.KVStore(k.storeKey)
-	if store.Has([]byte(key)) {
-		store.Delete([]byte(key))
+func (k KVStore) del(ctx cosmos.Context, key []byte) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	if store.Has(key) {
+		store.Delete(key)
 	}
 }
 
 // has - kvstore has key
-func (k KVStore) has(ctx cosmos.Context, key string) bool {
-	store := ctx.KVStore(k.storeKey)
-	return store.Has([]byte(key))
+func (k KVStore) has(ctx cosmos.Context, key []byte) bool {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	return store.Has(key)
 }
 
-func (k KVStore) setInt64(ctx cosmos.Context, key string, record int64) {
-	store := ctx.KVStore(k.storeKey)
+func (k KVStore) setInt64(ctx cosmos.Context, key []byte, record int64) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 	value := ProtoInt64{Value: record}
 	buf := k.cdc.MustMarshal(&value)
 	if buf == nil {
-		store.Delete([]byte(key))
+		store.Delete(key)
 	} else {
-		store.Set([]byte(key), buf)
+		store.Set(key, buf)
 	}
 }
 
-func (k KVStore) getInt64(ctx cosmos.Context, key string, record *int64) (bool, error) {
-	store := ctx.KVStore(k.storeKey)
-	if !store.Has([]byte(key)) {
+func (k KVStore) getInt64(ctx cosmos.Context, key []byte, record *int64) (bool, error) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	if !store.Has(key) {
 		return false, nil
 	}
 
 	value := ProtoInt64{}
-	bz := store.Get([]byte(key))
+	bz := store.Get(key)
 	if err := k.cdc.Unmarshal(bz, &value); err != nil {
 		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
 	}
@@ -202,25 +216,25 @@ func (k KVStore) getInt64(ctx cosmos.Context, key string, record *int64) (bool, 
 	return true, nil
 }
 
-func (k KVStore) setUint64(ctx cosmos.Context, key string, record uint64) {
-	store := ctx.KVStore(k.storeKey)
+func (k KVStore) setUint64(ctx cosmos.Context, key []byte, record uint64) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 	value := ProtoUint64{Value: record}
 	buf := k.cdc.MustMarshal(&value)
 	if buf == nil {
-		store.Delete([]byte(key))
+		store.Delete(key)
 	} else {
-		store.Set([]byte(key), buf)
+		store.Set(key, buf)
 	}
 }
 
-func (k KVStore) getUint64(ctx cosmos.Context, key string, record *uint64) (bool, error) {
-	store := ctx.KVStore(k.storeKey)
-	if !store.Has([]byte(key)) {
+func (k KVStore) getUint64(ctx cosmos.Context, key []byte, record *uint64) (bool, error) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	if !store.Has(key) {
 		return false, nil
 	}
 
 	value := ProtoUint64{Value: *record}
-	bz := store.Get([]byte(key))
+	bz := store.Get(key)
 	if err := k.cdc.Unmarshal(bz, &value); err != nil {
 		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
 	}
@@ -228,25 +242,25 @@ func (k KVStore) getUint64(ctx cosmos.Context, key string, record *uint64) (bool
 	return true, nil
 }
 
-func (k KVStore) setAccAddresses(ctx cosmos.Context, key string, record []cosmos.AccAddress) {
-	store := ctx.KVStore(k.storeKey)
+func (k KVStore) setAccAddresses(ctx cosmos.Context, key []byte, record []cosmos.AccAddress) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 	value := ProtoAccAddresses{Value: record}
 	buf := k.cdc.MustMarshal(&value)
 	if buf == nil {
-		store.Delete([]byte(key))
+		store.Delete(key)
 	} else {
-		store.Set([]byte(key), buf)
+		store.Set(key, buf)
 	}
 }
 
-func (k KVStore) getAccAddresses(ctx cosmos.Context, key string, record *[]cosmos.AccAddress) (bool, error) {
-	store := ctx.KVStore(k.storeKey)
-	if !store.Has([]byte(key)) {
+func (k KVStore) getAccAddresses(ctx cosmos.Context, key []byte, record *[]cosmos.AccAddress) (bool, error) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	if !store.Has(key) {
 		return false, nil
 	}
 
 	var value ProtoAccAddresses
-	bz := store.Get([]byte(key))
+	bz := store.Get(key)
 	if err := k.cdc.Unmarshal(bz, &value); err != nil {
 		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
 	}
@@ -254,9 +268,9 @@ func (k KVStore) getAccAddresses(ctx cosmos.Context, key string, record *[]cosmo
 	return true, nil
 }
 
-func (k KVStore) setStrings(ctx cosmos.Context, key string, record []string) {
-	store := ctx.KVStore(k.storeKey)
-	value := ProtoStrings{Value: record}
+func (k KVStore) setString(ctx cosmos.Context, key, record string) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	value := ProtoString{Value: record}
 	buf := k.cdc.MustMarshal(&value)
 	if buf == nil {
 		store.Delete([]byte(key))
@@ -265,14 +279,40 @@ func (k KVStore) setStrings(ctx cosmos.Context, key string, record []string) {
 	}
 }
 
-func (k KVStore) getStrings(ctx cosmos.Context, key string, record *[]string) (bool, error) {
-	store := ctx.KVStore(k.storeKey)
+func (k KVStore) getString(ctx cosmos.Context, key string, record *string) (bool, error) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 	if !store.Has([]byte(key)) {
+		return false, nil
+	}
+
+	var value ProtoString
+	bz := store.Get([]byte(key))
+	if err := k.cdc.Unmarshal(bz, &value); err != nil {
+		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
+	}
+	*record = value.Value
+	return true, nil
+}
+
+func (k KVStore) setStrings(ctx cosmos.Context, key []byte, record []string) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	value := ProtoStrings{Value: record}
+	buf := k.cdc.MustMarshal(&value)
+	if buf == nil {
+		store.Delete(key)
+	} else {
+		store.Set(key, buf)
+	}
+}
+
+func (k KVStore) getStrings(ctx cosmos.Context, key []byte, record *[]string) (bool, error) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	if !store.Has(key) {
 		return false, nil
 	}
 
 	var value ProtoStrings
-	bz := store.Get([]byte(key))
+	bz := store.Get(key)
 	if err := k.cdc.Unmarshal(bz, &value); err != nil {
 		return true, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
 	}
@@ -280,56 +320,27 @@ func (k KVStore) getStrings(ctx cosmos.Context, key string, record *[]string) (b
 	return true, nil
 }
 
-func (k KVStore) setUint(ctx cosmos.Context, key string, record cosmos.Uint) {
-	store := ctx.KVStore(k.storeKey)
+func (k KVStore) setUint(ctx cosmos.Context, key []byte, record cosmos.Uint) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 	value := ProtoUint{Value: record}
 	buf := k.cdc.MustMarshal(&value)
 	if buf == nil {
-		store.Delete([]byte(key))
+		store.Delete(key)
 	} else {
-		store.Set([]byte(key), buf)
+		store.Set(key, buf)
 	}
 }
 
-func (k KVStore) getUint(ctx cosmos.Context, key string, record *cosmos.Uint) (bool, error) {
-	store := ctx.KVStore(k.storeKey)
-	if !store.Has([]byte(key)) {
+func (k KVStore) getUint(ctx cosmos.Context, key []byte, record *cosmos.Uint) (bool, error) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	if !store.Has(key) {
 		return false, nil
 	}
 
 	var value ProtoUint
-	bz := store.Get([]byte(key))
+	bz := store.Get(key)
 	if err := k.cdc.Unmarshal(bz, &value); err != nil {
 		return false, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
-	}
-	*record = value.Value
-	return true, nil
-}
-
-func (k KVStore) setBools(ctx cosmos.Context, key string, record []bool) {
-	store := ctx.KVStore(k.storeKey)
-	value := ProtoBools{Value: record}
-	buf := k.cdc.MustMarshal(&value)
-	if buf == nil {
-		store.Delete([]byte(key))
-	} else {
-		store.Set([]byte(key), buf)
-	}
-}
-
-func (k KVStore) getBools(ctx cosmos.Context, key string, record *[]bool) (bool, error) {
-	store := ctx.KVStore(k.storeKey)
-
-	var value ProtoBools
-	bz := store.Get([]byte(key))
-	if bz == nil {
-		return false, nil
-	}
-	if err := k.cdc.Unmarshal(bz, &value); err != nil {
-		return false, dbError(ctx, fmt.Sprintf("Unmarshal kvstore: (%T) %s", record, key), err)
-	}
-	if record == nil {
-		return false, nil
 	}
 	*record = value.Value
 	return true, nil

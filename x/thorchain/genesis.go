@@ -67,7 +67,7 @@ func ValidateGenesis(data GenesisState) error {
 		}
 	}
 
-	for _, item := range data.OrderbookItems {
+	for _, item := range data.AdvSwapQueueItems {
 		if err := item.ValidateBasic(); err != nil {
 			return fmt.Errorf("invalid swap msg: %w", err)
 		}
@@ -106,12 +106,6 @@ func ValidateGenesis(data GenesisState) error {
 		}
 	}
 
-	for _, loan := range data.Loans {
-		if err := loan.Valid(); err != nil {
-			return fmt.Errorf("invalid loan: %w", err)
-		}
-	}
-
 	return nil
 }
 
@@ -134,14 +128,12 @@ func DefaultGenesisState() GenesisState {
 		OutboundFeeWithheldRune: common.Coins{},
 		OutboundFeeSpentRune:    common.Coins{},
 		POL:                     NewProtocolOwnedLiquidity(),
-		OrderbookItems:          make([]MsgSwap, 0),
+		AdvSwapQueueItems:       make([]MsgSwap, 0),
 		SwapQueueItems:          make([]MsgSwap, 0),
 		StreamingSwaps:          make([]StreamingSwap, 0),
 		NetworkFees:             make([]NetworkFee, 0),
 		ChainContracts:          make([]ChainContract, 0),
 		THORNames:               make([]THORName, 0),
-		Loans:                   make([]Loan, 0),
-		LoanTotalCollateral:     make([]common.Coin, 0),
 		SwapperClout:            make([]SwapperClout, 0),
 		TradeAccounts:           make([]TradeAccount, 0),
 		TradeUnits:              make([]TradeUnit, 0),
@@ -248,8 +240,8 @@ func initGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 		panic(err)
 	}
 
-	for _, item := range data.OrderbookItems {
-		if err := keeper.SetOrderBookItem(ctx, item); err != nil {
+	for _, item := range data.AdvSwapQueueItems {
+		if err := keeper.SetAdvSwapQueueItem(ctx, item); err != nil {
 			panic(err)
 		}
 	}
@@ -278,14 +270,6 @@ func initGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 		keeper.SetTHORName(ctx, n)
 	}
 
-	for _, loan := range data.Loans {
-		keeper.SetLoan(ctx, loan)
-	}
-
-	for _, c := range data.LoanTotalCollateral {
-		keeper.SetTotalCollateral(ctx, c.Asset, c.Amount)
-	}
-
 	for _, clout := range data.SwapperClout {
 		if err := keeper.SetSwapperClout(ctx, clout); err != nil {
 			panic(err)
@@ -300,6 +284,13 @@ func initGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 	}
 	for _, a := range data.SecuredAssets {
 		keeper.SetSecuredAsset(ctx, a)
+	}
+
+	ttl := keeper.GetConfigInt64(ctx, constants.MemolessTxnTTL)
+	for _, ref := range data.ReferenceMemos {
+		if !ref.IsExpired(ctx.BlockHeight(), ttl) {
+			keeper.SetReferenceMemo(ctx, ref)
+		}
 	}
 
 	// Mint coins into the reserve
@@ -491,7 +482,8 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 	endBlockHeight := ctx.BlockHeight() + 17200
 
 	for height := startBlockHeight; height < endBlockHeight; height++ {
-		txOut, err := k.GetTxOut(ctx, height)
+		var txOut *keeper.TxOut
+		txOut, err = k.GetTxOut(ctx, height)
 		if err != nil {
 			ctx.Logger().Error("fail to get tx out", "error", err, "height", height)
 			continue
@@ -501,6 +493,17 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		}
 		includeTxOut := false
 		for _, item := range txOut.TxArray {
+			var vault types.Vault
+			vault, err = k.GetVault(ctx, item.VaultPubKey)
+			if err != nil {
+				ctx.Logger().Error("fail to get vault", "error", err, "pubkey", item.VaultPubKey.String())
+				continue
+			}
+			if vault.Status == types.VaultStatus_InactiveVault || vault.Status == types.VaultStatus_InitVault {
+				// skip txouts from inactive vaults
+				continue
+			}
+
 			if item.OutHash.IsEmpty() {
 				// Set all these txouts if even one is still pending.
 				includeTxOut = true
@@ -572,8 +575,21 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		vaults = append(vaults, vault)
 	}
 
+	ttl := k.GetConfigInt64(ctx, constants.MemolessTxnTTL)
+	memos := make([]ReferenceMemo, 0)
+	refIter := k.GetReferenceMemoIterator(ctx)
+	defer refIter.Close()
+	for ; refIter.Valid(); refIter.Next() {
+		var mem ReferenceMemo
+		k.Cdc().MustUnmarshal(refIter.Value(), &mem)
+		if mem.IsExpired(ctx.BlockHeight(), ttl) {
+			continue
+		}
+		memos = append(memos, mem)
+	}
+
 	swapMsgs := make([]MsgSwap, 0)
-	iterMsgSwap := k.GetOrderBookItemIterator(ctx)
+	iterMsgSwap := k.GetAdvSwapQueueItemIterator(ctx)
 	defer iterMsgSwap.Close()
 	for ; iterMsgSwap.Valid(); iterMsgSwap.Next() {
 		var m MsgSwap
@@ -645,42 +661,6 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		value := NodeMimirs{}
 		k.Cdc().MustUnmarshal(nodeMimirIter.Value(), &value)
 		nodeMimirs = append(nodeMimirs, value.GetMimirs()...)
-	}
-
-	// collect all assets
-	seenAssets := make(map[common.Asset]bool)
-	assets := make([]common.Asset, 0)
-	for _, vault := range vaults {
-		for _, coin := range vault.Coins {
-			if !seenAssets[coin.Asset] {
-				seenAssets[coin.Asset] = true
-				assets = append(assets, coin.Asset)
-			}
-		}
-	}
-
-	// export loans from all assets
-	loans := make([]Loan, 0)
-	for _, asset := range assets {
-		loanIter := k.GetLoanIterator(ctx, asset)
-		defer loanIter.Close()
-		for ; loanIter.Valid(); loanIter.Next() {
-			var loan Loan
-			k.Cdc().MustUnmarshal(loanIter.Value(), &loan)
-			loans = append(loans, loan)
-		}
-	}
-
-	loanTotalCollateral := make([]common.Coin, 0)
-	for _, asset := range assets {
-		amount, errTotalCol := k.GetTotalCollateral(ctx, asset)
-		if errTotalCol != nil {
-			panic(errTotalCol)
-		}
-		if !amount.IsZero() {
-			coin := common.NewCoin(asset, amount)
-			loanTotalCollateral = append(loanTotalCollateral, coin)
-		}
 	}
 
 	clouts := make([]SwapperClout, 0)
@@ -790,20 +770,19 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		NodeAccounts:            nodeAccounts,
 		BondProviders:           bps,
 		Vaults:                  vaults,
+		ReferenceMemos:          memos,
 		LastSignedHeight:        lastSignedHeight,
 		LastChainHeights:        lastChainHeights,
 		Network:                 network,
 		OutboundFeeWithheldRune: outboundFeeWithheldRune,
 		OutboundFeeSpentRune:    outboundFeeSpentRune,
 		POL:                     pol,
-		OrderbookItems:          swapMsgs,
+		AdvSwapQueueItems:       swapMsgs,
 		SwapQueueItems:          swapQ,
 		StreamingSwaps:          streamSwaps,
 		NetworkFees:             networkFees,
 		ChainContracts:          chainContracts,
 		THORNames:               names,
-		Loans:                   loans,
-		LoanTotalCollateral:     loanTotalCollateral,
 		Mimirs:                  mimirs,
 		NodeMimirs:              nodeMimirs,
 		SwapperClout:            clouts,

@@ -4,9 +4,8 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"math"
 	"regexp"
-
-	"github.com/blang/semver"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -43,16 +42,6 @@ func (h ManageTHORNameHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Re
 	return result, err
 }
 
-func (h ManageTHORNameHandler) validate(ctx cosmos.Context, msg MsgManageTHORName) error {
-	version := h.mgr.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("3.0.0")):
-		return h.validateV3_0_0(ctx, msg)
-	default:
-		return errBadVersion
-	}
-}
-
 func (h ManageTHORNameHandler) validateName(n string) error {
 	// validate THORName
 	if len(n) > 30 {
@@ -64,7 +53,7 @@ func (h ManageTHORNameHandler) validateName(n string) error {
 	return nil
 }
 
-func (h ManageTHORNameHandler) validateV3_0_0(ctx cosmos.Context, msg MsgManageTHORName) error {
+func (h ManageTHORNameHandler) validate(ctx cosmos.Context, msg MsgManageTHORName) error {
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}
@@ -122,18 +111,8 @@ func (h ManageTHORNameHandler) validateV3_0_0(ctx cosmos.Context, msg MsgManageT
 }
 
 // handle process MsgManageTHORName
-func (h ManageTHORNameHandler) handle(ctx cosmos.Context, msg MsgManageTHORName) (*cosmos.Result, error) {
-	version := h.mgr.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("3.0.0")):
-		return h.handleV3_0_0(ctx, msg)
-	default:
-		return nil, errBadVersion
-	}
-}
-
 // handle process MsgManageTHORName
-func (h ManageTHORNameHandler) handleV3_0_0(ctx cosmos.Context, msg MsgManageTHORName) (*cosmos.Result, error) {
+func (h ManageTHORNameHandler) handle(ctx cosmos.Context, msg MsgManageTHORName) (*cosmos.Result, error) {
 	var err error
 
 	enable, _ := h.mgr.Keeper().GetMimir(ctx, "THORNames")
@@ -169,13 +148,35 @@ func (h ManageTHORNameHandler) handleV3_0_0(ctx cosmos.Context, msg MsgManageTHO
 			addBlocks = h.mgr.GetConstants().GetInt64Value(constants.BlocksPerYear) // registration comes with 1 free year
 		}
 		feePerBlock := h.mgr.Keeper().GetTHORNamePerBlockFee(ctx)
-		fundPaid = msg.Coin.Amount
-		addBlocks += (int64(msg.Coin.Amount.Uint64()) / int64(feePerBlock.Uint64()))
-		if tn.ExpireBlockHeight < ctx.BlockHeight() {
-			tn.ExpireBlockHeight = ctx.BlockHeight() + addBlocks
-		} else {
-			tn.ExpireBlockHeight += addBlocks
+		// Validate feePerBlock is not zero to prevent division by zero
+		if feePerBlock.IsZero() {
+			return nil, errors.New("per block fee cannot be zero")
 		}
+		fundPaid = msg.Coin.Amount
+		// Validate msg.Coin.Amount doesn't exceed int64 max to prevent overflow during conversion
+		if msg.Coin.Amount.GT(cosmos.NewUint(math.MaxInt64)) {
+			return nil, errors.New("coin amount exceeds maximum allowed value")
+		}
+		// Validate feePerBlock doesn't exceed int64 max to prevent overflow during conversion
+		if feePerBlock.GT(cosmos.NewUint(math.MaxInt64)) {
+			return nil, errors.New("per block fee exceeds maximum allowed value")
+		}
+		blocksFromFund := int64(msg.Coin.Amount.Uint64()) / int64(feePerBlock.Uint64())
+		// Check for overflow before adding blocks
+		if addBlocks > 0 && blocksFromFund > math.MaxInt64-addBlocks {
+			return nil, errors.New("block calculation overflow: addBlocks")
+		}
+		addBlocks += blocksFromFund
+		// Determine base block height for expiration
+		baseHeight := tn.ExpireBlockHeight
+		if baseHeight < ctx.BlockHeight() {
+			baseHeight = ctx.BlockHeight()
+		}
+		// Check for overflow when computing new expiration
+		if addBlocks > 0 && baseHeight > math.MaxInt64-addBlocks {
+			return nil, errors.New("block calculation overflow: expire block height")
+		}
+		tn.ExpireBlockHeight = baseHeight + addBlocks
 	}
 
 	// check if we need to reduce the expire time, upon user request

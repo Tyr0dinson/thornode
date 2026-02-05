@@ -33,10 +33,14 @@ var (
 	BaseETHAsset = Asset{Chain: BASEChain, Symbol: "ETH", Ticker: "ETH", Synth: false}
 	// AVAXAsset AVAX
 	AVAXAsset = Asset{Chain: AVAXChain, Symbol: "AVAX", Ticker: "AVAX", Synth: false}
+	// TRXAsset TRON
+	TRXAsset = Asset{Chain: TRONChain, Symbol: "TRX", Ticker: "TRX", Synth: false}
 	// XRPAsset XRP
 	XRPAsset = Asset{Chain: XRPChain, Symbol: "XRP", Ticker: "XRP", Synth: false}
 	// SOLAsset SOL
 	SOLAsset = Asset{Chain: SOLChain, Symbol: "SOL", Ticker: "SOL", Synth: false}
+	// ZECAsset ZEC
+	ZECAsset = Asset{Chain: ZECChain, Symbol: "ZEC", Ticker: "ZEC", Synth: false}
 	// ADAAsset ADA
 	ADAAsset = Asset{Chain: ADAChain, Symbol: "ADA", Ticker: "ADA", Synth: false}
 	// RuneNative RUNE on thorchain
@@ -44,6 +48,12 @@ var (
 	TCY        = Asset{Chain: THORChain, Symbol: "TCY", Ticker: "TCY", Synth: false}
 	TOR        = Asset{Chain: THORChain, Symbol: "TOR", Ticker: "TOR", Synth: false}
 	THORBTC    = Asset{Chain: THORChain, Symbol: "BTC", Ticker: "BTC", Synth: false}
+	USDCAsset  = Asset{Chain: NOBLEChain, Symbol: "USDC", Ticker: "USDC", Synth: false}
+	// Whitelisted assets
+	RUJI = Asset{Chain: THORChain, Symbol: "RUJI", Ticker: "RUJI", Synth: false}
+	NAMI = Asset{Chain: THORChain, Symbol: "NAMI", Ticker: "NAMI", Synth: false}
+	LQDY = Asset{Chain: THORChain, Symbol: "LQDY", Ticker: "LQDY", Synth: false}
+	AUTO = Asset{Chain: THORChain, Symbol: "AUTO", Ticker: "AUTO", Synth: false}
 )
 
 var _ sdk.CustomProtobufType = (*Asset)(nil)
@@ -116,7 +126,9 @@ func NewAssetWithShortCodesV3_1_0(input string) (Asset, error) {
 	shorts[SOLAsset.ShortCode()] = SOLAsset.String()
 	shorts[RuneNative.ShortCode()] = RuneNative.String()
 	shorts[BaseETHAsset.ShortCode()] = BaseETHAsset.String()
+	shorts[TRXAsset.ShortCode()] = TRXAsset.String()
 	shorts[XRPAsset.ShortCode()] = XRPAsset.String()
+	shorts[ADAAsset.ShortCode()] = ADAAsset.String()
 
 	long, ok := shorts[input]
 	if ok {
@@ -243,7 +255,7 @@ func (a Asset) IsVaultAsset() bool {
 
 // Check if asset is a derived asset
 func (a Asset) IsDerivedAsset() bool {
-	return !a.Synth && !a.Trade && !a.Secured && a.GetChain().IsTHORChain() && !a.IsRune() && !a.Equals(TCY)
+	return !a.Synth && !a.Trade && !a.Secured && a.GetChain().IsTHORChain() && !a.IsRune() && !a.IsTCY() && !a.IsWhitelisted()
 }
 
 // Native return native asset, only relevant on THORChain
@@ -255,6 +267,14 @@ func (a Asset) Native() string {
 		return "tor"
 	case a.Equals(TCY):
 		return "tcy"
+	case a.Equals(RUJI):
+		return "x/ruji"
+	case a.Equals(NAMI):
+		return "thor.nami"
+	case a.Equals(LQDY):
+		return "thor.lqdy"
+	case a.Equals(AUTO):
+		return "thor.auto"
 	}
 
 	return strings.ToLower(a.String())
@@ -303,10 +323,17 @@ func (a Asset) ShortCode() string {
 		return "s"
 	case "BASE.ETH":
 		return "f"
+	case "TRON.TRX":
+		return "tr"
 	case "XRP.XRP":
 		return "x"
 	case "SOL.SOL":
 		return "o"
+	case "ZEC.ZEC":
+		return "z"
+	case "ADA.ADA":
+		return "ad"
+
 	default:
 		return ""
 	}
@@ -326,9 +353,20 @@ func (a Asset) IsRune() bool {
 	return RuneAsset().Equals(a)
 }
 
-// IsTCY is a helper function ,return true only when the asset represent RUNE
+// IsTCY is a helper function, return true only when the asset represents TCY
 func (a Asset) IsTCY() bool {
 	return TCY.Equals(a)
+}
+
+// IsWhitelisted is a helper function, return true when the asset is whitelisted for a base layer pool
+func (a Asset) IsWhitelisted() bool {
+	whitelist := map[Asset]bool{
+		RUJI: true,
+		NAMI: true,
+		LQDY: true,
+		AUTO: true,
+	}
+	return whitelist[a]
 }
 
 // IsNative is a helper function, returns true when the asset is a native

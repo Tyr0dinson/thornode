@@ -14,23 +14,15 @@ type: create-blocks
 count: 1
 ---
 ########################################################################################
-# deposit savers (non-streaming, quote only)
+# disable advanced swap queue to ensure consistent test behavior
 ########################################################################################
-type: check
-endpoint: http://localhost:1317/thorchain/quote/saver/deposit
-params:
-  asset: BTC.BTC
-  amount: 10000000
-asserts:
-  - .inbound_address == "{{ addr_btc_dog }}"
-  - .expected_amount_deposit|tonumber == 9149338
-  - .dust_threshold|tonumber == 10000
-  - .fees.liquidity|tonumber == 1201394
-  - .fees.outbound|tonumber == 2227
-  - .fees.slippage_bps|tonumber == 1160
-  - .fees.total|tonumber == 1203621
-  - .fees.total_bps|tonumber == 1162
-  - (.fees.total|tonumber) == (.fees.liquidity|tonumber)+(.fees.outbound|tonumber)
+type: tx-mimir
+key: EnableAdvSwapQueue
+value: 0
+signer: {{ addr_thor_dog }}
+---
+type: create-blocks
+count: 1
 ---
 ########################################################################################
 # enable streaming savers
@@ -42,25 +34,6 @@ value: 1
 ---
 type: create-blocks
 count: 1
----
-########################################################################################
-# streaming savers deposit (quote)
-########################################################################################
-type: check
-endpoint: http://localhost:1317/thorchain/quote/saver/deposit
-params:
-  asset: BTC.BTC
-  amount: 10000000
-asserts:
-  - .inbound_address == "{{ addr_btc_dog }}"
-  - .expected_amount_deposit|tonumber == 9925103
-  - .dust_threshold|tonumber == 10000
-  - .fees.liquidity|tonumber == 99120
-  - .fees.outbound|tonumber == 2010
-  - .fees.slippage_bps|tonumber == 98
-  - .fees.total|tonumber == 101130
-  - .fees.total_bps|tonumber == 100
-  - (.fees.total|tonumber) == (.fees.liquidity|tonumber)+(.fees.outbound|tonumber)
 ---
 ########################################################################################
 # streaming savers deposit
@@ -93,27 +66,6 @@ endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/savers
 asserts:
   - .|length == 1
   - .[0].asset_deposit_value|tonumber == 9923995
----
-########################################################################################
-# streaming savers withdraw (quote)
-########################################################################################
-type: check
-endpoint: http://localhost:1317/thorchain/quote/saver/withdraw
-params:
-  asset: BTC.BTC
-  withdraw_bps: 10000
-  address: "{{ addr_btc_pig }}"
-asserts:
-  - .inbound_address == "{{ addr_btc_dog }}"
-  - .dust_amount|tonumber == 20000
-  - .dust_threshold|tonumber == 10000
-  - .expected_amount_out|tonumber == 9787126
-  - .fees.liquidity|tonumber == 98730
-  - .fees.outbound|tonumber == 14000
-  - .fees.slippage_bps|tonumber == 99
-  - .fees.total|tonumber == 112730
-  - .fees.total_bps|tonumber == 113
-  - (.fees.total|tonumber) == (.fees.liquidity|tonumber)+(.fees.outbound|tonumber)
 ---
 ########################################################################################
 # streaming savers affiliate tests
@@ -177,10 +129,10 @@ endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .|length == 1
   - .[0].coin.asset == "${IN_ASSET}"
-  - .[0].coin.amount == "${OUT_AMOUNT=1486000}"
+  - .[0].coin.amount == "${OUT_AMOUNT=1493000}"
   - .| ${OUT_AMOUNT} > ${IN_AMOUNT} * 95/100 # Full inbound amount, minus outbound fee.
-  - .[0].max_gas[0].amount == "${OUT_GAS_AMOUNT=10500}"
-  - .[0].memo == "REFUND:${IN_TXID}"
+  - .[0].max_gas[0].amount == "${OUT_GAS_AMOUNT=10000}"
+  - .[0].original_memo == "REFUND:${IN_TXID}"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -266,10 +218,10 @@ endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .|length == 1
   - .[0].coin.asset == "${IN_ASSET}"
-  - .[0].coin.amount == "${OUT_AMOUNT=1486000}"
+  - .[0].coin.amount == "${OUT_AMOUNT=1493000}"
   - .| ${OUT_AMOUNT} > ${IN_AMOUNT} * 95/100 # Full inbound amount, minus outbound fee.
-  - .[0].max_gas[0].amount == "${OUT_GAS_AMOUNT=10500}"
-  - .[0].memo == "REFUND:${IN_TXID}"
+  - .[0].max_gas[0].amount == "${OUT_GAS_AMOUNT=10000}"
+  - .[0].original_memo == "REFUND:${IN_TXID}"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -369,7 +321,7 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/pool/BTC.BTC/saver/{{ addr_btc_fish }}
 asserts:
-  - .units == "${SAVER_UNITS=148740}" # Successful Savers add for the Affiliate BTC address.
+  - .units == "${SAVER_UNITS=148739}" # Successful Savers add for the Affiliate BTC address.
 ---
 ###########################################################################
 type: tx-observed-in

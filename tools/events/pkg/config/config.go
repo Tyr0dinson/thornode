@@ -76,11 +76,12 @@ type Config struct {
 
 	// Notifications contain categories of webhooks that route to multiple services.
 	Notifications struct {
-		Activity    Webhooks `mapstructure:"activity"`
-		Lending     Webhooks `mapstructure:"lending"`
-		Info        Webhooks `mapstructure:"info"`
-		Security    Webhooks `mapstructure:"security"`
-		Reschedules Webhooks `mapstructure:"reschedules"`
+		Activity      Webhooks `mapstructure:"activity"`
+		Lending       Webhooks `mapstructure:"lending"`
+		Info          Webhooks `mapstructure:"info"`
+		Security      Webhooks `mapstructure:"security"`
+		Reschedules   Webhooks `mapstructure:"reschedules"`
+		FailedRefunds Webhooks `mapstructure:"failed_refunds"`
 	} `mapstructure:"notifications"`
 
 	// Links contain URLs to services linked in alerts.
@@ -115,7 +116,7 @@ type Config struct {
 		// alert will fire if both thresholds are met.
 		SwapDelta struct {
 			USDValue    uint64 `mapstructure:"usd_value"`
-			BasisPoints uint64 `mapstructure:"basis_points"`
+			BasisPoints int64  `mapstructure:"basis_points"`
 		} `mapstructure:"swap_delta"`
 
 		Security struct {
@@ -191,6 +192,7 @@ func init() {
 	config.Notifications.Lending.Category = "Lending"
 	config.Notifications.Security.Category = "Security"
 	config.Notifications.Reschedules.Category = "Reschedules"
+	config.Notifications.FailedRefunds.Category = "Failed Refunds"
 
 	// retries
 	config.MaxRetries = 10
@@ -206,11 +208,11 @@ func init() {
 	config.TORAnchorCheckBlocks = 300 // 30 minutes
 
 	// thresholds
-	config.Thresholds.USDValue = 150_000
+	config.Thresholds.USDValue = 250_000
 	config.Thresholds.RuneTransferValue = 1_000_000
 	config.Thresholds.SwapDelta.USDValue = 50_000
-	config.Thresholds.SwapDelta.BasisPoints = 500
-	config.Thresholds.Security.USDValue = 3_000_000
+	config.Thresholds.SwapDelta.BasisPoints = 1000
+	config.Thresholds.Security.USDValue = 10_000_000
 	config.Thresholds.SwapSlipBasisPoints = 100
 	config.Thresholds.TORAnchorDriftBasisPoints = 500
 	config.Thresholds.MaxRescheduledAge = 3 * 24 * time.Hour

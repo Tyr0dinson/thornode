@@ -44,6 +44,7 @@ type BlockScanner struct {
 	wg                    *sync.WaitGroup
 	scanChan              chan int64
 	stopChan              chan struct{}
+	rollbackChan          chan int64
 	scannerStorage        ScannerStorage
 	metrics               *metrics.Metrics
 	previousBlock         int64
@@ -75,6 +76,7 @@ func NewBlockScanner(cfg config.BifrostBlockScannerConfiguration, scannerStorage
 		wg:              &sync.WaitGroup{},
 		stopChan:        make(chan struct{}),
 		scanChan:        make(chan int64),
+		rollbackChan:    make(chan int64),
 		scannerStorage:  scannerStorage,
 		metrics:         m,
 		errorCounter:    m.GetCounterVec(metrics.CommonBlockScannerError),
@@ -83,7 +85,7 @@ func NewBlockScanner(cfg config.BifrostBlockScannerConfiguration, scannerStorage
 		healthy:         &atomic.Bool{},
 	}
 
-	scanner.previousBlock, err = scanner.FetchLastHeight()
+	scanner.previousBlock, err = scanner.GetStartHeight()
 	logger.Info().Int64("block height", scanner.previousBlock).Msg("block scanner last fetch height")
 	return scanner, err
 }
@@ -95,6 +97,63 @@ func (b *BlockScanner) IsHealthy() bool {
 
 func (b *BlockScanner) PreviousHeight() int64 {
 	return atomic.LoadInt64(&b.previousBlock)
+}
+
+// RollbackToLastObserved rollback the block scanner to last observed height minus flex period
+func (b *BlockScanner) RollbackToLastObserved() error {
+	lastObservedHeight, err := b.thorchainBridge.GetLastObservedInHeight(b.cfg.ChainID)
+	if err != nil {
+		return fmt.Errorf("fail to get last observed height: %w", err)
+	}
+	if lastObservedHeight <= 0 {
+		// no last observed height, no need to rollback
+		return nil
+	}
+
+	maxConfirmations, err := b.thorchainBridge.GetMimirWithRef(constants.MimirTemplateMaxConfirmations, b.cfg.ChainID.String())
+	if err != nil || maxConfirmations < 0 {
+		maxConfirmations = 0
+	}
+
+	c, err := b.thorchainBridge.GetConstants()
+	if err != nil {
+		return fmt.Errorf("fail to get constants: %w", err)
+	}
+
+	obsDelayFlexConst := constants.ObservationDelayFlexibility.String()
+	observerFlexWindowBlocksThor := c[obsDelayFlexConst]
+	observerFlexWindowBlocksThorMimir, err := b.thorchainBridge.GetMimir(obsDelayFlexConst)
+	if err == nil && observerFlexWindowBlocksThorMimir > 0 {
+		observerFlexWindowBlocksThor = observerFlexWindowBlocksThorMimir
+	}
+
+	thorBlockTimeMs := c[constants.ThorchainBlockTime.String()] / int64(time.Millisecond)
+	observerFlexWindowBlocksChain := observerFlexWindowBlocksThor * thorBlockTimeMs / b.cfg.ChainID.ApproximateBlockMilliseconds()
+	if observerFlexWindowBlocksChain < 1 {
+		observerFlexWindowBlocksChain = 1
+	}
+
+	rollbackHeight := lastObservedHeight - max(observerFlexWindowBlocksChain, maxConfirmations)
+
+	if rollbackHeight < 0 {
+		rollbackHeight = 0
+	}
+
+	b.rollbackChan <- rollbackHeight
+	return nil
+}
+
+func (b *BlockScanner) rollback(height int64) error {
+	if b.PreviousHeight() <= height {
+		// height is already below rollback amount, proceed as normal
+		return nil
+	}
+	if err := b.scannerStorage.SetScanPos(height); err != nil {
+		return fmt.Errorf("fail to set scan pos: %w", err)
+	}
+	// set the previous block to height
+	atomic.StoreInt64(&b.previousBlock, height)
+	return nil
 }
 
 // GetMessages return the channel
@@ -157,41 +216,45 @@ func (b *BlockScanner) scanMempool() {
 // Checks current mimir settings to determine if the current chain is paused
 // either globally or specifically
 func IsChainPaused(cfg config.BifrostBlockScannerConfiguration, logger zerolog.Logger, bridge thorclient.ThorchainBridge) bool {
-	var haltHeight, solvencyHaltHeight, nodeHaltHeight, thorHeight int64
+	thorHeight, err := bridge.GetBlockHeight()
+	if err != nil {
+		logger.Error().Err(err).Msg("fail to get THORChain block height")
+	}
 
 	// Check if chain has been halted via mimir
 	haltHeight, err := bridge.GetMimir(fmt.Sprintf("Halt%sChain", cfg.ChainID))
 	if err != nil {
 		logger.Error().Err(err).Msgf("fail to get mimir setting %s", fmt.Sprintf("Halt%sChain", cfg.ChainID))
 	}
+	if haltHeight > 0 && thorHeight >= haltHeight {
+		return true
+	}
+
 	// Check if chain has been halted by auto solvency checks
-	solvencyHaltHeight, err = bridge.GetMimir(fmt.Sprintf("SolvencyHalt%sChain", cfg.ChainID))
+	solvencyHaltHeight, err := bridge.GetMimir(fmt.Sprintf("SolvencyHalt%sChain", cfg.ChainID))
 	if err != nil {
 		logger.Error().Err(err).Msgf("fail to get mimir %s", fmt.Sprintf("SolvencyHalt%sChain", cfg.ChainID))
 	}
+	if solvencyHaltHeight > 0 && thorHeight >= solvencyHaltHeight {
+		return true
+	}
+
 	// Check if all chains halted globally
 	globalHaltHeight, err := bridge.GetMimir("HaltChainGlobal")
 	if err != nil {
 		logger.Error().Err(err).Msg("fail to get mimir setting HaltChainGlobal")
 	}
-	if globalHaltHeight > haltHeight {
-		haltHeight = globalHaltHeight
+	if globalHaltHeight > 0 && thorHeight >= globalHaltHeight {
+		return true
 	}
-	// Check if a node paused all chains
-	nodeHaltHeight, err = bridge.GetMimir("NodePauseChainGlobal")
+
+	// Check if a node temporarily paused all chains
+	nodePauseHeight, err := bridge.GetMimir("NodePauseChainGlobal")
 	if err != nil {
 		logger.Error().Err(err).Msg("fail to get mimir setting NodePauseChainGlobal")
 	}
-	thorHeight, err = bridge.GetBlockHeight()
-	if err != nil {
-		logger.Error().Err(err).Msg("fail to get THORChain block height")
-	}
 
-	if nodeHaltHeight > 0 && thorHeight < nodeHaltHeight {
-		haltHeight = 1
-	}
-
-	return (haltHeight > 0 && thorHeight > haltHeight) || (solvencyHaltHeight > 0 && thorHeight > solvencyHaltHeight)
+	return (nodePauseHeight > 0 && thorHeight <= nodePauseHeight)
 }
 
 // scanBlocks
@@ -203,11 +266,24 @@ func (b *BlockScanner) scanBlocks() {
 	lastMimirCheck := time.Now().Add(-constants.ThorchainBlockTime)
 	isChainPaused := false
 
+	type fetchTxsResult struct {
+		txIn types.TxIn
+		err  error
+	}
+	prefetch := map[int64]chan fetchTxsResult{}
+
 	// start up to grab those blocks
 	for {
 		select {
 		case <-b.stopChan:
 			return
+		case amount := <-b.rollbackChan:
+			if err := b.rollback(amount); err != nil {
+				b.logger.Error().Err(err).Msg("fail to rollback block scanner")
+				b.errorCounter.WithLabelValues(b.cfg.ChainID.String()).Inc()
+				time.Sleep(b.cfg.BlockHeightDiscoverBackoff)
+				continue
+			}
 		default:
 			preBlockHeight := atomic.LoadInt64(&b.previousBlock)
 			currentBlock := preBlockHeight + 1
@@ -234,7 +310,18 @@ func (b *BlockScanner) scanBlocks() {
 				time.Sleep(b.cfg.BlockHeightDiscoverBackoff)
 				continue
 			}
-			txIn, err := b.chainScanner.FetchTxs(currentBlock, chainHeight)
+
+			// get the prefetched result or call FetchTxs for the block
+			var txIn types.TxIn
+			if resultChan, ok := prefetch[currentBlock]; ok {
+				// already prefetched, just wait for the result
+				result := <-resultChan
+				delete(prefetch, currentBlock)
+				txIn, err = result.txIn, result.err
+			} else {
+				txIn, err = b.chainScanner.FetchTxs(currentBlock, chainHeight)
+			}
+
 			if err != nil {
 				// don't log an error if its because the block doesn't exist yet
 				if !errors.Is(err, btypes.ErrUnavailableBlock) {
@@ -245,11 +332,26 @@ func (b *BlockScanner) scanBlocks() {
 				continue
 			}
 
+			// start prefetching next blocks if configured
+			if b.cfg.PrefetchBlocks > 1 {
+				for i := int64(1); i < b.cfg.PrefetchBlocks; i++ {
+					prefetchHeight := currentBlock + i
+					if _, ok := prefetch[prefetchHeight]; !ok && prefetchHeight <= chainHeight {
+						resultChan := make(chan fetchTxsResult, 1)
+						prefetch[prefetchHeight] = resultChan
+						go func(height int64, resultChan chan fetchTxsResult) {
+							fetchTxIn, fetchErr := b.chainScanner.FetchTxs(height, chainHeight)
+							resultChan <- fetchTxsResult{txIn: fetchTxIn, err: fetchErr}
+						}(prefetchHeight, resultChan)
+					}
+				}
+			}
+
 			ms := b.cfg.ChainID.ApproximateBlockMilliseconds()
 
 			// determine how often we compare THORNode network fee to Bifrost network fee.
-			// General goal is about once per day.
-			mod := ((24 * 60 * 60 * 1000) + ms - 1) / ms
+			// General goal is about once per hour.
+			mod := ((60 * 60 * 1000) + ms - 1) / ms
 			if currentBlock%mod == 0 {
 				b.updateStaleNetworkFee(currentBlock)
 			}
@@ -312,6 +414,11 @@ func (b *BlockScanner) updateStaleNetworkFee(currentBlock int64) {
 	}
 	// Do not broadcast a regularly-timed network fee if the THORNode network fee is already consistent with the scanner's.
 	if thorTransactionSize == transactionSize && thorTransactionFeeRate == transactionFeeRate {
+		b.logger.Info().
+			Int64("height", currentBlock).
+			Uint64("size", transactionSize).
+			Uint64("rate", transactionFeeRate).
+			Msg("thornode network fee is consistent with scanner, no need to broadcast")
 		return
 	}
 
@@ -329,34 +436,35 @@ func (b *BlockScanner) updateStaleNetworkFee(currentBlock int64) {
 		Msg("sent timed network fee to THORChain")
 }
 
-// FetchLastHeight determines the height to start scanning:
+// GetStartHeight determines the height to start scanning:
 //  1. Use the config start height if set.
 //  2. If last consensus inbound height (lastblock) is available:
 //     a) Use local scanner storage height if available, up to the max lag from lastblock.
 //     b) Otherwise, use lastblock.
 //  3. Otherwise, use local scanner storage height if available.
 //  4. Otherwise, use the last height from the chain itself.
-func (b *BlockScanner) FetchLastHeight() (int64, error) {
+func (b *BlockScanner) GetStartHeight() (int64, error) {
 	// get scanner storage height
 	currentPos, _ := b.scannerStorage.GetScanPos() // ignore error
 
+	clog := b.logger.With().Stringer("chain", b.cfg.ChainID).Logger()
+
 	// 1. Use the config start height if set.
 	if b.cfg.StartBlockHeight > 0 {
+		clog.Info().
+			Int64("start_height", b.cfg.StartBlockHeight).
+			Msg("using configured start block height")
 		return b.cfg.StartBlockHeight, nil
 	}
 
 	// wait for thorchain to be caught up first
 	if err := b.thorchainBridge.WaitToCatchUp(); err != nil {
+		clog.Info().Err(err).Msg("waiting for thorchain to catch up")
 		return 0, err
 	}
 
-	if b.thorchainBridge != nil {
-		var height int64
-		if b.cfg.ChainID.Equals(common.THORChain) {
-			height, _ = b.thorchainBridge.GetBlockHeight()
-		} else {
-			height, _ = b.thorchainBridge.GetLastObservedInHeight(b.cfg.ChainID)
-		}
+	if b.thorchainBridge != nil && b.cfg.ChainID != common.THORChain {
+		height, _ := b.thorchainBridge.GetLastObservedInHeight(b.cfg.ChainID)
 		if height > 0 {
 
 			// 2.a) Use local scanner storage height if available, up to the max lag from lastblock.
@@ -366,23 +474,46 @@ func (b *BlockScanner) FetchLastHeight() (int64, error) {
 
 				// return the position up to the max block lag behind the consensus height
 				if height <= currentPos+maxLagBlocks {
+					clog.Info().
+						Int64("start_height", currentPos).
+						Int64("last_observed_height", height).
+						Msg("using local scanner storage height")
+
 					return currentPos, nil
 				} else {
+					clog.Info().
+						Int64("start_height", height-maxLagBlocks).
+						Int64("last_observed_height", height).
+						Msg("using last observed height with max lag")
 					return height - maxLagBlocks, nil
 				}
 			}
 
 			// 2.b) Otherwise, use lastblock.
+			clog.Info().
+				Int64("start_height", height).
+				Msg("using last observed height")
 			return height, nil
 		}
 	}
 
 	//  3. Otherwise, use local scanner storage height if available.
 	if currentPos > 0 {
+		clog.Info().
+			Int64("start_height", currentPos).
+			Msg("using local scanner storage height")
 		return currentPos, nil
 	}
 
 	//  4. Otherwise, use the last height from the chain itself.
+	height, err := b.chainScanner.GetHeight()
+	if err != nil {
+		clog.Error().Err(err).Msg("failed to get chain height")
+		return 0, err
+	}
+	clog.Info().
+		Int64("start_height", height).
+		Msg("using chain height as start height")
 	return b.chainScanner.GetHeight()
 }
 

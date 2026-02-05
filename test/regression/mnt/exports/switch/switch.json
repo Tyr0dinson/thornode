@@ -112,6 +112,9 @@
         "tx_size_cost_per_byte": "10"
       }
     },
+    "authz": {
+      "authorization": []
+    },
     "bank": {
       "balances": [
         {
@@ -127,7 +130,7 @@
           "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
           "coins": [
             {
-              "amount": "200739866",
+              "amount": "202219597",
               "denom": "rune"
             }
           ]
@@ -136,7 +139,7 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "35000003260104",
+              "amount": "35000001780314",
               "denom": "rune"
             }
           ]
@@ -167,7 +170,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "4999998000030",
+              "amount": "4999998000089",
               "denom": "rune"
             }
           ]
@@ -196,12 +199,16 @@
     "genutil": {
       "gen_txs": []
     },
+    "scheduler": {
+      "schedules": []
+    },
     "thorchain": {
       "POL": {
         "rune_deposited": "0",
         "rune_withdrawn": "0"
       },
       "THORNames": [],
+      "adv_swap_queue_items": [],
       "affiliate_collectors": null,
       "bond_providers": [
         {
@@ -230,8 +237,6 @@
           "units": "200000000"
         }
       ],
-      "loan_total_collateral": [],
-      "loans": [],
       "mimirs": [
         {
           "key": "ENABLESWITCH-GAIA-KUJI",
@@ -240,13 +245,13 @@
       ],
       "network": {
         "LPIncomeSplit": "10000",
-        "bond_reward_rune": "30",
+        "bond_reward_rune": "89",
         "total_bond_units": "2"
       },
       "network_fees": [
         {
           "chain": "GAIA",
-          "transaction_fee_rate": "1000",
+          "transaction_fee_rate": "10",
           "transaction_size": "1000"
         }
       ],
@@ -265,7 +270,7 @@
           "ip_address": "1.1.1.1",
           "node_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
           "pub_key_set": {
-            "ed25519": "tthorpub1zcjduepqfan43w2emjhfv45gspf98squqlnl2rcchc3e4dx7z2nxr27edflsy2e8ql",
+            "ed25519": "tthorpub1zcjduepqzupdpx7334mjeuuggnvxv3ctkghu0qcz2eml30tgu9ukw58z6uusmmxmys",
             "secp256k1": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
           },
           "status": "Active",
@@ -281,7 +286,7 @@
                 "amount": "10000000",
                 "asset": "GAIA.KUJI"
               },
-              "gas_rate": "1500",
+              "gas_rate": "15",
               "in_hash": "0000000000000000000000000000000000000000000000000000000000000002",
               "max_gas": [
                 {
@@ -290,9 +295,10 @@
                   "decimals": "6"
                 }
               ],
-              "memo": "OUT:0000000000000000000000000000000000000000000000000000000000000002",
+              "original_memo": "OUT:0000000000000000000000000000000000000000000000000000000000000002",
               "to_address": "cosmos100000000000000000000000000000000708mjz",
-              "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
+              "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
+              "vault_pub_key_eddsa": "tthorpub1zcjduepqzupdpx7334mjeuuggnvxv3ctkghu0qcz2eml30tgu9ukw58z6uusmmxmys"
             }
           ],
           "finalised_height": "6",
@@ -358,19 +364,24 @@
               }
             }
           ],
+          "unfinalized_height": "6",
           "updated_vault": true
         }
       ],
       "observed_tx_out_voters": null,
-      "orderbook_items": [],
       "outbound_fee_spent_rune": [],
-      "outbound_fee_withheld_rune": [],
+      "outbound_fee_withheld_rune": [
+        {
+          "amount": "689655172414",
+          "asset": "GAIA.KUJI"
+        }
+      ],
       "pools": [
         {
           "LP_units": "200000000",
           "asset": "GAIA.ATOM",
           "balance_asset": "10000000",
-          "balance_rune": "200739866",
+          "balance_rune": "202219597",
           "decimals": "6",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -378,6 +389,7 @@
           "synth_units": "0"
         }
       ],
+      "reference_memos": [],
       "reserve_contributors": null,
       "rune_pool": {
         "pool_units": "0",
@@ -406,7 +418,7 @@
                 "amount": "10000000",
                 "asset": "GAIA.KUJI"
               },
-              "gas_rate": "1500",
+              "gas_rate": "15",
               "in_hash": "0000000000000000000000000000000000000000000000000000000000000002",
               "max_gas": [
                 {
@@ -415,9 +427,10 @@
                   "decimals": "6"
                 }
               ],
-              "memo": "OUT:0000000000000000000000000000000000000000000000000000000000000002",
+              "original_memo": "OUT:0000000000000000000000000000000000000000000000000000000000000002",
               "to_address": "cosmos100000000000000000000000000000000708mjz",
-              "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
+              "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
+              "vault_pub_key_eddsa": "tthorpub1zcjduepqzupdpx7334mjeuuggnvxv3ctkghu0qcz2eml30tgu9ukw58z6uusmmxmys"
             }
           ]
         }
@@ -434,8 +447,10 @@
             "DOGE",
             "AVAX",
             "GAIA",
+            "NOBLE",
             "BSC",
             "BASE",
+            "TRON",
             "XRP",
             "SOL"
           ],
@@ -456,7 +471,7 @@
             "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
           ],
           "pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4",
-          "pub_key_eddsa": "tthorpub1zcjduepqfan43w2emjhfv45gspf98squqlnl2rcchc3e4dx7z2nxr27edflsy2e8ql",
+          "pub_key_eddsa": "tthorpub1zcjduepqzupdpx7334mjeuuggnvxv3ctkghu0qcz2eml30tgu9ukw58z6uusmmxmys",
           "routers": null,
           "status": "ActiveVault",
           "type": "AsgardVault"

@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/blang/semver"
 )
@@ -22,9 +21,6 @@ var (
 
 var SWVersion, _ = semver.Make(Version)
 
-// ThorchainBlockTime Block time of THORChain
-var ThorchainBlockTime = 2 * time.Second
-
 // max basis points
 const MaxBasisPts = uint64(10_000)
 
@@ -36,20 +32,31 @@ const MaxMemoSize = 250
 // streaming swap math
 const StreamingSwapMinBPFeeMulti = int64(100)
 
+// "width" of a volume bucket (15min)
+const VolumeBucketSeconds = int64(900)
+
 // used to preserve precision when determining the dollar price of rune.
 const DollarMulti = 1e9
 
 // MaxETHGas define the maximum gas for a single transaction on ETH
 const MaxETHGas = 50000000
 
+// max amount of data that can be provided with OP_RETURN (bytes)
+const MaxOpReturnDataSize = 80
+
+// when using fake transactions to encode further memo information, support up
+// to eight fake addresses (20 bytes each):
+// 80 (op_return) + 8 * 20 (addresses) - 1 ('^' marker)
+const MaxMemoSizeUtxoExtended = MaxOpReturnDataSize - 1 + 8*20
+
 // The provided key must be comparable and should not be of type string or any other built-in type to avoid collisions between packages using context. Users of WithValue should define their own types for keys. To avoid allocating when assigning to an interface{}, context keys often have concrete type struct{}. Alternatively, exported context key variables' static type should be a pointer or interface.
 type contextKey string
 
 const (
-	CtxMetricLabels  contextKey = "metricLabels"
-	CtxLoanTxID      contextKey = "loan-txid"
-	CtxLoanToAddress contextKey = "loan-toaddress"
-	CtxObservedTx    contextKey = "observed-tx"
+	CtxMetricLabels   contextKey = "metricLabels"
+	CtxObservedTx     contextKey = "observed-tx"
+	CtxSimulationMode contextKey = "simulation-mode"
+	CtxWASMQuery      contextKey = "wasm-query"
 )
 
 // Permitted characters in Mimirs

@@ -15,13 +15,13 @@ import (
 
 type Keeper interface {
 	Cdc() codec.BinaryCodec
-	DeleteKey(ctx cosmos.Context, key string)
+	DeleteKey(ctx cosmos.Context, key []byte)
 	GetVersion() semver.Version
 	GetVersionWithCtx(ctx cosmos.Context) (semver.Version, bool)
 	SetVersionWithCtx(ctx cosmos.Context, v semver.Version)
 	GetMinJoinLast(ctx cosmos.Context) (semver.Version, int64)
 	SetMinJoinLast(ctx cosmos.Context)
-	GetKey(prefix kvTypes.DbPrefix, key string) string
+	GetKey(prefix kvTypes.DbPrefix, key string, other ...string) []byte
 	GetRuneBalanceOfModule(ctx cosmos.Context, moduleName string) cosmos.Uint
 	GetBalanceOfModule(ctx cosmos.Context, moduleName, denom string) cosmos.Uint
 	SendFromModuleToModule(ctx cosmos.Context, from, to string, coin common.Coins) error
@@ -58,7 +58,6 @@ type Keeper interface {
 	KeeperPool
 	KeeperLastHeight
 	KeeperLiquidityProvider
-	KeeperLoan
 	KeeperNodeAccount
 	KeeperUpgrade
 	KeeperObserver
@@ -77,13 +76,15 @@ type Keeper interface {
 	KeeperErrataTx
 	KeeperBanVoter
 	KeeperSwapQueue
-	KeeperOrderBooks
+	KeeperAdvSwapQueues
 	KeeperMimir
 	KeeperNetworkFee
 	KeeperObservedNetworkFeeVoter
+	KeeperOracle
 	KeeperChainContract
 	KeeperSolvencyVoter
 	KeeperTHORName
+	KeeperReferenceMemo
 	KeeperHalt
 	KeeperAnchors
 	KeeperStreamingSwap
@@ -93,6 +94,7 @@ type Keeper interface {
 	KeeperRUNEPool
 	KeeperTCYClaimer
 	KeeperTCYStaker
+	KeeperVolume
 }
 
 type KeeperConfig interface {
@@ -135,15 +137,6 @@ type KeeperStreamingSwap interface {
 	GetStreamingSwap(ctx cosmos.Context, _ common.TxID) (StreamingSwap, error)
 	StreamingSwapExists(ctx cosmos.Context, _ common.TxID) bool
 	RemoveStreamingSwap(ctx cosmos.Context, _ common.TxID)
-}
-
-type KeeperLoan interface {
-	GetLoanIterator(ctx cosmos.Context, _ common.Asset) cosmos.Iterator
-	GetLoan(ctx cosmos.Context, asset common.Asset, addr common.Address) (Loan, error)
-	SetLoan(ctx cosmos.Context, _ Loan)
-	RemoveLoan(ctx cosmos.Context, _ Loan)
-	SetTotalCollateral(_ cosmos.Context, _ common.Asset, _ cosmos.Uint)
-	GetTotalCollateral(_ cosmos.Context, _ common.Asset) (cosmos.Uint, error)
 }
 
 type KeeperLiquidityProvider interface {
@@ -242,6 +235,7 @@ type KeeperOutboundFees interface {
 	GetOutboundFeeSpentRune(ctx cosmos.Context, outAsset common.Asset) (cosmos.Uint, error)
 	GetOutboundFeeSpentRuneIterator(ctx cosmos.Context) cosmos.Iterator
 	GetOutboundTxFee(ctx cosmos.Context) cosmos.Uint
+	GetSurplusForTargetMultiplier(ctx cosmos.Context, targetMultiplierBps cosmos.Uint) cosmos.Uint
 }
 
 type KeeperSwapSlip interface {
@@ -374,20 +368,22 @@ type KeeperSwapQueue interface {
 	RemoveSwapQueueItem(ctx cosmos.Context, txID common.TxID, i int)
 }
 
-type KeeperOrderBooks interface {
-	OrderBooksEnabled(ctx cosmos.Context) bool
-	SetOrderBookItem(ctx cosmos.Context, msg MsgSwap) error
-	GetOrderBookItemIterator(ctx cosmos.Context) cosmos.Iterator
-	GetOrderBookItem(ctx cosmos.Context, txID common.TxID) (MsgSwap, error)
-	HasOrderBookItem(ctx cosmos.Context, txID common.TxID) bool
-	RemoveOrderBookItem(ctx cosmos.Context, txID common.TxID) error
-	GetOrderBookIndexIterator(_ cosmos.Context, _ types.OrderType, _, _ common.Asset) cosmos.Iterator
-	SetOrderBookIndex(_ cosmos.Context, _ MsgSwap) error
-	GetOrderBookIndex(_ cosmos.Context, _ MsgSwap) (common.TxIDs, error)
-	HasOrderBookIndex(_ cosmos.Context, _ MsgSwap) (bool, error)
-	RemoveOrderBookIndex(_ cosmos.Context, _ MsgSwap) error
-	SetOrderBookProcessor(_ cosmos.Context, _ []bool) error
-	GetOrderBookProcessor(_ cosmos.Context) ([]bool, error)
+type KeeperAdvSwapQueues interface {
+	AdvSwapQueueEnabled(ctx cosmos.Context) bool
+	SetAdvSwapQueueItem(ctx cosmos.Context, msg MsgSwap) error
+	GetAdvSwapQueueItemIterator(ctx cosmos.Context) cosmos.Iterator
+	GetAdvSwapQueueItem(ctx cosmos.Context, txID common.TxID, index int) (MsgSwap, error)
+	HasAdvSwapQueueItem(ctx cosmos.Context, txID common.TxID, index int) bool
+	RemoveAdvSwapQueueItem(ctx cosmos.Context, txID common.TxID, index int) error
+	GetAdvSwapQueueIndexIterator(_ cosmos.Context, _ types.SwapType, _, _ common.Asset) cosmos.Iterator
+	SetAdvSwapQueueIndex(_ cosmos.Context, _ MsgSwap) error
+	GetAdvSwapQueueIndex(_ cosmos.Context, _ MsgSwap) ([]types.AdvSwapQueueIndexItem, error)
+	HasAdvSwapQueueIndex(_ cosmos.Context, _ MsgSwap) (bool, error)
+	RemoveAdvSwapQueueIndex(_ cosmos.Context, _ MsgSwap) error
+	SetLimitSwapTTL(ctx cosmos.Context, blockHeight int64, txHashes []common.TxID) error
+	GetLimitSwapTTL(ctx cosmos.Context, blockHeight int64) ([]common.TxID, error)
+	RemoveLimitSwapTTL(ctx cosmos.Context, blockHeight int64)
+	AddToLimitSwapTTL(ctx cosmos.Context, blockHeight int64, txHash common.TxID) error
 }
 
 type KeeperMimir interface {
@@ -428,6 +424,32 @@ type KeeperChainContract interface {
 type KeeperSolvencyVoter interface {
 	SetSolvencyVoter(_ cosmos.Context, _ SolvencyVoter)
 	GetSolvencyVoter(_ cosmos.Context, _ common.TxID, _ common.Chain) (SolvencyVoter, error)
+}
+
+type KeeperOracle interface {
+	SetPrice(ctx cosmos.Context, oraclePrice OraclePrice) error
+	GetPrice(ctx cosmos.Context, symbol string) (OraclePrice, error)
+	DelPrice(ctx cosmos.Context, symbol string)
+	GetPriceIterator(ctx cosmos.Context) cosmos.Iterator
+}
+
+type KeeperVolume interface {
+	GetVolumeBucket(ctx cosmos.Context, pool common.Asset, index int64) (VolumeBucket, error)
+	SetVolumeBucket(ctx cosmos.Context, bucket VolumeBucket) error
+	GetVolumeBucketIterator(ctx cosmos.Context, pool common.Asset) cosmos.Iterator
+	GetVolume(ctx cosmos.Context, pool common.Asset) (Volume, error)
+	SetVolume(ctx cosmos.Context, volume Volume) error
+}
+
+type KeeperReferenceMemo interface {
+	ReferenceMemoExists(ctx cosmos.Context, _ common.Asset, _ string) bool
+	GetReferenceMemo(ctx cosmos.Context, _ common.Asset, _ string) (ReferenceMemo, error)
+	GetReferenceMemoByTxnHash(ctx cosmos.Context, _ common.TxID) (ReferenceMemo, error)
+	SetReferenceMemo(ctx cosmos.Context, _ ReferenceMemo)
+	GetReferenceMemoIterator(ctx cosmos.Context) cosmos.Iterator
+	DeleteReferenceMemo(ctx cosmos.Context, _ common.Asset, _ string) error
+	GetLastReferenceNumber(ctx cosmos.Context, _ common.Asset) string
+	SetLastReferenceNumber(ctx cosmos.Context, _ common.Asset, _ string)
 }
 
 // NewKeeper creates new instances of the thorchain Keeper

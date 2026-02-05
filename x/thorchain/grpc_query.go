@@ -27,6 +27,7 @@ func NewQueryServerImpl(mgr *Mgrs, txConfig client.TxConfig, kbs cosmos.KeybaseS
 
 func (s *queryServer) unwrapSdkContext(c context.Context) sdk.Context {
 	ctx := sdk.UnwrapSDKContext(c)
+	ctx = ctx.WithLogger(ctx.Logger().With("height", ctx.BlockHeight()))
 	if s.regInit {
 		return ctx
 	}
@@ -107,22 +108,6 @@ func (s *queryServer) Savers(c context.Context, req *types.QuerySaversRequest) (
 	}
 	ctx := s.unwrapSdkContext(c)
 	return s.querySavers(ctx, req)
-}
-
-func (s *queryServer) Borrower(c context.Context, req *types.QueryBorrowerRequest) (*types.QueryBorrowerResponse, error) {
-	if err := checkHeightParam(req.Height); err != nil {
-		return nil, err
-	}
-	ctx := s.unwrapSdkContext(c)
-	return s.queryBorrower(ctx, req)
-}
-
-func (s *queryServer) Borrowers(c context.Context, req *types.QueryBorrowersRequest) (*types.QueryBorrowersResponse, error) {
-	if err := checkHeightParam(req.Height); err != nil {
-		return nil, err
-	}
-	ctx := s.unwrapSdkContext(c)
-	return s.queryBorrowers(ctx, req)
 }
 
 func (s *queryServer) TradeUnit(c context.Context, req *types.QueryTradeUnitRequest) (*types.QueryTradeUnitResponse, error) {
@@ -389,36 +374,9 @@ func (s *queryServer) QuoteSwap(c context.Context, req *types.QueryQuoteSwapRequ
 	return s.queryQuoteSwap(ctx, req)
 }
 
-func (s *queryServer) QuoteSaverDeposit(c context.Context, req *types.QueryQuoteSaverDepositRequest) (*types.QueryQuoteSaverDepositResponse, error) {
-	if err := checkHeightParam(req.Height); err != nil {
-		return nil, err
-	}
+func (s *queryServer) QuoteLimit(c context.Context, req *types.QueryQuoteLimitRequest) (*types.QueryQuoteLimitResponse, error) {
 	ctx := s.unwrapSdkContext(c)
-	return s.queryQuoteSaverDeposit(ctx, req)
-}
-
-func (s *queryServer) QuoteSaverWithdraw(c context.Context, req *types.QueryQuoteSaverWithdrawRequest) (*types.QueryQuoteSaverWithdrawResponse, error) {
-	if err := checkHeightParam(req.Height); err != nil {
-		return nil, err
-	}
-	ctx := s.unwrapSdkContext(c)
-	return s.queryQuoteSaverWithdraw(ctx, req)
-}
-
-func (s *queryServer) QuoteLoanOpen(c context.Context, req *types.QueryQuoteLoanOpenRequest) (*types.QueryQuoteLoanOpenResponse, error) {
-	if err := checkHeightParam(req.Height); err != nil {
-		return nil, err
-	}
-	ctx := s.unwrapSdkContext(c)
-	return s.queryQuoteLoanOpen(ctx, req)
-}
-
-func (s *queryServer) QuoteLoanClose(c context.Context, req *types.QueryQuoteLoanCloseRequest) (*types.QueryQuoteLoanCloseResponse, error) {
-	if err := checkHeightParam(req.Height); err != nil {
-		return nil, err
-	}
-	ctx := s.unwrapSdkContext(c)
-	return s.queryQuoteLoanClose(ctx, req)
+	return s.queryQuoteLimit(ctx, req)
 }
 
 func (s *queryServer) ConstantValues(c context.Context, req *types.QueryConstantValuesRequest) (*types.QueryConstantValuesResponse, error) {
@@ -435,6 +393,30 @@ func (s *queryServer) SwapQueue(c context.Context, req *types.QuerySwapQueueRequ
 	}
 	ctx := s.unwrapSdkContext(c)
 	return s.querySwapQueue(ctx, req)
+}
+
+func (s *queryServer) SwapDetails(c context.Context, req *types.QuerySwapDetailsRequest) (*types.QuerySwapDetailsResponse, error) {
+	if err := checkHeightParam(req.Height); err != nil {
+		return nil, err
+	}
+	ctx := s.unwrapSdkContext(c)
+	return s.querySwapDetails(ctx, req)
+}
+
+func (s *queryServer) LimitSwaps(c context.Context, req *types.QueryLimitSwapsRequest) (*types.QueryLimitSwapsResponse, error) {
+	if err := checkHeightParam(req.Height); err != nil {
+		return nil, err
+	}
+	ctx := s.unwrapSdkContext(c)
+	return s.queryLimitSwaps(ctx, req)
+}
+
+func (s *queryServer) LimitSwapsSummary(c context.Context, req *types.QueryLimitSwapsSummaryRequest) (*types.QueryLimitSwapsSummaryResponse, error) {
+	if err := checkHeightParam(req.Height); err != nil {
+		return nil, err
+	}
+	ctx := s.unwrapSdkContext(c)
+	return s.queryLimitSwapsSummary(ctx, req)
 }
 
 func (s *queryServer) LastBlocks(c context.Context, req *types.QueryLastBlocksRequest) (*types.QueryLastBlocksResponse, error) {
@@ -475,6 +457,14 @@ func (s *queryServer) VaultsPubkeys(c context.Context, req *types.QueryVaultsPub
 	}
 	ctx := s.unwrapSdkContext(c)
 	return s.queryVaultsPubkeys(ctx, req)
+}
+
+func (s *queryServer) VaultSolvency(c context.Context, req *types.QueryVaultSolvencyRequest) (*types.QueryVaultSolvencyResponse, error) {
+	if err := checkHeightParam(req.Height); err != nil {
+		return nil, err
+	}
+	ctx := s.unwrapSdkContext(c)
+	return s.queryVaultSolvency(ctx, req)
 }
 
 func (s *queryServer) TxStages(c context.Context, req *types.QueryTxStagesRequest) (*types.QueryTxStagesResponse, error) {
@@ -673,4 +663,49 @@ func (s *queryServer) TCYClaimers(c context.Context, req *types.QueryTCYClaimers
 	}
 	ctx := s.unwrapSdkContext(c)
 	return s.queryTCYClaimers(ctx, req)
+}
+
+func (s *queryServer) OraclePrices(c context.Context, req *types.QueryOraclePricesRequest) (*types.QueryOraclePricesResponse, error) {
+	if err := checkHeightParam(req.Height); err != nil {
+		return nil, err
+	}
+	ctx := s.unwrapSdkContext(c)
+	return s.queryOraclePrices(ctx, req)
+}
+
+func (s *queryServer) OraclePrice(c context.Context, req *types.QueryOraclePriceRequest) (*types.QueryOraclePriceResponse, error) {
+	if err := checkHeightParam(req.Height); err != nil {
+		return nil, err
+	}
+	ctx := s.unwrapSdkContext(c)
+	return s.queryOraclePrice(ctx, req)
+}
+
+func (s *queryServer) Eip712TypedData(c context.Context, req *types.QueryEip712TypedDataRequest) (*types.QueryEip712TypedDataResponse, error) {
+	ctx := s.unwrapSdkContext(c)
+	return s.queryEip712TypedData(ctx, req)
+}
+
+func (s *queryServer) ReferenceMemo(c context.Context, req *types.QueryReferenceMemoRequest) (*types.QueryReferenceMemoResponse, error) {
+	if err := checkHeightParam(req.Height); err != nil {
+		return nil, err
+	}
+	ctx := s.unwrapSdkContext(c)
+	return s.queryReferenceMemo(ctx, req)
+}
+
+func (s *queryServer) ReferenceMemoByHash(c context.Context, req *types.QueryReferenceMemoByHashRequest) (*types.QueryReferenceMemoByHashResponse, error) {
+	if err := checkHeightParam(req.Height); err != nil {
+		return nil, err
+	}
+	ctx := s.unwrapSdkContext(c)
+	return s.queryReferenceMemoByHash(ctx, req)
+}
+
+func (s *queryServer) ReferenceMemoPreflight(c context.Context, req *types.QueryReferenceMemoPreflightRequest) (*types.QueryReferenceMemoPreflightResponse, error) {
+	if err := checkHeightParam(req.Height); err != nil {
+		return nil, err
+	}
+	ctx := s.unwrapSdkContext(c)
+	return s.queryReferenceMemoPreflight(ctx, req)
 }

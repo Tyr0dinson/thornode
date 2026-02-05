@@ -1,6 +1,7 @@
 package common
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -11,19 +12,19 @@ import (
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcutil"
 	"github.com/btcsuite/btcutil/bech32"
+	"github.com/cometbft/cometbft/crypto"
 	"github.com/cosmos/cosmos-sdk/crypto/codec"
+	"github.com/decred/dcrd/crypto/ripemd160"
 	dogchaincfg "github.com/eager7/dogd/chaincfg"
 	"github.com/eager7/dogutil"
+	eth "github.com/ethereum/go-ethereum/crypto"
 	bchchaincfg "github.com/gcash/bchd/chaincfg"
 	"github.com/gcash/bchutil"
-	cardano "github.com/kocubinski/gardano/address"
 	ltcchaincfg "github.com/ltcsuite/ltcd/chaincfg"
 	"github.com/ltcsuite/ltcutil"
-
-	"github.com/cometbft/cometbft/crypto"
-	eth "github.com/ethereum/go-ethereum/crypto"
 	"github.com/mr-tron/base58"
 
+	adacommon "github.com/blinklabs-io/gouroboros/ledger/common"
 	xrpkm "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/xrp/keymanager"
 
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -42,7 +43,7 @@ var (
 	EmptyPubKey            PubKey
 	EmptyPubKeySet         PubKeySet
 	pubkeyToAddressCache   = make(map[string]Address)
-	pubkeyToAddressCacheMu = &sync.Mutex{}
+	pubkeyToAddressCacheMu = &sync.RWMutex{}
 )
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -116,11 +117,12 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 
 	// cache pubkey to address, since this is expensive with many vaults in pubkey manager
 	key := fmt.Sprintf("%s-%s", chain.String(), p.String())
-	pubkeyToAddressCacheMu.Lock()
-	defer pubkeyToAddressCacheMu.Unlock()
+	pubkeyToAddressCacheMu.RLock()
 	if v, ok := pubkeyToAddressCache[key]; ok {
+		pubkeyToAddressCacheMu.RUnlock()
 		return v, nil
 	}
+	pubkeyToAddressCacheMu.RUnlock()
 
 	chainNetwork := CurrentChainNetwork
 	var addressString string
@@ -131,7 +133,7 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 			return NoAddress, fmt.Errorf("get pub key secp256k1, %w", err)
 		}
 		addressString = xrpkm.MasterPubKeyToAccountID(pk.SerializeCompressed())
-	case GAIAChain, THORChain:
+	case GAIAChain, THORChain, NOBLEChain:
 		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, string(p))
 		if err != nil {
 			return NoAddress, err
@@ -222,22 +224,88 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 
 		// Encode the public key to base58 to get the Solana address
 		addressString = base58.Encode(pubBz)
+	case TRONChain:
+		pub, err := p.Secp256K1()
+		if err != nil {
+			return NoAddress, err
+		}
+
+		addr := eth.PubkeyToAddress(*pub.ToECDSA()).Bytes()
+		addr = append([]byte{65}, addr...)
+
+		sha256sum := func(data []byte) []byte {
+			h := sha256.New()
+			h.Write(data)
+			return h.Sum(nil)
+		}
+
+		checksum := sha256sum(sha256sum(addr))
+
+		addressString = base58.Encode(append(addr, checksum[:4]...))
+	case ZECChain:
+		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, p.String())
+		if err != nil {
+			return NoAddress, fmt.Errorf("fail to get pubkey from bech32: %w", err)
+		}
+
+		// Zcash address generation is similar to Bitcoin but uses different version bytes
+		// Version bytes for Zcash: 0x1c, 0xb8 for mainnet P2PKH (t1), 0x1d, 0x25 for testnet P2PKH (tm)
+		pubBz := pk.Bytes()
+
+		// Hash the public key: SHA256 then RIPEMD160
+		pubHash := sha256.Sum256(pubBz)
+		ripemd160Hasher := ripemd160.New()
+		ripemd160Hasher.Write(pubHash[:])
+		pubKeyHash := ripemd160Hasher.Sum(nil)
+
+		// Determine version bytes based on network
+		var versionBytes []byte
+		switch chainNetwork {
+		case MockNet:
+			versionBytes = []byte{0x1d, 0x25} // testnet P2PKH prefix (tm)
+		case MainNet, StageNet:
+			versionBytes = []byte{0x1c, 0xb8} // mainnet P2PKH prefix (t1)
+		}
+
+		// Create payload: version bytes + public key hash
+		payload := make([]byte, len(versionBytes)+len(pubKeyHash))
+		copy(payload, versionBytes)
+		copy(payload[len(versionBytes):], pubKeyHash)
+
+		// Add checksum: double SHA256 first 4 bytes
+		checksumHash := sha256.Sum256(payload)
+		checksum := sha256.Sum256(checksumHash[:])
+		fullPayload := make([]byte, len(payload)+4)
+		copy(fullPayload, payload)
+		copy(fullPayload[len(payload):], checksum[:4])
+
+		// Encode with base58
+		addressString = base58.Encode(fullPayload)
 	case ADAChain:
 		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, p.String())
 		if err != nil {
 			return NoAddress, err
 		}
-		var addr cardano.Address
+
+		var network uint8
 		switch chainNetwork {
 		case MainNet, StageNet:
-			addr, err = cardano.PaymentOnlyMainnetAddressFromPubkey(pk.Bytes())
+			network = adacommon.AddressNetworkMainnet
 		default:
-			addr, err = cardano.PaymentOnlyTestnetAddressFromPubkey(pk.Bytes())
+			network = adacommon.AddressNetworkTestnet
 		}
-		addressString = addr.String()
+
+		addr, err := adacommon.NewAddressFromParts(
+			adacommon.AddressTypeKeyNone,
+			network,
+			pk.Address().Bytes(),
+			nil,
+		)
 		if err != nil {
 			return NoAddress, err
 		}
+
+		addressString = addr.String()
 	default:
 		// Only EVM chains remain.
 		if !chain.IsEVM() {
@@ -254,7 +322,9 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 	if err != nil {
 		return address, fmt.Errorf("NewAddress, addressString %s, %w", addressString, err)
 	}
+	pubkeyToAddressCacheMu.Lock()
 	pubkeyToAddressCache[key] = address
+	pubkeyToAddressCacheMu.Unlock()
 	return address, nil
 }
 

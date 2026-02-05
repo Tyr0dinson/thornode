@@ -1,11 +1,13 @@
 package storage
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
 
+	"github.com/binance-chain/tss-lib/ecdsa/keygen"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-peerstore/addr"
 	tnet "github.com/libp2p/go-libp2p-testing/net"
@@ -45,9 +47,13 @@ func (s *FileStateMgrTestSuite) TestNewFileStateMgr(c *C) {
 }
 
 func (s *FileStateMgrTestSuite) TestSaveLocalState(c *C) {
+	localData := keygen.NewLocalPartySaveData(5)
+	localDataBytes, err := json.Marshal(localData)
+	c.Assert(err, IsNil)
+
 	stateItem := KeygenLocalState{
 		PubKey:    "wasdfasdfasdfasdfasdfasdf",
-		LocalData: []byte("5"),
+		LocalData: localDataBytes,
 		ParticipantKeys: []string{
 			"A", "B", "C",
 		},
@@ -56,8 +62,8 @@ func (s *FileStateMgrTestSuite) TestSaveLocalState(c *C) {
 	folder := os.TempDir()
 	f := filepath.Join(folder, "test", "test1", "test2")
 	defer func() {
-		err := os.RemoveAll(f)
-		c.Assert(err, IsNil)
+		removeErr := os.RemoveAll(f)
+		c.Assert(removeErr, IsNil)
 	}()
 	fsm, err := NewFileStateMgr(f)
 	c.Assert(err, IsNil)
@@ -71,6 +77,24 @@ func (s *FileStateMgrTestSuite) TestSaveLocalState(c *C) {
 	item, err := fsm.GetLocalState(stateItem.PubKey)
 	c.Assert(err, IsNil)
 	c.Assert(reflect.DeepEqual(stateItem, item), Equals, true)
+
+	// test migration from v1 to v2
+	stateItemV1 := keygenLocalStateV1{
+		PubKey:    "wasdfasdfasdfasdfasdfasdf",
+		LocalData: keygen.NewLocalPartySaveData(5),
+		ParticipantKeys: []string{
+			"A", "B", "C",
+		},
+		LocalPartyKey: "A",
+	}
+	stateItemV1.PubKey = stateItem.PubKey
+	buf, err := json.Marshal(stateItemV1)
+	c.Assert(err, IsNil)
+	err = os.WriteFile(filePathName, buf, 0o600)
+	c.Assert(err, IsNil)
+	itemV1, err := fsm.GetLocalState(stateItemV1.PubKey)
+	c.Assert(err, IsNil)
+	c.Assert(item, DeepEquals, itemV1)
 }
 
 func (s *FileStateMgrTestSuite) TestSaveAddressBook(c *C) {
@@ -88,8 +112,8 @@ func (s *FileStateMgrTestSuite) TestSaveAddressBook(c *C) {
 	folder := os.TempDir()
 	f := filepath.Join(folder, "test")
 	defer func() {
-		err := os.RemoveAll(f)
-		c.Assert(err, IsNil)
+		removeErr := os.RemoveAll(f)
+		c.Assert(removeErr, IsNil)
 	}()
 	fsm, err := NewFileStateMgr(f)
 	c.Assert(err, IsNil)

@@ -19,85 +19,90 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	Query_Account_FullMethodName             = "/types.Query/Account"
-	Query_Balances_FullMethodName            = "/types.Query/Balances"
-	Query_Export_FullMethodName              = "/types.Query/Export"
-	Query_Pool_FullMethodName                = "/types.Query/Pool"
-	Query_Pools_FullMethodName               = "/types.Query/Pools"
-	Query_DerivedPool_FullMethodName         = "/types.Query/DerivedPool"
-	Query_DerivedPools_FullMethodName        = "/types.Query/DerivedPools"
-	Query_LiquidityProvider_FullMethodName   = "/types.Query/LiquidityProvider"
-	Query_LiquidityProviders_FullMethodName  = "/types.Query/LiquidityProviders"
-	Query_Saver_FullMethodName               = "/types.Query/Saver"
-	Query_Savers_FullMethodName              = "/types.Query/Savers"
-	Query_Borrower_FullMethodName            = "/types.Query/Borrower"
-	Query_Borrowers_FullMethodName           = "/types.Query/Borrowers"
-	Query_TradeUnit_FullMethodName           = "/types.Query/TradeUnit"
-	Query_TradeUnits_FullMethodName          = "/types.Query/TradeUnits"
-	Query_TradeAccount_FullMethodName        = "/types.Query/TradeAccount"
-	Query_TradeAccounts_FullMethodName       = "/types.Query/TradeAccounts"
-	Query_SecuredAsset_FullMethodName        = "/types.Query/SecuredAsset"
-	Query_SecuredAssets_FullMethodName       = "/types.Query/SecuredAssets"
-	Query_Node_FullMethodName                = "/types.Query/Node"
-	Query_Nodes_FullMethodName               = "/types.Query/Nodes"
-	Query_PoolSlip_FullMethodName            = "/types.Query/PoolSlip"
-	Query_PoolSlips_FullMethodName           = "/types.Query/PoolSlips"
-	Query_OutboundFee_FullMethodName         = "/types.Query/OutboundFee"
-	Query_OutboundFees_FullMethodName        = "/types.Query/OutboundFees"
-	Query_StreamingSwap_FullMethodName       = "/types.Query/StreamingSwap"
-	Query_StreamingSwaps_FullMethodName      = "/types.Query/StreamingSwaps"
-	Query_Ban_FullMethodName                 = "/types.Query/Ban"
-	Query_Ragnarok_FullMethodName            = "/types.Query/Ragnarok"
-	Query_RunePool_FullMethodName            = "/types.Query/RunePool"
-	Query_RuneProvider_FullMethodName        = "/types.Query/RuneProvider"
-	Query_RuneProviders_FullMethodName       = "/types.Query/RuneProviders"
-	Query_MimirValues_FullMethodName         = "/types.Query/MimirValues"
-	Query_MimirWithKey_FullMethodName        = "/types.Query/MimirWithKey"
-	Query_MimirAdminValues_FullMethodName    = "/types.Query/MimirAdminValues"
-	Query_MimirNodesAllValues_FullMethodName = "/types.Query/MimirNodesAllValues"
-	Query_MimirNodesValues_FullMethodName    = "/types.Query/MimirNodesValues"
-	Query_MimirNodeValues_FullMethodName     = "/types.Query/MimirNodeValues"
-	Query_InboundAddresses_FullMethodName    = "/types.Query/InboundAddresses"
-	Query_Version_FullMethodName             = "/types.Query/Version"
-	Query_Thorname_FullMethodName            = "/types.Query/Thorname"
-	Query_Invariant_FullMethodName           = "/types.Query/Invariant"
-	Query_Invariants_FullMethodName          = "/types.Query/Invariants"
-	Query_Network_FullMethodName             = "/types.Query/Network"
-	Query_BalanceModule_FullMethodName       = "/types.Query/BalanceModule"
-	Query_QuoteSwap_FullMethodName           = "/types.Query/QuoteSwap"
-	Query_QuoteSaverDeposit_FullMethodName   = "/types.Query/QuoteSaverDeposit"
-	Query_QuoteSaverWithdraw_FullMethodName  = "/types.Query/QuoteSaverWithdraw"
-	Query_QuoteLoanOpen_FullMethodName       = "/types.Query/QuoteLoanOpen"
-	Query_QuoteLoanClose_FullMethodName      = "/types.Query/QuoteLoanClose"
-	Query_ConstantValues_FullMethodName      = "/types.Query/ConstantValues"
-	Query_SwapQueue_FullMethodName           = "/types.Query/SwapQueue"
-	Query_LastBlocks_FullMethodName          = "/types.Query/LastBlocks"
-	Query_ChainsLastBlock_FullMethodName     = "/types.Query/ChainsLastBlock"
-	Query_Vault_FullMethodName               = "/types.Query/Vault"
-	Query_AsgardVaults_FullMethodName        = "/types.Query/AsgardVaults"
-	Query_VaultsPubkeys_FullMethodName       = "/types.Query/VaultsPubkeys"
-	Query_TxStages_FullMethodName            = "/types.Query/TxStages"
-	Query_TxStatus_FullMethodName            = "/types.Query/TxStatus"
-	Query_Tx_FullMethodName                  = "/types.Query/Tx"
-	Query_TxVoters_FullMethodName            = "/types.Query/TxVoters"
-	Query_TxVotersOld_FullMethodName         = "/types.Query/TxVotersOld"
-	Query_Clout_FullMethodName               = "/types.Query/Clout"
-	Query_Queue_FullMethodName               = "/types.Query/Queue"
-	Query_ScheduledOutbound_FullMethodName   = "/types.Query/ScheduledOutbound"
-	Query_PendingOutbound_FullMethodName     = "/types.Query/PendingOutbound"
-	Query_Block_FullMethodName               = "/types.Query/Block"
-	Query_TssKeygenMetric_FullMethodName     = "/types.Query/TssKeygenMetric"
-	Query_TssMetric_FullMethodName           = "/types.Query/TssMetric"
-	Query_Keysign_FullMethodName             = "/types.Query/Keysign"
-	Query_KeysignPubkey_FullMethodName       = "/types.Query/KeysignPubkey"
-	Query_Keygen_FullMethodName              = "/types.Query/Keygen"
-	Query_UpgradeProposals_FullMethodName    = "/types.Query/UpgradeProposals"
-	Query_UpgradeProposal_FullMethodName     = "/types.Query/UpgradeProposal"
-	Query_UpgradeVotes_FullMethodName        = "/types.Query/UpgradeVotes"
-	Query_TCYStaker_FullMethodName           = "/types.Query/TCYStaker"
-	Query_TCYStakers_FullMethodName          = "/types.Query/TCYStakers"
-	Query_TCYClaimer_FullMethodName          = "/types.Query/TCYClaimer"
-	Query_TCYClaimers_FullMethodName         = "/types.Query/TCYClaimers"
+	Query_Account_FullMethodName                = "/types.Query/Account"
+	Query_Balances_FullMethodName               = "/types.Query/Balances"
+	Query_Export_FullMethodName                 = "/types.Query/Export"
+	Query_Pool_FullMethodName                   = "/types.Query/Pool"
+	Query_Pools_FullMethodName                  = "/types.Query/Pools"
+	Query_DerivedPool_FullMethodName            = "/types.Query/DerivedPool"
+	Query_DerivedPools_FullMethodName           = "/types.Query/DerivedPools"
+	Query_LiquidityProvider_FullMethodName      = "/types.Query/LiquidityProvider"
+	Query_LiquidityProviders_FullMethodName     = "/types.Query/LiquidityProviders"
+	Query_Saver_FullMethodName                  = "/types.Query/Saver"
+	Query_Savers_FullMethodName                 = "/types.Query/Savers"
+	Query_TradeUnit_FullMethodName              = "/types.Query/TradeUnit"
+	Query_TradeUnits_FullMethodName             = "/types.Query/TradeUnits"
+	Query_TradeAccount_FullMethodName           = "/types.Query/TradeAccount"
+	Query_TradeAccounts_FullMethodName          = "/types.Query/TradeAccounts"
+	Query_SecuredAsset_FullMethodName           = "/types.Query/SecuredAsset"
+	Query_SecuredAssets_FullMethodName          = "/types.Query/SecuredAssets"
+	Query_Node_FullMethodName                   = "/types.Query/Node"
+	Query_Nodes_FullMethodName                  = "/types.Query/Nodes"
+	Query_PoolSlip_FullMethodName               = "/types.Query/PoolSlip"
+	Query_PoolSlips_FullMethodName              = "/types.Query/PoolSlips"
+	Query_OutboundFee_FullMethodName            = "/types.Query/OutboundFee"
+	Query_OutboundFees_FullMethodName           = "/types.Query/OutboundFees"
+	Query_StreamingSwap_FullMethodName          = "/types.Query/StreamingSwap"
+	Query_StreamingSwaps_FullMethodName         = "/types.Query/StreamingSwaps"
+	Query_Ban_FullMethodName                    = "/types.Query/Ban"
+	Query_Ragnarok_FullMethodName               = "/types.Query/Ragnarok"
+	Query_RunePool_FullMethodName               = "/types.Query/RunePool"
+	Query_RuneProvider_FullMethodName           = "/types.Query/RuneProvider"
+	Query_RuneProviders_FullMethodName          = "/types.Query/RuneProviders"
+	Query_MimirValues_FullMethodName            = "/types.Query/MimirValues"
+	Query_MimirWithKey_FullMethodName           = "/types.Query/MimirWithKey"
+	Query_MimirAdminValues_FullMethodName       = "/types.Query/MimirAdminValues"
+	Query_MimirNodesAllValues_FullMethodName    = "/types.Query/MimirNodesAllValues"
+	Query_MimirNodesValues_FullMethodName       = "/types.Query/MimirNodesValues"
+	Query_MimirNodeValues_FullMethodName        = "/types.Query/MimirNodeValues"
+	Query_InboundAddresses_FullMethodName       = "/types.Query/InboundAddresses"
+	Query_Version_FullMethodName                = "/types.Query/Version"
+	Query_Thorname_FullMethodName               = "/types.Query/Thorname"
+	Query_Invariant_FullMethodName              = "/types.Query/Invariant"
+	Query_Invariants_FullMethodName             = "/types.Query/Invariants"
+	Query_Network_FullMethodName                = "/types.Query/Network"
+	Query_BalanceModule_FullMethodName          = "/types.Query/BalanceModule"
+	Query_QuoteSwap_FullMethodName              = "/types.Query/QuoteSwap"
+	Query_QuoteLimit_FullMethodName             = "/types.Query/QuoteLimit"
+	Query_ConstantValues_FullMethodName         = "/types.Query/ConstantValues"
+	Query_SwapQueue_FullMethodName              = "/types.Query/SwapQueue"
+	Query_SwapDetails_FullMethodName            = "/types.Query/SwapDetails"
+	Query_LimitSwaps_FullMethodName             = "/types.Query/LimitSwaps"
+	Query_LimitSwapsSummary_FullMethodName      = "/types.Query/LimitSwapsSummary"
+	Query_LastBlocks_FullMethodName             = "/types.Query/LastBlocks"
+	Query_ChainsLastBlock_FullMethodName        = "/types.Query/ChainsLastBlock"
+	Query_Vault_FullMethodName                  = "/types.Query/Vault"
+	Query_AsgardVaults_FullMethodName           = "/types.Query/AsgardVaults"
+	Query_VaultsPubkeys_FullMethodName          = "/types.Query/VaultsPubkeys"
+	Query_VaultSolvency_FullMethodName          = "/types.Query/VaultSolvency"
+	Query_TxStages_FullMethodName               = "/types.Query/TxStages"
+	Query_TxStatus_FullMethodName               = "/types.Query/TxStatus"
+	Query_Tx_FullMethodName                     = "/types.Query/Tx"
+	Query_TxVoters_FullMethodName               = "/types.Query/TxVoters"
+	Query_TxVotersOld_FullMethodName            = "/types.Query/TxVotersOld"
+	Query_Clout_FullMethodName                  = "/types.Query/Clout"
+	Query_Queue_FullMethodName                  = "/types.Query/Queue"
+	Query_ScheduledOutbound_FullMethodName      = "/types.Query/ScheduledOutbound"
+	Query_PendingOutbound_FullMethodName        = "/types.Query/PendingOutbound"
+	Query_Block_FullMethodName                  = "/types.Query/Block"
+	Query_TssKeygenMetric_FullMethodName        = "/types.Query/TssKeygenMetric"
+	Query_TssMetric_FullMethodName              = "/types.Query/TssMetric"
+	Query_Keysign_FullMethodName                = "/types.Query/Keysign"
+	Query_KeysignPubkey_FullMethodName          = "/types.Query/KeysignPubkey"
+	Query_Keygen_FullMethodName                 = "/types.Query/Keygen"
+	Query_UpgradeProposals_FullMethodName       = "/types.Query/UpgradeProposals"
+	Query_UpgradeProposal_FullMethodName        = "/types.Query/UpgradeProposal"
+	Query_UpgradeVotes_FullMethodName           = "/types.Query/UpgradeVotes"
+	Query_TCYStaker_FullMethodName              = "/types.Query/TCYStaker"
+	Query_TCYStakers_FullMethodName             = "/types.Query/TCYStakers"
+	Query_TCYClaimer_FullMethodName             = "/types.Query/TCYClaimer"
+	Query_TCYClaimers_FullMethodName            = "/types.Query/TCYClaimers"
+	Query_OraclePrices_FullMethodName           = "/types.Query/OraclePrices"
+	Query_OraclePrice_FullMethodName            = "/types.Query/OraclePrice"
+	Query_Eip712TypedData_FullMethodName        = "/types.Query/Eip712TypedData"
+	Query_ReferenceMemo_FullMethodName          = "/types.Query/ReferenceMemo"
+	Query_ReferenceMemoByHash_FullMethodName    = "/types.Query/ReferenceMemoByHash"
+	Query_ReferenceMemoPreflight_FullMethodName = "/types.Query/ReferenceMemoPreflight"
 )
 
 // QueryClient is the client API for Query service.
@@ -105,12 +110,12 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type QueryClient interface {
 	// Account returns account details for a given address.
-	// As this path does not start with /thorchain/ , it requires an exception in CustomGRPCGatewayRouter
-	// to not drop the height parameter.
+	// As this path does not start with /thorchain/ , it requires an exception in
+	// CustomGRPCGatewayRouter to not drop the height parameter.
 	Account(ctx context.Context, in *QueryAccountRequest, opts ...grpc.CallOption) (*QueryAccountResponse, error)
 	// Balances returns the bank module balances for a given address.
-	// As this path does not start with /thorchain/ , it requires an exception in CustomGRPCGatewayRouter
-	// to not drop the height parameter.
+	// As this path does not start with /thorchain/ , it requires an exception in
+	// CustomGRPCGatewayRouter to not drop the height parameter.
 	Balances(ctx context.Context, in *QueryBalancesRequest, opts ...grpc.CallOption) (*QueryBalancesResponse, error)
 	// Export returns the content of the export file (regression test only).
 	Export(ctx context.Context, in *QueryExportRequest, opts ...grpc.CallOption) (*QueryExportResponse, error)
@@ -124,8 +129,6 @@ type QueryClient interface {
 	LiquidityProviders(ctx context.Context, in *QueryLiquidityProvidersRequest, opts ...grpc.CallOption) (*QueryLiquidityProvidersResponse, error)
 	Saver(ctx context.Context, in *QuerySaverRequest, opts ...grpc.CallOption) (*QuerySaverResponse, error)
 	Savers(ctx context.Context, in *QuerySaversRequest, opts ...grpc.CallOption) (*QuerySaversResponse, error)
-	Borrower(ctx context.Context, in *QueryBorrowerRequest, opts ...grpc.CallOption) (*QueryBorrowerResponse, error)
-	Borrowers(ctx context.Context, in *QueryBorrowersRequest, opts ...grpc.CallOption) (*QueryBorrowersResponse, error)
 	TradeUnit(ctx context.Context, in *QueryTradeUnitRequest, opts ...grpc.CallOption) (*QueryTradeUnitResponse, error)
 	TradeUnits(ctx context.Context, in *QueryTradeUnitsRequest, opts ...grpc.CallOption) (*QueryTradeUnitsResponse, error)
 	TradeAccount(ctx context.Context, in *QueryTradeAccountRequest, opts ...grpc.CallOption) (*QueryTradeAccountsResponse, error)
@@ -159,17 +162,18 @@ type QueryClient interface {
 	Network(ctx context.Context, in *QueryNetworkRequest, opts ...grpc.CallOption) (*QueryNetworkResponse, error)
 	BalanceModule(ctx context.Context, in *QueryBalanceModuleRequest, opts ...grpc.CallOption) (*QueryBalanceModuleResponse, error)
 	QuoteSwap(ctx context.Context, in *QueryQuoteSwapRequest, opts ...grpc.CallOption) (*QueryQuoteSwapResponse, error)
-	QuoteSaverDeposit(ctx context.Context, in *QueryQuoteSaverDepositRequest, opts ...grpc.CallOption) (*QueryQuoteSaverDepositResponse, error)
-	QuoteSaverWithdraw(ctx context.Context, in *QueryQuoteSaverWithdrawRequest, opts ...grpc.CallOption) (*QueryQuoteSaverWithdrawResponse, error)
-	QuoteLoanOpen(ctx context.Context, in *QueryQuoteLoanOpenRequest, opts ...grpc.CallOption) (*QueryQuoteLoanOpenResponse, error)
-	QuoteLoanClose(ctx context.Context, in *QueryQuoteLoanCloseRequest, opts ...grpc.CallOption) (*QueryQuoteLoanCloseResponse, error)
+	QuoteLimit(ctx context.Context, in *QueryQuoteLimitRequest, opts ...grpc.CallOption) (*QueryQuoteLimitResponse, error)
 	ConstantValues(ctx context.Context, in *QueryConstantValuesRequest, opts ...grpc.CallOption) (*QueryConstantValuesResponse, error)
 	SwapQueue(ctx context.Context, in *QuerySwapQueueRequest, opts ...grpc.CallOption) (*QuerySwapQueueResponse, error)
+	SwapDetails(ctx context.Context, in *QuerySwapDetailsRequest, opts ...grpc.CallOption) (*QuerySwapDetailsResponse, error)
+	LimitSwaps(ctx context.Context, in *QueryLimitSwapsRequest, opts ...grpc.CallOption) (*QueryLimitSwapsResponse, error)
+	LimitSwapsSummary(ctx context.Context, in *QueryLimitSwapsSummaryRequest, opts ...grpc.CallOption) (*QueryLimitSwapsSummaryResponse, error)
 	LastBlocks(ctx context.Context, in *QueryLastBlocksRequest, opts ...grpc.CallOption) (*QueryLastBlocksResponse, error)
 	ChainsLastBlock(ctx context.Context, in *QueryChainsLastBlockRequest, opts ...grpc.CallOption) (*QueryLastBlocksResponse, error)
 	Vault(ctx context.Context, in *QueryVaultRequest, opts ...grpc.CallOption) (*QueryVaultResponse, error)
 	AsgardVaults(ctx context.Context, in *QueryAsgardVaultsRequest, opts ...grpc.CallOption) (*QueryAsgardVaultsResponse, error)
 	VaultsPubkeys(ctx context.Context, in *QueryVaultsPubkeysRequest, opts ...grpc.CallOption) (*QueryVaultsPubkeysResponse, error)
+	VaultSolvency(ctx context.Context, in *QueryVaultSolvencyRequest, opts ...grpc.CallOption) (*QueryVaultSolvencyResponse, error)
 	TxStages(ctx context.Context, in *QueryTxStagesRequest, opts ...grpc.CallOption) (*QueryTxStagesResponse, error)
 	TxStatus(ctx context.Context, in *QueryTxStatusRequest, opts ...grpc.CallOption) (*QueryTxStatusResponse, error)
 	Tx(ctx context.Context, in *QueryTxRequest, opts ...grpc.CallOption) (*QueryTxResponse, error)
@@ -192,6 +196,12 @@ type QueryClient interface {
 	TCYStakers(ctx context.Context, in *QueryTCYStakersRequest, opts ...grpc.CallOption) (*QueryTCYStakersResponse, error)
 	TCYClaimer(ctx context.Context, in *QueryTCYClaimerRequest, opts ...grpc.CallOption) (*QueryTCYClaimerResponse, error)
 	TCYClaimers(ctx context.Context, in *QueryTCYClaimersRequest, opts ...grpc.CallOption) (*QueryTCYClaimersResponse, error)
+	OraclePrices(ctx context.Context, in *QueryOraclePricesRequest, opts ...grpc.CallOption) (*QueryOraclePricesResponse, error)
+	OraclePrice(ctx context.Context, in *QueryOraclePriceRequest, opts ...grpc.CallOption) (*QueryOraclePriceResponse, error)
+	Eip712TypedData(ctx context.Context, in *QueryEip712TypedDataRequest, opts ...grpc.CallOption) (*QueryEip712TypedDataResponse, error)
+	ReferenceMemo(ctx context.Context, in *QueryReferenceMemoRequest, opts ...grpc.CallOption) (*QueryReferenceMemoResponse, error)
+	ReferenceMemoByHash(ctx context.Context, in *QueryReferenceMemoByHashRequest, opts ...grpc.CallOption) (*QueryReferenceMemoByHashResponse, error)
+	ReferenceMemoPreflight(ctx context.Context, in *QueryReferenceMemoPreflightRequest, opts ...grpc.CallOption) (*QueryReferenceMemoPreflightResponse, error)
 }
 
 type queryClient struct {
@@ -295,24 +305,6 @@ func (c *queryClient) Saver(ctx context.Context, in *QuerySaverRequest, opts ...
 func (c *queryClient) Savers(ctx context.Context, in *QuerySaversRequest, opts ...grpc.CallOption) (*QuerySaversResponse, error) {
 	out := new(QuerySaversResponse)
 	err := c.cc.Invoke(ctx, Query_Savers_FullMethodName, in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *queryClient) Borrower(ctx context.Context, in *QueryBorrowerRequest, opts ...grpc.CallOption) (*QueryBorrowerResponse, error) {
-	out := new(QueryBorrowerResponse)
-	err := c.cc.Invoke(ctx, Query_Borrower_FullMethodName, in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *queryClient) Borrowers(ctx context.Context, in *QueryBorrowersRequest, opts ...grpc.CallOption) (*QueryBorrowersResponse, error) {
-	out := new(QueryBorrowersResponse)
-	err := c.cc.Invoke(ctx, Query_Borrowers_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -616,36 +608,9 @@ func (c *queryClient) QuoteSwap(ctx context.Context, in *QueryQuoteSwapRequest, 
 	return out, nil
 }
 
-func (c *queryClient) QuoteSaverDeposit(ctx context.Context, in *QueryQuoteSaverDepositRequest, opts ...grpc.CallOption) (*QueryQuoteSaverDepositResponse, error) {
-	out := new(QueryQuoteSaverDepositResponse)
-	err := c.cc.Invoke(ctx, Query_QuoteSaverDeposit_FullMethodName, in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *queryClient) QuoteSaverWithdraw(ctx context.Context, in *QueryQuoteSaverWithdrawRequest, opts ...grpc.CallOption) (*QueryQuoteSaverWithdrawResponse, error) {
-	out := new(QueryQuoteSaverWithdrawResponse)
-	err := c.cc.Invoke(ctx, Query_QuoteSaverWithdraw_FullMethodName, in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *queryClient) QuoteLoanOpen(ctx context.Context, in *QueryQuoteLoanOpenRequest, opts ...grpc.CallOption) (*QueryQuoteLoanOpenResponse, error) {
-	out := new(QueryQuoteLoanOpenResponse)
-	err := c.cc.Invoke(ctx, Query_QuoteLoanOpen_FullMethodName, in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *queryClient) QuoteLoanClose(ctx context.Context, in *QueryQuoteLoanCloseRequest, opts ...grpc.CallOption) (*QueryQuoteLoanCloseResponse, error) {
-	out := new(QueryQuoteLoanCloseResponse)
-	err := c.cc.Invoke(ctx, Query_QuoteLoanClose_FullMethodName, in, out, opts...)
+func (c *queryClient) QuoteLimit(ctx context.Context, in *QueryQuoteLimitRequest, opts ...grpc.CallOption) (*QueryQuoteLimitResponse, error) {
+	out := new(QueryQuoteLimitResponse)
+	err := c.cc.Invoke(ctx, Query_QuoteLimit_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -664,6 +629,33 @@ func (c *queryClient) ConstantValues(ctx context.Context, in *QueryConstantValue
 func (c *queryClient) SwapQueue(ctx context.Context, in *QuerySwapQueueRequest, opts ...grpc.CallOption) (*QuerySwapQueueResponse, error) {
 	out := new(QuerySwapQueueResponse)
 	err := c.cc.Invoke(ctx, Query_SwapQueue_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *queryClient) SwapDetails(ctx context.Context, in *QuerySwapDetailsRequest, opts ...grpc.CallOption) (*QuerySwapDetailsResponse, error) {
+	out := new(QuerySwapDetailsResponse)
+	err := c.cc.Invoke(ctx, Query_SwapDetails_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *queryClient) LimitSwaps(ctx context.Context, in *QueryLimitSwapsRequest, opts ...grpc.CallOption) (*QueryLimitSwapsResponse, error) {
+	out := new(QueryLimitSwapsResponse)
+	err := c.cc.Invoke(ctx, Query_LimitSwaps_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *queryClient) LimitSwapsSummary(ctx context.Context, in *QueryLimitSwapsSummaryRequest, opts ...grpc.CallOption) (*QueryLimitSwapsSummaryResponse, error) {
+	out := new(QueryLimitSwapsSummaryResponse)
+	err := c.cc.Invoke(ctx, Query_LimitSwapsSummary_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -709,6 +701,15 @@ func (c *queryClient) AsgardVaults(ctx context.Context, in *QueryAsgardVaultsReq
 func (c *queryClient) VaultsPubkeys(ctx context.Context, in *QueryVaultsPubkeysRequest, opts ...grpc.CallOption) (*QueryVaultsPubkeysResponse, error) {
 	out := new(QueryVaultsPubkeysResponse)
 	err := c.cc.Invoke(ctx, Query_VaultsPubkeys_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *queryClient) VaultSolvency(ctx context.Context, in *QueryVaultSolvencyRequest, opts ...grpc.CallOption) (*QueryVaultSolvencyResponse, error) {
+	out := new(QueryVaultSolvencyResponse)
+	err := c.cc.Invoke(ctx, Query_VaultSolvency_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -913,17 +914,71 @@ func (c *queryClient) TCYClaimers(ctx context.Context, in *QueryTCYClaimersReque
 	return out, nil
 }
 
+func (c *queryClient) OraclePrices(ctx context.Context, in *QueryOraclePricesRequest, opts ...grpc.CallOption) (*QueryOraclePricesResponse, error) {
+	out := new(QueryOraclePricesResponse)
+	err := c.cc.Invoke(ctx, Query_OraclePrices_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *queryClient) OraclePrice(ctx context.Context, in *QueryOraclePriceRequest, opts ...grpc.CallOption) (*QueryOraclePriceResponse, error) {
+	out := new(QueryOraclePriceResponse)
+	err := c.cc.Invoke(ctx, Query_OraclePrice_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *queryClient) Eip712TypedData(ctx context.Context, in *QueryEip712TypedDataRequest, opts ...grpc.CallOption) (*QueryEip712TypedDataResponse, error) {
+	out := new(QueryEip712TypedDataResponse)
+	err := c.cc.Invoke(ctx, Query_Eip712TypedData_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *queryClient) ReferenceMemo(ctx context.Context, in *QueryReferenceMemoRequest, opts ...grpc.CallOption) (*QueryReferenceMemoResponse, error) {
+	out := new(QueryReferenceMemoResponse)
+	err := c.cc.Invoke(ctx, Query_ReferenceMemo_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *queryClient) ReferenceMemoByHash(ctx context.Context, in *QueryReferenceMemoByHashRequest, opts ...grpc.CallOption) (*QueryReferenceMemoByHashResponse, error) {
+	out := new(QueryReferenceMemoByHashResponse)
+	err := c.cc.Invoke(ctx, Query_ReferenceMemoByHash_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *queryClient) ReferenceMemoPreflight(ctx context.Context, in *QueryReferenceMemoPreflightRequest, opts ...grpc.CallOption) (*QueryReferenceMemoPreflightResponse, error) {
+	out := new(QueryReferenceMemoPreflightResponse)
+	err := c.cc.Invoke(ctx, Query_ReferenceMemoPreflight_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // QueryServer is the server API for Query service.
 // All implementations must embed UnimplementedQueryServer
 // for forward compatibility
 type QueryServer interface {
 	// Account returns account details for a given address.
-	// As this path does not start with /thorchain/ , it requires an exception in CustomGRPCGatewayRouter
-	// to not drop the height parameter.
+	// As this path does not start with /thorchain/ , it requires an exception in
+	// CustomGRPCGatewayRouter to not drop the height parameter.
 	Account(context.Context, *QueryAccountRequest) (*QueryAccountResponse, error)
 	// Balances returns the bank module balances for a given address.
-	// As this path does not start with /thorchain/ , it requires an exception in CustomGRPCGatewayRouter
-	// to not drop the height parameter.
+	// As this path does not start with /thorchain/ , it requires an exception in
+	// CustomGRPCGatewayRouter to not drop the height parameter.
 	Balances(context.Context, *QueryBalancesRequest) (*QueryBalancesResponse, error)
 	// Export returns the content of the export file (regression test only).
 	Export(context.Context, *QueryExportRequest) (*QueryExportResponse, error)
@@ -937,8 +992,6 @@ type QueryServer interface {
 	LiquidityProviders(context.Context, *QueryLiquidityProvidersRequest) (*QueryLiquidityProvidersResponse, error)
 	Saver(context.Context, *QuerySaverRequest) (*QuerySaverResponse, error)
 	Savers(context.Context, *QuerySaversRequest) (*QuerySaversResponse, error)
-	Borrower(context.Context, *QueryBorrowerRequest) (*QueryBorrowerResponse, error)
-	Borrowers(context.Context, *QueryBorrowersRequest) (*QueryBorrowersResponse, error)
 	TradeUnit(context.Context, *QueryTradeUnitRequest) (*QueryTradeUnitResponse, error)
 	TradeUnits(context.Context, *QueryTradeUnitsRequest) (*QueryTradeUnitsResponse, error)
 	TradeAccount(context.Context, *QueryTradeAccountRequest) (*QueryTradeAccountsResponse, error)
@@ -972,17 +1025,18 @@ type QueryServer interface {
 	Network(context.Context, *QueryNetworkRequest) (*QueryNetworkResponse, error)
 	BalanceModule(context.Context, *QueryBalanceModuleRequest) (*QueryBalanceModuleResponse, error)
 	QuoteSwap(context.Context, *QueryQuoteSwapRequest) (*QueryQuoteSwapResponse, error)
-	QuoteSaverDeposit(context.Context, *QueryQuoteSaverDepositRequest) (*QueryQuoteSaverDepositResponse, error)
-	QuoteSaverWithdraw(context.Context, *QueryQuoteSaverWithdrawRequest) (*QueryQuoteSaverWithdrawResponse, error)
-	QuoteLoanOpen(context.Context, *QueryQuoteLoanOpenRequest) (*QueryQuoteLoanOpenResponse, error)
-	QuoteLoanClose(context.Context, *QueryQuoteLoanCloseRequest) (*QueryQuoteLoanCloseResponse, error)
+	QuoteLimit(context.Context, *QueryQuoteLimitRequest) (*QueryQuoteLimitResponse, error)
 	ConstantValues(context.Context, *QueryConstantValuesRequest) (*QueryConstantValuesResponse, error)
 	SwapQueue(context.Context, *QuerySwapQueueRequest) (*QuerySwapQueueResponse, error)
+	SwapDetails(context.Context, *QuerySwapDetailsRequest) (*QuerySwapDetailsResponse, error)
+	LimitSwaps(context.Context, *QueryLimitSwapsRequest) (*QueryLimitSwapsResponse, error)
+	LimitSwapsSummary(context.Context, *QueryLimitSwapsSummaryRequest) (*QueryLimitSwapsSummaryResponse, error)
 	LastBlocks(context.Context, *QueryLastBlocksRequest) (*QueryLastBlocksResponse, error)
 	ChainsLastBlock(context.Context, *QueryChainsLastBlockRequest) (*QueryLastBlocksResponse, error)
 	Vault(context.Context, *QueryVaultRequest) (*QueryVaultResponse, error)
 	AsgardVaults(context.Context, *QueryAsgardVaultsRequest) (*QueryAsgardVaultsResponse, error)
 	VaultsPubkeys(context.Context, *QueryVaultsPubkeysRequest) (*QueryVaultsPubkeysResponse, error)
+	VaultSolvency(context.Context, *QueryVaultSolvencyRequest) (*QueryVaultSolvencyResponse, error)
 	TxStages(context.Context, *QueryTxStagesRequest) (*QueryTxStagesResponse, error)
 	TxStatus(context.Context, *QueryTxStatusRequest) (*QueryTxStatusResponse, error)
 	Tx(context.Context, *QueryTxRequest) (*QueryTxResponse, error)
@@ -1005,6 +1059,12 @@ type QueryServer interface {
 	TCYStakers(context.Context, *QueryTCYStakersRequest) (*QueryTCYStakersResponse, error)
 	TCYClaimer(context.Context, *QueryTCYClaimerRequest) (*QueryTCYClaimerResponse, error)
 	TCYClaimers(context.Context, *QueryTCYClaimersRequest) (*QueryTCYClaimersResponse, error)
+	OraclePrices(context.Context, *QueryOraclePricesRequest) (*QueryOraclePricesResponse, error)
+	OraclePrice(context.Context, *QueryOraclePriceRequest) (*QueryOraclePriceResponse, error)
+	Eip712TypedData(context.Context, *QueryEip712TypedDataRequest) (*QueryEip712TypedDataResponse, error)
+	ReferenceMemo(context.Context, *QueryReferenceMemoRequest) (*QueryReferenceMemoResponse, error)
+	ReferenceMemoByHash(context.Context, *QueryReferenceMemoByHashRequest) (*QueryReferenceMemoByHashResponse, error)
+	ReferenceMemoPreflight(context.Context, *QueryReferenceMemoPreflightRequest) (*QueryReferenceMemoPreflightResponse, error)
 	mustEmbedUnimplementedQueryServer()
 }
 
@@ -1044,12 +1104,6 @@ func (UnimplementedQueryServer) Saver(context.Context, *QuerySaverRequest) (*Que
 }
 func (UnimplementedQueryServer) Savers(context.Context, *QuerySaversRequest) (*QuerySaversResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Savers not implemented")
-}
-func (UnimplementedQueryServer) Borrower(context.Context, *QueryBorrowerRequest) (*QueryBorrowerResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Borrower not implemented")
-}
-func (UnimplementedQueryServer) Borrowers(context.Context, *QueryBorrowersRequest) (*QueryBorrowersResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Borrowers not implemented")
 }
 func (UnimplementedQueryServer) TradeUnit(context.Context, *QueryTradeUnitRequest) (*QueryTradeUnitResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method TradeUnit not implemented")
@@ -1150,23 +1204,23 @@ func (UnimplementedQueryServer) BalanceModule(context.Context, *QueryBalanceModu
 func (UnimplementedQueryServer) QuoteSwap(context.Context, *QueryQuoteSwapRequest) (*QueryQuoteSwapResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method QuoteSwap not implemented")
 }
-func (UnimplementedQueryServer) QuoteSaverDeposit(context.Context, *QueryQuoteSaverDepositRequest) (*QueryQuoteSaverDepositResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method QuoteSaverDeposit not implemented")
-}
-func (UnimplementedQueryServer) QuoteSaverWithdraw(context.Context, *QueryQuoteSaverWithdrawRequest) (*QueryQuoteSaverWithdrawResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method QuoteSaverWithdraw not implemented")
-}
-func (UnimplementedQueryServer) QuoteLoanOpen(context.Context, *QueryQuoteLoanOpenRequest) (*QueryQuoteLoanOpenResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method QuoteLoanOpen not implemented")
-}
-func (UnimplementedQueryServer) QuoteLoanClose(context.Context, *QueryQuoteLoanCloseRequest) (*QueryQuoteLoanCloseResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method QuoteLoanClose not implemented")
+func (UnimplementedQueryServer) QuoteLimit(context.Context, *QueryQuoteLimitRequest) (*QueryQuoteLimitResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method QuoteLimit not implemented")
 }
 func (UnimplementedQueryServer) ConstantValues(context.Context, *QueryConstantValuesRequest) (*QueryConstantValuesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ConstantValues not implemented")
 }
 func (UnimplementedQueryServer) SwapQueue(context.Context, *QuerySwapQueueRequest) (*QuerySwapQueueResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SwapQueue not implemented")
+}
+func (UnimplementedQueryServer) SwapDetails(context.Context, *QuerySwapDetailsRequest) (*QuerySwapDetailsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SwapDetails not implemented")
+}
+func (UnimplementedQueryServer) LimitSwaps(context.Context, *QueryLimitSwapsRequest) (*QueryLimitSwapsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method LimitSwaps not implemented")
+}
+func (UnimplementedQueryServer) LimitSwapsSummary(context.Context, *QueryLimitSwapsSummaryRequest) (*QueryLimitSwapsSummaryResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method LimitSwapsSummary not implemented")
 }
 func (UnimplementedQueryServer) LastBlocks(context.Context, *QueryLastBlocksRequest) (*QueryLastBlocksResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method LastBlocks not implemented")
@@ -1182,6 +1236,9 @@ func (UnimplementedQueryServer) AsgardVaults(context.Context, *QueryAsgardVaults
 }
 func (UnimplementedQueryServer) VaultsPubkeys(context.Context, *QueryVaultsPubkeysRequest) (*QueryVaultsPubkeysResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method VaultsPubkeys not implemented")
+}
+func (UnimplementedQueryServer) VaultSolvency(context.Context, *QueryVaultSolvencyRequest) (*QueryVaultSolvencyResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method VaultSolvency not implemented")
 }
 func (UnimplementedQueryServer) TxStages(context.Context, *QueryTxStagesRequest) (*QueryTxStagesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method TxStages not implemented")
@@ -1248,6 +1305,24 @@ func (UnimplementedQueryServer) TCYClaimer(context.Context, *QueryTCYClaimerRequ
 }
 func (UnimplementedQueryServer) TCYClaimers(context.Context, *QueryTCYClaimersRequest) (*QueryTCYClaimersResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method TCYClaimers not implemented")
+}
+func (UnimplementedQueryServer) OraclePrices(context.Context, *QueryOraclePricesRequest) (*QueryOraclePricesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method OraclePrices not implemented")
+}
+func (UnimplementedQueryServer) OraclePrice(context.Context, *QueryOraclePriceRequest) (*QueryOraclePriceResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method OraclePrice not implemented")
+}
+func (UnimplementedQueryServer) Eip712TypedData(context.Context, *QueryEip712TypedDataRequest) (*QueryEip712TypedDataResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Eip712TypedData not implemented")
+}
+func (UnimplementedQueryServer) ReferenceMemo(context.Context, *QueryReferenceMemoRequest) (*QueryReferenceMemoResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReferenceMemo not implemented")
+}
+func (UnimplementedQueryServer) ReferenceMemoByHash(context.Context, *QueryReferenceMemoByHashRequest) (*QueryReferenceMemoByHashResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReferenceMemoByHash not implemented")
+}
+func (UnimplementedQueryServer) ReferenceMemoPreflight(context.Context, *QueryReferenceMemoPreflightRequest) (*QueryReferenceMemoPreflightResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReferenceMemoPreflight not implemented")
 }
 func (UnimplementedQueryServer) mustEmbedUnimplementedQueryServer() {}
 
@@ -1456,42 +1531,6 @@ func _Query_Savers_Handler(srv interface{}, ctx context.Context, dec func(interf
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(QueryServer).Savers(ctx, req.(*QuerySaversRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _Query_Borrower_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(QueryBorrowerRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(QueryServer).Borrower(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: Query_Borrower_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(QueryServer).Borrower(ctx, req.(*QueryBorrowerRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _Query_Borrowers_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(QueryBorrowersRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(QueryServer).Borrowers(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: Query_Borrowers_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(QueryServer).Borrowers(ctx, req.(*QueryBorrowersRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2090,74 +2129,20 @@ func _Query_QuoteSwap_Handler(srv interface{}, ctx context.Context, dec func(int
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Query_QuoteSaverDeposit_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(QueryQuoteSaverDepositRequest)
+func _Query_QuoteLimit_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryQuoteLimitRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(QueryServer).QuoteSaverDeposit(ctx, in)
+		return srv.(QueryServer).QuoteLimit(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: Query_QuoteSaverDeposit_FullMethodName,
+		FullMethod: Query_QuoteLimit_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(QueryServer).QuoteSaverDeposit(ctx, req.(*QueryQuoteSaverDepositRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _Query_QuoteSaverWithdraw_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(QueryQuoteSaverWithdrawRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(QueryServer).QuoteSaverWithdraw(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: Query_QuoteSaverWithdraw_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(QueryServer).QuoteSaverWithdraw(ctx, req.(*QueryQuoteSaverWithdrawRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _Query_QuoteLoanOpen_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(QueryQuoteLoanOpenRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(QueryServer).QuoteLoanOpen(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: Query_QuoteLoanOpen_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(QueryServer).QuoteLoanOpen(ctx, req.(*QueryQuoteLoanOpenRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _Query_QuoteLoanClose_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(QueryQuoteLoanCloseRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(QueryServer).QuoteLoanClose(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: Query_QuoteLoanClose_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(QueryServer).QuoteLoanClose(ctx, req.(*QueryQuoteLoanCloseRequest))
+		return srv.(QueryServer).QuoteLimit(ctx, req.(*QueryQuoteLimitRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2194,6 +2179,60 @@ func _Query_SwapQueue_Handler(srv interface{}, ctx context.Context, dec func(int
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(QueryServer).SwapQueue(ctx, req.(*QuerySwapQueueRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Query_SwapDetails_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QuerySwapDetailsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).SwapDetails(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Query_SwapDetails_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).SwapDetails(ctx, req.(*QuerySwapDetailsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Query_LimitSwaps_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryLimitSwapsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).LimitSwaps(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Query_LimitSwaps_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).LimitSwaps(ctx, req.(*QueryLimitSwapsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Query_LimitSwapsSummary_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryLimitSwapsSummaryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).LimitSwapsSummary(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Query_LimitSwapsSummary_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).LimitSwapsSummary(ctx, req.(*QueryLimitSwapsSummaryRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2284,6 +2323,24 @@ func _Query_VaultsPubkeys_Handler(srv interface{}, ctx context.Context, dec func
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(QueryServer).VaultsPubkeys(ctx, req.(*QueryVaultsPubkeysRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Query_VaultSolvency_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryVaultSolvencyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).VaultSolvency(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Query_VaultSolvency_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).VaultSolvency(ctx, req.(*QueryVaultSolvencyRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2684,6 +2741,114 @@ func _Query_TCYClaimers_Handler(srv interface{}, ctx context.Context, dec func(i
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Query_OraclePrices_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryOraclePricesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).OraclePrices(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Query_OraclePrices_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).OraclePrices(ctx, req.(*QueryOraclePricesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Query_OraclePrice_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryOraclePriceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).OraclePrice(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Query_OraclePrice_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).OraclePrice(ctx, req.(*QueryOraclePriceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Query_Eip712TypedData_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryEip712TypedDataRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).Eip712TypedData(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Query_Eip712TypedData_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).Eip712TypedData(ctx, req.(*QueryEip712TypedDataRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Query_ReferenceMemo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryReferenceMemoRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).ReferenceMemo(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Query_ReferenceMemo_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).ReferenceMemo(ctx, req.(*QueryReferenceMemoRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Query_ReferenceMemoByHash_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryReferenceMemoByHashRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).ReferenceMemoByHash(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Query_ReferenceMemoByHash_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).ReferenceMemoByHash(ctx, req.(*QueryReferenceMemoByHashRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Query_ReferenceMemoPreflight_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryReferenceMemoPreflightRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).ReferenceMemoPreflight(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Query_ReferenceMemoPreflight_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).ReferenceMemoPreflight(ctx, req.(*QueryReferenceMemoPreflightRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Query_ServiceDesc is the grpc.ServiceDesc for Query service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -2734,14 +2899,6 @@ var Query_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Savers",
 			Handler:    _Query_Savers_Handler,
-		},
-		{
-			MethodName: "Borrower",
-			Handler:    _Query_Borrower_Handler,
-		},
-		{
-			MethodName: "Borrowers",
-			Handler:    _Query_Borrowers_Handler,
 		},
 		{
 			MethodName: "TradeUnit",
@@ -2876,20 +3033,8 @@ var Query_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Query_QuoteSwap_Handler,
 		},
 		{
-			MethodName: "QuoteSaverDeposit",
-			Handler:    _Query_QuoteSaverDeposit_Handler,
-		},
-		{
-			MethodName: "QuoteSaverWithdraw",
-			Handler:    _Query_QuoteSaverWithdraw_Handler,
-		},
-		{
-			MethodName: "QuoteLoanOpen",
-			Handler:    _Query_QuoteLoanOpen_Handler,
-		},
-		{
-			MethodName: "QuoteLoanClose",
-			Handler:    _Query_QuoteLoanClose_Handler,
+			MethodName: "QuoteLimit",
+			Handler:    _Query_QuoteLimit_Handler,
 		},
 		{
 			MethodName: "ConstantValues",
@@ -2898,6 +3043,18 @@ var Query_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SwapQueue",
 			Handler:    _Query_SwapQueue_Handler,
+		},
+		{
+			MethodName: "SwapDetails",
+			Handler:    _Query_SwapDetails_Handler,
+		},
+		{
+			MethodName: "LimitSwaps",
+			Handler:    _Query_LimitSwaps_Handler,
+		},
+		{
+			MethodName: "LimitSwapsSummary",
+			Handler:    _Query_LimitSwapsSummary_Handler,
 		},
 		{
 			MethodName: "LastBlocks",
@@ -2918,6 +3075,10 @@ var Query_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "VaultsPubkeys",
 			Handler:    _Query_VaultsPubkeys_Handler,
+		},
+		{
+			MethodName: "VaultSolvency",
+			Handler:    _Query_VaultSolvency_Handler,
 		},
 		{
 			MethodName: "TxStages",
@@ -3006,6 +3167,30 @@ var Query_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "TCYClaimers",
 			Handler:    _Query_TCYClaimers_Handler,
+		},
+		{
+			MethodName: "OraclePrices",
+			Handler:    _Query_OraclePrices_Handler,
+		},
+		{
+			MethodName: "OraclePrice",
+			Handler:    _Query_OraclePrice_Handler,
+		},
+		{
+			MethodName: "Eip712TypedData",
+			Handler:    _Query_Eip712TypedData_Handler,
+		},
+		{
+			MethodName: "ReferenceMemo",
+			Handler:    _Query_ReferenceMemo_Handler,
+		},
+		{
+			MethodName: "ReferenceMemoByHash",
+			Handler:    _Query_ReferenceMemoByHash_Handler,
+		},
+		{
+			MethodName: "ReferenceMemoPreflight",
+			Handler:    _Query_ReferenceMemoPreflight_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

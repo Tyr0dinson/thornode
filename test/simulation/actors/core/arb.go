@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	rand "math/rand/v2"
 	"sort"
 	"strings"
 	"sync"
@@ -31,9 +32,9 @@ type ArbActor struct {
 	originalPools map[string]types.Pool
 }
 
-func NewArbActor() *Actor {
+func NewArbActor(rng *rand.Rand) *Actor {
 	a := &ArbActor{
-		Actor:         *NewActor("Arbitrage"),
+		Actor:         *NewActor("Arbitrage", rng),
 		originalPools: make(map[string]types.Pool),
 	}
 	a.Timeout = time.Hour
@@ -124,35 +125,34 @@ func (a *ArbActor) acquireUser(config *OpConfig) OpResult {
 }
 
 func (a *ArbActor) enableTradeAssets(config *OpConfig) OpResult {
-	for _, node := range config.NodeUsers {
-		// wait to acquire the node user
-		if !node.Acquire() {
-			return OpResult{
-				Continue: false,
-			}
+	node := config.NodeUsers[0]
+	// wait to acquire the node user
+	if !node.Acquire() {
+		return OpResult{
+			Continue: false,
 		}
-		// Release all the node users at the end of the function.
-		defer node.Release()
-
-		accAddr, err := node.PubKey(common.THORChain).GetThorAddress()
-		if err != nil {
-			a.Log().Error().Err(err).Msg("failed to get thor address")
-			return OpResult{
-				Continue: false,
-			}
-		}
-		mimirMsg := types.NewMsgMimir("TradeAccountsEnabled", 1, accAddr)
-		txid, err := node.Thorchain.Broadcast(mimirMsg)
-		if err != nil {
-			a.Log().Error().Err(err).Msg("failed to broadcast tx")
-			return OpResult{
-				Continue: false,
-			}
-		}
-		a.Log().Info().
-			Stringer("txid", txid).
-			Msg("broadcasted admin mimir tx to enable trade assets")
 	}
+	// Release all the node users at the end of the function.
+	defer node.Release()
+
+	accAddr, err := node.PubKey(common.THORChain).GetThorAddress()
+	if err != nil {
+		a.Log().Error().Err(err).Msg("failed to get thor address")
+		return OpResult{
+			Continue: false,
+		}
+	}
+	mimirMsg := types.NewMsgMimir("TradeAccountsEnabled", 1, accAddr)
+	txid, err := node.Thorchain.Broadcast(mimirMsg)
+	if err != nil {
+		a.Log().Error().Err(err).Msg("failed to broadcast tx")
+		return OpResult{
+			Continue: false,
+		}
+	}
+	a.Log().Info().
+		Stringer("txid", txid).
+		Msg("broadcasted admin mimir tx to enable trade assets")
 
 	return OpResult{
 		Continue: true,
@@ -296,8 +296,8 @@ func (a *ArbActor) arb(config *OpConfig) OpResult {
 	send := arbPools[0]
 	receive := arbPools[len(arbPools)-1]
 
-	// skip if none have diverged more than 10 basis points
-	if priceChangeBps(send)-priceChangeBps(receive) < 25 {
+	// skip if none have diverged more than 1% basis points
+	if priceChangeBps(send)-priceChangeBps(receive) < 100 {
 		a.Log().Info().
 			Int64("maxShift", priceChangeBps(send)).
 			Int64("minShift", priceChangeBps(receive)).
@@ -306,7 +306,8 @@ func (a *ArbActor) arb(config *OpConfig) OpResult {
 			Continue: false,
 		}
 	}
-	adjustmentBps := int64(10)
+
+	adjustmentBps := int64(50)
 
 	// build the swap
 	minRuneDepth := common.Min(cosmos.NewUintFromString(send.BalanceRune).Uint64(), cosmos.NewUintFromString(receive.BalanceRune).Uint64())

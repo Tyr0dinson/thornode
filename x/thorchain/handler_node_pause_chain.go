@@ -44,16 +44,6 @@ func (h NodePauseChainHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Re
 }
 
 func (h NodePauseChainHandler) validate(ctx cosmos.Context, msg MsgNodePauseChain) error {
-	version := h.mgr.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("3.0.0")):
-		return h.validateV3_0_0(ctx, msg)
-	default:
-		return errBadVersion
-	}
-}
-
-func (h NodePauseChainHandler) validateV3_0_0(ctx cosmos.Context, msg MsgNodePauseChain) error {
 	// ValidateBasic is also executed in message service router's handler and isn't versioned there
 	if err := msg.ValidateBasic(); err != nil {
 		return err
@@ -68,16 +58,6 @@ func (h NodePauseChainHandler) validateV3_0_0(ctx cosmos.Context, msg MsgNodePau
 
 func (h NodePauseChainHandler) handle(ctx cosmos.Context, msg MsgNodePauseChain) error {
 	ctx.Logger().Info("handleMsgNodePauseChain request", "node", msg.Signer, "value", msg.Value)
-	version := h.mgr.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("3.0.0")):
-		return h.handleV3_0_0(ctx, msg)
-	default:
-		return errBadVersion
-	}
-}
-
-func (h NodePauseChainHandler) handleV3_0_0(ctx cosmos.Context, msg MsgNodePauseChain) error {
 	// get block height of last churn
 	active, err := h.mgr.Keeper().GetAsgardVaultsByStatus(ctx, ActiveVault)
 	if err != nil {
@@ -97,15 +77,13 @@ func (h NodePauseChainHandler) handleV3_0_0(ctx cosmos.Context, msg MsgNodePause
 	}
 
 	// get the current block height set by node pause chain global
-	pauseHeight, err := h.mgr.Keeper().GetMimir(ctx, "NodePauseChainGlobal")
+	key := "NodePauseChainGlobal"
+	pauseHeight, err := h.mgr.Keeper().GetMimir(ctx, key)
 	if err != nil {
 		return err
 	}
 
-	blocks, err := h.mgr.Keeper().GetMimir(ctx, constants.NodePauseChainBlocks.String())
-	if blocks < 0 || err != nil {
-		blocks = h.mgr.GetConstants().GetInt64Value(constants.NodePauseChainBlocks)
-	}
+	blocks := h.mgr.Keeper().GetConfigInt64(ctx, constants.NodePauseChainBlocks)
 
 	if msg.Value > 0 { // node intends to pause chain
 		if pauseHeight > ctx.BlockHeight() { // chain is paused
@@ -115,14 +93,15 @@ func (h NodePauseChainHandler) handleV3_0_0(ctx cosmos.Context, msg MsgNodePause
 			pauseHeight = ctx.BlockHeight() + blocks
 			h.mgr.Keeper().SetNodePauseChain(ctx, msg.Signer)
 		}
-	} else if msg.Value < 0 { // node intends so resume chain
-		if pauseHeight > ctx.BlockHeight() { // chain is paused
-			h.mgr.Keeper().SetNodePauseChain(ctx, msg.Signer)
-			pauseHeight -= blocks
+	} else { // node intends to resume chain
+		if pauseHeight <= ctx.BlockHeight() {
+			// chain isn't paused, so don't do anything
+			return nil
 		}
+		h.mgr.Keeper().SetNodePauseChain(ctx, msg.Signer)
+		pauseHeight -= blocks
 	}
 
-	key := "NodePauseChainGlobal"
 	h.mgr.Keeper().SetMimir(ctx, key, pauseHeight)
 	mimirEvent := NewEventSetMimir(strings.ToUpper(key), strconv.FormatInt(pauseHeight, 10))
 	if err = h.mgr.EventMgr().EmitEvent(ctx, mimirEvent); err != nil {

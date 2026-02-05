@@ -21,18 +21,27 @@ func main() {
 	cleanExports()
 
 	// parse the regex in the RUN environment variable to determine which tests to run
-	var runRegexs []*regexp.Regexp
-	if len(os.Getenv("RUN")) > 0 {
-		csv := strings.Split(os.Getenv("RUN"), ",")
-		for _, item := range csv {
-			item = strings.Trim(item, " \"")
-			if len(item) == 0 {
+	var runRegexes []*regexp.Regexp
+	runVar := os.Getenv("RUN")
+	if len(runVar) > 0 {
+		csvSplit := strings.Split(runVar, ",")
+		for _, v := range csvSplit {
+			v = strings.TrimSpace(v)
+			// trim surrounding quotes if present
+			if len(v) > 1 && v[0] == '"' && v[len(v)-1] == '"' {
+				v = v[1 : len(v)-1]
+			} else if len(v) > 1 && v[0] == '\'' && v[len(v)-1] == '\'' {
+				v = v[1 : len(v)-1]
+			}
+			// skip empty regexes
+			if len(v) == 0 {
 				continue
 			}
-			runRegexs = append(runRegexs, regexp.MustCompile(item))
+			runRegexes = append(runRegexes, regexp.MustCompile(v))
 		}
 	} else {
-		runRegexs = append(runRegexs, regexp.MustCompile(".*"))
+		runRegex := regexp.MustCompile(".*")
+		runRegexes = append(runRegexes, runRegex)
 	}
 
 	// find all regression tests in path
@@ -50,8 +59,8 @@ func main() {
 			return nil
 		}
 
-		for _, r := range runRegexs {
-			if r.MatchString(path) {
+		for _, runRegex := range runRegexes {
+			if runRegex.MatchString(path) {
 				files = append(files, path)
 				break
 			}
@@ -75,14 +84,13 @@ func main() {
 	// get parallelism from environment variable if DEBUG is not set
 	parallelism := 1
 	envParallelism := os.Getenv("PARALLELISM")
-	if envParallelism != "" {
-		if os.Getenv("DEBUG") != "" {
-			log.Fatal().Msg("PARALLELISM is not supported in DEBUG mode")
-		}
+	if envParallelism != "" && os.Getenv("DEBUG") == "" {
 		parallelism, err = strconv.Atoi(envParallelism)
 		if err != nil {
 			log.Fatal().Err(err).Msg("failed to parse PARALLELISM")
 		}
+	} else if envParallelism != "" && os.Getenv("DEBUG") != "" {
+		log.Warn().Msg("PARALLELISM is not supported in DEBUG mode, ignoring parallelism value")
 	}
 
 	newRegressionTest(files, parallelism).run()

@@ -6,6 +6,7 @@ import (
 
 	"github.com/cosmos/cosmos-sdk/telemetry"
 	"github.com/hashicorp/go-metrics"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -13,14 +14,14 @@ import (
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 )
 
-type SwapperVCUR struct{}
+type SwapperImpl struct{}
 
-func newSwapperVCUR() *SwapperVCUR {
-	return &SwapperVCUR{}
+func newSwapper() Swapper {
+	return &SwapperImpl{}
 }
 
 // validateMessage is trying to validate the legitimacy of the incoming message and decide whether THORNode can handle it
-func (s *SwapperVCUR) validateMessage(tx common.Tx, target common.Asset, destination common.Address) error {
+func (s *SwapperImpl) validateMessage(tx common.Tx, target common.Asset, destination common.Address) error {
 	if err := tx.Valid(); err != nil {
 		return err
 	}
@@ -40,7 +41,7 @@ func (s *SwapperVCUR) validateMessage(tx common.Tx, target common.Asset, destina
 	return nil
 }
 
-func (s *SwapperVCUR) Swap(ctx cosmos.Context,
+func (s *SwapperImpl) Swap(ctx cosmos.Context,
 	keeper keeper.Keeper,
 	tx common.Tx,
 	target common.Asset,
@@ -98,11 +99,26 @@ func (s *SwapperVCUR) Swap(ctx cosmos.Context,
 		return cosmos.ZeroUint(), swapEvents, swapErr
 	}
 	swapEvents = append(swapEvents, swapEvt)
-	if !swapTarget.IsZero() && assetAmount.LT(swapTarget) {
-		// **NOTE** this error string is utilized by the order book manager to
-		// catch the error. DO NOT change this error string without updating
-		// the order book manager as well
-		return cosmos.ZeroUint(), swapEvents, fmt.Errorf("emit asset %s less than price limit %s", assetAmount, swapTarget)
+	if !swapTarget.IsZero() {
+		checkAmount := assetAmount
+		// deduct L1 outbound fee to ensure user receives their limit amount after fees
+		if !target.IsNative() {
+			outboundFee, err := mgr.GasMgr().GetAssetOutboundFee(ctx, target, false)
+			if err == nil && !outboundFee.IsZero() {
+				feeToDeduct := outboundFee
+				// for streaming swaps, each sub-swap bears proportional share of the fee
+				if swp.Quantity > 0 {
+					feeToDeduct = outboundFee.QuoUint64(swp.Quantity)
+				}
+				checkAmount = common.SafeSub(assetAmount, feeToDeduct)
+			}
+		}
+		if checkAmount.LT(swapTarget) {
+			// **NOTE** this error string is utilized by the adv swap queue manager to
+			// catch the error. DO NOT change this error string without updating
+			// the adv swap queue manager as well
+			return cosmos.ZeroUint(), swapEvents, fmt.Errorf("emit asset %s less than price limit %s", checkAmount, swapTarget)
+		}
 	}
 	// emit asset is zero
 	if assetAmount.IsZero() {
@@ -137,6 +153,24 @@ func (s *SwapperVCUR) Swap(ctx cosmos.Context,
 			telem(evt.LiquidityFeeInRune),
 			[]metrics.Label{telemetry.NewLabel("pool", evt.Pool.String())},
 		)
+
+		volume, err := keeper.GetVolume(ctx, evt.Pool)
+		if err != nil {
+			volume = types.NewVolume(evt.Pool)
+		}
+
+		if evt.EmitAsset.Asset.GetLayer1Asset().Equals(evt.Pool) {
+			volume.ChangeAsset = volume.ChangeAsset.Add(evt.EmitAsset.Amount)
+			volume.ChangeRune = volume.ChangeRune.Add(evt.InTx.Coins[0].Amount)
+		} else {
+			volume.ChangeAsset = volume.ChangeAsset.Add(evt.InTx.Coins[0].Amount)
+			volume.ChangeRune = volume.ChangeRune.Add(evt.EmitAsset.Amount)
+		}
+
+		err = keeper.SetVolume(ctx, volume)
+		if err != nil {
+			ctx.Logger().Error("fail to save volume", "error", err)
+		}
 	}
 
 	if !destination.IsNoop() {
@@ -151,7 +185,19 @@ func (s *SwapperVCUR) Swap(ctx cosmos.Context,
 		}
 
 		// streaming swap outbounds are handled in the swap queue manager
-		if swp.Valid() != nil {
+		// all swaps are managed by the swap queue manager for the advanced swap queue
+		// Skip outbound creation when:
+		// 1. It's a streaming swap (swp.Valid() == nil)
+		// 2. OR advanced swap queue is enabled AND we're not in simulation mode
+		advSwapQueueEnabled := keeper.AdvSwapQueueEnabled(ctx)
+		isSimMode := isSimulationMode(ctx)
+		streamingSwap := swp.Valid() == nil
+
+		if streamingSwap || (advSwapQueueEnabled && !isSimMode) {
+			// Skip - outbound will be created by swap queue manager or settleSwap
+		} else {
+			// Create outbound for regular swaps when advanced queue is disabled
+			// OR when in simulation mode (to generate fee events for quotes)
 			ok, err := mgr.TxOutStore().TryAddTxOutItem(ctx, mgr, toi, swapTarget)
 			if err != nil {
 				return assetAmount, swapEvents, ErrInternal(err, "fail to add outbound tx")
@@ -165,7 +211,7 @@ func (s *SwapperVCUR) Swap(ctx cosmos.Context,
 	return assetAmount, swapEvents, nil
 }
 
-func (s *SwapperVCUR) swapOne(ctx cosmos.Context,
+func (s *SwapperImpl) swapOne(ctx cosmos.Context,
 	mgr Manager, tx common.Tx,
 	target common.Asset,
 	destination common.Address,
@@ -418,29 +464,17 @@ func (s *SwapperVCUR) swapOne(ctx cosmos.Context,
 		return cosmos.ZeroUint(), evt, fmt.Errorf("fail to set pool")
 	}
 
-	// if target is trade account, deposit the asset to trade account
+	// if target is trade account, check whether swaps to trade assets are enabled
 	if target.IsTradeAsset() {
 		if tradeAccountsEnabled <= 0 {
 			return cosmos.ZeroUint(), evt, fmt.Errorf("trade accounts are disabled")
 		}
-		acc, err := destination.AccAddress()
-		if err != nil {
-			return cosmos.ZeroUint(), evt, ErrInternal(err, "fail to parse trade account address")
-		}
-		_, err = mgr.TradeAccountManager().Deposit(ctx, target, emitAssets, acc, common.NoAddress, tx.ID)
-		if err != nil {
-			return cosmos.ZeroUint(), evt, ErrInternal(err, "fail to deposit to trade account")
-		}
 	}
 
+	// if target is secured asset, check whether swaps to secured assets are enabled
 	if target.IsSecuredAsset() {
-		acc, err := destination.AccAddress()
-		if err != nil {
-			return cosmos.ZeroUint(), evt, ErrInternal(err, "fail to parse destination address")
-		}
-		_, err = mgr.SecuredAssetManager().Deposit(ctx, target.GetLayer1Asset(), emitAssets, acc, common.NoAddress, tx.ID)
-		if err != nil {
-			return cosmos.ZeroUint(), evt, ErrInternal(err, "fail to mint secured asset")
+		if err := mgr.SecuredAssetManager().CheckHalt(ctx); err != nil {
+			return cosmos.ZeroUint(), evt, err
 		}
 	}
 
@@ -472,7 +506,7 @@ func (s *SwapperVCUR) swapOne(ctx cosmos.Context,
 
 // calculate the number of assets sent to the address (includes liquidity fee)
 // nolint
-func (s *SwapperVCUR) CalcAssetEmission(X, x, Y cosmos.Uint) cosmos.Uint {
+func (s *SwapperImpl) CalcAssetEmission(X, x, Y cosmos.Uint) cosmos.Uint {
 	// ( x * X * Y ) / ( x + X )^2
 	numerator := x.Mul(X).Mul(Y)
 	denominator := x.Add(X).Mul(x.Add(X))
@@ -484,7 +518,7 @@ func (s *SwapperVCUR) CalcAssetEmission(X, x, Y cosmos.Uint) cosmos.Uint {
 
 // calculate the asset amount to be sent to address using a predefined fee (fee calculated using artificial floor)
 // nolint
-func (s *SwapperVCUR) CalcMaxAssetEmission(X, x, Y, fee cosmos.Uint) cosmos.Uint {
+func (s *SwapperImpl) CalcMaxAssetEmission(X, x, Y, fee cosmos.Uint) cosmos.Uint {
 	// (( x * Y ) / ( x + X )) - fee
 	numerator := x.Mul(Y)
 	denominator := x.Add(X)
@@ -496,7 +530,7 @@ func (s *SwapperVCUR) CalcMaxAssetEmission(X, x, Y, fee cosmos.Uint) cosmos.Uint
 
 // CalculateLiquidityFee the fee of the swap
 // nolint
-func (s *SwapperVCUR) CalcLiquidityFee(X, x, Y cosmos.Uint) cosmos.Uint {
+func (s *SwapperImpl) CalcLiquidityFee(X, x, Y cosmos.Uint) cosmos.Uint {
 	// ( x^2 *  Y ) / ( x + X )^2
 	numerator := x.Mul(x).Mul(Y)
 	denominator := x.Add(X).Mul(x.Add(X))
@@ -508,7 +542,7 @@ func (s *SwapperVCUR) CalcLiquidityFee(X, x, Y cosmos.Uint) cosmos.Uint {
 
 // CalcMinLiquidityFee calculates the fee of the swap using min artificial slip floor
 // nolint
-func (s *SwapperVCUR) CalcMinLiquidityFee(X, x, Y, minSlipBps cosmos.Uint) cosmos.Uint {
+func (s *SwapperImpl) CalcMinLiquidityFee(X, x, Y, minSlipBps cosmos.Uint) cosmos.Uint {
 	// minSlip * ( x  *  Y ) / ( x + X )
 	numerator := common.GetSafeShare(minSlipBps, cosmos.NewUint(constants.MaxBasisPts), x.Mul(Y))
 	denominator := x.Add(X)
@@ -520,7 +554,7 @@ func (s *SwapperVCUR) CalcMinLiquidityFee(X, x, Y, minSlipBps cosmos.Uint) cosmo
 
 // CalcSwapSlip - calculate the swap slip, expressed in basis points (10000)
 // nolint
-func (s *SwapperVCUR) CalcSwapSlip(Xi, xi cosmos.Uint) cosmos.Uint {
+func (s *SwapperImpl) CalcSwapSlip(Xi, xi cosmos.Uint) cosmos.Uint {
 	// Cast to DECs
 	xD := cosmos.NewDecFromBigInt(xi.BigInt())
 	XD := cosmos.NewDecFromBigInt(Xi.BigInt())
@@ -538,7 +572,7 @@ func (s *SwapperVCUR) CalcSwapSlip(Xi, xi cosmos.Uint) cosmos.Uint {
 
 // GetSwapCalc returns emission, liquidity fee and slip for a swap
 // nolint
-func (s *SwapperVCUR) GetSwapCalc(X, x, Y, slipBps, minSlipBps cosmos.Uint) (emitAssets, liquidityFee, slip cosmos.Uint) {
+func (s *SwapperImpl) GetSwapCalc(X, x, Y, slipBps, minSlipBps cosmos.Uint) (emitAssets, liquidityFee, slip cosmos.Uint) {
 	if minSlipBps.GT(slipBps) {
 		// adjust calc emission based on artificial floor
 		liquidityFee = s.CalcMinLiquidityFee(X, x, Y, minSlipBps)

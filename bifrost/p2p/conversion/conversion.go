@@ -29,6 +29,9 @@ import (
 
 // GetPeerIDFromSecp256PubKey convert the given pubkey into a peer.ID
 func GetPeerIDFromSecp256PubKey(pk []byte) (peer.ID, error) {
+	if len(pk) == 0 {
+		return "", errors.New("empty public key raw bytes")
+	}
 	ppk, err := crypto2.UnmarshalSecp256k1PublicKey(pk)
 	if err != nil {
 		return "", fmt.Errorf("fail to convert pubkey to the crypto pubkey used in libp2p: %w", err)
@@ -205,11 +208,5 @@ func GetThreshold(value int) (int, error) {
 }
 
 func GetEDDSAPrivateKeyRawBytes(privateKey crypto2.PrivKey) ([]byte, error) {
-	var keyBytesArray [64]byte
-	pk, err := privateKey.Raw()
-	if err != nil {
-		return nil, err
-	}
-	copy(keyBytesArray[:], pk)
-	return keyBytesArray[:], nil
+	return privateKey.Raw()
 }

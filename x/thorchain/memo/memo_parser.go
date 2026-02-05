@@ -3,7 +3,6 @@ package thorchain
 import (
 	"encoding/base64"
 	"fmt"
-	"math/big"
 	"strconv"
 	"strings"
 
@@ -76,8 +75,10 @@ func (p *parser) parse() (mem Memo, err error) {
 		return p.ParseRunePoolDepositMemo()
 	case TxRunePoolWithdraw:
 		return p.ParseRunePoolWithdrawMemo()
-	case TxSwap, TxLimitOrder:
+	case TxSwap, TxLimitSwap:
 		return p.ParseSwapMemo()
+	case TxModifyLimitSwap:
+		return p.ParseModifyLimitSwap()
 	case TxOutbound:
 		return p.ParseOutboundMemo()
 	case TxRefund:
@@ -86,6 +87,8 @@ func (p *parser) parse() (mem Memo, err error) {
 		return p.ParseBondMemo()
 	case TxUnbond:
 		return p.ParseUnbondMemo()
+	case TxRebond:
+		return p.ParseRebondMemo()
 	case TxReserve:
 		return p.ParseReserveMemo()
 	case TxMigrate:
@@ -98,10 +101,10 @@ func (p *parser) parse() (mem Memo, err error) {
 		return p.ParseConsolidateMemo()
 	case TxTHORName:
 		return p.ParseManageTHORNameMemo()
-	case TxLoanOpen:
-		return p.ParseLoanOpenMemo()
-	case TxLoanRepayment:
-		return p.ParseLoanRepaymentMemo()
+	case TxReferenceWriteMemo:
+		return p.ParseReferenceWriteMemo()
+	case TxReferenceReadMemo:
+		return p.ParseReferenceReadMemo()
 	case TxTradeAccountDeposit:
 		return p.ParseTradeAccountDeposit()
 	case TxTradeAccountWithdrawal:
@@ -120,6 +123,10 @@ func (p *parser) parse() (mem Memo, err error) {
 		return p.ParseTCYStakeMemo()
 	case TxTCYUnstake:
 		return p.ParseTCYUnstakeMemo()
+	case TxMaint:
+		return p.ParseMaintMemo()
+	case TxOperatorRotate:
+		return p.ParseOperatorRotate()
 
 	default:
 		return EmptyMemo, fmt.Errorf("TxType not supported: %s", p.getType().String())
@@ -198,16 +205,89 @@ func (p *parser) getUint(idx int, required bool, def uint64) cosmos.Uint {
 
 func (p *parser) getUintWithScientificNotation(idx int, required bool, def uint64) cosmos.Uint {
 	p.incRequired(required)
-	f, _, err := big.ParseFloat(p.get(idx), 10, 0, big.ToZero)
-	if err != nil {
-		if required || p.get(idx) != "" {
-			p.addErr(fmt.Errorf("cannot parse '%s' as an uint with sci notation: %w", p.get(idx), err))
+	s := p.get(idx)
+	if s == "" {
+		if required {
+			p.addErr(fmt.Errorf("required index idx value is empty"))
 		}
 		return cosmos.NewUint(def)
 	}
-	i := new(big.Int)
-	f.Int(i) // Note: fractional part will be discarded
-	result := cosmos.NewUintFromBigInt(i)
+
+	// Handle scientific notation without floating-point precision loss
+	if strings.Contains(s, "e") || strings.Contains(s, "E") {
+		// Parse scientific notation manually to avoid float precision issues
+		parts := strings.Split(strings.ToLower(s), "e")
+		if len(parts) != 2 {
+			if required || s != "" {
+				p.addErr(fmt.Errorf("cannot parse '%s' as scientific notation", s))
+			}
+			return cosmos.NewUint(def)
+		}
+
+		// Parse the coefficient
+		coeff, err := cosmos.ParseUint(parts[0])
+		if err != nil {
+			if required || s != "" {
+				p.addErr(fmt.Errorf("cannot parse coefficient '%s' in scientific notation: %w", parts[0], err))
+			}
+			return cosmos.NewUint(def)
+		}
+
+		// Parse the exponent
+		exp, err := strconv.ParseInt(parts[1], 10, 64)
+		if err != nil {
+			if required || s != "" {
+				p.addErr(fmt.Errorf("cannot parse exponent '%s' in scientific notation: %w", parts[1], err))
+			}
+			return cosmos.NewUint(def)
+		}
+
+		if exp < 0 {
+			if required || s != "" {
+				p.addErr(fmt.Errorf("the memo parser does not support fractional values: %s", s))
+			}
+			return cosmos.NewUint(def)
+		}
+
+		// Set maximum exponent limit based on 256-bit capacity
+		const maxExponent = 77 // 10^77 is still within 256-bit range
+
+		if exp > maxExponent {
+			if required || s != "" {
+				p.addErr(fmt.Errorf("exponent %d exceeds maximum allowed value of %d: %s", exp, maxExponent, s))
+			}
+			return cosmos.NewUint(def)
+		}
+
+		// Calculate 10^exp (the multiplier)
+		multiplier := cosmos.NewUint(1)
+		for i := int64(0); i < exp; i++ {
+			multiplier = multiplier.MulUint64(10)
+		}
+
+		// Get the maximum 256-bit value
+		// For cosmos.Uint, this would be 2^256 - 1
+		maxUint256 := cosmos.NewUintFromString("115792089237316195423570985008687907853269984665640564039457584007913129639935") // 2^256 - 1
+
+		// Check if coefficient * multiplier would overflow
+		if !coeff.IsZero() && coeff.GT(maxUint256.Quo(multiplier)) {
+			if required || s != "" {
+				p.addErr(fmt.Errorf("coefficient %s would cause overflow when multiplied by 10^%d: %s", coeff.String(), exp, s))
+			}
+			return cosmos.NewUint(def)
+		}
+
+		return coeff.Mul(multiplier)
+	}
+
+	// Fallback to regular uint parsing for non-scientific notation
+	result, err := cosmos.ParseUint(s)
+	if err != nil {
+		if required || s != "" {
+			p.addErr(fmt.Errorf("cannot parse '%s' as an uint: %w", s, err))
+		}
+		return cosmos.NewUint(def)
+	}
 	return result
 }
 
@@ -275,6 +355,18 @@ func (p *parser) getAddressWithKeeper(idx int, required bool, def common.Address
 		}
 	}
 	return addr
+}
+
+func (p *parser) getString(idx int, required bool, def string) string {
+	p.incRequired(required)
+	value := p.get(idx)
+	if value == "" {
+		if required {
+			p.addErr(fmt.Errorf("cannot parse '%s' as a string", p.get(idx)))
+		}
+		return def
+	}
+	return value
 }
 
 func (p *parser) getStringArrayBySeparator(idx int, required bool, separator string) []string {
@@ -372,6 +464,76 @@ func (p *parser) getAsset(idx int, required bool, def common.Asset) common.Asset
 		return def
 	}
 	return value
+}
+
+func (p *parser) getCoin(idx int, required bool, def common.Coin) common.Coin {
+	p.incRequired(required)
+	coinStr := p.get(idx)
+
+	// Check if the coin string contains special separators for trade assets (~),
+	// synths (/), or secured assets (-). These are not valid in cosmos.ParseCoins
+	// but are valid THORChain assets that need custom parsing via common.ParseCoin.
+	if strings.ContainsAny(coinStr, "~/-") {
+		// common.ParseCoin expects format "<amount> <asset>" with a space,
+		// but memo format is "<amount><asset>" without a space.
+		// Find where digits end and insert a space.
+		i := 0
+		for i < len(coinStr) && (coinStr[i] >= '0' && coinStr[i] <= '9') {
+			i++
+		}
+
+		if i == 0 || i == len(coinStr) {
+			if required || coinStr != "" {
+				p.addErr(fmt.Errorf("cannot parse '%s' as coin: invalid format", coinStr))
+			}
+			return def
+		}
+
+		// Insert space between amount and asset
+		coinStrWithSpace := coinStr[:i] + " " + coinStr[i:]
+
+		// Use common.ParseCoin which handles trade assets, synths, and secured assets
+		coin, err := common.ParseCoin(coinStrWithSpace)
+		if err != nil {
+			if required || coinStr != "" {
+				p.addErr(fmt.Errorf("cannot parse '%s' as coin: %w", coinStr, err))
+			}
+			return def
+		}
+
+		return coin
+	}
+
+	// Use standard cosmos.ParseCoins for regular assets (backward compatibility)
+	coins, err := cosmos.ParseCoins(coinStr)
+	if err != nil {
+		if required || coinStr != "" {
+			p.addErr(fmt.Errorf("cannot parse '%s' as coins: %w", p.get(idx), err))
+		}
+		return def
+	}
+
+	// Should have exactly one coin
+	if len(coins) != 1 {
+		if required || coinStr != "" {
+			p.addErr(fmt.Errorf("expected exactly one coin, got %d", len(coins)))
+		}
+		return def
+	}
+
+	// Convert cosmos.Coin to common.Coin
+	cosmosCoin := coins[0]
+
+	// Parse the denom back to an asset
+	asset, err := common.NewAssetWithShortCodes(p.version, cosmosCoin.Denom)
+	if err != nil {
+		if required || coinStr != "" {
+			p.addErr(fmt.Errorf("cannot parse denom '%s' as asset: %w", cosmosCoin.Denom, err))
+		}
+		return def
+	}
+
+	return common.NewCoin(asset, cosmos.NewUintFromBigInt(cosmosCoin.Amount.BigInt()))
 }
 
 func (p *parser) getTxID(idx int, required bool, def common.TxID) common.TxID {

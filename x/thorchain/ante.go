@@ -11,6 +11,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/crypto/types/multisig"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	authsigning "github.com/cosmos/cosmos-sdk/x/auth/signing"
+	"github.com/cosmos/cosmos-sdk/x/authz"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -36,6 +37,10 @@ func NewAnteDecorator(keeper keeper.Keeper) AnteDecorator {
 
 func (ad AnteDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate bool, next sdk.AnteHandler) (newCtx sdk.Context, err error) {
 	if err = ad.rejectMultipleDepositMsgs(tx.GetMsgs()); err != nil {
+		return ctx, err
+	}
+
+	if err = ad.rejectDuplicateTHORNameMsgs(tx.GetMsgs()); err != nil {
 		return ctx, err
 	}
 
@@ -95,6 +100,22 @@ func (ad AnteDecorator) rejectMultipleDepositMsgs(msgs []cosmos.Msg) error {
 				return cosmos.ErrUnknownRequest("only one deposit msg per tx")
 			}
 			hasDeposit = true
+		}
+	}
+	return nil
+}
+
+// rejectDuplicateTHORNameMsgs prevents multiple MsgManageTHORName messages for the same name in a single tx
+// This prevents exploitation where a second message could inherit state changes (like extended expiration)
+// from the first message without paying for them
+func (ad AnteDecorator) rejectDuplicateTHORNameMsgs(msgs []cosmos.Msg) error {
+	seenNames := make(map[string]struct{})
+	for _, msg := range msgs {
+		if tnMsg, ok := msg.(*types.MsgManageTHORName); ok {
+			if _, exists := seenNames[tnMsg.Name]; exists {
+				return cosmos.ErrUnknownRequest("duplicate THORName operation in same tx: " + tnMsg.Name)
+			}
+			seenNames[tnMsg.Name] = struct{}{}
 		}
 	}
 	return nil
@@ -173,7 +194,12 @@ func (ad AnteDecorator) anteHandleMessage(ctx sdk.Context, version semver.Versio
 		*wasmtypes.MsgInstantiateContract2,
 		*wasmtypes.MsgExecuteContract,
 		*wasmtypes.MsgMigrateContract,
-		*wasmtypes.MsgSudoContract:
+		*wasmtypes.MsgSudoContract,
+		*wasmtypes.MsgUpdateAdmin,
+		*wasmtypes.MsgClearAdmin,
+		*authz.MsgGrant,
+		*authz.MsgRevoke,
+		*authz.MsgExec:
 		return ctx, nil
 	default:
 		return ctx, cosmos.ErrUnknownRequest("invalid message type")

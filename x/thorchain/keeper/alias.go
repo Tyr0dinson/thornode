@@ -38,7 +38,6 @@ type (
 	Pool                     = types.Pool
 	Pools                    = types.Pools
 	LiquidityProvider        = types.LiquidityProvider
-	Loan                     = types.Loan
 	StreamingSwap            = types.StreamingSwap
 	ObservedTxVoter          = types.ObservedTxVoter
 	BanVoter                 = types.BanVoter
@@ -68,6 +67,7 @@ type (
 	RagnarokWithdrawPosition = types.RagnarokWithdrawPosition
 	ChainContract            = types.ChainContract
 	SolvencyVoter            = types.SolvencyVoter
+	ReferenceMemo            = types.ReferenceMemo
 	THORName                 = types.THORName
 	AffiliateFeeCollector    = types.AffiliateFeeCollector
 	SwapperClout             = types.SwapperClout
@@ -79,4 +79,8 @@ type (
 	Upgrade                  = types.Upgrade
 	TCYClaimer               = types.TCYClaimer
 	TCYStaker                = types.TCYStaker
+	PriceFeed                = types.PriceFeed
+	OraclePrice              = types.OraclePrice
+	Volume                   = types.Volume
+	VolumeBucket             = types.VolumeBucket
 )

@@ -23,8 +23,6 @@ var (
 	_ jsonpb.JSONPBMarshaler = &QueryBalanceModuleResponse{}
 	_ jsonpb.JSONPBMarshaler = &BanVoter{}
 	_ jsonpb.JSONPBMarshaler = &QueryBlockResponse{}
-	_ jsonpb.JSONPBMarshaler = &QueryBorrowerResponse{}
-	_ jsonpb.JSONPBMarshaler = &QueryBorrowersResponse{}
 	_ jsonpb.JSONPBMarshaler = &QueryConstantValuesResponse{}
 	_ jsonpb.JSONPBMarshaler = &QueryDerivedPoolResponse{}
 	_ jsonpb.JSONPBMarshaler = &QueryDerivedPoolsResponse{}
@@ -48,10 +46,6 @@ var (
 	_ jsonpb.JSONPBMarshaler = &QueryPoolSlipsResponse{}
 	_ jsonpb.JSONPBMarshaler = &QueryPoolsResponse{}
 	_ jsonpb.JSONPBMarshaler = &QueryQueueResponse{}
-	_ jsonpb.JSONPBMarshaler = &QueryQuoteLoanCloseResponse{}
-	_ jsonpb.JSONPBMarshaler = &QueryQuoteLoanOpenResponse{}
-	_ jsonpb.JSONPBMarshaler = &QueryQuoteSaverDepositResponse{}
-	_ jsonpb.JSONPBMarshaler = &QueryQuoteSaverWithdrawResponse{}
 	_ jsonpb.JSONPBMarshaler = &QueryQuoteSwapResponse{}
 	_ jsonpb.JSONPBMarshaler = &QueryRagnarokResponse{}
 	_ jsonpb.JSONPBMarshaler = &QueryRuneProviderResponse{}
@@ -62,6 +56,7 @@ var (
 	_ jsonpb.JSONPBMarshaler = &QueryStreamingSwapsResponse{}
 	_ jsonpb.JSONPBMarshaler = &SwapperClout{}
 	_ jsonpb.JSONPBMarshaler = &QuerySwapQueueResponse{}
+	_ jsonpb.JSONPBMarshaler = &QuerySwapDetailsResponse{}
 	_ jsonpb.JSONPBMarshaler = &QueryThornameResponse{}
 	_ jsonpb.JSONPBMarshaler = &QueryTradeAccountsResponse{}
 	_ jsonpb.JSONPBMarshaler = &QueryTradeUnitsResponse{}
@@ -107,15 +102,6 @@ func (m *QueryBalanceModuleResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte,
 // BanVoter
 func (m *BanVoter) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
 	return jsonify(m)
-}
-
-// QueryBorrowerResponse
-func (m *QueryBorrowerResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
-	return jsonify(m)
-}
-
-func (m *QueryBorrowersResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
-	return jsonify(m.Borrowers)
 }
 
 func (m *QueryConstantValuesResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
@@ -294,26 +280,6 @@ func (m *QueryQueueResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) 
 	return jsonify(m)
 }
 
-// QueryQuoteLoanOpenResponse
-func (m *QueryQuoteLoanOpenResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
-	return jsonify(m)
-}
-
-// QueryQuoteLoanCloseResponse
-func (m *QueryQuoteLoanCloseResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
-	return jsonify(m)
-}
-
-// QueryQuoteSaverDepositResponse
-func (m *QueryQuoteSaverDepositResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
-	return jsonify(m)
-}
-
-// QueryQuoteSaverWithdrawResponse
-func (m *QueryQuoteSaverWithdrawResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
-	return jsonify(m)
-}
-
 // QueryQuoteSwapResponse
 func (m *QueryQuoteSwapResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
 	return jsonify(m)
@@ -361,17 +327,17 @@ func (m *SwapperClout) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
 	return jsonify(m)
 }
 
-// Use openapi type since its ordertype is a string (i.e. "market", "limit") and not the int representation ("0", "1")
+// Use openapi type since its swaptype is a string (i.e. "market", "limit") and not the int representation ("0", "1")
 func (m *QuerySwapQueueResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
 	result := make([]openapi.MsgSwap, 0)
 	for _, msg := range m.SwapQueue {
-		// Only display the OrderType if it is "limit", not if "market".
-		var orderType *string
-		if msg.OrderType != OrderType_market {
-			orderType = wrapString(msg.OrderType.String())
+		// Only display the SwapType if it is "limit", not if "market".
+		var swapType *string
+		if msg.SwapType != SwapType_market {
+			swapType = wrapString(msg.SwapType.String())
 		}
-		// TODO: After order books implementation,
-		// always display the OrderType?
+		// TODO: After adv swap queue implementation,
+		// always display the SwapType?
 
 		result = append(result, openapi.MsgSwap{
 			Tx:                      castTx(msg.Tx),
@@ -384,10 +350,67 @@ func (m *QuerySwapQueueResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, err
 			Aggregator:              wrapString(msg.Aggregator),
 			AggregatorTargetAddress: wrapString(msg.AggregatorTargetAddress),
 			AggregatorTargetLimit:   wrapUintPtr(msg.AggregatorTargetLimit),
-			OrderType:               orderType,
+			SwapType:                swapType,
 			StreamQuantity:          wrapInt64(int64(msg.StreamQuantity)),
 			StreamInterval:          wrapInt64(int64(msg.StreamInterval)),
 		})
+	}
+	return jsonify(result)
+}
+
+// QuerySwapDetailsResponse
+func (m *QuerySwapDetailsResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) {
+	if m.Swap == nil {
+		return jsonify(openapi.SwapDetailsResponse{
+			Status:    wrapString(m.Status),
+			QueueType: wrapString(m.QueueType),
+		})
+	}
+
+	// Only display the SwapType if it is "limit", not if "market".
+	var swapType *string
+	if m.Swap.SwapType != SwapType_market {
+		swapType = wrapString(m.Swap.SwapType.String())
+	}
+
+	// Convert SwapState if present
+	var state *openapi.SwapState
+	if m.Swap.State != nil {
+		state = &openapi.SwapState{
+			Interval:          wrapInt64(int64(m.Swap.State.Interval)),
+			Quantity:          wrapInt64(int64(m.Swap.State.Quantity)),
+			Ttl:               wrapInt64(int64(m.Swap.State.Ttl)),
+			Count:             wrapInt64(int64(m.Swap.State.Count)),
+			LastHeight:        wrapInt64(m.Swap.State.LastHeight),
+			Deposit:           wrapString(m.Swap.State.Deposit.String()),
+			Withdrawn:         wrapString(m.Swap.State.Withdrawn.String()),
+			In:                wrapString(m.Swap.State.In.String()),
+			Out:               wrapString(m.Swap.State.Out.String()),
+			FailedSwaps:       convertUint64SliceToInt64(m.Swap.State.FailedSwaps),
+			FailedSwapReasons: m.Swap.State.FailedSwapReasons,
+		}
+	}
+
+	result := openapi.SwapDetailsResponse{
+		Swap: &openapi.MsgSwap{
+			Tx:                      castTx(m.Swap.Tx),
+			TargetAsset:             m.Swap.TargetAsset.String(),
+			Destination:             wrapString(m.Swap.Destination.String()),
+			TradeTarget:             m.Swap.TradeTarget.String(),
+			AffiliateAddress:        wrapString(m.Swap.AffiliateAddress.String()),
+			AffiliateBasisPoints:    m.Swap.AffiliateBasisPoints.String(),
+			Signer:                  wrapString(m.Swap.Signer.String()),
+			Aggregator:              wrapString(m.Swap.Aggregator),
+			AggregatorTargetAddress: wrapString(m.Swap.AggregatorTargetAddress),
+			AggregatorTargetLimit:   wrapUintPtr(m.Swap.AggregatorTargetLimit),
+			SwapType:                swapType,
+			StreamQuantity:          wrapInt64(int64(m.Swap.StreamQuantity)),
+			StreamInterval:          wrapInt64(int64(m.Swap.StreamInterval)),
+			InitialBlockHeight:      wrapInt64(m.Swap.InitialBlockHeight),
+			State:                   state,
+		},
+		Status:    wrapString(m.Status),
+		QueueType: wrapString(m.QueueType),
 	}
 	return jsonify(result)
 }
@@ -566,8 +589,9 @@ func (m *QueryBlockResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) 
 				EvidenceHash:       m.Header.EvidenceHash,
 				ProposerAddress:    m.Header.ProposerAddress,
 			},
-			BeginBlockEvents: []map[string]string{},
-			EndBlockEvents:   []map[string]string{},
+			BeginBlockEvents:    []map[string]string{},
+			EndBlockEvents:      []map[string]string{},
+			FinalizeBlockEvents: []map[string]string{},
 		},
 		Txs: make([]QueryOpenApiBlockTx, len(m.Txs)),
 	}
@@ -578,6 +602,10 @@ func (m *QueryBlockResponse) MarshalJSONPB(_ *jsonpb.Marshaler) ([]byte, error) 
 
 	for _, event := range m.EndBlockEvents {
 		res.EndBlockEvents = append(res.EndBlockEvents, eventMap(event))
+	}
+
+	for _, event := range m.FinalizeBlockEvents {
+		res.FinalizeBlockEvents = append(res.FinalizeBlockEvents, eventMap(event))
 	}
 
 	for i, tx := range m.Txs {
@@ -737,5 +765,16 @@ func castTxStagesResponse(in QueryTxStagesResponse) (result openapi.TxStagesResp
 		}
 	}
 
+	return result
+}
+
+func convertUint64SliceToInt64(slice []uint64) []int64 {
+	if slice == nil {
+		return nil
+	}
+	result := make([]int64, len(slice))
+	for i, v := range slice {
+		result[i] = int64(v)
+	}
 	return result
 }

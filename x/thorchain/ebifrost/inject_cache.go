@@ -1,16 +1,21 @@
 package ebifrost
 
 import (
-	"sync"
+	"time"
 
 	"cosmossdk.io/log"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	common "gitlab.com/thorchain/thornode/v3/common"
 )
 
+type TimestampedItem[T any] struct {
+	Item      T
+	Timestamp time.Time
+}
+
 type InjectCache[T any] struct {
-	items []T
-	mu    sync.Mutex
+	items []TimestampedItem[T]
+	mu    *PriorityRWLock
 
 	// recentBlockItems is a map of block height to items that were included in that block.
 	// This is used to keep track of recently processed items so we don't reprocess them.
@@ -20,8 +25,9 @@ type InjectCache[T any] struct {
 // NewInjectCache creates a new inject cache for the given type
 func NewInjectCache[T any]() *InjectCache[T] {
 	return &InjectCache[T]{
-		items:            make([]T, 0),
+		items:            make([]TimestampedItem[T], 0),
 		recentBlockItems: make(map[int64][]T),
+		mu:               NewPriorityRWLock(),
 	}
 }
 
@@ -30,16 +36,21 @@ func (c *InjectCache[T]) Add(item T) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	c.items = append(c.items, item)
+	c.items = append(c.items, TimestampedItem[T]{
+		Item:      item,
+		Timestamp: time.Now(),
+	})
 }
 
 // Get returns all items in the cache (thread-safe)
 func (c *InjectCache[T]) Get() []T {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.mu.RLockPriority()
+	defer c.mu.RUnlock()
 
 	result := make([]T, len(c.items))
-	copy(result, c.items)
+	for i, item := range c.items {
+		result[i] = item.Item
+	}
 	return result
 }
 
@@ -86,39 +97,10 @@ func (c *InjectCache[T]) CleanOldBlocks(currentHeight int64, keepBlocks int64) {
 	}
 }
 
-// FindMatchingItemIndex finds the index of an item that matches the provided predicate
-func (c *InjectCache[T]) FindMatchingItemIndex(matches func(T) bool) int {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	for i, item := range c.items {
-		if matches(item) {
-			return i
-		}
-	}
-
-	return -1
-}
-
-// FindMatchingItem finds an item that matches the provided predicate
-func (c *InjectCache[T]) FindMatchingItem(matches func(T) bool) (T, bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	for _, item := range c.items {
-		if matches(item) {
-			return item, true
-		}
-	}
-
-	var zero T
-	return zero, false
-}
-
 // CheckRecentBlocks checks if any item in the recent blocks matches the provided predicate
 func (c *InjectCache[T]) CheckRecentBlocks(matches func(T) bool) bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 
 	// analyze-ignore(map-iteration)
 	for _, items := range c.recentBlockItems {
@@ -132,46 +114,42 @@ func (c *InjectCache[T]) CheckRecentBlocks(matches func(T) bool) bool {
 	return false
 }
 
-// MergeWithExisting tries to merge an item with an existing one or adds it as new
-func (c *InjectCache[T]) MergeWithExisting(item T, equals func(T, T) bool, merge func(existing T, new T)) bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	for i, existing := range c.items {
-		if equals(existing, item) {
-			merge(c.items[i], item)
-			return true
+// markAttestationsConfirmedLocked is the internal implementation that assumes the lock is already held
+func (c *InjectCache[T]) markAttestationsConfirmedLocked(
+	item T,
+	logger log.Logger,
+	equals func(T, T) bool,
+	getAttestations func(T) []*common.Attestation,
+	removeAttestations func(T, []*common.Attestation) bool,
+	logInfo func(T, log.Logger),
+) bool {
+	found := false
+	for i := 0; i < len(c.items); i++ {
+		cacheItem := c.items[i].Item
+		if equals(cacheItem, item) {
+			found = true
+			logInfo(cacheItem, logger)
+			if empty := removeAttestations(cacheItem, getAttestations(item)); empty {
+				// Remove the element at index i
+				c.items = append(c.items[:i], c.items[i+1:]...)
+			} else {
+				// Update the timestamp since we modified the item
+				c.items[i].Timestamp = time.Now()
+			}
+			break
 		}
 	}
 
-	c.items = append(c.items, item)
-	return false
+	return found
 }
 
-// ForEach executes a function for each item in the cache
-func (c *InjectCache[T]) ForEach(fn func(T)) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	for _, item := range c.items {
-		fn(item)
-	}
-}
-
-// LogDebug logs debug information about each item using the provided logger and log function
-func (c *InjectCache[T]) LogDebug(logger log.Logger, logFn func(item T, logger log.Logger)) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	for _, item := range c.items {
-		logFn(item, logger)
-	}
-}
-
-// MarkAttestationsConfirmed is a generic method to mark attestations confirmed and remove items if empty
-// This is a template method that needs specific implementations to use
-func (c *InjectCache[T]) MarkAttestationsConfirmed(
+// MarkAttestationsConfirmedAndAddToBlock atomically marks attestations as confirmed and adds the item
+// to recentBlockItems. This prevents race conditions where AddItem could check recentBlockItems
+// between MarkAttestationsConfirmed and AddToBlock, potentially re-adding a just-confirmed item.
+func (c *InjectCache[T]) MarkAttestationsConfirmedAndAddToBlock(
 	item T,
+	height int64,
+	keepBlocks int64,
 	logger log.Logger,
 	equals func(T, T) bool,
 	getAttestations func(T) []*common.Attestation,
@@ -181,48 +159,65 @@ func (c *InjectCache[T]) MarkAttestationsConfirmed(
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	found := false
-	for i := 0; i < len(c.items); i++ {
-		cacheItem := c.items[i]
-		if equals(cacheItem, item) {
-			found = true
-			logInfo(cacheItem, logger)
-			if empty := removeAttestations(cacheItem, getAttestations(item)); empty {
-				// Remove the element at index i
-				c.items = append(c.items[:i], c.items[i+1:]...)
-			}
-			break
+	// First, mark attestations as confirmed (remove from c.items)
+	found := c.markAttestationsConfirmedLocked(item, logger, equals, getAttestations, removeAttestations, logInfo)
+
+	// Then, add to recentBlockItems (for deduplication in AddItem)
+	c.recentBlockItems[height] = append(c.recentBlockItems[height], item)
+
+	// Clean old blocks
+	// analyze-ignore(map-iteration)
+	for h := range c.recentBlockItems {
+		if h < height-keepBlocks {
+			delete(c.recentBlockItems, h)
 		}
 	}
 
 	return found
 }
 
-// AddItem is a generic method that handles the common pattern for sending items to the cache
-// It filters out attestations that already exist in recent blocks and merges with existing items
+// AddItem is a generic method that handles the common pattern for sending items to the cache.
+// It filters out attestations that already exist in recent blocks and merges with existing items.
+// This method is atomic - it holds the lock across both the check and the merge to prevent
+// race conditions where the state could change between checking recentBlockItems and modifying c.items.
 func (c *InjectCache[T]) AddItem(
 	newItem T,
 	getAttestations func(T) []*common.Attestation,
 	setAttestations func(T, []*common.Attestation) T,
 	itemsEqual func(T, T) bool,
 ) error {
-	// Filter out attestations that are already in recent blocks
-	newAttestations := make([]*common.Attestation, 0)
-	for _, a := range getAttestations(newItem) {
-		found := c.CheckRecentBlocks(func(blockItem T) bool {
-			if !itemsEqual(blockItem, newItem) {
-				return false
-			}
+	// Hold the lock for the entire operation to prevent race conditions.
+	// This ensures atomicity between checking recentBlockItems and modifying c.items.
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
-			existingAttestation := getAttestations(blockItem)
-			for _, att := range existingAttestation {
-				if a.Equals(att) {
-					return true
+	// Filter out attestations that are already confirmed in recent blocks
+	incomingAtts := getAttestations(newItem)
+	newAttestations := make([]*common.Attestation, 0, len(incomingAtts))
+
+	for _, a := range incomingAtts {
+		// Check if this attestation exists in any recent block (inline check while holding lock)
+		found := false
+		// analyze-ignore(map-iteration)
+		for _, blockItems := range c.recentBlockItems {
+			for _, blockItem := range blockItems {
+				if !itemsEqual(blockItem, newItem) {
+					continue
+				}
+				for _, att := range getAttestations(blockItem) {
+					if a.Equals(att) {
+						found = true
+						break
+					}
+				}
+				if found {
+					break
 				}
 			}
-
-			return false
-		})
+			if found {
+				break
+			}
+		}
 
 		if !found {
 			newAttestations = append(newAttestations, a)
@@ -237,14 +232,13 @@ func (c *InjectCache[T]) AddItem(
 	// Create a new item with only the new attestations
 	itemToAdd := setAttestations(newItem, newAttestations)
 
-	// Try to merge with an existing item or add as new
-	c.MergeWithExisting(
-		itemToAdd,
-		itemsEqual,
-		func(existing T, new T) {
-			// Merge attestations that don't already exist
-			existingAtts := getAttestations(existing)
-			for _, newAtt := range getAttestations(new) {
+	// Try to merge with an existing item or add as new (inline merge while holding lock)
+	merged := false
+	for i, existing := range c.items {
+		if itemsEqual(existing.Item, itemToAdd) {
+			// Merge attestations that don't already exist in the cached item
+			existingAtts := getAttestations(c.items[i].Item)
+			for _, newAtt := range getAttestations(itemToAdd) {
 				attExists := false
 				for _, existingAtt := range existingAtts {
 					if newAtt.Equals(existingAtt) {
@@ -256,11 +250,22 @@ func (c *InjectCache[T]) AddItem(
 					existingAtts = append(existingAtts, newAtt)
 				}
 			}
-			// Update the attestations using setAttestations
-			// This is where we use the provided function to handle type-specific updates
-			_ = setAttestations(existing, existingAtts)
-		},
-	)
+			// Update the attestations on the cached item
+			_ = setAttestations(c.items[i].Item, existingAtts)
+			// Update the timestamp since we modified the item
+			c.items[i].Timestamp = time.Now()
+			merged = true
+			break
+		}
+	}
+
+	if !merged {
+		// No existing item to merge with, add as new
+		c.items = append(c.items, TimestampedItem[T]{
+			Item:      itemToAdd,
+			Timestamp: time.Now(),
+		})
+	}
 
 	return nil
 }
@@ -310,4 +315,27 @@ func (c *InjectCache[T]) ProcessForProposal(
 	}
 
 	return injectTxs
+}
+
+// PruneExpiredItems removes items that have been in the cache longer than the TTL
+func (c *InjectCache[T]) PruneExpiredItems(ttl time.Duration) []T {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	now := time.Now()
+	var newItems []TimestampedItem[T]
+
+	var prunedItems []T
+
+	for _, item := range c.items {
+		if now.Sub(item.Timestamp) < ttl {
+			newItems = append(newItems, item)
+		} else {
+			prunedItems = append(prunedItems, item.Item)
+		}
+	}
+
+	c.items = newItems
+
+	return prunedItems
 }

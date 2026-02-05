@@ -3,7 +3,6 @@ package thorchain
 import (
 	"context"
 
-	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/telemetry"
 	"github.com/hashicorp/go-metrics"
 
@@ -42,28 +41,7 @@ func (h RagnarokHandler) Run(ctx cosmos.Context, m cosmos.Msg) (*cosmos.Result, 
 }
 
 func (h RagnarokHandler) validate(ctx cosmos.Context, msg MsgRagnarok) error {
-	version := h.mgr.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("3.0.0")):
-		return h.validateV3_0_0(ctx, msg)
-	default:
-		return errInvalidVersion
-	}
-}
-
-func (h RagnarokHandler) validateV3_0_0(ctx cosmos.Context, msg MsgRagnarok) error {
 	return msg.ValidateBasic()
-}
-
-func (h RagnarokHandler) handle(ctx cosmos.Context, msg MsgRagnarok) (*cosmos.Result, error) {
-	ctx.Logger().Info("receive MsgRagnarok", "request tx hash", msg.Tx.Tx.ID)
-	version := h.mgr.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("3.0.0")):
-		return h.handleV3_0_0(ctx, msg)
-	default:
-		return nil, errBadVersion
-	}
 }
 
 func (h RagnarokHandler) slash(ctx cosmos.Context, tx ObservedTx) error {
@@ -79,7 +57,9 @@ func (h RagnarokHandler) slash(ctx cosmos.Context, tx ObservedTx) error {
 	return h.mgr.Slasher().SlashVault(ctx, tx.ObservedPubKey, toSlash, h.mgr)
 }
 
-func (h RagnarokHandler) handleV3_0_0(ctx cosmos.Context, msg MsgRagnarok) (*cosmos.Result, error) {
+func (h RagnarokHandler) handle(ctx cosmos.Context, msg MsgRagnarok) (*cosmos.Result, error) {
+	ctx.Logger().Info("receive MsgRagnarok", "request tx hash", msg.Tx.Tx.ID)
+
 	// for ragnarok on thorchain ,
 	if msg.Tx.Tx.Chain.Equals(common.THORChain) {
 		return &cosmos.Result{}, nil
@@ -100,7 +80,11 @@ func (h RagnarokHandler) handleV3_0_0(ctx cosmos.Context, msg MsgRagnarok) (*cos
 			// this type of tx out is special, because it doesn't have relevant tx
 			// in to trigger it, it is trigger by thorchain itself.
 
-			fromAddress, _ := tx.VaultPubKey.GetAddress(tx.Chain)
+			fromAddress, err := tx.VaultPubKey.GetAddress(tx.Chain)
+			if err != nil {
+				ctx.Logger().Error("fail to get from address from vault pubkey", "error", err, "vault_pubkey", tx.VaultPubKey, "chain", tx.Chain)
+				continue
+			}
 
 			if tx.InHash.Equals(common.BlankTxID) &&
 				tx.OutHash.IsEmpty() &&
@@ -128,11 +112,11 @@ func (h RagnarokHandler) handleV3_0_0(ctx cosmos.Context, msg MsgRagnarok) (*cos
 				}
 				txOut.TxArray[i].OutHash = msg.Tx.Tx.ID
 				shouldSlash = false
-				if err := h.mgr.Keeper().SetTxOut(ctx, txOut); nil != err { // trunk-ignore(golangci-lint/govet): shadow
+				if err := h.mgr.Keeper().SetTxOut(ctx, txOut); nil != err {
 					return nil, ErrInternal(err, "fail to save tx out")
 				}
 				if !decrementedPendingRagnarok {
-					pending, err := h.mgr.Keeper().GetRagnarokPending(ctx) // trunk-ignore(golangci-lint/govet): shadow
+					pending, err := h.mgr.Keeper().GetRagnarokPending(ctx)
 					if err != nil {
 						ctx.Logger().Error("fail to get ragnarok pending", "error", err)
 					} else {

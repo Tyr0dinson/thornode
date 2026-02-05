@@ -4,28 +4,15 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/blang/semver"
-
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/constants"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 )
 
-func withdraw(ctx cosmos.Context, msg MsgWithdrawLiquidity, mgr Manager) (cosmos.Uint, cosmos.Uint, cosmos.Uint, cosmos.Uint, error) {
-	version := mgr.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("3.0.0")):
-		return withdrawV3_0_0(ctx, msg, mgr)
-	default:
-		zero := cosmos.ZeroUint()
-		return zero, zero, zero, zero, errInvalidVersion
-	}
-}
-
 // Performs the withdraw for the provided MsgWithdrawLiquidity message.
 // Returns: runeAmt, assetAmount, units, lastWithdraw, err
-func withdrawV3_0_0(ctx cosmos.Context, msg MsgWithdrawLiquidity, mgr Manager) (cosmos.Uint, cosmos.Uint, cosmos.Uint, cosmos.Uint, error) {
+func withdraw(ctx cosmos.Context, msg MsgWithdrawLiquidity, mgr Manager) (cosmos.Uint, cosmos.Uint, cosmos.Uint, cosmos.Uint, error) {
 	if err := validateWithdraw(ctx, mgr.Keeper(), msg); err != nil {
 		ctx.Logger().Error("msg withdraw failed validation", "error", err)
 		return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), err
@@ -43,8 +30,9 @@ func withdrawV3_0_0(ctx cosmos.Context, msg MsgWithdrawLiquidity, mgr Manager) (
 	if err != nil {
 		ctx.Logger().Error("failed to find liquidity provider", "error", err)
 		return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), err
-
 	}
+
+	withdrawToSecuredAsset := !msg.Asset.IsNative() && !lp.AssetAddress.IsEmpty() && lp.AssetAddress.Equals(lp.RuneAddress)
 
 	poolRune := pool.BalanceRune
 	poolAsset := pool.BalanceAsset
@@ -55,7 +43,7 @@ func withdrawV3_0_0(ctx cosmos.Context, msg MsgWithdrawLiquidity, mgr Manager) (
 			mgr.Keeper().RemoveLiquidityProvider(ctx, lp)
 			pool.PendingInboundRune = common.SafeSub(pool.PendingInboundRune, lp.PendingRune)
 			pool.PendingInboundAsset = common.SafeSub(pool.PendingInboundAsset, lp.PendingAsset)
-			if err := mgr.Keeper().SetPool(ctx, pool); err != nil {
+			if err = mgr.Keeper().SetPool(ctx, pool); err != nil {
 				ctx.Logger().Error("failed to save pool pending inbound funds", "error", err)
 			}
 			// remove lp
@@ -103,9 +91,13 @@ func withdrawV3_0_0(ctx cosmos.Context, msg MsgWithdrawLiquidity, mgr Manager) (
 	}
 	withDrawAsset = cosmos.RoundToDecimal(withDrawAsset, pool.Decimals)
 	gasAsset := cosmos.ZeroUint()
+
 	// If the pool is empty, and there is a gas asset, subtract required gas
-	if common.SafeSub(pool.GetPoolUnits(), fLiquidityProviderUnit).Add(unitAfter).IsZero() {
-		maxGas, err := mgr.GasMgr().GetMaxGas(ctx, pool.Asset.GetChain())
+	// Skip, if withdrawn to secured asset (lp asset address is TC address)
+	remainingPoolUnits := common.SafeSub(pool.GetPoolUnits(), fLiquidityProviderUnit).Add(unitAfter)
+	if remainingPoolUnits.IsZero() && !withdrawToSecuredAsset {
+		var maxGas common.Coin
+		maxGas, err = mgr.GasMgr().GetMaxGas(ctx, pool.Asset.GetChain())
 		if err != nil {
 			ctx.Logger().Error("fail to get gas for asset", "asset", pool.Asset, "error", err)
 			return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), errWithdrawFail
@@ -180,16 +172,6 @@ func assetToWithdraw(msg MsgWithdrawLiquidity, lp LiquidityProvider, pauseAsym i
 }
 
 func calculateWithdraw(ctx cosmos.Context, keeper keeper.Keeper, poolAsset common.Asset, poolUnits, poolRuneDepth, poolAssetDepth, lpUnits, withdrawBasisPoints cosmos.Uint, withdrawalAsset common.Asset, withdrawAddress common.Address) (cosmos.Uint, cosmos.Uint, cosmos.Uint, error) {
-	version := keeper.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("3.0.0")):
-		return calculateWithdrawV3_0_0(ctx, keeper, poolAsset, poolUnits, poolRuneDepth, poolAssetDepth, lpUnits, withdrawBasisPoints, withdrawalAsset, withdrawAddress)
-	default:
-		return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), errBadVersion
-	}
-}
-
-func calculateWithdrawV3_0_0(ctx cosmos.Context, keeper keeper.Keeper, poolAsset common.Asset, poolUnits, poolRuneDepth, poolAssetDepth, lpUnits, withdrawBasisPoints cosmos.Uint, withdrawalAsset common.Asset, withdrawAddress common.Address) (cosmos.Uint, cosmos.Uint, cosmos.Uint, error) {
 	if poolUnits.IsZero() {
 		return cosmos.ZeroUint(), cosmos.ZeroUint(), cosmos.ZeroUint(), errors.New("poolUnits can't be zero")
 	}

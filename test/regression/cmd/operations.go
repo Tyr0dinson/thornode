@@ -67,11 +67,11 @@ func (op *OpBase) OpType() string {
 	return op.Type
 }
 
-func NewOperation(opMap map[string]any) Operation {
+func NewOperation(opMap map[string]any) (Operation, error) {
 	// ensure type is provided
 	t, ok := opMap["type"].(string)
 	if !ok {
-		log.Fatal().Interface("type", opMap["type"]).Msg("operation type is not a string")
+		return nil, fmt.Errorf("operation type is not a string: %v", opMap["type"])
 	}
 
 	// create the operation for the type
@@ -139,9 +139,13 @@ func NewOperation(opMap map[string]any) Operation {
 		op = &OpTxStoreCode{}
 	case "tx-sudo-contract":
 		op = &OpTxSudoContract{}
+	case "tx-update-admin":
+		op = &OpTxUpdateAdmin{}
+	case "tx-clear-admin":
+		op = &OpTxClearAdmin{}
 
 	default:
-		log.Fatal().Str("type", t).Msg("unknown operation type")
+		return nil, fmt.Errorf("unknown operation type: %s", t)
 	}
 
 	// create decoder supporting embedded structs and weakly typed input
@@ -153,7 +157,7 @@ func NewOperation(opMap map[string]any) Operation {
 		Result:           op,
 	})
 	if err != nil {
-		log.Fatal().Err(err).Msg("failed to create decoder")
+		return nil, fmt.Errorf("failed to create decoder: %w", err)
 	}
 
 	switch op.(type) {
@@ -187,7 +191,7 @@ func NewOperation(opMap map[string]any) Operation {
 		enc := json.NewEncoder(buf)
 		err = enc.Encode(opMap)
 		if err != nil {
-			log.Fatal().Interface("op", opMap).Err(err).Msg("failed to encode operation")
+			return nil, fmt.Errorf("failed to encode operation: %w", err)
 		}
 
 		// unmarshal json to op
@@ -197,7 +201,7 @@ func NewOperation(opMap map[string]any) Operation {
 		err = dec.Decode(opMap)
 	}
 	if err != nil {
-		log.Fatal().Interface("op", opMap).Err(err).Msg("failed to decode operation")
+		return nil, fmt.Errorf("failed to decode operation: %w", err)
 	}
 
 	// default status check to 200 if endpoint is set
@@ -208,7 +212,7 @@ func NewOperation(opMap map[string]any) Operation {
 		}
 	}
 
-	return op
+	return op, nil
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -324,9 +328,7 @@ func (op *OpCheck) prefetch(routine int) {
 	// add params
 	q := req.URL.Query()
 	for k, v := range op.Params {
-		for _, val := range strings.Split(v, ",") {
-			q.Add(k, val)
-		}
+		q.Add(k, v)
 	}
 	req.URL.RawQuery = q.Encode()
 
@@ -597,10 +599,21 @@ func (op *OpCreateBlocks) Execute(out io.Writer, path string, _, routine int, p 
 
 		// get the block response
 		url := fmt.Sprintf("http://localhost:%d/thorchain/block?height=%d", 1317+routine, height)
-		res, err := httpClient.Get(url)
+		var res *http.Response
+		for j := 0; j < 5; j++ {
+			res, err = httpClient.Get(url)
+			if res.StatusCode == http.StatusOK {
+				break
+			}
+			time.Sleep(100 * time.Millisecond * getTimeFactor())
+		}
 		if err != nil {
 			localLog.Err(err).Msg("failed to get block")
 			return err
+		}
+		if res.StatusCode != http.StatusOK {
+			localLog.Error().Int("status", res.StatusCode).Msg("failed to get block")
+			return fmt.Errorf("failed to get block: %d", res.StatusCode)
 		}
 
 		// decode response
@@ -616,6 +629,19 @@ func (op *OpCreateBlocks) Execute(out io.Writer, path string, _, routine int, p 
 		blockResponse.Header.Time = ""
 		blockResponse.Header.LastBlockId = openapi.BlockResponseId{}
 		blockResponse.Header.LastCommitHash = ""
+
+		// only apply static values if UNFILTER_EXPORT is not set
+		if os.Getenv("UNFILTER_EXPORT") == "" {
+			blankHash := "0000000000000000000000000000000000000000000000000000000000000000"
+			blockResponse.Header.AppHash = blankHash
+			blockResponse.Header.LastResultsHash = blankHash
+
+			// zero gas_used for all transactions
+			zeroGas := "0"
+			for i := range blockResponse.Txs {
+				blockResponse.Txs[i].Result.GasUsed = &zeroGas
+			}
+		}
 
 		// write to file
 		enc := json.NewEncoder(f)
@@ -1139,6 +1165,30 @@ type OpTxSudoContract struct {
 
 func (op *OpTxSudoContract) Execute(out io.Writer, _ string, _, routine int, _ *os.Process, logs chan string) error {
 	return sendMsg(out, routine, &op.MsgSudoContract, sdk.MustAccAddressFromBech32(op.Authority), "", op.Sequence, op.Gas, op, op.Fees, logs)
+}
+
+type OpTxUpdateAdmin struct {
+	OpBase                   `yaml:",inline"`
+	wasmtypes.MsgUpdateAdmin `yaml:",inline"`
+	Sequence                 *int64 `json:"sequence"`
+	Gas                      *int64 `json:"gas"`
+	Fees                     string `json:"fees"`
+}
+
+func (op *OpTxUpdateAdmin) Execute(out io.Writer, _ string, _, routine int, _ *os.Process, logs chan string) error {
+	return sendMsg(out, routine, &op.MsgUpdateAdmin, sdk.MustAccAddressFromBech32(op.Sender), "", op.Sequence, op.Gas, op, op.Fees, logs)
+}
+
+type OpTxClearAdmin struct {
+	OpBase                  `yaml:",inline"`
+	wasmtypes.MsgClearAdmin `yaml:",inline"`
+	Sequence                *int64 `json:"sequence"`
+	Gas                     *int64 `json:"gas"`
+	Fees                    string `json:"fees"`
+}
+
+func (op *OpTxClearAdmin) Execute(out io.Writer, _ string, _, routine int, _ *os.Process, logs chan string) error {
+	return sendMsg(out, routine, &op.MsgClearAdmin, sdk.MustAccAddressFromBech32(op.Sender), "", op.Sequence, op.Gas, op, op.Fees, logs)
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////

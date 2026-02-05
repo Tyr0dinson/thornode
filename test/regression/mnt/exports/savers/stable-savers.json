@@ -12,7 +12,7 @@
             "@type": "/cosmos.crypto.secp256k1.PubKey",
             "key": "AmF4AUTWZEUSBtgqiR5n2Lgic/Yrr1mWupMo5TAubNRO"
           },
-          "sequence": "6"
+          "sequence": "7"
         },
         {
           "@type": "/cosmos.auth.v1beta1.ModuleAccount",
@@ -109,6 +109,9 @@
         "tx_size_cost_per_byte": "10"
       }
     },
+    "authz": {
+      "authorization": []
+    },
     "bank": {
       "balances": [
         {
@@ -124,7 +127,7 @@
           "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
           "coins": [
             {
-              "amount": "299842039512",
+              "amount": "299975709522",
               "denom": "rune"
             }
           ]
@@ -133,7 +136,7 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "35000158076903",
+              "amount": "35000026025697",
               "denom": "rune"
             }
           ]
@@ -160,7 +163,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "4999999883585",
+              "amount": "4999998264781",
               "denom": "rune"
             }
           ]
@@ -185,12 +188,16 @@
     "genutil": {
       "gen_txs": []
     },
+    "scheduler": {
+      "schedules": []
+    },
     "thorchain": {
       "POL": {
         "rune_deposited": "0",
         "rune_withdrawn": "0"
       },
       "THORNames": [],
+      "adv_swap_queue_items": [],
       "affiliate_collectors": null,
       "bond_providers": [
         {
@@ -206,7 +213,7 @@
           "height": "4"
         }
       ],
-      "last_signed_height": "6",
+      "last_signed_height": "7",
       "liquidity_providers": [
         {
           "asset": "BTC.BTC",
@@ -242,9 +249,10 @@
           "units": "100000000000"
         }
       ],
-      "loan_total_collateral": [],
-      "loans": [],
       "mimirs": [
+        {
+          "key": "ENABLEADVSWAPQUEUE"
+        },
         {
           "key": "LENDING-THOR-BTC",
           "value": "1"
@@ -259,10 +267,10 @@
         }
       ],
       "network": {
-        "LPIncomeSplit": "9401",
-        "NodeIncomeSplit": "599",
-        "bond_reward_rune": "1883585",
-        "total_bond_units": "7"
+        "LPIncomeSplit": "9400",
+        "NodeIncomeSplit": "600",
+        "bond_reward_rune": "2264781",
+        "total_bond_units": "8"
       },
       "network_fees": [
         {
@@ -272,11 +280,15 @@
         },
         {
           "chain": "ETH",
-          "transaction_fee_rate": "8",
+          "transaction_fee_rate": "80",
           "transaction_size": "80000"
         }
       ],
       "nodeMimirs": [
+        {
+          "key": "ENABLEADVSWAPQUEUE",
+          "signer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m"
+        },
         {
           "key": "TORANCHOR-ETH-USDC-0X9999999999999999999999999999999999999999",
           "signer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
@@ -286,12 +298,12 @@
       "node_accounts": [
         {
           "active_block_height": "1",
-          "bond": "4999998000000",
+          "bond": "4999996000000",
           "bond_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
           "ip_address": "1.1.1.1",
           "node_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
           "pub_key_set": {
-            "ed25519": "tthorpub1zcjduepqfan43w2emjhfv45gspf98squqlnl2rcchc3e4dx7z2nxr27edflsy2e8ql",
+            "ed25519": "tthorpub1zcjduepqzupdpx7334mjeuuggnvxv3ctkghu0qcz2eml30tgu9ukw58z6uusmmxmys",
             "secp256k1": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
           },
           "status": "Active",
@@ -300,16 +312,15 @@
       ],
       "observed_tx_in_voters": null,
       "observed_tx_out_voters": null,
-      "orderbook_items": [],
       "outbound_fee_spent_rune": [
         {
-          "amount": "97001520",
+          "amount": "97002977",
           "asset": "ETH.USDC-0X9999999999999999999999999999999999999999"
         }
       ],
       "outbound_fee_withheld_rune": [
         {
-          "amount": "255668067",
+          "amount": "689783079850",
           "asset": "ETH.USDC-0X9999999999999999999999999999999999999999"
         }
       ],
@@ -318,7 +329,7 @@
           "LP_units": "100000000000",
           "asset": "BTC.BTC",
           "balance_asset": "100000000",
-          "balance_rune": "100000579849",
+          "balance_rune": "100002086899",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -329,7 +340,7 @@
           "LP_units": "100000000000",
           "asset": "ETH.ETH",
           "balance_asset": "999040000",
-          "balance_rune": "100097581372",
+          "balance_rune": "100099089882",
           "decimals": "8",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -339,8 +350,8 @@
         {
           "LP_units": "100000000000",
           "asset": "ETH.USDC-0X9999999999999999999999999999999999999999",
-          "balance_asset": "100285213300",
-          "balance_rune": "99743878291",
+          "balance_asset": "100156948100",
+          "balance_rune": "99874532741",
           "decimals": "6",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
@@ -358,6 +369,7 @@
           "synth_units": "0"
         }
       ],
+      "reference_memos": [],
       "reserve_contributors": null,
       "rune_pool": {
         "pool_units": "0",
@@ -373,7 +385,7 @@
         {
           "address": "0xdd99304abf262d653e2eb6722d874c2b86efdcea",
           "reclaimed": "0",
-          "score": "21524136",
+          "score": "21565332",
           "spent": "0"
         }
       ],
@@ -407,7 +419,7 @@
               "decimals": "8"
             },
             {
-              "amount": "100285213300",
+              "amount": "100156948100",
               "asset": "ETH.USDC-0X9999999999999999999999999999999999999999",
               "decimals": "6"
             }
@@ -472,5 +484,5 @@
       }
     }
   },
-  "initial_height": 8
+  "initial_height": 9
 }

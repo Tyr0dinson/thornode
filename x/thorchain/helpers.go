@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	sdkmath "cosmossdk.io/math"
 	"github.com/blang/semver"
 	"github.com/cosmos/cosmos-sdk/telemetry"
 	"github.com/hashicorp/go-metrics"
@@ -17,12 +18,26 @@ import (
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
+// isSimulationMode checks if the context indicates we're in simulation mode
+func isSimulationMode(ctx cosmos.Context) bool {
+	simulationMode, ok := ctx.Value(constants.CtxSimulationMode).(bool)
+	return ok && simulationMode
+}
+
 func refundTx(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32, refundReason, sourceModuleName string) error {
 	// If THORNode recognize one of the coins, and therefore able to refund
 	// withholding fees, refund all coins.
 
 	refundCoins := make(common.Coins, 0)
 	for _, coin := range tx.Tx.Coins {
+		// Do not emit Trade/Secured Asset refund event or attempt refund txout,
+		// as Trade/Secured Asset withdrawals take place in the internal handlers
+		// (state changes and event emission only if the internal handler succeeds)
+		// and not in the deposit handler.
+		if coin.Asset.IsTradeAsset() || coin.Asset.IsSecuredAsset() {
+			continue
+		}
+
 		if coin.IsRune() && coin.Asset.GetChain().Equals(common.ETHChain) {
 			continue
 		}
@@ -53,14 +68,20 @@ func refundTx(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32,
 			}
 
 			toi := TxOutItem{
-				Chain:            coin.Asset.GetChain(),
-				ToAddress:        toAddr,
-				VaultPubKey:      vault.PubKey,
-				VaultPubKeyEddsa: vault.PubKeyEddsa,
-				Coin:             coin,
-				Memo:             NewRefundMemo(tx.Tx.ID).String(),
-				InHash:           tx.Tx.ID,
-				ModuleName:       sourceModuleName,
+				Chain:                 coin.Asset.GetChain(),
+				ToAddress:             toAddr,
+				VaultPubKey:           vault.PubKey,
+				VaultPubKeyEddsa:      vault.PubKeyEddsa,
+				Coin:                  coin,
+				Memo:                  NewRefundMemo(tx.Tx.ID).String(),
+				MaxGas:                []common.Coin{},
+				GasRate:               0,
+				InHash:                tx.Tx.ID,
+				OutHash:               "",
+				ModuleName:            sourceModuleName,
+				Aggregator:            "",
+				AggregatorTargetAsset: "",
+				AggregatorTargetLimit: &cosmos.Uint{},
 			}
 
 			success, err := mgr.TxOutStore().TryAddTxOutItem(ctx, mgr, toi, cosmos.ZeroUint())
@@ -147,16 +168,6 @@ func unrefundableCoinCleanup(ctx cosmos.Context, mgr Manager, toi TxOutItem, bur
 }
 
 func getMaxSwapQuantity(ctx cosmos.Context, mgr Manager, sourceAsset, targetAsset common.Asset, swp StreamingSwap) (uint64, error) {
-	version := mgr.GetVersion()
-	switch {
-	case version.GTE(semver.MustParse("3.0.0")):
-		return getMaxSwapQuantityV3_0_0(ctx, mgr, sourceAsset, targetAsset, swp)
-	default:
-		return 0, errBadVersion
-	}
-}
-
-func getMaxSwapQuantityV3_0_0(ctx cosmos.Context, mgr Manager, sourceAsset, targetAsset common.Asset, swp StreamingSwap) (uint64, error) {
 	if swp.Interval == 0 {
 		return 0, nil
 	}
@@ -415,6 +426,10 @@ func addGasFees(ctx cosmos.Context, mgr Manager, tx ObservedTx) error {
 		return nil
 	}
 
+	if isTronZeroGasTx(tx) {
+		return nil
+	}
+
 	// If the transaction wasn't from a known vault, then no relevance for known vaults or pools.
 	if !mgr.Keeper().VaultExists(ctx, tx.ObservedPubKey) {
 		return nil
@@ -590,7 +605,8 @@ func emitEndBlockTelemetry(ctx cosmos.Context, mgr Manager) error {
 			telem(cosmos.NewUint(node.Bond.Uint64())),
 			[]metrics.Label{telemetry.NewLabel("node_address", node.NodeAddress.String()), telemetry.NewLabel("status", node.Status.String())},
 		)
-		pts, err := mgr.Keeper().GetNodeAccountSlashPoints(ctx, node.NodeAddress)
+		var pts int64
+		pts, err = mgr.Keeper().GetNodeAccountSlashPoints(ctx, node.NodeAddress)
 		if err != nil {
 			continue
 		}
@@ -644,7 +660,8 @@ func emitEndBlockTelemetry(ctx cosmos.Context, mgr Manager) error {
 		telemetry.SetGaugeWithLabels([]string{"thornode", "pool", "price", "usd"}, price, labels)
 
 		// trade accounts
-		tu, err := mgr.Keeper().GetTradeUnit(ctx, pool.Asset.GetTradeAsset())
+		var tu TradeUnit
+		tu, err = mgr.Keeper().GetTradeUnit(ctx, pool.Asset.GetTradeAsset())
 		if err != nil {
 			ctx.Logger().Error("fail to get trade unit", "error", err)
 			continue
@@ -666,7 +683,8 @@ func emitEndBlockTelemetry(ctx cosmos.Context, mgr Manager) error {
 			if coin.IsRune() {
 				totalValue = totalValue.Add(coin.Amount)
 			} else {
-				pool, err := mgr.Keeper().GetPool(ctx, coin.Asset.GetLayer1Asset())
+				var pool Pool
+				pool, err = mgr.Keeper().GetPool(ctx, coin.Asset.GetLayer1Asset())
 				if err != nil {
 					continue
 				}
@@ -972,6 +990,12 @@ func passiveBackfill(ctx cosmos.Context, mgr Manager, nodeAccount NodeAccount, b
 // atTVLCap - returns bool on if we've hit the TVL hard cap. Coins passed in
 // are included in the calculation
 func atTVLCap(ctx cosmos.Context, coins common.Coins, mgr Manager) bool {
+	// Check if StrictBondLiquidityRatio is enabled
+	strictBondLiquidityRatio := mgr.GetConstants().GetBoolValue(constants.StrictBondLiquidityRatio)
+	if !strictBondLiquidityRatio {
+		return false
+	}
+
 	vaults, err := mgr.Keeper().GetAsgardVaults(ctx)
 	if err != nil {
 		ctx.Logger().Error("fail to get vaults for atTVLCap", "error", err)
@@ -998,7 +1022,8 @@ func atTVLCap(ctx cosmos.Context, coins common.Coins, mgr Manager) bool {
 		if asset.IsSyntheticAsset() {
 			asset = asset.GetLayer1Asset()
 		}
-		pool, err := mgr.Keeper().GetPool(ctx, asset)
+		var pool Pool
+		pool, err = mgr.Keeper().GetPool(ctx, asset)
 		if err != nil {
 			ctx.Logger().Error("fail to get pool for atTVLCap", "asset", coin.Asset, "error", err)
 			continue
@@ -1009,11 +1034,15 @@ func atTVLCap(ctx cosmos.Context, coins common.Coins, mgr Manager) bool {
 		if pool.BalanceRune.IsZero() || pool.BalanceAsset.IsZero() {
 			continue
 		}
+		if pool.Asset.IsNative() {
+			continue
+		}
 		totalRuneValue = totalRuneValue.Add(pool.AssetValueInRune(coin.Amount))
 	}
 
 	// get effectiveSecurity
-	nodeAccounts, err := mgr.Keeper().ListActiveValidators(ctx)
+	var nodeAccounts NodeAccounts
+	nodeAccounts, err = mgr.Keeper().ListActiveValidators(ctx)
 	if err != nil {
 		ctx.Logger().Error("fail to get validators to calculate TVL cap", "error", err)
 		return true
@@ -1098,24 +1127,28 @@ func willSwapOutputExceedLimitAndFees(ctx cosmos.Context, mgr Manager, msg MsgSw
 	var emit cosmos.Uint
 	switch {
 	case !source.IsRune() && !target.IsRune():
-		sourcePool, err := mgr.Keeper().GetPool(ctx, source.Asset.GetLayer1Asset())
+		var sourcePool Pool
+		sourcePool, err = mgr.Keeper().GetPool(ctx, source.Asset.GetLayer1Asset())
 		if err != nil {
 			return false
 		}
-		targetPool, err := mgr.Keeper().GetPool(ctx, target.Asset.GetLayer1Asset())
+		var targetPool Pool
+		targetPool, err = mgr.Keeper().GetPool(ctx, target.Asset.GetLayer1Asset())
 		if err != nil {
 			return false
 		}
 		emit = swapper.CalcAssetEmission(sourcePool.BalanceAsset, source.Amount, sourcePool.BalanceRune)
 		emit = swapper.CalcAssetEmission(targetPool.BalanceRune, emit, targetPool.BalanceAsset)
 	case source.IsRune():
-		pool, err := mgr.Keeper().GetPool(ctx, target.Asset.GetLayer1Asset())
+		var pool Pool
+		pool, err = mgr.Keeper().GetPool(ctx, target.Asset.GetLayer1Asset())
 		if err != nil {
 			return false
 		}
 		emit = swapper.CalcAssetEmission(pool.BalanceRune, source.Amount, pool.BalanceAsset)
 	case target.IsRune():
-		pool, err := mgr.Keeper().GetPool(ctx, source.Asset.GetLayer1Asset())
+		var pool Pool
+		pool, err = mgr.Keeper().GetPool(ctx, source.Asset.GetLayer1Asset())
 		if err != nil {
 			return false
 		}
@@ -1125,6 +1158,151 @@ func willSwapOutputExceedLimitAndFees(ctx cosmos.Context, mgr Manager, msg MsgSw
 	// Check that the swap will emit more than the limit amount + outbound fee
 	transactionFeeAsset, err := mgr.GasMgr().GetAssetOutboundFee(ctx, msg.TargetAsset, false)
 	return err == nil && emit.GT(target.Amount.Add(transactionFeeAsset))
+}
+
+// getLastChurnHeight returns the block height of the last churn.
+func getLastChurnHeight(ctx cosmos.Context, k keeper.Keeper) int64 {
+	vaults, err := k.GetAsgardVaultsByStatus(ctx, ActiveVault)
+	if err != nil {
+		ctx.Logger().Error("failed to get asgard vaults", "error", err)
+		return ctx.BlockHeight()
+	}
+	// calculate last churn block height
+	var lastChurnHeight int64 // the last block height we had a successful churn
+	for _, vault := range vaults {
+		if vault.StatusSince > lastChurnHeight {
+			lastChurnHeight = vault.StatusSince
+		}
+	}
+	return lastChurnHeight
+}
+
+// settleSwap handles the settlement of any type of swap (market, limit, streaming) from the advanced swap queue, including:
+// - Scheduling the outbound transaction for swapped amounts
+// - Refunding any remaining deposit
+// - Removing the swap from advanced queue and indexes
+// - Emitting appropriate events
+func settleSwap(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason string) error {
+	// Schedule outbound for what was already swapped
+	if !msg.State.Out.IsZero() {
+		// Parse memo to check if this is a savers add
+		memo, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), msg.Tx.Memo)
+		if err != nil {
+			ctx.Logger().Error("fail to parse memo", "error", err)
+			// Continue with outbound even if memo parsing fails
+			memo = nil
+		}
+
+		// Only schedule outbound if not a savers add and not in simulation mode
+		if (memo == nil || !memo.IsType(TxAdd)) && !isSimulationMode(ctx) {
+			// Handle aggregator if present
+			dexAgg := ""
+			if len(msg.Aggregator) > 0 {
+				dexAgg, err = FetchDexAggregator(
+					msg.TargetAsset.GetChain(),
+					msg.Aggregator,
+				)
+				if err != nil {
+					ctx.Logger().Error("fail to fetch dex aggregator", "error", err)
+					// Continue without aggregator
+				}
+			}
+
+			toi := TxOutItem{
+				Chain:                 msg.TargetAsset.GetChain(),
+				InHash:                msg.Tx.ID,
+				ToAddress:             msg.Destination,
+				Coin:                  common.NewCoin(msg.TargetAsset, msg.State.Out),
+				Memo:                  "",
+				MaxGas:                []common.Coin{},
+				GasRate:               0,
+				OutHash:               "",
+				ModuleName:            "",
+				Aggregator:            dexAgg,
+				AggregatorTargetAsset: msg.AggregatorTargetAddress,
+				AggregatorTargetLimit: msg.AggregatorTargetLimit,
+				CloutSpent:            &cosmos.Uint{},
+			}
+
+			if _, err := mgr.TxOutStore().TryAddTxOutItem(ctx, mgr, toi, cosmos.ZeroUint()); err != nil {
+				ctx.Logger().Error("fail to schedule swap outbound", "error", err)
+				unrefundableCoinCleanup(ctx, mgr, toi, "failed_outbound")
+
+				// Emit a "fail to refund" refund event
+				refundReasonFull := fmt.Sprintf("%s; fail to refund (%s): swap output", err, toi.Coin.String())
+				refundTx := common.NewTx(msg.Tx.ID, msg.Tx.FromAddress, msg.Tx.ToAddress, common.NewCoins(toi.Coin), msg.Tx.Gas, msg.Tx.Memo)
+				eventRefund := NewEventRefund(CodeFailAddOutboundTx, refundReasonFull, refundTx, common.Fee{})
+				if err := mgr.EventMgr().EmitEvent(ctx, eventRefund); err != nil {
+					ctx.Logger().Error("fail to emit refund event", "error", err)
+				}
+			}
+		}
+	}
+
+	// Refund any remaining deposit
+	if msg.State.Deposit.GT(msg.State.In) {
+		remainder := common.SafeSub(msg.State.Deposit, msg.State.In)
+		refundCoin := common.NewCoin(msg.Tx.Coins[0].Asset, remainder)
+		refundCoinTx := msg.Tx
+		refundCoinTx.Coins = common.NewCoins(refundCoin)
+
+		// Try to get the observed tx for vault selection
+		voter, voterErr := mgr.Keeper().GetObservedTxInVoter(ctx, msg.Tx.ID)
+		if voterErr == nil && !voter.Tx.IsEmpty() {
+			if refundErr := refundTx(ctx, ObservedTx{Tx: refundCoinTx, ObservedPubKey: voter.Tx.ObservedPubKey}, mgr, CodeSwapFail, settleReason, ""); refundErr != nil {
+				ctx.Logger().Error("fail to refund swap remainder", "error", refundErr)
+			}
+		} else {
+			if refundErr := refundTx(ctx, ObservedTx{Tx: refundCoinTx}, mgr, CodeSwapFail, settleReason, ""); refundErr != nil {
+				ctx.Logger().Error("fail to refund swap remainder", "error", refundErr)
+			}
+		}
+	}
+
+	// Remove from advanced swap queue index
+	if err := mgr.Keeper().RemoveAdvSwapQueueIndex(ctx, msg); err != nil {
+		// Log but don't fail - it might not exist in index
+		ctx.Logger().Debug("fail to remove swap from adv queue index", "error", err)
+	}
+
+	// Remove from advanced swap queue
+	if err := mgr.Keeper().RemoveAdvSwapQueueItem(ctx, msg.Tx.ID, int(msg.Index)); err != nil {
+		// Log but don't fail
+		ctx.Logger().Debug("fail to remove swap from adv queue", "error", err)
+	}
+
+	// Emit streaming swap event if this was a streaming swap
+	if msg.IsStreaming() {
+		// Create a StreamingSwap struct from the MsgSwap state for the event
+		swp := StreamingSwap{
+			TxID:              msg.Tx.ID,
+			Interval:          msg.State.Interval,
+			Quantity:          msg.State.Quantity,
+			Count:             msg.State.Count,
+			LastHeight:        msg.State.LastHeight,
+			TradeTarget:       msg.TradeTarget,
+			Deposit:           msg.State.Deposit,
+			In:                msg.State.In,
+			Out:               msg.State.Out,
+			FailedSwaps:       msg.State.FailedSwaps,
+			FailedSwapReasons: msg.State.FailedSwapReasons,
+		}
+
+		evt := NewEventStreamingSwap(msg.Tx.Coins[0].Asset, msg.TargetAsset, swp)
+		if err := mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
+			ctx.Logger().Error("fail to emit streaming swap event", "error", err)
+		}
+	}
+
+	// Emit limit swap close event if this was a limit swap being closed
+	if msg.IsLimitSwap() {
+		evt := NewEventLimitSwapClose(msg.Tx.ID, settleReason, ctx.BlockHeight())
+		if err := mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
+			ctx.Logger().Error("fail to emit limit swap close event", "error", err)
+		}
+	}
+
+	return nil
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -1270,4 +1448,152 @@ func trimKeyPrefix(key []byte) string {
 
 func IsPeriodLastBlock(ctx cosmos.Context, blocksPerPeriod int64) bool {
 	return ctx.BlockHeight()%blocksPerPeriod == 0
+}
+
+func isTronZeroGasTx(tx ObservedTx) bool {
+	if !tx.Tx.Chain.Equals(common.TRONChain) {
+		return false
+	}
+
+	gasAmount := tx.Tx.Gas.ToCoins().GetCoin(common.TRXAsset).Amount
+	return gasAmount.Equal(cosmos.NewUint(1))
+}
+
+// leadingZeros pads a string with leading zeros to reach the specified length.
+// If str is already longer than length, it returns the first 'length' characters.
+func leadingZeros(length int, str string) string {
+	switch {
+	case len(str) < length:
+		var b strings.Builder
+		for i := 1; i <= length-len(str); i++ {
+			b.WriteString("0")
+		}
+		b.WriteString(str)
+		return b.String()
+	case len(str) > length:
+		return str[:length]
+	}
+	return str
+}
+
+// isOutboundFakeGasTx returns true if the observed outbound is a "fake gas" transaction
+// for a failed outbound. When an EVM outbound fails (e.g., out of gas), bifrost
+// observes the failed transaction and reports it as an outbound observation with
+// amount=1 wei and memo="OUT:failed_txhash" so the gas can be accounted for. This
+// should not trigger slashing as it's a legitimate observation of a failed transaction.
+// Checks are:
+// - must only have one coin in outbound
+// - coin asset must be the gas asset
+// - coin amount must be 1
+// - memo must start with "OUT:" (bifrost sets memo to OUT:txhash for failed tx observations)
+func isOutboundFakeGasTx(tx ObservedTx) bool {
+	isLenCoins1 := len(tx.Tx.Coins) == 1
+	if !isLenCoins1 {
+		return false
+	}
+	asset := tx.Tx.Coins[0].Asset
+	gasAsset := asset.Chain.GetGasAsset()
+	isAssetGasAsset := asset.Equals(gasAsset)
+	if !isAssetGasAsset {
+		return false
+	}
+
+	if !tx.Tx.Coins[0].Amount.Equal(sdkmath.NewUint(1)) {
+		return false
+	}
+
+	// fake gas txs have a self-referential out memo
+	return tx.Tx.Memo == "OUT:"+tx.Tx.ID.String()
+}
+
+// isCancelTx returns true if the observed outbound is a cancel transaction sent by bifrost to unstuck a pending transaction.
+// This occurs on EVM chains where bifrost needs to replace a stuck transaction by sending a new transaction with the same nonce
+// but higher gas price. To "cancel" the original transaction, bifrost sends a zero-value transaction to the vault's own address.
+// Note: Cancel transactions have amount=0 on the EVM chain, but bifrost converts them to DustThreshold when observing to make them observable.
+// Checks are:
+// - must only have one coin in outbound
+// - chain of coin must be an EVM chain
+// - coin asset must be the gas asset
+// - coin amount must equal DustThreshold (cancel transactions have 0 value on chain, but bifrost converts to DustThreshold)
+// - ToAddress must equal the vault address (vault-to-vault transaction)
+// - memo must be empty (cancel transactions have no memo)
+func isCancelTx(tx ObservedTx) bool {
+	// Must have exactly one coin
+	if len(tx.Tx.Coins) != 1 {
+		return false
+	}
+
+	asset := tx.Tx.Coins[0].Asset
+
+	// Must be an EVM chain
+	if !asset.Chain.IsEVM() {
+		return false
+	}
+
+	// Must be the gas asset
+	gasAsset := asset.Chain.GetGasAsset()
+	if !asset.Equals(gasAsset) {
+		return false
+	}
+
+	// Must have amount = DustThreshold (cancel transactions have 0 value on chain,
+	// but bifrost scanner converts them to DustThreshold to make them observable)
+	dustThreshold := asset.Chain.DustThreshold()
+	if !tx.Tx.Coins[0].Amount.Equal(dustThreshold) {
+		return false
+	}
+
+	// Must be sent to and from the vault's own address (vault-to-vault)
+	vaultAddr, err := tx.ObservedPubKey.GetAddress(tx.Tx.Chain)
+	if err != nil {
+		return false
+	}
+	if !tx.Tx.ToAddress.Equals(vaultAddr) || !tx.Tx.FromAddress.Equals(vaultAddr) {
+		return false
+	}
+
+	// Must have no memo (cancel transactions are purely operational)
+	if tx.Tx.Memo != "" {
+		return false
+	}
+
+	return true
+}
+
+// applyMemolessOutboundLogic applies the memoless outbound logic to a TxOutItem
+// It modifies the memo based on enableMemolessOutbound setting and memo type
+// The function is safe to call multiple times on the same TxOutItem
+func applyMemolessOutboundLogic(version semver.Version, toi *TxOutItem, enableMemolessOutbound int64) {
+	// Store original memo if not already set (prevents overwriting on multiple calls)
+	if toi.OriginalMemo == "" {
+		toi.OriginalMemo = toi.Memo
+	}
+
+	// If feature is disabled, restore memo from original_memo
+	if enableMemolessOutbound <= 0 {
+		if toi.OriginalMemo != "" {
+			toi.Memo = toi.OriginalMemo
+		}
+		return
+	}
+
+	// Feature is enabled - apply memoless logic
+	memo, err := ParseMemo(version, toi.OriginalMemo)
+	if err != nil {
+		// If memo parsing fails, preserve the original memo
+		toi.Memo = toi.OriginalMemo
+		return
+	}
+
+	switch {
+	case toi.Aggregator != "", strings.Contains(toi.OriginalMemo, "|"):
+		// Utilizes dex agg or data passthrough, preserve memo
+		toi.Memo = toi.OriginalMemo
+	case memo.GetType().IsOutboundMemoless():
+		// Outbound memo type supports memoless, clear the memo
+		toi.Memo = ""
+	default:
+		// For all other memo types, preserve the original memo
+		toi.Memo = toi.OriginalMemo
+	}
 }

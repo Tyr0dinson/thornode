@@ -3,7 +3,9 @@ package main
 import (
 	"fmt"
 	"math/big"
+	rand "math/rand/v2"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -16,10 +18,11 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
-	"gitlab.com/thorchain/thornode/v3/test/simulation/actors/suites"
+	acommon "gitlab.com/thorchain/thornode/v3/test/simulation/actors/common"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/evm"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/thornode"
 	. "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain"
 	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
@@ -28,17 +31,18 @@ import (
 ////////////////////////////////////////////////////////////////////////////////////////
 
 var chainRPCs = map[common.Chain]string{
-	common.BTCChain:  "http://localhost:18443",
-	common.LTCChain:  "http://localhost:38443",
-	common.BCHChain:  "http://localhost:28443",
-	common.DOGEChain: "http://localhost:18332",
-	common.ETHChain:  "http://localhost:8545",
-	common.AVAXChain: "http://localhost:9650/ext/bc/C/rpc",
-	common.GAIAChain: "localhost:9091",
-	common.BASEChain: "http://localhost:8547",
-	common.XRPChain:  "http://localhost:5005",
-	common.SOLChain:  "http://localhost:8899",
-	common.ADAChain:  "localhost:7007",
+	common.BTCChain:   "http://localhost:18443",
+	common.LTCChain:   "http://localhost:38443",
+	common.BCHChain:   "http://localhost:28443",
+	common.DOGEChain:  "http://localhost:18332",
+	common.ETHChain:   "http://localhost:8545",
+	common.AVAXChain:  "http://localhost:9650/ext/bc/C/rpc",
+	common.GAIAChain:  "localhost:9091",
+	common.NOBLEChain: "localhost:9092",
+	common.BASEChain:  "http://localhost:8547",
+	common.TRONChain:  "http://localhost:8090",
+	common.XRPChain:   "http://localhost:5005",
+	common.SOLChain:   "http://localhost:8899",
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -50,9 +54,9 @@ var (
 
 	mocknetValidatorMnemonics = [...]string{
 		strings.Repeat("dog ", 23) + "fossil",
-		// strings.Repeat("cat ", 23) + "crawl",
-		// strings.Repeat("fox ", 23) + "filter",
-		// strings.Repeat("pig ", 23) + "quick",
+		strings.Repeat("cat ", 23) + "crawl",
+		strings.Repeat("fox ", 23) + "filter",
+		strings.Repeat("pig ", 23) + "quick",
 	}
 
 	mocknetUserMnemonics = [...]string{
@@ -75,7 +79,7 @@ var (
 // Init
 ////////////////////////////////////////////////////////////////////////////////////////
 
-func InitConfig(parallelism int, seed bool) *OpConfig {
+func InitConfig(parallelism int, seed bool, rng *rand.Rand) *OpConfig {
 	if parallelism > len(mocknetUserMnemonics) {
 		log.Error().
 			Int("parallelism", parallelism).
@@ -83,7 +87,9 @@ func InitConfig(parallelism int, seed bool) *OpConfig {
 			Msg("parallelism limited by available user accounts")
 	}
 
-	c := &OpConfig{}
+	c := &OpConfig{
+		NodeUsers: make([]*User, len(mocknetValidatorMnemonics)),
+	}
 	mu := &sync.Mutex{}
 	wg := &sync.WaitGroup{}
 	sem := make(chan struct{}, 8)
@@ -95,13 +101,13 @@ func InitConfig(parallelism int, seed bool) *OpConfig {
 	config.Init()
 
 	// validators
-	for _, mnemonic := range mocknetValidatorMnemonics {
+	for i, mnemonic := range mocknetValidatorMnemonics {
 		wg.Add(1)
 		sem <- struct{}{}
-		go func(mnemonic string) {
+		go func(i int, mnemonic string) {
 			a := NewUser(mnemonic, liteClientConstructors)
 			mu.Lock()
-			c.NodeUsers = append(c.NodeUsers, a)
+			c.NodeUsers[i] = a
 			mu.Unlock()
 
 			defer func() {
@@ -114,17 +120,39 @@ func InitConfig(parallelism int, seed bool) *OpConfig {
 				return
 			}
 
+			// only the first mnemonic is an active node at init
+			if i != 0 {
+				return
+			}
+
+			// halt churning
+			accAddr, err := a.PubKey(common.THORChain).GetThorAddress()
+			if err != nil {
+				log.Error().Err(err).Msg("failed to get thor address")
+			}
+			mimir := thorchain.NewMsgMimir("HALTCHURNING", 1, accAddr)
+			_, err = a.Thorchain.Broadcast(mimir)
+			if err != nil {
+				log.Error().Err(err).Msg("failed to broadcast mimir")
+			}
+
 			// default network fees on chains needing a window of blocks before bifrost sends
 			defaultFees := []struct {
 				chain common.Chain
 				size  uint64
 				rate  uint64
 			}{
-				{common.GAIAChain, 1, 1_000_000},
-				{common.XRPChain, 1, 1_000},
-				{common.AVAXChain, 80000, 150},
-				{common.BASEChain, 80000, 30},
-				{common.ETHChain, 80000, 30},
+				{common.GAIAChain, 1, 10_000},
+				{common.NOBLEChain, 1, 10_000},
+				{common.XRPChain, 1, 10},
+				{common.AVAXChain, 80000, 1500},
+				{common.BASEChain, 80000, 300000},
+				{common.ETHChain, 80000, 300},
+				{common.SOLChain, 1, 5000},
+				{common.BTCChain, 1000, 4},
+				{common.LTCChain, 250, 103},
+				{common.BCHChain, 1500, 7},
+				{common.DOGEChain, 1000, 1500000},
 			}
 			for _, fee := range defaultFees {
 				log.Info().Msgf("posting %s network fee", fee.chain)
@@ -137,7 +165,7 @@ func InitConfig(parallelism int, seed bool) *OpConfig {
 					time.Sleep(2 * time.Second)
 				}
 			}
-		}(mnemonic)
+		}(i, mnemonic)
 	}
 
 	// users
@@ -156,12 +184,37 @@ func InitConfig(parallelism int, seed bool) *OpConfig {
 
 	// wait for all users to be created
 	wg.Wait()
+	// sort users deterministically
+	mu.Lock()
+	sort.Slice(c.Users, func(ux_idx, uy_idx int) bool {
+		return c.Users[ux_idx].Name() < c.Users[uy_idx].Name()
+	})
+	rng.Shuffle(len(c.Users), func(ux_idx, uy_idx int) {
+		ux := c.Users[ux_idx]
+		c.Users[ux_idx] = c.Users[uy_idx]
+		c.Users[uy_idx] = ux
+	})
+	mu.Unlock()
 
 	// fund all user accounts from master
 	master := NewUser(mocknetMasterMnemonic, liteClientConstructors)
 
-	// log all configured tokens, their decimals, and master balance
+	// sort chains deterministically
+	chains := make([]common.Chain, 0, len(liteClientConstructors))
 	for chain := range liteClientConstructors {
+		chains = append(chains, chain)
+	}
+	sort.Slice(chains, func(cx_idx, cy_idx int) bool {
+		return chains[cx_idx] < chains[cy_idx]
+	})
+	rng.Shuffle(len(chains), func(cx_idx, cy_idx int) {
+		cx := chains[cx_idx]
+		chains[cx_idx] = chains[cy_idx]
+		chains[cy_idx] = cx
+	})
+
+	// log all configured tokens, their decimals, and master balance
+	for _, chain := range chains {
 		account, err := master.ChainClients[chain].GetAccount(nil)
 		if err != nil {
 			log.Fatal().Stringer("chain", chain).Err(err).Msg("failed to get master account")
@@ -170,7 +223,7 @@ func InitConfig(parallelism int, seed bool) *OpConfig {
 			ctxLog := log.Info().
 				Stringer("chain", chain).
 				Stringer("asset", coin.Asset).
-				Stringer("address", master.MustAddress(chain)).
+				Stringer("address", master.Address(chain)).
 				Str("amount", coin.Amount.String())
 
 			// on evm chains, also log token decimals for debugging
@@ -215,7 +268,7 @@ func InitConfig(parallelism int, seed bool) *OpConfig {
 
 	// fund user accounts with one goroutine per chain
 	wg = &sync.WaitGroup{}
-	for _, chain := range suites.SimChains {
+	for _, chain := range acommon.SimChains {
 		// determine the amount to seed
 		chainSeedAmount := sdkmath.ZeroUint()
 		switch chain {
@@ -223,15 +276,15 @@ func InitConfig(parallelism int, seed bool) *OpConfig {
 			chainSeedAmount = sdkmath.NewUint(10 * common.One)
 		case common.BSCChain, common.BASEChain, common.ETHChain, common.SOLChain:
 			chainSeedAmount = sdkmath.NewUint(100 * common.One)
-		case common.GAIAChain:
+		case common.GAIAChain, common.NOBLEChain:
 			chainSeedAmount = sdkmath.NewUint(1000 * common.One)
 		case common.AVAXChain, // more since local gas is high
 			common.XRPChain: // more since dust threshold is 1 XRP
 			chainSeedAmount = sdkmath.NewUint(10000 * common.One)
 		case common.DOGEChain:
 			chainSeedAmount = sdkmath.NewUint(100000 * common.One)
-		case common.ADAChain:
-			chainSeedAmount = sdkmath.NewUint(1000 * common.One)
+		case common.TRONChain:
+			chainSeedAmount = sdkmath.NewUint(100000 * common.One)
 		default:
 			continue // all other chains currently unsupported
 		}
@@ -262,7 +315,7 @@ func fundUserChainAccounts(master *User, users []*User, chain common.Chain, amou
 // nolint:typecheck
 func fundUserChainAccount(master, user *User, chain common.Chain, amount sdkmath.Uint) {
 	// build tx
-	addr, err := user.Address(chain)
+	addr, err := user.PubKey(chain).GetAddress(chain)
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to get address")
 	}
@@ -320,7 +373,7 @@ func fundUserChainAccount(master, user *User, chain common.Chain, amount sdkmath
 		}
 		tokenTxid, err := master.ChainClients[chain].BroadcastTx(tokenSigned)
 		if err != nil {
-			from, _ := master.Address(chain)
+			from, _ := master.PubKey(chain).GetAddress(chain)
 			log.Fatal().Err(err).
 				Stringer("chain", chain).
 				Stringer("from", from).
@@ -345,7 +398,7 @@ func fundUserThorAccount(master, user *User) bool {
 	}
 
 	// skip seeding user if thorchain account has balance
-	userThorAddress, err := user.Address(common.THORChain)
+	userThorAddress, err := user.PubKey(common.THORChain).GetAddress(common.THORChain)
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to get user thor address")
 	}

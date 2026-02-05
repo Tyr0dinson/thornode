@@ -34,6 +34,9 @@ const (
 	DynamicMaxAnchorCalcInterval
 	ChurnInterval
 	ChurnRetryInterval
+	MissingBlockChurnOut
+	MaxMissingBlockChurnOut
+	MaxTrackMissingBlock
 	BadValidatorRedline
 	LackOfObservationPenalty
 	SigningTransactionPeriod
@@ -59,6 +62,8 @@ const (
 	MinSwapsPerBlock
 	MaxSwapsPerBlock
 	EnableOrderBooks
+	EnableAdvSwapQueue
+	AdvSwapQueueRapidSwapMax
 	MaxSynthPerPoolDepth
 	MaxSynthsForSaversYield
 	VirtualMultSynths
@@ -76,11 +81,9 @@ const (
 	StreamingSwapMinBPFee // TODO: remove on hard fork
 	StreamingSwapMaxLength
 	StreamingSwapMaxLengthNative
+	StreamingLimitSwapMaxAge
 	MinCR
 	MaxCR
-	LoanStreamingSwapsInterval
-	PauseLoans
-	LoanRepaymentMaturity
 	LendingLever
 	PermittedSolvencyGap
 	NodeOperatorFee
@@ -119,6 +122,7 @@ const (
 	SynthSlipMinBps
 	TradeAccountsSlipMinBps
 	DerivedSlipMinBps
+	SlipMinBpsMax
 	TradeAccountsEnabled
 	TradeAccountsDepositEnabled
 	SecuredAssetSlipMinBps
@@ -148,17 +152,35 @@ const (
 	TCYStakingHalt
 	TCYUnstakingHalt
 	TCYClaimingHalt
+	HaltRebond
+	HaltOperatorRotate
+	HaltMemoless
+	RequiredPriceFeeds
+	HaltOracle
+	OracleUpdateInterval
+	ReserveMaxCap
+	MarketingFundSystemIncomeBps
+	MarketingFundAddress
+	OverSolvencyToReserveBps
+	OverSolvencyCheckInterval
+	MaxDepositTxIDRetries
+	MaxRetiredVaultRecoveryAttempts
 
 	// These are the implicitly-0 Constants undisplayed in the API endpoint (no explicit value set).
 	ArtificialRagnarokBlockHeight
 	BondLockupPeriod
 	BurnSynths
 	DefaultPoolStatus
+	EnableMemolessOutbound
 	ManualSwapsToSynthDisabled
 	MaximumLiquidityRune
 	MintSynths
 	NumberOfNewNodesPerChurn
 	SignerConcurrency
+	MemolessTxnTTL
+	MemolessTxnRefCount
+	MemolessTxnCost
+	MemolessTxnMaxUse
 	StrictBondLiquidityRatio
 	SwapOutDexAggregationDisabled
 )

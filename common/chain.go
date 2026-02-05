@@ -23,10 +23,13 @@ const (
 	DOGEChain  = Chain("DOGE")
 	THORChain  = Chain("THOR")
 	GAIAChain  = Chain("GAIA")
+	NOBLEChain = Chain("NOBLE")
 	AVAXChain  = Chain("AVAX")
 	BASEChain  = Chain("BASE")
+	TRONChain  = Chain("TRON")
 	XRPChain   = Chain("XRP")
 	SOLChain   = Chain("SOL")
+	ZECChain   = Chain("ZEC")
 	ADAChain   = Chain("ADA")
 
 	SigningAlgoSecp256k1 = SigningAlgo("secp256k1")
@@ -42,11 +45,13 @@ var AllChains = [...]Chain{
 	DOGEChain,
 	THORChain,
 	GAIAChain,
+	NOBLEChain,
 	AVAXChain,
 	BASEChain,
+	TRONChain,
 	XRPChain,
 	SOLChain,
-	ADAChain,
+	ZECChain,
 }
 
 type SigningAlgo string
@@ -104,7 +109,7 @@ func GetEVMChains() []Chain {
 
 // GetUTXOChains returns all "UTXO" chains connected to THORChain.
 func GetUTXOChains() []Chain {
-	return []Chain{BTCChain, LTCChain, BCHChain, DOGEChain}
+	return []Chain{BTCChain, LTCChain, BCHChain, DOGEChain, ZECChain}
 }
 
 // IsEVM returns true if given chain is an EVM chain.
@@ -144,10 +149,12 @@ func (c Chain) String() string {
 
 // GetSigningAlgo get the signing algorithm for the given chain
 func (c Chain) GetSigningAlgo() SigningAlgo {
-	if c == SOLChain || c == ADAChain {
+	switch c {
+	case SOLChain, ADAChain:
 		return SigningAlgoEd25519
+	default:
+		return SigningAlgoSecp256k1
 	}
-	return SigningAlgoSecp256k1
 }
 
 // GetGasAsset chain's base asset
@@ -171,12 +178,19 @@ func (c Chain) GetGasAsset() Asset {
 		return AVAXAsset
 	case GAIAChain:
 		return ATOMAsset
+	case NOBLEChain:
+		// Noble doesn't charge gas. `0uusdc` typically provided as fee
+		return USDCAsset
 	case BASEChain:
 		return BaseETHAsset
+	case TRONChain:
+		return TRXAsset
 	case XRPChain:
 		return XRPAsset
 	case SOLChain:
 		return SOLAsset
+	case ZECChain:
+		return ZECAsset
 	case ADAChain:
 		return ADAAsset
 	default:
@@ -184,32 +198,48 @@ func (c Chain) GetGasAsset() Asset {
 	}
 }
 
-// GetGasUnits returns name of the gas unit for each chain
-func (c Chain) GetGasUnits() string {
+// GetGasUnits returns the name of the gas unit for each chain
+// as well as the number of gas units per 'One'.
+// gasRateUnitsPerOne type is cosmos.Uint to avoid uint64 overflow through
+// for example .Mul(gasRateUnitsPerOne).QuoUint64(common.One)
+// rather than * gasRateUnitsPerOne / common.One .
+func (c Chain) GetGasUnits() (gasRateUnits string, gasRateUnitsPerOne cosmos.Uint) {
 	switch c {
-	case AVAXChain:
-		return "nAVAX"
-	case BTCChain:
-		return "satsperbyte"
-	case BCHChain:
-		return "satsperbyte"
-	case DOGEChain:
-		return "satsperbyte"
-	case ETHChain, BSCChain, BASEChain:
-		return "gwei"
 	case GAIAChain:
-		return "uatom"
-	case LTCChain:
-		return "satsperbyte"
+		return "uatom", cosmos.NewUint(1e6)
+	case NOBLEChain:
+		return "uusdc", cosmos.NewUint(1e6)
 	case XRPChain:
-		return "drop"
+		return "drop", cosmos.NewUint(1e6)
+	case TRONChain:
+		return "sun", cosmos.NewUint(1e6)
+	case BTCChain, BCHChain, LTCChain, DOGEChain, ZECChain:
+		return "satsperbyte", cosmos.NewUint(1e8)
+	case ETHChain, BSCChain:
+		return "gwei", cosmos.NewUint(1e9)
+	case AVAXChain:
+		return "nAVAX", cosmos.NewUint(1e9)
+	case BASEChain:
+		return "mwei", cosmos.NewUint(1e12)
 	case SOLChain:
-		return "lamport"
+		return "lamport", cosmos.NewUint(1e9)
 	case ADAChain:
-		return "lovelace"
+		return "lovelace", cosmos.NewUint(1e6)
 	default:
-		return ""
+		return "", cosmos.OneUint() // Avoid any divide-by-zero.
 	}
+}
+
+// NativeGasToThorchain converts native gas units to THORChain units (1e8).
+func (c Chain) NativeGasToThorchain(native cosmos.Uint) cosmos.Uint {
+	_, gasRateUnitsPerOne := c.GetGasUnits()
+	return native.MulUint64(One).Quo(gasRateUnitsPerOne)
+}
+
+// ThorchainToNativeGas converts THORChain units (1e8) to native gas units.
+func (c Chain) ThorchainToNativeGas(thorchain cosmos.Uint) cosmos.Uint {
+	_, gasRateUnitsPerOne := c.GetGasUnits()
+	return thorchain.Mul(gasRateUnitsPerOne).QuoUint64(One)
 }
 
 // GetGasAssetDecimal returns decimals for the gas asset of the given chain. Currently
@@ -217,7 +247,7 @@ func (c Chain) GetGasUnits() string {
 // 1e8, just return cosmos.DefaultCoinDecimals.
 func (c Chain) GetGasAssetDecimal() int64 {
 	switch c {
-	case GAIAChain, ADAChain:
+	case GAIAChain, NOBLEChain, TRONChain, ADAChain:
 		return 6
 	case XRPChain:
 		return 6
@@ -246,6 +276,8 @@ func (c Chain) AddressPrefix(cn ChainNetwork) string {
 		switch c {
 		case GAIAChain:
 			return "cosmos"
+		case NOBLEChain:
+			return "noble"
 		case THORChain:
 			// TODO update this to use mocknet address prefix
 			return types.GetConfig().GetBech32AccountAddrPrefix()
@@ -255,11 +287,15 @@ func (c Chain) AddressPrefix(cn ChainNetwork) string {
 			return ltcchaincfg.RegressionNetParams.Bech32HRPSegwit
 		case DOGEChain:
 			return dogchaincfg.RegressionNetParams.Bech32HRPSegwit
+		case ADAChain:
+			return "addr1"
 		}
 	case MainNet, StageNet:
 		switch c {
 		case GAIAChain:
 			return "cosmos"
+		case NOBLEChain:
+			return "noble"
 		case THORChain:
 			return types.GetConfig().GetBech32AccountAddrPrefix()
 		case BTCChain:
@@ -268,6 +304,8 @@ func (c Chain) AddressPrefix(cn ChainNetwork) string {
 			return ltcchaincfg.MainNetParams.Bech32HRPSegwit
 		case DOGEChain:
 			return dogchaincfg.MainNetParams.Bech32HRPSegwit
+		case ADAChain:
+			return "addr_test1"
 		}
 	}
 	return ""
@@ -281,12 +319,24 @@ func (c Chain) AddressPrefix(cn ChainNetwork) string {
 // NOTE: these should all be in 8 decimal places
 func (c Chain) DustThreshold() cosmos.Uint {
 	switch c {
-	case BTCChain, LTCChain, BCHChain:
+	case BTCChain:
+		return cosmos.NewUint(1_000)
+	case LTCChain:
+		return cosmos.NewUint(100_000)
+	case BCHChain, ZECChain:
 		return cosmos.NewUint(10_000)
 	case DOGEChain:
 		return cosmos.NewUint(100_000_000)
-	case ETHChain, AVAXChain, GAIAChain, BSCChain, BASEChain:
-		return cosmos.OneUint()
+	case ETHChain, BASEChain:
+		return cosmos.NewUint(1_000)
+	case AVAXChain:
+		return cosmos.NewUint(100_000)
+	case BSCChain:
+		return cosmos.NewUint(10_000)
+	case GAIAChain:
+		return cosmos.NewUint(1_000_000)
+	case NOBLEChain:
+		return cosmos.NewUint(1_000_000)
 	case XRPChain:
 		// XRP's dust threshold is being set to 1 XRP. This is the base reserve requirement on XRP's ledger.
 		// It is set to this value for two reasons:
@@ -297,18 +347,42 @@ func (c Chain) DustThreshold() cosmos.Uint {
 		return cosmos.NewUint(One) // 1 XRP
 	case SOLChain:
 		return cosmos.NewUint(100_000) // 0.001 SOL
+	case TRONChain:
+		return cosmos.NewUint(10_000_000)
 	case ADAChain:
-		return cosmos.NewUint(1_000_000) // 1 ADA
+		return cosmos.NewUint(10_000_000)
 	default:
 		return cosmos.ZeroUint()
+	}
+}
+
+// P2WPKHOutputValue returns the value for P2WPKH outputs used for memo data
+func (c Chain) P2WPKHOutputValue() int64 {
+	switch c {
+	case BTCChain:
+		// https://github.com/bitcoin/bitcoin/blob/29.x/src/policy/policy.cpp#L28-L41
+		return 294
+	case LTCChain:
+		// dust relay fee in 'lits' is 10x of the fees on btc (30k vs 3k)
+		// https://github.com/litecoin-project/litecoin/blob/v0.21.4/src/policy/policy.h#L52
+		// https://github.com/litecoin-project/litecoin/blob/v0.21.4/src/policy/policy.cpp#L17-L30
+		return 2940
+	case DOGEChain:
+		// using bitcoin default for p2pkh txout
+		return 546
+	case BCHChain:
+		// using bitcoin default for p2pkh txout
+		return 546
+	default:
+		return 0 // unsupported chain
 	}
 }
 
 // MaxMemoLength returns the max memo length for each chain.
 func (c Chain) MaxMemoLength() int {
 	switch c {
-	case BTCChain, LTCChain, BCHChain, DOGEChain:
-		return 80
+	case BTCChain, LTCChain, BCHChain, DOGEChain, ZECChain:
+		return constants.MaxOpReturnDataSize
 	default:
 		// Default to the max memo size that we will process, regardless
 		// of any higher memo size capable on other chains.
@@ -329,6 +403,8 @@ func (c Chain) DefaultCoinbase() float64 {
 		return 3.125
 	case DOGEChain:
 		return 10000
+	case ZECChain:
+		return 1.5625
 	default:
 		return 0
 	}
@@ -349,17 +425,23 @@ func (c Chain) ApproximateBlockMilliseconds() int64 {
 	case AVAXChain:
 		return 3_000
 	case BSCChain:
-		return 3_000
+		return 450
 	case GAIAChain:
 		return 6_000
 	case THORChain:
 		return 6_000
 	case BASEChain:
 		return 2_000
+	case TRONChain:
+		return 3_000
 	case XRPChain:
 		return 4_000 // approx 3-5 seconds
+	case NOBLEChain:
+		return 1_500
 	case SOLChain:
 		return 400
+	case ZECChain:
+		return 75_000
 	case ADAChain:
 		return 20_000
 	default:
@@ -369,16 +451,25 @@ func (c Chain) ApproximateBlockMilliseconds() int64 {
 
 func (c Chain) InboundNotes() string {
 	switch c {
-	case BTCChain, LTCChain, BCHChain, DOGEChain:
+	case BTCChain, LTCChain, BCHChain, DOGEChain, ZECChain:
 		return "First output should be to inbound_address, second output should be change back to self, third output should be OP_RETURN, limited to 80 bytes. Do not send below the dust threshold. Do not use exotic spend scripts, locks or address formats."
 	case ETHChain, AVAXChain, BSCChain, BASEChain:
 		return "Base Asset: Send the inbound_address the asset with the memo encoded in hex in the data field. Tokens: First approve router to spend tokens from user: asset.approve(router, amount). Then call router.depositWithExpiry(inbound_address, asset, amount, memo, expiry). Asset is the token contract address. Amount should be in native asset decimals (eg 1e18 for most tokens). Do not swap to smart contract addresses."
-	case GAIAChain:
+	case GAIAChain, NOBLEChain:
 		return "Transfer the inbound_address the asset with the memo. Do not use multi-in, multi-out transactions."
 	case THORChain:
 		return "Broadcast a MsgDeposit to the THORChain network with the appropriate memo. Do not use multi-in, multi-out transactions."
 	case XRPChain:
 		return "Transfer the inbound_address the asset with the memo. Only a single memo is supported and only MemoData is used."
+	default:
+		return ""
+	}
+}
+
+func (c Chain) OutboundNotes() string {
+	switch c {
+	case XRPChain:
+		return "Ensure XRP destination address does not have special flags like lsfRequireDestTag, lsfRequireAuth, lsfDisallowIncomingPayChan, etcetera."
 	default:
 		return ""
 	}

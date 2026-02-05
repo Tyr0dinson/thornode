@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	rand "math/rand/v2"
 
 	"github.com/hashicorp/go-multierror"
 
@@ -29,9 +30,9 @@ type DualLPActor struct {
 	l1Amount    cosmos.Uint
 }
 
-func NewDualLPActor(asset common.Asset) *Actor {
+func NewDualLPActor(asset common.Asset, rng *rand.Rand) *Actor {
 	a := &DualLPActor{
-		Actor: *NewActor(fmt.Sprintf("DualLP-%s", asset)),
+		Actor: *NewActor(fmt.Sprintf("DualLP-%s", asset), rng),
 		asset: asset,
 	}
 
@@ -104,7 +105,7 @@ func (a *DualLPActor) acquireUser(config *OpConfig) OpResult {
 		// TODO: skip users that already have a position in this pool
 
 		// get l1 address to store in state context
-		l1Address, err := user.Address(a.asset.Chain)
+		l1Address, err := user.PubKey(a.asset.Chain).GetAddress(a.asset.Chain)
 		if err != nil {
 			a.Log().Error().Err(err).Msg("failed to get L1 address")
 			user.Release()
@@ -125,8 +126,8 @@ func (a *DualLPActor) acquireUser(config *OpConfig) OpResult {
 			Msg("acquired user")
 		a.thorAddress = thorAddress
 		a.l1Address = l1Address
-		a.runeAmount = thorBalances.GetCoin(common.RuneAsset()).Amount.QuoUint64(5)
-		a.l1Amount = l1Acct.Coins.GetCoin(a.asset).Amount.QuoUint64(5)
+		a.runeAmount = thorBalances.GetCoin(common.RuneAsset()).Amount.QuoUint64(4)
+		a.l1Amount = l1Acct.Coins.GetCoin(a.asset).Amount.QuoUint64(4)
 		a.account = user
 	}
 

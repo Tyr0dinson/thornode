@@ -2,6 +2,7 @@ package thorchain
 
 import (
 	"errors"
+	"fmt"
 
 	. "gopkg.in/check.v1"
 
@@ -13,15 +14,15 @@ import (
 	"gitlab.com/thorchain/thornode/v3/constants"
 )
 
-type SlashingVCURSuite struct{}
+type SlashingSuite struct{}
 
-var _ = Suite(&SlashingVCURSuite{})
+var _ = Suite(&SlashingSuite{})
 
-func (s *SlashingVCURSuite) SetUpSuite(_ *C) {
+func (s *SlashingSuite) SetUpSuite(_ *C) {
 	SetupConfigForTest()
 }
 
-func (s *SlashingVCURSuite) TestNodeSignSlashErrors(c *C) {
+func (s *SlashingSuite) TestNodeSignSlashErrors(c *C) {
 	testCases := []struct {
 		name        string
 		condition   func(keeper *TestSlashingLackKeeper)
@@ -114,7 +115,7 @@ func (s *SlashingVCURSuite) TestNodeSignSlashErrors(c *C) {
 		}
 		signingTransactionPeriod := constAccessor.GetInt64Value(constants.SigningTransactionPeriod)
 		ctx = ctx.WithBlockHeight(3 + signingTransactionPeriod)
-		slasher := newSlasherVCUR(keeper, NewDummyEventMgr())
+		slasher := newSlasher(keeper, NewDummyEventMgr())
 		item.condition(keeper)
 		if item.shouldError {
 			c.Assert(slasher.LackSigning(ctx, NewDummyMgr()), NotNil)
@@ -124,7 +125,7 @@ func (s *SlashingVCURSuite) TestNodeSignSlashErrors(c *C) {
 	}
 }
 
-func (s *SlashingVCURSuite) TestNotSigningSlash(c *C) {
+func (s *SlashingSuite) TestNotSigningSlash(c *C) {
 	ctx, _ := setupKeeperForTest(c)
 	ctx = ctx.WithBlockHeight(201) // set blockheight
 	txOutStore := NewTxStoreDummy()
@@ -173,7 +174,7 @@ func (s *SlashingVCURSuite) TestNotSigningSlash(c *C) {
 	ctx = ctx.WithBlockHeight(3 + signingTransactionPeriod)
 	mgr := NewDummyMgr()
 	mgr.txOutStore = txOutStore
-	slasher := newSlasherVCUR(keeper, NewDummyEventMgr())
+	slasher := newSlasher(keeper, NewDummyEventMgr())
 	c.Assert(slasher.LackSigning(ctx, mgr), IsNil)
 
 	outItems, err := txOutStore.GetOutboundItems(ctx)
@@ -187,7 +188,7 @@ func (s *SlashingVCURSuite) TestNotSigningSlash(c *C) {
 	c.Assert(keeper.txOut.TxArray[0].OutHash.IsEmpty(), Equals, false)
 }
 
-func (s *SlashingVCURSuite) TestNewSlasher(c *C) {
+func (s *SlashingSuite) TestNewSlasher(c *C) {
 	nas := NodeAccounts{
 		GetRandomValidatorNode(NodeActive),
 		GetRandomValidatorNode(NodeActive),
@@ -197,11 +198,255 @@ func (s *SlashingVCURSuite) TestNewSlasher(c *C) {
 		addrs:    []cosmos.AccAddress{nas[0].NodeAddress},
 		slashPts: make(map[string]int64),
 	}
-	slasher := newSlasherVCUR(keeper, NewDummyEventMgr())
+	slasher := newSlasher(keeper, NewDummyEventMgr())
 	c.Assert(slasher, NotNil)
 }
 
-func (s *SlashingVCURSuite) TestDoubleSign(c *C) {
+func (s *SlashingSuite) TestHandleSuccessfulSign(c *C) {
+	ctx, _ := setupKeeperForTest(c)
+	constAccessor := constants.GetConstantValues(GetCurrentVersion())
+
+	testCases := []struct {
+		name                  string
+		setupNodeAccount      func() (NodeAccount, error)
+		validatorAddr         string
+		expectedMissingBefore uint64
+		expectedMissingAfter  uint64
+		expectedErr           error
+	}{
+		{
+			name: "normal node account with missing blocks",
+			setupNodeAccount: func() (NodeAccount, error) {
+				na := GetRandomValidatorNode(NodeActive)
+				na.MissingBlocks = 10
+				return na, nil
+			},
+			expectedMissingBefore: 10,
+			expectedMissingAfter:  9,
+			expectedErr:           nil,
+		},
+		{
+			name: "node account with zero missing blocks",
+			setupNodeAccount: func() (NodeAccount, error) {
+				na := GetRandomValidatorNode(NodeActive)
+				na.MissingBlocks = 0
+				return na, nil
+			},
+			expectedMissingBefore: 0,
+			expectedMissingAfter:  0,
+			expectedErr:           nil,
+		},
+		{
+			name: "node account with max missing blocks",
+			setupNodeAccount: func() (NodeAccount, error) {
+				na := GetRandomValidatorNode(NodeActive)
+				na.MissingBlocks = 100
+				return na, nil
+			},
+			expectedMissingBefore: 100,
+			expectedMissingAfter:  99,
+			expectedErr:           nil,
+		},
+	}
+
+	for _, tc := range testCases {
+		c.Logf("Test case: %s", tc.name)
+		na, err := tc.setupNodeAccount()
+		c.Assert(err, IsNil)
+
+		keeper := &TestDoubleSlashKeeper{
+			na:          na,
+			network:     NewNetwork(),
+			slashPoints: make(map[string]int64),
+			constants:   make(map[string]int64),
+		}
+		slasher := newSlasher(keeper, NewDummyEventMgr())
+
+		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeConsPub, na.ValidatorConsPubKey)
+		c.Assert(err, IsNil)
+
+		var pair nodeAddressValidatorAddressPair
+		pair.nodeAddress = na.NodeAddress
+		pair.validatorAddress = pk.Address()
+
+		c.Assert(keeper.na.MissingBlocks, Equals, tc.expectedMissingBefore)
+		err = slasher.HandleSuccessfulSign(ctx, pk.Address(), constAccessor, []nodeAddressValidatorAddressPair{pair})
+		c.Assert(err, IsNil)
+		c.Assert(keeper.na.MissingBlocks, Equals, tc.expectedMissingAfter)
+	}
+}
+
+func (s *SlashingSuite) TestHandleSuccessfulSignErrors(c *C) {
+	ctx, _ := setupKeeperForTest(c)
+	constAccessor := constants.GetConstantValues(GetCurrentVersion())
+
+	// Test case: validator address not found
+	na := GetRandomValidatorNode(NodeActive)
+	keeper := &TestDoubleSlashKeeper{
+		na:          na,
+		network:     NewNetwork(),
+		slashPoints: make(map[string]int64),
+		constants:   make(map[string]int64),
+	}
+	slasher := newSlasher(keeper, NewDummyEventMgr())
+
+	randomAddr := GetRandomBech32Addr().String()
+	err := slasher.HandleSuccessfulSign(ctx, []byte(randomAddr), constAccessor, []nodeAddressValidatorAddressPair{})
+	c.Assert(err, NotNil)
+	c.Assert(err.Error(), Matches, "could not find active node account with validator address: .*")
+}
+
+func (s *SlashingSuite) TestHandleMissingSign(c *C) {
+	ctx, _ := setupKeeperForTest(c)
+	constAccessor := constants.GetConstantValues(GetCurrentVersion())
+
+	testCases := []struct {
+		name                  string
+		setupNodeAccount      func() (NodeAccount, error)
+		maxTrack              int64
+		missBlockSignSlashPts int64
+		expectedMissingBefore uint64
+		expectedMissingAfter  uint64
+		expectedSlashPoints   int64
+		expectedErr           error
+	}{
+		{
+			name: "normal node account with no missing blocks",
+			setupNodeAccount: func() (NodeAccount, error) {
+				na := GetRandomValidatorNode(NodeActive)
+				na.MissingBlocks = 0
+				return na, nil
+			},
+			maxTrack:              10,
+			missBlockSignSlashPts: 5,
+			expectedMissingBefore: 0,
+			expectedMissingAfter:  1,
+			expectedSlashPoints:   5,
+			expectedErr:           nil,
+		},
+		{
+			name: "node account with some missing blocks",
+			setupNodeAccount: func() (NodeAccount, error) {
+				na := GetRandomValidatorNode(NodeActive)
+				na.MissingBlocks = 5
+				return na, nil
+			},
+			maxTrack:              10,
+			missBlockSignSlashPts: 5,
+			expectedMissingBefore: 5,
+			expectedMissingAfter:  6,
+			expectedSlashPoints:   5,
+			expectedErr:           nil,
+		},
+		{
+			name: "node account at max missing blocks",
+			setupNodeAccount: func() (NodeAccount, error) {
+				na := GetRandomValidatorNode(NodeActive)
+				na.MissingBlocks = 10
+				return na, nil
+			},
+			maxTrack:              10,
+			missBlockSignSlashPts: 5,
+			expectedMissingBefore: 10,
+			expectedMissingAfter:  10, // Should not increase beyond maxTrack
+			expectedSlashPoints:   5,
+			expectedErr:           nil,
+		},
+		{
+			name: "node account exceeding max missing blocks",
+			setupNodeAccount: func() (NodeAccount, error) {
+				na := GetRandomValidatorNode(NodeActive)
+				na.MissingBlocks = 11 // This is already above maxTrack, but should be capped
+				return na, nil
+			},
+			maxTrack:              10,
+			missBlockSignSlashPts: 5,
+			expectedMissingBefore: 11,
+			expectedMissingAfter:  10, // Should be capped at maxTrack
+			expectedSlashPoints:   5,
+			expectedErr:           nil,
+		},
+		{
+			name: "node account with low maxTrack value",
+			setupNodeAccount: func() (NodeAccount, error) {
+				na := GetRandomValidatorNode(NodeActive)
+				na.MissingBlocks = 1
+				return na, nil
+			},
+			maxTrack:              3,
+			missBlockSignSlashPts: 5,
+			expectedMissingBefore: 1,
+			expectedMissingAfter:  2,
+			expectedSlashPoints:   5,
+			expectedErr:           nil,
+		},
+		{
+			name: "node account with high slash points",
+			setupNodeAccount: func() (NodeAccount, error) {
+				na := GetRandomValidatorNode(NodeActive)
+				na.MissingBlocks = 5
+				return na, nil
+			},
+			maxTrack:              10,
+			missBlockSignSlashPts: 20,
+			expectedMissingBefore: 5,
+			expectedMissingAfter:  6,
+			expectedSlashPoints:   20,
+			expectedErr:           nil,
+		},
+	}
+
+	for _, tc := range testCases {
+		c.Logf("Test case: %s", tc.name)
+		na, err := tc.setupNodeAccount()
+		c.Assert(err, IsNil)
+
+		keeper := &TestDoubleSlashKeeper{
+			na:          na,
+			network:     NewNetwork(),
+			slashPoints: make(map[string]int64),
+			constants:   make(map[string]int64),
+		}
+		keeper.constants["MissBlockSignSlashPoints"] = tc.missBlockSignSlashPts
+		keeper.constants["MaxTrackMissingBlock"] = tc.maxTrack
+		slasher := newSlasher(keeper, NewDummyEventMgr())
+
+		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeConsPub, na.ValidatorConsPubKey)
+		c.Assert(err, IsNil)
+
+		var pair nodeAddressValidatorAddressPair
+		pair.nodeAddress = na.NodeAddress
+		pair.validatorAddress = pk.Address()
+
+		c.Assert(keeper.na.MissingBlocks, Equals, tc.expectedMissingBefore)
+		err = slasher.HandleMissingSign(ctx, pk.Address(), constAccessor, []nodeAddressValidatorAddressPair{pair})
+		c.Assert(err, IsNil)
+		c.Assert(keeper.na.MissingBlocks, Equals, tc.expectedMissingAfter)
+		c.Assert(keeper.slashPoints[na.NodeAddress.String()], Equals, tc.expectedSlashPoints)
+	}
+}
+
+func (s *SlashingSuite) TestHandleMissingSignErrors(c *C) {
+	ctx, _ := setupKeeperForTest(c)
+	constAccessor := constants.GetConstantValues(GetCurrentVersion())
+
+	// Test case: validator address not found
+	na := GetRandomValidatorNode(NodeActive)
+	keeper := &TestDoubleSlashKeeper{
+		na:          na,
+		network:     NewNetwork(),
+		slashPoints: make(map[string]int64),
+		constants:   make(map[string]int64),
+	}
+	slasher := newSlasher(keeper, NewDummyEventMgr())
+
+	randomAddr := GetRandomBech32Addr().String()
+	err := slasher.HandleMissingSign(ctx, []byte(randomAddr), constAccessor, []nodeAddressValidatorAddressPair{})
+	c.Assert(err, NotNil)
+	c.Assert(err.Error(), Matches, "could not find active node account with validator address: .*")
+}
+
+func (s *SlashingSuite) TestDoubleSign(c *C) {
 	ctx, _ := setupKeeperForTest(c)
 	constAccessor := constants.GetConstantValues(GetCurrentVersion())
 
@@ -213,7 +458,7 @@ func (s *SlashingVCURSuite) TestDoubleSign(c *C) {
 		slashPoints: make(map[string]int64),
 		constants:   make(map[string]int64),
 	}
-	slasher := newSlasherVCUR(keeper, NewDummyEventMgr())
+	slasher := newSlasher(keeper, NewDummyEventMgr())
 
 	pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeConsPub, na.ValidatorConsPubKey)
 	c.Assert(err, IsNil)
@@ -229,7 +474,7 @@ func (s *SlashingVCURSuite) TestDoubleSign(c *C) {
 	c.Assert(keeper.slashPoints[na.NodeAddress.String()], Equals, int64(1))
 }
 
-func (s *SlashingVCURSuite) TestIncreaseDecreaseSlashPoints(c *C) {
+func (s *SlashingSuite) TestIncreaseDecreaseSlashPoints(c *C) {
 	ctx, _ := setupKeeperForTest(c)
 
 	na := GetRandomValidatorNode(NodeActive)
@@ -240,16 +485,16 @@ func (s *SlashingVCURSuite) TestIncreaseDecreaseSlashPoints(c *C) {
 		network:     NewNetwork(),
 		slashPoints: make(map[string]int64),
 	}
-	slasher := newSlasherVCUR(keeper, NewDummyEventMgr())
+	slasher := newSlasher(keeper, NewDummyEventMgr())
 	addr := GetRandomBech32Addr()
 	slasher.IncSlashPoints(ctx, 1, addr)
 	slasher.DecSlashPoints(ctx, 1, addr)
 	c.Assert(keeper.slashPoints[addr.String()], Equals, int64(0))
 }
 
-func (s *SlashingVCURSuite) TestSlashVault(c *C) {
+func (s *SlashingSuite) TestSlashVault(c *C) {
 	ctx, mgr := setupManagerForTest(c)
-	slasher := newSlasherVCUR(mgr.Keeper(), mgr.EventMgr())
+	slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
 	// when coins are empty , it should return nil
 	c.Assert(slasher.SlashVault(ctx, GetRandomPubKey(), common.NewCoins(), mgr), IsNil)
 
@@ -345,14 +590,20 @@ func (s *SlashingVCURSuite) TestSlashVault(c *C) {
 	c.Check(nodeBondBeforeSlash.Sub(nodeBondAfterSlash).Uint64(), Equals, uint64(76457722), Commentf("%d", nodeBondBeforeSlash.Sub(nodeBondAfterSlash).Uint64()))
 	c.Check(node1BondBeforeSlash.Sub(node1BondAfterSlash).Uint64(), Equals, uint64(76572581), Commentf("%d", node1BondBeforeSlash.Sub(node1BondAfterSlash).Uint64()))
 
-	val, err := mgr.Keeper().GetMimir(ctx, "HaltBTCChain")
+	// Check that signing halt mimir was set
+	val, err := mgr.Keeper().GetMimir(ctx, fmt.Sprintf(constants.MimirTemplateHaltSigning, common.BTCChain))
 	c.Assert(err, IsNil)
 	c.Assert(val, Equals, int64(18), Commentf("%d", val))
+
+	// Check that trading halt mimir was set
+	val2, err := mgr.Keeper().GetMimir(ctx, fmt.Sprintf(constants.MimirTemplateHaltTrading, common.BTCChain))
+	c.Assert(err, IsNil)
+	c.Assert(val2, Equals, int64(18), Commentf("%d", val2))
 }
 
-func (s *SlashingVCURSuite) TestUpdatePoolFromSlash(c *C) {
+func (s *SlashingSuite) TestUpdatePoolFromSlash(c *C) {
 	ctx, mgr := setupManagerForTest(c)
-	slasher := newSlasherVCUR(mgr.Keeper(), mgr.EventMgr())
+	slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
 
 	pool := NewPool()
 	pool.Asset = common.BTCAsset
@@ -372,9 +623,9 @@ func (s *SlashingVCURSuite) TestUpdatePoolFromSlash(c *C) {
 	c.Assert(pool.BalanceRune.Uint64(), Equals, uint64(1500*common.One))
 }
 
-func (s *SlashingVCURSuite) TestNetworkShouldNotSlashMorethanVaultAmount(c *C) {
+func (s *SlashingSuite) TestNetworkShouldNotSlashMorethanVaultAmount(c *C) {
 	ctx, mgr := setupManagerForTest(c)
-	slasher := newSlasherVCUR(mgr.Keeper(), mgr.EventMgr())
+	slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
 
 	// create a node
 	node := GetRandomValidatorNode(NodeActive)
@@ -463,9 +714,15 @@ func (s *SlashingVCURSuite) TestNetworkShouldNotSlashMorethanVaultAmount(c *C) {
 	c.Check(nodeBondBeforeSlash.Sub(nodeBondAfterSlash).Uint64(), Equals, uint64(37862675), Commentf("%d", nodeBondBeforeSlash.Sub(nodeBondAfterSlash).Uint64()))
 	c.Check(node1BondBeforeSlash.Sub(node1BondAfterSlash).Uint64(), Equals, uint64(37891094), Commentf("%d", node1BondBeforeSlash.Sub(node1BondAfterSlash).Uint64()))
 
-	val, err := mgr.Keeper().GetMimir(ctx, "HaltBTCChain")
+	// Check that signing halt mimir was set
+	val, err := mgr.Keeper().GetMimir(ctx, fmt.Sprintf(constants.MimirTemplateHaltSigning, common.BTCChain))
 	c.Assert(err, IsNil)
 	c.Assert(val, Equals, int64(18), Commentf("%d", val))
+
+	// Check that trading halt mimir was set
+	val2, err := mgr.Keeper().GetMimir(ctx, fmt.Sprintf(constants.MimirTemplateHaltTrading, common.BTCChain))
+	c.Assert(err, IsNil)
+	c.Assert(val2, Equals, int64(18), Commentf("%d", val2))
 
 	// Attempt to slash more than node has, pool should only be deducted what was successfully slashed
 	pool.BalanceRune = cosmos.NewUint(4000 * common.One)
@@ -498,7 +755,7 @@ func (s *SlashingVCURSuite) TestNetworkShouldNotSlashMorethanVaultAmount(c *C) {
 	c.Assert(updatedPool.BalanceAsset.Uint64(), Equals, cosmos.NewUint(2000*common.One).Uint64())
 }
 
-func (s *SlashingVCURSuite) TestNeedsNewVault(c *C) {
+func (s *SlashingSuite) TestNeedsNewVault(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 
 	inhash := GetRandomTxHash()
@@ -519,7 +776,7 @@ func (s *SlashingVCURSuite) TestNeedsNewVault(c *C) {
 	vault := GetRandomVault()
 	vault.Membership = []string{pk1.String(), pk2.String(), pk3.String()}
 
-	slasher := newSlasherVCUR(mgr.Keeper(), mgr.EventMgr())
+	slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
 
 	c.Assert(len(tx.Coins), Equals, 1)
 	toi := TxOutItem{
@@ -544,4 +801,504 @@ func (s *SlashingVCURSuite) TestNeedsNewVault(c *C) {
 	// test that more than 2/3rd will always return false
 	ctx = ctx.WithBlockHeight(999999999)
 	c.Check(slasher.needsNewVault(ctx, mgr, vault, 300, 1, toi), Equals, false)
+}
+
+func (s *SlashingSuite) TestTreasuryRecoveryForMaxAttempts(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	// Setup a node and vault
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+
+	vault := GetRandomVault()
+	vault.Type = AsgardVault
+	vault.Status = types2.VaultStatus_ActiveVault
+	vault.PubKey = na.PubKeySet.Secp256k1
+	vault.Membership = []string{na.PubKeySet.Secp256k1.String()}
+	vault.Coins = common.NewCoins(
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One)),
+	)
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	// Setup pool
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	pool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	// Create tx out item
+	inHash := GetRandomTxHash()
+	txOutItem := TxOutItem{
+		Chain:       common.BTCChain,
+		InHash:      inHash,
+		VaultPubKey: na.PubKeySet.Secp256k1,
+		ToAddress:   GetRandomBTCAddress(),
+		Coin:        common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One)),
+		Memo:        fmt.Sprintf("OUT:%s", inHash.String()),
+	}
+
+	// Parse the memo
+	memo, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), txOutItem.Memo)
+	c.Assert(err, IsNil)
+	c.Assert(memo.IsOutbound(), Equals, true, Commentf("Memo should be outbound"))
+
+	// Directly call sendFailedOutboundToTreasury
+	slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
+	err = slasher.sendFailedOutboundToTreasury(ctx, mgr, txOutItem, vault, memo)
+	c.Assert(err, IsNil, Commentf("sendFailedOutboundToTreasury should not error"))
+
+	// Verify a swap was queued (check both standard and advanced swap queues)
+	hasSwap := false
+
+	// Check standard swap queue
+	swapQueueItems := mgr.Keeper().GetSwapQueueIterator(ctx)
+	for ; swapQueueItems.Valid(); swapQueueItems.Next() {
+		hasSwap = true
+		break
+	}
+	swapQueueItems.Close()
+
+	// If not in standard queue, check advanced swap queue
+	if !hasSwap {
+		advSwapQueueItems := mgr.Keeper().GetAdvSwapQueueItemIterator(ctx)
+		for ; advSwapQueueItems.Valid(); advSwapQueueItems.Next() {
+			hasSwap = true
+			break
+		}
+		advSwapQueueItems.Close()
+	}
+
+	c.Assert(hasSwap, Equals, true, Commentf("Expected a swap to be queued for treasury recovery"))
+}
+
+func (s *SlashingSuite) TestTreasuryRecoveryWithDifferentMemoTypes(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	testCases := []struct {
+		name          string
+		memo          string
+		shouldRecover bool
+	}{
+		{
+			name:          "outbound memo should recover",
+			memo:          fmt.Sprintf("OUT:%s", GetRandomTxHash()),
+			shouldRecover: true,
+		},
+		{
+			name:          "refund memo should recover",
+			memo:          fmt.Sprintf("REFUND:%s", GetRandomTxHash()),
+			shouldRecover: true,
+		},
+		{
+			name:          "ragnarok memo should recover",
+			memo:          fmt.Sprintf("RAGNAROK:%d", 12345),
+			shouldRecover: true,
+		},
+		{
+			name:          "migrate memo should not recover (internal)",
+			memo:          fmt.Sprintf("MIGRATE:%d", 12345),
+			shouldRecover: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		c.Logf("Test case: %s", tc.name)
+
+		// Setup vault
+		na := GetRandomValidatorNode(NodeActive)
+		c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+
+		vault := GetRandomVault()
+		vault.Type = AsgardVault
+		vault.Status = types2.VaultStatus_ActiveVault
+		vault.PubKey = na.PubKeySet.Secp256k1
+		vault.Membership = []string{na.PubKeySet.Secp256k1.String()}
+		vault.Coins = common.NewCoins(
+			common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One)),
+		)
+		c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+		// Setup pool for non-RUNE assets
+		pool := NewPool()
+		pool.Asset = common.BTCAsset
+		pool.BalanceRune = cosmos.NewUint(1000 * common.One)
+		pool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+		pool.Status = PoolAvailable
+		c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+		// Create tx out item
+		inHash := GetRandomTxHash()
+		txOutItem := TxOutItem{
+			Chain:       common.BTCChain,
+			InHash:      inHash,
+			VaultPubKey: na.PubKeySet.Secp256k1,
+			ToAddress:   GetRandomBTCAddress(),
+			Coin:        common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One)),
+			Memo:        tc.memo,
+		}
+
+		// Parse memo
+		parsedMemo, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), txOutItem.Memo)
+		c.Assert(err, IsNil)
+
+		// Check if memo matches expected outbound type
+		c.Assert(parsedMemo.IsOutbound(), Equals, tc.shouldRecover, Commentf("Memo type mismatch for %s", tc.name))
+
+		// If this should recover, test the sendFailedOutboundToTreasury function
+		if tc.shouldRecover {
+			slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
+			err = slasher.sendFailedOutboundToTreasury(ctx, mgr, txOutItem, vault, parsedMemo)
+			c.Assert(err, IsNil, Commentf("sendFailedOutboundToTreasury should not error for %s", tc.name))
+
+			// Verify a swap was queued (check both standard and advanced swap queues)
+			hasSwap := false
+
+			// Check standard swap queue
+			swapQueueItems := mgr.Keeper().GetSwapQueueIterator(ctx)
+			for ; swapQueueItems.Valid(); swapQueueItems.Next() {
+				hasSwap = true
+				break
+			}
+			swapQueueItems.Close()
+
+			// If not in standard queue, check advanced swap queue
+			if !hasSwap {
+				advSwapQueueItems := mgr.Keeper().GetAdvSwapQueueItemIterator(ctx)
+				for ; advSwapQueueItems.Valid(); advSwapQueueItems.Next() {
+					hasSwap = true
+					break
+				}
+				advSwapQueueItems.Close()
+			}
+
+			c.Assert(hasSwap, Equals, true, Commentf("Expected swap to be queued for %s", tc.name))
+		}
+	}
+}
+
+func (s *SlashingSuite) TestReverseSwapForFailedSwapOutbound(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	// Setup a node and vault
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+
+	vault := GetRandomVault()
+	vault.Type = AsgardVault
+	vault.Status = types2.VaultStatus_ActiveVault
+	vault.PubKey = na.PubKeySet.Secp256k1
+	vault.Membership = []string{na.PubKeySet.Secp256k1.String()}
+	vault.Coins = common.NewCoins(
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One)),
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One)),
+	)
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	// Setup pools for both assets
+	btcPool := NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	btcPool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	btcPool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, btcPool), IsNil)
+
+	ethPool := NewPool()
+	ethPool.Asset = common.ETHAsset
+	ethPool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	ethPool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	ethPool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, ethPool), IsNil)
+
+	// Create original swap transaction: ETH -> BTC
+	inHash := GetRandomTxHash()
+	ethAddr := GetRandomETHAddress()
+	btcAddr := GetRandomBTCAddress()
+	swapMemo := fmt.Sprintf("=:BTC.BTC:%s", btcAddr.String())
+
+	originalTx := common.Tx{
+		ID:          inHash,
+		Chain:       common.ETHChain,
+		FromAddress: ethAddr,
+		ToAddress:   GetRandomETHAddress(), // vault address
+		Coins:       common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(10*common.One))},
+		Memo:        swapMemo,
+		Gas:         common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(1000000))},
+	}
+
+	observedTx := ObservedTx{
+		Tx:             originalTx,
+		Status:         common.Status_done,
+		OutHashes:      nil,
+		BlockHeight:    ctx.BlockHeight(),
+		Signers:        []string{na.NodeAddress.String()},
+		ObservedPubKey: vault.PubKey,
+		FinaliseHeight: ctx.BlockHeight(),
+	}
+
+	// Save the observed tx voter
+	voter := NewObservedTxVoter(inHash, []ObservedTx{observedTx})
+	voter.FinalisedHeight = ctx.BlockHeight()
+	voter.Tx = observedTx
+	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+
+	// Create the failed outbound (BTC output that couldn't be sent)
+	txOutItem := TxOutItem{
+		Chain:       common.BTCChain,
+		InHash:      inHash,
+		VaultPubKey: na.PubKeySet.Secp256k1,
+		ToAddress:   btcAddr,
+		Coin:        common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One)),
+		Memo:        fmt.Sprintf("OUT:%s", inHash.String()),
+	}
+
+	// Parse the outbound memo
+	memo, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), txOutItem.Memo)
+	c.Assert(err, IsNil)
+	c.Assert(memo.IsOutbound(), Equals, true)
+
+	// Call sendFailedOutboundToTreasury - it should detect this is a swap and do a reverse swap
+	slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
+	err = slasher.sendFailedOutboundToTreasury(ctx, mgr, txOutItem, vault, memo)
+	c.Assert(err, IsNil, Commentf("sendFailedOutboundToTreasury should not error"))
+
+	// Verify a swap was queued for reverse swap (BTC -> ETH)
+	hasSwap := false
+	var queuedSwap MsgSwap
+
+	// Check standard swap queue
+	swapQueueItems := mgr.Keeper().GetSwapQueueIterator(ctx)
+	for ; swapQueueItems.Valid(); swapQueueItems.Next() {
+		var msg MsgSwap
+		if err := mgr.Keeper().Cdc().Unmarshal(swapQueueItems.Value(), &msg); err == nil {
+			hasSwap = true
+			queuedSwap = msg
+			break
+		}
+	}
+	swapQueueItems.Close()
+
+	// If not in standard queue, check advanced swap queue
+	if !hasSwap {
+		advSwapQueueItems := mgr.Keeper().GetAdvSwapQueueItemIterator(ctx)
+		for ; advSwapQueueItems.Valid(); advSwapQueueItems.Next() {
+			var msg MsgSwap
+			if err := mgr.Keeper().Cdc().Unmarshal(advSwapQueueItems.Value(), &msg); err == nil {
+				hasSwap = true
+				queuedSwap = msg
+				break
+			}
+		}
+		advSwapQueueItems.Close()
+	}
+
+	c.Assert(hasSwap, Equals, true, Commentf("Expected reverse swap to be queued"))
+
+	// Verify the swap is reversing correctly: BTC -> ETH back to original sender
+	c.Assert(queuedSwap.Tx.Coins[0].Asset.Equals(common.BTCAsset), Equals, true,
+		Commentf("Swap should be from BTC (failed asset)"))
+	c.Assert(queuedSwap.TargetAsset.Equals(common.ETHAsset), Equals, true,
+		Commentf("Swap should be to ETH (original asset)"))
+	c.Assert(queuedSwap.Destination.Equals(ethAddr), Equals, true,
+		Commentf("Swap should send back to original sender"))
+	c.Assert(queuedSwap.TradeTarget.IsZero(), Equals, true,
+		Commentf("Reverse swap should have no slip limit"))
+}
+
+func (s *SlashingSuite) TestReverseSwapWithCustomRefundAddress(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	// Setup a node and vault
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+
+	vault := GetRandomVault()
+	vault.Type = AsgardVault
+	vault.Status = types2.VaultStatus_ActiveVault
+	vault.PubKey = na.PubKeySet.Secp256k1
+	vault.Membership = []string{na.PubKeySet.Secp256k1.String()}
+	vault.Coins = common.NewCoins(
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One)),
+		common.NewCoin(common.ETHAsset, cosmos.NewUint(100*common.One)),
+	)
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	// Setup pools
+	btcPool := NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	btcPool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	btcPool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, btcPool), IsNil)
+
+	ethPool := NewPool()
+	ethPool.Asset = common.ETHAsset
+	ethPool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	ethPool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	ethPool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, ethPool), IsNil)
+
+	// Create original swap transaction with custom refund address: ETH -> BTC
+	inHash := GetRandomTxHash()
+	ethAddr := GetRandomETHAddress()
+	customRefundAddr := GetRandomETHAddress()
+	btcAddr := GetRandomBTCAddress()
+	// Format: =:ASSET:DESTINATION/REFUND:LIMIT
+	swapMemo := fmt.Sprintf("=:BTC.BTC:%s/%s", btcAddr.String(), customRefundAddr.String())
+
+	originalTx := common.Tx{
+		ID:          inHash,
+		Chain:       common.ETHChain,
+		FromAddress: ethAddr,
+		ToAddress:   GetRandomETHAddress(),
+		Coins:       common.Coins{common.NewCoin(common.ETHAsset, cosmos.NewUint(10*common.One))},
+		Memo:        swapMemo,
+		Gas:         common.Gas{common.NewCoin(common.ETHAsset, cosmos.NewUint(1000000))},
+	}
+
+	observedTx := ObservedTx{
+		Tx:             originalTx,
+		Status:         common.Status_done,
+		OutHashes:      nil,
+		BlockHeight:    ctx.BlockHeight(),
+		Signers:        []string{na.NodeAddress.String()},
+		ObservedPubKey: vault.PubKey,
+		FinaliseHeight: ctx.BlockHeight(),
+	}
+
+	voter := NewObservedTxVoter(inHash, []ObservedTx{observedTx})
+	voter.FinalisedHeight = ctx.BlockHeight()
+	voter.Tx = observedTx
+	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+
+	// Create the failed outbound
+	txOutItem := TxOutItem{
+		Chain:       common.BTCChain,
+		InHash:      inHash,
+		VaultPubKey: na.PubKeySet.Secp256k1,
+		ToAddress:   btcAddr,
+		Coin:        common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One)),
+		Memo:        fmt.Sprintf("OUT:%s", inHash.String()),
+	}
+
+	memo, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), txOutItem.Memo)
+	c.Assert(err, IsNil)
+
+	// Call sendFailedOutboundToTreasury
+	slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
+	err = slasher.sendFailedOutboundToTreasury(ctx, mgr, txOutItem, vault, memo)
+	c.Assert(err, IsNil)
+
+	// Verify the reverse swap uses the custom refund address
+	hasSwap := false
+	var queuedSwap MsgSwap
+
+	swapQueueItems := mgr.Keeper().GetSwapQueueIterator(ctx)
+	for ; swapQueueItems.Valid(); swapQueueItems.Next() {
+		var msg MsgSwap
+		if err := mgr.Keeper().Cdc().Unmarshal(swapQueueItems.Value(), &msg); err == nil {
+			hasSwap = true
+			queuedSwap = msg
+			break
+		}
+	}
+	swapQueueItems.Close()
+
+	if !hasSwap {
+		advSwapQueueItems := mgr.Keeper().GetAdvSwapQueueItemIterator(ctx)
+		for ; advSwapQueueItems.Valid(); advSwapQueueItems.Next() {
+			var msg MsgSwap
+			if err := mgr.Keeper().Cdc().Unmarshal(advSwapQueueItems.Value(), &msg); err == nil {
+				hasSwap = true
+				queuedSwap = msg
+				break
+			}
+		}
+		advSwapQueueItems.Close()
+	}
+
+	c.Assert(hasSwap, Equals, true, Commentf("Expected reverse swap to be queued"))
+	c.Assert(queuedSwap.Destination.Equals(customRefundAddr), Equals, true,
+		Commentf("Reverse swap should use custom refund address"))
+}
+
+func (s *SlashingSuite) TestReverseSwapFallbackToTreasury(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	// Setup a node and vault
+	na := GetRandomValidatorNode(NodeActive)
+	c.Assert(mgr.Keeper().SetNodeAccount(ctx, na), IsNil)
+
+	vault := GetRandomVault()
+	vault.Type = AsgardVault
+	vault.Status = types2.VaultStatus_ActiveVault
+	vault.PubKey = na.PubKeySet.Secp256k1
+	vault.Membership = []string{na.PubKeySet.Secp256k1.String()}
+	vault.Coins = common.NewCoins(
+		common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One)),
+	)
+	c.Assert(mgr.Keeper().SetVault(ctx, vault), IsNil)
+
+	// Setup only BTC pool (no ETH pool for reverse swap)
+	btcPool := NewPool()
+	btcPool.Asset = common.BTCAsset
+	btcPool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	btcPool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	btcPool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, btcPool), IsNil)
+
+	// Create failed outbound WITHOUT an original observed tx
+	// This simulates a case where we can't retrieve the original transaction
+	inHash := GetRandomTxHash()
+	txOutItem := TxOutItem{
+		Chain:       common.BTCChain,
+		InHash:      inHash,
+		VaultPubKey: na.PubKeySet.Secp256k1,
+		ToAddress:   GetRandomBTCAddress(),
+		Coin:        common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One)),
+		Memo:        fmt.Sprintf("OUT:%s", inHash.String()),
+	}
+
+	memo, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), txOutItem.Memo)
+	c.Assert(err, IsNil)
+
+	// Call sendFailedOutboundToTreasury - should fall back to treasury since no original tx
+	slasher := newSlasher(mgr.Keeper(), mgr.EventMgr())
+	err = slasher.sendFailedOutboundToTreasury(ctx, mgr, txOutItem, vault, memo)
+	c.Assert(err, IsNil)
+
+	// Verify a treasury recovery swap was queued (BTC -> RUNE to treasury)
+	hasSwap := false
+	var queuedSwap MsgSwap
+
+	swapQueueItems := mgr.Keeper().GetSwapQueueIterator(ctx)
+	for ; swapQueueItems.Valid(); swapQueueItems.Next() {
+		var msg MsgSwap
+		if err := mgr.Keeper().Cdc().Unmarshal(swapQueueItems.Value(), &msg); err == nil {
+			hasSwap = true
+			queuedSwap = msg
+			break
+		}
+	}
+	swapQueueItems.Close()
+
+	if !hasSwap {
+		advSwapQueueItems := mgr.Keeper().GetAdvSwapQueueItemIterator(ctx)
+		for ; advSwapQueueItems.Valid(); advSwapQueueItems.Next() {
+			var msg MsgSwap
+			if err := mgr.Keeper().Cdc().Unmarshal(advSwapQueueItems.Value(), &msg); err == nil {
+				hasSwap = true
+				queuedSwap = msg
+				break
+			}
+		}
+		advSwapQueueItems.Close()
+	}
+
+	c.Assert(hasSwap, Equals, true, Commentf("Expected treasury recovery swap to be queued"))
+	c.Assert(queuedSwap.TargetAsset.Equals(common.RuneAsset()), Equals, true,
+		Commentf("Treasury recovery should swap to RUNE"))
+	c.Assert(queuedSwap.Destination.Equals(common.TreasuryAddress), Equals, true,
+		Commentf("Treasury recovery should send to treasury address"))
 }

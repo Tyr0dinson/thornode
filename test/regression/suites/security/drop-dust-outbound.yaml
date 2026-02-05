@@ -11,7 +11,7 @@ count: 1
 type: tx-deposit
 signer: {{ addr_thor_fox }}
 coins:
-  - amount: "20000000"
+  - amount: "4000000"
     asset: "rune"
 memo: "=:BTC.BTC:{{ addr_btc_fox }}"
 ---
@@ -44,7 +44,7 @@ signer: {{ addr_thor_cat }}
 coins:
   - amount: "0"
     asset: "rune"
-memo: "-:BTC.BTC:5001"
+memo: "-:BTC.BTC:4999"
 ---
 type: create-blocks
 count: 1
@@ -66,7 +66,8 @@ type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
 asserts:
   - .|length == 1
-  - .[0]|.coin.amount|tonumber == 49982000-6500
+  # ${DROPPED=8999} is the amount from the "dropping gas asset output below dust threshold" log
+  - .[0]|.coin.amount|tonumber == 49990000-${DROPPED}
 ---
 ########################################################################################
 # vault will have more than pool

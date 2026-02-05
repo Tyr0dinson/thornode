@@ -8,7 +8,7 @@ import (
 
 var _ WasmManager = &DummyWasmManager{}
 
-// DummyWasmManager is VCUR implementation of slasher
+// DummyWasmManager is current implementation of slasher
 type DummyWasmManager struct {
 	wasmtypes.UnimplementedMsgServer
 }
@@ -66,6 +66,18 @@ func (s *DummyWasmManager) MigrateContract(ctx cosmos.Context,
 func (s *DummyWasmManager) SudoContract(ctx cosmos.Context,
 	contractAddress, caller sdk.AccAddress,
 	msg []byte,
+) ([]byte, error) {
+	return nil, nil
+}
+
+func (s *DummyWasmManager) UpdateAdmin(ctx cosmos.Context,
+	contractAddress, sender, newAdmin sdk.AccAddress,
+) ([]byte, error) {
+	return nil, nil
+}
+
+func (s *DummyWasmManager) ClearAdmin(ctx cosmos.Context,
+	contractAddress, sender sdk.AccAddress,
 ) ([]byte, error) {
 	return nil, nil
 }

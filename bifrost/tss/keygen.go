@@ -49,6 +49,7 @@ func NewTssKeyGen(keys *thorclient.Keys, server *tss.TssServer, bridge thorclien
 
 func (kg *KeyGen) getVersion() semver.Version {
 	requestTime := time.Now()
+	// analyze-ignore(float-comparison)
 	if !kg.currentVersion.Equals(semver.Version{}) && requestTime.Sub(kg.lastCheck).Seconds() < constants.ThorchainBlockTime.Seconds() {
 		return kg.currentVersion
 	}
@@ -128,6 +129,32 @@ func (kg *KeyGen) GenerateNewKey(keygenBlockHeight int64, pKeys common.PubKeys) 
 		panic("tss keygen timeout")
 	}
 
+	// Handle KeygenAllAlgo error first, before processing individual responses
+	if err != nil {
+		// Create blame from the error or use the first response's blame if available
+		var b types.Blame
+		if len(responses) > 0 && responses[0].Blame.AlreadyBlame() {
+			// Use the blame from the first response if available
+			b = types.Blame{
+				FailReason: responses[0].Blame.FailReason,
+				IsUnicast:  responses[0].Blame.IsUnicast,
+				Round:      responses[0].Blame.Round,
+				BlameNodes: make([]types.Node, len(responses[0].Blame.BlameNodes)),
+			}
+			for i, n := range responses[0].Blame.BlameNodes {
+				b.BlameNodes[i].Pubkey = n.Pubkey
+				b.BlameNodes[i].BlameData = n.BlameData
+				b.BlameNodes[i].BlameSignature = n.BlameSignature
+			}
+		} else {
+			// Create a generic blame with the error message
+			b.FailReason = err.Error()
+		}
+		blame = append(blame, b)
+		return common.EmptyPubKeySet, blame, fmt.Errorf("fail to keygen: %w", err)
+	}
+
+	// Process individual response blames (for cases where KeygenAllAlgo succeeded but individual algos had issues)
 	for _, resp := range responses {
 		// copy blame to our own struct
 		b := types.Blame{
@@ -142,19 +169,18 @@ func (kg *KeyGen) GenerateNewKey(keygenBlockHeight int64, pKeys common.PubKeys) 
 			b.BlameNodes[i].BlameSignature = n.BlameSignature
 		}
 
-		if err != nil {
-			// the resp from kg.server.Keygen will not be nil
-			if b.IsEmpty() {
-				b.FailReason = err.Error()
-			}
+		// Only add blame if it contains actual blame information
+		if !b.IsEmpty() {
 			blame = append(blame, b)
 		}
 	}
 
+	// If there were any individual response blames, return error
 	if len(blame) > 0 {
-		return common.EmptyPubKeySet, blame, fmt.Errorf("fail to keygen :%w", err)
+		return common.EmptyPubKeySet, blame, fmt.Errorf("fail to keygen: individual algorithm failures")
 	}
 
+	// Extract public keys from successful responses
 	var ecdsaPubKey common.PubKey
 	var eddsaPubKey common.PubKey
 	for _, resp := range responses {
@@ -172,6 +198,14 @@ func (kg *KeyGen) GenerateNewKey(keygenBlockHeight int64, pKeys common.PubKeys) 
 				return common.EmptyPubKeySet, blame, fmt.Errorf("fail to create EDDSA PubKey: %w", err)
 			}
 		}
+	}
+
+	// Ensure both key types were generated
+	if ecdsaPubKey.IsEmpty() {
+		return common.EmptyPubKeySet, blame, fmt.Errorf("ECDSA PubKey not generated")
+	}
+	if eddsaPubKey.IsEmpty() {
+		return common.EmptyPubKeySet, blame, fmt.Errorf("EDDSA PubKey not generated")
 	}
 
 	return common.NewPubKeySet(ecdsaPubKey, eddsaPubKey), blame, nil

@@ -46,12 +46,7 @@ func (r *RouterUpgradeController) getChainOldAndNewRouters(chain common.Chain) (
 
 // getRouterChains gets the chains that have routers for the current version
 func (r *RouterUpgradeController) getRouterChains(version semver.Version) ([]common.Chain, error) {
-	switch {
-	case version.GTE(semver.MustParse("3.1.0")):
-		return []common.Chain{common.ETHChain, common.AVAXChain, common.BSCChain, common.BASEChain}, nil
-	default:
-		return nil, fmt.Errorf("invalid version %s", version.String())
-	}
+	return []common.Chain{common.ETHChain, common.AVAXChain, common.BSCChain, common.BASEChain}, nil
 }
 
 // upgradeContract updates a chain's router in the KVStore if needed
@@ -115,7 +110,7 @@ func (r *RouterUpgradeController) upgradeContract(ctx cosmos.Context, version se
 		// Unset upgrade router mimir
 		err = r.mgr.Keeper().DeleteMimir(ctx, mimirKey)
 		if err != nil {
-			ctx.Logger().Error("fail to unset router upgrade mimir", "chain", chain.String(), "error", err)
+			ctx.Logger().Debug("fail to unset router upgrade mimir", "chain", chain.String(), "error", err)
 		}
 	}
 

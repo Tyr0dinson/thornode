@@ -16,14 +16,14 @@ import (
 
 // Pool struct for Pool
 type Pool struct {
-	Asset string `json:"asset"`
-	ShortCode *string `json:"short_code,omitempty"`
-	Status string `json:"status"`
-	Decimals *int64 `json:"decimals,omitempty"`
-	PendingInboundAsset string `json:"pending_inbound_asset"`
-	PendingInboundRune string `json:"pending_inbound_rune"`
-	BalanceAsset string `json:"balance_asset"`
-	BalanceRune string `json:"balance_rune"`
+	Asset               string  `json:"asset"`
+	ShortCode           *string `json:"short_code,omitempty"`
+	Status              string  `json:"status"`
+	Decimals            *int64  `json:"decimals,omitempty"`
+	PendingInboundAsset string  `json:"pending_inbound_asset"`
+	PendingInboundRune  string  `json:"pending_inbound_rune"`
+	BalanceAsset        string  `json:"balance_asset"`
+	BalanceRune         string  `json:"balance_rune"`
 	// the USD (TOR) price of the asset in 1e8
 	AssetTorPrice string `json:"asset_tor_price"`
 	// the total pool units, this is the sum of LP and synth units
@@ -46,21 +46,21 @@ type Pool struct {
 	SynthMintPaused bool `json:"synth_mint_paused"`
 	// the amount of synth supply remaining before the current max supply is reached
 	SynthSupplyRemaining string `json:"synth_supply_remaining"`
-	// the amount of collateral collects for loans
-	LoanCollateral string `json:"loan_collateral"`
-	// the amount of remaining collateral collects for loans
-	LoanCollateralRemaining string `json:"loan_collateral_remaining"`
-	// the current loan collateralization ratio
-	LoanCr string `json:"loan_cr"`
 	// the depth of the derived virtual pool relative to L1 pool (in basis points)
 	DerivedDepthBps string `json:"derived_depth_bps"`
+	// indicates if the pool can be used for swaps
+	TradingHalted *bool `json:"trading_halted,omitempty"`
+	// 24h volume in asset
+	VolumeAsset *string `json:"volume_asset,omitempty"`
+	// 24h volume in rune
+	VolumeRune *string `json:"volume_rune,omitempty"`
 }
 
 // NewPool instantiates a new Pool object
 // This constructor will assign default values to properties that have it defined,
 // and makes sure properties required by API are set, but the set of arguments
 // will change when the set of required properties is changed
-func NewPool(asset string, status string, pendingInboundAsset string, pendingInboundRune string, balanceAsset string, balanceRune string, assetTorPrice string, poolUnits string, lPUnits string, synthUnits string, synthSupply string, saversDepth string, saversUnits string, saversFillBps string, saversCapacityRemaining string, synthMintPaused bool, synthSupplyRemaining string, loanCollateral string, loanCollateralRemaining string, loanCr string, derivedDepthBps string) *Pool {
+func NewPool(asset string, status string, pendingInboundAsset string, pendingInboundRune string, balanceAsset string, balanceRune string, assetTorPrice string, poolUnits string, lPUnits string, synthUnits string, synthSupply string, saversDepth string, saversUnits string, saversFillBps string, saversCapacityRemaining string, synthMintPaused bool, synthSupplyRemaining string, derivedDepthBps string) *Pool {
 	this := Pool{}
 	this.Asset = asset
 	this.Status = status
@@ -79,9 +79,6 @@ func NewPool(asset string, status string, pendingInboundAsset string, pendingInb
 	this.SaversCapacityRemaining = saversCapacityRemaining
 	this.SynthMintPaused = synthMintPaused
 	this.SynthSupplyRemaining = synthSupplyRemaining
-	this.LoanCollateral = loanCollateral
-	this.LoanCollateralRemaining = loanCollateralRemaining
-	this.LoanCr = loanCr
 	this.DerivedDepthBps = derivedDepthBps
 	return &this
 }
@@ -566,78 +563,6 @@ func (o *Pool) SetSynthSupplyRemaining(v string) {
 	o.SynthSupplyRemaining = v
 }
 
-// GetLoanCollateral returns the LoanCollateral field value
-func (o *Pool) GetLoanCollateral() string {
-	if o == nil {
-		var ret string
-		return ret
-	}
-
-	return o.LoanCollateral
-}
-
-// GetLoanCollateralOk returns a tuple with the LoanCollateral field value
-// and a boolean to check if the value has been set.
-func (o *Pool) GetLoanCollateralOk() (*string, bool) {
-	if o == nil {
-		return nil, false
-	}
-	return &o.LoanCollateral, true
-}
-
-// SetLoanCollateral sets field value
-func (o *Pool) SetLoanCollateral(v string) {
-	o.LoanCollateral = v
-}
-
-// GetLoanCollateralRemaining returns the LoanCollateralRemaining field value
-func (o *Pool) GetLoanCollateralRemaining() string {
-	if o == nil {
-		var ret string
-		return ret
-	}
-
-	return o.LoanCollateralRemaining
-}
-
-// GetLoanCollateralRemainingOk returns a tuple with the LoanCollateralRemaining field value
-// and a boolean to check if the value has been set.
-func (o *Pool) GetLoanCollateralRemainingOk() (*string, bool) {
-	if o == nil {
-		return nil, false
-	}
-	return &o.LoanCollateralRemaining, true
-}
-
-// SetLoanCollateralRemaining sets field value
-func (o *Pool) SetLoanCollateralRemaining(v string) {
-	o.LoanCollateralRemaining = v
-}
-
-// GetLoanCr returns the LoanCr field value
-func (o *Pool) GetLoanCr() string {
-	if o == nil {
-		var ret string
-		return ret
-	}
-
-	return o.LoanCr
-}
-
-// GetLoanCrOk returns a tuple with the LoanCr field value
-// and a boolean to check if the value has been set.
-func (o *Pool) GetLoanCrOk() (*string, bool) {
-	if o == nil {
-		return nil, false
-	}
-	return &o.LoanCr, true
-}
-
-// SetLoanCr sets field value
-func (o *Pool) SetLoanCr(v string) {
-	o.LoanCr = v
-}
-
 // GetDerivedDepthBps returns the DerivedDepthBps field value
 func (o *Pool) GetDerivedDepthBps() string {
 	if o == nil {
@@ -660,6 +585,102 @@ func (o *Pool) GetDerivedDepthBpsOk() (*string, bool) {
 // SetDerivedDepthBps sets field value
 func (o *Pool) SetDerivedDepthBps(v string) {
 	o.DerivedDepthBps = v
+}
+
+// GetTradingHalted returns the TradingHalted field value if set, zero value otherwise.
+func (o *Pool) GetTradingHalted() bool {
+	if o == nil || o.TradingHalted == nil {
+		var ret bool
+		return ret
+	}
+	return *o.TradingHalted
+}
+
+// GetTradingHaltedOk returns a tuple with the TradingHalted field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *Pool) GetTradingHaltedOk() (*bool, bool) {
+	if o == nil || o.TradingHalted == nil {
+		return nil, false
+	}
+	return o.TradingHalted, true
+}
+
+// HasTradingHalted returns a boolean if a field has been set.
+func (o *Pool) HasTradingHalted() bool {
+	if o != nil && o.TradingHalted != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetTradingHalted gets a reference to the given bool and assigns it to the TradingHalted field.
+func (o *Pool) SetTradingHalted(v bool) {
+	o.TradingHalted = &v
+}
+
+// GetVolumeAsset returns the VolumeAsset field value if set, zero value otherwise.
+func (o *Pool) GetVolumeAsset() string {
+	if o == nil || o.VolumeAsset == nil {
+		var ret string
+		return ret
+	}
+	return *o.VolumeAsset
+}
+
+// GetVolumeAssetOk returns a tuple with the VolumeAsset field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *Pool) GetVolumeAssetOk() (*string, bool) {
+	if o == nil || o.VolumeAsset == nil {
+		return nil, false
+	}
+	return o.VolumeAsset, true
+}
+
+// HasVolumeAsset returns a boolean if a field has been set.
+func (o *Pool) HasVolumeAsset() bool {
+	if o != nil && o.VolumeAsset != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetVolumeAsset gets a reference to the given string and assigns it to the VolumeAsset field.
+func (o *Pool) SetVolumeAsset(v string) {
+	o.VolumeAsset = &v
+}
+
+// GetVolumeRune returns the VolumeRune field value if set, zero value otherwise.
+func (o *Pool) GetVolumeRune() string {
+	if o == nil || o.VolumeRune == nil {
+		var ret string
+		return ret
+	}
+	return *o.VolumeRune
+}
+
+// GetVolumeRuneOk returns a tuple with the VolumeRune field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *Pool) GetVolumeRuneOk() (*string, bool) {
+	if o == nil || o.VolumeRune == nil {
+		return nil, false
+	}
+	return o.VolumeRune, true
+}
+
+// HasVolumeRune returns a boolean if a field has been set.
+func (o *Pool) HasVolumeRune() bool {
+	if o != nil && o.VolumeRune != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetVolumeRune gets a reference to the given string and assigns it to the VolumeRune field.
+func (o *Pool) SetVolumeRune(v string) {
+	o.VolumeRune = &v
 }
 
 func (o Pool) MarshalJSON_deprecated() ([]byte, error) {
@@ -722,16 +743,16 @@ func (o Pool) MarshalJSON_deprecated() ([]byte, error) {
 		toSerialize["synth_supply_remaining"] = o.SynthSupplyRemaining
 	}
 	if true {
-		toSerialize["loan_collateral"] = o.LoanCollateral
-	}
-	if true {
-		toSerialize["loan_collateral_remaining"] = o.LoanCollateralRemaining
-	}
-	if true {
-		toSerialize["loan_cr"] = o.LoanCr
-	}
-	if true {
 		toSerialize["derived_depth_bps"] = o.DerivedDepthBps
+	}
+	if o.TradingHalted != nil {
+		toSerialize["trading_halted"] = o.TradingHalted
+	}
+	if o.VolumeAsset != nil {
+		toSerialize["volume_asset"] = o.VolumeAsset
+	}
+	if o.VolumeRune != nil {
+		toSerialize["volume_rune"] = o.VolumeRune
 	}
 	return json.Marshal(toSerialize)
 }
@@ -771,5 +792,3 @@ func (v *NullablePool) UnmarshalJSON(src []byte) error {
 	v.isSet = true
 	return json.Unmarshal(src, &v.value)
 }
-
-

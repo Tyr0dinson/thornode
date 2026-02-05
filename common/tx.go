@@ -2,9 +2,11 @@ package common
 
 import (
 	"crypto/sha256"
+	"encoding/binary"
 	"errors"
 	"fmt"
-	"math/big"
+	"math"
+	"regexp"
 	"strings"
 
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -19,11 +21,24 @@ type (
 	TxIDs []TxID
 )
 
-// BlankTxID represent blank
-var BlankTxID = TxID("0000000000000000000000000000000000000000000000000000000000000000")
+var (
+	// BlankTxID represent blank
+	BlankTxID = TxID("0000000000000000000000000000000000000000000000000000000000000000")
+
+	regexIsCosmosIndexed = regexp.MustCompile(`^[0-9a-fA-F]{64}-[0-9]+$`)
+)
 
 // NewTxID parse the input hash as TxID
 func NewTxID(hash string) (TxID, error) {
+	// for cosmos tx hash with appended id
+	// eg: DDFB48D1A6084FD41FE1D37BB5A950234F4AED3CF8036AED12633389BDC37DB9-1
+	if len(hash) > 64 {
+		// TODO: check if regex is much overhead
+		if regexIsCosmosIndexed.MatchString(hash) {
+			return TxID(hash), nil
+		}
+	}
+
 	switch len(hash) {
 	case 64:
 		// do nothing
@@ -51,13 +66,19 @@ func (tx TxID) Int64() int64 {
 	if tx.IsEmpty() {
 		return 0
 	}
-	last8Chars := tx.String()[len(tx)-8:]
-	// using last8 chars to prevent negative int64
-	val, success := new(big.Int).SetString(last8Chars, 16)
-	if !success {
-		panic("Failed to convert")
+
+	s := tx.String()
+	if len(s) < 8 {
+		panic("tx id too short: " + s)
 	}
-	return val.Int64()
+
+	b := []byte(s)
+	last := b[len(b)-8:]
+
+	n := binary.BigEndian.Uint64(last)
+	n &= math.MaxInt64 // ensure non-negative
+
+	return int64(n)
 }
 
 // IsEmpty return true when the tx represent empty string
@@ -72,15 +93,6 @@ func (tx TxID) IsBlank() bool {
 // String implement fmt.Stringer
 func (tx TxID) String() string {
 	return string(tx)
-}
-
-// Reverse returns a reversed version of the TxID
-func (tx TxID) Reverse() TxID {
-	t := make([]rune, len(tx))
-	for i := 0; i < len(tx); i++ {
-		t[i] = rune(tx[len(tx)-1-i])
-	}
-	return TxID(string(t))
 }
 
 // Txs a list of Tx

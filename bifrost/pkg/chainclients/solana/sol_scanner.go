@@ -1,7 +1,6 @@
 package solana
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
@@ -16,6 +15,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"github.com/syndtr/goleveldb/leveldb"
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
@@ -33,9 +33,11 @@ import (
 )
 
 const (
-	BaseFeePerSigLamports = 5000 // "Base" fee per signature of a transaction
+	baseFeePerSigLamports = 5000 // "Base" fee per signature of a transaction
 
-	NetFeeUpdateInterval = 100 // update network fee every 100 slots
+	transactionQueryLimit = 1000 // maximum number of transactions to query in a single request
+
+	maxConcurrentTxQueries = 5 // maximum number of concurrent tx queries to the RPC node
 )
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -49,6 +51,7 @@ type SOLScanner struct {
 	m                  *metrics.Metrics
 	errCounter         *prometheus.CounterVec
 	solRpc             *rpc.SolRPC
+	pubKeyMgr          pubkeymanager.PubKeyValidator
 	bridge             thorclient.ThorchainBridge
 	solvencyReporter   shtypes.SolvencyReporter
 	signerCacheManager *signercache.CacheManager
@@ -78,8 +81,18 @@ type SOLScanner struct {
 	stopChan chan struct{}
 
 	// state for if we've successfully processed the initial height
-	initialHeight map[string]struct{}
-	lastHeight    uint64
+	initialHeight     map[string]struct{}
+	lastHeight        uint64
+	lastHeightMu      sync.RWMutex
+	vaultScanStatuses map[string]vaultScanStatus
+
+	isChainPaused  bool
+	lastMimirCheck time.Time
+}
+
+type vaultScanStatus struct {
+	lastSig  string
+	lastSlot uint64
 }
 
 // NewSOLScanner create a new instance of SOLScanner.
@@ -112,6 +125,7 @@ func NewSOLScanner(
 		db:                 storage,
 		m:                  m,
 		solRpc:             rpc,
+		pubKeyMgr:          pubkeyMgr,
 		bridge:             bridge,
 		solvencyReporter:   solvencyReporter,
 		signerCacheManager: signerCacheManager,
@@ -121,12 +135,13 @@ func NewSOLScanner(
 		stopChan:           stopChan,
 		healthy:            &atomic.Bool{},
 		initialHeight:      make(map[string]struct{}),
+		vaultScanStatuses:  map[string]vaultScanStatus{},
 	}, nil
 }
 
 func (s *SOLScanner) Start() {
-	lastMimirCheck := time.Now().Add(-constants.ThorchainBlockTime)
-	isChainPaused := false
+	s.lastMimirCheck = time.Now().Add(-constants.ThorchainBlockTime)
+	s.isChainPaused = false
 
 	initialSlot, err := s.solRpc.GetSlot()
 	if err != nil {
@@ -134,15 +149,22 @@ func (s *SOLScanner) Start() {
 		return
 	}
 
-	lastHeight, _ := s.db.GetScanPos()
+	lastHeight, err := s.db.GetScanPos()
+	// if err is ErrNotFound, then we set to 0.
+	if err != nil && !errors.Is(err, leveldb.ErrNotFound) {
+		s.logger.Error().Err(err).Msg("failed to get last scan pos")
+		return
+	}
+	s.lastHeightMu.Lock()
 	s.lastHeight = lastHeight
+	s.lastHeightMu.Unlock()
 
 	// initialize the network fee slot multiple to the closest multiple of NetFeeUpdateInterval beneath the initial slot
-	s.netFeeSlotMultiple = initialSlot / NetFeeUpdateInterval
+	s.netFeeSlotMultiple = initialSlot / s.cfg.Solana.FeeUpdateInterval
 
 	// attempt to initialize the network fee. In simtest environment, we will not have enough tx history
 	// so the initial netfee will be sent upon first tx(s) observation
-	if err := s.checkRecentBlocksAndUpdateNetworkFee(s.netFeeSlotMultiple * NetFeeUpdateInterval); err != nil {
+	if err := s.checkRecentBlocksAndUpdateNetworkFee(s.netFeeSlotMultiple * s.cfg.Solana.FeeUpdateInterval); err != nil {
 		s.logger.Error().Err(err).Msg("failed to check recent blocks and update network fee")
 	}
 
@@ -152,172 +174,213 @@ func (s *SOLScanner) Start() {
 			s.logger.Info().Msg("stopping SOL scanner")
 			return
 		default:
-			if time.Since(lastMimirCheck) >= constants.ThorchainBlockTime {
-				isChainPaused = blockscanner.IsChainPaused(s.cfg, s.logger, s.bridge)
-				lastMimirCheck = time.Now()
-			}
-
-			if isChainPaused {
-				s.healthy.Store(false)
-				time.Sleep(constants.ThorchainBlockTime)
-				continue
-			}
-
-			vaults, err := s.bridge.GetAsgards()
-			if err != nil {
-				s.logger.Error().Err(err).Msg("failed to get vaults")
-				time.Sleep(time.Second)
-				continue
-			}
-
-			var vaultAddrs []string
-			for _, vault := range vaults {
-				if !vault.PubKeyEddsa.IsEmpty() {
-					vaultAddrSol, err := vault.PubKeyEddsa.GetAddress(common.SOLChain)
-					if err != nil {
-						s.logger.Error().Err(err).Msg("failed to get vault address")
-						continue
-					}
-					vaultAddrs = append(vaultAddrs, vaultAddrSol.String())
-				}
-			}
-
-			currentSlot, err := s.solRpc.GetSlot()
-			if err != nil {
-				s.logger.Error().Err(err).Msg("failed to get current slot")
-				time.Sleep(time.Second)
-				continue
-			}
-
-			if currentSlot > (s.netFeeSlotMultiple+1)*NetFeeUpdateInterval {
-				_, thorRate, err := s.bridge.GetNetworkFee(common.SOLChain)
-				if err != nil {
-					s.logger.Error().Err(err).Msg("failed to get network fee")
-				} else {
-					s.lastFeeRate = thorRate
-				}
-
-				// we crossed the threshold for updating the network fee, so check the last N blocks
-				//  up to the rounded slot for deterministic behavior across nodes.
-				s.netFeeSlotMultiple = currentSlot / NetFeeUpdateInterval
-				if err := s.checkRecentBlocksAndUpdateNetworkFee(s.netFeeSlotMultiple * NetFeeUpdateInterval); err != nil {
-					s.logger.Error().Err(err).Msg("failed to check recent blocks and update network fee")
-				}
-			}
-
-			lastSlot, _ := s.db.GetScanPos()
-
-			if currentSlot == lastSlot {
-				time.Sleep(200 * time.Millisecond)
-				continue
-			}
-
-			var wg sync.WaitGroup
-			wg.Add(len(vaultAddrs))
-
-			healthy := true
-			var mu sync.Mutex
-			setUnhealthy := func() {
-				mu.Lock()
-				defer mu.Unlock()
-				healthy = false
-			}
-
-			newLastSigs := make([]string, len(vaultAddrs))
-			successfulQueries := make([]bool, len(vaultAddrs))
-			countTxs := make([]int, len(vaultAddrs))
-			vaultLastSigs := make([]string, len(vaultAddrs))
-			for i, vaultAddr := range vaultAddrs {
-				lastSig, vaultLastSlot, _ := s.db.GetScanStatus(vaultAddr)
-				vaultLastSigs[i] = lastSig
-
-				var minContextSlot uint64
-				var queryLastSig string
-				if _, ok := s.initialHeight[vaultAddr]; ok || s.cfg.StartBlockHeight == 0 {
-					minContextSlot = vaultLastSlot
-					queryLastSig = lastSig
-				} else {
-					minContextSlot = uint64(s.cfg.StartBlockHeight)
-					s.logger.Info().
-						Str("vault", vaultAddr).
-						Uint64("minContextSlot", minContextSlot).
-						Msg("Initial height is set, querying all rpc node tx history")
-					queryLastSig = ""
-					// NOTE: this can observe txs that we already observed in the past,
-					// because minContextSlot does not set a minimum bound for the query,
-					// it only ensures that minContextSlot is in the history on the rpc node.
-				}
-
-				go s.scanVault(vaultAddr, i, queryLastSig, minContextSlot, setUnhealthy, countTxs, successfulQueries, newLastSigs, &wg)
-			}
-			wg.Wait()
-
-			s.healthy.Store(healthy)
-
-			var numTxs int
-
-			for i, vaultAddr := range vaultAddrs {
-				txCount := countTxs[i]
-
-				// increment tx counts for this scan iteration and also since last log.
-				numTxs += txCount
-				s.txCount += txCount
-
-				if successfulQueries[i] {
-					// we are up to date as of the current slot, so minContextSlot
-					// can be the current slot for the next call
-
-					// since tx query was successful, we want to update last scanned slot for this vault. We may or may not have queried new txs.
-					// If no txs were queried, we want to retain the last sig from the db.
-					var lastSig string
-					if txCount == 0 {
-						lastSig = vaultLastSigs[i]
-					} else {
-						lastSig = newLastSigs[i]
-					}
-
-					// we have not scanned this vault before, so we mark it as such so that
-					// the cfg.StartBlockHeight is only used for the first successful query.
-					if _, ok := s.initialHeight[vaultAddr]; !ok {
-						s.initialHeight[vaultAddr] = struct{}{}
-					}
-
-					if err := s.db.SetScanStatus(vaultAddr, lastSig, currentSlot); err != nil {
-						s.logger.Error().Err(err).Str("vault", vaultAddr).Msg("failed to set scan status")
-					}
-				}
-			}
-
-			if !s.netFeeInit && numTxs > 0 {
-				// this should really only happen (and is only necessary) in test environments to initialize the network fee,
-				// because we expect to have enough observed txs in the checkRecentBlocksAndUpdateNetworkFee above.
-				s.sendNetworkFeeIfNecessary(currentSlot)
-			}
-			if err = s.solvencyReporter(int64(currentSlot)); err != nil {
-				s.logger.Err(err).Msg("fail to send solvency to THORChain")
-			}
-
-			if (time.Since(s.lastLog) > (5 * time.Second)) || !healthy {
-				s.lastLog = time.Now()
-				s.logger.Info().
-					Uint64("block height", currentSlot).
-					Int("gap", 0).
-					Int("txs", s.txCount).
-					Bool("healthy", healthy).
-					Msg("scan block")
-				s.txCount = 0
-			}
-
-			if lastSlot > 0 {
-				s.m.GetCounter(metrics.TotalBlockScanned).Add(float64(currentSlot - lastSlot))
-			}
-
-			s.lastHeight = currentSlot
-			if err := s.db.SetScanPos(currentSlot); err != nil {
-				s.logger.Error().Err(err).Msg("failed to set scan position")
-			}
+			s.scan()
 		}
 	}
+}
+
+// scan is the main scanning loop for the SOLScanner. It will check if the chain is paused, get the current slot,
+// and then scan for new transactions in the vaults. It will also update the network fee if necessary.min
+func (s *SOLScanner) scan() {
+	if time.Since(s.lastMimirCheck) >= constants.ThorchainBlockTime {
+		s.isChainPaused = blockscanner.IsChainPaused(s.cfg, s.logger, s.bridge)
+		s.lastMimirCheck = time.Now()
+	}
+
+	if s.isChainPaused {
+		s.healthy.Store(false)
+		time.Sleep(constants.ThorchainBlockTime)
+		return
+	}
+
+	var vaultAddrs []string
+	for _, vault := range s.pubKeyMgr.GetAlgoPubKeys(common.SigningAlgoEd25519, s.cfg.Solana.ScanInactiveVaults) {
+		vaultAddrSol, err := vault.GetAddress(common.SOLChain)
+		if err != nil {
+			s.logger.Error().Err(err).Msg("failed to get vault address")
+			continue
+		}
+		vaultAddrs = append(vaultAddrs, vaultAddrSol.String())
+	}
+
+	currentSlot, err := s.solRpc.GetSlot()
+	if err != nil {
+		s.logger.Error().Err(err).Msg("failed to get current slot")
+		time.Sleep(time.Second)
+		return
+	}
+
+	if currentSlot > (s.netFeeSlotMultiple+1)*s.cfg.Solana.FeeUpdateInterval {
+		var thorRate uint64
+		_, thorRate, err = s.bridge.GetNetworkFee(common.SOLChain)
+		if err != nil {
+			s.logger.Error().Err(err).Msg("failed to get network fee")
+		} else {
+			s.lastFeeRate = thorRate
+		}
+
+		// we crossed the threshold for updating the network fee, so check the last N blocks
+		//  up to the rounded slot for deterministic behavior across nodes.
+		s.netFeeSlotMultiple = currentSlot / s.cfg.Solana.FeeUpdateInterval
+		if err = s.checkRecentBlocksAndUpdateNetworkFee(s.netFeeSlotMultiple * s.cfg.Solana.FeeUpdateInterval); err != nil {
+			s.logger.Error().Err(err).Msg("failed to check recent blocks and update network fee")
+		}
+	}
+
+	s.lastHeightMu.RLock()
+	lastSlot := s.lastHeight
+	s.lastHeightMu.RUnlock()
+
+	// skip if rpc slot is behind last scanned slot
+	if currentSlot <= lastSlot {
+		time.Sleep(s.cfg.Solana.ScanInterval)
+		return
+	}
+
+	// coalesce scan to configured scan interval
+	solanaBlockTime := time.Duration(common.SOLChain.ApproximateBlockMilliseconds()) * time.Millisecond
+	lag := time.Duration(currentSlot-lastSlot) * solanaBlockTime
+	if lag < s.cfg.Solana.ScanInterval {
+		time.Sleep(s.cfg.Solana.ScanInterval)
+		return
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(len(vaultAddrs))
+
+	healthy := true
+	var mu sync.Mutex
+	setUnhealthy := func() {
+		mu.Lock()
+		defer mu.Unlock()
+		healthy = false
+	}
+
+	newLastSigs := make([]string, len(vaultAddrs))
+	successfulQueries := make([]bool, len(vaultAddrs))
+	countTxs := make([]int, len(vaultAddrs))
+	vaultLastSigs := make([]string, len(vaultAddrs))
+	for i, vaultAddr := range vaultAddrs {
+		var lastSig string
+		var vaultLastSlot uint64
+		if vss, ok := s.vaultScanStatuses[vaultAddr]; ok {
+			lastSig = vss.lastSig
+			vaultLastSlot = vss.lastSlot
+		} else {
+			lastSig, vaultLastSlot, err = s.db.GetScanStatus(vaultAddr)
+			// if err is ErrNotFound, then we set to "" and 0.
+			if err != nil && !errors.Is(err, leveldb.ErrNotFound) {
+				s.logger.Error().Err(err).Str("vault", vaultAddr).Msg("failed to get vault scan status from db")
+				setUnhealthy()
+				wg.Done()
+				continue
+			}
+			s.vaultScanStatuses[vaultAddr] = vaultScanStatus{
+				lastSig:  lastSig,
+				lastSlot: vaultLastSlot,
+			}
+		}
+		vaultLastSigs[i] = lastSig
+
+		var minContextSlot uint64
+		var queryLastSig string
+		if _, ok := s.initialHeight[vaultAddr]; ok || s.cfg.StartBlockHeight == 0 {
+			minContextSlot = vaultLastSlot
+			queryLastSig = lastSig
+		} else {
+			minContextSlot = uint64(s.cfg.StartBlockHeight)
+			s.logger.Info().
+				Str("vault", vaultAddr).
+				Uint64("minContextSlot", minContextSlot).
+				Msg("Initial height is set, querying all rpc node tx history")
+			queryLastSig = ""
+			// NOTE: this can observe txs that we already observed in the past,
+			// because minContextSlot does not set a minimum bound for the query,
+			// it only ensures that minContextSlot is in the history on the rpc node.
+		}
+
+		go s.scanVault(vaultAddr, i, queryLastSig, minContextSlot, setUnhealthy, countTxs, successfulQueries, newLastSigs, &wg)
+	}
+	wg.Wait()
+
+	s.healthy.Store(healthy)
+
+	var numTxs int
+
+	for i, vaultAddr := range vaultAddrs {
+		txCount := countTxs[i]
+
+		// increment tx counts for this scan iteration and also since last log.
+		numTxs += txCount
+		s.txCount += txCount
+
+		if successfulQueries[i] {
+			// we are up to date as of the current slot, so minContextSlot
+			// can be the current slot for the next call
+
+			// since tx query was successful, we want to update last scanned slot for this vault. We may or may not have queried new txs.
+			// If no txs were queried, we want to retain the last sig from the db.
+			var lastSig string
+			if txCount == 0 {
+				lastSig = vaultLastSigs[i]
+			} else {
+				lastSig = newLastSigs[i]
+			}
+
+			// we have not scanned this vault before, so we mark it as such so that
+			// the cfg.StartBlockHeight is only used for the first successful query.
+			if _, ok := s.initialHeight[vaultAddr]; !ok {
+				s.initialHeight[vaultAddr] = struct{}{}
+			}
+
+			s.vaultScanStatuses[vaultAddr] = vaultScanStatus{
+				lastSig:  lastSig,
+				lastSlot: currentSlot,
+			}
+
+			// update the db in a goroutine, we don't need to block here
+			go func() {
+				if err = s.db.SetScanStatus(vaultAddr, lastSig, currentSlot); err != nil {
+					s.logger.Error().Err(err).Str("vault", vaultAddr).Msg("failed to set vault scan status")
+				}
+			}()
+		}
+	}
+
+	if !s.netFeeInit && numTxs > 0 {
+		// this should really only happen (and is only necessary) in test environments to initialize the network fee,
+		// because we expect to have enough observed txs in the checkRecentBlocksAndUpdateNetworkFee above.
+		s.sendNetworkFeeIfNecessary(currentSlot)
+	}
+	if err = s.solvencyReporter(int64(currentSlot)); err != nil {
+		s.logger.Err(err).Msg("fail to send solvency to THORChain")
+	}
+
+	if (time.Since(s.lastLog) > (5 * time.Second)) || !healthy {
+		s.lastLog = time.Now()
+		s.logger.Info().
+			Uint64("block height", currentSlot).
+			Int("gap", 0).
+			Int("txs", s.txCount).
+			Bool("healthy", healthy).
+			Msg("scan block")
+		s.txCount = 0
+	}
+
+	if lastSlot > 0 {
+		s.m.GetCounter(metrics.TotalBlockScanned).Add(float64(currentSlot - lastSlot))
+	}
+
+	s.lastHeightMu.Lock()
+	s.lastHeight = currentSlot
+	s.lastHeightMu.Unlock()
+
+	// update the db in a goroutine, we don't need to block here
+	go func() {
+		if err := s.db.SetScanPos(currentSlot); err != nil {
+			s.logger.Error().Err(err).Msg("failed to set scan position")
+		}
+	}()
 }
 
 // scanVault scans a vault for new transactions. It will query the RPC node for the vault's
@@ -338,48 +401,72 @@ func (s *SOLScanner) scanVault(
 ) {
 	defer wg.Done()
 
-	res, err := s.solRpc.GetSignaturesForAddressUntil(vaultAddr, minContextSlot, queryLastSig)
-	if err != nil {
-		s.logger.Error().Err(err).Msgf("failed to get signatures for address %s", vaultAddr)
-		setUnhealthy()
-		return
-	}
-
-	if len(res) == 0 {
-		successfulQueries[i] = true
-		s.logger.Debug().Msgf("no new signatures for address %s", vaultAddr)
-		return
-	}
-
-	txCounts[i] = len(res)
-	var eg errgroup.Group
-	for _, sig := range res {
-		sig := sig
-
-		eg.Go(func() error {
-			tx, err := s.solRpc.GetTransaction(sig.Signature)
-			if err != nil {
-				setUnhealthy()
-				return fmt.Errorf("failed to get transaction %s: %w", sig.Signature, err)
-			}
-
-			if tx.Meta.Err != nil {
-				s.logger.Debug().Msgf("transaction %s failed: %s", sig.Signature, tx.Meta.Err)
-				return nil
-			}
-
-			s.globalTxsQueue <- s.getTxIn(sig.Slot, []*rpc.TransactionResult{tx})
-			return nil
+	var totalTxs int
+	var newestSig string
+	before := ""
+	for {
+		res, err := s.solRpc.GetSignaturesForAddressUntil(vaultAddr, rpc.GetSignaturesForAddressUntilParams{
+			Commitment:     "finalized",
+			MinContextSlot: minContextSlot,
+			Before:         before,
+			Until:          queryLastSig,
+			Limit:          transactionQueryLimit,
 		})
-	}
-	if err := eg.Wait(); err != nil {
-		setUnhealthy()
-		s.logger.Error().Err(err).Msgf("failed to process transactions")
-		return
+		if err != nil {
+			s.logger.Error().Err(err).Msgf("failed to get signatures for address %s", vaultAddr)
+			setUnhealthy()
+			return
+		}
+
+		if len(res) == 0 {
+			if totalTxs == 0 {
+				s.logger.Debug().Msgf("no new signatures for address %s", vaultAddr)
+			}
+			break
+		}
+
+		totalTxs += len(res)
+		if newestSig == "" {
+			newestSig = res[0].Signature
+		}
+
+		var eg errgroup.Group
+		// limit the number of concurrent tx queries to the RPC node
+		eg.SetLimit(maxConcurrentTxQueries)
+		for _, sig := range res {
+			eg.Go(func() error {
+				tx, err := s.solRpc.GetTransaction(sig.Signature)
+				if err != nil {
+					setUnhealthy()
+					return fmt.Errorf("failed to get transaction %s: %w", sig.Signature, err)
+				}
+
+				if tx.Meta.Err != nil {
+					s.logger.Debug().Msgf("transaction %s failed: %s", sig.Signature, tx.Meta.Err)
+					return nil
+				}
+
+				s.globalTxsQueue <- s.getTxIn(sig.Slot, []*rpc.TransactionResult{tx})
+				return nil
+			})
+		}
+		if err := eg.Wait(); err != nil {
+			setUnhealthy()
+			s.logger.Error().Err(err).Msgf("failed to process transactions")
+			return
+		}
+
+		if len(res) < transactionQueryLimit {
+			break
+		}
+		before = res[len(res)-1].Signature
 	}
 
 	successfulQueries[i] = true
-	newLastSigs[i] = res[0].Signature
+	txCounts[i] = totalTxs
+	if totalTxs > 0 {
+		newLastSigs[i] = newestSig
+	}
 }
 
 // Since we don't scan all txs in every block, in order to get a good perspective of the network fee
@@ -391,11 +478,11 @@ func (s *SOLScanner) checkRecentBlocksAndUpdateNetworkFee(slot uint64) error {
 	var lastSlot uint64
 
 	var firstSlot uint64
-	if slot > 100 {
-		firstSlot = slot - 100
+	if slot > s.cfg.Solana.FeeSampleSlots {
+		firstSlot = slot - s.cfg.Solana.FeeSampleSlots
 	}
 
-	blocks, err := s.solRpc.GetBlocks(firstSlot, slot)
+	blocks, err := s.solRpc.GetBlockHeights(firstSlot, slot)
 	if err != nil {
 		return fmt.Errorf("failed to get confirmed blocks: %w", err)
 	}
@@ -403,7 +490,8 @@ func (s *SOLScanner) checkRecentBlocksAndUpdateNetworkFee(slot uint64) error {
 	// reverse the blocks to get the most recent first
 	slices.Reverse(blocks)
 
-	for i, b := range blocks {
+	setBlockHash := false
+	for _, b := range blocks {
 		block, err := s.solRpc.GetBlock(b)
 		if err != nil {
 			if strings.Contains(err.Error(), "Block status not yet available for slot") {
@@ -413,15 +501,20 @@ func (s *SOLScanner) checkRecentBlocksAndUpdateNetworkFee(slot uint64) error {
 			s.logger.Error().Err(err).Msg("failed to get block to determine netfee")
 			continue
 		}
-		if i == 0 {
+		if block == nil {
+			s.logger.Debug().Msgf("block %d is nil", b)
+			continue
+		}
+		if !setBlockHash {
 			s.setRecentBlockHash(block.Blockhash)
+			setBlockHash = true
 		}
 		if lastSlot == 0 {
 			lastSlot = b
 		}
 
-		txIn := s.getTxIn(b, block.Transactions)
-		numTxs += len(txIn.TxArray)
+		numTxsInBlock := s.calculateFeeRatesFromTransactions(block.Transactions)
+		numTxs += numTxsInBlock
 
 		if numTxs > s.cfg.GasCacheBlocks {
 			// We have enough transactions to calculate the network fee
@@ -448,7 +541,21 @@ func (s *SOLScanner) GetHeight() (int64, error) {
 
 // ScanHeight returns the current scanned height
 func (s *SOLScanner) ScanHeight() (int64, error) {
-	lastSlot, _ := s.db.GetScanPos()
+	s.lastHeightMu.RLock()
+	lastHeight := s.lastHeight
+	s.lastHeightMu.RUnlock()
+
+	if lastHeight > 0 {
+		return int64(lastHeight), nil
+	}
+
+	// lastHeight not in memory, get from db
+
+	lastSlot, err := s.db.GetScanPos()
+	// if err is ErrNotFound, then we set to 0.
+	if err != nil && !errors.Is(err, leveldb.ErrNotFound) {
+		return -1, err
+	}
 	return int64(lastSlot), nil
 }
 
@@ -539,9 +646,6 @@ func (s *SOLScanner) getTxIn(slot uint64, transactions []*rpc.TransactionResult)
 		ConfirmationRequired: 1, // Assuming 1 confirmation is required
 	}
 
-	// Stores each transaction's fee rate (lamports per signature)
-	txFeeRates := []uint64{}
-
 	for _, txn := range transactions {
 		// Skip transactions with no signatures or no fee
 		if len(txn.Transaction.Signatures) == 0 || txn.Meta.Fee == 0 {
@@ -554,27 +658,6 @@ func (s *SOLScanner) getTxIn(slot uint64, transactions []*rpc.TransactionResult)
 		}
 
 		txIn.TxArray = append(txIn.TxArray, txItem)
-
-		// Calculate the fee rate (lamports per signature)
-		numSigs := uint64(len(txn.Transaction.Signatures))
-		// baseFee := BaseFeePerSigLamports * numSigs
-		feeRate := txn.Meta.Fee / numSigs
-		if feeRate < BaseFeePerSigLamports {
-			feeRate = BaseFeePerSigLamports
-		}
-
-		txFeeRates = append(txFeeRates, feeRate)
-	}
-
-	switch {
-	case len(txFeeRates) == 1:
-		s.feeRateCache = append(s.feeRateCache, txFeeRates[0])
-	case len(txFeeRates) > 1:
-		medianFeeRate := calculateMedian(txFeeRates)
-		s.feeRateCache = append(s.feeRateCache, medianFeeRate)
-	case len(txFeeRates) == 0:
-		// If no transactions in the block, just add the base fee
-		s.feeRateCache = append(s.feeRateCache, BaseFeePerSigLamports)
 	}
 
 	return txIn
@@ -590,12 +673,58 @@ func calculateMedian(arr []uint64) uint64 {
 	return arr[n/2]
 }
 
+// calculateFeeRatesFromTransactions extracts fee rates from transactions for network fee calculation.
+// Unlike getTxIn, this does not validate transactions or filter for THORChain inbounds.
+// It processes ALL transactions in the block to get an accurate network fee measurement.
+func (s *SOLScanner) calculateFeeRatesFromTransactions(transactions []*rpc.TransactionResult) int {
+	txFeeRates := []uint64{}
+
+	for _, txn := range transactions {
+		// skip transactions with no signatures or no fee
+		if len(txn.Transaction.Signatures) == 0 || txn.Meta.Fee == 0 {
+			continue
+		}
+
+		// skip failed transactions
+		if txn.Meta.Err != nil {
+			continue
+		}
+
+		// calculate the fee rate (lamports per signature)
+		numSigs := uint64(len(txn.Transaction.Signatures))
+		feeRate := txn.Meta.Fee / numSigs
+
+		// rate may underestimate in cases like multi-sig transactions, floor to base fee
+		if feeRate < baseFeePerSigLamports {
+			feeRate = baseFeePerSigLamports
+		}
+
+		txFeeRates = append(txFeeRates, feeRate)
+	}
+
+	// update the fee rate cache
+	switch {
+	case len(txFeeRates) == 1:
+		s.feeRateCache = append(s.feeRateCache, txFeeRates[0])
+	case len(txFeeRates) > 1:
+		medianFeeRate := calculateMedian(txFeeRates)
+		s.feeRateCache = append(s.feeRateCache, medianFeeRate)
+	case len(txFeeRates) == 0:
+		// if no transactions in the block, just add the base fee
+		s.feeRateCache = append(s.feeRateCache, baseFeePerSigLamports)
+	}
+
+	return len(txFeeRates)
+}
+
 // Create a TxInItem for a SOL transfer transaction. This function will only return a
-// TxInItem if the transaction contains a transfer of SOL. Otherwise, it will return
-// nil.
+// TxInItem if the transaction contains exactly one SOL transfer instruction to the vault.
+// Otherwise, it will return nil.
 func (s *SOLScanner) getTxInItem(txn *rpc.TransactionResult, blockHeight int64) *stypes.TxInItem {
 	memo := ""
-	netBalanceChange := make(map[string]int64)
+	var transferCount int
+	var fromAccount, toAccount string
+	var amountMoved uint64
 	fee := txn.Meta.Fee
 
 	instructions := txn.Transaction.GetInstructions()
@@ -603,7 +732,7 @@ func (s *SOLScanner) getTxInItem(txn *rpc.TransactionResult, blockHeight int64) 
 	for _, instruction := range instructions {
 		programID := txn.Transaction.GetAccountAtIndex(instruction.ProgramIdIndex)
 
-		// Check if this instruction is the memo
+		// Handle memo
 		if types.MemoProgramID.EqualsString(programID) {
 			memoBytes, err := base58.Decode(instruction.Data)
 			if err == nil {
@@ -611,83 +740,84 @@ func (s *SOLScanner) getTxInItem(txn *rpc.TransactionResult, blockHeight int64) 
 			} else {
 				s.logger.Error().Err(err).Str("memoData", instruction.Data).Msg("Failed to decode memo")
 			}
+			continue
 		}
 
-		// SOL transfers using the systemProgram, so skip if program is something else.
+		// Skip non-SystemProgram instructions
 		if !types.SystemProgramID.EqualsString(programID) {
 			continue
 		}
 
-		// Decode the data
+		// Decode instruction data
 		data, err := base58.Decode(instruction.Data)
 		if err != nil {
 			s.logger.Error().Err(err).Str("data", instruction.Data).Msg("Failed to decode instruction data")
 			continue
 		}
 
-		// Check if the instruction is a transfer
+		// Check for transfer instruction
 		if len(data) >= 1 && data[0] == 2 { // `2` indicates a System Program transfer instruction
+			transferCount++
+			if transferCount > 1 {
+				s.logger.Warn().
+					Int("transferCount", transferCount).
+					Str("txID", txn.Transaction.Signatures[0]).
+					Msg("Rejected transaction with multiple transfer instructions")
+				return nil
+			}
+
 			if len(instruction.Accounts) < 2 {
 				s.logger.Debug().Msg("Instruction does not contain enough accounts for transfer")
-				continue
+				return nil
 			}
-			for i := 0; i < len(instruction.Accounts)-1; i += 2 {
-				if i+1 >= len(instruction.Accounts) {
-					s.logger.Debug().Msg("Index out of range when accessing instruction accounts")
-					continue
-				}
-				fromIdx := instruction.Accounts[i]
-				toIdx := instruction.Accounts[i+1]
-				if fromIdx >= len(txn.Transaction.Message.AccountKeys) || toIdx >= len(txn.Transaction.Message.AccountKeys) {
-					// Account index out of range, meaning the instruction references an account
-					// from an account lookup table. This instruction can be skipped since
-					// transfer instructions must reference accounts in the primary account keys
-					// array
-					continue
-				}
-				fromAccount := txn.Transaction.Message.AccountKeys[fromIdx]
-				toAccount := txn.Transaction.Message.AccountKeys[toIdx]
-				if fromIdx >= len(txn.Meta.PreBalances) || fromIdx >= len(txn.Meta.PostBalances) {
-					// Account index out of range, meaning the instruction references an account
-					// from an account lookup table. This instruction can be skipped since
-					// transfer instructions must reference accounts in the primary account keys
-					// array
-					continue
-				}
-				amountMoved := txn.Meta.PreBalances[fromIdx] - txn.Meta.PostBalances[fromIdx]
 
-				// Adjust amountMoved for fee if the fromAccount is the sender
-				if fromAccount == txn.Transaction.Message.AccountKeys[0] { // Assuming the first account is the fee payer
-					amountMoved -= fee
-				}
+			fromIdx := instruction.Accounts[0]
+			toIdx := instruction.Accounts[1]
+			if fromIdx >= len(txn.Transaction.Message.AccountKeys) || toIdx >= len(txn.Transaction.Message.AccountKeys) {
+				s.logger.Debug().Msg("Account index out of range")
+				return nil
+			}
+			if fromIdx >= len(txn.Meta.PreBalances) || fromIdx >= len(txn.Meta.PostBalances) {
+				s.logger.Debug().Msg("Account index out of range for balances")
+				return nil
+			}
 
-				netBalanceChange[fromAccount] -= int64(amountMoved)
-				netBalanceChange[toAccount] += int64(amountMoved)
+			fromAccount = txn.Transaction.Message.AccountKeys[fromIdx]
+			toAccount = txn.Transaction.Message.AccountKeys[toIdx]
+
+			// verify prebalance is greater than postbalance to avoid underflow
+			if txn.Meta.PreBalances[fromIdx] < txn.Meta.PostBalances[fromIdx] {
+				s.logger.Debug().
+					Str("txid", txn.Transaction.Signatures[0]).
+					Msg("skipping tx with prebalance less than postbalance")
+				return nil
+			}
+
+			amountMoved = txn.Meta.PreBalances[fromIdx] - txn.Meta.PostBalances[fromIdx]
+
+			// Adjust for fee if fromAccount is the fee payer
+			if fromAccount == txn.Transaction.Message.AccountKeys[0] {
+				if amountMoved < fee {
+					s.logger.Debug().
+						Str("txID", txn.Transaction.Signatures[0]).
+						Msg("Amount moved is less than fee; skipping")
+					return nil
+				}
+				amountMoved -= fee
 			}
 		}
 	}
 
-	// Find the net sender and receiver
-	var netSender, netReceiver string
-	var netAmount int64
-	for account, change := range netBalanceChange {
-		if change < 0 {
-			netSender = account
-			netAmount = -change
-		} else if change > 0 {
-			netReceiver = account
-		}
-	}
-
-	// Skip if net SOL movement is 0
-	if netAmount == 0 {
+	// Skip if no valid transfer was found or amount is zero
+	if transferCount == 0 || amountMoved == 0 {
+		s.logger.Debug().
+			Str("txID", txn.Transaction.Signatures[0]).
+			Msg("No valid transfer found or amount is zero")
 		return nil
 	}
 
-	solCoin := common.NewCoin(common.SOLAsset, convertLamportsToTHORChain(netAmount))
-	gasCoin := common.NewCoin(common.SOLAsset, convertLamportsToTHORChain(int64(fee)))
-
-	// set coin decimals
+	solCoin := common.NewCoin(common.SOLAsset, convertLamportsToTHORChain(amountMoved))
+	gasCoin := common.NewCoin(common.SOLAsset, convertLamportsToTHORChain(fee))
 	solCoin.Decimals = 9
 	gasCoin.Decimals = 9
 
@@ -695,8 +825,8 @@ func (s *SOLScanner) getTxInItem(txn *rpc.TransactionResult, blockHeight int64) 
 		BlockHeight: blockHeight,
 		Tx:          txn.Transaction.Signatures[0],
 		Memo:        memo,
-		Sender:      netSender,
-		To:          netReceiver,
+		Sender:      fromAccount,
+		To:          toAccount,
 		Coins:       []common.Coin{solCoin},
 		Gas:         common.Gas{gasCoin},
 	}
@@ -704,17 +834,8 @@ func (s *SOLScanner) getTxInItem(txn *rpc.TransactionResult, blockHeight int64) 
 
 // --------------------------------- helpers ---------------------------------
 
-// Function to convert amountMoved (lamports) to sdk.Uintt
-func convertLamportsToTHORChain(amountMoved int64) sdk.Uint {
-	amountMovedBig := big.NewInt(amountMoved)
-	return sdk.NewUintFromBigInt(amountMovedBig.Quo(amountMovedBig, big.NewInt(10)))
-}
-
-func prettyPrint(data interface{}) {
-	jsonData, err := json.MarshalIndent(data, "", "  ")
-	if err != nil {
-		fmt.Printf("Error pretty printing JSON: %v\n", err)
-		return
-	}
-	fmt.Println(string(jsonData))
+// Function to convert lamports to sdk.Uint
+func convertLamportsToTHORChain(lamports uint64) sdk.Uint {
+	lamportsBig := new(big.Int).SetUint64(lamports)
+	return sdk.NewUintFromBigInt(lamportsBig.Quo(lamportsBig, big.NewInt(10)))
 }

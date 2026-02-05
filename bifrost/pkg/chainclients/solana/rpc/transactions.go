@@ -1,7 +1,6 @@
 package rpc
 
 import (
-	"encoding/json"
 	"fmt"
 )
 
@@ -20,30 +19,24 @@ type SignaturesForAddressResult struct {
 	Err       any    `json:"err"`
 }
 
-// GetSignaturesForAddressUntil - makes a getSignaturesForAddress RPC call to the Solana RPC. Will only return "finalized" data.
-func (s *SolRPC) GetSignaturesForAddressUntil(address string, minContextSlot uint64, until string) ([]SignaturesForAddressResult, error) {
-	objParams := map[string]interface{}{
-		"commitment": "finalized",
-	}
-	if minContextSlot > 0 {
-		objParams["minContextSlot"] = minContextSlot
-	}
-	if until != "" {
-		objParams["until"] = until
-	}
-	params := []interface{}{
-		address,
-		objParams,
-	}
+type GetSignaturesForAddressUntilParams struct {
+	Commitment     string `json:"commitment,omitempty"` // e.g., "finalized"
+	MinContextSlot uint64 `json:"minContextSlot,omitempty"`
+	Before         string `json:"before,omitempty"`
+	Until          string `json:"until,omitempty"`
+	Limit          int    `json:"limit,omitempty"`
+}
 
-	respBody, err := s.post("getSignaturesForAddress", params)
-	if err != nil {
-		return nil, fmt.Errorf("failed to call getSignaturesForAddress: %w", err)
+// GetSignaturesForAddressUntil - makes a getSignaturesForAddress RPC call to the Solana RPC.
+func (s *SolRPC) GetSignaturesForAddressUntil(address string, params GetSignaturesForAddressUntilParams) ([]SignaturesForAddressResult, error) {
+	p := []interface{}{
+		address,
+		params,
 	}
 
 	var response GetSignaturesForAddressResponse
-	if err := json.Unmarshal(respBody, &response); err != nil {
-		return nil, err
+	if err := s.post("getSignaturesForAddress", p, &response); err != nil {
+		return nil, fmt.Errorf("failed to call getSignaturesForAddress: %w", err)
 	}
 
 	if response.Error != nil && response.Error.Code != 0 {
@@ -73,19 +66,15 @@ func (s *SolRPC) GetTransaction(signature string) (*TransactionResult, error) {
 	params := []interface{}{
 		signature,
 		map[string]interface{}{
-			"commitment": "finalized",
-			"encoding":   "json",
+			"commitment":                     "finalized",
+			"encoding":                       "json",
+			"maxSupportedTransactionVersion": 0,
 		},
 	}
 
-	respBody, err := s.post("getTransaction", params)
-	if err != nil {
-		return nil, fmt.Errorf("failed to call getTransaction: %w", err)
-	}
-
 	var response GetTransactionResponse
-	if err := json.Unmarshal(respBody, &response); err != nil {
-		return nil, err
+	if err := s.post("getTransaction", params, &response); err != nil {
+		return nil, fmt.Errorf("failed to call getTransaction: %w", err)
 	}
 
 	if response.Error != nil && response.Error.Code != 0 {

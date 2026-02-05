@@ -36,9 +36,10 @@ Native asset names can be shortened to reduce the length of the memo. The exact 
 | g             | GAIA.ATOM      |
 | s             | BSC.BNB        |
 | d             | DOGE.DOGE      |
-| e             | ETH.ETH        |
 | l             | LTC.LTC        |
 | f             | BASE.ETH       |
+| x             | XRP.XRP        |
+| tr            | TRON.TRX       |
 
 **Example Swaps**:
 
@@ -75,10 +76,8 @@ Memos contain functions such as Swap or Add, which describe the user's intent an
 | Swap          | s           | =           |
 | Add / Deposit |             | +           |
 | Withdraw      | wd          | -           |
-| Loan Open     | Loan+       | $+          |
-| Loan Close    | Loan-       | $-          |
 | THORName      | name, n     | \~          |
-| Limit Order   | Limitto     | lo          |
+| Limit Swap    | =>          | =>          |
 
 **Example**:
 

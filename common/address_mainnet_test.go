@@ -306,6 +306,21 @@ func (s *AddressSuite) TestAddress(c *C) {
 	c.Check(addr.IsChain(XRPChain), Equals, true)
 	c.Check(addr.GetNetwork(XRPChain), Equals, MainNet)
 
+	// tron test
+	addr, err = NewAddress("TKSrg7Ffs81r8QsLMfqRHG82hbFYz2Bw5W")
+	c.Check(err, IsNil)
+	c.Check(addr.IsChain(BCHChain), Equals, false)
+	c.Check(addr.IsChain(LTCChain), Equals, false)
+	c.Check(addr.IsChain(BTCChain), Equals, false)
+	c.Check(addr.IsChain(ETHChain), Equals, false)
+	c.Check(addr.IsChain(GAIAChain), Equals, false)
+	c.Check(addr.IsChain(THORChain), Equals, false)
+	c.Check(addr.IsChain(DOGEChain), Equals, false)
+	c.Check(addr.IsChain(XRPChain), Equals, false)
+	c.Check(addr.IsChain(TRONChain), Equals, true)
+	c.Check(addr.GetNetwork(TRONChain), Equals, MainNet)
+
+	//
 	addr, err = NewAddress("mtyBWSzMZaCxJ1xy9apJBZzXz648BZrpJg")
 	c.Check(err, IsNil)
 	c.Check(addr.IsChain(BCHChain), Equals, true)
@@ -317,6 +332,42 @@ func (s *AddressSuite) TestAddress(c *C) {
 	c.Check(addr.IsChain(DOGEChain), Equals, true)
 	c.Check(addr.IsChain(XRPChain), Equals, false)
 	c.Check(addr.GetNetwork(DOGEChain), Equals, MockNet)
+
+	// GAIA tests
+	addr, err = NewAddress("cosmos1vx6vkpn8mgk7tfv3x6n8kaypw080pa46lf7kjw")
+	c.Assert(err, IsNil)
+	c.Check(addr.IsChain(GAIAChain), Equals, true)
+	c.Check(addr.IsChain(NOBLEChain), Equals, false)
+	c.Check(addr.IsChain(THORChain), Equals, false)
+	c.Check(addr.IsChain(ETHChain), Equals, false)
+	c.Check(addr.IsChain(BTCChain), Equals, false)
+	c.Check(addr.IsChain(LTCChain), Equals, false)
+	c.Check(addr.IsChain(BCHChain), Equals, false)
+	c.Check(addr.IsChain(DOGEChain), Equals, false)
+	c.Check(addr.IsChain(XRPChain), Equals, false)
+
+	// NOBLE tests
+	addr, err = NewAddress("noble1vx6vkpn8mgk7tfv3x6n8kaypw080pa46h2t72q")
+	c.Assert(err, IsNil)
+	c.Check(addr.IsChain(NOBLEChain), Equals, true)
+	c.Check(addr.IsChain(GAIAChain), Equals, false)
+	c.Check(addr.IsChain(THORChain), Equals, false)
+	c.Check(addr.IsChain(ETHChain), Equals, false)
+	c.Check(addr.IsChain(BTCChain), Equals, false)
+	c.Check(addr.IsChain(LTCChain), Equals, false)
+	c.Check(addr.IsChain(BCHChain), Equals, false)
+	c.Check(addr.IsChain(DOGEChain), Equals, false)
+	c.Check(addr.IsChain(XRPChain), Equals, false)
+
+	// Test invalid Noble address (wrong prefix)
+	addr, err = NewAddress("cosmos1vx6vkpn8mgk7tfv3x6n8kaypw080pa46lf7kjw")
+	c.Assert(err, IsNil)
+	c.Check(addr.IsChain(NOBLEChain), Equals, false)
+
+	// Test invalid GAIA address (wrong prefix)
+	addr, err = NewAddress("noble1vx6vkpn8mgk7tfv3x6n8kaypw080pa46h2t72q")
+	c.Assert(err, IsNil)
+	c.Check(addr.IsChain(GAIAChain), Equals, false)
 }
 
 func (s *AddressSuite) TestConvertToNewBCHAddressFormat(c *C) {
@@ -352,5 +403,5 @@ func (s *AddressSuite) TestConvertToNewBCHAddressFormat(c *C) {
 	addr7Result, err := ConvertToNewBCHAddressFormat(Address(addr7))
 	c.Assert(err, IsNil)
 	c.Assert(addr7Result.IsEmpty(), Equals, false)
-	c.Assert(addr7Result.String(), Equals, "pqmaqvs7fc00gr37l6usj2w4cr8sq5lrlqg9wq2m7j")
+	c.Assert(addr7Result.String(), Equals, "prkhwf3etusv88eu7fekcxgce7pj0vuf4sys9u2mns")
 }

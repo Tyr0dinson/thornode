@@ -64,7 +64,7 @@ func NewSOLClient(
 ) (*SOLClient, error) {
 	// check required arguments
 	if thorKeys == nil {
-		return nil, fmt.Errorf("failed to create EVM client, thor keys empty")
+		return nil, errors.New("thor keys empty")
 	}
 	if bridge == nil {
 		return nil, errors.New("thorchain bridge is nil")
@@ -88,7 +88,7 @@ func NewSOLClient(
 
 	pub, ok := priv.PubKey().(*cosmoscryptoed25519.PubKey)
 	if !ok {
-		return nil, fmt.Errorf("failed to cast pubkey to ed25519")
+		return nil, errors.New("failed to cast pubkey to ed25519")
 	}
 	formattedPub := base58.Encode(pub.Bytes())
 
@@ -119,7 +119,7 @@ func NewSOLClient(
 	}
 	signerCacheManager, err := signercache.NewSignerCacheManager(storage.GetInternalDb())
 	if err != nil {
-		return nil, fmt.Errorf("fail to create signer cache manager")
+		return nil, fmt.Errorf("fail to create signer cache manager: %w", err)
 	}
 	c.signerCacheManager = signerCacheManager
 
@@ -192,6 +192,17 @@ func (c *SOLClient) GetHeight() (int64, error) {
 // GetBlockScannerHeight returns blockscanner height
 func (c *SOLClient) GetBlockScannerHeight() (int64, error) {
 	return c.solScanner.ScanHeight()
+}
+
+// RollbackBlockScanner rolls back the block scanner to the last observed block
+func (c *SOLClient) RollbackBlockScanner() error {
+	// rollback disabled for solana, as we scan by transaction signatures, not blocks heights.
+	// a rollback to fetch all transactions for a vault could cause many duplicate observations and likewise the slashes for them.
+
+	// if determined this is absolutely necessary, we could query all transactions for a vault address that exist on the node,
+	// and then determine which transaction signature is the one immediately behind the desired rollback height, then use that
+	// for queryLastSig passed to the SOLScanner.scanVault method.
+	return nil
 }
 
 func (c *SOLClient) GetLatestTxForVault(vault string) (string, string, error) {
@@ -275,6 +286,7 @@ func (c *SOLClient) ReportSolvency(height int64) error {
 	solventMsgs := make([]stypes.Solvency, 0, len(asgardVaults))
 	for _, v := range asgardVaults {
 		if v.PubKeyEddsa.IsEmpty() {
+			c.logger.Error().Msg("asgard vault pubkey is empty, skipping solvency check")
 			continue
 		}
 		acct, err := c.GetAccount(v.PubKeyEddsa, nil)
@@ -341,20 +353,20 @@ func (c *SOLClient) ShouldReportSolvency(height int64) bool {
 // SignTx returns the signed transaction.
 func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *stypes.TxInItem, error) {
 	if tx.Chain != common.SOLChain {
-		return nil, nil, nil, fmt.Errorf("tx chain is not solana")
+		return nil, nil, nil, errors.New("tx chain is not solana")
 	}
 	if tx.ToAddress.IsEmpty() {
-		return nil, nil, nil, fmt.Errorf("to address is empty")
+		return nil, nil, nil, errors.New("to address is empty")
 	}
 	if tx.VaultPubKeyEddsa.IsEmpty() {
-		return nil, nil, nil, fmt.Errorf("vault public key is empty")
+		return nil, nil, nil, errors.New("vault public key is empty")
 	}
 
-	if len(tx.Memo) == 0 {
-		return nil, nil, nil, fmt.Errorf("can't sign tx when it doesn't have memo")
-	}
+	// GetMemo returns OriginalMemo for memoless outbounds
+	// For truly memoless transactions (no Memo or OriginalMemo), default to TxOutbound
+	memoForParsing := tx.GetMemo()
 
-	solTx, err := c.CreateTx(tx)
+	solTx, err := c.CreateTx(tx, memoForParsing)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("fail to create tx: %w", err)
 	}
@@ -369,16 +381,31 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 		return checkPointBytes, nil, nil, fmt.Errorf("fail to sign tx: %w", err)
 	}
 
-	prettyPrint(signedTx)
-
 	signedBytes, err := signedTx.Serialize()
 	if err != nil {
 		return checkPointBytes, nil, nil, fmt.Errorf("fail to serialize signed tx: %w", err)
 	}
 
-	fmt.Println("SIGNED TX", string(signedBytes))
+	fromAddr, err := tx.VaultPubKeyEddsa.GetAddress(common.SOLChain)
+	if err != nil {
+		return checkPointBytes, nil, nil, fmt.Errorf("fail to get vault address: %w", err)
+	}
 
-	return signedBytes, nil, nil, nil
+	txIn := stypes.NewTxInItem(
+		height,
+		base58.Encode(signedTx.Signatures[0]),
+		tx.Memo,
+		fromAddr.String(),
+		tx.ToAddress.String(),
+		tx.Coins,
+		common.Gas([]common.Coin{{Asset: common.SOLAsset, Amount: cosmos.NewUint(5000), Decimals: 9}}),
+		tx.VaultPubKeyEddsa,
+		"",
+		"",
+		nil,
+	)
+
+	return signedBytes, nil, txIn, nil
 }
 
 // SignTransaction takes a rpc.Transaction and signs with the pubkey
@@ -409,7 +436,7 @@ func (c *SOLClient) signTransaction(solTx types.Transaction, txOut stypes.TxOutI
 
 	vaultAccount := solTx.Message.Accounts[0]
 	if !ed25519.Verify(vaultAccount.Bytes(), message, sig) {
-		return types.Transaction{}, fmt.Errorf("signature verification failed")
+		return types.Transaction{}, errors.New("signature verification failed")
 	}
 
 	if err := solTx.AddSignature(sig); err != nil {
@@ -421,22 +448,29 @@ func (c *SOLClient) signTransaction(solTx types.Transaction, txOut stypes.TxOutI
 
 // CreateTx builds a solana transfer function from a TxOutItem using the transaction
 // specification (https://solana.com/docs/core/transactions#manual-sol-transfer)
-func (c *SOLClient) CreateTx(tx stypes.TxOutItem) (types.Transaction, error) {
+func (c *SOLClient) CreateTx(tx stypes.TxOutItem, memoForParsing string) (types.Transaction, error) {
 	recentBlockhash := c.solScanner.getRecentBlockHash()
 	if recentBlockhash == "" {
-		return types.Transaction{}, fmt.Errorf("recent blockhash is empty")
+		return types.Transaction{}, errors.New("recent blockhash is empty")
 	}
 
-	// Validation
-	memo, err := mem.ParseMemo(common.LatestVersion, tx.Memo)
-	if err != nil {
-		return types.Transaction{}, fmt.Errorf("fail to parse memo(%s):%w", tx.Memo, err)
-	}
-	if memo.IsInbound() {
-		return types.Transaction{}, fmt.Errorf("inbound memo should not be used for outbound tx")
+	// Validation - use memoForParsing (which may be OriginalMemo for memoless outbounds)
+	// For truly memoless transactions, default to TxOutbound
+	var memo mem.Memo
+	if memoForParsing == "" {
+		memo = mem.NewOutboundMemo(tx.InHash)
+	} else {
+		var err error
+		memo, err = mem.ParseMemo(common.LatestVersion, memoForParsing)
+		if err != nil {
+			return types.Transaction{}, fmt.Errorf("fail to parse memo(%s):%w", memoForParsing, err)
+		}
+		if memo.IsInbound() {
+			return types.Transaction{}, errors.New("inbound memo should not be used for outbound tx")
+		}
 	}
 	if len(tx.Coins) != 1 {
-		return types.Transaction{}, fmt.Errorf("only support one coin per transaction")
+		return types.Transaction{}, fmt.Errorf("only support one coin per transaction, received: %d", len(tx.Coins))
 	}
 
 	solTx := types.Transaction{}
@@ -464,7 +498,7 @@ func (c *SOLClient) CreateTx(tx stypes.TxOutItem) (types.Transaction, error) {
 
 	solValue := convertToLamports(tx.Coins[0].Amount)
 	if solValue.Int64() == 0 {
-		return solTx, fmt.Errorf("sol value is zero")
+		return solTx, errors.New("sol value is zero")
 	}
 	// Transfer instruction
 	// Program index is 2 (referencing accountKeys) for the system program
@@ -506,16 +540,6 @@ func (c *SOLClient) BroadcastTx(txOutItem stypes.TxOutItem, rawTx []byte) (strin
 		c.logger.Err(err).Interface("txOutItem", txOutItem).Msg("fail to mark tx out item as signed")
 	}
 
-	// TODO: update signed block height
-	// blockHeight, err := c.bridge.GetBlockHeight()
-	// if err != nil {
-	// 	c.logger.Err(err).Msg("fail to get current THORChain block height")
-	// 	// at this point , the tx already broadcast successfully , don't return an error
-	// 	// otherwise will cause the same tx to retry
-	// } else if err = c.AddSignedTxItem(txID, blockHeight, txOutItem.VaultPubKey.String(), &txOutItem); err != nil {
-	// 	c.logger.Err(err).Str("hash", txID).Msg("fail to add signed tx item")
-	// }
-
 	return txSig, nil
 }
 
@@ -523,17 +547,31 @@ func (c *SOLClient) BroadcastTx(txOutItem stypes.TxOutItem, rawTx []byte) (strin
 
 // OnObservedTxIn is called when a new observed tx is received.
 func (c *SOLClient) OnObservedTxIn(txIn stypes.TxInItem, blockHeight int64) {
-	// TODO: Implement
+	m, err := mem.ParseMemo(common.LatestVersion, txIn.Memo)
+	if err != nil {
+		// Debug log only as ParseMemo error is expected for THORName inbounds.
+		c.logger.Debug().Err(err).Str("memo", txIn.Memo).Msg("fail to parse memo")
+		return
+	}
+	if !m.IsOutbound() {
+		return
+	}
+	if m.GetTxID().IsEmpty() {
+		return
+	}
+	if err = c.signerCacheManager.SetSigned(txIn.CacheHash(c.GetChain(), m.GetTxID().String()), txIn.CacheVault(c.GetChain()), txIn.Tx); err != nil {
+		c.logger.Err(err).Msg("fail to update signer cache")
+	}
 }
 
 // GetConfirmationCount returns the confirmation count for the given tx.
 func (c *SOLClient) GetConfirmationCount(txIn stypes.TxIn) int64 {
-	// TODO: Implement
+	// Solana has instant finality since we query everything with commitment "finalized"
 	return 0
 }
 
 // ConfirmationCountReady returns true if the confirmation count is ready.
 func (c *SOLClient) ConfirmationCountReady(txIn stypes.TxIn) bool {
-	// TODO: Implement
+	// Solana has instant finality since we query everything with commitment "finalized"
 	return true
 }

@@ -8,7 +8,7 @@ lint:
     - name: codespell
       commands:
         # IDae = base64 found in wasm bytecode expected to be "idea"
-        - run: codespell --uri-ignore-words-list=* --ignore-words-list=toi,amountIn,IDae ${target}
+        - run: codespell --uri-ignore-words-list=* --ignore-words-list=toi,amountIn,IDae,liquify,refErr ${target}
     - name: golangci-lint
       environment:
         - name: CGO_ENABLED
@@ -55,10 +55,12 @@ lint:
     - linters:
         - codespell
       paths:
-        - bifrost/pkg/chainclients/gaia/test-data/latest_block.json
+        - bifrost/pkg/chainclients/gaia/test-data/*.json
+        - bifrost/oracle/providers/mock/data/*.json
         - common/tokenlist/*/*.json
         - third_party/**
         - test/regression/mnt/blocks/**
+        - bifrost/pkg/chainclients/tron/api/core
 actions:
   disabled:
     - trunk-announce
@@ -73,7 +75,7 @@ plugins:
       uri: https://github.com/trunk-io/plugins
 runtimes:
   enabled:
-    - go@1.23.6
+    - go@1.24.0
     - node@18.20.5
     - python@3.10.8
   definitions:

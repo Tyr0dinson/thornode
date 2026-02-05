@@ -88,8 +88,9 @@ func (tKeyGen *TssKeyGen) GenerateNewKey(keygenReq keygen.Request) (*bcrypto.ECP
 	keyGenPartyMap := new(sync.Map)
 	ctx := btss.NewPeerContext(partiesID)
 	params := btss.NewParameters(tss.S256(), ctx, localPartyID, len(partiesID), threshold)
-	outCh := make(chan btss.Message, len(partiesID))
-	endCh := make(chan bkg.LocalPartySaveData, len(partiesID))
+	bufferSize := len(partiesID) * 10 // buffer size for outCh and endCh
+	outCh := make(chan btss.Message, bufferSize)
+	endCh := make(chan bkg.LocalPartySaveData, bufferSize)
 	errChan := make(chan struct{})
 	if tKeyGen.preParams == nil {
 		tKeyGen.logger.Error().Err(err).Msg("error, empty pre-parameters")

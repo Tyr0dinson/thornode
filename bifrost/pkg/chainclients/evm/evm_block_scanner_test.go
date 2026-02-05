@@ -38,9 +38,11 @@ import (
 	. "gopkg.in/check.v1"
 )
 
-const TestGasPriceResolution = 50_000_000_000
-
-const Mainnet = 1
+const (
+	TestGasPriceResolution = 50  // 50 nAVAX
+	weiPerNanoAvax         = 1e9 // For .gasPrice checks.
+	Mainnet                = 1
+)
 
 var (
 	//go:embed test/deposit_evm_transaction.json
@@ -216,16 +218,16 @@ func (s *BlockScannerTestSuite) TestProcessBlock(c *C) {
 			Params []interface{} `json:"params"`
 		}{}
 
-		err := json.Unmarshal(body, &r)
-		c.Assert(err, IsNil)
+		unmarshalErr := json.Unmarshal(body, &r)
+		c.Assert(unmarshalErr, IsNil)
 
 		rw.Header().Set("Content-Type", "application/json")
 		result := map[string]json.RawMessage{
 			"result": json.RawMessage(rpcResults[r.Method]),
 		}
 
-		err = json.NewEncoder(rw).Encode(result)
-		c.Assert(err, IsNil)
+		encodeErr := json.NewEncoder(rw).Encode(result)
+		c.Assert(encodeErr, IsNil)
 	}
 	handleBatchRPC := func(body []byte, rw http.ResponseWriter) {
 		r := []struct {
@@ -234,8 +236,8 @@ func (s *BlockScannerTestSuite) TestProcessBlock(c *C) {
 			ID     int           `json:"id"`
 		}{}
 
-		err := json.Unmarshal(body, &r)
-		c.Assert(err, IsNil)
+		batchUnmarshalErr := json.Unmarshal(body, &r)
+		c.Assert(batchUnmarshalErr, IsNil)
 
 		rw.Header().Set("Content-Type", "application/json")
 		result := make([]map[string]json.RawMessage, len(r))
@@ -246,8 +248,8 @@ func (s *BlockScannerTestSuite) TestProcessBlock(c *C) {
 			}
 		}
 
-		err = json.NewEncoder(rw).Encode(result)
-		c.Assert(err, IsNil)
+		batchEncodeErr := json.NewEncoder(rw).Encode(result)
+		c.Assert(batchEncodeErr, IsNil)
 	}
 
 	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
@@ -275,8 +277,8 @@ func (s *BlockScannerTestSuite) TestProcessBlock(c *C) {
 				return
 			}
 
-			body, err := io.ReadAll(req.Body)
-			c.Assert(err, IsNil)
+			body, readErr := io.ReadAll(req.Body)
+			c.Assert(readErr, IsNil)
 			defer func() {
 				c.Assert(req.Body.Close(), IsNil)
 			}()
@@ -387,12 +389,21 @@ func (s *BlockScannerTestSuite) TestGetTxInItem(c *C) {
 				c.Assert(err, IsNil)
 			}
 			if rpcRequest.Method == "eth_call" {
-				c.Log()
-				if string(rpcRequest.Params) == `[{"data":"0x95d89b41", "to":"0x333c3310824b7c685133F2BeDb2CA4b8b4DF633d"},"latest"]` {
-					_, err = rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0x544B4E"}`))
-					c.Assert(err, IsNil)
-					return
-				} else if string(rpcRequest.Params) == `[{"data":"0x313ce567","from":"0x0000000000000000000000000000000000000000","to":"0x333c3310824b7c685133F2BeDb2CA4b8b4DF633d"},"latest"]` {
+				var params []interface{}
+				if err = json.Unmarshal(rpcRequest.Params, &params); err == nil && len(params) > 0 {
+					if callParams, ok := params[0].(map[string]interface{}); ok {
+						if to, ok := callParams["to"].(string); ok && strings.EqualFold(to, "0x333c3310824b7c685133F2BeDb2CA4b8b4DF633d") {
+							if data, ok := callParams["data"].(string); ok && data == "0x95d89b41" {
+								_, err = rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0x544B4E"}`))
+								c.Assert(err, IsNil)
+								return
+							}
+						}
+					}
+				}
+
+				// Keep existing fallback for other calls if any (like the one with "from" field)
+				if strings.Contains(string(rpcRequest.Params), `"data":"0x313ce567"`) {
 					_, err = rw.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"0x0000000000000000000000000000000000000000000000000000000000000012"}`))
 					c.Assert(err, IsNil)
 					return
@@ -422,6 +433,7 @@ func (s *BlockScannerTestSuite) TestGetTxInItem(c *C) {
 				"blockHash":"0x78bfef68fccd4507f9f4804ba5c65eb2f928ea45b3383ade88aaa720f1209cba",
 				"cumulativeGasUsed":"0xc350",
 				"gasUsed":"0x4dc",
+				"effectiveGasPrice":"0x4a817c800",
 				"logsBloom":"0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
 				"logs":[],
 				"status":"0x1"
@@ -521,15 +533,12 @@ func (s *BlockScannerTestSuite) TestGetTxInItem(c *C) {
 	c.Assert(txInItem.Coins[0].Asset.String(), Equals, "AVAX.AVAX")
 	c.Assert(txInItem.Coins[0].Amount.Uint64(), Equals, cosmos.NewUint(200000000).Uint64())
 
-	config.WhitelistTokens = append(config.WhitelistTokens, "0x333c3310824b7c685133F2BeDb2CA4b8b4DF633d")
-
-	bs, err = NewEVMScanner(config, storage, big.NewInt(43112), ethClient, rpcClient, bridge, s.m, pkeyMgr, func(height int64) error {
-		return nil
-	}, nil)
-	// whitelist the address for test
-	bs.whitelistContracts = append(bs.whitelistContracts, "0x17aB05351fC94a1a67Bf3f56DdbB941aE6c63E25")
+	// Pre-save token metadata to bypass whitelist validation
+	// This allows testing token transactions without requiring the token in the official token list
+	err = bs.tokenManager.SaveTokenMeta("TKN", "0x333c3310824b7c685133F2BeDb2CA4b8b4DF633d", 18)
 	c.Assert(err, IsNil)
-	c.Assert(bs, NotNil)
+	// whitelist the router contract for test
+	bs.whitelistContracts = append(bs.whitelistContracts, "0x17aB05351fC94a1a67Bf3f56DdbB941aE6c63E25")
 
 	// smart contract - depositTKN
 	tx = &etypes.Transaction{}
@@ -652,10 +661,6 @@ func (s *BlockScannerTestSuite) TestProcessReOrg(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(blockNew, NotNil)
 	blockMeta := evmtypes.NewBlockMeta(block, stypes.TxIn{TxArray: []*stypes.TxInItem{{Tx: "0x88df016429689c079f3b2f6ad39fa052532c56795b733da78a91ebe6a713944b"}}})
-	blockMeta.Transactions = append(blockMeta.Transactions, evmtypes.TransactionMeta{
-		Hash:        "0x88df016429689c079f3b2f6ad39fa052532c56795b733da78a91ebe6a713944b",
-		BlockHeight: block.Number.Int64(),
-	})
 	// add one UTXO which will trigger the re-org process next
 	c.Assert(bs.blockMetaAccessor.SaveBlockMeta(0, blockMeta), IsNil)
 	bs.globalErrataQueue = make(chan stypes.ErrataBlock, 1)
@@ -714,11 +719,11 @@ func (s *BlockScannerTestSuite) TestUpdateGasPrice(c *C) {
 	// almost fill gas cache
 	for i := 0; i < 99; i++ {
 		bs.updateGasPrice([]*big.Int{
-			big.NewInt(1 * TestGasPriceResolution),
-			big.NewInt(2 * TestGasPriceResolution),
-			big.NewInt(3 * TestGasPriceResolution),
-			big.NewInt(4 * TestGasPriceResolution),
-			big.NewInt(5 * TestGasPriceResolution),
+			big.NewInt(1 * TestGasPriceResolution * weiPerNanoAvax),
+			big.NewInt(2 * TestGasPriceResolution * weiPerNanoAvax),
+			big.NewInt(3 * TestGasPriceResolution * weiPerNanoAvax),
+			big.NewInt(4 * TestGasPriceResolution * weiPerNanoAvax),
+			big.NewInt(5 * TestGasPriceResolution * weiPerNanoAvax),
 		})
 	}
 
@@ -729,50 +734,50 @@ func (s *BlockScannerTestSuite) TestUpdateGasPrice(c *C) {
 
 	// now we should get the median of medians
 	bs.updateGasPrice([]*big.Int{
-		big.NewInt(1 * TestGasPriceResolution),
-		big.NewInt(2 * TestGasPriceResolution),
-		big.NewInt(3 * TestGasPriceResolution),
-		big.NewInt(4 * TestGasPriceResolution),
-		big.NewInt(5 * TestGasPriceResolution),
+		big.NewInt(1 * TestGasPriceResolution * weiPerNanoAvax),
+		big.NewInt(2 * TestGasPriceResolution * weiPerNanoAvax),
+		big.NewInt(3 * TestGasPriceResolution * weiPerNanoAvax),
+		big.NewInt(4 * TestGasPriceResolution * weiPerNanoAvax),
+		big.NewInt(5 * TestGasPriceResolution * weiPerNanoAvax),
 	})
 	c.Assert(len(bs.gasCache), Equals, 100)
-	c.Assert(bs.gasPrice.String(), Equals, big.NewInt(3*TestGasPriceResolution).String())
+	c.Assert(bs.gasPrice.String(), Equals, big.NewInt(3*TestGasPriceResolution*weiPerNanoAvax).String())
 
 	// add 49 more blocks with 2x the median and we should get the same
 	for i := 0; i < 49; i++ {
 		bs.updateGasPrice([]*big.Int{
-			big.NewInt(2 * TestGasPriceResolution),
-			big.NewInt(4 * TestGasPriceResolution),
-			big.NewInt(6 * TestGasPriceResolution),
-			big.NewInt(8 * TestGasPriceResolution),
-			big.NewInt(10 * TestGasPriceResolution),
+			big.NewInt(2 * TestGasPriceResolution * weiPerNanoAvax),
+			big.NewInt(4 * TestGasPriceResolution * weiPerNanoAvax),
+			big.NewInt(6 * TestGasPriceResolution * weiPerNanoAvax),
+			big.NewInt(8 * TestGasPriceResolution * weiPerNanoAvax),
+			big.NewInt(10 * TestGasPriceResolution * weiPerNanoAvax),
 		})
 	}
 	c.Assert(len(bs.gasCache), Equals, 100)
-	c.Assert(bs.gasPrice.String(), Equals, big.NewInt(3*TestGasPriceResolution).String())
+	c.Assert(bs.gasPrice.String(), Equals, big.NewInt(3*TestGasPriceResolution*weiPerNanoAvax).String())
 
 	// after one more block with 2x the median we should get 2x
 	bs.updateGasPrice([]*big.Int{
-		big.NewInt(2 * TestGasPriceResolution),
-		big.NewInt(4 * TestGasPriceResolution),
-		big.NewInt(6 * TestGasPriceResolution),
-		big.NewInt(8 * TestGasPriceResolution),
-		big.NewInt(10 * TestGasPriceResolution),
+		big.NewInt(2 * TestGasPriceResolution * weiPerNanoAvax),
+		big.NewInt(4 * TestGasPriceResolution * weiPerNanoAvax),
+		big.NewInt(6 * TestGasPriceResolution * weiPerNanoAvax),
+		big.NewInt(8 * TestGasPriceResolution * weiPerNanoAvax),
+		big.NewInt(10 * TestGasPriceResolution * weiPerNanoAvax),
 	})
-	c.Assert(bs.gasPrice.String(), Equals, big.NewInt(6*TestGasPriceResolution).String())
+	c.Assert(bs.gasPrice.String(), Equals, big.NewInt(6*TestGasPriceResolution*weiPerNanoAvax).String())
 
 	// add 50 more blocks with half the median and we should get the same
 	for i := 0; i < 50; i++ {
 		bs.updateGasPrice([]*big.Int{
-			big.NewInt(TestGasPriceResolution),
+			big.NewInt(TestGasPriceResolution * weiPerNanoAvax),
 		})
 	}
 	c.Assert(len(bs.gasCache), Equals, 100)
-	c.Assert(bs.gasPrice.String(), Equals, big.NewInt(6*TestGasPriceResolution).String())
+	c.Assert(bs.gasPrice.String(), Equals, big.NewInt(6*TestGasPriceResolution*weiPerNanoAvax).String())
 
 	// after one more block with half the median we should get half
 	bs.updateGasPrice([]*big.Int{
 		big.NewInt(TestGasPriceResolution),
 	})
-	c.Assert(bs.gasPrice.String(), Equals, big.NewInt(TestGasPriceResolution).String())
+	c.Assert(bs.gasPrice.String(), Equals, big.NewInt(TestGasPriceResolution*weiPerNanoAvax).String())
 }

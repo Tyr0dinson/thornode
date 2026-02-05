@@ -11,33 +11,34 @@ import (
 	"gitlab.com/thorchain/thornode/v3/constants"
 )
 
-type PoolMgrVCUR struct{}
+type PoolMgr struct{}
 
-func newPoolMgrVCUR() *PoolMgrVCUR {
-	return &PoolMgrVCUR{}
+func newPoolMgr() *PoolMgr {
+	return &PoolMgr{}
 }
 
 // EndBlock cycle pools if required and if ragnarok is not in progress
-func (pm *PoolMgrVCUR) EndBlock(ctx cosmos.Context, mgr Manager) error {
+func (pm *PoolMgr) EndBlock(ctx cosmos.Context, mgr Manager) error {
 	poolCycle, err := mgr.Keeper().GetMimir(ctx, constants.PoolCycle.String())
 	if poolCycle < 0 || err != nil {
 		poolCycle = mgr.GetConstants().GetInt64Value(constants.PoolCycle)
 	}
 	// Enable a pool every poolCycle
 	if ctx.BlockHeight()%poolCycle == 0 && !mgr.Keeper().RagnarokInProgress(ctx) {
-		maxAvailablePools, err := mgr.Keeper().GetMimir(ctx, constants.MaxAvailablePools.String())
+		var maxAvailablePools, minRunePoolDepth, stagedPoolCost int64
+		maxAvailablePools, err = mgr.Keeper().GetMimir(ctx, constants.MaxAvailablePools.String())
 		if maxAvailablePools < 0 || err != nil {
 			maxAvailablePools = mgr.GetConstants().GetInt64Value(constants.MaxAvailablePools)
 		}
-		minRunePoolDepth, err := mgr.Keeper().GetMimir(ctx, constants.MinRunePoolDepth.String())
+		minRunePoolDepth, err = mgr.Keeper().GetMimir(ctx, constants.MinRunePoolDepth.String())
 		if minRunePoolDepth < 0 || err != nil {
 			minRunePoolDepth = mgr.GetConstants().GetInt64Value(constants.MinRunePoolDepth)
 		}
-		stagedPoolCost, err := mgr.Keeper().GetMimir(ctx, constants.StagedPoolCost.String())
+		stagedPoolCost, err = mgr.Keeper().GetMimir(ctx, constants.StagedPoolCost.String())
 		if stagedPoolCost < 0 || err != nil {
 			stagedPoolCost = mgr.GetConstants().GetInt64Value(constants.StagedPoolCost)
 		}
-		if err := pm.cyclePools(ctx, maxAvailablePools, minRunePoolDepth, stagedPoolCost, mgr); err != nil {
+		if err = pm.cyclePools(ctx, maxAvailablePools, minRunePoolDepth, stagedPoolCost, mgr); err != nil {
 			ctx.Logger().Error("Unable to enable a pool", "error", err)
 		}
 	}
@@ -58,7 +59,7 @@ func (pm *PoolMgrVCUR) EndBlock(ctx cosmos.Context, mgr Manager) error {
 // The valid Staged pool with the highest rune depth is promoted to Available.
 // If there are more than the maximum available pools, the Available pool with
 // with the lowest rune depth is demoted to Staged
-func (pm *PoolMgrVCUR) cyclePools(ctx cosmos.Context, maxAvailablePools, minRunePoolDepth, stagedPoolCost int64, mgr Manager) error {
+func (pm *PoolMgr) cyclePools(ctx cosmos.Context, maxAvailablePools, minRunePoolDepth, stagedPoolCost int64, mgr Manager) error {
 	var availblePoolCount int64
 	onDeck := NewPool()        // currently staged pool that could get promoted
 	choppingBlock := NewPool() // currently available pool that is on the chopping block to being demoted
@@ -176,7 +177,6 @@ func (pm *PoolMgrVCUR) cyclePools(ctx cosmos.Context, maxAvailablePools, minRune
 				}
 				// remove asset from Vault
 				pm.removeAssetFromVault(ctx, pool.Asset, mgr)
-
 			} else if validPool(pool) && onDeck.BalanceRune.LT(pool.BalanceRune) {
 				onDeck = pool
 			}
@@ -215,7 +215,7 @@ func (pm *PoolMgrVCUR) cyclePools(ctx cosmos.Context, maxAvailablePools, minRune
 }
 
 // poolMeetTradingVolumeCriteria check if pool generated the minimum amount of fees since last cycle
-func (pm *PoolMgrVCUR) poolMeetTradingVolumeCriteria(ctx cosmos.Context, mgr Manager, pool Pool, minPoolLiquidityFee cosmos.Uint) bool {
+func (pm *PoolMgr) poolMeetTradingVolumeCriteria(ctx cosmos.Context, mgr Manager, pool Pool, minPoolLiquidityFee cosmos.Uint) bool {
 	if minPoolLiquidityFee.IsZero() {
 		return true
 	}
@@ -230,7 +230,42 @@ func (pm *PoolMgrVCUR) poolMeetTradingVolumeCriteria(ctx cosmos.Context, mgr Man
 }
 
 // removeAssetFromVault set asset balance to zero for all vaults holding the asset
-func (pm *PoolMgrVCUR) removeAssetFromVault(ctx cosmos.Context, asset common.Asset, mgr Manager) {
+func (pm *PoolMgr) removeAssetFromVault(ctx cosmos.Context, asset common.Asset, mgr Manager) {
+	if asset.IsNative() {
+		// get asgard module balance
+		asgardAddress, err := mgr.Keeper().GetModuleAddress(AsgardName)
+		if err != nil {
+			ctx.Logger().Error("fail to get asgard address", "error", err)
+		}
+
+		asgardAccAddress, err := asgardAddress.AccAddress()
+		if err != nil {
+			ctx.Logger().Error("fail to get asgard acc address", "error", err)
+		}
+
+		asgardCoins := mgr.Keeper().GetBalance(ctx, asgardAccAddress)
+
+		for _, coin := range asgardCoins {
+			if asset.Native() != coin.Denom {
+				continue
+			}
+			err = mgr.Keeper().SendFromModuleToModule(
+				ctx,
+				AsgardName,
+				TreasuryName,
+				common.Coins{{
+					Asset:  asset,
+					Amount: cosmos.NewUint(coin.Amount.Uint64()),
+				}},
+			)
+			if err != nil {
+				ctx.Logger().Error("fail to send coins to treasury", "error", err)
+			}
+			// done processing native asset
+			return
+		}
+	}
+
 	// zero vaults with the pool asset
 	vaultIter := mgr.Keeper().GetVaultIterator(ctx)
 	defer vaultIter.Close()
@@ -255,7 +290,7 @@ func (pm *PoolMgrVCUR) removeAssetFromVault(ctx cosmos.Context, asset common.Ass
 }
 
 // removeLiquidityProviders remove all lps for the given asset pool
-func (pm *PoolMgrVCUR) removeLiquidityProviders(ctx cosmos.Context, asset common.Asset, mgr Manager) {
+func (pm *PoolMgr) removeLiquidityProviders(ctx cosmos.Context, asset common.Asset, mgr Manager) {
 	iterator := mgr.Keeper().GetLiquidityProviderIterator(ctx, asset)
 	defer iterator.Close()
 	for ; iterator.Valid(); iterator.Next() {
@@ -289,7 +324,7 @@ func (pm *PoolMgrVCUR) removeLiquidityProviders(ctx cosmos.Context, asset common
 	}
 }
 
-func (pm *PoolMgrVCUR) cleanupPendingLiquidity(ctx cosmos.Context, mgr Manager) {
+func (pm *PoolMgr) cleanupPendingLiquidity(ctx cosmos.Context, mgr Manager) {
 	if atTVLCap(ctx, nil, mgr) {
 		ctx.Logger().Info("cleaning pending liquidity skipped due to TVL cap")
 		return
@@ -351,7 +386,7 @@ func (pm *PoolMgrVCUR) cleanupPendingLiquidity(ctx cosmos.Context, mgr Manager) 
 	}
 }
 
-func (pm *PoolMgrVCUR) checkSaversUtilization(ctx cosmos.Context, mgr Manager) error {
+func (pm *PoolMgr) checkSaversUtilization(ctx cosmos.Context, mgr Manager) error {
 	if mgr.Keeper().IsGlobalTradingHalted(ctx) {
 		return nil
 	}
@@ -407,7 +442,8 @@ func (pm *PoolMgrVCUR) checkSaversUtilization(ctx cosmos.Context, mgr Manager) e
 		}
 
 		synthSupply := mgr.Keeper().GetTotalSupply(ctx, pool.Asset.GetSyntheticAsset())
-		l1Pool, err := mgr.Keeper().GetPool(ctx, pool.Asset.GetLayer1Asset())
+		var l1Pool Pool
+		l1Pool, err = mgr.Keeper().GetPool(ctx, pool.Asset.GetLayer1Asset())
 		if err != nil {
 			continue
 		}
@@ -431,7 +467,7 @@ func (pm *PoolMgrVCUR) checkSaversUtilization(ctx cosmos.Context, mgr Manager) e
 	var latestLp LiquidityProvider
 	for ; lpIterator.Valid(); lpIterator.Next() {
 		var lp LiquidityProvider
-		if err := mgr.Keeper().Cdc().Unmarshal(lpIterator.Value(), &lp); err != nil {
+		if err = mgr.Keeper().Cdc().Unmarshal(lpIterator.Value(), &lp); err != nil {
 			ctx.Logger().Error("fail to unmarshal liquidity provider", "error", err)
 			continue
 		}
@@ -481,7 +517,7 @@ func (pm *PoolMgrVCUR) checkSaversUtilization(ctx cosmos.Context, mgr Manager) e
 }
 
 // commitPendingLiquidity - for aged pending liquidity, commit it to the pool
-func (pm *PoolMgrVCUR) commitPendingLiquidity(ctx cosmos.Context, pool Pool, mgr Manager) error {
+func (pm *PoolMgr) commitPendingLiquidity(ctx cosmos.Context, pool Pool, mgr Manager) error {
 	ctx.Logger().Info("cleaning pending liquidity in pool", "pool", pool.Asset)
 	// track stats
 	var count int

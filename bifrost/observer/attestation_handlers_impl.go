@@ -2,19 +2,17 @@ package observer
 
 import (
 	"context"
+	"encoding/hex"
+	"time"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
+const priceFeedsUpdateDelay = time.Millisecond * 100
+
 // handleObservedTxAttestation processes attestations for observed transactions
 func (s *AttestationGossip) handleObservedTxAttestation(ctx context.Context, tx common.AttestTx) {
-	// Ensure the attester is an active validator
-	if err := s.ensureAttesterIsActiveNode(tx.Attestation); err != nil {
-		s.logger.Error().Err(err).Msg("fail to ensure attester for observed tx is active node")
-		return
-	}
-
 	obsTx := tx.ObsTx
 
 	k := txKey{
@@ -29,12 +27,15 @@ func (s *AttestationGossip) handleObservedTxAttestation(ctx context.Context, tx 
 	s.mu.Lock()
 	state, ok := s.observedTxs[k]
 	if !ok {
-		state = NewAttestationState(&obsTx)
+		state = s.observedTxsPool.NewAttestationState(&obsTx)
 		s.observedTxs[k] = state
 	}
+
+	// note, purposefully locking the single state mutex prior to releasing the global mutex to avoid race in between.
+	// This order must be maintained everywhere to avoid deadlock.
+	state.mu.Lock()
 	s.mu.Unlock()
 
-	state.mu.Lock()
 	defer state.mu.Unlock()
 
 	// Add the attestation
@@ -101,12 +102,6 @@ func (s *AttestationGossip) sendObservedTxAttestationsToThornode(
 
 // handleNetworkFeeAttestation processes attestations for network fees
 func (s *AttestationGossip) handleNetworkFeeAttestation(ctx context.Context, anf common.AttestNetworkFee) {
-	// Ensure the attester is an active validator
-	if err := s.ensureAttesterIsActiveNode(anf.Attestation); err != nil {
-		s.logger.Error().Err(err).Msg("fail to ensure attester for network fee is active node")
-		return
-	}
-
 	// Use the network fee as the map key
 	k := *anf.NetworkFee
 
@@ -114,12 +109,15 @@ func (s *AttestationGossip) handleNetworkFeeAttestation(ctx context.Context, anf
 	state, ok := s.networkFees[k]
 	if !ok {
 		// Create a new attestation state
-		state = NewAttestationState(anf.NetworkFee)
+		state = s.networkFeesPool.NewAttestationState(anf.NetworkFee)
 		s.networkFees[k] = state
 	}
+
+	// note, purposefully locking the single state mutex prior to releasing the global mutex to avoid race in between.
+	// This order must be maintained everywhere to avoid deadlock.
+	state.mu.Lock()
 	s.mu.Unlock()
 
-	state.mu.Lock()
 	defer state.mu.Unlock()
 
 	// Add the attestation
@@ -167,12 +165,6 @@ func (s *AttestationGossip) sendNetworkFeeAttestationsToThornode(ctx context.Con
 
 // handleSolvencyAttestation processes attestations for solvency proofs
 func (s *AttestationGossip) handleSolvencyAttestation(ctx context.Context, ats common.AttestSolvency) {
-	// Ensure the attester is an active validator
-	if err := s.ensureAttesterIsActiveNode(ats.Attestation); err != nil {
-		s.logger.Error().Err(err).Msg("fail to ensure attester for solvency is active node")
-		return
-	}
-
 	// Calculate the hash for the solvency to use as key
 	k, err := ats.Solvency.Hash()
 	if err != nil {
@@ -184,12 +176,15 @@ func (s *AttestationGossip) handleSolvencyAttestation(ctx context.Context, ats c
 	state, ok := s.solvencies[k]
 	if !ok {
 		// Create a new attestation state
-		state = NewAttestationState(ats.Solvency)
+		state = s.solvenciesPool.NewAttestationState(ats.Solvency)
 		s.solvencies[k] = state
 	}
+
+	// note, purposefully locking the single state mutex prior to releasing the global mutex to avoid race in between.
+	// This order must be maintained everywhere to avoid deadlock.
+	state.mu.Lock()
 	s.mu.Unlock()
 
-	state.mu.Lock()
 	defer state.mu.Unlock()
 
 	// Add the attestation
@@ -237,12 +232,6 @@ func (s *AttestationGossip) sendSolvencyAttestationsToThornode(ctx context.Conte
 
 // handleErrataAttestation processes attestations for errata transactions
 func (s *AttestationGossip) handleErrataAttestation(ctx context.Context, aet common.AttestErrataTx) {
-	// Ensure the attester is an active validator
-	if err := s.ensureAttesterIsActiveNode(aet.Attestation); err != nil {
-		s.logger.Error().Err(err).Msg("fail to ensure attester for errata tx is active node")
-		return
-	}
-
 	// Use the errata tx as the map key
 	k := *aet.ErrataTx
 
@@ -250,12 +239,15 @@ func (s *AttestationGossip) handleErrataAttestation(ctx context.Context, aet com
 	state, ok := s.errataTxs[k]
 	if !ok {
 		// Create a new attestation state
-		state = NewAttestationState(aet.ErrataTx)
+		state = s.errataTxsPool.NewAttestationState(aet.ErrataTx)
 		s.errataTxs[k] = state
 	}
+
+	// note, purposefully locking the single state mutex prior to releasing the global mutex to avoid race in between.
+	// This order must be maintained everywhere to avoid deadlock.
+	state.mu.Lock()
 	s.mu.Unlock()
 
-	state.mu.Lock()
 	defer state.mu.Unlock()
 
 	// Add the attestation
@@ -298,4 +290,100 @@ func (s *AttestationGossip) sendErrataAttestationsToThornode(ctx context.Context
 
 	// Mark attestations as sent
 	state.MarkAttestationsSent(isQuorum)
+}
+
+// handlePriceFeedAttestation processes attestations for price feeds
+func (s *AttestationGossip) handlePriceFeedAttestation(ctx context.Context, apf common.AttestPriceFeed) {
+	// Use the pubkey as key
+	k := hex.EncodeToString(apf.Attestation.PubKey)
+
+	// Get the marshaled data for signature verification
+	signBz, err := apf.PriceFeed.GetSignablePayload()
+	if err != nil {
+		s.logger.Error().Err(err).Msg("fail to get signable payload")
+		return
+	}
+
+	// Verify the signature
+	att := apf.Attestation
+	err = verifySignature(signBz, att.Signature, att.PubKey)
+	if err != nil {
+		s.logger.Error().Err(err).Msgf("signature verification failed for %x", att.PubKey)
+		return
+	}
+
+	// We don't collect multiple attestations for price feeds, rather want
+	// to store the most recent price we received for every node
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	state, ok := s.priceFeeds[k]
+	if !ok || state.Item.Time < apf.PriceFeed.Time {
+		// Set new attestation state
+		state = s.priceFeedsPool.NewAttestationState(apf.PriceFeed)
+		state.attestations = []attestationSentState{
+			{attestation: apf.Attestation, sent: false},
+		}
+		s.priceFeeds[k] = state
+
+		// we received an updated price feed, start delay to maybe collect
+		// more updated values before sending them to thornode
+		if s.priceFeedsDelay.IsRunning() {
+			return
+		}
+
+		s.priceFeedsDelay.Start()
+		go func() {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(priceFeedsUpdateDelay):
+				s.sendPriceFeedAttestationsToThornode(ctx)
+				s.priceFeedsDelay.Done()
+			}
+		}()
+	}
+}
+
+// sendPriceFeedAttestationsToThornode sends price feed attestations
+// to thornode via gRPC
+//
+// To avoid calling the endpoint hundred times per update, all
+// (quorum) price feeds are batched into a single request
+func (s *AttestationGossip) sendPriceFeedAttestationsToThornode(
+	ctx context.Context,
+) {
+	qpfb := common.QuorumPriceFeedBatch{
+		QuorumPriceFeeds: []*common.QuorumPriceFeed{},
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, state := range s.priceFeeds {
+		state.mu.Lock()
+		defer state.mu.Unlock()
+
+		qpfb.QuorumPriceFeeds = append(qpfb.QuorumPriceFeeds, &common.QuorumPriceFeed{
+			PriceFeed:    state.Item,
+			Attestations: []*common.Attestation{state.attestations[0].attestation},
+		})
+	}
+
+	if len(qpfb.QuorumPriceFeeds) == 0 {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+
+	_, err := s.grpcClient.SendQuorumPriceFeedBatch(ctx, &qpfb)
+	if err != nil {
+		s.logger.Error().Err(err).Msg("fail to send price feed")
+		return
+	}
+
+	// delete price feeds
+	for k := range s.priceFeeds {
+		delete(s.priceFeeds, k)
+	}
 }

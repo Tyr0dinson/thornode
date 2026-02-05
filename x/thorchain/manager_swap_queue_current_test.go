@@ -9,25 +9,38 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
-type SwapQueueVCURSuite struct{}
+type SwapQueueSuite struct{}
 
-var _ = Suite(&SwapQueueVCURSuite{})
+var _ = Suite(&SwapQueueSuite{})
 
-func (s SwapQueueVCURSuite) TestGetTodoNum(c *C) {
-	queue := newSwapQueueVCUR(keeper.KVStoreDummy{})
+func (s SwapQueueSuite) TestGetTodoNum(c *C) {
+	queue := newSwapQueue(keeper.KVStoreDummy{})
 
-	c.Check(queue.getTodoNum(50, 10, 100), Equals, int64(25))     // halves it
-	c.Check(queue.getTodoNum(11, 10, 100), Equals, int64(5))      // halves it
-	c.Check(queue.getTodoNum(10, 10, 100), Equals, int64(10))     // does all of them
-	c.Check(queue.getTodoNum(1, 10, 100), Equals, int64(1))       // does all of them
-	c.Check(queue.getTodoNum(0, 10, 100), Equals, int64(0))       // does none
-	c.Check(queue.getTodoNum(10000, 10, 100), Equals, int64(100)) // does max 100
-	c.Check(queue.getTodoNum(200, 10, 100), Equals, int64(100))   // does max 100
+	c.Check(queue.getTodoNum(10000, 10, 100), Equals, int64(100)) // MaxSwapsPerBlock
+
+	c.Check(queue.getTodoNum(202, 10, 100), Equals, int64(100)) // MaxSwapsPerBlock
+	c.Check(queue.getTodoNum(201, 10, 100), Equals, int64(100)) // MaxSwapsPerBlock
+	c.Check(queue.getTodoNum(200, 10, 100), Equals, int64(100)) // MaxSwapsPerBlock
+	c.Check(queue.getTodoNum(199, 10, 100), Equals, int64(99))  // halves it
+	c.Check(queue.getTodoNum(198, 10, 100), Equals, int64(99))  // halves it
+
+	c.Check(queue.getTodoNum(50, 10, 100), Equals, int64(25)) // halves it
+
+	c.Check(queue.getTodoNum(22, 10, 100), Equals, int64(11)) // halves it
+	c.Check(queue.getTodoNum(21, 10, 100), Equals, int64(10)) // MinSwapsPerblock
+	c.Check(queue.getTodoNum(11, 10, 100), Equals, int64(10)) // MinSwapsPerblock
+	c.Check(queue.getTodoNum(10, 10, 100), Equals, int64(10)) // MinSwapsPerblock
+	c.Check(queue.getTodoNum(9, 10, 100), Equals, int64(9))   // does all of them
+	c.Check(queue.getTodoNum(8, 10, 100), Equals, int64(8))   // does all of them
+
+	c.Check(queue.getTodoNum(1, 10, 100), Equals, int64(1)) // does all of them
+	c.Check(queue.getTodoNum(0, 10, 100), Equals, int64(0)) // does none
 }
 
-func (s SwapQueueVCURSuite) TestScoreMsgs(c *C) {
+func (s SwapQueueSuite) TestScoreMsgs(c *C) {
 	ctx, k := setupKeeperForTest(c)
 
 	pool := NewPool()
@@ -47,7 +60,7 @@ func (s SwapQueueVCURSuite) TestScoreMsgs(c *C) {
 	pool.Status = PoolStaged
 	c.Assert(k.SetPool(ctx, pool), IsNil)
 
-	queue := newSwapQueueVCUR(k)
+	queue := newSwapQueue(k)
 
 	// check that we sort by liquidity ok
 	msgs := []*MsgSwap{
@@ -56,52 +69,52 @@ func (s SwapQueueVCURSuite) TestScoreMsgs(c *C) {
 			Coins: common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(2*common.One))},
 		}, common.ATOMAsset, GetRandomGAIAAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(),
 			"", "", nil,
-			MarketOrder,
-			0, 0, GetRandomBech32Addr()),
+			types.SwapType_market,
+			0, 0, types.SwapVersion_v1, GetRandomBech32Addr()),
 		NewMsgSwap(common.Tx{
 			ID:    common.TxID("53C1A22436B385133BDD9157BB365DB7AAC885910D2FA7C9DC3578A04FFD4ADC"),
 			Coins: common.Coins{common.NewCoin(common.ATOMAsset, cosmos.NewUint(50*common.One))},
 		}, common.RuneAsset(), GetRandomGAIAAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(),
 			"", "", nil,
-			MarketOrder,
-			0, 0, GetRandomBech32Addr()),
+			types.SwapType_market,
+			0, 0, types.SwapVersion_v1, GetRandomBech32Addr()),
 		NewMsgSwap(common.Tx{
 			ID:    common.TxID("6A470EB9AFE82981979A5EEEED3296E1E325597794BD5BFB3543A372CAF435E5"),
 			Coins: common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(1*common.One))},
 		}, common.ATOMAsset, GetRandomGAIAAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(),
 			"", "", nil,
-			MarketOrder,
-			0, 0, GetRandomBech32Addr()),
+			types.SwapType_market,
+			0, 0, types.SwapVersion_v1, GetRandomBech32Addr()),
 		NewMsgSwap(common.Tx{
 			ID:    common.TxID("5EE9A7CCC55A3EBAFA0E542388CA1B909B1E3CE96929ED34427B96B7CCE9F8E8"),
 			Coins: common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(100*common.One))},
 		}, common.ATOMAsset, GetRandomGAIAAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(),
 			"", "", nil,
-			MarketOrder,
-			0, 0, GetRandomBech32Addr()),
+			types.SwapType_market,
+			0, 0, types.SwapVersion_v1, GetRandomBech32Addr()),
 		NewMsgSwap(common.Tx{
 			ID:    common.TxID("0FF2A521FB11FFEA4DFE3B7AD4066FF0A33202E652D846F8397EFC447C97A91B"),
 			Coins: common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(10*common.One))},
 		}, common.ATOMAsset, GetRandomGAIAAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(),
 			"", "", nil,
-			MarketOrder,
-			0, 0, GetRandomBech32Addr()),
+			types.SwapType_market,
+			0, 0, types.SwapVersion_v1, GetRandomBech32Addr()),
 
 		NewMsgSwap(common.Tx{
 			ID:    GetRandomTxHash(),
 			Coins: common.Coins{common.NewCoin(common.ATOMAsset, cosmos.NewUint(150*common.One))},
 		}, common.RuneAsset(), GetRandomTHORAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(),
 			"", "", nil,
-			MarketOrder,
-			0, 0, GetRandomBech32Addr()),
+			types.SwapType_market,
+			0, 0, types.SwapVersion_v1, GetRandomBech32Addr()),
 
 		NewMsgSwap(common.Tx{
 			ID:    GetRandomTxHash(),
 			Coins: common.Coins{common.NewCoin(common.ATOMAsset, cosmos.NewUint(151*common.One))},
 		}, common.RuneAsset(), GetRandomTHORAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(),
 			"", "", nil,
-			MarketOrder,
-			0, 0, GetRandomBech32Addr()),
+			types.SwapType_market,
+			0, 0, types.SwapVersion_v1, GetRandomBech32Addr()),
 
 		// synthetics can be redeemed on unavailable pools, should score
 		NewMsgSwap(common.Tx{
@@ -109,8 +122,8 @@ func (s SwapQueueVCURSuite) TestScoreMsgs(c *C) {
 			Coins: common.Coins{common.NewCoin(common.ETHAsset.GetSyntheticAsset(), cosmos.NewUint(3*common.One))},
 		}, common.RuneAsset(), GetRandomTHORAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(),
 			"", "", nil,
-			MarketOrder,
-			0, 0, GetRandomBech32Addr()),
+			types.SwapType_market,
+			0, 0, types.SwapVersion_v1, GetRandomBech32Addr()),
 	}
 
 	swaps := make(swapItems, len(msgs))
@@ -142,79 +155,79 @@ func (s SwapQueueVCURSuite) TestScoreMsgs(c *C) {
 			Coins: common.Coins{common.NewCoin(common.ATOMAsset, cosmos.NewUint(2*common.One))},
 		}, common.RuneAsset(), GetRandomTHORAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(),
 			"", "", nil,
-			MarketOrder,
-			0, 0, GetRandomBech32Addr()),
+			types.SwapType_market,
+			0, 0, types.SwapVersion_v1, GetRandomBech32Addr()),
 		NewMsgSwap(common.Tx{
 			ID:    GetRandomTxHash(),
 			Coins: common.Coins{common.NewCoin(common.ATOMAsset, cosmos.NewUint(50*common.One))},
 		}, common.RuneAsset(), GetRandomTHORAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(),
 			"", "", nil,
-			MarketOrder,
-			0, 0, GetRandomBech32Addr()),
+			types.SwapType_market,
+			0, 0, types.SwapVersion_v1, GetRandomBech32Addr()),
 		NewMsgSwap(common.Tx{
 			ID:    GetRandomTxHash(),
 			Coins: common.Coins{common.NewCoin(common.ATOMAsset, cosmos.NewUint(1*common.One))},
 		}, common.RuneAsset(), GetRandomTHORAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(),
 			"", "", nil,
-			MarketOrder,
-			0, 0, GetRandomBech32Addr()),
+			types.SwapType_market,
+			0, 0, types.SwapVersion_v1, GetRandomBech32Addr()),
 		NewMsgSwap(common.Tx{
 			ID:    GetRandomTxHash(),
 			Coins: common.Coins{common.NewCoin(common.ATOMAsset, cosmos.NewUint(100*common.One))},
 		}, common.RuneAsset(), GetRandomTHORAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(),
 			"", "", nil,
-			MarketOrder,
-			0, 0, GetRandomBech32Addr()),
+			types.SwapType_market,
+			0, 0, types.SwapVersion_v1, GetRandomBech32Addr()),
 		NewMsgSwap(common.Tx{
 			ID:    GetRandomTxHash(),
 			Coins: common.Coins{common.NewCoin(common.ATOMAsset, cosmos.NewUint(10*common.One))},
 		}, common.RuneAsset(), GetRandomTHORAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(),
 			"", "", nil,
-			MarketOrder,
-			0, 0, GetRandomBech32Addr()),
+			types.SwapType_market,
+			0, 0, types.SwapVersion_v1, GetRandomBech32Addr()),
 		NewMsgSwap(common.Tx{
 			ID:    GetRandomTxHash(),
 			Coins: common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(2*common.One))},
 		}, common.RuneAsset(), GetRandomTHORAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(),
 			"", "", nil,
-			MarketOrder,
-			0, 0, GetRandomBech32Addr()),
+			types.SwapType_market,
+			0, 0, types.SwapVersion_v1, GetRandomBech32Addr()),
 		NewMsgSwap(common.Tx{
 			ID:    GetRandomTxHash(),
 			Coins: common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(50*common.One))},
 		}, common.RuneAsset(), GetRandomTHORAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(),
 			"", "", nil,
-			MarketOrder,
-			0, 0, GetRandomBech32Addr()),
+			types.SwapType_market,
+			0, 0, types.SwapVersion_v1, GetRandomBech32Addr()),
 		NewMsgSwap(common.Tx{
 			ID:    GetRandomTxHash(),
 			Coins: common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(1*common.One))},
 		}, common.RuneAsset(), GetRandomTHORAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(),
 			"", "", nil,
-			MarketOrder,
-			0, 0, GetRandomBech32Addr()),
+			types.SwapType_market,
+			0, 0, types.SwapVersion_v1, GetRandomBech32Addr()),
 		NewMsgSwap(common.Tx{
 			ID:    GetRandomTxHash(),
 			Coins: common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One))},
 		}, common.RuneAsset(), GetRandomTHORAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(),
 			"", "", nil,
-			MarketOrder,
-			0, 0, GetRandomBech32Addr()),
+			types.SwapType_market,
+			0, 0, types.SwapVersion_v1, GetRandomBech32Addr()),
 		NewMsgSwap(common.Tx{
 			ID:    GetRandomTxHash(),
 			Coins: common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(10*common.One))},
 		}, common.RuneAsset(), GetRandomTHORAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(),
 			"", "", nil,
-			MarketOrder,
-			0, 0, GetRandomBech32Addr()),
+			types.SwapType_market,
+			0, 0, types.SwapVersion_v1, GetRandomBech32Addr()),
 
 		NewMsgSwap(common.Tx{
 			ID:    GetRandomTxHash(),
 			Coins: common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(10*common.One))},
 		}, common.ATOMAsset, GetRandomGAIAAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(),
 			"", "", nil,
-			MarketOrder,
-			0, 0, GetRandomBech32Addr()),
+			types.SwapType_market,
+			0, 0, types.SwapVersion_v1, GetRandomBech32Addr()),
 	}
 
 	swaps = make(swapItems, len(msgs))
@@ -264,9 +277,9 @@ func (s SwapQueueVCURSuite) TestScoreMsgs(c *C) {
 	c.Check(swaps[10].msg.Tx.Coins[0].Asset.Equals(common.ATOMAsset), Equals, true)
 }
 
-func (s SwapQueueVCURSuite) TestStreamingSwapSelection(c *C) {
+func (s SwapQueueSuite) TestStreamingSwapSelection(c *C) {
 	ctx, k := setupKeeperForTest(c)
-	queue := newSwapQueueVCUR(k)
+	queue := newSwapQueue(k)
 
 	ethAddr := GetRandomETHAddress()
 	txID := GetRandomTxHash()
@@ -280,7 +293,7 @@ func (s SwapQueueVCURSuite) TestStreamingSwapSelection(c *C) {
 	)
 
 	// happy path
-	msg := NewMsgSwap(tx, common.ETHAsset.GetSyntheticAsset(), GetRandomTHORAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, MarketOrder, 10, 20, GetRandomBech32Addr())
+	msg := NewMsgSwap(tx, common.ETHAsset.GetSyntheticAsset(), GetRandomTHORAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, types.SwapType_market, 10, 20, types.SwapVersion_v1, GetRandomBech32Addr())
 	c.Assert(k.SetSwapQueueItem(ctx, *msg, 0), IsNil)
 
 	// no saved streaming swap, should swap now
@@ -315,7 +328,7 @@ func (s SwapQueueVCURSuite) TestStreamingSwapSelection(c *C) {
 	c.Check(items, HasLen, 1)
 }
 
-func (s SwapQueueVCURSuite) TestStreamingSwapOutbounds(c *C) {
+func (s SwapQueueSuite) TestStreamingSwapOutbounds(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 	mgr.txOutStore = NewTxStoreDummy()
 
@@ -327,7 +340,7 @@ func (s SwapQueueVCURSuite) TestStreamingSwapOutbounds(c *C) {
 	pool.Asset = common.ETHAsset
 	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
 
-	queue := newSwapQueueVCUR(mgr.Keeper())
+	queue := newSwapQueue(mgr.Keeper())
 
 	badHandler := func(mgr Manager) cosmos.Handler {
 		return func(ctx cosmos.Context, msg cosmos.Msg) (*cosmos.Result, error) {
@@ -354,7 +367,7 @@ func (s SwapQueueVCURSuite) TestStreamingSwapOutbounds(c *C) {
 		fmt.Sprintf("=:BTC.BTC:%s", btcAddr),
 	)
 
-	msg := NewMsgSwap(tx, common.BTCAsset, btcAddr, cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, MarketOrder, 10, 20, GetRandomBech32Addr())
+	msg := NewMsgSwap(tx, common.BTCAsset, btcAddr, cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(), "", "", nil, types.SwapType_market, 10, 20, types.SwapVersion_v1, GetRandomBech32Addr())
 	swp := msg.GetStreamingSwap()
 	mgr.Keeper().SetStreamingSwap(ctx, swp)
 	c.Assert(mgr.Keeper().SetSwapQueueItem(ctx, *msg, 0), IsNil)
@@ -428,4 +441,108 @@ func (s SwapQueueVCURSuite) TestStreamingSwapOutbounds(c *C) {
 	_, err = mgr.Keeper().GetSwapQueueItem(ctx, txID, 0)
 	c.Assert(err, NotNil)
 	mgr.TxOutStore().ClearOutboundItems(ctx)
+}
+
+// TestStreamingLimitSwapNoDivisionByZero is a regression test for the October 7, 2025 incident
+// where a limit swap with streaming parameters (quantity=2, interval=2) caused a division by zero panic.
+//
+// The bug occurred because:
+// 1. User creates a limit swap with streaming parameters while EnableAdvSwapQueue mimir = 0 (forcing v1 mode)
+// 2. Handler skips creating StreamingSwap record for limit swaps (handler_swap.go:326)
+// 3. Manager tries to update non-existent swap, creating a "hollowed-out" record with Interval=0
+// 4. Next block attempts division by zero: (height - lastHeight) % interval
+//
+// This test verifies that limit swaps with streaming parameters:
+// - Execute successfully without panicking
+// - Do NOT create or update StreamingSwap records in keeper
+// - Complete in a single iteration
+func (s SwapQueueSuite) TestStreamingLimitSwapNoDivisionByZero(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	mgr.txOutStore = NewTxStoreDummy()
+
+	// Setup pool
+	pool := NewPool()
+	pool.Asset = common.AVAXAsset
+	pool.BalanceRune = cosmos.NewUint(143166 * common.One)
+	pool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	queue := newSwapQueue(mgr.Keeper())
+
+	// Create the exact transaction from the incident:
+	// Streaming LIMIT swap with quantity=2, interval=2
+	// Memo: =<:AVAX-USDT-0X9702230A8EA53601F5CD2DC00FDBC13D4DF4A8C7:thor1dvvr4kdeurs8fdwgrql6je7l2v9ma73dp50n7m:40000000000/2/2
+	txID := common.TxID("43F310A416A4ED8CF8B645B1EBBB5E25FB89F9777A4350F7023DEB62B90EA3AD")
+	tx := common.NewTx(
+		txID,
+		GetRandomTHORAddress(),
+		GetRandomTHORAddress(),
+		common.NewCoins(common.NewCoin(common.RuneAsset(), cosmos.NewUint(40000000000))),
+		common.Gas{},
+		"=<:AVAX-USDT-0X9702230A8EA53601F5CD2DC00FDBC13D4DF4A8C7:thor1dvvr4kdeurs8fdwgrql6je7l2v9ma73dp50n7m:40000000000/2/2",
+	)
+
+	// Create a LIMIT swap with streaming parameters (quantity=2, interval=2)
+	// This is the problematic combination that caused the panic
+	targetAsset, _ := common.NewAsset("AVAX.USDT-0X9702230A8EA53601F5CD2DC00FDBC13D4DF4A8C7")
+	msg := NewMsgSwap(
+		tx,
+		targetAsset,
+		GetRandomTHORAddress(),
+		cosmos.NewUint(40000000000), // trade target (limit price)
+		common.NoAddress,
+		cosmos.ZeroUint(),
+		"", "", nil,
+		types.SwapType_limit, // This is a LIMIT swap
+		2,                    // quantity = 2 (streaming parameter)
+		2,                    // interval = 2 (streaming parameter)
+		types.SwapVersion_v1,
+		GetRandomBech32Addr(),
+	)
+
+	c.Assert(mgr.Keeper().SetSwapQueueItem(ctx, *msg, 0), IsNil)
+
+	// CRITICAL: Verify that no StreamingSwap record exists before EndBlock
+	c.Check(mgr.Keeper().StreamingSwapExists(ctx, txID), Equals, false,
+		Commentf("No StreamingSwap record should exist for limit swap before processing"))
+
+	// Process the swap - this should NOT panic with division by zero
+	c.Assert(queue.EndBlock(ctx, mgr), IsNil)
+
+	// Verify no StreamingSwap record was created (limit swaps should not persist state)
+	c.Check(mgr.Keeper().StreamingSwapExists(ctx, txID), Equals, false,
+		Commentf("Limit swap should NOT create StreamingSwap record"))
+
+	// Verify swap queue item was removed (swap completed)
+	_, err := mgr.Keeper().GetSwapQueueItem(ctx, txID, 0)
+	c.Assert(err, NotNil)
+	c.Check(err.Error(), Equals, "not found",
+		Commentf("Swap queue item should be removed after limit swap completes"))
+
+	// Simulate the next block to ensure no division by zero panic occurs
+	// In the original bug, this is where the panic happened
+	ctx = ctx.WithBlockHeight(ctx.BlockHeight() + 1)
+
+	// This should complete without panic - there should be no items to fetch
+	// because the limit swap completed in a single iteration
+	items, err := queue.FetchQueue(ctx)
+	c.Assert(err, IsNil)
+	c.Check(items, HasLen, 0,
+		Commentf("No items should remain in queue after limit swap completion"))
+
+	// Explicitly verify the keeper validation prevents invalid swaps from being saved
+	// This tests the defense-in-depth validation layer
+	invalidSwap := NewStreamingSwap(
+		txID,
+		0, // quantity = 0 (invalid)
+		0, // interval = 0 (invalid - would cause division by zero)
+		cosmos.ZeroUint(),
+		cosmos.ZeroUint(),
+	)
+	invalidSwap.LastHeight = ctx.BlockHeight()
+
+	// Attempting to save this invalid swap should be rejected by the keeper
+	mgr.Keeper().SetStreamingSwap(ctx, invalidSwap)
+	c.Check(mgr.Keeper().StreamingSwapExists(ctx, txID), Equals, false,
+		Commentf("Keeper should reject invalid StreamingSwap with interval=0"))
 }

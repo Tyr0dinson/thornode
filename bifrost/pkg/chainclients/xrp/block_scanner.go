@@ -128,8 +128,14 @@ func (c *XrpBlockScanner) updateFeeCache(fee common.Coin) {
 		return
 	}
 
+	// gas rate from THORChain decimals to gas rate units
+	gasRate := c.cfg.ChainID.ThorchainToNativeGas(fee.Amount)
+	if gasRate.IsZero() {
+		gasRate = sdkmath.OneUint()
+	}
+
 	// add the fee to our cache
-	c.feeCache = append(c.feeCache, fee.Amount)
+	c.feeCache = append(c.feeCache, gasRate)
 
 	// truncate fee prices older than our max cached transactions
 	if len(c.feeCache) > FeeCacheTransactions {
@@ -148,7 +154,7 @@ func (c *XrpBlockScanner) averageFee() sdkmath.Uint {
 	for _, val := range c.feeCache {
 		sum = sum.Add(val)
 	}
-	mean := sum.Quo(sdkmath.NewUint(uint64(len(c.feeCache))))
+	mean := sum.QuoUint64(uint64(len(c.feeCache)))
 
 	return mean
 }
@@ -157,6 +163,11 @@ func (c *XrpBlockScanner) updateFees(height int64) error {
 	// post the gas fee over every cache period when we have a full gas cache
 	if height%FeeUpdatePeriodBlocks == 0 && len(c.feeCache) == FeeCacheTransactions {
 		avgFee := c.averageFee()
+
+		resolution := sdkmath.NewUint(uint64(c.cfg.GasPriceResolution))
+		avgFee = avgFee.Add(resolution.SubUint64(1))
+		avgFee = avgFee.Quo(resolution)
+		avgFee = avgFee.Mul(resolution)
 
 		// sanity check the fee is not zero
 		if avgFee.IsZero() {
@@ -168,11 +179,10 @@ func (c *XrpBlockScanner) updateFees(height int64) error {
 			return nil
 		}
 
-		// NOTE: We post the fee to the network instead of the transaction rate, and set the
-		// transaction size 1 to ensure the MaxGas in the generated TxOut contains the
-		// correct fee. We cannot pass the proper size and rate without a deeper change to
-		// Thornode, as the rate on XRP chain is less than 1 and cannot be represented
-		// by the uint.
+		// NOTE: We post the fee to the network as the transaction rate (in gas rate units),
+		// and set the transaction size 1 to ensure the MaxGas in the generated TxOut
+		// contains the correct fee. We previously could not pass the proper size and rate
+		// without a deeper change to Thornode, as the rate on XRP chain can be less than 1.
 		c.globalNetworkFeeQueue <- common.NetworkFee{
 			Chain:           c.cfg.ChainID,
 			Height:          height,
@@ -260,6 +270,10 @@ func (c *XrpBlockScanner) processTxs(height int64, rawTxs []transaction.FlatTran
 			continue
 		}
 		coins := common.Coins{coin}
+		if coin.Amount.LT(c.cfg.ChainID.DustThreshold()) {
+			c.logger.Debug().Str("tx_hash", hash).Msg("dropping tx below dust threshold")
+			continue
+		}
 
 		txIn = append(txIn, &types.TxInItem{
 			Tx:          hash,

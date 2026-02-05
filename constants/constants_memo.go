@@ -2,6 +2,9 @@ package constants
 
 const (
 	// Memo prefixes
-	MemoPrefixRefund  = "REFUND"
-	MemoPrefixMigrate = "MIGRATE"
+	MemoPrefixOut                = "OUT"
+	MemoPrefixRefund             = "REFUND"
+	MemoPrefixMigrate            = "MIGRATE"
+	MemoPrefixRagnarok           = "RAGNAROK"
+	MemoPrefixPreferredAssetSwap = "THOR-PREFERRED-ASSET"
 )

@@ -99,7 +99,11 @@ def events(
     """
 
     def _listen(block):
-        for event in block["begin_block_events"] + block["end_block_events"]:
+        for event in (
+            block["begin_block_events"]
+            + block["end_block_events"]
+            + block["finalize_block_events"]
+        ):
             if types is not None and event["type"] not in types:
                 continue
             for listener in listeners:
@@ -172,7 +176,7 @@ def _get(*args, **kwargs) -> requests.Response:
     kwargs["headers"]["x-client-id"] = "thorscan"
 
     # 5 second timeout
-    kwargs["timeout"] = kwargs.get("timeout", 5)
+    kwargs["timeout"] = kwargs.get("timeout", 20)
 
     # get session from pool for request
     session = sessions.get()
@@ -298,6 +302,8 @@ def scan(
         # call all block listeners
         for listener in listeners:
             _print(listener(block))
+
+        sys.stdout.flush()
 
 
 ########################################################################################

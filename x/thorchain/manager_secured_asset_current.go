@@ -10,26 +10,26 @@ import (
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/keeper"
 )
 
-// SecuredAssetMgrVCUR is VCUR implementation of SecuredAssetMgr
-type SecuredAssetMgrVCUR struct {
+// SecuredAssetMgr is current implementation of SecuredAssetMgr
+type SecuredAssetMgr struct {
 	keeper   keeper.Keeper
 	eventMgr EventManager
 }
 
-// newSecuredAssetMgrVCUR create a new instance of SecuredAssetMgr
-func newSecuredAssetMgrVCUR(keeper keeper.Keeper, eventMgr EventManager) *SecuredAssetMgrVCUR {
-	return &SecuredAssetMgrVCUR{
+// newSecuredAssetMgr create a new instance of SecuredAssetMgr
+func newSecuredAssetMgr(keeper keeper.Keeper, eventMgr EventManager) *SecuredAssetMgr {
+	return &SecuredAssetMgr{
 		keeper:   keeper,
 		eventMgr: eventMgr,
 	}
 }
 
-func (s *SecuredAssetMgrVCUR) EndBlock(ctx cosmos.Context, keeper keeper.Keeper) error {
+func (s *SecuredAssetMgr) EndBlock(ctx cosmos.Context, keeper keeper.Keeper) error {
 	// TODO: implement liquidation
 	return nil
 }
 
-func (s *SecuredAssetMgrVCUR) BalanceOf(
+func (s *SecuredAssetMgr) BalanceOf(
 	ctx cosmos.Context,
 	asset common.Asset,
 	addr cosmos.AccAddress,
@@ -47,7 +47,7 @@ func (s *SecuredAssetMgrVCUR) BalanceOf(
 	return common.GetSafeShare(math.Uint(balance.Amount), shareSupply, pool.Depth)
 }
 
-func (s *SecuredAssetMgrVCUR) GetShareSupply(
+func (s *SecuredAssetMgr) GetShareSupply(
 	ctx cosmos.Context,
 	asset common.Asset,
 ) math.Uint {
@@ -55,7 +55,7 @@ func (s *SecuredAssetMgrVCUR) GetShareSupply(
 	return shareSupply
 }
 
-func (s *SecuredAssetMgrVCUR) GetSecuredAssetStatus(
+func (s *SecuredAssetMgr) GetSecuredAssetStatus(
 	ctx cosmos.Context,
 	asset common.Asset,
 ) (keeper.SecuredAsset, math.Uint, error) {
@@ -69,7 +69,7 @@ func (s *SecuredAssetMgrVCUR) GetSecuredAssetStatus(
 	return pool, shareSupply, nil
 }
 
-func (s *SecuredAssetMgrVCUR) Deposit(
+func (s *SecuredAssetMgr) Deposit(
 	ctx cosmos.Context,
 	asset common.Asset,
 	amount cosmos.Uint,
@@ -102,10 +102,11 @@ func (s *SecuredAssetMgrVCUR) Deposit(
 	s.keeper.SetSecuredAsset(ctx, pool)
 
 	depositEvent := NewEventSecuredAssetDeposit(amount, asset, assetAddr, common.Address(owner.String()), txID)
-	if err := s.eventMgr.EmitEvent(ctx, depositEvent); err != nil {
+	if err = s.eventMgr.EmitEvent(ctx, depositEvent); err != nil {
 		ctx.Logger().Error("fail to emit secured asset deposit event", "error", err)
 	}
-	cosmosCoin, err := coin.Native()
+	var cosmosCoin cosmos.Coin
+	cosmosCoin, err = coin.Native()
 	if err != nil {
 		return cosmos.Coin{}, err
 	}
@@ -113,7 +114,7 @@ func (s *SecuredAssetMgrVCUR) Deposit(
 	return cosmosCoin, nil
 }
 
-func (s *SecuredAssetMgrVCUR) calcMintAmt(oldUnits, depth, add cosmos.Uint) cosmos.Uint {
+func (s *SecuredAssetMgr) calcMintAmt(oldUnits, depth, add cosmos.Uint) cosmos.Uint {
 	if oldUnits.IsZero() || depth.IsZero() {
 		return add
 	}
@@ -123,7 +124,7 @@ func (s *SecuredAssetMgrVCUR) calcMintAmt(oldUnits, depth, add cosmos.Uint) cosm
 	return common.GetUncappedShare(add, depth, oldUnits)
 }
 
-func (s *SecuredAssetMgrVCUR) Withdraw(
+func (s *SecuredAssetMgr) Withdraw(
 	ctx cosmos.Context,
 	asset common.Asset,
 	amount cosmos.Uint,
@@ -153,6 +154,10 @@ func (s *SecuredAssetMgrVCUR) Withdraw(
 	// Calculate share tokens to redeem (burn) as a percentage of the total account balance
 	burnAmt := common.GetSafeShare(amount, assetAvailable, shareBalance)
 
+	if burnAmt.IsZero() {
+		return common.NoCoin, fmt.Errorf("insufficient secured asset balance for %s: requested %s, available %s", asset, amount, assetAvailable)
+	}
+
 	coin := common.NewCoin(asset, burnAmt)
 	coins := common.NewCoins(coin)
 
@@ -180,7 +185,7 @@ func (s *SecuredAssetMgrVCUR) Withdraw(
 	return common.NewCoin(asset.GetLayer1Asset(), tokensToClaim), nil
 }
 
-func (h SecuredAssetMgrVCUR) CheckHalt(ctx cosmos.Context) error {
+func (h SecuredAssetMgr) CheckHalt(ctx cosmos.Context) error {
 	m, err := h.keeper.GetMimir(ctx, constants.MimirKeySecuredAssetHaltGlobal)
 	if err != nil {
 		return err

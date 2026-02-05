@@ -10,9 +10,9 @@ import (
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
-// GasMgrVCUR implement GasManager interface which will store the gas related events happened in thorchain to memory
+// GasMgr implement GasManager interface which will store the gas related events happened in thorchain to memory
 // emit GasEvent per block if there are any
-type GasMgrVCUR struct {
+type GasMgr struct {
 	gasEvent          *EventGas
 	outAssetGas       []OutAssetGas
 	gasCount          map[common.Asset]int64
@@ -20,9 +20,9 @@ type GasMgrVCUR struct {
 	keeper            keeper.Keeper
 }
 
-// newGasMgrVCUR create a new instance of GasMgrVCUR
-func newGasMgrVCUR(constantsAccessor constants.ConstantValues, k keeper.Keeper) *GasMgrVCUR {
-	return &GasMgrVCUR{
+// newGasMgr create a new instance of GasMgr
+func newGasMgr(constantsAccessor constants.ConstantValues, k keeper.Keeper) *GasMgr {
+	return &GasMgr{
 		gasEvent:          NewEventGas(),
 		outAssetGas:       []OutAssetGas{},
 		gasCount:          make(map[common.Asset]int64),
@@ -31,21 +31,21 @@ func newGasMgrVCUR(constantsAccessor constants.ConstantValues, k keeper.Keeper) 
 	}
 }
 
-func (gm *GasMgrVCUR) reset() {
+func (gm *GasMgr) reset() {
 	gm.gasEvent = NewEventGas()
 	gm.outAssetGas = []OutAssetGas{}
 	gm.gasCount = make(map[common.Asset]int64)
 }
 
 // BeginBlock need to be called when a new block get created , update the internal EventGas to new one
-func (gm *GasMgrVCUR) BeginBlock() {
+func (gm *GasMgr) BeginBlock() {
 	gm.reset()
 }
 
 // AddGasAsset for EndBlock's ProcessGas;
 // add the outbound-Asset-associated Gas to the gas manager's outAssetGas,
 // and optionally increment the gas manager's gasCount.
-func (gm *GasMgrVCUR) AddGasAsset(outAsset common.Asset, gas common.Gas, increaseTxCount bool) {
+func (gm *GasMgr) AddGasAsset(outAsset common.Asset, gas common.Gas, increaseTxCount bool) {
 	matched := false
 	for i := range gm.outAssetGas {
 		if !gm.outAssetGas[i].outAsset.Equals(outAsset) {
@@ -80,7 +80,7 @@ func (gm *GasMgrVCUR) AddGasAsset(outAsset common.Asset, gas common.Gas, increas
 }
 
 // GetGas return gas
-func (gm *GasMgrVCUR) GetGas() common.Gas {
+func (gm *GasMgr) GetGas() common.Gas {
 	// Collect gas by gas asset.
 	gas := common.Gas{}
 	for i := range gm.outAssetGas {
@@ -94,27 +94,17 @@ func (gm *GasMgrVCUR) GetGas() common.Gas {
 // - asset: the asset to calculate the fee for
 // - inRune: whether the fee should be returned in RUNE. If false the fee is returned in
 // asset units.
-func (gm *GasMgrVCUR) GetAssetOutboundFee(ctx cosmos.Context, asset common.Asset, inRune bool) (cosmos.Uint, error) {
-	thorchainOutboundFee := gm.keeper.GetOutboundTxFee(ctx)
-
-	// If the asset is native RUNE, return the default native outbound fee.
-	if asset.IsRune() {
-		return thorchainOutboundFee, nil
-	}
-
-	// Asset is on THORChain, but not RUNE, convert the fee to asset value.
+func (gm *GasMgr) GetAssetOutboundFee(ctx cosmos.Context, asset common.Asset, inRune bool) (cosmos.Uint, error) {
+	// If the asset is native to THORChain, no need to charge an outbound fee.
 	if asset.IsNative() {
-		if inRune {
-			return thorchainOutboundFee, nil
-		}
-		return gm.getRuneInAssetValue(ctx, thorchainOutboundFee, asset), nil
+		return cosmos.ZeroUint(), nil
 	}
 
 	chainOutboundFee, err := gm.keeper.GetNetworkFee(ctx, asset.GetChain())
 	if err != nil {
 		return cosmos.ZeroUint(), err
 	}
-	if err := chainOutboundFee.Valid(); err != nil {
+	if err = chainOutboundFee.Valid(); err != nil {
 		// If the network fee is invalid, usually because consensus hasn't been reached, a
 		// fee can't be deducted. So return 0 and no error
 		return cosmos.ZeroUint(), nil
@@ -124,7 +114,6 @@ func (gm *GasMgrVCUR) GetAssetOutboundFee(ctx cosmos.Context, asset common.Asset
 	if err != nil {
 		return cosmos.ZeroUint(), err
 	}
-
 	minOutboundUSD, err := gm.keeper.GetMimir(ctx, constants.MinimumL1OutboundFeeUSD.String())
 	if minOutboundUSD < 0 || err != nil {
 		minOutboundUSD = gm.constantsAccessor.GetInt64Value(constants.MinimumL1OutboundFeeUSD)
@@ -157,9 +146,10 @@ func (gm *GasMgrVCUR) GetAssetOutboundFee(ctx cosmos.Context, asset common.Asset
 	minMultiplierBasisPoints := gm.keeper.GetConfigInt64(ctx, constants.MinOutboundFeeMultiplierBasisPoints)
 
 	// Calculate outbound fee based on current fee multiplier
-	chainBaseFee := chainOutboundFee.TransactionSize * chainOutboundFee.TransactionFeeRate
+	_, gasRateUnitsPerOne := asset.GetChain().GetGasUnits()
+	chainBaseFee := cosmos.NewUint(chainOutboundFee.TransactionSize).MulUint64(chainOutboundFee.TransactionFeeRate).MulUint64(common.One).Quo(gasRateUnitsPerOne)
 	feeMultiplierBps := gm.CalcOutboundFeeMultiplier(ctx, cosmos.NewUint(uint64(targetOutboundFeeSurplus)), outboundFeeSpentRune, outboundFeeWithheldRune, cosmos.NewUint(uint64(maxMultiplierBasisPoints)), cosmos.NewUint(uint64(minMultiplierBasisPoints)))
-	finalFee := common.GetUncappedShare(feeMultiplierBps, cosmos.NewUint(constants.MaxBasisPts), cosmos.NewUint(chainBaseFee))
+	finalFee := common.GetUncappedShare(feeMultiplierBps, cosmos.NewUint(constants.MaxBasisPts), chainBaseFee)
 
 	fee := cosmos.RoundToDecimal(
 		finalFee,
@@ -201,7 +191,7 @@ func (gm *GasMgrVCUR) GetAssetOutboundFee(ctx cosmos.Context, asset common.Asset
 }
 
 // CalcOutboundFeeMultiplier returns the current outbound fee multiplier based on current and target outbound fee surplus
-func (gm *GasMgrVCUR) CalcOutboundFeeMultiplier(ctx cosmos.Context, targetSurplusRune, gasSpentRune, gasWithheldRune, maxMultiplier, minMultiplier cosmos.Uint) cosmos.Uint {
+func (gm *GasMgr) CalcOutboundFeeMultiplier(ctx cosmos.Context, targetSurplusRune, gasSpentRune, gasWithheldRune, maxMultiplier, minMultiplier cosmos.Uint) cosmos.Uint {
 	// Sanity check
 	if targetSurplusRune.Equal(cosmos.ZeroUint()) {
 		ctx.Logger().Error("target gas surplus is zero")
@@ -220,48 +210,53 @@ func (gm *GasMgrVCUR) CalcOutboundFeeMultiplier(ctx cosmos.Context, targetSurplu
 	return common.SafeSub(maxMultiplier, multiplierReducedBps)
 }
 
-// getRuneInAssetValue convert the transaction fee to asset value , when the given asset is synthetic , it will need to get
-// the layer1 asset first , and then use the pool to convert
-func (gm *GasMgrVCUR) getRuneInAssetValue(ctx cosmos.Context, transactionFee cosmos.Uint, asset common.Asset) cosmos.Uint {
-	if asset.IsSyntheticAsset() || asset.IsTradeAsset() || asset.IsSecuredAsset() {
-		asset = asset.GetLayer1Asset()
-	}
-	pool, err := gm.keeper.GetPool(ctx, asset)
+// TODO: Replace combined GetMaxGas/GetGasRate calls with single GetGasDetails calls, so GetNetworkFee called only once.
+// (If done completely, perhaps mark GetMaxGas/GetGasRate to be removed on hard fork.)
+//
+// GetGasDetails calculates a consistent MaxGas Coin and GasRate for the network's TransactionSize.
+func (gm *GasMgr) GetGasDetails(ctx cosmos.Context, chain common.Chain) (common.Coin, int64, error) {
+	networkFee, err := gm.GetNetworkFee(ctx, chain)
 	if err != nil {
-		ctx.Logger().Error("fail to get pool", "asset", asset, "error", err)
-		return transactionFee
-	}
-	if pool.BalanceAsset.Equal(cosmos.ZeroUint()) || pool.BalanceRune.Equal(cosmos.ZeroUint()) {
-		return transactionFee
-	}
-
-	return pool.RuneValueInAsset(transactionFee)
-}
-
-// GetGasRate return the gas rate
-func (gm *GasMgrVCUR) GetGasRate(ctx cosmos.Context, chain common.Chain) cosmos.Uint {
-	transactionFee := gm.keeper.GetOutboundTxFee(ctx)
-	if chain.Equals(common.THORChain) {
-		return transactionFee
-	}
-	networkFee, err := gm.keeper.GetNetworkFee(ctx, chain)
-	if err != nil {
-		ctx.Logger().Error("fail to get network fee", "error", err)
-		return transactionFee
+		ctx.Logger().Error("fail to get network fee", "error", err, "chain", chain)
+		return common.NoCoin, 0, fmt.Errorf("fail to get network fee for chain(%s): %w", chain, err)
 	}
 	if err := networkFee.Valid(); err != nil {
 		ctx.Logger().Error("network fee is invalid", "error", err, "chain", chain)
-		return transactionFee
+		return common.NoCoin, 0, fmt.Errorf("network fee for chain(%s) is invalid: %w", chain, err)
 	}
-	return cosmos.RoundToDecimal(
-		cosmos.NewUint(networkFee.TransactionFeeRate*3/2),
-		chain.GetGasAssetDecimal(),
+
+	gasRate := cosmos.NewUint(networkFee.TransactionFeeRate)
+	if !chain.IsTHORChain() {
+		// THORChain has exactly-knowable gas costs, but otherwise overestimate the gas rate by 1.5x
+		// to increase the likelihood of transaction acceptance.
+		gasRate = gasRate.MulUint64(3).QuoUint64(2)
+	}
+	chainGasAssetPrecision := chain.GetGasAssetDecimal()
+
+	// convert to 1e8 decimals for the max gas coin
+	_, gasRateUnitsPerOne := chain.GetGasUnits()
+	maxGasAmount := gasRate.MulUint64(networkFee.TransactionSize)
+	maxGasAmount1e8 := maxGasAmount.MulUint64(common.One).Quo(gasRateUnitsPerOne)
+	maxGasAmount1e8 = cosmos.RoundToDecimal(
+		maxGasAmount1e8,
+		chainGasAssetPrecision,
 	)
+
+	maxGasCoin := common.NewCoin(chain.GetGasAsset(), maxGasAmount1e8)
+	maxGasCoin.Decimals = chainGasAssetPrecision
+
+	return maxGasCoin, int64(gasRate.Uint64()), nil
 }
 
-func (gm *GasMgrVCUR) GetNetworkFee(ctx cosmos.Context, chain common.Chain) (types.NetworkFee, error) {
-	transactionFee := gm.keeper.GetOutboundTxFee(ctx)
+// GetGasRate return the gas rate
+func (gm *GasMgr) GetGasRate(ctx cosmos.Context, chain common.Chain) cosmos.Uint {
+	_, gasRate, _ := gm.GetGasDetails(ctx, chain)
+	return cosmos.NewUint(uint64(gasRate))
+}
+
+func (gm *GasMgr) GetNetworkFee(ctx cosmos.Context, chain common.Chain) (types.NetworkFee, error) {
 	if chain.Equals(common.THORChain) {
+		transactionFee := gm.keeper.GetOutboundTxFee(ctx)
 		return types.NewNetworkFee(common.THORChain, 1, transactionFee.Uint64()), nil
 	}
 
@@ -269,24 +264,13 @@ func (gm *GasMgrVCUR) GetNetworkFee(ctx cosmos.Context, chain common.Chain) (typ
 }
 
 // GetMaxGas will calculate the maximum gas fee a tx can use
-func (gm *GasMgrVCUR) GetMaxGas(ctx cosmos.Context, chain common.Chain) (common.Coin, error) {
-	gasAsset := chain.GetGasAsset()
-	var amount cosmos.Uint
-
-	nf, err := gm.keeper.GetNetworkFee(ctx, chain)
-	if err != nil {
-		return common.NoCoin, fmt.Errorf("fail to get network fee for chain(%s): %w", chain, err)
-	}
-	amount = cosmos.NewUint(nf.TransactionSize * nf.TransactionFeeRate).MulUint64(3).QuoUint64(2)
-	gasCoin := common.NewCoin(gasAsset, amount)
-	chainGasAssetPrecision := chain.GetGasAssetDecimal()
-	gasCoin.Amount = cosmos.RoundToDecimal(amount, chainGasAssetPrecision)
-	gasCoin.Decimals = chainGasAssetPrecision
-	return gasCoin, nil
+func (gm *GasMgr) GetMaxGas(ctx cosmos.Context, chain common.Chain) (common.Coin, error) {
+	maxGasCoin, _, err := gm.GetGasDetails(ctx, chain)
+	return maxGasCoin, err
 }
 
 // EndBlock emit the events
-func (gm *GasMgrVCUR) EndBlock(ctx cosmos.Context, keeper keeper.Keeper, eventManager EventManager) {
+func (gm *GasMgr) EndBlock(ctx cosmos.Context, keeper keeper.Keeper, eventManager EventManager) {
 	gm.ProcessGas(ctx, keeper)
 
 	if len(gm.gasEvent.Pools) == 0 {
@@ -299,7 +283,7 @@ func (gm *GasMgrVCUR) EndBlock(ctx cosmos.Context, keeper keeper.Keeper, eventMa
 }
 
 // ProcessGas to subsidise the gas asset pools with RUNE for the gas they have spent
-func (gm *GasMgrVCUR) ProcessGas(ctx cosmos.Context, keeper keeper.Keeper) {
+func (gm *GasMgr) ProcessGas(ctx cosmos.Context, keeper keeper.Keeper) {
 	if keeper.RagnarokInProgress(ctx) {
 		// ragnarok is in progress , stop
 		return

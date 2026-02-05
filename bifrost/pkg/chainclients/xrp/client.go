@@ -196,6 +196,11 @@ func (c *Client) GetBlockScannerHeight() (int64, error) {
 	return c.blockScanner.PreviousHeight(), nil
 }
 
+// RollbackBlockScanner rolls back the block scanner to the last observed block
+func (c *Client) RollbackBlockScanner() error {
+	return c.blockScanner.RollbackToLastObserved()
+}
+
 func (c *Client) GetLatestTxForVault(vault string) (string, string, error) {
 	lastObserved, err := c.signerCacheManager.GetLatestRecordedTx(stypes.InboundCacheKey(vault, c.GetChain().String()))
 	if err != nil {
@@ -363,7 +368,19 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signedTx, c
 		return nil, nil, nil, fmt.Errorf("fail to marshal checkpoint: %w", err)
 	}
 
-	feeCurrency, err := fromThorchainToXrp(common.NewCoin(common.XRPAsset, cosmos.NewUint(uint64(tx.GasRate))))
+	// gas rate from gas rate units to THORChain decimals
+	gasRate := c.cfg.ChainID.NativeGasToThorchain(cosmos.NewUint(uint64(tx.GasRate)))
+	if gasRate.IsZero() {
+		gasRate = cosmos.OneUint()
+	}
+	gasCoin := common.NewCoin(common.XRPAsset, cosmos.NewUint(uint64(tx.GasRate)))
+
+	// TODO: Optionally
+	// (to avoid overpaying for already-queued TxOutItems when changing units),
+	// rather than assuming Transaction Size 1 here,
+	// use the tx.MaxGas instead like GAIA?
+
+	feeCurrency, err := fromThorchainToXrp(common.NewCoin(common.XRPAsset, gasRate))
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("fail to get fee: %w", err)
 	}
@@ -375,6 +392,7 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signedTx, c
 
 	msg.Sequence = uint32(meta.SeqNumber)
 	msg.Fee = fee
+	// For memoless outbounds, skip adding memo to the transaction
 	if tx.Memo != "" {
 		msg.BaseTx.Memos = []txtypes.MemoWrapper{
 			{
@@ -383,8 +401,6 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signedTx, c
 				},
 			},
 		}
-	} else {
-		return nil, nil, nil, fmt.Errorf("tx out memo is empty")
 	}
 
 	txBytes, err := c.signMsg(msg, tx.VaultPubKey)
@@ -392,7 +408,33 @@ func (c *Client) SignTx(tx stypes.TxOutItem, thorchainHeight int64) (signedTx, c
 		return nil, checkpointBytes, nil, fmt.Errorf("failed to sign message: %w", err)
 	}
 
-	return txBytes, nil, nil, nil
+	// create instant observation
+	fromAddr, err := tx.VaultPubKey.GetAddress(c.GetChain())
+	if err != nil {
+		c.logger.Err(err).Msg("error retrieving from address for instant observation")
+		return txBytes, nil, nil, nil
+	}
+	blobHex := hex.EncodeToString(txBytes)
+	txID, err := hash.SignTxBlob(blobHex)
+	if err != nil {
+		c.logger.Err(err).Msg("error retrieving txid for instant observation")
+		return txBytes, nil, nil, nil
+	}
+	txIn := stypes.NewTxInItem(
+		currentHeight,
+		txID,
+		tx.Memo,
+		fromAddr.String(),
+		tx.ToAddress.String(),
+		tx.Coins,
+		common.Gas([]common.Coin{gasCoin}),
+		tx.VaultPubKey,
+		"",
+		"",
+		nil,
+	)
+
+	return txBytes, nil, txIn, nil
 }
 
 // signMsg takes a payment msg and signs it using either private key or TSS.
@@ -424,7 +466,8 @@ func (c *Client) signMsg(
 		}
 	} else {
 		hashedMsg := sha512.Sum512(signBytes)
-		signature, _, err := c.tssKeyManager.RemoteSign(hashedMsg[:32], common.SigningAlgoSecp256k1, pubkey.String())
+		var signature []byte
+		signature, _, err = c.tssKeyManager.RemoteSign(hashedMsg[:32], common.SigningAlgoSecp256k1, pubkey.String())
 		if err != nil {
 			c.logger.Err(err).Msg("xrp remote sign")
 			return nil, fmt.Errorf("error, xrp remote sign: %w", err)
@@ -517,7 +560,7 @@ func (c *Client) txNeedsBroadcast(txHash string) bool {
 		return true
 	}
 
-	return false
+	return txResponse == nil || !txResponse.Validated
 }
 
 func (c *Client) broadcastTx(txBlob string) error {
@@ -548,7 +591,7 @@ func (c *Client) BroadcastTx(tx stypes.TxOutItem, txBytes []byte) (string, error
 
 	// if tx has already been broadcasted, don't try again, it will error with engine result: tefPAST_SEQ
 	if c.txNeedsBroadcast(txHash) {
-		if err := c.broadcastTx(txBlob); err != nil {
+		if err = c.broadcastTx(txBlob); err != nil {
 			return "", err
 		}
 	}
@@ -590,7 +633,8 @@ func (c *Client) ReportSolvency(blockHeight int64) error {
 		return fmt.Errorf("fail to get asgards,err: %w", err)
 	}
 
-	currentGasFee := c.xrpScanner.lastFee
+	// 1x estimated gas cost breathing room (transaction size 1), from gas rate units gas price to THORChain (1e8) format
+	currentGasFee := c.cfg.ChainID.NativeGasToThorchain(c.xrpScanner.lastFee)
 
 	// report insolvent asgard vaults,
 	// or else all if the chain is halted and all are solvent

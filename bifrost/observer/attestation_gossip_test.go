@@ -19,9 +19,11 @@ import (
 	"google.golang.org/grpc"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p"
+	"gitlab.com/thorchain/thornode/v3/bifrost/p2p/conversion"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
+	"gitlab.com/thorchain/thornode/v3/x/thorchain"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/ebifrost"
 )
 
@@ -57,14 +59,28 @@ func getTestLogger(t *testing.T) zerolog.Logger {
 
 // setupTestGossip sets up a test instance of AttestationGossip with mocked dependencies
 func setupTestGossip(t *testing.T) (*AttestationGossip, *MockHost, *MockKeys, *MockGRPCClient, *MockThorchainBridge, *MockEventClient) {
-	// Set up mocks
-	peers := []peer.ID{"peer1", "peer2", "peer3"}
-	host := NewMockHost(peers)
-
-	privKey := secp256k1.PrivKey{Key: []byte("private-key")}
+	privKey := secp256k1.GenPrivKey()
 	keys := &MockKeys{
-		privKey: &privKey,
+		privKey: privKey,
 	}
+
+	pubkey2 := thorchain.GetRandomPubKey()
+	pubkey3 := thorchain.GetRandomPubKey()
+
+	// derive peer IDs
+	peer1, err := conversion.GetPeerIDFromSecp256PubKey(privKey.PubKey().Bytes())
+	require.NoError(t, err)
+	pubkey2Bz, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, pubkey2.String())
+	require.NoError(t, err)
+	peer2, err := conversion.GetPeerIDFromSecp256PubKey(pubkey2Bz.Bytes())
+	require.NoError(t, err)
+	pubkey3Bz, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, pubkey3.String())
+	require.NoError(t, err)
+	peer3, err := conversion.GetPeerIDFromSecp256PubKey(pubkey3Bz.Bytes())
+	require.NoError(t, err)
+
+	peers := []peer.ID{peer1, peer2, peer3}
+	host := NewMockHost(peers)
 
 	pubKey, err := cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeAccPub, privKey.PubKey())
 	require.NoError(t, err)
@@ -86,42 +102,54 @@ func setupTestGossip(t *testing.T) (*AttestationGossip, *MockHost, *MockKeys, *M
 
 	bridge := &MockThorchainBridge{
 		getKeysignPartyFunc: func(pubKey common.PubKey) (common.PubKeys, error) {
-			return common.PubKeys{pubKey, "pubkey2", "pubkey3"}, nil
+			return common.PubKeys{pubKey, pubkey2, pubkey3}, nil
 		},
 	}
 
 	eventClient := NewMockEventClient()
 
 	// Create config
-	config := config.BifrostAttestationGossipConfig{
+	cfg := config.BifrostAttestationGossipConfig{
 		ObserveReconcileInterval:   1 * time.Second,
 		LateObserveTimeout:         2 * time.Minute,
 		NonQuorumTimeout:           10 * time.Hour,
 		MinTimeBetweenAttestations: 10 * time.Second,
 		AskPeers:                   2,
 		AskPeersDelay:              1 * time.Second,
+		MaxBatchSize:               100,
+		BatchInterval:              100 * time.Millisecond,
 	}
+
+	batcher := NewAttestationBatcher(NewMockHost(peers), getTestLogger(t), nil, 1*time.Second, 100, 10*time.Second, 4)
 
 	// Create the attestation gossip directly without calling NewAttestationGossip
 	ag := &AttestationGossip{
 		logger:               getTestLogger(t),
 		host:                 host,
-		keys:                 keys,
+		privKey:              privKey,
 		pubKey:               privKey.PubKey().Bytes(),
 		grpcClient:           grpcClient,
-		config:               config,
+		config:               cfg,
 		bridge:               bridge,
 		eventClient:          eventClient,
 		cachedKeySignParties: make(map[common.PubKey]cachedKeySignParty),
+		batcher:              batcher,
 
 		observedTxs: make(map[txKey]*AttestationState[*common.ObservedTx]),
 		networkFees: make(map[common.NetworkFee]*AttestationState[*common.NetworkFee]),
 		solvencies:  make(map[common.TxID]*AttestationState[*common.Solvency]),
 		errataTxs:   make(map[common.ErrataTx]*AttestationState[*common.ErrataTx]),
+
+		observedTxsPool: NewAttestationStatePool[*common.ObservedTx](),
+		networkFeesPool: NewAttestationStatePool[*common.NetworkFee](),
+		solvenciesPool:  NewAttestationStatePool[*common.Solvency](),
+		errataTxsPool:   NewAttestationStatePool[*common.ErrataTx](),
+
+		peerMgr: newPeerManager(getTestLogger(t), 2),
 	}
 
-	// Set active validator count
-	ag.setActiveValidators([]common.PubKey{common.PubKey(pubKey)})
+	// Set active validators
+	ag.setActiveValidators([]common.PubKey{common.PubKey(pubKey), pubkey2, pubkey3})
 
 	return ag, host, keys, grpcClient, bridge, eventClient
 }
@@ -166,7 +194,7 @@ func TestActiveValidatorCount(t *testing.T) {
 
 	// Test initial value
 	count := ag.activeValidatorCount()
-	assert.Equal(t, 1, count)
+	assert.Equal(t, 3, count)
 
 	privKey1 := secp256k1.GenPrivKey()
 	privKey2 := secp256k1.GenPrivKey()
@@ -182,10 +210,17 @@ func TestActiveValidatorCount(t *testing.T) {
 	count = ag.activeValidatorCount()
 	assert.Equal(t, 2, count)
 
+	peer1, err := conversion.GetPeerIDFromSecp256PubKey(privKey1.PubKey().Bytes())
+	require.NoError(t, err)
+	peer2, err := conversion.GetPeerIDFromSecp256PubKey(privKey2.PubKey().Bytes())
+	require.NoError(t, err)
+	peer3, err := conversion.GetPeerIDFromSecp256PubKey(privKey3.PubKey().Bytes())
+	require.NoError(t, err)
+
 	// Test isActiveValidator function
-	assert.NoError(t, ag.isActiveValidator(privKey1.PubKey().Bytes()))
-	assert.NoError(t, ag.isActiveValidator(privKey2.PubKey().Bytes()))
-	assert.Error(t, ag.isActiveValidator(privKey3.PubKey().Bytes()))
+	assert.True(t, ag.isActiveValidator(peer1))
+	assert.True(t, ag.isActiveValidator(peer2))
+	assert.False(t, ag.isActiveValidator(peer3))
 }
 
 // TestGetKeysignParty tests retrieving and caching the keysign party
@@ -614,7 +649,7 @@ func TestPruningLogic(t *testing.T) {
 		Tx: *pruneTx,
 	}
 
-	pruneState := NewAttestationState(obsTx)
+	pruneState := ag.observedTxsPool.NewAttestationState(obsTx)
 
 	// Set quorum time in the distant past
 	pruneState.quorumAttestationsSent = time.Now().Add(-24 * time.Hour)
@@ -629,7 +664,7 @@ func TestPruningLogic(t *testing.T) {
 		Height: 400,
 	}
 
-	pruneFeeState := NewAttestationState(&pruneFee)
+	pruneFeeState := ag.networkFeesPool.NewAttestationState(&pruneFee)
 
 	// Set quorum time in the distant past
 	pruneFeeState.quorumAttestationsSent = time.Now().Add(-24 * time.Hour)
@@ -686,7 +721,7 @@ func TestSendLateAttestations(t *testing.T) {
 		ID:    tx.ID,
 	}
 
-	lateState := NewAttestationState(obsTx)
+	lateState := ag.observedTxsPool.NewAttestationState(obsTx)
 
 	// Add two attestations
 	lateState.attestations = append(lateState.attestations, attestationSentState{
@@ -792,7 +827,7 @@ func TestHandleQuorumTxCommited(t *testing.T) {
 		require.NoError(t, err)
 
 		// Call the handler
-		ag.handleQuorumTxCommited(&ebifrost.EventNotification{
+		ag.handleQuorumTxCommitted(&ebifrost.EventNotification{
 			Payload: payload,
 		})
 
@@ -830,7 +865,7 @@ func TestHandleQuorumTxCommited(t *testing.T) {
 		require.NoError(t, err)
 
 		// Call the handler
-		ag.handleQuorumTxCommited(&ebifrost.EventNotification{
+		ag.handleQuorumTxCommitted(&ebifrost.EventNotification{
 			Payload: payload,
 		})
 

@@ -17,7 +17,7 @@ type WithdrawSuite struct{}
 
 var _ = Suite(&WithdrawSuite{})
 
-var ethSingleTxFee = cosmos.NewUint(37500)
+var ethSingleTxFee = cosmos.NewUint(375_000) // 375,000 gwei gas rate
 
 type WithdrawTestKeeper struct {
 	keeper.KVStoreDummy
@@ -691,7 +691,7 @@ func getWithdrawTestKeeper(c *C, ctx cosmos.Context, k keeper.Keeper, runeAddres
 	lp := LiquidityProvider{
 		Asset:              pool.Asset,
 		RuneAddress:        runeAddress,
-		AssetAddress:       runeAddress,
+		AssetAddress:       GetRandomETHAddress(),
 		LastAddHeight:      0,
 		LastWithdrawHeight: 0,
 		Units:              cosmos.NewUint(100 * common.One),

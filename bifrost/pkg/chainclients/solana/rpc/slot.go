@@ -1,7 +1,6 @@
 package rpc
 
 import (
-	"encoding/json"
 	"fmt"
 )
 
@@ -22,14 +21,9 @@ func (s *SolRPC) GetSlot() (uint64, error) {
 		},
 	}
 
-	respBody, err := s.post("getSlot", params)
-	if err != nil {
-		return 0, fmt.Errorf("failed to call getSlot: %w", err)
-	}
-
 	var response GetSlotResponse
-	if err := json.Unmarshal(respBody, &response); err != nil {
-		return 0, err
+	if err := s.post("getSlot", params, &response); err != nil {
+		return 0, fmt.Errorf("failed to call getSlot: %w", err)
 	}
 
 	if response.Error != nil && response.Error.Code != 0 {

@@ -3,6 +3,7 @@ package thorchain
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/cosmos/cosmos-sdk/telemetry"
@@ -60,6 +61,9 @@ func processTxInAttestation(
 		if voter.FinalisedHeight == 0 {
 			ok = true
 			voter.Height = ctx.BlockHeight() // Always record the consensus height of the finalised Tx
+			if voter.UnfinalizedHeight == 0 {
+				voter.UnfinalizedHeight = voter.Height // Preserve first consensus height
+			}
 			voter.FinalisedHeight = ctx.BlockHeight()
 			voter.Tx = *voter.GetTx(nas)
 
@@ -84,6 +88,9 @@ func processTxInAttestation(
 		if voter.Height == 0 {
 			ok = true
 			voter.Height = ctx.BlockHeight()
+			if voter.UnfinalizedHeight == 0 {
+				voter.UnfinalizedHeight = voter.Height // Preserve first consensus height
+			}
 			// this is the tx that has consensus
 			voter.Tx = *voter.GetTx(nas)
 
@@ -168,10 +175,33 @@ func handleObservedTxInQuorum(
 
 	voter.Tx.Tx.Memo = tx.Tx.Memo
 
-	hasFinalised := voter.HasFinalised(activeNodeAccounts)
+	// add memo for memoless transactions (after consensus is reached)
+	if len(tx.Tx.Coins) > 0 {
+		// Use the asset from the first coin for reference memo lookup
+		refAsset := tx.Tx.Coins[0].Asset
+
+		// Generate reference memo for memoless transactions
+		if strings.TrimSpace(voter.Tx.Tx.Memo) == "" {
+			var referenceID string
+			referenceID, err = generateReferenceMemoID(ctx, mgr, refAsset, tx)
+			if err != nil {
+				ctx.Logger().Error("failed to generate reference memo", "error", err, "txid", tx.Tx.ID.String())
+				// Continue without reference memo - will likely be refunded later due to empty memo
+			} else {
+				// Use ReferenceReadMemo's CreateMemo function
+				// Note: Reference memo expiry and duplicate usage validation is handled later in fetchMemoFromReference
+				refMemo := NewReferenceReadMemo(referenceID)
+				voter.Tx.Tx.Memo = refMemo.CreateMemo()
+			}
+		}
+
+	}
+
 	// memo errors are ignored here and will be caught later in processing,
 	// after vault update, voter setup, etc and the coin will be refunded
 	memo, _ := ParseMemoWithTHORNames(ctx, k, tx.Tx.Memo)
+
+	hasFinalised := voter.HasFinalised(activeNodeAccounts)
 
 	// Update vault balances from inbounds with Migrate memos immediately,
 	// to minimise any gap between outbound and inbound observations.
@@ -239,6 +269,16 @@ func handleObservedTxInQuorum(
 		return nil
 	}
 
+	// Resolve reference memo if needed before processing
+	if len(tx.Tx.Coins) > 0 {
+		asset := tx.Tx.Coins[0].Asset
+		resolvedMemo := fetchMemoFromReference(ctx, mgr, asset, voter.Tx.Tx, voter.UnfinalizedHeight)
+		preMemo := voter.Tx.Tx.Memo
+		voter.Tx.Tx.Memo = resolvedMemo
+		ctx.Logger().Info("reference memo conversion", "pre", preMemo, "post", voter.Tx.Tx.Memo, "asset", asset)
+		k.SetObservedTxInVoter(ctx, voter)
+	}
+
 	// construct msg from memo
 	m, txErr := processOneTxIn(ctx, k, voter.Tx, signer)
 	if txErr != nil {
@@ -264,18 +304,16 @@ func handleObservedTxInQuorum(
 
 	// if its a swap, send it to our queue for processing later
 	if isSwap {
-		addSwap(ctx, k, mgr.EventMgr(), *swapMsg)
+		if err = addSwap(ctx, mgr, *swapMsg); err != nil {
+			if refundErr := refundTx(ctx, tx, mgr, CodeSwapFail, err.Error(), ""); refundErr != nil {
+				ctx.Logger().Error("fail to refund swap", "error", refundErr)
+				return fmt.Errorf("swap failed and refund also failed: %w, refund error: %v", err, refundErr)
+			}
+		}
 		return nil
 	}
 
-	// if it is a loan, inject the observed TxID and ToAddress into the context
-	_, isLoanOpen := m.(*MsgLoanOpen)
-	_, isLoanRepayment := m.(*MsgLoanRepayment)
 	mCtx := ctx
-	if isLoanOpen || isLoanRepayment {
-		mCtx = ctx.WithValue(constants.CtxLoanTxID, tx.Tx.ID)
-		mCtx = mCtx.WithValue(constants.CtxLoanToAddress, tx.Tx.ToAddress)
-	}
 
 	// Check and block switch assets
 	// Check is independent of the mimir to enable the handler in order to support
@@ -300,8 +338,7 @@ func handleObservedTxInQuorum(
 	// if an outbound is not expected, mark the voter as done
 	if !memo.GetType().HasOutbound() {
 		// retrieve the voter from store in case the handler caused a change
-		// trunk-ignore(golangci-lint/govet): shadow
-		voter, err := k.GetObservedTxInVoter(ctx, tx.Tx.ID)
+		voter, err = k.GetObservedTxInVoter(ctx, tx.Tx.ID)
 		if err != nil {
 			return fmt.Errorf("fail to get voter")
 		}
@@ -355,19 +392,25 @@ func processTxOutAttestation(
 		// A duplicate message, so do nothing further.
 		return voter, ok
 	}
-	parts := strings.Split(tx.Tx.Memo, ":")
-	if len(parts) > 1 {
-		inhash, err := common.NewTxID(parts[len(parts)-1])
-		if err == nil {
-			k.SetObservedLink(ctx, inhash, tx.Tx.ID)
-		}
+
+	// Outbound memos can have | data passthrough,
+	// so linked TxID extracted with memo parsing and GetTxID
+	// rather than strings.Split .
+	if memo, err := ParseMemoWithTHORNames(ctx, k, tx.Tx.Memo); err != nil {
+		ctx.Logger().Error("fail to parse outbound memo", "error", err, "memo", tx.Tx.Memo)
+	} else if inhash := memo.GetTxID(); !inhash.IsEmpty() {
+		k.SetObservedLink(ctx, inhash, tx.Tx.ID)
 	}
+
 	if voter.HasFinalised(nas) {
 		if voter.FinalisedHeight == 0 {
 			if voter.Height == 0 {
 				ok = true
 				// Record the consensus height at which outbound consensus actions are taken.
 				voter.Height = ctx.BlockHeight()
+				if voter.UnfinalizedHeight == 0 {
+					voter.UnfinalizedHeight = voter.Height // Preserve first consensus height
+				}
 			}
 			voter.FinalisedHeight = ctx.BlockHeight()
 			voter.Tx = *voter.GetTx(nas)
@@ -406,6 +449,9 @@ func processTxOutAttestation(
 			// Record the consensus height at which outbound consensus actions are taken,
 			// even if not yet Finalised.
 			voter.Height = ctx.BlockHeight()
+			if voter.UnfinalizedHeight == 0 {
+				voter.UnfinalizedHeight = voter.Height // Preserve first consensus height
+			}
 			// this is the tx that has consensus
 			voter.Tx = *voter.GetTx(nas)
 
@@ -488,9 +534,19 @@ func handleObservedTxOutQuorum(
 
 	k := mgr.Keeper()
 
+	if isCancelTx(tx) {
+		ctx.Logger().Info("skipping slash for cancel tx with empty memo", "txid", tx.Tx.ID)
+		// Credit gas to gas manager and deduct from vault (legit operational spend, no penalty)
+		// This also adds to fee_spent_rune for dynamic outbound fee calculation
+		if err := addGasFees(ctx, mgr, tx); err != nil {
+			ctx.Logger().Error("fail to add gas fees for cancel tx", "error", err)
+		}
+		return nil
+	}
+
 	// if memo isn't valid or its an inbound memo, slash the vault
 	memo, _ := ParseMemoWithTHORNames(ctx, k, tx.Tx.Memo)
-	if memo.IsEmpty() || memo.IsInbound() {
+	if memo.IsInbound() {
 		vault, err := k.GetVault(ctx, tx.ObservedPubKey)
 		if err != nil {
 			ctx.Logger().Error("fail to get vault", "error", err)
@@ -518,17 +574,20 @@ func handleObservedTxOutQuorum(
 
 	txOut := voter.GetTx(activeNodeAccounts) // get consensus tx, in case our for loop is incorrect
 	txOut.Tx.Memo = tx.Tx.Memo
+
+	// For memoless outbounds, look up the original memo from the scheduled TxOutItem
+	if txOut.Tx.Memo == "" {
+		if originalMemo := findOriginalMemoForOutbound(ctx, mgr, tx); originalMemo != "" {
+			txOut.Tx.Memo = originalMemo
+			ctx.Logger().Info("resolved memoless outbound", "original_memo", originalMemo, "txid", tx.Tx.ID)
+		}
+	}
+
 	m, err := processOneTxIn(ctx, k, *txOut, signer)
 	if err != nil || tx.Tx.Chain.IsEmpty() {
 		ctx.Logger().Error("fail to process txOut",
 			"error", err,
 			"tx", tx.Tx.String())
-		return nil
-	}
-
-	// Apply Gas fees
-	if err := addGasFees(ctx, mgr, tx); err != nil {
-		ctx.Logger().Error("fail to add gas fee", "error", err)
 		return nil
 	}
 
@@ -538,23 +597,45 @@ func handleObservedTxOutQuorum(
 
 	// emit tss keysign metrics
 	if tx.KeysignMs > 0 {
-		keysignMetric, err := k.GetTssKeysignMetric(ctx, tx.Tx.ID)
+		var keysignMetric *keeper.TssKeysignMetric
+		keysignMetric, err = k.GetTssKeysignMetric(ctx, tx.Tx.ID)
 		if err != nil {
 			ctx.Logger().Error("fail to get tss keysign metric", "error", err, "hash", tx.Tx.ID)
 		} else {
 			evt := NewEventTssKeysignMetric(keysignMetric.TxID, keysignMetric.GetMedianTime())
-			if err := mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
+			if err = mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
 				ctx.Logger().Error("fail to emit tss metric event", "error", err)
 			}
 		}
 	}
-	_, err = handler(ctx, m)
+	var res *cosmos.Result
+	res, err = handler(ctx, m)
 	if err != nil {
 		ctx.Logger().Error("handler failed:", "error", err)
 		return nil
 	}
+
+	vaultSlash := false
+	if res != nil && res.Events != nil {
+		for _, ev := range res.Events {
+			if ev.Type == "vault-slash" {
+				vaultSlash = true
+				break
+			}
+		}
+	}
+
 	voter.SetDone()
 	k.SetObservedTxOutVoter(ctx, voter)
+
+	// only deduct gas fee via the manager if there was not a vault slash that covered it
+	if !vaultSlash {
+		if err = addGasFees(ctx, mgr, tx); err != nil {
+			ctx.Logger().Error("fail to add gas fee", "error", err)
+			return nil
+		}
+	}
+
 	// process the msg first , and then deduct the fund from vault last
 	// If sending from one of our vaults, decrement coins
 	vault, err := k.GetVault(ctx, tx.ObservedPubKey)
@@ -562,12 +643,22 @@ func handleObservedTxOutQuorum(
 		ctx.Logger().Error("fail to get vault", "error", err)
 		return nil
 	}
+
+	// if the vault was slashed we skipped the gas manager above and deduct gas directly
+	if vaultSlash {
+		vault.SubFunds(tx.Tx.Gas.ToCoins())
+	}
+
+	// Don't add to or subtract from vault balances when the sender and recipient are the same
+	// (particularly avoid Consolidate SafeSub zeroing of vault balances).
 	if !tx.Tx.FromAddress.Equals(tx.Tx.ToAddress) {
-		// Don't add to or subtract from vault balances when the sender and recipient are the same
-		// (particularly avoid Consolidate SafeSub zeroing of vault balances).
-		vault.SubFunds(tx.Tx.Coins)
+		// skip deducting funds for outbound fake gas
+		if !isOutboundFakeGasTx(tx) {
+			vault.SubFunds(tx.Tx.Coins)
+		}
 		vault.OutboundTxCount++
 	}
+
 	if vault.IsAsgard() && memo.IsType(TxMigrate) {
 		// only remove the block height that had been specified in the memo
 		vault.RemovePendingTxBlockHeights(memo.GetBlockHeight())
@@ -596,4 +687,272 @@ func handleObservedTxOutQuorum(
 	ctx.Logger().Info("tx out processed", "chain", tx.Tx.Chain, "id", tx.Tx.ID, "finalized", tx.IsFinal())
 
 	return nil
+}
+
+// matchedOutbound holds a matching TxOutItem with its height and hash for sorting
+type matchedOutbound struct {
+	height int64
+	item   TxOutItem
+	hash   string
+}
+
+// findOriginalMemoForOutbound searches the TxOut queue for a matching scheduled outbound
+// and returns its OriginalMemo. This is needed for memoless outbounds where the on-chain
+// memo is empty but we need the original memo to properly link the outbound to its inbound.
+//
+// When multiple TxOutItems match (e.g., two outbounds with identical on-chain fields but
+// different memos), this function uses deterministic ordering matching Bifrost's signer
+// (see bifrost/signer/storage.go:200-204) to ensure THORNode picks the same one Bifrost signed.
+func findOriginalMemoForOutbound(ctx cosmos.Context, mgr Manager, tx common.ObservedTx) string {
+	// Check coins early to avoid unnecessary iteration
+	if len(tx.Tx.Coins) == 0 {
+		return ""
+	}
+
+	k := mgr.Keeper()
+	signingTransPeriod := k.GetConfigInt64(ctx, constants.SigningTransactionPeriod)
+
+	// Search recent TxOut blocks for matching TxOutItem
+	// Use the same range logic as handler_common_outbound.go
+	earliestHeight := ctx.BlockHeight() - signingTransPeriod
+	if earliestHeight < 1 {
+		earliestHeight = 1
+	}
+
+	// A TxOutItem might be rescheduled (by LackSigning) rounded up to nearest multiple of RescheduleCoalesceBlocks,
+	// so check backwards from that future nearest multiple.
+	latestHeight := ctx.BlockHeight()
+	rescheduleCoalesceBlocks := k.GetConfigInt64(ctx, constants.RescheduleCoalesceBlocks)
+	if rescheduleCoalesceBlocks > 1 {
+		overBlocks := latestHeight % rescheduleCoalesceBlocks
+		if overBlocks != 0 {
+			latestHeight += rescheduleCoalesceBlocks - overBlocks
+		}
+	}
+
+	// Collect all matching TxOutItems
+	var matches []matchedOutbound
+
+	for height := earliestHeight; height <= latestHeight; height++ {
+		txOut, err := k.GetTxOut(ctx, height)
+		if err != nil {
+			continue
+		}
+		for _, item := range txOut.TxArray {
+			// Skip if already has an OutHash (already processed)
+			if !item.OutHash.IsEmpty() {
+				continue
+			}
+			if !item.Chain.Equals(tx.Tx.Chain) {
+				continue
+			}
+			if !item.ToAddress.Equals(tx.Tx.ToAddress) {
+				continue
+			}
+			// Check both regular and EdDSA vault pubkeys (same as handler_common_outbound.go)
+			if !item.VaultPubKey.Equals(tx.ObservedPubKey) && !item.VaultPubKeyEddsa.Equals(tx.ObservedPubKey) {
+				continue
+			}
+			if !item.Coin.Asset.Equals(tx.Tx.Coins[0].Asset) {
+				continue
+			}
+			// Check coin amount matches (with some flexibility for gas)
+			// Similar to handler_common_outbound.go logic
+			matchCoin := tx.Tx.Coins.EqualsEx(common.Coins{item.Coin})
+			if !matchCoin && item.Coin.Asset.Equals(item.Chain.GetGasAsset()) {
+				asset := item.Chain.GetGasAsset()
+				intendToSpend := item.Coin.Amount.Add(item.MaxGas.ToCoins().GetCoin(asset).Amount)
+				actualSpend := tx.Tx.Coins.GetCoin(asset).Amount.Add(tx.Tx.Gas.ToCoins().GetCoin(asset).Amount)
+				if intendToSpend.Equal(actualSpend) {
+					matchCoin = true
+				}
+			}
+			if !matchCoin {
+				continue
+			}
+			// Found a match - add to list for deterministic sorting
+			matches = append(matches, matchedOutbound{
+				height: height,
+				item:   item,
+				hash:   item.Hash(),
+			})
+		}
+	}
+
+	if len(matches) == 0 {
+		return ""
+	}
+
+	// Sort by height (ascending), then by hash (ascending)
+	// This matches Bifrost's deterministic ordering in signer/storage.go:200-204
+	sort.SliceStable(matches, func(i, j int) bool {
+		return matches[i].hash < matches[j].hash
+	})
+	sort.SliceStable(matches, func(i, j int) bool {
+		return matches[i].height < matches[j].height
+	})
+
+	// Return memo from first match (what Bifrost would sign first)
+	if matches[0].item.OriginalMemo != "" {
+		return matches[0].item.OriginalMemo
+	}
+	return matches[0].item.Memo
+}
+
+// fetchMemoFromReference fetches memo from reference if it's a memoless transaction
+func fetchMemoFromReference(ctx cosmos.Context, mgr Manager, asset common.Asset, tx common.Tx, txObservationHeight int64) string {
+	mem, err := ParseMemoWithTHORNames(ctx, mgr.Keeper(), tx.Memo)
+	if err != nil {
+		ctx.Logger().Debug("failed to parse memo in fetchMemoFromReference", "error", err, "memo", tx.Memo, "txid", tx.ID)
+	}
+	if mem.GetType() == TxReferenceReadMemo {
+		m, ok := mem.(ReferenceReadMemo)
+		if !ok {
+			return tx.Memo
+		}
+		// Check if memoless transactions are halted
+		haltMemoless, err := mgr.Keeper().GetMimir(ctx, constants.HaltMemoless.String())
+		if err == nil && haltMemoless > 0 {
+			return ""
+		}
+
+		refMemo, err := mgr.Keeper().GetReferenceMemo(ctx, asset, m.Reference)
+		if err != nil {
+			ctx.Logger().Error("unable to fetch pool for ref memo lookup", "error", err, "asset", asset)
+			return ""
+		}
+
+		// Ensure transaction was observed after the reference memo was created
+		if txObservationHeight <= refMemo.Height {
+			ctx.Logger().Info("transaction observed before reference memo creation", "tx_height", txObservationHeight, "memo_height", refMemo.Height, "reference", m.Reference)
+			// Track failure usage
+			trackReferenceMemoUsage(ctx, mgr, asset, tx.Memo, tx.ID)
+			return ""
+		}
+
+		ttl := mgr.Keeper().GetConfigInt64(ctx, constants.MemolessTxnTTL)
+		if !refMemo.IsExpired(ctx.BlockHeight(), ttl) {
+			// Check usage limit
+			maxUse := mgr.Keeper().GetConfigInt64(ctx, constants.MemolessTxnMaxUse)
+			if maxUse > 0 && refMemo.GetUsageCount() >= maxUse {
+				ctx.Logger().Info("reference memo usage limit exceeded in fetchMemoFromReference", "reference", m.Reference, "usage_count", refMemo.GetUsageCount(), "max_use", maxUse)
+
+				// Track failure usage
+				trackReferenceMemoUsage(ctx, mgr, asset, tx.Memo, tx.ID)
+				return ""
+			}
+
+			// Track successful usage
+			trackReferenceMemoUsage(ctx, mgr, asset, tx.Memo, tx.ID)
+			return refMemo.Memo
+		}
+
+		// Track failure usage
+		trackReferenceMemoUsage(ctx, mgr, asset, tx.Memo, tx.ID)
+		return ""
+	}
+	return tx.Memo
+}
+
+// trackReferenceMemoUsage tracks that a transaction has used a reference memo
+func trackReferenceMemoUsage(ctx cosmos.Context, mgr Manager, asset common.Asset, memo string, txID common.TxID) {
+	mem, _ := ParseMemo(mgr.GetVersion(), memo) // ignore err
+	if mem.GetType() == TxReferenceReadMemo {
+		m, ok := mem.(ReferenceReadMemo)
+		if !ok {
+			return
+		}
+
+		refMemo, err := mgr.Keeper().GetReferenceMemo(ctx, asset, m.Reference)
+		if err != nil {
+			ctx.Logger().Error("fail to get reference memo for usage tracking", "error", err)
+			return
+		}
+
+		// Check if already used by this transaction
+		if refMemo.HasBeenUsedBy(txID) {
+			// Already tracked, nothing to do
+			return
+		}
+
+		// Add this transaction to the usage list (with duplicate protection)
+		if refMemo.AddUsage(txID) {
+			mgr.Keeper().SetReferenceMemo(ctx, refMemo)
+			maxUse := mgr.Keeper().GetConfigInt64(ctx, constants.MemolessTxnMaxUse)
+			ctx.Logger().Info("reference memo usage tracked", "reference", m.Reference, "usage_count", refMemo.GetUsageCount(), "max_use", maxUse, "txid", txID, "asset", asset, "memo", refMemo.Memo)
+		}
+	}
+}
+
+func generateReferenceMemoID(ctx cosmos.Context, mgr Manager, asset common.Asset, tx common.ObservedTx) (string, error) {
+	if len(tx.Tx.Coins) == 0 {
+		return "", fmt.Errorf("no coins in transaction for reference generation")
+	}
+
+	amount := tx.Tx.Coins[0].Amount.Uint64()
+	return ExtractReferenceFromAmount(ctx, mgr, asset, amount)
+}
+
+// ExtractReferenceFromAmount extracts the reference ID from a transaction amount.
+// This is the core logic shared by both the handler (generateReferenceMemoID)
+// and the querier (queryReferenceMemoPreflight).
+func ExtractReferenceFromAmount(ctx cosmos.Context, mgr Manager, asset common.Asset, amount uint64) (string, error) {
+	if asset.IsEmpty() {
+		return "", fmt.Errorf("asset is empty for reference generation")
+	}
+
+	if amount == 0 {
+		return "", fmt.Errorf("zero amount in transaction for reference generation")
+	}
+
+	var decimals int64
+	if asset.IsGasAsset() {
+		decimals = asset.Chain.GetGasAssetDecimal()
+	} else {
+		pool, err := mgr.Keeper().GetPool(ctx, asset)
+		if err != nil {
+			ctx.Logger().Error("unable to fetch pool for ref memo", "error", err)
+			return "", err
+		}
+		decimals = pool.Decimals
+	}
+
+	baseEnd := mgr.Keeper().GetConfigInt64(ctx, constants.MemolessTxnRefCount)
+	txnRefLength := len(fmt.Sprintf("%d", baseEnd))
+
+	// Prevent overflow: uint64 max is ~1.8e19, so max safe length is 19 digits
+	const maxRefLength = 19
+	if txnRefLength > maxRefLength {
+		return "", fmt.Errorf("reference length %d exceeds maximum %d to prevent overflow", txnRefLength, maxRefLength)
+	}
+
+	// Calculate modulus based on reference length (10^txnRefLength)
+	var modulus uint64 = 1
+	if baseEnd > 0 {
+		for i := 0; i < txnRefLength; i++ {
+			modulus *= 10
+		}
+	}
+
+	// Normalize amount to THORChain decimals.
+	if decimals < int64(common.THORChainDecimals) {
+		divisor := int64(1)
+		for i := decimals; i < int64(common.THORChainDecimals); i++ {
+			divisor *= 10
+		}
+		amount /= uint64(divisor)
+	}
+
+	// Extract reference from the amount.
+	refNum := amount % modulus
+
+	// Zero references are not allowed as they would create ambiguous reference IDs.
+	// This occurs when the amount (after decimal normalization) is exactly divisible
+	// by the modulus (e.g., 50000000 sat with modulus 100 → ref 0).
+	// Users should adjust their amount slightly to avoid this edge case.
+	if refNum == 0 {
+		return "", fmt.Errorf("zero reference from amount is invalid: amount %d is divisible by modulus %d", amount, modulus)
+	}
+
+	return leadingZeros(txnRefLength, fmt.Sprintf("%d", refNum)), nil
 }

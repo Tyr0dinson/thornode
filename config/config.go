@@ -204,35 +204,10 @@ func Init() {
 		"bifrost.chains.GAIA.block_scanner.cosmos_grpc_tls",
 		"GAIA_GRPC_TLS",
 	))
-	assert(viper.BindEnv(
-		"bifrost.chains.SOL.rpc_host",
-		"SOL_HOST",
-	))
-	assert(viper.BindEnv(
-		"bifrost.chains.SOL.block_scanner.rpc_host",
-		"SOL_HOST",
-	))
-	assert(viper.BindEnv(
-		"bifrost.chains.SOL.geyser_host",
-		"SOL_GEYSER",
-	))
-	assert(viper.BindEnv(
-		"bifrost.chains.SOL.geyser_token",
-		"SOL_TOKEN",
-	))
-	assert(viper.BindEnv(
-		"bifrost.chains.ADA.rpc_host",
-		"ADA_HOST",
-	))
-	assert(viper.BindEnv(
-		"bifrost.chains.ADA.cardano_n2c_address",
-		"ADA_N2C_ADDRESS",
-	))
 	assert(viper.BindEnv("bifrost.chains.GAIA.disabled", "GAIA_DISABLED"))
 	assert(viper.BindEnv("bifrost.chains.DOGE.disabled", "DOGE_DISABLED"))
 	assert(viper.BindEnv("bifrost.chains.LTC.disabled", "LTC_DISABLED"))
 	assert(viper.BindEnv("bifrost.chains.AVAX.disabled", "AVAX_DISABLED"))
-	assert(viper.BindEnv("bifrost.chains.SOL.disabled", "SOL_DISABLED"))
 	assert(viper.BindEnv("bifrost.chains.AVAX.block_scanner.gas_cache_size", "AVAX_GAS_CACHE_SIZE"))
 	assert(viper.BindEnv("thor.cosmos.halt_height", "HARDFORK_BLOCK_HEIGHT"))
 
@@ -386,12 +361,40 @@ type Thornode struct {
 	// consensus failure on sync from genesis.
 	StagenetAdminAddresses []string `mapstructure:"stagenet_admin_addresses"`
 
+	// API contains THORnode-specific API configuration.
+	API struct {
+		// Quote contains configuration for the quote endpoints.
+		Quote struct {
+			// RecommendedMinAmountFeeMultiplier sets the multiplier on the outbound fee for
+			// the source and destination chains, used to determine the min recommended swap
+			// amount that should be respected by clients to avoid outbounds and refunds being
+			// swallowed.
+			RecommendedMinAmountFeeMultiplier uint64 `mapstructure:"recommended_min_amount_fee_multiplier"`
+
+			// MaxLag is the maximum lag for the latest block time on a node. If the latest
+			// block time is older than this duration, quote endpoints will return an error.
+			MaxLag time.Duration `mapstructure:"max_lag"`
+		} `mapstructure:"quote"`
+
+		// Pagination sets the pagination defaults for THORNode API endpoints that page.
+		Pagination struct {
+			// DefaultPageSize is the default page size for paginated endpoints.
+			DefaultPageSize uint64 `mapstructure:"default_page_size"`
+
+			// MaxPageSize is the maximum page size for paginated endpoints.
+			MaxPageSize uint64 `mapstructure:"max_page_size"`
+		} `mapstructure:"pagination"`
+	} `mapstructure:"api"`
+
 	// Telemetry contains THORnode-specific telemetry configuration.
 	Telemetry struct {
 		// SlashPoints enables slash point telemetry. This creates a file in the node home
 		// directory with JSON events for all slash increments and decrements. This feature
 		// should not be enabled on production nodes.
 		SlashPoints bool `mapstructure:"slash_points"`
+		// PricePerNode enables oracle price telemetry. This tracks the reported
+		// price per asset and per node, updated every block.
+		PricePerNode bool `mapstructure:"price_per_node"`
 	} `mapstructure:"telemetry"`
 
 	// LogFilter will drop logs matching the modules and messages when not in debug level.
@@ -444,14 +447,20 @@ type Thornode struct {
 		} `mapstructure:"grpc"`
 
 		EBifrost struct {
-			Enable  bool   `mapstructure:"enable"`
-			Address string `mapstructure:"address"`
+			Enable       bool          `mapstructure:"enable"`
+			Address      string        `mapstructure:"address"`
+			CacheItemTTL time.Duration `mapstructure:"cache_item_ttl"`
 		} `mapstructure:"ebifrost"`
 
 		StateSync struct {
 			SnapshotInterval   int64 `mapstructure:"snapshot_interval"`
 			SnapshotKeepRecent int64 `mapstructure:"snapshot_keep_recent"`
 		} `mapstructure:"state_sync"`
+
+		Wasm struct {
+			QueryGasLimit   int64 `mapstructure:"query_gas_limit"`
+			MemoryCacheSize int64 `mapstructure:"memory_cache_size"`
+		} `mapstructure:"wasm"`
 	} `mapstructure:"cosmos"`
 
 	// Tendermint contains values used in templating the Tendermint config.toml.
@@ -510,37 +519,88 @@ type Bifrost struct {
 	AttestationGossip BifrostAttestationGossipConfig `mapstructure:"attestation_gossip"`
 	Metrics           BifrostMetricsConfiguration    `mapstructure:"metrics"`
 	Chains            struct {
-		AVAX BifrostChainConfiguration `mapstructure:"avax"`
-		BCH  BifrostChainConfiguration `mapstructure:"bch"`
-		BSC  BifrostChainConfiguration `mapstructure:"bsc"`
-		BTC  BifrostChainConfiguration `mapstructure:"btc"`
-		DOGE BifrostChainConfiguration `mapstructure:"doge"`
-		ETH  BifrostChainConfiguration `mapstructure:"eth"`
-		GAIA BifrostChainConfiguration `mapstructure:"gaia"`
-		LTC  BifrostChainConfiguration `mapstructure:"ltc"`
-		BASE BifrostChainConfiguration `mapstructure:"base"`
-		XRP  BifrostChainConfiguration `mapstructure:"xrp"`
-		SOL  BifrostChainConfiguration `mapstructure:"sol"`
-		ADA  BifrostChainConfiguration `mapstructure:"ada"`
+		AVAX  BifrostChainConfiguration `mapstructure:"avax"`
+		BCH   BifrostChainConfiguration `mapstructure:"bch"`
+		BSC   BifrostChainConfiguration `mapstructure:"bsc"`
+		BTC   BifrostChainConfiguration `mapstructure:"btc"`
+		DOGE  BifrostChainConfiguration `mapstructure:"doge"`
+		ETH   BifrostChainConfiguration `mapstructure:"eth"`
+		GAIA  BifrostChainConfiguration `mapstructure:"gaia"`
+		NOBLE BifrostChainConfiguration `mapstructure:"noble"`
+		LTC   BifrostChainConfiguration `mapstructure:"ltc"`
+		BASE  BifrostChainConfiguration `mapstructure:"base"`
+		TRON  BifrostChainConfiguration `mapstructure:"tron"`
+		XRP   BifrostChainConfiguration `mapstructure:"xrp"`
+		SOL   BifrostChainConfiguration `mapstructure:"sol"`
+		ADA   BifrostChainConfiguration `mapstructure:"ada"`
 	} `mapstructure:"chains"`
-	TSS             BifrostTSSConfiguration `mapstructure:"tss"`
-	ObserverLevelDB LevelDBOptions          `mapstructure:"observer_leveldb"`
+	TSS             BifrostTSSConfiguration    `mapstructure:"tss"`
+	ObserverLevelDB LevelDBOptions             `mapstructure:"observer_leveldb"`
+	ObserverWorkers int                        `mapstructure:"observer_workers"`
+	Oracle          BifrostOracleConfiguration `mapstructure:"oracle"`
+	Providers       struct {
+		Binance   BifrostOracleProviderConfiguration `mapstructure:"binance"`
+		Bitfinex  BifrostOracleProviderConfiguration `mapstructure:"bitfinex"`
+		Bitget    BifrostOracleProviderConfiguration `mapstructure:"bitget"`
+		Bitmart   BifrostOracleProviderConfiguration `mapstructure:"bitmart"`
+		Bitstamp  BifrostOracleProviderConfiguration `mapstructure:"bitstamp"`
+		Bybit     BifrostOracleProviderConfiguration `mapstructure:"bybit"`
+		Coinbase  BifrostOracleProviderConfiguration `mapstructure:"coinbase"`
+		Coinw     BifrostOracleProviderConfiguration `mapstructure:"coinw"`
+		Crypto    BifrostOracleProviderConfiguration `mapstructure:"crypto"`
+		Digifinex BifrostOracleProviderConfiguration `mapstructure:"digifinex"`
+		Gate      BifrostOracleProviderConfiguration `mapstructure:"gate"`
+		Gemini    BifrostOracleProviderConfiguration `mapstructure:"gemini"`
+		Htx       BifrostOracleProviderConfiguration `mapstructure:"htx"`
+		Kraken    BifrostOracleProviderConfiguration `mapstructure:"kraken"`
+		Kucoin    BifrostOracleProviderConfiguration `mapstructure:"kucoin"`
+		Lbank     BifrostOracleProviderConfiguration `mapstructure:"lbank"`
+		Mexc      BifrostOracleProviderConfiguration `mapstructure:"mexc"`
+		Okx       BifrostOracleProviderConfiguration `mapstructure:"okx"`
+		Thorchain BifrostOracleProviderConfiguration `mapstructure:"thorchain"`
+	} `mapstructure:"providers"`
 }
 
 func (b Bifrost) GetChains() map[common.Chain]BifrostChainConfiguration {
 	return map[common.Chain]BifrostChainConfiguration{
-		common.AVAXChain: b.Chains.AVAX,
-		common.BCHChain:  b.Chains.BCH,
-		common.BSCChain:  b.Chains.BSC,
-		common.BTCChain:  b.Chains.BTC,
-		common.DOGEChain: b.Chains.DOGE,
-		common.ETHChain:  b.Chains.ETH,
-		common.GAIAChain: b.Chains.GAIA,
-		common.LTCChain:  b.Chains.LTC,
-		common.BASEChain: b.Chains.BASE,
-		common.XRPChain:  b.Chains.XRP,
-		common.SOLChain:  b.Chains.SOL,
-		common.ADAChain:  b.Chains.ADA,
+		common.AVAXChain:  b.Chains.AVAX,
+		common.BCHChain:   b.Chains.BCH,
+		common.BSCChain:   b.Chains.BSC,
+		common.BTCChain:   b.Chains.BTC,
+		common.DOGEChain:  b.Chains.DOGE,
+		common.ETHChain:   b.Chains.ETH,
+		common.GAIAChain:  b.Chains.GAIA,
+		common.NOBLEChain: b.Chains.NOBLE,
+		common.LTCChain:   b.Chains.LTC,
+		common.BASEChain:  b.Chains.BASE,
+		common.TRONChain:  b.Chains.TRON,
+		common.XRPChain:   b.Chains.XRP,
+		common.SOLChain:   b.Chains.SOL,
+		common.ADAChain:   b.Chains.ADA,
+	}
+}
+
+func (b Bifrost) GetProviders() map[string]BifrostOracleProviderConfiguration {
+	return map[string]BifrostOracleProviderConfiguration{
+		common.ProviderBinance:   b.Providers.Binance,
+		common.ProviderBitfinex:  b.Providers.Bitfinex,
+		common.ProviderBitget:    b.Providers.Bitget,
+		common.ProviderBitmart:   b.Providers.Bitmart,
+		common.ProviderBitstamp:  b.Providers.Bitstamp,
+		common.ProviderBybit:     b.Providers.Bybit,
+		common.ProviderCoinbase:  b.Providers.Coinbase,
+		common.ProviderCoinw:     b.Providers.Coinw,
+		common.ProviderCrypto:    b.Providers.Crypto,
+		common.ProviderDigifinex: b.Providers.Digifinex,
+		common.ProviderGate:      b.Providers.Gate,
+		common.ProviderGemini:    b.Providers.Gemini,
+		common.ProviderHtx:       b.Providers.Htx,
+		common.ProviderKraken:    b.Providers.Kraken,
+		common.ProviderKucoin:    b.Providers.Kucoin,
+		common.ProviderLbank:     b.Providers.Lbank,
+		common.ProviderMexc:      b.Providers.Mexc,
+		common.ProviderOkx:       b.Providers.Okx,
+		common.ProviderThorchain: b.Providers.Thorchain,
 	}
 }
 
@@ -567,6 +627,7 @@ func (b LevelDBOptions) Options() *opt.Options {
 	o := &opt.Options{}
 
 	// only override zero values if set
+	// analyze-ignore(float-comparison)
 	if b.CompactionTableSizeMultiplier > 0 {
 		o.CompactionTableSizeMultiplier = b.CompactionTableSizeMultiplier
 	}
@@ -627,6 +688,21 @@ type BifrostAttestationGossipConfig struct {
 
 	// delay before asking peers for their attestation state on startup.
 	AskPeersDelay time.Duration `mapstructure:"ask_peers_delay"`
+
+	// how many attestations to batch together before sending to thornode.
+	MaxBatchSize int64 `mapstructure:"max_batch_size"`
+
+	// how often to send batches of attestations to thornode.
+	BatchInterval time.Duration `mapstructure:"batch_interval"`
+
+	// how long to wait when sending a single attestation to a peer before giving up.
+	PeerTimeout time.Duration `mapstructure:"peer_timeout"`
+
+	// maximum concurrent sends to a single peer
+	PeerConcurrentSends int `mapstructure:"peer_concurrent_sends"`
+
+	// maximum concurrent receives from a single peer
+	PeerConcurrentReceives int `mapstructure:"peer_concurrent_receives"`
 }
 
 type BifrostChainConfiguration struct {
@@ -636,8 +712,10 @@ type BifrostChainConfiguration struct {
 	UserName            string                           `mapstructure:"username"`
 	Password            string                           `mapstructure:"password"`
 	RPCHost             string                           `mapstructure:"rpc_host"`
+	APIHost             string                           `mapstructure:"api_host"`
 	CosmosGRPCHost      string                           `mapstructure:"cosmos_grpc_host"`
 	CosmosGRPCTLS       bool                             `mapstructure:"cosmos_grpc_tls"`
+	CosmosChainID       string                           `mapstructure:"cosmos_chain_id"`
 	HTTPostMode         bool                             `mapstructure:"http_post_mode"` // Bitcoin core only supports HTTP POST mode
 	DisableTLS          bool                             `mapstructure:"disable_tls"`    // Bitcoin core does not provide TLS by default
 	OptToRetire         bool                             `mapstructure:"opt_to_retire"`  // don't emit support for this chain during keygen process
@@ -661,20 +739,6 @@ type BifrostChainConfiguration struct {
 	// MaxRPCRetries is the maximum number of retries for RPC requests.
 	MaxRPCRetries int `mapstructure:"max_rpc_retries"`
 
-	// MaxGasTipPercentage is the percentage of the max fee to set for the max tip cap on
-	// dynamic fee EVM transactions.
-	MaxGasTipPercentage int `mapstructure:"max_gas_tip_percentage"`
-
-	// TokenMaxGasMultiplier is a multiplier applied to max gas for outbounds which are
-	// not the gas asset. This compensates for variance in gas units when contracts for
-	// pool assets use more than the configured MaxGasLimit gas units in transferOut.
-	TokenMaxGasMultiplier int64 `mapstructure:"token_max_gas_multiplier"`
-
-	// AggregatorMaxGasMultiplier is a multiplier applied to max gas for outbounds which
-	// swap out via an aggregator contract. This compensates for variance in gas units when
-	// aggregator swaps outs use more than the configured MaxGasLimit gas units.
-	AggregatorMaxGasMultiplier int64 `mapstructure:"aggregator_max_gas_multiplier"`
-
 	// MaxPendingNonces is the maximum number of pending nonces to allow before aborting
 	// new signing attempts.
 	MaxPendingNonces uint64 `mapstructure:"max_pending_nonces"`
@@ -683,8 +747,30 @@ type BifrostChainConfiguration struct {
 	// will be provided to the backend in an Authorization header.
 	AuthorizationBearer string `mapstructure:"authorization_bearer"`
 
-	// Cardano N2CAddress is the address of the Cardano node-to-client service.
-	CardanoN2CAddress string `mapstructure:"cardano_n2c_address"`
+	// EVM contains EVM chain specific configuration.
+	EVM struct {
+		// MaxGasTipPercentage is the percentage of the max fee to set for the max tip cap on
+		// dynamic fee EVM transactions.
+		MaxGasTipPercentage int `mapstructure:"max_gas_tip_percentage"`
+
+		// TokenMaxGasMultiplier is a multiplier applied to max gas for outbounds which are
+		// not the gas asset. This compensates for variance in gas units when contracts for
+		// pool assets use more than the configured MaxGasLimit gas units in transferOut.
+		TokenMaxGasMultiplier int64 `mapstructure:"token_max_gas_multiplier"`
+
+		// AggregatorMaxGasMultiplier is a multiplier applied to max gas for outbounds which
+		// swap out via an aggregator contract. This compensates for variance in gas units when
+		// aggregator swaps outs use more than the configured MaxGasLimit gas units.
+		AggregatorMaxGasMultiplier int64 `mapstructure:"aggregator_max_gas_multiplier"`
+
+		// ExtraL1GasFee is an extra 1e8 amount deducted from the scheduled max gas to
+		// account for the Ethereum gas fee on Ethereum L2s.
+		ExtraL1GasFee int64 `mapstructure:"extra_l1_gas_fee"`
+
+		// ReconstructLiabilitiesConcurrency is the number of concurrent workers to use
+		// when reconstructing liabilities for EVM chains.
+		ReconstructLiabilitiesConcurrency int `mapstructure:"reconstruct_liabilities_concurrency"`
+	} `mapstructure:"evm"`
 
 	// UTXO contains UTXO chain specific configuration.
 	UTXO struct {
@@ -731,12 +817,50 @@ type BifrostChainConfiguration struct {
 		// MaxUTXOsToSpend is the maximum number of UTXOs to spend in a single transaction.
 		// This is overridden at runtime by the `MaxUTXOsToSpend` mimir value.
 		MaxUTXOsToSpend int64 `mapstructure:"max_utxos_to_spend"`
+
+		// MaxMempoolAncestors is the maximum number of unconfirmed ancestors or descendants
+		// a UTXO can have before it is excluded from selection. This prevents the
+		// "too-long-mempool-chain" error when broadcasting transactions. Bitcoin, Litecoin,
+		// and Dogecoin have a default limit of 25 for both ancestors and descendants.
+		// Note: GetMempoolEntry's ancestorcount and descendantcount include the transaction
+		// itself, so set this to 25 (not 24). Additionally, UTXOs are excluded if the combined
+		// chain length (ancestorcount + descendantcount - 1) would exceed the limit when adding
+		// our transaction, since Bitcoin Core validates the entire transaction package.
+		// Bitcoin Cash removed ancestor/descendant limits in May 2021, so BCH should set this
+		// to 0 (no limit). Set to 0 to disable checking.
+		MaxMempoolAncestors int64 `mapstructure:"max_mempool_ancestors"`
 	} `mapstructure:"utxo"`
 }
 
 func (b *BifrostChainConfiguration) Validate() {
-	if b.RPCHost == "" {
-		log.Fatal().Str("chain", b.ChainID.String()).Msg("rpc host is required")
+	switch b.ChainID {
+	case common.TRONChain:
+		if b.APIHost == "" {
+			log.Fatal().
+				Str("chain", b.ChainID.String()).
+				Msg("api host is required")
+		}
+	default:
+		if b.RPCHost == "" {
+			log.Fatal().
+				Str("chain", b.ChainID.String()).
+				Msg("rpc host is required")
+		}
+	}
+
+	// Validate MaxMempoolAncestors for UTXO chains
+	switch b.ChainID {
+	case common.BTCChain, common.LTCChain, common.DOGEChain:
+		// Bitcoin, Litecoin, and Dogecoin have a mempool ancestor/descendant limit of 25
+		// Config value should be <= 25 (GetMempoolEntry counts include the tx itself)
+		if b.UTXO.MaxMempoolAncestors > 25 {
+			log.Fatal().
+				Str("chain", b.ChainID.String()).
+				Int64("max_mempool_ancestors", b.UTXO.MaxMempoolAncestors).
+				Msg("max_mempool_ancestors exceeds chain limit of 25")
+		}
+	case common.BCHChain:
+		// BCH removed ancestor limits in May 2021, so any value (including 0) is valid
 	}
 }
 
@@ -771,6 +895,9 @@ type BifrostBlockScannerConfiguration struct {
 	// Concurrency is the number of goroutines used for RPC requests on data within a
 	// block - e.g. transactions, receipts, logs, etc. Blocks are processed sequentially.
 	Concurrency int64 `mapstructure:"concurrency"`
+
+	// PrefetchBlocks is the number of blocks to prefetch in the background.
+	PrefetchBlocks int64 `mapstructure:"prefetch_blocks"`
 
 	// FixedGasRate will force the scanner to only report the defined gas rate.
 	FixedGasRate int64 `mapstructure:"fixed_gas_rate"`
@@ -821,6 +948,26 @@ type BifrostBlockScannerConfiguration struct {
 
 	// MaxReorgRescanBlocks is the maximum number of blocks to rescan during a reorg.
 	MaxReorgRescanBlocks int64 `mapstructure:"max_reorg_rescan_blocks"`
+
+	// ReferenceAddress is needed for calculating TRC20 fees on Tron blockchain
+	// The default address is pre-funded with 1 TRX & 1 USDT, see config.yaml
+	ReferenceAddress string `mapstructure:"reference_address"`
+
+	// Solana contains Solana-specific scanner configuration.
+	Solana struct {
+		// ScanInterval is the duration between each scan of the vaults.
+		ScanInterval time.Duration `mapstructure:"scan_interval"`
+
+		// ScanInactiveVaults indicates whether to scan inactive vaults. This is most likely
+		// cost-prohibitive on Solana due to the cost of provider RPC calls.
+		ScanInactiveVaults bool `mapstructure:"scan_inactive_vaults"`
+
+		// FeeUpdateInterval is the number of slots between network fee updates.
+		FeeUpdateInterval uint64 `mapstructure:"fee_update_interval"`
+
+		// FeeSampleSlots is the number of slots to sample for network fee calculation.
+		FeeSampleSlots uint64 `mapstructure:"fee_sample_slots"`
+	} `mapstructure:"solana"`
 }
 
 type BifrostClientConfiguration struct {
@@ -849,6 +996,25 @@ type BifrostTSSConfiguration struct {
 	InfoAddress                  string   `mapstructure:"info_address"`
 	ExternalIP                   string   `mapstructure:"external_ip"`
 	MaxKeyshareRecoverScanBlocks int64    `mapstructure:"max_keyshare_recover_scan_blocks"`
+}
+
+type BifrostOracleConfiguration struct {
+	LogLevel string `mapstructure:"log_level"`
+	Enabled  bool   `mapstructure:"enabled"`
+	// DetailedMetrics enables tracking rates and 24h trading volume  of each
+	// trading pair on each provider, as well as final USD rates and internal
+	// weightings
+	DetailedMetrics bool `mapstructure:"detailed_metrics"`
+}
+
+type BifrostOracleProviderConfiguration struct {
+	Name            string        `mapstructure:"name"`
+	Disabled        bool          `mapstructure:"disabled"`
+	PollingInterval time.Duration `mapstructure:"polling_interval"`
+	ApiEndpoints    []string      `mapstructure:"api_endpoints"`
+	WsEndpoints     []string      `mapstructure:"ws_endpoints"`
+	Pairs           []string      `mapstructure:"pairs"`
+	SymbolMapping   []string      `mapstructure:"symbol_mapping"`
 }
 
 func (c BifrostTSSConfiguration) GetP2PPort() int {
