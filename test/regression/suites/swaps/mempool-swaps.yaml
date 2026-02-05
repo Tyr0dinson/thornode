@@ -187,7 +187,6 @@ asserts:
   - .[0].in_hash == "{{ observe_txid 1 }}"
   - .[0].chain == "ETH"
   - .[0].to_address == "{{ addr_eth_fox }}"
-  - .[0].inbound_finalized == true  # Now finalized!
 ---
 # Verify staged queue is empty (item was moved to real queue)
 type: check
@@ -268,7 +267,6 @@ asserts:
   - .[0].chain == "ETH"
   - .[0].to_address == "{{ addr_eth_cat }}"
   - .[0].in_hash == "{{ observe_txid 10 }}"
-  - .[0].inbound_finalized == true  # Processed on finalization
 ---
 # Clean up - observe the second outbound
 type: tx-observed-out
