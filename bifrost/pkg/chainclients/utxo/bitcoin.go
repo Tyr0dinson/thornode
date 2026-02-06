@@ -17,8 +17,6 @@ func (c *Client) getChainCfgBTC() *btcchaincfg.Params {
 	switch common.CurrentChainNetwork {
 	case common.MockNet:
 		return &btcchaincfg.RegressionNetParams
-	case common.TestNet:
-		return &btcchaincfg.TestNet3Params
 	case common.MainNet, common.StageNet, common.ChainNet:
 		return &btcchaincfg.MainNetParams
 	default:
