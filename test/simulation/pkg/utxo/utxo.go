@@ -1014,3 +1014,72 @@ func (c *Client) signUTXOZEC(zecTx *zcash.Tx, hashes *zcash.SigHashes, idx int) 
 
 	return nil
 }
+
+// --- ZEC actor helpers ---
+
+func (c *Client) GetAddress() common.Address {
+	return c.address
+}
+
+func (c *Client) GetRawTransactionVerbose(txid string) (*btcjson.TxRawResult, error) {
+	return c.rpc.GetRawTransactionVerbose(txid)
+}
+
+func (c *Client) GetZECRawTransactionVerbose(txid string) (*btcjson.TxRawResult, error) {
+	return c.GetRawTransactionVerbose(txid)
+}
+
+// GetAddressUTXOKeys returns outpoint keys ("txid:vout") for the given address.
+// ZEC uses getaddressutxos; other UTXO chains use listunspent.
+func (c *Client) GetAddressUTXOKeys(address string) (map[string]struct{}, error) {
+	if c.chain.Equals(common.ZECChain) {
+		return c.GetZECAddressUTXOKeys(address)
+	}
+
+	utxos, err := c.rpc.ListUnspent(address)
+	if err != nil {
+		return nil, err
+	}
+
+	keys := make(map[string]struct{}, len(utxos))
+	for _, utxo := range utxos {
+		key := fmt.Sprintf("%s:%d", utxo.TxID, utxo.Vout)
+		keys[key] = struct{}{}
+	}
+	return keys, nil
+}
+
+func (c *Client) GetZECAddressUTXOKeys(address string) (map[string]struct{}, error) {
+	utxos, err := c.getZecAddressUTXOs(address)
+	if err != nil {
+		return nil, err
+	}
+	keys := make(map[string]struct{}, len(utxos))
+	for _, utxo := range utxos {
+		key := fmt.Sprintf("%s:%d", utxo.TxID, utxo.Vout)
+		keys[key] = struct{}{}
+	}
+	return keys, nil
+}
+
+type zecUTXO struct {
+	TxID   string `json:"txid"`
+	Vout   uint32 `json:"outputIndex"`
+	Script string `json:"script"`
+	Value  int64  `json:"satoshis"`
+	Height int64  `json:"height"`
+}
+
+func (c *Client) getZecAddressUTXOs(address string) ([]zecUTXO, error) {
+	if address == "" {
+		return nil, fmt.Errorf("address cannot be empty")
+	}
+	params := map[string]interface{}{
+		"addresses": []string{address},
+	}
+	var utxos []zecUTXO
+	if err := c.rpc.Call(&utxos, "getaddressutxos", params); err != nil {
+		return nil, err
+	}
+	return utxos, nil
+}

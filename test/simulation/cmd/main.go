@@ -90,6 +90,7 @@ func simulationStages() []simulationStage {
 	return []simulationStage{
 		{name: "seed", defaultOn: true},
 		{name: "bootstrap", defaultOn: true, constructor: suites.Bootstrap},
+		{name: "utxo-mempool", defaultOn: false, constructor: suites.UTXOMempool},
 		{name: "xmr-coverage", defaultOn: true, constructor: suites.XMRCoverage},
 		{name: "arb", defaultOn: true, constructor: core.NewArbActor},
 		{name: "swaps", defaultOn: true, constructor: suites.Swaps},

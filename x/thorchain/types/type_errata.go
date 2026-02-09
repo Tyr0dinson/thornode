@@ -63,7 +63,7 @@ func (m *ErrataTxVoter) Empty() bool {
 	return m.TxID.IsEmpty() || m.Chain.IsEmpty()
 }
 
-// String implement fmt.Stinger , return a string representation of errata tx voter
+// String implement fmt.Stringer , return a string representation of errata tx voter
 func (m *ErrataTxVoter) String() string {
 	return fmt.Sprintf("%s-%s", m.Chain.String(), m.TxID.String())
 }

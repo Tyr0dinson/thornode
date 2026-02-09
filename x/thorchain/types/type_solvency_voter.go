@@ -53,7 +53,7 @@ func (m *SolvencyVoter) Empty() bool {
 	return m.Id.IsEmpty() || m.Chain.IsEmpty() || m.Height <= 0 || len(m.Signers) == 0
 }
 
-// String implement fmt.Stinger , return a string representation of solvency tx voter
+// String implement fmt.Stringer , return a string representation of solvency tx voter
 func (m *SolvencyVoter) String() string {
 	return m.Id.String()
 }
