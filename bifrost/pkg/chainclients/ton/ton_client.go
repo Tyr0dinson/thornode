@@ -42,8 +42,7 @@ import (
 const (
 	V3R2CodeHex              = "B5EE9C724101010100710000DEFF0020DD2082014C97BA218201339CBAB19F71B0ED44D0D31FD31F31D70BFFE304E0A4F2608308D71820D31FD31FD31FF82313BBF263ED44D0D31FD31FD3FFD15132BAF2A15144BAF2A204F901541055F910F2A3F8009320D74A96D307D402FB00E8D101A4C8CB1FCB1FCBFFC9ED5410BD6DAD"
 	ConfirmationBlocks int64 = 1
-	TimestampAccuracy        = 10 * time.Second
-	TimestampValidity        = 5 * time.Minute
+	TransactionTimeout       = 5 * time.Minute
 )
 
 type TonClient struct {
@@ -768,11 +767,14 @@ func (c *TonClient) createAndSignTx(
 		}
 	}
 
-	timestamp := time.Now().UTC().
-		Truncate(TimestampAccuracy).
-		Add(TimestampAccuracy * -1)
+	// Use THORChain block timestamp for determinism
+	timestamp, err := c.bridge.GetBlockTimestamp(txOutItem.Height)
+	if err != nil {
+		c.logger.Err(err).Msg("failed to get THORChain block timestamp")
+		return nil, err
+	}
 
-	timeout := timestamp.UTC().Add(TimestampValidity)
+	timeout := timestamp.UTC().Add(TransactionTimeout)
 
 	payload := cell.BeginCell()
 
