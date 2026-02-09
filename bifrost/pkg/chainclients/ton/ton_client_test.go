@@ -35,6 +35,15 @@ type TonTestSuite struct {
 	pubkey  common.PubKey
 }
 
+// mockBridge is a mock implementation of ThorchainBridge for testing
+type mockBridge struct {
+	thorclient.ThorchainBridge
+}
+
+func (m *mockBridge) GetBlockTimestamp(height int64) (time.Time, error) {
+	return time.Unix(0, 1749121581000*int64(time.Millisecond)), nil
+}
+
 var _ = Suite(&TonTestSuite{})
 
 var m *metrics.Metrics
@@ -113,10 +122,7 @@ func (s *TonTestSuite) SetUpSuite(c *C) {
 	)
 	c.Assert(err, IsNil)
 
-	bridge, err := thorclient.NewThorchainBridge(
-		clientConfig, metrics, keys,
-	)
-	c.Assert(err, IsNil)
+	bridge := &mockBridge{}
 
 	s.client, err = NewTonClient(
 		keys,
