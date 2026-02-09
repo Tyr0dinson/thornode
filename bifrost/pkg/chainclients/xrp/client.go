@@ -28,6 +28,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/xrp/keymanager"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/xrp/keymanager/secp256k1"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/reporter"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss"
@@ -178,13 +179,10 @@ func NewClient(
 }
 
 // Start Xrp chain client
-func (c *Client) Start(globalTxsQueue chan stypes.TxIn, globalErrataQueue chan stypes.ErrataBlock, globalSolvencyQueue chan stypes.Solvency, globalNetworkFeeQueue chan common.NetworkFee) {
-	c.globalSolvencyQueue = globalSolvencyQueue
+func (c *Client) Start(globalTxsQueue chan stypes.TxIn, globalErrataQueue chan stypes.ErrataBlock, globalNetworkFeeQueue chan common.NetworkFee, reporterDispatcher reporter.Dispatcher) {
 	c.xrpScanner.globalNetworkFeeQueue = globalNetworkFeeQueue
 	c.tssKeyManager.Start()
-	c.blockScanner.Start(globalTxsQueue, globalNetworkFeeQueue)
-	c.wg.Add(1)
-	go runners.SolvencyCheckRunner(c.GetChain(), c, c.thorchainBridge, c.stopchan, c.wg, constants.ThorchainBlockTime)
+	c.blockScanner.Start(globalTxsQueue, globalNetworkFeeQueue, reporterDispatcher)
 }
 
 // Stop Xrp chain client
@@ -949,6 +947,8 @@ func (c *Client) GetGasEstimateForSolvency() cosmos.Uint {
 	return c.cfg.ChainID.NativeGasToThorchain(c.xrpScanner.getLastFee())
 }
 
+// ReportSolvency is the legacy solvency flow retained for reviewer comparison.
+//nolint:unused
 func (c *Client) ReportSolvency(blockHeight int64) error {
 	// The ordered scan loop and SolvencyCheckRunner can both call this.
 	c.solvencyLock.Lock()
@@ -1052,6 +1052,8 @@ func (c *Client) ReportSolvency(blockHeight int64) error {
 	return nil
 }
 
+// ShouldReportSolvency is the legacy solvency flow retained for reviewer comparison.
+//nolint:unused
 func (c *Client) ShouldReportSolvency(height int64) bool {
 	// Block time on XRP generally hovers between 3-5 seconds (15
 	// blocks/min). Since the last fee is used as a buffer we also want to ensure that is

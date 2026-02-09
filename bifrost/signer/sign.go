@@ -272,7 +272,7 @@ func (s *Signer) Start() error {
 	s.wg.Add(1)
 	go s.signTransactions()
 
-	s.blockScanner.Start(nil, nil)
+	s.blockScanner.Start(nil, nil, nil)
 	return nil
 }
 

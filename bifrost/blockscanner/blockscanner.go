@@ -13,6 +13,7 @@ import (
 
 	btypes "gitlab.com/thorchain/thornode/v3/bifrost/blockscanner/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
+	"gitlab.com/thorchain/thornode/v3/bifrost/reporter"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -57,6 +58,7 @@ type BlockScanner struct {
 	previousBlock         int64
 	globalTxsQueue        chan types.TxIn
 	globalNetworkFeeQueue chan common.NetworkFee
+	reporterDispatcher    reporter.Dispatcher
 	errorCounter          *prometheus.CounterVec
 	thorchainBridge       thorclient.ThorchainBridge
 	chainScanner          BlockScannerFetcher
@@ -330,9 +332,11 @@ func (b *BlockScanner) GetMessages() <-chan int64 {
 }
 
 // Start block scanner
-func (b *BlockScanner) Start(globalTxsQueue chan types.TxIn, globalNetworkFeeQueue chan common.NetworkFee) {
+func (b *BlockScanner) Start(globalTxsQueue chan types.TxIn, globalNetworkFeeQueue chan common.NetworkFee, reporterDispatcher reporter.Dispatcher) {
 	b.globalTxsQueue = globalTxsQueue
 	b.globalNetworkFeeQueue = globalNetworkFeeQueue
+	b.reporterDispatcher = reporterDispatcher
+
 
 	currentPos, err := b.scannerStorage.GetScanPos()
 	if err != nil {
@@ -778,6 +782,9 @@ func (b *BlockScanner) scanBlocks() {
 				continue
 			}
 			atomic.StoreInt64(&b.previousBlock, currentBlock)
+			if b.reporterDispatcher != nil {
+				b.reporterDispatcher.Process(b.cfg.ChainID, currentBlock)
+			}
 		}
 	}
 }

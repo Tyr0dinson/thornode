@@ -27,6 +27,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/solana/rpc"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/solana/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
+	"gitlab.com/thorchain/thornode/v3/bifrost/reporter"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss"
@@ -254,16 +255,14 @@ func NewSOLClient(
 func (c *SOLClient) Start(
 	globalTxsQueue chan stypes.TxIn,
 	globalErrataQueue chan stypes.ErrataBlock,
-	globalSolvencyQueue chan stypes.Solvency,
 	globalNetworkFeeQueue chan common.NetworkFee,
+	reporterDispatcher reporter.Dispatcher,
 ) {
-	c.globalSolvencyQueue = globalSolvencyQueue
 	c.solScanner.globalNetworkFeeQueue = globalNetworkFeeQueue
 	c.solScanner.globalTxsQueue = globalTxsQueue
 	c.tssKeyManager.Start()
+	c.solScanner.setReporterDispatcher(reporterDispatcher)
 	go c.solScanner.Start()
-	c.wg.Add(1)
-	go runners.SolvencyCheckRunner(c.GetChain(), c, c.bridge, c.stopchan, c.wg, constants.ThorchainBlockTime)
 	c.wg.Add(1)
 	go c.keepAliveLoop()
 }
@@ -389,6 +388,13 @@ func (c *SOLClient) GetGasEstimateForSolvency() cosmos.Uint {
 }
 
 // ReportSolvency reports solvency once per configured solvency blocks.
+// GetGasEstimateForSolvency returns the current gas fee estimate used by solvency checks.
+func (c *SOLClient) GetGasEstimateForSolvency() cosmos.Uint {
+	return cosmos.NewUint(3 * c.cfg.BlockScanner.MaxGasLimit * c.solScanner.lastFeeRate)
+}
+
+// ReportSolvency is the legacy solvency flow retained for reviewer comparison.
+//nolint:unused
 func (c *SOLClient) ReportSolvency(height int64) error {
 	reportSlotMultiple := c.nextSolvencyReportSlotMultiple(height)
 	if !c.reportInFlight.TryLock() {
@@ -500,6 +506,8 @@ func (c *SOLClient) ReportSolvency(height int64) error {
 }
 
 // ShouldReportSolvency returns true if the given height is a solvency report height.
+// ShouldReportSolvency is the legacy solvency flow retained for reviewer comparison.
+//nolint:unused
 func (c *SOLClient) ShouldReportSolvency(height int64) bool {
 	return c.nextSolvencyReportSlotMultiple(height) > c.getSolvencySlotMultiple()
 }

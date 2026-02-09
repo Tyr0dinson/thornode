@@ -32,6 +32,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/tron/api"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/tron/rpc"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
+	"gitlab.com/thorchain/thornode/v3/bifrost/reporter"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss"
@@ -308,23 +309,12 @@ func NewTronClient(
 func (c *TronClient) Start(
 	globalTxsQueue chan types.TxIn,
 	_ chan types.ErrataBlock,
-	globalSolvencyQueue chan types.Solvency,
 	globalNetworkFeeQueue chan common.NetworkFee,
+	reporterDispatcher reporter.Dispatcher,
 ) {
-	c.globalSolvencyQueue = globalSolvencyQueue
 	c.tronScanner.globalNetworkFeeQueue = globalNetworkFeeQueue
-	c.blockScanner.Start(globalTxsQueue, globalNetworkFeeQueue)
+	c.blockScanner.Start(globalTxsQueue, globalNetworkFeeQueue, reporterDispatcher)
 	c.tssKeyManager.Start()
-
-	c.wg.Add(1)
-	go runners.SolvencyCheckRunner(
-		c.GetChain(),
-		c,
-		c.bridge,
-		c.stopchan,
-		c.wg,
-		time.Second,
-	)
 }
 
 // Stop Tron chain client
@@ -818,10 +808,14 @@ func (c *TronClient) GetGasEstimateForSolvency() cosmos.Uint {
 	return c.config.ChainID.NativeGasToThorchain(fee)
 }
 
+// ShouldReportSolvency is the legacy solvency flow retained for reviewer comparison.
+//nolint:unused
 func (c *TronClient) ShouldReportSolvency(height int64) bool {
 	return height%10 == 0
 }
 
+// ReportSolvency is the legacy solvency flow retained for reviewer comparison.
+//nolint:unused
 func (c *TronClient) ReportSolvency(height int64) error {
 	// The ordered scan loop and SolvencyCheckRunner can both call this.
 	c.solvencyLock.Lock()

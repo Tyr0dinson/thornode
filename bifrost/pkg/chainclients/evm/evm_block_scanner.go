@@ -284,13 +284,8 @@ func (e *EVMScanner) FetchTxs(height, chainHeight int64) (stypes.TxIn, error) {
 		return txIn, nil
 	}
 
-	// report network fee and solvency
+	// report network fee
 	e.reportNetworkFee(height)
-	if e.solvencyReporter != nil {
-		if err = e.solvencyReporter(height); err != nil {
-			e.logger.Err(err).Msg("failed to report Solvency info to THORNode")
-		}
-	}
 
 	return txIn, nil
 }

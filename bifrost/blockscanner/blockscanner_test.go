@@ -128,7 +128,7 @@ func (s *BlockScannerTestSuite) TestStartBlockHeightOverridesPersistedPosition(c
 
 	txsQueue := make(chan types.TxIn, 1)
 	feeQueue := make(chan common.NetworkFee, 1)
-	cbs.Start(txsQueue, feeQueue)
+	cbs.Start(txsQueue, feeQueue, nil)
 
 	c.Check(cbs.previousBlock, Equals, int64(5000))
 
@@ -223,7 +223,7 @@ func (s *BlockScannerTestSuite) TestBlockScanner(c *C) {
 	}()
 	globalChan := make(chan types.TxIn)
 	nfChan := make(chan common.NetworkFee)
-	cbs.Start(globalChan, nfChan)
+	cbs.Start(globalChan, nfChan, nil)
 	waitForPauseChecks(c, counting, 2)
 	cbs.Stop()
 }
@@ -269,7 +269,7 @@ func (s *BlockScannerTestSuite) TestBadBlock(c *C) {
 	}, mss, m, counting, DummyFetcher{})
 	c.Check(cbs, NotNil)
 	c.Check(err, IsNil)
-	cbs.Start(make(chan types.TxIn), make(chan common.NetworkFee))
+	cbs.Start(make(chan types.TxIn), make(chan common.NetworkFee), nil)
 	waitForPauseChecks(c, counting, 2)
 	cbs.Stop()
 }
@@ -310,7 +310,7 @@ func (s *BlockScannerTestSuite) TestBadConnection(c *C) {
 	}, mss, m, counting, DummyFetcher{})
 	c.Check(cbs, NotNil)
 	c.Check(err, IsNil)
-	cbs.Start(make(chan types.TxIn), make(chan common.NetworkFee))
+	cbs.Start(make(chan types.TxIn), make(chan common.NetworkFee), nil)
 	waitForPauseChecks(c, counting, 2)
 	cbs.Stop()
 }
@@ -475,7 +475,7 @@ func (s *BlockScannerTestSuite) TestRollbackScanner(c *C) {
 	// Start scanner
 	globalChan := make(chan types.TxIn)
 	nfChan := make(chan common.NetworkFee)
-	cbs.Start(globalChan, nfChan)
+	cbs.Start(globalChan, nfChan, nil)
 	defer cbs.Stop()
 
 	// Call rollback

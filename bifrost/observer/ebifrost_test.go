@@ -24,6 +24,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/p2p"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
+	"gitlab.com/thorchain/thornode/v3/bifrost/reporter"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/cmd"
@@ -462,7 +463,7 @@ func pollForCondition(c *C, description string, condition func() bool, maxWait, 
 // Mock chain client for testing
 type mockChainClient struct{}
 
-func (m *mockChainClient) Start(chan types.TxIn, chan types.ErrataBlock, chan types.Solvency, chan common.NetworkFee) {
+func (m *mockChainClient) Start(chan types.TxIn, chan types.ErrataBlock, chan common.NetworkFee, reporter.Dispatcher) {
 }
 
 func (m *mockChainClient) Stop() {}
@@ -493,6 +494,10 @@ func (m *mockChainClient) BroadcastTx(types.TxOutItem, []byte) (string, error) {
 
 func (m *mockChainClient) GetAccount(common.PubKey, *big.Int) (common.Account, error) {
 	return common.Account{}, nil
+}
+
+func (m *mockChainClient) GetGasEstimateForSolvency() cosmos.Uint {
+	return cosmos.ZeroUint()
 }
 
 func (m *mockChainClient) GetAccountByAddress(string, *big.Int) (common.Account, error) {

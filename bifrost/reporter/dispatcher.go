@@ -40,7 +40,6 @@ type dispatcher struct {
 	logger          zerolog.Logger
 	reportQueue     chan ReportBatch
 	stopper         chan struct{}
-	wg              *sync.WaitGroup
 	chains          map[common.Chain]ChainClient
 	thorchainBridge ThorchainBridge
 	errCounter      *prometheus.CounterVec
@@ -51,7 +50,7 @@ type dispatcher struct {
 
 // NewDispatcher creates and starts a reporter dispatcher for all configured chains.
 // It initializes per-chain reporters, locking primitives, and async workers.
-func NewDispatcher(chains map[common.Chain]ChainClient, thorchainBridge ThorchainBridge, errCounter *prometheus.CounterVec, stopper chan struct{}, wg *sync.WaitGroup) Dispatcher {
+func NewDispatcher(chains map[common.Chain]ChainClient, thorchainBridge ThorchainBridge, errCounter *prometheus.CounterVec, stopper chan struct{}) Dispatcher {
 	logger := log.Logger.With().Str("module", "reporter_dispatcher").Logger()
 	reportQueue := make(chan ReportBatch)
 	reporters := make(map[common.Chain]Reporters, len(chains))
@@ -71,7 +70,6 @@ func NewDispatcher(chains map[common.Chain]ChainClient, thorchainBridge Thorchai
 	d := &dispatcher{
 		logger:          logger,
 		stopper:         stopper,
-		wg:              wg,
 		chains:          chains,
 		thorchainBridge: thorchainBridge,
 		errCounter:      errCounter,
@@ -89,7 +87,6 @@ func NewDispatcher(chains map[common.Chain]ChainClient, thorchainBridge Thorchai
 // - periodic chain runner
 // - outbound report queue processor
 func (d *dispatcher) start() {
-	d.wg.Add(2)
 	go d.runner(
 		// get chain-specific timing
 		func(chain common.Chain) time.Duration {
@@ -104,7 +101,6 @@ func (d *dispatcher) start() {
 func (d *dispatcher) processReportQueue() {
 	d.logger.Info().Msg("reporter dispatcher (processReportQueue) started")
 	defer func() {
-		d.wg.Done()
 		d.logger.Info().Msg("reporter dispatcher (processReportQueue) stopped")
 	}()
 
@@ -126,15 +122,12 @@ func (d *dispatcher) processReportQueue() {
 
 // Process schedules an immediate block-scanner-triggered processing pass for one chain.
 func (d *dispatcher) Process(chain common.Chain, height int64) {
-	d.wg.Add(1)
 	go d.processInternal(chain, fromBlockScanner, height)
 }
 
 // processInternal can be invoked by the runner goroutine or by dispatcher.Process() (which spawns its own goroutine).
 // Reporting is serialized per chain via a per-chain lock, so ShouldReport and Collect are also serialized per chain.
 func (d *dispatcher) processInternal(chain common.Chain, from triggeredFrom, height int64) {
-	defer d.wg.Done()
-
 	logger := d.logger.With().Stringer("chain", chain).Stringer("from", from).Int64("height", height).Logger()
 
 	lock := d.getChainLock(chain)

@@ -36,6 +36,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
+	"gitlab.com/thorchain/thornode/v3/bifrost/reporter"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss"
@@ -254,16 +255,13 @@ func IsETH(token string) bool {
 }
 
 // Start to monitor Ethereum block chain
-func (c *Client) Start(globalTxsQueue chan stypes.TxIn, globalErrataQueue chan stypes.ErrataBlock, globalSolvencyQueue chan stypes.Solvency, globalNetworkFeeQueue chan common.NetworkFee) {
+func (c *Client) Start(globalTxsQueue chan stypes.TxIn, globalErrataQueue chan stypes.ErrataBlock, globalNetworkFeeQueue chan common.NetworkFee, reporterDispatcher reporter.Dispatcher) {
 	c.ethScanner.globalErrataQueue = globalErrataQueue
 	c.ethScanner.globalNetworkFeeQueue = globalNetworkFeeQueue
-	c.globalSolvencyQueue = globalSolvencyQueue
 	c.tssKeySigner.Start()
-	c.blockScanner.Start(globalTxsQueue, globalNetworkFeeQueue)
+	c.blockScanner.Start(globalTxsQueue, globalNetworkFeeQueue, reporterDispatcher)
 	c.wg.Add(1)
 	go c.unstuck()
-	c.wg.Add(1)
-	go runners.SolvencyCheckRunner(c.GetChain(), c, c.bridge, c.stopchan, c.wg, constants.ThorchainBlockTime)
 	c.wg.Add(1)
 	go c.reconstructLiabilities()
 }
@@ -1512,6 +1510,8 @@ func (c *Client) GetGasEstimateForSolvency() cosmos.Uint {
 	return cosmos.NewUint(c.cfg.BlockScanner.MaxGasLimit).MulUint64(3).MulUint64(c.ethScanner.lastReportedGasPrice.Load()).MulUint64(common.One).Quo(gasRateUnitsPerOne)
 }
 
+// ReportSolvency is the legacy solvency flow retained for reviewer comparison.
+//nolint:unused
 func (c *Client) ReportSolvency(ethBlockHeight int64) error {
 	// The ordered scan loop and SolvencyCheckRunner can both call this.
 	c.solvencyLock.Lock()
@@ -1617,6 +1617,8 @@ func (c *Client) ReportSolvency(ethBlockHeight int64) error {
 }
 
 // ShouldReportSolvency with given block height , should chain client report Solvency to THORNode?
+// ShouldReportSolvency is the legacy solvency flow retained for reviewer comparison.
+//nolint:unused
 func (c *Client) ShouldReportSolvency(height int64) bool {
 	return height%20 == 0
 }

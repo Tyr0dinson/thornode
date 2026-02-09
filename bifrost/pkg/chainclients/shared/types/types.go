@@ -3,8 +3,10 @@ package types
 import (
 	"math/big"
 
+	"gitlab.com/thorchain/thornode/v3/bifrost/reporter"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
 	ttypes "gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
@@ -15,8 +17,8 @@ type ChainClient interface {
 	Start(
 		globalTxsQueue chan types.TxIn,
 		globalErrataQueue chan types.ErrataBlock,
-		globalSolvencyQueue chan types.Solvency,
 		globalNetworkFeeQueue chan common.NetworkFee,
+		reporterDispatcher reporter.Dispatcher,
 	)
 
 	// Stop stops the chain client.
@@ -60,6 +62,8 @@ type ChainClient interface {
 
 	// GetBlockScannerHeight returns block scanner height for chain
 	GetBlockScannerHeight() (int64, error)
+	// GetGasEstimateForSolvency returns the gas fee estimate used by solvency checks
+	GetGasEstimateForSolvency() cosmos.Uint
 
 	// GetLatestTxForVault returns last observed and broadcasted tx for a particular vault and chain
 	GetLatestTxForVault(vault string) (string, string, error)

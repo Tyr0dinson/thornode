@@ -37,6 +37,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients"
 	chainclienttypes "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
+	"gitlab.com/thorchain/thornode/v3/bifrost/reporter"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss"
@@ -589,6 +590,10 @@ func (b *MockChainClient) GetGasFee(count uint64) common.Gas {
 	}
 }
 
+func (b *MockChainClient) GetGasEstimateForSolvency() cosmos.Uint {
+	return cosmos.ZeroUint()
+}
+
 func (b *MockChainClient) CheckIsTestNet() (string, bool) {
 	return "", true
 }
@@ -641,7 +646,7 @@ func (b *MockChainClient) GetPubKey() crypto.PubKey {
 func (b *MockChainClient) OnObservedTxIn(txIn types.TxInItem, blockHeight int64) {
 }
 
-func (b *MockChainClient) Start(globalTxsQueue chan types.TxIn, globalErrataQueue chan types.ErrataBlock, globalSolvencyQueue chan types.Solvency, globalNetworkFeeQueue chan common.NetworkFee) {
+func (b *MockChainClient) Start(globalTxsQueue chan types.TxIn, globalErrataQueue chan types.ErrataBlock, globalNetworkFeeQueue chan common.NetworkFee, reporterDispatcher reporter.Dispatcher) {
 }
 
 func (b *MockChainClient) Stop() {}

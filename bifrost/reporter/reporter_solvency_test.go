@@ -579,17 +579,15 @@ func (s *SolvencySuite) TestReportSolvencyReporter(c *C) {
 			// setup environment
 			mockBridge.clearMsgs()
 			stopper := make(chan struct{})
-			wg := sync.WaitGroup{}
 			chain := tc.client.GetChain()
 			chains := map[common.Chain]ChainClient{chain: tc.client}
 			defer func() {
 				// stop goroutines
 				close(stopper)
-				wg.Wait()
 			}()
 
 			// prepare dispatcher
-			disp := NewDispatcher(chains, mockBridge, nil, stopper, &wg)
+			disp := NewDispatcher(chains, mockBridge, nil, stopper)
 
 			// now trigger reporter checks
 			disp.Process(chain, 0)

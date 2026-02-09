@@ -38,6 +38,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/runners"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
+	"gitlab.com/thorchain/thornode/v3/bifrost/reporter"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss"
@@ -204,15 +205,12 @@ func NewCosmosClient(
 func (c *CosmosClient) Start(
 	globalTxsQueue chan stypes.TxIn,
 	globalErrataQueue chan stypes.ErrataBlock,
-	globalSolvencyQueue chan stypes.Solvency,
 	globalNetworkFeeQueue chan common.NetworkFee,
+	reporterDispatcher reporter.Dispatcher,
 ) {
-	c.globalSolvencyQueue = globalSolvencyQueue
 	c.cosmosScanner.globalNetworkFeeQueue = globalNetworkFeeQueue
 	c.tssKeyManager.Start()
-	c.blockScanner.Start(globalTxsQueue, globalNetworkFeeQueue)
-	c.wg.Add(1)
-	go runners.SolvencyCheckRunner(c.GetChain(), c, c.thorchainBridge, c.stopchan, c.wg, constants.ThorchainBlockTime)
+	c.blockScanner.Start(globalTxsQueue, globalNetworkFeeQueue, reporterDispatcher)
 }
 
 // Stop Cosmos chain client
@@ -707,6 +705,8 @@ func (c *CosmosClient) GetGasEstimateForSolvency() cosmos.Uint {
 	return c.cfg.ChainID.NativeGasToThorchain(c.cosmosScanner.getLastFee())
 }
 
+// ReportSolvency is the legacy solvency flow retained for reviewer comparison.
+//nolint:unused
 func (c *CosmosClient) ReportSolvency(blockHeight int64) error {
 	// FetchTxs may call this from prefetch goroutines; SolvencyCheckRunner also calls it while halted.
 	c.solvencyLock.Lock()
@@ -810,6 +810,8 @@ func (c *CosmosClient) ReportSolvency(blockHeight int64) error {
 	return nil
 }
 
+// ShouldReportSolvency is the legacy solvency flow retained for reviewer comparison.
+//nolint:unused
 func (c *CosmosClient) ShouldReportSolvency(height int64) bool {
 	// Block time on Cosmos-based chains generally hovers around 6 seconds (10
 	// blocks/min). Since the last fee is used as a buffer we also want to ensure that is

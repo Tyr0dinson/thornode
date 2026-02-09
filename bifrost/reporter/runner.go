@@ -15,7 +15,6 @@ func (d *dispatcher) runner(getBackoffForChain func(chain common.Chain) time.Dur
 	logger := log.Logger.With().Str("module", "reporter_runner").Logger()
 	logger.Info().Msg("runner started")
 	defer func() {
-		d.wg.Done()
 		logger.Info().Msg("runner stopped")
 	}()
 
@@ -62,7 +61,6 @@ func (d *dispatcher) runner(getBackoffForChain func(chain common.Chain) time.Dur
 		case chainToProcess := <-tickChan:
 			// Check a specific chain
 			d.logger.Debug().Stringer("chain", chainToProcess).Msg("runner triggered check for chain")
-			d.wg.Add(1)
 			go d.processInternal(chainToProcess, fromRunner, 0)
 		}
 	}

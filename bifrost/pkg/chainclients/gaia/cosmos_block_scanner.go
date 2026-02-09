@@ -690,11 +690,5 @@ func (c *CosmosBlockScanner) FetchTxs(height, chainHeight int64) (types.TxIn, er
 		c.logger.Err(err).Int64("height", height).Msg("unable to update network fee")
 	}
 
-	if c.solvencyReporter != nil {
-		if err = c.solvencyReporter(height); err != nil {
-			c.logger.Err(err).Msg("fail to send solvency to THORChain")
-		}
-	}
-
 	return txIn, nil
 }

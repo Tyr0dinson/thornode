@@ -33,6 +33,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/runners"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
+	"gitlab.com/thorchain/thornode/v3/bifrost/reporter"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss"
@@ -503,14 +504,13 @@ func (c *EVMClient) reconstructVaultLiability(vaultAddr string) (bool, error) {
 func (c *EVMClient) Start(
 	globalTxsQueue chan stypes.TxIn,
 	globalErrataQueue chan stypes.ErrataBlock,
-	globalSolvencyQueue chan stypes.Solvency,
 	globalNetworkFeeQueue chan common.NetworkFee,
+	reporterDispatcher reporter.Dispatcher,
 ) {
 	c.evmScanner.globalErrataQueue = globalErrataQueue
 	c.evmScanner.globalNetworkFeeQueue = globalNetworkFeeQueue
-	c.globalSolvencyQueue = globalSolvencyQueue
 	c.tssKeySigner.Start()
-	c.blockScanner.Start(globalTxsQueue, globalNetworkFeeQueue)
+	c.blockScanner.Start(globalTxsQueue, globalNetworkFeeQueue, reporterDispatcher)
 	c.wg.Add(1)
 	go c.unstuck()
 	c.wg.Add(1)
@@ -1546,6 +1546,8 @@ func (c *EVMClient) GetGasEstimateForSolvency() cosmos.Uint {
 }
 
 // ReportSolvency reports solvency once per configured solvency blocks.
+// ReportSolvency is the legacy solvency flow retained for reviewer comparison.
+//nolint:unused
 func (c *EVMClient) ReportSolvency(height int64) error {
 	// FetchTxs may call this from prefetch goroutines; SolvencyCheckRunner also calls it while halted.
 	c.solvencyLock.Lock()
@@ -1651,6 +1653,8 @@ func (c *EVMClient) ReportSolvency(height int64) error {
 }
 
 // ShouldReportSolvency returns true if the given height is a solvency report height.
+// ShouldReportSolvency is the legacy solvency flow retained for reviewer comparison.
+//nolint:unused
 func (c *EVMClient) ShouldReportSolvency(height int64) bool {
 	return height%c.cfg.SolvencyBlocks == 0
 }

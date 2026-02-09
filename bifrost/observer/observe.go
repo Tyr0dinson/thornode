@@ -24,6 +24,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
+	"gitlab.com/thorchain/thornode/v3/bifrost/reporter"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -109,9 +110,9 @@ type Observer struct {
 	wg                    *sync.WaitGroup
 	globalTxsQueue        chan types.TxIn
 	globalErrataQueue     chan types.ErrataBlock
-	globalSolvencyQueue   chan types.Solvency
 	globalNetworkFeeQueue chan common.NetworkFee
 	globalPriceFeedQueue  chan common.PriceFeed
+	reporterDispatcher    reporter.Dispatcher
 	m                     *metrics.Metrics
 	errCounter            *prometheus.CounterVec
 	thorchainBridge       thorclient.ThorchainBridge
@@ -208,7 +209,6 @@ func NewObserver(pubkeyMgr *pubkeymanager.PubKeyManager,
 		onDeck:                make(map[txInKey]*types.TxIn),
 		globalTxsQueue:        make(chan types.TxIn),
 		globalErrataQueue:     make(chan types.ErrataBlock),
-		globalSolvencyQueue:   make(chan types.Solvency),
 		globalNetworkFeeQueue: make(chan common.NetworkFee, networkFeeQueueCapacity),
 		globalPriceFeedQueue:  make(chan common.PriceFeed),
 		errCounter:            m.GetCounterVec(metrics.ObserverError),
@@ -244,6 +244,21 @@ func (o *Observer) getChain(chainID common.Chain) (chainclients.ChainClient, err
 	return chain, nil
 }
 
+func (o *Observer) getReporterChains() map[common.Chain]reporter.ChainClient {
+	reporterChains := make(map[common.Chain]reporter.ChainClient, len(o.chains))
+	for chain, client := range o.chains {
+		rc, ok := client.(reporter.ChainClient)
+		if !ok {
+			o.logger.Error().
+				Stringer("chain", chain).
+				Msg("chain client does not implement reporter ChainClient")
+			continue
+		}
+		reporterChains[chain] = rc
+	}
+	return reporterChains
+}
+
 func (o *Observer) startChainClient(chainID common.Chain, chain chainclients.ChainClient) bool {
 	o.chainLifecycleMu.Lock()
 	defer o.chainLifecycleMu.Unlock()
@@ -256,7 +271,7 @@ func (o *Observer) startChainClient(chainID common.Chain, chain chainclients.Cha
 	if _, started := o.startedChains[chainID]; started {
 		return false
 	}
-	chain.Start(o.globalTxsQueue, o.globalErrataQueue, o.globalSolvencyQueue, o.globalNetworkFeeQueue)
+	chain.Start(o.globalTxsQueue, o.globalErrataQueue, o.globalNetworkFeeQueue, o.reporterDispatcher)
 	o.startedChains[chainID] = chain
 	return true
 }
@@ -420,6 +435,7 @@ func (o *Observer) Start(ctx context.Context) error {
 	if err := o.restoreDeck(); err != nil {
 		return fmt.Errorf("restore observer deck: %w", err)
 	}
+	o.reporterDispatcher = reporter.NewDispatcher(o.getReporterChains(), o.thorchainBridge, o.errCounter, o.stopChan)
 	deferXMR, err := o.startRestoredChainClients()
 	if err != nil {
 		return err
@@ -428,7 +444,6 @@ func (o *Observer) Start(ctx context.Context) error {
 	go o.processOracle()
 	go o.processTxIns()
 	go o.processErrataTx(ctx)
-	go o.processSolvencyQueue(ctx)
 	go o.processNetworkFeeQueue(ctx)
 	go o.deck(ctx)
 	go o.attestationGossip.Start(ctx)
@@ -437,7 +452,32 @@ func (o *Observer) Start(ctx context.Context) error {
 	return nil
 }
 
-// ObserveSigned is called when a tx is signed by the signer and returns an observation that should be immediately submitted.
+// func (o *Observer) processSolvencyQueue(ctx context.Context) {
+// 	for {
+// 		select {
+// 		case <-o.stopChan:
+// 			return
+// 		case solvencyItem, more := <-o.globalSolvencyQueue:
+// 			if !more {
+// 				return
+// 			}
+// 			if solvencyItem.Chain.IsEmpty() || solvencyItem.Coins.IsEmpty() || solvencyItem.PubKey.IsEmpty() {
+// 				continue
+// 			}
+// 			o.logger.Debug().Msgf("solvency:%+v", solvencyItem)
+// 			if err := o.attestationGossip.AttestSolvency(ctx, common.Solvency{
+// 				Chain:  solvencyItem.Chain,
+// 				Height: solvencyItem.Height,
+// 				PubKey: solvencyItem.PubKey,
+// 				Coins:  solvencyItem.Coins,
+// 			}); err != nil {
+// 				o.errCounter.WithLabelValues("fail_to_broadcast_solvency", "").Inc()
+// 				o.logger.Error().Err(err).Msg("fail to broadcast solvency tx")
+// 			}
+// 		}
+// 	}
+// }
+
 // Observations passed to this method with 'allowFutureObservation' false will be cached in memory and skipped if they are later observed in the mempool or block.
 func (o *Observer) ObserveSigned(txIn types.TxIn) {
 	if !txIn.AllowFutureObservation {
@@ -2145,32 +2185,6 @@ func (o *Observer) getThorchainTxIns(txIn *types.TxIn, finalized bool, finaliseH
 		obsTxs = append(obsTxs, obsTx)
 	}
 	return obsTxs, invalidIndices, nil
-}
-
-func (o *Observer) processSolvencyQueue(ctx context.Context) {
-	for {
-		select {
-		case <-o.stopChan:
-			return
-		case solvencyItem, more := <-o.globalSolvencyQueue:
-			if !more {
-				return
-			}
-			if solvencyItem.Chain.IsEmpty() || solvencyItem.PubKey.IsEmpty() {
-				continue
-			}
-			o.logger.Debug().Msgf("solvency:%+v", solvencyItem)
-			if err := o.attestationGossip.AttestSolvency(ctx, common.Solvency{
-				Chain:  solvencyItem.Chain,
-				Height: solvencyItem.Height,
-				PubKey: solvencyItem.PubKey,
-				Coins:  solvencyItem.Coins,
-			}); err != nil {
-				o.errCounter.WithLabelValues("fail_to_broadcast_solvency", "").Inc()
-				o.logger.Error().Err(err).Msg("fail to broadcast solvency tx")
-			}
-		}
-	}
 }
 
 func (o *Observer) processNetworkFeeQueue(ctx context.Context) {

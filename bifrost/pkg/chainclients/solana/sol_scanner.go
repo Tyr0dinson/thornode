@@ -24,6 +24,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/solana/rpc"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/solana/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
+	"gitlab.com/thorchain/thornode/v3/bifrost/reporter"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -56,6 +57,7 @@ type SOLScanner struct {
 	bridge             thorclient.ThorchainBridge
 	solvencyReporter   shtypes.SolvencyReporter
 	signerCacheManager *signercache.CacheManager
+	reporterDispatcher reporter.Dispatcher
 
 	globalNetworkFeeQueue chan common.NetworkFee
 	globalTxsQueue        chan stypes.TxIn
@@ -142,6 +144,10 @@ func NewSOLScanner(
 		initialHeight:      make(map[string]struct{}),
 		vaultScanStatuses:  map[string]vaultScanStatus{},
 	}, nil
+}
+
+func (s *SOLScanner) setReporterDispatcher(dispatcher reporter.Dispatcher) {
+	s.reporterDispatcher = dispatcher
 }
 
 func (s *SOLScanner) Start() {
@@ -382,16 +388,16 @@ func (s *SOLScanner) scan() {
 		// because we expect to have enough observed txs in the checkRecentBlocksAndUpdateNetworkFee above.
 		s.sendNetworkFeeIfNecessary(currentSlot)
 	}
+	if s.reporterDispatcher != nil {
+		s.reporterDispatcher.Process(common.SOLChain, int64(currentSlot))
+	}
+
 	// Record the slot being scanned before reporting so ReportSolvency can
 	// distinguish this scan-driven call from a SolvencyCheckRunner call (which
 	// passes the live chain tip). Without this, the unhealthy-scanner guard in
 	// ReportSolvency never matches and a lagging/unhealthy scanner keeps
 	// reporting where it should defer to the runner.
 	s.currentScanSlot.Store(int64(currentSlot))
-	if err = s.solvencyReporter(int64(currentSlot)); err != nil {
-		s.logger.Err(err).Msg("fail to send solvency to THORChain")
-	}
-
 	if (time.Since(s.lastLog) > (5 * time.Second)) || !healthy {
 		s.lastLog = time.Now()
 		s.logger.Info().

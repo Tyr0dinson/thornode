@@ -25,6 +25,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/utxo"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/rpc"
+	"gitlab.com/thorchain/thornode/v3/bifrost/reporter"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss"
@@ -278,18 +279,13 @@ func (c *Client) GetAddress(pubkey common.PubKey) string {
 func (c *Client) Start(
 	globalTxsQueue chan types.TxIn,
 	globalErrataQueue chan types.ErrataBlock,
-	globalSolvencyQueue chan types.Solvency,
 	globalNetworkFeeQueue chan common.NetworkFee,
+	reporterDispatcher reporter.Dispatcher,
 ) {
 	c.globalErrataQueue = globalErrataQueue
-	c.globalSolvencyQueue = globalSolvencyQueue
 	c.globalNetworkFeeQueue = globalNetworkFeeQueue
 	c.tssKeySigner.Start()
-	c.blockScanner.Start(globalTxsQueue, globalNetworkFeeQueue)
-	c.wg.Add(1)
-	go runners.SolvencyCheckRunner(
-		c.GetChain(), c, c.bridge, c.stopchan, c.wg, constants.ThorchainBlockTime,
-	)
+	c.blockScanner.Start(globalTxsQueue, globalNetworkFeeQueue, reporterDispatcher)
 }
 
 // Stop stops the scanner, signer, and solvency check.
@@ -515,12 +511,7 @@ func (c *Client) FetchTxs(height, chainHeight int64) (types.TxIn, error) {
 		if err != nil {
 			c.log.Err(err).Msg("fail to send network fee")
 		}
-		// when block scanner is not healthy, only report from auto-unhalt SolvencyCheckRunner
-		if c.IsBlockScannerHealthy() {
-			if err = c.ReportSolvency(height); err != nil {
-				c.log.Err(err).Msg("fail to report solvency info")
-			}
-		}
+		// solvency reporting handled by reporter dispatcher
 	}
 
 	// consolidate UTXOs if there is not one in progress
@@ -731,6 +722,13 @@ func (c *Client) updateCurrentBlockHeight(height int64) {
 ////////////////////////////////////////////////////////////////////////////////////////
 
 // ShouldReportSolvency returns true if solvency should be reported at the given height.
+// GetGasEstimateForSolvency returns the current gas fee estimate used by solvency checks.
+func (c *Client) GetGasEstimateForSolvency() cosmos.Uint {
+	return cosmos.NewUint(3 * c.cfg.UTXO.EstimatedAverageTxSize * c.lastFeeRate)
+}
+
+// ShouldReportSolvency is the legacy solvency flow retained for reviewer comparison.
+//nolint:unused
 func (c *Client) ShouldReportSolvency(height int64) bool {
 	return c.shouldReportSolvency(height)
 }
@@ -755,6 +753,8 @@ func (c *Client) shouldReportSolvency(height int64) bool {
 }
 
 // ReportSolvency reports solvency for all asgard vaults.
+// ReportSolvency is the legacy solvency flow retained for reviewer comparison.
+//nolint:unused
 func (c *Client) ReportSolvency(height int64) error {
 	c.solvencyLock.Lock()
 	defer c.solvencyLock.Unlock()
