@@ -507,6 +507,7 @@ bifrost:
         - TRX/USDT
         - USDC/USDT
         - XRP/USDT
+        - ZEC/USDT
       symbol_mapping: []
 
     bitfinex:
@@ -562,6 +563,7 @@ bifrost:
         - BTC/USDT
         - ETH/USDT
         - RUNE/USDT
+        - ZEC/USDT
       symbol_mapping: []
 
     bitstamp:
@@ -622,6 +624,7 @@ bifrost:
         - SOL/USD
         - USDT/USD
         - XRP/USD
+        - ZEC/USD
       symbol_mapping: []
 
     coinw:
@@ -664,6 +667,7 @@ bifrost:
         - LTC/USDT
         - SOL/USDT
         - TRX/USDT
+        - ZEC/USDT
       symbol_mapping: []
 
     crypto:
@@ -701,6 +705,7 @@ bifrost:
         - SOL/USDT
         - TRX/USDT
         - USDC/USDT
+        - ZEC/USDT
       symbol_mapping: []
 
     gemini:
@@ -738,6 +743,7 @@ bifrost:
         - SOL/USDT
         - TRX/USDT
         - XRP/USDT
+        - ZEC/USDT
       symbol_mapping: []
 
     kraken:
@@ -754,11 +760,13 @@ bifrost:
         - USDC/USDT
         - USDT/USD
         - XRP/USD
+        - ZEC/USD
       symbol_mapping:
         - USDT/USD=USDTZUSD
         - BTC/USD=XXBTZUSD
         - XRP/USD=XRPZUSD
         - DOGE/USD=XDGUSD
+        - ZEC/USD=XZECZUSD
 
     kucoin:
       name: kucoin
@@ -777,6 +785,7 @@ bifrost:
         - SOL/USDT
         - TRX/USDT
         - XRP/USDT
+        - ZEC/USDT
       symbol_mapping: []
 
     lbank:
@@ -821,6 +830,7 @@ bifrost:
         - TRX/USDT
         - USDC/USDT
         - XRP/USDT
+        - ZEC/USDT
       symbol_mapping: []
 
     okx:
@@ -844,6 +854,7 @@ bifrost:
         - USDC/USDT
         - USDT/USD
         - XRP/USDT
+        - ZEC/USDT
       symbol_mapping: []
 
     thorchain:

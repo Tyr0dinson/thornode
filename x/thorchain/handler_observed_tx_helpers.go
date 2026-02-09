@@ -534,7 +534,7 @@ func handleObservedTxOutQuorum(
 
 	k := mgr.Keeper()
 
-	if isCancelTx(tx) {
+	if isCancelOrApprovalTx(tx) {
 		ctx.Logger().Info("skipping slash for cancel tx with empty memo", "txid", tx.Tx.ID)
 		// Credit gas to gas manager and deduct from vault (legit operational spend, no penalty)
 		// This also adds to fee_spent_rune for dynamic outbound fee calculation
@@ -573,6 +573,10 @@ func handleObservedTxOutQuorum(
 	}
 
 	txOut := voter.GetTx(activeNodeAccounts) // get consensus tx, in case our for loop is incorrect
+	if txOut == nil || txOut.IsEmpty() {
+		ctx.Logger().Error("fail to get consensus tx from voter", "txid", tx.Tx.ID)
+		return fmt.Errorf("fail to get consensus tx from voter: %s", tx.Tx.ID)
+	}
 	txOut.Tx.Memo = tx.Tx.Memo
 
 	// For memoless outbounds, look up the original memo from the scheduled TxOutItem
@@ -641,7 +645,7 @@ func handleObservedTxOutQuorum(
 	vault, err := k.GetVault(ctx, tx.ObservedPubKey)
 	if err != nil {
 		ctx.Logger().Error("fail to get vault", "error", err)
-		return nil
+		return fmt.Errorf("fail to get vault for outbound tx: %w", err)
 	}
 
 	// if the vault was slashed we skipped the gas manager above and deduct gas directly
@@ -825,7 +829,8 @@ func fetchMemoFromReference(ctx cosmos.Context, mgr Manager, asset common.Asset,
 		// Ensure transaction was observed after the reference memo was created
 		if txObservationHeight <= refMemo.Height {
 			ctx.Logger().Info("transaction observed before reference memo creation", "tx_height", txObservationHeight, "memo_height", refMemo.Height, "reference", m.Reference)
-			// Track failure usage
+			// Track usage for audit purposes - we intentionally track all usage attempts (including failures)
+			// to maintain a record of who tried to use the reference memo, even if the attempt was invalid.
 			trackReferenceMemoUsage(ctx, mgr, asset, tx.Memo, tx.ID)
 			return ""
 		}
@@ -836,8 +841,8 @@ func fetchMemoFromReference(ctx cosmos.Context, mgr Manager, asset common.Asset,
 			maxUse := mgr.Keeper().GetConfigInt64(ctx, constants.MemolessTxnMaxUse)
 			if maxUse > 0 && refMemo.GetUsageCount() >= maxUse {
 				ctx.Logger().Info("reference memo usage limit exceeded in fetchMemoFromReference", "reference", m.Reference, "usage_count", refMemo.GetUsageCount(), "max_use", maxUse)
-
-				// Track failure usage
+				// Track usage for audit purposes - we intentionally track all usage attempts (including failures)
+				// to maintain a record of who tried to use the reference memo, even if the attempt was invalid.
 				trackReferenceMemoUsage(ctx, mgr, asset, tx.Memo, tx.ID)
 				return ""
 			}
@@ -847,7 +852,8 @@ func fetchMemoFromReference(ctx cosmos.Context, mgr Manager, asset common.Asset,
 			return refMemo.Memo
 		}
 
-		// Track failure usage
+		// Track usage for audit purposes - we intentionally track all usage attempts (including failures)
+		// to maintain a record of who tried to use the reference memo, even if the attempt was invalid (expired).
 		trackReferenceMemoUsage(ctx, mgr, asset, tx.Memo, tx.ID)
 		return ""
 	}
