@@ -352,19 +352,20 @@ func (s *HandlerObservedTxOutSuite) TestHandleFailedTransaction(c *C) {
 	mgr.ObMgr().EndBlock(ctx, keeper)
 	c.Check(keeper.observing, HasLen, 1)
 
-	// With new behavior: fake gas tx (amount=1) is NOT slashed
-	// No pool deductions yet (pool stays at 300,000)
-	c.Check(int(keeper.pool.BalanceAsset.Uint64()), Equals, 300_000)
+	// The observed amount (1) doesn't match the TxOutItem amount (100*1e8),
+	// and the memo is not self-referential (OUT:txInHash != OUT:tx.ID),
+	// so the outbound is slashed for coins + gas = 1 + 37,500 = 37,501.
+	// Pool: 300,000 - 37,501 = 262,499
+	c.Check(int(keeper.pool.BalanceAsset.Uint64()), Equals, 262_499)
 
 	mgr.GasMgr().EndBlock(ctx, keeper, eventMgr)
-	// After gas manager processes, gas is handled correctly (single addGasFees call):
-	// - handleObservedTxOutQuorum (line 590) calls addGasFees once
-	// - handler_common_outbound does NOT call it again (no double deduction)
-	// Pool gets: -37,500, so 300,000 - 37,500 = 262,500
-	c.Check(int(keeper.pool.BalanceAsset.Uint64()), Equals, 262_500)
+	// Since vaultSlash was true, addGasFees was not called,
+	// so gas manager EndBlock does not change the pool further.
+	c.Check(int(keeper.pool.BalanceAsset.Uint64()), Equals, 262_499)
 
-	// Vault deducted: only gas (37,500) for fake gas tx
-	c.Check(vault.Coins.GetCoin(common.ETHAsset).Amount.Equal(cosmos.NewUint(19999962500)), Equals, true, Commentf("%d", vault.Coins.GetCoin(common.ETHAsset).Amount.Uint64()))
+	// Vault deducted: gas (37,500) + coins (1) = 37,501
+	// 200*1e8 - 37,501 = 19,999,962,499
+	c.Check(vault.Coins.GetCoin(common.ETHAsset).Amount.Equal(cosmos.NewUint(19999962499)), Equals, true, Commentf("%d", vault.Coins.GetCoin(common.ETHAsset).Amount.Uint64()))
 
 	hashes := keeper.GetObservedLink(ctx, tx.ID)
 	c.Assert(hashes, HasLen, 1)
