@@ -190,7 +190,20 @@ func processErrataOutboundTx(ctx cosmos.Context, k keeper.Keeper, eventMgr Event
 		return fmt.Errorf("fail to get observed tx out voter for tx (%s) : %w", er.Id, err)
 	}
 	if len(txOutVoter.Txs) == 0 {
-		return fmt.Errorf("cannot find tx: %s", er.Id)
+		// try resolving via observed link (outbound voters may be stored under a computed hash)
+		linkedHashes := k.GetObservedLink(ctx, er.Id)
+		for _, hash := range linkedHashes {
+			txOutVoter, err = k.GetObservedTxOutVoter(ctx, hash)
+			if err != nil {
+				return fmt.Errorf("fail to get observed tx out voter for tx (%s) : %w", hash, err)
+			}
+			if len(txOutVoter.Txs) > 0 {
+				break
+			}
+		}
+		if len(txOutVoter.Txs) == 0 {
+			return fmt.Errorf("cannot find tx: %s", er.Id)
+		}
 	}
 	if txOutVoter.Tx.IsEmpty() {
 		return fmt.Errorf("tx out voter is not finalised")

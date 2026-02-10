@@ -944,7 +944,7 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/tx/details/{{ native_txid -1 }}
 asserts:
-  - .tx.tx.memo == "=:BTC.BTC:{{ addr_btc_fox }}"
+  - .tx_voters | .[0] | .tx.tx.memo == "=:BTC.BTC:{{ addr_btc_fox }}"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -1017,7 +1017,7 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/tx/details/{{ native_txid -1 }}
 asserts:
-  - .tx.tx.memo == "=:BTC.BTC:{{ addr_btc_fox }}"
+  - .tx_voters | .[0] | .tx.tx.memo == "=:BTC.BTC:{{ addr_btc_fox }}"
 ---
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
