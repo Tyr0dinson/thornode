@@ -344,6 +344,13 @@ func GetMimirs() (map[string]int64, error) {
 	return mimirs, err
 }
 
+func GetMimir(key string) (int64, error) {
+	url := fmt.Sprintf("%s/thorchain/mimir/key/%s", thornodeURL, strings.ToUpper(key))
+	var mimir int64
+	err := Get(url, &mimir)
+	return mimir, err
+}
+
 func GetBlock(height int64) (openapi.BlockResponse, error) {
 	url := fmt.Sprintf("%s/thorchain/block", thornodeURL)
 	if height > 0 {

@@ -200,3 +200,11 @@ func (c *Client) BroadcastTx(signed []byte) (string, error) {
 	waitDuration := time.Duration(solanaBroadcastConfirmationAttempts) * solanaBroadcastConfirmationPollInterval
 	return txSig, fmt.Errorf("broadcasted tx %s not confirmed on solana node after %s: %w", txSig, waitDuration, lastErr)
 }
+
+func (c *Client) GetHeight() (int64, error) {
+	slot, err := c.rpc.GetSlot()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get slot: %w", err)
+	}
+	return int64(slot), nil
+}

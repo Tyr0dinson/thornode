@@ -283,3 +283,11 @@ func (c *Client) waitForConfirmedBroadcast(txID string, signed []byte, expiratio
 		time.Sleep(tronBroadcastObservationPollInterval)
 	}
 }
+
+func (c *Client) GetHeight() (int64, error) {
+	block, err := c.api.GetLatestBlock()
+	if err != nil {
+		return 0, fmt.Errorf("fail to get latest block: %w", err)
+	}
+	return block.Header.RawData.Number, nil
+}

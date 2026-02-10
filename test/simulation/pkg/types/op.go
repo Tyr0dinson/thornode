@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"runtime"
 	"strings"
+	"sync/atomic"
 )
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -17,6 +18,19 @@ type OpConfig struct {
 
 	// Users is a slice of clients for simulation user keys.
 	Users []*User
+
+	// solvencyHaltLogOnly controls whether solvency halt watcher should only log.
+	solvencyHaltLogOnly atomic.Bool
+}
+
+// SetSolvencyHaltLogOnly sets the solvency halt watcher mode.
+func (c *OpConfig) SetSolvencyHaltLogOnly(enabled bool) {
+	c.solvencyHaltLogOnly.Store(enabled)
+}
+
+// SolvencyHaltLogOnly returns true when solvency halt watcher should only log.
+func (c *OpConfig) SolvencyHaltLogOnly() bool {
+	return c.solvencyHaltLogOnly.Load()
 }
 
 // OpResult is the result of an operation.

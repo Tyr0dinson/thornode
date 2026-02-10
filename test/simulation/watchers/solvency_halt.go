@@ -14,16 +14,22 @@ import (
 )
 
 var (
+	// Recheck a detected halt before failing the run so short-lived mimir states
+	// do not abort simulations that recover on the next poll.
 	solvencyHaltRecheckAttempts = 2
 	solvencyHaltRecheckDelay    = 2 * time.Second
 )
 
+// outboundQueueItem is the subset of outbound queue fields needed to identify
+// Ragnarok outbounds.
 type outboundQueueItem struct {
 	Chain        string `json:"chain"`
 	Memo         string `json:"memo"`
 	OriginalMemo string `json:"original_memo"`
 }
 
+// fetchActiveSolvencyHalts returns only positive SOLVENCYHALT mimir entries.
+// Zero or negative values are treated as inactive halts.
 func fetchActiveSolvencyHalts(cl *http.Client, endpoint string) (map[string]int64, error) {
 	mimirRes, err := fetchMimir(cl, endpoint)
 	if err != nil {
@@ -40,6 +46,7 @@ func fetchActiveSolvencyHalts(cl *http.Client, endpoint string) (map[string]int6
 	return activeHalts, nil
 }
 
+// fetchMimir loads the thorchain mimir endpoint into a key/value map.
 func fetchMimir(cl *http.Client, endpoint string) (map[string]int64, error) {
 	resp, err := cl.Get(endpoint)
 	if err != nil {
@@ -58,6 +65,8 @@ func fetchMimir(cl *http.Client, endpoint string) (map[string]int64, error) {
 	return mimirRes, nil
 }
 
+// fetchPendingRagnarokChains returns chains that still have Ragnarok outbounds
+// in the queue.
 func fetchPendingRagnarokChains(cl *http.Client, endpoint string) (map[string]struct{}, error) {
 	resp, err := cl.Get(endpoint)
 	if err != nil {
@@ -75,6 +84,8 @@ func fetchPendingRagnarokChains(cl *http.Client, endpoint string) (map[string]st
 
 	chains := make(map[string]struct{})
 	for _, item := range outboundItems {
+		// Prefer original_memo because outbound processing can rewrite memo while
+		// preserving the user-visible source memo here.
 		memo := item.OriginalMemo
 		if memo == "" {
 			memo = item.Memo
@@ -87,6 +98,7 @@ func fetchPendingRagnarokChains(cl *http.Client, endpoint string) (map[string]st
 	return chains, nil
 }
 
+// fetchActiveRagnarokChains returns chains with active RAGNAROK-* mimir values.
 func fetchActiveRagnarokChains(cl *http.Client, endpoint string) (map[string]struct{}, error) {
 	mimirRes, err := fetchMimir(cl, endpoint)
 	if err != nil {
@@ -98,6 +110,8 @@ func fetchActiveRagnarokChains(cl *http.Client, endpoint string) (map[string]str
 		if v <= 0 || !strings.HasPrefix(k, "RAGNAROK-") {
 			continue
 		}
+		// RAGNAROK keys are asset-scoped, for example RAGNAROK-BTC-BTC.
+		// Solvency halts are chain-scoped, so compare only the chain prefix.
 		asset := strings.TrimPrefix(k, "RAGNAROK-")
 		chain, _, _ := strings.Cut(asset, "-")
 		if chain != "" {
@@ -128,6 +142,7 @@ func fetchRagnarokInProgress(cl *http.Client, endpoint string) (bool, error) {
 	return inProgress, nil
 }
 
+// haltedChains normalizes active halt mimir keys into sorted chain names.
 func haltedChains(activeHalts map[string]int64) []string {
 	chains := make([]string, 0, len(activeHalts))
 	for k := range activeHalts {
@@ -142,6 +157,8 @@ func haltedChains(activeHalts map[string]int64) []string {
 	return chains
 }
 
+// allHaltedChainsInSet reports whether every halted chain is covered by the
+// supplied chain set.
 func allHaltedChainsInSet(activeHalts map[string]int64, coveredChains map[string]struct{}) bool {
 	halted := haltedChains(activeHalts)
 	if len(halted) == 0 {
@@ -155,6 +172,8 @@ func allHaltedChainsInSet(activeHalts map[string]int64, coveredChains map[string
 	return true
 }
 
+// NewSolvencyHalt builds a watcher that fails the simulation on persistent,
+// unexpected solvency halts.
 func NewSolvencyHalt() *Watcher {
 	cl := log.With().Str("watcher", "solvency").Logger()
 
@@ -175,6 +194,8 @@ func NewSolvencyHalt() *Watcher {
 				return nil
 			}
 
+			// Give the network a chance to clear short-lived halt mimirs before
+			// treating the condition as persistent.
 			transient := false
 			for attempt := 0; attempt < solvencyHaltRecheckAttempts; attempt++ {
 				time.Sleep(solvencyHaltRecheckDelay)
@@ -211,6 +232,8 @@ func NewSolvencyHalt() *Watcher {
 				return nil
 			}
 
+			// Ragnarok can intentionally create temporary solvency halt states
+			// while queued outbounds are still draining.
 			pendingRagnarokChains, err := fetchPendingRagnarokChains(httpClient, queueEndpoint)
 			if err != nil {
 				cl.Error().Err(err).Msg("failed to get outbound queue response")
@@ -221,6 +244,8 @@ func NewSolvencyHalt() *Watcher {
 				return nil
 			}
 
+			// Active Ragnarok mimirs are another intentional drain mode.
+			// Ignore halts only when every halted chain is part of that active Ragnarok.
 			activeRagnarokChains, err := fetchActiveRagnarokChains(httpClient, endpoint)
 			if err != nil {
 				cl.Error().Err(err).Msg("failed to get ragnarok mimir response")
@@ -231,11 +256,28 @@ func NewSolvencyHalt() *Watcher {
 				return nil
 			}
 
+			// Sort keys so log-only output and fatal errors are deterministic.
 			keys := make([]string, 0, len(activeHalts))
 			for k := range activeHalts {
 				keys = append(keys, k)
 			}
 			sort.Strings(keys)
+
+			// Some suites intentionally trigger insolvency and assert on the halt
+			// themselves. Log-only mode records the condition without stopping the
+			// simulation runner.
+			if config != nil && config.SolvencyHaltLogOnly() {
+				for _, key := range keys {
+					cl.Warn().
+						Str("mimir", key).
+						Int64("value", activeHalts[key]).
+						Msg("solvency halt detected (log-only mode)")
+				}
+				return nil
+			}
+
+			// Fatal mode returns the first sorted halt to keep the error stable
+			// when multiple chains are halted at once.
 			key := keys[0]
 			value := activeHalts[key]
 			cl.Error().Str("mimir", key).Int64("value", value).Msg("solvency halt detected")

@@ -167,3 +167,37 @@ func DepositL1Token(log *zerolog.Logger, client LiteChainClient, asset common.As
 
 	return txid, err
 }
+
+////////////////////////////////////////////////////////////////////////////////////////
+// Send
+////////////////////////////////////////////////////////////////////////////////////////
+
+func Send(log *zerolog.Logger, user *User, to common.Address, asset common.Asset, memo string, amount cosmos.Uint) (string, error) {
+	if user == nil {
+		return "", fmt.Errorf("user is nil")
+	}
+	client, ok := user.ChainClients[asset.Chain]
+	if !ok {
+		return "", fmt.Errorf("no chain client for %s", asset.Chain)
+	}
+
+	tx := SimTx{
+		Chain:     asset.Chain,
+		ToAddress: to,
+		Coin:      common.NewCoin(asset, amount),
+		Memo:      memo,
+	}
+
+	signed, err := client.SignTx(tx)
+	if err != nil {
+		log.Error().Err(err).Msg("failed to sign tx")
+		return "", err
+	}
+
+	txid, err := client.BroadcastTx(signed)
+	if err != nil {
+		log.Error().Err(err).Msg("failed to broadcast tx")
+	}
+
+	return txid, err
+}

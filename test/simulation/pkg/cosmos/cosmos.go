@@ -9,6 +9,7 @@ import (
 	sdkmath "cosmossdk.io/math"
 
 	"github.com/cosmos/cosmos-sdk/client"
+	"github.com/cosmos/cosmos-sdk/client/grpc/cmtservice"
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
@@ -312,4 +313,13 @@ func (c *Client) BroadcastTx(signed []byte) (string, error) {
 	}
 
 	return broadcast.TxResponse.TxHash, nil
+}
+
+func (c *Client) GetHeight() (int64, error) {
+	tmService := cmtservice.NewServiceClient(c.grpc)
+	res, err := tmService.GetLatestBlock(ctx(), &cmtservice.GetLatestBlockRequest{})
+	if err != nil {
+		return 0, fmt.Errorf("fail to get latest block: %w", err)
+	}
+	return res.Block.Header.Height, nil
 }
