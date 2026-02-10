@@ -3,4 +3,7 @@
 
 package common
 
-const CurrentChainNetwork = ChainNet
+const (
+	CurrentChainNetwork = ChainNet
+	IsMocknet           = false
+)
