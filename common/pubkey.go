@@ -154,7 +154,7 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 		switch chainNetwork {
 		case MockNet:
 			net = &chaincfg.RegressionNetParams
-		case MainNet, StageNet:
+		case MainNet, StageNet, ChainNet:
 			net = &chaincfg.MainNetParams
 		}
 		addr, err := btcutil.NewAddressWitnessPubKeyHash(pk.Address().Bytes(), net)
@@ -171,7 +171,7 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 		switch chainNetwork {
 		case MockNet:
 			net = &ltcchaincfg.RegressionNetParams
-		case MainNet, StageNet:
+		case MainNet, StageNet, ChainNet:
 			net = &ltcchaincfg.MainNetParams
 		}
 		addr, err := ltcutil.NewAddressWitnessPubKeyHash(pk.Address().Bytes(), net)
@@ -188,7 +188,7 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 		switch chainNetwork {
 		case MockNet:
 			net = &dogchaincfg.RegressionNetParams
-		case MainNet, StageNet:
+		case MainNet, StageNet, ChainNet:
 			net = &dogchaincfg.MainNetParams
 		}
 		addr, err := dogutil.NewAddressPubKeyHash(pk.Address().Bytes(), net)
@@ -205,7 +205,7 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 		switch chainNetwork {
 		case MockNet:
 			net = &bchchaincfg.RegressionNetParams
-		case MainNet, StageNet:
+		case MainNet, StageNet, ChainNet:
 			net = &bchchaincfg.MainNetParams
 		}
 		addr, err := bchutil.NewAddressPubKeyHash(pk.Address().Bytes(), net)
@@ -265,7 +265,7 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 		switch chainNetwork {
 		case MockNet:
 			versionBytes = []byte{0x1d, 0x25} // testnet P2PKH prefix (tm)
-		case MainNet, StageNet:
+		case MainNet, StageNet, ChainNet:
 			versionBytes = []byte{0x1c, 0xb8} // mainnet P2PKH prefix (t1)
 		}
 

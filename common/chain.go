@@ -289,7 +289,7 @@ func (c Chain) AddressPrefix(cn ChainNetwork) string {
 		case DOGEChain:
 			return dogchaincfg.RegressionNetParams.Bech32HRPSegwit
 		}
-	case MainNet, StageNet:
+	case MainNet, StageNet, ChainNet:
 		switch c {
 		case GAIAChain:
 			return "cosmos"

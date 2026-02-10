@@ -504,9 +504,7 @@ func (c *Client) getChainCfgBTC() *btcchaincfg.Params {
 	switch common.CurrentChainNetwork {
 	case common.MockNet:
 		return &btcchaincfg.RegressionNetParams
-	case common.MainNet:
-		return &btcchaincfg.MainNetParams
-	case common.StageNet:
+	case common.MainNet, common.StageNet, common.ChainNet:
 		return &btcchaincfg.MainNetParams
 	default:
 		log.Fatal().Msg("unsupported network")
@@ -519,9 +517,7 @@ func (c *Client) getChainCfgLTC() *ltcchaincfg.Params {
 	switch cn {
 	case common.MockNet:
 		return &ltcchaincfg.RegressionNetParams
-	case common.MainNet:
-		return &ltcchaincfg.MainNetParams
-	case common.StageNet:
+	case common.MainNet, common.StageNet, common.ChainNet:
 		return &ltcchaincfg.MainNetParams
 	}
 	return nil
@@ -531,9 +527,7 @@ func (c *Client) getChainCfgBCH() *bchchaincfg.Params {
 	switch common.CurrentChainNetwork {
 	case common.MockNet:
 		return &bchchaincfg.RegressionNetParams
-	case common.MainNet:
-		return &bchchaincfg.MainNetParams
-	case common.StageNet:
+	case common.MainNet, common.StageNet, common.ChainNet:
 		return &bchchaincfg.MainNetParams
 	default:
 		log.Fatal().Msg("unsupported network")
@@ -545,9 +539,7 @@ func (c *Client) getChainCfgDOGE() *dogechaincfg.Params {
 	switch common.CurrentChainNetwork {
 	case common.MockNet:
 		return &dogechaincfg.RegressionNetParams
-	case common.MainNet:
-		return &dogechaincfg.MainNetParams
-	case common.StageNet:
+	case common.MainNet, common.StageNet, common.ChainNet:
 		return &dogechaincfg.MainNetParams
 	default:
 		log.Fatal().Msg("unsupported network")
