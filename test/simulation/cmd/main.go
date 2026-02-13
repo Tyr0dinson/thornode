@@ -15,6 +15,7 @@ import (
 	"github.com/rivo/tview"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/ada"
 	"golang.org/x/term"
 
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -54,6 +55,7 @@ var liteClientConstructors = map[common.Chain]LiteChainClientConstructor{
 	common.XRPChain:   xrp.NewConstructor(chainRPCs[common.XRPChain]),
 	common.NOBLEChain: pkgcosmos.NewConstructor(chainRPCs[common.NOBLEChain]),
 	common.SOLChain:   solana.NewConstructor(chainRPCs[common.SOLChain]),
+	common.ADAChain: ada.NewConstructor(chainRPCs[common.ADAChain]),
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////

@@ -295,10 +295,12 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 			network = adacommon.AddressNetworkTestnet
 		}
 
+		hash := adacommon.Blake2b224Hash(pk.Bytes())
+
 		addr, err := adacommon.NewAddressFromParts(
 			adacommon.AddressTypeKeyNone,
 			network,
-			pk.Address().Bytes(),
+			hash[:],
 			nil,
 		)
 		if err != nil {

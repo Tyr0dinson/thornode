@@ -469,7 +469,6 @@ bifrost:
 
     ada:
       <<: *default-chain
-      disabled: true
       chain_id: ADA
       block_scanner:
         <<: *default-block-scanner

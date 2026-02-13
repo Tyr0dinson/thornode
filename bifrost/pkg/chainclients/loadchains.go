@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/rs/zerolog/log"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/cardano"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss/go-tss/tss"
 
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"

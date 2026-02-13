@@ -52,6 +52,7 @@ var AllChains = [...]Chain{
 	XRPChain,
 	SOLChain,
 	ZECChain,
+	ADAChain,
 }
 
 type SigningAlgo string

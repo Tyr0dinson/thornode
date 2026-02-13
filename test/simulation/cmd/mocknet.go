@@ -43,6 +43,7 @@ var chainRPCs = map[common.Chain]string{
 	common.TRONChain:  "http://localhost:8090",
 	common.XRPChain:   "http://localhost:5005",
 	common.SOLChain:   "http://localhost:8899",
+	common.ADAChain: "localhost:3002",
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -153,6 +154,7 @@ func InitConfig(parallelism int, seed bool, rng *rand.Rand) *OpConfig {
 				{common.LTCChain, 250, 103},
 				{common.BCHChain, 1500, 7},
 				{common.DOGEChain, 1000, 1500000},
+				{common.ADAChain, 1, 200000},
 			}
 			for _, fee := range defaultFees {
 				log.Info().Msgf("posting %s network fee", fee.chain)
@@ -285,6 +287,8 @@ func InitConfig(parallelism int, seed bool, rng *rand.Rand) *OpConfig {
 			chainSeedAmount = sdkmath.NewUint(100000 * common.One)
 		case common.TRONChain:
 			chainSeedAmount = sdkmath.NewUint(100000 * common.One)
+		case common.ADAChain:
+			chainSeedAmount = sdkmath.NewUint(1000 * common.One)
 		default:
 			continue // all other chains currently unsupported
 		}

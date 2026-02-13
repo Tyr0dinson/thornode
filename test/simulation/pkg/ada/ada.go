@@ -4,20 +4,23 @@ import (
 	"crypto/ed25519"
 	"fmt"
 	"log/slog"
-	"net"
 	"os"
 	"sync"
 	"time"
 
 	sdkmath "cosmossdk.io/math"
 	ouroboros "github.com/blinklabs-io/gouroboros"
+	"github.com/blinklabs-io/gouroboros/cbor"
 	"github.com/blinklabs-io/gouroboros/ledger"
-	"github.com/blinklabs-io/gouroboros/protocol/chainsync"
-	ocommon "github.com/blinklabs-io/gouroboros/protocol/common"
-	cardano "github.com/kocubinski/gardano/address"
-	adatx "github.com/kocubinski/gardano/tx"
+	"github.com/blinklabs-io/gouroboros/ledger/babbage"
+	lcommon "github.com/blinklabs-io/gouroboros/ledger/common"
+	"github.com/blinklabs-io/gouroboros/ledger/conway"
+	"github.com/blinklabs-io/gouroboros/ledger/mary"
+	"github.com/blinklabs-io/gouroboros/ledger/shelley"
+	"github.com/blinklabs-io/gouroboros/protocol/localstatequery"
 	"github.com/rs/zerolog/log"
 	utxocardano "github.com/utxorpc/go-codegen/utxorpc/v1alpha/cardano"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/cardano"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/common"
 	simtypes "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
@@ -25,16 +28,13 @@ import (
 
 const testnetNetworkMagic = 42
 
-var chainSyncOnce sync.Once
-
 type Client struct {
-	clientConn *ouroboros.Connection
-	logger     *slog.Logger
-	key        ed25519.PrivateKey
-	address    cardano.Address
-	protocol   *utxocardano.PParams
-
-	broadcastLock sync.Mutex
+	n2c      *ouroboros.Connection
+	mtx      sync.Mutex
+	logger   *slog.Logger
+	key      ed25519.PrivateKey
+	address  lcommon.Address
+	protocol *utxocardano.PParams
 }
 
 func NewConstructor(n2cAddress string) simtypes.LiteChainClientConstructor {
@@ -48,6 +48,7 @@ func NewClient(n2cAddress string, keys *thorclient.Keys) (*Client, error) {
 		Level: slog.LevelInfo,
 	}))
 	c := &Client{logger: logger}
+
 	// create n2c connection
 	networkError := make(chan error)
 
@@ -62,51 +63,32 @@ func NewClient(n2cAddress string, keys *thorclient.Keys) (*Client, error) {
 		Level: slog.LevelInfo,
 	}))
 
-	chainSyncOnce.Do(func() {
-		n2cConn, err := net.Dial("tcp", n2cAddress)
-		if err != nil {
-			log.Fatal().Err(err).Msg("fail to dial n2c host")
-		}
-		conn, err := ouroboros.NewConnection(
-			ouroboros.WithConnection(n2cConn),
-			ouroboros.WithErrorChan(networkError),
-			ouroboros.WithLogger(networkLogger),
-			ouroboros.WithNetworkMagic(testnetNetworkMagic),
-			ouroboros.WithKeepAlive(true),
-			ouroboros.WithChainSyncConfig(chainsync.NewConfig(
-				chainsync.WithRollForwardFunc(chainSyncRollForwardHandler),
-				chainsync.WithRollBackwardFunc(chainSyncRollBackwardHandler))),
-		)
-		if err != nil {
-			log.Fatal().Err(err).Msg("fail to create ouroboros connection")
-		}
-		err = conn.ChainSync().Client.Sync([]ocommon.Point{ocommon.NewPointOrigin()})
-		if err != nil {
-			log.Fatal().Err(err).Msg("fail to start chain sync")
-		}
-	})
-
-	n2cConn, err := net.Dial("tcp", n2cAddress)
-	if err != nil {
-		return nil, fmt.Errorf("fail to dial n2c host: %w", err)
-	}
-	c.clientConn, err = ouroboros.NewConnection(
-		ouroboros.WithConnection(n2cConn),
+	var err error
+	c.n2c, err = ouroboros.NewConnection(
 		ouroboros.WithErrorChan(networkError),
 		ouroboros.WithLogger(networkLogger),
 		ouroboros.WithNetworkMagic(testnetNetworkMagic),
-		ouroboros.WithKeepAlive(true),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("fail to create ouroboros connection: %w", err)
+		log.Fatal().Err(err).Msg("fail to create ouroboros connection")
+	}
+
+	err = c.n2c.Dial("tcp", n2cAddress)
+	if err != nil {
+		log.Fatal().Err(err).Msg("fail to dial ouroboros node")
 	}
 
 	// fetch network protocol parameters, needed for tx signing
-	protocolParams, err := c.clientConn.LocalStateQuery().Client.GetCurrentProtocolParams()
+	client := c.client()
+	protocolParams, err := client.GetCurrentProtocolParams()
+	c.release()
 	if err != nil {
 		return nil, fmt.Errorf("fail to get protocol parameters: %w", err)
 	}
-	c.protocol = protocolParams.Utxorpc()
+	c.protocol, err = protocolParams.Utxorpc()
+	if err != nil {
+		return nil, fmt.Errorf("fail to get utxorpc params: %w", err)
+	}
 
 	priv, err := keys.GetPrivateKeyEDDSA()
 	if err != nil {
@@ -114,7 +96,8 @@ func NewClient(n2cAddress string, keys *thorclient.Keys) (*Client, error) {
 	}
 	c.key = priv.Key
 	pub := c.key.Public().(ed25519.PublicKey)
-	c.address, err = cardano.PaymentOnlyTestnetAddressFromPubkey(pub)
+
+	c.address, err = cardano.AddressFromBytes(pub)
 	if err != nil {
 		return nil, fmt.Errorf("fail to create cardano address: %w", err)
 	}
@@ -125,21 +108,17 @@ func NewClient(n2cAddress string, keys *thorclient.Keys) (*Client, error) {
 }
 
 func (c *Client) BroadcastTx(txBytes []byte) (string, error) {
-	c.broadcastLock.Lock()
-	defer c.broadcastLock.Unlock()
-
 	tx, err := ledger.NewConwayTransactionFromCbor(txBytes)
 	if err != nil {
 		return "", fmt.Errorf("failed to create transaction: %w", err)
 	}
-	txHash := tx.Hash().String()
-	log.Info().Msgf("broadcasting transaction hash=%s bytes=%x", txHash, txBytes)
 
-	era, err := c.clientConn.LocalStateQuery().Client.GetCurrentEra()
-	if err != nil {
-		return "", fmt.Errorf("failed to get current era: %w", err)
-	}
-	err = c.clientConn.LocalTxSubmission().Client.SubmitTx(uint16(era), txBytes)
+	txHash := tx.Hash().String()
+	log.Info().Str("hash", txHash).Msg("broadcasting transaction")
+
+	err = c.n2c.LocalTxSubmission().Client.SubmitTx(
+		ledger.TxTypeConway, txBytes,
+	)
 	if err != nil {
 		return "", fmt.Errorf("failed to submit transaction bytes=%x: %w", txBytes, err)
 	}
@@ -150,107 +129,182 @@ func (c *Client) BroadcastTx(txBytes []byte) (string, error) {
 		if time.Since(start) > 30*time.Second {
 			return "", fmt.Errorf("timeout waiting for tx to be included in a block")
 		}
-		if _, ok := txInBlock.Load(txHash); ok {
-			log.Info().Msgf("transaction included in block hash=%s", txHash)
-			break
+
+		client := c.client()
+		utxos, err := client.GetUTxOByAddress([]lcommon.Address{
+			tx.Outputs()[0].Address()},
+		)
+		c.release()
+
+		if err != nil {
+			continue
 		}
-		time.Sleep(50 * time.Millisecond)
+		for id := range utxos.Results {
+			if id.Hash.String() == txHash {
+				return txHash, nil // tx is on-chain
+			}
+		}
+
+		time.Sleep(250 * time.Millisecond)
 	}
 	return txHash, nil
 }
 
 func (c *Client) GetAccount(_ *common.PubKey) (*common.Account, error) {
-	adaAddr, err := ledger.NewAddress(c.address.String())
-	if err != nil {
-		return &common.Account{}, fmt.Errorf("fail to create address: %w", err)
-	}
-	queryClient := c.clientConn.LocalStateQuery().Client
-	if err = queryClient.AcquireVolatileTip(); err != nil {
-		return &common.Account{}, fmt.Errorf("fail to acquire tip: %w", err)
-	}
-	defer queryClient.Release()
-	res, err := queryClient.GetUTxOByAddress([]ledger.Address{adaAddr})
+	client := c.client()
+	res, err := client.GetUTxOByAddress([]ledger.Address{c.address})
+	c.release()
 	if err != nil {
 		return &common.Account{}, fmt.Errorf("fail to query address: %w", err)
 	}
 	var balance uint64
 	for _, utxo := range res.Results {
-		balance += utxo.Amount()
+		balance += utxo.Amount().Uint64()
 	}
-	// balance *= 100 // 1e6 -> 1e8
+
+	balance *= 100
+
 	coin := common.NewCoin(common.ADAAsset, sdkmath.NewUint(balance))
-	c.logger.Info("get account", "address", c.address.String(), "adaAddress", adaAddr.String(), "balance", balance)
+	c.logger.Info("get account", "address", c.address.String(), "balance", balance)
 	return &common.Account{
 		Coins: common.Coins{coin},
 	}, nil
 }
 
-func (c *Client) SignTx(tx simtypes.SimTx) ([]byte, error) {
-	txBuilder := adatx.NewTxBuilder(c.protocol)
-	toAddr, err := cardano.NewAddressFromBech32(tx.ToAddress.String())
-	if err != nil {
-		return nil, fmt.Errorf("fail to create address: %w", err)
-	}
-	// amount := tx.Coin.Amount.Quo(sdkmath.NewUint(100)) // 1e8 -> 1e6
-	amount := tx.Coin.Amount
-	txIns, err := c.getUtxoToSpend(amount.Uint64())
-	if err != nil {
-		return nil, fmt.Errorf("fail to get utxo: %w", err)
-	}
-	txBuilder.AddInputs(txIns...)
-	txBuilder.AddOutputs(adatx.NewTxOutput(toAddr, amount.Uint64()))
-	if err = txBuilder.SetMemo(tx.Memo); err != nil {
-		return nil, fmt.Errorf("fail to set memo: %w", err)
-	}
-	if err = txBuilder.AddChangeIfNeeded(c.address); err != nil {
-		return nil, fmt.Errorf("fail to add change: %w", err)
-	}
-	if err = txBuilder.CalculateFee(); err != nil {
-		return nil, fmt.Errorf("fail to calculate fee: %w", err)
-	}
-	signedTx, err := txBuilder.Sign([]ed25519.PrivateKey{c.key})
-	if err != nil {
-		return nil, fmt.Errorf("fail to build tx: %w", err)
-	}
-	return signedTx.Bytes()
-}
+func (c *Client) SignTx(simTx simtypes.SimTx) ([]byte, error) {
+	fmt.Println("SignTx", simTx)
 
-func (c *Client) getUtxoToSpend(total uint64) ([]adatx.TxInput, error) {
-	// 1 tx at a time globally.. better to lock on addr iff an in-flight utxo is seen
-	// in response below
-	c.broadcastLock.Lock()
-	defer c.broadcastLock.Unlock()
-	addr, err := ledger.NewAddress(c.address.String())
+	coin := simTx.Coin
+
+	if coin.IsEmpty() {
+		err := fmt.Errorf("no ADA coins found")
+		c.logger.Error("error", err)
+		return nil, err
+	}
+
+	fromAddress, err := ledger.NewAddress(c.address.String())
 	if err != nil {
-		return nil, fmt.Errorf("fail to create address: %w", err)
+		c.logger.Error("failed to get address", "error", err)
+		return nil, err
 	}
-	queryClient := c.clientConn.LocalStateQuery().Client
-	if err := queryClient.AcquireVolatileTip(); err != nil {
-		return nil, fmt.Errorf("fail to acquire tip: %w", err)
-	}
-	defer queryClient.Release()
-	res, err := queryClient.GetUTxOByAddress([]ledger.Address{addr})
+
+	toAddress, err := ledger.NewAddress(simTx.ToAddress.String())
 	if err != nil {
-		return nil, fmt.Errorf("fail to query address: %w", err)
+		c.logger.Error("failed to get address", "error", err)
 	}
-	var txIns []adatx.TxInput
-	var sum uint64
-	for txId, utxo := range res.Results {
-		txIns = append(txIns, adatx.TxInput{
-			TxHash: txId.Hash[:],
-			Index:  uint16(txId.Idx),
-			Amount: utxo.Amount(),
-		})
-		c.logger.Info("utxo TxIn", "txId", fmt.Sprintf("%x#%d", txId.Hash[:], txId.Idx), "amount", utxo.Amount())
-		sum += utxo.Amount()
-		if sum >= total {
+
+	client := c.client()
+	result, err := client.GetUTxOByAddress([]ledger.Address{fromAddress})
+	c.release()
+	if err != nil {
+		c.logger.Error("failed to get utxos by address", "error", err)
+		return nil, err
+	}
+
+	fmt.Println("result", result)
+
+	var inputs []shelley.ShelleyTransactionInput
+
+	fee := uint64(200_000)
+	amount := coin.Amount.Uint64() / 100
+	target := amount + fee
+	total := uint64(0)
+
+	for id, ouput := range result.Results {
+		total += ouput.Amount().Uint64()
+
+		inputs = append(inputs, shelley.NewShelleyTransactionInput(
+			id.Hash.String(),
+			id.Idx,
+		))
+
+		if total >= target {
 			break
 		}
 	}
-	if sum < total {
-		return nil, fmt.Errorf("insufficient balance")
+
+	if total < amount+fee {
+		err = fmt.Errorf("insufficient funds")
+		c.logger.Error("failed to get utxos", "have", total, "need", target)
+		return nil, err
 	}
-	return txIns, nil
+
+	outputs := []babbage.BabbageTransactionOutput{
+		{
+			OutputAddress: toAddress,
+			OutputAmount: mary.MaryTransactionOutputValue{
+				Amount: amount,
+			},
+		},
+	}
+
+	change := total - target
+	fmt.Println("change", change)
+
+	if change > common.ADAChain.DustThreshold().Uint64() {
+		outputs = append(outputs, babbage.BabbageTransactionOutput{
+			OutputAddress: fromAddress,
+			OutputAmount: mary.MaryTransactionOutputValue{
+				Amount: change,
+			},
+		})
+	}
+
+	tx := &conway.ConwayTransaction{}
+	tx.Body.TxInputs = conway.NewConwayTransactionInputSet(inputs)
+	tx.Body.TxOutputs = outputs
+	tx.Body.TxFee = fee
+	tx.Body.Ttl = 50_000_000 // TODO: find reasonable value
+	tx.TxIsValid = true
+
+	if simTx.Memo != "" {
+		tx.TxMetadata, tx.Body.TxAuxDataHash, err = cardano.CreateMemo(simTx.Memo)
+		if err != nil {
+			c.logger.Error("failed to create memo", "error", err)
+			return nil, err
+		}
+	}
+
+	encoded, err := cbor.Encode(&tx.Body)
+	if err != nil {
+		c.logger.Error("failed to encode transaction", "error", err)
+		return nil, err
+	}
+
+	hash := lcommon.Blake2b256Hash(encoded)
+
+	signature := ed25519.Sign(c.key, hash[:])
+
+	pub := c.key.Public().(ed25519.PublicKey)
+
+	tx.WitnessSet.VkeyWitnesses = cbor.NewSetType(
+		[]lcommon.VkeyWitness{
+			{
+				Vkey:      pub,
+				Signature: signature,
+			},
+		},
+		false,
+	)
+
+	signed, err := cbor.Encode(tx)
+	if err != nil {
+		c.logger.Error("failed to encode transaction", "error", err)
+		return nil, err
+	}
+
+	return signed, nil
 }
 
-var _ simtypes.LiteChainClient = &Client{}
+func (c *Client) release() {
+	err := c.n2c.LocalStateQuery().Client.Release()
+	if err != nil {
+		c.logger.Error("failed to release client", "error", err)
+	}
+	c.mtx.Unlock()
+}
+
+func (c *Client) client() *localstatequery.Client {
+	c.mtx.Lock()
+	return c.n2c.LocalStateQuery().Client
+}

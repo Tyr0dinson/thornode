@@ -161,6 +161,7 @@ services:
       - litecoin
       - tron-supernode
       - tron-fullnode
+      - cardano
       - thornode
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -237,7 +238,9 @@ services:
       BIFROST_CHAINS_SOL_RPC_HOST: ${SOL_HOST:-http://solana:8899}
 
       # disable cardano
-      BIFROST_CHAINS_ADA_DISABLED: "true"
+      BIFROST_CHAINS_ADA_DISABLED: "false"
+      BIFROST_CHAINS_ADA_RPC_HOST: "cardano:3001"
+      BIFROST_CHAINS_ADA_API_HOST: "cardano:3002"
 
       # set fixed gas rate for evm chains
       BIFROST_CHAINS_ETH_BLOCK_SCANNER_FIXED_GAS_RATE: 20_000_000_000 # 20 gwei
@@ -710,9 +713,7 @@ services:
       - mocknet
       - mocknet-cluster
     restart: unless-stopped
-    image: kocubinski/cardano-devnet:0.1.7
+    image: cardano:latest
     ports:
-      - 7007:7007 #n2c port
-      - 3001:3001 #n2n port
-    environment:
-      FUND_ACCOUNT: addr_test1vze3395j26tfwymgtmk4e26gmam7vaq9vyejtj0lkpj70rc20g9xv
+      - 127.0.0.1:3001:3001 #n2n port
+      - 127.0.0.1:3002:3002 #n2c port
