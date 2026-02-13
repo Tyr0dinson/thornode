@@ -12,6 +12,7 @@ import (
 	. "gopkg.in/check.v1"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/rs/zerolog/log"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -221,6 +222,8 @@ func (s *SolvencySuite) SetUpSuite(c *C) {
 
 func (s *SolvencySuite) TestReportSolvencyReporter(c *C) {
 	// speed up Thorchain for quick tests
+	origBlockTime := constants.ThorchainBlockTime
+	defer func() { constants.ThorchainBlockTime = origBlockTime }()
 	constants.ThorchainBlockTime = 100 * time.Millisecond
 
 	defaultCoinsInVault := common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1024_000_000)))
@@ -419,6 +422,7 @@ func (s *SolvencySuite) TestReportSolvencyReporter(c *C) {
 		{
 			name:         "6. skip report when block scanner is unhealthy",
 			height:       2000,
+			chainHeight:  2000, // keep runner on solvency_blocks cadence (1000)
 			shouldReport: false,
 			client: &mockChainClient{
 				chain:                 common.ETHChain,
@@ -495,7 +499,7 @@ func (s *SolvencySuite) TestReportSolvencyReporter(c *C) {
 
 	for _, tc := range testCases {
 		c.Log(fmt.Sprintf("Test: %s", tc.name))
-		fmt.Printf("Test: %s", tc.name)
+		fmt.Printf("Test: %s\n", tc.name)
 		// setup environment
 		mockBridge := &thorMockBridge{}
 		tc.mockSetup(mockBridge)
@@ -558,12 +562,12 @@ func (s *SolvencySuite) TestReportSolvencyReporter(c *C) {
 		reporter.lastSolvencyCheckHeight = 0
 
 		// test ShouldReport
-		shouldReport := reporter.ShouldReport(fromBlockScanner, 0)
+		shouldReport := reporter.ShouldReport(fromBlockScanner, tc.client.blockScannerHeight)
 		c.Assert(shouldReport, Equals, tc.shouldReport, Commentf(tc.name))
 
 		// test Collect
 		if shouldReport {
-			allMsgs, err := reporter.Collect(fromBlockScanner)
+			allMsgs, err := reporter.Collect(fromBlockScanner, tc.client.blockScannerHeight)
 			if tc.expectedError != "" {
 				c.Assert(err, NotNil)
 				c.Assert(err.Error(), Equals, tc.expectedError)
@@ -579,15 +583,17 @@ func (s *SolvencySuite) TestReportSolvencyReporter(c *C) {
 			// setup environment
 			mockBridge.clearMsgs()
 			stopper := make(chan struct{})
+			wg := sync.WaitGroup{}
 			chain := tc.client.GetChain()
 			chains := map[common.Chain]ChainClient{chain: tc.client}
 			defer func() {
 				// stop goroutines
 				close(stopper)
+				wg.Wait()
 			}()
 
 			// prepare dispatcher
-			disp := NewDispatcher(chains, mockBridge, nil, stopper)
+			disp := NewDispatcher(chains, mockBridge, nil, stopper, &wg)
 
 			// now trigger reporter checks
 			disp.Process(chain, 0)
@@ -683,7 +689,7 @@ func (s *SolvencySuite) TestCollectSkipsSolventVaultsWhenInsolventPresent(c *C) 
 	reporter := newSolvencyReporter(client, bridge)
 	reporter.lastSolvencyCheckHeight = 0
 
-	batch, err := reporter.Collect(fromRunner)
+	batch, err := reporter.Collect(fromRunner, client.chainHeight)
 	c.Assert(err, IsNil)
 	c.Assert(batch, HasLen, 1)
 
@@ -731,7 +737,7 @@ func (s *SolvencySuite) TestCollectReportsAllSolventWhenScannerDown(c *C) {
 	reporter := newSolvencyReporter(client, bridge)
 	reporter.lastSolvencyCheckHeight = 0
 
-	batch, err := reporter.Collect(fromRunner)
+	batch, err := reporter.Collect(fromRunner, client.chainHeight)
 	c.Assert(err, IsNil)
 	c.Assert(batch, HasLen, len(asgards))
 
@@ -781,4 +787,172 @@ func (s *SolvencySuite) TestShouldReportRequiresNonZeroGas(c *C) {
 	reporter.lastSolvencyCheckHeight = 0
 
 	c.Assert(reporter.ShouldReport(fromBlockScanner, 20), Equals, false)
+}
+
+func (s *SolvencySuite) TestShouldReportRejectsNonPositiveHeight(c *C) {
+	client := &mockChainClient{
+		chain:                 common.ETHChain,
+		blockScannerIsHealthy: true,
+		gas:                   cosmos.NewUint(10),
+		cfg: config.BifrostChainConfiguration{
+			SolvencyBlocks: 20,
+		},
+		account: common.Account{Coins: common.NewCoins(common.NewCoin(common.ETHAsset, cosmos.NewUint(1)))},
+	}
+	reporter := newSolvencyReporter(client, &thorMockBridge{})
+	reporter.lastSolvencyCheckHeight = 0
+
+	c.Assert(reporter.ShouldReport(fromBlockScanner, 0), Equals, false)
+	c.Assert(reporter.ShouldReport(fromRunner, -1), Equals, false)
+}
+
+func (s *SolvencySuite) TestCollectUsesAlgoPubKeyForSolanaLookup(c *C) {
+	secpPubKey := ctypes.GetRandomPubKey()
+	eddsaPubKey := ctypes.GetRandomEd25519PubKey()
+	vault := ctypes.Vault{
+		PubKey:      secpPubKey,
+		PubKeyEddsa: eddsaPubKey,
+		Coins:       common.NewCoins(common.NewCoin(common.SOLAsset, cosmos.NewUint(1_000_000_000))),
+	}
+
+	bridge := &thorMockBridge{}
+	bridge.getAsgardsFunc = func() (ctypes.Vaults, error) {
+		return ctypes.Vaults{vault}, nil
+	}
+
+	client := &mockChainClient{
+		chain:                 common.SOLChain,
+		blockScannerIsHealthy: true,
+		gas:                   cosmos.NewUint(10),
+		cfg: config.BifrostChainConfiguration{
+			SolvencyBlocks: 50,
+			BlockScanner: config.BifrostBlockScannerConfiguration{
+				ObservationFlexibilityBlocks: 40,
+			},
+		},
+		// Fallback account is intentionally insolvent; if the reporter wrongly uses secp key
+		// for SOL lookup, this account is selected and a report is generated.
+		account: common.Account{
+			Coins: common.NewCoins(common.NewCoin(common.SOLAsset, cosmos.NewUint(1))),
+		},
+		accounts: map[string]common.Account{
+			eddsaPubKey.String(): {
+				Coins: common.NewCoins(common.NewCoin(common.SOLAsset, cosmos.NewUint(1_000_000_000))),
+			},
+		},
+		chainHeight:        100,
+		blockScannerHeight: 100,
+	}
+
+	reporter := newSolvencyReporter(client, bridge)
+	batch, err := reporter.Collect(fromBlockScanner, client.blockScannerHeight)
+	c.Assert(err, IsNil)
+	// Scanner is healthy and SOL account looked up via ed25519 key is solvent,
+	// so no message should be emitted.
+	c.Assert(batch, HasLen, 0)
+}
+
+func (s *SolvencySuite) TestDispatcherUsesLegacyTronCadenceAndMsgHeight(c *C) {
+	vault := ctypes.Vault{
+		PubKey: ctypes.GetRandomPubKey(),
+		Coins:  common.NewCoins(common.NewCoin(common.TRXAsset, cosmos.NewUint(1_000_000_000))),
+	}
+
+	bridge := &thorMockBridge{}
+	bridge.getAsgardsFunc = func() (ctypes.Vaults, error) {
+		return ctypes.Vaults{vault}, nil
+	}
+
+	client := &mockChainClient{
+		chain:                 common.TRONChain,
+		blockScannerIsHealthy: true,
+		gas:                   cosmos.NewUint(10),
+		cfg: config.BifrostChainConfiguration{
+			SolvencyBlocks: 10,
+			BlockScanner: config.BifrostBlockScannerConfiguration{
+				ObservationFlexibilityBlocks: 100,
+			},
+		},
+		// Insolvent account to guarantee a report would be emitted if cadence allowed it.
+		account: common.Account{
+			Coins: common.NewCoins(common.NewCoin(common.TRXAsset, cosmos.NewUint(1))),
+		},
+		chainHeight: 30,
+	}
+
+	d := &dispatcher{
+		logger:      log.Logger,
+		reportQueue: make(chan ReportBatch, 1),
+		stopper:     make(chan struct{}),
+		chains:      map[common.Chain]ChainClient{common.TRONChain: client},
+		reporters: map[common.Chain]Reporters{
+			common.TRONChain: {newSolvencyReporter(client, bridge)},
+		},
+	}
+
+	resolved, err := d.resolveTaskHeight(common.TRONChain, fromBlockScanner, 30)
+	c.Assert(err, IsNil)
+	c.Assert(resolved, Equals, int64(30))
+
+	d.processInternal(common.TRONChain, fromBlockScanner, 30)
+	c.Assert(len(d.reportQueue), Equals, 1)
+
+	batch := <-d.reportQueue
+	c.Assert(batch, HasLen, 1)
+	msg, ok := batch[0].(*ctypes.MsgSolvency)
+	c.Assert(ok, Equals, true)
+	c.Assert(msg.Height, Equals, int64(11))
+}
+
+func (s *SolvencySuite) TestDispatcherUsesLegacySolanaMsgHeightFloor(c *C) {
+	vault := ctypes.Vault{
+		PubKey:      ctypes.GetRandomPubKey(),
+		PubKeyEddsa: ctypes.GetRandomEd25519PubKey(),
+		Coins:       common.NewCoins(common.NewCoin(common.SOLAsset, cosmos.NewUint(1_000_000_000))),
+	}
+
+	bridge := &thorMockBridge{}
+	bridge.getAsgardsFunc = func() (ctypes.Vaults, error) {
+		return ctypes.Vaults{vault}, nil
+	}
+
+	client := &mockChainClient{
+		chain:                 common.SOLChain,
+		blockScannerIsHealthy: true,
+		gas:                   cosmos.NewUint(10),
+		cfg: config.BifrostChainConfiguration{
+			SolvencyBlocks: 100,
+			BlockScanner: config.BifrostBlockScannerConfiguration{
+				ObservationFlexibilityBlocks: 100,
+			},
+		},
+		// Insolvent account to force solvency message emission.
+		account: common.Account{
+			Coins: common.NewCoins(common.NewCoin(common.SOLAsset, cosmos.NewUint(1))),
+		},
+		chainHeight: 130,
+	}
+
+	d := &dispatcher{
+		logger:      log.Logger,
+		reportQueue: make(chan ReportBatch, 1),
+		stopper:     make(chan struct{}),
+		chains:      map[common.Chain]ChainClient{common.SOLChain: client},
+		reporters: map[common.Chain]Reporters{
+			common.SOLChain: {newSolvencyReporter(client, bridge)},
+		},
+	}
+
+	resolved, err := d.resolveTaskHeight(common.SOLChain, fromBlockScanner, 111)
+	c.Assert(err, IsNil)
+	c.Assert(resolved, Equals, int64(111))
+
+	d.processInternal(common.SOLChain, fromBlockScanner, 111)
+	c.Assert(len(d.reportQueue), Equals, 1)
+
+	batch := <-d.reportQueue
+	c.Assert(batch, HasLen, 1)
+	msg, ok := batch[0].(*ctypes.MsgSolvency)
+	c.Assert(ok, Equals, true)
+	c.Assert(msg.Height, Equals, int64(110))
 }

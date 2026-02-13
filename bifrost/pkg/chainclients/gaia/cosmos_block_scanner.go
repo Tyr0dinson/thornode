@@ -108,6 +108,17 @@ type CosmosBlockScanner struct {
 	networkFeeMu sync.Mutex
 	feeCache     []sdkmath.Uint
 	lastFee      sdkmath.Uint
+
+	// gasCacheTransactions configures how many observed fee-paying txs are required
+	// before fee averaging/network fee updates begin.
+	gasCacheTransactions int
+}
+
+func getCosmosGasCacheTransactions(cfg config.BifrostBlockScannerConfiguration) int {
+	if cfg.CosmosGasCacheTransactions > 0 {
+		return cfg.CosmosGasCacheTransactions
+	}
+	return GasCacheTransactions
 }
 
 // NewCosmosBlockScanner create a new instance of BlockScan
@@ -128,6 +139,7 @@ func NewCosmosBlockScanner(
 	}
 
 	logger := log.Logger.With().Str("module", "blockscanner").Str("chain", cfg.ChainID.String()).Logger()
+	gasCacheTransactions := getCosmosGasCacheTransactions(cfg)
 
 	// Bifrost only supports an "RPCHost" in its configuration.
 	// We also need to access GRPC for Cosmos chains
@@ -142,17 +154,18 @@ func NewCosmosBlockScanner(
 	}
 
 	return &CosmosBlockScanner{
-		cfg:              cfg,
-		logger:           logger,
-		db:               scanStorage,
-		cdc:              cdc,
-		txConfig:         txConfig,
-		rpc:              rpcClient,
-		feeCache:         make([]sdkmath.Uint, 0),
-		lastFee:          sdkmath.NewUint(0),
-		bridge:           bridge,
-		pubkeyMgr:        pubkeyMgr,
-		solvencyReporter: solvencyReporter,
+		cfg:                  cfg,
+		logger:               logger,
+		db:                   scanStorage,
+		cdc:                  cdc,
+		txConfig:             txConfig,
+		rpc:                  rpcClient,
+		feeCache:             make([]sdkmath.Uint, 0, gasCacheTransactions),
+		lastFee:              sdkmath.NewUint(0),
+		bridge:               bridge,
+		pubkeyMgr:            pubkeyMgr,
+		solvencyReporter:     solvencyReporter,
+		gasCacheTransactions: gasCacheTransactions,
 	}, nil
 }
 
@@ -268,8 +281,8 @@ func (c *CosmosBlockScanner) updateGasCache(tx ctypes.FeeTx) {
 	c.feeCache = append(c.feeCache, fee)
 
 	// truncate gas prices older than our max cached transactions
-	if len(c.feeCache) > GasCacheTransactions {
-		c.feeCache = c.feeCache[(len(c.feeCache) - GasCacheTransactions):]
+	if len(c.feeCache) > c.gasCacheTransactions {
+		c.feeCache = c.feeCache[(len(c.feeCache) - c.gasCacheTransactions):]
 	}
 }
 
@@ -315,7 +328,7 @@ func (c *CosmosBlockScanner) updateGasFees(height int64) error {
 		defer c.networkFeeMu.Unlock()
 
 		// post the gas fee over every cache period when we have a full gas cache
-		if height%GasUpdatePeriodBlocks != 0 || len(c.feeCache) != GasCacheTransactions {
+		if height%GasUpdatePeriodBlocks != 0 || len(c.feeCache) != c.gasCacheTransactions {
 			return false, nil
 		}
 

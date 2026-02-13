@@ -36,25 +36,39 @@ func chainRequiresSolvencyBlocks(chain common.Chain) bool {
 	}
 }
 
+type reportTask struct {
+	from   triggeredFrom
+	height int64
+}
+
+const (
+	chainTaskQueueSize = 64
+
+	// - TRON uses height-19 for solvency reports.
+	// - SOL rounds report height down to the nearest 10-slot boundary.
+	tronSolvencyFinalityBlocks    = 19
+	solanaSolvencyHeightFloorStep = 10
+)
+
 type dispatcher struct {
 	logger          zerolog.Logger
 	reportQueue     chan ReportBatch
 	stopper         chan struct{}
+	wg              *sync.WaitGroup
 	chains          map[common.Chain]ChainClient
 	thorchainBridge ThorchainBridge
 	errCounter      *prometheus.CounterVec
 	reporters       map[common.Chain]Reporters
-	chainLocksMu    sync.RWMutex
-	chainLocks      map[common.Chain]*sync.Mutex
+	chainTaskQueues map[common.Chain]chan reportTask
 }
 
 // NewDispatcher creates and starts a reporter dispatcher for all configured chains.
-// It initializes per-chain reporters, locking primitives, and async workers.
-func NewDispatcher(chains map[common.Chain]ChainClient, thorchainBridge ThorchainBridge, errCounter *prometheus.CounterVec, stopper chan struct{}) Dispatcher {
+// It initializes per-chain reporters and async workers.
+func NewDispatcher(chains map[common.Chain]ChainClient, thorchainBridge ThorchainBridge, errCounter *prometheus.CounterVec, stopper chan struct{}, wg *sync.WaitGroup) Dispatcher {
 	logger := log.Logger.With().Str("module", "reporter_dispatcher").Logger()
 	reportQueue := make(chan ReportBatch)
 	reporters := make(map[common.Chain]Reporters, len(chains))
-	chainLocks := make(map[common.Chain]*sync.Mutex, len(chains))
+	chainTaskQueues := make(map[common.Chain]chan reportTask, len(chains))
 	for _, client := range chains {
 		chain := client.GetChain()
 		if chainRequiresSolvencyBlocks(chain) && client.GetConfig().SolvencyBlocks <= 0 {
@@ -64,18 +78,19 @@ func NewDispatcher(chains map[common.Chain]ChainClient, thorchainBridge Thorchai
 				Msg("invalid solvency_blocks: solvency reporting disabled for this chain")
 		}
 		reporters[chain] = createReporters(client, thorchainBridge)
-		chainLocks[chain] = &sync.Mutex{}
+		chainTaskQueues[chain] = make(chan reportTask, chainTaskQueueSize)
 	}
 
 	d := &dispatcher{
 		logger:          logger,
 		stopper:         stopper,
+		wg:              wg,
 		chains:          chains,
 		thorchainBridge: thorchainBridge,
 		errCounter:      errCounter,
 		reportQueue:     reportQueue,
 		reporters:       reporters,
-		chainLocks:      chainLocks,
+		chainTaskQueues: chainTaskQueues,
 	}
 
 	d.start()
@@ -86,7 +101,13 @@ func NewDispatcher(chains map[common.Chain]ChainClient, thorchainBridge Thorchai
 // start launches dispatcher background workers:
 // - periodic chain runner
 // - outbound report queue processor
+// - per-chain workers that serialize reporter work for each chain
 func (d *dispatcher) start() {
+	for chain, taskQueue := range d.chainTaskQueues {
+		d.wg.Add(1)
+		go d.processChainQueue(chain, taskQueue)
+	}
+	d.wg.Add(2)
 	go d.runner(
 		// get chain-specific timing
 		func(chain common.Chain) time.Duration {
@@ -101,6 +122,7 @@ func (d *dispatcher) start() {
 func (d *dispatcher) processReportQueue() {
 	d.logger.Info().Msg("reporter dispatcher (processReportQueue) started")
 	defer func() {
+		d.wg.Done()
 		d.logger.Info().Msg("reporter dispatcher (processReportQueue) stopped")
 	}()
 
@@ -122,31 +144,102 @@ func (d *dispatcher) processReportQueue() {
 
 // Process schedules an immediate block-scanner-triggered processing pass for one chain.
 func (d *dispatcher) Process(chain common.Chain, height int64) {
-	go d.processInternal(chain, fromBlockScanner, height)
+	d.enqueueProcess(chain, fromBlockScanner, height)
 }
 
-// processInternal can be invoked by the runner goroutine or by dispatcher.Process() (which spawns its own goroutine).
-// Reporting is serialized per chain via a per-chain lock, so ShouldReport and Collect are also serialized per chain.
+func (d *dispatcher) processChainQueue(chain common.Chain, taskQueue <-chan reportTask) {
+	defer d.wg.Done()
+
+	logger := d.logger.With().Stringer("chain", chain).Logger()
+	logger.Debug().Msg("chain reporter worker started")
+	defer logger.Debug().Msg("chain reporter worker stopped")
+
+	for {
+		select {
+		case <-d.stopper:
+			return
+		case task := <-taskQueue:
+			d.processInternal(chain, task.from, task.height)
+		}
+	}
+}
+
+func (d *dispatcher) enqueueProcess(chain common.Chain, from triggeredFrom, height int64) {
+	taskQueue, ok := d.chainTaskQueues[chain]
+	if !ok {
+		d.logger.Error().
+			Stringer("chain", chain).
+			Stringer("from", from).
+			Int64("height", height).
+			Msg("internal error: chain task queue not found")
+		return
+	}
+
+	task := reportTask{from: from, height: height}
+	select {
+	case taskQueue <- task:
+		return
+	case <-d.stopper:
+		return
+	default:
+	}
+
+	// Backpressure policy:
+	// - runner ticks are periodic and can be dropped when busy;
+	// - block-scanner triggers should prefer the latest height, so drop one stale task and enqueue the latest.
+	if from == fromRunner {
+		d.logger.Debug().
+			Stringer("chain", chain).
+			Int("queue_len", len(taskQueue)).
+			Msg("dropping runner task: chain task queue is full")
+		return
+	}
+
+	select {
+	case <-taskQueue:
+	default:
+	}
+	select {
+	case taskQueue <- task:
+		d.logger.Warn().
+			Stringer("chain", chain).
+			Stringer("from", from).
+			Int64("height", height).
+			Msg("chain task queue full: dropped one stale task and enqueued latest")
+	case <-d.stopper:
+	default:
+		d.logger.Warn().
+			Stringer("chain", chain).
+			Stringer("from", from).
+			Int64("height", height).
+			Msg("chain task queue full: dropping task")
+	}
+}
+
+// processInternal processes one reporting task.
+// This method is invoked by a dedicated per-chain worker, so ShouldReport and Collect
+// are serialized per chain by design.
 func (d *dispatcher) processInternal(chain common.Chain, from triggeredFrom, height int64) {
 	logger := d.logger.With().Stringer("chain", chain).Stringer("from", from).Int64("height", height).Logger()
 
-	lock := d.getChainLock(chain)
-	lock.Lock()
-	defer lock.Unlock()
-
 	var err error
 	var allMsgs, reportedMsgs ReportBatch
+	taskHeight, err := d.resolveTaskHeight(chain, from, height)
+	if err != nil {
+		logger.Err(err).Msg("failed to resolve report height")
+		return
+	}
 	reporters, ok := d.reporters[chain]
 	if !ok {
 		logger.Error().Msg("internal error: reporters not found for chain")
 		return
 	}
 	for _, reporter := range reporters {
-		if !reporter.ShouldReport(from, height) {
+		if !reporter.ShouldReport(from, taskHeight) {
 			continue
 		}
 		// collect all report messages from this reporter
-		reportedMsgs, err = reporter.Collect(from)
+		reportedMsgs, err = reporter.Collect(from, taskHeight)
 		if err != nil {
 			logger.Err(err).Stringer("reporter", reporter).Msg("fail to collect reports")
 			continue
@@ -164,6 +257,35 @@ func (d *dispatcher) processInternal(chain common.Chain, from triggeredFrom, hei
 			logger.Error().Msg("fail to send report batch to queue: timeout")
 		}
 	}
+}
+
+func (d *dispatcher) resolveTaskHeight(chain common.Chain, from triggeredFrom, height int64) (int64, error) {
+	resolvedHeight := height
+	if resolvedHeight <= 0 {
+		client, ok := d.chains[chain]
+		if !ok {
+			return 0, fmt.Errorf("chain client not found")
+		}
+
+		switch from {
+		case fromRunner:
+			h, err := client.GetHeight()
+			if err != nil {
+				return 0, fmt.Errorf("failed to get chain height: %w", err)
+			}
+			resolvedHeight = h
+		case fromBlockScanner:
+			h, err := client.GetBlockScannerHeight()
+			if err != nil {
+				return 0, fmt.Errorf("failed to get block scanner height: %w", err)
+			}
+			resolvedHeight = h
+		default:
+			return 0, fmt.Errorf("unknown trigger source: %s", from)
+		}
+	}
+
+	return resolvedHeight, nil
 }
 
 // sendCollectedToThorchain broadcasts each collected reporter message
@@ -201,29 +323,4 @@ func (d *dispatcher) sendMsgToThorchain(msg sdk.Msg) error {
 		return fmt.Errorf("fail to broadcast report message: %w", err)
 	}
 	return nil
-}
-
-// getChainLock returns a stable per-chain mutex used to serialize reporting work.
-// It uses double-checked locking to lazily create missing locks.
-func (d *dispatcher) getChainLock(chain common.Chain) *sync.Mutex {
-	// Check if lock already present
-	d.chainLocksMu.RLock()
-	lock, ok := d.chainLocks[chain]
-	d.chainLocksMu.RUnlock()
-	if ok {
-		return lock
-	}
-
-	// Lock not present so upgrade to write lock to create one
-	d.chainLocksMu.Lock()
-	defer d.chainLocksMu.Unlock()
-	// Another goroutine might have created the lock
-	if lock, ok = d.chainLocks[chain]; ok {
-		return lock
-	}
-
-	// No lock yet, create and store a new one for this chain
-	lock = &sync.Mutex{}
-	d.chainLocks[chain] = lock
-	return lock
 }

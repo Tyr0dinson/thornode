@@ -944,10 +944,25 @@ func (c *Client) getSignerCacheExpiry() time.Duration {
 
 // GetGasEstimateForSolvency returns the current gas fee estimate used by solvency checks.
 func (c *Client) GetGasEstimateForSolvency() cosmos.Uint {
-	return c.cfg.ChainID.NativeGasToThorchain(c.xrpScanner.getLastFee())
+	// Prefer scanner-observed fee once initialized.
+	lastFee := c.xrpScanner.getLastFee()
+	if !lastFee.IsZero() {
+		return c.cfg.ChainID.NativeGasToThorchain(lastFee)
+	}
+
+	// Fallback to the latest THORNode network fee for early/low-traffic periods where
+	// scanner fee cache has not warmed yet.
+	txSize, txRate, err := c.thorchainBridge.GetNetworkFee(c.cfg.ChainID)
+	if err != nil || txSize == 0 || txRate == 0 {
+		return cosmos.ZeroUint()
+	}
+
+	fee := cosmos.NewUint(txRate).MulUint64(txSize)
+	return c.cfg.ChainID.NativeGasToThorchain(fee)
 }
 
 // ReportSolvency is the legacy solvency flow retained for reviewer comparison.
+//
 //nolint:unused
 func (c *Client) ReportSolvency(blockHeight int64) error {
 	// The ordered scan loop and SolvencyCheckRunner can both call this.
@@ -1053,6 +1068,7 @@ func (c *Client) ReportSolvency(blockHeight int64) error {
 }
 
 // ShouldReportSolvency is the legacy solvency flow retained for reviewer comparison.
+//
 //nolint:unused
 func (c *Client) ShouldReportSolvency(height int64) bool {
 	// Block time on XRP generally hovers between 3-5 seconds (15

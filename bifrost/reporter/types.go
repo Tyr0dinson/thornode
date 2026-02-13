@@ -1,7 +1,6 @@
 package reporter
 
 import (
-	"fmt"
 	"math/big"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -55,7 +54,7 @@ func (from triggeredFrom) String() string {
 
 type Reporter interface {
 	String() string
-	Collect(from triggeredFrom) (collectedMsgs ReportBatch, err error)
+	Collect(from triggeredFrom, height int64) (collectedMsgs ReportBatch, err error)
 	ShouldReport(from triggeredFrom, height int64) bool
 }
 
@@ -65,20 +64,4 @@ type baseReporter struct {
 	logger          zerolog.Logger
 	client          ChainClient
 	thorchainBridge ThorchainBridge
-}
-
-func (r baseReporter) getRelevantHeight(from triggeredFrom) (int64, error) {
-	if from == fromRunner {
-		chainHeight, err := r.client.GetHeight()
-		if err != nil {
-			return -1, fmt.Errorf("fail to get chain height: %w", err)
-		}
-		return chainHeight, nil
-	} else {
-		fetchHeight, err := r.client.GetBlockScannerHeight()
-		if err != nil {
-			return -1, fmt.Errorf("fail to get fetch (blockscanner) height: %w", err)
-		}
-		return fetchHeight, nil
-	}
 }

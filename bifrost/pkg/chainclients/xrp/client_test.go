@@ -58,6 +58,17 @@ func testXrpScannerWithLastFee(scanner *XrpBlockScanner, fee sdkmath.Uint) *XrpB
 	return scanner
 }
 
+type mockNetworkFeeBridge struct {
+	thorclient.ThorchainBridge
+	size uint64
+	rate uint64
+	err  error
+}
+
+func (m *mockNetworkFeeBridge) GetNetworkFee(_ common.Chain) (uint64, uint64, error) {
+	return m.size, m.rate, m.err
+}
+
 var m *metrics.Metrics
 
 func GetMetricForTest(c *C) *metrics.Metrics {
@@ -294,18 +305,43 @@ func (s *XrpTestSuite) TestXAddresses(c *C) {
 }
 
 func (s *XrpTestSuite) TestGetGasEstimateForSolvency(c *C) {
-	client := &Client{
+	clientWithScannerFee := &Client{
 		cfg: config.BifrostChainConfiguration{
 			ChainID: common.XRPChain,
 		},
-		xrpScanner: &XrpBlockScanner{},
+		xrpScanner: testXrpScannerWithLastFee(&XrpBlockScanner{}, sdkmath.NewUint(12)), // drops
+		thorchainBridge: &mockNetworkFeeBridge{
+			size: 1,
+			rate: 999, // should be ignored when scanner fee is set
+		},
 	}
-	client.xrpScanner.setLastFee(sdkmath.NewUint(12)) // drops
-	got := client.GetGasEstimateForSolvency()
+	got := clientWithScannerFee.GetGasEstimateForSolvency()
 	c.Assert(got.Equal(cosmos.NewUint(1200)), Equals, true) // 12 drops => 1200 (1e8 units)
 
-	client.xrpScanner.setLastFee(sdkmath.ZeroUint())
-	got = client.GetGasEstimateForSolvency()
+	clientWithFallbackFee := &Client{
+		cfg: config.BifrostChainConfiguration{
+			ChainID: common.XRPChain,
+		},
+		xrpScanner: testXrpScannerWithLastFee(&XrpBlockScanner{}, sdkmath.ZeroUint()),
+		thorchainBridge: &mockNetworkFeeBridge{
+			size: 1,
+			rate: 10, // drops
+		},
+	}
+	got = clientWithFallbackFee.GetGasEstimateForSolvency()
+	c.Assert(got.Equal(cosmos.NewUint(1000)), Equals, true) // 10 drops => 1000 (1e8 units)
+
+	clientWithNoFallbackFee := &Client{
+		cfg: config.BifrostChainConfiguration{
+			ChainID: common.XRPChain,
+		},
+		xrpScanner: testXrpScannerWithLastFee(&XrpBlockScanner{}, sdkmath.ZeroUint()),
+		thorchainBridge: &mockNetworkFeeBridge{
+			size: 0,
+			rate: 0,
+		},
+	}
+	got = clientWithNoFallbackFee.GetGasEstimateForSolvency()
 	c.Assert(got.IsZero(), Equals, true)
 }
 

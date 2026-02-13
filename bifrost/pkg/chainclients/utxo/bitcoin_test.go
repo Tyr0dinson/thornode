@@ -1400,6 +1400,40 @@ func (s *BitcoinSuite) TestGetOutput(c *C) {
 	c.Assert(out.ScriptPubKey.Addresses[0], Equals, vaultAddressString)
 	c.Assert(out.Value, Equals, 1.49655603)
 
+	// non-vault sender + consolidate memo should not select an observed output
+	// even when one vout pays to Asgard and another is sender change.
+	// This behavior is used by the insolvency actor simulation restore flow.
+	tx = btcjson.TxRawResult{
+		Vin: []btcjson.Vin{
+			{
+				Txid: "5b0876dcc027d2f0c671fc250460ee388df39697c3ff082007b6ddd9cb9a7513",
+				Vout: 1,
+			},
+		},
+		Vout: []btcjson.Vout{
+			{
+				Value: 1.49655603,
+				ScriptPubKey: btcjson.ScriptPubKeyResult{
+					Addresses: []string{vaultAddressString},
+				},
+			},
+			{
+				Value: 0.00195384,
+				ScriptPubKey: btcjson.ScriptPubKeyResult{
+					Addresses: []string{"tb1qj08ys4ct2hzzc2hcz6h2hgrvlmsjynaw43s835"},
+				},
+			},
+			{
+				ScriptPubKey: btcjson.ScriptPubKeyResult{
+					Asm:  "OP_RETURN 74686f72636861696e3a636f6e736f6c6964617465",
+					Type: "nulldata",
+				},
+			},
+		},
+	}
+	_, err = s.client.getOutput("tb1qj08ys4ct2hzzc2hcz6h2hgrvlmsjynaw43s835", &tx, true)
+	c.Assert(err, NotNil)
+
 	// invalid tx only multiple (positive-value) vout Addresses
 	tx = btcjson.TxRawResult{
 		Vin: []btcjson.Vin{

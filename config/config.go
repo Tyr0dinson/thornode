@@ -306,6 +306,14 @@ func Init() {
 		"bifrost.chains.GAIA.block_scanner.cosmos_grpc_tls",
 		"GAIA_GRPC_TLS",
 	))
+	assert(viper.BindEnv(
+		"bifrost.chains.GAIA.block_scanner.cosmos_gas_cache_transactions",
+		"BIFROST_COSMOS_GAS_CACHE_TRANSACTION",
+	))
+	assert(viper.BindEnv(
+		"bifrost.chains.NOBLE.block_scanner.cosmos_gas_cache_transactions",
+		"BIFROST_COSMOS_GAS_CACHE_TRANSACTION",
+	))
 	assert(viper.BindEnv("bifrost.chains.GAIA.disabled", "GAIA_DISABLED"))
 	assert(viper.BindEnv("bifrost.chains.DOGE.disabled", "DOGE_DISABLED"))
 	assert(viper.BindEnv("bifrost.chains.LTC.disabled", "LTC_DISABLED"))
@@ -1137,6 +1145,10 @@ type BifrostBlockScannerConfiguration struct {
 
 	// CosmosGRPCTLS is a boolean value indicating whether the gRPC host is using TLS.
 	CosmosGRPCTLS bool `mapstructure:"cosmos_grpc_tls"`
+
+	// CosmosGasCacheTransactions is the number of transactions over which Cosmos chain
+	// scanners compute average fee prices before reporting network fees.
+	CosmosGasCacheTransactions int `mapstructure:"cosmos_gas_cache_transactions"`
 
 	// GasCacheBlocks is the number of blocks worth of gas price data cached to determine
 	// the gas price reported to Thorchain.

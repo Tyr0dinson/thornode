@@ -132,7 +132,22 @@ func (s *BlockScannerTestSuite) TestCalculateAverageGasFees(c *C) {
 			{Denom: "uatom", Decimals: 6, THORChainSymbol: "ATOM"},
 		},
 	}
-	blockScanner := CosmosBlockScanner{cfg: cfg}
+
+	// Keep this test aligned with real scanner initialization:
+	// NewCosmosBlockScanner derives the effective cache window from
+	// getCosmosGasCacheTransactions(cfg), then stores it in
+	// `gasCacheTransactions` and sizes `feeCache` accordingly.
+	//
+	// This is superior to the old implicit setup (struct literal with zero-value
+	// internals) because the fee-cache logic is now config-driven, not
+	// hardcoded-only. Explicitly wiring these fields here exercises the same
+	// behavior production uses and avoids relying on zero-value defaults.
+	gasCacheTransactions := getCosmosGasCacheTransactions(cfg)
+	blockScanner := CosmosBlockScanner{
+		cfg:                  cfg,
+		feeCache:             make([]sdkmath.Uint, 0, gasCacheTransactions),
+		gasCacheTransactions: gasCacheTransactions,
+	}
 
 	blockScanner.updateGasCache(&MockFeeTx{
 		gas: GasLimit / 2,
@@ -202,6 +217,19 @@ func (s *BlockScannerTestSuite) TestCalculateAverageGasFees(c *C) {
 	}
 	c.Check(len(blockScanner.feeCache), Equals, GasCacheTransactions)
 	c.Check(blockScanner.averageFee().String(), Equals, fmt.Sprintf("%d", uint64(10000)))
+}
+
+func (s *BlockScannerTestSuite) TestCosmosGasCacheTransactionsConfig(c *C) {
+	c.Assert(getCosmosGasCacheTransactions(config.BifrostBlockScannerConfiguration{}), Equals, GasCacheTransactions)
+	c.Assert(getCosmosGasCacheTransactions(config.BifrostBlockScannerConfiguration{
+		CosmosGasCacheTransactions: 7,
+	}), Equals, 7)
+	c.Assert(getCosmosGasCacheTransactions(config.BifrostBlockScannerConfiguration{
+		CosmosGasCacheTransactions: 0,
+	}), Equals, GasCacheTransactions)
+	c.Assert(getCosmosGasCacheTransactions(config.BifrostBlockScannerConfiguration{
+		CosmosGasCacheTransactions: -1,
+	}), Equals, GasCacheTransactions)
 }
 
 func (s *BlockScannerTestSuite) TestGetBlock(c *C) {

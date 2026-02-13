@@ -387,12 +387,6 @@ func (c *SOLClient) GetGasEstimateForSolvency() cosmos.Uint {
 	return c.cfg.ChainID.NativeGasToThorchain(nativeCurrentFee)
 }
 
-// ReportSolvency reports solvency once per configured solvency blocks.
-// GetGasEstimateForSolvency returns the current gas fee estimate used by solvency checks.
-func (c *SOLClient) GetGasEstimateForSolvency() cosmos.Uint {
-	return cosmos.NewUint(3 * c.cfg.BlockScanner.MaxGasLimit * c.solScanner.lastFeeRate)
-}
-
 // ReportSolvency is the legacy solvency flow retained for reviewer comparison.
 //nolint:unused
 func (c *SOLClient) ReportSolvency(height int64) error {

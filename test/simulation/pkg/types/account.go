@@ -1,6 +1,7 @@
 package types
 
 import (
+	"os"
 	"strings"
 	"time"
 
@@ -56,7 +57,13 @@ func NewUser(mnemonic string, constructors map[common.Chain]LiteChainClientConst
 	pubkey := common.PubKey(s)
 
 	// EdDSA pubkey
-	edPriv, err := ed25519.Ed25519.Derive()(mnemonic, "", ed25519.HDPath)
+	// `thornode ed25519` derives with SIGNER_PASSWD as BIP39 passphrase in mocknet.
+	// Keep simulation EdDSA derivation aligned so SOL signer checks match active Asgard.
+	edPassphrase := os.Getenv("SIGNER_PASSWD")
+	if edPassphrase == "" {
+		edPassphrase = "password"
+	}
+	edPriv, err := ed25519.Ed25519.Derive()(mnemonic, edPassphrase, ed25519.HDPath)
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to derive ed25519 private key")
 	}
@@ -81,7 +88,7 @@ func NewUser(mnemonic string, constructors map[common.Chain]LiteChainClientConst
 	}
 
 	// Add Ed25519 key to keyring
-	_, err = kr.NewAccount(ed25519.SignerNameEDDSA(name), mnemonic, "", ed25519.HDPath, ed25519.Ed25519)
+	_, err = kr.NewAccount(ed25519.SignerNameEDDSA(name), mnemonic, edPassphrase, ed25519.HDPath, ed25519.Ed25519)
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to add account to keyring")
 	}

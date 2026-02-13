@@ -266,6 +266,25 @@ services:
       BIFROST_CHAINS_BASE_BLOCK_SCANNER_APPROXIMATE_BLOCK_TIME: 0s
       BIFROST_CHAINS_XRP_BLOCK_SCANNER_OBSERVATION_FLEXIBILITY_BLOCKS: "5"
 
+      # faster solvency cadence for mocknet/simulation
+      BIFROST_CHAINS_AVAX_SOLVENCY_BLOCKS: "10"
+      BIFROST_CHAINS_BCH_SOLVENCY_BLOCKS: "10"
+      BIFROST_CHAINS_BSC_SOLVENCY_BLOCKS: "10"
+      BIFROST_CHAINS_BTC_SOLVENCY_BLOCKS: "10"
+      BIFROST_CHAINS_DOGE_SOLVENCY_BLOCKS: "10"
+      BIFROST_CHAINS_ETH_SOLVENCY_BLOCKS: "10"
+      BIFROST_CHAINS_GAIA_SOLVENCY_BLOCKS: "10"
+      BIFROST_CHAINS_NOBLE_SOLVENCY_BLOCKS: "10"
+      BIFROST_CHAINS_LTC_SOLVENCY_BLOCKS: "10"
+      BIFROST_CHAINS_BASE_SOLVENCY_BLOCKS: "10"
+      BIFROST_CHAINS_TRON_SOLVENCY_BLOCKS: "10"
+      BIFROST_CHAINS_XRP_SOLVENCY_BLOCKS: "10"
+      BIFROST_CHAINS_SOL_SOLVENCY_BLOCKS: "10"
+
+      # mocknet/simulation: keep this low so Cosmos (GAIA/NOBLE) fee reporting
+      # initializes quickly without requiring many observed txs; not a mainnet setting
+      BIFROST_COSMOS_GAS_CACHE_TRANSACTION: 2
+
       # maintain historical gas behavior for hard-coded smoke test values
       BIFROST_CHAINS_ETH_BLOCK_SCANNER_MAX_GAS_LIMIT: 80000
       BIFROST_CHAINS_AVAX_BLOCK_SCANNER_MAX_GAS_LIMIT: 80000
@@ -1175,7 +1194,8 @@ services:
       - 10000:10000
     environment:
       RPC_PORT: "8899"
-      AIRDROP_ADDRESS: "AAH1XhfycX678et7Pjvwp1DMWnHpSP92wpJwV19MXHtX"
+      # Ed25519 master with SIGNER_PASSWD=password
+      AIRDROP_ADDRESS: "${SOL_MASTER_ADDR:-HfoxmVeom8Q1mJMQvuFZD945KBrUJHSVPKX9FWgay2uR}"
       AIRDROP_AMOUNT: "10000"
 
   # -------------------------- polygon ------------------------------

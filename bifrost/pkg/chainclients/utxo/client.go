@@ -724,7 +724,7 @@ func (c *Client) updateCurrentBlockHeight(height int64) {
 // ShouldReportSolvency returns true if solvency should be reported at the given height.
 // GetGasEstimateForSolvency returns the current gas fee estimate used by solvency checks.
 func (c *Client) GetGasEstimateForSolvency() cosmos.Uint {
-	return cosmos.NewUint(3 * c.cfg.UTXO.EstimatedAverageTxSize * c.lastFeeRate)
+	return cosmos.NewUint(3 * c.cfg.UTXO.EstimatedAverageTxSize * c.lastFeeRate.Load())
 }
 
 // ShouldReportSolvency is the legacy solvency flow retained for reviewer comparison.

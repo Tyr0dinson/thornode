@@ -2,6 +2,7 @@ package reporter
 
 import (
 	"fmt"
+	"math/big"
 
 	"github.com/rs/zerolog/log"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -34,27 +35,32 @@ func (r *solvencyReporter) String() string {
 // Collect gathers solvency messages for all Asgard vaults on this chain.
 // It prefers reporting insolvent vaults, and when scanner health is degraded it can
 // emit "all solvent" reports to allow auto-unhalt.
-func (r *solvencyReporter) Collect(from triggeredFrom) (ReportBatch, error) {
+func (r *solvencyReporter) Collect(_ triggeredFrom, height int64) (ReportBatch, error) {
 	// report insolvent asgard vaults,
 	// or else all if the chain is halted and all are solvent
 	currentGasFee := r.client.GetGasEstimateForSolvency()
 	asgardVaults, err := r.thorchainBridge.GetAsgards()
-	msgBatch := make(ReportBatch, 0, len(asgardVaults))
-	solventMsgBatch := make(ReportBatch, 0, len(asgardVaults))
 	if err != nil {
 		return nil, fmt.Errorf("fail to get asgards: %w", err)
 	}
-
-	var height int64
-	height, err = r.getRelevantHeight(from)
-	if err != nil {
-		return nil, fmt.Errorf("fail to get relevant height for solvency report: %w", err)
+	if height <= 0 {
+		return nil, fmt.Errorf("invalid report height: %d", height)
 	}
 
+	msgs := make(ReportBatch, 0, len(asgardVaults))
+	solventMsgs := make(ReportBatch, 0, len(asgardVaults))
 	checkedVaults := 0
+	msgHeight := solvencyMsgHeight(r.client.GetChain(), height)
+	queryHeight := big.NewInt(height)
 	for _, asgard := range asgardVaults {
+		accountPubKey, err := asgard.AlgoPubKey(r.client.GetChain())
+		if err != nil {
+			r.logger.Err(err).Stringer("vault", asgard.PubKey).Msg("fail to get chain-specific vault pubkey for account lookup")
+			continue
+		}
+
 		var acct common.Account
-		acct, err = r.client.GetAccount(asgard.PubKey, nil)
+		acct, err = r.client.GetAccount(accountPubKey, queryHeight)
 		if err != nil {
 			r.logger.Err(err).Msg("fail to get account balance")
 			continue
@@ -62,15 +68,15 @@ func (r *solvencyReporter) Collect(from triggeredFrom) (ReportBatch, error) {
 		checkedVaults++
 
 		var msg *types.MsgSolvency
-		msg, err = r.createSolvencyMsg(asgard.PubKey, acct.Coins, height)
+		msg, err = r.createSolvencyMsg(asgard.PubKey, acct.Coins, msgHeight)
 		if err != nil {
 			r.logger.Err(err).Stringer("chain", r.client.GetChain()).Msg("fail to create solvency msg")
 			continue
 		}
 		if r.isVaultSolvent(acct, asgard, currentGasFee) {
-			solventMsgBatch = append(solventMsgBatch, msg) // Solvent-vault message
+			solventMsgs = append(solventMsgs, msg) // Solvent-vault message
 		} else {
-			msgBatch = append(msgBatch, msg) // Insolvent-vault message
+			msgs = append(msgs, msg) // Insolvent-vault message
 		}
 	}
 
@@ -84,15 +90,15 @@ func (r *solvencyReporter) Collect(from triggeredFrom) (ReportBatch, error) {
 	// Note: only report "all solvent" when every vault was successfully checked,
 	// to avoid clearing a solvency halt on partial data.
 	solvent := false
-	if !r.client.IsBlockScannerHealthy() && checkedVaults == len(asgardVaults) && len(solventMsgBatch) == len(asgardVaults) {
-		msgBatch = solventMsgBatch
+	if !r.client.IsBlockScannerHealthy() && checkedVaults == len(asgardVaults) && len(solventMsgs) == len(asgardVaults) {
+		msgs = solventMsgs
 		solvent = true
 	}
 
-	for i := range msgBatch {
-		msg, ok := msgBatch[i].(*types.MsgSolvency)
+	for i := range msgs {
+		msg, ok := msgs[i].(*types.MsgSolvency)
 		if !ok {
-			r.logger.Warn().Msgf("unexpected report type from solvency reporter: %T", msgBatch[i])
+			r.logger.Warn().Msgf("unexpected report type from solvency reporter: %T", msgs[i])
 			continue
 		}
 		r.logger.Info().
@@ -103,12 +109,32 @@ func (r *solvencyReporter) Collect(from triggeredFrom) (ReportBatch, error) {
 
 	r.lastSolvencyCheckHeight = height
 
-	return msgBatch, nil
+	return msgs, nil
+}
+
+// solvencyMsgHeight applies legacy chain-specific report height shaping while
+// keeping cadence checks on the unmodified trigger height.
+func solvencyMsgHeight(chain common.Chain, height int64) int64 {
+	switch chain {
+	case common.TRONChain:
+		return height - tronSolvencyFinalityBlocks
+	case common.SOLChain:
+		return (height / solanaSolvencyHeightFloorStep) * solanaSolvencyHeightFloorStep
+	default:
+		return height
+	}
 }
 
 // ShouldReport decides whether a solvency collection/report cycle should run for
-// a given trigger source and height.
+// a given trigger source and raw (unnormalized) height.
 func (r *solvencyReporter) ShouldReport(from triggeredFrom, height int64) bool {
+	if height <= 0 {
+		r.logger.Warn().
+			Stringer("from", from).
+			Int64("height", height).
+			Msg("skip solvency report: invalid raw height")
+		return false
+	}
 	if from == fromRunner && !r.shouldReportFromRunner() {
 		return false
 	}
@@ -117,39 +143,24 @@ func (r *solvencyReporter) ShouldReport(from triggeredFrom, height int64) bool {
 	if !isHealthy && from == fromBlockScanner {
 		return false
 	}
-	chainHeight, err := r.client.GetHeight()
-	if err != nil {
-		r.logger.Err(err).Msg("fail to get chain height")
-		return false
-	}
-	if from == fromBlockScanner {
-		if height <= 0 {
-			height, err = r.client.GetBlockScannerHeight()
-			if err != nil {
-				r.logger.Err(err).Msg("fail to get fetch (blockscanner) height")
-				return false
-			}
-		}
-		// skip reporting solvency from block scanner if block is more than flexibility blocks from tip
-		if chainHeight-height > r.client.GetConfig().BlockScanner.ObservationFlexibilityBlocks {
-			return false
-		}
-	}
-	if height <= 0 {
-		var err error
-		height, err = r.getRelevantHeight(from)
-		if err != nil {
-			r.logger.Err(err).Msg("fail to get relevant height for solvency report")
-			return false
-		}
-	}
 	if !r.shouldReportAtHeight(height) {
 		return false
 	}
 	if r.requiresNonZeroGas() && r.client.GetGasEstimateForSolvency().IsZero() {
 		// GAIA/NOBLE/XRP use observed fee as insolvency buffer and should not report
-		// before scanner fee initialization to avoid false positives.
+		// before scanner fee initialization.
 		return false
+	}
+	if from == fromBlockScanner {
+		chainHeight, err := r.client.GetHeight()
+		if err != nil {
+			r.logger.Err(err).Msg("fail to get chain height")
+			return false
+		}
+		// skip reporting solvency from block scanner if block is more than flexibility blocks from tip
+		if chainHeight-height > r.client.GetConfig().BlockScanner.ObservationFlexibilityBlocks {
+			return false
+		}
 	}
 
 	return true
@@ -173,40 +184,39 @@ func (r *solvencyReporter) shouldReportAtHeight(height int64) bool {
 	chain := r.client.GetChain()
 	solvencyBlocks := r.client.GetConfig().SolvencyBlocks
 
+	// if solvencyBlocks is not set use hardcoded values from legacy code
+	if solvencyBlocks <= 0 {
+		switch chain {
+		case common.ETHChain:
+			solvencyBlocks = 20
+		case common.GAIAChain, common.NOBLEChain, common.TRONChain, common.DOGEChain, common.ZECChain:
+			solvencyBlocks = 10
+		case common.BTCChain, common.BCHChain:
+			solvencyBlocks = 1
+		case common.LTCChain:
+			solvencyBlocks = 5
+		default:
+			solvencyBlocks = 1 // default to 1 if not set, to allow reporting every block
+		}
+	}
+
 	switch chain {
-	case common.ETHChain:
-		return height%20 == 0
-	case common.AVAXChain, common.BSCChain, common.BASEChain:
-		if solvencyBlocks <= 0 {
-			return false
-		}
-		return height%solvencyBlocks == 0
-	case common.GAIAChain, common.NOBLEChain, common.TRONChain:
-		return height%10 == 0
-	case common.XRPChain:
-		if solvencyBlocks <= 0 {
-			return false
-		}
+	case common.ETHChain, common.AVAXChain, common.BSCChain, common.BASEChain,
+		common.GAIAChain, common.NOBLEChain, common.TRONChain, common.XRPChain:
 		return height%solvencyBlocks == 0
 	case common.SOLChain:
-		if solvencyBlocks <= 0 {
-			return false
-		}
 		lastSlotMultiple := r.lastSolvencyCheckHeight / solvencyBlocks
 		return height > (lastSlotMultiple+1)*solvencyBlocks
 	case common.DOGEChain, common.ZECChain:
 		if height-r.lastSolvencyCheckHeight <= 1 {
 			return false
 		}
-		return height%10 == 0
+		return height%solvencyBlocks == 0
 	case common.BTCChain, common.BCHChain:
-		return height-r.lastSolvencyCheckHeight > 1
+		return height-r.lastSolvencyCheckHeight > solvencyBlocks
 	case common.LTCChain:
-		return height-r.lastSolvencyCheckHeight > 5 && height%5 == 0
+		return height-r.lastSolvencyCheckHeight >= solvencyBlocks && height%solvencyBlocks == 0
 	default:
-		if solvencyBlocks <= 0 {
-			return false
-		}
 		return height-r.lastSolvencyCheckHeight > solvencyBlocks
 	}
 }
@@ -254,7 +264,11 @@ func (r *solvencyReporter) isVaultSolvent(account common.Account, vault types.Va
 	// thornode allow 10x of MaxGas as the gap
 	currentGasFee10x := currentGasFee.MulUint64(10)
 
-	// Compare against vault expectations (treat absent wallet asset as zero)
+	// Compare against vault expectations (treat absent wallet asset as zero).
+	// Legacy chain-specific code iterated wallet coins, which could miss vault-required
+	// assets that were absent in the wallet (effectively zero) and incorrectly appear
+	// solvent. This common reporter iterates vault coins (chain-filtered), so a vault
+	// asset missing from the wallet is treated as insolvent.
 	for _, asgardCoin := range vault.Coins {
 		// Ignore assets from other chains
 		if !asgardCoin.Asset.Chain.Equals(chain) {
@@ -294,6 +308,9 @@ func (r *solvencyReporter) isVaultSolvent(account common.Account, vault types.Va
 }
 
 // createSolvencyMsg builds a MsgSolvency report for a single vault.
+// MsgSolvency.PubKey should remain the vault's canonical secp256k1 pubkey
+// (not chain-specific algo keys like SOL ed25519), because the solvency message ID
+// and voter identity are keyed by this field across nodes.
 func (r *solvencyReporter) createSolvencyMsg(pubKey common.PubKey, coins common.Coins, height int64) (*types.MsgSolvency, error) {
 	msg := r.thorchainBridge.GetSolvencyMsg(height, r.client.GetChain(), pubKey, coins)
 	if msg == nil {

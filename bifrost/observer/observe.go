@@ -435,7 +435,7 @@ func (o *Observer) Start(ctx context.Context) error {
 	if err := o.restoreDeck(); err != nil {
 		return fmt.Errorf("restore observer deck: %w", err)
 	}
-	o.reporterDispatcher = reporter.NewDispatcher(o.getReporterChains(), o.thorchainBridge, o.errCounter, o.stopChan)
+	o.reporterDispatcher = reporter.NewDispatcher(o.getReporterChains(), o.thorchainBridge, o.errCounter, o.stopChan, o.wg)
 	deferXMR, err := o.startRestoredChainClients()
 	if err != nil {
 		return err
