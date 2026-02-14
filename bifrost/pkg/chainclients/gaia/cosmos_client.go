@@ -706,6 +706,7 @@ func (c *CosmosClient) GetGasEstimateForSolvency() cosmos.Uint {
 }
 
 // ReportSolvency is the legacy solvency flow retained for reviewer comparison.
+//
 //nolint:unused
 func (c *CosmosClient) ReportSolvency(blockHeight int64) error {
 	// FetchTxs may call this from prefetch goroutines; SolvencyCheckRunner also calls it while halted.
@@ -811,6 +812,7 @@ func (c *CosmosClient) ReportSolvency(blockHeight int64) error {
 }
 
 // ShouldReportSolvency is the legacy solvency flow retained for reviewer comparison.
+//
 //nolint:unused
 func (c *CosmosClient) ShouldReportSolvency(height int64) bool {
 	// Block time on Cosmos-based chains generally hovers around 6 seconds (10

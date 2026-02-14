@@ -728,6 +728,7 @@ func (c *Client) GetGasEstimateForSolvency() cosmos.Uint {
 }
 
 // ShouldReportSolvency is the legacy solvency flow retained for reviewer comparison.
+//
 //nolint:unused
 func (c *Client) ShouldReportSolvency(height int64) bool {
 	return c.shouldReportSolvency(height)
@@ -754,6 +755,7 @@ func (c *Client) shouldReportSolvency(height int64) bool {
 
 // ReportSolvency reports solvency for all asgard vaults.
 // ReportSolvency is the legacy solvency flow retained for reviewer comparison.
+//
 //nolint:unused
 func (c *Client) ReportSolvency(height int64) error {
 	c.solvencyLock.Lock()

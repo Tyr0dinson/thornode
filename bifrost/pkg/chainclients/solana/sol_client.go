@@ -388,6 +388,7 @@ func (c *SOLClient) GetGasEstimateForSolvency() cosmos.Uint {
 }
 
 // ReportSolvency is the legacy solvency flow retained for reviewer comparison.
+//
 //nolint:unused
 func (c *SOLClient) ReportSolvency(height int64) error {
 	reportSlotMultiple := c.nextSolvencyReportSlotMultiple(height)
@@ -501,6 +502,7 @@ func (c *SOLClient) ReportSolvency(height int64) error {
 
 // ShouldReportSolvency returns true if the given height is a solvency report height.
 // ShouldReportSolvency is the legacy solvency flow retained for reviewer comparison.
+//
 //nolint:unused
 func (c *SOLClient) ShouldReportSolvency(height int64) bool {
 	return c.nextSolvencyReportSlotMultiple(height) > c.getSolvencySlotMultiple()

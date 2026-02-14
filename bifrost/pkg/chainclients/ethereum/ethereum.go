@@ -1512,6 +1512,7 @@ func (c *Client) GetGasEstimateForSolvency() cosmos.Uint {
 }
 
 // ReportSolvency is the legacy solvency flow retained for reviewer comparison.
+//
 //nolint:unused
 func (c *Client) ReportSolvency(ethBlockHeight int64) error {
 	// The ordered scan loop and SolvencyCheckRunner can both call this.
@@ -1619,6 +1620,7 @@ func (c *Client) ReportSolvency(ethBlockHeight int64) error {
 
 // ShouldReportSolvency with given block height , should chain client report Solvency to THORNode?
 // ShouldReportSolvency is the legacy solvency flow retained for reviewer comparison.
+//
 //nolint:unused
 func (c *Client) ShouldReportSolvency(height int64) bool {
 	return height%20 == 0

@@ -809,12 +809,14 @@ func (c *TronClient) GetGasEstimateForSolvency() cosmos.Uint {
 }
 
 // ShouldReportSolvency is the legacy solvency flow retained for reviewer comparison.
+//
 //nolint:unused
 func (c *TronClient) ShouldReportSolvency(height int64) bool {
 	return height%10 == 0
 }
 
 // ReportSolvency is the legacy solvency flow retained for reviewer comparison.
+//
 //nolint:unused
 func (c *TronClient) ReportSolvency(height int64) error {
 	// The ordered scan loop and SolvencyCheckRunner can both call this.

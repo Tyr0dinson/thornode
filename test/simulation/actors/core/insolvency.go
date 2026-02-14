@@ -49,11 +49,18 @@ import (
 //     User deposits back to Asgard with "CONSOLIDATE".
 //     In simulation this uses the unobserved consolidate behavior to close the test flow.
 //
-// C) GAIA / TRON / XRP / SOL
+// C) GAIA
 //   - Steal path:
 //     Same as EVM steal path (Asgard -> user, empty memo).
 //   - Restore path:
-//     User deposits to Asgard with "NOOP:novault".
+//     Same as EVM restore path (self-transfer reconcile + DONATE bootstrap).
+//   - This is the currently active non-EVM path used in insolvency simulation coverage.
+//
+// D) TRON / SOL / XRP (provisional simulation restore path)
+//   - Core reporter behavior (insolvency trigger + solvency trigger) works on these chains.
+//   - A durable "restore and remain restored" simulation flow is still unresolved.
+//   - Suite-level insolvency coverage currently skips these chains until restore is stable.
+//   - Current restore attempt in this actor uses user->Asgard "NOOP:novault".
 //
 // Extra notes:
 //   - stolenAmount target starts as 10% of current Asgard wallet balance.
@@ -389,7 +396,8 @@ func (a *InsolvencyActor) stealFunds(config *OpConfig) OpResult {
 }
 
 // restoreFunds attempts to close the induced insolvency gap using chain-specific
-// simulation plumbing.
+// simulation plumbing. GAIA follows the stable EVM-like reconcile flow.
+// TRON/SOL/XRP keep a provisional restore path for local experimentation.
 func (a *InsolvencyActor) restoreFunds(config *OpConfig) OpResult {
 	a.Log().Info().Msg("attempting to restore solvency after induced insolvency")
 
@@ -416,6 +424,7 @@ func (a *InsolvencyActor) restoreFunds(config *OpConfig) OpResult {
 			Msg("broadcasted restore transaction")
 		return OpResult{Continue: true}
 	case a.chain.IsEVM(),
+		a.chain.Equals(common.SOLChain),
 		a.chain.Equals(common.GAIAChain):
 		// EVM & GAIA restore:
 		// 1) Use self-transfer reconciliation to trigger the NOOP slash path.
@@ -457,11 +466,13 @@ func (a *InsolvencyActor) restoreFunds(config *OpConfig) OpResult {
 			Msg("broadcasted donate transaction after reconcile")
 
 		return OpResult{Continue: true}
-	case a.chain.Equals(common.SOLChain),
+	case // a.chain.Equals(common.SOLChain),
 		a.chain.Equals(common.TRONChain),
 		a.chain.Equals(common.XRPChain):
-		// SOL/TRON/XRP restore via normal inbound NOOP deposit.
+		// Provisional restore for SOL/TRON/XRP via normal inbound NOOP deposit.
 		// Solana rejects self-transfer restore txs with "Account loaded twice".
+		// This path can trigger solvency transitions but is not yet durable enough
+		// for stable end-to-end suite coverage.
 		txid, err := DepositL1(a.Log(), a.userClient, a.asset, "NOOP:novault", restoreAmount)
 		if err != nil {
 			return OpResult{

@@ -1547,6 +1547,7 @@ func (c *EVMClient) GetGasEstimateForSolvency() cosmos.Uint {
 
 // ReportSolvency reports solvency once per configured solvency blocks.
 // ReportSolvency is the legacy solvency flow retained for reviewer comparison.
+//
 //nolint:unused
 func (c *EVMClient) ReportSolvency(height int64) error {
 	// FetchTxs may call this from prefetch goroutines; SolvencyCheckRunner also calls it while halted.
@@ -1654,6 +1655,7 @@ func (c *EVMClient) ReportSolvency(height int64) error {
 
 // ShouldReportSolvency returns true if the given height is a solvency report height.
 // ShouldReportSolvency is the legacy solvency flow retained for reviewer comparison.
+//
 //nolint:unused
 func (c *EVMClient) ShouldReportSolvency(height int64) bool {
 	return height%c.cfg.SolvencyBlocks == 0

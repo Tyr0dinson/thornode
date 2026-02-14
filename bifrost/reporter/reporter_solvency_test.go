@@ -2,7 +2,6 @@ package reporter
 
 import (
 	"fmt"
-	"maps"
 	"math/big"
 	"strings"
 	"sync"
@@ -113,39 +112,6 @@ func (mm *mimirMap) get(key string) int64 {
 		return -1
 	}
 	return value
-}
-
-func (mm *mimirMap) items() map[string]int64 {
-	mm.mu.Lock()
-	defer mm.mu.Unlock()
-	copyMimir := make(map[string]int64, len(mm.mimir))
-	maps.Copy(copyMimir, mm.mimir)
-	return copyMimir
-}
-
-func (mm *mimirMap) clear() {
-	mm.mu.Lock()
-	defer mm.mu.Unlock()
-	mm.mimir = map[string]int64{}
-}
-
-func (mm *mimirMap) setZeros() {
-	mm.mu.Lock()
-	defer mm.mu.Unlock()
-	zeros := make(map[string]int64, len(mm.mimir))
-	for key := range mm.mimir {
-		zeros[key] = 0
-	}
-	mm.mimir = zeros
-}
-
-func (mm *mimirMap) setFull(full map[string]int64) {
-	mm.mu.Lock()
-	defer mm.mu.Unlock()
-	mm.mimir = map[string]int64{}
-	for k, v := range full {
-		mm.mimir[strings.ToUpper(k)] = v
-	}
 }
 
 // mockThorchainBridge is a mock for the bridge

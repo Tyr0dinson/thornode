@@ -321,5 +321,8 @@ func (c *Client) GetHeight() (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("fail to get latest block: %w", err)
 	}
-	return res.Block.Header.Height, nil
+	if res.SdkBlock == nil {
+		return 0, fmt.Errorf("latest block response missing sdk_block")
+	}
+	return res.SdkBlock.Header.Height, nil
 }
