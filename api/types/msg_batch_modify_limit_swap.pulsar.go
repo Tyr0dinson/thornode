@@ -1231,7 +1231,8 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// ModifyLimitSwapOperation represents a single limit swap modification within a batch
+// ModifyLimitSwapOperation represents a single limit swap modification within a
+// batch
 type ModifyLimitSwapOperation struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache

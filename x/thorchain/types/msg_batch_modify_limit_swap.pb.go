@@ -29,7 +29,8 @@ var _ = math.Inf
 // proto package needs to be updated.
 const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 
-// ModifyLimitSwapOperation represents a single limit swap modification within a batch
+// ModifyLimitSwapOperation represents a single limit swap modification within a
+// batch
 type ModifyLimitSwapOperation struct {
 	From                 gitlab_com_thorchain_thornode_v3_common.Address `protobuf:"bytes,1,opt,name=from,proto3,casttype=gitlab.com/thorchain/thornode/v3/common.Address" json:"from,omitempty"`
 	Source               common.Coin                                     `protobuf:"bytes,2,opt,name=source,proto3" json:"source"`
