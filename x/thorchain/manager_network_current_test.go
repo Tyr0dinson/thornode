@@ -6906,8 +6906,8 @@ func (s *NetworkManagerTestSuite) TestClaimingSwapCustomParameters(c *C) {
 
 	// Set custom streaming parameters via mimir
 	helper.SetMimir(ctx, constants.TCYClaimingSwapHalt.String(), 0)
-	helper.SetMimir(ctx, constants.TCYClaimingSwapQuantity.String(), 20)  // Custom quantity
-	helper.SetMimir(ctx, constants.TCYClaimingSwapInterval.String(), 5) // Custom interval
+	helper.SetMimir(ctx, constants.TCYClaimingSwapQuantity.String(), 20) // Custom quantity
+	helper.SetMimir(ctx, constants.TCYClaimingSwapInterval.String(), 5)  // Custom interval
 
 	// Execute claiming swap
 	err := nmgr.claimingSwapRuneToTCY(ctx, mgr)

@@ -3030,16 +3030,16 @@ func (vm *NetworkMgr) createClaimingStreamingSwap(ctx cosmos.Context, mgr Manage
 	// Create MsgSwap with streaming parameters
 	msg := NewMsgSwap(
 		tx,
-		common.TCY,                                         // Target asset
-		claimingAddr,                                       // Destination (send TCY back to claiming module)
-		cosmos.ZeroUint(),                                  // Trade target (0 = market swap)
-		common.NoAddress,                                   // No affiliate
-		cosmos.ZeroUint(),                                  // No affiliate fee
-		"", "", nil,                                        // No DEX aggregator
-		MarketSwap,                                         // Market swap type
-		uint64(quantity),                                   // StreamQuantity
-		uint64(interval),                                   // StreamInterval
-		version,                                            // Swap version
+		common.TCY,        // Target asset
+		claimingAddr,      // Destination (send TCY back to claiming module)
+		cosmos.ZeroUint(), // Trade target (0 = market swap)
+		common.NoAddress,  // No affiliate
+		cosmos.ZeroUint(), // No affiliate fee
+		"", "", nil,       // No DEX aggregator
+		MarketSwap,       // Market swap type
+		uint64(quantity), // StreamQuantity
+		uint64(interval), // StreamInterval
+		version,          // Swap version
 		mgr.Keeper().GetModuleAccAddress(TCYClaimingName), // Signer
 	)
 
