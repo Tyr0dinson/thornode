@@ -34,11 +34,13 @@ var chainRPCs = map[common.Chain]string{
 	common.LTCChain:   "http://localhost:38443",
 	common.BCHChain:   "http://localhost:28443",
 	common.DOGEChain:  "http://localhost:18332",
+	common.ZECChain:   "http://localhost:18232",
 	common.ETHChain:   "http://localhost:8545",
 	common.AVAXChain:  "http://localhost:9650/ext/bc/C/rpc",
 	common.GAIAChain:  "localhost:9091",
 	common.NOBLEChain: "localhost:9092",
 	common.BASEChain:  "http://localhost:8547",
+	common.POLChain:   "http://localhost:8548",
 	common.TRONChain:  "http://localhost:8090",
 	common.XRPChain:   "http://localhost:5005",
 	common.SOLChain:   "http://localhost:8899",
@@ -141,9 +143,11 @@ func InitConfig(parallelism int, seed bool, rng *rand.Rand) *OpConfig {
 				{common.XRPChain, 1, 10},
 				{common.AVAXChain, 80000, 1500},
 				{common.BASEChain, 80000, 300000},
+				{common.POLChain, 80000, 1500},
 				{common.ETHChain, 80000, 300},
 				{common.SOLChain, 1, 5000},
 				{common.BTCChain, 1000, 4},
+				{common.ZECChain, 1, 50_000},
 				{common.LTCChain, 250, 103},
 				{common.BCHChain, 1500, 7},
 				{common.DOGEChain, 1000, 1500000},
@@ -266,12 +270,17 @@ func InitConfig(parallelism int, seed bool, rng *rand.Rand) *OpConfig {
 	wg = &sync.WaitGroup{}
 	for _, chain := range acommon.SimChains() {
 		// determine the amount to seed
-		chainSeedAmount := sdkmath.ZeroUint()
+		var chainSeedAmount sdkmath.Uint
+		// determine the amount of txs for seeding, to create multiple utxos
+		chainSeedTxs := 1
 		switch chain {
 		case common.BTCChain, common.LTCChain, common.BCHChain:
 			chainSeedAmount = sdkmath.NewUint(10 * common.One)
 		case common.BSCChain, common.BASEChain, common.ETHChain, common.SOLChain:
 			chainSeedAmount = sdkmath.NewUint(100 * common.One)
+		case common.ZECChain:
+			chainSeedAmount = sdkmath.NewUint(100 * common.One)
+			chainSeedTxs = 20
 		case common.GAIAChain, common.NOBLEChain:
 			chainSeedAmount = sdkmath.NewUint(1000 * common.One)
 		case common.AVAXChain, // more since local gas is high
@@ -283,15 +292,19 @@ func InitConfig(parallelism int, seed bool, rng *rand.Rand) *OpConfig {
 			chainSeedAmount = sdkmath.NewUint(100000 * common.One)
 		case common.TONChain:
 			chainSeedAmount = sdkmath.NewUint(100000 * common.One)
+		case common.POLChain:
+			chainSeedAmount = sdkmath.NewUint(1_000_000 * common.One)
 		default:
 			continue // all other chains currently unsupported
 		}
 
-		wg.Add(1)
-		go func(chain common.Chain, amount sdkmath.Uint) {
-			defer wg.Done()
-			fundUserChainAccounts(master, funded, chain, chainSeedAmount)
-		}(chain, chainSeedAmount)
+		for i := 0; i < chainSeedTxs; i++ {
+			wg.Add(1)
+			go func(chain common.Chain, amount sdkmath.Uint) {
+				defer wg.Done()
+				fundUserChainAccounts(master, funded, chain, amount)
+			}(chain, chainSeedAmount.QuoUint64(uint64(chainSeedTxs)))
+		}
 
 	}
 	wg.Wait()
@@ -353,9 +366,14 @@ func fundUserChainAccount(master, user *User, chain common.Chain, amount sdkmath
 	// fund token balances
 	eAddr := ecommon.HexToAddress(addr.String())
 	for asset, token := range evm.Tokens(chain) {
+		// for huge amounts like POLChain, total token amount is 500k
+		tokenAmount := sdkmath.NewUint(10_000 * common.One)
+		if amount.LT(tokenAmount) {
+			tokenAmount = amount
+		}
 		// convert funding amount to token decimals
 		factor := big.NewInt(1).Exp(big.NewInt(10), big.NewInt(int64(token.Decimals)), nil)
-		tokenAmount := amount.Mul(sdkmath.NewUintFromBigInt(factor))
+		tokenAmount = tokenAmount.Mul(sdkmath.NewUintFromBigInt(factor))
 		tokenAmount = tokenAmount.Quo(sdkmath.NewUint(common.One))
 
 		tokenTx := SimContractTx{

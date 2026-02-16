@@ -77,6 +77,8 @@ func (vm *NetworkMgr) processGenesisSetup(ctx cosmos.Context) error {
 			common.TRONChain,
 			common.XRPChain,
 			common.SOLChain,
+			common.POLChain,
+			common.ZECChain,
 			common.TONChain,
 		}
 		pubSet := active[0].PubKeySet

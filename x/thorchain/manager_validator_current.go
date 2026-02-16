@@ -52,8 +52,14 @@ func (vm *ValidatorMgr) BeginBlock(ctx cosmos.Context, mgr Manager, existingVali
 	lastChurnHeight := getLastChurnHeight(ctx, vm.k)
 	churnInterval := vm.k.GetConfigInt64(ctx, constants.ChurnInterval)
 	churnRetryInterval := vm.k.GetConfigInt64(ctx, constants.ChurnRetryInterval)
-	onChurnTick := (ctx.BlockHeight()-lastChurnHeight-churnInterval)%churnRetryInterval == 0
-	if !onChurnTick {
+	// Only compute retry tick if the interval is valid
+	onChurnTick := false
+	if churnRetryInterval > 0 {
+		onChurnTick = (ctx.BlockHeight()-lastChurnHeight-churnInterval)%churnRetryInterval == 0
+	}
+	// Allow regular churns to proceed regardless of churnRetryInterval
+	isRegularChurn := lastChurnHeight+churnInterval == ctx.BlockHeight()
+	if !onChurnTick && !isRegularChurn {
 		return nil
 	}
 
@@ -76,6 +82,9 @@ func (vm *ValidatorMgr) BeginBlock(ctx cosmos.Context, mgr Manager, existingVali
 		return err
 	}
 	asgardSize := vm.k.GetConfigInt64(ctx, constants.AsgardSize)
+	if asgardSize <= 0 {
+		return nil
+	}
 	expectedActiveVaults := int64(len(nas)) / asgardSize
 	if int64(len(nas))%asgardSize > 0 {
 		expectedActiveVaults++
@@ -1013,6 +1022,14 @@ func (vm *ValidatorMgr) getScore(ctx cosmos.Context, slashPts, lastChurnHeight i
 // Iterate over active node accounts, finding bad actors with high slash points
 func (vm *ValidatorMgr) findBadActors(ctx cosmos.Context, minSlashPointsForBadValidator, badValidatorRedline int64) (NodeAccounts, error) {
 	badActors := make(NodeAccounts, 0)
+
+	// Guard against division by zero: badValidatorRedline is used as a divisor
+	// below. If Mimir sets BadValidatorRedline to 0, skip bad actor detection
+	// rather than panicking in a consensus-critical code path.
+	if badValidatorRedline <= 0 {
+		return badActors, nil
+	}
+
 	nas, err := vm.k.ListActiveValidators(ctx)
 	if err != nil {
 		return badActors, err

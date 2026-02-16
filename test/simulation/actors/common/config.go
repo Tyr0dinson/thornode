@@ -29,19 +29,20 @@ func SimChains() []common.Chain {
 
 	if len(chains) == 0 {
 		chains = []common.Chain{
-			common.BTCChain,
-			common.LTCChain,
+			common.AVAXChain,
+			common.BASEChain,
 			common.BCHChain,
+			common.BTCChain,
 			common.DOGEChain,
 			common.ETHChain,
-			common.AVAXChain,
 			common.GAIAChain,
-			common.BASEChain,
-			common.TRONChain,
+			common.LTCChain,
 			common.XRPChain,
-			common.NOBLEChain,
-			common.SOLChain,
 			common.TONChain,
+			common.TRONChain,
+			common.SOLChain,
+			common.POLChain,
+			common.ZECChain,
 		}
 	}
 
