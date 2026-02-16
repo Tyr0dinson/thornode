@@ -18,8 +18,8 @@ import (
 	ltcchaincfg "github.com/ltcsuite/ltcd/chaincfg"
 	"github.com/ltcsuite/ltcutil"
 	"github.com/mr-tron/base58"
-	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zecutil"
 	tonaddress "github.com/xssnick/tonutils-go/address"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zecutil"
 
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
@@ -85,6 +85,9 @@ func NewAddress(address string) (Address, error) {
 }
 
 func IsValidTONAddress(address string) bool {
+	if address[:1] != "U" && address[:1] != "0" {
+		return false
+	}
 	_, err := tonaddress.ParseAddr(address)
 	return err == nil
 }
@@ -433,6 +436,17 @@ func (addr Address) GetNetwork(chain Chain) ChainNetwork {
 					return MockNet
 				}
 			}
+		}
+	case TONChain:
+		if !addr.IsChain(chain) {
+			return currentNetwork
+		}
+
+		switch addr.String()[:1] {
+		case "0":
+			return MockNet
+		case "U":
+			return mainNetPredicate()
 		}
 	}
 	return currentNetwork
