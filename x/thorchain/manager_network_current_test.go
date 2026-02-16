@@ -6698,3 +6698,282 @@ func (s *NetworkManagerTestSuite) TestWithdrawLPsDustPendingRemovesLP(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(got.PendingRune.IsZero(), Equals, true, Commentf("dust pending record should be removed, got %s", got.PendingRune))
 }
+
+func (s *NetworkManagerTestSuite) TestClaimingSwapStreamingSwapCreation(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	helper := NewVaultGenesisSetupTestHelper(mgr.Keeper())
+	nmgr := newNetworkMgr(helper, mgr.TxOutStore(), mgr.EventMgr())
+
+	// Setup TCY pool
+	tcyPool := NewPool()
+	tcyPool.Asset = common.TCY
+	tcyPool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	tcyPool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	tcyPool.Status = PoolAvailable
+	c.Assert(helper.SetPool(ctx, tcyPool), IsNil)
+
+	// Fund claiming module with RUNE
+	claimingAmount := cosmos.NewUint(100 * common.One)
+	FundModule(c, ctx, helper, TCYClaimingName, claimingAmount.Uint64())
+
+	// Disable halt flag
+	helper.SetMimir(ctx, constants.TCYClaimingSwapHalt.String(), 0)
+
+	// Execute claiming swap
+	err := nmgr.claimingSwapRuneToTCY(ctx, mgr)
+	c.Assert(err, IsNil)
+
+	// Verify ObservedTxVoter was created
+	iterator := helper.GetObservedTxInVoterIterator(ctx)
+	defer iterator.Close()
+	foundVoter := false
+	for ; iterator.Valid(); iterator.Next() {
+		var voter types.ObservedTxVoter
+		helper.Cdc().MustUnmarshal(iterator.Value(), &voter)
+		if voter.Tx.Tx.Memo == "SWAP:TCY:claiming-swap" {
+			foundVoter = true
+			c.Assert(voter.Tx.Tx.Coins[0].Amount.Equal(claimingAmount), Equals, true)
+			c.Assert(voter.Tx.Tx.Coins[0].Asset.Equals(common.RuneNative), Equals, true)
+			break
+		}
+	}
+	c.Assert(foundVoter, Equals, true, Commentf("ObservedTxVoter should be created"))
+
+	// Verify RUNE was transferred from claiming to asgard
+	claimingBalance := helper.GetRuneBalanceOfModule(ctx, TCYClaimingName)
+	c.Assert(claimingBalance.IsZero(), Equals, true, Commentf("Claiming module should have zero RUNE after transfer"))
+
+	// Verify swap was added to queue (check both V1 and V2)
+	foundSwap := false
+	if mgr.Keeper().AdvSwapQueueEnabled(ctx) {
+		iter := mgr.Keeper().GetAdvSwapQueueItemIterator(ctx)
+		defer iter.Close()
+		for ; iter.Valid(); iter.Next() {
+			var msg types.MsgSwap
+			mgr.Keeper().Cdc().MustUnmarshal(iter.Value(), &msg)
+			if msg.Tx.Memo == "SWAP:TCY:claiming-swap" {
+				foundSwap = true
+				c.Assert(msg.TargetAsset.Equals(common.TCY), Equals, true)
+				c.Assert(msg.StreamQuantity, Equals, uint64(10)) // Default quantity
+				c.Assert(msg.StreamInterval, Equals, uint64(10)) // Default interval
+				break
+			}
+		}
+	} else {
+		iter := mgr.Keeper().GetSwapQueueIterator(ctx)
+		defer iter.Close()
+		for ; iter.Valid(); iter.Next() {
+			var msg types.MsgSwap
+			mgr.Keeper().Cdc().MustUnmarshal(iter.Value(), &msg)
+			if msg.Tx.Memo == "SWAP:TCY:claiming-swap" {
+				foundSwap = true
+				c.Assert(msg.TargetAsset.Equals(common.TCY), Equals, true)
+				c.Assert(msg.StreamQuantity, Equals, uint64(10)) // Default quantity
+				c.Assert(msg.StreamInterval, Equals, uint64(10)) // Default interval
+				break
+			}
+		}
+	}
+	c.Assert(foundSwap, Equals, true, Commentf("Swap should be in queue"))
+}
+
+func (s *NetworkManagerTestSuite) TestClaimingSwapZeroBalance(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	helper := NewVaultGenesisSetupTestHelper(mgr.Keeper())
+	nmgr := newNetworkMgr(helper, mgr.TxOutStore(), mgr.EventMgr())
+
+	// Setup TCY pool
+	tcyPool := NewPool()
+	tcyPool.Asset = common.TCY
+	tcyPool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	tcyPool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	tcyPool.Status = PoolAvailable
+	c.Assert(helper.SetPool(ctx, tcyPool), IsNil)
+
+	// Disable halt flag
+	helper.SetMimir(ctx, constants.TCYClaimingSwapHalt.String(), 0)
+
+	// Claiming module has zero balance (no funding)
+	claimingBalance := helper.GetRuneBalanceOfModule(ctx, TCYClaimingName)
+	c.Assert(claimingBalance.IsZero(), Equals, true)
+
+	// Execute claiming swap - should not create swap
+	err := nmgr.claimingSwapRuneToTCY(ctx, mgr)
+	c.Assert(err, IsNil)
+
+	// Verify no swap was created in queue
+	swapIterator := helper.GetSwapQueueIterator(ctx)
+	defer swapIterator.Close()
+	swapCount := 0
+	for ; swapIterator.Valid(); swapIterator.Next() {
+		swapCount++
+	}
+	c.Assert(swapCount, Equals, 0, Commentf("No swap should be created for zero balance"))
+}
+
+func (s *NetworkManagerTestSuite) TestClaimingSwapHaltFlag(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	helper := NewVaultGenesisSetupTestHelper(mgr.Keeper())
+	nmgr := newNetworkMgr(helper, mgr.TxOutStore(), mgr.EventMgr())
+
+	// Setup TCY pool
+	tcyPool := NewPool()
+	tcyPool.Asset = common.TCY
+	tcyPool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	tcyPool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	tcyPool.Status = PoolAvailable
+	c.Assert(helper.SetPool(ctx, tcyPool), IsNil)
+
+	// Fund claiming module
+	claimingAmount := cosmos.NewUint(100 * common.One)
+	FundModule(c, ctx, helper, TCYClaimingName, claimingAmount.Uint64())
+
+	// Enable halt flag (default value is 1)
+	helper.SetMimir(ctx, constants.TCYClaimingSwapHalt.String(), 1)
+
+	// Execute claiming swap - should be halted
+	err := nmgr.claimingSwapRuneToTCY(ctx, mgr)
+	c.Assert(err, IsNil)
+
+	// Verify balance unchanged
+	claimingBalance := helper.GetRuneBalanceOfModule(ctx, TCYClaimingName)
+	c.Assert(claimingBalance.Equal(claimingAmount), Equals, true, Commentf("Balance should be unchanged"))
+
+	// Verify no swap was created
+	swapIterator := helper.GetSwapQueueIterator(ctx)
+	defer swapIterator.Close()
+	swapCount := 0
+	for ; swapIterator.Valid(); swapIterator.Next() {
+		swapCount++
+	}
+	c.Assert(swapCount, Equals, 0, Commentf("No swap should be created when halted"))
+}
+
+func (s *NetworkManagerTestSuite) TestClaimingSwapPoolUnavailable(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	helper := NewVaultGenesisSetupTestHelper(mgr.Keeper())
+	nmgr := newNetworkMgr(helper, mgr.TxOutStore(), mgr.EventMgr())
+
+	// Setup TCY pool as Staged (not available)
+	tcyPool := NewPool()
+	tcyPool.Asset = common.TCY
+	tcyPool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	tcyPool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	tcyPool.Status = PoolStaged
+	c.Assert(helper.SetPool(ctx, tcyPool), IsNil)
+
+	// Fund claiming module
+	claimingAmount := cosmos.NewUint(100 * common.One)
+	FundModule(c, ctx, helper, TCYClaimingName, claimingAmount.Uint64())
+
+	// Disable halt flag
+	helper.SetMimir(ctx, constants.TCYClaimingSwapHalt.String(), 0)
+
+	// Execute claiming swap - should skip due to pool unavailability
+	err := nmgr.claimingSwapRuneToTCY(ctx, mgr)
+	c.Assert(err, IsNil)
+
+	// Verify balance unchanged
+	claimingBalance := helper.GetRuneBalanceOfModule(ctx, TCYClaimingName)
+	c.Assert(claimingBalance.Equal(claimingAmount), Equals, true, Commentf("Balance should be unchanged"))
+
+	// Verify no swap was created
+	swapIterator := helper.GetSwapQueueIterator(ctx)
+	defer swapIterator.Close()
+	swapCount := 0
+	for ; swapIterator.Valid(); swapIterator.Next() {
+		swapCount++
+	}
+	c.Assert(swapCount, Equals, 0, Commentf("No swap should be created for unavailable pool"))
+}
+
+func (s *NetworkManagerTestSuite) TestClaimingSwapCustomParameters(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	helper := NewVaultGenesisSetupTestHelper(mgr.Keeper())
+	nmgr := newNetworkMgr(helper, mgr.TxOutStore(), mgr.EventMgr())
+
+	// Setup TCY pool
+	tcyPool := NewPool()
+	tcyPool.Asset = common.TCY
+	tcyPool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	tcyPool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	tcyPool.Status = PoolAvailable
+	c.Assert(helper.SetPool(ctx, tcyPool), IsNil)
+
+	// Fund claiming module
+	claimingAmount := cosmos.NewUint(100 * common.One)
+	FundModule(c, ctx, helper, TCYClaimingName, claimingAmount.Uint64())
+
+	// Set custom streaming parameters via mimir
+	helper.SetMimir(ctx, constants.TCYClaimingSwapHalt.String(), 0)
+	helper.SetMimir(ctx, constants.TCYClaimingSwapQuantity.String(), 20)  // Custom quantity
+	helper.SetMimir(ctx, constants.TCYClaimingSwapInterval.String(), 5) // Custom interval
+
+	// Execute claiming swap
+	err := nmgr.claimingSwapRuneToTCY(ctx, mgr)
+	c.Assert(err, IsNil)
+
+	// Verify swap was created with custom parameters (check both V1 and V2)
+	foundSwap := false
+	if mgr.Keeper().AdvSwapQueueEnabled(ctx) {
+		iter := mgr.Keeper().GetAdvSwapQueueItemIterator(ctx)
+		defer iter.Close()
+		for ; iter.Valid(); iter.Next() {
+			var msg types.MsgSwap
+			mgr.Keeper().Cdc().MustUnmarshal(iter.Value(), &msg)
+			if msg.Tx.Memo == "SWAP:TCY:claiming-swap" {
+				foundSwap = true
+				c.Assert(msg.StreamQuantity, Equals, uint64(20), Commentf("Should use custom quantity"))
+				c.Assert(msg.StreamInterval, Equals, uint64(5), Commentf("Should use custom interval"))
+				break
+			}
+		}
+	} else {
+		iter := mgr.Keeper().GetSwapQueueIterator(ctx)
+		defer iter.Close()
+		for ; iter.Valid(); iter.Next() {
+			var msg types.MsgSwap
+			mgr.Keeper().Cdc().MustUnmarshal(iter.Value(), &msg)
+			if msg.Tx.Memo == "SWAP:TCY:claiming-swap" {
+				foundSwap = true
+				c.Assert(msg.StreamQuantity, Equals, uint64(20), Commentf("Should use custom quantity"))
+				c.Assert(msg.StreamInterval, Equals, uint64(5), Commentf("Should use custom interval"))
+				break
+			}
+		}
+	}
+	c.Assert(foundSwap, Equals, true, Commentf("Swap should be in queue with custom params"))
+}
+
+func (s *NetworkManagerTestSuite) TestClaimingSwapDuplicatePrevention(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+	helper := NewVaultGenesisSetupTestHelper(mgr.Keeper())
+	nmgr := newNetworkMgr(helper, mgr.TxOutStore(), mgr.EventMgr())
+
+	// Setup TCY pool
+	tcyPool := NewPool()
+	tcyPool.Asset = common.TCY
+	tcyPool.BalanceAsset = cosmos.NewUint(1000 * common.One)
+	tcyPool.BalanceRune = cosmos.NewUint(1000 * common.One)
+	tcyPool.Status = PoolAvailable
+	c.Assert(helper.SetPool(ctx, tcyPool), IsNil)
+
+	// Fund claiming module
+	claimingAmount := cosmos.NewUint(100 * common.One)
+	FundModule(c, ctx, helper, TCYClaimingName, claimingAmount.Uint64())
+
+	// Disable halt flag
+	helper.SetMimir(ctx, constants.TCYClaimingSwapHalt.String(), 0)
+
+	// Execute first claiming swap - should succeed
+	err := nmgr.claimingSwapRuneToTCY(ctx, mgr)
+	c.Assert(err, IsNil)
+
+	// Fund claiming module again for second attempt
+	FundModule(c, ctx, helper, TCYClaimingName, claimingAmount.Uint64())
+
+	// Try to execute second claiming swap at same block height - should fail with duplicate error
+	err = nmgr.claimingSwapRuneToTCY(ctx, mgr)
+	c.Assert(err, NotNil)
+	c.Assert(err.Error(), Matches, ".*claiming swap already exists.*")
+}

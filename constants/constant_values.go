@@ -153,6 +153,8 @@ const (
 	MinTCYForTCYStakeDistribution
 	TCYStakeSystemIncomeBps
 	TCYClaimingSwapHalt
+	TCYClaimingSwapQuantity
+	TCYClaimingSwapInterval
 	TCYStakeDistributionHalt
 	TCYStakingHalt
 	TCYUnstakingHalt

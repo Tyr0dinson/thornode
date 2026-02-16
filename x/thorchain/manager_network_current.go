@@ -2977,58 +2977,153 @@ func (vm *NetworkMgr) getTCYStakeAmountToDistribute(tcyStakeAmount cosmos.Uint, 
 	return tcyStakeAmount.Sub(remainder) // Round down to the nearest multiple
 }
 
+// createClaimingStreamingSwap creates a streaming swap for the TCY claiming module to convert RUNE to TCY.
+// This uses streaming swaps to prevent price manipulation attacks by spreading the swap over multiple blocks.
+func (vm *NetworkMgr) createClaimingStreamingSwap(ctx cosmos.Context, mgr Manager, claimingRuneBalance cosmos.Uint) error {
+	// Get streaming parameters from config
+	quantity := vm.k.GetConfigInt64(ctx, constants.TCYClaimingSwapQuantity)
+	interval := vm.k.GetConfigInt64(ctx, constants.TCYClaimingSwapInterval)
+
+	// Generate unique TxID using hash of balance + height + identifier
+	str := fmt.Sprintf("claiming-swap|%s|%d", claimingRuneBalance.String(), ctx.BlockHeight())
+	hash := fmt.Sprintf("%X", sha256.Sum256([]byte(str)))
+	txID, err := common.NewTxID(hash)
+	if err != nil {
+		return fmt.Errorf("failed to create txid: %w", err)
+	}
+
+	// Check for existing voter to prevent duplicates
+	existingVoter, err := mgr.Keeper().GetObservedTxInVoter(ctx, txID)
+	if err != nil {
+		return fmt.Errorf("failed to check existing voter: %w", err)
+	}
+	if len(existingVoter.Txs) > 0 {
+		return fmt.Errorf("claiming swap already exists: %s", txID)
+	}
+
+	// Get module addresses
+	claimingAddr, err := mgr.Keeper().GetModuleAddress(TCYClaimingName)
+	if err != nil {
+		return fmt.Errorf("failed to get claiming module address: %w", err)
+	}
+	asgardAddr, err := mgr.Keeper().GetModuleAddress(AsgardName)
+	if err != nil {
+		return fmt.Errorf("failed to get asgard module address: %w", err)
+	}
+
+	// Construct transaction
+	tx := common.NewTx(
+		txID,
+		claimingAddr,
+		asgardAddr,
+		common.NewCoins(common.NewCoin(common.RuneNative, claimingRuneBalance)),
+		common.Gas{},
+		"SWAP:TCY:claiming-swap",
+	)
+
+	// Determine version (V1 or V2 based on config)
+	version := types.SwapVersion_v1
+	if mgr.Keeper().AdvSwapQueueEnabled(ctx) {
+		version = types.SwapVersion_v2
+	}
+
+	// Create MsgSwap with streaming parameters
+	msg := NewMsgSwap(
+		tx,
+		common.TCY,                                         // Target asset
+		claimingAddr,                                       // Destination (send TCY back to claiming module)
+		cosmos.ZeroUint(),                                  // Trade target (0 = market swap)
+		common.NoAddress,                                   // No affiliate
+		cosmos.ZeroUint(),                                  // No affiliate fee
+		"", "", nil,                                        // No DEX aggregator
+		MarketSwap,                                         // Market swap type
+		uint64(quantity),                                   // StreamQuantity
+		uint64(interval),                                   // StreamInterval
+		version,                                            // Swap version
+		mgr.Keeper().GetModuleAccAddress(TCYClaimingName), // Signer
+	)
+
+	// Create ObservedTxVoter for tracking
+	txIn := ObservedTx{Tx: tx}
+	voter := NewObservedTxVoter(txID, []common.ObservedTx{txIn})
+	voter.Height = ctx.BlockHeight()
+	voter.FinalisedHeight = ctx.BlockHeight()
+	voter.Tx = txIn
+	mgr.Keeper().SetObservedTxInVoter(ctx, voter)
+
+	// Add to swap queue (V1 or V2)
+	if version == types.SwapVersion_v2 {
+		if err = mgr.AdvSwapQueueMgr().AddSwapQueueItem(ctx, mgr, msg); err != nil {
+			return fmt.Errorf("failed to add to advanced swap queue: %w", err)
+		}
+	} else {
+		// For V1, determine next queue index
+		iterator := mgr.Keeper().GetSwapQueueIterator(ctx)
+		defer iterator.Close()
+		maxIndex := -1
+		for ; iterator.Valid(); iterator.Next() {
+			key := string(iterator.Key())
+			parts := strings.Split(key, "-")
+			if len(parts) > 0 {
+				if idx, parseErr := strconv.Atoi(parts[len(parts)-1]); parseErr == nil {
+					if idx > maxIndex {
+						maxIndex = idx
+					}
+				}
+			}
+		}
+		if err = mgr.Keeper().SetSwapQueueItem(ctx, *msg, maxIndex+1); err != nil {
+			return fmt.Errorf("failed to add to swap queue: %w", err)
+		}
+	}
+
+	// Transfer RUNE from claiming module to Asgard
+	coins := common.NewCoins(common.NewCoin(common.RuneNative, claimingRuneBalance))
+	if err = mgr.Keeper().SendFromModuleToModule(ctx, TCYClaimingName, AsgardName, coins); err != nil {
+		return fmt.Errorf("failed to transfer rune: %w", err)
+	}
+
+	ctx.Logger().Info("created claiming streaming swap",
+		"amount", claimingRuneBalance,
+		"quantity", quantity,
+		"interval", interval,
+		"total_blocks", quantity*interval,
+		"txid", txID)
+
+	return nil
+}
+
 func (vm *NetworkMgr) claimingSwapRuneToTCY(ctx cosmos.Context, mgr Manager) error {
+	// Check halt flag
 	claimingSwapHalt := vm.k.GetConfigInt64(ctx, constants.TCYClaimingSwapHalt)
 	if claimingSwapHalt > 0 {
 		ctx.Logger().Info("claiming module tcy swap is halted")
 		return nil
 	}
 
+	// Get claiming module balance
 	claimingRuneBalance := mgr.Keeper().GetRuneBalanceOfModule(ctx, TCYClaimingName)
 	if claimingRuneBalance.IsZero() {
 		ctx.Logger().Info("claiming module doesn't have rune to swap for tcy")
 		return nil
 	}
 
+	// Verify pool exists and is available
 	pool, err := mgr.Keeper().GetPool(ctx, common.TCY)
 	if err != nil {
 		return err
 	}
-
-	// Use CacheContext for atomicity: all state mutations succeed or none persist
-	cacheCtx, commit := ctx.CacheContext()
-
-	err = mgr.Keeper().SendFromModuleToModule(cacheCtx, TCYClaimingName, AsgardName, common.NewCoins(common.NewCoin(common.RuneNative, claimingRuneBalance)))
-	if err != nil {
-		return err
-	}
-
-	assetDisbursement := pool.AssetDisbursementForRuneAdd(claimingRuneBalance)
-	if assetDisbursement.IsZero() {
+	if pool.Status != PoolAvailable {
+		ctx.Logger().Info("TCY pool not available, skipping claiming swap")
 		return nil
 	}
 
-	pool.BalanceRune = pool.BalanceRune.Add(claimingRuneBalance)
-	pool.BalanceAsset = common.SafeSub(pool.BalanceAsset, assetDisbursement)
-
-	if err = vm.k.SetPool(cacheCtx, pool); err != nil {
-		return fmt.Errorf("failed to set pool (%s): %w", pool.Asset.String(), err)
+	// Create streaming swap instead of direct pool manipulation
+	// This prevents price manipulation attacks by spreading the swap over multiple blocks
+	if err := vm.createClaimingStreamingSwap(ctx, mgr, claimingRuneBalance); err != nil {
+		return fmt.Errorf("failed to create claiming streaming swap: %w", err)
 	}
 
-	err = mgr.Keeper().SendFromModuleToModule(cacheCtx, AsgardName, TCYClaimingName, common.NewCoins(common.NewCoin(common.TCY, assetDisbursement)))
-	if err != nil {
-		return err
-	}
-
-	evt := NewEventPoolBalanceChanged(
-		NewPoolMod(pool.Asset, claimingRuneBalance, true, assetDisbursement, false),
-		"tcy claiming swap",
-	)
-	if err = vm.eventMgr.EmitEvent(cacheCtx, evt); err != nil {
-		ctx.Logger().Error("fail to emit pool balance changed event", "error", err)
-	}
-
-	commit()
 	return nil
 }
 

@@ -150,6 +150,8 @@ func NewConstantValue() *ConstantVals {
 			MinTCYForTCYStakeDistribution:       100000,             // Set what is the minimum amount of TCY need it on TCY fund in order to be distributed
 			TCYStakeSystemIncomeBps:             1000,               // allocate 1000bps (10%) RUNE of all system income to TCY Fund
 			TCYClaimingSwapHalt:                 1,                  // enable/disable claiming module rune to tcy swap
+			TCYClaimingSwapQuantity:             10,                 // number of sub-swaps for claiming streaming swap
+			TCYClaimingSwapInterval:             10,                 // blocks between each sub-swap for claiming streaming swap
 			TCYStakeDistributionHalt:            1,                  // enable/disable tcy stake distribution
 			TCYStakingHalt:                      1,                  // enable/disable tcy staking
 			TCYUnstakingHalt:                    1,                  // enable/disable tcy unstaking

@@ -19,7 +19,7 @@
             "@type": "/cosmos.crypto.secp256k1.PubKey",
             "key": "AmF4AUTWZEUSBtgqiR5n2Lgic/Yrr1mWupMo5TAubNRO"
           },
-          "sequence": "2"
+          "sequence": "3"
         },
         {
           "@type": "/cosmos.auth.v1beta1.ModuleAccount",
@@ -154,7 +154,7 @@
           "address": "tthor1qk8c8sfrmfm0tkncs0zxeutc8v5mx3pjj07k4u",
           "coins": [
             {
-              "amount": "9949819",
+              "amount": "8127527",
               "denom": "rune"
             }
           ]
@@ -163,11 +163,11 @@
           "address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
           "coins": [
             {
-              "amount": "27509924329385",
+              "amount": "27510119697382",
               "denom": "rune"
             },
             {
-              "amount": "363505180176712",
+              "amount": "399838214529740",
               "denom": "tcy"
             }
           ]
@@ -176,21 +176,8 @@
           "address": "tthor1dheycdevq39qlkxs2a6wuuzyn4aqxhve3hhmlw",
           "coins": [
             {
-              "amount": "35000012000000",
+              "amount": "35000014000000",
               "denom": "rune"
-            }
-          ]
-        },
-        {
-          "address": "tthor1ss8rrf3twa20kf9frdyru05dmu2kg9llwwcgag",
-          "coins": [
-            {
-              "amount": "8906",
-              "denom": "rune"
-            },
-            {
-              "amount": "36363684534194",
-              "denom": "tcy"
             }
           ]
         },
@@ -216,11 +203,11 @@
           "address": "tthor1anq4fk6l89w3sfuxehwyprxqjdj3kuzpfwlrav",
           "coins": [
             {
-              "amount": "857711890",
+              "amount": "664175091",
               "denom": "rune"
             },
             {
-              "amount": "132135289094",
+              "amount": "162785470260",
               "denom": "tcy"
             }
           ]
@@ -229,7 +216,7 @@
           "address": "tthor17gw75axcnr8747pkanye45pnrwk7p9c3uhzgff",
           "coins": [
             {
-              "amount": "5000000000000",
+              "amount": "4999998000000",
               "denom": "rune"
             }
           ]
@@ -267,7 +254,84 @@
         "rune_withdrawn": "0"
       },
       "THORNames": [],
-      "adv_swap_queue_items": [],
+      "adv_swap_queue_items": [
+        {
+          "affiliate_basis_points": "0",
+          "destination": "tthor1ss8rrf3twa20kf9frdyru05dmu2kg9llwwcgag",
+          "initial_block_height": "5",
+          "signer": "tthor1ss8rrf3twa20kf9frdyru05dmu2kg9llwwcgag",
+          "state": {
+            "count": "2",
+            "deposit": "2500000000000",
+            "failed_swap_reasons": [
+              "MEMO: SWAP:TCY:claiming-swap\nPARSE FAILURE(S): cannot parse 'claiming-swap' as an Address: claiming-swap is not recognizable",
+              "MEMO: SWAP:TCY:claiming-swap\nPARSE FAILURE(S): cannot parse 'claiming-swap' as an Address: claiming-swap is not recognizable"
+            ],
+            "failed_swaps": [
+              "0",
+              "1"
+            ],
+            "in": "0",
+            "interval": "10",
+            "last_height": "20",
+            "out": "0",
+            "quantity": "10",
+            "withdrawn": "0"
+          },
+          "stream_interval": "10",
+          "stream_quantity": "10",
+          "target_asset": "THOR.TCY",
+          "trade_target": "0",
+          "tx": {
+            "chain": "THOR",
+            "coins": [
+              {
+                "amount": "2500000000000",
+                "asset": "THOR.RUNE"
+              }
+            ],
+            "from_address": "tthor1ss8rrf3twa20kf9frdyru05dmu2kg9llwwcgag",
+            "gas": null,
+            "id": "13BE76E0F4C1665A0A13C5DC47EAC3F476551600272B038B3784A91F8A2A0077",
+            "memo": "SWAP:TCY:claiming-swap",
+            "to_address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2"
+          },
+          "version": 1
+        },
+        {
+          "affiliate_basis_points": "0",
+          "destination": "tthor1ss8rrf3twa20kf9frdyru05dmu2kg9llwwcgag",
+          "initial_block_height": "20",
+          "signer": "tthor1ss8rrf3twa20kf9frdyru05dmu2kg9llwwcgag",
+          "state": {
+            "deposit": "4014062",
+            "in": "0",
+            "interval": "10",
+            "out": "0",
+            "quantity": "10",
+            "withdrawn": "0"
+          },
+          "stream_interval": "10",
+          "stream_quantity": "10",
+          "target_asset": "THOR.TCY",
+          "trade_target": "0",
+          "tx": {
+            "chain": "THOR",
+            "coins": [
+              {
+                "amount": "4014062",
+                "asset": "THOR.RUNE"
+              }
+            ],
+            "from_address": "tthor1ss8rrf3twa20kf9frdyru05dmu2kg9llwwcgag",
+            "gas": null,
+            "id": "52CD6DA2941CD5F9F3A55CD93D0D24DB56FD93E47F55DB38071CE669AFE1D442",
+            "memo": "SWAP:TCY:claiming-swap",
+            "to_address": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2"
+          },
+          "version": 1
+        }
+      ],
       "affiliate_collectors": null,
       "bond_providers": [
         {
@@ -293,17 +357,26 @@
           "units": "25000000000000"
         }
       ],
-      "mimirs": [],
+      "mimirs": [
+        {
+          "key": "TCYCLAIMINGSWAPHALT"
+        }
+      ],
       "network": {
         "bond_reward_rune": "0",
         "total_bond_units": "0"
       },
       "network_fees": [],
-      "nodeMimirs": [],
+      "nodeMimirs": [
+        {
+          "key": "TCYCLAIMINGSWAPHALT",
+          "signer": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m"
+        }
+      ],
       "node_accounts": [
         {
           "active_block_height": "1",
-          "bond": "5000000000000",
+          "bond": "4999998000000",
           "bond_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
           "ip_address": "1.1.1.1",
           "node_address": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
@@ -323,8 +396,8 @@
         {
           "LP_units": "25000000000000",
           "asset": "THOR.TCY",
-          "balance_asset": "363505180176712",
-          "balance_rune": "27509924329385",
+          "balance_asset": "399838214529740",
+          "balance_rune": "25010115683320",
           "pending_inbound_asset": "0",
           "pending_inbound_rune": "0",
           "status": "Available",
@@ -348,7 +421,7 @@
         {
           "address": "tthor1anq4fk6l89w3sfuxehwyprxqjdj3kuzpfwlrav",
           "reclaimed": "0",
-          "score": "3654565",
+          "score": "4014062",
           "spent": "0"
         },
         {
@@ -444,5 +517,5 @@
       }
     }
   },
-  "initial_height": 18
+  "initial_height": 22
 }
