@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"strconv"
 	"strings"
@@ -1455,6 +1456,18 @@ func (qs queryServer) queryQuoteIntent(ctx cosmos.Context, req *types.QueryQuote
 		}, nil
 	}
 
+	// Fee chargeability: only L1 pool assets and RUNE can be charged fees.
+	// Secured/trade assets cannot be charged fees because they can't be swapped to RUNE.
+	canChargeSource := (hasSourcePool && !fromAsset.IsSecuredAsset() && !fromAsset.IsTradeAsset()) || fromAsset.IsRune()
+	canChargeTarget := (hasTargetPool && !toAsset.IsSecuredAsset() && !toAsset.IsTradeAsset()) || toAsset.IsRune()
+
+	if !canChargeSource && !canChargeTarget {
+		return &types.QueryQuoteIntentResponse{
+			Valid:           false,
+			ValidationError: "at least one of source or target asset must be fee-chargeable (L1 pool asset or RUNE)",
+		}, nil
+	}
+
 	// Parse destination address
 	destAddr, err := quoteParseAddress(ctx, qs.mgr, req.Destination, toAsset.GetChain())
 	if err != nil {
@@ -1486,10 +1499,6 @@ func (qs queryServer) queryQuoteIntent(ctx cosmos.Context, req *types.QueryQuote
 	minFeeBps := qs.mgr.Keeper().GetConfigInt64(ctx, constants.IntentMinFeeBasisPoints)
 	auctionBps := qs.mgr.Keeper().GetConfigInt64(ctx, constants.IntentAuctionBasisPoints)
 	auctionDuration := qs.mgr.Keeper().GetConfigInt64(ctx, constants.IntentAuctionDurationBlocks)
-
-	// Determine fee asset (prefer source if pooled/native)
-	canChargeSource := hasSourcePool || isSourceNative
-	canChargeTarget := hasTargetPool || isTargetNative
 
 	var feeAsset common.Asset
 	estimatedFee := cosmos.ZeroUint()
@@ -1791,7 +1800,13 @@ func (qs queryServer) queryQuoteIntentSolve(ctx cosmos.Context, req *types.Query
 			} else {
 				delay := highMinusOffered.Mul(cosmos.NewUint(uint64(slideBlocks)))
 				delay = delay.Quo(highMinusLow)
-				matchHeight = currentHeight + int64(delay.Uint64())
+
+				// Guard against int64 overflow when converting delay
+				if delay.GT(cosmos.NewUint(uint64(math.MaxInt64))) {
+					matchHeight = intent.ExpiryHeight
+				} else {
+					matchHeight = currentHeight + int64(delay.Uint64())
+				}
 
 				if matchHeight > intent.ExpiryHeight {
 					matchHeight = intent.ExpiryHeight

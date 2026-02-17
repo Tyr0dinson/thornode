@@ -190,6 +190,8 @@ func (HandlerIntentAuctionBidSuite) TestIntentAuctionBid_OvertimeExtension(c *C)
 	w.keeper.SetMimir(w.ctx, constants.IntentsEnabled.String(), 1)
 	w.keeper.SetMimir(w.ctx, constants.IntentAuctionMinBidMultiplier.String(), 3)
 	w.keeper.SetMimir(w.ctx, constants.IntentAuctionOvertimeBlocks.String(), 100)
+	w.keeper.SetMimir(w.ctx, constants.IntentAuctionMaxOvertimeBlocks.String(), 500)
+	w.keeper.SetMimir(w.ctx, constants.IntentAuctionDurationBlocks.String(), 200)
 
 	currentHeight := w.ctx.BlockHeight()
 
@@ -216,7 +218,7 @@ func (HandlerIntentAuctionBidSuite) TestIntentAuctionBid_OvertimeExtension(c *C)
 		RemainingAmount: common.NewCoin(common.DOGEAsset, cosmos.NewUint(90*common.One)),
 		BidAsset:        common.DOGEAsset.GetChain().GetGasAsset(),
 		MinBid:          cosmos.NewUint(1000),
-		StartHeight:     currentHeight - 100,
+		StartHeight:     currentHeight,
 		ExpiryHeight:    auctionExpiry,
 		Status:          IntentAuctionStatus_AuctionActive,
 	}

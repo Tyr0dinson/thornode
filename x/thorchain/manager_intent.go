@@ -167,6 +167,43 @@ func (im *IntentMgr) refundLosingSolves(ctx cosmos.Context, intent types.Intent,
 	}
 }
 
+// refundUserSource refunds the user's escrowed source funds when intent execution fails
+func (im *IntentMgr) refundUserSource(ctx cosmos.Context, intent types.Intent) {
+	sourceAsset := intent.Source.Asset
+
+	moduleName := ""
+	if sourceAsset.IsRune() {
+		moduleName = AsgardName
+	}
+
+	toi := TxOutItem{
+		Chain:      sourceAsset.GetChain(),
+		ToAddress:  intent.SourceAddress,
+		Coin:       intent.Source,
+		Memo:       NewRefundMemo(intent.TxID).String(),
+		InHash:     intent.TxID,
+		ModuleName: moduleName,
+	}
+
+	ok, err := im.mgr.TxOutStore().TryAddTxOutItem(ctx, im.mgr, toi, cosmos.ZeroUint())
+	if err != nil {
+		ctx.Logger().Error("fail to refund user source on intent execution failure", "intent_txid", intent.TxID, "error", err)
+		unrefundableCoinCleanup(ctx, im.mgr, toi, "failed_intent_execution_refund")
+		return
+	}
+	if !ok {
+		ctx.Logger().Error("fail to schedule user source refund on intent execution failure", "intent_txid", intent.TxID)
+		unrefundableCoinCleanup(ctx, im.mgr, toi, "failed_intent_execution_refund")
+		return
+	}
+
+	ctx.Logger().Info("refunded user source due to intent execution failure",
+		"intent_txid", intent.TxID,
+		"amount", intent.Source.Amount,
+		"to", intent.SourceAddress,
+	)
+}
+
 // processMatches executes intents that have solve bids matching at the current height
 func (im *IntentMgr) processMatches(ctx cosmos.Context) error {
 	currentHeight := ctx.BlockHeight()
@@ -224,16 +261,25 @@ func (im *IntentMgr) processMatches(ctx cosmos.Context) error {
 		// Select best solve deterministically (must exceed by 1x gas to be "better", then earliest submit, then lowest txid)
 		winningSolve := im.selectBestSolve(ctx, intent, intentSolves)
 
-		// Execute the intent with winning solve
-		if err := im.executeIntent(ctx, intent, winningSolve); err != nil {
+		// Execute the intent with winning solve using CacheContext for atomicity.
+		// This ensures that if any step fails (fee processing, pool changes, TxOut scheduling),
+		// all state changes are rolled back, preventing partial execution where the solver
+		// gets both assets while the user gets nothing.
+		cacheCtx, commit := ctx.CacheContext()
+		if err := im.executeIntent(cacheCtx, intent, winningSolve); err != nil {
 			ctx.Logger().Error("fail to execute intent", "intent_txid", intentTxID, "solve_txid", winningSolve.SolveTxID, "error", err)
+			// CacheContext discarded - no pool/fee changes persisted
 			// Refund ALL solvers (including winner) since execution failed
 			im.refundLosingSolves(ctx, intent, common.BlankTxID, intentSolves)
+			// Refund the user's escrowed source funds
+			im.refundUserSource(ctx, intent)
 			// Mark intent as expired to prevent double-refund in processExpirations
 			intent.Status = IntentExpired
 			im.mgr.Keeper().SetIntent(ctx, intent)
 			continue
 		}
+		commit()
+		ctx.EventManager().EmitEvents(cacheCtx.EventManager().Events())
 
 		// Refund losing solves (winner excluded since execution succeeded)
 		im.refundLosingSolves(ctx, intent, winningSolve.SolveTxID, intentSolves)
