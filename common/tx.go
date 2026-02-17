@@ -42,8 +42,8 @@ func NewTxID(hash string) (TxID, error) {
 	switch len(hash) {
 	case 64:
 		// do nothing
-	case 66: // ETH check
-		if !strings.HasPrefix(hash, "0x") {
+	case 66: // ETH/Substrate 0x-prefixed check
+		if !strings.EqualFold(hash[:2], "0x") {
 			err := fmt.Errorf("txid error: must be 66 characters (got %d)", len(hash))
 			return TxID(""), err
 		}

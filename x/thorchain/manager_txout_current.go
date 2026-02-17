@@ -505,9 +505,14 @@ func (tos *TxOutStorage) DiscoverOutbounds(ctx cosmos.Context, transactionFeeAmo
 			}
 		}
 
-		// XRP wallets must keep 1 XRP (the dust threshold) in the wallet
+		// Chains with account reserve requirements (existential deposit / base reserve)
+		// must keep a minimum balance in the wallet to prevent account deletion.
+		// XRP: base reserve of 1 XRP. TAO: existential deposit enforced by transfer_keep_alive.
 		if toi.Coin.Asset.Equals(common.XRPAsset) {
 			vaultCoinAmount = common.SafeSub(vaultCoinAmount, common.XRPChain.DustThreshold())
+		}
+		if toi.Coin.Asset.Equals(common.TAOAsset) {
+			vaultCoinAmount = common.SafeSub(vaultCoinAmount, common.TAOChain.DustThreshold())
 		}
 
 		toi.VaultPubKey = vault.PubKey

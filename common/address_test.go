@@ -11,7 +11,7 @@ type AddressSuite struct{}
 var _ = Suite(&AddressSuite{})
 
 func (s *AddressSuite) TestAddress(c *C) {
-	c.Assert(AllChains, HasLen, 16)
+	c.Assert(AllChains, HasLen, 17)
 
 	c.Check(Address("").IsEmpty(), Equals, true)
 	c.Check(NoAddress.Equals(Address("")), Equals, true)
@@ -277,6 +277,13 @@ func (s *AddressSuite) TestAddress(c *C) {
 			Address: "0x3619ed62358db1c24fc0a180c6e2959cc79e22646c7cf3cb7ffa9cdeb0ab7698",
 			Chain:   SUIChain,
 			Network: CurrentChainNetwork,
+		},
+		// - TAO ---
+		{
+			Address: "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY",
+			Chain:   TAOChain,
+			Network: CurrentChainNetwork,
+			Info:    "SS58 address (Alice dev account)",
 		},
 	}
 

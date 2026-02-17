@@ -32,6 +32,7 @@ const (
 	ZECChain   = Chain("ZEC")
 	POLChain   = Chain("POL")
 	SUIChain   = Chain("SUI")
+	TAOChain   = Chain("TAO")
 
 	SigningAlgoSecp256k1 = SigningAlgo("secp256k1")
 	SigningAlgoEd25519   = SigningAlgo("ed25519")
@@ -54,6 +55,7 @@ var AllChains = [...]Chain{
 	SOLChain,
 	ZECChain,
 	POLChain,
+	TAOChain,
 }
 
 type SigningAlgo string
@@ -152,7 +154,7 @@ func (c Chain) String() string {
 // GetSigningAlgo get the signing algorithm for the given chain
 func (c Chain) GetSigningAlgo() SigningAlgo {
 	switch c {
-	case SOLChain, SUIChain:
+	case SOLChain, SUIChain, TAOChain:
 		return SigningAlgoEd25519
 	default:
 		return SigningAlgoSecp256k1
@@ -191,6 +193,8 @@ func (c Chain) GetGasAsset() Asset {
 		return XRPAsset
 	case SOLChain:
 		return SOLAsset
+	case TAOChain:
+		return TAOAsset
 	case ZECChain:
 		return ZECAsset
 	case POLChain:
@@ -229,6 +233,8 @@ func (c Chain) GetGasUnits() (gasRateUnits string, gasRateUnitsPerOne cosmos.Uin
 		return "lamport", cosmos.NewUint(1e9)
 	case SUIChain:
 		return "mist", cosmos.NewUint(1e9)
+	case TAOChain:
+		return "rao", cosmos.NewUint(1e9)
 	default:
 		return "", cosmos.OneUint() // Avoid any divide-by-zero.
 	}
@@ -255,7 +261,7 @@ func (c Chain) GetGasAssetDecimal() int64 {
 		return 6
 	case XRPChain:
 		return 6
-	case SOLChain, SUIChain:
+	case SOLChain, SUIChain, TAOChain:
 		return 9
 	default:
 		return cosmos.DefaultCoinDecimals
@@ -274,6 +280,9 @@ func (c Chain) IsValidAddress(addr Address) bool {
 func (c Chain) AddressPrefix(cn ChainNetwork) string {
 	if c.IsEVM() {
 		return "0x"
+	}
+	if c.Equals(TAOChain) {
+		return "5" // SS58 prefix 42 addresses start with "5"
 	}
 	switch cn {
 	case MockNet:
@@ -353,6 +362,8 @@ func (c Chain) DustThreshold() cosmos.Uint {
 		return cosmos.NewUint(One) // 1 XRP
 	case SOLChain:
 		return cosmos.NewUint(100_000) // 0.001 SOL
+	case TAOChain:
+		return cosmos.NewUint(100_000) // 0.001 TAO
 	case TRONChain:
 		return cosmos.NewUint(10_000_000)
 	case SUIChain:
@@ -449,6 +460,8 @@ func (c Chain) ApproximateBlockMilliseconds() int64 {
 		return 1_500
 	case SOLChain:
 		return 400
+	case TAOChain:
+		return 12_000
 	case ZECChain:
 		return 75_000
 	case POLChain:
@@ -472,6 +485,8 @@ func (c Chain) InboundNotes() string {
 		return "Broadcast a MsgDeposit to the THORChain network with the appropriate memo. Do not use multi-in, multi-out transactions."
 	case XRPChain:
 		return "Transfer the inbound_address the asset with the memo. Only a single memo is supported and only MemoData is used."
+	case TAOChain:
+		return "Transfer TAO to the inbound_address using Balances::transfer_keep_alive or transfer_allow_death. Include the memo as a System.remark call in a batch_all extrinsic. Do not use transfer_all."
 	default:
 		return ""
 	}

@@ -168,6 +168,7 @@ services:
       - dogecoin
       - gaia
       - litecoin
+      - bittensor
       - tron-supernode
       - tron-fullnode
       - thornode
@@ -206,6 +207,7 @@ services:
       BIFROST_CHAINS_LTC_BLOCK_SCANNER_OBSERVATION_FLEXIBILITY_BLOCKS: "5"
       BIFROST_CHAINS_BASE_BLOCK_SCANNER_OBSERVATION_FLEXIBILITY_BLOCKS: "5"
       BIFROST_CHAINS_XRP_BLOCK_SCANNER_OBSERVATION_FLEXIBILITY_BLOCKS: "5"
+      BIFROST_CHAINS_TAO_BLOCK_SCANNER_OBSERVATION_FLEXIBILITY_BLOCKS: "5"
 
       # maintain historical gas behavior for hard-coded smoke test values
       BIFROST_CHAINS_ETH_BLOCK_SCANNER_MAX_GAS_LIMIT: 80000
@@ -274,6 +276,10 @@ services:
 
       # disable sui
       BIFROST_CHAINS_SUI_DISABLED: "true"
+
+      # enable bittensor
+      BIFROST_CHAINS_TAO_DISABLED: "${BIFROST_CHAINS_TAO_DISABLED:-false}"
+      BIFROST_CHAINS_TAO_RPC_HOST: ${TAO_HOST:-http://bittensor:9944}
 
       # set fixed gas rate for evm chains
       BIFROST_CHAINS_ETH_BLOCK_SCANNER_FIXED_GAS_RATE: 20_000_000_000 # 20 gwei
@@ -767,6 +773,40 @@ services:
       --http.vhosts="*"
       --nodiscover 
       --miner.etherbase=0x8db97C7cEcE249c2b98bDC0226Cc4C2A57BF52FC
+
+  # ------------------------------ bittensor ------------------------------
+
+  bittensor:
+    profiles:
+      - mocknet
+      - mocknet-cluster
+    restart: unless-stopped
+    build:
+      context: ./mocknet/bittensor
+    ports:
+      - 9944:9944
+    environment:
+      TAO_MASTER_ADDR: "${TAO_MASTER_ADDR:-5F99wvx3Rn1dJs7AYWxbgtJq43p9dEW6VVcLmxFTKfEDmArz}"
+      TAO_MASTER_AMOUNT: "${TAO_MASTER_AMOUNT:-1000000000000000}" # 1M TAO in rao
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "-sf",
+          "-X",
+          "POST",
+          "-H",
+          "Content-Type: application/json",
+          "-d",
+          '{"jsonrpc":"2.0","id":1,"method":"system_health","params":[]}',
+          "http://localhost:9944",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    platform: linux/amd64
 
   # ------------------------------ zcash ------------------------------
 

@@ -20,15 +20,20 @@ func (s *VaultSuiteV2) TestVaultV2(c *C) {
 	poolPkEddsa, err := common.NewPubKey("tthorpub1zcjduepqnd6pdwxvzu35dh60d256sewc5xczlxa35jrzq4uyd95x5476afrs9lzd5u")
 
 	c.Check(err, IsNil)
-	vault = NewVaultV2(12, VaultStatus_ActiveVault, VaultType_AsgardVault, poolPk, common.Chains{common.ETHChain, common.SOLChain}.Strings(), []ChainContract{}, poolPkEddsa)
+	vault = NewVaultV2(12, VaultStatus_ActiveVault, VaultType_AsgardVault, poolPk, common.Chains{common.ETHChain, common.SOLChain, common.TAOChain}.Strings(), []ChainContract{}, poolPkEddsa)
 
 	// Test getting ECDSA Address
 	ethAddr, err := vault.GetAddress(common.ETHChain)
 	c.Check(err, IsNil)
 	c.Check(ethAddr.String(), Equals, "0x39da14bfdcfb127766bdbe0c335ef1bb8bce77a2")
 
-	// Test Getting EdDSA Address
+	// Test Getting EdDSA Address (SOL)
 	solAddr, err := vault.GetAddress(common.SOLChain)
 	c.Check(err, IsNil)
 	c.Check(solAddr.String(), Equals, "BTps2v7MvutCD9CEQhETk2ArNgyaaoRpn4SpVvb4dZGJ")
+
+	// Test Getting EdDSA Address (TAO — SS58 with prefix 42)
+	taoAddr, err := vault.GetAddress(common.TAOChain)
+	c.Check(err, IsNil)
+	c.Check(taoAddr.String(), Equals, "5FaXmKDojV4S9CrFqcQh4LF9yEGWeFq58wP6rVdtUrMStdgK")
 }

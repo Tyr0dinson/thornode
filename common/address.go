@@ -20,6 +20,7 @@ import (
 	"github.com/ltcsuite/ltcutil"
 	"github.com/mr-tron/base58"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zecutil"
+	"gitlab.com/thorchain/thornode/v3/common/crypto/ss58"
 
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
@@ -80,6 +81,11 @@ func NewAddress(address string) (Address, error) {
 		return Address(address), nil
 	}
 
+	// Check is tao address (SS58 with prefix 42)
+	if IsValidTAOAddress(address) {
+		return Address(address), nil
+	}
+
 	// Network-specific (with build tags) address checking.
 	return newAddress(address)
 }
@@ -111,6 +117,14 @@ func IsValidSOLAddress(address string) bool {
 	}
 
 	return len(decoded) == 32
+}
+
+func IsValidTAOAddress(address string) bool {
+	prefix, _, err := ss58.Decode(address)
+	if err != nil {
+		return false
+	}
+	return prefix == ss58.PrefixTAO
 }
 
 func IsValidZECAddress(address string) bool {
@@ -299,6 +313,8 @@ func (addr Address) IsChain(chain Chain) bool {
 		return false
 	case SOLChain:
 		return IsValidSOLAddress(addr.String())
+	case TAOChain:
+		return IsValidTAOAddress(addr.String())
 	case ZECChain:
 		return IsValidZECAddress(addr.String())
 	case SUIChain:
@@ -311,7 +327,7 @@ func (addr Address) IsChain(chain Chain) bool {
 // Note that this will always return ETHChain for an AVAXChain address,
 // so perhaps only use it when determining a network (e.g. mainnet/testnet).
 func (addr Address) GetChain() Chain {
-	for _, chain := range []Chain{ETHChain, THORChain, BTCChain, LTCChain, BCHChain, DOGEChain, GAIAChain, AVAXChain, XRPChain, ZECChain} {
+	for _, chain := range []Chain{ETHChain, THORChain, BTCChain, LTCChain, BCHChain, DOGEChain, GAIAChain, AVAXChain, XRPChain, ZECChain, TAOChain} {
 		if addr.IsChain(chain) {
 			return chain
 		}
@@ -420,7 +436,7 @@ func (addr Address) GetNetwork(chain Chain) ChainNetwork {
 		if err == nil {
 			return MockNet
 		}
-	case SOLChain, SUIChain:
+	case SOLChain, SUIChain, TAOChain:
 		return currentNetwork
 	case ZECChain:
 		// Determine network based on address prefix

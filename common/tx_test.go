@@ -38,6 +38,11 @@ func (s TxSuite) TestTxID(c *C) {
 			IsValid: true,
 			ToUpper: true,
 		}, {
+			// EVM/Substrate uppercased 0X (re-parsed from state)
+			Id:      "0X14A17D8B6BD66E23F64DCFBEDD6E2249AD9F25DDA9E2645EB0D1E9FA552BC35D",
+			IsValid: true,
+			ToUpper: true,
+		}, {
 			// Bogus
 			Id:      "bogus",
 			IsValid: false,

@@ -79,6 +79,7 @@ func (vm *NetworkMgr) processGenesisSetup(ctx cosmos.Context) error {
 			common.SOLChain,
 			common.POLChain,
 			common.ZECChain,
+			common.TAOChain,
 		}
 		pubSet := active[0].PubKeySet
 		vault := NewVaultV2(0, ActiveVault, AsgardVault, pubSet.Secp256k1, supportChains.Strings(), vm.k.GetChainContracts(ctx, supportChains), pubSet.Ed25519)
@@ -720,7 +721,7 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 							continue
 						}
 
-						if chain.Equals(common.XRPChain) || chain.Equals(common.SOLChain) {
+						if chain.Equals(common.XRPChain) || chain.Equals(common.SOLChain) || chain.Equals(common.TAOChain) {
 							ctx.Logger().Info("left coin is account reserve, thus burn it", "coin", coin, "gas", gasAmount)
 						} else {
 							ctx.Logger().Info("left coin is not enough to pay for gas, thus burn it", "coin", coin, "gas", gasAmount)
@@ -756,7 +757,7 @@ func (vm *NetworkMgr) migrateFunds(ctx cosmos.Context, mgr Manager) error {
 
 					// on the final migration round(s), deduct amt by 1 XRP (1e8) so that we don't try to transfer any of the account reserve
 					// the account reserve balance will be burned on the next migration round
-					if nth >= migrationRounds && (chain.Equals(common.XRPChain) || chain.Equals(common.SOLChain)) {
+					if nth >= migrationRounds && (chain.Equals(common.XRPChain) || chain.Equals(common.SOLChain) || chain.Equals(common.TAOChain)) {
 						if amt.GT(dustThreshold) {
 							amt = common.SafeSub(amt, dustThreshold)
 						} else {

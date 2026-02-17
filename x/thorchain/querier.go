@@ -217,7 +217,7 @@ func getVaultChainAddresses(ctx cosmos.Context, vault Vault) []*types.VaultAddre
 	var result []*types.VaultAddress
 	allChains := append(vault.GetChains(), common.THORChain)
 	for _, c := range allChains.Distinct() {
-		if vault.PubKeyEddsa.IsEmpty() && c.GetSigningAlgo() != common.SigningAlgoEd25519 {
+		if vault.PubKeyEddsa.IsEmpty() && c.GetSigningAlgo() == common.SigningAlgoEd25519 {
 			// this is an eddsa chain, but the vault doesn't have an eddsa pubkey, skip.
 			continue
 		}

@@ -21,6 +21,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/test/simulation/actors/core"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/actors/features"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/actors/suites"
+	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/bittensor"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/cli"
 	pkgcosmos "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/cosmos"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/dag"
@@ -56,6 +57,7 @@ var liteClientConstructors = map[common.Chain]LiteChainClientConstructor{
 	common.SOLChain:   solana.NewConstructor(chainRPCs[common.SOLChain]),
 	common.POLChain:   evm.NewConstructor(chainRPCs[common.POLChain]),
 	common.ZECChain:   utxo.NewConstructor(chainRPCs[common.ZECChain]),
+	common.TAOChain:   bittensor.NewConstructor(chainRPCs[common.TAOChain]),
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////

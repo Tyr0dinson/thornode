@@ -80,4 +80,17 @@ func (s ChainSuite) TestChain(c *C) {
 	c.Assert(tronGasUnits, Equals, "sun")
 	c.Assert(TRONChain.GetGasAssetDecimal(), Equals, int64(6))
 	c.Assert(TRONChain.ApproximateBlockMilliseconds(), Equals, int64(3000))
+
+	// TAO chain tests
+	c.Assert(TAOChain.GetGasAsset(), Equals, TAOAsset)
+	c.Assert(TAOChain.GetSigningAlgo(), Equals, SigningAlgoEd25519)
+	c.Assert(TAOChain.AddressPrefix(MockNet), Equals, "5")
+	c.Assert(TAOChain.AddressPrefix(MainNet), Equals, "5")
+	taoGasUnits, taoGasPerOne := TAOChain.GetGasUnits()
+	c.Assert(taoGasUnits, Equals, "rao")
+	c.Assert(taoGasPerOne.Uint64(), Equals, uint64(1e9))
+	c.Assert(TAOChain.GetGasAssetDecimal(), Equals, int64(9))
+	c.Assert(TAOChain.ApproximateBlockMilliseconds(), Equals, int64(12000))
+	c.Assert(TAOChain.DustThreshold().Uint64(), Equals, uint64(100_000))
+	c.Assert(TAOChain.InboundNotes(), Not(Equals), "")
 }
