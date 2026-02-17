@@ -41,46 +41,15 @@ func (k KVStore) SetIntent(ctx cosmos.Context, intent types.Intent) {
 	// Save the intent
 	k.setIntent(ctx, k.GetKey(prefixIntent, intent.TxID.String()), intent)
 
-	// Manage active status index - this is a single key storing all active intent TxIDs
+	// Manage active status index using prefix keys (O(1) add/remove)
 	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
-	activeIndexKey := k.GetKey(prefixIntentStatusIndex, "")
-
-	// Load current active intent index
-	var activeIndex types.ActiveIntentIndex
-	if store.Has(activeIndexKey) {
-		bz := store.Get(activeIndexKey)
-		if err := k.cdc.Unmarshal(bz, &activeIndex); err != nil {
-			ctx.Logger().Error("failed to unmarshal active intent index", "error", err)
-			activeIndex = types.ActiveIntentIndex{}
-		}
-	}
+	activeKey := k.GetKey(prefixIntentStatusIndex, intent.TxID.String())
 
 	if intent.Status == types.IntentStatus_IntentActive {
-		// Add to active index if not already present
-		found := false
-		for _, txID := range activeIndex.ActiveIntentTxIDs {
-			if txID.Equals(intent.TxID) {
-				found = true
-				break
-			}
-		}
-		if !found {
-			activeIndex.ActiveIntentTxIDs = append(activeIndex.ActiveIntentTxIDs, intent.TxID)
-		}
+		store.Set(activeKey, []byte{1})
 	} else {
-		// Remove from active index if present
-		newList := make([]common.TxID, 0, len(activeIndex.ActiveIntentTxIDs))
-		for _, txID := range activeIndex.ActiveIntentTxIDs {
-			if !txID.Equals(intent.TxID) {
-				newList = append(newList, txID)
-			}
-		}
-		activeIndex.ActiveIntentTxIDs = newList
+		store.Delete(activeKey)
 	}
-
-	// Save updated index
-	buf := k.cdc.MustMarshal(&activeIndex)
-	store.Set(activeIndexKey, buf)
 }
 
 // GetIntent retrieves an intent from the KV store
@@ -101,32 +70,8 @@ func (k KVStore) RemoveIntent(ctx cosmos.Context, txID common.TxID) {
 	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 	store.Delete(k.GetKey(prefixIntent, txID.String()))
 
-	// Remove from active intent index
-	activeIndexKey := k.GetKey(prefixIntentStatusIndex, "")
-	if !store.Has(activeIndexKey) {
-		return
-	}
-
-	// Load current active intent index
-	var activeIndex types.ActiveIntentIndex
-	bz := store.Get(activeIndexKey)
-	if err := k.cdc.Unmarshal(bz, &activeIndex); err != nil {
-		ctx.Logger().Error("failed to unmarshal active intent index", "error", err)
-		return
-	}
-
-	// Remove the TxID from the list
-	newList := make([]common.TxID, 0, len(activeIndex.ActiveIntentTxIDs))
-	for _, id := range activeIndex.ActiveIntentTxIDs {
-		if !id.Equals(txID) {
-			newList = append(newList, id)
-		}
-	}
-	activeIndex.ActiveIntentTxIDs = newList
-
-	// Save updated index
-	buf := k.cdc.MustMarshal(&activeIndex)
-	store.Set(activeIndexKey, buf)
+	// Remove from active intent index (O(1) with prefix keys)
+	store.Delete(k.GetKey(prefixIntentStatusIndex, txID.String()))
 }
 
 // GetIntentIterator returns an iterator for all intents
@@ -135,26 +80,22 @@ func (k KVStore) GetIntentIterator(ctx cosmos.Context) cosmos.Iterator {
 	return k.getIterator(ctx, kvTypes.DbPrefix(key))
 }
 
-// GetActiveIntents retrieves all active intents from the active status index
+// GetActiveIntents retrieves all active intents using prefix key iteration
 func (k KVStore) GetActiveIntents(ctx cosmos.Context) ([]types.Intent, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
-	activeIndexKey := k.GetKey(prefixIntentStatusIndex, "")
+	key := k.GetKey(prefixIntentStatusIndex, "")
+	iter := k.getIterator(ctx, kvTypes.DbPrefix(key))
+	defer iter.Close()
 
-	// If the index doesn't exist, return empty list
-	if !store.Has(activeIndexKey) {
-		return []types.Intent{}, nil
-	}
+	var intents []types.Intent
+	for ; iter.Valid(); iter.Next() {
+		// Extract the TxID from the key
+		keyStr := string(iter.Key())
+		parts := splitKey(keyStr)
+		if len(parts) == 0 {
+			continue
+		}
+		txID := common.TxID(parts[len(parts)-1])
 
-	// Load and unmarshal the active intent index
-	var activeIndex types.ActiveIntentIndex
-	bz := store.Get(activeIndexKey)
-	if err := k.cdc.Unmarshal(bz, &activeIndex); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal active intent index: %w", err)
-	}
-
-	// Fetch all intents from the index
-	intents := make([]types.Intent, 0, len(activeIndex.ActiveIntentTxIDs))
-	for _, txID := range activeIndex.ActiveIntentTxIDs {
 		intent, err := k.GetIntent(ctx, txID)
 		if err != nil {
 			ctx.Logger().Error("failed to get intent from active index", "txid", txID, "error", err)
@@ -170,55 +111,41 @@ func (k KVStore) GetActiveIntents(ctx cosmos.Context) ([]types.Intent, error) {
 // This should be called from EndBlock to ensure deterministic cleanup.
 func (k KVStore) CleanupStaleActiveIntents(ctx cosmos.Context) {
 	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
-	activeIndexKey := k.GetKey(prefixIntentStatusIndex, "")
+	key := k.GetKey(prefixIntentStatusIndex, "")
+	iter := k.getIterator(ctx, kvTypes.DbPrefix(key))
+	defer iter.Close()
 
-	// If the index doesn't exist, nothing to clean up
-	if !store.Has(activeIndexKey) {
-		return
-	}
+	var staleKeys [][]byte
+	for ; iter.Valid(); iter.Next() {
+		keyStr := string(iter.Key())
+		parts := splitKey(keyStr)
+		if len(parts) == 0 {
+			continue
+		}
+		txID := common.TxID(parts[len(parts)-1])
 
-	// Load and unmarshal the active intent index
-	var activeIndex types.ActiveIntentIndex
-	bz := store.Get(activeIndexKey)
-	if err := k.cdc.Unmarshal(bz, &activeIndex); err != nil {
-		ctx.Logger().Error("failed to unmarshal active intent index for cleanup", "error", err)
-		return
-	}
-
-	// Verify each intent is actually active and filter out stale entries
-	verifiedActiveTxIDs := make([]common.TxID, 0, len(activeIndex.ActiveIntentTxIDs))
-	staleEntries := false
-
-	for _, txID := range activeIndex.ActiveIntentTxIDs {
-		// Check existence first - non-existent intents have zero-value status (IntentActive=0)
+		// Check existence first
 		if !k.IntentExists(ctx, txID) {
 			ctx.Logger().Warn("removing non-existent entry from active intent index", "txid", txID)
-			staleEntries = true
+			staleKeys = append(staleKeys, iter.Key())
 			continue
 		}
 
 		intent, err := k.GetIntent(ctx, txID)
 		if err != nil {
 			ctx.Logger().Error("failed to get intent from active index", "txid", txID, "error", err)
-			staleEntries = true
+			staleKeys = append(staleKeys, iter.Key())
 			continue
 		}
 
-		// Only keep intents that are truly active
-		if intent.Status == types.IntentStatus_IntentActive {
-			verifiedActiveTxIDs = append(verifiedActiveTxIDs, txID)
-		} else {
+		if intent.Status != types.IntentStatus_IntentActive {
 			ctx.Logger().Warn("removing stale entry from active intent index", "txid", txID, "status", intent.Status.String())
-			staleEntries = true
+			staleKeys = append(staleKeys, iter.Key())
 		}
 	}
 
-	// Update the index if any stale entries were found
-	if staleEntries {
-		ctx.Logger().Info("cleaned up stale entries from active intent index", "original_count", len(activeIndex.ActiveIntentTxIDs), "verified_count", len(verifiedActiveTxIDs))
-		activeIndex.ActiveIntentTxIDs = verifiedActiveTxIDs
-		buf := k.cdc.MustMarshal(&activeIndex)
-		store.Set(activeIndexKey, buf)
+	for _, staleKey := range staleKeys {
+		store.Delete(staleKey)
 	}
 }
 
@@ -254,30 +181,9 @@ func (k KVStore) SetIntentSolve(ctx cosmos.Context, solve types.IntentSolve) {
 
 	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 
-	// Index by intent ID - use IntentSolveIndex with list of solve TxIDs
-	intentIndexKey := k.GetKey(prefixIntentSolveByIntent, solve.IntentTxID.String())
-	var index types.IntentSolveIndex
-	if store.Has(intentIndexKey) {
-		bz := store.Get(intentIndexKey)
-		if err := k.cdc.Unmarshal(bz, &index); err != nil {
-			ctx.Logger().Error("failed to unmarshal intent solve index", "error", err)
-			index = types.IntentSolveIndex{}
-		}
-	}
-
-	// Add solve TxID if not already in the index
-	found := false
-	for _, txID := range index.SolveTxIDs {
-		if txID.Equals(solve.SolveTxID) {
-			found = true
-			break
-		}
-	}
-	if !found {
-		index.SolveTxIDs = append(index.SolveTxIDs, solve.SolveTxID)
-		buf := k.cdc.MustMarshal(&index)
-		store.Set(intentIndexKey, buf)
-	}
+	// Index by intent ID using prefix keys (O(1) add)
+	intentIndexKey := k.GetKey(prefixIntentSolveByIntent, solve.IntentTxID.String(), "/"+solve.SolveTxID.String())
+	store.Set(intentIndexKey, []byte{1})
 
 	// Index by match height
 	heightStr := strconv.FormatInt(solve.MatchHeight, 10)
@@ -316,59 +222,31 @@ func (k KVStore) RemoveIntentSolve(ctx cosmos.Context, solveTxID common.TxID) {
 	// Remove main record
 	store.Delete(k.GetKey(prefixIntentSolve, solveTxID.String()))
 
-	// Update intent index - remove solve TxID from the list
-	intentIndexKey := k.GetKey(prefixIntentSolveByIntent, solve.IntentTxID.String())
-	if store.Has(intentIndexKey) {
-		var index types.IntentSolveIndex
-		bz := store.Get(intentIndexKey)
-		if err := k.cdc.Unmarshal(bz, &index); err != nil {
-			ctx.Logger().Error("failed to unmarshal intent solve index", "error", err)
-		} else {
-			// Remove solve TxID from the list
-			newList := make([]common.TxID, 0, len(index.SolveTxIDs))
-			for _, txID := range index.SolveTxIDs {
-				if !txID.Equals(solveTxID) {
-					newList = append(newList, txID)
-				}
-			}
-			index.SolveTxIDs = newList
-
-			// If list is empty, delete the index; otherwise update it
-			if len(index.SolveTxIDs) == 0 {
-				store.Delete(intentIndexKey)
-			} else {
-				buf := k.cdc.MustMarshal(&index)
-				store.Set(intentIndexKey, buf)
-			}
-		}
-	}
+	// Remove from intent index (O(1) with prefix keys)
+	intentIndexKey := k.GetKey(prefixIntentSolveByIntent, solve.IntentTxID.String(), "/"+solveTxID.String())
+	store.Delete(intentIndexKey)
 
 	// Remove match height index
 	heightStr := strconv.FormatInt(solve.MatchHeight, 10)
-	matchHeightIndexKey := k.GetKey(prefixIntentSolveByMatchHeight, heightStr, "/"+solve.SolveTxID.String())
+	matchHeightIndexKey := k.GetKey(prefixIntentSolveByMatchHeight, heightStr, "/"+solveTxID.String())
 	store.Delete(matchHeightIndexKey)
 }
 
-// GetIntentSolvesByIntentID retrieves all solve bids for a specific intent
+// GetIntentSolvesByIntentID retrieves all solve bids for a specific intent using prefix key iteration
 func (k KVStore) GetIntentSolvesByIntentID(ctx cosmos.Context, intentTxID common.TxID) ([]types.IntentSolve, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
-	intentIndexKey := k.GetKey(prefixIntentSolveByIntent, intentTxID.String())
+	key := k.GetKey(prefixIntentSolveByIntent, intentTxID.String(), "")
+	iter := k.getIterator(ctx, kvTypes.DbPrefix(key))
+	defer iter.Close()
 
-	// If the index doesn't exist, return empty list
-	if !store.Has(intentIndexKey) {
-		return []types.IntentSolve{}, nil
-	}
+	var solves []types.IntentSolve
+	for ; iter.Valid(); iter.Next() {
+		keyStr := string(iter.Key())
+		parts := splitKey(keyStr)
+		if len(parts) < 2 {
+			continue
+		}
+		solveTxID := common.TxID(parts[len(parts)-1])
 
-	// Load and unmarshal the intent solve index
-	var index types.IntentSolveIndex
-	bz := store.Get(intentIndexKey)
-	if err := k.cdc.Unmarshal(bz, &index); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal intent solve index: %w", err)
-	}
-
-	// Fetch all solve records
-	solves := make([]types.IntentSolve, 0, len(index.SolveTxIDs))
-	for _, solveTxID := range index.SolveTxIDs {
 		solve, err := k.GetIntentSolve(ctx, solveTxID)
 		if err != nil {
 			ctx.Logger().Error("failed to get intent solve", "txid", solveTxID, "error", err)

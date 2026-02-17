@@ -6,6 +6,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/runtime"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	kvTypes "gitlab.com/thorchain/thornode/v3/x/thorchain/keeper/types"
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
@@ -35,46 +36,15 @@ func (k KVStore) SetIntentAuction(ctx cosmos.Context, auction types.IntentAuctio
 	// Save the auction
 	k.setIntentAuction(ctx, k.GetKey(prefixIntentAuction, auction.IntentTxID.String()), auction)
 
-	// Manage active auction index - this is a single key storing all active auction intent TxIDs
+	// Manage active auction index using prefix keys (O(1) add/remove)
 	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
-	activeIndexKey := k.GetKey(prefixActiveAuctionIndex, "")
-
-	// Load current active auction index
-	var activeIndex types.ActiveAuctionIndex
-	if store.Has(activeIndexKey) {
-		bz := store.Get(activeIndexKey)
-		if err := k.cdc.Unmarshal(bz, &activeIndex); err != nil {
-			ctx.Logger().Error("failed to unmarshal active auction index", "error", err)
-			activeIndex = types.ActiveAuctionIndex{}
-		}
-	}
+	activeKey := k.GetKey(prefixActiveAuctionIndex, auction.IntentTxID.String())
 
 	if auction.Status == types.IntentAuctionStatus_AuctionActive {
-		// Add to active index if not already present
-		found := false
-		for _, txID := range activeIndex.ActiveAuctionTxIDs {
-			if txID.Equals(auction.IntentTxID) {
-				found = true
-				break
-			}
-		}
-		if !found {
-			activeIndex.ActiveAuctionTxIDs = append(activeIndex.ActiveAuctionTxIDs, auction.IntentTxID)
-		}
+		store.Set(activeKey, []byte{1})
 	} else {
-		// Remove from active index if present
-		newList := make([]common.TxID, 0, len(activeIndex.ActiveAuctionTxIDs))
-		for _, txID := range activeIndex.ActiveAuctionTxIDs {
-			if !txID.Equals(auction.IntentTxID) {
-				newList = append(newList, txID)
-			}
-		}
-		activeIndex.ActiveAuctionTxIDs = newList
+		store.Delete(activeKey)
 	}
-
-	// Save updated index
-	buf := k.cdc.MustMarshal(&activeIndex)
-	store.Set(activeIndexKey, buf)
 }
 
 // GetIntentAuction retrieves an intent auction from the KV store
@@ -95,54 +65,25 @@ func (k KVStore) RemoveIntentAuction(ctx cosmos.Context, intentTxID common.TxID)
 	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 	store.Delete(k.GetKey(prefixIntentAuction, intentTxID.String()))
 
-	// Remove from active auction index
-	activeIndexKey := k.GetKey(prefixActiveAuctionIndex, "")
-	if !store.Has(activeIndexKey) {
-		return
-	}
-
-	// Load current active auction index
-	var activeIndex types.ActiveAuctionIndex
-	bz := store.Get(activeIndexKey)
-	if err := k.cdc.Unmarshal(bz, &activeIndex); err != nil {
-		ctx.Logger().Error("failed to unmarshal active auction index", "error", err)
-		return
-	}
-
-	// Remove the TxID from the list
-	newList := make([]common.TxID, 0, len(activeIndex.ActiveAuctionTxIDs))
-	for _, id := range activeIndex.ActiveAuctionTxIDs {
-		if !id.Equals(intentTxID) {
-			newList = append(newList, id)
-		}
-	}
-	activeIndex.ActiveAuctionTxIDs = newList
-
-	// Save updated index
-	buf := k.cdc.MustMarshal(&activeIndex)
-	store.Set(activeIndexKey, buf)
+	// Remove from active auction index (O(1) with prefix keys)
+	store.Delete(k.GetKey(prefixActiveAuctionIndex, intentTxID.String()))
 }
 
-// GetActiveAuctions retrieves all active intent auctions from the active status index
+// GetActiveAuctions retrieves all active intent auctions using prefix key iteration
 func (k KVStore) GetActiveAuctions(ctx cosmos.Context) ([]types.IntentAuction, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
-	activeIndexKey := k.GetKey(prefixActiveAuctionIndex, "")
+	key := k.GetKey(prefixActiveAuctionIndex, "")
+	iter := k.getIterator(ctx, kvTypes.DbPrefix(key))
+	defer iter.Close()
 
-	// If the index doesn't exist, return empty list
-	if !store.Has(activeIndexKey) {
-		return []types.IntentAuction{}, nil
-	}
+	var auctions []types.IntentAuction
+	for ; iter.Valid(); iter.Next() {
+		keyStr := string(iter.Key())
+		parts := splitKey(keyStr)
+		if len(parts) == 0 {
+			continue
+		}
+		txID := common.TxID(parts[len(parts)-1])
 
-	// Load and unmarshal the active auction index
-	var activeIndex types.ActiveAuctionIndex
-	bz := store.Get(activeIndexKey)
-	if err := k.cdc.Unmarshal(bz, &activeIndex); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal active auction index: %w", err)
-	}
-
-	// Fetch all auctions from the index
-	auctions := make([]types.IntentAuction, 0, len(activeIndex.ActiveAuctionTxIDs))
-	for _, txID := range activeIndex.ActiveAuctionTxIDs {
 		auction, err := k.GetIntentAuction(ctx, txID)
 		if err != nil {
 			ctx.Logger().Error("failed to get auction from active index", "txid", txID, "error", err)
@@ -158,55 +99,40 @@ func (k KVStore) GetActiveAuctions(ctx cosmos.Context) ([]types.IntentAuction, e
 // This should be called from EndBlock to ensure deterministic cleanup.
 func (k KVStore) CleanupStaleActiveAuctions(ctx cosmos.Context) {
 	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
-	activeIndexKey := k.GetKey(prefixActiveAuctionIndex, "")
+	key := k.GetKey(prefixActiveAuctionIndex, "")
+	iter := k.getIterator(ctx, kvTypes.DbPrefix(key))
+	defer iter.Close()
 
-	// If the index doesn't exist, nothing to clean up
-	if !store.Has(activeIndexKey) {
-		return
-	}
+	var staleKeys [][]byte
+	for ; iter.Valid(); iter.Next() {
+		keyStr := string(iter.Key())
+		parts := splitKey(keyStr)
+		if len(parts) == 0 {
+			continue
+		}
+		txID := common.TxID(parts[len(parts)-1])
 
-	// Load and unmarshal the active auction index
-	var activeIndex types.ActiveAuctionIndex
-	bz := store.Get(activeIndexKey)
-	if err := k.cdc.Unmarshal(bz, &activeIndex); err != nil {
-		ctx.Logger().Error("failed to unmarshal active auction index for cleanup", "error", err)
-		return
-	}
-
-	// Verify each auction is actually active and filter out stale entries
-	verifiedActiveTxIDs := make([]common.TxID, 0, len(activeIndex.ActiveAuctionTxIDs))
-	staleEntries := false
-
-	for _, txID := range activeIndex.ActiveAuctionTxIDs {
-		// Check existence first - non-existent auctions have zero-value status (AuctionActive=0)
 		if !k.IntentAuctionExists(ctx, txID) {
 			ctx.Logger().Warn("removing non-existent entry from active auction index", "txid", txID)
-			staleEntries = true
+			staleKeys = append(staleKeys, iter.Key())
 			continue
 		}
 
 		auction, err := k.GetIntentAuction(ctx, txID)
 		if err != nil {
 			ctx.Logger().Error("failed to get auction from active index", "txid", txID, "error", err)
-			staleEntries = true
+			staleKeys = append(staleKeys, iter.Key())
 			continue
 		}
 
-		// Only keep auctions that are truly active
-		if auction.Status == types.IntentAuctionStatus_AuctionActive {
-			verifiedActiveTxIDs = append(verifiedActiveTxIDs, txID)
-		} else {
+		if auction.Status != types.IntentAuctionStatus_AuctionActive {
 			ctx.Logger().Warn("removing stale entry from active auction index", "txid", txID, "status", auction.Status.String())
-			staleEntries = true
+			staleKeys = append(staleKeys, iter.Key())
 		}
 	}
 
-	// Update the index if any stale entries were found
-	if staleEntries {
-		ctx.Logger().Info("cleaned up stale entries from active auction index", "original_count", len(activeIndex.ActiveAuctionTxIDs), "verified_count", len(verifiedActiveTxIDs))
-		activeIndex.ActiveAuctionTxIDs = verifiedActiveTxIDs
-		buf := k.cdc.MustMarshal(&activeIndex)
-		store.Set(activeIndexKey, buf)
+	for _, staleKey := range staleKeys {
+		store.Delete(staleKey)
 	}
 }
 
@@ -238,30 +164,9 @@ func (k KVStore) SetIntentAuctionBid(ctx cosmos.Context, bid types.IntentAuction
 
 	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 
-	// Index by auction (intent) ID - use IntentAuctionBidIndex with list of bid TxIDs
-	auctionIndexKey := k.GetKey(prefixIntentAuctionBidByAuction, bid.IntentTxID.String())
-	var index types.IntentAuctionBidIndex
-	if store.Has(auctionIndexKey) {
-		bz := store.Get(auctionIndexKey)
-		if err := k.cdc.Unmarshal(bz, &index); err != nil {
-			ctx.Logger().Error("failed to unmarshal intent auction bid index", "error", err)
-			index = types.IntentAuctionBidIndex{}
-		}
-	}
-
-	// Add bid TxID if not already in the index
-	found := false
-	for _, txID := range index.BidTxIDs {
-		if txID.Equals(bid.BidTxID) {
-			found = true
-			break
-		}
-	}
-	if !found {
-		index.BidTxIDs = append(index.BidTxIDs, bid.BidTxID)
-		buf := k.cdc.MustMarshal(&index)
-		store.Set(auctionIndexKey, buf)
-	}
+	// Index by auction (intent) ID using prefix keys (O(1) add)
+	auctionIndexKey := k.GetKey(prefixIntentAuctionBidByAuction, bid.IntentTxID.String(), "/"+bid.BidTxID.String())
+	store.Set(auctionIndexKey, []byte{1})
 
 	// Index by bidder address for finding existing bids to top-up
 	bidderIndexKey := k.GetKey(prefixIntentAuctionBidByBidder, bid.IntentTxID.String(), bid.BidderAddress.String())
@@ -299,58 +204,30 @@ func (k KVStore) RemoveIntentAuctionBid(ctx cosmos.Context, bidTxID common.TxID)
 	// Remove main record
 	store.Delete(k.GetKey(prefixIntentAuctionBid, bidTxID.String()))
 
-	// Update auction index - remove bid TxID from the list
-	auctionIndexKey := k.GetKey(prefixIntentAuctionBidByAuction, bid.IntentTxID.String())
-	if store.Has(auctionIndexKey) {
-		var index types.IntentAuctionBidIndex
-		bz := store.Get(auctionIndexKey)
-		if err := k.cdc.Unmarshal(bz, &index); err != nil {
-			ctx.Logger().Error("failed to unmarshal intent auction bid index", "error", err)
-		} else {
-			// Remove bid TxID from the list
-			newList := make([]common.TxID, 0, len(index.BidTxIDs))
-			for _, txID := range index.BidTxIDs {
-				if !txID.Equals(bidTxID) {
-					newList = append(newList, txID)
-				}
-			}
-			index.BidTxIDs = newList
-
-			// If list is empty, delete the index; otherwise update it
-			if len(index.BidTxIDs) == 0 {
-				store.Delete(auctionIndexKey)
-			} else {
-				buf := k.cdc.MustMarshal(&index)
-				store.Set(auctionIndexKey, buf)
-			}
-		}
-	}
+	// Remove from auction index (O(1) with prefix keys)
+	auctionIndexKey := k.GetKey(prefixIntentAuctionBidByAuction, bid.IntentTxID.String(), "/"+bidTxID.String())
+	store.Delete(auctionIndexKey)
 
 	// Remove bidder index
 	bidderIndexKey := k.GetKey(prefixIntentAuctionBidByBidder, bid.IntentTxID.String(), bid.BidderAddress.String())
 	store.Delete(bidderIndexKey)
 }
 
-// GetIntentAuctionBidsByIntentID retrieves all auction bids for a specific intent auction
+// GetIntentAuctionBidsByIntentID retrieves all auction bids for a specific intent auction using prefix key iteration
 func (k KVStore) GetIntentAuctionBidsByIntentID(ctx cosmos.Context, intentTxID common.TxID) ([]types.IntentAuctionBid, error) {
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
-	auctionIndexKey := k.GetKey(prefixIntentAuctionBidByAuction, intentTxID.String())
+	key := k.GetKey(prefixIntentAuctionBidByAuction, intentTxID.String(), "")
+	iter := k.getIterator(ctx, kvTypes.DbPrefix(key))
+	defer iter.Close()
 
-	// If the index doesn't exist, return empty list
-	if !store.Has(auctionIndexKey) {
-		return []types.IntentAuctionBid{}, nil
-	}
+	var bids []types.IntentAuctionBid
+	for ; iter.Valid(); iter.Next() {
+		keyStr := string(iter.Key())
+		parts := splitKey(keyStr)
+		if len(parts) < 2 {
+			continue
+		}
+		bidTxID := common.TxID(parts[len(parts)-1])
 
-	// Load and unmarshal the intent auction bid index
-	var index types.IntentAuctionBidIndex
-	bz := store.Get(auctionIndexKey)
-	if err := k.cdc.Unmarshal(bz, &index); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal intent auction bid index: %w", err)
-	}
-
-	// Fetch all bid records
-	bids := make([]types.IntentAuctionBid, 0, len(index.BidTxIDs))
-	for _, bidTxID := range index.BidTxIDs {
 		bid, err := k.GetIntentAuctionBid(ctx, bidTxID)
 		if err != nil {
 			ctx.Logger().Error("failed to get intent auction bid", "txid", bidTxID, "error", err)

@@ -315,7 +315,7 @@ func (HandlerIntentSolveSuite) TestIntentSolve_ValidationErrors(c *C) {
 				}
 				return NewMsgIntentSolve(multiTx, intentTx.ID, multiTx.FromAddress, w.activeNodeAccount.NodeAddress)
 			},
-			expectedErr: se.ErrInvalidRequest,
+			expectedErr: se.ErrUnknownRequest, // caught by ValidateBasic
 		},
 		{
 			name: "wrong asset should fail",

@@ -209,12 +209,27 @@ func (h IntentAuctionBidHandler) handle(ctx cosmos.Context, msg MsgIntentAuction
 
 		// If this bid qualifies for overtime extension (new highest >= previous + 1x gas)
 		if bid.BidAmount.Amount.GTE(minOvertimeBid) {
-			auction.ExpiryHeight = ctx.BlockHeight() + overtimeBlocks
-			h.mgr.Keeper().SetIntentAuction(ctx, auction)
-			ctx.Logger().Info("auction overtime extended",
-				"intent_txid", msg.IntentTxID,
-				"new_expiry", auction.ExpiryHeight,
-			)
+			newExpiry := ctx.BlockHeight() + overtimeBlocks
+
+			// Enforce hard cap on total overtime to prevent indefinite stalling
+			maxOvertimeBlocks := h.mgr.Keeper().GetConfigInt64(ctx, constants.IntentAuctionMaxOvertimeBlocks)
+			if maxOvertimeBlocks > 0 {
+				// Get the original auction duration to calculate max allowed expiry
+				auctionDuration := h.mgr.Keeper().GetConfigInt64(ctx, constants.IntentAuctionDurationBlocks)
+				maxExpiry := auction.StartHeight + auctionDuration + maxOvertimeBlocks
+				if newExpiry > maxExpiry {
+					newExpiry = maxExpiry
+				}
+			}
+
+			if newExpiry > auction.ExpiryHeight {
+				auction.ExpiryHeight = newExpiry
+				h.mgr.Keeper().SetIntentAuction(ctx, auction)
+				ctx.Logger().Info("auction overtime extended",
+					"intent_txid", msg.IntentTxID,
+					"new_expiry", auction.ExpiryHeight,
+				)
+			}
 		}
 	}
 
