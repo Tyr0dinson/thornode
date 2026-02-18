@@ -3,6 +3,7 @@ package cardano
 import (
 	"crypto/ed25519"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -16,11 +17,8 @@ import (
 	ouroboros "github.com/blinklabs-io/gouroboros"
 	"github.com/blinklabs-io/gouroboros/cbor"
 	"github.com/blinklabs-io/gouroboros/ledger"
-	"github.com/blinklabs-io/gouroboros/ledger/babbage"
 	lcommon "github.com/blinklabs-io/gouroboros/ledger/common"
 	"github.com/blinklabs-io/gouroboros/ledger/conway"
-	"github.com/blinklabs-io/gouroboros/ledger/mary"
-	"github.com/blinklabs-io/gouroboros/ledger/shelley"
 	"github.com/blinklabs-io/gouroboros/protocol/chainsync"
 	pcommon "github.com/blinklabs-io/gouroboros/protocol/common"
 	"github.com/blinklabs-io/gouroboros/protocol/keepalive"
@@ -60,6 +58,12 @@ var (
 	}
 )
 
+// estimated tx size with
+// 5 inputs, 2 outputs (1 base + 1 enterprise), 150 char memo
+// 1.5 factor covers, more inputs or longer memos
+// precise tx fee will be calculated on actual tx creation
+const estimatedTxSize = 620
+
 const (
 	networkFeeUpdatePeriod = 100
 	networkMagicMainnet    = 764824073
@@ -73,6 +77,9 @@ type Client struct {
 	n2n                 *ouroboros.Connection
 	n2c                 *ouroboros.Connection
 	mtx                 sync.Mutex
+	minFeeA             uint64
+	minFeeB             uint64
+	networkFee          uint64
 	thorchainBridge     thorclient.ThorchainBridge
 	storage             *blockscanner.BlockScannerStorage
 	scanner             *blockscanner.BlockScanner
@@ -82,16 +89,12 @@ type Client struct {
 	globalSolvencyQueue chan types.Solvency
 	globalNetworkQueue  chan common.NetworkFee
 	networkMagic        uint32
-	networkFee          uint64
 	localAddress        string
 
 	startHeight uint64
 
 	protocol *utxocardano.PParams
 	localKey ed25519.PrivateKey
-
-	txSizes     []uint64
-	txSizesLock sync.Mutex
 
 	signLock   sync.Mutex
 	vaultLocks map[string]*sync.Mutex
@@ -170,6 +173,7 @@ func NewClient(
 		ouroboros.WithLogger(networkLogger),
 		ouroboros.WithErrorChan(c.networkError),
 		ouroboros.WithNodeToNode(true),
+		ouroboros.WithKeepAlive(true),
 		ouroboros.WithKeepAliveConfig(keepalive.NewConfig(
 			keepalive.WithPeriod(10*time.Second),
 		)),
@@ -192,7 +196,6 @@ func NewClient(
 		ouroboros.WithErrorChan(c.networkError),
 		ouroboros.WithLogger(networkLogger),
 		ouroboros.WithNetworkMagic(c.networkMagic),
-		ouroboros.WithKeepAlive(true),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create ouroboros n2c connection: %w", err)
@@ -265,26 +268,41 @@ func (c *Client) BroadcastTx(_ types.TxOutItem, txBytes []byte) (string, error) 
 		return "", fmt.Errorf("failed to create transaction: %w", err)
 	}
 
-	client := c.client()
-	era, err := client.GetCurrentEra()
-	c.release()
-	if err != nil {
-		return "", fmt.Errorf("failed to get current era: %w", err)
-	}
-
-	err = c.n2c.LocalTxSubmission().Client.SubmitTx(uint16(era), txBytes)
+	err = c.n2c.LocalTxSubmission().Client.SubmitTx(
+		ledger.TxTypeConway, txBytes,
+	)
 	if err != nil {
 		return "", fmt.Errorf("failed to submit transaction bytes=%x: %w", txBytes, err)
 	}
 
-	c.txSizesLock.Lock()
-	defer c.txSizesLock.Unlock()
-	c.txSizes = append(c.txSizes, uint64(len(txBytes)))
-	if len(c.txSizes) > 100 {
-		c.txSizes = c.txSizes[1:]
+	txHash := tx.Hash().String()
+
+	// wait for tx to be included in a block
+	start := time.Now()
+	for {
+		if time.Since(start) > 30*time.Second {
+			return "", fmt.Errorf("timeout waiting for tx to be included in a block")
+		}
+
+		client := c.client()
+		utxos, err := client.GetUTxOByAddress([]lcommon.Address{
+			tx.Outputs()[0].Address()},
+		)
+		c.release()
+
+		if err != nil {
+			continue
+		}
+		for id := range utxos.Results {
+			if id.Hash.String() == txHash {
+				return txHash, nil // tx is on-chain
+			}
+		}
+
+		time.Sleep(250 * time.Millisecond)
 	}
 
-	return tx.Hash().String(), nil
+	return txHash, nil
 }
 
 func (c *Client) ConfirmationCountReady(txIn types.TxIn) bool {
@@ -313,7 +331,7 @@ func (c *Client) getUtxosByAddress(address string, height *big.Int) (*localstate
 		var slot uint64
 		var hash []byte
 
-		slot, hash, err := c.getBlockId(height.Uint64())
+		slot, hash, err = c.getBlockId(height.Uint64())
 		if err != nil {
 			c.logger.Warn().Err(err).
 				Uint64("height", height.Uint64()).
@@ -324,14 +342,11 @@ func (c *Client) getUtxosByAddress(address string, height *big.Int) (*localstate
 	}
 
 	if point.Hash == nil {
-		var tip *chainsync.Tip
-		tip, err = c.n2n.ChainSync().Client.GetCurrentTip()
-		if err != nil {
-			c.logger.Err(err).Msg("failed to get current tip")
-			return nil, err
+		block, slot, hash := c.getLastSeenBlock()
+		if block == 0 {
+			return nil, fmt.Errorf("no blocks seen yet")
 		}
-
-		point = tip.Point
+		point = pcommon.NewPoint(slot, hash)
 	}
 
 	client := c.client()
@@ -466,67 +481,27 @@ func (c *Client) SignTx(txOutItem types.TxOutItem, height int64) ([]byte, []byte
 		return nil, nil, nil, err
 	}
 
-	var inputs []shelley.ShelleyTransactionInput
-
-	amount := coin.Amount.Uint64() / 100 // 1e8 => 1e6
-	target := amount + c.networkFee
-	total := uint64(0)
-
-	for id, output := range result.Results {
-		total += output.Amount().Uint64()
-
-		inputs = append(inputs, shelley.NewShelleyTransactionInput(
-			id.Hash.String(),
-			id.Idx,
-		))
-
-		if total >= target {
-			break
-		}
-	}
-
-	if total < target {
-		err = fmt.Errorf("insufficient funds")
-		c.logger.Err(err).
-			Uint64("have", amount).
-			Uint64("need", target).
-			Msg("failed to get utxos")
-		return nil, nil, nil, err
-	}
-
-	outputs := []babbage.BabbageTransactionOutput{
-		{
-			OutputAddress: toAddress,
-			OutputAmount: mary.MaryTransactionOutputValue{
-				Amount: amount,
-			},
-		},
-	}
-
-	change := total - target
-
-	if change > common.ADAChain.DustThreshold().Uint64() {
-		outputs = append(outputs, babbage.BabbageTransactionOutput{
-			OutputAddress: fromAddress,
-			OutputAmount: mary.MaryTransactionOutputValue{
-				Amount: change,
-			},
-		})
-	}
-
-	tx := &conway.ConwayTransaction{}
-	tx.Body.TxInputs = conway.NewConwayTransactionInputSet(inputs)
-	tx.Body.TxOutputs = outputs
-	tx.Body.TxFee = c.networkFee
-	tx.Body.Ttl = 50_000_000 // TODO: find reasonable value
-	tx.TxIsValid = true
-
-	encoded, err := cbor.Encode(&tx.Body)
+	tx, err := CreateConwayTx(
+		fromAddress,
+		toAddress,
+		coin.Amount.Uint64()/100, // 1e8 => 1e6
+		c.minFeeA,
+		c.minFeeB,
+		txOutItem.Memo,
+		result,
+	)
 	if err != nil {
-		c.logger.Err(err).Msg("failed to encode transaction")
+		c.logger.Err(err).Msg("failed to create conway tx")
 		return nil, nil, nil, err
 	}
 
+	c.logger.Info().
+		Uint64("min_fee_a", c.minFeeA).
+		Uint64("min_fee_b", c.minFeeB).
+		Uint64("fee", tx.Body.TxFee).
+		Msg("created tx")
+
+	encoded, err := cbor.Encode(tx.Body)
 	hash := lcommon.Blake2b256Hash(encoded)
 
 	signature, err := c.sign(hash[:], txOutItem)
@@ -641,10 +616,12 @@ func (c *Client) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
 	c.logger.Info().Msgf("FetchTxs: fetch_height=%d chain_height=%d", fetchHeight, chainHeight)
 	slot, hash, err := c.getBlockId(uint64(fetchHeight))
 	if err != nil {
+		c.logger.Err(err).Msgf("fail to find block id for height=%d", fetchHeight)
 		return types.TxIn{}, err
 	}
 	block, err := c.n2n.BlockFetch().Client.GetBlock(pcommon.NewPoint(slot, hash))
 	if err != nil {
+		c.logger.Err(err).Msg("fail to fetch block")
 		return types.TxIn{}, err
 	}
 
@@ -717,22 +694,12 @@ func (c *Client) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
 	}, nil
 }
 
-func (c *Client) getMeanTxSize() uint64 {
-	c.txSizesLock.Lock()
-	defer c.txSizesLock.Unlock()
-	meanSize := uint64(568)
-	if len(c.txSizes) > 0 {
-		meanSize = 0
-		for _, size := range c.txSizes {
-			meanSize += size
-		}
-		meanSize /= uint64(len(c.txSizes))
-	}
-	return meanSize
-}
-
 func (c *Client) updateNetworkFee(height int64) error {
-	if height != 0 && height%networkFeeUpdatePeriod != 0 {
+	if height <= 0 {
+		return nil
+	}
+
+	if height%networkFeeUpdatePeriod != 0 && c.minFeeA > 0 && c.minFeeB > 0 {
 		return nil
 	}
 
@@ -741,30 +708,31 @@ func (c *Client) updateNetworkFee(height int64) error {
 	protocolParams, err := client.GetCurrentProtocolParams()
 	c.release()
 	if err != nil {
-		return fmt.Errorf("fail to get protocol parameters: %w", err)
-	}
-	c.protocol, err = protocolParams.Utxorpc()
-	if err != nil {
-		return fmt.Errorf("fail to get parameters: %w", err)
+		return fmt.Errorf("failed to get protocol parameters: %w", err)
 	}
 
-	minFeeConstant := c.protocol.MinFeeConstant.GetInt()
-	minFeeCoefficient := c.protocol.MinFeeCoefficient.GetInt()
+	params, ok := protocolParams.(*conway.ConwayProtocolParameters)
+	if !ok {
+		return fmt.Errorf("failed to get protocol parameters: %w, err")
+	}
+
+	minFeeA := uint64(params.MinFeeA)
+	minFeeB := uint64(params.MinFeeB)
+
+	if minFeeA == c.minFeeA && minFeeB == c.minFeeB {
+		return nil
+	}
+
+	c.minFeeA = minFeeA
+	c.minFeeB = minFeeB
+
+	feeRate := minFeeA*estimatedTxSize + minFeeB + 1
 
 	resolution := uint64(c.config.BlockScanner.GasPriceResolution)
-
-	feeRate := uint64(minFeeConstant+minFeeCoefficient) * c.getMeanTxSize()
-
 	roundedFeeRate := ((feeRate + (resolution / 2)) / resolution) * resolution
-
-	// TODO: check if min fee rate is needed
 
 	if roundedFeeRate == 0 {
 		return fmt.Errorf("rounded fee rate is zero")
-	}
-
-	if c.networkFee == roundedFeeRate {
-		return nil
 	}
 
 	c.networkFee = roundedFeeRate

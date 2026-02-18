@@ -12,11 +12,7 @@ import (
 	ouroboros "github.com/blinklabs-io/gouroboros"
 	"github.com/blinklabs-io/gouroboros/cbor"
 	"github.com/blinklabs-io/gouroboros/ledger"
-	"github.com/blinklabs-io/gouroboros/ledger/babbage"
 	lcommon "github.com/blinklabs-io/gouroboros/ledger/common"
-	"github.com/blinklabs-io/gouroboros/ledger/conway"
-	"github.com/blinklabs-io/gouroboros/ledger/mary"
-	"github.com/blinklabs-io/gouroboros/ledger/shelley"
 	"github.com/blinklabs-io/gouroboros/protocol/localstatequery"
 	"github.com/rs/zerolog/log"
 	utxocardano "github.com/utxorpc/go-codegen/utxorpc/v1alpha/cardano"
@@ -162,7 +158,7 @@ func (c *Client) GetAccount(_ *common.PubKey) (*common.Account, error) {
 		balance += utxo.Amount().Uint64()
 	}
 
-	balance *= 100
+	balance *= 100 // 1e6 => 1e8
 
 	coin := common.NewCoin(common.ADAAsset, sdkmath.NewUint(balance))
 	c.logger.Info("get account", "address", c.address.String(), "balance", balance)
@@ -201,76 +197,25 @@ func (c *Client) SignTx(simTx simtypes.SimTx) ([]byte, error) {
 		return nil, err
 	}
 
-	fmt.Println("result", result)
+	minFeeA := uint64(0)
+	minFeeB := uint64(500_000)
 
-	var inputs []shelley.ShelleyTransactionInput
+	tx, err := cardano.CreateConwayTx(
+		fromAddress,
+		toAddress,
+		coin.Amount.Uint64()/100, // 1e8 => 1e6
+		minFeeA,
+		minFeeB,
+		simTx.Memo,
+		result,
+	)
 
-	fee := uint64(200_000)
-	amount := coin.Amount.Uint64() / 100
-	target := amount + fee
-	total := uint64(0)
-
-	for id, ouput := range result.Results {
-		total += ouput.Amount().Uint64()
-
-		inputs = append(inputs, shelley.NewShelleyTransactionInput(
-			id.Hash.String(),
-			id.Idx,
-		))
-
-		if total >= target {
-			break
-		}
-	}
-
-	if total < amount+fee {
-		err = fmt.Errorf("insufficient funds")
-		c.logger.Error("failed to get utxos", "have", total, "need", target)
-		return nil, err
-	}
-
-	outputs := []babbage.BabbageTransactionOutput{
-		{
-			OutputAddress: toAddress,
-			OutputAmount: mary.MaryTransactionOutputValue{
-				Amount: amount,
-			},
-		},
-	}
-
-	change := total - target
-	fmt.Println("change", change)
-
-	if change > common.ADAChain.DustThreshold().Uint64() {
-		outputs = append(outputs, babbage.BabbageTransactionOutput{
-			OutputAddress: fromAddress,
-			OutputAmount: mary.MaryTransactionOutputValue{
-				Amount: change,
-			},
-		})
-	}
-
-	tx := &conway.ConwayTransaction{}
-	tx.Body.TxInputs = conway.NewConwayTransactionInputSet(inputs)
-	tx.Body.TxOutputs = outputs
-	tx.Body.TxFee = fee
-	tx.Body.Ttl = 50_000_000 // TODO: find reasonable value
-	tx.TxIsValid = true
-
-	if simTx.Memo != "" {
-		tx.TxMetadata, tx.Body.TxAuxDataHash, err = cardano.CreateMemo(simTx.Memo)
-		if err != nil {
-			c.logger.Error("failed to create memo", "error", err)
-			return nil, err
-		}
-	}
-
-	encoded, err := cbor.Encode(&tx.Body)
 	if err != nil {
-		c.logger.Error("failed to encode transaction", "error", err)
+		c.logger.Error("fail to create conway tx", "error", err)
 		return nil, err
 	}
 
+	encoded, err := cbor.Encode(tx.Body)
 	hash := lcommon.Blake2b256Hash(encoded)
 
 	signature := ed25519.Sign(c.key, hash[:])
