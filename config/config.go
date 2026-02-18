@@ -968,6 +968,13 @@ type BifrostBlockScannerConfiguration struct {
 		// FeeSampleSlots is the number of slots to sample for network fee calculation.
 		FeeSampleSlots uint64 `mapstructure:"fee_sample_slots"`
 	} `mapstructure:"solana"`
+
+	Cardano struct {
+		// StartBlockSlot
+		StartBlockSlot uint64 `mapstructure:"start_block_slot"`
+		// StartBlockHash
+		StartBlockHash string `mapstructure:"start_block_hash"`
+	}
 }
 
 type BifrostClientConfiguration struct {

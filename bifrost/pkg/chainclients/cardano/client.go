@@ -2,14 +2,12 @@ package cardano
 
 import (
 	"crypto/ed25519"
-	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
 	"math/big"
 	"os"
-	"strings"
 	"sync"
 	"time"
 
@@ -26,13 +24,12 @@ import (
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-	leveldbutil "github.com/syndtr/goleveldb/leveldb/util"
 	utxocardano "github.com/utxorpc/go-codegen/utxorpc/v1alpha/cardano"
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/runners"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
 	shared "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/types"
-	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/utxo"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/bifrost/tss"
@@ -41,6 +38,7 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
 	"gitlab.com/thorchain/thornode/v3/constants"
+	mem "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
 )
 
 var (
@@ -74,14 +72,16 @@ type Client struct {
 	logger              zerolog.Logger
 	networkError        chan error
 	config              config.BifrostChainConfiguration
-	n2n                 *ouroboros.Connection
-	n2c                 *ouroboros.Connection
 	mtx                 sync.Mutex
+	n2c                 *ouroboros.Connection
+	n2n                 *ouroboros.Connection
+	n2nPoint            pcommon.Point
 	minFeeA             uint64
 	minFeeB             uint64
 	networkFee          uint64
 	thorchainBridge     thorclient.ThorchainBridge
-	storage             *blockscanner.BlockScannerStorage
+	signerCacheManager  *signercache.CacheManager
+	storage             *blockscanner.BlockScannerStorageCardano
 	scanner             *blockscanner.BlockScanner
 	tssKeyManager       tss.ThorchainKeyManager
 	asgardAddresses     []common.Address
@@ -143,7 +143,7 @@ func NewClient(
 	if len(cfg.BlockScanner.DBPath) > 0 {
 		path = fmt.Sprintf("%s/%s", cfg.BlockScanner.DBPath, cfg.BlockScanner.ChainID)
 	}
-	c.storage, err = blockscanner.NewBlockScannerStorage(path, cfg.ScannerLevelDB)
+	c.storage, err = blockscanner.NewBlockScannerStorageCardano(path, cfg.ScannerLevelDB)
 	if err != nil {
 		return nil, fmt.Errorf("fail to create scan storage: %w", err)
 	}
@@ -151,6 +151,13 @@ func NewClient(
 	c.tssKeyManager, err = tss.NewKeySign(server, thorchainBridge)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create tss signer: %w", err)
+	}
+
+	c.signerCacheManager, err = signercache.NewSignerCacheManager(
+		c.storage.GetInternalDb(),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("fail to create signer cache: %w", err)
 	}
 
 	// create ouroboros connection
@@ -206,36 +213,34 @@ func NewClient(
 		return nil, fmt.Errorf("failed to dial ouroboros n2c connection: %w", err)
 	}
 
-	c.startHeight, _, _ = c.getLastSeenBlock()
-	if c.networkMagic == networkMagicMainnet {
-		if cfg.BlockScanner.StartBlockHeight > 0 {
-			slot, _, _ := c.getBlockId(uint64(cfg.BlockScanner.StartBlockHeight))
-			if slot == 0 {
-				if cfg.BlockScanner.StartBlockHeight < int64(epoch542StartBlock.BlockNumber) {
-					return nil, fmt.Errorf("start block height %d is before hardcoded kepoch 542 start block %d",
-						cfg.BlockScanner.StartBlockHeight, epoch542StartBlock.BlockNumber)
-				}
-				// assume we're missing data and start from an arbitrary epoch.. this could take awhile.
-				err := c.setBlockId(epoch542StartBlock.BlockNumber, epoch542StartBlock.Point.Slot, epoch542StartBlock.Point.Hash)
-				if err != nil {
-					return nil, fmt.Errorf("fail to set epoch block id: %w", err)
-				}
-				c.startHeight = epoch542StartBlock.BlockNumber
-			} else {
-				c.startHeight = uint64(cfg.BlockScanner.StartBlockHeight)
-			}
-		} else if c.startHeight == 0 {
-			// also start from epoch 542 if a clean start
-			err := c.setBlockId(epoch542StartBlock.BlockNumber, epoch542StartBlock.Point.Slot, epoch542StartBlock.Point.Hash)
-			if err != nil {
-				return nil, fmt.Errorf("fail to set epoch block id: %w", err)
-			}
-			c.startHeight = epoch542StartBlock.BlockNumber
+	if c.config.BlockScanner.StartBlockHeight > 0 {
+		slot := c.config.BlockScanner.Cardano.StartBlockSlot
+		if slot == 0 {
+			return nil, fmt.Errorf("start block slot is zero")
 		}
-	}
 
-	c.logger.Info().Msgf("start height: %d", c.startHeight)
-	c.logger.Info().Msgf("magic: %d", c.networkMagic)
+		hash := c.config.BlockScanner.Cardano.StartBlockHash
+		if hash == "" {
+			return nil, fmt.Errorf("start block hash is undefined")
+		}
+
+		var bz []byte
+		bz, err = hex.DecodeString(hash)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode start block hash: %w", err)
+		}
+
+		c.n2nPoint = pcommon.NewPoint(slot, bz)
+	} else {
+		client := c.client()
+		var tip *pcommon.Point
+		tip, err = client.GetChainPoint()
+		c.release()
+		if err != nil {
+			return nil, fmt.Errorf("fail to get current tip: %w", err)
+		}
+		c.n2nPoint = *tip
+	}
 
 	// create block scanner
 	// scanner, err := NewScanner(cfg.BlockScanner, thorchainBridge, c.n2c, c.n2n)
@@ -262,10 +267,10 @@ func NewClient(
 	return c, nil
 }
 
-func (c *Client) BroadcastTx(_ types.TxOutItem, txBytes []byte) (string, error) {
+func (c *Client) BroadcastTx(txOutItem types.TxOutItem, txBytes []byte) (string, error) {
 	tx, err := ledger.NewConwayTransactionFromCbor(txBytes)
 	if err != nil {
-		return "", fmt.Errorf("failed to create transaction: %w", err)
+		return "", fmt.Errorf("failed to decode transaction: %w", err)
 	}
 
 	err = c.n2c.LocalTxSubmission().Client.SubmitTx(
@@ -279,13 +284,13 @@ func (c *Client) BroadcastTx(_ types.TxOutItem, txBytes []byte) (string, error) 
 
 	// wait for tx to be included in a block
 	start := time.Now()
-	for {
-		if time.Since(start) > 30*time.Second {
-			return "", fmt.Errorf("timeout waiting for tx to be included in a block")
-		}
+	found := false
+	for !found && time.Since(start) < 30*time.Second {
+		time.Sleep(250 * time.Millisecond)
 
 		client := c.client()
-		utxos, err := client.GetUTxOByAddress([]lcommon.Address{
+		var utxos *localstatequery.UTxOsResult
+		utxos, err = client.GetUTxOByAddress([]lcommon.Address{
 			tx.Outputs()[0].Address()},
 		)
 		c.release()
@@ -293,13 +298,27 @@ func (c *Client) BroadcastTx(_ types.TxOutItem, txBytes []byte) (string, error) 
 		if err != nil {
 			continue
 		}
+
 		for id := range utxos.Results {
 			if id.Hash.String() == txHash {
-				return txHash, nil // tx is on-chain
+				found = true
 			}
 		}
+	}
 
-		time.Sleep(250 * time.Millisecond)
+	if !found {
+		return "", fmt.Errorf("timeout waiting for tx to be included in a block")
+	}
+
+	err = c.signerCacheManager.SetSigned(
+		txOutItem.CacheHash(),
+		txOutItem.CacheVault(c.GetChain()),
+		txHash,
+	)
+	if err != nil {
+		c.logger.Err(err).
+			Interface("tx_out_item", txOutItem).
+			Msg("failed to mark tx out item as signed")
 	}
 
 	return txHash, nil
@@ -327,11 +346,12 @@ func (c *Client) getUtxosByAddress(address string, height *big.Int) (*localstate
 
 	var point pcommon.Point
 
-	if height != nil {
-		var slot uint64
-		var hash []byte
+	var slot uint64
+	var hash []byte
 
-		slot, hash, err = c.getBlockId(height.Uint64())
+	if height != nil {
+
+		_, slot, hash, err = c.storage.GetBlockId(height.Uint64())
 		if err != nil {
 			c.logger.Warn().Err(err).
 				Uint64("height", height.Uint64()).
@@ -342,9 +362,9 @@ func (c *Client) getUtxosByAddress(address string, height *big.Int) (*localstate
 	}
 
 	if point.Hash == nil {
-		block, slot, hash := c.getLastSeenBlock()
-		if block == 0 {
-			return nil, fmt.Errorf("no blocks seen yet")
+		_, slot, hash, err = c.storage.GetLastBlockId()
+		if err != nil {
+			return nil, err
 		}
 		point = pcommon.NewPoint(slot, hash)
 	}
@@ -435,8 +455,9 @@ func (c *Client) GetConfirmationCount(txIn types.TxIn) int64 {
 // GetHeight returns the current height of the chain.
 // Implements both ChainClient and BlockScannerFetcher interfaces.
 func (c *Client) GetHeight() (int64, error) {
-	height, _, _ := c.getLastSeenBlock()
-	return int64(height), nil
+	client := c.client()
+	defer c.release()
+	return client.GetChainBlockNo()
 }
 
 func (c *Client) GetLatestTxForVault(vault string) (string, string, error) {
@@ -448,9 +469,31 @@ func (c *Client) IsBlockScannerHealthy() bool {
 }
 
 func (c *Client) OnObservedTxIn(txIn types.TxInItem, blockHeight int64) {
+	m, err := mem.ParseMemo(common.LatestVersion, txIn.Memo)
+	if err != nil {
+		// Debug log only as ParseMemo error is expected for THORName inbounds.
+		c.logger.Debug().Err(err).Str("memo", txIn.Memo).Msg("fail to parse memo")
+		return
+	}
+	if !m.IsOutbound() {
+		return
+	}
+	if m.GetTxID().IsEmpty() {
+		return
+	}
+	if err = c.signerCacheManager.SetSigned(txIn.CacheHash(c.GetChain(), m.GetTxID().String()), txIn.CacheVault(c.GetChain()), txIn.Tx); err != nil {
+		c.logger.Err(err).Msg("fail to update signer cache")
+	}
 }
 
 func (c *Client) SignTx(txOutItem types.TxOutItem, height int64) ([]byte, []byte, *types.TxInItem, error) {
+	if c.signerCacheManager.HasSigned(txOutItem.CacheHash()) {
+		c.logger.Info().
+			Interface("tx", txOutItem).
+			Msg("transaction already signed, ignoring...")
+		return nil, nil, nil, nil
+	}
+
 	coin := txOutItem.Coins.GetCoin(common.ADAAsset)
 
 	if coin.IsEmpty() {
@@ -536,13 +579,35 @@ func (c *Client) SignTx(txOutItem types.TxOutItem, height int64) ([]byte, []byte
 		false,
 	)
 
-	signed, err := cbor.Encode(tx)
+	txBytes, err := cbor.Encode(tx)
 	if err != nil {
 		c.logger.Err(err).Msg("failed to encode transaction")
 		return nil, nil, nil, err
 	}
 
-	return signed, nil, nil, nil
+	currentHeight, err := c.GetHeight()
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to get current height")
+	}
+
+	txIn := types.NewTxInItem(
+		currentHeight,
+		tx.Hash().String(),
+		txOutItem.Memo,
+		fromAddress.String(),
+		toAddress.String(),
+		txOutItem.Coins,
+		[]common.Coin{common.NewCoin(
+			common.ADAAsset,
+			cosmos.NewUint(tx.Body.TxFee),
+		)},
+		txOutItem.VaultPubKeyEddsa,
+		"",
+		"",
+		nil,
+	)
+
+	return txBytes, nil, txIn, nil
 }
 
 func (c *Client) sign(
@@ -575,20 +640,12 @@ func (c *Client) Start(
 	globalSolvencyQueue chan types.Solvency,
 	globalNetworkFeeQueue chan common.NetworkFee,
 ) {
-	c.logger.Info().Msg("Start ADA client")
-	var point pcommon.Point
-	if c.startHeight == 0 {
-		point = pcommon.NewPointOrigin()
-	} else {
-		slot, hash, err := c.getBlockId(c.startHeight)
-		if err != nil {
-			c.logger.Err(err).Msgf("client start failed, unable to find block id for height=%d", c.startHeight)
-			return
-		}
-		point = pcommon.NewPoint(slot, hash)
-	}
-	c.logger.Info().Msgf("starting ChainSync: %x, %d", point.Hash, point.Slot)
-	err := c.n2n.ChainSync().Client.Sync([]pcommon.Point{point})
+	c.logger.Info().
+		Uint64("slot", c.n2nPoint.Slot).
+		Hex("hash", c.n2nPoint.Hash).
+		Msg("starting ChainSync")
+
+	err := c.n2n.ChainSync().Client.Sync([]pcommon.Point{c.n2nPoint})
 	if err != nil {
 		c.logger.Err(err).Msg("failed to start chain-sync client")
 		return
@@ -614,7 +671,7 @@ func (c *Client) FetchMemPool(height int64) (types.TxIn, error) {
 // FetchTxs implements blockscanner.BlockScannerFetcher.
 func (c *Client) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
 	c.logger.Info().Msgf("FetchTxs: fetch_height=%d chain_height=%d", fetchHeight, chainHeight)
-	slot, hash, err := c.getBlockId(uint64(fetchHeight))
+	_, slot, hash, err := c.storage.GetBlockId(uint64(fetchHeight))
 	if err != nil {
 		c.logger.Err(err).Msgf("fail to find block id for height=%d", fetchHeight)
 		return types.TxIn{}, err
@@ -667,6 +724,7 @@ func (c *Client) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
 		}
 
 		amount := output.Amount().Uint64() * 100
+		fee := tx.Fee().Uint64() * 100
 
 		memo := ExtractMemo(tx.Metadata(), 0)
 		fmt.Println("memo:", memo)
@@ -678,7 +736,7 @@ func (c *Client) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
 			Sender:      fromAddress.String(),
 			To:          toAddress.String(),
 			Coins:       common.Coins{common.NewCoin(common.ADAAsset, sdkmath.NewUint(amount))},
-			Gas:         common.Gas{common.NewCoin(common.ADAAsset, sdkmath.NewUintFromBigInt(tx.Fee()))},
+			Gas:         common.Gas{common.NewCoin(common.ADAAsset, sdkmath.NewUint(fee))},
 		})
 	}
 
@@ -762,7 +820,7 @@ func (c *Client) chainSyncRollForwardHandler(
 	case ledger.Block:
 		c.logger.Warn().Msg("block type is ledger.Block, chain-sync n2n protocol expects ledger.BlockHeader")
 	case ledger.BlockHeader:
-		err := c.setBlockId(h.BlockNumber(), h.SlotNumber(), h.Hash().Bytes())
+		err := c.storage.SetBlockId(h.BlockNumber(), h.SlotNumber(), h.Hash().Bytes())
 		c.logger.Info().
 			Uint64("block_number", h.BlockNumber()).
 			Uint64("slot_number", h.SlotNumber()).
@@ -850,81 +908,6 @@ func (c *Client) ReportSolvency(height int64) error {
 
 func (c *Client) GetNetworkFee() (transactionSize, transactionFeeRate uint64) {
 	return 1, c.networkFee
-}
-
-// STORAGE
-
-const (
-	blockIDKeyPrefix = "chainblock"
-)
-
-func (c *Client) getLastSeenBlock() (height uint64, slot uint64, hash []byte) {
-	itr := c.storage.GetInternalDb().NewIterator(&leveldbutil.Range{Start: []byte(blockIDKeyPrefix)}, nil)
-	ok := itr.First()
-	if !ok {
-		return
-	}
-	key := itr.Key()
-	value := itr.Value()
-	slot = binary.BigEndian.Uint64(value[:8])
-	hash = value[8:]
-	invertedHeight := binary.BigEndian.Uint64(key[len(blockIDKeyPrefix):])
-	height = ^invertedHeight
-	return
-}
-
-func (c *Client) blockIDKey(height uint64) []byte {
-	buf := make([]byte, 8+len(blockIDKeyPrefix))
-	copy(buf[:], blockIDKeyPrefix)
-	inverted := ^height
-	binary.BigEndian.PutUint64(buf[len(blockIDKeyPrefix):], inverted)
-	return buf
-}
-
-func (c *Client) setBlockId(height uint64, slot uint64, hash []byte) error {
-	buf := make([]byte, 8+32)
-	binary.BigEndian.PutUint64(buf[:8], slot)
-	copy(buf[8:], hash)
-	return c.storage.GetInternalDb().Put(c.blockIDKey(height), buf, nil)
-}
-
-func (c *Client) getBlockId(height uint64) (slot uint64, hash []byte, err error) {
-	buf, err := c.storage.GetInternalDb().Get(c.blockIDKey(height), nil)
-	if err != nil {
-		return
-	}
-	slot = binary.BigEndian.Uint64(buf[:8])
-	hash = buf[8:]
-	return
-}
-
-func (c *Client) getAsgardAddress() ([]common.Address, error) {
-	if time.Since(c.lastAsgard) < constants.ThorchainBlockTime && c.asgardAddresses != nil {
-		return c.asgardAddresses, nil
-	}
-	newAddresses, err := utxo.GetAsgardAddress(c.config.ChainID, c.thorchainBridge)
-	if err != nil {
-		return nil, fmt.Errorf("fail to get asgards: %w", err)
-	}
-	if len(newAddresses) > 0 { // ensure we don't overwrite with empty list
-		c.asgardAddresses = newAddresses
-	}
-	c.lastAsgard = time.Now()
-	return c.asgardAddresses, nil
-}
-
-func (c *Client) isAsgardAddress(addressToCheck string) bool {
-	asgards, err := c.getAsgardAddress()
-	if err != nil {
-		c.logger.Err(err).Msg("fail to get asgard addresses")
-		return false
-	}
-	for _, addr := range asgards {
-		if strings.EqualFold(addr.String(), addressToCheck) {
-			return true
-		}
-	}
-	return false
 }
 
 func (c *Client) release() {
