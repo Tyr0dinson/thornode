@@ -1359,6 +1359,55 @@
         "source_sent": "5000000 BTC~BTC",
         "target_received": "60000000 ETH~ETH",
         "type": "intent_complete"
+      },
+      {
+        "amount": "5000000",
+        "asset": "BTC~BTC",
+        "asset_address": "",
+        "mode": "EndBlock",
+        "rune_address": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
+        "tx_id": "E931AA360CF07E23A110839ED6CB5F5473599C10BD4C8689755F91AA692EA759",
+        "type": "trade_account_deposit"
+      },
+      {
+        "chain": "THOR",
+        "coin": "5000000 BTC~BTC",
+        "from": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
+        "id": "0000000000000000000000000000000000000000000000000000000000000000",
+        "in_tx_id": "E931AA360CF07E23A110839ED6CB5F5473599C10BD4C8689755F91AA692EA759",
+        "memo": "OUT:E931AA360CF07E23A110839ED6CB5F5473599C10BD4C8689755F91AA692EA759",
+        "mode": "EndBlock",
+        "to": "tthor1uuds8pd92qnnq0udw0rpg0szpgcslc9p8lluej",
+        "type": "outbound"
+      },
+      {
+        "amount": "60000000",
+        "asset": "ETH~ETH",
+        "asset_address": "",
+        "mode": "EndBlock",
+        "rune_address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
+        "tx_id": "52C4CD3B7AD0EC975DC0E79C773BC70DCCFE27F32D27FB0B670ADE179B7DAB45",
+        "type": "trade_account_deposit"
+      },
+      {
+        "chain": "THOR",
+        "coin": "60000000 ETH~ETH",
+        "from": "tthor1g98cy3n9mmjrpn0sxmn63lztelera37nrytwp2",
+        "id": "0000000000000000000000000000000000000000000000000000000000000000",
+        "in_tx_id": "52C4CD3B7AD0EC975DC0E79C773BC70DCCFE27F32D27FB0B670ADE179B7DAB45",
+        "memo": "OUT:52C4CD3B7AD0EC975DC0E79C773BC70DCCFE27F32D27FB0B670ADE179B7DAB45",
+        "mode": "EndBlock",
+        "to": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
+        "type": "outbound"
+      },
+      {
+        "fee": "0 .",
+        "intent_tx_id": "52C4CD3B7AD0EC975DC0E79C773BC70DCCFE27F32D27FB0B670ADE179B7DAB45",
+        "mode": "EndBlock",
+        "solve_tx_id": "E931AA360CF07E23A110839ED6CB5F5473599C10BD4C8689755F91AA692EA759",
+        "source_sent": "5000000 BTC~BTC",
+        "target_received": "60000000 ETH~ETH",
+        "type": "intent_complete"
       }
     ],
     "txs": [
