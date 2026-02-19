@@ -2,6 +2,7 @@ package cardano
 
 import (
 	"crypto/ed25519"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -62,6 +63,8 @@ var (
 // precise tx fee will be calculated on actual tx creation
 const estimatedTxSize = 620
 
+const txTimeoutBlocks = uint64(20)
+
 const (
 	networkFeeUpdatePeriod = 100
 	networkMagicMainnet    = 764824073
@@ -76,6 +79,7 @@ type Client struct {
 	n2c                 *ouroboros.Connection
 	n2n                 *ouroboros.Connection
 	n2nPoint            pcommon.Point
+	ttlSlots            uint64
 	minFeeA             uint64
 	minFeeB             uint64
 	networkFee          uint64
@@ -242,6 +246,26 @@ func NewClient(
 		c.n2nPoint = *tip
 	}
 
+	// get slot coefficient
+	client := c.client()
+	var genesisConfig *localstatequery.GenesisConfigResult
+	genesisConfig, err = client.GetGenesisConfig()
+	c.release()
+	if err != nil {
+		return nil, fmt.Errorf("fail to get genesis config: %w", err)
+	}
+
+	num, ok := genesisConfig.ActiveSlotsCoeff[0].(uint64)
+	if !ok {
+		return nil, fmt.Errorf("fail to get active slot coeff")
+	}
+	den, ok := genesisConfig.ActiveSlotsCoeff[1].(uint64)
+	if !ok {
+		return nil, fmt.Errorf("fail to get active slot coeff")
+	}
+
+	c.ttlSlots = den / num * txTimeoutBlocks
+
 	// create block scanner
 	// scanner, err := NewScanner(cfg.BlockScanner, thorchainBridge, c.n2c, c.n2n)
 	// if err != nil {
@@ -282,33 +306,33 @@ func (c *Client) BroadcastTx(txOutItem types.TxOutItem, txBytes []byte) (string,
 
 	txHash := tx.Hash().String()
 
-	// wait for tx to be included in a block
-	start := time.Now()
-	found := false
-	for !found && time.Since(start) < 30*time.Second {
-		time.Sleep(250 * time.Millisecond)
-
-		client := c.client()
-		var utxos *localstatequery.UTxOsResult
-		utxos, err = client.GetUTxOByAddress([]lcommon.Address{
-			tx.Outputs()[0].Address()},
-		)
-		c.release()
-
-		if err != nil {
-			continue
-		}
-
-		for id := range utxos.Results {
-			if id.Hash.String() == txHash {
-				found = true
-			}
-		}
-	}
-
-	if !found {
-		return "", fmt.Errorf("timeout waiting for tx to be included in a block")
-	}
+	// // wait for tx to be included in a block
+	// start := time.Now()
+	// found := false
+	// for !found && time.Since(start) < 30*time.Second {
+	// 	time.Sleep(250 * time.Millisecond)
+	//
+	// 	client := c.client()
+	// 	var utxos *localstatequery.UTxOsResult
+	// 	utxos, err = client.GetUTxOByAddress([]lcommon.Address{
+	// 		tx.Outputs()[0].Address()},
+	// 	)
+	// 	c.release()
+	//
+	// 	if err != nil {
+	// 		continue
+	// 	}
+	//
+	// 	for id := range utxos.Results {
+	// 		if id.Hash.String() == txHash {
+	// 			found = true
+	// 		}
+	// 	}
+	// }
+	//
+	// if !found {
+	// 	return "", fmt.Errorf("timeout waiting for tx to be included in a block")
+	// }
 
 	err = c.signerCacheManager.SetSigned(
 		txOutItem.CacheHash(),
@@ -338,7 +362,10 @@ func (c *Client) GetAccount(pubkey common.PubKey, height *big.Int) (common.Accou
 	return c.GetAccountByAddress(addr.String(), height)
 }
 
-func (c *Client) getUtxosByAddress(address string, height *big.Int) (*localstatequery.UTxOsResult, error) {
+func (c *Client) getUtxosByAddress(
+	address string,
+	height *big.Int,
+) (map[localstatequery.UtxoId]ledger.BabbageTransactionOutput, error) {
 	addr, err := ledger.NewAddress(address)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create address: %w", err)
@@ -382,20 +409,36 @@ func (c *Client) getUtxosByAddress(address string, height *big.Int) (*localstate
 		return nil, fmt.Errorf("failed to get UTxO by address")
 	}
 
-	return result, nil
+	utxos := map[localstatequery.UtxoId]ledger.BabbageTransactionOutput{}
+	for id, output := range result.Results {
+		var found bool
+		found, err = c.storage.HasSpentUtxo(id.Hash.Bytes())
+		if err != nil {
+			c.logger.Warn().Err(err).Msg("failed to check for spent utxo")
+			continue
+		}
+
+		if found {
+			continue
+		}
+
+		utxos[id] = output
+	}
+
+	return utxos, nil
 }
 
 func (c *Client) GetAccountByAddress(address string, height *big.Int) (common.Account, error) {
 	account := common.Account{}
 
-	result, err := c.getUtxosByAddress(address, height)
+	utxos, err := c.getUtxosByAddress(address, height)
 	if err != nil {
 		c.logger.Err(err).Msg("failed to get utxos by address")
 		return account, err
 	}
 
 	total := uint64(0)
-	for _, output := range result.Results {
+	for _, output := range utxos {
 		total += output.Amount().Uint64()
 	}
 
@@ -461,7 +504,16 @@ func (c *Client) GetHeight() (int64, error) {
 }
 
 func (c *Client) GetLatestTxForVault(vault string) (string, string, error) {
-	panic("unimplemented")
+	lastObserved, err := c.signerCacheManager.GetLatestRecordedTx(
+		types.InboundCacheKey(vault, c.GetChain().String()),
+	)
+	if err != nil {
+		return "", "", err
+	}
+	lastBroadCasted, err := c.signerCacheManager.GetLatestRecordedTx(
+		types.BroadcastCacheKey(vault, c.GetChain().String()),
+	)
+	return lastObserved, lastBroadCasted, err
 }
 
 func (c *Client) IsBlockScannerHealthy() bool {
@@ -518,10 +570,15 @@ func (c *Client) SignTx(txOutItem types.TxOutItem, height int64) ([]byte, []byte
 		Str("to", toAddress.String()).
 		Msg("sign tx")
 
-	result, err := c.getUtxosByAddress(fromAddress.String(), nil)
+	utxos, err := c.getUtxosByAddress(fromAddress.String(), nil)
 	if err != nil {
 		c.logger.Err(err).Msg("failed to get utxos by address")
 		return nil, nil, nil, err
+	}
+
+	currentHeight, err := c.GetHeight()
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to get current height")
 	}
 
 	tx, err := CreateConwayTx(
@@ -531,7 +588,7 @@ func (c *Client) SignTx(txOutItem types.TxOutItem, height int64) ([]byte, []byte
 		c.minFeeA,
 		c.minFeeB,
 		txOutItem.Memo,
-		result,
+		utxos,
 	)
 	if err != nil {
 		c.logger.Err(err).Msg("failed to create conway tx")
@@ -543,6 +600,10 @@ func (c *Client) SignTx(txOutItem types.TxOutItem, height int64) ([]byte, []byte
 		Uint64("min_fee_b", c.minFeeB).
 		Uint64("fee", tx.Body.TxFee).
 		Msg("created tx")
+
+	_, slot, _, _ := c.storage.GetLastBlockId()
+
+	tx.Body.Ttl = slot + c.ttlSlots
 
 	encoded, err := cbor.Encode(tx.Body)
 	hash := lcommon.Blake2b256Hash(encoded)
@@ -585,9 +646,20 @@ func (c *Client) SignTx(txOutItem types.TxOutItem, height int64) ([]byte, []byte
 		return nil, nil, nil, err
 	}
 
-	currentHeight, err := c.GetHeight()
+	var spentUtxos [][]byte
+	for _, input := range tx.Inputs() {
+		index := make([]byte, 4)
+		binary.BigEndian.PutUint32(index, input.Index())
+		spentUtxos = append(spentUtxos, append(input.Id().Bytes(), index...))
+	}
+	err = c.storage.SetSpentUtxos(spentUtxos, currentHeight)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to get current height")
+		c.logger.Err(err).Msg("failed to set spent utxos")
+		return nil, nil, nil, err
+	}
+
+	if txOutItem.ToAddress.String() != toAddress.String() {
+		c.logger.Error().Msg("transaction does not match address")
 	}
 
 	txIn := types.NewTxInItem(
@@ -595,7 +667,7 @@ func (c *Client) SignTx(txOutItem types.TxOutItem, height int64) ([]byte, []byte
 		tx.Hash().String(),
 		txOutItem.Memo,
 		fromAddress.String(),
-		toAddress.String(),
+		txOutItem.ToAddress.String(),
 		txOutItem.Coins,
 		[]common.Coin{common.NewCoin(
 			common.ADAAsset,
@@ -742,6 +814,16 @@ func (c *Client) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
 
 	if err = c.updateNetworkFee(fetchHeight); err != nil {
 		return types.TxIn{}, err
+	}
+
+	err = c.storage.PruneBlockIds(uint64(fetchHeight))
+	if err != nil {
+		c.logger.Err(err).Msg("fail to prune block ids")
+	}
+
+	err = c.storage.PruneSpentUtxos(uint64(fetchHeight) - txTimeoutBlocks)
+	if err != nil {
+		c.logger.Err(err).Msg("fail to prune spent utxos")
 	}
 
 	return types.TxIn{

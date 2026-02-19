@@ -105,7 +105,7 @@ func CreateConwayTx(
 	fromAddress, toAddress ledger.Address,
 	amount, minFeeA, minFeeB uint64,
 	memo string,
-	result *localstatequery.UTxOsResult,
+	utxos map[localstatequery.UtxoId]ledger.BabbageTransactionOutput,
 ) (*conway.ConwayTransaction, error) {
 	var inputs []shelley.ShelleyTransactionInput
 
@@ -113,7 +113,7 @@ func CreateConwayTx(
 	target := amount + 2_000_000
 	total := uint64(0)
 
-	for id, output := range result.Results {
+	for id, output := range utxos {
 		total += output.Amount().Uint64()
 
 		inputs = append(inputs, shelley.NewShelleyTransactionInput(

@@ -81,6 +81,14 @@ func (s *LevelDBScannerStorageCardano) SetBlockId(
 
 // spent utxos
 
+func (s *LevelDBScannerStorageCardano) SetSpentUtxos(ids [][]byte, height int64) error {
+	if height <= 0 {
+		return fmt.Errorf("height must >= 0")
+	}
+
+	return s.setSpentUtxosByHeight(ids, uint64(height))
+}
+
 func (s *LevelDBScannerStorageCardano) GetSpentUtxosByHeight(height uint64) ([][]byte, error) {
 	key := s.getSpentUtxoByHeightKey(height)
 
@@ -107,7 +115,7 @@ func (s *LevelDBScannerStorageCardano) HasSpentUtxo(id []byte) (bool, error) {
 
 func (s *LevelDBScannerStorageCardano) PruneSpentUtxos(height uint64) error {
 	iterator := s.db.NewIterator(
-		&leveldbutil.Range{Start: []byte(PrefixSpentUtxoByHeight)}, nil,
+		leveldbutil.BytesPrefix([]byte(PrefixSpentUtxoByHeight)), nil,
 	)
 	defer iterator.Release()
 	candidates := []uint64{}
@@ -149,12 +157,15 @@ func (s *LevelDBScannerStorageCardano) PruneSpentUtxos(height uint64) error {
 
 func (s *LevelDBScannerStorageCardano) PruneBlockIds(height uint64) error {
 	iterator := s.db.NewIterator(
-		&leveldbutil.Range{Start: []byte(PrefixBlockId)}, nil,
+		leveldbutil.BytesPrefix([]byte(PrefixBlockId)), nil,
 	)
 	defer iterator.Release()
 	candidates := [][]byte{}
 	for ; iterator.Next(); iterator.Valid() {
 		key := iterator.Key()
+		if key == nil {
+			continue
+		}
 
 		inverted := binary.BigEndian.Uint64(key[len(PrefixBlockId):])
 		if ^inverted > height {
@@ -219,6 +230,10 @@ func (s *LevelDBScannerStorageCardano) getBlockId(
 }
 
 func (s *LevelDBScannerStorageCardano) setSpentUtxosByHeight(ids [][]byte, height uint64) error {
+	if ids == nil {
+		return nil
+	}
+
 	key := s.getSpentUtxoByHeightKey(height)
 
 	spent, err := s.GetSpentUtxosByHeight(height)
