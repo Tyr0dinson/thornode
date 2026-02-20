@@ -306,33 +306,12 @@ func (c *Client) BroadcastTx(txOutItem types.TxOutItem, txBytes []byte) (string,
 
 	txHash := tx.Hash().String()
 
-	// // wait for tx to be included in a block
-	// start := time.Now()
-	// found := false
-	// for !found && time.Since(start) < 30*time.Second {
-	// 	time.Sleep(250 * time.Millisecond)
-	//
-	// 	client := c.client()
-	// 	var utxos *localstatequery.UTxOsResult
-	// 	utxos, err = client.GetUTxOByAddress([]lcommon.Address{
-	// 		tx.Outputs()[0].Address()},
-	// 	)
-	// 	c.release()
-	//
-	// 	if err != nil {
-	// 		continue
-	// 	}
-	//
-	// 	for id := range utxos.Results {
-	// 		if id.Hash.String() == txHash {
-	// 			found = true
-	// 		}
-	// 	}
-	// }
-	//
-	// if !found {
-	// 	return "", fmt.Errorf("timeout waiting for tx to be included in a block")
-	// }
+	c.logger.Info().
+		Str("hash", txHash).
+		Uint64("amount", tx.Outputs()[0].Amount().Uint64()).
+		Uint64("change", tx.Outputs()[1].Amount().Uint64()).
+		Uint64("fee", tx.Fee().Uint64()).
+		Msg("BroadcastTx")
 
 	err = c.signerCacheManager.SetSigned(
 		txOutItem.CacheHash(),
@@ -658,10 +637,6 @@ func (c *Client) SignTx(txOutItem types.TxOutItem, height int64) ([]byte, []byte
 		return nil, nil, nil, err
 	}
 
-	if txOutItem.ToAddress.String() != toAddress.String() {
-		c.logger.Error().Msg("transaction does not match address")
-	}
-
 	txIn := types.NewTxInItem(
 		currentHeight,
 		tx.Hash().String(),
@@ -671,7 +646,7 @@ func (c *Client) SignTx(txOutItem types.TxOutItem, height int64) ([]byte, []byte
 		txOutItem.Coins,
 		[]common.Coin{common.NewCoin(
 			common.ADAAsset,
-			cosmos.NewUint(tx.Body.TxFee),
+			cosmos.NewUint(tx.Body.TxFee*100),
 		)},
 		txOutItem.VaultPubKeyEddsa,
 		"",
@@ -795,11 +770,21 @@ func (c *Client) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
 			continue
 		}
 
-		amount := output.Amount().Uint64() * 100
-		fee := tx.Fee().Uint64() * 100
-
 		memo := ExtractMemo(tx.Metadata(), 0)
-		fmt.Println("memo:", memo)
+
+		amount := output.Amount().Uint64() * 100
+		coins := common.Coins{{
+			Asset:    common.ADAAsset,
+			Amount:   sdkmath.NewUint(amount),
+			Decimals: 6,
+		}}
+
+		fee := tx.Fee().Uint64() * 100
+		gas := common.Gas{{
+			Asset:    common.ADAAsset,
+			Amount:   sdkmath.NewUint(fee),
+			Decimals: 6,
+		}}
 
 		txIns = append(txIns, &types.TxInItem{
 			Tx:          tx.Hash().String(),
@@ -807,8 +792,8 @@ func (c *Client) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
 			Memo:        memo,
 			Sender:      fromAddress.String(),
 			To:          toAddress.String(),
-			Coins:       common.Coins{common.NewCoin(common.ADAAsset, sdkmath.NewUint(amount))},
-			Gas:         common.Gas{common.NewCoin(common.ADAAsset, sdkmath.NewUint(fee))},
+			Coins:       coins,
+			Gas:         gas,
 		})
 	}
 

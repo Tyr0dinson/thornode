@@ -207,7 +207,7 @@ func (c *Client) SignTx(simTx simtypes.SimTx) ([]byte, error) {
 		minFeeA,
 		minFeeB,
 		simTx.Memo,
-		result,
+		result.Results,
 	)
 
 	if err != nil {
