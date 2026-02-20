@@ -146,9 +146,23 @@ func (c *Client) BroadcastTx(txBytes []byte) (string, error) {
 	return txHash, nil
 }
 
-func (c *Client) GetAccount(_ *common.PubKey) (*common.Account, error) {
+func (c *Client) GetAccount(pk *common.PubKey) (*common.Account, error) {
+	var address ledger.Address
+	if pk != nil {
+		bz, err := pk.Bytes()
+		if err != nil {
+			return nil, err
+		}
+		address, err = cardano.AddressFromBytes(bz)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		address = c.address
+	}
+
 	client := c.client()
-	res, err := client.GetUTxOByAddress([]ledger.Address{c.address})
+	res, err := client.GetUTxOByAddress([]ledger.Address{address})
 	c.release()
 	if err != nil {
 		return &common.Account{}, fmt.Errorf("fail to query address: %w", err)
