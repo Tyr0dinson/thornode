@@ -564,13 +564,17 @@ func (k KVStore) DeductModifyLimitSwapFee(ctx cosmos.Context, addr cosmos.AccAdd
 		return nil // no fee
 	}
 
-	// Mark this address as having modified in this block so subsequent modifies pay full fee.
-	// Ordering relative to SendFromAccountToModule doesn't matter for correctness since the
-	// handler's CacheContext ensures all state changes are atomic (all committed or all reverted).
-	k.SetModifiedLimitSwapInBlock(ctx, addr)
-
+	// Deduct fee first, then mark the address. This runs in the ante handler (outside the
+	// handler's CacheContext), so Cosmos SDK's transaction-level CacheContext provides atomicity:
+	// if the ante handler returns an error, all state changes (including the tracker) are rolled back.
 	coins := common.NewCoins(common.NewCoin(common.RuneNative, fee))
-	return k.SendFromAccountToModule(ctx, addr, ReserveName, coins)
+	if err := k.SendFromAccountToModule(ctx, addr, ReserveName, coins); err != nil {
+		return err
+	}
+
+	// Mark after successful fee deduction so subsequent modifies in this block pay full fee.
+	k.SetModifiedLimitSwapInBlock(ctx, addr)
+	return nil
 }
 
 // RagnarokAccount remove account and return all assets to the protocol

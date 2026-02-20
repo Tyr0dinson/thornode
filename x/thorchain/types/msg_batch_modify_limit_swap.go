@@ -58,18 +58,24 @@ func (m *MsgBatchModifyLimitSwap) ValidateBasic() error {
 		if op.Source.Asset.Equals(op.Target.Asset) {
 			return cosmos.ErrUnknownRequest(fmt.Sprintf("operation %d: source and target assets cannot be the same", i))
 		}
+		// Batch modify is only supported for THORChain-native source assets.
+		// External-chain limit swaps must be modified through MsgDeposit or Bifrost observation,
+		// which authenticate the From address. Since MsgBatchModifyLimitSwap is directly
+		// submittable via gRPC, allowing external-chain sources would let anyone modify
+		// another user's limit swaps by providing their external address in From.
+		if !op.Source.Asset.GetChain().IsTHORChain() {
+			return cosmos.ErrUnknownRequest(fmt.Sprintf("operation %d: batch modify only supports THORChain-native source assets", i))
+		}
 		if !op.From.IsChain(op.Source.Asset.GetChain()) {
 			return cosmos.ErrUnknownRequest(fmt.Sprintf("operation %d: from address and source asset do not match", i))
 		}
-		// For native assets, verify from matches signer
-		if op.Source.Asset.GetChain().IsTHORChain() {
-			frm, err := op.From.AccAddress()
-			if err != nil {
-				return cosmos.ErrUnknownRequest(fmt.Sprintf("operation %d: %s", i, err.Error()))
-			}
-			if !frm.Equals(m.Signer) {
-				return cosmos.ErrUnknownRequest(fmt.Sprintf("operation %d: from and signer address must match when source asset is native", i))
-			}
+		// Verify from matches signer (required for all operations since only native assets are allowed)
+		frm, err := op.From.AccAddress()
+		if err != nil {
+			return cosmos.ErrUnknownRequest(fmt.Sprintf("operation %d: %s", i, err.Error()))
+		}
+		if !frm.Equals(m.Signer) {
+			return cosmos.ErrUnknownRequest(fmt.Sprintf("operation %d: from and signer address must match", i))
 		}
 	}
 	return nil

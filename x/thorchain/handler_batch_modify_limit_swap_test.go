@@ -17,56 +17,58 @@ func (s *HandlerBatchModifyLimitSwapSuite) TestBatchModifyLimitSwapHandler(c *C)
 
 	handler := NewBatchModifyLimitSwapHandler(mgr)
 
-	// Create addresses and assets
-	fromAddr1 := GetRandomBTCAddress()
-	fromAddr2 := GetRandomBTCAddress()
-	sourceAsset := common.BTCAsset
-	targetAsset := common.RuneAsset()
+	// Create addresses and assets (RUNE source, signer must match from)
+	fromAddr := GetRandomTHORAddress()
+	signer, err := fromAddr.AccAddress()
+	c.Assert(err, IsNil)
+
+	sourceAsset := common.RuneAsset()
+	targetAsset1 := common.BTCAsset
+	targetAsset2 := common.ETHAsset
 	sourceCoin1 := common.NewCoin(sourceAsset, cosmos.NewUint(100*common.One))
 	sourceCoin2 := common.NewCoin(sourceAsset, cosmos.NewUint(200*common.One))
-	targetCoin1 := common.NewCoin(targetAsset, cosmos.NewUint(500*common.One))
-	targetCoin2 := common.NewCoin(targetAsset, cosmos.NewUint(1000*common.One))
+	targetCoin1 := common.NewCoin(targetAsset1, cosmos.NewUint(500*common.One))
+	targetCoin2 := common.NewCoin(targetAsset2, cosmos.NewUint(1000*common.One))
 	modifiedTargetAmount1 := cosmos.NewUint(600 * common.One)
 	modifiedTargetAmount2 := cosmos.NewUint(1200 * common.One)
-	signer := GetRandomBech32Addr()
 
 	// Create limit swaps in the keeper
 	txID1 := GetRandomTxHash()
 	tx1 := common.NewTx(
 		txID1,
-		fromAddr1,
-		fromAddr1,
+		fromAddr,
+		fromAddr,
 		common.Coins{sourceCoin1},
 		common.Gas{},
 		"",
 	)
-	limitSwap1 := NewMsgSwap(tx1, targetAsset, fromAddr1, targetCoin1.Amount, common.NoAddress, cosmos.ZeroUint(), "", "", nil, types.SwapType_limit, 0, 0, types.SwapVersion_v2, signer)
+	limitSwap1 := NewMsgSwap(tx1, targetAsset1, fromAddr, targetCoin1.Amount, common.NoAddress, cosmos.ZeroUint(), "", "", nil, types.SwapType_limit, 0, 0, types.SwapVersion_v2, signer)
 	c.Assert(mgr.Keeper().SetAdvSwapQueueItem(ctx, *limitSwap1), IsNil)
 	c.Assert(mgr.Keeper().SetAdvSwapQueueIndex(ctx, *limitSwap1), IsNil)
 
 	txID2 := GetRandomTxHash()
 	tx2 := common.NewTx(
 		txID2,
-		fromAddr2,
-		fromAddr2,
+		fromAddr,
+		fromAddr,
 		common.Coins{sourceCoin2},
 		common.Gas{},
 		"",
 	)
-	limitSwap2 := NewMsgSwap(tx2, targetAsset, fromAddr2, targetCoin2.Amount, common.NoAddress, cosmos.ZeroUint(), "", "", nil, types.SwapType_limit, 0, 0, types.SwapVersion_v2, signer)
+	limitSwap2 := NewMsgSwap(tx2, targetAsset2, fromAddr, targetCoin2.Amount, common.NoAddress, cosmos.ZeroUint(), "", "", nil, types.SwapType_limit, 0, 0, types.SwapVersion_v2, signer)
 	c.Assert(mgr.Keeper().SetAdvSwapQueueItem(ctx, *limitSwap2), IsNil)
 	c.Assert(mgr.Keeper().SetAdvSwapQueueIndex(ctx, *limitSwap2), IsNil)
 
 	// Create batch modify message with two operations
 	operations := []ModifyLimitSwapOperation{
 		{
-			From:                 fromAddr1,
+			From:                 fromAddr,
 			Source:               sourceCoin1,
 			Target:               targetCoin1,
 			ModifiedTargetAmount: modifiedTargetAmount1,
 		},
 		{
-			From:                 fromAddr2,
+			From:                 fromAddr,
 			Source:               sourceCoin2,
 			Target:               targetCoin2,
 			ModifiedTargetAmount: modifiedTargetAmount2,
@@ -94,15 +96,17 @@ func (s *HandlerBatchModifyLimitSwapSuite) TestBatchModifyLimitSwapTooManyOperat
 	ctx, mgr := setupManagerForTest(c)
 
 	handler := NewBatchModifyLimitSwapHandler(mgr)
-	signer := GetRandomBech32Addr()
+	fromAddr := GetRandomTHORAddress()
+	signer, err := fromAddr.AccAddress()
+	c.Assert(err, IsNil)
 
 	// Create more operations than allowed
 	operations := make([]ModifyLimitSwapOperation, MaxBatchModifyOperations+1)
 	for i := range operations {
 		operations[i] = ModifyLimitSwapOperation{
-			From:                 GetRandomBTCAddress(),
-			Source:               common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One)),
-			Target:               common.NewCoin(common.RuneAsset(), cosmos.NewUint(500*common.One)),
+			From:                 fromAddr,
+			Source:               common.NewCoin(common.RuneAsset(), cosmos.NewUint(100*common.One)),
+			Target:               common.NewCoin(common.BTCAsset, cosmos.NewUint(500*common.One)),
 			ModifiedTargetAmount: cosmos.NewUint(600 * common.One),
 		}
 	}
@@ -136,44 +140,45 @@ func (s *HandlerBatchModifyLimitSwapSuite) TestBatchModifyLimitSwapPartialFailur
 
 	handler := NewBatchModifyLimitSwapHandler(mgr)
 
-	// Create only one limit swap
-	fromAddr1 := GetRandomBTCAddress()
-	sourceAsset := common.BTCAsset
-	targetAsset := common.RuneAsset()
+	// Create only one limit swap (RUNE source)
+	fromAddr := GetRandomTHORAddress()
+	signer, err := fromAddr.AccAddress()
+	c.Assert(err, IsNil)
+
+	sourceAsset := common.RuneAsset()
+	targetAsset := common.BTCAsset
 	sourceCoin1 := common.NewCoin(sourceAsset, cosmos.NewUint(100*common.One))
 	targetCoin1 := common.NewCoin(targetAsset, cosmos.NewUint(500*common.One))
 	modifiedTargetAmount1 := cosmos.NewUint(600 * common.One)
-	signer := GetRandomBech32Addr()
 
 	txID1 := GetRandomTxHash()
 	tx1 := common.NewTx(
 		txID1,
-		fromAddr1,
-		fromAddr1,
+		fromAddr,
+		fromAddr,
 		common.Coins{sourceCoin1},
 		common.Gas{},
 		"",
 	)
-	limitSwap1 := NewMsgSwap(tx1, targetAsset, fromAddr1, targetCoin1.Amount, common.NoAddress, cosmos.ZeroUint(), "", "", nil, types.SwapType_limit, 0, 0, types.SwapVersion_v2, signer)
+	limitSwap1 := NewMsgSwap(tx1, targetAsset, fromAddr, targetCoin1.Amount, common.NoAddress, cosmos.ZeroUint(), "", "", nil, types.SwapType_limit, 0, 0, types.SwapVersion_v2, signer)
 	c.Assert(mgr.Keeper().SetAdvSwapQueueItem(ctx, *limitSwap1), IsNil)
 	c.Assert(mgr.Keeper().SetAdvSwapQueueIndex(ctx, *limitSwap1), IsNil)
 
 	// Create batch with one valid and one invalid operation
 	// Second operation references a non-existent limit swap
-	fromAddr2 := GetRandomBTCAddress()
 	sourceCoin2 := common.NewCoin(sourceAsset, cosmos.NewUint(200*common.One))
 	targetCoin2 := common.NewCoin(targetAsset, cosmos.NewUint(1000*common.One))
 	modifiedTargetAmount2 := cosmos.NewUint(1200 * common.One)
 
 	operations := []ModifyLimitSwapOperation{
 		{
-			From:                 fromAddr1,
+			From:                 fromAddr,
 			Source:               sourceCoin1,
 			Target:               targetCoin1,
 			ModifiedTargetAmount: modifiedTargetAmount1,
 		},
 		{
-			From:                 fromAddr2, // No swap exists for this address
+			From:                 fromAddr, // No swap exists for this source/target combo
 			Source:               sourceCoin2,
 			Target:               targetCoin2,
 			ModifiedTargetAmount: modifiedTargetAmount2,
@@ -194,54 +199,56 @@ func (s *HandlerBatchModifyLimitSwapSuite) TestBatchModifyLimitSwapWithCancellat
 
 	handler := NewBatchModifyLimitSwapHandler(mgr)
 
-	// Create two limit swaps
-	fromAddr1 := GetRandomBTCAddress()
-	fromAddr2 := GetRandomBTCAddress()
-	sourceAsset := common.BTCAsset
-	targetAsset := common.RuneAsset()
+	// Create two limit swaps (RUNE source)
+	fromAddr := GetRandomTHORAddress()
+	signer, err := fromAddr.AccAddress()
+	c.Assert(err, IsNil)
+
+	sourceAsset := common.RuneAsset()
+	targetAsset1 := common.BTCAsset
+	targetAsset2 := common.ETHAsset
 	sourceCoin1 := common.NewCoin(sourceAsset, cosmos.NewUint(100*common.One))
 	sourceCoin2 := common.NewCoin(sourceAsset, cosmos.NewUint(200*common.One))
-	targetCoin1 := common.NewCoin(targetAsset, cosmos.NewUint(500*common.One))
-	targetCoin2 := common.NewCoin(targetAsset, cosmos.NewUint(1000*common.One))
+	targetCoin1 := common.NewCoin(targetAsset1, cosmos.NewUint(500*common.One))
+	targetCoin2 := common.NewCoin(targetAsset2, cosmos.NewUint(1000*common.One))
 	modifiedTargetAmount := cosmos.NewUint(600 * common.One)
-	signer := GetRandomBech32Addr()
 
 	txID1 := GetRandomTxHash()
 	tx1 := common.NewTx(
 		txID1,
-		fromAddr1,
-		fromAddr1,
+		fromAddr,
+		fromAddr,
 		common.Coins{sourceCoin1},
 		common.Gas{},
 		"",
 	)
-	limitSwap1 := NewMsgSwap(tx1, targetAsset, fromAddr1, targetCoin1.Amount, common.NoAddress, cosmos.ZeroUint(), "", "", nil, types.SwapType_limit, 0, 0, types.SwapVersion_v2, signer)
+	limitSwap1 := NewMsgSwap(tx1, targetAsset1, fromAddr, targetCoin1.Amount, common.NoAddress, cosmos.ZeroUint(), "", "", nil, types.SwapType_limit, 0, 0, types.SwapVersion_v2, signer)
 	c.Assert(mgr.Keeper().SetAdvSwapQueueItem(ctx, *limitSwap1), IsNil)
 	c.Assert(mgr.Keeper().SetAdvSwapQueueIndex(ctx, *limitSwap1), IsNil)
 
 	txID2 := GetRandomTxHash()
 	tx2 := common.NewTx(
 		txID2,
-		fromAddr2,
-		fromAddr2,
+		fromAddr,
+		fromAddr,
 		common.Coins{sourceCoin2},
 		common.Gas{},
 		"",
 	)
-	limitSwap2 := NewMsgSwap(tx2, targetAsset, fromAddr2, targetCoin2.Amount, common.NoAddress, cosmos.ZeroUint(), "", "", nil, types.SwapType_limit, 0, 0, types.SwapVersion_v2, signer)
+	limitSwap2 := NewMsgSwap(tx2, targetAsset2, fromAddr, targetCoin2.Amount, common.NoAddress, cosmos.ZeroUint(), "", "", nil, types.SwapType_limit, 0, 0, types.SwapVersion_v2, signer)
 	c.Assert(mgr.Keeper().SetAdvSwapQueueItem(ctx, *limitSwap2), IsNil)
 	c.Assert(mgr.Keeper().SetAdvSwapQueueIndex(ctx, *limitSwap2), IsNil)
 
 	// Batch: modify first, cancel second (by setting modified amount to zero)
 	operations := []ModifyLimitSwapOperation{
 		{
-			From:                 fromAddr1,
+			From:                 fromAddr,
 			Source:               sourceCoin1,
 			Target:               targetCoin1,
 			ModifiedTargetAmount: modifiedTargetAmount,
 		},
 		{
-			From:                 fromAddr2,
+			From:                 fromAddr,
 			Source:               sourceCoin2,
 			Target:               targetCoin2,
 			ModifiedTargetAmount: cosmos.ZeroUint(), // Cancellation
@@ -269,12 +276,9 @@ func (s *HandlerBatchModifyLimitSwapSuite) TestBatchModifyLimitSwapValidation(c 
 
 	handler := NewBatchModifyLimitSwapHandler(mgr)
 
-	// Test with invalid signer
-	fromAddr := GetRandomBTCAddress()
-	sourceAsset := common.BTCAsset
-	targetAsset := common.RuneAsset()
-	sourceCoin := common.NewCoin(sourceAsset, cosmos.NewUint(100*common.One))
-	targetCoin := common.NewCoin(targetAsset, cosmos.NewUint(500*common.One))
+	fromAddr := GetRandomTHORAddress()
+	sourceCoin := common.NewCoin(common.RuneAsset(), cosmos.NewUint(100*common.One))
+	targetCoin := common.NewCoin(common.BTCAsset, cosmos.NewUint(500*common.One))
 
 	operations := []ModifyLimitSwapOperation{
 		{
@@ -296,11 +300,12 @@ func (s *HandlerBatchModifyLimitSwapSuite) TestBatchModifyLimitSwapInvalidOperat
 	ctx, mgr := setupManagerForTest(c)
 
 	handler := NewBatchModifyLimitSwapHandler(mgr)
-	signer := GetRandomBech32Addr()
+	fromAddr := GetRandomTHORAddress()
+	signer, err := fromAddr.AccAddress()
+	c.Assert(err, IsNil)
 
 	// Test with operation having same source and target
-	fromAddr := GetRandomBTCAddress()
-	sourceCoin := common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One))
+	sourceCoin := common.NewCoin(common.RuneAsset(), cosmos.NewUint(100*common.One))
 
 	operations := []ModifyLimitSwapOperation{
 		{
@@ -323,14 +328,16 @@ func (s *HandlerBatchModifyLimitSwapSuite) TestBatchModifyLimitSwapMultipleSameF
 
 	handler := NewBatchModifyLimitSwapHandler(mgr)
 
-	// Create multiple limit swaps from same address
-	fromAddr := GetRandomBTCAddress()
-	sourceAsset := common.BTCAsset
-	targetAsset := common.RuneAsset()
+	// Create multiple limit swaps from same address (RUNE source)
+	fromAddr := GetRandomTHORAddress()
+	signer, err := fromAddr.AccAddress()
+	c.Assert(err, IsNil)
+
+	sourceAsset := common.RuneAsset()
+	targetAsset := common.BTCAsset
 	sourceCoin := common.NewCoin(sourceAsset, cosmos.NewUint(100*common.One))
 	targetCoin1 := common.NewCoin(targetAsset, cosmos.NewUint(500*common.One))
 	targetCoin2 := common.NewCoin(targetAsset, cosmos.NewUint(600*common.One))
-	signer := GetRandomBech32Addr()
 
 	// First swap with target 500
 	txID1 := GetRandomTxHash()
@@ -442,4 +449,54 @@ func (s *HandlerBatchModifyLimitSwapSuite) TestBatchModifyLimitSwapRUNESource(c 
 	modifiedSwap, err := mgr.Keeper().GetAdvSwapQueueItem(ctx, txID, 0)
 	c.Assert(err, IsNil)
 	c.Assert(modifiedSwap.TradeTarget.Equal(cosmos.NewUint(2*common.One)), Equals, true)
+}
+
+func (s *HandlerBatchModifyLimitSwapSuite) TestBatchModifyLimitSwapRejectsExternalChainSource(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	handler := NewBatchModifyLimitSwapHandler(mgr)
+	signer := GetRandomBech32Addr()
+
+	// Attempt batch modify with BTC source asset (should be rejected)
+	fromAddr := GetRandomBTCAddress()
+	operations := []ModifyLimitSwapOperation{
+		{
+			From:                 fromAddr,
+			Source:               common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One)),
+			Target:               common.NewCoin(common.RuneAsset(), cosmos.NewUint(500*common.One)),
+			ModifiedTargetAmount: cosmos.NewUint(600 * common.One),
+		},
+	}
+
+	msg := NewMsgBatchModifyLimitSwap(operations, signer)
+
+	result, err := handler.Run(ctx, msg)
+	c.Assert(err, NotNil)
+	c.Assert(result, IsNil)
+	c.Assert(err.Error(), Matches, ".*batch modify only supports THORChain-native source assets.*")
+}
+
+func (s *HandlerBatchModifyLimitSwapSuite) TestBatchModifyLimitSwapRejectsSignerMismatch(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	handler := NewBatchModifyLimitSwapHandler(mgr)
+
+	fromAddr := GetRandomTHORAddress()
+	differentSigner := GetRandomBech32Addr() // Different from fromAddr
+
+	operations := []ModifyLimitSwapOperation{
+		{
+			From:                 fromAddr,
+			Source:               common.NewCoin(common.RuneAsset(), cosmos.NewUint(100*common.One)),
+			Target:               common.NewCoin(common.BTCAsset, cosmos.NewUint(500*common.One)),
+			ModifiedTargetAmount: cosmos.NewUint(600 * common.One),
+		},
+	}
+
+	msg := NewMsgBatchModifyLimitSwap(operations, differentSigner)
+
+	result, err := handler.Run(ctx, msg)
+	c.Assert(err, NotNil)
+	c.Assert(result, IsNil)
+	c.Assert(err.Error(), Matches, ".*from and signer address must match.*")
 }
