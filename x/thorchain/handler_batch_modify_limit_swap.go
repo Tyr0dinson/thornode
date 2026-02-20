@@ -48,7 +48,11 @@ func (h BatchModifyLimitSwapHandler) validate(ctx cosmos.Context, msg MsgBatchMo
 func (h BatchModifyLimitSwapHandler) handle(ctx cosmos.Context, msg MsgBatchModifyLimitSwap) error {
 	singleHandler := NewModifyLimitSwapHandler(h.mgr)
 
-	// Process each operation atomically - if any fails, the entire batch fails
+	// Process each operation - if any fails, the entire batch fails.
+	// Atomicity is provided by the CacheContext wrapper in handler.go:
+	// all state changes are rolled back if any operation returns an error.
+	// Note: the ante handler (fee deduction) runs outside this CacheContext,
+	// so the fee is always deducted regardless of handler success/failure.
 	for i, op := range msg.Operations {
 		singleMsg := NewMsgModifyLimitSwap(
 			op.From,

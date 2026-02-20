@@ -549,7 +549,7 @@ func (k KVStore) GetModifyLimitSwapFee(ctx cosmos.Context, addr cosmos.AccAddres
 	// Only the first modify in a block (single or batch) gets the discounted fee
 	if !k.HasModifiedLimitSwapInBlock(ctx, addr) {
 		fee := k.GetConfigInt64(ctx, constants.ModifyLimitSwapDiscountedFee)
-		return cosmos.NewUint(uint64(fee))
+		return cosmos.SafeUintFromInt64(fee)
 	}
 	// Not first in block, use standard fee
 	return k.GetNativeTxFee(ctx)

@@ -500,3 +500,51 @@ func (s *HandlerBatchModifyLimitSwapSuite) TestBatchModifyLimitSwapRejectsSigner
 	c.Assert(result, IsNil)
 	c.Assert(err.Error(), Matches, ".*from and signer address must match.*")
 }
+
+func (s *HandlerBatchModifyLimitSwapSuite) TestBatchModifyLimitSwapFeeDeduction(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	fromAddr := GetRandomTHORAddress()
+	signer, err := fromAddr.AccAddress()
+	c.Assert(err, IsNil)
+
+	// Fund the account
+	FundAccount(c, ctx, mgr.Keeper(), signer, 200*common.One)
+	denom := common.RuneNative.Native()
+	initialRune := mgr.Keeper().GetBalance(ctx, signer).AmountOf(denom)
+
+	// First batch modify should get discounted fee
+	discountedFee := mgr.Keeper().GetModifyLimitSwapFee(ctx, signer)
+	c.Assert(discountedFee.LT(mgr.Keeper().GetNativeTxFee(ctx)), Equals, true, Commentf("discounted fee should be less than standard fee"))
+
+	// Deduct first fee (discounted)
+	err = mgr.Keeper().DeductModifyLimitSwapFee(ctx, signer)
+	c.Assert(err, IsNil)
+
+	afterFirstRune := mgr.Keeper().GetBalance(ctx, signer).AmountOf(denom)
+	firstDeduction := initialRune.Sub(afterFirstRune)
+	c.Assert(firstDeduction.String(), Equals, discountedFee.String())
+
+	// Second fee in same block should be full fee
+	fullFee := mgr.Keeper().GetModifyLimitSwapFee(ctx, signer)
+	c.Assert(fullFee.Equal(mgr.Keeper().GetNativeTxFee(ctx)), Equals, true, Commentf("second fee should be the standard tx fee"))
+
+	err = mgr.Keeper().DeductModifyLimitSwapFee(ctx, signer)
+	c.Assert(err, IsNil)
+
+	afterSecondRune := mgr.Keeper().GetBalance(ctx, signer).AmountOf(denom)
+	secondDeduction := afterFirstRune.Sub(afterSecondRune)
+	c.Assert(secondDeduction.String(), Equals, fullFee.String())
+}
+
+func (s *HandlerBatchModifyLimitSwapSuite) TestBatchModifyLimitSwapInsufficientFunds(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	fromAddr := GetRandomTHORAddress()
+	signer, err := fromAddr.AccAddress()
+	c.Assert(err, IsNil)
+
+	// Don't fund the account - should fail fee deduction
+	err = mgr.Keeper().DeductModifyLimitSwapFee(ctx, signer)
+	c.Assert(err, NotNil)
+}
