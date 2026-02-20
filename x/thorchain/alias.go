@@ -30,7 +30,8 @@ const (
 	PoolSuspended = types.PoolStatus_Suspended
 
 	// Admin config keys
-	MaxWithdrawBasisPoints = types.MaxWithdrawBasisPoints
+	MaxWithdrawBasisPoints   = types.MaxWithdrawBasisPoints
+	MaxBatchModifyOperations = types.MaxBatchModifyOperations
 
 	// Vaults
 	AsgardVault   = types.VaultType_AsgardVault

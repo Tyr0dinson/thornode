@@ -27,7 +27,9 @@ func (k KVStore) HasModifiedLimitSwapInBlock(ctx cosmos.Context, addr cosmos.Acc
 	return storedHeight == ctx.BlockHeight()
 }
 
-// SetModifiedLimitSwapInBlock marks that an address has modified a limit swap in the current block
+// SetModifiedLimitSwapInBlock marks that an address has modified a limit swap in the current block.
+// Entries persist indefinitely but naturally become stale: old block heights won't match
+// the current block, so they have no effect on fee calculations and require no cleanup.
 func (k KVStore) SetModifiedLimitSwapInBlock(ctx cosmos.Context, addr cosmos.AccAddress) {
 	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 	key := k.getModifyLimitSwapTrackerKey(addr)

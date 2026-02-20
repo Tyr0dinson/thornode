@@ -11,6 +11,8 @@ import (
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 )
 
+const MaxBatchModifyOperations = 100
+
 var (
 	_ sdk.Msg              = &MsgBatchModifyLimitSwap{}
 	_ sdk.HasValidateBasic = &MsgBatchModifyLimitSwap{}
@@ -42,6 +44,9 @@ func (m *MsgBatchModifyLimitSwap) ValidateBasic() error {
 	}
 	if len(m.Operations) == 0 {
 		return cosmos.ErrUnknownRequest("no operations provided")
+	}
+	if len(m.Operations) > MaxBatchModifyOperations {
+		return cosmos.ErrUnknownRequest(fmt.Sprintf("too many operations: %d, max %d", len(m.Operations), MaxBatchModifyOperations))
 	}
 	for i, op := range m.Operations {
 		if err := op.Source.Valid(); err != nil {

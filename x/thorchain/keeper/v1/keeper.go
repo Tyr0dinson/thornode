@@ -564,8 +564,9 @@ func (k KVStore) DeductModifyLimitSwapFee(ctx cosmos.Context, addr cosmos.AccAdd
 		return nil // no fee
 	}
 
-	// Mark this address as having modified in this block
-	// This must be done before deducting to ensure subsequent modifies pay full fee
+	// Mark this address as having modified in this block so subsequent modifies pay full fee.
+	// Ordering relative to SendFromAccountToModule doesn't matter for correctness since the
+	// handler's CacheContext ensures all state changes are atomic (all committed or all reverted).
 	k.SetModifiedLimitSwapInBlock(ctx, addr)
 
 	coins := common.NewCoins(common.NewCoin(common.RuneNative, fee))

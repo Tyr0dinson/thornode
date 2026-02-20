@@ -46,9 +46,10 @@ func (h BatchModifyLimitSwapHandler) validate(ctx cosmos.Context, msg MsgBatchMo
 }
 
 func (h BatchModifyLimitSwapHandler) handle(ctx cosmos.Context, msg MsgBatchModifyLimitSwap) error {
+	singleHandler := NewModifyLimitSwapHandler(h.mgr)
+
 	// Process each operation atomically - if any fails, the entire batch fails
 	for i, op := range msg.Operations {
-		// Create a synthetic single modify message for each operation
 		singleMsg := NewMsgModifyLimitSwap(
 			op.From,
 			op.Source,
@@ -59,8 +60,6 @@ func (h BatchModifyLimitSwapHandler) handle(ctx cosmos.Context, msg MsgBatchModi
 			cosmos.ZeroUint(),
 		)
 
-		// Reuse the single modify handler logic
-		singleHandler := NewModifyLimitSwapHandler(h.mgr)
 		if err := singleHandler.handle(ctx, *singleMsg); err != nil {
 			return fmt.Errorf("operation %d failed: %w", i, err)
 		}

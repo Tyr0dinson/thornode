@@ -167,7 +167,7 @@ asserts:
 type: check
 endpoint: http://localhost:1317/thorchain/block
 asserts:
-  - .txs[].result.events[]|select(.type == "limit_swap_mod")|length > 0
+  - '[.txs[].result.events[]|select(.type == "limit_swap_mod")]|length == 2'
 ---
 ########################################################################################
 # Final verification: Queue integrity

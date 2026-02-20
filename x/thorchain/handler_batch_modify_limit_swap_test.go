@@ -90,6 +90,31 @@ func (s *HandlerBatchModifyLimitSwapSuite) TestBatchModifyLimitSwapHandler(c *C)
 	c.Assert(modifiedSwap2.TradeTarget.Equal(modifiedTargetAmount2), Equals, true)
 }
 
+func (s *HandlerBatchModifyLimitSwapSuite) TestBatchModifyLimitSwapTooManyOperations(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	handler := NewBatchModifyLimitSwapHandler(mgr)
+	signer := GetRandomBech32Addr()
+
+	// Create more operations than allowed
+	operations := make([]ModifyLimitSwapOperation, MaxBatchModifyOperations+1)
+	for i := range operations {
+		operations[i] = ModifyLimitSwapOperation{
+			From:                 GetRandomBTCAddress(),
+			Source:               common.NewCoin(common.BTCAsset, cosmos.NewUint(100*common.One)),
+			Target:               common.NewCoin(common.RuneAsset(), cosmos.NewUint(500*common.One)),
+			ModifiedTargetAmount: cosmos.NewUint(600 * common.One),
+		}
+	}
+
+	msg := NewMsgBatchModifyLimitSwap(operations, signer)
+
+	result, err := handler.Run(ctx, msg)
+	c.Assert(err, NotNil)
+	c.Assert(result, IsNil)
+	c.Assert(err.Error(), Matches, ".*too many operations.*")
+}
+
 func (s *HandlerBatchModifyLimitSwapSuite) TestBatchModifyLimitSwapEmptyOperations(c *C) {
 	ctx, mgr := setupManagerForTest(c)
 
