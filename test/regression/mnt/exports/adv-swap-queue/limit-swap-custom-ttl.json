@@ -213,7 +213,7 @@
           "height": "1"
         }
       ],
-      "last_signed_height": "12",
+      "last_signed_height": "3",
       "liquidity_providers": [
         {
           "asset": "BTC.BTC",
@@ -332,6 +332,7 @@
       },
       "rune_providers": [],
       "secured_assets": [],
+      "staged_outbounds": [],
       "streaming_swaps": [],
       "swap_queue_items": [],
       "swapper_clout": [

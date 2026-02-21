@@ -844,13 +844,6 @@
               "msg_index": "0",
               "sender": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
               "type": "message"
-            },
-            {
-              "msg_index": "0",
-              "source": "100000000 BTC.BTC",
-              "target": "0 THOR.RUNE",
-              "txid": "0000000000000000000000000000000000000000000000000000000000000001",
-              "type": "limit_swap"
             }
           ]
         }
@@ -2084,13 +2077,6 @@
               "msg_index": "0",
               "sender": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
               "type": "message"
-            },
-            {
-              "msg_index": "0",
-              "source": "50000000 BTC.BTC",
-              "target": "0 THOR.RUNE",
-              "txid": "000000000000000000000000000000000000000000000000000000000000000a",
-              "type": "limit_swap"
             }
           ]
         }
@@ -3840,13 +3826,6 @@
               "msg_index": "0",
               "sender": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
               "type": "message"
-            },
-            {
-              "msg_index": "0",
-              "source": "100000000 BTC.BTC",
-              "target": "0 BTC-BTC",
-              "txid": "0000000000000000000000000000000000000000000000000000000000000014",
-              "type": "limit_swap"
             }
           ]
         }
@@ -5101,13 +5080,6 @@
               "msg_index": "0",
               "sender": "tthor1zf3gsk7edzwl9syyefvfhle37cjtql35h6k85m",
               "type": "message"
-            },
-            {
-              "msg_index": "0",
-              "source": "100000000 BTC.BTC",
-              "target": "0 THOR.RUNE",
-              "txid": "000000000000000000000000000000000000000000000000000000000000001e",
-              "type": "limit_swap"
             }
           ]
         }
@@ -5892,13 +5864,6 @@
               "msg_index": "0",
               "sender": "tthor1xkz88t875m7ms7wa6220estwwdlc86pqsccrvm",
               "type": "message"
-            },
-            {
-              "msg_index": "0",
-              "source": "1000000000 THOR.RUNE",
-              "target": "0 BTC~BTC",
-              "txid": "B590CD5C563AC76DBFE0C1E0F7CAD819B317B63149F729D54DCF34B7E2781F2E",
-              "type": "limit_swap"
             }
           ]
         }

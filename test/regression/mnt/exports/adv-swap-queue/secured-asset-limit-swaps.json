@@ -332,6 +332,7 @@
           ],
           "finalised_height": "8",
           "height": "8",
+          "mempool_swap_tor": "0",
           "out_txs": null,
           "outbound_height": "8",
           "tx": {
@@ -448,6 +449,7 @@
           "depth": "313568150"
         }
       ],
+      "staged_outbounds": [],
       "streaming_swaps": [],
       "swap_queue_items": [],
       "swapper_clout": [
