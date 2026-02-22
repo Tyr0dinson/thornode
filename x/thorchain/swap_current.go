@@ -356,6 +356,20 @@ func (s *SwapperImpl) swapOne(ctx cosmos.Context,
 		return cosmos.ZeroUint(), evt, errSwapFailNotEnoughBalance
 	}
 
+	// When synthetic virtual depth is applied, Y may exceed the actual pool balance.
+	// Also validate against the actual balance to prevent SafeSub underflow.
+	if source.IsSyntheticAsset() || target.IsSyntheticAsset() {
+		var actualOutputBalance cosmos.Uint
+		if source.IsRune() {
+			actualOutputBalance = pool.BalanceAsset
+		} else {
+			actualOutputBalance = pool.BalanceRune
+		}
+		if emitAssets.GTE(actualOutputBalance) {
+			return cosmos.ZeroUint(), evt, errSwapFailNotEnoughBalance
+		}
+	}
+
 	ctx.Logger().Info("pre swap", "pool", pool.Asset, "rune", pool.BalanceRune, "asset", pool.BalanceAsset, "lp units", pool.LPUnits, "synth units", pool.SynthUnits)
 
 	// Burning of input synth or derived pool input (Asset or RUNE).
