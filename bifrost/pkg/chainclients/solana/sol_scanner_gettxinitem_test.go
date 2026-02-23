@@ -11,12 +11,14 @@ import (
 )
 
 const (
-	testSystemProgram = "11111111111111111111111111111111"
-	testMemoProgram   = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"
-	testSender        = "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM"
-	testVault         = "6sbzC1eH4FTujJXWj51eQe25cYvr4xfXbJ1vAj7j2k5J"
-	testNewAccount    = "HN7cABqLq46Es1jh92dQQisAq662SmxELLLsHHe4YWrH"
-	testTxSig         = "5VERv8NMHYqQsM5Cg9J2kDfqyJzHmo6YNXRNh1JFhWaBa1ZNK5e2FtJCA7m1AimKs4Gbno3LnFruJHcxHBxhRFqR"
+	testSystemProgram        = "11111111111111111111111111111111"
+	testMemoProgram          = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"
+	testComputeBudgetProgram = "ComputeBudget111111111111111111111111111111"
+	testUnknownProgram       = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" // SPL Token — not whitelisted
+	testSender               = "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM"
+	testVault                = "6sbzC1eH4FTujJXWj51eQe25cYvr4xfXbJ1vAj7j2k5J"
+	testNewAccount           = "HN7cABqLq46Es1jh92dQQisAq662SmxELLLsHHe4YWrH"
+	testTxSig                = "5VERv8NMHYqQsM5Cg9J2kDfqyJzHmo6YNXRNh1JFhWaBa1ZNK5e2FtJCA7m1AimKs4Gbno3LnFruJHcxHBxhRFqR"
 )
 
 type GetTxInItemSuite struct{}
@@ -299,6 +301,166 @@ func (s *GetTxInItemSuite) TestAccountIndexOutOfRange(c *C) {
 					{
 						ProgramIdIndex: 1,
 						Accounts:       []int{0, 5}, // index 5 is out of range
+						Data:           makeTransferData(1_000_000_000),
+					},
+				},
+			},
+		},
+	}
+
+	item := scanner.getTxInItem(txn, 100)
+	c.Assert(item, IsNil)
+}
+
+// TestUnknownProgramRejected verifies that a transaction containing an instruction
+// from a non-whitelisted program is rejected outright, even if it also has a valid
+// System Program Transfer instruction.
+func (s *GetTxInItemSuite) TestUnknownProgramRejected(c *C) {
+	scanner := newTestScanner()
+
+	txn := &rpc.TransactionResult{
+		Slot: 100,
+		Meta: rpc.RPCMeta{
+			Fee:          5000,
+			PreBalances:  []uint64{10_000_000_000, 50_000_000_000, 1, 1},
+			PostBalances: []uint64{9_000_000_000, 51_000_000_000, 1, 1},
+		},
+		Transaction: rpc.RPCTxnData{
+			Signatures: []string{testTxSig},
+			Message: rpc.RPCMessage{
+				AccountKeys: []string{testSender, testVault, testSystemProgram, testUnknownProgram},
+				Instructions: []rpc.RPCInstruction{
+					{
+						ProgramIdIndex: 2, // System Program Transfer
+						Accounts:       []int{0, 1},
+						Data:           makeTransferData(1_000_000_000),
+					},
+					{
+						ProgramIdIndex: 3, // Non-whitelisted program
+						Accounts:       []int{0},
+						Data:           base58.Encode([]byte("arbitrary")),
+					},
+				},
+			},
+		},
+	}
+
+	item := scanner.getTxInItem(txn, 100)
+	c.Assert(item, IsNil)
+}
+
+// TestComputeBudgetAllowed verifies that a transaction containing a Compute Budget
+// Program instruction (commonly injected by wallets for priority fees) alongside
+// a valid System Program Transfer is accepted.
+func (s *GetTxInItemSuite) TestComputeBudgetAllowed(c *C) {
+	scanner := newTestScanner()
+
+	oneSol := uint64(1_000_000_000)
+	fee := uint64(5000)
+
+	txn := &rpc.TransactionResult{
+		Slot: 100,
+		Meta: rpc.RPCMeta{
+			Fee:          fee,
+			PreBalances:  []uint64{10_000_000_000, 50_000_000_000, 1, 1},
+			PostBalances: []uint64{10_000_000_000 - oneSol - fee, 50_000_000_000 + oneSol, 1, 1},
+		},
+		Transaction: rpc.RPCTxnData{
+			Signatures: []string{testTxSig},
+			Message: rpc.RPCMessage{
+				AccountKeys: []string{testSender, testVault, testSystemProgram, testComputeBudgetProgram},
+				Instructions: []rpc.RPCInstruction{
+					{
+						ProgramIdIndex: 3, // Compute Budget Program
+						Accounts:       []int{},
+						Data:           base58.Encode([]byte{0x02, 0x40, 0x42, 0x0f, 0x00}), // SetComputeUnitLimit
+					},
+					{
+						ProgramIdIndex: 2, // System Program Transfer
+						Accounts:       []int{0, 1},
+						Data:           makeTransferData(oneSol),
+					},
+				},
+			},
+		},
+	}
+
+	item := scanner.getTxInItem(txn, 100)
+	c.Assert(item, NotNil)
+	c.Assert(item.Coins[0].Amount.Equal(convertLamportsToTHORChain(oneSol)), Equals, true)
+}
+
+// TestMultipleMemosRejected verifies that a transaction with more than one Memo
+// Program instruction is rejected.
+func (s *GetTxInItemSuite) TestMultipleMemosRejected(c *C) {
+	scanner := newTestScanner()
+
+	txn := &rpc.TransactionResult{
+		Slot: 100,
+		Meta: rpc.RPCMeta{
+			Fee:          5000,
+			PreBalances:  []uint64{10_000_000_000, 50_000_000_000, 1, 1},
+			PostBalances: []uint64{9_000_000_000, 51_000_000_000, 1, 1},
+		},
+		Transaction: rpc.RPCTxnData{
+			Signatures: []string{testTxSig},
+			Message: rpc.RPCMessage{
+				AccountKeys: []string{testSender, testVault, testSystemProgram, testMemoProgram},
+				Instructions: []rpc.RPCInstruction{
+					{
+						ProgramIdIndex: 2,
+						Accounts:       []int{0, 1},
+						Data:           makeTransferData(1_000_000_000),
+					},
+					{
+						ProgramIdIndex: 3,
+						Accounts:       []int{0},
+						Data:           makeMemoData("=:ETH.ETH:0x1234"),
+					},
+					{
+						ProgramIdIndex: 3,
+						Accounts:       []int{0},
+						Data:           makeMemoData("duplicate memo"),
+					},
+				},
+			},
+		},
+	}
+
+	item := scanner.getTxInItem(txn, 100)
+	c.Assert(item, IsNil)
+}
+
+// TestMultipleComputeBudgetRejected verifies that a transaction with more than one
+// Compute Budget Program instruction is rejected.
+func (s *GetTxInItemSuite) TestMultipleComputeBudgetRejected(c *C) {
+	scanner := newTestScanner()
+
+	txn := &rpc.TransactionResult{
+		Slot: 100,
+		Meta: rpc.RPCMeta{
+			Fee:          5000,
+			PreBalances:  []uint64{10_000_000_000, 50_000_000_000, 1, 1},
+			PostBalances: []uint64{9_000_000_000, 51_000_000_000, 1, 1},
+		},
+		Transaction: rpc.RPCTxnData{
+			Signatures: []string{testTxSig},
+			Message: rpc.RPCMessage{
+				AccountKeys: []string{testSender, testVault, testSystemProgram, testComputeBudgetProgram},
+				Instructions: []rpc.RPCInstruction{
+					{
+						ProgramIdIndex: 3,
+						Accounts:       []int{},
+						Data:           base58.Encode([]byte{0x02, 0x40, 0x42, 0x0f, 0x00}),
+					},
+					{
+						ProgramIdIndex: 3,
+						Accounts:       []int{},
+						Data:           base58.Encode([]byte{0x03, 0x01, 0x00, 0x00, 0x00}),
+					},
+					{
+						ProgramIdIndex: 2,
+						Accounts:       []int{0, 1},
 						Data:           makeTransferData(1_000_000_000),
 					},
 				},

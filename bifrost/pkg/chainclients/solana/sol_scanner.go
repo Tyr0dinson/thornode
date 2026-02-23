@@ -727,7 +727,7 @@ func (s *SOLScanner) calculateFeeRatesFromTransactions(transactions []*rpc.Trans
 // Otherwise, it will return nil.
 func (s *SOLScanner) getTxInItem(txn *rpc.TransactionResult, blockHeight int64) *stypes.TxInItem {
 	memo := ""
-	var transferCount int
+	var transferCount, memoCount, computeBudgetCount int
 	var fromAccount, toAccount string
 	var amountMoved uint64
 	fee := txn.Meta.Fee
@@ -739,6 +739,13 @@ func (s *SOLScanner) getTxInItem(txn *rpc.TransactionResult, blockHeight int64) 
 
 		// Handle memo
 		if types.MemoProgramID.EqualsString(programID) {
+			memoCount++
+			if memoCount > 1 {
+				s.logger.Warn().
+					Str("txID", txn.Transaction.Signatures[0]).
+					Msg("Rejected transaction with multiple memo instructions")
+				return nil
+			}
 			memoBytes, err := base58.Decode(instruction.Data)
 			if err == nil {
 				memo = string(memoBytes)
@@ -748,9 +755,25 @@ func (s *SOLScanner) getTxInItem(txn *rpc.TransactionResult, blockHeight int64) 
 			continue
 		}
 
-		// Skip non-SystemProgram instructions
-		if !types.SystemProgramID.EqualsString(programID) {
+		// Allow Compute Budget Program (priority fees commonly injected by wallets)
+		if types.ComputeBudgetProgramID.EqualsString(programID) {
+			computeBudgetCount++
+			if computeBudgetCount > 1 {
+				s.logger.Warn().
+					Str("txID", txn.Transaction.Signatures[0]).
+					Msg("Rejected transaction with multiple compute budget instructions")
+				return nil
+			}
 			continue
+		}
+
+		// Reject any instruction from a program outside the whitelist
+		if !types.SystemProgramID.EqualsString(programID) {
+			s.logger.Warn().
+				Str("txID", txn.Transaction.Signatures[0]).
+				Str("programID", programID).
+				Msg("Rejected transaction with non-whitelisted program instruction")
+			return nil
 		}
 
 		// Decode instruction data
