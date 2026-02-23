@@ -2,6 +2,7 @@ package blockscanner
 
 import (
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 
@@ -46,11 +47,13 @@ func (s *LevelDBScannerStorageCardano) GetLastBlockId() (
 	uint64, uint64, []byte, error,
 ) {
 	iterator := s.db.NewIterator(
-		&leveldbutil.Range{Start: []byte(PrefixBlockId)}, nil,
+		leveldbutil.BytesPrefix([]byte(PrefixBlockId)), nil,
 	)
+	defer iterator.Release()
 	if !iterator.First() {
 		return 0, 0, nil, fmt.Errorf("no entry found")
 	}
+	fmt.Println(">>", hex.EncodeToString(iterator.Key()))
 	key := iterator.Key()
 
 	return s.getBlockId(key)
@@ -69,8 +72,9 @@ func (s *LevelDBScannerStorageCardano) SetBlockId(
 	key := s.getBlockIdKey(height)
 
 	bz, err := json.Marshal(BlockId{
-		Slot: slot,
-		Hash: hash,
+		Height: height,
+		Slot:   slot,
+		Hash:   hash,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to marshal data: %w", err)

@@ -11,8 +11,6 @@ import (
 
 // ScannerStorage define the method need to be used by scanner
 type ScannerStorageCardano interface {
-	GetScanStatus(account string) (string, uint64, error)
-	SetScanStatus(account, lastSignature string, lastSlot uint64) error
 	GetScanPos() (uint64, error)
 	SetScanPos(block uint64) error
 	GetInternalDb() *leveldb.DB

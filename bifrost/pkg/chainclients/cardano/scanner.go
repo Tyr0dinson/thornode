@@ -1,64 +1,348 @@
 package cardano
 
 import (
-	ouroboros "github.com/blinklabs-io/gouroboros"
+	"encoding/hex"
+	"fmt"
+	"sync"
+	"time"
+
+	sdkmath "cosmossdk.io/math"
+	"github.com/blinklabs-io/gouroboros/ledger"
+	"github.com/blinklabs-io/gouroboros/ledger/conway"
+	"github.com/blinklabs-io/gouroboros/protocol/chainsync"
+	pcommon "github.com/blinklabs-io/gouroboros/protocol/common"
 	"github.com/rs/zerolog"
+	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
-
-	"github.com/rs/zerolog/log"
 )
 
 type Scanner struct {
 	config                config.BifrostBlockScannerConfiguration
 	logger                zerolog.Logger
 	bridge                thorclient.ThorchainBridge
-	n2c                   *ouroboros.Connection
-	n2n                   *ouroboros.Connection
+	db                    *blockscanner.BlockScannerStorageCardano
+	n2c                   *ClientConnection
+	n2n                   *NodeConnection
+	networkMtx            sync.Mutex
 	networkFee            uint64
+	minFeeA               uint64
+	minFeeB               uint64
 	globalNetworkFeeQueue chan common.NetworkFee
 }
 
 func NewScanner(
+	logger zerolog.Logger,
 	cfg config.BifrostBlockScannerConfiguration,
 	bridge thorclient.ThorchainBridge,
-	n2c, n2n *ouroboros.Connection,
+	storage *blockscanner.BlockScannerStorageCardano,
+	n2cAddress string,
+	n2nAddress string,
 ) (*Scanner, error) {
-	return &Scanner{
+	var err error
+
+	s := &Scanner{
+		logger: logger.With().Str("module", "scanner").Logger(),
 		config: cfg,
-		logger: log.Logger.With().
-			Str("module", "blockscanner").
-			Str("chain", cfg.ChainID.String()).
-			Logger(),
 		bridge: bridge,
-		n2c:    n2c,
-		n2n:    n2n,
+		db:     storage,
+	}
+
+	// create n2n connection
+	s.n2n, err = NewNodeConnection(
+		logger, n2nAddress, s.rollBackwardHandler, s.rollForwardHandler,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create ouroboros n2n connection: %w", err)
+	}
+
+	// create n2c connection
+	s.n2c, err = NewClientConnection(s.logger, n2cAddress)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create ouroboros n2c connection: %w", err)
+	}
+
+	return s, nil
+}
+
+func (s *Scanner) Start() error {
+	var point pcommon.Point
+
+	if s.config.StartBlockHeight > 0 {
+		slot := s.config.Cardano.StartBlockSlot
+		if slot == 0 {
+			return fmt.Errorf("start block slot is zero")
+		}
+
+		hash := s.config.Cardano.StartBlockHash
+		if hash == "" {
+			return fmt.Errorf("start block hash is undefined")
+		}
+
+		bz, err := hex.DecodeString(hash)
+		if err != nil {
+			return fmt.Errorf("failed to decode start block hash: %w", err)
+		}
+
+		point = pcommon.NewPoint(slot, bz)
+	} else {
+		tip, err := s.n2c.GetChainPoint()
+		if err != nil {
+			return fmt.Errorf("fail to get current tip: %w", err)
+		}
+		point = *tip
+	}
+
+	fmt.Printf("Starting block scanner from: %x\n", point.Hash)
+
+	err := s.n2n.conn.ChainSync().Client.Sync([]pcommon.Point{point})
+	if err != nil {
+		return err
+	}
+
+	// wait for the first block
+	start := time.Now()
+	for {
+		time.Sleep(1 * time.Second)
+
+		height, _, _, _ := s.db.GetLastBlockId()
+		if height > 0 {
+			break
+		}
+
+		if time.Since(start).Seconds() > 10 {
+			return fmt.Errorf("timeout waiting for block scanner to start")
+		}
+	}
+
+	return nil
+}
+
+func (s *Scanner) Stop() error {
+	return s.n2n.conn.ChainSync().Client.Stop()
+}
+
+// GetHeight returns the current height of the chain.
+// Implements both ChainClient and BlockScannerFetcher interfaces.
+func (s *Scanner) GetHeight() (int64, error) {
+	return s.n2c.GetChainBlockNo()
+}
+
+// FetchMemPool implements blockscanner.BlockScannerFetcher.
+func (s *Scanner) FetchMemPool(_ int64) (types.TxIn, error) {
+	return types.TxIn{}, nil
+}
+
+func (s *Scanner) GetNetworkFee() (uint64, uint64) {
+	s.networkMtx.Lock()
+	defer s.networkMtx.Unlock()
+	return 1, s.networkFee
+}
+
+func (s *Scanner) GetNetworkMinFees() (uint64, uint64) {
+	s.networkMtx.Lock()
+	defer s.networkMtx.Unlock()
+	return s.minFeeA, s.minFeeB
+}
+
+// FetchTxs implements blockscanner.BlockScannerFetcher.
+func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
+	s.logger.Info().Msgf("FetchTxs: fetch_height=%d chain_height=%d", fetchHeight, chainHeight)
+	_, slot, hash, err := s.db.GetBlockId(uint64(fetchHeight))
+	if err != nil {
+		s.logger.Err(err).Msgf("fail to find block id for height=%d", fetchHeight)
+		return types.TxIn{}, err
+	}
+	block, err := s.n2n.conn.BlockFetch().Client.GetBlock(pcommon.NewPoint(slot, hash))
+	if err != nil {
+		s.logger.Err(err).Msg("fail to fetch block")
+		return types.TxIn{}, err
+	}
+
+	var txIns []*types.TxInItem
+	for _, tx := range block.Transactions() {
+		s.logger.Info().Str("hash", tx.Hash().String()).Msg("processing transaction")
+		if !tx.IsValid() {
+			continue
+		}
+
+		// try to get sender from witness
+		// if we make certain assumptions about tx origins we can skip n2c protocols and utxo queries
+		if len(tx.Witnesses().Vkey()) != 1 {
+			continue
+		}
+
+		fromAddress, err := AddressFromBytes(tx.Witnesses().Vkey()[0].Vkey)
+		if err != nil {
+			s.logger.Err(err).Msg("fail to get sender address")
+			continue
+		}
+
+		// isSenderAsgard := c.isAsgardAddress(senderAddr.String())
+
+		// expectation is one output address per filtered tx
+		// see: https://gitlab.com/thorchain/thornode/-/blob/develop/bifrost/pkg/chainclients/utxo/client_internal.go#L724
+		// which collapses multiple VOUTs into a single address based on filter criteria
+		if len(tx.Outputs()) == 0 {
+			continue
+		}
+		output := tx.Outputs()[0]
+
+		toAddress := output.Address()
+
+		fmt.Println(fromAddress.String(), "=>", toAddress.String())
+		// if !isSenderAsgard && !c.isAsgardAddress(addr.String()) {
+		// 	// skip txs that don't involve asgard addresses
+		// 	continue
+		// }
+		if fromAddress.String() == toAddress.String() {
+			// skip txs that are sent to the sender, i.e. for utxo change
+			continue
+		}
+
+		memo := ExtractMemo(tx.Metadata(), 0)
+
+		amount := output.Amount().Uint64() * 100
+		coins := common.Coins{{
+			Asset:    common.ADAAsset,
+			Amount:   sdkmath.NewUint(amount),
+			Decimals: 6,
+		}}
+
+		fee := tx.Fee().Uint64() * 100
+		gas := common.Gas{{
+			Asset:    common.ADAAsset,
+			Amount:   sdkmath.NewUint(fee),
+			Decimals: 6,
+		}}
+
+		txIns = append(txIns, &types.TxInItem{
+			Tx:          tx.Hash().String(),
+			BlockHeight: fetchHeight,
+			Memo:        memo,
+			Sender:      fromAddress.String(),
+			To:          toAddress.String(),
+			Coins:       coins,
+			Gas:         gas,
+		})
+	}
+
+	s.logger.Info().Msgf("done fetch")
+
+	if err = s.updateNetworkFee(fetchHeight); err != nil {
+		return types.TxIn{}, err
+	}
+
+	s.logger.Info().Msgf("done network fee")
+
+	err = s.db.PruneBlockIds(uint64(fetchHeight))
+	if err != nil {
+		s.logger.Err(err).Msg("fail to prune block ids")
+	}
+
+	err = s.db.PruneSpentUtxos(uint64(fetchHeight) - txTimeoutBlocks)
+	if err != nil {
+		s.logger.Err(err).Msg("fail to prune spent utxos")
+	}
+
+	s.logger.Info().Msgf("done pruning")
+
+	return types.TxIn{
+		Chain:    s.config.ChainID,
+		TxArray:  txIns,
+		Filtered: false,
+		MemPool:  false,
 	}, nil
 }
 
-// GetHeight returns the block height from tip  minus 1
-func (s *Scanner) GetHeight() (int64, error) {
-	tip, err := s.n2n.ChainSync().Client.GetCurrentTip()
-	if err != nil {
-		s.logger.Error().Err(err).Msg("failed to get current tip")
-		return -1, err
+func (s *Scanner) updateNetworkFee(height int64) error {
+	if height <= 0 {
+		return nil
 	}
-	return int64(tip.BlockNumber), nil
+
+	if height%networkFeeUpdatePeriod != 0 && s.minFeeA > 0 && s.minFeeB > 0 {
+		return nil
+	}
+
+	// fetch network protocol parameters, needed for tx signing
+	protocolParams, err := s.n2c.GetCurrentProtocolParams()
+	if err != nil {
+		return fmt.Errorf("failed to get protocol parameters: %w", err)
+	}
+
+	params, ok := protocolParams.(*conway.ConwayProtocolParameters)
+	if !ok {
+		return fmt.Errorf("failed to get protocol parameters: %w", err)
+	}
+
+	minFeeA := uint64(params.MinFeeA)
+	minFeeB := uint64(params.MinFeeB)
+
+	if minFeeA == s.minFeeA && minFeeB == s.minFeeB {
+		return nil
+	}
+
+	s.minFeeA = minFeeA
+	s.minFeeB = minFeeB
+
+	feeRate := minFeeA*estimatedTxSize + minFeeB + 1
+
+	resolution := uint64(s.config.GasPriceResolution)
+	roundedFeeRate := ((feeRate + (resolution / 2)) / resolution) * resolution
+
+	if roundedFeeRate == 0 {
+		return fmt.Errorf("rounded fee rate is zero")
+	}
+
+	s.networkFee = roundedFeeRate
+
+	s.globalNetworkFeeQueue <- common.NetworkFee{
+		Chain:           common.ADAChain,
+		Height:          height,
+		TransactionSize: 1,
+		TransactionRate: roundedFeeRate,
+	}
+
+	s.logger.Info().
+		Uint64("fee", roundedFeeRate).
+		Int64("height", height).
+		Msg("sent network fee to THORChain")
+
+	return nil
 }
 
-func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
-	// TODO implement me
-	panic("implement me")
+func (s *Scanner) rollForwardHandler(
+	_ chainsync.CallbackContext,
+	_ uint,
+	blockData any,
+	_ chainsync.Tip,
+) error {
+	switch h := blockData.(type) {
+	case ledger.Block:
+		s.logger.Warn().Msg("block type is ledger.Block, chain-sync n2n protocol expects ledger.BlockHeader")
+	case ledger.BlockHeader:
+		err := s.db.SetBlockId(h.BlockNumber(), h.SlotNumber(), h.Hash().Bytes())
+		s.logger.Info().
+			Uint64("block_number", h.BlockNumber()).
+			Uint64("slot_number", h.SlotNumber()).
+			Str("hash", h.Hash().String()).
+			Msg("roll forward")
+		if err != nil {
+			s.logger.Err(err).Msg("fail to set block id")
+		}
+	}
+	return nil
 }
 
-func (s *Scanner) GetNetworkFee() (transactionSize, transactionFeeRate uint64) {
-	// TODO implement me
-	panic("implement me")
-}
-
-func (s *Scanner) FetchMemPool(height int64) (types.TxIn, error) {
-	// TODO implement me
-	panic("implement me")
+func (s *Scanner) rollBackwardHandler(
+	_ chainsync.CallbackContext,
+	point pcommon.Point,
+	tip chainsync.Tip,
+) error {
+	s.logger.Info().Msgf("roll backward: point = (%d, %x), tip = (%d, %x)",
+		point.Slot, point.Hash, tip.Point.Slot, tip.Point.Hash,
+	)
+	return nil
 }

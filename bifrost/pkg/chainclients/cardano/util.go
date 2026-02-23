@@ -12,22 +12,14 @@ import (
 	"github.com/blinklabs-io/gouroboros/ledger/mary"
 	"github.com/blinklabs-io/gouroboros/ledger/shelley"
 	"github.com/blinklabs-io/gouroboros/protocol/localstatequery"
-	"gitlab.com/thorchain/thornode/v3/common"
 )
 
 func AddressFromBytes(bz []byte) (ledger.Address, error) {
-	var network uint8
-	if common.CurrentChainNetwork == common.MockNet {
-		network = lcommon.AddressNetworkTestnet
-	} else {
-		network = lcommon.AddressNetworkMainnet
-	}
-
 	hash := lcommon.Blake2b224Hash(bz)
 
 	return ledger.NewAddressFromParts(
 		ledger.AddressTypeKeyNone,
-		network,
+		networkId,
 		hash[:],
 		nil,
 	)
