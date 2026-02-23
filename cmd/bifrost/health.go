@@ -64,6 +64,7 @@ type ScannerResponse struct {
 	ChainHeight        int64  `json:"chain_height"`
 	BlockScannerHeight int64  `json:"block_scanner_height"`
 	ScannerHeightDiff  int64  `json:"scanner_height_diff"`
+	Healthy            *bool  `json:"healthy,omitempty"`
 }
 
 type signingChain struct {
@@ -355,12 +356,14 @@ func (s *HealthServer) chainScanner(w http.ResponseWriter, _ *http.Request) {
 				scannerHeightDiff = height - blockScannerHeight
 			}
 
+			healthy := client.IsBlockScannerHealthy()
 			mu.Lock()
 			res[chain.String()] = ScannerResponse{
 				Chain:              chain.String(),
 				ChainHeight:        height,
 				BlockScannerHeight: blockScannerHeight,
 				ScannerHeightDiff:  scannerHeightDiff,
+				Healthy:            &healthy,
 			}
 			mu.Unlock()
 		}()
