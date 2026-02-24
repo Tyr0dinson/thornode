@@ -2,9 +2,17 @@ package cardano
 
 import (
 	"crypto/ed25519"
+	"fmt"
+	"math/big"
 	"testing"
 
 	sdkmath "cosmossdk.io/math"
+	"github.com/blinklabs-io/gouroboros/ledger"
+	"github.com/blinklabs-io/gouroboros/ledger/babbage"
+	lcommon "github.com/blinklabs-io/gouroboros/ledger/common"
+	"github.com/blinklabs-io/gouroboros/ledger/mary"
+	"github.com/blinklabs-io/gouroboros/protocol/localstatequery"
+	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
@@ -29,12 +37,14 @@ func (s *ClientTestSuite) SetUpTest(c *C) {
 	c.Assert(err, IsNil)
 
 	s.client = &Client{
+		logger: zerolog.Nop(),
 		config: config.BifrostChainConfiguration{
 			ChainID:        common.ADAChain,
 			SolvencyBlocks: 10,
 		},
 		signerCacheManager: signerCacheMgr,
 		storage:            storage,
+		n2c:                &mockClientWrapper{},
 	}
 }
 
@@ -143,8 +153,8 @@ func (s *ClientTestSuite) TestOnObservedTxInOutbound(c *C) {
 		BlockHeight: 1,
 		Tx:          "txhash123",
 		Memo:        "OUT:" + txID,
-		Sender:      "sender",
-		To:          "to",
+		Sender:      "addr1v8xc93gy5emqdjh6vfs2sg3g54je20xe20qrenwkcaj4qaqrctsph",
+		To:          "addr1v9mspu7na3ycmw523tqqmx5dejlrkuz94qt6v6yg0sh0tvgacgq8d",
 		Coins: common.Coins{
 			common.NewCoin(common.ADAAsset, sdkmath.NewUint(1000000)),
 		},
@@ -167,13 +177,129 @@ func (s *ClientTestSuite) TestGetLatestTxForVault(c *C) {
 	_, _, err := s.client.GetLatestTxForVault("nonexistent")
 	c.Assert(err, NotNil)
 
-	// after signing a tx, the vault key should be recorded
-	vaultKey := "test-vault"
-	err = s.client.signerCacheManager.SetSigned("hash1", vaultKey, "txhash1")
+	// store using the same cache keys that GetLatestTxForVault looks up
+	vault := "test-vault"
+	chain := s.client.GetChain().String()
+	inboundKey := types.InboundCacheKey(vault, chain)
+	broadcastKey := types.BroadcastCacheKey(vault, chain)
+
+	err = s.client.signerCacheManager.SetSigned("hash1", inboundKey, "tx-inbound")
+	c.Assert(err, IsNil)
+	err = s.client.signerCacheManager.SetSigned("hash2", broadcastKey, "tx-broadcast")
 	c.Assert(err, IsNil)
 
-	// the latest recorded tx should now be retrievable
-	latest, _, err := s.client.GetLatestTxForVault(vaultKey)
+	lastObserved, lastBroadcast, err := s.client.GetLatestTxForVault(vault)
 	c.Assert(err, IsNil)
-	c.Assert(latest, Equals, "txhash1")
+	c.Assert(lastObserved, Equals, "tx-inbound")
+	c.Assert(lastBroadcast, Equals, "tx-broadcast")
+}
+
+// ---------------------------------------------------------------------------
+// GetConfirmationCount (via mock n2c)
+// ---------------------------------------------------------------------------
+
+func (s *ClientTestSuite) TestGetConfirmationCount(c *C) {
+	s.client.n2c = &mockClientWrapper{blockNo: 150}
+
+	txIn := types.TxIn{
+		TxArray: []*types.TxInItem{
+			{BlockHeight: 100},
+			{BlockHeight: 120},
+		},
+	}
+
+	// tip (150) - max height in TxArray (120) = 30
+	count := s.client.GetConfirmationCount(txIn)
+	c.Assert(count, Equals, int64(30))
+}
+
+func (s *ClientTestSuite) TestGetConfirmationCountError(c *C) {
+	s.client.n2c = &mockClientWrapper{blockNoErr: fmt.Errorf("fail")}
+
+	txIn := types.TxIn{
+		TxArray: []*types.TxInItem{
+			{BlockHeight: 100},
+		},
+	}
+
+	// on error, returns 0
+	count := s.client.GetConfirmationCount(txIn)
+	c.Assert(count, Equals, int64(0))
+}
+
+func (s *ClientTestSuite) TestGetConfirmationCountEmptyTxArray(c *C) {
+	s.client.n2c = &mockClientWrapper{blockNo: 200}
+
+	// empty TxArray => max height is 0 => returns tip - 0
+	count := s.client.GetConfirmationCount(types.TxIn{})
+	c.Assert(count, Equals, int64(200))
+}
+
+// ---------------------------------------------------------------------------
+// GetAccountByAddress (via mock n2c)
+// ---------------------------------------------------------------------------
+
+func (s *ClientTestSuite) TestGetAccountByAddress(c *C) {
+	addr, err := AddressFromBytes([]byte("test-pub-key"))
+	c.Assert(err, IsNil)
+
+	// seed storage with a block so getUtxosByAddress can resolve a point
+	err = s.client.storage.SetBlockId(1, 100, lcommon.Blake2b256Hash([]byte("blk")).Bytes())
+	c.Assert(err, IsNil)
+
+	hash1 := lcommon.Blake2b256Hash([]byte{1})
+	hash2 := lcommon.Blake2b256Hash([]byte{2})
+
+	s.client.n2c = &mockClientWrapper{
+		utxoResult: &localstatequery.UTxOsResult{
+			Results: map[localstatequery.UtxoId]ledger.BabbageTransactionOutput{
+				{Hash: hash1, Idx: 0}: babbage.BabbageTransactionOutput{
+					OutputAmount: mary.MaryTransactionOutputValue{Amount: 3_000_000},
+				},
+				{Hash: hash2, Idx: 1}: babbage.BabbageTransactionOutput{
+					OutputAmount: mary.MaryTransactionOutputValue{Amount: 7_000_000},
+				},
+			},
+		},
+	}
+
+	acct, err := s.client.GetAccountByAddress(addr.String(), big.NewInt(1))
+	c.Assert(err, IsNil)
+	c.Assert(acct.Coins, HasLen, 1)
+	c.Assert(acct.Coins[0].Asset, Equals, common.ADAAsset)
+	c.Assert(acct.Coins[0].Amount.Equal(sdkmath.NewUint(10_000_000)), Equals, true)
+}
+
+func (s *ClientTestSuite) TestGetAccountByAddressNoUtxos(c *C) {
+	addr, err := AddressFromBytes([]byte("empty-addr"))
+	c.Assert(err, IsNil)
+
+	err = s.client.storage.SetBlockId(1, 100, lcommon.Blake2b256Hash([]byte("blk")).Bytes())
+	c.Assert(err, IsNil)
+
+	s.client.n2c = &mockClientWrapper{
+		utxoResult: &localstatequery.UTxOsResult{
+			Results: map[localstatequery.UtxoId]ledger.BabbageTransactionOutput{},
+		},
+	}
+
+	acct, err := s.client.GetAccountByAddress(addr.String(), big.NewInt(1))
+	c.Assert(err, IsNil)
+	c.Assert(acct.Coins, HasLen, 1)
+	c.Assert(acct.Coins[0].Amount.Equal(sdkmath.NewUint(0)), Equals, true)
+}
+
+func (s *ClientTestSuite) TestGetAccountByAddressUtxoError(c *C) {
+	addr, err := AddressFromBytes([]byte("err-addr"))
+	c.Assert(err, IsNil)
+
+	err = s.client.storage.SetBlockId(1, 100, lcommon.Blake2b256Hash([]byte("blk")).Bytes())
+	c.Assert(err, IsNil)
+
+	s.client.n2c = &mockClientWrapper{
+		utxoErr: fmt.Errorf("network error"),
+	}
+
+	_, err = s.client.GetAccountByAddress(addr.String(), big.NewInt(1))
+	c.Assert(err, NotNil)
 }

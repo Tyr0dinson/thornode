@@ -337,7 +337,6 @@ func (c *Client) GetConfig() config.BifrostChainConfiguration {
 	return c.config
 }
 
-// TODO: check
 func (c *Client) GetConfirmationCount(txIn types.TxIn) int64 {
 	//  n2c call may be slow, may also query leveldb if chain-sync is current
 	tip, err := c.n2c.GetChainBlockNo()

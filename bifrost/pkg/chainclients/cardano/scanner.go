@@ -294,6 +294,11 @@ func (s *Scanner) updateNetworkFee(height int64) error {
 		return fmt.Errorf("rounded fee rate is zero")
 	}
 
+	// no need to update
+	if s.networkFee == roundedFeeRate {
+		return nil
+	}
+
 	s.networkFee = roundedFeeRate
 
 	s.globalNetworkFeeQueue <- common.NetworkFee{

@@ -1,9 +1,14 @@
 package cardano
 
 import (
+	"fmt"
+
+	"github.com/blinklabs-io/gouroboros/ledger"
 	lcommon "github.com/blinklabs-io/gouroboros/ledger/common"
+	"github.com/blinklabs-io/gouroboros/ledger/conway"
 	"github.com/blinklabs-io/gouroboros/protocol/chainsync"
 	pcommon "github.com/blinklabs-io/gouroboros/protocol/common"
+	"github.com/blinklabs-io/gouroboros/protocol/localstatequery"
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
@@ -11,6 +16,48 @@ import (
 	"gitlab.com/thorchain/thornode/v3/config"
 	. "gopkg.in/check.v1"
 )
+
+// ---------------------------------------------------------------------------
+// mockClientWrapper satisfies the ClientWrapper interface for testing.
+// Shared by both ScannerTestSuite and ClientTestSuite (same package).
+// ---------------------------------------------------------------------------
+
+type mockClientWrapper struct {
+	blockNo           int64
+	blockNoErr        error
+	protocolParams    lcommon.ProtocolParameters
+	protocolParamsErr error
+	chainPoint        *pcommon.Point
+	chainPointErr     error
+	genesisConfig     *localstatequery.GenesisConfigResult
+	genesisConfigErr  error
+	utxoResult        *localstatequery.UTxOsResult
+	utxoErr           error
+	submitErr         error
+}
+
+func (m *mockClientWrapper) GetChainBlockNo() (int64, error) {
+	return m.blockNo, m.blockNoErr
+}
+func (m *mockClientWrapper) GetCurrentProtocolParams() (lcommon.ProtocolParameters, error) {
+	return m.protocolParams, m.protocolParamsErr
+}
+func (m *mockClientWrapper) GetChainPoint() (*pcommon.Point, error) {
+	return m.chainPoint, m.chainPointErr
+}
+func (m *mockClientWrapper) GetGenesisConfig() (*localstatequery.GenesisConfigResult, error) {
+	return m.genesisConfig, m.genesisConfigErr
+}
+func (m *mockClientWrapper) GetUTxOByAddress(_ []ledger.Address, _ *pcommon.Point) (*localstatequery.UTxOsResult, error) {
+	return m.utxoResult, m.utxoErr
+}
+func (m *mockClientWrapper) SubmitTx(_ uint16, _ []byte) error {
+	return m.submitErr
+}
+
+// ---------------------------------------------------------------------------
+// test helpers
+// ---------------------------------------------------------------------------
 
 type ScannerTestSuite struct{}
 
@@ -24,9 +71,10 @@ func makeTestScanner(c *C) *Scanner {
 		logger: zerolog.Nop(),
 		config: config.BifrostBlockScannerConfiguration{
 			ChainID:            common.ADAChain,
-			GasPriceResolution: 100_000,
+			GasPriceResolution: 1000,
 		},
-		db: storage,
+		db:  storage,
+		n2c: &mockClientWrapper{},
 	}
 }
 
@@ -151,4 +199,92 @@ func (s *ScannerTestSuite) TestRollForwardHandlerUnknownType(c *C) {
 		pcommon.Tip{},
 	)
 	c.Assert(err, IsNil)
+}
+
+// ---------------------------------------------------------------------------
+// GetHeight (via mock n2c)
+// ---------------------------------------------------------------------------
+
+func (s *ScannerTestSuite) TestGetHeight(c *C) {
+	scanner := makeTestScanner(c)
+	scanner.n2c = &mockClientWrapper{blockNo: 42}
+
+	height, err := scanner.GetHeight()
+	c.Assert(err, IsNil)
+	c.Assert(height, Equals, int64(42))
+
+	scanner.n2c = &mockClientWrapper{blockNoErr: fmt.Errorf("timeout")}
+	_, err = scanner.GetHeight()
+	c.Assert(err, NotNil)
+}
+
+// ---------------------------------------------------------------------------
+// updateNetworkFee (protocol params path via mock n2c)
+// ---------------------------------------------------------------------------
+
+func (s *ScannerTestSuite) TestUpdateNetworkFee(c *C) {
+	queue := make(chan common.NetworkFee, 1)
+
+	scanner := makeTestScanner(c)
+	scanner.globalNetworkFeeQueue = queue
+
+	// minFeeA and minFee are 0, so try to get parameters which fails
+
+	// minFeeA and minFee are 0, so try to get parameters which succeeds
+	scanner.n2c = &mockClientWrapper{
+		protocolParams: &conway.ConwayProtocolParameters{
+			MinFeeA: 43,
+			MinFeeB: 155_951,
+		},
+	}
+
+	err := scanner.updateNetworkFee(99)
+	c.Assert(err, IsNil)
+
+	c.Assert(scanner.minFeeA, Equals, uint64(43))
+	c.Assert(scanner.minFeeB, Equals, uint64(155_951))
+	// 577 * 43 + 155951 + 5 = 180767 => 181000
+	c.Assert(scanner.networkFee, Equals, uint64(181_000))
+
+	select {
+	case nf := <-queue:
+		c.Assert(nf.Chain, Equals, common.ADAChain)
+		c.Assert(nf.Height, Equals, int64(99))
+		c.Assert(nf.TransactionSize, Equals, uint64(1))
+		c.Assert(nf.TransactionRate, Equals, scanner.networkFee)
+	default:
+		c.Fatal("expected network fee on queue")
+	}
+
+	// height divisible by networkFeeUpdatePeriod (100) triggers the n2c call
+	scanner.n2c = &mockClientWrapper{
+		protocolParams: &conway.ConwayProtocolParameters{
+			MinFeeA: 44,
+			MinFeeB: 155_381,
+		},
+	}
+	err = scanner.updateNetworkFee(100)
+	c.Assert(err, IsNil)
+
+	c.Assert(scanner.minFeeA, Equals, uint64(44))
+	c.Assert(scanner.minFeeB, Equals, uint64(155_381))
+	// 577 * 44 + 155_381 + 5 = 180774 => 181000
+	c.Assert(scanner.networkFee, Equals, uint64(181_000))
+
+	// no update sent, because rounded fee is still 181_000
+	select {
+	case <-queue:
+		c.Fatal("should not enqueue when fees are unchanged")
+	default:
+	}
+
+	// same fees as already set => early return, nothing enqueued
+	err = scanner.updateNetworkFee(200)
+	c.Assert(err, IsNil)
+
+	select {
+	case <-queue:
+		c.Fatal("should not enqueue when fees are unchanged")
+	default:
+	}
 }
