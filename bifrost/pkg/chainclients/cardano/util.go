@@ -1,7 +1,9 @@
 package cardano
 
 import (
+	"encoding/binary"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/blinklabs-io/gouroboros/cbor"
@@ -11,8 +13,13 @@ import (
 	"github.com/blinklabs-io/gouroboros/ledger/conway"
 	"github.com/blinklabs-io/gouroboros/ledger/mary"
 	"github.com/blinklabs-io/gouroboros/ledger/shelley"
-	"github.com/blinklabs-io/gouroboros/protocol/localstatequery"
 )
+
+type Utxo struct {
+	Hash   string
+	Index  int
+	Amount uint64
+}
 
 func AddressFromBytes(bz []byte) (ledger.Address, error) {
 	hash := lcommon.Blake2b224Hash(bz)
@@ -99,20 +106,24 @@ func CreateConwayTx(
 	fromAddress, toAddress ledger.Address,
 	amount, minFeeA, minFeeB uint64,
 	memo string,
-	utxos map[localstatequery.UtxoId]ledger.BabbageTransactionOutput,
+	utxos []Utxo,
 ) (*conway.ConwayTransaction, error) {
+	sort.Slice(utxos, func(i, j int) bool {
+		return utxos[i].Amount < utxos[j].Amount
+	})
+
 	var inputs []shelley.ShelleyTransactionInput
 
-	// add 2 ADA to ensure , min ADA per utxo ~ 0.86 ADA
-	target := amount + 2_000_000
+	// add 5 ADA to ensure dust threshold after fees for change back to vault
+	target := amount + 5_000_000
 	total := uint64(0)
 
-	for id, output := range utxos {
-		total += output.Amount().Uint64()
+	for _, utxo := range utxos {
+		total += utxo.Amount
 
 		inputs = append(inputs, shelley.NewShelleyTransactionInput(
-			id.Hash.String(),
-			id.Idx,
+			utxo.Hash,
+			utxo.Index,
 		))
 
 		if total >= target {
@@ -178,8 +189,19 @@ func CreateConwayTx(
 	if fee == 0 {
 		return nil, fmt.Errorf("failed to calculate fee")
 	}
+
+	if fee+amount+dustThreshold > total {
+		return nil, fmt.Errorf("fee exceeds dust threshold margin")
+	}
+
 	tx.Body.TxFee = fee
 	tx.Body.TxOutputs[1].OutputAmount.Amount = total - amount - fee
 
 	return tx, nil
+}
+
+func getUtxoKey(hash []byte, index uint32) []byte {
+	idx := make([]byte, 4)
+	binary.BigEndian.PutUint32(idx, index)
+	return append(hash, idx...)
 }

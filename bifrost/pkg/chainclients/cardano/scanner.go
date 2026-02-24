@@ -3,6 +3,7 @@ package cardano
 import (
 	"encoding/hex"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -13,10 +14,12 @@ import (
 	pcommon "github.com/blinklabs-io/gouroboros/protocol/common"
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/utxo"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/config"
+	"gitlab.com/thorchain/thornode/v3/constants"
 )
 
 type Scanner struct {
@@ -30,6 +33,8 @@ type Scanner struct {
 	networkFee            uint64
 	minFeeA               uint64
 	minFeeB               uint64
+	asgardAddresses       []common.Address
+	lastAsgardUpdate      time.Time
 	globalNetworkFeeQueue chan common.NetworkFee
 }
 
@@ -178,8 +183,6 @@ func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
 			continue
 		}
 
-		// isSenderAsgard := c.isAsgardAddress(senderAddr.String())
-
 		// expectation is one output address per filtered tx
 		// see: https://gitlab.com/thorchain/thornode/-/blob/develop/bifrost/pkg/chainclients/utxo/client_internal.go#L724
 		// which collapses multiple VOUTs into a single address based on filter criteria
@@ -190,13 +193,13 @@ func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
 
 		toAddress := output.Address()
 
-		fmt.Println(fromAddress.String(), "=>", toAddress.String())
-		// if !isSenderAsgard && !c.isAsgardAddress(addr.String()) {
-		// 	// skip txs that don't involve asgard addresses
-		// 	continue
-		// }
+		// skip txs not related to us
+		if !s.isAsgardAddress(fromAddress) && !s.isAsgardAddress(toAddress) {
+			continue
+		}
+
+		// skip txs that are sent to the sender, i.e. for utxo change
 		if fromAddress.String() == toAddress.String() {
-			// skip txs that are sent to the sender, i.e. for utxo change
 			continue
 		}
 
@@ -240,9 +243,11 @@ func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
 		s.logger.Err(err).Msg("fail to prune block ids")
 	}
 
-	err = s.db.PruneSpentUtxos(uint64(fetchHeight) - txTimeoutBlocks)
-	if err != nil {
-		s.logger.Err(err).Msg("fail to prune spent utxos")
+	if fetchHeight > transactionTimeout {
+		err = s.db.PruneSpentUtxos(uint64(fetchHeight - transactionTimeout))
+		if err != nil {
+			s.logger.Err(err).Msg("fail to prune spent utxos")
+		}
 	}
 
 	s.logger.Info().Msgf("done pruning")
@@ -272,11 +277,14 @@ func (s *Scanner) updateNetworkFee(height int64) error {
 
 	params, ok := protocolParams.(*conway.ConwayProtocolParameters)
 	if !ok {
-		return fmt.Errorf("failed to get protocol parameters: %w", err)
+		return fmt.Errorf("failed to get protocol parameters")
 	}
 
 	minFeeA := uint64(params.MinFeeA)
 	minFeeB := uint64(params.MinFeeB)
+
+	s.networkMtx.Lock()
+	defer s.networkMtx.Unlock()
 
 	if minFeeA == s.minFeeA && minFeeB == s.minFeeB {
 		return nil
@@ -348,4 +356,33 @@ func (s *Scanner) rollBackwardHandler(
 		point.Slot, point.Hash, tip.Point.Slot, tip.Point.Hash,
 	)
 	return nil
+}
+
+func (s *Scanner) getAsgardAddresses() ([]common.Address, error) {
+	if time.Since(s.lastAsgardUpdate) < constants.ThorchainBlockTime && s.asgardAddresses != nil {
+		return s.asgardAddresses, nil
+	}
+	newAddresses, err := utxo.GetAsgardAddress(s.config.ChainID, s.bridge)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get asgards: %w", err)
+	}
+	if len(newAddresses) > 0 { // ensure we don't overwrite with empty list
+		s.asgardAddresses = newAddresses
+	}
+	s.lastAsgardUpdate = time.Now()
+	return s.asgardAddresses, nil
+}
+
+func (s *Scanner) isAsgardAddress(address ledger.Address) bool {
+	asgards, err := s.getAsgardAddresses()
+	if err != nil {
+		s.logger.Err(err).Msg("fail to get asgard addresses")
+		return false
+	}
+	for _, asgard := range asgards {
+		if strings.EqualFold(asgard.String(), address.String()) {
+			return true
+		}
+	}
+	return false
 }

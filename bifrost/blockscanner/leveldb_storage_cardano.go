@@ -88,6 +88,13 @@ func (s *LevelDBScannerStorageCardano) SetSpentUtxos(ids [][]byte, height int64)
 		return fmt.Errorf("height must >= 0")
 	}
 
+	for _, id := range ids {
+		err := s.setSpentUtxoById(id)
+		if err != nil {
+			return err
+		}
+	}
+
 	return s.setSpentUtxosByHeight(ids, uint64(height))
 }
 
@@ -208,7 +215,7 @@ func (s *LevelDBScannerStorageCardano) getSpentUtxoByHeightKey(height uint64) []
 }
 
 func (s *LevelDBScannerStorageCardano) getSpentUtxoByIdKey(id []byte) []byte {
-	return append([]byte(PrefixSpentUtxoByHeight), id...)
+	return append([]byte(PrefixSpentUtxoById), id...)
 }
 
 //  internal
@@ -254,7 +261,7 @@ func (s *LevelDBScannerStorageCardano) setSpentUtxosByHeight(ids [][]byte, heigh
 	return s.db.Put(key, bz, nil)
 }
 
-func (s *LevelDBScannerStorageCardano) setSpentUtxosById(id []byte) error {
+func (s *LevelDBScannerStorageCardano) setSpentUtxoById(id []byte) error {
 	if len(id) == 0 {
 		return nil
 	}

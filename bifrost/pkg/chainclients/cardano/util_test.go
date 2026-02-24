@@ -7,10 +7,7 @@ import (
 	"testing"
 
 	"github.com/blinklabs-io/gouroboros/ledger"
-	"github.com/blinklabs-io/gouroboros/ledger/babbage"
 	lcommon "github.com/blinklabs-io/gouroboros/ledger/common"
-	"github.com/blinklabs-io/gouroboros/ledger/mary"
-	"github.com/blinklabs-io/gouroboros/protocol/localstatequery"
 	"github.com/fxamacker/cbor/v2"
 	"gitlab.com/thorchain/thornode/v3/common"
 	. "gopkg.in/check.v1"
@@ -239,16 +236,13 @@ func makeTestAddress(c *C, seed string) ledger.Address {
 	return addr
 }
 
-func makeUtxos(amounts ...uint64) map[localstatequery.UtxoId]ledger.BabbageTransactionOutput {
-	utxos := make(map[localstatequery.UtxoId]ledger.BabbageTransactionOutput)
-	for i, amt := range amounts {
-		var hash lcommon.Blake2b256
-		hash[0] = byte(i + 1) // unique per utxo
-		id := localstatequery.UtxoId{Hash: hash, Idx: i}
-		utxos[id] = babbage.BabbageTransactionOutput{
-			OutputAmount: mary.MaryTransactionOutputValue{
-				Amount: amt,
-			},
+func makeUtxos(amounts ...uint64) []Utxo {
+	utxos := make([]Utxo, len(amounts))
+	for i, amount := range amounts {
+		utxos[i] = Utxo{
+			Hash:   lcommon.Blake2b256Hash([]byte{uint8(i)}).String(),
+			Index:  0,
+			Amount: amount,
 		}
 	}
 	return utxos

@@ -2,7 +2,6 @@ package cardano
 
 import (
 	"crypto/ed25519"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"math/big"
@@ -127,7 +126,7 @@ func NewClient(
 		return nil, fmt.Errorf("fail to get active slot coeff")
 	}
 
-	c.ttlSlots = den / num * txTimeoutBlocks
+	c.ttlSlots = den / num * transactionTimeout
 
 	c.logger.Info().Msgf("creating blockscanner")
 
@@ -190,6 +189,10 @@ func (c *Client) BroadcastTx(txOutItem types.TxOutItem, txBytes []byte) (string,
 		return "", fmt.Errorf("failed to decode transaction: %w", err)
 	}
 
+	if len(tx.Outputs()) != 2 {
+		return "", fmt.Errorf("invalid number of transaction outputs: %d", len(tx.Outputs()))
+	}
+
 	err = c.n2c.SubmitTx(ledger.TxTypeConway, txBytes)
 	if err != nil {
 		return "", fmt.Errorf("failed to submit transaction bytes=%x: %w", txBytes, err)
@@ -219,7 +222,24 @@ func (c *Client) BroadcastTx(txOutItem types.TxOutItem, txBytes []byte) (string,
 }
 
 func (c *Client) ConfirmationCountReady(txIn types.TxIn) bool {
-	return true
+	if len(txIn.TxArray) == 0 {
+		return true
+	}
+
+	required := txIn.ConfirmationRequired
+	c.logger.Info().
+		Int64("height", txIn.TxArray[0].BlockHeight).
+		Int64("required", required).
+		Int("transactions", len(txIn.TxArray)).
+		Msg("pending confirmations")
+
+	currentHeight, err := c.GetHeight()
+	if err != nil {
+		c.logger.Err(err).Msg("failed to get current height")
+		return false
+	}
+
+	return currentHeight-txIn.TxArray[0].BlockHeight >= required
 }
 
 func (c *Client) GetAccount(pubkey common.PubKey, height *big.Int) (common.Account, error) {
@@ -228,6 +248,7 @@ func (c *Client) GetAccount(pubkey common.PubKey, height *big.Int) (common.Accou
 		c.logger.Err(err).
 			Str("pub_key", pubkey.String()).
 			Msg("failed to get address")
+		return common.Account{}, err
 	}
 	return c.GetAccountByAddress(addr.String(), height)
 }
@@ -235,7 +256,7 @@ func (c *Client) GetAccount(pubkey common.PubKey, height *big.Int) (common.Accou
 func (c *Client) getUtxosByAddress(
 	address string,
 	height *big.Int,
-) (map[localstatequery.UtxoId]ledger.BabbageTransactionOutput, error) {
+) ([]Utxo, error) {
 	addr, err := ledger.NewAddress(address)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create address: %w", err)
@@ -247,12 +268,12 @@ func (c *Client) getUtxosByAddress(
 	var hash []byte
 
 	if height != nil {
-
 		_, slot, hash, err = c.storage.GetBlockId(height.Uint64())
 		if err != nil {
 			c.logger.Warn().Err(err).
 				Uint64("height", height.Uint64()).
 				Msg("failed to get block id for height, falling back to tip")
+			return nil, err
 		}
 
 		point = pcommon.NewPoint(slot, hash)
@@ -271,10 +292,13 @@ func (c *Client) getUtxosByAddress(
 		return nil, fmt.Errorf("failed to get UTxO by address")
 	}
 
-	utxos := map[localstatequery.UtxoId]ledger.BabbageTransactionOutput{}
+	var utxos []Utxo
+
 	for id, output := range result.Results {
+		key := getUtxoKey(id.Hash.Bytes(), uint32(id.Idx))
+
 		var found bool
-		found, err = c.storage.HasSpentUtxo(id.Hash.Bytes())
+		found, err = c.storage.HasSpentUtxo(key)
 		if err != nil {
 			c.logger.Warn().Err(err).Msg("failed to check for spent utxo")
 			continue
@@ -284,7 +308,11 @@ func (c *Client) getUtxosByAddress(
 			continue
 		}
 
-		utxos[id] = output
+		utxos = append(utxos, Utxo{
+			Hash:   id.Hash.String(),
+			Index:  id.Idx,
+			Amount: output.Amount().Uint64(),
+		})
 	}
 
 	return utxos, nil
@@ -300,8 +328,8 @@ func (c *Client) GetAccountByAddress(address string, height *big.Int) (common.Ac
 	}
 
 	total := uint64(0)
-	for _, output := range utxos {
-		total += output.Amount().Uint64()
+	for _, utxo := range utxos {
+		total += utxo.Amount
 	}
 
 	account.Coins = common.Coins{
@@ -419,6 +447,7 @@ func (c *Client) SignTx(txOutItem types.TxOutItem, _ int64) ([]byte, []byte, *ty
 	toAddress, err := ledger.NewAddress(txOutItem.ToAddress.String())
 	if err != nil {
 		c.logger.Err(err).Msg("failed to get address")
+		return nil, nil, nil, err
 	}
 
 	utxos, err := c.getUtxosByAddress(fromAddress.String(), nil)
@@ -448,17 +477,16 @@ func (c *Client) SignTx(txOutItem types.TxOutItem, _ int64) ([]byte, []byte, *ty
 		return nil, nil, nil, err
 	}
 
-	c.logger.Info().
-		Uint64("min_fee_a", minFeeA).
-		Uint64("min_fee_b", minFeeB).
-		Uint64("fee", tx.Body.TxFee).
-		Msg("created tx")
-
 	_, slot, _, _ := c.storage.GetLastBlockId()
 
 	tx.Body.Ttl = slot + c.ttlSlots
 
 	encoded, err := cbor.Encode(tx.Body)
+	if err != nil {
+		c.logger.Err(err).Msg("failed to encode transaction")
+		return nil, nil, nil, err
+	}
+
 	hash := lcommon.Blake2b256Hash(encoded)
 
 	signature, err := c.sign(hash[:], txOutItem)
@@ -501,9 +529,8 @@ func (c *Client) SignTx(txOutItem types.TxOutItem, _ int64) ([]byte, []byte, *ty
 
 	var spentUtxos [][]byte
 	for _, input := range tx.Inputs() {
-		index := make([]byte, 4)
-		binary.BigEndian.PutUint32(index, input.Index())
-		spentUtxos = append(spentUtxos, append(input.Id().Bytes(), index...))
+		key := getUtxoKey(input.Id().Bytes(), input.Index())
+		spentUtxos = append(spentUtxos, key)
 	}
 	err = c.storage.SetSpentUtxos(spentUtxos, currentHeight)
 	if err != nil {

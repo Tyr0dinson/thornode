@@ -6,8 +6,9 @@ package cardano
 // precise tx fee will be calculated on actual tx creation
 const estimatedTxSize = 577
 
-const txTimeoutBlocks = uint64(20)
+const transactionTimeout = 20
 
-const (
-	networkFeeUpdatePeriod = 100
-)
+const networkFeeUpdatePeriod = 100
+
+// minimum ADA per UTXO (~ 0.86 ADA on mainnet)
+const dustThreshold = uint64(1e6)
