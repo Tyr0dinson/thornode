@@ -63,6 +63,10 @@ func ExtractMemo(data lcommon.TransactionMetadatum, depth int) string {
 }
 
 func CreateMemo(memo string) (lcommon.TransactionMetadatum, *lcommon.Blake2b256, error) {
+	if len(memo) == 0 {
+		return nil, nil, fmt.Errorf("memo is empty")
+	}
+
 	var chunks []string
 	size := 64
 	for i := 0; i < len(memo); i += size {
@@ -87,8 +91,6 @@ func CreateMemo(memo string) (lcommon.TransactionMetadatum, *lcommon.Blake2b256,
 	}
 
 	hash := lcommon.Blake2b256Hash(encoded)
-
-	fmt.Println("hash", len(hash), "meta", len(encoded), "memo", memo)
 
 	return meta, &hash, err
 }
@@ -140,8 +142,8 @@ func CreateConwayTx(
 	tx := &conway.ConwayTransaction{}
 	tx.Body.TxInputs = conway.NewConwayTransactionInputSet(inputs)
 	tx.Body.TxOutputs = outputs
-	tx.Body.TxFee = 0        // Will be replaced later
-	tx.Body.Ttl = 50_000_000 // TODO: find reasonable value
+	tx.Body.TxFee = 1_000_000 // Will be replaced later
+	tx.Body.Ttl = 50_000_000  // TODO: find reasonable value
 	tx.TxIsValid = true
 
 	if memo != "" {

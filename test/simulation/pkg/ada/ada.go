@@ -19,7 +19,7 @@ import (
 )
 
 type Client struct {
-	n2c      *cardano.ClientConnection
+	n2c      cardano.ClientWrapper
 	key      ed25519.PrivateKey
 	logger   zerolog.Logger
 	address  lcommon.Address

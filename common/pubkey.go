@@ -282,20 +282,20 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 		// Encode with base58
 		addressString = base58.Encode(fullPayload)
 	case ADAChain:
-		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, p.String())
+		bz, err := p.Bytes()
 		if err != nil {
 			return NoAddress, err
 		}
 
 		var network uint8
 		switch chainNetwork {
-		case MainNet, StageNet:
-			network = adacommon.AddressNetworkMainnet
-		default:
+		case MockNet:
 			network = adacommon.AddressNetworkTestnet
+		default:
+			network = adacommon.AddressNetworkMainnet
 		}
 
-		hash := adacommon.Blake2b224Hash(pk.Bytes())
+		hash := adacommon.Blake2b224Hash(bz)
 
 		addr, err := adacommon.NewAddressFromParts(
 			adacommon.AddressTypeKeyNone,
@@ -336,6 +336,14 @@ func (p PubKey) GetThorAddress() (cosmos.AccAddress, error) {
 		return nil, err
 	}
 	return cosmos.AccAddressFromBech32(addr.String())
+}
+
+func (p PubKey) Bytes() ([]byte, error) {
+	pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, p.String())
+	if err != nil {
+		return nil, err
+	}
+	return pk.Bytes(), nil
 }
 
 // MarshalJSON to Marshals to JSON using Bech32

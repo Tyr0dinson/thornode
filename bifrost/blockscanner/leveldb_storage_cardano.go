@@ -2,7 +2,6 @@ package blockscanner
 
 import (
 	"encoding/binary"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 
@@ -53,7 +52,6 @@ func (s *LevelDBScannerStorageCardano) GetLastBlockId() (
 	if !iterator.First() {
 		return 0, 0, nil, fmt.Errorf("no entry found")
 	}
-	fmt.Println(">>", hex.EncodeToString(iterator.Key()))
 	key := iterator.Key()
 
 	return s.getBlockId(key)

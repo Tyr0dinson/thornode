@@ -24,8 +24,8 @@ type Scanner struct {
 	logger                zerolog.Logger
 	bridge                thorclient.ThorchainBridge
 	db                    *blockscanner.BlockScannerStorageCardano
-	n2c                   *ClientConnection
-	n2n                   *NodeConnection
+	n2c                   ClientWrapper
+	n2n                   *NodeWrapper
 	networkMtx            sync.Mutex
 	networkFee            uint64
 	minFeeA               uint64
@@ -94,8 +94,6 @@ func (s *Scanner) Start() error {
 		}
 		point = *tip
 	}
-
-	fmt.Printf("Starting block scanner from: %x\n", point.Hash)
 
 	err := s.n2n.conn.ChainSync().Client.Sync([]pcommon.Point{point})
 	if err != nil {

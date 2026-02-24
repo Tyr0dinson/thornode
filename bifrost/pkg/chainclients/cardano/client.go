@@ -33,12 +33,11 @@ import (
 )
 
 type Client struct {
-	logger       zerolog.Logger
-	networkError chan error
-	config       config.BifrostChainConfiguration
-	n2c          *ClientConnection
-	ttlSlots     uint64
-
+	logger              zerolog.Logger
+	networkError        chan error
+	config              config.BifrostChainConfiguration
+	n2c                 ClientWrapper
+	ttlSlots            uint64 // TODO: Not used yet
 	networkFee          uint64
 	thorchainBridge     thorclient.ThorchainBridge
 	signerCacheManager  *signercache.CacheManager

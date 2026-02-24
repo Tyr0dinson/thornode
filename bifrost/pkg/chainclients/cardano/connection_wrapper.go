@@ -17,31 +17,22 @@ import (
 	"github.com/rs/zerolog"
 )
 
-type connection struct {
+//  generic
+// ----------------------------------------------------------------------------
+
+type wrapper struct {
 	conn   *ouroboros.Connection
 	error  chan error
 	logger zerolog.Logger
 }
 
-type NodeConnection struct {
-	*connection
-}
-
-type ClientConnection struct {
-	*connection
-	mtx sync.Mutex
-}
-
-//  generic
-// ----------------------------------------------------------------------------
-
-func newConnection(
+func newWrapper(
 	logger zerolog.Logger,
 	address string,
 	rollBackwardFunc chainsync.RollBackwardFunc,
 	rollForwardFunc chainsync.RollForwardFunc,
-) (*connection, error) {
-	c := &connection{
+) (*wrapper, error) {
+	c := &wrapper{
 		error:  make(chan error),
 		logger: logger,
 	}
@@ -96,46 +87,64 @@ func newConnection(
 	return c, nil
 }
 
-func (c *connection) Dial(address string) error {
+func (c *wrapper) Dial(address string) error {
 	return c.conn.Dial("tcp", address)
 }
 
 //  node
 // ----------------------------------------------------------------------------
 
+type NodeWrapper struct {
+	*wrapper
+}
+
 func NewNodeConnection(
 	logger zerolog.Logger,
 	address string,
 	rollBackwardFunc chainsync.RollBackwardFunc,
 	rollForwardFunc chainsync.RollForwardFunc,
-) (*NodeConnection, error) {
-	c, err := newConnection(logger, address, rollBackwardFunc, rollForwardFunc)
+) (*NodeWrapper, error) {
+	c, err := newWrapper(logger, address, rollBackwardFunc, rollForwardFunc)
 	if err != nil {
 		return nil, err
 	}
 
-	return &NodeConnection{c}, nil
+	return &NodeWrapper{c}, nil
 }
 
 //  client
 // ----------------------------------------------------------------------------
 
+type ClientWrapper interface {
+	GetChainBlockNo() (int64, error)
+	GetCurrentProtocolParams() (lcommon.ProtocolParameters, error)
+	GetChainPoint() (*pcommon.Point, error)
+	GetGenesisConfig() (*localstatequery.GenesisConfigResult, error)
+	GetUTxOByAddress([]ledger.Address, *pcommon.Point) (*localstatequery.UTxOsResult, error)
+	SubmitTx(uint16, []byte) error
+}
+
+type clientWrapper struct {
+	*wrapper
+	mtx sync.Mutex
+}
+
 func NewClientConnection(
 	logger zerolog.Logger,
 	address string,
-) (*ClientConnection, error) {
-	c, err := newConnection(logger, address, nil, nil)
+) (ClientWrapper, error) {
+	c, err := newWrapper(logger, address, nil, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	return &ClientConnection{
-		connection: c,
-		mtx:        sync.Mutex{},
+	return &clientWrapper{
+		wrapper: c,
+		mtx:     sync.Mutex{},
 	}, nil
 }
 
-func (c *ClientConnection) release() {
+func (c *clientWrapper) release() {
 	err := c.conn.LocalStateQuery().Client.Release()
 	if err != nil {
 		c.logger.Err(err).Msg("failed to release client")
@@ -143,36 +152,36 @@ func (c *ClientConnection) release() {
 	c.mtx.Unlock()
 }
 
-func (c *ClientConnection) client() *localstatequery.Client {
+func (c *clientWrapper) client() *localstatequery.Client {
 	c.mtx.Lock()
 	return c.conn.LocalStateQuery().Client
 }
 
-func (c *ClientConnection) GetChainBlockNo() (int64, error) {
+func (c *clientWrapper) GetChainBlockNo() (int64, error) {
 	client := c.client()
 	defer c.release()
 	return client.GetChainBlockNo()
 }
 
-func (c *ClientConnection) GetCurrentProtocolParams() (lcommon.ProtocolParameters, error) {
+func (c *clientWrapper) GetCurrentProtocolParams() (lcommon.ProtocolParameters, error) {
 	client := c.client()
 	defer c.release()
 	return client.GetCurrentProtocolParams()
 }
 
-func (c *ClientConnection) GetChainPoint() (*pcommon.Point, error) {
+func (c *clientWrapper) GetChainPoint() (*pcommon.Point, error) {
 	client := c.client()
 	defer c.release()
 	return client.GetChainPoint()
 }
 
-func (c *ClientConnection) GetGenesisConfig() (*localstatequery.GenesisConfigResult, error) {
+func (c *clientWrapper) GetGenesisConfig() (*localstatequery.GenesisConfigResult, error) {
 	client := c.client()
 	defer c.release()
 	return client.GetGenesisConfig()
 }
 
-func (c *ClientConnection) GetUTxOByAddress(
+func (c *clientWrapper) GetUTxOByAddress(
 	addresses []ledger.Address,
 	point *pcommon.Point,
 ) (*localstatequery.UTxOsResult, error) {
@@ -192,6 +201,6 @@ func (c *ClientConnection) GetUTxOByAddress(
 	return client.GetUTxOByAddress(addresses)
 }
 
-func (c *ClientConnection) SubmitTx(era uint16, bz []byte) error {
+func (c *clientWrapper) SubmitTx(era uint16, bz []byte) error {
 	return c.conn.LocalTxSubmission().Client.SubmitTx(era, bz)
 }
