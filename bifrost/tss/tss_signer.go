@@ -308,7 +308,7 @@ func (s *KeySign) toLocalTSSSigner(poolPubKey string, algo common.SigningAlgo, t
 		return
 	}
 	// this is just round the block height to the nearest 60
-	tssMsg.BlockHeight = blockHeight / 60 * 60
+	tssMsg.BlockHeight = blockHeight / 20 * 20
 
 	s.logger.Info().Msgf("msgToSign to tss Local node PoolPubKey: %s, Messages: %+v, block height: %d", tssMsg.PoolPubKey, tssMsg.Messages, tssMsg.BlockHeight)
 

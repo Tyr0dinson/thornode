@@ -178,7 +178,7 @@ func getBCHAddress(address bchutil.Address, cfg *bchchaincfg.Params) (Address, e
 		}
 		return NewAddress(h.String())
 	case *bchutil.LegacyAddressScriptHash, *bchutil.AddressScriptHash:
-		h, err := bchutil.NewAddressScriptHash(address.ScriptAddress(), cfg)
+		h, err := bchutil.NewAddressScriptHashFromHash(address.ScriptAddress(), cfg)
 		if err != nil {
 			return NoAddress, fmt.Errorf("fail to convert to new address script hash address: %w", err)
 		}
@@ -195,10 +195,15 @@ func (addr Address) IsChain(chain Chain) bool {
 	switch chain {
 	case XRPChain:
 		return IsValidXRPAddress(addr.String())
+	case TRONChain:
+		return IsValidTRONAddress(addr.String())
 	case GAIAChain:
 		// Note: Gaia does not use a special prefix for testnet
 		prefix, _, _ := bech32.Decode(addr.String())
 		return prefix == "cosmos"
+	case NOBLEChain:
+		prefix, _, _ := bech32.Decode(addr.String())
+		return prefix == "noble"
 	case THORChain:
 		prefix, _, _ := bech32.Decode(addr.String())
 		return prefix == "thor" || prefix == "tthor" || prefix == "sthor"
@@ -293,7 +298,7 @@ func (addr Address) IsChain(chain Chain) bool {
 // Note that this will always return ETHChain for an AVAXChain address,
 // so perhaps only use it when determining a network (e.g. mainnet/testnet).
 func (addr Address) GetChain() Chain {
-	for _, chain := range []Chain{ETHChain, THORChain, BTCChain, LTCChain, BCHChain, DOGEChain, GAIAChain, AVAXChain, XRPChain} {
+	for _, chain := range []Chain{ETHChain, THORChain, BTCChain, LTCChain, BCHChain, DOGEChain, GAIAChain, AVAXChain, XRPChain, ZECChain} {
 		if addr.IsChain(chain) {
 			return chain
 		}
@@ -448,8 +453,14 @@ func (addr Address) String() string {
 }
 
 func (addr Address) MappedAccAddress() (cosmos.AccAddress, error) {
-	// TODO: Add support to map EVM addresses -> bech32.
-	// Will require new PubKey type to validate.
+	if addr.GetChain().IsEVM() {
+		// TODO: Add support to map EVM addresses -> bech32.
+		return cosmos.AccAddressFromHexUnsafe(
+			// Will require new PubKey type to validate.
+			strings.TrimPrefix(addr.String(), "0x"),
+		)
+	}
+
 	_, data, err := bech32.Decode(addr.String())
 	if err != nil {
 		return nil, err

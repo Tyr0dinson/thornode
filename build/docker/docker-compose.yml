@@ -534,133 +534,17 @@ services:
       - mocknet-cluster
     image: registry.gitlab.com/thorchain/devops/node-launcher:litecoin-daemon-0.21.4
     restart: unless-stopped
-    environment:
-      BTC_MASTER_ADDR: ${LTC_MASTER_ADDR:-rltc1qf4l5dlqhaujgkxxqmug4stfvmvt58vx2fc03xm}
-      RPC_PORT: "38443"
+    image: cardano:latest
     ports:
-      - 38443:38443
-    volumes:
-      - "./mocknet:/mocknet"
-    entrypoint: "/mocknet/litecoin-entrypoint.sh"
-
-  # ------------------------------ ethereum ------------------------------
-
-  ethereum:
-    profiles:
-      - mocknet
-      - mocknet-cluster
-    image: ethereum/client-go:v1.16.8
-    restart: unless-stopped
-    environment:
-      BLOCK_TIME: ${BLOCK_TIME:-5}
-    ports:
-      - 8545:8545
-      - 30301:30301
-      - 30303:30303
-    volumes:
-      - "../scripts:/docker/scripts"
-    entrypoint: /docker/scripts/mock/start-eth.sh
-
-  # ------------------------------ base ------------------------------
-
-  base:
-    profiles:
-      - mocknet
-      - mocknet-cluster
-    image: us-docker.pkg.dev/oplabs-tools-artifacts/images/op-geth:v1.101603.5
-    restart: unless-stopped
-    environment:
-      BLOCK_TIME: ${BLOCK_TIME:-5}
-      OP_NODE_L1_ETH_RPC: ${ETH_HOST:-http://ethereum:8545}
-    ports:
-      - 8547:8545
-    volumes:
-      - "../scripts:/docker/scripts"
-    entrypoint: /docker/scripts/mock/start-eth.sh
-
-  # ------------------------------ xrp ------------------------------
-
-  xrp:
-    profiles:
-      - mocknet
-      - mocknet-cluster
-    image: xrpllabsofficial/xrpld:3.0.0
-    restart: unless-stopped
-    environment:
-      BLOCK_TIME: ${BLOCK_TIME:-5}
-    ports:
-      - 5005:5005
-    volumes:
-      - "../scripts:/docker/scripts"
-    entrypoint: /docker/scripts/xrp/start-xrp.sh
-
-  # ------------------------------ binance-smart ------------------------------
-
-  binance-smart:
-    profiles:
-      - mocknet
-      - mocknet-cluster
-    image: registry.gitlab.com/thorchain/devops/node-launcher:binance-smart-daemon-1.4.18
-    restart: unless-stopped
-    environment:
-      BLOCK_TIME: ${BLOCK_TIME:-5}
-    ports:
-      - 8546:8545
-    volumes:
-      - "../scripts:/docker/scripts"
-    entrypoint: /docker/scripts/mock/start-eth.sh
-
-  # ------------------------------ avalanche ------------------------------
-
-  avalanche:
-    profiles:
-      - mocknet
-      - mocknet-cluster
-    restart: unless-stopped
-    image: registry.gitlab.com/thorchain/devops/node-launcher:avalanche-daemon-1.14.1
-    volumes:
-      - "./mocknet/avax:/mocknet"
-    command:
-      - ./avalanchego
-      - --sybil-protection-enabled=false
-      - --network-id=local
-      - --http-host=0.0.0.0
-      - --chain-config-dir=/mocknet/configs
-      - --http-allowed-hosts=*
-    ports:
-      - 9650:9650
-    environment:
-      RPC_PORT: "9650"
-
-  # ------------------------------ tron ------------------------------
-  # The fullnode must wait for the supernode to be healthy before starting.
-  # Without this, both nodes try to connect simultaneously, triggering DUPLICATE_PEER
-  # detection which closes both connections. The fullnode ends up with 0 peers and
-  # fails to sync blocks, causing simulation tests to timeout waiting for tron.
-
-  tron-supernode:
-    profiles:
-      - mocknet
-      - mocknet-cluster
-    image: registry.gitlab.com/thorchain/devops/node-launcher:tron-daemon-4.8.0.1
-    volumes:
-      - "./mocknet:/mocknet"
-    environment:
-      TRON_NODE_TYPE: mocknet-supernode
+      - 127.0.0.1:3001:3001 #n2n port
+      - 127.0.0.1:3002:3002 #n2c port
     healthcheck:
-      # Wait for supernode to produce block 1 before fullnode connects
       test:
         [
           "CMD",
-          "curl",
-          "-sf",
-          "-X",
-          "POST",
-          "-H",
-          "Content-Type: application/json",
-          "-d",
-          '{"num":1}',
-          "http://localhost:8090/wallet/getblockbynum",
+          "test",
+          "-S",
+          "/root/mocknet/node.socket"
         ]
       interval: 3s
       timeout: 5s

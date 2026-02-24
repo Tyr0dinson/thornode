@@ -629,17 +629,7 @@ func (s *Signer) signAndBroadcast(item TxOutStoreItem) ([]byte, *types.TxInItem,
 
 	start := time.Now()
 	defer func() {
-		// TODO fix cardano metrics
-		// s.m.GetHistograms(metrics.SignAndBroadcastDuration(chain.GetChain())).Observe(time.Since(start).Seconds())
-		hist := s.m.GetHistograms(metrics.SignAndBroadcastDuration(chain.GetChain()))
-		if hist == nil {
-			s.logger.
-				Warn().
-				Str("metric", string(metrics.SignAndBroadcastDuration(chain.GetChain()))).
-				Msg("histogram not found for chain")
-		} else {
-			hist.Observe(time.Since(start).Seconds())
-		}
+		s.m.GetHistograms(metrics.SignAndBroadcastDuration(chain.GetChain())).Observe(time.Since(start).Seconds())
 	}()
 
 	if !tx.OutHash.IsEmpty() {
