@@ -974,7 +974,7 @@ type BifrostBlockScannerConfiguration struct {
 		StartBlockSlot uint64 `mapstructure:"start_block_slot"`
 		// StartBlockHash
 		StartBlockHash string `mapstructure:"start_block_hash"`
-	}
+	} `mapstructure:"cardano"`
 }
 
 type BifrostClientConfiguration struct {
