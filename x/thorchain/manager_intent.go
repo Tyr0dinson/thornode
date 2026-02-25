@@ -294,13 +294,25 @@ func (im *IntentMgr) processExpirations(ctx cosmos.Context) error {
 		return fmt.Errorf("fail to get active intents: %w", err)
 	}
 
+	// Cap the number of expirations per block to prevent timeout
+	maxProcessing := im.mgr.Keeper().GetConfigInt64(ctx, constants.IntentMaxEndBlockProcessing)
+	if maxProcessing <= 0 {
+		maxProcessing = 100
+	}
+	var processed int64
+
 	for _, intent := range activeIntents {
+		if processed >= maxProcessing {
+			ctx.Logger().Warn("reached per-block processing cap for intent expirations", "cap", maxProcessing)
+			break
+		}
 		// Check if expired
 		if currentHeight >= intent.ExpiryHeight {
 			if err := im.expireIntent(ctx, intent); err != nil {
 				ctx.Logger().Error("fail to expire intent", "txid", intent.TxID, "error", err)
 				continue
 			}
+			processed++
 		}
 	}
 
@@ -403,6 +415,14 @@ func (im *IntentMgr) executeIntent(ctx cosmos.Context, intent Intent, solve Inte
 				userToi.Coin.Amount = common.SafeSub(userToi.Coin.Amount, affiliateFeeAmount)
 			}
 		}
+	}
+
+	// Validate outbound amounts are non-zero after fee deductions
+	if solverToi.Coin.Amount.IsZero() {
+		return fmt.Errorf("solver outbound amount is zero after fee deduction (source: %s, fees too large)", intent.Source.Amount)
+	}
+	if userToi.Coin.Amount.IsZero() {
+		return fmt.Errorf("user outbound amount is zero after fee deduction (target: %s, fees too large)", solve.TargetCoin.Amount)
 	}
 
 	// Process protocol fee - deposit into reserve
@@ -793,7 +813,10 @@ func (im *IntentMgr) expireIntent(ctx cosmos.Context, intent Intent) error {
 }
 
 // refundExpiredIntent refunds an expired intent directly without auction
-// This is used when the source asset is native or has an L1 pool
+// This is used when the source asset is native or has an L1 pool.
+// If refunding fails repeatedly (e.g., chain halted), a grace period of
+// IntentTTLBlocks beyond expiry falls back to unrefundableCoinCleanup
+// to prevent the intent from blocking processing indefinitely.
 func (im *IntentMgr) refundExpiredIntent(ctx cosmos.Context, intent Intent) error {
 	sourceAsset := intent.Source.Asset
 
@@ -814,11 +837,30 @@ func (im *IntentMgr) refundExpiredIntent(ctx cosmos.Context, intent Intent) erro
 	}
 
 	ok, err := im.mgr.TxOutStore().TryAddTxOutItem(ctx, im.mgr, toi, cosmos.ZeroUint())
-	if err != nil {
-		return fmt.Errorf("fail to schedule refund for expired intent: %w", err)
-	}
-	if !ok {
-		return fmt.Errorf("fail to add refund txout for expired intent")
+	if err != nil || !ok {
+		// Check if we've exceeded the grace period for retries
+		ttlBlocks := im.mgr.Keeper().GetConfigInt64(ctx, constants.IntentTTLBlocks)
+		if ttlBlocks <= 0 {
+			ttlBlocks = 14400
+		}
+		graceDeadline := intent.ExpiryHeight + ttlBlocks
+		if ctx.BlockHeight() > graceDeadline {
+			// Grace period exceeded — fall back to unrefundableCoinCleanup to unblock processing
+			ctx.Logger().Error("intent refund grace period exceeded, cleaning up unrefundable funds",
+				"txid", intent.TxID,
+				"expiry_height", intent.ExpiryHeight,
+				"grace_deadline", graceDeadline,
+			)
+			unrefundableCoinCleanup(ctx, im.mgr, toi, "intent_refund_grace_exceeded")
+
+			// Still proceed with cleanup below
+		} else {
+			// Within grace period — return error to retry next block
+			if err != nil {
+				return fmt.Errorf("fail to schedule refund for expired intent: %w", err)
+			}
+			return fmt.Errorf("fail to add refund txout for expired intent")
+		}
 	}
 
 	// Refund any existing solves for this intent
@@ -914,13 +956,25 @@ func (im *IntentMgr) processAuctions(ctx cosmos.Context) error {
 		return fmt.Errorf("fail to get active auctions: %w", err)
 	}
 
+	// Cap the number of auctions processed per block to prevent timeout
+	maxProcessing := im.mgr.Keeper().GetConfigInt64(ctx, constants.IntentMaxEndBlockProcessing)
+	if maxProcessing <= 0 {
+		maxProcessing = 100
+	}
+	var processed int64
+
 	for _, auction := range activeAuctions {
+		if processed >= maxProcessing {
+			ctx.Logger().Warn("reached per-block processing cap for auction completions", "cap", maxProcessing)
+			break
+		}
 		// Check if auction has expired
 		if currentHeight >= auction.ExpiryHeight {
 			if err := im.completeAuction(ctx, auction); err != nil {
 				ctx.Logger().Error("fail to complete auction", "intent_txid", auction.IntentTxID, "error", err)
 				continue
 			}
+			processed++
 		}
 	}
 
@@ -1003,11 +1057,13 @@ func (im *IntentMgr) completeAuction(ctx cosmos.Context, auction IntentAuction) 
 		ok, refundErr := im.mgr.TxOutStore().TryAddTxOutItem(cacheCtx, im.mgr, toi, cosmos.ZeroUint())
 		switch {
 		case refundErr != nil:
-			cacheCtx.Logger().Error("fail to refund losing bid", "bid_txid", bids[i].BidTxID, "error", refundErr)
-			unrefundableCoinCleanup(cacheCtx, im.mgr, toi, "failed_refund")
+			// Return error to roll back the entire CacheContext and retry next block.
+			// This prevents losing bidders' funds from being silently lost
+			// (especially for non-native L1 assets where unrefundableCoinCleanup
+			// only logs and leaves funds untracked in the vault).
+			return fmt.Errorf("fail to refund losing bid %s: %w", bids[i].BidTxID, refundErr)
 		case !ok:
-			cacheCtx.Logger().Error("fail to schedule losing bid refund", "bid_txid", bids[i].BidTxID)
-			unrefundableCoinCleanup(cacheCtx, im.mgr, toi, "failed_refund")
+			return fmt.Errorf("fail to schedule losing bid refund for %s", bids[i].BidTxID)
 		default:
 			cacheCtx.Logger().Info("refunded losing auction bid",
 				"intent_txid", auction.IntentTxID,
@@ -1108,7 +1164,9 @@ func (im *IntentMgr) completeAuction(ctx cosmos.Context, auction IntentAuction) 
 	return nil
 }
 
-// processWinningBid handles the winning bid - swap to RUNE and add to reserve
+// processWinningBid handles the winning bid - direct swap to RUNE and add to reserve.
+// Uses a direct pool swap (not the swap queue) to prevent the bid from being refunded
+// to the bidder on swap failure, which would let them win the auction for free.
 func (im *IntentMgr) processWinningBid(ctx cosmos.Context, bid IntentAuctionBid) error {
 	// If the bid is already in RUNE, transfer it from Asgard to Reserve
 	// (bids are deposited to Asgard via handler_deposit.go)
@@ -1121,60 +1179,73 @@ func (im *IntentMgr) processWinningBid(ctx cosmos.Context, bid IntentAuctionBid)
 		return nil
 	}
 
-	// For non-RUNE assets, queue a swap to RUNE destined for the reserve.
-	// This uses the swap queue (not a direct swap) to ensure proper pool accounting
-	// (LUVI, volume tracking, slip-based fees). The bid funds remain in Asgard
-	// until the swap executes (typically next block), which is acceptable since
-	// the funds are already tracked in the vault balance.
-	reserveAddr, err := im.mgr.Keeper().GetModuleAddress(ReserveName)
+	// For non-RUNE assets, perform a direct swap to RUNE and add to reserve.
+	// This is the same approach used by processProtocolFee — directly updating
+	// pool balances rather than queuing a swap. This prevents the failure mode
+	// where a queued swap fails and refunds the bid back to the bidder,
+	// letting them win the auction for free.
+	bidPool, err := im.mgr.Keeper().GetPool(ctx, bid.BidAmount.Asset.GetLayer1Asset())
 	if err != nil {
-		return fmt.Errorf("fail to get reserve module address: %w", err)
+		return fmt.Errorf("fail to get pool for winning bid swap: %w", err)
+	}
+	if bidPool.IsEmpty() {
+		return fmt.Errorf("no pool found for winning bid asset %s", bid.BidAmount.Asset)
 	}
 
-	// Create a synthetic transaction for the swap
-	swapTx := common.Tx{
-		ID:          bid.BidTxID,
-		Chain:       bid.BidAmount.Asset.GetChain(),
-		FromAddress: bid.BidderAddress,
-		ToAddress:   reserveAddr,
-		Coins:       common.NewCoins(bid.BidAmount),
-		Gas:         common.Gas{common.NewCoin(bid.BidAmount.Asset, cosmos.OneUint())},
-		Memo:        fmt.Sprintf("=:THOR.RUNE:%s", reserveAddr),
+	swapper, err := GetSwapper(im.mgr.Keeper().GetVersion())
+	if err != nil {
+		return fmt.Errorf("fail to get swapper: %w", err)
 	}
 
-	// Determine swap version based on configuration
-	version := types.SwapVersion_v1
-	if im.mgr.Keeper().AdvSwapQueueEnabled(ctx) {
-		version = types.SwapVersion_v2
+	// Calculate swap: bid asset -> RUNE
+	X := bidPool.BalanceAsset
+	x := bid.BidAmount.Amount
+	Y := bidPool.BalanceRune
+
+	slipBps := swapper.CalcSwapSlip(X, x)
+	minSlipBps := cosmos.ZeroUint()
+	emitRune, liquidityFee, _ := swapper.GetSwapCalc(X, x, Y, slipBps, minSlipBps)
+
+	if emitRune.GTE(Y) {
+		return fmt.Errorf("not enough RUNE in pool for winning bid swap")
 	}
 
-	// Get Asgard module address for signer
-	asgardAddr := im.mgr.Keeper().GetModuleAccAddress(AsgardName)
+	// Update pool balances directly
+	bidPool.BalanceAsset = bidPool.BalanceAsset.Add(x)
+	bidPool.BalanceRune = common.SafeSub(bidPool.BalanceRune, emitRune)
 
-	// Create the swap message
-	swapMsg := NewMsgSwap(
-		swapTx,
-		common.RuneAsset(),
-		reserveAddr,
-		cosmos.ZeroUint(), // No slip limit
-		common.NoAddress,  // No affiliate
-		cosmos.ZeroUint(), // No affiliate fee
-		"",                // No aggregator
-		"", nil,           // No dex target
-		MarketSwap,
-		1, 0, // No streaming
-		version,
-		asgardAddr,
+	if err := im.mgr.Keeper().SetPool(ctx, bidPool); err != nil {
+		return fmt.Errorf("fail to save pool after winning bid swap: %w", err)
+	}
+
+	// Transfer emitted RUNE from Asgard to Reserve
+	if err := im.mgr.Keeper().AddPoolFeeToReserve(ctx, emitRune); err != nil {
+		return fmt.Errorf("fail to add winning bid RUNE to reserve: %w", err)
+	}
+
+	// Emit swap event for the direct swap
+	swapEvt := NewEventSwap(
+		bidPool.Asset,
+		cosmos.ZeroUint(),
+		slipBps,
+		liquidityFee,
+		cosmos.ZeroUint(),
+		common.Tx{
+			ID:    bid.BidTxID,
+			Chain: common.THORChain,
+			Coins: common.NewCoins(bid.BidAmount),
+		},
+		common.NewCoin(common.RuneAsset(), emitRune),
+		cosmos.ZeroUint(),
 	)
-
-	// Add swap to the advanced swap queue - this ensures proper outbound handling
-	if err := im.mgr.AdvSwapQueueMgr().AddSwapQueueItem(ctx, im.mgr, swapMsg); err != nil {
-		return fmt.Errorf("fail to add winning bid swap to queue: %w", err)
+	if err := im.mgr.EventMgr().EmitEvent(ctx, swapEvt); err != nil {
+		ctx.Logger().Error("fail to emit winning bid swap event", "error", err)
 	}
 
-	ctx.Logger().Info("queued winning bid swap to RUNE for reserve",
+	ctx.Logger().Info("executed direct winning bid swap to RUNE for reserve",
 		"bid_asset", bid.BidAmount.Asset,
 		"bid_amount", bid.BidAmount.Amount,
+		"emit_rune", emitRune,
 	)
 
 	return nil

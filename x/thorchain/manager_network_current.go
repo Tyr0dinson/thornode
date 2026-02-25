@@ -2401,22 +2401,15 @@ func (vm *NetworkMgr) calculateNetworkSolvency(ctx cosmos.Context, mgr Manager) 
 		}
 	}
 
-	// Step 7: Subtract L1 assets held for active intents, pending solves, and auction bids
-	// These assets are in vaults but allocated to intents (similar to swap queue items)
-	intentIter := vm.k.GetIntentIterator(ctx)
-	defer intentIter.Close()
-	for ; intentIter.Valid(); intentIter.Next() {
-		var intent types.Intent
-		if err = vm.k.Cdc().Unmarshal(intentIter.Value(), &intent); err != nil {
-			ctx.Logger().Error("fail to unmarshal intent", "error", err)
-			continue
-		}
-
-		// Only count active/auctioning intents - expired/completed/cancelled have been refunded
-		if intent.Status != types.IntentStatus_IntentActive && intent.Status != types.IntentStatus_IntentAuctioning {
-			continue
-		}
-
+	// Step 7: Subtract L1 assets held for active intents, pending solves, and auction bids.
+	// Uses the active intent index for O(active) instead of O(all) iteration,
+	// and skips solve lookups for auctioning intents (solves are refunded on auction start).
+	var activeIntents []types.Intent
+	activeIntents, err = vm.k.GetActiveIntents(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("fail to get active intents for solvency: %w", err)
+	}
+	for _, intent := range activeIntents {
 		// Subtract source L1 asset (skip trade/secured - they're tracked via supply)
 		coin := intent.Source
 		if !coin.Asset.IsTradeAsset() && !coin.Asset.IsSecuredAsset() {
@@ -2426,7 +2419,7 @@ func (vm *NetworkMgr) calculateNetworkSolvency(ctx cosmos.Context, mgr Manager) 
 			}
 		}
 
-		// Subtract L1 assets from pending solves for this intent
+		// Subtract L1 assets from pending solves
 		var solves []types.IntentSolve
 		solves, err = vm.k.GetIntentSolvesByIntentID(ctx, intent.TxID)
 		if err != nil {
@@ -2444,13 +2437,27 @@ func (vm *NetworkMgr) calculateNetworkSolvency(ctx cosmos.Context, mgr Manager) 
 		}
 	}
 
-	// Subtract L1 assets from active auction bids
+	// Subtract L1 assets from active auction bids and auctioning intent source amounts.
+	// Auctioning intents are not in the active intent index, so their source amounts
+	// are accounted for via the auction's AuctionAmount + RemainingAmount.
 	var activeAuctions []types.IntentAuction
 	activeAuctions, err = vm.k.GetActiveAuctions(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("fail to get active auctions: %w", err)
 	}
 	for _, auction := range activeAuctions {
+		// Subtract the auctioning intent's source amount (AuctionAmount + RemainingAmount)
+		// These are still in the vault but allocated to the auction
+		auctionAsset := auction.AuctionAmount.Asset
+		if !auctionAsset.IsTradeAsset() && !auctionAsset.IsSecuredAsset() {
+			if _, ok := assetAmounts[auctionAsset]; ok {
+				totalAuctionAmount := auction.AuctionAmount.Amount.Add(auction.RemainingAmount.Amount)
+				auctionAmt := math.NewIntFromBigInt(totalAuctionAmount.BigInt())
+				assetAmounts[auctionAsset] = assetAmounts[auctionAsset].Sub(auctionAmt)
+			}
+		}
+
+		// Subtract bid amounts held in vault
 		var bids []types.IntentAuctionBid
 		bids, err = vm.k.GetIntentAuctionBidsByIntentID(ctx, auction.IntentTxID)
 		if err != nil {

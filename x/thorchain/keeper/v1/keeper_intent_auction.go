@@ -165,19 +165,39 @@ func (k KVStore) getIntentAuctionBid(ctx cosmos.Context, key []byte, record *typ
 	return true, nil
 }
 
-// SetIntentAuctionBid saves an intent auction bid and updates indices
+// SetIntentAuctionBid saves an intent auction bid and updates indices.
+// If the bid already exists and indexed fields have changed, old index entries
+// are cleaned up before writing new ones (consistent with SetIntentSolve).
 func (k KVStore) SetIntentAuctionBid(ctx cosmos.Context, bid types.IntentAuctionBid) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+
+	// If updating an existing bid, clean up stale index entries
+	if k.IntentAuctionBidExists(ctx, bid.BidTxID) {
+		existing, err := k.GetIntentAuctionBid(ctx, bid.BidTxID)
+		if err == nil {
+			// Remove old auction index if IntentTxID changed
+			if !existing.IntentTxID.Equals(bid.IntentTxID) {
+				oldAuctionKey := k.GetKey(prefixIntentAuctionBidByAuction, existing.IntentTxID.String(), "/"+bid.BidTxID.String())
+				store.Delete(oldAuctionKey)
+				oldBidderKey := k.GetKey(prefixIntentAuctionBidByBidder, existing.IntentTxID.String(), existing.BidderAddress.String())
+				store.Delete(oldBidderKey)
+			} else if !existing.BidderAddress.Equals(bid.BidderAddress) {
+				// Remove old bidder index if BidderAddress changed
+				oldBidderKey := k.GetKey(prefixIntentAuctionBidByBidder, existing.IntentTxID.String(), existing.BidderAddress.String())
+				store.Delete(oldBidderKey)
+			}
+		}
+	}
+
 	// Store the bid record
 	k.setIntentAuctionBid(ctx, k.GetKey(prefixIntentAuctionBid, bid.BidTxID.String()), bid)
-
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 
 	// Index by auction (intent) ID using prefix keys (O(1) add)
 	auctionIndexKey := k.GetKey(prefixIntentAuctionBidByAuction, bid.IntentTxID.String(), "/"+bid.BidTxID.String())
 	store.Set(auctionIndexKey, []byte{1})
 
 	// Index by bidder address for finding existing bids to top-up
-	bidderIndexKey := k.GetKey(prefixIntentAuctionBidByBidder, bid.IntentTxID.String(), bid.BidderAddress.String())
+	bidderIndexKey := k.GetKey(prefixIntentAuctionBidByBidder, bid.IntentTxID.String(), "/"+bid.BidderAddress.String())
 	store.Set(bidderIndexKey, []byte(bid.BidTxID.String()))
 }
 
@@ -217,7 +237,7 @@ func (k KVStore) RemoveIntentAuctionBid(ctx cosmos.Context, bidTxID common.TxID)
 	store.Delete(auctionIndexKey)
 
 	// Remove bidder index
-	bidderIndexKey := k.GetKey(prefixIntentAuctionBidByBidder, bid.IntentTxID.String(), bid.BidderAddress.String())
+	bidderIndexKey := k.GetKey(prefixIntentAuctionBidByBidder, bid.IntentTxID.String(), "/"+bid.BidderAddress.String())
 	store.Delete(bidderIndexKey)
 }
 
@@ -250,7 +270,7 @@ func (k KVStore) GetIntentAuctionBidsByIntentID(ctx cosmos.Context, intentTxID c
 // GetBidderBidForAuction retrieves a bidder's existing bid for a specific auction (for top-up)
 func (k KVStore) GetBidderBidForAuction(ctx cosmos.Context, intentTxID common.TxID, bidder common.Address) (types.IntentAuctionBid, error) {
 	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
-	bidderIndexKey := k.GetKey(prefixIntentAuctionBidByBidder, intentTxID.String(), bidder.String())
+	bidderIndexKey := k.GetKey(prefixIntentAuctionBidByBidder, intentTxID.String(), "/"+bidder.String())
 
 	// If the index doesn't exist, return empty bid (not found)
 	if !store.Has(bidderIndexKey) {

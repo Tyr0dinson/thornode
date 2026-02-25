@@ -236,7 +236,8 @@ func (tx TxType) HasOutbound() bool {
 		TxMaint,
 		TxRagnarok,
 		TxIntentOpen,
-		TxIntentSolve:
+		TxIntentSolve,
+		TxIntentAuctionBid:
 		return false
 	default:
 		return true

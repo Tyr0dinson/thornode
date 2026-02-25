@@ -164,6 +164,8 @@ func NewConstantValue() *ConstantVals {
 			IntentAuctionMinBidMultiplier:       3,                  // minimum bid must be >= 3x network gas fee
 			IntentAuctionOvertimeBlocks:         600,                // overtime window in blocks (~1 hour at 6 second blocks)
 			IntentAuctionMaxOvertimeBlocks:      7200,               // max total overtime extension in blocks (~12 hours at 6 second blocks)
+			IntentMaxSolvesPerIntent:            100,                // maximum number of solve bids per intent
+			IntentMaxEndBlockProcessing:         100,                // max intents/auctions to process per EndBlock
 		},
 		boolValues: map[ConstantName]bool{
 			StrictBondLiquidityRatio: true,
