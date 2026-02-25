@@ -257,24 +257,25 @@ func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
 
 	s.logger.Info().Msgf("done network fee")
 
-	err = s.db.PruneBlockIds(uint64(fetchHeight))
-	if err != nil {
-		s.logger.Err(err).Msg("fail to prune block ids")
-	}
+	if chainHeight > s.config.MaxReorgRescanBlocks {
+		pruneHeight := uint64(chainHeight - s.config.MaxReorgRescanBlocks)
 
-	if fetchHeight > transactionTimeout {
-		pruneHeight := uint64(fetchHeight - transactionTimeout)
-		err = s.db.PruneSpentUtxos(pruneHeight)
-		if err != nil {
-			s.logger.Err(err).Msg("failed to prune spent utxos")
-		}
-	}
-
-	if fetchHeight > s.config.MaxReorgRescanBlocks {
-		pruneHeight := uint64(fetchHeight - s.config.MaxReorgRescanBlocks)
 		err = s.db.PruneObservedTxs(pruneHeight)
 		if err != nil {
 			s.logger.Err(err).Msg("failed to prune observed txs")
+		}
+
+		err = s.db.PruneBlockIds(pruneHeight)
+		if err != nil {
+			s.logger.Err(err).Msg("fail to prune block ids")
+		}
+	}
+
+	if chainHeight > transactionTimeout {
+		pruneHeight := uint64(chainHeight - transactionTimeout)
+		err = s.db.PruneSpentUtxos(pruneHeight)
+		if err != nil {
+			s.logger.Err(err).Msg("failed to prune spent utxos")
 		}
 	}
 

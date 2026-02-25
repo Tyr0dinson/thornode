@@ -144,10 +144,12 @@ func (s *LevelDBScannerStorageCardano) PruneBlockIds(height uint64) error {
 	defer iterator.Release()
 	candidates := [][]byte{}
 	for ; iterator.Next(); iterator.Valid() {
-		key := iterator.Key()
-		if key == nil {
+		if iterator.Key() == nil {
 			continue
 		}
+
+		key := make([]byte, len(iterator.Key()))
+		copy(key, iterator.Key())
 
 		inverted := binary.BigEndian.Uint64(key[len(PrefixBlockId):])
 		if ^inverted > height {
