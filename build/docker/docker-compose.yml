@@ -597,7 +597,23 @@ services:
       - mocknet
       - mocknet-cluster
     restart: unless-stopped
-    image: cardano:latest
+    build:
+      context: ./mocknet/cardano
+      args:
+        TAG: mocknet
+    image: cardano:mocknet
     ports:
-      - 127.0.0.1:3001:3001 #n2n port
-      - 127.0.0.1:3002:3002 #n2c port
+      - 127.0.0.1:3001:3001 # n2n port
+      - 127.0.0.1:3002:3002 # n2c port
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "test",
+          "-S",
+          "/root/mocknet/node.socket"
+        ]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+      start_period: 10s

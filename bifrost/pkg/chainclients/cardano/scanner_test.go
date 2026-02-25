@@ -241,9 +241,9 @@ func (s *ScannerTestSuite) TestRollBackwardHandler(c *C) {
 	storeTestBlocks(c, scanner, 5)
 
 	// store observed txs at heights 3, 4, and 5
-	c.Assert(scanner.db.SetObservedTxs(3, makeIds("tx3a")), IsNil)
-	c.Assert(scanner.db.SetObservedTxs(4, makeIds("tx4a", "tx4b")), IsNil)
-	c.Assert(scanner.db.SetObservedTxs(5, makeIds("tx5a")), IsNil)
+	c.Assert(scanner.db.SetObservedTxs(3, makeIds("003a")), IsNil)
+	c.Assert(scanner.db.SetObservedTxs(4, makeIds("004a", "004b")), IsNil)
+	c.Assert(scanner.db.SetObservedTxs(5, makeIds("005a")), IsNil)
 
 	// rollback to slot 200 (block 2) — blocks 3, 4, 5 are invalidated
 	point := pcommon.NewPoint(200, []byte("rollback-hash"))
@@ -267,9 +267,9 @@ func (s *ScannerTestSuite) TestRollBackwardHandler(c *C) {
 	// should have errata for heights 3, 4, 5
 	// rollBackwardHandler hex-encodes the raw bytes, so expected values are hex
 	c.Assert(len(errata), Equals, 3)
-	c.Assert(errata[3], DeepEquals, []string{"tx3a"})
-	c.Assert(errata[4], DeepEquals, []string{"tx4a", "tx4b"})
-	c.Assert(errata[5], DeepEquals, []string{"tx5a"})
+	c.Assert(errata[3], DeepEquals, []string{"003a"})
+	c.Assert(errata[4], DeepEquals, []string{"004a", "004b"})
+	c.Assert(errata[5], DeepEquals, []string{"005a"})
 
 	// invalidated block IDs should be deleted
 	_, _, _, err = scanner.db.GetBlockId(3)
