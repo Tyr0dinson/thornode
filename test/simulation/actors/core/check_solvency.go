@@ -3,6 +3,7 @@ package core
 import (
 	"fmt"
 	rand "math/rand/v2"
+	"time"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
@@ -35,6 +36,9 @@ func NewSolvencyCheckActor(rng *rand.Rand) *Actor {
 ////////////////////////////////////////////////////////////////////////////////////////
 
 func (a *SolvencyCheckActor) checkSolvency(config *OpConfig) OpResult {
+	// wait a moment for any blocks to be created
+	time.Sleep(time.Second * 5)
+
 	// get all vaults
 	vaults, err := thornode.GetVaults()
 	if err != nil {
@@ -77,15 +81,17 @@ func (a *SolvencyCheckActor) checkSolvency(config *OpConfig) OpResult {
 
 	// find a user to lookup L1 balances
 	var user *User
+	userAcquired := false
 	for _, user = range config.Users {
 		a.SetLogger(a.Log().With().Str("user", user.Name()).Logger())
 
 		// skip users already being used
 		if user.Acquire() {
+			userAcquired = true
 			break
 		}
 	}
-	if user == nil {
+	if !userAcquired {
 		a.Log().Error().Msg("no user available")
 		return OpResult{
 			Continue: false,

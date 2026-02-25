@@ -49,7 +49,7 @@ class EVMSetupTool:
         self.addr = self.account.address
 
         # fund admin admin account with 10M ETH
-        if self.chain != "AVAX":
+        if self.chain not in ["AVAX", "POL"]:
             coinbase_addr = self.web3.eth.accounts[0]
             self.fund_account(coinbase_addr, self.addr, int(10000000e18))  # 10M ETH
 
@@ -59,8 +59,11 @@ class EVMSetupTool:
             SignAndSendRawMiddlewareBuilder.build(self.account), layer=0
         )
 
+        amount = 1_000_000e18
+        if self.chain == "POL":
+            amount = 100_000_000e18
         # fund simulation account with 1m ETH
-        self.fund_account(self.addr, self.simulation_master, int(1000000e18))
+        self.fund_account(self.addr, self.simulation_master, int(amount))
 
         # done if this is hardhat
         if self.web3.net.version == "31337":
@@ -78,6 +81,8 @@ class EVMSetupTool:
             return "BSC.BNB"
         elif self.chain == "BASE":
             return "BASE.ETH"
+        elif self.chain == "POL":
+            return "POL.POL"
         else:
             logging.fatal(f"unknown chain: {self.chain}")
 
@@ -150,20 +155,19 @@ class EVMSetupTool:
     # NOTE: returns the router contract and the constructor args
     def router_contract(self, address=None):
         abi_file = "router-abi.json"
-        bytecode_file = "router-bytecode.txt"
+        # Polygon's Bor dev mode only supports up to London fork (no PUSH0/Shanghai),
+        # so use the paris-compiled bytecode which avoids the PUSH0 opcode.
+        if self.chain == "POL":
+            bytecode_file = "router-bytecode-paris.txt"
+        else:
+            bytecode_file = "router-bytecode.txt"
         args = []
-
-        # if on eth the router constructor takes ERC20 RUNE token address
-        if self.chain == "ETH":
-            abi_file = "eth-" + abi_file
-            bytecode_file = "eth-" + bytecode_file
-            args = [self.erc20rune]
 
         # load abi and bytecode
         with open(os.path.join(os.path.dirname(__file__), abi_file), "r") as f:
             abi = json.load(f)
         with open(os.path.join(os.path.dirname(__file__), bytecode_file), "r") as f:
-            bytecode = f.read()
+            bytecode = f.read().strip()
         return self.web3.eth.contract(abi=abi, bytecode=bytecode, address=address), args
 
     def dex_contract(self, address=None):
@@ -354,6 +358,7 @@ def main():
         "ETH": "http://ethereum:8545",
         "BSC": "http://binance-smart:8545",
         "BASE": "http://base:8545",
+        "POL": "http://polygon:8545",
     }
 
     # parse args

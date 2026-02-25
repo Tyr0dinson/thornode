@@ -77,6 +77,8 @@ func (vm *NetworkMgr) processGenesisSetup(ctx cosmos.Context) error {
 			common.TRONChain,
 			common.XRPChain,
 			common.SOLChain,
+			common.POLChain,
+			common.ZECChain,
 			common.ADAChain,
 		}
 		pubSet := active[0].PubKeySet
@@ -2277,14 +2279,24 @@ func (vm *NetworkMgr) calculateNetworkSolvency(ctx cosmos.Context, mgr Manager) 
 		// Subtract the source asset coin from the calculation
 		if !msg.Tx.Coins.IsEmpty() {
 			coin := msg.Tx.Coins[0]
-			// Skip trade/secured assets
-			if coin.Asset.IsTradeAsset() || coin.Asset.IsSecuredAsset() {
+			// Skip native assets
+			if coin.Asset.IsNative() {
 				continue
 			}
 			if _, ok := assetAmounts[coin.Asset]; !ok {
 				return nil, fmt.Errorf("unexpected asset %s not found in tracking map (legacy swap queue)", coin.Asset)
 			}
 			coinAmount := math.NewIntFromBigInt(coin.Amount.BigInt())
+			// For streaming swaps, only deduct the remaining (unprocessed) amount
+			// to avoid double-counting with pool balance which already includes processed amounts
+			if msg.IsLegacyStreaming() {
+				swp, err := vm.k.GetStreamingSwap(ctx, msg.Tx.ID)
+				if err == nil && swp.TxID.Equals(msg.Tx.ID) {
+					// Remaining = Deposit - In (what hasn't been swapped yet)
+					remaining := common.SafeSub(swp.Deposit, swp.In)
+					coinAmount = math.NewIntFromBigInt(remaining.BigInt())
+				}
+			}
 			assetAmounts[coin.Asset] = assetAmounts[coin.Asset].Sub(coinAmount)
 		}
 	}
@@ -2301,14 +2313,24 @@ func (vm *NetworkMgr) calculateNetworkSolvency(ctx cosmos.Context, mgr Manager) 
 		// Subtract the source asset coin from the calculation
 		if !msg.Tx.Coins.IsEmpty() {
 			coin := msg.Tx.Coins[0]
-			// Skip trade/secured assets
-			if coin.Asset.IsTradeAsset() || coin.Asset.IsSecuredAsset() {
+			// Skip native assets
+			if coin.Asset.IsNative() {
 				continue
 			}
 			if _, ok := assetAmounts[coin.Asset]; !ok {
 				return nil, fmt.Errorf("unexpected asset %s not found in tracking map (advanced swap queue)", coin.Asset)
 			}
 			coinAmount := math.NewIntFromBigInt(coin.Amount.BigInt())
+			// For streaming swaps, only deduct the remaining (unprocessed) amount
+			// to avoid double-counting with pool balance which already includes processed amounts
+			if msg.IsStreaming() {
+				swp, err := vm.k.GetStreamingSwap(ctx, msg.Tx.ID)
+				if err == nil && swp.TxID.Equals(msg.Tx.ID) {
+					// Remaining = Deposit - In (what hasn't been swapped yet)
+					remaining := common.SafeSub(swp.Deposit, swp.In)
+					coinAmount = math.NewIntFromBigInt(remaining.BigInt())
+				}
+			}
 			assetAmounts[coin.Asset] = assetAmounts[coin.Asset].Sub(coinAmount)
 		}
 	}
@@ -2364,6 +2386,10 @@ func (vm *NetworkMgr) calculateNetworkSolvency(ctx cosmos.Context, mgr Manager) 
 			}
 
 			if !item.Coin.IsEmpty() {
+				// Skip native assets
+				if item.Coin.Asset.IsNative() {
+					continue
+				}
 				if _, ok := assetAmounts[item.Coin.Asset]; !ok {
 					return nil, fmt.Errorf("unexpected asset %s not found in tracking map (scheduled txout)", item.Coin.Asset)
 				}

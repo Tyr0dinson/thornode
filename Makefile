@@ -88,13 +88,20 @@ HTTPS_GIT := gitlab.com/thorchain/thornode.git
 
 # ------------------------------ Generate ------------------------------
 
-generate: go-generate openapi proto-gen
+generate: go-generate generate-abi openapi proto-gen
 	@./scripts/generate.py
 	@cd test/simulation && go mod tidy
 
 go-generate:
 	@go install golang.org/x/tools/cmd/stringer@v0.28.0
 	@go generate ./...
+
+# mirror router abi from single source of truth to reference locations
+generate-abi:
+	@cp chain/evm/router-abi.json bifrost/pkg/chainclients/evm/abi/router.json
+	@cp chain/evm/router-abi.json bifrost/pkg/chainclients/ethereum/abi/router.json
+	@cp chain/evm/router-abi.json build/scripts/evm/router-abi.json
+	@cp chain/evm/router-abi.json test/simulation/pkg/evm/abi/router.json
 
 openapi:
 	@docker run --rm \
@@ -210,6 +217,7 @@ test-go-tss:
 
 test-network-specific:
 	@go test -tags stagenet ${RUN_FLAG} ./common
+	@go test -tags chainnet ${RUN_FLAG} ./common
 	@go test -tags mainnet ${RUN_FLAG} ./common ./bifrost/pkg/chainclients/utxo/...
 	@go test -tags mocknet ${RUN_FLAG} ./common ./bifrost/pkg/chainclients/utxo/...
 
@@ -300,7 +308,8 @@ build-test-regression:
 	@DOCKER_BUILDKIT=1 docker build . \
 		-t thornode-regtest \
 		-f ci/Dockerfile.regtest \
-		--build-arg COMMIT=$(COMMIT)
+		--build-arg COMMIT=$(COMMIT) \
+		--build-arg DOCKER_MIRROR
 
 test-regression-coverage:
 	@go tool cover -html=test/regression/mnt/coverage/coverage.txt
@@ -343,6 +352,7 @@ build-test-simulation:
 		-t thornode-simtest \
 		-f ci/Dockerfile.simtest \
 		--build-arg COMMIT=$(COMMIT) \
+		--build-arg DOCKER_MIRROR
 
 test-simulation-events:
 	@docker compose $(DOCKER_COMPOSE_FILES) run --rm events
@@ -440,7 +450,8 @@ docker-gitlab-build:
 		$(shell sh ./build/docker/semver_tags.sh registry.gitlab.com/thorchain/thornode ${BRANCH} $(shell cat version)) \
 		-t registry.gitlab.com/thorchain/thornode:${GITREF} \
 		--build-arg COMMIT=$(COMMIT) \
-		--build-arg TAG=$(BUILDTAG)
+		--build-arg TAG=$(BUILDTAG) \
+		--build-arg DOCKER_MIRROR
 
 ########################################################################################
 # Tools
@@ -457,7 +468,8 @@ thorscan-gitlab-push: docker-gitlab-login
 events-build:
 	@docker build . -f tools/events/Dockerfile \
 		$(shell sh ./build/docker/semver_tags.sh registry.gitlab.com/thorchain/thornode events-${BRANCH} $(shell cat version)) \
-		--build-arg TAG=$(BUILDTAG)
+		--build-arg TAG=$(BUILDTAG) \
+		--build-arg DOCKER_MIRROR
 
 events-gitlab-push: docker-gitlab-login
 	@./build/docker/semver_tags.sh registry.gitlab.com/thorchain/thornode events-${BRANCH} $(shell cat version) \

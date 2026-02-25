@@ -284,7 +284,7 @@ func handleObservedTxInQuorum(
 	if txErr != nil {
 		ctx.Logger().Error("fail to process inbound tx", "error", txErr.Error(), "tx hash", tx.Tx.ID.String())
 		if newErr := refundTx(ctx, tx, mgr, CodeInvalidMemo, txErr.Error(), ""); nil != newErr {
-			ctx.Logger().Error("fail to refund", "error", err)
+			ctx.Logger().Error("fail to refund", "error", newErr)
 		}
 		return nil
 	}
@@ -296,7 +296,7 @@ func handleObservedTxInQuorum(
 	if isSwap || isAddLiquidity {
 		if k.IsTradingHalt(ctx, m) || k.RagnarokInProgress(ctx) {
 			if newErr := refundTx(ctx, tx, mgr, se.ErrUnauthorized.ABCICode(), "trading halted", ""); nil != newErr {
-				ctx.Logger().Error("fail to refund for halted trading", "error", err)
+				ctx.Logger().Error("fail to refund for halted trading", "error", newErr)
 			}
 			return nil
 		}
@@ -319,7 +319,7 @@ func handleObservedTxInQuorum(
 	// Check is independent of the mimir to enable the handler in order to support
 	// bifrost & switch whitelisting prior to switching commencing
 	_, isSwitch := m.(*MsgSwitch)
-	if !isSwitch && mgr.SwitchManager().IsSwitch(ctx, tx.Tx.Coins[0].Asset) {
+	if !isSwitch && len(tx.Tx.Coins) > 0 && mgr.SwitchManager().IsSwitch(ctx, tx.Tx.Coins[0].Asset) {
 		if err = refundTx(ctx, tx, mgr, CodeTxFail, "asset is a switch asset", ""); err != nil {
 			ctx.Logger().Error("fail to refund", "error", err)
 		}
@@ -534,7 +534,7 @@ func handleObservedTxOutQuorum(
 
 	k := mgr.Keeper()
 
-	if isCancelTx(tx) {
+	if isCancelOrApprovalTx(tx) {
 		ctx.Logger().Info("skipping slash for cancel tx with empty memo", "txid", tx.Tx.ID)
 		// Credit gas to gas manager and deduct from vault (legit operational spend, no penalty)
 		// This also adds to fee_spent_rune for dynamic outbound fee calculation
@@ -573,6 +573,10 @@ func handleObservedTxOutQuorum(
 	}
 
 	txOut := voter.GetTx(activeNodeAccounts) // get consensus tx, in case our for loop is incorrect
+	if txOut == nil || txOut.IsEmpty() {
+		ctx.Logger().Error("fail to get consensus tx from voter", "txid", tx.Tx.ID)
+		return fmt.Errorf("fail to get consensus tx from voter: %s", tx.Tx.ID)
+	}
 	txOut.Tx.Memo = tx.Tx.Memo
 
 	// For memoless outbounds, look up the original memo from the scheduled TxOutItem
@@ -583,8 +587,12 @@ func handleObservedTxOutQuorum(
 		}
 	}
 
+	if tx.Tx.Chain.IsEmpty() {
+		ctx.Logger().Error("fail to process txOut: chain is empty", "tx", tx.Tx.String())
+		return nil
+	}
 	m, err := processOneTxIn(ctx, k, *txOut, signer)
-	if err != nil || tx.Tx.Chain.IsEmpty() {
+	if err != nil {
 		ctx.Logger().Error("fail to process txOut",
 			"error", err,
 			"tx", tx.Tx.String())
@@ -641,7 +649,7 @@ func handleObservedTxOutQuorum(
 	vault, err := k.GetVault(ctx, tx.ObservedPubKey)
 	if err != nil {
 		ctx.Logger().Error("fail to get vault", "error", err)
-		return nil
+		return fmt.Errorf("fail to get vault for outbound tx: %w", err)
 	}
 
 	// if the vault was slashed we skipped the gas manager above and deduct gas directly
@@ -816,6 +824,12 @@ func fetchMemoFromReference(ctx cosmos.Context, mgr Manager, asset common.Asset,
 			return ""
 		}
 
+		// Check if the reference memo exists before proceeding
+		if !mgr.Keeper().ReferenceMemoExists(ctx, asset, m.Reference) {
+			ctx.Logger().Debug("reference memo not found", "reference", m.Reference, "asset", asset)
+			return ""
+		}
+
 		refMemo, err := mgr.Keeper().GetReferenceMemo(ctx, asset, m.Reference)
 		if err != nil {
 			ctx.Logger().Error("unable to fetch pool for ref memo lookup", "error", err, "asset", asset)
@@ -825,7 +839,8 @@ func fetchMemoFromReference(ctx cosmos.Context, mgr Manager, asset common.Asset,
 		// Ensure transaction was observed after the reference memo was created
 		if txObservationHeight <= refMemo.Height {
 			ctx.Logger().Info("transaction observed before reference memo creation", "tx_height", txObservationHeight, "memo_height", refMemo.Height, "reference", m.Reference)
-			// Track failure usage
+			// Track usage for audit purposes - we intentionally track all usage attempts (including failures)
+			// to maintain a record of who tried to use the reference memo, even if the attempt was invalid.
 			trackReferenceMemoUsage(ctx, mgr, asset, tx.Memo, tx.ID)
 			return ""
 		}
@@ -836,8 +851,8 @@ func fetchMemoFromReference(ctx cosmos.Context, mgr Manager, asset common.Asset,
 			maxUse := mgr.Keeper().GetConfigInt64(ctx, constants.MemolessTxnMaxUse)
 			if maxUse > 0 && refMemo.GetUsageCount() >= maxUse {
 				ctx.Logger().Info("reference memo usage limit exceeded in fetchMemoFromReference", "reference", m.Reference, "usage_count", refMemo.GetUsageCount(), "max_use", maxUse)
-
-				// Track failure usage
+				// Track usage for audit purposes - we intentionally track all usage attempts (including failures)
+				// to maintain a record of who tried to use the reference memo, even if the attempt was invalid.
 				trackReferenceMemoUsage(ctx, mgr, asset, tx.Memo, tx.ID)
 				return ""
 			}
@@ -847,7 +862,8 @@ func fetchMemoFromReference(ctx cosmos.Context, mgr Manager, asset common.Asset,
 			return refMemo.Memo
 		}
 
-		// Track failure usage
+		// Track usage for audit purposes - we intentionally track all usage attempts (including failures)
+		// to maintain a record of who tried to use the reference memo, even if the attempt was invalid (expired).
 		trackReferenceMemoUsage(ctx, mgr, asset, tx.Memo, tx.ID)
 		return ""
 	}
@@ -860,6 +876,12 @@ func trackReferenceMemoUsage(ctx cosmos.Context, mgr Manager, asset common.Asset
 	if mem.GetType() == TxReferenceReadMemo {
 		m, ok := mem.(ReferenceReadMemo)
 		if !ok {
+			return
+		}
+
+		// Only track usage for reference memos that actually exist in state
+		if !mgr.Keeper().ReferenceMemoExists(ctx, asset, m.Reference) {
+			ctx.Logger().Debug("reference memo not found for usage tracking, skipping", "reference", m.Reference, "asset", asset)
 			return
 		}
 
@@ -935,6 +957,10 @@ func ExtractReferenceFromAmount(ctx cosmos.Context, mgr Manager, asset common.As
 	}
 
 	// Normalize amount to THORChain decimals.
+	// Note: Only decimals < THORChainDecimals (8) need handling here. For chains with
+	// decimals >= THORChainDecimals (e.g. SOL at 9), Bifrost already normalizes all
+	// inbound amounts to 1e8 precision before they reach THORNode, so no scaling is
+	// needed in those cases.
 	if decimals < int64(common.THORChainDecimals) {
 		divisor := int64(1)
 		for i := decimals; i < int64(common.THORChainDecimals); i++ {

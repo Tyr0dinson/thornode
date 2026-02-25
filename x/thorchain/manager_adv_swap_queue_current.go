@@ -16,6 +16,70 @@ import (
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
+// SwapDirection represents the direction of a swap through a pool.
+type SwapDirection int
+
+const (
+	RuneToAsset SwapDirection = iota
+	AssetToRune
+)
+
+// poolSwapDir tracks the direction of the last swap through a pool.
+type poolSwapDir map[string]SwapDirection
+
+// swapDirEntry represents a pool and the direction a swap goes through it.
+type swapDirEntry struct {
+	pool      string
+	direction SwapDirection
+}
+
+// getSwapDirections returns the pool asset and direction for each pool leg of a swap.
+// Note: RUNE->RUNE swaps are invalid and rejected by MsgSwap.ValidateBasic,
+// so the default case always represents a genuine double swap (asset->asset).
+func getSwapDirections(msg MsgSwap) []swapDirEntry {
+	source := msg.Tx.Coins[0].Asset.GetLayer1Asset()
+	target := msg.TargetAsset.GetLayer1Asset()
+	switch {
+	case source.IsRune():
+		// RUNE -> Asset: single swap, rune-to-asset
+		return []swapDirEntry{
+			{target.String(), RuneToAsset},
+		}
+	case target.IsRune():
+		// Asset -> RUNE: single swap, asset-to-rune
+		return []swapDirEntry{
+			{source.String(), AssetToRune},
+		}
+	default:
+		// Double swap: source pool (asset-to-rune) + target pool (rune-to-asset)
+		return []swapDirEntry{
+			{source.String(), AssetToRune},
+			{target.String(), RuneToAsset},
+		}
+	}
+}
+
+// shouldSkipRapidSwapDirection returns true if a market swap should be skipped
+// because it would go in the same direction as the last swap through any pool
+// it touches. This prevents draining pools without counter-liquidity during
+// rapid swap iterations.
+//
+// For double swaps (e.g. ETH→BTC), the swap is skipped if ANY pool leg matches
+// the last recorded direction for that pool. This is a conservative policy that
+// errs on the side of caution: even if only one leg conflicts, the swap is
+// deferred to allow counter-directional liquidity to flow first.
+func shouldSkipRapidSwapDirection(msg MsgSwap, lastPoolDir poolSwapDir, iteration int64) bool {
+	if iteration == 0 || !msg.IsMarketSwap() {
+		return false
+	}
+	for _, d := range getSwapDirections(msg) {
+		if lastDir, exists := lastPoolDir[d.pool]; exists && lastDir == d.direction {
+			return true
+		}
+	}
+	return false
+}
+
 // SwapQueueAdv is going to manage the swaps queue
 type SwapQueueAdv struct {
 	k keeper.Keeper
@@ -218,14 +282,7 @@ func (vm *SwapQueueAdv) IsDone(ctx cosmos.Context, msg MsgSwap) bool {
 // Uses State.Interval if specified and valid, otherwise falls back to maxAge
 func (vm *SwapQueueAdv) getTTL(ctx cosmos.Context, msg MsgSwap) int64 {
 	maxAge := vm.k.GetConfigInt64(ctx, constants.StreamingLimitSwapMaxAge)
-
-	// Use custom TTL if specified via State.Interval, with validation
-	ttl := maxAge // default to maxAge
-	if msg.State.Interval > 0 && msg.State.Interval <= uint64(maxAge) {
-		ttl = int64(msg.State.Interval)
-	}
-
-	return ttl
+	return getLimitSwapTTL(msg, maxAge)
 }
 
 func (vm *SwapQueueAdv) checkFeelessSwap(pools Pools, pair tradePair, indexRatio uint64) bool {
@@ -429,8 +486,10 @@ func (vm *SwapQueueAdv) getMaxSwapQuantity(ctx cosmos.Context, mgr Manager, sour
 	} else {
 		maxLength = vm.k.GetConfigInt64(ctx, constants.StreamingSwapMaxLength)
 	}
+	// For limit swaps, State.Interval represents the custom TTL (expiry in blocks),
+	// not the interval between sub-swaps. Limit swaps execute every block (interval=1).
 	interval := msg.State.Interval
-	if interval == 0 {
+	if interval == 0 || msg.IsLimitSwap() {
 		interval = 1
 	}
 	maxSwapInMaxLength := uint64(maxLength) / interval
@@ -492,6 +551,18 @@ func (vm *SwapQueueAdv) AddSwapQueueItem(ctx cosmos.Context, mgr Manager, msg *M
 		msg.State.Deposit = msg.Tx.Coins[0].Amount
 	}
 
+	// Cap limit swap custom TTL (stored in State.Interval) to maxAge so the
+	// stored value is always within bounds for downstream consumers.
+	if msg.IsLimitSwap() && msg.State.Interval > 0 {
+		swapMaxAge := vm.k.GetConfigInt64(ctx, constants.StreamingLimitSwapMaxAge)
+		if swapMaxAge < 0 {
+			return fmt.Errorf("%s returned maxAge < 0", constants.StreamingLimitSwapMaxAge)
+		}
+		if maxAge := uint64(swapMaxAge); msg.State.Interval > maxAge {
+			msg.State.Interval = maxAge
+		}
+	}
+
 	maxSwapQuantity, err := vm.getMaxSwapQuantity(ctx, mgr, msg.Tx.Coins[0].Asset, msg.TargetAsset, *msg)
 	if err != nil {
 		return err
@@ -517,6 +588,7 @@ func (vm *SwapQueueAdv) AddSwapQueueItem(ctx cosmos.Context, mgr Manager, msg *M
 		expiryHeight := msg.InitialBlockHeight + ttl
 		if err := vm.k.AddToLimitSwapTTL(ctx, expiryHeight, msg.Tx.ID); err != nil {
 			ctx.Logger().Error("fail to add limit swap to TTL", "error", err, "txID", msg.Tx.ID.String(), "expiryHeight", expiryHeight)
+			return err
 		}
 	}
 
@@ -566,6 +638,9 @@ func (vm *SwapQueueAdv) EndBlock(ctx cosmos.Context, mgr Manager, telemetryEnabl
 	limitSwapCount := int64(0)
 	completedSwapCount := int64(0)
 
+	// Track the last swap direction per pool for rapid swap safety.
+	lastPoolDir := make(poolSwapDir)
+
 	// Rapid swap iterations - exit early if no swaps succeeded on previous iteration
 	prevIterationSuccess := int64(0)
 	for iteration := int64(0); iteration < rapidSwapMax; iteration++ {
@@ -600,6 +675,15 @@ func (vm *SwapQueueAdv) EndBlock(ctx cosmos.Context, mgr Manager, telemetryEnabl
 			var msg MsgSwap
 			if err := copier.Copy(&msg, &pick.msg); err != nil {
 				ctx.Logger().Error("fail copy msg", "msg", msg.Tx.String(), "error", err)
+				continue
+			}
+
+			// Skip market swaps that would go in the same direction as the last
+			// swap through any pool they touch, preventing pool draining.
+			// Note: skipped swaps still consume a slot in the getTodoNum budget,
+			// so N is a cap on candidates considered, not swaps executed. This
+			// matches the existing behavior for failed market swaps (line ~700).
+			if shouldSkipRapidSwapDirection(msg, lastPoolDir, iteration) {
 				continue
 			}
 
@@ -642,6 +726,11 @@ func (vm *SwapQueueAdv) EndBlock(ctx cosmos.Context, mgr Manager, telemetryEnabl
 				commit()
 				settleMsg = "swap has been completed"
 				iterationSuccess++
+
+				// Track swap direction for rapid swap safety check
+				for _, d := range getSwapDirections(msg) {
+					lastPoolDir[d.pool] = d.direction
+				}
 
 				// Update state for successful swap
 				msg.State.In = msg.State.In.Add(msg.Tx.Coins[0].Amount)
@@ -751,14 +840,22 @@ func (vm *SwapQueueAdv) scoreMsgs(ctx cosmos.Context, items swapItems, synthVirt
 		if poolAsset.IsSyntheticAsset() {
 			virtualDepthMult = synthVirtualDepthMult
 		}
-		vm.getLiquidityFeeAndSlip(ctx, pool, item.msg.Tx.Coins[0], &items[i], virtualDepthMult)
+		// Get the next sub-swap size for scoring streaming swaps fairly
+		// For non-streaming swaps (quantity=1), this returns the full deposit
+		subSwapSize, _ := item.msg.NextSize()
+		// Fallback to full coin amount if NextSize returns zero (uninitialized state)
+		if subSwapSize.IsZero() {
+			subSwapSize = item.msg.Tx.Coins[0].Amount
+		}
+		sourceCoin := common.NewCoin(item.msg.Tx.Coins[0].Asset, subSwapSize)
+		vm.getLiquidityFeeAndSlip(ctx, pool, sourceCoin, &items[i], virtualDepthMult)
 
 		if sourceAsset.IsRune() || targetAsset.IsRune() {
 			// single swap , stop here
 			continue
 		}
 		// double swap , thus need to convert source coin to RUNE and calculate fee and slip again
-		runeCoin := common.NewCoin(common.RuneAsset(), pool.AssetValueInRune(item.msg.Tx.Coins[0].Amount))
+		runeCoin := common.NewCoin(common.RuneAsset(), pool.AssetValueInRune(subSwapSize))
 		poolAsset = targetAsset
 		pool = pools[poolAsset]
 		if pool.IsEmpty() || !pool.IsAvailable() || pool.BalanceRune.IsZero() || pool.BalanceAsset.IsZero() {
@@ -839,27 +936,22 @@ func (vm *SwapQueueAdv) processExpiredLimitSwaps(ctx cosmos.Context, mgr Manager
 		// Process each expired swap for this height
 		for _, txHash := range expiredTxHashes {
 			// Try to find the swap in the advanced queue
-			// Check up to 5 possible indices for this txID
+			// Iterate until HasAdvSwapQueueItem returns false to handle all indices
 			found := false
-			for index := 0; index < 5; index++ {
-				if vm.k.HasAdvSwapQueueItem(ctx, txHash, index) {
-					swap, err := vm.k.GetAdvSwapQueueItem(ctx, txHash, index)
-					if err != nil {
-						ctx.Logger().Error("fail to get expired swap item", "error", err, "txID", txHash.String(), "index", index)
-						continue
-					}
+			for index := 0; vm.k.HasAdvSwapQueueItem(ctx, txHash, index); index++ {
+				swap, err := vm.k.GetAdvSwapQueueItem(ctx, txHash, index)
+				if err != nil {
+					ctx.Logger().Error("fail to get expired swap item", "error", err, "txID", txHash.String(), "index", index)
+					continue
+				}
 
-					// Verify this is actually a limit swap that should expire
-					if swap.IsLimitSwap() {
-						// Settle the expired swap
-						if err := settleSwap(ctx, mgr, swap, "limit swap expired"); err != nil {
-							ctx.Logger().Error("fail to settle expired limit swap", "error", err, "txID", txHash.String(), "index", index)
-						}
-						found = true
+				// Verify this is actually a limit swap that should expire
+				if swap.IsLimitSwap() {
+					// Settle the expired swap
+					if err := settleSwap(ctx, mgr, swap, "limit swap expired"); err != nil {
+						ctx.Logger().Error("fail to settle expired limit swap", "error", err, "txID", txHash.String(), "index", index)
 					}
-				} else {
-					// No swap found at this hash + index, break to avoid checking higher indices
-					break
+					found = true
 				}
 			}
 

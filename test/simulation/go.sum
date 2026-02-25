@@ -756,10 +756,12 @@ github.com/bits-and-blooms/bitset v1.22.0 h1:Tquv9S8+SGaS3EhyA+up3FXzmkhxPGjQQCk
 github.com/bits-and-blooms/bitset v1.22.0/go.mod h1:7hO7Gc7Pp1vODcmWvKMRA9BNmbv6a/7QIWpPxHddWR8=
 github.com/blang/semver v3.5.1+incompatible h1:cQNTCjp13qL8KC3Nbxr/y2Bqb63oX6wdnnjpJbkM4JQ=
 github.com/blang/semver v3.5.1+incompatible/go.mod h1:kRBLl5iJ+tD4TcOOxsy/0fnwebNt5EWlYSAyrTnjyyk=
-github.com/blinklabs-io/gouroboros v0.151.2 h1:Fi81NkPv79Qj8+BiZaRqCk8xeOwCmJ/D9WayabzYQTk=
-github.com/blinklabs-io/gouroboros v0.151.2/go.mod h1:BlrbtnBjEwDgSQTNSGN0og/B8QAXUb24I/AX81nktlQ=
-github.com/blinklabs-io/plutigo v0.0.22 h1:4O1+bac3pY2JPsIC9PvwthZWn6eFgkQ3R+z5t1rNeu8=
-github.com/blinklabs-io/plutigo v0.0.22/go.mod h1:gWmUk3afrNAwWkrHym/KjFDn63r4MAx/amtjZLkWNXM=
+github.com/blinklabs-io/gouroboros v0.157.0 h1:UNDo9OCvpb39goH7Ag8IvLmAA4Jf05hkj7g2dbmfEFg=
+github.com/blinklabs-io/gouroboros v0.157.0/go.mod h1:oD41po6mrWc4GkUta5TupkLLdUOA14ovLebuZHEKzt8=
+github.com/blinklabs-io/ouroboros-mock v0.9.0 h1:O4FhgxKt43RcZGcxRQAOV9GMF6F06qtpU76eFeBKWeQ=
+github.com/blinklabs-io/ouroboros-mock v0.9.0/go.mod h1:piXZP3q8e/E3kkP8xkdc7tkD4mUjf5Ittzww6PCylDo=
+github.com/blinklabs-io/plutigo v0.0.23 h1:LtfWHc0bwpSLGekkO1ZBvMwo03JV/ZVpqoSIZwzjdco=
+github.com/blinklabs-io/plutigo v0.0.23/go.mod h1:gWmUk3afrNAwWkrHym/KjFDn63r4MAx/amtjZLkWNXM=
 github.com/blocto/solana-go-sdk v1.30.0 h1:GEh4GDjYk1lMhV/hqJDCyuDeCuc5dianbN33yxL88NU=
 github.com/blocto/solana-go-sdk v1.30.0/go.mod h1:Xoyhhb3hrGpEQ5rJps5a3OgMwDpmEhrd9bgzFKkkwMs=
 github.com/boombuler/barcode v1.0.0/go.mod h1:paBWMcWSl3LHKBqUq+rly7CNSldXjb2rDl3JlRe0mD8=
@@ -923,6 +925,8 @@ github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc/go.mod h1:J7Y8Yc
 github.com/davidlazar/go-crypto v0.0.0-20170701192655-dcfb0a7ac018/go.mod h1:rQYf4tfk5sSwFsnDg3qYaBxSjsD9S8+59vW0dKUgme4=
 github.com/davidlazar/go-crypto v0.0.0-20200604182044-b73af7476f6c h1:pFUpOrbxDR6AkioZ1ySsx5yxlDQZ8stG2b88gTPxgJU=
 github.com/davidlazar/go-crypto v0.0.0-20200604182044-b73af7476f6c/go.mod h1:6UhI8N9EjYm1c2odKpFpAYeR8dsBeM7PtzQhRgxRr9U=
+github.com/dchest/blake2b v1.0.0 h1:KK9LimVmE0MjRl9095XJmKqZ+iLxWATvlcpVFRtaw6s=
+github.com/dchest/blake2b v1.0.0/go.mod h1:U034kXgbJpCle2wSk5ybGIVhOSHCVLMDqOzcPEA0F7s=
 github.com/dchest/siphash v1.2.1/go.mod h1:q+IRvb2gOSrUnYoPqHiyHXS0FOBBOdl6tONBlVnOnt4=
 github.com/dchest/siphash v1.2.2 h1:9DFz8tQwl9pTVt5iok/9zKyzA1Q6bRGiF3HPiEEVr9I=
 github.com/dchest/siphash v1.2.2/go.mod h1:q+IRvb2gOSrUnYoPqHiyHXS0FOBBOdl6tONBlVnOnt4=

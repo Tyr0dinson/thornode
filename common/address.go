@@ -1,6 +1,7 @@
 package common
 
 import (
+	"encoding/hex"
 	"fmt"
 	"regexp"
 	"strings"
@@ -18,6 +19,7 @@ import (
 	ltcchaincfg "github.com/ltcsuite/ltcd/chaincfg"
 	"github.com/ltcsuite/ltcutil"
 	"github.com/mr-tron/base58"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zecutil"
 
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 
@@ -76,6 +78,14 @@ func NewAddress(address string) (Address, error) {
 		return Address(address), nil
 	}
 
+	if IsValidZECAddress(address) {
+		return Address(address), nil
+	}
+
+	if IsValidSUIAddress(address) {
+		return Address(address), nil
+	}
+
 	// Network-specific (with build tags) address checking.
 	return newAddress(address)
 }
@@ -107,6 +117,35 @@ func IsValidSOLAddress(address string) bool {
 	}
 
 	return len(decoded) == 32
+}
+
+func IsValidZECAddress(address string) bool {
+	// Zcash transparent addresses start with specific prefixes
+	// Mainnet: t1 (P2PKH), t3 (P2SH), tex1
+	// Testnet: tm (P2PKH), tn (P2SH), textest1
+	for _, prefix := range []string{"t1", "t2", "t3", "tm", "tex1", "textest1"} {
+		if strings.HasPrefix(address, prefix) {
+			var network string
+			switch prefix {
+			case "t1", "t3", "tex1":
+				network = "mainnet"
+			case "t2", "tm", "textest1":
+				network = "testnet3"
+			}
+
+			_, err := zecutil.DecodeAddress(address, network)
+			return err == nil
+		}
+	}
+	return false
+}
+
+func IsValidSUIAddress(address string) bool {
+	if len(address) != 66 || address[:2] != "0x" {
+		return false
+	}
+	_, err := hex.DecodeString(address[2:])
+	return err == nil
 }
 
 func IsValidADAAddress(address string) bool {
@@ -157,9 +196,7 @@ func ConvertToNewBCHAddressFormat(addr Address) (Address, error) {
 	switch network {
 	case MockNet:
 		param = &bchchaincfg.RegressionNetParams
-	case MainNet:
-		param = &bchchaincfg.MainNetParams
-	case StageNet:
+	case MainNet, StageNet, ChainNet:
 		param = &bchchaincfg.MainNetParams
 	}
 	bchAddr, err := bchutil.DecodeAddress(addr.String(), param)
@@ -190,7 +227,8 @@ func getBCHAddress(address bchutil.Address, cfg *bchchaincfg.Params) (Address, e
 // Note that this can have false positives, such as being unable to distinguish between ETH and AVAX.
 func (addr Address) IsChain(chain Chain) bool {
 	if chain.IsEVM() {
-		return strings.HasPrefix(addr.String(), "0x")
+		addrStr := addr.String()
+		return len(addrStr) == 42 && addrStr[:2] == "0x"
 	}
 	switch chain {
 	case XRPChain:
@@ -206,7 +244,7 @@ func (addr Address) IsChain(chain Chain) bool {
 		return prefix == "noble"
 	case THORChain:
 		prefix, _, _ := bech32.Decode(addr.String())
-		return prefix == "thor" || prefix == "tthor" || prefix == "sthor"
+		return prefix == "thor" || prefix == "tthor" || prefix == "sthor" || prefix == "cthor"
 	case BTCChain:
 		prefix, _, err := bech32.Decode(addr.String())
 		if err == nil && (prefix == "bc" || prefix == "tb") {
@@ -276,18 +314,9 @@ func (addr Address) IsChain(chain Chain) bool {
 	case SOLChain:
 		return IsValidSOLAddress(addr.String())
 	case ZECChain:
-		// Zcash transparent addresses start with specific prefixes
-		// Mainnet: t1 (P2PKH), t3 (P2SH)
-		// Testnet: tm (P2PKH), tn (P2SH)
-		// Shielded: z (Sapling), u (Unified)
-		addrStr := addr.String()
-		if strings.HasPrefix(addrStr, "t1") || strings.HasPrefix(addrStr, "t3") ||
-			strings.HasPrefix(addrStr, "tm") || strings.HasPrefix(addrStr, "tn") ||
-			strings.HasPrefix(addrStr, "z") || strings.HasPrefix(addrStr, "u") {
-			// Basic length check for addresses
-			return len(addrStr) >= 26 && len(addrStr) <= 95
-		}
-		return false
+		return IsValidZECAddress(addr.String())
+	case SUIChain:
+		return IsValidSUIAddress(addr.String())
 	case ADAChain:
 		return IsValidADAAddress(addr.String())
 	default:
@@ -298,7 +327,7 @@ func (addr Address) IsChain(chain Chain) bool {
 // Note that this will always return ETHChain for an AVAXChain address,
 // so perhaps only use it when determining a network (e.g. mainnet/testnet).
 func (addr Address) GetChain() Chain {
-	for _, chain := range []Chain{ETHChain, THORChain, BTCChain, LTCChain, BCHChain, DOGEChain, GAIAChain, AVAXChain, XRPChain, ZECChain} {
+	for _, chain := range []Chain{ETHChain, THORChain, BTCChain, LTCChain, BCHChain, DOGEChain, GAIAChain, AVAXChain, XRPChain, ZECChain, ADAChain} {
 		if addr.IsChain(chain) {
 			return chain
 		}
@@ -309,10 +338,10 @@ func (addr Address) GetChain() Chain {
 func (addr Address) GetNetwork(chain Chain) ChainNetwork {
 	currentNetwork := CurrentChainNetwork
 	mainNetPredicate := func() ChainNetwork {
-		if currentNetwork == StageNet {
-			return StageNet
+		if currentNetwork == MockNet {
+			return MainNet
 		}
-		return MainNet
+		return currentNetwork
 	}
 	// EVM addresses don't have different prefixes per network
 	if chain.IsEVM() {
@@ -329,6 +358,9 @@ func (addr Address) GetNetwork(chain Chain) ChainNetwork {
 		}
 		if strings.EqualFold(prefix, "sthor") {
 			return StageNet
+		}
+		if strings.EqualFold(prefix, "cthor") {
+			return ChainNet
 		}
 	case BTCChain:
 		prefix, _, _ := bech32.Decode(addr.String())
@@ -404,20 +436,23 @@ func (addr Address) GetNetwork(chain Chain) ChainNetwork {
 		if err == nil {
 			return MockNet
 		}
-	case SOLChain:
+	case SOLChain, SUIChain:
 		return currentNetwork
 	case ZECChain:
 		// Determine network based on address prefix
-		addrStr := addr.String()
-		if strings.HasPrefix(addrStr, "tm") || strings.HasPrefix(addrStr, "tn") ||
-			strings.HasPrefix(addrStr, "ztestsapling") || strings.HasPrefix(addrStr, "utest") ||
-			strings.HasPrefix(addrStr, "uregtest") {
-			// Testnet addresses
-			return MockNet
+		if !addr.IsChain(chain) {
+			return currentNetwork
 		}
-		// Mainnet addresses: t1, t3, z (Sapling), u (Unified mainnet)
-		if addr.IsChain(ZECChain) {
-			return mainNetPredicate()
+
+		for _, prefix := range []string{"tex1", "t1", "t3", "textest1", "tm", "t2"} {
+			if strings.HasPrefix(addr.String(), prefix) {
+				switch prefix {
+				case "t1", "t3", "tex1":
+					return MainNet
+				case "t2", "tm", "textest1":
+					return MockNet
+				}
+			}
 		}
 	case ADAChain:
 		addrStr := addr.String()
@@ -454,9 +489,7 @@ func (addr Address) String() string {
 
 func (addr Address) MappedAccAddress() (cosmos.AccAddress, error) {
 	if addr.GetChain().IsEVM() {
-		// TODO: Add support to map EVM addresses -> bech32.
 		return cosmos.AccAddressFromHexUnsafe(
-			// Will require new PubKey type to validate.
 			strings.TrimPrefix(addr.String(), "0x"),
 		)
 	}
@@ -471,4 +504,46 @@ func (addr Address) MappedAccAddress() (cosmos.AccAddress, error) {
 	}
 
 	return cosmos.AccAddressFromBech32(encoded)
+}
+
+// ToTexAddress returns the tex address for a Zcash P2PKH address
+func (addr Address) ToTexAddress() (Address, error) {
+	addrStr := addr.String()
+
+	if !addr.IsChain(ZECChain) {
+		return NoAddress, fmt.Errorf("%s is no Zcash address", addrStr)
+	}
+
+	if addrStr[:2] != "t1" && addrStr[:2] != "tm" {
+		return NoAddress, fmt.Errorf("%s is no P2PKH address", addrStr)
+	}
+
+	var network, prefix string
+	switch CurrentChainNetwork {
+	case MockNet:
+		network = "testnet3"
+		prefix = "textest"
+	case MainNet, StageNet:
+		network = "mainnet"
+		prefix = "tex"
+	}
+
+	zecAddr, err := zecutil.DecodeAddress(addrStr, network)
+	if err != nil {
+		return NoAddress, err
+	}
+
+	var bz []byte
+	bz, err = bech32.ConvertBits(zecAddr.ScriptAddress(), 8, 5, true)
+	if err != nil {
+		return NoAddress, err
+	}
+
+	var texAddr string
+	texAddr, err = bech32.EncodeM(prefix, bz)
+	if err != nil {
+		return NoAddress, err
+	}
+
+	return Address(texAddr), nil
 }

@@ -216,6 +216,15 @@ func (k *TestObservedTxInHandleKeeper) SetLastObserveHeight(ctx cosmos.Context, 
 	return nil
 }
 
+func (k *TestObservedTxInHandleKeeper) ReferenceMemoExists(_ cosmos.Context, asset common.Asset, reference string) bool {
+	if k.referenceMemos == nil {
+		return false
+	}
+	key := fmt.Sprintf("%s:%s", asset.String(), reference)
+	_, exists := k.referenceMemos[key]
+	return exists
+}
+
 func (k *TestObservedTxInHandleKeeper) GetReferenceMemo(_ cosmos.Context, asset common.Asset, reference string) (ReferenceMemo, error) {
 	if k.referenceMemos == nil {
 		return ReferenceMemo{}, fmt.Errorf("reference memo not found")
@@ -817,6 +826,113 @@ func (s HandlerObservedTxInSuite) TestSwapWithAffiliate(c *C) {
 	}
 }
 
+func (s HandlerObservedTxInSuite) TestAddSwapEmitsLimitEventOnlyForLimitSwaps(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	// Setup target pool required by validation for RUNE -> BTC swaps.
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.BalanceRune = cosmos.NewUint(10000 * common.One)
+	pool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	countEvents := func(eventType string) int {
+		count := 0
+		for _, e := range ctx.EventManager().Events() {
+			if e.Type == eventType {
+				count++
+			}
+		}
+		return count
+	}
+
+	limitSwapEventsBefore := countEvents(types.LimitSwapEventType)
+
+	// V2 market swap should not emit a limit_swap event.
+	marketMsg := NewMsgSwap(common.Tx{
+		ID:          GetRandomTxHash(),
+		FromAddress: GetRandomTHORAddress(),
+		ToAddress:   GetRandomTHORAddress(),
+		Gas:         common.Gas{},
+		Chain:       common.THORChain,
+		Coins:       common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(2*common.One))},
+		Memo:        "=:BTC.BTC:" + GetRandomBTCAddress().String(),
+	}, common.BTCAsset, GetRandomBTCAddress(), cosmos.ZeroUint(), common.NoAddress, cosmos.ZeroUint(),
+		"",
+		"", nil,
+		types.SwapType_market,
+		0, 0, types.SwapVersion_v2, GetRandomBech32Addr(),
+	)
+	c.Assert(addSwap(ctx, mgr, *marketMsg), IsNil)
+	c.Assert(countEvents(types.LimitSwapEventType), Equals, limitSwapEventsBefore)
+
+	// V2 limit swap should emit exactly one limit_swap event.
+	limitMsg := NewMsgSwap(common.Tx{
+		ID:          GetRandomTxHash(),
+		FromAddress: GetRandomTHORAddress(),
+		ToAddress:   GetRandomTHORAddress(),
+		Gas:         common.Gas{},
+		Chain:       common.THORChain,
+		Coins:       common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(2*common.One))},
+		Memo:        "=<:BTC.BTC:" + GetRandomBTCAddress().String() + ":1",
+	}, common.BTCAsset, GetRandomBTCAddress(), cosmos.NewUint(1), common.NoAddress, cosmos.ZeroUint(),
+		"",
+		"", nil,
+		types.SwapType_limit,
+		0, 0, types.SwapVersion_v2, GetRandomBech32Addr(),
+	)
+	c.Assert(addSwap(ctx, mgr, *limitMsg), IsNil)
+	c.Assert(countEvents(types.LimitSwapEventType), Equals, limitSwapEventsBefore+1)
+}
+
+func (s HandlerObservedTxInSuite) TestAddSwapDoesNotEmitLimitEventWhenQueueInsertFails(c *C) {
+	ctx, mgr := setupManagerForTest(c)
+
+	// Put advanced swap queue into market-only mode so v2 limit swaps are rejected.
+	mgr.Keeper().SetMimir(ctx, "EnableAdvSwapQueue", int64(AdvSwapQueueModeMarketOnly))
+
+	// Setup target pool required by validation for RUNE -> BTC swaps.
+	pool := NewPool()
+	pool.Asset = common.BTCAsset
+	pool.BalanceAsset = cosmos.NewUint(100 * common.One)
+	pool.BalanceRune = cosmos.NewUint(10000 * common.One)
+	pool.Status = PoolAvailable
+	c.Assert(mgr.Keeper().SetPool(ctx, pool), IsNil)
+
+	countEvents := func(eventType string) int {
+		count := 0
+		for _, e := range ctx.EventManager().Events() {
+			if e.Type == eventType {
+				count++
+			}
+		}
+		return count
+	}
+
+	limitSwapEventsBefore := countEvents(types.LimitSwapEventType)
+
+	limitMsg := NewMsgSwap(common.Tx{
+		ID:          GetRandomTxHash(),
+		FromAddress: GetRandomTHORAddress(),
+		ToAddress:   GetRandomTHORAddress(),
+		Gas:         common.Gas{},
+		Chain:       common.THORChain,
+		Coins:       common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(2*common.One))},
+		Memo:        "=<:BTC.BTC:" + GetRandomBTCAddress().String() + ":1",
+	}, common.BTCAsset, GetRandomBTCAddress(), cosmos.NewUint(1), common.NoAddress, cosmos.ZeroUint(),
+		"",
+		"", nil,
+		types.SwapType_limit,
+		0, 0, types.SwapVersion_v2, GetRandomBech32Addr(),
+	)
+
+	err := addSwap(ctx, mgr, *limitMsg)
+	c.Assert(err, NotNil)
+	c.Assert(err.Error(), Equals, "limit swaps are not allowed in market-only mode")
+	c.Assert(countEvents(types.LimitSwapEventType), Equals, limitSwapEventsBefore)
+}
+
 func (s *HandlerObservedTxInSuite) TestVaultStatus(c *C) {
 	testCases := []struct {
 		name                 string
@@ -942,11 +1058,12 @@ func (s *HandlerObservedTxInSuite) TestMemoUsageTracking(c *C) {
 	memo = fetchMemoFromReference(ctx, mgr, asset, testTx2, 17) // tx observed at height 17, memo created at height 15
 	c.Check(memo, check.Equals, "", check.Commentf("Second usage should fail"))
 
-	// Verify usage count incremented
+	// Verify usage count is 2 (all attempts are tracked for audit purposes, including failures)
 	updatedMemo, err = mgr.Keeper().GetReferenceMemo(ctx, asset, "12345")
 	c.Assert(err, check.IsNil)
 	c.Check(updatedMemo.GetUsageCount(), check.Equals, int64(2))
 	c.Check(updatedMemo.HasBeenUsedBy(txID1), check.Equals, true)
+	c.Check(updatedMemo.HasBeenUsedBy(txID2), check.Equals, true, check.Commentf("Failed validation should still be tracked for audit purposes"))
 
 	// Test duplicate tracking - same txID called again should not increase count
 	testTx3 := common.NewTx(txID1, common.NoAddress, common.NoAddress, common.Coins{}, common.Gas{}, "r:12345")

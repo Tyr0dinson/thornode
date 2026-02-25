@@ -24,11 +24,7 @@ import (
 	memo "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
 )
 
-var (
-	refBlocksMax            = 10
-	refBlockInterval  int64 = 25
-	updateGasInterval int64 = 30
-)
+var updateGasInterval int64 = 30
 
 type ReportSolvency func(int64) error
 
@@ -425,7 +421,7 @@ func (s *TronBlockScanner) getTxInFromFailedTransaction(
 		Tx:          rawTx.TxId,
 		BlockHeight: height,
 		// memo is the OUT:<txid> with self-reference to indicate failed outbound
-		Memo:   memo.NewOutboundMemo(common.TxID(rawTx.TxId)).String(),
+		Memo:   memo.NewOutboundMemo(common.TxID(strings.ToUpper(rawTx.TxId))).String(),
 		Sender: sender,
 		To:     dest,
 		Coins:  common.NewCoins(common.NewCoin(common.TRXAsset, math.NewUint(1))),

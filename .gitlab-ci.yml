@@ -14,6 +14,8 @@ variables:
   DOCKER_TLS_CERTDIR: /certs
   DOCKER_TLS_VERIFY: 1
   DOCKER_CERT_PATH: $DOCKER_TLS_CERTDIR/client
+  GOMODCACHE: /go-mod-cache
+  GOCACHE: /go-build-cache
   SAST_EXCLUDED_ANALYZERS: eslint,bandit,semgrep
   SAST_EXCLUDED_PATHS: spec, test, tests, tmp, .cache
 
@@ -110,6 +112,11 @@ generate:
   before_script:
     - apk -U add bash curl findutils git go jq make protoc sed wget python3
     - echo "$DOCKER_HUB_PASSWD" | docker login -u thornode --password-stdin
+    - |
+      if [ -n "$CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX" ]; then
+        export DOCKER_MIRROR="${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/"
+        echo "$CI_DEPENDENCY_PROXY_PASSWORD" | docker login "$CI_DEPENDENCY_PROXY_SERVER" -u "$CI_DEPENDENCY_PROXY_USER" --password-stdin
+      fi
   script:
     - |
       export PATH="$PATH:/root/go/bin"
@@ -144,11 +151,15 @@ lint:
       when: never
     - if: $CI_COMMIT_BRANCH == "stagenet"
       when: never
+    - if: $CI_COMMIT_BRANCH == "chainnet"
+      when: never
     - if: $CI_COMMIT_BRANCH == "mainnet"
       when: never
     - if: $CI == "true"
       when: on_success
   stage: test
+  variables:
+    XDG_CACHE_HOME: /trunk-cache
   before_script:
     - apt-get update && apt-get install -y --no-install-recommends jq
   script:
@@ -159,6 +170,8 @@ check-formatting:
     - if: $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH && $CI_MERGE_REQUEST_SOURCE_PROJECT_PATH != $CI_MERGE_REQUEST_PROJECT_PATH
       when: never
     - if: $CI_COMMIT_BRANCH == "stagenet"
+      when: never
+    - if: $CI_COMMIT_BRANCH == "chainnet"
       when: never
     - if: $CI_COMMIT_BRANCH == "mainnet"
       when: never
@@ -179,6 +192,8 @@ build-thornode:
       when: always
     - if: $CI_COMMIT_BRANCH == "stagenet"
       when: always
+    - if: $CI_COMMIT_BRANCH == "chainnet"
+      when: always
     - if: $CI_COMMIT_BRANCH == "mainnet"
       when: always
   stage: build
@@ -194,36 +209,31 @@ build-thornode:
       done
     - apk -U add make git jq curl protoc
     - echo "$DOCKER_HUB_PASSWD" | docker login -u thornode --password-stdin
+    - |
+      if [ -n "$CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX" ]; then
+        export DOCKER_MIRROR="${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/"
+        echo "$CI_DEPENDENCY_PROXY_PASSWORD" | docker login "$CI_DEPENDENCY_PROXY_SERVER" -u "$CI_DEPENDENCY_PROXY_USER" --password-stdin
+      fi
     - make docker-gitlab-login
   script:
     - make docker-gitlab-build
     - make docker-gitlab-push
     # also push mocknet from develop
-    - BUILDTAG=mocknet BRANCH=mocknet make docker-gitlab-build
-    - BUILDTAG=mocknet BRANCH=mocknet make docker-gitlab-push
+    - |
+      if [ "$CI_COMMIT_BRANCH" = "develop" ]; then
+        BUILDTAG=mocknet BRANCH=mocknet make docker-gitlab-build
+        BUILDTAG=mocknet BRANCH=mocknet make docker-gitlab-push
+      fi
 
-chain-avalanche:
+chain-evm:
   rules:
     - changes:
         paths:
-          - chain/avalanche/**/*
+          - chain/evm/**/*
   stage: test
-  image: node:16
+  image: node:18
   script:
-    - cd chain/avalanche/
-    - yarn install --non-interactive
-    - yarn hardhat compile
-    - yarn hardhat test
-
-chain-ethereum:
-  rules:
-    - changes:
-        paths:
-          - chain/ethereum/**/*
-  stage: test
-  image: node:16
-  script:
-    - cd chain/ethereum/
+    - cd chain/evm/
     - yarn install --non-interactive
     - yarn hardhat test
 
@@ -233,10 +243,6 @@ go-tss:
         paths:
           - bifrost/tss/go-tss/**/*
   stage: test
-  <<: *use_dind
-  before_script:
-    - apk -U add make git bash go
-    - echo "$DOCKER_HUB_PASSWD" | docker login -u thornode --password-stdin
   script:
     - make test-go-tss
 
@@ -277,6 +283,13 @@ test-simulation:
     - if: '$CI_MERGE_REQUEST_EVENT_TYPE == "merge_train" && $CI_MERGE_REQUEST_TARGET_BRANCH_SHA == $CI_MERGE_REQUEST_DIFF_BASE_SHA'
       when: never
     - *rules
+  retry:
+    max: 2
+    when:
+      - runner_system_failure
+      - stuck_or_timeout_failure
+      - scheduler_failure
+      - script_failure
   stage: long-test
   <<: *use_dind
   artifacts:
@@ -289,6 +302,11 @@ test-simulation:
   before_script:
     - apk -U add git make protoc bash
     - echo "$DOCKER_HUB_PASSWD" | docker login -u thornode --password-stdin
+    - |
+      if [ -n "$CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX" ]; then
+        export DOCKER_MIRROR="${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/"
+        echo "$CI_DEPENDENCY_PROXY_PASSWORD" | docker login "$CI_DEPENDENCY_PROXY_SERVER" -u "$CI_DEPENDENCY_PROXY_USER" --password-stdin
+      fi
     - |
       PLUGIN="$HOME/.docker/cli-plugins/docker-compose"
       mkdir -p $(dirname $PLUGIN)
@@ -310,6 +328,13 @@ test-regression:
     - if: '$CI_MERGE_REQUEST_EVENT_TYPE == "merge_train" && $CI_MERGE_REQUEST_TARGET_BRANCH_SHA == $CI_MERGE_REQUEST_DIFF_BASE_SHA'
       when: never
     - *rules
+  retry:
+    max: 2
+    when:
+      - runner_system_failure
+      - stuck_or_timeout_failure
+      - scheduler_failure
+      - script_failure
   stage: long-test
   <<: *use_dind
   environment:
@@ -322,6 +347,11 @@ test-regression:
   before_script:
     - apk -U add make git bash
     - echo "$DOCKER_HUB_PASSWD" | docker login -u thornode --password-stdin
+    - |
+      if [ -n "$CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX" ]; then
+        export DOCKER_MIRROR="${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/"
+        echo "$CI_DEPENDENCY_PROXY_PASSWORD" | docker login "$CI_DEPENDENCY_PROXY_SERVER" -u "$CI_DEPENDENCY_PROXY_USER" --password-stdin
+      fi
   script:
     - make test-regression
 

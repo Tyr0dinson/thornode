@@ -441,7 +441,7 @@ func (e *EVMScanner) getTxIn(block *etypes.Block) (stypes.TxIn, []*big.Int, erro
 	// CHANGEME: if an EVM chain supports some way of fetching all transaction receipts
 	// within a block, register it here.
 	switch e.cfg.ChainID {
-	case common.BASEChain, common.BSCChain:
+	case common.BASEChain, common.BSCChain, common.POLChain:
 		return e.getTxInOptimized("eth_getBlockReceipts", block)
 	}
 
@@ -591,6 +591,13 @@ func (e *EVMScanner) receiptToTxInItem(tx *etypes.Transaction, receipt *etypes.R
 		destination := tx.To()
 		isToVault, _ := e.pubkeyMgr.IsValidPoolAddress(destination.String(), e.cfg.ChainID)
 
+		// resolve sender upfront to check vault outbounds (approvals, cancels, etc.)
+		sender, senderErr := e.eipSigner.Sender(tx)
+		var isFromVault bool
+		if senderErr == nil {
+			isFromVault, _ = e.pubkeyMgr.IsValidPoolAddress(sender.String(), e.cfg.ChainID)
+		}
+
 		switch {
 		case isToVault:
 			// Tx to a vault
@@ -598,19 +605,33 @@ func (e *EVMScanner) receiptToTxInItem(tx *etypes.Transaction, receipt *etypes.R
 		case e.isToValidContractAddress(destination, true):
 			// Deposit directly to router
 			return e.getTxInFromSmartContract(tx, receipt, 0)
+		case isFromVault:
+			// Tx from a vault (outbound, approval, cancel, etc.)
+			return e.getTxInFromTransaction(tx, receipt)
 		case evm.IsSmartContractCall(tx, receipt):
 			// Tx to a different contract, attempt to parse with max allowable logs
 			return e.getTxInFromSmartContract(tx, receipt, int64(e.cfg.MaxContractTxLogs))
 		default:
-			// Tx to a non-contract or vault address
-			return e.getTxInFromTransaction(tx, receipt)
+			// ignore tx not involving any vault
+			return nil, nil
 		}
 	} else {
 		// parse tx with whitelist
 		if e.isToValidContractAddress(tx.To(), true) {
 			return e.getTxInFromSmartContract(tx, receipt, 0)
 		}
-		return e.getTxInFromTransaction(tx, receipt)
+		// check if tx is to or from a vault
+		sender, err := e.eipSigner.Sender(tx)
+		if err != nil {
+			return nil, nil // ignore tx if we cannot determine sender
+		}
+		isFromVault, _ := e.pubkeyMgr.IsValidPoolAddress(sender.String(), e.cfg.ChainID)
+		isToVault, _ := e.pubkeyMgr.IsValidPoolAddress(tx.To().String(), e.cfg.ChainID)
+		if isFromVault || isToVault {
+			return e.getTxInFromTransaction(tx, receipt)
+		}
+		// ignore tx not involving any vault
+		return nil, nil
 	}
 }
 
@@ -881,9 +902,9 @@ func (e *EVMScanner) getTxInFromTransaction(tx *etypes.Transaction, receipt *ety
 	txInItem.Gas = common.MakeEVMGas(e.cfg.ChainID, txGasPrice, receipt.GasUsed, receipt.L1Fee)
 	txInItem.Gas[0].Asset = e.cfg.ChainID.GetGasAsset()
 
-	// drop non-cancel transactions below dust threshold
-	isCancel := txInItem.Sender == txInItem.To
-	if !isCancel &&
+	// drop non-outbound transactions below dust threshold
+	isOutbound, _ := e.pubkeyMgr.IsValidPoolAddress(sender.String(), e.cfg.ChainID)
+	if !isOutbound &&
 		len(txInItem.Coins) == 1 &&
 		txInItem.Coins[0].Asset.Equals(e.cfg.ChainID.GetGasAsset()) &&
 		txInItem.Coins[0].Amount.LT(e.cfg.ChainID.DustThreshold()) {
@@ -893,10 +914,15 @@ func (e *EVMScanner) getTxInFromTransaction(tx *etypes.Transaction, receipt *ety
 	}
 
 	if txInItem.Coins.IsEmpty() {
-		if isCancel {
-			// When the Sender and To is the same then there's no balance chance whatever the Coins,
-			// and for Tx-received Valid() a non-zero Amount is needed to observe
-			// the transaction fees (THORChain gas cost) of unstuck.go's cancel transactions.
+		if isOutbound {
+			// outbound with no coins that is not a cancel is assumed to be router approval
+			isCancel := txInItem.Sender == txInItem.To
+			if !isCancel {
+				txInItem.Memo = "" // clear the memo (otherwise contains call data)
+			}
+
+			// Outbounds with no coins are either a cancel from unstuck.go, or a router
+			// token approval - both should be observed to take gas fees from the vault.
 			observableAmount := e.cfg.ChainID.DustThreshold()
 			txInItem.Coins = common.NewCoins(common.NewCoin(txInItem.Gas[0].Asset, observableAmount))
 
@@ -918,7 +944,7 @@ func (e *EVMScanner) isToValidContractAddress(addr *ecommon.Address, includeWhit
 		return false
 	}
 	// get the smart contract used by thornode
-	contractAddresses := e.pubkeyMgr.GetContracts(e.cfg.ChainID)
+	contractAddresses := e.pubkeyMgr.GetContracts(e.cfg.ChainID, false)
 	if includeWhiteList {
 		contractAddresses = append(contractAddresses, e.whitelistContracts...)
 	}
@@ -964,7 +990,7 @@ func (e *EVMScanner) getTxInFromSmartContract(tx *etypes.Transaction, receipt *e
 		return nil, fmt.Errorf("failed to parse logs, err: %w", err)
 	}
 	if isVaultTransfer {
-		contractAddresses := e.pubkeyMgr.GetContracts(e.cfg.ChainID)
+		contractAddresses := e.pubkeyMgr.GetContracts(e.cfg.ChainID, false)
 		isDirectlyToRouter := false
 		for _, item := range contractAddresses {
 			if strings.EqualFold(item.String(), tx.To().String()) {
@@ -981,6 +1007,31 @@ func (e *EVMScanner) getTxInFromSmartContract(tx *etypes.Transaction, receipt *e
 				nativeValue = e.tokenManager.ConvertAmount(evm.NativeTokenAddr, tx.Value())
 				if txInItem.Coins.GetCoin(e.cfg.ChainID.GetGasAsset()).IsEmpty() && !nativeValue.IsZero() {
 					txInItem.Coins = append(txInItem.Coins, common.NewCoin(e.cfg.ChainID.GetGasAsset(), nativeValue))
+				}
+			}
+		}
+	}
+
+	// Validate that the deposit's target vault is associated with the router
+	// that emitted the event. This prevents an attacker from depositing to an
+	// old router targeting the current active vault (or vice versa), which would
+	// cause bifrost to observe an inbound the vault cannot actually spend.
+	// Skip this check for vault-initiated transactions (e.g. migrations), which
+	// legitimately use the old router to send to a vault on a new router.
+	if txInItem.To != "" && tx.To() != nil {
+		senderIsVault, _ := e.pubkeyMgr.IsValidPoolAddress(txInItem.Sender, e.cfg.ChainID)
+		if !senderIsVault {
+			ok, cpi := e.pubkeyMgr.IsValidPoolAddress(txInItem.To, e.cfg.ChainID)
+			if ok {
+				expectedRouter := e.pubkeyMgr.GetContract(e.cfg.ChainID, cpi.PubKey)
+				if expectedRouter != common.NoAddress && !strings.EqualFold(expectedRouter.String(), tx.To().String()) {
+					e.logger.Warn().
+						Str("vault", txInItem.To).
+						Str("sender", txInItem.Sender).
+						Str("expected_router", expectedRouter.String()).
+						Str("actual_router", tx.To().String()).
+						Msg("deposit targets vault via wrong router, ignoring")
+					return nil, nil
 				}
 			}
 		}

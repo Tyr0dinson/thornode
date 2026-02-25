@@ -101,8 +101,8 @@ func (k KVStore) RemoveLowBondValidatorAccounts(ctx cosmos.Context) error {
 			continue
 		}
 		if na.Type == NodeTypeValidator && na.Bond.LTE(cosmos.NewUint(common.One)) {
-			lowBondValidators = append(lowBondValidators, naIterator.Key())
 			if na.Bond.IsZero() {
+				lowBondValidators = append(lowBondValidators, naIterator.Key())
 				continue
 			}
 			bps, err := k.GetBondProviders(ctx, na.NodeAddress)
@@ -127,11 +127,13 @@ func (k KVStore) RemoveLowBondValidatorAccounts(ctx cosmos.Context) error {
 				} else {
 					ctx.EventManager().EmitEvents(events)
 				}
+				lowBondValidators = append(lowBondValidators, naIterator.Key())
 				continue
 			}
 
 			bps.Adjust(na.Bond)
 			totalSent := cosmos.ZeroUint()
+			sendFailed := false
 			for _, provider := range bps.Providers {
 				if provider.Bond.IsZero() || provider.BondAddress.Empty() {
 					continue
@@ -139,6 +141,7 @@ func (k KVStore) RemoveLowBondValidatorAccounts(ctx cosmos.Context) error {
 				coin := common.NewCoin(common.RuneAsset(), provider.Bond)
 				if err = k.SendFromModuleToAccount(ctx, BondName, provider.BondAddress, common.NewCoins(coin)); err != nil {
 					ctx.Logger().Error("failed to return bond pool coins", "error", err)
+					sendFailed = true
 					continue
 				}
 				bondEvent := NewEventBond(provider.Bond, BondReturned, common.Tx{}, &na, provider.BondAddress)
@@ -154,8 +157,19 @@ func (k KVStore) RemoveLowBondValidatorAccounts(ctx cosmos.Context) error {
 				return dbError(ctx, "", fmt.Errorf("total bond returned greater than node bond"))
 			}
 
+			// If any send failed, preserve node account and bond providers
+			// so funds remain recoverable in a future attempt.
+			if sendFailed {
+				na.Bond = na.Bond.Sub(totalSent)
+				if err = k.SetNodeAccount(ctx, na); err != nil {
+					return dbError(ctx, "", fmt.Errorf("fail to save node account: %w", err))
+				}
+				continue
+			}
+
 			// remove bond providers
 			k.del(ctx, k.GetKey(prefixBondProviders, na.NodeAddress.String()))
+			lowBondValidators = append(lowBondValidators, naIterator.Key())
 		}
 	}
 	for _, naKey := range lowBondValidators {
@@ -283,6 +297,13 @@ func (k KVStore) SetNodeAccount(ctx cosmos.Context, na NodeAccount) error {
 // EnsureNodeKeysUnique check the given consensus pubkey and pubkey set against all the the node account
 // return an error when it is overlap with any existing account
 func (k KVStore) EnsureNodeKeysUnique(ctx cosmos.Context, consensusPubKey string, pubKeys common.PubKeySet) error {
+	if strings.TrimSpace(consensusPubKey) == "" {
+		return dbError(ctx, "", errors.New("Validator Consensus Key cannot be empty"))
+	}
+	if pubKeys.IsEmpty() {
+		return dbError(ctx, "", errors.New("PubKeySet cannot be empty"))
+	}
+
 	iter := k.GetNodeAccountIterator(ctx)
 	defer iter.Close()
 	for ; iter.Valid(); iter.Next() {
@@ -290,15 +311,8 @@ func (k KVStore) EnsureNodeKeysUnique(ctx cosmos.Context, consensusPubKey string
 		if err := k.cdc.Unmarshal(iter.Value(), &na); err != nil {
 			return dbError(ctx, "Unmarshal: node account", err)
 		}
-		if strings.EqualFold("", consensusPubKey) {
-			return dbError(ctx, "", errors.New("Validator Consensus Key cannot be empty"))
-		}
 		if na.ValidatorConsPubKey == consensusPubKey {
 			return dbError(ctx, "", fmt.Errorf("%s already exist", na.ValidatorConsPubKey))
-		}
-
-		if pubKeys.IsEmpty() {
-			return dbError(ctx, "", errors.New("PubKeySet cannot be empty"))
 		}
 		if na.PubKeySet.Contains(pubKeys.Secp256k1) {
 			return dbError(ctx, "", fmt.Errorf("%s already exist", pubKeys))

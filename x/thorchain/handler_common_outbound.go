@@ -215,16 +215,19 @@ func (h CommonOutboundTxHandler) handle(ctx cosmos.Context, tx ObservedTx, inTxI
 					cloutOut, err = h.mgr.Keeper().GetSwapperClout(ctx, outTxn.ToAddress)
 					if err != nil {
 						ctx.Logger().Error("fail to get swapper clout destination address", "error", err)
+						break
 					}
 					var inVoter ObservedTxVoter
 					inVoter, err = h.mgr.Keeper().GetObservedTxInVoter(ctx, outTxn.InHash)
 					if err != nil {
 						ctx.Logger().Error("fail to get txin for clout calculation", "error", err)
+						break
 					}
 					var cloutIn SwapperClout
 					cloutIn, err = h.mgr.Keeper().GetSwapperClout(ctx, inVoter.Tx.Tx.FromAddress)
 					if err != nil {
-						ctx.Logger().Error("fail to get swapper clout destination address", "error", err)
+						ctx.Logger().Error("fail to get swapper clout source address", "error", err)
+						break
 					}
 
 					clout1, clout2 := calcReclaim(cloutIn.Claimable(), cloutOut.Claimable(), *spent)
@@ -262,9 +265,9 @@ func (h CommonOutboundTxHandler) handle(ctx cosmos.Context, tx ObservedTx, inTxI
 	// authorized operational transaction (fake gas tx or cancel tx).
 	// - isOutboundFakeGasTx: Fake gas transactions used for EVM chain operations
 	//   (amount=1, gas asset, self-referential OUT: memo)
-	// - isCancelTx: Cancel transactions sent by bifrost to unstuck pending transactions
+	// - isCancelOrApprovalTx: Cancel transactions sent by bifrost to unstuck pending transactions
 	//   on EVM chains (vault-to-vault, dust threshold amount, empty memo)
-	if shouldSlash && !isOutboundFakeGasTx(tx) && !isCancelTx(tx) {
+	if shouldSlash && !isOutboundFakeGasTx(tx) && !isCancelOrApprovalTx(tx) {
 		ctx.Logger().Info("slash node account, no matched tx out item", "inbound txid", inTxID, "outbound tx", tx.Tx)
 
 		// Send security alert for unmatched outbounds.

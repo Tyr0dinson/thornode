@@ -2,6 +2,7 @@ package common
 
 import (
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -14,7 +15,6 @@ import (
 	"github.com/btcsuite/btcutil/bech32"
 	"github.com/cometbft/cometbft/crypto"
 	"github.com/cosmos/cosmos-sdk/crypto/codec"
-	"github.com/decred/dcrd/crypto/ripemd160"
 	dogchaincfg "github.com/eager7/dogd/chaincfg"
 	"github.com/eager7/dogutil"
 	eth "github.com/ethereum/go-ethereum/crypto"
@@ -23,6 +23,8 @@ import (
 	ltcchaincfg "github.com/ltcsuite/ltcd/chaincfg"
 	"github.com/ltcsuite/ltcutil"
 	"github.com/mr-tron/base58"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/utxo/zecutil"
+	"golang.org/x/crypto/blake2b"
 
 	adacommon "github.com/blinklabs-io/gouroboros/ledger/common"
 	xrpkm "gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/xrp/keymanager"
@@ -152,7 +154,7 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 		switch chainNetwork {
 		case MockNet:
 			net = &chaincfg.RegressionNetParams
-		case MainNet, StageNet:
+		case MainNet, StageNet, ChainNet:
 			net = &chaincfg.MainNetParams
 		}
 		addr, err := btcutil.NewAddressWitnessPubKeyHash(pk.Address().Bytes(), net)
@@ -169,7 +171,7 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 		switch chainNetwork {
 		case MockNet:
 			net = &ltcchaincfg.RegressionNetParams
-		case MainNet, StageNet:
+		case MainNet, StageNet, ChainNet:
 			net = &ltcchaincfg.MainNetParams
 		}
 		addr, err := ltcutil.NewAddressWitnessPubKeyHash(pk.Address().Bytes(), net)
@@ -186,7 +188,7 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 		switch chainNetwork {
 		case MockNet:
 			net = &dogchaincfg.RegressionNetParams
-		case MainNet, StageNet:
+		case MainNet, StageNet, ChainNet:
 			net = &dogchaincfg.MainNetParams
 		}
 		addr, err := dogutil.NewAddressPubKeyHash(pk.Address().Bytes(), net)
@@ -203,7 +205,7 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 		switch chainNetwork {
 		case MockNet:
 			net = &bchchaincfg.RegressionNetParams
-		case MainNet, StageNet:
+		case MainNet, StageNet, ChainNet:
 			net = &bchchaincfg.MainNetParams
 		}
 		addr, err := bchutil.NewAddressPubKeyHash(pk.Address().Bytes(), net)
@@ -248,39 +250,29 @@ func (p PubKey) GetAddress(chain Chain) (Address, error) {
 			return NoAddress, fmt.Errorf("fail to get pubkey from bech32: %w", err)
 		}
 
-		// Zcash address generation is similar to Bitcoin but uses different version bytes
-		// Version bytes for Zcash: 0x1c, 0xb8 for mainnet P2PKH (t1), 0x1d, 0x25 for testnet P2PKH (tm)
-		pubBz := pk.Bytes()
-
-		// Hash the public key: SHA256 then RIPEMD160
-		pubHash := sha256.Sum256(pubBz)
-		ripemd160Hasher := ripemd160.New()
-		ripemd160Hasher.Write(pubHash[:])
-		pubKeyHash := ripemd160Hasher.Sum(nil)
-
-		// Determine version bytes based on network
-		var versionBytes []byte
+		var prefix string
 		switch chainNetwork {
 		case MockNet:
-			versionBytes = []byte{0x1d, 0x25} // testnet P2PKH prefix (tm)
-		case MainNet, StageNet:
-			versionBytes = []byte{0x1c, 0xb8} // mainnet P2PKH prefix (t1)
+			prefix = "testnet3"
+		case MainNet, StageNet, ChainNet:
+			prefix = "mainnet"
 		}
 
-		// Create payload: version bytes + public key hash
-		payload := make([]byte, len(versionBytes)+len(pubKeyHash))
-		copy(payload, versionBytes)
-		copy(payload[len(versionBytes):], pubKeyHash)
+		var bz [20]byte
+		copy(bz[:], pk.Address().Bytes())
 
-		// Add checksum: double SHA256 first 4 bytes
-		checksumHash := sha256.Sum256(payload)
-		checksum := sha256.Sum256(checksumHash[:])
-		fullPayload := make([]byte, len(payload)+4)
-		copy(fullPayload, payload)
-		copy(fullPayload[len(payload):], checksum[:4])
+		addressString = zecutil.NewAddressPubKeyHash(bz, prefix).String()
+	case SUIChain:
+		pk, err := cosmos.GetPubKeyFromBech32(cosmos.Bech32PubKeyTypeAccPub, p.String())
+		if err != nil {
+			return NoAddress, err
+		}
 
-		// Encode with base58
-		addressString = base58.Encode(fullPayload)
+		pub := append([]byte{0x00}, pk.Bytes()...)
+
+		hash := blake2b.Sum256(pub)
+
+		addressString = "0x" + hex.EncodeToString(hash[:])
 	case ADAChain:
 		bz, err := p.Bytes()
 		if err != nil {

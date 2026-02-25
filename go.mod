@@ -1,6 +1,8 @@
 module gitlab.com/thorchain/thornode/v3
 
-go 1.24.6
+go 1.24.0
+
+toolchain go1.24.5
 
 // overrides
 replace (
@@ -131,8 +133,10 @@ require (
 
 require (
 	cosmossdk.io/collections v1.2.1
-	github.com/blinklabs-io/gouroboros v0.151.2
+	github.com/blinklabs-io/gouroboros v0.157.0
+	github.com/btcsuite/btcd/btcutil v1.1.6
 	github.com/coder/websocket v1.8.13
+	github.com/dchest/blake2b v1.0.0
 	github.com/decred/dcrd/dcrec/secp256k1 v1.0.4
 )
 
@@ -145,8 +149,7 @@ require (
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp v1.26.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.48.1 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.48.1 // indirect
-	github.com/blinklabs-io/plutigo v0.0.22 // indirect
-	github.com/btcsuite/btcd/btcutil v1.1.6 // indirect
+	github.com/blinklabs-io/plutigo v0.0.23 // indirect
 	github.com/bytedance/gopkg v0.1.3 // indirect
 	github.com/cncf/xds/go v0.0.0-20250121191232-2f005788dc42 // indirect
 	github.com/decred/dcrd/crypto/blake256 v1.1.0 // indirect
@@ -226,7 +229,7 @@ require (
 	github.com/davidlazar/go-crypto v0.0.0-20200604182044-b73af7476f6c // indirect
 	github.com/dchest/siphash v1.2.2 // indirect
 	github.com/deckarep/golang-set/v2 v2.6.0 // indirect
-	github.com/decred/dcrd/crypto/ripemd160 v1.0.2
+	github.com/decred/dcrd/crypto/ripemd160 v1.0.2 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0 // indirect
 	github.com/desertbit/timer v1.0.1 // indirect
 	github.com/dgraph-io/badger/v4 v4.2.0 // indirect

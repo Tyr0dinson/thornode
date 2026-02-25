@@ -3,7 +3,7 @@ FROM rust:1.80-bookworm AS build
 ARG AGAVE_TAG=v2.3.8
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-  git=1:2.39.5-0+deb12u2 \
+  git=1:2.39.5-0+deb12u3 \
   clang=1:14.0-55.7~deb12u1 \
   llvm=1:14.0-55.7~deb12u1 \
   libclang-dev=1:14.0-55.7~deb12u1 \

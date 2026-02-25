@@ -1,5 +1,5 @@
-//go:build !stagenet && !mocknet
-// +build !stagenet,!mocknet
+//go:build !stagenet && !chainnet && !mocknet
+// +build !stagenet,!chainnet,!mocknet
 
 package common
 
@@ -27,12 +27,12 @@ func (s *ZECPubKeyMainnetSuite) TestZECAddressGeneration(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(addr.IsEmpty(), Equals, false)
 
-	// Verify the address starts with mainnet prefix (t1 or t3)
+	// Verify the address starts with mainnet prefix
 	addrStr := addr.String()
-	c.Check(addrStr[:2] == "t1" || addrStr[:2] == "t3", Equals, true)
+	c.Check(addrStr[:2] == "t1", Equals, true)
 
-	// Verify address length is in valid range (26-95 characters for Zcash)
-	c.Check(len(addrStr) >= 26 && len(addrStr) <= 95, Equals, true)
+	// Verify address length is valid
+	c.Check(addrStr, HasLen, 35)
 
 	// Verify it's recognized as a Zcash address
 	c.Check(addr.IsChain(ZECChain), Equals, true)

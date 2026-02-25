@@ -347,7 +347,9 @@
             "BASE",
             "TRON",
             "XRP",
-            "SOL"
+            "SOL",
+            "POL",
+            "ZEC"
           ],
           "coins": [
             {

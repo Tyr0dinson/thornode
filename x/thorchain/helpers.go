@@ -65,6 +65,13 @@ func refundTx(ctx cosmos.Context, tx ObservedTx, mgr Manager, refundCode uint32,
 				if err != nil {
 					return fmt.Errorf("fail to get vault: %w", err)
 				}
+				// If the vault is no longer active or retiring and lacks sufficient
+				// balance for this refund, clear it so prepareTxOutItem discovers an
+				// appropriate active vault. This handles expired limit order refunds
+				// where the original inbound vault has been churned out and emptied.
+				if !vault.IsActive() && !vault.IsRetiring() && vault.GetCoin(coin.Asset).Amount.LT(coin.Amount) {
+					vault = Vault{}
+				}
 			}
 
 			toi := TxOutItem{
@@ -1250,11 +1257,11 @@ func settleSwap(ctx cosmos.Context, mgr Manager, msg MsgSwap, settleReason strin
 		voter, voterErr := mgr.Keeper().GetObservedTxInVoter(ctx, msg.Tx.ID)
 		if voterErr == nil && !voter.Tx.IsEmpty() {
 			if refundErr := refundTx(ctx, ObservedTx{Tx: refundCoinTx, ObservedPubKey: voter.Tx.ObservedPubKey}, mgr, CodeSwapFail, settleReason, ""); refundErr != nil {
-				ctx.Logger().Error("fail to refund swap remainder", "error", refundErr)
+				return fmt.Errorf("fail to refund swap remainder: %w", refundErr)
 			}
 		} else {
 			if refundErr := refundTx(ctx, ObservedTx{Tx: refundCoinTx}, mgr, CodeSwapFail, settleReason, ""); refundErr != nil {
-				ctx.Logger().Error("fail to refund swap remainder", "error", refundErr)
+				return fmt.Errorf("fail to refund swap remainder: %w", refundErr)
 			}
 		}
 	}
@@ -1506,18 +1513,19 @@ func isOutboundFakeGasTx(tx ObservedTx) bool {
 	return tx.Tx.Memo == "OUT:"+tx.Tx.ID.String()
 }
 
-// isCancelTx returns true if the observed outbound is a cancel transaction sent by bifrost to unstuck a pending transaction.
-// This occurs on EVM chains where bifrost needs to replace a stuck transaction by sending a new transaction with the same nonce
-// but higher gas price. To "cancel" the original transaction, bifrost sends a zero-value transaction to the vault's own address.
-// Note: Cancel transactions have amount=0 on the EVM chain, but bifrost converts them to DustThreshold when observing to make them observable.
-// Checks are:
-// - must only have one coin in outbound
-// - chain of coin must be an EVM chain
-// - coin asset must be the gas asset
-// - coin amount must equal DustThreshold (cancel transactions have 0 value on chain, but bifrost converts to DustThreshold)
-// - ToAddress must equal the vault address (vault-to-vault transaction)
-// - memo must be empty (cancel transactions have no memo)
-func isCancelTx(tx ObservedTx) bool {
+// isCancelOrApprovalTx returns true if the observed outbound is a cancel transaction
+// sent by bifrost to unstuck a pending transaction or an approval transaction for
+// router V6.
+//
+// Cancel transactions occurs on EVM chains where bifrost needs to replace a stuck
+// transaction by sending a new transaction with the same nonce but higher gas price. To
+// "cancel" the original transaction, bifrost sends a zero-value transaction to the
+// vault's own address. Note: Cancel transactions have amount=0 on the EVM chain, but
+// bifrost converts them to DustThreshold when observing to make them observable.
+//
+// Approval transactions are sent by bifrost to approve token allowances for the router
+// contract on behalf of the vault with the ERC20 balance.
+func isCancelOrApprovalTx(tx ObservedTx) bool {
 	// Must have exactly one coin
 	if len(tx.Tx.Coins) != 1 {
 		return false
@@ -1543,16 +1551,7 @@ func isCancelTx(tx ObservedTx) bool {
 		return false
 	}
 
-	// Must be sent to and from the vault's own address (vault-to-vault)
-	vaultAddr, err := tx.ObservedPubKey.GetAddress(tx.Tx.Chain)
-	if err != nil {
-		return false
-	}
-	if !tx.Tx.ToAddress.Equals(vaultAddr) || !tx.Tx.FromAddress.Equals(vaultAddr) {
-		return false
-	}
-
-	// Must have no memo (cancel transactions are purely operational)
+	// Must have no memo
 	if tx.Tx.Memo != "" {
 		return false
 	}

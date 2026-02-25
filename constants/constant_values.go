@@ -86,6 +86,7 @@ const (
 	MaxCR
 	LendingLever
 	PermittedSolvencyGap
+	PermittedSolvencyGapUSD
 	NodeOperatorFee
 	ValidatorMaxRewardRatio
 	MaxNodeToChurnOutForLowVersion
@@ -183,6 +184,7 @@ const (
 	MemolessTxnMaxUse
 	StrictBondLiquidityRatio
 	SwapOutDexAggregationDisabled
+	P2PGateDisabled
 )
 
 // ConstantValues define methods used to get constant values

@@ -192,7 +192,7 @@ A withdrawal can be either dual-sided (withdrawn based on pool's price) or entir
 
 ### Claim TCY
 
-Claim TCY tokens for THORFi debt. Claims must be sent form an address within [`tcy_claimers_mainnet`](https://gitlab.com/thorchain/thornode/-/raw/develop/common/tcyclaimlist/tcy_claimers_mainnet.json). Claimed TCY is assigned to the specified thor address and automatically staked.
+Claim TCY tokens for THORFi debt. Claims must be sent from an address within [`tcy_claimers_mainnet`](https://gitlab.com/thorchain/thornode/-/raw/develop/common/tcyclaimlist/tcy_claimers_mainnet.json). Claimed TCY is assigned to the specified thor address and automatically staked.
 
 **`TCY:ADDR`**
 
@@ -509,7 +509,7 @@ See [Memoless Swaps](../swap-guide/memoless-swaps.md) for detailed information.
 **Configuration:**
 
 - **TTL (Time To Live)**: `MemolessTxnTTL` - Reference memos expire after a configurable number of blocks (default: 3600 blocks ≈ 6 hours)
-- **Reference Range**: `MemolessTxnRefCount` - Reference numbers range from 1 to this value (default: 99999)
+- **Reference Range**: `MemolessTxnRefCount` - Reference numbers range from 1 to this value (default: 99999). **CAUTION:** Changing this value changes the zero-padding normalization of reference keys. Existing non-expired references become inaccessible. Only change after all references have expired or with a coordinated migration.
 - **Cost**: `MemolessTxnCost` - Additional protocol-level fee, currently set to 0
 - **Max Usage**: `MemolessTxnMaxUse` - Maximum number of times a reference can be used (default: 1)
 - **HaltMemoless**: Operational mimir to emergency halt all memoless functionality
