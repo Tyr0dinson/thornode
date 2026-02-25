@@ -234,10 +234,10 @@ func (im *IntentMgr) processMatches(ctx cosmos.Context) error {
 			continue
 		}
 
-		// Skip if intent has expired past its expiry height - let processExpirations handle it.
-		// Use strict greater-than so that solves whose match height was capped to ExpiryHeight
-		// (by handler_intent_solve.go) can still execute on that exact block.
-		if currentHeight > intent.ExpiryHeight {
+		// Skip if intent has reached its expiry height - let processExpirations handle it.
+		// When a solve's match_height was capped to ExpiryHeight (because its calculated delay
+		// exceeded the TTL), the intent should expire rather than execute the solve.
+		if currentHeight >= intent.ExpiryHeight {
 			ctx.Logger().Info("intent has expired, skipping execution", "txid", intentTxID, "expiry_height", intent.ExpiryHeight)
 			continue
 		}
