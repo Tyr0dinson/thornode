@@ -91,11 +91,16 @@ func (h IntentCancelHandler) handle(ctx cosmos.Context, msg MsgIntentCancel) err
 
 	if shouldRefund {
 		// Refund the source asset back to the source address
-		// Include any coins sent with the cancel tx (same asset) in the refund
+		// Include any coins sent with the cancel tx (same asset) in the refund,
+		// but only for non-secured/trade assets. The deposit handler skips escrowing
+		// secured/trade coins for cancel messages, so including them would create
+		// units from nothing.
 		refundCoin = intent.Source
-		for _, coin := range msg.Tx.Coins {
-			if coin.Asset.Equals(intent.Source.Asset) && !coin.Amount.IsZero() {
-				refundCoin.Amount = refundCoin.Amount.Add(coin.Amount)
+		if !intent.Source.Asset.IsSecuredAsset() && !intent.Source.Asset.IsTradeAsset() {
+			for _, coin := range msg.Tx.Coins {
+				if coin.Asset.Equals(intent.Source.Asset) && !coin.Amount.IsZero() {
+					refundCoin.Amount = refundCoin.Amount.Add(coin.Amount)
+				}
 			}
 		}
 

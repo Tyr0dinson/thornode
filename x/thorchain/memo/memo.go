@@ -234,7 +234,9 @@ func (tx TxType) HasOutbound() bool {
 		TxReserve,
 		TxMigrate,
 		TxMaint,
-		TxRagnarok:
+		TxRagnarok,
+		TxIntentOpen,
+		TxIntentSolve:
 		return false
 	default:
 		return true

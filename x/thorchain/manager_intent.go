@@ -65,8 +65,9 @@ func (im *IntentMgr) selectBestSolve(ctx cosmos.Context, intent types.Intent, so
 	// Use the target asset's chain gas fee for the comparison threshold.
 	// Since solve amounts are denominated in the target asset, we must use the
 	// same denomination for the gas fee tolerance to avoid unit mismatches.
-	// For native assets (RUNE/secured/trade), GetChain() returns THORChain,
-	// which has near-zero gas, meaning exact matching applies.
+	// For RUNE, GetChain() returns THORChain with near-zero gas (exact matching).
+	// For secured/trade assets, GetChain() returns the underlying L1 chain,
+	// providing a reasonable tolerance in the same denomination (e.g. satoshis).
 	targetAsset := intent.TargetAsset
 	gasFeeChain := targetAsset.GetChain()
 	gasFee, err := calculateGasFee(ctx, im.mgr, gasFeeChain)
@@ -114,12 +115,19 @@ func (im *IntentMgr) refundLosingSolves(ctx cosmos.Context, intent types.Intent,
 			continue // Skip winner
 		}
 
+		// Set ModuleName for RUNE solves (RUNE is escrowed in Asgard module)
+		moduleName := ""
+		if solve.TargetCoin.Asset.IsRune() {
+			moduleName = AsgardName
+		}
+
 		toi := TxOutItem{
-			Chain:     solve.TargetCoin.Asset.GetChain(),
-			ToAddress: solve.SolverAddress,
-			Coin:      solve.TargetCoin,
-			Memo:      NewRefundMemo(solve.SolveTxID).String(),
-			InHash:    solve.SolveTxID,
+			Chain:      solve.TargetCoin.Asset.GetChain(),
+			ToAddress:  solve.SolverAddress,
+			Coin:       solve.TargetCoin,
+			Memo:       NewRefundMemo(solve.SolveTxID).String(),
+			InHash:     solve.SolveTxID,
+			ModuleName: moduleName,
 		}
 
 		ok, err := im.mgr.TxOutStore().TryAddTxOutItem(ctx, im.mgr, toi, cosmos.ZeroUint())
@@ -322,6 +330,15 @@ func (im *IntentMgr) executeIntent(ctx cosmos.Context, intent Intent, solve Inte
 	canChargeSource := isSourcePoolAsset || isSourceRune
 	canChargeTarget := isTargetPoolAsset || isTargetRune
 
+	// Log a warning if no fees can be charged (pool may have changed status since intent was opened)
+	if !canChargeSource && !canChargeTarget {
+		ctx.Logger().Warn("intent executing with zero fees - no fee-chargeable asset available",
+			"intent_txid", intent.TxID,
+			"source_asset", intent.Source.Asset,
+			"target_asset", solve.TargetCoin.Asset,
+		)
+	}
+
 	// Calculate protocol fee
 	protocolFeeBps := intent.MinFeeBasisPoints
 	protocolFee := common.NoCoin
@@ -482,6 +499,9 @@ func (im *IntentMgr) processProtocolFee(ctx cosmos.Context, solveTxID common.TxI
 		// with invariant checks. The swap queue approach can cause the pool to
 		// have more coins than the vault during the window between solve completion
 		// and swap execution.
+		// Note: This bypasses the swap queue's volume/LUVI tracking, but swap events
+		// are still emitted for indexer consumption. The fee amounts are small
+		// (basis-point-level) so the impact on pool metrics is minimal.
 
 		// Get the swapper for swap calculations
 		swapper, err := GetSwapper(im.mgr.Keeper().GetVersion())
@@ -654,7 +674,13 @@ func (im *IntentMgr) processAffiliateFee(ctx cosmos.Context, intent Intent, solv
 		)
 	}
 
-	// Emit affiliate fee event
+	// Emit affiliate fee event - use the correct base amount depending on which side fees are charged
+	var feeBaseAmount cosmos.Uint
+	if affiliateFee.Asset.Equals(intent.Source.Asset) {
+		feeBaseAmount = intent.Source.Amount
+	} else {
+		feeBaseAmount = solve.TargetCoin.Amount
+	}
 	affFeeEvent := NewEventAffiliateFee(
 		intent.TxID,
 		"", // memo not needed for intents
@@ -662,7 +688,7 @@ func (im *IntentMgr) processAffiliateFee(ctx cosmos.Context, intent Intent, solv
 		affiliateAddr,
 		affiliateFee.Asset,
 		uint64(intent.AffiliateBasisPoints),
-		intent.Source.Amount, // original amount fees were calculated from
+		feeBaseAmount,
 		affiliateFee.Amount,
 	)
 	if err := im.mgr.EventMgr().EmitEvent(ctx, affFeeEvent); err != nil {
@@ -729,7 +755,10 @@ func (im *IntentMgr) expireIntent(ctx cosmos.Context, intent Intent) error {
 	// Save the auction
 	im.mgr.Keeper().SetIntentAuction(ctx, auction)
 
-	// Refund any existing solves for this intent
+	// Refund any existing solves for this intent.
+	// Even if some individual refunds fail (handled by unrefundableCoinCleanup),
+	// we still transition to auctioning. The solve records are always cleaned up
+	// regardless of refund success. Only abort if we can't read solves at all.
 	if err := im.refundIntentSolves(ctx, intent); err != nil {
 		ctx.Logger().Error("fail to refund intent solves", "txid", intent.TxID, "error", err)
 	}
@@ -830,13 +859,20 @@ func (im *IntentMgr) refundIntentSolves(ctx cosmos.Context, intent Intent) error
 
 	var failedRefunds []string
 	for _, solve := range solves {
+		// Set ModuleName for RUNE solves (RUNE is escrowed in Asgard module)
+		moduleName := ""
+		if solve.TargetCoin.Asset.IsRune() {
+			moduleName = AsgardName
+		}
+
 		// Schedule refund for the solve
 		toi := TxOutItem{
-			Chain:     solve.TargetCoin.Asset.GetChain(),
-			ToAddress: solve.SolverAddress,
-			Coin:      solve.TargetCoin,
-			Memo:      NewRefundMemo(solve.SolveTxID).String(),
-			InHash:    solve.SolveTxID,
+			Chain:      solve.TargetCoin.Asset.GetChain(),
+			ToAddress:  solve.SolverAddress,
+			Coin:       solve.TargetCoin,
+			Memo:       NewRefundMemo(solve.SolveTxID).String(),
+			InHash:     solve.SolveTxID,
+			ModuleName: moduleName,
 		}
 
 		ok, err := im.mgr.TxOutStore().TryAddTxOutItem(ctx, im.mgr, toi, cosmos.ZeroUint())
@@ -1007,22 +1043,24 @@ func (im *IntentMgr) completeAuction(ctx cosmos.Context, auction IntentAuction) 
 		return fmt.Errorf("fail to schedule winner txout")
 	}
 
-	// Send remaining amount to owner
-	ownerToi := TxOutItem{
-		Chain:      auction.RemainingAmount.Asset.GetChain(),
-		ToAddress:  auction.OwnerAddress,
-		Coin:       auction.RemainingAmount,
-		Memo:       NewRefundMemo(auction.IntentTxID).String(),
-		InHash:     auction.IntentTxID,
-		ModuleName: moduleName,
-	}
+	// Send remaining amount to owner (skip if zero, e.g. when IntentAuctionBasisPoints = 10000)
+	if !auction.RemainingAmount.Amount.IsZero() {
+		ownerToi := TxOutItem{
+			Chain:      auction.RemainingAmount.Asset.GetChain(),
+			ToAddress:  auction.OwnerAddress,
+			Coin:       auction.RemainingAmount,
+			Memo:       NewRefundMemo(auction.IntentTxID).String(),
+			InHash:     auction.IntentTxID,
+			ModuleName: moduleName,
+		}
 
-	ok, err = im.mgr.TxOutStore().TryAddTxOutItem(cacheCtx, im.mgr, ownerToi, cosmos.ZeroUint())
-	if err != nil {
-		return fmt.Errorf("fail to send remaining amount to owner: %w", err)
-	}
-	if !ok {
-		return fmt.Errorf("fail to schedule owner refund txout")
+		ok, err = im.mgr.TxOutStore().TryAddTxOutItem(cacheCtx, im.mgr, ownerToi, cosmos.ZeroUint())
+		if err != nil {
+			return fmt.Errorf("fail to send remaining amount to owner: %w", err)
+		}
+		if !ok {
+			return fmt.Errorf("fail to schedule owner refund txout")
+		}
 	}
 
 	// Process winning bid: swap to RUNE and add to reserve
@@ -1083,7 +1121,11 @@ func (im *IntentMgr) processWinningBid(ctx cosmos.Context, bid IntentAuctionBid)
 		return nil
 	}
 
-	// For non-RUNE assets, create a swap to RUNE destined for the reserve
+	// For non-RUNE assets, queue a swap to RUNE destined for the reserve.
+	// This uses the swap queue (not a direct swap) to ensure proper pool accounting
+	// (LUVI, volume tracking, slip-based fees). The bid funds remain in Asgard
+	// until the swap executes (typically next block), which is acceptable since
+	// the funds are already tracked in the vault balance.
 	reserveAddr, err := im.mgr.Keeper().GetModuleAddress(ReserveName)
 	if err != nil {
 		return fmt.Errorf("fail to get reserve module address: %w", err)
@@ -1216,7 +1258,13 @@ func (im *IntentMgr) cancelAuction(ctx cosmos.Context, auction IntentAuction, in
 			return fmt.Errorf("no vault found with sufficient balance for asset %s (need %s)", sourceAsset, totalAmount)
 		}
 
-		// Subtract the abandoned amount from the vault
+		// Subtract the abandoned amount from the vault's tracked balance.
+		// NOTE: The actual on-chain L1 UTXOs/outputs remain in the vault's addresses.
+		// This creates a known surplus (on-chain > tracked) which the solvency checker
+		// will observe. During vault migrations (churn), these "orphaned" UTXOs are swept
+		// along with legitimate funds. This is the standard THORChain approach for
+		// non-refundable, non-pool assets and is consistent with how other abandon
+		// scenarios work in the codebase.
 		selectedVault.SubFunds(common.NewCoins(totalCoin))
 
 		// Save the updated vault
