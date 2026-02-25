@@ -1716,7 +1716,7 @@ func (qs queryServer) queryQuoteIntentSolve(ctx cosmos.Context, req *types.Query
 	}
 
 	// Calculate amount needed to beat current best
-	amountToBeatBest := cosmos.ZeroUint()
+	var amountToBeatBest cosmos.Uint
 	if currentBestAmount.IsZero() {
 		amountToBeatBest = intent.LowTarget
 	} else {
