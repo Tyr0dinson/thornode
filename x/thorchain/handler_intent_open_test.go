@@ -279,6 +279,26 @@ func (HandlerIntentOpenSuite) TestIntentOpen_ValidationErrors(c *C) {
 			expectedErrMsg: ".*low target cannot be zero.*",
 		},
 		{
+			name: "amount below dust threshold should fail",
+			setupMsg: func() *MsgIntentOpen {
+				w.keeper.SetMimir(w.ctx, constants.IntentsEnabled.String(), 1)
+				dustTx := GetRandomTx()
+				// DOGE dust threshold is 100_000_000 (1 DOGE), use amount at threshold
+				dustTx.Coins = common.Coins{common.NewCoin(common.DOGEAsset, cosmos.NewUint(100_000_000))}
+				return NewMsgIntentOpen(
+					dustTx,
+					common.BTCAsset,
+					GetRandomBTCAddress(),
+					cosmos.NewUint(15*common.One),
+					cosmos.NewUint(10*common.One),
+					common.NoAddress,
+					cosmos.ZeroUint(),
+					w.activeNodeAccount.NodeAddress,
+				)
+			},
+			expectedErrMsg: ".*below dust threshold.*",
+		},
+		{
 			name: "empty target address should fail",
 			setupMsg: func() *MsgIntentOpen {
 				return NewMsgIntentOpen(
