@@ -992,9 +992,10 @@
         "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
       },
       {
-        "fee": "100000 ETH.ETH",
+        "affiliate_fee": "0 .",
         "intent_tx_id": "0000000000000000000000000000000000000000000000000000000000000001",
         "mode": "EndBlock",
+        "protocol_fee": "100000 ETH.ETH",
         "solve_tx_id": "0000000000000000000000000000000000000000000000000000000000000002",
         "source_sent": "99900000 ETH.ETH",
         "target_received": "1200000 BTC.BTC",
@@ -1149,9 +1150,10 @@
         "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
       },
       {
-        "fee": "100000 ETH.ETH",
+        "affiliate_fee": "0 .",
         "intent_tx_id": "0000000000000000000000000000000000000000000000000000000000000001",
         "mode": "EndBlock",
+        "protocol_fee": "100000 ETH.ETH",
         "solve_tx_id": "0000000000000000000000000000000000000000000000000000000000000002",
         "source_sent": "99900000 ETH.ETH",
         "target_received": "1200000 BTC.BTC",

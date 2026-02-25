@@ -28,19 +28,24 @@ func (im *IntentMgr) EndBlock(ctx cosmos.Context) error {
 	im.mgr.Keeper().CleanupStaleActiveIntents(ctx)
 	im.mgr.Keeper().CleanupStaleActiveAuctions(ctx)
 
-	// Process solve bids that match at this height
-	if err := im.processMatches(ctx); err != nil {
-		ctx.Logger().Error("fail to process intent matches", "error", err)
-		return err
+	intentsEnabled := im.mgr.Keeper().GetConfigInt64(ctx, constants.IntentsEnabled) > 0
+
+	// Only process new matches when intents are enabled; when disabled as an
+	// emergency measure, skip executing new solves to prevent further damage.
+	if intentsEnabled {
+		if err := im.processMatches(ctx); err != nil {
+			ctx.Logger().Error("fail to process intent matches", "error", err)
+			return err
+		}
 	}
 
-	// Process expired intents
+	// Always process expirations and auctions for cleanup, even when disabled,
+	// so existing intents can expire/complete and users can recover funds.
 	if err := im.processExpirations(ctx); err != nil {
 		ctx.Logger().Error("fail to process intent expirations", "error", err)
 		return err
 	}
 
-	// Process active auctions (check for completion)
 	if err := im.processAuctions(ctx); err != nil {
 		ctx.Logger().Error("fail to process intent auctions", "error", err)
 		return err
@@ -244,6 +249,18 @@ func (im *IntentMgr) processMatches(ctx cosmos.Context) error {
 
 		// Select best solve deterministically (must exceed by 1x gas to be "better", then earliest submit, then lowest txid)
 		winningSolve := im.selectBestSolve(ctx, intent, intentSolves)
+
+		// Defensive assertion: MatchHeight must not exceed ExpiryHeight.
+		// The handler caps MatchHeight at ExpiryHeight, but this guards against regressions.
+		if winningSolve.MatchHeight > intent.ExpiryHeight {
+			ctx.Logger().Error("solve MatchHeight exceeds intent ExpiryHeight, skipping",
+				"intent_txid", intentTxID,
+				"solve_txid", winningSolve.SolveTxID,
+				"match_height", winningSolve.MatchHeight,
+				"expiry_height", intent.ExpiryHeight,
+			)
+			continue
+		}
 
 		// Execute the intent with winning solve using CacheContext for atomicity.
 		// This ensures that if any step fails (fee processing, pool changes, TxOut scheduling),
@@ -477,6 +494,7 @@ func (im *IntentMgr) executeIntent(ctx cosmos.Context, intent Intent, solve Inte
 		solverToi.Coin,
 		userToi.Coin,
 		protocolFee,
+		affiliateFee,
 	)
 	if err := im.mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
 		ctx.Logger().Error("fail to emit intent complete event", "error", err)
@@ -1128,8 +1146,9 @@ func (im *IntentMgr) completeAuction(ctx cosmos.Context, auction IntentAuction) 
 	// Clean up the winning bid record
 	im.mgr.Keeper().RemoveIntentAuctionBid(cacheCtx, winningBid.BidTxID)
 
-	// Update auction status
+	// Update auction status and record winning bid
 	auction.Status = IntentAuctionStatus_AuctionCompleted
+	auction.WinningBidTxID = winningBid.BidTxID
 	im.mgr.Keeper().SetIntentAuction(cacheCtx, auction)
 
 	// Update intent status to expired (auction completed)

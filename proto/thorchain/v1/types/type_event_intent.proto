@@ -80,7 +80,8 @@ message EventIntentComplete {
   ];
   common.Coin source_sent = 3 [ (gogoproto.nullable) = false ];
   common.Coin target_received = 4 [ (gogoproto.nullable) = false ];
-  common.Coin fee = 5 [ (gogoproto.nullable) = false ];
+  common.Coin protocol_fee = 5 [ (gogoproto.nullable) = false ];
+  common.Coin affiliate_fee = 6 [ (gogoproto.nullable) = false ];
 }
 
 message EventIntentExpire {

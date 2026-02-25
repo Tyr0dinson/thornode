@@ -141,6 +141,10 @@ func DefaultGenesisState() GenesisState {
 		RuneProviders:           make([]RUNEProvider, 0),
 		RunePool:                NewRUNEPool(),
 		AffiliateCollectors:     []AffiliateFeeCollector{},
+		Intents:                 make([]Intent, 0),
+		IntentSolves:            make([]IntentSolve, 0),
+		IntentAuctions:          make([]IntentAuction, 0),
+		IntentAuctionBids:       make([]IntentAuctionBid, 0),
 	}
 }
 
@@ -334,6 +338,19 @@ func initGenesis(ctx cosmos.Context, keeper keeper.Keeper, data GenesisState) []
 		if err := keeper.SetTCYStaker(ctx, item); err != nil {
 			panic(err)
 		}
+	}
+
+	for _, intent := range data.Intents {
+		keeper.SetIntent(ctx, intent)
+	}
+	for _, solve := range data.IntentSolves {
+		keeper.SetIntentSolve(ctx, solve)
+	}
+	for _, auction := range data.IntentAuctions {
+		keeper.SetIntentAuction(ctx, auction)
+	}
+	for _, bid := range data.IntentAuctionBids {
+		keeper.SetIntentAuctionBid(ctx, bid)
 	}
 
 	reserveAddr, _ := keeper.GetModuleAddress(ReserveName)
@@ -762,6 +779,42 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		panic(err)
 	}
 
+	intents := make([]Intent, 0)
+	iterIntents := k.GetIntentIterator(ctx)
+	defer iterIntents.Close()
+	for ; iterIntents.Valid(); iterIntents.Next() {
+		var intent Intent
+		k.Cdc().MustUnmarshal(iterIntents.Value(), &intent)
+		intents = append(intents, intent)
+	}
+
+	intentSolves := make([]IntentSolve, 0)
+	iterSolves := k.GetIntentSolveIterator(ctx)
+	defer iterSolves.Close()
+	for ; iterSolves.Valid(); iterSolves.Next() {
+		var solve IntentSolve
+		k.Cdc().MustUnmarshal(iterSolves.Value(), &solve)
+		intentSolves = append(intentSolves, solve)
+	}
+
+	intentAuctions := make([]IntentAuction, 0)
+	iterAuctions := k.GetIntentAuctionIterator(ctx)
+	defer iterAuctions.Close()
+	for ; iterAuctions.Valid(); iterAuctions.Next() {
+		var auction IntentAuction
+		k.Cdc().MustUnmarshal(iterAuctions.Value(), &auction)
+		intentAuctions = append(intentAuctions, auction)
+	}
+
+	intentAuctionBids := make([]IntentAuctionBid, 0)
+	iterBids := k.GetIntentAuctionBidIterator(ctx)
+	defer iterBids.Close()
+	for ; iterBids.Valid(); iterBids.Next() {
+		var bid IntentAuctionBid
+		k.Cdc().MustUnmarshal(iterBids.Value(), &bid)
+		intentAuctionBids = append(intentAuctionBids, bid)
+	}
+
 	return GenesisState{
 		Pools:                   pools,
 		LiquidityProviders:      liquidityProviders,
@@ -794,5 +847,9 @@ func ExportGenesis(ctx cosmos.Context, k keeper.Keeper) GenesisState {
 		AffiliateCollectors:     affiliateCollectors,
 		TcyClaimers:             tcyClaimers,
 		TcyStakers:              tcyStakers,
+		Intents:                 intents,
+		IntentSolves:            intentSolves,
+		IntentAuctions:          intentAuctions,
+		IntentAuctionBids:       intentAuctionBids,
 	}
 }

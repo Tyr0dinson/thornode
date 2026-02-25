@@ -10,6 +10,18 @@ import (
 	"gitlab.com/thorchain/thornode/v3/x/thorchain/types"
 )
 
+// GetIntentAuctionIterator returns an iterator for all intent auctions
+func (k KVStore) GetIntentAuctionIterator(ctx cosmos.Context) cosmos.Iterator {
+	key := k.GetKey(prefixIntentAuction, "")
+	return k.getIterator(ctx, kvTypes.DbPrefix(key))
+}
+
+// GetIntentAuctionBidIterator returns an iterator for all intent auction bids
+func (k KVStore) GetIntentAuctionBidIterator(ctx cosmos.Context) cosmos.Iterator {
+	key := k.GetKey(prefixIntentAuctionBid, "")
+	return k.getIterator(ctx, kvTypes.DbPrefix(key))
+}
+
 // -------------------- IntentAuction Methods --------------------
 
 func (k KVStore) setIntentAuction(ctx cosmos.Context, key []byte, record types.IntentAuction) {

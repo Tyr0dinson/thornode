@@ -1578,13 +1578,14 @@ func (m *EventIntentSolve) Events() (cosmos.Events, error) {
 }
 
 // NewEventIntentComplete creates a new intent complete event
-func NewEventIntentComplete(intentTxID, solveTxID common.TxID, sourceSent, targetReceived, fee common.Coin) *EventIntentComplete {
+func NewEventIntentComplete(intentTxID, solveTxID common.TxID, sourceSent, targetReceived, protocolFee, affiliateFee common.Coin) *EventIntentComplete {
 	return &EventIntentComplete{
 		IntentTxID:     intentTxID,
 		SolveTxID:      solveTxID,
 		SourceSent:     sourceSent,
 		TargetReceived: targetReceived,
-		Fee:            fee,
+		ProtocolFee:    protocolFee,
+		AffiliateFee:   affiliateFee,
 	}
 }
 
@@ -1600,7 +1601,8 @@ func (m *EventIntentComplete) Events() (cosmos.Events, error) {
 		cosmos.NewAttribute("solve_tx_id", m.SolveTxID.String()),
 		cosmos.NewAttribute("source_sent", m.SourceSent.String()),
 		cosmos.NewAttribute("target_received", m.TargetReceived.String()),
-		cosmos.NewAttribute("fee", m.Fee.String()),
+		cosmos.NewAttribute("protocol_fee", m.ProtocolFee.String()),
+		cosmos.NewAttribute("affiliate_fee", m.AffiliateFee.String()),
 	)
 	return cosmos.Events{evt}, nil
 }

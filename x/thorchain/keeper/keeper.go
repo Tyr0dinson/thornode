@@ -517,6 +517,7 @@ type KeeperIntent interface {
 	GetIntentSolve(ctx cosmos.Context, solveTxID common.TxID) (types.IntentSolve, error)
 	IntentSolveExists(ctx cosmos.Context, solveTxID common.TxID) bool
 	RemoveIntentSolve(ctx cosmos.Context, solveTxID common.TxID)
+	GetIntentSolveIterator(ctx cosmos.Context) cosmos.Iterator
 
 	// Index methods for efficient lookups
 	GetIntentSolvesByIntentID(ctx cosmos.Context, intentTxID common.TxID) ([]types.IntentSolve, error)
@@ -527,6 +528,7 @@ type KeeperIntent interface {
 	GetIntentAuction(ctx cosmos.Context, intentTxID common.TxID) (types.IntentAuction, error)
 	IntentAuctionExists(ctx cosmos.Context, intentTxID common.TxID) bool
 	RemoveIntentAuction(ctx cosmos.Context, intentTxID common.TxID)
+	GetIntentAuctionIterator(ctx cosmos.Context) cosmos.Iterator
 	GetActiveAuctions(ctx cosmos.Context) ([]types.IntentAuction, error)
 	CleanupStaleActiveAuctions(ctx cosmos.Context)
 
@@ -535,6 +537,7 @@ type KeeperIntent interface {
 	GetIntentAuctionBid(ctx cosmos.Context, bidTxID common.TxID) (types.IntentAuctionBid, error)
 	IntentAuctionBidExists(ctx cosmos.Context, bidTxID common.TxID) bool
 	RemoveIntentAuctionBid(ctx cosmos.Context, bidTxID common.TxID)
+	GetIntentAuctionBidIterator(ctx cosmos.Context) cosmos.Iterator
 	GetIntentAuctionBidsByIntentID(ctx cosmos.Context, intentTxID common.TxID) ([]types.IntentAuctionBid, error)
 	GetBidderBidForAuction(ctx cosmos.Context, intentTxID common.TxID, bidder common.Address) (types.IntentAuctionBid, error)
 }

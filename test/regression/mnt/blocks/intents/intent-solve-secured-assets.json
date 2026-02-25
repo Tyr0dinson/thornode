@@ -1414,9 +1414,10 @@
         "type": "outbound"
       },
       {
-        "fee": "0 .",
+        "affiliate_fee": "0 .",
         "intent_tx_id": "660E3F71D3DB4383A79C8C1C6EDEB3324D49174FC7F325B94A08464034D6B5A6",
         "mode": "EndBlock",
+        "protocol_fee": "0 .",
         "solve_tx_id": "36C6F39FB1FD649F3665FF2C65D981795B3D0DEF4B4DA2A784AE6401D11370FF",
         "source_sent": "5000000 BTC-BTC",
         "target_received": "60000000 ETH-ETH",
@@ -1535,9 +1536,10 @@
         "type": "outbound"
       },
       {
-        "fee": "0 .",
+        "affiliate_fee": "0 .",
         "intent_tx_id": "660E3F71D3DB4383A79C8C1C6EDEB3324D49174FC7F325B94A08464034D6B5A6",
         "mode": "EndBlock",
+        "protocol_fee": "0 .",
         "solve_tx_id": "36C6F39FB1FD649F3665FF2C65D981795B3D0DEF4B4DA2A784AE6401D11370FF",
         "source_sent": "5000000 BTC-BTC",
         "target_received": "60000000 ETH-ETH",
