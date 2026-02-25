@@ -207,6 +207,46 @@
         }
       ],
       "chain_contracts": [],
+      "intent_auction_bids": [],
+      "intent_auctions": [
+        {
+          "auction_amount": {
+            "amount": "10000000",
+            "asset": "ETH.TKN-0X0000000000000000000000000000000000001234"
+          },
+          "bid_asset": "ETH.ETH",
+          "expiry_height": "13",
+          "intent_tx_id": "0000000000000000000000000000000000000000000000000000000000000001",
+          "min_bid": "19200000",
+          "owner_address": "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
+          "remaining_amount": {
+            "amount": "90000000",
+            "asset": "ETH.TKN-0X0000000000000000000000000000000000001234"
+          },
+          "start_height": "8",
+          "status": 2
+        }
+      ],
+      "intent_solves": [],
+      "intents": [
+        {
+          "create_height": "3",
+          "expiry_height": "8",
+          "high_target": "5000000",
+          "low_target": "4000000",
+          "min_fee_basis_points": "10",
+          "source": {
+            "amount": "100000000",
+            "asset": "ETH.TKN-0X0000000000000000000000000000000000001234",
+            "decimals": "8"
+          },
+          "source_address": "0xe3c64974c78f5693bd2bc68b3221d58df5c6e877",
+          "status": 3,
+          "target_address": "bcrt1q3wrmhnh2qe98rjse30pl7u6jxszjjwl44ls6uw",
+          "target_asset": "BTC.BTC",
+          "tx_id": "0000000000000000000000000000000000000000000000000000000000000001"
+        }
+      ],
       "last_chain_heights": [
         {
           "chain": "ETH",

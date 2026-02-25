@@ -933,8 +933,9 @@ func (k KVStoreDummy) SetIntentSolve(_ cosmos.Context, _ types.IntentSolve) {}
 func (k KVStoreDummy) GetIntentSolve(_ cosmos.Context, _ common.TxID) (types.IntentSolve, error) {
 	return types.IntentSolve{}, kaboom
 }
-func (k KVStoreDummy) IntentSolveExists(_ cosmos.Context, _ common.TxID) bool { return false }
-func (k KVStoreDummy) RemoveIntentSolve(_ cosmos.Context, _ common.TxID)      {}
+func (k KVStoreDummy) IntentSolveExists(_ cosmos.Context, _ common.TxID) bool  { return false }
+func (k KVStoreDummy) RemoveIntentSolve(_ cosmos.Context, _ common.TxID)       {}
+func (k KVStoreDummy) GetIntentSolveIterator(_ cosmos.Context) cosmos.Iterator { return nil }
 func (k KVStoreDummy) GetIntentSolvesByIntentID(_ cosmos.Context, _ common.TxID) ([]types.IntentSolve, error) {
 	return nil, kaboom
 }
@@ -949,8 +950,9 @@ func (k KVStoreDummy) SetIntentAuction(_ cosmos.Context, _ types.IntentAuction) 
 func (k KVStoreDummy) GetIntentAuction(_ cosmos.Context, _ common.TxID) (types.IntentAuction, error) {
 	return types.IntentAuction{}, kaboom
 }
-func (k KVStoreDummy) IntentAuctionExists(_ cosmos.Context, _ common.TxID) bool { return false }
-func (k KVStoreDummy) RemoveIntentAuction(_ cosmos.Context, _ common.TxID)      {}
+func (k KVStoreDummy) IntentAuctionExists(_ cosmos.Context, _ common.TxID) bool  { return false }
+func (k KVStoreDummy) RemoveIntentAuction(_ cosmos.Context, _ common.TxID)       {}
+func (k KVStoreDummy) GetIntentAuctionIterator(_ cosmos.Context) cosmos.Iterator { return nil }
 func (k KVStoreDummy) GetActiveAuctions(_ cosmos.Context) ([]types.IntentAuction, error) {
 	return nil, kaboom
 }
@@ -963,8 +965,9 @@ func (k KVStoreDummy) SetIntentAuctionBid(_ cosmos.Context, _ types.IntentAuctio
 func (k KVStoreDummy) GetIntentAuctionBid(_ cosmos.Context, _ common.TxID) (types.IntentAuctionBid, error) {
 	return types.IntentAuctionBid{}, kaboom
 }
-func (k KVStoreDummy) IntentAuctionBidExists(_ cosmos.Context, _ common.TxID) bool { return false }
-func (k KVStoreDummy) RemoveIntentAuctionBid(_ cosmos.Context, _ common.TxID)      {}
+func (k KVStoreDummy) IntentAuctionBidExists(_ cosmos.Context, _ common.TxID) bool  { return false }
+func (k KVStoreDummy) RemoveIntentAuctionBid(_ cosmos.Context, _ common.TxID)       {}
+func (k KVStoreDummy) GetIntentAuctionBidIterator(_ cosmos.Context) cosmos.Iterator { return nil }
 func (k KVStoreDummy) GetIntentAuctionBidsByIntentID(_ cosmos.Context, _ common.TxID) ([]types.IntentAuctionBid, error) {
 	return nil, kaboom
 }
