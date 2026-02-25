@@ -116,9 +116,9 @@ func (h IntentAuctionBidHandler) validate(ctx cosmos.Context, msg MsgIntentAucti
 			return se.ErrInvalidRequest.Wrapf("bid amount %s must be greater than current highest bid %s", bidAmount, highestBid)
 		}
 
-		// Check if we're in the overtime window
+		// Check if we're in the overtime window (guard against underflow when overtimeBlocks > ExpiryHeight)
 		overtimeBlocks := h.mgr.Keeper().GetConfigInt64(ctx, constants.IntentAuctionOvertimeBlocks)
-		inOvertimeWindow := ctx.BlockHeight() >= auction.ExpiryHeight-overtimeBlocks
+		inOvertimeWindow := overtimeBlocks > 0 && auction.ExpiryHeight >= overtimeBlocks && ctx.BlockHeight() >= auction.ExpiryHeight-overtimeBlocks
 
 		// During overtime window, bid must be >= highestBid + 1x gas to be valid
 		if inOvertimeWindow {
@@ -170,11 +170,10 @@ func (h IntentAuctionBidHandler) handle(ctx cosmos.Context, msg MsgIntentAuction
 	var bid IntentAuctionBid
 	isTopUp := !existingBid.BidTxID.IsEmpty()
 	if isTopUp {
-		// Top-up: update existing bid
+		// Top-up: update existing bid amount but preserve original SubmitHeight
+		// to maintain tiebreaker fairness (earlier bidders keep priority)
 		bid = existingBid
 		bid.BidAmount = common.NewCoin(auction.BidAsset, bid.BidAmount.Amount.Add(bidCoin.Amount))
-		// Keep the original BidTxID but update submit height
-		bid.SubmitHeight = ctx.BlockHeight()
 	} else {
 		// New bid
 		bid = IntentAuctionBid{
@@ -186,21 +185,34 @@ func (h IntentAuctionBidHandler) handle(ctx cosmos.Context, msg MsgIntentAuction
 		}
 	}
 
-	// Get current bids to determine the previous highest bid (before this bid)
+	// Get current bids to determine the previous highest bid (before this bid).
+	// Exclude the current bidder's own bid so that top-ups by the highest bidder
+	// don't trivially trigger overtime extension.
 	currentBids, err := h.mgr.Keeper().GetIntentAuctionBidsByIntentID(ctx, msg.IntentTxID)
 	if err != nil {
 		return ErrInternal(err, "fail to get current bids for overtime calculation")
 	}
-	previousHighest := IntentAuctionBids(currentBids).HighestBid()
+	var previousHighest cosmos.Uint
+	for _, b := range currentBids {
+		if b.BidderAddress.Equals(msg.Tx.FromAddress) {
+			continue // Skip the current bidder's own previous bid
+		}
+		if b.BidAmount.Amount.GT(previousHighest) {
+			previousHighest = b.BidAmount.Amount
+		}
+	}
+	if previousHighest.IsNil() {
+		previousHighest = cosmos.ZeroUint()
+	}
 
 	// Save the bid
 	h.mgr.Keeper().SetIntentAuctionBid(ctx, bid)
 
-	// Check if we should extend the auction due to overtime
+	// Check if we should extend the auction due to overtime (guard against underflow)
 	overtimeBlocks := h.mgr.Keeper().GetConfigInt64(ctx, constants.IntentAuctionOvertimeBlocks)
-	inOvertimeWindow := ctx.BlockHeight() >= auction.ExpiryHeight-overtimeBlocks
+	inOvertimeWindow := overtimeBlocks > 0 && auction.ExpiryHeight >= overtimeBlocks && ctx.BlockHeight() >= auction.ExpiryHeight-overtimeBlocks
 
-	if inOvertimeWindow && overtimeBlocks > 0 {
+	if inOvertimeWindow {
 		gasFee, err := calculateGasFee(ctx, h.mgr, auction.BidAsset.GetChain())
 		if err != nil {
 			return ErrInternal(err, "fail to calculate gas fee for overtime extension")

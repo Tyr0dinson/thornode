@@ -60,8 +60,16 @@ func (k KVStore) IntentAuctionExists(ctx cosmos.Context, intentTxID common.TxID)
 	return store.Has(k.GetKey(prefixIntentAuction, intentTxID.String()))
 }
 
-// RemoveIntentAuction removes an intent auction from the KV store and updates active status index
+// RemoveIntentAuction removes an intent auction and all associated bids
 func (k KVStore) RemoveIntentAuction(ctx cosmos.Context, intentTxID common.TxID) {
+	// Remove all associated bids
+	bids, err := k.GetIntentAuctionBidsByIntentID(ctx, intentTxID)
+	if err == nil {
+		for _, bid := range bids {
+			k.RemoveIntentAuctionBid(ctx, bid.BidTxID)
+		}
+	}
+
 	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 	store.Delete(k.GetKey(prefixIntentAuction, intentTxID.String()))
 

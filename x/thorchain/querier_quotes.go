@@ -1490,6 +1490,12 @@ func (qs queryServer) queryQuoteIntent(ctx cosmos.Context, req *types.QueryQuote
 			if err != nil {
 				return nil, fmt.Errorf("bad affiliate_bps: %w", err)
 			}
+			if affiliateBps.GT(cosmos.NewUint(constants.MaxBasisPts)) {
+				return &types.QueryQuoteIntentResponse{
+					Valid:           false,
+					ValidationError: fmt.Sprintf("affiliate_bps %s exceeds maximum %d", affiliateBps, constants.MaxBasisPts),
+				}, nil
+			}
 		}
 	}
 
@@ -1499,6 +1505,17 @@ func (qs queryServer) queryQuoteIntent(ctx cosmos.Context, req *types.QueryQuote
 	minFeeBps := qs.mgr.Keeper().GetConfigInt64(ctx, constants.IntentMinFeeBasisPoints)
 	auctionBps := qs.mgr.Keeper().GetConfigInt64(ctx, constants.IntentAuctionBasisPoints)
 	auctionDuration := qs.mgr.Keeper().GetConfigInt64(ctx, constants.IntentAuctionDurationBlocks)
+
+	// Guard against negative config values before uint64 conversion
+	if minFeeBps < 0 {
+		minFeeBps = 0
+	}
+	if auctionBps < 0 {
+		auctionBps = 0
+	}
+	if auctionBps > 10000 {
+		auctionBps = 10000
+	}
 
 	var feeAsset common.Asset
 	estimatedFee := cosmos.ZeroUint()
@@ -1526,8 +1543,13 @@ func (qs queryServer) queryQuoteIntent(ctx cosmos.Context, req *types.QueryQuote
 	// Determine auction behavior
 	willAuction := !hasSourcePool && !isSourceNative
 
-	// Get inbound info
+	// Get inbound info.
+	// Secured/trade assets are THORChain-native, so the inbound is on THORChain,
+	// not on the underlying L1 chain.
 	fromChain := fromAsset.GetLayer1Asset().GetChain()
+	if fromAsset.IsSecuredAsset() || fromAsset.IsTradeAsset() {
+		fromChain = common.THORChain
+	}
 	inboundAddr, routerAddr, confBlocks, err := quoteInboundInfo(ctx, qs.mgr, amount, fromChain, fromAsset)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get inbound info: %w", err)
