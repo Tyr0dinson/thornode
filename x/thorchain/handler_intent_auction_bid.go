@@ -78,6 +78,11 @@ func (h IntentAuctionBidHandler) validate(ctx cosmos.Context, msg MsgIntentAucti
 		return se.ErrInvalidRequest.Wrap("no coins in bid transaction")
 	}
 
+	// Reject zero-amount bids
+	if msg.Tx.Coins[0].Amount.IsZero() {
+		return se.ErrInvalidRequest.Wrap("bid amount cannot be zero")
+	}
+
 	// Verify the coin is the expected bid asset (gas asset of source chain)
 	if !msg.Tx.Coins[0].Asset.Equals(auction.BidAsset) {
 		return se.ErrInvalidRequest.Wrapf("bid asset %s does not match expected asset %s", msg.Tx.Coins[0].Asset, auction.BidAsset)
@@ -171,7 +176,10 @@ func (h IntentAuctionBidHandler) handle(ctx cosmos.Context, msg MsgIntentAuction
 	isTopUp := !existingBid.BidTxID.IsEmpty()
 	if isTopUp {
 		// Top-up: update existing bid amount but preserve original SubmitHeight
-		// to maintain tiebreaker fairness (earlier bidders keep priority)
+		// to maintain tiebreaker fairness (earlier bidders keep priority).
+		// Note: The top-up transaction's TxID (msg.Tx.ID) is recorded in the emitted
+		// event for auditability. The bid record retains the original BidTxID since
+		// refunds use the bidder's address (not InHash-based routing).
 		bid = existingBid
 		bid.BidAmount = common.NewCoin(auction.BidAsset, bid.BidAmount.Amount.Add(bidCoin.Amount))
 	} else {
@@ -192,7 +200,7 @@ func (h IntentAuctionBidHandler) handle(ctx cosmos.Context, msg MsgIntentAuction
 	if err != nil {
 		return ErrInternal(err, "fail to get current bids for overtime calculation")
 	}
-	var previousHighest cosmos.Uint
+	previousHighest := cosmos.ZeroUint()
 	for _, b := range currentBids {
 		if b.BidderAddress.Equals(msg.Tx.FromAddress) {
 			continue // Skip the current bidder's own previous bid
@@ -200,9 +208,6 @@ func (h IntentAuctionBidHandler) handle(ctx cosmos.Context, msg MsgIntentAuction
 		if b.BidAmount.Amount.GT(previousHighest) {
 			previousHighest = b.BidAmount.Amount
 		}
-	}
-	if previousHighest.IsNil() {
-		previousHighest = cosmos.ZeroUint()
 	}
 
 	// Save the bid
@@ -289,11 +294,17 @@ func calculateMinBid(ctx cosmos.Context, mgr Manager, chain common.Chain) (cosmo
 	return fee.MulUint64(uint64(multiplier)), nil
 }
 
-// calculateGasFee returns 1x network gas fee for the chain
+// calculateGasFee returns 1x network gas fee for the chain.
+// Returns a minimum floor of 1 if the calculated fee is zero, to prevent
+// the overtime anti-sniping threshold from becoming ineffective.
 func calculateGasFee(ctx cosmos.Context, mgr Manager, chain common.Chain) (cosmos.Uint, error) {
 	networkFee, err := mgr.Keeper().GetNetworkFee(ctx, chain)
 	if err != nil {
 		return cosmos.ZeroUint(), err
 	}
-	return cosmos.NewUint(networkFee.TransactionSize).MulUint64(networkFee.TransactionFeeRate), nil
+	fee := cosmos.NewUint(networkFee.TransactionSize).MulUint64(networkFee.TransactionFeeRate)
+	if fee.IsZero() {
+		fee = cosmos.OneUint()
+	}
+	return fee, nil
 }

@@ -52,6 +52,11 @@ func (h IntentOpenHandler) validate(ctx cosmos.Context, msg MsgIntentOpen) error
 		return se.ErrUnauthorized.Wrap("intents feature is disabled")
 	}
 
+	// Block intent creation during ragnarok
+	if h.mgr.Keeper().RagnarokInProgress(ctx) {
+		return se.ErrUnauthorized.Wrap("cannot create intents during ragnarok")
+	}
+
 	// Check if intent already exists (prevent duplicate intents)
 	if h.mgr.Keeper().IntentExists(ctx, msg.Tx.ID) {
 		return se.ErrInvalidRequest.Wrapf("intent with txid %s already exists", msg.Tx.ID)
@@ -109,6 +114,14 @@ func (h IntentOpenHandler) validate(ctx cosmos.Context, msg MsgIntentOpen) error
 	canChargeTarget := (hasActiveTargetPool && !targetAsset.IsSecuredAsset() && !targetAsset.IsTradeAsset()) || targetAsset.IsRune()
 	if !canChargeSource && !canChargeTarget {
 		return se.ErrInvalidRequest.Wrap("at least one of source or target asset must be a fee-chargeable asset (has active pool or is RUNE)")
+	}
+
+	// Validate combined fee basis points won't consume entire outbound
+	minFeeBps := h.mgr.Keeper().GetConfigInt64(ctx, constants.IntentMinFeeBasisPoints)
+	affiliateBps := msg.AffiliateBasisPoints.BigInt().Int64()
+	if minFeeBps+affiliateBps >= int64(constants.MaxBasisPts) {
+		return se.ErrInvalidRequest.Wrapf("combined fee basis points (%d + %d = %d) must be less than %d",
+			minFeeBps, affiliateBps, minFeeBps+affiliateBps, constants.MaxBasisPts)
 	}
 
 	return nil

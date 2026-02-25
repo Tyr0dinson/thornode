@@ -881,3 +881,125 @@ func (HandlerIntentSolveSuite) TestIntentSolve_CrossChainRequiresDestinationAddr
 	c.Assert(err, IsNil)
 	c.Check(solve.DestinationAddress.Equals(correctDestAddr), Equals, true)
 }
+
+func (HandlerIntentSolveSuite) TestIntentSolve_DuplicateSolveTxID(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
+
+	// Enable intents feature
+	w.keeper.SetMimir(w.ctx, constants.IntentsEnabled.String(), 1)
+	w.keeper.SetMimir(w.ctx, constants.IntentPriceSlideBlocks.String(), 1000)
+
+	// Create intent
+	intentTx := GetRandomTx()
+	intent := Intent{
+		TxID:          intentTx.ID,
+		SourceAddress: GetRandomTHORAddress(),
+		Source:        common.NewCoin(common.DOGEAsset, cosmos.NewUint(100*common.One)),
+		TargetAsset:   common.BTCAsset,
+		TargetAddress: GetRandomBTCAddress(),
+		HighTarget:    cosmos.NewUint(20 * common.One),
+		LowTarget:     cosmos.NewUint(10 * common.One),
+		ExpiryHeight:  w.ctx.BlockHeight() + 2000,
+		Status:        IntentActive,
+	}
+	w.keeper.SetIntent(w.ctx, intent)
+
+	mgr := NewDummyMgrWithKeeper(w.keeper)
+	handler := NewIntentSolveHandler(mgr)
+
+	// Place first solve
+	solveTx := GetRandomTx()
+	solveTx.FromAddress = GetRandomDOGEAddress()
+	solveTx.Coins = common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(15*common.One))}
+	msg := NewMsgIntentSolve(solveTx, intentTx.ID, solveTx.FromAddress, w.activeNodeAccount.NodeAddress)
+	_, err := handler.Run(w.ctx, msg)
+	c.Assert(err, IsNil)
+
+	// Try to place solve with same TxID (should fail)
+	msg2 := NewMsgIntentSolve(solveTx, intentTx.ID, solveTx.FromAddress, w.activeNodeAccount.NodeAddress)
+	_, err = handler.Run(w.ctx, msg2)
+	c.Assert(err, NotNil)
+	c.Check(err.Error(), Matches, ".*already exists.*")
+}
+
+func (HandlerIntentSolveSuite) TestIntentSolve_SelfSolving(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
+
+	// Enable intents feature
+	w.keeper.SetMimir(w.ctx, constants.IntentsEnabled.String(), 1)
+	w.keeper.SetMimir(w.ctx, constants.IntentPriceSlideBlocks.String(), 1000)
+
+	// Create intent with a specific source address
+	intentTx := GetRandomTx()
+	sourceAddr := GetRandomDOGEAddress()
+	intent := Intent{
+		TxID:          intentTx.ID,
+		SourceAddress: sourceAddr,
+		Source:        common.NewCoin(common.DOGEAsset, cosmos.NewUint(100*common.One)),
+		TargetAsset:   common.BTCAsset,
+		TargetAddress: GetRandomBTCAddress(),
+		HighTarget:    cosmos.NewUint(20 * common.One),
+		LowTarget:     cosmos.NewUint(10 * common.One),
+		ExpiryHeight:  w.ctx.BlockHeight() + 2000,
+		Status:        IntentActive,
+	}
+	w.keeper.SetIntent(w.ctx, intent)
+
+	mgr := NewDummyMgrWithKeeper(w.keeper)
+	handler := NewIntentSolveHandler(mgr)
+
+	// Try to solve own intent (FromAddress matches intent SourceAddress)
+	solveTx := GetRandomTx()
+	solveTx.FromAddress = sourceAddr // Same as intent creator
+	solveTx.Coins = common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(15*common.One))}
+	msg := NewMsgIntentSolve(solveTx, intentTx.ID, solveTx.FromAddress, w.activeNodeAccount.NodeAddress)
+	_, err := handler.Run(w.ctx, msg)
+	c.Assert(err, NotNil)
+	c.Check(err.Error(), Matches, ".*cannot solve their own intent.*")
+}
+
+func (HandlerIntentSolveSuite) TestIntentSolve_MaxSolvesPerIntent(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
+
+	// Enable intents feature with very low max solves
+	w.keeper.SetMimir(w.ctx, constants.IntentsEnabled.String(), 1)
+	w.keeper.SetMimir(w.ctx, constants.IntentPriceSlideBlocks.String(), 1000)
+	w.keeper.SetMimir(w.ctx, constants.IntentMaxSolvesPerIntent.String(), 2) // Only 2 solves allowed
+
+	// Create intent
+	intentTx := GetRandomTx()
+	intent := Intent{
+		TxID:          intentTx.ID,
+		SourceAddress: GetRandomTHORAddress(),
+		Source:        common.NewCoin(common.DOGEAsset, cosmos.NewUint(100*common.One)),
+		TargetAsset:   common.BTCAsset,
+		TargetAddress: GetRandomBTCAddress(),
+		HighTarget:    cosmos.NewUint(20 * common.One),
+		LowTarget:     cosmos.NewUint(10 * common.One),
+		ExpiryHeight:  w.ctx.BlockHeight() + 2000,
+		Status:        IntentActive,
+	}
+	w.keeper.SetIntent(w.ctx, intent)
+
+	mgr := NewDummyMgrWithKeeper(w.keeper)
+	handler := NewIntentSolveHandler(mgr)
+
+	// Place 2 solves successfully
+	for i := 0; i < 2; i++ {
+		solveTx := GetRandomTx()
+		solveTx.FromAddress = GetRandomDOGEAddress()
+		solveTx.Coins = common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(15*common.One))}
+		msg := NewMsgIntentSolve(solveTx, intentTx.ID, solveTx.FromAddress, w.activeNodeAccount.NodeAddress)
+		_, err := handler.Run(w.ctx, msg)
+		c.Assert(err, IsNil, Commentf("Solve %d should succeed", i+1))
+	}
+
+	// 3rd solve should fail
+	solveTx := GetRandomTx()
+	solveTx.FromAddress = GetRandomDOGEAddress()
+	solveTx.Coins = common.Coins{common.NewCoin(common.BTCAsset, cosmos.NewUint(15*common.One))}
+	msg := NewMsgIntentSolve(solveTx, intentTx.ID, solveTx.FromAddress, w.activeNodeAccount.NodeAddress)
+	_, err := handler.Run(w.ctx, msg)
+	c.Assert(err, NotNil)
+	c.Check(err.Error(), Matches, ".*maximum number of solves.*")
+}

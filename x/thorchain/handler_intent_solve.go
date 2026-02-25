@@ -74,6 +74,11 @@ func (h IntentSolveHandler) validate(ctx cosmos.Context, msg MsgIntentSolve) err
 		return se.ErrUnauthorized.Wrapf("intent has expired at height %d", intent.ExpiryHeight)
 	}
 
+	// Reject duplicate solve IDs to prevent overwriting existing solve records
+	if h.mgr.Keeper().IntentSolveExists(ctx, msg.Tx.ID) {
+		return se.ErrInvalidRequest.Wrapf("solve with txid %s already exists", msg.Tx.ID)
+	}
+
 	// Validate solve transaction has exactly one coin (the target asset)
 	if len(msg.Tx.Coins) == 0 {
 		return se.ErrInvalidRequest.Wrap("no coins in solve transaction")
@@ -85,6 +90,23 @@ func (h IntentSolveHandler) validate(ctx cosmos.Context, msg MsgIntentSolve) err
 	// Verify the coin is the target asset
 	if !msg.Tx.Coins[0].Asset.Equals(intent.TargetAsset) {
 		return se.ErrInvalidRequest.Wrapf("solve asset %s does not match intent target asset %s", msg.Tx.Coins[0].Asset, intent.TargetAsset)
+	}
+
+	// Prevent self-solving: the intent creator cannot solve their own intent
+	if intent.SourceAddress.Equals(msg.Tx.FromAddress) {
+		return se.ErrUnauthorized.Wrap("intent creator cannot solve their own intent")
+	}
+
+	// Enforce maximum number of solves per intent to prevent DoS
+	maxSolvesPerIntent := h.mgr.Keeper().GetConfigInt64(ctx, constants.IntentMaxSolvesPerIntent)
+	if maxSolvesPerIntent > 0 {
+		solves, err := h.mgr.Keeper().GetIntentSolvesByIntentID(ctx, msg.IntentTxID)
+		if err != nil {
+			return ErrInternal(err, "fail to get existing solves")
+		}
+		if int64(len(solves)) >= maxSolvesPerIntent {
+			return se.ErrInvalidRequest.Wrapf("maximum number of solves (%d) reached for this intent", maxSolvesPerIntent)
+		}
 	}
 
 	// Verify the offered amount meets minimum (at least low target)
@@ -122,6 +144,11 @@ func (h IntentSolveHandler) handle(ctx cosmos.Context, msg MsgIntentSolve) error
 	intent, err := h.mgr.Keeper().GetIntent(ctx, msg.IntentTxID)
 	if err != nil {
 		return ErrInternal(err, "fail to get intent")
+	}
+
+	// Re-validate intent status to guard against state changes between validate and handle
+	if intent.Status != IntentActive {
+		return fmt.Errorf("intent %s is no longer active, status: %s", msg.IntentTxID, intent.Status.String())
 	}
 
 	// Get the solver's target coin
@@ -174,6 +201,9 @@ func (h IntentSolveHandler) handle(ctx cosmos.Context, msg MsgIntentSolve) error
 	// match_height = current_height + ((high - offered) * slide_blocks / (high - low))
 	currentHeight := ctx.BlockHeight()
 	slideBlocks := h.mgr.Keeper().GetConfigInt64(ctx, constants.IntentPriceSlideBlocks)
+	if slideBlocks <= 0 {
+		slideBlocks = 600 // Default to ~1 hour if misconfigured
+	}
 
 	var matchHeight int64
 	switch {
