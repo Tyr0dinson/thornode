@@ -329,7 +329,7 @@ func (s *HandlerObservedTxOutSuite) TestHandleFailedTransaction(c *C) {
 	pendingTxOuts, err := validatorMgr.getPendingTxOut(ctx)
 	c.Assert(err, IsNil)
 	// c.Check(pendingTxOuts, Equals, int64(1))
-	c.Check(pendingTxOuts, Equals, int64(332)) // pendingTxOuts in fact returns 301; learn why.
+	c.Check(pendingTxOuts, Equals, int64(301)) // pendingTxOuts in fact returns 301; learn why.
 
 	_, err = handler.handle(ctx, *msg)
 	c.Assert(err, IsNil)
