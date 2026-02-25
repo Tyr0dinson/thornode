@@ -16,6 +16,14 @@ import (
 // Insolvency
 ////////////////////////////////////////////////////////////////////////////////////////
 
+// Insolvency configures suite-level solvency-halt simulations.
+//
+// The suite:
+// 1) enables log-only mode for the solvency-halt watcher,
+// 2) applies deterministic USD config mimirs used by solvency threshold logic,
+// 3) runs selected chain-specific insolvency actors sequentially,
+// 4) waits for all solvency halts to clear,
+// 5) restores watcher behavior to fatal mode.
 func Insolvency(rng *rand.Rand) *Actor {
 	a := NewActor("Insolvency", rng)
 	a.Ops = append(a.Ops, func(config *OpConfig) OpResult {
@@ -36,31 +44,15 @@ func Insolvency(rng *rand.Rand) *Actor {
 
 	chains := insolvencySimulationChains()
 
-	// Run only chains with a stable end-to-end restore path in simulation.
-	// In mocknet, insolvency actors all contend for the same node lock/account, so build a
-	// sequential chain of actors instead of spawning them as parallel children.
-	//
-	// - EVM: steal with empty memo, restore via self-transfer reconcile + DONATE bootstrap
-	// - UTXO: steal with CONSOLIDATE, restore with unobserved CONSOLIDATE inbound
-	// - GAIA: steal with empty memo, restore via self-transfer reconcile + DONATE bootstrap
-	//
-	// TRON/SOL/XRP are intentionally skipped for now:
-	// - Core insolvency/solvency triggering (the reporter logic itself) works there.
-	// - A durable "restore and stay restored" simulation path is not solved yet.
-	// Keeping them out of this suite still exercises the new solvency reporter thoroughly.
+	// In mocknet, insolvency actors contend for the same node lock/account,
+	// so we chain them sequentially instead of running as parallel children.
 	for _, chain := range chains {
-		if chain.IsUTXO() || chain.IsEVM() || chain.Equals(common.GAIAChain) ||
-			chain.Equals(common.XRPChain) ||
-			chain.Equals(common.TRONChain) ||
-			//			chain.Equals(common.SOLChain) ||
-			false {
-			// See note above: temporarily excluded until restore path is durable in simulation.
-			continue
-		}
 		tests.Append(core.NewInsolvencyActor(chain, rng))
 	}
 	a.Append(tests)
 
+	// Before restoring watcher fatal mode, ensure no chain is still halted from
+	// any insolvency actor run in this suite invocation.
 	restoreWatcherMode := NewActor("Insolvency-Watcher-Reset", rng)
 	restoreWatcherMode.Timeout = 5 * time.Minute
 	restoreWatcherMode.Ops = append(restoreWatcherMode.Ops, func(config *OpConfig) OpResult {

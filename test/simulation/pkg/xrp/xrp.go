@@ -129,6 +129,29 @@ func (c *Client) GetAccount(pk *common.PubKey) (*common.Account, error) {
 }
 
 func (c *Client) SignTx(tx SimTx) ([]byte, error) {
+	var memo *txtypes.Memo
+	if tx.Memo != "" {
+		m := txtypes.Memo{
+			MemoData: hex.EncodeToString([]byte(tx.Memo)),
+		}
+		memo = &m
+	}
+	return c.signPaymentTx(tx, memo)
+}
+
+// SignTxWithMemoTypeOnly builds a valid XRP Payment that includes a memo entry
+// without MemoData. This is used by simulation-only scanner-blind flows.
+func (c *Client) SignTxWithMemoTypeOnly(tx SimTx, memoType string) ([]byte, error) {
+	if memoType == "" {
+		memoType = "novault"
+	}
+	m := txtypes.Memo{
+		MemoType: hex.EncodeToString([]byte(memoType)),
+	}
+	return c.signPaymentTx(tx, &m)
+}
+
+func (c *Client) signPaymentTx(tx SimTx, memo *txtypes.Memo) ([]byte, error) {
 	// get account
 	account, err := c.GetAccount(nil)
 	if err != nil {
@@ -147,12 +170,10 @@ func (c *Client) SignTx(tx SimTx) ([]byte, error) {
 		Amount:      txtypes.XRPCurrencyAmount(tx.Coin.Amount.QuoUint64(100).Uint64()), // 1e8 -> 1e6
 		Destination: txtypes.Address(tx.ToAddress),
 	}
-	if tx.Memo != "" {
+	if memo != nil {
 		payment.BaseTx.Memos = []txtypes.MemoWrapper{
 			{
-				Memo: txtypes.Memo{
-					MemoData: hex.EncodeToString([]byte(tx.Memo)),
-				},
+				Memo: *memo,
 			},
 		}
 	}
