@@ -1696,33 +1696,11 @@ func (qs queryServer) queryQuoteIntentSolve(ctx cosmos.Context, req *types.Query
 		}, nil
 	}
 
-	// Calculate gas fee for minimum increment (1x gas determines what's "better")
-	sourceAsset := intent.Source.Asset
+	// Calculate gas fee for minimum increment (1x gas determines what's "better").
+	// Use the target asset's chain gas fee since solve amounts are in target denomination.
+	// This ensures the gas fee tolerance and solve amounts are in the same units.
 	targetAsset := intent.TargetAsset
-
-	sourcePool, err := qs.mgr.Keeper().GetPool(ctx, sourceAsset.GetLayer1Asset())
-	if err != nil {
-		ctx.Logger().Error("fail to get source pool for intent solve quote", "asset", sourceAsset, "error", err)
-	}
-	targetPool, err := qs.mgr.Keeper().GetPool(ctx, targetAsset.GetLayer1Asset())
-	if err != nil {
-		ctx.Logger().Error("fail to get target pool for intent solve quote", "asset", targetAsset, "error", err)
-	}
-
-	hasSourcePool := !sourcePool.IsEmpty() && sourcePool.Status == types.PoolStatus_Available
-	hasTargetPool := !targetPool.IsEmpty() && targetPool.Status == types.PoolStatus_Available
-	isSourceNative := sourceAsset.IsRune() || sourceAsset.IsSecuredAsset() || sourceAsset.IsTradeAsset()
-	isTargetNative := targetAsset.IsRune() || targetAsset.IsSecuredAsset() || targetAsset.IsTradeAsset()
-
-	var gasFeeChain common.Chain
-	switch {
-	case !hasSourcePool && !isSourceNative:
-		gasFeeChain = sourceAsset.GetChain()
-	case !hasTargetPool && !isTargetNative:
-		gasFeeChain = targetAsset.GetChain()
-	default:
-		gasFeeChain = sourceAsset.GetChain()
-	}
+	gasFeeChain := targetAsset.GetChain()
 	minIncrement, err := calculateGasFee(ctx, qs.mgr, gasFeeChain)
 	if err != nil {
 		return nil, fmt.Errorf("fail to calculate minimum increment: %w", err)
@@ -1730,7 +1708,7 @@ func (qs queryServer) queryQuoteIntentSolve(ctx cosmos.Context, req *types.Query
 	minIncrementAsset := gasFeeChain.GetGasAsset()
 
 	// Find current best solve (highest amount)
-	var currentBestAmount cosmos.Uint
+	currentBestAmount := cosmos.ZeroUint()
 	for _, solve := range solves {
 		if solve.TargetCoin.Amount.GT(currentBestAmount) {
 			currentBestAmount = solve.TargetCoin.Amount
@@ -1738,7 +1716,7 @@ func (qs queryServer) queryQuoteIntentSolve(ctx cosmos.Context, req *types.Query
 	}
 
 	// Calculate amount needed to beat current best
-	var amountToBeatBest cosmos.Uint
+	amountToBeatBest := cosmos.ZeroUint()
 	if currentBestAmount.IsZero() {
 		amountToBeatBest = intent.LowTarget
 	} else {

@@ -262,7 +262,10 @@ func (k KVStore) GetIntentSolvesByIntentID(ctx cosmos.Context, intentTxID common
 func (k KVStore) GetIntentSolvesByMatchHeight(ctx cosmos.Context, height int64) ([]types.IntentSolve, error) {
 	var solves []types.IntentSolve
 	heightStr := strconv.FormatInt(height, 10)
-	key := k.GetKey(prefixIntentSolveByMatchHeight, heightStr, "")
+	// Append "/" to prevent prefix collision: without it, height "50" would also
+	// match keys for heights 500, 5000, etc. since "intsh//50" is a string prefix
+	// of "intsh//500/TXID".
+	key := k.GetKey(prefixIntentSolveByMatchHeight, heightStr, "/")
 	iter := k.getIterator(ctx, kvTypes.DbPrefix(key))
 	defer iter.Close()
 
