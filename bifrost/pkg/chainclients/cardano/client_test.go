@@ -8,7 +8,6 @@ import (
 
 	sdkmath "cosmossdk.io/math"
 	"github.com/blinklabs-io/gouroboros/ledger"
-	"github.com/blinklabs-io/gouroboros/ledger/babbage"
 	lcommon "github.com/blinklabs-io/gouroboros/ledger/common"
 	"github.com/blinklabs-io/gouroboros/ledger/mary"
 	"github.com/blinklabs-io/gouroboros/protocol/localstatequery"
@@ -36,6 +35,16 @@ func (s *ClientTestSuite) SetUpTest(c *C) {
 	signerCacheMgr, err := signercache.NewSignerCacheManager(storage.GetInternalDb())
 	c.Assert(err, IsNil)
 
+	scanner := &Scanner{
+		logger: zerolog.Nop(),
+		config: config.BifrostBlockScannerConfiguration{
+			ChainID:            common.ADAChain,
+			GasPriceResolution: 1000,
+		},
+		db:  storage,
+		n2c: &mockClientWrapper{},
+	}
+
 	s.client = &Client{
 		logger: zerolog.Nop(),
 		config: config.BifrostChainConfiguration{
@@ -44,6 +53,7 @@ func (s *ClientTestSuite) SetUpTest(c *C) {
 		},
 		signerCacheManager: signerCacheMgr,
 		storage:            storage,
+		chainScanner:       scanner,
 		n2c:                &mockClientWrapper{},
 	}
 }
@@ -55,7 +65,8 @@ func (s *ClientTestSuite) SetUpTest(c *C) {
 func (s *ClientTestSuite) TestConfirmationCountReady(c *C) {
 	c.Assert(s.client.ConfirmationCountReady(types.TxIn{}), Equals, true)
 
-	// always true regardless of content
+	// current height >= block height with 0 required confirmations
+	s.client.chainScanner.n2c = &mockClientWrapper{blockNo: 200}
 	txIn := types.TxIn{
 		Chain: common.ADAChain,
 		TxArray: []*types.TxInItem{
@@ -88,14 +99,16 @@ func (s *ClientTestSuite) TestGetConfig(c *C) {
 // ---------------------------------------------------------------------------
 
 func (s *ClientTestSuite) TestGetNetworkFee(c *C) {
+	s.client.chainScanner = makeTestScanner(c)
+
 	// default zero
-	size, rate := s.client.GetNetworkFee()
+	size, rate := s.client.chainScanner.GetNetworkFee()
 	c.Assert(size, Equals, uint64(1))
 	c.Assert(rate, Equals, uint64(0))
 
 	// after setting
-	s.client.networkFee = 200_000
-	size, rate = s.client.GetNetworkFee()
+	s.client.chainScanner.networkFee = 200_000
+	size, rate = s.client.chainScanner.GetNetworkFee()
 	c.Assert(size, Equals, uint64(1))
 	c.Assert(rate, Equals, uint64(200_000))
 }
@@ -253,10 +266,10 @@ func (s *ClientTestSuite) TestGetAccountByAddress(c *C) {
 	s.client.n2c = &mockClientWrapper{
 		utxoResult: &localstatequery.UTxOsResult{
 			Results: map[localstatequery.UtxoId]ledger.BabbageTransactionOutput{
-				{Hash: hash1, Idx: 0}: babbage.BabbageTransactionOutput{
+				{Hash: hash1, Idx: 0}: {
 					OutputAmount: mary.MaryTransactionOutputValue{Amount: 3_000_000},
 				},
-				{Hash: hash2, Idx: 1}: babbage.BabbageTransactionOutput{
+				{Hash: hash2, Idx: 1}: {
 					OutputAmount: mary.MaryTransactionOutputValue{Amount: 7_000_000},
 				},
 			},

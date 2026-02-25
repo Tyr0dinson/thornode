@@ -164,12 +164,13 @@ func NewClient(
 
 func (c *Client) Start(
 	globalTxsQueue chan types.TxIn,
-	_ chan types.ErrataBlock,
+	globalErrataQueue chan types.ErrataBlock,
 	globalSolvencyQueue chan types.Solvency,
 	globalNetworkFeeQueue chan common.NetworkFee,
 ) {
 	c.globalSolvencyQueue = globalSolvencyQueue
 	c.chainScanner.globalNetworkFeeQueue = globalNetworkFeeQueue
+	c.chainScanner.globalErrataQueue = globalErrataQueue
 	err := c.chainScanner.Start()
 	if err != nil {
 		c.logger.Err(err).Msg("failed to start cardano scanner")
@@ -410,7 +411,7 @@ func (c *Client) IsBlockScannerHealthy() bool {
 	return c.blockScanner.IsHealthy()
 }
 
-func (c *Client) OnObservedTxIn(txIn types.TxInItem, blockHeight int64) {
+func (c *Client) OnObservedTxIn(txIn types.TxInItem, _ int64) {
 	m, err := mem.ParseMemo(common.LatestVersion, txIn.Memo)
 	if err != nil {
 		// Debug log only as ParseMemo error is expected for THORName inbounds.

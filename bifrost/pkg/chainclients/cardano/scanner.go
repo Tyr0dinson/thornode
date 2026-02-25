@@ -35,6 +35,7 @@ type Scanner struct {
 	asgardAddresses       []common.Address
 	lastAsgardUpdate      time.Time
 	globalNetworkFeeQueue chan common.NetworkFee
+	globalErrataQueue     chan types.ErrataBlock
 }
 
 func NewScanner(
@@ -171,6 +172,7 @@ func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
 		return types.TxIn{}, err
 	}
 
+	var txIds [][]byte
 	var txIns []*types.TxInItem
 	for _, tx := range block.Transactions() {
 		s.logger.Info().Str("hash", tx.Hash().String()).Msg("processing transaction")
@@ -237,9 +239,17 @@ func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
 			Coins:       coins,
 			Gas:         gas,
 		})
+
+		txIds = append(txIds, tx.Hash().Bytes())
 	}
 
-	s.logger.Info().Msgf("done fetch")
+	// store observed tx hashes for rollback errata
+	if len(txIds) > 0 {
+		err = s.db.SetObservedTxs(uint64(fetchHeight), txIds)
+		if err != nil {
+			s.logger.Err(err).Msg("fail to store observed txs")
+		}
+	}
 
 	if err = s.updateNetworkFee(fetchHeight); err != nil {
 		return types.TxIn{}, err
@@ -253,9 +263,18 @@ func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
 	}
 
 	if fetchHeight > transactionTimeout {
-		err = s.db.PruneSpentUtxos(uint64(fetchHeight - transactionTimeout))
+		pruneHeight := uint64(fetchHeight - transactionTimeout)
+		err = s.db.PruneSpentUtxos(pruneHeight)
 		if err != nil {
-			s.logger.Err(err).Msg("fail to prune spent utxos")
+			s.logger.Err(err).Msg("failed to prune spent utxos")
+		}
+	}
+
+	if fetchHeight > s.config.MaxReorgRescanBlocks {
+		pruneHeight := uint64(fetchHeight - s.config.MaxReorgRescanBlocks)
+		err = s.db.PruneObservedTxs(pruneHeight)
+		if err != nil {
+			s.logger.Err(err).Msg("failed to prune observed txs")
 		}
 	}
 
@@ -364,6 +383,68 @@ func (s *Scanner) rollBackwardHandler(
 	s.logger.Info().Msgf("roll backward: point = (%d, %x), tip = (%d, %x)",
 		point.Slot, point.Hash, tip.Point.Slot, tip.Point.Hash,
 	)
+
+	// find invalidated block IDs (slot > rollback slot)
+	invalidated, err := s.db.GetBlockIdsAboveSlot(point.Slot)
+	if err != nil {
+		s.logger.Err(err).Msg("fail to get invalidated block ids")
+		return nil
+	}
+	if len(invalidated) == 0 {
+		return nil
+	}
+
+	// generate errata for observed txs at invalidated heights
+	for _, block := range invalidated {
+		var txIds [][]byte
+		txIds, err = s.db.GetObservedTxs(block.Height)
+		if err != nil {
+			s.logger.Err(err).Uint64("height", block.Height).Msg("fail to get observed txs")
+			continue
+		}
+
+		var errataTxs []types.ErrataTx
+		for _, txId := range txIds {
+			errataTxs = append(errataTxs, types.ErrataTx{
+				TxID:  common.TxID(hex.EncodeToString(txId)),
+				Chain: s.config.ChainID,
+			})
+		}
+
+		if len(errataTxs) > 0 && s.globalErrataQueue != nil {
+			s.globalErrataQueue <- types.ErrataBlock{
+				Height: int64(block.Height),
+				Txs:    errataTxs,
+			}
+			s.logger.Info().Uint64("height", block.Height).
+				Int("txs", len(errataTxs)).Msg("sent errata for rolled-back block")
+		}
+
+		// clean up storage for this height
+		if err = s.db.DeleteObservedTxs(block.Height); err != nil {
+			s.logger.Err(err).Uint64("height", block.Height).Msg("fail to delete observed txs")
+		}
+		if err = s.db.DeleteBlockId(block.Height); err != nil {
+			s.logger.Err(err).Uint64("height", block.Height).Msg("fail to delete block id")
+		}
+	}
+
+	// set the scan position to the highest valid remaining block so the
+	// block scanner resumes from the correct height on next restart
+	height, _, _, err := s.db.GetLastBlockId()
+	if err != nil {
+		s.logger.Err(err).Msg("fail to get rollback height")
+		return nil
+	}
+
+	if err = s.db.SetScanPos(int64(height)); err != nil {
+		s.logger.Err(err).Msg("fail to set scan position")
+	} else {
+		s.logger.Info().
+			Uint64("height", height).
+			Msg("set scan position for rollback")
+	}
+
 	return nil
 }
 

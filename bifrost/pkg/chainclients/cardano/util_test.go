@@ -2,6 +2,7 @@ package cardano
 
 import (
 	"encoding/hex"
+	"fmt"
 	"math/big"
 	"strings"
 	"testing"
@@ -274,25 +275,25 @@ func (s *UtilTestSuite) TestCreateConwayTx(c *C) {
 		{
 			Name:    "Valid tx with memo with different fees",
 			Amount:  1_000_000,
-			Inputs:  []uint64{5_000_000},
+			Inputs:  []uint64{7_000_000},
 			MinFeeA: 44,
 			MinFeeB: 155_381,
-			Change:  3_831_370,
+			Change:  5_831_370,
 			Fee:     168_630,
 			Memo:    "SWAP:BTC.BTC:bc1tc",
 			Size:    301,
 		},
 		{
 			Name:   "Verify estimated size constant",
-			Amount: 3_000_000,
-			Inputs: []uint64{1e6, 1e6, 1e6, 1e6, 1e6},
+			Amount: 5_000_000,
+			Inputs: []uint64{2e6, 4e6, 1e6, 2e6, 1e6},
 			Memo:   strings.Repeat("a", 150),
 			Size:   estimatedTxSize,
 		},
 		{
 			Name:   "Valid tx without memo",
 			Amount: 1_000_000,
-			Inputs: []uint64{5_000_000},
+			Inputs: []uint64{7_000_000},
 			Memo:   "",
 		},
 		{
@@ -302,7 +303,7 @@ func (s *UtilTestSuite) TestCreateConwayTx(c *C) {
 			Error:  "insufficient funds",
 		},
 		{
-			Name:   "Not enough inputs for 2 ADA security margin",
+			Name:   "Not enough inputs for 5 ADA dust margin",
 			Amount: 5_000_000,
 			Inputs: []uint64{6_000_000},
 			Error:  "insufficient funds",
@@ -310,8 +311,10 @@ func (s *UtilTestSuite) TestCreateConwayTx(c *C) {
 		{
 			Name:    "Exactly matching inputs",
 			Amount:  5_000_000,
-			Inputs:  []uint64{7_200_000},
+			Inputs:  []uint64{10_200_000},
 			MinFeeB: 200_000,
+			Fee:     200_005,
+			Change:  4_999_995,
 		},
 	}
 
@@ -338,6 +341,7 @@ func (s *UtilTestSuite) TestCreateConwayTx(c *C) {
 			if tc.Size > 0 {
 				var bz []byte
 				bz, err = cbor.Marshal(tx)
+				fmt.Println(len(bz))
 				c.Assert(err, IsNil)
 				c.Assert(bz, HasLen, tc.Size)
 			}
