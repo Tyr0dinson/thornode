@@ -1466,10 +1466,9 @@ func (qs queryServer) queryQuoteIntent(ctx cosmos.Context, req *types.QueryQuote
 		}, nil
 	}
 
-	// Fee chargeability: only L1 pool assets and RUNE can be charged fees.
-	// Secured/trade assets cannot be charged fees because they can't be swapped to RUNE.
-	canChargeSource := (hasSourcePool && !fromAsset.IsSecuredAsset() && !fromAsset.IsTradeAsset()) || fromAsset.IsRune()
-	canChargeTarget := (hasTargetPool && !toAsset.IsSecuredAsset() && !toAsset.IsTradeAsset()) || toAsset.IsRune()
+	// Determine fee chargeability for fee estimation.
+	canChargeSource := hasSourcePool || fromAsset.IsNative()
+	canChargeTarget := hasTargetPool || toAsset.IsNative()
 
 	if !canChargeSource && !canChargeTarget {
 		return &types.QueryQuoteIntentResponse{

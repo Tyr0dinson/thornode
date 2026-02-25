@@ -1163,6 +1163,8 @@
               "type": "secured_asset_withdraw"
             },
             {
+              "affiliate_address": "",
+              "affiliate_basis_points": "0",
               "expiry_height": "10",
               "high_target": "60000000",
               "low_target": "60000000",
