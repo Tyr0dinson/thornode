@@ -237,6 +237,27 @@
         }
       ],
       "chain_contracts": [],
+      "intent_auction_bids": [],
+      "intent_auctions": [],
+      "intent_solves": [],
+      "intents": [
+        {
+          "create_height": "5",
+          "expiry_height": "10",
+          "high_target": "60000000",
+          "low_target": "60000000",
+          "min_fee_basis_points": "10",
+          "source": {
+            "amount": "5000000",
+            "asset": "BTC-BTC"
+          },
+          "source_address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
+          "status": 2,
+          "target_address": "tthor13wrmhnh2qe98rjse30pl7u6jxszjjwl4f6yycr",
+          "target_asset": "ETH-ETH",
+          "tx_id": "660E3F71D3DB4383A79C8C1C6EDEB3324D49174FC7F325B94A08464034D6B5A6"
+        }
+      ],
       "last_chain_heights": [
         {
           "chain": "BTC",

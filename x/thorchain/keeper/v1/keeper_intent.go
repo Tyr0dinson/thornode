@@ -162,6 +162,12 @@ func (k KVStore) CleanupStaleActiveIntents(ctx cosmos.Context) {
 	}
 }
 
+// GetIntentSolveIterator returns an iterator for all intent solves
+func (k KVStore) GetIntentSolveIterator(ctx cosmos.Context) cosmos.Iterator {
+	key := k.GetKey(prefixIntentSolve, "")
+	return k.getIterator(ctx, kvTypes.DbPrefix(key))
+}
+
 // -------------------- IntentSolve Methods --------------------
 
 func (k KVStore) setIntentSolve(ctx cosmos.Context, key []byte, record types.IntentSolve) {

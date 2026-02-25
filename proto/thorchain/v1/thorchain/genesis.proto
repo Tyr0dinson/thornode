@@ -28,6 +28,7 @@ import "types/type_rune_pool.proto";
 import "types/type_secured_asset.proto";
 import "types/type_tcy_claimer.proto";
 import "types/type_tcy_staker.proto";
+import "types/type_intent.proto";
 import "gogoproto/gogo.proto";
 
 message lastChainHeight {
@@ -120,5 +121,12 @@ message GenesisState {
   repeated types.TCYClaimer tcy_claimers = 42 [ (gogoproto.nullable) = false ];
   repeated types.TCYStaker tcy_stakers = 43 [ (gogoproto.nullable) = false ];
   repeated types.ReferenceMemo reference_memos = 44
+      [ (gogoproto.nullable) = false ];
+  repeated types.Intent intents = 45 [ (gogoproto.nullable) = false ];
+  repeated types.IntentSolve intent_solves = 46
+      [ (gogoproto.nullable) = false ];
+  repeated types.IntentAuction intent_auctions = 47
+      [ (gogoproto.nullable) = false ];
+  repeated types.IntentAuctionBid intent_auction_bids = 48
       [ (gogoproto.nullable) = false ];
 }

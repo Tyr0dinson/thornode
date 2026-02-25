@@ -113,6 +113,10 @@ message IntentAuction {
   string owner_address = 9
       [ (gogoproto.casttype) =
             "gitlab.com/thorchain/thornode/v3/common.Address" ];
+  string winning_bid_tx_id = 10 [
+    (gogoproto.casttype) = "gitlab.com/thorchain/thornode/v3/common.TxID",
+    (gogoproto.customname) = "WinningBidTxID"
+  ];
 }
 
 // IntentAuctionBid represents a bid on an intent auction

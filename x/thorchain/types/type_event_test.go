@@ -511,9 +511,10 @@ func (EventSuite) TestEventIntentComplete(c *C) {
 	solveTxID := GetRandomTxHash()
 	sourceSent := common.NewCoin(common.ETHAsset, cosmos.NewUint(1000))
 	targetReceived := common.NewCoin(common.BTCAsset, cosmos.NewUint(450))
-	fee := common.NewCoin(common.RuneAsset(), cosmos.NewUint(50))
+	protocolFee := common.NewCoin(common.RuneAsset(), cosmos.NewUint(50))
+	affiliateFee := common.NewCoin(common.RuneAsset(), cosmos.NewUint(10))
 
-	e := NewEventIntentComplete(intentTxID, solveTxID, sourceSent, targetReceived, fee)
+	e := NewEventIntentComplete(intentTxID, solveTxID, sourceSent, targetReceived, protocolFee, affiliateFee)
 
 	c.Check(e.Type(), Equals, IntentCompleteEventType)
 	c.Check(e.Type(), Equals, "intent_complete")
@@ -522,7 +523,8 @@ func (EventSuite) TestEventIntentComplete(c *C) {
 	c.Check(e.SolveTxID.Equals(solveTxID), Equals, true)
 	c.Check(e.SourceSent.Equals(sourceSent), Equals, true)
 	c.Check(e.TargetReceived.Equals(targetReceived), Equals, true)
-	c.Check(e.Fee.Equals(fee), Equals, true)
+	c.Check(e.ProtocolFee.Equals(protocolFee), Equals, true)
+	c.Check(e.AffiliateFee.Equals(affiliateFee), Equals, true)
 
 	events, err := e.Events()
 	c.Check(err, IsNil)
