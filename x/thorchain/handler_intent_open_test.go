@@ -586,6 +586,64 @@ func (HandlerIntentOpenSuite) TestIntentOpen_TradeAssetEscrowError(c *C) {
 	c.Check(w.keeper.IntentExists(w.ctx, tx.ID), Equals, false)
 }
 
+func (HandlerIntentOpenSuite) TestIntentOpen_RagnarokBlocked(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
+
+	// Enable intents feature
+	w.keeper.SetMimir(w.ctx, constants.IntentsEnabled.String(), 1)
+
+	// Set ragnarok in progress using the keeper method
+	w.keeper.SetRagnarokBlockHeight(w.ctx, 1)
+
+	mgr := NewDummyMgrWithKeeper(w.keeper)
+	handler := NewIntentOpenHandler(mgr)
+
+	tx := GetRandomTx()
+	tx.Coins = common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(100*common.One))}
+	msg := NewMsgIntentOpen(
+		tx,
+		common.BTCAsset,
+		GetRandomBTCAddress(),
+		cosmos.NewUint(15*common.One),
+		cosmos.NewUint(10*common.One),
+		common.NoAddress,
+		cosmos.ZeroUint(),
+		w.activeNodeAccount.NodeAddress,
+	)
+
+	_, err := handler.Run(w.ctx, msg)
+	c.Assert(err, NotNil)
+	c.Check(err.Error(), Matches, ".*cannot create intents during ragnarok.*")
+}
+
+func (HandlerIntentOpenSuite) TestIntentOpen_CombinedFeesTooHigh(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
+
+	// Enable intents feature with protocol fee that, combined with max affiliate fee, exceeds MaxBasisPts
+	w.keeper.SetMimir(w.ctx, constants.IntentsEnabled.String(), 1)
+	w.keeper.SetMimir(w.ctx, constants.IntentMinFeeBasisPoints.String(), 9500) // 95% protocol fee
+
+	mgr := NewDummyMgrWithKeeper(w.keeper)
+	handler := NewIntentOpenHandler(mgr)
+
+	tx := GetRandomTx()
+	tx.Coins = common.Coins{common.NewCoin(common.RuneAsset(), cosmos.NewUint(100*common.One))}
+	msg := NewMsgIntentOpen(
+		tx,
+		common.BTCAsset,
+		GetRandomBTCAddress(),
+		cosmos.NewUint(15*common.One),
+		cosmos.NewUint(10*common.One),
+		GetRandomTHORAddress(), // affiliate
+		cosmos.NewUint(500),    // 5% affiliate fee → combined 100%
+		w.activeNodeAccount.NodeAddress,
+	)
+
+	_, err := handler.Run(w.ctx, msg)
+	c.Assert(err, NotNil)
+	c.Check(err.Error(), Matches, ".*combined fee basis points.*")
+}
+
 func (HandlerIntentOpenSuite) TestIntentOpen_EmptyCoins(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
 

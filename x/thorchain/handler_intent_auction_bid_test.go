@@ -210,15 +210,19 @@ func (HandlerIntentAuctionBidSuite) TestIntentAuctionBid_OvertimeExtension(c *C)
 	}
 	w.keeper.SetIntent(w.ctx, intent)
 
-	// Create an auction that's in overtime window
-	auctionExpiry := currentHeight + 50 // Within 100 block overtime window
+	// Create an auction in overtime window. For overtime detection:
+	// - ExpiryHeight must be >= overtimeBlocks (100) for the underflow guard
+	// - currentHeight must be >= ExpiryHeight - overtimeBlocks (we're close to expiry)
+	// - ExpiryHeight must be > currentHeight (auction hasn't expired yet)
+	// Using currentHeight + 99 satisfies all conditions.
+	auctionExpiry := currentHeight + 99
 	auction := IntentAuction{
 		IntentTxID:      intentTx.ID,
 		AuctionAmount:   common.NewCoin(common.DOGEAsset, cosmos.NewUint(10*common.One)),
 		RemainingAmount: common.NewCoin(common.DOGEAsset, cosmos.NewUint(90*common.One)),
 		BidAsset:        common.DOGEAsset.GetChain().GetGasAsset(),
 		MinBid:          cosmos.NewUint(1000),
-		StartHeight:     currentHeight,
+		StartHeight:     currentHeight - 100,
 		ExpiryHeight:    auctionExpiry,
 		Status:          IntentAuctionStatus_AuctionActive,
 	}
@@ -227,17 +231,19 @@ func (HandlerIntentAuctionBidSuite) TestIntentAuctionBid_OvertimeExtension(c *C)
 	mgr := NewDummyMgrWithKeeper(w.keeper)
 	handler := NewIntentAuctionBidHandler(mgr)
 
-	// Place first bid (establishes baseline)
+	// Place first bid from bidder A (establishes baseline)
 	bidTx1 := GetRandomTx()
 	bidTx1.Coins = common.Coins{common.NewCoin(auction.BidAsset, cosmos.NewUint(5000))}
 	msg1 := NewMsgIntentAuctionBid(bidTx1, intentTx.ID, w.activeNodeAccount.NodeAddress)
 	_, err := handler.Run(w.ctx, msg1)
 	c.Assert(err, IsNil)
 
-	// Place higher bid that should trigger overtime
-	// In overtime, bid must be >= highest bid + 1x gas fee
-	// Gas fee is typically 37500, so we need at least 5000 + 37500 = 42500
+	// Place higher bid from a DIFFERENT bidder to trigger overtime extension.
+	// The handle method excludes the current bidder's own bid from previousHighest
+	// to prevent trivial self-top-up overtime extension.
+	// Gas fee for DOGE is 37500 (150 * 250), so bid must be >= 5000 + 37500 = 42500
 	bidTx2 := GetRandomTx()
+	bidTx2.FromAddress = GetRandomDOGEAddress()
 	bidTx2.Coins = common.Coins{common.NewCoin(auction.BidAsset, cosmos.NewUint(100000))} // High enough to exceed overtime minimum
 	msg2 := NewMsgIntentAuctionBid(bidTx2, intentTx.ID, w.activeNodeAccount.NodeAddress)
 	_, err = handler.Run(w.ctx, msg2)
@@ -588,8 +594,11 @@ func (HandlerIntentAuctionBidSuite) TestIntentAuctionBid_OvertimeBidRejection(c 
 	}
 	w.keeper.SetIntent(w.ctx, intent)
 
-	// Create an auction that's in overtime window (expiry within 100 blocks)
-	auctionExpiry := currentHeight + 50
+	// Create an auction in overtime window. Using currentHeight + 99 ensures:
+	// - ExpiryHeight >= overtimeBlocks (100) for the underflow guard
+	// - currentHeight >= ExpiryHeight - overtimeBlocks (in overtime window)
+	// - ExpiryHeight > currentHeight (not expired)
+	auctionExpiry := currentHeight + 99
 	auction := IntentAuction{
 		IntentTxID:      intentTx.ID,
 		AuctionAmount:   common.NewCoin(common.DOGEAsset, cosmos.NewUint(10*common.One)),
@@ -605,17 +614,19 @@ func (HandlerIntentAuctionBidSuite) TestIntentAuctionBid_OvertimeBidRejection(c 
 	mgr := NewDummyMgrWithKeeper(w.keeper)
 	handler := NewIntentAuctionBidHandler(mgr)
 
-	// Place first bid (establishes baseline of 5000)
+	// Place first bid from bidder A (establishes baseline of 5000)
 	bidTx1 := GetRandomTx()
 	bidTx1.Coins = common.Coins{common.NewCoin(auction.BidAsset, cosmos.NewUint(5000))}
 	msg1 := NewMsgIntentAuctionBid(bidTx1, intentTx.ID, w.activeNodeAccount.NodeAddress)
 	_, err := handler.Run(w.ctx, msg1)
 	c.Assert(err, IsNil)
 
-	// Try to place a bid that exceeds highest but is less than highest + gas fee
+	// Try to place a bid from a DIFFERENT bidder that exceeds highest but is
+	// less than highest + gas fee.
 	// Gas fee for DOGE is 37500 (150 * 250), so minimum overtime bid should be 5000 + 37500 = 42500
 	// A bid of 6000 exceeds 5000 but is less than 42500
 	bidTx2 := GetRandomTx()
+	bidTx2.FromAddress = GetRandomDOGEAddress()
 	bidTx2.Coins = common.Coins{common.NewCoin(auction.BidAsset, cosmos.NewUint(6000))}
 	msg2 := NewMsgIntentAuctionBid(bidTx2, intentTx.ID, w.activeNodeAccount.NodeAddress)
 	_, err = handler.Run(w.ctx, msg2)
@@ -683,6 +694,52 @@ func (HandlerIntentAuctionBidSuite) TestIntentAuctionBid_BoundaryConditions(c *C
 	c.Assert(err, IsNil, Commentf("Bid one unit above highest should succeed"))
 }
 
+func (HandlerIntentAuctionBidSuite) TestIntentAuctionBid_ZeroAmount(c *C) {
+	w := getHandlerTestWrapper(c, 1, true, true)
+
+	// Enable intents feature
+	w.keeper.SetMimir(w.ctx, constants.IntentsEnabled.String(), 1)
+
+	// Create an intent
+	intentTx := GetRandomTx()
+	intent := Intent{
+		TxID:          intentTx.ID,
+		SourceAddress: GetRandomTHORAddress(),
+		Source:        common.NewCoin(common.DOGEAsset, cosmos.NewUint(100*common.One)),
+		TargetAsset:   common.BTCAsset,
+		TargetAddress: GetRandomBTCAddress(),
+		HighTarget:    cosmos.NewUint(15 * common.One),
+		LowTarget:     cosmos.NewUint(10 * common.One),
+		ExpiryHeight:  w.ctx.BlockHeight() + 2000,
+		Status:        IntentAuctioning,
+	}
+	w.keeper.SetIntent(w.ctx, intent)
+
+	// Create an auction
+	auction := IntentAuction{
+		IntentTxID:      intentTx.ID,
+		AuctionAmount:   common.NewCoin(common.DOGEAsset, cosmos.NewUint(10*common.One)),
+		RemainingAmount: common.NewCoin(common.DOGEAsset, cosmos.NewUint(90*common.One)),
+		BidAsset:        common.DOGEAsset.GetChain().GetGasAsset(),
+		MinBid:          cosmos.NewUint(1000),
+		StartHeight:     w.ctx.BlockHeight(),
+		ExpiryHeight:    w.ctx.BlockHeight() + 1000,
+		Status:          IntentAuctionStatus_AuctionActive,
+	}
+	w.keeper.SetIntentAuction(w.ctx, auction)
+
+	mgr := NewDummyMgrWithKeeper(w.keeper)
+	handler := NewIntentAuctionBidHandler(mgr)
+
+	// Place a bid with zero amount
+	bidTx := GetRandomTx()
+	bidTx.Coins = common.Coins{common.NewCoin(auction.BidAsset, cosmos.ZeroUint())}
+	msg := NewMsgIntentAuctionBid(bidTx, intentTx.ID, w.activeNodeAccount.NodeAddress)
+	_, err := handler.Run(w.ctx, msg)
+	c.Assert(err, NotNil)
+	c.Check(err.Error(), Matches, ".*amount cannot be zero.*")
+}
+
 func (HandlerIntentAuctionBidSuite) TestIntentAuctionBid_NetworkFeeFailure(c *C) {
 	w := getHandlerTestWrapper(c, 1, true, true)
 
@@ -708,8 +765,8 @@ func (HandlerIntentAuctionBidSuite) TestIntentAuctionBid_NetworkFeeFailure(c *C)
 	}
 	w.keeper.SetIntent(w.ctx, intent)
 
-	// Create an auction in overtime window
-	auctionExpiry := currentHeight + 50
+	// Create an auction in overtime window (currentHeight + 99).
+	auctionExpiry := currentHeight + 99
 	auction := IntentAuction{
 		IntentTxID:      intentTx.ID,
 		AuctionAmount:   common.NewCoin(common.DOGEAsset, cosmos.NewUint(10*common.One)),
@@ -722,7 +779,7 @@ func (HandlerIntentAuctionBidSuite) TestIntentAuctionBid_NetworkFeeFailure(c *C)
 	}
 	w.keeper.SetIntentAuction(w.ctx, auction)
 
-	// Place first bid to establish a highest bid
+	// Place first bid from bidder A to establish a highest bid
 	mgr := NewDummyMgrWithKeeper(w.keeper)
 	handler := NewIntentAuctionBidHandler(mgr)
 	bidTx1 := GetRandomTx()
@@ -731,13 +788,14 @@ func (HandlerIntentAuctionBidSuite) TestIntentAuctionBid_NetworkFeeFailure(c *C)
 	_, err := handler.Run(w.ctx, msg1)
 	c.Assert(err, IsNil)
 
-	// Now try to place a second bid with network fee lookup failing
-	// This tests that calculateGasFee errors are properly propagated
+	// Now try to place a second bid from a different bidder with network fee
+	// lookup failing. This tests that calculateGasFee errors are properly propagated.
 	testKeeper := NewHandlerIntentAuctionBidTestHelper(w.keeper)
 	testKeeper.failToGetNetworkFee = true
 	handler2 := NewIntentAuctionBidHandler(NewDummyMgrWithKeeper(testKeeper))
 
 	bidTx2 := GetRandomTx()
+	bidTx2.FromAddress = GetRandomDOGEAddress()
 	bidTx2.Coins = common.Coins{common.NewCoin(auction.BidAsset, cosmos.NewUint(100000))}
 	msg2 := NewMsgIntentAuctionBid(bidTx2, intentTx.ID, w.activeNodeAccount.NodeAddress)
 	result, err := handler2.Run(w.ctx, msg2)

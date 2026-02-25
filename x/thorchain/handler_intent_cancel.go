@@ -189,9 +189,11 @@ func (h IntentCancelHandler) handle(ctx cosmos.Context, msg MsgIntentCancel) err
 		)
 	}
 
-	// Refund any pending solves for this intent
+	// Refund any pending solves for this intent.
+	// Return the error to trigger CacheContext rollback and retry next block,
+	// preventing solve records from being deleted without successful refunds.
 	if err := h.mgr.IntentMgr().RefundIntentSolves(ctx, intent); err != nil {
-		ctx.Logger().Error("fail to refund intent solves on cancel", "txid", intent.TxID, "error", err)
+		return fmt.Errorf("fail to refund intent solves on cancel: %w", err)
 	}
 
 	// Update intent status to cancelled

@@ -177,6 +177,8 @@ const (
 	IntentAuctionMinBidMultiplier
 	IntentAuctionOvertimeBlocks
 	IntentAuctionMaxOvertimeBlocks
+	IntentMaxSolvesPerIntent
+	IntentMaxEndBlockProcessing
 
 	// These are the implicitly-0 Constants undisplayed in the API endpoint (no explicit value set).
 	ArtificialRagnarokBlockHeight
