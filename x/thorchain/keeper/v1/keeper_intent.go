@@ -65,8 +65,21 @@ func (k KVStore) IntentExists(ctx cosmos.Context, txID common.TxID) bool {
 	return store.Has(k.GetKey(prefixIntent, txID.String()))
 }
 
-// RemoveIntent removes an intent from the KV store and updates active status index
+// RemoveIntent removes an intent and all associated child records (solves, auction, bids)
 func (k KVStore) RemoveIntent(ctx cosmos.Context, txID common.TxID) {
+	// Remove all associated solves
+	solves, err := k.GetIntentSolvesByIntentID(ctx, txID)
+	if err == nil {
+		for _, solve := range solves {
+			k.RemoveIntentSolve(ctx, solve.SolveTxID)
+		}
+	}
+
+	// Remove associated auction and its bids
+	if k.IntentAuctionExists(ctx, txID) {
+		k.RemoveIntentAuction(ctx, txID)
+	}
+
 	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 	store.Delete(k.GetKey(prefixIntent, txID.String()))
 
@@ -174,12 +187,32 @@ func (k KVStore) getIntentSolve(ctx cosmos.Context, key []byte, record *types.In
 	return true, nil
 }
 
-// SetIntentSolve saves an intent solve bid and updates indices
+// SetIntentSolve saves an intent solve bid and updates indices.
+// If the solve already exists and indexed fields (IntentTxID, MatchHeight) have changed,
+// old index entries are removed before writing new ones.
 func (k KVStore) SetIntentSolve(ctx cosmos.Context, solve types.IntentSolve) {
+	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+
+	// If updating an existing solve, clean up stale index entries
+	if k.IntentSolveExists(ctx, solve.SolveTxID) {
+		existing, err := k.GetIntentSolve(ctx, solve.SolveTxID)
+		if err == nil {
+			// Remove old intent index if IntentTxID changed
+			if !existing.IntentTxID.Equals(solve.IntentTxID) {
+				oldIntentKey := k.GetKey(prefixIntentSolveByIntent, existing.IntentTxID.String(), "/"+solve.SolveTxID.String())
+				store.Delete(oldIntentKey)
+			}
+			// Remove old match height index if MatchHeight changed
+			if existing.MatchHeight != solve.MatchHeight {
+				oldHeightStr := strconv.FormatInt(existing.MatchHeight, 10)
+				oldHeightKey := k.GetKey(prefixIntentSolveByMatchHeight, oldHeightStr, "/"+solve.SolveTxID.String())
+				store.Delete(oldHeightKey)
+			}
+		}
+	}
+
 	// Store the solve record
 	k.setIntentSolve(ctx, k.GetKey(prefixIntentSolve, solve.SolveTxID.String()), solve)
-
-	store := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
 
 	// Index by intent ID using prefix keys (O(1) add)
 	intentIndexKey := k.GetKey(prefixIntentSolveByIntent, solve.IntentTxID.String(), "/"+solve.SolveTxID.String())

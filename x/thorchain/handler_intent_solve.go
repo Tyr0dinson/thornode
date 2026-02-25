@@ -197,8 +197,11 @@ func (h IntentSolveHandler) handle(ctx cosmos.Context, msg MsgIntentSolve) error
 			delay := highMinusOffered.Mul(cosmos.NewUint(uint64(slideBlocks)))
 			delay = delay.Quo(highMinusLow)
 
-			// Guard against int64 overflow when converting delay
-			if delay.GT(cosmos.NewUint(uint64(math.MaxInt64))) {
+			// Guard against int64 overflow when converting delay.
+			// Both checks are needed: the first rejects delays that don't fit in int64,
+			// the second prevents currentHeight + delay from wrapping negative.
+			remainingBlocks := intent.ExpiryHeight - currentHeight
+			if delay.GT(cosmos.NewUint(uint64(math.MaxInt64))) || (remainingBlocks >= 0 && delay.GT(cosmos.NewUint(uint64(remainingBlocks)))) {
 				matchHeight = intent.ExpiryHeight
 			} else {
 				matchHeight = currentHeight + int64(delay.Uint64())
