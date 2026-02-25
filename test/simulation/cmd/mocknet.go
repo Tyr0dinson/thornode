@@ -43,7 +43,7 @@ var chainRPCs = map[common.Chain]string{
 	common.TRONChain:  "http://localhost:8090",
 	common.XRPChain:   "http://localhost:5005",
 	common.SOLChain:   "http://localhost:8899",
-	common.ADAChain: "localhost:3002",
+	common.ADAChain:   "localhost:3002",
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -288,7 +288,7 @@ func InitConfig(parallelism int, seed bool, rng *rand.Rand) *OpConfig {
 		case common.TRONChain:
 			chainSeedAmount = sdkmath.NewUint(100000 * common.One)
 		case common.ADAChain:
-			chainSeedAmount = sdkmath.NewUint(1000 * common.One)
+			chainSeedAmount = sdkmath.NewUint(1_000_000 * common.One)
 		default:
 			continue // all other chains currently unsupported
 		}

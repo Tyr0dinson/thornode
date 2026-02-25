@@ -55,7 +55,7 @@ var liteClientConstructors = map[common.Chain]LiteChainClientConstructor{
 	common.XRPChain:   xrp.NewConstructor(chainRPCs[common.XRPChain]),
 	common.NOBLEChain: pkgcosmos.NewConstructor(chainRPCs[common.NOBLEChain]),
 	common.SOLChain:   solana.NewConstructor(chainRPCs[common.SOLChain]),
-	common.ADAChain: ada.NewConstructor(chainRPCs[common.ADAChain]),
+	common.ADAChain:   ada.NewConstructor(chainRPCs[common.ADAChain]),
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -88,6 +88,7 @@ func main() {
 		{Name: "solvency", Default: true},
 		{Name: "ragnarok", Default: true},
 	}
+
 	if os.Getenv("STAGES") != "" {
 		for _, stage := range strings.Split(os.Getenv("STAGES"), ",") {
 			enabledStages[stage] = true
