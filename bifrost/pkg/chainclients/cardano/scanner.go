@@ -248,6 +248,7 @@ func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
 		err = s.db.SetObservedTxs(uint64(fetchHeight), txIds)
 		if err != nil {
 			s.logger.Err(err).Msg("fail to store observed txs")
+			return types.TxIn{}, err
 		}
 	}
 
