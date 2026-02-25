@@ -148,20 +148,20 @@ func (im *IntentMgr) refundLosingSolves(ctx cosmos.Context, intent types.Intent,
 		}
 
 		ok, err := im.mgr.TxOutStore().TryAddTxOutItem(ctx, im.mgr, toi, cosmos.ZeroUint())
-		if err != nil {
+		switch {
+		case err != nil:
 			ctx.Logger().Error("fail to refund losing solve", "solve_txid", solve.SolveTxID, "error", err)
-			continue
-		}
-		if !ok {
+			unrefundableCoinCleanup(ctx, im.mgr, toi, "failed_refund")
+		case !ok:
 			ctx.Logger().Error("fail to schedule losing solve refund", "solve_txid", solve.SolveTxID)
-			continue
+			unrefundableCoinCleanup(ctx, im.mgr, toi, "failed_refund")
+		default:
+			ctx.Logger().Info("refunded losing intent solve",
+				"intent_txid", intent.TxID,
+				"solve_txid", solve.SolveTxID,
+				"amount", solve.TargetCoin.Amount,
+			)
 		}
-
-		ctx.Logger().Info("refunded losing intent solve",
-			"intent_txid", intent.TxID,
-			"solve_txid", solve.SolveTxID,
-			"amount", solve.TargetCoin.Amount,
-		)
 		// Clean up the solve record
 		im.mgr.Keeper().RemoveIntentSolve(ctx, solve.SolveTxID)
 	}
@@ -973,21 +973,20 @@ func (im *IntentMgr) completeAuction(ctx cosmos.Context, auction IntentAuction) 
 		}
 
 		ok, refundErr := im.mgr.TxOutStore().TryAddTxOutItem(ctx, im.mgr, toi, cosmos.ZeroUint())
-		if refundErr != nil {
+		switch {
+		case refundErr != nil:
 			ctx.Logger().Error("fail to refund losing bid", "bid_txid", bids[i].BidTxID, "error", refundErr)
-			continue
-		}
-		if !ok {
+			unrefundableCoinCleanup(ctx, im.mgr, toi, "failed_refund")
+		case !ok:
 			ctx.Logger().Error("fail to schedule losing bid refund", "bid_txid", bids[i].BidTxID)
-			continue
+			unrefundableCoinCleanup(ctx, im.mgr, toi, "failed_refund")
+		default:
+			ctx.Logger().Info("refunded losing auction bid",
+				"intent_txid", auction.IntentTxID,
+				"bid_txid", bids[i].BidTxID,
+				"amount", bids[i].BidAmount.Amount,
+			)
 		}
-
-		ctx.Logger().Info("refunded losing auction bid",
-			"intent_txid", auction.IntentTxID,
-			"bid_txid", bids[i].BidTxID,
-			"amount", bids[i].BidAmount.Amount,
-		)
-
 		// Clean up the losing bid record
 		im.mgr.Keeper().RemoveIntentAuctionBid(ctx, bids[i].BidTxID)
 	}
