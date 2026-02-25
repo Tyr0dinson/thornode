@@ -2381,10 +2381,24 @@ func (s *NetworkManagerTestSuite) TestCalculateNetworkSolvencyWithIntents(c *C) 
 	}
 
 	// Test 5: Auctioning intent should still be counted
+	// When an intent transitions to auctioning, an auction record is created.
+	// The solvency code tracks auctioning intents via GetActiveAuctions, not GetActiveIntents.
 	intent.Status = IntentAuctioning
 	mgr.Keeper().SetIntent(ctx, intent)
 
-	// ETH: 150 vault - 100 pool - 30 intent = 20 over-solvent
+	// Create the corresponding auction (AuctionAmount + RemainingAmount = intent source = 30 ETH)
+	test5Auction := IntentAuction{
+		IntentTxID:      intent.TxID,
+		AuctionAmount:   common.NewCoin(common.ETHAsset, cosmos.NewUint(3*common.One)),
+		RemainingAmount: common.NewCoin(common.ETHAsset, cosmos.NewUint(27*common.One)),
+		BidAsset:        common.ETHAsset,
+		StartHeight:     ctx.BlockHeight(),
+		ExpiryHeight:    ctx.BlockHeight() + 100,
+		Status:          IntentAuctionStatus_AuctionActive,
+	}
+	mgr.Keeper().SetIntentAuction(ctx, test5Auction)
+
+	// ETH: 150 vault - 100 pool - 30 auction (3+27) = 20 over-solvent
 	solvency, err = nmgr.calculateNetworkSolvency(ctx, mgr)
 	c.Assert(err, IsNil)
 	for _, s := range solvency {
@@ -2430,8 +2444,10 @@ func (s *NetworkManagerTestSuite) TestCalculateNetworkSolvencyWithIntents(c *C) 
 	}
 	mgr.Keeper().SetIntentAuctionBid(ctx, bid)
 
-	// ETH: 150 vault - 100 pool - 30 first intent - 10 auction intent = 10 over-solvent
-	// BTC: 150 vault - 100 pool - 20 solve - 5 auction bid = 25 over-solvent
+	// ETH: 150 vault - 100 pool - 30 first auction (3+27) - 10 second auction = 10 over-solvent
+	// BTC: 150 vault - 100 pool - 5 auction bid = 45 over-solvent
+	// Note: The solve from Test 3 is not counted because its intent is now auctioning (not active).
+	// In production, solves are refunded when an intent transitions to auctioning.
 	solvency, err = nmgr.calculateNetworkSolvency(ctx, mgr)
 	c.Assert(err, IsNil)
 	for _, s := range solvency {
@@ -2439,8 +2455,8 @@ func (s *NetworkManagerTestSuite) TestCalculateNetworkSolvencyWithIntents(c *C) 
 			expectedETH := math.NewInt(10 * common.One)
 			c.Assert(s.Amount.Equal(expectedETH), Equals, true, Commentf("ETH should be 10 over-solvent with auction intent, got %s", s.Amount))
 		} else if s.Asset.Equals(common.BTCAsset) {
-			expectedBTC := math.NewInt(25 * common.One)
-			c.Assert(s.Amount.Equal(expectedBTC), Equals, true, Commentf("BTC should be 25 over-solvent with auction bid, got %s", s.Amount))
+			expectedBTC := math.NewInt(45 * common.One)
+			c.Assert(s.Amount.Equal(expectedBTC), Equals, true, Commentf("BTC should be 45 over-solvent with auction bid, got %s", s.Amount))
 		}
 	}
 }
