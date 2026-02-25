@@ -36,7 +36,7 @@ type Client struct {
 	networkError        chan error
 	config              config.BifrostChainConfiguration
 	n2c                 ClientWrapper
-	ttlSlots            uint64 // TODO: Not used yet
+	ttl                 uint64
 	networkFee          uint64
 	thorchainBridge     thorclient.ThorchainBridge
 	signerCacheManager  *signercache.CacheManager
@@ -66,34 +66,35 @@ func NewClient(
 		config:          cfg,
 	}
 
-	_, err := tss.NewKeySign(server, thorchainBridge)
+	var err error
+
+	c.tssKeyManager, err = tss.NewKeySign(server, thorchainBridge)
 	if err != nil {
-		return nil, fmt.Errorf("fail to create tss signer: %w", err)
+		return nil, fmt.Errorf("failed to create tss signer: %w", err)
 	}
+
 	privKey, err := thorKeys.GetPrivateKeyEDDSA()
 	if err != nil {
 		return nil, fmt.Errorf("fail to get local testing key: %w", err)
 	}
+
 	c.localKey = privKey.Key
 
 	address, err := AddressFromBytes(privKey.PubKey().Bytes())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create address: %w", err)
 	}
+
 	c.localAddress = address.String()
 
 	var path string // if not set later, will in memory db
 	if len(cfg.BlockScanner.DBPath) > 0 {
 		path = fmt.Sprintf("%s/%s", cfg.BlockScanner.DBPath, cfg.BlockScanner.ChainID)
 	}
+
 	c.storage, err = blockscanner.NewBlockScannerStorageCardano(path, cfg.ScannerLevelDB)
 	if err != nil {
 		return nil, fmt.Errorf("fail to create scan db: %w", err)
-	}
-
-	c.tssKeyManager, err = tss.NewKeySign(server, thorchainBridge)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create tss signer: %w", err)
 	}
 
 	c.signerCacheManager, err = signercache.NewSignerCacheManager(
@@ -117,16 +118,21 @@ func NewClient(
 		return nil, fmt.Errorf("fail to get genesis config: %w", err)
 	}
 
-	num, ok := genesisConfig.ActiveSlotsCoeff[0].(uint64)
-	if !ok {
-		return nil, fmt.Errorf("fail to get active slot coeff")
-	}
-	den, ok := genesisConfig.ActiveSlotsCoeff[1].(uint64)
-	if !ok {
-		return nil, fmt.Errorf("fail to get active slot coeff")
+	coefficient := uint64(20)
+	if len(genesisConfig.ActiveSlotsCoeff) == 2 {
+		num, ok1 := genesisConfig.ActiveSlotsCoeff[0].(uint64)
+		den, ok2 := genesisConfig.ActiveSlotsCoeff[1].(uint64)
+
+		if !ok1 || !ok2 || num == 0 {
+			c.logger.Warn().
+				Uint64("default", coefficient).
+				Msg("failed to calculate slot coefficient, using default")
+		} else {
+			coefficient = (num + den - 1) / num
+		}
 	}
 
-	c.ttlSlots = den / num * transactionTimeout
+	c.ttl = coefficient * transactionTimeout
 
 	c.logger.Info().Msgf("creating blockscanner")
 
@@ -177,6 +183,7 @@ func (c *Client) Start(
 func (c *Client) Stop() {
 	c.tssKeyManager.Stop()
 	c.blockScanner.Stop()
+	c.n2c.Close()
 	err := c.chainScanner.Stop()
 	if err != nil {
 		c.logger.Err(err).Msg("failed to stop cardano scanner")
@@ -270,7 +277,7 @@ func (c *Client) getUtxosByAddress(
 	if height != nil {
 		_, slot, hash, err = c.storage.GetBlockId(height.Uint64())
 		if err != nil {
-			c.logger.Warn().Err(err).
+			c.logger.Err(err).
 				Uint64("height", height.Uint64()).
 				Msg("failed to get block id for height, falling back to tip")
 			return nil, err
@@ -289,7 +296,7 @@ func (c *Client) getUtxosByAddress(
 
 	result, err := c.n2c.GetUTxOByAddress([]ledger.Address{addr}, &point)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get UTxO by address")
+		return nil, fmt.Errorf("failed to get UTxO by address: %w", err)
 	}
 
 	var utxos []Utxo
@@ -479,7 +486,7 @@ func (c *Client) SignTx(txOutItem types.TxOutItem, _ int64) ([]byte, []byte, *ty
 
 	_, slot, _, _ := c.storage.GetLastBlockId()
 
-	tx.Body.Ttl = slot + c.ttlSlots
+	tx.Body.Ttl = slot + c.ttl
 
 	encoded, err := cbor.Encode(tx.Body)
 	if err != nil {
@@ -508,7 +515,7 @@ func (c *Client) SignTx(txOutItem types.TxOutItem, _ int64) ([]byte, []byte, *ty
 	// verify
 	ok := ed25519.Verify(pubKey.Bytes(), hash[:], signature)
 	if !ok {
-		return nil, nil, nil, fmt.Errorf("failed to verify signature: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to verify signature")
 	}
 
 	tx.WitnessSet.VkeyWitnesses = cbor.NewSetType(

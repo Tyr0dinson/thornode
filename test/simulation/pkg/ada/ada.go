@@ -169,6 +169,15 @@ func (c *Client) SignTx(simTx simtypes.SimTx) ([]byte, error) {
 		return nil, err
 	}
 
+	var utxos []cardano.Utxo
+	for id, output := range result.Results {
+		utxos = append(utxos, cardano.Utxo{
+			Hash:   id.Hash.String(),
+			Index:  id.Idx,
+			Amount: output.Amount().Uint64(),
+		})
+	}
+
 	minFeeA := uint64(0)
 	minFeeB := uint64(500_000)
 
@@ -179,7 +188,7 @@ func (c *Client) SignTx(simTx simtypes.SimTx) ([]byte, error) {
 		minFeeA,
 		minFeeB,
 		simTx.Memo,
-		result.Results,
+		utxos,
 	)
 
 	if err != nil {

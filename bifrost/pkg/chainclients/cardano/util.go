@@ -109,7 +109,13 @@ func CreateConwayTx(
 	utxos []Utxo,
 ) (*conway.ConwayTransaction, error) {
 	sort.Slice(utxos, func(i, j int) bool {
-		return utxos[i].Amount < utxos[j].Amount
+		if utxos[i].Amount != utxos[j].Amount {
+			return utxos[i].Amount < utxos[j].Amount
+		}
+		if utxos[i].Hash != utxos[j].Hash {
+			return utxos[i].Hash < utxos[j].Hash
+		}
+		return utxos[i].Index < utxos[j].Index
 	})
 
 	var inputs []shelley.ShelleyTransactionInput
@@ -153,8 +159,8 @@ func CreateConwayTx(
 	tx := &conway.ConwayTransaction{}
 	tx.Body.TxInputs = conway.NewConwayTransactionInputSet(inputs)
 	tx.Body.TxOutputs = outputs
-	tx.Body.TxFee = 1_000_000 // Will be replaced later
-	tx.Body.Ttl = 50_000_000  // TODO: find reasonable value
+	tx.Body.TxFee = 1_000_000 // replaced after determining tx size
+	tx.Body.Ttl = 50_000_000  // simtest default, replaced in client
 	tx.TxIsValid = true
 
 	if memo != "" {
@@ -201,7 +207,8 @@ func CreateConwayTx(
 }
 
 func getUtxoKey(hash []byte, index uint32) []byte {
-	idx := make([]byte, 4)
-	binary.BigEndian.PutUint32(idx, index)
-	return append(hash, idx...)
+	key := make([]byte, len(hash)+4)
+	copy(key, hash)
+	binary.BigEndian.PutUint32(key[len(hash):], index)
+	return key
 }

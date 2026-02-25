@@ -23,6 +23,7 @@ import (
 type wrapper struct {
 	conn   *ouroboros.Connection
 	error  chan error
+	done   chan struct{}
 	logger zerolog.Logger
 }
 
@@ -34,14 +35,21 @@ func newWrapper(
 ) (*wrapper, error) {
 	c := &wrapper{
 		error:  make(chan error),
+		done:   make(chan struct{}),
 		logger: logger,
 	}
 
 	go func() {
 		for {
-			err := <-c.error
-			c.logger.Err(err).Msg("ouroboros network error")
-			time.Sleep(time.Millisecond * 500)
+			select {
+			case err, ok := <-c.error:
+				if !ok {
+					return
+				}
+				c.logger.Err(err).Msg("ouroboros network error")
+			case <-c.done:
+				return
+			}
 		}
 	}()
 
@@ -91,6 +99,14 @@ func (c *wrapper) Dial(address string) error {
 	return c.conn.Dial("tcp", address)
 }
 
+func (c *wrapper) Close() {
+	close(c.done)
+	err := c.conn.Close()
+	if err != nil {
+		c.logger.Error().Err(err).Msg("failed to close ouroboros connection")
+	}
+}
+
 //  node
 // ----------------------------------------------------------------------------
 
@@ -122,6 +138,7 @@ type ClientWrapper interface {
 	GetGenesisConfig() (*localstatequery.GenesisConfigResult, error)
 	GetUTxOByAddress([]ledger.Address, *pcommon.Point) (*localstatequery.UTxOsResult, error)
 	SubmitTx(uint16, []byte) error
+	Close()
 }
 
 type clientWrapper struct {

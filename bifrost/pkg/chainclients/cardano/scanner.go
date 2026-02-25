@@ -14,7 +14,6 @@ import (
 	pcommon "github.com/blinklabs-io/gouroboros/protocol/common"
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
-	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/utxo"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
@@ -110,7 +109,12 @@ func (s *Scanner) Start() error {
 	for {
 		time.Sleep(1 * time.Second)
 
-		height, _, _, _ := s.db.GetLastBlockId()
+		var height uint64
+		height, _, _, err = s.db.GetLastBlockId()
+		if err != nil {
+			s.logger.Err(err).Msg("failed to get last block id")
+		}
+
 		if height > 0 {
 			break
 		}
@@ -124,6 +128,8 @@ func (s *Scanner) Start() error {
 }
 
 func (s *Scanner) Stop() error {
+	s.n2c.Close()
+	s.n2n.Close()
 	return s.n2n.conn.ChainSync().Client.Stop()
 }
 
@@ -171,41 +177,42 @@ func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
 			continue
 		}
 
-		// try to get sender from witness
-		// if we make certain assumptions about tx origins we can skip n2c protocols and utxo queries
-		if len(tx.Witnesses().Vkey()) != 1 {
-			continue
-		}
-
 		fromAddress, err := AddressFromBytes(tx.Witnesses().Vkey()[0].Vkey)
 		if err != nil {
 			s.logger.Err(err).Msg("fail to get sender address")
 			continue
 		}
 
-		// expectation is one output address per filtered tx
-		// see: https://gitlab.com/thorchain/thornode/-/blob/develop/bifrost/pkg/chainclients/utxo/client_internal.go#L724
-		// which collapses multiple VOUTs into a single address based on filter criteria
-		if len(tx.Outputs()) == 0 {
-			continue
-		}
-		output := tx.Outputs()[0]
+		isFromAsgard := s.isAsgardAddress(fromAddress)
 
-		toAddress := output.Address()
+		var toAddress ledger.Address
+		var amount uint64
 
-		// skip txs not related to us
-		if !s.isAsgardAddress(fromAddress) && !s.isAsgardAddress(toAddress) {
-			continue
-		}
+		for _, output := range tx.Outputs() {
+			toAddress = output.Address()
 
-		// skip txs that are sent to the sender, i.e. for utxo change
-		if fromAddress.String() == toAddress.String() {
-			continue
+			// skip txs that are sent to the sender, i.e. for utxo change
+			if fromAddress.String() == toAddress.String() {
+				continue
+			}
+
+			// skip txs that are unrelated to THORChain
+			if !isFromAsgard && !s.isAsgardAddress(toAddress) {
+				continue
+			}
+
+			// only tx witch exactly one VKey are supported
+			if len(tx.Witnesses().Vkey()) != 1 {
+				s.logger.Warn().Msg("tx with multiple witnesses are not supported")
+				continue
+			}
+
+			amount = output.Amount().Uint64()
+			break
 		}
 
 		memo := ExtractMemo(tx.Metadata(), 0)
 
-		amount := output.Amount().Uint64() * 100
 		coins := common.Coins{{
 			Asset:    common.ADAAsset,
 			Amount:   sdkmath.NewUint(amount),
@@ -362,14 +369,19 @@ func (s *Scanner) getAsgardAddresses() ([]common.Address, error) {
 	if time.Since(s.lastAsgardUpdate) < constants.ThorchainBlockTime && s.asgardAddresses != nil {
 		return s.asgardAddresses, nil
 	}
-	newAddresses, err := utxo.GetAsgardAddress(s.config.ChainID, s.bridge)
+
+	addresses, err := s.bridge.GetAsgardAddresses(s.config.ChainID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get asgards: %w", err)
+		return nil, err
 	}
-	if len(newAddresses) > 0 { // ensure we don't overwrite with empty list
-		s.asgardAddresses = newAddresses
+
+	// ensure we don't overwrite with empty list
+	if len(addresses) > 0 {
+		s.asgardAddresses = addresses
 	}
+
 	s.lastAsgardUpdate = time.Now()
+
 	return s.asgardAddresses, nil
 }
 

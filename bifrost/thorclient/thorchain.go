@@ -81,6 +81,7 @@ type ThorchainBridge interface {
 	FetchNodeStatus() (stypes.NodeStatus, error)
 	FetchActiveNodes() ([]common.PubKey, error)
 	GetAsgards() (stypes.Vaults, error)
+	GetAsgardAddresses(chain common.Chain) ([]common.Address, error)
 	GetVault(pubkey string) (stypes.Vault, error)
 	GetConfig() config.BifrostClientConfiguration
 	GetConstants() (map[string]int64, error)
@@ -949,4 +950,33 @@ func (b *thorchainBridge) GetReferenceMemoByTxHash(hash string) (string, error) 
 		return "", fmt.Errorf("fail to unmarshal reference memo from json: %w", err)
 	}
 	return r.Memo, nil
+}
+
+func (b *thorchainBridge) GetAsgardAddresses(
+	chain common.Chain,
+) ([]common.Address, error) {
+	vaults, err := b.GetAsgardPubKeys()
+	if err != nil {
+		return nil, fmt.Errorf("fail to get asgards : %w", err)
+	}
+
+	algo := chain.GetSigningAlgo()
+
+	var addresses []common.Address
+
+	for _, v := range vaults {
+		// we only care about chain specific algo
+		if v.Algo != algo {
+			continue
+		}
+
+		var address common.Address
+		address, err = v.PubKey.GetAddress(chain)
+		if err != nil {
+			continue
+		}
+		addresses = append(addresses, address)
+	}
+
+	return addresses, nil
 }
