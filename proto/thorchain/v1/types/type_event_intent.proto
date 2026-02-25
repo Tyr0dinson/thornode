@@ -32,6 +32,10 @@ message EventIntentOpen {
   ];
   int64 expiry_height = 8;
   int64 min_fee_basis_points = 9;
+  string affiliate_address = 10
+      [ (gogoproto.casttype) =
+            "gitlab.com/thorchain/thornode/v3/common.Address" ];
+  int64 affiliate_basis_points = 11;
 }
 
 message EventIntentCancel {
