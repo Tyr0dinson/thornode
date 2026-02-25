@@ -67,6 +67,16 @@ func (h IntentOpenHandler) validate(ctx cosmos.Context, msg MsgIntentOpen) error
 		return se.ErrInvalidRequest.Wrap("no coins in transaction")
 	}
 
+	// Reject amounts below the chain's dust threshold to prevent spam
+	sourceCoin := msg.Tx.Coins[0]
+	dustThreshold := sourceCoin.Asset.GetLayer1Asset().Chain.DustThreshold()
+	if !dustThreshold.IsZero() && sourceCoin.Amount.LTE(dustThreshold) {
+		return se.ErrInvalidRequest.Wrapf(
+			"source amount %s is below dust threshold %s for %s",
+			sourceCoin.Amount, dustThreshold, sourceCoin.Asset.GetLayer1Asset().Chain,
+		)
+	}
+
 	sourceAsset := msg.Tx.Coins[0].Asset
 	targetAsset := msg.TargetAsset
 
