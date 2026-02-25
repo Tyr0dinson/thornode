@@ -128,9 +128,10 @@ func (s *Scanner) Start() error {
 }
 
 func (s *Scanner) Stop() error {
+	err := s.n2n.conn.ChainSync().Client.Stop()
 	s.n2c.Close()
 	s.n2n.Close()
-	return s.n2n.conn.ChainSync().Client.Stop()
+	return err
 }
 
 // GetHeight returns the current height of the chain.
@@ -177,6 +178,12 @@ func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
 			continue
 		}
 
+		// only tx witch exactly one VKey are supported
+		if len(tx.Witnesses().Vkey()) != 1 {
+			s.logger.Warn().Msg("tx with multiple witnesses are not supported")
+			continue
+		}
+
 		fromAddress, err := AddressFromBytes(tx.Witnesses().Vkey()[0].Vkey)
 		if err != nil {
 			s.logger.Err(err).Msg("fail to get sender address")
@@ -196,33 +203,28 @@ func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
 				continue
 			}
 
-			// skip txs that are unrelated to THORChain
-			if !isFromAsgard && !s.isAsgardAddress(toAddress) {
-				continue
+			if isFromAsgard || s.isAsgardAddress(toAddress) {
+				amount = output.Amount().Uint64()
+				break
 			}
+		}
 
-			// only tx witch exactly one VKey are supported
-			if len(tx.Witnesses().Vkey()) != 1 {
-				s.logger.Warn().Msg("tx with multiple witnesses are not supported")
-				continue
-			}
-
-			amount = output.Amount().Uint64()
-			break
+		if amount == 0 {
+			continue
 		}
 
 		memo := ExtractMemo(tx.Metadata(), 0)
 
 		coins := common.Coins{{
 			Asset:    common.ADAAsset,
-			Amount:   sdkmath.NewUint(amount),
+			Amount:   sdkmath.NewUint(amount * 100), // 1e6 => 1e8
 			Decimals: 6,
 		}}
 
-		fee := tx.Fee().Uint64() * 100
+		fee := tx.Fee().Uint64()
 		gas := common.Gas{{
 			Asset:    common.ADAAsset,
-			Amount:   sdkmath.NewUint(fee),
+			Amount:   sdkmath.NewUint(fee * 100), // 1e6 => 1e8
 			Decimals: 6,
 		}}
 

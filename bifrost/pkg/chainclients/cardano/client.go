@@ -37,7 +37,6 @@ type Client struct {
 	config              config.BifrostChainConfiguration
 	n2c                 ClientWrapper
 	ttl                 uint64
-	networkFee          uint64
 	thorchainBridge     thorclient.ThorchainBridge
 	signerCacheManager  *signercache.CacheManager
 	storage             *blockscanner.BlockScannerStorageCardano
@@ -604,7 +603,7 @@ func (c *Client) ReportSolvency(height int64) error {
 	if err != nil {
 		return fmt.Errorf("fail to get asgard vaults: %w", err)
 	}
-	_, fee := c.GetNetworkFee()
+	_, fee := c.chainScanner.GetNetworkFee()
 	gasFee := sdkmath.NewUint(fee)
 	reportMsgs := make([]types.Solvency, 0, len(asgardVaults))
 	solventMsgs := make([]types.Solvency, 0, len(asgardVaults))
@@ -649,8 +648,4 @@ func (c *Client) ReportSolvency(height int64) error {
 	}
 	return nil
 
-}
-
-func (c *Client) GetNetworkFee() (transactionSize, transactionFeeRate uint64) {
-	return 1, c.networkFee
 }
