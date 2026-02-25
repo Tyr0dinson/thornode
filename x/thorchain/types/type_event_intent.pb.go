@@ -4,15 +4,16 @@
 package types
 
 import (
-	cosmossdk_io_math "cosmossdk.io/math"
 	fmt "fmt"
+	io "io"
+	math "math"
+	math_bits "math/bits"
+
+	cosmossdk_io_math "cosmossdk.io/math"
 	_ "github.com/cosmos/gogoproto/gogoproto"
 	proto "github.com/cosmos/gogoproto/proto"
 	common "gitlab.com/thorchain/thornode/v3/common"
 	gitlab_com_thorchain_thornode_v3_common "gitlab.com/thorchain/thornode/v3/common"
-	io "io"
-	math "math"
-	math_bits "math/bits"
 )
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -27,15 +28,17 @@ var _ = math.Inf
 const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 
 type EventIntentOpen struct {
-	TxID              gitlab_com_thorchain_thornode_v3_common.TxID    `protobuf:"bytes,1,opt,name=tx_id,json=txId,proto3,casttype=gitlab.com/thorchain/thornode/v3/common.TxID" json:"tx_id,omitempty"`
-	Source            common.Coin                                     `protobuf:"bytes,2,opt,name=source,proto3" json:"source"`
-	SourceAddress     gitlab_com_thorchain_thornode_v3_common.Address `protobuf:"bytes,3,opt,name=source_address,json=sourceAddress,proto3,casttype=gitlab.com/thorchain/thornode/v3/common.Address" json:"source_address,omitempty"`
-	TargetAsset       gitlab_com_thorchain_thornode_v3_common.Asset   `protobuf:"bytes,4,opt,name=target_asset,json=targetAsset,proto3,customtype=gitlab.com/thorchain/thornode/v3/common.Asset" json:"target_asset"`
-	TargetAddress     gitlab_com_thorchain_thornode_v3_common.Address `protobuf:"bytes,5,opt,name=target_address,json=targetAddress,proto3,casttype=gitlab.com/thorchain/thornode/v3/common.Address" json:"target_address,omitempty"`
-	HighTarget        cosmossdk_io_math.Uint                          `protobuf:"bytes,6,opt,name=high_target,json=highTarget,proto3,customtype=cosmossdk.io/math.Uint" json:"high_target"`
-	LowTarget         cosmossdk_io_math.Uint                          `protobuf:"bytes,7,opt,name=low_target,json=lowTarget,proto3,customtype=cosmossdk.io/math.Uint" json:"low_target"`
-	ExpiryHeight      int64                                           `protobuf:"varint,8,opt,name=expiry_height,json=expiryHeight,proto3" json:"expiry_height,omitempty"`
-	MinFeeBasisPoints int64                                           `protobuf:"varint,9,opt,name=min_fee_basis_points,json=minFeeBasisPoints,proto3" json:"min_fee_basis_points,omitempty"`
+	TxID                 gitlab_com_thorchain_thornode_v3_common.TxID    `protobuf:"bytes,1,opt,name=tx_id,json=txId,proto3,casttype=gitlab.com/thorchain/thornode/v3/common.TxID" json:"tx_id,omitempty"`
+	Source               common.Coin                                     `protobuf:"bytes,2,opt,name=source,proto3" json:"source"`
+	SourceAddress        gitlab_com_thorchain_thornode_v3_common.Address `protobuf:"bytes,3,opt,name=source_address,json=sourceAddress,proto3,casttype=gitlab.com/thorchain/thornode/v3/common.Address" json:"source_address,omitempty"`
+	TargetAsset          gitlab_com_thorchain_thornode_v3_common.Asset   `protobuf:"bytes,4,opt,name=target_asset,json=targetAsset,proto3,customtype=gitlab.com/thorchain/thornode/v3/common.Asset" json:"target_asset"`
+	TargetAddress        gitlab_com_thorchain_thornode_v3_common.Address `protobuf:"bytes,5,opt,name=target_address,json=targetAddress,proto3,casttype=gitlab.com/thorchain/thornode/v3/common.Address" json:"target_address,omitempty"`
+	HighTarget           cosmossdk_io_math.Uint                          `protobuf:"bytes,6,opt,name=high_target,json=highTarget,proto3,customtype=cosmossdk.io/math.Uint" json:"high_target"`
+	LowTarget            cosmossdk_io_math.Uint                          `protobuf:"bytes,7,opt,name=low_target,json=lowTarget,proto3,customtype=cosmossdk.io/math.Uint" json:"low_target"`
+	ExpiryHeight         int64                                           `protobuf:"varint,8,opt,name=expiry_height,json=expiryHeight,proto3" json:"expiry_height,omitempty"`
+	MinFeeBasisPoints    int64                                           `protobuf:"varint,9,opt,name=min_fee_basis_points,json=minFeeBasisPoints,proto3" json:"min_fee_basis_points,omitempty"`
+	AffiliateAddress     gitlab_com_thorchain_thornode_v3_common.Address `protobuf:"bytes,10,opt,name=affiliate_address,json=affiliateAddress,proto3,casttype=gitlab.com/thorchain/thornode/v3/common.Address" json:"affiliate_address,omitempty"`
+	AffiliateBasisPoints int64                                           `protobuf:"varint,11,opt,name=affiliate_basis_points,json=affiliateBasisPoints,proto3" json:"affiliate_basis_points,omitempty"`
 }
 
 func (m *EventIntentOpen) Reset()         { *m = EventIntentOpen{} }
@@ -109,6 +112,20 @@ func (m *EventIntentOpen) GetExpiryHeight() int64 {
 func (m *EventIntentOpen) GetMinFeeBasisPoints() int64 {
 	if m != nil {
 		return m.MinFeeBasisPoints
+	}
+	return 0
+}
+
+func (m *EventIntentOpen) GetAffiliateAddress() gitlab_com_thorchain_thornode_v3_common.Address {
+	if m != nil {
+		return m.AffiliateAddress
+	}
+	return ""
+}
+
+func (m *EventIntentOpen) GetAffiliateBasisPoints() int64 {
+	if m != nil {
+		return m.AffiliateBasisPoints
 	}
 	return 0
 }
@@ -769,6 +786,18 @@ func (m *EventIntentOpen) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if m.AffiliateBasisPoints != 0 {
+		i = encodeVarintTypeEventIntent(dAtA, i, uint64(m.AffiliateBasisPoints))
+		i--
+		dAtA[i] = 0x58
+	}
+	if len(m.AffiliateAddress) > 0 {
+		i -= len(m.AffiliateAddress)
+		copy(dAtA[i:], m.AffiliateAddress)
+		i = encodeVarintTypeEventIntent(dAtA, i, uint64(len(m.AffiliateAddress)))
+		i--
+		dAtA[i] = 0x52
+	}
 	if m.MinFeeBasisPoints != 0 {
 		i = encodeVarintTypeEventIntent(dAtA, i, uint64(m.MinFeeBasisPoints))
 		i--
@@ -1379,6 +1408,13 @@ func (m *EventIntentOpen) Size() (n int) {
 	if m.MinFeeBasisPoints != 0 {
 		n += 1 + sovTypeEventIntent(uint64(m.MinFeeBasisPoints))
 	}
+	l = len(m.AffiliateAddress)
+	if l > 0 {
+		n += 1 + l + sovTypeEventIntent(uint64(l))
+	}
+	if m.AffiliateBasisPoints != 0 {
+		n += 1 + sovTypeEventIntent(uint64(m.AffiliateBasisPoints))
+	}
 	return n
 }
 
@@ -1867,6 +1903,57 @@ func (m *EventIntentOpen) Unmarshal(dAtA []byte) error {
 				b := dAtA[iNdEx]
 				iNdEx++
 				m.MinFeeBasisPoints |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 10:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field AffiliateAddress", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTypeEventIntent
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthTypeEventIntent
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthTypeEventIntent
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.AffiliateAddress = gitlab_com_thorchain_thornode_v3_common.Address(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 11:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field AffiliateBasisPoints", wireType)
+			}
+			m.AffiliateBasisPoints = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTypeEventIntent
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.AffiliateBasisPoints |= int64(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}

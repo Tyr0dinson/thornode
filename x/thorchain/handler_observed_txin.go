@@ -80,6 +80,8 @@ func addSwap(ctx cosmos.Context, mgr Manager, msg MsgSwap) error {
 	if msg.IsV2() {
 		// TODO: swap to synth if layer1 asset (follow on PR)
 		// TODO: create handler to modify/cancel a limit swap (follow on PR)
+
+
 		if err := mgr.AdvSwapQueueMgr().AddSwapQueueItem(ctx, mgr, &msg); err != nil {
 			ctx.Logger().Error("fail to add swap to queue", "error", err)
 			return err

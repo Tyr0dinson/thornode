@@ -1484,17 +1484,19 @@ func (m *EventFailedOutboundRecovery) Events() (cosmos.Events, error) {
 }
 
 // NewEventIntentOpen creates a new intent open event
-func NewEventIntentOpen(txID common.TxID, source common.Coin, sourceAddr common.Address, targetAsset common.Asset, targetAddr common.Address, highTarget, lowTarget cosmos.Uint, expiryHeight, minFeeBps int64) *EventIntentOpen {
+func NewEventIntentOpen(txID common.TxID, source common.Coin, sourceAddr common.Address, targetAsset common.Asset, targetAddr common.Address, highTarget, lowTarget cosmos.Uint, expiryHeight, minFeeBps int64, affiliateAddress common.Address, affiliateBasisPoints int64) *EventIntentOpen {
 	return &EventIntentOpen{
-		TxID:              txID,
-		Source:            source,
-		SourceAddress:     sourceAddr,
-		TargetAsset:       targetAsset,
-		TargetAddress:     targetAddr,
-		HighTarget:        highTarget,
-		LowTarget:         lowTarget,
-		ExpiryHeight:      expiryHeight,
-		MinFeeBasisPoints: minFeeBps,
+		TxID:                 txID,
+		Source:               source,
+		SourceAddress:        sourceAddr,
+		TargetAsset:          targetAsset,
+		TargetAddress:        targetAddr,
+		HighTarget:           highTarget,
+		LowTarget:            lowTarget,
+		ExpiryHeight:         expiryHeight,
+		MinFeeBasisPoints:    minFeeBps,
+		AffiliateAddress:     affiliateAddress,
+		AffiliateBasisPoints: affiliateBasisPoints,
 	}
 }
 
@@ -1515,6 +1517,8 @@ func (m *EventIntentOpen) Events() (cosmos.Events, error) {
 		cosmos.NewAttribute("low_target", m.LowTarget.String()),
 		cosmos.NewAttribute("expiry_height", strconv.FormatInt(m.ExpiryHeight, 10)),
 		cosmos.NewAttribute("min_fee_basis_points", strconv.FormatInt(m.MinFeeBasisPoints, 10)),
+		cosmos.NewAttribute("affiliate_address", m.AffiliateAddress.String()),
+		cosmos.NewAttribute("affiliate_basis_points", strconv.FormatInt(m.AffiliateBasisPoints, 10)),
 	)
 	return cosmos.Events{evt}, nil
 }

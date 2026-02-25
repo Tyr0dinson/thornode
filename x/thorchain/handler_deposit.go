@@ -166,7 +166,7 @@ func (h DepositHandler) handle(ctx cosmos.Context, msg MsgDeposit, idx uint16) (
 		targetModule = ReserveName
 	case TxTCYStake, TxTCYUnstake:
 		targetModule = TCYStakeName
-	case TxIntentOpen, TxIntentAuctionBid:
+	case TxIntentOpen, TxIntentAuctionBid, TxIntentSolve, TxIntentCancel:
 		// Intent funds go to Asgard and are tracked in the Asgard invariant
 		targetModule = AsgardName
 	default:
@@ -182,7 +182,7 @@ func (h DepositHandler) handle(ctx cosmos.Context, msg MsgDeposit, idx uint16) (
 	}
 
 	coinsInMsg := msg.Coins
-	if !coinsInMsg.IsEmpty() && !coinsInMsg[0].Asset.IsTradeAsset() && !coinsInMsg[0].Asset.IsSecuredAsset() {
+	if !coinsInMsg.IsEmpty() && !coinsInMsg[0].Asset.IsTradeAsset() && !coinsInMsg[0].Asset.IsSecuredAsset() && memo.GetType() != TxIntentSolve {
 		// send funds to target module
 		err = h.mgr.Keeper().SendFromAccountToModule(ctx, msg.GetSigners()[0], targetModule, msg.Coins)
 		if err != nil {

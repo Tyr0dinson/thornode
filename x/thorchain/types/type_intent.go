@@ -33,7 +33,10 @@ func (bids IntentAuctionBids) Len() int {
 
 // SortByBidAmountDescending sorts bids from highest to lowest bid amount
 func (bids IntentAuctionBids) SortByBidAmountDescending() {
-	sort.Slice(bids, func(i, j int) bool {
+	sort.SliceStable(bids, func(i, j int) bool {
+		if bids[i].BidAmount.Amount.Equal(bids[j].BidAmount.Amount) {
+			return bids[i].BidTxID.String() < bids[j].BidTxID.String()
+		}
 		return bids[i].BidAmount.Amount.GT(bids[j].BidAmount.Amount)
 	})
 }

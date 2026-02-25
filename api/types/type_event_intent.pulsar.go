@@ -3,28 +3,31 @@ package types
 
 import (
 	fmt "fmt"
+	io "io"
+	reflect "reflect"
+	sync "sync"
+
 	runtime "github.com/cosmos/cosmos-proto/runtime"
 	_ "github.com/cosmos/gogoproto/gogoproto"
 	common "gitlab.com/thorchain/thornode/v3/api/common"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoiface "google.golang.org/protobuf/runtime/protoiface"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
-	io "io"
-	reflect "reflect"
-	sync "sync"
 )
 
 var (
-	md_EventIntentOpen                      protoreflect.MessageDescriptor
-	fd_EventIntentOpen_tx_id                protoreflect.FieldDescriptor
-	fd_EventIntentOpen_source               protoreflect.FieldDescriptor
-	fd_EventIntentOpen_source_address       protoreflect.FieldDescriptor
-	fd_EventIntentOpen_target_asset         protoreflect.FieldDescriptor
-	fd_EventIntentOpen_target_address       protoreflect.FieldDescriptor
-	fd_EventIntentOpen_high_target          protoreflect.FieldDescriptor
-	fd_EventIntentOpen_low_target           protoreflect.FieldDescriptor
-	fd_EventIntentOpen_expiry_height        protoreflect.FieldDescriptor
-	fd_EventIntentOpen_min_fee_basis_points protoreflect.FieldDescriptor
+	md_EventIntentOpen                        protoreflect.MessageDescriptor
+	fd_EventIntentOpen_tx_id                  protoreflect.FieldDescriptor
+	fd_EventIntentOpen_source                 protoreflect.FieldDescriptor
+	fd_EventIntentOpen_source_address         protoreflect.FieldDescriptor
+	fd_EventIntentOpen_target_asset           protoreflect.FieldDescriptor
+	fd_EventIntentOpen_target_address         protoreflect.FieldDescriptor
+	fd_EventIntentOpen_high_target            protoreflect.FieldDescriptor
+	fd_EventIntentOpen_low_target             protoreflect.FieldDescriptor
+	fd_EventIntentOpen_expiry_height          protoreflect.FieldDescriptor
+	fd_EventIntentOpen_min_fee_basis_points   protoreflect.FieldDescriptor
+	fd_EventIntentOpen_affiliate_address      protoreflect.FieldDescriptor
+	fd_EventIntentOpen_affiliate_basis_points protoreflect.FieldDescriptor
 )
 
 func init() {
@@ -39,6 +42,8 @@ func init() {
 	fd_EventIntentOpen_low_target = md_EventIntentOpen.Fields().ByName("low_target")
 	fd_EventIntentOpen_expiry_height = md_EventIntentOpen.Fields().ByName("expiry_height")
 	fd_EventIntentOpen_min_fee_basis_points = md_EventIntentOpen.Fields().ByName("min_fee_basis_points")
+	fd_EventIntentOpen_affiliate_address = md_EventIntentOpen.Fields().ByName("affiliate_address")
+	fd_EventIntentOpen_affiliate_basis_points = md_EventIntentOpen.Fields().ByName("affiliate_basis_points")
 }
 
 var _ protoreflect.Message = (*fastReflection_EventIntentOpen)(nil)
@@ -160,6 +165,18 @@ func (x *fastReflection_EventIntentOpen) Range(f func(protoreflect.FieldDescript
 			return
 		}
 	}
+	if x.AffiliateAddress != "" {
+		value := protoreflect.ValueOfString(x.AffiliateAddress)
+		if !f(fd_EventIntentOpen_affiliate_address, value) {
+			return
+		}
+	}
+	if x.AffiliateBasisPoints != int64(0) {
+		value := protoreflect.ValueOfInt64(x.AffiliateBasisPoints)
+		if !f(fd_EventIntentOpen_affiliate_basis_points, value) {
+			return
+		}
+	}
 }
 
 // Has reports whether a field is populated.
@@ -193,6 +210,10 @@ func (x *fastReflection_EventIntentOpen) Has(fd protoreflect.FieldDescriptor) bo
 		return x.ExpiryHeight != int64(0)
 	case "types.EventIntentOpen.min_fee_basis_points":
 		return x.MinFeeBasisPoints != int64(0)
+	case "types.EventIntentOpen.affiliate_address":
+		return x.AffiliateAddress != ""
+	case "types.EventIntentOpen.affiliate_basis_points":
+		return x.AffiliateBasisPoints != int64(0)
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.EventIntentOpen"))
@@ -227,6 +248,10 @@ func (x *fastReflection_EventIntentOpen) Clear(fd protoreflect.FieldDescriptor) 
 		x.ExpiryHeight = int64(0)
 	case "types.EventIntentOpen.min_fee_basis_points":
 		x.MinFeeBasisPoints = int64(0)
+	case "types.EventIntentOpen.affiliate_address":
+		x.AffiliateAddress = ""
+	case "types.EventIntentOpen.affiliate_basis_points":
+		x.AffiliateBasisPoints = int64(0)
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.EventIntentOpen"))
@@ -270,6 +295,12 @@ func (x *fastReflection_EventIntentOpen) Get(descriptor protoreflect.FieldDescri
 	case "types.EventIntentOpen.min_fee_basis_points":
 		value := x.MinFeeBasisPoints
 		return protoreflect.ValueOfInt64(value)
+	case "types.EventIntentOpen.affiliate_address":
+		value := x.AffiliateAddress
+		return protoreflect.ValueOfString(value)
+	case "types.EventIntentOpen.affiliate_basis_points":
+		value := x.AffiliateBasisPoints
+		return protoreflect.ValueOfInt64(value)
 	default:
 		if descriptor.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.EventIntentOpen"))
@@ -308,6 +339,10 @@ func (x *fastReflection_EventIntentOpen) Set(fd protoreflect.FieldDescriptor, va
 		x.ExpiryHeight = value.Int()
 	case "types.EventIntentOpen.min_fee_basis_points":
 		x.MinFeeBasisPoints = value.Int()
+	case "types.EventIntentOpen.affiliate_address":
+		x.AffiliateAddress = value.Interface().(string)
+	case "types.EventIntentOpen.affiliate_basis_points":
+		x.AffiliateBasisPoints = value.Int()
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.EventIntentOpen"))
@@ -352,6 +387,10 @@ func (x *fastReflection_EventIntentOpen) Mutable(fd protoreflect.FieldDescriptor
 		panic(fmt.Errorf("field expiry_height of message types.EventIntentOpen is not mutable"))
 	case "types.EventIntentOpen.min_fee_basis_points":
 		panic(fmt.Errorf("field min_fee_basis_points of message types.EventIntentOpen is not mutable"))
+	case "types.EventIntentOpen.affiliate_address":
+		panic(fmt.Errorf("field affiliate_address of message types.EventIntentOpen is not mutable"))
+	case "types.EventIntentOpen.affiliate_basis_points":
+		panic(fmt.Errorf("field affiliate_basis_points of message types.EventIntentOpen is not mutable"))
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: types.EventIntentOpen"))
@@ -384,6 +423,10 @@ func (x *fastReflection_EventIntentOpen) NewField(fd protoreflect.FieldDescripto
 	case "types.EventIntentOpen.expiry_height":
 		return protoreflect.ValueOfInt64(int64(0))
 	case "types.EventIntentOpen.min_fee_basis_points":
+		return protoreflect.ValueOfInt64(int64(0))
+	case "types.EventIntentOpen.affiliate_address":
+		return protoreflect.ValueOfString("")
+	case "types.EventIntentOpen.affiliate_basis_points":
 		return protoreflect.ValueOfInt64(int64(0))
 	default:
 		if fd.IsExtension() {
@@ -6271,15 +6314,17 @@ type EventIntentOpen struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	TxId              string        `protobuf:"bytes,1,opt,name=tx_id,json=txId,proto3" json:"tx_id,omitempty"`
-	Source            *common.Coin  `protobuf:"bytes,2,opt,name=source,proto3" json:"source,omitempty"`
-	SourceAddress     string        `protobuf:"bytes,3,opt,name=source_address,json=sourceAddress,proto3" json:"source_address,omitempty"`
-	TargetAsset       *common.Asset `protobuf:"bytes,4,opt,name=target_asset,json=targetAsset,proto3" json:"target_asset,omitempty"`
-	TargetAddress     string        `protobuf:"bytes,5,opt,name=target_address,json=targetAddress,proto3" json:"target_address,omitempty"`
-	HighTarget        string        `protobuf:"bytes,6,opt,name=high_target,json=highTarget,proto3" json:"high_target,omitempty"`
-	LowTarget         string        `protobuf:"bytes,7,opt,name=low_target,json=lowTarget,proto3" json:"low_target,omitempty"`
-	ExpiryHeight      int64         `protobuf:"varint,8,opt,name=expiry_height,json=expiryHeight,proto3" json:"expiry_height,omitempty"`
-	MinFeeBasisPoints int64         `protobuf:"varint,9,opt,name=min_fee_basis_points,json=minFeeBasisPoints,proto3" json:"min_fee_basis_points,omitempty"`
+	TxId                 string        `protobuf:"bytes,1,opt,name=tx_id,json=txId,proto3" json:"tx_id,omitempty"`
+	Source               *common.Coin  `protobuf:"bytes,2,opt,name=source,proto3" json:"source,omitempty"`
+	SourceAddress        string        `protobuf:"bytes,3,opt,name=source_address,json=sourceAddress,proto3" json:"source_address,omitempty"`
+	TargetAsset          *common.Asset `protobuf:"bytes,4,opt,name=target_asset,json=targetAsset,proto3" json:"target_asset,omitempty"`
+	TargetAddress        string        `protobuf:"bytes,5,opt,name=target_address,json=targetAddress,proto3" json:"target_address,omitempty"`
+	HighTarget           string        `protobuf:"bytes,6,opt,name=high_target,json=highTarget,proto3" json:"high_target,omitempty"`
+	LowTarget            string        `protobuf:"bytes,7,opt,name=low_target,json=lowTarget,proto3" json:"low_target,omitempty"`
+	ExpiryHeight         int64         `protobuf:"varint,8,opt,name=expiry_height,json=expiryHeight,proto3" json:"expiry_height,omitempty"`
+	MinFeeBasisPoints    int64         `protobuf:"varint,9,opt,name=min_fee_basis_points,json=minFeeBasisPoints,proto3" json:"min_fee_basis_points,omitempty"`
+	AffiliateAddress     string        `protobuf:"bytes,10,opt,name=affiliate_address,json=affiliateAddress,proto3" json:"affiliate_address,omitempty"`
+	AffiliateBasisPoints int64         `protobuf:"varint,11,opt,name=affiliate_basis_points,json=affiliateBasisPoints,proto3" json:"affiliate_basis_points,omitempty"`
 }
 
 func (x *EventIntentOpen) Reset() {
@@ -6361,6 +6406,20 @@ func (x *EventIntentOpen) GetExpiryHeight() int64 {
 func (x *EventIntentOpen) GetMinFeeBasisPoints() int64 {
 	if x != nil {
 		return x.MinFeeBasisPoints
+	}
+	return 0
+}
+
+func (x *EventIntentOpen) GetAffiliateAddress() string {
+	if x != nil {
+		return x.AffiliateAddress
+	}
+	return ""
+}
+
+func (x *EventIntentOpen) GetAffiliateBasisPoints() int64 {
+	if x != nil {
+		return x.AffiliateBasisPoints
 	}
 	return 0
 }
