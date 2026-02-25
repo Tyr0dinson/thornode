@@ -155,6 +155,9 @@ bifrost:
           scan_inactive_vaults: false
           fee_update_interval: 100
           fee_sample_slots: 10
+        cardano:
+          start_block_slot: 0
+          start_block_hash: ""
 
       # the following defaults must be defined to override with environment
       chain_host: ""
