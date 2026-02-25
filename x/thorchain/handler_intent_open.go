@@ -77,6 +77,10 @@ func (h IntentOpenHandler) validate(ctx cosmos.Context, msg MsgIntentOpen) error
 		)
 	}
 
+	if msg.Tx.Coins[0].Asset.Equals(msg.TargetAsset) {
+		return cosmos.ErrUnknownRequest("source and target assets cannot be the same")
+	}
+
 	sourceAsset := msg.Tx.Coins[0].Asset
 	targetAsset := msg.TargetAsset
 
@@ -102,8 +106,8 @@ func (h IntentOpenHandler) validate(ctx cosmos.Context, msg MsgIntentOpen) error
 	// At least one side must be fee-chargeable (has active pool or is RUNE).
 	// Secured/trade assets are fee-chargeable because their underlying L1 pool is active
 	// and fees are deducted from the solver's payout.
-	canChargeSource := hasActiveSourcePool || sourceAsset.IsRune()
-	canChargeTarget := hasActiveTargetPool || targetAsset.IsRune()
+	canChargeSource := (hasActiveSourcePool && !sourceAsset.IsSecuredAsset() && !sourceAsset.IsTradeAsset()) || sourceAsset.IsRune()
+	canChargeTarget := (hasActiveTargetPool && !targetAsset.IsSecuredAsset() && !targetAsset.IsTradeAsset()) || targetAsset.IsRune()
 	if !canChargeSource && !canChargeTarget {
 		return se.ErrInvalidRequest.Wrap("at least one of source or target asset must be a fee-chargeable asset (has active pool or is RUNE)")
 	}
@@ -172,6 +176,8 @@ func (h IntentOpenHandler) handle(ctx cosmos.Context, msg MsgIntentOpen) error {
 		msg.LowTarget,
 		intent.ExpiryHeight,
 		intent.MinFeeBasisPoints,
+		intent.AffiliateAddress,
+		intent.AffiliateBasisPoints,
 	)
 	if err := h.mgr.EventMgr().EmitEvent(ctx, evt); err != nil {
 		return fmt.Errorf("fail to emit intent open event: %w", err)

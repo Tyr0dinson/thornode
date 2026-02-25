@@ -424,8 +424,10 @@ func (EventSuite) TestEventIntentOpen(c *C) {
 	lowTarget := cosmos.NewUint(400)
 	expiryHeight := int64(12345)
 	minFeeBps := int64(30)
+	affiliateAddress := GetRandomTHORAddress()
+	affiliateBps := int64(50)
 
-	e := NewEventIntentOpen(txID, source, sourceAddr, targetAsset, targetAddr, highTarget, lowTarget, expiryHeight, minFeeBps)
+	e := NewEventIntentOpen(txID, source, sourceAddr, targetAsset, targetAddr, highTarget, lowTarget, expiryHeight, minFeeBps, affiliateAddress, affiliateBps)
 
 	c.Check(e.Type(), Equals, IntentOpenEventType)
 	c.Check(e.Type(), Equals, "intent_open")
@@ -439,6 +441,8 @@ func (EventSuite) TestEventIntentOpen(c *C) {
 	c.Check(e.LowTarget.Equal(lowTarget), Equals, true)
 	c.Check(e.ExpiryHeight, Equals, expiryHeight)
 	c.Check(e.MinFeeBasisPoints, Equals, minFeeBps)
+	c.Check(e.AffiliateAddress.Equals(affiliateAddress), Equals, true)
+	c.Check(e.AffiliateBasisPoints, Equals, affiliateBps)
 
 	events, err := e.Events()
 	c.Check(err, IsNil)
