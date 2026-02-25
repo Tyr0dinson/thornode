@@ -62,38 +62,13 @@ func (im *IntentMgr) selectBestSolve(ctx cosmos.Context, intent types.Intent, so
 		return solves[0]
 	}
 
-	// Determine which chain's gas fee to use:
-	// - If source has no pool and is not native → source chain gas
-	// - Else if target has no pool and is not native → target chain gas
-	// - Else (both have pools/native) → source chain gas
-	sourceAsset := intent.Source.Asset
+	// Use the target asset's chain gas fee for the comparison threshold.
+	// Since solve amounts are denominated in the target asset, we must use the
+	// same denomination for the gas fee tolerance to avoid unit mismatches.
+	// For native assets (RUNE/secured/trade), GetChain() returns THORChain,
+	// which has near-zero gas, meaning exact matching applies.
 	targetAsset := intent.TargetAsset
-
-	sourcePool, err := im.mgr.Keeper().GetPool(ctx, sourceAsset.GetLayer1Asset())
-	if err != nil {
-		ctx.Logger().Error("fail to get source pool for solve selection", "asset", sourceAsset, "error", err)
-		return solves[0] // Return first solve as fallback
-	}
-	targetPool, err := im.mgr.Keeper().GetPool(ctx, targetAsset.GetLayer1Asset())
-	if err != nil {
-		ctx.Logger().Error("fail to get target pool for solve selection", "asset", targetAsset, "error", err)
-		return solves[0] // Return first solve as fallback
-	}
-
-	hasSourcePool := !sourcePool.IsEmpty() && sourcePool.Status == PoolAvailable
-	hasTargetPool := !targetPool.IsEmpty() && targetPool.Status == PoolAvailable
-	isSourceNative := sourceAsset.IsRune() || sourceAsset.IsSecuredAsset() || sourceAsset.IsTradeAsset()
-	isTargetNative := targetAsset.IsRune() || targetAsset.IsSecuredAsset() || targetAsset.IsTradeAsset()
-
-	var gasFeeChain common.Chain
-	switch {
-	case !hasSourcePool && !isSourceNative:
-		gasFeeChain = sourceAsset.GetChain()
-	case !hasTargetPool && !isTargetNative:
-		gasFeeChain = targetAsset.GetChain()
-	default:
-		gasFeeChain = sourceAsset.GetChain()
-	}
+	gasFeeChain := targetAsset.GetChain()
 	gasFee, err := calculateGasFee(ctx, im.mgr, gasFeeChain)
 	if err != nil {
 		ctx.Logger().Error("fail to calculate gas fee for solve selection, using first solve", "chain", gasFeeChain, "error", err)
@@ -251,9 +226,10 @@ func (im *IntentMgr) processMatches(ctx cosmos.Context) error {
 			continue
 		}
 
-		// Skip if intent has expired - let processExpirations handle it
-		// This prevents double-refunding of solves when execution fails and expiry happens on the same block
-		if currentHeight >= intent.ExpiryHeight {
+		// Skip if intent has expired past its expiry height - let processExpirations handle it.
+		// Use strict greater-than so that solves whose match height was capped to ExpiryHeight
+		// (by handler_intent_solve.go) can still execute on that exact block.
+		if currentHeight > intent.ExpiryHeight {
 			ctx.Logger().Info("intent has expired, skipping execution", "txid", intentTxID, "expiry_height", intent.ExpiryHeight)
 			continue
 		}
@@ -276,16 +252,25 @@ func (im *IntentMgr) processMatches(ctx cosmos.Context) error {
 			// Mark intent as expired to prevent double-refund in processExpirations
 			intent.Status = IntentExpired
 			im.mgr.Keeper().SetIntent(ctx, intent)
+			// Refund any remaining solves at other match heights to prevent orphaned funds
+			if err := im.refundIntentSolves(ctx, intent); err != nil {
+				ctx.Logger().Error("fail to refund remaining solves after execution failure", "intent_txid", intentTxID, "error", err)
+			}
 			continue
 		}
 		commit()
 		ctx.EventManager().EmitEvents(cacheCtx.EventManager().Events())
 
-		// Refund losing solves (winner excluded since execution succeeded)
+		// Refund losing solves at this height (winner excluded since execution succeeded)
 		im.refundLosingSolves(ctx, intent, winningSolve.SolveTxID, intentSolves)
 
 		// Clean up the winning solve record
 		im.mgr.Keeper().RemoveIntentSolve(ctx, winningSolve.SolveTxID)
+
+		// Refund any remaining solves at other match heights to prevent orphaned funds
+		if err := im.refundIntentSolves(ctx, intent); err != nil {
+			ctx.Logger().Error("fail to refund remaining solves after intent completion", "intent_txid", intentTxID, "error", err)
+		}
 	}
 
 	return nil
@@ -906,7 +891,9 @@ func (im *IntentMgr) processAuctions(ctx cosmos.Context) error {
 	return nil
 }
 
-// completeAuction finalizes an expired auction
+// completeAuction finalizes an expired auction.
+// Uses CacheContext for atomicity to prevent partial state changes on failure,
+// which could otherwise cause double-payments on retry.
 func (im *IntentMgr) completeAuction(ctx cosmos.Context, auction IntentAuction) error {
 	// Get bids for this auction
 	bids, err := im.mgr.Keeper().GetIntentAuctionBidsByIntentID(ctx, auction.IntentTxID)
@@ -948,7 +935,12 @@ func (im *IntentMgr) completeAuction(ctx cosmos.Context, auction IntentAuction) 
 		}
 		return candidates[i].BidTxID.String() < candidates[j].BidTxID.String()
 	})
-	winningBid := &candidates[0]
+	winningBid := candidates[0]
+
+	// Use CacheContext for atomicity: if any step fails, all state changes are rolled back.
+	// Without this, partial completion (e.g., losing bids refunded but winner payout fails)
+	// would leave the auction in an inconsistent state and cause double-payments on retry.
+	cacheCtx, commit := ctx.CacheContext()
 
 	// Process losing bids - refund them
 	for i := range bids {
@@ -972,23 +964,23 @@ func (im *IntentMgr) completeAuction(ctx cosmos.Context, auction IntentAuction) 
 			ModuleName: bidModuleName,
 		}
 
-		ok, refundErr := im.mgr.TxOutStore().TryAddTxOutItem(ctx, im.mgr, toi, cosmos.ZeroUint())
+		ok, refundErr := im.mgr.TxOutStore().TryAddTxOutItem(cacheCtx, im.mgr, toi, cosmos.ZeroUint())
 		switch {
 		case refundErr != nil:
-			ctx.Logger().Error("fail to refund losing bid", "bid_txid", bids[i].BidTxID, "error", refundErr)
-			unrefundableCoinCleanup(ctx, im.mgr, toi, "failed_refund")
+			cacheCtx.Logger().Error("fail to refund losing bid", "bid_txid", bids[i].BidTxID, "error", refundErr)
+			unrefundableCoinCleanup(cacheCtx, im.mgr, toi, "failed_refund")
 		case !ok:
-			ctx.Logger().Error("fail to schedule losing bid refund", "bid_txid", bids[i].BidTxID)
-			unrefundableCoinCleanup(ctx, im.mgr, toi, "failed_refund")
+			cacheCtx.Logger().Error("fail to schedule losing bid refund", "bid_txid", bids[i].BidTxID)
+			unrefundableCoinCleanup(cacheCtx, im.mgr, toi, "failed_refund")
 		default:
-			ctx.Logger().Info("refunded losing auction bid",
+			cacheCtx.Logger().Info("refunded losing auction bid",
 				"intent_txid", auction.IntentTxID,
 				"bid_txid", bids[i].BidTxID,
 				"amount", bids[i].BidAmount.Amount,
 			)
 		}
 		// Clean up the losing bid record
-		im.mgr.Keeper().RemoveIntentAuctionBid(ctx, bids[i].BidTxID)
+		im.mgr.Keeper().RemoveIntentAuctionBid(cacheCtx, bids[i].BidTxID)
 	}
 
 	// Determine module name for RUNE outbounds (RUNE is escrowed in Asgard)
@@ -1007,7 +999,7 @@ func (im *IntentMgr) completeAuction(ctx cosmos.Context, auction IntentAuction) 
 		ModuleName: moduleName,
 	}
 
-	ok, err := im.mgr.TxOutStore().TryAddTxOutItem(ctx, im.mgr, winnerToi, cosmos.ZeroUint())
+	ok, err := im.mgr.TxOutStore().TryAddTxOutItem(cacheCtx, im.mgr, winnerToi, cosmos.ZeroUint())
 	if err != nil {
 		return fmt.Errorf("fail to send auction amount to winner: %w", err)
 	}
@@ -1025,7 +1017,7 @@ func (im *IntentMgr) completeAuction(ctx cosmos.Context, auction IntentAuction) 
 		ModuleName: moduleName,
 	}
 
-	ok, err = im.mgr.TxOutStore().TryAddTxOutItem(ctx, im.mgr, ownerToi, cosmos.ZeroUint())
+	ok, err = im.mgr.TxOutStore().TryAddTxOutItem(cacheCtx, im.mgr, ownerToi, cosmos.ZeroUint())
 	if err != nil {
 		return fmt.Errorf("fail to send remaining amount to owner: %w", err)
 	}
@@ -1034,21 +1026,25 @@ func (im *IntentMgr) completeAuction(ctx cosmos.Context, auction IntentAuction) 
 	}
 
 	// Process winning bid: swap to RUNE and add to reserve
-	if err := im.processWinningBid(ctx, *winningBid); err != nil {
-		ctx.Logger().Error("fail to process winning bid", "error", err)
+	if err := im.processWinningBid(cacheCtx, winningBid); err != nil {
+		cacheCtx.Logger().Error("fail to process winning bid", "error", err)
 		return fmt.Errorf("fail to process winning bid revenue: %w", err)
 	}
 
 	// Clean up the winning bid record
-	im.mgr.Keeper().RemoveIntentAuctionBid(ctx, winningBid.BidTxID)
+	im.mgr.Keeper().RemoveIntentAuctionBid(cacheCtx, winningBid.BidTxID)
 
 	// Update auction status
 	auction.Status = IntentAuctionStatus_AuctionCompleted
-	im.mgr.Keeper().SetIntentAuction(ctx, auction)
+	im.mgr.Keeper().SetIntentAuction(cacheCtx, auction)
 
 	// Update intent status to expired (auction completed)
 	intent.Status = IntentExpired
-	im.mgr.Keeper().SetIntent(ctx, intent)
+	im.mgr.Keeper().SetIntent(cacheCtx, intent)
+
+	// All steps succeeded, commit all state changes atomically
+	commit()
+	ctx.EventManager().EmitEvents(cacheCtx.EventManager().Events())
 
 	// Emit auction complete event
 	evt := NewEventIntentAuctionComplete(
