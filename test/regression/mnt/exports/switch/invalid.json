@@ -198,6 +198,10 @@
         }
       ],
       "chain_contracts": [],
+      "intent_auction_bids": [],
+      "intent_auctions": [],
+      "intent_solves": [],
+      "intents": [],
       "last_chain_heights": [
         {
           "chain": "GAIA",
