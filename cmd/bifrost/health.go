@@ -441,7 +441,7 @@ func classifyHost(rawURL string) string {
 		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() {
 			return "self-hosted"
 		}
-		return host // public IP – surface it directly
+		return "external-host" // public IP
 	}
 
 	// Bare hostnames (no dots) such as "localhost", "bitcoin-daemon", "thornode".
@@ -462,7 +462,7 @@ func classifyHost(rawURL string) string {
 	if len(parts) >= 2 {
 		return strings.Join(parts[len(parts)-2:], ".")
 	}
-	return host
+	return "unknown"
 }
 
 // Start health server
