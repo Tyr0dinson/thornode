@@ -37,10 +37,9 @@ type: create-blocks
 count: 1
 ---
 ########################################################################################
-# Create an intent with a price range using same-chain assets (ETH -> ETH)
-# This tests the sliding price mechanism without cross-chain address issues
-# high = 200000000 (2 ETH), low = 100000000 (1 ETH)
-# This gives a range of 100000000 for testing price sliding
+# Create an intent with a price range - swap ETH for BTC
+# high = 2400000 (0.024 BTC), low = 1200000 (0.012 BTC)
+# This gives a range of 1200000 for testing price sliding
 ########################################################################################
 type: tx-observed-in
 signer: {{ addr_thor_dog }}
@@ -57,7 +56,7 @@ txs:
     gas:
       - amount: "10000"
         asset: "ETH.ETH"
-    memo: "IO:ETH.ETH:200000000:100000000:{{ addr_eth_fox }}"
+    memo: "IO:BTC.BTC:2400000:1200000:{{ addr_btc_fox }}"
   block_height: 2
   finalise_height: 2
   observed_pub_key: {{ pubkey_dog }}
@@ -73,33 +72,34 @@ endpoint: http://localhost:1317/thorchain/intent/{{ observe_txid 1 }}
 asserts:
   - .intent.tx_id == "{{ observe_txid 1 }}"
   - .intent.status == "IntentActive"
-  - .intent.high_target == "200000000"
-  - .intent.low_target == "100000000"
+  - .intent.high_target == "2400000"
+  - .intent.low_target == "1200000"
 ---
 ########################################################################################
-# Submit solve at midpoint: 150000000 (halfway between 100000000 and 200000000)
+# Submit solve at midpoint: 1800000 (halfway between 1200000 and 2400000)
 # Expected delay calculation:
 # delay = (high - offered) * slide_blocks / (high - low)
-# delay = (200000000 - 150000000) * 10 / (200000000 - 100000000)
-# delay = 50000000 * 10 / 100000000 = 5 blocks
+# delay = (2400000 - 1800000) * 10 / (2400000 - 1200000)
+# delay = 600000 * 10 / 1200000 = 5 blocks
 # match_height = current_height + 5
+# Solver sends from BTC chain, specifies ETH destination for source asset
 ########################################################################################
 type: tx-observed-in
 signer: {{ addr_thor_dog }}
 txs:
 - tx:
     id: '{{ observe_txid 2 }}'
-    chain: ETH
-    from_address: {{ addr_eth_cat }}
-    to_address: {{ addr_eth_dog }}
+    chain: BTC
+    from_address: {{ addr_btc_cat }}
+    to_address: {{ addr_btc_dog }}
     coins:
-      - amount: "150000000"
-        asset: "ETH.ETH"
+      - amount: "1800000"
+        asset: "BTC.BTC"
         decimals: 8
     gas:
       - amount: "10000"
-        asset: "ETH.ETH"
-    memo: "IS:{{ observe_txid 1 }}"
+        asset: "BTC.BTC"
+    memo: "IS:{{ observe_txid 1 }}:{{ addr_eth_cat }}"
   block_height: 3
   finalise_height: 3
   observed_pub_key: {{ pubkey_dog }}
@@ -182,24 +182,24 @@ type: create-blocks
 count: 1
 ---
 ########################################################################################
-# Observe user's outbound (fox gets ETH target)
-# Amount: solve amount (150M) - outbound gas + pool rewards
+# Observe user's outbound (fox gets BTC target)
+# Amount: solve amount (1800000) - outbound gas
 ########################################################################################
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
 txs:
 - tx:
     id: '{{ observe_txid 4 }}'
-    chain: ETH
-    from_address: {{ addr_eth_dog }}
-    to_address: {{ addr_eth_fox }}
+    chain: BTC
+    from_address: {{ addr_btc_dog }}
+    to_address: {{ addr_btc_fox }}
     coins:
-      - amount: "149360128"
-        asset: "ETH.ETH"
+      - amount: "1793000"
+        asset: "BTC.BTC"
         decimals: 8
     gas:
-      - amount: "960000"
-        asset: "ETH.ETH"
+      - amount: "10000"
+        asset: "BTC.BTC"
     memo: "OUT:{{ observe_txid 1 }}"
   block_height: 11
   finalise_height: 11

@@ -23,9 +23,7 @@ type: create-blocks
 count: 1
 ---
 ########################################################################################
-# Create an intent - swap ETH for more ETH (same chain)
-# This tests the intent solve mechanics on a single chain
-# For cross-chain intent solves, see intent-solve-cross-chain.yaml
+# Create an intent - swap ETH for BTC
 # Format: IO:TARGET_ASSET:HIGH_TARGET:LOW_TARGET:TARGET_ADDR
 # Setting high=low so any valid offer executes immediately
 ########################################################################################
@@ -44,7 +42,7 @@ txs:
     gas:
       - amount: "10000"
         asset: "ETH.ETH"
-    memo: "IO:ETH.ETH:120000000:120000000:{{ addr_eth_fox }}"
+    memo: "IO:BTC.BTC:1200000:1200000:{{ addr_btc_fox }}"
   block_height: 2
   finalise_height: 2
   observed_pub_key: {{ pubkey_dog }}
@@ -62,32 +60,33 @@ asserts:
   - .intent.status == "IntentActive"
   - .intent.source.asset == "ETH.ETH"
   - .intent.source.amount == "100000000"
-  - .intent.target_asset == "ETH.ETH"
-  - .intent.high_target == "120000000"
-  - .intent.low_target == "120000000"
+  - .intent.target_asset == "BTC.BTC"
+  - .intent.high_target == "1200000"
+  - .intent.low_target == "1200000"
 ---
 ########################################################################################
-# Solver sends ETH to solve the intent
-# Format: IS:INTENT_TX_HASH
-# Sending 120000000 ETH which meets the high target for immediate execution
-# Since source and target are both ETH, solver receives ETH at their ETH address
+# Solver sends BTC to solve the intent
+# Format: IS:INTENT_TX_HASH:DESTINATION_ADDR
+# Sending 1200000 BTC which meets the high target for immediate execution
+# Solver sends from BTC chain but needs to receive ETH (the source asset)
+# So they must specify their ETH address as the destination
 ########################################################################################
 type: tx-observed-in
 signer: {{ addr_thor_dog }}
 txs:
 - tx:
     id: '{{ observe_txid 2 }}'
-    chain: ETH
-    from_address: {{ addr_eth_cat }}
-    to_address: {{ addr_eth_dog }}
+    chain: BTC
+    from_address: {{ addr_btc_cat }}
+    to_address: {{ addr_btc_dog }}
     coins:
-      - amount: "120000000"
-        asset: "ETH.ETH"
+      - amount: "1200000"
+        asset: "BTC.BTC"
         decimals: 8
     gas:
       - amount: "10000"
-        asset: "ETH.ETH"
-    memo: "IS:{{ observe_txid 1 }}"
+        asset: "BTC.BTC"
+    memo: "IS:{{ observe_txid 1 }}:{{ addr_eth_cat }}"
   block_height: 3
   finalise_height: 3
   observed_pub_key: {{ pubkey_dog }}
@@ -105,8 +104,8 @@ asserts:
 ---
 ########################################################################################
 # Check outbound queue has the swaps scheduled:
-# 1. Solver (cat) gets the source asset (ETH - 100000000)
-# 2. User (fox) gets the target asset (ETH - 120000000) at target address
+# 1. Solver (cat) gets the source asset (ETH) at their ETH destination address
+# 2. User (fox) gets the target asset (BTC) at their BTC target address
 ########################################################################################
 type: check
 endpoint: http://localhost:1317/thorchain/queue/outbound
@@ -114,7 +113,7 @@ asserts:
   - .|length >= 1
 ---
 ########################################################################################
-# Observe solver's outbound (cat gets ETH source)
+# Observe solver's outbound (cat gets ETH source at their ETH address)
 ########################################################################################
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
@@ -140,26 +139,26 @@ type: create-blocks
 count: 1
 ---
 ########################################################################################
-# Observe user's outbound (fox gets ETH target at target address)
+# Observe user's outbound (fox gets BTC target at their BTC address)
 ########################################################################################
 type: tx-observed-out
 signer: {{ addr_thor_dog }}
 txs:
 - tx:
     id: '{{ observe_txid 4 }}'
-    chain: ETH
-    from_address: {{ addr_eth_dog }}
-    to_address: {{ addr_eth_fox }}
+    chain: BTC
+    from_address: {{ addr_btc_dog }}
+    to_address: {{ addr_btc_fox }}
     coins:
-      - amount: "119360128"
-        asset: "ETH.ETH"
+      - amount: "1193000"
+        asset: "BTC.BTC"
         decimals: 8
     gas:
-      - amount: "960000"
-        asset: "ETH.ETH"
+      - amount: "10000"
+        asset: "BTC.BTC"
     memo: "OUT:{{ observe_txid 1 }}"
-  block_height: 5
-  finalise_height: 5
+  block_height: 6
+  finalise_height: 6
   observed_pub_key: {{ pubkey_dog }}
 ---
 type: create-blocks

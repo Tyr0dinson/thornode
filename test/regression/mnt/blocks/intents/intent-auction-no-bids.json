@@ -585,6 +585,8 @@
               "type": "message"
             },
             {
+              "affiliate_address": "",
+              "affiliate_basis_points": "0",
               "expiry_height": "8",
               "high_target": "5000000",
               "low_target": "4000000",
