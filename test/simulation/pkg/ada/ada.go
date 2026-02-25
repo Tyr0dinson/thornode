@@ -92,9 +92,9 @@ func (c *Client) BroadcastTx(txBytes []byte) (string, error) {
 		}
 
 		utxos, err := c.n2c.GetUTxOByAddress([]lcommon.Address{
-			tx.Outputs()[0].Address()}, nil,
+			tx.Outputs()[0].Address(),
+		}, nil,
 		)
-
 		if err != nil {
 			continue
 		}
@@ -190,7 +190,6 @@ func (c *Client) SignTx(simTx simtypes.SimTx) ([]byte, error) {
 		simTx.Memo,
 		utxos,
 	)
-
 	if err != nil {
 		c.logger.Err(err).Msg("fail to create conway tx")
 		return nil, err

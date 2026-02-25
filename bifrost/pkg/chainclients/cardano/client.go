@@ -648,5 +648,4 @@ func (c *Client) ReportSolvency(height int64) error {
 		}
 	}
 	return nil
-
 }

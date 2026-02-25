@@ -97,8 +97,11 @@ func (m *MockThorchainBridge) EnsureNodeWhitelistedWithTimeout() error { return 
 func (m *MockThorchainBridge) FetchNodeStatus() (types.NodeStatus, error) {
 	return types.NodeStatus_Unknown, nil
 }
-func (m *MockThorchainBridge) FetchActiveNodes() ([]common.PubKey, error)  { return nil, nil }
-func (m *MockThorchainBridge) GetAsgards() (types.Vaults, error)           { return nil, nil }
+func (m *MockThorchainBridge) FetchActiveNodes() ([]common.PubKey, error) { return nil, nil }
+func (m *MockThorchainBridge) GetAsgards() (types.Vaults, error)          { return nil, nil }
+func (m *MockThorchainBridge) GetAsgardAddresses(common.Chain) ([]common.Address, error) {
+	return nil, nil
+}
 func (m *MockThorchainBridge) GetVault(pubkey string) (types.Vault, error) { return types.Vault{}, nil }
 func (m *MockThorchainBridge) GetConfig() config.BifrostClientConfiguration {
 	return config.BifrostClientConfiguration{}

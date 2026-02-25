@@ -26,6 +26,7 @@ type KeyData struct {
 	addrETH  KeyDataAddr
 	addrDOGE KeyDataAddr
 	addrSOL  KeyDataAddr
+	addrADA  KeyDataAddr
 }
 
 type PubKeyTestSuite struct {
@@ -63,6 +64,10 @@ func (s *PubKeyTestSuite) SetUpSuite(_ *C) {
 				mainnet: "DhMcGoLSWsKLqoM12GhR1ZxgcRFzZo2wZ8D2A3BvX9op",
 				mocknet: "DhMcGoLSWsKLqoM12GhR1ZxgcRFzZo2wZ8D2A3BvX9op",
 			},
+			addrADA: KeyDataAddr{
+				mainnet: "addr1v8ejz6eyzpwnk5k33adtzdwuahehag4eerg9u7jdj66hjcqex4538",
+				mocknet: "addr_test1vrejz6eyzpwnk5k33adtzdwuahehag4eerg9u7jdj66hjcqzwpg7z",
+			},
 		},
 		{
 			priv: "289c2857d4598e37fb9647507e47a309d6133539bf21a8b9cb6df88fd5232032",
@@ -90,6 +95,10 @@ func (s *PubKeyTestSuite) SetUpSuite(_ *C) {
 			addrSOL: KeyDataAddr{
 				mainnet: "G8n9W2tGpcazbyrdQzniSKV6p4uFJArWCENhapDmHTx9",
 				mocknet: "G8n9W2tGpcazbyrdQzniSKV6p4uFJArWCENhapDmHTx9",
+			},
+			addrADA: KeyDataAddr{
+				mainnet: "addr1vy3y76rp7m4zkvk3uaz8g9mrwcl5yz9fq5q0umqqsxz6gdq4cm9sq",
+				mocknet: "addr_test1vq3y76rp7m4zkvk3uaz8g9mrwcl5yz9fq5q0umqqsxz6gdqws0el9",
 			},
 		},
 		{
@@ -119,6 +128,10 @@ func (s *PubKeyTestSuite) SetUpSuite(_ *C) {
 				mainnet: "49gTXamRza4famcZDvFve6omcFqpiooaWBTX2KK3kp4h",
 				mocknet: "49gTXamRza4famcZDvFve6omcFqpiooaWBTX2KK3kp4h",
 			},
+			addrADA: KeyDataAddr{
+				mainnet: "addr1v8symch3jrmcaslxu23hg8jdahw5wgyrkeandk56gyv2nhsx9d6gm",
+				mocknet: "addr_test1vrsymch3jrmcaslxu23hg8jdahw5wgyrkeandk56gyv2nhsadex87",
+			},
 		},
 		{
 			priv: "a96e62ed3955e65be32703f12d87b6b5cf26039ecfa948dc5107a495418e5330",
@@ -147,6 +160,10 @@ func (s *PubKeyTestSuite) SetUpSuite(_ *C) {
 				mainnet: "C7nGYnw9qTT4XjYKiynAF3Qz9iPrZfXg338sdvBGdBhS",
 				mocknet: "C7nGYnw9qTT4XjYKiynAF3Qz9iPrZfXg338sdvBGdBhS",
 			},
+			addrADA: KeyDataAddr{
+				mainnet: "addr1vy07qc6nexr9uetwenuuqna8nq6ukftmyljntnn3zw5x69gz4cnpu",
+				mocknet: "addr_test1vq07qc6nexr9uetwenuuqna8nq6ukftmyljntnn3zw5x69geav0we",
+			},
 		},
 		{
 			priv: "9294f4d108465fd293f7fe299e6923ef71a77f2cb1eb6d4394839c64ec25d5c0",
@@ -174,6 +191,10 @@ func (s *PubKeyTestSuite) SetUpSuite(_ *C) {
 			addrSOL: KeyDataAddr{
 				mainnet: "GYnVuwPsSAE6QwWh6TebBqNbFFqsU2563eShGcPbAvL2",
 				mocknet: "GYnVuwPsSAE6QwWh6TebBqNbFFqsU2563eShGcPbAvL2",
+			},
+			addrADA: KeyDataAddr{
+				mainnet: "addr1v9xhe4fjjvzy66lz3e4flp9hp4q7yaq47f777927rf9ddgc70fcvg",
+				mocknet: "addr_test1vpxhe4fjjvzy66lz3e4flp9hp4q7yaq47f777927rf9ddgc98ayrd",
 			},
 		},
 	}

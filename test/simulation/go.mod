@@ -31,7 +31,7 @@ require (
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp v1.26.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.48.1 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.48.1 // indirect
-	github.com/blinklabs-io/gouroboros v0.157.0 // indirect
+	github.com/blinklabs-io/gouroboros v0.157.0
 	github.com/blinklabs-io/plutigo v0.0.23 // indirect
 	github.com/btcsuite/btcd/btcutil v1.1.6 // indirect
 	github.com/bytedance/gopkg v0.1.3 // indirect
@@ -44,7 +44,7 @@ require (
 	github.com/go-viper/mapstructure/v2 v2.2.1 // indirect
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
 	github.com/spiffe/go-spiffe/v2 v2.5.0 // indirect
-	github.com/utxorpc/go-codegen v0.18.1 // indirect
+	github.com/utxorpc/go-codegen v0.18.1
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/zeebo/errs v1.4.0 // indirect
 	go.opentelemetry.io/contrib/detectors/gcp v1.34.0 // indirect

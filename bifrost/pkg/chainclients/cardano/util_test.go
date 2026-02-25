@@ -2,14 +2,13 @@ package cardano
 
 import (
 	"encoding/hex"
-	"fmt"
 	"math/big"
 	"strings"
 	"testing"
 
+	"github.com/blinklabs-io/gouroboros/cbor"
 	"github.com/blinklabs-io/gouroboros/ledger"
 	lcommon "github.com/blinklabs-io/gouroboros/ledger/common"
-	"github.com/fxamacker/cbor/v2"
 	"gitlab.com/thorchain/thornode/v3/common"
 	. "gopkg.in/check.v1"
 )
@@ -340,8 +339,7 @@ func (s *UtilTestSuite) TestCreateConwayTx(c *C) {
 
 			if tc.Size > 0 {
 				var bz []byte
-				bz, err = cbor.Marshal(tx)
-				fmt.Println(len(bz))
+				bz, err = cbor.Encode(tx)
 				c.Assert(err, IsNil)
 				c.Assert(bz, HasLen, tc.Size)
 			}

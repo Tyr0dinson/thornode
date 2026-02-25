@@ -40,18 +40,23 @@ type mockClientWrapper struct {
 func (m *mockClientWrapper) GetChainBlockNo() (int64, error) {
 	return m.blockNo, m.blockNoErr
 }
+
 func (m *mockClientWrapper) GetCurrentProtocolParams() (lcommon.ProtocolParameters, error) {
 	return m.protocolParams, m.protocolParamsErr
 }
+
 func (m *mockClientWrapper) GetChainPoint() (*pcommon.Point, error) {
 	return m.chainPoint, m.chainPointErr
 }
+
 func (m *mockClientWrapper) GetGenesisConfig() (*localstatequery.GenesisConfigResult, error) {
 	return m.genesisConfig, m.genesisConfigErr
 }
+
 func (m *mockClientWrapper) GetUTxOByAddress(_ []ledger.Address, _ *pcommon.Point) (*localstatequery.UTxOsResult, error) {
 	return m.utxoResult, m.utxoErr
 }
+
 func (m *mockClientWrapper) SubmitTx(_ uint16, _ []byte) error {
 	return m.submitErr
 }

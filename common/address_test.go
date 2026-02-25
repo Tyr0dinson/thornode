@@ -11,19 +11,19 @@ type AddressSuite struct{}
 var _ = Suite(&AddressSuite{})
 
 func (s *AddressSuite) TestAddress(c *C) {
-	c.Assert(AllChains, HasLen, 16)
+	c.Assert(AllChains, HasLen, 17)
 
 	c.Check(Address("").IsEmpty(), Equals, true)
 	c.Check(NoAddress.Equals(Address("")), Equals, true)
 
-	var notMockNet ChainNetwork
+	var mainnet ChainNetwork
 	switch CurrentChainNetwork {
 	case StageNet:
-		notMockNet = StageNet
+		mainnet = StageNet
 	case ChainNet:
-		notMockNet = ChainNet
+		mainnet = ChainNet
 	default:
-		notMockNet = MainNet
+		mainnet = MainNet
 	}
 
 	addr, err := NewAddress("")
@@ -49,7 +49,7 @@ func (s *AddressSuite) TestAddress(c *C) {
 		{
 			Address: "thor1kljxxccrheghavaw97u78le6yy3sdj7h696nl4",
 			Chain:   THORChain,
-			Network: notMockNet,
+			Network: mainnet,
 		},
 		{
 			Address: "tthor1x6m28lezv00ugcahqv5w2eagrm9396j2gf6zjpd4auf9mv4h",
@@ -75,7 +75,7 @@ func (s *AddressSuite) TestAddress(c *C) {
 			Address: "1MirQ9bwyQcGVJPwKUgapu5ouK2E2Ey4gX",
 			Chain:   BTCChain,
 			Chains:  Chains{BCHChain},
-			Network: notMockNet,
+			Network: mainnet,
 			Info:    "mainnet p2pkh",
 		},
 		{
@@ -89,21 +89,21 @@ func (s *AddressSuite) TestAddress(c *C) {
 			Address: "12MzCDwodF9G1e7jfwLXfR164RNtx4BRVG",
 			Chain:   BTCChain,
 			Chains:  Chains{BCHChain},
-			Network: notMockNet,
+			Network: mainnet,
 			Info:    "mainnet p2pkh",
 		},
 		{
 			Address: "3QJmV3qfvL9SuYo34YihAf3sRCW3qSinyC",
 			Chain:   BTCChain,
 			Chains:  Chains{BCHChain},
-			Network: notMockNet,
+			Network: mainnet,
 			Info:    "mainnet p2sh",
 		},
 		{
 			Address: "3NukJ6fYZJ5Kk8bPjycAnruZkE5Q7UW7i8",
 			Chain:   BTCChain,
 			Chains:  Chains{BCHChain},
-			Network: notMockNet,
+			Network: mainnet,
 			Info:    "mainnet p2sh",
 		},
 		{
@@ -145,14 +145,14 @@ func (s *AddressSuite) TestAddress(c *C) {
 			Address: "BC1QW508D6QEJXTDG4Y5R3ZARVARY0C5XW7KV8F3T4",
 			Chain:   BTCChain,
 			Chains:  Chains{DOGEChain},
-			Network: notMockNet,
+			Network: mainnet,
 			Info:    "segwit mainnet p2wpkh v0",
 		},
 		{
 			Address: "bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3",
 			Chain:   BTCChain,
 			Chains:  Chains{DOGEChain},
-			Network: notMockNet,
+			Network: mainnet,
 			Info:    "segwit mainnet p2wsh v0",
 		},
 		{
@@ -172,13 +172,13 @@ func (s *AddressSuite) TestAddress(c *C) {
 		{
 			Address: "bc1pw508d6qejxtdg4y5r3zarvary0c5xw7kw508d6qejxtdg4y5r3zarvary0c5xw7k7grplx",
 			Chain:   BTCChain,
-			Network: notMockNet,
+			Network: mainnet,
 			Info:    "segwit mainnet witness v1",
 		},
 		{
 			Address: "BC1SW50QA3JX3S",
 			Chain:   BTCChain,
-			Network: notMockNet,
+			Network: mainnet,
 			Info:    "segwit mainnet witness v16",
 		},
 		{
@@ -190,7 +190,7 @@ func (s *AddressSuite) TestAddress(c *C) {
 		{
 			Address: "bc1pfy63nact82mfmts5jv87p2uayxqs29gf8070td7kzhwzx6zc9ruq9u7xy7",
 			Chain:   BTCChain,
-			Network: notMockNet,
+			Network: mainnet,
 			Info:    "Taproot mainnet (bech32m)",
 		},
 		{
@@ -281,7 +281,7 @@ func (s *AddressSuite) TestAddress(c *C) {
 		{
 			Address: "addr1vyacmg042vn3r6g9e5uv25sjj4jmm27vewztphr9qrtafkgl35pq2",
 			Chain:   ADAChain,
-			Network: notMockNet,
+			Network: mainnet,
 		},
 		{
 			Address: "addr_test1vqacmg042vn3r6g9e5uv25sjj4jmm27vewztphr9qrtafkgyeqa00",

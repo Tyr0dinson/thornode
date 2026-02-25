@@ -80,4 +80,10 @@ func (s ChainSuite) TestChain(c *C) {
 	c.Assert(tronGasUnits, Equals, "sun")
 	c.Assert(TRONChain.GetGasAssetDecimal(), Equals, int64(6))
 	c.Assert(TRONChain.ApproximateBlockMilliseconds(), Equals, int64(3000))
+
+	// Cardano tests
+	cardanoGasUnits, _ := ADAChain.GetGasUnits()
+	c.Assert(cardanoGasUnits, Equals, "lovelace")
+	c.Assert(ADAChain.GetGasAssetDecimal(), Equals, int64(6))
+	c.Assert(ADAChain.ApproximateBlockMilliseconds(), Equals, int64(20_000))
 }

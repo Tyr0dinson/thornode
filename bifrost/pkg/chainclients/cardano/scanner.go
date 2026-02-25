@@ -108,7 +108,7 @@ func (s *Scanner) Start() error {
 	// wait for the first block
 	start := time.Now()
 	for {
-		time.Sleep(1 * time.Second)
+		time.Sleep(time.Second)
 
 		var height uint64
 		height, _, _, err = s.db.GetLastBlockId()
@@ -120,7 +120,7 @@ func (s *Scanner) Start() error {
 			break
 		}
 
-		if time.Since(start).Seconds() > 10 {
+		if time.Since(start) > time.Second*10 {
 			return fmt.Errorf("timeout waiting for block scanner to start")
 		}
 	}
