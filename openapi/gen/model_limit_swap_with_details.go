@@ -3,7 +3,6 @@ Thornode API
 
 Thornode REST API.
 
-API version: 3.16.0
 Contact: devs@thorchain.org
 */
 
@@ -205,7 +204,7 @@ func (o *LimitSwapWithDetails) SetCreatedTimestamp(v int64) {
 	o.CreatedTimestamp = &v
 }
 
-func (o LimitSwapWithDetails) MarshalJSON() ([]byte, error) {
+func (o LimitSwapWithDetails) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if o.Swap != nil {
 		toSerialize["swap"] = o.Swap
@@ -252,7 +251,7 @@ func NewNullableLimitSwapWithDetails(val *LimitSwapWithDetails) *NullableLimitSw
 	return &NullableLimitSwapWithDetails{value: val, isSet: true}
 }
 
-func (v NullableLimitSwapWithDetails) MarshalJSON() ([]byte, error) {
+func (v NullableLimitSwapWithDetails) MarshalJSON_deprecated() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

@@ -3,7 +3,6 @@ Thornode API
 
 Thornode REST API.
 
-API version: 3.16.0
 Contact: devs@thorchain.org
 */
 
@@ -410,7 +409,7 @@ func (o *SwapState) SetFailedSwapReasons(v []string) {
 	o.FailedSwapReasons = v
 }
 
-func (o SwapState) MarshalJSON() ([]byte, error) {
+func (o SwapState) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if o.Interval != nil {
 		toSerialize["interval"] = o.Interval
@@ -475,7 +474,7 @@ func NewNullableSwapState(val *SwapState) *NullableSwapState {
 	return &NullableSwapState{value: val, isSet: true}
 }
 
-func (v NullableSwapState) MarshalJSON() ([]byte, error) {
+func (v NullableSwapState) MarshalJSON_deprecated() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

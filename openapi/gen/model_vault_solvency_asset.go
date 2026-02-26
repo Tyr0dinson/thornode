@@ -3,7 +3,6 @@ Thornode API
 
 Thornode REST API.
 
-API version: 3.16.0
 Contact: devs@thorchain.org
 */
 
@@ -90,7 +89,7 @@ func (o *VaultSolvencyAsset) SetAmount(v string) {
 	o.Amount = v
 }
 
-func (o VaultSolvencyAsset) MarshalJSON() ([]byte, error) {
+func (o VaultSolvencyAsset) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
 		toSerialize["asset"] = o.Asset
@@ -128,7 +127,7 @@ func NewNullableVaultSolvencyAsset(val *VaultSolvencyAsset) *NullableVaultSolven
 	return &NullableVaultSolvencyAsset{value: val, isSet: true}
 }
 
-func (v NullableVaultSolvencyAsset) MarshalJSON() ([]byte, error) {
+func (v NullableVaultSolvencyAsset) MarshalJSON_deprecated() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

@@ -3,7 +3,6 @@ Thornode API
 
 Thornode REST API.
 
-API version: 3.16.0
 Contact: devs@thorchain.org
 */
 
@@ -232,7 +231,7 @@ func (o *ReferenceMemoPreflightResponse) SetMaxUse(v string) {
 	o.MaxUse = v
 }
 
-func (o ReferenceMemoPreflightResponse) MarshalJSON() ([]byte, error) {
+func (o ReferenceMemoPreflightResponse) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
 		toSerialize["reference"] = o.Reference
@@ -285,7 +284,7 @@ func NewNullableReferenceMemoPreflightResponse(val *ReferenceMemoPreflightRespon
 	return &NullableReferenceMemoPreflightResponse{value: val, isSet: true}
 }
 
-func (v NullableReferenceMemoPreflightResponse) MarshalJSON() ([]byte, error) {
+func (v NullableReferenceMemoPreflightResponse) MarshalJSON_deprecated() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

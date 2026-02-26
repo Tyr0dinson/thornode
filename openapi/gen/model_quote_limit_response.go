@@ -3,7 +3,6 @@ Thornode API
 
 Thornode REST API.
 
-API version: 3.16.0
 Contact: devs@thorchain.org
 */
 
@@ -612,7 +611,7 @@ func (o *QuoteLimitResponse) SetOrderExpiryTimestamp(v int64) {
 	o.OrderExpiryTimestamp = v
 }
 
-func (o QuoteLimitResponse) MarshalJSON() ([]byte, error) {
+func (o QuoteLimitResponse) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
 		toSerialize["inbound_address"] = o.InboundAddress
@@ -698,7 +697,7 @@ func NewNullableQuoteLimitResponse(val *QuoteLimitResponse) *NullableQuoteLimitR
 	return &NullableQuoteLimitResponse{value: val, isSet: true}
 }
 
-func (v NullableQuoteLimitResponse) MarshalJSON() ([]byte, error) {
+func (v NullableQuoteLimitResponse) MarshalJSON_deprecated() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 
