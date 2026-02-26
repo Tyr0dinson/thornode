@@ -85,19 +85,35 @@ func (s *LevelDBScannerStorageCardano) SetBlockId(
 
 // spent utxos
 
-func (s *LevelDBScannerStorageCardano) SetSpentUtxos(ids [][]byte, height int64) error {
-	if height <= 0 {
-		return fmt.Errorf("height must >= 0")
+func (s *LevelDBScannerStorageCardano) SetSpentUtxos(ids [][]byte, height uint64) error {
+	if height == 0 {
+		return fmt.Errorf("height must > 0")
 	}
+
+	batch := new(leveldb.Batch)
 
 	for _, id := range ids {
-		err := s.setSpentUtxoById(id)
-		if err != nil {
-			return err
-		}
+		batch.Put(s.getSpentUtxoByIdKey(id), nil)
 	}
 
-	return s.setSpentUtxosByHeight(ids, uint64(height))
+	key := s.getSpentUtxoByHeightKey(height)
+
+	spent, err := s.GetSpentUtxosByHeight(height)
+	if err != nil {
+		return err
+	}
+
+	bz, err := json.Marshal(IdsByHeight{
+		Height: height,
+		Ids:    append(spent, ids...),
+	})
+	if err != nil {
+		return fmt.Errorf("fail to marshal data: %w", err)
+	}
+
+	batch.Put(key, bz)
+
+	return s.db.Write(batch, nil)
 }
 
 func (s *LevelDBScannerStorageCardano) GetSpentUtxosByHeight(height uint64) ([][]byte, error) {
@@ -138,11 +154,13 @@ func (s *LevelDBScannerStorageCardano) PruneSpentUtxos(height uint64) error {
 }
 
 func (s *LevelDBScannerStorageCardano) PruneBlockIds(height uint64) error {
+	candidates := [][]byte{}
+
 	iterator := s.db.NewIterator(
 		leveldbutil.BytesPrefix([]byte(PrefixBlockId)), nil,
 	)
 	defer iterator.Release()
-	candidates := [][]byte{}
+
 	for ; iterator.Next(); iterator.Valid() {
 		if iterator.Key() == nil {
 			continue
@@ -159,14 +177,16 @@ func (s *LevelDBScannerStorageCardano) PruneBlockIds(height uint64) error {
 		candidates = append(candidates, key)
 	}
 
-	for _, key := range candidates {
-		err := s.db.Delete(key, nil)
-		if err != nil {
-			return fmt.Errorf("failed to delete data from storage: %w", err)
-		}
+	if err := iterator.Error(); err != nil {
+		return err
 	}
 
-	return nil
+	batch := new(leveldb.Batch)
+	for _, key := range candidates {
+		batch.Delete(key)
+	}
+
+	return s.db.Write(batch, nil)
 }
 
 // observed txs
@@ -190,8 +210,7 @@ func (s *LevelDBScannerStorageCardano) GetObservedTxs(height uint64) ([][]byte, 
 }
 
 func (s *LevelDBScannerStorageCardano) DeleteObservedTxs(height uint64) error {
-	key := s.getObservedTxsByHeightKey(height)
-	return s.db.Delete(key, nil)
+	return s.db.Delete(s.getObservedTxsByHeightKey(height), nil)
 }
 
 func (s *LevelDBScannerStorageCardano) PruneObservedTxs(height uint64) error {
@@ -231,6 +250,10 @@ func (s *LevelDBScannerStorageCardano) GetBlockIdsAboveSlot(slot uint64) ([]Bloc
 		if id.Slot > slot {
 			result = append(result, id)
 		}
+	}
+
+	if iterator.Error() != nil {
+		return nil, iterator.Error()
 	}
 
 	return result, nil
@@ -290,38 +313,6 @@ func (s *LevelDBScannerStorageCardano) getBlockId(
 	return id.Height, id.Slot, id.Hash, nil
 }
 
-func (s *LevelDBScannerStorageCardano) setSpentUtxosByHeight(ids [][]byte, height uint64) error {
-	if ids == nil {
-		return nil
-	}
-
-	key := s.getSpentUtxoByHeightKey(height)
-
-	spent, err := s.GetSpentUtxosByHeight(height)
-	if err != nil {
-		return err
-	}
-
-	bz, err := json.Marshal(IdsByHeight{
-		Height: height,
-		Ids:    append(spent, ids...),
-	})
-	if err != nil {
-		return fmt.Errorf("fail to marshal data: %w", err)
-	}
-
-	return s.db.Put(key, bz, nil)
-}
-
-func (s *LevelDBScannerStorageCardano) setSpentUtxoById(id []byte) error {
-	if len(id) == 0 {
-		return nil
-	}
-
-	key := s.getSpentUtxoByIdKey(id)
-	return s.db.Put(key, nil, nil)
-}
-
 func (s *LevelDBScannerStorageCardano) getIdsByHeightKey(key []byte) ([][]byte, error) {
 	bz, err := s.db.Get(key, nil)
 	if err != nil {
@@ -340,11 +331,13 @@ func (s *LevelDBScannerStorageCardano) getIdsByHeightKey(key []byte) ([][]byte, 
 }
 
 func (s *LevelDBScannerStorageCardano) getPruneCandidates(height uint64, key string) ([]uint64, error) {
+	var candidates []uint64
+
 	iterator := s.db.NewIterator(
 		leveldbutil.BytesPrefix([]byte(key)), nil,
 	)
 	defer iterator.Release()
-	var candidates []uint64
+
 	for ; iterator.Next(); iterator.Valid() {
 		bz := iterator.Value()
 		if len(bz) == 0 {
@@ -357,6 +350,10 @@ func (s *LevelDBScannerStorageCardano) getPruneCandidates(height uint64, key str
 		if record.Height <= height {
 			candidates = append(candidates, record.Height)
 		}
+	}
+
+	if iterator.Error() != nil {
+		return nil, iterator.Error()
 	}
 
 	return candidates, nil

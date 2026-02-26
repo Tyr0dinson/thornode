@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"sync"
 	"time"
 
 	sdkmath "cosmossdk.io/math"
@@ -32,12 +33,12 @@ import (
 )
 
 type Client struct {
-	logger              zerolog.Logger
-	networkError        chan error
-	config              config.BifrostChainConfiguration
+	logger zerolog.Logger
+	config config.BifrostChainConfiguration
+
 	n2c                 ClientWrapper
 	ttl                 uint64
-	thorchainBridge     thorclient.ThorchainBridge
+	bridge              thorclient.ThorchainBridge
 	signerCacheManager  *signercache.CacheManager
 	storage             *blockscanner.BlockScannerStorageCardano
 	blockScanner        *blockscanner.BlockScanner
@@ -47,6 +48,8 @@ type Client struct {
 	localAddress        string
 	globalSolvencyQueue chan types.Solvency
 	globalNetworkQueue  chan common.NetworkFee
+	wg                  *sync.WaitGroup
+	stopchan            chan struct{}
 }
 
 func NewClient(
@@ -60,9 +63,11 @@ func NewClient(
 		return nil, errors.New("thorchain bridge is nil")
 	}
 	c := &Client{
-		thorchainBridge: thorchainBridge,
-		logger:          log.With().Str("module", cfg.ChainID.String()).Logger(),
-		config:          cfg,
+		bridge:   thorchainBridge,
+		logger:   log.With().Str("module", cfg.ChainID.String()).Logger(),
+		config:   cfg,
+		wg:       &sync.WaitGroup{},
+		stopchan: make(chan struct{}),
 	}
 
 	var err error
@@ -138,7 +143,7 @@ func NewClient(
 	c.chainScanner, err = NewScanner(
 		c.logger,
 		cfg.BlockScanner,
-		c.thorchainBridge,
+		c.bridge,
 		c.storage,
 		cfg.APIHost,
 		cfg.RPCHost,
@@ -178,6 +183,16 @@ func (c *Client) Start(
 
 	c.blockScanner.Start(globalTxsQueue, globalNetworkFeeQueue)
 	c.tssKeyManager.Start()
+
+	c.wg.Add(1)
+	go runners.SolvencyCheckRunner(
+		c.GetChain(),
+		c,
+		c.bridge,
+		c.stopchan,
+		c.wg,
+		constants.ThorchainBlockTime,
+	)
 }
 
 func (c *Client) Stop() {
@@ -188,6 +203,8 @@ func (c *Client) Stop() {
 	if err != nil {
 		c.logger.Err(err).Msg("failed to stop cardano scanner")
 	}
+	close(c.stopchan)
+	c.wg.Wait()
 }
 
 func (c *Client) BroadcastTx(txOutItem types.TxOutItem, txBytes []byte) (string, error) {
@@ -196,21 +213,26 @@ func (c *Client) BroadcastTx(txOutItem types.TxOutItem, txBytes []byte) (string,
 		return "", fmt.Errorf("failed to decode transaction: %w", err)
 	}
 
-	if len(tx.Outputs()) != 2 {
+	if len(tx.Outputs()) > 2 {
 		return "", fmt.Errorf("invalid number of transaction outputs: %d", len(tx.Outputs()))
 	}
 
 	err = c.n2c.SubmitTx(ledger.TxTypeConway, txBytes)
 	if err != nil {
-		return "", fmt.Errorf("failed to submit transaction bytes=%x: %w", txBytes, err)
+		return "", fmt.Errorf("failed to submit transaction: %w", err)
 	}
 
 	txHash := tx.Hash().String()
 
+	var change uint64
+	if len(tx.Outputs()) == 2 {
+		change = tx.Outputs()[1].Amount().Uint64()
+	}
+
 	c.logger.Info().
 		Str("hash", txHash).
 		Uint64("amount", tx.Outputs()[0].Amount().Uint64()).
-		Uint64("change", tx.Outputs()[1].Amount().Uint64()).
+		Uint64("change", change).
 		Uint64("fee", tx.Fee().Uint64()).
 		Msg("BroadcastTx")
 
@@ -339,9 +361,13 @@ func (c *Client) GetAccountByAddress(address string, height *big.Int) (common.Ac
 		total += utxo.Amount
 	}
 
-	account.Coins = common.Coins{
-		common.NewCoin(common.ADAAsset, sdkmath.NewUint(total)),
-	}
+	decimals := c.config.ChainID.GetGasAssetDecimal()
+
+	account.Coins = []common.Coin{{
+		Asset:    common.ADAAsset,
+		Amount:   sdkmath.NewUint(total * 100),
+		Decimals: decimals,
+	}}
 
 	return account, nil
 }
@@ -373,6 +399,10 @@ func (c *Client) GetConfig() config.BifrostChainConfiguration {
 }
 
 func (c *Client) GetConfirmationCount(txIn types.TxIn) int64 {
+	if len(txIn.TxArray) == 0 {
+		return 0
+	}
+
 	//  n2c call may be slow, may also query leveldb if chain-sync is current
 	tip, err := c.n2c.GetChainBlockNo()
 	if err != nil {
@@ -470,36 +500,43 @@ func (c *Client) SignTx(txOutItem types.TxOutItem, _ int64) ([]byte, []byte, *ty
 
 	minFeeA, minFeeB := c.chainScanner.GetNetworkMinFees()
 
+	maxFee := uint64(500_000)
+	if !txOutItem.MaxGas.IsEmpty() {
+		coins := txOutItem.MaxGas.ToCoins()
+		maxFee = coins[0].Amount.Uint64() / 100
+	}
+
 	tx, err := CreateConwayTx(
 		fromAddress,
 		toAddress,
 		coin.Amount.Uint64()/100, // 1e8 => 1e6
 		minFeeA,
 		minFeeB,
+		maxFee,
 		txOutItem.Memo,
 		utxos,
 	)
 	if err != nil {
-		c.logger.Err(err).Msg("failed to create conway tx")
-		return nil, nil, nil, err
+		return nil, nil, nil, fmt.Errorf("failed to create conway tx: %w", err)
 	}
 
-	_, slot, _, _ := c.storage.GetLastBlockId()
+	_, slot, _, err := c.storage.GetLastBlockId()
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to get last block id: %w", err)
+	}
 
 	tx.Body.Ttl = slot + c.ttl
 
 	encoded, err := cbor.Encode(tx.Body)
 	if err != nil {
-		c.logger.Err(err).Msg("failed to encode transaction")
-		return nil, nil, nil, err
+		return nil, nil, nil, fmt.Errorf("failed to encode transaction: %w", err)
 	}
 
 	hash := lcommon.Blake2b256Hash(encoded)
 
 	signature, err := c.sign(hash[:], txOutItem)
 	if err != nil {
-		c.logger.Err(err).Msg("failed to sign transaction")
-		return nil, nil, nil, err
+		return nil, nil, nil, fmt.Errorf("failed to sign transaction: %w", err)
 	}
 
 	var pubKey cryptotypes.PubKey
@@ -508,8 +545,7 @@ func (c *Client) SignTx(txOutItem types.TxOutItem, _ int64) ([]byte, []byte, *ty
 		txOutItem.VaultPubKeyEddsa.String(),
 	)
 	if err != nil {
-		c.logger.Err(err).Msg("failed to get public key")
-		return nil, nil, nil, err
+		return nil, nil, nil, fmt.Errorf("failed to get public key: %w", err)
 	}
 
 	// verify
@@ -530,8 +566,7 @@ func (c *Client) SignTx(txOutItem types.TxOutItem, _ int64) ([]byte, []byte, *ty
 
 	txBytes, err := cbor.Encode(tx)
 	if err != nil {
-		c.logger.Err(err).Msg("failed to encode transaction")
-		return nil, nil, nil, err
+		return nil, nil, nil, fmt.Errorf("failed to encode transaction: %w", err)
 	}
 
 	var spentUtxos [][]byte
@@ -539,10 +574,9 @@ func (c *Client) SignTx(txOutItem types.TxOutItem, _ int64) ([]byte, []byte, *ty
 		key := getUtxoKey(input.Id().Bytes(), input.Index())
 		spentUtxos = append(spentUtxos, key)
 	}
-	err = c.storage.SetSpentUtxos(spentUtxos, currentHeight)
+	err = c.storage.SetSpentUtxos(spentUtxos, uint64(currentHeight))
 	if err != nil {
-		c.logger.Err(err).Msg("failed to set spent utxos")
-		return nil, nil, nil, err
+		return nil, nil, nil, fmt.Errorf("failed to set spent utxos")
 	}
 
 	txIn := types.NewTxInItem(
@@ -590,6 +624,9 @@ func (c *Client) sign(
 }
 
 func (c *Client) ShouldReportSolvency(height int64) bool {
+	if c.config.SolvencyBlocks <= 0 {
+		return false
+	}
 	return height%c.config.SolvencyBlocks == 0
 }
 
@@ -597,55 +634,76 @@ func (c *Client) ReportSolvency(height int64) error {
 	if !c.ShouldReportSolvency(height) {
 		return nil
 	}
+
+	// when block scanner is not healthy, only report from auto-unhalt SolvencyCheckRunner
+	// (FetchTxs passes PreviousHeight + 1 from scanBlocks, while SolvencyCheckRunner passes chainHeight)
 	if !c.IsBlockScannerHealthy() && height == c.blockScanner.PreviousHeight()+1 {
 		return nil
 	}
-	asgardVaults, err := c.thorchainBridge.GetAsgards()
+
+	vaults, err := c.bridge.GetAsgards()
 	if err != nil {
-		return fmt.Errorf("fail to get asgard vaults: %w", err)
+		return fmt.Errorf("failed to get asgards, err: %w", err)
 	}
-	_, fee := c.chainScanner.GetNetworkFee()
-	gasFee := sdkmath.NewUint(fee)
-	reportMsgs := make([]types.Solvency, 0, len(asgardVaults))
-	solventMsgs := make([]types.Solvency, 0, len(asgardVaults))
-	for i := range asgardVaults {
-		acct, err := c.GetAccount(asgardVaults[i].PubKey, big.NewInt(height))
+
+	_, rate := c.chainScanner.GetNetworkFee()
+
+	fee, err := common.ConvertDecimals(
+		big.NewInt(int64(rate)),
+		int(c.config.ChainID.GetGasAssetDecimal()),
+		common.THORChainDecimals,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to convert fee amount to decimals")
+	}
+
+	solventMsgs := make([]types.Solvency, 0, len(vaults))
+	insolventMsgs := make([]types.Solvency, 0, len(vaults))
+
+	for i, vault := range vaults {
+		var acc common.Account
+		acc, err = c.GetAccount(vault.PubKeyEddsa, big.NewInt(height))
 		if err != nil {
-			return fmt.Errorf("fail to get account: %w", err)
+			c.logger.Err(err).Msgf("failed to get account balance")
+			continue
 		}
+
 		msg := types.Solvency{
 			Height: height,
 			Chain:  c.config.ChainID,
-			PubKey: asgardVaults[i].PubKey,
-			Coins:  acct.Coins,
+			PubKey: vaults[i].PubKeyEddsa,
+			Coins:  acc.Coins,
 		}
-		if runners.IsVaultSolvent(acct, asgardVaults[i], gasFee) {
+
+		if runners.IsVaultSolvent(acc, vaults[i], cosmos.NewUintFromBigInt(fee)) {
 			solventMsgs = append(solventMsgs, msg)
-		} else {
-			reportMsgs = append(reportMsgs, msg)
+			continue
 		}
+
+		insolventMsgs = append(insolventMsgs, msg)
 	}
-	// only report solvency when the block blockScanner is unhealthy and all vaults are solvent
-	// otherwise report insolvency
+
+	msgs := insolventMsgs
 	solvent := false
-	if !c.IsBlockScannerHealthy() && len(solventMsgs) == len(asgardVaults) {
-		reportMsgs = solventMsgs
+
+	if !c.IsBlockScannerHealthy() && len(solventMsgs) == len(vaults) {
+		msgs = solventMsgs
 		solvent = true
 	}
 
-	for i := range reportMsgs {
+	for _, msg := range msgs {
 		c.logger.Info().
-			Stringer("asgard", reportMsgs[i].PubKey).
-			Interface("coins", reportMsgs[i].Coins).
+			Str("asgard", msg.PubKey.String()).
+			Interface("coins", msg.Coins).
 			Bool("solvent", solvent).
 			Msg("reporting solvency")
-
 		// send solvency to thorchain via global queue consumed by the observer
 		select {
-		case c.globalSolvencyQueue <- reportMsgs[i]:
+		case c.globalSolvencyQueue <- msg:
 		case <-time.After(constants.ThorchainBlockTime):
 			c.logger.Info().Msgf("fail to send solvency info to THORChain, timeout")
 		}
 	}
+
 	return nil
 }

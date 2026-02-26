@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	sdkmath "cosmossdk.io/math"
@@ -12,6 +13,7 @@ import (
 	"github.com/blinklabs-io/gouroboros/ledger/conway"
 	"github.com/blinklabs-io/gouroboros/protocol/chainsync"
 	pcommon "github.com/blinklabs-io/gouroboros/protocol/common"
+	"github.com/blinklabs-io/gouroboros/protocol/localstatequery"
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
@@ -36,6 +38,7 @@ type Scanner struct {
 	lastAsgardUpdate      time.Time
 	globalNetworkFeeQueue chan common.NetworkFee
 	globalErrataQueue     chan types.ErrataBlock
+	rollbackHeight        int64
 }
 
 func NewScanner(
@@ -95,7 +98,7 @@ func (s *Scanner) Start() error {
 	} else {
 		tip, err := s.n2c.GetChainPoint()
 		if err != nil {
-			return fmt.Errorf("fail to get current tip: %w", err)
+			return fmt.Errorf("failed to get current tip: %w", err)
 		}
 		point = *tip
 	}
@@ -160,16 +163,91 @@ func (s *Scanner) GetNetworkMinFees() (uint64, uint64) {
 
 // FetchTxs implements blockscanner.BlockScannerFetcher.
 func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
-	s.logger.Info().Msgf("FetchTxs: fetch_height=%d chain_height=%d", fetchHeight, chainHeight)
-	_, slot, hash, err := s.db.GetBlockId(uint64(fetchHeight))
+
+	var allTxIns []*types.TxInItem
+
+	rollbackHeight := atomic.LoadInt64(&s.rollbackHeight)
+	if rollbackHeight > 0 && rollbackHeight < fetchHeight {
+		s.logger.Info().
+			Int64("rollback_height", rollbackHeight).
+			Int64("fetch_height", fetchHeight).
+			Msg("processing rollback blocks")
+
+		for height := rollbackHeight + 1; height < fetchHeight; height++ {
+			txIns, err := s.fetchTxs(height)
+			if err != nil {
+				return types.TxIn{}, fmt.Errorf("failed to fetch txs: %w", err)
+			}
+
+			allTxIns = append(allTxIns, txIns...)
+		}
+	}
+
+	txIns, err := s.fetchTxs(fetchHeight)
 	if err != nil {
-		s.logger.Err(err).Msgf("fail to find block id for height=%d", fetchHeight)
+		return types.TxIn{}, fmt.Errorf("failed to fetch txs: %w", err)
+	}
+
+	allTxIns = append(allTxIns, txIns...)
+
+	if err = s.updateNetworkFee(fetchHeight); err != nil {
 		return types.TxIn{}, err
 	}
-	block, err := s.n2n.conn.BlockFetch().Client.GetBlock(pcommon.NewPoint(slot, hash))
+
+	s.logger.Info().Msgf("done network fee")
+
+	if chainHeight > s.config.MaxReorgRescanBlocks {
+		pruneHeight := uint64(chainHeight - s.config.MaxReorgRescanBlocks)
+
+		err = s.db.PruneObservedTxs(pruneHeight)
+		if err != nil {
+			s.logger.Err(err).Msg("failed to prune observed txs")
+		}
+
+		err = s.db.PruneBlockIds(pruneHeight)
+		if err != nil {
+			s.logger.Err(err).Msg("failed to prune block ids")
+		}
+	}
+
+	if chainHeight > transactionTimeout {
+		pruneHeight := uint64(chainHeight - transactionTimeout)
+		err = s.db.PruneSpentUtxos(pruneHeight)
+		if err != nil {
+			s.logger.Err(err).Msg("failed to prune spent utxos")
+		}
+	}
+
+	s.logger.Info().Msgf("done pruning")
+
+	// reset rollbackHeight
+	if rollbackHeight > 0 {
+		atomic.StoreInt64(&s.rollbackHeight, 0)
+	}
+
+	return types.TxIn{
+		Chain:    s.config.ChainID,
+		TxArray:  allTxIns,
+		Filtered: false,
+		MemPool:  false,
+	}, nil
+}
+
+func (s *Scanner) fetchTxs(height int64) ([]*types.TxInItem, error) {
+	s.logger.Info().Int64("height", height).Msgf("fetch txs")
+
+	_, slot, hash, err := s.db.GetBlockId(uint64(height))
 	if err != nil {
-		s.logger.Err(err).Msg("fail to fetch block")
-		return types.TxIn{}, err
+		s.logger.Err(err).Msgf("failed to find block id for height=%d", height)
+		return nil, err
+	}
+
+	point := pcommon.NewPoint(slot, hash)
+
+	block, err := s.n2n.conn.BlockFetch().Client.GetBlock(point)
+	if err != nil {
+		s.logger.Err(err).Msg("failed to fetch block")
+		return nil, err
 	}
 
 	var txIds [][]byte
@@ -186,10 +264,26 @@ func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
 			continue
 		}
 
-		fromAddress, err := AddressFromBytes(tx.Witnesses().Vkey()[0].Vkey)
+		// lookup the sender from the first input utxo
+		var result *localstatequery.UTxOByTxInResult
+		result, err = s.n2c.GetUTxOByTxIn(tx.Inputs(), &point)
 		if err != nil {
-			s.logger.Err(err).Msg("fail to get sender address")
+			s.logger.Err(err).Msg("failed to fetch utxo result for tx")
 			continue
+		}
+
+		if len(result.Results) == 0 {
+			s.logger.Error().Msg("no utxo result for tx")
+			continue
+		}
+
+		var fromAddress ledger.Address
+
+		// We just use the first input for the sender address,
+		// txs with multiple VKeys where already discarded
+		for _, output := range result.Results {
+			fromAddress = output.Address()
+			break
 		}
 
 		isFromAsgard := s.isAsgardAddress(fromAddress)
@@ -232,7 +326,7 @@ func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
 
 		txIns = append(txIns, &types.TxInItem{
 			Tx:          tx.Hash().String(),
-			BlockHeight: fetchHeight,
+			BlockHeight: height,
 			Memo:        memo,
 			Sender:      fromAddress.String(),
 			To:          toAddress.String(),
@@ -245,49 +339,14 @@ func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
 
 	// store observed tx hashes for rollback errata
 	if len(txIds) > 0 {
-		err = s.db.SetObservedTxs(uint64(fetchHeight), txIds)
+		err = s.db.SetObservedTxs(uint64(height), txIds)
 		if err != nil {
-			s.logger.Err(err).Msg("fail to store observed txs")
-			return types.TxIn{}, err
+			s.logger.Err(err).Msg("failed to store observed txs")
+			return nil, err
 		}
 	}
 
-	if err = s.updateNetworkFee(fetchHeight); err != nil {
-		return types.TxIn{}, err
-	}
-
-	s.logger.Info().Msgf("done network fee")
-
-	if chainHeight > s.config.MaxReorgRescanBlocks {
-		pruneHeight := uint64(chainHeight - s.config.MaxReorgRescanBlocks)
-
-		err = s.db.PruneObservedTxs(pruneHeight)
-		if err != nil {
-			s.logger.Err(err).Msg("failed to prune observed txs")
-		}
-
-		err = s.db.PruneBlockIds(pruneHeight)
-		if err != nil {
-			s.logger.Err(err).Msg("fail to prune block ids")
-		}
-	}
-
-	if chainHeight > transactionTimeout {
-		pruneHeight := uint64(chainHeight - transactionTimeout)
-		err = s.db.PruneSpentUtxos(pruneHeight)
-		if err != nil {
-			s.logger.Err(err).Msg("failed to prune spent utxos")
-		}
-	}
-
-	s.logger.Info().Msgf("done pruning")
-
-	return types.TxIn{
-		Chain:    s.config.ChainID,
-		TxArray:  txIns,
-		Filtered: false,
-		MemPool:  false,
-	}, nil
+	return txIns, nil
 }
 
 func (s *Scanner) updateNetworkFee(height int64) error {
@@ -364,14 +423,15 @@ func (s *Scanner) rollForwardHandler(
 	case ledger.Block:
 		s.logger.Warn().Msg("block type is ledger.Block, chain-sync n2n protocol expects ledger.BlockHeader")
 	case ledger.BlockHeader:
-		err := s.db.SetBlockId(h.BlockNumber(), h.SlotNumber(), h.Hash().Bytes())
 		s.logger.Info().
 			Uint64("block_number", h.BlockNumber()).
 			Uint64("slot_number", h.SlotNumber()).
 			Str("hash", h.Hash().String()).
 			Msg("roll forward")
+
+		err := s.db.SetBlockId(h.BlockNumber(), h.SlotNumber(), h.Hash().Bytes())
 		if err != nil {
-			s.logger.Err(err).Msg("fail to set block id")
+			return fmt.Errorf("failed to set block id: %w", err)
 		}
 	}
 	return nil
@@ -389,7 +449,7 @@ func (s *Scanner) rollBackwardHandler(
 	// find invalidated block IDs (slot > rollback slot)
 	invalidated, err := s.db.GetBlockIdsAboveSlot(point.Slot)
 	if err != nil {
-		s.logger.Err(err).Msg("fail to get invalidated block ids")
+		s.logger.Err(err).Msg("failed to get invalidated block ids")
 		return nil
 	}
 	if len(invalidated) == 0 {
@@ -401,7 +461,7 @@ func (s *Scanner) rollBackwardHandler(
 		var txIds [][]byte
 		txIds, err = s.db.GetObservedTxs(block.Height)
 		if err != nil {
-			s.logger.Err(err).Uint64("height", block.Height).Msg("fail to get observed txs")
+			s.logger.Err(err).Uint64("height", block.Height).Msg("failed to get observed txs")
 			continue
 		}
 
@@ -424,10 +484,10 @@ func (s *Scanner) rollBackwardHandler(
 
 		// clean up storage for this height
 		if err = s.db.DeleteObservedTxs(block.Height); err != nil {
-			s.logger.Err(err).Uint64("height", block.Height).Msg("fail to delete observed txs")
+			s.logger.Err(err).Uint64("height", block.Height).Msg("failed to delete observed txs")
 		}
 		if err = s.db.DeleteBlockId(block.Height); err != nil {
-			s.logger.Err(err).Uint64("height", block.Height).Msg("fail to delete block id")
+			s.logger.Err(err).Uint64("height", block.Height).Msg("failed to delete block id")
 		}
 	}
 
@@ -435,17 +495,21 @@ func (s *Scanner) rollBackwardHandler(
 	// block scanner resumes from the correct height on next restart
 	height, _, _, err := s.db.GetLastBlockId()
 	if err != nil {
-		s.logger.Err(err).Msg("fail to get rollback height")
+		s.logger.Err(err).Msg("failed to get rollback height")
 		return nil
 	}
 
 	if err = s.db.SetScanPos(int64(height)); err != nil {
-		s.logger.Err(err).Msg("fail to set scan position")
+		s.logger.Err(err).Msg("failed to set scan position")
 	} else {
 		s.logger.Info().
 			Uint64("height", height).
 			Msg("set scan position for rollback")
 	}
+
+	// signal FetchTxs to reprocess blocks from this height, blockscanner
+	// doesn't know of this rollback
+	atomic.StoreInt64(&s.rollbackHeight, int64(height))
 
 	return nil
 }
@@ -473,7 +537,7 @@ func (s *Scanner) getAsgardAddresses() ([]common.Address, error) {
 func (s *Scanner) isAsgardAddress(address ledger.Address) bool {
 	asgards, err := s.getAsgardAddresses()
 	if err != nil {
-		s.logger.Err(err).Msg("fail to get asgard addresses")
+		s.logger.Err(err).Msg("failed to get asgard addresses")
 		return false
 	}
 	for _, asgard := range asgards {

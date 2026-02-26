@@ -187,6 +187,7 @@ func (c *Client) SignTx(simTx simtypes.SimTx) ([]byte, error) {
 		coin.Amount.Uint64()/100, // 1e8 => 1e6
 		minFeeA,
 		minFeeB,
+		500_000,
 		simTx.Memo,
 		utxos,
 	)

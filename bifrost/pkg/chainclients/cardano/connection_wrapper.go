@@ -137,6 +137,7 @@ type ClientWrapper interface {
 	GetChainPoint() (*pcommon.Point, error)
 	GetGenesisConfig() (*localstatequery.GenesisConfigResult, error)
 	GetUTxOByAddress([]ledger.Address, *pcommon.Point) (*localstatequery.UTxOsResult, error)
+	GetUTxOByTxIn([]ledger.TransactionInput, *pcommon.Point) (*localstatequery.UTxOByTxInResult, error)
 	SubmitTx(uint16, []byte) error
 	Close()
 }
@@ -218,6 +219,27 @@ func (c *clientWrapper) GetUTxOByAddress(
 	return client.GetUTxOByAddress(addresses)
 }
 
+func (c *clientWrapper) GetUTxOByTxIn(
+	inputs []ledger.TransactionInput,
+	point *pcommon.Point,
+) (*localstatequery.UTxOByTxInResult, error) {
+	client := c.client()
+
+	if point != nil {
+		err := client.Acquire(point)
+		if err != nil {
+			c.release()
+			c.logger.Err(err).Msg("failed to acquire point")
+			return nil, err
+		}
+	}
+
+	defer c.release()
+	return client.GetUTxOByTxIn(inputs)
+}
+
 func (c *clientWrapper) SubmitTx(era uint16, bz []byte) error {
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
 	return c.conn.LocalTxSubmission().Client.SubmitTx(era, bz)
 }

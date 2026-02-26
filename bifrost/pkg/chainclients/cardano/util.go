@@ -13,6 +13,7 @@ import (
 	"github.com/blinklabs-io/gouroboros/ledger/conway"
 	"github.com/blinklabs-io/gouroboros/ledger/mary"
 	"github.com/blinklabs-io/gouroboros/ledger/shelley"
+	"gitlab.com/thorchain/thornode/v3/constants"
 )
 
 type Utxo struct {
@@ -45,7 +46,7 @@ func ExtractMemo(data lcommon.TransactionMetadatum, depth int) string {
 	for _, pair := range metaMap.Pairs {
 		switch key := pair.Key.(type) {
 		case lcommon.MetaInt:
-			if depth == 0 && key.Value.Int64() == 674 {
+			if depth == 0 && key.Value.IsInt64() && key.Value.Int64() == 674 {
 				return ExtractMemo(pair.Value, depth+1)
 			}
 		case lcommon.MetaText:
@@ -61,7 +62,13 @@ func ExtractMemo(data lcommon.TransactionMetadatum, depth int) string {
 					}
 				}
 
-				return strings.Join(chunks, "")
+				memo := strings.Join(chunks, "")
+
+				if len(memo) > constants.MaxMemoSize {
+					memo = memo[:constants.MaxMemoSize]
+				}
+
+				return memo
 			}
 		}
 	}
@@ -104,13 +111,13 @@ func CreateMemo(memo string) (lcommon.TransactionMetadatum, *lcommon.Blake2b256,
 
 func CreateConwayTx(
 	fromAddress, toAddress ledger.Address,
-	amount, minFeeA, minFeeB uint64,
+	amount, minFeeA, minFeeB, maxFee uint64,
 	memo string,
 	utxos []Utxo,
 ) (*conway.ConwayTransaction, error) {
 	sort.Slice(utxos, func(i, j int) bool {
 		if utxos[i].Amount != utxos[j].Amount {
-			return utxos[i].Amount < utxos[j].Amount
+			return utxos[i].Amount > utxos[j].Amount
 		}
 		if utxos[i].Hash != utxos[j].Hash {
 			return utxos[i].Hash < utxos[j].Hash
@@ -118,10 +125,20 @@ func CreateConwayTx(
 		return utxos[i].Index < utxos[j].Index
 	})
 
+	// put n amount of the smallest utxos to the front of the slice
+	// to be consumed first for consolidation
+	if len(utxos) > numSmallUtxos {
+		small := make([]Utxo, numSmallUtxos)
+		for i := 0; i < numSmallUtxos; i++ {
+			small[i] = utxos[len(utxos)-i-1]
+		}
+
+		utxos = append(small, utxos[:len(utxos)-numSmallUtxos]...)
+	}
+
 	var inputs []shelley.ShelleyTransactionInput
 
-	// add 5 ADA to ensure dust threshold after fees for change back to vault
-	target := amount + 5_000_000
+	target := amount + maxFee
 	total := uint64(0)
 
 	for _, utxo := range utxos {
@@ -185,25 +202,69 @@ func CreateConwayTx(
 	)
 
 	// calculate fee
-	encoded, err := cbor.Encode(tx)
+	fee, err := calculateFee(tx, minFeeA, minFeeB, maxFee)
 	if err != nil {
 		return nil, err
 	}
 
-	// add 5 byte for rounding issues or change of fee value
-	fee := uint64(len(encoded))*minFeeA + minFeeB + 5
-	if fee == 0 {
-		return nil, fmt.Errorf("failed to calculate fee")
+	remain := total - amount - fee
+
+	if remain > 0 {
+		for remain < dustThreshold && len(utxos) > len(inputs) {
+			utxo := utxos[len(inputs)]
+
+			inputs = append(inputs, shelley.NewShelleyTransactionInput(
+				utxo.Hash,
+				utxo.Index,
+			))
+
+			total += utxo.Amount
+
+			tx.Body.TxInputs = conway.NewConwayTransactionInputSet(inputs)
+
+			fee, err = calculateFee(tx, minFeeA, minFeeB, maxFee)
+			if err != nil {
+				return nil, err
+			}
+
+			remain = total - amount - fee
+		}
 	}
 
-	if fee+amount+dustThreshold > total {
-		return nil, fmt.Errorf("fee exceeds dust threshold margin")
+	// if still below dustThreshold, spend remain as fee
+	if remain < dustThreshold {
+		tx.Body.TxOutputs = tx.Body.TxOutputs[:1]
+		fee = total - amount
+	} else {
+		tx.Body.TxOutputs[1].OutputAmount.Amount = remain
 	}
 
 	tx.Body.TxFee = fee
-	tx.Body.TxOutputs[1].OutputAmount.Amount = total - amount - fee
 
 	return tx, nil
+}
+
+func calculateFee(
+	tx *conway.ConwayTransaction,
+	minFeeA, minFeeB, maxFee uint64,
+) (uint64, error) {
+	encoded, err := cbor.Encode(tx)
+	if err != nil {
+		return 0, err
+	}
+
+	if len(encoded) > maxTransactionSize {
+		return 0, fmt.Errorf("transaction too large")
+	}
+
+	// add 5 byte for rounding issues or change of fee value
+	fee := uint64(len(encoded))*minFeeA + minFeeB + 5
+
+	if fee > maxFee {
+		return 0, fmt.Errorf("fee exceeds max fee")
+	}
+
+	return fee, nil
 }
 
 func getUtxoKey(hash []byte, index uint32) []byte {
