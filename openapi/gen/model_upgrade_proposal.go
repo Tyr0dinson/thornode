@@ -3,6 +3,7 @@ Thornode API
 
 Thornode REST API.
 
+API version: 3.16.0
 Contact: devs@thorchain.org
 */
 
@@ -286,7 +287,7 @@ func (o *UpgradeProposal) SetRejecters(v []string) {
 	o.Rejecters = v
 }
 
-func (o UpgradeProposal) MarshalJSON_deprecated() ([]byte, error) {
+func (o UpgradeProposal) MarshalJSON() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
 		toSerialize["name"] = o.Name
@@ -342,7 +343,7 @@ func NewNullableUpgradeProposal(val *UpgradeProposal) *NullableUpgradeProposal {
 	return &NullableUpgradeProposal{value: val, isSet: true}
 }
 
-func (v NullableUpgradeProposal) MarshalJSON_deprecated() ([]byte, error) {
+func (v NullableUpgradeProposal) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

@@ -164,6 +164,7 @@ const (
 	MarketingFundAddress
 	OverSolvencyToReserveBps
 	OverSolvencyCheckInterval
+	OverSolvencyAddress
 	MaxDepositTxIDRetries
 	MaxRetiredVaultRecoveryAttempts
 

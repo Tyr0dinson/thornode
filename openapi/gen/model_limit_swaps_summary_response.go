@@ -3,6 +3,7 @@ Thornode API
 
 Thornode REST API.
 
+API version: 3.16.0
 Contact: devs@thorchain.org
 */
 
@@ -205,7 +206,7 @@ func (o *LimitSwapsSummaryResponse) SetAverageAgeBlocks(v int64) {
 	o.AverageAgeBlocks = &v
 }
 
-func (o LimitSwapsSummaryResponse) MarshalJSON_deprecated() ([]byte, error) {
+func (o LimitSwapsSummaryResponse) MarshalJSON() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if o.TotalLimitSwaps != nil {
 		toSerialize["total_limit_swaps"] = o.TotalLimitSwaps
@@ -252,7 +253,7 @@ func NewNullableLimitSwapsSummaryResponse(val *LimitSwapsSummaryResponse) *Nulla
 	return &NullableLimitSwapsSummaryResponse{value: val, isSet: true}
 }
 
-func (v NullableLimitSwapsSummaryResponse) MarshalJSON_deprecated() ([]byte, error) {
+func (v NullableLimitSwapsSummaryResponse) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

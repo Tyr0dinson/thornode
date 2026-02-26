@@ -3,6 +3,7 @@ Thornode API
 
 Thornode REST API.
 
+API version: 3.16.0
 Contact: devs@thorchain.org
 */
 
@@ -171,7 +172,7 @@ func (o *AssetPairSummary) SetTotalValueUsd(v string) {
 	o.TotalValueUsd = &v
 }
 
-func (o AssetPairSummary) MarshalJSON_deprecated() ([]byte, error) {
+func (o AssetPairSummary) MarshalJSON() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if o.SourceAsset != nil {
 		toSerialize["source_asset"] = o.SourceAsset
@@ -215,7 +216,7 @@ func NewNullableAssetPairSummary(val *AssetPairSummary) *NullableAssetPairSummar
 	return &NullableAssetPairSummary{value: val, isSet: true}
 }
 
-func (v NullableAssetPairSummary) MarshalJSON_deprecated() ([]byte, error) {
+func (v NullableAssetPairSummary) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

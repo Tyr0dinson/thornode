@@ -3,6 +3,7 @@ Thornode API
 
 Thornode REST API.
 
+API version: 3.16.0
 Contact: devs@thorchain.org
 */
 
@@ -539,7 +540,7 @@ func (o *TxOutItem) SetCloutSpent(v string) {
 	o.CloutSpent = &v
 }
 
-func (o TxOutItem) MarshalJSON_deprecated() ([]byte, error) {
+func (o TxOutItem) MarshalJSON() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if o.Height != nil {
 		toSerialize["height"] = o.Height
@@ -619,7 +620,7 @@ func NewNullableTxOutItem(val *TxOutItem) *NullableTxOutItem {
 	return &NullableTxOutItem{value: val, isSet: true}
 }
 
-func (v NullableTxOutItem) MarshalJSON_deprecated() ([]byte, error) {
+func (v NullableTxOutItem) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

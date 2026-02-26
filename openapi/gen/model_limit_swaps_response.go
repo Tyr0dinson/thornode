@@ -3,6 +3,7 @@ Thornode API
 
 Thornode REST API.
 
+API version: 3.16.0
 Contact: devs@thorchain.org
 */
 
@@ -102,7 +103,7 @@ func (o *LimitSwapsResponse) SetPagination(v PaginationMeta) {
 	o.Pagination = &v
 }
 
-func (o LimitSwapsResponse) MarshalJSON_deprecated() ([]byte, error) {
+func (o LimitSwapsResponse) MarshalJSON() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if o.LimitSwaps != nil {
 		toSerialize["limit_swaps"] = o.LimitSwaps
@@ -140,7 +141,7 @@ func NewNullableLimitSwapsResponse(val *LimitSwapsResponse) *NullableLimitSwapsR
 	return &NullableLimitSwapsResponse{value: val, isSet: true}
 }
 
-func (v NullableLimitSwapsResponse) MarshalJSON_deprecated() ([]byte, error) {
+func (v NullableLimitSwapsResponse) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

@@ -3,6 +3,7 @@ Thornode API
 
 Thornode REST API.
 
+API version: 3.16.0
 Contact: devs@thorchain.org
 */
 
@@ -205,7 +206,7 @@ func (o *PaginationMeta) SetHasPrev(v bool) {
 	o.HasPrev = &v
 }
 
-func (o PaginationMeta) MarshalJSON_deprecated() ([]byte, error) {
+func (o PaginationMeta) MarshalJSON() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if o.Offset != nil {
 		toSerialize["offset"] = o.Offset
@@ -252,7 +253,7 @@ func NewNullablePaginationMeta(val *PaginationMeta) *NullablePaginationMeta {
 	return &NullablePaginationMeta{value: val, isSet: true}
 }
 
-func (v NullablePaginationMeta) MarshalJSON_deprecated() ([]byte, error) {
+func (v NullablePaginationMeta) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

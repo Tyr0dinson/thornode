@@ -2505,8 +2505,15 @@ func (vm *NetworkMgr) createSwapToReserve(ctx cosmos.Context, mgr Manager, asset
 	}
 
 	// Create a synthetic transaction for the swap
-	// Use the reserve module address as the sender/destination
+	// Use the reserve module address as the signer (must be module account for internal transactions)
 	reserveAddr := mgr.Keeper().GetModuleAccAddress(ReserveName)
+
+	// Get the over-solvency destination address
+	overSolvencyAddrStr := mgr.Keeper().GetConstants().GetStringValue(constants.OverSolvencyAddress)
+	overSolvencyAddr, err := cosmos.AccAddressFromBech32(overSolvencyAddrStr)
+	if err != nil {
+		return fmt.Errorf("fail to parse OverSolvencyAddress: %w", err)
+	}
 
 	// Get chain-appropriate address format for FromAddress/ToAddress
 	// This ensures future address parsing won't break for different chain types
@@ -2568,10 +2575,10 @@ func (vm *NetworkMgr) createSwapToReserve(ctx cosmos.Context, mgr Manager, asset
 			Gas: common.Gas{
 				maxGasCoin,
 			},
-			Memo: fmt.Sprintf("SWAP:THOR.RUNE:%s", reserveAddr.String()),
+			Memo: fmt.Sprintf("SWAP:THOR.RUNE:%s", overSolvencyAddr.String()),
 		},
 		TargetAsset:          common.RuneAsset(),
-		Destination:          common.Address(reserveAddr.String()),
+		Destination:          common.Address(overSolvencyAddr.String()),
 		TradeTarget:          cosmos.ZeroUint(),
 		AffiliateAddress:     common.NoAddress,
 		AffiliateBasisPoints: cosmos.ZeroUint(),
@@ -2618,12 +2625,17 @@ func (vm *NetworkMgr) SwapToReserveIncome(ctx cosmos.Context, mgr Manager, coin 
 		return nil
 	}
 
-	// RUNE: direct transfer to reserve
+	// RUNE: direct transfer to over-solvency address
 	if coin.IsRune() {
-		if err := mgr.Keeper().SendFromModuleToModule(ctx, AsgardName, ReserveName, common.NewCoins(coin)); err != nil {
-			return fmt.Errorf("fail to send RUNE to reserve: %w", err)
+		overSolvencyAddrStr := mgr.Keeper().GetConstants().GetStringValue(constants.OverSolvencyAddress)
+		overSolvencyAddr, err := cosmos.AccAddressFromBech32(overSolvencyAddrStr)
+		if err != nil {
+			return fmt.Errorf("fail to parse OverSolvencyAddress: %w", err)
 		}
-		ctx.Logger().Info("processed RUNE income to reserve", "amount", coin.Amount)
+		if err := mgr.Keeper().SendFromModuleToAccount(ctx, AsgardName, overSolvencyAddr, common.NewCoins(coin)); err != nil {
+			return fmt.Errorf("fail to send RUNE to over-solvency address: %w", err)
+		}
+		ctx.Logger().Info("processed RUNE income to over-solvency address", "amount", coin.Amount)
 		return nil
 	}
 

@@ -3,6 +3,7 @@ Thornode API
 
 Thornode REST API.
 
+API version: 3.16.0
 Contact: devs@thorchain.org
 */
 
@@ -683,7 +684,7 @@ func (o *Pool) SetVolumeRune(v string) {
 	o.VolumeRune = &v
 }
 
-func (o Pool) MarshalJSON_deprecated() ([]byte, error) {
+func (o Pool) MarshalJSON() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
 		toSerialize["asset"] = o.Asset
@@ -784,7 +785,7 @@ func NewNullablePool(val *Pool) *NullablePool {
 	return &NullablePool{value: val, isSet: true}
 }
 
-func (v NullablePool) MarshalJSON_deprecated() ([]byte, error) {
+func (v NullablePool) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 

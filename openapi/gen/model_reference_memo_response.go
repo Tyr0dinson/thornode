@@ -3,6 +3,7 @@ Thornode API
 
 Thornode REST API.
 
+API version: 3.16.0
 Contact: devs@thorchain.org
 */
 
@@ -224,7 +225,7 @@ func (o *ReferenceMemoResponse) SetUsedByTxs(v []string) {
 	o.UsedByTxs = v
 }
 
-func (o ReferenceMemoResponse) MarshalJSON_deprecated() ([]byte, error) {
+func (o ReferenceMemoResponse) MarshalJSON() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if true {
 		toSerialize["asset"] = o.Asset
@@ -277,7 +278,7 @@ func NewNullableReferenceMemoResponse(val *ReferenceMemoResponse) *NullableRefer
 	return &NullableReferenceMemoResponse{value: val, isSet: true}
 }
 
-func (v NullableReferenceMemoResponse) MarshalJSON_deprecated() ([]byte, error) {
+func (v NullableReferenceMemoResponse) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.value)
 }
 
