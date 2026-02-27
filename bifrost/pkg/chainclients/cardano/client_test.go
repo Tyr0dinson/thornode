@@ -11,11 +11,14 @@ import (
 	lcommon "github.com/blinklabs-io/gouroboros/ledger/common"
 	"github.com/blinklabs-io/gouroboros/ledger/mary"
 	"github.com/blinklabs-io/gouroboros/protocol/localstatequery"
+	cmted25519 "github.com/cometbft/cometbft/crypto/ed25519"
+	"github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/rs/zerolog"
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/shared/signercache"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
 	"gitlab.com/thorchain/thornode/v3/common"
+	"gitlab.com/thorchain/thornode/v3/common/cosmos"
 	"gitlab.com/thorchain/thornode/v3/config"
 	. "gopkg.in/check.v1"
 )
@@ -470,4 +473,261 @@ func (s *ClientTestSuite) TestGetAccountByAddressSingleUtxo(c *C) {
 	c.Assert(acct.Coins, HasLen, 1)
 	// 5_000_000 lovelace * 100 = 500_000_000 in 1e8 units
 	c.Assert(acct.Coins[0].Amount.Equal(sdkmath.NewUint(500_000_000)), Equals, true)
+}
+
+// ---------------------------------------------------------------------------
+// SignTx
+// ---------------------------------------------------------------------------
+
+// makeVaultPubKey generates an ed25519 keypair and returns the bech32-encoded
+// common.PubKey along with the raw private key and public key bytes.
+func makeVaultPubKey(c *C) (common.PubKey, ed25519.PrivateKey, ed25519.PublicKey) {
+	pub, priv, err := ed25519.GenerateKey(nil)
+	c.Assert(err, IsNil)
+
+	sdkPub, err := codec.FromCmtPubKeyInterface(cmted25519.PubKey(pub))
+	c.Assert(err, IsNil)
+
+	bech32Pub, err := cosmos.Bech32ifyPubKey(cosmos.Bech32PubKeyTypeAccPub, sdkPub)
+	c.Assert(err, IsNil)
+
+	pk, err := common.NewPubKey(bech32Pub)
+	c.Assert(err, IsNil)
+
+	return pk, priv, pub
+}
+
+func (s *ClientTestSuite) TestSignTxFullFlow(c *C) {
+	// 1. Generate ed25519 keypair and bech32 PubKey
+	vaultPubKey, priv, _ := makeVaultPubKey(c)
+
+	// 2. Set client key and derive vault address
+	s.client.localKey = priv
+	vaultAddress := s.client.GetAddress(vaultPubKey)
+	c.Assert(vaultAddress, Not(Equals), "")
+	s.client.localAddress = vaultAddress
+
+	// 3. Set TTL and fee params
+	s.client.ttl = 400
+	s.client.chainScanner.minFeeA = 44
+	s.client.chainScanner.minFeeB = 155_381
+
+	// 4. Store a block (height=1, slot=100) for UTXO lookup and TTL
+	blockHash := lcommon.Blake2b256Hash([]byte("block1"))
+	err := s.client.storage.SetBlockId(1, 100, blockHash.Bytes())
+	c.Assert(err, IsNil)
+
+	// 5. Set scanner mock for GetHeight
+	s.client.chainScanner.n2c = &mockClientWrapper{blockNo: 1}
+
+	// 6. Set client mock with one UTXO of 10 ADA (10_000_000 lovelace)
+	utxoHash := lcommon.Blake2b256Hash([]byte("utxo1"))
+	s.client.n2c = &mockClientWrapper{
+		blockNo: 1,
+		utxoResult: &localstatequery.UTxOsResult{
+			Results: map[localstatequery.UtxoId]ledger.BabbageTransactionOutput{
+				{Hash: utxoHash, Idx: 0}: {
+					OutputAmount: mary.MaryTransactionOutputValue{Amount: 10_000_000},
+				},
+			},
+		},
+	}
+
+	// 7. Create toAddress
+	toAddr, err := AddressFromBytes([]byte("to-address-seed"))
+	c.Assert(err, IsNil)
+
+	// 8. Build TxOutItem: send 2 ADA, maxGas 0.5 ADA (all in 1e8 units)
+	memo := "OUT:AABBCCDD"
+	txOutItem := types.TxOutItem{
+		Chain:            common.ADAChain,
+		VaultPubKeyEddsa: vaultPubKey,
+		ToAddress:        common.Address(toAddr.String()),
+		Coins: common.Coins{
+			common.NewCoin(common.ADAAsset, sdkmath.NewUint(200_000_000)),
+		},
+		MaxGas: common.Gas{
+			common.NewCoin(common.ADAAsset, sdkmath.NewUint(50_000_000)),
+		},
+		Memo: memo,
+	}
+
+	// 9. Call SignTx
+	txBytes, _, txIn, err := s.client.SignTx(txOutItem, 1)
+	c.Assert(err, IsNil)
+	c.Assert(txBytes, NotNil)
+	c.Assert(txIn, NotNil)
+
+	// --- TxInItem assertions ---
+	c.Assert(txIn.Memo, Equals, memo)
+	c.Assert(txIn.Sender, Equals, vaultAddress)
+	c.Assert(txIn.To, Equals, toAddr.String())
+
+	// Gas should be non-zero and under maxFee (500_000 lovelace * 100 = 50_000_000 in 1e8)
+	c.Assert(txIn.Gas.IsEmpty(), Equals, false)
+	gasCoin := txIn.Gas[0]
+	c.Assert(gasCoin.Amount.GT(sdkmath.ZeroUint()), Equals, true)
+	c.Assert(gasCoin.Amount.LT(sdkmath.NewUint(50_000_000)), Equals, true)
+
+	// --- Decode and verify CBOR transaction ---
+	decodedTx, err := ledger.NewConwayTransactionFromCbor(txBytes)
+	c.Assert(err, IsNil)
+	c.Assert(decodedTx, NotNil)
+
+	// 1 input, 2 outputs (send + change)
+	c.Assert(decodedTx.Inputs(), HasLen, 1)
+	c.Assert(decodedTx.Outputs(), HasLen, 2)
+
+	// Output[0] amount == 2_000_000 lovelace (2 ADA)
+	c.Assert(decodedTx.Outputs()[0].Amount().Uint64(), Equals, uint64(2_000_000))
+
+	// Output[1] (change) == 10_000_000 - 2_000_000 - fee
+	fee := decodedTx.Fee().Uint64()
+	c.Assert(fee > 0, Equals, true)
+	expectedChange := uint64(10_000_000) - uint64(2_000_000) - fee
+	c.Assert(decodedTx.Outputs()[1].Amount().Uint64(), Equals, expectedChange)
+
+	// TTL = slot(100) + ttl(400) = 500
+	c.Assert(decodedTx.Body.Ttl, Equals, uint64(500))
+
+	// --- Spent UTXO is marked ---
+	input := decodedTx.Inputs()[0]
+	key := getUtxoKey(input.Id().Bytes(), input.Index())
+	found, err := s.client.storage.HasSpentUtxo(key)
+	c.Assert(err, IsNil)
+	c.Assert(found, Equals, true)
+}
+
+func (s *ClientTestSuite) TestSignTxAlreadySigned(c *C) {
+	vaultPubKey, priv, _ := makeVaultPubKey(c)
+
+	s.client.localKey = priv
+	vaultAddress := s.client.GetAddress(vaultPubKey)
+	s.client.localAddress = vaultAddress
+	s.client.ttl = 400
+	s.client.chainScanner.minFeeA = 44
+	s.client.chainScanner.minFeeB = 155_381
+
+	blockHash := lcommon.Blake2b256Hash([]byte("block1"))
+	err := s.client.storage.SetBlockId(1, 100, blockHash.Bytes())
+	c.Assert(err, IsNil)
+
+	s.client.chainScanner.n2c = &mockClientWrapper{blockNo: 1}
+
+	utxoHash := lcommon.Blake2b256Hash([]byte("utxo1"))
+	s.client.n2c = &mockClientWrapper{
+		utxoResult: &localstatequery.UTxOsResult{
+			Results: map[localstatequery.UtxoId]ledger.BabbageTransactionOutput{
+				{Hash: utxoHash, Idx: 0}: {
+					OutputAmount: mary.MaryTransactionOutputValue{Amount: 10_000_000},
+				},
+			},
+		},
+	}
+
+	toAddr, err := AddressFromBytes([]byte("to-address-seed"))
+	c.Assert(err, IsNil)
+
+	txOutItem := types.TxOutItem{
+		Chain:            common.ADAChain,
+		VaultPubKeyEddsa: vaultPubKey,
+		ToAddress:        common.Address(toAddr.String()),
+		Coins: common.Coins{
+			common.NewCoin(common.ADAAsset, sdkmath.NewUint(200_000_000)),
+		},
+		MaxGas: common.Gas{
+			common.NewCoin(common.ADAAsset, sdkmath.NewUint(50_000_000)),
+		},
+		Memo: "OUT:AABBCCDD",
+	}
+
+	// First call succeeds
+	txBytes, _, txIn, err := s.client.SignTx(txOutItem, 1)
+	c.Assert(err, IsNil)
+	c.Assert(txBytes, NotNil)
+	c.Assert(txIn, NotNil)
+
+	// Mark as signed in the signer cache (simulating what BroadcastTx does)
+	err = s.client.signerCacheManager.SetSigned(
+		txOutItem.CacheHash(),
+		txOutItem.CacheVault(s.client.GetChain()),
+		"txhash123",
+	)
+	c.Assert(err, IsNil)
+
+	// Second call returns nil, nil, nil, nil (already signed)
+	txBytes2, extra2, txIn2, err2 := s.client.SignTx(txOutItem, 1)
+	c.Assert(err2, IsNil)
+	c.Assert(txBytes2, IsNil)
+	c.Assert(extra2, IsNil)
+	c.Assert(txIn2, IsNil)
+}
+
+func (s *ClientTestSuite) TestSignTxNoADACoin(c *C) {
+	vaultPubKey, priv, _ := makeVaultPubKey(c)
+
+	s.client.localKey = priv
+	s.client.localAddress = s.client.GetAddress(vaultPubKey)
+
+	txOutItem := types.TxOutItem{
+		Chain:            common.ADAChain,
+		VaultPubKeyEddsa: vaultPubKey,
+		ToAddress:        common.Address("addr_test1vze3395j26tfwymgtmk4e26gmam7vaq9vyejtj0lkpj70rc20g9xv"),
+		Coins:            common.Coins{}, // no ADA coin
+		Memo:             "OUT:AABB",
+	}
+
+	_, _, _, err := s.client.SignTx(txOutItem, 1)
+	c.Assert(err, NotNil)
+	c.Assert(err, ErrorMatches, "no ADA coins found")
+}
+
+func (s *ClientTestSuite) TestSignTxInsufficientFunds(c *C) {
+	vaultPubKey, priv, _ := makeVaultPubKey(c)
+
+	s.client.localKey = priv
+	vaultAddress := s.client.GetAddress(vaultPubKey)
+	s.client.localAddress = vaultAddress
+	s.client.ttl = 400
+	s.client.chainScanner.minFeeA = 44
+	s.client.chainScanner.minFeeB = 155_381
+
+	blockHash := lcommon.Blake2b256Hash([]byte("block1"))
+	err := s.client.storage.SetBlockId(1, 100, blockHash.Bytes())
+	c.Assert(err, IsNil)
+
+	s.client.chainScanner.n2c = &mockClientWrapper{blockNo: 1}
+
+	// Only 1 ADA available (1_000_000 lovelace)
+	utxoHash := lcommon.Blake2b256Hash([]byte("utxo-small"))
+	s.client.n2c = &mockClientWrapper{
+		utxoResult: &localstatequery.UTxOsResult{
+			Results: map[localstatequery.UtxoId]ledger.BabbageTransactionOutput{
+				{Hash: utxoHash, Idx: 0}: {
+					OutputAmount: mary.MaryTransactionOutputValue{Amount: 1_000_000},
+				},
+			},
+		},
+	}
+
+	toAddr, err := AddressFromBytes([]byte("to-address-seed"))
+	c.Assert(err, IsNil)
+
+	// Try to send 5 ADA (500_000_000 in 1e8) with only 1 ADA available
+	txOutItem := types.TxOutItem{
+		Chain:            common.ADAChain,
+		VaultPubKeyEddsa: vaultPubKey,
+		ToAddress:        common.Address(toAddr.String()),
+		Coins: common.Coins{
+			common.NewCoin(common.ADAAsset, sdkmath.NewUint(500_000_000)),
+		},
+		MaxGas: common.Gas{
+			common.NewCoin(common.ADAAsset, sdkmath.NewUint(50_000_000)),
+		},
+		Memo: "OUT:AABB",
+	}
+
+	_, _, _, err = s.client.SignTx(txOutItem, 1)
+	c.Assert(err, NotNil)
+	c.Assert(err, ErrorMatches, ".*insufficient funds.*")
 }

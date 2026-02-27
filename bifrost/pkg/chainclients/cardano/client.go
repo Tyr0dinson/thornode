@@ -585,7 +585,10 @@ func (c *Client) SignTx(txOutItem types.TxOutItem, _ int64) ([]byte, []byte, *ty
 		txOutItem.Memo,
 		fromAddress.String(),
 		txOutItem.ToAddress.String(),
-		txOutItem.Coins,
+		[]common.Coin{common.NewCoin(
+			common.ADAAsset,
+			cosmos.NewUint(tx.Body.TxOutputs[0].Amount().Uint64()*100),
+		)},
 		[]common.Coin{common.NewCoin(
 			common.ADAAsset,
 			cosmos.NewUint(tx.Body.TxFee*100),

@@ -390,7 +390,6 @@ func (s *UtilTestSuite) TestCreateConwayTx(c *C) {
 			from, to, tc.Amount, tc.MinFeeA, tc.MinFeeB, maxFee, tc.Memo, utxos,
 		)
 
-		fmt.Println(tc.Name)
 		if tc.ExpectedError == "" {
 			c.Assert(err, IsNil)
 			c.Assert(tx, NotNil)
