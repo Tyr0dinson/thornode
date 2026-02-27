@@ -258,7 +258,7 @@ func calculateFee(
 	}
 
 	// add 5 byte for rounding issues or change of fee value
-	fee := uint64(len(encoded))*minFeeA + minFeeB + 5
+	fee := uint64(len(encoded))*minFeeA + minFeeB + extraFeeBuffer
 
 	if fee > maxFee {
 		return 0, fmt.Errorf("fee exceeds max fee")

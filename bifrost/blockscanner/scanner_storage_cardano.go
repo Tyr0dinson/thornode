@@ -2,20 +2,11 @@ package blockscanner
 
 import (
 	"fmt"
-	"io"
 
 	"github.com/syndtr/goleveldb/leveldb"
 	"gitlab.com/thorchain/thornode/v3/bifrost/db"
 	"gitlab.com/thorchain/thornode/v3/config"
 )
-
-// ScannerStorage define the method need to be used by scanner
-type ScannerStorageCardano interface {
-	GetScanPos() (uint64, error)
-	SetScanPos(block uint64) error
-	GetInternalDb() *leveldb.DB
-	io.Closer
-}
 
 type BlockScannerStorageCardano struct {
 	*LevelDBScannerStorageCardano

@@ -382,7 +382,7 @@ func (s *Scanner) updateNetworkFee(height int64) error {
 	s.minFeeA = minFeeA
 	s.minFeeB = minFeeB
 
-	feeRate := minFeeA*estimatedTxSize + minFeeB + 1
+	feeRate := minFeeA*estimatedTxSize + minFeeB + extraFeeBuffer
 
 	resolution := uint64(s.config.GasPriceResolution)
 	roundedFeeRate := ((feeRate + (resolution / 2)) / resolution) * resolution

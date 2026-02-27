@@ -20,4 +20,7 @@ const (
 	// maximum allowed transaction size in bytes
 	// usually less than 500, maximum supported by cardano 16KB
 	maxTransactionSize = 2048
+
+	// extra lovelace added to calculated fees to mitigate rounding issues
+	extraFeeBuffer = 5
 )
