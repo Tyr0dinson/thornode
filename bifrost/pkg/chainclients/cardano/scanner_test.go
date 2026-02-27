@@ -57,6 +57,10 @@ func (m *mockClientWrapper) GetUTxOByAddress(_ []ledger.Address, _ *pcommon.Poin
 	return m.utxoResult, m.utxoErr
 }
 
+func (m *mockClientWrapper) GetUTxOByTxIn(_ []ledger.TransactionInput, _ *pcommon.Point) (*localstatequery.UTxOByTxInResult, error) {
+	return nil, nil
+}
+
 func (m *mockClientWrapper) SubmitTx(_ uint16, _ []byte) error {
 	return m.submitErr
 }
@@ -206,6 +210,32 @@ func (s *ScannerTestSuite) TestRollForwardHandlerUnknownType(c *C) {
 		pcommon.Tip{},
 	)
 	c.Assert(err, IsNil)
+}
+
+func (s *ScannerTestSuite) TestRollForwardHandlerMultipleBlocksOverwrite(c *C) {
+	scanner := makeTestScanner(c)
+
+	// store blocks and verify they can be overwritten
+	storeTestBlocks(c, scanner, 3)
+
+	// overwrite block 3 with a different hash
+	newHash := lcommon.Blake2b256Hash([]byte("new-block-3"))
+	header := &mockBlockHeader{
+		blockNumber: 3,
+		slotNumber:  350, // different slot
+		hash:        newHash,
+	}
+	err := scanner.rollForwardHandler(
+		chainsync.CallbackContext{}, 0, header, pcommon.Tip{},
+	)
+	c.Assert(err, IsNil)
+
+	// verify the overwritten block
+	h, sl, hash, err := scanner.db.GetBlockId(3)
+	c.Assert(err, IsNil)
+	c.Assert(h, Equals, uint64(3))
+	c.Assert(sl, Equals, uint64(350))
+	c.Assert(hash, DeepEquals, newHash.Bytes())
 }
 
 // ---------------------------------------------------------------------------
@@ -399,15 +429,41 @@ func (s *ScannerTestSuite) TestRollBackwardHandlerNilErrataQueue(c *C) {
 	c.Assert(txs, IsNil)
 }
 
+func (s *ScannerTestSuite) TestRollBackwardHandlerAllBlocksInvalidated(c *C) {
+	scanner := makeTestScanner(c)
+	errataQueue := make(chan types.ErrataBlock, 10)
+	scanner.globalErrataQueue = errataQueue
+
+	// store 3 blocks
+	storeTestBlocks(c, scanner, 3)
+
+	// rollback to slot 0 — all blocks invalidated
+	point := pcommon.NewPoint(0, []byte("genesis"))
+	tip := pcommon.Tip{Point: pcommon.NewPoint(0, []byte("genesis"))}
+	err := scanner.rollBackwardHandler(chainsync.CallbackContext{}, point, tip)
+	c.Assert(err, IsNil)
+
+	// all blocks should be deleted
+	for i := uint64(1); i <= 3; i++ {
+		_, _, _, err = scanner.db.GetBlockId(i)
+		c.Assert(err, NotNil)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // GetHeight (via mock n2c)
 // ---------------------------------------------------------------------------
 
 func (s *ScannerTestSuite) TestGetHeight(c *C) {
 	scanner := makeTestScanner(c)
-	scanner.n2c = &mockClientWrapper{blockNo: 42}
 
+	scanner.n2c = &mockClientWrapper{blockNo: 0}
 	height, err := scanner.GetHeight()
+	c.Assert(err, IsNil)
+	c.Assert(height, Equals, int64(0))
+
+	scanner.n2c = &mockClientWrapper{blockNo: 42}
+	height, err = scanner.GetHeight()
 	c.Assert(err, IsNil)
 	c.Assert(height, Equals, int64(42))
 
@@ -483,6 +539,64 @@ func (s *ScannerTestSuite) TestUpdateNetworkFee(c *C) {
 	select {
 	case <-queue:
 		c.Fatal("should not enqueue when fees are unchanged")
+	default:
+	}
+}
+
+func (s *ScannerTestSuite) TestUpdateNetworkFeeHeightZero(c *C) {
+	scanner := makeTestScanner(c)
+	scanner.globalNetworkFeeQueue = make(chan common.NetworkFee, 1)
+
+	// height <= 0 should return nil immediately
+	err := scanner.updateNetworkFee(0)
+	c.Assert(err, IsNil)
+
+	err = scanner.updateNetworkFee(-1)
+	c.Assert(err, IsNil)
+
+	// nothing should be enqueued
+	select {
+	case <-scanner.globalNetworkFeeQueue:
+		c.Fatal("should not enqueue for height <= 0")
+	default:
+	}
+}
+
+func (s *ScannerTestSuite) TestUpdateNetworkFeeProtocolParamsError(c *C) {
+	scanner := makeTestScanner(c)
+	scanner.globalNetworkFeeQueue = make(chan common.NetworkFee, 1)
+
+	// fees are zero, so it will try to fetch protocol params
+	scanner.n2c = &mockClientWrapper{
+		protocolParamsErr: fmt.Errorf("connection timeout"),
+	}
+
+	err := scanner.updateNetworkFee(50)
+	c.Assert(err, NotNil)
+	c.Assert(err, ErrorMatches, "failed to get protocol parameters: connection timeout")
+}
+
+func (s *ScannerTestSuite) TestUpdateNetworkFeeSkipsWhenFeesSetAndNotPeriod(c *C) {
+	scanner := makeTestScanner(c)
+	scanner.globalNetworkFeeQueue = make(chan common.NetworkFee, 1)
+
+	// pre-set fee values so the early return kicks in
+	scanner.minFeeA = 44
+	scanner.minFeeB = 155_381
+
+	// height 50 is not divisible by networkFeeUpdatePeriod (100)
+	// and fees are already set, so should return nil immediately
+	scanner.n2c = &mockClientWrapper{
+		protocolParamsErr: fmt.Errorf("should not be called"),
+	}
+
+	err := scanner.updateNetworkFee(50)
+	c.Assert(err, IsNil)
+
+	// nothing enqueued
+	select {
+	case <-scanner.globalNetworkFeeQueue:
+		c.Fatal("should not enqueue when skipping")
 	default:
 	}
 }

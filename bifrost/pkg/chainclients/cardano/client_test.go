@@ -243,9 +243,9 @@ func (s *ClientTestSuite) TestGetConfirmationCountError(c *C) {
 func (s *ClientTestSuite) TestGetConfirmationCountEmptyTxArray(c *C) {
 	s.client.n2c = &mockClientWrapper{blockNo: 200}
 
-	// empty TxArray => max height is 0 => returns tip - 0
+	// empty TxArray => early return 0
 	count := s.client.GetConfirmationCount(types.TxIn{})
-	c.Assert(count, Equals, int64(200))
+	c.Assert(count, Equals, int64(0))
 }
 
 // ---------------------------------------------------------------------------
@@ -280,7 +280,8 @@ func (s *ClientTestSuite) TestGetAccountByAddress(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(acct.Coins, HasLen, 1)
 	c.Assert(acct.Coins[0].Asset, Equals, common.ADAAsset)
-	c.Assert(acct.Coins[0].Amount.Equal(sdkmath.NewUint(10_000_000)), Equals, true)
+	// 10_000_000 lovelace (1e6) * 100 = 1_000_000_000 (1e8 THORChain units)
+	c.Assert(acct.Coins[0].Amount.Equal(sdkmath.NewUint(1_000_000_000)), Equals, true)
 }
 
 func (s *ClientTestSuite) TestGetAccountByAddressNoUtxos(c *C) {
@@ -315,4 +316,158 @@ func (s *ClientTestSuite) TestGetAccountByAddressUtxoError(c *C) {
 
 	_, err = s.client.GetAccountByAddress(addr.String(), big.NewInt(1))
 	c.Assert(err, NotNil)
+}
+
+// ---------------------------------------------------------------------------
+// ConfirmationCountReady (insufficient confirmations)
+// ---------------------------------------------------------------------------
+
+func (s *ClientTestSuite) TestConfirmationCountReadyNotEnough(c *C) {
+	s.client.chainScanner.n2c = &mockClientWrapper{blockNo: 105}
+
+	txIn := types.TxIn{
+		Chain:                common.ADAChain,
+		ConfirmationRequired: 10,
+		TxArray: []*types.TxInItem{
+			{BlockHeight: 100, Tx: "abc123"},
+		},
+	}
+
+	// currentHeight(105) - blockHeight(100) = 5, which is < 10 required
+	c.Assert(s.client.ConfirmationCountReady(txIn), Equals, false)
+}
+
+func (s *ClientTestSuite) TestConfirmationCountReadyExact(c *C) {
+	s.client.chainScanner.n2c = &mockClientWrapper{blockNo: 110}
+
+	txIn := types.TxIn{
+		Chain:                common.ADAChain,
+		ConfirmationRequired: 10,
+		TxArray: []*types.TxInItem{
+			{BlockHeight: 100, Tx: "abc123"},
+		},
+	}
+
+	// currentHeight(110) - blockHeight(100) = 10 >= 10 required
+	c.Assert(s.client.ConfirmationCountReady(txIn), Equals, true)
+}
+
+func (s *ClientTestSuite) TestConfirmationCountReadyHeightError(c *C) {
+	s.client.chainScanner.n2c = &mockClientWrapper{blockNoErr: fmt.Errorf("fail")}
+
+	txIn := types.TxIn{
+		Chain: common.ADAChain,
+		TxArray: []*types.TxInItem{
+			{BlockHeight: 100, Tx: "abc123"},
+		},
+	}
+
+	// error getting height should return false
+	c.Assert(s.client.ConfirmationCountReady(txIn), Equals, false)
+}
+
+// ---------------------------------------------------------------------------
+// OnObservedTxIn (non-outbound memo, no-op)
+// ---------------------------------------------------------------------------
+
+func (s *ClientTestSuite) TestOnObservedTxInNonOutbound(c *C) {
+	txInItem := types.TxInItem{
+		BlockHeight: 1,
+		Tx:          "txhash456",
+		Memo:        "SWAP:ETH.ETH:0xABC", // not an outbound memo
+		Sender:      "addr1v8xc93gy5emqdjh6vfs2sg3g54je20xe20qrenwkcaj4qaqrctsph",
+		To:          "addr1v9mspu7na3ycmw523tqqmx5dejlrkuz94qt6v6yg0sh0tvgacgq8d",
+		Coins: common.Coins{
+			common.NewCoin(common.ADAAsset, sdkmath.NewUint(1000000)),
+		},
+	}
+
+	// should not panic or cache anything — non-outbound memos are ignored
+	s.client.OnObservedTxIn(txInItem, 1)
+
+	cacheHash := txInItem.CacheHash(s.client.GetChain(), "")
+	c.Assert(s.client.signerCacheManager.HasSigned(cacheHash), Equals, false)
+}
+
+func (s *ClientTestSuite) TestOnObservedTxInInvalidMemo(c *C) {
+	txInItem := types.TxInItem{
+		BlockHeight: 1,
+		Tx:          "txhash789",
+		Memo:        "this is not a valid memo format",
+		Sender:      "addr1v8xc93gy5emqdjh6vfs2sg3g54je20xe20qrenwkcaj4qaqrctsph",
+		To:          "addr1v9mspu7na3ycmw523tqqmx5dejlrkuz94qt6v6yg0sh0tvgacgq8d",
+		Coins: common.Coins{
+			common.NewCoin(common.ADAAsset, sdkmath.NewUint(1000000)),
+		},
+	}
+
+	// should not panic — invalid memos are silently ignored
+	s.client.OnObservedTxIn(txInItem, 1)
+}
+
+// ---------------------------------------------------------------------------
+// ShouldReportSolvency (edge cases)
+// ---------------------------------------------------------------------------
+
+func (s *ClientTestSuite) TestShouldReportSolvencyDisabled(c *C) {
+	s.client.config.SolvencyBlocks = 0
+	c.Assert(s.client.ShouldReportSolvency(0), Equals, false)
+	c.Assert(s.client.ShouldReportSolvency(10), Equals, false)
+	c.Assert(s.client.ShouldReportSolvency(100), Equals, false)
+}
+
+func (s *ClientTestSuite) TestShouldReportSolvencyNegative(c *C) {
+	s.client.config.SolvencyBlocks = -1
+	c.Assert(s.client.ShouldReportSolvency(0), Equals, false)
+	c.Assert(s.client.ShouldReportSolvency(10), Equals, false)
+}
+
+// ---------------------------------------------------------------------------
+// GetConfirmationCount (multiple txs, uses max height)
+// ---------------------------------------------------------------------------
+
+func (s *ClientTestSuite) TestGetConfirmationCountUsesMaxHeight(c *C) {
+	s.client.n2c = &mockClientWrapper{blockNo: 200}
+
+	txIn := types.TxIn{
+		TxArray: []*types.TxInItem{
+			{BlockHeight: 50},
+			{BlockHeight: 180}, // highest
+			{BlockHeight: 100},
+		},
+	}
+
+	// tip(200) - max height(180) = 20
+	count := s.client.GetConfirmationCount(txIn)
+	c.Assert(count, Equals, int64(20))
+}
+
+// ---------------------------------------------------------------------------
+// GetAccountByAddress (single UTXO)
+// ---------------------------------------------------------------------------
+
+func (s *ClientTestSuite) TestGetAccountByAddressSingleUtxo(c *C) {
+	addr, err := AddressFromBytes([]byte("single-utxo"))
+	c.Assert(err, IsNil)
+
+	err = s.client.storage.SetBlockId(1, 100, lcommon.Blake2b256Hash([]byte("blk")).Bytes())
+	c.Assert(err, IsNil)
+
+	hash1 := lcommon.Blake2b256Hash([]byte{1})
+
+	s.client.n2c = &mockClientWrapper{
+		utxoResult: &localstatequery.UTxOsResult{
+			Results: map[localstatequery.UtxoId]ledger.BabbageTransactionOutput{
+				{Hash: hash1, Idx: 0}: {
+					OutputAmount: mary.MaryTransactionOutputValue{Amount: 5_000_000},
+				},
+			},
+		},
+	}
+
+	acct, err := s.client.GetAccountByAddress(addr.String(), big.NewInt(1))
+	c.Assert(err, IsNil)
+	c.Assert(acct.Coins, HasLen, 1)
+	// 5_000_000 lovelace * 100 = 500_000_000 in 1e8 units
+	c.Assert(acct.Coins[0].Amount.Equal(sdkmath.NewUint(500_000_000)), Equals, true)
 }
