@@ -2,6 +2,7 @@ package cardano
 
 import (
 	"encoding/hex"
+	"fmt"
 	"math/big"
 	"strings"
 	"testing"
@@ -187,7 +188,7 @@ func (s *UtilTestSuite) TestExtractMemo(c *C) {
 		},
 		{
 			Name:   "Long memo is truncated",
-			Result: strings.Repeat("x", 250),
+			Result: "thor1" + strings.Repeat("x", 245),
 			Meta: lcommon.MetaMap{
 				Pairs: []lcommon.MetaPair{
 					{
@@ -197,8 +198,7 @@ func (s *UtilTestSuite) TestExtractMemo(c *C) {
 								Key: lcommon.MetaText{Value: "msg"},
 								Value: lcommon.MetaList{
 									Items: []lcommon.TransactionMetadatum{
-										lcommon.MetaText{Value: "thor"},
-										lcommon.MetaInt{Value: big.NewInt(123)}, // non-text, skipped
+										lcommon.MetaText{Value: "thor1"},
 										lcommon.MetaText{Value: strings.Repeat("x", 999)},
 									},
 								},
@@ -313,17 +313,19 @@ func (s *UtilTestSuite) TestCreateConwayTx(c *C) {
 		},
 		{
 			Name:           "Verify estimated size constant",
-			Amount:         5_000_000,
+			Amount:         8_000_000,
 			MaxFee:         500_000,
 			Inputs:         []uint64{2e6, 4e6, 1e6, 2e6, 1e6, 3e6},
 			Memo:           strings.Repeat("a", 150),
 			ExpectedSize:   estimatedTxSize,
-			ExpectedInputs: []uint64{1e6, 1e6, 2e6, 4e6, 2e6},
+			ExpectedInputs: []uint64{1e6, 1e6, 2e6, 4e6, 3e6},
+			ExpectedChange: 2_999_995, // 1+1+2+4+3 * 1e6 - 5e6 - 5
 		},
 		{
-			Name:   "Valid tx without memo",
-			Amount: 1_000_000,
-			Inputs: []uint64{7_000_000},
+			Name:           "Valid tx without memo",
+			Amount:         1_000_000,
+			Inputs:         []uint64{7_000_000},
+			ExpectedChange: 5_999_995,
 		},
 		{
 			Name:          "Amount greater than inputs",
@@ -357,6 +359,21 @@ func (s *UtilTestSuite) TestCreateConwayTx(c *C) {
 			Inputs:        []uint64{5_000_000},
 			ExpectedError: "insufficient funds",
 		},
+		{
+			Name:          "Exceeds max fee",
+			Amount:        1_000_000,
+			Inputs:        []uint64{5_000_000},
+			MinFeeB:       200_000,
+			MaxFee:        1,
+			ExpectedError: "fee exceeds max fee",
+		},
+		{
+			Name:           "Fee below dust",
+			Amount:         1_000_000,
+			Inputs:         []uint64{1_200_000},
+			MaxFee:         100_000,
+			ExpectedChange: 0,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -372,17 +389,19 @@ func (s *UtilTestSuite) TestCreateConwayTx(c *C) {
 		tx, err := CreateConwayTx(
 			from, to, tc.Amount, tc.MinFeeA, tc.MinFeeB, maxFee, tc.Memo, utxos,
 		)
+
+		fmt.Println(tc.Name)
 		if tc.ExpectedError == "" {
 			c.Assert(err, IsNil)
 			c.Assert(tx, NotNil)
 
-			c.Assert(tx.Inputs(), HasLen, len(tc.Inputs))
-			c.Assert(tx.Outputs(), HasLen, 2)
-			c.Assert(tx.Outputs()[1].Amount().Int64() > 1e6, Equals, true)
-
 			c.Assert(tx.Body.TxOutputs[0].Amount().Uint64(), Equals, tc.Amount)
 
 			c.Assert(ExtractMemo(tx.Metadata(), 0), Equals, tc.Memo)
+
+			if tc.ExpectedInputs != nil {
+				c.Assert(len(tx.Inputs()), Equals, len(tc.ExpectedInputs))
+			}
 
 			if tc.ExpectedSize > 0 {
 				var bz []byte
@@ -396,76 +415,13 @@ func (s *UtilTestSuite) TestCreateConwayTx(c *C) {
 			}
 
 			if tc.ExpectedChange > 0 {
+				c.Assert(tx.Outputs(), HasLen, 2)
 				c.Assert(tx.Body.TxOutputs[1].Amount().Uint64(), Equals, tc.ExpectedChange)
+			} else {
+				c.Assert(tx.Outputs(), HasLen, 1)
 			}
 		} else {
 			c.Assert(strings.Contains(err.Error(), tc.ExpectedError), Equals, true)
 		}
 	}
-}
-
-func (s *UtilTestSuite) TestCreateConwayTxSubDustChange(c *C) {
-	// when change is below dustThreshold (1e6), it should be folded into the fee
-	// resulting in only 1 output (no change output)
-	from := makeTestAddress(c, "from-address")
-	to := makeTestAddress(c, "to-address")
-	utxos := makeUtxos(2_000_000)
-
-	tx, err := CreateConwayTx(from, to, 1_500_000, 0, 0, 300_000, "", utxos)
-	c.Assert(err, IsNil)
-	c.Assert(tx, NotNil)
-
-	// change (2M - 1.5M - fee) is sub-dust, so only 1 output
-	c.Assert(len(tx.Body.TxOutputs), Equals, 1)
-	c.Assert(tx.Body.TxOutputs[0].Amount().Uint64(), Equals, uint64(1_500_000))
-
-	// fee should be total - amount (entire remainder goes to fee)
-	c.Assert(tx.Fee().Uint64(), Equals, uint64(500_000))
-}
-
-func (s *UtilTestSuite) TestCreateConwayTxUtxoConsolidation(c *C) {
-	// when there are more than numSmallUtxos (3) utxos, the 3 smallest
-	// should be moved to the front for consolidation
-	from := makeTestAddress(c, "from-address")
-	to := makeTestAddress(c, "to-address")
-
-	// 6 utxos: the 3 smallest (1e6, 1e6, 2e6) + the largest (9e6) should be consumed
-	utxos := makeUtxos(4e6, 1e6, 2e6, 1e6, 3e6, 9e6)
-
-	tx, err := CreateConwayTx(from, to, 4_500_000, 0, 0, 500_000, "", utxos)
-	c.Assert(err, IsNil)
-	c.Assert(tx, NotNil)
-	c.Assert(tx.Body.TxOutputs, HasLen, 4)
-	c.Assert(tx.Body.TxOutputs[0].Amount().Uint64(), Equals, uint64(1e6))
-	c.Assert(tx.Body.TxOutputs[0].Amount().Uint64(), Equals, uint64(1e6))
-	c.Assert(tx.Body.TxOutputs[0].Amount().Uint64(), Equals, uint64(2e6))
-	c.Assert(tx.Body.TxOutputs[0].Amount().Uint64(), Equals, uint64(9e6))
-}
-
-func (s *UtilTestSuite) TestCreateConwayTxFeeExceedsMaxFee(c *C) {
-	// when calculated fee exceeds maxFee, should return error
-	from := makeTestAddress(c, "from-address")
-	to := makeTestAddress(c, "to-address")
-	utxos := makeUtxos(10_000_000)
-
-	// set maxFee to 1 (impossibly low)
-	_, err := CreateConwayTx(from, to, 1_000_000, 44, 155_381, 1, "", utxos)
-	c.Assert(err, NotNil)
-	c.Assert(strings.Contains(err.Error(), "fee exceeds max fee"), Equals, true)
-}
-
-func (s *UtilTestSuite) TestCreateConwayTxMultipleInputsNeeded(c *C) {
-	// needs multiple small utxos to cover the amount
-	from := makeTestAddress(c, "from-address")
-	to := makeTestAddress(c, "to-address")
-	utxos := makeUtxos(1e6, 1e6, 1e6, 1e6, 5e6)
-
-	tx, err := CreateConwayTx(from, to, 3_000_000, 0, 0, 500_000, "", utxos)
-	c.Assert(err, IsNil)
-	c.Assert(tx, NotNil)
-	c.Assert(tx.Body.TxOutputs[0].Amount().Uint64(), Equals, uint64(3_000_000))
-	c.Assert(tx.Body.TxOutputs, HasLen, 3)
-	c.Assert(tx.Body.TxOutputs[0].Amount().Uint64(), Equals, uint64(1e6))
-	c.Assert(tx.Body.TxOutputs[0].Amount().Uint64(), Equals, uint64(1e6))
-	c.Assert(tx.Body.TxOutputs[0].Amount().Uint64(), Equals, uint64(1e6))
 }

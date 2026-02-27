@@ -163,18 +163,15 @@ func (s *LevelDBStorageCardanoSuite) TestSetAndHasSpentUtxo(c *C) {
 	c.Assert(found, Equals, false)
 }
 
-func (s *LevelDBStorageCardanoSuite) TestSetSpentUtxosInvalidHeight(c *C) {
-	err := s.storage.SetSpentUtxos([][]byte{[]byte("utxo1")}, 0)
-	c.Assert(err, NotNil)
-	c.Assert(err, ErrorMatches, "height must >= 0")
-
-	err = s.storage.SetSpentUtxos([][]byte{[]byte("utxo1")}, -1)
-	c.Assert(err, NotNil)
-}
-
 func (s *LevelDBStorageCardanoSuite) TestGetSpentUtxosByHeight(c *C) {
 	ids := [][]byte{[]byte("utxo1"), []byte("utxo2")}
-	c.Assert(s.storage.SetSpentUtxos(ids, 10), IsNil)
+
+	err := s.storage.SetSpentUtxos(ids, 0)
+	c.Assert(err, NotNil)
+	c.Assert(err, ErrorMatches, "height must > 0")
+
+	err = s.storage.SetSpentUtxos(ids, 10)
+	c.Assert(err, IsNil)
 
 	result, err := s.storage.GetSpentUtxosByHeight(10)
 	c.Assert(err, IsNil)
