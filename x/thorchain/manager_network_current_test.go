@@ -1923,9 +1923,9 @@ func (s *NetworkManagerTestSuite) TestCreateSwapToReserve(c *C) {
 	c.Assert(foundSwap.Tx.FromAddress.String(), Equals, btcAddr.String())
 	c.Assert(foundSwap.Tx.ToAddress.String(), Equals, btcAddr.String())
 
-	// Verify destination is reserve address
-	reserveAddr := mgr.Keeper().GetModuleAccAddress(ReserveName)
-	c.Assert(foundSwap.Destination.String(), Equals, reserveAddr.String())
+	// Verify destination is over-solvency address
+	overSolvencyAddr := mgr.Keeper().GetConstants().GetStringValue(constants.OverSolvencyAddress)
+	c.Assert(foundSwap.Destination.String(), Equals, overSolvencyAddr)
 
 	// Test 2: Multiple swaps - add vault for ETH chain
 	ethVaultPubKey := GetRandomPubKey()
@@ -2145,17 +2145,20 @@ func (s *NetworkManagerTestSuite) TestSwapToReserveIncome(c *C) {
 		c.Assert(foundSwap, Equals, true, Commentf("swap should have been created in queue"))
 	}
 
-	// Test 2: Process RUNE directly to reserve
+	// Test 2: Process RUNE directly to over-solvency address
 	FundModule(c, ctx, mgr.Keeper(), AsgardName, 100*common.One)
 	runeCoin := common.NewCoin(common.RuneAsset(), cosmos.NewUint(50*common.One))
-	reserveBalanceBefore := mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName)
+	overSolvencyAddrStr := mgr.Keeper().GetConstants().GetStringValue(constants.OverSolvencyAddress)
+	overSolvencyAccAddr, addrErr := cosmos.AccAddressFromBech32(overSolvencyAddrStr)
+	c.Assert(addrErr, IsNil)
+	runeBalanceBefore := mgr.Keeper().GetBalanceOf(ctx, overSolvencyAccAddr, common.RuneAsset())
 
 	err = nmgr.SwapToReserveIncome(ctx, mgr, runeCoin)
 	c.Assert(err, IsNil)
 
-	// Verify RUNE was transferred to reserve
-	reserveBalanceAfter := mgr.Keeper().GetRuneBalanceOfModule(ctx, ReserveName)
-	c.Assert(reserveBalanceAfter.Sub(reserveBalanceBefore).Equal(runeCoin.Amount), Equals, true)
+	// Verify RUNE was transferred to over-solvency address
+	runeBalanceAfter := mgr.Keeper().GetBalanceOf(ctx, overSolvencyAccAddr, common.RuneAsset())
+	c.Assert(runeBalanceAfter.Amount.Sub(runeBalanceBefore.Amount).Uint64(), Equals, runeCoin.Amount.Uint64())
 
 	// Test 3: Zero amount should return nil without error
 	zeroCoin := common.NewCoin(common.BTCAsset, cosmos.ZeroUint())
