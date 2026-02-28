@@ -176,10 +176,6 @@ func (c *Client) Start(
 	c.globalSolvencyQueue = globalSolvencyQueue
 	c.chainScanner.globalNetworkFeeQueue = globalNetworkFeeQueue
 	c.chainScanner.globalErrataQueue = globalErrataQueue
-	err := c.chainScanner.Start()
-	if err != nil {
-		c.logger.Err(err).Msg("failed to start cardano scanner")
-	}
 
 	c.blockScanner.Start(globalTxsQueue, globalNetworkFeeQueue)
 	c.tssKeyManager.Start()

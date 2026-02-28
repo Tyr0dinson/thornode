@@ -72,63 +72,69 @@ func NewScanner(
 		return nil, fmt.Errorf("failed to create ouroboros n2c connection: %w", err)
 	}
 
-	return s, nil
-}
-
-func (s *Scanner) Start() error {
 	var point pcommon.Point
 
 	if s.config.StartBlockHeight > 0 {
 		slot := s.config.Cardano.StartBlockSlot
 		if slot == 0 {
-			return fmt.Errorf("start block slot is zero")
+			return nil, fmt.Errorf("start block slot is zero")
 		}
 
 		hash := s.config.Cardano.StartBlockHash
 		if hash == "" {
-			return fmt.Errorf("start block hash is undefined")
+			return nil, fmt.Errorf("start block hash is undefined")
 		}
 
 		bz, err := hex.DecodeString(hash)
 		if err != nil {
-			return fmt.Errorf("failed to decode start block hash: %w", err)
+			return nil, fmt.Errorf("failed to decode start block hash: %w", err)
 		}
 
 		point = pcommon.NewPoint(slot, bz)
 	} else {
 		tip, err := s.n2c.GetChainPoint()
 		if err != nil {
-			return fmt.Errorf("failed to get current tip: %w", err)
+			return nil, fmt.Errorf("failed to get current tip: %w", err)
 		}
+
 		point = *tip
 	}
 
-	err := s.n2n.conn.ChainSync().Client.Sync([]pcommon.Point{point})
+	// start chain sync in NewScanner to be able to fetch two consecutive
+	// blocks before blockscanner tries to determine last scan position
+	err = s.n2n.conn.ChainSync().Client.Sync([]pcommon.Point{point})
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	// wait for the first block
+	// FetchTxs expects the last _two_ blocks, because it needs
+	// the previous block state to extract the sender address from
+	// the input utxos
 	start := time.Now()
 	for {
+		if time.Since(start) > time.Second*30 {
+			return nil, fmt.Errorf("timeout waiting for block scanner to start")
+		}
+
 		time.Sleep(time.Second)
 
 		var height uint64
 		height, _, _, err = s.db.GetLastBlockId()
+		if err != nil || height == 0 {
+			continue
+		}
+
+		height, _, _, err = s.db.GetBlockId(height - 1)
 		if err != nil {
-			s.logger.Err(err).Msg("failed to get last block id")
+			continue
 		}
 
 		if height > 0 {
 			break
 		}
-
-		if time.Since(start) > time.Second*10 {
-			return fmt.Errorf("timeout waiting for block scanner to start")
-		}
 	}
 
-	return nil
+	return s, nil
 }
 
 func (s *Scanner) Stop() error {
@@ -236,17 +242,21 @@ func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
 func (s *Scanner) fetchTxs(height int64) ([]*types.TxInItem, error) {
 	s.logger.Info().Int64("height", height).Msgf("fetch txs")
 
-	_, slot, hash, err := s.db.GetBlockId(uint64(height))
+	currentPoint, err := s.getPoint(height)
 	if err != nil {
-		s.logger.Err(err).Msgf("failed to find block id for height=%d", height)
 		return nil, err
 	}
 
-	point := pcommon.NewPoint(slot, hash)
-
-	block, err := s.n2n.conn.BlockFetch().Client.GetBlock(point)
+	block, err := s.n2n.conn.BlockFetch().Client.GetBlock(currentPoint)
 	if err != nil {
 		s.logger.Err(err).Msg("failed to fetch block")
+		return nil, err
+	}
+
+	// Scanner.Start() waits for two consecutive blocks to arrive
+	var previousPoint pcommon.Point
+	previousPoint, err = s.getPoint(height - 1)
+	if err != nil {
 		return nil, err
 	}
 
@@ -266,7 +276,7 @@ func (s *Scanner) fetchTxs(height int64) ([]*types.TxInItem, error) {
 
 		// lookup the sender from the first input utxo
 		var result *localstatequery.UTxOByTxInResult
-		result, err = s.n2c.GetUTxOByTxIn(tx.Inputs(), &point)
+		result, err = s.n2c.GetUTxOByTxIn(tx.Consumed(), &previousPoint)
 		if err != nil {
 			s.logger.Err(err).Msg("failed to fetch utxo result for tx")
 			continue
@@ -546,4 +556,14 @@ func (s *Scanner) isAsgardAddress(address ledger.Address) bool {
 		}
 	}
 	return false
+}
+
+func (s *Scanner) getPoint(height int64) (pcommon.Point, error) {
+	_, slot, hash, err := s.db.GetBlockId(uint64(height))
+	if err != nil {
+		s.logger.Err(err).Int64("height", height).Msg("failed to get block id")
+		return pcommon.Point{}, err
+	}
+
+	return pcommon.NewPoint(slot, hash), nil
 }

@@ -179,7 +179,7 @@ func (c *Client) SignTx(simTx simtypes.SimTx) ([]byte, error) {
 	}
 
 	minFeeA := uint64(0)
-	minFeeB := uint64(500_000)
+	minFeeB := uint64(200_000)
 
 	tx, err := cardano.CreateConwayTx(
 		fromAddress,

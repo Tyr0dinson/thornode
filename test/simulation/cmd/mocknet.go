@@ -11,7 +11,6 @@ import (
 	"time"
 
 	sdkmath "cosmossdk.io/math"
-	"gitlab.com/thorchain/thornode/v3/x/thorchain"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	ecommon "github.com/ethereum/go-ethereum/common"
@@ -289,7 +288,6 @@ func InitConfig(parallelism int, seed bool, rng *rand.Rand) *OpConfig {
 			chainSeedAmount = sdkmath.NewUint(1_000_000 * common.One)
 		case common.ADAChain:
 			chainSeedAmount = sdkmath.NewUint(1_000_000 * common.One)
-			chainSeedTxs = 10
 		default:
 			continue // all other chains currently unsupported
 		}
