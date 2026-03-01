@@ -106,7 +106,6 @@ func (c *Client) BroadcastTx(txBytes []byte) (string, error) {
 
 		time.Sleep(250 * time.Millisecond)
 	}
-	return txHash, nil
 }
 
 func (c *Client) GetAccount(pk *common.PubKey) (*common.Account, error) {

@@ -705,7 +705,7 @@ func (c *Client) ReportSolvency(height int64) error {
 		select {
 		case c.globalSolvencyQueue <- msg:
 		case <-time.After(constants.ThorchainBlockTime):
-			c.logger.Info().Msgf("fail to send solvency info to THORChain, timeout")
+			c.logger.Error().Msg("timeout sending solvency info to THORChain")
 		}
 	}
 

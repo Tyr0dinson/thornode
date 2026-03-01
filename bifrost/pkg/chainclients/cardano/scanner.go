@@ -200,8 +200,6 @@ func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
 		return types.TxIn{}, err
 	}
 
-	s.logger.Info().Msgf("done network fee")
-
 	if chainHeight > s.config.MaxReorgRescanBlocks {
 		pruneHeight := uint64(chainHeight - s.config.MaxReorgRescanBlocks)
 
@@ -224,8 +222,6 @@ func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
 		}
 	}
 
-	s.logger.Info().Msgf("done pruning")
-
 	// reset rollbackHeight
 	if rollbackHeight > 0 {
 		atomic.StoreInt64(&s.rollbackHeight, 0)
@@ -240,8 +236,6 @@ func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
 }
 
 func (s *Scanner) fetchTxs(height int64) ([]*types.TxInItem, error) {
-	s.logger.Info().Int64("height", height).Msgf("fetch txs")
-
 	currentPoint, err := s.getPoint(height)
 	if err != nil {
 		return nil, err
@@ -263,7 +257,6 @@ func (s *Scanner) fetchTxs(height int64) ([]*types.TxInItem, error) {
 	var txIds [][]byte
 	var txIns []*types.TxInItem
 	for _, tx := range block.Transactions() {
-		s.logger.Info().Str("hash", tx.Hash().String()).Msg("processing transaction")
 		if !tx.IsValid() {
 			continue
 		}
@@ -433,7 +426,7 @@ func (s *Scanner) rollForwardHandler(
 	case ledger.Block:
 		s.logger.Warn().Msg("block type is ledger.Block, chain-sync n2n protocol expects ledger.BlockHeader")
 	case ledger.BlockHeader:
-		s.logger.Info().
+		s.logger.Debug().
 			Uint64("block_number", h.BlockNumber()).
 			Uint64("slot_number", h.SlotNumber()).
 			Str("hash", h.Hash().String()).
@@ -452,9 +445,9 @@ func (s *Scanner) rollBackwardHandler(
 	point pcommon.Point,
 	tip chainsync.Tip,
 ) error {
-	s.logger.Info().Msgf("roll backward: point = (%d, %x), tip = (%d, %x)",
-		point.Slot, point.Hash, tip.Point.Slot, tip.Point.Hash,
-	)
+	s.logger.Warn().
+		Uint64("height", tip.BlockNumber).
+		Msg("roll backward")
 
 	// find invalidated block IDs (slot > rollback slot)
 	invalidated, err := s.db.GetBlockIdsAboveSlot(point.Slot)
