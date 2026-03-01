@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"strings"
 	"sync"
 	"time"
 
@@ -209,13 +210,17 @@ func (c *Client) BroadcastTx(txOutItem types.TxOutItem, txBytes []byte) (string,
 		return "", fmt.Errorf("failed to decode transaction: %w", err)
 	}
 
-	if len(tx.Outputs()) > 2 {
+	if len(tx.Outputs()) < 1 || len(tx.Outputs()) > 2 {
 		return "", fmt.Errorf("invalid number of transaction outputs: %d", len(tx.Outputs()))
 	}
 
 	err = c.n2c.SubmitTx(ledger.TxTypeConway, txBytes)
 	if err != nil {
-		return "", fmt.Errorf("failed to submit transaction: %w", err)
+		if strings.Contains(err.Error(), "probably already been included") {
+			c.logger.Info().Msg("transaction already sent by different node")
+		} else {
+			return "", fmt.Errorf("failed to submit transaction: %w", err)
+		}
 	}
 
 	txHash := tx.Hash().String()
