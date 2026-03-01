@@ -169,7 +169,6 @@ func (s *Scanner) GetNetworkMinFees() (uint64, uint64) {
 
 // FetchTxs implements blockscanner.BlockScannerFetcher.
 func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
-
 	var allTxIns []*types.TxInItem
 
 	rollbackHeight := atomic.LoadInt64(&s.rollbackHeight)
