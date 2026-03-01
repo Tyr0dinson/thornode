@@ -2,7 +2,6 @@ package cardano
 
 import (
 	"encoding/hex"
-	"fmt"
 	"math/big"
 	"strings"
 	"testing"
@@ -373,6 +372,18 @@ func (s *UtilTestSuite) TestCreateConwayTx(c *C) {
 			Inputs:         []uint64{1_200_000},
 			MaxFee:         100_000,
 			ExpectedChange: 0,
+		},
+		{
+			Name:          "Output amount below minimum UTXO",
+			Amount:        500_000, // below dustThreshold (1_000_000)
+			Inputs:        []uint64{5_000_000},
+			ExpectedError: "output amount below dust threshold",
+		},
+		{
+			Name:           "Output amount at minimum UTXO",
+			Amount:         dustThreshold,
+			Inputs:         []uint64{5_000_000},
+			ExpectedChange: 3_999_995,
 		},
 	}
 

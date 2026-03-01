@@ -115,6 +115,10 @@ func CreateConwayTx(
 	memo string,
 	utxos []Utxo,
 ) (*conway.ConwayTransaction, error) {
+	if amount < dustThreshold {
+		return nil, fmt.Errorf("output amount below dust threshold")
+	}
+
 	sort.Slice(utxos, func(i, j int) bool {
 		if utxos[i].Amount != utxos[j].Amount {
 			return utxos[i].Amount > utxos[j].Amount

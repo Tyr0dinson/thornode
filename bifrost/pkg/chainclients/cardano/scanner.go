@@ -271,12 +271,13 @@ func (s *Scanner) fetchTxs(height int64) ([]*types.TxInItem, error) {
 		var result *localstatequery.UTxOByTxInResult
 		result, err = s.n2c.GetUTxOByTxIn(tx.Consumed(), &previousPoint)
 		if err != nil {
-			s.logger.Err(err).Msg("failed to fetch utxo result for tx")
-			continue
+			return nil, fmt.Errorf("failed to fetch utxo result for tx: %w", err)
 		}
 
 		if len(result.Results) == 0 {
-			s.logger.Error().Msg("no utxo result for tx")
+			s.logger.Warn().
+				Str("tx", tx.Hash().String()).
+				Msg("no utxo result for tx, skipping")
 			continue
 		}
 
