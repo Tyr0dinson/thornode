@@ -32,7 +32,15 @@ import (
 	mem "gitlab.com/thorchain/thornode/v3/x/thorchain/memo"
 )
 
-const solvencyDivisor = 10
+const (
+	solvencyDivisor = 10
+
+	// Solana blockhashes are valid for roughly 150 slots. We keep a buffer to
+	// avoid signing near-expiry hashes that can expire before broadcast.
+	solBlockhashValiditySlots     = uint64(150)
+	solBlockhashSafetyMarginSlots = uint64(30)
+	solBlockhashMaxCachedAgeSlots = solBlockhashValiditySlots - solBlockhashSafetyMarginSlots
+)
 
 // SOLClient is a client for the Solana blockchain
 type SOLClient struct {
@@ -50,6 +58,10 @@ type SOLClient struct {
 	signerCacheManager   *signercache.CacheManager
 	rpcClient            *rpc.SolRPC
 	solvencySlotMultiple int64
+
+	blockhashCacheMu    sync.RWMutex
+	cachedBlockhash     string
+	cachedBlockhashSlot uint64
 }
 
 // NewSOLClient creates a new instance of a SOLClient
@@ -366,7 +378,15 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 	// For truly memoless transactions (no Memo or OriginalMemo), default to TxOutbound
 	memoForParsing := tx.GetMemo()
 
-	solTx, err := c.CreateTx(tx, memoForParsing)
+	// Resolve a signing-time blockhash using hybrid logic:
+	// reuse a still-fresh cached hash, otherwise fetch and cache a fresh one.
+	recentBlockhash, err := c.getSigningBlockhash()
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("fail to get signing blockhash: %w", err)
+	}
+
+	// Build the transaction with the exact blockhash selected for this signing round.
+	solTx, err := c.CreateTx(tx, memoForParsing, recentBlockhash)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("fail to create tx: %w", err)
 	}
@@ -406,6 +426,66 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 	)
 
 	return signedBytes, nil, txIn, nil
+}
+
+// getSigningBlockhash returns the blockhash to embed in the message being signed.
+// It prefers a cached hash if it is still inside the configured freshness window;
+// otherwise it fetches the latest hash and updates the cache.
+func (c *SOLClient) getSigningBlockhash() (string, error) {
+	currentSlot, err := c.rpcClient.GetSlot()
+	if err != nil {
+		return "", fmt.Errorf("fail to get slot for blockhash cache validation: %w", err)
+	}
+
+	// Keep deterministic bytes across close-in-time signers by reusing fresh cache.
+	if cached, ok := c.getCachedBlockhash(currentSlot); ok {
+		return cached, nil
+	}
+
+	latest, err := c.rpcClient.GetLatestBlockhash()
+	if err != nil {
+		return "", fmt.Errorf("fail to fetch latest blockhash: %w", err)
+	}
+	if latest == "" {
+		return "", errors.New("latest blockhash is empty")
+	}
+
+	// Store the freshly fetched hash with the slot used for age checks.
+	c.setCachedBlockhash(latest, currentSlot)
+	return latest, nil
+}
+
+// getCachedBlockhash returns the cached blockhash only if it is still fresh enough
+// to avoid signing near-expiry hashes.
+func (c *SOLClient) getCachedBlockhash(currentSlot uint64) (string, bool) {
+	c.blockhashCacheMu.RLock()
+	hash := c.cachedBlockhash
+	hashSlot := c.cachedBlockhashSlot
+	c.blockhashCacheMu.RUnlock()
+
+	if hash == "" {
+		return "", false
+	}
+
+	// If slot unexpectedly moves backwards, do not trust cached age.
+	if currentSlot < hashSlot {
+		return "", false
+	}
+
+	age := currentSlot - hashSlot
+	if age > solBlockhashMaxCachedAgeSlots {
+		return "", false
+	}
+
+	return hash, true
+}
+
+// setCachedBlockhash stores the last fetched blockhash and slot atomically.
+func (c *SOLClient) setCachedBlockhash(hash string, slot uint64) {
+	c.blockhashCacheMu.Lock()
+	defer c.blockhashCacheMu.Unlock()
+	c.cachedBlockhash = hash
+	c.cachedBlockhashSlot = slot
 }
 
 // SignTransaction takes a rpc.Transaction and signs with the pubkey
@@ -448,8 +528,7 @@ func (c *SOLClient) signTransaction(solTx types.Transaction, txOut stypes.TxOutI
 
 // CreateTx builds a solana transfer function from a TxOutItem using the transaction
 // specification (https://solana.com/docs/core/transactions#manual-sol-transfer)
-func (c *SOLClient) CreateTx(tx stypes.TxOutItem, memoForParsing string) (types.Transaction, error) {
-	recentBlockhash := c.solScanner.getRecentBlockHash()
+func (c *SOLClient) CreateTx(tx stypes.TxOutItem, memoForParsing, recentBlockhash string) (types.Transaction, error) {
 	if recentBlockhash == "" {
 		return types.Transaction{}, errors.New("recent blockhash is empty")
 	}

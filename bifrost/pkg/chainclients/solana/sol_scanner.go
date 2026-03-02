@@ -66,11 +66,6 @@ type SOLScanner struct {
 
 	healthy *atomic.Bool
 
-	// recent block hash (needed for tx construction / signing)
-	// needs to be in consensus between validators
-	recentBlockHash   string
-	recentBlockHashMu sync.Mutex
-
 	// network fee state
 	netFeeSlotMultiple uint64
 	netFeeInit         bool
@@ -130,7 +125,6 @@ func NewSOLScanner(
 		bridge:             bridge,
 		solvencyReporter:   solvencyReporter,
 		signerCacheManager: signerCacheManager,
-		recentBlockHash:    "",
 		lastFeeRate:        0,
 		feeRateCache:       make([]uint64, 0),
 		stopChan:           stopChan,
@@ -491,7 +485,6 @@ func (s *SOLScanner) checkRecentBlocksAndUpdateNetworkFee(slot uint64) error {
 	// reverse the blocks to get the most recent first
 	slices.Reverse(blocks)
 
-	setBlockHash := false
 	for _, b := range blocks {
 		block, err := s.solRpc.GetBlock(b)
 		if err != nil {
@@ -505,10 +498,6 @@ func (s *SOLScanner) checkRecentBlocksAndUpdateNetworkFee(slot uint64) error {
 		if block == nil {
 			s.logger.Debug().Msgf("block %d is nil", b)
 			continue
-		}
-		if !setBlockHash {
-			s.setRecentBlockHash(block.Blockhash)
-			setBlockHash = true
 		}
 		if lastSlot == 0 {
 			lastSlot = b
@@ -563,20 +552,6 @@ func (s *SOLScanner) ScanHeight() (int64, error) {
 // ScanHeight returns the current scanned height
 func (s *SOLScanner) IsHealthy() bool {
 	return s.healthy.Load()
-}
-
-// GetrecentBlockHash returns the latest block hash
-func (s *SOLScanner) getRecentBlockHash() string {
-	s.recentBlockHashMu.Lock()
-	defer s.recentBlockHashMu.Unlock()
-	return s.recentBlockHash
-}
-
-// UpdaterecentBlockHash updates the local latest block hash to be used in tx signing
-func (s *SOLScanner) setRecentBlockHash(hash string) {
-	s.recentBlockHashMu.Lock()
-	defer s.recentBlockHashMu.Unlock()
-	s.recentBlockHash = hash
 }
 
 // GetNetworkFee returns current chain network fee according to Bifrost.

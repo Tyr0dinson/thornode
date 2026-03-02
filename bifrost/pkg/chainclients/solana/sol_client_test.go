@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -24,6 +25,7 @@ import (
 	"github.com/mr-tron/base58"
 	"github.com/stretchr/testify/require"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
+	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/solana/rpc"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
@@ -44,6 +46,8 @@ type SolTestSuite struct {
 	bridge   thorclient.ThorchainBridge
 	m        *metrics.Metrics
 	server   *httptest.Server
+
+	getLatestBlockhashCalls atomic.Int64
 }
 
 var _ = Suite(&SolTestSuite{})
@@ -150,7 +154,11 @@ func (s *SolTestSuite) SetUpSuite(c *C) {
 			if rpcRequest.Method == "getBlock" {
 				httpTestHandler(c, rw, "./test/getBlock.json")
 			}
+			if rpcRequest.Method == "getSlot" {
+				httpTestHandler(c, rw, "./test/getSlot.json")
+			}
 			if rpcRequest.Method == "getLatestBlockhash" {
+				s.getLatestBlockhashCalls.Add(1)
 				// fmt.Println("GET LATEST BLOCK HASH", rpcRequest)
 				httpTestHandler(c, rw, "./test/getLatestBlockHash.json")
 			}
@@ -188,9 +196,8 @@ func (s *SolTestSuite) TestCreateAndSerializeTx(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(e, NotNil)
 
-	e.solScanner.recentBlockHash = "asdfasdf"
-
 	// Create TX
+	recentBlockhash := "asdfasdf"
 	txOutItem := stypes.TxOutItem{
 		Chain:            common.SOLChain,
 		ToAddress:        "D9A6eE2pZ6oSiGb8BPkag4gvAeEhHvc3eEYPBoLSMshG",
@@ -205,7 +212,7 @@ func (s *SolTestSuite) TestCreateAndSerializeTx(c *C) {
 		GasRate: 1,
 		Memo:    "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
 	}
-	tx, err := e.CreateTx(txOutItem, txOutItem.GetMemo())
+	tx, err := e.CreateTx(txOutItem, txOutItem.GetMemo(), recentBlockhash)
 	c.Assert(err, IsNil)
 	c.Assert(tx, NotNil)
 
@@ -246,8 +253,6 @@ func (s *SolTestSuite) TestSignSOLTx(c *C) {
 	c.Assert(result, IsNil)
 	c.Assert(obs, IsNil)
 
-	e.solScanner.recentBlockHash = "asdfasdf"
-
 	// Valid outbound
 	result, _, _, err = e.SignTx(stypes.TxOutItem{
 		Chain:            common.SOLChain,
@@ -267,6 +272,99 @@ func (s *SolTestSuite) TestSignSOLTx(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
 	// c.Assert(obs, NotNil)
+}
+
+func (s *SolTestSuite) TestSignSOLTxUsesCachedBlockhashWhenFresh(c *C) {
+	pubkeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
+	c.Assert(err, IsNil)
+	poolMgr := thorclient.NewPoolMgr(s.bridge)
+	e, err := NewSOLClient(s.thorKeys,
+		config.BifrostChainConfiguration{
+			RPCHost: "http://" + s.server.Listener.Addr().String(),
+			BlockScanner: config.BifrostBlockScannerConfiguration{
+				ChainID:            common.SOLChain,
+				StartBlockHeight:   1, // avoids querying thorchain for block height
+				HTTPRequestTimeout: time.Second,
+				MaxGasLimit:        80000,
+			},
+		}, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
+	c.Assert(err, IsNil)
+	c.Assert(e, NotNil)
+	c.Assert(pubkeyMgr.Start(), IsNil)
+	defer func() { c.Assert(pubkeyMgr.Stop(), IsNil) }()
+
+	s.getLatestBlockhashCalls.Store(0)
+
+	pubkeys := pubkeyMgr.GetPubKeys()
+	txOut := stypes.TxOutItem{
+		Chain:            common.SOLChain,
+		ToAddress:        "D9A6eE2pZ6oSiGb8BPkag4gvAeEhHvc3eEYPBoLSMshG",
+		VaultPubKey:      pubkeys[0],
+		VaultPubKeyEddsa: pubkeys[0],
+		Coins: common.Coins{
+			common.NewCoin(common.SOLAsset, cosmos.NewUint(11047250)),
+		},
+		MaxGas: common.Gas{
+			common.NewCoin(common.SOLAsset, cosmos.NewUint(15000)),
+		},
+		GasRate: 1,
+		Memo:    "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
+	}
+
+	result, _, _, err := e.SignTx(txOut, 1)
+	c.Assert(err, IsNil)
+	c.Assert(result, NotNil)
+
+	result, _, _, err = e.SignTx(txOut, 1)
+	c.Assert(err, IsNil)
+	c.Assert(result, NotNil)
+
+	// getSlot fixture always returns the same slot, so second signing should reuse
+	// cached blockhash and avoid an extra getLatestBlockhash call.
+	c.Assert(s.getLatestBlockhashCalls.Load(), Equals, int64(1))
+}
+
+func (s *SolTestSuite) TestSignSOLTxFailWhenLatestBlockhashUnavailable(c *C) {
+	pubkeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
+	c.Assert(err, IsNil)
+	poolMgr := thorclient.NewPoolMgr(s.bridge)
+	e, err := NewSOLClient(s.thorKeys,
+		config.BifrostChainConfiguration{
+			RPCHost: "http://" + s.server.Listener.Addr().String(),
+			BlockScanner: config.BifrostBlockScannerConfiguration{
+				ChainID:            common.SOLChain,
+				StartBlockHeight:   1, // avoids querying thorchain for block height
+				HTTPRequestTimeout: time.Second,
+				MaxGasLimit:        80000,
+			},
+		}, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
+	c.Assert(err, IsNil)
+	c.Assert(e, NotNil)
+	c.Assert(pubkeyMgr.Start(), IsNil)
+	defer func() { c.Assert(pubkeyMgr.Stop(), IsNil) }()
+
+	// Ensure we fail if signing-time blockhash refresh is unavailable.
+	e.rpcClient = rpc.NewSolRPC("http://127.0.0.1:1", 200*time.Millisecond)
+
+	pubkeys := pubkeyMgr.GetPubKeys()
+	result, _, _, err := e.SignTx(stypes.TxOutItem{
+		Chain:            common.SOLChain,
+		ToAddress:        "D9A6eE2pZ6oSiGb8BPkag4gvAeEhHvc3eEYPBoLSMshG",
+		VaultPubKey:      pubkeys[0],
+		VaultPubKeyEddsa: pubkeys[0],
+		Coins: common.Coins{
+			common.NewCoin(common.SOLAsset, cosmos.NewUint(11047250)),
+		},
+		MaxGas: common.Gas{
+			common.NewCoin(common.SOLAsset, cosmos.NewUint(15000)),
+		},
+		GasRate: 1,
+		Memo:    "OUT:4D91ADAFA69765E7805B5FF2F3A0BA1DBE69E37A1CFCD20C48B99C528AA3EE87",
+	}, 1)
+
+	c.Assert(result, IsNil)
+	c.Assert(err, NotNil)
+	c.Assert(err.Error(), Matches, ".*fail to get signing blockhash.*")
 }
 
 func TestSolAddrKeyringRoundTrip(t *testing.T) {
