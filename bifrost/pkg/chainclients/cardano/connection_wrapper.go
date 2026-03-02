@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	ouroboros "github.com/blinklabs-io/gouroboros"
@@ -21,10 +22,12 @@ import (
 // ----------------------------------------------------------------------------
 
 type wrapper struct {
-	conn   *ouroboros.Connection
-	error  chan error
-	done   chan struct{}
-	logger zerolog.Logger
+	conn     *ouroboros.Connection
+	error    chan error
+	done     chan struct{}
+	logger   zerolog.Logger
+	address  string
+	shutdown atomic.Bool
 }
 
 func newWrapper(
@@ -34,9 +37,10 @@ func newWrapper(
 	rollForwardFunc chainsync.RollForwardFunc,
 ) (*wrapper, error) {
 	c := &wrapper{
-		error:  make(chan error),
-		done:   make(chan struct{}),
-		logger: logger,
+		error:   make(chan error),
+		done:    make(chan struct{}),
+		logger:  logger,
+		address: address,
 	}
 
 	go func() {
@@ -47,12 +51,33 @@ func newWrapper(
 					return
 				}
 				c.logger.Err(err).Msg("ouroboros network error")
+
+				// if this is intentional, return
+				if c.shutdown.Load() {
+					return
+				}
+
+				// try to reconnect otherwise
+				c.logger.Info().Msg("trying to reconnect")
+
+				err = c.Connect(rollBackwardFunc, rollForwardFunc)
+				if err != nil {
+					c.logger.Err(err).Msg("failed to reconnect")
+					return
+				}
 			case <-c.done:
 				return
 			}
 		}
 	}()
 
+	return c, nil
+}
+
+func (c *wrapper) Connect(
+	rollBackwardFunc chainsync.RollBackwardFunc,
+	rollForwardFunc chainsync.RollForwardFunc,
+) error {
 	networkLogger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
 	}))
@@ -84,22 +109,19 @@ func newWrapper(
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to create ouroboros n2c connection: %w", err)
+		return fmt.Errorf("failed to create ouroboros n2c connection: %w", err)
 	}
 
-	err = c.conn.Dial("tcp", address)
+	err = c.conn.Dial("tcp", c.address)
 	if err != nil {
-		return nil, fmt.Errorf("failed to dial ouroboros n2c connection: %w", err)
+		return fmt.Errorf("failed to dial ouroboros n2c connection: %w", err)
 	}
 
-	return c, nil
-}
-
-func (c *wrapper) Dial(address string) error {
-	return c.conn.Dial("tcp", address)
+	return nil
 }
 
 func (c *wrapper) Close() {
+	c.shutdown.Store(true)
 	close(c.done)
 	err := c.conn.Close()
 	if err != nil {
