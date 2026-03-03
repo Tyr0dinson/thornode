@@ -632,7 +632,7 @@ func handleObservedTxOutQuorum(
 ) error {
 	// check whether the tx has consensus
 	if !isQuorum {
-		if voter.Height == ctx.BlockHeight() {
+		if voter.Height == ctx.BlockHeight() || voter.FinalisedHeight == ctx.BlockHeight() {
 			// we've already process the transaction, but we should still
 			// update the observing addresses
 			mgr.ObMgr().AppendObserver(tx.Tx.Chain, observers)
