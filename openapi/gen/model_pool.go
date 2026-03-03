@@ -16,14 +16,14 @@ import (
 
 // Pool struct for Pool
 type Pool struct {
-	Asset               string  `json:"asset"`
-	ShortCode           *string `json:"short_code,omitempty"`
-	Status              string  `json:"status"`
-	Decimals            *int64  `json:"decimals,omitempty"`
-	PendingInboundAsset string  `json:"pending_inbound_asset"`
-	PendingInboundRune  string  `json:"pending_inbound_rune"`
-	BalanceAsset        string  `json:"balance_asset"`
-	BalanceRune         string  `json:"balance_rune"`
+	Asset string `json:"asset"`
+	ShortCode *string `json:"short_code,omitempty"`
+	Status string `json:"status"`
+	Decimals *int64 `json:"decimals,omitempty"`
+	PendingInboundAsset string `json:"pending_inbound_asset"`
+	PendingInboundRune string `json:"pending_inbound_rune"`
+	BalanceAsset string `json:"balance_asset"`
+	BalanceRune string `json:"balance_rune"`
 	// the USD (TOR) price of the asset in 1e8
 	AssetTorPrice string `json:"asset_tor_price"`
 	// the total pool units, this is the sum of LP and synth units
@@ -792,3 +792,5 @@ func (v *NullablePool) UnmarshalJSON(src []byte) error {
 	v.isSet = true
 	return json.Unmarshal(src, &v.value)
 }
+
+

@@ -18,22 +18,23 @@ import (
 	"net/url"
 )
 
+
 // LimitOrderApiService LimitOrderApi service
 type LimitOrderApiService service
 
 type ApiQuotelimitRequest struct {
-	ctx               context.Context
-	ApiService        *LimitOrderApiService
-	height            *int64
-	fromAsset         *string
-	toAsset           *string
-	amount            *int64
-	destination       *string
-	refundAddress     *string
-	customTtl         *int64
+	ctx context.Context
+	ApiService *LimitOrderApiService
+	height *int64
+	fromAsset *string
+	toAsset *string
+	amount *int64
+	destination *string
+	refundAddress *string
+	customTtl *int64
 	streamingQuantity *int64
-	affiliateBps      *int64
-	affiliate         *string
+	affiliateBps *int64
+	affiliate *string
 }
 
 // optional block height, defaults to current tip
@@ -105,25 +106,24 @@ Quotelimit Method for Quotelimit
 
 Provide a limit order quote and memo for the provided limit order
 
-	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-	@return ApiQuotelimitRequest
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @return ApiQuotelimitRequest
 */
 func (a *LimitOrderApiService) Quotelimit(ctx context.Context) ApiQuotelimitRequest {
 	return ApiQuotelimitRequest{
 		ApiService: a,
-		ctx:        ctx,
+		ctx: ctx,
 	}
 }
 
 // Execute executes the request
-//
-//	@return QuoteLimitResponse
+//  @return QuoteLimitResponse
 func (a *LimitOrderApiService) QuotelimitExecute(r ApiQuotelimitRequest) (*QuoteLimitResponse, *http.Response, error) {
 	var (
-		localVarHTTPMethod  = http.MethodGet
-		localVarPostBody    interface{}
-		formFiles           []formFile
-		localVarReturnValue *QuoteLimitResponse
+		localVarHTTPMethod   = http.MethodGet
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  *QuoteLimitResponse
 	)
 
 	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "LimitOrderApiService.Quotelimit")

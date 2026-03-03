@@ -19,15 +19,16 @@ import (
 	"strings"
 )
 
+
 // ReferenceMemosApiService ReferenceMemosApi service
 type ReferenceMemosApiService service
 
 type ApiReferenceMemoRequest struct {
-	ctx        context.Context
+	ctx context.Context
 	ApiService *ReferenceMemosApiService
-	asset      string
-	reference  string
-	height     *int64
+	asset string
+	reference string
+	height *int64
 }
 
 // optional block height, defaults to current tip
@@ -45,29 +46,28 @@ ReferenceMemo Method for ReferenceMemo
 
 Returns the memoless transaction memo for the provided asset and reference number.
 
-	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-	@param asset
-	@param reference the reference number to lookup
-	@return ApiReferenceMemoRequest
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @param asset
+ @param reference the reference number to lookup
+ @return ApiReferenceMemoRequest
 */
 func (a *ReferenceMemosApiService) ReferenceMemo(ctx context.Context, asset string, reference string) ApiReferenceMemoRequest {
 	return ApiReferenceMemoRequest{
 		ApiService: a,
-		ctx:        ctx,
-		asset:      asset,
-		reference:  reference,
+		ctx: ctx,
+		asset: asset,
+		reference: reference,
 	}
 }
 
 // Execute executes the request
-//
-//	@return ReferenceMemoResponse
+//  @return ReferenceMemoResponse
 func (a *ReferenceMemosApiService) ReferenceMemoExecute(r ApiReferenceMemoRequest) (*ReferenceMemoResponse, *http.Response, error) {
 	var (
-		localVarHTTPMethod  = http.MethodGet
-		localVarPostBody    interface{}
-		formFiles           []formFile
-		localVarReturnValue *ReferenceMemoResponse
+		localVarHTTPMethod   = http.MethodGet
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  *ReferenceMemoResponse
 	)
 
 	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "ReferenceMemosApiService.ReferenceMemo")
@@ -141,10 +141,10 @@ func (a *ReferenceMemosApiService) ReferenceMemoExecute(r ApiReferenceMemoReques
 }
 
 type ApiReferenceMemoByHashRequest struct {
-	ctx        context.Context
+	ctx context.Context
 	ApiService *ReferenceMemosApiService
-	hash       string
-	height     *int64
+	hash string
+	height *int64
 }
 
 // optional block height, defaults to current tip
@@ -162,27 +162,26 @@ ReferenceMemoByHash Method for ReferenceMemoByHash
 
 Returns the memoless transaction memo for the provided reference hash.
 
-	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-	@param hash
-	@return ApiReferenceMemoByHashRequest
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @param hash
+ @return ApiReferenceMemoByHashRequest
 */
 func (a *ReferenceMemosApiService) ReferenceMemoByHash(ctx context.Context, hash string) ApiReferenceMemoByHashRequest {
 	return ApiReferenceMemoByHashRequest{
 		ApiService: a,
-		ctx:        ctx,
-		hash:       hash,
+		ctx: ctx,
+		hash: hash,
 	}
 }
 
 // Execute executes the request
-//
-//	@return ReferenceMemoResponse
+//  @return ReferenceMemoResponse
 func (a *ReferenceMemosApiService) ReferenceMemoByHashExecute(r ApiReferenceMemoByHashRequest) (*ReferenceMemoResponse, *http.Response, error) {
 	var (
-		localVarHTTPMethod  = http.MethodGet
-		localVarPostBody    interface{}
-		formFiles           []formFile
-		localVarReturnValue *ReferenceMemoResponse
+		localVarHTTPMethod   = http.MethodGet
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  *ReferenceMemoResponse
 	)
 
 	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "ReferenceMemosApiService.ReferenceMemoByHash")
@@ -255,11 +254,11 @@ func (a *ReferenceMemosApiService) ReferenceMemoByHashExecute(r ApiReferenceMemo
 }
 
 type ApiReferenceMemoCheckRequest struct {
-	ctx        context.Context
+	ctx context.Context
 	ApiService *ReferenceMemosApiService
-	asset      string
-	amount     string
-	height     *int64
+	asset string
+	amount string
+	height *int64
 }
 
 // optional block height, defaults to current tip
@@ -277,29 +276,28 @@ ReferenceMemoCheck Method for ReferenceMemoCheck
 
 Pre-flight check for memoless transactions. Returns what reference would be extracted from the amount and whether it's available for registration.
 
-	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-	@param asset
-	@param amount the transaction amount in base units to check
-	@return ApiReferenceMemoCheckRequest
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @param asset
+ @param amount the transaction amount in base units to check
+ @return ApiReferenceMemoCheckRequest
 */
 func (a *ReferenceMemosApiService) ReferenceMemoCheck(ctx context.Context, asset string, amount string) ApiReferenceMemoCheckRequest {
 	return ApiReferenceMemoCheckRequest{
 		ApiService: a,
-		ctx:        ctx,
-		asset:      asset,
-		amount:     amount,
+		ctx: ctx,
+		asset: asset,
+		amount: amount,
 	}
 }
 
 // Execute executes the request
-//
-//	@return ReferenceMemoPreflightResponse
+//  @return ReferenceMemoPreflightResponse
 func (a *ReferenceMemosApiService) ReferenceMemoCheckExecute(r ApiReferenceMemoCheckRequest) (*ReferenceMemoPreflightResponse, *http.Response, error) {
 	var (
-		localVarHTTPMethod  = http.MethodGet
-		localVarPostBody    interface{}
-		formFiles           []formFile
-		localVarReturnValue *ReferenceMemoPreflightResponse
+		localVarHTTPMethod   = http.MethodGet
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  *ReferenceMemoPreflightResponse
 	)
 
 	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "ReferenceMemosApiService.ReferenceMemoCheck")

@@ -19,14 +19,15 @@ import (
 	"strings"
 )
 
+
 // SwapApiService SwapApi service
 type SwapApiService service
 
 type ApiSwapDetailsRequest struct {
-	ctx        context.Context
+	ctx context.Context
 	ApiService *SwapApiService
-	txId       string
-	height     *int64
+	txId string
+	height *int64
 }
 
 // optional block height, defaults to current tip
@@ -44,27 +45,26 @@ SwapDetails Method for SwapDetails
 
 Returns detailed information about a specific swap including its state.
 
-	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-	@param txId Transaction ID of the swap
-	@return ApiSwapDetailsRequest
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @param txId Transaction ID of the swap
+ @return ApiSwapDetailsRequest
 */
 func (a *SwapApiService) SwapDetails(ctx context.Context, txId string) ApiSwapDetailsRequest {
 	return ApiSwapDetailsRequest{
 		ApiService: a,
-		ctx:        ctx,
-		txId:       txId,
+		ctx: ctx,
+		txId: txId,
 	}
 }
 
 // Execute executes the request
-//
-//	@return SwapDetailsResponse
+//  @return SwapDetailsResponse
 func (a *SwapApiService) SwapDetailsExecute(r ApiSwapDetailsRequest) (*SwapDetailsResponse, *http.Response, error) {
 	var (
-		localVarHTTPMethod  = http.MethodGet
-		localVarPostBody    interface{}
-		formFiles           []formFile
-		localVarReturnValue *SwapDetailsResponse
+		localVarHTTPMethod   = http.MethodGet
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  *SwapDetailsResponse
 	)
 
 	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "SwapApiService.SwapDetails")

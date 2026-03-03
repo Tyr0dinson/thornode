@@ -18,24 +18,25 @@ import (
 	"net/url"
 )
 
+
 // QuoteApiService QuoteApi service
 type QuoteApiService service
 
 type ApiQuoteswapRequest struct {
-	ctx                   context.Context
-	ApiService            *QuoteApiService
-	height                *int64
-	fromAsset             *string
-	toAsset               *string
-	amount                *int64
-	destination           *string
-	refundAddress         *string
-	streamingInterval     *int64
-	streamingQuantity     *int64
-	toleranceBps          *int64
+	ctx context.Context
+	ApiService *QuoteApiService
+	height *int64
+	fromAsset *string
+	toAsset *string
+	amount *int64
+	destination *string
+	refundAddress *string
+	streamingInterval *int64
+	streamingQuantity *int64
+	toleranceBps *int64
 	liquidityToleranceBps *int64
-	affiliateBps          *int64
-	affiliate             *string
+	affiliateBps *int64
+	affiliate *string
 }
 
 // optional block height, defaults to current tip
@@ -119,25 +120,24 @@ Quoteswap Method for Quoteswap
 
 Provide a quote estimate for the provided swap.
 
-	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-	@return ApiQuoteswapRequest
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @return ApiQuoteswapRequest
 */
 func (a *QuoteApiService) Quoteswap(ctx context.Context) ApiQuoteswapRequest {
 	return ApiQuoteswapRequest{
 		ApiService: a,
-		ctx:        ctx,
+		ctx: ctx,
 	}
 }
 
 // Execute executes the request
-//
-//	@return QuoteSwapResponse
+//  @return QuoteSwapResponse
 func (a *QuoteApiService) QuoteswapExecute(r ApiQuoteswapRequest) (*QuoteSwapResponse, *http.Response, error) {
 	var (
-		localVarHTTPMethod  = http.MethodGet
-		localVarPostBody    interface{}
-		formFiles           []formFile
-		localVarReturnValue *QuoteSwapResponse
+		localVarHTTPMethod   = http.MethodGet
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  *QuoteSwapResponse
 	)
 
 	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "QuoteApiService.Quoteswap")

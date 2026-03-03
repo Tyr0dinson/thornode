@@ -16,9 +16,9 @@ import (
 
 // VaultInfo struct for VaultInfo
 type VaultInfo struct {
-	PubKey      string        `json:"pub_key"`
-	PubKeyEddsa *string       `json:"pub_key_eddsa,omitempty"`
-	Routers     []VaultRouter `json:"routers"`
+	PubKey string `json:"pub_key"`
+	PubKeyEddsa *string `json:"pub_key_eddsa,omitempty"`
+	Routers []VaultRouter `json:"routers"`
 	// the list of node public keys which are members of the vault
 	Membership []string `json:"membership,omitempty"`
 }
@@ -206,3 +206,5 @@ func (v *NullableVaultInfo) UnmarshalJSON(src []byte) error {
 	v.isSet = true
 	return json.Unmarshal(src, &v.value)
 }
+
+

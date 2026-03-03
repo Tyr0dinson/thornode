@@ -19,13 +19,14 @@ import (
 	"strings"
 )
 
+
 // VaultsApiService VaultsApi service
 type VaultsApiService service
 
 type ApiAsgardRequest struct {
-	ctx        context.Context
+	ctx context.Context
 	ApiService *VaultsApiService
-	height     *int64
+	height *int64
 }
 
 // optional block height, defaults to current tip
@@ -43,25 +44,24 @@ Asgard Method for Asgard
 
 Returns current asgard vaults.
 
-	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-	@return ApiAsgardRequest
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @return ApiAsgardRequest
 */
 func (a *VaultsApiService) Asgard(ctx context.Context) ApiAsgardRequest {
 	return ApiAsgardRequest{
 		ApiService: a,
-		ctx:        ctx,
+		ctx: ctx,
 	}
 }
 
 // Execute executes the request
-//
-//	@return []Vault
+//  @return []Vault
 func (a *VaultsApiService) AsgardExecute(r ApiAsgardRequest) ([]Vault, *http.Response, error) {
 	var (
-		localVarHTTPMethod  = http.MethodGet
-		localVarPostBody    interface{}
-		formFiles           []formFile
-		localVarReturnValue []Vault
+		localVarHTTPMethod   = http.MethodGet
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  []Vault
 	)
 
 	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "VaultsApiService.Asgard")
@@ -133,10 +133,10 @@ func (a *VaultsApiService) AsgardExecute(r ApiAsgardRequest) ([]Vault, *http.Res
 }
 
 type ApiVaultRequest struct {
-	ctx        context.Context
+	ctx context.Context
 	ApiService *VaultsApiService
-	pubkey     string
-	height     *int64
+	pubkey string
+	height *int64
 }
 
 // optional block height, defaults to current tip
@@ -154,27 +154,26 @@ Vault Method for Vault
 
 Returns the vault for the provided pubkey.
 
-	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-	@param pubkey
-	@return ApiVaultRequest
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @param pubkey
+ @return ApiVaultRequest
 */
 func (a *VaultsApiService) Vault(ctx context.Context, pubkey string) ApiVaultRequest {
 	return ApiVaultRequest{
 		ApiService: a,
-		ctx:        ctx,
-		pubkey:     pubkey,
+		ctx: ctx,
+		pubkey: pubkey,
 	}
 }
 
 // Execute executes the request
-//
-//	@return Vault
+//  @return Vault
 func (a *VaultsApiService) VaultExecute(r ApiVaultRequest) (*Vault, *http.Response, error) {
 	var (
-		localVarHTTPMethod  = http.MethodGet
-		localVarPostBody    interface{}
-		formFiles           []formFile
-		localVarReturnValue *Vault
+		localVarHTTPMethod   = http.MethodGet
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  *Vault
 	)
 
 	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "VaultsApiService.Vault")
@@ -247,9 +246,9 @@ func (a *VaultsApiService) VaultExecute(r ApiVaultRequest) (*Vault, *http.Respon
 }
 
 type ApiVaultPubkeysRequest struct {
-	ctx        context.Context
+	ctx context.Context
 	ApiService *VaultsApiService
-	height     *int64
+	height *int64
 }
 
 // optional block height, defaults to current tip
@@ -267,25 +266,24 @@ VaultPubkeys Method for VaultPubkeys
 
 Returns all pubkeys for current vaults.
 
-	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-	@return ApiVaultPubkeysRequest
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @return ApiVaultPubkeysRequest
 */
 func (a *VaultsApiService) VaultPubkeys(ctx context.Context) ApiVaultPubkeysRequest {
 	return ApiVaultPubkeysRequest{
 		ApiService: a,
-		ctx:        ctx,
+		ctx: ctx,
 	}
 }
 
 // Execute executes the request
-//
-//	@return VaultPubkeysResponse
+//  @return VaultPubkeysResponse
 func (a *VaultsApiService) VaultPubkeysExecute(r ApiVaultPubkeysRequest) (*VaultPubkeysResponse, *http.Response, error) {
 	var (
-		localVarHTTPMethod  = http.MethodGet
-		localVarPostBody    interface{}
-		formFiles           []formFile
-		localVarReturnValue *VaultPubkeysResponse
+		localVarHTTPMethod   = http.MethodGet
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  *VaultPubkeysResponse
 	)
 
 	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "VaultsApiService.VaultPubkeys")
@@ -357,9 +355,9 @@ func (a *VaultsApiService) VaultPubkeysExecute(r ApiVaultPubkeysRequest) (*Vault
 }
 
 type ApiVaultSolvencyRequest struct {
-	ctx        context.Context
+	ctx context.Context
 	ApiService *VaultsApiService
-	height     *int64
+	height *int64
 }
 
 // optional block height, defaults to current tip
@@ -377,25 +375,24 @@ VaultSolvency Method for VaultSolvency
 
 Returns aggregate vault solvency showing over-solvent or under-solvent amounts per asset.
 
-	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-	@return ApiVaultSolvencyRequest
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @return ApiVaultSolvencyRequest
 */
 func (a *VaultsApiService) VaultSolvency(ctx context.Context) ApiVaultSolvencyRequest {
 	return ApiVaultSolvencyRequest{
 		ApiService: a,
-		ctx:        ctx,
+		ctx: ctx,
 	}
 }
 
 // Execute executes the request
-//
-//	@return VaultSolvencyResponse
+//  @return VaultSolvencyResponse
 func (a *VaultsApiService) VaultSolvencyExecute(r ApiVaultSolvencyRequest) (*VaultSolvencyResponse, *http.Response, error) {
 	var (
-		localVarHTTPMethod  = http.MethodGet
-		localVarPostBody    interface{}
-		formFiles           []formFile
-		localVarReturnValue *VaultSolvencyResponse
+		localVarHTTPMethod   = http.MethodGet
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  *VaultSolvencyResponse
 	)
 
 	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "VaultsApiService.VaultSolvency")
@@ -467,9 +464,9 @@ func (a *VaultsApiService) VaultSolvencyExecute(r ApiVaultSolvencyRequest) (*Vau
 }
 
 type ApiYggdrasilRequest struct {
-	ctx        context.Context
+	ctx context.Context
 	ApiService *VaultsApiService
-	height     *int64
+	height *int64
 }
 
 // optional block height, defaults to current tip
@@ -487,25 +484,24 @@ Yggdrasil Method for Yggdrasil
 
 Returns current yggdrasil vaults.
 
-	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-	@return ApiYggdrasilRequest
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @return ApiYggdrasilRequest
 */
 func (a *VaultsApiService) Yggdrasil(ctx context.Context) ApiYggdrasilRequest {
 	return ApiYggdrasilRequest{
 		ApiService: a,
-		ctx:        ctx,
+		ctx: ctx,
 	}
 }
 
 // Execute executes the request
-//
-//	@return []YggdrasilVault
+//  @return []YggdrasilVault
 func (a *VaultsApiService) YggdrasilExecute(r ApiYggdrasilRequest) ([]YggdrasilVault, *http.Response, error) {
 	var (
-		localVarHTTPMethod  = http.MethodGet
-		localVarPostBody    interface{}
-		formFiles           []formFile
-		localVarReturnValue []YggdrasilVault
+		localVarHTTPMethod   = http.MethodGet
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  []YggdrasilVault
 	)
 
 	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "VaultsApiService.Yggdrasil")

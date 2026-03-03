@@ -18,20 +18,21 @@ import (
 	"net/url"
 )
 
+
 // QueueApiService QueueApi service
 type QueueApiService service
 
 type ApiLimitSwapsRequest struct {
-	ctx         context.Context
-	ApiService  *QueueApiService
-	height      *int64
-	offset      *int32
-	limit       *int32
+	ctx context.Context
+	ApiService *QueueApiService
+	height *int64
+	offset *int32
+	limit *int32
 	sourceAsset *string
 	targetAsset *string
-	sender      *string
-	sortBy      *string
-	sortOrder   *string
+	sender *string
+	sortBy *string
+	sortOrder *string
 }
 
 // optional block height, defaults to current tip
@@ -91,25 +92,24 @@ LimitSwaps Method for LimitSwaps
 
 Returns limit swaps with pagination and filtering.
 
-	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-	@return ApiLimitSwapsRequest
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @return ApiLimitSwapsRequest
 */
 func (a *QueueApiService) LimitSwaps(ctx context.Context) ApiLimitSwapsRequest {
 	return ApiLimitSwapsRequest{
 		ApiService: a,
-		ctx:        ctx,
+		ctx: ctx,
 	}
 }
 
 // Execute executes the request
-//
-//	@return LimitSwapsResponse
+//  @return LimitSwapsResponse
 func (a *QueueApiService) LimitSwapsExecute(r ApiLimitSwapsRequest) (*LimitSwapsResponse, *http.Response, error) {
 	var (
-		localVarHTTPMethod  = http.MethodGet
-		localVarPostBody    interface{}
-		formFiles           []formFile
-		localVarReturnValue *LimitSwapsResponse
+		localVarHTTPMethod   = http.MethodGet
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  *LimitSwapsResponse
 	)
 
 	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "QueueApiService.LimitSwaps")
@@ -202,9 +202,9 @@ func (a *QueueApiService) LimitSwapsExecute(r ApiLimitSwapsRequest) (*LimitSwaps
 }
 
 type ApiLimitSwapsSummaryRequest struct {
-	ctx         context.Context
-	ApiService  *QueueApiService
-	height      *int64
+	ctx context.Context
+	ApiService *QueueApiService
+	height *int64
 	sourceAsset *string
 	targetAsset *string
 }
@@ -236,25 +236,24 @@ LimitSwapsSummary Method for LimitSwapsSummary
 
 Returns limit swaps summary statistics.
 
-	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-	@return ApiLimitSwapsSummaryRequest
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @return ApiLimitSwapsSummaryRequest
 */
 func (a *QueueApiService) LimitSwapsSummary(ctx context.Context) ApiLimitSwapsSummaryRequest {
 	return ApiLimitSwapsSummaryRequest{
 		ApiService: a,
-		ctx:        ctx,
+		ctx: ctx,
 	}
 }
 
 // Execute executes the request
-//
-//	@return LimitSwapsSummaryResponse
+//  @return LimitSwapsSummaryResponse
 func (a *QueueApiService) LimitSwapsSummaryExecute(r ApiLimitSwapsSummaryRequest) (*LimitSwapsSummaryResponse, *http.Response, error) {
 	var (
-		localVarHTTPMethod  = http.MethodGet
-		localVarPostBody    interface{}
-		formFiles           []formFile
-		localVarReturnValue *LimitSwapsSummaryResponse
+		localVarHTTPMethod   = http.MethodGet
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  *LimitSwapsSummaryResponse
 	)
 
 	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "QueueApiService.LimitSwapsSummary")
@@ -332,9 +331,9 @@ func (a *QueueApiService) LimitSwapsSummaryExecute(r ApiLimitSwapsSummaryRequest
 }
 
 type ApiQueueRequest struct {
-	ctx        context.Context
+	ctx context.Context
 	ApiService *QueueApiService
-	height     *int64
+	height *int64
 }
 
 // optional block height, defaults to current tip
@@ -352,25 +351,24 @@ Queue Method for Queue
 
 Returns queue statistics.
 
-	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-	@return ApiQueueRequest
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @return ApiQueueRequest
 */
 func (a *QueueApiService) Queue(ctx context.Context) ApiQueueRequest {
 	return ApiQueueRequest{
 		ApiService: a,
-		ctx:        ctx,
+		ctx: ctx,
 	}
 }
 
 // Execute executes the request
-//
-//	@return QueueResponse
+//  @return QueueResponse
 func (a *QueueApiService) QueueExecute(r ApiQueueRequest) (*QueueResponse, *http.Response, error) {
 	var (
-		localVarHTTPMethod  = http.MethodGet
-		localVarPostBody    interface{}
-		formFiles           []formFile
-		localVarReturnValue *QueueResponse
+		localVarHTTPMethod   = http.MethodGet
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  *QueueResponse
 	)
 
 	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "QueueApiService.Queue")
@@ -442,9 +440,9 @@ func (a *QueueApiService) QueueExecute(r ApiQueueRequest) (*QueueResponse, *http
 }
 
 type ApiQueueOutboundRequest struct {
-	ctx        context.Context
+	ctx context.Context
 	ApiService *QueueApiService
-	height     *int64
+	height *int64
 }
 
 // optional block height, defaults to current tip
@@ -462,25 +460,24 @@ QueueOutbound Method for QueueOutbound
 
 Returns the outbound queue including estimated RUNE values.
 
-	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-	@return ApiQueueOutboundRequest
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @return ApiQueueOutboundRequest
 */
 func (a *QueueApiService) QueueOutbound(ctx context.Context) ApiQueueOutboundRequest {
 	return ApiQueueOutboundRequest{
 		ApiService: a,
-		ctx:        ctx,
+		ctx: ctx,
 	}
 }
 
 // Execute executes the request
-//
-//	@return []TxOutItem
+//  @return []TxOutItem
 func (a *QueueApiService) QueueOutboundExecute(r ApiQueueOutboundRequest) ([]TxOutItem, *http.Response, error) {
 	var (
-		localVarHTTPMethod  = http.MethodGet
-		localVarPostBody    interface{}
-		formFiles           []formFile
-		localVarReturnValue []TxOutItem
+		localVarHTTPMethod   = http.MethodGet
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  []TxOutItem
 	)
 
 	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "QueueApiService.QueueOutbound")
@@ -552,9 +549,9 @@ func (a *QueueApiService) QueueOutboundExecute(r ApiQueueOutboundRequest) ([]TxO
 }
 
 type ApiQueueScheduledRequest struct {
-	ctx        context.Context
+	ctx context.Context
 	ApiService *QueueApiService
-	height     *int64
+	height *int64
 }
 
 // optional block height, defaults to current tip
@@ -572,25 +569,24 @@ QueueScheduled Method for QueueScheduled
 
 Returns the scheduled queue.
 
-	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-	@return ApiQueueScheduledRequest
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @return ApiQueueScheduledRequest
 */
 func (a *QueueApiService) QueueScheduled(ctx context.Context) ApiQueueScheduledRequest {
 	return ApiQueueScheduledRequest{
 		ApiService: a,
-		ctx:        ctx,
+		ctx: ctx,
 	}
 }
 
 // Execute executes the request
-//
-//	@return []TxOutItem
+//  @return []TxOutItem
 func (a *QueueApiService) QueueScheduledExecute(r ApiQueueScheduledRequest) ([]TxOutItem, *http.Response, error) {
 	var (
-		localVarHTTPMethod  = http.MethodGet
-		localVarPostBody    interface{}
-		formFiles           []formFile
-		localVarReturnValue []TxOutItem
+		localVarHTTPMethod   = http.MethodGet
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  []TxOutItem
 	)
 
 	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "QueueApiService.QueueScheduled")
@@ -662,9 +658,9 @@ func (a *QueueApiService) QueueScheduledExecute(r ApiQueueScheduledRequest) ([]T
 }
 
 type ApiQueueSwapRequest struct {
-	ctx        context.Context
+	ctx context.Context
 	ApiService *QueueApiService
-	height     *int64
+	height *int64
 }
 
 // optional block height, defaults to current tip
@@ -682,25 +678,24 @@ QueueSwap Method for QueueSwap
 
 Returns the swap queue.
 
-	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-	@return ApiQueueSwapRequest
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @return ApiQueueSwapRequest
 */
 func (a *QueueApiService) QueueSwap(ctx context.Context) ApiQueueSwapRequest {
 	return ApiQueueSwapRequest{
 		ApiService: a,
-		ctx:        ctx,
+		ctx: ctx,
 	}
 }
 
 // Execute executes the request
-//
-//	@return []MsgSwap
+//  @return []MsgSwap
 func (a *QueueApiService) QueueSwapExecute(r ApiQueueSwapRequest) ([]MsgSwap, *http.Response, error) {
 	var (
-		localVarHTTPMethod  = http.MethodGet
-		localVarPostBody    interface{}
-		formFiles           []formFile
-		localVarReturnValue []MsgSwap
+		localVarHTTPMethod   = http.MethodGet
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  []MsgSwap
 	)
 
 	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "QueueApiService.QueueSwap")

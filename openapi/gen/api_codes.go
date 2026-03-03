@@ -18,13 +18,14 @@ import (
 	"net/url"
 )
 
+
 // CodesApiService CodesApi service
 type CodesApiService service
 
 type ApiCodesRequest struct {
-	ctx        context.Context
+	ctx context.Context
 	ApiService *CodesApiService
-	height     *int64
+	height *int64
 }
 
 // optional block height, defaults to current tip
@@ -42,25 +43,24 @@ Codes Method for Codes
 
 Returns all whitelisted contract codes
 
-	@param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
-	@return ApiCodesRequest
+ @param ctx context.Context - for authentication, logging, cancellation, deadlines, tracing, etc. Passed from http.Request or context.Background().
+ @return ApiCodesRequest
 */
 func (a *CodesApiService) Codes(ctx context.Context) ApiCodesRequest {
 	return ApiCodesRequest{
 		ApiService: a,
-		ctx:        ctx,
+		ctx: ctx,
 	}
 }
 
 // Execute executes the request
-//
-//	@return CodesResponse
+//  @return CodesResponse
 func (a *CodesApiService) CodesExecute(r ApiCodesRequest) (*CodesResponse, *http.Response, error) {
 	var (
-		localVarHTTPMethod  = http.MethodGet
-		localVarPostBody    interface{}
-		formFiles           []formFile
-		localVarReturnValue *CodesResponse
+		localVarHTTPMethod   = http.MethodGet
+		localVarPostBody     interface{}
+		formFiles            []formFile
+		localVarReturnValue  *CodesResponse
 	)
 
 	localBasePath, err := a.client.cfg.ServerURLWithContext(r.ctx, "CodesApiService.Codes")

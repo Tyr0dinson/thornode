@@ -18,7 +18,7 @@ import (
 type LimitSwapsResponse struct {
 	// Array of limit swaps with details
 	LimitSwaps []LimitSwapWithDetails `json:"limit_swaps,omitempty"`
-	Pagination *PaginationMeta        `json:"pagination,omitempty"`
+	Pagination *PaginationMeta `json:"pagination,omitempty"`
 }
 
 // NewLimitSwapsResponse instantiates a new LimitSwapsResponse object
@@ -148,3 +148,5 @@ func (v *NullableLimitSwapsResponse) UnmarshalJSON(src []byte) error {
 	v.isSet = true
 	return json.Unmarshal(src, &v.value)
 }
+
+

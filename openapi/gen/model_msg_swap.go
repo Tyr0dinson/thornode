@@ -42,8 +42,8 @@ type MsgSwap struct {
 	// the interval (in blocks) to execute the streaming swap
 	StreamInterval *int64 `json:"stream_interval,omitempty"`
 	// the initial block height when the streaming swap was first queued
-	InitialBlockHeight *int64     `json:"initial_block_height,omitempty"`
-	State              *SwapState `json:"state,omitempty"`
+	InitialBlockHeight *int64 `json:"initial_block_height,omitempty"`
+	State *SwapState `json:"state,omitempty"`
 	// the version of the swap (v1 or v2)
 	Version *string `json:"version,omitempty"`
 	// the index of the swap in the batch
@@ -674,3 +674,5 @@ func (v *NullableMsgSwap) UnmarshalJSON(src []byte) error {
 	v.isSet = true
 	return json.Unmarshal(src, &v.value)
 }
+
+

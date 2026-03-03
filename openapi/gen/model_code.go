@@ -16,9 +16,9 @@ import (
 
 // Code struct for Code
 type Code struct {
-	Code      *string  `json:"code,omitempty"`
+	Code *string `json:"code,omitempty"`
 	Deployers []string `json:"deployers,omitempty"`
-	Origin    *string  `json:"origin,omitempty"`
+	Origin *string `json:"origin,omitempty"`
 }
 
 // NewCode instantiates a new Code object
@@ -183,3 +183,5 @@ func (v *NullableCode) UnmarshalJSON(src []byte) error {
 	v.isSet = true
 	return json.Unmarshal(src, &v.value)
 }
+
+
