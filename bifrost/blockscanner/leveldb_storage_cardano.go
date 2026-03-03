@@ -204,29 +204,26 @@ func (s *LevelDBScannerStorageCardano) GetObservedTxs(height uint64) ([][]byte, 
 	return s.getIdsByHeightKey(s.getObservedTxsByHeightKey(height))
 }
 
-func (s *LevelDBScannerStorageCardano) DeleteObservedTxs(height uint64) error {
-	return s.db.Delete(s.getObservedTxsByHeightKey(height), nil)
-}
-
 func (s *LevelDBScannerStorageCardano) PruneObservedTxs(height uint64) error {
 	candidates, err := s.getPruneCandidates(height, PrefixObservedTxsByHeight)
 	if err != nil {
 		return err
 	}
 
+	batch := new(leveldb.Batch)
 	for _, h := range candidates {
-		err = s.DeleteObservedTxs(h)
-		if err != nil {
-			return fmt.Errorf("failed to delete observed txs at height %d: %w", h, err)
-		}
+		batch.Delete(s.getObservedTxsByHeightKey(h))
 	}
 
-	return nil
+	return s.db.Write(batch, nil)
 }
 
+// DeleteBlockId deletes the specified block information and its observed txs
 func (s *LevelDBScannerStorageCardano) DeleteBlockId(height uint64) error {
-	key := s.getBlockIdKey(height)
-	return s.db.Delete(key, nil)
+	batch := new(leveldb.Batch)
+	batch.Delete(s.getBlockIdKey(height))
+	batch.Delete(s.getObservedTxsByHeightKey(height))
+	return s.db.Write(batch, nil)
 }
 
 //  keys

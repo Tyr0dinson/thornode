@@ -181,64 +181,7 @@ func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
 			Uint64("latest_height", latestHeight).
 			Msg("processing rollback blocks")
 
-		for height := uint64(rollbackHeight + 1); height <= latestHeight; height++ {
-			var txIds [][]byte
-			txIds, err = s.db.GetObservedTxs(height)
-			if err != nil {
-				s.logger.Err(err).
-					Uint64("height", height).
-					Msg("failed to get observed txs")
-				continue
-			}
-
-			var errataTxs []types.ErrataTx
-			for _, txId := range txIds {
-				errataTxs = append(errataTxs, types.ErrataTx{
-					TxID:  common.TxID(hex.EncodeToString(txId)),
-					Chain: s.config.ChainID,
-				})
-			}
-
-			if len(errataTxs) > 0 && s.globalErrataQueue != nil {
-				s.globalErrataQueue <- types.ErrataBlock{
-					Height: int64(height),
-					Txs:    errataTxs,
-				}
-				s.logger.Info().
-					Uint64("height", height).
-					Int("txs", len(errataTxs)).
-					Msg("sent errata for rolled-back block")
-			}
-
-			// clean up storage for this height
-			if err = s.db.DeleteObservedTxs(height); err != nil {
-				s.logger.Err(err).
-					Uint64("height", height).
-					Msg("failed to delete observed txs")
-			}
-			if err = s.db.DeleteBlockId(height); err != nil {
-				s.logger.Err(err).
-					Uint64("height", height).
-					Msg("failed to delete block id")
-			}
-		}
-
-		// // set the scan position to the highest valid remaining block so the
-		// // block scanner resumes from the correct height on next restart
-		// height, _, _, err := s.db.GetLastBlockId()
-		// if err != nil {
-		// 	s.logger.Err(err).Msg("failed to get rollback height")
-		// 	return nil
-		// }
-
-		// if err = s.db.SetScanPos(int64(height)); err != nil {
-		// 	s.logger.Err(err).Msg("failed to set scan position")
-		// } else {
-		// 	s.logger.Info().
-		// 		Uint64("height", height).
-		// 		Msg("set scan position for rollback")
-		// }
-
+		// process all new blocks
 		for height := rollbackHeight + 1; height < fetchHeight; height++ {
 			var txIns []*types.TxInItem
 			txIns, err = s.fetchTxs(height)
@@ -384,14 +327,13 @@ func (s *Scanner) fetchTxs(height int64) ([]*types.TxInItem, error) {
 
 		coins := common.Coins{{
 			Asset:    common.ADAAsset,
-			Amount:   sdkmath.NewUint(amount * 100), // 1e6 => 1e8
+			Amount:   sdkmath.NewUint(amount).MulUint64(100), // 1e6 => 1e8
 			Decimals: 6,
 		}}
 
-		fee := tx.Fee().Uint64()
 		gas := common.Gas{{
 			Asset:    common.ADAAsset,
-			Amount:   sdkmath.NewUint(fee * 100), // 1e6 => 1e8
+			Amount:   sdkmath.NewUintFromBigInt(tx.Fee()).MulUint64(100), // 1e6 => 1e8
 			Decimals: 6,
 		}}
 
@@ -516,6 +458,54 @@ func (s *Scanner) rollBackwardHandler(
 	s.logger.Warn().
 		Uint64("height", tip.BlockNumber).
 		Msg("roll backward")
+
+	latestHeight, _, _, err := s.db.GetLastBlockId()
+	if err != nil {
+		s.logger.Err(err).Msg("failed to get last block height")
+		return nil
+	}
+
+	for height := tip.BlockNumber + 1; height <= latestHeight; height++ {
+		var txIds [][]byte
+		txIds, err = s.db.GetObservedTxs(height)
+		if err != nil {
+			s.logger.Err(err).
+				Uint64("height", height).
+				Msg("failed to get observed txs")
+			continue
+		}
+
+		var errataTxs []types.ErrataTx
+		for _, txId := range txIds {
+			errataTxs = append(errataTxs, types.ErrataTx{
+				TxID:  common.TxID(hex.EncodeToString(txId)),
+				Chain: s.config.ChainID,
+			})
+		}
+
+		if len(errataTxs) > 0 && s.globalErrataQueue != nil {
+			s.globalErrataQueue <- types.ErrataBlock{
+				Height: int64(height),
+				Txs:    errataTxs,
+			}
+			s.logger.Info().
+				Uint64("height", height).
+				Int("txs", len(errataTxs)).
+				Msg("sent errata for rolled-back block")
+		}
+
+		// remove block and associated txs
+		if err = s.db.DeleteBlockId(height); err != nil {
+			s.logger.Err(err).
+				Uint64("height", height).
+				Msg("failed to delete block id")
+		}
+	}
+
+	err = s.db.SetScanPos(int64(tip.BlockNumber))
+	if err != nil {
+		s.logger.Err(err).Msg("failed to set scan position")
+	}
 
 	// signal FetchTxs to reprocess blocks from this height, blockscanner
 	// doesn't know of this rollback

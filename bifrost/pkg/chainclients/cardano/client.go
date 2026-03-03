@@ -591,6 +591,7 @@ func (c *Client) SignTx(txOutItem types.TxOutItem, _ int64) ([]byte, []byte, *ty
 		return nil, nil, nil, fmt.Errorf("failed to set spent utxos")
 	}
 
+	amount := tx.Body.TxOutputs[0].Amount()
 	txIn := types.NewTxInItem(
 		currentHeight,
 		tx.Hash().String(),
@@ -599,7 +600,7 @@ func (c *Client) SignTx(txOutItem types.TxOutItem, _ int64) ([]byte, []byte, *ty
 		txOutItem.ToAddress.String(),
 		[]common.Coin{common.NewCoin(
 			common.ADAAsset,
-			cosmos.NewUint(tx.Body.TxOutputs[0].Amount().Uint64()*100),
+			cosmos.NewUintFromBigInt(amount).MulUint64(100), // 1e6 -> 1e8
 		)},
 		[]common.Coin{common.NewCoin(
 			common.ADAAsset,
@@ -630,7 +631,9 @@ func (c *Client) sign(
 			common.SigningAlgoEd25519,
 			txOutItem.VaultPubKeyEddsa.String(),
 		)
+	}
 
+	if err != nil {
 		var keysignError tss.KeysignError
 		if errors.As(err, &keysignError) {
 			if len(keysignError.Blame.BlameNodes) == 0 {
@@ -653,10 +656,8 @@ func (c *Client) sign(
 			c.logger.Info().
 				Str("tx_id", txId.String()).
 				Msg("post keysign failure to THORChain")
-
-			return nil, err
 		}
-
+		return nil, err
 	}
 
 	return signature, nil

@@ -110,8 +110,6 @@ func (c *wrapper) connect(
 		Level: slog.LevelInfo,
 	}))
 
-	errorChan := make(chan error)
-
 	var err error
 
 	if rollBackwardFunc != nil || rollForwardFunc != nil {
@@ -119,7 +117,7 @@ func (c *wrapper) connect(
 			ouroboros.WithPeerSharing(true),
 			ouroboros.WithNetworkMagic(networkMagic),
 			ouroboros.WithLogger(logger),
-			ouroboros.WithErrorChan(errorChan),
+			ouroboros.WithErrorChan(c.error),
 			ouroboros.WithNodeToNode(true),
 			ouroboros.WithKeepAlive(true),
 			ouroboros.WithKeepAliveConfig(keepalive.NewConfig(
@@ -132,33 +130,20 @@ func (c *wrapper) connect(
 		)
 	} else {
 		c.conn, err = ouroboros.NewConnection(
-			ouroboros.WithErrorChan(errorChan),
+			ouroboros.WithErrorChan(c.error),
 			ouroboros.WithLogger(logger),
 			ouroboros.WithNetworkMagic(networkMagic),
 		)
 	}
 
 	if err != nil {
-		close(errorChan)
 		return fmt.Errorf("failed to create ouroboros n2c connection: %w", err)
 	}
 
 	err = c.conn.Dial("tcp", c.address)
 	if err != nil {
-		close(errorChan)
 		return fmt.Errorf("failed to dial ouroboros n2c connection: %w", err)
 	}
-
-	// forward error from errorChan to c.error
-	go func() {
-		for e := range errorChan {
-			select {
-			case c.error <- e:
-			case <-c.done:
-				return
-			}
-		}
-	}()
 
 	return nil
 }
