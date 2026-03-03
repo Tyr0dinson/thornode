@@ -55,13 +55,17 @@ type QuoteSwapResponse struct {
 	StreamingSwapSeconds *int64 `json:"streaming_swap_seconds,omitempty"`
 	// total number of seconds a swap is expected to take (inbound conf + streaming swap + outbound delay)
 	TotalSwapSeconds *int64 `json:"total_swap_seconds,omitempty"`
+	// whether the source asset is currently eligible for memoless swap flows (currently gas assets only)
+	MemolessSupported bool `json:"memoless_supported"`
+	// optional reason when memoless is not supported for this source asset
+	MemolessReason *string `json:"memoless_reason,omitempty"`
 }
 
 // NewQuoteSwapResponse instantiates a new QuoteSwapResponse object
 // This constructor will assign default values to properties that have it defined,
 // and makes sure properties required by API are set, but the set of arguments
 // will change when the set of required properties is changed
-func NewQuoteSwapResponse(outboundDelayBlocks int64, outboundDelaySeconds int64, fees QuoteFees, expiry int64, warning string, notes string, expectedAmountOut string) *QuoteSwapResponse {
+func NewQuoteSwapResponse(outboundDelayBlocks int64, outboundDelaySeconds int64, fees QuoteFees, expiry int64, warning string, notes string, expectedAmountOut string, memolessSupported bool) *QuoteSwapResponse {
 	this := QuoteSwapResponse{}
 	this.OutboundDelayBlocks = outboundDelayBlocks
 	this.OutboundDelaySeconds = outboundDelaySeconds
@@ -70,6 +74,7 @@ func NewQuoteSwapResponse(outboundDelayBlocks int64, outboundDelaySeconds int64,
 	this.Warning = warning
 	this.Notes = notes
 	this.ExpectedAmountOut = expectedAmountOut
+	this.MemolessSupported = memolessSupported
 	return &this
 }
 
@@ -665,6 +670,62 @@ func (o *QuoteSwapResponse) SetTotalSwapSeconds(v int64) {
 	o.TotalSwapSeconds = &v
 }
 
+// GetMemolessSupported returns the MemolessSupported field value
+func (o *QuoteSwapResponse) GetMemolessSupported() bool {
+	if o == nil {
+		var ret bool
+		return ret
+	}
+
+	return o.MemolessSupported
+}
+
+// GetMemolessSupportedOk returns a tuple with the MemolessSupported field value
+// and a boolean to check if the value has been set.
+func (o *QuoteSwapResponse) GetMemolessSupportedOk() (*bool, bool) {
+	if o == nil {
+		return nil, false
+	}
+	return &o.MemolessSupported, true
+}
+
+// SetMemolessSupported sets field value
+func (o *QuoteSwapResponse) SetMemolessSupported(v bool) {
+	o.MemolessSupported = v
+}
+
+// GetMemolessReason returns the MemolessReason field value if set, zero value otherwise.
+func (o *QuoteSwapResponse) GetMemolessReason() string {
+	if o == nil || o.MemolessReason == nil {
+		var ret string
+		return ret
+	}
+	return *o.MemolessReason
+}
+
+// GetMemolessReasonOk returns a tuple with the MemolessReason field value if set, nil otherwise
+// and a boolean to check if the value has been set.
+func (o *QuoteSwapResponse) GetMemolessReasonOk() (*string, bool) {
+	if o == nil || o.MemolessReason == nil {
+		return nil, false
+	}
+	return o.MemolessReason, true
+}
+
+// HasMemolessReason returns a boolean if a field has been set.
+func (o *QuoteSwapResponse) HasMemolessReason() bool {
+	if o != nil && o.MemolessReason != nil {
+		return true
+	}
+
+	return false
+}
+
+// SetMemolessReason gets a reference to the given string and assigns it to the MemolessReason field.
+func (o *QuoteSwapResponse) SetMemolessReason(v string) {
+	o.MemolessReason = &v
+}
+
 func (o QuoteSwapResponse) MarshalJSON_deprecated() ([]byte, error) {
 	toSerialize := map[string]interface{}{}
 	if o.InboundAddress != nil {
@@ -726,6 +787,12 @@ func (o QuoteSwapResponse) MarshalJSON_deprecated() ([]byte, error) {
 	}
 	if o.TotalSwapSeconds != nil {
 		toSerialize["total_swap_seconds"] = o.TotalSwapSeconds
+	}
+	if true {
+		toSerialize["memoless_supported"] = o.MemolessSupported
+	}
+	if o.MemolessReason != nil {
+		toSerialize["memoless_reason"] = o.MemolessReason
 	}
 	return json.Marshal(toSerialize)
 }

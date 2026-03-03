@@ -2453,6 +2453,18 @@ paths:
           example: t
           type: string
         style: form
+      - description: quote mode - set to `memoless` to enforce memoless source-asset
+          eligibility checks
+        explode: true
+        in: query
+        name: mode
+        required: false
+        schema:
+          enum:
+          - memoless
+          example: memoless
+          type: string
+        style: form
       responses:
         "200":
           content:
@@ -6845,6 +6857,9 @@ components:
         warning: Do not cache this response. Do not send funds after the expiry.
         expiry: 1671660285
         inbound_confirmation_blocks: 0
+        memoless_reason: source asset ETH.USDT is not memoless-eligible; only gas
+          assets are currently supported
+        memoless_supported: true
         inbound_address: bc1qjk3xzu5slu7mtmc8jc9yed3zqvkhkttm700g9a
       properties:
         inbound_address:
@@ -6943,10 +6958,22 @@ components:
           example: 600
           format: int64
           type: integer
+        memoless_supported:
+          description: whether the source asset is currently eligible for memoless
+            swap flows (currently gas assets only)
+          example: true
+          type: boolean
+        memoless_reason:
+          description: optional reason when memoless is not supported for this source
+            asset
+          example: source asset ETH.USDT is not memoless-eligible; only gas assets
+            are currently supported
+          type: string
       required:
       - expected_amount_out
       - expiry
       - fees
+      - memoless_supported
       - notes
       - outbound_delay_blocks
       - outbound_delay_seconds

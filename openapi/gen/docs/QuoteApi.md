@@ -10,7 +10,7 @@ Method | HTTP request | Description
 
 ## Quoteswap
 
-> QuoteSwapResponse Quoteswap(ctx).Height(height).FromAsset(fromAsset).ToAsset(toAsset).Amount(amount).Destination(destination).RefundAddress(refundAddress).StreamingInterval(streamingInterval).StreamingQuantity(streamingQuantity).ToleranceBps(toleranceBps).LiquidityToleranceBps(liquidityToleranceBps).AffiliateBps(affiliateBps).Affiliate(affiliate).Execute()
+> QuoteSwapResponse Quoteswap(ctx).Height(height).FromAsset(fromAsset).ToAsset(toAsset).Amount(amount).Destination(destination).RefundAddress(refundAddress).StreamingInterval(streamingInterval).StreamingQuantity(streamingQuantity).ToleranceBps(toleranceBps).LiquidityToleranceBps(liquidityToleranceBps).AffiliateBps(affiliateBps).Affiliate(affiliate).Mode(mode).Execute()
 
 
 
@@ -41,10 +41,11 @@ func main() {
     liquidityToleranceBps := int64(100) // int64 | the maximum basis points of tolerance for pool price movements to set the limit in the generated memo (optional)
     affiliateBps := int64(100) // int64 | the affiliate fee in basis points (optional)
     affiliate := "t" // string | the affiliate (address or thorname) (optional)
+    mode := "memoless" // string | quote mode - set to `memoless` to enforce memoless source-asset eligibility checks (optional)
 
     configuration := openapiclient.NewConfiguration()
     apiClient := openapiclient.NewAPIClient(configuration)
-    resp, r, err := apiClient.QuoteApi.Quoteswap(context.Background()).Height(height).FromAsset(fromAsset).ToAsset(toAsset).Amount(amount).Destination(destination).RefundAddress(refundAddress).StreamingInterval(streamingInterval).StreamingQuantity(streamingQuantity).ToleranceBps(toleranceBps).LiquidityToleranceBps(liquidityToleranceBps).AffiliateBps(affiliateBps).Affiliate(affiliate).Execute()
+    resp, r, err := apiClient.QuoteApi.Quoteswap(context.Background()).Height(height).FromAsset(fromAsset).ToAsset(toAsset).Amount(amount).Destination(destination).RefundAddress(refundAddress).StreamingInterval(streamingInterval).StreamingQuantity(streamingQuantity).ToleranceBps(toleranceBps).LiquidityToleranceBps(liquidityToleranceBps).AffiliateBps(affiliateBps).Affiliate(affiliate).Mode(mode).Execute()
     if err != nil {
         fmt.Fprintf(os.Stderr, "Error when calling `QuoteApi.Quoteswap``: %v\n", err)
         fmt.Fprintf(os.Stderr, "Full HTTP response: %v\n", r)
@@ -77,6 +78,7 @@ Name | Type | Description  | Notes
  **liquidityToleranceBps** | **int64** | the maximum basis points of tolerance for pool price movements to set the limit in the generated memo | 
  **affiliateBps** | **int64** | the affiliate fee in basis points | 
  **affiliate** | **string** | the affiliate (address or thorname) | 
+ **mode** | **string** | quote mode - set to &#x60;memoless&#x60; to enforce memoless source-asset eligibility checks | 
 
 ### Return type
 

@@ -1516,6 +1516,14 @@ paths:
         schema:
           type: string
           example: "t"
+      - name: mode
+        in: query
+        description: quote mode - set to `memoless` to enforce memoless source-asset eligibility checks
+        schema:
+          type: string
+          enum:
+            - memoless
+          example: "memoless"
     get:
       description: Provide a quote estimate for the provided swap.
       operationId: quoteswap
@@ -4603,6 +4611,7 @@ components:
         - outbound_delay_blocks
         - outbound_delay_seconds
         - fees
+        - memoless_supported
         - warning
         - notes
         - expiry
@@ -4636,6 +4645,14 @@ components:
           format: int64
           description: total number of seconds a swap is expected to take (inbound conf + streaming swap + outbound delay)
           example: 600
+        memoless_supported:
+          type: boolean
+          description: whether the source asset is currently eligible for memoless swap flows (currently gas assets only)
+          example: true
+        memoless_reason:
+          type: string
+          description: optional reason when memoless is not supported for this source asset
+          example: "source asset ETH.USDT is not memoless-eligible; only gas assets are currently supported"
 
     QuoteLimitResponse:
       type: object

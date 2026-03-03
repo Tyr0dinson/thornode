@@ -1374,6 +1374,60 @@ func (s *QuerierSuite) TestQuerySwap(c *C) {
 	// The memo format includes streaming params: =:r:destination/refund:amount/streaming_interval/streaming_quantity:affiliates:affiliate_bps
 	expectedMemo := fmt.Sprintf("=:r:%s/%s:970000000/1/1:%s/%s:30/15", request.Destination, request.RefundAddress, affiliate1, affiliate2)
 	c.Assert(queryPoolsResp.Memo, Equals, expectedMemo)
+
+	// Add a non-gas ETH asset pool to validate memoless quote mode behavior.
+	busdAsset, err := common.NewAsset("ETH.BUSD-BD1")
+	c.Assert(err, IsNil)
+	poolBUSD := NewPool()
+	poolBUSD.Asset = busdAsset
+	poolBUSD.BalanceAsset = cosmos.NewUint(100_000_000_000)
+	poolBUSD.BalanceRune = cosmos.NewUint(10_000_000_000_000)
+	poolBUSD.LPUnits = cosmos.NewUint(100)
+	c.Assert(s.mgr.Keeper().SetPool(s.ctx, poolBUSD), IsNil)
+
+	// mode=memoless should reject non-gas source assets.
+	memolessUnsupportedReq := types.QueryQuoteSwapRequest{
+		FromAsset:     busdAsset.String(),
+		ToAsset:       common.RuneNative.String(),
+		Amount:        "100000000",
+		Destination:   addressTHOR,
+		RefundAddress: GetRandomETHAddress().String(),
+		Mode:          "memoless",
+	}
+	queryPoolsResp, err = s.queryServer.QuoteSwap(s.ctx, &memolessUnsupportedReq)
+	c.Assert(err, NotNil)
+	c.Assert(err.Error(), Matches, "mode=memoless requires a gas-asset source, got .*")
+	c.Assert(queryPoolsResp, IsNil)
+
+	// mode=memoless should allow gas source assets.
+	memolessSupportedReq := types.QueryQuoteSwapRequest{
+		FromAsset:     common.ETHAsset.String(),
+		ToAsset:       common.RuneNative.String(),
+		Amount:        "100000000",
+		Destination:   addressTHOR,
+		RefundAddress: GetRandomETHAddress().String(),
+		Mode:          "memoless",
+	}
+	queryPoolsResp, err = s.queryServer.QuoteSwap(s.ctx, &memolessSupportedReq)
+	c.Assert(err, IsNil)
+	c.Assert(queryPoolsResp, NotNil)
+	c.Assert(queryPoolsResp.MemolessSupported, Equals, true)
+	c.Assert(queryPoolsResp.MemolessReason, Equals, "")
+
+	// Backward compatibility: when mode is omitted, non-gas sources still quote,
+	// but expose explicit memoless metadata.
+	memolessDefaultModeReq := types.QueryQuoteSwapRequest{
+		FromAsset:     busdAsset.String(),
+		ToAsset:       common.RuneNative.String(),
+		Amount:        "100000000",
+		Destination:   addressTHOR,
+		RefundAddress: GetRandomETHAddress().String(),
+	}
+	queryPoolsResp, err = s.queryServer.QuoteSwap(s.ctx, &memolessDefaultModeReq)
+	c.Assert(err, IsNil)
+	c.Assert(queryPoolsResp, NotNil)
+	c.Assert(queryPoolsResp.MemolessSupported, Equals, false)
+	c.Assert(queryPoolsResp.MemolessReason, Matches, "source asset .* is not memoless-eligible, only gas assets are currently supported")
 }
 
 func (s *QuerierSuite) TestNetwork(c *C) {

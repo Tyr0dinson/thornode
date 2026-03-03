@@ -160,7 +160,7 @@ func GetPool(asset common.Asset) (openapi.Pool, error) {
 	return pool, err
 }
 
-func GetSwapQuote(from, to common.Asset, amount sdk.Uint) (openapi.QuoteSwapResponse, error) {
+func GetSwapQuote(from, to common.Asset, amount sdk.Uint, mode ...string) (openapi.QuoteSwapResponse, error) {
 	baseURL := fmt.Sprintf("%s/thorchain/quote/swap", thornodeURL)
 	parsedURL, err := url.Parse(baseURL)
 	if err != nil {
@@ -170,6 +170,12 @@ func GetSwapQuote(from, to common.Asset, amount sdk.Uint) (openapi.QuoteSwapResp
 	params.Add("from_asset", from.String())
 	params.Add("to_asset", to.String())
 	params.Add("amount", amount.String())
+	if len(mode) > 0 {
+		quoteMode := strings.TrimSpace(mode[0])
+		if quoteMode != "" {
+			params.Add("mode", quoteMode)
+		}
+	}
 	parsedURL.RawQuery = params.Encode()
 	url := parsedURL.String()
 

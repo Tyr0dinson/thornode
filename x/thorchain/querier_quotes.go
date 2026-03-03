@@ -38,6 +38,7 @@ const (
 	quoteWarning         = "Do not cache this response. Do not send funds after the expiry."
 	quoteExpiration      = 15 * time.Minute
 	ethBlockRewardAndFee = 3 * 1e18
+	quoteModeMemoless    = "memoless"
 )
 
 var nullLogger = log.NewNopLogger()
@@ -771,6 +772,27 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 	}
 	toAsset = fuzzyAssetMatch(ctx, qs.mgr.Keeper(), toAsset)
 
+	mode := strings.TrimSpace(strings.ToLower(req.Mode))
+	if mode != "" && mode != quoteModeMemoless {
+		return nil, fmt.Errorf("unsupported mode %q", req.Mode)
+	}
+
+	memolessSupported := fromAsset.IsGasAsset()
+	memolessReason := ""
+	if !memolessSupported {
+		memolessReason = fmt.Sprintf(
+			"source asset %s is not memoless-eligible, only gas assets are currently supported",
+			fromAsset.String(),
+		)
+	}
+
+	if mode == quoteModeMemoless && !memolessSupported {
+		return nil, fmt.Errorf(
+			"mode=memoless requires a gas-asset source, got %s",
+			fromAsset.String(),
+		)
+	}
+
 	// parse amount
 	amount, err := cosmos.ParseUint(req.Amount)
 	if err != nil {
@@ -1168,6 +1190,8 @@ func (qs queryServer) queryQuoteSwap(ctx cosmos.Context, req *types.QueryQuoteSw
 		res.RecommendedGasRate = inboundGas.String()
 		res.GasRateUnits, _ = fromAsset.Chain.GetGasUnits()
 	}
+	res.MemolessSupported = memolessSupported
+	res.MemolessReason = memolessReason
 
 	if !fromChain.IsUTXO() || !req.Extended {
 		return res, nil

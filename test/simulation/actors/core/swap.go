@@ -13,6 +13,7 @@ import (
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	"gitlab.com/thorchain/thornode/v3/common/cosmos"
+	openapi "gitlab.com/thorchain/thornode/v3/openapi/gen"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/evm"
 	"gitlab.com/thorchain/thornode/v3/test/simulation/pkg/thornode"
 	. "gitlab.com/thorchain/thornode/v3/test/simulation/pkg/types"
@@ -170,6 +171,14 @@ func (a *SwapActor) getQuote(config *OpConfig) OpResult {
 		}
 	}
 
+	a.setExpectedRangeFromQuote(quote)
+
+	return OpResult{
+		Continue: true,
+	}
+}
+
+func (a *SwapActor) setExpectedRangeFromQuote(quote openapi.QuoteSwapResponse) {
 	// store expected range to fail if received amount is outside 10% tolerance
 	quoteOut := sdkmath.NewUintFromString(quote.ExpectedAmountOut)
 	tolerance := quoteOut.QuoUint64(10)
@@ -182,10 +191,6 @@ func (a *SwapActor) getQuote(config *OpConfig) OpResult {
 	}
 	a.minExpected = common.SafeSub(quoteOut, tolerance)
 	a.maxExpected = quoteOut.Add(tolerance)
-
-	return OpResult{
-		Continue: true,
-	}
 }
 
 func (a *SwapActor) sendSwap(config *OpConfig) OpResult {

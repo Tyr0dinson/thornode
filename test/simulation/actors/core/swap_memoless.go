@@ -4,6 +4,7 @@ import (
 	"fmt"
 	rand "math/rand/v2"
 	"strconv"
+	"strings"
 	"time"
 
 	sdkmath "cosmossdk.io/math"
@@ -52,16 +53,19 @@ func NewSwapMemolessActor(from, to common.Asset, memolessType MemolessType, rng 
 
 	a.Ops = append(a.Ops, a.updateLogContext)
 
+	// Non-gas sources are expected to fail memoless quote eligibility checks.
+	// Keep this actor quote-only and treat the rejection as success.
+	if !from.IsGasAsset() {
+		a.Ops = append(a.Ops, a.setQuoteAmount)
+		a.Ops = append(a.Ops, a.getQuote)
+		return &a.Actor
+	}
+
 	// lock an account with from balance
 	a.Ops = append(a.Ops, a.acquireUser)
 
 	// generate swap quote
 	a.Ops = append(a.Ops, a.getQuote)
-
-	// TODO: support tokens
-	if !from.IsGasAsset() {
-		log.Fatal().Msg("simulation only implemented for gas assets")
-	}
 
 	// TODO: support assets with less than 1e8 precision
 	if from.Chain.GetGasAssetDecimal() != 8 {
@@ -95,6 +99,85 @@ func NewSwapMemolessActor(from, to common.Asset, memolessType MemolessType, rng 
 
 func (a *SwapMemolessActor) updateLogContext(config *OpConfig) OpResult {
 	a.SetLogger(log.With().Stringer("type", a.memolessType).Logger())
+	return OpResult{
+		Continue: true,
+	}
+}
+
+func (a *SwapMemolessActor) getQuote(config *OpConfig) OpResult {
+	// Step 1: Fetch quote without mode and validate memoless eligibility.
+	baseQuote, err := thornode.GetSwapQuote(a.from, a.to, a.swapAmount)
+	if err != nil {
+		a.Log().Error().Err(err).Str("amount", a.swapAmount.String()).Msg("failed to get swap quote")
+		return OpResult{
+			Continue: false,
+		}
+	}
+
+	baseReason := ""
+	if baseQuote.MemolessReason != nil {
+		baseReason = *baseQuote.MemolessReason
+	}
+	if a.from.IsGasAsset() && !baseQuote.MemolessSupported {
+		return OpResult{
+			Finish: true,
+			Error:  fmt.Errorf("expected memoless_supported=true for gas source %s, reason: %s", a.from, baseReason),
+		}
+	}
+	if !a.from.IsGasAsset() && baseQuote.MemolessSupported {
+		return OpResult{
+			Finish: true,
+			Error:  fmt.Errorf("expected memoless_supported=false for non-gas source %s", a.from),
+		}
+	}
+
+	// Step 2: Fetch quote with mode=memoless and validate expected execution path.
+	memolessQuote, err := thornode.GetSwapQuote(a.from, a.to, a.swapAmount, "memoless")
+	if err != nil {
+		// For non-gas sources, memoless mode must be rejected by quote API.
+		if !a.from.IsGasAsset() &&
+			(strings.Contains(err.Error(), "mode=memoless requires a gas-asset source") ||
+				strings.Contains(err.Error(), "not memoless-eligible")) {
+			a.Log().Info().Err(err).Stringer("from", a.from).Msg("memoless quote rejection expected for non-gas source")
+			return OpResult{
+				Finish: true,
+			}
+		}
+
+		a.Log().Error().Err(err).Str("amount", a.swapAmount.String()).Msg("failed to get memoless swap quote")
+		return OpResult{
+			Continue: false,
+		}
+	}
+
+	if !a.from.IsGasAsset() {
+		return OpResult{
+			Finish: true,
+			Error:  fmt.Errorf("expected mode=memoless quote to fail for non-gas source %s", a.from),
+		}
+	}
+
+	a.setExpectedRangeFromQuote(memolessQuote)
+
+	return OpResult{
+		Continue: true,
+	}
+}
+
+func (a *SwapMemolessActor) setQuoteAmount(config *OpConfig) OpResult {
+	pool, err := thornode.GetPool(a.from)
+	if err != nil {
+		a.Log().Warn().Err(err).Stringer("from", a.from).Msg("failed to get pool for memoless quote amount")
+		return OpResult{
+			Continue: false,
+		}
+	}
+
+	a.swapAmount = sdkmath.NewUintFromString(pool.BalanceAsset).QuoUint64(400)
+	if a.swapAmount.IsZero() {
+		a.swapAmount = sdkmath.NewUint(1)
+	}
+
 	return OpResult{
 		Continue: true,
 	}

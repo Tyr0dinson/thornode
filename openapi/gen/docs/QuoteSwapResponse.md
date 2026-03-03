@@ -24,12 +24,14 @@ Name | Type | Description | Notes
 **StreamingSwapBlocks** | Pointer to **int64** | the number of blocks the streaming swap will execute over | [optional] 
 **StreamingSwapSeconds** | Pointer to **int64** | approx the number of seconds the streaming swap will execute over | [optional] 
 **TotalSwapSeconds** | Pointer to **int64** | total number of seconds a swap is expected to take (inbound conf + streaming swap + outbound delay) | [optional] 
+**MemolessSupported** | **bool** | whether the source asset is currently eligible for memoless swap flows (currently gas assets only) | 
+**MemolessReason** | Pointer to **string** | optional reason when memoless is not supported for this source asset | [optional] 
 
 ## Methods
 
 ### NewQuoteSwapResponse
 
-`func NewQuoteSwapResponse(outboundDelayBlocks int64, outboundDelaySeconds int64, fees QuoteFees, expiry int64, warning string, notes string, expectedAmountOut string, ) *QuoteSwapResponse`
+`func NewQuoteSwapResponse(outboundDelayBlocks int64, outboundDelaySeconds int64, fees QuoteFees, expiry int64, warning string, notes string, expectedAmountOut string, memolessSupported bool, ) *QuoteSwapResponse`
 
 NewQuoteSwapResponse instantiates a new QuoteSwapResponse object
 This constructor will assign default values to properties that have it defined,
@@ -508,6 +510,51 @@ SetTotalSwapSeconds sets TotalSwapSeconds field to given value.
 `func (o *QuoteSwapResponse) HasTotalSwapSeconds() bool`
 
 HasTotalSwapSeconds returns a boolean if a field has been set.
+
+### GetMemolessSupported
+
+`func (o *QuoteSwapResponse) GetMemolessSupported() bool`
+
+GetMemolessSupported returns the MemolessSupported field if non-nil, zero value otherwise.
+
+### GetMemolessSupportedOk
+
+`func (o *QuoteSwapResponse) GetMemolessSupportedOk() (*bool, bool)`
+
+GetMemolessSupportedOk returns a tuple with the MemolessSupported field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetMemolessSupported
+
+`func (o *QuoteSwapResponse) SetMemolessSupported(v bool)`
+
+SetMemolessSupported sets MemolessSupported field to given value.
+
+
+### GetMemolessReason
+
+`func (o *QuoteSwapResponse) GetMemolessReason() string`
+
+GetMemolessReason returns the MemolessReason field if non-nil, zero value otherwise.
+
+### GetMemolessReasonOk
+
+`func (o *QuoteSwapResponse) GetMemolessReasonOk() (*string, bool)`
+
+GetMemolessReasonOk returns a tuple with the MemolessReason field if it's non-nil, zero value otherwise
+and a boolean to check if the value has been set.
+
+### SetMemolessReason
+
+`func (o *QuoteSwapResponse) SetMemolessReason(v string)`
+
+SetMemolessReason sets MemolessReason field to given value.
+
+### HasMemolessReason
+
+`func (o *QuoteSwapResponse) HasMemolessReason() bool`
+
+HasMemolessReason returns a boolean if a field has been set.
 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)

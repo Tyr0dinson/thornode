@@ -37,6 +37,7 @@ type ApiQuoteswapRequest struct {
 	liquidityToleranceBps *int64
 	affiliateBps *int64
 	affiliate *string
+	mode *string
 }
 
 // optional block height, defaults to current tip
@@ -108,6 +109,12 @@ func (r ApiQuoteswapRequest) AffiliateBps(affiliateBps int64) ApiQuoteswapReques
 // the affiliate (address or thorname)
 func (r ApiQuoteswapRequest) Affiliate(affiliate string) ApiQuoteswapRequest {
 	r.affiliate = &affiliate
+	return r
+}
+
+// quote mode - set to &#x60;memoless&#x60; to enforce memoless source-asset eligibility checks
+func (r ApiQuoteswapRequest) Mode(mode string) ApiQuoteswapRequest {
+	r.mode = &mode
 	return r
 }
 
@@ -186,6 +193,9 @@ func (a *QuoteApiService) QuoteswapExecute(r ApiQuoteswapRequest) (*QuoteSwapRes
 	}
 	if r.affiliate != nil {
 		localVarQueryParams.Add("affiliate", parameterToString(*r.affiliate, ""))
+	}
+	if r.mode != nil {
+		localVarQueryParams.Add("mode", parameterToString(*r.mode, ""))
 	}
 	// to determine the Content-Type header
 	localVarHTTPContentTypes := []string{}

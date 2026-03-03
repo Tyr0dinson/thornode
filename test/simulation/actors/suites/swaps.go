@@ -2,6 +2,7 @@ package suites
 
 import (
 	rand "math/rand/v2"
+	"slices"
 
 	"gitlab.com/thorchain/thornode/v3/common"
 	acommon "gitlab.com/thorchain/thornode/v3/test/simulation/actors/common"
@@ -36,7 +37,43 @@ func MemolessSwaps(rng *rand.Rand) *Actor {
 		}
 	}
 
+	// Add one or two non-gas sources to verify memoless quote rejection paths.
+	// These actors first verify memoless_supported=false on normal quote, then
+	// expect mode=memoless quote to be rejected.
+	nonGasSources := []common.Asset{}
+	for _, chain := range acommon.SimChains {
+		if !chain.IsEVM() {
+			continue
+		}
+		for asset := range evm.Tokens(chain) {
+			if asset.IsGasAsset() {
+				continue
+			}
+			nonGasSources = append(nonGasSources, asset)
+		}
+	}
+	slices.SortFunc(nonGasSources, func(a, b common.Asset) int {
+		return compareAssetStrings(a.String(), b.String())
+	})
+	if len(nonGasSources) > 2 {
+		nonGasSources = nonGasSources[:2]
+	}
+	for _, fromAsset := range nonGasSources {
+		toAsset := acommon.SimChains[rng.IntN(len(acommon.SimChains))].GetGasAsset()
+		a.Children[core.NewSwapMemolessActor(fromAsset, toAsset, core.MemolessTypeRef, rng)] = true
+	}
+
 	return a
+}
+
+func compareAssetStrings(a, b string) int {
+	if a < b {
+		return -1
+	}
+	if a > b {
+		return 1
+	}
+	return 0
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
