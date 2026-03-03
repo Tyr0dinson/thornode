@@ -66,6 +66,12 @@ type SOLScanner struct {
 
 	healthy *atomic.Bool
 
+	// recent block hash (needed for tx construction / signing)
+	// needs to be in consensus between validators
+	recentBlockHash   string
+	recentBlockSlot   uint64
+	recentBlockHashMu sync.RWMutex
+
 	// network fee state
 	netFeeSlotMultiple uint64
 	netFeeInit         bool
@@ -485,6 +491,7 @@ func (s *SOLScanner) checkRecentBlocksAndUpdateNetworkFee(slot uint64) error {
 	// reverse the blocks to get the most recent first
 	slices.Reverse(blocks)
 
+	setBlockHash := false
 	for _, b := range blocks {
 		block, err := s.solRpc.GetBlock(b)
 		if err != nil {
@@ -498,6 +505,10 @@ func (s *SOLScanner) checkRecentBlocksAndUpdateNetworkFee(slot uint64) error {
 		if block == nil {
 			s.logger.Debug().Msgf("block %d is nil", b)
 			continue
+		}
+		if !setBlockHash {
+			s.setRecentBlockHash(block.Blockhash, b)
+			setBlockHash = true
 		}
 		if lastSlot == 0 {
 			lastSlot = b
@@ -552,6 +563,56 @@ func (s *SOLScanner) ScanHeight() (int64, error) {
 // ScanHeight returns the current scanned height
 func (s *SOLScanner) IsHealthy() bool {
 	return s.healthy.Load()
+}
+
+// getRecentBlockHash returns the last scanner-selected blockhash and its slot.
+func (s *SOLScanner) getRecentBlockHash() (string, uint64) {
+	s.recentBlockHashMu.RLock()
+	defer s.recentBlockHashMu.RUnlock()
+	return s.recentBlockHash, s.recentBlockSlot
+}
+
+// setRecentBlockHash updates the scanner-selected blockhash and its source slot.
+func (s *SOLScanner) setRecentBlockHash(hash string, slot uint64) {
+	s.recentBlockHashMu.Lock()
+	defer s.recentBlockHashMu.Unlock()
+	s.recentBlockHash = hash
+	s.recentBlockSlot = slot
+}
+
+// refreshRecentBlockHash refreshes the scanner-selected blockhash deterministically
+// using a rounded slot boundary shared across nodes.
+func (s *SOLScanner) refreshRecentBlockHash(currentSlot uint64) error {
+	roundedSlot := (currentSlot / s.cfg.Solana.FeeUpdateInterval) * s.cfg.Solana.FeeUpdateInterval
+	var firstSlot uint64
+	if roundedSlot > s.cfg.Solana.FeeSampleSlots {
+		firstSlot = roundedSlot - s.cfg.Solana.FeeSampleSlots
+	}
+
+	blocks, err := s.solRpc.GetBlockHeights(firstSlot, roundedSlot)
+	if err != nil {
+		return fmt.Errorf("failed to get confirmed blocks for blockhash refresh: %w", err)
+	}
+
+	// Reverse to prefer the most recent finalized block in the window.
+	slices.Reverse(blocks)
+	for _, b := range blocks {
+		block, err := s.solRpc.GetBlock(b)
+		if err != nil {
+			if strings.Contains(err.Error(), "Block status not yet available for slot") {
+				return fmt.Errorf("block status not yet available for slot %d", b)
+			}
+			s.logger.Error().Err(err).Msg("failed to get block for blockhash refresh")
+			continue
+		}
+		if block == nil {
+			continue
+		}
+		s.setRecentBlockHash(block.Blockhash, b)
+		return nil
+	}
+
+	return errors.New("no finalized blockhash available in refresh window")
 }
 
 // GetNetworkFee returns current chain network fee according to Bifrost.

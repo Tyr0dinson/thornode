@@ -152,7 +152,27 @@ func (s *SolTestSuite) SetUpSuite(c *C) {
 			err = json.Unmarshal(body, &rpcRequest)
 			c.Assert(err, IsNil)
 			if rpcRequest.Method == "getBlock" {
-				httpTestHandler(c, rw, "./test/getBlock.json")
+				rw.Header().Set("Content-Type", "application/json")
+				_, writeErr := rw.Write([]byte(`{
+  "jsonrpc": "2.0",
+  "result": {
+    "blockhash": "asdfasdf",
+    "previousBlockhash": "prevhash",
+    "parentSlot": 0,
+    "transactions": []
+  },
+  "id": 1
+}`))
+				c.Assert(writeErr, IsNil)
+			}
+			if rpcRequest.Method == "getBlocks" {
+				rw.Header().Set("Content-Type", "application/json")
+				_, writeErr := rw.Write([]byte(`{
+  "jsonrpc": "2.0",
+  "result": [1],
+  "id": 1
+}`))
+				c.Assert(writeErr, IsNil)
 			}
 			if rpcRequest.Method == "getSlot" {
 				httpTestHandler(c, rw, "./test/getSlot.json")
@@ -234,6 +254,15 @@ func (s *SolTestSuite) TestSignSOLTx(c *C) {
 				StartBlockHeight:   1, // avoids querying thorchain for block height
 				HTTPRequestTimeout: time.Second,
 				MaxGasLimit:        80000,
+				Solana: struct {
+					ScanInterval       time.Duration `mapstructure:"scan_interval"`
+					ScanInactiveVaults bool          `mapstructure:"scan_inactive_vaults"`
+					FeeUpdateInterval  uint64        `mapstructure:"fee_update_interval"`
+					FeeSampleSlots     uint64        `mapstructure:"fee_sample_slots"`
+				}{
+					FeeUpdateInterval: 50,
+					FeeSampleSlots:    10,
+				},
 			},
 		}, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
 	c.Assert(err, IsNil)
@@ -274,7 +303,7 @@ func (s *SolTestSuite) TestSignSOLTx(c *C) {
 	// c.Assert(obs, NotNil)
 }
 
-func (s *SolTestSuite) TestSignSOLTxUsesCachedBlockhashWhenFresh(c *C) {
+func (s *SolTestSuite) TestSignSOLTxUsesFreshScannerBlockhashWithoutRefresh(c *C) {
 	pubkeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
 	c.Assert(err, IsNil)
 	poolMgr := thorclient.NewPoolMgr(s.bridge)
@@ -286,6 +315,15 @@ func (s *SolTestSuite) TestSignSOLTxUsesCachedBlockhashWhenFresh(c *C) {
 				StartBlockHeight:   1, // avoids querying thorchain for block height
 				HTTPRequestTimeout: time.Second,
 				MaxGasLimit:        80000,
+				Solana: struct {
+					ScanInterval       time.Duration `mapstructure:"scan_interval"`
+					ScanInactiveVaults bool          `mapstructure:"scan_inactive_vaults"`
+					FeeUpdateInterval  uint64        `mapstructure:"fee_update_interval"`
+					FeeSampleSlots     uint64        `mapstructure:"fee_sample_slots"`
+				}{
+					FeeUpdateInterval: 50,
+					FeeSampleSlots:    10,
+				},
 			},
 		}, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
 	c.Assert(err, IsNil)
@@ -294,6 +332,10 @@ func (s *SolTestSuite) TestSignSOLTxUsesCachedBlockhashWhenFresh(c *C) {
 	defer func() { c.Assert(pubkeyMgr.Stop(), IsNil) }()
 
 	s.getLatestBlockhashCalls.Store(0)
+	e.solScanner.setRecentBlockHash("asdfasdf", 1)
+	// If signing tries to refresh via scanner RPC despite the hash being fresh,
+	// this call will fail and the test will fail.
+	e.solScanner.solRpc = rpc.NewSolRPC("http://127.0.0.1:1", 200*time.Millisecond)
 
 	pubkeys := pubkeyMgr.GetPubKeys()
 	txOut := stypes.TxOutItem{
@@ -319,12 +361,11 @@ func (s *SolTestSuite) TestSignSOLTxUsesCachedBlockhashWhenFresh(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
 
-	// getSlot fixture always returns the same slot, so second signing should reuse
-	// cached blockhash and avoid an extra getLatestBlockhash call.
-	c.Assert(s.getLatestBlockhashCalls.Load(), Equals, int64(1))
+	// Strict scanner-based policy should never call signing-time getLatestBlockhash.
+	c.Assert(s.getLatestBlockhashCalls.Load(), Equals, int64(0))
 }
 
-func (s *SolTestSuite) TestSignSOLTxFailWhenLatestBlockhashUnavailable(c *C) {
+func (s *SolTestSuite) TestSignSOLTxFailWhenStrictScannerRefreshUnavailable(c *C) {
 	pubkeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
 	c.Assert(err, IsNil)
 	poolMgr := thorclient.NewPoolMgr(s.bridge)
@@ -336,6 +377,15 @@ func (s *SolTestSuite) TestSignSOLTxFailWhenLatestBlockhashUnavailable(c *C) {
 				StartBlockHeight:   1, // avoids querying thorchain for block height
 				HTTPRequestTimeout: time.Second,
 				MaxGasLimit:        80000,
+				Solana: struct {
+					ScanInterval       time.Duration `mapstructure:"scan_interval"`
+					ScanInactiveVaults bool          `mapstructure:"scan_inactive_vaults"`
+					FeeUpdateInterval  uint64        `mapstructure:"fee_update_interval"`
+					FeeSampleSlots     uint64        `mapstructure:"fee_sample_slots"`
+				}{
+					FeeUpdateInterval: 50,
+					FeeSampleSlots:    10,
+				},
 			},
 		}, nil, s.bridge, s.m, pubkeyMgr, poolMgr)
 	c.Assert(err, IsNil)
@@ -343,8 +393,8 @@ func (s *SolTestSuite) TestSignSOLTxFailWhenLatestBlockhashUnavailable(c *C) {
 	c.Assert(pubkeyMgr.Start(), IsNil)
 	defer func() { c.Assert(pubkeyMgr.Stop(), IsNil) }()
 
-	// Ensure we fail if signing-time blockhash refresh is unavailable.
-	e.rpcClient = rpc.NewSolRPC("http://127.0.0.1:1", 200*time.Millisecond)
+	// Ensure strict signing fails when scanner refresh is unavailable.
+	e.solScanner.solRpc = rpc.NewSolRPC("http://127.0.0.1:1", 200*time.Millisecond)
 
 	pubkeys := pubkeyMgr.GetPubKeys()
 	result, _, _, err := e.SignTx(stypes.TxOutItem{
@@ -364,7 +414,7 @@ func (s *SolTestSuite) TestSignSOLTxFailWhenLatestBlockhashUnavailable(c *C) {
 
 	c.Assert(result, IsNil)
 	c.Assert(err, NotNil)
-	c.Assert(err.Error(), Matches, ".*fail to get signing blockhash.*")
+	c.Assert(err.Error(), Matches, ".*strict blockhash refresh failed.*")
 }
 
 func TestSolAddrKeyringRoundTrip(t *testing.T) {

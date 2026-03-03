@@ -58,10 +58,6 @@ type SOLClient struct {
 	signerCacheManager   *signercache.CacheManager
 	rpcClient            *rpc.SolRPC
 	solvencySlotMultiple int64
-
-	blockhashCacheMu    sync.RWMutex
-	cachedBlockhash     string
-	cachedBlockhashSlot uint64
 }
 
 // NewSOLClient creates a new instance of a SOLClient
@@ -378,8 +374,7 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 	// For truly memoless transactions (no Memo or OriginalMemo), default to TxOutbound
 	memoForParsing := tx.GetMemo()
 
-	// Resolve a signing-time blockhash using hybrid logic:
-	// reuse a still-fresh cached hash, otherwise fetch and cache a fresh one.
+	// Resolve a signing-time blockhash using strict scanner-based hybrid logic.
 	recentBlockhash, err := c.getSigningBlockhash()
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("fail to get signing blockhash: %w", err)
@@ -429,63 +424,56 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 }
 
 // getSigningBlockhash returns the blockhash to embed in the message being signed.
-// It prefers a cached hash if it is still inside the configured freshness window;
-// otherwise it fetches the latest hash and updates the cache.
+// Strict policy:
+// 1) use scanner-selected blockhash if fresh enough
+// 2) deterministically refresh scanner blockhash if stale/missing
+// 3) fail if a fresh shared blockhash is still unavailable
 func (c *SOLClient) getSigningBlockhash() (string, error) {
 	currentSlot, err := c.rpcClient.GetSlot()
 	if err != nil {
-		return "", fmt.Errorf("fail to get slot for blockhash cache validation: %w", err)
+		return "", fmt.Errorf("fail to get current slot for signing blockhash: %w", err)
 	}
 
-	// Keep deterministic bytes across close-in-time signers by reusing fresh cache.
-	if cached, ok := c.getCachedBlockhash(currentSlot); ok {
-		return cached, nil
+	if hash, _, ok := c.getFreshScannerBlockhash(currentSlot); ok {
+		return hash, nil
 	}
 
-	latest, err := c.rpcClient.GetLatestBlockhash()
-	if err != nil {
-		return "", fmt.Errorf("fail to fetch latest blockhash: %w", err)
-	}
-	if latest == "" {
-		return "", errors.New("latest blockhash is empty")
+	if err := c.solScanner.refreshRecentBlockHash(currentSlot); err != nil {
+		return "", fmt.Errorf("strict blockhash refresh failed: %w", err)
 	}
 
-	// Store the freshly fetched hash with the slot used for age checks.
-	c.setCachedBlockhash(latest, currentSlot)
-	return latest, nil
+	if hash, hashSlot, ok := c.getFreshScannerBlockhash(currentSlot); ok {
+		c.logger.Debug().
+			Str("blockhash", hash).
+			Uint64("hash_slot", hashSlot).
+			Uint64("current_slot", currentSlot).
+			Msg("using refreshed scanner blockhash for signing")
+		return hash, nil
+	}
+
+	return "", errors.New("strict blockhash refresh failed: scanner blockhash remains stale or empty")
 }
 
-// getCachedBlockhash returns the cached blockhash only if it is still fresh enough
+// getFreshScannerBlockhash returns scanner-selected hash only when it is fresh enough
 // to avoid signing near-expiry hashes.
-func (c *SOLClient) getCachedBlockhash(currentSlot uint64) (string, bool) {
-	c.blockhashCacheMu.RLock()
-	hash := c.cachedBlockhash
-	hashSlot := c.cachedBlockhashSlot
-	c.blockhashCacheMu.RUnlock()
+func (c *SOLClient) getFreshScannerBlockhash(currentSlot uint64) (string, uint64, bool) {
+	hash, hashSlot := c.solScanner.getRecentBlockHash()
 
 	if hash == "" {
-		return "", false
+		return "", 0, false
 	}
 
 	// If slot unexpectedly moves backwards, do not trust cached age.
 	if currentSlot < hashSlot {
-		return "", false
+		return "", 0, false
 	}
 
 	age := currentSlot - hashSlot
 	if age > solBlockhashMaxCachedAgeSlots {
-		return "", false
+		return "", 0, false
 	}
 
-	return hash, true
-}
-
-// setCachedBlockhash stores the last fetched blockhash and slot atomically.
-func (c *SOLClient) setCachedBlockhash(hash string, slot uint64) {
-	c.blockhashCacheMu.Lock()
-	defer c.blockhashCacheMu.Unlock()
-	c.cachedBlockhash = hash
-	c.cachedBlockhashSlot = slot
+	return hash, hashSlot, true
 }
 
 // SignTransaction takes a rpc.Transaction and signs with the pubkey
