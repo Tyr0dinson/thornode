@@ -79,8 +79,7 @@ message QueryQuoteSwapResponse {
   // wallets to easily construct transactions with more than 80bytes
   repeated Vout vout = 21;
   // whether the source asset is currently eligible for memoless swap flows
-  bool memoless_supported = 22
-      [ (gogoproto.jsontag) = "memoless_supported" ];
+  bool memoless_supported = 22 [ (gogoproto.jsontag) = "memoless_supported" ];
   // optional reason when memoless is not supported for the source asset
   string memoless_reason = 23
       [ (gogoproto.jsontag) = "memoless_reason,omitempty" ];
