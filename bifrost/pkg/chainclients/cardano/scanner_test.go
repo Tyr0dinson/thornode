@@ -286,8 +286,6 @@ func (s *ScannerTestSuite) TestRollBackwardHandler(c *C) {
 	err := scanner.rollBackwardHandler(chainsync.CallbackContext{}, point, tip)
 	c.Assert(err, IsNil)
 
-	scanner.FetchTxs(int64(tip.BlockNumber), 5)
-
 	// collect errata blocks from queue
 	errata := make(map[int64][]string)
 	for len(errataQueue) > 0 {

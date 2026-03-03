@@ -3,6 +3,7 @@ package cardano
 import (
 	"encoding/hex"
 	"fmt"
+	"math/big"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -266,7 +267,7 @@ func (s *Scanner) fetchTxs(height int64) ([]*types.TxInItem, error) {
 			continue
 		}
 
-		// only tx witch exactly one VKey are supported
+		// only tx with exactly one VKey are supported
 		if len(tx.Witnesses().Vkey()) != 1 {
 			s.logger.Warn().Msg("tx with multiple witnesses are not supported")
 			continue
@@ -278,48 +279,57 @@ func (s *Scanner) fetchTxs(height int64) ([]*types.TxInItem, error) {
 			continue
 		}
 
-		var result *localstatequery.UTxOByTxInResult
-		result, err = s.n2c.GetUTxOByTxIn(tx.Consumed()[:1], &previousPoint)
-		if err != nil {
-			return nil, fmt.Errorf("failed to fetch utxo result for tx: %w", err)
-		}
+		var toAddress, fromAddress ledger.Address
+		var amount *big.Int
 
-		if len(result.Results) == 0 {
-			s.logger.Warn().
-				Str("tx", tx.Hash().String()).
-				Msg("no utxo result for tx, skipping")
-			continue
-		}
-
-		var fromAddress ledger.Address
-
-		// We just use the first input for the sender address,
-		// txs with multiple VKeys where already discarded
-		for _, output := range result.Results {
-			fromAddress = output.Address()
-			break
-		}
-
-		isFromAsgard := s.isAsgardAddress(fromAddress)
-
-		var toAddress ledger.Address
-		var amount uint64
-
+		isToAsgard := false
 		for _, output := range tx.Outputs() {
-			toAddress = output.Address()
-
-			// skip txs that are sent to the sender, i.e. for utxo change
-			if fromAddress.String() == toAddress.String() {
-				continue
-			}
-
-			if isFromAsgard || s.isAsgardAddress(toAddress) {
-				amount = output.Amount().Uint64()
+			if s.isAsgardAddress(output.Address()) {
+				isToAsgard = true
+				toAddress = output.Address()
+				amount = output.Amount()
 				break
 			}
 		}
 
-		if amount == 0 {
+		fromAddress, err = AddressFromBytes(tx.Witnesses().Vkey()[0].Vkey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to calculate address: %w", err)
+		}
+
+		// ignore if neither from nor to an asgard vault
+		if !isToAsgard && !s.isAsgardAddress(fromAddress) {
+			continue
+		}
+
+		if isToAsgard {
+			// toAddress is asgard vault, get sender from first input
+			// txs with multiple VKeys where already discarded
+			var result *localstatequery.UTxOByTxInResult
+			result, err = s.n2c.GetUTxOByTxIn(tx.Consumed()[:1], &previousPoint)
+			if err != nil {
+				return nil, fmt.Errorf("failed to fetch utxo result for tx: %w", err)
+			}
+
+			if len(result.Results) == 0 {
+				s.logger.Warn().
+					Str("tx", tx.Hash().String()).
+					Msg("no utxo result for tx, skipping")
+				continue
+			}
+
+			// get the first item from map
+			for _, output := range result.Results {
+				fromAddress = output.Address()
+				break
+			}
+		} else {
+			// fromAddress is asgard vault, so recipient is first output
+			toAddress = tx.Outputs()[0].Address()
+			amount = tx.Outputs()[0].Amount()
+		}
+
+		if amount == nil || amount.Uint64() == 0 {
 			continue
 		}
 
@@ -327,7 +337,7 @@ func (s *Scanner) fetchTxs(height int64) ([]*types.TxInItem, error) {
 
 		coins := common.Coins{{
 			Asset:    common.ADAAsset,
-			Amount:   sdkmath.NewUint(amount).MulUint64(100), // 1e6 => 1e8
+			Amount:   sdkmath.NewUintFromBigInt(amount).MulUint64(100), // 1e6 => 1e8
 			Decimals: 6,
 		}}
 
