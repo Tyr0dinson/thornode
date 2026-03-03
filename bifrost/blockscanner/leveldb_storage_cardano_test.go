@@ -109,39 +109,6 @@ func (s *LevelDBStorageCardanoSuite) TestPruneBlockIdsNoop(c *C) {
 }
 
 // ---------------------------------------------------------------------------
-// GetBlockIdsAboveSlot
-// ---------------------------------------------------------------------------
-
-func (s *LevelDBStorageCardanoSuite) TestGetBlockIdsAboveSlot(c *C) {
-	c.Assert(s.storage.SetBlockId(1, 100, []byte("a")), IsNil)
-	c.Assert(s.storage.SetBlockId(2, 200, []byte("b")), IsNil)
-	c.Assert(s.storage.SetBlockId(3, 300, []byte("c")), IsNil)
-
-	result, err := s.storage.GetBlockIdsAboveSlot(150)
-	c.Assert(err, IsNil)
-	c.Assert(len(result), Equals, 2)
-
-	// Verify returned blocks have slot > 150
-	for _, id := range result {
-		c.Assert(id.Slot > 150, Equals, true)
-	}
-}
-
-func (s *LevelDBStorageCardanoSuite) TestGetBlockIdsAboveSlotNone(c *C) {
-	c.Assert(s.storage.SetBlockId(1, 100, []byte("a")), IsNil)
-
-	result, err := s.storage.GetBlockIdsAboveSlot(200)
-	c.Assert(err, IsNil)
-	c.Assert(len(result), Equals, 0)
-}
-
-func (s *LevelDBStorageCardanoSuite) TestGetBlockIdsAboveSlotEmpty(c *C) {
-	result, err := s.storage.GetBlockIdsAboveSlot(0)
-	c.Assert(err, IsNil)
-	c.Assert(result, IsNil)
-}
-
-// ---------------------------------------------------------------------------
 // Spent UTXOs
 // ---------------------------------------------------------------------------
 

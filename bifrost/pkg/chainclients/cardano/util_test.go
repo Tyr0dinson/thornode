@@ -293,7 +293,7 @@ func (s *UtilTestSuite) TestCreateConwayTx(c *C) {
 			Name:           "Valid tx with memo with fees",
 			Amount:         3_000_000,
 			Inputs:         []uint64{10_000_000},
-			MinFeeB:        199_995,
+			MinFeeB:        200_000,
 			Memo:           "SWAP:ETH.ETH:0xABC",
 			ExpectedFee:    200_000,
 			ExpectedSize:   301,
@@ -306,25 +306,26 @@ func (s *UtilTestSuite) TestCreateConwayTx(c *C) {
 			MinFeeA:        44,
 			MinFeeB:        155_381,
 			Memo:           "SWAP:BTC.BTC:bc1tc",
-			ExpectedFee:    168_630,
+			ExpectedFee:    168_625,
 			ExpectedSize:   301,
-			ExpectedChange: 5_831_370,
+			ExpectedChange: 5_831_375,
 		},
 		{
 			Name:           "Verify estimated size constant",
 			Amount:         8_000_000,
 			MaxFee:         500_000,
+			MinFeeB:        200_000,
 			Inputs:         []uint64{2e6, 4e6, 1e6, 2e6, 1e6, 3e6},
 			Memo:           strings.Repeat("a", 150),
 			ExpectedSize:   estimatedTxSize,
 			ExpectedInputs: []uint64{1e6, 1e6, 2e6, 4e6, 3e6},
-			ExpectedChange: 2_999_995, // 1+1+2+4+3 * 1e6 - 5e6 - 5
+			ExpectedChange: 2_800_000, // 1+1+2+4+3 * 1e6 - 5e6
 		},
 		{
 			Name:           "Valid tx without memo",
 			Amount:         1_000_000,
 			Inputs:         []uint64{7_000_000},
-			ExpectedChange: 5_999_995,
+			ExpectedChange: 6_000_000,
 		},
 		{
 			Name:          "Amount greater than inputs",
@@ -343,8 +344,8 @@ func (s *UtilTestSuite) TestCreateConwayTx(c *C) {
 			Amount:         5_000_000,
 			Inputs:         []uint64{10_200_000},
 			MinFeeB:        200_000,
-			ExpectedFee:    200_005,
-			ExpectedChange: 4_999_995,
+			ExpectedFee:    200_000,
+			ExpectedChange: 5_000_000,
 		},
 		{
 			Name:          "Empty utxos",
@@ -383,7 +384,7 @@ func (s *UtilTestSuite) TestCreateConwayTx(c *C) {
 			Name:           "Output amount at minimum UTXO",
 			Amount:         dustThreshold,
 			Inputs:         []uint64{5_000_000},
-			ExpectedChange: 3_999_995,
+			ExpectedChange: 4_000_000,
 		},
 	}
 

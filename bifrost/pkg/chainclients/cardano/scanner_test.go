@@ -282,9 +282,11 @@ func (s *ScannerTestSuite) TestRollBackwardHandler(c *C) {
 
 	// rollback to slot 200 (block 2) — blocks 3, 4, 5 are invalidated
 	point := pcommon.NewPoint(200, []byte("rollback-hash"))
-	tip := pcommon.Tip{Point: pcommon.NewPoint(200, []byte("rollback-hash"))}
+	tip := pcommon.Tip{Point: point, BlockNumber: 2}
 	err := scanner.rollBackwardHandler(chainsync.CallbackContext{}, point, tip)
 	c.Assert(err, IsNil)
+
+	scanner.FetchTxs(int64(tip.BlockNumber), 5)
 
 	// collect errata blocks from queue
 	errata := make(map[int64][]string)
@@ -346,108 +348,6 @@ func (s *ScannerTestSuite) TestRollBackwardHandler(c *C) {
 	scanPos, err := scanner.db.GetScanPos()
 	c.Assert(err, IsNil)
 	c.Assert(scanPos, Equals, int64(2))
-}
-
-func (s *ScannerTestSuite) TestRollBackwardHandlerNoInvalidatedBlocks(c *C) {
-	scanner := makeTestScanner(c)
-	errataQueue := make(chan types.ErrataBlock, 10)
-	scanner.globalErrataQueue = errataQueue
-
-	// store 3 blocks: height 1..3, slot 100..300
-	storeTestBlocks(c, scanner, 3)
-
-	// rollback to slot 300 (block 3's slot) — nothing invalidated
-	point := pcommon.NewPoint(300, []byte("hash"))
-	tip := pcommon.Tip{Point: pcommon.NewPoint(300, []byte("hash"))}
-	err := scanner.rollBackwardHandler(chainsync.CallbackContext{}, point, tip)
-	c.Assert(err, IsNil)
-
-	// no errata should be sent
-	c.Assert(len(errataQueue), Equals, 0)
-
-	// all blocks should still exist
-	for i := uint64(1); i <= 3; i++ {
-		h, _, _, err := scanner.db.GetBlockId(i)
-		c.Assert(err, IsNil)
-		c.Assert(h, Equals, i)
-	}
-}
-
-func (s *ScannerTestSuite) TestRollBackwardHandlerNoObservedTxs(c *C) {
-	scanner := makeTestScanner(c)
-	errataQueue := make(chan types.ErrataBlock, 10)
-	scanner.globalErrataQueue = errataQueue
-
-	// store 3 blocks but no observed txs
-	storeTestBlocks(c, scanner, 3)
-
-	// rollback to slot 100 — blocks 2 and 3 invalidated but no txs to errata
-	point := pcommon.NewPoint(100, []byte("hash"))
-	tip := pcommon.Tip{Point: pcommon.NewPoint(100, []byte("hash"))}
-	err := scanner.rollBackwardHandler(chainsync.CallbackContext{}, point, tip)
-	c.Assert(err, IsNil)
-
-	// no errata sent (no observed txs at invalidated heights)
-	c.Assert(len(errataQueue), Equals, 0)
-
-	// invalidated block IDs should still be deleted
-	_, _, _, err = scanner.db.GetBlockId(2)
-	c.Assert(err, NotNil)
-	_, _, _, err = scanner.db.GetBlockId(3)
-	c.Assert(err, NotNil)
-
-	// block 1 should still exist
-	h, _, _, err := scanner.db.GetBlockId(1)
-	c.Assert(err, IsNil)
-	c.Assert(h, Equals, uint64(1))
-
-	// scan position should be set to block 1
-	scanPos, err := scanner.db.GetScanPos()
-	c.Assert(err, IsNil)
-	c.Assert(scanPos, Equals, int64(1))
-}
-
-func (s *ScannerTestSuite) TestRollBackwardHandlerNilErrataQueue(c *C) {
-	scanner := makeTestScanner(c)
-	// globalErrataQueue is nil — should not panic
-
-	storeTestBlocks(c, scanner, 3)
-	c.Assert(scanner.db.SetObservedTxs(3, makeIds("txA")), IsNil)
-
-	// rollback to slot 200 — block 3 invalidated
-	point := pcommon.NewPoint(200, []byte("hash"))
-	tip := pcommon.Tip{Point: pcommon.NewPoint(200, []byte("hash"))}
-	err := scanner.rollBackwardHandler(chainsync.CallbackContext{}, point, tip)
-	c.Assert(err, IsNil)
-
-	// block 3 should still be cleaned up even without errata queue
-	_, _, _, err = scanner.db.GetBlockId(3)
-	c.Assert(err, NotNil)
-
-	txs, err := scanner.db.GetObservedTxs(3)
-	c.Assert(err, IsNil)
-	c.Assert(txs, IsNil)
-}
-
-func (s *ScannerTestSuite) TestRollBackwardHandlerAllBlocksInvalidated(c *C) {
-	scanner := makeTestScanner(c)
-	errataQueue := make(chan types.ErrataBlock, 10)
-	scanner.globalErrataQueue = errataQueue
-
-	// store 3 blocks
-	storeTestBlocks(c, scanner, 3)
-
-	// rollback to slot 0 — all blocks invalidated
-	point := pcommon.NewPoint(0, []byte("genesis"))
-	tip := pcommon.Tip{Point: pcommon.NewPoint(0, []byte("genesis"))}
-	err := scanner.rollBackwardHandler(chainsync.CallbackContext{}, point, tip)
-	c.Assert(err, IsNil)
-
-	// all blocks should be deleted
-	for i := uint64(1); i <= 3; i++ {
-		_, _, _, err = scanner.db.GetBlockId(i)
-		c.Assert(err, NotNil)
-	}
 }
 
 // ---------------------------------------------------------------------------

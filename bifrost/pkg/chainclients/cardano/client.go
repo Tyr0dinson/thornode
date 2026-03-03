@@ -16,6 +16,7 @@ import (
 	pcommon "github.com/blinklabs-io/gouroboros/protocol/common"
 	"github.com/blinklabs-io/gouroboros/protocol/localstatequery"
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
+	"github.com/hashicorp/go-multierror"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"gitlab.com/thorchain/thornode/v3/bifrost/blockscanner"
@@ -196,10 +197,7 @@ func (c *Client) Stop() {
 	c.tssKeyManager.Stop()
 	c.blockScanner.Stop()
 	c.n2c.Close()
-	err := c.chainScanner.Stop()
-	if err != nil {
-		c.logger.Err(err).Msg("failed to stop cardano scanner")
-	}
+	c.chainScanner.Stop()
 	close(c.stopchan)
 	c.wg.Wait()
 }
@@ -208,6 +206,15 @@ func (c *Client) BroadcastTx(txOutItem types.TxOutItem, txBytes []byte) (string,
 	tx, err := ledger.NewConwayTransactionFromCbor(txBytes)
 	if err != nil {
 		return "", fmt.Errorf("failed to decode transaction: %w", err)
+	}
+
+	_, slot, _, err := c.storage.GetLastBlockId()
+	if err != nil {
+		return "", fmt.Errorf("failed to get last block id: %w", err)
+	}
+
+	if slot >= tx.TTL() {
+		return "", fmt.Errorf("transaction expired")
 	}
 
 	if len(tx.Outputs()) < 1 || len(tx.Outputs()) > 2 {
@@ -366,7 +373,7 @@ func (c *Client) GetAccountByAddress(address string, height *big.Int) (common.Ac
 
 	account.Coins = []common.Coin{{
 		Asset:    common.ADAAsset,
-		Amount:   sdkmath.NewUint(total * 100),
+		Amount:   sdkmath.NewUint(total).MulUint64(100),
 		Decimals: decimals,
 	}}
 
@@ -468,6 +475,10 @@ func (c *Client) SignTx(txOutItem types.TxOutItem, _ int64) ([]byte, []byte, *ty
 		return nil, nil, nil, nil
 	}
 
+	if txOutItem.Chain != c.GetChain() {
+		return nil, nil, nil, fmt.Errorf("invalid chain")
+	}
+
 	coin := txOutItem.Coins.GetCoin(common.ADAAsset)
 
 	if coin.IsEmpty() {
@@ -478,39 +489,39 @@ func (c *Client) SignTx(txOutItem types.TxOutItem, _ int64) ([]byte, []byte, *ty
 
 	fromAddress, err := ledger.NewAddress(c.GetAddress(txOutItem.VaultPubKeyEddsa))
 	if err != nil {
-		c.logger.Err(err).Msg("failed to get address")
-		return nil, nil, nil, err
+		return nil, nil, nil, fmt.Errorf("failed to get address: %w", err)
 	}
 
 	toAddress, err := ledger.NewAddress(txOutItem.ToAddress.String())
 	if err != nil {
-		c.logger.Err(err).Msg("failed to get address")
-		return nil, nil, nil, err
+		return nil, nil, nil, fmt.Errorf("failed to get address: %w", err)
 	}
 
 	utxos, err := c.getUtxosByAddress(fromAddress.String(), nil)
 	if err != nil {
-		c.logger.Err(err).Msg("failed to get utxos by address")
-		return nil, nil, nil, err
+		return nil, nil, nil, fmt.Errorf("failed to get utxos by address: %w", err)
 	}
 
 	currentHeight, err := c.GetHeight()
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to get current height")
+		return nil, nil, nil, fmt.Errorf("failed to get current height: %w", err)
 	}
 
 	minFeeA, minFeeB := c.chainScanner.GetNetworkMinFees()
 
-	maxFee := uint64(500_000)
-	if !txOutItem.MaxGas.IsEmpty() {
-		coins := txOutItem.MaxGas.ToCoins()
-		maxFee = coins[0].Amount.Uint64() / 100
+	var maxFee uint64
+
+	gasCoin := txOutItem.MaxGas.ToCoins().GetCoin(common.ADAAsset)
+	if gasCoin.IsEmpty() {
+		maxFee = 500_000
+	} else {
+		maxFee = gasCoin.Amount.Quo(sdkmath.NewUint(100)).Uint64()
 	}
 
 	tx, err := CreateConwayTx(
 		fromAddress,
 		toAddress,
-		coin.Amount.Uint64()/100, // 1e8 => 1e6
+		coin.Amount.Quo(sdkmath.NewUint(100)).Uint64(), // 1e8 => 1e6
 		minFeeA,
 		minFeeB,
 		maxFee,
@@ -619,9 +630,33 @@ func (c *Client) sign(
 			common.SigningAlgoEd25519,
 			txOutItem.VaultPubKeyEddsa.String(),
 		)
-		if err != nil {
-			return nil, fmt.Errorf("failed to sign remote transaction: %w", err)
+
+		var keysignError tss.KeysignError
+		if errors.As(err, &keysignError) {
+			if len(keysignError.Blame.BlameNodes) == 0 {
+				// TSS doesn't know which node to blame
+				c.logger.Err(err).Msg("failed to sign tx")
+				return nil, err
+			}
+
+			// forward the keysign blame to thorchain
+			txId, errPostKeysignFail := c.bridge.PostKeysignFailure(
+				keysignError.Blame,
+				txOutItem.Height,
+				txOutItem.Memo,
+				txOutItem.Coins,
+				txOutItem.VaultPubKeyEddsa,
+			)
+			if errPostKeysignFail != nil {
+				return nil, multierror.Append(err, errPostKeysignFail)
+			}
+			c.logger.Info().
+				Str("tx_id", txId.String()).
+				Msg("post keysign failure to THORChain")
+
+			return nil, err
 		}
+
 	}
 
 	return signature, nil

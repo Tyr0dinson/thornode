@@ -23,6 +23,7 @@ import (
 
 type wrapper struct {
 	conn     *ouroboros.Connection
+	mtx      sync.Mutex
 	error    chan error
 	done     chan struct{}
 	logger   zerolog.Logger
@@ -37,33 +38,53 @@ func newWrapper(
 	rollForwardFunc chainsync.RollForwardFunc,
 ) (*wrapper, error) {
 	c := &wrapper{
+		mtx:     sync.Mutex{},
 		error:   make(chan error),
 		done:    make(chan struct{}),
 		logger:  logger,
 		address: address,
 	}
 
+	err := c.connect(rollBackwardFunc, rollForwardFunc)
+	if err != nil {
+		return nil, err
+	}
+
 	go func() {
 		for {
+			var ok bool
+
 			select {
-			case err, ok := <-c.error:
+			case err, ok = <-c.error:
 				if !ok {
 					return
 				}
 				c.logger.Err(err).Msg("ouroboros network error")
 
-				// if this is intentional, return
-				if c.shutdown.Load() {
-					return
-				}
+				interval := time.Second
+				for i := 1; ; i++ {
+					// if this is intentional, return
+					if c.shutdown.Load() {
+						return
+					}
 
-				// try to reconnect otherwise
-				c.logger.Info().Msg("trying to reconnect")
+					// try to reconnect otherwise
+					err = c.connect(rollBackwardFunc, rollForwardFunc)
+					if err == nil {
+						break
+					}
 
-				err = c.Connect(rollBackwardFunc, rollForwardFunc)
-				if err != nil {
 					c.logger.Err(err).Msg("failed to reconnect")
-					return
+
+					select {
+					case <-time.After(interval):
+					case <-c.done:
+						return
+					}
+
+					if interval <= maxRetryInterval {
+						interval = min(interval*2, maxRetryInterval)
+					}
 				}
 			case <-c.done:
 				return
@@ -74,13 +95,22 @@ func newWrapper(
 	return c, nil
 }
 
-func (c *wrapper) Connect(
+func (c *wrapper) connect(
 	rollBackwardFunc chainsync.RollBackwardFunc,
 	rollForwardFunc chainsync.RollForwardFunc,
 ) error {
-	networkLogger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
+
+	if c.conn != nil {
+		c.conn.Close()
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
 	}))
+
+	errorChan := make(chan error)
 
 	var err error
 
@@ -88,8 +118,8 @@ func (c *wrapper) Connect(
 		c.conn, err = ouroboros.NewConnection(
 			ouroboros.WithPeerSharing(true),
 			ouroboros.WithNetworkMagic(networkMagic),
-			ouroboros.WithLogger(networkLogger),
-			ouroboros.WithErrorChan(c.error),
+			ouroboros.WithLogger(logger),
+			ouroboros.WithErrorChan(errorChan),
 			ouroboros.WithNodeToNode(true),
 			ouroboros.WithKeepAlive(true),
 			ouroboros.WithKeepAliveConfig(keepalive.NewConfig(
@@ -102,27 +132,38 @@ func (c *wrapper) Connect(
 		)
 	} else {
 		c.conn, err = ouroboros.NewConnection(
-			ouroboros.WithErrorChan(c.error),
-			ouroboros.WithLogger(networkLogger),
+			ouroboros.WithErrorChan(errorChan),
+			ouroboros.WithLogger(logger),
 			ouroboros.WithNetworkMagic(networkMagic),
 		)
 	}
 
 	if err != nil {
+		close(errorChan)
 		return fmt.Errorf("failed to create ouroboros n2c connection: %w", err)
 	}
 
 	err = c.conn.Dial("tcp", c.address)
 	if err != nil {
+		close(errorChan)
 		return fmt.Errorf("failed to dial ouroboros n2c connection: %w", err)
 	}
+
+	// forward error from errorChan to c.error
+	go func() {
+		for e := range errorChan {
+			select {
+			case c.error <- e:
+			case <-c.done:
+				return
+			}
+		}
+	}()
 
 	return nil
 }
 
-func (c *wrapper) Close() {
-	c.shutdown.Store(true)
-	close(c.done)
+func (c *wrapper) close() {
 	err := c.conn.Close()
 	if err != nil {
 		c.logger.Error().Err(err).Msg("failed to close ouroboros connection")
@@ -132,7 +173,12 @@ func (c *wrapper) Close() {
 //  node
 // ----------------------------------------------------------------------------
 
-type NodeWrapper struct {
+type NodeWrapper interface {
+	Sync(pcommon.Point) error
+	GetBlock(pcommon.Point) (ledger.Block, error)
+	Close()
+}
+type nodeWrapper struct {
 	*wrapper
 }
 
@@ -141,13 +187,40 @@ func NewNodeConnection(
 	address string,
 	rollBackwardFunc chainsync.RollBackwardFunc,
 	rollForwardFunc chainsync.RollForwardFunc,
-) (*NodeWrapper, error) {
+) (NodeWrapper, error) {
 	c, err := newWrapper(logger, address, rollBackwardFunc, rollForwardFunc)
 	if err != nil {
 		return nil, err
 	}
 
-	return &NodeWrapper{c}, nil
+	return &nodeWrapper{c}, nil
+}
+
+func (c *nodeWrapper) Sync(point pcommon.Point) error {
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
+	return c.conn.ChainSync().Client.Sync([]pcommon.Point{point})
+}
+
+func (c *nodeWrapper) GetBlock(point pcommon.Point) (ledger.Block, error) {
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
+	return c.conn.BlockFetch().Client.GetBlock(point)
+}
+
+func (c *nodeWrapper) Close() {
+	c.shutdown.Store(true)
+	close(c.done)
+
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
+
+	err := c.conn.ChainSync().Client.Stop()
+	if err != nil {
+		c.logger.Error().Err(err).Msg("failed to stop client")
+	}
+
+	c.close()
 }
 
 //  client
@@ -166,7 +239,6 @@ type ClientWrapper interface {
 
 type clientWrapper struct {
 	*wrapper
-	mtx sync.Mutex
 }
 
 func NewClientConnection(
@@ -178,10 +250,7 @@ func NewClientConnection(
 		return nil, err
 	}
 
-	return &clientWrapper{
-		wrapper: c,
-		mtx:     sync.Mutex{},
-	}, nil
+	return &clientWrapper{wrapper: c}, nil
 }
 
 func (c *clientWrapper) release() {
@@ -264,4 +333,14 @@ func (c *clientWrapper) SubmitTx(era uint16, bz []byte) error {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 	return c.conn.LocalTxSubmission().Client.SubmitTx(era, bz)
+}
+
+func (c *clientWrapper) Close() {
+	c.shutdown.Store(true)
+	close(c.done)
+
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
+
+	c.close()
 }

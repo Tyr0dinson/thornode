@@ -211,6 +211,9 @@ func CreateConwayTx(
 		return nil, err
 	}
 
+	if amount+fee > total {
+		return nil, fmt.Errorf("insufficient funds")
+	}
 	remain := total - amount - fee
 
 	if remain > 0 {
@@ -231,6 +234,9 @@ func CreateConwayTx(
 				return nil, err
 			}
 
+			if amount+fee > total {
+				return nil, fmt.Errorf("insufficient funds")
+			}
 			remain = total - amount - fee
 		}
 	}
@@ -262,7 +268,7 @@ func calculateFee(
 	}
 
 	// add 5 byte for rounding issues or change of fee value
-	fee := uint64(len(encoded))*minFeeA + minFeeB + extraFeeBuffer
+	fee := uint64(len(encoded))*minFeeA + minFeeB + extraFeeBuffer*minFeeA
 
 	if fee > maxFee {
 		return 0, fmt.Errorf("fee exceeds max fee")

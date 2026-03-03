@@ -91,7 +91,6 @@ func (s *LevelDBScannerStorageCardano) SetSpentUtxos(ids [][]byte, height uint64
 	}
 
 	batch := new(leveldb.Batch)
-
 	for _, id := range ids {
 		batch.Put(s.getSpentUtxoByIdKey(id), nil)
 	}
@@ -131,26 +130,22 @@ func (s *LevelDBScannerStorageCardano) PruneSpentUtxos(height uint64) error {
 		return err
 	}
 
+	batch := new(leveldb.Batch)
 	for _, height = range candidates {
-		ids, err := s.GetSpentUtxosByHeight(height)
+		var ids [][]byte
+		ids, err = s.GetSpentUtxosByHeight(height)
 		if err != nil {
 			return fmt.Errorf("failed to get data from storage: %w", err)
 		}
 		for _, id := range ids {
 			key := s.getSpentUtxoByIdKey(id)
-			err = s.db.Delete(key, nil)
-			if err != nil {
-				return fmt.Errorf("failed to delete data from storage: %w", err)
-			}
+			batch.Delete(key)
 		}
 		key := s.getSpentUtxoByHeightKey(height)
-		err = s.db.Delete(key, nil)
-		if err != nil {
-			return fmt.Errorf("failed to delete data from storage: %w", err)
-		}
+		batch.Delete(key)
 	}
 
-	return nil
+	return s.db.Write(batch, nil)
 }
 
 func (s *LevelDBScannerStorageCardano) PruneBlockIds(height uint64) error {
@@ -227,36 +222,6 @@ func (s *LevelDBScannerStorageCardano) PruneObservedTxs(height uint64) error {
 	}
 
 	return nil
-}
-
-// block id rollback helpers
-
-func (s *LevelDBScannerStorageCardano) GetBlockIdsAboveSlot(slot uint64) ([]BlockId, error) {
-	iterator := s.db.NewIterator(
-		leveldbutil.BytesPrefix([]byte(PrefixBlockId)), nil,
-	)
-	defer iterator.Release()
-
-	var result []BlockId
-	for ; iterator.Next(); iterator.Valid() {
-		bz := iterator.Value()
-		if len(bz) == 0 {
-			continue
-		}
-		var id BlockId
-		if err := json.Unmarshal(bz, &id); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal block id: %w", err)
-		}
-		if id.Slot > slot {
-			result = append(result, id)
-		}
-	}
-
-	if iterator.Error() != nil {
-		return nil, iterator.Error()
-	}
-
-	return result, nil
 }
 
 func (s *LevelDBScannerStorageCardano) DeleteBlockId(height uint64) error {

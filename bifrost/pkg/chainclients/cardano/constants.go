@@ -1,11 +1,13 @@
 package cardano
 
+import "time"
+
 const (
 	// estimated tx size with
 	// 5 inputs, 2 outputs (1 base + 1 enterprise), 150 char memo
 	// 1.5 factor covers, more inputs or longer memos
 	// precise tx fee will be calculated on actual tx creation
-	estimatedTxSize = 577
+	estimatedTxSize = 581
 
 	transactionTimeout = 20
 
@@ -21,6 +23,8 @@ const (
 	// usually less than 500, maximum supported by cardano 16KB
 	maxTransactionSize = 2048
 
-	// extra lovelace added to calculated fees to mitigate rounding issues
-	extraFeeBuffer = 5
+	// extra bytes added to calculated fees to mitigate rounding issues
+	extraFeeBuffer = 0
+
+	maxRetryInterval = time.Minute
 )

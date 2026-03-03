@@ -29,7 +29,7 @@ type Scanner struct {
 	bridge                thorclient.ThorchainBridge
 	db                    *blockscanner.BlockScannerStorageCardano
 	n2c                   ClientWrapper
-	n2n                   *NodeWrapper
+	n2n                   NodeWrapper
 	networkMtx            sync.Mutex
 	networkFee            uint64
 	minFeeA               uint64
@@ -102,7 +102,7 @@ func NewScanner(
 
 	// start chain sync in NewScanner to be able to fetch two consecutive
 	// blocks before blockscanner tries to determine last scan position
-	err = s.n2n.conn.ChainSync().Client.Sync([]pcommon.Point{point})
+	err = s.n2n.Sync(point)
 	if err != nil {
 		return nil, err
 	}
@@ -137,11 +137,9 @@ func NewScanner(
 	return s, nil
 }
 
-func (s *Scanner) Stop() error {
-	err := s.n2n.conn.ChainSync().Client.Stop()
-	s.n2c.Close()
+func (s *Scanner) Stop() {
 	s.n2n.Close()
-	return err
+	s.n2c.Close()
 }
 
 // GetHeight returns the current height of the chain.
@@ -172,14 +170,78 @@ func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
 	var allTxIns []*types.TxInItem
 
 	rollbackHeight := atomic.LoadInt64(&s.rollbackHeight)
-	if rollbackHeight > 0 && rollbackHeight < fetchHeight {
+	if rollbackHeight > 0 {
+		latestHeight, _, _, err := s.db.GetLastBlockId()
+		if err != nil {
+			return types.TxIn{}, err
+		}
+
 		s.logger.Info().
 			Int64("rollback_height", rollbackHeight).
-			Int64("fetch_height", fetchHeight).
+			Uint64("latest_height", latestHeight).
 			Msg("processing rollback blocks")
 
+		for height := uint64(rollbackHeight + 1); height <= latestHeight; height++ {
+			var txIds [][]byte
+			txIds, err = s.db.GetObservedTxs(height)
+			if err != nil {
+				s.logger.Err(err).
+					Uint64("height", height).
+					Msg("failed to get observed txs")
+				continue
+			}
+
+			var errataTxs []types.ErrataTx
+			for _, txId := range txIds {
+				errataTxs = append(errataTxs, types.ErrataTx{
+					TxID:  common.TxID(hex.EncodeToString(txId)),
+					Chain: s.config.ChainID,
+				})
+			}
+
+			if len(errataTxs) > 0 && s.globalErrataQueue != nil {
+				s.globalErrataQueue <- types.ErrataBlock{
+					Height: int64(height),
+					Txs:    errataTxs,
+				}
+				s.logger.Info().
+					Uint64("height", height).
+					Int("txs", len(errataTxs)).
+					Msg("sent errata for rolled-back block")
+			}
+
+			// clean up storage for this height
+			if err = s.db.DeleteObservedTxs(height); err != nil {
+				s.logger.Err(err).
+					Uint64("height", height).
+					Msg("failed to delete observed txs")
+			}
+			if err = s.db.DeleteBlockId(height); err != nil {
+				s.logger.Err(err).
+					Uint64("height", height).
+					Msg("failed to delete block id")
+			}
+		}
+
+		// // set the scan position to the highest valid remaining block so the
+		// // block scanner resumes from the correct height on next restart
+		// height, _, _, err := s.db.GetLastBlockId()
+		// if err != nil {
+		// 	s.logger.Err(err).Msg("failed to get rollback height")
+		// 	return nil
+		// }
+
+		// if err = s.db.SetScanPos(int64(height)); err != nil {
+		// 	s.logger.Err(err).Msg("failed to set scan position")
+		// } else {
+		// 	s.logger.Info().
+		// 		Uint64("height", height).
+		// 		Msg("set scan position for rollback")
+		// }
+
 		for height := rollbackHeight + 1; height < fetchHeight; height++ {
-			txIns, err := s.fetchTxs(height)
+			var txIns []*types.TxInItem
+			txIns, err = s.fetchTxs(height)
 			if err != nil {
 				return types.TxIn{}, fmt.Errorf("failed to fetch txs: %w", err)
 			}
@@ -195,8 +257,9 @@ func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
 
 	allTxIns = append(allTxIns, txIns...)
 
-	if err = s.updateNetworkFee(fetchHeight); err != nil {
-		return types.TxIn{}, err
+	err = s.updateNetworkFee(fetchHeight)
+	if err != nil {
+		s.logger.Err(err).Msg("failed to update network fee")
 	}
 
 	if chainHeight > s.config.MaxReorgRescanBlocks {
@@ -221,9 +284,9 @@ func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
 		}
 	}
 
-	// reset rollbackHeight
+	// reset rollbackHeight only if no new rollback occured
 	if rollbackHeight > 0 {
-		atomic.StoreInt64(&s.rollbackHeight, 0)
+		atomic.CompareAndSwapInt64(&s.rollbackHeight, rollbackHeight, 0)
 	}
 
 	return types.TxIn{
@@ -240,7 +303,7 @@ func (s *Scanner) fetchTxs(height int64) ([]*types.TxInItem, error) {
 		return nil, err
 	}
 
-	block, err := s.n2n.conn.BlockFetch().Client.GetBlock(currentPoint)
+	block, err := s.n2n.GetBlock(currentPoint)
 	if err != nil {
 		s.logger.Err(err).Msg("failed to fetch block")
 		return nil, err
@@ -267,8 +330,13 @@ func (s *Scanner) fetchTxs(height int64) ([]*types.TxInItem, error) {
 		}
 
 		// lookup the sender from the first input utxo
+		if len(tx.Consumed()) < 1 {
+			s.logger.Warn().Msg("tx without inputs")
+			continue
+		}
+
 		var result *localstatequery.UTxOByTxInResult
-		result, err = s.n2c.GetUTxOByTxIn(tx.Consumed(), &previousPoint)
+		result, err = s.n2c.GetUTxOByTxIn(tx.Consumed()[:1], &previousPoint)
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch utxo result for tx: %w", err)
 		}
@@ -449,70 +517,9 @@ func (s *Scanner) rollBackwardHandler(
 		Uint64("height", tip.BlockNumber).
 		Msg("roll backward")
 
-	// find invalidated block IDs (slot > rollback slot)
-	invalidated, err := s.db.GetBlockIdsAboveSlot(point.Slot)
-	if err != nil {
-		s.logger.Err(err).Msg("failed to get invalidated block ids")
-		return nil
-	}
-	if len(invalidated) == 0 {
-		return nil
-	}
-
-	// generate errata for observed txs at invalidated heights
-	for _, block := range invalidated {
-		var txIds [][]byte
-		txIds, err = s.db.GetObservedTxs(block.Height)
-		if err != nil {
-			s.logger.Err(err).Uint64("height", block.Height).Msg("failed to get observed txs")
-			continue
-		}
-
-		var errataTxs []types.ErrataTx
-		for _, txId := range txIds {
-			errataTxs = append(errataTxs, types.ErrataTx{
-				TxID:  common.TxID(hex.EncodeToString(txId)),
-				Chain: s.config.ChainID,
-			})
-		}
-
-		if len(errataTxs) > 0 && s.globalErrataQueue != nil {
-			s.globalErrataQueue <- types.ErrataBlock{
-				Height: int64(block.Height),
-				Txs:    errataTxs,
-			}
-			s.logger.Info().Uint64("height", block.Height).
-				Int("txs", len(errataTxs)).Msg("sent errata for rolled-back block")
-		}
-
-		// clean up storage for this height
-		if err = s.db.DeleteObservedTxs(block.Height); err != nil {
-			s.logger.Err(err).Uint64("height", block.Height).Msg("failed to delete observed txs")
-		}
-		if err = s.db.DeleteBlockId(block.Height); err != nil {
-			s.logger.Err(err).Uint64("height", block.Height).Msg("failed to delete block id")
-		}
-	}
-
-	// set the scan position to the highest valid remaining block so the
-	// block scanner resumes from the correct height on next restart
-	height, _, _, err := s.db.GetLastBlockId()
-	if err != nil {
-		s.logger.Err(err).Msg("failed to get rollback height")
-		return nil
-	}
-
-	if err = s.db.SetScanPos(int64(height)); err != nil {
-		s.logger.Err(err).Msg("failed to set scan position")
-	} else {
-		s.logger.Info().
-			Uint64("height", height).
-			Msg("set scan position for rollback")
-	}
-
 	// signal FetchTxs to reprocess blocks from this height, blockscanner
 	// doesn't know of this rollback
-	atomic.StoreInt64(&s.rollbackHeight, int64(height))
+	atomic.StoreInt64(&s.rollbackHeight, int64(tip.BlockNumber))
 
 	return nil
 }
