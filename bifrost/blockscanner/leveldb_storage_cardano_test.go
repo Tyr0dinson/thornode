@@ -255,7 +255,7 @@ func (s *LevelDBStorageCardanoSuite) TestGetObservedTxsNotFound(c *C) {
 func (s *LevelDBStorageCardanoSuite) TestDeleteObservedTxs(c *C) {
 	c.Assert(s.storage.SetObservedTxs(100, [][]byte{[]byte("tx1")}), IsNil)
 
-	err := s.storage.DeleteObservedTxs(100)
+	err := s.storage.DeleteBlockId(100)
 	c.Assert(err, IsNil)
 
 	result, err := s.storage.GetObservedTxs(100)
