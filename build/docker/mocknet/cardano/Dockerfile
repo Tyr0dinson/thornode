@@ -1,13 +1,13 @@
-FROM ubuntu:latest
+FROM ubuntu:24.04
 
 ARG CARDANO_VERSION=10.6.1
 ARG CARDANO_OS=linux
 
 RUN apt-get update && apt-get install --yes --no-install-recommends \
-    jq \
-    ca-certificates \
-    wget \
-    socat \
+    jq=1.7.1-3ubuntu0.24.04.1 \
+    ca-certificates=20240203 \
+    wget=1.21.4-1ubuntu4.1 \
+    socat=1.8.0.0-4build3 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /root

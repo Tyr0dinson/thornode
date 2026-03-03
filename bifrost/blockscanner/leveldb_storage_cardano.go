@@ -231,7 +231,7 @@ func (s *LevelDBScannerStorageCardano) DeleteBlockId(height uint64) error {
 
 func (s *LevelDBScannerStorageCardano) getBlockIdKey(height uint64) []byte {
 	key := make([]byte, len(PrefixBlockId)+8)
-	copy(key[:], PrefixBlockId)
+	copy(key, PrefixBlockId)
 	inverted := ^height
 	binary.BigEndian.PutUint64(key[len(PrefixBlockId):], inverted)
 	return key
@@ -239,14 +239,14 @@ func (s *LevelDBScannerStorageCardano) getBlockIdKey(height uint64) []byte {
 
 func (s *LevelDBScannerStorageCardano) getObservedTxsByHeightKey(height uint64) []byte {
 	key := make([]byte, len(PrefixObservedTxsByHeight)+8)
-	copy(key[:], PrefixObservedTxsByHeight)
+	copy(key, PrefixObservedTxsByHeight)
 	binary.BigEndian.PutUint64(key[len(PrefixObservedTxsByHeight):], height)
 	return key
 }
 
 func (s *LevelDBScannerStorageCardano) getSpentUtxoByHeightKey(height uint64) []byte {
 	key := make([]byte, len(PrefixSpentUtxoByHeight)+8)
-	copy(key[:], PrefixSpentUtxoByHeight)
+	copy(key, PrefixSpentUtxoByHeight)
 	binary.BigEndian.PutUint64(key[len(PrefixSpentUtxoByHeight):], height)
 	return key
 }

@@ -191,11 +191,16 @@ func (c *Client) SignTx(simTx simtypes.SimTx) ([]byte, error) {
 		utxos,
 	)
 	if err != nil {
-		c.logger.Err(err).Msg("fail to create conway tx")
+		c.logger.Err(err).Msg("failed to create conway tx")
 		return nil, err
 	}
 
 	encoded, err := cbor.Encode(tx.Body)
+	if err != nil {
+		c.logger.Err(err).Msg("failed to encode tx")
+		return nil, err
+	}
+
 	hash := lcommon.Blake2b256Hash(encoded)
 
 	signature := ed25519.Sign(c.key, hash[:])

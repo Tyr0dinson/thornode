@@ -49,7 +49,6 @@ type Client struct {
 	localKey            ed25519.PrivateKey
 	localAddress        string
 	globalSolvencyQueue chan types.Solvency
-	globalNetworkQueue  chan common.NetworkFee
 	wg                  *sync.WaitGroup
 	stopchan            chan struct{}
 }
@@ -150,7 +149,6 @@ func NewClient(
 		cfg.APIHost,
 		cfg.RPCHost,
 	)
-
 	if err != nil {
 		return nil, fmt.Errorf("fail to create cardano scanner: %w", err)
 	}

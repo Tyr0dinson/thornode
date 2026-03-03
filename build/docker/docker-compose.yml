@@ -815,13 +815,7 @@ services:
       - 127.0.0.1:3001:3001 # n2n port
       - 127.0.0.1:3002:3002 # n2c port
     healthcheck:
-      test:
-        [
-          "CMD",
-          "test",
-          "-S",
-          "/root/mocknet/node.socket"
-        ]
+      test: ["CMD", "test", "-S", "/root/mocknet/node.socket"]
       interval: 3s
       timeout: 5s
       retries: 30
