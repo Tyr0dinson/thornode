@@ -86,14 +86,16 @@ func NewScanner(
 			return nil, fmt.Errorf("start block hash is undefined")
 		}
 
-		bz, err := hex.DecodeString(hash)
+		var bz []byte
+		bz, err = hex.DecodeString(hash)
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode start block hash: %w", err)
 		}
 
 		point = pcommon.NewPoint(slot, bz)
 	} else {
-		tip, err := s.n2c.GetChainPoint()
+		var tip *pcommon.Point
+		tip, err = s.n2c.GetChainPoint()
 		if err != nil {
 			return nil, fmt.Errorf("failed to get current tip: %w", err)
 		}
@@ -228,7 +230,7 @@ func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
 		}
 	}
 
-	// reset rollbackHeight only if no new rollback occured
+	// reset rollbackHeight only if no new rollback occurred
 	if rollbackHeight > 0 {
 		atomic.CompareAndSwapInt64(&s.rollbackHeight, rollbackHeight, 0)
 	}
