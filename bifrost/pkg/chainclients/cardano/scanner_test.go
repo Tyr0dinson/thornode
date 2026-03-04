@@ -3,6 +3,7 @@ package cardano
 import (
 	"encoding/hex"
 	"fmt"
+	"sync"
 
 	"github.com/blinklabs-io/gouroboros/ledger"
 	lcommon "github.com/blinklabs-io/gouroboros/ledger/common"
@@ -67,6 +68,19 @@ func (m *mockClientWrapper) SubmitTx(_ uint16, _ []byte) error {
 func (m *mockClientWrapper) Close() {}
 
 // ---------------------------------------------------------------------------
+// mockNodeWrapper satisfies the NodeWrapper interface for testing.
+// ---------------------------------------------------------------------------
+
+type mockNodeWrapper struct {
+	block    ledger.Block
+	blockErr error
+}
+
+func (m *mockNodeWrapper) Sync(_ pcommon.Point) error                     { return nil }
+func (m *mockNodeWrapper) GetBlock(_ pcommon.Point) (ledger.Block, error) { return m.block, m.blockErr }
+func (m *mockNodeWrapper) Close()                                         {}
+
+// ---------------------------------------------------------------------------
 // test helpers
 // ---------------------------------------------------------------------------
 
@@ -84,8 +98,10 @@ func makeTestScanner(c *C) *Scanner {
 			ChainID:            common.ADAChain,
 			GasPriceResolution: 1000,
 		},
-		db:  storage,
-		n2c: &mockClientWrapper{},
+		db:           storage,
+		n2c:          &mockClientWrapper{},
+		errataBlocks: []types.ErrataBlock{},
+		errataMtx:    sync.Mutex{},
 	}
 }
 
@@ -271,6 +287,7 @@ func (s *ScannerTestSuite) TestRollBackwardHandler(c *C) {
 	scanner := makeTestScanner(c)
 	errataQueue := make(chan types.ErrataBlock, 10)
 	scanner.globalErrataQueue = errataQueue
+	scanner.n2n = &mockNodeWrapper{blockErr: fmt.Errorf("mock")}
 
 	// store 5 blocks: height 1..5, slot 100..500
 	storeTestBlocks(c, scanner, 5)
@@ -285,6 +302,11 @@ func (s *ScannerTestSuite) TestRollBackwardHandler(c *C) {
 	tip := pcommon.Tip{Point: point, BlockNumber: 2}
 	err := scanner.rollBackwardHandler(chainsync.CallbackContext{}, point, tip)
 	c.Assert(err, IsNil)
+
+	c.Assert(scanner.errataBlocks, HasLen, 3)
+
+	// just interested in flushing the blocks
+	_, _ = scanner.FetchTxs(1, 1)
 
 	// collect errata blocks from queue
 	errata := make(map[int64][]string)
