@@ -191,11 +191,11 @@ func (k KVStore) SetIntentAuctionBid(ctx cosmos.Context, bid types.IntentAuction
 			if !existing.IntentTxID.Equals(bid.IntentTxID) {
 				oldAuctionKey := k.GetKey(prefixIntentAuctionBidByAuction, existing.IntentTxID.String(), "/"+bid.BidTxID.String())
 				store.Delete(oldAuctionKey)
-				oldBidderKey := k.GetKey(prefixIntentAuctionBidByBidder, existing.IntentTxID.String(), existing.BidderAddress.String())
+				oldBidderKey := k.GetKey(prefixIntentAuctionBidByBidder, existing.IntentTxID.String(), "/"+existing.BidderAddress.String())
 				store.Delete(oldBidderKey)
 			} else if !existing.BidderAddress.Equals(bid.BidderAddress) {
 				// Remove old bidder index if BidderAddress changed
-				oldBidderKey := k.GetKey(prefixIntentAuctionBidByBidder, existing.IntentTxID.String(), existing.BidderAddress.String())
+				oldBidderKey := k.GetKey(prefixIntentAuctionBidByBidder, existing.IntentTxID.String(), "/"+existing.BidderAddress.String())
 				store.Delete(oldBidderKey)
 			}
 		}
