@@ -643,6 +643,9 @@ func (c *Client) SignTx(txs []stypes.TxOutItem, _ int64) ([]byte, []byte, []*sty
 	if !c.signingReady.Load() {
 		return nil, nil, nil, fmt.Errorf("client still initializing, cannot sign yet")
 	}
+	if len(txs) == 0 {
+		return nil, nil, nil, fmt.Errorf("no transactions to sign")
+	}
 	tx := txs[0]
 	if !tx.Chain.Equals(common.ETHChain) {
 		return nil, nil, nil, fmt.Errorf("chain %s is not support by ETH chain client", tx.Chain)

@@ -1028,6 +1028,9 @@ func (c *EVMClient) SignTx(txs []stypes.TxOutItem, _ int64) ([]byte, []byte, []*
 	if !c.signingReady.Load() {
 		return nil, nil, nil, fmt.Errorf("client still initializing, cannot sign yet")
 	}
+	if len(txs) == 0 {
+		return nil, nil, nil, fmt.Errorf("no transactions to sign")
+	}
 	tx := txs[0]
 	if !tx.Chain.Equals(c.cfg.ChainID) {
 		return nil, nil, nil, fmt.Errorf("chain %s is not support by evm chain client", tx.Chain)

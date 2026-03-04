@@ -470,6 +470,9 @@ func (c *Client) signingMetadata(tx stypes.TxOutItem, currentHeight int64) (XrpM
 
 // SignTx signs the given TxArrayItem.
 func (c *Client) SignTx(txs []stypes.TxOutItem, thorchainHeight int64) (signedTx, checkpoint []byte, _ []*stypes.TxInItem, err error) {
+	if len(txs) == 0 {
+		return nil, nil, nil, fmt.Errorf("no transactions to sign")
+	}
 	tx := txs[0]
 	defer func() {
 		if err != nil {

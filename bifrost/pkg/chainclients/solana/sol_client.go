@@ -580,6 +580,9 @@ func (c *SOLClient) countAbstain(reason string) {
 
 // SignTx returns the signed transaction.
 func (c *SOLClient) SignTx(txs []stypes.TxOutItem, height int64) ([]byte, []byte, []*stypes.TxInItem, error) {
+	if len(txs) == 0 {
+		return nil, nil, nil, fmt.Errorf("no transactions to sign")
+	}
 	tx := txs[0]
 	if tx.Chain != common.SOLChain {
 		return nil, nil, nil, errors.New("tx chain is not solana")

@@ -414,6 +414,9 @@ func (c *CosmosClient) verifyBroadcast(sig string) signercache.LookupResult {
 
 // SignTx sign the the given TxArrayItem
 func (c *CosmosClient) SignTx(txs []stypes.TxOutItem, _ int64) (signedTx, checkpoint []byte, _ []*stypes.TxInItem, err error) {
+	if len(txs) == 0 {
+		return nil, nil, nil, fmt.Errorf("no transactions to sign")
+	}
 	tx := txs[0]
 	defer func() {
 		if err != nil {
