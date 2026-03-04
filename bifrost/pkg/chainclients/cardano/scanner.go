@@ -31,15 +31,17 @@ type Scanner struct {
 	db                    *blockscanner.BlockScannerStorageCardano
 	n2c                   ClientWrapper
 	n2n                   NodeWrapper
-	networkMtx            sync.Mutex
-	networkFee            uint64
 	minFeeA               uint64
 	minFeeB               uint64
-	asgardAddresses       []common.Address
+	networkFee            uint64
+	networkMtx            sync.Mutex
 	lastAsgardUpdate      time.Time
+	asgardAddresses       []common.Address
+	asgardMtx             sync.Mutex
 	globalNetworkFeeQueue chan common.NetworkFee
 	globalErrataQueue     chan types.ErrataBlock
 	rollbackHeight        int64
+	indexedBlocks         atomic.Uint64
 }
 
 func NewScanner(
@@ -53,10 +55,12 @@ func NewScanner(
 	var err error
 
 	s := &Scanner{
-		logger: logger.With().Str("module", "scanner").Logger(),
-		config: cfg,
-		bridge: bridge,
-		db:     storage,
+		logger:     logger.With().Str("module", "scanner").Logger(),
+		config:     cfg,
+		bridge:     bridge,
+		db:         storage,
+		asgardMtx:  sync.Mutex{},
+		networkMtx: sync.Mutex{},
 	}
 
 	// create n2n connection
@@ -110,9 +114,8 @@ func NewScanner(
 		return nil, err
 	}
 
-	// FetchTxs expects the last _two_ blocks, because it needs
-	// the previous block state to extract the sender address from
-	// the input utxos
+	// fetchTxs needs the last _two_ blocks, to retrieve the user address
+	// from the spent utxos, so wait for them
 	start := time.Now()
 	for {
 		if time.Since(start) > time.Second*30 {
@@ -121,18 +124,7 @@ func NewScanner(
 
 		time.Sleep(time.Second)
 
-		var height uint64
-		height, _, _, err = s.db.GetLastBlockId()
-		if err != nil || height == 0 {
-			continue
-		}
-
-		height, _, _, err = s.db.GetBlockId(height - 1)
-		if err != nil {
-			continue
-		}
-
-		if height > 0 {
+		if s.indexedBlocks.Load() > 1 {
 			break
 		}
 	}
@@ -259,7 +251,10 @@ func (s *Scanner) fetchTxs(height int64) ([]*types.TxInItem, error) {
 	var previousPoint pcommon.Point
 	previousPoint, err = s.getPoint(height - 1)
 	if err != nil {
-		return nil, err
+		// shouldn't happen and maybe isn't needed for this block
+		s.logger.Err(err).
+			Int64("height", height-1).
+			Msg("failed to fetch previous point")
 	}
 
 	var txIds [][]byte
@@ -281,17 +276,20 @@ func (s *Scanner) fetchTxs(height int64) ([]*types.TxInItem, error) {
 			continue
 		}
 
+		if len(tx.Outputs()) < 1 {
+			s.logger.Warn().Msg("tx without outputs")
+			continue
+		}
+
 		var toAddress, fromAddress ledger.Address
 		var amount *big.Int
 
-		isToAsgard := false
-		for _, output := range tx.Outputs() {
-			if s.isAsgardAddress(output.Address()) {
-				isToAsgard = true
-				toAddress = output.Address()
-				amount = output.Amount()
-				break
-			}
+		// deposits _must_ have asgard address as first, like BTC for example
+		isToAsgard := s.isAsgardAddress(tx.Outputs()[0].Address())
+		if isToAsgard {
+			isToAsgard = true
+			toAddress = tx.Outputs()[0].Address()
+			amount = tx.Outputs()[0].Amount()
 		}
 
 		fromAddress, err = AddressFromBytes(tx.Witnesses().Vkey()[0].Vkey)
@@ -307,16 +305,28 @@ func (s *Scanner) fetchTxs(height int64) ([]*types.TxInItem, error) {
 		if isToAsgard {
 			// toAddress is asgard vault, get sender from first input
 			// txs with multiple VKeys where already discarded
+
+			// if we don't have height - 1 indexed yet (directly after start)
+			// we can't determine the utxos
+			if previousPoint.Slot == 0 {
+				s.logger.Error().
+					Str("tx_id", tx.Hash().String()).
+					Msg("previous point not available, skipping")
+				continue
+			}
+
 			var result *localstatequery.UTxOByTxInResult
 			result, err = s.n2c.GetUTxOByTxIn(tx.Consumed()[:1], &previousPoint)
 			if err != nil {
 				return nil, fmt.Errorf("failed to fetch utxo result for tx: %w", err)
 			}
 
-			if len(result.Results) == 0 {
+			if len(result.Results) != 1 {
 				s.logger.Warn().
 					Str("tx", tx.Hash().String()).
-					Msg("no utxo result for tx, skipping")
+					Int("results", len(result.Results)).
+					Int("expected", 1).
+					Msg("unexpected amount of utxo results")
 				continue
 			}
 
@@ -409,7 +419,13 @@ func (s *Scanner) updateNetworkFee(height int64) error {
 
 	feeRate := minFeeA*estimatedTxSize + minFeeB + extraFeeBuffer
 
-	resolution := uint64(s.config.GasPriceResolution)
+	var resolution uint64
+	if s.config.GasPriceResolution > 0 {
+		resolution = uint64(s.config.GasPriceResolution)
+	} else {
+		resolution = 1000 // default to 0.001 ADA
+	}
+
 	roundedFeeRate := ((feeRate + (resolution / 2)) / resolution) * resolution
 
 	if roundedFeeRate == 0 {
@@ -458,6 +474,8 @@ func (s *Scanner) rollForwardHandler(
 		if err != nil {
 			return fmt.Errorf("failed to set block id: %w", err)
 		}
+
+		s.indexedBlocks.Add(1)
 	}
 	return nil
 }
@@ -527,6 +545,9 @@ func (s *Scanner) rollBackwardHandler(
 }
 
 func (s *Scanner) getAsgardAddresses() ([]common.Address, error) {
+	s.asgardMtx.Lock()
+	defer s.asgardMtx.Unlock()
+
 	if time.Since(s.lastAsgardUpdate) < constants.ThorchainBlockTime && s.asgardAddresses != nil {
 		return s.asgardAddresses, nil
 	}

@@ -24,7 +24,6 @@ import (
 type wrapper struct {
 	conn     *ouroboros.Connection
 	mtx      sync.Mutex
-	error    chan error
 	done     chan struct{}
 	logger   zerolog.Logger
 	address  string
@@ -39,13 +38,12 @@ func newWrapper(
 ) (*wrapper, error) {
 	c := &wrapper{
 		mtx:     sync.Mutex{},
-		error:   make(chan error),
 		done:    make(chan struct{}),
 		logger:  logger,
 		address: address,
 	}
 
-	err := c.connect(rollBackwardFunc, rollForwardFunc)
+	errChan, err := c.connect(rollBackwardFunc, rollForwardFunc)
 	if err != nil {
 		return nil, err
 	}
@@ -55,11 +53,14 @@ func newWrapper(
 			var ok bool
 
 			select {
-			case err, ok = <-c.error:
+			case err, ok = <-errChan:
 				if !ok {
-					return
+					if c.shutdown.Load() {
+						return
+					}
+				} else {
+					c.logger.Err(err).Msg("ouroboros network error")
 				}
-				c.logger.Err(err).Msg("ouroboros network error")
 
 				interval := time.Second
 				for i := 1; ; i++ {
@@ -69,7 +70,7 @@ func newWrapper(
 					}
 
 					// try to reconnect otherwise
-					err = c.connect(rollBackwardFunc, rollForwardFunc)
+					errChan, err = c.connect(rollBackwardFunc, rollForwardFunc)
 					if err == nil {
 						break
 					}
@@ -98,7 +99,7 @@ func newWrapper(
 func (c *wrapper) connect(
 	rollBackwardFunc chainsync.RollBackwardFunc,
 	rollForwardFunc chainsync.RollForwardFunc,
-) error {
+) (chan error, error) {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 
@@ -117,7 +118,6 @@ func (c *wrapper) connect(
 			ouroboros.WithPeerSharing(true),
 			ouroboros.WithNetworkMagic(networkMagic),
 			ouroboros.WithLogger(logger),
-			ouroboros.WithErrorChan(c.error),
 			ouroboros.WithNodeToNode(true),
 			ouroboros.WithKeepAlive(true),
 			ouroboros.WithKeepAliveConfig(keepalive.NewConfig(
@@ -130,22 +130,21 @@ func (c *wrapper) connect(
 		)
 	} else {
 		c.conn, err = ouroboros.NewConnection(
-			ouroboros.WithErrorChan(c.error),
 			ouroboros.WithLogger(logger),
 			ouroboros.WithNetworkMagic(networkMagic),
 		)
 	}
 
 	if err != nil {
-		return fmt.Errorf("failed to create ouroboros n2c connection: %w", err)
+		return nil, fmt.Errorf("failed to create ouroboros n2c connection: %w", err)
 	}
 
 	err = c.conn.Dial("tcp", c.address)
 	if err != nil {
-		return fmt.Errorf("failed to dial ouroboros n2c connection: %w", err)
+		return nil, fmt.Errorf("failed to dial ouroboros n2c connection: %w", err)
 	}
 
-	return nil
+	return c.conn.ErrorChan(), nil
 }
 
 func (c *wrapper) close() {

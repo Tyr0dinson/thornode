@@ -3,6 +3,7 @@ package cardano
 import (
 	"encoding/binary"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 
@@ -117,6 +118,10 @@ func CreateConwayTx(
 ) (*conway.ConwayTransaction, error) {
 	if amount < dustThreshold {
 		return nil, fmt.Errorf("output amount below dust threshold")
+	}
+
+	if amount > math.MaxUint64-maxFee {
+		return nil, fmt.Errorf("uint64 overflow for amount + fee")
 	}
 
 	sort.Slice(utxos, func(i, j int) bool {
