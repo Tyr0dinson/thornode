@@ -42,6 +42,8 @@ type Scanner struct {
 	globalErrataQueue     chan types.ErrataBlock
 	rollbackHeight        int64
 	indexedBlocks         atomic.Uint64
+	errataBlocks          []types.ErrataBlock
+	errataMtx             sync.Mutex
 }
 
 func NewScanner(
@@ -60,6 +62,7 @@ func NewScanner(
 		bridge:     bridge,
 		db:         storage,
 		asgardMtx:  sync.Mutex{},
+		errataMtx:  sync.Mutex{},
 		networkMtx: sync.Mutex{},
 	}
 
@@ -162,6 +165,16 @@ func (s *Scanner) GetNetworkMinFees() (uint64, uint64) {
 
 // FetchTxs implements blockscanner.BlockScannerFetcher.
 func (s *Scanner) FetchTxs(fetchHeight, chainHeight int64) (types.TxIn, error) {
+	// handle erratas first
+	s.errataMtx.Lock()
+	errataBlocks := s.errataBlocks
+	s.errataBlocks = nil
+	s.errataMtx.Unlock()
+
+	for _, errata := range errataBlocks {
+		s.globalErrataQueue <- errata
+	}
+
 	var allTxIns []*types.TxInItem
 
 	rollbackHeight := atomic.LoadInt64(&s.rollbackHeight)
@@ -408,9 +421,9 @@ func (s *Scanner) updateNetworkFee(height int64) error {
 	minFeeB := uint64(params.MinFeeB)
 
 	s.networkMtx.Lock()
-	defer s.networkMtx.Unlock()
 
 	if minFeeA == s.minFeeA && minFeeB == s.minFeeB {
+		s.networkMtx.Unlock()
 		return nil
 	}
 
@@ -429,15 +442,18 @@ func (s *Scanner) updateNetworkFee(height int64) error {
 	roundedFeeRate := ((feeRate + (resolution / 2)) / resolution) * resolution
 
 	if roundedFeeRate == 0 {
+		s.networkMtx.Unlock()
 		return fmt.Errorf("rounded fee rate is zero")
 	}
 
 	// no need to update
 	if s.networkFee == roundedFeeRate {
+		s.networkMtx.Unlock()
 		return nil
 	}
 
 	s.networkFee = roundedFeeRate
+	s.networkMtx.Unlock()
 
 	s.globalNetworkFeeQueue <- common.NetworkFee{
 		Chain:           common.ADAChain,
@@ -513,11 +529,14 @@ func (s *Scanner) rollBackwardHandler(
 			})
 		}
 
-		if len(errataTxs) > 0 && s.globalErrataQueue != nil {
-			s.globalErrataQueue <- types.ErrataBlock{
+		if len(errataTxs) > 0 {
+			s.errataMtx.Lock()
+			s.errataBlocks = append(s.errataBlocks, types.ErrataBlock{
 				Height: int64(height),
 				Txs:    errataTxs,
-			}
+			})
+			s.errataMtx.Unlock()
+
 			s.logger.Info().
 				Uint64("height", height).
 				Int("txs", len(errataTxs)).
