@@ -134,7 +134,7 @@ func (s *ZcashSignerSuite) TestSignTx(c *C) {
 		Reason      string
 	}{
 		{
-			Name: "Wrong chain returns error",
+			Name: "Wrong chain is skipped",
 			TxOutItem: stypes.TxOutItem{
 				Chain:       common.ETHChain, // Wrong chain
 				ToAddress:   types2.GetRandomETHAddress(),
@@ -146,9 +146,9 @@ func (s *ZcashSignerSuite) TestSignTx(c *C) {
 					common.NewCoin(common.ZECAsset, cosmos.NewUint(1001)),
 				},
 			},
-			ExpectError: true,
+			ExpectError: false,
 			ExpectNil:   true,
-			Reason:      "ETH chain tx should not be signed by ZEC client",
+			Reason:      "ETH chain tx should be skipped by ZEC client",
 		},
 		{
 			Name: "Invalid pubkey returns error",
@@ -168,7 +168,7 @@ func (s *ZcashSignerSuite) TestSignTx(c *C) {
 			Reason:      "Invalid pubkey cannot derive signing key",
 		},
 		{
-			Name: "Invalid to address returns error",
+			Name: "Invalid to address is skipped",
 			TxOutItem: stypes.TxOutItem{
 				Chain:       common.ZECChain,
 				ToAddress:   "invalidaddress", // Invalid ZEC address
@@ -180,14 +180,14 @@ func (s *ZcashSignerSuite) TestSignTx(c *C) {
 					common.NewCoin(common.ZECAsset, cosmos.NewUint(1001)),
 				},
 			},
-			ExpectError: true,
+			ExpectError: false,
 			ExpectNil:   true,
-			Reason:      "Invalid destination address cannot create output script",
+			Reason:      "Invalid destination address is skipped",
 		},
 	}
 
 	for i, tc := range testCases {
-		result, _, _, err := s.client.SignTx(tc.TxOutItem, int64(i+1))
+		result, _, _, err := s.client.SignTx([]stypes.TxOutItem{tc.TxOutItem}, int64(i+1))
 		if tc.ExpectError {
 			c.Assert(err, NotNil, Commentf("Test case: %s - %s", tc.Name, tc.Reason))
 		} else {
@@ -243,7 +243,7 @@ func (s *ZcashSignerSuite) TestSignTxInsufficientUTXOs(c *C) {
 	txOutItem.VaultPubKey = s.client.nodePubKey
 
 	// Signing should fail due to insufficient UTXOs
-	buf, _, _, err := s.client.SignTx(txOutItem, 1)
+	buf, _, _, err := s.client.SignTx([]stypes.TxOutItem{txOutItem}, 1)
 	c.Assert(err, NotNil, Commentf("Expected error due to insufficient UTXOs"))
 	c.Assert(buf, IsNil)
 }
