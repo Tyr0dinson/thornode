@@ -152,8 +152,8 @@ func (HealthServerTestSuite) TestClassifyHost(c *C) {
 		{"http://node.internal:8545/", "self-hosted"},
 
 		// public IP (no provider name available)
-		{"203.0.113.5", "203.0.113.5"},
-		{"203.0.113.5:8545", "203.0.113.5"},
+		{"203.0.113.5", "external-host"},
+		{"203.0.113.5:8545", "external-host"},
 
 		// external providers – bare host
 		{"mainnet.infura.io", "infura.io"},
