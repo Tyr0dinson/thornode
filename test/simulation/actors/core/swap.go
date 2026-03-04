@@ -361,13 +361,22 @@ func (a *SwapActor) verifyOutbound(config *OpConfig) OpResult {
 	}
 
 	// get tx details
-	details, err := thornode.GetTxDetails(a.swapTxID)
+	allDetails, err := thornode.GetTxDetails(a.swapTxID)
 	if err != nil {
 		a.Log().Warn().Err(err).Msg("failed to get tx details")
 		return OpResult{
 			Continue: false,
 		}
 	}
+
+	// verify exactly one response
+	if len(allDetails) != 1 {
+		return OpResult{
+			Error:  fmt.Errorf("expected exactly one tx details response, got %d", len(allDetails)),
+			Finish: true,
+		}
+	}
+	details := allDetails[0]
 
 	// verify exactly one out transaction
 	if len(details.OutTxs) != 1 {

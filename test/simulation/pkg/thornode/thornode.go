@@ -185,9 +185,9 @@ func GetTxStages(txid string) (openapi.TxStagesResponse, error) {
 	return stages, err
 }
 
-func GetTxDetails(txid string) (openapi.TxDetailsResponse, error) {
+func GetTxDetails(txid string) ([]openapi.TxDetailsResponse, error) {
 	url := fmt.Sprintf("%s/thorchain/tx/details/%s", thornodeURL, txid)
-	var details openapi.TxDetailsResponse
+	var details []openapi.TxDetailsResponse
 	err := Get(url, &details)
 	return details, err
 }
