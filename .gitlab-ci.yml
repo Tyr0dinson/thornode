@@ -302,11 +302,6 @@ test-simulation:
   before_script:
     - apk -U add git make protoc bash
     - echo "$DOCKER_HUB_PASSWD" | docker login -u thornode --password-stdin
-#    - |
-#      if [ -n "$CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX" ]; then
-#        export DOCKER_MIRROR="${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/"
-#        echo "$CI_DEPENDENCY_PROXY_PASSWORD" | docker login "$CI_DEPENDENCY_PROXY_SERVER" -u "$CI_DEPENDENCY_PROXY_USER" --password-stdin
-#      fi
     - |
       PLUGIN="$HOME/.docker/cli-plugins/docker-compose"
       mkdir -p $(dirname $PLUGIN)
@@ -347,11 +342,6 @@ test-regression:
   before_script:
     - apk -U add make git bash
     - echo "$DOCKER_HUB_PASSWD" | docker login -u thornode --password-stdin
-#    - |
-#      if [ -n "$CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX" ]; then
-#        export DOCKER_MIRROR="${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/"
-#        echo "$CI_DEPENDENCY_PROXY_PASSWORD" | docker login "$CI_DEPENDENCY_PROXY_SERVER" -u "$CI_DEPENDENCY_PROXY_USER" --password-stdin
-#      fi
   script:
     - make test-regression
 
