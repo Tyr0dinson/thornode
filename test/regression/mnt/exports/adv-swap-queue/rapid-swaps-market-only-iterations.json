@@ -324,8 +324,9 @@
               "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
             }
           ],
-          "finalised_height": "12",
+          "finalised_height": "3",
           "height": "3",
+          "mempool_swap_tor": "0",
           "out_txs": null,
           "outbound_height": "12",
           "tx": {
@@ -413,8 +414,9 @@
               "vault_pub_key": "tthorpub1addwnpepqfshsq2y6ejy2ysxmq4gj8n8mzuzyulk9wh4n946jv5w2vpwdn2yuyp6sp4"
             }
           ],
-          "finalised_height": "12",
+          "finalised_height": "3",
           "height": "3",
+          "mempool_swap_tor": "0",
           "out_txs": null,
           "outbound_height": "12",
           "tx": {
