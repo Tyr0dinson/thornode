@@ -187,9 +187,12 @@ func GetTxStages(txid string) (openapi.TxStagesResponse, error) {
 
 func GetTxDetails(txid string) ([]openapi.TxDetailsResponse, error) {
 	url := fmt.Sprintf("%s/thorchain/tx/details/%s", thornodeURL, txid)
-	var details []openapi.TxDetailsResponse
-	err := Get(url, &details)
-	return details, err
+	// The gRPC-gateway wraps the response in {"tx_voters": [...]}.
+	var wrapper struct {
+		TxVoters []openapi.TxDetailsResponse `json:"tx_voters"`
+	}
+	err := Get(url, &wrapper)
+	return wrapper.TxVoters, err
 }
 
 func GetMimirs() (map[string]int64, error) {
