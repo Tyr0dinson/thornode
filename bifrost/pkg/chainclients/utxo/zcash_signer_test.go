@@ -287,13 +287,13 @@ func (s *ZcashSignerSuite) TestBroadcastTx(c *C) {
 
 	// Empty payload should return error
 	emptyInput := []byte{}
-	_, err := s.client.BroadcastTx(txOutItem, emptyInput)
+	_, err := s.client.BroadcastTx([]stypes.TxOutItem{txOutItem}, emptyInput)
 	c.Assert(err, NotNil, Commentf("Empty payload should fail"))
-	c.Assert(strings.Contains(err.Error(), "empty"), Equals, true,
-		Commentf("Error should mention empty payload: %v", err))
+	c.Assert(strings.Contains(err.Error(), "no txns to broadcast"), Equals, true,
+		Commentf("Error should mention no txns to broadcast: %v", err))
 
 	// Malformed payloads cannot bypass the expiry check.
-	_, err = s.client.BroadcastTx(txOutItem, []byte("invalid payload"))
+	_, err = s.client.BroadcastTx([]stypes.TxOutItem{txOutItem}, []byte("invalid payload"))
 	c.Assert(err, ErrorMatches, "invalid ZEC payload: .*")
 }
 
