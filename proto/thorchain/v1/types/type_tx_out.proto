@@ -24,7 +24,7 @@ message TxOutItem {
   common.Coin coin = 4
       [ (gogoproto.nullable) = false, (gogoproto.jsontag) = "coin" ];
   string memo = 5;
-  string original_memo = 17;
+  string original_memo = 16;
   repeated common.Coin max_gas = 6 [
     (gogoproto.castrepeated) = "gitlab.com/thorchain/thornode/v3/common.Gas",
     (gogoproto.nullable) = false,
@@ -50,8 +50,6 @@ message TxOutItem {
     (gogoproto.casttype) = "gitlab.com/thorchain/thornode/v3/common.PubKey",
     (gogoproto.nullable) = true
   ];
-  reserved 16; // inbound_finalized removed - queue membership is source of
-               // truth
 }
 
 message TxOut {
