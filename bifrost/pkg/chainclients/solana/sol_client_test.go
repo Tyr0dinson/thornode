@@ -25,7 +25,6 @@ import (
 	"github.com/mr-tron/base58"
 	"github.com/stretchr/testify/require"
 	"gitlab.com/thorchain/thornode/v3/bifrost/metrics"
-	"gitlab.com/thorchain/thornode/v3/bifrost/pkg/chainclients/solana/rpc"
 	"gitlab.com/thorchain/thornode/v3/bifrost/pubkeymanager"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	stypes "gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
@@ -48,6 +47,7 @@ type SolTestSuite struct {
 	server   *httptest.Server
 
 	getLatestBlockhashCalls atomic.Int64
+	slotResponse            atomic.Uint64
 }
 
 var _ = Suite(&SolTestSuite{})
@@ -73,6 +73,7 @@ func GetMetricForTest(c *C) *metrics.Metrics {
 func (s *SolTestSuite) SetUpSuite(c *C) {
 	s.m = GetMetricForTest(c)
 	c.Assert(s.m, NotNil)
+	s.slotResponse.Store(1)
 
 	ccfg := cosmos.GetConfig()
 	ccfg.SetBech32PrefixForAccount("tthor", "tthorpub")
@@ -175,7 +176,9 @@ func (s *SolTestSuite) SetUpSuite(c *C) {
 				c.Assert(writeErr, IsNil)
 			}
 			if rpcRequest.Method == "getSlot" {
-				httpTestHandler(c, rw, "./test/getSlot.json")
+				rw.Header().Set("Content-Type", "application/json")
+				_, err = rw.Write([]byte(fmt.Sprintf(`{"jsonrpc":"2.0","result":%d,"id":1}`, s.slotResponse.Load())))
+				c.Assert(err, IsNil)
 			}
 			if rpcRequest.Method == "getLatestBlockhash" {
 				s.getLatestBlockhashCalls.Add(1)
@@ -271,6 +274,7 @@ func (s *SolTestSuite) TestSignSOLTx(c *C) {
 	defer func() { c.Assert(pubkeyMgr.Stop(), IsNil) }()
 	e.solScanner.globalNetworkFeeQueue = make(chan common.NetworkFee, 1)
 	pubkeys := pubkeyMgr.GetPubKeys()
+	e.solScanner.setRecentBlockHash("asdfasdf", 1)
 
 	// Not SOL chain
 	result, _, obs, err := e.SignTx(stypes.TxOutItem{
@@ -303,7 +307,7 @@ func (s *SolTestSuite) TestSignSOLTx(c *C) {
 	// c.Assert(obs, NotNil)
 }
 
-func (s *SolTestSuite) TestSignSOLTxUsesFreshScannerBlockhashWithoutRefresh(c *C) {
+func (s *SolTestSuite) TestSignSOLTxUsesFreshScannerBlockhash(c *C) {
 	pubkeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
 	c.Assert(err, IsNil)
 	poolMgr := thorclient.NewPoolMgr(s.bridge)
@@ -333,9 +337,6 @@ func (s *SolTestSuite) TestSignSOLTxUsesFreshScannerBlockhashWithoutRefresh(c *C
 
 	s.getLatestBlockhashCalls.Store(0)
 	e.solScanner.setRecentBlockHash("asdfasdf", 1)
-	// If signing tries to refresh via scanner RPC despite the hash being fresh,
-	// this call will fail and the test will fail.
-	e.solScanner.solRpc = rpc.NewSolRPC("http://127.0.0.1:1", 200*time.Millisecond)
 
 	pubkeys := pubkeyMgr.GetPubKeys()
 	txOut := stypes.TxOutItem{
@@ -361,11 +362,11 @@ func (s *SolTestSuite) TestSignSOLTxUsesFreshScannerBlockhashWithoutRefresh(c *C
 	c.Assert(err, IsNil)
 	c.Assert(result, NotNil)
 
-	// Strict scanner-based policy should never call signing-time getLatestBlockhash.
+	// Signing should use the cached scanner blockhash and never fetch a latest blockhash.
 	c.Assert(s.getLatestBlockhashCalls.Load(), Equals, int64(0))
 }
 
-func (s *SolTestSuite) TestSignSOLTxFailWhenStrictScannerRefreshUnavailable(c *C) {
+func (s *SolTestSuite) TestSignSOLTxFailWhenScannerBlockhashTooOld(c *C) {
 	pubkeyMgr, err := pubkeymanager.NewPubKeyManager(s.bridge, s.m)
 	c.Assert(err, IsNil)
 	poolMgr := thorclient.NewPoolMgr(s.bridge)
@@ -393,8 +394,9 @@ func (s *SolTestSuite) TestSignSOLTxFailWhenStrictScannerRefreshUnavailable(c *C
 	c.Assert(pubkeyMgr.Start(), IsNil)
 	defer func() { c.Assert(pubkeyMgr.Stop(), IsNil) }()
 
-	// Ensure strict signing fails when scanner refresh is unavailable.
-	e.solScanner.solRpc = rpc.NewSolRPC("http://127.0.0.1:1", 200*time.Millisecond)
+	s.slotResponse.Store(102)
+	defer s.slotResponse.Store(1)
+	e.solScanner.setRecentBlockHash("asdfasdf", 1)
 
 	pubkeys := pubkeyMgr.GetPubKeys()
 	result, _, _, err := e.SignTx(stypes.TxOutItem{
@@ -414,7 +416,7 @@ func (s *SolTestSuite) TestSignSOLTxFailWhenStrictScannerRefreshUnavailable(c *C
 
 	c.Assert(result, IsNil)
 	c.Assert(err, NotNil)
-	c.Assert(err.Error(), Matches, ".*strict blockhash refresh failed.*")
+	c.Assert(err.Error(), Matches, ".*scanner blockhash is 101 slots old, exceeds max age 100.*")
 }
 
 func TestSolAddrKeyringRoundTrip(t *testing.T) {

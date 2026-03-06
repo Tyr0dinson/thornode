@@ -35,11 +35,9 @@ import (
 const (
 	solvencyDivisor = 10
 
-	// Solana blockhashes are valid for roughly 150 slots. We keep a buffer to
-	// avoid signing near-expiry hashes that can expire before broadcast.
-	solBlockhashValiditySlots     = uint64(150)
-	solBlockhashSafetyMarginSlots = uint64(30)
-	solBlockhashMaxCachedAgeSlots = solBlockhashValiditySlots - solBlockhashSafetyMarginSlots
+	// Only sign with a scanner-selected blockhash when it is at most 100 slots old.
+	// Older hashes should wait for the next scanner refresh to preserve determinism.
+	solBlockhashMaxCachedAgeSlots = uint64(100)
 )
 
 // SOLClient is a client for the Solana blockchain
@@ -374,7 +372,8 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 	// For truly memoless transactions (no Memo or OriginalMemo), default to TxOutbound
 	memoForParsing := tx.GetMemo()
 
-	// Resolve a signing-time blockhash using strict scanner-based hybrid logic.
+	// Use the scanner-selected cached blockhash for signing. If it is too old,
+	// fail and let the next signing attempt use the scanner's next refresh.
 	recentBlockhash, err := c.getSigningBlockhash()
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("fail to get signing blockhash: %w", err)
@@ -424,10 +423,9 @@ func (c *SOLClient) SignTx(tx stypes.TxOutItem, height int64) ([]byte, []byte, *
 }
 
 // getSigningBlockhash returns the blockhash to embed in the message being signed.
-// Strict policy:
-// 1) use scanner-selected blockhash if fresh enough
-// 2) deterministically refresh scanner blockhash if stale/missing
-// 3) fail if a fresh shared blockhash is still unavailable
+// Policy:
+// 1) use scanner-selected blockhash if it is available and at most 100 slots old
+// 2) otherwise fail and wait for the scanner to refresh it on the next polling interval
 func (c *SOLClient) getSigningBlockhash() (string, error) {
 	currentSlot, err := c.rpcClient.GetSlot()
 	if err != nil {
@@ -438,20 +436,16 @@ func (c *SOLClient) getSigningBlockhash() (string, error) {
 		return hash, nil
 	}
 
-	if err := c.solScanner.refreshRecentBlockHash(currentSlot); err != nil {
-		return "", fmt.Errorf("strict blockhash refresh failed: %w", err)
+	hash, hashSlot := c.solScanner.getRecentBlockHash()
+	if hash == "" {
+		return "", errors.New("scanner blockhash is empty")
+	}
+	if currentSlot < hashSlot {
+		return "", fmt.Errorf("scanner blockhash slot %d is ahead of current slot %d", hashSlot, currentSlot)
 	}
 
-	if hash, hashSlot, ok := c.getFreshScannerBlockhash(currentSlot); ok {
-		c.logger.Debug().
-			Str("blockhash", hash).
-			Uint64("hash_slot", hashSlot).
-			Uint64("current_slot", currentSlot).
-			Msg("using refreshed scanner blockhash for signing")
-		return hash, nil
-	}
-
-	return "", errors.New("strict blockhash refresh failed: scanner blockhash remains stale or empty")
+	age := currentSlot - hashSlot
+	return "", fmt.Errorf("scanner blockhash is %d slots old, exceeds max age %d", age, solBlockhashMaxCachedAgeSlots)
 }
 
 // getFreshScannerBlockhash returns scanner-selected hash only when it is fresh enough

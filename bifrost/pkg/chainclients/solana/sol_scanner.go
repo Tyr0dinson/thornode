@@ -580,41 +580,6 @@ func (s *SOLScanner) setRecentBlockHash(hash string, slot uint64) {
 	s.recentBlockSlot = slot
 }
 
-// refreshRecentBlockHash refreshes the scanner-selected blockhash deterministically
-// using a rounded slot boundary shared across nodes.
-func (s *SOLScanner) refreshRecentBlockHash(currentSlot uint64) error {
-	roundedSlot := (currentSlot / s.cfg.Solana.FeeUpdateInterval) * s.cfg.Solana.FeeUpdateInterval
-	var firstSlot uint64
-	if roundedSlot > s.cfg.Solana.FeeSampleSlots {
-		firstSlot = roundedSlot - s.cfg.Solana.FeeSampleSlots
-	}
-
-	blocks, err := s.solRpc.GetBlockHeights(firstSlot, roundedSlot)
-	if err != nil {
-		return fmt.Errorf("failed to get confirmed blocks for blockhash refresh: %w", err)
-	}
-
-	// Reverse to prefer the most recent finalized block in the window.
-	slices.Reverse(blocks)
-	for _, b := range blocks {
-		block, err := s.solRpc.GetBlock(b)
-		if err != nil {
-			if strings.Contains(err.Error(), "Block status not yet available for slot") {
-				return fmt.Errorf("block status not yet available for slot %d", b)
-			}
-			s.logger.Error().Err(err).Msg("failed to get block for blockhash refresh")
-			continue
-		}
-		if block == nil {
-			continue
-		}
-		s.setRecentBlockHash(block.Blockhash, b)
-		return nil
-	}
-
-	return errors.New("no finalized blockhash available in refresh window")
-}
-
 // GetNetworkFee returns current chain network fee according to Bifrost.
 func (s *SOLScanner) GetNetworkFee() (transactionSize, transactionFeeRate uint64) {
 	return 1, s.lastFeeRate
