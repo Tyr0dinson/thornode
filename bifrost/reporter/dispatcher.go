@@ -222,7 +222,6 @@ func (d *dispatcher) enqueueProcess(chain common.Chain, from triggeredFrom, heig
 func (d *dispatcher) processInternal(chain common.Chain, from triggeredFrom, height int64) {
 	logger := d.logger.With().Stringer("chain", chain).Stringer("from", from).Int64("height", height).Logger()
 
-	var err error
 	var allMsgs, reportedMsgs ReportBatch
 	taskHeight, err := d.resolveTaskHeight(chain, from, height)
 	if err != nil {
@@ -260,32 +259,31 @@ func (d *dispatcher) processInternal(chain common.Chain, from triggeredFrom, hei
 }
 
 func (d *dispatcher) resolveTaskHeight(chain common.Chain, from triggeredFrom, height int64) (int64, error) {
-	resolvedHeight := height
-	if resolvedHeight <= 0 {
-		client, ok := d.chains[chain]
-		if !ok {
-			return 0, fmt.Errorf("chain client not found")
-		}
-
-		switch from {
-		case fromRunner:
-			h, err := client.GetHeight()
-			if err != nil {
-				return 0, fmt.Errorf("failed to get chain height: %w", err)
-			}
-			resolvedHeight = h
-		case fromBlockScanner:
-			h, err := client.GetBlockScannerHeight()
-			if err != nil {
-				return 0, fmt.Errorf("failed to get block scanner height: %w", err)
-			}
-			resolvedHeight = h
-		default:
-			return 0, fmt.Errorf("unknown trigger source: %s", from)
-		}
+	if height > 0 {
+		return height, nil
 	}
 
-	return resolvedHeight, nil
+	client, ok := d.chains[chain]
+	if !ok {
+		return 0, fmt.Errorf("chain client not found")
+	}
+
+	switch from {
+	case fromRunner:
+		h, err := client.GetHeight()
+		if err != nil {
+			return 0, fmt.Errorf("failed to get chain height: %w", err)
+		}
+		return h, nil
+	case fromBlockScanner:
+		h, err := client.GetBlockScannerHeight()
+		if err != nil {
+			return 0, fmt.Errorf("failed to get block scanner height: %w", err)
+		}
+		return h, nil
+	default:
+		return 0, fmt.Errorf("unknown trigger source: %s", from)
+	}
 }
 
 // sendCollectedToThorchain broadcasts each collected reporter message
@@ -297,6 +295,10 @@ func (d *dispatcher) sendCollectedToThorchain(allMsgs ReportBatch) error {
 	}
 
 	if nodeStatus != types.NodeStatus_Active {
+		d.logger.Info().
+			Stringer("node_status", nodeStatus).
+			Int("report_count", len(allMsgs)).
+			Msg("skipping broadcast of collected reports to thorchain: local node is not active")
 		return nil
 	}
 

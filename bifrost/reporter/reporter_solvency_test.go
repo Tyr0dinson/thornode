@@ -1,6 +1,7 @@
 package reporter
 
 import (
+	"bytes"
 	"fmt"
 	"math/big"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	. "gopkg.in/check.v1"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient"
 	"gitlab.com/thorchain/thornode/v3/bifrost/thorclient/types"
@@ -117,10 +119,11 @@ func (mm *mimirMap) get(key string) int64 {
 // mockThorchainBridge is a mock for the bridge
 type thorMockBridge struct {
 	thorclient.ThorchainBridge
-	getAsgardsFunc func() (ctypes.Vaults, error)
-	msgs           []ctypes.MsgSolvency
-	mimir          mimirMap
-	mu             sync.Mutex
+	getAsgardsFunc      func() (ctypes.Vaults, error)
+	fetchNodeStatusFunc func() (ctypes.NodeStatus, error)
+	msgs                []ctypes.MsgSolvency
+	mimir               mimirMap
+	mu                  sync.Mutex
 }
 
 func (m *thorMockBridge) GetAsgards() (ctypes.Vaults, error) {
@@ -128,6 +131,9 @@ func (m *thorMockBridge) GetAsgards() (ctypes.Vaults, error) {
 }
 
 func (m *thorMockBridge) FetchNodeStatus() (ctypes.NodeStatus, error) {
+	if m.fetchNodeStatusFunc != nil {
+		return m.fetchNodeStatusFunc()
+	}
 	return ctypes.NodeStatus_Active, nil
 }
 
@@ -921,4 +927,23 @@ func (s *SolvencySuite) TestDispatcherUsesLegacySolanaMsgHeightFloor(c *C) {
 	msg, ok := batch[0].(*ctypes.MsgSolvency)
 	c.Assert(ok, Equals, true)
 	c.Assert(msg.Height, Equals, int64(110))
+}
+
+func (s *SolvencySuite) TestSendCollectedToThorchainLogsInactiveNode(c *C) {
+	var logBuf bytes.Buffer
+
+	bridge := &thorMockBridge{
+		fetchNodeStatusFunc: func() (ctypes.NodeStatus, error) {
+			return ctypes.NodeStatus_Standby, nil
+		},
+	}
+	d := &dispatcher{
+		logger:          zerolog.New(&logBuf),
+		thorchainBridge: bridge,
+	}
+
+	err := d.sendCollectedToThorchain(ReportBatch{nil})
+	c.Assert(err, IsNil)
+	c.Assert(bridge.getMsgs(), HasLen, 0)
+	c.Assert(logBuf.String(), Matches, `(?s).*"node_status":"Standby".*"report_count":1.*skip sending collected reports to thorchain: local node is not active.*`)
 }
