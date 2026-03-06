@@ -945,5 +945,5 @@ func (s *SolvencySuite) TestSendCollectedToThorchainLogsInactiveNode(c *C) {
 	err := d.sendCollectedToThorchain(ReportBatch{nil})
 	c.Assert(err, IsNil)
 	c.Assert(bridge.getMsgs(), HasLen, 0)
-	c.Assert(logBuf.String(), Matches, `(?s).*"node_status":"Standby".*"report_count":1.*skip sending collected reports to thorchain: local node is not active.*`)
+	c.Assert(logBuf.String(), Matches, `(?s).*"node_status":"Standby".*"report_count":1.*skipping broadcast of collected reports to thorchain: local node is not active.*`)
 }
