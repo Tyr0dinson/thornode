@@ -54,6 +54,4 @@ message QueryTxOutItem {
   string clout_spent = 11;
   string vault_pub_key_eddsa = 15;
   string vault_pub_key_frost = 17;
-  reserved 18; // inbound_finalized removed - queue membership is source of
-               // truth
 }
